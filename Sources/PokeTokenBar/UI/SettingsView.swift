@@ -203,6 +203,8 @@ struct SettingsView: View {
                     .menuStyle(.borderlessButton).controlSize(.small).frame(maxWidth: 180)
                 }
             }
+            Divider()
+            toggleRow(l.imageAntialiasingLabel, $settings.imageAntialiasing)
         }
     }
 
