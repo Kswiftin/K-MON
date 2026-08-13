@@ -92,15 +92,15 @@ final class DittoRevealTests: XCTestCase {
         let active = "{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":\(usedAtStage),"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":\(shiny),"
             + "\"dittoDisguise\":1,\"dittoRevealed\":\(revealed)}"
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":1000000000,\"spentTokens\":0,"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"installBaselineSet\":true,\"usedSinceInstall\":1000000000,\"spentTokens\":0,"
             + "\"lastDate\":\"d1\",\"active\":\(active),\"dex\":[],\"collectedFinals\":[]}"
         try? json.data(using: .utf8)!.write(to: url)
         return CompanionStore(provider: DittoTestProvider(), clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 7))
     }
 
-    /// update → loadCurrentLine → applyUsage(0) → (임계 초과 시) revealDitto 비동기 체인을 드레인.
+    /// tick → loadCurrentLine → (임계 초과 시) revealDitto 비동기 체인을 드레인.
     private func drainReveal(_ s: CompanionStore) async {
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         for _ in 0..<200 where !(s.state.active?.dittoRevealed ?? false) { await Task.yield() }
     }
 
@@ -142,7 +142,7 @@ final class DittoRevealTests: XCTestCase {
         let active = "{\"baseID\":206,\"pathIDs\":[206],\"plannedPathIDs\":[206,982],\"stageIndex\":0,"
             + "\"usedAtStage\":\(threshold),\"rarity\":\"common\",\"totalForms\":2,\"isShiny\":true,"
             + "\"nature\":\"timid\",\"dittoDisguise\":206,\"dittoRevealed\":false}"
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":1000000000,\"lastDate\":\"d1\","
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"installBaselineSet\":true,\"usedSinceInstall\":1000000000,\"lastDate\":\"d1\","
             + "\"active\":\(active),\"dex\":[],\"collectedFinals\":[]}"
         try Data(json.utf8).write(to: url)
         let s = CompanionStore(provider: PrunedDittoTestProvider(), clock: { dNow }, fileURL: url,
@@ -166,7 +166,7 @@ final class DittoRevealTests: XCTestCase {
     func testDelayedRevealDoesNotConvertSameBaseReplacementDisguise() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("ditto-race-\(UUID().uuidString).json")
         let active = #"{"baseID":1,"pathIDs":[1],"plannedPathIDs":[1,2,3],"stageIndex":0,"usedAtStage":125000000,"rarity":"common","totalForms":3,"dittoDisguise":1}"#
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":2000000000,\"lastDate\":\"d1\",\"active\":\(active),\"dex\":[],\"collectedFinals\":[]}"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"installBaselineSet\":true,\"usedSinceInstall\":2000000000,\"lastDate\":\"d1\",\"active\":\(active),\"dex\":[],\"collectedFinals\":[]}"
         try Data(json.utf8).write(to: url)
         let provider = DelayedDittoProvider()
         var seed: UInt64?
@@ -179,8 +179,7 @@ final class DittoRevealTests: XCTestCase {
         let s = CompanionStore(provider: provider, clock: { dNow }, fileURL: url,
                                rng: SeededRNG(seed: selectedSeed), dittoDisguiseRollingEnabled: true)
 
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         let deadline = Date().addingTimeInterval(1)
         while !(await provider.isSuspended()), Date() < deadline {
             try? await Task.sleep(nanoseconds: 1_000_000)
@@ -229,7 +228,7 @@ final class DittoRevealTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("ditto-bc-\(UUID().uuidString).json")
         let active = "{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":0,"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":true}"   // ditto 필드 없음
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":0,\"spentTokens\":0,"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"installBaselineSet\":true,\"usedSinceInstall\":0,\"spentTokens\":0,"
             + "\"lastDate\":\"d1\",\"active\":\(active),\"dex\":[],\"collectedFinals\":[]}"
         try? json.data(using: .utf8)!.write(to: url)
         let s = CompanionStore(provider: DittoTestProvider(), clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 7))
