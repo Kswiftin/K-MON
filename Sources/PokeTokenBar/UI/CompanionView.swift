@@ -78,6 +78,7 @@ struct SpriteSubject: Equatable {
 /// 스프라이트 1개(런타임 로드 + 캐시). 없으면 알 글리프. bob 으로 가벼운 상하 움직임.
 /// animated=true 면 Showdown GIF 프레임을 순환(미지원/오프라인이면 정적+bob 으로 폴백).
 struct SpriteView: View {
+    @Environment(AppSettings.self) private var settings
     let speciesID: Int?
     var size: CGFloat = 84
     var bob: Bool = false
@@ -144,10 +145,10 @@ struct SpriteView: View {
             if !frames.isEmpty {
                 // GIF 애니메이션 경로 — 현재 프레임만 렌더
                 Image(nsImage: frames[frameIndex % frames.count].image)
-                    .resizable().interpolation(.none)
+                    .resizable().interpolation(settings.imageAntialiasing ? .high : .none)
                     .frame(width: size, height: size)
             } else if let img {
-                Image(nsImage: img).resizable().interpolation(.none)
+                Image(nsImage: img).resizable().interpolation(settings.imageAntialiasing ? .high : .none)
                     .frame(width: size, height: size)
             } else {
                 Text("🥚").font(.system(size: size * 0.62)).frame(width: size, height: size)
