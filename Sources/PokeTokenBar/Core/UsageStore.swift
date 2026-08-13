@@ -171,10 +171,14 @@ final class UsageStore {
     /// - **활성 항목 2개 이하 → 각 항목을 개별 세로 줄로**(토큰/비용/한도 각 1줄).
     /// - **3개(토큰+비용+한도) 모두 활성 → 토큰·비용을 한 줄로, 한도를 아랫줄로**(= 총 2줄).
     /// 한도 줄은 오늘 사용한 프로바이더만(`menuLimitLine`). 빈 배열이면 아이콘만.
+    /// 메뉴바 헤드라인 대체 문자열 — AppDelegate 가 companion 의 "오늘 함께한 시간"을 넣는다.
+    /// nil 이면 기존 토큰 합계로 폴백. 영속 아님(런타임 표시 전용).
+    var menuHeadlineOverride: String?
+
     var menuLines: [String] {
         guard lastUpdated != nil else { return ["—"] }
         var usage: [String] = []
-        if showTokensInMenu { usage.append(TokenFormatter.compact(todayTotalTokens)) }
+        if showTokensInMenu { usage.append(menuHeadlineOverride ?? TokenFormatter.compact(todayTotalTokens)) }
         if showCostInMenu, showsCost { usage.append(TokenFormatter.costCompact(todayCostTotal)) }
         let limit = menuLimitLine   // nil = 한도 미표시/미가용
 
@@ -325,55 +329,13 @@ final class UsageStore {
             for bucket in codexLimits?.visibleSnapshots ?? [] {
                 if let u = bucket.primary?.usedPercent { utils.append(Double(u)) }
                 if let u = bucket.secondary?.usedPercent { utils.append(Double(u)) }
-                // individualLimit is a $ spend cap — intentionally omitted (candyEligibleWindows parity).
+                // individualLimit is a $ spend cap — intentionally omitted from token-limit utilization.
             }
         }
         return utils.max()
     }
 
-    /// 사탕 지급 대상 한도 창 — 세션급(≈5h)=1개, 주간급=5개, 전 프로바이더. 공식 한도 신호가 없는
-    /// 프로바이더(Gemini·Antigravity·OpenCode·Hermes·Cursor·Grok)는 자연히 빠진다(창 목록에 없음).
-    /// 지급 제외: Opus/Sonnet 주간·scoped·Codex 개인 spend
-    /// limit(헤드라인 창의 하위/중복 → 이중지급 방지). 알림(checkLimitAlerts)보다 좁은 지급 전용.
-    var candyEligibleWindows: [CandyWindow] {
-        let l = L(localizationLanguage)
-        var windows: [CandyWindow] = []
-        if let u = limits?.fiveHour?.utilization {
-            windows.append(CandyWindow(key: "claude.fiveHour", name: l.claudeFiveHour,
-                                       kind: .session, utilization: u))
-        }
-        if let u = limits?.sevenDay?.utilization {
-            windows.append(CandyWindow(key: "claude.sevenDay", name: l.claudeWeekly,
-                                       kind: .weekly, utilization: u))
-        }
-        for bucket in codexLimits?.visibleSnapshots ?? [] {
-            let bucketKey = bucket.limitId ?? bucket.limitName ?? "codex"
-            let bucketName = bucket.bucketDisplayName
-            if let primary = bucket.primary {
-                windows.append(CandyWindow(
-                    key: "codex.\(bucketKey).primary",
-                    name: "\(bucketName) \(l.codexWindow(primary.windowDurationMins))",
-                    kind: Self.windowClass(minutes: primary.windowDurationMins),
-                    utilization: Double(primary.usedPercent)))
-            }
-            if let secondary = bucket.secondary {
-                windows.append(CandyWindow(
-                    key: "codex.\(bucketKey).secondary",
-                    name: "\(bucketName) \(l.codexWindow(secondary.windowDurationMins))",
-                    kind: Self.windowClass(minutes: secondary.windowDurationMins),
-                    utilization: Double(secondary.usedPercent)))
-            }
-        }
-        return windows
-    }
-
-    /// Codex 창 분류 — ≤24h(1440분)=세션, 초과=주간. 미상(nil)은 세션으로 간주(보수적).
-    nonisolated static func windowClass(minutes: Int?) -> WindowClass {
-        if let m = minutes, m > 1440 { return .weekly }
-        return .session
-    }
-
-    /// 한도 데이터가 최소 1개 프로바이더 로드됐는가 — 사탕 첫 실행 시드 게이트(미로딩 중 시드 방지).
+    /// 한도 데이터가 최소 1개 프로바이더 로드됐는가.
     var limitsReady: Bool { limits != nil || codexLimits != nil }
 
     /// burn rate 티어 — companion 표시 상태(idle/working/focus) 판정에 사용.

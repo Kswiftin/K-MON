@@ -27,6 +27,12 @@ final class PopoverNavigation {
         showSettings = false
         tab = .home
     }
+
+    /// 배틀이 잡히면 배틀 탭으로 — 창 고정과 함께 AppDelegate 가 호출.
+    func goToBattle() {
+        showSettings = false
+        tab = .battle
+    }
 }
 
 struct PopoverView: View {
@@ -126,34 +132,22 @@ struct PopoverView: View {
             Text(l.todayTokens)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline) {
-                Text(TokenFormatter.compact(store.todayTotalTokens))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(l.duration(companion.activeSecondsToday))
                     .font(.system(size: 28, weight: .bold))
                     .monospacedDigit()
-                Text(TokenFormatter.grouped(store.todayTotalTokens))
+                Text("\(l.totalPlaytime) \(l.duration(companion.activeSecondsTotal))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                 Spacer()
-                if store.showsCost {
-                    Text(TokenFormatter.cost(todayCost))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            // 주간/월간 누적 (전 서비스 합산 — 오늘 합계와 함께 통합 통계)
-            if store.weekTotalTokens > 0 || store.monthTotalTokens > 0 {
-                HStack(spacing: 14) {
-                    periodLabel(l.thisWeek, tokens: store.weekTotalTokens, cost: store.showsCost ? store.weekCostTotal : nil)
-                    periodLabel(l.thisMonth, tokens: store.monthTotalTokens, cost: store.showsCost ? store.monthCostTotal : nil)
-                    Spacer()
-                }
-                .padding(.top, 2)
+                Text(l.perHour(TokenFormatter.compact(companion.productionPerHour)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             // 연결된 서비스가 2개 이상이면 작은 탭으로 서비스별 상세를 넘나든다
-            // (합계는 위에 유지 — 상세·한도만 탭 스코프).
+            // (한도·상세만 탭 스코프 — 헤드라인은 방치 시간).
             if store.snapshots.count > 1 {
                 providerTabBar
                     .padding(.top, 6)
@@ -174,26 +168,6 @@ struct PopoverView: View {
             snapshots: store.snapshots,
             selectedID: selectedSnapshot?.providerID,
             onSelect: { nav.providerID = $0 })
-    }
-
-    private func periodLabel(_ name: String, tokens: Int, cost: Double?) -> some View {
-        HStack(spacing: 4) {
-            Text(name)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            Text(TokenFormatter.compact(tokens))
-                .font(.caption.weight(.semibold))
-                .monospacedDigit()
-            if let cost {
-                Text(TokenFormatter.cost(cost))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var todayCost: Double {
-        store.costingSnapshots.reduce(0) { $0 + ($1.today?.totalCost ?? 0) }
     }
 
     private func providerRow(snapshot: ProviderSnapshot, today: DailyUsage) -> some View {

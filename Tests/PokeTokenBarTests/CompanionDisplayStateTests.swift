@@ -105,10 +105,9 @@ final class CompanionDisplayStateTests: XCTestCase {
         XCTAssertEqual(s.eggProgress, 0)
         XCTAssertEqual(s.eggTokensToHatch, PokemonBalance.eggHatchThreshold)
 
-        // 임계의 40% 사용
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        // 임계의 40% 생산 — 방치 경제 전환 후 인큐베이션은 tick()/accrue 경로로만 쌓인다(update() 는 표시 전용).
         let part = PokemonBalance.eggHatchThreshold * 2 / 5
-        s.update(todayTokensByProvider: ["test": part], todayDate: "d", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.debugAccrue(part)
         XCTAssertEqual(s.eggProgress, 0.4, accuracy: 0.001)
         XCTAssertEqual(s.eggTokensToHatch, PokemonBalance.eggHatchThreshold - part)
         XCTAssertTrue(s.eggStarted)

@@ -164,7 +164,7 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
 
 // MARK: - 배틀 스냅샷 (교환 단위)
 
-/// 배틀 코드로 교환되는 포켓몬 스냅샷 — 수신 측이 네트워크 없이 배틀할 수 있게 스탯·타입을 내장한다.
+/// 대전 상대와 교환되는 포켓몬 스냅샷 — 수신 측이 추가 조회 없이 배틀할 수 있게 스탯·타입을 내장한다.
 struct BattleSnapshot: Codable, Sendable, Equatable {
     var v: Int = 1
     var speciesID: Int
@@ -177,9 +177,7 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     var types: [PokemonType]
     /// 종족값 — 유효 스탯은 배틀 시점에 level·nature 로 계산(레벨만 바꾸는 변조 방지 폭 축소).
     var base: BattleStats
-    /// 위조 억제용 checksum(hex) — 보안이 아니라 실수/장난 방지 수준. `BattleCode` 가 검증.
-    var checksum: String?
-    /// 네트워크 대전용 무브셋(최대 4). 배틀 코드에선 생략(코드 길이·v1 호환) — canonical 에도 미포함.
+    /// 네트워크 대전용 무브셋(최대 4).
     var moves: [MoveSpec]? = nil
 
     /// 레벨 유도 — 성장 진행도(단계 + 단계 내 진행)를 5~100 레벨로 사상.
@@ -207,65 +205,6 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
             spe: other(base.spe, \.spe))
     }
 
-    /// checksum 대상 canonical 문자열 — 필드 추가 시 여기와 버전(v)을 같이 올린다.
-    var canonical: String {
-        let t = types.map(\.rawValue).joined(separator: ",")
-        return "v\(v)|\(speciesID)|\(name)|\(trainer ?? "")|\(level)|\(nature?.rawValue ?? "")|\(isShiny)|\(t)|\(base.hp),\(base.atk),\(base.def),\(base.spa),\(base.spd),\(base.spe)"
-    }
-}
-
-// MARK: - 배틀 코드 (직렬화)
-
-/// 스냅샷 ↔ 공유 문자열. 형식: `PTB1.` + base64url(JSON). checksum 은 FNV-1a 64(솔트 포함).
-/// 보안 아님 — 대충 고쳐 붙이는 장난을 걸러내는 수준(솔트가 코드에 있으므로 결심한 위조는 못 막는다).
-enum BattleCode {
-    static let prefix = "PTB1."
-    private static let salt = "poketokenbar-battle-v1"
-
-    enum DecodeError: Error, Equatable { case badFormat, badChecksum }
-
-    static func fnv1a(_ s: String) -> UInt64 {
-        var h: UInt64 = 0xcbf29ce484222325
-        for b in s.utf8 {
-            h ^= UInt64(b)
-            h = h &* 0x100000001b3
-        }
-        return h
-    }
-
-    static func checksum(of snapshot: BattleSnapshot) -> String {
-        String(fnv1a(snapshot.canonical + "|" + salt), radix: 16)
-    }
-
-    static func encode(_ snapshot: BattleSnapshot) throws -> String {
-        var sealed = snapshot
-        sealed.moves = nil   // 코드 대전은 자동 배틀 — 코드 길이 절약 + canonical 미포함 필드 제거
-        sealed.checksum = checksum(of: sealed)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let json = try encoder.encode(sealed)
-        let b64 = json.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        return prefix + b64
-    }
-
-    static func decode(_ code: String) throws -> BattleSnapshot {
-        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix(prefix) else { throw DecodeError.badFormat }
-        var b64 = String(trimmed.dropFirst(prefix.count))
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        while b64.count % 4 != 0 { b64 += "=" }
-        guard let data = Data(base64Encoded: b64),
-              let snapshot = try? JSONDecoder().decode(BattleSnapshot.self, from: data),
-              !snapshot.types.isEmpty, snapshot.level >= 1, snapshot.level <= 100 else {
-            throw DecodeError.badFormat
-        }
-        guard snapshot.checksum == checksum(of: snapshot) else { throw DecodeError.badChecksum }
-        return snapshot
-    }
 }
 
 // MARK: - 배틀 엔진
@@ -283,87 +222,8 @@ struct SplitMix64: RandomNumberGenerator {
     }
 }
 
-/// 한 턴의 공격 기록 — 뷰가 언어별 문구로 렌더한다(엔진은 문자열을 만들지 않는다).
-struct BattleTurn: Sendable, Equatable {
-    var attackerIsA: Bool
-    /// nil = 발버둥(양쪽 타입 모두 무효라 무속성 공격으로 폴백).
-    var moveType: PokemonType?
-    var damage: Int
-    var effectiveness: Double   // 0.25/0.5/1/2/4 (발버둥은 1)
-    var isCritical: Bool
-    var defenderHPAfter: Int
-}
-
-struct BattleResult: Sendable, Equatable {
-    /// nil = 무승부(턴 상한 도달 + 잔여 HP 비율 동률).
-    var winnerIsA: Bool?
-    var turns: [BattleTurn]
-    var aMaxHP: Int
-    var bMaxHP: Int
-}
-
 enum BattleEngine {
-    static let movePower = 65
-    static let maxTurns = 60
     static let critDenominator: UInt64 = 16
-
-    /// 양쪽이 같은 (코드A, 코드B) 쌍에서 같은 seed 를 얻도록 — 순서 무관(XOR 교환법칙).
-    static func symmetricSeed(_ codeA: String, _ codeB: String) -> UInt64 {
-        BattleCode.fnv1a(codeA) ^ BattleCode.fnv1a(codeB)
-    }
-
-    /// 자동 배틀 시뮬레이션. 기술 선택 = 자기 타입 중 상대에게 배율 최대(STAB 고정 1.5).
-    /// 자기 타입 전부가 무효(배율 0)면 발버둥(무속성, STAB 없음)으로 폴백.
-    static func simulate(a: BattleSnapshot, b: BattleSnapshot, seed: UInt64) -> BattleResult {
-        var rng = SplitMix64(seed: seed)
-        let statsA = a.effectiveStats(), statsB = b.effectiveStats()
-        var hpA = statsA.hp, hpB = statsB.hp
-        var turns: [BattleTurn] = []
-
-        // 선공 — 스피드, 동률은 코인토스(결정적 RNG).
-        var aActs = statsA.spe != statsB.spe ? statsA.spe > statsB.spe : (rng.next() & 1 == 0)
-
-        while hpA > 0 && hpB > 0 && turns.count < maxTurns {
-            let (atkSnap, atkStats) = aActs ? (a, statsA) : (b, statsB)
-            let (defSnap, defStats) = aActs ? (b, statsB) : (a, statsA)
-
-            // 기술 타입 선택 — 상대에게 가장 잘 박히는 자기 타입.
-            let best = atkSnap.types
-                .map { ($0, TypeChart.effectiveness($0, against: defSnap.types)) }
-                .max { $0.1 < $1.1 }
-            let (moveType, eff, stab): (PokemonType?, Double, Double) = {
-                guard let best, best.1 > 0 else { return (nil, 1.0, 1.0) }   // 발버둥
-                return (best.0, best.1, 1.5)
-            }()
-
-            // 물리/특수 — 더 높은 공격 스탯 사용.
-            let physical = atkStats.atk >= atkStats.spa
-            let attack = physical ? atkStats.atk : atkStats.spa
-            let defense = physical ? defStats.def : defStats.spd
-
-            let crit = rng.next() % critDenominator == 0
-            let roll = 0.85 + Double(rng.next() % 16) / 100.0   // 0.85 ~ 1.00
-            let level = atkSnap.level
-            let baseDamage = Double((2 * level / 5 + 2) * movePower * attack / max(1, defense)) / 50.0 + 2.0
-            let damage = max(1, Int(baseDamage * stab * eff * (crit ? 1.5 : 1.0) * roll))
-
-            if aActs { hpB = max(0, hpB - damage) } else { hpA = max(0, hpA - damage) }
-            turns.append(BattleTurn(attackerIsA: aActs, moveType: moveType, damage: damage,
-                                    effectiveness: eff, isCritical: crit,
-                                    defenderHPAfter: aActs ? hpB : hpA))
-            aActs.toggle()
-        }
-
-        let winnerIsA: Bool?
-        if hpA <= 0 { winnerIsA = false }
-        else if hpB <= 0 { winnerIsA = true }
-        else {
-            // 턴 상한 — 잔여 HP 비율로 판정, 동률은 무승부.
-            let ratioA = Double(hpA) / Double(statsA.hp), ratioB = Double(hpB) / Double(statsB.hp)
-            winnerIsA = ratioA == ratioB ? nil : ratioA > ratioB
-        }
-        return BattleResult(winnerIsA: winnerIsA, turns: turns, aMaxHP: statsA.hp, bMaxHP: statsB.hp)
-    }
 }
 
 // MARK: - 네트워크 대전 턴 해상

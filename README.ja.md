@@ -1,198 +1,158 @@
 <div align="center">
 
-<img src="assets/icon.png" width="128" alt="PokeTokenBar アイコン">
+<img src="assets/icon.png" width="128" alt="K-MON アイコン">
 
-# PokeTokenBar
+# K-MON
 
-**あなたのAIコーディングトークンを、ポケモンに — メニューバーで。**
+**macOS のメニューバーで勝手に育つ放置型ポケモンコンパニオン — そして同じネットワークの友だちとバトル。**
 
-[![Release](https://img.shields.io/github/v/release/chattymin/PokeTokenBar?color=444d56&label=release)](https://github.com/chattymin/PokeTokenBar/releases)
 [![macOS](https://img.shields.io/badge/macOS-14%2B-0969da)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-6-f05138)](https://swift.org)
-[![Homebrew](https://img.shields.io/badge/Homebrew-cask-8957e5)](#homebrew)
 [![License](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%99%A5-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/chattymin)
 
 [English](README.md) · [한국어](README.ko.md) · **日本語**
 
 </div>
 
-PokeTokenBar は、あなたがすでに使っている AI コーディングトークン（Claude Code・Codex・Gemini CLI・Antigravity・OpenCode・Hermes Agent・Cursor・Grok CLI・Copilot CLI）を、macOS メニューバーの中で育っていく **ポケモンのパートナー** に変えます。トークンを使うとタマゴが孵化し、実際の進化ラインに沿って進化し、最終進化後に図鑑へ卒業して、また新しいタマゴが始まります。パートナーの下には正確な使用量トラッカーがあります — 今日の使用量・コスト、公式の5時間／週間上限をローカルログから直接読み取ります。
+K-MON は macOS のメニューバーに住み、**ポケモンのコンパニオン**を自動で育てます — アプリを起動しておくだけ。最初のパートナーを選び、本物の進化ラインに沿って進化させ、名前をつけ、図鑑に卒業させて、また最初から。同じネットワークの友だちも K-MON を起動していれば、リアルタイムでバトルを挑めます — ターン制の**タイマン**、または方向キーを交互に押す**かけっこ**。
 
-> トークン使用量はローカルの Claude Code・Codex・Gemini CLI・Antigravity・OpenCode・Hermes Agent・Cursor・Grok CLI・Copilot CLI データから直接読み取ります（`totalTokens` = input + output + cache、ローカル日付）— 外部 CLI 不要。非公式・非商用のポケモンファンプロジェクトです — [ライセンス & 免責](#ライセンス--免責) を参照。
+コンパニオンの下には、今も正確な AI コーディング使用量トラッカー（Claude Code・Codex・Gemini CLI など）がローカルログから直接動いています — ただし主役はもう、トークン数ではなく**一緒に過ごした時間**です。
 
-## なぜ
+> [PokeTokenBar](https://github.com/chattymin/PokeTokenBar) がベース。非公式・非商用のポケモンファンプロジェクト — [ライセンス & 免責](#ライセンス--免責)参照。
 
-- **開くのが楽しい使用量トラッカー。** 使用量がポケモンを育てます — 孵化し、進化し、卒業して図鑑を埋めます。色違い1匹が、また開く理由になります。
-- 今日のトークン使用量とコストを一目で — ダッシュボードもブラウザタブも不要。
-- 公式の **5時間 / 週間** 上限をリセットのカウントダウンとともに追跡し、現在の burn rate でいつ到達するかを予測します。
+## 育ちかた
 
-<div align="center">
-<img src="assets/screenshot-home.gif" width="420" alt="ポップオーバー ホーム — パートナー、今日のトークン、公式上限">
-</div>
+1. 🎒 **スターターを選ぶ。** 初回起動で**トレーナー名**を入力し、あなたのために引かれた**第1世代スターター3匹**から1匹を選びます。この3匹はあなたの Mac に固定され、**再インストールしても引き直せません**（スターター厳選不可）。
+2. ⏳ **起動中に育つ。** コンパニオンはアプリが開いている毎秒 **✨ ほしのすな**を集めます — トークン不要。ほしのすながタマゴを孵し、本物の進化ツリーに沿って進化させ、図鑑に卒業させます。集めた種が多いほど速く育ちます（**1種ごとに +2%**）。
+3. 🐣 **孵化・進化・命名。** タマゴとスターターは [PokéAPI](https://pokeapi.co/) の本物の進化ラインで生まれます。孵化ごとに25種の性格から1つ、まれに **✨ 色違い**。✏️ ボタンで**ニックネーム**をつけられます。
+4. 🎓 **卒業 & 収集。** 最終進化 + しきい値到達で**図鑑**に永久保存され、新しいタマゴが届きます。以降タマゴからは色々なポケモンが生まれます（捕獲率で重み付け — 伝説はレア）。
+5. 🍬 **デイリー報酬。** アプリを開いた日ごとに**ふしぎなアメ**をもらえます — **バッグ**から使って今のポケモンを即成長。
+6. 🛒 **ショップで使う。** ほしのすなが通貨です — **ふしぎなアメ**、性格を振り直す**ミント**、色違い率を永久に上げる**ひかるおまもり**、または今のコンパニオンを手放してやり直すタマゴを買えます。
 
-## しくみ
+## ⚔️ 同じネットワークで友だちとバトル
 
-1. 🥚 **いつも通りコーディング。** Claude Code・Codex・Gemini CLI・Antigravity・OpenCode・Hermes Agent・Cursor・Grok CLI・Copilot CLI で使うトークンがタマゴを温めます — 追加の操作は不要です。
-2. 🐣 **孵化。** [PokéAPI](https://pokeapi.co/) の**第1〜5世代すべての進化系統（起点329種）**から、公式の捕獲率で重み付けされて生まれます — よくいるポケモンは頻繁に、伝説は129回に1回。孵化したポケモンは育成中もすぐに **図鑑** に表示されます。孵化ごとに25種類のせいかくがひとつ決まり — **ごくまれな偶然で ✨ 色違いが生まれます**。
-3. ⚡ **進化。** コーディングを続けると実際の進化ツリー（1/2/3段階、分岐）に沿って育ち、各段階で小さな演出が流れます。
-4. 🎓 **卒業 & 収集。** 最終進化 + 閾値で **図鑑** に永久保存されます — レアなほど時間がかかり（ヘビーユーザーで common ≈3日 → legendary ≈24日）— 新しいタマゴが届きます。
-5. 🍬 **上限を使い切ってごほうび。** 5時間または週間の使用量上限を使い切ると **ふしぎなアメ** がもらえます — 新しい **バッグ** タブから使って、いまのポケモンを育てましょう。
-6. 🛒 **ショップで使う。** これまで使ったトークンがそのまま通貨です — 新しい **ショップ** タブで **ふしぎなアメ**、せいかくをランダムに引き直す **ミント**、色違い確率を永続的に上げる **光るお守り**、いまのパートナーを手放してやり直すタマゴを購入できます。タマゴは3種類 — 通常の **ポケモンのタマゴ**、アンコモン以上が確定で孵る **アンコモンのタマゴ**、レア以上が確定で孵る **レアのタマゴ**。
+同じネットワークの2台の Mac が K-MON を起動していれば、自動で互いを見つけます（Bonjour + AWDL）。IP 入力は不要 — 制限されたネットワーク用に手動 `IP:ポート` 接続もあります。
+
+- **タイマン** — ターン制バトル。4つのわざから選択、タイプ相性・タイプ一致・急所・はずれをすべて反映。決定的エンジンで両者が同じ結果を計算 → 結果を通信で改ざんできません。
+- **かけっこ** — リアルタイムレース。**← → 方向キーを交互に**押して走ります（片方だけ連打は進みません）。先にゴールした方が勝ち、両ランナーの進行がリアルタイム同期されます。
+- **自動承諾** — オンにすると申し込みが来た瞬間に承諾 → 席を外していてもバトルが成立します。
+- **通知 & ウィンドウ固定** — 作業中でも申し込みが来ると通知が出て、バトルが始まるとウィンドウが**固定**され（外をクリックしても閉じない）作業しながら遊べます。
+- **名前表示** — トレーナー名とポケモンのニックネームが申し込み・アリーナ・通知に表示されます。
 
 ## ツアー
 
 <table>
 <tr>
-<td width="45%" align="center"><img src="assets/floating-pet.gif" width="340" alt="デスクトップのフローティングペット — ホバー表示と右クリックメニュー"></td>
+<td width="45%" align="center"><img src="assets/floating-pet.gif" width="340" alt="デスクトップのフローティングペット"></td>
 <td width="55%" valign="middle">
 <h3>🐾 デスクトップに置く</h3>
-パートナーをメニューバーからデスクトップへ、48〜192px の好きなサイズで。ホバーで今日の使用量、クリックでポップオーバー、右クリックでメニュー、ドラッグで自由に移動 — 上限アラートはペットの上に吹き出しでも表示されます。
+パートナーをメニューバーの外に出し、48〜192px の好きなサイズで置けます。ホバーで今日のステータス、クリックでポップオーバー、右クリックでメニュー、ドラッグで移動。
 </td>
 </tr>
 <tr>
 <td width="55%" valign="middle">
-<h3>メニューバーの相棒</h3>
-動く Gen-V スプライトが今日のトークン合計（compact、例：<code>200.7M</code>）の隣に住んでいます。今日のコスト（<code>$</code>）や公式上限 <code>%</code> を追加しても、すべてオフにしてキャラクターだけにしても。
+<h3>メニューバーのパートナー</h3>
+動く第5世代スプライトが<b>今日一緒にいた時間</b>の隣に住みます。アプリが開いている毎分更新されます。
 </td>
 <td width="45%" align="center"><img src="assets/menubar.gif" width="240" alt="メニューバー"></td>
 </tr>
 <tr>
 <td width="45%" align="center"><img src="assets/shiny-banner.gif" width="340" alt="通常 vs 色違い"></td>
 <td width="55%" valign="middle">
-<h3>✨ ごくまれな偶然、色違い</h3>
-色違いはメニューバー・ホームカード・進化ラインで専用カラーで表示され、進化しても維持されます。図鑑では番号の横に ✨ が付き、マスをタップすると色違いカラーに切り替わります。専用通知でその瞬間を見逃しません。
+<h3>✨ まれに — 色違い</h3>
+色違いはメニューバー・ホームカード・進化ラインで専用色で表示され、進化しても保たれます。図鑑では番号の隣に ✨。専用通知がその瞬間を逃しません。
 </td>
 </tr>
 <tr>
 <td width="55%" valign="middle">
 <h3>埋めたくなる図鑑</h3>
-<b>図鑑</b>は手に入れた種を1マスに畳んで図鑑番号順に並べます — 1ページ24マス、色違いで捕まえた種には ✨ が付きます。<b>捕獲ログ</b>は個体をそのまま残します: 新しい順に、進化ライン全体・レア度・せいかく・捕獲日まで。
+<b>図鑑</b>は所持した種を1マスに畳んで図鑑番号順に表示 — 色違いで捕まえた種には ✨。<b>捕獲ログ</b>は個体を残します：新しい順に、進化ライン・希少度・性格・入手日つき。集めた種が多いほどほしのすなが速くなります。
 </td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="300" alt="図鑑 — 1種が1マス"><br><br><img src="assets/screenshot-collection-catchlog.png" width="300" alt="捕獲ログ — 育てた個体が1行"></td>
+<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="300" alt="図鑑"><br><br><img src="assets/screenshot-collection-catchlog.png" width="300" alt="捕獲ログ"></td>
 </tr>
 <tr>
+<td width="45%" align="center"><img src="assets/screenshot-shop-ja.png" width="300" alt="ショップ"></td>
+<td width="55%" valign="middle">
+<h3>🛒 ほしのすなで動くショップ</h3>
+時間で集めたほしのすなが通貨です。<b>ふしぎなアメ</b>で今のポケモンを育て、<b>ミント</b>で性格を振り直し、<b>ひかるおまもり</b>で色違い率を永久に上げ、またはタマゴを買ってやり直せます。タマゴは3等級 — 基本・アンコモン以上確定・レア以上確定。
+</td>
+</tr>
+<tr>
+<td width="55%" valign="middle">
+<h3>設定で自分好みに</h3>
+メニューバー項目、更新間隔、ログイン時に起動、コンパニオンイベント通知、バトル自動承諾。<b>韓国語/英語/日本語</b>の UI・ポケモン名に対応。
+</td>
 <td width="45%" align="center"><img src="assets/settings-ja.png" width="300" alt="設定"></td>
-<td width="55%" valign="middle">
-<h3>設定はお好みで</h3>
-メニューバー表示項目、更新間隔（1–15分／手動）、ログイン時に起動、上限セクションだけを隠す Keychain オフ、警告／危険の閾値つき上限通知、パートナーのイベント通知。<b>韓国語／英語／日本語</b>の UI とポケモン名を完備。
-</td>
-</tr>
-<tr>
-<td width="55%" valign="middle">
-<h3>🍬 上限を使い切ると、ふしぎなアメ</h3>
-5時間または週間の使用量上限を使い切ると <b>ふしぎなアメ</b> がもらえます — 5時間上限で1個、週間上限で5個。新しい <b>バッグ</b> タブから使っていまのポケモンを育てましょう。レート制限にかかった瞬間が、レベルアップの瞬間になります。
-</td>
-<td width="45%" align="center"><img src="assets/screenshot-bag-ja.png" width="300" alt="バッグの中のふしぎなアメとミント"></td>
-</tr>
-<tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop-ja.png" width="300" alt="トークンショップ — ミント・ふしぎなアメ・ポケモンのタマゴ・アンコモンのタマゴ・光るお守り・レアのタマゴ"></td>
-<td width="55%" valign="middle">
-<h3>🛒 使用量で回るショップ</h3>
-これまで使ったトークンがそのまま通貨です — 新しい <b>ショップ</b> タブで <b>ふしぎなアメ</b> で育てたり、<b>ミント</b> でせいかくを引き直したり、<b>光るお守り</b> で色違い確率を永続的に上げたり、タマゴを買っていまのパートナーを手放してやり直したりできます。タマゴは3種類 — 通常の <b>ポケモンのタマゴ</b>、アンコモン以上が確定で孵る <b>アンコモンのタマゴ</b>、レア以上が確定で孵る <b>レアのタマゴ</b>。等級付きのタマゴにも伝説はそのまま混ざっているので、確定の孵化にも驚きが残ります。
-</td>
 </tr>
 </table>
 
-## そのほかにも
+> スクリーンショットは最新 UI と異なる場合があります — アプリはトークンカウンターから時間ベースの放置型ゲームへ変わりました。
 
-- **インタラクティブなフローティングペット** — ホバーで今日の使用量、クリックでメイン画面、右クリックでメニュー。上限アラートは吹き出しでも表示。
-- **サービス別タブ** — Claude Code・Codex・Gemini CLI・Antigravity・OpenCode・Hermes Agent・Cursor・Grok CLI・Copilot CLI のうち2つ以上が検出されると、小さなタブでサービス別の詳細を切替（今日の合計は合算のまま）。
-- **公式の上限** — Claude・Codex の5時間／週間使用率とリセットのカウントダウンを、今日の数字のすぐ下に。
-- **消費予測** — 現在の5時間ウィンドウが100%に達する時刻を予測。
-- **アプリ内アップデート** — ワンクリックの更新確認、設定に現在のバージョンを表示。
+## 下で動く使用量トラッカー
 
-## 対応ツール
+K-MON は今もローカルの AI コーディング使用量を読み、ポップオーバーに表示できます：今日の合計、公式の5時間/週間上限、プロバイダー別の詳細。ただしもう主役ではありません — メニューバーはコンパニオンと一緒に過ごした時間を前面に出します。
 
-| ツール | 集計範囲 | 公式の上限 |
+| ツール | 追跡 | 公式上限 |
 |---|---|---|
-| **Claude Code** | 今日 · 5時間ブロック · 週 · 月 | ✅ 5時間／週間 |
-| **Codex** | 今日 · 週 · 月 | ✅ 5時間／週間 |
-| **Gemini CLI** | 今日 · 週 · 月 | — |
-| **Antigravity** | 今日 · 5時間ブロック · 週 · 月 | — |
-| **OpenCode** | 今日 · 5時間ブロック · 週 · 月 | — |
-| **Hermes Agent** | 今日 · 5時間ブロック · 週 · 月 | — |
-| **Cursor** | 今日 · 5時間ブロック · 週 · 月 | — |
-| **Grok CLI** | 今日 · 5時間ブロック · 週 · 月 | — |
-| **Copilot CLI** | 今日 · 5時間ブロック · 週 · 月 | — |
+| **Claude Code** | 今日・5時間・週・月 | ✅ 5時間 / 週間 |
+| **Codex** | 今日・週・月 | ✅ 5時間 / 週間 |
+| **Gemini CLI** | 今日・週・月 | — |
+| **Antigravity** | 今日・5時間・週・月 | — |
+| **OpenCode** | 今日・5時間・週・月 | — |
+| **Hermes Agent** | 今日・5時間・週・月 | — |
+| **Cursor** | 今日・5時間・週・月 | — |
+| **Grok CLI** | 今日・5時間・週・月 | — |
+| **Copilot CLI** | 今日・5時間・週・月 | — |
 
-すべてローカルから読み取り — 外部の使用量CLIは不要。ツール追加はプロバイダーファイル1つで完結します（[CONTRIBUTING.ja.md](CONTRIBUTING.ja.md) 参照）。
+すべてローカルで読みます — 外部の使用量 CLI は不要。
 
 ## インストール
 
-### 必要条件
+### 要件
 
-macOS 14+（Apple Silicon または Intel）。それだけ — トークン使用量はローカルの Claude Code・Codex・Gemini CLI・Antigravity・OpenCode・Hermes Agent・Cursor・Grok CLI・Copilot CLI データから直接読み取り、外部の使用量 CLI は不要です。
+macOS 14+（Apple Silicon または Intel）。
 
-### Homebrew
+### ダウンロード
 
-```bash
-brew install --cask chattymin/tap/poke-token-bar
-```
+[リリース](https://github.com/2giduck/K-MON/releases)から `PokeTokenBar.zip` を入手し、解凍して `PokeTokenBar.app` を `/Applications` にドラッグします。
 
-ad-hoc／自己署名アプリのため、Cask インストール時に隔離属性を自動で除去します。
+ad-hoc/自己署名（Apple 公証なし）のため、初回起動で Gatekeeper の警告が出ます。一度だけ解除してください：
 
-### 手動インストール（Homebrew なし）
-
-Homebrew を使わない場合は、[最新リリース](https://github.com/chattymin/PokeTokenBar/releases/latest) から `PokeTokenBar.zip` をダウンロードして展開し、`PokeTokenBar.app` を `/Applications` にドラッグします。
-
-このアプリは ad-hoc／自己署名（Apple Developer アカウントでの公証なし）のため、初回起動時に Gatekeeper が「開発元が未確認」の警告を表示します。次のいずれかで一度だけ解除してください。
-
-- **Finder:** `PokeTokenBar.app` を右クリック（または Control+クリック）→ **開く** → ダイアログで再度 **開く**。
+- **Finder:** `PokeTokenBar.app` を右クリック（Control-クリック）→ **開く** → ダイアログでもう一度 **開く**。
 - **ターミナル:** `xattr -dr com.apple.quarantine /Applications/PokeTokenBar.app`
 
-（Homebrew Cask は隔離属性を自動で除去するため、この手順は不要です。）
+初回起動で**通知の許可**（バトル申し込み用）、バトルタブを初めて開いたときにシステム設定 → プライバシーで**ローカルネットワークの許可**（自動検出用）をオンにしてください。
 
 ### ソースからビルド
 
 ```bash
 swift build                  # デバッグ
-swift test                   # ユニットテスト
-./scripts/build-app.sh       # release → PokeTokenBar.app → /Applications
+./scripts/build-app.sh       # リリース → PokeTokenBar.app → /Applications
 ```
 
-## データソース
+> テスト全体（`swift test`）は XCTest のため Xcode が必要です。Command Line Tools だけではアプリはビルドできますがテストは動きません。
 
-| ソース | 用途 | 備考 |
-|---|---|---|
-| `~/.claude/projects/**/*.jsonl` | Claude Code daily/blocks/weekly/monthly | 直接読み取り；メッセージ id で重複排除；増分キャッシュ |
-| `~/.gemini/tmp/**/chats/*.json(l)` | Gemini CLI daily/monthly | セッションレコード（メッセージ別 `tokens`）；週間 = daily 合算 |
-| `~/.gemini/antigravity-cli/conversations/*.db` | Antigravity daily/blocks/weekly/monthly | SQLite 読み取り専用；Cascade protobuf blob の呼び出し単位の使用量；Gemini には合算しない独立プロバイダ；サブスクのためコストは推定しない |
-| `~/.codex/sessions/**/*.jsonl` | Codex daily/monthly | `token_count` イベント；週間 = daily 合算 |
-| `~/.local/share/opencode/opencode.db` | OpenCode daily/blocks/weekly/monthly | SQLite 読み取り専用；レガシー `storage/message` JSON にも対応 |
-| `~/.hermes/state.db` | Hermes Agent daily/blocks/weekly/monthly | SQLite 読み取り専用；セッショントークン合計と保存済みコスト |
-| `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | Cursor daily/blocks/weekly/monthly | SQLite 読み取り専用；`cursorDiskKV` バブルエントリの `tokenCount` |
-| `~/.grok/sessions/**/updates.jsonl` | Grok CLI daily/blocks/weekly/monthly | `turn_completed` レコード（ターン単位の `usage`、サーバー報告のコスト）；`$GROK_HOME` を設定していればそのパス；サブエージェントのセッションは親ターンに合算済みのため除外 |
-| `~/.copilot/session-store.db` | Copilot CLI daily/blocks/weekly/monthly | SQLite 読み取り専用；`assistant_usage_events` の1行が API 呼び出し1回；`$COPILOT_HOME` を設定していればそのパス；`input_tokens` にキャッシュ分が含まれるため cache read/write を差し引いて集計；premium request 課金のためコストは推定しない |
-| Keychain / `~/.claude/.credentials.json` → `api.anthropic.com` | Claude 公式 5h/週間 % | 非公式 endpoint；Keychain は**更新ボタンを押した時のみ**読み取り — 自動更新では読みません |
-| `codex app-server` | Codex 公式 5h/週間 % | ローカル子プロセス；アカウント snapshot のみ、モデル turn なし |
-| [PokéAPI](https://pokeapi.co/) — `pokeapi.co`, `graphql.pokeapi.co` | ポケモンの種・進化 | ランタイム取得；ローカルキャッシュ、バンドルしない |
-| `raw.githubusercontent.com/PokeAPI/sprites` | ポケモン・アイテムのスプライト | ランタイム取得；Application Support にキャッシュ、バンドルしない |
-| `status.claude.com`, `status.openai.com` | プロバイダ障害バナー | statuspage の要約；表示専用 — 設定でオフにできます |
-| `api.github.com` | アップデート確認 | 最新リリースのタグ；起動時とポップオーバーを開いた時 |
+## フェアプレイ
+
+- **スターターは端末固定。** スターター3種は安定したハードウェア識別子から導かれます — アプリを消して入れ直しても同じ3匹なので、伝説狙いの厳選ができません。（スターターに伝説は出ません。）
+- **セーブ整合性。** セーブファイルは端末シードのチェックサムで署名されます。`companion-state.json` を手で書き換えて通貨を水増ししたりアイテムを増やすと、次回起動で検出され、改ざんされた進行はリセットされます。
+- **決定的バトル。** 両者が共有シードで同じ結果を計算します。結果は通信で送られないため改ざんできません。
 
 ## プライバシー & 権限
 
-- **オンデバイス。** トークン使用量はローカルの Claude Code・Codex・Gemini CLI・Antigravity・OpenCode・Hermes Agent・Cursor・Grok CLI・Copilot CLI データから直接読み取ります。使用量のアップロードも、モデルの推論実行も行いません。
-- **外部リクエスト。** 本アプリは完全オフラインではありません。7つのホストに接続します — `pokeapi.co`・`graphql.pokeapi.co`（種・進化）、`raw.githubusercontent.com`（スプライト）、`api.anthropic.com`（Claude 公式の上限）、`status.claude.com`・`status.openai.com`（障害バナー — 設定でオフ可）、`api.github.com`（アップデート確認）。**いずれのリクエストにも使用量・トークン・プロンプト・プロジェクトのパスは含まれません** — 送られるのはリクエストそのものだけです。
-- **Keychain（任意）。** Claude OAuth 資格情報は**更新ボタンを押した時のみ**読み取ります（設定、またはポップオーバーの上限行）。自動更新では Keychain に触れないためパスワードのプロンプトは表示されず、`~/.claude/.credentials.json` があればそちらから取得します。トークンはメモリ上にのみ保持し、**アプリ自身の Keychain 項目は作成しません。** トークンが期限切れになると、上限は更新するまで以前の値（stale）として表示されます。設定でオフにすると上限セクションが非表示になります。
-- **ポケモンのアセット** はランタイムに PokéAPI から取得し、`~/Library/Application Support/PokeTokenBar/` にのみキャッシュされます。アプリのバイナリおよびリリース成果物にポケモンのアセットは含まれません。
-
-## コントリビューター
-
-大小を問わずあらゆる貢献を歓迎します — ビルド・テスト・プルリクエストの方法は [CONTRIBUTING.ja.md](CONTRIBUTING.ja.md) をご覧ください。
-
-[![Contributors](https://contrib.rocks/image?repo=chattymin/PokeTokenBar)](https://github.com/chattymin/PokeTokenBar/graphs/contributors)
+- **オンデバイス。** AI コーディング使用量はローカルログから直接読みます。使用量をアップロードしたりモデルを動かしたりしません。
+- **ローカルネットワーク。** バトル検出は LAN の Bonjour/AWDL のみ。バトルはピアツーピアで、サーバーへ送るものはありません。
+- **外部リクエスト。** 種・進化・スプライトのために [PokéAPI](https://pokeapi.co/)（`pokeapi.co`, `graphql.pokeapi.co`）と `raw.githubusercontent.com`、任意で Claude 上限・ステータスバナーのために `api.anthropic.com`/`status.*` と通信します。いずれも使用量・トークン・プロンプト・プロジェクトパスを含みません。
+- **ポケモンアセット**はランタイムに PokéAPI から取得し、`~/Library/Application Support/PokeTokenBar/` にのみキャッシュします。アプリバイナリにポケモンアセットは含まれません。
 
 ## ライセンス & 免責
 
-**MIT** — [LICENSE](LICENSE) を参照。MIT は本プロジェクトの**オリジナルソースコードのみ**を対象とし、アプリを通じてアクセスされる第三者の商標・アートワーク・データに関する権利を付与するものではありません。
+**MIT** — [LICENSE](LICENSE) 参照。MIT はこのプロジェクトのオリジナルソースコードのみに適用され、アプリを通じてアクセスする第三者の商標・アートワーク・データに関する権利は付与しません。K-MON は MIT ライセンスの [PokeTokenBar](https://github.com/chattymin/PokeTokenBar) がベースです。
 
-PokeTokenBar は**非公式・非商用のファンプロジェクト**です。**任天堂、ゲームフリーク、クリーチャーズ、株式会社ポケモンとの提携・推奨・後援・承認はありません。**「ポケモン（Pokémon）」および関連する名称・キャラクター・画像は、各権利者の商標および著作物であり、本プロジェクトはポケモンの知的財産に対する所有権や権利を一切主張しません。
+K-MON は**非公式・非商用のファンプロジェクト**です。**任天堂、ゲームフリーク、クリーチャーズ、ポケモンとは提携・承認・後援・許可の関係はありません。**「ポケモン」および関連する名称・キャラクター・イメージは各権利者の商標・著作物です。本プロジェクトはいかなるポケモンの知的財産に対しても所有権を主張しません。
 
-- **アプリのバイナリおよびリリース成果物にポケモンのアセットは含まれません。** ポケモンの種族データおよびスプライトは、公開されている [PokéAPI](https://pokeapi.co) から**実行時に**取得され、ユーザーの端末にローカルキャッシュされます。PokéAPI 経由で提供されるスプライト画像の権利は各権利者に帰属します。
-- 本リポジトリのドキュメント（スクリーンショット/GIF）に表示されるポケモンの画像は、アプリの機能を説明する目的でのみ使用されています。
-- 本アプリは**個人的・非商用の利用に限り**無償で提供されます。
-- 権利者の方で本プロジェクトに懸念がある場合は、Issue を作成するかメンテナーまでご連絡ください。速やかに対応いたします。
+- **アプリバイナリとリリース成果物にポケモンアセットは含まれません。** 種データとスプライトは**ランタイムに**公開 [PokéAPI](https://pokeapi.co) から取得し、ユーザー端末にローカルキャッシュされます。
+- 本リポジトリのドキュメント内のポケモン画像（スクリーンショット/GIF）は、アプリの機能を説明するためだけに表示しています。
+- 本アプリは**個人・非商用目的のみ**に無償提供されます。
 
-*本プロジェクトは、いかなる保証もなく「現状のまま」提供されます。本免責事項は法的助言ではありません。*
+*いかなる保証もなく「現状のまま」提供されます。本告知は法的助言ではありません。*

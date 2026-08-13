@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// 배틀 탭 — 같은 네트워크(LAN) 실시간 대전이 기본. 상대 목록에서 신청하고, 신청이 오면
-/// 알림+수락 화면, 대전 중엔 기술 4개 중 선택. 오프라인 폴백으로 배틀 코드 대전을 접어 둔다.
+/// 배틀 탭 — 같은 네트워크(LAN) 실시간 대전. 상대 목록에서 신청하고, 신청이 오면
+/// 알림+수락 화면, 대전 중엔 기술 4개 중 선택.
 struct BattleView: View {
     @Bindable var store: CompanionStore
     @Environment(BattleCenter.self) private var center
@@ -10,20 +10,7 @@ struct BattleView: View {
     // 수동(IP) 연결 상태
     @State private var manualAddress = ""
     @State private var addressCopied = false
-
-    // 배틀 코드(오프라인) 상태
-    @State private var codeExpanded = false
-    @State private var myCode: String?
-    @State private var mySnapshot: BattleSnapshot?
-    @State private var codeLoadFailed = false
-    @State private var copied = false
-    @State private var pastedCode = ""
-    @State private var codeOpponent: BattleSnapshot?
-    @State private var codeError: String?
-    @State private var codeResult: BattleResult?
-    @State private var revealedTurns = 0
-    @State private var revealTask: Task<Void, Never>?
-    @State private var replayCount: UInt64 = 0
+    @State private var kind: BattleKind = .brawl   // 신청할 배틀 종류
 
     private var l: L { store.l }
 
@@ -37,20 +24,9 @@ struct BattleView: View {
                     .padding(.vertical, 24)
             } else {
                 networkSection
-                if isIdlePhase {
-                    Divider()
-                    codeSection
-                }
             }
         }
         .onAppear { center.pendingAttention = false }
-    }
-
-    private var isIdlePhase: Bool {
-        switch center.phase {
-        case .ready, .preparing: return true
-        default: return false
-        }
     }
 
     // MARK: 네트워크 대전
@@ -65,7 +41,8 @@ struct BattleView: View {
         case .incoming(let peer):
             incomingView(peer: peer)
         case .battling:
-            if let b = center.battle { arenaView(b) }
+            if let race = center.race { raceView(race) }        // 달리기
+            else if let b = center.battle { arenaView(b) }       // 맞짱
         case .finished(let iWon, let byForfeit):
             finishedView(iWon: iWon, byForfeit: byForfeit)
         }
@@ -73,6 +50,21 @@ struct BattleView: View {
 
     private var peerList: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // 배틀 종류 선택 — 맞짱(턴제) / 달리기(스피드 레이스). 신청 시 이 종류로 건다.
+            Picker("", selection: $kind) {
+                Text(l.battleKindBrawl).tag(BattleKind.brawl)
+                Text(l.battleKindRace).tag(BattleKind.race)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            // 자동 수락 — 자리를 비워도 신청이 오면 바로 성사.
+            Toggle(l.battleAutoAccept, isOn: Binding(
+                get: { center.autoAccept },
+                set: { center.autoAccept = $0 }))
+                .font(.caption2)
+                .toggleStyle(.checkbox)
+
             HStack(spacing: 6) {
                 Text(l.battleNearby).font(.caption).bold()
                 if case .preparing = center.phase { ProgressView().controlSize(.mini) }
@@ -95,7 +87,7 @@ struct BattleView: View {
                             .foregroundStyle(.secondary)
                         Text(peer.name).font(.callout).lineLimit(1)
                         Spacer()
-                        Button(l.battleChallengeButton) { center.challenge(peer) }
+                        Button(l.battleChallengeButton) { center.challenge(peer, kind: kind) }
                             .controlSize(.small)
                             .disabled(!isChallengeEnabled)
                     }
@@ -144,7 +136,7 @@ struct BattleView: View {
 
     private func challengeManual() {
         guard isChallengeEnabled else { return }
-        center.challengeManual(manualAddress)
+        center.challengeManual(manualAddress, kind: kind)
     }
 
     private var isChallengeEnabled: Bool {
@@ -170,6 +162,8 @@ struct BattleView: View {
             Text("⚔️ \(l.battleIncomingFrom(peer))")
                 .font(.callout).bold()
                 .multilineTextAlignment(.center)
+            Text(l.battleKindLabel(center.incomingKind))
+                .font(.caption2).foregroundStyle(.secondary)
             if let opp = center.incomingSnapshot {
                 snapshotCard(opp, title: opp.trainer.map { l.battleTrainerLabel($0) } ?? "?", hpRatio: nil)
                     .frame(maxWidth: 180)
@@ -224,6 +218,12 @@ struct BattleView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    // MARK: 달리기 (레이스)
+
+    private func raceView(_ race: RaceState) -> some View {
+        RaceLane(center: center, l: l, onClose: { center.dismissResult() })
     }
 
     private func moveButtons(_ b: NetBattleState) -> some View {
@@ -356,205 +356,88 @@ struct BattleView: View {
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Capsule().fill(Color.accentColor.opacity(0.15)))
     }
+}
 
-    // MARK: 배틀 코드 대전 (오프라인 폴백)
+/// 달리기 레인 — **키보드 ←/→ 를 번갈아** 눌러 직접 달린다(같은 키 연타는 무효, 번갈아야 전진).
+/// 내 러너는 입력마다 전진하고 진행도를 상대에게 보내며, 상대 러너는 수신 진행도로 움직인다.
+/// 먼저 결승선(finishLine)에 닿는 쪽 승리. 결과가 정해지면(race.iWon) 승패 + 닫기 표시.
+private struct RaceLane: View {
+    let center: BattleCenter
+    let l: L
+    let onClose: () -> Void
 
-    private var codeSection: some View {
-        DisclosureGroup(isExpanded: $codeExpanded) {
-            VStack(alignment: .leading, spacing: 8) {
-                codeExportRow
-                codeOpponentInput
-                codeBattleControls
-                if let codeResult { codeBattleLog(codeResult) }
-            }
-            .padding(.top, 6)
-        } label: {
-            Text(l.battleCodeSection).font(.caption).foregroundStyle(.secondary)
-        }
-        .task(id: codeTaskKey) {
-            if codeExpanded, mySnapshot == nil { await buildMyCodeSnapshot() }
-        }
-    }
+    @State private var monitor: Any?
+    @State private var lastKey: UInt16?   // 123 = ←, 124 = →
 
-    private var codeTaskKey: String { "\(codeExpanded)-\(store.currentSpeciesID ?? 0)" }
-
-    private var codeExportRow: some View {
-        HStack(spacing: 8) {
-            Button {
-                guard let myCode else { return }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(myCode, forType: .string)
-                copied = true
-                Task { try? await Task.sleep(for: .seconds(2)); copied = false }
-            } label: {
-                Label(copied ? l.battleCodeCopied : l.battleCopyCode,
-                      systemImage: copied ? "checkmark" : "doc.on.doc")
-            }
-            .controlSize(.small)
-            .disabled(myCode == nil)
-            if mySnapshot == nil {
-                Text(codeLoadFailed ? l.battleStatsFailed : l.battleLoadingStats)
-                    .font(.caption2)
-                    .foregroundStyle(codeLoadFailed ? .orange : .secondary)
-                if codeLoadFailed {
-                    Button(l.refresh) { Task { await buildMyCodeSnapshot() } }
-                        .controlSize(.small)
+    var body: some View {
+        let race = center.race
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("🏁 \(l.battleKindRace)").font(.callout).bold()
+            if let race {
+                lane(snapshot: race.my, title: l.battleMyPokemon, progress: race.myProgress)
+                lane(snapshot: race.opp,
+                     title: race.opp.trainer.map { l.battleTrainerLabel($0) } ?? "?",
+                     progress: race.oppProgress)
+                if let iWon = race.iWon {
+                    Text(raceResultText(iWon)).font(.title3).bold()
+                        .frame(maxWidth: .infinity)
+                    Button(l.battleClose) { onClose() }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Text(l.battleRaceHint).font(.caption2).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity)
                 }
             }
-            Spacer()
+        }
+        .onAppear { installKeyMonitor() }
+        .onDisappear { removeKeyMonitor() }
+    }
+
+    private func installKeyMonitor() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let code = event.keyCode
+            guard code == 123 || code == 124 else { return event }   // ←/→ 만 처리
+            // 번갈아 눌러야 전진 — 직전과 다른 키일 때만 한 스텝(같은 키 연타 방지 = 달리는 모션).
+            if lastKey != code {
+                lastKey = code
+                center.raceStep()
+            }
+            return nil   // 방향키 소비(스크롤·삑 소리 방지)
         }
     }
 
-    private var codeOpponentInput: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(l.battleShareHint)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            TextField(l.battlePastePlaceholder, text: $pastedCode)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 11, design: .monospaced))
-                .onChange(of: pastedCode) { _, newValue in decodeCodeOpponent(newValue) }
-            if let codeError {
-                Text(codeError)
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-            }
+    private func removeKeyMonitor() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private func raceResultText(_ iWon: Bool?) -> String {
+        switch iWon {
+        case .some(true):  return l.battleWon
+        case .some(false): return l.battleLost
+        case .none:        return l.battleDraw
         }
     }
 
-    private func decodeCodeOpponent(_ raw: String) {
-        codeResult = nil
-        revealTask?.cancel()
-        revealedTurns = 0
-        guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            codeOpponent = nil; codeError = nil; return
+    private func lane(snapshot: BattleSnapshot, title: String, progress: Double) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            GeometryReader { geo in
+                let travel = max(0, geo.size.width - 34)
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(Color.secondary.opacity(0.25)).frame(width: 2)
+                        .frame(maxWidth: .infinity, alignment: .trailing)   // 결승선
+                    SpriteView(speciesID: snapshot.speciesID, size: 30, bob: true, animated: true, shiny: snapshot.isShiny)
+                        .frame(width: 30, height: 30)
+                        .offset(x: travel * progress)
+                        .animation(.easeOut(duration: 0.15), value: progress)
+                }
+            }
+            .frame(height: 32)
         }
-        do {
-            codeOpponent = try BattleCode.decode(raw)
-            codeError = nil
-        } catch BattleCode.DecodeError.badChecksum {
-            codeOpponent = nil; codeError = l.battleTamperedCode
-        } catch {
-            codeOpponent = nil; codeError = l.battleInvalidCode
-        }
-    }
-
-    private var codeBattleControls: some View {
-        HStack {
-            Spacer()
-            Button {
-                runCodeBattle()
-            } label: {
-                Label(codeResult == nil ? l.battleStart : l.battleAgain, systemImage: "bolt.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .disabled(mySnapshot == nil || codeOpponent == nil)
-            Spacer()
-        }
-    }
-
-    private func runCodeBattle() {
-        guard let mySnapshot, let codeOpponent, let myCode else { return }
-        // 같은 코드 쌍 → 같은 seed(순서 무관) → 양쪽 Mac 에서 동일한 배틀. 재대결은 seed 를 굴린다.
-        let seed = BattleEngine.symmetricSeed(myCode, pastedCode.trimmingCharacters(in: .whitespacesAndNewlines)) &+ replayCount
-        replayCount &+= 1
-        let battle = BattleEngine.simulate(a: mySnapshot, b: codeOpponent, seed: seed)
-        codeResult = battle
-        revealedTurns = 0
-        revealTask?.cancel()
-        revealTask = Task {
-            for i in 1...battle.turns.count {
-                try? await Task.sleep(for: .milliseconds(450))
-                guard !Task.isCancelled else { return }
-                revealedTurns = i
-            }
-        }
-    }
-
-    private func codeBattleLog(_ result: BattleResult) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                codeLogLines(result)
-            }
-            .frame(height: 100)
-            .padding(6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-            .onChange(of: revealedTurns) { _, n in
-                let target: AnyHashable = n >= result.turns.count ? AnyHashable("winner") : AnyHashable(n - 1)
-                withAnimation { proxy.scrollTo(target, anchor: .bottom) }
-            }
-        }
-    }
-
-    private func codeLogLines(_ result: BattleResult) -> some View {
-        let visible: [(offset: Int, element: BattleTurn)] = Array(result.turns.prefix(revealedTurns).enumerated())
-        return VStack(alignment: .leading, spacing: 3) {
-            ForEach(visible, id: \.offset) { pair in
-                codeTurnLine(pair.element).id(pair.offset)
-            }
-            if revealedTurns >= result.turns.count {
-                codeWinnerLine(result).id("winner")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func codeTurnLine(_ turn: BattleTurn) -> some View {
-        let attacker = turn.attackerIsA ? (mySnapshot?.name ?? "?") : (codeOpponent?.name ?? "?")
-        let moveName = turn.moveType?.name(store.language) ?? l.battleStruggle
-        return VStack(alignment: .leading, spacing: 0) {
-            Text(l.battleUsedMove(attacker, type: moveName, damage: turn.damage))
-                .font(.caption2)
-                .foregroundStyle(turn.attackerIsA ? .primary : .secondary)
-            if turn.isCritical {
-                Text(l.battleCritical).font(.caption2).foregroundStyle(.red)
-            }
-            if turn.effectiveness > 1 {
-                Text(l.battleSuperEffective).font(.caption2).foregroundStyle(.orange)
-            } else if turn.effectiveness < 1 {
-                Text(l.battleNotVeryEffective).font(.caption2).foregroundStyle(.tertiary)
-            }
-        }
-    }
-
-    private func codeWinnerLine(_ result: BattleResult) -> some View {
-        let text: String = {
-            switch result.winnerIsA {
-            case .some(true):  return l.battleWinner(mySnapshot?.name ?? "?")
-            case .some(false): return l.battleWinner(codeOpponent?.name ?? "?")
-            case .none:        return l.battleDraw
-            }
-        }()
-        return Text("🏆 \(text)")
-            .font(.caption)
-            .bold()
-            .padding(.top, 2)
-    }
-
-    private func buildMyCodeSnapshot() async {
-        mySnapshot = nil
-        myCode = nil
-        codeLoadFailed = false
-        guard let active = store.state.active, let speciesID = store.currentSpeciesID else { return }
-        do {
-            let profile = try await PokeAPIClient.shared.battleProfile(speciesID: speciesID)
-            let level = BattleSnapshot.level(stageIndex: active.stageIndex,
-                                             totalForms: active.totalForms,
-                                             stageProgress: store.progress)
-            let snapshot = BattleSnapshot(speciesID: speciesID,
-                                          name: store.displayName,
-                                          trainer: NSFullUserName(),
-                                          level: level,
-                                          nature: active.nature,
-                                          isShiny: active.isShiny,
-                                          types: profile.types,
-                                          base: profile.stats)
-            myCode = try BattleCode.encode(snapshot)
-            mySnapshot = snapshot
-        } catch {
-            AppLog.write("battle: profile load failed for \(speciesID): \(error)")
-            codeLoadFailed = true
-        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
     }
 }

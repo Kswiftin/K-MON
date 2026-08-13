@@ -76,8 +76,8 @@ final class PremiumEggTests: XCTestCase {
         let f = file ?? url()
         let mon = "{\"baseID\":10,\"pathIDs\":[10],\"stageIndex\":0,\"usedAtStage\":200000000,"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":false}"
-        let json = "{\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":0,"
-            + "\"lastDate\":\"d\",\"active\":\(mon),\"dex\":[],\"collectedFinals\":[]}"
+        let json = "{\"economyVersion\":2,\"usedSinceInstall\":\(used),\"spentTokens\":0,"
+            + "\"active\":\(mon),\"dex\":[],\"collectedFinals\":[]}"
         try? json.data(using: .utf8)!.write(to: f)
         return CompanionStore(provider: provider, clock: { self.now }, fileURL: f, rng: SeededRNG(seed: 7))
     }
@@ -86,8 +86,8 @@ final class PremiumEggTests: XCTestCase {
     private func eggStore(tier: Rarity?, seed: UInt64, provider: any PokeProviding) -> CompanionStore {
         let f = url()
         let tierJSON = tier.map { "\"\($0.rawValue)\"" } ?? "null"
-        let json = "{\"installBaselineSet\":true,\"usedSinceInstall\":10000000,\"spentTokens\":0,"
-            + "\"lastDate\":\"d\",\"active\":null,\"dex\":[],\"collectedFinals\":[],"
+        let json = "{\"economyVersion\":2,\"usedSinceInstall\":10000000,\"spentTokens\":0,"
+            + "\"active\":null,\"dex\":[],\"collectedFinals\":[],"
             + "\"eggUsage\":\(PokemonBalance.eggHatchThreshold),\"eggTier\":\(tierJSON)}"
         try? json.data(using: .utf8)!.write(to: f)
         return CompanionStore(provider: provider, clock: { self.now }, fileURL: f, rng: SeededRNG(seed: seed))
@@ -375,8 +375,7 @@ final class PremiumEggTests: XCTestCase {
         var imported = CompanionState()
         imported.eggTier = .uncommon
         imported.usedSinceInstall = 1_000_000
-        let rebased = SaveTransfer.rebasedForThisDevice(imported, current: CompanionState(),
-                                                        todayTokensByProvider: ["test": 0], todayDate: "d", hasUsageData: true)
+        let rebased = SaveTransfer.rebasedForThisDevice(imported, current: CompanionState())
         XCTAssertEqual(rebased.eggTier, .uncommon)
     }
 
@@ -428,8 +427,8 @@ final class PremiumEggTests: XCTestCase {
 
     /// 모르는 등급 rawValue 는 nil(보증 없음)로 강등 — 관대 디코딩의 안전한 방향.
     func testUnknownGuaranteeDecodesAsNoGuarantee() throws {
-        let json = "{\"installBaselineSet\":true,\"usedSinceInstall\":0,\"spentTokens\":0,"
-            + "\"lastDate\":\"d\",\"dex\":[],\"collectedFinals\":[],\"eggTier\":\"mythic\"}"
+        let json = "{\"economyVersion\":2,\"usedSinceInstall\":0,\"spentTokens\":0,"
+            + "\"dex\":[],\"collectedFinals\":[],\"eggTier\":\"mythic\"}"
         let decoded = try JSONDecoder().decode(CompanionState.self, from: Data(json.utf8))
         XCTAssertNil(decoded.eggTier)
     }

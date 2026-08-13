@@ -24,33 +24,13 @@ struct L {
 
     // MARK: 배틀
     var battleMyPokemon: String { t("내 포켓몬", "My Pokémon", "自分のポケモン") }
-    var battleCopyCode: String { t("내 배틀 코드 복사", "Copy my battle code", "バトルコードをコピー") }
-    var battleCodeCopied: String { t("복사됨!", "Copied!", "コピーしました！") }
-    var battlePastePlaceholder: String { t("상대의 배틀 코드를 붙여넣으세요", "Paste your opponent's battle code", "相手のバトルコードを貼り付け") }
-    var battleShareHint: String {
-        t("코드를 복사해 친구와 교환하면, 친구의 포켓몬과 배틀할 수 있어요.",
-          "Copy your code and swap with a friend to battle their Pokémon.",
-          "コードを友だちと交換すると、そのポケモンとバトルできます。")
-    }
-    var battleInvalidCode: String { t("코드를 읽을 수 없어요.", "Can't read that code.", "コードを読み取れません。") }
-    var battleTamperedCode: String { t("변조된 코드예요.", "That code has been tampered with.", "改ざんされたコードです。") }
-    var battleStart: String { t("배틀 시작!", "Start battle!", "バトル開始！") }
-    var battleAgain: String { t("다시 배틀", "Battle again", "もう一度バトル") }
     var battleNeedHatch: String { t("알은 배틀할 수 없어요 — 먼저 부화시키세요.", "Eggs can't battle — hatch first.", "タマゴはバトルできません — まず孵化させましょう。") }
-    var battleLoadingStats: String { t("스탯 불러오는 중…", "Loading stats…", "ステータス読み込み中…") }
     var battleStatsFailed: String { t("스탯을 불러오지 못했어요 — 네트워크 확인 후 다시 시도하세요.", "Couldn't load stats — check your network and retry.", "ステータスを取得できません — 通信を確認して再試行してください。") }
     var battleDraw: String { t("무승부!", "It's a draw!", "引き分け！") }
     var battleSuperEffective: String { t("효과가 굉장했다!", "It's super effective!", "こうかはばつぐんだ！") }
     var battleNotVeryEffective: String { t("효과가 별로인 듯하다…", "It's not very effective…", "こうかはいまひとつのようだ…") }
     var battleCritical: String { t("급소에 맞았다!", "A critical hit!", "きゅうしょにあたった！") }
-    var battleStruggle: String { t("발버둥", "Struggle", "わるあがき") }
-    func battleWinner(_ name: String) -> String { t("\(name) 승리!", "\(name) wins!", "\(name)の勝ち！") }
     func battleLv(_ n: Int) -> String { "Lv.\(n)" }
-    func battleUsedMove(_ attacker: String, type: String, damage: Int) -> String {
-        t("\(attacker)의 \(type) 공격! \(damage) 데미지",
-          "\(attacker) used a \(type) attack! \(damage) damage",
-          "\(attacker)の\(type)こうげき！ \(damage)ダメージ")
-    }
     func battleTrainerLabel(_ trainer: String) -> String {
         t("\(trainer)의 포켓몬", "\(trainer)'s Pokémon", "\(trainer)のポケモン")
     }
@@ -80,7 +60,6 @@ struct L {
     var battleWon: String { t("이겼다! 🏆", "You won! 🏆", "勝った！ 🏆") }
     var battleLost: String { t("졌다…", "You lost…", "負けた…") }
     var battleClose: String { t("확인", "Done", "閉じる") }
-    var battleCodeSection: String { t("배틀 코드로 대전 (오프라인)", "Battle by code (offline)", "コードで対戦（オフライン）") }
     var battleManualHint: String {
         t("자동 탐색이 안 되면(사내망 등) 주소로 직접 연결하세요.",
           "If auto-discovery is blocked (office Wi-Fi etc.), connect by address.",
@@ -89,6 +68,18 @@ struct L {
     var battleMyAddress: String { t("내 주소", "My address", "自分のアドレス") }
     var battleManualPlaceholder: String { t("상대 주소 (예: 10.1.2.3:50628)", "Opponent address (e.g. 10.1.2.3:50628)", "相手のアドレス（例: 10.1.2.3:50628）") }
     var battleBadAddress: String { t("주소 형식이 잘못됐어요 — IP:포트", "Bad address — use IP:port", "アドレス形式が不正です — IP:ポート") }
+    var battleKindBrawl: String { t("맞짱", "Brawl", "タイマン") }
+    var battleKindRace: String { t("달리기", "Race", "かけっこ") }
+    func battleKindLabel(_ k: BattleKind) -> String {
+        switch k { case .brawl: return battleKindBrawl; case .race: return battleKindRace }
+    }
+    var battleAutoAccept: String { t("신청 자동 수락", "Auto-accept challenges", "自動で承諾") }
+    var battleRaceHint: String { t("← → 방향키를 번갈아 눌러 달려요!", "Alternate ← → arrow keys to run!", "← → キーを交互に押して走ろう！") }
+    var battleDiscoveryBlocked: String {
+        t("자동 탐색이 막혀 있어요 — 시스템 설정 > 개인정보 보호 > 로컬 네트워크에서 허용하거나, 아래 주소로 직접 연결하세요.",
+          "Auto-discovery is blocked — allow it in System Settings > Privacy > Local Network, or connect by address below.",
+          "自動検出がブロックされています — システム設定 > プライバシー > ローカルネットワークで許可するか、下のアドレスで直接接続してください。")
+    }
     func battleTurnLabel(_ n: Int) -> String { t("턴 \(n)", "Turn \(n)", "ターン \(n)") }
     func battleIncomingFrom(_ trainer: String) -> String {
         t("\(trainer)님이 대결을 신청했어요!", "\(trainer) challenged you!", "\(trainer)さんが対戦を申し込みました！")
@@ -109,7 +100,16 @@ struct L {
     }
 
     // MARK: 헤더 (오늘/주/월)
-    var todayTokens: String { t("오늘 사용한 토큰", "Today's tokens", "本日のトークン") }
+    var todayTokens: String { t("오늘 함께한 시간", "Time together today", "今日一緒にいた時間") }
+    var totalPlaytime: String { t("누적", "Total", "累計") }
+    /// 초 → "N시간 M분" / "M분" / "M초"(짧을 때). 대시보드가 사용량 숫자 대신 이 시간을 보여준다.
+    func duration(_ seconds: Double) -> String {
+        let s = max(0, Int(seconds))
+        let h = s / 3600, m = (s % 3600) / 60
+        if h > 0 { return t("\(h)시간 \(m)분", "\(h)h \(m)m", "\(h)時間\(m)分") }
+        if m > 0 { return t("\(m)분", "\(m)m", "\(m)分") }
+        return t("\(s)초", "\(s)s", "\(s)秒")
+    }
     var thisWeek: String { t("이번 주", "This week", "今週") }
     var thisMonth: String { t("이번 달", "This month", "今月") }
 
@@ -191,7 +191,7 @@ struct L {
     var refreshInterval: String { t("새로고침 간격", "Refresh interval", "更新間隔") }
     var language: String { t("언어", "Language", "言語") }
     var menuBarItems: String { t("메뉴바 표시 항목 (복수 선택)", "Menu bar items (multi-select)", "メニューバー表示項目（複数選択）") }
-    var todayTokensShort: String { t("오늘 토큰", "Today's tokens", "本日のトークン") }
+    var todayTokensShort: String { t("오늘 함께한 시간", "Time together today", "今日一緒にいた時間") }
     var todayCost: String { t("오늘 비용 ($)", "Today's cost ($)", "本日のコスト ($)") }
     var limitPercent: String { t("한도 %", "Limit %", "上限 %") }
     var limitDisplayModeLabel: String { t("한도 표시 방식", "Limit display", "上限の表示") }
@@ -215,17 +215,17 @@ struct L {
     var floatingPetBubbleAlertsLabel: String {
         t("말풍선으로 알림 받기", "Show notifications as bubbles", "通知を吹き出しで表示")
     }
-    var floatingPetMenuOpen: String { t("토큰 바 열기", "Open Token Bar", "トークンバーを開く") }
+    var floatingPetMenuOpen: String { t("열기", "Open", "開く") }
     var floatingPetMenuHide: String {
         t("플로팅 펫 끄기", "Turn off floating pet", "フローティングペットをオフ")
     }
     func floatingPetHoverTokensOnly(_ tokens: String) -> String {
-        t("오늘 \(tokens) 토큰", "Today: \(tokens) tokens", "今日: \(tokens) トークン")
+        t("오늘 \(tokens)", "Today: \(tokens)", "今日: \(tokens)")
     }
     func floatingPetHoverWithLimit(_ tokens: String, _ percent: String) -> String {
-        t("오늘 \(tokens) 토큰 (한도 \(percent))",
-          "Today: \(tokens) tokens (limit \(percent))",
-          "今日: \(tokens) トークン（上限 \(percent)）")
+        t("오늘 \(tokens) (한도 \(percent))",
+          "Today: \(tokens) (limit \(percent))",
+          "今日: \(tokens)（上限 \(percent)）")
     }
 
     var disableKeychain: String { t("Keychain 접근 끄기", "Disable Keychain access", "Keychainアクセスを無効化") }
@@ -248,8 +248,8 @@ struct L {
     var transferSectionTitle: String { t("백업 & 이전", "Backup & Transfer", "バックアップと移行") }
     var exportSaveLabel: String { t("세이브 내보내기", "Export save", "セーブを書き出す") }
     var exportSaveHint: String {
-        t("도감·누적 토큰·가방·현재 포켓몬을 파일 하나로 저장해요",
-          "Saves your Pokédex, lifetime tokens, Bag, and current Pokémon as one file",
+        t("도감·누적 별의모래·가방·현재 포켓몬을 파일 하나로 저장해요",
+          "Saves your Pokédex, lifetime Stardust, Bag, and current Pokémon as one file",
           "図鑑・累計トークン・バッグ・現在のポケモンを1つのファイルに保存します")
     }
     var exportSaveButton: String { t("내보내기…", "Export…", "書き出す…") }
@@ -393,17 +393,32 @@ struct L {
     var finalForm: String { t("최종 진화체", "Final form", "最終進化") }
     func stage(_ i: Int, _ k: Int) -> String { t("진화 단계 \(i) / \(k)", "Stage \(i) / \(k)", "進化段階 \(i) / \(k)") }
     var unknownNextEvolution: String { t("알 수 없는 다음 진화", "Unknown next evolution", "次の進化先は不明") }
+    // MARK: 스타터 선택 (맨 처음 1회)
+    var trainerNamePrompt: String { t("트레이너 이름", "Trainer name", "トレーナー名") }
+    var trainerNamePlaceholder: String { t("이름을 입력하세요", "Enter your name", "名前を入力") }
+    var starterNeedName: String { t("먼저 트레이너 이름을 입력하세요.", "Enter your trainer name first.", "先にトレーナー名を入力してください。") }
+    var starterPrompt: String { t("함께할 첫 파트너를 골라요", "Choose your first partner", "最初のパートナーを選ぼう") }
+    var starterHint: String {
+        t("고른 포켓몬이 바로 함께합니다. 이후엔 알에서 다양한 포켓몬이 태어나요.",
+          "Your pick joins you right away. After that, eggs hatch a variety of Pokémon.",
+          "選んだポケモンがすぐに仲間になります。以降はタマゴから色々なポケモンが生まれます。")
+    }
+    var starterLoading: String { t("후보를 부르는 중…", "Summoning candidates…", "候補を呼び出し中…") }
     var eggIncubating: String { t("🥚 부화 준비 중", "🥚 Incubating", "🥚 孵化の準備中") }
-    func eggToHatch(_ amount: String) -> String { t("부화까지 \(amount)", "\(amount) to hatch", "孵化まで \(amount)") }
-    func toNextEvolution(_ amount: String) -> String { t("다음 진화까지 \(amount)", "\(amount) to next evolution", "次の進化まで \(amount)") }
-    func toGraduation(_ amount: String) -> String { t("졸업까지 \(amount)", "\(amount) to graduation", "卒業まで \(amount)") }
+    /// 게임 재화 표시 단위 — 사용량 트래커의 실제 AI 토큰 숫자와 시각적으로 구분하는 ✨ 접두.
+    func stardust(_ amount: String) -> String { "✨\(amount)" }
+    /// 시간당 생산량(방치형 핵심 신호) — "앱을 켜 두면 자란다"를 수치로.
+    func perHour(_ amount: String) -> String { t("시간당 ✨\(amount)", "✨\(amount)/hr", "毎時 ✨\(amount)") }
+    func eggToHatch(_ amount: String) -> String { t("부화까지 ✨\(amount)", "✨\(amount) to hatch", "孵化まで ✨\(amount)") }
+    func toNextEvolution(_ amount: String) -> String { t("다음 진화까지 ✨\(amount)", "✨\(amount) to next evolution", "次の進化まで ✨\(amount)") }
+    func toGraduation(_ amount: String) -> String { t("졸업까지 ✨\(amount)", "✨\(amount) to graduation", "卒業まで ✨\(amount)") }
     func graduated(_ name: String) -> String {
-        t("\(name) 졸업 → 도감에 보존. 새 Token Egg가 도착했어요!",
-          "\(name) graduated → saved to the dex. A new Token Egg has arrived!",
-          "\(name) 卒業 → 図鑑に保存。新しいToken Eggが届きました！")
+        t("\(name) 졸업 → 도감에 보존. 새 알이 도착했어요!",
+          "\(name) graduated → saved to the dex. A new egg has arrived!",
+          "\(name) 卒業 → 図鑑に保存。新しいタマゴが届きました！")
     }
     var dexEmptyTitle: String { t("아직 잡은 포켓몬이 없어요!", "No Pokémon caught yet!", "まだ捕まえたポケモンがいません！") }
-    var dexEmptyHint: String { t("토큰을 써서 첫 포켓몬을 부화시켜 보세요.", "Spend tokens to hatch your first Pokémon.", "トークンを使って最初のポケモンを孵化させましょう。") }
+    var dexEmptyHint: String { t("앱을 켜 두고 첫 포켓몬을 부화시켜 보세요.", "Keep the app running to hatch your first Pokémon.", "アプリを起動したままにして最初のポケモンを孵化させましょう。") }
 
     // MARK: 도감 요약 헤더
     var dexTitle: String { t("도감", "Pokédex", "図鑑") }
@@ -450,11 +465,11 @@ struct L {
     var notifShinyHatchTitle: String { t("✨ 이로치 포켓몬!", "✨ Shiny Pokémon!", "✨ 色違いポケモン！") }
     func notifShinyHatchBody(_ name: String) -> String { t("이로치 \(name)이(가) 태어났어요! (1/64)", "A shiny \(name) hatched! (1 in 64)", "色違いの \(name) が生まれました！(1/64)") }
     var eggImminent: String { t("곧 부화해요!", "About to hatch!", "もうすぐ孵化！") }
-    /// 첫 실행(아직 토큰 적립 0) 안내 — "왜 아무 일도 안 일어나지"를 방지.
+    /// 첫 실행(아직 적립 0) 안내 — "왜 아무 일도 안 일어나지"를 방지.
     var eggFirstRunHint: String {
-        t("로컬 AI 코딩 도구의 사용량으로 자라요. 약 5M 토큰을 쓰면 알이 부화해요.",
-          "Grows from your local AI coding usage. Your egg hatches after ~5M tokens.",
-          "ローカルの AI コーディング使用量で育ちます。約5Mトークンでタマゴが孵化します。") }
+        t("앱을 켜 두면 별의모래가 쌓여 자라요. 잠시 뒤 알이 부화해요.",
+          "Grows on Stardust that piles up while the app is running. Your egg hatches soon.",
+          "アプリを起動している間にほしのすなが貯まって育ちます。まもなくタマゴが孵化します。") }
     var notifEvolveTitle: String { t("✨ 진화!", "✨ Evolved!", "✨ 進化！") }
     func notifEvolveBody(_ name: String) -> String { t("\(name)(으)로 진화했어요!", "Evolved into \(name)!", "\(name) に進化しました！") }
     // 메타몽 위장 리빌 — 진화 못 하는 메타몽이 첫 진화 순간 정체를 드러낸다.
@@ -575,13 +590,13 @@ struct L {
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
     var mintEffectHint: String { t("성격 랜덤 변경", "Random nature", "せいかくランダム変更") }
 
-    // MARK: 상점 (재화 = 사용한 토큰)
+    // MARK: 상점 (재화 = 별의모래)
     var shop: String { t("상점", "Shop", "ショップ") }
-    var spendableTokens: String { t("쓸 수 있는 토큰", "Spendable tokens", "使えるトークン") }
-    var shopHint: String { t("사용한 토큰으로 아이템을 살 수 있어요.", "Spend the tokens you've used on items.", "使ったトークンでアイテムを購入できます。") }
+    var spendableTokens: String { t("쓸 수 있는 별의모래", "Spendable Stardust", "使えるほしのすな") }
+    var shopHint: String { t("앱을 켜 두는 동안 쌓인 별의모래로 아이템을 살 수 있어요.", "Spend the Stardust you collect while the app runs.", "アプリ起動中に貯まったほしのすなでアイテムを購入できます。") }
     var buy: String { t("구매", "Buy", "購入") }
     func buyConfirm(_ name: String) -> String { t("\(name) 구매할까요?", "Buy \(name)?", "\(name) を購入しますか？") }
-    var notEnoughTokens: String { t("토큰이 부족해요", "Not enough tokens", "トークンが足りません") }
+    var notEnoughTokens: String { t("별의모래가 부족해요", "Not enough Stardust", "ほしのすなが足りません") }
     func ownedCount(_ n: Int) -> String { t("보유 ×\(n)", "Owned ×\(n)", "所持 ×\(n)") }
     var shopPriceLabel: String { t("가격", "Price", "価格") }
     var ownedAlready: String { t("보유 중", "Owned", "所持済み") }
@@ -621,15 +636,15 @@ struct L {
     var freshEggShinyWarning: String { t("⚠️ 이로치 포켓몬이에요! 정말 놓아줄까요?", "⚠️ This one is shiny! Really send it off?", "⚠️ 色違いです！本当に手放しますか？") }
     var freshEggDiscardShiny: String { t("이로치 놓아주기", "Send shiny off", "手放す") }
 
-    // MARK: 사탕 획득 알림 ("왜 받는지" = 토큰 한도를 다 채운 수고에 대한 보상)
+    // MARK: 사탕 획득 알림 (일일 보상)
     func notifCandyTitle(item: String, count: Int) -> String {
         t("🍬 \(item) \(count)개를 받았어요!",
           "🍬 You got \(count)× \(item)!",
           "🍬 \(item)を\(count)個もらいました！")
     }
-    func notifCandyBody(window: String) -> String {
-        t("\(window) 토큰 한도를 다 채웠어요. 열심히 쓴 만큼 사탕을 드려요 — 포켓몬에게 써서 진화시켜 보세요!",
-          "You maxed out your \(window) token limit. A treat for the effort — use it to evolve your Pokémon!",
-          "\(window)のトークン上限を使い切りました。がんばったごほうびです — ポケモンに使って進化させよう！")
+    var notifDailyCandyBody: String {
+        t("오늘의 첫 만남 보상이에요 — 포켓몬에게 써서 진화시켜 보세요!",
+          "Your daily check-in treat — use it to evolve your Pokémon!",
+          "本日のごほうびです — ポケモンに使って進化させよう！")
     }
 }

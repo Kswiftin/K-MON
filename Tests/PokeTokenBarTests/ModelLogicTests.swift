@@ -253,11 +253,11 @@ final class StatePersistenceLogicTests: XCTestCase {
 
     func testCompanionStateEncodeDecodeRoundTrip() throws {
         var st = CompanionState()
-        st.installBaselineSet = true
+        st.economyVersion = 2
         st.usedSinceInstall = 42
         st.eggUsage = 1234
-        st.claimedTodayTokensByProvider = ["test": 7]
-        st.lastDate = "2026-06-27"
+        st.lastTickAt = Date(timeIntervalSince1970: 1_700_000_000)
+        st.lastCandyDate = "2026-06-27"
         st.collectedFinals = ["1:3", "10:12"]
         st.language = .ja
         st.dex = [DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .rare, caughtAt: nil)]
@@ -265,11 +265,11 @@ final class StatePersistenceLogicTests: XCTestCase {
         let data = try JSONEncoder().encode(st)
         let back = try JSONDecoder().decode(CompanionState.self, from: data)
 
-        XCTAssertEqual(back.installBaselineSet, true)
+        XCTAssertEqual(back.economyVersion, 2)
         XCTAssertEqual(back.usedSinceInstall, 42)
         XCTAssertEqual(back.eggUsage, 1234)
-        XCTAssertEqual(back.claimedTodayTokensByProvider, ["test": 7])
-        XCTAssertEqual(back.lastDate, "2026-06-27")
+        XCTAssertEqual(back.lastTickAt, Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertEqual(back.lastCandyDate, "2026-06-27")
         XCTAssertEqual(back.collectedFinals, ["1:3", "10:12"])
         XCTAssertEqual(back.language, .ja)
         XCTAssertEqual(back.dex.count, 1)

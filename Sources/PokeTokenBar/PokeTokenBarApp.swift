@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 import SwiftUI
+import UserNotifications
 
 @main
 struct PokeTokenBarApp: App {
@@ -14,7 +15,7 @@ struct PokeTokenBarApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private var store: UsageStore!
@@ -48,6 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         updater = UpdateChecker()
         battleCenter = BattleCenter(companion: companion)
         battleCenter.start()   // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신
+        // 배틀 신청은 팝오버가 닫힌(=앱 실행 중) 상태에서 오는 게 정상이라, 알림 표시가 핵심이다.
+        // ① delegate 없으면 foreground(accessory 앱은 항상 그렇다) 알림이 억제돼 배너가 안 뜬다.
+        // ② 권한을 팝오버 첫 오픈 때만 요청하면 팝오버를 안 연 사용자는 권한이 없어 알림이 안 온다 → 기동 시 요청.
+        UNUserNotificationCenter.current().delegate = self
+        store.requestNotificationAuthorizationIfNeeded()
         store.localizationLanguage = companion.language   // 알림 현지화용 미러 시드
         store.onRefresh = { [weak self] in self?.onStoreRefreshed() }   // 한도 로드 후 companion·사탕 지급
         floatingPet = FloatingPetController(
@@ -72,8 +78,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         observeStore()
         observeCompanionSprite()
+        observeBattlePin()
         observeDisplaySleep()
+        startIdleTick()
         applyState()
+    }
+
+    /// 배틀이 잡히거나 걸리면 팝오버를 열고 **고정**(닫힘 방지)한다 — 일하면서 배틀할 수 있게.
+    /// 배틀이 끝나 .ready 로 돌아가면 다시 transient(클릭 밖=닫힘)로 복원한다.
+    private var battlePinned = false
+    private func observeBattlePin() {
+        withObservationTracking {
+            _ = battleCenter.wantsPinnedWindow
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.applyBattlePin()
+                self.observeBattlePin()
+            }
+        }
+    }
+
+    private func applyBattlePin() {
+        if battleCenter.wantsPinnedWindow {
+            // .applicationDefined = 명시적으로 닫기 전엔 안 닫힘(앱 전환·바깥 클릭에도 유지) → 일하면서 배틀.
+            popover.behavior = .applicationDefined
+            battlePinned = true
+            if !popover.isShown { openPopover() }
+            navigation.goToBattle()   // 배틀 탭으로 전환
+        } else if battlePinned {
+            popover.behavior = .transient   // 배틀 끝 → 원래대로(클릭 밖이면 닫힘)
+            battlePinned = false
+        }
     }
 
     /// Observation 기반 상태 반영 — store 의 menuTitle(=menuLines) 변경 시 재호출.
@@ -108,8 +144,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
+    // MARK: 알림 표시 (foreground 배너 + 탭 → 팝오버)
+
+    /// 앱이 실행 중(accessory 는 항상)일 때도 배너·소리를 띄운다 — 없으면 배틀 신청 알림이 조용히 삼켜진다.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .list])
+    }
+
+    /// 알림 탭 → 팝오버 열기(배틀 신청이면 수락 화면으로 자연스럽게 이어지게).
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        Task { @MainActor in self.openPopover() }
+        completionHandler()
+    }
+
     private func applyState() {
         guard let button = statusItem.button else { return }
+        // 메뉴바 헤드라인 = "오늘 함께한 시간"(방치형). 토큰 사용량 대신 시간을 보여준다.
+        store.menuHeadlineOverride = companion.l.duration(companion.activeSecondsToday)
         Self.applyMenuText(store.menuLines, to: button)
         // stale 시각 dim 제거 — 슬립/런치 직후 refresh 완료 전 몇 초간 회색으로 보여 '고장/비활성'
         // 으로 오인되던 것 방지(사용자 반복 지적). 데이터가 오래됐다는 신호가 필요하면 팝오버
@@ -174,11 +229,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             hasUsageData: store.hasUsageData)
     }
 
-    /// 매 refresh 완료 훅 — companion 갱신 + 사탕 지급(한도가 신선한 시점). 지급을 여기 묶는 이유는
-    /// UsageStore.onRefresh 주석 참조(observeStore 만으론 한도 변경이 companion 에 안 전달되는 케이스).
+    /// 매 refresh 완료 훅 — companion 표시 상태 갱신 + 생산 틱(타이머 사이 반응성 보강).
     private func onStoreRefreshed() {
         updateCompanion()
-        companion.grantCandies(from: store.candyEligibleWindows, limitsReady: store.limitsReady)
+        companion.tick()
+    }
+
+    /// 방치 생산 틱 — 60초마다 경과 시간을 별의모래로 적립한다(CompanionStore.tick 이 슬립 캡 처리).
+    private var idleTickTimer: Timer?
+    private func startIdleTick() {
+        companion.tick()   // 기동 즉시 기준점 시드(첫 틱은 적립 없음)
+        let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.companion.tick()
+                self.applyState()   // 메뉴바 "오늘 함께한 시간" 갱신(틱만으론 menuTitle 관찰이 안 걸린다)
+            }
+        }
+        timer.tolerance = 5   // 배터리 — 정밀도 불필요(경과분 기반이라 늦게 와도 손실 없음)
+        RunLoop.main.add(timer, forMode: .common)
+        idleTickTimer = timer
     }
 
     // MARK: 메뉴바 애니메이션

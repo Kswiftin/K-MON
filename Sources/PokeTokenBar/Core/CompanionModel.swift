@@ -84,11 +84,29 @@ enum Rarity: String, Codable, Sendable {
     }
 }
 
-/// 토큰 경제 — 실측 평균(~253M/일) 기준.
-/// 졸업 총량 T 는 같은 희귀도면 진화 단계 수와 무관하게 동일.
+/// 방치형 경제 — 재화는 **별의모래(stardust)**. 앱이 켜져 있는 동안 시간으로 생산되고,
+/// 성장(부화·진화·졸업)과 상점이 같은 단위를 쓴다. 수치는 토큰 경제 시절의 표를 그대로 계승한다
+/// (헤비유저 ~253M/일 기준으로 튜닝된 값 — 생산 속도를 그 등가로 맞춰 소요 기간 감각을 유지).
+enum IdleEconomy {
+    /// 경제 스키마 버전. 이 값보다 낮은 세이브(토큰 경제 시절)는 로드/불러오기 경계에서
+    /// 도감·수집만 남기고 진행을 리셋한다(SaveTransfer.sanitized). 토큰 누적과 별의모래는
+    /// 단위가 달라 환산하지 않는다(2026-08-13 결정: 전면 리셋).
+    static let currentVersion = 2
+    /// 기본 생산 속도 — 초당 별의모래. 7,000/s = 25.2M/시간: 알 부화(5M) ≈ 12분,
+    /// common 졸업(750M) ≈ 30시간, legendary(6B) ≈ 240시간(하루 10시간 가동 시 ≈ 24일) —
+    /// README 의 "common ≈3일 → legendary ≈24일" 약속을 실행 시간 기준으로 유지한다.
+    static let dustPerSecond: Double = 7_000
+    /// 도감 보너스 — 등록한 종(고유 최종체) 1종당 생산 속도 +2%. 수집이 곧 성장 엔진.
+    static let dexBonusPerSpecies = 0.02
+    /// 틱 1회가 인정하는 최대 경과 시간. 틱 타이머(60초)가 몇 번 밀려도 흡수하되,
+    /// 시스템 슬립·강제 시계 점프 같은 "안 켜져 있던 시간"은 여기서 잘린다.
+    static let maxTickInterval: TimeInterval = 180
+}
+
+/// 성장 밸런스 — 졸업 총량 T 는 같은 희귀도면 진화 단계 수와 무관하게 동일.
 /// 형태 k개 라인에서 i번째 형태 성장 비용 = T·i / (k(k+1)/2) → 합 = T, 단계↑일수록 비용↑.
 enum PokemonBalance {
-    /// 알 부화 임계 — 이만큼 토큰을 써야 알이 깨진다(즉시 부화 대신 기대감). 초과분은 부화체 성장에 이월.
+    /// 알 부화 임계 — 이만큼 별의모래가 쌓여야 알이 깨진다(즉시 부화 대신 기대감). 초과분은 부화체 성장에 이월.
     static let eggHatchThreshold = 5_000_000
 
     static func graduationTotal(_ rarity: Rarity) -> Int {
@@ -150,15 +168,15 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
 
 /// 이상한 사탕 밸런스 상수.
 enum RareCandy {
-    /// 사용 시 현재 포켓몬에 주입하는 XP(토큰 환산). 최소 진화 임계(커먼 1형태 125M)보다 작아
+    /// 사용 시 현재 포켓몬에 주입하는 XP(별의모래 환산). 최소 진화 임계(커먼 1형태 125M)보다 작아
     /// 사탕 1개는 최대 1단계만 올린다(연쇄·졸업 폭주 없음). applyUsage 로 주입 → 이월/진화/졸업 자동.
     static let xp = 100_000_000
-    /// 주간 한도 100% 도달 시 지급 개수(세션급은 1개).
-    static let weeklyGrant = 5
-    /// 상점 구매가(재화 = 사용한 토큰: usedSinceInstall − spentTokens). XP 값어치(100M)의 5배.
-    /// 토큰이 "성장 미터 + 상점 지갑"으로 이중 사용되는 구조라, 가격을 XP 와 같게 두면 구매가 사실상
-    /// 공짜 추가성장(150M 써서 250M 성장)이 된다. 500M 로 두면 그 값 모으는 500M 패시브 성장 + 사탕
-    /// 100M = 실질 보너스 +20% 로 억제된다. 무료 획득(한도 100% 보상)이 항상 이득이도록 값어치보다 비싸게.
+    /// 일일 보상 개수 — 그 날 첫 틱에 지급(방치형 출석 보상. 토큰 한도 연동 지급의 대체, 2026-08-13).
+    static let dailyGrant = 1
+    /// 상점 구매가(재화 = 별의모래: usedSinceInstall − spentTokens). XP 값어치(100M)의 5배.
+    /// 별의모래가 "성장 미터 + 상점 지갑"으로 이중 사용되는 구조라, 가격을 XP 와 같게 두면 구매가 사실상
+    /// 공짜 추가성장이 된다. 500M 로 두면 그 값 모으는 500M 패시브 성장 + 사탕 100M = 실질 보너스
+    /// +20% 로 억제된다. 무료 획득(일일 보상)이 항상 이득이도록 값어치보다 비싸게.
     static let price = 500_000_000
 }
 
@@ -220,22 +238,14 @@ enum ShopEntry: Hashable, Sendable {
     }
 }
 
-/// 사탕 지급 대상 한도 창의 분류 — session=1개·weekly=weeklyGrant.
-enum WindowClass: Sendable { case session, weekly }
-
-/// 사탕 지급 판정 입력 — 프로바이더 무관 한도 창 1개. (UsageStore.candyEligibleWindows 가 생성)
-struct CandyWindow: Sendable {
-    let key: String          // 안정 식별자(tier 추적) — resets_at 등 휘발 필드 금지
-    let name: String         // 표시용(알림 "왜 받는지")
-    let kind: WindowClass    // session=1개 · weekly=5개
-    let utilization: Double  // 0~100+
-}
-
-/// 사탕 지급 1건(순수 판정 결과) — 부수효과(인벤토리·알림)와 분리해 테스트 가능하게.
-struct CandyGrant: Equatable, Sendable {
-    let windowKey: String
-    let windowName: String   // 알림 "왜 받는지"
-    let count: Int
+/// 스타터 선택 규칙 — 후보 풀 범위·제외 종. SaveTransfer(세이브 정규화)와 CompanionStore(후보 롤)가 공유.
+enum StarterRules {
+    /// 1세대(1~151) 기본형(진화 전) 후보 풀 범위.
+    static let genRange = 1...151
+    /// 스타터에서 제외할 1세대 전설·환상 종(3신조·뮤츠·뮤). BaseSpecies 인덱스엔 is_legendary 가
+    /// 없어 id 로 직접 거른다. 전설은 알/졸업 루프에서만 나온다.
+    static let legendaryExclusions: Set<Int> = [144, 145, 146, 150, 151]
+    static func isLegendary(_ id: Int) -> Bool { legendaryExclusions.contains(id) }
 }
 
 /// 현재 서비스가 제공하는 움직이는 포켓몬 스프라이트 범위.
@@ -377,6 +387,7 @@ struct MonState: Codable, Sendable {
     var totalForms: Int
     var isShiny = false             // 부화 시 확정, 진화해도 유지
     var nature: PokemonNature?      // 부화 시 확정 (구버전 저장은 nil)
+    var nickname: String?           // 사용자 지정 별명(없으면 종 이름 표시). 진화해도 유지.
     // 메타몽 위장 — nil=일반. 값=정체 메타몽, 이 종으로 위장 중(위장 구간엔 baseID 와 동일, 리빌 후에도 원 위장체 보존).
     var dittoDisguise: Int?
     var dittoRevealed = false       // 위장 → 리빌(정체 공개) 전환 여부
@@ -385,7 +396,7 @@ struct MonState: Codable, Sendable {
 
     init(baseID: Int, pathIDs: [Int], plannedPathIDs: [Int]? = nil, stageIndex: Int, usedAtStage: Int,
          rarity: Rarity, totalForms: Int, isShiny: Bool = false, nature: PokemonNature? = nil,
-         dittoDisguise: Int? = nil, dittoRevealed: Bool = false) {
+         nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false) {
         self.baseID = baseID
         self.pathIDs = pathIDs
         if let plannedPathIDs, !plannedPathIDs.isEmpty {
@@ -399,6 +410,7 @@ struct MonState: Codable, Sendable {
         self.totalForms = totalForms
         self.isShiny = isShiny
         self.nature = nature
+        self.nickname = nickname
         self.dittoDisguise = dittoDisguise
         self.dittoRevealed = dittoRevealed
     }
@@ -424,6 +436,7 @@ struct MonState: Codable, Sendable {
         totalForms = try c.decode(Int.self, forKey: .totalForms)
         isShiny = try c.decodeIfPresent(Bool.self, forKey: .isShiny) ?? false
         nature = try c.decodeIfPresent(PokemonNature.self, forKey: .nature)
+        nickname = try c.decodeIfPresent(String.self, forKey: .nickname)
         dittoDisguise = try c.decodeIfPresent(Int.self, forKey: .dittoDisguise)
         dittoRevealed = try c.decodeIfPresent(Bool.self, forKey: .dittoRevealed) ?? false
     }
@@ -496,13 +509,25 @@ private extension KeyedDecodingContainer {
 
 /// 영속 상태(Application Support JSON). 포켓몬 전환 — 이전 커스텀 캐릭터 상태는 폐기(새로 시작).
 struct CompanionState: Codable, Sendable {
-    // 토큰: 설치 이후만 측정
-    var installBaselineSet = false
+    /// 경제 스키마 버전 — 신규 상태는 현재 버전, 구버전 세이브는 디코드 기본값 0 으로 남아
+    /// SaveTransfer.sanitized 의 리셋 마이그레이션을 탄다(도감·수집·언어만 계승).
+    var economyVersion = IdleEconomy.currentVersion
+    /// 마지막 생산 틱 시각 — 다음 틱은 이 시각과의 경과분(maxTickInterval 캡)만 적립한다.
+    /// nil = 아직 틱 없음(신규/리셋 직후) — 첫 틱은 기준점만 잡고 적립하지 않는다.
+    var lastTickAt: Date?
+    /// 함께한 시간(초) — 앱이 켜져 생산한 누적 시간. 대시보드가 "토큰 사용량" 대신 이 시간을 보여준다.
+    var activeSecondsTotal: Double = 0
+    /// 오늘 함께한 시간(초) + 그 날짜 — 날짜가 바뀐 첫 틱에 0으로 리셋.
+    var activeSecondsToday: Double = 0
+    var activeSecondsDate: String = ""
+    /// 일일 사탕을 지급한 로컬 날짜(YYYY-MM-DD). 날짜가 바뀐 첫 틱에 재지급.
+    var lastCandyDate = ""
+    // 별의모래: 설치 이후 생산 누적(성장 미터, 불변)
     var usedSinceInstall = 0
-    // 상점에서 쓴 토큰 누적(재화 지출 원장). 쓸 수 있는 재화 = usedSinceInstall − spentTokens.
+    // 상점에서 쓴 별의모래 누적(재화 지출 원장). 쓸 수 있는 재화 = usedSinceInstall − spentTokens.
     // 성장 미터(usedSinceInstall)는 불변 — 구매는 이 값만 올려 잔액을 깎는다(성장 되감김 없음).
     var spentTokens = 0
-    // 현재 알이 생긴 뒤 쓴 토큰(부화 인큐베이션). 누적(usedSinceInstall)과 별개 — 졸업 후 새 알마다 0.
+    // 현재 알이 생긴 뒤 쌓인 별의모래(부화 인큐베이션). 누적(usedSinceInstall)과 별개 — 졸업 후 새 알마다 0.
     var eggUsage = 0
     // 현재 알이 보증하는 등급 하한(프리미엄 알). nil = 보증 없음(무료 알·기본 알).
     // ★영속이어야 한다 — 구매 시점엔 종을 못 정한다(롤에 네트워크가 필요). 보증을 상태에 적어 두고
@@ -510,15 +535,13 @@ struct CompanionState: Codable, Sendable {
     var eggTier: Rarity?
     // 알 상태에서 미리 롤해둔 부화 종(프리패칭) — 부화 순간 네트워크 딜레이 제거. 재시작에도 유지.
     var pendingHatchID: Int?
-    /// 오늘 사용량 적립 기준값 — 프로바이더별로 독립 관리한다.
-    ///
-    /// `nil`은 aggregate `claimedTodayTokens`만 가지고 있던 구버전 세이브가 아직 첫 유효
-    /// snapshot을 기준으로 seed되지 않았다는 뜻이다. 첫 update에서 현재 프로바이더 값을
-    /// 기준값으로만 저장하고, 과거 사용량은 소급 지급하지 않는다. 빈 map은 이미 seed된 뒤
-    /// 오늘 보고한 프로바이더가 없는 정상 상태와 구분되어야 하므로 `nil`과 별도로 유지한다.
-    /// 키는 `UsageProvider.id`를 그대로 사용한다.
-    var claimedTodayTokensByProvider: [String: Int]? = nil
-    var lastDate = ""
+    // 트레이너 이름 — 첫 시작에 입력받아 배틀에 표시. 빈 문자열이면 아직 미입력(이름 입력 화면).
+    var trainerName = ""
+    // 첫 파트너를 골랐는지 — false면 알이 아니라 스타터 선택 화면으로 시작(맨 처음 1회).
+    // 졸업 후 새 알부터는 true 라 기존 알/부화 루프로 돌아간다.
+    var starterChosen = false
+    // 스타터 선택 후보 — 1세대(1~151) 기본형 중 무작위 3종. 한 번 뽑아 고정(재렌더/재시작에도 유지).
+    var starterCandidates: [Int] = []
     // 현재 포켓몬(없으면 알)
     var active: MonState?
     // 도감
@@ -528,10 +551,9 @@ struct CompanionState: Codable, Sendable {
     var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
-    // 사탕 지급 엣지 상태(창 key → 지급한 tier). ★영속 — notifiedTier(인메모리)와 달리 재시작 무한지급 방지.
-    var candyGrantTier: [String: Int] = [:]
-    // 사탕 지급 첫 실행 시드 완료 — 업데이트 직후 이미 100%였던 창의 소급 지급 차단.
-    var candyFeatureSeeded = false
+    // 세이브 무결성 해시(기기 시드) — 손으로 JSON 을 고치면 불일치 → 로드 때 조작 판정.
+    // 이 필드 자체는 해시 입력에서 제외한다(자기참조 방지). 빈 값 = 아직 서명 전(구버전/첫 로드).
+    var integrity = ""
 
     init() {}
 
@@ -540,23 +562,22 @@ struct CompanionState: Codable, Sendable {
     // 전면 손상만 throw → load() 가 원본을 .corrupt 로 백업하고 fresh 로 시작.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        installBaselineSet = c.lenient(Bool.self, forKey: .installBaselineSet, default: false)
+        // 키 없음 = 토큰 경제 시절 세이브 → 0 으로 남겨 sanitized 의 리셋 마이그레이션 대상이 되게 한다.
+        economyVersion     = c.lenient(Int.self, forKey: .economyVersion, default: 0)
+        lastTickAt         = c.lenientOptional(Date.self, forKey: .lastTickAt)
+        activeSecondsTotal = c.lenient(Double.self, forKey: .activeSecondsTotal, default: 0)
+        activeSecondsToday = c.lenient(Double.self, forKey: .activeSecondsToday, default: 0)
+        activeSecondsDate  = c.lenient(String.self, forKey: .activeSecondsDate, default: "")
+        lastCandyDate      = c.lenient(String.self, forKey: .lastCandyDate, default: "")
         usedSinceInstall   = c.lenient(Int.self, forKey: .usedSinceInstall, default: 0)
         spentTokens        = c.lenient(Int.self, forKey: .spentTokens, default: 0)
         eggUsage           = c.lenient(Int.self, forKey: .eggUsage, default: 0)
         // 모르는 rawValue 는 nil(보증 없음)로 강등 — 관대 디코딩의 안전한 방향(있지도 않은 보증을 만들지 않는다).
         eggTier            = c.lenientOptional(Rarity.self, forKey: .eggTier)
         pendingHatchID     = c.lenientOptional(Int.self, forKey: .pendingHatchID)
-        if c.contains(.claimedTodayTokensByProvider) {
-            claimedTodayTokensByProvider = c.lenient([String: Int].self,
-                                                      forKey: .claimedTodayTokensByProvider,
-                                                      default: [:])
-        } else {
-            // 구버전의 aggregate claimedTodayTokens 키는 의도적으로 읽지 않는다. 프로바이더별
-            // 분해가 불가능하므로 다음 CompanionStore.update에서 현재 snapshot을 기준점으로 seed한다.
-            claimedTodayTokensByProvider = nil
-        }
-        lastDate           = c.lenient(String.self, forKey: .lastDate, default: "")
+        trainerName        = c.lenient(String.self, forKey: .trainerName, default: "")
+        starterChosen      = c.lenient(Bool.self, forKey: .starterChosen, default: false)
+        starterCandidates  = c.lenient([Int].self, forKey: .starterCandidates, default: [])
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.
         active             = c.lenientOptional(MonState.self, forKey: .active)
         // 도감은 항목별 격리 — 손상 항목 하나가 도감 전체를 날리지 않게.
@@ -564,8 +585,7 @@ struct CompanionState: Codable, Sendable {
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])
         language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
-        candyGrantTier     = c.lenient([String: Int].self, forKey: .candyGrantTier, default: [:])
-        candyFeatureSeeded = c.lenient(Bool.self, forKey: .candyFeatureSeeded, default: false)
+        integrity          = c.lenient(String.self, forKey: .integrity, default: "")
     }
 }
 

@@ -13,6 +13,9 @@ build/
 .DS_Store
 *.xcuserstate
 
+# JetBrains IDE
+.idea/
+
 # Signing material — never commit private keys / certs
 *.p12
 *.pem

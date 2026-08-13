@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 상점 — 사용한 토큰(재화 = usedSinceInstall − spentTokens)으로 아이템 구매(이상한 사탕·민트).
+/// 상점 — 별의모래(재화 = usedSinceInstall − spentTokens)로 아이템 구매(이상한 사탕·민트).
 /// 인라인 확인(버튼 morph) — .sheet/.alert 금지(BagView 주석과 동일: transient 팝오버가 닫힐 때
 /// 고아 시트가 이후 클릭을 먹통내는 결함 회피).
 struct ShopView: View {
@@ -32,7 +32,7 @@ struct ShopView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(l.spendableTokens)
                 .font(.caption).foregroundStyle(.secondary)
-            Text(TokenFormatter.compact(store.availableTokens))
+            Text(l.stardust(TokenFormatter.compact(store.availableTokens)))
                 .font(.system(size: 24, weight: .bold)).monospacedDigit()
             Text(l.shopHint)
                 .font(.caption2).foregroundStyle(.tertiary)
@@ -101,7 +101,7 @@ private struct ShopItemCard: View {
             }
         } else {
             HStack {
-                Text("\(l.shopPriceLabel) \(TokenFormatter.compact(price))")
+                Text("\(l.shopPriceLabel) \(l.stardust(TokenFormatter.compact(price)))")
                     .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                 Spacer()
                 if store.canBuy(kind) {
@@ -172,7 +172,7 @@ private struct EggCard: View {
         switch stage {
         case .idle:
             HStack {
-                Text("\(l.shopPriceLabel) \(TokenFormatter.compact(price))")
+                Text("\(l.shopPriceLabel) \(l.stardust(TokenFormatter.compact(price)))")
                     .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                 Spacer()
                 if store.canBuyEgg(tier) {

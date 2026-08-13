@@ -9,7 +9,9 @@ import Foundation
 /// 봉투의 `format`/`schema` 는 관대 디코딩 대상이 아니라(기본값 없음) 이 오인을 먼저 차단한다.
 struct SaveEnvelope: Codable, Sendable {
     static let formatID = "poketokenbar.save"
-    static let schemaVersion = 1
+    /// 2 = 방치형 경제(별의모래). 구버전 앱이 새 세이브를 토큰 경제로 오독하지 않게 올렸다 —
+    /// 구버전은 `newerSchema` 로 거절하고, 이 빌드는 schema 1(토큰 시절)도 받아 리셋 마이그레이션한다.
+    static let schemaVersion = 2
 
     var format: String
     var schema: Int
@@ -141,13 +143,10 @@ enum SaveTransfer {
     /// 정규화한다. 대상은 실제로 산술에 쓰이는 필드뿐이다 — 도감·인벤토리 항목은 잘라내지 않는다(데이터 손실).
     static func sanitized(_ state: CompanionState) -> CompanionState {
         func clampToken(_ v: Int) -> Int { min(max(0, v), maxTokenValue) }
-        var s = state
+        var s = migratedToIdleEconomy(state)
         s.usedSinceInstall = clampToken(s.usedSinceInstall)
         s.spentTokens = clampToken(s.spentTokens)
         s.eggUsage = clampToken(s.eggUsage)
-        s.claimedTodayTokensByProvider = s.claimedTodayTokensByProvider?.reduce(into: [:]) { result, entry in
-            result[entry.key] = clampToken(entry.value)
-        }
         // 알 보증은 "지금 품고 있는 알"에만 붙는 값이라 활성 포켓몬과 공존할 수 없다. 손편집·구버전
         // 조합으로 둘 다 들어오면 그 보증이 다음 알로 새어 영구 프리미엄이 되므로 여기서 떨군다.
         // 그 보증으로 미리 뽑아둔 종(pendingHatchID)도 함께 버린다 — 보증만 지우면 졸업 후 받는 **무료**
@@ -166,7 +165,84 @@ enum SaveTransfer {
             active.stageIndex = min(max(0, active.stageIndex), max(0, active.pathIDs.count - 1))
             s.active = active
         }
+        // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
+        s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
+        // 전설 스타터 리셋 — 첫 동반자(dex 비어 있음)가 전설이면 스타터를 다시 고르게 한다.
+        // (구버전 스타터 롤이 전설을 허용했을 때의 개체. 알/졸업으로 얻은 전설은 dex 가 비지 않아 유지된다.)
+        if let a = s.active, a.rarity == .legendary, s.dex.isEmpty, s.starterChosen {
+            s.active = nil
+            s.starterChosen = false
+            s.starterCandidates = []
+            s.eggUsage = 0
+            s.eggTier = nil
+            s.pendingHatchID = nil
+        }
+        // 후보에 전설·범위 밖이 섞였으면(구버전·조작) 비워 재추첨하게 한다.
+        if s.starterCandidates.contains(where: { StarterRules.isLegendary($0) || !StarterRules.genRange.contains($0) }) {
+            s.starterCandidates = []
+        }
         return s
+    }
+
+    // MARK: 세이브 무결성 (손편집 조작 방어)
+
+    /// 조작에 민감한 필드의 canonical 문자열 → 기기 시드 FNV 해시. `integrity` 자신은 입력에서 제외.
+    /// 손으로 JSON 을 고치면(재화·인벤토리·개체·도감) 이 해시가 안 맞아 로드 때 조작으로 판정된다.
+    /// 기기 시드가 들어가 다른 기기·해시 알고리즘을 모르면 유효 서명을 못 만든다(캐주얼 편집 차단).
+    static func integrityHash(_ s: CompanionState) -> String {
+        var p: [String] = []
+        p.append("v\(s.economyVersion)")
+        p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("eg\(s.eggUsage)")
+        p.append("tier\(s.eggTier?.rawValue ?? "-")"); p.append("sc\(s.starterChosen)")
+        p.append("cand" + s.starterCandidates.map(String.init).joined(separator: ","))
+        p.append("inv" + s.inventory.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))
+        if let a = s.active {
+            p.append("act\(a.baseID)|\(a.stageIndex)|\(a.usedAtStage)|\(a.rarity.rawValue)|\(a.isShiny)|\(a.totalForms)|\(a.nickname ?? "")")
+        } else { p.append("act-") }
+        p.append("dex" + s.dex.map { "\($0.baseID):\($0.finalID):\($0.rarity.rawValue)" }.sorted().joined(separator: ","))
+        p.append("cf" + s.collectedFinals.sorted().joined(separator: ","))
+        p.append("sec\(DeviceID.stableIdentifier())")
+        return String(fnv1a(p.joined(separator: "|")), radix: 16)
+    }
+
+    private static func fnv1a(_ s: String) -> UInt64 {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h ^= UInt64(b); h = h &* 0x100000001b3 }
+        return h
+    }
+
+    /// 저장 직전 서명 — integrity 를 현재 상태 해시로 채운 사본을 반환(원본 불변).
+    static func signed(_ state: CompanionState) -> CompanionState {
+        var s = state
+        s.integrity = integrityHash(s)
+        return s
+    }
+
+    /// 서명이 있는데 안 맞는가(= 손편집됨). 서명 전(빈 값)·구버전은 조작으로 보지 않는다.
+    static func isTampered(_ state: CompanionState) -> Bool {
+        !state.integrity.isEmpty && state.integrity != integrityHash(state)
+    }
+
+    /// 조작 감지 시 초기화 — 언어·트레이너 이름(코스메틱)만 남기고 진행·도감·인벤토리를 전부 리셋.
+    /// 스타터부터 다시 고르게 해 조작 이득을 무효화한다.
+    static func resetForTamper(_ state: CompanionState) -> CompanionState {
+        var fresh = CompanionState()
+        fresh.language = state.language
+        fresh.trainerName = state.trainerName
+        return fresh
+    }
+
+    /// 토큰 경제 세이브(economyVersion < currentVersion)의 리셋 마이그레이션 — 도감·수집·언어만
+    /// 계승하고 진행(활성 개체·알·재화·인벤토리)은 새로 시작한다(2026-08-13 결정). 토큰 누적과
+    /// 별의모래는 단위가 달라 환산하지 않는다. 로드/불러오기 공통 경계(sanitized)에서 호출된다.
+    static func migratedToIdleEconomy(_ state: CompanionState) -> CompanionState {
+        guard state.economyVersion < IdleEconomy.currentVersion else { return state }
+        var fresh = CompanionState()
+        fresh.dex = state.dex
+        fresh.collectedFinals = state.collectedFinals
+        fresh.language = state.language
+        AppLog.write("economy migration: v\(state.economyVersion) → v\(IdleEconomy.currentVersion) — progress reset, dex(\(state.dex.count)) preserved")
+        return fresh
     }
 
     /// 다른 기기에서 온 상태를 **이 기기 기준으로 재정렬**한다.
@@ -174,45 +250,17 @@ enum SaveTransfer {
     /// `CompanionState` 의 필드는 이전 관점에서 세 부류다.
     ///  - **진행**: 어느 기기에서든 참(`usedSinceInstall`·`dex`·`inventory`·`active`·`eggUsage`·`eggTier`…)
     ///    → 그대로. 알 보증(`eggTier`)은 산 물건이지 이 기기의 장부가 아니라 기기를 옮겨도 따라간다.
-    ///  - **로컬 장부**: *그 기기가* 어디까지 적립했나(`claimedTodayTokensByProvider`·`lastDate`·`installBaselineSet`)
-    ///    → 새 기기 기준으로 다시 잡는다. 그대로 들여오면 옛 기기의 오늘 총량이 문턱이 되어
-    ///    `CompanionStore.update` 의 프로바이더별 증분 게이트가 이전 당일 내내 거짓이 되고,
-    ///    새 기기 사용분이 조용히 안 잡힌다(자정에 저절로 낫기 때문에 버그로 안 보인다).
+    ///  - **로컬 장부**: 이 기기의 시계 기준값(`lastTickAt`) → 리셋. 옛 기기의 시각을 그대로 들여오면
+    ///    다음 틱이 그 시각과의 경과분(캡 적용)을 이 기기 가동 시간으로 오인한다.
     ///  - **기기 환경설정**: 진행이 아니라 이 기기에서 보는 방식(`language`) → **현재 기기 값을 지킨다**.
     ///    일본어 Mac 의 세이브가 영어 Mac 의 UI 언어를 바꾸면 안 된다.
-    ///
-    /// 계정 전역 원장(`candyGrantTier`)은 교체가 아니라 **key 별 max 병합**이다. 한도 창 key 는 계정
-    /// 단위라 두 기기가 같은 창을 본다 — 더 오래된 세이브로 통째 교체하면 이미 지급한 창의 기록이
-    /// 사라져 같은 창에서 사탕이 재지급된다(보존만으로는 이 역방향을 못 막는다).
     static func rebasedForThisDevice(_ imported: CompanionState,
-                                     current: CompanionState,
-                                     todayTokensByProvider: [String: Int],
-                                     todayDate: String,
-                                     hasUsageData: Bool) -> CompanionState {
+                                     current: CompanionState) -> CompanionState {
         var state = imported
         state.language = current.language
-        state.candyGrantTier = mergedGrantTier(imported.candyGrantTier, current.candyGrantTier)
-        state.candyFeatureSeeded = imported.candyFeatureSeeded || current.candyFeatureSeeded
-        let hasCurrentProviderData = hasUsageData && !todayTokensByProvider.isEmpty
-        if hasCurrentProviderData {
-            // 신규 설치와 같은 규칙: 불러온 시점 이전의 이 기기 사용량은 소급 적립하지 않는다.
-            state.installBaselineSet = true
-            state.claimedTodayTokensByProvider = todayTokensByProvider
-            state.lastDate = todayDate
-        } else {
-            // 아직 이 기기의 오늘 사용량을 모른다(파싱 전·프로바이더 없음·stale snapshot만 존재).
-            // `hasUsageData`는 snapshot 존재 여부일 뿐 오늘 날짜 데이터의 존재를 보장하지 않는다.
-            // 여기서 빈 map을 이미 seed된 장부로 저장하면 첫 정상 snapshot이 "새 provider"로
-            // 취급되어 그 시점까지의 하루치가 조용히 누락된다 → baseline 판정을 신규 설치 경로에 넘긴다.
-            state.installBaselineSet = false
-            state.claimedTodayTokensByProvider = nil
-            state.lastDate = ""
-        }
+        state.lastTickAt = nil
+        // 일일 사탕 원장은 로컬 날짜 문자열이라 기기 간 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
+        state.lastCandyDate = max(imported.lastCandyDate, current.lastCandyDate)
         return state
-    }
-
-    /// 창 key 별로 더 높은 tier 를 남긴다 — 어느 쪽에서든 이미 지급했으면 지급한 것으로 본다.
-    static func mergedGrantTier(_ a: [String: Int], _ b: [String: Int]) -> [String: Int] {
-        a.merging(b) { max($0, $1) }
     }
 }

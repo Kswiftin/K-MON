@@ -2,8 +2,9 @@ import Foundation
 import Observation
 import UserNotifications
 
-/// 게임 상태의 출처. 설치 이후 토큰 사용량으로 포켓몬을 진화시키고, 최종체 + 추가 임계 도달 시
-/// 도감(라인 전체)에 보존 + 새 알. 진화 트리/희귀도/이름은 PokeProviding 으로 런타임 주입.
+/// 게임 상태의 출처. 앱이 켜져 있는 동안 시간이 별의모래로 적립돼(tick) 포켓몬을 진화시키고,
+/// 최종체 + 추가 임계 도달 시 도감(라인 전체)에 보존 + 새 알. 진화 트리/희귀도/이름은
+/// PokeProviding 으로 런타임 주입. 사용량 스냅샷은 표시 상태(모션·수면)에만 쓰인다.
 @MainActor
 @Observable
 final class CompanionStore {
@@ -92,6 +93,58 @@ final class CompanionStore {
     }
     var currentNature: PokemonNature? { state.active?.nature }
 
+    // 스타터 선택 — 맨 처음 1회, 알 대신 세 마리 중 택1. 고르면 starterChosen=true 로 이후엔 알 루프.
+    // 후보 풀 규칙(범위·전설 제외)은 StarterRules 공유.
+
+    /// 스타터 선택 화면을 보여야 하는가 — 아직 안 골랐고 활성 개체도 없을 때(맨 처음).
+    var needsStarterSelection: Bool { !state.starterChosen && state.active == nil }
+    /// 뽑아둔 후보 3종(선택 화면이 그린다). 아직 못 뽑았으면 빈 배열.
+    var starterCandidateIDs: [Int] { state.starterCandidates }
+
+    /// 후보 3종을 아직 안 뽑았으면 뽑아 고정한다 — 1세대 기본형(baseSpeciesIndex 는 진화 루트만 담는다)
+    /// 에서 메타몽 제외. **기기 고유 시드로 결정적**이라 재설치·상태 초기화에도 같은 Mac이면 같은 3종
+    /// (리세마라 방지). 풀을 id 순으로 정렬해 시드가 같으면 결과도 같게 고정한다.
+    /// 인덱스 조회 실패(오프라인)면 다음 호출에 재시도(빈 채로 둔다).
+    func ensureStarterCandidates() async {
+        guard needsStarterSelection, state.starterCandidates.isEmpty, !isHatching else { return }
+        guard let index = try? await provider.baseSpeciesIndex(), !index.isEmpty else { return }
+        var pool = index.map(\.id)
+            .filter { StarterRules.genRange.contains($0)
+                && $0 != PokemonOdds.dittoSpeciesID
+                && !StarterRules.isLegendary($0) }   // 전설 제외
+            .sorted()   // 안정 순서 — 같은 시드 + 같은 풀이면 항상 같은 결과
+        guard pool.count >= 3 else { return }
+        var seeded = SplitMix64(seed: DeviceID.starterSeed())
+        var picked: [Int] = []
+        for _ in 0..<3 {
+            let i = Int(seeded.next() % UInt64(pool.count))
+            picked.append(pool.remove(at: i))
+        }
+        state.starterCandidates = picked
+        save()
+    }
+
+    /// 종의 표시 이름(현재 언어) — 스타터 카드 라벨용. 라인 조회 후 캐시, 실패 시 #번호 폴백.
+    func resolveSpeciesName(_ speciesID: Int) async -> String {
+        if let line = try? await provider.line(baseSpeciesID: speciesID) {
+            return line.localizedName(speciesID, state.language)
+        }
+        return "#\(speciesID)"
+    }
+
+    /// 스타터 확정 — 고른 종으로 즉시 부화(알 단계 건너뜀). 이후 졸업하면 기존 알/부화 루프로 돌아간다.
+    func chooseStarter(_ speciesID: Int) async {
+        guard needsStarterSelection, !isHatching else { return }
+        guard state.starterCandidates.contains(speciesID) else { return }   // 화면에 뜬 후보만 허용(방어)
+        state.starterChosen = true
+        state.starterCandidates = []
+        state.eggUsage = 0
+        state.eggTier = nil
+        state.pendingHatchID = nil
+        save()
+        await hatch(baseID: speciesID)   // hatchCore 재사용 — shiny/성격 롤·연출·저장 포함
+    }
+
     // 알 인큐베이션 (active 없을 때)
     var isEgg: Bool { state.active == nil }
     var eggStarted: Bool { state.eggUsage > 0 }
@@ -100,7 +153,30 @@ final class CompanionStore {
 
     var displayName: String {
         guard let a = state.active, let line = currentLine else { return "Token Egg" }
+        if let nick = a.nickname, !nick.trimmingCharacters(in: .whitespaces).isEmpty { return nick }
         return line.localizedName(a.currentID, state.language)
+    }
+    /// 종 이름(별명 무시) — 별명 입력 플레이스홀더·리셋 기준값.
+    var speciesName: String {
+        guard let a = state.active, let line = currentLine else { return "" }
+        return line.localizedName(a.currentID, state.language)
+    }
+    var currentNickname: String? { state.active?.nickname }
+
+    /// 현재 포켓몬 별명 설정 — 공백이면 nil(종 이름으로 표시). 진화해도 유지.
+    func setNickname(_ name: String) {
+        guard state.active != nil else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        state.active!.nickname = trimmed.isEmpty ? nil : String(trimmed.prefix(20))
+        save()
+    }
+
+    // MARK: 트레이너 이름 (배틀 표시)
+    var trainerName: String { state.trainerName }
+    var hasTrainerName: Bool { !state.trainerName.trimmingCharacters(in: .whitespaces).isEmpty }
+    func setTrainerName(_ name: String) {
+        state.trainerName = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20))
+        save()
     }
     var currentSpeciesID: Int? { state.active?.currentID }
     var isFinalStage: Bool {
@@ -300,103 +376,91 @@ final class CompanionStore {
         })
     }
 
-    // MARK: 갱신 (AppDelegate 가 UsageStore 값으로 호출)
+    // MARK: 생산 틱 (시간 → 별의모래)
 
+    /// 방치 생산 — 앱이 켜져 있는 동안 경과 시간을 별의모래로 적립한다. AppDelegate 의 60초 타이머와
+    /// refresh 훅이 호출한다. 슬립·시계 점프는 maxTickInterval 캡으로 잘린다(켜져 있던 시간만 인정).
+    /// 부화·진화·졸업은 applyUsage 경로 그대로 — 입력원만 토큰 델타에서 시간으로 바뀌었다.
+    func tick() {
+        let now = clock()
+        defer {
+            grantDailyCandyIfNeeded(now: now)
+            save()
+        }
+        guard let last = state.lastTickAt else {
+            state.lastTickAt = now   // 첫 틱은 기준점만 — 설치/리셋 이전 시간을 소급하지 않는다
+            return
+        }
+        state.lastTickAt = now
+        // 스타터를 고르기 전엔 인큐베이션할 알이 없다 — 생산은 첫 파트너를 고른 뒤부터.
+        guard !needsStarterSelection else { return }
+        let elapsed = min(max(0, now.timeIntervalSince(last)), IdleEconomy.maxTickInterval)
+        guard elapsed > 0 else { return }
+        // 함께한 시간 누적 — 날짜가 바뀐 첫 틱에 오늘 버킷 리셋(대시보드 "오늘 함께한 시간").
+        let today = Self.dayKey(now)
+        if state.activeSecondsDate != today { state.activeSecondsDate = today; state.activeSecondsToday = 0 }
+        state.activeSecondsTotal += elapsed
+        state.activeSecondsToday += elapsed
+        let dust = Int((elapsed * IdleEconomy.dustPerSecond * productionMultiplier).rounded())
+        guard dust > 0 else { return }
+        accrue(dust)
+    }
+
+    /// 생산분을 상태에 반영 — 알이면 인큐베이션, 활성이면 성장(진화/졸업 판정). tick 과 테스트가 공유.
+    private func accrue(_ dust: Int) {
+        state.usedSinceInstall += dust
+        if state.active == nil {
+            state.eggUsage += dust   // 알 인큐베이션 누적
+        } else {
+            applyUsage(dust)
+        }
+    }
+
+    #if DEBUG
+    /// 테스트 전용 — 시간을 전진시키지 않고 생산분을 직접 주입한다. tick 의 적립 경로(accrue)를 그대로
+    /// 태우므로 임계·이월·진화·졸업이 실동작과 동일하게 발화한다. 프로덕션 호출 경로 없음.
+    func debugAccrue(_ dust: Int) { accrue(dust) }
+    /// 테스트 전용 — 인벤토리에 사탕 n개 주입(일일 지급 경로를 우회). 사용(useRareCandy) 테스트용.
+    func debugAddCandy(_ n: Int) { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += n; save() }
+    #endif
+
+    /// 생산 배율 — 도감에 등록한 종(고유 최종체) 1종당 +2%. 수집이 곧 성장 엔진.
+    var productionMultiplier: Double {
+        1.0 + IdleEconomy.dexBonusPerSpecies * Double(Set(state.dex.map(\.finalID)).count)
+    }
+
+    /// 시간당 생산량(표시용) — 현재 배율 반영.
+    var productionPerHour: Int { Int(IdleEconomy.dustPerSecond * 3600 * productionMultiplier) }
+
+    /// 대시보드용 함께한 시간(초). "토큰 사용량" 대신 이 시간을 보여준다.
+    var activeSecondsToday: Double { state.activeSecondsToday }
+    var activeSecondsTotal: Double { state.activeSecondsTotal }
+
+    /// 일일 사탕 — 날짜가 바뀐 첫 틱에 지급(방치형 출석 보상). 첫 실행도 지급(웰컴 사탕).
+    private func grantDailyCandyIfNeeded(now: Date) {
+        let today = Self.dayKey(now)
+        guard state.lastCandyDate != today else { return }
+        state.lastCandyDate = today
+        state.inventory[ItemKind.rareCandy.rawValue, default: 0] += RareCandy.dailyGrant
+        notifyCompanionEvent(l.notifCandyTitle(item: l.itemName(.rareCandy), count: RareCandy.dailyGrant),
+                             l.notifDailyCandyBody)
+    }
+
+    /// 로컬 달력 기준 YYYY-MM-DD — 일일 보상 원장 키.
+    nonisolated static func dayKey(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    // MARK: 갱신 (AppDelegate 가 UsageStore 값으로 호출 — 표시 상태·비동기 트리거 전용)
+
+    /// 사용량 스냅샷 → 표시 상태(burn 기반 모션·수면 등) + 부화/라인 로드 트리거.
+    /// 성장 적립은 여기서 하지 않는다 — tick() 이 담당(방치형 전환, 2026-08-13).
     func update(todayTokensByProvider: [String: Int], todayDate: String, monthTotal: Int,
                 burnTier: BurnTier, limitWarning: Bool, hasUsageData: Bool) {
         let todayTokens = todayTokensByProvider.values.reduce(0, +)
-        // `hasUsageData`는 표시용 snapshot 존재 여부이고, 이 map은 오늘 날짜가 확인된
-        // provider 데이터만 담는다. stale snapshot이나 today == nil carrier만 있는 refresh는
-        // ledger의 기준점을 움직일 수 있는 관측으로 취급하지 않는다.
-        let hasCurrentProviderData = hasUsageData && !todayTokensByProvider.isEmpty
-        if !state.installBaselineSet {
-            // 설치 기준선 — 실제 데이터가 도착한 시점의 today 를 baseline 으로(이전 사용량 미카운트).
-            // 데이터 도착 전(기동 직후 빈 새로고침)에는 잡지 않는다.
-            guard hasCurrentProviderData else {
-                // 세이브 불러오기가 baseline 판정을 이 경로에 넘겼을 수 있다(SaveTransfer.rebasedForThisDevice).
-                // 그 경우 개체는 이미 들어와 있으므로 알로 표시하면 안 되고, 진화 라인 로드도 계속 재시도해야
-                // 한다 — 새 Mac 은 AI CLI 를 처음 쓸 때까지 hasUsageData 가 false 라 여기서 막히면 그날 내내
-                // 알로 보인다(재시작해도 동일).
-                displayState = state.active == nil ? .egg : .idle
-                kickLineLoadIfNeeded()
-                return
-            }
-            state.installBaselineSet = true
-            state.claimedTodayTokensByProvider = todayTokensByProvider
-            state.lastDate = todayDate
-            save()
-        } else {
-            // `today == nil` carrier만 남거나 파싱이 실패한 refresh는 현재 map이 비어 있을 수
-            // 있다. 그런 관측으로 날짜·ledger를 움직이면 다음 정상 snapshot을 당일 전체 신규
-            // 사용량으로 오인할 수 있으므로, 유효한 사용량이 있는 refresh만 ledger를 갱신한다.
-            if hasCurrentProviderData {
-                let dateChanged = todayDate != state.lastDate
-                if state.claimedTodayTokensByProvider == nil {
-                    // 구버전 세이브에는 aggregate high-water mark만 있어 프로바이더별로 분해할 수 없다.
-                    // 첫 유효 관측을 새 장부의 기준점으로만 저장해 과거 사용량을 소급 지급하지 않는다.
-                    state.claimedTodayTokensByProvider = todayTokensByProvider
-                    state.lastDate = todayDate
-                    AppLog.write("companion provider ledger seeded date=\(todayDate) providers=\(todayTokensByProvider.keys.sorted().joined(separator: ","))")
-                } else if dateChanged {
-                    // 일자별 snapshot은 서로 비교할 수 없다. 새 날짜에는 이전 날짜의 ledger를
-                    // 기준으로 삼지 않고, 현재 날짜의 누적값 전체를 새 날짜 사용량으로 적립한다.
-                    // 단, 위의 nil migration 경로는 구버전 aggregate를 분해할 수 없으므로 seed만 한다.
-                    //
-                    // 이전 날짜에 이미 알려진 provider가 첫 새로고침에서 빠질 수 있다(오늘 데이터
-                    // 없음, stale 응답, 일시 실패). 그 provider를 아예 ledger에서 제거하면 같은
-                    // 날짜에 복구될 때 현재 누적값을 "이미 적립한 값"으로 seed해 사용량이 누락된다.
-                    // 이전 날짜의 숫자는 비교에 사용할 수 없으므로, 알려진 provider의 새 날짜 기준을
-                    // 0으로 열어 둔다. 이후 복구된 현재 날짜 값은 그 날짜의 실제 사용량으로 적립되고,
-                    // 같은 날짜의 부분 응답에서는 이 기준을 그대로 보존한다.
-                    state.lastDate = todayDate
-                    var newLedger = Dictionary(uniqueKeysWithValues:
-                        state.claimedTodayTokensByProvider!.keys.map { ($0, 0) })
-                    for (providerID, current) in todayTokensByProvider {
-                        newLedger[providerID] = current
-                    }
-                    state.claimedTodayTokensByProvider = newLedger
-                    let delta = todayTokensByProvider.values.reduce(0, +)
-                    if delta > 0 {
-                        state.usedSinceInstall += delta
-                        if state.active == nil {
-                            state.eggUsage += delta
-                        } else {
-                            applyUsage(delta)
-                        }
-                    }
-                } else {
-                    var ledger = state.claimedTodayTokensByProvider ?? [:]
-                    var delta = 0
-                    for (providerID, current) in todayTokensByProvider {
-                        guard let previous = ledger[providerID] else {
-                            // 새로 관측된 프로바이더의 과거 로그를 소급하지 않는다. 이후 refresh부터
-                            // 해당 프로바이더의 증가분을 추적할 수 있도록 현재 값을 seed한다.
-                            ledger[providerID] = current
-                            continue
-                        }
-                        if current < previous {
-                            // 전체 합계가 아니라 해당 프로바이더의 line만 rebase한다. 다른 프로바이더가
-                            // 이번 refresh에서 보고하지 않았거나 carrier snapshot만 남은 경우에는 map에
-                            // line 자체가 없으므로 기존 기준값을 건드리지 않는다.
-                            ledger[providerID] = current
-                            AppLog.write("companion usage regression provider=\(providerID) date=\(todayDate) previous=\(previous) current=\(current) drop=\(previous - current) — rebased provider ledger")
-                            continue
-                        }
-                        delta += current - previous
-                        ledger[providerID] = current
-                    }
-                    state.claimedTodayTokensByProvider = ledger
-                    if delta > 0 {
-                        state.usedSinceInstall += delta
-                        if state.active == nil {
-                            state.eggUsage += delta   // 알 인큐베이션 누적
-                        } else {
-                            applyUsage(delta)
-                        }
-                    }
-                }
-            }
-        }
         // 이벤트(진화/졸업/부화) 창 만료 — .levelUp 창이 끝날 때 문구 플래그를 함께 정리한다.
         // justEvolvedTo 는 여기(창 만료)에서만 지운다: 과거엔 매 update() 초입에 무조건 nil 로 밀어,
         // 진화 후 4초 창 도중 update 틱이 끼면 "…(으)로 진화했어요"→"성장했어요"로 되돌아갔다(회귀 #4).
@@ -404,8 +468,8 @@ final class CompanionStore {
             justGraduated = nil; justEvolvedTo = nil; eventUntil = nil
         }
         // 알 상태 프리패칭 — 종 pre-roll + 라인/스프라이트 예열(부화 순간 딜레이 제거).
-        // 성공할 때까지 매 update 틱마다 재시도(성공 후엔 no-op).
-        if state.active == nil, state.installBaselineSet, !isHatching {
+        // 성공할 때까지 매 update 틱마다 재시도(성공 후엔 no-op). 스타터 선택 중엔 알이 없어 건너뛴다.
+        if state.active == nil, !needsStarterSelection, !isHatching {
             Task { await ensureEggPrefetch() }
         }
         // 알이 부화 임계에 도달하면 부화
@@ -427,7 +491,7 @@ final class CompanionStore {
         save()
     }
 
-    /// 토큰 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
+    /// 별의모래 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
     /// 라인 미로딩(재시작 직후·오프라인)이어도 사용량은 항상 적립한다 — 여기서 드롭하면
     /// 프로바이더별 ledger 는 이미 전진해 델타가 영구 유실된다. 진화 판정만 라인 로드 후로 미룬다.
     func applyUsage(_ delta: Int) {
@@ -739,53 +803,6 @@ final class CompanionStore {
     var canBuyFreshEgg: Bool { canBuyEgg(nil) }
     @discardableResult
     func buyFreshEgg() -> Bool { buyEgg(nil) }
-
-    /// 지급 판정(순수·엣지 트리거) — 한도 창이 100% 를 새로 넘어선 순간에만 지급.
-    /// - 100% 미만 → 맵에서 제거(재무장). resets_at 등 휘발 필드는 key 에 없다(안정 식별자만).
-    /// - 이미 지급한 창(tier≥1)은 재지급 안 함. session=1개·weekly=weeklyGrant.
-    /// - 부수효과(인벤토리·알림)와 분리해 xctest 가능. (evaluateLimitAlerts 자매)
-    static func evaluateCandyGrants(
-        windows: [CandyWindow], grantTier: inout [String: Int]
-    ) -> [CandyGrant] {
-        var grants: [CandyGrant] = []
-        for w in windows {
-            guard w.utilization >= 100 else { grantTier[w.key] = nil; continue }
-            let previous = grantTier[w.key] ?? 0
-            guard previous < 1 else { continue }
-            grantTier[w.key] = 1
-            let count = w.kind == .weekly ? RareCandy.weeklyGrant : 1
-            grants.append(CandyGrant(windowKey: w.key, windowName: w.name, count: count))
-        }
-        return grants
-    }
-
-    /// 한도 창 상태로부터 사탕 지급(엣지·영속). AppDelegate 가 매 refresh 완료 시(한도 로드 후) 호출.
-    /// - 첫 실행: 현재 100% 창을 지급 없이 tier 시드만 → 이후 "새로 넘어서는" 순간부터 지급(소급 차단).
-    /// - limitsReady=false(한도 미로딩)면 시드/지급 모두 대기(다음 refresh 에 재시도).
-    func grantCandies(from windows: [CandyWindow], limitsReady: Bool) {
-        guard limitsReady else { return }
-        if !state.candyFeatureSeeded {
-            // 한계(수용): 첫 refresh 에 한 프로바이더 한도만 로드되면 그 프로바이더 창만 시드된다.
-            // 이후 다른 프로바이더가 이미 100%인 채 로드되면 소급 지급될 수 있으나, 1회·소수 캔디라
-            // 1인 로컬에서 무시(YAGNI). refresh() 는 전 프로바이더 fetch 를 await 후 onRefresh 하므로
-            // 정상 경로(둘 다 성공)에선 원자적 시드다.
-            for w in windows where w.utilization >= 100 { state.candyGrantTier[w.key] = 1 }
-            state.candyFeatureSeeded = true
-            save()
-            return
-        }
-        let before = state.candyGrantTier
-        let grants = Self.evaluateCandyGrants(windows: windows, grantTier: &state.candyGrantTier)
-        for g in grants {
-            state.inventory[ItemKind.rareCandy.rawValue, default: 0] += g.count
-            // 지급 자체는 알림 여부와 무관(상태 변경). 알림은 "왜 받는지"(그 창 한도를 다 채운 수고) 명시.
-            notifyCompanionEvent(l.notifCandyTitle(item: l.itemName(.rareCandy), count: g.count),
-                                 l.notifCandyBody(window: g.windowName))
-        }
-        // 지급이 없어도 재무장(창이 100%→아래로 내려가며 grantTier 에서 제거)은 영속해야 한다 —
-        // 안 하면 재시작 시 stale tier=1 로 다음 100% 도달이 "이미 지급"으로 오판돼 지급 누락(회귀).
-        if !grants.isEmpty || state.candyGrantTier != before { save() }
-    }
 
     /// companion 이벤트 시스템 알림(.app + 토글 ON 일 때만). 한도 알림과 독립.
     private var notifSeq = 0
@@ -1105,14 +1122,9 @@ final class CompanionStore {
     /// 검증된 세이브를 이 기기에 적용 — 기존 상태 백업 → 기기 기준 재정렬 → 저장 → 라인 재로딩.
     /// 백업을 못 남기면 **적용하지 않고** throw 한다 — 확인창이 "직전 상태가 남는다"고 약속하므로,
     /// 그 약속을 못 지키는 채로 덮어쓰면 사용자는 되돌릴 수단 없이 진행을 잃는다.
-    func applySave(_ envelope: SaveEnvelope, todayTokensByProvider: [String: Int], todayDate: String,
-                   hasUsageData: Bool) throws {
+    func applySave(_ envelope: SaveEnvelope) throws {
         try backupStateBeforeImport()
-        state = SaveTransfer.rebasedForThisDevice(envelope.state,
-                                                  current: state,
-                                                  todayTokensByProvider: todayTokensByProvider,
-                                                  todayDate: todayDate,
-                                                  hasUsageData: hasUsageData)
+        state = SaveTransfer.rebasedForThisDevice(envelope.state, current: state)
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
         // 않으면 먼저 떠 있던 라인 로드가 완료되며 새로 불러온 개체를 덮어쓴다.
         activeGeneration += 1
@@ -1160,6 +1172,11 @@ final class CompanionStore {
         }
     }
 
+    #if DEBUG
+    /// 테스트 전용 — 도감을 직접 세팅(생산 배율·마이그레이션 계승 검증용). 프로덕션 경로 없음.
+    func debugSetDex(_ entries: [DexEntry]) { state.dex = entries; save() }
+    #endif
+
     // MARK: 영속
     private func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }   // 파일 없음 = 신규 설치
@@ -1172,13 +1189,22 @@ final class CompanionStore {
             AppLog.write("companion state decode failed — original backed up to \(backup.lastPathComponent), starting fresh")
             return
         }
+        // 무결성 검사는 **정규화 전** 원본에서 한다 — sanitized 가 값을 바꾸면(클램프·전설 리셋) 서명이
+        // 달라져 정상 세이브도 조작으로 오인된다. 원본 서명이 안 맞으면 손편집이므로 리셋한다.
+        if SaveTransfer.isTampered(s) {
+            AppLog.write("save integrity check failed — tampered save detected, resetting progress")
+            state = SaveTransfer.resetForTamper(s)
+            save()   // 즉시 새 서명으로 덮어써 조작본을 남기지 않는다
+            return
+        }
         // 불러오기 경계와 같은 정규화를 디스크에서 읽을 때도 건다. 불러오기만 막으면 **이미 저장된**
         // 극단값은 그대로 남아, 앱이 매 기동마다 같은 값을 읽어 산술 트랩으로 죽는 상태를 못 벗어난다
         // (디코드는 *성공*하므로 위의 .corrupt 복구도 발동하지 않는다). 여기서 걸면 자가 복구된다.
         state = SaveTransfer.sanitized(s)
     }
     private func save() {
-        guard let data = try? JSONEncoder().encode(state) else { return }
+        // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).
+        guard let data = try? JSONEncoder().encode(SaveTransfer.signed(state)) else { return }
         try? data.write(to: fileURL, options: .atomic)   // 부분 쓰기 손상 방지(펫 상태)
     }
 }

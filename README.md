@@ -1,44 +1,43 @@
 <div align="center">
 
-<img src="assets/icon.png" width="128" alt="PokeTokenBar icon">
+<img src="assets/icon.png" width="128" alt="K-MON icon">
 
-# PokeTokenBar
+# K-MON
 
-**Your AI coding tokens, hatched into Pokémon — right in your menu bar.**
+**An idle Pokémon companion that grows in your macOS menu bar — then battles your friends over LAN.**
 
-[![Release](https://img.shields.io/github/v/release/chattymin/PokeTokenBar?color=444d56&label=release)](https://github.com/chattymin/PokeTokenBar/releases)
 [![macOS](https://img.shields.io/badge/macOS-14%2B-0969da)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-6-f05138)](https://swift.org)
-[![Homebrew](https://img.shields.io/badge/Homebrew-cask-8957e5)](#homebrew)
 [![License](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%99%A5-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/chattymin)
 
 **English** · [한국어](README.ko.md) · [日本語](README.ja.md)
 
 </div>
 
-PokeTokenBar turns the AI coding tokens you're already burning — Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI & Copilot CLI — into a growing **Pokémon companion** in your macOS menu bar. Spend tokens, hatch an egg, evolve it through its real evolution line, graduate it into your Pokédex, and start again. Underneath the companion it's a precise usage tracker — today's spend, cost, and official 5-hour / weekly limits, read straight from your local logs.
+K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own — just keep the app running. Pick your first partner, watch it evolve through its real evolution line, name it, graduate it into your Pokédex, and start again. When a friend on the same network is running K-MON too, challenge them to a live battle — a turn-based **Brawl** or a keyboard-mashing **Race**.
 
-> Token usage is read directly from local Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, and Copilot CLI data (`totalTokens` = input + output + cache, local date) — no external CLI needed. Unofficial, non-commercial Pokémon fan project — see [License & disclaimer](#license--disclaimer).
+Underneath the companion there's still a precise AI-coding usage tracker (Claude Code, Codex, Gemini CLI, and more), read straight from your local logs — but the headline is now the time you've spent together, not a token count.
 
-## Why
-
-- **The usage tracker you actually enjoy opening.** Your spend raises a Pokémon that hatches, evolves, graduates, and fills a Pokédex — and every shiny is a reason to check back.
-- See today's token spend & cost at a glance — no dashboard, no browser tab.
-- Track official **5-hour / weekly** limits with reset countdowns and a burn-rate forecast for when you'll hit them.
-
-<div align="center">
-<img src="assets/screenshot-home.gif" width="420" alt="Popover home — companion, today's tokens, official limits">
-</div>
+> Built on top of [PokeTokenBar](https://github.com/chattymin/PokeTokenBar). Unofficial, non-commercial Pokémon fan project — see [License & disclaimer](#license--disclaimer).
 
 ## How it works
 
-1. 🥚 **Code as usual.** The tokens you burn in Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, or Copilot CLI incubate an egg — nothing extra to run.
-2. 🐣 **Hatch.** Eggs hatch into Pokémon with real evolution lines from [PokéAPI](https://pokeapi.co/) — any Gen 1–5 line (329 possible starts), weighted by the official capture rate: commons hatch often, a legendary is a 1-in-129 event. It appears in your **Pokédex** immediately while you raise it. Every hatch rolls one of 25 natures — and once in a rare while, the egg hatches **✨ Shiny**.
-3. ⚡ **Evolve.** Keep coding and it grows through its actual evolution tree (1/2/3 stages, branching), with a little flash celebration at each step.
-4. 🎓 **Graduate & collect.** Final form + threshold permanently archives it in your **Pokédex** — rarer takes longer (≈3 days common → ≈24 days legendary at heavy use) — and a fresh egg arrives.
-5. 🍬 **Max out, get a candy.** Fill a 5-hour or weekly usage limit and you earn **Rare Candy** — spend it from the **Bag** to grow your current Pokémon.
-6. 🛒 **Spend at the Shop.** Every token you've used is spendable currency — buy **Rare Candy**, a **Mint** that re-rolls your Pokémon's nature, a **Shiny Charm** that permanently raises your shiny odds, or an egg to send off your current companion and start over. Eggs come in three grades: a plain **Pokémon Egg**, an **Uncommon Egg** guaranteed to hatch Uncommon or better, and a **Rare Egg** guaranteed to hatch Rare or better.
+1. 🎒 **Choose your starter.** On first launch you enter a **trainer name** and pick one of **three Gen-1 starters** drawn just for you. The three are locked to your Mac — reinstalling won't re-roll them (no starter fishing).
+2. ⏳ **It grows while the app runs.** Your companion earns **✨ Stardust** every second the app is open — no tokens required. Stardust incubates the egg, evolves your Pokémon through its real evolution tree, and graduates it into the Pokédex. The more species you've collected, the faster it grows (**+2% per species**).
+3. 🐣 **Hatch, evolve, name.** Eggs and starters hatch into Pokémon with real evolution lines from [PokéAPI](https://pokeapi.co/). Every hatch rolls one of 25 natures, and once in a rare while — **✨ Shiny**. Give any Pokémon a **nickname** with the ✏️ button.
+4. 🎓 **Graduate & collect.** Final form + threshold permanently archives it in your **Pokédex**, and a fresh egg arrives. From then on, eggs hatch a variety of Pokémon (weighted by capture rate — legendaries are rare).
+5. 🍬 **Daily treat.** Every day you open the app, you get a **Rare Candy** — spend it from the **Bag** to instantly grow your current Pokémon.
+6. 🛒 **Spend at the Shop.** Your Stardust is spendable currency — buy **Rare Candy**, a **Mint** to re-roll nature, a **Shiny Charm** for permanently better shiny odds, or an egg to send off your current companion and start over.
+
+## ⚔️ Battle a friend over LAN
+
+When two Macs on the same network are both running K-MON, they discover each other automatically (Bonjour + AWDL). No IP typing — but a manual `IP:port` fallback is there for locked-down networks.
+
+- **Brawl** — a turn-based battle. Pick from four moves; type advantage, STAB, crits and misses all matter. Deterministic engine — both peers compute the same result, so nothing can be forged over the wire.
+- **Race** — a real-time footrace. **Alternate the ← and → arrow keys** to run (mashing one key does nothing); first to the finish line wins. Both runners' progress is synced live.
+- **Auto-accept** — flip it on and challenges are accepted the moment they arrive, so a battle happens even while you're away from the keyboard.
+- **Notifications & a pinned window** — a challenge raises a system notification even while you're working; when a battle starts, the window pins itself open (it won't close when you click away) so you can play while you work.
+- **Names everywhere** — your trainer name and your Pokémon's nickname show up on the challenge, the arena, and the notification.
 
 ## Tour
 
@@ -47,13 +46,13 @@ PokeTokenBar turns the AI coding tokens you're already burning — Claude Code, 
 <td width="45%" align="center"><img src="assets/floating-pet.gif" width="340" alt="Floating desktop pet with a hover callout and right-click menu"></td>
 <td width="55%" valign="middle">
 <h3>🐾 Let it live on your desktop</h3>
-Move your companion out of the menu bar and onto the desktop, at any size from 48 to 192px. Hover it for today's usage, click to open the popover, right-click for a menu, drag it wherever you like — and limit alerts can appear as a speech bubble above it.
+Move your companion out of the menu bar and onto the desktop, at any size from 48 to 192px. Hover it for today's stats, click to open the popover, right-click for a menu, drag it wherever you like.
 </td>
 </tr>
 <tr>
 <td width="55%" valign="middle">
 <h3>In your menu bar</h3>
-An animated Gen-V sprite lives next to today's total tokens (compact, e.g. <code>200.7M</code>). Add today's cost (<code>$</code>) or official limit <code>%</code> — or turn everything off for a character-only bar.
+An animated Gen-V sprite lives next to <b>today's time together</b>. It updates every minute the app is open.
 </td>
 <td width="45%" align="center"><img src="assets/menubar.gif" width="240" alt="Menu bar"></td>
 </tr>
@@ -61,48 +60,37 @@ An animated Gen-V sprite lives next to today's total tokens (compact, e.g. <code
 <td width="45%" align="center"><img src="assets/shiny-banner.gif" width="340" alt="Normal vs shiny"></td>
 <td width="55%" valign="middle">
 <h3>✨ Once in a rare while — Shiny</h3>
-Shiny hatches keep their distinct colors through every evolution — menu bar, home card, evolution line. In the Pokédex a ✨ sits next to the dex number, and tapping the cell swaps in the shiny colors. A dedicated notification makes sure you don't miss the moment.
+Shiny hatches keep their distinct colors through every evolution — menu bar, home card, evolution line. In the Pokédex a ✨ sits next to the dex number. A dedicated notification makes sure you don't miss the moment.
 </td>
 </tr>
 <tr>
 <td width="55%" valign="middle">
 <h3>A Pokédex worth filling</h3>
-The <b>Pokédex</b> folds every species you've owned into one cell — 24 per page in dex-number order, and a ✨ on the ones you own shiny. The <b>Catch log</b> keeps the individuals: newest first, each with its full evolution line, rarity, nature, and capture date.
+The <b>Pokédex</b> folds every species you've owned into one cell — in dex-number order, with a ✨ on the ones you own shiny. The <b>Catch log</b> keeps the individuals: newest first, each with its full evolution line, rarity, nature, and capture date. Every species you collect speeds up your Stardust.
 </td>
 <td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="300" alt="Pokédex — one cell per species"><br><br><img src="assets/screenshot-collection-catchlog.png" width="300" alt="Catch log — one row per Pokémon raised"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/settings.png" width="300" alt="Settings"></td>
+<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="300" alt="Shop — Rare Candy, Mint, Shiny Charm, eggs"></td>
+<td width="55%" valign="middle">
+<h3>🛒 A shop that runs on Stardust</h3>
+The Stardust you collect over time is your currency. Spend it on <b>Rare Candy</b> to grow your current Pokémon, a <b>Mint</b> to re-roll its nature, a <b>Shiny Charm</b> that permanently raises your shiny hatch odds, or an egg to send off your companion and start over. Eggs come in three grades — plain, Uncommon-or-better, and Rare-or-better.
+</td>
+</tr>
+<tr>
 <td width="55%" valign="middle">
 <h3>Tune it your way</h3>
-Menu-bar items, refresh interval (1–15 min or manual), launch at login, a Keychain opt-out that just hides the limits section, limit alerts with warning/critical thresholds, and companion event notifications. Full <b>KO / EN / JA</b> UI and Pokémon names.
+Menu-bar items, refresh interval, launch at login, companion event notifications, and battle auto-accept. Full <b>KO / EN / JA</b> UI and Pokémon names.
 </td>
-</tr>
-<tr>
-<td width="55%" valign="middle">
-<h3>🍬 Fill a limit, earn a Rare Candy</h3>
-Max out a 5-hour or weekly usage limit and you're handed a <b>Rare Candy</b> — one per 5-hour cap, five per weekly. Spend it from the new <b>Bag</b> tab to grow your current Pokémon: the moment you're rate-limited becomes the moment you level up.
-</td>
-<td width="45%" align="center"><img src="assets/screenshot-bag.png" width="300" alt="Rare Candy and Mint in the Bag"></td>
-</tr>
-<tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="300" alt="Token Shop — Mint, Rare Candy, Pokémon Egg, Uncommon Egg, Shiny Charm, Rare Egg"></td>
-<td width="55%" valign="middle">
-<h3>🛒 A shop that runs on your usage</h3>
-The tokens you've already used are your currency. Spend them in the new <b>Shop</b> tab on <b>Rare Candy</b> to grow your current Pokémon, a <b>Mint</b> to re-roll its nature, a <b>Shiny Charm</b> that permanently raises your shiny hatch odds, or an egg to send off your companion and start over. Eggs come in three grades — a plain <b>Pokémon Egg</b>, an <b>Uncommon Egg</b> that always hatches Uncommon or better, and a <b>Rare Egg</b> that always hatches Rare or better. Legendaries stay in the pool for both graded eggs, so a guaranteed hatch can still surprise you.
-</td>
+<td width="45%" align="center"><img src="assets/settings.png" width="300" alt="Settings"></td>
 </tr>
 </table>
 
-## Also in the box
+> Screenshots may lag the latest UI — the app has moved from a token counter to a time-based idle game.
 
-- **Interactive floating pet** — hover for today's usage, click to open the main window, right-click for a menu; limit alerts can pop up as speech bubbles.
-- **Per-service tabs** — when two or more of Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, and Copilot CLI are detected, compact tabs switch between them; today's total stays combined.
-- **Official limits** — Claude & Codex 5-hour / weekly utilization with reset countdowns, right under today's numbers.
-- **Burn-rate forecast** — projects when the current 5h window hits 100%.
-- **In-app updates** — one-click update check; current version shown in Settings.
+## The usage tracker underneath
 
-## Works with
+K-MON still reads your local AI-coding usage and can show it in the popover: today's totals, official 5-hour / weekly limits, and per-provider detail. It's just no longer the headline — the menu bar leads with your companion and the time you've spent together.
 
 | Tool | Tracked | Official limits |
 |---|---|---|
@@ -116,83 +104,55 @@ The tokens you've already used are your currency. Spend them in the new <b>Shop<
 | **Grok CLI** | today · 5h block · week · month | — |
 | **Copilot CLI** | today · 5h block · week · month | — |
 
-All read locally — no external usage CLI required. Adding a tool is one provider file (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+All read locally — no external usage CLI required.
 
 ## Install
 
 ### Requirements
 
-macOS 14+ (Apple Silicon or Intel). That's it — token usage is read directly from local Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, and Copilot CLI data, with no external usage CLI required.
+macOS 14+ (Apple Silicon or Intel).
 
-### Homebrew
+### Download
 
-```bash
-brew install --cask chattymin/tap/poke-token-bar
-```
+Grab `PokeTokenBar.zip` from the [releases](https://github.com/2giduck/K-MON/releases), unzip it, and drag `PokeTokenBar.app` into `/Applications`.
 
-ad-hoc/self-signed; the cask strips the quarantine attribute on install.
-
-### Manual install (without Homebrew)
-
-Prefer not to use Homebrew? Download `PokeTokenBar.zip` from the [latest release](https://github.com/chattymin/PokeTokenBar/releases/latest), unzip it, and drag `PokeTokenBar.app` into `/Applications`.
-
-Because the app is ad-hoc/self-signed (not notarized under an Apple Developer account), Gatekeeper shows an "unidentified developer" warning on first launch. Clear it once, either way:
+Because the app is ad-hoc/self-signed (not notarized under an Apple Developer account), Gatekeeper shows an "unidentified developer" warning on first launch. Clear it once:
 
 - **Finder:** right-click (or Control-click) `PokeTokenBar.app` → **Open** → **Open** again in the dialog.
 - **Terminal:** `xattr -dr com.apple.quarantine /Applications/PokeTokenBar.app`
 
-(The Homebrew cask strips quarantine for you, so it needs no extra step.)
+On first launch, **allow the notification prompt** (for battle challenges) and, when you first open the Battle tab, **allow Local Network access** (for auto-discovery) in System Settings → Privacy.
 
 ### Build from source
 
 ```bash
 swift build                  # debug
-swift test                   # unit tests
 ./scripts/build-app.sh       # release → PokeTokenBar.app → /Applications
 ```
 
-## Data sources
+> Running the full test suite (`swift test`) requires Xcode (for XCTest); Command Line Tools alone build the app but not the tests.
 
-| Source | Used for | Notes |
-|---|---|---|
-| `~/.claude/projects/**/*.jsonl` | Claude Code daily/blocks/weekly/monthly | read directly; deduped by message id; cached incrementally |
-| `~/.gemini/tmp/**/chats/*.json(l)` | Gemini CLI daily/monthly | session records (`tokens` per message); weekly = daily sum |
-| `~/.gemini/antigravity-cli/conversations/*.db` | Antigravity daily/blocks/weekly/monthly | SQLite read-only; per-call usage from the Cascade protobuf blob; its own provider, not folded into Gemini; a subscription, so no cost is estimated |
-| `~/.codex/sessions/**/*.jsonl` | Codex daily/monthly | `token_count` events; weekly = daily sum |
-| `~/.local/share/opencode/opencode.db` | OpenCode daily/blocks/weekly/monthly | SQLite read-only; legacy `storage/message` JSON is also supported |
-| `~/.hermes/state.db` | Hermes Agent daily/blocks/weekly/monthly | SQLite read-only; session token totals and persisted cost |
-| `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | Cursor daily/blocks/weekly/monthly | SQLite read-only; `cursorDiskKV` bubble entries with `tokenCount` |
-| `~/.grok/sessions/**/updates.jsonl` | Grok CLI daily/blocks/weekly/monthly | `turn_completed` records (per-turn `usage`, server-reported cost); honours `$GROK_HOME`; subagent sessions are skipped because their tokens are already folded into the parent turn |
-| `~/.copilot/session-store.db` | Copilot CLI daily/blocks/weekly/monthly | SQLite read-only; one `assistant_usage_events` row per API call; honours `$COPILOT_HOME`; `input_tokens` already contains the cached prompt, so cache reads/writes are subtracted; premium-request billing, so no cost is estimated |
-| Keychain / `~/.claude/.credentials.json` → `api.anthropic.com` | Claude official 5h/weekly % | unofficial endpoint; the Keychain is read **only when you press refresh** — auto-polling never reads it |
-| `codex app-server` | Codex official 5h/weekly % | local child process; account snapshot only, no model turn |
-| [PokéAPI](https://pokeapi.co/) — `pokeapi.co`, `graphql.pokeapi.co` | Pokémon species &amp; evolution | runtime fetch; cached locally, never bundled |
-| `raw.githubusercontent.com/PokeAPI/sprites` | Pokémon &amp; item sprites | runtime fetch; cached under Application Support, never bundled |
-| `status.claude.com`, `status.openai.com` | provider incident banner | statuspage summary; display only — turn it off in Settings |
-| `api.github.com` | update check | latest release tag; on launch and when the popover opens |
+## Fair play
+
+- **Starters are device-locked.** Your three starter choices are derived from a stable hardware identifier — deleting the app and reinstalling gives you the same three, so there's no re-rolling for a legendary. (Legendaries never appear as starters anyway.)
+- **Save integrity.** The save file is signed with a device-keyed checksum. Hand-editing `companion-state.json` to inflate currency or hand yourself items is detected on the next launch and resets the tampered progress.
+- **Deterministic battles.** Both peers compute the same battle result from a shared seed; results are never sent over the wire, so they can't be forged.
 
 ## Privacy & permissions
 
-- **On-device.** Token usage is read directly from local Claude Code, Codex, Gemini CLI, Antigravity, OpenCode, Hermes Agent, Cursor, Grok CLI, and Copilot CLI data. The app never uploads usage or runs model turns.
-- **Outbound requests.** The app is not fully offline. It talks to seven hosts: `pokeapi.co` and `graphql.pokeapi.co` (species/evolution), `raw.githubusercontent.com` (sprites), `api.anthropic.com` (Claude official limits), `status.claude.com` and `status.openai.com` (incident banner — off switch in Settings), and `api.github.com` (update check). **None of them carry your usage, tokens, prompts, or project paths** — only the request itself.
-- **Keychain (optional).** The Claude OAuth credential is read **only when you press a refresh button** (Settings, or the limits row in the popover). Automatic polling never touches the Keychain, so it never raises a password prompt; when available, the credential is taken from `~/.claude/.credentials.json` instead. The token is held in memory only — the app creates no Keychain item of its own. Once the token expires, limits stay visible but stale until you refresh. Turn it off in Settings — the limits section simply hides.
-- **Pokémon assets** are fetched at runtime from PokéAPI and cached only under `~/Library/Application Support/PokeTokenBar/`. The app binary and its release artifacts contain no Pokémon assets.
-
-## Contributors
-
-Contributions of all sizes are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test, and open a pull request.
-
-[![Contributors](https://contrib.rocks/image?repo=chattymin/PokeTokenBar)](https://github.com/chattymin/PokeTokenBar/graphs/contributors)
+- **On-device.** AI-coding usage is read directly from local logs. The app never uploads usage or runs model turns.
+- **Local network.** Battle discovery uses Bonjour/AWDL on your LAN only. Battles connect peer-to-peer; nothing goes to a server.
+- **Outbound requests.** The app talks to [PokéAPI](https://pokeapi.co/) (`pokeapi.co`, `graphql.pokeapi.co`) and `raw.githubusercontent.com` for species/evolution data and sprites, and optionally `api.anthropic.com` / `status.*` for Claude limits and incident banners. None of these carry your usage, tokens, prompts, or project paths.
+- **Pokémon assets** are fetched at runtime from PokéAPI and cached only under `~/Library/Application Support/PokeTokenBar/`. The app binary bundles no Pokémon assets.
 
 ## License & disclaimer
 
-**MIT** — see [LICENSE](LICENSE). The MIT license covers this project's original source code only; it grants no rights to any third-party trademarks, artwork, or data accessed through the app.
+**MIT** — see [LICENSE](LICENSE). The MIT license covers this project's original source code only; it grants no rights to any third-party trademarks, artwork, or data accessed through the app. K-MON is based on the MIT-licensed [PokeTokenBar](https://github.com/chattymin/PokeTokenBar).
 
-PokeTokenBar is an **unofficial, non-commercial fan project**. It is **not affiliated with, endorsed, sponsored, or approved by Nintendo, Game Freak, Creatures Inc., or The Pokémon Company.** "Pokémon" and all related names, characters, and imagery are trademarks and copyrights of their respective owners. This project claims no ownership of, and asserts no rights over, any Pokémon intellectual property.
+K-MON is an **unofficial, non-commercial fan project**. It is **not affiliated with, endorsed, sponsored, or approved by Nintendo, Game Freak, Creatures Inc., or The Pokémon Company.** "Pokémon" and all related names, characters, and imagery are trademarks and copyrights of their respective owners. This project claims no ownership of, and asserts no rights over, any Pokémon intellectual property.
 
-- **The app binary and its release artifacts bundle no Pokémon assets.** Pokémon species data and sprites are fetched **at runtime** from the public [PokéAPI](https://pokeapi.co) and cached locally on the user's own device; sprite images served via PokéAPI remain the property of their respective owners.
+- **The app binary and its release artifacts bundle no Pokémon assets.** Species data and sprites are fetched **at runtime** from the public [PokéAPI](https://pokeapi.co) and cached locally on the user's own device.
 - Any Pokémon imagery in this repository's documentation (screenshots/GIFs) is shown solely to illustrate the app's functionality.
 - The app is provided free of charge for **personal, non-commercial use only.**
-- If you are a rights holder with any concern about this project, please open an issue or contact the maintainer, and we will respond promptly.
 
 *Provided "as is", without warranty of any kind. This notice is not legal advice.*

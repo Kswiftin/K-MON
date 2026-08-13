@@ -432,11 +432,27 @@ struct CompanionHeader: View {
     // 민트 사용 시 "반짝" 스파클 (성격 변경 피드백 — 텍스트 없이 짧은 이펙트)
     @State private var seenMintSeq = -1
     @State private var mintSparkle = false
+    // 별명 인라인 편집
+    @State private var editingName = false
+    @State private var nameDraft = ""
+
+    private func commitNickname() {
+        store.setNickname(nameDraft)
+        editingName = false
+    }
 
     /// 부화 임박(90%+) — 알이 흔들리고 문구가 바뀐다.
     private var eggImminent: Bool { store.isEgg && store.eggProgress >= 0.9 }
 
     var body: some View {
+        if store.needsStarterSelection {
+            StarterPickerView(store: store)
+        } else {
+            companionContent
+        }
+    }
+
+    private var companionContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 12) {
                 SpriteView(speciesID: store.currentSpeciesID, size: 76, bob: true, animated: true,
@@ -483,9 +499,28 @@ struct CompanionHeader: View {
                     }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(store.displayName).font(.callout.weight(.semibold))
-                        if store.currentIsShiny { Text("✨").font(.system(size: 11)) }
-                        if let r = store.rarity {
+                        if editingName {
+                            TextField(store.speciesName, text: $nameDraft)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.callout.weight(.semibold))
+                                .frame(maxWidth: 140)
+                                .onSubmit { commitNickname() }
+                            Button(action: commitNickname) { Image(systemName: "checkmark") }
+                                .buttonStyle(.borderless).controlSize(.small)
+                        } else {
+                            Text(store.displayName).font(.callout.weight(.semibold))
+                            if store.currentIsShiny { Text("✨").font(.system(size: 11)) }
+                            // 별명 짓기/바꾸기 — 활성 개체 + 라인 로딩 후에만(종 이름 폴백 준비됨).
+                            if store.hasActive, store.currentLine != nil {
+                                Button {
+                                    nameDraft = store.currentNickname ?? ""
+                                    editingName = true
+                                } label: { Image(systemName: "pencil").font(.system(size: 10)) }
+                                .buttonStyle(.borderless).controlSize(.mini)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        if let r = store.rarity, !editingName {
                             Text(store.l.rarityLabel(r).uppercased()).font(.system(size: 8, weight: .bold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(rarityColor(r)).foregroundStyle(.white)
@@ -497,9 +532,14 @@ struct CompanionHeader: View {
                         let nature = store.currentNature.map { " · \($0.name(store.language))" } ?? ""
                         Text(store.stageText + nature).font(.caption2).foregroundStyle(.secondary)
                         ProgressView(value: store.progress).controlSize(.small).tint(.orange)
-                        if store.tokensToNext > 0 {
-                            let amount = TokenFormatter.compact(store.tokensToNext)
-                            Text(store.isFinalStage ? store.l.toGraduation(amount) : store.l.toNextEvolution(amount))
+                        HStack(spacing: 6) {
+                            if store.tokensToNext > 0 {
+                                let amount = TokenFormatter.compact(store.tokensToNext)
+                                Text(store.isFinalStage ? store.l.toGraduation(amount) : store.l.toNextEvolution(amount))
+                                    .font(.caption2).foregroundStyle(.tertiary)
+                            }
+                            Spacer(minLength: 0)
+                            Text(store.l.perHour(TokenFormatter.compact(store.productionPerHour)))
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                     } else {
@@ -518,8 +558,13 @@ struct CompanionHeader: View {
                             }
                         }
                         ProgressView(value: store.eggProgress).controlSize(.small).tint(.orange)
-                        Text(store.l.eggToHatch(TokenFormatter.compact(store.eggTokensToHatch)))
-                            .font(.caption2).foregroundStyle(.tertiary)
+                        HStack(spacing: 6) {
+                            Text(store.l.eggToHatch(TokenFormatter.compact(store.eggTokensToHatch)))
+                                .font(.caption2).foregroundStyle(.tertiary)
+                            Spacer(minLength: 0)
+                            Text(store.l.perHour(TokenFormatter.compact(store.productionPerHour)))
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
                         // 첫 실행(적립 0) — 정적 알 앞에서 "고장났나" 오해 방지용 한 줄 안내
                         if !store.eggStarted {
                             Text(store.l.eggFirstRunHint)
@@ -627,6 +672,88 @@ struct CompanionHeader: View {
         case .sleep:   return l.statusSleep
         case .levelUp: return store.justEvolvedTo.map { l.statusEvolved($0) } ?? l.statusGrew
         }
+    }
+}
+
+/// 스타터 선택 — 맨 처음 1회. 알로 시작하는 대신 1세대 기본형 랜덤 3종 중 하나를 고른다.
+/// 후보는 store.ensureStarterCandidates 가 뽑아 고정하고(재렌더/재시작에도 동일), 탭하면 즉시 부화한다.
+struct StarterPickerView: View {
+    let store: CompanionStore
+    @State private var picking = false   // 선택 후 중복 탭 방지
+    @State private var trainer = ""
+
+    private var l: L { store.l }
+    private var nameReady: Bool { !trainer.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // 1) 트레이너 이름 — 배틀에 표시된다. 이름을 넣어야 스타터를 고를 수 있다.
+            VStack(alignment: .leading, spacing: 4) {
+                Text(l.trainerNamePrompt).font(.callout.weight(.semibold))
+                TextField(l.trainerNamePlaceholder, text: $trainer)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(picking)
+                    .onSubmit { store.setTrainerName(trainer) }
+            }
+
+            Divider()
+
+            // 2) 스타터 선택
+            Text(l.starterPrompt).font(.callout.weight(.semibold))
+            let ids = store.starterCandidateIDs
+            if ids.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(l.starterLoading).font(.caption2).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 24)
+            } else {
+                HStack(spacing: 10) {
+                    ForEach(ids, id: \.self) { id in
+                        StarterCard(store: store, speciesID: id, disabled: picking || !nameReady) {
+                            picking = true
+                            store.setTrainerName(trainer)
+                            Task { await store.chooseStarter(id) }
+                        }
+                    }
+                }
+                Text(nameReady ? l.starterHint : l.starterNeedName)
+                    .font(.caption2).foregroundStyle(nameReady ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.orange))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear { if trainer.isEmpty { trainer = store.trainerName } }
+        .task { await store.ensureStarterCandidates() }   // 후보 미확정이면 뽑는다(오프라인이면 다음 표시에 재시도)
+    }
+}
+
+/// 스타터 후보 1장 — 스프라이트 + 이름(비동기 조회) + 탭. 이름은 라인 조회로 채운다(캐시 → 보통 0콜).
+private struct StarterCard: View {
+    let store: CompanionStore
+    let speciesID: Int
+    let disabled: Bool
+    let onPick: () -> Void
+    @State private var name: String = ""
+
+    var body: some View {
+        Button(action: onPick) {
+            VStack(spacing: 6) {
+                SpriteView(speciesID: speciesID, size: 64, bob: true, animated: true)
+                    .frame(width: 64, height: 64)
+                Text(name.isEmpty ? "#\(speciesID)" : name)
+                    .font(.caption2.weight(.medium)).lineLimit(1)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color.secondary.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.15)))
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .task(id: speciesID) { name = await store.resolveSpeciesName(speciesID) }
     }
 }
 

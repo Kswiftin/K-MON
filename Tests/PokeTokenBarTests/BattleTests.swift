@@ -21,7 +21,7 @@ final class BattleTests: XCTestCase {
 
     func testNatureModifiers() {
         var s = BattleStats(hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100)
-        _ = s   // canonical 확인용이 아니라 keypath 대상 타입 고정용
+        _ = s   // keypath 대상 타입 고정용
         XCTAssertEqual(NatureEffect.multiplier(.adamant, for: \.atk), 1.1)
         XCTAssertEqual(NatureEffect.multiplier(.adamant, for: \.spa), 0.9)
         XCTAssertEqual(NatureEffect.multiplier(.adamant, for: \.spe), 1.0)
@@ -77,58 +77,7 @@ final class BattleTests: XCTestCase {
         XCTAssertLessThan(mid, late)
     }
 
-    // MARK: 배틀 코드 직렬화
-
-    private func sampleSnapshot() -> BattleSnapshot {
-        BattleSnapshot(speciesID: 6, name: "리자몽", trainer: "지우", level: 77,
-                       nature: .jolly, isShiny: true, types: [.fire, .flying],
-                       base: BattleStats(hp: 78, atk: 84, def: 78, spa: 109, spd: 85, spe: 100))
-    }
-
-    func testBattleCodeRoundTrip() throws {
-        let original = sampleSnapshot()
-        let code = try BattleCode.encode(original)
-        XCTAssertTrue(code.hasPrefix(BattleCode.prefix))
-        let decoded = try BattleCode.decode(code)
-        XCTAssertEqual(decoded.speciesID, original.speciesID)
-        XCTAssertEqual(decoded.name, original.name)
-        XCTAssertEqual(decoded.level, original.level)
-        XCTAssertEqual(decoded.nature, original.nature)
-        XCTAssertEqual(decoded.types, original.types)
-        XCTAssertEqual(decoded.base, original.base)
-        XCTAssertTrue(decoded.isShiny)
-    }
-
-    func testBattleCodeRoundTripWithWhitespace() throws {
-        let code = try BattleCode.encode(sampleSnapshot())
-        _ = try BattleCode.decode("  \(code)\n")   // Slack 복붙 잔여 공백 허용
-    }
-
-    func testBattleCodeTamperDetected() throws {
-        let code = try BattleCode.encode(sampleSnapshot())
-        // 레벨을 77 → 99 로 고쳐 재인코딩(checksum 은 그대로) — badChecksum 이어야 한다.
-        let b64 = String(code.dropFirst(BattleCode.prefix.count))
-        var padded = b64.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        while padded.count % 4 != 0 { padded += "=" }
-        let json = String(data: Data(base64Encoded: padded)!, encoding: .utf8)!
-        let tampered = json.replacingOccurrences(of: "\"level\":77", with: "\"level\":99")
-        XCTAssertNotEqual(json, tampered, "fixture 가 level 필드를 못 찾으면 테스트가 무의미")
-        let tamperedCode = BattleCode.prefix + Data(tampered.utf8).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        XCTAssertThrowsError(try BattleCode.decode(tamperedCode)) { error in
-            XCTAssertEqual(error as? BattleCode.DecodeError, .badChecksum)
-        }
-    }
-
-    func testBattleCodeGarbageRejected() {
-        XCTAssertThrowsError(try BattleCode.decode("PTB1.notbase64!!!"))
-        XCTAssertThrowsError(try BattleCode.decode("hello"))
-        XCTAssertThrowsError(try BattleCode.decode(""))
-    }
-
-    // MARK: 배틀 엔진
+    // MARK: 네트워크 대전 턴 해상
 
     private func water() -> BattleSnapshot {
         BattleSnapshot(speciesID: 9, name: "거북왕", trainer: nil, level: 50,
@@ -140,59 +89,6 @@ final class BattleTests: XCTestCase {
                        nature: nil, isShiny: false, types: [.fire, .flying],
                        base: BattleStats(hp: 78, atk: 84, def: 78, spa: 109, spd: 85, spe: 100))
     }
-
-    func testSimulationDeterministicForSameSeed() {
-        let r1 = BattleEngine.simulate(a: water(), b: fire(), seed: 42)
-        let r2 = BattleEngine.simulate(a: water(), b: fire(), seed: 42)
-        XCTAssertEqual(r1, r2)
-    }
-
-    func testSimulationEndsWithWinnerOrDraw() {
-        let r = BattleEngine.simulate(a: water(), b: fire(), seed: 7)
-        XCTAssertFalse(r.turns.isEmpty)
-        XCTAssertLessThanOrEqual(r.turns.count, BattleEngine.maxTurns)
-        if let last = r.turns.last, r.winnerIsA != nil, r.turns.count < BattleEngine.maxTurns {
-            XCTAssertEqual(last.defenderHPAfter, 0, "상한 전 종료면 마지막 피격자는 기절이어야 한다")
-        }
-    }
-
-    func testTypeAdvantageWinsLopsidedMatch() {
-        // 물 vs 불(비행 복합, 물 2배) — 동레벨·유사 종족값이면 seed 무관하게 물이 대부분 이겨야 한다.
-        var waterWins = 0
-        for seed in UInt64(0)..<20 {
-            let r = BattleEngine.simulate(a: water(), b: fire(), seed: seed)
-            if r.winnerIsA == true { waterWins += 1 }
-        }
-        XCTAssertGreaterThanOrEqual(waterWins, 15, "타입 상성이 결과에 반영돼야 한다 (20판 중 \(waterWins)승)")
-    }
-
-    func testStruggleFallbackWhenAllTypesImmune() {
-        // 노말 단일 vs 고스트 단일 — 노말 공격이 0배라 발버둥(moveType nil)으로 폴백해야 한다.
-        let normal = BattleSnapshot(speciesID: 143, name: "잠만보", trainer: nil, level: 50,
-                                    nature: nil, isShiny: false, types: [.normal],
-                                    base: BattleStats(hp: 160, atk: 110, def: 65, spa: 65, spd: 110, spe: 30))
-        let ghost = BattleSnapshot(speciesID: 92, name: "고오스", trainer: nil, level: 50,
-                                   nature: nil, isShiny: false, types: [.ghost],
-                                   base: BattleStats(hp: 30, atk: 35, def: 30, spa: 100, spd: 35, spe: 80))
-        let r = BattleEngine.simulate(a: normal, b: ghost, seed: 1)
-        let normalAttacks = r.turns.filter { $0.attackerIsA }
-        XCTAssertFalse(normalAttacks.isEmpty)
-        XCTAssertTrue(normalAttacks.allSatisfy { $0.moveType == nil }, "노말→고스트는 발버둥이어야 한다")
-        XCTAssertTrue(normalAttacks.allSatisfy { $0.damage >= 1 }, "발버둥도 최소 1 데미지")
-    }
-
-    func testSymmetricSeedIsOrderIndependent() {
-        XCTAssertEqual(BattleEngine.symmetricSeed("codeA", "codeB"),
-                       BattleEngine.symmetricSeed("codeB", "codeA"))
-    }
-
-    func testFasterPokemonActsFirst() {
-        let r = BattleEngine.simulate(a: water(), b: fire(), seed: 3)
-        // fire(spe 100) > water(spe 78) — 첫 턴 공격자는 b.
-        XCTAssertEqual(r.turns.first?.attackerIsA, false)
-    }
-
-    // MARK: 네트워크 대전 턴 해상
 
     private func hydroPump() -> MoveSpec {
         MoveSpec(id: 56, names: ["en": "Hydro Pump"], type: .water, power: 110,

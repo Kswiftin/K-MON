@@ -189,7 +189,7 @@ final class CompanionStoreTests: XCTestCase {
     func testCorruptDexEntryDroppedWhileRestSurvives() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-dex-\(UUID().uuidString).json")
         // 유효 2개 + 손상 1개(finalID/chainOrder 누락).
-        let json = #"{"dex":[{"baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"},"#
+        let json = #"{"economyVersion":2,"dex":[{"baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"},"#
             + #"{"baseID":99,"rarity":"rare"},"#
             + #"{"baseID":7,"finalID":9,"chainOrder":[7,8,9],"rarity":"uncommon"}],"inventory":{"rareCandy":2}}"#
         try Data(json.utf8).write(to: url)
@@ -228,7 +228,7 @@ final class CompanionStoreTests: XCTestCase {
     func testCorruptActiveFallsBackToEggWhileRestSurvives() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-corrupt-\(UUID().uuidString).json")
         // active 는 pathIDs 누락 → MonState decode 실패. dex/inventory/usedSinceInstall 은 유효.
-        let json = #"{"active":{"baseID":1},"#
+        let json = #"{"economyVersion":2,"active":{"baseID":1},"#
             + #""dex":[{"baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"}],"#
             + #""inventory":{"rareCandy":3},"usedSinceInstall":5000}"#
         try Data(json.utf8).write(to: url)
@@ -332,7 +332,7 @@ final class CompanionStoreTests: XCTestCase {
                               usedAtStage: 0, rarity: .common, totalForms: 3, nature: .brave)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let json = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
-        try Data(#"{"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 7))
@@ -372,7 +372,7 @@ final class CompanionStoreTests: XCTestCase {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("poke-\(UUID().uuidString).json")
             let json = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
-            try Data(#"{"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
+            try Data(#"{"economyVersion":2,"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
             return CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                   fileURL: url, rng: SeededRNG(seed: 7))
         }
@@ -473,7 +473,7 @@ final class CompanionStoreTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let dexJSON = String(decoding: try JSONEncoder().encode([graduated]), as: UTF8.self)
         let activeJSON = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
-        try Data(#"{"dex":\#(dexJSON),"active":\#(activeJSON),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"dex":\#(dexJSON),"active":\#(activeJSON),"language":"ko"}"#.utf8).write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 7))
@@ -508,179 +508,11 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(names, [1: "#1", 2: "#2", 3: "#3"])
     }
 
-    func testInstallBaselineExcludesPreInstallUsage() {
-        let s = store(linear3)
-        // 데이터 도착 전 → baseline 미설정
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: false)
-        XCTAssertFalse(s.state.installBaselineSet)
-        // 첫 실데이터 → baseline = 그 시점 today(이전 사용량 미카운트)
-        s.update(todayTokensByProvider: ["test": 48_000_000], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
-        XCTAssertTrue(s.state.installBaselineSet)
-        XCTAssertEqual(s.state.usedSinceInstall, 0)
-        // 이후 증가분만 누적
-        s.update(todayTokensByProvider: ["test": 148_000_000], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
-        XCTAssertEqual(s.state.usedSinceInstall, 100_000_000)
-    }
-
-    /// [회귀] 로컬 사용량 재집계가 기존 값보다 낮아진 뒤에도, 새 기준점 이후의 증가분은 알에 반영한다.
-    /// 예전에는 aggregate high-water mark 로만 유지해 감소 후 증가가 영구히 무시됐다.
-    func testUsageIncreaseAfterValidDropContinuesEggProgress() {
-        let s = store(linear3)
-        base(s)
-        use(s, 200)
-        XCTAssertEqual(s.state.eggUsage, 200)
-
-        // 유효한 낮은 스냅샷: 이 자체는 토큰 사용량으로 지급하지 않고 기준점만 재설정한다.
-        use(s, 40)
-        XCTAssertEqual(s.state.eggUsage, 200)
-        XCTAssertEqual(s.state.claimedTodayTokensByProvider?["test"], 40)
-
-        // 새 기준점 이후의 증가분만 반영한다.
-        use(s, 75)
-        XCTAssertEqual(s.state.eggUsage, 235)
-        XCTAssertEqual(s.state.usedSinceInstall, 235)
-    }
-
-    /// [회귀] 데이터 공백/조회 실패로 today=0 이 들어와도 당일 기준점을 0으로 낮추지 않는다.
-    /// 다음 정상 조회 때 당일 전체를 중복 지급하면 안 된다.
-    func testEmptyUsageSnapshotDoesNotRebaseDailyLedger() {
-        let s = store(linear3)
-        base(s)
-        use(s, 200)
-
-        use(s, 0, hasUsageData: false) // 빈 스냅샷/조회 공백
-        XCTAssertEqual(s.state.eggUsage, 200)
-        XCTAssertEqual(s.state.claimedTodayTokensByProvider?["test"], 200)
-
-        use(s, 250)
-        XCTAssertEqual(s.state.eggUsage, 250)
-        XCTAssertEqual(s.state.usedSinceInstall, 250)
-    }
-
-    /// [회귀] 프로바이더 하나가 일시적으로 snapshot을 내놓지 않아도 다른 프로바이더의
-    /// 증가분만 적립하고, 사라졌던 프로바이더가 복구될 때 과거 사용량을 중복 지급하지 않는다.
-    func testProviderLedgerDoesNotRecreditMissingProviderAfterPartialSnapshotLoss() {
-        let s = store(linear3)
-        useMap(s, ["claude_code": 0, "codex": 0])
-        useMap(s, ["claude_code": 1_000, "codex": 500])
-        XCTAssertEqual(s.state.usedSinceInstall, 1_500)
-
-        // codex today == nil인 carrier snapshot은 map에서 빠진다. codex line은 그대로 보존한다.
-        useMap(s, ["claude_code": 1_000], hasUsageData: true)
-        XCTAssertEqual(s.state.usedSinceInstall, 1_500)
-        XCTAssertEqual(s.state.claimedTodayTokensByProvider,
-                       ["claude_code": 1_000, "codex": 500])
-
-        // 복구된 codex의 기존 500을 다시 지급하지 않고 이후 증가분만 지급한다.
-        useMap(s, ["claude_code": 1_000, "codex": 500])
-        XCTAssertEqual(s.state.usedSinceInstall, 1_500)
-        useMap(s, ["claude_code": 1_000, "codex": 700])
-        XCTAssertEqual(s.state.usedSinceInstall, 1_700)
-    }
-
-    /// [회귀] carrier만 남아 오늘 map이 비어도 프로바이더별 ledger를 0으로 낮추지 않는다.
-    /// 정상 snapshot 복구 뒤에는 복구 시점 이후 증가분만 적립한다.
-    func testCarrierWithoutTodayDataDoesNotRebaseProviderLedger() {
-        let s = store(linear3)
-        useMap(s, ["codex": 0])
-        useMap(s, ["codex": 2_000])
-        XCTAssertEqual(s.state.usedSinceInstall, 2_000)
-
-        useMap(s, [:], hasUsageData: false)
-        XCTAssertEqual(s.state.usedSinceInstall, 2_000)
-        XCTAssertEqual(s.state.claimedTodayTokensByProvider, ["codex": 2_000])
-
-        useMap(s, ["codex": 2_200])
-        XCTAssertEqual(s.state.usedSinceInstall, 2_200)
-    }
-
-    /// [회귀] 날짜가 바뀌면 이전 날짜의 provider별 기준값과 비교하지 않고,
-    /// 새 날짜에 이미 사용한 누적값 전체를 적립한 뒤 이후 증가분을 이어서 적립한다.
-    func testDateRolloverCreditsCurrentDayUsage() {
-        let s = store(linear3)
-        useMap(s, ["codex": 0], date: "d1")
-        useMap(s, ["codex": 200], date: "d1")
-        XCTAssertEqual(s.state.usedSinceInstall, 200)
-
-        useMap(s, ["codex": 100], date: "d2")
-        XCTAssertEqual(s.state.usedSinceInstall, 300)
-        XCTAssertEqual(s.state.claimedTodayTokensByProvider, ["codex": 100])
-
-        useMap(s, ["codex": 150], date: "d2")
-        XCTAssertEqual(s.state.usedSinceInstall, 350)
-    }
-
-    /// [회귀] 날짜 경계의 첫 refresh에서 provider 하나가 빠져도, 같은 날 복구된 현재 사용량을
-    /// 누락하지 않는다. 이전 날짜의 ledger 값은 새 날짜와 비교할 수 없으므로 복구 provider의
-    /// 새 날짜 기준은 0으로 열고, 그 날 처음 확인된 누적값을 적립한다.
-    func testLateProviderRecoveryAfterDateRolloverCreditsCurrentDayUsage() {
-        let s = store(linear3)
-        useMap(s, ["claude_code": 0, "codex": 0], date: "d1")
-        useMap(s, ["claude_code": 1_000, "codex": 500], date: "d1")
-        XCTAssertEqual(s.state.usedSinceInstall, 1_500)
-
-        // 날짜가 바뀐 첫 응답에는 codex가 빠졌다. Claude의 d2 사용량만 먼저 적립한다.
-        useMap(s, ["claude_code": 100], date: "d2")
-        XCTAssertEqual(s.state.usedSinceInstall, 1_600)
-        XCTAssertEqual(s.state.claimedTodayTokensByProvider,
-                       ["claude_code": 100, "codex": 0])
-
-        // 같은 날 codex가 복구되면 d2의 현재 누적값 전체가 적립되어야 한다.
-        useMap(s, ["claude_code": 100, "codex": 700], date: "d2")
-        XCTAssertEqual(s.state.usedSinceInstall, 2_300)
-
-        // 이후에는 복구 시점 기준의 증가분만 적립한다.
-        useMap(s, ["claude_code": 100, "codex": 900], date: "d2")
-        XCTAssertEqual(s.state.usedSinceInstall, 2_500)
-    }
-
-    /// [회귀] stale snapshot처럼 오늘 provider map이 비어 있는 refresh는 날짜 경계를 소비하지
-    /// 않는다. 다음 유효한 새 날짜 snapshot이 들어오면 그 시점의 오늘 사용량을 적립한다.
-    func testStaleSnapshotDoesNotConsumeDateBoundary() {
-        let s = store(linear3)
-        useMap(s, ["codex": 0], date: "d1")
-        useMap(s, ["codex": 200], date: "d1")
-
-        useMap(s, [:], date: "d2", hasUsageData: true)
-        XCTAssertEqual(s.state.usedSinceInstall, 200)
-        XCTAssertEqual(s.state.lastDate, "d1")
-        XCTAssertEqual(s.state.claimedTodayTokensByProvider, ["codex": 200])
-
-        useMap(s, ["codex": 100], date: "d2")
-        XCTAssertEqual(s.state.usedSinceInstall, 300)
-    }
-
-    /// [마이그레이션] aggregate high-water mark만 가진 구버전 세이브는 값을 프로바이더별로
-    /// 추정하지 않고 첫 유효 snapshot을 seed한다. 이후 증가분은 새 ledger로 정상 적립한다.
-    func testLegacyAggregateLedgerSeedsProviderMapWithoutRetrospectiveCredit() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
-        let legacy = #"{"installBaselineSet":true,"usedSinceInstall":10000,"claimedTodayTokens":9000,"lastDate":"d1"}"#
-        try Data(legacy.utf8).write(to: url)
-
-        let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow }, fileURL: url,
-                               rng: SeededRNG(seed: 7))
-        XCTAssertNil(s.state.claimedTodayTokensByProvider)
-
-        s.update(todayTokensByProvider: ["codex": 500], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
-        XCTAssertEqual(s.state.usedSinceInstall, 10_000)
-        XCTAssertEqual(s.state.claimedTodayTokensByProvider, ["codex": 500])
-
-        s.update(todayTokensByProvider: ["codex": 700], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
-        XCTAssertEqual(s.state.usedSinceInstall, 10_200)
-    }
-
-    private func base(_ s: CompanionStore) {
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
-    }
-    private func use(_ s: CompanionStore, _ today: Int, hasUsageData: Bool = true) {
-        s.update(todayTokensByProvider: ["test": today], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: hasUsageData)
-    }
-    private func useMap(_ s: CompanionStore, _ todayTokensByProvider: [String: Int], date: String = "d1",
-                        hasUsageData: Bool = true) {
-        s.update(todayTokensByProvider: todayTokensByProvider, todayDate: date, monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: hasUsageData)
+    // 방치형 경제 전환(2026-08-13): 성장은 update() 가 아니라 tick/accrue 경로로 주입된다.
+    // base 는 더 이상 baseline 개념이 없어 no-op, use 는 델타 생산분을 직접 적립한다.
+    private func base(_ s: CompanionStore) { }
+    private func use(_ s: CompanionStore, _ amount: Int, hasUsageData: Bool = true) {
+        s.debugAccrue(amount)
     }
 
     func testEggDoesNotHatchBelowThreshold() async {
@@ -731,7 +563,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 도감 빈 화면으로 떨어지지 않는다.
     func testLoadedActiveCompanionPreventsEmptyDexState() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-\(UUID().uuidString).json")
-        let json = #"{"active":{"baseID":529,"pathIDs":[529],"stageIndex":0,"usedAtStage":148344233,"rarity":"uncommon","totalForms":2,"isShiny":false,"nature":"timid"},"dex":[]}"#
+        let json = #"{"economyVersion":2,"active":{"baseID":529,"pathIDs":[529],"stageIndex":0,"usedAtStage":148344233,"rarity":"uncommon","totalForms":2,"isShiny":false,"nature":"timid"},"dex":[]}"#
         try json.data(using: .utf8)!.write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
@@ -746,7 +578,7 @@ final class CompanionStoreTests: XCTestCase {
     /// caughtAt 이 없는 구버전 졸업 항목은 active 로 오인하지 않는다.
     func testActiveCompanionPinnedBeforeGraduatedEntries() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-sort-\(UUID().uuidString).json")
-        let json = #"{"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":5,"rarity":"common","totalForms":3},"dex":[{"id":"legacy-graduated","baseID":150,"finalID":150,"chainOrder":[150],"rarity":"legendary"}]}"#
+        let json = #"{"economyVersion":2,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":5,"rarity":"common","totalForms":3},"dex":[{"id":"legacy-graduated","baseID":150,"finalID":150,"chainOrder":[150],"rarity":"legendary"}]}"#
         try json.data(using: .utf8)!.write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
@@ -809,7 +641,6 @@ final class CompanionStoreTests: XCTestCase {
         let state = try JSONDecoder().decode(CompanionState.self, from: Data(json.utf8))
         XCTAssertEqual(state.eggUsage, 0)
         XCTAssertEqual(state.usedSinceInstall, 5)
-        XCTAssertNil(state.claimedTodayTokensByProvider)
     }
 
     func testEvolvesThroughLineAndGraduatesWithFullChain() async {
@@ -979,7 +810,7 @@ final class CompanionStoreTests: XCTestCase {
     func testReloadLegacyIncompletePlanMigratesToPersistedCompleteRoute() async throws {
         let line = wurmpleLine
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-reload-legacy-\(UUID().uuidString).json")
-        let legacy = #"{"active":{"baseID":265,"pathIDs":[265],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1}}"#
+        let legacy = #"{"economyVersion":2,"active":{"baseID":265,"pathIDs":[265],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1}}"#
         try Data(legacy.utf8).write(to: url)
         let rng = CountingRNG(seed: 7)
         let s = CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: rng)
@@ -1007,7 +838,7 @@ final class CompanionStoreTests: XCTestCase {
 
     func testReloadRepairsInvalidPlanSuffixWithoutRewindingRealizedPath() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-invalid-plan-\(UUID().uuidString).json")
-        let saved = #"{"active":{"baseID":265,"pathIDs":[265,266],"plannedPathIDs":[265,266,269],"stageIndex":1,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
+        let saved = #"{"economyVersion":2,"active":{"baseID":265,"pathIDs":[265,266],"plannedPathIDs":[265,266,269],"stageIndex":1,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
         try Data(saved.utf8).write(to: url)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 9))
 
@@ -1025,7 +856,7 @@ final class CompanionStoreTests: XCTestCase {
 
     func testReloadWrongRootNormalizesPathWithoutChangingIdentityOrDisguise() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-wrong-root-\(UUID().uuidString).json")
-        let saved = #"{"active":{"baseID":265,"pathIDs":[999],"plannedPathIDs":[999],"stageIndex":0,"usedAtStage":42,"rarity":"common","totalForms":1,"isShiny":true,"nature":"timid","dittoDisguise":265}}"#
+        let saved = #"{"economyVersion":2,"active":{"baseID":265,"pathIDs":[999],"plannedPathIDs":[999],"stageIndex":0,"usedAtStage":42,"rarity":"common","totalForms":1,"isShiny":true,"nature":"timid","dittoDisguise":265}}"#
         try Data(saved.utf8).write(to: url)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 9))
 
@@ -1045,7 +876,7 @@ final class CompanionStoreTests: XCTestCase {
 
     func testReloadLeafCurrentPlanDoesNotConsumeRNG() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-leaf-plan-\(UUID().uuidString).json")
-        let saved = #"{"active":{"baseID":265,"pathIDs":[265,266,267],"plannedPathIDs":[265,266,267],"stageIndex":2,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
+        let saved = #"{"economyVersion":2,"active":{"baseID":265,"pathIDs":[265,266,267],"plannedPathIDs":[265,266,267],"stageIndex":2,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
         try Data(saved.utf8).write(to: url)
         let rng = CountingRNG(seed: 9)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: rng)
@@ -1062,7 +893,7 @@ final class CompanionStoreTests: XCTestCase {
 
     func testLineLoadPreservesUpdatesMadeWhileProviderIsSuspended() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-load-race-\(UUID().uuidString).json")
-        let saved = #"{"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1,"nature":"adamant"},"inventory":{"mint":1}}"#
+        let saved = #"{"economyVersion":2,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1,"nature":"adamant"},"inventory":{"mint":1}}"#
         try Data(saved.utf8).write(to: url)
         let provider = SuspendedLineProvider(value: linear3)
         let s = CompanionStore(provider: provider, clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
@@ -1282,7 +1113,6 @@ final class CompanionIdentityTests: XCTestCase {
         XCTAssertEqual(s.active?.plannedPathIDs, [1])
         XCTAssertEqual(s.active?.isShiny, false)
         XCTAssertNil(s.active?.nature)
-        XCTAssertNil(s.claimedTodayTokensByProvider, "구버전 aggregate ledger는 프로바이더별 값으로 추정하지 않는다")
         XCTAssertEqual(s.dex[0].isShiny, false)
         XCTAssertNil(s.dex[0].nature)
         // 재인코딩 후 재디코딩도 안정적(라운드트립)
@@ -1301,7 +1131,7 @@ final class CompanionIdentityTests: XCTestCase {
         let state = try? JSONDecoder().decode(CompanionState.self, from: Data(corrupt.utf8))
         XCTAssertNotNil(state, "빈 pathIDs 는 active 만 무효화 — 전체 디코드는 성공(부분 복원)")
         XCTAssertNil(state?.active, "빈 pathIDs active 는 nil(알)로 폴백 — 깨진 active 를 살려두지 않는다")
-        XCTAssertEqual(state?.installBaselineSet, true, "나머지 필드는 보존")
+        XCTAssertEqual(state?.eggUsage, 0, "나머지 필드는 보존")
     }
 
     /// currentID 는 pathIDs 가 비어도(방어) baseID 로 폴백 — 크래시 없음.
@@ -1363,7 +1193,7 @@ final class CompanionIdentityTests: XCTestCase {
     /// 복구하고 단계 수를 현재 에셋 개수에 맞춘다. 그렇지 않으면 트리에서 현재 종을 못 찾아 성장이 멈춘다.
     func testLineLoadMigratesPersistedUnsupportedEvolution() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-assets-\(UUID().uuidString).json")
-        let json = #"{"installBaselineSet":true,"lastDate":"d1","active":{"baseID":56,"pathIDs":[56,57,979],"stageIndex":2,"usedAtStage":123,"rarity":"common","totalForms":3},"dex":[]}"#
+        let json = #"{"economyVersion":2,"active":{"baseID":56,"pathIDs":[56,57,979],"stageIndex":2,"usedAtStage":123,"rarity":"common","totalForms":3},"dex":[]}"#
         try Data(json.utf8).write(to: url)
         let supportedLine = makeLine(base: 56, tree: node(56, [node(57, [node(979)])]))
         let s = CompanionStore(provider: StubProvider(value: supportedLine), clock: { fixedNow },
@@ -1394,9 +1224,8 @@ final class CompanionIdentityTests: XCTestCase {
         guard let seed else { return XCTFail("shiny 시드 탐색 실패") }
 
         let s = store(linear3, seed: seed)
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
-        // 알 임계(5M) + stage0 임계(125M) 초과 → 부화 즉시 1회 진화하는 이월
-        s.update(todayTokensByProvider: ["test": 135_000_000], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        // 알 임계 + stage0 임계 초과 생산분 → 부화 즉시 1회 진화하는 이월
+        s.debugAccrue(135_000_000)
         await s.hatchIfNeeded()
         XCTAssertEqual(s.state.active?.isShiny, true)
         XCTAssertEqual(s.state.active?.stageIndex, 1, "이월로 1회 진화했어야 함")
@@ -1406,9 +1235,8 @@ final class CompanionIdentityTests: XCTestCase {
     /// [회귀] 이월이 졸업 총량을 넘어 부화 즉시 졸업한 극단 케이스 — hatch 연출은 생략(이미 도감행).
     func testHatchCelebrationSkippedOnInstantGraduate() async {
         let s = store(noEvo, seed: 11)
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
-        // 알 임계 + 졸업 총량(750M) 초과
-        s.update(todayTokensByProvider: ["test": 800_000_000], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        // 알 임계 + 졸업 총량(750M) 초과 생산분
+        s.debugAccrue(800_000_000)
         await s.hatchIfNeeded()
         XCTAssertNil(s.state.active, "즉시 졸업")
         XCTAssertEqual(s.state.dex.count, 1)
@@ -1424,11 +1252,9 @@ final class CompanionIdentityTests: XCTestCase {
         return CompanionStore(provider: provider, clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: seed))
     }
 
-    /// 알을 임계 이상으로 채운 상태(installBaseline 포함) — rng 미소비 경로.
+    /// 알을 임계 이상으로 채운 상태 — rng 미소비 경로.
     private func eggReadyState(collected: Set<String> = []) -> CompanionState {
         var st = CompanionState()
-        st.installBaselineSet = true
-        st.lastDate = "d1"
         st.eggUsage = PokemonBalance.eggHatchThreshold + 1
         st.collectedFinals = collected
         return st
@@ -1500,16 +1326,13 @@ final class CompanionIdentityTests: XCTestCase {
     func testEggPrefetchStoresPendingAndHatchUsesIt() async {
         let p = IndexProvider()
         p.index = [BaseSpecies(id: 77, captureRate: 255)]
-        var st = CompanionState()
-        st.installBaselineSet = true
-        st.lastDate = "d1"
-        let s = samplerStore(p, seed: 5, preloadState: st)
-        // 임계 미만 사용 → 부화는 안 되지만 프리패칭은 돌아야 한다
-        s.update(todayTokensByProvider: ["test": 1_000], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        let s = samplerStore(p, seed: 5, preloadState: CompanionState())
+        // 임계 미만(알 진행 0) → 부화는 안 되지만 update 틱이 프리패칭을 돌려야 한다
+        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
         for _ in 0..<50 where s.state.pendingHatchID == nil { await Task.yield() }
         XCTAssertEqual(s.state.pendingHatchID, 77, "알 상태에서 종이 미리 롤/저장돼야 한다")
-        // 임계 도달 → 부화는 pending 그대로 (추가 선택 롤 없음: shiny/nature 만 소비)
-        s.update(todayTokensByProvider: ["test": 6_000_000], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        // 임계 도달(생산 적립) → 부화는 pending 그대로 (추가 선택 롤 없음: shiny/nature 만 소비)
+        s.debugAccrue(6_000_000)
         await s.hatchIfNeeded()
         XCTAssertEqual(s.state.active?.baseID, 77)
         XCTAssertNil(s.state.pendingHatchID, "부화 후 pending 은 비워져야 한다")

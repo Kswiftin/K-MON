@@ -521,10 +521,7 @@ struct SettingsView: View {
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
 
         do {
-            try companion.applySave(envelope,
-                                    todayTokensByProvider: store.todayTokensByProvider,
-                                    todayDate: LocalUsageReader.todayKey(),
-                                    hasUsageData: store.hasUsageData)
+            try companion.applySave(envelope)
         } catch {
             presentAlert(title: l.importSaveLabel, message: l.importErrorMessage(error), style: .warning)
             return

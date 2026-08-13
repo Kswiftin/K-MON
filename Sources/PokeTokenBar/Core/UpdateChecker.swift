@@ -22,9 +22,15 @@ final class UpdateChecker {
         self.clock = clock
     }
 
+    /// 자동 업데이트 확인 비활성 — 이 빌드는 upstream(chattymin/PokeTokenBar)에서 갈라진 개인 포크라
+    /// upstream 릴리스는 이 포크와 무관하다(별의모래 방치형 전환 등). upstream API 를 찌르지 않고,
+    /// 팝오버 업데이트 배너도 뜨지 않는다. 자체 배포 채널을 붙이면 여기서 repo 를 바꿔 되살린다.
+    static let autoUpdateEnabled = false
+
     /// 최신 릴리스 조회 → 새 버전이고 사용자가 그 버전을 'skip' 하지 않았으면 available 설정.
     /// minInterval 보다 자주 호출되면 무시(레이트리밋 보호).
     func check(minInterval: TimeInterval = 1800) async {
+        guard Self.autoUpdateEnabled else { return }   // 개인 포크 — upstream 연결 차단
         if let last = lastChecked, clock().timeIntervalSince(last) < minInterval { return }
         lastChecked = clock()
         guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else { return }
