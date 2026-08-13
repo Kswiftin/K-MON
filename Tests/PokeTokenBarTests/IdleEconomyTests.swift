@@ -14,8 +14,14 @@ final class IdleEconomyTests: XCTestCase {
     private func makeStore(_ clock: TestClock) -> CompanionStore {
         // linear3 등 공용 픽스처는 CompanionTests 에 있다 — 여기선 라인이 필요 없는 알 상태만 쓰므로
         // 부화가 일어나지 않도록 임계 미만 생산만 하거나, 라인 로드 실패 프로바이더를 쓴다.
-        CompanionStore(provider: NoLineProvider(), clock: clock.closure,
-                       fileURL: tempURL(), rng: SeededRNG(seed: 1))
+        // starterChosen 을 세워 **졸업 직후의 알 상태**를 시드한다 — 생산은 첫 파트너를 고른 뒤부터
+        // 도는 설계라(`tick` 의 needsStarterSelection 가드), 기본 상태로는 아무것도 적립되지 않는다.
+        let url = tempURL()
+        var eggAfterStarter = CompanionState()
+        eggAfterStarter.starterChosen = true
+        if let data = try? JSONEncoder().encode(eggAfterStarter) { try? data.write(to: url) }
+        return CompanionStore(provider: NoLineProvider(), clock: clock.closure,
+                              fileURL: url, rng: SeededRNG(seed: 1))
     }
 
     /// 라인 제공 실패 — 알 유지(부화 억제)용. 적립 로직 자체는 라인과 무관하다.
@@ -162,10 +168,16 @@ final class IdleEconomyTests: XCTestCase {
         var imported = CompanionState()
         imported.lastTickAt = Date(timeIntervalSince1970: 1_000)
         imported.lastCandyDate = "2026-08-10"
+        imported.care.lastUpdatedAt = Date(timeIntervalSince1970: 1_000)
+        imported.care.lastRestedAt = Date(timeIntervalSince1970: 1_000)
+        imported.care.energy = 42
         var current = CompanionState()
         current.lastCandyDate = "2026-08-13"
         let out = SaveTransfer.rebasedForThisDevice(imported, current: current)
         XCTAssertNil(out.lastTickAt, "옛 기기 시각을 이 기기 가동 시간으로 오인하지 않게 리셋")
         XCTAssertEqual(out.lastCandyDate, "2026-08-13", "더 최근 날짜를 남겨 사탕 재지급 방지")
+        XCTAssertNil(out.care.lastUpdatedAt, "돌봄 경과도 옛 기기 시각 기준으로 정산되면 안 된다")
+        XCTAssertNil(out.care.lastRestedAt, "재우기 대기가 옛 기기 시계로 잠기면 안 된다")
+        XCTAssertEqual(out.care.energy, 42, "시각만 리셋 — 펫 상태(진행)는 따라온다")
     }
 }

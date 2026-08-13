@@ -1326,7 +1326,10 @@ final class CompanionIdentityTests: XCTestCase {
     func testEggPrefetchStoresPendingAndHatchUsesIt() async {
         let p = IndexProvider()
         p.index = [BaseSpecies(id: 77, captureRate: 255)]
-        let s = samplerStore(p, seed: 5, preloadState: CompanionState())
+        // 프리패치도 스타터를 고른 뒤부터 돈다(update 의 needsStarterSelection 가드) → 졸업 직후 알 상태로 시드.
+        var eggAfterStarter = CompanionState()
+        eggAfterStarter.starterChosen = true
+        let s = samplerStore(p, seed: 5, preloadState: eggAfterStarter)
         // 임계 미만(알 진행 0) → 부화는 안 되지만 update 틱이 프리패칭을 돌려야 한다
         s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
         for _ in 0..<50 where s.state.pendingHatchID == nil { await Task.yield() }

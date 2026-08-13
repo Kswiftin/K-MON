@@ -359,10 +359,13 @@ final class SaveTransferTests: XCTestCase {
     /// 딸려 들어간다(`language` 가 실제로 그랬다). 필드 목록을 테스트로 고정해 **분류를 강제**한다.
     func testEveryCompanionStateFieldIsClassifiedForTransfer() {
         // 진행: 어느 기기에서든 참. eggTier(알 등급 보증)도 산 물건이라 기기를 옮겨도 따라간다.
+        // care/adventure 도 진행 — 펫의 상태와 진행 중인 모험은 기기가 아니라 그 개체에 딸린 것이다.
+        // (care 안의 시각 필드는 옛 기기 시계라 rebasedForThisDevice 가 따로 리셋한다.)
         let progress: Set<String> = ["economyVersion", "usedSinceInstall", "spentTokens", "eggUsage",
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
                                      "starterCandidates", "active", "dex", "collectedFinals", "inventory",
-                                     "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate"]
+                                     "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate",
+                                     "care", "adventure", "adventureHistory", "battleHistory"]
         // 로컬 장부: 이 기기의 시계 기준값·서명 → 새 기기 기준 재설정(저장 시 재서명).
         let deviceLedger: Set<String> = ["lastTickAt", "integrity"]
         // 계정 원장(로컬 날짜 문자열 — 비교 가능): 더 최근 값 유지.

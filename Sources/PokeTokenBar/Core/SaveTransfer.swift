@@ -295,6 +295,10 @@ enum SaveTransfer {
         var state = imported
         state.language = current.language
         state.lastTickAt = nil
+        // 돌봄 시각도 같은 부류다 — 옛 기기 시각을 그대로 들여오면 그 시각과의 경과분이 이 기기의 돌봄
+        // 경과로 오인돼 이전 직후 허기·에너지가 한꺼번에 정산되고, 재우기가 남의 시계로 잠긴다.
+        state.care.lastUpdatedAt = nil
+        state.care.lastRestedAt = nil
         // 일일 사탕 원장은 로컬 날짜 문자열이라 기기 간 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
         state.lastCandyDate = max(imported.lastCandyDate, current.lastCandyDate)
         return state
