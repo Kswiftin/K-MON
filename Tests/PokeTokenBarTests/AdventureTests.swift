@@ -135,8 +135,11 @@ final class AdventureTests: XCTestCase {
                                 damageClass: .physical, accuracy: 100, pp: 20)
             let snapshot = BattleSnapshot(speciesID: index, name: "M\(index)", trainer: "P\(index)",
                                           level: 20, nature: nil, isShiny: false, types: [.normal],
+                                          // 종족값 간격을 5로 벌린다 — 실효 속도는 (2*base+31)*level/100
+                                          // 정수 나눗셈이라 1씩 올리면 레벨 20에서 세 명이 28로 뭉치고,
+                                          // 동점은 UUID 순으로 갈려(resolveRound) 이 단언이 매 실행 달라진다.
                                           base: BattleStats(hp: 80, atk: 60, def: 60, spa: 60, spd: 60,
-                                                            spe: 40 + index), moves: [move])
+                                                            spe: 40 + index * 5), moves: [move])
             return MultiplayerFighter(participant: LobbyParticipant(id: ids[index - 1], trainerName: "P\(index)",
                                                                       speciesID: index, team: .solo,
                                                                       isReady: true, isHost: index == 1),
