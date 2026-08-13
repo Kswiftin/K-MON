@@ -1,158 +1,158 @@
 <div align="center">
 
-<img src="assets/icon.png" width="128" alt="K-MON icon">
+<img src="assets/icon.png" width="128" alt="K-MON 아이콘">
 
 # K-MON
 
-**An idle Pokémon companion that grows in your macOS menu bar — then battles your friends over LAN.**
+**macOS 메뉴바에서 스스로 자라는 방치형 포켓몬 컴패니언 — 그리고 같은 네트워크 친구와 배틀.**
 
 [![macOS](https://img.shields.io/badge/macOS-14%2B-0969da)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-6-f05138)](https://swift.org)
 [![License](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
 
-**English** · [한국어](README.ko.md) · [日本語](README.ja.md)
+[English](README.en.md) · **한국어** · [日本語](README.ja.md)
 
 </div>
 
-K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own — just keep the app running. Pick your first partner, watch it evolve through its real evolution line, name it, graduate it into your Pokédex, and start again. When a friend on the same network is running K-MON too, challenge them to a live battle — a turn-based **Brawl** or a keyboard-mashing **Race**.
+K-MON은 macOS 메뉴바에 살면서 **포켓몬 컴패니언**을 스스로 키웁니다 — 앱만 켜 두면 됩니다. 첫 파트너를 고르고, 실제 진화 라인을 따라 진화시키고, 이름을 지어 주고, 도감에 졸업시킨 뒤 다시 시작하세요. 같은 네트워크의 친구도 K-MON을 켜 두면 실시간 배틀을 걸 수 있습니다 — 턴제 **맞짱**, 또는 방향키를 번갈아 누르는 **달리기**.
 
-Underneath the companion there's still a precise AI-coding usage tracker (Claude Code, Codex, Gemini CLI, and more), read straight from your local logs — but the headline is now the time you've spent together, not a token count.
+컴패니언 아래에는 여전히 정확한 AI 코딩 사용량 트래커(Claude Code · Codex · Gemini CLI 등)가 로컬 로그에서 직접 읽어 돌아갑니다 — 다만 헤드라인은 이제 토큰 숫자가 아니라 **함께한 시간**입니다.
 
-> Built on top of [PokeTokenBar](https://github.com/chattymin/PokeTokenBar). Unofficial, non-commercial Pokémon fan project — see [License & disclaimer](#license--disclaimer).
+> [PokeTokenBar](https://github.com/chattymin/PokeTokenBar) 기반. 비공식·비상업 포켓몬 팬 프로젝트 — [라이선스 & 면책](#라이선스--면책) 참고.
 
-## How it works
+## 어떻게 자라나요
 
-1. 🎒 **Choose your starter.** On first launch you enter a **trainer name** and pick one of **three Gen-1 starters** drawn just for you. The three are locked to your Mac — reinstalling won't re-roll them (no starter fishing).
-2. ⏳ **It grows while the app runs.** Your companion earns **✨ Stardust** every second the app is open — no tokens required. Stardust incubates the egg, evolves your Pokémon through its real evolution tree, and graduates it into the Pokédex. The more species you've collected, the faster it grows (**+2% per species**).
-3. 🐣 **Hatch, evolve, name.** Eggs and starters hatch into Pokémon with real evolution lines from [PokéAPI](https://pokeapi.co/). Every hatch rolls one of 25 natures, and once in a rare while — **✨ Shiny**. Give any Pokémon a **nickname** with the ✏️ button.
-4. 🎓 **Graduate & collect.** Final form + threshold permanently archives it in your **Pokédex**, and a fresh egg arrives. From then on, eggs hatch a variety of Pokémon (weighted by capture rate — legendaries are rare).
-5. 🍬 **Daily treat.** Every day you open the app, you get a **Rare Candy** — spend it from the **Bag** to instantly grow your current Pokémon.
-6. 🛒 **Spend at the Shop.** Your Stardust is spendable currency — buy **Rare Candy**, a **Mint** to re-roll nature, a **Shiny Charm** for permanently better shiny odds, or an egg to send off your current companion and start over.
+1. 🎒 **스타터 선택.** 첫 실행에 **트레이너 이름**을 입력하고, 당신만을 위해 뽑힌 **1세대 스타터 3마리** 중 하나를 고릅니다. 이 3마리는 당신의 Mac에 고정돼 — **재설치해도 다시 뽑히지 않아요**(스타터 리세마라 불가).
+2. ⏳ **앱을 켜 두면 자랍니다.** 컴패니언은 앱이 켜져 있는 매 초마다 **✨ 별의모래**를 모읍니다 — 토큰 필요 없어요. 별의모래가 알을 부화시키고, 실제 진화 트리를 따라 진화시키고, 도감에 졸업시킵니다. 모은 종이 많을수록 더 빨리 자랍니다(**종당 +2%**).
+3. 🐣 **부화·진화·이름.** 알과 스타터는 [PokéAPI](https://pokeapi.co/)의 실제 진화 라인으로 태어납니다. 부화마다 25종 성격 중 하나가 정해지고, 아주 드물게 **✨ 이로치**가 나옵니다. ✏️ 버튼으로 **별명**을 지어 줄 수 있어요.
+4. 🎓 **졸업 & 수집.** 최종 진화 + 임계 도달 시 **도감**에 영구 보존되고 새 알이 도착합니다. 이후 알에서는 다양한 포켓몬이 태어나요(포획률 가중 — 전설은 드묾).
+5. 🍬 **일일 보상.** 앱을 여는 날마다 **이상한 사탕**을 받습니다 — **가방**에서 써서 지금 포켓몬을 즉시 성장시키세요.
+6. 🛒 **상점에서 쓰기.** 별의모래가 재화입니다 — **이상한 사탕**, 성격을 다시 굴리는 **민트**, 이로치 확률을 영구히 올리는 **이로치 부적**, 또는 지금 컴패니언을 놓아주고 다시 시작하는 알을 살 수 있어요.
 
-## ⚔️ Battle a friend over LAN
+## ⚔️ 같은 네트워크에서 친구와 배틀
 
-When two Macs on the same network are both running K-MON, they discover each other automatically (Bonjour + AWDL). No IP typing — but a manual `IP:port` fallback is there for locked-down networks.
+같은 네트워크의 두 Mac이 K-MON을 켜 두면 자동으로 서로를 찾습니다(Bonjour + AWDL). IP 입력 필요 없어요 — 막힌 네트워크를 위한 수동 `IP:포트` 연결도 있습니다.
 
-- **Brawl** — a turn-based battle. Pick from four moves; type advantage, STAB, crits and misses all matter. Deterministic engine — both peers compute the same result, so nothing can be forged over the wire.
-- **Race** — a real-time footrace. **Alternate the ← and → arrow keys** to run (mashing one key does nothing); first to the finish line wins. Both runners' progress is synced live.
-- **Auto-accept** — flip it on and challenges are accepted the moment they arrive, so a battle happens even while you're away from the keyboard.
-- **Notifications & a pinned window** — a challenge raises a system notification even while you're working; when a battle starts, the window pins itself open (it won't close when you click away) so you can play while you work.
-- **Names everywhere** — your trainer name and your Pokémon's nickname show up on the challenge, the arena, and the notification.
+- **맞짱** — 턴제 배틀. 기술 4개 중 선택, 타입 상성·STAB·급소·빗나감 모두 반영. 결정적 엔진이라 양쪽이 같은 결과를 계산 → 네트워크로 결과를 위조할 수 없어요.
+- **달리기** — 실시간 레이스. **← → 방향키를 번갈아** 눌러 달립니다(한 키만 연타하면 안 나감). 먼저 결승선에 닿는 쪽 승리, 두 러너 진행도가 실시간 동기됩니다.
+- **자동 수락** — 켜 두면 신청이 오는 즉시 수락 → 자리를 비워도 배틀이 성사됩니다.
+- **알림 & 창 고정** — 일하는 중에도 신청이 오면 시스템 알림이 뜨고, 배틀이 잡히면 창이 **고정**돼(바깥을 클릭해도 안 닫힘) 일하면서 배틀할 수 있어요.
+- **이름 표시** — 트레이너 이름과 포켓몬 별명이 신청·아레나·알림에 모두 표시됩니다.
 
-## Tour
+## 둘러보기
 
 <table>
 <tr>
-<td width="45%" align="center"><img src="assets/floating-pet.gif" width="340" alt="Floating desktop pet with a hover callout and right-click menu"></td>
+<td width="45%" align="center"><img src="assets/floating-pet.gif" width="340" alt="바탕화면 플로팅 펫 — 호버 콜아웃과 우클릭 메뉴"></td>
 <td width="55%" valign="middle">
-<h3>🐾 Let it live on your desktop</h3>
-Move your companion out of the menu bar and onto the desktop, at any size from 48 to 192px. Hover it for today's stats, click to open the popover, right-click for a menu, drag it wherever you like.
+<h3>🐾 바탕화면에 두기</h3>
+파트너를 메뉴바 밖 바탕화면으로 꺼내 48~192px 원하는 크기로 둘 수 있어요. 호버하면 오늘 상태, 클릭하면 팝오버, 우클릭하면 메뉴, 드래그로 위치 이동.
 </td>
 </tr>
 <tr>
 <td width="55%" valign="middle">
-<h3>In your menu bar</h3>
-An animated Gen-V sprite lives next to <b>today's time together</b>. It updates every minute the app is open.
+<h3>메뉴바 속 파트너</h3>
+움직이는 Gen-V 스프라이트가 <b>오늘 함께한 시간</b> 옆에 삽니다. 앱이 켜져 있는 매 분 갱신돼요.
 </td>
-<td width="45%" align="center"><img src="assets/menubar.gif" width="240" alt="Menu bar"></td>
+<td width="45%" align="center"><img src="assets/menubar.gif" width="240" alt="메뉴바"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/shiny-banner.gif" width="340" alt="Normal vs shiny"></td>
+<td width="45%" align="center"><img src="assets/shiny-banner.gif" width="340" alt="일반 vs 이로치"></td>
 <td width="55%" valign="middle">
-<h3>✨ Once in a rare while — Shiny</h3>
-Shiny hatches keep their distinct colors through every evolution — menu bar, home card, evolution line. In the Pokédex a ✨ sits next to the dex number. A dedicated notification makes sure you don't miss the moment.
-</td>
-</tr>
-<tr>
-<td width="55%" valign="middle">
-<h3>A Pokédex worth filling</h3>
-The <b>Pokédex</b> folds every species you've owned into one cell — in dex-number order, with a ✨ on the ones you own shiny. The <b>Catch log</b> keeps the individuals: newest first, each with its full evolution line, rarity, nature, and capture date. Every species you collect speeds up your Stardust.
-</td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="300" alt="Pokédex — one cell per species"><br><br><img src="assets/screenshot-collection-catchlog.png" width="300" alt="Catch log — one row per Pokémon raised"></td>
-</tr>
-<tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="300" alt="Shop — Rare Candy, Mint, Shiny Charm, eggs"></td>
-<td width="55%" valign="middle">
-<h3>🛒 A shop that runs on Stardust</h3>
-The Stardust you collect over time is your currency. Spend it on <b>Rare Candy</b> to grow your current Pokémon, a <b>Mint</b> to re-roll its nature, a <b>Shiny Charm</b> that permanently raises your shiny hatch odds, or an egg to send off your companion and start over. Eggs come in three grades — plain, Uncommon-or-better, and Rare-or-better.
+<h3>✨ 아주 드문 우연, 이로치</h3>
+이로치는 메뉴바·홈 카드·진화 라인에서 전용 색으로 표시되고, 진화를 거쳐도 유지됩니다. 도감에서는 번호 옆에 ✨가 붙어요. 전용 알림이 그 순간을 놓치지 않게 해줘요.
 </td>
 </tr>
 <tr>
 <td width="55%" valign="middle">
-<h3>Tune it your way</h3>
-Menu-bar items, refresh interval, launch at login, companion event notifications, and battle auto-accept. Full <b>KO / EN / JA</b> UI and Pokémon names.
+<h3>채우고 싶어지는 도감</h3>
+<b>도감</b>은 보유한 종을 한 칸으로 접어 도감 번호순으로 보여줍니다 — 이로치로 잡은 종에는 ✨. <b>포획 로그</b>는 개체를 그대로 남깁니다: 최신순으로 전체 진화 라인·희귀도·성격·획득일까지. 수집한 종이 많을수록 별의모래가 빨라져요.
 </td>
-<td width="45%" align="center"><img src="assets/settings.png" width="300" alt="Settings"></td>
+<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="300" alt="도감 — 종 하나가 한 칸"><br><br><img src="assets/screenshot-collection-catchlog.png" width="300" alt="포획 로그 — 키운 개체 하나가 한 행"></td>
+</tr>
+<tr>
+<td width="45%" align="center"><img src="assets/screenshot-shop-ko.png" width="300" alt="상점 — 이상한 사탕·민트·이로치 부적·알"></td>
+<td width="55%" valign="middle">
+<h3>🛒 별의모래로 돌아가는 상점</h3>
+시간으로 모은 별의모래가 재화입니다. <b>이상한 사탕</b>으로 지금 포켓몬을 키우고, <b>민트</b>로 성격을 다시 굴리고, <b>이로치 부적</b>으로 이로치 확률을 영구히 올리거나, 알을 사서 컴패니언을 놓아주고 다시 시작하세요. 알은 3등급 — 기본·고급 이상 확정·희귀 이상 확정.
+</td>
+</tr>
+<tr>
+<td width="55%" valign="middle">
+<h3>설정에서 취향대로</h3>
+메뉴바 표시 항목, 새로고침 간격, 로그인 시 자동 시작, companion 이벤트 알림, 배틀 자동 수락. <b>한국어/영어/일본어</b> UI·포켓몬 이름 완비.
+</td>
+<td width="45%" align="center"><img src="assets/settings-ko.png" width="300" alt="설정"></td>
 </tr>
 </table>
 
-> Screenshots may lag the latest UI — the app has moved from a token counter to a time-based idle game.
+> 스크린샷은 최신 UI와 다를 수 있어요 — 앱이 토큰 카운터에서 시간 기반 방치형 게임으로 바뀌었습니다.
 
-## The usage tracker underneath
+## 아래에 깔린 사용량 트래커
 
-K-MON still reads your local AI-coding usage and can show it in the popover: today's totals, official 5-hour / weekly limits, and per-provider detail. It's just no longer the headline — the menu bar leads with your companion and the time you've spent together.
+K-MON은 여전히 로컬 AI 코딩 사용량을 읽어 팝오버에 보여줄 수 있습니다: 오늘 합계, 공식 5시간/주간 한도, 프로바이더별 상세. 다만 더 이상 헤드라인이 아닙니다 — 메뉴바는 컴패니언과 함께한 시간을 앞세웁니다.
 
-| Tool | Tracked | Official limits |
+| 도구 | 추적 | 공식 한도 |
 |---|---|---|
-| **Claude Code** | today · 5h block · week · month | ✅ 5h / weekly |
-| **Codex** | today · week · month | ✅ 5h / weekly |
-| **Gemini CLI** | today · week · month | — |
-| **Antigravity** | today · 5h block · week · month | — |
-| **OpenCode** | today · 5h block · week · month | — |
-| **Hermes Agent** | today · 5h block · week · month | — |
-| **Cursor** | today · 5h block · week · month | — |
-| **Grok CLI** | today · 5h block · week · month | — |
-| **Copilot CLI** | today · 5h block · week · month | — |
+| **Claude Code** | 오늘·5시간·주·월 | ✅ 5시간 / 주간 |
+| **Codex** | 오늘·주·월 | ✅ 5시간 / 주간 |
+| **Gemini CLI** | 오늘·주·월 | — |
+| **Antigravity** | 오늘·5시간·주·월 | — |
+| **OpenCode** | 오늘·5시간·주·월 | — |
+| **Hermes Agent** | 오늘·5시간·주·월 | — |
+| **Cursor** | 오늘·5시간·주·월 | — |
+| **Grok CLI** | 오늘·5시간·주·월 | — |
+| **Copilot CLI** | 오늘·5시간·주·월 | — |
 
-All read locally — no external usage CLI required.
+전부 로컬에서 읽습니다 — 외부 사용량 CLI 불필요.
 
-## Install
+## 설치
 
-### Requirements
+### 요구 사항
 
-macOS 14+ (Apple Silicon or Intel).
+macOS 14+ (Apple Silicon 또는 Intel).
 
-### Download
+### 다운로드
 
-Grab `PokeTokenBar.zip` from the [releases](https://github.com/2giduck/K-MON/releases), unzip it, and drag `PokeTokenBar.app` into `/Applications`.
+[릴리스](https://github.com/2giduck/K-MON/releases)에서 `PokeTokenBar.zip`을 받아 압축을 풀고 `PokeTokenBar.app`을 `/Applications`로 옮기세요.
 
-Because the app is ad-hoc/self-signed (not notarized under an Apple Developer account), Gatekeeper shows an "unidentified developer" warning on first launch. Clear it once:
+ad-hoc/자체 서명(Apple 개발자 공증 아님)이라 첫 실행에 Gatekeeper 경고가 뜹니다. 한 번만 풀어 주세요:
 
-- **Finder:** right-click (or Control-click) `PokeTokenBar.app` → **Open** → **Open** again in the dialog.
-- **Terminal:** `xattr -dr com.apple.quarantine /Applications/PokeTokenBar.app`
+- **Finder:** `PokeTokenBar.app` 우클릭(또는 Control-클릭) → **열기** → 대화상자에서 다시 **열기**.
+- **터미널:** `xattr -dr com.apple.quarantine /Applications/PokeTokenBar.app`
 
-On first launch, **allow the notification prompt** (for battle challenges) and, when you first open the Battle tab, **allow Local Network access** (for auto-discovery) in System Settings → Privacy.
+첫 실행에 **알림 권한 허용**(배틀 신청용), 배틀 탭 첫 진입에 시스템 설정 → 개인정보 보호에서 **로컬 네트워크 허용**(자동 탐색용)을 켜 주세요.
 
-### Build from source
+### 소스에서 빌드
 
 ```bash
-swift build                  # debug
-./scripts/build-app.sh       # release → PokeTokenBar.app → /Applications
+swift build                  # 디버그
+./scripts/build-app.sh       # 릴리스 → PokeTokenBar.app → /Applications
 ```
 
-> Running the full test suite (`swift test`) requires Xcode (for XCTest); Command Line Tools alone build the app but not the tests.
+> 전체 테스트(`swift test`)는 XCTest 때문에 Xcode가 필요합니다. Command Line Tools만으로는 앱은 빌드되지만 테스트는 안 돌아갑니다.
 
-## Fair play
+## 페어 플레이
 
-- **Starters are device-locked.** Your three starter choices are derived from a stable hardware identifier — deleting the app and reinstalling gives you the same three, so there's no re-rolling for a legendary. (Legendaries never appear as starters anyway.)
-- **Save integrity.** The save file is signed with a device-keyed checksum. Hand-editing `companion-state.json` to inflate currency or hand yourself items is detected on the next launch and resets the tampered progress.
-- **Deterministic battles.** Both peers compute the same battle result from a shared seed; results are never sent over the wire, so they can't be forged.
+- **스타터는 기기 고정.** 스타터 3종은 안정적인 하드웨어 식별자에서 유도됩니다 — 앱을 지웠다 다시 깔아도 같은 3마리라 전설을 노린 리세마라가 불가능합니다. (스타터엔 전설이 아예 안 나옵니다.)
+- **세이브 무결성.** 세이브 파일은 기기 시드 체크섬으로 서명됩니다. `companion-state.json`을 손으로 고쳐 재화를 부풀리거나 아이템을 넣으면 다음 실행에서 감지돼 조작된 진행이 리셋됩니다.
+- **결정적 배틀.** 두 피어가 공유 seed로 같은 결과를 계산합니다. 결과는 네트워크로 보내지 않아 위조할 수 없어요.
 
-## Privacy & permissions
+## 개인정보 & 권한
 
-- **On-device.** AI-coding usage is read directly from local logs. The app never uploads usage or runs model turns.
-- **Local network.** Battle discovery uses Bonjour/AWDL on your LAN only. Battles connect peer-to-peer; nothing goes to a server.
-- **Outbound requests.** The app talks to [PokéAPI](https://pokeapi.co/) (`pokeapi.co`, `graphql.pokeapi.co`) and `raw.githubusercontent.com` for species/evolution data and sprites, and optionally `api.anthropic.com` / `status.*` for Claude limits and incident banners. None of these carry your usage, tokens, prompts, or project paths.
-- **Pokémon assets** are fetched at runtime from PokéAPI and cached only under `~/Library/Application Support/PokeTokenBar/`. The app binary bundles no Pokémon assets.
+- **온디바이스.** AI 코딩 사용량은 로컬 로그에서 직접 읽습니다. 사용량을 업로드하거나 모델을 돌리지 않아요.
+- **로컬 네트워크.** 배틀 탐색은 LAN의 Bonjour/AWDL만 씁니다. 배틀은 피어투피어 — 서버로 가는 게 없어요.
+- **외부 요청.** 종·진화·스프라이트를 위해 [PokéAPI](https://pokeapi.co/)(`pokeapi.co`, `graphql.pokeapi.co`)와 `raw.githubusercontent.com`, 그리고 선택적으로 Claude 한도·상태 배너를 위해 `api.anthropic.com`/`status.*`와 통신합니다. 어느 것도 사용량·토큰·프롬프트·프로젝트 경로를 담지 않아요.
+- **포켓몬 에셋**은 런타임에 PokéAPI에서 받아 `~/Library/Application Support/PokeTokenBar/`에만 캐시합니다. 앱 바이너리에는 포켓몬 에셋이 없어요.
 
-## License & disclaimer
+## 라이선스 & 면책
 
-**MIT** — see [LICENSE](LICENSE). The MIT license covers this project's original source code only; it grants no rights to any third-party trademarks, artwork, or data accessed through the app. K-MON is based on the MIT-licensed [PokeTokenBar](https://github.com/chattymin/PokeTokenBar).
+**MIT** — [LICENSE](LICENSE) 참고. MIT는 이 프로젝트의 원본 소스 코드에만 적용되며, 앱을 통해 접근하는 제3자 상표·아트워크·데이터에는 어떤 권리도 부여하지 않습니다. K-MON은 MIT 라이선스의 [PokeTokenBar](https://github.com/chattymin/PokeTokenBar) 기반입니다.
 
-K-MON is an **unofficial, non-commercial fan project**. It is **not affiliated with, endorsed, sponsored, or approved by Nintendo, Game Freak, Creatures Inc., or The Pokémon Company.** "Pokémon" and all related names, characters, and imagery are trademarks and copyrights of their respective owners. This project claims no ownership of, and asserts no rights over, any Pokémon intellectual property.
+K-MON은 **비공식·비상업 팬 프로젝트**입니다. **닌텐도, 게임프리크, 크리처스, 포켓몬 컴퍼니와 제휴·보증·후원·승인 관계가 없습니다.** "포켓몬" 및 관련 이름·캐릭터·이미지는 각 권리자의 상표·저작물입니다. 이 프로젝트는 어떤 포켓몬 지식재산에 대해서도 소유권을 주장하지 않습니다.
 
-- **The app binary and its release artifacts bundle no Pokémon assets.** Species data and sprites are fetched **at runtime** from the public [PokéAPI](https://pokeapi.co) and cached locally on the user's own device.
-- Any Pokémon imagery in this repository's documentation (screenshots/GIFs) is shown solely to illustrate the app's functionality.
-- The app is provided free of charge for **personal, non-commercial use only.**
+- **앱 바이너리와 릴리스 산출물에는 포켓몬 에셋이 없습니다.** 종 데이터와 스프라이트는 **런타임에** 공개 [PokéAPI](https://pokeapi.co)에서 받아 사용자 기기에 로컬 캐시됩니다.
+- 이 저장소 문서의 포켓몬 이미지(스크린샷/GIF)는 앱 기능을 설명하기 위해서만 표시됩니다.
+- 이 앱은 **개인·비상업 용도로만** 무료 제공됩니다.
 
-*Provided "as is", without warranty of any kind. This notice is not legal advice.*
+*아무런 보증 없이 "있는 그대로" 제공됩니다. 이 고지는 법률 자문이 아닙니다.*
