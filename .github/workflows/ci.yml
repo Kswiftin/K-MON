@@ -11,6 +11,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
     name: build-test
@@ -45,3 +48,44 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-development:
+    name: publish-development
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build-test, secret-scan]
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Build installable app
+        env:
+          KMON_VERSION: 2.5.${{ github.run_number }}
+          KMON_SOURCE_COMMIT: ${{ github.sha }}
+          KMON_SKIP_INSTALL: "1"
+        run: ./scripts/build-app.sh
+
+      - name: Package and checksum
+        run: |
+          ditto -c -k --keepParent build/PokeTokenBar.app build/PokeTokenBar.zip
+          shasum -a 256 build/PokeTokenBar.zip > build/PokeTokenBar.zip.sha256
+
+      - name: Update rolling development release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f development "$GITHUB_SHA"
+          git push --force origin refs/tags/development
+          if gh release view development >/dev/null 2>&1; then
+            gh release upload development build/PokeTokenBar.zip build/PokeTokenBar.zip.sha256 --clobber
+            gh release edit development --target "$GITHUB_SHA" --prerelease \
+              --title "K-MON Development" \
+              --notes "Automated development build from main at $GITHUB_SHA. Tests and secret scan passed."
+          else
+            gh release create development build/PokeTokenBar.zip build/PokeTokenBar.zip.sha256 \
+              --target "$GITHUB_SHA" --prerelease --title "K-MON Development" \
+              --notes "Automated development build from main at $GITHUB_SHA. Tests and secret scan passed."
+          fi

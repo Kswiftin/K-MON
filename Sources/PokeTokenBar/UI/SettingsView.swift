@@ -78,12 +78,7 @@ struct SettingsView: View {
         HStack(spacing: 5) {
             Text("v\(Self.appVersion)")
             Text("·")
-            footerLink("GitHub", "https://github.com/chattymin/PokeTokenBar")
-            Text("·")
-            footerLink("Web", "https://chattymin.github.io/PokeTokenBar/")
-            Text("·")
-            // 개발자 후원 — 기능 잠금·너지 없는 푸터 링크
-            footerLink("♥ Sponsor", "https://github.com/sponsors/chattymin")
+            footerLink("GitHub", "https://github.com/2giduck/K-MON")
             Spacer()
         }
         .font(.caption2)

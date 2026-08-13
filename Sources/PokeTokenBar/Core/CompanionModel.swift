@@ -551,6 +551,10 @@ struct CompanionState: Codable, Sendable {
     var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
+    var care = PetCareState()
+    var adventure: AdventureRun?
+    var adventureHistory: [AdventureRecord] = []
+    var battleHistory: [BattleRecord] = []
     // 세이브 무결성 해시(기기 시드) — 손으로 JSON 을 고치면 불일치 → 로드 때 조작 판정.
     // 이 필드 자체는 해시 입력에서 제외한다(자기참조 방지). 빈 값 = 아직 서명 전(구버전/첫 로드).
     var integrity = ""
@@ -585,6 +589,10 @@ struct CompanionState: Codable, Sendable {
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])
         language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
+        care               = c.lenient(PetCareState.self, forKey: .care, default: PetCareState())
+        adventure          = c.lenientOptional(AdventureRun.self, forKey: .adventure)
+        adventureHistory   = c.lenient([Lossy<AdventureRecord>].self, forKey: .adventureHistory, default: []).compactMap(\.value)
+        battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)
         integrity          = c.lenient(String.self, forKey: .integrity, default: "")
     }
 }

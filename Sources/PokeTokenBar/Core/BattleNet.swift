@@ -126,6 +126,7 @@ final class BattleCenter {
     }
 
     private let companion: CompanionStore
+    let multiplayer: MultiplayerRoomCenter
     private var listener: NWListener?
     private var browser: NWBrowser?
     private var connection: NWConnection?
@@ -135,6 +136,7 @@ final class BattleCenter {
 
     init(companion: CompanionStore) {
         self.companion = companion
+        self.multiplayer = MultiplayerRoomCenter(companion: companion)
         // 표시 이름 우선순위: 사용자가 정한 트레이너 이름 → 계정 풀네임 → 호스트명 → "Trainer".
         let trainer = companion.trainerName.trimmingCharacters(in: .whitespaces)
         let name = !trainer.isEmpty ? trainer
@@ -164,6 +166,7 @@ final class BattleCenter {
     func start() {
         startListener()
         startBrowser()
+        multiplayer.startBrowsing()
     }
 
     /// Bonjour 광고/탐색 파라미터 — `includePeerToPeer` 로 AWDL(피어투피어)까지 켠다.

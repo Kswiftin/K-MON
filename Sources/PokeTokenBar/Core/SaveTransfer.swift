@@ -167,6 +167,27 @@ enum SaveTransfer {
         }
         // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
         s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
+        s.care.hunger = min(max(0, s.care.hunger), 100)
+        s.care.happiness = min(max(0, s.care.happiness), 100)
+        s.care.energy = min(max(0, s.care.energy), 100)
+        if let adventure = s.adventure,
+           adventure.endsAt <= adventure.startedAt ||
+           adventure.endsAt.timeIntervalSince(adventure.startedAt) > 24 * 60 * 60 {
+            s.adventure = nil
+        }
+        s.adventureHistory = Array(s.adventureHistory
+            .filter { (1...10_000).contains($0.companionSpeciesID) && (0...maxTokenValue).contains($0.stardust) }
+            .sorted { $0.completedAt > $1.completedAt }.prefix(30))
+        s.battleHistory = Array(s.battleHistory
+            .filter { (2...4).contains($0.participantCount) && (0...maxTokenValue).contains($0.reward) }
+            .sorted { $0.playedAt > $1.playedAt }.prefix(30))
+        s.battleHistory = s.battleHistory.map { record in
+            var record = record
+            record.opponentNames = Array(record.opponentNames.prefix(3)).map {
+                String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(30))
+            }.filter { !$0.isEmpty }
+            return record
+        }
         // 전설 스타터 리셋 — 첫 동반자(dex 비어 있음)가 전설이면 스타터를 다시 고르게 한다.
         // (구버전 스타터 롤이 전설을 허용했을 때의 개체. 알/졸업으로 얻은 전설은 dex 가 비지 않아 유지된다.)
         if let a = s.active, a.rarity == .legendary, s.dex.isEmpty, s.starterChosen {
@@ -196,6 +217,19 @@ enum SaveTransfer {
         p.append("tier\(s.eggTier?.rawValue ?? "-")"); p.append("sc\(s.starterChosen)")
         p.append("cand" + s.starterCandidates.map(String.init).joined(separator: ","))
         p.append("inv" + s.inventory.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))
+        // 구버전 서명 호환: 새 필드가 완전히 기본값이면 기존 canonical 문자열을 유지한다.
+        if s.care != PetCareState() {
+            p.append("care\(Int(s.care.hunger))|\(Int(s.care.happiness))|\(Int(s.care.energy))")
+        }
+        if let run = s.adventure {
+            p.append("adv\(run.id)|\(run.zone.rawValue)|\(run.startedAt.timeIntervalSince1970)|\(run.endsAt.timeIntervalSince1970)|\(run.companionSpeciesID)")
+        }
+        if !s.adventureHistory.isEmpty {
+            p.append("ah" + s.adventureHistory.map { "\($0.id)|\($0.zone.rawValue)|\($0.stardust)|\($0.foundRareCandy)" }.joined(separator: ","))
+        }
+        if !s.battleHistory.isEmpty {
+            p.append("bh" + s.battleHistory.map { "\($0.id)|\($0.mode.rawValue)|\($0.participantCount)|\($0.won)|\($0.reward)" }.joined(separator: ","))
+        }
         if let a = s.active {
             p.append("act\(a.baseID)|\(a.stageIndex)|\(a.usedAtStage)|\(a.rarity.rawValue)|\(a.isShiny)|\(a.totalForms)|\(a.nickname ?? "")")
         } else { p.append("act-") }

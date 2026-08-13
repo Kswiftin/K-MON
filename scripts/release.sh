@@ -13,8 +13,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPO="chattymin/PokeTokenBar"
-TAP_REPO="chattymin/homebrew-tap"
+REPO="2giduck/K-MON"
+TAP_REPO=""
 CASK_PATH="Casks/poke-token-bar.rb"
 
 # ── 문서 일관성 검토 (배포 전 항상 실행) ───────────────────────────────────
@@ -84,7 +84,7 @@ fi
 
 VERSION="${1:?사용: release.sh <version>  (예: 2.1.1)}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "✗ 버전 형식 오류: $VERSION"; exit 1; }
-PREV=$(grep -oE 'VERSION="[0-9.]+"' scripts/build-app.sh | grep -oE '[0-9.]+')
+PREV=$(grep -oE 'DEFAULT_VERSION="[0-9.]+"' scripts/build-app.sh | grep -oE '[0-9.]+')
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 [[ "$BRANCH" == "main" ]] || { echo "✗ main 브랜치에서 실행하세요 (현재: $BRANCH) — 커밋/push 대상 일치 보장"; exit 1; }
 echo "=== PokeTokenBar 릴리스 $PREV → $VERSION ==="
@@ -127,7 +127,7 @@ echo "  ✓ '$SIGN_IDENTITY' leaf=$LEAF — 안정적 서명으로 배포(사용
 export PTB_REQUIRE_STABLE_SIGN=1   # build-app.sh 방어선: ad-hoc 폴백으로 새면 즉시 실패
 
 echo "▶ 3/8 VERSION 범프 $PREV → $VERSION (아직 미커밋)"
-perl -pi -e "s/VERSION=\"[0-9.]+\"/VERSION=\"$VERSION\"/" scripts/build-app.sh
+perl -pi -e "s/DEFAULT_VERSION=\"[0-9.]+\"/DEFAULT_VERSION=\"$VERSION\"/" scripts/build-app.sh
 
 echo "▶ 4/8 빌드 + zip (push 전 검증 — 실패해도 범프 미커밋이라 origin/main 무손상)"
 ./scripts/build-app.sh >/dev/null
@@ -147,21 +147,13 @@ echo "▶ 6/8 GitHub Release v$VERSION"
 NOTES_FILE="${PTB_NOTES_FILE:-}"
 if [[ -n "$NOTES_FILE" && -f "$NOTES_FILE" ]]; then
   gh release create "v$VERSION" build/PokeTokenBar.zip --repo "$REPO" \
-    --title "PokeTokenBar v$VERSION" --target main --notes-file "$NOTES_FILE"
+    --title "K-MON v$VERSION" --target main --notes-file "$NOTES_FILE"
 else
   gh release create "v$VERSION" build/PokeTokenBar.zip --repo "$REPO" \
-    --title "PokeTokenBar v$VERSION" --target main --notes "Release v$VERSION"
+    --title "K-MON v$VERSION" --target main --notes "K-MON v$VERSION"
 fi
 
-echo "▶ 7/8 Homebrew cask $VERSION"
-TMP_CASK=$(mktemp)
-gh api "repos/$TAP_REPO/contents/$CASK_PATH" --jq '.content' | base64 -d \
-  | perl -pe "s/version \"[0-9.]+\"/version \"$VERSION\"/" > "$TMP_CASK"
-SHA=$(gh api "repos/$TAP_REPO/contents/$CASK_PATH" --jq '.sha')
-gh api -X PUT "repos/$TAP_REPO/contents/$CASK_PATH" \
-  -f message="cask: poke-token-bar $VERSION" \
-  -f content="$(base64 -i "$TMP_CASK")" -f sha="$SHA" --jq '.commit.html_url'
-rm -f "$TMP_CASK"
+echo "▶ 7/8 Homebrew cask 생략 — K-MON 전용 tap 미구성"
 
 echo "▶ 8/8 GitHub Pages 재빌드(랜딩 동적 배지 갱신 유도)"
 gh api -X POST "repos/$REPO/pages/builds" >/dev/null 2>&1 || true

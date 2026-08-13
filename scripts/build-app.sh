@@ -3,7 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="2.5.0"
+DEFAULT_VERSION="2.5.0"
+VERSION="${KMON_VERSION:-$DEFAULT_VERSION}"
+SOURCE_COMMIT="${KMON_SOURCE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
 APP_NAME="PokeTokenBar"
 BUILD_DIR="build"
 APP="$BUILD_DIR/$APP_NAME.app"
@@ -30,14 +32,16 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
+    <key>KMONSourceCommit</key><string>$SOURCE_COMMIT</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSLocalNetworkUsageDescription</key><string>Battle friends' Pokémon on the same network.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>Discover K-MON rooms and battle with up to four friends on the same network.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_ptbbattle._tcp</string>
+        <string>_kmonroom._tcp</string>
     </array>
 </dict>
 </plist>
@@ -88,9 +92,12 @@ else
     codesign --force -s - "$APP"
 fi
 
-echo "==> 기존 인스턴스 종료 + /Applications 설치"
-pkill -x "$APP_NAME" 2>/dev/null || true
-rm -rf "/Applications/$APP_NAME.app"
-cp -R "$APP" /Applications/
-
-echo "완료: open /Applications/$APP_NAME.app"
+if [[ "${KMON_SKIP_INSTALL:-0}" == "1" ]]; then
+    echo "완료: $APP (설치 생략)"
+else
+    echo "==> 기존 인스턴스 종료 + /Applications 설치"
+    pkill -x "$APP_NAME" 2>/dev/null || true
+    rm -rf "/Applications/$APP_NAME.app"
+    cp -R "$APP" /Applications/
+    echo "완료: open /Applications/$APP_NAME.app"
+fi
