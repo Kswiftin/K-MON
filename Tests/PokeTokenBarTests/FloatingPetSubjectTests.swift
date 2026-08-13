@@ -59,6 +59,38 @@ final class FloatingPetSubjectTests: XCTestCase {
         XCTAssertEqual(subject.isShiny, store.currentIsShiny)
     }
 
+    // MARK: 진화 라인 묶기 (선택 메뉴)
+
+    func testLinesGroupEachChainUnderItsBaseForm() {
+        let store = makeStore()
+        store.debugSetDex([dexEntry(base: 1, final: 3, chain: [1, 2, 3]),
+                           dexEntry(base: 4, final: 6, chain: [4, 5, 6])])
+        let lines = store.dexLines
+        XCTAssertEqual(lines.map(\.id), [1, 4], "기본형 번호순")
+        XCTAssertEqual(lines.first?.species.map(\.id), [1, 2, 3], "초기→최종 순서 유지")
+    }
+
+    /// 분기 진화는 한 줄로 합친다 — 기본형 이름이 메뉴에 여러 번 뜨면 어느 쪽인지 구분할 수 없다.
+    func testBranchingEvolutionsShareOneLine() {
+        let store = makeStore()
+        store.debugSetDex([dexEntry(base: 133, final: 134, chain: [133, 134]),
+                           dexEntry(base: 133, final: 136, chain: [133, 136])])
+        let lines = store.dexLines
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines.first?.species.map(\.id), [133, 134, 136])
+    }
+
+    /// 메뉴에 있는 항목은 전부 고를 수 있어야 하고, 같은 종이 두 줄에 나오면 안 된다.
+    func testLinesCoverEveryDexSpeciesExactlyOnce() {
+        let store = makeStore()
+        store.debugSetDex([dexEntry(base: 1, final: 3, chain: [1, 2, 3]),
+                           dexEntry(base: 133, final: 134, chain: [133, 134]),
+                           dexEntry(base: 133, final: 136, chain: [133, 136], shiny: true)])
+        let listed = store.dexLines.flatMap { $0.species.map(\.id) }
+        XCTAssertEqual(listed.sorted(), store.dexSpecies.map(\.id).sorted())
+        XCTAssertEqual(Set(listed).count, listed.count, "같은 종이 두 줄에 걸쳐 나오면 안 된다")
+    }
+
     /// 고를 수 있는 목록과 실제로 그려지는 종이 같은 출처여야 한다 — 규칙이 갈라지면 목록에 보이는데
     /// 골라도 안 바뀌는 칸이 생긴다.
     func testEverySpeciesOfferedByTheDexCanBeDrawn() {

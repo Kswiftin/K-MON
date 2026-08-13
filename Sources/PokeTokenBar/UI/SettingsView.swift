@@ -16,6 +16,19 @@ struct SettingsView: View {
 
     private var isBundledApp: Bool { AppEnv.isBundledApp }
 
+    /// 이로치는 도감 격자와 같은 표식으로 — 메뉴에서만 표기가 다르면 같은 칸으로 안 보인다.
+    private func speciesMenuLabel(_ species: CompanionStore.DexSpecies) -> String {
+        species.isShiny ? "✨ \(species.name)" : species.name
+    }
+
+    /// 고른 종이 도감에서 사라졌으면 파트너 표기로 — 실제로 그려지는 대상(floatingPetSubject)과 맞춘다.
+    private var floatingPetSpeciesSelectionLabel: String {
+        guard let pinned = settings.floatingPetSpeciesID,
+              let species = companion.dexSpecies.first(where: { $0.id == pinned })
+        else { return l.floatingPetSpeciesFollowsPartner }
+        return speciesMenuLabel(species)
+    }
+
     /// 세이브 봉투에 남길 출처 표기 — 어느 Mac에서 내보낸 파일인지 나중에 알아보기 위한 것.
     private static var deviceName: String {
         Host.current().localizedName ?? ProcessInfo.processInfo.hostName
@@ -172,14 +185,22 @@ struct SettingsView: View {
                 groupRow {
                     Text(l.floatingPetSpeciesLabel).font(.callout)
                     Spacer()
-                    Picker("", selection: $settings.floatingPetSpeciesID) {
-                        Text(l.floatingPetSpeciesFollowsPartner).tag(Int?.none)
-                        ForEach(companion.dexSpecies) { species in
-                            Text(species.isShiny ? "✨ \(species.name)" : species.name)
-                                .tag(Int?.some(species.id))
+                    // 진화 라인을 하위 메뉴로 접는다 — 도감이 커지면 평평한 목록은 스크롤만 길어진다.
+                    Menu {
+                        Button(l.floatingPetSpeciesFollowsPartner) { settings.floatingPetSpeciesID = nil }
+                        ForEach(companion.dexLines) { line in
+                            Menu(line.name) {
+                                ForEach(line.species) { species in
+                                    Button(speciesMenuLabel(species)) {
+                                        settings.floatingPetSpeciesID = species.id
+                                    }
+                                }
+                            }
                         }
+                    } label: {
+                        Text(floatingPetSpeciesSelectionLabel)
                     }
-                    .labelsHidden().controlSize(.small).frame(maxWidth: 180)
+                    .menuStyle(.borderlessButton).controlSize(.small).frame(maxWidth: 180)
                 }
             }
         }
