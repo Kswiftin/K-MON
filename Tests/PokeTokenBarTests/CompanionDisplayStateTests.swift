@@ -1,7 +1,15 @@
 import XCTest
 @testable import PokeTokenBar
 
-// companion 표시 상태(displayState) 전이 — update() 입력 조합에 따른 결과 검증.
+// companion 표시 상태(displayState) 전이 — refreshLifecycle() 의 규칙을 고정한다.
+//
+// 2026-08-13 게임 구조 개편으로 표시 상태는 더 이상 사용량/burn tier 입력이 아니라, 매 tick() 마다
+// refreshLifecycle() 이 활성 여부·이벤트 창(eventUntil)·돌봄 에너지(care.energy)만으로 정한다:
+//   active == nil                          → .egg
+//   justGraduated != nil || 이벤트 창 안    → .levelUp
+//   care.energy < 20                       → .tired
+//   care.energy < 45                       → .sleep
+//   그 외                                   → .idle
 // SeededRNG / StubProvider 는 CompanionTests.swift 의 내부 헬퍼를 재사용한다.
 
 private func dnode(_ id: Int, _ children: [EvoNode] = []) -> EvoNode { EvoNode(speciesID: id, children: children) }
@@ -28,71 +36,60 @@ final class CompanionDisplayStateTests: XCTestCase {
         return (s, clock)
     }
 
-    func testEggWhenNoUsageData() {
+    /// 활성 개체가 하나도 없으면(알 상태) 항상 .egg — 에너지·이벤트 창과 무관.
+    func testEggWhenNoActiveCompanion() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-disp-\(UUID().uuidString).json")
         let s = CompanionStore(provider: StubProvider(value: dline(base: 1)),
                                clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 1))
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: false)
+        s.tick()
         XCTAssertEqual(s.displayState, .egg)
     }
 
-    func testLevelUpDuringEventWindow() async {
+    /// hatch() 직후엔 tick 없이도 이미 .levelUp — hatch 가 직접 이벤트 창을 연다.
+    func testLevelUpImmediatelyAfterHatch() async {
         let (s, _) = await hatchedStore()
-        // 이벤트 윈도우가 살아있는 동안(시계 미전진) → levelUp 유지
-        s.update(todayTokensByProvider: ["test": 100], todayDate: "d", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
         XCTAssertEqual(s.displayState, .levelUp)
     }
 
-    func testWorkingAfterEventExpires() async {
-        let (s, clock) = await hatchedStore()
-        clock.now = dNow.addingTimeInterval(60)   // 이벤트 만료
-        s.update(todayTokensByProvider: ["test": 100], todayDate: "d", monthTotal: 0, burnTier: .normal, limitWarning: false, hasUsageData: true)
-        XCTAssertEqual(s.displayState, .working)
+    /// 회귀(#4): 이벤트 창이 열려 있는 동안의 tick 은 .levelUp 을 유지해야 한다. 과거엔 표시 갱신이
+    /// 매 갱신 초입에서 이벤트 관련 상태를 무조건 정리해, 창 도중 갱신이 끼면 .levelUp 이 조기에
+    /// 풀렸다. 지금은 refreshLifecycle 이 만료 여부(clock() > eventUntil)만 보고 판단한다.
+    func testLevelUpSurvivesATickWithinTheEventWindow() async {
+        let (s, _) = await hatchedStore()
+        s.tick()   // 시계 미전진 — 창이 아직 살아있다
+        XCTAssertEqual(s.displayState, .levelUp)
     }
 
-    func testFocusOnHighBurn() async {
+    /// 창이 끝나면(기본 에너지 100 ≥ 45) .idle 로 돌아간다.
+    func testIdleAfterEventWindowExpires() async {
         let (s, clock) = await hatchedStore()
-        clock.now = dNow.addingTimeInterval(60)
-        s.update(todayTokensByProvider: ["test": 100], todayDate: "d", monthTotal: 0, burnTier: .blazing, limitWarning: false, hasUsageData: true)
-        XCTAssertEqual(s.displayState, .focus)
+        clock.now = dNow.addingTimeInterval(10)   // hatch 가 연 4초 창을 넘긴다
+        s.tick()
+        XCTAssertEqual(s.displayState, .idle)
     }
 
-    func testTiredWhenLimitWarning() async {
-        let (s, clock) = await hatchedStore()
-        clock.now = dNow.addingTimeInterval(60)
-        s.update(todayTokensByProvider: ["test": 100], todayDate: "d", monthTotal: 0, burnTier: .normal, limitWarning: true, hasUsageData: true)
-        XCTAssertEqual(s.displayState, .tired)
-    }
-
-    func testSleepWhenZeroUsageToday() async {
-        let (s, clock) = await hatchedStore()
-        clock.now = dNow.addingTimeInterval(60)
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+    /// 이벤트 창이 없고 에너지가 20~44 구간이면 .sleep.
+    func testSleepWhenEnergyIsModerate() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-disp-\(UUID().uuidString).json")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"#
+            + #""rarity":"common","totalForms":3},"care":{"energy":30}}"#
+        try Data(json.utf8).write(to: url)
+        let s = CompanionStore(provider: StubProvider(value: dline(base: 1)),
+                               clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 1))
+        s.tick()
         XCTAssertEqual(s.displayState, .sleep)
     }
 
-    /// 회귀(#4): 진화 문구(justEvolvedTo)는 진화가 연 .levelUp 창 **전체** 동안 유지돼야 한다.
-    /// 과거엔 update() 초입에서 매 틱 무조건 nil 로 밀어, 창 도중 틱이 끼면 표시가
-    /// "…(으)로 진화했어요"→"성장했어요"(statusEvolved→statusGrew)로 되돌아갔다.
-    func testEvolveStatusSurvivesUpdateWithinEventWindow() async {
-        let (s, clock) = await hatchedStore()
-        clock.now = dNow.addingTimeInterval(60)   // 부화 창 만료 — 이후엔 진화 이벤트만 남게
-        // 기준선 설정(첫 update 는 baseline 만 잡고 delta 는 적용 안 함).
-        s.update(todayTokensByProvider: ["test": 100], todayDate: "d", monthTotal: 0, burnTier: .normal, limitWarning: false, hasUsageData: true)
-        // stage0 임계 도달 → 정확히 1회 진화(1→2). justEvolvedTo 설정 + 이벤트 창 갱신(clock+4).
-        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
-        XCTAssertEqual(s.state.active?.stageIndex, 1)
-        let evolvedName = s.justEvolvedTo
-        XCTAssertNotNil(evolvedName, "진화 직후 진화 문구가 설정돼야 함")
-        // 창이 살아있는 동안 추가 update()(delta 0)가 와도 진화 문구·levelUp 이 유지돼야 한다.
-        s.update(todayTokensByProvider: ["test": 100], todayDate: "d", monthTotal: 0, burnTier: .normal, limitWarning: false, hasUsageData: true)
-        XCTAssertEqual(s.justEvolvedTo, evolvedName, "이벤트 창 도중 진화 문구가 nil 로 밀리면 안 됨(#4)")
-        XCTAssertEqual(s.displayState, .levelUp)
-        // 창 만료 후 update → 진화 문구 정리 + 일반 상태 복귀.
-        clock.now = dNow.addingTimeInterval(70)
-        s.update(todayTokensByProvider: ["test": 100], todayDate: "d", monthTotal: 0, burnTier: .normal, limitWarning: false, hasUsageData: true)
-        XCTAssertNil(s.justEvolvedTo, "창 만료 시 진화 문구가 정리돼야 함")
-        XCTAssertEqual(s.displayState, .working)
+    /// 에너지가 20 미만이면 .tired — .sleep 보다 우선한다.
+    func testTiredWhenEnergyIsLow() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-disp-\(UUID().uuidString).json")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"#
+            + #""rarity":"common","totalForms":3},"care":{"energy":10}}"#
+        try Data(json.utf8).write(to: url)
+        let s = CompanionStore(provider: StubProvider(value: dline(base: 1)),
+                               clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 1))
+        s.tick()
+        XCTAssertEqual(s.displayState, .tired)
     }
 
     // MARK: 알(egg) 인큐베이션 파생값
@@ -105,7 +102,7 @@ final class CompanionDisplayStateTests: XCTestCase {
         XCTAssertEqual(s.eggProgress, 0)
         XCTAssertEqual(s.eggTokensToHatch, PokemonBalance.eggHatchThreshold)
 
-        // 임계의 40% 생산 — 방치 경제 전환 후 인큐베이션은 tick()/accrue 경로로만 쌓인다(update() 는 표시 전용).
+        // 임계의 40% 생산 — 방치 경제 전환 후 인큐베이션은 tick()/accrue 경로로만 쌓인다(displayState 갱신과는 별개).
         let part = PokemonBalance.eggHatchThreshold * 2 / 5
         s.debugAccrue(part)
         XCTAssertEqual(s.eggProgress, 0.4, accuracy: 0.001)

@@ -189,7 +189,7 @@ final class CompanionStoreTests: XCTestCase {
     func testCorruptDexEntryDroppedWhileRestSurvives() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-dex-\(UUID().uuidString).json")
         // 유효 2개 + 손상 1개(finalID/chainOrder 누락).
-        let json = #"{"economyVersion":2,"dex":[{"baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"},"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"dex":[{"baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"},"#
             + #"{"baseID":99,"rarity":"rare"},"#
             + #"{"baseID":7,"finalID":9,"chainOrder":[7,8,9],"rarity":"uncommon"}],"inventory":{"rareCandy":2}}"#
         try Data(json.utf8).write(to: url)
@@ -228,7 +228,7 @@ final class CompanionStoreTests: XCTestCase {
     func testCorruptActiveFallsBackToEggWhileRestSurvives() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-corrupt-\(UUID().uuidString).json")
         // active 는 pathIDs 누락 → MonState decode 실패. dex/inventory/usedSinceInstall 은 유효.
-        let json = #"{"economyVersion":2,"active":{"baseID":1},"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1},"#
             + #""dex":[{"baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"}],"#
             + #""inventory":{"rareCandy":3},"usedSinceInstall":5000}"#
         try Data(json.utf8).write(to: url)
@@ -332,7 +332,7 @@ final class CompanionStoreTests: XCTestCase {
                               usedAtStage: 0, rarity: .common, totalForms: 3, nature: .brave)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let json = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
-        try Data(#"{"economyVersion":2,"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 7))
@@ -372,7 +372,7 @@ final class CompanionStoreTests: XCTestCase {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("poke-\(UUID().uuidString).json")
             let json = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
-            try Data(#"{"economyVersion":2,"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
+            try Data(#"{"economyVersion":2,"forcedResetVersion":1,"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
             return CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                   fileURL: url, rng: SeededRNG(seed: 7))
         }
@@ -473,7 +473,7 @@ final class CompanionStoreTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let dexJSON = String(decoding: try JSONEncoder().encode([graduated]), as: UTF8.self)
         let activeJSON = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
-        try Data(#"{"economyVersion":2,"dex":\#(dexJSON),"active":\#(activeJSON),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"active":\#(activeJSON),"language":"ko"}"#.utf8).write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 7))
@@ -563,7 +563,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 도감 빈 화면으로 떨어지지 않는다.
     func testLoadedActiveCompanionPreventsEmptyDexState() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-\(UUID().uuidString).json")
-        let json = #"{"economyVersion":2,"active":{"baseID":529,"pathIDs":[529],"stageIndex":0,"usedAtStage":148344233,"rarity":"uncommon","totalForms":2,"isShiny":false,"nature":"timid"},"dex":[]}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":529,"pathIDs":[529],"stageIndex":0,"usedAtStage":148344233,"rarity":"uncommon","totalForms":2,"isShiny":false,"nature":"timid"},"dex":[]}"#
         try json.data(using: .utf8)!.write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
@@ -578,7 +578,7 @@ final class CompanionStoreTests: XCTestCase {
     /// caughtAt 이 없는 구버전 졸업 항목은 active 로 오인하지 않는다.
     func testActiveCompanionPinnedBeforeGraduatedEntries() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-sort-\(UUID().uuidString).json")
-        let json = #"{"economyVersion":2,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":5,"rarity":"common","totalForms":3},"dex":[{"id":"legacy-graduated","baseID":150,"finalID":150,"chainOrder":[150],"rarity":"legendary"}]}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":5,"rarity":"common","totalForms":3},"dex":[{"id":"legacy-graduated","baseID":150,"finalID":150,"chainOrder":[150],"rarity":"legendary"}]}"#
         try json.data(using: .utf8)!.write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
@@ -793,8 +793,7 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(opposing.next() % 2, 1, "a reroll would select the opposite branch (3)")
         let rng = CountingRNG(seed: 1)
         let s2 = CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: rng)
-        s2.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                  burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s2.tick()
         let loaded = await waitUntil { s2.currentLine != nil }
         XCTAssertTrue(loaded, "line should load before evolution")
 
@@ -810,13 +809,12 @@ final class CompanionStoreTests: XCTestCase {
     func testReloadLegacyIncompletePlanMigratesToPersistedCompleteRoute() async throws {
         let line = wurmpleLine
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-reload-legacy-\(UUID().uuidString).json")
-        let legacy = #"{"economyVersion":2,"active":{"baseID":265,"pathIDs":[265],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1}}"#
+        let legacy = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":265,"pathIDs":[265],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1}}"#
         try Data(legacy.utf8).write(to: url)
         let rng = CountingRNG(seed: 7)
         let s = CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: rng)
 
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         let loaded = await waitUntil { s.currentLine != nil }
         XCTAssertTrue(loaded, "line should load legacy state")
 
@@ -828,8 +826,7 @@ final class CompanionStoreTests: XCTestCase {
 
         let reloadRNG = CountingRNG(seed: 1)
         let reloaded = CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: reloadRNG)
-        reloaded.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                        burnTier: .idle, limitWarning: false, hasUsageData: true)
+        reloaded.tick()
         let reloadedLine = await waitUntil { reloaded.currentLine != nil }
         XCTAssertTrue(reloadedLine)
         XCTAssertEqual(reloaded.state.active?.plannedPathIDs, migratedPlan, "migration must persist its one-time choice")
@@ -838,12 +835,11 @@ final class CompanionStoreTests: XCTestCase {
 
     func testReloadRepairsInvalidPlanSuffixWithoutRewindingRealizedPath() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-invalid-plan-\(UUID().uuidString).json")
-        let saved = #"{"economyVersion":2,"active":{"baseID":265,"pathIDs":[265,266],"plannedPathIDs":[265,266,269],"stageIndex":1,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
+        let saved = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":265,"pathIDs":[265,266],"plannedPathIDs":[265,266,269],"stageIndex":1,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
         try Data(saved.utf8).write(to: url)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 9))
 
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         let loaded = await waitUntil { s.currentLine != nil }
         XCTAssertTrue(loaded)
 
@@ -856,12 +852,11 @@ final class CompanionStoreTests: XCTestCase {
 
     func testReloadWrongRootNormalizesPathWithoutChangingIdentityOrDisguise() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-wrong-root-\(UUID().uuidString).json")
-        let saved = #"{"economyVersion":2,"active":{"baseID":265,"pathIDs":[999],"plannedPathIDs":[999],"stageIndex":0,"usedAtStage":42,"rarity":"common","totalForms":1,"isShiny":true,"nature":"timid","dittoDisguise":265}}"#
+        let saved = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":265,"pathIDs":[999],"plannedPathIDs":[999],"stageIndex":0,"usedAtStage":42,"rarity":"common","totalForms":1,"isShiny":true,"nature":"timid","dittoDisguise":265}}"#
         try Data(saved.utf8).write(to: url)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 9))
 
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         let loaded = await waitUntil { s.currentLine != nil }
         XCTAssertTrue(loaded)
 
@@ -876,13 +871,12 @@ final class CompanionStoreTests: XCTestCase {
 
     func testReloadLeafCurrentPlanDoesNotConsumeRNG() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-leaf-plan-\(UUID().uuidString).json")
-        let saved = #"{"economyVersion":2,"active":{"baseID":265,"pathIDs":[265,266,267],"plannedPathIDs":[265,266,267],"stageIndex":2,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
+        let saved = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":265,"pathIDs":[265,266,267],"plannedPathIDs":[265,266,267],"stageIndex":2,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
         try Data(saved.utf8).write(to: url)
         let rng = CountingRNG(seed: 9)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: rng)
 
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         let loaded = await waitUntil { s.currentLine != nil }
         XCTAssertTrue(loaded)
 
@@ -893,13 +887,12 @@ final class CompanionStoreTests: XCTestCase {
 
     func testLineLoadPreservesUpdatesMadeWhileProviderIsSuspended() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-load-race-\(UUID().uuidString).json")
-        let saved = #"{"economyVersion":2,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1,"nature":"adamant"},"inventory":{"mint":1}}"#
+        let saved = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1,"nature":"adamant"},"inventory":{"mint":1}}"#
         try Data(saved.utf8).write(to: url)
         let provider = SuspendedLineProvider(value: linear3)
         let s = CompanionStore(provider: provider, clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
 
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         let suspensionDeadline = Date().addingTimeInterval(1)
         while !(await provider.isSuspended()), Date() < suspensionDeadline {
             try? await Task.sleep(nanoseconds: 1_000_000)
@@ -1168,7 +1161,7 @@ final class CompanionIdentityTests: XCTestCase {
         // 1차 스토어: 부화 후 저장
         let s1 = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                 fileURL: url, rng: SeededRNG(seed: 5))
-        s1.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s1.tick()
         await s1.hatch(baseID: 1)
         XCTAssertNotNil(s1.state.active)
 
@@ -1182,7 +1175,7 @@ final class CompanionIdentityTests: XCTestCase {
         XCTAssertEqual(s2.state.active?.usedAtStage, 300_000_000, "라인 미로딩 중 델타가 유실되면 안 된다")
         XCTAssertEqual(s2.state.active?.stageIndex, 0)
         // update → loadCurrentLine 완료 시 적립분으로 진화 판정(드레인)
-        s2.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s2.tick()
         for _ in 0..<50 where s2.currentLine == nil { await Task.yield() }
         XCTAssertNotNil(s2.currentLine)
         XCTAssertEqual(s2.state.active?.stageIndex, 1, "라인 로드 후 적립분으로 진화해야 한다")
@@ -1193,14 +1186,13 @@ final class CompanionIdentityTests: XCTestCase {
     /// 복구하고 단계 수를 현재 에셋 개수에 맞춘다. 그렇지 않으면 트리에서 현재 종을 못 찾아 성장이 멈춘다.
     func testLineLoadMigratesPersistedUnsupportedEvolution() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-assets-\(UUID().uuidString).json")
-        let json = #"{"economyVersion":2,"active":{"baseID":56,"pathIDs":[56,57,979],"stageIndex":2,"usedAtStage":123,"rarity":"common","totalForms":3},"dex":[]}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":56,"pathIDs":[56,57,979],"stageIndex":2,"usedAtStage":123,"rarity":"common","totalForms":3},"dex":[]}"#
         try Data(json.utf8).write(to: url)
         let supportedLine = makeLine(base: 56, tree: node(56, [node(57, [node(979)])]))
         let s = CompanionStore(provider: StubProvider(value: supportedLine), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 5))
 
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0,
-                 burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         for _ in 0..<50 where s.currentLine == nil { await Task.yield() }
 
         XCTAssertNotNil(s.currentLine)
@@ -1328,7 +1320,7 @@ final class CompanionIdentityTests: XCTestCase {
         p.index = [BaseSpecies(id: 77, captureRate: 255)]
         let s = samplerStore(p, seed: 5, preloadState: CompanionState())
         // 임계 미만(알 진행 0) → 부화는 안 되지만 update 틱이 프리패칭을 돌려야 한다
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         for _ in 0..<50 where s.state.pendingHatchID == nil { await Task.yield() }
         XCTAssertEqual(s.state.pendingHatchID, 77, "알 상태에서 종이 미리 롤/저장돼야 한다")
         // 임계 도달(생산 적립) → 부화는 pending 그대로 (추가 선택 롤 없음: shiny/nature 만 소비)
@@ -1345,7 +1337,7 @@ final class CompanionIdentityTests: XCTestCase {
         p.index = [BaseSpecies(id: 88, captureRate: 255)]
         p.failAll = true
         let s = samplerStore(p, seed: 9, preloadState: eggReadyState())
-        s.update(todayTokensByProvider: ["test": 0], todayDate: "d1", monthTotal: 0, burnTier: .idle, limitWarning: false, hasUsageData: true)
+        s.tick()
         for _ in 0..<10 { await Task.yield() }        // 프리패치 시도 소진(실패)
         XCTAssertNil(s.state.pendingHatchID)
         await s.hatchIfNeeded()                        // 여전히 오프라인 → 알 유지
