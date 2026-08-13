@@ -67,12 +67,7 @@ struct L {
     var battleManualPlaceholder: String { t("상대 주소 (예: 10.1.2.3:50628)", "Opponent address (e.g. 10.1.2.3:50628)", "相手のアドレス（例: 10.1.2.3:50628）") }
     var battleBadAddress: String { t("주소 형식이 잘못됐어요 — IP:포트", "Bad address — use IP:port", "アドレス形式が不正です — IP:ポート") }
     var battleKindBrawl: String { t("맞짱", "Brawl", "タイマン") }
-    var battleKindRace: String { t("달리기", "Race", "かけっこ") }
-    func battleKindLabel(_ k: BattleKind) -> String {
-        switch k { case .brawl: return battleKindBrawl; case .race: return battleKindRace }
-    }
     var battleAutoAccept: String { t("신청 자동 수락", "Auto-accept challenges", "自動で承諾") }
-    var battleRaceHint: String { t("← → 방향키를 번갈아 눌러 달려요!", "Alternate ← → arrow keys to run!", "← → キーを交互に押して走ろう！") }
     var battleDiscoveryBlocked: String {
         t("자동 탐색이 막혀 있어요 — 시스템 설정 > 개인정보 보호 > 로컬 네트워크에서 허용하거나, 아래 주소로 직접 연결하세요.",
           "Auto-discovery is blocked — allow it in System Settings > Privacy > Local Network, or connect by address below.",

@@ -7,20 +7,14 @@ import UserNotifications
 /// 피어 간 대전 메시지. 와이어 포맷 = 4바이트 길이(big-endian) + JSON.
 /// 턴 결과는 보내지 않는다 — 양쪽이 (스냅샷, seed, 기술 선택)만 교환하고 각자 같은 결정적
 /// 엔진으로 해상한다. 결과 필드가 없으니 결과 변조도 없다.
-/// 배틀 종류 — 맞짱(턴제 기술 대전) / 달리기(스피드 기반 결정적 레이스).
-enum BattleKind: String, Codable, Sendable, CaseIterable {
-    case brawl   // 맞짱 — 기존 턴제 기술 배틀
-    case race    // 달리기 — 스피드로 겨루는 즉시 판정 레이스
-}
-
+/// 1:1 LAN 대전은 맞짱(턴제 기술 대전) 하나다. 여러 명이 달리는 레이스는 포켓애슬론
+/// (`MultiplayerRoomCenter` + `PokeathlonRace`)이 담당한다 — 호스트가 판정하는 방식.
 enum NetMessage: Codable, Sendable {
-    case challenge(snapshot: BattleSnapshot, seed: UInt64, kind: BattleKind, profile: BattleRankProfile)
+    case challenge(snapshot: BattleSnapshot, seed: UInt64, profile: BattleRankProfile)
     case accept(snapshot: BattleSnapshot, profile: BattleRankProfile)
     case decline
     case move(turn: Int, moveIndex: Int)   // moveIndex -1 = 발버둥(PP 소진)
     case forfeit
-    case raceStep(distance: Int)           // 달리기 진행도 동기(상대 러너 위치)
-    case raceFinish                        // 달리기 결승 통과 알림
 }
 
 /// 발견된 대전 상대.
@@ -30,24 +24,6 @@ struct BattlePeer: Identifiable, Equatable {
     let endpoint: NWEndpoint
     var id: String { serviceName }
     static func == (l: Self, r: Self) -> Bool { l.serviceName == r.serviceName }
-}
-
-/// 달리기 상태 — 키보드(←/→ 번갈아)로 직접 조작하는 실시간 레이스. 양쪽이 각자 달리고
-/// 진행도를 주고받아 상대 러너를 본다. 먼저 결승선에 닿는 쪽이 승리(동시 완주는 challenger 승).
-struct RaceState {
-    let my: BattleSnapshot
-    let opp: BattleSnapshot
-    let iAmA: Bool                 // challenger = A (동시 완주 타이브레이크)
-    static let finishLine = 40     // 결승까지 필요한 스텝 수(←→ 번갈아 1스텝)
-    var myDistance = 0
-    var oppDistance = 0
-    var myFinished = false
-    var oppFinished = false
-    var iWon: Bool? = nil          // nil = 진행 중, 정해지면 결과 표시
-    var resolved: Bool { iWon != nil || (myFinished && oppFinished) }
-
-    var myProgress: Double { min(1, Double(myDistance) / Double(Self.finishLine)) }
-    var oppProgress: Double { min(1, Double(oppDistance) / Double(Self.finishLine)) }
 }
 
 /// 진행 중 대전 상태(뷰 렌더 소스).
@@ -104,13 +80,10 @@ final class BattleCenter {
     /// 이 주소를 상대에게 알려주고 직접 연결받는다.
     private(set) var listeningPort: UInt16?
     private(set) var battle: NetBattleState?
-    private(set) var race: RaceState?                    // 달리기 결과(있으면 아레나가 레이스 뷰를 그린다)
     private(set) var incomingSnapshot: BattleSnapshot?   // 수락 화면에서 상대 미리보기
-    private(set) var incomingKind: BattleKind = .brawl   // 받은 신청의 종류(수락 화면 표시용)
     private(set) var opponentRankProfile: BattleRankProfile?
     private(set) var rankedStake = 0
     private(set) var lastRankDelta = 0
-    private var myKind: BattleKind = .brawl              // 내가 건 신청의 종류
     private(set) var lastError: String?
     /// 팝오버가 열려 있을 때 배틀 탭으로 유도하기 위한 신호(뷰가 소비).
     var pendingAttention = false
@@ -163,7 +136,7 @@ final class BattleCenter {
     private var l: L { companion.l }
 
     var incomingRankedStake: Int {
-        guard incomingKind == .brawl, let opponentRankProfile else { return 0 }
+        guard let opponentRankProfile else { return 0 }
         return BattleRank.stake(challenger: opponentRankProfile.rank, defender: companion.battleRank)
     }
 
@@ -312,12 +285,12 @@ final class BattleCenter {
         teamPractice = practice
     }
 
-    func challenge(_ peer: BattlePeer, kind: BattleKind = .brawl) {
-        challengeEndpoint(peer.endpoint, displayName: peer.name, kind: kind)
+    func challenge(_ peer: BattlePeer) {
+        challengeEndpoint(peer.endpoint, displayName: peer.name)
     }
 
     /// mDNS 가 막힌 네트워크(사내망 등)용 — "IP:포트" 직접 입력 신청.
-    func challengeManual(_ address: String, kind: BattleKind = .brawl) {
+    func challengeManual(_ address: String) {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = trimmed.split(separator: ":")
         guard parts.count == 2, !parts[0].isEmpty,
@@ -326,7 +299,7 @@ final class BattleCenter {
             return
         }
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(String(parts[0])), port: port)
-        challengeEndpoint(endpoint, displayName: trimmed, kind: kind)
+        challengeEndpoint(endpoint, displayName: trimmed)
     }
 
     /// 내 수동 연결 주소("IP:포트") — 리스너 준비 전/IP 미확인이면 nil.
@@ -335,13 +308,12 @@ final class BattleCenter {
         return "\(ip):\(port)"
     }
 
-    private func challengeEndpoint(_ endpoint: NWEndpoint, displayName: String, kind: BattleKind) {
+    private func challengeEndpoint(_ endpoint: NWEndpoint, displayName: String) {
         guard case .ready = phase else { return }
         phase = .preparing
         lastError = nil
-        myKind = kind
         Task { @MainActor in
-            guard let snapshot = await buildMySnapshot(levelOverride: kind == .brawl ? 50 : nil) else {
+            guard let snapshot = await buildMySnapshot(levelOverride: 50) else {
                 phase = .ready
                 lastError = l.battleStatsFailed
                 return
@@ -359,7 +331,7 @@ final class BattleCenter {
                 Task { @MainActor in self?.connectionState(state, conn: conn) }
             }
             conn.start(queue: .main)
-            send(.challenge(snapshot: snapshot, seed: seed, kind: kind,
+            send(.challenge(snapshot: snapshot, seed: seed,
                             profile: companion.battleRankProfile), over: conn)
             receiveLoop(conn)
             pendingMySnapshot = snapshot
@@ -415,7 +387,7 @@ final class BattleCenter {
         guard case .incoming = phase, let conn = connection, let oppSnapshot = incomingSnapshot else { return }
         phase = .preparing
         Task { @MainActor in
-            guard let mine = await buildMySnapshot(levelOverride: incomingKind == .brawl ? 50 : nil) else {
+            guard let mine = await buildMySnapshot(levelOverride: 50) else {
                 send(.decline, over: conn)
                 dropConnection()
                 phase = .ready
@@ -423,16 +395,15 @@ final class BattleCenter {
                 return
             }
             let mineProfile = companion.battleRankProfile
-            let stake = incomingKind == .brawl
-                ? BattleRank.stake(challenger: opponentRankProfile?.rank ?? BattleRank(), defender: mineProfile.rank)
-                : 0
+            let stake = BattleRank.stake(challenger: opponentRankProfile?.rank ?? BattleRank(),
+                                         defender: mineProfile.rank)
             guard stake == 0 || (mineProfile.stardust >= stake && (opponentRankProfile?.stardust ?? 0) >= stake) else {
                 send(.decline, over: conn)
                 dropConnection(); phase = .ready; lastError = "랭크전 판돈이 부족합니다."
                 return
             }
             send(.accept(snapshot: mine, profile: mineProfile), over: conn)
-            beginBattle(my: mine, opp: oppSnapshot, iAmA: false, seed: incomingSeed, kind: incomingKind)
+            beginBattle(my: mine, opp: oppSnapshot, iAmA: false, seed: incomingSeed)
         }
     }
 
@@ -477,79 +448,35 @@ final class BattleCenter {
     }
 
     func dismissResult() {
-        let wasRace = race != nil
         battle = nil
-        race = nil
         teamPractice = nil
         if case .finished = phase { phase = .ready }
-        else if wasRace, case .battling = phase { phase = .ready }   // 레이스 결과 닫기
         isPracticeBattle = false
     }
 
     private var pendingMySnapshot: BattleSnapshot?
 
-    private func beginBattle(my: BattleSnapshot, opp: BattleSnapshot, iAmA: Bool, seed: UInt64, kind: BattleKind) {
+    private func beginBattle(my: BattleSnapshot, opp: BattleSnapshot, iAmA: Bool, seed: UInt64) {
         didSettleRankedBrawl = false
         lastRankDelta = 0
-        if kind == .brawl, let opponentRankProfile {
+        if let opponentRankProfile {
             rankedStake = iAmA
                 ? BattleRank.stake(challenger: companion.battleRank, defender: opponentRankProfile.rank)
                 : BattleRank.stake(challenger: opponentRankProfile.rank, defender: companion.battleRank)
         } else {
             rankedStake = 0
         }
-        switch kind {
-        case .brawl:
-            let myStats = my.effectiveStats(), oppStats = opp.effectiveStats()
-            let myMoves = my.moves ?? MoveSpec.fallbackSet(types: my.types)
-            let oppMoves = opp.moves ?? MoveSpec.fallbackSet(types: opp.types)
-            battle = NetBattleState(iAmA: iAmA, my: my, opp: opp,
-                                    myStats: myStats, oppStats: oppStats,
-                                    myHP: myStats.hp, oppHP: oppStats.hp,
-                                    myMoves: myMoves, oppMoves: oppMoves,
-                                    myPP: myMoves.map(\.pp), oppPP: oppMoves.map(\.pp),
-                                    rng: SplitMix64(seed: seed))
-            phase = .battling
-            pendingAttention = true
-        case .race:
-            // 달리기 — 실시간 키보드 조작. 연결을 유지해 진행도·결승을 주고받는다.
-            race = RaceState(my: my, opp: opp, iAmA: iAmA)
-            lastSentRaceStep = 0   // 이전 레이스 잔여값 리셋(안 하면 새 레이스 초반 전송 누락)
-            phase = .battling   // 아레나가 race != nil 이면 레이스 뷰를 그린다
-            pendingAttention = true
-        }
-    }
-
-    // MARK: 달리기 (실시간)
-
-    private var lastSentRaceStep = 0
-    /// 유효한 ←/→ 번갈아 입력 1회 — 내 러너를 한 스텝 전진시키고 상대에게 알린다.
-    func raceStep() {
-        guard case .battling = phase, var r = race, !r.myFinished else { return }
-        r.myDistance = min(RaceState.finishLine, r.myDistance + 1)
-        if r.myDistance >= RaceState.finishLine {
-            r.myFinished = true
-        }
-        race = r
-        // 진행도 동기 — 매 스텝 다 보내면 과하니 3스텝마다(+결승 직전) 전송.
-        if r.myDistance - lastSentRaceStep >= 3 || r.myFinished {
-            lastSentRaceStep = r.myDistance
-            send(.raceStep(distance: r.myDistance), over: connection)
-        }
-        if r.myFinished {
-            send(.raceFinish, over: connection)
-            resolveRace()
-        }
-    }
-
-    /// 결승 판정 — 내가 먼저면 승, 상대가 먼저면 패, 동시 완주면 challenger(A) 승. 양쪽이 같은 규칙.
-    private func resolveRace() {
-        guard var r = race, r.iWon == nil else { return }
-        if r.myFinished && !r.oppFinished { r.iWon = true }
-        else if r.oppFinished && !r.myFinished { r.iWon = false }
-        else if r.myFinished && r.oppFinished { r.iWon = r.iAmA }   // 동시 → A 승
-        race = r
-        if r.iWon != nil { dropConnection() }   // 결과 확정 → 연결 정리(뷰는 race 로 결과 표시)
+        let myStats = my.effectiveStats(), oppStats = opp.effectiveStats()
+        let myMoves = my.moves ?? MoveSpec.fallbackSet(types: my.types)
+        let oppMoves = opp.moves ?? MoveSpec.fallbackSet(types: opp.types)
+        battle = NetBattleState(iAmA: iAmA, my: my, opp: opp,
+                                myStats: myStats, oppStats: oppStats,
+                                myHP: myStats.hp, oppHP: oppStats.hp,
+                                myMoves: myMoves, oppMoves: oppMoves,
+                                myPP: myMoves.map(\.pp), oppPP: oppMoves.map(\.pp),
+                                rng: SplitMix64(seed: seed))
+        phase = .battling
+        pendingAttention = true
     }
 
     /// 양쪽 선택이 모이면 턴 해상 — challenger 를 A 로 고정해 양쪽이 같은 좌변으로 계산.
@@ -588,7 +515,7 @@ final class BattleCenter {
 
     private func handle(_ message: NetMessage) {
         switch message {
-        case .challenge(let snapshot, let seed, let kind, let profile):
+        case .challenge(let snapshot, let seed, let profile):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
             if UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false {
                 send(.decline, over: connection)
@@ -604,7 +531,6 @@ final class BattleCenter {
             }
             incomingSnapshot = snapshot
             incomingSeed = seed
-            incomingKind = kind
             opponentRankProfile = profile
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             pendingAttention = true
@@ -614,15 +540,13 @@ final class BattleCenter {
             guard !snapshot.types.isEmpty, (1...100).contains(snapshot.level) else {
                 dropConnection(); phase = .ready; return
             }
-            let stake = myKind == .brawl
-                ? BattleRank.stake(challenger: companion.battleRank, defender: profile.rank)
-                : 0
+            let stake = BattleRank.stake(challenger: companion.battleRank, defender: profile.rank)
             guard stake == 0 || (companion.availableTokens >= stake && profile.stardust >= stake) else {
                 dropConnection(); phase = .ready; lastError = "랭크전 판돈이 부족합니다."
                 return
             }
             opponentRankProfile = profile
-            beginBattle(my: mine, opp: snapshot, iAmA: true, seed: incomingSeed, kind: myKind)
+            beginBattle(my: mine, opp: snapshot, iAmA: true, seed: incomingSeed)
         case .decline:
             if case .challenging = phase {
                 dropConnection()
@@ -636,24 +560,11 @@ final class BattleCenter {
             battle = b
             resolveIfReady()
         case .forfeit:
-            if race != nil {
-                if var r = race, r.iWon == nil { r.iWon = true; race = r }   // 상대 기권 → 내 승
-                dropConnection()
-            } else if case .battling = phase {
+            if case .battling = phase {
                 dropConnection()
                 phase = .finished(iWon: true, byForfeit: true)
                 settleRankedBrawlIfNeeded(won: true)
             }
-        case .raceStep(let distance):
-            guard var r = race else { return }
-            r.oppDistance = max(r.oppDistance, min(RaceState.finishLine, distance))   // 뒤로 안 감
-            race = r
-        case .raceFinish:
-            guard var r = race else { return }
-            r.oppFinished = true
-            r.oppDistance = RaceState.finishLine
-            race = r
-            resolveRace()
         }
     }
 
@@ -679,13 +590,6 @@ final class BattleCenter {
     private func connectionDropped() {
         guard connection != nil else { return }
         connection = nil
-        // 달리기 중 연결 끊김은 forfeit 로 처리하지 않는다 — 정상 종료(상대가 완주 후 연결 정리)일 수 있고,
-        // 그 경우 이미 계산된 결과(race.iWon)를 유지해야 한다. 아직 결과가 없다면 상대 이탈 → 내 승.
-        if race != nil {
-            if var r = race, r.iWon == nil { r.iWon = true; race = r }   // 상대 이탈 → 승
-            incomingSnapshot = nil
-            return
-        }
         switch phase {
         case .battling:
             // 상대 이탈 = 몰수승.
