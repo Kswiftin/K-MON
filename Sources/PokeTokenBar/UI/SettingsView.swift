@@ -168,6 +168,19 @@ struct SettingsView: View {
                     Text("\(Int(settings.floatingPetSize))px")
                         .font(.caption).monospacedDigit().frame(width: 44, alignment: .trailing)
                 }
+                Divider()
+                groupRow {
+                    Text(l.floatingPetSpeciesLabel).font(.callout)
+                    Spacer()
+                    Picker("", selection: $settings.floatingPetSpeciesID) {
+                        Text(l.floatingPetSpeciesFollowsPartner).tag(Int?.none)
+                        ForEach(companion.dexSpecies) { species in
+                            Text(species.isShiny ? "✨ \(species.name)" : species.name)
+                                .tag(Int?.some(species.id))
+                        }
+                    }
+                    .labelsHidden().controlSize(.small).frame(maxWidth: 180)
+                }
             }
         }
     }
