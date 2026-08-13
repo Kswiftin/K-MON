@@ -174,6 +174,121 @@ actor PokeAPIClient: PokeProviding {
         return BaseSpecies(id: id, captureRate: dto.capture_rate)
     }
 
+    // MARK: 배틀 프로필 (종족값·타입)
+
+    private var battleProfileCache: [Int: PokemonBattleProfile] = [:]
+
+    /// `/pokemon/{id}` 에서 배틀에 필요한 종족값·타입만 파싱. id ≤ 649(Gen-V) 기본 폼은 species id 와 동일.
+    /// PokéAPI 가 모르는 타입을 주면 건너뛴다(모두 무효면 throw — 스냅샷에 빈 types 를 내보내지 않게).
+    func battleProfile(speciesID: Int) async throws -> PokemonBattleProfile {
+        if let c = battleProfileCache[speciesID] { return c }
+        let dto: PokemonDTO = try await get(base.appendingPathComponent("pokemon/\(speciesID)"))
+        var stats = BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1)
+        for s in dto.stats {
+            switch s.stat.name {
+            case "hp":              stats.hp = s.base_stat
+            case "attack":          stats.atk = s.base_stat
+            case "defense":         stats.def = s.base_stat
+            case "special-attack":  stats.spa = s.base_stat
+            case "special-defense": stats.spd = s.base_stat
+            case "speed":           stats.spe = s.base_stat
+            default: break
+            }
+        }
+        let types = dto.types
+            .sorted { $0.slot < $1.slot }
+            .compactMap { PokemonType(rawValue: $0.type.name) }
+        guard !types.isEmpty else { throw URLError(.cannotParseResponse) }
+        let profile = PokemonBattleProfile(speciesID: speciesID, stats: stats, types: types)
+        battleProfileCache[speciesID] = profile
+        return profile
+    }
+
+    // MARK: 무브셋 (네트워크 대전)
+
+    private var moveSetCache: [String: [MoveSpec]] = [:]   // "speciesID-level" → 4기술
+
+    /// 현재 레벨까지 레벨업으로 배우는 기술 중 공격기 4개 선택(위력·타입 다양성 우선).
+    /// 후보가 모자라면 레벨 제한을 풀고, 그래도 없거나 fetch 실패면 합성 무브셋 폴백 —
+    /// 대전 성립이 기술 데이터 fetch 성공에 묶이면 안 된다.
+    func moveSet(speciesID: Int, level: Int, types: [PokemonType]) async -> [MoveSpec] {
+        let cacheKey = "\(speciesID)-\(level)"
+        if let c = moveSetCache[cacheKey] { return c }
+        do {
+            let dto: PokemonMovesDTO = try await get(base.appendingPathComponent("pokemon/\(speciesID)"))
+            let candidates = Self.moveCandidates(dto, level: level)
+            var picked: [MoveSpec] = []
+            for name in candidates {
+                if picked.count >= 8 { break }   // 상세 fetch 상한(PokéAPI 배려)
+                guard let spec = try? await moveDetail(name) else { continue }
+                guard spec.power > 0 else { continue }   // 변화기 제외(자동 판정 불가)
+                picked.append(spec)
+            }
+            let four = Self.pickFour(from: picked, types: types)
+            guard !four.isEmpty else { throw URLError(.cannotParseResponse) }
+            moveSetCache[cacheKey] = four
+            return four
+        } catch {
+            AppLog.write("moveSet: fetch failed for \(speciesID) lv\(level) — fallback set: \(error)")
+            return MoveSpec.fallbackSet(types: types)
+        }
+    }
+
+    /// 레벨업 습득 기술을 (습득레벨 내림차순, 현 레벨 이하 우선) 이름 목록으로.
+    static func moveCandidates(_ dto: PokemonMovesDTO, level: Int) -> [String] {
+        struct Learn { let name: String; let level: Int }
+        var best: [String: Int] = [:]   // 이름 → 최소 습득레벨(버전그룹 중)
+        for m in dto.moves {
+            let levels = m.version_group_details
+                .filter { $0.move_learn_method.name == "level-up" }
+                .map(\.level_learned_at)
+            guard let l = levels.min() else { continue }
+            best[m.move.name] = min(best[m.move.name] ?? Int.max, l)
+        }
+        let learns = best.map { Learn(name: $0.key, level: $0.value) }
+        let within = learns.filter { $0.level <= max(1, level) }
+        // 현 레벨 이하가 4개 못 되면 전체로 완화 — 저레벨도 대전은 돼야 한다.
+        let pool = within.count >= 4 ? within : learns
+        return pool.sorted { $0.level == $1.level ? $0.name < $1.name : $0.level > $1.level }.map(\.name)
+    }
+
+    /// 공격기 목록에서 4개 — STAB·고위력 우선하되 타입 중복은 뒤로(견제폭).
+    static func pickFour(from specs: [MoveSpec], types: [PokemonType]) -> [MoveSpec] {
+        let ranked = specs.sorted {
+            let stab0 = types.contains($0.type), stab1 = types.contains($1.type)
+            if stab0 != stab1 { return stab0 }
+            return $0.power > $1.power
+        }
+        var out: [MoveSpec] = []
+        for s in ranked where !out.contains(where: { $0.type == s.type }) {
+            out.append(s)
+            if out.count == 4 { return out }
+        }
+        for s in ranked where !out.contains(where: { $0.id == s.id }) {
+            out.append(s)
+            if out.count == 4 { break }
+        }
+        return out
+    }
+
+    private var moveDetailCache: [String: MoveSpec] = [:]
+    private func moveDetail(_ name: String) async throws -> MoveSpec {
+        if let c = moveDetailCache[name] { return c }
+        let dto: MoveDTO = try await get(base.appendingPathComponent("move/\(name)"))
+        var byLang: [String: String] = [:]
+        for n in dto.names where langCodes.contains(n.language.name) { byLang[n.language.name] = n.name }
+        if byLang["en"] == nil { byLang["en"] = name }
+        guard let type = PokemonType(rawValue: dto.type.name),
+              let cls = MoveDamageClass(rawValue: dto.damage_class.name) else {
+            throw URLError(.cannotParseResponse)
+        }
+        let spec = MoveSpec(id: dto.id, names: byLang, type: type,
+                            power: dto.power ?? 0, damageClass: cls,
+                            accuracy: dto.accuracy, pp: dto.pp ?? 10)
+        moveDetailCache[name] = spec
+        return spec
+    }
+
     private func get<T: Decodable>(_ url: URL) async throws -> T {
         var req = URLRequest(url: url)
         req.timeoutInterval = 15
@@ -215,6 +330,41 @@ struct NameDTO: Decodable, Sendable { let name: String; let language: NamedRef }
 struct NamedRef: Decodable, Sendable { let name: String; let url: String? }
 struct URLRef: Decodable, Sendable { let url: String }
 struct ChainDTO: Decodable, Sendable { let chain: ChainLink }
+
+/// 배틀에 필요한 종 데이터(종족값·타입) — `/pokemon/{id}` 부분 디코드 결과.
+struct PokemonBattleProfile: Sendable {
+    let speciesID: Int
+    let stats: BattleStats
+    let types: [PokemonType]
+}
+struct PokemonDTO: Decodable, Sendable {
+    struct StatEntry: Decodable, Sendable { let base_stat: Int; let stat: NamedRef }
+    struct TypeEntry: Decodable, Sendable { let slot: Int; let type: NamedRef }
+    let stats: [StatEntry]
+    let types: [TypeEntry]
+}
+/// `/pokemon/{id}` 의 moves 부분만 — 배틀 프로필과 별도 디코드(무브셋은 대전 시작 때만 필요).
+struct PokemonMovesDTO: Decodable, Sendable {
+    struct MoveEntry: Decodable, Sendable {
+        struct Detail: Decodable, Sendable {
+            let level_learned_at: Int
+            let move_learn_method: NamedRef
+        }
+        let move: NamedRef
+        let version_group_details: [Detail]
+    }
+    let moves: [MoveEntry]
+}
+/// `/move/{name}` 부분 디코드.
+struct MoveDTO: Decodable, Sendable {
+    let id: Int
+    let power: Int?
+    let accuracy: Int?
+    let pp: Int?
+    let type: NamedRef
+    let damage_class: NamedRef
+    let names: [NameDTO]
+}
 struct ChainLink: Decodable, Sendable {
     let species: NamedRef
     let evolves_to: [ChainLink]

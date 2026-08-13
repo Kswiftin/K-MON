@@ -34,6 +34,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>Battle friends' Pokémon on the same network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_ptbbattle._tcp</string>
+    </array>
 </dict>
 </plist>
 PLIST

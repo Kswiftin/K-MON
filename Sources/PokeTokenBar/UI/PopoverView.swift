@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-enum PopoverTab { case home, shop, bag, collection }
+enum PopoverTab { case home, shop, bag, collection, battle }
 
 /// 팝오버 치수의 단일 소스. 자식이 쓸 수 있는 폭을 알아야 할 때 이 값을 쓴다 — 넘치는 자식이
 /// 부모 폭을 부풀리므로 GeometryReader 로 재면 순환한다.
@@ -34,6 +34,7 @@ struct PopoverView: View {
     @Environment(CompanionStore.self) private var companion
     @Environment(UpdateChecker.self) private var updater
     @Environment(PopoverNavigation.self) private var nav
+    @Environment(BattleCenter.self) private var battleCenter
 
     private var l: L { companion.l }
 
@@ -53,6 +54,8 @@ struct PopoverView: View {
         }
         .frame(width: PopoverMetrics.width)
         .environment(\.locale, companion.language.displayLocale)
+        // 배틀 신청/개시 등 주의가 필요한 상태로 열리면 배틀 탭으로 바로 이동.
+        .onAppear { if battleCenter.pendingAttention { nav.tab = .battle } }
     }
 
     @ViewBuilder
@@ -87,11 +90,14 @@ struct PopoverView: View {
                 Text(l.shop).tag(PopoverTab.shop)
                 Text(l.bag).tag(PopoverTab.bag)
                 Text(l.collection).tag(PopoverTab.collection)
+                Text(l.battle).tag(PopoverTab.battle)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
 
-            if nav.tab == .collection {
+            if nav.tab == .battle {
+                BattleView(store: companion)
+            } else if nav.tab == .collection {
                 CollectionView(store: companion)
             } else if nav.tab == .bag {
                 BagView(store: companion, nav: nav)

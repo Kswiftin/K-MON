@@ -815,7 +815,9 @@ final class UsageStore {
         guard !notifAuthRequested else { return }
         guard AppEnv.isBundledApp else { return }
         notifAuthRequested = true
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // completion 은 시스템이 백그라운드 큐에서 부른다 — @MainActor 문맥에서 만든 클로저가 격리를
+        // 상속하면 런타임 executor 검사에 걸려 SIGTRAP(dispatch_assert_queue). @Sendable 로 격리 차단.
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { @Sendable _, _ in }
     }
 
     /// 한도 알림 1건의 발화 지시(순수 판정 결과). 부수효과와 분리해 테스트 가능하게.

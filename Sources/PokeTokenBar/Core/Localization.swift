@@ -20,6 +20,93 @@ struct L {
     /// 상위 탭 이름 — 안에서 도감/포획 로그를 세그먼트로 전환하므로 둘을 아우르는 말이어야 한다.
     /// (ko 가 "도감"이면 탭과 세그먼트가 같은 이름이 돼 en/ja 의 Collection/コレクション 과도 어긋난다.)
     var collection: String { t("컬렉션", "Collection", "コレクション") }
+    var battle: String { t("배틀", "Battle", "バトル") }
+
+    // MARK: 배틀
+    var battleMyPokemon: String { t("내 포켓몬", "My Pokémon", "自分のポケモン") }
+    var battleCopyCode: String { t("내 배틀 코드 복사", "Copy my battle code", "バトルコードをコピー") }
+    var battleCodeCopied: String { t("복사됨!", "Copied!", "コピーしました！") }
+    var battlePastePlaceholder: String { t("상대의 배틀 코드를 붙여넣으세요", "Paste your opponent's battle code", "相手のバトルコードを貼り付け") }
+    var battleShareHint: String {
+        t("코드를 복사해 친구와 교환하면, 친구의 포켓몬과 배틀할 수 있어요.",
+          "Copy your code and swap with a friend to battle their Pokémon.",
+          "コードを友だちと交換すると、そのポケモンとバトルできます。")
+    }
+    var battleInvalidCode: String { t("코드를 읽을 수 없어요.", "Can't read that code.", "コードを読み取れません。") }
+    var battleTamperedCode: String { t("변조된 코드예요.", "That code has been tampered with.", "改ざんされたコードです。") }
+    var battleStart: String { t("배틀 시작!", "Start battle!", "バトル開始！") }
+    var battleAgain: String { t("다시 배틀", "Battle again", "もう一度バトル") }
+    var battleNeedHatch: String { t("알은 배틀할 수 없어요 — 먼저 부화시키세요.", "Eggs can't battle — hatch first.", "タマゴはバトルできません — まず孵化させましょう。") }
+    var battleLoadingStats: String { t("스탯 불러오는 중…", "Loading stats…", "ステータス読み込み中…") }
+    var battleStatsFailed: String { t("스탯을 불러오지 못했어요 — 네트워크 확인 후 다시 시도하세요.", "Couldn't load stats — check your network and retry.", "ステータスを取得できません — 通信を確認して再試行してください。") }
+    var battleDraw: String { t("무승부!", "It's a draw!", "引き分け！") }
+    var battleSuperEffective: String { t("효과가 굉장했다!", "It's super effective!", "こうかはばつぐんだ！") }
+    var battleNotVeryEffective: String { t("효과가 별로인 듯하다…", "It's not very effective…", "こうかはいまひとつのようだ…") }
+    var battleCritical: String { t("급소에 맞았다!", "A critical hit!", "きゅうしょにあたった！") }
+    var battleStruggle: String { t("발버둥", "Struggle", "わるあがき") }
+    func battleWinner(_ name: String) -> String { t("\(name) 승리!", "\(name) wins!", "\(name)の勝ち！") }
+    func battleLv(_ n: Int) -> String { "Lv.\(n)" }
+    func battleUsedMove(_ attacker: String, type: String, damage: Int) -> String {
+        t("\(attacker)의 \(type) 공격! \(damage) 데미지",
+          "\(attacker) used a \(type) attack! \(damage) damage",
+          "\(attacker)の\(type)こうげき！ \(damage)ダメージ")
+    }
+    func battleTrainerLabel(_ trainer: String) -> String {
+        t("\(trainer)의 포켓몬", "\(trainer)'s Pokémon", "\(trainer)のポケモン")
+    }
+
+    // MARK: 배틀 (네트워크 대전)
+    var battleNearby: String { t("근처의 트레이너", "Nearby trainers", "近くのトレーナー") }
+    var battleNoPeers: String {
+        t("같은 네트워크에서 대전 상대를 찾는 중… 친구도 앱을 켜야 보여요.",
+          "Searching this network for opponents… your friend needs the app running too.",
+          "同じネットワークで対戦相手を探しています… 相手もアプリを起動している必要があります。")
+    }
+    var battleChallengeButton: String { t("대결 신청", "Challenge", "対戦を申し込む") }
+    var battleWaitingAccept: String { t("수락 대기 중…", "Waiting for accept…", "承諾を待っています…") }
+    var battleCancel: String { t("취소", "Cancel", "キャンセル") }
+    var battleIncomingTitle: String { t("배틀 신청이 왔습니다!", "Incoming battle challenge!", "バトルの申し込みが来ました！") }
+    var battleAccept: String { t("수락", "Accept", "承諾") }
+    var battleDecline: String { t("거절", "Decline", "拒否") }
+    var battleDeclined: String { t("상대가 거절했어요.", "They declined.", "相手に断られました。") }
+    var battleConnectionLost: String { t("연결이 끊어졌어요.", "Connection lost.", "接続が切れました。") }
+    var battleYourTurn: String { t("기술을 선택하세요", "Choose a move", "わざを選んでください") }
+    var battleWaitingOpponent: String { t("상대가 기술을 고르는 중…", "Opponent is choosing…", "相手がわざを選んでいます…") }
+    var battleForfeit: String { t("기권", "Forfeit", "降参") }
+    var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }
+    var battleNoEffect: String { t("효과가 없었다…", "It had no effect…", "こうかがないようだ…") }
+    var battleOppForfeited: String { t("상대가 기권했어요 — 승리!", "Opponent forfeited — you win!", "相手が降参しました — 勝ち！") }
+    var battleYouForfeited: String { t("기권했어요.", "You forfeited.", "降参しました。") }
+    var battleWon: String { t("이겼다! 🏆", "You won! 🏆", "勝った！ 🏆") }
+    var battleLost: String { t("졌다…", "You lost…", "負けた…") }
+    var battleClose: String { t("확인", "Done", "閉じる") }
+    var battleCodeSection: String { t("배틀 코드로 대전 (오프라인)", "Battle by code (offline)", "コードで対戦（オフライン）") }
+    var battleManualHint: String {
+        t("자동 탐색이 안 되면(사내망 등) 주소로 직접 연결하세요.",
+          "If auto-discovery is blocked (office Wi-Fi etc.), connect by address.",
+          "自動検出できない場合（社内ネットワーク等）はアドレスで直接接続。")
+    }
+    var battleMyAddress: String { t("내 주소", "My address", "自分のアドレス") }
+    var battleManualPlaceholder: String { t("상대 주소 (예: 10.1.2.3:50628)", "Opponent address (e.g. 10.1.2.3:50628)", "相手のアドレス（例: 10.1.2.3:50628）") }
+    var battleBadAddress: String { t("주소 형식이 잘못됐어요 — IP:포트", "Bad address — use IP:port", "アドレス形式が不正です — IP:ポート") }
+    func battleTurnLabel(_ n: Int) -> String { t("턴 \(n)", "Turn \(n)", "ターン \(n)") }
+    func battleIncomingFrom(_ trainer: String) -> String {
+        t("\(trainer)님이 대결을 신청했어요!", "\(trainer) challenged you!", "\(trainer)さんが対戦を申し込みました！")
+    }
+    var battleChallengeNotifTitle: String { t("배틀 신청이 왔습니다!", "Battle challenge!", "バトルの申し込み！") }
+    func battleChallengeNotifBody(_ trainer: String, pokemon: String, level: Int) -> String {
+        t("\(trainer) — \(pokemon) Lv.\(level) · 메뉴바에서 수락하세요",
+          "\(trainer) — \(pokemon) Lv.\(level) · accept from the menu bar",
+          "\(trainer) — \(pokemon) Lv.\(level) · メニューバーから承諾")
+    }
+    func battleUsedMoveNamed(_ attacker: String, move: String, damage: Int) -> String {
+        t("\(attacker)의 \(move)! \(damage) 데미지",
+          "\(attacker) used \(move)! \(damage) damage",
+          "\(attacker)の\(move)！ \(damage)ダメージ")
+    }
+    func battleUsedMoveMissed(_ attacker: String, move: String) -> String {
+        t("\(attacker)의 \(move)!", "\(attacker) used \(move)!", "\(attacker)の\(move)！")
+    }
 
     // MARK: 헤더 (오늘/주/월)
     var todayTokens: String { t("오늘 사용한 토큰", "Today's tokens", "本日のトークン") }
