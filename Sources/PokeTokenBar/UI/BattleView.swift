@@ -206,7 +206,7 @@ struct BattleView: View {
                     .padding(5)
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
                 }
-                ForEach(lobby.participants.count..<lobby.capacity, id: \.self) { _ in
+                ForEach(lobby.runners.count..<max(lobby.runners.count, lobby.capacity), id: \.self) { _ in
                     HStack { Image(systemName: "person.crop.circle.dashed"); Text(store.language == .ko ? "참가자 대기 중" : "Waiting for player") }
                         .font(.caption2).foregroundStyle(.tertiary).padding(5)
                 }
