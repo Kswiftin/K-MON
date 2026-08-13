@@ -66,6 +66,9 @@ enum ImportConfirmPolicy {
 }
 
 enum SaveTransfer {
+    static let integrityVersion = 5
+    /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
+    static let forcedResetVersion = 1
     /// 세이브 파일 크기 상한. 정상 세이브는 수 KB 이고 도감이 가득 차도 수백 KB 를 넘지 않는다.
     /// 상한이 없으면 거대한 JSON 이 메인스레드 파싱을 수 초간 잡는다(실측: 39MB → 약 1.8초 정지).
     static let maxFileBytes = 8 * 1024 * 1024
@@ -142,10 +145,19 @@ enum SaveTransfer {
     /// 다운스트림 산술 지점마다 막으면 새 지점이 생길 때마다 재발하므로, 값이 **들어오는 경계 한 곳**에서
     /// 정규화한다. 대상은 실제로 산술에 쓰이는 필드뿐이다 — 도감·인벤토리 항목은 잘라내지 않는다(데이터 손실).
     static func sanitized(_ state: CompanionState) -> CompanionState {
+        guard state.forcedResetVersion >= forcedResetVersion else {
+            AppLog.write("forced save reset: v\(state.forcedResetVersion) → v\(forcedResetVersion)")
+            return CompanionState()
+        }
         func clampToken(_ v: Int) -> Int { min(max(0, v), maxTokenValue) }
         var s = migratedToIdleEconomy(state)
         s.usedSinceInstall = clampToken(s.usedSinceInstall)
         s.spentTokens = clampToken(s.spentTokens)
+        s.starPieces = clampToken(s.starPieces)
+        s.battleRank.points = min(BattleRank.maximumPoints, max(0, s.battleRank.points))
+        s.focusEggs = min(max(0, s.focusEggs), 999)
+        s.eggFragments = min(max(0, s.eggFragments), 9)
+        s.weeklyAdventureCount = min(max(0, s.weeklyAdventureCount), 10)
         s.eggUsage = clampToken(s.eggUsage)
         // 알 보증은 "지금 품고 있는 알"에만 붙는 값이라 활성 포켓몬과 공존할 수 없다. 손편집·구버전
         // 조합으로 둘 다 들어오면 그 보증이 다음 알로 새어 영구 프리미엄이 되므로 여기서 떨군다.
@@ -165,11 +177,24 @@ enum SaveTransfer {
             active.stageIndex = min(max(0, active.stageIndex), max(0, active.pathIDs.count - 1))
             s.active = active
         }
+        s.boxedMons = Array(s.boxedMons.prefix(100)).map { mon in
+            var m = mon
+            m.levelExperience = min(max(0, m.levelExperience), 990_000_000)
+            m.learnedMoves = Array(m.learnedMoves.prefix(4))
+            return m
+        }
         // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
         s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
         s.care.hunger = min(max(0, s.care.hunger), 100)
         s.care.happiness = min(max(0, s.care.happiness), 100)
         s.care.energy = min(max(0, s.care.energy), 100)
+        s.care.affection = min(max(0, s.care.affection), 100)
+        s.care.hygiene = min(max(0, s.care.hygiene), 100)
+        s.care.messCount = min(max(0, s.care.messCount), 3)
+        s.care.discipline = min(max(0, s.care.discipline), 100)
+        s.care.careMistakes = min(max(0, s.care.careMistakes), 99_999)
+        if s.care.pendingNeed == nil { s.care.needDeadline = nil }
+        if !s.care.isSleeping { s.care.sleepStartedAt = nil }
         if let adventure = s.adventure,
            adventure.endsAt <= adventure.startedAt ||
            adventure.endsAt.timeIntervalSince(adventure.startedAt) > 24 * 60 * 60 {
@@ -213,7 +238,10 @@ enum SaveTransfer {
     static func integrityHash(_ s: CompanionState) -> String {
         var p: [String] = []
         p.append("v\(s.economyVersion)")
-        p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("eg\(s.eggUsage)")
+        p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("pc\(s.starPieces)"); p.append("eg\(s.eggUsage)")
+        if s.battleRank.points != 0 { p.append("br\(s.battleRank.points)") }
+        if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
+        p.append("ef\(s.eggFragments)|ab\(s.lastAdventureBonusDate)|wk\(s.adventureWeekKey)|wc\(s.weeklyAdventureCount)")
         p.append("tier\(s.eggTier?.rawValue ?? "-")"); p.append("sc\(s.starterChosen)")
         p.append("cand" + s.starterCandidates.map(String.init).joined(separator: ","))
         p.append("inv" + s.inventory.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))
@@ -221,6 +249,14 @@ enum SaveTransfer {
         if s.care != PetCareState() {
             p.append("care\(Int(s.care.hunger))|\(Int(s.care.happiness))|\(Int(s.care.energy))")
         }
+        if s.care.affection != 50 || s.care.careMistakes != 0 || s.care.pendingNeed != nil {
+            p.append("care2\(Int(s.care.affection))|\(s.care.careMistakes)|\(s.care.pendingNeed?.rawValue ?? "-")")
+        }
+        if s.care.hygiene != 100 || s.care.isSick || s.care.messCount != 0 {
+            p.append("health\(Int(s.care.hygiene))|\(s.care.isSick)|\(s.care.messCount)")
+        }
+        if s.care.discipline != 0 { p.append("disc\(Int(s.care.discipline))") }
+        if s.care.isSleeping { p.append("sleep\(s.care.sleepStartedAt?.timeIntervalSince1970 ?? 0)") }
         if let run = s.adventure {
             p.append("adv\(run.id)|\(run.zone.rawValue)|\(run.startedAt.timeIntervalSince1970)|\(run.endsAt.timeIntervalSince1970)|\(run.companionSpeciesID)")
         }
@@ -231,8 +267,11 @@ enum SaveTransfer {
             p.append("bh" + s.battleHistory.map { "\($0.id)|\($0.mode.rawValue)|\($0.participantCount)|\($0.won)|\($0.reward)" }.joined(separator: ","))
         }
         if let a = s.active {
-            p.append("act\(a.baseID)|\(a.stageIndex)|\(a.usedAtStage)|\(a.rarity.rawValue)|\(a.isShiny)|\(a.totalForms)|\(a.nickname ?? "")")
+            p.append("act\(a.id)|\(a.baseID)|\(a.stageIndex)|\(a.usedAtStage)|\(a.rarity.rawValue)|\(a.isShiny)|\(a.totalForms)|\(a.nickname ?? "")|\(a.levelExperience)|\(a.learnedMoves.map(\.id))")
         } else { p.append("act-") }
+        if !s.boxedMons.isEmpty {
+            p.append("box" + s.boxedMons.map { "\($0.id):\($0.baseID):\($0.stageIndex):\($0.levelExperience)" }.joined(separator: ","))
+        }
         p.append("dex" + s.dex.map { "\($0.baseID):\($0.finalID):\($0.rarity.rawValue)" }.sorted().joined(separator: ","))
         p.append("cf" + s.collectedFinals.sorted().joined(separator: ","))
         p.append("sec\(DeviceID.stableIdentifier())")
@@ -248,13 +287,15 @@ enum SaveTransfer {
     /// 저장 직전 서명 — integrity 를 현재 상태 해시로 채운 사본을 반환(원본 불변).
     static func signed(_ state: CompanionState) -> CompanionState {
         var s = state
+        s.integrityVersion = integrityVersion
         s.integrity = integrityHash(s)
         return s
     }
 
     /// 서명이 있는데 안 맞는가(= 손편집됨). 서명 전(빈 값)·구버전은 조작으로 보지 않는다.
     static func isTampered(_ state: CompanionState) -> Bool {
-        !state.integrity.isEmpty && state.integrity != integrityHash(state)
+        guard state.integrityVersion >= integrityVersion else { return false }
+        return !state.integrity.isEmpty && state.integrity != integrityHash(state)
     }
 
     /// 조작 감지 시 초기화 — 언어·트레이너 이름(코스메틱)만 남기고 진행·도감·인벤토리를 전부 리셋.

@@ -132,6 +132,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case rareCandy
     case mint
     case shinyCharm
+    case linkingCord, fireStone, waterStone, thunderStone, leafStone, iceStone, moonStone, sunStone
 
     /// PokéAPI 아이템 스프라이트 파일명(.../sprites/items/{name}.png). nil = 스프라이트 없음(이모지 폴백만).
     var spriteName: String? {
@@ -139,6 +140,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .rareCandy: return "rare-candy"
         case .mint: return nil   // PokéAPI 에 민트 스프라이트 없음(8세대 아이템) → 이모지 폴백
         case .shinyCharm: return "shiny-charm"
+        case .linkingCord: return nil
+        case .fireStone: return "fire-stone"; case .waterStone: return "water-stone"
+        case .thunderStone: return "thunder-stone"; case .leafStone: return "leaf-stone"
+        case .iceStone: return "ice-stone"; case .moonStone: return "moon-stone"; case .sunStone: return "sun-stone"
         }
     }
     /// 스프라이트 로딩 전/미제공/실패 시 폴백 이모지.
@@ -147,6 +152,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .rareCandy: return "🍬"
         case .mint: return "🌿"
         case .shinyCharm: return "✨"
+        case .linkingCord: return "🔗"
+        case .fireStone: return "🔥"; case .waterStone: return "💧"; case .thunderStone: return "⚡"
+        case .leafStone: return "🍃"; case .iceStone: return "❄️"; case .moonStone: return "🌙"; case .sunStone: return "☀️"
         }
     }
     /// 상점 판매가(재화 = 사용한 토큰). nil = 상점 미판매.
@@ -154,14 +162,25 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .rareCandy: return RareCandy.price
         case .mint: return Mint.price
-        case .shinyCharm: return ShinyCharm.price
+        case .shinyCharm: return nil
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone: return 500
         }
     }
     /// 보유형(패시브) 아이템 — 소비하지 않고 보유하는 동안 상시 효과. 1회 구매(재구매 불가), 가방엔 "적용 중" 표시.
     var isPassive: Bool {
         switch self {
-        case .rareCandy, .mint: return false
+        case .rareCandy, .mint, .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone: return false
         case .shinyCharm: return true
+        }
+    }
+
+    var evolutionKey: String? {
+        switch self {
+        case .linkingCord: return "trade"
+        case .fireStone: return "fire-stone"; case .waterStone: return "water-stone"
+        case .thunderStone: return "thunder-stone"; case .leafStone: return "leaf-stone"
+        case .iceStone: return "ice-stone"; case .moonStone: return "moon-stone"; case .sunStone: return "sun-stone"
+        default: return nil
         }
     }
 }
@@ -202,12 +221,12 @@ enum FreshEgg {
     /// 상점 구매가. 마음에 안 드는 부화를 리롤하는 프리미엄(쌓인 토큰의 활용처). 폐기 개체는 졸업이
     /// 아니라 그냥 사라지므로 도감·확률(collectedFinals)에 무영향 — "뽑은 적 없던 것처럼". 새 알은
     /// 처음부터 재인큐베이션(5M) 필요 + 성장(usedAtStage) 소멸이라 스팸/파밍이 자연 억제된다.
-    static let price = 1_000_000_000
+    static let price = 2_000_000_000
 
     /// 상점에서 파는 알 — 보증 없음(기본) → 고급 이상 → 희귀 이상. `nil` = 등급 보증 없는 기존 알.
     /// **전설 전용 알은 팔지 않는다**(등급 하한을 capture_rate 로 표현할 수 없고, 최고 등급을 확정
     /// 상품으로 만들지 않는다). 전설은 고급/희귀 알에서 자연 가중대로 섞여 나온다 — 희귀 알 기준 약 10%.
-    static let shopTiers: [Rarity?] = [nil, .uncommon, .rare]
+    static let shopTiers: [Rarity?] = [nil]
 
     /// 등급 보증 알의 가격 — 배율은 새 상수를 짓지 않고 **기존 졸업 총량 표**를 그대로 쓴다
     /// (common 750M : uncommon 1.875B : rare 3B = 1 : 2.5 : 4 → 1B / 2.5B / 4B).
@@ -262,6 +281,9 @@ enum PokemonAssets {
 struct EvoNode: Codable, Sendable {
     let speciesID: Int
     let children: [EvoNode]
+    var evolutionLevel: Int? = nil
+    var evolutionTrigger: String? = nil
+    var evolutionItem: String? = nil
 
     /// 최장 경로 길이(형태 수). 분기는 보통 같은 깊이라 대표값으로 사용.
     var depth: Int { 1 + (children.map(\.depth).max() ?? 0) }
@@ -278,7 +300,9 @@ struct EvoNode: Codable, Sendable {
     /// 서비스에 GIF 에셋이 있는 종만 남긴 진화 트리. 지원하지 않는 종부터 그 하위 체인도 제외한다.
     func keepingAnimatedSprites() -> EvoNode? {
         guard PokemonAssets.hasAnimatedSprite(speciesID: speciesID) else { return nil }
-        return EvoNode(speciesID: speciesID, children: children.compactMap { $0.keepingAnimatedSprites() })
+        return EvoNode(speciesID: speciesID, children: children.compactMap { $0.keepingAnimatedSprites() },
+                       evolutionLevel: evolutionLevel, evolutionTrigger: evolutionTrigger,
+                       evolutionItem: evolutionItem)
     }
 }
 
@@ -378,6 +402,7 @@ enum PokemonOdds {
 
 /// 현재 키우는 포켓몬.
 struct MonState: Codable, Sendable {
+    var id = UUID()
     var baseID: Int
     var pathIDs: [Int]      // 실제 진화 경로(분기 선택 반영)
     var plannedPathIDs: [Int] // 사전에 선택한 전체 진화 경로
@@ -391,6 +416,9 @@ struct MonState: Codable, Sendable {
     // 메타몽 위장 — nil=일반. 값=정체 메타몽, 이 종으로 위장 중(위장 구간엔 baseID 와 동일, 리빌 후에도 원 위장체 보존).
     var dittoDisguise: Int?
     var dittoRevealed = false       // 위장 → 리빌(정체 공개) 전환 여부
+    var levelExperience = 0
+    var learnedMoves: [MoveSpec] = []
+    var level: Int { min(100, 1 + max(0, levelExperience) / 10_000_000) }
     // pathIDs 가 비면(손상된 상태 파일) baseID 로 폴백 — 렌더마다 읽히므로 out-of-bounds 크래시 방지.
     var currentID: Int { pathIDs.isEmpty ? baseID : pathIDs[min(stageIndex, pathIDs.count - 1)] }
 
@@ -439,6 +467,9 @@ struct MonState: Codable, Sendable {
         nickname = try c.decodeIfPresent(String.self, forKey: .nickname)
         dittoDisguise = try c.decodeIfPresent(Int.self, forKey: .dittoDisguise)
         dittoRevealed = try c.decodeIfPresent(Bool.self, forKey: .dittoRevealed) ?? false
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        levelExperience = try c.decodeIfPresent(Int.self, forKey: .levelExperience) ?? 0
+        learnedMoves = try c.decodeIfPresent([MoveSpec].self, forKey: .learnedMoves) ?? []
     }
 }
 
@@ -509,6 +540,12 @@ private extension KeyedDecodingContainer {
 
 /// 영속 상태(Application Support JSON). 포켓몬 전환 — 이전 커스텀 캐릭터 상태는 폐기(새로 시작).
 struct CompanionState: Codable, Sendable {
+    /// 배포 단위 강제 초기화 버전. 기존 세이브에는 키가 없어서 0으로 읽히며, 현재 버전보다 낮으면
+    /// 최초 실행 한 번만 완전 초기화한다. 초기화 후 현재 값이 저장돼 다음 실행부터는 유지된다.
+    var forcedResetVersion = SaveTransfer.forcedResetVersion
+    /// 무결성 canonical 형식 버전. 구버전은 첫 로드에서 검사를 건너뛰고 새 형식으로 재서명한다.
+    /// 새 필드 추가가 정상 세이브를 변조로 오인해 초기화하는 일을 막는다.
+    var integrityVersion = SaveTransfer.integrityVersion
     /// 경제 스키마 버전 — 신규 상태는 현재 버전, 구버전 세이브는 디코드 기본값 0 으로 남아
     /// SaveTransfer.sanitized 의 리셋 마이그레이션을 탄다(도감·수집·언어만 계승).
     var economyVersion = IdleEconomy.currentVersion
@@ -527,6 +564,7 @@ struct CompanionState: Codable, Sendable {
     // 상점에서 쓴 별의모래 누적(재화 지출 원장). 쓸 수 있는 재화 = usedSinceInstall − spentTokens.
     // 성장 미터(usedSinceInstall)는 불변 — 구매는 이 값만 올려 잔액을 깎는다(성장 되감김 없음).
     var spentTokens = 0
+    var starPieces = 0
     // 현재 알이 생긴 뒤 쌓인 별의모래(부화 인큐베이션). 누적(usedSinceInstall)과 별개 — 졸업 후 새 알마다 0.
     var eggUsage = 0
     // 현재 알이 보증하는 등급 하한(프리미엄 알). nil = 보증 없음(무료 알·기본 알).
@@ -544,6 +582,7 @@ struct CompanionState: Codable, Sendable {
     var starterCandidates: [Int] = []
     // 현재 포켓몬(없으면 알)
     var active: MonState?
+    var boxedMons: [MonState] = []
     // 도감
     var dex: [DexEntry] = []
     // 소유한 (base,final) 쌍 — 분기 다양성용
@@ -555,6 +594,12 @@ struct CompanionState: Codable, Sendable {
     var adventure: AdventureRun?
     var adventureHistory: [AdventureRecord] = []
     var battleHistory: [BattleRecord] = []
+    var battleRank = BattleRank()
+    var focusEggs = 0
+    var eggFragments = 0
+    var lastAdventureBonusDate = ""
+    var adventureWeekKey = ""
+    var weeklyAdventureCount = 0
     // 세이브 무결성 해시(기기 시드) — 손으로 JSON 을 고치면 불일치 → 로드 때 조작 판정.
     // 이 필드 자체는 해시 입력에서 제외한다(자기참조 방지). 빈 값 = 아직 서명 전(구버전/첫 로드).
     var integrity = ""
@@ -566,8 +611,10 @@ struct CompanionState: Codable, Sendable {
     // 전면 손상만 throw → load() 가 원본을 .corrupt 로 백업하고 fresh 로 시작.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        forcedResetVersion = c.lenient(Int.self, forKey: .forcedResetVersion, default: 0)
         // 키 없음 = 토큰 경제 시절 세이브 → 0 으로 남겨 sanitized 의 리셋 마이그레이션 대상이 되게 한다.
         economyVersion     = c.lenient(Int.self, forKey: .economyVersion, default: 0)
+        integrityVersion   = c.lenient(Int.self, forKey: .integrityVersion, default: 0)
         lastTickAt         = c.lenientOptional(Date.self, forKey: .lastTickAt)
         activeSecondsTotal = c.lenient(Double.self, forKey: .activeSecondsTotal, default: 0)
         activeSecondsToday = c.lenient(Double.self, forKey: .activeSecondsToday, default: 0)
@@ -575,6 +622,8 @@ struct CompanionState: Codable, Sendable {
         lastCandyDate      = c.lenient(String.self, forKey: .lastCandyDate, default: "")
         usedSinceInstall   = c.lenient(Int.self, forKey: .usedSinceInstall, default: 0)
         spentTokens        = c.lenient(Int.self, forKey: .spentTokens, default: 0)
+        starPieces          = c.lenient(Int.self, forKey: .starPieces,
+                                       default: max(0, usedSinceInstall - spentTokens))
         eggUsage           = c.lenient(Int.self, forKey: .eggUsage, default: 0)
         // 모르는 rawValue 는 nil(보증 없음)로 강등 — 관대 디코딩의 안전한 방향(있지도 않은 보증을 만들지 않는다).
         eggTier            = c.lenientOptional(Rarity.self, forKey: .eggTier)
@@ -584,6 +633,7 @@ struct CompanionState: Codable, Sendable {
         starterCandidates  = c.lenient([Int].self, forKey: .starterCandidates, default: [])
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.
         active             = c.lenientOptional(MonState.self, forKey: .active)
+        boxedMons          = c.lenient([Lossy<MonState>].self, forKey: .boxedMons, default: []).compactMap(\.value)
         // 도감은 항목별 격리 — 손상 항목 하나가 도감 전체를 날리지 않게.
         dex                = c.lenient([Lossy<DexEntry>].self, forKey: .dex, default: []).compactMap(\.value)
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])
@@ -593,6 +643,12 @@ struct CompanionState: Codable, Sendable {
         adventure          = c.lenientOptional(AdventureRun.self, forKey: .adventure)
         adventureHistory   = c.lenient([Lossy<AdventureRecord>].self, forKey: .adventureHistory, default: []).compactMap(\.value)
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)
+        battleRank         = c.lenient(BattleRank.self, forKey: .battleRank, default: BattleRank())
+        focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
+        eggFragments       = c.lenient(Int.self, forKey: .eggFragments, default: 0)
+        lastAdventureBonusDate = c.lenient(String.self, forKey: .lastAdventureBonusDate, default: "")
+        adventureWeekKey   = c.lenient(String.self, forKey: .adventureWeekKey, default: "")
+        weeklyAdventureCount = c.lenient(Int.self, forKey: .weeklyAdventureCount, default: 0)
         integrity          = c.lenient(String.self, forKey: .integrity, default: "")
     }
 }

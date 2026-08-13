@@ -17,9 +17,7 @@ struct L {
 
     // MARK: 탭
     var home: String { t("홈", "Home", "ホーム") }
-    /// 상위 탭 이름 — 안에서 도감/포획 로그를 세그먼트로 전환하므로 둘을 아우르는 말이어야 한다.
-    /// (ko 가 "도감"이면 탭과 세그먼트가 같은 이름이 돼 en/ja 의 Collection/コレクション 과도 어긋난다.)
-    var collection: String { t("컬렉션", "Collection", "コレクション") }
+    var collection: String { t("도감", "Pokédex", "ポケモン図鑑") }
     var battle: String { t("배틀", "Battle", "バトル") }
 
     // MARK: 배틀
@@ -127,17 +125,6 @@ struct L {
     var refresh: String { t("갱신", "Refresh", "更新") }
     var limitsTapToLoad: String { t("공식 한도 불러오기", "Load official limits", "公式上限を読み込む") }
 
-    /// 프로바이더 상태 페이지 인시던트 지표 → 현지화 라벨(표시 전용).
-    func providerStatusLabel(_ indicator: ProviderStatusIndicator) -> String {
-        switch indicator {
-        case .operational: return t("정상", "Operational", "正常")
-        case .minor:       return t("일부 장애", "Minor issues", "一部障害")
-        case .major:       return t("장애", "Major outage", "障害")
-        case .critical:    return t("심각한 장애", "Critical outage", "重大障害")
-        case .maintenance: return t("점검 중", "Maintenance", "メンテナンス")
-        case .unknown:     return t("상태 불명", "Status unknown", "状態不明")
-        }
-    }
     func plan(_ p: String) -> String { t("플랜 \(p)", "Plan \(p)", "プラン \(p)") }
     func forecastReach(_ time: String) -> String {
         t("현재 속도면 \(time) 한도 도달", "At current rate, limit hit at \(time)", "現在のペースで \(time) に上限到達")
@@ -454,7 +441,7 @@ struct L {
     var statusIdle: String { t("오늘은 조용히 자리를 지켜요.", "Keeping quiet today.", "今日は静かにしています。") }
     var statusWorking: String { t("오늘의 작업 흔적이 쌓이고 있어요.", "Today's work is piling up.", "本日の作業が積み重なっています。") }
     var statusFocus: String { t("지금은 집중 모드예요.", "In focus mode now.", "今は集中モードです。") }
-    var statusTired: String { t("한도에 가까워요. 잠깐 쉬어도 괜찮아요.", "Close to the limit. A short break is fine.", "上限が近いです。少し休んでも大丈夫。") }
+    var statusTired: String { t("에너지가 부족해요. 잠깐 쉬어도 괜찮아요.", "Low on energy. A short rest would help.", "エネルギーが少ないです。少し休みましょう。") }
     var statusSleep: String { t("지금은 자고 있어요.", "Sleeping now.", "今は眠っています。") }
     func statusEvolved(_ name: String) -> String { t("\(name)(으)로 진화했어요!", "Evolved into \(name)!", "\(name) に進化しました！") }
     var statusGrew: String { t("성장했어요!", "It grew!", "成長しました！") }
@@ -568,12 +555,20 @@ struct L {
         case .rareCandy: return t("이상한 사탕", "Rare Candy", "ふしぎなアメ")
         case .mint:      return t("민트", "Mint", "ミント")
         case .shinyCharm: return t("이로치 부적", "Shiny Charm", "ひかるおまもり")
+        case .linkingCord: return t("연결의끈", "Linking Cord", "つながりのヒモ")
+        case .fireStone: return t("불꽃의돌", "Fire Stone", "ほのおのいし")
+        case .waterStone: return t("물의돌", "Water Stone", "みずのいし")
+        case .thunderStone: return t("천둥의돌", "Thunder Stone", "かみなりのいし")
+        case .leafStone: return t("리프의돌", "Leaf Stone", "リーフのいし")
+        case .iceStone: return t("얼음의돌", "Ice Stone", "こおりのいし")
+        case .moonStone: return t("달의돌", "Moon Stone", "つきのいし")
+        case .sunStone: return t("태양의돌", "Sun Stone", "たいようのいし")
         }
     }
     func itemDescription(_ kind: ItemKind) -> String {
         switch kind {
         case .rareCandy:
-            let xp = TokenFormatter.compact(RareCandy.xp)   // 상수에서 파생(하드코딩 드리프트 방지)
+            let xp = GameNumberFormatter.compact(RareCandy.xp)   // 상수에서 파생(하드코딩 드리프트 방지)
             return t("현재 포켓몬의 경험치를 \(xp) 올려줘요.",
                      "Raises your Pokémon's EXP by \(xp).",
                      "ポケモンの経験値を\(xp)上げます。")
@@ -585,6 +580,10 @@ struct L {
             return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
                      "While owned, raises the chance of hatching a shiny.",
                      "持っていると色違いが生まれる確率が上がります。")
+        case .linkingCord:
+            return t("통신교환으로 진화하는 포켓몬을 진화시켜요.", "Evolves a Pokémon that normally evolves by trade.", "通信交換で進化するポケモンを進化させます。")
+        case .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone:
+            return t("이 돌에 반응하는 포켓몬을 진화시켜요.", "Evolves a Pokémon that reacts to this stone.", "この石に反応するポケモンを進化させます。")
         }
     }
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
@@ -592,11 +591,11 @@ struct L {
 
     // MARK: 상점 (재화 = 별의모래)
     var shop: String { t("상점", "Shop", "ショップ") }
-    var spendableTokens: String { t("쓸 수 있는 별의모래", "Spendable Stardust", "使えるほしのすな") }
-    var shopHint: String { t("앱을 켜 두는 동안 쌓인 별의모래로 아이템을 살 수 있어요.", "Spend the Stardust you collect while the app runs.", "アプリ起動中に貯まったほしのすなでアイテムを購入できます。") }
+    var spendableTokens: String { t("보유 별의조각", "Star Pieces", "ほしのかけら") }
+    var shopHint: String { t("모험에서 얻은 별의조각으로 아이템을 살 수 있어요.", "Buy items with Star Pieces earned from adventures.", "冒険で手に入れたほしのかけらで購入できます。") }
     var buy: String { t("구매", "Buy", "購入") }
     func buyConfirm(_ name: String) -> String { t("\(name) 구매할까요?", "Buy \(name)?", "\(name) を購入しますか？") }
-    var notEnoughTokens: String { t("별의모래가 부족해요", "Not enough Stardust", "ほしのすなが足りません") }
+    var notEnoughTokens: String { t("별의조각이 부족해요", "Not enough Star Pieces", "ほしのかけらが足りません") }
     func ownedCount(_ n: Int) -> String { t("보유 ×\(n)", "Owned ×\(n)", "所持 ×\(n)") }
     var shopPriceLabel: String { t("가격", "Price", "価格") }
     var ownedAlready: String { t("보유 중", "Owned", "所持済み") }
@@ -606,7 +605,7 @@ struct L {
     // 조사가 어긋난다(レアのタマゴ vs 자연스러운 レアなタマゴ). 세 언어를 명시 트리플로 적는다.
     func eggName(_ tier: Rarity?) -> String {
         switch tier {
-        case nil, .common?: return t("포켓몬 알", "Pokémon Egg", "ポケモンのタマゴ")
+        case nil, .common?: return t("알", "Egg", "タマゴ")
         case .uncommon?:  return t("고급 알", "Uncommon Egg", "アンコモンのタマゴ")
         case .rare?:      return t("희귀 알", "Rare Egg", "レアのタマゴ")
         case .legendary?: return t("전설 알", "Legendary Egg", "でんせつのタマゴ")   // 미판매(FreshEgg.shopTiers)
@@ -614,9 +613,9 @@ struct L {
     }
     func eggDescription(_ tier: Rarity?) -> String {
         guard let tier, tier != .common else {
-            return t("지금 포켓몬을 놓아주고 새 알로 다시 시작해요.",
-                     "Send off your current Pokémon and start fresh with a new egg.",
-                     "いまのポケモンを手放して新しいタマゴからやり直します。")
+            return t("소유 포켓몬은 그대로 두고 알을 1개 받아요.",
+                     "Receive one Egg without releasing any Pokémon.",
+                     "ポケモンを手放さず、タマゴを1個受け取ります。")
         }
         let r = rarityLabel(tier)
         return t("지금 포켓몬을 놓아주고 \(r) 이상이 확정으로 나오는 알을 받아요.",

@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @Environment(UsageStore.self) private var store
+    @Environment(AppSettings.self) private var settings
     @Environment(CompanionStore.self) private var companion
     @Environment(UpdateChecker.self) private var updater
     /// 팝오버 내부 화면 전환 방식 — sheet/dismiss 를 쓰지 않는다 (PopoverView 의 NOTE 참조)
@@ -10,7 +10,6 @@ struct SettingsView: View {
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var launchAtLoginError: String?
     @State private var reportError: String?
-    @State private var advancedExpanded = false
     @State private var isCheckingUpdate = false
     @State private var didCheckUpdate = false
     private var l: L { companion.l }
@@ -30,19 +29,18 @@ struct SettingsView: View {
     // MARK: 레이아웃 — 헤더 고정 / 본문 스크롤 / 푸터 고정
 
     var body: some View {
-        @Bindable var store = store
+        @Bindable var settings = settings
         VStack(spacing: 0) {
             header
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    generalGroup(store)
-                    menuBarGroup(store)
-                    floatingPetGroup(store)
-                    notificationsGroup(store)
-                    updateGroup(store)
-                    transferGroup(store)
-                    advancedGroup(store)
+                    generalGroup
+                    workModeGroup(settings)
+                    floatingPetGroup(settings)
+                    notificationsGroup(settings)
+                    updateGroup(settings)
+                    transferGroup
                     aboutSupportGroup
                 }
                 .padding(16)
@@ -51,6 +49,25 @@ struct SettingsView: View {
             footer
         }
         .frame(height: 460)
+    }
+
+    @ViewBuilder
+    private func workModeGroup(_ settings: AppSettings) -> some View {
+        @Bindable var settings = settings
+        settingsSection(companion.language == .ko ? "집중 타이머" : "Focus timer") {
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(companion.language == .ko ? "방해금지 모드" : "Do Not Disturb")
+                    Text(companion.language == .ko
+                         ? "알림과 배틀 신청을 받지 않습니다."
+                         : "Blocks notifications and incoming battle challenges.")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.doNotDisturb)
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+        }
     }
 
     private var header: some View {
@@ -90,37 +107,17 @@ struct SettingsView: View {
     // MARK: 그룹 섹션
 
     @ViewBuilder
-    private func generalGroup(_ store: UsageStore) -> some View {
-        @Bindable var store = store
+    private var generalGroup: some View {
         settingsSection(l.generalSectionTitle) {
             groupRow {
                 Text(l.language)
                 Spacer()
                 Picker("", selection: Binding(
                     get: { companion.language },
-                    set: { companion.setLanguage($0); store.localizationLanguage = $0 })) {
+                    set: { companion.setLanguage($0) })) {
                     ForEach(AppLanguage.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 .labelsHidden().pickerStyle(.menu).fixedSize()
-            }
-            Divider()
-            groupRow {
-                Text(l.refreshInterval)
-                Spacer()
-                Picker("", selection: $store.refreshInterval) {
-                    ForEach(UsageStore.intervalPresets, id: \.value) { Text(l.intervalLabel($0.value)).tag($0.value) }
-                }
-                .labelsHidden().pickerStyle(.menu).fixedSize()
-            }
-            Divider()
-            groupRow {
-                Text(l.limitDisplayModeLabel)
-                Spacer()
-                Picker("", selection: $store.limitDisplayMode) {
-                    Text(l.limitDisplayUsed).tag(UsageStore.LimitDisplayMode.used)
-                    Text(l.limitDisplayRemaining).tag(UsageStore.LimitDisplayMode.remaining)
-                }
-                .labelsHidden().pickerStyle(.segmented).fixedSize()
             }
             Divider()
             groupRow {
@@ -151,23 +148,8 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func menuBarGroup(_ store: UsageStore) -> some View {
-        @Bindable var store = store
-        VStack(alignment: .leading, spacing: 6) {
-            settingsSection(l.menuBarSectionTitle) {
-                toggleRow(l.todayTokensShort, $store.showTokensInMenu)
-                Divider()
-                toggleRow(l.todayCost, $store.showCostInMenu)
-                Divider()
-                toggleRow(l.limitPercent, $store.showLimitInMenu)
-            }
-            Text(l.allOffHint).font(.caption2).foregroundStyle(.tertiary).padding(.leading, 4)
-        }
-    }
-
-    @ViewBuilder
-    private func floatingPetGroup(_ store: UsageStore) -> some View {
-        @Bindable var store = store
+    private func floatingPetGroup(_ settings: AppSettings) -> some View {
+        @Bindable var settings = settings
         settingsSection(l.floatingPetSectionTitle) {
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
@@ -175,64 +157,34 @@ struct SettingsView: View {
                     Text(l.floatingPetHint).font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
-                Toggle("", isOn: $store.floatingPetEnabled)
+                Toggle("", isOn: $settings.floatingPetEnabled)
                     .labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
-            if store.floatingPetEnabled {
+            if settings.floatingPetEnabled {
                 Divider()
                 groupRow {
                     Text(l.floatingPetSizeLabel).font(.callout)
-                    Slider(value: $store.floatingPetSize, in: 48...192, step: 8)
-                    Text("\(Int(store.floatingPetSize))px")
+                    Slider(value: $settings.floatingPetSize, in: 48...192, step: 8)
+                    Text("\(Int(settings.floatingPetSize))px")
                         .font(.caption).monospacedDigit().frame(width: 44, alignment: .trailing)
                 }
-                Divider()
-                toggleRow(l.floatingPetBubbleAlertsLabel, $store.floatingPetBubbleAlerts)
             }
         }
     }
 
     @ViewBuilder
-    private func notificationsGroup(_ store: UsageStore) -> some View {
-        @Bindable var store = store
+    private func notificationsGroup(_ settings: AppSettings) -> some View {
+        @Bindable var settings = settings
         settingsSection(l.notificationsSection) {
-            toggleRow(l.limitNotificationsLabel, $store.limitNotifications)
-            if store.limitNotifications {
-                Divider()
-                groupRow {
-                    Text(l.warning).font(.callout)
-                    Slider(value: $store.warnThreshold, in: 50...95, step: 5)
-                    Text(TokenFormatter.percent(store.warnThreshold))
-                        .font(.caption).monospacedDigit().frame(width: 38, alignment: .trailing)
-                }
-                Divider()
-                groupRow {
-                    Text(l.critical).font(.callout)
-                    Slider(value: $store.critThreshold, in: 80...100, step: 5)
-                    Text(TokenFormatter.percent(store.critThreshold))
-                        .font(.caption).monospacedDigit().frame(width: 38, alignment: .trailing)
-                }
-            }
-            Divider()
-            toggleRow(l.companionNotificationsLabel, $store.companionNotifications)
-            Divider()
-            groupRow {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(l.statusChecksLabel)
-                    Text(l.statusChecksHint).font(.caption2).foregroundStyle(.tertiary)
-                }
-                Spacer()
-                Toggle("", isOn: $store.statusChecksEnabled)
-                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
-            }
+            toggleRow(l.companionNotificationsLabel, $settings.companionNotifications)
         }
     }
 
     @ViewBuilder
-    private func updateGroup(_ store: UsageStore) -> some View {
-        @Bindable var store = store
+    private func updateGroup(_ settings: AppSettings) -> some View {
+        @Bindable var settings = settings
         settingsSection(l.updateSectionTitle) {
-            toggleRow(l.updateNotificationsLabel, $store.updateNotificationsEnabled)
+            toggleRow(l.updateNotificationsLabel, $settings.updateNotificationsEnabled)
             Divider()
             groupRow {
                 Text(l.checkForUpdatesLabel)
@@ -274,7 +226,7 @@ struct SettingsView: View {
     /// 사용자가 상태 파일 경로를 직접 찾아다니지 않도록, 저장 위치와 불러올 파일 모두 표준
     /// 파일 선택창으로 고르게 한다.
     @ViewBuilder
-    private func transferGroup(_ store: UsageStore) -> some View {
+    private var transferGroup: some View {
         settingsSection(l.transferSectionTitle) {
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
@@ -291,68 +243,7 @@ struct SettingsView: View {
                     Text(l.importSaveHint).font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
-                Button(l.importSaveButton) { importSave(store) }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func advancedGroup(_ store: UsageStore) -> some View {
-        @Bindable var store = store
-        settingsSection(l.advancedSectionTitle) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { advancedExpanded.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.forward")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(advancedExpanded ? 90 : 0))
-                    Text(l.advancedDisclosureLabel)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12).padding(.vertical, 9)
-
-            if advancedExpanded {
-                Divider()
-                groupRow {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(l.disableKeychain)
-                        Text(l.disableKeychainHint).font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    Spacer()
-                    Toggle("", isOn: $store.disableKeychainAccess)
-                        .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                }
-                Divider()
-                groupRow {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(l.refreshLimitToken)
-                        Text(l.onlyOnPress).font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    Spacer()
-                    Button {
-                        Task { await store.refreshLimitTokenFromKeychain() }
-                    } label: {
-                        if store.isRefreshingLimitToken {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text(l.refreshLimitToken)
-                        }
-                    }
-                    .disabled(store.disableKeychainAccess || store.isRefreshingLimitToken)
-                }
-                if let limitTokenRefreshError = store.limitTokenRefreshError {
-                    Text(limitTokenRefreshError)
-                        .font(.caption2).foregroundStyle(.orange).lineLimit(2)
-                        .padding(.horizontal, 12).padding(.bottom, 6)
-                }
-                Divider()
-                Text(l.aggregationNote)
-                    .font(.caption2).foregroundStyle(.tertiary)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
+                Button(l.importSaveButton) { importSave() }
             }
         }
     }
@@ -475,7 +366,7 @@ struct SettingsView: View {
         }
     }
 
-    private func importSave(_ store: UsageStore) {
+    private func importSave() {
         let panel = NSOpenPanel()
         panel.title = l.importSaveLabel
         panel.allowedContentTypes = [.json]
@@ -500,11 +391,11 @@ struct SettingsView: View {
         confirm.messageText = l.importConfirmTitle
         confirm.informativeText = l.importConfirmBody(
             incomingDex: incoming.dexCount,
-            incomingTokens: TokenFormatter.compact(incoming.lifetimeTokens),
+            incomingTokens: Self.grouped(incoming.lifetimeTokens),
             exportedAt: Self.exportedAtText(envelope.exportedAt),
             sourceDevice: envelope.sourceDevice,
             currentDex: current.dexCount,
-            currentTokens: TokenFormatter.compact(current.lifetimeTokens))
+            currentTokens: Self.grouped(current.lifetimeTokens))
         confirm.addButton(withTitle: l.importConfirmReplace)
         confirm.addButton(withTitle: l.cancel)
         // 파괴적 동작을 기본 버튼으로 두지 않는다(Return 한 번에 진행이 대체되지 않게).
@@ -523,8 +414,12 @@ struct SettingsView: View {
         }
         presentAlert(title: l.importSaveLabel,
                      message: l.importSaveDone(dex: incoming.dexCount,
-                                               tokens: TokenFormatter.compact(incoming.lifetimeTokens)),
+                                               tokens: Self.grouped(incoming.lifetimeTokens)),
                      style: .informational)
+    }
+
+    private static func grouped(_ value: Int) -> String {
+        value.formatted(.number.grouping(.automatic))
     }
 
     /// 확인창에 보일 내보낸 시각 — 사용자 로케일 기준 짧은 표기.

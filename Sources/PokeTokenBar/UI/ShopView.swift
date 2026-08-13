@@ -32,7 +32,7 @@ struct ShopView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(l.spendableTokens)
                 .font(.caption).foregroundStyle(.secondary)
-            Text(l.stardust(TokenFormatter.compact(store.availableTokens)))
+            Text("⭐" + GameNumberFormatter.compact(store.availableTokens))
                 .font(.system(size: 24, weight: .bold)).monospacedDigit()
             Text(l.shopHint)
                 .font(.caption2).foregroundStyle(.tertiary)
@@ -101,7 +101,7 @@ private struct ShopItemCard: View {
             }
         } else {
             HStack {
-                Text("\(l.shopPriceLabel) \(l.stardust(TokenFormatter.compact(price)))")
+                Text("\(l.shopPriceLabel) ⭐\(GameNumberFormatter.compact(price))")
                     .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                 Spacer()
                 if store.canBuy(kind) {
@@ -131,7 +131,7 @@ private struct EggCard: View {
     let nav: PopoverNavigation
     let tier: Rarity?
     @State private var stage: Stage = .idle
-    private enum Stage { case idle, confirm, shinyConfirm }
+    private enum Stage { case idle, confirm }
 
     private var price: Int { FreshEgg.price(guaranteeing: tier) }
 
@@ -172,7 +172,7 @@ private struct EggCard: View {
         switch stage {
         case .idle:
             HStack {
-                Text("\(l.shopPriceLabel) \(l.stardust(TokenFormatter.compact(price)))")
+                Text("\(l.shopPriceLabel) \(l.stardust(GameNumberFormatter.compact(price)))")
                     .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                 Spacer()
                 if store.canBuyEgg(tier) {
@@ -184,24 +184,11 @@ private struct EggCard: View {
             }
         case .confirm:
             HStack(spacing: 8) {
-                Text(l.eggConfirm(store.displayName, l.eggName(tier)))
+                Text(l.buyConfirm(l.eggName(tier)))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 Spacer()
-                // 이로치면 한 번 더 경고, 아니면 즉시 실행.
-                Button(l.buy) {
-                    if store.currentIsShiny { stage = .shinyConfirm } else { commit() }
-                }
+                Button(l.buy) { commit() }
                 .buttonStyle(.borderedProminent).controlSize(.small)
-                Button(l.cancel) { stage = .idle }
-                    .buttonStyle(.borderless).controlSize(.small)
-            }
-        case .shinyConfirm:
-            HStack(spacing: 8) {
-                Text(l.freshEggShinyWarning)
-                    .font(.caption2.weight(.semibold)).foregroundStyle(.orange).lineLimit(2)
-                Spacer()
-                Button(l.freshEggDiscardShiny) { commit() }
-                    .buttonStyle(.borderedProminent).controlSize(.small).tint(.orange)
                 Button(l.cancel) { stage = .idle }
                     .buttonStyle(.borderless).controlSize(.small)
             }
@@ -211,6 +198,6 @@ private struct EggCard: View {
     /// 리롤 실행 → 새 알을 볼 수 있게 Home 으로 전환(가방 사용과 동일 패턴).
     private func commit() {
         stage = .idle
-        if store.buyEgg(tier) { nav.tab = .home }
+        _ = store.buyEgg(tier)
     }
 }

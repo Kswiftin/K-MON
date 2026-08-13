@@ -12,6 +12,92 @@ struct BattleRecord: Codable, Sendable, Equatable, Identifiable {
     var opponentNames: [String]
 }
 
+enum PokeathlonInput: String, Codable, Sendable { case run, dodgeLeft, dodgeRight, switchPokemon }
+
+struct PokeathlonRacer: Codable, Sendable, Equatable, Identifiable {
+    let id: UUID
+    var trainerName: String
+    var speciesID: Int
+    var teamSpeciesIDs: [Int] = []
+    var activeTeamIndex = 0
+    var stamina: [Int] = [100, 100, 100]
+    var distance = 0
+    var crashes = 0
+    var lane = 1
+    var finished = false
+    var lastActionAt: Date?
+
+    var activeSpeciesID: Int {
+        let team = teamSpeciesIDs.isEmpty ? [speciesID] : teamSpeciesIDs
+        return team[min(activeTeamIndex, team.count - 1)]
+    }
+}
+
+struct PokeathlonRace: Codable, Sendable, Equatable {
+    static let finishLine = 300
+    static let obstacles = [35, 70, 125, 160, 220, 260]
+    var racers: [PokeathlonRacer]
+    var winnerID: UUID? = nil
+    var startsAt = Date().addingTimeInterval(3)
+
+    @discardableResult
+    mutating func apply(_ input: PokeathlonInput, racerID: UUID, now: Date = Date()) -> Bool {
+        guard now >= startsAt, winnerID == nil,
+              let i = racers.firstIndex(where: { $0.id == racerID }), !racers[i].finished else { return false }
+        if input == .run, let last = racers[i].lastActionAt, now.timeIntervalSince(last) < 0.12 { return false }
+        if input == .run { racers[i].lastActionAt = now }
+        switch input {
+        case .switchPokemon:
+            let teamCount = max(1, racers[i].teamSpeciesIDs.count)
+            racers[i].activeTeamIndex = (racers[i].activeTeamIndex + 1) % teamCount
+            return true
+        case .dodgeLeft:
+            racers[i].lane = max(0, racers[i].lane - 1)
+            return true
+        case .dodgeRight:
+            racers[i].lane = min(2, racers[i].lane + 1)
+            return true
+        case .run:
+            let staminaIndex = min(racers[i].activeTeamIndex, racers[i].stamina.count - 1)
+            let tired = racers[i].stamina[staminaIndex] <= 15
+            let next = racers[i].distance + (tired ? 1 : 4)
+            if Self.obstacles.contains(where: {
+                racers[i].distance < $0 && next >= $0 && Self.obstacleLane(at: $0) == racers[i].lane
+            }) {
+                racers[i].distance = max(0, racers[i].distance - 3)
+                racers[i].crashes += 1
+                racers[i].stamina[staminaIndex] = max(0, racers[i].stamina[staminaIndex] - 14)
+            } else {
+                racers[i].distance = next
+                racers[i].stamina[staminaIndex] = max(0, racers[i].stamina[staminaIndex] - 5)
+                if let other = racers.indices.first(where: {
+                    $0 != i && !racers[$0].finished && racers[$0].lane == racers[i].lane
+                        && abs(racers[$0].distance - racers[i].distance) <= 3
+                }) {
+                    applyCrash(to: i)
+                    applyCrash(to: other)
+                }
+            }
+        }
+        if racers[i].distance >= Self.finishLine {
+            racers[i].distance = Self.finishLine; racers[i].finished = true; winnerID = racers[i].id
+        }
+        return true
+    }
+
+    static func obstacleLane(at meter: Int) -> Int {
+        guard let index = obstacles.firstIndex(of: meter) else { return 1 }
+        return [1, 0, 2, 1, 2, 0][index % 6]
+    }
+
+    private mutating func applyCrash(to index: Int) {
+        racers[index].distance = max(0, racers[index].distance - 3)
+        racers[index].crashes += 1
+        let staminaIndex = min(racers[index].activeTeamIndex, racers[index].stamina.count - 1)
+        racers[index].stamina[staminaIndex] = max(0, racers[index].stamina[staminaIndex] - 14)
+    }
+}
+
 struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
     let id: UUID
     var trainerName: String
@@ -98,6 +184,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     case roundResolved(round: Int, fighters: [MultiplayerFighter], events: [MultiplayerBattleEvent])
     case leave(participantID: UUID)
     case rejected(reason: String)
+    case pokeathlonStart(race: PokeathlonRace)
+    case pokeathlonInput(participantID: UUID, input: PokeathlonInput)
+    case pokeathlonState(race: PokeathlonRace)
 }
 
 /// 2~4명 개인전/2:2 공용 결정적 전투 상태. 네트워크는 action만 모아 호스트가 resolveRound를 호출한다.

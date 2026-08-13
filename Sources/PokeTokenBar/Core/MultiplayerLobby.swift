@@ -1,6 +1,7 @@
 import Foundation
 
 enum BattleTeam: String, Codable, Sendable { case solo, red, blue }
+enum RoomActivity: String, Codable, Sendable { case battle, pokeathlon }
 struct LobbyParticipant: Codable, Sendable, Equatable, Identifiable {
     let id: UUID
     var trainerName: String
@@ -15,16 +16,18 @@ enum LobbyError: Error, Equatable { case full, duplicate, invalidCapacity, hostC
 struct MultiplayerLobby: Codable, Sendable, Equatable {
     private(set) var participants: [LobbyParticipant]
     let capacity: Int
-    init(host: LobbyParticipant, capacity: Int = 4) throws {
+    let activity: RoomActivity
+    init(host: LobbyParticipant, capacity: Int = 4, activity: RoomActivity = .battle) throws {
         guard (2...4).contains(capacity) else { throw LobbyError.invalidCapacity }
         var host = host; host.isHost = true
-        participants = [host]; self.capacity = capacity
+        participants = [host]; self.capacity = capacity; self.activity = activity
     }
     var mode: MultiplayerBattleMode {
         participants.allSatisfy { $0.team == .solo } ? .freeForAll : .teams
     }
     var canStart: Bool {
         guard participants.count >= 2, participants.allSatisfy(\.isReady) else { return false }
+        if activity == .pokeathlon { return true }
         if mode == .freeForAll { return true }
         return participants.count == 4 && participants.filter { $0.team == .red }.count == 2
             && participants.filter { $0.team == .blue }.count == 2

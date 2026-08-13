@@ -435,6 +435,7 @@ struct CompanionHeader: View {
     // 별명 인라인 편집
     @State private var editingName = false
     @State private var nameDraft = ""
+    @State private var showingMoves = false
 
     private func commitNickname() {
         store.setNickname(nameDraft)
@@ -479,7 +480,7 @@ struct CompanionHeader: View {
                     }
                     .overlay(alignment: .top) {
                         if candyXPShown {
-                            Text("+\(TokenFormatter.compact(candyXPAmount)) XP")
+                            Text("+\(GameNumberFormatter.compact(candyXPAmount)) XP")
                                 .font(.caption.weight(.bold)).foregroundStyle(.orange)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(.regularMaterial, in: Capsule())
@@ -530,17 +531,30 @@ struct CompanionHeader: View {
                     if store.hasActive {
                         // 단계 + 성격(부화 시 확정된 개체 아이덴티티)
                         let nature = store.currentNature.map { " · \($0.name(store.language))" } ?? ""
-                        Text(store.stageText + nature).font(.caption2).foregroundStyle(.secondary)
-                        ProgressView(value: store.progress).controlSize(.small).tint(.orange)
+                        Text("Lv.\(store.currentLevel) · " + store.stageText + nature)
+                            .font(.caption2).foregroundStyle(.secondary)
+                        if !store.currentTypes.isEmpty {
+                            HStack(spacing: 4) {
+                                ForEach(store.currentTypes, id: \.self) { TypeBadge(type: $0, language: store.language) }
+                            }
+                        }
+                        HStack {
+                            Text(store.experienceToNextLevel > 0
+                                 ? (store.language == .ko
+                                    ? "다음 레벨까지 \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP"
+                                    : "\(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP to next level")
+                                 : (store.language == .ko ? "최고 레벨" : "Max level"))
+                                .font(.caption2).foregroundStyle(.tertiary)
+                            Spacer()
+                        }
+                        ProgressView(value: store.levelProgress)
+                            .controlSize(.small).tint(.blue)
                         HStack(spacing: 6) {
-                            if store.tokensToNext > 0 {
-                                let amount = TokenFormatter.compact(store.tokensToNext)
-                                Text(store.isFinalStage ? store.l.toGraduation(amount) : store.l.toNextEvolution(amount))
+                            Spacer(minLength: 0)
+                            if let evolutionLevel = store.nextEvolutionLevel {
+                                Text(store.language == .ko ? "Lv.\(evolutionLevel)에 진화" : "Evolves at Lv.\(evolutionLevel)")
                                     .font(.caption2).foregroundStyle(.tertiary)
                             }
-                            Spacer(minLength: 0)
-                            Text(store.l.perHour(TokenFormatter.compact(store.productionPerHour)))
-                                .font(.caption2).foregroundStyle(.tertiary)
                         }
                     } else {
                         // 알 인큐베이션 — 부화까지 진행 (임박 시 문구·색 전환)
@@ -559,10 +573,10 @@ struct CompanionHeader: View {
                         }
                         ProgressView(value: store.eggProgress).controlSize(.small).tint(.orange)
                         HStack(spacing: 6) {
-                            Text(store.l.eggToHatch(TokenFormatter.compact(store.eggTokensToHatch)))
+                            Text(store.l.eggToHatch(GameNumberFormatter.compact(store.eggTokensToHatch)))
                                 .font(.caption2).foregroundStyle(.tertiary)
                             Spacer(minLength: 0)
-                            Text(store.l.perHour(TokenFormatter.compact(store.productionPerHour)))
+                            Text(store.language == .ko ? "집중 세션을 완료하면 부화" : "Complete focus sessions to hatch")
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                         // 첫 실행(적립 0) — 정적 알 앞에서 "고장났나" 오해 방지용 한 줄 안내
@@ -581,12 +595,28 @@ struct CompanionHeader: View {
                 EvoLineView(nodes: store.lineNodes, mysteryLabel: store.l.unknownNextEvolution, shiny: store.currentIsShiny,
                             maxWidth: PopoverMetrics.contentWidth)
             }
-            if store.hasActive { AdventureCard(store: store) }
+            if store.hasActive {
+                DisclosureGroup(isExpanded: $showingMoves) {
+                    MoveListView(store: store)
+                        .task(id: "\(store.state.active?.id.uuidString ?? "-")-\(store.currentLevel)") {
+                            await store.loadDisplayedMoves()
+                        }
+                } label: {
+                    Label(store.language == .ko ? "기술 보기" : "Moves", systemImage: "bolt.fill")
+                        .font(.caption.weight(.semibold))
+                }
+                .padding(8)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+            }
+            if !store.boxedMons.isEmpty { CompanionBoxView(store: store) }
+            if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
+            if let prompt = store.moveLearningPrompt { MoveLearningCard(store: store, prompt: prompt) }
             if let g = store.justGraduated {
                 Text(store.l.graduated(g))
                     .font(.caption2).foregroundStyle(.orange)
             }
         }
+        .task(id: store.currentSpeciesID) { await store.loadCurrentTypes() }
         .onAppear {
             playCelebrationIfNeeded()
             showCandyXPIfNeeded()
@@ -677,6 +707,213 @@ struct CompanionHeader: View {
 }
 
 /// 동물농장식 돌봄 + 시간 기반 모험의 첫 플레이 루프.
+private struct TypeBadge: View {
+    let type: PokemonType
+    let language: AppLanguage
+
+    var body: some View {
+        Text(type.name(language).uppercased())
+            .font(.system(size: 8, weight: .heavy))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(type.color, in: Capsule())
+    }
+}
+
+private extension PokemonType {
+    var color: Color {
+        switch self {
+        case .normal: Color(red: 0.57, green: 0.58, blue: 0.50)
+        case .fire: Color(red: 0.93, green: 0.29, blue: 0.20)
+        case .water: Color(red: 0.18, green: 0.50, blue: 0.88)
+        case .electric: Color(red: 0.95, green: 0.72, blue: 0.10)
+        case .grass: Color(red: 0.25, green: 0.65, blue: 0.31)
+        case .ice: Color(red: 0.35, green: 0.76, blue: 0.82)
+        case .fighting: Color(red: 0.78, green: 0.22, blue: 0.18)
+        case .poison: Color(red: 0.63, green: 0.25, blue: 0.67)
+        case .ground: Color(red: 0.72, green: 0.53, blue: 0.25)
+        case .flying: Color(red: 0.50, green: 0.62, blue: 0.88)
+        case .psychic: Color(red: 0.92, green: 0.29, blue: 0.51)
+        case .bug: Color(red: 0.57, green: 0.66, blue: 0.12)
+        case .rock: Color(red: 0.65, green: 0.55, blue: 0.25)
+        case .ghost: Color(red: 0.39, green: 0.32, blue: 0.58)
+        case .dragon: Color(red: 0.38, green: 0.30, blue: 0.82)
+        case .dark: Color(red: 0.36, green: 0.29, blue: 0.26)
+        case .steel: Color(red: 0.40, green: 0.57, blue: 0.65)
+        case .fairy: Color(red: 0.87, green: 0.47, blue: 0.70)
+        }
+    }
+}
+
+private struct MoveListView: View {
+    let store: CompanionStore
+
+    var body: some View {
+        VStack(spacing: 5) {
+            if store.isLoadingDisplayedMoves {
+                HStack { ProgressView().controlSize(.small); Text(store.language == .ko ? "기술 불러오는 중" : "Loading moves") }
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else if store.displayedMoves.isEmpty {
+                Text(store.language == .ko ? "확인할 수 있는 기술이 없습니다." : "No moves available.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                ForEach(store.displayedMoves) { move in
+                    HStack(spacing: 6) {
+                        Text(move.name(store.language)).font(.caption.weight(.semibold)).lineLimit(1)
+                        TypeBadge(type: move.type, language: store.language)
+                        Spacer()
+                        Text(move.damageClass == .status ? "변화" : "위력 \(move.power)").font(.caption2).foregroundStyle(.secondary)
+                        Text(move.accuracy.map { "명중 \($0)" } ?? "필중").font(.caption2).foregroundStyle(.secondary)
+                        Text("PP \(move.pp)").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .help(moveHelp(move))
+                }
+            }
+        }
+        .padding(.top, 7)
+    }
+
+    private func moveHelp(_ move: MoveSpec) -> String {
+        let category: String
+        switch move.damageClass {
+        case .physical: category = store.language == .ko ? "물리" : "Physical"
+        case .special: category = store.language == .ko ? "특수" : "Special"
+        case .status: category = store.language == .ko ? "변화" : "Status"
+        }
+        let power = move.damageClass == .status ? "—" : "\(move.power)"
+        let accuracy = move.accuracy.map(String.init) ?? (store.language == .ko ? "필중" : "Always hits")
+        let details = "\(move.type.name(store.language)) · \(category)\n\(store.language == .ko ? "위력" : "Power") \(power) · \(store.language == .ko ? "명중" : "Accuracy") \(accuracy) · PP \(move.pp)"
+        if let description = move.description(store.language), !description.isEmpty {
+            return "\(move.name(store.language))\n\(description)\n\(details)"
+        }
+        return "\(move.name(store.language))\n\(details)"
+    }
+}
+
+private struct EvolutionPromptCard: View {
+    let store: CompanionStore
+    let prompt: CompanionStore.EvolutionPrompt
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(store.language == .ko ? "진화할 수 있어요!" : "Evolution is available!", systemImage: "sparkles")
+                .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+            HStack(spacing: 10) {
+                SpriteView(speciesID: prompt.fromSpeciesID, size: 46, shiny: store.state.active?.isShiny ?? false)
+                Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                SpriteView(speciesID: prompt.toSpeciesID, size: 46, shiny: store.state.active?.isShiny ?? false)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(prompt.toName).font(.callout.bold())
+                    Text(store.language == .ko ? "Lv.\(prompt.requiredLevel) 진화" : "Evolves at Lv. \(prompt.requiredLevel)")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            Text(store.language == .ko ? "\(prompt.toName)(으)로 진화할까요?" : "Evolve into \(prompt.toName)?")
+                .font(.caption)
+            HStack {
+                Button(store.language == .ko ? "예, 진화할래요" : "Yes, evolve") { store.acceptEvolution() }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                Button(store.language == .ko ? "아니오" : "No") { store.declineEvolution() }
+                    .controlSize(.small)
+            }
+        }
+        .padding(9)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+private struct CompanionBoxView: View {
+    let store: CompanionStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(store.language == .ko ? "포켓몬 박스" : "Pokémon Box", systemImage: "shippingbox.fill")
+                .font(.caption.weight(.semibold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(store.boxedMons, id: \.id) { mon in
+                        BoxMonCard(store: store, mon: mon)
+                    }
+                }
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+private struct BoxMonCard: View {
+    let store: CompanionStore
+    let mon: MonState
+    @State private var name = ""
+    @State private var types: [PokemonType] = []
+
+    var body: some View {
+        Button { store.switchCompanion(to: mon.id) } label: {
+            VStack(spacing: 3) {
+                SpriteView(speciesID: mon.currentID, size: 42, shiny: mon.isShiny)
+                Text(name.isEmpty ? "#\(mon.currentID)" : name).font(.caption2.bold()).lineLimit(1)
+                Text("Lv.\(mon.level)").font(.system(size: 8)).foregroundStyle(.secondary)
+                HStack(spacing: 2) { ForEach(types, id: \.self) { TypeBadge(type: $0, language: store.language) } }
+            }.frame(width: 82).padding(5)
+        }
+        .buttonStyle(.bordered)
+        .task(id: mon.currentID) {
+            name = await store.resolveSpeciesName(mon.currentID)
+            types = (try? await PokeAPIClient.shared.battleProfile(speciesID: mon.currentID).types) ?? []
+        }
+    }
+}
+
+private struct MoveLearningCard: View {
+    let store: CompanionStore
+    let prompt: CompanionStore.MoveLearningPrompt
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(store.language == .ko ? "새로운 기술을 배울 수 있어요" : "A new move is available",
+                  systemImage: "sparkles")
+                .font(.caption.weight(.semibold)).foregroundStyle(.purple)
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(prompt.move.name(store.language)).font(.callout.bold())
+                    HStack(spacing: 5) {
+                        Text("Lv.\(prompt.level)").font(.caption2).foregroundStyle(.secondary)
+                        TypeBadge(type: prompt.move.type, language: store.language)
+                        Text(prompt.move.damageClass == .status ? "변화" : "Power \(prompt.move.power)")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+            if let active = store.state.active, active.learnedMoves.count >= 4 {
+                Text(store.language == .ko ? "잊을 기술을 선택하세요." : "Choose a move to forget.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                ForEach(Array(active.learnedMoves.enumerated()), id: \.element.id) { index, move in
+                    Button("\(move.name(store.language)) · \(move.type.name(store.language)) → \(prompt.move.name(store.language))") {
+                        store.acceptMoveLearning(replacing: index)
+                    }.controlSize(.small)
+                }
+            } else {
+                HStack {
+                    Button(store.language == .ko ? "예, 배울래요" : "Yes, learn it") {
+                        store.acceptMoveLearning()
+                    }.buttonStyle(.borderedProminent).controlSize(.small)
+                    Button(store.language == .ko ? "아니오" : "No") { store.declineMoveLearning() }
+                        .controlSize(.small)
+                }
+            }
+            if store.state.active?.learnedMoves.count ?? 0 >= 4 {
+                Button(store.language == .ko ? "배우지 않기" : "Don't learn") { store.declineMoveLearning() }
+                    .controlSize(.small)
+            }
+        }
+        .padding(9)
+        .background(Color.purple.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
 struct AdventureCard: View {
     let store: CompanionStore
     @State private var rewardText: String?
@@ -711,13 +948,92 @@ struct AdventureCard: View {
                 careGauge("🍖", store.care.hunger)
                 careGauge("😊", store.care.happiness)
                 careGauge("⚡", store.care.energy)
+                careGauge("💗", store.care.affection)
+                careGauge("🫧", store.care.hygiene)
+            }
+            HStack(spacing: 4) {
+                Text("🎓").font(.system(size: 10))
+                ProgressView(value: store.care.discipline, total: 100).controlSize(.mini)
+                Text("\(Int(store.care.discipline))")
+                    .font(.system(size: 9).monospacedDigit()).foregroundStyle(.secondary)
+            }
+            if store.care.isSick {
+                Label(store.language == .ko ? "아파요 · 씻긴 뒤 약을 주세요" : "Sick · clean, then give medicine",
+                      systemImage: "cross.case.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.red)
+                    .padding(.horizontal, 7).padding(.vertical, 5)
+                    .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 7))
+            }
+            if store.care.isSleeping {
+                Label(store.language == .ko ? "자는 중 · 에너지를 회복하고 있어요" : "Sleeping · recovering energy",
+                      systemImage: "moon.zzz.fill")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.indigo)
+            }
+            if store.care.messCount > 0 {
+                HStack(spacing: 4) {
+                    Text(String(repeating: "💩", count: store.care.messCount))
+                    Text(store.language == .ko ? "주변을 청소해 주세요" : "Time to clean up")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
+            if let need = store.care.pendingNeed, let deadline = store.care.needDeadline {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    HStack(spacing: 5) {
+                        Image(systemName: "bell.badge.fill").foregroundStyle(.orange)
+                        Text(needText(need)).font(.caption.weight(.semibold))
+                        Spacer()
+                        if deadline > context.date {
+                            Text(deadline, style: .timer).font(.caption.monospacedDigit())
+                        } else {
+                            Text(store.language == .ko ? "놓쳤어요" : "Missed")
+                                .font(.caption).foregroundStyle(.red)
+                        }
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 5)
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                }
             }
             HStack(spacing: 5) {
-                Button("🍎") { store.feedCompanion() }.help("Feed")
+                Menu {
+                    ForEach(CareFood.allCases) { food in
+                        Button("\(food.symbol) \(food == store.favoriteFood ? "★" : "")") {
+                            store.feedCompanion(food)
+                        }
+                    }
+                } label: { Text(store.favoriteFood.symbol) }
+                .help(store.language == .ko ? "좋아하는 간식 ★" : "Favorite treat ★")
                 Button("🎾") { store.playWithCompanion() }.help("Play")
                 Button("💤") { store.restCompanion() }.help("Rest")
+                Button("🖐️") { _ = store.petCompanion() }
+                    .help(store.language == .ko ? "쓰다듬기 · 5분마다" : "Pet · every 5 minutes")
+                Button(store.care.messCount > 0 ? "🧹" : "🛁") { store.cleanCompanion() }
+                    .help(store.language == .ko ? "씻기·청소" : "Clean")
+                if store.care.isSick {
+                    Button("💊") { _ = store.medicateCompanion() }
+                        .help(store.language == .ko ? "약 먹이기 · 위생 40 이상 필요" : "Medicine · requires 40 hygiene")
+                        .disabled(store.care.hygiene < 40)
+                }
+                Button("🎓") { _ = store.trainCompanion() }
+                    .help(store.language == .ko ? "훈련 · 에너지 10 · 30분마다" : "Train · 10 energy · every 30 min")
+                    .disabled(store.care.energy < 10 || store.care.isSick)
                 Spacer()
-            }.controlSize(.small)
+                Text(careSummary).font(.system(size: 9)).foregroundStyle(.tertiary)
+            }
+            .controlSize(.small)
+            .disabled(store.isAdventuring || store.care.isSleeping)
+
+            if store.care.isSleeping {
+                Button(store.language == .ko ? "불 켜고 깨우기" : "Turn on lights & wake") {
+                    store.wakeCompanion()
+                }.controlSize(.small)
+            } else {
+                Button(store.language == .ko ? "불 끄고 재우기" : "Lights out") {
+                    _ = store.sleepCompanion()
+                }
+                .controlSize(.small)
+                .disabled(store.isAdventuring || store.care.isSick || store.care.energy >= 100)
+            }
 
             if let run = store.activeAdventure {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -728,7 +1044,9 @@ struct AdventureCard: View {
                             if run.isComplete(at: context.date) {
                                 Button(store.language == .ko ? "보상 받기" : "Claim") {
                                     if let reward = store.claimAdventure() {
-                                        rewardText = "+\(reward.stardust) ✨" + (reward.foundRareCandy ? " + 🍬" : "")
+                                        rewardText = "+\(GameNumberFormatter.compact(reward.experience)) EXP · +\(reward.starPieces) ⭐ · +\(reward.eggFragments) 🧩"
+                                            + (reward.bonusEggs > 0 ? " · +\(reward.bonusEggs) 🥚" : "")
+                                            + (reward.foundRareCandy ? " · +🍬" : "")
                                     }
                                 }.controlSize(.small)
                             } else {
@@ -748,14 +1066,14 @@ struct AdventureCard: View {
                             }.frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(store.care.energy < 15)
+                        .disabled(store.care.energy < 15 || store.care.isSick || store.care.isSleeping)
                     }
                 }
             }
             if let recent = store.recentAdventures.first, store.activeAdventure == nil {
                 HStack(spacing: 5) {
                     Image(systemName: "book.closed.fill").foregroundStyle(.secondary)
-                    Text("\(zoneName(recent.zone)) · +\(recent.stardust) ✨" + (recent.foundRareCandy ? " · 🍬" : ""))
+                    Text("\(zoneName(recent.zone)) · +\(recent.stardust) ⭐" + (recent.foundRareCandy ? " · 🍬" : ""))
                         .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Text(recent.completedAt, style: .relative).font(.caption2).foregroundStyle(.tertiary)
@@ -771,6 +1089,29 @@ struct AdventureCard: View {
             Text(icon).font(.system(size: 10))
             ProgressView(value: value, total: 100).controlSize(.mini)
         }.frame(maxWidth: .infinity)
+    }
+
+    private func needText(_ need: CareNeed) -> String {
+        switch (store.language, need) {
+        case (.ko, .hungry): return "배고파요 · 🍎"
+        case (.ko, .lonely): return "놀고 싶어요 · 🎾"
+        case (.ko, .tired): return "졸려요 · 💤"
+        case (.ja, .hungry): return "おなかすいた · 🍎"
+        case (.ja, .lonely): return "遊びたい · 🎾"
+        case (.ja, .tired): return "ねむい · 💤"
+        case (_, .hungry): return "Hungry · 🍎"
+        case (_, .lonely): return "Wants to play · 🎾"
+        case (_, .tired): return "Sleepy · 💤"
+        }
+    }
+
+    private var careSummary: String {
+        let bonus = Int(((store.care.growthMultiplier - 1) * 100).rounded())
+        switch store.language {
+        case .ko: return "돌봄 \(bonus >= 0 ? "+" : "")\(bonus)% · 실수 \(store.care.careMistakes)"
+        case .ja: return "お世話 \(bonus >= 0 ? "+" : "")\(bonus)% · ミス \(store.care.careMistakes)"
+        case .en: return "Care \(bonus >= 0 ? "+" : "")\(bonus)% · \(store.care.careMistakes) misses"
+        }
     }
 }
 
@@ -797,33 +1138,43 @@ struct StarterPickerView: View {
 
             Divider()
 
-            // 2) 스타터 선택
-            Text(l.starterPrompt).font(.callout.weight(.semibold))
-            let ids = store.starterCandidateIDs
-            if ids.isEmpty {
+            // 2) 타입 선택 — 해당 타입의 1세대 미진화체 한 마리가 알에서 무작위로 부화한다.
+            Text(store.language == .ko ? "원하는 타입을 골라요" : "Choose a type")
+                .font(.callout.weight(.semibold))
+            if picking {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(l.starterLoading).font(.caption2).foregroundStyle(.secondary)
+                    Text(store.language == .ko ? "알 속의 포켓몬을 만나고 있어요…" : "Meeting the Pokémon inside the Egg…")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 24)
             } else {
-                HStack(spacing: 10) {
-                    ForEach(ids, id: \.self) { id in
-                        StarterCard(store: store, speciesID: id, disabled: picking || !nameReady) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 66))], spacing: 7) {
+                    ForEach(store.starterSelectableTypes, id: \.self) { type in
+                        Button {
                             picking = true
                             store.setTrainerName(trainer)
-                            Task { await store.chooseStarter(id) }
+                            Task {
+                                if !(await store.chooseStarterType(type)) { picking = false }
+                            }
+                        } label: {
+                            TypeBadge(type: type, language: store.language)
+                                .frame(maxWidth: .infinity).padding(.vertical, 5)
                         }
+                        .buttonStyle(.bordered).disabled(!nameReady)
                     }
                 }
-                Text(nameReady ? l.starterHint : l.starterNeedName)
+                Text(nameReady
+                     ? (store.language == .ko
+                        ? "선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다."
+                        : "A random unevolved Gen I Pokémon of that type will hatch. Legendary and Mythical Pokémon are excluded.")
+                     : l.starterNeedName)
                     .font(.caption2).foregroundStyle(nameReady ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.orange))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .onAppear { if trainer.isEmpty { trainer = store.trainerName } }
-        .task { await store.ensureStarterCandidates() }   // 후보 미확정이면 뽑는다(오프라인이면 다음 표시에 재시도)
     }
 }
 
@@ -924,9 +1275,6 @@ struct DexSummaryHeader: View {
 /// 상위 탭(PopoverTab)은 그대로 4개 — 세그먼트 폭(332/2)이 넉넉해 탭바를 늘릴 필요가 없다.
 struct CollectionView: View {
     let store: CompanionStore
-    @State private var showingLog = false
-    /// 로그 전용 희귀도 필터. 도감은 개수 단위가 종이라 자기 필터를 따로 갖는다(DexGridView).
-    @State private var selectedRarity: Rarity?
 
     /// 도감·로그 공통 높이 — 상점·가방과 같은 520. 세그먼트를 전환할 때도, 탭을 넘나들 때도
     /// 팝오버가 리사이즈되지 않는다.
@@ -935,55 +1283,11 @@ struct CollectionView: View {
     /// 행이 65.8 이고, 칸 여백 6 과 이름 12 를 빼면 스프라이트에 47.8 이 남는다(현재 44).
     private static let contentHeight: CGFloat = 520
 
-    /// 선택된 희귀도만 노출(없으면 전체). 상단 캡슐 토글로 설정.
-    private var visibleEntries: [DexEntry] {
-        guard let r = selectedRarity else { return store.dexEntriesSorted }
-        return store.dexEntriesSorted.filter { $0.rarity == r }
-    }
-
     var body: some View {
         if store.dexEntries.isEmpty {
-            emptyState   // 둘 다 비어 있으니 세그먼트를 그리지 않는다
+            emptyState
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Picker("", selection: $showingLog) {
-                    Text(store.l.dexTitle).tag(false)
-                    Text(store.l.catchLogTitle).tag(true)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                if showingLog { catchLog } else { DexGridView(store: store) }
-            }
-            .frame(height: Self.contentHeight)
-        }
-    }
-
-    /// 포획 로그 — 개체 단위 기록. 필터(요약 헤더)는 고정, 목록만 스크롤한다
-    /// (아래로 내리는 중에도 희귀도 필터를 토글할 수 있다).
-    private var catchLog: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            DexSummaryHeader(store: store, selected: selectedRarity) { r in
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    selectedRarity = (selectedRarity == r) ? nil : r
-                }
-            }
-            // maxHeight 는 팝오버 재오픈 시 ScrollView fitting size 가 작게 잡혀 크기가 줄어드는
-            // 문제가 있어, 바깥 VStack 을 height 로 고정해 스크롤 영역이 나머지를 채우게 한다.
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Color.clear.frame(height: 0).id("dexTop")   // 스크롤 최상단 앵커
-                        ForEach(visibleEntries) { entry in
-                            DexEntryRow(store: store, entry: entry)
-                        }
-                    }
-                }
-                .frame(maxHeight: .infinity)
-                // 필터 토글 시 목록 최상단으로 — 이전 스크롤 위치가 새 필터 결과 밖이어도 처음부터 보이게.
-                .onChange(of: selectedRarity) {
-                    withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo("dexTop", anchor: .top) }
-                }
-            }
+            DexGridView(store: store).frame(height: Self.contentHeight)
         }
     }
 

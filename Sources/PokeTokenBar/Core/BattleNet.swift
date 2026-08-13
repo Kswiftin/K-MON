@@ -14,8 +14,8 @@ enum BattleKind: String, Codable, Sendable, CaseIterable {
 }
 
 enum NetMessage: Codable, Sendable {
-    case challenge(snapshot: BattleSnapshot, seed: UInt64, kind: BattleKind)
-    case accept(snapshot: BattleSnapshot)
+    case challenge(snapshot: BattleSnapshot, seed: UInt64, kind: BattleKind, profile: BattleRankProfile)
+    case accept(snapshot: BattleSnapshot, profile: BattleRankProfile)
     case decline
     case move(turn: Int, moveIndex: Int)   // moveIndex -1 = 발버둥(PP 소진)
     case forfeit
@@ -107,6 +107,9 @@ final class BattleCenter {
     private(set) var race: RaceState?                    // 달리기 결과(있으면 아레나가 레이스 뷰를 그린다)
     private(set) var incomingSnapshot: BattleSnapshot?   // 수락 화면에서 상대 미리보기
     private(set) var incomingKind: BattleKind = .brawl   // 받은 신청의 종류(수락 화면 표시용)
+    private(set) var opponentRankProfile: BattleRankProfile?
+    private(set) var rankedStake = 0
+    private(set) var lastRankDelta = 0
     private var myKind: BattleKind = .brawl              // 내가 건 신청의 종류
     private(set) var lastError: String?
     /// 팝오버가 열려 있을 때 배틀 탭으로 유도하기 위한 신호(뷰가 소비).
@@ -119,12 +122,6 @@ final class BattleCenter {
         default: return true   // preparing/challenging/incoming/battling/finished
         }
     }
-    /// 신청 자동 수락 — 켜면 신청이 오는 즉시 수락(자리 비워도 배틀 성사). UserDefaults 영속.
-    var autoAccept: Bool {
-        get { UserDefaults.standard.object(forKey: "battleAutoAccept") as? Bool ?? false }
-        set { UserDefaults.standard.set(newValue, forKey: "battleAutoAccept") }
-    }
-
     private let companion: CompanionStore
     let multiplayer: MultiplayerRoomCenter
     private var listener: NWListener?
@@ -132,6 +129,10 @@ final class BattleCenter {
     private var connection: NWConnection?
     private var incomingSeed: UInt64 = 0
     private var myName: String          // 표시 이름(상대 카드·스냅샷 trainer)
+    private var didSettleRankedBrawl = false
+    private(set) var isPracticeBattle = false
+    private(set) var teamPractice: TeamPracticeBattle?
+    var rankedTeamSize = 1
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
 
     init(companion: CompanionStore) {
@@ -160,6 +161,11 @@ final class BattleCenter {
     }
 
     private var l: L { companion.l }
+
+    var incomingRankedStake: Int {
+        guard incomingKind == .brawl, let opponentRankProfile else { return 0 }
+        return BattleRank.stake(challenger: opponentRankProfile.rank, defender: companion.battleRank)
+    }
 
     // MARK: 기동/정지
 
@@ -262,6 +268,50 @@ final class BattleCenter {
 
     // MARK: 신청 (challenger = A)
 
+    func startRankedPractice() {
+        guard case .ready = phase else { return }
+        guard companion.ownedMons.count >= rankedTeamSize else {
+            lastError = "출전할 포켓몬이 부족합니다."
+            return
+        }
+        phase = .preparing
+        Task {
+            var myTeam: [BattleSnapshot] = []
+            for mon in companion.ownedMons.prefix(rankedTeamSize) {
+                if let snapshot = await companion.battleSnapshot(for: mon, level: 50) { myTeam.append(snapshot) }
+            }
+            guard myTeam.count == rankedTeamSize else {
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            var cpuTeam: [BattleSnapshot] = []
+            for opponentID in Array([25, 59, 94, 130, 143, 149].shuffled().prefix(rankedTeamSize)) {
+                guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: opponentID) else { continue }
+                let moves = await PokeAPIClient.shared.moveSet(speciesID: opponentID, level: 50, types: profile.types)
+                cpuTeam.append(BattleSnapshot(speciesID: opponentID, name: "CPU #\(opponentID)", trainer: "CPU",
+                                              level: 50, nature: nil, isShiny: false, types: profile.types,
+                                              base: profile.stats, moves: moves))
+            }
+            guard cpuTeam.count == rankedTeamSize else { phase = .ready; lastError = l.battleStatsFailed; return }
+            isPracticeBattle = true
+            teamPractice = TeamPracticeBattle(mine: myTeam.map(TeamBattleSlot.init),
+                                              opponents: cpuTeam.map(TeamBattleSlot.init),
+                                              rng: SplitMix64(seed: UInt64.random(in: UInt64.min...UInt64.max)))
+            opponentRankProfile = BattleRankProfile(rank: companion.battleRank, stardust: 0)
+            phase = .battling; rankedStake = 0; pendingAttention = true
+        }
+    }
+
+    func chooseTeamPracticeMove(_ index: Int) {
+        guard var practice = teamPractice, practice.useMove(index) else { return }
+        teamPractice = practice
+        if let result = practice.result { phase = .finished(iWon: result, byForfeit: false) }
+    }
+
+    func switchTeamPractice(to index: Int) {
+        guard var practice = teamPractice, practice.switchMine(to: index) else { return }
+        teamPractice = practice
+    }
+
     func challenge(_ peer: BattlePeer, kind: BattleKind = .brawl) {
         challengeEndpoint(peer.endpoint, displayName: peer.name, kind: kind)
     }
@@ -291,7 +341,7 @@ final class BattleCenter {
         lastError = nil
         myKind = kind
         Task { @MainActor in
-            guard let snapshot = await buildMySnapshot() else {
+            guard let snapshot = await buildMySnapshot(levelOverride: kind == .brawl ? 50 : nil) else {
                 phase = .ready
                 lastError = l.battleStatsFailed
                 return
@@ -309,7 +359,8 @@ final class BattleCenter {
                 Task { @MainActor in self?.connectionState(state, conn: conn) }
             }
             conn.start(queue: .main)
-            send(.challenge(snapshot: snapshot, seed: seed, kind: kind), over: conn)
+            send(.challenge(snapshot: snapshot, seed: seed, kind: kind,
+                            profile: companion.battleRankProfile), over: conn)
             receiveLoop(conn)
             pendingMySnapshot = snapshot
         }
@@ -364,14 +415,23 @@ final class BattleCenter {
         guard case .incoming = phase, let conn = connection, let oppSnapshot = incomingSnapshot else { return }
         phase = .preparing
         Task { @MainActor in
-            guard let mine = await buildMySnapshot() else {
+            guard let mine = await buildMySnapshot(levelOverride: incomingKind == .brawl ? 50 : nil) else {
                 send(.decline, over: conn)
                 dropConnection()
                 phase = .ready
                 lastError = l.battleStatsFailed
                 return
             }
-            send(.accept(snapshot: mine), over: conn)
+            let mineProfile = companion.battleRankProfile
+            let stake = incomingKind == .brawl
+                ? BattleRank.stake(challenger: opponentRankProfile?.rank ?? BattleRank(), defender: mineProfile.rank)
+                : 0
+            guard stake == 0 || (mineProfile.stardust >= stake && (opponentRankProfile?.stardust ?? 0) >= stake) else {
+                send(.decline, over: conn)
+                dropConnection(); phase = .ready; lastError = "랭크전 판돈이 부족합니다."
+                return
+            }
+            send(.accept(snapshot: mine, profile: mineProfile), over: conn)
             beginBattle(my: mine, opp: oppSnapshot, iAmA: false, seed: incomingSeed, kind: incomingKind)
         }
     }
@@ -386,34 +446,58 @@ final class BattleCenter {
     // MARK: 대전 진행
 
     func chooseMove(_ index: Int) {
-        guard case .battling = phase, var b = battle, b.myChoice == nil, let conn = connection else { return }
+        guard case .battling = phase, var b = battle, b.myChoice == nil else { return }
         let idx = b.mustStruggle ? -1 : index
         if idx >= 0 {
             guard idx < b.myPP.count, b.myPP[idx] > 0 else { return }
         }
         b.myChoice = idx
+        if isPracticeBattle {
+            let available = b.oppPP.indices.filter { b.oppPP[$0] > 0 }
+            b.oppChoice = available.randomElement() ?? -1
+            battle = b
+            resolveIfReady()
+            return
+        }
+        guard let conn = connection else { return }
         battle = b
         send(.move(turn: b.turn, moveIndex: idx), over: conn)
         resolveIfReady()
     }
 
     func forfeit() {
+        if isPracticeBattle {
+            phase = .finished(iWon: false, byForfeit: true)
+            return
+        }
         if let conn = connection { send(.forfeit, over: conn) }
         dropConnection()
         phase = .finished(iWon: false, byForfeit: true)
+        settleRankedBrawlIfNeeded(won: false)
     }
 
     func dismissResult() {
         let wasRace = race != nil
         battle = nil
         race = nil
+        teamPractice = nil
         if case .finished = phase { phase = .ready }
         else if wasRace, case .battling = phase { phase = .ready }   // 레이스 결과 닫기
+        isPracticeBattle = false
     }
 
     private var pendingMySnapshot: BattleSnapshot?
 
     private func beginBattle(my: BattleSnapshot, opp: BattleSnapshot, iAmA: Bool, seed: UInt64, kind: BattleKind) {
+        didSettleRankedBrawl = false
+        lastRankDelta = 0
+        if kind == .brawl, let opponentRankProfile {
+            rankedStake = iAmA
+                ? BattleRank.stake(challenger: companion.battleRank, defender: opponentRankProfile.rank)
+                : BattleRank.stake(challenger: opponentRankProfile.rank, defender: companion.battleRank)
+        } else {
+            rankedStake = 0
+        }
         switch kind {
         case .brawl:
             let myStats = my.effectiveStats(), oppStats = opp.effectiveStats()
@@ -496,6 +580,7 @@ final class BattleCenter {
             let iWon: Bool? = b.myHP > 0 ? true : (b.oppHP > 0 ? false : nil)
             dropConnection()
             phase = .finished(iWon: iWon, byForfeit: false)
+            if let iWon, !isPracticeBattle { settleRankedBrawlIfNeeded(won: iWon) }
         }
     }
 
@@ -503,8 +588,15 @@ final class BattleCenter {
 
     private func handle(_ message: NetMessage) {
         switch message {
-        case .challenge(let snapshot, let seed, let kind):
+        case .challenge(let snapshot, let seed, let kind, let profile):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
+            if UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false {
+                send(.decline, over: connection)
+                dropConnection()
+                phase = .ready
+                AppLog.write("battle challenge declined: do not disturb enabled")
+                return
+            }
             guard !snapshot.types.isEmpty, (1...100).contains(snapshot.level) else {
                 send(.decline, over: connection)
                 dropConnection()
@@ -513,19 +605,23 @@ final class BattleCenter {
             incomingSnapshot = snapshot
             incomingSeed = seed
             incomingKind = kind
+            opponentRankProfile = profile
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             pendingAttention = true
             postChallengeNotification(snapshot)
-            // 자동 수락 — 자리를 비워도 배틀이 성사되게. 신청 검증 통과 직후 즉시 수락.
-            if autoAccept {
-                AppLog.write("battle auto-accepting challenge from \(snapshot.trainer ?? "?")")
-                acceptIncoming()
-            }
-        case .accept(let snapshot):
+        case .accept(let snapshot, let profile):
             guard case .challenging = phase, let mine = pendingMySnapshot else { return }
             guard !snapshot.types.isEmpty, (1...100).contains(snapshot.level) else {
                 dropConnection(); phase = .ready; return
             }
+            let stake = myKind == .brawl
+                ? BattleRank.stake(challenger: companion.battleRank, defender: profile.rank)
+                : 0
+            guard stake == 0 || (companion.availableTokens >= stake && profile.stardust >= stake) else {
+                dropConnection(); phase = .ready; lastError = "랭크전 판돈이 부족합니다."
+                return
+            }
+            opponentRankProfile = profile
             beginBattle(my: mine, opp: snapshot, iAmA: true, seed: incomingSeed, kind: myKind)
         case .decline:
             if case .challenging = phase {
@@ -546,6 +642,7 @@ final class BattleCenter {
             } else if case .battling = phase {
                 dropConnection()
                 phase = .finished(iWon: true, byForfeit: true)
+                settleRankedBrawlIfNeeded(won: true)
             }
         case .raceStep(let distance):
             guard var r = race else { return }
@@ -593,6 +690,7 @@ final class BattleCenter {
         case .battling:
             // 상대 이탈 = 몰수승.
             phase = .finished(iWon: true, byForfeit: true)
+            settleRankedBrawlIfNeeded(won: true)
         case .challenging, .incoming, .preparing:
             phase = .ready
             lastError = l.battleConnectionLost
@@ -607,6 +705,12 @@ final class BattleCenter {
         connection = nil          // connectionDropped 재진입 차단(cancel 콜백)
         conn?.cancel()
         incomingSnapshot = nil
+    }
+
+    private func settleRankedBrawlIfNeeded(won: Bool) {
+        guard battle != nil, !didSettleRankedBrawl, let opponent = opponentRankProfile else { return }
+        didSettleRankedBrawl = true
+        lastRankDelta = companion.settleRankedBrawl(won: won, opponent: opponent.rank, stake: rankedStake)
     }
 
     // MARK: 전송/수신 (길이 프리픽스 프레이밍)
@@ -649,13 +753,14 @@ final class BattleCenter {
 
     // MARK: 내 스냅샷 (무브셋 포함)
 
-    private func buildMySnapshot() async -> BattleSnapshot? {
+    private func buildMySnapshot(levelOverride: Int? = nil) async -> BattleSnapshot? {
+        await companion.ensureInheritedMoves()
         guard let active = companion.state.active, let speciesID = companion.currentSpeciesID else { return nil }
         guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) else { return nil }
-        let level = BattleSnapshot.level(stageIndex: active.stageIndex,
-                                         totalForms: active.totalForms,
-                                         stageProgress: companion.progress)
-        let moves = await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
+        let level = levelOverride ?? active.level
+        let moves = active.learnedMoves.isEmpty
+            ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
+            : active.learnedMoves
         return BattleSnapshot(speciesID: speciesID,
                               name: companion.displayName,
                               trainer: trainerDisplayName,
@@ -670,6 +775,7 @@ final class BattleCenter {
     // MARK: 알림
 
     private func postChallengeNotification(_ snapshot: BattleSnapshot) {
+        guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false) else { return }
         AppLog.write("battle challenge received from \(snapshot.trainer ?? "?") — posting notification")
         guard AppEnv.isBundledApp else { AppLog.write("battle notif skipped: not bundled app"); return }
         let content = UNMutableNotificationContent()
@@ -680,7 +786,7 @@ final class BattleCenter {
         let center = UNUserNotificationCenter.current()
         // completion 은 시스템이 **백그라운드 큐**에서 부른다 — @MainActor 문맥에서 만든 클로저가 격리를
         // 상속하면 런타임 executor 검사에 걸려 SIGTRAP(_dispatch_assert_queue_fail). @Sendable 로 격리 차단.
-        // (UsageStore.requestNotificationAuthorizationIfNeeded 주석과 동일 부류.)
+        // 앱이 포그라운드여도 배틀 신청 알림이 보이도록 권한을 요청한다.
         center.getNotificationSettings { @Sendable settings in
             AppLog.write("battle notif auth status=\(settings.authorizationStatus.rawValue) (0=notDetermined 1=denied 2=authorized 3=provisional)")
         }

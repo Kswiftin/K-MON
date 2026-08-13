@@ -5,10 +5,7 @@
 #   1) swift test 전체 통과
 #   2) "로직 코어" 파일 집합의 라인 커버리지 >= THRESHOLD
 #
-# 로직 코어 = 결정적으로 단위 테스트 가능한 파일만 포함. ProcessRunner / PokeAPIClient /
-# CcusageProvider / CodexRateLimitsProvider / OAuthLimitsProvider / UpdateChecker /
-# BinaryLocator 는 실제 서브프로세스·네트워크·Keychain 의존이라 단위 커버리지 대상에서 제외
-# (해당 부분은 파서/순수 헬퍼만 별도로 테스트됨).
+# 로직 코어 = 결정적으로 단위 테스트 가능한 게임 파일만 포함.
 #
 # 사용:  ./scripts/test-gate.sh          # 게이트 실행
 #        THRESHOLD=75 ./scripts/test-gate.sh   # 임계값 임시 상향
@@ -21,13 +18,9 @@ THRESHOLD="${THRESHOLD:-75}"
 LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/CompanionModel.swift"
   "Sources/PokeTokenBar/Core/CompanionStore.swift"
-  "Sources/PokeTokenBar/Core/UsageStore.swift"
-  "Sources/PokeTokenBar/Core/Models.swift"
-  "Sources/PokeTokenBar/Core/TokenFormatter.swift"
-  "Sources/PokeTokenBar/Core/UsageProvider.swift"
-  "Sources/PokeTokenBar/Core/LocalUsageReader.swift"
-  "Sources/PokeTokenBar/Core/LocalUsageCache.swift"
-  "Sources/PokeTokenBar/Core/ModelPricing.swift"
+  "Sources/PokeTokenBar/Core/AdventureModel.swift"
+  "Sources/PokeTokenBar/Core/BattleModel.swift"
+  "Sources/PokeTokenBar/Core/GameNumberFormatter.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"

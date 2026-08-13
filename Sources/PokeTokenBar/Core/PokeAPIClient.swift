@@ -229,9 +229,50 @@ actor PokeAPIClient: PokeProviding {
             moveSetCache[cacheKey] = four
             return four
         } catch {
-            AppLog.write("moveSet: fetch failed for \(speciesID) lv\(level) — fallback set: \(error)")
-            return MoveSpec.fallbackSet(types: types)
+            AppLog.write("moveSet: fetch failed for \(speciesID) lv\(level): \(error)")
+            return []
         }
+    }
+
+    /// 본가 레벨업 습득표에서 현재 레벨까지 배울 수 있는 최근 기술 4개. 변화기도 포함한다.
+    func canonicalLevelUpMoves(speciesID: Int, level: Int) async -> [MoveSpec] {
+        guard let dto: PokemonMovesDTO = try? await get(base.appendingPathComponent("pokemon/\(speciesID)")) else { return [] }
+        let names = Self.levelUpMoveNames(dto, through: level)
+        var moves: [MoveSpec] = []
+        for name in names {
+            guard let move = try? await moveDetail(name) else { continue }
+            moves.append(move)
+            if moves.count == 4 { break }
+        }
+        return moves
+    }
+
+    static func levelUpMoveNames(_ dto: PokemonMovesDTO, through level: Int) -> [String] {
+        var learned: [String: Int] = [:]
+        for entry in dto.moves {
+            let levels = entry.version_group_details
+                .filter { $0.move_learn_method.name == "level-up" && $0.level_learned_at <= max(1, level) }
+                .map(\.level_learned_at)
+            guard let learnedAt = levels.max() else { continue }
+            learned[entry.move.name] = max(learned[entry.move.name] ?? 0, learnedAt)
+        }
+        return learned.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.map(\.key)
+    }
+
+    /// 정확히 이 레벨에 배우는 공격 기술. 사용자 기술 습득 선택창에서 사용한다.
+    func movesLearned(speciesID: Int, at level: Int) async -> [MoveSpec] {
+        guard let dto: PokemonMovesDTO = try? await get(base.appendingPathComponent("pokemon/\(speciesID)")) else { return [] }
+        let names = dto.moves.compactMap { entry -> String? in
+            let learnsHere = entry.version_group_details.contains {
+                $0.move_learn_method.name == "level-up" && $0.level_learned_at == level
+            }
+            return learnsHere ? entry.move.name : nil
+        }
+        var result: [MoveSpec] = []
+        for name in Array(Set(names)).sorted() {
+            if let move = try? await moveDetail(name) { result.append(move) }
+        }
+        return result
     }
 
     /// 레벨업 습득 기술을 (습득레벨 내림차순, 현 레벨 이하 우선) 이름 목록으로.
@@ -272,11 +313,22 @@ actor PokeAPIClient: PokeProviding {
     }
 
     private var moveDetailCache: [String: MoveSpec] = [:]
+    func moveDetail(id: Int) async -> MoveSpec? {
+        guard id > 0 else { return nil }
+        return try? await moveDetail(String(id))
+    }
+
     private func moveDetail(_ name: String) async throws -> MoveSpec {
         if let c = moveDetailCache[name] { return c }
         let dto: MoveDTO = try await get(base.appendingPathComponent("move/\(name)"))
         var byLang: [String: String] = [:]
         for n in dto.names where langCodes.contains(n.language.name) { byLang[n.language.name] = n.name }
+        var descriptions: [String: String] = [:]
+        for entry in dto.flavor_text_entries where langCodes.contains(entry.language.name) {
+            descriptions[entry.language.name] = entry.flavor_text
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\u{000C}", with: " ")
+        }
         if byLang["en"] == nil { byLang["en"] = name }
         guard let type = PokemonType(rawValue: dto.type.name),
               let cls = MoveDamageClass(rawValue: dto.damage_class.name) else {
@@ -284,7 +336,8 @@ actor PokeAPIClient: PokeProviding {
         }
         let spec = MoveSpec(id: dto.id, names: byLang, type: type,
                             power: dto.power ?? 0, damageClass: cls,
-                            accuracy: dto.accuracy, pp: dto.pp ?? 10)
+                            accuracy: dto.accuracy, pp: dto.pp ?? 10,
+                            descriptions: descriptions)
         moveDetailCache[name] = spec
         return spec
     }
@@ -298,7 +351,10 @@ actor PokeAPIClient: PokeProviding {
 
     private func node(from link: ChainLink) -> EvoNode {
         EvoNode(speciesID: Self.id(from: link.species.url ?? ""),
-                children: link.evolves_to.map(node(from:)))
+                children: link.evolves_to.map(node(from:)),
+                evolutionLevel: link.evolution_details.compactMap(\.min_level).first,
+                evolutionTrigger: link.evolution_details.first?.trigger.name,
+                evolutionItem: link.evolution_details.first?.item?.name)
     }
     private func allIDs(_ n: EvoNode) -> [Int] { [n.speciesID] + n.children.flatMap(allIDs) }
 
@@ -357,6 +413,10 @@ struct PokemonMovesDTO: Decodable, Sendable {
 }
 /// `/move/{name}` 부분 디코드.
 struct MoveDTO: Decodable, Sendable {
+    struct FlavorText: Decodable, Sendable {
+        let flavor_text: String
+        let language: NamedRef
+    }
     let id: Int
     let power: Int?
     let accuracy: Int?
@@ -364,8 +424,15 @@ struct MoveDTO: Decodable, Sendable {
     let type: NamedRef
     let damage_class: NamedRef
     let names: [NameDTO]
+    let flavor_text_entries: [FlavorText]
 }
 struct ChainLink: Decodable, Sendable {
+    struct EvolutionDetail: Decodable, Sendable {
+        let min_level: Int?
+        let trigger: NamedRef
+        let item: NamedRef?
+    }
     let species: NamedRef
     let evolves_to: [ChainLink]
+    let evolution_details: [EvolutionDetail]
 }

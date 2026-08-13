@@ -18,10 +18,11 @@ struct PokeTokenBarApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
-    private var store: UsageStore!
+    private var settings: AppSettings!
     private var companion: CompanionStore!
     private var updater: UpdateChecker!
     private var battleCenter: BattleCenter!
+    private let focusTimer = FocusTimer()
     private var floatingPet: FloatingPetController!
     private let navigation = PopoverNavigation()
 
@@ -35,17 +36,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private var displayAwake = true     // 디스플레이 켜짐 여부 (꺼지면 메뉴 애니메이션 정지 — 배터리)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 서브프로세스(codex app-server 등) 파이프가 조기 종료로 끊겨도 SIGPIPE 로 앱이 죽지 않게
-        // 무시한다. ProcessRunner 의 throwing write 와 함께 broken-pipe 크래시를 막는 이중 방어.
-        signal(SIGPIPE, SIG_IGN)
         // 크래시·OOM·강제종료·런치실패를 로그에 남기는 전역 처리. 가능한 이르게(초기 크래시도 잡히게).
         CrashReporter.install(
             version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")
         NSApp.setActivationPolicy(.accessory)
         Self.migrateLegacyStorageIfNeeded()   // TokenMac → PokeTokenBar 리네임: 기존 companion/캐시 보존
         LoginItem.migrateFromLegacyLoginItemIfNeeded()   // 로그인아이템 → KeepAlive 에이전트(크래시 자동 재실행)
-        store = UsageStore()
+        settings = AppSettings()
         companion = CompanionStore()
+        Task { await companion.ensureInheritedMoves() }
+        focusTimer.onFocusCompleted = { [weak self] minutes in
+            self?.companion.completeFocusSession(minutes: minutes)
+                ?? FocusRewardRules.reward(minutes: minutes, roll: 9_999)
+        }
         updater = UpdateChecker()
         battleCenter = BattleCenter(companion: companion)
         battleCenter.start()   // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신
@@ -53,13 +56,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         // ① delegate 없으면 foreground(accessory 앱은 항상 그렇다) 알림이 억제돼 배너가 안 뜬다.
         // ② 권한을 팝오버 첫 오픈 때만 요청하면 팝오버를 안 연 사용자는 권한이 없어 알림이 안 온다 → 기동 시 요청.
         UNUserNotificationCenter.current().delegate = self
-        store.requestNotificationAuthorizationIfNeeded()
-        store.localizationLanguage = companion.language   // 알림 현지화용 미러 시드
-        store.onRefresh = { [weak self] in self?.onStoreRefreshed() }   // 한도 로드 후 companion·사탕 지급
+        settings.requestNotificationAuthorizationIfNeeded()
         floatingPet = FloatingPetController(
-            store: store, companion: companion,
+            settings: settings, companion: companion,
             onOpenPopover: { [weak self] in self?.openPopover() },
-            onHide: { [weak self] in self?.store.floatingPetEnabled = false }
+            onHide: { [weak self] in self?.settings.floatingPetEnabled = false }
         )   // 데스크톱 플로팅 펫(옵트인)
         Task { await updater.check() }                    // 기동 시 1회 업데이트 확인
 
@@ -68,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             setStatusImage(Self.eggImage(up: false))   // 초기 알도 전환 억제 경로로 통일(불변식)
             button.imagePosition = .imageLeading
             button.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
-            button.cell?.usesSingleLineMode = false   // 사용량/한도를 2줄로 세로 스택 가능하게
+            button.cell?.usesSingleLineMode = true
             button.action = #selector(togglePopover)
             button.target = self
         }
@@ -76,11 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         popover.behavior = .transient
         popover.delegate = self   // 닫힐 때(popoverDidClose) 호스팅 컨트롤러 해제 → 숨은 채 재레이아웃 비용 제거
 
-        observeStore()
         observeCompanionSprite()
         observeBattlePin()
         observeDisplaySleep()
         startIdleTick()
+        startFocusTick()
         applyState()
     }
 
@@ -112,24 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         }
     }
 
-    /// Observation 기반 상태 반영 — store 의 menuTitle(=menuLines) 변경 시 재호출.
-    /// (isStale 은 더 이상 추적 안 함 — 메뉴바 dim 제거로 시각 출력에 관여하지 않음.)
-    private func observeStore() {
-        withObservationTracking {
-            _ = store.menuTitle
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.applyState()
-                self.observeStore()
-            }
-        }
-    }
-
     /// Companion 스프라이트 정체성(종/shiny) 관찰 — 사탕 진화·졸업(BagView), 세이브 가져오기,
     /// 부화·메타몽 리빌 async 완료처럼 store 갱신 틱 없이 companion 만 바뀌는 경로에서도 메뉴바
-    /// 스프라이트를 즉시 갱신한다. observeStore(menuTitle)만으론 다음 사용량 폴링(기본 120s)까지
-    /// 이전 포켓몬이 남는다(사탕 졸업 후 메뉴바 잔상 리포트 — UsageStore.onRefresh 주석과 같은 부류).
+    /// 스프라이트를 즉시 갱신해 사탕 진화·졸업 후 이전 포켓몬이 남지 않게 한다.
     private func observeCompanionSprite() {
         withObservationTracking {
             _ = companion.currentSpeciesID
@@ -150,6 +136,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification,
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        if UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false {
+            completionHandler([])
+            return
+        }
         completionHandler([.banner, .sound, .list])
     }
 
@@ -163,17 +153,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
 
     private func applyState() {
         guard let button = statusItem.button else { return }
-        // 메뉴바 헤드라인 = "오늘 함께한 시간"(방치형). 토큰 사용량 대신 시간을 보여준다.
-        store.menuHeadlineOverride = companion.l.duration(companion.activeSecondsToday)
-        Self.applyMenuText(store.menuLines, to: button)
-        // stale 시각 dim 제거 — 슬립/런치 직후 refresh 완료 전 몇 초간 회색으로 보여 '고장/비활성'
-        // 으로 오인되던 것 방지(사용자 반복 지적). 데이터가 오래됐다는 신호가 필요하면 팝오버
-        // (limitsUpdatedAt 등)에서 제공하고, 메뉴바 아이콘·숫자는 흐리게 하지 않는다.
+        if focusTimer.isRunning {
+            let prefix = focusTimer.phase == .focus ? "FOCUS" : "BREAK"
+            Self.applyMenuText(["\(prefix) \(focusTimer.clockText())"], to: button)
+        } else {
+            let resting: String
+            switch companion.language {
+            case .ko: resting = "휴식 중"
+            case .en: resting = "RESTING"
+            case .ja: resting = "休憩中"
+            }
+            Self.applyMenuText([resting], to: button)
+        }
         button.appearsDisabled = false
 
-        updateCompanion()
-        ensureMenuAnimation()
-        syncMenuAnimation()   // 가시성 상태 주기적 재평가(occlusion 이 잘못 멈춰도 자가 복구)
+        if settings.doNotDisturb {
+            menuTimer?.invalidate()
+            menuTimer = nil
+            button.image = NSImage(systemSymbolName: "timer", accessibilityDescription: "Focus timer")
+        } else {
+            ensureMenuAnimation()
+            syncMenuAnimation()   // 가시성 상태 주기적 재평가(occlusion 이 잘못 멈춰도 자가 복구)
+        }
     }
 
     /// 메뉴바 버튼 텍스트 반영 — 1줄이면 기본 title(13pt), 2줄 이상이면 세로 스택.
@@ -218,23 +219,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         }
     }
 
-    /// UsageStore 값 → CompanionStore (사용량 적립 + 표시 상태). 매 관찰 변경 시 호출.
-    private func updateCompanion() {
-        companion.update(
-            todayTokensByProvider: store.todayTokensByProvider,
-            todayDate: LocalUsageReader.todayKey(),
-            monthTotal: store.monthTotalTokens,
-            burnTier: store.burnTier,
-            limitWarning: store.isLimitWarning,
-            hasUsageData: store.hasUsageData)
-    }
-
-    /// 매 refresh 완료 훅 — companion 표시 상태 갱신 + 생산 틱(타이머 사이 반응성 보강).
-    private func onStoreRefreshed() {
-        updateCompanion()
-        companion.tick()
-    }
-
     /// 방치 생산 틱 — 60초마다 경과 시간을 별의모래로 적립한다(CompanionStore.tick 이 슬립 캡 처리).
     private var idleTickTimer: Timer?
     private func startIdleTick() {
@@ -249,6 +233,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         timer.tolerance = 5   // 배터리 — 정밀도 불필요(경과분 기반이라 늦게 와도 손실 없음)
         RunLoop.main.add(timer, forMode: .common)
         idleTickTimer = timer
+    }
+
+    private var focusTickTimer: Timer?
+    private func startFocusTick() {
+        let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.focusTimer.tick()
+                self.applyState()
+            }
+        }
+        timer.tolerance = 0.15
+        RunLoop.main.add(timer, forMode: .common)
+        focusTickTimer = timer
+        observeOfficeMode()
+    }
+
+    private func observeOfficeMode() {
+        withObservationTracking { _ = settings.doNotDisturb } onChange: { [weak self] in
+            Task { @MainActor in self?.applyState(); self?.observeOfficeMode() }
+        }
     }
 
     // MARK: 메뉴바 애니메이션
@@ -415,8 +420,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private func buildPopoverContent() {
         popover.contentViewController = NSHostingController(
             rootView: PopoverView()
-                .environment(store).environment(companion).environment(updater).environment(navigation)
-                .environment(battleCenter))
+                .environment(settings).environment(companion).environment(updater).environment(navigation)
+                .environment(battleCenter).environment(focusTimer))
     }
 
     @objc private func togglePopover() {
@@ -431,7 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
             syncMenuAnimation()   // 팝오버 열림 → 메뉴바 애니메이션 정지(중복 + WindowServer 부하 회피)
-            store.requestNotificationAuthorizationIfNeeded()   // 알림 권한은 사용자가 앱을 처음 열 때 요청
+            settings.requestNotificationAuthorizationIfNeeded()
             Task { await updater.check() }   // 팝오버 열 때 재확인(내부 minInterval 디바운스)
         }
     }

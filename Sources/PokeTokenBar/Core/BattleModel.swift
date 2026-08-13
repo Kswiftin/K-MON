@@ -121,7 +121,7 @@ enum NatureEffect {
 
 // MARK: - 기술 (네트워크 대전용)
 
-enum MoveDamageClass: String, Codable, Sendable { case physical, special }
+enum MoveDamageClass: String, Codable, Sendable { case physical, special, status }
 
 /// 대전에서 고르는 기술 하나 — PokéAPI move 에서 필요한 것만. 스냅샷에 실려 상대에게 전달되므로
 /// 이름은 다국어 맵(수신 측이 자기 언어로 표시).
@@ -133,8 +133,13 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     var damageClass: MoveDamageClass
     var accuracy: Int?              // nil = 필중
     var pp: Int
+    var descriptions: [String: String]? = nil
 
     func name(_ lang: AppLanguage) -> String { lang.resolveName(names) ?? names.values.first ?? "?" }
+    func description(_ lang: AppLanguage) -> String? {
+        guard let descriptions else { return nil }
+        return lang.resolveName(descriptions) ?? descriptions["en"] ?? descriptions.values.first
+    }
 
     /// 발버둥 — PP 전부 소진 시 폴백(무속성 취급은 엔진에서 id 로 판정).
     static let struggleID = -999

@@ -1,12 +1,13 @@
 #!/bin/bash
-# PokeTokenBar.app 번들 조립 + /Applications 설치
+# Pokédoro.app 번들 조립 + /Applications 설치
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DEFAULT_VERSION="2.5.0"
 VERSION="${KMON_VERSION:-$DEFAULT_VERSION}"
 SOURCE_COMMIT="${KMON_SOURCE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
-APP_NAME="PokeTokenBar"
+APP_NAME="Pokédoro"
+EXECUTABLE="PokeTokenBar"
 BUILD_DIR="build"
 APP="$BUILD_DIR/$APP_NAME.app"
 
@@ -16,9 +17,9 @@ swift build -c release
 echo "==> $APP 조립"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp ".build/release/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
+cp ".build/release/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
 # 심볼 strip — 릴리스 바이너리 1.84MB → 0.80MB(-57%). codesign 전에 수행(서명 무효화 방지).
-strip -rSTx "$APP/Contents/MacOS/$APP_NAME" 2>/dev/null || strip -rSx "$APP/Contents/MacOS/$APP_NAME"
+strip -rSTx "$APP/Contents/MacOS/$EXECUTABLE" 2>/dev/null || strip -rSx "$APP/Contents/MacOS/$EXECUTABLE"
 cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -28,7 +29,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleIdentifier</key><string>io.github.chattymin.poketokenbar</string>
     <key>CFBundleName</key><string>$APP_NAME</string>
-    <key>CFBundleExecutable</key><string>$APP_NAME</string>
+    <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+    <key>CFBundleExecutable</key><string>$EXECUTABLE</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
@@ -37,7 +39,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSLocalNetworkUsageDescription</key><string>Discover K-MON rooms and battle with up to four friends on the same network.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>Discover Pokédoro rooms for ranked battles and Pokéathlon with up to four friends.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_ptbbattle._tcp</string>
@@ -59,7 +61,7 @@ cat > "$APP/Contents/Library/LaunchAgents/io.github.chattymin.poketokenbar.login
     <key>Label</key><string>io.github.chattymin.poketokenbar.login</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME</string>
+        <string>/Applications/$APP_NAME.app/Contents/MacOS/$EXECUTABLE</string>
     </array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key>
@@ -96,8 +98,9 @@ if [[ "${KMON_SKIP_INSTALL:-0}" == "1" ]]; then
     echo "완료: $APP (설치 생략)"
 else
     echo "==> 기존 인스턴스 종료 + /Applications 설치"
-    pkill -x "$APP_NAME" 2>/dev/null || true
+    pkill -x "$EXECUTABLE" 2>/dev/null || true
     rm -rf "/Applications/$APP_NAME.app"
+    rm -rf "/Applications/PokeTokenBar.app"
     cp -R "$APP" /Applications/
     echo "완료: open /Applications/$APP_NAME.app"
 fi

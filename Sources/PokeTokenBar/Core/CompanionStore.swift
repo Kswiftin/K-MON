@@ -4,10 +4,33 @@ import UserNotifications
 
 /// 게임 상태의 출처. 앱이 켜져 있는 동안 시간이 별의모래로 적립돼(tick) 포켓몬을 진화시키고,
 /// 최종체 + 추가 임계 도달 시 도감(라인 전체)에 보존 + 새 알. 진화 트리/희귀도/이름은
-/// PokeProviding 으로 런타임 주입. 사용량 스냅샷은 표시 상태(모션·수면)에만 쓰인다.
+/// PokeProviding 으로 런타임 주입하며 시간 기반 성장과 게임 상태를 관리한다.
 @MainActor
 @Observable
 final class CompanionStore {
+    struct MoveLearningPrompt: Identifiable {
+        let id = UUID()
+        let monID: UUID
+        let level: Int
+        let move: MoveSpec
+    }
+    struct EvolutionPrompt: Identifiable {
+        let id = UUID()
+        let monID: UUID
+        let fromSpeciesID: Int
+        let toSpeciesID: Int
+        let requiredLevel: Int
+        let toName: String
+    }
+    private(set) var moveLearningPrompt: MoveLearningPrompt?
+    private(set) var evolutionPrompt: EvolutionPrompt?
+    private var declinedEvolutionMonID: UUID?
+    private var declinedEvolutionLevel = 0
+    private var declinedEvolutionTargetID = 0
+    private(set) var currentTypes: [PokemonType] = []
+    private(set) var displayedMoves: [MoveSpec] = []
+    private(set) var isLoadingDisplayedMoves = false
+    private var moveLearningQueue: [MoveLearningPrompt] = []
     private(set) var state = CompanionState()
     private(set) var displayState: CompanionStateKind = .egg
     private(set) var currentLine: EvoLine?
@@ -92,12 +115,34 @@ final class CompanionStore {
         return a.isShiny
     }
     var currentNature: PokemonNature? { state.active?.nature }
+    var currentLevel: Int { state.active?.level ?? 1 }
+    var experienceToNextLevel: Int {
+        guard let mon = state.active, mon.level < 100 else { return 0 }
+        return mon.level * 10_000_000 - mon.levelExperience
+    }
+    var levelProgress: Double {
+        guard let mon = state.active else { return 0 }
+        return Double(mon.levelExperience % 10_000_000) / 10_000_000
+    }
+    var nextEvolutionLevel: Int? {
+        guard let mon = state.active, let node = currentLine?.tree.node(withID: mon.currentID),
+              !node.children.isEmpty else { return nil }
+        let nextIndex = mon.stageIndex + 1
+        let next = mon.plannedPathIDs.indices.contains(nextIndex)
+            ? node.children.first(where: { $0.speciesID == mon.plannedPathIDs[nextIndex] })
+            : node.children.first
+        return next?.evolutionLevel
+    }
+    var boxedMons: [MonState] { state.boxedMons }
+    var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }
+    var activeMonID: UUID? { state.active?.id }
 
     // 스타터 선택 — 맨 처음 1회, 알 대신 세 마리 중 택1. 고르면 starterChosen=true 로 이후엔 알 루프.
     // 후보 풀 규칙(범위·전설 제외)은 StarterRules 공유.
 
     /// 스타터 선택 화면을 보여야 하는가 — 아직 안 골랐고 활성 개체도 없을 때(맨 처음).
     var needsStarterSelection: Bool { !state.starterChosen && state.active == nil }
+    var starterSelectableTypes: [PokemonType] { PokemonType.allCases.filter { $0 != .dark } }
     /// 뽑아둔 후보 3종(선택 화면이 그린다). 아직 못 뽑았으면 빈 배열.
     var starterCandidateIDs: [Int] { state.starterCandidates }
 
@@ -132,6 +177,17 @@ final class CompanionStore {
         return "#\(speciesID)"
     }
 
+    func battleSnapshot(for mon: MonState, level: Int = 50) async -> BattleSnapshot? {
+        guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.currentID) else { return nil }
+        let name = await resolveSpeciesName(mon.currentID)
+        let moves = mon.learnedMoves.isEmpty
+            ? await PokeAPIClient.shared.moveSet(speciesID: mon.currentID, level: mon.level, types: profile.types)
+            : mon.learnedMoves
+        return BattleSnapshot(speciesID: mon.currentID, name: mon.nickname ?? name, trainer: trainerName,
+                              level: level, nature: mon.nature, isShiny: mon.isShiny,
+                              types: profile.types, base: profile.stats, moves: moves)
+    }
+
     /// 스타터 확정 — 고른 종으로 즉시 부화(알 단계 건너뜀). 이후 졸업하면 기존 알/부화 루프로 돌아간다.
     func chooseStarter(_ speciesID: Int) async {
         guard needsStarterSelection, !isHatching else { return }
@@ -143,6 +199,38 @@ final class CompanionStore {
         state.pendingHatchID = nil
         save()
         await hatch(baseID: speciesID)   // hatchCore 재사용 — shiny/성격 롤·연출·저장 포함
+    }
+
+    @discardableResult
+    func chooseStarterType(_ type: PokemonType) async -> Bool {
+        guard needsStarterSelection, !isHatching, starterSelectableTypes.contains(type),
+              let index = try? await provider.baseSpeciesIndex() else { return false }
+        let ids = index.map(\.id).filter {
+            StarterRules.genRange.contains($0)
+                && !StarterRules.isLegendary($0)
+        }
+        let candidates = await withTaskGroup(of: Int?.self, returning: [Int].self) { group in
+            for id in ids {
+                group.addTask {
+                    guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id),
+                          profile.types.contains(type) else { return nil }
+                    return id
+                }
+            }
+            var matches: [Int] = []
+            for await id in group { if let id { matches.append(id) } }
+            return matches.sorted()
+        }
+        guard !candidates.isEmpty else { return false }
+        let picked = candidates[Int(rng.next() % UInt64(candidates.count))]
+        state.starterChosen = true
+        state.starterCandidates = []
+        state.eggUsage = 0
+        state.eggTier = nil
+        state.pendingHatchID = nil
+        save()
+        await hatch(baseID: picked)
+        return state.active != nil
     }
 
     // 알 인큐베이션 (active 없을 때)
@@ -380,10 +468,10 @@ final class CompanionStore {
 
     /// 방치 생산 — 앱이 켜져 있는 동안 경과 시간을 별의모래로 적립한다. AppDelegate 의 60초 타이머와
     /// refresh 훅이 호출한다. 슬립·시계 점프는 maxTickInterval 캡으로 잘린다(켜져 있던 시간만 인정).
-    /// 부화·진화·졸업은 applyUsage 경로 그대로 — 입력원만 토큰 델타에서 시간으로 바뀌었다.
+    /// 부화·진화·졸업은 공통 성장량 적용 경로를 사용한다.
     func tick() {
         let now = clock()
-        state.care.advance(to: now)
+        refreshLifecycle()
         defer {
             grantDailyCandyIfNeeded(now: now)
             save()
@@ -402,9 +490,7 @@ final class CompanionStore {
         if state.activeSecondsDate != today { state.activeSecondsDate = today; state.activeSecondsToday = 0 }
         state.activeSecondsTotal += elapsed
         state.activeSecondsToday += elapsed
-        let dust = Int((elapsed * IdleEconomy.dustPerSecond * productionMultiplier).rounded())
-        guard dust > 0 else { return }
-        accrue(dust)
+        // 별의모래는 완료한 집중 세션에서만 지급한다. 틱은 함께한 시간 기록과 생명주기 갱신만 담당한다.
     }
 
     /// 생산분을 상태에 반영 — 알이면 인큐베이션, 활성이면 성장(진화/졸업 판정). tick 과 테스트가 공유.
@@ -427,13 +513,14 @@ final class CompanionStore {
 
     /// 생산 배율 — 도감에 등록한 종(고유 최종체) 1종당 +2%. 수집이 곧 성장 엔진.
     var productionMultiplier: Double {
-        1.0 + IdleEconomy.dexBonusPerSpecies * Double(Set(state.dex.map(\.finalID)).count)
+        let collection = 1.0 + IdleEconomy.dexBonusPerSpecies * Double(Set(state.dex.map(\.finalID)).count)
+        return collection
     }
 
     /// 시간당 생산량(표시용) — 현재 배율 반영.
     var productionPerHour: Int { Int(IdleEconomy.dustPerSecond * 3600 * productionMultiplier) }
 
-    /// 대시보드용 함께한 시간(초). "토큰 사용량" 대신 이 시간을 보여준다.
+    /// 대시보드용 함께한 시간(초).
     var activeSecondsToday: Double { state.activeSecondsToday }
     var activeSecondsTotal: Double { state.activeSecondsTotal }
 
@@ -451,7 +538,8 @@ final class CompanionStore {
     func startAdventure(_ zone: AdventureZone) -> Bool {
         let now = clock()
         state.care.advance(to: now)
-        guard let speciesID = currentSpeciesID, state.adventure == nil, state.care.energy >= 15 else { return false }
+        guard let speciesID = currentSpeciesID, state.adventure == nil,
+              !state.care.isSick, !state.care.isSleeping, state.care.energy >= 15 else { return false }
         state.care.energy -= 15
         state.adventure = AdventureRun(zone: zone, startedAt: now,
                                        endsAt: now.addingTimeInterval(zone.duration),
@@ -461,36 +549,328 @@ final class CompanionStore {
     }
 
     @discardableResult
+    func startFocusAdventure(minutes: Int) -> Bool {
+        let now = clock()
+        state.care.advance(to: now)
+        guard let speciesID = currentSpeciesID, state.adventure == nil,
+              !state.care.isSick, !state.care.isSleeping, state.care.energy >= 15 else { return false }
+        let zone: AdventureZone = minutes >= 90 ? .coast : (minutes >= 50 ? .cave : .forest)
+        state.care.energy -= 15
+        state.adventure = AdventureRun(zone: zone, startedAt: now,
+                                       endsAt: now.addingTimeInterval(TimeInterval(max(1, minutes) * 60)),
+                                       companionSpeciesID: speciesID)
+        save()
+        return true
+    }
+
+    @discardableResult
     func claimAdventure() -> AdventureReward? {
         let now = clock()
         guard let run = state.adventure, run.isComplete(at: now) else { return nil }
-        let reward = AdventureRules.reward(for: run)
+        var reward = AdventureRules.reward(for: run)
         state.adventure = nil
-        state.usedSinceInstall += reward.stardust
-        if state.active != nil { applyUsage(reward.stardust) } else { state.eggUsage += reward.stardust }
+        state.starPieces += reward.starPieces
+        if state.active != nil {
+            let oldLevel = state.active!.level
+            state.active!.levelExperience = min(990_000_000,
+                state.active!.levelExperience + reward.experience)
+            let newLevel = state.active!.level
+            applyUsage(0)
+            if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
+        }
         if reward.foundRareCandy { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += 1 }
+        let minutes = Int((run.endsAt.timeIntervalSince(run.startedAt) / 60).rounded())
+        var fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
+        let today = Self.dayKey(now)
+        if state.lastAdventureBonusDate != today {
+            state.lastAdventureBonusDate = today
+            fragments += 1
+        }
+        state.eggFragments += fragments
+        let fragmentEggs = state.eggFragments / 10
+        state.eggFragments %= 10
+        let week = Self.weekKey(now)
+        if state.adventureWeekKey != week {
+            state.adventureWeekKey = week
+            state.weeklyAdventureCount = 0
+        }
+        state.weeklyAdventureCount += 1
+        let weeklyEgg = state.weeklyAdventureCount == 10 ? 1 : 0
+        let rareEgg = reward.foundEgg ? 1 : 0
+        let earnedEggs = fragmentEggs + weeklyEgg + rareEgg
+        state.focusEggs = min(999, state.focusEggs + earnedEggs)
+        reward.eggFragments = fragments
+        reward.bonusEggs = earnedEggs
         state.care.happiness = min(100, state.care.happiness + 10)
         state.adventureHistory.insert(AdventureRecord(id: run.id, zone: run.zone,
                                                        companionSpeciesID: run.companionSpeciesID,
-                                                       completedAt: now, stardust: reward.stardust,
+                                                       completedAt: now, stardust: reward.starPieces,
                                                        foundRareCandy: reward.foundRareCandy), at: 0)
         if state.adventureHistory.count > 30 { state.adventureHistory.removeLast(state.adventureHistory.count - 30) }
         save()
         return reward
     }
 
-    func feedCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.feed(); save() }
-    func playWithCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.play(); save() }
-    func restCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.rest(); save() }
+    var favoriteFood: CareFood { CareFood.favorite(for: currentSpeciesID ?? 0) }
+
+    func feedCompanion(_ food: CareFood = .apple) {
+        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        state.care.feed(favorite: food == favoriteFood); save()
+    }
+    func playWithCompanion() {
+        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        state.care.play(); save()
+    }
+    func restCompanion() {
+        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        state.care.rest(); save()
+    }
+
+    func cleanCompanion() {
+        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        state.care.clean(); save()
+    }
+
+    @discardableResult
+    func medicateCompanion() -> Bool {
+        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return false }
+        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        let healed = state.care.giveMedicine()
+        if healed { save() }
+        return healed
+    }
+
+    @discardableResult
+    func trainCompanion() -> CareTrainingResult {
+        guard state.active != nil, state.adventure == nil, !state.care.isSick,
+              !state.care.isSleeping else { return .tooTired }
+        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        let result = state.care.train(at: clock())
+        if result == .trained { save() }
+        return result
+    }
+
+    @discardableResult
+    func petCompanion() -> Bool {
+        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return false }
+        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        let accepted = state.care.pet(at: clock())
+        if accepted { save() }
+        return accepted
+    }
+
+    @discardableResult
+    func sleepCompanion() -> Bool {
+        guard state.active != nil, state.adventure == nil, !state.care.isSick else { return false }
+        let started = state.care.sleep(at: clock())
+        if started { save() }
+        return started
+    }
+
+    func wakeCompanion() {
+        guard state.care.wake(at: clock()) else { return }
+        save()
+    }
+
+    var focusEggCount: Int { state.focusEggs }
+    var eggFragmentCount: Int { state.eggFragments }
+    var weeklyAdventureProgress: Int {
+        state.adventureWeekKey == Self.weekKey(clock()) ? state.weeklyAdventureCount : 0
+    }
+
+    @discardableResult
+    func completeFocusSession(minutes: Int, roll: Int? = nil) -> FocusSessionReward {
+        save()
+        return FocusSessionReward(minutes: minutes, stardust: 0, foundEgg: false)
+    }
+
+    func beginIncubatingFocusEgg() -> Bool {
+        guard state.focusEggs > 0, let active = state.active else { return false }
+        state.boxedMons.append(active)
+        state.active = nil
+        state.focusEggs -= 1
+        state.eggUsage = 0
+        state.eggTier = nil
+        state.pendingHatchID = nil
+        activeGeneration += 1
+        currentLine = nil
+        save()
+        return true
+    }
+
+    func switchCompanion(to id: UUID) {
+        guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return }
+        let selected = state.boxedMons.remove(at: index)
+        if let active = state.active { state.boxedMons.append(active) }
+        state.active = selected
+        activeGeneration += 1
+        currentLine = nil
+        currentTypes = []
+        displayedMoves = []
+        evolutionPrompt = nil
+        displayState = .idle
+        save()
+        Task { await loadCurrentLine() }
+    }
+
+    func declineEvolution() {
+        guard let prompt = evolutionPrompt, let active = state.active, active.id == prompt.monID else {
+            evolutionPrompt = nil; return
+        }
+        declinedEvolutionMonID = active.id
+        declinedEvolutionLevel = active.level
+        declinedEvolutionTargetID = prompt.toSpeciesID
+        evolutionPrompt = nil
+    }
+
+    func acceptEvolution() {
+        guard let prompt = evolutionPrompt, let line = currentLine, let active = state.active,
+              active.id == prompt.monID, active.currentID == prompt.fromSpeciesID,
+              active.level >= prompt.requiredLevel,
+              let node = line.tree.node(withID: active.currentID),
+              node.children.contains(where: { $0.speciesID == prompt.toSpeciesID }) else {
+            evolutionPrompt = nil; return
+        }
+        evolutionPrompt = nil
+        declinedEvolutionMonID = nil
+        state.active!.pathIDs = Array(active.pathIDs.prefix(active.stageIndex + 1)) + [prompt.toSpeciesID]
+        state.active!.stageIndex += 1
+        state.active!.usedAtStage = 0
+        justEvolvedTo = prompt.toName
+        fireCelebration(.evolve)
+        eventUntil = clock().addingTimeInterval(4)
+        notifyCompanionEvent(l.notifEvolveTitle, l.notifEvolveBody(prompt.toName))
+        save()
+        applyUsage(0)
+    }
+
+    func declineMoveLearning() {
+        moveLearningPrompt = nil
+        showNextMoveLearningPrompt()
+    }
+
+    func acceptMoveLearning(replacing index: Int? = nil) {
+        guard let prompt = moveLearningPrompt, state.active?.id == prompt.monID else {
+            declineMoveLearning(); return
+        }
+        if state.active!.learnedMoves.count < 4 {
+            state.active!.learnedMoves.append(prompt.move)
+        } else if let index, state.active!.learnedMoves.indices.contains(index) {
+            state.active!.learnedMoves[index] = prompt.move
+        } else { return }
+        save()
+        moveLearningPrompt = nil
+        showNextMoveLearningPrompt()
+    }
+
+    private func queueMoveLearning(from first: Int, through last: Int) {
+        guard let mon = state.active else { return }
+        Task { @MainActor in
+            for level in first...last {
+                let moves = await PokeAPIClient.shared.movesLearned(speciesID: mon.currentID, at: level)
+                for move in moves where !mon.learnedMoves.contains(where: { $0.id == move.id }) {
+                    moveLearningQueue.append(MoveLearningPrompt(monID: mon.id, level: level, move: move))
+                }
+            }
+            showNextMoveLearningPrompt()
+        }
+    }
+
+    private func showNextMoveLearningPrompt() {
+        guard moveLearningPrompt == nil, !moveLearningQueue.isEmpty else { return }
+        moveLearningPrompt = moveLearningQueue.removeFirst()
+    }
+
+    func loadCurrentTypes() async {
+        guard let id = currentSpeciesID,
+              let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id),
+              currentSpeciesID == id else { return }
+        currentTypes = profile.types
+    }
+
+    func loadDisplayedMoves() async {
+        guard let active = state.active, let speciesID = currentSpeciesID else {
+            displayedMoves = []; return
+        }
+        if active.learnedMoves.isEmpty { await ensureInheritedMoves() }
+        guard let refreshed = state.active, refreshed.id == active.id else { return }
+        if !refreshed.learnedMoves.isEmpty {
+            isLoadingDisplayedMoves = true
+            defer { isLoadingDisplayedMoves = false }
+            var enriched = refreshed.learnedMoves
+            for index in enriched.indices where enriched[index].descriptions == nil {
+                if let detail = await PokeAPIClient.shared.moveDetail(id: enriched[index].id) {
+                    enriched[index] = detail
+                }
+            }
+            guard state.active?.id == active.id else { return }
+            state.active!.learnedMoves = enriched
+            displayedMoves = enriched
+            save()
+            return
+        }
+        isLoadingDisplayedMoves = true
+        defer { isLoadingDisplayedMoves = false }
+        let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID)
+        let moves = await PokeAPIClient.shared.canonicalLevelUpMoves(speciesID: speciesID, level: active.level)
+        guard state.active?.id == active.id else { return }
+        if let profile { currentTypes = profile.types }
+        displayedMoves = moves
+    }
+
+    /// 진화 경로의 모든 이전 종에서 현재 레벨까지 배울 수 있었던 본가 기술을 복원한다.
+    /// 한번 저장된 learnedMoves는 이후 진화에서도 MonState와 함께 그대로 유지된다.
+    func ensureInheritedMoves() async {
+        guard let mon = state.active, mon.learnedMoves.isEmpty else { return }
+        var inherited: [MoveSpec] = []
+        for speciesID in mon.pathIDs {
+            let moves = await PokeAPIClient.shared.canonicalLevelUpMoves(speciesID: speciesID, level: mon.level)
+            for move in moves where !inherited.contains(where: { $0.id == move.id }) {
+                inherited.append(move)
+            }
+        }
+        guard state.active?.id == mon.id else { return }
+        // 오래된 기술부터 최대 4개. 이후 새 기술은 학습 선택 카드에서 교체한다.
+        state.active!.learnedMoves = Array(inherited.prefix(4))
+        displayedMoves = state.active!.learnedMoves
+        if !inherited.isEmpty { save() }
+    }
+
+    private func handleCareEvent(_ event: CareAdvanceEvent) {
+        if case .becameSick = event {
+            let copy: (String, String)
+            switch state.language {
+            case .ko: copy = ("파트너가 아파요!", "먼저 씻긴 뒤 약을 먹여 주세요.")
+            case .ja: copy = ("パートナーが病気です！", "きれいにしてから薬をあげてください。")
+            case .en: copy = ("Your partner is sick!", "Clean it first, then give medicine.")
+            }
+            notifyCompanionEvent(copy.0, copy.1)
+            return
+        }
+        guard case let .requested(need) = event else { return }
+        let copy: (String, String)
+        switch (state.language, need) {
+        case (.ko, .hungry): copy = ("배가 고파요!", "30분 안에 사과를 주세요.")
+        case (.ko, .lonely): copy = ("같이 놀고 싶어요!", "30분 안에 공으로 놀아주세요.")
+        case (.ko, .tired): copy = ("졸려요!", "30분 안에 쉬게 해주세요.")
+        case (.ja, .hungry): copy = ("おなかがすいた！", "30分以内に食べ物をあげてください。")
+        case (.ja, .lonely): copy = ("遊びたい！", "30分以内に一緒に遊んでください。")
+        case (.ja, .tired): copy = ("ねむい！", "30分以内に休ませてください。")
+        case (_, .hungry): copy = ("I'm hungry!", "Please feed me within 30 minutes.")
+        case (_, .lonely): copy = ("Let's play!", "Please play with me within 30 minutes.")
+        case (_, .tired): copy = ("I'm sleepy!", "Please let me rest within 30 minutes.")
+        }
+        notifyCompanionEvent(copy.0, copy.1)
+    }
 
     func grantBattleReward(won: Bool, participantCount: Int, mode: MultiplayerBattleMode,
                            opponentNames: [String]) {
         guard state.active != nil else { return }
-        let dust = max(20, participantCount * (won ? 40 : 15))
-        state.usedSinceInstall += dust
-        applyUsage(dust)
-        state.care.happiness = min(100, state.care.happiness + (won ? 12 : 5))
-        state.care.energy = max(0, state.care.energy - 5)
+        let dust = 0
         state.battleHistory.insert(BattleRecord(playedAt: clock(), mode: mode,
                                                 participantCount: participantCount, won: won,
                                                 reward: dust, opponentNames: opponentNames), at: 0)
@@ -500,6 +880,24 @@ final class CompanionStore {
 
     var recentAdventures: [AdventureRecord] { Array(state.adventureHistory.prefix(5)) }
     var recentBattles: [BattleRecord] { Array(state.battleHistory.prefix(5)) }
+    var battleRank: BattleRank { state.battleRank }
+    var battleRankProfile: BattleRankProfile {
+        BattleRankProfile(rank: state.battleRank, stardust: availableTokens)
+    }
+
+    /// 1:1 맞짱 랭크전 정산. 판돈은 계산된 고정액만 이동한다.
+    @discardableResult
+    func settleRankedBrawl(won: Bool, opponent: BattleRank, stake: Int) -> Int {
+        if won {
+            state.starPieces += max(0, stake)
+        } else if stake > 0 {
+            guard availableTokens >= stake else { return 0 }
+            state.starPieces -= stake
+        }
+        let delta = state.battleRank.apply(win: won, opponent: opponent)
+        save()
+        return delta
+    }
 
     /// 일일 사탕 — 날짜가 바뀐 첫 틱에 지급(방치형 출석 보상). 첫 실행도 지급(웰컴 사탕).
     private func grantDailyCandyIfNeeded(now: Date) {
@@ -519,13 +917,16 @@ final class CompanionStore {
         return f.string(from: date)
     }
 
-    // MARK: 갱신 (AppDelegate 가 UsageStore 값으로 호출 — 표시 상태·비동기 트리거 전용)
+    nonisolated static func weekKey(_ date: Date) -> String {
+        let calendar = Calendar(identifier: .iso8601)
+        let parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return "\(parts.yearForWeekOfYear ?? 0)-W\(parts.weekOfYear ?? 0)"
+    }
 
-    /// 사용량 스냅샷 → 표시 상태(burn 기반 모션·수면 등) + 부화/라인 로드 트리거.
-    /// 성장 적립은 여기서 하지 않는다 — tick() 이 담당(방치형 전환, 2026-08-13).
-    func update(todayTokensByProvider: [String: Int], todayDate: String, monthTotal: Int,
-                burnTier: BurnTier, limitWarning: Bool, hasUsageData: Bool) {
-        let todayTokens = todayTokensByProvider.values.reduce(0, +)
+    // MARK: 생명주기 갱신
+
+    /// 시간 생산 틱에서 표시 상태와 부화·진화 관련 비동기 작업을 갱신한다.
+    private func refreshLifecycle() {
         // 이벤트(진화/졸업/부화) 창 만료 — .levelUp 창이 끝날 때 문구 플래그를 함께 정리한다.
         // justEvolvedTo 는 여기(창 만료)에서만 지운다: 과거엔 매 update() 초입에 무조건 nil 로 밀어,
         // 진화 후 4초 창 도중 update 틱이 끼면 "…(으)로 진화했어요"→"성장했어요"로 되돌아갔다(회귀 #4).
@@ -551,14 +952,16 @@ final class CompanionStore {
            a.usedAtStage >= PokemonBalance.phaseThreshold(rarity: a.rarity, totalForms: a.totalForms, stageIndex: 0) {
             Task { await revealDitto() }
         }
-        displayState = computeState(burnTier: burnTier, limitWarning: limitWarning,
-                                    hasUsageData: hasUsageData, today: todayTokens)
+        if state.active == nil { displayState = .egg }
+        else if justGraduated != nil || (eventUntil != nil && clock() < eventUntil!) { displayState = .levelUp }
+        else if state.care.energy < 20 { displayState = .tired }
+        else if state.care.energy < 45 { displayState = .sleep }
+        else { displayState = .idle }
         save()
     }
 
     /// 별의모래 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
-    /// 라인 미로딩(재시작 직후·오프라인)이어도 사용량은 항상 적립한다 — 여기서 드롭하면
-    /// 프로바이더별 ledger 는 이미 전진해 델타가 영구 유실된다. 진화 판정만 라인 로드 후로 미룬다.
+    /// 라인 미로딩(재시작 직후·오프라인)이어도 성장량은 항상 적립하고 진화 판정만 미룬다.
     func applyUsage(_ delta: Int) {
         guard state.active != nil else { return }
         state.active!.usedAtStage += delta
@@ -567,8 +970,6 @@ final class CompanionStore {
         while state.active != nil, guardCount < 50 {
             guardCount += 1
             let a = state.active!
-            let thr = PokemonBalance.phaseThreshold(rarity: a.rarity, totalForms: a.totalForms, stageIndex: a.stageIndex)
-            guard a.usedAtStage >= thr else { break }
             guard let node = line.tree.node(withID: a.currentID) else { break }
             // 위장체는 부화 때는 다형태지만, 에셋 정규화/마이그레이션 뒤 leaf가 될 수 있다.
             // 따라서 terminal 졸업보다 먼저 리빌해야 위장 종이 도감으로 잘못 졸업하지 않는다.
@@ -577,7 +978,7 @@ final class CompanionStore {
                 break
             }
             if node.children.isEmpty {
-                graduate(); break
+                break
             } else {
                 let nextIndex = a.stageIndex + 1
                 let next: EvoNode
@@ -593,16 +994,15 @@ final class CompanionStore {
                     state.active!.totalForms = repaired.count
                     AppLog.write("evolve: repaired invalid planned path for base \(a.baseID)")
                 }
-                state.active!.pathIDs = Array(a.pathIDs.prefix(a.stageIndex + 1)) + [next.speciesID]
-                state.active!.stageIndex += 1
-                state.active!.usedAtStage = a.usedAtStage - thr   // 초과분 이월
-                let newName = line.localizedName(next.speciesID, state.language)
-                justEvolvedTo = newName
-                fireCelebration(.evolve)
-                // 짧은 levelUp 창 — 진화 순간 "…(으)로 진화했어요" 문구 노출(hatch/graduate 와 동일 패턴).
-                // 이게 없으면 computeState 가 .levelUp 을 안 내 statusEvolved 가 도달 불가(dead code)였다.
-                eventUntil = clock().addingTimeInterval(4)
-                notifyCompanionEvent(l.notifEvolveTitle, l.notifEvolveBody(newName))
+                guard let requiredLevel = next.evolutionLevel, a.level >= requiredLevel else { break }
+                if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
+                   declinedEvolutionTargetID == next.speciesID { break }
+                if evolutionPrompt == nil {
+                    evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
+                        toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
+                        toName: line.localizedName(next.speciesID, state.language))
+                }
+                break
             }
         }
         save()
@@ -686,6 +1086,7 @@ final class CompanionStore {
         notifyCompanionEvent(l.notifGraduateTitle, l.notifGraduateBody(name))
         eventUntil = clock().addingTimeInterval(6)
         state.active = nil
+        state.care = PetCareState(lastNeedAt: clock(), lastUpdatedAt: clock())
         activeGeneration += 1
         currentLine = nil
         state.eggUsage = 0   // 새 알은 처음부터 인큐베이션
@@ -718,7 +1119,7 @@ final class CompanionStore {
     enum CandyUseResult: Equatable { case evolved, graduated, progressed, unavailable }
 
     /// 이상한 사탕 1개 사용 — 현재 포켓몬에 +RareCandy.xp. applyUsage 재사용으로 이월·진화·졸업·연출 자동.
-    /// 사탕 XP 는 usedAtStage(진화 진행)에만 반영 — usedSinceInstall/오늘 토큰(실사용 통계)엔 안 잡힌다.
+    /// 사탕 XP 는 현재 진화 진행에만 반영한다.
     @discardableResult
     func useRareCandy() -> CandyUseResult {
         guard canUseRareCandy else { return .unavailable }
@@ -727,7 +1128,11 @@ final class CompanionStore {
         // 진화 안 될 때(부분 진행)도 즉시 "+XP" 피드백 — CompanionHeader 가 연출과 별개로 표시.
         candyFeedbackAmount = RareCandy.xp
         candyFeedbackSeq += 1
-        applyUsage(RareCandy.xp)   // 내부에서 save() 수행(인벤토리 감소 포함 영속)
+        let oldLevel = state.active!.level
+        state.active!.levelExperience += RareCandy.xp
+        let newLevel = state.active!.level
+        if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
+        applyUsage(0)   // 경험치는 위에서 반영하고, 진화 가능 여부만 평가한다.
         if state.active == nil { return .graduated }
         if state.active!.stageIndex > beforeStage { return .evolved }
         return .progressed
@@ -755,11 +1160,45 @@ final class CompanionStore {
         return new
     }
 
-    // MARK: 상점 (재화 = 사용한 토큰)
+    func canUseEvolutionItem(_ kind: ItemKind) -> Bool {
+        guard itemCount(kind) > 0, let key = kind.evolutionKey,
+              let mon = state.active, let node = currentLine?.tree.node(withID: mon.currentID) else { return false }
+        return node.children.contains { child in
+            key == "trade" ? child.evolutionTrigger == "trade"
+                : child.evolutionTrigger == "use-item" && child.evolutionItem == key
+        }
+    }
 
-    /// 상점에서 쓸 수 있는 토큰(재화) = 실사용 누적 − 상점 지출 누적. 성장 미터(usedSinceInstall)는
+    @discardableResult
+    func useEvolutionItem(_ kind: ItemKind) -> Bool {
+        guard canUseEvolutionItem(kind), let key = kind.evolutionKey,
+              let line = currentLine, let mon = state.active,
+              let node = line.tree.node(withID: mon.currentID),
+              let next = node.children.first(where: { child in
+                  key == "trade" ? child.evolutionTrigger == "trade"
+                      : child.evolutionTrigger == "use-item" && child.evolutionItem == key
+              }) else { return false }
+        state.inventory[kind.rawValue] = itemCount(kind) - 1
+        state.active!.pathIDs = Array(mon.pathIDs.prefix(mon.stageIndex + 1)) + [next.speciesID]
+        state.active!.plannedPathIDs = state.active!.pathIDs
+            + Array(makeEvolutionPlan(from: next, baseID: mon.baseID).dropFirst())
+        state.active!.stageIndex += 1
+        state.active!.totalForms = state.active!.plannedPathIDs.count
+        state.active!.usedAtStage = 0
+        let newName = line.localizedName(next.speciesID, state.language)
+        justEvolvedTo = newName
+        fireCelebration(.evolve)
+        eventUntil = clock().addingTimeInterval(4)
+        notifyCompanionEvent(l.notifEvolveTitle, l.notifEvolveBody(newName))
+        save()
+        return true
+    }
+
+    // MARK: 상점 (재화 = 별의모래)
+
+    /// 상점에서 쓸 수 있는 별의모래 = 누적 생산량 − 상점 지출 누적. 성장 미터(usedSinceInstall)는
     /// 여기선 읽기만 — 구매는 spentTokens 만 올려 잔액을 깎는다(진화 진행·오늘/주/월 통계 무영향).
-    var availableTokens: Int { max(0, state.usedSinceInstall - state.spentTokens) }
+    var availableTokens: Int { max(0, state.starPieces) }
 
     /// 상점 판매 아이템 — shopPrice 있는 것만. 가격 저렴한 순, 단 구매 완료한 보유형은 맨 아래로.
     var purchasableItems: [ItemKind] {
@@ -784,7 +1223,7 @@ final class CompanionStore {
     /// 카드의 등급 배지로 읽히게 한다.
     var shopEntries: [ShopEntry] {
         var entries: [ShopEntry] = purchasableItems.map { ShopEntry.item($0) }
-        if hasActive { entries += FreshEgg.shopTiers.map { ShopEntry.egg($0) } }
+        entries += FreshEgg.shopTiers.map { ShopEntry.egg($0) }
         return entries.sorted { a, b in
             let aDone = isPurchasedPassive(a)
             let bDone = isPurchasedPassive(b)
@@ -812,7 +1251,7 @@ final class CompanionStore {
     func buy(_ kind: ItemKind) -> Bool {
         guard let price = kind.shopPrice, availableTokens >= price else { return false }
         if kind.isPassive && itemCount(kind) > 0 { return false }   // 보유형 중복 구매 방지(방어)
-        state.spentTokens += price
+        state.starPieces -= price
         state.inventory[kind.rawValue, default: 0] += 1
         save()
         return true
@@ -837,7 +1276,7 @@ final class CompanionStore {
         // 새 알 구매는 `hasActive` 에 막혀 되돌릴 수단이 없다. 가격만 계산되면 값이 빠져나가므로
         // 판매 목록을 여기서 강제한다(호출부 하나가 실수하면 토큰이 통째로 사라진다).
         guard FreshEgg.shopTiers.contains(tier) else { return false }
-        return hasActive && availableTokens >= FreshEgg.price(guaranteeing: tier)
+        return availableTokens >= FreshEgg.price(guaranteeing: tier)
     }
 
     /// 알 구매 — 현재 포켓몬을 폐기하고 처음부터 인큐베이션하는 새 알로. 지갑에서 가격 차감.
@@ -849,17 +1288,9 @@ final class CompanionStore {
     @discardableResult
     func buyEgg(_ tier: Rarity?) -> Bool {
         guard canBuyEgg(tier) else { return false }
-        state.spentTokens += FreshEgg.price(guaranteeing: tier)
-        state.active = nil            // 폐기 (졸업 아님 — dex/collectedFinals 미변경)
-        activeGeneration += 1
-        currentLine = nil
-        state.eggUsage = 0            // 새 알은 처음부터 인큐베이션(재부화에 5M 필요)
-        state.eggTier = tier          // 등급 보증(nil = 보증 없음)
-        state.pendingHatchID = nil    // 새 보증으로 처음부터 롤(활성 포켓몬이 있는 동안엔 원래 비어 있다)
-        prefetchedLineID = nil
-        justGraduated = nil; justEvolvedTo = nil; eventUntil = nil
-        AppLog.write("egg purchased: discarded active, tier=\(tier?.rawValue ?? "none")")
-        Task { await self.ensureEggPrefetch() }   // 다음 부화 예열
+        state.starPieces -= FreshEgg.price(guaranteeing: tier)
+        state.focusEggs = min(999, state.focusEggs + 1)
+        AppLog.write("egg purchased: added to egg inventory")
         save()
         return true
     }
@@ -873,6 +1304,7 @@ final class CompanionStore {
     private var notifSeq = 0
     private func notifyCompanionEvent(_ title: String, _ body: String) {
         guard AppEnv.isBundledApp else { return }
+        guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false) else { return }
         guard UserDefaults.standard.object(forKey: "companionNotifications") as? Bool ?? true else { return }
         notifSeq += 1
         let content = UNMutableNotificationContent()
@@ -1158,18 +1590,6 @@ final class CompanionStore {
         return nil
     }
 
-    private func computeState(burnTier: BurnTier, limitWarning: Bool, hasUsageData: Bool, today: Int) -> CompanionStateKind {
-        if state.active == nil { return .egg }
-        if justGraduated != nil || (eventUntil != nil && clock() < eventUntil!) { return .levelUp }
-        if limitWarning { return .tired }
-        if !hasUsageData || today == 0 { return .sleep }
-        switch burnTier {
-        case .idle: return .idle
-        case .normal: return .working
-        case .fast, .blazing: return .focus
-        }
-    }
-
     // MARK: 세이브 이전 (기기 교체)
 
     /// 덮어쓰기 확인에 쓸 "이 기기의 현재 진행" 요약.
@@ -1254,10 +1674,30 @@ final class CompanionStore {
             AppLog.write("companion state decode failed — original backed up to \(backup.lastPathComponent), starting fresh")
             return
         }
+        // 배포 강제 초기화는 무결성 검사보다 먼저 처리하고 즉시 디스크에 기록한다. 다음 자동 저장을
+        // 기다리면 사용자가 첫 화면에서 바로 종료했을 때 구세이브가 남아 다음 실행마다 재초기화될 수 있다.
+        if s.forcedResetVersion < SaveTransfer.forcedResetVersion {
+            AppLog.write("forced save reset on load: v\(s.forcedResetVersion) → v\(SaveTransfer.forcedResetVersion)")
+            state = CompanionState()
+            save()
+            return
+        }
         // 무결성 검사는 **정규화 전** 원본에서 한다 — sanitized 가 값을 바꾸면(클램프·전설 리셋) 서명이
         // 달라져 정상 세이브도 조작으로 오인된다. 원본 서명이 안 맞으면 손편집이므로 리셋한다.
         if SaveTransfer.isTampered(s) {
             AppLog.write("save integrity check failed — tampered save detected, resetting progress")
+            // 리셋 전에 원본을 반드시 보존한다. 무결성 규칙 회귀나 실제 손편집 어느 경우든 복구 가능해야 한다.
+            let stamp = Int(clock().timeIntervalSince1970)
+            let backup = fileURL.deletingLastPathComponent()
+                .appendingPathComponent("companion-state.pre-reset-\(stamp).json")
+            do {
+                try data.write(to: backup, options: .atomic)
+                AppLog.write("pre-reset save backed up to \(backup.lastPathComponent)")
+            } catch {
+                AppLog.write("save reset aborted — pre-reset backup failed: \(error)")
+                state = SaveTransfer.sanitized(s)
+                return
+            }
             state = SaveTransfer.resetForTamper(s)
             save()   // 즉시 새 서명으로 덮어써 조작본을 남기지 않는다
             return

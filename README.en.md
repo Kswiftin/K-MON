@@ -2,7 +2,7 @@
 
 <img src="assets/icon.png" width="128" alt="K-MON icon">
 
-# K-MON
+# Pokédoro
 
 **An idle Pokémon companion that grows in your macOS menu bar — then battles your friends over LAN.**
 
@@ -16,8 +16,6 @@
 
 K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own — just keep the app running. Pick your first partner, watch it evolve through its real evolution line, name it, graduate it into your Pokédex, and start again. When a friend on the same network is running K-MON too, challenge them to a live battle — a turn-based **Brawl** or a keyboard-mashing **Race**.
 
-Underneath the companion there's still a precise AI-coding usage tracker (Claude Code, Codex, Gemini CLI, and more), read straight from your local logs — but the headline is now the time you've spent together, not a token count.
-
 > Built on top of [PokeTokenBar](https://github.com/chattymin/PokeTokenBar). Unofficial, non-commercial Pokémon fan project — see [License & disclaimer](#license--disclaimer).
 
 ## How it works
@@ -28,6 +26,8 @@ Underneath the companion there's still a precise AI-coding usage tracker (Claude
 4. 🎓 **Graduate & collect.** Final form + threshold permanently archives it in your **Pokédex**, and a fresh egg arrives. From then on, eggs hatch a variety of Pokémon (weighted by capture rate — legendaries are rare).
 5. 🍬 **Daily treat.** Every day you open the app, you get a **Rare Candy** — spend it from the **Bag** to instantly grow your current Pokémon.
 6. 🛒 **Spend at the Shop.** Your Stardust is spendable currency — buy **Rare Candy**, a **Mint** to re-roll nature, a **Shiny Charm** for permanently better shiny odds, or an egg to send off your current companion and start over.
+7. 💗 **Care when it calls.** Build affection and growth through favorite treats and petting, then manage messes, hygiene, illness, training, and sleep as its needs change.
+8. ⏱️ **Grow only through focus adventures.** Stardust comes exclusively from completed 25, 50, or 90-minute sessions. Longer focus pays more per minute and improves the Mystery Egg chance. Work mode uses a neutral timer and hides the floating pet.
 
 ## ⚔️ Battle a friend over LAN
 
@@ -88,24 +88,6 @@ Menu-bar items, refresh interval, launch at login, companion event notifications
 
 > Screenshots may lag the latest UI — the app has moved from a token counter to a time-based idle game.
 
-## The usage tracker underneath
-
-K-MON still reads your local AI-coding usage and can show it in the popover: today's totals, official 5-hour / weekly limits, and per-provider detail. It's just no longer the headline — the menu bar leads with your companion and the time you've spent together.
-
-| Tool | Tracked | Official limits |
-|---|---|---|
-| **Claude Code** | today · 5h block · week · month | ✅ 5h / weekly |
-| **Codex** | today · week · month | ✅ 5h / weekly |
-| **Gemini CLI** | today · week · month | — |
-| **Antigravity** | today · 5h block · week · month | — |
-| **OpenCode** | today · 5h block · week · month | — |
-| **Hermes Agent** | today · 5h block · week · month | — |
-| **Cursor** | today · 5h block · week · month | — |
-| **Grok CLI** | today · 5h block · week · month | — |
-| **Copilot CLI** | today · 5h block · week · month | — |
-
-All read locally — no external usage CLI required.
-
 ## Install
 
 ### Requirements
@@ -140,9 +122,8 @@ swift build                  # debug
 
 ## Privacy & permissions
 
-- **On-device.** AI-coding usage is read directly from local logs. The app never uploads usage or runs model turns.
 - **Local network.** Battle discovery uses Bonjour/AWDL on your LAN only. Battles connect peer-to-peer; nothing goes to a server.
-- **Outbound requests.** The app talks to [PokéAPI](https://pokeapi.co/) (`pokeapi.co`, `graphql.pokeapi.co`) and `raw.githubusercontent.com` for species/evolution data and sprites, and optionally `api.anthropic.com` / `status.*` for Claude limits and incident banners. None of these carry your usage, tokens, prompts, or project paths.
+- **Outbound requests.** The app talks to [PokéAPI](https://pokeapi.co/) (`pokeapi.co`, `graphql.pokeapi.co`) and `raw.githubusercontent.com` for species/evolution data and sprites, and uses the GitHub API to check for app updates.
 - **Pokémon assets** are fetched at runtime from PokéAPI and cached only under `~/Library/Application Support/PokeTokenBar/`. The app binary bundles no Pokémon assets.
 
 ## License & disclaimer

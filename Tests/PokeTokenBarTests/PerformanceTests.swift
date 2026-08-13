@@ -26,39 +26,12 @@ final class PureComputePerformanceTests: XCTestCase {
         }
     }
 
-    func testLargeDailyReportDecode() {
-        let rows = (0..<1000).map {
-            "{\"date\":\"2026-06-\(($0 % 28) + 1)\",\"inputTokens\":\($0),\"outputTokens\":1," +
-            "\"cacheCreationTokens\":2,\"cacheReadTokens\":3,\"totalTokens\":\($0),\"totalCost\":0.1}"
-        }.joined(separator: ",")
-        let json = Data("{\"daily\":[\(rows)]}".utf8)
-        measure {
-            let report = try! JSONDecoder().decode(DailyReport.self, from: json)
-            XCTAssertEqual(report.daily.count, 1000)
-        }
-    }
 }
 
 // MARK: 스토어 핫패스 / 스케일
 
 @MainActor
 final class StorePerformanceTests: XCTestCase {
-    func testUpdateHotPath() async {
-        // legendary(임계 6e9)를 부화시켜 진화 없이 작은 델타를 반복 — refresh 당 update 비용 측정.
-        let s = CompanionStore(provider: StubProvider(value: pline(base: 1, rarity: .legendary)),
-                               clock: { pNow }, fileURL: tmpURL(), rng: SeededRNG(seed: 1))
-        await s.hatch(baseID: 1)
-        var token = 0
-        measure {
-            for _ in 0..<500 {
-                token += 100
-                s.update(todayTokensByProvider: ["test": token], todayDate: "d", monthTotal: 0,
-                         burnTier: .normal, limitWarning: false, hasUsageData: true)
-            }
-        }
-        XCTAssertNotNil(s.state.active)   // 진화 없이 동일 단계 유지
-    }
-
     /// 큰 도감을 파일 로드로 주입하고 정렬 비용/정확성을 함께 본다.
     private func storeWithLargeDex(_ count: Int) throws -> CompanionStore {
         let entries = (0..<count).map { i -> DexEntry in
@@ -153,22 +126,17 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertEqual(FloatingPetView.frameFloor, 0.4, accuracy: 1e-9, "메뉴바와 동일한 0.4s≈2.5fps 캡")
     }
 
-    /// Bubble needs headroom + width beyond the square pet size — otherwise content is clipped.
-    func testPanelGrowsForBubbleWithoutChangingPetOrigin() {
+    func testPanelKeepsPetOrigin() {
         let pet: CGFloat = 96
-        let idle = FloatingPetController.panelSize(petSize: pet, showingBubble: false)
-        XCTAssertEqual(idle, NSSize(width: pet, height: pet))
-
-        let shown = FloatingPetController.panelSize(petSize: pet, showingBubble: true)
-        XCTAssertGreaterThan(shown.height, pet, "must reserve vertical headroom for the bubble")
-        XCTAssertGreaterThanOrEqual(shown.width, pet)
+        let panel = FloatingPetController.panelSize(petSize: pet)
+        XCTAssertEqual(panel, NSSize(width: pet, height: pet))
 
         let petOrigin = NSPoint(x: 400, y: 200)
         let panelOrigin = FloatingPetController.panelOrigin(
-            petOrigin: petOrigin, petSize: pet, panelSize: shown)
+            petOrigin: petOrigin, petSize: pet, panelSize: panel)
         XCTAssertEqual(panelOrigin.y, petOrigin.y, accuracy: 0.5)
         let roundTrip = FloatingPetController.petOrigin(
-            panelOrigin: panelOrigin, petSize: pet, panelSize: shown)
+            panelOrigin: panelOrigin, petSize: pet, panelSize: panel)
         XCTAssertEqual(roundTrip.x, petOrigin.x, accuracy: 0.5)
         XCTAssertEqual(roundTrip.y, petOrigin.y, accuracy: 0.5)
     }
@@ -181,46 +149,4 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertFalse(FloatingPetController.isClick(from: a, to: NSPoint(x: 20, y: 10)))
     }
 
-    /// Hover tooltip is localized and pure — tokens always; limit % only when provided.
-    /// Remaining mode inverts the % and adds the self-describing suffix.
-    func testHoverTooltipBuilder() {
-        let l = L(.en)
-        XCTAssertEqual(
-            FloatingPetView.hoverTooltip(todayTokens: 12_345, limitUtilization: nil, mode: .used, l: l),
-            l.floatingPetHoverTokensOnly(TokenFormatter.grouped(12_345)))
-        XCTAssertEqual(
-            FloatingPetView.hoverTooltip(todayTokens: 12_345, limitUtilization: 42, mode: .used, l: l),
-            l.floatingPetHoverWithLimit(TokenFormatter.grouped(12_345), TokenFormatter.percent(42)))
-        XCTAssertEqual(
-            FloatingPetView.hoverTooltip(todayTokens: 12_345, limitUtilization: 42, mode: .remaining, l: l),
-            l.floatingPetHoverWithLimit(TokenFormatter.grouped(12_345),
-                                        l.percentRemaining(TokenFormatter.percent(58))))
-    }
-
-    /// Japanese (and ko/en) alert copy must fit the default bubble panel — width-capped wrap,
-    /// not intrinsic `.fixedSize` that clipped ja by ~9pt (owner review on #124).
-    func testLocalizedAlertBubbleFitsDefaultPanel() {
-        let pet: CGFloat = 96
-        let panel = FloatingPetController.panelSize(petSize: pet, showingBubble: true)
-        XCTAssertEqual(panel.width, FloatingPetController.bubbleMinWidth)
-        XCTAssertEqual(panel.height, pet + FloatingPetController.bubbleHeadroom)
-        XCTAssertEqual(
-            FloatingPetController.bubbleContentWidth
-                + FloatingPetController.bubbleHorizontalPadding * 2,
-            FloatingPetController.bubbleMinWidth,
-            "content column + horizontal padding must equal panel width")
-
-        for lang in [AppLanguage.ko, .en, .ja] {
-            let l = L(lang)
-            let title = l.notifCritical
-            let body = l.notifBody(l.claudeFiveHour, TokenFormatter.percent(85))
-            let measured = FloatingPetController.measureSpeechBubble(title: title, body: body)
-            XCTAssertLessThanOrEqual(
-                measured.width, panel.width + 0.5,
-                "\(lang.rawValue) bubble width \(measured.width) must fit panel \(panel.width)")
-            XCTAssertLessThanOrEqual(
-                measured.height, FloatingPetController.bubbleHeadroom - 2,
-                "\(lang.rawValue) bubble height \(measured.height) must fit headroom \(FloatingPetController.bubbleHeadroom)")
-        }
-    }
 }

@@ -12,7 +12,7 @@ struct MultiplayerRoomPeer: Identifiable, Equatable {
 @MainActor
 @Observable
 final class MultiplayerRoomCenter {
-    enum Phase: Equatable { case idle, creating, hosting, joining(String), joined, battling }
+    enum Phase: Equatable { case idle, creating, hosting, joining(String), joined, battling, pokeathlon }
     nonisolated static let serviceType = "_kmonroom._tcp"
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
 
@@ -26,6 +26,7 @@ final class MultiplayerRoomCenter {
     private(set) var turnEndsAt: Date?
     private(set) var battleReward: Int?
     private(set) var lastError: String?
+    private(set) var pokeathlonRace: PokeathlonRace?
     let myID = UUID()
 
     private let companion: CompanionStore
@@ -68,6 +69,32 @@ final class MultiplayerRoomCenter {
     }
 
     func createRoom(mode: MultiplayerBattleMode) {
+        createRoom(mode: mode, activity: .battle)
+    }
+
+    func createPokeathlonRoom() { createRoom(mode: .freeForAll, activity: .pokeathlon) }
+
+    func startSoloPokeathlon() {
+        guard phase == .idle else { return }
+        lastError = nil
+        phase = .creating
+        Task {
+            guard let snapshot = await buildSnapshot() else {
+                phase = .idle
+                lastError = "포켓몬 정보를 불러오지 못했습니다."
+                return
+            }
+            hostingRole = true
+            lobby = nil
+            pokeathlonRace = PokeathlonRace(racers: [
+                PokeathlonRacer(id: myID, trainerName: trainerName, speciesID: snapshot.speciesID,
+                                teamSpeciesIDs: relayTeamSpeciesIDs())
+            ])
+            phase = .pokeathlon
+        }
+    }
+
+    private func createRoom(mode: MultiplayerBattleMode, activity: RoomActivity) {
         guard phase == .idle else { return }
         phase = .creating; lastError = nil
         Task {
@@ -78,7 +105,7 @@ final class MultiplayerRoomCenter {
             let host = LobbyParticipant(id: myID, trainerName: trainerName, speciesID: snapshot.speciesID,
                                         team: team, isReady: false, isHost: true)
             do {
-                lobby = try MultiplayerLobby(host: host)
+                lobby = try MultiplayerLobby(host: host, activity: activity)
                 hostingRole = true
                 try startHosting()
                 phase = .hosting
@@ -133,7 +160,7 @@ final class MultiplayerRoomCenter {
     }
 
     func startBattle() {
-        guard isHost, let lobby, lobby.canStart else { return }
+        guard isHost, let lobby, lobby.canStart, lobby.activity == .battle else { return }
         let fighters = lobby.participants.compactMap { participant -> MultiplayerFighter? in
             guard let snapshot = snapshots[participant.id] else { return nil }
             return MultiplayerFighter(participant: participant, snapshot: snapshot)
@@ -148,6 +175,28 @@ final class MultiplayerRoomCenter {
             let message = MultiplayerWireMessage.start(seed: seed, fighters: fighters, mode: lobby.mode)
             for connection in guestConnections.values { send(message, over: connection) }
         } catch { lastError = error.localizedDescription }
+    }
+
+    func startPokeathlon() {
+        guard isHost, let lobby, lobby.canStart, lobby.activity == .pokeathlon else { return }
+        let race = PokeathlonRace(racers: lobby.participants.map {
+            PokeathlonRacer(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID,
+                            teamSpeciesIDs: [$0.speciesID, $0.speciesID, $0.speciesID])
+        })
+        pokeathlonRace = race; phase = .pokeathlon
+        for connection in guestConnections.values { send(.pokeathlonStart(race: race), over: connection) }
+    }
+
+    func pokeathlonInput(_ input: PokeathlonInput) {
+        guard phase == .pokeathlon else { return }
+        if isHost { applyPokeathlonInput(input, participantID: myID) }
+        else if let hostConnection { send(.pokeathlonInput(participantID: myID, input: input), over: hostConnection) }
+    }
+
+    private func applyPokeathlonInput(_ input: PokeathlonInput, participantID: UUID) {
+        guard isHost, var race = pokeathlonRace else { return }
+        race.apply(input, racerID: participantID); pokeathlonRace = race
+        for connection in guestConnections.values { send(.pokeathlonState(race: race), over: connection) }
     }
 
     func submitAction(targetID: UUID, moveIndex: Int) {
@@ -176,7 +225,7 @@ final class MultiplayerRoomCenter {
         pendingGuestConnections.values.forEach { $0.cancel() }; pendingGuestConnections.removeAll()
         listener?.cancel(); listener = nil
         turnTimeoutTask?.cancel(); turnTimeoutTask = nil
-        lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil
+        lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; battleReward = nil; rewardedBattle = false
         hasSubmittedAction = false; hostingRole = false; phase = .idle
@@ -184,7 +233,8 @@ final class MultiplayerRoomCenter {
 
     private func startHosting() throws {
         let listener = try NWListener(using: Self.parameters())
-        listener.service = NWListener.Service(name: "\(trainerName)'s room#\(String(myID.uuidString.prefix(6)))",
+        let prefix = lobby?.activity == .pokeathlon ? "RUN" : "BATTLE"
+        listener.service = NWListener.Service(name: "\(prefix) · \(trainerName)#\(String(myID.uuidString.prefix(6)))",
                                               type: Self.serviceType)
         listener.newConnectionHandler = { [weak self] connection in
             Task { @MainActor in self?.acceptGuest(connection) }
@@ -248,6 +298,8 @@ final class MultiplayerRoomCenter {
                 connection.cancel(); self.broadcastLobby(); return
             case .action(let round, let action) where action.attackerID == id && round == self.combatRound:
                 if let id { self.acceptAction(action, from: id) }
+            case .pokeathlonInput(let pid, let input) where pid == id:
+                self.applyPokeathlonInput(input, participantID: pid)
             default: break
             }
             self.receiveHostLoop(connection, key: key, participantID: id)
@@ -274,6 +326,8 @@ final class MultiplayerRoomCenter {
                 self.combatRound += 1; self.hasSubmittedAction = false
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.grantRewardIfFinished()
+            case .pokeathlonStart(let race): self.pokeathlonRace = race; self.phase = .pokeathlon
+            case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
             case .rejected(let reason): self.lastError = reason; self.leaveRoom(); return
             default: break
             }
@@ -392,12 +446,22 @@ final class MultiplayerRoomCenter {
         return value.isEmpty ? "Trainer" : value
     }
 
+    private func relayTeamSpeciesIDs() -> [Int] {
+        var ids = companion.state.active.map { [$0.currentID] } ?? []
+        ids.append(contentsOf: companion.boxedMons.prefix(2).map(\.currentID))
+        guard let fallback = ids.first else { return [] }
+        while ids.count < 3 { ids.append(fallback) }
+        return Array(ids.prefix(3))
+    }
+
     private func buildSnapshot() async -> BattleSnapshot? {
+        await companion.ensureInheritedMoves()
         guard let active = companion.state.active, let speciesID = companion.currentSpeciesID,
               let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) else { return nil }
-        let level = BattleSnapshot.level(stageIndex: active.stageIndex, totalForms: active.totalForms,
-                                         stageProgress: companion.progress)
-        let moves = await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
+        let level = active.level
+        let moves = active.learnedMoves.isEmpty
+            ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
+            : active.learnedMoves
         return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
                               level: level, nature: active.nature, isShiny: active.isShiny,
                               types: profile.types, base: profile.stats, moves: moves)

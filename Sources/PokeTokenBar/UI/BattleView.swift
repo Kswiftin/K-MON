@@ -35,9 +35,7 @@ struct BattleView: View {
 
     @ViewBuilder
     private var networkSection: some View {
-        if center.multiplayer.phase != .idle {
-            multiplayerLobby
-        } else { switch center.phase {
+        switch center.phase {
         case .ready, .preparing:
             peerList
         case .challenging(let peer):
@@ -45,31 +43,46 @@ struct BattleView: View {
         case .incoming(let peer):
             incomingView(peer: peer)
         case .battling:
-            if let race = center.race { raceView(race) }        // 달리기
+            if let practice = center.teamPractice { teamPracticeView(practice) }
+            else if let race = center.race { raceView(race) }        // 달리기
             else if let b = center.battle { arenaView(b) }       // 맞짱
         case .finished(let iWon, let byForfeit):
             finishedView(iWon: iWon, byForfeit: byForfeit)
-        } }
+        }
     }
 
     private var peerList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            multiplayerRooms
-            Divider().padding(.vertical, 2)
-            // 배틀 종류 선택 — 맞짱(턴제) / 달리기(스피드 레이스). 신청 시 이 종류로 건다.
-            Picker("", selection: $kind) {
-                Text(l.battleKindBrawl).tag(BattleKind.brawl)
-                Text(l.battleKindRace).tag(BattleKind.race)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            Label(store.language == .ko ? "랭크배틀 · 전원 Lv.50" : "Ranked Battle · All Pokémon Lv.50",
+                  systemImage: "shield.lefthalf.filled")
+                .font(.caption.bold())
+            Picker("", selection: Binding(get: { center.rankedTeamSize }, set: { center.rankedTeamSize = $0 })) {
+                Text("1 vs 1").tag(1)
+                Text("3 vs 3").tag(3)
+                Text("6 vs 6").tag(6)
+            }.pickerStyle(.segmented).labelsHidden()
 
-            // 자동 수락 — 자리를 비워도 신청이 오면 바로 성사.
-            Toggle(l.battleAutoAccept, isOn: Binding(
-                get: { center.autoAccept },
-                set: { center.autoAccept = $0 }))
+            Button {
+                center.startRankedPractice()
+            } label: {
+                Label(store.language == .ko ? "CPU 모의전" : "Practice vs CPU", systemImage: "gamecontroller.fill")
+            }
+            .buttonStyle(.borderedProminent).controlSize(.small)
+            .disabled(!isChallengeEnabled)
+            Text(store.language == .ko
+                 ? "실전과 동일한 Lv.50 규칙 · 랭크와 별의조각은 변하지 않음"
+                 : "Same Lv.50 rules · rank and Star Pieces are unchanged")
+                .font(.caption2).foregroundStyle(.secondary)
+
+            if kind == .brawl {
+                HStack {
+                    Label(store.battleRank.displayName, systemImage: "shield.lefthalf.filled")
+                    Spacer()
+                    Text("⭐ \(GameNumberFormatter.compact(store.availableTokens))")
+                }
                 .font(.caption2)
-                .toggleStyle(.checkbox)
+                .foregroundStyle(.secondary)
+            }
 
             HStack(spacing: 6) {
                 Text(l.battleNearby).font(.caption).bold()
@@ -93,7 +106,7 @@ struct BattleView: View {
                             .foregroundStyle(.secondary)
                         Text(peer.name).font(.callout).lineLimit(1)
                         Spacer()
-                        Button(l.battleChallengeButton) { center.challenge(peer, kind: kind) }
+                        Button(l.battleChallengeButton) { center.challenge(peer, kind: .brawl) }
                             .controlSize(.small)
                             .disabled(!isChallengeEnabled)
                     }
@@ -377,7 +390,7 @@ struct BattleView: View {
 
     private func challengeManual() {
         guard isChallengeEnabled else { return }
-        center.challengeManual(manualAddress, kind: kind)
+        center.challengeManual(manualAddress, kind: .brawl)
     }
 
     private var isChallengeEnabled: Bool {
@@ -405,6 +418,16 @@ struct BattleView: View {
                 .multilineTextAlignment(.center)
             Text(l.battleKindLabel(center.incomingKind))
                 .font(.caption2).foregroundStyle(.secondary)
+            if center.incomingKind == .brawl, let profile = center.opponentRankProfile {
+                VStack(spacing: 2) {
+                    Text("\(profile.rank.displayName)  VS  \(store.battleRank.displayName)")
+                    if center.incomingRankedStake > 0 {
+                        Text("고정 판돈 ⭐ \(GameNumberFormatter.compact(center.incomingRankedStake))")
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .font(.caption2)
+            }
             if let opp = center.incomingSnapshot {
                 snapshotCard(opp, title: opp.trainer.map { l.battleTrainerLabel($0) } ?? "?", hpRatio: nil)
                     .frame(maxWidth: 180)
@@ -461,6 +484,51 @@ struct BattleView: View {
         }
     }
 
+    private func teamPracticeView(_ practice: TeamPracticeBattle) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                teamSlotCard(practice.mySlot, title: store.language == .ko ? "내 포켓몬" : "My Pokémon")
+                Text("VS").font(.headline).foregroundStyle(.secondary)
+                teamSlotCard(practice.opponentSlot, title: "CPU")
+            }
+            HStack(spacing: 4) {
+                ForEach(Array(practice.mine.enumerated()), id: \.element.id) { index, slot in
+                    Button { center.switchTeamPractice(to: index) } label: {
+                        VStack(spacing: 1) {
+                            SpriteView(speciesID: slot.snapshot.speciesID, size: 25, shiny: slot.snapshot.isShiny)
+                            Text("\(slot.hp)").font(.system(size: 7).monospacedDigit())
+                        }
+                    }
+                    .buttonStyle(.bordered).controlSize(.mini)
+                    .disabled(index == practice.myActive || !slot.isAlive)
+                }
+            }
+            Text(store.language == .ko ? "기술" : "Moves").font(.caption.bold())
+            let moves = practice.mySlot.snapshot.moves ?? MoveSpec.fallbackSet(types: practice.mySlot.snapshot.types)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
+                ForEach(Array(moves.enumerated()), id: \.element.id) { index, move in
+                    moveButton(move, pp: practice.mySlot.pp[index]) { center.chooseTeamPracticeMove(index) }
+                        .disabled(practice.mySlot.pp[index] <= 0)
+                }
+            }
+            HStack {
+                Text("\(practice.mine.filter(\.isAlive).count)/\(practice.mine.count)")
+                Spacer()
+                Text("CPU \(practice.opponents.filter(\.isAlive).count)/\(practice.opponents.count)")
+            }.font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func teamSlotCard(_ slot: TeamBattleSlot, title: String) -> some View {
+        VStack(spacing: 3) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            SpriteView(speciesID: slot.snapshot.speciesID, size: 52, animated: true, shiny: slot.snapshot.isShiny)
+            Text(slot.snapshot.name).font(.caption.bold()).lineLimit(1)
+            ProgressView(value: Double(slot.hp), total: Double(max(1, slot.snapshot.effectiveStats().hp)))
+                .tint(slot.hp > 0 ? .green : .red)
+        }.frame(maxWidth: .infinity).padding(6).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
+    }
+
     // MARK: 달리기 (레이스)
 
     private func raceView(_ race: RaceState) -> some View {
@@ -510,6 +578,21 @@ struct BattleView: View {
         VStack(spacing: 10) {
             Text(finishText(iWon: iWon, byForfeit: byForfeit))
                 .font(.title3).bold()
+            if center.battle != nil {
+                Text(center.isPracticeBattle
+                     ? (store.language == .ko ? "모의전 결과" : "Practice result")
+                     : store.battleRank.displayName)
+                    .font(.caption).bold()
+                if center.lastRankDelta != 0 {
+                    Text("\(center.lastRankDelta > 0 ? "+" : "")\(center.lastRankDelta) LP")
+                        .font(.caption2)
+                        .foregroundStyle(center.lastRankDelta > 0 ? .green : .red)
+                }
+                if center.rankedStake > 0, let iWon {
+                    Text("\(iWon ? "+" : "−")⭐ \(GameNumberFormatter.compact(center.rankedStake))")
+                        .font(.caption2).foregroundStyle(iWon ? .green : .orange)
+                }
+            }
             if let b = center.battle, !b.events.isEmpty { eventLog(b) }
             Button(l.battleClose) { center.dismissResult() }
                 .buttonStyle(.borderedProminent)

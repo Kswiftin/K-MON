@@ -6,12 +6,37 @@ struct BagView: View {
     let nav: PopoverNavigation
 
     var body: some View {
-        if store.ownedItems.isEmpty {
+        if store.ownedItems.isEmpty && store.focusEggCount == 0 && store.eggFragmentCount == 0 {
             emptyState
         } else {
             // 고정 높이 — 컬렉션과 동일(팝오버 재오픈 시 fitting size 축소 방지).
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
+                    if store.eggFragmentCount > 0 {
+                        HStack {
+                            Text("🧩").font(.title2)
+                            Text(store.language == .ko
+                                 ? "알 조각 \(store.eggFragmentCount)/10 · 주간 모험 \(store.weeklyAdventureProgress)/10"
+                                 : "Egg Fragments \(store.eggFragmentCount)/10 · Weekly \(store.weeklyAdventureProgress)/10")
+                                .font(.caption.bold())
+                        }
+                    }
+                    if store.focusEggCount > 0 {
+                        HStack(spacing: 10) {
+                            Text("🥚").font(.system(size: 30))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(store.language == .ko ? "신비한 알 ×\(store.focusEggCount)" : "Mystery Egg ×\(store.focusEggCount)")
+                                    .font(.callout.weight(.semibold))
+                                Text(store.language == .ko
+                                     ? "집중 모험에서 발견한 알입니다. 안전하게 보관 중이에요."
+                                     : "Found during focus adventures and stored safely.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(10)
+                        .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    }
                     ForEach(store.ownedItems, id: \.kind) { item in
                         ItemCard(store: store, nav: nav, kind: item.kind, count: item.count)
                     }
@@ -75,14 +100,18 @@ private struct ItemCard: View {
         case .rareCandy: return store.canUseRareCandy
         case .mint:      return store.canUseMint
         case .shinyCharm: return false   // 보유형 — 사용 개념 없음(상시 효과)
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone:
+            return store.canUseEvolutionItem(kind)
         }
     }
     /// 사용 컨트롤 효과 힌트 ("+XP" / "성격 랜덤 변경").
     private func effectHint(_ l: L) -> String {
         switch kind {
-        case .rareCandy: return "+\(TokenFormatter.compact(RareCandy.xp)) XP"
+        case .rareCandy: return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
         case .mint:      return l.mintEffectHint
         case .shinyCharm: return l.shinyCharmEffectHint
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone:
+            return store.language == .ko ? "진화 가능할 때 사용" : "Use when evolution is available"
         }
     }
     private func performUse() {
@@ -90,6 +119,8 @@ private struct ItemCard: View {
         case .rareCandy: _ = store.useRareCandy()
         case .mint:      _ = store.useMint()
         case .shinyCharm: break   // 보유형 — 사용 동작 없음
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone:
+            _ = store.useEvolutionItem(kind)
         }
     }
 
