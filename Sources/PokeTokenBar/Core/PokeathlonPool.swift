@@ -45,3 +45,33 @@ struct PokeathlonPool: Codable, Sendable, Equatable {
         return payouts
     }
 }
+
+/// 호스트가 베팅을 거절하는 이유. UI 문구와 테스트가 같은 값을 본다.
+enum PokeathlonBetRejection: Error, Equatable {
+    case identityMismatch, notSpectator, poolClosed, invalidAmount, unknownRunner, insufficientBalance
+}
+
+extension PokeathlonPool {
+    /// 호스트측 베팅 수용 검사. `nil` 이면 수용. 순수 함수라 네트워크 없이 전 분기를 테스트할 수 있다.
+    ///
+    /// - `senderID` 는 연결에서 확인된 참가자 ID(위조 불가). `bet.bettorID` 가 이것과 다르면
+    ///   남의 ID 로 베팅하려는 시도다.
+    /// - 러너는 아예 베팅할 수 없다 — 승부를 조작해 이득 보는 경로를 만들기 전에 막는다.
+    static func rejection(for bet: PokeathlonBet, senderID: UUID, lobby: MultiplayerLobby,
+                          race: PokeathlonRace, pool: PokeathlonPool, now: Date) -> PokeathlonBetRejection? {
+        guard bet.bettorID == senderID else { return .identityMismatch }
+        guard let member = lobby.participants.first(where: { $0.id == senderID }),
+              member.role == .spectator else { return .notSpectator }
+        guard !pool.isClosed, now < race.startsAt else { return .poolClosed }
+        guard bet.amount > 0 else { return .invalidAmount }
+        guard race.racers.contains(where: { $0.id == bet.runnerID }) else { return .unknownRunner }
+        guard bet.amount <= member.reportedStarPieces else { return .insufficientBalance }
+        return nil
+    }
+
+    /// 호스트가 보낸 원장이 "내가 본 내 베팅"과 일치하는지. 남의 베팅이 늘어난 것은 정상이고,
+    /// 내 항목이 바뀌거나 없던 내 베팅이 생긴 경우만 거부한다.
+    func agreesWithSeenBet(_ seen: PokeathlonBet?, bettorID: UUID) -> Bool {
+        bets[bettorID] == seen
+    }
+}

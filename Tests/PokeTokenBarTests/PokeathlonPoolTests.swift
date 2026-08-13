@@ -94,4 +94,131 @@ final class PokeathlonPoolTests: XCTestCase {
             XCTAssertEqual(p.payouts(winnerID: nil).values.reduce(0, +), p.total)
         }
     }
+
+    // MARK: 호스트측 베팅 수용 검사 (순수 — 네트워크 없이 전 분기 검증)
+
+    private func racer(_ n: Int) -> PokeathlonRacer {
+        PokeathlonRacer(id: id(n), trainerName: "R\(n)", speciesID: 25)
+    }
+
+    private func member(_ n: Int, role: LobbyRole, wallet: Int) -> LobbyParticipant {
+        LobbyParticipant(id: id(n), trainerName: "T\(n)", speciesID: 25, team: .solo,
+                         isReady: true, isHost: false, role: role, reportedStarPieces: wallet)
+    }
+
+    /// 러너 10·11, 관전자 1(잔액 100). 레이스는 t+10초 시작.
+    private func fixture() throws -> (lobby: MultiplayerLobby, race: PokeathlonRace, start: Date) {
+        var lobby = try MultiplayerLobby(host: member(10, role: .runner, wallet: 0),
+                                         capacity: 4, activity: .pokeathlon)
+        try lobby.join(member(11, role: .runner, wallet: 0))
+        try lobby.join(member(1, role: .spectator, wallet: 100))
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var race = PokeathlonRace(racers: [racer(10), racer(11)])
+        race.startsAt = start
+        return (lobby, race, start)
+    }
+
+    func testValidSpectatorBetIsAccepted() throws {
+        let f = try fixture()
+        let bet = PokeathlonBet(bettorID: id(1), runnerID: id(10), amount: 100)
+        XCTAssertNil(PokeathlonPool.rejection(for: bet, senderID: id(1), lobby: f.lobby, race: f.race,
+                                              pool: PokeathlonPool(), now: f.start.addingTimeInterval(-1)))
+    }
+
+    func testBetUnderAnotherParticipantsIDIsRejected() throws {
+        let f = try fixture()
+        // 관전자 1이 관전자 2의 ID 로 베팅을 보낸 상황 — 연결의 참가자 ID 와 불일치.
+        let bet = PokeathlonBet(bettorID: id(2), runnerID: id(10), amount: 10)
+        XCTAssertEqual(PokeathlonPool.rejection(for: bet, senderID: id(1), lobby: f.lobby, race: f.race,
+                                                pool: PokeathlonPool(), now: f.start.addingTimeInterval(-1)),
+                       .identityMismatch)
+    }
+
+    func testBetFromARunnerIsRejected() throws {
+        let f = try fixture()
+        let bet = PokeathlonBet(bettorID: id(11), runnerID: id(10), amount: 10)
+        XCTAssertEqual(PokeathlonPool.rejection(for: bet, senderID: id(11), lobby: f.lobby, race: f.race,
+                                                pool: PokeathlonPool(), now: f.start.addingTimeInterval(-1)),
+                       .notSpectator)
+    }
+
+    func testBetFromANonMemberIsRejected() throws {
+        let f = try fixture()
+        let bet = PokeathlonBet(bettorID: id(99), runnerID: id(10), amount: 10)
+        XCTAssertEqual(PokeathlonPool.rejection(for: bet, senderID: id(99), lobby: f.lobby, race: f.race,
+                                                pool: PokeathlonPool(), now: f.start.addingTimeInterval(-1)),
+                       .notSpectator)
+    }
+
+    func testBetAfterStartIsRejected() throws {
+        let f = try fixture()
+        let bet = PokeathlonBet(bettorID: id(1), runnerID: id(10), amount: 10)
+        XCTAssertEqual(PokeathlonPool.rejection(for: bet, senderID: id(1), lobby: f.lobby, race: f.race,
+                                                pool: PokeathlonPool(), now: f.start),
+                       .poolClosed)
+    }
+
+    func testBetIntoAClosedPoolIsRejectedEvenBeforeStart() throws {
+        let f = try fixture()
+        var closed = PokeathlonPool(); closed.isClosed = true
+        let bet = PokeathlonBet(bettorID: id(1), runnerID: id(10), amount: 10)
+        XCTAssertEqual(PokeathlonPool.rejection(for: bet, senderID: id(1), lobby: f.lobby, race: f.race,
+                                                pool: closed, now: f.start.addingTimeInterval(-5)),
+                       .poolClosed)
+    }
+
+    func testNonPositiveAmountIsRejected() throws {
+        let f = try fixture()
+        for amount in [0, -50] {
+            let bet = PokeathlonBet(bettorID: id(1), runnerID: id(10), amount: amount)
+            XCTAssertEqual(PokeathlonPool.rejection(for: bet, senderID: id(1), lobby: f.lobby, race: f.race,
+                                                    pool: PokeathlonPool(), now: f.start.addingTimeInterval(-1)),
+                           .invalidAmount)
+        }
+    }
+
+    func testBetOnSomeoneWhoIsNotRacingIsRejected() throws {
+        let f = try fixture()
+        let bet = PokeathlonBet(bettorID: id(1), runnerID: id(1), amount: 10)   // 자기 자신(관전자)에 베팅
+        XCTAssertEqual(PokeathlonPool.rejection(for: bet, senderID: id(1), lobby: f.lobby, race: f.race,
+                                                pool: PokeathlonPool(), now: f.start.addingTimeInterval(-1)),
+                       .unknownRunner)
+    }
+
+    func testBetAboveTheBalanceReportedAtJoinIsRejected() throws {
+        let f = try fixture()
+        let bet = PokeathlonBet(bettorID: id(1), runnerID: id(10), amount: 101)   // 신고 잔액 100
+        XCTAssertEqual(PokeathlonPool.rejection(for: bet, senderID: id(1), lobby: f.lobby, race: f.race,
+                                                pool: PokeathlonPool(), now: f.start.addingTimeInterval(-1)),
+                       .insufficientBalance)
+    }
+
+    // MARK: 정산 검증 — 호스트 원장이 내가 본 내 베팅과 다르면 거부
+
+    func testAgreementRequiresMyOwnBetToMatchWhatISaw() {
+        let mine = PokeathlonBet(bettorID: id(1), runnerID: id(10), amount: 40)
+        var pool = PokeathlonPool(); pool.bets[id(1)] = mine
+        XCTAssertTrue(pool.agreesWithSeenBet(mine, bettorID: id(1)))
+
+        // 호스트가 내 금액을 바꿔치기
+        var tampered = pool
+        tampered.bets[id(1)] = PokeathlonBet(bettorID: id(1), runnerID: id(10), amount: 400)
+        XCTAssertFalse(tampered.agreesWithSeenBet(mine, bettorID: id(1)))
+
+        // 호스트가 내 러너를 바꿔치기
+        var switched = pool
+        switched.bets[id(1)] = PokeathlonBet(bettorID: id(1), runnerID: id(11), amount: 40)
+        XCTAssertFalse(switched.agreesWithSeenBet(mine, bettorID: id(1)))
+
+        // 내가 걸지 않은 베팅이 호스트 원장에 등장
+        XCTAssertFalse(pool.agreesWithSeenBet(nil, bettorID: id(1)))
+
+        // 내가 걸었는데 호스트 원장에서 사라짐
+        XCTAssertFalse(PokeathlonPool().agreesWithSeenBet(mine, bettorID: id(1)))
+
+        // 남의 베팅이 늘어난 것은 파리뮤추얼상 정상 — 내 배당은 재계산으로 검증된다.
+        var others = pool
+        others.bets[id(2)] = PokeathlonBet(bettorID: id(2), runnerID: id(11), amount: 5)
+        XCTAssertTrue(others.agreesWithSeenBet(mine, bettorID: id(1)))
+    }
 }
