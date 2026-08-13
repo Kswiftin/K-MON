@@ -170,6 +170,8 @@ enum SaveTransfer {
         s.care.hunger = min(max(0, s.care.hunger), 100)
         s.care.happiness = min(max(0, s.care.happiness), 100)
         s.care.energy = min(max(0, s.care.energy), 100)
+        // 미래 시각이면 재우기가 그 시각까지 영영 잠긴다 — 시계를 뒤로 돌린 뒤 복귀한 세이브도 여기서 풀린다.
+        if let lastRestedAt = s.care.lastRestedAt, lastRestedAt > Date() { s.care.lastRestedAt = nil }
         if let adventure = s.adventure,
            adventure.endsAt <= adventure.startedAt ||
            adventure.endsAt.timeIntervalSince(adventure.startedAt) > 24 * 60 * 60 {

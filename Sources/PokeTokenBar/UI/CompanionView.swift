@@ -715,7 +715,7 @@ struct AdventureCard: View {
             HStack(spacing: 5) {
                 Button("🍎") { store.feedCompanion() }.help("Feed")
                 Button("🎾") { store.playWithCompanion() }.help("Play")
-                Button("💤") { store.restCompanion() }.help("Rest")
+                Button("💤") { store.restCompanion() }.help("Rest").disabled(!store.canRest)
                 Spacer()
             }.controlSize(.small)
 
@@ -748,7 +748,7 @@ struct AdventureCard: View {
                             }.frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(store.care.energy < 15)
+                        .disabled(store.care.energy < zone.energyCost)
                     }
                 }
             }

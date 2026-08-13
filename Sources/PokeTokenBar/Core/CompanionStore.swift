@@ -451,8 +451,9 @@ final class CompanionStore {
     func startAdventure(_ zone: AdventureZone) -> Bool {
         let now = clock()
         state.care.advance(to: now)
-        guard let speciesID = currentSpeciesID, state.adventure == nil, state.care.energy >= 15 else { return false }
-        state.care.energy -= 15
+        guard let speciesID = currentSpeciesID, state.adventure == nil,
+              state.care.energy >= zone.energyCost else { return false }
+        state.care.energy -= zone.energyCost
         state.adventure = AdventureRun(zone: zone, startedAt: now,
                                        endsAt: now.addingTimeInterval(zone.duration),
                                        companionSpeciesID: speciesID)
@@ -464,7 +465,7 @@ final class CompanionStore {
     func claimAdventure() -> AdventureReward? {
         let now = clock()
         guard let run = state.adventure, run.isComplete(at: now) else { return nil }
-        let reward = AdventureRules.reward(for: run)
+        let reward = AdventureRules.reward(for: run, productionMultiplier: productionMultiplier)
         state.adventure = nil
         state.usedSinceInstall += reward.stardust
         if state.active != nil { applyUsage(reward.stardust) } else { state.eggUsage += reward.stardust }
@@ -481,7 +482,17 @@ final class CompanionStore {
 
     func feedCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.feed(); save() }
     func playWithCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.play(); save() }
-    func restCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.rest(); save() }
+    func restCompanion() {
+        guard state.active != nil, state.adventure == nil else { return }
+        guard state.care.rest(at: clock()) else { return }   // 대기 중이면 저장할 변화가 없다
+        save()
+    }
+
+    /// 재우기 가능 여부(버튼 비활성화용) — 대기 중에 눌러도 아무 반응이 없으면 고장으로 보인다.
+    var canRest: Bool {
+        guard let lastRestedAt = state.care.lastRestedAt else { return true }
+        return clock().timeIntervalSince(lastRestedAt) >= PetCareState.restCooldown
+    }
 
     func grantBattleReward(won: Bool, participantCount: Int, mode: MultiplayerBattleMode,
                            opponentNames: [String]) {

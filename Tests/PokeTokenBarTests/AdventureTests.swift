@@ -3,15 +3,46 @@ import XCTest
 
 final class AdventureTests: XCTestCase {
     func testCareDecaysAndActionsStayWithinBounds() {
-        var care = PetCareState(lastUpdatedAt: Date(timeIntervalSince1970: 0))
-        care.advance(to: Date(timeIntervalSince1970: 3600))
+        let start = Date(timeIntervalSince1970: 0)
+        var care = PetCareState(energy: 50, lastUpdatedAt: start)
+        care.advance(to: start.addingTimeInterval(3600))
         XCTAssertEqual(care.hunger, 96)
         XCTAssertEqual(care.happiness, 98)
-        XCTAssertEqual(care.energy, 97)
-        for _ in 0..<10 { care.feed(); care.play(); care.rest() }
+        XCTAssertEqual(care.energy, 70, "에너지는 감소가 아니라 시간당 회복이다")
+        for index in 0..<10 {
+            care.feed(); care.play()
+            _ = care.rest(at: start.addingTimeInterval(Double(index) * PetCareState.restCooldown))
+        }
         XCTAssertTrue((0...100).contains(care.hunger))
         XCTAssertTrue((0...100).contains(care.happiness))
         XCTAssertTrue((0...100).contains(care.energy))
+    }
+
+    /// 재우기 연타 방지 — 대기 없이 회복되면 에너지가 무한이 되어 모험 소모 설계가 통째로 무의미해진다.
+    func testRestIsRateLimitedByCooldown() {
+        let start = Date(timeIntervalSince1970: 0)
+        var care = PetCareState(energy: 0, lastUpdatedAt: start)
+        XCTAssertTrue(care.rest(at: start))
+        XCTAssertEqual(care.energy, PetCareState.restRecovery)
+        XCTAssertFalse(care.rest(at: start.addingTimeInterval(PetCareState.restCooldown - 1)))
+        XCTAssertEqual(care.energy, PetCareState.restRecovery, "대기 중에는 회복되지 않는다")
+        XCTAssertTrue(care.rest(at: start.addingTimeInterval(PetCareState.restCooldown)))
+        XCTAssertEqual(care.energy, PetCareState.restRecovery * 2)
+    }
+
+    /// 에너지 소모도 구간 길이에 비례해야 한다 — 고정 비용이면 시간당 소모가 짧은 구간에 불리해져
+    /// 별의모래 밸런스(짧을수록 유리)와 정반대로 작용하고, 최장 구간이 다시 유일한 선택지가 된다.
+    func testEnergyCostPerHourIsEqualAcrossZones() {
+        for zone in AdventureZone.allCases {
+            XCTAssertEqual(zone.energyCost / (zone.duration / 3600),
+                           PetCareState.adventureEnergyPerHour, accuracy: 1e-9,
+                           "\(zone.rawValue) 구간의 시간당 에너지 소모가 다르다")
+        }
+    }
+
+    /// 자동 회복이 모험 소모를 넘으면 에너지가 사실상 무제한이 되어 제약 역할을 못 한다.
+    func testEnergyRecoveryStaysBelowAdventureDrain() {
+        XCTAssertLessThan(PetCareState.recoveryPerHour, PetCareState.adventureEnergyPerHour)
     }
 
     func testAdventureProgressAndRewardAreDeterministic() {
@@ -24,6 +55,50 @@ final class AdventureTests: XCTestCase {
         XCTAssertTrue(run.isComplete(at: start.addingTimeInterval(600)))
         XCTAssertEqual(AdventureRules.reward(for: run), AdventureRules.reward(for: run))
         XCTAssertGreaterThan(AdventureRules.reward(for: run).stardust, 0)
+    }
+
+    /// 구간 지배 방지 — 짧은 구간일수록 시간당 별의모래가 많아야 한다. 대소가 뒤집히면 최장 구간이
+    /// 효율·수고 양쪽에서 우월해져 나머지 두 구간이 고를 이유 없는 죽은 선택지가 된다(도입 시 실제로 그랬다).
+    func testShorterZonesPayMoreStardustPerHour() {
+        func stardustPerHour(_ zone: AdventureZone) -> Double {
+            let start = Date(timeIntervalSince1970: 0)
+            let run = AdventureRun(zone: zone, startedAt: start,
+                                   endsAt: start.addingTimeInterval(zone.duration),
+                                   companionSpeciesID: 25)
+            return Double(AdventureRules.reward(for: run).stardust) / (zone.duration / 3600)
+        }
+        XCTAssertGreaterThan(stardustPerHour(.forest), stardustPerHour(.cave))
+        XCTAssertGreaterThan(stardustPerHour(.cave), stardustPerHour(.coast))
+    }
+
+    /// 사탕 기대치는 구간마다 같아야 한다 — 한쪽이 유리하면 구간 선택이 별의모래가 아니라 사탕으로 쏠린다.
+    func testRareCandyOddsAreEqualPerHourAcrossZones() {
+        func rareCandyPerHour(_ zone: AdventureZone) -> Double {
+            (3600 / zone.duration) / Double(zone.rareCandyDenominator)
+        }
+        for zone in AdventureZone.allCases {
+            XCTAssertEqual(rareCandyPerHour(zone), rareCandyPerHour(.forest), accuracy: 1e-9,
+                           "\(zone.rawValue) 구간의 시간당 사탕 기대치가 다르다")
+        }
+    }
+
+    /// 도감 보너스가 방치 생산에만 붙고 모험엔 안 붙으면, 종을 모을수록 모험이 상대적으로 무가치해진다.
+    func testRewardScalesWithDexProductionMultiplier() {
+        let start = Date(timeIntervalSince1970: 0)
+        let run = AdventureRun(zone: .cave, startedAt: start,
+                               endsAt: start.addingTimeInterval(AdventureZone.cave.duration),
+                               companionSpeciesID: 25)
+        let withoutDexBonus = AdventureRules.reward(for: run).stardust
+        let withDexBonus = AdventureRules.reward(for: run, productionMultiplier: 2).stardust
+        XCTAssertEqual(withDexBonus, withoutDexBonus * 2)
+    }
+
+    /// 모험 중에도 방치 생산은 계속 돈다 — 보상이 같은 시간 방치분을 넘으면 "모험 안 하면 손해"가 되어
+    /// 방치형 전제가 무너진다. 보너스는 방치분의 일부여야 한다.
+    func testZoneRewardStaysBelowSameDurationIdleProduction() {
+        for zone in AdventureZone.allCases {
+            XCTAssertLessThan(zone.idleProductionShare, 1.0, "\(zone.rawValue) 보상이 방치 생산을 넘는다")
+        }
     }
 
     func testLobbySupportsAtMostFourAndRequiresEveryoneReady() throws {
