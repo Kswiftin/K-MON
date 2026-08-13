@@ -73,7 +73,7 @@ CI는 모든 풀 리퀘스트에서 `swift build`와 `swift test`를 실행합�
 
 PokeTokenBar는 **비공식·비상업 팬 프로젝트**이며 Nintendo, Game Freak,
 Creatures Inc., The Pokémon Company와 제휴 관계가 없습니다
-([README](README.ko.md#라이선스--면책)의 면책 참고). 프로젝트를 안전하게 유지·배포하기
+([README](README.md#라이선스--면책)의 면책 참고). 프로젝트를 안전하게 유지·배포하기
 위해 기여는 **반드시** 다음 규칙을 따라야 합니다:
 
 - **포켓몬(또는 다른 제3자) 저작물을 커밋하거나 번들하지 마세요** — 스프라이트,

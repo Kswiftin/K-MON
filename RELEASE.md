@@ -45,7 +45,7 @@ status item(AX)→팝오버 오픈(AXPress)까지 7개 체크. 5단계는 터미
 
 `release.sh` 2단계가 출력하는 것 — **기능/동작이 바뀐 릴리스면 반드시 갱신**:
 
-- [ ] **README.md / README.ko.md / README.ja.md** — 기능 목록, 요구사항, 데이터 소스, 스크린샷. 3개 언어 동시.
+- [ ] **README.md / README.en.md / README.ja.md** — 기능 목록, 요구사항, 데이터 소스, 스크린샷. 3개 언어 동시.
 - [ ] **랜딩 페이지** (`gh-pages` 브랜치 `index.html`) — hero·features·companion·install·works-with·요구사항·푸터.
   - 릴리스 배지는 **동적**(`img.shields.io/github/v/release/...`) → 버전 자동 반영. **기능/문구만 수동.**
   - i18n 사전 **en/ko/ja 동시** 갱신 + 마크업 키 ⊆ 사전, en==ko==ja 키 정합 유지.
