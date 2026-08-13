@@ -426,6 +426,55 @@ final class CompanionStore {
         }
     }
 
+    /// 도감 한 줄 = 진화 라인 하나. 선택 메뉴가 기본형 아래에 단계들을 접어 보여주기 위한 묶음이다.
+    struct DexLine: Identifiable, Sendable {
+        let id: Int                  // 기본형 종 번호 — 라인 식별자이자 메뉴 제목의 근거
+        let name: String
+        let species: [DexSpecies]    // 수록된 단계만, 초기→최종 순서
+    }
+
+    /// 도감을 진화 라인 단위로 묶는다.
+    ///
+    /// 칸의 내용(이름·이로치·희귀도)은 `dexSpecies` 에서 그대로 읽는다 — 여기서 다시 만들면 격자와
+    /// 메뉴가 같은 종을 다른 이름·표식으로 보여줄 수 있다.
+    ///
+    /// 분기 진화(이브이처럼 기본형 하나에 여러 최종형)는 **한 라인으로 합친다**. 졸업 기록이 분기마다
+    /// 따로 남아 있어도 트레이너에겐 같은 갈래이므로, 기본형 이름이 메뉴에 여러 번 뜨면 어느 쪽을
+    /// 골라야 할지 알 수 없다.
+    var dexLines: [DexLine] {
+        let speciesByID = Dictionary(dexSpecies.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var memberIDsByBase: [Int: [Int]] = [:]
+        func collect(_ chain: [Int]) {
+            guard let base = chain.first else { return }
+            var members = memberIDsByBase[base] ?? []
+            for id in chain where speciesByID[id] != nil && !members.contains(id) { members.append(id) }
+            memberIDsByBase[base] = members
+        }
+        for entry in state.dex { collect(entry.chainOrder) }
+        if let active = state.active { collect(Array(active.pathIDs.prefix(active.stageIndex + 1))) }
+
+        return memberIDsByBase.keys.sorted().compactMap { base in
+            let members = (memberIDsByBase[base] ?? []).compactMap { speciesByID[$0] }
+            guard let head = members.first else { return nil }
+            return DexLine(id: base, name: head.name, species: members)
+        }
+    }
+
+    /// 플로팅 펫이 그릴 대상 — 설정에서 고른 도감 종이 있으면 그 종, 없으면 지금 키우는 개체.
+    ///
+    /// 수록 판정과 이로치 여부를 `dexSpecies` 에서 그대로 읽는다. 같은 규칙을 여기에 다시 적으면
+    /// (졸업 기록 + 지금 키우는 개체의 도달 단계) 한쪽만 바뀌었을 때 고를 수 있는 종과 실제로 그려지는
+    /// 종이 어긋난다.
+    ///
+    /// 고른 종이 도감에서 사라졌으면 파트너로 되돌아간다 — 졸업 전 개체만 근거였던 칸은 그 개체를
+    /// 놓아주면 없어지므로(`isRaising`), 그대로 두면 보유한 적 없는 종이 바탕화면에 남는다.
+    func floatingPetSubject(pinnedSpeciesID: Int?) -> (speciesID: Int?, isShiny: Bool) {
+        guard let pinnedSpeciesID,
+              let pinned = dexSpecies.first(where: { $0.id == pinnedSpeciesID })
+        else { return (currentSpeciesID, currentIsShiny) }
+        return (pinned.id, pinned.isShiny)
+    }
+
     /// 이름이 없는 구버전 졸업 항목의 체인 이름을 채운다(도감 격자 진입 시 1회).
     ///
     /// 격자는 저장된 이름만 읽으므로 백필이 없으면 칸이 종 번호(`#41`)로 남는다. 포획 로그는 행이

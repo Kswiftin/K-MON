@@ -53,6 +53,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         withObservationTracking {
             _ = settings.floatingPetEnabled
             _ = settings.floatingPetSize
+            _ = settings.floatingPetSpeciesID
             _ = settings.doNotDisturb
             _ = companion.activeSecondsToday
             _ = companion.language
@@ -335,8 +336,9 @@ struct FloatingPetView: View {
     var body: some View {
         let size = CGFloat(settings.floatingPetSize)
         VStack(spacing: 8) {
-            SpriteView(speciesID: companion.currentSpeciesID, size: size, animated: animated,
-                       shiny: companion.currentIsShiny, minFrameDelay: Self.frameFloor)
+            let subject = companion.floatingPetSubject(pinnedSpeciesID: settings.floatingPetSpeciesID)
+            SpriteView(speciesID: subject.speciesID, size: size, animated: animated,
+                       shiny: subject.isShiny, minFrameDelay: Self.frameFloor)
                 .frame(width: size, height: size)
                 .zIndex(0)
         }
