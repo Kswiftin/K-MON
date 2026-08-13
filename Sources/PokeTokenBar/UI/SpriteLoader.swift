@@ -4,6 +4,9 @@ import AppKit
 actor SpriteStore {
     static let shared = SpriteStore()
     private let base = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon"
+    /// Higher-quality animated battle sprites. Keep this cache namespace separate from the
+    /// former Gen-V assets so an existing install does not keep serving stale GIFs.
+    private let animatedBase = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown"
     private let itemBase = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items"
     private var mem: [String: Data] = [:]
     private var memOrder: [String] = []   // LRU 순서(최근 접근이 뒤). 상한 초과 시 앞(오래된 것)부터 evict
@@ -18,9 +21,13 @@ actor SpriteStore {
         return d
     }()
 
-    /// 캐시 파일명 키 — 기존 "\(id)-a"/"\(id)-s" 유지, shiny 는 "sh" 접두(구캐시 그대로 유효).
+    /// 캐시 파일명 키 — 정적 PNG 키는 기존 형식을 유지하고, 애니메이션은 showdown 전용
+    /// 네임스페이스를 사용해 이전 Gen-V GIF 캐시를 자동으로 무효화한다.
     static func cacheKey(speciesID: Int, animated: Bool, shiny: Bool) -> String {
-        "\(speciesID)-\(shiny ? "sh" : "")\(animated ? "a" : "s")"
+        if animated {
+            return "\(speciesID)-showdown-\(shiny ? "shiny" : "normal")"
+        }
+        return "\(speciesID)-\(shiny ? "sh" : "")s"
     }
 
     func data(speciesID: Int, animated: Bool, shiny: Bool = false) async -> Data? {
@@ -32,8 +39,8 @@ actor SpriteStore {
         if let d = try? Data(contentsOf: file) { remember(key, d); return d }
         let urlStr: String
         switch (animated, shiny) {
-        case (true, false):  urlStr = "\(base)/versions/generation-v/black-white/animated/\(speciesID).gif"
-        case (true, true):   urlStr = "\(base)/versions/generation-v/black-white/animated/shiny/\(speciesID).gif"
+        case (true, false):  urlStr = "\(animatedBase)/\(speciesID).gif"
+        case (true, true):   urlStr = "\(animatedBase)/shiny/\(speciesID).gif"
         case (false, false): urlStr = "\(base)/\(speciesID).png"
         case (false, true):  urlStr = "\(base)/shiny/\(speciesID).png"
         }
