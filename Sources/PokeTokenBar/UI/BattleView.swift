@@ -11,6 +11,8 @@ struct BattleView: View {
     @State private var manualAddress = ""
     @State private var addressCopied = false
     @State private var kind: BattleKind = .brawl   // 신청할 배틀 종류
+    @State private var roomMode: MultiplayerBattleMode = .freeForAll
+    @State private var multiplayerTargetID: UUID?
 
     private var l: L { store.l }
 
@@ -33,7 +35,9 @@ struct BattleView: View {
 
     @ViewBuilder
     private var networkSection: some View {
-        switch center.phase {
+        if center.multiplayer.phase != .idle {
+            multiplayerLobby
+        } else { switch center.phase {
         case .ready, .preparing:
             peerList
         case .challenging(let peer):
@@ -45,11 +49,13 @@ struct BattleView: View {
             else if let b = center.battle { arenaView(b) }       // 맞짱
         case .finished(let iWon, let byForfeit):
             finishedView(iWon: iWon, byForfeit: byForfeit)
-        }
+        } }
     }
 
     private var peerList: some View {
         VStack(alignment: .leading, spacing: 6) {
+            multiplayerRooms
+            Divider().padding(.vertical, 2)
             // 배틀 종류 선택 — 맞짱(턴제) / 달리기(스피드 레이스). 신청 시 이 종류로 건다.
             Picker("", selection: $kind) {
                 Text(l.battleKindBrawl).tag(BattleKind.brawl)
@@ -95,6 +101,241 @@ struct BattleView: View {
                 }
             }
             manualConnect
+        }
+    }
+
+    private var multiplayerRooms: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Label(store.language == .ko ? "최대 4인 배틀" : "Up to 4 players",
+                      systemImage: "person.3.fill").font(.caption).bold()
+                Spacer()
+            }
+            Picker("", selection: $roomMode) {
+                Text(store.language == .ko ? "개인전" : "Free-for-all").tag(MultiplayerBattleMode.freeForAll)
+                Text("2 vs 2").tag(MultiplayerBattleMode.teams)
+            }.pickerStyle(.segmented).labelsHidden()
+            HStack {
+                Button(store.language == .ko ? "방 만들기" : "Create room") {
+                    center.multiplayer.createRoom(mode: roomMode)
+                }.buttonStyle(.borderedProminent).controlSize(.small)
+                Spacer()
+            }
+            if !center.multiplayer.rooms.isEmpty {
+                ForEach(center.multiplayer.rooms) { room in
+                    HStack {
+                        Image(systemName: "door.left.hand.open").foregroundStyle(.secondary)
+                        Text(room.name).font(.caption).lineLimit(1)
+                        Spacer()
+                        Button(store.language == .ko ? "참가" : "Join") { center.multiplayer.join(room) }
+                            .controlSize(.small)
+                    }
+                }
+            }
+            if let error = center.multiplayer.lastError {
+                Text(error).font(.caption2).foregroundStyle(.orange)
+            }
+            if !store.recentBattles.isEmpty {
+                Divider().padding(.vertical, 1)
+                Text(store.language == .ko ? "최근 배틀" : "Recent battles").font(.caption2).bold()
+                ForEach(store.recentBattles.prefix(3)) { record in
+                    HStack(spacing: 5) {
+                        Image(systemName: record.won ? "trophy.fill" : "shield.fill")
+                            .foregroundStyle(record.won ? .orange : .secondary)
+                        Text(record.mode == .teams ? "2 vs 2" : "\(record.participantCount)P")
+                            .font(.caption2).bold()
+                        Text(record.opponentNames.joined(separator: ", "))
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Spacer()
+                        Text("+\(record.reward) ✨").font(.caption2).foregroundStyle(.orange)
+                    }
+                }
+            }
+        }
+        .padding(7)
+        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private var multiplayerLobby: some View {
+        Group {
+            if center.multiplayer.phase == .battling { multiplayerArena }
+            else { multiplayerLobbyContent }
+        }
+    }
+
+    private var multiplayerLobbyContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(store.language == .ko ? "4인 배틀 로비" : "Multiplayer lobby",
+                      systemImage: "person.3.fill").font(.callout).bold()
+                Spacer()
+                Text(center.multiplayer.isHost ? (store.language == .ko ? "방장" : "HOST") : "")
+                    .font(.system(size: 9, weight: .bold)).foregroundStyle(.orange)
+            }
+            if case .creating = center.multiplayer.phase {
+                ProgressView(store.language == .ko ? "방을 만드는 중…" : "Creating room…")
+            } else if case .joining(let name) = center.multiplayer.phase {
+                ProgressView("\(name)…")
+            }
+            if let lobby = center.multiplayer.lobby {
+                Text(lobby.mode == .teams ? "2 vs 2" : (store.language == .ko ? "개인전" : "Free-for-all"))
+                    .font(.caption2).foregroundStyle(.secondary)
+                ForEach(lobby.participants) { participant in
+                    HStack(spacing: 7) {
+                        SpriteView(speciesID: participant.speciesID, size: 30)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(participant.trainerName).font(.caption).bold().lineLimit(1)
+                            Text(participant.isHost ? "HOST" : "PLAYER").font(.system(size: 8)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if lobby.mode == .teams {
+                            Text(participant.team == .red ? "🔴" : "🔵")
+                        }
+                        Image(systemName: participant.isReady ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(participant.isReady ? .green : .secondary)
+                    }
+                    .padding(5)
+                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                }
+                ForEach(lobby.participants.count..<lobby.capacity, id: \.self) { _ in
+                    HStack { Image(systemName: "person.crop.circle.dashed"); Text(store.language == .ko ? "참가자 대기 중" : "Waiting for player") }
+                        .font(.caption2).foregroundStyle(.tertiary).padding(5)
+                }
+                if lobby.mode == .teams, let me = center.multiplayer.myParticipant {
+                    Picker("Team", selection: Binding(get: { me.team }, set: { center.multiplayer.selectTeam($0) })) {
+                        Text("🔴 RED").tag(BattleTeam.red); Text("🔵 BLUE").tag(BattleTeam.blue)
+                    }.pickerStyle(.segmented)
+                }
+                HStack {
+                    Button(center.multiplayer.myParticipant?.isReady == true
+                           ? (store.language == .ko ? "준비 취소" : "Cancel ready")
+                           : (store.language == .ko ? "준비" : "Ready")) {
+                        center.multiplayer.toggleReady()
+                    }.buttonStyle(.borderedProminent).controlSize(.small)
+                    Spacer()
+                    if center.multiplayer.isHost, lobby.canStart {
+                        Button(store.language == .ko ? "배틀 시작" : "Start battle") {
+                            center.multiplayer.startBattle()
+                        }.buttonStyle(.borderedProminent).controlSize(.small)
+                    }
+                    Button(store.language == .ko ? "나가기" : "Leave") { center.multiplayer.leaveRoom() }
+                        .controlSize(.small)
+                }
+            }
+            if let error = center.multiplayer.lastError { Text(error).font(.caption2).foregroundStyle(.orange) }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var multiplayerArena: some View {
+        let fighters = center.multiplayer.combatFighters
+        let me = fighters.first { $0.id == center.multiplayer.myID }
+        let targets = fighters.filter { fighter in
+            guard fighter.id != center.multiplayer.myID, fighter.isAlive else { return false }
+            if center.multiplayer.lobby?.mode == .teams, let myTeam = me?.team { return fighter.team != myTeam }
+            return true
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("⚔️ \(store.language == .ko ? "4인 배틀" : "Multiplayer Battle")")
+                    .font(.callout).bold()
+                Spacer()
+                Text("R\(center.multiplayer.combatRound)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                if let end = center.multiplayer.turnEndsAt, !center.multiplayer.isBattleFinished {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text("\(max(0, Int(end.timeIntervalSince(context.date))))s")
+                            .font(.caption.monospacedDigit().bold())
+                            .foregroundStyle(end.timeIntervalSince(context.date) <= 5 ? .red : .orange)
+                    }
+                }
+            }
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                ForEach(fighters) { fighter in
+                    VStack(spacing: 2) {
+                        HStack {
+                            if center.multiplayer.lobby?.mode == .teams {
+                                Text(fighter.team == .red ? "🔴" : "🔵").font(.caption2)
+                            }
+                            Text(fighter.trainerName).font(.caption2).bold().lineLimit(1)
+                        }
+                        SpriteView(speciesID: fighter.snapshot.speciesID, size: 38,
+                                   shiny: fighter.snapshot.isShiny)
+                            .opacity(fighter.isAlive ? 1 : 0.25)
+                        ProgressView(value: Double(fighter.hp), total: Double(max(1, fighter.snapshot.effectiveStats().hp)))
+                            .tint(fighter.isAlive ? .green : .gray).controlSize(.mini)
+                        Text("HP \(fighter.hp)").font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
+                    }
+                    .padding(5)
+                    .background((multiplayerTargetID == fighter.id ? Color.red.opacity(0.12) : Color.primary.opacity(0.04)),
+                                in: RoundedRectangle(cornerRadius: 7))
+                    .onTapGesture {
+                        if targets.contains(where: { $0.id == fighter.id }), !center.multiplayer.hasSubmittedAction {
+                            multiplayerTargetID = fighter.id
+                        }
+                    }
+                }
+            }
+            if center.multiplayer.isBattleFinished {
+                Text(center.multiplayer.didIWin
+                     ? (store.language == .ko ? "승리!" : "Victory!")
+                     : (store.language == .ko ? "패배" : "Defeated"))
+                    .font(.title3).bold().frame(maxWidth: .infinity)
+                if let reward = center.multiplayer.battleReward {
+                    Text("+\(reward) ✨")
+                        .font(.callout.weight(.semibold)).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity)
+                }
+                Button(store.language == .ko ? "로비 나가기" : "Leave") { center.multiplayer.leaveRoom() }
+                    .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+            } else if me?.isAlive == false {
+                Text(store.language == .ko ? "탈락 — 배틀을 관전하고 있습니다." : "Knocked out — spectating.")
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+            } else if center.multiplayer.hasSubmittedAction {
+                HStack { ProgressView().controlSize(.small); Text(store.language == .ko ? "다른 참가자의 행동을 기다리는 중…" : "Waiting for other players…") }
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+            } else {
+                Text(multiplayerTargetID == nil
+                     ? (store.language == .ko ? "공격할 상대를 선택하세요." : "Choose a target.")
+                     : (store.language == .ko ? "기술을 선택하세요." : "Choose a move."))
+                    .font(.caption).bold()
+                if let me {
+                    let moves = me.snapshot.moves ?? MoveSpec.fallbackSet(types: me.snapshot.types)
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
+                        ForEach(Array(moves.enumerated()), id: \.offset) { index, move in
+                            Button {
+                                guard let target = multiplayerTargetID else { return }
+                                center.multiplayer.submitAction(targetID: target, moveIndex: index)
+                            } label: {
+                                VStack(spacing: 1) {
+                                    Text(move.name(store.language)).font(.caption2).bold().lineLimit(1)
+                                    Text("PP \(me.pp[index])").font(.system(size: 8)).foregroundStyle(.secondary)
+                                }.frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered).disabled(multiplayerTargetID == nil || me.pp[index] <= 0)
+                        }
+                    }
+                }
+            }
+            if !center.multiplayer.combatEvents.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(center.multiplayer.combatEvents.suffix(4).enumerated()), id: \.offset) { _, event in
+                        let attacker = fighters.first { $0.id == event.attackerID }?.snapshot.name ?? "?"
+                        let target = fighters.first { $0.id == event.targetID }?.snapshot.name ?? "?"
+                        Text(event.missed ? "\(attacker) → \(target): MISS"
+                             : "\(attacker) → \(target): -\(event.damage)")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }.padding(5).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+            }
+        }
+        .onAppear {
+            if multiplayerTargetID == nil { multiplayerTargetID = targets.first?.id }
+        }
+        .onChange(of: center.multiplayer.combatRound) {
+            if !targets.contains(where: { fighter in multiplayerTargetID.map { fighter.id == $0 } ?? false }) {
+                multiplayerTargetID = targets.first?.id
+            }
         }
     }
 

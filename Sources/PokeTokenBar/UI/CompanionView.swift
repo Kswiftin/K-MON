@@ -581,6 +581,7 @@ struct CompanionHeader: View {
                 EvoLineView(nodes: store.lineNodes, mysteryLabel: store.l.unknownNextEvolution, shiny: store.currentIsShiny,
                             maxWidth: PopoverMetrics.contentWidth)
             }
+            if store.hasActive { AdventureCard(store: store) }
             if let g = store.justGraduated {
                 Text(store.l.graduated(g))
                     .font(.caption2).foregroundStyle(.orange)
@@ -672,6 +673,104 @@ struct CompanionHeader: View {
         case .sleep:   return l.statusSleep
         case .levelUp: return store.justEvolvedTo.map { l.statusEvolved($0) } ?? l.statusGrew
         }
+    }
+}
+
+/// 동물농장식 돌봄 + 시간 기반 모험의 첫 플레이 루프.
+struct AdventureCard: View {
+    let store: CompanionStore
+    @State private var rewardText: String?
+
+    private func zoneName(_ zone: AdventureZone) -> String {
+        switch (store.language, zone) {
+        case (.ko, .forest): return "숲"
+        case (.ko, .cave): return "동굴"
+        case (.ko, .coast): return "바닷가"
+        case (.ja, .forest): return "森"
+        case (.ja, .cave): return "洞窟"
+        case (.ja, .coast): return "海辺"
+        case (_, .forest): return "Forest"
+        case (_, .cave): return "Cave"
+        case (_, .coast): return "Coast"
+        }
+    }
+
+    private func duration(_ seconds: TimeInterval) -> String {
+        seconds >= 3600 ? "\(Int(seconds / 3600))h" : "\(Int(seconds / 60))m"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Label(store.language == .ko ? "돌보기와 모험" : "Care & Adventure",
+                      systemImage: "map.fill").font(.caption.weight(.semibold))
+                Spacer()
+                if let rewardText { Text(rewardText).font(.caption2).foregroundStyle(.orange) }
+            }
+            HStack(spacing: 7) {
+                careGauge("🍖", store.care.hunger)
+                careGauge("😊", store.care.happiness)
+                careGauge("⚡", store.care.energy)
+            }
+            HStack(spacing: 5) {
+                Button("🍎") { store.feedCompanion() }.help("Feed")
+                Button("🎾") { store.playWithCompanion() }.help("Play")
+                Button("💤") { store.restCompanion() }.help("Rest")
+                Spacer()
+            }.controlSize(.small)
+
+            if let run = store.activeAdventure {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Label(zoneName(run.zone), systemImage: run.zone.symbol).font(.caption)
+                            Spacer()
+                            if run.isComplete(at: context.date) {
+                                Button(store.language == .ko ? "보상 받기" : "Claim") {
+                                    if let reward = store.claimAdventure() {
+                                        rewardText = "+\(reward.stardust) ✨" + (reward.foundRareCandy ? " + 🍬" : "")
+                                    }
+                                }.controlSize(.small)
+                            } else {
+                                Text(run.endsAt, style: .timer).font(.caption.monospacedDigit())
+                            }
+                        }
+                        ProgressView(value: run.progress(at: context.date)).controlSize(.small).tint(.green)
+                    }
+                }
+            } else {
+                HStack(spacing: 5) {
+                    ForEach(AdventureZone.allCases) { zone in
+                        Button { _ = store.startAdventure(zone) } label: {
+                            VStack(spacing: 1) {
+                                Image(systemName: zone.symbol)
+                                Text("\(zoneName(zone)) · \(duration(zone.duration))").font(.system(size: 9))
+                            }.frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(store.care.energy < 15)
+                    }
+                }
+            }
+            if let recent = store.recentAdventures.first, store.activeAdventure == nil {
+                HStack(spacing: 5) {
+                    Image(systemName: "book.closed.fill").foregroundStyle(.secondary)
+                    Text("\(zoneName(recent.zone)) · +\(recent.stardust) ✨" + (recent.foundRareCandy ? " · 🍬" : ""))
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                    Text(recent.completedAt, style: .relative).font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private func careGauge(_ icon: String, _ value: Double) -> some View {
+        HStack(spacing: 3) {
+            Text(icon).font(.system(size: 10))
+            ProgressView(value: value, total: 100).controlSize(.mini)
+        }.frame(maxWidth: .infinity)
     }
 }
 

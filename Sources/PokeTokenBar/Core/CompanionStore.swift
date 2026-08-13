@@ -383,6 +383,7 @@ final class CompanionStore {
     /// 부화·진화·졸업은 applyUsage 경로 그대로 — 입력원만 토큰 델타에서 시간으로 바뀌었다.
     func tick() {
         let now = clock()
+        state.care.advance(to: now)
         defer {
             grantDailyCandyIfNeeded(now: now)
             save()
@@ -435,6 +436,70 @@ final class CompanionStore {
     /// 대시보드용 함께한 시간(초). "토큰 사용량" 대신 이 시간을 보여준다.
     var activeSecondsToday: Double { state.activeSecondsToday }
     var activeSecondsTotal: Double { state.activeSecondsTotal }
+
+    // MARK: 돌봄·모험
+
+    var care: PetCareState { state.care }
+    var activeAdventure: AdventureRun? { state.adventure }
+    var isAdventuring: Bool { state.adventure != nil }
+
+    func adventureProgress(at date: Date? = nil) -> Double {
+        state.adventure?.progress(at: date ?? clock()) ?? 0
+    }
+
+    @discardableResult
+    func startAdventure(_ zone: AdventureZone) -> Bool {
+        let now = clock()
+        state.care.advance(to: now)
+        guard let speciesID = currentSpeciesID, state.adventure == nil, state.care.energy >= 15 else { return false }
+        state.care.energy -= 15
+        state.adventure = AdventureRun(zone: zone, startedAt: now,
+                                       endsAt: now.addingTimeInterval(zone.duration),
+                                       companionSpeciesID: speciesID)
+        save()
+        return true
+    }
+
+    @discardableResult
+    func claimAdventure() -> AdventureReward? {
+        let now = clock()
+        guard let run = state.adventure, run.isComplete(at: now) else { return nil }
+        let reward = AdventureRules.reward(for: run)
+        state.adventure = nil
+        state.usedSinceInstall += reward.stardust
+        if state.active != nil { applyUsage(reward.stardust) } else { state.eggUsage += reward.stardust }
+        if reward.foundRareCandy { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += 1 }
+        state.care.happiness = min(100, state.care.happiness + 10)
+        state.adventureHistory.insert(AdventureRecord(id: run.id, zone: run.zone,
+                                                       companionSpeciesID: run.companionSpeciesID,
+                                                       completedAt: now, stardust: reward.stardust,
+                                                       foundRareCandy: reward.foundRareCandy), at: 0)
+        if state.adventureHistory.count > 30 { state.adventureHistory.removeLast(state.adventureHistory.count - 30) }
+        save()
+        return reward
+    }
+
+    func feedCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.feed(); save() }
+    func playWithCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.play(); save() }
+    func restCompanion() { guard state.active != nil, state.adventure == nil else { return }; state.care.rest(); save() }
+
+    func grantBattleReward(won: Bool, participantCount: Int, mode: MultiplayerBattleMode,
+                           opponentNames: [String]) {
+        guard state.active != nil else { return }
+        let dust = max(20, participantCount * (won ? 40 : 15))
+        state.usedSinceInstall += dust
+        applyUsage(dust)
+        state.care.happiness = min(100, state.care.happiness + (won ? 12 : 5))
+        state.care.energy = max(0, state.care.energy - 5)
+        state.battleHistory.insert(BattleRecord(playedAt: clock(), mode: mode,
+                                                participantCount: participantCount, won: won,
+                                                reward: dust, opponentNames: opponentNames), at: 0)
+        if state.battleHistory.count > 30 { state.battleHistory.removeLast(state.battleHistory.count - 30) }
+        save()
+    }
+
+    var recentAdventures: [AdventureRecord] { Array(state.adventureHistory.prefix(5)) }
+    var recentBattles: [BattleRecord] { Array(state.battleHistory.prefix(5)) }
 
     /// 일일 사탕 — 날짜가 바뀐 첫 틱에 지급(방치형 출석 보상). 첫 실행도 지급(웰컴 사탕).
     private func grantDailyCandyIfNeeded(now: Date) {
