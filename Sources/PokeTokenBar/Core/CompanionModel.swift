@@ -249,7 +249,8 @@ enum StarterRules {
 }
 
 /// 현재 서비스가 제공하는 움직이는 포켓몬 스프라이트 범위.
-/// PokéAPI 의 Gen-V animated 에셋은 전국도감 #1...649까지만 존재한다.
+/// K-MON currently limits animated companions to the Gen 1–5 species range (#1...649).
+/// Showdown provides normal and shiny GIFs for every ID in this range.
 enum PokemonAssets {
     static let animatedSpeciesIDs = 1...649
 

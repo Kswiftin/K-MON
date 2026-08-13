@@ -1372,11 +1372,11 @@ final class CompanionIdentityTests: XCTestCase {
         XCTAssertFalse(s.isHatching)
     }
 
-    /// 스프라이트 캐시 키 — 기존 키("25-a"/"25-s") 불변 + shiny 접두.
+    /// 스프라이트 캐시 키 — 정적 키는 기존 형식, 애니메이션은 showdown 전용 네임스페이스.
     func testSpriteCacheKeyScheme() {
-        XCTAssertEqual(SpriteStore.cacheKey(speciesID: 25, animated: true, shiny: false), "25-a")
+        XCTAssertEqual(SpriteStore.cacheKey(speciesID: 25, animated: true, shiny: false), "25-showdown-normal")
         XCTAssertEqual(SpriteStore.cacheKey(speciesID: 25, animated: false, shiny: false), "25-s")
-        XCTAssertEqual(SpriteStore.cacheKey(speciesID: 25, animated: true, shiny: true), "25-sha")
+        XCTAssertEqual(SpriteStore.cacheKey(speciesID: 25, animated: true, shiny: true), "25-showdown-shiny")
         XCTAssertEqual(SpriteStore.cacheKey(speciesID: 25, animated: false, shiny: true), "25-shs")
     }
 

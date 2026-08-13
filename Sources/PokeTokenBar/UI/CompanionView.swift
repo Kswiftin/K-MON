@@ -76,7 +76,7 @@ struct SpriteSubject: Equatable {
 }
 
 /// 스프라이트 1개(런타임 로드 + 캐시). 없으면 알 글리프. bob 으로 가벼운 상하 움직임.
-/// animated=true 면 Gen-V GIF 프레임을 순환(미지원/오프라인이면 정적+bob 으로 폴백).
+/// animated=true 면 Showdown GIF 프레임을 순환(미지원/오프라인이면 정적+bob 으로 폴백).
 struct SpriteView: View {
     let speciesID: Int?
     var size: CGFloat = 84
