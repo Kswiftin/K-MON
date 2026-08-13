@@ -103,7 +103,8 @@ final class MultiplayerRoomCenter {
             snapshots[myID] = snapshot
             let team: BattleTeam = mode == .teams ? .red : .solo
             let host = LobbyParticipant(id: myID, trainerName: trainerName, speciesID: snapshot.speciesID,
-                                        team: team, isReady: false, isHost: true)
+                                        team: team, isReady: false, isHost: true, role: .runner,
+                                        reportedStarPieces: companion.availableTokens)
             do {
                 lobby = try MultiplayerLobby(host: host, activity: activity)
                 hostingRole = true
@@ -115,7 +116,7 @@ final class MultiplayerRoomCenter {
         }
     }
 
-    func join(_ room: MultiplayerRoomPeer) {
+    func join(_ room: MultiplayerRoomPeer, as role: LobbyRole = .runner) {
         guard phase == .idle else { return }
         phase = .joining(room.name); lastError = nil
         hostingRole = false
@@ -132,7 +133,9 @@ final class MultiplayerRoomCenter {
                     case .ready:
                         let participant = LobbyParticipant(id: self.myID, trainerName: self.trainerName,
                                                            speciesID: snapshot.speciesID, team: .solo,
-                                                           isReady: false, isHost: false)
+                                                           isReady: role == .spectator, isHost: false,
+                                                           role: role,
+                                                           reportedStarPieces: self.companion.availableTokens)
                         self.send(.join(version: MultiplayerWireMessage.protocolVersion,
                                         participant: participant, snapshot: snapshot), over: connection)
                         self.receiveGuestLoop(connection)
@@ -161,11 +164,12 @@ final class MultiplayerRoomCenter {
 
     func startBattle() {
         guard isHost, let lobby, lobby.canStart, lobby.activity == .battle else { return }
-        let fighters = lobby.participants.compactMap { participant -> MultiplayerFighter? in
+        let runners = lobby.runners
+        let fighters = runners.compactMap { participant -> MultiplayerFighter? in
             guard let snapshot = snapshots[participant.id] else { return nil }
             return MultiplayerFighter(participant: participant, snapshot: snapshot)
         }
-        guard fighters.count == lobby.participants.count else { lastError = "참가자 정보를 준비하지 못했습니다."; return }
+        guard fighters.count == runners.count else { lastError = "참가자 정보를 준비하지 못했습니다."; return }
         let seed = UInt64.random(in: UInt64.min...UInt64.max)
         do {
             battle = try MultiplayerBattle(fighters: fighters, mode: lobby.mode, seed: seed)
@@ -179,7 +183,7 @@ final class MultiplayerRoomCenter {
 
     func startPokeathlon() {
         guard isHost, let lobby, lobby.canStart, lobby.activity == .pokeathlon else { return }
-        let race = PokeathlonRace(racers: lobby.participants.map {
+        let race = PokeathlonRace(racers: lobby.runners.map {
             PokeathlonRacer(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID,
                             teamSpeciesIDs: [$0.speciesID, $0.speciesID, $0.speciesID])
         })
@@ -246,7 +250,10 @@ final class MultiplayerRoomCenter {
     }
 
     private func acceptGuest(_ connection: NWConnection) {
-        guard isHost, guestConnections.count + pendingGuestConnections.count < 3 else { connection.cancel(); return }
+        let maxGuests = 3 + MultiplayerLobby.spectatorCapacity   // 러너 3 + 관전 8
+        guard isHost, guestConnections.count + pendingGuestConnections.count < maxGuests else {
+            connection.cancel(); return
+        }
         let key = ObjectIdentifier(connection); pendingGuestConnections[key] = connection
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             switch state {

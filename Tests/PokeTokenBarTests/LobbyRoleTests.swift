@@ -96,4 +96,27 @@ final class LobbyRoleTests: XCTestCase {
         let data = try JSONEncoder().encode(original)
         XCTAssertEqual(try JSONDecoder().decode(LobbyParticipant.self, from: data), original)
     }
+
+    // MARK: 와이어 계약 — 버전 상승과 새 메시지 왕복
+
+    func testProtocolVersionIsBumpedForTheRoleField() {
+        // role 없는 옛 빌드가 레이스 중간에 깨지는 대신 핸드셰이크에서 거절되게 버전을 올린다.
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 2)
+    }
+
+    func testBettingMessagesRoundTrip() throws {
+        let bettor = UUID(); let runner = UUID()
+        var pool = PokeathlonPool()
+        pool.bets[bettor] = PokeathlonBet(bettorID: bettor, runnerID: runner, amount: 30)
+        let messages: [MultiplayerWireMessage] = [
+            .pokeathlonBet(participantID: bettor, runnerID: runner, amount: 30),
+            .pokeathlonPool(pool),
+            .pokeathlonSettlement(pool: pool, winnerID: runner),
+            .pokeathlonSettlement(pool: pool, winnerID: nil),
+        ]
+        for message in messages {
+            let data = try JSONEncoder().encode(message)
+            XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
+        }
+    }
 }
