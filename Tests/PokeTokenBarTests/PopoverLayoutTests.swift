@@ -98,12 +98,37 @@ final class PopoverLayoutTests: XCTestCase {
                                  maxWidth)
     }
 
+    /// 긴 라틴 문자 이름(영문 UI 의 실제 최악 케이스)이 행 높이를 키우면 안 된다.
+    /// 예전엔 이름에 밀린 타입 배지 글자가 줄바꿈돼 행이 통째로 커졌다 — 한국어 이름은 짧아
+    /// 로컬에선 안 걸리고 영어로 도는 CI 에서만 4행이 78pt 대신 118pt 로 잡혔다.
+    func testLongLatinNameDoesNotGrowRowHeight() {
+        let maxWidth = PopoverMetrics.contentWidth - 16
+        let latin = (0..<MoveListView.maxRows).map { index in
+            MoveSpec(id: 100 + index, names: ["en": String(repeating: "Hyper", count: 6)],
+                     type: .fire, power: 250, damageClass: .special, accuracy: 100, pp: 40)
+        }
+        let short = moveStore((0..<MoveListView.maxRows).map { index in
+            MoveSpec(id: index, names: ["en": "Tackle"], type: .normal, power: 40,
+                     damageClass: .physical, accuracy: 100, pp: 35)
+        })
+        XCTAssertEqual(renderedHeight(MoveListView(store: moveStore(latin), maxWidth: maxWidth),
+                                      proposingWidth: maxWidth),
+                       renderedHeight(MoveListView(store: short, maxWidth: maxWidth),
+                                      proposingWidth: maxWidth),
+                       accuracy: 2, "이름 길이에 따라 행 높이가 달라지면 안 된다")
+    }
+
     /// 로딩 자리표시자 높이가 완성본(4행)과 같아야 팝오버가 한 번만 리사이즈된다.
     /// 자리표시자는 같은 행 뷰를 투명하게 깔아 높이를 잡는다 — 숫자 상수로 두면 폰트·OS 에 따라
     /// 실제 행 높이와 어긋나 이 검증이 기계마다 다른 결과를 낸다(CI 118pt vs 로컬 78pt 회귀).
     func testLoadingPlaceholderMatchesFinalHeight() {
         let maxWidth = PopoverMetrics.contentWidth - 16
-        let loaded = moveStore(longMoves)
+        // 언어에 상관없이 같은(긴 라틴) 이름을 쓴다 — CI 는 영어, 로컬은 한국어로 돌아
+        // 언어별 이름을 쓰면 두 환경이 서로 다른 케이스를 검증하게 된다.
+        let loaded = moveStore((0..<MoveListView.maxRows).map { index in
+            MoveSpec(id: 200 + index, names: ["en": String(repeating: "Hyper", count: 6)],
+                     type: .fire, power: 250, damageClass: .special, accuracy: 100, pp: 40)
+        })
         let loading = moveStore([])
         loading.debugSetDisplayedMoves([], loading: true)
 

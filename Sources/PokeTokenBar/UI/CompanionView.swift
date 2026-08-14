@@ -725,9 +725,12 @@ private struct TypeBadge: View {
     let language: AppLanguage
 
     var body: some View {
+        // lineLimit/fixedSize 가 없으면 좁은 행(긴 기술 이름 옆)에서 배지 글자가 줄바꿈돼
+        // 행 높이가 통째로 늘어난다 — 기술 목록이 언어에 따라 다른 높이로 그려지던 원인.
         Text(type.name(language).uppercased())
             .font(.system(size: 8, weight: .heavy))
             .foregroundStyle(.white)
+            .lineLimit(1).fixedSize()
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(type.color, in: Capsule())
     }
