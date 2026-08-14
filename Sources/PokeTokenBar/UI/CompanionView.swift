@@ -606,16 +606,20 @@ struct CompanionHeader: View {
             }
             if store.hasActive {
                 DisclosureGroup(isExpanded: $showingMoves) {
-                    MoveListView(store: store)
+                    // 폭을 넘기지 않으면 이름·배지·위력/명중/PP 가 한 줄에서 넘쳐 팝오버가 좌우로 잘린다.
+                    MoveListView(store: store, maxWidth: PopoverMetrics.contentWidth - 16)
                         .task(id: "\(store.state.active?.id.uuidString ?? "-")-\(store.currentLevel)") {
                             await store.loadDisplayedMoves()
                         }
                 } label: {
-                    Label(store.language == .ko ? "기술 보기" : "Moves", systemImage: "bolt.fill")
+                    Label(store.l.movesTitle, systemImage: "bolt.fill")
                         .font(.caption.weight(.semibold))
                 }
                 .padding(8)
                 .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+                // 돌봄·모험 카드 — 여기 없으면 claimAdventure() 가 UI 에서 도달 불가라
+                // 모험 보상이 영영 정산되지 않고 집중 시작 버튼도 계속 비활성이 된다(#8).
+                AdventureCard(store: store)
             }
             if !store.boxedMons.isEmpty { CompanionBoxView(store: store) }
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
@@ -721,9 +725,12 @@ private struct TypeBadge: View {
     let language: AppLanguage
 
     var body: some View {
+        // lineLimit/fixedSize 가 없으면 좁은 행(긴 기술 이름 옆)에서 배지 글자가 줄바꿈돼
+        // 행 높이가 통째로 늘어난다 — 기술 목록이 언어에 따라 다른 높이로 그려지던 원인.
         Text(type.name(language).uppercased())
             .font(.system(size: 8, weight: .heavy))
             .foregroundStyle(.white)
+            .lineLimit(1).fixedSize()
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(type.color, in: Capsule())
     }
@@ -754,44 +761,70 @@ private extension PokemonType {
     }
 }
 
-private struct MoveListView: View {
+struct MoveListView: View {
     let store: CompanionStore
+    /// 부모가 주는 콘텐츠 폭. 안 주면 행이 넘쳐 팝오버 전체가 좌우로 잘린다(EvoLineView 와 같은 이유).
+    var maxWidth: CGFloat = .infinity
+
+    static let rowSpacing: CGFloat = 5
+    static let maxRows = 4
+    /// 자리표시자용 더미 기술 — 로딩 중에도 완성본과 *같은 행 레이아웃*을 그려 높이를 예약한다.
+    /// 높이를 숫자 상수로 두면 폰트·OS 버전에 따라 실제 행 높이와 어긋난다(CI 118pt vs 로컬 78pt).
+    private static let skeletonMove = MoveSpec(id: -1, names: [:], type: .normal, power: 0,
+                                               damageClass: .physical, accuracy: 100, pp: 0)
+
+    private var l: L { store.l }
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: Self.rowSpacing) {
             if store.isLoadingDisplayedMoves {
-                HStack { ProgressView().controlSize(.small); Text(store.language == .ko ? "기술 불러오는 중" : "Loading moves") }
-                    .font(.caption2).foregroundStyle(.secondary)
+                ZStack {
+                    // 최종 행 수만큼 같은 구조를 투명하게 깔아 높이를 잡는다 → 로드 완료 시 리사이즈 0회.
+                    VStack(spacing: Self.rowSpacing) {
+                        ForEach(0..<Self.maxRows, id: \.self) { _ in row(Self.skeletonMove) }
+                    }
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                    HStack { ProgressView().controlSize(.small); Text(l.movesLoading) }
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: maxWidth)
             } else if store.displayedMoves.isEmpty {
-                Text(store.language == .ko ? "확인할 수 있는 기술이 없습니다." : "No moves available.")
+                Text(l.movesEmpty)
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
                 ForEach(store.displayedMoves) { move in
-                    HStack(spacing: 6) {
-                        Text(move.name(store.language)).font(.caption.weight(.semibold)).lineLimit(1)
-                        TypeBadge(type: move.type, language: store.language)
-                        Spacer()
-                        Text(move.damageClass == .status ? "변화" : "위력 \(move.power)").font(.caption2).foregroundStyle(.secondary)
-                        Text(move.accuracy.map { "명중 \($0)" } ?? "필중").font(.caption2).foregroundStyle(.secondary)
-                        Text("PP \(move.pp)").font(.caption2).foregroundStyle(.secondary)
-                    }
-                    .help(moveHelp(move))
+                    row(move).help(moveHelp(move))
                 }
             }
         }
+        .frame(maxWidth: maxWidth, alignment: .leading)
         .padding(.top, 7)
     }
 
-    private func moveHelp(_ move: MoveSpec) -> String {
-        let category: String
-        switch move.damageClass {
-        case .physical: category = store.language == .ko ? "물리" : "Physical"
-        case .special: category = store.language == .ko ? "특수" : "Special"
-        case .status: category = store.language == .ko ? "변화" : "Status"
+    /// 기술 한 줄. 자리표시자와 완성본이 이 한 곳을 공유해야 높이가 구조적으로 같아진다.
+    private func row(_ move: MoveSpec) -> some View {
+        HStack(spacing: 6) {
+            Text(move.name(store.language)).font(.caption.weight(.semibold))
+                .lineLimit(1).layoutPriority(1)
+            TypeBadge(type: move.type, language: store.language)
+            Spacer(minLength: 2)
+            Group {
+                Text(move.damageClass == .status ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                Text(move.accuracy.map { l.moveAccuracyShort($0) } ?? l.moveAlwaysHits)
+                Text(l.movePP(move.pp))
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+            .lineLimit(1).minimumScaleFactor(0.75)
         }
+        .frame(maxWidth: maxWidth, alignment: .leading)
+    }
+
+    private func moveHelp(_ move: MoveSpec) -> String {
+        let category = l.moveCategory(move.damageClass)
         let power = move.damageClass == .status ? "—" : "\(move.power)"
-        let accuracy = move.accuracy.map(String.init) ?? (store.language == .ko ? "필중" : "Always hits")
-        let details = "\(move.type.name(store.language)) · \(category)\n\(store.language == .ko ? "위력" : "Power") \(power) · \(store.language == .ko ? "명중" : "Accuracy") \(accuracy) · PP \(move.pp)"
+        let accuracy = move.accuracy.map(String.init) ?? l.moveAlwaysHits
+        let details = "\(move.type.name(store.language)) · \(category)\n\(l.movePowerLabel) \(power) · \(l.moveAccuracyLabel) \(accuracy) · \(l.movePP(move.pp))"
         if let description = move.description(store.language), !description.isEmpty {
             return "\(move.name(store.language))\n\(description)\n\(details)"
         }

@@ -560,6 +560,11 @@ final class CompanionStore {
     func debugAddCandy(_ n: Int) { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += n; save() }
     /// 테스트 전용 — 스타터 선택 완료 후의 기존 사용자 상태를 재현한다.
     func debugMarkStarterChosen() { state.starterChosen = true; save() }
+    /// 테스트 전용 — 기술 목록 표시 상태를 직접 세팅(네트워크 로드 없이 행 레이아웃을 재기 위함).
+    func debugSetDisplayedMoves(_ moves: [MoveSpec], loading: Bool = false) {
+        displayedMoves = moves
+        isLoadingDisplayedMoves = loading
+    }
     #endif
 
     /// 생산 배율 — 도감에 등록한 종(고유 최종체) 1종당 +2%. 수집이 곧 성장 엔진.
@@ -580,13 +585,28 @@ final class CompanionStore {
     var care: PetCareState { state.care }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
+    /// "지금 나가 있는 중" — 끝났지만 아직 정산 안 된 모험은 포함하지 않는다.
+    /// UI 게이트는 이걸 써야 한다. `isAdventuring` 으로 막으면 정산 전 상태에서 영영 잠긴다(#8).
+    var isAdventureInProgress: Bool {
+        guard let run = state.adventure else { return false }
+        return !run.isComplete(at: clock())
+    }
 
     func adventureProgress(at date: Date? = nil) -> Double {
         state.adventure?.progress(at: date ?? clock()) ?? 0
     }
 
+    /// 끝났는데 아직 안 받아간 모험을 먼저 정산한다. 새 모험 시작 경로의 선행 단계 —
+    /// 이게 없으면 정산 안 된 run 이 `state.adventure != nil` 로 남아 시작이 조용히 실패한다.
+    @discardableResult
+    func claimCompletedAdventureIfNeeded() -> AdventureReward? {
+        guard state.adventure?.isComplete(at: clock()) == true else { return nil }
+        return claimAdventure()
+    }
+
     @discardableResult
     func startAdventure(_ zone: AdventureZone) -> Bool {
+        claimCompletedAdventureIfNeeded()
         let now = clock()
         state.care.advance(to: now)
         guard let speciesID = currentSpeciesID, state.adventure == nil,
@@ -601,6 +621,7 @@ final class CompanionStore {
 
     @discardableResult
     func startFocusAdventure(minutes: Int) -> Bool {
+        claimCompletedAdventureIfNeeded()
         let now = clock()
         state.care.advance(to: now)
         guard let speciesID = currentSpeciesID, state.adventure == nil,
@@ -733,10 +754,17 @@ final class CompanionStore {
         state.adventureWeekKey == Self.weekKey(clock()) ? state.weeklyAdventureCount : 0
     }
 
+    /// 집중 세션이 끝나면 그 세션으로 보낸 모험을 바로 정산한다.
+    /// 예전엔 save() 만 해서 보상이 안 들어오고 `state.adventure` 도 안 비워졌다(#8).
+    /// 보상 계산은 claimAdventure() 한 곳에만 있다 — 여기서 따로 더하면 이중 지급이 된다.
     @discardableResult
     func completeFocusSession(minutes: Int, roll: Int? = nil) -> FocusSessionReward {
-        save()
-        return FocusSessionReward(minutes: minutes, stardust: 0, foundEgg: false)
+        guard let reward = claimAdventure() else {
+            save()
+            return FocusSessionReward(minutes: minutes, stardust: 0, foundEgg: false)
+        }
+        return FocusSessionReward(minutes: minutes, stardust: reward.starPieces,
+                                  foundEgg: reward.bonusEggs > 0)
     }
 
     func beginIncubatingFocusEgg() -> Bool {

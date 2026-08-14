@@ -7,6 +7,23 @@ enum PopoverMetrics {
     static let width: CGFloat = 360
     static let padding: CGFloat = 14
     static let contentWidth: CGFloat = width - padding * 2
+
+    /// 메뉴바·팝오버 화살표·화면 아래 여백이 먹는 세로 공간.
+    static let verticalChrome: CGFloat = 80
+    /// 화면이 아무리 커도 이 이상은 안 키운다(팝오버가 화면을 뒤덮지 않게).
+    static let hardMaxHeight: CGFloat = 720
+    /// 좁은 화면에서도 최소한 이만큼은 준다 — 아래 스크롤로 나머지를 본다.
+    static let minHeight: CGFloat = 320
+
+    /// 팝오버 콘텐츠 높이 상한. 넘으면 NSPopover 가 스크롤 없이 잘라내므로(#9) 스크롤 컨테이너와 짝으로 쓴다.
+    static func maxHeight(screenHeight: CGFloat) -> CGFloat {
+        max(minHeight, min(hardMaxHeight, screenHeight - verticalChrome))
+    }
+
+    @MainActor
+    static var currentMaxHeight: CGFloat {
+        maxHeight(screenHeight: NSScreen.main?.visibleFrame.height ?? hardMaxHeight)
+    }
 }
 
 @MainActor
@@ -45,7 +62,16 @@ struct PopoverView: View {
                     .environment(companion)
                     .environment(updater)
             } else {
-                mainContent
+                // 높이 상한 + 스크롤. 기술 목록을 펼치면 홈 탭이 화면 아래를 넘고, NSPopover 는
+                // 넘친 만큼을 스크롤 대신 잘라내 타이머·푸터가 사라졌다(#9). 상한은 화면 높이에서 파생.
+                ScrollView {
+                    mainContent
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: PopoverMetrics.currentMaxHeight)
+                // fixedSize 가 없으면 ScrollView 가 제안받은 높이를 통째로 먹어 짧은 탭에서도
+                // 팝오버가 상한 높이(빈 여백)로 부푼다. 순서 주의 — frame 뒤에 와야 한다.
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(width: PopoverMetrics.width)
