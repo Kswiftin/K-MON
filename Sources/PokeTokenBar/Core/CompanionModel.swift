@@ -109,6 +109,11 @@ enum PokemonBalance {
     /// 알 부화 임계 — 이만큼 별의모래가 쌓여야 알이 깨진다(즉시 부화 대신 기대감). 초과분은 부화체 성장에 이월.
     static let eggHatchThreshold = 5_000_000
 
+    /// 졸업(최종 진화형 → 도감) 게이팅 레벨 — 희귀도 무관 단일 기준. 희귀도는 처음 뽑힐 확률에만
+    /// 관여하고, 다 자란 뒤의 속도는 관여하지 않는다(#19 논의). graduationTotal/phaseThreshold 는
+    /// 레벨 메타데이터가 없는 진화(구버전 픽스처 등)의 성장치 게이트로만 남는다.
+    static let graduationRequiredLevel = 30
+
     static func graduationTotal(_ rarity: Rarity) -> Int {
         switch rarity {
         case .common:    return    750_000_000

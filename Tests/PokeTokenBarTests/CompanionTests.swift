@@ -273,6 +273,7 @@ final class CompanionStoreTests: XCTestCase {
         await s.hatch(baseID: 1)
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))  // →2
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))  // →3(최종)
+        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 2))  // 졸업
         XCTAssertEqual(s.state.dex.count, 1)
         XCTAssertEqual(s.state.dex.first?.chainOrder, [1, 2, 3])
@@ -552,6 +553,7 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.dexEntries[0].finalID, 2)
 
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
+        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 2))
         XCTAssertNil(s.state.active)
         XCTAssertEqual(s.state.dex.count, 1, "졸업 시 영구 엔트리 하나만 저장")
@@ -628,6 +630,7 @@ final class CompanionStoreTests: XCTestCase {
         use(s, PokemonBalance.eggHatchThreshold)
         await s.hatchIfNeeded()
         XCTAssertNotNil(s.state.active)
+        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.graduationTotal(.common))   // 무진화 졸업
         XCTAssertNil(s.state.active)
         XCTAssertEqual(s.state.eggUsage, 0)                     // 새 알 인큐베이션 리셋
@@ -654,6 +657,7 @@ final class CompanionStoreTests: XCTestCase {
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1)) // →3 (final)
         XCTAssertEqual(s.currentSpeciesID, 3)
         XCTAssertTrue(s.isFinalStage)
+        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 2)) // 졸업
         XCTAssertNil(s.state.active)
         XCTAssertEqual(s.dexEntries.count, 1)
@@ -665,6 +669,7 @@ final class CompanionStoreTests: XCTestCase {
         let s = store(noEvo)
         await s.hatch(baseID: 20)
         XCTAssertTrue(s.isFinalStage)
+        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.graduationTotal(.common))   // 무진화: 단일 임계 = T
         XCTAssertEqual(s.dexEntries.count, 1)
         XCTAssertEqual(s.dexEntries[0].chainOrder, [20])
@@ -740,6 +745,7 @@ final class CompanionStoreTests: XCTestCase {
         for _ in 0..<3 {
             await s.hatch(baseID: 10)
             s.applyUsage(evo)    // 분기 진화
+            s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
             s.applyUsage(grad)   // 졸업
             finals.append(s.dexEntries.last!.finalID)
         }
@@ -933,6 +939,7 @@ final class CompanionStoreTests: XCTestCase {
         await s.hatch(baseID: 1)
         XCTAssertEqual(s.state.active?.totalForms, s.state.active?.plannedPathIDs.count,
                        "totalForms = 선택된 계획 경로 길이")
+        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         var guardCount = 0
         while s.state.active != nil, guardCount < 12 {
             guardCount += 1
@@ -1008,16 +1015,19 @@ final class DexSortingTests: XCTestCase {
         // legendary (가장 먼저 — 희귀도 우선 정렬이면 맨 앞으로 올라온다)
         provider.line = makeLine(base: 200, tree: node(200), rarity: .legendary)
         tick = 1; await s.hatch(baseID: 200)
+        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.graduationTotal(.legendary))
 
         // common #1
         provider.line = makeLine(base: 100, tree: node(100), rarity: .common)
         tick = 2; await s.hatch(baseID: 100)
+        s.debugAccrueLevelExperience(300_000_000)
         s.applyUsage(PokemonBalance.graduationTotal(.common))
 
         // common #2 (가장 나중)
         provider.line = makeLine(base: 101, tree: node(101), rarity: .common)
         tick = 3; await s.hatch(baseID: 101)
+        s.debugAccrueLevelExperience(300_000_000)
         s.applyUsage(PokemonBalance.graduationTotal(.common))
 
         XCTAssertEqual(s.dexEntries.count, 3)
@@ -1086,6 +1096,7 @@ final class CompanionIdentityTests: XCTestCase {
         let shiny = s.state.active!.isShiny
         let nature = s.state.active!.nature
         XCTAssertNotNil(nature)
+        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.graduationTotal(.common))
         XCTAssertNil(s.state.active)   // 졸업
         XCTAssertEqual(s.state.dex.count, 1)
@@ -1225,12 +1236,17 @@ final class CompanionIdentityTests: XCTestCase {
     }
 
     /// [회귀] 이월이 졸업 총량을 넘어 부화 즉시 졸업한 극단 케이스 — hatch 연출은 생략(이미 도감행).
-    func testHatchCelebrationSkippedOnInstantGraduate() async {
+    /// 졸업은 레벨 30 게이트도 함께 넘어야 한다(#19) — usedAtStage 초과분이 부화 즉시 임계를
+    /// 넘어도, 레벨을 채우기 전까진 졸업이 미뤄진다. 레벨을 채운 순간 졸업이 나면 떠난 mon 의
+    /// hatch 연출이 새 상태에 남지 않아야 한다.
+    func testHatchCelebrationSkippedOnGraduate() async {
         let s = store(noEvo, seed: 11)
-        // 알 임계 + 졸업 총량(750M) 초과 생산분
+        // 알 임계 + 졸업 총량(750M) 초과 생산분 — usedAtStage 는 즉시 임계를 넘지만 레벨은 아직 1.
         s.debugAccrue(800_000_000)
         await s.hatchIfNeeded()
-        XCTAssertNil(s.state.active, "즉시 졸업")
+        XCTAssertNotNil(s.state.active, "성장치는 찼지만 레벨 미달 — 아직 졸업 안 됨")
+        s.debugAccrueLevelExperience(300_000_000)   // 레벨 30 도달 → 이제 졸업
+        XCTAssertNil(s.state.active, "졸업")
         XCTAssertEqual(s.state.dex.count, 1)
         XCTAssertNil(s.celebration, "떠난 mon 의 hatch 연출을 재생하면 안 된다")
     }

@@ -94,6 +94,7 @@ final class RareCandyStoreTests: XCTestCase {
         let s = store(rcNoEvo)
         await s.hatch(baseID: 20)
         s.applyUsage(700_000_000)   // 졸업 총량 750M 잔여 50M ≤ 100M
+        s.debugAccrueLevelExperience(200_000_000)   // 졸업은 레벨 30 게이트도 넘어야 한다(#19) — 사탕 XP(100M)와 합쳐 31
         giveCandies(s, 1)
         let result = s.useRareCandy()
         XCTAssertEqual(result, .graduated)
@@ -109,6 +110,7 @@ final class RareCandyStoreTests: XCTestCase {
         let s = store(rcNoEvo)
         await s.hatch(baseID: 20)
         s.applyUsage(700_000_000)   // 졸업 총량 750M 잔여 50M ≤ 100M
+        s.debugAccrueLevelExperience(200_000_000)   // 졸업은 레벨 30 게이트도 넘어야 한다(#19) — 사탕 XP(100M)와 합쳐 31
         giveCandies(s, 1)
         let fired = expectation(description: "sprite identity observation fired")
         withObservationTracking {
