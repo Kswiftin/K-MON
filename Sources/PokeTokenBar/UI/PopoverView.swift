@@ -10,19 +10,23 @@ enum PopoverMetrics {
 
     /// 메뉴바·팝오버 화살표·화면 아래 여백이 먹는 세로 공간.
     static let verticalChrome: CGFloat = 80
-    /// 화면이 아무리 커도 이 이상은 안 키운다(팝오버가 화면을 뒤덮지 않게).
-    static let hardMaxHeight: CGFloat = 720
     /// 좁은 화면에서도 최소한 이만큼은 준다 — 아래 스크롤로 나머지를 본다.
     static let minHeight: CGFloat = 320
+    /// 화면 크기를 모를 때(NSScreen 부재) 쓰는 보수적 기본값.
+    static let fallbackScreenHeight: CGFloat = 900
 
     /// 팝오버 콘텐츠 높이 상한. 넘으면 NSPopover 가 스크롤 없이 잘라내므로(#9) 스크롤 컨테이너와 짝으로 쓴다.
+    ///
+    /// 상한은 오직 화면 가용 높이에서만 나온다. 예전엔 720pt 짜리 고정 천장을 같이 걸었는데,
+    /// 1440pt 화면에서도 상한이 720 이라 "기술 보기" 를 펼친 홈 탭(약 760pt)이 화면에 다 들어가는데도
+    /// 스크롤로 넘어가 헤더와 돌봄·모험 카드가 잘려 보였다. 화면보다 작은 고정 천장은 두지 않는다.
     static func maxHeight(screenHeight: CGFloat) -> CGFloat {
-        max(minHeight, min(hardMaxHeight, screenHeight - verticalChrome))
+        max(minHeight, screenHeight - verticalChrome)
     }
 
     @MainActor
     static var currentMaxHeight: CGFloat {
-        maxHeight(screenHeight: NSScreen.main?.visibleFrame.height ?? hardMaxHeight)
+        maxHeight(screenHeight: NSScreen.main?.visibleFrame.height ?? fallbackScreenHeight)
     }
 }
 
