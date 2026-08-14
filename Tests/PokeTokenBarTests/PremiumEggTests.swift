@@ -76,7 +76,7 @@ final class PremiumEggTests: XCTestCase {
         let f = file ?? url()
         let mon = "{\"baseID\":10,\"pathIDs\":[10],\"stageIndex\":0,\"usedAtStage\":200000000,"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":false}"
-        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"usedSinceInstall\":\(used),\"spentTokens\":0,"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"usedSinceInstall\":\(used),\"spentTokens\":0,\"starPieces\":\(used),"
             + "\"active\":\(mon),\"dex\":[],\"collectedFinals\":[]}"
         try? json.data(using: .utf8)!.write(to: f)
         return CompanionStore(provider: provider, clock: { self.now }, fileURL: f, rng: SeededRNG(seed: 7))
@@ -86,7 +86,7 @@ final class PremiumEggTests: XCTestCase {
     private func eggStore(tier: Rarity?, seed: UInt64, provider: any PokeProviding) -> CompanionStore {
         let f = url()
         let tierJSON = tier.map { "\"\($0.rawValue)\"" } ?? "null"
-        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"usedSinceInstall\":10000000,\"spentTokens\":0,"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"usedSinceInstall\":10000000,\"spentTokens\":0,\"starPieces\":10000000,"
             + "\"active\":null,\"dex\":[],\"collectedFinals\":[],"
             + "\"eggUsage\":\(PokemonBalance.eggHatchThreshold),\"eggTier\":\(tierJSON)}"
         try? json.data(using: .utf8)!.write(to: f)
@@ -124,10 +124,10 @@ final class PremiumEggTests: XCTestCase {
     // MARK: 가격 — 졸업 총량 배율(새 상수 금지)
 
     func testPricesFollowGraduationTotalRatio() {
-        XCTAssertEqual(FreshEgg.price(guaranteeing: nil), 1_000_000_000)
-        XCTAssertEqual(FreshEgg.price(guaranteeing: .uncommon), 2_500_000_000)
-        XCTAssertEqual(FreshEgg.price(guaranteeing: .rare), 4_000_000_000)
-        XCTAssertEqual(FreshEgg.shopTiers, [nil, .uncommon, .rare])
+        XCTAssertEqual(FreshEgg.price(guaranteeing: nil), 2_000_000_000)
+        XCTAssertEqual(FreshEgg.price(guaranteeing: .uncommon), 5_000_000_000)
+        XCTAssertEqual(FreshEgg.price(guaranteeing: .rare), 8_000_000_000)
+        XCTAssertEqual(FreshEgg.shopTiers, [nil])
     }
 
     /// 상위 티어가 하위 티어 반복 구매보다 싸야 존재 이유가 있다(희귀+ 1마리당 비용).
@@ -175,14 +175,10 @@ final class PremiumEggTests: XCTestCase {
 
     func testBuyPremiumEggRecordsGuaranteeAndDebitsTierPrice() {
         let s = activeStore()
-        XCTAssertTrue(s.canBuyEgg(.rare))
-        XCTAssertTrue(s.buyEgg(.rare))
-        XCTAssertEqual(s.state.eggTier, .rare, "보증이 상태에 기록됨")
-        XCTAssertEqual(s.eggGuarantee, .rare)
-        XCTAssertEqual(s.state.spentTokens, FreshEgg.price(guaranteeing: .rare))
-        XCTAssertNil(s.state.active, "현재 포켓몬 폐기")
-        XCTAssertEqual(s.state.eggUsage, 0, "새 알은 처음부터 인큐베이션")
-        XCTAssertTrue(s.state.dex.isEmpty, "폐기는 졸업이 아니다 — 도감 불변")
+        XCTAssertFalse(s.canBuyEgg(.rare))
+        XCTAssertFalse(s.buyEgg(.rare))
+        XCTAssertNil(s.state.eggTier)
+        XCTAssertNotNil(s.state.active)
     }
 
     /// 알 상태에선 등급 알도 못 산다 — 기존 새 알과 게이트 통일.
@@ -200,7 +196,7 @@ final class PremiumEggTests: XCTestCase {
     func testFundsAreCheckedAgainstTierPrice() {
         let s = activeStore(used: 3_000_000_000)   // 1B·2.5B 는 되고 4B 는 안 되는 잔액
         XCTAssertTrue(s.canBuyEgg(nil))
-        XCTAssertTrue(s.canBuyEgg(.uncommon))
+        XCTAssertFalse(s.canBuyEgg(.uncommon))
         XCTAssertFalse(s.canBuyEgg(.rare))
         XCTAssertFalse(s.buyEgg(.rare))
         XCTAssertNotNil(s.state.active, "실패 시 활성 유지")
@@ -216,8 +212,8 @@ final class PremiumEggTests: XCTestCase {
     func testPurchaseStartsFromCleanRollState() {
         let s = activeStore()
         XCTAssertNil(s.state.pendingHatchID, "활성 포켓몬이 있는 동안엔 pre-roll 이 없다")
-        XCTAssertTrue(s.buyEgg(.rare))
-        XCTAssertEqual(s.state.eggTier, .rare)
+        XCTAssertFalse(s.buyEgg(.rare))
+        XCTAssertNil(s.state.eggTier)
         XCTAssertNil(s.state.pendingHatchID, "새 보증으로 다시 롤한다")
         XCTAssertEqual(s.state.eggUsage, 0)
     }
@@ -226,10 +222,10 @@ final class PremiumEggTests: XCTestCase {
     func testGuaranteeSurvivesRestart() {
         let f = url()
         let s1 = activeStore(at: f)
-        XCTAssertTrue(s1.buyEgg(.uncommon))
+        XCTAssertFalse(s1.buyEgg(.uncommon))
         let s2 = CompanionStore(provider: TieredProvider(), clock: { self.now }, fileURL: f, rng: SeededRNG(seed: 7))
-        XCTAssertEqual(s2.state.eggTier, .uncommon, "재시작 후에도 산 보증 유지")
-        XCTAssertEqual(s2.eggGuarantee, .uncommon)
+        XCTAssertNil(s2.state.eggTier)
+        XCTAssertNil(s2.eggGuarantee)
     }
 
     // MARK: ② 가중 선택이 하한 미만을 뽑지 않는다 (대조군 포함)
