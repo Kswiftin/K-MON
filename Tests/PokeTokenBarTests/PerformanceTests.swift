@@ -224,6 +224,18 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertEqual(origin.x, -1920, accuracy: 0.001)
     }
 
+    func testStraddledPortraitBoundaryCanRecoverPortalLock() {
+        let portrait = NSRect(x: -3000, y: 11, width: 1080, height: 1920)
+        let center = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: -1950, y: 1000), petSize: 72,
+            velocity: CGVector(dx: 180, dy: 40), screens: [portrait, center])
+        XCTAssertNotNil(route, "이미 경계에 걸친 상태에서도 오른쪽 통과 잠금을 복구해야 함")
+        XCTAssertEqual(route?.target ?? 0, 1000, accuracy: 0.001)
+        XCTAssertEqual(route?.crossingSign ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(route?.completionCoordinate ?? 0, -1920, accuracy: 0.001)
+    }
+
     func testBlockedLeftwardCrossingFindsSamePortal() {
         let left = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
         let right = NSRect(x: 0, y: 0, width: 1728, height: 1084)
