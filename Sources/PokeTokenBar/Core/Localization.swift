@@ -199,6 +199,7 @@ struct L {
     }
     var floatingPetSizeLabel: String { t("크기", "Size", "サイズ") }
     var floatingPetRoamingLabel: String { t("화면 돌아다니기", "Roam across screens", "画面を歩き回る") }
+    var floatingPetMouseChaseLabel: String { t("마우스 따라가기", "Follow the pointer", "マウスを追いかける") }
     var floatingPetSpeedLabel: String { t("이동 속도", "Movement speed", "移動速度") }
     var floatingPetSpeciesLabel: String { t("표시할 포켓몬", "Pokémon shown", "表示するポケモン") }
     var floatingPetSpeciesFollowsPartner: String {
