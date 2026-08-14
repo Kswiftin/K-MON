@@ -1231,19 +1231,27 @@ final class CompanionIdentityTests: XCTestCase {
     }
 
     /// [회귀] 이월이 졸업 총량을 넘어 부화 즉시 졸업한 극단 케이스 — hatch 연출은 생략(이미 도감행).
-    /// 졸업은 레벨 30 게이트도 함께 넘어야 한다(#19) — usedAtStage 초과분이 부화 즉시 임계를
-    /// 넘어도, 레벨을 채우기 전까진 졸업이 미뤄진다. 레벨을 채운 순간 졸업이 나면 떠난 mon 의
-    /// hatch 연출이 새 상태에 남지 않아야 한다.
-    func testHatchCelebrationSkippedOnGraduate() async {
+    /// [갱신] 원래는 "부화 즉시 오버플로로 졸업까지 이어지면 떠난 mon 의 hatch 연출이 남으면
+    /// 안 된다"는 회귀 가드였다(hatch() 의 `if state.active != nil { fireCelebration(.hatch) }`
+    /// 방어). 레벨 30 게이트(#19) 도입 이후 무진화 종도 부화 직후엔 항상 레벨 1이라 그 즉시
+    /// 졸업은 더 이상 일어나지 않는다 — 원래 시나리오 자체가 재현 불가능해졌다. 대신 정상 경로에서
+    /// hatch 연출이 뜨는지, 그리고 그 연출을 사용자가 아직 못 본 채로 이후 졸업이 나도 조용히
+    /// 지워지지 않는지(소비 전 연출을 다른 이벤트가 덮어쓰면 안 된다)를 확인한다.
+    func testHatchCelebrationSurvivesUntilConsumedEvenAfterGraduation() async {
         let s = store(noEvo, seed: 11)
         // 알 임계 + 졸업 총량(750M) 초과 생산분 — usedAtStage 는 즉시 임계를 넘지만 레벨은 아직 1.
         s.debugAccrue(800_000_000)
         await s.hatchIfNeeded()
-        XCTAssertNotNil(s.state.active, "성장치는 찼지만 레벨 미달 — 아직 졸업 안 됨")
-        s.debugAccrueLevelExperience(300_000_000)   // 레벨 30 도달 → 이제 졸업
+        XCTAssertNotNil(s.state.active, "레벨 게이트 때문에 부화 즉시 졸업은 더 이상 일어나지 않는다")
+        guard case .hatch = s.celebration else {
+            return XCTFail("정상 부화 연출이 떠야 한다: \(String(describing: s.celebration))")
+        }
+        s.debugAccrueLevelExperience(300_000_000)   // 레벨 30 도달 → 졸업
         XCTAssertNil(s.state.active, "졸업")
         XCTAssertEqual(s.state.dex.count, 1)
-        XCTAssertNil(s.celebration, "떠난 mon 의 hatch 연출을 재생하면 안 된다")
+        guard case .hatch = s.celebration else {
+            return XCTFail("소비 전 hatch 연출을 졸업이 덮어쓰면 안 된다: \(String(describing: s.celebration))")
+        }
     }
 
     // MARK: 부화 샘플러 (PokéAPI rejection sampling — 하드코딩 풀 대체)
