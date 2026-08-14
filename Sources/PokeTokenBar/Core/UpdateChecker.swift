@@ -48,6 +48,7 @@ final class UpdateChecker {
     private var lastChecked: Date?
     private let sparkleController: SPUStandardUpdaterController
     private let sparkleDelegate: AuthenticatedSparkleDelegate
+    private let appcastServer = LocalAppcastServer()
     private var sparkleStarted = false
     private var automaticDownloads = true
     private var periodicTimer: Timer?
@@ -253,12 +254,7 @@ final class UpdateChecker {
               original.contains(browserDownload) else { throw FeedError.invalid }
         guard let rewritten = Self.rewriteAppcast(original, browserDownloadURL: browserDownload,
                                                   assetAPIURL: apiDownload) else { throw FeedError.invalid }
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Pokédoro/Updates", isDirectory: true)
-        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        let localFeed = base.appendingPathComponent("authenticated-appcast.xml")
-        try Data(rewritten.utf8).write(to: localFeed, options: .atomic)
-        return localFeed
+        return try await appcastServer.serve(Data(rewritten.utf8))
     }
 
     private enum FeedError: Error { case invalid }
@@ -276,7 +272,7 @@ final class UpdateChecker {
     }
 }
 
-/// 인증된 appcast에서 ZIP 주소만 REST asset URL로 바꾼 로컬 feed를 Sparkle에 제공한다.
+/// 인증된 appcast에서 ZIP 주소만 REST asset URL로 바꾼 loopback feed를 Sparkle에 제공한다.
 @MainActor
 final class AuthenticatedSparkleDelegate: NSObject, SPUUpdaterDelegate {
     var feedURL: URL?

@@ -98,4 +98,23 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertNil(UpdateChecker.rewriteAppcast(original, browserDownloadURL: browser,
                                                    assetAPIURL: "https://evil.example/update.zip"))
     }
+
+    @MainActor
+    func testLocalAppcastServerOnlyServesExpectedPath() async throws {
+        let server = LocalAppcastServer()
+        let expected = Data("<rss>test</rss>".utf8)
+        let url = try await server.serve(expected)
+        XCTAssertEqual(url.scheme, "http")
+        XCTAssertEqual(url.host, "127.0.0.1")
+        let (data, response) = try await URLSession.shared.data(from: url)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(data, expected)
+        let queryURL = URL(string: "\(url.absoluteString)?channel=stable")!
+        let (queryData, queryResponse) = try await URLSession.shared.data(from: queryURL)
+        XCTAssertEqual((queryResponse as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(queryData, expected)
+        let missing = URL(string: "http://127.0.0.1:\(url.port!)/missing")!
+        let (_, missingResponse) = try await URLSession.shared.data(from: missing)
+        XCTAssertEqual((missingResponse as? HTTPURLResponse)?.statusCode, 404)
+    }
 }
