@@ -123,8 +123,8 @@ perl -pi -e "s/DEFAULT_VERSION=\"[0-9.]+\"/DEFAULT_VERSION=\"$VERSION\"/" script
 
 echo "▶ 4/8 빌드 + zip (push 전 검증 — 실패해도 범프 미커밋이라 origin/main 무손상)"
 ./scripts/build-app.sh >/dev/null
-rm -f build/Pokédoro.zip
-ditto -c -k --keepParent build/Pokédoro.app build/Pokédoro.zip
+rm -f build/Pokedoro.zip
+ditto -c -k --keepParent build/Pokédoro.app build/Pokedoro.zip
 BUILT=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" build/Pokédoro.app/Contents/Info.plist)
 [[ "$BUILT" == "$VERSION" ]] || { echo "✗ 빌드 버전 불일치: $BUILT (수동 복구: git checkout scripts/build-app.sh)"; exit 1; }
 
@@ -138,10 +138,10 @@ git push -q origin main
 echo "▶ 6/8 GitHub Release v$VERSION"
 NOTES_FILE="${PTB_NOTES_FILE:-}"
 if [[ -n "$NOTES_FILE" && -f "$NOTES_FILE" ]]; then
-  gh release create "v$VERSION" build/Pokédoro.zip --repo "$REPO" \
+  gh release create "v$VERSION" build/Pokedoro.zip --repo "$REPO" \
     --title "K-MON v$VERSION" --target main --notes-file "$NOTES_FILE"
 else
-  gh release create "v$VERSION" build/Pokédoro.zip --repo "$REPO" \
+  gh release create "v$VERSION" build/Pokedoro.zip --repo "$REPO" \
     --title "K-MON v$VERSION" --target main --notes "K-MON v$VERSION"
 fi
 
