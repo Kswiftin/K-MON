@@ -617,9 +617,6 @@ struct CompanionHeader: View {
                 }
                 .padding(8)
                 .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
-                // 돌봄·모험 카드 — 여기 없으면 claimAdventure() 가 UI 에서 도달 불가라
-                // 모험 보상이 영영 정산되지 않고 집중 시작 버튼도 계속 비활성이 된다(#8).
-                AdventureCard(store: store)
             }
             if !store.boxedMons.isEmpty { CompanionBoxView(store: store) }
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
