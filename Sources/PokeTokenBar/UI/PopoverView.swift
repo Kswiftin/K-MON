@@ -49,6 +49,7 @@ struct PopoverView: View {
             }
         }
         .frame(width: PopoverMetrics.width)
+        .environment(\.spriteAntialiasing, settings.imageAntialiasing)
         .environment(\.locale, companion.language.displayLocale)
         .onAppear { if battleCenter.pendingAttention { nav.tab = .battle } }
     }

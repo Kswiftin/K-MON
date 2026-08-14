@@ -14,8 +14,10 @@ final class IdleEconomyTests: XCTestCase {
     private func makeStore(_ clock: TestClock) -> CompanionStore {
         // linear3 등 공용 픽스처는 CompanionTests 에 있다 — 여기선 라인이 필요 없는 알 상태만 쓰므로
         // 부화가 일어나지 않도록 임계 미만 생산만 하거나, 라인 로드 실패 프로바이더를 쓴다.
-        CompanionStore(provider: NoLineProvider(), clock: clock.closure,
-                       fileURL: tempURL(), rng: SeededRNG(seed: 1))
+        let store = CompanionStore(provider: NoLineProvider(), clock: clock.closure,
+                                   fileURL: tempURL(), rng: SeededRNG(seed: 1))
+        store.debugMarkStarterChosen()
+        return store
     }
 
     /// 라인 제공 실패 — 알 유지(부화 억제)용. 적립 로직 자체는 라인과 무관하다.

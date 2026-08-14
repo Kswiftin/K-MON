@@ -41,7 +41,7 @@ final class StorePerformanceTests: XCTestCase {
         }
         let dexJSON = String(data: try JSONEncoder().encode(entries), encoding: .utf8)!
         let url = tmpURL()
-        try Data("{\"economyVersion\":2,\"dex\":\(dexJSON),\"language\":\"ko\"}".utf8).write(to: url)
+        try Data("{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"dex\":\(dexJSON),\"language\":\"ko\"}".utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: pline(base: 1, rarity: .common)),
                               clock: { pNow }, fileURL: url, rng: SeededRNG(seed: 1))
     }
