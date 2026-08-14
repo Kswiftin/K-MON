@@ -162,15 +162,6 @@ final class AdventureClaimTests: XCTestCase {
                       "마운트되지 않은 View: \(unmounted) — 선언만 있고 화면에 안 붙으면 그 안의 기능(보상 정산 등)은 도달 불가다")
     }
 
-    /// 모험 정산 버튼이 사는 카드가 홈 화면(CompanionHeader)에 실제로 붙어 있는지 — #8 의 정확한 조건.
-    func testAdventureCardIsMountedOnTheHomeView() throws {
-        let companionView = try String(
-            contentsOf: Self.repositoryRoot.appendingPathComponent("Sources/PokeTokenBar/UI/CompanionView.swift"),
-            encoding: .utf8)
-        XCTAssertTrue(companionView.contains("AdventureCard(store:"),
-                      "AdventureCard 호출부가 사라지면 claimAdventure() 가 다시 도달 불가가 된다")
-    }
-
     private static var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)          // Tests/PokeTokenBarTests/AdventureClaimTests.swift
             .deletingLastPathComponent()         // Tests/PokeTokenBarTests

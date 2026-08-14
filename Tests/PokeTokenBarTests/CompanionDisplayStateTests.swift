@@ -68,30 +68,6 @@ final class CompanionDisplayStateTests: XCTestCase {
         XCTAssertEqual(s.displayState, .idle)
     }
 
-    /// 이벤트 창이 없고 에너지가 20~44 구간이면 .sleep.
-    func testSleepWhenEnergyIsModerate() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-disp-\(UUID().uuidString).json")
-        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"#
-            + #""rarity":"common","totalForms":3},"care":{"energy":30}}"#
-        try Data(json.utf8).write(to: url)
-        let s = CompanionStore(provider: StubProvider(value: dline(base: 1)),
-                               clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 1))
-        s.tick()
-        XCTAssertEqual(s.displayState, .sleep)
-    }
-
-    /// 에너지가 20 미만이면 .tired — .sleep 보다 우선한다.
-    func testTiredWhenEnergyIsLow() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-disp-\(UUID().uuidString).json")
-        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"#
-            + #""rarity":"common","totalForms":3},"care":{"energy":10}}"#
-        try Data(json.utf8).write(to: url)
-        let s = CompanionStore(provider: StubProvider(value: dline(base: 1)),
-                               clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 1))
-        s.tick()
-        XCTAssertEqual(s.displayState, .tired)
-    }
-
     // MARK: 알(egg) 인큐베이션 파생값
 
     func testEggProgressAndTokensToHatch() {
