@@ -30,20 +30,20 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertGreaterThan(renderedHeight(tall), PopoverMetrics.maxHeight(screenHeight: 900))
     }
 
-    /// 수정 후: 스크롤 컨테이너 + maxHeight 조합이 요청 높이를 상한으로 자른다.
-    func testScrollViewWithCapNeverExceedsTheCap() {
-        let cap = PopoverMetrics.maxHeight(screenHeight: 900)
-        let capped = ScrollView { Color.clear.frame(height: 3_000) }
-            .frame(maxHeight: cap).fixedSize(horizontal: false, vertical: true)
-        XCTAssertLessThanOrEqual(renderedHeight(capped), cap)
+    /// 수정 후: 창 높이가 고정이라 긴 콘텐츠도 그 높이를 넘지 않는다(넘는 부분은 안에서 스크롤).
+    func testFixedHeightNeverExceedsItself() {
+        let h = PopoverMetrics.height(for: .home, screenHeight: 900)
+        let tall = ScrollView { Color.clear.frame(height: 3_000) }.frame(height: h)
+        XCTAssertEqual(renderedHeight(tall), h, accuracy: 1)
     }
 
-    /// 짧은 콘텐츠는 상한만큼 부풀지 않는다(스크롤을 붙였다고 팝오버가 커지면 안 된다).
-    func testShortContentKeepsItsNaturalHeight() {
-        let cap = PopoverMetrics.maxHeight(screenHeight: 900)
-        let short = ScrollView { Color.clear.frame(height: 120) }
-            .frame(maxHeight: cap).fixedSize(horizontal: false, vertical: true)
-        XCTAssertEqual(renderedHeight(short), 120, accuracy: 1)
+    /// 짧은 콘텐츠도 같은 높이를 유지한다 — 탭을 바꾸거나 기술 목록을 접었다 펴도 창이 안 흔들린다.
+    /// (예전엔 `.fixedSize` 로 자연 높이를 따라가서 펼칠 때마다 팝오버가 커졌다 작아지며 떨렸다.)
+    func testShortContentKeepsTheSameHeightAsTallContent() {
+        let h = PopoverMetrics.height(for: .home, screenHeight: 900)
+        let short = ScrollView { Color.clear.frame(height: 120) }.frame(height: h)
+        let tall = ScrollView { Color.clear.frame(height: 3_000) }.frame(height: h)
+        XCTAssertEqual(renderedHeight(short), renderedHeight(tall), accuracy: 1)
     }
 
     /// 상한은 화면 높이에서만 파생된다 — 작은 화면일수록 낮게, 큰 화면에선 화면만큼 커진다.
@@ -57,14 +57,17 @@ final class PopoverLayoutTests: XCTestCase {
                           PopoverMetrics.maxHeight(screenHeight: 760))
     }
 
-    /// 회귀(#9 2차): 화면보다 낮은 고정 천장이 다시 들어오면 잡는다.
-    /// 720pt 천장 시절, 1440pt 화면에서도 "기술 보기" 를 펼친 홈 탭이 상한을 넘겨 스크롤로 밀리고
-    /// 헤더 첫 줄과 돌봄·모험 카드가 잘려 보였다 — 화면엔 두 배 넘는 자리가 남아 있는데도.
-    func testTallScreenFitsTheExpandedHomeTabWithoutScrolling() {
-        let cap = PopoverMetrics.maxHeight(screenHeight: 1_440)
-        // 사용자 화면에서 잰 값: 기술 접힌 홈 탭 약 626pt + 기술 4행 약 118pt + 여백.
-        let expandedHomeHeight: CGFloat = 780
-        XCTAssertGreaterThan(cap, expandedHomeHeight)
+    /// 탭별 고정 높이는 화면이 넉넉하면 그대로, 좁으면 화면에 맞춰 줄어든다.
+    /// 회귀(#9 2차): 720pt 고정 천장 시절엔 1440pt 화면에서도 펼친 홈 탭이 상한을 넘겨
+    /// 헤더 첫 줄과 아래 카드가 잘려 보였다 — 화면엔 두 배 넘는 자리가 남아 있는데도.
+    func testTabHeightIsFixedOnBigScreensAndClampsOnSmallOnes() {
+        XCTAssertEqual(PopoverMetrics.height(for: .home, screenHeight: 1_440),
+                       PopoverTab.home.contentHeight)
+        XCTAssertEqual(PopoverMetrics.height(for: .collection, screenHeight: 700),
+                       700 - PopoverMetrics.verticalChrome)
+        // 홈은 기술 4행을 펼친 높이(약 560)면 되고, 520pt 격자를 든 탭은 그보다 커야 한다.
+        XCTAssertGreaterThan(PopoverTab.home.contentHeight, 500)
+        XCTAssertGreaterThan(PopoverTab.collection.contentHeight, PopoverTab.home.contentHeight)
     }
 
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
