@@ -35,7 +35,6 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     private var direction = CGVector(dx: 1, dy: 0)
     private var directionDeadline: TimeInterval = 0
     private var pendingPortal: PortalRoute?
-    private var crossingPortal: PortalRoute?
     private var lastPositionSave: TimeInterval = 0
     private var isAutomaticMove = false
     private var isUserDragging = false
@@ -166,7 +165,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         var frame = NSRect(origin: p.frame.origin, size: desiredSize)
         if !p.isVisible {
             frame = targetFrame(petSize: petSize)
-        } else if sizeChanged, pendingPortal == nil, crossingPortal == nil,
+        } else if sizeChanged, pendingPortal == nil,
                   !Self.isCovered(frame, by: NSScreen.screens.map(\.visibleFrame)) {
             // 이미 보이는 패널의 일반 상태 갱신은 현재 위치를 보존한다. 통과 중 저장 좌표로
             // 되감기는 일을 막고, 실제 크기 변경으로 밖에 밀린 경우에만 복구한다.
@@ -203,13 +202,11 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         movementTimer = nil
         lastMovementTick = nil
         pendingPortal = nil
-        crossingPortal = nil
         persistCurrentOrigin()
     }
 
     private func chooseDirection(now: TimeInterval) {
         pendingPortal = nil
-        crossingPortal = nil
         let angle = Double.random(in: 0..<(Double.pi * 2))
         direction = CGVector(dx: cos(angle), dy: sin(angle))
         directionDeadline = now + Double.random(
@@ -225,10 +222,6 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         guard let previous = lastMovementTick else { return }
         let delta = min(0.1, max(0, now - previous))
         let speed = CGFloat(settings.floatingPetMovementSpeed)
-        if let route = crossingPortal {
-            advanceAcrossPortal(route, speed: speed, delta: delta, now: now)
-            return
-        }
         if let route = pendingPortal {
             advanceTowardPortal(route, speed: speed, delta: delta, now: now)
             return
@@ -281,13 +274,16 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         if abs(difference) <= step {
             if route.axis == .horizontal { origin.y = route.target }
             else { origin.x = route.target }
-            setAutomaticOrigin(origin)
+            // 서로 다른 backing scale의 화면 사이에 NSPanel을 걸쳐 두면 AppKit 좌표 보정과
+            // 이동 타이머가 충돌해 경계에서 앞뒤로 떨린다. 유효 통로의 반대편으로 원자적으로 인계한다.
+            setAutomaticOrigin(Self.portalDestinationOrigin(from: origin, route: route))
             direction = route.axis == .horizontal
                 ? CGVector(dx: route.crossingSign, dy: 0)
                 : CGVector(dx: 0, dy: route.crossingSign)
             motion.facingLeft = direction.dx < 0
             pendingPortal = nil
-            crossingPortal = route
+            directionDeadline = now + Self.minimumTravelDuration
+            persistCurrentOrigin()
             return
         }
         let sign: CGFloat = difference < 0 ? -1 : 1
@@ -300,54 +296,17 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         setAutomaticOrigin(result.origin)
     }
 
-    private func advanceAcrossPortal(_ route: PortalRoute, speed: CGFloat,
-                                     delta: TimeInterval, now: TimeInterval) {
-        guard let panel else { return }
-        let result = Self.advancedPortalOrigin(
-            from: panel.frame.origin, route: route, distance: speed * CGFloat(delta))
-        setAutomaticOrigin(result.origin)
-        let completed = result.completed
-        if completed {
-            crossingPortal = nil
-            direction = route.axis == .horizontal
-                ? CGVector(dx: route.crossingSign, dy: 0)
-                : CGVector(dx: 0, dy: route.crossingSign)
-            motion.facingLeft = direction.dx < 0
-            directionDeadline = now + Self.minimumTravelDuration
-        }
-    }
-
-    /// portalRoute가 양쪽 visibleFrame의 실제 겹침을 이미 검증했으므로 통과 중에는 일반 충돌 판정을
-    /// 다시 적용하지 않는다. 서로 다른 backing scale 경계의 반 픽셀 보정이 펫을 되튕기는 것을 방지한다.
-    static func advancedPortalOrigin(from origin: NSPoint, route: PortalRoute,
-                                     distance: CGFloat) -> (origin: NSPoint, completed: Bool) {
+    static func portalDestinationOrigin(from origin: NSPoint, route: PortalRoute) -> NSPoint {
         var next = origin
-        let signedDistance = max(0, distance) * route.crossingSign
         switch route.axis {
         case .horizontal:
             next.y = route.target
-            next.x += signedDistance
-            if route.crossingSign > 0, next.x >= route.completionCoordinate {
-                next.x = route.completionCoordinate
-                return (next, true)
-            }
-            if route.crossingSign < 0, next.x <= route.completionCoordinate {
-                next.x = route.completionCoordinate
-                return (next, true)
-            }
+            next.x = route.completionCoordinate
         case .vertical:
             next.x = route.target
-            next.y += signedDistance
-            if route.crossingSign > 0, next.y >= route.completionCoordinate {
-                next.y = route.completionCoordinate
-                return (next, true)
-            }
-            if route.crossingSign < 0, next.y <= route.completionCoordinate {
-                next.y = route.completionCoordinate
-                return (next, true)
-            }
+            next.y = route.completionCoordinate
         }
-        return (next, false)
+        return next
     }
 
     private func setAutomaticOrigin(_ origin: NSPoint) {
