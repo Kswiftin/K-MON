@@ -219,8 +219,11 @@ final class CompanionStoreTests: XCTestCase {
         let backup = url.appendingPathExtension("corrupt")
         XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path), "손상 원본이 .corrupt 로 백업돼야 한다")
         XCTAssertEqual(try String(contentsOf: backup, encoding: .utf8), garbage, "백업 내용 = 원본 그대로")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "원본은 이동돼 사라짐")
+        // 핵심 보장은 손상 원본이 그대로 백업되는 것이다. fresh state 가 이후 저장되면 같은 원래
+        // 경로에 정상 JSON 이 다시 생길 수 있으므로, 원래 경로의 부재까지 요구하면 실행 순서에 따라
+        // 복구가 성공했는데도 실패하는 테스트가 된다.
         try? FileManager.default.removeItem(at: backup)
+        try? FileManager.default.removeItem(at: url)
     }
 
     /// [회귀] active(현재 포켓몬)가 손상돼도(pathIDs 누락 등) 알로 폴백하되 도감·인벤토리·누적은 보존한다 —

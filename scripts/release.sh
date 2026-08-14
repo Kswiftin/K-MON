@@ -46,4 +46,4 @@ git tag -a "$TAG" -m "K-MON $TAG"
 git push origin "refs/tags/$TAG"
 
 echo "✓ GitHub Actions가 $TAG 빌드·서명·Release 생성을 진행합니다."
-echo "  https://github.com/2giduck/K-MON/actions/workflows/release.yml"
+echo "  https://github.com/Kswiftin/K-MON/actions/workflows/release.yml"
