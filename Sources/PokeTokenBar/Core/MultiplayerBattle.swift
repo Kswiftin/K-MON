@@ -174,7 +174,7 @@ enum MultiplayerValidation {
 /// 4인 방의 와이어 계약. 호스트 권위형이라 클라이언트는 참가/준비/행동만 보내고,
 /// 로비 상태와 라운드 결과는 호스트가 전 참가자에게 브로드캐스트한다.
 enum MultiplayerWireMessage: Codable, Sendable, Equatable {
-    static let protocolVersion = 1
+    static let protocolVersion = 2   // 2: LobbyParticipant.role + 관전자 베팅 메시지
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -187,6 +187,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     case pokeathlonStart(race: PokeathlonRace)
     case pokeathlonInput(participantID: UUID, input: PokeathlonInput)
     case pokeathlonState(race: PokeathlonRace)
+    case pokeathlonBet(participantID: UUID, runnerID: UUID, amount: Int)
+    case pokeathlonPool(PokeathlonPool)
+    case pokeathlonSettlement(pool: PokeathlonPool, winnerID: UUID?)
 }
 
 /// 2~4명 개인전/2:2 공용 결정적 전투 상태. 네트워크는 action만 모아 호스트가 resolveRound를 호출한다.

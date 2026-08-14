@@ -980,6 +980,24 @@ final class CompanionStore {
         return delta
     }
 
+    /// 관전자 베팅 에스크로 — 판돈을 지갑에서 뺀다. 잔액이 모자라거나 금액이 0 이하면 no-op(false).
+    /// 원장 브로드캐스트에서 자기 베팅을 본 시점에 각 클라이언트가 스스로 호출한다(호스트가 남의
+    /// 지갑을 건드리지 않는 구조).
+    @discardableResult
+    func escrowStarPieces(_ amount: Int) -> Bool {
+        guard amount > 0, availableTokens >= amount else { return false }
+        state.starPieces -= amount
+        save()
+        return true
+    }
+
+    /// 베팅 정산 지급. 환불도 "판돈과 같은 금액 지급" 이라 같은 경로를 쓴다.
+    func creditStarPieces(_ amount: Int) {
+        guard amount > 0 else { return }
+        state.starPieces += amount
+        save()
+    }
+
     /// 일일 사탕 — 날짜가 바뀐 첫 틱에 지급(방치형 출석 보상). 첫 실행도 지급(웰컴 사탕).
     private func grantDailyCandyIfNeeded(now: Date) {
         let today = Self.dayKey(now)

@@ -27,6 +27,11 @@ final class MultiplayerRoomCenter {
     private(set) var battleReward: Int?
     private(set) var lastError: String?
     private(set) var pokeathlonRace: PokeathlonRace?
+    private(set) var pokeathlonPool = PokeathlonPool()
+    private(set) var settlementPayout: Int?
+    /// 내가 이미 지갑에서 뺀 베팅. 원장이 바뀌면 차액만 조정하고, 정산 때 이 값으로 호스트 원장을 검증한다.
+    private var escrowedBet: PokeathlonBet?
+    private var settledPool = false
     let myID = UUID()
 
     private let companion: CompanionStore
@@ -48,6 +53,8 @@ final class MultiplayerRoomCenter {
 
     var isHost: Bool { hostingRole }
     var myParticipant: LobbyParticipant? { lobby?.participants.first { $0.id == myID } }
+    var amSpectator: Bool { myParticipant?.role == .spectator }
+    var myBet: PokeathlonBet? { pokeathlonPool.bets[myID] }
 
     func startBrowsing() {
         guard browser == nil else { return }
@@ -103,7 +110,8 @@ final class MultiplayerRoomCenter {
             snapshots[myID] = snapshot
             let team: BattleTeam = mode == .teams ? .red : .solo
             let host = LobbyParticipant(id: myID, trainerName: trainerName, speciesID: snapshot.speciesID,
-                                        team: team, isReady: false, isHost: true)
+                                        team: team, isReady: false, isHost: true, role: .runner,
+                                        reportedStarPieces: companion.availableTokens)
             do {
                 lobby = try MultiplayerLobby(host: host, activity: activity)
                 hostingRole = true
@@ -115,7 +123,7 @@ final class MultiplayerRoomCenter {
         }
     }
 
-    func join(_ room: MultiplayerRoomPeer) {
+    func join(_ room: MultiplayerRoomPeer, as role: LobbyRole = .runner) {
         guard phase == .idle else { return }
         phase = .joining(room.name); lastError = nil
         hostingRole = false
@@ -132,7 +140,9 @@ final class MultiplayerRoomCenter {
                     case .ready:
                         let participant = LobbyParticipant(id: self.myID, trainerName: self.trainerName,
                                                            speciesID: snapshot.speciesID, team: .solo,
-                                                           isReady: false, isHost: false)
+                                                           isReady: role == .spectator, isHost: false,
+                                                           role: role,
+                                                           reportedStarPieces: self.companion.availableTokens)
                         self.send(.join(version: MultiplayerWireMessage.protocolVersion,
                                         participant: participant, snapshot: snapshot), over: connection)
                         self.receiveGuestLoop(connection)
@@ -161,11 +171,12 @@ final class MultiplayerRoomCenter {
 
     func startBattle() {
         guard isHost, let lobby, lobby.canStart, lobby.activity == .battle else { return }
-        let fighters = lobby.participants.compactMap { participant -> MultiplayerFighter? in
+        let runners = lobby.runners
+        let fighters = runners.compactMap { participant -> MultiplayerFighter? in
             guard let snapshot = snapshots[participant.id] else { return nil }
             return MultiplayerFighter(participant: participant, snapshot: snapshot)
         }
-        guard fighters.count == lobby.participants.count else { lastError = "참가자 정보를 준비하지 못했습니다."; return }
+        guard fighters.count == runners.count else { lastError = "참가자 정보를 준비하지 못했습니다."; return }
         let seed = UInt64.random(in: UInt64.min...UInt64.max)
         do {
             battle = try MultiplayerBattle(fighters: fighters, mode: lobby.mode, seed: seed)
@@ -179,11 +190,12 @@ final class MultiplayerRoomCenter {
 
     func startPokeathlon() {
         guard isHost, let lobby, lobby.canStart, lobby.activity == .pokeathlon else { return }
-        let race = PokeathlonRace(racers: lobby.participants.map {
+        let race = PokeathlonRace(racers: lobby.runners.map {
             PokeathlonRacer(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID,
                             teamSpeciesIDs: [$0.speciesID, $0.speciesID, $0.speciesID])
         })
         pokeathlonRace = race; phase = .pokeathlon
+        settlementPayout = nil; settledPool = false
         for connection in guestConnections.values { send(.pokeathlonStart(race: race), over: connection) }
     }
 
@@ -196,7 +208,97 @@ final class MultiplayerRoomCenter {
     private func applyPokeathlonInput(_ input: PokeathlonInput, participantID: UUID) {
         guard isHost, var race = pokeathlonRace else { return }
         race.apply(input, racerID: participantID); pokeathlonRace = race
+        closePoolIfStarted(race)
         for connection in guestConnections.values { send(.pokeathlonState(race: race), over: connection) }
+        if race.winnerID != nil { settle(winnerID: race.winnerID) }
+    }
+
+    /// 관전자 베팅 전송. 호스트는 자기 검사기를 그대로 통과해야 하므로 같은 경로로 들어간다.
+    ///
+    /// 보내기 전에 **지금** 지갑을 확인한다. 호스트의 상한은 참가 시 신고한 잔액이라, 로비에서
+    /// 별조각을 쓴 뒤 베팅하면 호스트는 통과시키지만 내 에스크로가 실패한다. 그러면 아무도 내지
+    /// 않은 판돈이 배당에 섞여 별조각이 생성된다("이동만" 불변식 위반) — 여기서 먼저 막는다.
+    func placeBet(runnerID: UUID, amount: Int) {
+        guard phase == .pokeathlon || phase == .joined || phase == .hosting else { return }
+        guard amount > 0, companion.availableTokens >= amount else {
+            lastError = "별조각이 부족합니다."; return
+        }
+        if isHost { acceptBet(PokeathlonBet(bettorID: myID, runnerID: runnerID, amount: amount), from: myID) }
+        else if let hostConnection {
+            send(.pokeathlonBet(participantID: myID, runnerID: runnerID, amount: amount), over: hostConnection)
+        }
+    }
+
+    /// 호스트 권위 검사 — 통과한 베팅만 원장에 들어가고, 원장 전체를 다시 브로드캐스트한다.
+    private func acceptBet(_ bet: PokeathlonBet, from senderID: UUID) {
+        guard isHost, let lobby, let race = pokeathlonRace else { return }
+        if let rejection = PokeathlonPool.rejection(for: bet, senderID: senderID, lobby: lobby,
+                                                    race: race, pool: pokeathlonPool, now: Date()) {
+            if senderID == myID { lastError = Self.betRejectionText(rejection) }
+            return
+        }
+        pokeathlonPool.bets[bet.bettorID] = bet    // 같은 관전자의 이전 베팅을 대체
+        broadcastPool()
+        syncEscrow()
+    }
+
+    private func broadcastPool() {
+        let message = MultiplayerWireMessage.pokeathlonPool(pokeathlonPool)
+        for connection in guestConnections.values { send(message, over: connection) }
+    }
+
+    private static func betRejectionText(_ rejection: PokeathlonBetRejection) -> String {
+        switch rejection {
+        case .identityMismatch: return "본인 ID 로만 베팅할 수 있습니다."
+        case .notSpectator: return "관전자만 베팅할 수 있습니다."
+        case .poolClosed: return "베팅이 마감되었습니다."
+        case .invalidAmount: return "베팅 금액을 확인하세요."
+        case .unknownRunner: return "이 경기에 없는 선수입니다."
+        case .insufficientBalance: return "별조각이 부족합니다."
+        }
+    }
+
+    /// 원장에서 내 베팅을 본 시점에 내 지갑에서 판돈을 뺀다(에스크로). 베팅을 바꿨으면
+    /// 이전 판돈을 되돌리고 새 판돈을 뺀다 — 지갑이 부족해 실패하면 에스크로 기록을 남기지 않는다.
+    private func syncEscrow() {
+        let mine = pokeathlonPool.bets[myID]
+        guard mine != escrowedBet else { return }
+        if let previous = escrowedBet { companion.creditStarPieces(previous.amount) }
+        if let mine, companion.escrowStarPieces(mine.amount) { escrowedBet = mine }
+        else { escrowedBet = nil }
+    }
+
+    /// 출발 시각이 지나면 원장을 잠근다. 검사기도 시각을 보지만, 잠금 사실을 관전자 화면에
+    /// 반영하려면 원장 플래그가 함께 브로드캐스트돼야 한다.
+    private func closePoolIfStarted(_ race: PokeathlonRace) {
+        guard isHost, !pokeathlonPool.isClosed, Date() >= race.startsAt else { return }
+        pokeathlonPool.isClosed = true
+        broadcastPool()
+    }
+
+    /// 호스트 정산 — 원장과 우승자를 함께 보내고, 각 클라이언트가 배당을 재계산한다.
+    /// 우승자 없이 방이 닫히면 `winnerID: nil` 로 보내 전원 환불이 된다.
+    private func settle(winnerID: UUID?) {
+        guard isHost, !settledPool else { return }
+        settledPool = true
+        pokeathlonPool.isClosed = true
+        let message = MultiplayerWireMessage.pokeathlonSettlement(pool: pokeathlonPool, winnerID: winnerID)
+        for connection in guestConnections.values { send(message, over: connection) }
+        applySettlement(pool: pokeathlonPool, winnerID: winnerID)
+    }
+
+    /// 정산 적용(호스트·게스트 공통). 호스트가 보낸 원장이 내가 본 내 베팅과 다르면 지급을 거부한다.
+    private func applySettlement(pool: PokeathlonPool, winnerID: UUID?) {
+        guard escrowedBet != nil || !pool.bets.isEmpty else { return }
+        guard pool.agreesWithSeenBet(escrowedBet, bettorID: myID) else {
+            lastError = "정산 내역이 내가 건 베팅과 다릅니다. 지급을 거부했습니다."
+            return
+        }
+        pokeathlonPool = pool
+        let payout = pool.payouts(winnerID: winnerID)[myID] ?? 0
+        companion.creditStarPieces(payout)
+        settlementPayout = payout
+        escrowedBet = nil
     }
 
     func submitAction(targetID: UUID, moveIndex: Int) {
@@ -219,6 +321,11 @@ final class MultiplayerRoomCenter {
     var didIWin: Bool { isBattleFinished && combatFighters.first(where: { $0.id == myID })?.isAlive == true }
 
     func leaveRoom() {
+        if isHost, pokeathlonRace != nil, !settledPool { settle(winnerID: pokeathlonRace?.winnerID) }
+        else if !isHost, let escrowed = escrowedBet {
+            // 호스트 정산을 못 받고 방을 떠나면 자기 판돈은 스스로 되돌린다(경기 미완주 = 환불).
+            companion.creditStarPieces(escrowed.amount); escrowedBet = nil
+        }
         if !isHost, let hostConnection { send(.leave(participantID: myID), over: hostConnection) }
         hostConnection?.cancel(); hostConnection = nil
         guestConnections.values.forEach { $0.cancel() }; guestConnections.removeAll()
@@ -226,6 +333,7 @@ final class MultiplayerRoomCenter {
         listener?.cancel(); listener = nil
         turnTimeoutTask?.cancel(); turnTimeoutTask = nil
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
+        pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; battleReward = nil; rewardedBattle = false
         hasSubmittedAction = false; hostingRole = false; phase = .idle
@@ -246,7 +354,10 @@ final class MultiplayerRoomCenter {
     }
 
     private func acceptGuest(_ connection: NWConnection) {
-        guard isHost, guestConnections.count + pendingGuestConnections.count < 3 else { connection.cancel(); return }
+        let maxGuests = 3 + MultiplayerLobby.spectatorCapacity   // 러너 3 + 관전 8
+        guard isHost, guestConnections.count + pendingGuestConnections.count < maxGuests else {
+            connection.cancel(); return
+        }
         let key = ObjectIdentifier(connection); pendingGuestConnections[key] = connection
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             switch state {
@@ -300,6 +411,8 @@ final class MultiplayerRoomCenter {
                 if let id { self.acceptAction(action, from: id) }
             case .pokeathlonInput(let pid, let input) where pid == id:
                 self.applyPokeathlonInput(input, participantID: pid)
+            case .pokeathlonBet(let pid, let runnerID, let amount) where pid == id:
+                self.acceptBet(PokeathlonBet(bettorID: pid, runnerID: runnerID, amount: amount), from: pid)
             default: break
             }
             self.receiveHostLoop(connection, key: key, participantID: id)
@@ -328,6 +441,11 @@ final class MultiplayerRoomCenter {
                 self.grantRewardIfFinished()
             case .pokeathlonStart(let race): self.pokeathlonRace = race; self.phase = .pokeathlon
             case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
+            case .pokeathlonPool(let pool):
+                self.pokeathlonPool = pool
+                self.syncEscrow()
+            case .pokeathlonSettlement(let pool, let winnerID):
+                self.applySettlement(pool: pool, winnerID: winnerID)
             case .rejected(let reason): self.lastError = reason; self.leaveRoom(); return
             default: break
             }
@@ -401,6 +519,8 @@ final class MultiplayerRoomCenter {
                 broadcastCombatState()
             } else { finishRoundIfReady() }
         } else {
+            // 관전자가 떠나도 원장은 그대로 둔다 — 판돈은 이미 그 관전자 지갑에서 빠졌고,
+            // 정산은 우승자 기준으로 계산되므로 남은 참가자들의 배당이 흔들리지 않는다.
             try? lobby?.leave(participantID: id); broadcastLobby()
         }
     }

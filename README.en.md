@@ -14,7 +14,7 @@
 
 </div>
 
-K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own — just keep the app running. Pick your first partner, watch it evolve through its real evolution line, name it, graduate it into your Pokédex, and start again. When a friend on the same network is running K-MON too, challenge them to a live battle — a turn-based **Brawl** or a keyboard-mashing **Race**.
+K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own — just keep the app running. Pick your first partner, watch it evolve through its real evolution line, name it, graduate it into your Pokédex, and start again. When a friend on the same network is running K-MON too, challenge them to a live turn-based **Brawl**. Races for several trainers at once are their own event — the **Pokéathlon**.
 
 > Built on top of [PokeTokenBar](https://github.com/chattymin/PokeTokenBar). Unofficial, non-commercial Pokémon fan project — see [License & disclaimer](#license--disclaimer).
 
@@ -34,7 +34,6 @@ K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own
 When two Macs on the same network are both running K-MON, they discover each other automatically (Bonjour + AWDL). No IP typing — but a manual `IP:port` fallback is there for locked-down networks.
 
 - **Brawl** — a turn-based battle. Pick from four moves; type advantage, STAB, crits and misses all matter. Deterministic engine — both peers compute the same result, so nothing can be forged over the wire.
-- **Race** — a real-time footrace. **Alternate the ← and → arrow keys** to run (mashing one key does nothing); first to the finish line wins. Both runners' progress is synced live.
 - **Auto-accept** — flip it on and challenges are accepted the moment they arrive, so a battle happens even while you're away from the keyboard.
 - **Notifications & a pinned window** — a challenge raises a system notification even while you're working; when a battle starts, the window pins itself open (it won't close when you click away) so you can play while you work.
 - **Names everywhere** — your trainer name and your Pokémon's nickname show up on the challenge, the arena, and the notification.
