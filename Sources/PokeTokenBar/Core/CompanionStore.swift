@@ -623,16 +623,20 @@ final class CompanionStore {
     func startFocusAdventure(minutes: Int) -> Bool {
         claimCompletedAdventureIfNeeded()
         let now = clock()
-        state.care.advance(to: now)
-        guard let speciesID = currentSpeciesID, state.adventure == nil,
-              !state.care.isSick, !state.care.isSleeping, state.care.energy >= 15 else { return false }
+        guard let speciesID = currentSpeciesID, state.adventure == nil else { return false }
         let zone: AdventureZone = minutes >= 90 ? .coast : (minutes >= 50 ? .cave : .forest)
-        state.care.energy -= 15
         state.adventure = AdventureRun(zone: zone, startedAt: now,
                                        endsAt: now.addingTimeInterval(TimeInterval(max(1, minutes) * 60)),
                                        companionSpeciesID: speciesID)
         save()
         return true
+    }
+
+    /// 진행 중인 집중 세션을 사용자가 중단했을 때 모험도 함께 취소한다. 보상은 지급하지 않는다.
+    func cancelFocusAdventure() {
+        guard state.adventure != nil else { return }
+        state.adventure = nil
+        save()
     }
 
     @discardableResult
