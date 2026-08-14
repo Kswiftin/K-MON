@@ -10,10 +10,13 @@ enum MenuBarStatus: Equatable {
     case adventureClaimable
     case resting
 
-    static func resolve(focusTimer: FocusTimer, activeAdventure: AdventureRun?, now: Date = Date()) -> MenuBarStatus {
-        if focusTimer.isRunning {
-            let prefix = focusTimer.phase == .focus ? "FOCUS" : "BREAK"
-            return .focus(prefix: prefix, clock: focusTimer.clockText(at: now))
+    /// FocusTimer 인스턴스를 통째로 받지 않는다 — FocusTimer 는 @MainActor 라 그러면 이 함수까지
+    /// 액터에 묶여 진짜 순수 함수가 아니게 된다. 호출부(MainActor 컨텍스트)가 값만 미리 뽑아 넘긴다.
+    static func resolve(focusRunning: Bool, focusPhase: FocusPhase, focusClockText: String,
+                        activeAdventure: AdventureRun?, now: Date = Date()) -> MenuBarStatus {
+        if focusRunning {
+            let prefix = focusPhase == .focus ? "FOCUS" : "BREAK"
+            return .focus(prefix: prefix, clock: focusClockText)
         }
         if let run = activeAdventure {
             return run.isComplete(at: now)

@@ -155,7 +155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         guard let button = statusItem.button else { return }
         // focus > adventuring > resting 우선순위와 시간 포맷은 MenuBarStatus 에 고정돼 있다(#20) —
         // 여기서 다시 if 사슬로 풀면 상태가 하나 늘 때 분기 누락이 재발한다.
-        let status = MenuBarStatus.resolve(focusTimer: focusTimer, activeAdventure: companion.activeAdventure)
+        let status = MenuBarStatus.resolve(focusRunning: focusTimer.isRunning, focusPhase: focusTimer.phase,
+                                           focusClockText: focusTimer.clockText(),
+                                           activeAdventure: companion.activeAdventure)
         Self.applyMenuText([status.text(companion.l)], to: button)
         button.appearsDisabled = false
 
