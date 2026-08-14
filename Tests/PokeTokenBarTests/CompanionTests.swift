@@ -981,6 +981,7 @@ final class CompanionStoreTests: XCTestCase {
             guardCount += 1
             let stage = s.state.active!.stageIndex
             s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: s.state.active!.totalForms, stageIndex: stage))
+            if s.canGraduate { s.graduateCompanion() }   // 졸업은 사용자 액션(#19)
         }
         XCTAssertNil(s.state.active, "어느 분기든 최종체에서 졸업(크래시·무한루프 없음)")
         XCTAssertEqual(s.dexEntries.count, 1)
@@ -1287,7 +1288,8 @@ final class CompanionIdentityTests: XCTestCase {
         guard case .hatch = s.celebration else {
             return XCTFail("정상 부화 연출이 떠야 한다: \(String(describing: s.celebration))")
         }
-        s.debugAccrueLevelExperience(300_000_000)   // 레벨 30 도달 → 졸업
+        s.debugAccrueLevelExperience(300_000_000)   // 레벨 30 도달 → 졸업 가능
+        XCTAssertTrue(s.graduateCompanion(), "졸업은 사용자가 직접 누른다(#19)")
         XCTAssertNil(s.state.active, "졸업")
         XCTAssertEqual(s.state.dex.count, 1)
         guard case .hatch = s.celebration else {
