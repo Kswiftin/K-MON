@@ -85,7 +85,6 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             _ = settings.floatingPetMovementSpeed
             _ = settings.floatingPetSpeciesID
             _ = settings.doNotDisturb
-            _ = companion.activeSecondsToday
             _ = companion.language
         } onChange: { [weak self] in
             Task { @MainActor in
@@ -162,8 +161,15 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             hosting.toolTip = currentHoverText()
         }
         let petSize = CGFloat(settings.floatingPetSize)
-        var frame = NSRect(origin: p.frame.origin, size: Self.panelSize(petSize: petSize))
-        if !p.isVisible || !Self.isCovered(frame, by: NSScreen.screens.map(\.visibleFrame)) {
+        let desiredSize = Self.panelSize(petSize: petSize)
+        let sizeChanged = p.frame.size != desiredSize
+        var frame = NSRect(origin: p.frame.origin, size: desiredSize)
+        if !p.isVisible {
+            frame = targetFrame(petSize: petSize)
+        } else if sizeChanged, pendingPortal == nil, crossingPortal == nil,
+                  !Self.isCovered(frame, by: NSScreen.screens.map(\.visibleFrame)) {
+            // 이미 보이는 패널의 일반 상태 갱신은 현재 위치를 보존한다. 통과 중 저장 좌표로
+            // 되감기는 일을 막고, 실제 크기 변경으로 밖에 밀린 경우에만 복구한다.
             frame = targetFrame(petSize: petSize)
         }
         p.setFrame(frame, display: true)
@@ -490,9 +496,16 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                             screens: [NSRect]) -> PortalRoute? {
         let pet = NSRect(origin: origin, size: NSSize(width: petSize, height: petSize))
         let epsilon: CGFloat = 2
-        let sources = screens.filter {
-            $0.minX <= pet.minX + epsilon && $0.maxX >= pet.maxX - epsilon &&
-            $0.minY <= pet.minY + epsilon && $0.maxY >= pet.maxY - epsilon
+        let sources = screens.filter { source in
+            let containsY = source.minY <= pet.minY + epsilon && source.maxY >= pet.maxY - epsilon
+            let containsX = source.minX <= pet.minX + epsilon && source.maxX >= pet.maxX - epsilon
+            let horizontalTrailingEdgeInside = containsY && (
+                (velocity.dx > 0 && source.minX <= pet.minX + epsilon && pet.minX < source.maxX) ||
+                (velocity.dx < 0 && source.maxX >= pet.maxX - epsilon && pet.maxX > source.minX))
+            let verticalTrailingEdgeInside = containsX && (
+                (velocity.dy > 0 && source.minY <= pet.minY + epsilon && pet.minY < source.maxY) ||
+                (velocity.dy < 0 && source.maxY >= pet.maxY - epsilon && pet.maxY > source.minY))
+            return horizontalTrailingEdgeInside || verticalTrailingEdgeInside
         }
         var routes: [PortalRoute] = []
         for source in sources {
