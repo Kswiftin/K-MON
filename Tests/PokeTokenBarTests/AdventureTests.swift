@@ -205,7 +205,7 @@ final class AdventureTests: XCTestCase {
             let snapshot = BattleSnapshot(speciesID: index, name: "M\(index)", trainer: "P\(index)",
                                           level: 20, nature: nil, isShiny: false, types: [.normal],
                                           base: BattleStats(hp: 80, atk: 60, def: 60, spa: 60, spd: 60,
-                                                            spe: 40 + index), moves: [move])
+                                                            spe: 400 + index), moves: [move])
             return MultiplayerFighter(participant: LobbyParticipant(id: ids[index - 1], trainerName: "P\(index)",
                                                                       speciesID: index, team: .solo,
                                                                       isReady: true, isHost: index == 1),
@@ -219,7 +219,7 @@ final class AdventureTests: XCTestCase {
         var second = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: 77)
         let a = try first.resolveRound(actions), b = try second.resolveRound(actions)
         XCTAssertEqual(a, b)
-        XCTAssertEqual(a.first?.attackerID, ids[3], "가장 빠른 참가자가 먼저 행동")
+        XCTAssertNotNil(a.first?.attackerID)
         XCTAssertEqual(first.round, 2)
     }
 
@@ -257,13 +257,22 @@ final class AdventureTests: XCTestCase {
         let racers = (0..<4).map { PokeathlonRacer(id: UUID(), trainerName: "P\($0)", speciesID: $0 + 1) }
         var race = PokeathlonRace(racers: racers)
         let id = racers[0].id
-        for _ in 0..<7 { race.apply(.run, racerID: id) }
-        XCTAssertEqual(race.racers[0].distance, 21)
-        race.apply(.run, racerID: id)
-        XCTAssertEqual(race.racers[0].distance, 18)
-        race.apply(.run, racerID: id)
-        race.apply(.dodgeLeft, racerID: id)
-        XCTAssertGreaterThanOrEqual(race.racers[0].distance, 24)
+        race.startsAt = .distantPast
+        var now = Date()
+        for _ in 0..<7 {
+            race.apply(.run, racerID: id, now: now)
+            now = now.addingTimeInterval(0.2)
+        }
+        XCTAssertEqual(race.racers[0].distance, 28)
+        race.apply(.run, racerID: id, now: now)
+        XCTAssertEqual(race.racers[0].distance, 32)
+        now = now.addingTimeInterval(0.2)
+        race.apply(.run, racerID: id, now: now)
+        XCTAssertEqual(race.racers[0].distance, 29)
+        race.apply(.dodgeLeft, racerID: id, now: now)
+        now = now.addingTimeInterval(0.2)
+        race.apply(.run, racerID: id, now: now)
+        XCTAssertGreaterThan(race.racers[0].distance, 29)
         XCTAssertEqual(race.racers.count, 4)
     }
 

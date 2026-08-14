@@ -24,7 +24,7 @@ final class MintTests: XCTestCase {
         let active = "{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":\(usedAtStage),"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":\(shiny)\(natureField)}"
         let inv = mint > 0 ? ",\"inventory\":{\"mint\":\(mint)}" : ""
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":\(spent),"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":\(spent),\"starPieces\":\(max(0, used - spent)),"
             + "\"lastDate\":\"d\",\"active\":\(active),\"dex\":[],\"collectedFinals\":[]\(inv)}"
         try? json.data(using: .utf8)!.write(to: url)
         return CompanionStore(provider: MintNoProvider(), clock: { self.now }, fileURL: url, rng: SeededRNG(seed: seed))
@@ -80,7 +80,7 @@ final class MintTests: XCTestCase {
 
     func testCannotUseMintOnEgg() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("mint-egg-\(UUID().uuidString).json")
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":1,\"lastDate\":\"d\","
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":1,\"starPieces\":1,\"lastDate\":\"d\","
             + "\"dex\":[],\"collectedFinals\":[],\"inventory\":{\"mint\":2}}"
         try? json.data(using: .utf8)!.write(to: url)
         let s = CompanionStore(provider: MintNoProvider(), clock: { self.now }, fileURL: url, rng: SeededRNG(seed: 1))
@@ -112,7 +112,7 @@ final class MintTests: XCTestCase {
 
     func testUseMintPersistsAcrossRestart() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("mint-persist-\(UUID().uuidString).json")
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":1,\"lastDate\":\"d\","
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":1,\"starPieces\":1,\"lastDate\":\"d\","
             + "\"active\":{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":0,\"rarity\":\"common\",\"totalForms\":3,\"nature\":\"adamant\"},"
             + "\"inventory\":{\"mint\":2},\"dex\":[],\"collectedFinals\":[]}"
         try? json.data(using: .utf8)!.write(to: url)
@@ -140,7 +140,7 @@ final class MintTests: XCTestCase {
         XCTAssertTrue(s.canBuy(.mint))
         XCTAssertTrue(s.buy(.mint))
         XCTAssertEqual(s.itemCount(.mint), 1)
-        XCTAssertEqual(s.state.spentTokens, Mint.price)
+        XCTAssertEqual(s.state.starPieces, 300_000_000 - Mint.price)
         XCTAssertEqual(s.availableTokens, 300_000_000 - Mint.price)
     }
 

@@ -328,7 +328,8 @@ final class PetHostingView: NSHostingView<AnyView> {
 }
 
 struct FloatingPetView: View {
-    static let frameFloor: TimeInterval = 0.4
+    // 플로팅 펫도 쇼다운 GIF가 가진 원본 프레임 속도를 그대로 사용한다.
+    static let frameFloor: TimeInterval = 0
     var animated: Bool = true
     @Environment(AppSettings.self) private var settings
     @Environment(CompanionStore.self) private var companion
@@ -343,5 +344,6 @@ struct FloatingPetView: View {
                 .zIndex(0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .environment(\.spriteAntialiasing, settings.imageAntialiasing)
     }
 }

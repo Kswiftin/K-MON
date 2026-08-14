@@ -558,6 +558,8 @@ final class CompanionStore {
     func debugAccrue(_ dust: Int) { accrue(dust) }
     /// 테스트 전용 — 인벤토리에 사탕 n개 주입(일일 지급 경로를 우회). 사용(useRareCandy) 테스트용.
     func debugAddCandy(_ n: Int) { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += n; save() }
+    /// 테스트 전용 — 스타터 선택 완료 후의 기존 사용자 상태를 재현한다.
+    func debugMarkStarterChosen() { state.starterChosen = true; save() }
     #endif
 
     /// 생산 배율 — 도감에 등록한 종(고유 최종체) 1종당 +2%. 수집이 곧 성장 엔진.
@@ -788,7 +790,9 @@ final class CompanionStore {
         declinedEvolutionMonID = nil
         state.active!.pathIDs = Array(active.pathIDs.prefix(active.stageIndex + 1)) + [prompt.toSpeciesID]
         state.active!.stageIndex += 1
-        state.active!.usedAtStage = 0
+        let threshold = PokemonBalance.phaseThreshold(
+            rarity: active.rarity, totalForms: active.totalForms, stageIndex: active.stageIndex - 1)
+        state.active!.usedAtStage = max(0, active.usedAtStage - threshold)
         justEvolvedTo = prompt.toName
         fireCelebration(.evolve)
         eventUntil = clock().addingTimeInterval(4)
@@ -1011,11 +1015,12 @@ final class CompanionStore {
 
     /// 별의모래 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
     /// 라인 미로딩(재시작 직후·오프라인)이어도 성장량은 항상 적립하고 진화 판정만 미룬다.
-    func applyUsage(_ delta: Int) {
+    func applyUsage(_ delta: Int, maxTransitions: Int = .max) {
         guard state.active != nil else { return }
         state.active!.usedAtStage += delta
         guard let line = currentLine else { save(); return }
         var guardCount = 0
+        var transitions = 0
         while state.active != nil, guardCount < 50 {
             guardCount += 1
             let a = state.active!
@@ -1026,7 +1031,11 @@ final class CompanionStore {
                 if !isRevealingDitto { Task { await revealDitto() } }
                 break
             }
+            let threshold = PokemonBalance.phaseThreshold(
+                rarity: a.rarity, totalForms: a.totalForms, stageIndex: a.stageIndex)
+            guard a.usedAtStage >= threshold else { break }
             if node.children.isEmpty {
+                graduate()
                 break
             } else {
                 let nextIndex = a.stageIndex + 1
@@ -1043,15 +1052,29 @@ final class CompanionStore {
                     state.active!.totalForms = repaired.count
                     AppLog.write("evolve: repaired invalid planned path for base \(a.baseID)")
                 }
-                guard let requiredLevel = next.evolutionLevel, a.level >= requiredLevel else { break }
-                if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
-                   declinedEvolutionTargetID == next.speciesID { break }
-                if evolutionPrompt == nil {
-                    evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
-                        toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
-                        toName: line.localizedName(next.speciesID, state.language))
+                // Some legacy/fixture lines have no evolution metadata. When neither a level nor an
+                // item/trigger is supplied, the growth threshold itself is the complete rule and the
+                // evolution can proceed immediately. Real API lines with an explicit trigger still
+                // remain gated instead of silently evolving.
+                if let requiredLevel = next.evolutionLevel {
+                    guard a.level >= requiredLevel else { break }
+                    if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
+                       declinedEvolutionTargetID == next.speciesID { break }
+                    if evolutionPrompt == nil {
+                        evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
+                            toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
+                            toName: line.localizedName(next.speciesID, state.language))
+                    }
+                    break
                 }
-                break
+                guard next.evolutionTrigger == nil, next.evolutionItem == nil else { break }
+                state.active!.pathIDs = Array(a.pathIDs.prefix(a.stageIndex + 1)) + [next.speciesID]
+                state.active!.stageIndex += 1
+                state.active!.usedAtStage = max(0, a.usedAtStage - threshold)
+                fireCelebration(.evolve)
+                transitions += 1
+                if transitions >= maxTransitions { break }
+                continue
             }
         }
         save()
@@ -1178,10 +1201,11 @@ final class CompanionStore {
         candyFeedbackAmount = RareCandy.xp
         candyFeedbackSeq += 1
         let oldLevel = state.active!.level
+        state.active!.usedAtStage += RareCandy.xp
         state.active!.levelExperience += RareCandy.xp
         let newLevel = state.active!.level
         if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
-        applyUsage(0)   // 경험치는 위에서 반영하고, 진화 가능 여부만 평가한다.
+        applyUsage(0, maxTransitions: 1)   // 사탕 1개는 최대 1단계만 진행한다.
         if state.active == nil { return .graduated }
         if state.active!.stageIndex > beforeStage { return .evolved }
         return .progressed
