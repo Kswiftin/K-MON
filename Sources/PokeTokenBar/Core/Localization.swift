@@ -193,6 +193,8 @@ struct L {
           "ポケモンが画面の上に浮かびます — ドラッグで移動できます")
     }
     var floatingPetSizeLabel: String { t("크기", "Size", "サイズ") }
+    var floatingPetRoamingLabel: String { t("화면 돌아다니기", "Roam across screens", "画面を歩き回る") }
+    var floatingPetSpeedLabel: String { t("이동 속도", "Movement speed", "移動速度") }
     var floatingPetSpeciesLabel: String { t("표시할 포켓몬", "Pokémon shown", "表示するポケモン") }
     var floatingPetSpeciesFollowsPartner: String {
         t("지금 키우는 파트너", "Current partner", "育成中のパートナー")

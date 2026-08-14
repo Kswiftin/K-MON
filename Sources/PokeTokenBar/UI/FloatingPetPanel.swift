@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+@Observable
+final class FloatingPetMotionState {
+    var facingLeft = false
+}
+
 /// 데스크톱 위에 떠 있는 컴패니언 포켓몬 오버레이(옵트인, 설정 → 플로팅 펫).
 /// - 드래그: 커스텀 `mouseDragged` (클릭과 충돌하지 않음).
 /// - 클릭 → 팝오버, 우클릭 → 메뉴, 호버 → 함께한 시간 콜아웃.
@@ -15,12 +21,23 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     private var displayAwake = true
     private var builtAnimated: Bool?
     private var powerObserver: NSObjectProtocol?
+    private var screenObserver: NSObjectProtocol?
+    private var movementTimer: Timer?
+    private var lastMovementTick: TimeInterval?
+    private var direction = CGVector(dx: 1, dy: 0)
+    private var directionDeadline: TimeInterval = 0
+    private var lastPositionSave: TimeInterval = 0
+    private var isAutomaticMove = false
+    private var isUserDragging = false
+    private let motion = FloatingPetMotionState()
 
     private static let originXKey = "floatingPetOriginX"
     private static let originYKey = "floatingPetOriginY"
 
     /// Squared movement (pt²) below which a mouse-up counts as a click, not a drag.
     static let clickThresholdSquared: CGFloat = 16  // ~4pt
+    static let minimumTravelDuration: TimeInterval = 3
+    static let maximumTravelDuration: TimeInterval = 8
 
     private var onOpenPopover: (() -> Void)?
     private var onHide: (() -> Void)?
@@ -35,6 +52,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         super.init()
         observeSettings()
         observePowerState()
+        observeScreens()
         sync()
     }
 
@@ -53,6 +71,8 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         withObservationTracking {
             _ = settings.floatingPetEnabled
             _ = settings.floatingPetSize
+            _ = settings.floatingPetRoamingEnabled
+            _ = settings.floatingPetMovementSpeed
             _ = settings.floatingPetSpeciesID
             _ = settings.doNotDisturb
             _ = companion.activeSecondsToday
@@ -74,6 +94,14 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         }
     }
 
+    private func observeScreens() {
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.screenConfigurationDidChange() }
+        }
+    }
+
     static func shouldAnimate(lowPower: Bool) -> Bool { !lowPower }
 
     static func panelSize(petSize: CGFloat) -> NSSize { NSSize(width: petSize, height: petSize) }
@@ -89,8 +117,13 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     }
 
     private func sync() {
-        guard settings.floatingPetEnabled, !settings.doNotDisturb, displayAwake else { hide(); return }
+        guard settings.floatingPetEnabled, !settings.doNotDisturb, displayAwake else {
+            stopMovement()
+            hide()
+            return
+        }
         show()
+        if settings.floatingPetRoamingEnabled { startMovement() } else { stopMovement() }
     }
 
     private func show() {
@@ -99,13 +132,18 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         let wantAnimated = Self.shouldAnimate(lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
         if p.contentView == nil || builtAnimated != wantAnimated {
             let hosting = PetHostingView(rootView: AnyView(
-                FloatingPetView(animated: wantAnimated).environment(settings).environment(companion)))
+                FloatingPetView(animated: wantAnimated, motion: motion)
+                    .environment(settings).environment(companion)))
             hosting.onOpenPopover = onOpenPopover
             hosting.onHide = onHide
             hosting.onPet = { [weak self] in _ = self?.companion.petCompanion() }
             hosting.languageProvider = { [weak self] in self?.companion.language ?? .systemDefault }
             hosting.onHoverChange = { [weak self] hovering in
                 if hovering { self?.showHoverCallout() } else { self?.hideHoverCallout() }
+            }
+            hosting.onDragChange = { [weak self] dragging in
+                self?.isUserDragging = dragging
+                if !dragging { self?.persistCurrentOrigin() }
             }
             p.contentView = hosting
             builtAnimated = wantAnimated
@@ -114,17 +152,79 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             hosting.toolTip = currentHoverText()
         }
         let petSize = CGFloat(settings.floatingPetSize)
-        p.setFrame(targetFrame(petSize: petSize), display: true)
+        var frame = NSRect(origin: p.frame.origin, size: Self.panelSize(petSize: petSize))
+        if !p.isVisible || !Self.isCovered(frame, by: NSScreen.screens.map(\.visibleFrame)) {
+            frame = targetFrame(petSize: petSize)
+        }
+        p.setFrame(frame, display: true)
         p.orderFrontRegardless()
         if hoverPanel?.isVisible == true { showHoverCallout() }
     }
 
     private func hide() {
+        persistCurrentOrigin()
         hideHoverCallout()
         guard let p = panel else { return }
         p.orderOut(nil)
         p.contentView = nil
         builtAnimated = nil
+    }
+
+    private func startMovement() {
+        guard movementTimer == nil else { return }
+        chooseDirection(now: ProcessInfo.processInfo.systemUptime)
+        lastMovementTick = nil
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.advanceMovement() }
+        }
+        timer.tolerance = 0.005
+        RunLoop.main.add(timer, forMode: .common)
+        movementTimer = timer
+    }
+
+    private func stopMovement() {
+        movementTimer?.invalidate()
+        movementTimer = nil
+        lastMovementTick = nil
+        persistCurrentOrigin()
+    }
+
+    private func chooseDirection(now: TimeInterval) {
+        let angle = Double.random(in: 0..<(Double.pi * 2))
+        direction = CGVector(dx: cos(angle), dy: sin(angle))
+        directionDeadline = now + Double.random(
+            in: Self.minimumTravelDuration...Self.maximumTravelDuration)
+        motion.facingLeft = direction.dx < 0
+    }
+
+    private func advanceMovement() {
+        guard settings.floatingPetRoamingEnabled, !isUserDragging,
+              let panel, panel.isVisible else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        defer { lastMovementTick = now }
+        guard let previous = lastMovementTick else { return }
+        let delta = min(0.1, max(0, now - previous))
+        if now >= directionDeadline { chooseDirection(now: now) }
+
+        let speed = CGFloat(settings.floatingPetMovementSpeed)
+        let velocity = CGVector(dx: direction.dx * speed, dy: direction.dy * speed)
+        let result = Self.resolvedMotion(
+            origin: panel.frame.origin,
+            petSize: CGFloat(settings.floatingPetSize),
+            velocity: velocity,
+            delta: delta,
+            screens: NSScreen.screens.map(\.visibleFrame))
+        if speed > 0 {
+            direction = CGVector(dx: result.velocity.dx / speed, dy: result.velocity.dy / speed)
+            if abs(direction.dx) > 0.05 { motion.facingLeft = direction.dx < 0 }
+        }
+        isAutomaticMove = true
+        panel.setFrameOrigin(result.origin)
+        isAutomaticMove = false
+        if now - lastPositionSave >= 2 {
+            persistCurrentOrigin()
+            lastPositionSave = now
+        }
     }
 
     private func currentHoverText() -> String {
@@ -194,11 +294,78 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         }
         var frame = NSRect(origin: Self.panelOrigin(petOrigin: petOrigin, petSize: petSize, panelSize: size),
                            size: size)
-        if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }) {
+        if !Self.isCovered(frame, by: NSScreen.screens.map(\.visibleFrame)) {
             let fallbackPet = Self.defaultPetOrigin(petSize: petSize)
             frame.origin = Self.panelOrigin(petOrigin: fallbackPet, petSize: petSize, panelSize: size)
         }
         return frame
+    }
+
+    /// 사각형 전체가 여러 모니터의 visibleFrame 합집합 안에 있는지 판정한다.
+    /// 맞닿은 두 모니터의 경계에 걸친 펫도 허용하되, 바깥쪽과 모니터 사이 빈 공간은 막는다.
+    static func isCovered(_ rect: NSRect, by screens: [NSRect]) -> Bool {
+        guard rect.width > 0, rect.height > 0 else { return false }
+        let clipped = screens.map { $0.intersection(rect) }
+            .filter { !$0.isNull && $0.width > 0 && $0.height > 0 }
+        guard !clipped.isEmpty else { return false }
+
+        var xs = [rect.minX, rect.maxX]
+        for frame in clipped { xs.append(frame.minX); xs.append(frame.maxX) }
+        xs = Array(Set(xs)).sorted()
+        let epsilon: CGFloat = 0.01
+        for index in 0..<(xs.count - 1) where xs[index + 1] - xs[index] > epsilon {
+            let midX = (xs[index] + xs[index + 1]) / 2
+            let intervals = clipped.filter { $0.minX <= midX && midX <= $0.maxX }
+                .map { (max(rect.minY, $0.minY), min(rect.maxY, $0.maxY)) }
+                .sorted { $0.0 < $1.0 }
+            guard var coveredY = intervals.first?.0, coveredY <= rect.minY + epsilon else { return false }
+            for interval in intervals {
+                if interval.0 > coveredY + epsilon { return false }
+                coveredY = max(coveredY, interval.1)
+                if coveredY >= rect.maxY - epsilon { break }
+            }
+            if coveredY < rect.maxY - epsilon { return false }
+        }
+        return true
+    }
+
+    static func resolvedMotion(origin: NSPoint, petSize: CGFloat, velocity: CGVector,
+                               delta: TimeInterval, screens: [NSRect])
+        -> (origin: NSPoint, velocity: CGVector) {
+        let dx = velocity.dx * CGFloat(delta)
+        let dy = velocity.dy * CGFloat(delta)
+        let candidate = NSPoint(x: origin.x + dx, y: origin.y + dy)
+        let rect = { (point: NSPoint) in
+            NSRect(origin: point, size: NSSize(width: petSize, height: petSize))
+        }
+        if isCovered(rect(candidate), by: screens) { return (candidate, velocity) }
+
+        let xOnly = NSPoint(x: origin.x + dx, y: origin.y)
+        let yOnly = NSPoint(x: origin.x, y: origin.y + dy)
+        let canMoveX = isCovered(rect(xOnly), by: screens)
+        let canMoveY = isCovered(rect(yOnly), by: screens)
+        switch (canMoveX, canMoveY) {
+        case (true, false):
+            return (xOnly, CGVector(dx: velocity.dx, dy: -velocity.dy))
+        case (false, true):
+            return (yOnly, CGVector(dx: -velocity.dx, dy: velocity.dy))
+        case (true, true):
+            // 오목한 모니터 배치의 코너에서는 각 축 이동은 가능해도 대각선 후보만 빈 공간일 수 있다.
+            if abs(dx) >= abs(dy) {
+                return (xOnly, CGVector(dx: velocity.dx, dy: -velocity.dy))
+            }
+            return (yOnly, CGVector(dx: -velocity.dx, dy: velocity.dy))
+        case (false, false):
+            return (origin, CGVector(dx: -velocity.dx, dy: -velocity.dy))
+        }
+    }
+
+    private func screenConfigurationDidChange() {
+        guard let panel else { return }
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        guard !Self.isCovered(panel.frame, by: screens) else { return }
+        panel.setFrame(targetFrame(petSize: CGFloat(settings.floatingPetSize)), display: true)
+        chooseDirection(now: ProcessInfo.processInfo.systemUptime)
     }
 
     private static func defaultPetOrigin(petSize: CGFloat) -> NSPoint {
@@ -227,12 +394,21 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         guard let p = panel, p.isVisible else { return }
+        if isAutomaticMove {
+            if hoverPanel?.isVisible == true { showHoverCallout() }
+            return
+        }
+        persistCurrentOrigin()
+        if hoverPanel?.isVisible == true { showHoverCallout() }
+    }
+
+    private func persistCurrentOrigin() {
+        guard let p = panel, p.isVisible else { return }
         let petSize = CGFloat(settings.floatingPetSize)
         let size = Self.panelSize(petSize: petSize)
         let pet = Self.petOrigin(panelOrigin: p.frame.origin, petSize: petSize, panelSize: size)
         defaults.set(Double(pet.x), forKey: Self.originXKey)
         defaults.set(Double(pet.y), forKey: Self.originYKey)
-        if hoverPanel?.isVisible == true { showHoverCallout() }
     }
 }
 
@@ -241,6 +417,7 @@ final class PetHostingView: NSHostingView<AnyView> {
     var onHide: (() -> Void)?
     var onPet: (() -> Void)?
     var onHoverChange: ((Bool) -> Void)?
+    var onDragChange: ((Bool) -> Void)?
     var languageProvider: () -> AppLanguage = { .systemDefault }
 
     private var mouseDownScreen: NSPoint?
@@ -275,6 +452,7 @@ final class PetHostingView: NSHostingView<AnyView> {
         mouseDownScreen = NSEvent.mouseLocation
         originAtDown = window?.frame.origin
         didDrag = false
+        onDragChange?(true)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -287,6 +465,7 @@ final class PetHostingView: NSHostingView<AnyView> {
 
     override func mouseUp(with event: NSEvent) {
         defer {
+            onDragChange?(false)
             mouseDownScreen = nil
             originAtDown = nil
             didDrag = false
@@ -331,6 +510,7 @@ struct FloatingPetView: View {
     // 플로팅 펫도 쇼다운 GIF가 가진 원본 프레임 속도를 그대로 사용한다.
     static let frameFloor: TimeInterval = 0
     var animated: Bool = true
+    var motion: FloatingPetMotionState
     @Environment(AppSettings.self) private var settings
     @Environment(CompanionStore.self) private var companion
 
@@ -341,6 +521,7 @@ struct FloatingPetView: View {
             SpriteView(speciesID: subject.speciesID, size: size, animated: animated,
                        shiny: subject.isShiny, minFrameDelay: Self.frameFloor)
                 .frame(width: size, height: size)
+                .scaleEffect(x: motion.facingLeft ? -1 : 1, y: 1)
                 .zIndex(0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)

@@ -137,6 +137,66 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertEqual(roundTrip.y, petOrigin.y, accuracy: 0.5)
     }
 
+    func testAdjacentMonitorsFormOneWalkableSurface() {
+        let left = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let right = NSRect(x: 1000, y: 0, width: 1000, height: 800)
+        let crossingPet = NSRect(x: 950, y: 200, width: 100, height: 100)
+        XCTAssertTrue(FloatingPetController.isCovered(crossingPet, by: [left, right]))
+
+        let moved = FloatingPetController.resolvedMotion(
+            origin: NSPoint(x: 940, y: 200), petSize: 100,
+            velocity: CGVector(dx: 100, dy: 0), delta: 0.2, screens: [left, right])
+        XCTAssertEqual(moved.origin.x, 960, accuracy: 0.001)
+        XCTAssertGreaterThan(moved.velocity.dx, 0)
+    }
+
+    func testOuterDisplayEdgeReflectsMovement() {
+        let screen = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let moved = FloatingPetController.resolvedMotion(
+            origin: NSPoint(x: 900, y: 200), petSize: 100,
+            velocity: CGVector(dx: 100, dy: 20), delta: 0.2, screens: [screen])
+        XCTAssertEqual(moved.origin.x, 900, accuracy: 0.001)
+        XCTAssertLessThan(moved.velocity.dx, 0)
+        XCTAssertGreaterThan(moved.velocity.dy, 0)
+    }
+
+    func testGapBetweenMonitorsIsAClosedBoundary() {
+        let left = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let separated = NSRect(x: 1010, y: 0, width: 1000, height: 800)
+        let crossingGap = NSRect(x: 950, y: 200, width: 100, height: 100)
+        XCTAssertFalse(FloatingPetController.isCovered(crossingGap, by: [left, separated]))
+    }
+
+    func testOffsetMonitorAllowsOnlyOverlappingPassage() {
+        let left = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let upperRight = NSRect(x: 1000, y: 400, width: 1000, height: 800)
+        XCTAssertTrue(FloatingPetController.isCovered(
+            NSRect(x: 950, y: 500, width: 100, height: 100), by: [left, upperRight]))
+        XCTAssertFalse(FloatingPetController.isCovered(
+            NSRect(x: 950, y: 100, width: 100, height: 100), by: [left, upperRight]))
+    }
+
+    func testRandomDirectionHasMinimumTravelWindow() {
+        XCTAssertGreaterThanOrEqual(FloatingPetController.minimumTravelDuration, 3)
+        XCTAssertGreaterThan(FloatingPetController.maximumTravelDuration,
+                             FloatingPetController.minimumTravelDuration)
+    }
+
+    func testRoamingSettingsDefaultAndPersist() {
+        let suite = "FloatingPetRoamingTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let initial = AppSettings(defaults: defaults)
+        XCTAssertFalse(initial.floatingPetRoamingEnabled)
+        XCTAssertEqual(initial.floatingPetMovementSpeed, 80)
+        initial.floatingPetRoamingEnabled = true
+        initial.floatingPetMovementSpeed = 140
+
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertTrue(restored.floatingPetRoamingEnabled)
+        XCTAssertEqual(restored.floatingPetMovementSpeed, 140)
+    }
+
     /// Click opens the popover only when the pointer barely moved; larger movement is a drag.
     func testClickThresholdDistinguishesClickFromDrag() {
         let a = NSPoint(x: 10, y: 10)
