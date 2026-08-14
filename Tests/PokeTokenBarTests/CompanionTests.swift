@@ -704,6 +704,23 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.currentSpeciesID, 20)
     }
 
+    /// [회귀] 기동 시 조정할 게 없으면 세이브를 다시 쓰지 않는다. reconcileStoredEggDates() 가
+    /// 무조건 save() 하던 동안엔 손상 세이브를 .corrupt 로 옮긴 자리에 파일이 즉시 되살아나
+    /// testCorruptStateFileBackedUpBeforeReset 이 지키는 복구 장치가 무력화됐다.
+    func testStartupDoesNotRewriteAnUnchangedSave() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-nowrite-\(UUID().uuidString).json")
+        let s1 = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
+                                fileURL: url, rng: SeededRNG(seed: 7))
+        s1.debugMarkStarterChosen()   // 파일 생성
+        let before = try Data(contentsOf: url)
+
+        try FileManager.default.removeItem(at: url)   // 지운 뒤 재로드 — 다시 쓰면 파일이 되살아난다
+        try before.write(to: url)
+        _ = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
+                           fileURL: url, rng: SeededRNG(seed: 7))
+        XCTAssertEqual(try Data(contentsOf: url), before, "변경이 없으면 세이브를 다시 쓰지 않는다")
+    }
+
     /// [회귀] 졸업 보상 알은 5분 타이머로 부화한다. 예전엔 eggUsage(누적 임계) 알을 줬는데 그 값을
     /// 채우는 생산 경로가 없어(accrue 는 호출자 없음) 영원히 안 깨졌다 — 졸업이 곧 진행 정지였다.
     func testGraduationGrantsATimedEggInsteadOfADeadThresholdEgg() async {

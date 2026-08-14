@@ -1501,11 +1501,18 @@ final class CompanionStore {
     }
 
     /// 구버전 세이브의 보관 알에는 시각이 없다. 업데이트 시점부터 5분 타이머를 시작한다.
+    ///
+    /// **바꿀 게 없으면 저장하지 않는다.** init 이 load() 직후 무조건 호출하므로, 무조건 save() 하면
+    /// 손상 세이브를 `.corrupt` 로 옮겨 둔 자리에 파일을 곧바로 되만들어 그 복구 장치를 무력화한다
+    /// (load 의 백업 분기는 "다음 save 가 원본을 덮어쓰기 전에" 옮겨두는 것이 전제다).
     private func reconcileStoredEggDates() {
-        state.focusEggReadyDates = Array(state.focusEggReadyDates.sorted().prefix(state.focusEggs))
-        while state.focusEggReadyDates.count < state.focusEggs {
-            state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        let trimmed = Array(state.focusEggReadyDates.sorted().prefix(state.focusEggs))
+        var dates = trimmed
+        while dates.count < state.focusEggs {
+            dates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
         }
+        guard dates != state.focusEggReadyDates else { return }
+        state.focusEggReadyDates = dates
         save()
     }
 
