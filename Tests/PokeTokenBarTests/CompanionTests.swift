@@ -704,6 +704,20 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.currentSpeciesID, 20)
     }
 
+    /// [회귀] 졸업 보상 알은 5분 타이머로 부화한다. 예전엔 eggUsage(누적 임계) 알을 줬는데 그 값을
+    /// 채우는 생산 경로가 없어(accrue 는 호출자 없음) 영원히 안 깨졌다 — 졸업이 곧 진행 정지였다.
+    func testGraduationGrantsATimedEggInsteadOfADeadThresholdEgg() async {
+        let s = store(noEvo)
+        await s.hatch(baseID: 20)
+        s.debugAccrueLevelExperience(300_000_000)
+        let eggsBefore = s.focusEggCount
+        XCTAssertTrue(s.graduateCompanion())
+
+        XCTAssertEqual(s.focusEggCount, eggsBefore + 1, "타이머가 붙은 알을 받는다")
+        XCTAssertNotNil(s.nextStoredEggHatchAt, "부화 예정 시각이 있어야 카운트다운이 뜬다")
+        XCTAssertEqual(s.state.eggUsage, 0, "누적 임계 알은 더 이상 쓰지 않는다")
+    }
+
     /// 최종형이 아니면 졸업 버튼 자체가 안 뜬다.
     func testCannotGraduateBeforeTheFinalForm() async {
         let s = store(linear3)
