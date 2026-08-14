@@ -200,28 +200,19 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertEqual(route?.completionCoordinate ?? 0, -1920, accuracy: 0.001)
     }
 
-    func testPortraitToCenterPortalCrossingCannotBounceBack() {
+    func testPortraitToCenterPortalUsesAtomicHandoff() {
         let portrait = NSRect(x: -3000, y: 11, width: 1080, height: 1920)
         let center = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
         let route = FloatingPetController.PortalRoute(
             axis: .horizontal, target: 1000, crossingSign: 1,
             completionCoordinate: -1920)
-        var origin = NSPoint(x: -1992, y: 1000)
-        var completed = false
-        for _ in 0..<20 {
-            let result = FloatingPetController.advancedPortalOrigin(
-                from: origin, route: route, distance: 7)
-            XCTAssertGreaterThanOrEqual(result.origin.x, origin.x, "통과 중 왼쪽으로 튕기면 안 됨")
-            XCTAssertEqual(result.origin.y, 1000, accuracy: 0.001)
-            XCTAssertTrue(FloatingPetController.isCovered(
-                NSRect(origin: result.origin, size: NSSize(width: 72, height: 72)),
-                by: [portrait, center]))
-            origin = result.origin
-            completed = result.completed
-            if completed { break }
-        }
-        XCTAssertTrue(completed)
-        XCTAssertEqual(origin.x, -1920, accuracy: 0.001)
+        let destination = FloatingPetController.portalDestinationOrigin(
+            from: NSPoint(x: -1992, y: 1000), route: route)
+        XCTAssertEqual(destination.x, -1920, accuracy: 0.001)
+        XCTAssertEqual(destination.y, 1000, accuracy: 0.001)
+        XCTAssertTrue(FloatingPetController.isCovered(
+            NSRect(origin: destination, size: NSSize(width: 72, height: 72)),
+            by: [portrait, center]))
     }
 
     func testStraddledPortraitBoundaryCanRecoverPortalLock() {
