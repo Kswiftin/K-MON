@@ -385,6 +385,39 @@ struct L {
     var finalForm: String { t("최종 진화체", "Final form", "最終進化") }
     func stage(_ i: Int, _ k: Int) -> String { t("진화 단계 \(i) / \(k)", "Stage \(i) / \(k)", "進化段階 \(i) / \(k)") }
     var unknownNextEvolution: String { t("알 수 없는 다음 진화", "Unknown next evolution", "次の進化先は不明") }
+
+    // MARK: 기술 목록 (홈 · "기술 보기")
+    // 행 라벨과 툴팁이 같은 키를 쓴다 — 예전엔 행만 한국어 리터럴이라 en/ja 에서 둘이 어긋났다(#10).
+    var movesTitle: String { t("기술 보기", "Moves", "わざを見る") }
+    var movesLoading: String { t("기술 불러오는 중", "Loading moves", "わざを読み込み中") }
+    var movesEmpty: String { t("확인할 수 있는 기술이 없습니다.", "No moves available.", "確認できるわざがありません。") }
+    var moveCategoryStatus: String { t("변화", "Status", "へんか") }
+    var moveCategoryPhysical: String { t("물리", "Physical", "ぶつり") }
+    var moveCategorySpecial: String { t("특수", "Special", "とくしゅ") }
+    func moveCategory(_ damageClass: MoveDamageClass) -> String {
+        switch damageClass {
+        case .physical: return moveCategoryPhysical
+        case .special: return moveCategorySpecial
+        case .status: return moveCategoryStatus
+        }
+    }
+    var movePowerLabel: String { t("위력", "Power", "威力") }
+    var moveAccuracyLabel: String { t("명중", "Accuracy", "命中") }
+    var moveAlwaysHits: String { t("필중", "Always hits", "必中") }
+    /// 행 라벨은 폭이 좁아 축약형을 쓴다(툴팁은 위 전체 라벨).
+    func movePowerShort(_ power: Int) -> String { t("위력 \(power)", "Pow \(power)", "威力 \(power)") }
+    func moveAccuracyShort(_ accuracy: Int) -> String { t("명중 \(accuracy)", "Acc \(accuracy)", "命中 \(accuracy)") }
+    func movePP(_ pp: Int) -> String { "PP \(pp)" }
+
+    // MARK: 집중 타이머 · 모험 재화 줄
+    /// 알·조각·주간 모험 진행도 한 줄. 예전엔 "주간" 만 한국어로 박혀 있었다(#10 부류 스윕).
+    func focusStash(eggs: Int, fragments: Int, weekly: Int) -> String {
+        let progress = t("주간 \(weekly)/10", "Weekly \(weekly)/10", "週間 \(weekly)/10")
+        return "🥚 ×\(eggs) · 🧩 \(fragments)/10 · \(progress)"
+    }
+    func battleFixedStake(_ amount: String) -> String {
+        t("고정 판돈 ⭐ \(amount)", "Fixed stake ⭐ \(amount)", "固定かけ金 ⭐ \(amount)")
+    }
     // MARK: 스타터 선택 (맨 처음 1회)
     var trainerNamePrompt: String { t("트레이너 이름", "Trainer name", "トレーナー名") }
     var trainerNamePlaceholder: String { t("이름을 입력하세요", "Enter your name", "名前を入力") }

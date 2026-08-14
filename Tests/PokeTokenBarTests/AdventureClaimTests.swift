@@ -1,0 +1,207 @@
+import XCTest
+@testable import PokeTokenBar
+
+// 모험 보상 정산 도달성 회귀(#8).
+// 증상: 첫 집중 모험 이후 "모험 보내고 집중 시작" 이 영구 비활성. `state.adventure` 를 비우는 유일한
+// 코드가 claimAdventure() 인데, 그 호출부(AdventureCard)가 어디에도 마운트돼 있지 않았다.
+// 세션 완료(completeFocusSession)도 save() 만 하고 정산하지 않았다.
+//
+// 트리거 브랜치를 그대로 재현한다: "모험이 끝났지만 아직 정산 안 된" 상태(= 예전 게이트가 잠기던
+// 바로 그 조건)를 만들고, 정산·게이트·재시작이 모두 풀리는지 본다.
+@MainActor
+final class AdventureClaimTests: XCTestCase {
+
+    private func makeStore(_ clock: TestClock) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-adv-\(UUID().uuidString).json")
+        return CompanionStore(provider: StubProvider(value: claimTestLine), clock: clock.closure,
+                              fileURL: url, rng: SeededRNG(seed: 11))
+    }
+
+    private func hatchedStore(_ clock: TestClock) async -> CompanionStore {
+        let store = makeStore(clock)
+        await store.hatch(baseID: 1)
+        XCTAssertNotNil(store.state.active, "테스트 전제: 활성 포켓몬이 있어야 모험을 보낼 수 있다")
+        return store
+    }
+
+    /// 집중 세션이 끝나면 그 세션의 모험이 자동 정산된다 — 보상이 들어오고 슬롯이 비워진다.
+    func testFocusSessionCompletionClaimsTheAdventure() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        let starPiecesBefore = store.state.starPieces
+        let expBefore = store.state.active?.levelExperience ?? 0
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        clock.advance(25 * 60)
+        let reward = store.completeFocusSession(minutes: 25)
+
+        XCTAssertNil(store.activeAdventure, "정산 후에는 모험 슬롯이 비어야 한다")
+        XCTAssertGreaterThan(store.state.starPieces, starPiecesBefore)
+        XCTAssertGreaterThan(store.state.active?.levelExperience ?? 0, expBefore)
+        XCTAssertEqual(reward.stardust, store.state.starPieces - starPiecesBefore,
+                       "세션 보상은 claimAdventure() 결과 그대로 — 별도 가산이면 이중 지급이다")
+    }
+
+    /// 이중 지급 가드: 세션 완료 후 한 번 더 정산해도 아무것도 늘지 않는다.
+    func testClaimingTwiceDoesNotPayTwice() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        clock.advance(25 * 60)
+        _ = store.completeFocusSession(minutes: 25)
+
+        let starPieces = store.state.starPieces
+        let fragments = store.eggFragmentCount
+        XCTAssertNil(store.claimAdventure())
+        XCTAssertEqual(store.state.starPieces, starPieces)
+        XCTAssertEqual(store.eggFragmentCount, fragments)
+    }
+
+    /// 트리거 재현 — 진행 중 / 완료-미정산 두 브랜치를 각각 확인한다.
+    /// 예전 게이트(`isAdventuring`)는 완료-미정산에서도 참이라 버튼이 영구 비활성이었다.
+    func testGateBlocksOnlyWhileRunIsStillInProgress() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+
+        clock.advance(24 * 60)
+        XCTAssertTrue(store.isAdventureInProgress, "진행 중에는 막아야 한다")
+
+        clock.advance(2 * 60)   // 종료 시각 통과 — 정산 전
+        XCTAssertTrue(store.isAdventuring, "슬롯은 아직 차 있다(= 예전 게이트가 잠기던 조건)")
+        XCTAssertFalse(store.isAdventureInProgress, "끝난 모험은 더 이상 시작을 막지 않는다")
+    }
+
+    /// 앱이 꺼진 채 모험이 끝났거나 정산 UI 를 못 본 세이브(실제 회귀 리포트의 상태) —
+    /// 다음 모험을 시작하면 밀린 보상이 먼저 자동 정산된다. 정산이 없으면 시작이 조용히 실패한다.
+    func testStartingNewRunAutoClaimsStaleCompletedRun() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        let staleRunID = store.activeAdventure?.id
+        clock.advance(6 * 3600)   // 몇 시간 방치
+
+        let starPiecesBefore = store.state.starPieces
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25), "밀린 보상 때문에 시작이 막히면 안 된다")
+
+        XCTAssertGreaterThan(store.state.starPieces, starPiecesBefore, "밀린 보상이 정산돼야 한다")
+        XCTAssertEqual(store.recentAdventures.first?.id, staleRunID, "정산 기록이 남는다")
+        XCTAssertNotEqual(store.activeAdventure?.id, staleRunID, "새 모험이 시작됐다")
+        XCTAssertTrue(store.isAdventureInProgress)
+    }
+
+    /// 존 모험 버튼도 같은 자동 정산 경로를 탄다(부류 스윕 — 시작 경로가 둘이다).
+    func testZoneAdventureStartAlsoClaimsStaleRun() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        XCTAssertTrue(store.startAdventure(.forest))
+        clock.advance(AdventureZone.forest.duration + 3600)
+
+        let starPiecesBefore = store.state.starPieces
+        XCTAssertTrue(store.startAdventure(.cave))
+        XCTAssertGreaterThan(store.state.starPieces, starPiecesBefore)
+        XCTAssertEqual(store.activeAdventure?.zone, .cave)
+    }
+
+    /// 모험을 안 보낸 집중 세션은 정산할 게 없다 — 보상 0, 크래시 없음.
+    func testFocusSessionWithoutAdventureYieldsNoReward() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        let starPiecesBefore = store.state.starPieces
+        let reward = store.completeFocusSession(minutes: 25)
+        XCTAssertEqual(reward.stardust, 0)
+        XCTAssertFalse(reward.foundEgg)
+        XCTAssertEqual(store.state.starPieces, starPiecesBefore)
+    }
+
+    /// 아직 안 끝난 모험은 세션이 일찍 끝나도 정산되지 않는다(시간 조건을 우회하지 않는다).
+    func testIncompleteRunIsNotClaimedEarly() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        XCTAssertTrue(store.startFocusAdventure(minutes: 50))
+        clock.advance(10 * 60)
+
+        let reward = store.completeFocusSession(minutes: 50)
+        XCTAssertEqual(reward.stardust, 0)
+        XCTAssertNotNil(store.activeAdventure, "미완료 모험은 그대로 유지")
+        XCTAssertTrue(store.isAdventureInProgress)
+    }
+
+    // MARK: 도달성 가드 — 선언만 되고 아무 데서도 마운트되지 않는 뷰 금지
+
+    /// #8 의 진짜 원인은 로직이 아니라 "뷰가 어디에도 안 붙어 있었다" 였다. 로직 테스트로는 절대
+    /// 안 걸리므로, UI 파일의 View 선언에 호출부가 하나라도 있는지를 소스에서 기계적으로 검사한다.
+    func testEveryDeclaredViewHasACallSite() throws {
+        let uiDirectory = Self.repositoryRoot.appendingPathComponent("Sources/PokeTokenBar/UI")
+        let sourceDirectory = Self.repositoryRoot.appendingPathComponent("Sources/PokeTokenBar")
+        let allSources = try Self.swiftFiles(in: sourceDirectory)
+            .map { try String(contentsOf: $0, encoding: .utf8) }
+
+        // 앱 진입점에서 NSHostingView/Controller 로만 붙는 루트 뷰는 이름 호출부가 없을 수 있다.
+        let rootViews: Set<String> = ["PopoverView", "FloatingPetView"]
+        // 이미 마운트가 끊긴 채로 남아 있던 뷰들 — 포획 로그 화면(개체 단위 목록)이 도감 격자로
+        // 대체되면서 호출부가 사라졌다. 화면을 되살릴지 지울지는 별도 과제라 여기선 목록을 고정해
+        // "더 늘어나지 않는다" 만 잠근다. 해결하면 이 목록에서 지운다.
+        let knownUnmounted: Set<String> = ["StarterCard", "DexSummaryHeader", "DexEntryRow"]
+
+        var unmounted: [String] = []
+        for file in try Self.swiftFiles(in: uiDirectory) {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for name in Self.declaredViewNames(in: text)
+            where !rootViews.contains(name) && !knownUnmounted.contains(name) {
+                let hasCallSite = allSources.contains { source in
+                    source.contains("\(name)(") && !source.contains("struct \(name)(")
+                }
+                if !hasCallSite { unmounted.append(name) }
+            }
+        }
+        XCTAssertTrue(unmounted.isEmpty,
+                      "마운트되지 않은 View: \(unmounted) — 선언만 있고 화면에 안 붙으면 그 안의 기능(보상 정산 등)은 도달 불가다")
+    }
+
+    /// 모험 정산 버튼이 사는 카드가 홈 화면(CompanionHeader)에 실제로 붙어 있는지 — #8 의 정확한 조건.
+    func testAdventureCardIsMountedOnTheHomeView() throws {
+        let companionView = try String(
+            contentsOf: Self.repositoryRoot.appendingPathComponent("Sources/PokeTokenBar/UI/CompanionView.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(companionView.contains("AdventureCard(store:"),
+                      "AdventureCard 호출부가 사라지면 claimAdventure() 가 다시 도달 불가가 된다")
+    }
+
+    private static var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath)          // Tests/PokeTokenBarTests/AdventureClaimTests.swift
+            .deletingLastPathComponent()         // Tests/PokeTokenBarTests
+            .deletingLastPathComponent()         // Tests
+            .deletingLastPathComponent()         // <repo>
+    }
+
+    private static func swiftFiles(in directory: URL) throws -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(at: directory,
+                                                              includingPropertiesForKeys: nil) else { return [] }
+        return enumerator.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+    }
+
+    /// `struct Foo: View {` / `struct Foo: View, Sendable` 형태의 선언 이름을 뽑는다.
+    private static func declaredViewNames(in text: String) -> [String] {
+        text.split(separator: "\n").compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("struct ") || trimmed.hasPrefix("private struct ")
+                    || trimmed.hasPrefix("fileprivate struct ") else { return nil }
+            let parts = trimmed.split(separator: " ")
+            guard let structIndex = parts.firstIndex(of: "struct"), parts.count > structIndex + 1 else { return nil }
+            let name = parts[structIndex + 1].split(separator: ":").first.map(String.init) ?? ""
+            guard trimmed.contains(": View"), !name.isEmpty else { return nil }
+            return name
+        }
+    }
+}
+
+// 부화용 최소 진화 라인(1 → 2 → 3).
+private let claimTestLine: EvoLine = {
+    var names: [Int: [String: String]] = [:]
+    for id in [1, 2, 3] { names[id] = ["en": "P\(id)", "ko": "포\(id)", "ja": "ポ\(id)"] }
+    return EvoLine(baseID: 1,
+                   tree: EvoNode(speciesID: 1, children: [EvoNode(speciesID: 2, children: [EvoNode(speciesID: 3, children: [])])]),
+                   rarity: .common, names: names)
+}()
