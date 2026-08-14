@@ -79,6 +79,10 @@ final class CompanionStore {
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
+        // 앱이 종료된 사이 끝난 집중 모험은 기동 즉시 정산한다. FocusTimer 는 세션 메모리 상태라
+        // 재실행하면 .idle 로 돌아오지만 모험은 디스크에 남으므로, 여기서 비우지 않으면 시작 버튼이
+        // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
+        claimCompletedAdventureIfNeeded()
         if state.active != nil { displayState = .idle }
     }
 
