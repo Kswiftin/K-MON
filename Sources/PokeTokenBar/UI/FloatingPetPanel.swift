@@ -13,6 +13,13 @@ final class FloatingPetMotionState {
 /// - 에너지: 숨김·슬립 시 호스팅 트리 해제.
 @MainActor
 final class FloatingPetController: NSObject, NSWindowDelegate {
+    enum PortalAxis { case horizontal, vertical }
+    struct PortalRoute {
+        let axis: PortalAxis
+        let target: CGFloat
+        let crossingSign: CGFloat
+    }
+
     private let settings: AppSettings
     private let companion: CompanionStore
     private let defaults: UserDefaults
@@ -26,6 +33,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     private var lastMovementTick: TimeInterval?
     private var direction = CGVector(dx: 1, dy: 0)
     private var directionDeadline: TimeInterval = 0
+    private var pendingPortal: PortalRoute?
     private var lastPositionSave: TimeInterval = 0
     private var isAutomaticMove = false
     private var isUserDragging = false
@@ -190,6 +198,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     }
 
     private func chooseDirection(now: TimeInterval) {
+        pendingPortal = nil
         let angle = Double.random(in: 0..<(Double.pi * 2))
         direction = CGVector(dx: cos(angle), dy: sin(angle))
         directionDeadline = now + Double.random(
@@ -204,16 +213,27 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         defer { lastMovementTick = now }
         guard let previous = lastMovementTick else { return }
         let delta = min(0.1, max(0, now - previous))
+        let speed = CGFloat(settings.floatingPetMovementSpeed)
+        if let route = pendingPortal {
+            advanceTowardPortal(route, speed: speed, delta: delta, now: now)
+            return
+        }
         if now >= directionDeadline { chooseDirection(now: now) }
 
-        let speed = CGFloat(settings.floatingPetMovementSpeed)
         let velocity = CGVector(dx: direction.dx * speed, dy: direction.dy * speed)
+        let screens = NSScreen.screens.map(\.visibleFrame)
         let result = Self.resolvedMotion(
             origin: panel.frame.origin,
             petSize: CGFloat(settings.floatingPetSize),
             velocity: velocity,
             delta: delta,
-            screens: NSScreen.screens.map(\.visibleFrame))
+            screens: screens)
+        if result.collided,
+           let route = Self.portalRoute(origin: panel.frame.origin,
+                                        petSize: CGFloat(settings.floatingPetSize),
+                                        velocity: velocity, screens: screens) {
+            pendingPortal = route
+        }
         if speed > 0 {
             direction = CGVector(dx: result.velocity.dx / speed, dy: result.velocity.dy / speed)
             if abs(direction.dx) > 0.05 { motion.facingLeft = direction.dx < 0 }
@@ -225,6 +245,42 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             persistCurrentOrigin()
             lastPositionSave = now
         }
+    }
+
+    private func advanceTowardPortal(_ route: PortalRoute, speed: CGFloat,
+                                     delta: TimeInterval, now: TimeInterval) {
+        guard let panel else { return }
+        var origin = panel.frame.origin
+        let step = speed * CGFloat(delta)
+        let current = route.axis == .horizontal ? origin.y : origin.x
+        let difference = route.target - current
+        if abs(difference) <= step {
+            if route.axis == .horizontal { origin.y = route.target }
+            else { origin.x = route.target }
+            setAutomaticOrigin(origin)
+            direction = route.axis == .horizontal
+                ? CGVector(dx: route.crossingSign, dy: 0)
+                : CGVector(dx: 0, dy: route.crossingSign)
+            motion.facingLeft = direction.dx < 0
+            pendingPortal = nil
+            directionDeadline = now + Self.minimumTravelDuration
+            return
+        }
+        let sign: CGFloat = difference < 0 ? -1 : 1
+        let velocity = route.axis == .horizontal
+            ? CGVector(dx: 0, dy: sign * speed)
+            : CGVector(dx: sign * speed, dy: 0)
+        let result = Self.resolvedMotion(
+            origin: origin, petSize: CGFloat(settings.floatingPetSize),
+            velocity: velocity, delta: delta, screens: NSScreen.screens.map(\.visibleFrame))
+        setAutomaticOrigin(result.origin)
+    }
+
+    private func setAutomaticOrigin(_ origin: NSPoint) {
+        guard let panel else { return }
+        isAutomaticMove = true
+        panel.setFrameOrigin(origin)
+        isAutomaticMove = false
     }
 
     private func currentHoverText() -> String {
@@ -331,14 +387,14 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
 
     static func resolvedMotion(origin: NSPoint, petSize: CGFloat, velocity: CGVector,
                                delta: TimeInterval, screens: [NSRect])
-        -> (origin: NSPoint, velocity: CGVector) {
+        -> (origin: NSPoint, velocity: CGVector, collided: Bool) {
         let dx = velocity.dx * CGFloat(delta)
         let dy = velocity.dy * CGFloat(delta)
         let candidate = NSPoint(x: origin.x + dx, y: origin.y + dy)
         let rect = { (point: NSPoint) in
             NSRect(origin: point, size: NSSize(width: petSize, height: petSize))
         }
-        if isCovered(rect(candidate), by: screens) { return (candidate, velocity) }
+        if isCovered(rect(candidate), by: screens) { return (candidate, velocity, false) }
 
         let xOnly = NSPoint(x: origin.x + dx, y: origin.y)
         let yOnly = NSPoint(x: origin.x, y: origin.y + dy)
@@ -346,18 +402,74 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         let canMoveY = isCovered(rect(yOnly), by: screens)
         switch (canMoveX, canMoveY) {
         case (true, false):
-            return (xOnly, CGVector(dx: velocity.dx, dy: -velocity.dy))
+            return (xOnly, CGVector(dx: velocity.dx, dy: -velocity.dy), true)
         case (false, true):
-            return (yOnly, CGVector(dx: -velocity.dx, dy: velocity.dy))
+            return (yOnly, CGVector(dx: -velocity.dx, dy: velocity.dy), true)
         case (true, true):
             // 오목한 모니터 배치의 코너에서는 각 축 이동은 가능해도 대각선 후보만 빈 공간일 수 있다.
             if abs(dx) >= abs(dy) {
-                return (xOnly, CGVector(dx: velocity.dx, dy: -velocity.dy))
+                return (xOnly, CGVector(dx: velocity.dx, dy: -velocity.dy), true)
             }
-            return (yOnly, CGVector(dx: -velocity.dx, dy: velocity.dy))
+            return (yOnly, CGVector(dx: -velocity.dx, dy: velocity.dy), true)
         case (false, false):
-            return (origin, CGVector(dx: -velocity.dx, dy: -velocity.dy))
+            return (origin, CGVector(dx: -velocity.dx, dy: -velocity.dy), true)
         }
+    }
+
+    /// 현재 화면의 막힌 경계 너머에 실제 이웃 모니터가 있으면, 펫 전체가 통과 가능한
+    /// 가장 가까운 연결 구간을 찾는다. 모니터 외곽에는 route가 없으므로 기존 반사 동작을 유지한다.
+    static func portalRoute(origin: NSPoint, petSize: CGFloat, velocity: CGVector,
+                            screens: [NSRect]) -> PortalRoute? {
+        let pet = NSRect(origin: origin, size: NSSize(width: petSize, height: petSize))
+        let epsilon: CGFloat = 2
+        let sources = screens.filter {
+            $0.minX <= pet.minX + epsilon && $0.maxX >= pet.maxX - epsilon &&
+            $0.minY <= pet.minY + epsilon && $0.maxY >= pet.maxY - epsilon
+        }
+        var routes: [PortalRoute] = []
+        for source in sources {
+            if velocity.dx > 0, pet.maxX >= source.maxX - abs(velocity.dx) * 0.1 - epsilon {
+                for neighbor in screens where abs(neighbor.minX - source.maxX) <= epsilon {
+                    if let target = portalTarget(current: origin.y,
+                                                 lower: max(source.minY, neighbor.minY),
+                                                 upper: min(source.maxY, neighbor.maxY) - petSize) {
+                        routes.append(PortalRoute(axis: .horizontal, target: target, crossingSign: 1))
+                    }
+                }
+            } else if velocity.dx < 0, pet.minX <= source.minX + abs(velocity.dx) * 0.1 + epsilon {
+                for neighbor in screens where abs(neighbor.maxX - source.minX) <= epsilon {
+                    if let target = portalTarget(current: origin.y,
+                                                 lower: max(source.minY, neighbor.minY),
+                                                 upper: min(source.maxY, neighbor.maxY) - petSize) {
+                        routes.append(PortalRoute(axis: .horizontal, target: target, crossingSign: -1))
+                    }
+                }
+            }
+            if velocity.dy > 0, pet.maxY >= source.maxY - abs(velocity.dy) * 0.1 - epsilon {
+                for neighbor in screens where abs(neighbor.minY - source.maxY) <= epsilon {
+                    if let target = portalTarget(current: origin.x,
+                                                 lower: max(source.minX, neighbor.minX),
+                                                 upper: min(source.maxX, neighbor.maxX) - petSize) {
+                        routes.append(PortalRoute(axis: .vertical, target: target, crossingSign: 1))
+                    }
+                }
+            } else if velocity.dy < 0, pet.minY <= source.minY + abs(velocity.dy) * 0.1 + epsilon {
+                for neighbor in screens where abs(neighbor.maxY - source.minY) <= epsilon {
+                    if let target = portalTarget(current: origin.x,
+                                                 lower: max(source.minX, neighbor.minX),
+                                                 upper: min(source.maxX, neighbor.maxX) - petSize) {
+                        routes.append(PortalRoute(axis: .vertical, target: target, crossingSign: -1))
+                    }
+                }
+            }
+        }
+        return routes.min { abs($0.target - ($0.axis == .horizontal ? origin.y : origin.x)) <
+                            abs($1.target - ($1.axis == .horizontal ? origin.y : origin.x)) }
+    }
+
+    private static func portalTarget(current: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat? {
+        guard lower <= upper else { return nil }
+        return min(max(current, lower), upper)
     }
 
     private func screenConfigurationDidChange() {

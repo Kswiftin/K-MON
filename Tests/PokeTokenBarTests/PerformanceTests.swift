@@ -176,6 +176,35 @@ final class FloatingPetEnergyTests: XCTestCase {
             NSRect(x: 950, y: 100, width: 100, height: 100), by: [left, upperRight]))
     }
 
+    func testBlockedRightwardCrossingFindsNearestPortal() {
+        let left = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let right = NSRect(x: 0, y: 0, width: 1728, height: 1084)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: -96, y: 1500), petSize: 96,
+            velocity: CGVector(dx: 80, dy: 0), screens: [left, right])
+        XCTAssertNotNil(route)
+        XCTAssertEqual(route?.target ?? 0, 988, accuracy: 0.001)
+        XCTAssertEqual(route?.crossingSign ?? 0, 1, accuracy: 0.001)
+    }
+
+    func testBlockedLeftwardCrossingFindsSamePortal() {
+        let left = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let right = NSRect(x: 0, y: 0, width: 1728, height: 1084)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: 0, y: 300), petSize: 96,
+            velocity: CGVector(dx: -80, dy: 0), screens: [left, right])
+        XCTAssertNotNil(route)
+        XCTAssertEqual(route?.target ?? 0, 712, accuracy: 0.001)
+        XCTAssertEqual(route?.crossingSign ?? 0, -1, accuracy: 0.001)
+    }
+
+    func testOuterEdgeHasNoPortalRoute() {
+        let screen = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        XCTAssertNil(FloatingPetController.portalRoute(
+            origin: NSPoint(x: 900, y: 200), petSize: 100,
+            velocity: CGVector(dx: 80, dy: 0), screens: [screen]))
+    }
+
     func testRandomDirectionHasMinimumTravelWindow() {
         XCTAssertGreaterThanOrEqual(FloatingPetController.minimumTravelDuration, 3)
         XCTAssertGreaterThan(FloatingPetController.maximumTravelDuration,
