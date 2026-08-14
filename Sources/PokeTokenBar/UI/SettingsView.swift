@@ -185,6 +185,17 @@ struct SettingsView: View {
                         .font(.caption).monospacedDigit().frame(width: 44, alignment: .trailing)
                 }
                 Divider()
+                toggleRow(l.floatingPetRoamingLabel, $settings.floatingPetRoamingEnabled)
+                if settings.floatingPetRoamingEnabled {
+                    Divider()
+                    groupRow {
+                        Text(l.floatingPetSpeedLabel).font(.callout)
+                        Slider(value: $settings.floatingPetMovementSpeed, in: 20...200, step: 10)
+                        Text("\(Int(settings.floatingPetMovementSpeed))")
+                            .font(.caption).monospacedDigit().frame(width: 32, alignment: .trailing)
+                    }
+                }
+                Divider()
                 groupRow {
                     Text(l.floatingPetSpeciesLabel).font(.callout)
                     Spacer()
