@@ -38,12 +38,8 @@ jobs:
   secret-scan:
     name: secret-scan
     runs-on: ubuntu-latest
-    # On pull_request, gitleaks lists the PR's commits through the API, which the
-    # workflow-wide `contents: read` alone does not cover — it 403s on every PR
-    # while still passing on push, where no such call is made.
     permissions:
       contents: read
-      pull-requests: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -51,9 +47,11 @@ jobs:
           fetch-depth: 0
 
       - name: Scan for committed secrets
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The action wrapper requires a paid license for organization-owned
+        # repositories. Run the same official scanner directly instead.
+        uses: docker://ghcr.io/gitleaks/gitleaks:v8.28.0
+        with:
+          args: detect --source=/github/workspace --redact --no-banner
 
   publish-development:
     name: publish-development
