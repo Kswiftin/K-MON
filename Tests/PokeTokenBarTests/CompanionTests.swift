@@ -286,7 +286,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 한다. 구버전 저장 JSON(“names” 키 없음)을 로드해 실제 마이그레이션 경로를 재현한다.
     func testDexResolveChainNamesBackfillsLegacyEntry() async {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
-        let json = #"{"dex":[{"id":"e1","baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"}]}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"dex":[{"id":"e1","baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"}]}"#
         try? json.data(using: .utf8)!.write(to: url)
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 7))
@@ -312,7 +312,7 @@ final class CompanionStoreTests: XCTestCase {
         ]
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let dexJSON = String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)
-        try Data(#"{"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
 
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 7))
@@ -353,7 +353,7 @@ final class CompanionStoreTests: XCTestCase {
         ]
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let dexJSON = String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)
-        try Data(#"{"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                               fileURL: url, rng: SeededRNG(seed: 7))
 
@@ -416,7 +416,7 @@ final class CompanionStoreTests: XCTestCase {
                              names: [1: ["ko": "포1"], 2: ["ko": "포2"], 3: ["ko": "포3"]])
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let dexJSON = String(decoding: try JSONEncoder().encode([entry]), as: UTF8.self)
-        try Data(#"{"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
         let provider = CountingLineProvider(value: linear3)
         let s = CompanionStore(provider: provider, clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
 
@@ -432,7 +432,7 @@ final class CompanionStoreTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let bare = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: fixedNow)
         let dexJSON = String(decoding: try JSONEncoder().encode([bare]), as: UTF8.self)
-        try Data(#"{"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
 
         let offline = CompanionStore(provider: LineThrowsProvider(), clock: { fixedNow },
                                      fileURL: url, rng: SeededRNG(seed: 7))
@@ -493,7 +493,7 @@ final class CompanionStoreTests: XCTestCase {
         let bare = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: fixedNow)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         let dexJSON = String(decoding: try JSONEncoder().encode([bare]), as: UTF8.self)
-        try Data(#"{"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                               fileURL: url, rng: SeededRNG(seed: 7))
     }
@@ -1318,11 +1318,13 @@ final class CompanionIdentityTests: XCTestCase {
     func testEggPrefetchStoresPendingAndHatchUsesIt() async {
         let p = IndexProvider()
         p.index = [BaseSpecies(id: 77, captureRate: 255)]
-        let s = samplerStore(p, seed: 5, preloadState: CompanionState())
+        var state = CompanionState()
+        state.starterChosen = true
+        let s = samplerStore(p, seed: 5, preloadState: state)
         // 임계 미만(알 진행 0) → 부화는 안 되지만 update 틱이 프리패칭을 돌려야 한다
         s.tick()
-        for _ in 0..<50 where s.state.pendingHatchID == nil { await Task.yield() }
-        XCTAssertEqual(s.state.pendingHatchID, 77, "알 상태에서 종이 미리 롤/저장돼야 한다")
+        let prefetched = await waitUntil { s.state.pendingHatchID == 77 }
+        XCTAssertTrue(prefetched, "알 상태에서 종이 미리 롤/저장돼야 한다")
         // 임계 도달(생산 적립) → 부화는 pending 그대로 (추가 선택 롤 없음: shiny/nature 만 소비)
         s.debugAccrue(6_000_000)
         await s.hatchIfNeeded()

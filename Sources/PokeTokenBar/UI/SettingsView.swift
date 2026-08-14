@@ -121,6 +121,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var generalGroup: some View {
+        @Bindable var settings = settings
         settingsSection(l.generalSectionTitle) {
             groupRow {
                 Text(l.language)
@@ -157,6 +158,8 @@ struct SettingsView: View {
                         }
                     }
             }
+            Divider()
+            toggleRow(l.imageAntialiasingLabel, $settings.imageAntialiasing)
         }
     }
 

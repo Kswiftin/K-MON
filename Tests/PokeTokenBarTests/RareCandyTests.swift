@@ -27,7 +27,7 @@ private struct RCLineThrows: PokeProviding {
 final class InventoryDecodeTests: XCTestCase {
     /// 구버전 저장(인벤토리 키 없음)도 깨지지 않고 기본값으로 로드.
     func testDecodesWithoutInventoryFields() throws {
-        let json = #"{"economyVersion":2,"usedSinceInstall":5,"dex":[],"language":"ko"}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"usedSinceInstall":5,"dex":[],"language":"ko"}"#
         let s = try JSONDecoder().decode(CompanionState.self, from: Data(json.utf8))
         XCTAssertEqual(s.inventory, [:])
     }
@@ -144,7 +144,7 @@ final class RareCandyStoreTests: XCTestCase {
     func testCannotUseWhileLineUnloaded() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("rc-unloaded-\(UUID().uuidString).json")
         // 활성 포켓몬 + 사탕 1 을 저장 → RCLineThrows 로 로드하면 currentLine 이 nil.
-        let json = #"{"economyVersion":2,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":3},"inventory":{"rareCandy":1},"dex":[],"collectedFinals":[]}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":3},"inventory":{"rareCandy":1},"dex":[],"collectedFinals":[]}"#
         try? json.data(using: .utf8)!.write(to: url)
         let s = CompanionStore(provider: RCLineThrows(), clock: { rcNow }, fileURL: url, rng: SeededRNG(seed: 1))
         XCTAssertNotNil(s.state.active, "활성 포켓몬 로드")

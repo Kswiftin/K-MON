@@ -14,8 +14,10 @@ final class IdleEconomyTests: XCTestCase {
     private func makeStore(_ clock: TestClock) -> CompanionStore {
         // linear3 등 공용 픽스처는 CompanionTests 에 있다 — 여기선 라인이 필요 없는 알 상태만 쓰므로
         // 부화가 일어나지 않도록 임계 미만 생산만 하거나, 라인 로드 실패 프로바이더를 쓴다.
-        CompanionStore(provider: NoLineProvider(), clock: clock.closure,
-                       fileURL: tempURL(), rng: SeededRNG(seed: 1))
+        let store = CompanionStore(provider: NoLineProvider(), clock: clock.closure,
+                                   fileURL: tempURL(), rng: SeededRNG(seed: 1))
+        store.debugMarkStarterChosen()
+        return store
     }
 
     /// 라인 제공 실패 — 알 유지(부화 억제)용. 적립 로직 자체는 라인과 무관하다.
@@ -41,8 +43,8 @@ final class IdleEconomyTests: XCTestCase {
         s.tick()                      // 시드
         clock.advance(60)
         s.tick()
-        XCTAssertEqual(s.state.usedSinceInstall, Int(60 * IdleEconomy.dustPerSecond))
-        XCTAssertEqual(s.state.eggUsage, s.state.usedSinceInstall, "알 상태 적립은 인큐베이션에도 쌓인다")
+        XCTAssertEqual(s.state.usedSinceInstall, 0, "생산 틱은 집중 세션 보상만 기록한다")
+        XCTAssertEqual(s.state.activeSecondsTotal, 60, accuracy: 0.001)
     }
 
     // MARK: 캡 — 슬립/시계 점프 방어 (B 단독 브랜치)
@@ -53,9 +55,8 @@ final class IdleEconomyTests: XCTestCase {
         s.tick()
         clock.advance(8 * 3600)       // 밤새 슬립
         s.tick()
-        XCTAssertEqual(s.state.usedSinceInstall,
-                       Int(IdleEconomy.maxTickInterval * IdleEconomy.dustPerSecond),
-                       "캡 초과 경과는 maxTickInterval 로 잘려야 한다")
+        XCTAssertEqual(s.state.usedSinceInstall, 0)
+        XCTAssertEqual(s.state.activeSecondsTotal, IdleEconomy.maxTickInterval, accuracy: 0.001)
     }
 
     func testBackwardClockAccruesNothingAndRebases() {
@@ -67,8 +68,8 @@ final class IdleEconomyTests: XCTestCase {
         XCTAssertEqual(s.state.usedSinceInstall, 0, "음수 경과는 0 으로 — 마이너스 적립 금지")
         clock.advance(60)
         s.tick()
-        XCTAssertEqual(s.state.usedSinceInstall, Int(60 * IdleEconomy.dustPerSecond),
-                       "역행 후 기준점이 새 시각으로 갱신돼 다음 틱은 정상 적립")
+        XCTAssertEqual(s.state.usedSinceInstall, 0)
+        XCTAssertEqual(s.state.activeSecondsTotal, 60, accuracy: 0.001)
     }
 
     // MARK: 도감 배율
@@ -87,8 +88,8 @@ final class IdleEconomyTests: XCTestCase {
         s.tick()
         clock.advance(100)
         s.tick()
-        XCTAssertEqual(s.state.usedSinceInstall,
-                       Int((100 * IdleEconomy.dustPerSecond * s.productionMultiplier).rounded()))
+        XCTAssertEqual(s.state.usedSinceInstall, 0)
+        XCTAssertEqual(s.state.activeSecondsTotal, 100, accuracy: 0.001)
     }
 
     // MARK: 일일 사탕

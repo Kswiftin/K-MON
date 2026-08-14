@@ -202,6 +202,7 @@ struct L {
     var floatingPetSpeciesFollowsPartner: String {
         t("지금 키우는 파트너", "Current partner", "育成中のパートナー")
     }
+    var imageAntialiasingLabel: String { t("이미지 부드럽게 표시", "Smooth image edges", "画像の輪郭を滑らかにする") }
     /// 지금은 한도 알림만 말풍선으로 뜨지만, 알림 종류가 늘어도 이 라벨은 그대로 쓴다.
     var floatingPetBubbleAlertsLabel: String {
         t("말풍선으로 알림 받기", "Show notifications as bubbles", "通知を吹き出しで表示")

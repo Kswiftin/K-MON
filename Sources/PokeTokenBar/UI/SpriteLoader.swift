@@ -103,14 +103,20 @@ enum SpriteLoader {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PokeTokenBar/sprites")
     }()
+    private static let imageCache = NSCache<NSString, NSImage>()
+    private static var frameCache: [String: [(image: NSImage, delay: TimeInterval)]] = [:]
 
     /// 디스크 캐시에 이미 있으면 동기 반환(네트워크 없음). 없으면 nil.
     /// shiny 캐시 미스는 일반 캐시로 폴백 — 오프라인에서 live mon 이 알 글리프로 보이는 것 방지.
     static func cachedImage(speciesID: Int, animated: Bool = false, shiny: Bool = false) -> NSImage? {
-        let ext = animated ? "gif" : "png"
         let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny)
+        if let image = imageCache.object(forKey: key as NSString) { return image }
+        let ext = animated ? "gif" : "png"
         let f = cacheDir.appendingPathComponent("\(key).\(ext)")
-        if let d = try? Data(contentsOf: f), let img = NSImage(data: d) { return img }
+        if let d = try? Data(contentsOf: f), let img = NSImage(data: d) {
+            imageCache.setObject(img, forKey: key as NSString)
+            return img
+        }
         guard shiny else { return nil }
         return cachedImage(speciesID: speciesID, animated: animated, shiny: false)
     }
@@ -118,17 +124,31 @@ enum SpriteLoader {
     /// 정적 스프라이트. animated=true 면 Gen-V 움직이는 스프라이트(없으면 정적으로 폴백).
     /// shiny=true 는 색이 다른 스프라이트 — 미제공 종이면 일반으로 폴백.
     static func image(speciesID: Int, animated: Bool = false, shiny: Bool = false) async -> NSImage? {
+        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny)
+        if let image = imageCache.object(forKey: key as NSString) { return image }
         if animated, let d = await SpriteStore.shared.data(speciesID: speciesID, animated: true, shiny: shiny),
            let img = NSImage(data: d) {
+            imageCache.setObject(img, forKey: key as NSString)
             return img
         }
         if let d = await SpriteStore.shared.data(speciesID: speciesID, animated: false, shiny: shiny),
            let img = NSImage(data: d) {
+            imageCache.setObject(img, forKey: SpriteStore.cacheKey(speciesID: speciesID, animated: false, shiny: shiny) as NSString)
             return img
         }
         // shiny 미제공 → 일반 폴백
         guard shiny else { return nil }
         return await image(speciesID: speciesID, animated: animated, shiny: false)
+    }
+
+    static func decodedFrames(speciesID: Int, shiny: Bool) async -> [(image: NSImage, delay: TimeInterval)] {
+        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: true, shiny: shiny)
+        if let cached = frameCache[key] { return cached }
+        guard let data = await SpriteStore.shared.data(speciesID: speciesID, animated: true, shiny: shiny) else { return [] }
+        let decoded = GIFDecoder.frames(from: data)
+        guard decoded.count >= 2 else { return [] }
+        frameCache[key] = decoded
+        return decoded
     }
 
     /// 아이템 스프라이트 — 디스크 캐시 동기 조회(없으면 nil). 아이콘 즉시 표시용(재렌더 플래시 방지).

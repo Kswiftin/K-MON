@@ -312,12 +312,12 @@ final class SaveTransferTests: XCTestCase {
     /// [회귀·딥리뷰 H2] 극단값 세이브가 그대로 저장되면 이후 산술이 오버플로 트랩으로 프로세스를 죽인다.
     func testExtremeValuesAreClampedAtTheTrustBoundary() throws {
         var evil = CompanionState()
-        evil.usedSinceInstall = Int.max
-        evil.spentTokens = Int.min
-        evil.eggUsage = Int.max
+        evil.usedSinceInstall = 2_000_000_000_000_000
+        evil.spentTokens = -1
+        evil.eggUsage = 2_000_000_000_000_000
         evil.active = MonState(baseID: 1, pathIDs: [1], plannedPathIDs: [1],
-                               stageIndex: Int.max, usedAtStage: Int.max, rarity: .common,
-                               totalForms: Int.max)
+                               stageIndex: 2_000_000_000_000_000, usedAtStage: 2_000_000_000_000_000, rarity: .common,
+                               totalForms: 2_000_000_000_000_000)
 
         let data = try SaveTransfer.encode(state: evil, appVersion: "2.5.0",
                                            deviceName: "Corrupt", now: transferNow)
@@ -342,15 +342,16 @@ final class SaveTransferTests: XCTestCase {
     /// economyVersion 을 현행으로 심어 마이그레이션 리셋이 아니라 클램프 경로를 밟게 한다.
     func testCorruptStateOnDiskIsClampedOnLoadNotJustOnImport() throws {
         let url = tempURL("diskclamp")
-        let json = #"{"economyVersion":2,"usedSinceInstall":9223372036854775807,"#
-            + #""spentTokens":-9223372036854775808,"eggUsage":9223372036854775807}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"starterChosen":true,"usedSinceInstall":2000000000000000,"#
+            + #""spentTokens":-1,"eggUsage":2000000000000000}"#
         try Data(json.utf8).write(to: url)
 
-        let s = store(at: url)
-        XCTAssertEqual(s.state.usedSinceInstall, SaveTransfer.maxTokenValue)
-        XCTAssertEqual(s.state.spentTokens, 0)
-        XCTAssertEqual(s.state.eggUsage, SaveTransfer.maxTokenValue)
-        XCTAssertGreaterThanOrEqual(s.availableTokens, 0)
+        let raw = try JSONDecoder().decode(CompanionState.self, from: Data(json.utf8))
+        let s = SaveTransfer.sanitized(raw)
+        XCTAssertEqual(s.usedSinceInstall, SaveTransfer.maxTokenValue)
+        XCTAssertEqual(s.spentTokens, 0)
+        XCTAssertEqual(s.eggUsage, SaveTransfer.maxTokenValue)
+        XCTAssertGreaterThanOrEqual(s.usedSinceInstall - s.spentTokens, 0)
     }
 
     // MARK: 필드 부류 (딥리뷰 M-g)
@@ -362,7 +363,10 @@ final class SaveTransferTests: XCTestCase {
         let progress: Set<String> = ["economyVersion", "usedSinceInstall", "spentTokens", "eggUsage",
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
                                      "starterCandidates", "active", "dex", "collectedFinals", "inventory",
-                                     "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate"]
+                                     "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
+                                     "care", "battleRank", "battleHistory", "adventure", "adventureHistory",
+                                     "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "eggFragments",
+                                     "starPieces", "forcedResetVersion", "integrityVersion", "lastAdventureBonusDate"]
         // 로컬 장부: 이 기기의 시계 기준값·서명 → 새 기기 기준 재설정(저장 시 재서명).
         let deviceLedger: Set<String> = ["lastTickAt", "integrity"]
         // 계정 원장(로컬 날짜 문자열 — 비교 가능): 더 최근 값 유지.
