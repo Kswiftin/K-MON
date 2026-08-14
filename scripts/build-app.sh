@@ -16,11 +16,14 @@ swift build -c release
 
 echo "==> $APP 조립"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp ".build/release/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
 # 심볼 strip — 릴리스 바이너리 1.84MB → 0.80MB(-57%). codesign 전에 수행(서명 무효화 방지).
 strip -rSTx "$APP/Contents/MacOS/$EXECUTABLE" 2>/dev/null || strip -rSx "$APP/Contents/MacOS/$EXECUTABLE"
 cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Sparkle is a dynamic framework. ditto preserves its versioned symlinks and the
+# signed updater helpers; cp without the right options can silently flatten them.
+ditto ".build/release/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -39,6 +42,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>SUFeedURL</key><string>https://github.com/2giduck/K-MON/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>wF6hVA8cXA/NHj0fWmwxPKU4VWwiqQU1u5iXfOs7YwA=</string>
+    <key>SUVerifyUpdateBeforeExtraction</key><true/>
+    <key>SURequireSignedFeed</key><true/>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>21600</integer>
+    <key>SUAllowsAutomaticUpdates</key><true/>
+    <key>SUAutomaticallyUpdate</key><true/>
     <key>NSLocalNetworkUsageDescription</key><string>Discover Pokédoro rooms for ranked battles and Pokéathlon with up to four friends.</string>
     <key>NSBonjourServices</key>
     <array>

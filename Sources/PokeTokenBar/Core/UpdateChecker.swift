@@ -1,8 +1,9 @@
 import AppKit
 import Observation
+import Sparkle
 
-/// GitHub 릴리스 최신 버전을 확인해 새 버전이 있으면 팝오버에 알린다.
-/// 실제 설치는 brew 사용자면 `brew upgrade`, 그 외엔 릴리스 페이지 열기(저위험·인프라 0).
+/// GitHub 릴리스에서 표시할 최신 버전을 찾고, 안정 릴리스 설치는 Sparkle에 위임한다.
+/// Sparkle은 별도의 signed appcast로 다운로드를 다시 조회하고 EdDSA 서명을 검증한다.
 @MainActor
 @Observable
 final class UpdateChecker {
@@ -31,14 +32,33 @@ final class UpdateChecker {
     private let repo = "2giduck/K-MON"
     private let clock: () -> Date
     private var lastChecked: Date?
+    private let sparkleController: SPUStandardUpdaterController
+    private var sparkleStarted = false
 
     init(currentVersion: String? = nil, currentCommit: String? = nil,
          clock: @escaping () -> Date = Date.init) {
+        sparkleController = SPUStandardUpdaterController(
+            startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
         self.currentVersion = currentVersion
             ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0"
         self.clock = clock
         self.currentCommit = currentCommit
             ?? (Bundle.main.object(forInfoDictionaryKey: "KMONSourceCommit") as? String) ?? "unknown"
+    }
+
+    /// Sparkle의 검증·다운로드·원자적 교체 helper를 시작한다. 단위 테스트 실행 파일은
+    /// .app 번들이 아니므로 시작하지 않아 잘못된 feed 설정 경고창이 테스트를 방해하지 않는다.
+    func startInstaller(automaticDownloads: Bool) {
+        guard !sparkleStarted, Bundle.main.bundleURL.pathExtension == "app" else { return }
+        sparkleController.startUpdater()
+        sparkleStarted = true
+        sparkleController.updater.automaticallyChecksForUpdates = true
+        sparkleController.updater.automaticallyDownloadsUpdates = automaticDownloads
+    }
+
+    func setAutomaticDownloads(_ enabled: Bool) {
+        guard sparkleStarted else { return }
+        sparkleController.updater.automaticallyDownloadsUpdates = enabled
     }
 
     static let autoUpdateEnabled = true
@@ -79,10 +99,14 @@ final class UpdateChecker {
         available = nil
     }
 
-    /// 서명되지 않은 바이너리를 앱이 스스로 덮어쓰지 않는다. 검증된 K-MON 릴리스 페이지를 열어
-    /// 사용자가 ZIP과 변경 내역을 확인한 뒤 설치하게 한다.
+    /// 안정 릴리스는 Sparkle이 EdDSA 서명을 검증하고 앱 종료 뒤 원자적으로 교체한다.
+    /// rolling development 빌드는 서명된 appcast 대상이 아니므로 기존처럼 릴리스 페이지를 연다.
     func applyUpdate() {
         guard let update = available, !isUpdating else { return }
+        if update.channel == .stable, sparkleStarted {
+            sparkleController.checkForUpdates(nil)
+            return
+        }
         guard let url = URL(string: update.url), url.scheme == "https", url.host == "github.com" else { return }
         NSWorkspace.shared.open(url)
     }

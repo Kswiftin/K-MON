@@ -1,153 +1,49 @@
 #!/usr/bin/env bash
+# release.sh — 검증된 main 커밋에 시맨틱 버전 태그를 붙여 GitHub Actions 릴리즈를 시작한다.
 #
-# release.sh — 버전 배포 자동화 + 문서(README/웹페이지/cask) 일관성 검토.
+# 사용: ./scripts/release.sh 2.7.0
 #
-# 사용:
-#   PTB_NOTES_FILE=/tmp/notes.md ./scripts/release.sh 2.1.1
-#   ./scripts/release.sh 2.1.1            # 노트 파일 없으면 최소 노트
-#   ./scripts/release.sh --check-only     # 문서 일관성 검토만(배포 안 함)
-#
-# 단계: 1)test-gate 2)문서 검토 3)VERSION 범프 4)build+zip 5)커밋·push
-#       6)GitHub Release 7)Homebrew cask 8)Pages 재빌드. 각 단계 실패 시 즉시 중단(set -e).
-#
+# 앱 빌드, Sparkle 서명, appcast 생성, GitHub Release 공개는 release.yml 하나만 담당한다.
+# 로컬과 CI가 서로 다른 바이너리를 배포하거나 Asset 없는 Release를 먼저 공개하지 않도록
+# 이 스크립트는 버전 태그를 안전하게 만드는 일 외에는 하지 않는다.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPO="2giduck/K-MON"
-TAP_REPO=""
-CASK_PATH="Casks/poke-token-bar.rb"
-
-# ── 문서 일관성 검토 (배포 전 항상 실행) ───────────────────────────────────
-# 기계적으로 잡을 수 있는 것만 자동 경고. 내용(기능 설명) 변경 여부는 사람이 체크리스트로 판단.
-doc_check() {
-  local warn=0
-  echo "▶ 문서 일관성 검토"
-  # 정적 버전 하드코딩(릴리스마다 수동 갱신 필요 → 동적 배지 권장)
-  if grep -rnE "img.shields.io/badge/release-v[0-9]" README*.md 2>/dev/null; then
-    echo "  ⚠ README 에 정적 버전 배지가 있습니다(동적 github/v/release 배지 권장)."; warn=1
-  fi
-  # UI 변경 → 스크린샷 staleness (실제 diff 상태 검증 — 수동 체크리스트가 통과의례로 묻히지 않게).
-  # 직전 릴리스 태그 이후 UI 소스가 바뀌었는데 assets 스크린샷이 안 바뀌었으면 README 이미지 stale 가능.
-  local last_tag ui_changed shot_changed
-  last_tag=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "")
-  if [[ -n "$last_tag" ]]; then
-    ui_changed=$(git diff --name-only "$last_tag"..HEAD -- 'Sources/PokeTokenBar/UI/' 2>/dev/null)
-    shot_changed=$(git diff --name-only "$last_tag"..HEAD -- 'assets/settings*' 'assets/screenshot*' 'assets/menubar*' 'assets/shiny*' 2>/dev/null)
-    if [[ -n "$ui_changed" && -z "$shot_changed" ]]; then
-      echo "  ⚠ UI 소스가 $last_tag 이후 변경됐으나 스크린샷(assets/) 갱신 없음 — README 이미지 stale 가능:"
-      echo "$ui_changed" | sed 's/^/       /'
-      echo "     → 변경된 화면이면 assets 스크린샷 재생성 (README.md/ko/ja 각 언어)."
-      warn=1
-    fi
-
-    # 새 UI 기능 → **신규** 에셋 커버리지 (하드 게이트).
-    # 위 staleness 는 "에셋이 하나라도 바뀌었나"만 본다 → 기존 스크린샷만 다시 그려도 통과한다.
-    # 2.5.0 이 정확히 그 경로로 새 나갔다: 플로팅 펫(신규 기능)이 README·랜딩에 이미지 하나 없이 배포됐고,
-    # settings.png 를 갱신해 둔 탓에 위 검사는 조용히 통과했다. 신규 기능은 신규 에셋을 요구한다.
-    local ui_feats new_assets
-    ui_feats=$(git log "$last_tag"..HEAD --format='%s' -- 'Sources/PokeTokenBar/UI/' 2>/dev/null \
-                 | grep -iE '^(feat|feature)[(:]' || true)
-    new_assets=$(git diff --name-only --diff-filter=A "$last_tag"..HEAD -- 'assets/' 2>/dev/null)
-    if [[ -n "$ui_feats" && -z "$new_assets" ]]; then
-      echo "  ✗ UI 를 바꾼 신규 기능이 있는데 assets/ 에 **새로 추가된** 파일이 없습니다:"
-      echo "$ui_feats" | sed 's/^/       /'
-      echo "     → 새 화면·새 표면이면 전용 스크린샷을 만들어 README(ko/ja 포함)와 랜딩에 넣으세요."
-      echo "     → 이미지가 정말 불필요하다고 판단되면 그 판단을 커밋에 남기세요(feat 가 아닌 타입으로)."
-      # 예외 없음. 경고(return 1, y/N 프롬프트)와 달리 return 2 는 호출부에서 즉시 중단시킨다 —
-      # 환경변수 우회구를 두면 결국 그 변수가 습관이 된다. 통과시키려면 에셋을 만들거나
-      # 커밋 타입을 바꿔야 한다(= 판단을 기록으로 남겨야 한다).
-      return 2
-    fi
-  fi
-  cat <<'CHECK'
-  ─ 수동 체크리스트 (내용 변경 시 갱신) ─────────────────────────────
-   [ ] README.md / .ko / .ja : 기능 목록·요구사항·데이터소스·스크린샷
-   [ ] 랜딩(gh-pages/index.html): hero·features·install·works-with·요구사항·푸터
-       · 버전 배지는 동적(github/v/release) → 자동. 기능/문구만 수동.
-       · 3개 언어 i18n 사전(en/ko/ja) 동시 갱신 + 키 정합 유지.
-   [ ] homebrew-tap cask: caveats(설치 요구사항) 최신 상태인지
-  ─────────────────────────────────────────────────────────────────
-CHECK
-  return $warn
+VERSION="${1:?사용: release.sh <version>  (예: 2.7.0)}"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+  echo "✗ 버전 형식 오류: $VERSION (x.y.z 형식만 허용)" >&2
+  exit 1
 }
 
-if [[ "${1:-}" == "--check-only" ]]; then
-  doc_check || true
-  exit 0
-fi
-
-VERSION="${1:?사용: release.sh <version>  (예: 2.1.1)}"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "✗ 버전 형식 오류: $VERSION"; exit 1; }
-PREV=$(grep -oE 'DEFAULT_VERSION="[0-9.]+"' scripts/build-app.sh | grep -oE '[0-9.]+')
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-[[ "$BRANCH" == "main" ]] || { echo "✗ main 브랜치에서 실행하세요 (현재: $BRANCH) — 커밋/push 대상 일치 보장"; exit 1; }
-echo "=== PokeTokenBar 릴리스 $PREV → $VERSION ==="
-
-echo "▶ 1/8 릴리스 전 테스트 게이트"
-./scripts/test-gate.sh >/dev/null || { echo "✗ test-gate 실패 — 중단"; exit 1; }
-echo "  ✓ 통과"
-
-# set -e 하에서 `doc_check; rc=$?` 는 실패 즉시 종료돼 rc 를 못 읽는다.
-doc_rc=0; doc_check || doc_rc=$?
-if [[ $doc_rc -eq 2 ]]; then
-  echo "중단 — 새 기능에 필요한 에셋을 먼저 만드세요(프롬프트로 넘길 수 없는 게이트)."
+BRANCH=$(git branch --show-current)
+[[ "$BRANCH" == "main" ]] || {
+  echo "✗ main 브랜치에서 실행하세요 (현재: $BRANCH)" >&2
   exit 1
-elif [[ $doc_rc -ne 0 ]]; then
-  read -r -p "  문서 경고가 있습니다. 그래도 계속? [y/N] " a
-  [[ "$a" == "y" || "$a" == "Y" ]] || { echo "중단 — 문서 먼저 갱신하세요."; exit 1; }
-fi
+}
+[[ -z "$(git status --porcelain)" ]] || {
+  echo "✗ 커밋되지 않은 변경이 있습니다." >&2
+  exit 1
+}
 
-echo "▶ 코드서명 신원 게이트 (배포 전 — ad-hoc 릴리스 차단)"
-# 릴리스마다 서명 주체가 바뀌지 않도록 안정적인 자체서명 신원을 강제한다.
-SIGN_IDENTITY="${CODESIGN_IDENTITY:-PokeTokenBar Local}"
-# "PokeTokenBar Local" leaf SHA-1 — 설치본 DR 의 certificate leaf pin. 인증서를 재생성/교체하면 갱신 필요.
-EXPECTED_LEAF="507F814330C727B38AC9A987ECBA929721C52C62"
-LEAF=$(security find-identity -v -p codesigning | awk -v id="\"$SIGN_IDENTITY\"" '$0 ~ id {print $2; exit}')
-if [[ -z "$LEAF" ]]; then
-  echo "✗ 유효 codesigning identity '$SIGN_IDENTITY' 없음(미설치·만료 포함)."
-  echo "  이대로면 build-app.sh 가 ad-hoc 서명으로 폴백합니다."
-  echo "  복구: ./scripts/create-signing-cert.sh 실행 → 새 leaf 로 이 스크립트의 EXPECTED_LEAF 갱신 → 재실행."
+echo "▶ origin/main 동기화 확인"
+git fetch origin main --tags
+[[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
+  echo "✗ 로컬 main과 origin/main이 다릅니다. 먼저 pull 하세요." >&2
+  exit 1
+}
+
+TAG="v$VERSION"
+if git rev-parse "$TAG" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "✗ 이미 존재하는 태그입니다: $TAG" >&2
   exit 1
 fi
-if [[ "$LEAF" != "$EXPECTED_LEAF" ]]; then
-  echo "⚠ 서명 인증서 leaf 불일치: 현재 $LEAF ≠ 고정 $EXPECTED_LEAF"
-  echo "  인증서를 재생성/교체했다면 기존 설치본과 서명 주체가 달라집니다."
-  read -r -p "  의도한 변경이면 EXPECTED_LEAF 를 갱신하고 계속하세요. 지금 계속? [y/N] " a
-  [[ "$a" == "y" || "$a" == "Y" ]] || { echo "중단 — 서명 신원을 확인하세요."; exit 1; }
-fi
-echo "  ✓ '$SIGN_IDENTITY' leaf=$LEAF — 안정적 서명으로 배포"
-export PTB_REQUIRE_STABLE_SIGN=1   # build-app.sh 방어선: ad-hoc 폴백으로 새면 즉시 실패
 
-echo "▶ 3/8 VERSION 범프 $PREV → $VERSION (아직 미커밋)"
-perl -pi -e "s/DEFAULT_VERSION=\"[0-9.]+\"/DEFAULT_VERSION=\"$VERSION\"/" scripts/build-app.sh
+echo "▶ 릴리스 전 테스트 게이트"
+./scripts/test-gate.sh
 
-echo "▶ 4/8 빌드 + zip (push 전 검증 — 실패해도 범프 미커밋이라 origin/main 무손상)"
-./scripts/build-app.sh >/dev/null
-rm -f build/Pokedoro.zip
-ditto -c -k --keepParent build/Pokédoro.app build/Pokedoro.zip
-BUILT=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" build/Pokédoro.app/Contents/Info.plist)
-[[ "$BUILT" == "$VERSION" ]] || { echo "✗ 빌드 버전 불일치: $BUILT (수동 복구: git checkout scripts/build-app.sh)"; exit 1; }
+echo "▶ $TAG 태그 생성 및 push"
+git tag -a "$TAG" -m "K-MON $TAG"
+git push origin "refs/tags/$TAG"
 
-echo "▶ 5/8 커밋 + push (빌드 성공 후)"
-git add scripts/build-app.sh
-git commit -q -m "release: bump version to $VERSION
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
-git push -q origin main
-
-echo "▶ 6/8 GitHub Release v$VERSION"
-NOTES_FILE="${PTB_NOTES_FILE:-}"
-if [[ -n "$NOTES_FILE" && -f "$NOTES_FILE" ]]; then
-  gh release create "v$VERSION" build/Pokedoro.zip --repo "$REPO" \
-    --title "K-MON v$VERSION" --target main --notes-file "$NOTES_FILE"
-else
-  gh release create "v$VERSION" build/Pokedoro.zip --repo "$REPO" \
-    --title "K-MON v$VERSION" --target main --notes "K-MON v$VERSION"
-fi
-
-echo "▶ 7/8 Homebrew cask 생략 — K-MON 전용 tap 미구성"
-
-echo "▶ 8/8 GitHub Pages 재빌드(랜딩 동적 배지 갱신 유도)"
-gh api -X POST "repos/$REPO/pages/builds" >/dev/null 2>&1 || true
-
-echo "✓ v$VERSION 배포 완료. 검증: brew upgrade --cask poke-token-bar"
+echo "✓ GitHub Actions가 $TAG 빌드·서명·Release 생성을 진행합니다."
+echo "  https://github.com/2giduck/K-MON/actions/workflows/release.yml"

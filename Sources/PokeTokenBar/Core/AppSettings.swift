@@ -30,6 +30,9 @@ final class AppSettings {
     }
     var companionNotifications: Bool { didSet { defaults.set(companionNotifications, forKey: "companionNotifications") } }
     var updateNotificationsEnabled: Bool { didSet { defaults.set(updateNotificationsEnabled, forKey: "updateNotificationsEnabled") } }
+    var automaticUpdateDownloadsEnabled: Bool {
+        didSet { defaults.set(automaticUpdateDownloadsEnabled, forKey: "automaticUpdateDownloadsEnabled") }
+    }
     var doNotDisturb: Bool { didSet { defaults.set(doNotDisturb, forKey: "doNotDisturb") } }
 
     init(defaults: UserDefaults = .standard) {
@@ -43,6 +46,7 @@ final class AppSettings {
         floatingPetSpeciesID = defaults.object(forKey: "floatingPetSpeciesID") as? Int
         companionNotifications = defaults.object(forKey: "companionNotifications") as? Bool ?? true
         updateNotificationsEnabled = defaults.object(forKey: "updateNotificationsEnabled") as? Bool ?? true
+        automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
     }

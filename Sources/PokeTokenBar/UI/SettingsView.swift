@@ -236,6 +236,8 @@ struct SettingsView: View {
         settingsSection(l.updateSectionTitle) {
             toggleRow(l.updateNotificationsLabel, $settings.updateNotificationsEnabled)
             Divider()
+            toggleRow(l.automaticUpdateDownloadsLabel, $settings.automaticUpdateDownloadsEnabled)
+            Divider()
             groupRow {
                 Text(l.checkForUpdatesLabel)
                 Spacer()
