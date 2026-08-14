@@ -95,7 +95,7 @@ macOS 14+（Apple Silicon または Intel）。
 
 ### ダウンロード
 
-[リリース](https://github.com/2giduck/K-MON/releases)から `Pokedoro.zip` を入手し、解凍して `Pokédoro.app` を `/Applications` にドラッグします。
+[リリース](https://github.com/Kswiftin/K-MON/releases)から `Pokedoro.zip` を入手し、解凍して `Pokédoro.app` を `/Applications` にドラッグします。
 
 ad-hoc/自己署名（Apple 公証なし）のため、初回起動で Gatekeeper の警告が出ます。一度だけ解除してください：
 

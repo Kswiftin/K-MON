@@ -29,11 +29,12 @@ final class UpdateChecker {
 
     let currentVersion: String
     let currentCommit: String
-    private let repo = "2giduck/K-MON"
+    private let repo = "Kswiftin/K-MON"
     private let clock: () -> Date
     private var lastChecked: Date?
     private let sparkleController: SPUStandardUpdaterController
     private var sparkleStarted = false
+    private let updateChannel: Available.Channel
 
     init(currentVersion: String? = nil, currentCommit: String? = nil,
          clock: @escaping () -> Date = Date.init) {
@@ -44,6 +45,8 @@ final class UpdateChecker {
         self.clock = clock
         self.currentCommit = currentCommit
             ?? (Bundle.main.object(forInfoDictionaryKey: "KMONSourceCommit") as? String) ?? "unknown"
+        self.updateChannel = (Bundle.main.object(forInfoDictionaryKey: "KMONUpdateChannel") as? String) == "development"
+            ? .development : .stable
     }
 
     /// Sparkle의 검증·다운로드·원자적 교체 helper를 시작한다. 단위 테스트 실행 파일은
@@ -79,11 +82,12 @@ final class UpdateChecker {
         let stable = releases.first { !$0.draft && !$0.prerelease }
         let development = releases.first { $0.tag_name == "development" && !$0.draft }
         let skipped = UserDefaults.standard.string(forKey: "skippedUpdateVersion")
-        if let stable, let candidate = Self.releaseCandidate(from: stable, channel: .stable),
+        if updateChannel == .stable, let stable,
+           let candidate = Self.releaseCandidate(from: stable, channel: .stable),
            Self.isNewer(candidate.version, than: currentVersion), candidate.version != skipped {
             available = candidate; return
         }
-        if let development, currentCommit != "unknown",
+        if updateChannel == .development, let development, currentCommit != "unknown",
            !development.target_commitish.hasPrefix(currentCommit),
            !currentCommit.hasPrefix(development.target_commitish),
            let candidate = Self.releaseCandidate(from: development, channel: .development),
@@ -99,11 +103,10 @@ final class UpdateChecker {
         available = nil
     }
 
-    /// 안정 릴리스는 Sparkle이 EdDSA 서명을 검증하고 앱 종료 뒤 원자적으로 교체한다.
-    /// rolling development 빌드는 서명된 appcast 대상이 아니므로 기존처럼 릴리스 페이지를 연다.
+    /// 안정·개발 채널 모두 각자의 EdDSA 서명 appcast를 Sparkle이 검증하고 원자적으로 교체한다.
     func applyUpdate() {
         guard let update = available, !isUpdating else { return }
-        if update.channel == .stable, sparkleStarted {
+        if sparkleStarted {
             sparkleController.checkForUpdates(nil)
             return
         }

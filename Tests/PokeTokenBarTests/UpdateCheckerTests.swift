@@ -27,10 +27,10 @@ final class UpdateCheckerTests: XCTestCase {
 
     func testKMONStableReleaseCandidate() {
         let release = UpdateChecker.ReleaseInfo(tag_name: "v2.6.0",
-            html_url: "https://github.com/2giduck/K-MON/releases/tag/v2.6.0",
+            html_url: "https://github.com/Kswiftin/K-MON/releases/tag/v2.6.0",
             target_commitish: "abcdef123456", draft: false, prerelease: false,
             assets: [.init(name: UpdateChecker.releaseAssetName,
-                browser_download_url: "https://github.com/2giduck/K-MON/releases/download/v2.6.0/\(UpdateChecker.releaseAssetName)")])
+                browser_download_url: "https://github.com/Kswiftin/K-MON/releases/download/v2.6.0/\(UpdateChecker.releaseAssetName)")])
         let candidate = UpdateChecker.releaseCandidate(from: release, channel: .stable)
         XCTAssertEqual(candidate?.version, "2.6.0")
         XCTAssertEqual(candidate?.channel, .stable)
@@ -57,7 +57,7 @@ final class UpdateCheckerTests: XCTestCase {
 
     func testDevelopmentCandidateUsesCommitPrefixAndRejectsForeignURL() {
         let release = UpdateChecker.ReleaseInfo(tag_name: "development",
-            html_url: "https://github.com/2giduck/K-MON/releases/tag/development",
+            html_url: "https://github.com/Kswiftin/K-MON/releases/tag/development",
             target_commitish: "1234567890abcdef", draft: false, prerelease: true,
             assets: [.init(name: UpdateChecker.releaseAssetName, browser_download_url: "https://evil.example/app.zip")])
         let candidate = UpdateChecker.releaseCandidate(from: release, channel: .development)

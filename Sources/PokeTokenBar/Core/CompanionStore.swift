@@ -1490,11 +1490,14 @@ final class CompanionStore {
 
     /// 구버전 세이브의 보관 알에는 시각이 없다. 업데이트 시점부터 5분 타이머를 시작한다.
     private func reconcileStoredEggDates() {
+        let before = state.focusEggReadyDates
         state.focusEggReadyDates = Array(state.focusEggReadyDates.sorted().prefix(state.focusEggs))
         while state.focusEggReadyDates.count < state.focusEggs {
             state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
         }
-        save()
+        // 손상 파일을 load()가 .corrupt로 이동한 직후 빈 신규 상태까지 저장하면, 원본 경로가
+        // 다시 생겨 "원본은 이동돼 사라진다"는 복구 불변식을 깨뜨린다. 실제 마이그레이션 때만 저장한다.
+        if state.focusEggReadyDates != before { save() }
     }
 
     /// companion 이벤트 시스템 알림(.app + 토글 ON 일 때만). 한도 알림과 독립.

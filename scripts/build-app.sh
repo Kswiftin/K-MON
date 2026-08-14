@@ -6,6 +6,12 @@ cd "$(dirname "$0")/.."
 DEFAULT_VERSION="2.6.0"
 VERSION="${KMON_VERSION:-$DEFAULT_VERSION}"
 SOURCE_COMMIT="${KMON_SOURCE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
+UPDATE_CHANNEL="${KMON_UPDATE_CHANNEL:-stable}"
+if [[ "$UPDATE_CHANNEL" == "development" ]]; then
+    UPDATE_FEED_URL="https://github.com/Kswiftin/K-MON/releases/download/development/appcast.xml"
+else
+    UPDATE_FEED_URL="https://github.com/Kswiftin/K-MON/releases/latest/download/appcast.xml"
+fi
 APP_NAME="Pokédoro"
 EXECUTABLE="PokeTokenBar"
 BUILD_DIR="build"
@@ -38,11 +44,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>KMONSourceCommit</key><string>$SOURCE_COMMIT</string>
+    <key>KMONUpdateChannel</key><string>$UPDATE_CHANNEL</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>SUFeedURL</key><string>https://github.com/2giduck/K-MON/releases/latest/download/appcast.xml</string>
+    <key>SUFeedURL</key><string>$UPDATE_FEED_URL</string>
     <key>SUPublicEDKey</key><string>wF6hVA8cXA/NHj0fWmwxPKU4VWwiqQU1u5iXfOs7YwA=</string>
     <key>SUVerifyUpdateBeforeExtraction</key><true/>
     <key>SURequireSignedFeed</key><true/>
