@@ -1086,17 +1086,11 @@ final class CompanionStore {
                 if !isRevealingDitto { Task { await revealDitto() } }
                 break
             }
-            if node.children.isEmpty {
-                // 레벨 30 게이트는 애초에 진화가 없는 종(totalForms==1)에만 건다. 진화를 거쳐
-                // 최종형에 도달했다면 그 마지막 진화 자체가(레벨 요구치든 성장치 폴백이든) 이미
-                // 관문이었다 — 예컨대 파이리 라인은 리자몽 진화 요구 레벨(32/36 등)이 이미 30을
-                // 넘어서므로, 여기서 또 30을 요구하면 이미 통과한 관문을 중복 검사하는 꼴이다.
-                if a.totalForms == 1 {
-                    guard a.level >= PokemonBalance.graduationRequiredLevel else { break }
-                }
-                graduate()
-                break
-            }
+            // 최종 진화형 도달 — 졸업은 여기서 자동으로 하지 않는다. 사용자가 직접
+            // `graduateCompanion()` 을 눌러야 한다(canGraduate 가 조건을 판정). 자동 졸업은
+            // 진화 수락 직후 그 개체를 곧바로 활성에서 빼앗아, 방금 진화시킨 최종형을 한 순간도
+            // 못 데리고 있게 만들었다.
+            if node.children.isEmpty { break }
             let threshold = PokemonBalance.phaseThreshold(
                 rarity: a.rarity, totalForms: a.totalForms, stageIndex: a.stageIndex)
             let nextIndex = a.stageIndex + 1
@@ -1204,6 +1198,25 @@ final class CompanionStore {
         return normalized
     }
 
+    /// 졸업 가능 여부 — 최종 진화형에 도달했으면 언제든 사용자가 직접 졸업시킬 수 있다.
+    /// 진화가 없는 종(totalForms==1)만 레벨 30을 함께 요구한다(#19): 진화를 거친 종은 그 마지막
+    /// 진화 요구 레벨이 이미 관문이었지만, 무진화 종은 그 관문이 아예 없어 대신 세우는 기준이다.
+    var canGraduate: Bool {
+        guard let a = state.active, let line = currentLine,
+              line.tree.node(withID: a.currentID)?.children.isEmpty == true else { return false }
+        return a.totalForms > 1 || a.level >= PokemonBalance.graduationRequiredLevel
+    }
+
+    /// 졸업 — 도감에 기록하고 **개체는 박스로 보낸 뒤** 새 알을 시작한다. 사용자가 직접 누르는
+    /// 액션이다(자동 아님): 다음 포켓몬으로 넘어가는 버튼이지, 지금 개체를 버리는 것이 아니다.
+    /// 박스에 남으므로 `switchCompanion(to:)` 로 언제든 다시 데려와 계속 키울 수 있다.
+    @discardableResult
+    func graduateCompanion() -> Bool {
+        guard canGraduate else { return false }
+        graduate()
+        return true
+    }
+
     private func graduate() {
         guard let a = state.active else { return }
         let finalID = a.currentID
@@ -1219,6 +1232,9 @@ final class CompanionStore {
         justGraduated = name
         notifyCompanionEvent(l.notifGraduateTitle, l.notifGraduateBody(name))
         eventUntil = clock().addingTimeInterval(6)
+        // 도감은 기록만 남는다(DexEntry 엔 레벨·경험치가 없다) — 개체 자체는 박스로 옮겨 계속
+        // 키울 수 있게 한다. 예전엔 여기서 그냥 버려서, 졸업이 곧 그 개체의 영구 삭제였다.
+        state.boxedMons.append(a)
         state.active = nil
         state.care = PetCareState(lastNeedAt: clock(), lastUpdatedAt: clock())
         activeGeneration += 1

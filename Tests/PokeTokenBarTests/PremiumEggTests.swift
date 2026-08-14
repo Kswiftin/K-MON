@@ -124,9 +124,9 @@ final class PremiumEggTests: XCTestCase {
     // MARK: 가격 — 졸업 총량 배율(새 상수 금지)
 
     func testPricesFollowGraduationTotalRatio() {
-        XCTAssertEqual(FreshEgg.price(guaranteeing: nil), 2_000_000_000)
-        XCTAssertEqual(FreshEgg.price(guaranteeing: .uncommon), 5_000_000_000)
-        XCTAssertEqual(FreshEgg.price(guaranteeing: .rare), 8_000_000_000)
+        XCTAssertEqual(FreshEgg.price(guaranteeing: nil), 20_000)
+        XCTAssertEqual(FreshEgg.price(guaranteeing: .uncommon), 50_000)
+        XCTAssertEqual(FreshEgg.price(guaranteeing: .rare), 80_000)
         XCTAssertEqual(FreshEgg.shopTiers, [nil])
     }
 
@@ -357,8 +357,8 @@ final class PremiumEggTests: XCTestCase {
         await s.hatchIfNeeded()
         guard let active = s.state.active else { return XCTFail("부화 실패") }
         XCTAssertNil(s.state.eggTier, "부화 시점에 보증 소비")
-        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
-        s.applyUsage(PokemonBalance.graduationTotal(active.rarity) * 2)   // 단일 형태 → 졸업
+        s.debugAccrueLevelExperience(300_000_000)   // 무진화 종은 레벨 30 게이트(#19)
+        XCTAssertTrue(s.graduateCompanion())   // 졸업은 사용자 액션(#19)
         XCTAssertNil(s.state.active, "졸업")
         XCTAssertEqual(s.state.dex.count, 1)
         XCTAssertNil(s.state.eggTier, "졸업으로 받는 알에는 보증이 없다")
