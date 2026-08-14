@@ -137,6 +137,162 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertEqual(roundTrip.y, petOrigin.y, accuracy: 0.5)
     }
 
+    func testAdjacentMonitorsFormOneWalkableSurface() {
+        let left = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let right = NSRect(x: 1000, y: 0, width: 1000, height: 800)
+        let crossingPet = NSRect(x: 950, y: 200, width: 100, height: 100)
+        XCTAssertTrue(FloatingPetController.isCovered(crossingPet, by: [left, right]))
+
+        let moved = FloatingPetController.resolvedMotion(
+            origin: NSPoint(x: 940, y: 200), petSize: 100,
+            velocity: CGVector(dx: 100, dy: 0), delta: 0.2, screens: [left, right])
+        XCTAssertEqual(moved.origin.x, 960, accuracy: 0.001)
+        XCTAssertGreaterThan(moved.velocity.dx, 0)
+    }
+
+    func testOuterDisplayEdgeReflectsMovement() {
+        let screen = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let moved = FloatingPetController.resolvedMotion(
+            origin: NSPoint(x: 900, y: 200), petSize: 100,
+            velocity: CGVector(dx: 100, dy: 20), delta: 0.2, screens: [screen])
+        XCTAssertEqual(moved.origin.x, 900, accuracy: 0.001)
+        XCTAssertLessThan(moved.velocity.dx, 0)
+        XCTAssertGreaterThan(moved.velocity.dy, 0)
+    }
+
+    func testGapBetweenMonitorsIsAClosedBoundary() {
+        let left = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let separated = NSRect(x: 1010, y: 0, width: 1000, height: 800)
+        let crossingGap = NSRect(x: 950, y: 200, width: 100, height: 100)
+        XCTAssertFalse(FloatingPetController.isCovered(crossingGap, by: [left, separated]))
+    }
+
+    func testOffsetMonitorAllowsOnlyOverlappingPassage() {
+        let left = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        let upperRight = NSRect(x: 1000, y: 400, width: 1000, height: 800)
+        XCTAssertTrue(FloatingPetController.isCovered(
+            NSRect(x: 950, y: 500, width: 100, height: 100), by: [left, upperRight]))
+        XCTAssertFalse(FloatingPetController.isCovered(
+            NSRect(x: 950, y: 100, width: 100, height: 100), by: [left, upperRight]))
+    }
+
+    func testBlockedRightwardCrossingFindsNearestPortal() {
+        let left = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let right = NSRect(x: 0, y: 0, width: 1728, height: 1084)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: -96, y: 1500), petSize: 96,
+            velocity: CGVector(dx: 80, dy: 0), screens: [left, right])
+        XCTAssertNotNil(route)
+        XCTAssertEqual(route?.target ?? 0, 988, accuracy: 0.001)
+        XCTAssertEqual(route?.crossingSign ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(route?.completionCoordinate ?? 1, 0, accuracy: 0.001)
+    }
+
+    func testDiagonalEntryFromPortraitDisplayIsLockedBeforeStraddling() {
+        let portrait = NSRect(x: -3000, y: 11, width: 1080, height: 1920)
+        let center = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: -1992, y: 1000), petSize: 72,
+            velocity: CGVector(dx: 141, dy: 141), screens: [portrait, center])
+        XCTAssertNotNil(route, "유효 통로에서도 경계에 걸치기 전에 통과 잠금을 시작해야 함")
+        XCTAssertEqual(route?.target ?? 0, 1000, accuracy: 0.001)
+        XCTAssertEqual(route?.crossingSign ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(route?.completionCoordinate ?? 0, -1920, accuracy: 0.001)
+    }
+
+    func testPortraitToCenterPortalUsesAtomicHandoff() {
+        let portrait = NSRect(x: -3000, y: 11, width: 1080, height: 1920)
+        let center = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let route = FloatingPetController.PortalRoute(
+            axis: .horizontal, target: 1000, crossingSign: 1,
+            completionCoordinate: -1920)
+        let destination = FloatingPetController.portalDestinationOrigin(
+            from: NSPoint(x: -1992, y: 1000), route: route)
+        XCTAssertEqual(destination.x, -1920, accuracy: 0.001)
+        XCTAssertEqual(destination.y, 1000, accuracy: 0.001)
+        XCTAssertTrue(FloatingPetController.isCovered(
+            NSRect(origin: destination, size: NSSize(width: 72, height: 72)),
+            by: [portrait, center]))
+    }
+
+    func testStraddledPortraitBoundaryCanRecoverPortalLock() {
+        let portrait = NSRect(x: -3000, y: 11, width: 1080, height: 1920)
+        let center = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: -1950, y: 1000), petSize: 72,
+            velocity: CGVector(dx: 180, dy: 40), screens: [portrait, center])
+        XCTAssertNotNil(route, "이미 경계에 걸친 상태에서도 오른쪽 통과 잠금을 복구해야 함")
+        XCTAssertEqual(route?.target ?? 0, 1000, accuracy: 0.001)
+        XCTAssertEqual(route?.crossingSign ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(route?.completionCoordinate ?? 0, -1920, accuracy: 0.001)
+    }
+
+    func testBlockedLeftwardCrossingFindsSamePortal() {
+        let left = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let right = NSRect(x: 0, y: 0, width: 1728, height: 1084)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: 0, y: 300), petSize: 96,
+            velocity: CGVector(dx: -80, dy: 0), screens: [left, right])
+        XCTAssertNotNil(route)
+        XCTAssertEqual(route?.target ?? 0, 712, accuracy: 0.001)
+        XCTAssertEqual(route?.crossingSign ?? 0, -1, accuracy: 0.001)
+        XCTAssertEqual(route?.completionCoordinate ?? 0, -96, accuracy: 0.001)
+    }
+
+    func testOuterEdgeHasNoPortalRoute() {
+        let screen = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        XCTAssertNil(FloatingPetController.portalRoute(
+            origin: NSPoint(x: 900, y: 200), petSize: 100,
+            velocity: CGVector(dx: 80, dy: 0), screens: [screen]))
+    }
+
+    func testRandomDirectionHasMinimumTravelWindow() {
+        XCTAssertGreaterThanOrEqual(FloatingPetController.minimumTravelDuration, 3)
+        XCTAssertGreaterThan(FloatingPetController.maximumTravelDuration,
+                             FloatingPetController.minimumTravelDuration)
+    }
+
+    func testRoamingSettingsDefaultAndPersist() {
+        let suite = "FloatingPetRoamingTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let initial = AppSettings(defaults: defaults)
+        XCTAssertFalse(initial.floatingPetRoamingEnabled)
+        XCTAssertFalse(initial.floatingPetMouseChaseEnabled)
+        XCTAssertEqual(initial.floatingPetMovementSpeed, 80)
+        initial.floatingPetRoamingEnabled = true
+        initial.floatingPetMouseChaseEnabled = true
+        initial.floatingPetMovementSpeed = 140
+
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertTrue(restored.floatingPetRoamingEnabled)
+        XCTAssertTrue(restored.floatingPetMouseChaseEnabled)
+        XCTAssertEqual(restored.floatingPetMovementSpeed, 140)
+    }
+
+    func testMouseChaseUsesDirectShortestVectorAndStopsNearPointer() {
+        let velocity = FloatingPetController.mouseChaseVelocity(
+            petOrigin: NSPoint(x: 0, y: 0), petSize: 20,
+            mouse: NSPoint(x: 40, y: 50), speed: 100)
+        XCTAssertEqual(velocity.dx, 60, accuracy: 0.001)
+        XCTAssertEqual(velocity.dy, 80, accuracy: 0.001)
+
+        let stopped = FloatingPetController.mouseChaseVelocity(
+            petOrigin: NSPoint(x: 0, y: 0), petSize: 40,
+            mouse: NSPoint(x: 35, y: 20), speed: 100)
+        XCTAssertEqual(stopped, .zero)
+    }
+
+    func testMouseChasePortalUsesStraightLineIntersection() {
+        let portrait = NSRect(x: -3000, y: 11, width: 1080, height: 1920)
+        let center = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: -1992, y: 1000), petSize: 72,
+            velocity: CGVector(dx: 100, dy: 100), screens: [portrait, center],
+            destination: NSPoint(x: -1884, y: 1236))
+        XCTAssertEqual(route?.target ?? 0, 1100, accuracy: 0.001)
+    }
+
     /// Click opens the popover only when the pointer barely moved; larger movement is a drag.
     func testClickThresholdDistinguishesClickFromDrag() {
         let a = NSPoint(x: 10, y: 10)
