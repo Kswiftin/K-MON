@@ -9,6 +9,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# macOS에서 xcode-select가 Command Line Tools를 가리키면 SwiftPM이 XCTest를 찾지 못한다.
+# 전역 설정은 바꾸지 않고 이 릴리스 명령과 자식 프로세스에만 전체 Xcode를 사용한다.
+if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+
 VERSION="${1:?사용: release.sh <version>  (예: 2.7.0)}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
   echo "✗ 버전 형식 오류: $VERSION (x.y.z 형식만 허용)" >&2
@@ -26,7 +32,9 @@ BRANCH=$(git branch --show-current)
 }
 
 echo "▶ origin/main 동기화 확인"
-git fetch origin main --tags
+# development는 main 배포마다 강제로 이동하는 롤링 태그다. 여기서 전체 태그를 fetch하면
+# 로컬의 이전 development와 충돌해 안정 릴리스가 시작조차 못 하므로 main만 갱신한다.
+git fetch --no-tags origin main
 [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
   echo "✗ 로컬 main과 origin/main이 다릅니다. 먼저 pull 하세요." >&2
   exit 1

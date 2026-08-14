@@ -85,8 +85,9 @@ jobs:
               -o build/release-feed/appcast.xml \
               build/release-feed
           (cd build/release-feed && shasum -a 256 Pokedoro.zip > Pokedoro.zip.sha256)
+          # OAuth 인증을 붙이기 위해 앱이 enclosure URL을 로컬에서 치환하므로 feed 파일 자체는
+          # 서명하지 않는다. 설치 파일의 EdDSA 서명은 반드시 유지·검증한다.
           grep -F 'sparkle:edSignature=' build/release-feed/appcast.xml >/dev/null
-          grep -F 'sparkle-signatures:' build/release-feed/appcast.xml >/dev/null
           grep -F "/releases/download/$GITHUB_REF_NAME/Pokedoro.zip" build/release-feed/appcast.xml >/dev/null
 
       # Release is created only after every build, signature and feed check succeeds,
