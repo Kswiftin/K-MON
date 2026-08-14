@@ -297,17 +297,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     private func advanceAcrossPortal(_ route: PortalRoute, speed: CGFloat,
                                      delta: TimeInterval, now: TimeInterval) {
         guard let panel else { return }
-        let velocity = route.axis == .horizontal
-            ? CGVector(dx: route.crossingSign * speed, dy: 0)
-            : CGVector(dx: 0, dy: route.crossingSign * speed)
-        let result = Self.resolvedMotion(
-            origin: panel.frame.origin, petSize: CGFloat(settings.floatingPetSize),
-            velocity: velocity, delta: delta, screens: NSScreen.screens.map(\.visibleFrame))
+        let result = Self.advancedPortalOrigin(
+            from: panel.frame.origin, route: route, distance: speed * CGFloat(delta))
         setAutomaticOrigin(result.origin)
-        let coordinate = route.axis == .horizontal ? result.origin.x : result.origin.y
-        let completed = route.crossingSign > 0
-            ? coordinate >= route.completionCoordinate - 0.01
-            : coordinate <= route.completionCoordinate + 0.01
+        let completed = result.completed
         if completed {
             crossingPortal = nil
             direction = route.axis == .horizontal
@@ -316,6 +309,39 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             motion.facingLeft = direction.dx < 0
             directionDeadline = now + Self.minimumTravelDuration
         }
+    }
+
+    /// portalRoute가 양쪽 visibleFrame의 실제 겹침을 이미 검증했으므로 통과 중에는 일반 충돌 판정을
+    /// 다시 적용하지 않는다. 서로 다른 backing scale 경계의 반 픽셀 보정이 펫을 되튕기는 것을 방지한다.
+    static func advancedPortalOrigin(from origin: NSPoint, route: PortalRoute,
+                                     distance: CGFloat) -> (origin: NSPoint, completed: Bool) {
+        var next = origin
+        let signedDistance = max(0, distance) * route.crossingSign
+        switch route.axis {
+        case .horizontal:
+            next.y = route.target
+            next.x += signedDistance
+            if route.crossingSign > 0, next.x >= route.completionCoordinate {
+                next.x = route.completionCoordinate
+                return (next, true)
+            }
+            if route.crossingSign < 0, next.x <= route.completionCoordinate {
+                next.x = route.completionCoordinate
+                return (next, true)
+            }
+        case .vertical:
+            next.x = route.target
+            next.y += signedDistance
+            if route.crossingSign > 0, next.y >= route.completionCoordinate {
+                next.y = route.completionCoordinate
+                return (next, true)
+            }
+            if route.crossingSign < 0, next.y <= route.completionCoordinate {
+                next.y = route.completionCoordinate
+                return (next, true)
+            }
+        }
+        return (next, false)
     }
 
     private func setAutomaticOrigin(_ origin: NSPoint) {
