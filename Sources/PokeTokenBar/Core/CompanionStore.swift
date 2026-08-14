@@ -564,6 +564,13 @@ final class CompanionStore {
     func debugAddCandy(_ n: Int) { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += n; save() }
     /// 테스트 전용 — 스타터 선택 완료 후의 기존 사용자 상태를 재현한다.
     func debugMarkStarterChosen() { state.starterChosen = true; save() }
+    /// 테스트 전용 — 레벨 경험치를 직접 주입하고 진화·졸업 판정까지 트리거한다(applyUsage(0) 은
+    /// claimAdventure() 가 레벨만 올릴 때 쓰는 것과 같은 형태). 프로덕션 호출 경로 없음.
+    func debugAccrueLevelExperience(_ amount: Int) {
+        guard state.active != nil else { return }
+        state.active!.levelExperience = min(990_000_000, state.active!.levelExperience + amount)
+        applyUsage(0)
+    }
     /// 테스트 전용 — 기술 목록 표시 상태를 직접 세팅(네트워크 로드 없이 행 레이아웃을 재기 위함).
     func debugSetDisplayedMoves(_ moves: [MoveSpec], loading: Bool = false) {
         displayedMoves = moves
@@ -1079,51 +1086,52 @@ final class CompanionStore {
                 if !isRevealingDitto { Task { await revealDitto() } }
                 break
             }
+            // 최종 진화형 도달 — 졸업은 여기서 자동으로 하지 않는다. 사용자가 직접
+            // `graduateCompanion()` 을 눌러야 한다(canGraduate 가 조건을 판정). 자동 졸업은
+            // 진화 수락 직후 그 개체를 곧바로 활성에서 빼앗아, 방금 진화시킨 최종형을 한 순간도
+            // 못 데리고 있게 만들었다.
+            if node.children.isEmpty { break }
             let threshold = PokemonBalance.phaseThreshold(
                 rarity: a.rarity, totalForms: a.totalForms, stageIndex: a.stageIndex)
-            guard a.usedAtStage >= threshold else { break }
-            if node.children.isEmpty {
-                graduate()
-                break
+            let nextIndex = a.stageIndex + 1
+            let next: EvoNode
+            if a.plannedPathIDs.indices.contains(nextIndex),
+               let planned = node.children.first(where: { $0.speciesID == a.plannedPathIDs[nextIndex] }) {
+                next = planned
             } else {
-                let nextIndex = a.stageIndex + 1
-                let next: EvoNode
-                if a.plannedPathIDs.indices.contains(nextIndex),
-                   let planned = node.children.first(where: { $0.speciesID == a.plannedPathIDs[nextIndex] }) {
-                    next = planned
-                } else {
-                    next = pickPlannedChild(node, baseID: a.baseID)
-                    let fallbackRoute = [node.speciesID] + makeEvolutionPlan(from: next, baseID: a.baseID)
-                    let repaired = Self.repairedPlan(realizedPath: a.pathIDs, stageIndex: a.stageIndex,
-                                                     fallbackRoute: fallbackRoute)
-                    state.active!.plannedPathIDs = repaired
-                    state.active!.totalForms = repaired.count
-                    AppLog.write("evolve: repaired invalid planned path for base \(a.baseID)")
-                }
-                // Some legacy/fixture lines have no evolution metadata. When neither a level nor an
-                // item/trigger is supplied, the growth threshold itself is the complete rule and the
-                // evolution can proceed immediately. Real API lines with an explicit trigger still
-                // remain gated instead of silently evolving.
-                if let requiredLevel = next.evolutionLevel {
-                    guard a.level >= requiredLevel else { break }
-                    if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
-                       declinedEvolutionTargetID == next.speciesID { break }
-                    if evolutionPrompt == nil {
-                        evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
-                            toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
-                            toName: line.localizedName(next.speciesID, state.language))
-                    }
-                    break
-                }
-                guard next.evolutionTrigger == nil, next.evolutionItem == nil else { break }
-                state.active!.pathIDs = Array(a.pathIDs.prefix(a.stageIndex + 1)) + [next.speciesID]
-                state.active!.stageIndex += 1
-                state.active!.usedAtStage = max(0, a.usedAtStage - threshold)
-                fireCelebration(.evolve)
-                transitions += 1
-                if transitions >= maxTransitions { break }
-                continue
+                next = pickPlannedChild(node, baseID: a.baseID)
+                let fallbackRoute = [node.speciesID] + makeEvolutionPlan(from: next, baseID: a.baseID)
+                let repaired = Self.repairedPlan(realizedPath: a.pathIDs, stageIndex: a.stageIndex,
+                                                 fallbackRoute: fallbackRoute)
+                state.active!.plannedPathIDs = repaired
+                state.active!.totalForms = repaired.count
+                AppLog.write("evolve: repaired invalid planned path for base \(a.baseID)")
             }
+            // 본가처럼 레벨만으로 게이팅한다 — acceptEvolution() 도 이미 usedAtStage 를 참조하지
+            // 않고 0 으로 리셋할 뿐이다(#19). 여기서 성장치까지 같이 요구하면 acceptEvolution 이
+            // 절대 실행 못 하는 조건을 사전에 막는, 실질 의미 없는 이중 게이트가 된다.
+            if let requiredLevel = next.evolutionLevel {
+                guard a.level >= requiredLevel else { break }
+                if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
+                   declinedEvolutionTargetID == next.speciesID { break }
+                if evolutionPrompt == nil {
+                    evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
+                        toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
+                        toName: line.localizedName(next.speciesID, state.language))
+                }
+                break
+            }
+            // 레벨 메타데이터가 없는 진화(구버전 픽스처 등)만 성장치로 게이팅한다 — 본가에 대응하는
+            // 레벨 값이 없어 게이트로 삼을 다른 기준이 없다.
+            guard a.usedAtStage >= threshold else { break }
+            guard next.evolutionTrigger == nil, next.evolutionItem == nil else { break }
+            state.active!.pathIDs = Array(a.pathIDs.prefix(a.stageIndex + 1)) + [next.speciesID]
+            state.active!.stageIndex += 1
+            state.active!.usedAtStage = max(0, a.usedAtStage - threshold)
+            fireCelebration(.evolve)
+            transitions += 1
+            if transitions >= maxTransitions { break }
+            continue
         }
         save()
     }
@@ -1190,6 +1198,25 @@ final class CompanionStore {
         return normalized
     }
 
+    /// 졸업 가능 여부 — 최종 진화형에 도달했으면 언제든 사용자가 직접 졸업시킬 수 있다.
+    /// 진화가 없는 종(totalForms==1)만 레벨 30을 함께 요구한다(#19): 진화를 거친 종은 그 마지막
+    /// 진화 요구 레벨이 이미 관문이었지만, 무진화 종은 그 관문이 아예 없어 대신 세우는 기준이다.
+    var canGraduate: Bool {
+        guard let a = state.active, let line = currentLine,
+              line.tree.node(withID: a.currentID)?.children.isEmpty == true else { return false }
+        return a.totalForms > 1 || a.level >= PokemonBalance.graduationRequiredLevel
+    }
+
+    /// 졸업 — 도감에 기록하고 **개체는 박스로 보낸 뒤** 새 알을 시작한다. 사용자가 직접 누르는
+    /// 액션이다(자동 아님): 다음 포켓몬으로 넘어가는 버튼이지, 지금 개체를 버리는 것이 아니다.
+    /// 박스에 남으므로 `switchCompanion(to:)` 로 언제든 다시 데려와 계속 키울 수 있다.
+    @discardableResult
+    func graduateCompanion() -> Bool {
+        guard canGraduate else { return false }
+        graduate()
+        return true
+    }
+
     private func graduate() {
         guard let a = state.active else { return }
         let finalID = a.currentID
@@ -1205,6 +1232,9 @@ final class CompanionStore {
         justGraduated = name
         notifyCompanionEvent(l.notifGraduateTitle, l.notifGraduateBody(name))
         eventUntil = clock().addingTimeInterval(6)
+        // 도감은 기록만 남는다(DexEntry 엔 레벨·경험치가 없다) — 개체 자체는 박스로 옮겨 계속
+        // 키울 수 있게 한다. 예전엔 여기서 그냥 버려서, 졸업이 곧 그 개체의 영구 삭제였다.
+        state.boxedMons.append(a)
         state.active = nil
         state.care = PetCareState(lastNeedAt: clock(), lastUpdatedAt: clock())
         activeGeneration += 1

@@ -129,7 +129,7 @@ final class MintTests: XCTestCase {
 
     func testMintShopPriceAndPurchasable() {
         XCTAssertEqual(ItemKind.mint.shopPrice, Mint.price)
-        XCTAssertEqual(ItemKind.mint.shopPrice, 100_000_000)
+        XCTAssertEqual(ItemKind.mint.shopPrice, 1_000)
         let s = store(mint: 0)
         XCTAssertTrue(s.purchasableItems.contains(.rareCandy))
         XCTAssertTrue(s.purchasableItems.contains(.mint))
