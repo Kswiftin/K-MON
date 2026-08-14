@@ -66,7 +66,7 @@ enum ImportConfirmPolicy {
 }
 
 enum SaveTransfer {
-    static let integrityVersion = 5
+    static let integrityVersion = 6
     /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
     static let forcedResetVersion = 1
     /// 세이브 파일 크기 상한. 정상 세이브는 수 KB 이고 도감이 가득 차도 수백 KB 를 넘지 않는다.
@@ -156,6 +156,7 @@ enum SaveTransfer {
         s.starPieces = clampToken(s.starPieces)
         s.battleRank.points = min(BattleRank.maximumPoints, max(0, s.battleRank.points))
         s.focusEggs = min(max(0, s.focusEggs), 999)
+        s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
         s.weeklyAdventureCount = min(max(0, s.weeklyAdventureCount), 10)
         s.eggUsage = clampToken(s.eggUsage)
@@ -241,6 +242,9 @@ enum SaveTransfer {
         p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("pc\(s.starPieces)"); p.append("eg\(s.eggUsage)")
         if s.battleRank.points != 0 { p.append("br\(s.battleRank.points)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
+        if !s.focusEggReadyDates.isEmpty {
+            p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
+        }
         p.append("ef\(s.eggFragments)|ab\(s.lastAdventureBonusDate)|wk\(s.adventureWeekKey)|wc\(s.weeklyAdventureCount)")
         p.append("tier\(s.eggTier?.rawValue ?? "-")"); p.append("sc\(s.starterChosen)")
         p.append("cand" + s.starterCandidates.map(String.init).joined(separator: ","))

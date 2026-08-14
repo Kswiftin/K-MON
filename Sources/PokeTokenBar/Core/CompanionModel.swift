@@ -605,6 +605,8 @@ struct CompanionState: Codable, Sendable {
     var battleHistory: [BattleRecord] = []
     var battleRank = BattleRank()
     var focusEggs = 0
+    // 보관 중인 알마다 자동 부화 예정 시각. 알은 획득 5분 뒤 현재 동행과 무관하게 박스에서 부화한다.
+    var focusEggReadyDates: [Date] = []
     var eggFragments = 0
     var lastAdventureBonusDate = ""
     var adventureWeekKey = ""
@@ -654,6 +656,7 @@ struct CompanionState: Codable, Sendable {
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)
         battleRank         = c.lenient(BattleRank.self, forKey: .battleRank, default: BattleRank())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
+        focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
         eggFragments       = c.lenient(Int.self, forKey: .eggFragments, default: 0)
         lastAdventureBonusDate = c.lenient(String.self, forKey: .lastAdventureBonusDate, default: "")
         adventureWeekKey   = c.lenient(String.self, forKey: .adventureWeekKey, default: "")

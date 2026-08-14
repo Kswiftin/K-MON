@@ -84,6 +84,9 @@ struct BattleView: View {
                 Text(l.battleNearby).font(.caption).bold()
                 if case .preparing = center.phase { ProgressView().controlSize(.mini) }
                 Spacer()
+                if !center.peers.isEmpty {
+                    Text("\(center.peers.count)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
             }
             if let err = center.lastError {
                 Text(err).font(.caption2).foregroundStyle(.orange)
@@ -95,19 +98,30 @@ struct BattleView: View {
                 }
                 .padding(.vertical, 8)
             } else {
-                ForEach(center.peers) { peer in
-                    HStack {
-                        Image(systemName: "person.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(peer.name).font(.callout).lineLimit(1)
-                        Spacer()
-                        Button(l.battleChallengeButton) { center.challenge(peer) }
-                            .controlSize(.small)
-                            .disabled(!isChallengeEnabled)
+                ScrollView {
+                    LazyVStack(spacing: 4) {
+                        ForEach(center.peers) { peer in
+                            HStack {
+                                Image(systemName: "person.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(peer.name).font(.callout).lineLimit(1)
+                                    Text(peer.rank?.displayName
+                                         ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
+                                        .font(.caption2)
+                                        .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
+                                }
+                                Spacer()
+                                Button(l.battleChallengeButton) { center.challenge(peer) }
+                                    .controlSize(.small)
+                                    .disabled(!isChallengeEnabled)
+                            }
+                            .padding(.vertical, 2)
+                        }
                     }
-                    .padding(.vertical, 2)
                 }
+                .frame(maxHeight: 180)
             }
             manualConnect
         }
