@@ -1251,11 +1251,12 @@ final class CompanionStore {
         state.care = PetCareState(lastNeedAt: clock(), lastUpdatedAt: clock())
         activeGeneration += 1
         currentLine = nil
-        state.eggUsage = 0   // 새 알은 처음부터 인큐베이션
-        // eggTier 는 손대지 않는다 — 여기 도달했다는 건 활성 포켓몬이 있었다는 뜻이라 보증은 이미 nil 이다
-        // (부화가 소비, 디스크/불러오기는 sanitized 가 정규화). 소비 지점은 hatchCore 한 곳으로 유지한다.
-        // "알을 받는 순간" 즉시 프리패칭 시작 — 다음 부화의 종·라인·스프라이트 예열.
-        Task { await self.ensureEggPrefetch() }
+        // 졸업 보상 알은 보관 알과 같은 5분 타이머를 쓴다. 예전엔 eggUsage(누적 임계) 알을 줬는데,
+        // 그 값을 채우는 생산 경로가 Pokédoro 개편으로 사라져(accrue 는 호출자가 없다) 영원히
+        // 부화하지 않았다 — 졸업이 곧 진행 정지였다. 타이머 경로는 hatchStoredEggIfNeeded 가
+        // 이미 돌리고 있고, 활성이 비어 있으면 박스가 아니라 활성으로 부화한다.
+        state.focusEggs = min(999, state.focusEggs + 1)
+        state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
     }
 
     // MARK: 인벤토리 / 이상한 사탕
@@ -1478,7 +1479,18 @@ final class CompanionStore {
         let mon = MonState(baseID: line.baseID, pathIDs: [line.baseID], plannedPathIDs: plan,
                            stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: plan.count,
                            isShiny: shiny, nature: nature)
-        state.boxedMons.append(mon)
+        // 동행이 비어 있으면(졸업 직후 등) 박스가 아니라 바로 동행으로 부화한다 — 그러지 않으면
+        // 졸업 후 동행 없는 상태로 남아 사용자가 박스에서 직접 꺼내야 한다.
+        if state.active == nil {
+            state.active = mon
+            activeGeneration += 1
+            currentLine = line
+            displayState = .levelUp
+            eventUntil = clock().addingTimeInterval(4)
+            fireCelebration(.hatch(shiny: shiny))
+        } else {
+            state.boxedMons.append(mon)
+        }
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
         let name = line.localizedName(line.baseID, state.language)
