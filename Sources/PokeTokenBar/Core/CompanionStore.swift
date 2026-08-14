@@ -339,7 +339,9 @@ final class CompanionStore {
                 mon.pathIDs.compactMap { id in line.names[id].map { (id, $0) } })
         } : nil)
         return DexEntry(
-            id: "\(isActive ? "active" : "boxed")-\(mon.id)-\(mon.currentID)",
+            // 활성 항목 id 는 기존 형식을 유지한다(뷰 diffing·테스트가 이 문자열에 의존).
+            // 박스는 같은 종이 여럿일 수 있어 개체 UUID 로 구분한다.
+            id: isActive ? "active-\(mon.baseID)-\(mon.currentID)" : "boxed-\(mon.id)",
             baseID: mon.baseID,
             finalID: mon.currentID,
             // 도달분만 — stageIndex 는 MonState.init(from:) clamp + SaveTransfer 정규화가 범위를 보장하지만,
@@ -363,7 +365,9 @@ final class CompanionStore {
     }
 
     private var livingDexEntries: [DexEntry] {
-        (activeDexEntry.map { [$0] } ?? []) + state.boxedMons.map { livingDexEntry($0, isActive: false) }
+        // 졸업분은 state.dex 의 영구 기록이 이미 담당한다 — 여기서 또 만들면 같은 개체가 두 번 잡힌다.
+        (activeDexEntry.map { [$0] } ?? [])
+            + state.boxedMons.filter { !$0.isGraduated }.map { livingDexEntry($0, isActive: false) }
     }
 
     /// 합성된 현재 포켓몬 항목인지 판별한다. caughtAt 이 없는 구버전 졸업 항목과 혼동하지 않는다.
@@ -1265,7 +1269,9 @@ final class CompanionStore {
         eventUntil = clock().addingTimeInterval(6)
         // 도감은 기록만 남는다(DexEntry 엔 레벨·경험치가 없다) — 개체 자체는 박스로 옮겨 계속
         // 키울 수 있게 한다. 예전엔 여기서 그냥 버려서, 졸업이 곧 그 개체의 영구 삭제였다.
-        state.boxedMons.append(a)
+        var graduated = a
+        graduated.isGraduated = true   // 영구 DexEntry 가 이미 기록됐다 — 화면용 행으로 중복 집계 금지(#28)
+        state.boxedMons.append(graduated)
         state.active = nil
         state.care = PetCareState(lastNeedAt: clock(), lastUpdatedAt: clock())
         activeGeneration += 1
