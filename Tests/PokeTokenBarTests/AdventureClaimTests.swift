@@ -143,7 +143,9 @@ final class AdventureClaimTests: XCTestCase {
         // 이미 마운트가 끊긴 채로 남아 있던 뷰들 — 포획 로그 화면(개체 단위 목록)이 도감 격자로
         // 대체되면서 호출부가 사라졌다. 화면을 되살릴지 지울지는 별도 과제라 여기선 목록을 고정해
         // "더 늘어나지 않는다" 만 잠근다. 해결하면 이 목록에서 지운다.
-        let knownUnmounted: Set<String> = ["StarterCard", "DexSummaryHeader", "DexEntryRow"]
+        // AdventureCard 는 폐기된 돌보기 UI를 소스 호환 목적으로만 남긴 상태다. 모험 정산은
+        // FocusTimerView와 CompanionStore의 자동 정산 경로가 담당하므로 다시 마운트하면 안 된다.
+        let knownUnmounted: Set<String> = ["StarterCard", "DexSummaryHeader", "DexEntryRow", "AdventureCard"]
 
         var unmounted: [String] = []
         for file in try Self.swiftFiles(in: uiDirectory) {

@@ -1061,8 +1061,6 @@ final class CompanionStore {
         }
         if state.active == nil { displayState = .egg }
         else if justGraduated != nil || (eventUntil != nil && clock() < eventUntil!) { displayState = .levelUp }
-        else if state.care.energy < 20 { displayState = .tired }
-        else if state.care.energy < 45 { displayState = .sleep }
         else { displayState = .idle }
         save()
     }
