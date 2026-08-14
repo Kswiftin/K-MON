@@ -188,6 +188,18 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertEqual(route?.completionCoordinate ?? 1, 0, accuracy: 0.001)
     }
 
+    func testDiagonalEntryFromPortraitDisplayIsLockedBeforeStraddling() {
+        let portrait = NSRect(x: -3000, y: 11, width: 1080, height: 1920)
+        let center = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: -1992, y: 1000), petSize: 72,
+            velocity: CGVector(dx: 141, dy: 141), screens: [portrait, center])
+        XCTAssertNotNil(route, "유효 통로에서도 경계에 걸치기 전에 통과 잠금을 시작해야 함")
+        XCTAssertEqual(route?.target ?? 0, 1000, accuracy: 0.001)
+        XCTAssertEqual(route?.crossingSign ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(route?.completionCoordinate ?? 0, -1920, accuracy: 0.001)
+    }
+
     func testBlockedLeftwardCrossingFindsSamePortal() {
         let left = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
         let right = NSRect(x: 0, y: 0, width: 1728, height: 1084)
