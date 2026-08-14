@@ -185,6 +185,7 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertNotNil(route)
         XCTAssertEqual(route?.target ?? 0, 988, accuracy: 0.001)
         XCTAssertEqual(route?.crossingSign ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(route?.completionCoordinate ?? 1, 0, accuracy: 0.001)
     }
 
     func testBlockedLeftwardCrossingFindsSamePortal() {
@@ -196,6 +197,7 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertNotNil(route)
         XCTAssertEqual(route?.target ?? 0, 712, accuracy: 0.001)
         XCTAssertEqual(route?.crossingSign ?? 0, -1, accuracy: 0.001)
+        XCTAssertEqual(route?.completionCoordinate ?? 0, -96, accuracy: 0.001)
     }
 
     func testOuterEdgeHasNoPortalRoute() {
