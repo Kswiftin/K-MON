@@ -195,13 +195,10 @@ struct SpriteView: View {
             }
             guard animated else { return }
             // animated GIF 시도(shiny 미제공 종은 일반 GIF 폴백) → 프레임 2개 이상이면 순환 루프
-            var gifData = await SpriteStore.shared.data(speciesID: id, animated: true, shiny: shiny)
-            if gifData == nil, shiny {
-                gifData = await SpriteStore.shared.data(speciesID: id, animated: true, shiny: false)
-            }
-            guard let data = gifData else { return }
-            // 단일 프레임/디코드 실패 → 정적 폴백. 취소됐으면 아예 반영하지 않는다(빈 배열이라 아래서 종료).
-            let ready = Self.framesToApply(GIFDecoder.frames(from: data), cancelled: Task.isCancelled)
+            var ready = await SpriteLoader.decodedFrames(speciesID: id, shiny: shiny)
+            if ready.isEmpty, shiny { ready = await SpriteLoader.decodedFrames(speciesID: id, shiny: false) }
+            // 단일 프레임/디코드 실패 → 정적 폴백. 취소됐으면 아예 반영하지 않는다.
+            ready = Self.framesToApply(ready, cancelled: Task.isCancelled)
             guard !ready.isEmpty else { return }
             frames = ready
             // delay 기반 프레임 advance. .task 취소 시(speciesID 변경/뷰 소멸) 루프 종료 — 누수 없음
