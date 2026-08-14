@@ -325,26 +325,45 @@ final class CompanionStore {
     /// 현재 개체는 영속 dex 에 중복 저장하지 않고 화면용 항목으로 합성한다. 졸업 시 active 가 사라지고
     /// 같은 개체의 영구 DexEntry 가 추가되므로 목록 개수는 그대로 유지된다.
     private var activeDexEntry: DexEntry? {
-        guard let active = state.active else { return nil }
+        state.active.map { livingDexEntry($0, isActive: true) }
+    }
+
+    /// 아직 졸업하지 않은 개체(활성 + 박스)의 화면용 도감 항목.
+    ///
+    /// 이름은 개체에 저장된 `MonState.names` 를 먼저 쓴다 — `currentLine` 은 **활성 개체만** 로드되므로
+    /// 박스 개체를 그것으로 채우면 종 번호(#25)로 그려진다(#28). 활성 개체는 구버전 저장분(names 없음)을
+    /// 위해 currentLine 폴백을 남긴다.
+    private func livingDexEntry(_ mon: MonState, isActive: Bool) -> DexEntry {
+        let names = mon.names ?? (isActive ? currentLine.map { line in
+            Dictionary(uniqueKeysWithValues:
+                mon.pathIDs.compactMap { id in line.names[id].map { (id, $0) } })
+        } : nil)
         return DexEntry(
-            id: "active-\(active.baseID)-\(active.currentID)",
-            baseID: active.baseID,
-            finalID: active.currentID,
-            chainOrder: active.pathIDs,
-            rarity: active.rarity,
+            id: "\(isActive ? "active" : "boxed")-\(mon.id)-\(mon.currentID)",
+            baseID: mon.baseID,
+            finalID: mon.currentID,
+            // 도달분만 — stageIndex 는 MonState.init(from:) clamp + SaveTransfer 정규화가 범위를 보장하지만,
+            // 손상 입력에서 pathIDs 가 더 길 수 있어 방어적으로 자른다(원래 dexSpecies 가 하던 처리).
+            chainOrder: Array(mon.pathIDs.prefix(mon.stageIndex + 1)),
+            rarity: mon.rarity,
             caughtAt: nil,
-            isShiny: currentIsShiny,   // 위장 메타몽은 리빌 전까지 이로치를 숨긴다(판정 단일 소스)
-            nature: active.nature,
-            names: currentLine.map { line in
-                Dictionary(uniqueKeysWithValues:
-                    active.pathIDs.compactMap { id in line.names[id].map { (id, $0) } })
-            }
+            // 위장 메타몽은 리빌 전까지 이로치를 숨긴다(판정 단일 소스). 박스 개체는 그 판정이
+            // 활성 전용이라 저장된 값을 쓰되 위장 중이면 같은 규칙으로 감춘다.
+            isShiny: isActive ? currentIsShiny
+                : (mon.dittoDisguise != nil && !mon.dittoRevealed ? false : mon.isShiny),
+            nature: mon.nature,
+            names: names
         )
     }
 
+    /// 졸업 기록 + **아직 키우는 중인 개체 전부**(활성 + 박스). 박스를 빼면 #25 가 만든 "동행을 유지한 채
+    /// 박스에 부화" 경로의 개체가 도감에서 사라지고, 활성으로 바꿔야만 나타난다(#28).
     var dexEntries: [DexEntry] {
-        guard let activeDexEntry else { return state.dex }
-        return state.dex + [activeDexEntry]
+        state.dex + livingDexEntries
+    }
+
+    private var livingDexEntries: [DexEntry] {
+        (activeDexEntry.map { [$0] } ?? []) + state.boxedMons.map { livingDexEntry($0, isActive: false) }
     }
 
     /// 합성된 현재 포켓몬 항목인지 판별한다. caughtAt 이 없는 구버전 졸업 항목과 혼동하지 않는다.
@@ -398,7 +417,7 @@ final class CompanionStore {
 
     /// 도감 목록 — 보유 종만, 도감 번호 오름차순.
     ///
-    /// 포함 종 = 졸업분 `chainOrder` ∪ 현재 개체의 **도달분** `pathIDs[0...stageIndex]`.
+    /// 포함 종 = 졸업분 `chainOrder` ∪ 키우는 중인 개체(활성 + 박스)의 **도달분** `pathIDs[0...stageIndex]`.
     /// `plannedPathIDs`(사전 선택된 전체 경로)는 미도달 단계를 포함하므로 절대 쓰지 않는다 — 쓰면
     /// 아직 진화하지 않은 종이 보유로 잡힌다.
     var dexSpecies: [DexSpecies] {
@@ -413,13 +432,13 @@ final class CompanionStore {
                 acc[id] = a
             }
         }
-        if let active = state.active {
-            // 도달분만 — stageIndex 가 pathIDs 범위 안임은 두 입구가 보장한다:
-            // MonState.init(from:) 의 clamp, 그리고 SaveTransfer 의 가져오기 정규화.
-            for id in active.pathIDs.prefix(active.stageIndex + 1) {
-                var a = acc[id] ?? DexAccumulator(rarity: active.rarity)
-                if let n = currentLine?.names[id] { a.names = n }
-                if currentIsShiny { a.isShiny = true }   // 위장 중 숨김 규칙 재사용
+        // 활성 + 박스 — 박스를 빼면 #25 의 "동행 유지한 채 박스에 부화" 개체가 도감에서 빠진다(#28).
+        for entry in livingDexEntries {
+            // 도달분만 — chainOrder 는 이미 pathIDs(도달 경로)라 미도달 단계가 섞이지 않는다.
+            for id in entry.chainOrder {
+                var a = acc[id] ?? DexAccumulator(rarity: entry.rarity)
+                if let n = entry.names?[id] { a.names = n }
+                if entry.isShiny { a.isShiny = true }   // 위장 중 숨김 규칙은 livingDexEntry 가 적용
                 acc[id] = a
             }
         }
@@ -1478,7 +1497,8 @@ final class CompanionStore {
         let plan = makeEvolutionPlan(from: line.tree, baseID: line.baseID)
         let mon = MonState(baseID: line.baseID, pathIDs: [line.baseID], plannedPathIDs: plan,
                            stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: plan.count,
-                           isShiny: shiny, nature: nature)
+                           isShiny: shiny, nature: nature,
+                           names: line.names)   // 박스 개체는 currentLine 이 없어 이름을 여기서 들고 가야 한다
         // 동행이 비어 있으면(졸업 직후 등) 박스가 아니라 바로 동행으로 부화한다 — 그러지 않으면
         // 졸업 후 동행 없는 상태로 남아 사용자가 박스에서 직접 꺼내야 한다.
         if state.active == nil {
@@ -1673,7 +1693,8 @@ final class CompanionStore {
         activeGeneration += 1
         state.active = MonState(baseID: line.baseID, pathIDs: [line.baseID], plannedPathIDs: evolutionPlan,
                                 stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: evolutionPlan.count,
-                                isShiny: isShiny, nature: nature, dittoDisguise: dittoDisguise)
+                                isShiny: isShiny, nature: nature, dittoDisguise: dittoDisguise,
+                                names: line.names)   // 박스로 들어가도 도감이 이름을 그릴 수 있게 개체에 저장
         AppLog.write("hatch: base=\(line.baseID) rarity=\(line.rarity) shiny=\(isShiny) forms=\(evolutionPlan.count) ditto=\(dittoDisguise != nil)")
         let name = line.localizedName(line.baseID, state.language)
         notifyCompanionEvent(showShiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
@@ -1876,6 +1897,8 @@ final class CompanionStore {
     #if DEBUG
     /// 테스트 전용 — 도감을 직접 세팅(생산 배율·마이그레이션 계승 검증용). 프로덕션 경로 없음.
     func debugSetDex(_ entries: [DexEntry]) { state.dex = entries; save() }
+    /// 테스트 전용 — 박스를 직접 세팅(보관 알 부화의 네트워크 경로 없이 박스 상태만 재현). 프로덕션 경로 없음.
+    func debugSetBoxedMons(_ mons: [MonState]) { state.boxedMons = mons; save() }
     #endif
 
     // MARK: 영속

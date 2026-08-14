@@ -735,6 +735,35 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.state.eggUsage, 0, "누적 임계 알은 더 이상 쓰지 않는다")
     }
 
+    /// [회귀 #28] 동행을 유지한 채 박스로 들어간 개체도 도감에 보여야 한다. 예전엔 도감 접근자가
+    /// state.dex + 활성 개체만 읽어, 박스 개체는 활성으로 바꿔야만 나타나고 다시 바꾸면 사라졌다.
+    func testBoxedCompanionsAppearInTheDexWithoutSwitching() async {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let activeID = s.state.active?.id
+
+        // 동행이 있는 상태에서 다른 개체를 박스에 넣는다(보관 알 부화가 만드는 상태와 같다).
+        let boxed = MonState(baseID: 4, pathIDs: [4], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1,
+                             names: [4: ["ko": "포4", "en": "P4"]])
+        s.debugSetBoxedMons([boxed])
+
+        XCTAssertEqual(s.state.active?.id, activeID, "동행은 그대로")
+        XCTAssertTrue(s.dexSpecies.map(\.id).contains(4), "박스 개체도 도감에 잡혀야 한다")
+        XCTAssertTrue(s.dexEntries.contains { $0.baseID == 4 })
+    }
+
+    /// 박스 개체는 currentLine 이 없다 — 개체에 저장된 이름으로 그려야 종 번호(#4)로 안 떨어진다.
+    func testBoxedCompanionUsesItsStoredNames() async {
+        let s = store(linear3)
+        s.setLanguage(.ko)
+        await s.hatch(baseID: 1)
+        s.debugSetBoxedMons([MonState(baseID: 4, pathIDs: [4], stageIndex: 0, usedAtStage: 0,
+                                      rarity: .common, totalForms: 1,
+                                      names: [4: ["ko": "포4", "en": "P4"]])])
+        XCTAssertEqual(s.dexSpecies.first { $0.id == 4 }?.name, "포4")
+    }
+
     /// 최종형이 아니면 졸업 버튼 자체가 안 뜬다.
     func testCannotGraduateBeforeTheFinalForm() async {
         let s = store(linear3)
