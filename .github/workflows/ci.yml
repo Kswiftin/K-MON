@@ -46,12 +46,17 @@ jobs:
 
       - name: Scan for committed secrets
         # gitleaks-action requires a paid GITLEAKS_LICENSE for organization repos.
-        # The open-source CLI performs the same full-history scan without that wrapper.
+        # The open-source CLI scans only commits introduced by this PR/push; scanning the
+        # entire inherited history would fail forever on an old test-string false positive.
+        env:
+          SCAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          SCAN_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          [[ "$SCAN_BASE" =~ ^[0-9a-f]{40}$ && "$SCAN_HEAD" =~ ^[0-9a-f]{40}$ ]]
           docker run --rm \
             -v "$PWD:/repo" \
             ghcr.io/gitleaks/gitleaks:v8.30.1 \
-            git --redact --verbose --no-banner /repo
+            git --log-opts="$SCAN_BASE..$SCAN_HEAD" --redact --verbose --no-banner /repo
 
   publish-development:
     name: publish-development
