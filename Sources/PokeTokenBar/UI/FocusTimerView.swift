@@ -24,7 +24,10 @@ struct FocusTimerView: View {
                         Spacer()
                         Text(timer.phase == .focus ? focusHint : restHint)
                             .font(.caption2).foregroundStyle(.secondary)
-                        Button(companion.language == .ko ? "종료" : "Stop") { timer.stop() }
+                        Button(companion.language == .ko ? "종료" : "Stop") {
+                            timer.stop()
+                            companion.cancelFocusAdventure()
+                        }
                             .controlSize(.small)
                     }
                 }
@@ -34,6 +37,41 @@ struct FocusTimerView: View {
                     Spacer()
                     Text(rewardText(timer.focusMinutes))
                         .font(.caption2).foregroundStyle(.orange)
+                }
+            } else if let adventure = companion.activeAdventure {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Label(companion.language == .ko ? "진행 중인 모험" : "Active adventure",
+                                  systemImage: "map.fill")
+                                .font(.caption.weight(.semibold))
+                            Spacer()
+                            if adventure.isComplete(at: context.date) {
+                                Button(companion.language == .ko ? "보상 받기" : "Claim") {
+                                    _ = companion.claimAdventure()
+                                }
+                                .buttonStyle(.borderedProminent).controlSize(.small)
+                            } else {
+                                Text(adventure.endsAt, style: .timer)
+                                    .font(.caption.monospacedDigit())
+                            }
+                        }
+                        ProgressView(value: adventure.progress(at: context.date)).tint(.green)
+                        Text(companion.language == .ko
+                             ? (adventure.isComplete(at: context.date)
+                                ? "완료된 모험의 보상을 받아야 다음 집중을 시작할 수 있어요."
+                                : "앱을 다시 열어도 모험은 계속 진행됩니다.")
+                             : (adventure.isComplete(at: context.date)
+                                ? "Claim this reward before starting another focus session."
+                                : "The adventure continues after reopening the app."))
+                            .font(.caption2).foregroundStyle(.secondary)
+                        if !adventure.isComplete(at: context.date) {
+                            Button(companion.language == .ko ? "모험 취소" : "Cancel adventure") {
+                                companion.cancelFocusAdventure()
+                            }
+                            .controlSize(.small)
+                        }
+                    }
                 }
             } else {
                 Picker("", selection: $selectedMinutes) {
