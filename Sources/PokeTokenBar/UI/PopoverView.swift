@@ -1,7 +1,23 @@
 import AppKit
 import SwiftUI
 
-enum PopoverTab { case home, pokemon, collection, battle, pokeathlon, shop, bag }
+enum PopoverTab {
+    case home, pokemon, collection, battle, pokeathlon, shop, bag
+
+    /// 탭이 유지하는 팝오버 높이. 탭 안에서 콘텐츠가 늘고 줄어도(기술 목록 펼침, 로딩 자리표시자,
+    /// 진화 프롬프트) 이 값은 그대로라 창이 다시 그려지지 않는다 — 펼칠 때마다 커졌다 작아지며
+    /// 떨리던 원인을 없앤다. 탭을 바꿀 때만 크기가 바뀐다.
+    var contentHeight: CGFloat {
+        switch self {
+        // 헤더·진화 라인·기술 4행까지 펼친 높이. 접어도 같은 높이라 아래가 조금 빈다.
+        case .home: return 560
+        // 도감·상점·가방은 안에 520pt 격자를 들고 있어 타이머·탭바·푸터까지 더하면 이만큼 든다.
+        case .collection, .shop, .bag, .pokemon: return 780
+        // 배틀·포켓슬론은 상대 목록·경기 상태에 따라 세로가 가장 많이 흔들리는 탭이다.
+        case .battle, .pokeathlon: return 780
+        }
+    }
+}
 
 enum PopoverMetrics {
     static let width: CGFloat = 360
@@ -10,19 +26,33 @@ enum PopoverMetrics {
 
     /// 메뉴바·팝오버 화살표·화면 아래 여백이 먹는 세로 공간.
     static let verticalChrome: CGFloat = 80
-    /// 화면이 아무리 커도 이 이상은 안 키운다(팝오버가 화면을 뒤덮지 않게).
-    static let hardMaxHeight: CGFloat = 720
     /// 좁은 화면에서도 최소한 이만큼은 준다 — 아래 스크롤로 나머지를 본다.
     static let minHeight: CGFloat = 320
+    /// 화면 크기를 모를 때(NSScreen 부재) 쓰는 보수적 기본값.
+    static let fallbackScreenHeight: CGFloat = 900
 
     /// 팝오버 콘텐츠 높이 상한. 넘으면 NSPopover 가 스크롤 없이 잘라내므로(#9) 스크롤 컨테이너와 짝으로 쓴다.
+    ///
+    /// 상한은 오직 화면 가용 높이에서만 나온다. 예전엔 720pt 짜리 고정 천장을 같이 걸었는데,
+    /// 1440pt 화면에서도 상한이 720 이라 "기술 보기" 를 펼친 홈 탭(약 760pt)이 화면에 다 들어가는데도
+    /// 스크롤로 넘어가 헤더와 돌봄·모험 카드가 잘려 보였다. 화면보다 작은 고정 천장은 두지 않는다.
     static func maxHeight(screenHeight: CGFloat) -> CGFloat {
-        max(minHeight, min(hardMaxHeight, screenHeight - verticalChrome))
+        max(minHeight, screenHeight - verticalChrome)
     }
 
     @MainActor
     static var currentMaxHeight: CGFloat {
-        maxHeight(screenHeight: NSScreen.main?.visibleFrame.height ?? hardMaxHeight)
+        maxHeight(screenHeight: NSScreen.main?.visibleFrame.height ?? fallbackScreenHeight)
+    }
+
+    /// 탭이 원하는 높이를 화면에 맞춘다 — 고정 높이가 화면 밖으로 나가면 다시 클리핑이 된다.
+    static func height(for tab: PopoverTab, screenHeight: CGFloat) -> CGFloat {
+        min(tab.contentHeight, maxHeight(screenHeight: screenHeight))
+    }
+
+    @MainActor
+    static func currentHeight(for tab: PopoverTab) -> CGFloat {
+        height(for: tab, screenHeight: NSScreen.main?.visibleFrame.height ?? fallbackScreenHeight)
     }
 }
 
@@ -62,16 +92,11 @@ struct PopoverView: View {
                     .environment(companion)
                     .environment(updater)
             } else {
-                // 높이 상한 + 스크롤. 기술 목록을 펼치면 홈 탭이 화면 아래를 넘고, NSPopover 는
-                // 넘친 만큼을 스크롤 대신 잘라내 타이머·푸터가 사라졌다(#9). 상한은 화면 높이에서 파생.
-                ScrollView {
-                    mainContent
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .frame(maxHeight: PopoverMetrics.currentMaxHeight)
-                // fixedSize 가 없으면 ScrollView 가 제안받은 높이를 통째로 먹어 짧은 탭에서도
-                // 팝오버가 상한 높이(빈 여백)로 부푼다. 순서 주의 — frame 뒤에 와야 한다.
-                .fixedSize(horizontal: false, vertical: true)
+                // 고정 높이 + 탭 안 스크롤. 콘텐츠가 늘 때마다 창이 커지면 NSPopover 가 매번 다시
+                // 그려 떨리고, 화면을 넘기면 스크롤 대신 잘라낸다(#9). 창 크기는 고정하고 넘치는
+                // 부분만 탭 안에서 스크롤한다 — 타이머·탭바·푸터는 스크롤 밖이라 항상 제자리다.
+                mainContent
+                    .frame(height: PopoverMetrics.currentHeight(for: nav.tab))
             }
         }
         .frame(width: PopoverMetrics.width)
@@ -115,15 +140,25 @@ struct PopoverView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
 
-            switch nav.tab {
-            case .pokeathlon: PokeathlonView(store: companion)
-            case .battle: BattleView(store: companion)
-            case .collection: CollectionView(store: companion)
-            case .pokemon: PokemonRosterView(store: companion, nav: nav)
-            case .bag: BagView(store: companion, nav: nav)
-            case .shop: ShopView(store: companion, nav: nav)
-            case .home: CompanionHeader(store: companion)
+            // 탭 콘텐츠만 스크롤한다. 짧은 탭은 위로 붙고 남는 자리는 빈 공간으로 둔다 —
+            // 창 높이가 고정이라 탭을 바꾸거나 기술 목록을 펼쳐도 팝오버는 그대로다.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    switch nav.tab {
+                    case .pokeathlon: PokeathlonView(store: companion)
+                    case .battle: BattleView(store: companion)
+                    case .collection: CollectionView(store: companion)
+                    case .pokemon: PokemonRosterView(store: companion, nav: nav)
+                    case .bag: BagView(store: companion, nav: nav)
+                    case .shop: ShopView(store: companion, nav: nav)
+                    case .home: CompanionHeader(store: companion)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             footer
         }

@@ -95,7 +95,7 @@ macOS 14+ (Apple Silicon or Intel).
 
 ### Download
 
-Grab `PokeTokenBar.zip` from the [releases](https://github.com/2giduck/K-MON/releases), unzip it, and drag `PokeTokenBar.app` into `/Applications`.
+Grab `Pokedoro.zip` from the [releases](https://github.com/2giduck/K-MON/releases), unzip it, and drag `Pokédoro.app` into `/Applications`.
 
 Because the app is ad-hoc/self-signed (not notarized under an Apple Developer account), Gatekeeper shows an "unidentified developer" warning on first launch. Clear it once:
 

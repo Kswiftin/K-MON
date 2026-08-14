@@ -162,6 +162,17 @@ final class AdventureClaimTests: XCTestCase {
                       "마운트되지 않은 View: \(unmounted) — 선언만 있고 화면에 안 붙으면 그 안의 기능(보상 정산 등)은 도달 불가다")
     }
 
+    /// 정산 진입점은 `claimAdventure()` 하나다 — 완료 판정을 감싸는 래퍼가 다시 생기면 같은 가드가
+    /// 두 곳에 놓여 한쪽만 바뀌는 사고가 난다. 소스로 고정한다.
+    func testAdventureIsClaimedThroughASingleStoreEntryPoint() throws {
+        let store = try String(
+            contentsOf: Self.repositoryRoot.appendingPathComponent("Sources/PokeTokenBar/Core/CompanionStore.swift"),
+            encoding: .utf8)
+        XCTAssertFalse(store.contains("claimCompletedAdventureIfNeeded"),
+                       "완료 판정 래퍼가 다시 생겼다 — 정산 판정은 claimAdventure() 안에만 둔다")
+        XCTAssertEqual(store.components(separatedBy: "func claimAdventure()").count - 1, 1)
+    }
+
     private static var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)          // Tests/PokeTokenBarTests/AdventureClaimTests.swift
             .deletingLastPathComponent()         // Tests/PokeTokenBarTests

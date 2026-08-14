@@ -20,7 +20,7 @@ PTB_NOTES_FILE=/tmp/notes.md ./scripts/release.sh 2.1.1
 1. **test-gate** (`./scripts/test-gate.sh`) — 전체 테스트 + 로직 커버리지. 실패 시 중단.
 2. **문서 일관성 검토** — 정적 버전 배지·제거된 의존성(예: `ccusage`) 잔존을 자동 경고 + 아래 수동 체크리스트 출력. 경고 시 진행 여부를 묻는다.
 3. **VERSION 범프** (`scripts/build-app.sh`, 아직 미커밋).
-4. **빌드 + zip** (`build/PokeTokenBar.zip`) + 빌드 버전 일치 확인 — **push 전 검증**(실패해도 범프 미커밋이라 origin/main 무손상).
+4. **빌드 + zip** (`build/Pokedoro.zip`) + 빌드 버전 일치 확인 — **push 전 검증**(실패해도 범프 미커밋이라 origin/main 무손상).
 5. **커밋 + push** (`git push origin main`, 빌드 성공 후).
 6. **GitHub Release** 생성 (노트는 `PTB_NOTES_FILE` 또는 최소 노트).
 7. **Homebrew cask** 버전 갱신 (`chattymin/homebrew-tap`).
