@@ -29,12 +29,20 @@ final class UpdateCheckerTests: XCTestCase {
         let release = UpdateChecker.ReleaseInfo(tag_name: "v2.6.0",
             html_url: "https://github.com/2giduck/K-MON/releases/tag/v2.6.0",
             target_commitish: "abcdef123456", draft: false, prerelease: false,
-            assets: [.init(name: UpdateChecker.releaseAssetName,
-                browser_download_url: "https://github.com/2giduck/K-MON/releases/download/v2.6.0/\(UpdateChecker.releaseAssetName)")])
+            assets: [
+                .init(name: UpdateChecker.releaseAssetName,
+                    url: "https://api.github.com/repos/2giduck/K-MON/releases/assets/67890",
+                    browser_download_url: "https://github.com/2giduck/K-MON/releases/download/v2.6.0/\(UpdateChecker.releaseAssetName)"),
+                .init(name: "appcast.xml",
+                    url: "https://api.github.com/repos/2giduck/K-MON/releases/assets/12345",
+                    browser_download_url: "https://github.com/2giduck/K-MON/releases/download/v2.6.0/appcast.xml"),
+            ])
         let candidate = UpdateChecker.releaseCandidate(from: release, channel: .stable)
         XCTAssertEqual(candidate?.version, "2.6.0")
         XCTAssertEqual(candidate?.channel, .stable)
         XCTAssertNotNil(candidate?.downloadURL)
+        XCTAssertEqual(candidate?.feedURL, "https://api.github.com/repos/2giduck/K-MON/releases/assets/12345")
+        XCTAssertEqual(candidate?.downloadAPIURL, "https://api.github.com/repos/2giduck/K-MON/releases/assets/67890")
     }
 
     /// 앱이 찾는 에셋 이름과 릴리스가 실제로 올리는 이름이 어긋나면 다운로드 URL 이 늘 nil 이라
@@ -64,5 +72,30 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(candidate?.version, "main-1234567")
         XCTAssertEqual(candidate?.channel, .development)
         XCTAssertNil(candidate?.downloadURL)
+    }
+
+    func testStableCandidateRequiresAuthenticatedAppcastAPIURL() {
+        let release = UpdateChecker.ReleaseInfo(tag_name: "v2.7.1",
+            html_url: "https://github.com/2giduck/K-MON/releases/tag/v2.7.1",
+            target_commitish: "abcdef", draft: false, prerelease: false,
+            assets: [.init(name: "appcast.xml", url: "https://evil.example/appcast.xml",
+                           browser_download_url: "https://github.com/appcast.xml")])
+        XCTAssertNil(UpdateChecker.releaseCandidate(from: release, channel: .stable))
+    }
+
+    func testOAuthFormBodyIsStableAndPercentEncoded() {
+        let body = GitHubOAuth.formBody(["scope": "repo user", "client_id": "abc"])
+        XCTAssertEqual(String(decoding: body, as: UTF8.self), "client_id=abc&scope=repo%20user")
+    }
+
+    func testAuthenticatedAppcastRewritesOnlyToKMONAssetAPI() {
+        let browser = "https://github.com/2giduck/K-MON/releases/download/v2.7.1/Pokedoro.zip"
+        let api = "https://api.github.com/repos/2giduck/K-MON/releases/assets/67890"
+        let original = #"<rss><enclosure url="\#(browser)" sparkle:edSignature="signed" /></rss>"#
+        let rewritten = UpdateChecker.rewriteAppcast(original, browserDownloadURL: browser, assetAPIURL: api)
+        XCTAssertFalse(rewritten?.contains(browser) ?? true)
+        XCTAssertTrue(rewritten?.contains(api) ?? false)
+        XCTAssertNil(UpdateChecker.rewriteAppcast(original, browserDownloadURL: browser,
+                                                   assetAPIURL: "https://evil.example/update.zip"))
     }
 }

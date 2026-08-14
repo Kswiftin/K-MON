@@ -72,6 +72,7 @@ jobs:
           KMON_VERSION: 2.5.${{ github.run_number }}
           KMON_SOURCE_COMMIT: ${{ github.sha }}
           KMON_SKIP_INSTALL: "1"
+          KMON_GITHUB_OAUTH_CLIENT_ID: ${{ vars.KMON_GITHUB_OAUTH_CLIENT_ID }}
         run: ./scripts/build-app.sh
 
       - name: Package and checksum

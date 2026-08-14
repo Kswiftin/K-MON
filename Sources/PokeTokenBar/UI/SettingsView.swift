@@ -234,6 +234,44 @@ struct SettingsView: View {
     private func updateGroup(_ settings: AppSettings) -> some View {
         @Bindable var settings = settings
         settingsSection(l.updateSectionTitle) {
+            groupRow {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(l.githubAccountLabel)
+                    if updater.githubAuth.isSignedIn {
+                        Text(updater.githubAuth.login.map { "@\($0)" } ?? l.githubConnected)
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else if let code = updater.githubAuth.deviceCode {
+                        Text(l.githubDeviceCode(code))
+                            .font(.caption.monospaced().weight(.semibold))
+                            .textSelection(.enabled)
+                        Text(l.githubDeviceCodeHint)
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Text(l.githubLoginHint).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if updater.githubAuth.isSignedIn {
+                    Button(l.githubLogout) { updater.signOutFromGitHub() }.controlSize(.small)
+                } else {
+                    Button {
+                        Task { await updater.signInToGitHub() }
+                    } label: {
+                        if updater.githubAuth.isAuthorizing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text(l.githubLogin)
+                        }
+                    }
+                    .disabled(updater.githubAuth.isAuthorizing)
+                    .controlSize(.small)
+                }
+            }
+            if let message = updater.githubAuth.errorMessage {
+                Divider()
+                groupRow { Text(message).font(.caption).foregroundStyle(.red); Spacer() }
+            }
+            Divider()
             toggleRow(l.updateNotificationsLabel, $settings.updateNotificationsEnabled)
             Divider()
             toggleRow(l.automaticUpdateDownloadsLabel, $settings.automaticUpdateDownloadsEnabled)
@@ -255,13 +293,16 @@ struct SettingsView: View {
                         Text(l.checkNowButton)
                     }
                 }
-                .disabled(isCheckingUpdate)
+                .disabled(isCheckingUpdate || !updater.githubAuth.isSignedIn)
             }
             // 확인 결과 — 알림을 꺼둔 사용자도 여기서 새 버전을 알고 바로 적용할 수 있게 업데이트 버튼을 함께 노출.
             if didCheckUpdate, !isCheckingUpdate {
                 Divider()
                 groupRow {
-                    if let version = updater.available?.version {
+                    if let error = updater.checkError {
+                        Text(l.updateCheckError(error)).font(.caption).foregroundStyle(.red)
+                        Spacer()
+                    } else if let version = updater.available?.version {
                         Text(l.updateFound(version)).font(.caption).foregroundStyle(.orange)
                         Spacer()
                         Button(l.updateButton) { updater.applyUpdate() }.controlSize(.small)

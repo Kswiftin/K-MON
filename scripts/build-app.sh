@@ -6,6 +6,8 @@ cd "$(dirname "$0")/.."
 DEFAULT_VERSION="2.6.0"
 VERSION="${KMON_VERSION:-$DEFAULT_VERSION}"
 SOURCE_COMMIT="${KMON_SOURCE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
+# OAuth Client ID는 공개 식별자다. 포크/별도 배포는 환경 변수로 자신의 App ID를 덮어쓴다.
+GITHUB_OAUTH_CLIENT_ID="${KMON_GITHUB_OAUTH_CLIENT_ID:-Ov23lim6Vwe3Fa7WhVFR}"
 APP_NAME="Pokédoro"
 EXECUTABLE="PokeTokenBar"
 BUILD_DIR="build"
@@ -38,6 +40,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>KMONSourceCommit</key><string>$SOURCE_COMMIT</string>
+    <key>KMONGitHubOAuthClientID</key><string>$GITHUB_OAUTH_CLIENT_ID</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSUIElement</key><true/>
@@ -45,9 +48,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>SUFeedURL</key><string>https://github.com/2giduck/K-MON/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key><string>wF6hVA8cXA/NHj0fWmwxPKU4VWwiqQU1u5iXfOs7YwA=</string>
     <key>SUVerifyUpdateBeforeExtraction</key><true/>
-    <key>SURequireSignedFeed</key><true/>
-    <key>SUEnableAutomaticChecks</key><true/>
-    <key>SUScheduledCheckInterval</key><integer>21600</integer>
+    <key>SUEnableAutomaticChecks</key><false/>
     <key>SUAllowsAutomaticUpdates</key><true/>
     <key>SUAutomaticallyUpdate</key><true/>
     <key>NSLocalNetworkUsageDescription</key><string>Discover Pokédoro rooms for ranked battles and Pokéathlon with up to four friends.</string>
