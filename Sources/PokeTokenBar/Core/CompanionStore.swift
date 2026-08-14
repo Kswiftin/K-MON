@@ -82,7 +82,7 @@ final class CompanionStore {
         // 앱이 종료된 사이 끝난 집중 모험은 기동 즉시 정산한다. FocusTimer 는 세션 메모리 상태라
         // 재실행하면 .idle 로 돌아오지만 모험은 디스크에 남으므로, 여기서 비우지 않으면 시작 버튼이
         // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
-        claimCompletedAdventureIfNeeded()
+        claimAdventure()   // 끝난 run 만 정산한다 — 진행 중이면 그대로 둔다.
         if state.active != nil { displayState = .idle }
     }
 
@@ -600,17 +600,9 @@ final class CompanionStore {
         state.adventure?.progress(at: date ?? clock()) ?? 0
     }
 
-    /// 끝났는데 아직 안 받아간 모험을 먼저 정산한다. 새 모험 시작 경로의 선행 단계 —
-    /// 이게 없으면 정산 안 된 run 이 `state.adventure != nil` 로 남아 시작이 조용히 실패한다.
-    @discardableResult
-    func claimCompletedAdventureIfNeeded() -> AdventureReward? {
-        guard state.adventure?.isComplete(at: clock()) == true else { return nil }
-        return claimAdventure()
-    }
-
     @discardableResult
     func startAdventure(_ zone: AdventureZone) -> Bool {
-        claimCompletedAdventureIfNeeded()
+        claimAdventure()
         let now = clock()
         state.care.advance(to: now)
         guard let speciesID = currentSpeciesID, state.adventure == nil,
@@ -625,7 +617,7 @@ final class CompanionStore {
 
     @discardableResult
     func startFocusAdventure(minutes: Int) -> Bool {
-        claimCompletedAdventureIfNeeded()
+        claimAdventure()
         let now = clock()
         guard let speciesID = currentSpeciesID, state.adventure == nil else { return false }
         let zone: AdventureZone = minutes >= 90 ? .coast : (minutes >= 50 ? .cave : .forest)
@@ -643,6 +635,10 @@ final class CompanionStore {
         save()
     }
 
+    /// 모험 정산의 **유일한** 진입점. 끝난 run 만 정산하고(미완료면 nil) 보상 계산도 여기 한 곳에만 있다.
+    /// 정산 계기는 "보상 받기" 버튼, 집중 세션 완료(`completeFocusSession`), 새 모험 시작
+    /// (`startAdventure`·`startFocusAdventure`) 셋이지만 모두 이 함수를 부른다 — 완료 판정을 감싸는
+    /// 래퍼를 따로 두면 같은 가드가 두 곳에 생겨 한쪽만 바뀌는 사고가 난다.
     @discardableResult
     func claimAdventure() -> AdventureReward? {
         let now = clock()
