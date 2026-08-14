@@ -258,13 +258,39 @@ final class FloatingPetEnergyTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let initial = AppSettings(defaults: defaults)
         XCTAssertFalse(initial.floatingPetRoamingEnabled)
+        XCTAssertFalse(initial.floatingPetMouseChaseEnabled)
         XCTAssertEqual(initial.floatingPetMovementSpeed, 80)
         initial.floatingPetRoamingEnabled = true
+        initial.floatingPetMouseChaseEnabled = true
         initial.floatingPetMovementSpeed = 140
 
         let restored = AppSettings(defaults: defaults)
         XCTAssertTrue(restored.floatingPetRoamingEnabled)
+        XCTAssertTrue(restored.floatingPetMouseChaseEnabled)
         XCTAssertEqual(restored.floatingPetMovementSpeed, 140)
+    }
+
+    func testMouseChaseUsesDirectShortestVectorAndStopsNearPointer() {
+        let velocity = FloatingPetController.mouseChaseVelocity(
+            petOrigin: NSPoint(x: 0, y: 0), petSize: 20,
+            mouse: NSPoint(x: 40, y: 50), speed: 100)
+        XCTAssertEqual(velocity.dx, 60, accuracy: 0.001)
+        XCTAssertEqual(velocity.dy, 80, accuracy: 0.001)
+
+        let stopped = FloatingPetController.mouseChaseVelocity(
+            petOrigin: NSPoint(x: 0, y: 0), petSize: 40,
+            mouse: NSPoint(x: 35, y: 20), speed: 100)
+        XCTAssertEqual(stopped, .zero)
+    }
+
+    func testMouseChasePortalUsesStraightLineIntersection() {
+        let portrait = NSRect(x: -3000, y: 11, width: 1080, height: 1920)
+        let center = NSRect(x: -1920, y: 712, width: 1920, height: 1080)
+        let route = FloatingPetController.portalRoute(
+            origin: NSPoint(x: -1992, y: 1000), petSize: 72,
+            velocity: CGVector(dx: 100, dy: 100), screens: [portrait, center],
+            destination: NSPoint(x: -1884, y: 1236))
+        XCTAssertEqual(route?.target ?? 0, 1100, accuracy: 0.001)
     }
 
     /// Click opens the popover only when the pointer barely moved; larger movement is a drag.

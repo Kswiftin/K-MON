@@ -38,6 +38,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     private var lastPositionSave: TimeInterval = 0
     private var isAutomaticMove = false
     private var isUserDragging = false
+    private var lastMouseChaseEnabled = false
     private let motion = FloatingPetMotionState()
 
     private static let originXKey = "floatingPetOriginX"
@@ -81,6 +82,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             _ = settings.floatingPetEnabled
             _ = settings.floatingPetSize
             _ = settings.floatingPetRoamingEnabled
+            _ = settings.floatingPetMouseChaseEnabled
             _ = settings.floatingPetMovementSpeed
             _ = settings.floatingPetSpeciesID
             _ = settings.doNotDisturb
@@ -125,13 +127,21 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     }
 
     private func sync() {
+        if lastMouseChaseEnabled != settings.floatingPetMouseChaseEnabled {
+            pendingPortal = nil
+            lastMouseChaseEnabled = settings.floatingPetMouseChaseEnabled
+        }
         guard settings.floatingPetEnabled, !settings.doNotDisturb, displayAwake else {
             stopMovement()
             hide()
             return
         }
         show()
-        if settings.floatingPetRoamingEnabled { startMovement() } else { stopMovement() }
+        if settings.floatingPetRoamingEnabled || settings.floatingPetMouseChaseEnabled {
+            startMovement()
+        } else {
+            stopMovement()
+        }
     }
 
     private func show() {
@@ -215,7 +225,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     }
 
     private func advanceMovement() {
-        guard settings.floatingPetRoamingEnabled, !isUserDragging,
+        guard (settings.floatingPetRoamingEnabled || settings.floatingPetMouseChaseEnabled), !isUserDragging,
               let panel, panel.isVisible else { return }
         let now = ProcessInfo.processInfo.systemUptime
         defer { lastMovementTick = now }
@@ -224,6 +234,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         let speed = CGFloat(settings.floatingPetMovementSpeed)
         if let route = pendingPortal {
             advanceTowardPortal(route, speed: speed, delta: delta, now: now)
+            return
+        }
+        if settings.floatingPetMouseChaseEnabled {
+            advanceMouseChase(panel: panel, speed: speed, delta: delta, now: now)
             return
         }
         if now >= directionDeadline { chooseDirection(now: now) }
@@ -262,6 +276,43 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             persistCurrentOrigin()
             lastPositionSave = now
         }
+    }
+
+    private func advanceMouseChase(panel: NSPanel, speed: CGFloat,
+                                   delta: TimeInterval, now: TimeInterval) {
+        let petSize = CGFloat(settings.floatingPetSize)
+        let mouse = NSEvent.mouseLocation
+        let velocity = Self.mouseChaseVelocity(
+            petOrigin: panel.frame.origin, petSize: petSize,
+            mouse: mouse, speed: speed)
+        guard velocity.dx != 0 || velocity.dy != 0 else { return }
+        if abs(velocity.dx) > 0.05 { motion.facingLeft = velocity.dx < 0 }
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        if let route = Self.portalRoute(origin: panel.frame.origin, petSize: petSize,
+                                        velocity: velocity, screens: screens, destination: mouse) {
+            pendingPortal = route
+            advanceTowardPortal(route, speed: speed, delta: delta, now: now)
+            return
+        }
+        let result = Self.resolvedMotion(origin: panel.frame.origin, petSize: petSize,
+                                         velocity: velocity, delta: delta, screens: screens)
+        setAutomaticOrigin(result.origin)
+        if now - lastPositionSave >= 2 {
+            persistCurrentOrigin()
+            lastPositionSave = now
+        }
+    }
+
+    /// 커서까지의 직선 방향을 매 틱 다시 계산한다. 포인터를 가리지 않도록 펫 반지름 안에서는 정지한다.
+    static func mouseChaseVelocity(petOrigin: NSPoint, petSize: CGFloat, mouse: NSPoint,
+                                   speed: CGFloat) -> CGVector {
+        let center = NSPoint(x: petOrigin.x + petSize / 2, y: petOrigin.y + petSize / 2)
+        let dx = mouse.x - center.x
+        let dy = mouse.y - center.y
+        let distance = hypot(dx, dy)
+        let stopDistance = max(24, petSize * 0.75)
+        guard distance > stopDistance, speed > 0 else { return .zero }
+        return CGVector(dx: dx / distance * speed, dy: dy / distance * speed)
     }
 
     private func advanceTowardPortal(_ route: PortalRoute, speed: CGFloat,
@@ -452,7 +503,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     /// 현재 화면의 막힌 경계 너머에 실제 이웃 모니터가 있으면, 펫 전체가 통과 가능한
     /// 가장 가까운 연결 구간을 찾는다. 모니터 외곽에는 route가 없으므로 기존 반사 동작을 유지한다.
     static func portalRoute(origin: NSPoint, petSize: CGFloat, velocity: CGVector,
-                            screens: [NSRect]) -> PortalRoute? {
+                            screens: [NSRect], destination: NSPoint? = nil) -> PortalRoute? {
         let pet = NSRect(origin: origin, size: NSSize(width: petSize, height: petSize))
         let epsilon: CGFloat = 2
         let sources = screens.filter { source in
@@ -470,7 +521,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         for source in sources {
             if velocity.dx > 0, pet.maxX >= source.maxX - abs(velocity.dx) * 0.1 - epsilon {
                 for neighbor in screens where abs(neighbor.minX - source.maxX) <= epsilon {
-                    if let target = portalTarget(current: origin.y,
+                    let preferred = preferredPortalCoordinate(
+                        origin: origin, petSize: petSize, seam: source.maxX,
+                        destination: destination, axis: .horizontal)
+                    if let target = portalTarget(current: preferred,
                                                  lower: max(source.minY, neighbor.minY),
                                                  upper: min(source.maxY, neighbor.maxY) - petSize) {
                         routes.append(PortalRoute(axis: .horizontal, target: target, crossingSign: 1,
@@ -479,7 +533,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                 }
             } else if velocity.dx < 0, pet.minX <= source.minX + abs(velocity.dx) * 0.1 + epsilon {
                 for neighbor in screens where abs(neighbor.maxX - source.minX) <= epsilon {
-                    if let target = portalTarget(current: origin.y,
+                    let preferred = preferredPortalCoordinate(
+                        origin: origin, petSize: petSize, seam: source.minX,
+                        destination: destination, axis: .horizontal)
+                    if let target = portalTarget(current: preferred,
                                                  lower: max(source.minY, neighbor.minY),
                                                  upper: min(source.maxY, neighbor.maxY) - petSize) {
                         routes.append(PortalRoute(axis: .horizontal, target: target, crossingSign: -1,
@@ -489,7 +546,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             }
             if velocity.dy > 0, pet.maxY >= source.maxY - abs(velocity.dy) * 0.1 - epsilon {
                 for neighbor in screens where abs(neighbor.minY - source.maxY) <= epsilon {
-                    if let target = portalTarget(current: origin.x,
+                    let preferred = preferredPortalCoordinate(
+                        origin: origin, petSize: petSize, seam: source.maxY,
+                        destination: destination, axis: .vertical)
+                    if let target = portalTarget(current: preferred,
                                                  lower: max(source.minX, neighbor.minX),
                                                  upper: min(source.maxX, neighbor.maxX) - petSize) {
                         routes.append(PortalRoute(axis: .vertical, target: target, crossingSign: 1,
@@ -498,7 +558,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                 }
             } else if velocity.dy < 0, pet.minY <= source.minY + abs(velocity.dy) * 0.1 + epsilon {
                 for neighbor in screens where abs(neighbor.maxY - source.minY) <= epsilon {
-                    if let target = portalTarget(current: origin.x,
+                    let preferred = preferredPortalCoordinate(
+                        origin: origin, petSize: petSize, seam: source.minY,
+                        destination: destination, axis: .vertical)
+                    if let target = portalTarget(current: preferred,
                                                  lower: max(source.minX, neighbor.minX),
                                                  upper: min(source.maxX, neighbor.maxX) - petSize) {
                         routes.append(PortalRoute(axis: .vertical, target: target, crossingSign: -1,
@@ -514,6 +577,26 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     private static func portalTarget(current: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat? {
         guard lower <= upper else { return nil }
         return min(max(current, lower), upper)
+    }
+
+    /// 직선이 화면 경계와 만나는 좌표를 통로 목표로 사용한다. 통로 범위를 벗어나면 이후 clamp되어
+    /// 가장 가까운 끝점을 지나므로, 단순히 현재 높이를 유지하는 것보다 커서까지의 경로가 짧다.
+    private static func preferredPortalCoordinate(origin: NSPoint, petSize: CGFloat, seam: CGFloat,
+                                                   destination: NSPoint?, axis: PortalAxis) -> CGFloat {
+        guard let destination else { return axis == .horizontal ? origin.y : origin.x }
+        let center = NSPoint(x: origin.x + petSize / 2, y: origin.y + petSize / 2)
+        switch axis {
+        case .horizontal:
+            let denominator = destination.x - center.x
+            guard abs(denominator) > 0.001 else { return origin.y }
+            let t = min(1, max(0, (seam - center.x) / denominator))
+            return center.y + (destination.y - center.y) * t - petSize / 2
+        case .vertical:
+            let denominator = destination.y - center.y
+            guard abs(denominator) > 0.001 else { return origin.x }
+            let t = min(1, max(0, (seam - center.y) / denominator))
+            return center.x + (destination.x - center.x) * t - petSize / 2
+        }
     }
 
     private func screenConfigurationDidChange() {

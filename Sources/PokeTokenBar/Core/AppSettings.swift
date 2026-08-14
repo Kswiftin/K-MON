@@ -13,6 +13,9 @@ final class AppSettings {
     var floatingPetRoamingEnabled: Bool {
         didSet { defaults.set(floatingPetRoamingEnabled, forKey: "floatingPetRoamingEnabled") }
     }
+    var floatingPetMouseChaseEnabled: Bool {
+        didSet { defaults.set(floatingPetMouseChaseEnabled, forKey: "floatingPetMouseChaseEnabled") }
+    }
     var floatingPetMovementSpeed: Double {
         didSet { defaults.set(floatingPetMovementSpeed, forKey: "floatingPetMovementSpeed") }
     }
@@ -34,6 +37,7 @@ final class AppSettings {
         floatingPetEnabled = defaults.object(forKey: "floatingPetEnabled") as? Bool ?? false
         floatingPetSize = defaults.object(forKey: "floatingPetSize") as? Double ?? 96
         floatingPetRoamingEnabled = defaults.object(forKey: "floatingPetRoamingEnabled") as? Bool ?? false
+        floatingPetMouseChaseEnabled = defaults.object(forKey: "floatingPetMouseChaseEnabled") as? Bool ?? false
         floatingPetMovementSpeed = defaults.object(forKey: "floatingPetMovementSpeed") as? Double ?? 80
         imageAntialiasing = defaults.object(forKey: "imageAntialiasing") as? Bool ?? true
         floatingPetSpeciesID = defaults.object(forKey: "floatingPetSpeciesID") as? Int

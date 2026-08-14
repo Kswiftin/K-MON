@@ -186,7 +186,9 @@ struct SettingsView: View {
                 }
                 Divider()
                 toggleRow(l.floatingPetRoamingLabel, $settings.floatingPetRoamingEnabled)
-                if settings.floatingPetRoamingEnabled {
+                Divider()
+                toggleRow(l.floatingPetMouseChaseLabel, $settings.floatingPetMouseChaseEnabled)
+                if settings.floatingPetRoamingEnabled || settings.floatingPetMouseChaseEnabled {
                     Divider()
                     groupRow {
                         Text(l.floatingPetSpeedLabel).font(.callout)
