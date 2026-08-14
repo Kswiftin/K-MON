@@ -50,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 ?? FocusRewardRules.reward(minutes: minutes, roll: 9_999)
         }
         updater = UpdateChecker()
+        updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)
+        observeAutomaticUpdates()
         battleCenter = BattleCenter(companion: companion)
         battleCenter.start()   // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신
         // 배틀 신청은 팝오버가 닫힌(=앱 실행 중) 상태에서 오는 게 정상이라, 알림 표시가 핵심이다.
@@ -83,6 +85,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         startIdleTick()
         startFocusTick()
         applyState()
+    }
+
+    private func observeAutomaticUpdates() {
+        withObservationTracking {
+            _ = settings.automaticUpdateDownloadsEnabled
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.updater.setAutomaticDownloads(self.settings.automaticUpdateDownloadsEnabled)
+                self.observeAutomaticUpdates()
+            }
+        }
     }
 
     /// 배틀이 잡히거나 걸리면 팝오버를 열고 **고정**(닫힘 방지)한다 — 일하면서 배틀할 수 있게.

@@ -1,7 +1,7 @@
 # Swift Package Manager
 .build/
 .swiftpm/
-Package.resolved
+# Package.resolved is committed because this repository ships an executable app.
 
 # App bundle build output
 build/
