@@ -422,7 +422,7 @@ struct BattleView: View {
                 VStack(spacing: 2) {
                     Text("\(profile.rank.displayName)  VS  \(store.battleRank.displayName)")
                     if center.incomingRankedStake > 0 {
-                        Text("고정 판돈 ⭐ \(GameNumberFormatter.compact(center.incomingRankedStake))")
+                        Text(l.battleFixedStake(GameNumberFormatter.compact(center.incomingRankedStake)))
                             .foregroundStyle(.orange)
                     }
                 }
