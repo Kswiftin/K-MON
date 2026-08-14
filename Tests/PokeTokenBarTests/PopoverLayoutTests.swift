@@ -46,14 +46,25 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertEqual(renderedHeight(short), 120, accuracy: 1)
     }
 
-    /// 상한은 화면 높이에서 파생된다 — 작은 화면일수록 낮게, 큰 화면에서도 하드 상한을 안 넘게.
+    /// 상한은 화면 높이에서만 파생된다 — 작은 화면일수록 낮게, 큰 화면에선 화면만큼 커진다.
     func testMaxHeightDerivesFromScreenHeight() {
         XCTAssertEqual(PopoverMetrics.maxHeight(screenHeight: 700),
                        700 - PopoverMetrics.verticalChrome)
-        XCTAssertEqual(PopoverMetrics.maxHeight(screenHeight: 4_000), PopoverMetrics.hardMaxHeight)
+        XCTAssertEqual(PopoverMetrics.maxHeight(screenHeight: 1_440),
+                       1_440 - PopoverMetrics.verticalChrome)
         XCTAssertEqual(PopoverMetrics.maxHeight(screenHeight: 200), PopoverMetrics.minHeight)
         XCTAssertLessThan(PopoverMetrics.maxHeight(screenHeight: 600),
                           PopoverMetrics.maxHeight(screenHeight: 760))
+    }
+
+    /// 회귀(#9 2차): 화면보다 낮은 고정 천장이 다시 들어오면 잡는다.
+    /// 720pt 천장 시절, 1440pt 화면에서도 "기술 보기" 를 펼친 홈 탭이 상한을 넘겨 스크롤로 밀리고
+    /// 헤더 첫 줄과 돌봄·모험 카드가 잘려 보였다 — 화면엔 두 배 넘는 자리가 남아 있는데도.
+    func testTallScreenFitsTheExpandedHomeTabWithoutScrolling() {
+        let cap = PopoverMetrics.maxHeight(screenHeight: 1_440)
+        // 사용자 화면에서 잰 값: 기술 접힌 홈 탭 약 626pt + 기술 4행 약 118pt + 여백.
+        let expandedHomeHeight: CGFloat = 780
+        XCTAssertGreaterThan(cap, expandedHomeHeight)
     }
 
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
