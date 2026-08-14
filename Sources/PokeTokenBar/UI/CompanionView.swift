@@ -763,49 +763,58 @@ struct MoveListView: View {
     /// 부모가 주는 콘텐츠 폭. 안 주면 행이 넘쳐 팝오버 전체가 좌우로 잘린다(EvoLineView 와 같은 이유).
     var maxWidth: CGFloat = .infinity
 
-    /// 기술 행 한 줄의 높이 — 로딩 자리표시자를 최종 높이로 맞춰 팝오버가 두 번 리사이즈되는 걸 막는다.
-    /// 실제 렌더 높이와 어긋나면 자리표시자가 거짓말을 하므로 테스트로 잠근다(MoveListLayoutTests).
-    static let rowHeight: CGFloat = 14
     static let rowSpacing: CGFloat = 5
     static let maxRows = 4
-    /// 로딩 중에 미리 잡아 둘 높이 = 최대 행 수 기준.
-    static var placeholderHeight: CGFloat {
-        rowHeight * CGFloat(maxRows) + rowSpacing * CGFloat(maxRows - 1)
-    }
+    /// 자리표시자용 더미 기술 — 로딩 중에도 완성본과 *같은 행 레이아웃*을 그려 높이를 예약한다.
+    /// 높이를 숫자 상수로 두면 폰트·OS 버전에 따라 실제 행 높이와 어긋난다(CI 118pt vs 로컬 78pt).
+    private static let skeletonMove = MoveSpec(id: -1, names: [:], type: .normal, power: 0,
+                                               damageClass: .physical, accuracy: 100, pp: 0)
 
     private var l: L { store.l }
 
     var body: some View {
         VStack(spacing: Self.rowSpacing) {
             if store.isLoadingDisplayedMoves {
-                HStack { ProgressView().controlSize(.small); Text(l.movesLoading) }
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: Self.placeholderHeight)
+                ZStack {
+                    // 최종 행 수만큼 같은 구조를 투명하게 깔아 높이를 잡는다 → 로드 완료 시 리사이즈 0회.
+                    VStack(spacing: Self.rowSpacing) {
+                        ForEach(0..<Self.maxRows, id: \.self) { _ in row(Self.skeletonMove) }
+                    }
+                    .opacity(0)
+                    .accessibilityHidden(true)
+                    HStack { ProgressView().controlSize(.small); Text(l.movesLoading) }
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: maxWidth)
             } else if store.displayedMoves.isEmpty {
                 Text(l.movesEmpty)
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
                 ForEach(store.displayedMoves) { move in
-                    HStack(spacing: 6) {
-                        Text(move.name(store.language)).font(.caption.weight(.semibold))
-                            .lineLimit(1).layoutPriority(1)
-                        TypeBadge(type: move.type, language: store.language)
-                        Spacer(minLength: 2)
-                        Group {
-                            Text(move.damageClass == .status ? l.moveCategoryStatus : l.movePowerShort(move.power))
-                            Text(move.accuracy.map { l.moveAccuracyShort($0) } ?? l.moveAlwaysHits)
-                            Text(l.movePP(move.pp))
-                        }
-                        .font(.caption2).foregroundStyle(.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.75)
-                    }
-                    .frame(maxWidth: maxWidth, alignment: .leading)
-                    .help(moveHelp(move))
+                    row(move).help(moveHelp(move))
                 }
             }
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
         .padding(.top, 7)
+    }
+
+    /// 기술 한 줄. 자리표시자와 완성본이 이 한 곳을 공유해야 높이가 구조적으로 같아진다.
+    private func row(_ move: MoveSpec) -> some View {
+        HStack(spacing: 6) {
+            Text(move.name(store.language)).font(.caption.weight(.semibold))
+                .lineLimit(1).layoutPriority(1)
+            TypeBadge(type: move.type, language: store.language)
+            Spacer(minLength: 2)
+            Group {
+                Text(move.damageClass == .status ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                Text(move.accuracy.map { l.moveAccuracyShort($0) } ?? l.moveAlwaysHits)
+                Text(l.movePP(move.pp))
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+            .lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: maxWidth, alignment: .leading)
     }
 
     private func moveHelp(_ move: MoveSpec) -> String {
