@@ -620,6 +620,7 @@ struct CompanionHeader: View {
             }
             if !store.boxedMons.isEmpty { CompanionBoxView(store: store) }
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
+            if store.canGraduate { GraduateCard(store: store) }
             if let prompt = store.moveLearningPrompt { MoveLearningCard(store: store, prompt: prompt) }
             if let g = store.justGraduated {
                 Text(store.l.graduated(g))
@@ -826,6 +827,29 @@ struct MoveListView: View {
             return "\(move.name(store.language))\n\(description)\n\(details)"
         }
         return "\(move.name(store.language))\n\(details)"
+    }
+}
+
+/// 최종 진화형 도달 후 "다음 포켓몬으로 넘어가기" 카드. 졸업해도 개체는 박스로 가므로
+/// 되돌릴 수 없는 동작이 아니다 — 문구도 그렇게 읽히게 쓴다(예전 자동 졸업은 영구 삭제였다).
+private struct GraduateCard: View {
+    let store: CompanionStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(store.language == .ko ? "다 키웠어요!" : "Fully grown!", systemImage: "graduationcap.fill")
+                .font(.caption.weight(.semibold))
+            Text(store.language == .ko
+                 ? "도감에 기록하고 새 알을 받아요. 이 포켓몬은 박스에 보관돼 언제든 다시 데려올 수 있어요."
+                 : "Records it in the Pokédex and starts a new egg. This Pokémon moves to your box, so you can bring it back anytime.")
+                .font(.caption2).foregroundStyle(.secondary)
+            Button(store.language == .ko ? "도감에 등록하고 새 알 받기" : "Record and get a new egg") {
+                store.graduateCompanion()
+            }
+            .buttonStyle(.borderedProminent).controlSize(.small)
+        }
+        .padding(9)
+        .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
     }
 }
 

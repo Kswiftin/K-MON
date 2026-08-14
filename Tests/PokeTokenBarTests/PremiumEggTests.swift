@@ -124,9 +124,9 @@ final class PremiumEggTests: XCTestCase {
     // MARK: 가격 — 졸업 총량 배율(새 상수 금지)
 
     func testPricesFollowGraduationTotalRatio() {
-        XCTAssertEqual(FreshEgg.price(guaranteeing: nil), 2_000_000_000)
-        XCTAssertEqual(FreshEgg.price(guaranteeing: .uncommon), 5_000_000_000)
-        XCTAssertEqual(FreshEgg.price(guaranteeing: .rare), 8_000_000_000)
+        XCTAssertEqual(FreshEgg.price(guaranteeing: nil), 20_000)
+        XCTAssertEqual(FreshEgg.price(guaranteeing: .uncommon), 50_000)
+        XCTAssertEqual(FreshEgg.price(guaranteeing: .rare), 80_000)
         XCTAssertEqual(FreshEgg.shopTiers, [nil])
     }
 
@@ -181,15 +181,19 @@ final class PremiumEggTests: XCTestCase {
         XCTAssertNotNil(s.state.active)
     }
 
-    /// 알 상태에선 등급 알도 못 산다 — 기존 새 알과 게이트 통일.
-    func testCannotBuyAnyEggWhileIncubating() {
+    /// 알 상태(활성 없음)에서 사는 알은 폐기할 개체가 없으므로 포커스 알로 적립된다 —
+    /// `FreshEggTests.testBuyFreshEggWithoutActive` 가 잠근 기존 새 알 동작과 통일된 게이트다.
+    ///
+    /// 이 테스트는 원래 "알 상태에선 못 산다"를 단언했는데, 그건 픽스처 잔액(10M)이 옛 가격(20억)에
+    /// 못 미쳐 **잔액 부족으로 막히던 것**을 게이트로 오인한 것이었다. 별의조각 재책정(#19)으로
+    /// 가격이 잔액 아래로 내려오자 드러났다 — canBuyEgg 에는 hasActive 게이트가 없다.
+    func testBuyingWhileIncubatingBanksAFocusEgg() {
         let s = eggStore(tier: nil, seed: 1, provider: TieredProvider())
         XCTAssertFalse(s.hasActive)
-        for tier in FreshEgg.shopTiers {
-            XCTAssertFalse(s.canBuyEgg(tier))
-            XCTAssertFalse(s.buyEgg(tier))
-        }
-        XCTAssertEqual(s.state.spentTokens, 0, "no-op")
+        let before = s.focusEggCount
+        XCTAssertTrue(s.canBuyEgg(nil))
+        XCTAssertTrue(s.buyEgg(nil))
+        XCTAssertEqual(s.focusEggCount, before + 1, "폐기할 개체가 없으니 포커스 알로 적립")
     }
 
     /// 잔액이 그 **티어의** 가격에 미달이면 불가 — 기본 알은 살 수 있어도 희귀 알은 못 산다.
@@ -357,7 +361,8 @@ final class PremiumEggTests: XCTestCase {
         await s.hatchIfNeeded()
         guard let active = s.state.active else { return XCTFail("부화 실패") }
         XCTAssertNil(s.state.eggTier, "부화 시점에 보증 소비")
-        s.applyUsage(PokemonBalance.graduationTotal(active.rarity) * 2)   // 단일 형태 → 졸업
+        s.debugAccrueLevelExperience(300_000_000)   // 무진화 종은 레벨 30 게이트(#19)
+        XCTAssertTrue(s.graduateCompanion())   // 졸업은 사용자 액션(#19)
         XCTAssertNil(s.state.active, "졸업")
         XCTAssertEqual(s.state.dex.count, 1)
         XCTAssertNil(s.state.eggTier, "졸업으로 받는 알에는 보증이 없다")

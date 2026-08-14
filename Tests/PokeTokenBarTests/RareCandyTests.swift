@@ -89,19 +89,22 @@ final class RareCandyStoreTests: XCTestCase {
         XCTAssertEqual(s.state.active?.stageIndex, 1, "최대 1단계")
     }
 
-    /// 최종단계에서 잔여가 사탕XP 이하면 졸업 → 도감 + 새 알.
-    func testUseGraduatesFinalStage() async {
+    /// 최종단계에서 사탕을 써도 졸업은 자동으로 안 된다(#19) — 성장만 반영되고, 졸업은 별도 액션이다.
+    func testUseOnFinalStageProgressesAndLeavesGraduationToThePlayer() async {
         let s = store(rcNoEvo)
         await s.hatch(baseID: 20)
         s.applyUsage(700_000_000)   // 졸업 총량 750M 잔여 50M ≤ 100M
+        s.debugAccrueLevelExperience(200_000_000)   // 졸업은 레벨 30 게이트도 넘어야 한다(#19) — 사탕 XP(100M)와 합쳐 31
         giveCandies(s, 1)
-        let result = s.useRareCandy()
-        XCTAssertEqual(result, .graduated)
+        XCTAssertEqual(s.useRareCandy(), .progressed, "사탕은 성장만 시킨다")
+        XCTAssertNotNil(s.state.active, "졸업은 사용자가 누르기 전까진 일어나지 않는다")
+        XCTAssertTrue(s.canGraduate, "대신 졸업 버튼 조건은 충족된다")
+        XCTAssertTrue(s.graduateCompanion())
         XCTAssertNil(s.state.active)
         XCTAssertEqual(s.dexEntries.count, 1)
     }
 
-    /// [회귀] 사탕 졸업은 store 폴링 틱 없이도 스프라이트 정체성(currentSpeciesID/currentIsShiny)
+    /// [회귀] 졸업은 store 폴링 틱 없이도 스프라이트 정체성(currentSpeciesID/currentIsShiny)
     /// 관찰을 발화해야 한다 — AppDelegate.observeCompanionSprite 가 이 발화로 메뉴바 스프라이트를 즉시
     /// 갱신한다. 발화가 없으면 메뉴바가 다음 폴링(기본 120s)까지 이전 포켓몬으로 남는다
     /// (리포트: 사탕 졸업 직후 메뉴바 잔상). 진화(.evolved)도 같은 applyUsage 경로라 함께 보호된다.
@@ -109,13 +112,15 @@ final class RareCandyStoreTests: XCTestCase {
         let s = store(rcNoEvo)
         await s.hatch(baseID: 20)
         s.applyUsage(700_000_000)   // 졸업 총량 750M 잔여 50M ≤ 100M
+        s.debugAccrueLevelExperience(200_000_000)   // 졸업은 레벨 30 게이트도 넘어야 한다(#19) — 사탕 XP(100M)와 합쳐 31
         giveCandies(s, 1)
         let fired = expectation(description: "sprite identity observation fired")
         withObservationTracking {
             _ = s.currentSpeciesID
             _ = s.currentIsShiny
         } onChange: { fired.fulfill() }
-        XCTAssertEqual(s.useRareCandy(), .graduated)
+        XCTAssertEqual(s.useRareCandy(), .progressed)
+        XCTAssertTrue(s.graduateCompanion(), "졸업은 사용자 액션(#19)")
         await fulfillment(of: [fired], timeout: 1)
         XCTAssertNil(s.currentSpeciesID, "졸업 → 알(메뉴바 스프라이트 키 nil)")
     }

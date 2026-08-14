@@ -75,6 +75,7 @@ final class StoreTerminationTests: XCTestCase {
                                clock: { pNow }, fileURL: tmpURL(), rng: SeededRNG(seed: 1))
         await s.hatch(baseID: 1)
         s.applyUsage(Int(PokemonBalance.graduationTotal(.common)) * 10)   // 졸업 총량의 10배
+        XCTAssertTrue(s.graduateCompanion())    // 졸업은 사용자 액션(#19)
         XCTAssertNil(s.state.active)            // 졸업 완료
         XCTAssertEqual(s.dexEntries.count, 1)   // 정확히 1회
         XCTAssertEqual(s.dexEntries[0].chainOrder, [1, 2, 3])
@@ -88,6 +89,7 @@ final class StoreTerminationTests: XCTestCase {
         for n in 1...20 {
             await s.hatch(baseID: 1)
             s.applyUsage(Int(PokemonBalance.graduationTotal(.common)) * 10)
+            XCTAssertTrue(s.graduateCompanion())   // 졸업은 사용자 액션(#19)
             XCTAssertEqual(s.dexEntries.count, n)
             XCTAssertNil(s.state.active)
         }
