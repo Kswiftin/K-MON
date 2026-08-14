@@ -250,7 +250,9 @@ final class AdventureTests: XCTestCase {
         let message = MultiplayerWireMessage.ready(participantID: id, ready: true)
         let data = try JSONEncoder().encode(message)
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 1)
+        // 2 = LobbyParticipant.role + 관전자 베팅 메시지. 버전을 올려야 옛 빌드가 레이스 중간이
+        // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 2)
     }
 
     func testPokeathlonObstacleRequiresJumpAndSupportsFourRacers() {
