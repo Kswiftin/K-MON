@@ -180,7 +180,7 @@ final class AdventureTests: XCTestCase {
         let p2 = player(2, ready: true), p3 = player(3, ready: true), p4 = player(4, ready: true)
         try lobby.join(p2); try lobby.join(p3); try lobby.join(p4)
         XCTAssertTrue(lobby.canStart)
-        XCTAssertThrowsError(try lobby.join(player(5))) { XCTAssertEqual($0 as? LobbyError, .full) }
+        XCTAssertThrowsError(try lobby.join(player(5))) { XCTAssertEqual($0 as? LobbyError, .runnersFull) }
     }
 
     func testTeamLobbyRequiresTwoVersusTwo() throws {
