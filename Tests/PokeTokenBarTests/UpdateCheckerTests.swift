@@ -41,13 +41,13 @@ final class UpdateCheckerTests: XCTestCase {
     /// 앱 내 업데이트가 조용히 죽는다(에러도 안 난다 — 릴리스 페이지만 열린다).
     /// 예전엔 앱이 `PokeTokenBar.zip` 을 찾는데 CI 는 `Pokédoro.zip` 을 올렸고, GitHub 이 그걸
     /// `Pokedoro.zip` 으로 정규화까지 해서 세 이름이 전부 달랐다. 테스트가 가짜 릴리스를 *자기가 지은*
-    /// 이름으로 만들어 통과시켰던 게 이걸 못 잡은 이유다 — 이제 배포 스크립트 원문과 대조한다.
+    /// 이름으로 만들어 통과시켰던 게 이걸 못 잡은 이유다 — 이제 실제 Asset을 올리는 두 Workflow와 대조한다.
     func testReleaseAssetNameMatchesWhatTheReleaseScriptsUpload() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        for path in ["scripts/release.sh", ".github/workflows/ci.yml"] {
+        for path in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
             let text = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
-            XCTAssertTrue(text.contains("build/\(UpdateChecker.releaseAssetName)"),
+            XCTAssertTrue(text.contains(UpdateChecker.releaseAssetName),
                           "\(path) 가 올리는 zip 이름이 UpdateChecker.releaseAssetName 과 다르다")
         }
         XCTAssertEqual(UpdateChecker.releaseAssetName,

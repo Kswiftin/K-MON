@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build-sign-release
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag and target
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$GITHUB_SHA" == "$(git rev-parse origin/main)" ]] || {
+            echo "Release tag must point at the current origin/main commit." >&2
+            exit 1
+          }
+          [[ -n "$version" ]]
+
+      - name: Require Sparkle signing key
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          [[ -n "$SPARKLE_PRIVATE_KEY" ]] || {
+            echo "SPARKLE_PRIVATE_KEY Actions secret is missing." >&2
+            exit 1
+          }
+
+      - name: Test and coverage gate
+        run: ./scripts/test-gate.sh
+
+      - name: Build installable app
+        env:
+          KMON_VERSION: ${{ github.ref_name }}
+          KMON_SOURCE_COMMIT: ${{ github.sha }}
+          KMON_SKIP_INSTALL: "1"
+        run: |
+          export KMON_VERSION="${KMON_VERSION#v}"
+          ./scripts/build-app.sh
+
+      - name: Verify embedded updater and app signature
+        run: |
+          test -d build/Pokédoro.app/Contents/Frameworks/Sparkle.framework
+          codesign --verify --deep --strict --verbose=2 build/Pokédoro.app
+          otool -L build/Pokédoro.app/Contents/MacOS/PokeTokenBar | grep -F '@rpath/Sparkle.framework'
+          /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' build/Pokédoro.app/Contents/Info.plist >/dev/null
+
+      - name: Package and generate signed appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          mkdir -p build/release-feed
+          ditto -c -k --keepParent build/Pokédoro.app build/release-feed/Pokedoro.zip
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | \
+            .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
+              --ed-key-file - \
+              --download-url-prefix "https://github.com/2giduck/K-MON/releases/download/$GITHUB_REF_NAME/" \
+              --link "https://github.com/2giduck/K-MON/releases/tag/$GITHUB_REF_NAME" \
+              --maximum-versions 1 \
+              -o build/release-feed/appcast.xml \
+              build/release-feed
+          (cd build/release-feed && shasum -a 256 Pokedoro.zip > Pokedoro.zip.sha256)
+          grep -F 'sparkle:edSignature=' build/release-feed/appcast.xml >/dev/null
+          grep -F 'sparkle-signatures:' build/release-feed/appcast.xml >/dev/null
+          grep -F "/releases/download/$GITHUB_REF_NAME/Pokedoro.zip" build/release-feed/appcast.xml >/dev/null
+
+      # Release is created only after every build, signature and feed check succeeds,
+      # so clients never observe a published semantic version with missing assets.
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            build/release-feed/Pokedoro.zip \
+            build/release-feed/Pokedoro.zip.sha256 \
+            build/release-feed/appcast.xml \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "K-MON $GITHUB_REF_NAME" \
+            --generate-notes
