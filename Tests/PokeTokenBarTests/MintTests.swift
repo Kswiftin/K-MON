@@ -24,7 +24,7 @@ final class MintTests: XCTestCase {
         let active = "{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":\(usedAtStage),"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":\(shiny)\(natureField)}"
         let inv = mint > 0 ? ",\"inventory\":{\"mint\":\(mint)}" : ""
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":\(spent),"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":\(spent),"
             + "\"lastDate\":\"d\",\"active\":\(active),\"dex\":[],\"collectedFinals\":[]\(inv)}"
         try? json.data(using: .utf8)!.write(to: url)
         return CompanionStore(provider: MintNoProvider(), clock: { self.now }, fileURL: url, rng: SeededRNG(seed: seed))

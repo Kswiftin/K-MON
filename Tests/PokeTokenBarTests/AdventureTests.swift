@@ -257,13 +257,22 @@ final class AdventureTests: XCTestCase {
         let racers = (0..<4).map { PokeathlonRacer(id: UUID(), trainerName: "P\($0)", speciesID: $0 + 1) }
         var race = PokeathlonRace(racers: racers)
         let id = racers[0].id
-        for _ in 0..<7 { race.apply(.run, racerID: id) }
-        XCTAssertEqual(race.racers[0].distance, 21)
-        race.apply(.run, racerID: id)
-        XCTAssertEqual(race.racers[0].distance, 18)
-        race.apply(.run, racerID: id)
-        race.apply(.dodgeLeft, racerID: id)
-        XCTAssertGreaterThanOrEqual(race.racers[0].distance, 24)
+        race.startsAt = .distantPast
+        var now = Date()
+        for _ in 0..<7 {
+            race.apply(.run, racerID: id, now: now)
+            now = now.addingTimeInterval(0.2)
+        }
+        XCTAssertEqual(race.racers[0].distance, 28)
+        race.apply(.run, racerID: id, now: now)
+        XCTAssertEqual(race.racers[0].distance, 32)
+        now = now.addingTimeInterval(0.2)
+        race.apply(.run, racerID: id, now: now)
+        XCTAssertEqual(race.racers[0].distance, 29)
+        race.apply(.dodgeLeft, racerID: id, now: now)
+        now = now.addingTimeInterval(0.2)
+        race.apply(.run, racerID: id, now: now)
+        XCTAssertGreaterThan(race.racers[0].distance, 29)
         XCTAssertEqual(race.racers.count, 4)
     }
 

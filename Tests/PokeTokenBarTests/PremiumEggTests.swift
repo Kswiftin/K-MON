@@ -76,7 +76,7 @@ final class PremiumEggTests: XCTestCase {
         let f = file ?? url()
         let mon = "{\"baseID\":10,\"pathIDs\":[10],\"stageIndex\":0,\"usedAtStage\":200000000,"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":false}"
-        let json = "{\"economyVersion\":2,\"usedSinceInstall\":\(used),\"spentTokens\":0,"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"usedSinceInstall\":\(used),\"spentTokens\":0,"
             + "\"active\":\(mon),\"dex\":[],\"collectedFinals\":[]}"
         try? json.data(using: .utf8)!.write(to: f)
         return CompanionStore(provider: provider, clock: { self.now }, fileURL: f, rng: SeededRNG(seed: 7))
@@ -86,7 +86,7 @@ final class PremiumEggTests: XCTestCase {
     private func eggStore(tier: Rarity?, seed: UInt64, provider: any PokeProviding) -> CompanionStore {
         let f = url()
         let tierJSON = tier.map { "\"\($0.rawValue)\"" } ?? "null"
-        let json = "{\"economyVersion\":2,\"usedSinceInstall\":10000000,\"spentTokens\":0,"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"usedSinceInstall\":10000000,\"spentTokens\":0,"
             + "\"active\":null,\"dex\":[],\"collectedFinals\":[],"
             + "\"eggUsage\":\(PokemonBalance.eggHatchThreshold),\"eggTier\":\(tierJSON)}"
         try? json.data(using: .utf8)!.write(to: f)

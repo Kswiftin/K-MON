@@ -343,5 +343,6 @@ struct FloatingPetView: View {
                 .zIndex(0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .environment(\.spriteAntialiasing, settings.imageAntialiasing)
     }
 }
