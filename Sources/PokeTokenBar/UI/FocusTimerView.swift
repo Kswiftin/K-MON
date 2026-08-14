@@ -49,7 +49,9 @@ struct FocusTimerView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent).controlSize(.small)
-                    .disabled(!companion.hasActive || companion.isAdventuring)
+                    // 진행 중일 때만 막는다. 끝난 모험은 시작 시 자동 정산되므로 여기서 잠그면
+                    // 정산 전 상태에서 버튼이 영영 비활성이 된다(#8).
+                    .disabled(!companion.hasActive || companion.isAdventureInProgress)
                     Spacer()
                     Text(rewardText(selectedMinutes))
                         .font(.caption2).foregroundStyle(.secondary)
@@ -57,7 +59,9 @@ struct FocusTimerView: View {
                 HStack {
                     Text(eggChanceText(selectedMinutes)).font(.caption2).foregroundStyle(.secondary)
                     Spacer()
-                    Text("🥚 ×\(companion.focusEggCount) · 🧩 \(companion.eggFragmentCount)/10 · 주간 \(companion.weeklyAdventureProgress)/10")
+                    Text(companion.l.focusStash(eggs: companion.focusEggCount,
+                                                fragments: companion.eggFragmentCount,
+                                                weekly: companion.weeklyAdventureProgress))
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 if let reward = timer.lastReward {
