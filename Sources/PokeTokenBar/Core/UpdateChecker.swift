@@ -101,12 +101,18 @@ final class UpdateChecker {
         return false
     }
 
+    /// 릴리스에 올라가는 zip 이름. `scripts/release.sh` · `.github/workflows/ci.yml` 이 만드는 이름과
+    /// **글자 그대로** 같아야 한다 — 다르면 다운로드 URL 이 늘 nil 이라 앱 내 업데이트가 조용히 죽는다.
+    /// ASCII 로 두는 이유: GitHub 이 에셋 이름의 비-ASCII 를 정규화해서(`Pokédoro.zip` → `Pokedoro.zip`)
+    /// 업로드한 이름과 조회되는 이름이 달라진다.
+    nonisolated static let releaseAssetName = "Pokedoro.zip"
+
     nonisolated static func releaseCandidate(from release: ReleaseInfo, channel: Available.Channel) -> Available? {
         let tag = release.tag_name
         let html = release.html_url
         guard
               let htmlURL = URL(string: html), htmlURL.scheme == "https", htmlURL.host == "github.com" else { return nil }
-        let rawDownload = release.assets.first { $0.name == "PokeTokenBar.zip" }?.browser_download_url
+        let rawDownload = release.assets.first { $0.name == releaseAssetName }?.browser_download_url
         let download = rawDownload.flatMap { value -> String? in
             guard let url = URL(string: value), url.scheme == "https", url.host == "github.com" else { return nil }
             return value

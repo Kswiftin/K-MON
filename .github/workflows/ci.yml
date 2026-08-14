@@ -76,8 +76,10 @@ jobs:
 
       - name: Package and checksum
         run: |
-          ditto -c -k --keepParent build/Pokédoro.app build/Pokédoro.zip
-          shasum -a 256 build/Pokédoro.zip > build/Pokédoro.zip.sha256
+          ditto -c -k --keepParent build/Pokédoro.app build/Pokedoro.zip
+          # build 안에서 만들어야 체크섬 파일에 "build/" 경로가 안 박힌다 —
+          # 받는 쪽은 zip 옆에서 `shasum -c Pokedoro.zip.sha256` 를 돌리므로 경로가 붙으면 검증이 실패한다.
+          (cd build && shasum -a 256 Pokedoro.zip > Pokedoro.zip.sha256)
 
       - name: Update rolling development release
         env:
@@ -86,12 +88,12 @@ jobs:
           git tag -f development "$GITHUB_SHA"
           git push --force origin refs/tags/development
           if gh release view development >/dev/null 2>&1; then
-            gh release upload development build/Pokédoro.zip build/Pokédoro.zip.sha256 --clobber
+            gh release upload development build/Pokedoro.zip build/Pokedoro.zip.sha256 --clobber
             gh release edit development --target "$GITHUB_SHA" --prerelease \
               --title "K-MON Development" \
               --notes "Automated development build from main at $GITHUB_SHA. Tests and secret scan passed."
           else
-            gh release create development build/Pokédoro.zip build/Pokédoro.zip.sha256 \
+            gh release create development build/Pokedoro.zip build/Pokedoro.zip.sha256 \
               --target "$GITHUB_SHA" --prerelease --title "K-MON Development" \
               --notes "Automated development build from main at $GITHUB_SHA. Tests and secret scan passed."
           fi
