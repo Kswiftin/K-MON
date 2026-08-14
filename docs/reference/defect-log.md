@@ -284,6 +284,20 @@ read_when:
   `grep -rE '"[^"]*[가-힣]' Sources/**/UI/*.swift` 후 **언어 분기(ternary/`t(...)`) 밖**에 있는 것만
   남긴다. 회귀 가드는 en/ja 출력에 한글 코드포인트가 없는지 + ko 는 한국어가 유지되는지(대조군).
 
+## 배포 산출물 이름 (앱 ↔ 스크립트 ↔ GitHub)
+
+- **에셋 이름은 세 곳이 글자 그대로 같아야 하고, GitHub 은 비-ASCII 를 말없이 바꾼다.** 앱은
+  `PokeTokenBar.zip` 을 찾고, `release.sh`·CI 는 `Pokédoro.zip` 을 올렸고, GitHub 은 그걸
+  `Pokedoro.zip` 으로 정규화해 세 이름이 전부 달랐다 → 다운로드 URL 이 항상 nil 이라 앱 내 업데이트가
+  **에러 없이** 죽는다(릴리스 페이지만 열려서 "업데이트가 원래 저런가 보다" 로 보인다). 이름은
+  `UpdateChecker.releaseAssetName` 한 곳에서 파생하고 ASCII 로 둔다. 테스트가 못 잡은 이유가 전형적이다 —
+  가짜 릴리스를 **테스트가 지은 이름**으로 만들어 자기 자신과 대조했다. 가드
+  `testReleaseAssetNameMatchesWhatTheReleaseScriptsUpload` 는 배포 스크립트 원문을 읽어 대조한다.
+- **체크섬 파일은 zip 옆에서 만들어라.** `shasum -a 256 build/X.zip > build/X.zip.sha256` 은 파일 안에
+  `build/X.zip` 이라는 *빌드 머신 경로*를 적는다. 받는 쪽은 zip 옆에서 `shasum -c` 를 돌리므로 파일을
+  못 찾아 검증이 항상 실패한다(실제 배포본 확인: `... build/Pokédoro.zip`). `(cd build && shasum ...)`
+  로 상대 이름만 남긴다.
+
 ## 에너지 (상시 표시 애니메이션)
 
 - **메뉴바 상태아이템 = idle CPU 저격수 (두 규칙 필수).** 실측: 라이브 앱 idle ~14% CPU → 수정 후 ~2%.
