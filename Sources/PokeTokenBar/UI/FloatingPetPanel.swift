@@ -18,6 +18,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         let axis: PortalAxis
         let target: CGFloat
         let crossingSign: CGFloat
+        let completionCoordinate: CGFloat
     }
 
     private let settings: AppSettings
@@ -34,6 +35,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     private var direction = CGVector(dx: 1, dy: 0)
     private var directionDeadline: TimeInterval = 0
     private var pendingPortal: PortalRoute?
+    private var crossingPortal: PortalRoute?
     private var lastPositionSave: TimeInterval = 0
     private var isAutomaticMove = false
     private var isUserDragging = false
@@ -194,11 +196,14 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         movementTimer?.invalidate()
         movementTimer = nil
         lastMovementTick = nil
+        pendingPortal = nil
+        crossingPortal = nil
         persistCurrentOrigin()
     }
 
     private func chooseDirection(now: TimeInterval) {
         pendingPortal = nil
+        crossingPortal = nil
         let angle = Double.random(in: 0..<(Double.pi * 2))
         direction = CGVector(dx: cos(angle), dy: sin(angle))
         directionDeadline = now + Double.random(
@@ -214,6 +219,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         guard let previous = lastMovementTick else { return }
         let delta = min(0.1, max(0, now - previous))
         let speed = CGFloat(settings.floatingPetMovementSpeed)
+        if let route = crossingPortal {
+            advanceAcrossPortal(route, speed: speed, delta: delta, now: now)
+            return
+        }
         if let route = pendingPortal {
             advanceTowardPortal(route, speed: speed, delta: delta, now: now)
             return
@@ -263,7 +272,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                 : CGVector(dx: 0, dy: route.crossingSign)
             motion.facingLeft = direction.dx < 0
             pendingPortal = nil
-            directionDeadline = now + Self.minimumTravelDuration
+            crossingPortal = route
             return
         }
         let sign: CGFloat = difference < 0 ? -1 : 1
@@ -274,6 +283,30 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             origin: origin, petSize: CGFloat(settings.floatingPetSize),
             velocity: velocity, delta: delta, screens: NSScreen.screens.map(\.visibleFrame))
         setAutomaticOrigin(result.origin)
+    }
+
+    private func advanceAcrossPortal(_ route: PortalRoute, speed: CGFloat,
+                                     delta: TimeInterval, now: TimeInterval) {
+        guard let panel else { return }
+        let velocity = route.axis == .horizontal
+            ? CGVector(dx: route.crossingSign * speed, dy: 0)
+            : CGVector(dx: 0, dy: route.crossingSign * speed)
+        let result = Self.resolvedMotion(
+            origin: panel.frame.origin, petSize: CGFloat(settings.floatingPetSize),
+            velocity: velocity, delta: delta, screens: NSScreen.screens.map(\.visibleFrame))
+        setAutomaticOrigin(result.origin)
+        let coordinate = route.axis == .horizontal ? result.origin.x : result.origin.y
+        let completed = route.crossingSign > 0
+            ? coordinate >= route.completionCoordinate - 0.01
+            : coordinate <= route.completionCoordinate + 0.01
+        if completed {
+            crossingPortal = nil
+            direction = route.axis == .horizontal
+                ? CGVector(dx: route.crossingSign, dy: 0)
+                : CGVector(dx: 0, dy: route.crossingSign)
+            motion.facingLeft = direction.dx < 0
+            directionDeadline = now + Self.minimumTravelDuration
+        }
     }
 
     private func setAutomaticOrigin(_ origin: NSPoint) {
@@ -433,7 +466,8 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                     if let target = portalTarget(current: origin.y,
                                                  lower: max(source.minY, neighbor.minY),
                                                  upper: min(source.maxY, neighbor.maxY) - petSize) {
-                        routes.append(PortalRoute(axis: .horizontal, target: target, crossingSign: 1))
+                        routes.append(PortalRoute(axis: .horizontal, target: target, crossingSign: 1,
+                                                  completionCoordinate: neighbor.minX))
                     }
                 }
             } else if velocity.dx < 0, pet.minX <= source.minX + abs(velocity.dx) * 0.1 + epsilon {
@@ -441,7 +475,8 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                     if let target = portalTarget(current: origin.y,
                                                  lower: max(source.minY, neighbor.minY),
                                                  upper: min(source.maxY, neighbor.maxY) - petSize) {
-                        routes.append(PortalRoute(axis: .horizontal, target: target, crossingSign: -1))
+                        routes.append(PortalRoute(axis: .horizontal, target: target, crossingSign: -1,
+                                                  completionCoordinate: neighbor.maxX - petSize))
                     }
                 }
             }
@@ -450,7 +485,8 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                     if let target = portalTarget(current: origin.x,
                                                  lower: max(source.minX, neighbor.minX),
                                                  upper: min(source.maxX, neighbor.maxX) - petSize) {
-                        routes.append(PortalRoute(axis: .vertical, target: target, crossingSign: 1))
+                        routes.append(PortalRoute(axis: .vertical, target: target, crossingSign: 1,
+                                                  completionCoordinate: neighbor.minY))
                     }
                 }
             } else if velocity.dy < 0, pet.minY <= source.minY + abs(velocity.dy) * 0.1 + epsilon {
@@ -458,7 +494,8 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                     if let target = portalTarget(current: origin.x,
                                                  lower: max(source.minX, neighbor.minX),
                                                  upper: min(source.maxX, neighbor.maxX) - petSize) {
-                        routes.append(PortalRoute(axis: .vertical, target: target, crossingSign: -1))
+                        routes.append(PortalRoute(axis: .vertical, target: target, crossingSign: -1,
+                                                  completionCoordinate: neighbor.maxY - petSize))
                     }
                 }
             }
