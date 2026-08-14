@@ -180,7 +180,7 @@ final class AdventureTests: XCTestCase {
         let p2 = player(2, ready: true), p3 = player(3, ready: true), p4 = player(4, ready: true)
         try lobby.join(p2); try lobby.join(p3); try lobby.join(p4)
         XCTAssertTrue(lobby.canStart)
-        XCTAssertThrowsError(try lobby.join(player(5))) { XCTAssertEqual($0 as? LobbyError, .full) }
+        XCTAssertThrowsError(try lobby.join(player(5))) { XCTAssertEqual($0 as? LobbyError, .runnersFull) }
     }
 
     func testTeamLobbyRequiresTwoVersusTwo() throws {
@@ -250,7 +250,9 @@ final class AdventureTests: XCTestCase {
         let message = MultiplayerWireMessage.ready(participantID: id, ready: true)
         let data = try JSONEncoder().encode(message)
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 1)
+        // 2 = LobbyParticipant.role + 관전자 베팅 메시지. 버전을 올려야 옛 빌드가 레이스 중간이
+        // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 2)
     }
 
     func testPokeathlonObstacleRequiresJumpAndSupportsFourRacers() {

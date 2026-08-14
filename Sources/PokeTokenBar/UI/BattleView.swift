@@ -10,7 +10,6 @@ struct BattleView: View {
     // 수동(IP) 연결 상태
     @State private var manualAddress = ""
     @State private var addressCopied = false
-    @State private var kind: BattleKind = .brawl   // 신청할 배틀 종류
     @State private var roomMode: MultiplayerBattleMode = .freeForAll
     @State private var multiplayerTargetID: UUID?
 
@@ -44,7 +43,6 @@ struct BattleView: View {
             incomingView(peer: peer)
         case .battling:
             if let practice = center.teamPractice { teamPracticeView(practice) }
-            else if let race = center.race { raceView(race) }        // 달리기
             else if let b = center.battle { arenaView(b) }       // 맞짱
         case .finished(let iWon, let byForfeit):
             finishedView(iWon: iWon, byForfeit: byForfeit)
@@ -74,15 +72,13 @@ struct BattleView: View {
                  : "Same Lv.50 rules · rank and Star Pieces are unchanged")
                 .font(.caption2).foregroundStyle(.secondary)
 
-            if kind == .brawl {
-                HStack {
-                    Label(store.battleRank.displayName, systemImage: "shield.lefthalf.filled")
-                    Spacer()
-                    Text("⭐ \(GameNumberFormatter.compact(store.availableTokens))")
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            HStack {
+                Label(store.battleRank.displayName, systemImage: "shield.lefthalf.filled")
+                Spacer()
+                Text("⭐ \(GameNumberFormatter.compact(store.availableTokens))")
             }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
 
             HStack(spacing: 6) {
                 Text(l.battleNearby).font(.caption).bold()
@@ -106,7 +102,7 @@ struct BattleView: View {
                             .foregroundStyle(.secondary)
                         Text(peer.name).font(.callout).lineLimit(1)
                         Spacer()
-                        Button(l.battleChallengeButton) { center.challenge(peer, kind: .brawl) }
+                        Button(l.battleChallengeButton) { center.challenge(peer) }
                             .controlSize(.small)
                             .disabled(!isChallengeEnabled)
                     }
@@ -210,7 +206,7 @@ struct BattleView: View {
                     .padding(5)
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
                 }
-                ForEach(lobby.participants.count..<lobby.capacity, id: \.self) { _ in
+                ForEach(lobby.runners.count..<max(lobby.runners.count, lobby.capacity), id: \.self) { _ in
                     HStack { Image(systemName: "person.crop.circle.dashed"); Text(store.language == .ko ? "참가자 대기 중" : "Waiting for player") }
                         .font(.caption2).foregroundStyle(.tertiary).padding(5)
                 }
@@ -390,7 +386,7 @@ struct BattleView: View {
 
     private func challengeManual() {
         guard isChallengeEnabled else { return }
-        center.challengeManual(manualAddress, kind: .brawl)
+        center.challengeManual(manualAddress)
     }
 
     private var isChallengeEnabled: Bool {
@@ -416,9 +412,9 @@ struct BattleView: View {
             Text("⚔️ \(l.battleIncomingFrom(peer))")
                 .font(.callout).bold()
                 .multilineTextAlignment(.center)
-            Text(l.battleKindLabel(center.incomingKind))
+            Text(l.battleKindBrawl)
                 .font(.caption2).foregroundStyle(.secondary)
-            if center.incomingKind == .brawl, let profile = center.opponentRankProfile {
+            if let profile = center.opponentRankProfile {
                 VStack(spacing: 2) {
                     Text("\(profile.rank.displayName)  VS  \(store.battleRank.displayName)")
                     if center.incomingRankedStake > 0 {
@@ -527,12 +523,6 @@ struct BattleView: View {
             ProgressView(value: Double(slot.hp), total: Double(max(1, slot.snapshot.effectiveStats().hp)))
                 .tint(slot.hp > 0 ? .green : .red)
         }.frame(maxWidth: .infinity).padding(6).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
-    }
-
-    // MARK: 달리기 (레이스)
-
-    private func raceView(_ race: RaceState) -> some View {
-        RaceLane(center: center, l: l, onClose: { center.dismissResult() })
     }
 
     private func moveButtons(_ b: NetBattleState) -> some View {
@@ -679,89 +669,5 @@ struct BattleView: View {
             .font(.system(size: 9, weight: .semibold))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Capsule().fill(Color.accentColor.opacity(0.15)))
-    }
-}
-
-/// 달리기 레인 — **키보드 ←/→ 를 번갈아** 눌러 직접 달린다(같은 키 연타는 무효, 번갈아야 전진).
-/// 내 러너는 입력마다 전진하고 진행도를 상대에게 보내며, 상대 러너는 수신 진행도로 움직인다.
-/// 먼저 결승선(finishLine)에 닿는 쪽 승리. 결과가 정해지면(race.iWon) 승패 + 닫기 표시.
-private struct RaceLane: View {
-    let center: BattleCenter
-    let l: L
-    let onClose: () -> Void
-
-    @State private var monitor: Any?
-    @State private var lastKey: UInt16?   // 123 = ←, 124 = →
-
-    var body: some View {
-        let race = center.race
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("🏁 \(l.battleKindRace)").font(.callout).bold()
-            if let race {
-                lane(snapshot: race.my, title: l.battleMyPokemon, progress: race.myProgress)
-                lane(snapshot: race.opp,
-                     title: race.opp.trainer.map { l.battleTrainerLabel($0) } ?? "?",
-                     progress: race.oppProgress)
-                if let iWon = race.iWon {
-                    Text(raceResultText(iWon)).font(.title3).bold()
-                        .frame(maxWidth: .infinity)
-                    Button(l.battleClose) { onClose() }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Text(l.battleRaceHint).font(.caption2).foregroundStyle(.orange)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-        }
-        .onAppear { installKeyMonitor() }
-        .onDisappear { removeKeyMonitor() }
-    }
-
-    private func installKeyMonitor() {
-        guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let code = event.keyCode
-            guard code == 123 || code == 124 else { return event }   // ←/→ 만 처리
-            // 번갈아 눌러야 전진 — 직전과 다른 키일 때만 한 스텝(같은 키 연타 방지 = 달리는 모션).
-            if lastKey != code {
-                lastKey = code
-                center.raceStep()
-            }
-            return nil   // 방향키 소비(스크롤·삑 소리 방지)
-        }
-    }
-
-    private func removeKeyMonitor() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
-    }
-
-    private func raceResultText(_ iWon: Bool?) -> String {
-        switch iWon {
-        case .some(true):  return l.battleWon
-        case .some(false): return l.battleLost
-        case .none:        return l.battleDraw
-        }
-    }
-
-    private func lane(snapshot: BattleSnapshot, title: String, progress: Double) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            GeometryReader { geo in
-                let travel = max(0, geo.size.width - 34)
-                ZStack(alignment: .leading) {
-                    Rectangle().fill(Color.secondary.opacity(0.25)).frame(width: 2)
-                        .frame(maxWidth: .infinity, alignment: .trailing)   // 결승선
-                    SpriteView(speciesID: snapshot.speciesID, size: 30, bob: true, animated: true, shiny: snapshot.isShiny)
-                        .frame(width: 30, height: 30)
-                        .offset(x: travel * progress)
-                        .animation(.easeOut(duration: 0.15), value: progress)
-                }
-            }
-            .frame(height: 32)
-        }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
     }
 }
