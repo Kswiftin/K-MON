@@ -99,7 +99,8 @@ final class PopoverLayoutTests: XCTestCase {
     }
 
     /// 로딩 자리표시자 높이가 완성본(4행)과 같아야 팝오버가 한 번만 리사이즈된다.
-    /// 상수(rowHeight)가 실제 렌더 높이와 어긋나면 자리표시자가 거짓말을 하므로 여기서 잠근다.
+    /// 자리표시자는 같은 행 뷰를 투명하게 깔아 높이를 잡는다 — 숫자 상수로 두면 폰트·OS 에 따라
+    /// 실제 행 높이와 어긋나 이 검증이 기계마다 다른 결과를 낸다(CI 118pt vs 로컬 78pt 회귀).
     func testLoadingPlaceholderMatchesFinalHeight() {
         let maxWidth = PopoverMetrics.contentWidth - 16
         let loaded = moveStore(longMoves)
@@ -110,7 +111,7 @@ final class PopoverLayoutTests: XCTestCase {
                                           proposingWidth: maxWidth)
         let loadingHeight = renderedHeight(MoveListView(store: loading, maxWidth: maxWidth),
                                            proposingWidth: maxWidth)
-        XCTAssertEqual(loadingHeight, loadedHeight, accuracy: 6,
+        XCTAssertEqual(loadingHeight, loadedHeight, accuracy: 2,
                        "자리표시자와 완성본 높이가 다르면 펼친 직후 팝오버가 두 번 리사이즈된다")
     }
 }
