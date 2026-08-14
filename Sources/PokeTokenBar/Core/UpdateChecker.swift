@@ -2,7 +2,7 @@ import AppKit
 import Observation
 import Sparkle
 
-/// OAuth로 비공개 GitHub 릴리스를 찾고, 안정 릴리스 설치는 Sparkle에 위임한다.
+/// GitHub App 사용자 인증으로 비공개 GitHub 릴리스를 찾고, 안정 릴리스 설치는 Sparkle에 위임한다.
 /// Sparkle의 ZIP 요청에도 같은 인증 헤더를 전달하며 실행 파일의 EdDSA 검증을 유지한다.
 @MainActor
 @Observable
@@ -43,7 +43,7 @@ final class UpdateChecker {
 
     let currentVersion: String
     let currentCommit: String
-    private let repo = "2giduck/K-MON"
+    private let repo = "Kswiftin/K-MON"
     private let clock: () -> Date
     private var lastChecked: Date?
     private let sparkleController: SPUStandardUpdaterController
@@ -102,6 +102,11 @@ final class UpdateChecker {
         if let last = lastChecked, clock().timeIntervalSince(last) < minInterval { return }
         lastChecked = clock()
         checkError = nil
+        guard await githubAuth.refreshAccessTokenIfNeeded() else {
+            available = nil
+            checkError = githubAuth.isSignedIn ? .network : .authenticationRequired
+            return
+        }
         guard let headers = githubAuth.authorizationHeaders else {
             available = nil
             checkError = .authenticationRequired
@@ -233,7 +238,7 @@ final class UpdateChecker {
 
     nonisolated private static func validAssetAPIURL(_ value: String) -> String? {
         guard let url = URL(string: value), url.scheme == "https", url.host == "api.github.com",
-              url.path.hasPrefix("/repos/2giduck/K-MON/releases/assets/") else { return nil }
+              url.path.hasPrefix("/repos/Kswiftin/K-MON/releases/assets/") else { return nil }
         return value
     }
 

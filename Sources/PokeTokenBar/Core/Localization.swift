@@ -597,9 +597,9 @@ struct L {
               "Couldn't check for updates. Check your network.",
               "更新を確認できませんでした。ネットワークを確認してください。")
         case .repositoryAccess:
-            t("이 계정은 2giduck/K-MON 릴리스에 접근할 수 없어요.",
-              "This account cannot access the 2giduck/K-MON release.",
-              "このアカウントは2giduck/K-MONのリリースにアクセスできません。")
+            t("이 계정은 Kswiftin/K-MON 릴리스에 접근할 수 없어요.",
+              "This account cannot access the Kswiftin/K-MON release.",
+              "このアカウントはKswiftin/K-MONのリリースにアクセスできません。")
         }
     }
 

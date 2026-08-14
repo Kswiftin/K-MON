@@ -79,8 +79,8 @@ jobs:
           printf '%s' "$SPARKLE_PRIVATE_KEY" | \
             .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
               --ed-key-file - \
-              --download-url-prefix "https://github.com/2giduck/K-MON/releases/download/$GITHUB_REF_NAME/" \
-              --link "https://github.com/2giduck/K-MON/releases/tag/$GITHUB_REF_NAME" \
+              --download-url-prefix "https://github.com/Kswiftin/K-MON/releases/download/$GITHUB_REF_NAME/" \
+              --link "https://github.com/Kswiftin/K-MON/releases/tag/$GITHUB_REF_NAME" \
               --maximum-versions 1 \
               -o build/release-feed/appcast.xml \
               build/release-feed

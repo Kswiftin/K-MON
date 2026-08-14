@@ -27,22 +27,22 @@ final class UpdateCheckerTests: XCTestCase {
 
     func testKMONStableReleaseCandidate() {
         let release = UpdateChecker.ReleaseInfo(tag_name: "v2.6.0",
-            html_url: "https://github.com/2giduck/K-MON/releases/tag/v2.6.0",
+            html_url: "https://github.com/Kswiftin/K-MON/releases/tag/v2.6.0",
             target_commitish: "abcdef123456", draft: false, prerelease: false,
             assets: [
                 .init(name: UpdateChecker.releaseAssetName,
-                    url: "https://api.github.com/repos/2giduck/K-MON/releases/assets/67890",
-                    browser_download_url: "https://github.com/2giduck/K-MON/releases/download/v2.6.0/\(UpdateChecker.releaseAssetName)"),
+                    url: "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/67890",
+                    browser_download_url: "https://github.com/Kswiftin/K-MON/releases/download/v2.6.0/\(UpdateChecker.releaseAssetName)"),
                 .init(name: "appcast.xml",
-                    url: "https://api.github.com/repos/2giduck/K-MON/releases/assets/12345",
-                    browser_download_url: "https://github.com/2giduck/K-MON/releases/download/v2.6.0/appcast.xml"),
+                    url: "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/12345",
+                    browser_download_url: "https://github.com/Kswiftin/K-MON/releases/download/v2.6.0/appcast.xml"),
             ])
         let candidate = UpdateChecker.releaseCandidate(from: release, channel: .stable)
         XCTAssertEqual(candidate?.version, "2.6.0")
         XCTAssertEqual(candidate?.channel, .stable)
         XCTAssertNotNil(candidate?.downloadURL)
-        XCTAssertEqual(candidate?.feedURL, "https://api.github.com/repos/2giduck/K-MON/releases/assets/12345")
-        XCTAssertEqual(candidate?.downloadAPIURL, "https://api.github.com/repos/2giduck/K-MON/releases/assets/67890")
+        XCTAssertEqual(candidate?.feedURL, "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/12345")
+        XCTAssertEqual(candidate?.downloadAPIURL, "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/67890")
     }
 
     /// 앱이 찾는 에셋 이름과 릴리스가 실제로 올리는 이름이 어긋나면 다운로드 URL 이 늘 nil 이라
@@ -65,7 +65,7 @@ final class UpdateCheckerTests: XCTestCase {
 
     func testDevelopmentCandidateUsesCommitPrefixAndRejectsForeignURL() {
         let release = UpdateChecker.ReleaseInfo(tag_name: "development",
-            html_url: "https://github.com/2giduck/K-MON/releases/tag/development",
+            html_url: "https://github.com/Kswiftin/K-MON/releases/tag/development",
             target_commitish: "1234567890abcdef", draft: false, prerelease: true,
             assets: [.init(name: UpdateChecker.releaseAssetName, browser_download_url: "https://evil.example/app.zip")])
         let candidate = UpdateChecker.releaseCandidate(from: release, channel: .development)
@@ -76,7 +76,7 @@ final class UpdateCheckerTests: XCTestCase {
 
     func testStableCandidateRequiresAuthenticatedAppcastAPIURL() {
         let release = UpdateChecker.ReleaseInfo(tag_name: "v2.7.1",
-            html_url: "https://github.com/2giduck/K-MON/releases/tag/v2.7.1",
+            html_url: "https://github.com/Kswiftin/K-MON/releases/tag/v2.7.1",
             target_commitish: "abcdef", draft: false, prerelease: false,
             assets: [.init(name: "appcast.xml", url: "https://evil.example/appcast.xml",
                            browser_download_url: "https://github.com/appcast.xml")])
@@ -88,9 +88,37 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(String(decoding: body, as: UTF8.self), "client_id=abc&scope=repo%20user")
     }
 
+    func testGitHubAppDeviceFlowDoesNotRequestBroadRepoScope() {
+        let authorization = GitHubOAuth.deviceAuthorizationBody(clientID: "client")
+        XCTAssertEqual(String(decoding: authorization, as: UTF8.self), "client_id=client")
+
+        let token = GitHubOAuth.tokenBody(clientID: "client", deviceCode: "device",
+                                          repositoryID: "1332674561")
+        XCTAssertEqual(String(decoding: token, as: UTF8.self),
+                       "client_id=client&device_code=device&grant_type=urn:ietf:params:oauth:grant-type:device_code&repository_id=1332674561")
+    }
+
+    func testGitHubAppRefreshUsesNoClientSecretAndBuildsExpirations() throws {
+        let body = GitHubOAuth.refreshBody(clientID: "client", refreshToken: "refresh")
+        XCTAssertEqual(String(decoding: body, as: UTF8.self),
+                       "client_id=client&grant_type=refresh_token&refresh_token=refresh")
+        XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("client_secret"))
+
+        let now = Date(timeIntervalSince1970: 1_000)
+        let response = GitHubOAuth.AccessTokenResponse(
+            access_token: "access", expires_in: 28_800,
+            refresh_token: "refresh", refresh_token_expires_in: 15_897_600,
+            error: nil, error_description: nil, interval: nil)
+        let credentials = try GitHubOAuth.credentials(from: response, now: now)
+        XCTAssertEqual(credentials.accessToken, "access")
+        XCTAssertEqual(credentials.refreshToken, "refresh")
+        XCTAssertEqual(credentials.expiresAt, now.addingTimeInterval(28_800))
+        XCTAssertEqual(credentials.refreshTokenExpiresAt, now.addingTimeInterval(15_897_600))
+    }
+
     func testAuthenticatedAppcastRewritesOnlyToKMONAssetAPI() {
-        let browser = "https://github.com/2giduck/K-MON/releases/download/v2.7.1/Pokedoro.zip"
-        let api = "https://api.github.com/repos/2giduck/K-MON/releases/assets/67890"
+        let browser = "https://github.com/Kswiftin/K-MON/releases/download/v2.7.1/Pokedoro.zip"
+        let api = "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/67890"
         let original = #"<rss><enclosure url="\#(browser)" sparkle:edSignature="signed" /></rss>"#
         let rewritten = UpdateChecker.rewriteAppcast(original, browserDownloadURL: browser, assetAPIURL: api)
         XCTAssertFalse(rewritten?.contains(browser) ?? true)

@@ -108,7 +108,7 @@ struct SettingsView: View {
         HStack(spacing: 5) {
             Text("v\(Self.appVersion)")
             Text("·")
-            footerLink("GitHub", "https://github.com/2giduck/K-MON")
+            footerLink("GitHub", "https://github.com/Kswiftin/K-MON")
             Spacer()
         }
         .font(.caption2)
