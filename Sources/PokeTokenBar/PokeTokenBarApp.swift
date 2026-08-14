@@ -153,28 +153,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
 
     private func applyState() {
         guard let button = statusItem.button else { return }
-        if focusTimer.isRunning {
-            let prefix = focusTimer.phase == .focus ? "FOCUS" : "BREAK"
-            Self.applyMenuText(["\(prefix) \(focusTimer.clockText())"], to: button)
-        } else if let run = companion.activeAdventure, !run.isComplete(at: Date()) {
-            // 집중 타이머가 안 돌아도 모험 중이면 "휴식 중"이 아니다 — 남은 시간까지 보여줘
-            // 팝오버를 열지 않고도 언제 돌아올지 알 수 있게 한다.
-            let adventuring: String
-            switch companion.language {
-            case .ko: adventuring = "모험 중"
-            case .en: adventuring = "ADVENTURING"
-            case .ja: adventuring = "冒険中"
-            }
-            Self.applyMenuText(["\(adventuring) \(Self.remainingClockText(run.endsAt))"], to: button)
-        } else {
-            let resting: String
-            switch companion.language {
-            case .ko: resting = "휴식 중"
-            case .en: resting = "RESTING"
-            case .ja: resting = "休憩中"
-            }
-            Self.applyMenuText([resting], to: button)
-        }
+        // focus > adventuring > resting 우선순위와 시간 포맷은 MenuBarStatus 에 고정돼 있다(#20) —
+        // 여기서 다시 if 사슬로 풀면 상태가 하나 늘 때 분기 누락이 재발한다.
+        let status = MenuBarStatus.resolve(focusTimer: focusTimer, activeAdventure: companion.activeAdventure)
+        Self.applyMenuText([status.text(companion.l)], to: button)
         button.appearsDisabled = false
 
         if settings.doNotDisturb {
@@ -185,16 +167,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             ensureMenuAnimation()
             syncMenuAnimation()   // 가시성 상태 주기적 재평가(occlusion 이 잘못 멈춰도 자가 복구)
         }
-    }
-
-    /// 모험 종료까지 남은 시간 — 해안 모험은 최대 2시간이라 FocusTimer.clockText() 의 MM:SS 만으로는
-    /// 분이 두 자리를 넘을 수 있다. 1시간 이상이면 H:MM, 미만이면 MM:SS 로 자릿수를 줄인다.
-    private static func remainingClockText(_ endsAt: Date, at now: Date = Date()) -> String {
-        let seconds = max(0, Int(endsAt.timeIntervalSince(now).rounded(.up)))
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        return hours > 0 ? String(format: "%d:%02d", hours, minutes)
-                         : String(format: "%02d:%02d", minutes, seconds % 60)
     }
 
     /// 메뉴바 버튼 텍스트 반영 — 1줄이면 기본 title(13pt), 2줄 이상이면 세로 스택.

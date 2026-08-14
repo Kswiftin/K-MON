@@ -413,6 +413,12 @@ struct L {
     func battleFixedStake(_ amount: String) -> String {
         t("고정 판돈 ⭐ \(amount)", "Fixed stake ⭐ \(amount)", "固定かけ金 ⭐ \(amount)")
     }
+
+    // MARK: 메뉴바 상태 (#20 — MenuBarStatus.text)
+    var menuBarResting: String { t("휴식 중", "RESTING", "休憩中") }
+    var menuBarAdventuring: String { t("모험 중", "ADVENTURING", "冒険中") }
+    var menuBarAdventureClaimable: String { t("보상 받기", "CLAIM REWARD", "報酬あり") }
+
     // MARK: 스타터 선택 (맨 처음 1회)
     var trainerNamePrompt: String { t("트레이너 이름", "Trainer name", "トレーナー名") }
     var trainerNamePlaceholder: String { t("이름을 입력하세요", "Enter your name", "名前を入力") }
