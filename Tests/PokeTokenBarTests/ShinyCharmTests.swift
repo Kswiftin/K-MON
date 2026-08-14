@@ -21,7 +21,7 @@ final class ShinyCharmTests: XCTestCase {
     private func store(used: Int = 5_000_000_000, spent: Int = 0, charm: Bool = false, seed: UInt64 = 7) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("charm-\(UUID().uuidString).json")
         let inv = charm ? ",\"inventory\":{\"shinyCharm\":1}" : ""
-        let json = "{\"economyVersion\":2,\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":\(spent),"
+        let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":\(spent),\"starPieces\":\(max(0, used - spent)),"
             + "\"lastDate\":\"d\",\"active\":null,\"dex\":[],\"collectedFinals\":[]\(inv)}"
         try? json.data(using: .utf8)!.write(to: url)
         return CompanionStore(provider: CharmStubProvider(), clock: { self.now }, fileURL: url, rng: SeededRNG(seed: seed))
@@ -60,13 +60,10 @@ final class ShinyCharmTests: XCTestCase {
     func testBuyDeductsAndOwns() {
         let s = store(used: 5_000_000_000, spent: 0, charm: false)
         XCTAssertFalse(s.ownsShinyCharm)
-        XCTAssertTrue(s.purchasableItems.contains(.shinyCharm), "상점에 노출")
-        XCTAssertTrue(s.canBuy(.shinyCharm))
-        XCTAssertTrue(s.buy(.shinyCharm))
-        XCTAssertTrue(s.ownsShinyCharm)
-        XCTAssertEqual(s.itemCount(.shinyCharm), 1)
-        XCTAssertEqual(s.state.spentTokens, ShinyCharm.price, "지갑에서 3B 차감")
-        XCTAssertEqual(s.availableTokens, 5_000_000_000 - ShinyCharm.price)
+        XCTAssertFalse(s.purchasableItems.contains(.shinyCharm), "부적은 현재 상점에서 판매하지 않음")
+        XCTAssertFalse(s.canBuy(.shinyCharm))
+        XCTAssertFalse(s.buy(.shinyCharm))
+        XCTAssertFalse(s.ownsShinyCharm)
     }
 
     /// 보유형은 재구매 불가 — canBuy false, buy no-op, 지출/개수 불변.

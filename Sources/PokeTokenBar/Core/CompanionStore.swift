@@ -1015,11 +1015,12 @@ final class CompanionStore {
 
     /// 별의모래 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
     /// 라인 미로딩(재시작 직후·오프라인)이어도 성장량은 항상 적립하고 진화 판정만 미룬다.
-    func applyUsage(_ delta: Int) {
+    func applyUsage(_ delta: Int, maxTransitions: Int = .max) {
         guard state.active != nil else { return }
         state.active!.usedAtStage += delta
         guard let line = currentLine else { save(); return }
         var guardCount = 0
+        var transitions = 0
         while state.active != nil, guardCount < 50 {
             guardCount += 1
             let a = state.active!
@@ -1071,7 +1072,9 @@ final class CompanionStore {
                 state.active!.stageIndex += 1
                 state.active!.usedAtStage = max(0, a.usedAtStage - threshold)
                 fireCelebration(.evolve)
-                break
+                transitions += 1
+                if transitions >= maxTransitions { break }
+                continue
             }
         }
         save()
@@ -1202,7 +1205,7 @@ final class CompanionStore {
         state.active!.levelExperience += RareCandy.xp
         let newLevel = state.active!.level
         if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
-        applyUsage(0)   // 경험치는 위에서 반영하고, 진화 가능 여부만 평가한다.
+        applyUsage(0, maxTransitions: 1)   // 사탕 1개는 최대 1단계만 진행한다.
         if state.active == nil { return .graduated }
         if state.active!.stageIndex > beforeStage { return .evolved }
         return .progressed
