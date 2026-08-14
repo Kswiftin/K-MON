@@ -427,13 +427,21 @@ struct MonState: Codable, Sendable {
     var dittoRevealed = false       // 위장 → 리빌(정체 공개) 전환 여부
     var levelExperience = 0
     var learnedMoves: [MoveSpec] = []
+    /// 진화 체인 각 종의 다국어 이름(speciesID → langCode → name). 부화 시 로드된 라인에서 저장한다 —
+    /// `DexEntry.names` 와 같은 패턴이다. 박스에 있는 개체는 `currentLine` 이 없어(활성 개체만 로드됨)
+    /// 이게 없으면 도감이 이름 대신 종 번호(#25)를 그린다. 구버전 저장분엔 없어(nil) 뷰가 폴백한다.
+    var names: [Int: [String: String]]?
+    /// 이미 졸업해 영구 `DexEntry` 가 기록된 개체. 졸업해도 개체는 박스에 남아 계속 키울 수 있는데(#27),
+    /// 도감이 박스도 집계하므로(#28) 이 표식이 없으면 같은 개체가 영구 기록과 화면용 행으로 두 번 잡힌다.
+    var isGraduated = false
     var level: Int { min(100, 1 + max(0, levelExperience) / 10_000_000) }
     // pathIDs 가 비면(손상된 상태 파일) baseID 로 폴백 — 렌더마다 읽히므로 out-of-bounds 크래시 방지.
     var currentID: Int { pathIDs.isEmpty ? baseID : pathIDs[min(stageIndex, pathIDs.count - 1)] }
 
     init(baseID: Int, pathIDs: [Int], plannedPathIDs: [Int]? = nil, stageIndex: Int, usedAtStage: Int,
          rarity: Rarity, totalForms: Int, isShiny: Bool = false, nature: PokemonNature? = nil,
-         nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false) {
+         nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false,
+         names: [Int: [String: String]]? = nil, isGraduated: Bool = false) {
         self.baseID = baseID
         self.pathIDs = pathIDs
         if let plannedPathIDs, !plannedPathIDs.isEmpty {
@@ -448,6 +456,8 @@ struct MonState: Codable, Sendable {
         self.isShiny = isShiny
         self.nature = nature
         self.nickname = nickname
+        self.names = names
+        self.isGraduated = isGraduated
         self.dittoDisguise = dittoDisguise
         self.dittoRevealed = dittoRevealed
     }
@@ -479,6 +489,8 @@ struct MonState: Codable, Sendable {
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         levelExperience = try c.decodeIfPresent(Int.self, forKey: .levelExperience) ?? 0
         learnedMoves = try c.decodeIfPresent([MoveSpec].self, forKey: .learnedMoves) ?? []
+        names = try c.decodeIfPresent([Int: [String: String]].self, forKey: .names)
+        isGraduated = try c.decodeIfPresent(Bool.self, forKey: .isGraduated) ?? false
     }
 }
 
