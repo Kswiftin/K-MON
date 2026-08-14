@@ -22,6 +22,7 @@ struct BattlePeer: Identifiable, Equatable {
     let name: String            // 표시 이름(고유 접미 제거)
     let serviceName: String     // Bonjour 광고 원본(고유) — id·self 판정용
     let endpoint: NWEndpoint
+    let rank: BattleRank?
     var id: String { serviceName }
     static func == (l: Self, r: Self) -> Bool { l.serviceName == r.serviceName }
 }
@@ -160,7 +161,9 @@ final class BattleCenter {
     private func startListener() {
         do {
             let listener = try NWListener(using: Self.discoveryParameters())
-            listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType)
+            let rankRecord = NWTXTRecord(["rankPoints": String(companion.battleRank.points)])
+            listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
+                                                  domain: nil, txtRecord: rankRecord)
             listener.newConnectionHandler = { [weak self] conn in
                 Task { @MainActor in self?.acceptConnection(conn) }
             }
@@ -233,7 +236,15 @@ final class BattleCenter {
         peers = results.compactMap { r in
             guard case .service(let name, _, _, _) = r.endpoint else { return nil }
             guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
-            return BattlePeer(name: Self.displayName(fromService: name), serviceName: name, endpoint: r.endpoint)
+            let points: Int?
+            if case .bonjour(let record) = r.metadata,
+               let raw = record["rankPoints"], let value = Int(raw) {
+                points = min(BattleRank.maximumPoints, max(0, value))
+            } else {
+                points = nil   // 업데이트 전 클라이언트도 목록에서 숨기지 않는다.
+            }
+            return BattlePeer(name: Self.displayName(fromService: name), serviceName: name,
+                              endpoint: r.endpoint, rank: points.map { BattleRank(points: $0) })
         }.sorted { $0.name < $1.name }
         AppLog.write("battle peers updated: \(results.count) result(s), \(peers.count) after self-filter")
         if !peers.isEmpty { lastError = nil }   // 상대가 보이면 이전 차단 경고 해제
