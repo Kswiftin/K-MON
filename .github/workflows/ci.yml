@@ -38,12 +38,6 @@ jobs:
   secret-scan:
     name: secret-scan
     runs-on: ubuntu-latest
-    # On pull_request, gitleaks lists the PR's commits through the API, which the
-    # workflow-wide `contents: read` alone does not cover — it 403s on every PR
-    # while still passing on push, where no such call is made.
-    permissions:
-      contents: read
-      pull-requests: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -51,9 +45,18 @@ jobs:
           fetch-depth: 0
 
       - name: Scan for committed secrets
-        uses: gitleaks/gitleaks-action@v3
+        # gitleaks-action requires a paid GITLEAKS_LICENSE for organization repos.
+        # The open-source CLI scans only commits introduced by this PR/push; scanning the
+        # entire inherited history would fail forever on an old test-string false positive.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          SCAN_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          [[ "$SCAN_BASE" =~ ^[0-9a-f]{40}$ && "$SCAN_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          docker run --rm \
+            -v "$PWD:/repo" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git --log-opts="$SCAN_BASE..$SCAN_HEAD" --redact --verbose --no-banner /repo
 
   publish-development:
     name: publish-development
@@ -72,6 +75,7 @@ jobs:
           KMON_VERSION: 2.5.${{ github.run_number }}
           KMON_SOURCE_COMMIT: ${{ github.sha }}
           KMON_SKIP_INSTALL: "1"
+          KMON_GITHUB_OAUTH_CLIENT_ID: ${{ vars.KMON_GITHUB_OAUTH_CLIENT_ID }}
         run: ./scripts/build-app.sh
 
       - name: Package and checksum

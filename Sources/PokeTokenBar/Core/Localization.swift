@@ -563,6 +563,23 @@ struct L {
     var updateLater: String { t("나중에", "Later", "後で") }
     var updating: String { t("업데이트 중…", "Updating…", "更新中…") }
     var updateSectionTitle: String { t("업데이트", "Updates", "アップデート") }
+    var githubAccountLabel: String { t("GitHub 계정", "GitHub account", "GitHubアカウント") }
+    var githubLogin: String { t("로그인", "Sign in", "ログイン") }
+    var githubLogout: String { t("로그아웃", "Sign out", "ログアウト") }
+    var githubConnected: String { t("연결됨", "Connected", "接続済み") }
+    var githubLoginHint: String {
+        t("비공개 릴리스에서 업데이트를 받으려면 로그인해 주세요.",
+          "Sign in to download updates from the private release.",
+          "非公開リリースから更新するにはログインしてください。")
+    }
+    func githubDeviceCode(_ code: String) -> String {
+        t("코드 \(code)", "Code \(code)", "コード \(code)")
+    }
+    var githubDeviceCodeHint: String {
+        t("코드를 복사했어요. 열린 GitHub 창에서 승인해 주세요.",
+          "The code was copied. Approve it in the GitHub window.",
+          "コードをコピーしました。GitHubの画面で承認してください。")
+    }
     var updateNotificationsLabel: String { t("업데이트 알림", "Update notifications", "アップデート通知") }
     var automaticUpdateDownloadsLabel: String {
         t("업데이트 자동 다운로드", "Download updates automatically", "アップデートを自動ダウンロード")
@@ -571,6 +588,20 @@ struct L {
     var checkNowButton: String { t("지금 확인", "Check now", "今すぐ確認") }
     func updateFound(_ version: String) -> String { t("새 버전 v\(version) 있어요", "Version \(version) is available", "バージョン \(version) が利用可能です") }
     func upToDate(_ version: String) -> String { t("최신 버전이에요 (v\(version))", "You're on the latest (v\(version))", "最新です (v\(version))") }
+    func updateCheckError(_ error: UpdateChecker.CheckError) -> String {
+        switch error {
+        case .authenticationRequired:
+            t("GitHub 로그인이 필요해요.", "GitHub sign-in is required.", "GitHubへのログインが必要です。")
+        case .network:
+            t("업데이트 확인에 실패했어요. 네트워크를 확인해 주세요.",
+              "Couldn't check for updates. Check your network.",
+              "更新を確認できませんでした。ネットワークを確認してください。")
+        case .repositoryAccess:
+            t("이 계정은 Kswiftin/K-MON 릴리스에 접근할 수 없어요.",
+              "This account cannot access the Kswiftin/K-MON release.",
+              "このアカウントはKswiftin/K-MONのリリースにアクセスできません。")
+        }
+    }
 
     // MARK: 알림
     var notifCritical: String { t("한도 임박", "Limit imminent", "上限切迫") }
