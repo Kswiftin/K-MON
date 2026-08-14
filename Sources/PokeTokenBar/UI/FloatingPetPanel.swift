@@ -328,9 +328,8 @@ final class PetHostingView: NSHostingView<AnyView> {
 }
 
 struct FloatingPetView: View {
-    // 쇼다운 GIF 원본 프레임을 존중하되, 비정상적으로 짧은 delay만 제한한다.
-    // 0.4초 하한은 플로팅 애니메이션을 약 2.5fps로 만들어 눈에 띄게 느렸다.
-    static let frameFloor: TimeInterval = 0.1
+    // 플로팅 펫도 쇼다운 GIF가 가진 원본 프레임 속도를 그대로 사용한다.
+    static let frameFloor: TimeInterval = 0
     var animated: Bool = true
     @Environment(AppSettings.self) private var settings
     @Environment(CompanionStore.self) private var companion
