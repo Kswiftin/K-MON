@@ -119,11 +119,11 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertTrue(FloatingPetController.shouldAnimate(lowPower: false))
     }
 
-    /// [회귀] 펫은 반드시 fps 캡이 걸려야 한다 — frameFloor 가 0 으로 돌아가면(네이티브 fps) 메뉴바에서
-    /// 고친 wakeup 회귀가 재발한다. 뷰가 실제로 넘기는 상수를 그대로 가드한다(리터럴 유실 방지).
+    /// [회귀] 펫은 반드시 fps 캡이 걸려야 한다 — frameFloor 가 0 으로 돌아가면(네이티브 fps)
+    /// idle wakeup 회귀가 재발한다. 0.1초(최대 10fps)로 과도한 지연만 제한한다.
     func testPetFrameFloorIsCapped() {
         XCTAssertGreaterThan(FloatingPetView.frameFloor, 0, "펫 fps 캡이 해제되면 idle wakeup 회귀")
-        XCTAssertEqual(FloatingPetView.frameFloor, 0.4, accuracy: 1e-9, "메뉴바와 동일한 0.4s≈2.5fps 캡")
+        XCTAssertEqual(FloatingPetView.frameFloor, 0.1, accuracy: 1e-9, "플로팅 펫은 0.1s≈10fps 캡")
     }
 
     func testPanelKeepsPetOrigin() {
