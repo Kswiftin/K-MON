@@ -74,7 +74,6 @@ final class StoreTerminationTests: XCTestCase {
         let s = CompanionStore(provider: StubProvider(value: pline(base: 1, rarity: .common)),
                                clock: { pNow }, fileURL: tmpURL(), rng: SeededRNG(seed: 1))
         await s.hatch(baseID: 1)
-        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(Int(PokemonBalance.graduationTotal(.common)) * 10)   // 졸업 총량의 10배
         XCTAssertNil(s.state.active)            // 졸업 완료
         XCTAssertEqual(s.dexEntries.count, 1)   // 정확히 1회
@@ -88,7 +87,6 @@ final class StoreTerminationTests: XCTestCase {
         let s = CompanionStore(provider: provider, clock: { pNow }, fileURL: tmpURL(), rng: SeededRNG(seed: 9))
         for n in 1...20 {
             await s.hatch(baseID: 1)
-            s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
             s.applyUsage(Int(PokemonBalance.graduationTotal(.common)) * 10)
             XCTAssertEqual(s.dexEntries.count, n)
             XCTAssertNil(s.state.active)

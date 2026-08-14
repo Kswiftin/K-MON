@@ -273,8 +273,7 @@ final class CompanionStoreTests: XCTestCase {
         await s.hatch(baseID: 1)
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))  // →2
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))  // →3(최종)
-        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
-        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 2))  // 졸업
+        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 2))  // 졸업(진화 라인이라 레벨 게이트 없음)
         XCTAssertEqual(s.state.dex.count, 1)
         XCTAssertEqual(s.state.dex.first?.chainOrder, [1, 2, 3])
         XCTAssertEqual(s.state.dex.first?.names?[1]?["ko"], "포1")   // 초기 단계도 저장
@@ -553,7 +552,6 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.dexEntries[0].finalID, 2)
 
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
-        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 2))
         XCTAssertNil(s.state.active)
         XCTAssertEqual(s.state.dex.count, 1, "졸업 시 영구 엔트리 하나만 저장")
@@ -657,7 +655,6 @@ final class CompanionStoreTests: XCTestCase {
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1)) // →3 (final)
         XCTAssertEqual(s.currentSpeciesID, 3)
         XCTAssertTrue(s.isFinalStage)
-        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 2)) // 졸업
         XCTAssertNil(s.state.active)
         XCTAssertEqual(s.dexEntries.count, 1)
@@ -745,7 +742,6 @@ final class CompanionStoreTests: XCTestCase {
         for _ in 0..<3 {
             await s.hatch(baseID: 10)
             s.applyUsage(evo)    // 분기 진화
-            s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
             s.applyUsage(grad)   // 졸업
             finals.append(s.dexEntries.last!.finalID)
         }
@@ -939,7 +935,6 @@ final class CompanionStoreTests: XCTestCase {
         await s.hatch(baseID: 1)
         XCTAssertEqual(s.state.active?.totalForms, s.state.active?.plannedPathIDs.count,
                        "totalForms = 선택된 계획 경로 길이")
-        s.debugAccrueLevelExperience(300_000_000)   // 졸업은 희귀도 무관 레벨 30 게이트(#19)
         var guardCount = 0
         while s.state.active != nil, guardCount < 12 {
             guardCount += 1

@@ -1087,9 +1087,13 @@ final class CompanionStore {
                 break
             }
             if node.children.isEmpty {
-                // 최종 진화형 도달 후 졸업은 희귀도 무관 레벨 하나로 게이팅한다 — 희귀도는 처음
-                // 뽑힐 확률에만 관여하고, 다 자란 뒤의 속도에는 관여하지 않는다는 원칙(#19 논의).
-                guard a.level >= PokemonBalance.graduationRequiredLevel else { break }
+                // 레벨 30 게이트는 애초에 진화가 없는 종(totalForms==1)에만 건다. 진화를 거쳐
+                // 최종형에 도달했다면 그 마지막 진화 자체가(레벨 요구치든 성장치 폴백이든) 이미
+                // 관문이었다 — 예컨대 파이리 라인은 리자몽 진화 요구 레벨(32/36 등)이 이미 30을
+                // 넘어서므로, 여기서 또 30을 요구하면 이미 통과한 관문을 중복 검사하는 꼴이다.
+                if a.totalForms == 1 {
+                    guard a.level >= PokemonBalance.graduationRequiredLevel else { break }
+                }
                 graduate()
                 break
             }
