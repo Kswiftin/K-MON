@@ -108,15 +108,15 @@ struct FocusTimerView: View {
                          : (companion.language == .ko ? "집중 세션 완료" : "Focus session complete"))
                         .font(.caption.weight(.semibold)).foregroundStyle(reward.foundEgg ? .purple : .green)
                 }
-                if companion.focusEggCount > 0, companion.hasActive {
-                    Button(companion.language == .ko ? "🥚 알 부화 시작" : "🥚 Incubate Egg") {
-                        _ = companion.beginIncubatingFocusEgg()
-                    }
-                    .controlSize(.small)
-                    .help(companion.language == .ko
-                          ? "현재 동행은 박스에 안전하게 보관됩니다."
-                          : "Your current companion will be stored safely in the Box.")
+            }
+            if companion.focusEggCount > 0, let readyAt = companion.nextStoredEggHatchAt {
+                HStack {
+                    Text(companion.language == .ko ? "🥚 자동 부화까지" : "🥚 Auto hatch")
+                    Spacer()
+                    Text(readyAt, style: .timer).monospacedDigit()
                 }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.purple)
             }
         }
         .padding(9)

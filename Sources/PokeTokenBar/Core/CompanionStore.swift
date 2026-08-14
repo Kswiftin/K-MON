@@ -8,6 +8,7 @@ import UserNotifications
 @MainActor
 @Observable
 final class CompanionStore {
+    static let storedEggHatchDelay: TimeInterval = 5 * 60
     struct MoveLearningPrompt: Identifiable {
         let id = UUID()
         let monID: UUID
@@ -36,6 +37,7 @@ final class CompanionStore {
     private(set) var currentLine: EvoLine?
     private(set) var isHatching = false
     private var isRevealingDitto = false   // 메타몽 리빌 비동기 중복 방지(isHatching 자매)
+    private var isStoredEggHatching = false
     private(set) var justEvolvedTo: String?     // 이름(연출/문구)
     private(set) var justGraduated: String?
     private var eventUntil: Date?
@@ -79,6 +81,7 @@ final class CompanionStore {
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
+        reconcileStoredEggDates()
         // 앱이 종료된 사이 끝난 집중 모험은 기동 즉시 정산한다. FocusTimer 는 세션 메모리 상태라
         // 재실행하면 .idle 로 돌아오지만 모험은 디스크에 남으므로, 여기서 비우지 않으면 시작 버튼이
         // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
@@ -681,7 +684,10 @@ final class CompanionStore {
         let weeklyEgg = state.weeklyAdventureCount == 10 ? 1 : 0
         let rareEgg = reward.foundEgg ? 1 : 0
         let earnedEggs = fragmentEggs + weeklyEgg + rareEgg
-        state.focusEggs = min(999, state.focusEggs + earnedEggs)
+        let acceptedEggs = min(earnedEggs, 999 - state.focusEggs)
+        state.focusEggs += acceptedEggs
+        state.focusEggReadyDates.append(contentsOf:
+            repeatElement(now.addingTimeInterval(Self.storedEggHatchDelay), count: acceptedEggs))
         reward.eggFragments = fragments
         reward.bonusEggs = earnedEggs
         state.care.happiness = min(100, state.care.happiness + 10)
@@ -760,6 +766,7 @@ final class CompanionStore {
     }
 
     var focusEggCount: Int { state.focusEggs }
+    var nextStoredEggHatchAt: Date? { state.focusEggReadyDates.min() }
     var eggFragmentCount: Int { state.eggFragments }
     var weeklyAdventureProgress: Int {
         state.adventureWeekKey == Self.weekKey(clock()) ? state.weeklyAdventureCount : 0
@@ -783,6 +790,7 @@ final class CompanionStore {
         state.boxedMons.append(active)
         state.active = nil
         state.focusEggs -= 1
+        if !state.focusEggReadyDates.isEmpty { state.focusEggReadyDates.removeFirst() }
         state.eggUsage = 0
         state.eggTier = nil
         state.pendingHatchID = nil
@@ -1051,6 +1059,10 @@ final class CompanionStore {
         // 알이 부화 임계에 도달하면 부화
         if state.active == nil, state.eggUsage >= PokemonBalance.eggHatchThreshold, !isHatching {
             Task { await hatchIfNeeded() }
+        }
+        if state.focusEggs > 0, state.focusEggReadyDates.first.map({ $0 <= clock() }) == true,
+           !isStoredEggHatching {
+            Task { await hatchStoredEggIfNeeded() }
         }
         // active 인데 라인 미로딩(앱 재시작) → 로드
         if state.active != nil, currentLine == nil, !isHatching {
@@ -1441,6 +1453,7 @@ final class CompanionStore {
         guard canBuyEgg(tier) else { return false }
         state.starPieces -= FreshEgg.price(guaranteeing: tier)
         state.focusEggs = min(999, state.focusEggs + 1)
+        state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
         AppLog.write("egg purchased: added to egg inventory")
         save()
         return true
@@ -1450,6 +1463,39 @@ final class CompanionStore {
     var canBuyFreshEgg: Bool { canBuyEgg(nil) }
     @discardableResult
     func buyFreshEgg() -> Bool { buyEgg(nil) }
+
+    /// 보관 알은 획득 5분 뒤 현재 동행·모험을 건드리지 않고 새 포켓몬으로 부화해 박스에 들어간다.
+    private func hatchStoredEggIfNeeded() async {
+        guard !isStoredEggHatching, state.focusEggs > 0,
+              state.focusEggReadyDates.first.map({ $0 <= clock() }) == true else { return }
+        isStoredEggHatching = true
+        defer { isStoredEggHatching = false }
+        guard let baseID = await chooseBase(),
+              let line = try? await provider.line(baseSpeciesID: baseID) else { return }
+        let shiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
+        let plan = makeEvolutionPlan(from: line.tree, baseID: line.baseID)
+        let mon = MonState(baseID: line.baseID, pathIDs: [line.baseID], plannedPathIDs: plan,
+                           stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: plan.count,
+                           isShiny: shiny, nature: nature)
+        state.boxedMons.append(mon)
+        state.focusEggs -= 1
+        state.focusEggReadyDates.removeFirst()
+        let name = line.localizedName(line.baseID, state.language)
+        notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
+                             shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
+        AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
+        save()
+    }
+
+    /// 구버전 세이브의 보관 알에는 시각이 없다. 업데이트 시점부터 5분 타이머를 시작한다.
+    private func reconcileStoredEggDates() {
+        state.focusEggReadyDates = Array(state.focusEggReadyDates.sorted().prefix(state.focusEggs))
+        while state.focusEggReadyDates.count < state.focusEggs {
+            state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        }
+        save()
+    }
 
     /// companion 이벤트 시스템 알림(.app + 토글 ON 일 때만). 한도 알림과 독립.
     private var notifSeq = 0
