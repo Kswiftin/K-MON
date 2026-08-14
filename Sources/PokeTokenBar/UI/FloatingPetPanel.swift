@@ -231,6 +231,15 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
 
         let velocity = CGVector(dx: direction.dx * speed, dy: direction.dy * speed)
         let screens = NSScreen.screens.map(\.visibleFrame)
+        // 충돌한 뒤가 아니라 경계에 닿기 직전에 통과 모드를 선점한다. 통로 안으로 대각선 진입한 뒤
+        // 세로 성분이 통로를 벗어나면 두 화면에 걸친 채 source 판정이 사라지는 간헐 교착을 막는다.
+        if let route = Self.portalRoute(origin: panel.frame.origin,
+                                        petSize: CGFloat(settings.floatingPetSize),
+                                        velocity: velocity, screens: screens) {
+            pendingPortal = route
+            advanceTowardPortal(route, speed: speed, delta: delta, now: now)
+            return
+        }
         let result = Self.resolvedMotion(
             origin: panel.frame.origin,
             petSize: CGFloat(settings.floatingPetSize),
