@@ -7,6 +7,13 @@ import Security
 @MainActor
 @Observable
 final class GitHubOAuth {
+    enum RefreshResult: Equatable {
+        case valid
+        case authenticationRequired
+        case network
+        case keychain
+    }
+
     enum State: Equatable {
         case signedOut
         case requestingCode
@@ -48,7 +55,7 @@ final class GitHubOAuth {
     private let clientID: String
     private let repositoryID: String
     private let session: URLSession
-    private let keychain: OAuthTokenKeychain
+    private let keychain: any OAuthCredentialStore
 
     var isSignedIn: Bool { credentials != nil }
     var isAuthorizing: Bool {
@@ -82,7 +89,7 @@ final class GitHubOAuth {
     init(clientID: String? = nil,
          repositoryID: String = "1332674561",
          session: URLSession = .shared,
-         keychain: OAuthTokenKeychain = OAuthTokenKeychain()) {
+         keychain: any OAuthCredentialStore = OAuthTokenKeychain()) {
         self.clientID = clientID
             ?? (Bundle.main.object(forInfoDictionaryKey: "KMONGitHubOAuthClientID") as? String)
             ?? ""
@@ -120,7 +127,7 @@ final class GitHubOAuth {
     }
 
     func refreshUser() async {
-        guard await refreshAccessTokenIfNeeded(), let token = credentials?.accessToken,
+        guard await refreshAccessTokenIfNeeded() == .valid, let token = credentials?.accessToken,
               let url = URL(string: "https://api.github.com/user") else { return }
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -184,14 +191,14 @@ final class GitHubOAuth {
     }
 
     /// 만료 5분 전부터 갱신한다. Device Flow로 발급된 Refresh Token은 Client Secret 없이 교환된다.
-    func refreshAccessTokenIfNeeded(now: Date = Date()) async -> Bool {
-        guard let current = credentials else { return false }
+    func refreshAccessTokenIfNeeded(now: Date = Date()) async -> RefreshResult {
+        guard let current = credentials else { return .authenticationRequired }
         guard let expiresAt = current.expiresAt,
-              expiresAt <= now.addingTimeInterval(300) else { return true }
+              expiresAt <= now.addingTimeInterval(300) else { return .valid }
         guard let refreshToken = current.refreshToken,
               current.refreshTokenExpiresAt.map({ $0 > now }) != false else {
             signOut()
-            return false
+            return .authenticationRequired
         }
 
         do {
@@ -202,19 +209,26 @@ final class GitHubOAuth {
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             request.httpBody = Self.refreshBody(clientID: clientID, refreshToken: refreshToken)
             let (data, response) = try await session.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return false }
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .network }
             let result = try JSONDecoder().decode(AccessTokenResponse.self, from: data)
             guard result.error == nil else {
-                if result.error == "bad_refresh_token" { signOut() }
-                return false
+                if result.error == "bad_refresh_token" {
+                    signOut()
+                    return .authenticationRequired
+                }
+                return .network
             }
             let refreshed = try Self.credentials(from: result, now: now)
-            try keychain.save(refreshed)
+            do {
+                try keychain.save(refreshed)
+            } catch {
+                return .keychain
+            }
             credentials = refreshed
-            return true
+            return .valid
         } catch {
             // 일시적 네트워크·Keychain 오류라면 기존 Refresh Token을 지우지 않고 다음 확인 때 재시도한다.
-            return false
+            return .network
         }
     }
 
@@ -273,9 +287,17 @@ final class GitHubOAuth {
     }
 }
 
+protocol OAuthCredentialStore: Sendable {
+    func load() -> GitHubOAuth.Credentials?
+    func save(_ credentials: GitHubOAuth.Credentials) throws
+    func delete()
+}
+
 /// OAuth 토큰 전용 Generic Password 항목. 저장 실패는 로그인 성공으로 처리하지 않는다.
-struct OAuthTokenKeychain: Sendable {
-    private let service = "io.github.chattymin.poketokenbar.github-oauth"
+struct OAuthTokenKeychain: OAuthCredentialStore {
+    // v1 항목은 ad-hoc 서명 앱이 생성해 릴리스마다 ACL이 달라졌다. 고정 서명이 적용되는
+    // 첫 릴리스부터 새 항목을 사용하고, 이후에는 같은 서명 신원이 갱신 권한을 유지한다.
+    private let service = "io.github.chattymin.poketokenbar.github-oauth.v2"
     private let account = "Kswiftin/K-MON"
 
     func load() -> GitHubOAuth.Credentials? {
@@ -296,14 +318,12 @@ struct OAuthTokenKeychain: Sendable {
 
     func save(_ credentials: GitHubOAuth.Credentials) throws {
         let data = try JSONEncoder().encode(credentials)
-        let status: OSStatus
-        if load() == nil {
+        var status = SecItemUpdate(baseQuery as CFDictionary,
+                                   [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
             var query = baseQuery
             query[kSecValueData as String] = data
             status = SecItemAdd(query as CFDictionary, nil)
-        } else {
-            status = SecItemUpdate(baseQuery as CFDictionary,
-                                   [kSecValueData as String: data] as CFDictionary)
         }
         guard status == errSecSuccess else { throw KeychainError(status: status) }
     }

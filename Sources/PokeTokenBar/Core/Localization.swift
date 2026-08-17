@@ -596,6 +596,10 @@ struct L {
             t("업데이트 확인에 실패했어요. 네트워크를 확인해 주세요.",
               "Couldn't check for updates. Check your network.",
               "更新を確認できませんでした。ネットワークを確認してください。")
+        case .keychain:
+            t("로그인 정보를 Keychain에 갱신하지 못했어요. 앱을 다시 로그인해 주세요.",
+              "Couldn't refresh the sign-in information in Keychain. Sign in again.",
+              "Keychainのログイン情報を更新できませんでした。もう一度ログインしてください。")
         case .repositoryAccess:
             t("이 계정은 Kswiftin/K-MON 릴리스에 접근할 수 없어요.",
               "This account cannot access the Kswiftin/K-MON release.",

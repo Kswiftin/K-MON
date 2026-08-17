@@ -88,7 +88,7 @@ cat > "$APP/Contents/Library/LaunchAgents/io.github.chattymin.poketokenbar.login
 AGENT
 
 echo "==> codesign"
-SIGN_IDENTITY="${CODESIGN_IDENTITY:-PokeTokenBar Local}"
+SIGN_IDENTITY="${CODESIGN_IDENTITY:-K-MON Release}"
 # 안정적 Keychain ACL 을 위해서는 인증서 존재가 아니라 유효한 codesigning identity 가 필요하다.
 if security find-identity -v -p codesigning | grep -F "\"$SIGN_IDENTITY\"" >/dev/null; then
     # 안정적 자체 서명 신원 → 재빌드해도 Keychain "항상 허용" 유지
