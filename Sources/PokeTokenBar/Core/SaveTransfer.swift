@@ -241,6 +241,13 @@ enum SaveTransfer {
     /// 손으로 JSON 을 고치면(재화·인벤토리·개체·도감) 이 해시가 안 맞아 로드 때 조작으로 판정된다.
     /// 기기 시드가 들어가 다른 기기·해시 알고리즘을 모르면 유효 서명을 못 만든다(캐주얼 편집 차단).
     static func integrityHash(_ s: CompanionState) -> String {
+        String(fnv1a(canonicalString(s)), radix: 16)
+    }
+
+    /// 해시의 입력 원문. 해시가 아니라 이 문자열을 테스트에 노출하는 이유는 **조건부 append 규칙을
+    /// 검사할 방법이 이것뿐**이기 때문이다 — 기본값 상태의 해시를 자기 자신과 비교하면 무조건 append
+    /// 로 바뀌어도 양쪽이 똑같이 바뀌어 그대로 통과한다(그 형태의 테스트 3개가 실제로 무력했다).
+    static func canonicalString(_ s: CompanionState) -> String {
         var p: [String] = []
         p.append("v\(s.economyVersion)")
         p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("pc\(s.starPieces)"); p.append("eg\(s.eggUsage)")
@@ -289,7 +296,7 @@ enum SaveTransfer {
         p.append("dex" + s.dex.map { "\($0.baseID):\($0.finalID):\($0.rarity.rawValue)" }.sorted().joined(separator: ","))
         p.append("cf" + s.collectedFinals.sorted().joined(separator: ","))
         p.append("sec\(DeviceID.stableIdentifier())")
-        return String(fnv1a(p.joined(separator: "|")), radix: 16)
+        return p.joined(separator: "|")
     }
 
     private static func fnv1a(_ s: String) -> UInt64 {

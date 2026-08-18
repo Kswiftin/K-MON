@@ -353,12 +353,12 @@ final class AdventureTests: XCTestCase {
         XCTAssertTrue(clean.battleHistory.isEmpty)
     }
 
-    func testEmptyHistoriesKeepLegacyIntegrityCanonicalForm() {
-        var state = CompanionState()
-        let before = SaveTransfer.integrityHash(state)
-        state.adventureHistory = []
-        state.battleHistory = []
-        XCTAssertEqual(SaveTransfer.integrityHash(state), before)
+    /// 빈 기록은 canonical 에 아무것도 붙이지 않는다 — 기록이 없던 세이브의 서명이 그대로 유효해야 한다.
+    /// 해시끼리 비교하면 기본값 상태를 자기 자신과 대조하게 돼 무조건 append 로 바꿔도 통과한다.
+    func testEmptyHistoriesAddNothingToTheIntegrityCanonical() {
+        let canonical = SaveTransfer.canonicalString(CompanionState())
+        XCTAssertFalse(canonical.contains("|ah"))
+        XCTAssertFalse(canonical.contains("|bh"))
     }
 }
 

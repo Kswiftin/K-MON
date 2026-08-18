@@ -177,7 +177,10 @@ struct PopoverView: View {
                     case .pokemon: PokemonRosterView(store: companion, nav: nav)
                     case .bag: BagView(store: companion, nav: nav)
                     case .shop: ShopView(store: companion, nav: nav)
-                    case .home: CompanionHeader(store: companion)
+                    case .home:
+                        // 스타터를 아직 안 고른 첫 화면에는 띄우지 않는다 — 첫 한 시간은 대상이 아니다.
+                        if !companion.needsStarterSelection { MissionBoardView(store: companion) }
+                        CompanionHeader(store: companion)
                     }
                     Spacer(minLength: 0)
                 }

@@ -279,12 +279,12 @@ final class MissionSaveTests: XCTestCase {
 
     /// 기본값이면 canonical 문자열에 아무것도 붙지 않는다 — 기존 세이브의 서명이 그대로 유효해야 한다.
     /// (조건부 append 를 무조건 append 로 바꾸면 정상 세이브가 전부 조작 판정 → 진행 초기화된다.)
-    func testDefaultMissionsKeepLegacyIntegrityCanonicalForm() {
-        var state = CompanionState()
-        let before = SaveTransfer.integrityHash(state)
-        state.missions = MissionBoard()
-        XCTAssertEqual(SaveTransfer.integrityHash(state), before)
-        XCTAssertFalse(SaveTransfer.isTampered(SaveTransfer.signed(state)))
+    ///
+    /// 해시끼리 비교하면 **안 된다**: 기본값 상태를 자기 자신과 대조하게 돼 무조건 append 로 바꿔도
+    /// 양쪽이 똑같이 바뀌어 통과한다. 조각이 실제로 없는지를 문자열에서 직접 본다.
+    func testDefaultMissionsAddNothingToTheIntegrityCanonical() {
+        XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|ms"))
+        XCTAssertFalse(SaveTransfer.isTampered(SaveTransfer.signed(CompanionState())))
     }
 
     /// 가드가 실제로 지키는지 — 서명 후 진행도를 손으로 올리면 조작으로 잡혀야 한다.
