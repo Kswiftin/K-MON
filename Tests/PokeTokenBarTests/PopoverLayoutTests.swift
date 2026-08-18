@@ -77,9 +77,11 @@ final class PopoverLayoutTests: XCTestCase {
     /// 파트너가 접힌 아래로 밀려 홈 탭을 열었을 때 앱의 주인공이 안 보인다.
     private static let missionCardBudget: CGFloat = 100
 
-    private func missionStore() -> CompanionStore {
+    private func missionStore(_ language: AppLanguage = .ko) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-mission-layout-\(UUID().uuidString).json")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)"}"#
+        try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: moveTestLine),
                               clock: { Date(timeIntervalSince1970: 1_755_000_000) },
                               fileURL: url, rng: SeededRNG(seed: 5))
@@ -108,6 +110,21 @@ final class PopoverLayoutTests: XCTestCase {
     func testMissionCardFitsTheHomeViewportBudget() {
         XCTAssertLessThanOrEqual(renderedHeight(MissionBoardView(store: missionStore())),
                                  Self.missionCardBudget)
+    }
+
+    /// 예산 여유가 3pt 뿐이라 **언어가 높이를 흔들면 안 된다**. 이름이 한 줄을 넘기는 순간 행이
+    /// 통째로 커지는데, 그 회귀를 기술 목록에서 이미 겪었다(CI 118pt vs 로컬 78pt — 한국어 이름만
+    /// 짧아 로컬에선 안 걸렸다).
+    ///
+    /// 지금은 세 언어 다 이름이 짧아 아무것도 줄바꿈되지 않는다 — 즉 이 테스트는 현재
+    /// `lineLimit(1)` 을 밟지 못한다. 미션을 더하거나 문구를 늘렸을 때 한 언어만 넘치는 상황을
+    /// 잡는 **전방 가드**다. 실패하면 예산이 아니라 그 문구를 줄여야 한다.
+    func testMissionCardHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(MissionBoardView(store: missionStore(.ko)))
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(MissionBoardView(store: missionStore(language))), korean,
+                           accuracy: 1, "\(language.rawValue) 에서 행 높이가 달라졌다")
+        }
     }
 
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이

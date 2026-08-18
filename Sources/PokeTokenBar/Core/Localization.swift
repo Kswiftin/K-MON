@@ -525,26 +525,29 @@ struct L {
     }
     /// 이름 없는 미션은 **빈 문자열**을 돌려준다 — 카탈로그에 미션을 더하고 문구를 빼먹으면
     /// `MissionBoardTests` 가 그 자리에서 실패한다. id 를 폴백으로 쓰면 그 가드가 무력해진다.
+    /// 이름에 "오늘"·"이번 주"를 넣지 않는다 — 카드의 일간/주간 배지가 이미 그 말을 하고,
+    /// 360pt 팝오버에서 같은 정보를 두 번 쓰면 이름이 잘린다. 목표 수치가 들어가 있어
+    /// 알림에서도 어느 미션인지 구분된다(집중 60분 vs 300분).
     func missionName(_ mission: Mission) -> String {
         switch mission.id {
         case "dailyAdventures":
-            return t("오늘 모험 \(mission.target)회 정산",
-                     "Claim \(mission.target) adventures today",
-                     "今日の冒険を\(mission.target)回精算")
-        case "dailyFocus":
-            return t("오늘 집중 \(mission.target)분",
-                     "Focus for \(mission.target) minutes today",
-                     "今日\(mission.target)分集中する")
-        case "weeklyFocus":
-            return t("이번 주 집중 \(mission.target)분",
-                     "Focus for \(mission.target) minutes this week",
-                     "今週\(mission.target)分集中する")
+            return t("모험 정산 \(mission.target)회",
+                     "Claim \(mission.target) adventures",
+                     "冒険を\(mission.target)回精算")
+        case "dailyFocus", "weeklyFocus":
+            return t("집중 \(mission.target)분",
+                     "Focus \(mission.target) minutes",
+                     "\(mission.target)分集中")
         case "weeklyGraduation":
-            return t("이번 주 졸업 \(mission.target)회",
-                     "Graduate \(mission.target) partner this week",
-                     "今週\(mission.target)体を卒業させる")
+            return t("졸업 \(mission.target)회",
+                     "Graduate \(mission.target) partner",
+                     "\(mission.target)体を卒業")
         default: return ""
         }
+    }
+    /// 카드 헤더 우측 요약 — 게이지를 걷어낸 자리에서 "얼마나 남았나"를 한눈에 주는 유일한 장치다.
+    func missionDoneSummary(_ done: Int, _ total: Int) -> String {
+        t("\(done)/\(total) 완료", "\(done)/\(total) done", "\(done)/\(total) 達成")
     }
     var missionsTitle: String { t("미션", "Missions", "ミッション") }
     var missionDaily: String { t("일간", "Daily", "デイリー") }
