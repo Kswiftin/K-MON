@@ -77,8 +77,8 @@ final class TrainerLevelTests: XCTestCase {
 @MainActor
 final class TrainerLevelAccrualTests: XCTestCase {
 
-    /// 시작 포인트는 세이브 파일로 심는다 — `state` 세터는 비공개고, 테스트 편의로 그걸 열면
-    /// 프로덕션에서도 상태를 통째로 갈아끼울 수 있다.
+    /// 시작 포인트는 세이브 파일에 심는다 — `state` 세터는 비공개고, 테스트 편의로 그걸 열면
+    /// 프로덕션에서도 상태를 통째로 갈아 끼울 수 있다.
     private func makeStore(_ clock: TestClock, trainerPoints: Int = 0) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-trainer-\(UUID().uuidString).json")

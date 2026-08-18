@@ -24,7 +24,7 @@ struct TrainerLevel: Codable, Sendable, Equatable {
     }
 
     /// 레벨업 보상 — **기존 재화인 별의조각**으로 지급한다(새 재화를 만들지 않는다).
-    /// 10레벨업이 5,000 으로 이상한 사탕 1개 값이고 알은 20,000 이다. 경제를 조절할 곳은 이 계수뿐이다.
+    /// 10레벨 보상이 5,000 — 이상한 사탕 1개 값이고 알은 20,000 이다. 경제를 조절할 곳은 이 계수뿐이다.
     static func reward(forReaching level: Int) -> Int { 500 * max(0, level) }
 
     var level: Int {
