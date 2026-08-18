@@ -1,13 +1,13 @@
 import XCTest
 @testable import PokeTokenBar
 
-// 트레이너 레벨 — 졸업으로 초기화되지 않는 유일한 성장 축.
+// 트레이너 레벨 — 졸업해도 남는 유일한 성장 값.
 // 파트너는 졸업하면 도감으로 가고 새 알부터 다시 시작하지만, 이 포인트는 계정에 남는다.
 final class TrainerLevelTests: XCTestCase {
 
     // MARK: 레벨 곡선 (순수 로직)
 
-    /// 도달선은 `25 × (n-1)²` — 25분 세션 한 번이 딱 2레벨이 되게 잡았다.
+    /// 도달선은 `25 × (n-1)²` — 25분 세션 한 번이면 2레벨이 되게 잡았다.
     /// 경계 바로 아래/위를 둘 다 확인한다(반올림으로 한 칸 밀리는 사고 방지).
     func testLevelBoundaries() {
         XCTAssertEqual(TrainerLevel(points: 0).level, 1)
@@ -78,7 +78,7 @@ final class TrainerLevelTests: XCTestCase {
 final class TrainerLevelAccrualTests: XCTestCase {
 
     /// 시작 포인트는 세이브 파일로 심는다 — `state` 세터는 비공개고, 테스트 편의로 그걸 열면
-    /// 프로덕션에서도 상태를 통째로 갈아끼울 수 있게 된다.
+    /// 프로덕션에서도 상태를 통째로 갈아끼울 수 있다.
     private func makeStore(_ clock: TestClock, trainerPoints: Int = 0) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-trainer-\(UUID().uuidString).json")

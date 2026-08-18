@@ -1,16 +1,16 @@
 import Foundation
 
-/// 졸업으로 초기화되지 않는 계정 성장 축. 파트너는 졸업하면 도감으로 떠나고 새 알부터 다시
-/// 시작하지만 이 포인트는 남는다 — 한 마리짜리 서사 위에 놓이는 유일한 목표다.
+/// 졸업으로 초기화되지 않는 계정 단위 성장. 파트너는 졸업하면 도감으로 떠나고 새 알부터 다시
+/// 시작하지만 이 포인트는 남는다 — 한 마리를 키워 보내는 흐름이 끝나도 남는 유일한 목표다.
 ///
-/// `BattleRank` 와 같은 구조: 영속은 `points` 하나뿐이고 레벨·진행도·표시는 모두 계산이다.
-/// 곡선을 다시 잡아도 세이브 형식은 그대로라 이전 문제가 생기지 않는다.
+/// `BattleRank` 와 같은 구조 — 영속은 `points` 하나뿐이고 레벨·진행도·표시는 모두 계산이다.
+/// 곡선을 다시 잡아도 세이브 형식은 그대로라 세이브를 이전할 일이 없다.
 struct TrainerLevel: Codable, Sendable, Equatable {
     static let maximumLevel = 99
-    /// 레벨 n 도달선 = `pointsPerStep × (n-1)²`. 25분 세션 한 번이 딱 2레벨이다.
+    /// 레벨 n 도달선 = `pointsPerStep × (n-1)²`. 25분 세션 한 번이면 2레벨이 된다.
     /// 초반은 빠르고 뒤로 갈수록 느려진다 — 평평한 곡선은 2레벨이 50레벨만큼 멀어 목표가 안 된다.
     static let pointsPerStep = 25
-    /// 만렙 도달선. 적립은 여기서 포화한다(그 위 값은 의미가 없다).
+    /// 만렙 도달선. 적립은 여기서 멈춘다(그 위 값은 의미가 없다).
     static let maximumPoints = points(forLevel: maximumLevel)
     /// 졸업 1회 = 25분 세션 4회분. 집중만이 아니라 도감을 채우는 쪽도 성장으로 인정한다.
     static let graduationPoints = 100
@@ -24,7 +24,7 @@ struct TrainerLevel: Codable, Sendable, Equatable {
     }
 
     /// 레벨업 보상 — **기존 재화인 별의조각**으로 지급한다(새 재화를 만들지 않는다).
-    /// 규모 기준: 10레벨업 5,000 ≈ 이상한 사탕 1개, 알은 20,000. 이 계수 하나가 경제 조절 손잡이다.
+    /// 10레벨업이 5,000 으로 이상한 사탕 1개 값이고 알은 20,000 이다. 경제를 조절할 곳은 이 계수뿐이다.
     static func reward(forReaching level: Int) -> Int { 500 * max(0, level) }
 
     var level: Int {

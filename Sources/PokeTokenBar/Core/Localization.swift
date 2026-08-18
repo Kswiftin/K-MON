@@ -514,7 +514,7 @@ struct L {
                  "Lv.\(level) 到達 — ほしのかけら \(amount) を獲得！")
     }
     /// 상단 트레이너 바 라벨. `Lv.N` 만 쓰면 포켓몬 레벨(파트너·로스터·배틀에서 이미 쓰는 표기)로
-    /// 오인지된다 — 이 단어가 계정 단위 값임을 알려주는 유일한 장치다.
+    /// 잘못 읽힌다 — 이 단어가 계정 단위 값임을 알려주는 유일한 장치다.
     var trainerLevelLabel: String { t("트레이너", "Trainer", "トレーナー") }
 
     var notifGraduateTitle: String { t("🎓 졸업!", "🎓 Graduated!", "🎓 卒業！") }
