@@ -116,6 +116,14 @@ enum PokemonBalance {
     /// 진화(구버전 픽스처 등)의 성장치 게이트로만 남는다.
     static let graduationRequiredLevel = 30
 
+    /// 친밀도 진화의 레벨 환산 — 앱엔 친밀도 축이 없다(돌봄 UI 는 제거됐고 affection 은 플로팅 펫
+    /// 쓰다듬기로만 오른다). PokéAPI 의 `min_happiness` 는 실제로 160/220 두 값뿐이라 그 두 단계를
+    /// 레벨 두 단계로 옮긴다. 하한 25 는 직전 진화 레벨(예: 주뱃→골뱃 22)보다 뒤에 오게 하는 값이고,
+    /// 상한은 무진화 종 졸업 기준과 같은 30이다. 원본 값이 바뀌어도 이 규칙만 유지하면 된다.
+    static func friendshipLevel(minHappiness: Int) -> Int {
+        minHappiness > 160 ? 30 : 25
+    }
+
     static func graduationTotal(_ rarity: Rarity) -> Int {
         switch rarity {
         case .common:    return    750_000_000
