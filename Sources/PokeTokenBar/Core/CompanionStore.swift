@@ -1239,6 +1239,10 @@ final class CompanionStore {
     var canGraduate: Bool {
         guard let a = state.active, let line = currentLine,
               line.tree.node(withID: a.currentID)?.children.isEmpty == true else { return false }
+        // 이미 졸업한 개체는 다시 졸업할 수 없다. 졸업해도 개체는 박스에 남으므로(#27) 박스에서
+        // 다시 꺼내면 최종형·레벨 조건은 그대로 만족한다 — 이 검사가 없으면 졸업 → 스위치 → 졸업을
+        // 반복해 알을 무한히 받아낼 수 있다. 도감 기록도 그 개체당 한 번이어야 한다.
+        guard !a.isGraduated else { return false }
         return a.totalForms > 1 || a.level >= PokemonBalance.graduationRequiredLevel
     }
 
