@@ -72,7 +72,7 @@ jobs:
 
       - name: Build installable app
         env:
-          KMON_VERSION: 2.5.${{ github.run_number }}
+          KMON_VERSION: 2.7.${{ github.run_number }}
           KMON_SOURCE_COMMIT: ${{ github.sha }}
           KMON_SKIP_INSTALL: "1"
           KMON_GITHUB_OAUTH_CLIENT_ID: ${{ vars.KMON_GITHUB_OAUTH_CLIENT_ID }}
