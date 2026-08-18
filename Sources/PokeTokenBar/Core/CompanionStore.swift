@@ -900,13 +900,27 @@ final class CompanionStore {
         showNextMoveLearningPrompt()
     }
 
+    /// 레벨 구간에서 새로 배울 기술을 큐에 넣는다.
+    ///
+    /// 개체를 값으로 한 번 캡처해 두면 안 된다. 이 루프는 await 를 끼고 도는 동안 사용자가 기술을
+    /// 수락하거나(learnedMoves 증가) 개체가 진화·교체될 수 있는데, 캡처본은 그대로라 **이미 배운
+    /// 기술을 다시 제안**하고 중복 카드가 쌓였다. 매 반복마다 현재 상태를 다시 읽는다.
     private func queueMoveLearning(from first: Int, through last: Int) {
-        guard let mon = state.active else { return }
+        guard let monID = state.active?.id else { return }
         Task { @MainActor in
             for level in first...last {
+                // 도중에 개체가 바뀌었으면(교체·졸업·리롤) 남은 구간은 그 개체 몫이 아니다.
+                guard let mon = state.active, mon.id == monID else { return }
                 let moves = await PokeAPIClient.shared.movesLearned(speciesID: mon.currentID, at: level)
-                for move in moves where !mon.learnedMoves.contains(where: { $0.id == move.id }) {
-                    moveLearningQueue.append(MoveLearningPrompt(monID: mon.id, level: level, move: move))
+                guard let current = state.active, current.id == monID else { return }   // await 뒤 재확인
+                for move in moves {
+                    // 이미 배운 것 + 아직 답 안 한 대기분(큐·표시 중) 모두와 대조한다. 한쪽만 보면
+                    // 같은 기술이 여러 장으로 쌓인다.
+                    let alreadyKnown = current.learnedMoves.contains { $0.id == move.id }
+                    let alreadyQueued = moveLearningQueue.contains { $0.move.id == move.id }
+                        || pendingMoveLearningPrompt?.move.id == move.id
+                    guard !alreadyKnown, !alreadyQueued else { continue }
+                    moveLearningQueue.append(MoveLearningPrompt(monID: monID, level: level, move: move))
                 }
             }
             showNextMoveLearningPrompt()
@@ -1923,6 +1937,8 @@ final class CompanionStore {
     /// 테스트 전용 — 박스를 직접 세팅(보관 알 부화의 네트워크 경로 없이 박스 상태만 재현). 프로덕션 경로 없음.
     func debugSetBoxedMons(_ mons: [MonState]) { state.boxedMons = mons; save() }
     /// 테스트 전용 — 레벨업 없이 기술 학습 제안을 세운다(네트워크 무브 조회 우회). 프로덕션 경로 없음.
+    /// 테스트 전용 — 대기 중인(표시 전) 학습 제안 수.
+    var debugMoveLearningQueueCount: Int { moveLearningQueue.count }
     func debugQueueMoveLearning(monID: UUID) {
         pendingMoveLearningPrompt = MoveLearningPrompt(
             monID: monID, level: 10,

@@ -808,6 +808,22 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertNil(s.moveLearningPrompt, "다른 포켓몬에게 이전 개체의 학습 카드가 뜨면 안 된다")
     }
 
+    /// [회귀] 같은 기술이 여러 장 쌓이면 안 된다. queueMoveLearning 이 개체를 값으로 한 번만
+    /// 캡처해 두고 그 낡은 learnedMoves 와만 대조하던 동안, 배치 도중 배운 기술이 다시 제안됐고
+    /// 큐에 이미 든 것과도 대조하지 않아 중복 카드가 쌓였다.
+    func testAlreadyPendingMoveIsNotQueuedTwice() async {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let monID = try! XCTUnwrap(s.state.active?.id)
+
+        s.debugQueueMoveLearning(monID: monID)
+        let firstMove = try! XCTUnwrap(s.moveLearningPrompt?.move.id)
+        // 같은 기술을 다시 세워도 대기분이 늘어나면 안 된다.
+        s.debugQueueMoveLearning(monID: monID)
+        XCTAssertEqual(s.moveLearningPrompt?.move.id, firstMove)
+        XCTAssertEqual(s.debugMoveLearningQueueCount, 0, "같은 기술이 큐에 또 쌓이면 안 된다")
+    }
+
     /// 최종형이 아니면 졸업 버튼 자체가 안 뜬다.
     func testCannotGraduateBeforeTheFinalForm() async {
         let s = store(linear3)
