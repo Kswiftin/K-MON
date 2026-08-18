@@ -196,3 +196,33 @@ final class StatePersistenceLogicTests: XCTestCase {
         XCTAssertEqual(back.dex[0].chainOrder, [1, 2, 3])
     }
 }
+
+// MARK: 친밀도 진화 → 레벨 환산
+
+/// PokéAPI 는 친밀도 진화를 min_level 없이(trigger=level-up + min_happiness) 준다. 앱엔 친밀도 축이
+/// 없어 그대로 두면 레벨 게이트를 못 타고 트리거 게이트에도 막혀 **영영 진화하지 않는다** —
+/// 앱 지원 범위(1~649)에서 크로뱃·에브이·블래키·루카리오·치렁 등 17건이 여기 걸렸다.
+final class FriendshipEvolutionTests: XCTestCase {
+    /// 원본에 실재하는 두 단계(160·220)가 서로 다른 레벨로 갈려야 한다 — 한 값으로 뭉치면
+    /// 본가에서 더 어려운 축(피츄→피카츄, 꼬몽울→치렁)이 같은 난이도로 내려앉는다.
+    func testTwoHappinessTiersMapToDistinctLevels() {
+        XCTAssertEqual(PokemonBalance.friendshipLevel(minHappiness: 160), 25)
+        XCTAssertEqual(PokemonBalance.friendshipLevel(minHappiness: 220), 30)
+        XCTAssertLessThan(PokemonBalance.friendshipLevel(minHappiness: 160),
+                          PokemonBalance.friendshipLevel(minHappiness: 220))
+    }
+
+    /// 하한은 직전 단계 진화 레벨보다 뒤여야 순서가 뒤집히지 않는다(주뱃→골뱃 22 → 크로뱃).
+    func testMapsAboveTypicalFirstStageEvolutionLevel() {
+        XCTAssertGreaterThan(PokemonBalance.friendshipLevel(minHappiness: 160), 22)
+    }
+
+    /// 도달 가능해야 한다 — 레벨 상한(100) 안이고, 무진화 졸업 기준을 넘지 않는다.
+    func testStaysWithinReachableLevels() {
+        for happiness in [160, 220] {
+            let level = PokemonBalance.friendshipLevel(minHappiness: happiness)
+            XCTAssertLessThanOrEqual(level, PokemonBalance.graduationRequiredLevel)
+            XCTAssertGreaterThan(level, 1)
+        }
+    }
+}

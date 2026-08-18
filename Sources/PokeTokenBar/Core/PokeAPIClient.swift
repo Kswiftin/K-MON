@@ -352,7 +352,12 @@ actor PokeAPIClient: PokeProviding {
     private func node(from link: ChainLink) -> EvoNode {
         EvoNode(speciesID: Self.id(from: link.species.url ?? ""),
                 children: link.evolves_to.map(node(from:)),
-                evolutionLevel: link.evolution_details.compactMap(\.min_level).first,
+                // 친밀도 진화는 min_level 이 없다(trigger=level-up, min_happiness 만 존재) → 그대로 두면
+                // 레벨 게이트를 못 타고 아이템/트리거 게이트에도 막혀 영영 진화하지 않는다.
+                // 앱에 친밀도 축이 없으므로 요구 친밀도를 레벨로 환산해 같은 레벨 게이트에 태운다.
+                evolutionLevel: link.evolution_details.compactMap(\.min_level).first
+                    ?? link.evolution_details.compactMap(\.min_happiness).first
+                        .map(PokemonBalance.friendshipLevel(minHappiness:)),
                 evolutionTrigger: link.evolution_details.first?.trigger.name,
                 evolutionItem: link.evolution_details.first?.item?.name)
     }
@@ -429,6 +434,8 @@ struct MoveDTO: Decodable, Sendable {
 struct ChainLink: Decodable, Sendable {
     struct EvolutionDetail: Decodable, Sendable {
         let min_level: Int?
+        /// 친밀도 진화 조건(160·220). 앱엔 친밀도 축이 없어 레벨로 환산한다 — PokemonBalance.friendshipLevel.
+        let min_happiness: Int?
         let trigger: NamedRef
         let item: NamedRef?
     }
