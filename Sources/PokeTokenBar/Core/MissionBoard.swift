@@ -2,15 +2,17 @@ import Foundation
 
 /// 미션이 세는 행동. **정산된 결과**만 이벤트가 된다 — 타이머를 시작하는 것만으로 진행되면
 /// 집중하지 않고 세션만 켜 두는 게 곧 미션 진행이 되어 목표가 집중과 무관해진다.
-enum MissionEvent: String, Codable, Sendable {
+/// 세이브에 들어가는 건 미션 **id 문자열**뿐이라 이 열거형들은 `Codable` 이 아니다 —
+/// 저장되지 않으니 case 이름을 나중에 바꿔도 기존 세이브가 깨지지 않는다.
+enum MissionEvent: Sendable {
     case focusMinutes, adventures, graduations
 }
 
-enum MissionPeriod: String, Codable, Sendable {
+enum MissionPeriod: Sendable {
     case daily, weekly
 }
 
-struct Mission: Identifiable, Sendable, Equatable {
+struct Mission: Identifiable, Sendable {
     /// 진행도 사전의 키이자 무결성 canonical 의 일부라 카탈로그 안에서 유일해야 한다.
     let id: String
     let period: MissionPeriod

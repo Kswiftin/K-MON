@@ -545,13 +545,9 @@ struct L {
         default: return ""
         }
     }
-    /// 카드 헤더 우측 요약 — 게이지를 걷어낸 자리에서 "얼마나 남았나"를 한눈에 주는 유일한 장치다.
-    func missionDoneSummary(_ done: Int, _ total: Int) -> String {
-        t("\(done)/\(total) 완료", "\(done)/\(total) done", "\(done)/\(total) 達成")
-    }
     var missionsTitle: String { t("미션", "Missions", "ミッション") }
+    /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.
     var missionDaily: String { t("일간", "Daily", "デイリー") }
-    var missionWeekly: String { t("주간", "Weekly", "ウィークリー") }
 
     var notifGraduateTitle: String { t("🎓 졸업!", "🎓 Graduated!", "🎓 卒業！") }
     func notifGraduateBody(_ name: String) -> String { t("\(name) — 도감에 보존! 새 알이 도착했어요.", "\(name) — saved to your Pokédex! A new egg has arrived.", "\(name) — 図鑑に保存！新しいタマゴが届きました。") }

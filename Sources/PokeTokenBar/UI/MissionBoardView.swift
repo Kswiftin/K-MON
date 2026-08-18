@@ -24,14 +24,15 @@ struct MissionBoardView: View {
             HStack {
                 Text("🎯 \(l.missionsTitle)").font(.caption.weight(.semibold))
                 Spacer()
-                Text(l.missionDoneSummary(doneCount, rows.count))
+                // `✓` 가 "완료 개수"를 대신 말한다 — 번역 없이도 행의 진행도(25/60)와 구분된다.
+                Text("✓ \(doneCount)/\(rows.count)")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
             }
             ForEach(rows, id: \.mission.id) { row in
                 let done = row.progress >= row.mission.target
                 HStack(spacing: 6) {
                     // 주기 배지가 "오늘/이번 주"를 대신 말해 주므로 미션 이름에서는 뺐다(가로도 아낀다).
-                    Text(row.mission.period == .daily ? l.missionDaily : l.missionWeekly)
+                    Text(row.mission.period == .daily ? l.missionDaily : l.weekly)
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(row.mission.period == .daily ? .blue : .purple)
                     Text(l.missionName(row.mission))
