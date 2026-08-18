@@ -27,13 +27,11 @@ final class UpdateChecker {
         let assets: [Asset]
     }
     struct Available: Equatable {
-        enum Channel: Equatable { case stable, development }
         let version: String
         let url: String
         let downloadURL: String?
         let feedURL: String?
         let downloadAPIURL: String?
-        let channel: Channel
     }
 
     private(set) var available: Available?
@@ -53,7 +51,7 @@ final class UpdateChecker {
     private var automaticDownloads = true
     private var periodicTimer: Timer?
 
-    enum CheckError: Equatable { case authenticationRequired, network, repositoryAccess }
+    enum CheckError: Equatable { case authenticationRequired, network, keychain, repositoryAccess }
 
     init(currentVersion: String? = nil, currentCommit: String? = nil,
          clock: @escaping () -> Date = Date.init,
@@ -102,9 +100,20 @@ final class UpdateChecker {
         if let last = lastChecked, clock().timeIntervalSince(last) < minInterval { return }
         lastChecked = clock()
         checkError = nil
-        guard await githubAuth.refreshAccessTokenIfNeeded() else {
+        switch await githubAuth.refreshAccessTokenIfNeeded() {
+        case .valid:
+            break
+        case .authenticationRequired:
             available = nil
-            checkError = githubAuth.isSignedIn ? .network : .authenticationRequired
+            checkError = .authenticationRequired
+            return
+        case .network:
+            available = nil
+            checkError = .network
+            return
+        case .keychain:
+            available = nil
+            checkError = .keychain
             return
         }
         guard let headers = githubAuth.authorizationHeaders else {
@@ -129,11 +138,10 @@ final class UpdateChecker {
               let releases = try? JSONDecoder().decode([ReleaseInfo].self, from: data) else {
             available = nil; checkError = status == 403 || status == 404 ? .repositoryAccess : .network; return
         }
-        let stable = releases.first { !$0.draft && !$0.prerelease }
-        let development = releases.first { $0.tag_name == "development" && !$0.draft }
+        let stable = Self.newestStableCandidate(from: releases)
         let skipped = UserDefaults.standard.string(forKey: "skippedUpdateVersion")
-        if let stable, let candidate = Self.releaseCandidate(from: stable, channel: .stable),
-           Self.isNewer(candidate.version, than: currentVersion), candidate.version != skipped {
+        if let candidate = stable, Self.isNewer(candidate.version, than: currentVersion),
+           candidate.version != skipped {
             do {
                 sparkleDelegate.feedURL = try await prepareAuthenticatedFeed(candidate)
             } catch {
@@ -143,13 +151,6 @@ final class UpdateChecker {
             applyAuthenticationToSparkle()
             if sparkleStarted, automaticDownloads { sparkleController.updater.checkForUpdatesInBackground() }
             return
-        }
-        if let development, currentCommit != "unknown",
-           !development.target_commitish.hasPrefix(currentCommit),
-           !currentCommit.hasPrefix(development.target_commitish),
-           let candidate = Self.releaseCandidate(from: development, channel: .development),
-           candidate.version != skipped {
-            available = candidate; return
         }
         available = nil
     }
@@ -177,11 +178,10 @@ final class UpdateChecker {
     }
 
     /// 안정 릴리스는 Sparkle이 EdDSA 서명을 검증하고 앱 종료 뒤 원자적으로 교체한다.
-    /// rolling development 빌드는 서명된 appcast 대상이 아니므로 기존처럼 릴리스 페이지를 연다.
+    /// 안정 릴리스는 서명된 appcast를 통해 설치하고, 설치기를 시작할 수 없으면 릴리스 페이지를 연다.
     func applyUpdate() {
         guard let update = available, !isUpdating else { return }
-        if update.channel == .stable, sparkleStarted, sparkleDelegate.feedURL != nil,
-           githubAuth.isSignedIn {
+        if sparkleStarted, sparkleDelegate.feedURL != nil, githubAuth.isSignedIn {
             applyAuthenticationToSparkle()
             sparkleController.checkForUpdates(nil)
             return
@@ -210,7 +210,10 @@ final class UpdateChecker {
     /// 업로드한 이름과 조회되는 이름이 달라진다.
     nonisolated static let releaseAssetName = "Pokedoro.zip"
 
-    nonisolated static func releaseCandidate(from release: ReleaseInfo, channel: Available.Channel) -> Available? {
+    nonisolated static func releaseCandidate(from release: ReleaseInfo) -> Available? {
+        guard !release.draft, !release.prerelease,
+              release.tag_name.range(of: #"^v[0-9]+\.[0-9]+\.[0-9]+$"#,
+                                     options: .regularExpression) != nil else { return nil }
         let tag = release.tag_name
         let html = release.html_url
         guard
@@ -224,16 +227,17 @@ final class UpdateChecker {
         let downloadAPI = rawDownloadAPI.flatMap(Self.validAssetAPIURL)
         let rawFeed = release.assets.first { $0.name == "appcast.xml" }?.url
         let feed = rawFeed.flatMap(Self.validAssetAPIURL)
-        let version: String
-        switch channel {
-        case .stable: version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-        case .development:
-            let sha = release.target_commitish.prefix(7)
-            version = "main-\(sha)"
-        }
-        if channel == .stable, (feed == nil || download == nil || downloadAPI == nil) { return nil }
+        let version = String(tag.dropFirst())
+        guard feed != nil, download != nil, downloadAPI != nil else { return nil }
         return Available(version: version, url: html, downloadURL: download, feedURL: feed,
-                         downloadAPIURL: downloadAPI, channel: channel)
+                         downloadAPIURL: downloadAPI)
+    }
+
+    /// GitHub API의 반환 순서를 신뢰하지 않고, 설치 가능한 정식 semver 릴리스 중 가장 높은 것을 고른다.
+    nonisolated static func newestStableCandidate(from releases: [ReleaseInfo]) -> Available? {
+        releases.compactMap(releaseCandidate).max {
+            isNewer($1.version, than: $0.version)
+        }
     }
 
     nonisolated private static func validAssetAPIURL(_ value: String) -> String? {

@@ -37,9 +37,8 @@ final class UpdateCheckerTests: XCTestCase {
                     url: "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/12345",
                     browser_download_url: "https://github.com/Kswiftin/K-MON/releases/download/v2.6.0/appcast.xml"),
             ])
-        let candidate = UpdateChecker.releaseCandidate(from: release, channel: .stable)
+        let candidate = UpdateChecker.releaseCandidate(from: release)
         XCTAssertEqual(candidate?.version, "2.6.0")
-        XCTAssertEqual(candidate?.channel, .stable)
         XCTAssertNotNil(candidate?.downloadURL)
         XCTAssertEqual(candidate?.feedURL, "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/12345")
         XCTAssertEqual(candidate?.downloadAPIURL, "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/67890")
@@ -63,15 +62,24 @@ final class UpdateCheckerTests: XCTestCase {
                        "GitHub 이 비-ASCII 에셋 이름을 정규화하므로 이름에 발음기호를 쓰면 안 된다")
     }
 
-    func testDevelopmentCandidateUsesCommitPrefixAndRejectsForeignURL() {
+    func testDevelopmentReleaseIsNeverAnUpdateCandidate() {
         let release = UpdateChecker.ReleaseInfo(tag_name: "development",
             html_url: "https://github.com/Kswiftin/K-MON/releases/tag/development",
             target_commitish: "1234567890abcdef", draft: false, prerelease: true,
-            assets: [.init(name: UpdateChecker.releaseAssetName, browser_download_url: "https://evil.example/app.zip")])
-        let candidate = UpdateChecker.releaseCandidate(from: release, channel: .development)
-        XCTAssertEqual(candidate?.version, "main-1234567")
-        XCTAssertEqual(candidate?.channel, .development)
-        XCTAssertNil(candidate?.downloadURL)
+            assets: validAssets(version: "development"))
+        XCTAssertNil(UpdateChecker.releaseCandidate(from: release))
+    }
+
+    func testNewestStableCandidateIgnoresOrderPrereleasesAndMalformedTags() {
+        let releases = [
+            release("v2.7.2"),
+            release("development", prerelease: true),
+            release("latest"),
+            release("v2.8.0", draft: true),
+            release("v2.7.10"),
+            release("v2.7.3"),
+        ]
+        XCTAssertEqual(UpdateChecker.newestStableCandidate(from: releases)?.version, "2.7.10")
     }
 
     func testStableCandidateRequiresAuthenticatedAppcastAPIURL() {
@@ -80,7 +88,7 @@ final class UpdateCheckerTests: XCTestCase {
             target_commitish: "abcdef", draft: false, prerelease: false,
             assets: [.init(name: "appcast.xml", url: "https://evil.example/appcast.xml",
                            browser_download_url: "https://github.com/appcast.xml")])
-        XCTAssertNil(UpdateChecker.releaseCandidate(from: release, channel: .stable))
+        XCTAssertNil(UpdateChecker.releaseCandidate(from: release))
     }
 
     func testOAuthFormBodyIsStableAndPercentEncoded() {
@@ -116,6 +124,49 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(credentials.refreshTokenExpiresAt, now.addingTimeInterval(15_897_600))
     }
 
+    @MainActor
+    func testExpiredAccessTokenRefreshesAndPersistsRotatedCredentials() async {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let store = OAuthStoreStub(credentials: expiredCredentials(now: now))
+        let json = #"{"access_token":"new-access","expires_in":28800,"refresh_token":"new-refresh","refresh_token_expires_in":15897600}"#
+        let oauth = GitHubOAuth(clientID: "client", session: oauthSession(status: 200, json: json),
+                                keychain: store)
+
+        let result = await oauth.refreshAccessTokenIfNeeded(now: now)
+        XCTAssertEqual(result, .valid)
+        XCTAssertEqual(store.saved?.accessToken, "new-access")
+        XCTAssertEqual(store.saved?.refreshToken, "new-refresh")
+        XCTAssertTrue(oauth.isSignedIn)
+    }
+
+    @MainActor
+    func testRefreshKeychainFailureIsNotReportedAsNetworkFailure() async {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let store = OAuthStoreStub(credentials: expiredCredentials(now: now), failsToSave: true)
+        let json = #"{"access_token":"new-access","expires_in":28800,"refresh_token":"new-refresh","refresh_token_expires_in":15897600}"#
+        let oauth = GitHubOAuth(clientID: "client", session: oauthSession(status: 200, json: json),
+                                keychain: store)
+
+        let result = await oauth.refreshAccessTokenIfNeeded(now: now)
+        XCTAssertEqual(result, .keychain)
+        XCTAssertTrue(oauth.isSignedIn)
+        XCTAssertFalse(store.deleted)
+    }
+
+    @MainActor
+    func testBadRefreshTokenSignsOutAndRequiresAuthentication() async {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let store = OAuthStoreStub(credentials: expiredCredentials(now: now))
+        let json = #"{"error":"bad_refresh_token","error_description":"expired"}"#
+        let oauth = GitHubOAuth(clientID: "client", session: oauthSession(status: 200, json: json),
+                                keychain: store)
+
+        let result = await oauth.refreshAccessTokenIfNeeded(now: now)
+        XCTAssertEqual(result, .authenticationRequired)
+        XCTAssertFalse(oauth.isSignedIn)
+        XCTAssertTrue(store.deleted)
+    }
+
     func testAuthenticatedAppcastRewritesOnlyToKMONAssetAPI() {
         let browser = "https://github.com/Kswiftin/K-MON/releases/download/v2.7.1/Pokedoro.zip"
         let api = "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/67890"
@@ -145,4 +196,73 @@ final class UpdateCheckerTests: XCTestCase {
         let (_, missingResponse) = try await URLSession.shared.data(from: missing)
         XCTAssertEqual((missingResponse as? HTTPURLResponse)?.statusCode, 404)
     }
+
+    private func release(_ tag: String, draft: Bool = false,
+                         prerelease: Bool = false) -> UpdateChecker.ReleaseInfo {
+        UpdateChecker.ReleaseInfo(
+            tag_name: tag,
+            html_url: "https://github.com/Kswiftin/K-MON/releases/tag/\(tag)",
+            target_commitish: "abcdef", draft: draft, prerelease: prerelease,
+            assets: validAssets(version: tag))
+    }
+
+    private func validAssets(version: String) -> [UpdateChecker.ReleaseInfo.Asset] {
+        [
+            .init(name: UpdateChecker.releaseAssetName,
+                  url: "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/100",
+                  browser_download_url: "https://github.com/Kswiftin/K-MON/releases/download/\(version)/Pokedoro.zip"),
+            .init(name: "appcast.xml",
+                  url: "https://api.github.com/repos/Kswiftin/K-MON/releases/assets/101",
+                  browser_download_url: "https://github.com/Kswiftin/K-MON/releases/download/\(version)/appcast.xml"),
+        ]
+    }
+
+    private func expiredCredentials(now: Date) -> GitHubOAuth.Credentials {
+        GitHubOAuth.Credentials(
+            accessToken: "old-access", refreshToken: "old-refresh",
+            expiresAt: now.addingTimeInterval(-1),
+            refreshTokenExpiresAt: now.addingTimeInterval(3_600))
+    }
+
+    private func oauthSession(status: Int, json: String) -> URLSession {
+        OAuthURLProtocolStub.response = (status, Data(json.utf8))
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OAuthURLProtocolStub.self]
+        return URLSession(configuration: configuration)
+    }
+}
+
+private final class OAuthStoreStub: OAuthCredentialStore, @unchecked Sendable {
+    private let initial: GitHubOAuth.Credentials?
+    private let failsToSave: Bool
+    private(set) var saved: GitHubOAuth.Credentials?
+    private(set) var deleted = false
+
+    init(credentials: GitHubOAuth.Credentials?, failsToSave: Bool = false) {
+        initial = credentials
+        self.failsToSave = failsToSave
+    }
+
+    func load() -> GitHubOAuth.Credentials? { initial }
+    func save(_ credentials: GitHubOAuth.Credentials) throws {
+        if failsToSave { throw NSError(domain: "OAuthStoreStub", code: 1) }
+        saved = credentials
+    }
+    func delete() { deleted = true }
+}
+
+private final class OAuthURLProtocolStub: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var response = (200, Data())
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let (status, data) = Self.response
+        let response = HTTPURLResponse(url: request.url!, statusCode: status,
+                                       httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
