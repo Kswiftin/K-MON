@@ -156,6 +156,9 @@ enum SaveTransfer {
         s.starPieces = clampToken(s.starPieces)
         s.battleRank.points = min(BattleRank.maximumPoints, max(0, s.battleRank.points))
         s.trainer.points = min(TrainerLevel.maximumPoints, max(0, s.trainer.points))
+        // 카탈로그에서 사라진 미션의 잔재를 버리고 진행도를 목표에서 자른다 — 잘린 값은 곧 완료 상태라
+        // 손편집으로 목표를 넘겨도 보상이 다시 나오지 않는다.
+        s.missions.normalize()
         s.focusEggs = min(max(0, s.focusEggs), 999)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
@@ -245,6 +248,9 @@ enum SaveTransfer {
         // 구버전 서명 호환: 기본값(0)이면 아무것도 붙이지 않는다. 무조건 붙이면 트레이너 필드가
         // 없던 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
         if s.trainer.points != 0 { p.append("tp\(s.trainer.points)") }
+        // 구버전 서명 호환: 기본값이면 아무것도 붙이지 않는다. 무조건 붙이면 미션 필드가 없던
+        // 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
+        if s.missions != MissionBoard() { p.append("ms\(s.missions.canonical)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))

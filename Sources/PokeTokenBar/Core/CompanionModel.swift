@@ -626,6 +626,8 @@ struct CompanionState: Codable, Sendable {
     var battleRank = BattleRank()
     // 트레이너 성장 — 졸업으로 초기화되지 않는 계정 단위 누적. 파트너가 바뀌어도 이어진다.
     var trainer = TrainerLevel()
+    // 일간·주간 미션 진행도. 갱신은 타이머가 아니라 날짜/주 키 비교로 일어난다(MissionBoard 참고).
+    var missions = MissionBoard()
     var focusEggs = 0
     // 보관 중인 알마다 자동 부화 예정 시각. 알은 획득 5분 뒤 현재 동행과 무관하게 박스에서 부화한다.
     var focusEggReadyDates: [Date] = []
@@ -678,6 +680,7 @@ struct CompanionState: Codable, Sendable {
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)
         battleRank         = c.lenient(BattleRank.self, forKey: .battleRank, default: BattleRank())
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
+        missions           = c.lenient(MissionBoard.self, forKey: .missions, default: MissionBoard())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
         focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
         eggFragments       = c.lenient(Int.self, forKey: .eggFragments, default: 0)
