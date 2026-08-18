@@ -10,7 +10,7 @@ struct TrainerLevel: Codable, Sendable, Equatable {
     /// 레벨 n 도달선 = `pointsPerStep × (n-1)²`. 25분 세션 한 번이면 2레벨이 된다.
     /// 초반은 빠르고 뒤로 갈수록 느려진다 — 평평한 곡선은 2레벨이 50레벨만큼 멀어 목표가 안 된다.
     static let pointsPerStep = 25
-    /// 만렙 도달선. 적립은 여기서 멈춘다(그 위 값은 의미가 없다).
+    /// 최고 레벨 도달선. 적립은 여기서 멈춘다(그 위 값은 의미가 없다).
     static let maximumPoints = points(forLevel: maximumLevel)
     /// 졸업 1회 = 25분 세션 4회분. 집중만이 아니라 도감을 채우는 쪽도 성장으로 인정한다.
     static let graduationPoints = 100
@@ -32,13 +32,13 @@ struct TrainerLevel: Codable, Sendable, Equatable {
         return min(Self.maximumLevel, 1 + Int(steps))
     }
 
-    /// 다음 레벨까지 남은 포인트. 만렙이면 nil.
+    /// 다음 레벨까지 남은 포인트. 최고 레벨이면 nil.
     var pointsToNextLevel: Int? {
         guard level < Self.maximumLevel else { return nil }
         return Self.points(forLevel: level + 1) - max(0, points)
     }
 
-    /// 현재 레벨 구간 진행도(0...1). 만렙은 1.
+    /// 현재 레벨 구간 진행도(0...1). 최고 레벨은 1.
     var progress: Double {
         guard level < Self.maximumLevel else { return 1 }
         let base = Self.points(forLevel: level)

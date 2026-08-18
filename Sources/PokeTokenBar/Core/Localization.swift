@@ -506,7 +506,7 @@ struct L {
     func notifDittoRevealBody(_ disguise: String) -> String { t("\(disguise)인 줄 알았는데 — 사실은 메타몽이었어요!", "You thought it was \(disguise) — it was Ditto all along!", "\(disguise) だと思ってた… 実はメタモンでした！") }
     var notifShinyDittoRevealTitle: String { t("🎭✨ 어라? 이로치 메타몽!", "🎭✨ Huh? A shiny Ditto!", "🎭✨ あれ？色違いメタモン！") }
     func notifShinyDittoRevealBody(_ disguise: String) -> String { t("\(disguise)인 줄 알았는데 — 이로치 메타몽이었어요! (1/64)", "You thought it was \(disguise) — it was a shiny Ditto! (1 in 64)", "\(disguise) だと思ってた… 色違いのメタモンでした！(1/64)") }
-    var notifTrainerLevelUpTitle: String { t("👑 트레이너 레벨 업!", "👑 Trainer level up!", "👑 トレーナーレベルアップ！") }
+    var notifTrainerLevelUpTitle: String { t("👑 트레이너 레벨업!", "👑 Trainer level up!", "👑 トレーナーレベルアップ！") }
     func notifTrainerLevelUpBody(_ level: Int, _ stardust: Int) -> String {
         let amount = GameNumberFormatter.compact(stardust)
         return t("Lv.\(level) 달성 — 별의조각 \(amount) 받았어요!",

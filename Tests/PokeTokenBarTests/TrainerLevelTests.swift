@@ -53,7 +53,7 @@ final class TrainerLevelTests: XCTestCase {
         XCTAssertEqual(trainer.points, 100, "음수 적립으로 되감기지 않는다")
     }
 
-    /// 보상은 기존 재화(별의조각). 사탕 5,000 · 알 20,000 과 비교해 과하지 않은 규모여야 한다.
+    /// 보상은 기존 재화(별의조각). 사탕 5,000·알 20,000 과 비교해 과하지 않은 규모여야 한다.
     func testLevelUpRewardIsModestAgainstShopPrices() {
         XCTAssertEqual(TrainerLevel.reward(forReaching: 2), 1_000)
         XCTAssertEqual(TrainerLevel.reward(forReaching: 10), 5_000)
@@ -67,8 +67,8 @@ final class TrainerLevelTests: XCTestCase {
         XCTAssertGreaterThan(mid.progress, 0)
         XCTAssertLessThan(mid.progress, 1)
         XCTAssertEqual(TrainerLevel(points: 25).pointsToNextLevel, 75)
-        XCTAssertNil(TrainerLevel(points: 240_100).pointsToNextLevel, "만렙에는 다음이 없다")
-        XCTAssertEqual(TrainerLevel(points: 240_100).progress, 1, accuracy: 0.001, "만렙은 게이지가 가득 찬다")
+        XCTAssertNil(TrainerLevel(points: 240_100).pointsToNextLevel, "최고 레벨에는 다음이 없다")
+        XCTAssertEqual(TrainerLevel(points: 240_100).progress, 1, accuracy: 0.001, "최고 레벨은 게이지가 가득 찬다")
     }
 }
 
