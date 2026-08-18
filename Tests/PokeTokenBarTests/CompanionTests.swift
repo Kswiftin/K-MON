@@ -781,7 +781,8 @@ final class CompanionStoreTests: XCTestCase {
         // 박스에서 그 개체를 다시 동행으로 —  조건은 그대로 충족되지만 재졸업은 막혀야 한다.
         s.switchCompanion(to: monID)
         s.tick()   // 라인 재로드 트리거(switchCompanion 이 currentLine 을 비운다)
-        XCTAssertTrue(await waitUntil { s.currentLine != nil }, "라인이 로드돼야 졸업 조건을 평가한다")
+        let lineLoaded = await waitUntil { s.currentLine != nil }
+        XCTAssertTrue(lineLoaded, "라인이 로드돼야 졸업 조건을 평가한다")
         XCTAssertEqual(s.state.active?.id, monID)
         XCTAssertFalse(s.canGraduate, "이미 졸업한 개체는 버튼이 다시 뜨면 안 된다")
         XCTAssertFalse(s.graduateCompanion())
