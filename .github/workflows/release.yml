@@ -61,12 +61,18 @@ jobs:
           security unlock-keychain -p "$keychain_password" "$keychain_path"
           security import "$certificate_path" -k "$keychain_path" \
             -P "$SIGNING_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-          security add-trusted-cert -r trustRoot -p codeSign -k "$keychain_path" "$certificate_pem"
+          # 사용자 trust 설정은 headless runner에서 GUI 승인을 기다리며 멈춘다.
+          # runner의 임시 System Keychain에 비대화식으로 신뢰하고 작업 종료 때 제거한다.
+          certificate_sha1="$(/usr/bin/openssl x509 -in "$certificate_pem" \
+            -noout -fingerprint -sha1 | cut -d= -f2 | tr -d :)"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
+            -k /Library/Keychains/System.keychain "$certificate_pem"
           security set-key-partition-list -S apple-tool:,apple: -s \
             -k "$keychain_password" "$keychain_path"
           security list-keychains -d user -s "$keychain_path"
           security find-identity -v -p codesigning "$keychain_path" | grep -F '"K-MON Release"'
           echo "CI_SIGNING_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
+          echo "CI_SIGNING_CERT_SHA1=$certificate_sha1" >> "$GITHUB_ENV"
 
       - name: Require GitHub OAuth Client ID
         env:
@@ -142,4 +148,8 @@ jobs:
         run: |
           if [[ -n "${CI_SIGNING_KEYCHAIN:-}" ]]; then
             security delete-keychain "$CI_SIGNING_KEYCHAIN" || true
+          fi
+          if [[ -n "${CI_SIGNING_CERT_SHA1:-}" ]]; then
+            sudo security delete-certificate -Z "$CI_SIGNING_CERT_SHA1" \
+              /Library/Keychains/System.keychain || true
           fi
