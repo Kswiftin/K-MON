@@ -43,8 +43,8 @@ struct TrainerLevel: Codable, Sendable, Equatable {
     var progress: Double {
         guard level < Self.maximumLevel else { return 1 }
         let base = Self.points(forLevel: level)
+        // 구간 폭은 `pointsPerStep × (2·level − 1)` 이라 level ≥ 1 에서 항상 양수다 — 0 나눗셈 가드는 두지 않는다.
         let span = Self.points(forLevel: level + 1) - base
-        guard span > 0 else { return 1 }
         return min(1, max(0, Double(max(0, points) - base) / Double(span)))
     }
 

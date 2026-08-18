@@ -68,6 +68,7 @@ final class TrainerLevelTests: XCTestCase {
         XCTAssertLessThan(mid.progress, 1)
         XCTAssertEqual(TrainerLevel(points: 25).pointsToNextLevel, 75)
         XCTAssertNil(TrainerLevel(points: 240_100).pointsToNextLevel, "만렙에는 다음이 없다")
+        XCTAssertEqual(TrainerLevel(points: 240_100).progress, 1, accuracy: 0.001, "만렙은 게이지가 가득 찬다")
     }
 }
 
