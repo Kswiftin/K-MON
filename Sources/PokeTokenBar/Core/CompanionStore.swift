@@ -823,7 +823,7 @@ final class CompanionStore {
 
     /// 미션 기록의 **유일한** 경로 — 완료 보상(별의조각)과 알림도 여기서 처리한다.
     /// 적립 지점(모험 정산·졸업)마다 `state.missions` 를 직접 만지면 갱신과 클램프가 두 곳으로 갈라진다.
-    /// 완료된 미션만 돌아오므로 "이미 줬나" 를 따로 기억하지 않는다.
+    /// 완료된 미션만 돌아오므로 "이미 줬나"를 따로 기억하지 않는다.
     private func recordMission(_ event: MissionEvent, _ amount: Int) {
         let now = clock()
         for mission in state.missions.record(event, amount,

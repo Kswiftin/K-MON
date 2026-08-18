@@ -355,11 +355,11 @@ read_when:
   없던 정상 세이브가 전부 조작 판정 → 진행 초기화). 그런데 그 규칙을 지키던 테스트가 모두
   (`testEmptyHistoriesKeepLegacyIntegrityCanonicalForm`·미션, 그리고 별도 브랜치의 트레이너 레벨)
   `hash(기본값) == hash(기본값)` 형태였다 — **조건부 append 를 무조건 append 로 바꿔도 비교 대상 양쪽이
-  똑같이 바뀌어 그대로 통과한다.** 결함을 주입해 보기 전까지 전부 초록이었다. 앵커 없는 자기비교는
-  통과가 곧 무의미다. 지금은 해시가 아니라 입력 원문(`SaveTransfer.canonicalString`)을 노출해
-  ① 필드별로 조각 부재를 직접 보고(`contains("|ms")`) ② 기본값 canonical 전체를 **동결 문자열**과 대조한다
-  (`testDefaultStateCanonicalFormIsFrozen`) — 후자는 목록을 손보지 않아도 새 무조건 append 를 자동으로
-  잡는다. 새 가드를 넣었으면 결함을 한 번 주입해 실패를 확인한다. (미션 필드 추가, 2026-08-18.)
+  똑같이 바뀌어 그대로 통과한다.** 결함을 주입해 보기 전까지 전부 초록이었다. 고정된 기준 없이 자기
+  자신과 대조하면 통과해도 지켜지는 게 없다. 지금은 해시가 아니라 입력 원문(`SaveTransfer.canonicalString`)을
+  노출해 ① 필드별로 조각 부재를 직접 보고(`contains("|ms")`) ② 기본값 canonical 전체를 **동결 문자열**과
+  대조한다(`testDefaultStateCanonicalFormIsFrozen`) — 후자는 목록을 손보지 않아도 새로 들어온 무조건
+  append 를 자동으로 잡는다. 새 가드를 넣었으면 결함을 한 번 주입해 실패를 확인한다. (미션 필드 추가, 2026-08-18.)
 
 ## 클라이언트 신고값을 상한 아닌 권위로 쓰는 부류
 

@@ -74,7 +74,7 @@ final class PopoverLayoutTests: XCTestCase {
 
     /// 홈 탭 스크롤 뷰포트 예산. 560pt 창에서 패딩·상단 바·타이머·탭 피커·푸터를 빼면 약 250pt 가
     /// 남고, 파트너 카드(`CompanionHeader`)가 그중 176pt 를 쓴다. 미션 카드가 이 값을 넘으면
-    /// 파트너가 접힌 아래로 밀려 홈 탭을 열었을 때 앱의 주인공이 안 보인다.
+    /// 파트너가 뷰포트 밖으로 밀려 홈 탭을 열었을 때 앱의 주인공이 안 보인다.
     private static let missionCardBudget: CGFloat = 100
 
     private func missionStore(_ language: AppLanguage = .ko) -> CompanionStore {
@@ -88,7 +88,7 @@ final class PopoverLayoutTests: XCTestCase {
     }
 
     /// 트리거 재현: 미션마다 `ProgressView` 를 한 줄씩 깔면 예산을 두 배로 넘긴다(첫 버전이 211pt).
-    /// 이 대조군이 없으면 아래 예산 검증이 "애초에 통과할 조건이었다" 는 false confidence 가 된다.
+    /// 이 대조군이 없으면 아래 예산 검증이 "애초에 통과할 조건이었다"는 false confidence 가 된다.
     func testAGaugePerMissionRowBlowsThroughTheBudget() {
         let gauged = VStack(alignment: .leading, spacing: 6) {
             Text("🎯 미션").font(.caption.weight(.semibold))

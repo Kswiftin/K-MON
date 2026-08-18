@@ -3,7 +3,7 @@ import XCTest
 
 // 일간·주간 미션 — 정해진 주기로 갱신되는 반복 목표.
 // 갱신은 자정 타이머가 아니라 키 비교다(모험 주간 카운터와 같은 방식): 날짜/주 키가 바뀐 첫 기록에서
-// 해당 주기만 비운다. 완료 보상은 그 순간 자동 지급되고, 진행도를 목표에서 잘라 재지급을 막는다.
+// 해당 주기만 비운다. 완료 보상은 그 순간 자동 지급되고, 진행도를 목표에서 클램프해 재지급을 막는다.
 final class MissionBoardTests: XCTestCase {
 
     private let day = "2026-08-18"
@@ -31,7 +31,7 @@ final class MissionBoardTests: XCTestCase {
         XCTAssertEqual(Set(MissionBoard.catalog.map(\.id)).count, MissionBoard.catalog.count)
     }
 
-    /// 미션 이름이 세 언어 모두 채워져야 한다 — 한 언어만 비면 그 언어 사용자에겐 빈 줄이 보인다.
+    /// 미션 이름은 세 언어 모두에서 채워져야 한다 — 한 언어만 비면 그 언어 사용자에겐 빈 줄이 보인다.
     func testEveryMissionIsNamedInAllThreeLanguages() {
         for mission in MissionBoard.catalog {
             for lang in [AppLanguage.ko, .en, .ja] {
@@ -65,7 +65,7 @@ final class MissionBoardTests: XCTestCase {
         let second = board.record(.focusMinutes, 90, dayKey: day, weekKey: week)
         XCTAssertFalse(second.contains { $0.id == "dailyFocus" }, "이미 완료된 미션은 다시 완료되지 않는다")
         XCTAssertEqual(board.progress(mission("dailyFocus"), dayKey: day, weekKey: week),
-                       mission("dailyFocus").target, "진행도는 목표에서 잘린다")
+                       mission("dailyFocus").target, "진행도는 목표에서 클램프된다")
     }
 
     func testCompletionReportsEveryMissionCrossedByOneEvent() {
@@ -94,7 +94,7 @@ final class MissionBoardTests: XCTestCase {
         _ = board.record(.focusMinutes, 10, dayKey: nextDay, weekKey: week)
 
         XCTAssertEqual(board.progress(mission("dailyFocus"), dayKey: nextDay, weekKey: week), 10,
-                       "일간은 새 날짜분만 남는다")
+                       "일간은 새 날짜에 쌓은 것만 남는다")
         XCTAssertEqual(board.progress(mission("weeklyFocus"), dayKey: nextDay, weekKey: week), 60,
                        "주간은 날짜가 바뀌어도 이어진다")
     }
@@ -144,7 +144,7 @@ final class MissionBoardTests: XCTestCase {
         XCTAssertTrue(board.record(.focusMinutes, 100, dayKey: day, weekKey: week).isEmpty)
     }
 
-    /// canonical 은 정렬돼야 한다 — 사전 순회 순서에 기대면 같은 상태가 다른 해시를 내 무작위 조작 판정이 난다.
+    /// canonical 은 정렬돼야 한다 — 순회 순서에 기대면 같은 상태가 다른 해시를 내서 무작위로 조작 판정된다.
     func testCanonicalIsSortedAndStable() {
         var forward = MissionBoard()
         _ = forward.record(.focusMinutes, 25, dayKey: day, weekKey: week)
@@ -221,14 +221,14 @@ final class MissionAccrualTests: XCTestCase {
         clock.advance(90 * 60)
         let first = try XCTUnwrap(store.claimAdventure())
         XCTAssertEqual(store.state.starPieces - before, first.starPieces + dailyFocus.reward,
-                       "90분 정산이 일간 집중 미션을 완료시킨다")
+                       "90분 정산으로 일간 집중 미션이 완료된다")
 
         before = store.state.starPieces
         XCTAssertTrue(store.startFocusAdventure(minutes: 25))
         clock.advance(25 * 60)
         let second = try XCTUnwrap(store.claimAdventure())
         XCTAssertEqual(store.state.starPieces - before, second.starPieces + dailyAdventures.reward,
-                       "두 번째 정산은 모험 횟수 미션만 완료시킨다 — 집중 미션은 재지급되지 않는다")
+                       "두 번째 정산으로는 모험 횟수 미션만 완료된다 — 집중 미션은 재지급되지 않는다")
     }
 
     /// 졸업 단독 경로 — 모험을 **한 번도 하지 않고** 졸업만 해도 주간 미션이 완료된다.
@@ -299,7 +299,7 @@ final class MissionSaveTests: XCTestCase {
         XCTAssertTrue(SaveTransfer.isTampered(signed), "진행도가 무결성 해시에 들어가 있어야 한다")
     }
 
-    /// 경계에서 한 번만 정규화한다 — 손편집 거대값이 그대로 저장되면 재지급 대상이 된다.
+    /// 경계에서 한 번만 정규화한다 — 손편집으로 넣은 거대한 값이 그대로 저장되면 재지급 대상이 된다.
     func testExtremeMissionProgressIsClampedAtTheBoundary() {
         var state = CompanionState()
         state.missions.dayKey = "2026-08-18"

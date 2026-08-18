@@ -156,7 +156,7 @@ enum SaveTransfer {
         s.starPieces = clampToken(s.starPieces)
         s.battleRank.points = min(BattleRank.maximumPoints, max(0, s.battleRank.points))
         s.trainer.points = min(TrainerLevel.maximumPoints, max(0, s.trainer.points))
-        // 카탈로그에서 사라진 미션의 잔재를 버리고 진행도를 목표에서 자른다 — 잘린 값은 곧 완료 상태라
+        // 카탈로그에서 사라진 미션의 잔재를 버리고 진행도를 목표에서 클램프한다 — 클램프된 값은 곧 완료 상태라
         // 손편집으로 목표를 넘겨도 보상이 다시 나오지 않는다.
         s.missions.normalize()
         s.focusEggs = min(max(0, s.focusEggs), 999)
@@ -246,7 +246,7 @@ enum SaveTransfer {
 
     /// 해시의 입력 원문. 해시가 아니라 이 문자열을 테스트에 노출하는 이유는 **조건부 append 규칙을
     /// 검사할 방법이 이것뿐**이기 때문이다 — 기본값 상태의 해시를 자기 자신과 비교하면 무조건 append
-    /// 로 바뀌어도 양쪽이 똑같이 바뀌어 그대로 통과한다(그 형태의 테스트 3개가 실제로 무력했다).
+    /// 로 바뀌어도 양쪽이 똑같이 바뀌어 그대로 통과한다(그 형태의 테스트 3개가 실제로 아무것도 못 걸렀다).
     static func canonicalString(_ s: CompanionState) -> String {
         var p: [String] = []
         p.append("v\(s.economyVersion)")

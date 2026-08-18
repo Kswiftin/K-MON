@@ -28,7 +28,7 @@ struct Mission: Identifiable, Sendable {
 /// 기록에서 그 주기만 비운다. 백그라운드 작업도, 자정에 깨어날 이유도 없다.
 ///
 /// 완료 보상은 그 순간 자동 지급된다(수령 버튼 없음 — 일일 사탕과 같은 형태). 재지급을 막는 장치는
-/// 별도의 "수령함" 플래그가 아니라 **목표에서 자르는 것**이다: 진행도가 목표를 넘을 수 없으니
+/// 별도의 "수령함" 플래그가 아니라 **목표값 클램프**다: 진행도가 목표를 넘을 수 없으니
 /// 완료 순간을 두 번 지날 수 없다.
 struct MissionBoard: Codable, Sendable, Equatable {
     /// 조절 손잡이는 이 표 하나뿐이다. 기준선 — 25분 모험 200⭐ · 90분 5,400⭐ · 사탕 5,000⭐ · 알 20,000⭐.
@@ -46,7 +46,7 @@ struct MissionBoard: Codable, Sendable, Equatable {
     var weekly: [String: Int] = [:]
 
     /// 기록 — 갱신하고, 진행도를 올리고, **이번에 완료된** 미션만 반환한다.
-    /// 호출부는 반환된 것에만 보상을 지급하면 되므로 "이미 줬나" 를 따로 기억할 필요가 없다.
+    /// 호출부는 반환된 것에만 보상을 지급하면 되므로 "이미 줬나"를 따로 기억할 필요가 없다.
     mutating func record(_ event: MissionEvent, _ amount: Int,
                          dayKey: String, weekKey: String) -> [Mission] {
         roll(dayKey: dayKey, weekKey: weekKey)
@@ -70,15 +70,15 @@ struct MissionBoard: Codable, Sendable, Equatable {
         return current ? self[mission] : 0
     }
 
-    /// 신뢰경계 정규화 — 카탈로그에서 사라진 미션의 잔재를 버리고 값을 `0...target` 으로 자른다.
-    /// 손편집으로 목표를 넘긴 값이 들어와도 잘린 값은 곧 완료 상태라 재지급되지 않는다.
+    /// 신뢰경계 정규화 — 카탈로그에서 사라진 미션의 잔재를 버리고 값을 `0...target` 으로 클램프한다.
+    /// 손편집으로 목표를 넘긴 값이 들어와도 클램프된 값은 곧 완료 상태라 재지급되지 않는다.
     mutating func normalize() {
         daily = Self.normalized(daily, period: .daily)
         weekly = Self.normalized(weekly, period: .weekly)
     }
 
     /// 무결성 해시 입력 — **정렬**해야 한다. 사전 순회 순서에 기대면 같은 상태가 실행마다 다른
-    /// 문자열을 내 정상 세이브가 무작위로 조작 판정된다.
+    /// 문자열을 내서, 정상 세이브가 무작위로 조작 판정된다.
     var canonical: String {
         let counts = [daily, weekly].map { dict in
             dict.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")
