@@ -23,7 +23,15 @@ final class CompanionStore {
         let requiredLevel: Int
         let toName: String
     }
-    private(set) var moveLearningPrompt: MoveLearningPrompt?
+    /// 저장된 원본 — 표시는 `moveLearningPrompt` 를 쓴다(현재 동행 것만 통과시킨다).
+    private(set) var pendingMoveLearningPrompt: MoveLearningPrompt?
+    /// 지금 동행에게 해당하는 기술 학습 제안만 노출한다. 개체가 바뀌면(교체·졸업·리롤) 이전 개체의
+    /// 카드가 그대로 떠 있어 "다른 포켓몬인데 배우기 창이 남는" 문제가 됐다. 해제 지점을 일일이
+    /// 추가하는 대신 표시 단계에서 걸러, 새 전환 경로가 생겨도 자동으로 막힌다.
+    var moveLearningPrompt: MoveLearningPrompt? {
+        guard let prompt = pendingMoveLearningPrompt, state.active?.id == prompt.monID else { return nil }
+        return prompt
+    }
     private(set) var evolutionPrompt: EvolutionPrompt?
     private var declinedEvolutionMonID: UUID?
     private var declinedEvolutionLevel = 0
@@ -833,6 +841,10 @@ final class CompanionStore {
         currentTypes = []
         displayedMoves = []
         evolutionPrompt = nil
+        // 이전 개체의 기술 학습 대기분까지 버린다 — 표시 게이트가 현재 카드는 막지만, 큐에 남은
+        // 다른 개체 몫이 나중에 승격되면 같은 증상이 재발한다.
+        pendingMoveLearningPrompt = nil
+        moveLearningQueue.removeAll()
         displayState = .idle
         save()
         Task { await loadCurrentLine() }
@@ -872,21 +884,19 @@ final class CompanionStore {
     }
 
     func declineMoveLearning() {
-        moveLearningPrompt = nil
+        pendingMoveLearningPrompt = nil
         showNextMoveLearningPrompt()
     }
 
     func acceptMoveLearning(replacing index: Int? = nil) {
-        guard let prompt = moveLearningPrompt, state.active?.id == prompt.monID else {
-            declineMoveLearning(); return
-        }
+        guard let prompt = moveLearningPrompt else { declineMoveLearning(); return }
         if state.active!.learnedMoves.count < 4 {
             state.active!.learnedMoves.append(prompt.move)
         } else if let index, state.active!.learnedMoves.indices.contains(index) {
             state.active!.learnedMoves[index] = prompt.move
         } else { return }
         save()
-        moveLearningPrompt = nil
+        pendingMoveLearningPrompt = nil
         showNextMoveLearningPrompt()
     }
 
@@ -904,8 +914,8 @@ final class CompanionStore {
     }
 
     private func showNextMoveLearningPrompt() {
-        guard moveLearningPrompt == nil, !moveLearningQueue.isEmpty else { return }
-        moveLearningPrompt = moveLearningQueue.removeFirst()
+        guard pendingMoveLearningPrompt == nil, !moveLearningQueue.isEmpty else { return }
+        pendingMoveLearningPrompt = moveLearningQueue.removeFirst()
     }
 
     func loadCurrentTypes() async {
@@ -1277,6 +1287,9 @@ final class CompanionStore {
         graduated.isGraduated = true   // 영구 DexEntry 가 이미 기록됐다 — 화면용 행으로 중복 집계 금지(#28)
         state.boxedMons.append(graduated)
         state.active = nil
+        // 졸업도 개체 교체다 — 남은 학습 제안은 그 개체 몫이므로 함께 버린다.
+        pendingMoveLearningPrompt = nil
+        moveLearningQueue.removeAll()
         state.care = PetCareState(lastNeedAt: clock(), lastUpdatedAt: clock())
         activeGeneration += 1
         currentLine = nil
@@ -1909,6 +1922,13 @@ final class CompanionStore {
     func debugSetDex(_ entries: [DexEntry]) { state.dex = entries; save() }
     /// 테스트 전용 — 박스를 직접 세팅(보관 알 부화의 네트워크 경로 없이 박스 상태만 재현). 프로덕션 경로 없음.
     func debugSetBoxedMons(_ mons: [MonState]) { state.boxedMons = mons; save() }
+    /// 테스트 전용 — 레벨업 없이 기술 학습 제안을 세운다(네트워크 무브 조회 우회). 프로덕션 경로 없음.
+    func debugQueueMoveLearning(monID: UUID) {
+        pendingMoveLearningPrompt = MoveLearningPrompt(
+            monID: monID, level: 10,
+            move: MoveSpec(id: 1, names: [:], type: .normal, power: 40,
+                           damageClass: .physical, accuracy: 100, pp: 20))
+    }
     #endif
 
     // MARK: 영속
