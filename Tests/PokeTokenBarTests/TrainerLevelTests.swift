@@ -76,17 +76,24 @@ final class TrainerLevelTests: XCTestCase {
 @MainActor
 final class TrainerLevelAccrualTests: XCTestCase {
 
-    private func makeStore(_ clock: TestClock) -> CompanionStore {
+    /// 시작 포인트는 세이브 파일로 심는다 — `state` 세터는 비공개고, 테스트 편의로 그걸 열면
+    /// 프로덕션에서도 상태를 통째로 갈아끼울 수 있게 된다.
+    private func makeStore(_ clock: TestClock, trainerPoints: Int = 0) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-trainer-\(UUID().uuidString).json")
+        if trainerPoints > 0 {
+            let json = #"{"economyVersion":2,"forcedResetVersion":1,"trainer":{"points":\#(trainerPoints)}}"#
+            try? Data(json.utf8).write(to: url)
+        }
         return CompanionStore(provider: StubProvider(value: trainerTestLine), clock: clock.closure,
                               fileURL: url, rng: SeededRNG(seed: 11))
     }
 
-    private func hatchedStore(_ clock: TestClock) async -> CompanionStore {
-        let store = makeStore(clock)
+    private func hatchedStore(_ clock: TestClock, trainerPoints: Int = 0) async -> CompanionStore {
+        let store = makeStore(clock, trainerPoints: trainerPoints)
         await store.hatch(baseID: 1)
         XCTAssertNotNil(store.state.active, "테스트 전제: 활성 포켓몬이 있어야 모험을 보낼 수 있다")
+        XCTAssertEqual(store.trainerLevel.points, trainerPoints, "시드 포인트가 로드돼야 한다")
         return store
     }
 
@@ -148,8 +155,7 @@ final class TrainerLevelAccrualTests: XCTestCase {
     /// 레벨업 보상은 오른 레벨마다 지급되고 합산된다 — 두 칸을 한 번에 넘겨 검증.
     func testLevelUpPaysStarPiecesForEveryLevelGained() async throws {
         let clock = TestClock()
-        let store = await hatchedStore(clock)
-        store.state.trainer = TrainerLevel(points: 20)   // 1레벨, 다음 도달선 25
+        let store = await hatchedStore(clock, trainerPoints: 20)   // 1레벨, 다음 도달선 25
         let before = store.state.starPieces
 
         XCTAssertTrue(store.startFocusAdventure(minutes: 90))
@@ -160,13 +166,13 @@ final class TrainerLevelAccrualTests: XCTestCase {
         let bonus = TrainerLevel.reward(forReaching: 2) + TrainerLevel.reward(forReaching: 3)
         XCTAssertEqual(store.state.starPieces - before, reward.starPieces + bonus,
                        "모험 보상 + 레벨 2·3 보상이 모두 들어와야 한다")
+        XCTAssertEqual(reward.trainerBonus, bonus, "지급액을 보상 객체가 그대로 설명해야 한다")
     }
 
     /// 레벨이 안 오르면 보너스도 없다(모험 보상만).
     func testNoBonusWhenLevelDoesNotChange() async throws {
         let clock = TestClock()
-        let store = await hatchedStore(clock)
-        store.state.trainer = TrainerLevel(points: 9_025)   // 20레벨, 다음 도달선 10,000
+        let store = await hatchedStore(clock, trainerPoints: 9_025)   // 20레벨, 다음 도달선 10,000
         let before = store.state.starPieces
 
         XCTAssertTrue(store.startFocusAdventure(minutes: 25))
@@ -175,6 +181,7 @@ final class TrainerLevelAccrualTests: XCTestCase {
 
         XCTAssertEqual(store.trainerLevel.level, 20)
         XCTAssertEqual(store.state.starPieces - before, reward.starPieces, "레벨업이 없으면 모험 보상뿐")
+        XCTAssertEqual(reward.trainerBonus, 0)
     }
 }
 

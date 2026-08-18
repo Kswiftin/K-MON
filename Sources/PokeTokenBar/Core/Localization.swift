@@ -506,6 +506,21 @@ struct L {
     func notifDittoRevealBody(_ disguise: String) -> String { t("\(disguise)인 줄 알았는데 — 사실은 메타몽이었어요!", "You thought it was \(disguise) — it was Ditto all along!", "\(disguise) だと思ってた… 実はメタモンでした！") }
     var notifShinyDittoRevealTitle: String { t("🎭✨ 어라? 이로치 메타몽!", "🎭✨ Huh? A shiny Ditto!", "🎭✨ あれ？色違いメタモン！") }
     func notifShinyDittoRevealBody(_ disguise: String) -> String { t("\(disguise)인 줄 알았는데 — 이로치 메타몽이었어요! (1/64)", "You thought it was \(disguise) — it was a shiny Ditto! (1 in 64)", "\(disguise) だと思ってた… 色違いのメタモンでした！(1/64)") }
+    var notifTrainerLevelUpTitle: String { t("👑 트레이너 레벨 업!", "👑 Trainer level up!", "👑 トレーナーレベルアップ！") }
+    func notifTrainerLevelUpBody(_ level: Int, _ stardust: Int) -> String {
+        let amount = GameNumberFormatter.compact(stardust)
+        return t("Lv.\(level) 달성 — 별의조각 \(amount) 받았어요!",
+                 "Reached Lv.\(level) — you earned \(amount) Star Pieces!",
+                 "Lv.\(level) 到達 — ほしのかけら \(amount) を獲得！")
+    }
+    /// 트레이너 레벨 칩 툴팁 — 다음 레벨까지 남은 포인트. 만렙이면 별도 문구.
+    func trainerLevelHint(_ remaining: Int?) -> String {
+        guard let remaining else { return t("최고 레벨", "Max level", "最高レベル") }
+        return t("다음 레벨까지 \(remaining)p · 집중 1분 = 1p, 졸업 = \(TrainerLevel.graduationPoints)p",
+                 "\(remaining)p to next level · 1 focus minute = 1p, graduation = \(TrainerLevel.graduationPoints)p",
+                 "次のレベルまで \(remaining)p · 集中1分 = 1p、卒業 = \(TrainerLevel.graduationPoints)p")
+    }
+
     var notifGraduateTitle: String { t("🎓 졸업!", "🎓 Graduated!", "🎓 卒業！") }
     func notifGraduateBody(_ name: String) -> String { t("\(name) — 도감에 보존! 새 알이 도착했어요.", "\(name) — saved to your Pokédex! A new egg has arrived.", "\(name) — 図鑑に保存！新しいタマゴが届きました。") }
 

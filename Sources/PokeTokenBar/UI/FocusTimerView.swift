@@ -12,6 +12,13 @@ struct FocusTimerView: View {
             HStack {
                 Label(title, systemImage: timer.phase == .rest ? "cup.and.saucer.fill" : "timer")
                     .font(.callout.weight(.semibold))
+                // 트레이너 레벨은 탭 스크롤 밖인 여기에 둔다 — 어느 탭에서도 보여야 파트너가
+                // 졸업해도 이어지는 축이라는 게 읽힌다.
+                Text(companion.trainerLevel.displayName)
+                    .font(.caption2.weight(.semibold)).monospacedDigit()
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15), in: Capsule())
+                    .help(companion.l.trainerLevelHint(companion.trainerLevel.pointsToNextLevel))
                 Spacer()
                 Toggle(companion.language == .ko ? "방해금지" : "Do Not Disturb", isOn: $settings.doNotDisturb)
                     .toggleStyle(.checkbox).font(.caption2)

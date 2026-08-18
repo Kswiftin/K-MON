@@ -155,6 +155,7 @@ enum SaveTransfer {
         s.spentTokens = clampToken(s.spentTokens)
         s.starPieces = clampToken(s.starPieces)
         s.battleRank.points = min(BattleRank.maximumPoints, max(0, s.battleRank.points))
+        s.trainer.points = min(TrainerLevel.maximumPoints, max(0, s.trainer.points))
         s.focusEggs = min(max(0, s.focusEggs), 999)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
@@ -241,6 +242,9 @@ enum SaveTransfer {
         p.append("v\(s.economyVersion)")
         p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("pc\(s.starPieces)"); p.append("eg\(s.eggUsage)")
         if s.battleRank.points != 0 { p.append("br\(s.battleRank.points)") }
+        // 구버전 서명 호환: 기본값(0)이면 아무것도 붙이지 않는다. 무조건 붙이면 트레이너 필드가
+        // 없던 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
+        if s.trainer.points != 0 { p.append("tp\(s.trainer.points)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))

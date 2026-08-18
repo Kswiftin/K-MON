@@ -364,7 +364,7 @@ final class SaveTransferTests: XCTestCase {
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
                                      "starterCandidates", "active", "dex", "collectedFinals", "inventory",
                                      "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
-                                     "care", "battleRank", "battleHistory", "adventure", "adventureHistory",
+                                     "care", "battleRank", "trainer", "battleHistory", "adventure", "adventureHistory",
                                      "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "focusEggReadyDates", "eggFragments",
                                      "starPieces", "forcedResetVersion", "integrityVersion", "lastAdventureBonusDate"]
         // 로컬 장부: 이 기기의 시계 기준값·서명 → 새 기기 기준 재설정(저장 시 재서명).
