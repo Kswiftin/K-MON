@@ -516,13 +516,6 @@ struct L {
     /// 상단 트레이너 바 라벨. `Lv.N` 만 쓰면 포켓몬 레벨(파트너·로스터·배틀에서 이미 쓰는 표기)로
     /// 오인지된다 — 이 단어가 계정 단위 값임을 알려주는 유일한 장치다.
     var trainerLevelLabel: String { t("트레이너", "Trainer", "トレーナー") }
-    /// 트레이너 바 툴팁 — 다음 레벨까지 남은 포인트. 만렙이면 별도 문구.
-    func trainerLevelHint(_ remaining: Int?) -> String {
-        guard let remaining else { return t("최고 레벨", "Max level", "最高レベル") }
-        return t("다음 레벨까지 \(remaining)p · 집중 1분 = 1p, 졸업 = \(TrainerLevel.graduationPoints)p",
-                 "\(remaining)p to next level · 1 focus minute = 1p, graduation = \(TrainerLevel.graduationPoints)p",
-                 "次のレベルまで \(remaining)p · 集中1分 = 1p、卒業 = \(TrainerLevel.graduationPoints)p")
-    }
 
     var notifGraduateTitle: String { t("🎓 졸업!", "🎓 Graduated!", "🎓 卒業！") }
     func notifGraduateBody(_ name: String) -> String { t("\(name) — 도감에 보존! 새 알이 도착했어요.", "\(name) — saved to your Pokédex! A new egg has arrived.", "\(name) — 図鑑に保存！新しいタマゴが届きました。") }

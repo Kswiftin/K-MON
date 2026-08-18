@@ -133,7 +133,7 @@ struct PopoverView: View {
     /// 옆의 잔액이 레벨업 보상이 어디로 들어왔는지 연결해 준다(그 전엔 상점 안에서만 보였다).
     private var trainerBar: some View {
         HStack(spacing: 8) {
-            Text("👑 \(l.trainerLevelLabel) \(companion.trainerLevel.displayName)")
+            Text("👑 \(l.trainerLevelLabel) Lv.\(companion.trainerLevel.level)")
                 .font(.caption.weight(.semibold)).monospacedDigit()
             ProgressView(value: companion.trainerLevel.progress)
                 .tint(.orange).frame(width: 64)
@@ -145,7 +145,6 @@ struct PopoverView: View {
             Text("⭐ " + GameNumberFormatter.compact(companion.availableTokens))
                 .font(.caption.weight(.semibold)).monospacedDigit()
         }
-        .help(l.trainerLevelHint(companion.trainerLevel.pointsToNextLevel))
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))

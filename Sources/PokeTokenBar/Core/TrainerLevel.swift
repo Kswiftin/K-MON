@@ -11,16 +11,15 @@ struct TrainerLevel: Codable, Sendable, Equatable {
     /// 초반은 빠르고 뒤로 갈수록 느려진다 — 평평한 곡선은 2레벨이 50레벨만큼 멀어 목표가 안 된다.
     static let pointsPerStep = 25
     /// 만렙 도달선. 적립은 여기서 포화한다(그 위 값은 의미가 없다).
-    static let maximumPoints = pointsPerStep * (maximumLevel - 1) * (maximumLevel - 1)
+    static let maximumPoints = points(forLevel: maximumLevel)
     /// 졸업 1회 = 25분 세션 4회분. 집중만이 아니라 도감을 채우는 쪽도 성장으로 인정한다.
     static let graduationPoints = 100
 
     var points = 0
 
-    init(points: Int = 0) { self.points = points }
-
+    /// 호출 인자는 항상 1 이상이다 — `level`(1부터), `level + 1`, `maximumLevel` 뿐이다.
     static func points(forLevel level: Int) -> Int {
-        let steps = max(1, level) - 1
+        let steps = level - 1
         return pointsPerStep * steps * steps
     }
 
@@ -47,8 +46,6 @@ struct TrainerLevel: Codable, Sendable, Equatable {
         let span = Self.points(forLevel: level + 1) - base
         return min(1, max(0, Double(max(0, points) - base) / Double(span)))
     }
-
-    var displayName: String { "Lv.\(level)" }
 
     /// 적립 — 오른 레벨 수를 반환한다(한 번에 두 칸 이상도 가능). 0·음수는 무시해 되감기를 막는다.
     @discardableResult
