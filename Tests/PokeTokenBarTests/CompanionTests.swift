@@ -767,6 +767,28 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.dexSpecies.first { $0.id == 4 }?.name, "포4")
     }
 
+    /// [회귀] 졸업한 개체를 박스에서 다시 꺼내도 재졸업은 불가하다. 졸업해도 개체는 박스에 남으므로(#27)
+    /// 최종형·레벨 조건은 그대로 만족한다 — 막지 않으면 졸업 → 스위치 → 졸업 반복으로 알이 무한 생성된다.
+    func testGraduatedCompanionCannotGraduateAgainForAnotherEgg() async {
+        let s = store(noEvo)
+        await s.hatch(baseID: 20)
+        let monID = try! XCTUnwrap(s.state.active?.id)
+        s.debugAccrueLevelExperience(300_000_000)
+        XCTAssertTrue(s.graduateCompanion())
+        let eggsAfterFirst = s.focusEggCount
+        let dexAfterFirst = s.state.dex.count
+
+        // 박스에서 그 개체를 다시 동행으로 —  조건은 그대로 충족되지만 재졸업은 막혀야 한다.
+        s.switchCompanion(to: monID)
+        s.tick()   // 라인 재로드 트리거(switchCompanion 이 currentLine 을 비운다)
+        XCTAssertTrue(await waitUntil { s.currentLine != nil }, "라인이 로드돼야 졸업 조건을 평가한다")
+        XCTAssertEqual(s.state.active?.id, monID)
+        XCTAssertFalse(s.canGraduate, "이미 졸업한 개체는 버튼이 다시 뜨면 안 된다")
+        XCTAssertFalse(s.graduateCompanion())
+        XCTAssertEqual(s.focusEggCount, eggsAfterFirst, "알이 추가로 생기면 안 된다")
+        XCTAssertEqual(s.state.dex.count, dexAfterFirst, "도감 기록도 개체당 한 번")
+    }
+
     /// 최종형이 아니면 졸업 버튼 자체가 안 뜬다.
     func testCannotGraduateBeforeTheFinalForm() async {
         let s = store(linear3)
