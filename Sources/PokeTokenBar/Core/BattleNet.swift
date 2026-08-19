@@ -369,7 +369,8 @@ final class BattleCenter {
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             guard getnameinfo(sa, socklen_t(sa.pointee.sa_len), &host, socklen_t(host.count),
                               nil, 0, NI_NUMERICHOST) == 0 else { continue }
-            let ip = String(cString: host)
+            // String(cString: [CChar]) 는 Swift 6 에서 deprecated — 포인터 오버로드는 유효하다.
+            let ip = host.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
             if name == "en0" { return ip }
             if fallback == nil { fallback = ip }
         }

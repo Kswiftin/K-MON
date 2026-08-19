@@ -359,7 +359,7 @@ final class PremiumEggTests: XCTestCase {
     func testGuaranteeDoesNotSurviveIntoTheNextEgg() async {
         let s = eggStore(tier: .rare, seed: 1, provider: TieredProvider())
         await s.hatchIfNeeded()
-        guard let active = s.state.active else { return XCTFail("부화 실패") }
+        guard s.state.active != nil else { return XCTFail("부화 실패") }
         XCTAssertNil(s.state.eggTier, "부화 시점에 보증 소비")
         s.debugAccrueLevelExperience(300_000_000)   // 무진화 종은 레벨 30 게이트(#19)
         XCTAssertTrue(s.graduateCompanion())   // 졸업은 사용자 액션(#19)

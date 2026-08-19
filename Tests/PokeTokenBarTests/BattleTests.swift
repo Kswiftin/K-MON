@@ -20,8 +20,6 @@ final class BattleTests: XCTestCase {
     // MARK: 성격 보정
 
     func testNatureModifiers() {
-        var s = BattleStats(hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100)
-        _ = s   // keypath 대상 타입 고정용
         XCTAssertEqual(NatureEffect.multiplier(.adamant, for: \.atk), 1.1)
         XCTAssertEqual(NatureEffect.multiplier(.adamant, for: \.spa), 0.9)
         XCTAssertEqual(NatureEffect.multiplier(.adamant, for: \.spe), 1.0)
