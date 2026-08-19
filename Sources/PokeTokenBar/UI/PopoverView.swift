@@ -125,10 +125,36 @@ struct PopoverView: View {
         }
     }
 
+    /// 계정 단위 상태 한 줄 — 트레이너 레벨과 별의조각 잔액. 팝오버 최상단에 고정해 어느 탭에서도 보인다.
+    ///
+    /// 파트너 카드가 아니라 여기 있어야 한다 — 레벨은 졸업으로 초기화되지 않는 **계정** 값이다.
+    /// 라벨의 "트레이너" 도 빼면 안 된다. `Lv.N` 만 쓰면 파트너·로스터·배틀이 이미 쓰는 표기와
+    /// 겹쳐 포켓몬 레벨로 잘못 읽힌다. 게이지와 남은 포인트가 있어야 배지가 아니라 좇을 목표가 되고,
+    /// 옆의 잔액이 레벨업 보상이 어디로 들어왔는지 연결해 준다(그 전엔 상점 안에서만 보였다).
+    private var trainerBar: some View {
+        HStack(spacing: 8) {
+            Text("👑 \(l.trainerLevelLabel) Lv.\(companion.trainerLevel.level)")
+                .font(.caption.weight(.semibold)).monospacedDigit()
+            ProgressView(value: companion.trainerLevel.progress)
+                .tint(.orange).frame(width: 64)
+            if let remaining = companion.trainerLevel.pointsToNextLevel {
+                Text("\(remaining)p")
+                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("⭐ " + GameNumberFormatter.compact(companion.availableTokens))
+                .font(.caption.weight(.semibold)).monospacedDigit()
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private var mainContent: some View {
         @Bindable var nav = nav
         return VStack(alignment: .leading, spacing: 12) {
             updateBanner
+            trainerBar
             FocusTimerView()
             Picker("", selection: $nav.tab) {
                 Text(l.home).tag(PopoverTab.home)

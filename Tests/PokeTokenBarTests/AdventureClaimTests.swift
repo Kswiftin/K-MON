@@ -39,7 +39,9 @@ final class AdventureClaimTests: XCTestCase {
         XCTAssertNil(store.activeAdventure, "정산 후에는 모험 슬롯이 비어야 한다")
         XCTAssertGreaterThan(store.state.starPieces, starPiecesBefore)
         XCTAssertGreaterThan(store.state.active?.levelExperience ?? 0, expBefore)
-        XCTAssertEqual(reward.stardust, store.state.starPieces - starPiecesBefore,
+        // 보상 객체가 지갑 증가분을 **전부** 설명해야 한다. 트레이너 레벨업 보너스처럼 정산 중에
+        // 함께 지급되는 값도 여기 실려야, 알려준 값과 실제 잔액이 어긋나지 않는다.
+        XCTAssertEqual(reward.stardust + reward.trainerBonus, store.state.starPieces - starPiecesBefore,
                        "세션 보상은 claimAdventure() 결과 그대로 — 별도 가산이면 이중 지급이다")
     }
 

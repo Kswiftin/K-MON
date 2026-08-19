@@ -697,6 +697,9 @@ final class CompanionStore {
         }
         if reward.foundRareCandy { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += 1 }
         let minutes = Int((run.endsAt.timeIntervalSince(run.startedAt) / 60).rounded())
+        // 트레이너 포인트는 **정산된** 분만 인정한다 — 시작만으로 적립하면 타이머를 켜 두는 것이
+        // 곧 성장이 돼 집중과 무관해진다.
+        reward.trainerBonus = accrueTrainerPoints(minutes)
         var fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
         let today = Self.dayKey(now)
         if state.lastAdventureBonusDate != today {
@@ -796,6 +799,24 @@ final class CompanionStore {
         save()
     }
 
+    var trainerLevel: TrainerLevel { state.trainer }
+
+    /// 트레이너 포인트 적립의 **유일한** 경로 — 레벨업 보상(별의조각)과 알림도 여기서 처리한다.
+    /// 적립 지점(모험 정산·졸업)마다 보상 계산을 흩뿌리면 한쪽만 바뀌는 사고가 난다.
+    /// 반환값은 이번에 지급한 별의조각 — 호출부가 보상 객체에 실어 사용자에게 알린 값과
+    /// 실제 지갑 증가가 어긋나지 않게 한다.
+    @discardableResult
+    private func accrueTrainerPoints(_ amount: Int) -> Int {
+        let gained = state.trainer.add(amount)
+        guard gained > 0 else { return 0 }
+        let level = state.trainer.level
+        // 한 번에 두 칸 이상 올랐으면 건너뛴 레벨의 보상도 모두 지급한다(마지막 레벨만 주면 손실).
+        let bonus = ((level - gained + 1)...level).reduce(0) { $0 + TrainerLevel.reward(forReaching: $1) }
+        state.starPieces += bonus
+        notifyCompanionEvent(l.notifTrainerLevelUpTitle, l.notifTrainerLevelUpBody(level, bonus))
+        return bonus
+    }
+
     var focusEggCount: Int { state.focusEggs }
     var nextStoredEggHatchAt: Date? { state.focusEggReadyDates.min() }
     var eggFragmentCount: Int { state.eggFragments }
@@ -813,7 +834,7 @@ final class CompanionStore {
             return FocusSessionReward(minutes: minutes, stardust: 0, foundEgg: false)
         }
         return FocusSessionReward(minutes: minutes, stardust: reward.starPieces,
-                                  foundEgg: reward.bonusEggs > 0)
+                                  foundEgg: reward.bonusEggs > 0, trainerBonus: reward.trainerBonus)
     }
 
     func beginIncubatingFocusEgg() -> Bool {
@@ -1284,6 +1305,9 @@ final class CompanionStore {
         guard let a = state.active else { return }
         let finalID = a.currentID
         state.collectedFinals.insert("\(a.baseID):\(finalID)")
+        // 졸업은 파트너를 초기화하지만 트레이너 성장은 여기서 이어진다 — 모험을 한 번도 하지 않고
+        // 졸업만 해도 적립된다(집중 경로와 독립).
+        accrueTrainerPoints(TrainerLevel.graduationPoints)
         state.dex.append(DexEntry(baseID: a.baseID, finalID: finalID,
                                   chainOrder: a.pathIDs, rarity: a.rarity, caughtAt: clock(),
                                   isShiny: a.isShiny, nature: a.nature,
