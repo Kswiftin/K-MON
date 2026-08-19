@@ -103,6 +103,48 @@ final class BattleTests: XCTestCase {
                  damageClass: .physical, accuracy: 100, pp: 30, priority: 1)
     }
 
+    /// 필중 물 기술 — 명중 굴림을 소비하지 않으므로 rng 소비가 **급소 → 난수** 두 번뿐이다.
+    /// 아래 골든값을 손으로 계산할 수 있는 이유가 이것이다.
+    private func surf() -> MoveSpec {
+        MoveSpec(id: 57, names: ["en": "Surf"], type: .water, power: 90,
+                 damageClass: .special, accuracy: nil, pp: 15)
+    }
+
+    // MARK: 데미지 파이프라인 — Gen 2 순서
+
+    /// Gen 2 데미지 식의 **순서**를 골든값으로 잠근다. 거북왕(특공 105)의 파도타기(위력 90)가
+    /// 리자몽(특방 105, 불꽃/비행)을 때린다. 양쪽 레벨 50.
+    ///
+    ///     base   = (2·50/5 + 2)·90·105/105/50 = 39
+    ///     비급소 = (39·1 + 2)·3/2·2 = 122      급소 = (39·2 + 2)·3/2·2 = 240
+    ///     최종   = 위 값 · rand / 255          rand ∈ 217…255 (균등 정수)
+    ///
+    /// 값을 정하는 건 두 가지다 — 급소 배율이 ×2 라는 것과, `+2` 가 그 배율 **뒤에** 온다는 것.
+    /// 예전 식은 `+2` 를 먼저 더한 뒤 ×1.5 를 곱하고 난수도 0.85~1.00 Double 이었다(같은 seed 로
+    /// 각각 111 / 114 / 112). 이제 전 구간이 정수 연산이라 두 피어 사이에 Double 오차가 남지 않는다.
+    func testGen2DamageOrderAndCritMultiplier() {
+        let attacker = BattleSide(water()), defender = BattleSide(fire())
+        // (seed, 급소인가, 기대 데미지). seed 12 는 새 임계값(17/256)에서만 급소다 — 예전 `% 16 == 0`
+        // 에서는 급소가 아니었으므로 이 줄 하나가 배율과 임계값을 같이 잠근다.
+        // seed 0 은 rand 하한 217, seed 20 은 상한 255 를 밟는다.
+        let golden: [(seed: UInt64, crit: Bool, damage: Int)] = [(0, false, 103), (12, true, 224), (20, false, 122)]
+        for (seed, expectedCrit, expectedDamage) in golden {
+            var rng = SplitMix64(seed: seed)
+            let outcome = BattleEngine.resolveAttack(attacker: attacker, defender: defender,
+                                                     move: surf(), rng: &rng)
+            XCTAssertEqual(outcome.isCritical, expectedCrit, "seed \(seed): 급소 판정")
+            XCTAssertEqual(outcome.damage, expectedDamage, "seed \(seed): Gen 2 식의 값이어야 한다")
+            XCTAssertEqual(outcome.effectiveness, 2, "seed \(seed): 표시용 상성 배율은 그대로 2 다")
+        }
+    }
+
+    /// 데미지 값이 바뀌면 두 피어의 HP 가 갈린다 — 규칙 버전을 올리지 않으면 구버전 앱과 붙어
+    /// **같은 배틀을 서로 다르게 본다**(challenge/accept 가 거절하지 못한다). 위 골든값과 이 상수는
+    /// 같이 움직여야 한다.
+    func testRulesVersionMovesWithTheDamagePipeline() {
+        XCTAssertEqual(BattleEngine.rulesVersion, 2, "Gen 2 데미지 파이프라인 = 규칙 2")
+    }
+
     // MARK: 턴 순서 — 우선도 → 스피드 → 무작위
 
     /// 본가 규칙: 우선도가 스피드를 이긴다. 거북왕(스피드 78)이 전광석화를 쓰면 리자몽(100)보다 먼저다.
