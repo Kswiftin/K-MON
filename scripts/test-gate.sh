@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# test-gate.sh — 안정성 가드레일. 커밋/머지 전 수동 실행 (1인 로컬, CI 없음).
+# test-gate.sh — 안정성 가드레일. CI(ci.yml·release.yml)와 release.sh 가 이 스크립트를 돌리고,
+# 커밋/머지 전 로컬에서도 같은 게이트를 그대로 실행한다.
 #
 #   1) swift test 전체 통과
-#   2) "로직 코어" 파일 집합의 라인 커버리지 >= THRESHOLD
+#   2) 자체 코드(Sources/·Tests/)에 컴파일러 warning 0건
+#   3) "로직 코어" 파일 집합의 라인 커버리지 >= THRESHOLD
 #
 # 로직 코어 = 결정적으로 단위 테스트 가능한 게임 파일만 포함.
 #
