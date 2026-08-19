@@ -65,6 +65,16 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertTrue(text.contains(L(.ko).moveAlwaysHits), text)
     }
 
+    /// 변화기는 위력이 0 이라 "위력 0" 이 아니라 "—" 로 나와야 한다.
+    /// (커버리지 게이트는 통과했지만 이 분기는 `^0` 이었다 — 라인 커버리지는 증거가 아니다.)
+    func testStatusMoveShowsDashInsteadOfZeroPower() {
+        let status = MoveSpec(id: 45, names: ["ko": "울음소리", "en": "Growl", "ja": "なきごえ"],
+                              type: .normal, power: 0, damageClass: .status, accuracy: 100, pp: 40)
+        let text = L(.ko).moveHoverText(status)
+        XCTAssertTrue(text.contains("—"), "변화기인데 위력 자리가 —가 아니다: \(text)")
+        XCTAssertFalse(text.contains("위력 0"), text)
+    }
+
     /// en/ja 에서는 어떤 분기에서도 한글이 남으면 안 된다(#10 부류).
     func testNoHangulInNonKoreanLanguages() {
         for lang in [AppLanguage.en, .ja] {
@@ -95,6 +105,51 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertNil(MoveListView.hoverState(current: 7, moveID: 7, isInside: false))
     }
 
+    // MARK: 호버 배선 (원래 결함 그 자체)
+
+    /// 근본원인 회귀: `.help()` 는 AppKit 에 마우스 트래킹 영역을 하나도 안 만든다 —
+    /// 그래서 팝오버 안에서 아무리 올려놔도 이벤트가 오지 않았다(프로브: help 0개 / onHover 1개).
+    /// 기술 행마다 트래킹 영역이 실제로 설치되는지 본다. 툴팁만으로 되돌리면 여기서 걸린다.
+    func testMoveRowsInstallHoverTracking() {
+        let moves = (0..<MoveListView.maxRows).map {
+            MoveSpec(id: 300 + $0, names: ["en": "Tackle", "ko": "몸통박치기"], type: .normal,
+                     power: 40, damageClass: .physical, accuracy: 100, pp: 35)
+        }
+        let host = NSHostingController(rootView: MoveListView(store: hoverTestStore(moves),
+                                                              maxWidth: 250))
+        host.view.frame = CGRect(x: 0, y: 0, width: 250, height: 260)
+        host.view.layoutSubtreeIfNeeded()
+        _ = host.view.fittingSize
+        // SwiftUI 는 호버 영역을 호스팅 뷰 하나의 트래킹 영역으로 합쳐 자체 히트테스트한다 —
+        // 그래서 행 수가 아니라 "있느냐 없느냐" 가 판별점이다.
+        XCTAssertGreaterThanOrEqual(trackingAreaCount(host.view), 1,
+                                    "기술 행에 마우스 트래킹이 안 걸려 있다 — 호버가 아예 안 온다")
+
+        // 대조군: 툴팁만 단 뷰는 트래킹 영역이 0개다. 이게 원래 결함의 정체이자
+        // 위 어서션이 통과만 하는 빈 검증이 아니라는 증거다.
+        let helpOnly = NSHostingController(rootView:
+            Text(verbatim: "Tackle").frame(width: 250, height: 30).help("설명"))
+        helpOnly.view.frame = CGRect(x: 0, y: 0, width: 250, height: 30)
+        helpOnly.view.layoutSubtreeIfNeeded()
+        _ = helpOnly.view.fittingSize
+        XCTAssertEqual(trackingAreaCount(helpOnly.view), 0,
+                       ".help() 가 트래킹을 걸어준다면 이 테스트는 아무것도 지키지 않는다")
+    }
+
+    private func trackingAreaCount(_ view: NSView) -> Int {
+        view.trackingAreas.count + view.subviews.reduce(0) { $0 + trackingAreaCount($1) }
+    }
+
+    private func hoverTestStore(_ moves: [MoveSpec]) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-hover-\(UUID().uuidString).json")
+        let store = CompanionStore(provider: StubProvider(value: hoverTestLine),
+                                   clock: { Date(timeIntervalSince1970: 1_700_000_000) },
+                                   fileURL: url, rng: SeededRNG(seed: 3))
+        store.debugSetDisplayedMoves(moves)
+        return store
+    }
+
     // MARK: 레이아웃 (팝오버 흔들림 방지 — #9 부류)
 
     /// 호버 대상이 바뀌어도 슬롯 높이는 그대로다. 길이에 따라 늘어나면 마우스를 옮길 때마다
@@ -116,3 +171,11 @@ final class MoveHoverTests: XCTestCase {
         }
     }
 }
+
+private let hoverTestLine: EvoLine = {
+    var names: [Int: [String: String]] = [:]
+    for id in [1, 2, 3] { names[id] = ["en": "P\(id)", "ko": "포\(id)", "ja": "ポ\(id)"] }
+    return EvoLine(baseID: 1,
+                   tree: EvoNode(speciesID: 1, children: [EvoNode(speciesID: 2, children: [EvoNode(speciesID: 3, children: [])])]),
+                   rarity: .common, names: names)
+}()

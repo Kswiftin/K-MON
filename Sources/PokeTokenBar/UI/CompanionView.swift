@@ -992,6 +992,10 @@ private struct MoveLearningCard: View {
                 }
                 Spacer()
             }
+            // 배울지 말지 고르는 자리다 — 무슨 기술인지 모르고 결정하게 두지 않는다.
+            Text(store.l.moveHoverText(prompt.move))
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if let active = store.state.active, active.learnedMoves.count >= 4 {
                 Text(store.language == .ko ? "잊을 기술을 선택하세요." : "Choose a move to forget.")
                     .font(.caption2).foregroundStyle(.secondary)
