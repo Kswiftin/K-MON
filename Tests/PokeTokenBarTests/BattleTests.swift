@@ -279,4 +279,64 @@ final class BattleTests: XCTestCase {
         XCTAssertTrue(picked.contains { $0.type == .flying })
         XCTAssertEqual(Set(picked.prefix(3).map(\.type)).count, 3, "1차 선발은 타입 중복 없음")
     }
+
+    // MARK: 팀 연습 배틀 — 교체는 그 턴을 쓴다
+
+    /// 교체 상대는 항상 같은 기술을 쓰도록 PP 1짜리 기술 하나만 준다 — CPU 기술 선택이
+    /// `randomElement()` 라 후보가 여럿이면 무엇을 골랐는지에 따라 데미지가 흔들린다.
+    private func practiceBattle(myTeam: [BattleSnapshot], opponent: BattleSnapshot) -> TeamPracticeBattle {
+        TeamPracticeBattle(mine: myTeam.map(TeamBattleSlot.init),
+                           opponents: [TeamBattleSlot(opponent)],
+                           rng: SplitMix64(seed: 5))
+    }
+
+    /// 회귀: 교체가 활성 슬롯만 바꾸고 끝나서 공짜였다. 상성이 나쁘면 계속 갈아타며 유리한 상대만
+    /// 때릴 수 있었고, 상대는 그동안 한 번도 움직이지 못했다. 이제 교체한 턴은 상대만 공격한다.
+    func testSwitchingCostsTheTurnAndLetsTheOpponentAttack() {
+        var battle = practiceBattle(myTeam: [water(), fire()], opponent: fire())
+        let before = battle.mine[1].hp
+
+        XCTAssertTrue(battle.switchMine(to: 1))
+
+        XCTAssertEqual(battle.myActive, 1, "교체는 이뤄진다")
+        XCTAssertEqual(battle.events.count, 1, "그 턴에 오간 공격은 상대 것 하나뿐이다")
+        XCTAssertEqual(battle.events.first?.attackerIsA, false, "내 공격은 없다")
+        XCTAssertLessThan(battle.mine[1].hp, before, "새로 나온 포켓몬이 그 공격을 맞는다")
+        XCTAssertEqual(battle.turn, 2, "턴이 넘어간다")
+    }
+
+    /// 교체 자체는 내 PP 를 쓰지 않는다 — 쓴 건 턴이지 기술이 아니다.
+    func testSwitchingDoesNotSpendMyPP() {
+        var battle = practiceBattle(myTeam: [water(), fire()], opponent: fire())
+        let ppBefore = battle.mine[1].pp
+
+        XCTAssertTrue(battle.switchMine(to: 1))
+
+        XCTAssertEqual(battle.mine[1].pp, ppBefore)
+    }
+
+    /// 교체하며 내보낸 포켓몬이 그 공격에 쓰러지면 다음 포켓몬으로 넘어간다 —
+    /// 남은 게 없으면 그 자리에서 패배가 확정된다(호출부가 이 값으로 화면을 닫는다).
+    func testSwitchingIntoAFatalHitEndsTheBattle() {
+        var frail = fire()
+        frail.base = BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1)
+        var battle = practiceBattle(myTeam: [water(), frail], opponent: fire())
+
+        XCTAssertTrue(battle.switchMine(to: 1))
+
+        XCTAssertFalse(battle.mine[1].isAlive, "맞고 쓰러진다")
+        XCTAssertEqual(battle.myActive, 0, "살아 있는 포켓몬으로 넘어간다")
+        XCTAssertNil(battle.result, "아직 한 마리 남았으므로 배틀은 계속된다")
+    }
+
+    /// 같은 자리로는 교체할 수 없다 — 턴만 버리는 조작이 된다.
+    func testSwitchingToTheActiveSlotIsRejected() {
+        var battle = practiceBattle(myTeam: [water(), fire()], opponent: fire())
+
+        XCTAssertFalse(battle.switchMine(to: 0))
+
+        XCTAssertTrue(battle.events.isEmpty, "거절된 교체는 상대에게 공격 기회를 주지 않는다")
+        XCTAssertEqual(battle.turn, 1)
+    }
 }
+
