@@ -272,7 +272,7 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 
 // MARK: - 상태이상
 
-/// 상태이상 — Gen 2 의 6종 + 혼란. PokéAPI `/move-ailment` 이 주는 20종 중 6개만 가져다 쓴다
+/// 상태이상 — Gen 2 의 6종 + 혼란. PokéAPI `/move-ailment` 이 주는 20종 중 6종만 가져다 쓴다
 /// (맹독은 그 20종에 이름이 없어 기술 id 로 가른다 — `MoveSpec.inflictedStatus`).
 /// 나머지 14종(trap·nightmare·torment·disable·yawn·heal-block·leech-seed 등)은 부여를 무시하고
 /// 로그만 남긴다.
@@ -354,7 +354,7 @@ struct BattleSide: Sendable, Equatable {
     var isAlive: Bool { hp > 0 }
     var isConfused: Bool { confusionTurns > 0 }
 
-    /// 턴 순서에 쓰는 스피드 — 마비면 25%(Gen 2. Gen 7 부터는 50%).
+    /// 턴 순서에 쓰는 스피드 — 마비면 Gen 2 기준 25%(Gen 7 부터 50%).
     /// 순서 계산이 `stats.spe` 를 직접 읽으면 마비가 스탯 화면에만 보이고 실제 선공은 그대로다.
     var effectiveSpeed: Int { status == .paralysis ? max(1, stats.spe / 4) : stats.spe }
 

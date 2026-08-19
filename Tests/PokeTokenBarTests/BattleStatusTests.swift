@@ -85,7 +85,7 @@ final class BattleStatusTests: XCTestCase {
             }
         }
         XCTAssertEqual(Double(blocked) / Double(rounds), 0.25, accuracy: 0.08,
-                       "Gen 2 는 25% (Gen 7 부터 50%) — 0 이나 1 이면 판정이 아예 죽었다")
+                       "Gen 2 는 25%(Gen 7 부터 50%) — 0 이나 1 이면 판정이 아예 죽었다")
     }
 
     // MARK: 잠듦 — 카운터 2~8 → 행동불능 1~7턴, 깬 턴에 바로 행동
@@ -377,7 +377,7 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertEqual(spec.ailmentChancePercent, 10)
     }
 
-    /// 구현한 6개 이름이 **전부** 이어지는지 본다. 하나만 확인하면 나머지 분기가 죽어 있어도
+    /// 구현한 6종이 **전부** 이어지는지 본다. 하나만 확인하면 나머지 분기가 죽어 있어도
     /// 통과한다(실제로 `--show-regions` 에서 paralysis·freeze·confusion 분기가 `^0` 이었다).
     func testEveryImplementedAilmentNameMapsToItsStatus() throws {
         let mapping: [(String, Status)] = [("burn", .burn), ("poison", .poison), ("paralysis", .paralysis),
