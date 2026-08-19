@@ -139,14 +139,32 @@ final class CompanionStore {
         guard let mon = state.active else { return 0 }
         return Double(mon.levelExperience % 10_000_000) / 10_000_000
     }
-    var nextEvolutionLevel: Int? {
+    /// 지금 형태에서 다음으로 갈 노드 — 미리 정한 경로가 있으면 그쪽, 없으면 첫 자식.
+    private var nextEvolutionNode: EvoNode? {
         guard let mon = state.active, let node = currentLine?.tree.node(withID: mon.currentID),
               !node.children.isEmpty else { return nil }
         let nextIndex = mon.stageIndex + 1
-        let next = mon.plannedPathIDs.indices.contains(nextIndex)
+        return mon.plannedPathIDs.indices.contains(nextIndex)
             ? node.children.first(where: { $0.speciesID == mon.plannedPathIDs[nextIndex] })
             : node.children.first
-        return next?.evolutionLevel
+    }
+
+    var nextEvolutionLevel: Int? { nextEvolutionNode?.evolutionLevel }
+
+    /// 다음 진화에 필요한 아이템 — 레벨이 아니라 돌·교환으로 넘어가는 종에만 있다.
+    ///
+    /// 이게 없으면 화면이 아무 말도 하지 않는다. 레벨 진화 종은 "Lv.N 에 진화" 가 뜨는데
+    /// 돌 진화 종은 그 자리가 비어, 오지 않을 진화를 레벨만 올리며 기다리게 된다
+    /// (치라미가 그랬다 — 빛의돌을 쓰기 전엔 레벨을 아무리 올려도 아무 일도 일어나지 않는다).
+    var nextEvolutionItem: ItemKind? {
+        guard let next = nextEvolutionNode else { return nil }
+        switch next.evolutionTrigger {
+        case "use-item":
+            guard let key = next.evolutionItem else { return nil }
+            return ItemKind.allCases.first { $0.evolutionKey == key }
+        case "trade": return .linkingCord
+        default: return nil
+        }
     }
     var boxedMons: [MonState] { state.boxedMons }
     var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }

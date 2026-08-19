@@ -692,6 +692,29 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertTrue(s.canGraduate, "이제 졸업 버튼이 뜬다")
     }
 
+    /// 돌 진화 종은 `nextEvolutionLevel` 이 nil 이라 파트너 카드의 "Lv.N 에 진화" 자리가 비어 있었다 —
+    /// 화면이 아무 말도 안 하니 레벨만 올리며 오지 않을 진화를 기다리게 된다. 이제 필요한 돌을 말한다.
+    func testStoneEvolvingCompanionNamesTheItemItNeeds() async {
+        let s = store(stoneLine)
+        await s.hatch(baseID: 30)
+
+        XCTAssertNil(s.nextEvolutionLevel, "레벨로는 진화하지 않는 종이라 이 자리가 비어 있었다")
+        XCTAssertEqual(s.nextEvolutionItem, .fireStone)
+        // 언어는 신규 설치 기본값이 `.systemDefault` 라 CI 로케일에 딸려간다 — `store.l` 로 재면
+        // 로컬(한국어)만 통과하고 CI(영어)에서 깨진다. 문구는 언어를 고정해 잰다.
+        XCTAssertEqual(L(.ko).evolutionNeedsItem(L(.ko).itemName(.fireStone)), "불꽃의돌 필요")
+        XCTAssertEqual(L(.en).evolutionNeedsItem(L(.en).itemName(.fireStone)), "Needs Fire Stone")
+    }
+
+    /// 대조군: 레벨 진화 종에는 아이템 안내가 붙지 않는다 — 두 안내가 같이 뜨면 어느 쪽을 따라야
+    /// 하는지 알 수 없다. 이게 없으면 "항상 첫 자식의 아이템을 보여준다" 로 잘못 짜도 위 테스트는 통과한다.
+    func testLevelEvolvingCompanionNeedsNoItem() async {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+
+        XCTAssertNil(s.nextEvolutionItem, "레벨로 진화하는 종이다")
+    }
+
     /// 트리거 재현: 500 짜리 돌 하나면 레벨 1 개체가 최종형이 된다(`useEvolutionItem` 은 레벨을
     /// 보지 않는다). 예전엔 그 상태로 졸업돼 20,000 짜리 알과 도감·트레이너 포인트·주간 미션을
     /// 한 번에 받아냈고, 개체는 박스에 버리면 그만이었다 — 이 앱의 육성 루프를 통째로 건너뛰는 값이다.
