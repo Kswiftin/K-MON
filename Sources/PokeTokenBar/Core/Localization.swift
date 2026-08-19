@@ -654,6 +654,9 @@ struct L {
         case .iceStone: return t("얼음의돌", "Ice Stone", "こおりのいし")
         case .moonStone: return t("달의돌", "Moon Stone", "つきのいし")
         case .sunStone: return t("태양의돌", "Sun Stone", "たいようのいし")
+        case .shinyStone: return t("빛의돌", "Shiny Stone", "ひかりのいし")
+        case .duskStone: return t("어둠의돌", "Dusk Stone", "やみのいし")
+        case .dawnStone: return t("각성의돌", "Dawn Stone", "めざめいし")
         }
     }
     func itemDescription(_ kind: ItemKind) -> String {
@@ -673,7 +676,8 @@ struct L {
                      "持っていると色違いが生まれる確率が上がります。")
         case .linkingCord:
             return t("통신교환으로 진화하는 포켓몬을 진화시켜요.", "Evolves a Pokémon that normally evolves by trade.", "通信交換で進化するポケモンを進化させます。")
-        case .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone:
+        case .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone,
+             .shinyStone, .duskStone, .dawnStone:
             return t("이 돌에 반응하는 포켓몬을 진화시켜요.", "Evolves a Pokémon that reacts to this stone.", "この石に反応するポケモンを進化させます。")
         }
     }

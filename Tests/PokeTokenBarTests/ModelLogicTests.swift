@@ -226,3 +226,40 @@ final class FriendshipEvolutionTests: XCTestCase {
         }
     }
 }
+
+// MARK: 진화 아이템 커버리지
+
+/// 앱이 파는 진화 아이템이 PokéAPI 의 `use-item` 진화를 덮지 못하면 그 종은 **진화할 방법이 없다**.
+/// 빛의돌·어둠의돌·각성의돌이 빠져 있어 로즈레이드 등 8종이 그 상태였다(레벨을 올려도 아무 안내 없음).
+final class EvolutionItemCoverageTests: XCTestCase {
+    /// 앱 지원 범위(1~649)의 use-item 진화가 요구하는 아이템 키 전체.
+    /// 지역폼 전용(가라르 등, 앱 범위 밖)은 제외한 실측값이다.
+    private let requiredKeys: Set<String> = [
+        "fire-stone", "water-stone", "thunder-stone", "leaf-stone",
+        "moon-stone", "sun-stone", "shiny-stone", "dusk-stone", "dawn-stone",
+    ]
+
+    func testEveryRequiredEvolutionItemIsSold() {
+        let sold = Set(ItemKind.allCases.compactMap(\.evolutionKey))
+        let missing = requiredKeys.subtracting(sold)
+        XCTAssertTrue(missing.isEmpty, "이 아이템이 없으면 해당 진화는 도달 불가: \(missing.sorted())")
+    }
+
+    /// 진화 아이템은 evolutionKey 가 PokéAPI 의 item.name 과 정확히 같아야 매칭된다 —
+    /// 오타 하나면 그 돌은 아무 포켓몬도 진화시키지 못하고 조용히 재화만 소모한다.
+    func testEvolutionKeysUseApiItemNaming() {
+        for kind in ItemKind.allCases {
+            guard let key = kind.evolutionKey, key != "trade" else { continue }
+            XCTAssertEqual(key, key.lowercased(), "\(kind) 키는 소문자여야 한다: \(key)")
+            XCTAssertTrue(key.hasSuffix("-stone"), "\(kind) 키가 API 명명과 다르다: \(key)")
+        }
+    }
+
+    /// 새 아이템도 상점에 값이 있어야 산다 — nil 이면 목록에 안 뜬다.
+    func testNewStonesArePurchasable() {
+        for kind in [ItemKind.shinyStone, .duskStone, .dawnStone] {
+            XCTAssertEqual(kind.shopPrice, 500, "\(kind) 가격이 기존 돌과 달라졌다")
+            XCTAssertFalse(kind.isPassive)
+        }
+    }
+}
