@@ -295,6 +295,47 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(quickAttack().turnPriority, 1)
     }
 
+    // MARK: 이벤트 스트림 (Showdown 어휘)
+
+    /// 스트림의 첫 줄은 턴 번호다 — 로그가 턴 구분선을 끼울 수 있어야 한다.
+    func testResolveTurnEmitsTheTurnNumberFirst() {
+        var rng = SplitMix64(seed: 1)
+        var a = BattleSide(water()), b = BattleSide(fire())
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: surf(), moveB: flamethrower(),
+                                              turn: 7, rng: &rng)
+        XCTAssertEqual(events.first, .turn(7))
+    }
+
+    /// 쓰러졌다는 사실을 스트림이 **말한다**. 예전엔 이벤트에 그런 case 가 없어서 뷰가 HP 0 을
+    /// 보고 추론했다 — 기절 연출(Phase 7)도 그 추론 위에 얹을 수밖에 없었다.
+    func testResolveTurnAnnouncesTheFaint() {
+        let strong = BattleSnapshot(speciesID: 143, name: "잠만보", trainer: nil, level: 50, nature: nil,
+                                    isShiny: false, types: [.normal],
+                                    base: BattleStats(hp: 160, atk: 110, def: 65, spa: 65, spd: 110, spe: 30))
+        let frail = BattleSnapshot(speciesID: 92, name: "유령", trainer: nil, level: 5, nature: nil,
+                                   isShiny: false, types: [.ghost],
+                                   base: BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1))
+        var rng = SplitMix64(seed: 3)
+        var a = BattleSide(strong), b = BattleSide(frail)
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: .struggle(), moveB: .struggle(),
+                                              turn: 1, rng: &rng)
+        XCTAssertTrue(events.contains(.faint(.b)), "기절이 스트림에 있어야 한다")
+        XCTAssertFalse(events.contains(.faint(.a)), "쓰러지지 않은 쪽에는 없어야 한다")
+    }
+
+    /// 급소·상성은 데미지와 **따로** 실린다. 한 구조체에 플래그로 묶여 있던 값들이라,
+    /// 분리되지 않으면 상태이상(Phase 2)이 들어올 자리가 없다.
+    func testCritAndEffectivenessAreSeparateEvents() {
+        // seed 12 는 급소가 나는 시드다(위 골든 테이블과 같은 자리).
+        var rng = SplitMix64(seed: 12)
+        var a = BattleSide(water()), b = BattleSide(fire())
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: surf(), moveB: flamethrower(),
+                                              turn: 1, rng: &rng)
+        XCTAssertTrue(events.contains(.crit(.b)))
+        XCTAssertTrue(events.contains(.superEffective(.b)), "물 → 불꽃/비행 = ×2")
+        XCTAssertTrue(events.contains { if case .damage(.b, _) = $0 { return true } else { return false } })
+    }
+
     func testResolveTurnDeterministic() {
         var rng1 = SplitMix64(seed: 99), rng2 = SplitMix64(seed: 99)
         var a1 = BattleSide(water()), b1 = BattleSide(fire())
