@@ -991,6 +991,13 @@ final class CompanionStore {
         currentTypes = profile.types
     }
 
+    /// 설명을 다시 받아야 하는가 — 비었거나, 예전 파서가 저장한 "사용할 수 없는 기술입니다"
+    /// 안내문이면 다시 받는다. nil 일 때만 받으면 이미 세이브에 박힌 안내문이 영영 안 고쳐진다.
+    static func needsDescriptionRefresh(_ move: MoveSpec) -> Bool {
+        guard let descriptions = move.descriptions, !descriptions.isEmpty else { return true }
+        return descriptions.values.contains(where: PokeAPIClient.isUnusableMoveNotice)
+    }
+
     func loadDisplayedMoves() async {
         guard let active = state.active, let speciesID = currentSpeciesID else {
             displayedMoves = []; return
@@ -1001,7 +1008,7 @@ final class CompanionStore {
             isLoadingDisplayedMoves = true
             defer { isLoadingDisplayedMoves = false }
             var enriched = refreshed.learnedMoves
-            for index in enriched.indices where enriched[index].descriptions == nil {
+            for index in enriched.indices where Self.needsDescriptionRefresh(enriched[index]) {
                 if let detail = await PokeAPIClient.shared.moveDetail(id: enriched[index].id) {
                     enriched[index] = detail
                 }

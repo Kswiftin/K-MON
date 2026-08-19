@@ -776,11 +776,12 @@ struct MoveListView: View {
     /// 마우스가 올라간 기술. 슬롯 문구는 여기서만 파생된다.
     @State private var hoveredMoveID: Int?
 
-    /// 호버 상태 전이 — 행 A → B 로 옮기면 B 진입이 먼저 오고 A 이탈이 뒤늦게 온다.
-    /// 이탈에서 무조건 nil 로 지우면 방금 고른 B 가 지워져 슬롯이 깜빡인다.
+    /// 호버 상태 전이 — 들어온 행으로 바꾸고, 이탈에서는 지우지 않는다.
+    /// 60초 방치 틱이 팝오버를 다시 그리면 AppKit 이 트래킹 영역을 재설치하는데, 커서가 안 움직였으면
+    /// `mouseExited` 만 오고 재진입은 안 온다 — 이탈에서 지우면 마우스를 올려둔 채로 설명이 사라진다.
+    /// 행 A→B 이동 때 A 이탈이 B 진입보다 늦게 오는 순서 뒤집힘도 같이 막힌다.
     static func hoverState(current: Int?, moveID: Int, isInside: Bool) -> Int? {
-        if isInside { return moveID }
-        return current == moveID ? nil : current
+        isInside ? moveID : current
     }
 
     private var hoveredMove: MoveSpec? {

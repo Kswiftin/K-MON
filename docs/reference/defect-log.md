@@ -13,6 +13,17 @@ read_when:
 남은 규칙들이다. 각 항목은 실제로 겪은 회귀에 묶여 있다.
 
 ## 판정·데이터
+- **다국어 목록에서 "마지막 = 최신" 은 맞아도 "최신 = 쓸 수 있는 값" 은 아니다.** PokéAPI
+  `flavor_text_entries` 는 버전그룹 오름차순이라 루프로 덮어쓰면 최신만 남는데, 소드·실드에서 *삭제된*
+  기술은 그 최신 항목이 설명이 아니라 "사용할 수 없는 기술입니다" 안내문이다(실측 `move/return`:
+  ultra-sun 까지는 진짜 설명, sword-shield 부터 안내문). 그래서 멀쩡히 습득한 기술의 설명 자리에
+  안내문이 떴다. 최신부터 훑되 **안내문 항목은 건너뛴다**(`PokeAPIClient.flavorTexts`).
+  판정은 **접두사로** 한다 — "사용할 수 없" 부분일치로 보면 금지어("4턴 동안 사용할 수 없게 만든다")
+  같은 진짜 설명까지 지운다(거짓양성 가드 `testRealDescriptionsMentioningUnusableAreNotDropped`).
+  정규화 없이 비교하면 안 잡힌다: PokéAPI 는 굽은 따옴표(`’`)와 전각 공백(U+3000)을 쓴다.
+- **파서를 고쳤으면 이미 세이브에 박힌 값도 다시 받아야 한다.** 보강 조건이 `descriptions == nil` 이면
+  잘못된 값이 *들어 있는* 개체는 영영 안 고쳐진다 — 사용자에겐 "고쳤다는데 그대로" 로 보인다.
+  조건을 "없거나 오염됐으면"(`CompanionStore.needsDescriptionRefresh`)으로 넓힌다.
 
 - **옵셔널 tautology.** 옵셔널 필드라도 *생산자가 항상 채우면* `x != nil` 은 항상 참이다. "값이 있나"는
   의미값으로 검사한다(예: `totalTokens > 0`, 또는 진짜 nil 가능한 필드 `activeBlock`). — weekTotal 회귀(#56).
@@ -185,6 +196,11 @@ read_when:
   `chooseBase()` 를 안 지나 통과하면서 아무것도 지키지 않았다(`testImportDuringSpeciesRollDiscardsTheHatch`).
 
 ## 표시·UI
+- **호버 상태를 `mouseExited` 로 지우지 마라 — 주기 갱신이 있는 화면에서는 커서가 그대로여도 온다.**
+  60초 방치 틱이 팝오버를 다시 그리면 AppKit 이 트래킹 영역을 재설치하는데, 그때 이탈 이벤트만 오고
+  **재진입은 안 온다**(커서가 안 움직였으므로). 이탈에서 상태를 비우면 마우스를 올려둔 채 설명이
+  사라진다. 들어온 값으로 *바꾸기만* 하고 이탈은 무시한다 — 행 A→B 이동 시 A 이탈이 B 진입보다 늦게
+  오는 순서 뒤집힘도 같은 규칙으로 막힌다(`MoveListView.hoverState`).
 - **`.help()` 툴팁은 유일한 표시 경로가 될 수 없다 — NSPopover 안에서는 아무것도 안 뜬다.** SwiftUI 의
   `.help()` 는 `NSView.toolTip` 도 툴팁 rect 도 남기지 않고, **마우스 트래킹 영역을 0개** 만든다(프로브:
   `.help()` 0개 / `.onHover` 1개). 그래서 팝오버 안에서 기술 행에 마우스를 올려도 설명이 영영 안 나왔다.
