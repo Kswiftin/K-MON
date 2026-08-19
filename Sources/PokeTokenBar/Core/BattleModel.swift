@@ -389,7 +389,7 @@ enum BattleEngine {
 // MARK: - 이벤트 스트림
 
 /// 이벤트가 가리키는 쪽. 1v1 LAN·연습 배틀은 좌우 두 자리뿐이고(엔진 좌변이 항상 challenger),
-/// 2~4인 방은 참가자가 여럿이라 UUID 로 가린다.
+/// 2~4인 방은 참가자가 여럿이라 UUID 로 가른다.
 enum BattleActor: Codable, Sendable, Equatable, Hashable {
     case a, b
     case fighter(UUID)

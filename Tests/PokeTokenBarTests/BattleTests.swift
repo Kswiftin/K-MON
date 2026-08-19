@@ -173,7 +173,7 @@ final class BattleTests: XCTestCase {
         highCrit.critRate = 1                       // PokéAPI `meta.crit_rate` — 베어가르기 부류
         let plain = critCount(surf()), boosted = critCount(highCrit)
 
-        // 512 회 중 기대값은 34(17/256) 와 128(1/4) 이다. seed 를 고정한 순회라 값이 실행마다 같다.
+        // 512회 중 기대값은 34(17/256) 와 128(1/4) 이다. seed 를 고정한 순회라 값이 실행마다 같다.
         XCTAssertGreaterThan(plain, 0, "기본 확률도 관측돼야 한다 — 0 이면 판정 자체가 죽었다")
         XCTAssertGreaterThan(boosted, plain * 2, "고급소기가 두 배도 안 되면 단계가 연결되지 않았다")
         XCTAssertEqual(Double(boosted) / 512, 0.25, accuracy: 0.05,
@@ -592,7 +592,7 @@ final class BattleTests: XCTestCase {
 
 /// 스트림에서 "누가 무엇을 썼다" 만 골라낸다 — 선공 판정 테스트가 보는 건 그 순서다.
 /// 예전엔 이벤트가 공격 1건과 1:1 이라 `events.first` 로 됐지만, 이제 한 공격이 이벤트 여럿을
-/// 남기고 턴 구분선도 낀다. (`AdventureTests` 의 멀티 라운드 테스트도 같이 쓴다.)
+/// 남기고 턴 구분선도 들어간다. (`AdventureTests` 의 멀티 라운드 테스트도 같이 쓴다.)
 extension Array where Element == BattleEvent {
     var moveActors: [BattleActor] {
         compactMap { if case .move(let actor, _) = $0 { return actor } else { return nil } }

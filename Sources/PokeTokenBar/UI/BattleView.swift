@@ -625,7 +625,7 @@ struct BattleView: View {
         return logBox(lines, mine: mine)
     }
 
-    /// 멀티(2~4인)의 스트림은 참가자 UUID 로 쪽을 가린다 — 이름·기술명만 그 방의 파이터에서 찾아 준다.
+    /// 멀티(2~4인)의 스트림은 참가자 UUID 로 쪽을 가른다 — 이름·기술명만 그 방의 파이터에서 찾아 준다.
     private func multiplayerLogLines(_ events: [BattleEvent],
                                      fighters: [MultiplayerFighter]) -> [BattleLog.Line] {
         func fighter(_ actor: BattleActor) -> MultiplayerFighter? {
