@@ -13,8 +13,11 @@ enum BattleFieldMetrics {
     static let windowHeight: CGFloat = 460
     static let padding: CGFloat = 12
     static let spacing: CGFloat = 8
-    /// 필드 높이 — 상대(우상단)와 나(좌하단)가 겹치지 않을 만큼.
-    static let fieldHeight: CGFloat = 196
+    /// 필드 높이 — 상대(우상단)와 나(좌하단)가 겹치지 않을 만큼. 창 높이에서 남는 자리는 전부
+    /// 여기로 준다. 처음엔 196 이었는데 그러면 아래 칸까지 합쳐도 창보다 50pt 남아, 호스팅 뷰가
+    /// 콘텐츠를 세로 중앙에 놓으면서 필드 위에 죽은 띠가 생겼다(실행 화면 확인에서 잡혔다 —
+    /// 예산 검증은 "자리를 얼마나 차지하는가" 만 보므로 이걸 잡지 못한다).
+    static let fieldHeight: CGFloat = 236
     /// 선택 패널과 로그가 나눠 쓰는 아래 칸 높이. **고정이다**(위 주석).
     static let panelHeight: CGFloat = 156
     static let logWidth: CGFloat = 202
@@ -360,8 +363,9 @@ struct MoveGridView: View {
                     Text(move.name(language)).font(.caption2.bold()).lineLimit(1)
                 }
                 HStack(spacing: 5) {
+                    // 변화기는 위력이, 필중기는 명중이 "없다" — 0 이나 ∞ 로 쓰면 있는 값처럼 읽힌다.
                     Text(move.damageClass == .status ? "—" : "\(move.power)")
-                    Text(move.accuracy.map { "\($0)%" } ?? "∞")
+                    Text(move.accuracy.map { "\($0)%" } ?? "—")
                     Spacer(minLength: 2)
                     if let remaining {
                         Text("\(remaining)/\(move.pp)")
@@ -554,7 +558,10 @@ struct BattleWindowView: View {
                 Color.clear   // 창이 닫히는 한 프레임 사이
             }
         }
-        .frame(width: BattleFieldMetrics.windowWidth, height: BattleFieldMetrics.windowHeight)
+        // 남는 세로 자리는 아래로 몰아 둔다 — 가운데 정렬이면 슬랙이 필드 위·아래로 반씩 갈려
+        // 헤더 위에 죽은 띠가 생긴다.
+        .frame(width: BattleFieldMetrics.windowWidth, height: BattleFieldMetrics.windowHeight,
+               alignment: .top)
         .environment(\.locale, store.language.displayLocale)
     }
 

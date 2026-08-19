@@ -319,6 +319,37 @@ final class BattleFieldTests: XCTestCase {
                              "팝오버 폭에 들어간다면 전용 창을 만든 이유가 없다")
     }
 
+    /// 예산 검증은 **자리를 얼마나 차지하는가**만 본다 — 아무것도 그리지 않는 뷰도 전부 통과한다.
+    /// 그래서 한 번은 실제로 래스터화해 색이 여러 개 나오는지 본다(defect-log: UI 결함은 컴파일과
+    /// 단위 테스트를 통과한다).
+    ///
+    /// `KMON_SNAPSHOT_DIR` 이 있으면 그 폴더에 PNG 로도 떨어뜨린다 — 사람이 눈으로 확인할 때 쓴다.
+    /// CI 는 그 변수를 두지 않으므로 파일을 만들지 않는다.
+    func testTheArenaActuallyRastersSomethingRatherThanABlankBox() throws {
+        let controller = NSHostingController(rootView: arena())
+        let bounds = CGRect(x: 0, y: 0,
+                            width: BattleFieldMetrics.windowWidth, height: BattleFieldMetrics.windowHeight)
+        controller.view.frame = bounds
+        controller.view.layoutSubtreeIfNeeded()
+        let rep = try XCTUnwrap(controller.view.bitmapImageRepForCachingDisplay(in: bounds))
+        controller.view.cacheDisplay(in: bounds, to: rep)
+
+        var seen = Set<String>()
+        for x in stride(from: 4, to: Int(bounds.width) - 4, by: 12) {
+            for y in stride(from: 4, to: Int(bounds.height) - 4, by: 12) {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                seen.insert(String(format: "%.2f-%.2f-%.2f",
+                                   color.redComponent, color.greenComponent, color.blueComponent))
+            }
+        }
+        XCTAssertGreaterThan(seen.count, 8, "배틀 화면이 사실상 단색이다 — 자리는 잡았는데 그린 게 없다")
+
+        if let dir = ProcessInfo.processInfo.environment["KMON_SNAPSHOT_DIR"],
+           let png = rep.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("battle-arena.png"))
+        }
+    }
+
     /// defect-log 규칙: 배틀 화면에 세로 스크롤 컨테이너를 두면 안쪽이 스크롤되지 않고 잘린다.
     /// 기억이 아니라 기계로 막는다 — 배틀 뷰 파일에 그 컨테이너가 다시 들어오면 여기서 실패한다.
     ///
