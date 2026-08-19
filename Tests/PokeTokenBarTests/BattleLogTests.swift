@@ -53,7 +53,7 @@ final class BattleLogTests: XCTestCase {
                        ["거북왕의 파도타기! 효과가 없었다…"])
     }
 
-    /// 기술 없이 들어온 피해는 **"기술을 썼다" 문구로 나오지 않는다.** Phase 2 의 화상·독 잔뎀이
+    /// 기술 없이 들어온 데미지는 **"기술을 썼다" 문구로 나오지 않는다.** Phase 2 의 화상·독 잔뎀이
     /// 이 모양으로 오는데, 현재 구조(플래그 뭉치 하나)에서 가장 흔한 오구현이 여기다.
     func testDamageWithoutAMoveIsNotRenderedAsAMove() {
         let out = lines([.damage(.a, amount: 12)])
@@ -85,7 +85,7 @@ final class BattleLogTests: XCTestCase {
                        ["거북왕의 파도타기! · 급소에 맞았다!"])
     }
 
-    /// 피해 없이 주석만 온 스트림(정상 경로에는 없다)도 문구를 만들어 낸다. 쓰지 않은 기술이나
+    /// 데미지 없이 주석만 온 스트림(정상 경로에는 없다)도 문구를 만들어 낸다. 쓰지 않은 기술이나
     /// 0 이라는 숫자를 지어내지만 않으면 된다.
     func testNotesWithoutAnActionRenderOnTheirOwn() {
         XCTAssertEqual(lines([.crit(.a)]), ["급소에 맞았다!"])

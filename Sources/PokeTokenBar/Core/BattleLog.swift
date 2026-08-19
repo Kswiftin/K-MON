@@ -27,7 +27,7 @@ enum BattleLog {
             pending = nil
             out.append(Line(actor: action.actor, text: action.text(l: l, name: name, moveName: moveName)))
         }
-        /// 행동 없이 들어온 이벤트(기술 없는 피해 등)도 주인은 있어야 한다.
+        /// 행동 없이 들어온 이벤트(기술 없는 데미지 등)도 주인은 있어야 한다.
         func begin(_ actor: BattleActor) {
             if pending == nil { pending = Action(actor: actor) }
         }
@@ -74,7 +74,7 @@ enum BattleLog {
         func text(l: L, name: (BattleActor) -> String, moveName: (BattleActor, Int) -> String) -> String {
             let who = name(actor)
             guard let moveID else {
-                // 기술 없이 들어온 피해 — Phase 2 의 화상·독 잔뎀이 이 모양으로 온다.
+                // 기술 없이 들어온 데미지 — Phase 2 의 화상·독 잔뎀이 이 모양으로 온다.
                 // 여기서 "기술을 썼다" 문구를 쓰면 쓰지 않은 기술 이름이 로그에 뜬다.
                 guard let damage else { return notes.joined(separator: " · ") }
                 return ([l.battleTookDamage(who, damage: damage)] + notes).joined(separator: " · ")
