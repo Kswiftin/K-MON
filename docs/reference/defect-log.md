@@ -438,11 +438,11 @@ read_when:
   (`AdventureTests.testResolveRoundRejectsFighterWhosePPArrayIsTooShort`).
 - 회귀 테스트는 **부분 적용을 관측**해야 한다. "throw 했다"만 보면 이 부류를 못 잡는다.
   `testResolveRoundRejectsSpentMoveBeforeAnyDamage` 는 throw 뒤의 HP·PP·이벤트가 그대로인지 본다.
-  (위법 액션을 **느린 쪽**에 둬야 앞선 공격이 먼저 적용된다 — 순서가 트리거의 일부다.)
+  (규칙 위반 액션을 **느린 쪽**에 둬야 앞선 공격이 먼저 적용된다 — 순서가 트리거의 일부다.)
 
 ## 테스트가 시스템 RNG 를 밟고 있는 부류
 
-- **엔진에 씨드 RNG 가 있어도 한 군데라도 `randomElement()`/`Bool.random()` 이 남아 있으면
+- **엔진에 시드 RNG 가 있어도 한 군데라도 `randomElement()`/`Bool.random()` 이 남아 있으면
   그 경로는 재현되지 않는다.** 연습 배틀의 CPU 기술 선택이 그랬다. 로컬 전용이라 desync 는 없지만,
   **seed 를 고정한 회귀 테스트를 쓸 수 없다** — 상태이상·랭크업처럼 확률 분기가 늘어나는 기전은
   그 테스트 없이는 검증할 방법이 없다. 결정적 엔진을 만들었으면 그 위의 *선택* 도 같은 rng 에서 뽑는다.

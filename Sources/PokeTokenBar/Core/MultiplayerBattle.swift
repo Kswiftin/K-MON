@@ -312,7 +312,7 @@ struct MultiplayerBattle: Sendable {
         for action in ordered {
             guard let ai = fighters.firstIndex(where: { $0.id == action.attackerID }), fighters[ai].isAlive,
                   let ti = fighters.firstIndex(where: { $0.id == action.targetID }), fighters[ti].isAlive else { continue }
-            // 인덱스·PP 는 위 사전 검증에서 통과한 값이다.
+            // 인덱스·PP 는 위 사전 검증을 통과한 값이다.
             let move = fighters[ai].side.move(at: action.moveIndex)
             if action.moveIndex >= 0 { fighters[ai].side.pp[action.moveIndex] -= 1 }
             let event = resolveAttack(attacker: fighters[ai], target: fighters[ti], move: move)

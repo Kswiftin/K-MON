@@ -261,7 +261,7 @@ final class AdventureTests: XCTestCase {
     /// 상대가 보내오는 액션은 신뢰 경계 밖이라 이 조건은 원격에서 만들 수 있다.
     func testResolveRoundRejectsSpentMoveBeforeAnyDamage() throws {
         let fastID = UUID(), slowID = UUID()
-        // 빠른 쪽이 먼저 때리고, 느린 쪽의 위법 액션은 그 뒤에 걸린다(부분 적용이 드러나는 순서).
+        // 빠른 쪽이 먼저 때리고, 느린 쪽의 규칙 위반 액션은 그 뒤에 걸린다(부분 적용이 드러나는 순서).
         let fast = soloMoveFighter(fastID, speed: 200)
         var slow = soloMoveFighter(slowID, speed: 10)
         slow.side.pp[0] = 0

@@ -219,9 +219,9 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 
 }
 
-// MARK: - 배틀 중 한 쪽의 상태
+// MARK: - 배틀 중 한쪽의 상태
 
-/// 대전 중 한 쪽이 들고 있는 것 전부 — 스냅샷은 *교환 단위*고, 이쪽은 **턴을 넘어 사는 상태**다.
+/// 대전 중 한쪽이 들고 있는 것 전부 — 스냅샷은 *교환 단위*고, 이쪽은 **턴을 넘어 사는 상태**다.
 ///
 /// 세 모드(1v1 LAN `NetBattleState`, 팀 연습 `TeamPracticeBattle`, 2~4인 `MultiplayerFighter`)가
 /// 각자 `hp`/`pp` 를 나열하고 있었다. 데미지 *함수* 는 `resolveAttack` 하나로 합쳐졌는데 상태는
@@ -257,7 +257,7 @@ struct BattleSide: Sendable, Equatable {
         moves.indices.contains(index) ? moves[index] : .struggle()
     }
 
-    /// 이번 턴 이 인덱스의 기술을 쓸 수 있는가 — 인덱스 범위와 남은 PP 를 **같이** 본다.
+    /// 이번 턴에 이 인덱스의 기술을 쓸 수 있는가 — 인덱스 범위와 남은 PP 를 **같이** 본다.
     /// `pp` 는 와이어로 들어오는 값이라 `moves` 와 길이가 어긋날 수 있다(경계에서 함께 막는다).
     func canUse(moveAt index: Int) -> Bool {
         moves.indices.contains(index) && pp.indices.contains(index) && pp[index] > 0

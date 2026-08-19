@@ -269,7 +269,7 @@ final class BattleTests: XCTestCase {
 
     // MARK: 팀 연습 배틀 — 교체는 그 턴을 쓴다
 
-    /// CPU 기술 선택은 이제 씨드 rng 에서 뽑는다. 무브셋이 여러 개여도 seed 를 고정하면 같은
+    /// CPU 기술 선택은 이제 시드 rng 에서 뽑는다. 무브셋이 여러 개여도 seed 를 고정하면 같은
     /// 선택이 나오므로, 아래 교체 테스트는 데미지 값에 의존하지 않는다.
     private func practiceBattle(myTeam: [BattleSnapshot], opponent: BattleSnapshot) -> TeamPracticeBattle {
         TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
@@ -381,7 +381,7 @@ final class BattleTests: XCTestCase {
             var battle = TeamPracticeBattle(mine: [BattleSide(tank())],
                                             opponents: [BattleSide(cpuWithFourMoves())],
                                             rng: SplitMix64(seed: 2_024))
-            for turn in 0..<6 { XCTAssertTrue(battle.useMove(0), "turn \(turn) 이 진행돼야 한다") }
+            for turn in 0..<6 { XCTAssertTrue(battle.useMove(0), "\(turn + 1)번째 턴이 진행돼야 한다") }
             return battle.events.map { $0.moveID }
         }
         let runs = Set((0..<10).map { _ in run() })
