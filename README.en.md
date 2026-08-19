@@ -25,9 +25,10 @@ K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own
 3. 🐣 **Hatch, evolve, name.** Eggs and starters hatch into Pokémon with real evolution lines from [PokéAPI](https://pokeapi.co/). Every hatch rolls one of 25 natures, and once in a rare while — **✨ Shiny**. Give any Pokémon a **nickname** with the ✏️ button.
 4. 🎓 **Graduate & collect.** Final form + threshold permanently archives it in your **Pokédex**, and a fresh egg arrives. From then on, eggs hatch a variety of Pokémon (weighted by capture rate — legendaries are rare).
 5. 🍬 **Daily treat.** Every day you open the app, you get a **Rare Candy** — spend it from the **Bag** to instantly grow your current Pokémon.
-6. 🛒 **Spend at the Shop.** Your Stardust is spendable currency — buy **Rare Candy**, a **Mint** to re-roll nature, a **Shiny Charm** for permanently better shiny odds, or an egg to send off your current companion and start over.
-7. 💗 **Care when it calls.** Build affection and growth through favorite treats and petting, then manage messes, hygiene, illness, training, and sleep as its needs change.
-8. ⏱️ **Grow only through focus adventures.** Stardust comes exclusively from completed 25, 50, or 90-minute sessions. Longer focus pays more per minute and improves the Mystery Egg chance. Work mode uses a neutral timer and hides the floating pet.
+6. 🎯 **Chase daily & weekly missions.** The home tab tracks claimed adventures, focused minutes, and graduations. Hit a target and the **✨ Stardust** reward lands right then — no claim button. Daily goals reset with the date, weekly ones with the week.
+7. 🛒 **Spend at the Shop.** Your Stardust is spendable currency — buy **Rare Candy**, a **Mint** to re-roll nature, a **Shiny Charm** for permanently better shiny odds, or an egg to send off your current companion and start over.
+8. 💗 **Care when it calls.** Build affection and growth through favorite treats and petting, then manage messes, hygiene, illness, training, and sleep as its needs change.
+9. ⏱️ **Grow only through focus adventures.** Stardust comes exclusively from completed 25, 50, or 90-minute sessions. Longer focus pays more per minute and improves the Mystery Egg chance. Work mode uses a neutral timer and hides the floating pet.
 
 ## ⚔️ Battle a friend over LAN
 
