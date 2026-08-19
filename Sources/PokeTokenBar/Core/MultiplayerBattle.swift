@@ -102,20 +102,44 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
     let id: UUID
     var trainerName: String
     var team: BattleTeam
-    var snapshot: BattleSnapshot
-    var hp: Int
-    var pp: [Int]
+    /// 배틀 상태 — 세 모드가 공유하는 `BattleSide` 하나. 새 기전은 여기 한 번만 얹는다.
+    var side: BattleSide
 
     init(participant: LobbyParticipant, snapshot: BattleSnapshot) {
         id = participant.id
         trainerName = participant.trainerName
         team = participant.team
-        self.snapshot = snapshot
-        hp = snapshot.effectiveStats().hp
-        pp = (snapshot.moves ?? MoveSpec.fallbackSet(types: snapshot.types)).map(\.pp)
+        side = BattleSide(snapshot)
     }
 
-    var isAlive: Bool { hp > 0 }
+    var isAlive: Bool { side.isAlive }
+
+    // 와이어 계약(`protocolVersion` 2)은 `snapshot`/`hp`/`pp` 를 **평면으로** 보낸다. 상태를
+    // `side` 로 모은 건 내부 구조 변경일 뿐이므로 JSON 모양은 그대로 두고 구버전과 계속 붙게 한다.
+    // (기전이 하나도 안 바뀐 리팩터로 프로토콜 버전을 올리면 구버전은 이유 없이 못 들어온다.)
+    // `stats`·`moves` 는 스냅샷에서 파생되므로 보내지 않고 받는 쪽이 다시 만든다.
+    private enum CodingKeys: String, CodingKey { case id, trainerName, team, snapshot, hp, pp }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        trainerName = try container.decode(String.self, forKey: .trainerName)
+        team = try container.decode(BattleTeam.self, forKey: .team)
+        var decoded = BattleSide(try container.decode(BattleSnapshot.self, forKey: .snapshot))
+        decoded.hp = try container.decode(Int.self, forKey: .hp)
+        decoded.pp = try container.decode([Int].self, forKey: .pp)
+        side = decoded
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(trainerName, forKey: .trainerName)
+        try container.encode(team, forKey: .team)
+        try container.encode(side.snapshot, forKey: .snapshot)
+        try container.encode(side.hp, forKey: .hp)
+        try container.encode(side.pp, forKey: .pp)
+    }
 }
 
 struct MultiplayerAction: Codable, Sendable, Equatable {
@@ -161,9 +185,10 @@ enum MultiplayerValidation {
         guard (2...4).contains(fighters.count), Set(fighters.map(\.id)).count == fighters.count else { return false }
         guard fighters.allSatisfy({ fighter in
             valid(participant: LobbyParticipant(id: fighter.id, trainerName: fighter.trainerName,
-                                                speciesID: fighter.snapshot.speciesID, team: fighter.team,
-                                                isReady: true, isHost: false), snapshot: fighter.snapshot)
-                && fighter.hp == fighter.snapshot.effectiveStats().hp
+                                                speciesID: fighter.side.snapshot.speciesID, team: fighter.team,
+                                                isReady: true, isHost: false),
+                  snapshot: fighter.side.snapshot)
+                && fighter.side.hp == fighter.side.stats.hp
         }) else { return false }
         if mode == .freeForAll { return fighters.allSatisfy { $0.team == .solo } }
         return fighters.count == 4 && fighters.filter { $0.team == .red }.count == 2
@@ -222,7 +247,7 @@ struct MultiplayerBattle: Sendable {
 
     mutating func forfeit(participantID: UUID) {
         guard let index = fighters.firstIndex(where: { $0.id == participantID }) else { return }
-        fighters[index].hp = 0
+        fighters[index].side.hp = 0
     }
 
     static func automaticActions(fighters: [MultiplayerFighter], mode: MultiplayerBattleMode,
@@ -234,7 +259,7 @@ struct MultiplayerBattle: Sendable {
             }.sorted { $0.id.uuidString < $1.id.uuidString }
             guard let target = targets.first else { return nil }
             return MultiplayerAction(attackerID: fighter.id, targetID: target.id,
-                                     moveIndex: fighter.pp.firstIndex(where: { $0 > 0 }) ?? -1)
+                                     moveIndex: fighter.side.pp.firstIndex(where: { $0 > 0 }) ?? -1)
         }
     }
 
@@ -244,6 +269,12 @@ struct MultiplayerBattle: Sendable {
         guard Set(actionIDs).count == actionIDs.count else { throw MultiplayerBattleError.duplicateAction }
         guard Set(actionIDs) == Set(alive.map(\.id)) else { throw MultiplayerBattleError.unknownFighter }
 
+        // 사전 검증은 **데미지가 한 점도 들어가기 전에** 끝난다. 예전엔 PP 검사만 해상 루프 안에
+        // 있어서, 남지 않은 기술을 지목한 액션 하나가 이미 해상된 앞 공격들과 함께 라운드를 통째로
+        // 무효로 만들었다. `mutating` 메서드는 throw 해도 그때까지의 변경이 호출자에게 남으므로
+        // 라운드가 **반쯤 적용된** 상태가 되고, 호스트(`finishRoundIfReady`)는 그 라운드를 버리면서
+        // 턴 타이머를 다시 걸지 않아 방의 진행이 멈춘다. 액션은 상대가 보내오는 값이라 신뢰 경계
+        // 밖이다 — 검증은 경계 한 곳에서 끝내야 한다.
         for action in actions {
             guard let attacker = fighters.first(where: { $0.id == action.attackerID }),
                   let target = fighters.first(where: { $0.id == action.targetID }) else {
@@ -253,8 +284,7 @@ struct MultiplayerBattle: Sendable {
                   mode == .freeForAll || attacker.team != target.team else {
                 throw MultiplayerBattleError.invalidTarget
             }
-            let moves = attacker.snapshot.moves ?? MoveSpec.fallbackSet(types: attacker.snapshot.types)
-            guard action.moveIndex == -1 || moves.indices.contains(action.moveIndex) else {
+            guard action.moveIndex == -1 || attacker.side.canUse(moveAt: action.moveIndex) else {
                 throw MultiplayerBattleError.invalidMove
             }
         }
@@ -268,11 +298,13 @@ struct MultiplayerBattle: Sendable {
         let ordered = zip(actions, tieBreakers).sorted { lhs, rhs in
             let leftFighter = fighters.first { $0.id == lhs.0.attackerID }!
             let rightFighter = fighters.first { $0.id == rhs.0.attackerID }!
-            let leftPriority = movePriority(for: lhs.0, of: leftFighter)
-            let rightPriority = movePriority(for: rhs.0, of: rightFighter)
+            let leftPriority = leftFighter.side.move(at: lhs.0.moveIndex).turnPriority
+            let rightPriority = rightFighter.side.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
-            let leftSpeed = leftFighter.snapshot.effectiveStats().spe
-            let rightSpeed = rightFighter.snapshot.effectiveStats().spe
+            // `stats` 는 배틀 시작에 한 번 계산된 값이다 — 예전엔 여기서 `effectiveStats()` 를
+            // 불러 비교 횟수만큼 스탯을 다시 만들었다.
+            let leftSpeed = leftFighter.side.stats.spe
+            let rightSpeed = rightFighter.side.stats.spe
             if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }
             return lhs.1 < rhs.1
         }.map(\.0)
@@ -280,14 +312,11 @@ struct MultiplayerBattle: Sendable {
         for action in ordered {
             guard let ai = fighters.firstIndex(where: { $0.id == action.attackerID }), fighters[ai].isAlive,
                   let ti = fighters.firstIndex(where: { $0.id == action.targetID }), fighters[ti].isAlive else { continue }
-            let moves = fighters[ai].snapshot.moves ?? MoveSpec.fallbackSet(types: fighters[ai].snapshot.types)
-            let move = action.moveIndex < 0 ? MoveSpec.struggle() : moves[action.moveIndex]
-            if action.moveIndex >= 0 {
-                guard fighters[ai].pp[action.moveIndex] > 0 else { throw MultiplayerBattleError.invalidMove }
-                fighters[ai].pp[action.moveIndex] -= 1
-            }
+            // 인덱스·PP 는 위 사전 검증에서 통과한 값이다.
+            let move = fighters[ai].side.move(at: action.moveIndex)
+            if action.moveIndex >= 0 { fighters[ai].side.pp[action.moveIndex] -= 1 }
             let event = resolveAttack(attacker: fighters[ai], target: fighters[ti], move: move)
-            fighters[ti].hp = event.defenderHPAfter
+            fighters[ti].side.hp = event.defenderHPAfter
             roundEvents.append(event)
         }
         events.append(contentsOf: roundEvents)
@@ -295,24 +324,14 @@ struct MultiplayerBattle: Sendable {
         return roundEvents
     }
 
-    /// 이 액션이 쓰는 기술의 우선도. 발버둥(moveIndex < 0)은 보통 기술과 같은 0 이다.
-    private func movePriority(for action: MultiplayerAction, of fighter: MultiplayerFighter) -> Int {
-        guard action.moveIndex >= 0 else { return 0 }
-        let moves = fighter.snapshot.moves ?? MoveSpec.fallbackSet(types: fighter.snapshot.types)
-        return moves.indices.contains(action.moveIndex) ? moves[action.moveIndex].turnPriority : 0
-    }
-
     private mutating func resolveAttack(attacker: MultiplayerFighter, target: MultiplayerFighter,
                                         move: MoveSpec) -> MultiplayerBattleEvent {
-        let outcome = BattleEngine.resolveAttack(attacker: attacker.snapshot,
-                                                 attackerStats: attacker.snapshot.effectiveStats(),
-                                                 defender: target.snapshot,
-                                                 defenderStats: target.snapshot.effectiveStats(),
+        let outcome = BattleEngine.resolveAttack(attacker: attacker.side, defender: target.side,
                                                  move: move, rng: &rng)
         return MultiplayerBattleEvent(attackerID: attacker.id, targetID: target.id, moveID: move.id,
                                       missed: outcome.missed, damage: outcome.damage,
                                       effectiveness: outcome.effectiveness,
                                       isCritical: outcome.isCritical,
-                                      defenderHPAfter: max(0, target.hp - outcome.damage))
+                                      defenderHPAfter: max(0, target.side.hp - outcome.damage))
     }
 }

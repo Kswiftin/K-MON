@@ -34,16 +34,9 @@ struct BattlePeer: Identifiable, Equatable {
 /// 진행 중 대전 상태(뷰 렌더 소스).
 struct NetBattleState {
     var iAmA: Bool                      // challenger = A (엔진 좌변)
-    var my: BattleSnapshot
-    var opp: BattleSnapshot
-    var myStats: BattleStats
-    var oppStats: BattleStats
-    var myHP: Int
-    var oppHP: Int
-    var myMoves: [MoveSpec]
-    var oppMoves: [MoveSpec]
-    var myPP: [Int]
-    var oppPP: [Int]
+    /// 양쪽 배틀 상태 — 세 모드가 같은 `BattleSide` 를 쓴다(예전엔 `myHP`/`oppHP` 처럼 좌우로 나열).
+    var me: BattleSide
+    var opp: BattleSide
     var rng: SplitMix64
     var turn = 1
     var myChoice: Int?
@@ -51,12 +44,10 @@ struct NetBattleState {
     var events: [NetBattleEvent] = []
 
     /// 내가 고를 수 있는 기술이 하나도 없으면 발버둥.
-    var mustStruggle: Bool { !myPP.contains { $0 > 0 } }
+    var mustStruggle: Bool { me.mustStruggle }
 
     func move(forIndex idx: Int, mine: Bool) -> MoveSpec {
-        if idx < 0 { return .struggle() }
-        let set = mine ? myMoves : oppMoves
-        return idx < set.count ? set[idx] : .struggle()
+        (mine ? me : opp).move(at: idx)
     }
 }
 
@@ -281,8 +272,8 @@ final class BattleCenter {
             }
             guard cpuTeam.count == rankedTeamSize else { phase = .ready; lastError = l.battleStatsFailed; return }
             isPracticeBattle = true
-            teamPractice = TeamPracticeBattle(mine: myTeam.map(TeamBattleSlot.init),
-                                              opponents: cpuTeam.map(TeamBattleSlot.init),
+            teamPractice = TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
+                                              opponents: cpuTeam.map(BattleSide.init),
                                               rng: SplitMix64(seed: UInt64.random(in: UInt64.min...UInt64.max)))
             opponentRankProfile = BattleRankProfile(rank: companion.battleRank, stardust: 0)
             phase = .battling; rankedStake = 0; pendingAttention = true
@@ -439,17 +430,8 @@ final class BattleCenter {
     func chooseMove(_ index: Int) {
         guard case .battling = phase, var b = battle, b.myChoice == nil else { return }
         let idx = b.mustStruggle ? -1 : index
-        if idx >= 0 {
-            guard idx < b.myPP.count, b.myPP[idx] > 0 else { return }
-        }
+        guard idx == -1 || b.me.canUse(moveAt: idx) else { return }
         b.myChoice = idx
-        if isPracticeBattle {
-            let available = b.oppPP.indices.filter { b.oppPP[$0] > 0 }
-            b.oppChoice = available.randomElement() ?? -1
-            battle = b
-            resolveIfReady()
-            return
-        }
         guard let conn = connection else { return }
         battle = b
         send(.move(turn: b.turn, moveIndex: idx), over: conn)
@@ -486,14 +468,7 @@ final class BattleCenter {
         } else {
             rankedStake = 0
         }
-        let myStats = my.effectiveStats(), oppStats = opp.effectiveStats()
-        let myMoves = my.moves ?? MoveSpec.fallbackSet(types: my.types)
-        let oppMoves = opp.moves ?? MoveSpec.fallbackSet(types: opp.types)
-        battle = NetBattleState(iAmA: iAmA, my: my, opp: opp,
-                                myStats: myStats, oppStats: oppStats,
-                                myHP: myStats.hp, oppHP: oppStats.hp,
-                                myMoves: myMoves, oppMoves: oppMoves,
-                                myPP: myMoves.map(\.pp), oppPP: oppMoves.map(\.pp),
+        battle = NetBattleState(iAmA: iAmA, me: BattleSide(my), opp: BattleSide(opp),
                                 rng: SplitMix64(seed: seed))
         phase = .battling
         pendingAttention = true
@@ -504,27 +479,26 @@ final class BattleCenter {
         guard var b = battle, let myIdx = b.myChoice, let oppIdx = b.oppChoice else { return }
         let myMove = b.move(forIndex: myIdx, mine: true)
         let oppMove = b.move(forIndex: oppIdx, mine: false)
-        if myIdx >= 0 { b.myPP[myIdx] = max(0, b.myPP[myIdx] - 1) }
-        if oppIdx >= 0 { b.oppPP[oppIdx] = max(0, b.oppPP[oppIdx] - 1) }
+        if myIdx >= 0 { b.me.pp[myIdx] = max(0, b.me.pp[myIdx] - 1) }
+        if oppIdx >= 0 { b.opp.pp[oppIdx] = max(0, b.opp.pp[oppIdx] - 1) }
 
-        var hpA = b.iAmA ? b.myHP : b.oppHP
-        var hpB = b.iAmA ? b.oppHP : b.myHP
-        let events = BattleEngine.resolveTurn(
-            a: b.iAmA ? b.my : b.opp, b: b.iAmA ? b.opp : b.my,
-            statsA: b.iAmA ? b.myStats : b.oppStats, statsB: b.iAmA ? b.oppStats : b.myStats,
-            hpA: &hpA, hpB: &hpB,
-            moveA: b.iAmA ? myMove : oppMove, moveB: b.iAmA ? oppMove : myMove,
-            rng: &b.rng)
-        b.myHP = b.iAmA ? hpA : hpB
-        b.oppHP = b.iAmA ? hpB : hpA
+        // 엔진 좌변은 항상 challenger(A) 다 — 양쪽이 같은 좌변으로 계산해야 같은 결과가 나온다.
+        var sideA = b.iAmA ? b.me : b.opp
+        var sideB = b.iAmA ? b.opp : b.me
+        let events = BattleEngine.resolveTurn(a: &sideA, b: &sideB,
+                                             moveA: b.iAmA ? myMove : oppMove,
+                                             moveB: b.iAmA ? oppMove : myMove,
+                                             rng: &b.rng)
+        b.me = b.iAmA ? sideA : sideB
+        b.opp = b.iAmA ? sideB : sideA
         b.events.append(contentsOf: events)
         b.turn += 1
         b.myChoice = nil
         b.oppChoice = nil
         battle = b
 
-        if b.myHP <= 0 || b.oppHP <= 0 {
-            let iWon: Bool? = b.myHP > 0 ? true : (b.oppHP > 0 ? false : nil)
+        if !b.me.isAlive || !b.opp.isAlive {
+            let iWon: Bool? = b.me.isAlive ? true : (b.opp.isAlive ? false : nil)
             dropConnection()
             phase = .finished(iWon: iWon, byForfeit: false)
             if let iWon, !isPracticeBattle { settleRankedBrawlIfNeeded(won: iWon) }

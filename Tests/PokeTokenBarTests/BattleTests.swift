@@ -108,15 +108,13 @@ final class BattleTests: XCTestCase {
     /// 본가 규칙: 우선도가 스피드를 이긴다. 거북왕(스피드 78)이 전광석화를 쓰면 리자몽(100)보다 먼저다.
     /// 예전엔 우선도라는 개념 자체가 없어 스피드만 봤다 — 전광석화가 보통 기술과 똑같이 굴렀다.
     func testPriorityBeatsSpeed() {
-        let (slow, fast) = (water(), fire())
-        let (slowStats, fastStats) = (slow.effectiveStats(), fast.effectiveStats())
-        XCTAssertLessThan(slowStats.spe, fastStats.spe, "스피드로는 거북왕이 후공인 상황이어야 한다")
+        let (slow, fast) = (BattleSide(water()), BattleSide(fire()))
+        XCTAssertLessThan(slow.stats.spe, fast.stats.spe, "스피드로는 거북왕이 후공인 상황이어야 한다")
 
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
-            var slowHP = slowStats.hp, fastHP = fastStats.hp
-            let events = BattleEngine.resolveTurn(a: slow, b: fast, statsA: slowStats, statsB: fastStats,
-                                                  hpA: &slowHP, hpB: &fastHP,
+            var a = slow, b = fast
+            let events = BattleEngine.resolveTurn(a: &a, b: &b,
                                                   moveA: quickAttack(), moveB: flamethrower(), rng: &rng)
             XCTAssertEqual(events.first?.attackerIsA, true, "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
         }
@@ -124,13 +122,11 @@ final class BattleTests: XCTestCase {
 
     /// 우선도가 같으면 예전 그대로 스피드 순이다 — 우선도 도입이 기존 순서를 흔들면 안 된다.
     func testSpeedStillDecidesWhenPriorityIsEqual() {
-        let (slow, fast) = (water(), fire())
-        let (slowStats, fastStats) = (slow.effectiveStats(), fast.effectiveStats())
+        let (slow, fast) = (BattleSide(water()), BattleSide(fire()))
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
-            var slowHP = slowStats.hp, fastHP = fastStats.hp
-            let events = BattleEngine.resolveTurn(a: slow, b: fast, statsA: slowStats, statsB: fastStats,
-                                                  hpA: &slowHP, hpB: &fastHP,
+            var a = slow, b = fast
+            let events = BattleEngine.resolveTurn(a: &a, b: &b,
                                                   moveA: hydroPump(), moveB: flamethrower(), rng: &rng)
             XCTAssertEqual(events.first?.attackerIsA, false, "seed \(seed): 빠른 쪽이 먼저다")
         }
@@ -139,14 +135,12 @@ final class BattleTests: XCTestCase {
     /// 우선도·스피드가 모두 같으면 무작위 — 어느 한쪽이 늘 선공하면 그게 곧 보이지 않는 이점이다.
     /// (멀티는 이 자리에서 UUID 문자열 순으로 갈라, 앱을 켠 동안 한쪽이 계속 선공했다.)
     func testEqualPriorityAndSpeedBreaksRandomly() {
-        let mirror = water()
-        let stats = mirror.effectiveStats()
+        let mirror = BattleSide(water())
         var firstMoverWasA = Set<Bool>()
         for seed in UInt64(0)..<40 {
             var rng = SplitMix64(seed: seed)
-            var hpA = stats.hp, hpB = stats.hp
-            let events = BattleEngine.resolveTurn(a: mirror, b: mirror, statsA: stats, statsB: stats,
-                                                  hpA: &hpA, hpB: &hpB,
+            var a = mirror, b = mirror
+            let events = BattleEngine.resolveTurn(a: &a, b: &b,
                                                   moveA: hydroPump(), moveB: hydroPump(), rng: &rng)
             if let first = events.first?.attackerIsA { firstMoverWasA.insert(first) }
         }
@@ -161,28 +155,25 @@ final class BattleTests: XCTestCase {
     }
 
     func testResolveTurnDeterministic() {
-        let (a, b) = (water(), fire())
-        let (sa, sb) = (a.effectiveStats(), b.effectiveStats())
         var rng1 = SplitMix64(seed: 99), rng2 = SplitMix64(seed: 99)
-        var a1 = sa.hp, b1 = sb.hp, a2 = sa.hp, b2 = sb.hp
-        let e1 = BattleEngine.resolveTurn(a: a, b: b, statsA: sa, statsB: sb, hpA: &a1, hpB: &b1,
+        var a1 = BattleSide(water()), b1 = BattleSide(fire())
+        var a2 = BattleSide(water()), b2 = BattleSide(fire())
+        let e1 = BattleEngine.resolveTurn(a: &a1, b: &b1,
                                           moveA: hydroPump(), moveB: flamethrower(), rng: &rng1)
-        let e2 = BattleEngine.resolveTurn(a: a, b: b, statsA: sa, statsB: sb, hpA: &a2, hpB: &b2,
+        let e2 = BattleEngine.resolveTurn(a: &a2, b: &b2,
                                           moveA: hydroPump(), moveB: flamethrower(), rng: &rng2)
         XCTAssertEqual(e1, e2, "두 피어가 같은 seed 로 같은 결과를 얻어야 대전이 성립한다")
-        XCTAssertEqual(a1, a2)
-        XCTAssertEqual(b1, b2)
+        XCTAssertEqual(a1.hp, a2.hp)
+        XCTAssertEqual(b1.hp, b2.hp)
     }
 
     func testResolveTurnAccuracyRoll() {
         // 명중 80 기술 — 여러 seed 에서 빗나감과 명중이 모두 관측돼야 한다.
-        let (a, b) = (water(), fire())
-        let (sa, sb) = (a.effectiveStats(), b.effectiveStats())
         var missSeen = false, hitSeen = false
         for seed in UInt64(0)..<40 {
             var rng = SplitMix64(seed: seed)
-            var ha = sa.hp, hb = sb.hp
-            let events = BattleEngine.resolveTurn(a: a, b: b, statsA: sa, statsB: sb, hpA: &ha, hpB: &hb,
+            var a = BattleSide(water()), b = BattleSide(fire())
+            let events = BattleEngine.resolveTurn(a: &a, b: &b,
                                                   moveA: hydroPump(), moveB: flamethrower(), rng: &rng)
             for e in events where e.attackerIsA { e.missed ? (missSeen = true) : (hitSeen = true) }
         }
@@ -197,14 +188,13 @@ final class BattleTests: XCTestCase {
         let dugtrio = BattleSnapshot(speciesID: 51, name: "닥트리오", trainer: nil, level: 50, nature: nil,
                                      isShiny: false, types: [.ground],
                                      base: BattleStats(hp: 35, atk: 100, def: 50, spa: 50, spd: 70, spe: 10))
-        let (sp, sg) = (pika.effectiveStats(), dugtrio.effectiveStats())
         let thunderbolt = MoveSpec(id: 85, names: ["en": "Thunderbolt"], type: .electric, power: 90,
                                    damageClass: .special, accuracy: nil, pp: 15)
         let dig = MoveSpec(id: 91, names: ["en": "Dig"], type: .ground, power: 80,
                            damageClass: .physical, accuracy: nil, pp: 10)
         var rng = SplitMix64(seed: 1)
-        var hp = sp.hp, hg = sg.hp
-        let events = BattleEngine.resolveTurn(a: pika, b: dugtrio, statsA: sp, statsB: sg, hpA: &hp, hpB: &hg,
+        var a = BattleSide(pika), b = BattleSide(dugtrio)
+        let events = BattleEngine.resolveTurn(a: &a, b: &b,
                                               moveA: thunderbolt, moveB: dig, rng: &rng)
         let pikaAttack = events.first { $0.attackerIsA }
         XCTAssertEqual(pikaAttack?.damage, 0)
@@ -218,14 +208,13 @@ final class BattleTests: XCTestCase {
         let frail = BattleSnapshot(speciesID: 92, name: "유령", trainer: nil, level: 5, nature: nil,
                                    isShiny: false, types: [.ghost],
                                    base: BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1))
-        let (ss, sf) = (strong.effectiveStats(), frail.effectiveStats())
         var rng = SplitMix64(seed: 3)
-        var hs = ss.hp, hf = sf.hp
+        var a = BattleSide(strong), b = BattleSide(frail)
         // 발버둥(무속성)이라 고스트에도 박힌다 — 선공 기절 시 이벤트는 1개여야 한다.
-        let events = BattleEngine.resolveTurn(a: strong, b: frail, statsA: ss, statsB: sf, hpA: &hs, hpB: &hf,
+        let events = BattleEngine.resolveTurn(a: &a, b: &b,
                                               moveA: .struggle(), moveB: .struggle(), rng: &rng)
         XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(hf, 0)
+        XCTAssertEqual(b.hp, 0)
     }
 
     func testFallbackMoveSet() {
@@ -280,11 +269,11 @@ final class BattleTests: XCTestCase {
 
     // MARK: 팀 연습 배틀 — 교체는 그 턴을 쓴다
 
-    /// 교체 상대는 항상 같은 기술을 쓰도록 PP 1짜리 기술 하나만 준다 — CPU 기술 선택이
-    /// `randomElement()` 라 후보가 여럿이면 무엇을 골랐는지에 따라 데미지가 흔들린다.
+    /// CPU 기술 선택은 이제 씨드 rng 에서 뽑으므로, 무브셋이 여러 개여도 seed 를 고정하면
+    /// 같은 선택이 나온다 — 아래 교체 테스트들이 데미지 값에 의존하지 않는 이유다.
     private func practiceBattle(myTeam: [BattleSnapshot], opponent: BattleSnapshot) -> TeamPracticeBattle {
-        TeamPracticeBattle(mine: myTeam.map(TeamBattleSlot.init),
-                           opponents: [TeamBattleSlot(opponent)],
+        TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
+                           opponents: [BattleSide(opponent)],
                            rng: SplitMix64(seed: 5))
     }
 
@@ -347,6 +336,42 @@ final class BattleTests: XCTestCase {
                        })
     }
 
+    /// `BattleSide` 의 두 접근자는 신뢰 경계다 — 인덱스는 상대가 보내온 값이고, `pp` 는 와이어로
+    /// 들어와 `moves` 와 길이가 어긋날 수 있다. 거절 조건을 **하나씩** 밟는다(한 조건만 보면 나머지
+    /// 조건이 죽어 있어도 초록으로 통과한다).
+    func testBattleSideRejectsOutOfRangeAndSpentMoves() {
+        var side = BattleSide(tank())            // 기술 1개, PP 30
+        XCTAssertEqual(side.moves.count, 1)
+        XCTAssertTrue(side.canUse(moveAt: 0))
+        XCTAssertFalse(side.canUse(moveAt: 1), "무브셋 범위 밖")
+        XCTAssertFalse(side.canUse(moveAt: -1), "발버둥 표식(−1)은 기술 인덱스가 아니다")
+        side.pp = []                             // 와이어에서 길이가 어긋난 pp
+        XCTAssertFalse(side.canUse(moveAt: 0), "pp 가 짧으면 인덱싱 전에 막힌다")
+        side.pp = [0]
+        XCTAssertFalse(side.canUse(moveAt: 0), "PP 0")
+        XCTAssertTrue(side.mustStruggle)
+        // 범위 밖·음수 인덱스는 발버둥으로 읽는다.
+        XCTAssertEqual(side.move(at: -1).id, MoveSpec.struggleID)
+        XCTAssertEqual(side.move(at: 9).id, MoveSpec.struggleID)
+        XCTAssertEqual(side.move(at: 0).id, 1)
+    }
+
+    /// PP 가 전부 떨어지면 발버둥으로 계속 싸운다 — 연습 배틀이 그 자리에서 멈추면 안 된다.
+    /// (`move(at:)` 의 발버둥 폴백을 실제로 밟는 경로다.)
+    func testPracticeBattleStrugglesWhenPPRunsOut() {
+        var battle = TeamPracticeBattle(mine: [BattleSide(tank())],
+                                        opponents: [BattleSide(cpuWithFourMoves())],
+                                        rng: SplitMix64(seed: 11))
+        battle.mine[0].pp = [0]
+        battle.opponents[0].pp = [0, 0, 0, 0]
+
+        XCTAssertTrue(battle.useMove(0))
+
+        XCTAssertEqual(battle.events.map(\.moveID), [MoveSpec.struggleID, MoveSpec.struggleID],
+                       "양쪽 모두 발버둥을 쓴다")
+        XCTAssertEqual(battle.mine[0].pp, [0], "발버둥은 PP 를 쓰지 않는다")
+    }
+
     /// 회귀: CPU 기술 선택이 `randomElement()`(시스템 RNG)라 같은 seed 로도 연습 배틀이 재현되지
     /// 않았다. seed 를 고정한 회귀 테스트를 쓸 수 없다는 뜻이고 — 상태이상·랭크업처럼 확률 분기가
     /// 늘어나는 기전은 그 테스트 없이는 검증할 방법이 없다. 이제 씨드 rng 에서 뽑는다.
@@ -354,8 +379,8 @@ final class BattleTests: XCTestCase {
     /// 한 판이 우연히 같아질 확률은 (1/4)^6 이라, 같은 seed 로 10판을 돌려 전부 같은지 본다.
     func testPracticeBattleIsDeterministicForASeed() {
         func run() -> [Int] {
-            var battle = TeamPracticeBattle(mine: [TeamBattleSlot(tank())],
-                                            opponents: [TeamBattleSlot(cpuWithFourMoves())],
+            var battle = TeamPracticeBattle(mine: [BattleSide(tank())],
+                                            opponents: [BattleSide(cpuWithFourMoves())],
                                             rng: SplitMix64(seed: 2_024))
             for turn in 0..<6 { XCTAssertTrue(battle.useMove(0), "turn \(turn) 이 진행돼야 한다") }
             return battle.events.map { $0.moveID }

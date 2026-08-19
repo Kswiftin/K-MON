@@ -223,6 +223,36 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(first.round, 2)
     }
 
+    /// 기술 1개(위력 40 / PP 20)만 든 파이터 — 스피드로 라운드 순서를 고정한다.
+    private func soloMoveFighter(_ id: UUID, speed: Int) -> MultiplayerFighter {
+        let move = MoveSpec(id: 1, names: [:], type: .normal, power: 40,
+                            damageClass: .physical, accuracy: 100, pp: 20)
+        let snapshot = BattleSnapshot(speciesID: 1, name: "Mon", trainer: nil, level: 20,
+                                      nature: nil, isShiny: false, types: [.normal],
+                                      base: BattleStats(hp: 80, atk: 60, def: 60, spa: 60,
+                                                        spd: 60, spe: speed),
+                                      moves: [move])
+        return MultiplayerFighter(participant: LobbyParticipant(id: id, trainerName: "T", speciesID: 1,
+                                                                 team: .solo, isReady: true, isHost: false),
+                                  snapshot: snapshot)
+    }
+
+    /// 상대가 보내오는 `pp` 는 `moves` 와 길이가 맞는다는 보장이 없다. 예전 사전 검증은 무브셋
+    /// 인덱스만 봤고, 해상 루프가 `pp[moveIndex]` 를 그대로 읽어 **인덱스 범위를 벗어났다**(거절이
+    /// 아니라 크래시다). 이제 경계에서 둘을 같이 본다.
+    func testResolveRoundRejectsFighterWhosePPArrayIsTooShort() throws {
+        let attackerID = UUID(), targetID = UUID()
+        var attacker = soloMoveFighter(attackerID, speed: 100)
+        attacker.side.pp = []                    // 무브셋은 1개인데 pp 는 0개
+        let target = soloMoveFighter(targetID, speed: 10)
+        var battle = try MultiplayerBattle(fighters: [attacker, target], mode: .freeForAll, seed: 3)
+
+        XCTAssertThrowsError(try battle.resolveRound([
+            MultiplayerAction(attackerID: attackerID, targetID: targetID, moveIndex: 0),
+            MultiplayerAction(attackerID: targetID, targetID: attackerID, moveIndex: 0),
+        ])) { XCTAssertEqual($0 as? MultiplayerBattleError, .invalidMove) }
+    }
+
     /// 회귀: PP 검증이 **해상 루프 안**에 있었다(사전 검증 루프는 인덱스만 봤다). 남지 않은 기술을
     /// 지목한 액션이 섞여 있으면, 그보다 순서가 앞선 공격은 이미 적용된 뒤에 throw 가 난다.
     /// `mutating` 메서드는 throw 해도 그때까지의 변경이 호출자에게 남으므로, 라운드가 반쯤 적용된
@@ -231,32 +261,20 @@ final class AdventureTests: XCTestCase {
     /// 상대가 보내오는 액션은 신뢰 경계 밖이라 이 조건은 원격에서 만들 수 있다.
     func testResolveRoundRejectsSpentMoveBeforeAnyDamage() throws {
         let fastID = UUID(), slowID = UUID()
-        func fighter(_ id: UUID, speed: Int) -> MultiplayerFighter {
-            let move = MoveSpec(id: 1, names: [:], type: .normal, power: 40,
-                                damageClass: .physical, accuracy: 100, pp: 20)
-            let snapshot = BattleSnapshot(speciesID: 1, name: "Mon", trainer: nil, level: 20,
-                                          nature: nil, isShiny: false, types: [.normal],
-                                          base: BattleStats(hp: 80, atk: 60, def: 60, spa: 60,
-                                                            spd: 60, spe: speed),
-                                          moves: [move])
-            return MultiplayerFighter(participant: LobbyParticipant(id: id, trainerName: "T", speciesID: 1,
-                                                                     team: .solo, isReady: true, isHost: false),
-                                      snapshot: snapshot)
-        }
         // 빠른 쪽이 먼저 때린다 — 느린 쪽의 위법 액션은 그 뒤에 걸린다(부분 적용이 드러나는 순서).
-        let fast = fighter(fastID, speed: 200)
-        var slow = fighter(slowID, speed: 10)
-        slow.pp[0] = 0
+        let fast = soloMoveFighter(fastID, speed: 200)
+        var slow = soloMoveFighter(slowID, speed: 10)
+        slow.side.pp[0] = 0
         var battle = try MultiplayerBattle(fighters: [fast, slow], mode: .freeForAll, seed: 7)
-        let fullHP = battle.fighters.map(\.hp)
+        let fullHP = battle.fighters.map(\.side.hp)
 
         XCTAssertThrowsError(try battle.resolveRound([
             MultiplayerAction(attackerID: fastID, targetID: slowID, moveIndex: 0),
             MultiplayerAction(attackerID: slowID, targetID: fastID, moveIndex: 0),
         ])) { XCTAssertEqual($0 as? MultiplayerBattleError, .invalidMove) }
 
-        XCTAssertEqual(battle.fighters.map(\.hp), fullHP, "거절된 라운드는 데미지를 남기지 않는다")
-        XCTAssertEqual(battle.fighters.first { $0.id == fastID }?.pp, [20], "PP 도 소모되지 않는다")
+        XCTAssertEqual(battle.fighters.map(\.side.hp), fullHP, "거절된 라운드는 데미지를 남기지 않는다")
+        XCTAssertEqual(battle.fighters.first { $0.id == fastID }?.side.pp, [20], "PP 도 소모되지 않는다")
         XCTAssertTrue(battle.events.isEmpty, "버려진 라운드의 이벤트가 남으면 안 된다")
     }
 
@@ -273,8 +291,8 @@ final class AdventureTests: XCTestCase {
         var fighter = MultiplayerFighter(participant: LobbyParticipant(id: id, trainerName: "T", speciesID: 25,
                                                                         team: .solo, isReady: true, isHost: true),
                                         snapshot: snapshot)
-        fighter.hp = 42
-        fighter.pp = [7]
+        fighter.side.hp = 42
+        fighter.side.pp = [7]
         let encoded = try JSONEncoder().encode(fighter)
         let json = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
         XCTAssertEqual(Set(json?.keys.sorted() ?? []),
