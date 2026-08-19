@@ -466,7 +466,7 @@ extension MoveSpec {
     /// `/move` 응답 하나를 대전용 스펙으로. 앱이 모르는 타입·분류면 `nil` — 호출부가 그 기술을
     /// 건너뛴다. 이름이 하나도 없으면 요청에 쓴 이름을 영어 자리에 넣어 화면에 "?" 가 남지 않게 한다.
     ///
-    /// DTO 를 스펙으로 옮기는 자리를 한 곳에 둔 이유는 필드가 계속 늘기 때문이다 —
+    /// DTO 를 스펙으로 옮기는 자리를 한 곳에 둔 건 필드가 계속 늘기 때문이다 —
     /// `priority`(#46) 에 이어 `crit_rate` 가 붙었고 Phase 2·3 이 상태이상·랭크변화를 더한다.
     /// 여기 있으면 네트워크 없이 JSON 모양 그대로 테스트할 수 있다.
     static func from(_ dto: MoveDTO, fallbackName: String, languages: [String]) -> MoveSpec? {

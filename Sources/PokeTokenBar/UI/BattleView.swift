@@ -341,7 +341,7 @@ struct BattleView: View {
                 }
             }
             if !center.multiplayer.combatEvents.isEmpty {
-                // 1v1 과 **같은** 스트림·같은 접기를 쓴다. 예전엔 여기만 "이름 → 이름: -12" 라는
+                // 1v1 과 스트림도 접기도 같다. 예전엔 여기만 "이름 → 이름: -12" 라는
                 // 별도 문구였고, 기술 이름도 급소도 상성도 나오지 않았다.
                 logBox(multiplayerLogLines(center.multiplayer.combatEvents, fighters: fighters),
                        mine: .fighter(center.multiplayer.myID))

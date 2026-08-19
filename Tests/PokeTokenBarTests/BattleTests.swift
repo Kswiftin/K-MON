@@ -103,8 +103,8 @@ final class BattleTests: XCTestCase {
                  damageClass: .physical, accuracy: 100, pp: 30, priority: 1)
     }
 
-    /// 필중 물 기술 — 명중 굴림을 소비하지 않으므로 rng 소비가 **급소 → 난수** 두 번뿐이다.
-    /// 아래 골든값을 손으로 계산할 수 있는 이유가 이것이다.
+    /// 필중 물 기술 — 명중 판정을 건너뛰므로 rng 소비가 **급소 → 난수** 두 번뿐이다.
+    /// 그래서 아래 골든값을 손으로 계산할 수 있다.
     private func surf() -> MoveSpec {
         MoveSpec(id: 57, names: ["en": "Surf"], type: .water, power: 90,
                  damageClass: .special, accuracy: nil, pp: 15)
@@ -119,7 +119,7 @@ final class BattleTests: XCTestCase {
     ///     비급소 = (39·1 + 2)·3/2·2 = 122      급소 = (39·2 + 2)·3/2·2 = 240
     ///     최종   = 위 값 · rand / 255          rand ∈ 217…255 (균등 정수)
     ///
-    /// 값을 정하는 건 두 가지다 — 급소 배율이 ×2 라는 것과, `+2` 가 그 배율 **뒤에** 온다는 것.
+    /// 값을 정하는 건 두 가지다 — 급소 배율이 ×2 라는 것과 `+2` 가 그 배율 **뒤에** 온다는 것.
     /// 예전 식은 `+2` 를 먼저 더한 뒤 ×1.5 를 곱하고 난수도 0.85~1.00 Double 이었다(같은 seed 로
     /// 각각 111 / 114 / 112). 이제 전 구간이 정수 연산이라 두 피어 사이에 Double 오차가 남지 않는다.
     func testGen2DamageOrderAndCritMultiplier() {
@@ -158,7 +158,7 @@ final class BattleTests: XCTestCase {
     }
 
     /// 단계표가 `resolveAttack` 까지 **실제로 연결됐는지** 본다. 표만 맞고 배선이 없어도 위 테스트는
-    /// 초록으로 통과하므로, 굴림을 밟는 경로를 따로 확인해야 한다.
+    /// 초록으로 통과하니, 판정을 실제로 밟는 경로를 따로 확인한다.
     func testHighCritMoveCritsFarMoreOftenThanANormalMove() {
         let attacker = BattleSide(water()), defender = BattleSide(fire())
         func critCount(_ move: MoveSpec) -> Int {
@@ -173,8 +173,8 @@ final class BattleTests: XCTestCase {
         highCrit.critRate = 1                       // PokéAPI `meta.crit_rate` — 베어가르기 부류
         let plain = critCount(surf()), boosted = critCount(highCrit)
 
-        // 512 회의 기대값은 34(17/256) 대 128(1/4) 이다. seed 를 고정한 순회라 값은 매 실행 같다.
-        XCTAssertGreaterThan(plain, 0, "기본 확률도 관측돼야 한다 — 0 이면 굴림 자체가 죽은 것이다")
+        // 512 회 중 기대값은 34(17/256) 와 128(1/4) 이다. seed 를 고정한 순회라 값이 실행마다 같다.
+        XCTAssertGreaterThan(plain, 0, "기본 확률도 관측돼야 한다 — 0 이면 판정 자체가 죽었다")
         XCTAssertGreaterThan(boosted, plain * 2, "고급소기가 두 배도 안 되면 단계가 연결되지 않았다")
         XCTAssertEqual(Double(boosted) / 512, 0.25, accuracy: 0.05,
                        "+2 단계는 1/4 이어야 한다 — 1단계(1/8)와 구분된다")
@@ -326,7 +326,7 @@ final class BattleTests: XCTestCase {
     /// 급소·상성은 데미지와 **따로** 실린다. 한 구조체에 플래그로 묶여 있던 값들이라,
     /// 분리되지 않으면 상태이상(Phase 2)이 들어올 자리가 없다.
     func testCritAndEffectivenessAreSeparateEvents() {
-        // 급소는 어느 시드에서 나는지 미리 알 수 없다(선공이 rng 를 먼저 쓴다) — 순회해서 찾는다.
+        // 급소가 어느 seed 에서 나는지는 미리 알 수 없다(선공이 rng 를 먼저 쓴다). 순회해서 찾는다.
         var sawCrit = false
         for seed in UInt64(0)..<64 {
             var rng = SplitMix64(seed: seed)

@@ -154,9 +154,9 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 이 키가 없다. 없으면 보통 기술(0)로 읽는다.
     var priority: Int? = nil
 
-    /// 고급소 보정(PokéAPI `meta.crit_rate`). 베어가르기·잎날가르기처럼 급소가 잘 나는 기술은
+    /// 급소율 보정(PokéAPI `meta.crit_rate`). 베어가르기·잎날가르기처럼 급소가 잘 나는 기술은
     /// 여기에 양수가 온다. `priority` 와 같은 이유로 옵셔널이다 — 이 키가 없던 시절의 세이브와
-    /// 구버전 피어의 무브셋에는 값이 없고, 없으면 보통 기술로 읽는다.
+    /// 구버전 피어의 무브셋에는 값이 아예 없다. 그런 기술은 보통 급소율로 읽는다.
     var critRate: Int? = nil
 
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
@@ -304,9 +304,9 @@ struct SplitMix64: RandomNumberGenerator {
 }
 
 enum BattleEngine {
-    /// 급소 배율 — Gen 2 는 ×2 고 공격측 랭크를 무시한다(Gen 6+ 는 ×1.5). 상수로 빼 둔 이유는
-    /// 밸런스다: 급소 ×2 와 상태이상이 겹치면 1턴 KO 가 흔해질 수 있어, 랭크업(Phase 3)까지
-    /// 들어온 뒤 시드를 여러 번 돌려 평균 턴 수를 재고 다시 판단한다.
+    /// 급소 배율 — Gen 2 는 ×2 고 공격측 랭크를 무시한다(Gen 6+ 는 ×1.5). 상수로 빼 둔 건 밸런스
+    /// 때문이다. 급소 ×2 와 상태이상이 겹치면 1턴 KO 가 흔해질 수 있으니, 랭크업(Phase 3)까지
+    /// 들어온 뒤 seed 를 여러 번 돌려 평균 턴 수를 재고 다시 판단한다.
     static let critMultiplier = 2
 
     /// 급소 확률의 분자(분모 256) — Gen 2 단계표. 0단계 17/256(≈6.6%), +1 은 1/8, +2 는 1/4,
@@ -354,9 +354,9 @@ enum BattleEngine {
         let attack = move.damageClass == .physical ? attacker.stats.atk : attacker.stats.spa
         let defense = move.damageClass == .physical ? defender.stats.def : defender.stats.spd
         let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
-        // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수나눗셈한다. 예전엔
+        // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수 나눗셈한다. 예전엔
         // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
-        // 구조에서는 정수 연산이 유리하다(부동소수 오차가 결과를 가를 여지가 없다).
+        // 구조에서는 정수 연산이 유리하다(부동소수 오차가 끼어들 자리가 없다).
         let random = 217 + Int(rng.next() % 39)
 
         // Gen 2 의 계산 **순서** 그대로다. `+2` 가 급소 배율 뒤에 오고, STAB·상성은 그 뒤에 곱한다.
@@ -403,8 +403,8 @@ enum BattleActor: Codable, Sendable, Equatable, Hashable {
 /// 방법이 없어서, 상태이상(Phase 2)·랭크업(Phase 3)·교체(Phase 4)가 들어올 때마다 플래그를 덧붙이고
 /// 뷰의 if/else 사슬을 다시 뜯어야 했다. case 를 늘리는 쪽은 그럴 필요가 없다.
 ///
-/// 여기 없는 case(상태이상·랭크·교체)는 **그 기전을 넣는 단계에서 만드는 쪽을 함께** 추가한다.
-/// 만드는 곳 없는 case 를 미리 두면 아무도 밟지 않는 분기가 커버리지만 채운다.
+/// 여기 없는 case(상태이상·랭크·교체)는 **그 이벤트를 실제로 내보내는 코드와 함께** 추가한다.
+/// 내보내는 곳이 없는 case 를 미리 두면 아무도 밟지 않는 분기만 늘어난다.
 enum BattleEvent: Codable, Sendable, Equatable {
     case turn(Int)
     case move(BattleActor, moveID: Int)
@@ -432,7 +432,7 @@ extension BattleEngine {
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
         if outcome.missed { return events + [.miss(attackerActor)] }
         if outcome.effectiveness == 0 { return events + [.immune(defenderActor)] }
-        // 급소·상성 문구가 데미지보다 먼저 온다(Showdown 순서) — 재생할 때 "급소!" 뒤에 HP 가 준다.
+        // 급소·상성 문구가 데미지보다 먼저 온다(Showdown 순서) — 재생할 때 "급소!" 뒤에 HP 가 줄어든다.
         if outcome.isCritical { events.append(.crit(defenderActor)) }
         if outcome.effectiveness > 1 { events.append(.superEffective(defenderActor)) }
         else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }

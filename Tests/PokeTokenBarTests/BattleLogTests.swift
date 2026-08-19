@@ -1,9 +1,9 @@
 import XCTest
 @testable import PokeTokenBar
 
-/// 이벤트 스트림 → 로그 줄 변환. 예전엔 이 판단이 `BattleView.eventLine` 의 if/else 사슬 안에
-/// 있어서 테스트할 수 없었다(뷰를 띄워야 문구를 볼 수 있었다). 스트림이 타입된 값이 되면서
-/// 문구 결정은 순수 함수가 되고, 3언어 문구와 접기 규칙을 여기서 잠근다.
+/// 이벤트 스트림을 로그 줄로 접는 자리를 본다. 이 판단은 예전에 `BattleView.eventLine` 의 if/else
+/// 사슬 안에 있어서 테스트할 수 없었다(뷰를 띄워야 문구를 볼 수 있었다). 스트림이 타입된 값이 되면서
+/// 문구를 고르는 일이 순수 함수로 빠졌고, 3언어 문구와 접기 규칙을 여기서 잠근다.
 final class BattleLogTests: XCTestCase {
 
     /// 이름·기술명 해석은 호출부(뷰)의 몫이라 테스트에서는 고정값을 준다.
@@ -53,7 +53,7 @@ final class BattleLogTests: XCTestCase {
                        ["거북왕의 파도타기! 효과가 없었다…"])
     }
 
-    /// 기술 없이 들어온 피해는 **기술을 썼다로 렌더되지 않는다.** Phase 2 의 화상·독 잔뎀이
+    /// 기술 없이 들어온 피해는 **"기술을 썼다" 문구로 나오지 않는다.** Phase 2 의 화상·독 잔뎀이
     /// 이 모양으로 오는데, 현재 구조(플래그 뭉치 하나)에서 가장 흔한 오구현이 여기다.
     func testDamageWithoutAMoveIsNotRenderedAsAMove() {
         let out = lines([.damage(.a, amount: 12)])
@@ -85,8 +85,8 @@ final class BattleLogTests: XCTestCase {
                        ["거북왕의 파도타기! · 급소에 맞았다!"])
     }
 
-    /// 피해 없이 주석만 온 스트림(정상 경로에는 없다)도 문구를 만들어 낸다 — 쓰지 않은 기술이나
-    /// 0 이라는 숫자를 지어내지 않는 것이 요점이다.
+    /// 피해 없이 주석만 온 스트림(정상 경로에는 없다)도 문구를 만들어 낸다. 쓰지 않은 기술이나
+    /// 0 이라는 숫자를 지어내지만 않으면 된다.
     func testNotesWithoutAnActionRenderOnTheirOwn() {
         XCTAssertEqual(lines([.crit(.a)]), ["급소에 맞았다!"])
     }
