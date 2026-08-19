@@ -58,7 +58,7 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertGreaterThan(quick.effectiveSpeed, sluggish.effectiveSpeed, "마비 전엔 이쪽이 선공이다")
 
         quick.status = .paralysis
-        XCTAssertEqual(quick.effectiveSpeed, quick.stats.spe / 4, "Gen 2 마비는 스피드 25% 다")
+        XCTAssertEqual(quick.effectiveSpeed, quick.stats.spe / 4, "Gen 2 마비는 스피드를 25% 로 깎는다")
         XCTAssertLessThan(quick.effectiveSpeed, sluggish.effectiveSpeed)
 
         for seed in UInt64(0)..<20 {
@@ -85,7 +85,7 @@ final class BattleStatusTests: XCTestCase {
             }
         }
         XCTAssertEqual(Double(blocked) / Double(rounds), 0.25, accuracy: 0.08,
-                       "Gen 2 는 25% 다 (Gen 7 부터 50%) — 0 이나 1 이면 판정이 아예 죽었다")
+                       "Gen 2 는 25% (Gen 7 부터 50%) — 0 이나 1 이면 판정이 아예 죽었다")
     }
 
     // MARK: 잠듦 — 카운터 2~8 → 행동불능 1~7턴, 깬 턴에 바로 행동
@@ -222,7 +222,7 @@ final class BattleStatusTests: XCTestCase {
         }
     }
 
-    /// 맹독은 1/16 부터 매턴 1/16 씩 누적한다. 값이 세 턴 모두 다르므로 "그냥 1/8" 오구현이 걸린다.
+    /// 맹독은 1/16 부터 매턴 1/16씩 누적한다. 값이 세 턴 모두 다르므로 "그냥 1/8" 오구현이 걸린다.
     func testToxicDamageGrowsBySixteenthsEveryTurn() {
         var side = BattleSide(tank())
         var rng = SplitMix64(seed: 1)
@@ -451,7 +451,7 @@ final class BattleStatusTests: XCTestCase {
             return Double(burned) / Double(rounds)
         }
         XCTAssertEqual(burnRate(0), 0, "확률 0 인 공격기는 절대 걸지 않는다")
-        XCTAssertEqual(burnRate(100), 1, "100% 면 매번 걸린다")
+        XCTAssertEqual(burnRate(100), 1, "100%면 매번 걸린다")
         XCTAssertEqual(burnRate(30), 0.30, accuracy: 0.10)
     }
 
