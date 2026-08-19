@@ -196,6 +196,31 @@ final class BattleStatusTests: XCTestCase {
         XCTFail("40개 seed 안에서 자멸이 한 번도 나지 않았다 — 판정 자체를 확인해야 한다")
     }
 
+    /// 마지막 혼란 턴에 자멸로 쓰러지면 해제 줄을 붙이지 않는다 — "쓰러졌다 / 혼란이 풀렸다" 로 읽힌다.
+    /// 살아남는 대조군이 없으면 해제 줄을 아예 지운 오구현도 통과한다.
+    func testAFaintingSelfHitDoesNotAlsoReportTheConfusionWoreOff() {
+        /// 마지막 혼란 턴을 강제로 만든다 — `confusionTurns` 은 판정 전에 1 줄어든다.
+        func lastTurn(seed: UInt64, hp: Int) -> [BattleEvent] {
+            var side = BattleSide(tank()), defender = BattleSide(tank())
+            var rng = SplitMix64(seed: seed)
+            BattleEngine.inflict(.confusion, on: &side, actor: .a, rng: &rng)
+            side.confusionTurns = 1
+            side.hp = hp
+            return attack(&side, &defender, harmless(), rng: &rng)
+        }
+        for seed in UInt64(0)..<40 {
+            let fainted = lastTurn(seed: seed, hp: 1)
+            guard fainted.contains(.cant(.a, .confusion)) else { continue }
+            XCTAssertTrue(fainted.contains(.faint(.a)))
+            XCTAssertFalse(fainted.contains(.cureStatus(.a, .confusion)),
+                           "기절 뒤에 해제 줄이 붙으면 로그가 '쓰러졌다 / 혼란이 풀렸다' 가 된다")
+            XCTAssertTrue(lastTurn(seed: seed, hp: 175).contains(.cureStatus(.a, .confusion)),
+                          "살아남으면 같은 턴에 해제 줄이 나와야 한다 — 여기가 없으면 해제를 통째로 잃었다")
+            return
+        }
+        XCTFail("40개 seed 안에서 자멸이 한 번도 나지 않았다 — 판정 자체를 확인해야 한다")
+    }
+
     /// 혼란 자멸은 무속성이다 — 자기 타입 STAB 도 상성도 타지 않는다.
     func testConfusionDamageIsTypelessAndUnaffectedByTheOwnType() {
         let normal = BattleEngine.confusionDamage(BattleSide(tank([.normal])))
@@ -347,7 +372,24 @@ final class BattleStatusTests: XCTestCase {
 
     /// 규칙이 바뀌면 버전을 올린다 — 구버전 피어는 같은 배틀을 다르게 보므로 핸드셰이크에서 막아야 한다.
     func testRulesVersionMovesWithTheStatusConditions() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 3, "상태이상 도입 = 규칙 3")
+        XCTAssertEqual(BattleEngine.rulesVersion, 4, "상태이상 = 3, 변화기 데미지 0 = 4")
+    }
+
+    /// 위력 0 인 변화기는 데미지를 넣지 않는다. 예전엔 식의 `+2` 가 남아 2 데미지가 박혔고,
+    /// `.damage` 이벤트까지 나가 로그가 "2 데미지" 를 찍었다. `learnedMoves` 는 변화기를
+    /// 걸러내지 않으므로(`moveSet` 만 걸러낸다) 실제 배틀에서 밟히는 경로다.
+    func testStatusMovesDealNoDamage() {
+        let thunderWave = MoveSpec(id: 86, names: ["en": "Thunder Wave"], type: .electric, power: 0,
+                                   damageClass: .status, accuracy: nil, pp: 20,
+                                   ailment: "paralysis", ailmentChance: 0)
+        var attacker = BattleSide(tank()), defender = BattleSide(tank())
+        let before = defender.hp
+        var rng = SplitMix64(seed: 11)
+        let events = attack(&attacker, &defender, thunderWave, rng: &rng)
+        XCTAssertEqual(defender.hp, before, "변화기는 HP 를 깎지 않는다")
+        XCTAssertFalse(events.contains { if case .damage = $0 { return true } else { return false } },
+                       "0 데미지 이벤트가 나가면 로그가 '맞았는데 0' 으로 읽힌다")
+        XCTAssertTrue(events.contains(.status(.b, .paralysis)), "상태는 그대로 걸린다")
     }
 
     // MARK: PokéAPI 데이터 경로 — meta.ailment 가 실제로 상태를 거는 데까지
@@ -505,6 +547,20 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertEqual(battle.mine[0].statusCounter, 0, "누적 배수도 같이 리셋된다")
     }
 
+    /// 혼란은 volatile 이라 물러나면 풀린다. 남겨 두면 다시 나올 때 옛 카운터로 계속 혼란이다.
+    func testSwitchingClearsConfusion() {
+        var battle = TeamPracticeBattle(mine: [BattleSide(tank()), BattleSide(tank())],
+                                        opponents: [BattleSide(tank())],
+                                        rng: SplitMix64(seed: 5))
+        var rng = SplitMix64(seed: 1)
+        BattleEngine.inflict(.confusion, on: &battle.mine[0], actor: .a, rng: &rng)
+        XCTAssertGreaterThan(battle.mine[0].confusionTurns, 0)
+
+        XCTAssertTrue(battle.switchMine(to: 1))
+
+        XCTAssertEqual(battle.mine[0].confusionTurns, 0, "교체로 혼란이 풀려야 한다")
+    }
+
     /// 상대가 보내온 무브셋의 부여 확률은 신뢰 경계 밖이다 — 100 을 넘기면 매턴 확정 부여가 된다.
     func testValidationRejectsAnOutOfRangeAilmentChance() {
         func accepted(_ chance: Int?) -> Bool {
@@ -521,6 +577,26 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertTrue(accepted(nil), "값이 없던 시절의 무브셋은 그대로 통과한다")
         XCTAssertFalse(accepted(400))
         XCTAssertFalse(accepted(-1))
+    }
+
+    /// 시작 스냅샷의 상태이상도 호스트가 보내오는 값이다. 만HP 만 보던 동안은 `sleep` +
+    /// `statusCounter: 9999` 로 시작한 게스트가 배틀 내내 한 번도 못 움직였다.
+    func testValidStartRejectsAFighterThatBeginsWithAStatus() {
+        func fighter(_ configure: (inout BattleSide) -> Void = { _ in }) -> MultiplayerFighter {
+            var f = MultiplayerFighter(
+                participant: LobbyParticipant(id: UUID(), trainerName: "T", speciesID: 143,
+                                             team: .solo, isReady: true, isHost: false),
+                snapshot: tank())
+            configure(&f.side)
+            return f
+        }
+        XCTAssertTrue(MultiplayerValidation.validStart(fighters: [fighter(), fighter()], mode: .freeForAll))
+        XCTAssertFalse(MultiplayerValidation.validStart(
+            fighters: [fighter(), fighter { $0.status = .sleep }], mode: .freeForAll),
+            "주 상태를 안 보면 영구히 못 움직이는 배틀이 시작된다")
+        XCTAssertFalse(MultiplayerValidation.validStart(
+            fighters: [fighter(), fighter { $0.confusionTurns = 3 }], mode: .freeForAll),
+            "혼란은 volatile 이라 주 상태 검사에 안 걸린다 — 따로 봐야 한다")
     }
 
     // MARK: 배지 표기

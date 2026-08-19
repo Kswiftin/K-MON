@@ -485,6 +485,9 @@ final class MultiplayerRoomCenter {
             } else { scheduleTurnTimeout() }
         } catch {
             lastError = error.localizedDescription; pendingActions.removeAll(); hasSubmittedAction = false
+            // 거절된 라운드에도 마감을 다시 건다. 이게 없으면 게스트가 보낸 엉뚱한 targetID 하나로
+            // 방이 영구히 멈춘다(마감 경로에서 throw 가 나면 다시 걸릴 타이머가 없다).
+            scheduleTurnTimeout()
         }
     }
 

@@ -3,15 +3,10 @@ import SwiftUI
 
 // MARK: - 창 예산
 
-/// 배틀 화면의 크기 예산 — 계획 §6.3 **안 B**(기존 팝오버 안). 모든 숫자가 팝오버 콘텐츠 폭 332pt
-/// 에서 거꾸로 나온다.
-///
-/// 이 예산이 안 A(전용 창 620×460)보다 빡빡한 대신, 지켜야 할 규칙이 하나 더 있다: 배틀 화면은
-/// **팝오버 본체 `ScrollView` 안**에서 그려지므로 자기 세로 스크롤을 둘 수 없다(defect-log — 안쪽은
-/// 스크롤되지 않고 잘린다). 넘치는 것을 스크롤로 미룰 수 없으니 **고정 높이 칸 + 최근 N줄**로 자른다.
-///
-/// 로그를 필드 옆이 아니라 **아래**로 내린 것도 여기서 나온다. 옆에 두면 332pt 에 들어가지 않는다
-/// (`BattleFieldTests.testALogBesideTheFieldWouldNotFitThePopoverWidth` 가 그 대조군이다).
+/// 배틀 화면의 크기 예산 — 계획 §6.3 **안 B**(기존 팝오버 안). 모든 숫자가 팝오버 콘텐츠 폭에서
+/// 거꾸로 나온다. 화면이 **팝오버 본체 `ScrollView` 안**이라 자기 세로 스크롤을 둘 수 없으므로
+/// (defect-log — 안쪽은 스크롤되지 않고 잘린다) 넘치는 건 **고정 높이 칸 + 최근 N줄**로 자른다.
+/// 로그가 필드 옆이 아니라 아래인 이유도 폭이다(`testALogBesideTheFieldWouldNotFitThePopoverWidth`).
 enum BattleFieldMetrics {
     /// 팝오버가 주는 폭 그대로. 더 요구하면 매번 압축돼 그려진다.
     static var width: CGFloat { PopoverMetrics.contentWidth }
@@ -23,12 +18,11 @@ enum BattleFieldMetrics {
     static let barWidth: CGFloat = 168
     static let mySpriteSize: CGFloat = 64
     static let opponentSpriteSize: CGFloat = 52
-    /// 로그 줄 수와 그 칸의 **고정** 높이. 배틀 후반에 로그가 길어져도 높이가 따라 커지면 늘어난
-    /// 만큼이 잘리고, 잘리는 쪽은 아래에 있는 기술 버튼이다. 전체 로그는 Phase 9 에서 별 시트로 붙는다.
+    /// 로그 줄 수와 그 칸의 **고정** 높이. 높이가 로그를 따라 커지면 늘어난 만큼 아래 기술 버튼이
+    /// 잘린다. 전체 로그는 Phase 9 에서 별 시트로 붙는다.
     static let logLines = 4
-    /// 4줄 × 9pt 폰트 + 줄간격 + 패딩 = 60pt 다. 58 로 뒀다가 마지막 줄이 2pt 넘쳤는데, 예산
-    /// 검증은 **보고하는** 높이만 보므로 전부 통과했다 — `testTheLogBoxIsTallEnoughForTheLinesItDraws`
-    /// 가 그 2pt 를 잡았다.
+    /// 4줄 × 9pt + 줄간격 + 패딩. 예산 검증은 **보고하는** 높이만 보므로 실제로 담기는지는
+    /// `testTheLogBoxIsTallEnoughForTheLinesItDraws` 가 본다(58 이면 2pt 넘친다).
     static let logHeight: CGFloat = 64
 }
 
@@ -69,12 +63,9 @@ enum HPReadout {
         return "\(Swift.max(1, hp * 100 / maximum))%"
     }
 
-    /// HP바가 채울 비율 0…1. **뷰 밖에 있어야 한다** — `GeometryReader` 안에서 계산하면 그 클로저가
-    /// 실제 레이아웃 때만 돌아서, 0 나눗셈 가드가 `--show-regions` 에서 영영 미실행으로 남는다
-    /// (`badgeTint` 와 같은 부류다). 최대가 0 이하인 스냅샷은 손상 세이브·적대적 피어에서 온다.
-    ///
-    /// 미실행 표시(캐럿 + 0)를 주석에 그대로 적지 않는다 — 그 표시를 grep 하는 감사 스크립트가
-    /// 주석을 리전으로 세어 버린다(`ScrollView` 가드가 자기 주석에 걸린 것과 같은 부류다).
+    /// HP바가 채울 비율 0…1. **뷰 밖에 있어야 한다** — `GeometryReader` 안에서 계산하면 0 나눗셈
+    /// 가드가 실제 레이아웃 때만 돌아 커버리지에서 영영 미실행으로 남는다(`badgeTint` 와 같은 부류).
+    /// 최대가 0 이하인 스냅샷은 손상 세이브·적대적 피어에서 온다.
     static func ratio(hp: Int, max maximum: Int) -> Double {
         guard maximum > 0 else { return 0 }
         return Swift.min(1, Swift.max(0, Double(hp) / Double(maximum)))
@@ -430,6 +421,39 @@ struct SwitchStripView: View {
     }
 }
 
+// MARK: - 로그 칸
+
+/// 최근 `BattleFieldMetrics.logLines` 줄만, **고정 높이**로. 세 모드가 같은 칸을 쓴다 — 멀티만
+/// 높이·줄바꿈 제한이 없던 동안은 긴 줄이 감겨 아래 기술 버튼을 밀어냈다.
+/// `ScrollView` 를 쓰지 않는 이유는 `BattleFieldMetrics.logLines` 주석에 있다.
+struct BattleLogBox: View {
+    let lines: [BattleLog.Line]
+    /// 내 편 줄을 진하게 그리는 기준.
+    let myActor: BattleActor?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(lines.suffix(BattleFieldMetrics.logLines).enumerated()), id: \.offset) { _, line in
+                Text(line.text)
+                    .font(.system(size: 9))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(line.actor == myActor ? .primary : .secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, minHeight: BattleFieldMetrics.logHeight,
+               maxHeight: BattleFieldMetrics.logHeight, alignment: .topLeading)
+        // 고정 높이는 **보고하는** 높이만 고정한다 — 넘친 줄은 칸 밖에 그려져 기술 버튼 위에 겹친다.
+        // 줄 수가 칸에 맞는지는 `testTheLogBoxIsTallEnoughForTheLinesItDraws` 가 지키고, 이 clip 은
+        // 그 가드를 넘어선 경우에도 조작을 가리지 않게 하는 두 번째 방어선이다.
+        .clipped()
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+    }
+}
+
 // MARK: - 배틀 화면 전체 (순수 렌더러)
 
 /// 필드 + 선택 패널 + 옆 로그. 상태를 하나도 들지 않는 **순수 렌더러**라 세 모드가 같은 화면을
@@ -475,7 +499,7 @@ struct BattleArenaView: View {
             if !switchSlots.isEmpty {
                 SwitchStripView(slots: switchSlots, label: l.battleSwitch, onSwitch: onSwitch)
             }
-            logBox
+            BattleLogBox(lines: logLines, myActor: myActor)
         }
         // 팝오버가 주는 폭을 넘겨 요구하지 않는다 — 넘기면 매번 압축돼 그려진다. 바깥 여백은
         // 팝오버(`PopoverMetrics.padding`)가 이미 준다.
@@ -500,29 +524,6 @@ struct BattleArenaView: View {
         }
     }
 
-    /// 필드 아래 로그 — **고정 높이**, 최근 몇 줄만. `ScrollView` 를 쓰지 않는 이유는 `logLines`
-    /// 주석에 있다. 고정 높이여야 후반 턴에 로그가 길어져도 아래 버튼이 밀려 잘리지 않는다.
-    private var logBox: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(logLines.suffix(BattleFieldMetrics.logLines).enumerated()), id: \.offset) { _, line in
-                Text(line.text)
-                    .font(.system(size: 9))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(line.actor == myActor ? .primary : .secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, minHeight: BattleFieldMetrics.logHeight,
-               maxHeight: BattleFieldMetrics.logHeight, alignment: .topLeading)
-        // 고정 높이는 **보고하는** 높이만 고정한다 — 내용이 넘치면 칸 밖에 그려져 아래 기술 버튼 위에
-        // 겹친다. 줄 수가 칸에 맞는지는 `testTheLogBoxIsTallEnoughForTheLinesItDraws` 가 지키고,
-        // 이 clip 은 그 가드를 넘어선 경우에도 조작을 가리지 않게 하는 두 번째 방어선이다.
-        .clipped()
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
-    }
 }
 
 // MARK: - 스트림 → 로그 줄

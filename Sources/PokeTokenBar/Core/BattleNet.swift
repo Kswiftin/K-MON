@@ -100,9 +100,8 @@ final class BattleCenter {
     private(set) var turnEndsAt: Date?
     private var turnTimeoutTask: Task<Void, Never>?
 
-    /// 시간이 다 됐을 때 자동으로 고를 기술 — PP 가 남은 **첫** 칸이고, 전부 소진이면 발버둥(−1)이다.
-    /// 무작위로 고르지 않는 이유가 있다: 이 선택은 와이어로 나가므로 desync 는 없지만, 시스템 RNG 를
-    /// 쓰면 같은 상황이 재현되지 않아 회귀 테스트를 쓸 수 없다(연습 배틀에서 이미 겪은 부류다).
+    /// 시간이 다 됐을 때 자동으로 고를 기술 — PP 가 남은 **첫** 칸, 전부 소진이면 발버둥(−1).
+    /// 무작위로 고르지 않는 건 시스템 RNG 를 쓰면 같은 상황이 재현되지 않아 회귀 테스트를 못 쓰기 때문.
     static func automaticMoveIndex(for side: BattleSide) -> Int {
         side.pp.indices.first { side.canUse(moveAt: $0) } ?? -1
     }
@@ -514,9 +513,8 @@ final class BattleCenter {
         turnEndsAt = nil
     }
 
-    /// 시간이 다 됐는데 아직 안 골랐으면 자동으로 고른다. 그 선택은 사람이 고른 것과 **같은 경로로**
-    /// 상대에게 나가므로 두 피어가 갈라지지 않는다 — 규칙이 아니라 입력이 바뀌는 것이라
-    /// `rulesVersion` 도 올릴 필요가 없다.
+    /// 시간이 다 됐는데 아직 안 골랐으면 자동으로 고른다. 사람이 고른 것과 **같은 경로로** 나가므로
+    /// 두 피어가 갈라지지 않고, 규칙이 아니라 입력이 바뀌는 것이라 `rulesVersion` 도 그대로다.
     private func fillTimedOutChoice(turn: Int) {
         guard case .battling = phase, let state = battle, state.turn == turn, state.myChoice == nil else { return }
         AppLog.write("battle turn \(turn) timed out — choosing a move automatically")
@@ -528,8 +526,10 @@ final class BattleCenter {
         guard var b = battle, let myIdx = b.myChoice, let oppIdx = b.oppChoice else { return }
         let myMove = b.move(forIndex: myIdx, mine: true)
         let oppMove = b.move(forIndex: oppIdx, mine: false)
-        if myIdx >= 0 { b.me.pp[myIdx] = max(0, b.me.pp[myIdx] - 1) }
-        if oppIdx >= 0 { b.opp.pp[oppIdx] = max(0, b.opp.pp[oppIdx] - 1) }
+        // 인덱스 검증은 경계(`chooseMove`/`handle(.move)`)에서 끝났지만, 여기서도 범위를 확인한다 —
+        // 배열 첨자는 틀리면 거절이 아니라 크래시다.
+        if b.me.pp.indices.contains(myIdx) { b.me.pp[myIdx] = max(0, b.me.pp[myIdx] - 1) }
+        if b.opp.pp.indices.contains(oppIdx) { b.opp.pp[oppIdx] = max(0, b.opp.pp[oppIdx] - 1) }
 
         // 엔진 좌변은 항상 challenger(A) 다. 양쪽이 같은 좌변으로 계산해야 같은 결과가 나온다.
         var sideA = b.iAmA ? b.me : b.opp
@@ -613,7 +613,9 @@ final class BattleCenter {
             }
         case .move(let turn, let moveIndex):
             guard case .battling = phase, var b = battle, b.oppChoice == nil, turn == b.turn else { return }
-            guard moveIndex >= -1, moveIndex < 4 else { return }
+            // 인덱스는 상대가 보내오는 값이다. `< 4` 로 세던 때는 기술이 2개인 무브셋에 3 이 오면
+            // `resolveIfReady` 의 `opp.pp[3]` 이 범위를 벗어나 크래시였다 — 경계는 `canUse` 하나로 본다.
+            guard moveIndex == -1 || b.opp.canUse(moveAt: moveIndex) else { return }
             b.oppChoice = moveIndex
             battle = b
             resolveIfReady()

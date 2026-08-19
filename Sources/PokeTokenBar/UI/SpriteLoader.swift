@@ -25,10 +25,8 @@ actor SpriteStore {
     /// 캐시 파일명 키 — 정적 PNG 키는 기존 형식을 유지하고, 애니메이션은 showdown 전용
     /// 네임스페이스를 사용해 이전 Gen-V GIF 캐시를 자동으로 무효화한다.
     ///
-    /// `back` 은 배틀 필드가 쓰는 등 스프라이트다. **앞·뒤가 반드시 다른 키여야 한다** — 같은 키를
-    /// 쓰면 먼저 받은 쪽이 양쪽에 나와서 "등 스프라이트가 안 붙는다" 가 아니라 "정면이 나온다" 로
-    /// 보인다. 기본값이 `false` 인 것도 이유가 있다: 앞면 키가 바뀌면 기존 설치의 디스크 캐시가
-    /// 통째로 무효화된다.
+    /// `back` 은 배틀 필드가 쓰는 등 스프라이트다. **앞·뒤가 다른 키여야 한다** — 같은 키면 먼저 받은
+    /// 쪽이 양쪽에 나온다. 기본값이 `false` 인 건 앞면 키가 바뀌면 기존 디스크 캐시가 전부 무효화되기 때문.
     static func cacheKey(speciesID: Int, animated: Bool, shiny: Bool, back: Bool = false) -> String {
         let facing = back ? "back-" : ""
         if animated {
@@ -127,9 +125,11 @@ enum SpriteLoader {
             imageCache.setObject(img, forKey: key as NSString)
             return img
         }
-        if shiny { return cachedImage(speciesID: speciesID, animated: animated, shiny: false, back: back) }
-        guard back else { return nil }
-        return cachedImage(speciesID: speciesID, animated: animated, shiny: shiny, back: false)
+        // 폴백은 **방향을 먼저 포기한다**: (이로치,등) → (이로치,앞) → (일반,앞).
+        // 이로치를 먼저 포기하면 등 에셋이 없는 종의 이로치가 일반색으로 나온다.
+        if back { return cachedImage(speciesID: speciesID, animated: animated, shiny: shiny, back: false) }
+        guard shiny else { return nil }
+        return cachedImage(speciesID: speciesID, animated: animated, shiny: false, back: back)
     }
 
     /// 정적 스프라이트. animated=true 면 Gen-V 움직이는 스프라이트(없으면 정적으로 폴백).
@@ -151,13 +151,15 @@ enum SpriteLoader {
                                                                   shiny: shiny, back: back) as NSString)
             return img
         }
-        // shiny 미제공 → 일반 폴백
-        if shiny { return await image(speciesID: speciesID, animated: animated, shiny: false, back: back) }
-        // 등 스프라이트가 아예 없는 종 → 앞면. 배틀 중에 아무것도 안 그리는 것보다 낫지만, 이 폴백은
-        // "등이 안 붙는다" 가 아니라 "정면이 나온다" 로 보이는 부류라 조용히 넘기지 않는다.
-        guard back else { return nil }
-        AppLog.write("sprite: no back asset for species \(speciesID) — using the front sprite")
-        return await image(speciesID: speciesID, animated: animated, shiny: shiny, back: false)
+        // 폴백은 **방향을 먼저 포기한다**: (이로치,등) → (이로치,앞) → (일반,앞). 이로치를 먼저
+        // 포기하면 등 에셋이 없는 종의 이로치가 일반색으로 나온다. 정면 폴백은 "등이 안 붙는다" 가
+        // 아니라 "정면이 나온다" 로 보이는 부류라 조용히 넘기지 않는다.
+        if back {
+            AppLog.write("sprite: no back asset for species \(speciesID) — using the front sprite")
+            return await image(speciesID: speciesID, animated: animated, shiny: shiny, back: false)
+        }
+        guard shiny else { return nil }
+        return await image(speciesID: speciesID, animated: animated, shiny: false, back: back)
     }
 
     static func decodedFrames(speciesID: Int, shiny: Bool,

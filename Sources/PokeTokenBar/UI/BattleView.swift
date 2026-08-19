@@ -441,19 +441,22 @@ struct BattleView: View {
                      : (store.language == .ko ? "기술을 선택하세요." : "Choose a move."))
                     .font(.caption).bold()
                 if let me {
-                    // 1v1 과 같은 버튼을 쓴다 — 타입색·분류 아이콘·PP 경고 단계가 모드마다 다를 이유가 없다.
-                    MoveGridView(moves: me.side.moves, pp: me.side.pp, language: store.language,
+                    // 1v1 과 같은 버튼·같은 발버둥 처리를 쓴다. 발버둥이 없던 동안은 PP 가 전부
+                    // 마르면 네 칸이 모두 비활성이라 마감(30초)까지 아무것도 할 수 없었다.
+                    let struggling = me.side.mustStruggle
+                    MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,
+                                 pp: struggling ? [] : me.side.pp, language: store.language,
                                  isEnabled: multiplayerTargetID != nil) { index in
                         guard let target = multiplayerTargetID else { return }
-                        center.multiplayer.submitAction(targetID: target, moveIndex: index)
+                        center.multiplayer.submitAction(targetID: target, moveIndex: struggling ? -1 : index)
                     }
                 }
             }
             if !center.multiplayer.combatEvents.isEmpty {
                 // 1v1 과 스트림도 접기도 같다. 예전엔 여기만 "이름 → 이름: -12" 라는
                 // 별도 문구였고, 기술 이름도 급소도 상성도 나오지 않았다.
-                logBox(multiplayerLogLines(center.multiplayer.combatEvents, fighters: fighters),
-                       mine: .fighter(center.multiplayer.myID))
+                BattleLogBox(lines: multiplayerLogLines(center.multiplayer.combatEvents, fighters: fighters),
+                             myActor: .fighter(center.multiplayer.myID))
             }
         }
         .onAppear {
@@ -574,22 +577,6 @@ struct BattleView: View {
                                    let moves = fighter(actor)?.side.moves ?? []
                                    return (moves.first { $0.id == id } ?? .struggle()).name(store.language)
                                })
-    }
-
-    /// 스트림을 접은 줄만 그린다 — 문구 결정은 `BattleLog` 에 있다(뷰는 순수 렌더러).
-    /// 최근 몇 줄만 보이는 구조라 `ScrollView` 는 쓰지 않는다 — 팝오버 본체가 이미 스크롤이고,
-    /// 그 안에 세로 스크롤을 겹치면 안쪽이 스크롤되지 않고 잘린다(defect-log 규칙).
-    private func logBox(_ lines: [BattleLog.Line], mine: BattleActor?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(lines.suffix(4).enumerated()), id: \.offset) { _, line in
-                Text(line.text)
-                    .font(.caption2)
-                    .foregroundStyle(line.actor == mine ? .primary : .secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
     }
 
     /// 신청 수락 화면의 상대 미리보기. HP 도 상태도 아직 없다 — 스냅샷만 왔고 배틀은 안 시작했다.
