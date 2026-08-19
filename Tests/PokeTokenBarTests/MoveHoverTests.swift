@@ -204,7 +204,7 @@ final class MoveHoverTests: XCTestCase {
                                                  languages: ["ko"])["ko"], disable)
     }
 
-    /// 줄바꿈·폼피드는 한 줄로 편다(설명 슬롯은 2줄 고정이라 원문 개행이 그대로 오면 잘린다).
+    /// 줄바꿈·폼피드는 한 줄로 편다(설명 슬롯은 줄 수가 고정이라 원문 개행이 그대로 오면 잘린다).
     func testFlattensLineBreaks() {
         let picked = PokeAPIClient.flavorTexts([(language: "en", text: "A move\nthat hits\u{000C}hard.")],
                                                languages: ["en"])
@@ -224,6 +224,41 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertTrue(CompanionStore.needsDescriptionRefresh(good.withoutDescriptions()))
     }
 
+    /// 트리거 브랜치: 모든 언어 항목이 안내문이면 flavorTexts 는 빈 dict 를 만든다.
+    /// 그걸 "없음" 으로 보면 로드할 때마다 다시 받아 영원히 수렴하지 않는다 —
+    /// "안 받아봤다(nil)" 와 "받아봤지만 쓸 게 없다([:])" 는 다른 상태다.
+    func testFetchedButEmptyDescriptionsDoNotRefetchForever() {
+        let fetchedEmpty = MoveSpec(id: 216, names: ["ko": "은혜갚기"], type: .normal, power: 102,
+                                    damageClass: .physical, accuracy: 100, pp: 20, descriptions: [:])
+        XCTAssertFalse(CompanionStore.needsDescriptionRefresh(fetchedEmpty),
+                       "조회 결과가 빈 것뿐인데 매번 다시 받는다")
+    }
+
+    /// 전각 공백이 두 번 이상 와도 안내문으로 잡아야 한다 — 1:1 치환만 하면 "この技は　　使えません" 을 놓친다.
+    func testDetectsNoticeWithRepeatedIdeographicSpaces() {
+        XCTAssertTrue(PokeAPIClient.isUnusableMoveNotice("この技は\u{3000}\u{3000}使えません\n思い出すことが"))
+        XCTAssertTrue(PokeAPIClient.isUnusableMoveNotice("사용할 수  없는  기술입니다."))
+    }
+
+    // MARK: 슬롯 배선 (id → 기술 → 문구)
+
+    /// 호버 id 를 실제 기술로 되짚는 단계까지 한 함수에 두고 검증한다.
+    /// 이게 뷰 안에만 있으면 "되짚기를 통째로 지워도 테스트 전부 통과" 가 된다(#40 과 같은 false confidence).
+    func testPanelTextResolvesTheHoveredMove() {
+        let moves = [move(descriptions: ["ko": "첫 번째 설명"]),
+                     MoveSpec(id: 99, names: ["ko": "다른 기술"], type: .water, power: 60,
+                              damageClass: .special, accuracy: 100, pp: 20,
+                              descriptions: ["ko": "두 번째 설명"])]
+        XCTAssertEqual(MoveListView.panelText(hoveredID: 99, moves: moves, l: L(.ko)), "두 번째 설명")
+        XCTAssertEqual(MoveListView.panelText(hoveredID: nil, moves: moves, l: L(.ko)), L(.ko).moveHoverHint)
+    }
+
+    /// 목록이 갈린 뒤(레벨업 재로드) 남은 옛 id 는 엉뚱한 기술이 아니라 안내로 떨어진다.
+    func testStaleHoveredIDFallsBackToHint() {
+        XCTAssertEqual(MoveListView.panelText(hoveredID: 12_345, moves: [move()], l: L(.ko)),
+                       L(.ko).moveHoverHint)
+    }
+
     // MARK: 레이아웃 (팝오버 흔들림 방지 — #9 부류)
 
     /// 호버 대상이 바뀌어도 슬롯 높이는 그대로다. 길이에 따라 늘어나면 마우스를 옮길 때마다
@@ -233,6 +268,22 @@ final class MoveHoverTests: XCTestCase {
         let long = renderedHeight(MoveHoverPanel(
             text: String(repeating: "아주 긴 기술 설명이 여기에 들어간다. ", count: 12)))
         XCTAssertEqual(short, long, accuracy: 0.5, "설명 길이에 따라 슬롯 높이가 변한다")
+    }
+
+    /// 슬롯 줄 예산이 **실제 최장 설명**을 담는지 — 못 담으면 뒷부분이 통째로 사라지는데
+    /// 나머지를 볼 경로가 없다(`.help()` 는 팝오버 안에서 안 뜬다. 이 화면의 원래 결함).
+    /// 예전 2줄 예산은 이 문자열(PokéAPI 그래스필드, 157자 = 3줄)에서 마지막 줄을 잘라먹었다.
+    /// 실제 호출부 폭(`PopoverMetrics.contentWidth - 16`)으로 재야 의미가 있다.
+    func testLongestRealDescriptionIsNotTruncated() {
+        let longest = "The user turns the ground into Grassy Terrain for five turns. This restores "
+            + "the HP of Pok\u{e9}mon on the ground a little every turn and powers up Grass-type moves."
+        let panelWidth = PopoverMetrics.contentWidth - 16
+        let needed = renderedHeight(Text(longest).font(.caption2)
+                                        .frame(maxWidth: .infinity, alignment: .leading),
+                                    width: panelWidth - 12)      // 패널 좌우 패딩 6+6
+        let budget = renderedHeight(MoveHoverPanel(text: longest), width: panelWidth) - 12
+        XCTAssertLessThanOrEqual(needed, budget + 0.5,
+                                 "슬롯 \(MoveHoverPanel.lines)줄 예산이 실제 최장 설명(\(needed)pt)을 못 담는다")
     }
 
     /// 안내 문구 상태와 설명 상태의 높이도 같다 — 처음 호버하는 순간에도 안 흔들려야 한다.

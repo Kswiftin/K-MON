@@ -784,9 +784,11 @@ struct MoveListView: View {
         isInside ? moveID : current
     }
 
-    private var hoveredMove: MoveSpec? {
-        guard let hoveredMoveID else { return nil }
-        return store.displayedMoves.first { $0.id == hoveredMoveID }
+    /// 슬롯 문구 — 호버 id 를 실제 기술로 되짚는 단계까지 여기 둔다. 되짚기를 뷰 안에 숨기면
+    /// "상태는 맞는데 문구가 안 따라가는" 배선 결함을 테스트가 못 본다(#40 과 같은 false confidence).
+    /// 목록이 갈려 남은 옛 id 는 엉뚱한 기술이 아니라 안내로 떨어진다.
+    static func panelText(hoveredID: Int?, moves: [MoveSpec], l: L) -> String {
+        l.moveHoverText(hoveredID.flatMap { id in moves.first { $0.id == id } })
     }
 
     var body: some View {
@@ -819,7 +821,8 @@ struct MoveListView: View {
                 }
             }
             if !store.displayedMoves.isEmpty || store.isLoadingDisplayedMoves {
-                MoveHoverPanel(text: l.moveHoverText(hoveredMove))
+                MoveHoverPanel(text: Self.panelText(hoveredID: hoveredMoveID,
+                                                    moves: store.displayedMoves, l: l))
             }
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
@@ -844,7 +847,9 @@ struct MoveListView: View {
         .frame(maxWidth: maxWidth, alignment: .leading)
     }
 
-    /// 길게 머무르면 뜨는 네이티브 툴팁 — 슬롯과 같은 문구를 쓴다(어휘가 갈리면 #10 이 재발한다).
+    /// 접근성 보조 문구 겸 팝오버 밖(창)에서의 네이티브 툴팁 — 슬롯과 같은 어휘를 쓴다(갈리면 #10 재발).
+    /// **표시 경로로 믿으면 안 된다**: `.help()` 는 NSPopover 안에서 아무것도 띄우지 않는다(defect-log 참고).
+    /// 사용자가 꼭 봐야 하는 정보는 위 `MoveHoverPanel` 에 직접 그린다.
     private func moveHelp(_ move: MoveSpec) -> String {
         let details = l.moveDetailLine(move)
         if let description = move.description(store.language), !description.isEmpty {
@@ -854,16 +859,22 @@ struct MoveListView: View {
     }
 }
 
-/// 호버한 기술의 설명 슬롯. 높이를 2줄로 고정한다 — 설명 길이를 따라 늘어나면 행 사이를
+/// 호버한 기술의 설명 슬롯. 높이를 고정한다 — 설명 길이를 따라 늘어나면 행 사이를
 /// 지날 때마다 아래 콘텐츠가 밀려 팝오버 안이 떨린다(#9 와 같은 부류).
-/// 높이는 숫자 상수가 아니라 같은 폰트의 2줄 더미에서 유도한다(폰트·OS 따라 실제 줄 높이가 다르다).
+/// 높이는 숫자 상수가 아니라 같은 폰트의 더미 줄에서 유도한다(폰트·OS 따라 실제 줄 높이가 다르다).
+///
+/// 줄 수는 3 이다. 2 줄로 두면 PokéAPI 최장급 설명(157자, 예: 그래스필드)이 잘리는데,
+/// 잘린 나머지를 볼 경로가 없다 — `.help()` 툴팁은 팝오버 안에서 안 뜬다(이 화면의 원래 결함).
 struct MoveHoverPanel: View {
+    static let lines = 3
+
     let text: String
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Text(verbatim: "—\n—").opacity(0).accessibilityHidden(true)
-            Text(text).lineLimit(2)
+            Text(verbatim: Array(repeating: "—", count: Self.lines).joined(separator: "\n"))
+                .opacity(0).accessibilityHidden(true)
+            Text(text).lineLimit(Self.lines)
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
@@ -987,7 +998,10 @@ private struct MoveLearningCard: View {
                     HStack(spacing: 5) {
                         Text("Lv.\(prompt.level)").font(.caption2).foregroundStyle(.secondary)
                         TypeBadge(type: prompt.move.type, language: store.language)
-                        Text(prompt.move.damageClass == .status ? "변화" : "Power \(prompt.move.power)")
+                        // 행 라벨과 같은 L 어휘를 쓴다 — 예전엔 "변화"/"Power N" 이 박혀 있어
+                        // 한국어 UI 에 "Power 90", 영어 UI 에 "변화" 가 나왔다(#10 부류).
+                        Text(prompt.move.damageClass == .status
+                             ? store.l.moveCategoryStatus : store.l.movePowerShort(prompt.move.power))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }

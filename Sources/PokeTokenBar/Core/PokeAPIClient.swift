@@ -339,9 +339,10 @@ actor PokeAPIClient: PokeProviding {
         return spec
     }
 
-    /// 언어별 기술 설명 — flavor_text 는 버전그룹 오름차순이라 뒤가 최신이지만, 소드·실드에서
-    /// *삭제된* 기술은 최신 항목이 설명이 아니라 "사용할 수 없는 기술입니다" 안내문이다
-    /// (실측: move/return). 그 항목을 건너뛰고 그 앞의 진짜 설명을 남긴다.
+    /// 언어별 기술 설명 — flavor_text 는 버전그룹 오름차순이라 **뒤로 갈수록 최신**이다.
+    /// 그래서 순서대로 덮어쓰면 최신이 남는데, 소드·실드에서 *삭제된* 기술은 그 최신 항목이 설명이 아니라
+    /// "사용할 수 없는 기술입니다" 안내문이다(실측: move/return). 안내문 항목은 건너뛰므로 결과적으로
+    /// **가장 최신의 진짜 설명**이 남는다. (순회는 오래된 것부터다 — `break` 를 넣으면 정반대가 된다.)
     static func flavorTexts(_ entries: [(language: String, text: String)],
                             languages: [String]) -> [String: String] {
         var out: [String: String] = [:]
@@ -358,10 +359,10 @@ actor PokeAPIClient: PokeProviding {
     /// 금지어("4턴 동안 사용할 수 없게 만든다") 같은 진짜 설명까지 지운다.
     static func isUnusableMoveNotice(_ text: String) -> Bool {
         let normalized = text
-            .replacingOccurrences(of: "\u{2019}", with: "'")   // PokéAPI 는 굽은 따옴표를 쓴다
-            .replacingOccurrences(of: "\u{3000}", with: " ")   // 일본어 전각 공백
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\u{000C}", with: " ")
+            .replacingOccurrences(of: "\u{2019}", with: "'")     // PokéAPI 는 굽은 따옴표를 쓴다
+            .replacingOccurrences(of: "\u{3000}", with: " ")     // 일본어 전각 공백
+            // 공백류는 개수까지 접는다 — 1:1 치환만 하면 "この技は　　使えません" 처럼 겹친 경우를 놓친다.
+            .replacingOccurrences(of: "[\\s\u{000C}]+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return unusableNoticePrefixes.contains { normalized.hasPrefix($0) }
     }
