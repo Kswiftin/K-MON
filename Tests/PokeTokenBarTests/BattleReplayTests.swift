@@ -212,3 +212,112 @@ final class BattleReplayTests: XCTestCase {
         XCTAssertNil(BattleReplay.struck(by: .status(.b, .burn)))
     }
 }
+
+/// 큐를 실제로 돌리는 쪽 — 뷰가 읽는 상태(표시 HP · 재생 진행도 · 오버레이)를 시간축에 푼다.
+/// 순수 큐(`BattleReplay`)가 맞아도 여기서 어긋나면 화면은 그대로 튄다.
+@MainActor
+final class BattleAnimatorTests: XCTestCase {
+
+    /// 재생이 끝날 때까지 기다린다 — 고정 대기(`sleep(0.5)`)는 부하가 걸린 CI 에서 흔들린다.
+    private func waitUntilIdle(_ animator: BattleAnimator, timeout: TimeInterval = 5) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while animator.overlay.isPlaying, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private let oneTurn: [BattleEvent] = [
+        .turn(2), .move(.a, moveID: 1), .crit(.b), .damage(.b, amount: 30, cause: .move),
+    ]
+
+    /// 팝오버를 닫아 뒀다 다시 열면 그동안 쌓인 스트림이 통째로 들어온다. 그걸 처음부터 재생하면
+    /// 이미 지나간 턴을 다시 보게 되고, 그동안 입력이 잠긴다 — 첫 동기화는 **끝으로 건너뛴다**.
+    func testOpeningAnInProgressBattleDoesNotReplayItsHistory() {
+        let animator = BattleAnimator()
+        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+
+        XCTAssertEqual(animator.playedCount, oneTurn.count, "이미 지나간 턴을 다시 재생하면 안 된다")
+        XCTAssertFalse(animator.overlay.isPlaying, "재생 중이면 입력이 잠긴 채 화면이 열린다")
+        XCTAssertEqual(animator.hp(for: .b), 70, "건너뛴 뒤의 HP 는 엔진 값 그대로다")
+    }
+
+    /// 끄기는 기다리지 않는다 — `sync` 가 돌아온 시점에 이미 끝나 있어야 한다.
+    /// 비동기로 한 프레임이라도 미루면 "끄기" 인데도 입력이 한 순간 잠긴다.
+    func testTurningPlaybackOffRevealsTheOutcomeWithoutWaiting() {
+        let animator = BattleAnimator()
+        animator.sync(events: [], hp: [.a: 100, .b: 100], speed: .off)
+        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .off)
+
+        XCTAssertEqual(animator.playedCount, oneTurn.count)
+        XCTAssertFalse(animator.overlay.isPlaying)
+        XCTAssertEqual(animator.hp(for: .b), 70)
+    }
+
+    /// 이 PR 의 본론 — 새 턴이 들어와도 바가 최종값으로 **튀지 않는다.** `sync` 직후엔 아직 이전
+    /// HP 고, 재생이 끝나야 엔진 값에 도달한다. 로그도 같은 진행도로 잘리므로 결과가 미리 새지 않는다.
+    func testANewTurnIsPlayedBackInsteadOfSnappingToTheFinalHP() async {
+        let animator = BattleAnimator()
+        animator.sync(events: [], hp: [.a: 100, .b: 100], speed: .normal)
+        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+
+        XCTAssertTrue(animator.overlay.isPlaying, "재생이 시작되지 않으면 입력이 잠기지 않는다")
+        XCTAssertEqual(animator.hp(for: .b), 100, "동기화 직후 최종 HP 로 튀면 재생할 게 남지 않는다")
+        XCTAssertLessThan(animator.playedCount, oneTurn.count, "로그가 결과를 미리 보여 주면 안 된다")
+
+        await waitUntilIdle(animator)
+
+        XCTAssertEqual(animator.hp(for: .b), 70, "재생이 끝나면 엔진 값에 정확히 도달한다")
+        XCTAssertEqual(animator.playedCount, oneTurn.count)
+        XCTAssertFalse(animator.overlay.isPlaying, "재생이 끝났는데 잠겨 있으면 다음 턴을 고를 수 없다")
+        XCTAssertNil(animator.overlay.popped, "마지막 팝 문구가 남으면 다음 턴 내내 떠 있는다")
+    }
+
+    /// 다음 배틀은 처음부터다 — 스트림이 짧아지면(새 배틀은 빈 스트림으로 시작한다) 진행도를 되돌린다.
+    /// 안 되돌리면 새 배틀의 첫 턴들이 "이미 재생한 것" 으로 취급돼 화면이 멈춘 채로 있는다.
+    func testStartingANewBattleForgetsTheOldOne() {
+        let animator = BattleAnimator()
+        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .off)
+        animator.sync(events: [], hp: [.a: 120, .b: 120], speed: .off)
+
+        XCTAssertEqual(animator.playedCount, 0)
+        XCTAssertEqual(animator.hp(for: .b), 120, "새 배틀의 만피로 갈아탄다")
+    }
+
+    /// 모르는 쪽(멀티의 다른 참가자 등)을 물으면 nil 이다 — 0 을 돌려주면 뷰가 쓰러진 것처럼 그린다.
+    func testAnUnknownSideHasNoDisplayHP() {
+        let animator = BattleAnimator()
+        animator.sync(events: [], hp: [.a: 100], speed: .off)
+
+        XCTAssertNil(animator.hp(for: .b))
+    }
+}
+
+/// 재생 속도 설정 — 저장과 문구. 끄기가 필수라(저전력·접근성) 설정 표면에 실제로 노출돼야 한다.
+final class ReplaySpeedSettingTests: XCTestCase {
+
+    /// 기본값은 보통이고, 고른 값은 앱을 다시 켜도 남는다.
+    func testTheReplaySpeedDefaultsToNormalAndSurvivesARelaunch() throws {
+        let suite = "kmon.replay.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let initial = AppSettings(defaults: defaults)
+        XCTAssertEqual(initial.battleReplaySpeed, .normal)
+
+        initial.battleReplaySpeed = .off
+        XCTAssertEqual(AppSettings(defaults: defaults).battleReplaySpeed, .off,
+                       "끄기를 고른 사용자에게 다시 켜서 애니메이션을 보여 주면 안 된다")
+    }
+
+    /// 세 속도가 세 언어에서 각각 다른 이름을 가진다 — 같은 이름 두 개면 고를 수 없다.
+    func testEverySpeedIsLabelledInEveryLanguage() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            let l = L(language)
+            let names = ReplaySpeed.allCases.map { l.battleReplaySpeedName($0) }
+            XCTAssertFalse(names.contains { $0.isEmpty }, "\(language.rawValue) 에 빈 이름이 있다")
+            XCTAssertEqual(Set(names).count, ReplaySpeed.allCases.count,
+                           "\(language.rawValue) 에서 두 속도의 이름이 같다")
+            XCTAssertFalse(l.battleReplaySpeedLabel.isEmpty)
+        }
+    }
+}
