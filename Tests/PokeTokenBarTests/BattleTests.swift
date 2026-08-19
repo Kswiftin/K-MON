@@ -145,6 +145,105 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(BattleEngine.rulesVersion, 2, "Gen 2 데미지 파이프라인 = 규칙 2")
     }
 
+    // MARK: 급소 단계
+
+    /// Gen 2 급소 단계표(분모 256). 고급소기는 이 표에서 **+2 단계**다.
+    func testCriticalHitThresholdsFollowTheGen2StageTable() {
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 0), 17)   // 17/256 ≈ 6.6%
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 1), 32)   // 1/8
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 2), 64)   // 1/4
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 3), 85)   // 85/256 — 상한
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 9), 85, "3단계 이상은 전부 상한이다")
+        XCTAssertEqual(BattleEngine.critThreshold(stage: -1), 17, "단계가 음수여도 기본 확률")
+    }
+
+    /// 단계표가 `resolveAttack` 까지 **실제로 연결됐는지** 본다. 표만 맞고 배선이 없어도 위 테스트는
+    /// 초록으로 통과하므로, 굴림을 밟는 경로를 따로 확인해야 한다.
+    func testHighCritMoveCritsFarMoreOftenThanANormalMove() {
+        let attacker = BattleSide(water()), defender = BattleSide(fire())
+        func critCount(_ move: MoveSpec) -> Int {
+            (UInt64(0)..<512).reduce(0) { count, seed in
+                var rng = SplitMix64(seed: seed)
+                let outcome = BattleEngine.resolveAttack(attacker: attacker, defender: defender,
+                                                         move: move, rng: &rng)
+                return count + (outcome.isCritical ? 1 : 0)
+            }
+        }
+        var highCrit = surf()
+        highCrit.critRate = 1                       // PokéAPI `meta.crit_rate` — 베어가르기 부류
+        let plain = critCount(surf()), boosted = critCount(highCrit)
+
+        // 512 회의 기대값은 34(17/256) 대 128(1/4) 이다. seed 를 고정한 순회라 값은 매 실행 같다.
+        XCTAssertGreaterThan(plain, 0, "기본 확률도 관측돼야 한다 — 0 이면 굴림 자체가 죽은 것이다")
+        XCTAssertGreaterThan(boosted, plain * 2, "고급소기가 두 배도 안 되면 단계가 연결되지 않았다")
+        XCTAssertEqual(Double(boosted) / 512, 0.25, accuracy: 0.05,
+                       "+2 단계는 1/4 이어야 한다 — 1단계(1/8)와 구분된다")
+    }
+
+    /// PokéAPI `/move` 응답 → `MoveSpec` 매핑. `meta.crit_rate` 는 이 경로로만 들어오므로
+    /// 필드가 스펙까지 실려오는지를 JSON 모양 그대로 확인한다.
+    private func slashJSON(includeMeta: Bool) -> Data {
+        let meta = includeMeta ? #", "meta": {"crit_rate": 1}"# : ""
+        return Data("""
+        {"id": 163, "power": 70, "accuracy": 100, "pp": 20, "priority": 0,
+         "type": {"name": "normal", "url": null},
+         "damage_class": {"name": "physical", "url": null},
+         "names": [{"name": "Slash", "language": {"name": "en", "url": null}},
+                   {"name": "베어가르기", "language": {"name": "ko", "url": null}}],
+         "flavor_text_entries": [{"flavor_text": "Cuts with claws.",
+                                  "language": {"name": "en", "url": null}}]\(meta)}
+        """.utf8)
+    }
+
+    func testMoveSpecFromPokeAPIJSONCarriesCritRate() throws {
+        let dto = try JSONDecoder().decode(MoveDTO.self, from: slashJSON(includeMeta: true))
+        let spec = try XCTUnwrap(MoveSpec.from(dto, fallbackName: "slash", languages: ["ko", "en"]))
+
+        XCTAssertEqual(spec.critRate, 1)
+        XCTAssertEqual(spec.critStage, 2, "Gen 2 고급소기는 +2 단계다")
+        XCTAssertEqual(spec.id, 163)
+        XCTAssertEqual(spec.power, 70)
+        XCTAssertEqual(spec.pp, 20)
+        XCTAssertEqual(spec.accuracy, 100)
+        XCTAssertEqual(spec.type, .normal)
+        XCTAssertEqual(spec.damageClass, .physical)
+        XCTAssertEqual(spec.turnPriority, 0)
+        XCTAssertEqual(spec.name(.ko), "베어가르기")
+        XCTAssertEqual(spec.name(.en), "Slash")
+    }
+
+    /// `meta` 가 없는 응답(옛 캐시)은 보통 급소율로 읽는다 — `nil` 이 곧 0단계다.
+    func testMoveSpecWithoutMetaReadsAsTheBaseCritRate() throws {
+        let dto = try JSONDecoder().decode(MoveDTO.self, from: slashJSON(includeMeta: false))
+        let spec = try XCTUnwrap(MoveSpec.from(dto, fallbackName: "slash", languages: ["ko", "en"]))
+
+        XCTAssertNil(spec.critRate)
+        XCTAssertEqual(spec.critStage, 0)
+    }
+
+    /// 앱이 모르는 타입·분류가 오면 스펙을 만들지 않는다(호출부가 그 기술을 건너뛴다).
+    /// 이름이 하나도 없으면 영어 자리에 요청 이름을 넣어 화면에 "?" 가 남지 않게 한다.
+    func testMoveSpecRejectsUnknownTypeAndFallsBackToTheRequestedName() throws {
+        let unknownType = Data("""
+        {"id": 1, "power": 40, "accuracy": 100, "pp": 35, "priority": 0,
+         "type": {"name": "cosmic", "url": null},
+         "damage_class": {"name": "physical", "url": null},
+         "names": [], "flavor_text_entries": []}
+        """.utf8)
+        let dto = try JSONDecoder().decode(MoveDTO.self, from: unknownType)
+        XCTAssertNil(MoveSpec.from(dto, fallbackName: "cosmic-blast", languages: ["ko", "en"]))
+
+        let noNames = Data("""
+        {"id": 33, "power": 40, "accuracy": 100, "pp": 35, "priority": 0,
+         "type": {"name": "normal", "url": null},
+         "damage_class": {"name": "physical", "url": null},
+         "names": [], "flavor_text_entries": []}
+        """.utf8)
+        let plain = try XCTUnwrap(MoveSpec.from(try JSONDecoder().decode(MoveDTO.self, from: noNames),
+                                               fallbackName: "tackle", languages: ["ko", "en"]))
+        XCTAssertEqual(plain.name(.en), "tackle")
+    }
+
     // MARK: 턴 순서 — 우선도 → 스피드 → 무작위
 
     /// 본가 규칙: 우선도가 스피드를 이긴다. 거북왕(스피드 78)이 전광석화를 쓰면 리자몽(100)보다 먼저다.
