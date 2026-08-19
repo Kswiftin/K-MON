@@ -413,7 +413,7 @@ struct L {
           "わざにカーソルを合わせると説明が出ます。")
     }
 
-    /// 기술 한 줄 요약 — 설명이 없을 때 대신 쓰고, 툴팁 상세줄로도 쓴다. 두 자리가 같은 어휘를 쓰도록 한 곳에 둔다.
+    /// 기술 한 줄 요약 — 설명이 없을 때 쓰는 폴백이자 툴팁 상세줄. 두 자리가 같은 어휘를 쓰도록 한 곳에 둔다.
     func moveDetailLine(_ move: MoveSpec) -> String {
         let power = move.damageClass == .status ? "—" : "\(move.power)"
         let accuracy = move.accuracy.map(String.init) ?? moveAlwaysHits

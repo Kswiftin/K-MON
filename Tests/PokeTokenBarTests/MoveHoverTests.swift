@@ -27,7 +27,7 @@ final class MoveHoverTests: XCTestCase {
 
     // MARK: 표시 문구
 
-    /// 아무것도 안 올렸을 때는 빈칸이 아니라 안내가 나온다 — 슬롯이 왜 비었는지 알 수 있어야 한다.
+    /// 아무것도 안 올렸을 때는 빈칸이 아니라 안내 문구가 나온다 — 슬롯이 왜 비었는지 알 수 있어야 한다.
     func testShowsHintWhenNothingHovered() {
         let text = L(.ko).moveHoverText(nil)
         XCTAssertFalse(text.isEmpty)
@@ -253,7 +253,7 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertEqual(MoveListView.panelText(hoveredID: nil, moves: moves, l: L(.ko)), L(.ko).moveHoverHint)
     }
 
-    /// 목록이 갈린 뒤(레벨업 재로드) 남은 옛 id 는 엉뚱한 기술이 아니라 안내로 떨어진다.
+    /// 목록이 바뀐 뒤(레벨업 재로드) 남은 옛 id 는 엉뚱한 기술이 아니라 안내 문구로 떨어진다.
     func testStaleHoveredIDFallsBackToHint() {
         XCTAssertEqual(MoveListView.panelText(hoveredID: 12_345, moves: [move()], l: L(.ko)),
                        L(.ko).moveHoverHint)

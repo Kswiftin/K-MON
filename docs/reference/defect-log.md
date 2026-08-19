@@ -20,7 +20,7 @@ read_when:
   안내문이 떴다. 순서대로 덮어쓰되 **안내문 항목은 건너뛴다** — 그러면 가장 최신의 진짜 설명이 남는다
   (`PokeAPIClient.flavorTexts`, 순회는 오래된 것부터다).
   판정은 **접두사로** 한다 — "사용할 수 없" 부분일치로 보면 금지어("4턴 동안 사용할 수 없게 만든다")
-  같은 진짜 설명까지 지운다(거짓양성 가드 `testRealDescriptionsMentioningUnusableAreNotDropped`).
+  같은 진짜 설명까지 지운다(거짓양성 가드 `MoveHoverTests.testRealDescriptionsMentioningUnusableAreNotDropped`).
   정규화 없이 비교하면 안 잡힌다. PokéAPI 는 굽은 따옴표(`’`)와 전각 공백(U+3000)을 쓴다.
 - **파서를 고쳤으면 이미 세이브에 박힌 값도 다시 받아야 한다 — 단 "조회했지만 없다"까지 다시 받으면 안 된다.**
   보강 조건이 `descriptions == nil` 이면 잘못된 값이 *들어 있는* 개체는 영영 안 고쳐진다 — 사용자에겐

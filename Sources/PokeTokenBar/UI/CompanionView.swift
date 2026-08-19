@@ -776,9 +776,9 @@ struct MoveListView: View {
     /// 마우스가 올라간 기술. 슬롯에 뭘 그릴지는 이 값 하나로 정해진다.
     @State private var hoveredMoveID: Int?
 
-    /// 호버 상태 전이 — 들어온 행으로 바꾸기만 하고, 빠져나올 때는 지우지 않는다.
+    /// 호버 상태 전이 — 들어온 행으로 바꾸기만 하고, 이탈 이벤트로는 지우지 않는다.
     /// 60초 방치 틱이 팝오버를 다시 그리면 AppKit 이 트래킹 영역을 재설치하는데, 커서가 안 움직였으면
-    /// `mouseExited` 만 오고 재진입은 안 온다 — 나갈 때 지우면 마우스를 올려둔 채로 설명이 사라진다.
+    /// `mouseExited` 만 오고 재진입은 안 온다 — 이탈에서 지우면 마우스를 올려둔 채로 설명이 사라진다.
     /// 행 A→B 이동 때 A 이탈이 B 진입보다 늦게 오는 순서 뒤집힘도 같이 막힌다.
     static func hoverState(current: Int?, moveID: Int, isInside: Bool) -> Int? {
         isInside ? moveID : current
@@ -786,7 +786,7 @@ struct MoveListView: View {
 
     /// 슬롯 문구 — 호버 id 를 실제 기술로 되짚는 단계까지 여기 둔다. 되짚기를 뷰 안에 숨기면
     /// "상태는 맞는데 문구가 안 따라가는" 배선 결함을 테스트가 못 본다(#40과 같은 false confidence).
-    /// 목록이 바뀐 뒤 남은 옛 id 는 엉뚱한 기술이 아니라 안내로 떨어진다.
+    /// 목록이 바뀐 뒤 남은 옛 id 는 엉뚱한 기술이 아니라 안내 문구로 떨어진다.
     static func panelText(hoveredID: Int?, moves: [MoveSpec], l: L) -> String {
         l.moveHoverText(hoveredID.flatMap { id in moves.first { $0.id == id } })
     }
