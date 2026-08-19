@@ -490,9 +490,9 @@ read_when:
   평범한 `swift build` 가 실제 진단은 이미 다 찍는다.
 - **같은 API 의 오버로드마다 deprecation 이 다르다 — 한 파일에서 warning 이 하나만 나면 그게 신호다.**
   `BattleNet.localIPv4` 의 두 `String(cString:)` 중 배열(`[CChar]`) 오버로드만 Swift 6 에서 deprecated 이다.
-  포인터 오버로드는 유효하다. 그래서 362줄은 조용하고 367줄만 warning 이 났다. 고칠 때도 컴파일러가
-  권하는 `String(decoding:as:)`(널 종단을 직접 잘라야 해서 3줄)보다 살아 있는 오버로드로 넘기는 쪽이
-  짧았다(`withUnsafeBufferPointer`).
+  포인터 오버로드는 유효하다. 그래서 `ifa_name` 을 읽는 포인터 호출은 조용하고 바로 아래 배열 호출만
+  warning 이 났다. 고칠 때도 컴파일러가 권하는 `String(decoding:as:)`(널 종단을 직접 잘라야 해서 3줄)보다
+  살아 있는 오버로드로 넘기는 쪽이 짧았다(`withUnsafeBufferPointer`).
 - **테스트의 미사용 warning 은 대개 리팩터링 잔여물이다 — 한 줄 지우고 끝낼 일이 아니다.** 이번 3건 전부
   그랬다 — `CompanionTests` 의 `grad` 는 졸업이 사용자 액션으로 바뀐 뒤(#19) 쓸 데가 없어졌고,
   `BattleTests` 의 `var s` 에 달린 "keypath 대상 타입 고정용" 주석은 `NatureEffect.multiplier` 가
