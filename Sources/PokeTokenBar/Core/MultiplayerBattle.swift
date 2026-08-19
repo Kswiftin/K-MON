@@ -259,12 +259,23 @@ struct MultiplayerBattle: Sendable {
             }
         }
 
-        // 속도 내림차순, 동률은 UUID 문자열 순. 모든 피어가 같은 순서로 rng를 소비한다.
-        let ordered = actions.sorted { lhs, rhs in
-            let ls = fighters.first { $0.id == lhs.attackerID }!.snapshot.effectiveStats().spe
-            let rs = fighters.first { $0.id == rhs.attackerID }!.snapshot.effectiveStats().spe
-            return ls == rs ? lhs.attackerID.uuidString < rhs.attackerID.uuidString : ls > rs
-        }
+        // 본가와 같은 순서: 기술 우선도 → 스피드 → 무작위. 모든 피어가 같은 순서로 rng를 소비한다.
+        //
+        // 무작위 tie-break 키는 정렬에 들어가기 **전에** `actions` 순서대로 하나씩 뽑는다.
+        // 비교 클로저 안에서 rng 를 부르면 소비 횟수가 정렬 알고리즘의 비교 횟수에 딸려가고,
+        // 그건 곧 피어마다 다른 rng 상태 — 이 배틀에서는 desync 다.
+        let tieBreakers = actions.map { _ in rng.next() }
+        let ordered = zip(actions, tieBreakers).sorted { lhs, rhs in
+            let leftFighter = fighters.first { $0.id == lhs.0.attackerID }!
+            let rightFighter = fighters.first { $0.id == rhs.0.attackerID }!
+            let leftPriority = movePriority(for: lhs.0, of: leftFighter)
+            let rightPriority = movePriority(for: rhs.0, of: rightFighter)
+            if leftPriority != rightPriority { return leftPriority > rightPriority }
+            let leftSpeed = leftFighter.snapshot.effectiveStats().spe
+            let rightSpeed = rightFighter.snapshot.effectiveStats().spe
+            if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }
+            return lhs.1 < rhs.1
+        }.map(\.0)
         var roundEvents: [MultiplayerBattleEvent] = []
         for action in ordered {
             guard let ai = fighters.firstIndex(where: { $0.id == action.attackerID }), fighters[ai].isAlive,
@@ -284,28 +295,24 @@ struct MultiplayerBattle: Sendable {
         return roundEvents
     }
 
+    /// 이 액션이 쓰는 기술의 우선도. 발버둥(moveIndex < 0)은 보통 기술과 같은 0 이다.
+    private func movePriority(for action: MultiplayerAction, of fighter: MultiplayerFighter) -> Int {
+        guard action.moveIndex >= 0 else { return 0 }
+        let moves = fighter.snapshot.moves ?? MoveSpec.fallbackSet(types: fighter.snapshot.types)
+        return moves.indices.contains(action.moveIndex) ? moves[action.moveIndex].turnPriority : 0
+    }
+
     private mutating func resolveAttack(attacker: MultiplayerFighter, target: MultiplayerFighter,
                                         move: MoveSpec) -> MultiplayerBattleEvent {
-        var missed = false
-        if let accuracy = move.accuracy { missed = Int(rng.next() % 100) >= accuracy }
-        var damage = 0, effectiveness = 1.0
-        var critical = false
-        if !missed {
-            let struggle = move.id == MoveSpec.struggleID
-            effectiveness = struggle ? 1 : TypeChart.effectiveness(move.type, against: target.snapshot.types)
-            let stab = !struggle && attacker.snapshot.types.contains(move.type) ? 1.5 : 1
-            let attackStats = attacker.snapshot.effectiveStats(), targetStats = target.snapshot.effectiveStats()
-            let attack = move.damageClass == .physical ? attackStats.atk : attackStats.spa
-            let defense = move.damageClass == .physical ? targetStats.def : targetStats.spd
-            critical = rng.next() % BattleEngine.critDenominator == 0
-            let roll = 0.85 + Double(rng.next() % 16) / 100
-            let base = Double((2 * attacker.snapshot.level / 5 + 2) * move.power * attack / max(1, defense)) / 50 + 2
-            damage = effectiveness == 0 ? 0 : max(1, Int(base * stab * effectiveness * (critical ? 1.5 : 1) * roll))
-        }
-        let hp = max(0, target.hp - damage)
+        let outcome = BattleEngine.resolveAttack(attacker: attacker.snapshot,
+                                                 attackerStats: attacker.snapshot.effectiveStats(),
+                                                 defender: target.snapshot,
+                                                 defenderStats: target.snapshot.effectiveStats(),
+                                                 move: move, rng: &rng)
         return MultiplayerBattleEvent(attackerID: attacker.id, targetID: target.id, moveID: move.id,
-                                      missed: missed, damage: damage,
-                                      effectiveness: missed ? 1 : effectiveness,
-                                      isCritical: critical, defenderHPAfter: hp)
+                                      missed: outcome.missed, damage: outcome.damage,
+                                      effectiveness: outcome.effectiveness,
+                                      isCritical: outcome.isCritical,
+                                      defenderHPAfter: max(0, target.hp - outcome.damage))
     }
 }

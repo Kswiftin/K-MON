@@ -10,8 +10,12 @@ import UserNotifications
 /// 1:1 LAN 대전은 맞짱(턴제 기술 대전) 하나다. 여러 명이 달리는 레이스는 포켓애슬론
 /// (`MultiplayerRoomCenter` + `PokeathlonRace`)이 담당한다 — 호스트가 판정하는 방식.
 enum NetMessage: Codable, Sendable {
-    case challenge(snapshot: BattleSnapshot, seed: UInt64, profile: BattleRankProfile)
-    case accept(snapshot: BattleSnapshot, profile: BattleRankProfile)
+    /// `rulesVersion` 은 대전 규칙(턴 순서·데미지 계산)의 버전이다. 이 대전은 결과를 주고받지 않고
+    /// **두 피어가 각자 계산**하므로, 규칙이 다르면 같은 배틀을 서로 다르게 본다(HP·승패가 어긋난다).
+    /// 옵셔널인 이유는 이 필드가 없던 버전이 보낸 메시지도 읽어서 "구버전이라 못 붙는다"고
+    /// 알려주기 위해서다 — 필수 필드로 두면 디코딩이 실패해 아무 설명 없이 조용히 무시된다.
+    case challenge(snapshot: BattleSnapshot, seed: UInt64, profile: BattleRankProfile, rulesVersion: Int?)
+    case accept(snapshot: BattleSnapshot, profile: BattleRankProfile, rulesVersion: Int?)
     case decline
     case move(turn: Int, moveIndex: Int)   // moveIndex -1 = 발버둥(PP 소진)
     case forfeit
@@ -343,7 +347,8 @@ final class BattleCenter {
             }
             conn.start(queue: .main)
             send(.challenge(snapshot: snapshot, seed: seed,
-                            profile: companion.battleRankProfile), over: conn)
+                            profile: companion.battleRankProfile,
+                            rulesVersion: BattleEngine.rulesVersion), over: conn)
             receiveLoop(conn)
             pendingMySnapshot = snapshot
         }
@@ -413,7 +418,8 @@ final class BattleCenter {
                 dropConnection(); phase = .ready; lastError = "랭크전 판돈이 부족합니다."
                 return
             }
-            send(.accept(snapshot: mine, profile: mineProfile), over: conn)
+            send(.accept(snapshot: mine, profile: mineProfile,
+                         rulesVersion: BattleEngine.rulesVersion), over: conn)
             beginBattle(my: mine, opp: oppSnapshot, iAmA: false, seed: incomingSeed)
         }
     }
@@ -526,8 +532,16 @@ final class BattleCenter {
 
     private func handle(_ message: NetMessage) {
         switch message {
-        case .challenge(let snapshot, let seed, let profile):
+        case .challenge(let snapshot, let seed, let profile, let rulesVersion):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
+            guard rulesVersion == BattleEngine.rulesVersion else {
+                send(.decline, over: connection)
+                dropConnection()
+                phase = .ready
+                lastError = l.battleRulesMismatch
+                AppLog.write("battle challenge declined: rules version \(rulesVersion.map(String.init) ?? "none")")
+                return
+            }
             if UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false {
                 send(.decline, over: connection)
                 dropConnection()
@@ -546,8 +560,12 @@ final class BattleCenter {
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             pendingAttention = true
             postChallengeNotification(snapshot)
-        case .accept(let snapshot, let profile):
+        case .accept(let snapshot, let profile, let rulesVersion):
             guard case .challenging = phase, let mine = pendingMySnapshot else { return }
+            guard rulesVersion == BattleEngine.rulesVersion else {
+                dropConnection(); phase = .ready; lastError = l.battleRulesMismatch
+                return
+            }
             guard !snapshot.types.isEmpty, (1...100).contains(snapshot.level) else {
                 dropConnection(); phase = .ready; return
             }
