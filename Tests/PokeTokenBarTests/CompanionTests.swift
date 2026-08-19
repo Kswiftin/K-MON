@@ -1651,4 +1651,73 @@ final class PokeAPIGuardTests: XCTestCase {
         XCTAssertNil(PokeAPIClient.validatedChainURL("http://pokeapi.co/x"), "http 거부(https 고정)")
         XCTAssertNil(PokeAPIClient.validatedChainURL(""), "빈 문자열 거부")
     }
+
+    // MARK: 출전 팀 고르기
+
+    private func teamPickCenter(monCount: Int) -> (center: BattleCenter, mons: [MonState]) {
+        let store = self.store(noEvo)
+        store.debugSetBoxedMons((0..<monCount).map { index in
+            MonState(baseID: 20 + index, pathIDs: [20 + index], plannedPathIDs: [20 + index],
+                     stageIndex: 0, usedAtStage: 0, rarity: .common, totalForms: 1)
+        })
+        return (BattleCenter(companion: store), store.ownedMons)
+    }
+
+    /// 아무것도 고르지 않으면 예전 그대로 소유 목록 앞에서 채운다 — 고르는 화면이 생겼다고
+    /// 매번 골라야만 시작할 수 있게 되면 안 된다.
+    func testUnpickedTeamStillFillsFromTheTopOfTheList() {
+        let (center, _) = teamPickCenter(monCount: 6)
+        center.rankedTeamSize = 3
+
+        XCTAssertEqual(center.battleTeamMons.map(\.baseID), [20, 21, 22])
+    }
+
+    /// 고른 순서가 곧 출전 순서다 — 첫 번째가 선봉.
+    func testPickedOrderIsTheBattleOrder() {
+        let (center, mons) = teamPickCenter(monCount: 6)
+        center.rankedTeamSize = 3
+
+        center.toggleTeamPick(mons[4].id)
+        center.toggleTeamPick(mons[1].id)
+        center.toggleTeamPick(mons[3].id)
+
+        XCTAssertEqual(center.battleTeamMons.map(\.baseID), [24, 21, 23])
+    }
+
+    /// 정원이 차면 더 받지 않는다. 앞을 밀어내면 애써 정한 순서가 조용히 바뀐다.
+    func testPickingBeyondTheTeamSizeIsIgnored() {
+        let (center, mons) = teamPickCenter(monCount: 6)
+        center.rankedTeamSize = 2
+
+        center.toggleTeamPick(mons[0].id)
+        center.toggleTeamPick(mons[1].id)
+        center.toggleTeamPick(mons[2].id)
+
+        XCTAssertEqual(center.pickedTeam.count, 2)
+        XCTAssertEqual(center.battleTeamMons.map(\.baseID), [20, 21])
+    }
+
+    /// 같은 칩을 다시 누르면 빠진다 — 넣기만 되고 빼기가 안 되면 다시 고를 방법이 없다.
+    func testTappingAPickedMonRemovesIt() {
+        let (center, mons) = teamPickCenter(monCount: 6)
+        center.rankedTeamSize = 3
+        center.toggleTeamPick(mons[0].id)
+        center.toggleTeamPick(mons[1].id)
+
+        center.toggleTeamPick(mons[0].id)
+
+        XCTAssertEqual(center.pickedTeam, [mons[1].id])
+    }
+
+    /// 정원보다 적게 골라도 배틀은 성립한다 — 남는 자리는 소유 순서로 채운다.
+    /// 고른 것이 앞에 서고, 이미 고른 개체가 뒤쪽 채움에 다시 끼면 안 된다.
+    func testPartialPickFillsTheRestWithoutDuplicating() {
+        let (center, mons) = teamPickCenter(monCount: 6)
+        center.rankedTeamSize = 3
+
+        center.toggleTeamPick(mons[5].id)
+
+        XCTAssertEqual(center.battleTeamMons.map(\.baseID), [25, 20, 21])
+    }
 }
+

@@ -116,6 +116,29 @@ final class BattleCenter {
     private(set) var isPracticeBattle = false
     private(set) var teamPractice: TeamPracticeBattle?
     var rankedTeamSize = 1
+
+    /// 모의전에 데려갈 개체 — **고른 순서가 곧 출전 순서**다(첫 번째가 선봉).
+    /// 비워 두면 예전처럼 소유 목록 앞에서 자동으로 채운다.
+    var pickedTeam: [UUID] = []
+
+    /// 칩을 눌렀을 때 — 이미 고른 것이면 빼고, 아니면 뒤에 붙인다. 정원이 차면 더 받지 않는다
+    /// (앞을 밀어내면 애써 정한 순서가 조용히 바뀐다).
+    func toggleTeamPick(_ monID: UUID) {
+        if let index = pickedTeam.firstIndex(of: monID) {
+            pickedTeam.remove(at: index)
+        } else if pickedTeam.count < rankedTeamSize {
+            pickedTeam.append(monID)
+        }
+    }
+
+    /// 실제 출전 팀. 고른 것을 그 순서대로 앞에 두고, 정원이 남으면 소유 순서로 채운다 —
+    /// 하나도 안 골라도 배틀은 시작돼야 하고, 3마리만 고른 6vs6 도 그대로 성립해야 한다.
+    var battleTeamMons: [MonState] {
+        let picked = pickedTeam.compactMap { id in companion.ownedMons.first { $0.id == id } }
+        let pickedIDs = Set(picked.map(\.id))
+        let rest = companion.ownedMons.filter { !pickedIDs.contains($0.id) }
+        return Array((picked + rest).prefix(rankedTeamSize))
+    }
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
 
     init(companion: CompanionStore) {
@@ -270,7 +293,7 @@ final class BattleCenter {
         phase = .preparing
         Task {
             var myTeam: [BattleSnapshot] = []
-            for mon in companion.ownedMons.prefix(rankedTeamSize) {
+            for mon in battleTeamMons {
                 if let snapshot = await companion.battleSnapshot(for: mon, level: 50) { myTeam.append(snapshot) }
             }
             guard myTeam.count == rankedTeamSize else {
