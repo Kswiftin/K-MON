@@ -3,7 +3,7 @@ import XCTest
 
 /// 상태이상 6종 + 혼란(volatile). Gen 2 의 의사결정층을 현대 데미지 파이프라인 위에 얹는 단계다.
 ///
-/// 여기 있는 테스트는 대부분 **대조군을 끼고** 쓴다. 상태이상은 "전부 절반", "전부 1/8", "전부 막힘"
+/// 여기 있는 테스트는 대부분 **대조군을 낀다.** 상태이상은 "전부 절반", "전부 1/8", "전부 막힘"
 /// 같은 뭉뚱그린 오구현이 단독 테스트만으로는 전부 초록으로 통과하는 부류이기 때문이다.
 final class BattleStatusTests: XCTestCase {
 
@@ -16,7 +16,7 @@ final class BattleStatusTests: XCTestCase {
                        base: BattleStats(hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: speed))
     }
 
-    /// 필중·저위력 — 명중 판정을 건너뛰므로 rng 소비가 상태 분기 것만 남는다.
+    /// 필중·저위력 — 명중 판정을 건너뛰므로 rng 를 상태 분기에서만 쓴다.
     private func harmless() -> MoveSpec {
         MoveSpec(id: 33, names: [:], type: .normal, power: 10,
                  damageClass: .physical, accuracy: nil, pp: 35)
@@ -276,7 +276,7 @@ final class BattleStatusTests: XCTestCase {
     // MARK: 부여 규칙 — 면역·중복
 
     /// Gen 2 타입 면역만 가져온다(전기 → 마비 면역은 Gen 6 부터라 넣지 않는다).
-    /// 대조군(노말 타입)이 함께 있어야 "면역"과 "부여 자체가 죽음"을 가른다.
+    /// 대조군(노말 타입)이 함께 있어야 "면역"과 "부여가 아예 죽은 것"을 가른다.
     func testGen2TypeImmunitiesBlockTheMatchingStatus() {
         func inflicted(_ status: Status, on types: [PokemonType]) -> Status? {
             var side = BattleSide(tank(types))
@@ -489,7 +489,7 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertFalse(events.contains { if case .status = $0 { return true } else { return false } })
     }
 
-    /// Gen 2 는 물러난 포켓몬의 맹독을 보통 독으로 내린다. 없으면 한 번 걸린 맹독의 배수가
+    /// Gen 2 는 물러난 포켓몬의 맹독을 보통 독으로 강등한다. 없으면 한 번 걸린 맹독의 배수가
     /// 배틀이 끝날 때까지 계속 커진다.
     func testSwitchingDowngradesToxicToOrdinaryPoison() {
         var battle = TeamPracticeBattle(mine: [BattleSide(tank()), BattleSide(tank())],

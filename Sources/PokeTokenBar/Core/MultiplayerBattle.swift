@@ -115,7 +115,7 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
     var isAlive: Bool { side.isAlive }
 
     // 와이어 계약은 `snapshot`/`hp`/`pp` 를 **평면으로** 보낸다. 상태를 `side` 로 모은 건 내부 구조
-    // 변경일 뿐이라 JSON 모양을 그대로 뒀었다(기전이 안 바뀐 리팩터로 버전을 올리면 구버전은 이유 없이
+    // 변경일 뿐이라 JSON 모양을 그대로 뒀다(기전이 안 바뀐 리팩터로 버전을 올리면 구버전은 이유 없이
     // 못 들어온다). 상태이상은 반대다 — 라운드 결과를 받는 쪽이 배지를 그려야 하므로 필드가 늘었다.
     // `stats`·`moves` 는 스냅샷에서 파생되므로 여전히 보내지 않고 받는 쪽이 다시 만든다.
     private enum CodingKeys: String, CodingKey {

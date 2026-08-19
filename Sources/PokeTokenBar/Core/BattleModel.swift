@@ -162,7 +162,7 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 이 기술이 거는 상태이상(PokéAPI `meta.ailment` 의 이름). `priority`·`critRate` 와 같은 이유로
     /// 옵셔널이다 — 이 키가 없던 시절의 세이브와 구버전 피어의 무브셋에는 값이 아예 없다.
     var ailment: String? = nil
-    /// 상태를 걸 확률(PokéAPI `meta.ailment_chance`). 0 은 "확률이 아니다" 는 뜻이다.
+    /// 상태를 걸 확률(PokéAPI `meta.ailment_chance`). 0 은 "확률이 아니다" 라는 뜻이다.
     var ailmentChance: Int? = nil
 
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
@@ -172,8 +172,8 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 뜻이 달라(Gen 6+ 는 +1 단계) 값을 그대로 쓰지 않고, 고급소기인지만 보고 Gen 2 단계로 옮긴다.
     var critStage: Int { (critRate ?? 0) > 0 ? 2 : 0 }
 
-    /// 실제로 걸 수 있는 상태 — 구현한 7종만. 나머지 14종은 `nil` 이라 부여 시도가 조용히 지나간다
-    /// (무엇을 흘렸는지는 스펙을 만들 때 `AppLog` 에 한 번 남긴다).
+    /// 실제로 걸 수 있는 상태 — 구현한 6종만. 나머지 14종은 `nil` 이라 부여 시도가 그냥 지나간다
+    /// (무엇을 건너뛰었는지는 스펙을 만들 때 `AppLog` 에 한 번 남긴다).
     ///
     /// 맹독은 PokéAPI 가 별도 ailment 로 주지 않는다 — 맹독(id 92)도 `ailment` 는 `poison` 이다.
     /// 그래서 이 기술만 id 로 가른다.
@@ -272,16 +272,18 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 
 // MARK: - 상태이상
 
-/// 상태이상 — Gen 2 의 6종 + 혼란. PokéAPI `/move-ailment` 이 주는 20종 중 이 7가지만 구현한다.
-/// 나머지(trap·nightmare·torment·disable·yawn·heal-block·leech-seed 등)는 부여를 무시하고 로그만 남긴다.
+/// 상태이상 — Gen 2 의 6종 + 혼란. PokéAPI `/move-ailment` 이 주는 20종 중 6개만 가져다 쓴다
+/// (맹독은 그 20종에 이름이 없어 기술 id 로 가른다 — `MoveSpec.inflictedStatus`).
+/// 나머지 14종(trap·nightmare·torment·disable·yawn·heal-block·leech-seed 등)은 부여를 무시하고
+/// 로그만 남긴다.
 ///
 /// 앞 6종은 **주 상태**라 한 번에 하나만 붙고, 혼란은 volatile 이라 주 상태와 같이 붙는다.
-/// 그런데도 한 enum 에 둔 건 화면 쪽 어휘가 하나여야 하기 때문이다 — 배지도 로그 문구도
-/// 7종을 같은 방식으로 그린다. 둘 중 어디에 사는지는 `BattleSide` 가 필드로 가른다.
+/// 그런데도 한 enum 에 둔 건 화면에서 쓰는 어휘가 하나여야 하기 때문이다 — 배지도 로그 문구도
+/// 7종을 같은 방식으로 그린다. 둘 중 어느 쪽인지는 `BattleSide` 가 필드로 가른다.
 enum Status: String, Codable, Sendable, Equatable, CaseIterable {
     case burn, poison, toxic, paralysis, sleep, freeze, confusion
 
-    /// PokéAPI `/move-ailment` 이름 → 구현한 상태. 모르는 이름(그리고 `none`·`unknown`)은 `nil` 이다.
+    /// PokéAPI `/move-ailment` 이름 → 구현한 상태. `none`·`unknown` 을 포함해 모르는 이름은 `nil` 이다.
     init?(ailment: String) {
         switch ailment {
         case "burn":      self = .burn
@@ -333,7 +335,7 @@ struct BattleSide: Sendable, Equatable {
     /// 세 모드가 각자 `snapshot.moves ?? fallbackSet(...)` 를 반복하던 자리다.
     let moves: [MoveSpec]
     var pp: [Int]
-    /// 주 상태이상 — 한 번에 하나. 혼란은 volatile 이라 여기가 아니라 `confusionTurns` 에 산다.
+    /// 주 상태이상 — 한 번에 하나. 혼란은 volatile 이라 여기가 아니라 `confusionTurns` 에 둔다.
     var status: Status?
     /// 상태마다 뜻이 다른 한 칸 — 맹독은 누적 배수(1, 2, 3…), 잠듦은 남은 카운터다.
     /// 주 상태가 하나뿐이라 두 값이 동시에 필요할 일이 없어 칸을 나누지 않는다.
@@ -577,7 +579,7 @@ extension BattleEngine {
         return [.status(actor, status)]
     }
 
-    /// 턴 끝 잔뎀 — 화상·독은 최대 HP 의 1/8, 맹독은 n/16 로 매턴 커진다.
+    /// 턴 끝 잔뎀 — 화상·독은 최대 HP 의 1/8, 맹독은 n/16 으로 매턴 커진다.
     /// rng 를 쓰지 않으므로 호출 순서만 고정하면 두 피어가 같은 값을 본다.
     static func endOfTurnResidual(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
         guard side.isAlive, let status = side.status else { return [] }

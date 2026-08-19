@@ -689,7 +689,7 @@ struct BattleView: View {
         }
     }
 
-    /// `side` 는 대전 중일 때만 있다 — 신청 수락 화면의 미리보기는 HP도 상태도 아직 없다.
+    /// `side` 는 대전 중일 때만 있다 — 신청 수락 화면의 미리보기는 HP 도 상태도 아직 없다.
     private func snapshotCard(_ snapshot: BattleSnapshot, title: String, side: BattleSide?) -> some View {
         let hpRatio = side.map { Double($0.hp) / Double(max(1, $0.stats.hp)) }
         return VStack(spacing: 4) {

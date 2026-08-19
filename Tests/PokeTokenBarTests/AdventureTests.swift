@@ -365,13 +365,14 @@ final class AdventureTests: XCTestCase {
     }
 
     /// 멀티의 순서 계산도 마비를 본다. 1v1 만 `effectiveSpeed` 로 고치고 여기를 `stats.spe` 로 두면
-    /// **같은 상태가 모드마다 다르게 굴러간다** — 이 계획이 상태를 `BattleSide` 하나로 모은 이유가
-    /// 정확히 이 부류의 조용한 분기다. 스피드가 동률인 두 참가자로 잡아 마비만 차이가 되게 한다.
+    /// **같은 상태가 모드마다 다르게 굴러간다** — 이 계획이 상태를 `BattleSide` 하나로 모은 것이
+    /// 바로 이렇게 조용히 갈라지는 걸 막기 위해서다. 스피드가 동률인 두 참가자로 잡아 마비만
+    /// 차이가 되게 한다.
     func testParalysisSlowsTheAttackerInMultiplayerToo() throws {
         let (ids, fighters) = tiedSpeedFighters(priorities: [nil, nil])
         let actions = [MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
                        MultiplayerAction(attackerID: ids[1], targetID: ids[0], moveIndex: 0)]
-        // 마비 전에는 이쪽이 확실히 빠르다 — 순서가 뒤집히는 것이 마비 때문임을 못박는다.
+        // 마비 전에는 이쪽이 확실히 빠르다 — 순서가 뒤집히는 게 마비 때문임을 못 박는다.
         var paralyzed = fighters
         paralyzed[0].side.snapshot.base.spe = 200
         paralyzed[0] = MultiplayerFighter(
