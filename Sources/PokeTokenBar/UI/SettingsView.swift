@@ -160,6 +160,17 @@ struct SettingsView: View {
             }
             Divider()
             toggleRow(l.imageAntialiasingLabel, $settings.imageAntialiasing)
+            Divider()
+            groupRow {
+                Text(l.battleReplaySpeedLabel)
+                Spacer()
+                // 끄기가 목록에 있어야 하는 설정이다 — 저전력·접근성. 저전력 모드에선 여기서 무엇을
+                // 골랐든 재생하지 않는다(`BattleReplay.effectiveSpeed`).
+                Picker("", selection: $settings.battleReplaySpeed) {
+                    ForEach(ReplaySpeed.allCases, id: \.self) { Text(l.battleReplaySpeedName($0)).tag($0) }
+                }
+                .labelsHidden().pickerStyle(.menu).fixedSize()
+            }
         }
     }
 

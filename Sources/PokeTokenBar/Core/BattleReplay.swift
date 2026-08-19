@@ -25,6 +25,20 @@ struct ReplayStep: Equatable, Sendable {
     let hp: [BattleActor: Int]
 }
 
+/// 재생 중 화면에 얹히는 것 — 필드가 이 값만 보고 흔들림·문구를 그린다.
+/// 재생이 없으면 `.idle` 이라 예전과 같은 화면이다(연출이 꺼져도 화면이 달라지지 않는다).
+struct ReplayOverlay: Equatable, Sendable {
+    /// 재생 중인가 — 입력 잠금의 근거다.
+    var isPlaying = false
+    /// 지금 맞은 쪽 — 이 스프라이트만 흔들리고 번쩍인다.
+    var hit: BattleActor?
+    /// 지금 떠 있는 팝의 **원인 이벤트**. 문구가 아니라 이벤트를 들고 있는 이유는 언어다 —
+    /// 뷰가 자기 `L` 로 푼다(`BattleReplay.popup`).
+    var popped: BattleEvent?
+
+    static let idle = ReplayOverlay()
+}
+
 /// 이벤트 스트림을 재생 큐로 바꾸는 순수 계층 (계획 §6 Phase 7).
 ///
 /// 지금까지는 턴이 해상되면 HP 가 **즉시** 최종값으로 튀어 무엇이 일어났는지 볼 시간이 없었다.

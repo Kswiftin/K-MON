@@ -283,6 +283,41 @@ final class BattleAnimatorTests: XCTestCase {
         XCTAssertEqual(animator.hp(for: .b), 120, "새 배틀의 만피로 갈아탄다")
     }
 
+    /// 뷰는 렌더마다 동기화한다 — 같은 스트림으로 다시 불러도 재생이 다시 시작되면 안 된다.
+    /// 다시 시작하면 재생할 것도 없이 입력만 잠긴다(스크롤 한 번에 화면이 굳는다).
+    func testRedrawingWithTheSameStreamDoesNotRestartPlayback() {
+        let animator = BattleAnimator()
+        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+
+        XCTAssertFalse(animator.overlay.isPlaying, "같은 스트림에 재생이 다시 걸리면 입력이 잠긴다")
+        XCTAssertEqual(animator.playedCount, oneTurn.count)
+    }
+
+    /// 재생 도중 배틀이 갈리면(기권·다음 배틀) 재생을 끊는다. 끊지 않으면 옛 스텝이 뒤늦게
+    /// 새 배틀의 HP 를 이전 배틀 값으로 덮는다 — 화면이 혼자 되돌아간다.
+    func testANewBattleInterruptsPlaybackInsteadOfOverwritingIt() async {
+        let animator = BattleAnimator()
+        animator.sync(events: [], hp: [.a: 100, .b: 100], speed: .normal)
+        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+        XCTAssertTrue(animator.overlay.isPlaying, "재생이 안 걸리면 끊을 것도 없어 이 테스트가 무의미하다")
+
+        // **재생 한가운데서** 끊어야 한다. 시작하기도 전에 끊으면 남은 스텝이 없어 아무것도
+        // 검증하지 못한다 — 위험한 건 이미 뽑아 둔 스텝이 살아남아 뒤늦게 값을 쓰는 경우다.
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertGreaterThan(animator.playedCount, 0, "아직 시작도 안 했다면 끊는 시점이 너무 이르다")
+        XCTAssertLessThan(animator.playedCount, oneTurn.count, "이미 끝났다면 끊을 게 없다")
+
+        animator.sync(events: [], hp: [.a: 130, .b: 130], speed: .normal)
+        XCTAssertEqual(animator.playedCount, 0)
+        XCTAssertEqual(animator.hp(for: .b), 130)
+
+        // 끊긴 재생이 살아 있으면 남은 스텝이 여기서 70 을 다시 써 넣는다.
+        try? await Task.sleep(for: .milliseconds(600))
+        XCTAssertEqual(animator.hp(for: .b), 130, "끊긴 재생이 새 배틀의 HP 를 덮었다")
+        XCTAssertFalse(animator.overlay.isPlaying)
+    }
+
     /// 모르는 쪽(멀티의 다른 참가자 등)을 물으면 nil 이다 — 0 을 돌려주면 뷰가 쓰러진 것처럼 그린다.
     func testAnUnknownSideHasNoDisplayHP() {
         let animator = BattleAnimator()
@@ -293,6 +328,7 @@ final class BattleAnimatorTests: XCTestCase {
 }
 
 /// 재생 속도 설정 — 저장과 문구. 끄기가 필수라(저전력·접근성) 설정 표면에 실제로 노출돼야 한다.
+@MainActor
 final class ReplaySpeedSettingTests: XCTestCase {
 
     /// 기본값은 보통이고, 고른 값은 앱을 다시 켜도 남는다.

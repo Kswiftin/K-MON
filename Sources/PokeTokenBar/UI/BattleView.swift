@@ -7,6 +7,9 @@ struct BattleView: View {
     @Bindable var store: CompanionStore
     @Environment(BattleCenter.self) private var center
     @Environment(PopoverNavigation.self) private var nav
+    @Environment(AppSettings.self) private var settings
+    /// 턴 해상 결과를 시간축에 푸는 재생기 — 배틀이 바뀌어도 같은 객체를 쓴다(스스로 되감는다).
+    @State private var animator = BattleAnimator()
 
     // 수동(IP) 연결 상태
     @State private var manualAddress = ""
@@ -70,38 +73,76 @@ struct BattleView: View {
     private func lanArena(_ battle: NetBattleState) -> some View {
         // 엔진 좌변(A)은 항상 challenger 다 — 내가 어느 쪽인지로 내 편/상대를 가른다.
         let mine: BattleActor = battle.iAmA ? .a : .b
+        let theirs: BattleActor = battle.iAmA ? .b : .a
+        // 재생 중엔 엔진의 최종 HP 가 아니라 **재생이 도달한 HP** 를 그리고, 로그도 같은 진행도로
+        // 자른다. 한쪽만 미루면 로그가 결과를 먼저 알려 줘 재생할 이유가 사라진다.
+        var me = battle.me, opp = battle.opp
+        me.hp = animator.hp(for: mine) ?? me.hp
+        opp.hp = animator.hp(for: theirs) ?? opp.hp
         return BattleArenaView(
-            mine: battle.me, theirs: battle.opp,
+            mine: me, theirs: opp,
             myTitle: l.battleMyPokemon,
             theirTitle: battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
             l: l, turn: battle.turn,
-            logLines: BattleLogSource.netBattle(battle, mine: mine, l: l),
+            logLines: BattleLogSource.netBattle(battle, mine: mine, l: l,
+                                                playedCount: animator.playedCount),
             myActor: mine,
             switchSlots: SwitchStripModel.battleSlots(battle.myTeam, active: battle.myActive),
             turnEndsAt: center.turnEndsAt,
             isWaitingForOpponent: battle.myAction != nil,
+            overlay: animator.overlay,
             onChoose: { center.chooseMove($0) },
             onSwitch: { center.switchLAN(to: $0) },
             onForfeit: { center.forfeit() })
+        .onAppear { replay(battle.events, hp: [mine: battle.me.hp, theirs: battle.opp.hp]) }
+        .onChange(of: battle.events.count) {
+            replay(battle.events, hp: [mine: battle.me.hp, theirs: battle.opp.hp])
+        }
     }
 
     private func practiceArena(_ practice: TeamPracticeBattle) -> some View {
-        BattleArenaView(
-            mine: practice.mySlot, theirs: practice.opponentSlot,
+        var me = practice.mySlot, opp = practice.opponentSlot
+        me.hp = animator.hp(for: .a) ?? me.hp
+        opp.hp = animator.hp(for: .b) ?? opp.hp
+        // 교체 스트립의 미니 바도 같은 값을 읽어야 한다 — 활성 칸만 엔진 값이면 위의 큰 바가
+        // 보간되는 동안 아래 칸은 이미 최종값에 가 있다.
+        var team = practice.mine
+        team[practice.myActive] = me
+        return BattleArenaView(
+            mine: me, theirs: opp,
             myTitle: l.battleMyPokemon, theirTitle: "CPU",
             l: l, turn: practice.turn,
-            logLines: BattleLogSource.twoSided(practice.events, mine: .a, l: l,
+            logLines: BattleLogSource.twoSided(played(practice.events), mine: .a, l: l,
                                                myName: practice.mySlot.snapshot.name,
                                                theirName: practice.opponentSlot.snapshot.name,
                                                myMoves: practice.mySlot.moves,
                                                theirMoves: practice.opponentSlot.moves),
             myActor: .a,
-            switchSlots: SwitchStripModel.slots(practice.mine, active: practice.myActive),
+            switchSlots: SwitchStripModel.slots(team, active: practice.myActive),
             turnEndsAt: nil,                       // CPU 는 즉시 답한다 — 기다림이 없으니 마감도 없다
             isWaitingForOpponent: false,
+            overlay: animator.overlay,
             onChoose: { center.chooseTeamPracticeMove($0) },
             onSwitch: { center.switchTeamPractice(to: $0) },
             onForfeit: { center.forfeit() })
+        .onAppear { replay(practice.events, hp: [.a: practice.mySlot.hp, .b: practice.opponentSlot.hp]) }
+        .onChange(of: practice.events.count) {
+            replay(practice.events, hp: [.a: practice.mySlot.hp, .b: practice.opponentSlot.hp])
+        }
+    }
+
+    /// 재생이 아직 닿지 않은 이벤트는 화면에 없다 — 로그도 스트림도 같은 진행도로 자른다.
+    private func played(_ events: [BattleEvent]) -> [BattleEvent] {
+        Array(events.prefix(animator.playedCount))
+    }
+
+    /// 스트림이 길어질 때마다 재생기에 넘긴다. **저전력이면 설정과 무관하게 끈다** —
+    /// `FloatingPetController.shouldAnimate(lowPower:)` 와 같은 가드다.
+    private func replay(_ events: [BattleEvent], hp: [BattleActor: Int]) {
+        animator.sync(events: events, hp: hp,
+                      speed: BattleReplay.effectiveSpeed(
+                        settings.battleReplaySpeed,
+                        lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled))
     }
 
     /// 결과 — 마지막 장면(필드)을 남겨 두고 아래 칸만 결과로 갈아 끼운다.
