@@ -12,9 +12,10 @@ final class BattleFieldTests: XCTestCase {
 
     // MARK: 고정 재료
 
-    private func mon(_ types: [PokemonType] = [.normal], hp: Int = 100, name: String = "탱커") -> BattleSnapshot {
+    private func mon(_ types: [PokemonType] = [.normal], hp: Int = 100, name: String = "탱커",
+                     shiny: Bool = false) -> BattleSnapshot {
         BattleSnapshot(speciesID: 143, name: name, trainer: nil, level: 50, nature: nil,
-                       isShiny: false, types: types,
+                       isShiny: shiny, types: types,
                        base: BattleStats(hp: hp, atk: 100, def: 100, spa: 100, spd: 100, spe: 100),
                        moves: fourMoves)
     }
@@ -105,6 +106,24 @@ final class BattleFieldTests: XCTestCase {
         }
     }
 
+    /// 글자색 접근자가 대비 판정과 어긋나면 안 된다 — 뷰가 읽는 건 이쪽이다.
+    func testTheLabelColourFollowsTheContrastDecision() {
+        for type in PokemonType.allCases {
+            XCTAssertEqual(type.battleLabelColor, type.prefersDarkLabel ? Color.black : Color.white,
+                           "\(type.rawValue) 의 글자색이 대비 판정과 다르다")
+        }
+    }
+
+    /// 배지 색 7분기를 전부 밟는다. 뷰 안의 `private` 로 두면 화면에 뜬 상태만 실행되고 나머지는
+    /// 한 번도 돌지 않는데, 라인 커버리지는 그걸 초록으로 보고한다(PR 3 에서 겪은 부류).
+    func testEveryStatusHasABadgeTintAndTheyAreNotAllTheSame() {
+        let tints = Status.allCases.map { String(describing: $0.badgeTint) }
+        XCTAssertEqual(tints.count, 7)
+        XCTAssertGreaterThanOrEqual(Set(tints).count, 6, "독·맹독만 같은 색을 공유한다")
+        XCTAssertEqual(Status.poison.badgeTint, Status.toxic.badgeTint, "독 계열은 한 색으로 읽힌다")
+        XCTAssertNotEqual(Status.burn.badgeTint, Status.freeze.badgeTint)
+    }
+
     /// 물리·특수·변화 세 분류가 각자 아이콘을 가진다 — 변화기(Phase 3)가 무브셋에 들어오면
     /// 위력 0 만으로는 "공격기인데 위력이 0" 과 구별되지 않는다.
     func testEachDamageClassHasItsOwnIcon() {
@@ -121,7 +140,14 @@ final class BattleFieldTests: XCTestCase {
         XCTAssertEqual(PPTier.of(remaining: 10, max: 40), .low, "정확히 1/4 은 이미 경고다")
         XCTAssertEqual(PPTier.of(remaining: 1, max: 35), .low)
         XCTAssertEqual(PPTier.of(remaining: 0, max: 35), .empty)
-        XCTAssertNotEqual(PPTier.empty.color, PPTier.low.color)
+        XCTAssertEqual(Set([PPTier.ample, .low, .empty].map { String(describing: $0.color) }).count, 3,
+                       "세 단계가 같은 색이면 단계가 없는 것과 같다")
+    }
+
+    /// 최대 PP 가 0 인 기술(구버전 피어·손상 세이브)이 와도 0 나눗셈이나 영구 경고가 되지 않는다.
+    func testAMoveClaimingZeroMaximumPPIsNotPermanentlyWarned() {
+        XCTAssertEqual(PPTier.of(remaining: 5, max: 0), .ample)
+        XCTAssertEqual(PPTier.of(remaining: 0, max: 0), .empty, "남은 게 없으면 최대와 무관하게 소진이다")
     }
 
     /// 소진된 기술은 고를 수 없다 — 색만 바꾸고 활성으로 두면 눌려서 아무 일도 안 일어난다.
@@ -208,24 +234,31 @@ final class BattleFieldTests: XCTestCase {
 
     // MARK: 창 예산 (계획 §6.3 안 A — 전용 배틀 창)
 
-    private func arena(logLines: Int = BattleFieldMetrics.logLines) -> BattleArenaView {
+    /// 창 예산을 재는 표본. **최악 케이스로 채운다** — 상태 배지 두 개, 이로치 별표, 기절한 교체 슬롯,
+    /// 양쪽 actor 의 로그 줄. 평온한 표본으로 재면 화면에서만 나타나는 분기를 한 번도 밟지 못한다.
+    private func arena(logLines: Int = BattleFieldMetrics.logLines,
+                       allPPSpent: Bool = false,
+                       turnEndsAt: Date? = nil,
+                       theirHP: Int? = nil) -> BattleArenaView {
         var theirs = BattleSide(mon([.fire, .flying], name: "상대"))
-        theirs.hp = theirs.stats.hp / 3
+        theirs.hp = theirHP ?? theirs.stats.hp / 3
         theirs.status = .burn
         theirs.confusionTurns = 3
-        var mine = BattleSide(mon([.water], name: "내 포켓몬"))
-        mine.pp[0] = 1
-        mine.pp[3] = 0
+        var mine = BattleSide(mon([.water], name: "내 포켓몬", shiny: true))
+        mine.pp = allPPSpent ? mine.pp.map { _ in 0 } : [1, mine.pp[1], mine.pp[2], 0]
+        var fainted = BattleSide(mon([.grass], name: "기절"))
+        fainted.hp = 0
         return BattleArenaView(
             mine: mine, theirs: theirs,
             myTitle: "내 포켓몬", theirTitle: "상대 트레이너",
             l: L(.ko), turn: 7,
             logLines: (0..<logLines).map {
-                BattleLog.Line(actor: .a, text: "탱커의 몸통박치기! 상대는 12 데미지를 받았다 (\($0))")
+                BattleLog.Line(actor: $0.isMultiple(of: 2) ? .a : .b,
+                               text: "탱커의 몸통박치기! 상대는 12 데미지를 받았다 (\($0))")
             },
             myActor: .a,
-            switchSlots: SwitchStripModel.slots([mine, theirs], active: 0),
-            turnEndsAt: nil,
+            switchSlots: SwitchStripModel.slots([mine, theirs, fainted], active: 0),
+            turnEndsAt: turnEndsAt,
             isWaitingForOpponent: false,
             onChoose: { _ in }, onSwitch: { _ in }, onForfeit: {})
     }
@@ -237,6 +270,35 @@ final class BattleFieldTests: XCTestCase {
         XCTAssertLessThanOrEqual(width, BattleFieldMetrics.windowWidth)
         XCTAssertLessThanOrEqual(renderedHeight(arena(), proposingWidth: BattleFieldMetrics.windowWidth),
                                  BattleFieldMetrics.windowHeight)
+    }
+
+    /// PP 를 전부 쓴 배틀은 기술 4칸이 발버둥 한 칸으로 바뀐다. 그 분기가 창을 넘기면 마지막 턴에만
+    /// 화면이 깨지는데, 평온한 표본만 재면 그 경로를 한 번도 밟지 않는다.
+    func testTheStruggleOnlyArenaStillFitsAndStaysNoTallerThanTheNormalOne() {
+        let struggling = renderedHeight(arena(allPPSpent: true),
+                                        proposingWidth: BattleFieldMetrics.windowWidth)
+        XCTAssertLessThanOrEqual(struggling, BattleFieldMetrics.windowHeight)
+        XCTAssertLessThanOrEqual(struggling,
+                                 renderedHeight(arena(), proposingWidth: BattleFieldMetrics.windowWidth) + 1,
+                                 "발버둥 한 칸이 기술 4칸보다 커질 수는 없다")
+    }
+
+    /// 턴 타이머가 붙은 화면도 같은 예산 안에 있다 — 헤더에 한 줄이 더 붙는 분기다.
+    /// 남은 시간이 넉넉할 때와 **다 됐을 때**를 모두 그린다: 5초 이하에서 색이 갈리는 분기가 있고,
+    /// 넉넉한 마감만 재면 그 경로를 한 번도 밟지 않는다.
+    func testTheArenaWithATurnDeadlineFitsWhetherTimeIsLeftOrNot() {
+        for deadline in [Date(timeIntervalSinceNow: 3_600), Date(timeIntervalSince1970: 0)] {
+            XCTAssertLessThanOrEqual(
+                renderedHeight(arena(turnEndsAt: deadline), proposingWidth: BattleFieldMetrics.windowWidth),
+                BattleFieldMetrics.windowHeight, "마감 \(deadline) 에서 창을 넘긴다")
+        }
+    }
+
+    /// 한쪽이 쓰러진 마지막 프레임도 같은 예산이다 — 스프라이트가 흐려지는 분기를 밟는다.
+    func testTheArenaFitsWithAFaintedCombatantOnTheField() {
+        XCTAssertLessThanOrEqual(
+            renderedHeight(arena(theirHP: 0), proposingWidth: BattleFieldMetrics.windowWidth),
+            BattleFieldMetrics.windowHeight)
     }
 
     /// 로그가 길어져도(배틀 후반) 창 높이는 그대로다 — 고정 높이 칸이라야 창이 안 흔들린다.

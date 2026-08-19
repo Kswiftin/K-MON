@@ -198,6 +198,22 @@ struct StatusBadgeRow: View {
     }
 }
 
+extension Status {
+    /// 배지 색. 뷰 안의 `private var` 로 두면 7개 분기 중 화면에 뜬 것만 실행되고 나머지는 테스트에서
+    /// 한 번도 돌지 않는다 — 라인 커버리지는 그걸 초록으로 보고한다(PR 3 에서 `Status.init(ailment:)`
+    /// 로 겪은 부류다). 밖으로 빼서 전 분기를 직접 검증한다.
+    var badgeTint: Color {
+        switch self {
+        case .burn:            return .orange
+        case .poison, .toxic:  return .purple
+        case .paralysis:       return .yellow
+        case .sleep:           return .gray
+        case .freeze:          return .cyan
+        case .confusion:       return .pink
+        }
+    }
+}
+
 struct StatusBadge: View {
     let status: Status
 
@@ -207,18 +223,7 @@ struct StatusBadge: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
-            .background(Capsule().fill(tint))
-    }
-
-    private var tint: Color {
-        switch status {
-        case .burn:            return .orange
-        case .poison, .toxic:  return .purple
-        case .paralysis:       return .yellow
-        case .sleep:           return .gray
-        case .freeze:          return .cyan
-        case .confusion:       return .pink
-        }
+            .background(Capsule().fill(status.badgeTint))
     }
 }
 
