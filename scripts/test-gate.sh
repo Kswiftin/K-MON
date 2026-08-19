@@ -30,7 +30,22 @@ LOGIC_CORE=(
 )
 
 echo "▶ swift test (--enable-code-coverage)"
-swift test --enable-code-coverage
+TEST_LOG=$(mktemp)
+trap 'rm -f "$TEST_LOG"' EXIT
+swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG"
+
+# 자체 코드의 컴파일러 warning 은 게이트 실패로 취급한다 — 쌓아두면 새 경고가 옛 경고에 묻힌다.
+# 경로로 걸러 의존성(.build/checkouts)의 warning 은 제외하고, 같은 warning 이 frontend 잡마다
+# 반복 출력되므로 sort -u 로 접는다.
+# ponytail: 재컴파일이 없는 warm build 는 warning 을 다시 찍지 않아 로컬에서 놓칠 수 있다 —
+#           신뢰 기준은 매번 cold build 인 CI 다. 로컬에서 확인하려면 `swift package clean` 후 실행.
+OWN_WARNINGS=$(grep -oE '(Sources|Tests)/PokeTokenBar[^ ]*\.swift:[0-9]+:[0-9]+: warning: .*' "$TEST_LOG" | sort -u || true)
+if [[ -n "$OWN_WARNINGS" ]]; then
+  echo
+  echo "✗ 자체 코드 warning $(wc -l <<< "$OWN_WARNINGS" | tr -d ' ')건 — 고친 뒤 다시 실행하세요." >&2
+  echo "$OWN_WARNINGS" >&2
+  exit 1
+fi
 
 PROF=$(find .build -name 'default.profdata' | head -1)
 # dSYM 안에도 같은 이름의 DWARF 바이너리가 있어 head -1 이 그걸 집으면 llvm-cov 가 실패한다 → 제외.
