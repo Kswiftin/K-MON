@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# test-gate.sh — 안정성 가드레일. CI(ci.yml·release.yml)와 release.sh 가 이 스크립트를 돌리고,
+# test-gate.sh — 안정성 가드레일. CI(ci.yml·release.yml)와 release.sh 가 이 스크립트를 돌린다.
 # 커밋/머지 전 로컬에서도 같은 게이트를 그대로 실행한다.
 #
 #   1) swift test 전체 통과
@@ -36,11 +36,11 @@ TEST_LOG=$(mktemp)
 trap 'rm -f "$TEST_LOG"' EXIT
 swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG"
 
-# 자체 코드의 컴파일러 warning 은 게이트 실패로 취급한다 — 쌓아두면 새 경고가 옛 경고에 묻힌다.
-# 경로로 걸러 의존성(.build/checkouts)의 warning 은 제외하고, 같은 warning 이 frontend 잡마다
-# 반복 출력되므로 sort -u 로 접는다.
+# 자체 코드의 컴파일러 warning 은 게이트 실패로 취급한다 — 쌓아두면 새로 생긴 게 옛것에 묻힌다.
+# 경로로 걸러 의존성(.build/checkouts)의 warning 은 빼둔다. 같은 warning 이 frontend 잡마다
+# 반복해서 찍히므로 sort -u 로 접는다.
 # ponytail: 재컴파일이 없는 warm build 는 warning 을 다시 찍지 않아 로컬에서 놓칠 수 있다 —
-#           신뢰 기준은 매번 cold build 인 CI 다. 로컬에서 확인하려면 `swift package clean` 후 실행.
+#           신뢰 기준은 매번 cold build 인 CI 다. 로컬에서 볼 때는 `swift package clean` 뒤에 돌린다.
 OWN_WARNINGS=$(grep -oE '(Sources|Tests)/PokeTokenBar[^ ]*\.swift:[0-9]+:[0-9]+: warning: .*' "$TEST_LOG" | sort -u || true)
 if [[ -n "$OWN_WARNINGS" ]]; then
   echo

@@ -5,7 +5,7 @@ read_when:
   - 동시성/await·옵셔널 판정·캐시 무효화·외부 로그 포맷을 건드릴 때
   - 메뉴바·플로팅 펫 등 상시 표시 애니메이션의 성능을 손볼 때
   - 세이브 이전/병합·외부 파일 입력 경로를 만들 때
-  - 컴파일러 warning·CI 게이트를 손볼 때 (게이트 없는 진단은 쌓인다)
+  - 컴파일러 warning·CI 게이트를 손볼 때 (게이트 없는 warning 은 쌓인다)
 ---
 
 # 결함 대응 축적 규칙
@@ -473,29 +473,29 @@ read_when:
 
 ## 컴파일러 warning · CI 진단
 
-- **게이트가 없는 진단은 쌓이고, 쌓인 진단은 새 진단을 묻는다.** CI 가 warning 을 통과시키는 동안
-  자체 코드 warning 4건이 조용히 누적됐고(로그에서는 컴파일 잡마다 반복돼 127줄로 보였다), 그 상태에서
-  새로 생긴 warning 은 눈에 띌 방법이 없었다. 지금은 `test-gate.sh` 가 `swift test` 출력에서
+- **게이트가 없는 warning 은 쌓이고, 쌓인 warning 은 새 warning 을 가린다.** CI 가 warning 을
+  통과시키는 동안 자체 코드 warning 4건이 조용히 쌓였다(컴파일 잡마다 반복돼 로그에는 127줄로 보였다).
+  그 상태에서는 새로 생긴 warning 을 알아볼 방법이 없다. 지금은 `test-gate.sh` 가 `swift test` 출력에서
   `(Sources|Tests)/PokeTokenBar…\.swift:줄:열: warning:` 을 뽑아 하나라도 있으면 실패한다.
   경로로 거르므로 의존성(`.build/checkouts`)의 warning 은 우리 빌드를 깨지 않는다.
   **한계는 명시해 둔다** — 재컴파일이 없는 warm build 는 컴파일러가 warning 을 다시 찍지 않아 로컬에서
-  놓칠 수 있다. 신뢰 기준은 매번 cold build 인 CI 이고, 로컬 확인은 `swift package clean` 뒤에 돌린다.
-- **정규식 게이트는 합성 픽스처가 아니라 실제 CI 로그로 검증한다.** 이 필터는 저장해 둔 실패 런의 로그
-  (Swift 6.1.2, 절대경로, `-v` 잡음 포함)에 그대로 걸어 127줄 → 진짜 4건만 남는지, 가짜 warning 0건인지
-  확인했다. 로컬 Swift 6.2.4 는 진단 끝에 `[#DeprecatedDeclaration]` 같은 그룹 태그를 덧붙이므로
+  놓칠 수 있다. 신뢰 기준은 매번 cold build 인 CI 다. 로컬에서 볼 때는 `swift package clean` 뒤에 돌린다.
+- **정규식 게이트는 합성 픽스처가 아니라 실제 CI 로그로 검증한다.** 이 필터는 저장해 둔 실패 CI 로그
+  (Swift 6.1.2, 절대경로, `-v` 잡음 포함)에 그대로 걸어봤다 — 127줄에서 진짜 4건만 남고 가짜 warning 은
+  0건이었다. 로컬 Swift 6.2.4 는 진단 끝에 `[#DeprecatedDeclaration]` 같은 그룹 태그를 덧붙이므로
   패턴 끝은 열어 둬야 한다(`.*`) — 로컬 포맷만 보고 잠그면 CI 에서 안 잡힌다.
 - **`swift build -v` 는 CI 에서 쓰지 않는다.** `-v` 를 켜면 SwiftPM 이 매니페스트 컴파일의 stderr 를
   `warning: '<패키지>': <swift-frontend 커맨드라인>` 으로 재출력한다 — 코드 문제가 아닌 가짜 warning 3건이
-  생기고 Build 스텝 로그가 404KB 로 부풀었다(53줄이 전체 컴파일러 커맨드라인). 평범한 `swift build` 가
+  생기고 Build 스텝 로그가 404KB 로 부풀었다(53줄이 저마다 컴파일러 커맨드라인 전문이다). 평범한 `swift build` 가
   실제 진단은 이미 다 찍는다.
-- **같은 API 의 오버로드마다 deprecation 이 다르다 — 한 파일에서 하나만 경고나면 그게 신호다.**
-  `BattleNet.localIPv4` 의 두 `String(cString:)` 중 배열(`[CChar]`) 오버로드만 Swift 6 에서 deprecated 이고
-  포인터 오버로드는 유효하다. 그래서 362줄이 아니라 367줄만 경고났고, 고치는 값싼 길도 컴파일러가 권한
-  `String(decoding:as:)`(널 종단을 직접 잘라야 해서 3줄)가 아니라 살아 있는 오버로드로 넘기는 것이었다
-  (`withUnsafeBufferPointer`).
-- **테스트의 미사용 warning 은 대개 리팩터링 잔여물이지, 지울 코드 한 줄이 아니다.** 이번 3건 전부
+- **같은 API 의 오버로드마다 deprecation 이 다르다 — 한 파일에서 warning 이 하나만 나면 그게 신호다.**
+  `BattleNet.localIPv4` 의 두 `String(cString:)` 중 배열(`[CChar]`) 오버로드만 Swift 6 에서 deprecated 다.
+  포인터 오버로드는 유효하다. 그래서 362줄은 조용하고 367줄만 warning 이 났다. 고치는 방법도 컴파일러가
+  권한 `String(decoding:as:)`(널 종단을 직접 잘라야 해서 3줄)가 아니라 살아 있는 오버로드로 넘기는 쪽이
+  짧았다(`withUnsafeBufferPointer`).
+- **테스트의 미사용 warning 은 대개 리팩터링 잔여물이다 — 한 줄 지우고 끝낼 일이 아니다.** 이번 3건 전부
   그랬다 — `CompanionTests` 의 `grad` 는 졸업이 사용자 액션으로 바뀐 뒤(#19) 쓸 데가 없어졌고,
   `BattleTests` 의 `var s` 에 달린 "keypath 대상 타입 고정용" 주석은 `NatureEffect.multiplier` 가
   `WritableKeyPath<BattleStats, Int>` 로 root 를 이미 고정하고 있어 오래전에 사실이 아니게 됐다.
-  지우기 전에 왜 남았는지 한 번 보면, 주석이 거짓말하고 있는 자리를 같이 찾을 수 있다.
+  지우기 전에 왜 남았는지 한 번 보면 주석이 거짓말하는 자리가 같이 나온다.
   (자체 코드 warning 게이트 도입, 2026-08-19.)
