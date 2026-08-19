@@ -65,9 +65,10 @@ final class PopoverLayoutTests: XCTestCase {
                        PopoverTab.home.contentHeight)
         XCTAssertEqual(PopoverMetrics.height(for: .collection, screenHeight: 700),
                        700 - PopoverMetrics.verticalChrome)
-        // 홈은 기술 4행을 펼친 높이(약 560)면 되고, 520pt 격자를 든 탭은 그보다 커야 한다.
-        XCTAssertGreaterThan(PopoverTab.home.contentHeight, 500)
-        XCTAssertGreaterThan(PopoverTab.collection.contentHeight, PopoverTab.home.contentHeight)
+        // 탭을 옮겨도 창이 뛰지 않도록 모든 탭이 같은 높이를 쓴다.
+        XCTAssertEqual(PopoverTab.home.contentHeight, PopoverTab.collection.contentHeight)
+        XCTAssertEqual(PopoverTab.battle.contentHeight, PopoverTab.collection.contentHeight)
+        XCTAssertEqual(PopoverTab.shop.contentHeight, PopoverTab.collection.contentHeight)
     }
 
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
