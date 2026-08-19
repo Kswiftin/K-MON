@@ -15,6 +15,10 @@ struct BattleView: View {
 
     private var l: L { store.l }
 
+    /// 한 번에 그리는 상대 수 상한. 팝오버 안에서는 스크롤로 미룰 수 없으니(defect-log) 목록도
+    /// 예산을 지켜야 한다 — 넘치는 인원은 숫자로만 알린다.
+    static let visiblePeerLimit = 5
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if store.isEgg {
@@ -34,39 +38,119 @@ struct BattleView: View {
 
     @ViewBuilder
     private var networkSection: some View {
-        // 1v1 LAN·연습 배틀은 전용 창이 그린다(계획 §6.3 안 A) — 팝오버에 같은 화면을 한 벌 더
-        // 두면 스프라이트 GIF 트리가 둘이 되고, 어느 쪽을 봐야 하는지도 애매해진다.
-        if center.wantsBattleWindow {
-            battleWindowPointer
-        } else {
-            switch center.phase {
-            case .ready, .preparing:
-                peerList
-            case .challenging(let peer):
-                waitingView(peer: peer)
-            case .incoming(let peer):
-                incomingView(peer: peer)
-            case .battling, .finished:
-                // 창이 맡는 구간이라 여기 올 일이 없다(`wantsBattleWindow` 가 먼저 걸린다).
-                battleWindowPointer
-            }
+        switch center.phase {
+        case .ready, .preparing:
+            peerList
+        case .challenging(let peer):
+            waitingView(peer: peer)
+        case .incoming(let peer):
+            incomingView(peer: peer)
+        case .battling:
+            // 세 모드가 같은 `BattleArenaView` 를 쓴다(계획 §6.3 안 B — 팝오버 탭 안에서 그린다).
+            // 2~4인 방만 예외다: 참가자 넷은 좌우 두 자리 배치에 담기지 않아 격자를 유지하되,
+            // 그 격자도 같은 HP 단계·상태 배지·타입색 버튼을 읽는다.
+            if let practice = center.teamPractice { practiceArena(practice) }
+            else if let battle = center.battle { lanArena(battle) }
+        case .finished(let iWon, let byForfeit):
+            finishedView(iWon: iWon, byForfeit: byForfeit)
         }
     }
 
-    /// 배틀이 창으로 옮겨 갔다는 안내. 창이 다른 창에 가려졌을 때 다시 끌어올 길이 필요하다.
-    private var battleWindowPointer: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "macwindow.on.rectangle")
-                .font(.title2).foregroundStyle(.secondary)
-            Text(l.battleRunsInItsOwnWindow)
-                .font(.callout).multilineTextAlignment(.center)
-            Button(l.battleShowWindow) {
-                (NSApp.delegate as? AppDelegate)?.showBattleWindow()
+    // MARK: 대전 화면 (팝오버 탭 안 — 계획 §6.3 안 B)
+
+    private func lanArena(_ battle: NetBattleState) -> some View {
+        // 엔진 좌변(A)은 항상 challenger 다 — 내가 어느 쪽인지로 내 편/상대를 가른다.
+        let mine: BattleActor = battle.iAmA ? .a : .b
+        return BattleArenaView(
+            mine: battle.me, theirs: battle.opp,
+            myTitle: l.battleMyPokemon,
+            theirTitle: battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
+            l: l, turn: battle.turn,
+            logLines: BattleLogSource.twoSided(battle.events, mine: mine, l: l,
+                                               myName: battle.me.snapshot.name,
+                                               theirName: battle.opp.snapshot.name,
+                                               myMoves: battle.me.moves, theirMoves: battle.opp.moves),
+            myActor: mine,
+            switchSlots: [],                       // 1v1 LAN 은 1마리 고정 — 교체는 Phase 4
+            turnEndsAt: center.turnEndsAt,
+            isWaitingForOpponent: battle.myChoice != nil,
+            onChoose: { center.chooseMove($0) },
+            onSwitch: { _ in },
+            onForfeit: { center.forfeit() })
+    }
+
+    private func practiceArena(_ practice: TeamPracticeBattle) -> some View {
+        BattleArenaView(
+            mine: practice.mySlot, theirs: practice.opponentSlot,
+            myTitle: l.battleMyPokemon, theirTitle: "CPU",
+            l: l, turn: practice.turn,
+            logLines: BattleLogSource.twoSided(practice.events, mine: .a, l: l,
+                                               myName: practice.mySlot.snapshot.name,
+                                               theirName: practice.opponentSlot.snapshot.name,
+                                               myMoves: practice.mySlot.moves,
+                                               theirMoves: practice.opponentSlot.moves),
+            myActor: .a,
+            switchSlots: SwitchStripModel.slots(practice.mine, active: practice.myActive),
+            turnEndsAt: nil,                       // CPU 는 즉시 답한다 — 기다림이 없으니 마감도 없다
+            isWaitingForOpponent: false,
+            onChoose: { center.chooseTeamPracticeMove($0) },
+            onSwitch: { center.switchTeamPractice(to: $0) },
+            onForfeit: { center.forfeit() })
+    }
+
+    /// 결과 — 마지막 장면(필드)을 남겨 두고 아래 칸만 결과로 갈아 끼운다.
+    @ViewBuilder
+    private func finishedView(iWon: Bool?, byForfeit: Bool) -> some View {
+        VStack(spacing: 8) {
+            if let sides = finishedSides {
+                BattleFieldView(mine: sides.mine, theirs: sides.theirs,
+                                myTitle: l.battleMyPokemon, theirTitle: sides.theirTitle, l: l)
+                    .frame(height: BattleFieldMetrics.fieldHeight)
             }
-            .buttonStyle(.borderedProminent).controlSize(.small)
+            Text(finishText(iWon: iWon, byForfeit: byForfeit)).font(.title3).bold()
+            if center.battle != nil || center.teamPractice != nil {
+                Text(center.isPracticeBattle
+                     ? (store.language == .ko ? "모의전 결과" : "Practice result")
+                     : store.battleRank.displayName)
+                    .font(.caption).bold()
+                if center.lastRankDelta != 0 {
+                    Text("\(center.lastRankDelta > 0 ? "+" : "")\(center.lastRankDelta) LP")
+                        .font(.caption2)
+                        .foregroundStyle(center.lastRankDelta > 0 ? .green : .red)
+                }
+                if center.rankedStake > 0, let iWon {
+                    Text("\(iWon ? "+" : "−")⭐ \(GameNumberFormatter.compact(center.rankedStake))")
+                        .font(.caption2).foregroundStyle(iWon ? .green : .orange)
+                }
+            }
+            Button(l.battleClose) { center.dismissResult() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, 8)
+    }
+
+    /// 결과 화면이 남겨 둘 마지막 장면. 연습은 활성 슬롯, 1v1 은 그대로다.
+    private var finishedSides: (mine: BattleSide, theirs: BattleSide, theirTitle: String)? {
+        if let practice = center.teamPractice {
+            return (practice.mySlot, practice.opponentSlot, "CPU")
+        }
+        if let battle = center.battle {
+            return (battle.me, battle.opp,
+                    battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?")
+        }
+        return nil
+    }
+
+    private func finishText(iWon: Bool?, byForfeit: Bool) -> String {
+        switch (iWon, byForfeit) {
+        case (.some(true), true):   return l.battleOppForfeited
+        case (.some(false), true):  return l.battleYouForfeited
+        case (.some(true), false):  return l.battleWon
+        case (.some(false), false): return l.battleLost
+        default:                    return l.battleDraw
+        }
     }
 
     private var peerList: some View {
@@ -118,30 +202,36 @@ struct BattleView: View {
                 }
                 .padding(.vertical, 8)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(center.peers) { peer in
-                            HStack {
-                                Image(systemName: "person.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(peer.name).font(.callout).lineLimit(1)
-                                    Text(peer.rank?.displayName
-                                         ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
-                                        .font(.caption2)
-                                        .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
-                                }
-                                Spacer()
-                                Button(l.battleChallengeButton) { center.challenge(peer) }
-                                    .controlSize(.small)
-                                    .disabled(!isChallengeEnabled)
+                // 예전엔 이 목록이 `ScrollView` + `maxHeight: 180` 이었다. 팝오버 본체가 이미
+                // `ScrollView` 라 안쪽은 **스크롤되지 않고 잘린다**(defect-log) — 상대가 다섯 명을
+                // 넘어가면 뒤쪽은 신청할 방법이 없었다. 스크롤을 지우고 상한까지만 그린 뒤,
+                // 넘치는 인원은 숫자로 알린다(도감 페이저와 같은 처방의 축소판).
+                VStack(spacing: 4) {
+                    ForEach(center.peers.prefix(Self.visiblePeerLimit)) { peer in
+                        HStack {
+                            Image(systemName: "person.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(peer.name).font(.callout).lineLimit(1)
+                                Text(peer.rank?.displayName
+                                     ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
+                                    .font(.caption2)
+                                    .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
                             }
-                            .padding(.vertical, 2)
+                            Spacer()
+                            Button(l.battleChallengeButton) { center.challenge(peer) }
+                                .controlSize(.small)
+                                .disabled(!isChallengeEnabled)
                         }
+                        .padding(.vertical, 2)
+                    }
+                    if center.peers.count > Self.visiblePeerLimit {
+                        Text(l.battleMorePeers(center.peers.count - Self.visiblePeerLimit))
+                            .font(.caption2).foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .frame(maxHeight: 180)
             }
             manualConnect
         }

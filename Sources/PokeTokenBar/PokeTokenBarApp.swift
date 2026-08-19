@@ -102,11 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     /// 배틀이 잡히거나 걸리면 팝오버를 열고 **고정**(닫힘 방지)한다 — 일하면서 배틀할 수 있게.
     /// 배틀이 끝나 .ready 로 돌아가면 다시 transient(클릭 밖=닫힘)로 복원한다.
     private var battlePinned = false
-    private let battleWindow = BattleWindowController()
     private func observeBattlePin() {
         withObservationTracking {
             _ = battleCenter.wantsPinnedWindow
-            _ = battleCenter.wantsBattleWindow
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -117,26 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     }
 
     private func applyBattlePin() {
-        // 배틀이 실제로 도는 동안은 전용 창이 화면을 맡는다(계획 §6.3 안 A). 신청·수락·상대 목록은
-        // 그대로 팝오버 몫이라, 두 표면이 겹치는 구간이 없다.
-        battleWindow.setVisible(battleCenter.wantsBattleWindow) { [self] in
-            AnyView(BattleWindowView(store: companion, center: battleCenter)
-                .environment(\.spriteAntialiasing, settings.imageAntialiasing))
-        }
-        if battleCenter.wantsPinnedWindow, !battleCenter.wantsBattleWindow {
+        if battleCenter.wantsPinnedWindow {
             // .applicationDefined = 명시적으로 닫기 전엔 안 닫힘(앱 전환·바깥 클릭에도 유지) → 일하면서 배틀.
+            // 배틀 화면이 이 팝오버 안에서 그려지므로(계획 §6.3 안 B) 고정이 곧 배틀 화면 유지다.
             popover.behavior = .applicationDefined
             battlePinned = true
             if !popover.isShown { openPopover() }
             navigation.goToBattle()   // 배틀 탭으로 전환
         } else if battlePinned {
-            popover.behavior = .transient   // 배틀 끝(또는 창이 맡음) → 원래대로(클릭 밖이면 닫힘)
+            popover.behavior = .transient   // 배틀 끝 → 원래대로(클릭 밖이면 닫힘)
             battlePinned = false
         }
     }
-
-    /// 팝오버의 "배틀 창 보기" 가 부른다 — 창이 다른 창에 가려졌을 때.
-    func showBattleWindow() { battleWindow.bringToFront() }
 
     /// Companion 스프라이트 정체성(종/shiny) 관찰 — 사탕 진화·졸업(BagView), 세이브 가져오기,
     /// 부화·메타몽 리빌 async 완료처럼 store 갱신 틱 없이 companion 만 바뀌는 경로에서도 메뉴바

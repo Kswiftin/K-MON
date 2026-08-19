@@ -92,11 +92,6 @@ final class BattleCenter {
         }
     }
 
-    /// 전용 배틀 창(계획 §6.3 안 A)을 띄울 조건 — **실제로 배틀이 돌고 있을 때만**이다.
-    /// 신청·수락·상대 목록은 팝오버가 계속 맡는다. `battle`/`teamPractice` 가 `dismissResult()`
-    /// 까지 살아 있으므로 결과 화면도 같은 창에서 보고, 확인을 누르면 창이 닫힌다.
-    var wantsBattleWindow: Bool { battle != nil || teamPractice != nil }
-
     /// 한 턴에 주는 시간 — 멀티와 같은 값이다.
     static let turnDuration: TimeInterval = MultiplayerRoomCenter.turnDuration
 

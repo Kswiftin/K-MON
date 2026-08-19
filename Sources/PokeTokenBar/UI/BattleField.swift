@@ -3,31 +3,30 @@ import SwiftUI
 
 // MARK: - 창 예산
 
-/// 전용 배틀 창의 크기 예산 — 계획 §6.3 안 A. 팝오버(360×780, 콘텐츠 332)와 분리한 이유가 이 숫자에
-/// 있다: Showdown 배치는 필드 **옆에** 로그를 두므로 332pt 폭에 애초에 들어가지 않는다.
+/// 배틀 화면의 크기 예산 — 계획 §6.3 **안 B**(기존 팝오버 안). 모든 숫자가 팝오버 콘텐츠 폭 332pt
+/// 에서 거꾸로 나온다.
 ///
-/// 아래 칸(`panelHeight`)이 고정인 것도 예산의 일부다. 로그가 배틀 후반에 길어져도 창 높이가
-/// 따라 커지면 매 턴 창이 뛴다 — 팝오버에서 겪은 그 회귀(#9)를 창에서 다시 겪지 않게 한다.
+/// 이 예산이 안 A(전용 창 620×460)보다 빡빡한 대신, 지켜야 할 규칙이 하나 더 있다: 배틀 화면은
+/// **팝오버 본체 `ScrollView` 안**에서 그려지므로 자기 세로 스크롤을 둘 수 없다(defect-log — 안쪽은
+/// 스크롤되지 않고 잘린다). 넘치는 것을 스크롤로 미룰 수 없으니 **고정 높이 칸 + 최근 N줄**로 자른다.
+///
+/// 로그를 필드 옆이 아니라 **아래**로 내린 것도 여기서 나온다. 옆에 두면 332pt 에 들어가지 않는다
+/// (`BattleFieldTests.testALogBesideTheFieldWouldNotFitThePopoverWidth` 가 그 대조군이다).
 enum BattleFieldMetrics {
-    static let windowWidth: CGFloat = 620
-    static let windowHeight: CGFloat = 460
-    static let padding: CGFloat = 12
-    static let spacing: CGFloat = 8
-    /// 필드 높이 — 상대(우상단)와 나(좌하단)가 겹치지 않을 만큼. 창 높이에서 남는 자리는 전부
-    /// 여기로 준다. 처음엔 196 이었는데 그러면 아래 칸까지 합쳐도 창보다 50pt 남아, 호스팅 뷰가
-    /// 콘텐츠를 세로 중앙에 놓으면서 필드 위에 죽은 띠가 생겼다(실행 화면 확인에서 잡혔다 —
-    /// 예산 검증은 "자리를 얼마나 차지하는가" 만 보므로 이걸 잡지 못한다).
-    static let fieldHeight: CGFloat = 236
-    /// 선택 패널과 로그가 나눠 쓰는 아래 칸 높이. **고정이다**(위 주석).
-    static let panelHeight: CGFloat = 156
-    static let logWidth: CGFloat = 202
-    /// 아래 칸에 그리는 로그 줄 수. 넘치는 만큼은 그리지 않는다 — 배틀 화면에 세로 `ScrollView` 를
-    /// 두면 안쪽이 스크롤되지 않고 잘린다(defect-log). 전체 로그는 Phase 9 에서 별 자리에 붙인다.
-    static let logLines = 9
+    /// 팝오버가 주는 폭 그대로. 더 요구하면 매번 압축돼 그려진다.
+    static var width: CGFloat { PopoverMetrics.contentWidth }
+    static let spacing: CGFloat = 7
+    /// 필드 높이 — 상대(우상단)와 나(좌하단)가 겹치지 않는 최소선. 창이 아니라 탭 안이라 여기서
+    /// 더 키우면 아래 기술 버튼이 잘린다(잘리는 쪽이 조작이라 더 나쁘다).
+    static let fieldHeight: CGFloat = 150
     /// HP바·이름이 들어가는 칸 — 양쪽이 같은 폭이라야 좌우가 대칭으로 읽힌다.
-    static let barWidth: CGFloat = 208
-    static let mySpriteSize: CGFloat = 104
-    static let opponentSpriteSize: CGFloat = 84
+    static let barWidth: CGFloat = 168
+    static let mySpriteSize: CGFloat = 64
+    static let opponentSpriteSize: CGFloat = 52
+    /// 로그 줄 수와 그 칸의 **고정** 높이. 배틀 후반에 로그가 길어져도 높이가 따라 커지면 늘어난
+    /// 만큼이 잘리고, 잘리는 쪽은 아래에 있는 기술 버튼이다. 전체 로그는 Phase 9 에서 별 시트로 붙는다.
+    static let logLines = 4
+    static let logHeight: CGFloat = 58
 }
 
 // MARK: - HP 표시
@@ -443,40 +442,33 @@ struct BattleArenaView: View {
     let onForfeit: () -> Void
 
     var body: some View {
-        VStack(spacing: BattleFieldMetrics.spacing) {
+        VStack(alignment: .leading, spacing: BattleFieldMetrics.spacing) {
             header
             BattleFieldView(mine: mine, theirs: theirs,
                             myTitle: myTitle, theirTitle: theirTitle, l: l)
                 .frame(height: BattleFieldMetrics.fieldHeight)
-            HStack(alignment: .top, spacing: BattleFieldMetrics.spacing) {
-                VStack(alignment: .leading, spacing: 5) {
-                    if isWaitingForOpponent {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text(l.battleWaitingOpponent).font(.caption).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Text(l.battleYourTurn)
-                            .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
-                    }
-                    MoveGridView(moves: mine.mustStruggle ? [.struggle()] : mine.moves,
-                                 pp: mine.mustStruggle ? [] : mine.pp,
-                                 language: l.lang,
-                                 isEnabled: !isWaitingForOpponent,
-                                 onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
-                    if !switchSlots.isEmpty {
-                        SwitchStripView(slots: switchSlots, label: l.battleSwitch, onSwitch: onSwitch)
-                    }
-                    Spacer(minLength: 0)
+            if isWaitingForOpponent {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(l.battleWaitingOpponent).font(.caption).foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                logColumn
+            } else {
+                Text(l.battleYourTurn)
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
             }
-            .frame(height: BattleFieldMetrics.panelHeight)
+            MoveGridView(moves: mine.mustStruggle ? [.struggle()] : mine.moves,
+                         pp: mine.mustStruggle ? [] : mine.pp,
+                         language: l.lang,
+                         isEnabled: !isWaitingForOpponent,
+                         onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
+            if !switchSlots.isEmpty {
+                SwitchStripView(slots: switchSlots, label: l.battleSwitch, onSwitch: onSwitch)
+            }
+            logBox
         }
-        .padding(BattleFieldMetrics.padding)
-        // 최소 폭이 이 배치의 실제 요구다 — 이보다 좁으면 필드와 옆 로그가 겹친다.
-        .frame(minWidth: BattleFieldMetrics.windowWidth)
+        // 팝오버가 주는 폭을 넘겨 요구하지 않는다 — 넘기면 매번 압축돼 그려진다. 바깥 여백은
+        // 팝오버(`PopoverMetrics.padding`)가 이미 준다.
+        .frame(maxWidth: BattleFieldMetrics.width, alignment: .leading)
     }
 
     private var header: some View {
@@ -497,8 +489,9 @@ struct BattleArenaView: View {
         }
     }
 
-    /// 옆 칸 로그 — 고정 높이, 최근 몇 줄만. `ScrollView` 를 쓰지 않는 이유는 `logLines` 주석에 있다.
-    private var logColumn: some View {
+    /// 필드 아래 로그 — **고정 높이**, 최근 몇 줄만. `ScrollView` 를 쓰지 않는 이유는 `logLines`
+    /// 주석에 있다. 고정 높이여야 후반 턴에 로그가 길어져도 아래 버튼이 밀려 잘리지 않는다.
+    private var logBox: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(logLines.suffix(BattleFieldMetrics.logLines).enumerated()), id: \.offset) { _, line in
                 Text(line.text)
@@ -509,9 +502,10 @@ struct BattleArenaView: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .padding(6)
-        .frame(width: BattleFieldMetrics.logWidth, alignment: .topLeading)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, minHeight: BattleFieldMetrics.logHeight,
+               maxHeight: BattleFieldMetrics.logHeight, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
     }
 }
@@ -533,130 +527,3 @@ enum BattleLogSource {
     }
 }
 
-// MARK: - 창 콘텐츠
-
-/// 전용 배틀 창(`BattleWindowController`)이 호스팅하는 화면. 1v1 LAN 과 연습 배틀이 **같은**
-/// `BattleArenaView` 를 쓴다 — 모드마다 다른 카드를 그리던 것이 조잡함의 절반이었다.
-///
-/// 2~4인 방은 여기 오지 않는다. 참가자 4명은 좌우 두 자리 배치에 담기지 않아 팝오버의 격자가
-/// 그대로 맞고, 그 격자도 이 파일의 HP 단계·상태 배지·타입색 버튼을 같이 읽는다.
-struct BattleWindowView: View {
-    let store: CompanionStore
-    let center: BattleCenter
-
-    private var l: L { store.l }
-
-    var body: some View {
-        Group {
-            if case .finished(let iWon, let byForfeit) = center.phase {
-                result(iWon: iWon, byForfeit: byForfeit)
-            } else if let practice = center.teamPractice {
-                practiceArena(practice)
-            } else if let battle = center.battle {
-                lanArena(battle)
-            } else {
-                Color.clear   // 창이 닫히는 한 프레임 사이
-            }
-        }
-        // 남는 세로 자리는 아래로 몰아 둔다 — 가운데 정렬이면 슬랙이 필드 위·아래로 반씩 갈려
-        // 헤더 위에 죽은 띠가 생긴다.
-        .frame(width: BattleFieldMetrics.windowWidth, height: BattleFieldMetrics.windowHeight,
-               alignment: .top)
-        .environment(\.locale, store.language.displayLocale)
-    }
-
-    private func lanArena(_ battle: NetBattleState) -> some View {
-        // 엔진 좌변(A)은 항상 challenger 다 — 내가 어느 쪽인지로 내 편/상대를 가른다.
-        let mine: BattleActor = battle.iAmA ? .a : .b
-        return BattleArenaView(
-            mine: battle.me, theirs: battle.opp,
-            myTitle: l.battleMyPokemon,
-            theirTitle: battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
-            l: l, turn: battle.turn,
-            logLines: BattleLogSource.twoSided(battle.events, mine: mine, l: l,
-                                               myName: battle.me.snapshot.name,
-                                               theirName: battle.opp.snapshot.name,
-                                               myMoves: battle.me.moves, theirMoves: battle.opp.moves),
-            myActor: mine,
-            switchSlots: [],                       // 1v1 LAN 은 1마리 고정 — 교체는 Phase 4
-            turnEndsAt: center.turnEndsAt,
-            isWaitingForOpponent: battle.myChoice != nil,
-            onChoose: { center.chooseMove($0) },
-            onSwitch: { _ in },
-            onForfeit: { center.forfeit() })
-    }
-
-    private func practiceArena(_ practice: TeamPracticeBattle) -> some View {
-        BattleArenaView(
-            mine: practice.mySlot, theirs: practice.opponentSlot,
-            myTitle: l.battleMyPokemon, theirTitle: "CPU",
-            l: l, turn: practice.turn,
-            logLines: BattleLogSource.twoSided(practice.events, mine: .a, l: l,
-                                               myName: practice.mySlot.snapshot.name,
-                                               theirName: practice.opponentSlot.snapshot.name,
-                                               myMoves: practice.mySlot.moves,
-                                               theirMoves: practice.opponentSlot.moves),
-            myActor: .a,
-            switchSlots: SwitchStripModel.slots(practice.mine, active: practice.myActive),
-            turnEndsAt: nil,                       // CPU 는 즉시 답한다 — 기다림이 없으니 마감도 없다
-            isWaitingForOpponent: false,
-            onChoose: { center.chooseTeamPracticeMove($0) },
-            onSwitch: { center.switchTeamPractice(to: $0) },
-            onForfeit: { center.forfeit() })
-    }
-
-    /// 결과 — 필드는 그대로 두고 아래 칸만 갈아 끼운다. 마지막 장면을 보면서 결과를 읽게 된다.
-    @ViewBuilder
-    private func result(iWon: Bool?, byForfeit: Bool) -> some View {
-        let sides = finishedSides
-        VStack(spacing: BattleFieldMetrics.spacing) {
-            if let sides {
-                BattleFieldView(mine: sides.mine, theirs: sides.theirs,
-                                myTitle: l.battleMyPokemon, theirTitle: sides.theirTitle, l: l)
-                    .frame(height: BattleFieldMetrics.fieldHeight)
-            }
-            VStack(spacing: 6) {
-                Text(finishText(iWon: iWon, byForfeit: byForfeit)).font(.title3).bold()
-                Text(center.isPracticeBattle
-                     ? (store.language == .ko ? "모의전 결과" : "Practice result")
-                     : store.battleRank.displayName)
-                    .font(.caption).bold()
-                if center.lastRankDelta != 0 {
-                    Text("\(center.lastRankDelta > 0 ? "+" : "")\(center.lastRankDelta) LP")
-                        .font(.caption2)
-                        .foregroundStyle(center.lastRankDelta > 0 ? .green : .red)
-                }
-                if center.rankedStake > 0, let iWon {
-                    Text("\(iWon ? "+" : "−")⭐ \(GameNumberFormatter.compact(center.rankedStake))")
-                        .font(.caption2).foregroundStyle(iWon ? .green : .orange)
-                }
-                Button(l.battleClose) { center.dismissResult() }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .padding(BattleFieldMetrics.padding)
-    }
-
-    /// 결과 화면이 그릴 마지막 장면. 연습은 활성 슬롯, 1v1 은 그대로다.
-    private var finishedSides: (mine: BattleSide, theirs: BattleSide, theirTitle: String)? {
-        if let practice = center.teamPractice {
-            return (practice.mySlot, practice.opponentSlot, "CPU")
-        }
-        if let battle = center.battle {
-            return (battle.me, battle.opp,
-                    battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?")
-        }
-        return nil
-    }
-
-    private func finishText(iWon: Bool?, byForfeit: Bool) -> String {
-        switch (iWon, byForfeit) {
-        case (.some(true), true):   return l.battleOppForfeited
-        case (.some(false), true):  return l.battleYouForfeited
-        case (.some(true), false):  return l.battleWon
-        case (.some(false), false): return l.battleLost
-        default:                    return l.battleDraw
-        }
-    }
-}
