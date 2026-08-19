@@ -971,7 +971,6 @@ final class CompanionStoreTests: XCTestCase {
     func testBranchingPrefersUncollectedFinals() async {
         let s = store(branch3)
         let evo = PokemonBalance.phaseThreshold(rarity: .common, totalForms: 2, stageIndex: 0)
-        let grad = PokemonBalance.phaseThreshold(rarity: .common, totalForms: 2, stageIndex: 1)
         var finals: [Int] = []
         for _ in 0..<3 {
             await s.hatch(baseID: 10)

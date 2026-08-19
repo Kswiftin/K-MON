@@ -27,7 +27,7 @@ jobs:
         run: swift --version
 
       - name: Build
-        run: swift build -v
+        run: swift build
 
       # test-gate.sh runs `swift test --enable-code-coverage` and then enforces a
       # line-coverage floor on the logic-core files. It replaces a bare `swift test`:
