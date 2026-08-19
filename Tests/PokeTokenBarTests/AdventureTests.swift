@@ -279,9 +279,9 @@ final class AdventureTests: XCTestCase {
         XCTAssertTrue(battle.events.isEmpty, "버려진 라운드의 이벤트가 남으면 안 된다")
     }
 
-    /// `MultiplayerFighter` 의 JSON 모양은 protocolVersion 2 의 계약이다. 배틀 상태를 내부에서
-    /// 어떻게 묶든 이 키들이 평면으로 남아야 구버전과 계속 붙는다. 이 테스트가 깨지면 고칠 것은
-    /// 테스트가 아니라 `protocolVersion` 이다.
+    /// `MultiplayerFighter` 의 JSON 모양은 와이어 계약이다. 배틀 상태를 내부에서 어떻게 묶든 키는
+    /// 평면으로 남는다. 키가 늘거나 줄면 고칠 것은 테스트가 아니라 `protocolVersion` 이다 —
+    /// 상태이상(protocolVersion 4)이 status 3종을 더했다.
     func testMultiplayerFighterWireShapeStaysFlat() throws {
         let id = UUID()
         let snapshot = BattleSnapshot(speciesID: 25, name: "Pika", trainer: "T", level: 50, nature: nil,
@@ -294,14 +294,25 @@ final class AdventureTests: XCTestCase {
                                         snapshot: snapshot)
         fighter.side.hp = 42
         fighter.side.pp = [7]
+        var rng = SplitMix64(seed: 3)
+        BattleEngine.inflict(.toxic, on: &fighter.side, actor: .fighter(id), rng: &rng)
         let encoded = try JSONEncoder().encode(fighter)
         let json = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
         XCTAssertEqual(Set(json?.keys.sorted() ?? []),
-                       ["id", "trainerName", "team", "snapshot", "hp", "pp"])
+                       ["id", "trainerName", "team", "snapshot", "hp", "pp",
+                        "status", "statusCounter", "confusionTurns"])
         XCTAssertEqual(json?["hp"] as? Int, 42)
         XCTAssertEqual(json?["pp"] as? [Int], [7])
-        // 왕복 — 받은 쪽이 hp/pp 를 복원한다(스냅샷 기본값으로 되돌아가지 않는다).
+        XCTAssertEqual(json?["status"] as? String, "toxic")
+        // 왕복 — 받은 쪽이 hp/pp/상태를 복원한다(스냅샷 기본값으로 되돌아가지 않는다).
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerFighter.self, from: encoded), fighter)
+
+        // 상태가 없으면 `status` 키 자체가 나가지 않는다 — 배지를 그릴 때 "없음"과 구분된다.
+        var healthy = fighter
+        healthy.side.status = nil
+        let healthyJSON = try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(healthy)) as? [String: Any]
+        XCTAssertNil(healthyJSON?["status"])
     }
 
     // MARK: 멀티 턴 순서 — 우선도 → 스피드 → 무작위
@@ -395,7 +406,7 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
         // 3 = 라운드 결과가 타입된 이벤트 스트림. 버전을 올려야 옛 빌드가 레이스·배틀 중간이
         // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 3)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 4)
     }
 
     /// 라운드 결과는 호스트가 게스트에게 **브로드캐스트**하는 유일한 배틀 페이로드다. 이벤트가
@@ -405,7 +416,7 @@ final class AdventureTests: XCTestCase {
         let attacker = UUID(), target = UUID()
         let events: [BattleEvent] = [.turn(4), .move(.fighter(attacker), moveID: 57),
                                      .crit(.fighter(target)), .superEffective(.fighter(target)),
-                                     .damage(.fighter(target), amount: 122), .faint(.fighter(target))]
+                                     .damage(.fighter(target), amount: 122, cause: .move), .faint(.fighter(target))]
         let message = MultiplayerWireMessage.roundResolved(round: 4, fighters: [], events: events)
         let data = try JSONEncoder().encode(message)
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)

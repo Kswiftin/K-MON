@@ -448,6 +448,9 @@ struct MoveDTO: Decodable, Sendable {
     /// 상태이상(`ailment`)·랭크변화(`stat_chance`)는 Phase 2·3 에서 이 자리에 붙는다.
     struct Meta: Decodable, Sendable {
         let crit_rate: Int?
+        /// `/move-ailment` 이름. 상태를 걸지 않는 기술은 `none` 이 온다(키가 빠지는 게 아니다).
+        let ailment: NamedRef?
+        let ailment_chance: Int?
     }
     let id: Int
     let power: Int?
@@ -480,11 +483,18 @@ extension MoveSpec {
         let descriptions = PokeAPIClient.flavorTexts(dto.flavor_text_entries.map {
             (language: $0.language.name, text: $0.flavor_text)
         }, languages: languages)
+        let ailment = dto.meta?.ailment?.name
+        // 구현하지 않은 상태(trap·nightmare·yawn·leech-seed 등 14종)는 조용히 삼키지 않고 한 번 남긴다.
+        // 스펙을 만들 때 한 번만 찍히므로(스펙은 캐시된다) 턴마다 로그가 불어나지 않는다.
+        if let ailment, ailment != "none", Status(ailment: ailment) == nil, dto.id != MoveSpec.toxicMoveID {
+            AppLog.write("move \(dto.id) (\(fallbackName)): ailment '\(ailment)' not implemented — ignored")
+        }
         return MoveSpec(id: dto.id, names: names, type: type,
                         power: dto.power ?? 0, damageClass: damageClass,
                         accuracy: dto.accuracy, pp: dto.pp ?? 10,
                         descriptions: descriptions, priority: dto.priority,
-                        critRate: dto.meta?.crit_rate)
+                        critRate: dto.meta?.crit_rate,
+                        ailment: ailment, ailmentChance: dto.meta?.ailment_chance)
     }
 }
 struct ChainLink: Decodable, Sendable {

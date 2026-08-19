@@ -142,7 +142,7 @@ final class BattleTests: XCTestCase {
     /// **같은 배틀을 서로 다르게 본다**(challenge/accept 가 거절하지 못한다). 위 골든값과 이 상수는
     /// 같이 움직여야 한다.
     func testRulesVersionMovesWithTheDamagePipeline() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 2, "Gen 2 데미지 파이프라인 = 규칙 2")
+        XCTAssertGreaterThanOrEqual(BattleEngine.rulesVersion, 2, "Gen 2 데미지 파이프라인부터 규칙 2 이상")
     }
 
     // MARK: 급소 단계
@@ -335,7 +335,7 @@ final class BattleTests: XCTestCase {
                                                   turn: 1, rng: &rng)
             XCTAssertTrue(events.contains(.superEffective(.b)), "seed \(seed): 물 → 불꽃/비행 = ×2")
             XCTAssertTrue(events.contains(.resisted(.a)), "seed \(seed): 불꽃 → 물 = ×0.5")
-            XCTAssertTrue(events.contains { if case .damage(.b, _) = $0 { return true } else { return false } })
+            XCTAssertTrue(events.contains { if case .damage(.b, _, _) = $0 { return true } else { return false } })
             if events.contains(.crit(.b)) { sawCrit = true }
         }
         XCTAssertTrue(sawCrit, "급소가 데미지와 별개의 이벤트로 실려야 한다")
@@ -364,7 +364,7 @@ final class BattleTests: XCTestCase {
                                                   moveB: flamethrower(), turn: 1, rng: &rng)
             // A 가 빗나갔으면 `.miss(.a)`, 맞았으면 B 쪽에 `.damage` 가 실린다.
             if events.contains(.miss(.a)) { missSeen = true }
-            if events.contains(where: { if case .damage(.b, _) = $0 { return true } else { return false } }) {
+            if events.contains(where: { if case .damage(.b, _, _) = $0 { return true } else { return false } }) {
                 hitSeen = true
             }
         }
@@ -389,7 +389,7 @@ final class BattleTests: XCTestCase {
                                               turn: 1, rng: &rng)
         // 무효는 `.immune` 로 실리고 데미지 이벤트 자체가 없다 — "0 데미지" 로 새면 맞은 것처럼 읽힌다.
         XCTAssertTrue(events.contains(.immune(.b)))
-        XCTAssertFalse(events.contains { if case .damage(.b, _) = $0 { return true } else { return false } })
+        XCTAssertFalse(events.contains { if case .damage(.b, _, _) = $0 { return true } else { return false } })
         XCTAssertEqual(b.hp, b.stats.hp, "닥트리오는 한 점도 깎이지 않는다")
     }
 

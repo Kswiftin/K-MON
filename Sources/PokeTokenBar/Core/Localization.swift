@@ -104,6 +104,70 @@ struct L {
         t("\(name)은(는) 쓰러졌다!", "\(name) fainted!", "\(name)はたおれた！")
     }
 
+    // MARK: 배틀 (상태이상)
+
+    func battleStatusInflicted(_ name: String, status: Status) -> String {
+        switch status {
+        case .burn:      return t("\(name)은(는) 화상을 입었다!", "\(name) was burned!", "\(name)は やけどを おった！")
+        case .poison:    return t("\(name)은(는) 독에 걸렸다!", "\(name) was poisoned!", "\(name)は どくを あびた！")
+        case .toxic:     return t("\(name)은(는) 맹독에 걸렸다!", "\(name) was badly poisoned!", "\(name)は もうどく状態になった！")
+        case .paralysis: return t("\(name)은(는) 마비되어 기술이 나오기 어려워졌다!",
+                                  "\(name) is paralyzed! It may be unable to move!",
+                                  "\(name)は しびれて 技が でにくくなった！")
+        case .sleep:     return t("\(name)은(는) 잠들어 버렸다!", "\(name) fell asleep!", "\(name)は 眠ってしまった！")
+        case .freeze:    return t("\(name)은(는) 얼어붙었다!", "\(name) was frozen solid!", "\(name)は こおりついた！")
+        case .confusion: return t("\(name)은(는) 혼란에 빠졌다!", "\(name) became confused!", "\(name)は 混乱した！")
+        }
+    }
+
+    func battleStatusCured(_ name: String, status: Status) -> String {
+        switch status {
+        case .burn:            return t("\(name)의 화상이 나았다!", "\(name)'s burn was healed!", "\(name)の やけどが 治った！")
+        case .poison, .toxic:  return t("\(name)의 독이 나았다!", "\(name) was cured of its poison!", "\(name)の どくが 治った！")
+        case .paralysis:       return t("\(name)의 마비가 풀렸다!", "\(name) was cured of paralysis!", "\(name)の まひが 治った！")
+        case .sleep:           return t("\(name)은(는) 잠에서 깨어났다!", "\(name) woke up!", "\(name)は 目を覚ました！")
+        case .freeze:          return t("\(name)의 얼음이 녹았다!", "\(name) thawed out!", "\(name)の こおりが とけた！")
+        case .confusion:       return t("\(name)의 혼란이 풀렸다!", "\(name) snapped out of its confusion!", "\(name)の 混乱が とけた！")
+        }
+    }
+
+    /// 그 상태 때문에 이번 턴을 못 썼다. 화상·독은 행동을 막지 않아 마지막 분기가 나올 일은 없지만,
+    /// 비워 두면 나중에 상태를 더할 때 조용히 빈 줄이 로그로 나간다.
+    func battleCantMove(_ name: String, status: Status) -> String {
+        switch status {
+        case .paralysis: return t("\(name)은(는) 몸이 저려서 움직일 수 없다!",
+                                  "\(name) is paralyzed! It can't move!",
+                                  "\(name)は からだが しびれて 動けない！")
+        case .sleep:     return t("\(name)은(는) 쿨쿨 잠들어 있다.", "\(name) is fast asleep.", "\(name)は ぐうぐう 眠っている。")
+        case .freeze:    return t("\(name)은(는) 얼어붙어서 움직일 수 없다!",
+                                  "\(name) is frozen solid!", "\(name)は こおって 動けない！")
+        case .confusion: return t("\(name)은(는) 혼란에 빠져 자신을 공격했다!",
+                                  "\(name) hurt itself in its confusion!",
+                                  "\(name)は わけも わからず 自分を 攻撃した！")
+        case .burn, .poison, .toxic:
+            return t("\(name)은(는) 움직일 수 없다!", "\(name) can't move!", "\(name)は 動けない！")
+        }
+    }
+
+    /// 기술이 아닌 데미지 — 원인을 말하지 않으면 로그가 "무엇에 맞았는지" 를 잃는다.
+    func battleStatusDamage(_ name: String, damage: Int, cause: DamageCause) -> String {
+        switch cause {
+        case .burn:      return t("\(name)은(는) 화상 데미지! \(damage)",
+                                  "\(name) was hurt by its burn! \(damage)",
+                                  "\(name)は やけどの ダメージ！ \(damage)")
+        case .poison:    return t("\(name)은(는) 독 데미지! \(damage)",
+                                  "\(name) was hurt by poison! \(damage)",
+                                  "\(name)は どくの ダメージ！ \(damage)")
+        case .toxic:     return t("\(name)은(는) 맹독 데미지! \(damage)",
+                                  "\(name) was hurt by the bad poison! \(damage)",
+                                  "\(name)は もうどくの ダメージ！ \(damage)")
+        case .confusion: return t("\(name)은(는) 혼란으로 \(damage) 데미지",
+                                  "\(name) hurt itself in confusion! \(damage)",
+                                  "\(name)は 混乱で \(damage)ダメージ")
+        case .move:      return battleTookDamage(name, damage: damage)
+        }
+    }
+
     // MARK: 헤더 (오늘/주/월)
     var todayTokens: String { t("오늘 함께한 시간", "Time together today", "今日一緒にいた時間") }
     var totalPlaytime: String { t("누적", "Total", "累計") }

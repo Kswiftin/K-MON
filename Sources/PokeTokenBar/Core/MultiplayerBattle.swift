@@ -114,11 +114,13 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
 
     var isAlive: Bool { side.isAlive }
 
-    // 와이어 계약(`protocolVersion` 2)은 `snapshot`/`hp`/`pp` 를 **평면으로** 보낸다. 상태를
-    // `side` 로 모은 건 내부 구조 변경일 뿐이므로 JSON 모양은 그대로 두고 구버전과 계속 붙게 한다.
-    // (기전이 하나도 안 바뀐 리팩터로 프로토콜 버전을 올리면 구버전은 이유 없이 못 들어온다.)
-    // `stats`·`moves` 는 스냅샷에서 파생되므로 보내지 않고 받는 쪽이 다시 만든다.
-    private enum CodingKeys: String, CodingKey { case id, trainerName, team, snapshot, hp, pp }
+    // 와이어 계약은 `snapshot`/`hp`/`pp` 를 **평면으로** 보낸다. 상태를 `side` 로 모은 건 내부 구조
+    // 변경일 뿐이라 JSON 모양을 그대로 뒀었다(기전이 안 바뀐 리팩터로 버전을 올리면 구버전은 이유 없이
+    // 못 들어온다). 상태이상은 반대다 — 라운드 결과를 받는 쪽이 배지를 그려야 하므로 필드가 늘었다.
+    // `stats`·`moves` 는 스냅샷에서 파생되므로 여전히 보내지 않고 받는 쪽이 다시 만든다.
+    private enum CodingKeys: String, CodingKey {
+        case id, trainerName, team, snapshot, hp, pp, status, statusCounter, confusionTurns
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -128,6 +130,9 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         var decoded = BattleSide(try container.decode(BattleSnapshot.self, forKey: .snapshot))
         decoded.hp = try container.decode(Int.self, forKey: .hp)
         decoded.pp = try container.decode([Int].self, forKey: .pp)
+        decoded.status = try container.decodeIfPresent(Status.self, forKey: .status)
+        decoded.statusCounter = try container.decodeIfPresent(Int.self, forKey: .statusCounter) ?? 0
+        decoded.confusionTurns = try container.decodeIfPresent(Int.self, forKey: .confusionTurns) ?? 0
         side = decoded
     }
 
@@ -139,6 +144,9 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         try container.encode(side.snapshot, forKey: .snapshot)
         try container.encode(side.hp, forKey: .hp)
         try container.encode(side.pp, forKey: .pp)
+        try container.encodeIfPresent(side.status, forKey: .status)
+        try container.encode(side.statusCounter, forKey: .statusCounter)
+        try container.encode(side.confusionTurns, forKey: .confusionTurns)
     }
 }
 
@@ -167,6 +175,8 @@ enum MultiplayerValidation {
         return moves.allSatisfy {
             (0...250).contains($0.power) && (1...100).contains($0.pp)
                 && ($0.accuracy.map { (1...100).contains($0) } ?? true)
+                // 상태 부여 확률은 상대가 보내오는 값이다 — 범위를 벗어나면 매번 확정 부여가 된다.
+                && ($0.ailmentChance.map { (0...100).contains($0) } ?? true)
         }
     }
 
@@ -191,7 +201,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 3: 라운드 결과가 타입된 이벤트 스트림(`[BattleEvent]`)이 됐다. 1v1 은 이벤트를 주고받지 않아
     //    `rulesVersion` 만으로 충분하지만, 이쪽은 호스트가 `roundResolved` 로 브로드캐스트하므로
     //    구버전 게스트는 라운드를 디코딩하지 못한다 → 버전을 올려 입장 단계에서 막는다.
-    static let protocolVersion = 3   // 2: LobbyParticipant.role + 관전자 베팅 메시지
+    // 4: 상태이상. `MultiplayerFighter` 에 status 필드가 붙었고 스트림에 `.status`/`.cant` case 가
+    //    늘었다 — 구버전 게스트는 모르는 case 를 만나 라운드 전체를 디코딩하지 못하고 화면이 멈춘다.
+    static let protocolVersion = 4   // 2: LobbyParticipant.role + 관전자 베팅 메시지
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -294,9 +306,10 @@ struct MultiplayerBattle: Sendable {
             let rightPriority = rightFighter.side.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
             // `stats` 는 배틀 시작에 한 번 계산된 값이다. 여기서 `effectiveStats()` 를 부르던
-            // 때는 비교 횟수만큼 스탯을 다시 만들었다.
-            let leftSpeed = leftFighter.side.stats.spe
-            let rightSpeed = rightFighter.side.stats.spe
+            // 때는 비교 횟수만큼 스탯을 다시 만들었다. 마비 보정은 `effectiveSpeed` 가 들고 있다 —
+            // 1v1 과 같은 값을 봐야 두 모드의 순서 규칙이 갈라지지 않는다.
+            let leftSpeed = leftFighter.side.effectiveSpeed
+            let rightSpeed = rightFighter.side.effectiveSpeed
             if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }
             return lhs.1 < rhs.1
         }.map(\.0)
@@ -307,14 +320,23 @@ struct MultiplayerBattle: Sendable {
             // 인덱스·PP 는 위 사전 검증을 통과한 값이다.
             let move = fighters[ai].side.move(at: action.moveIndex)
             if action.moveIndex >= 0 { fighters[ai].side.pp[action.moveIndex] -= 1 }
-            // 방어측을 지역 사본으로 꺼내 넘긴다 — 같은 배열의 두 원소를 동시에 inout 으로 잡으면
-            // 배타적 접근 위반이다. 데미지와 이벤트는 `applyAttack` 한 곳에서 만든다.
+            // 양쪽을 지역 사본으로 꺼내 넘긴다 — 같은 배열의 두 원소를 동시에 inout 으로 잡으면
+            // 배타적 접근 위반이다. 공격측도 inout 인 건 행동 가능 판정(잠듦·혼란)이 공격측 상태를
+            // 바꾸기 때문이다. 데미지·상태·이벤트는 전부 `applyAttack` 한 곳에서 만든다.
+            var attacker = fighters[ai].side
             var target = fighters[ti].side
-            roundEvents += BattleEngine.applyAttack(attacker: fighters[ai].side, defender: &target,
+            roundEvents += BattleEngine.applyAttack(attacker: &attacker, defender: &target,
                                                     attackerActor: .fighter(fighters[ai].id),
                                                     defenderActor: .fighter(fighters[ti].id),
                                                     move: move, rng: &rng)
+            fighters[ai].side = attacker
             fighters[ti].side = target
+        }
+        // 턴 끝 잔뎀 — 1v1 과 같은 규칙이다. 참가자 배열 순서로 고정해야 모든 피어가 같은 순서로 본다.
+        for index in fighters.indices {
+            var side = fighters[index].side
+            roundEvents += BattleEngine.endOfTurnResidual(&side, actor: .fighter(fighters[index].id))
+            fighters[index].side = side
         }
         events.append(contentsOf: roundEvents)
         round += 1
