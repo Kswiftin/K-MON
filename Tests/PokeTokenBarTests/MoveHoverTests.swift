@@ -100,9 +100,17 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertEqual(MoveListView.hoverState(current: 8, moveID: 7, isInside: false), 8)
     }
 
-    /// 선택된 그 행에서 빠져나오면 비운다.
-    func testLeavingTheSelectedRowClearsIt() {
-        XCTAssertNil(MoveListView.hoverState(current: 7, moveID: 7, isInside: false))
+    /// 이탈해도 마지막 기술을 유지한다.
+    /// 60초 방치 틱이 팝오버를 다시 그리면 AppKit 이 트래킹 영역을 재설치하는데, 커서가 그대로면
+    /// `mouseExited` 만 오고 재진입은 안 온다 — 이탈에서 지우면 마우스를 올려둔 채 설명이 사라진다.
+    func testLeavingKeepsTheLastHoveredMove() {
+        XCTAssertEqual(MoveListView.hoverState(current: 7, moveID: 7, isInside: false), 7)
+        XCTAssertEqual(MoveListView.hoverState(current: 8, moveID: 7, isInside: false), 8)
+    }
+
+    /// 다른 행에 올리면 그 행으로 바뀐다 — 유지가 "안 바뀐다" 가 되면 안 된다.
+    func testEnteringAnotherRowReplacesTheSelection() {
+        XCTAssertEqual(MoveListView.hoverState(current: 7, moveID: 9, isInside: true), 9)
     }
 
     // MARK: 호버 배선 (원래 결함 그 자체)
@@ -150,6 +158,72 @@ final class MoveHoverTests: XCTestCase {
         return store
     }
 
+    // MARK: 설명 출처 (PokéAPI flavor text)
+
+    private let koNotice = "사용할 수 없는 기술입니다.\n다시 배우게 할 수 없지만\n기술을 잊게 하는 것을 권장합니다."
+    private let enNotice = "This move can\u{2019}t be used.\nIt\u{2019}s recommended that this move is forgotten."
+    private let jaNotice = "この技は\u{3000}使えません\n思い出すことが\u{3000}できなくなりますが"
+
+    /// 트리거 재현: 삭제된 기술은 *최신* 버전 항목이 설명이 아니라 안내문이다(실측: move/return).
+    /// 마지막 항목을 그대로 쓰면 "사용할 수 없는 기술입니다" 가 설명 자리에 뜬다.
+    func testSkipsUnusableNoticeAndKeepsTheRealDescription() {
+        let picked = PokeAPIClient.flavorTexts([
+            (language: "ko", text: "트레이너를 위해 전력으로 상대를 공격한다."),
+            (language: "ko", text: koNotice),
+        ], languages: ["ko", "en", "ja"])
+        XCTAssertEqual(picked["ko"], "트레이너를 위해 전력으로 상대를 공격한다.")
+    }
+
+    /// 안내문이 없으면 종전대로 최신(마지막) 항목을 쓴다.
+    func testKeepsTheNewestEntryWhenAllAreUsable() {
+        let picked = PokeAPIClient.flavorTexts([
+            (language: "ko", text: "옛 설명"), (language: "ko", text: "새 설명"),
+        ], languages: ["ko"])
+        XCTAssertEqual(picked["ko"], "새 설명")
+    }
+
+    /// 전부 안내문이면 그 언어는 아예 비운다 — 다른 언어/스탯 폴백으로 넘어가야 한다.
+    func testDropsLanguageWhenEveryEntryIsANotice() {
+        let picked = PokeAPIClient.flavorTexts([(language: "ko", text: koNotice)], languages: ["ko"])
+        XCTAssertNil(picked["ko"])
+    }
+
+    /// en/ja 안내문도 잡는다 — 굽은 따옴표(’)와 전각 공백(U+3000)이 그대로 온다.
+    func testDetectsNoticeInEnglishAndJapanese() {
+        XCTAssertTrue(PokeAPIClient.isUnusableMoveNotice(enNotice))
+        XCTAssertTrue(PokeAPIClient.isUnusableMoveNotice(jaNotice))
+        XCTAssertTrue(PokeAPIClient.isUnusableMoveNotice("このわざは\u{3000}つかえません"))
+    }
+
+    /// 거짓양성 가드: 진짜 설명에도 "사용할 수 없" 이 들어간다(금지어·트집). 부분일치로 판정하면
+    /// 멀쩡한 설명이 통째로 사라진다 — 그래서 접두사로만 본다.
+    func testRealDescriptionsMentioningUnusableAreNotDropped() {
+        let disable = "상대가 마지막으로 사용한 기술을 4턴 동안 사용할 수 없게 만든다."
+        XCTAssertFalse(PokeAPIClient.isUnusableMoveNotice(disable))
+        XCTAssertEqual(PokeAPIClient.flavorTexts([(language: "ko", text: disable)],
+                                                 languages: ["ko"])["ko"], disable)
+    }
+
+    /// 줄바꿈·폼피드는 한 줄로 편다(설명 슬롯은 2줄 고정이라 원문 개행이 그대로 오면 잘린다).
+    func testFlattensLineBreaks() {
+        let picked = PokeAPIClient.flavorTexts([(language: "en", text: "A move\nthat hits\u{000C}hard.")],
+                                               languages: ["en"])
+        XCTAssertEqual(picked["en"], "A move that hits hard.")
+    }
+
+    /// 세이브에 이미 안내문이 저장된 사용자는 다시 받아야 한다 — 없을 때만 받으면 영영 안 고쳐진다.
+    func testStoredNoticeCountsAsMissingDescription() {
+        let bad = MoveSpec(id: 216, names: ["ko": "은혜갚기"], type: .normal, power: 102,
+                           damageClass: .physical, accuracy: 100, pp: 20,
+                           descriptions: ["ko": koNotice])
+        let good = MoveSpec(id: 33, names: ["ko": "몸통박치기"], type: .normal, power: 40,
+                            damageClass: .physical, accuracy: 100, pp: 35,
+                            descriptions: ["ko": "몸 전체로 부딪쳐 공격한다."])
+        XCTAssertTrue(CompanionStore.needsDescriptionRefresh(bad))
+        XCTAssertFalse(CompanionStore.needsDescriptionRefresh(good))
+        XCTAssertTrue(CompanionStore.needsDescriptionRefresh(good.withoutDescriptions()))
+    }
+
     // MARK: 레이아웃 (팝오버 흔들림 방지 — #9 부류)
 
     /// 호버 대상이 바뀌어도 슬롯 높이는 그대로다. 길이에 따라 늘어나면 마우스를 옮길 때마다
@@ -179,3 +253,9 @@ private let hoverTestLine: EvoLine = {
                    tree: EvoNode(speciesID: 1, children: [EvoNode(speciesID: 2, children: [EvoNode(speciesID: 3, children: [])])]),
                    rarity: .common, names: names)
 }()
+
+private extension MoveSpec {
+    func withoutDescriptions() -> MoveSpec {
+        var copy = self; copy.descriptions = nil; return copy
+    }
+}
