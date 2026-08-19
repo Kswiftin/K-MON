@@ -91,6 +91,55 @@ final class BattleLogTests: XCTestCase {
         XCTAssertEqual(lines([.crit(.a)]), ["급소에 맞았다!"])
     }
 
+    // MARK: 상태이상 (Phase 2)
+
+    /// 상태 부여·해제·행동불능은 각자 자기 줄을 갖는다 — 공격 줄에 접히면 "무엇 때문에 못 움직였는지"가
+    /// 사라진다. 세 종류를 함께 보는 이유는 하나만 배선하고 나머지를 빠뜨리는 게 흔하기 때문이다.
+    func testStatusInflictionCureAndBlockEachGetTheirOwnLine() {
+        XCTAssertEqual(lines([.status(.a, .burn)]), ["거북왕은(는) 화상을 입었다!"])
+        XCTAssertEqual(lines([.status(.b, .toxic)]), ["리자몽은(는) 맹독에 걸렸다!"])
+        XCTAssertEqual(lines([.cureStatus(.a, .sleep)]), ["거북왕은(는) 잠에서 깨어났다!"])
+        XCTAssertEqual(lines([.cant(.a, .paralysis)]), ["거북왕은(는) 몸이 저려서 움직일 수 없다!"])
+        XCTAssertEqual(lines([.cant(.b, .freeze)]), ["리자몽은(는) 얼어붙어서 움직일 수 없다!"])
+    }
+
+    /// 잔뎀은 **기술 줄이 아니다.** 원인이 없으면 직전 `.move` 에 접혀 쓰지도 않은 기술 이름이 붙는데,
+    /// 현재 구조에서 가장 흔한 오구현이 정확히 이 자리다.
+    func testResidualDamageNamesItsCauseInsteadOfAMove() {
+        let stream: [BattleEvent] = [.move(.a, moveID: 57), .damage(.b, amount: 30, cause: .move),
+                                     .damage(.a, amount: 21, cause: .burn)]
+        let out = lines(stream)
+        XCTAssertEqual(out, ["거북왕의 파도타기! 30 데미지", "거북왕은(는) 화상 데미지! 21"])
+        XCTAssertFalse(out[1].contains("파도타기"), "쓰지 않은 기술이 잔뎀 줄에 들어가면 안 된다")
+
+        XCTAssertEqual(lines([.damage(.b, amount: 10, cause: .poison)]), ["리자몽은(는) 독 데미지! 10"])
+        XCTAssertEqual(lines([.damage(.b, amount: 32, cause: .toxic)]), ["리자몽은(는) 맹독 데미지! 32"])
+    }
+
+    /// 혼란 자멸은 "못 움직였다" + "자기를 때렸다" 두 사실이다 — 두 줄로 나온다.
+    func testConfusionSelfHitReadsAsTwoLines() {
+        XCTAssertEqual(lines([.cant(.a, .confusion), .damage(.a, amount: 19, cause: .confusion)]),
+                       ["거북왕은(는) 혼란에 빠져 자신을 공격했다!", "거북왕은(는) 혼란으로 19 데미지"])
+    }
+
+    /// 상태 문구도 3언어 모두 있어야 한다 — 한 언어만 채우고 넘어가는 게 흔하다.
+    func testStatusLinesAreLocalized() {
+        XCTAssertEqual(lines([.status(.a, .paralysis)], .en),
+                       ["거북왕 is paralyzed! It may be unable to move!"])
+        XCTAssertEqual(lines([.status(.a, .paralysis)], .ja), ["거북왕は しびれて 技が でにくくなった！"])
+        XCTAssertEqual(lines([.damage(.a, amount: 21, cause: .burn)], .en),
+                       ["거북왕 was hurt by its burn! 21"])
+        XCTAssertEqual(lines([.damage(.a, amount: 21, cause: .burn)], .ja),
+                       ["거북왕は やけどの ダメージ！ 21"])
+    }
+
+    /// 줄의 주인은 그 상태를 겪는 쪽이다 — 뷰가 내 편/상대 색을 이 값으로 가른다.
+    func testStatusLineOwnerIsTheAfflictedSide() {
+        let out = BattleLog.lines([.status(.b, .burn), .cant(.b, .sleep)],
+                                  l: L(.ko), name: { _ in "X" }, moveName: { _, _ in "Y" })
+        XCTAssertEqual(out.map(\.actor), [.b, .b])
+    }
+
     /// 멀티(2~4인)는 참가자 UUID 로 쪽을 가른다 — 같은 스트림·같은 접기를 쓴다.
     func testFighterActorsUseTheSameFold() {
         let id = UUID()
