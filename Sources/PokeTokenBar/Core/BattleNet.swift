@@ -298,6 +298,8 @@ final class BattleCenter {
     func switchTeamPractice(to index: Int) {
         guard var practice = teamPractice, practice.switchMine(to: index) else { return }
         teamPractice = practice
+        // 교체는 이제 턴을 쓰므로 상대가 그 사이 공격한다 — 마지막 한 마리가 거기서 쓰러질 수 있다.
+        if let result = practice.result { phase = .finished(iWon: result, byForfeit: false) }
     }
 
     func challenge(_ peer: BattlePeer) {
