@@ -46,6 +46,11 @@ struct L {
     var battleIncomingTitle: String { t("배틀 신청이 왔습니다!", "Incoming battle challenge!", "バトルの申し込みが来ました！") }
     var battleAccept: String { t("수락", "Accept", "承諾") }
     var battleDecline: String { t("거절", "Decline", "拒否") }
+    var battleRulesMismatch: String {
+        t("상대와 앱 버전이 달라 대전할 수 없어요 — 양쪽 다 업데이트해 주세요.",
+          "Versions don't match — both sides need to update before battling.",
+          "アプリのバージョンが違うため対戦できません — 両方とも更新してください。")
+    }
     var battleDeclined: String { t("상대가 거절했어요.", "They declined.", "相手に断られました。") }
     var battleConnectionLost: String { t("연결이 끊어졌어요.", "Connection lost.", "接続が切れました。") }
     var battleYourTurn: String { t("기술을 선택하세요", "Choose a move", "わざを選んでください") }

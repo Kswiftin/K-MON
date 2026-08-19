@@ -334,7 +334,7 @@ actor PokeAPIClient: PokeProviding {
         let spec = MoveSpec(id: dto.id, names: byLang, type: type,
                             power: dto.power ?? 0, damageClass: cls,
                             accuracy: dto.accuracy, pp: dto.pp ?? 10,
-                            descriptions: descriptions)
+                            descriptions: descriptions, priority: dto.priority)
         moveDetailCache[name] = spec
         return spec
     }
@@ -462,6 +462,8 @@ struct MoveDTO: Decodable, Sendable {
     let damage_class: NamedRef
     let names: [NameDTO]
     let flavor_text_entries: [FlavorText]
+    /// 턴 순서에서 스피드보다 먼저 보는 값. 응답에 늘 들어 있지만, 옛 캐시 응답을 대비해 옵셔널로 둔다.
+    let priority: Int?
 }
 struct ChainLink: Decodable, Sendable {
     struct EvolutionDetail: Decodable, Sendable {

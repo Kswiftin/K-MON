@@ -134,6 +134,13 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     var accuracy: Int?              // nil = 필중
     var pp: Int
     var descriptions: [String: String]? = nil
+    /// 기술 우선도(PokéAPI `priority`). 전광석화 +1, 축지법 −6 처럼 스피드보다 먼저 보는 값이다.
+    /// 옵셔널인 이유는 호환이다 — 구버전 세이브의 학습 기술과 구버전 피어가 보내온 무브셋에는
+    /// 이 키가 없다. 없으면 보통 기술(0)로 읽는다.
+    var priority: Int? = nil
+
+    /// 턴 순서 비교용 우선도 — 값이 없으면 0.
+    var turnPriority: Int { priority ?? 0 }
 
     func name(_ lang: AppLanguage) -> String { lang.resolveName(names) ?? names.values.first ?? "?" }
     func description(_ lang: AppLanguage) -> String? {
@@ -229,6 +236,57 @@ struct SplitMix64: RandomNumberGenerator {
 
 enum BattleEngine {
     static let critDenominator: UInt64 = 16
+
+    /// 대전 규칙 버전 — 턴 순서나 데미지 계산을 바꿀 때마다 올린다. 두 피어가 결과를 주고받지 않고
+    /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다. 1 = 우선도 도입.
+    static let rulesVersion = 1
+
+    /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.
+    struct AttackOutcome: Sendable {
+        var missed: Bool
+        var damage: Int
+        /// 빗나갔으면 1 — 화면이 "효과가 굉장했다" 를 띄우지 않게 한다.
+        var effectiveness: Double
+        var isCritical: Bool
+    }
+
+    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 급소 → 난수 폭 순서로 소비하며,
+    /// 빗나가면 뒤의 둘을 소비하지 않는다. 두 피어가 같은 입력이면 같은 분기를 타므로 소비량도 같다.
+    ///
+    /// 예전엔 이 계산이 1v1(`resolveTurn`)과 멀티(`resolveAttack`)에 각각 복사돼 있었다. 한쪽만
+    /// 고치면 두 모드가 조용히 갈라지고, 새 기전을 넣을 때마다 같은 코드를 두 번 써야 했다.
+    static func resolveAttack(attacker: BattleSnapshot, attackerStats: BattleStats,
+                              defender: BattleSnapshot, defenderStats: BattleStats,
+                              move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
+        if let accuracy = move.accuracy, Int(rng.next() % 100) >= accuracy {
+            return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
+        }
+        // 발버둥은 무속성(상성·STAB 미적용).
+        let isStruggle = move.id == MoveSpec.struggleID
+        let effectiveness = isStruggle ? 1.0 : TypeChart.effectiveness(move.type, against: defender.types)
+        let stab = (!isStruggle && attacker.types.contains(move.type)) ? 1.5 : 1.0
+        let attack = move.damageClass == .physical ? attackerStats.atk : attackerStats.spa
+        let defense = move.damageClass == .physical ? defenderStats.def : defenderStats.spd
+        let isCritical = rng.next() % critDenominator == 0
+        let roll = 0.85 + Double(rng.next() % 16) / 100.0
+        let base = Double((2 * attacker.level / 5 + 2) * move.power * attack / max(1, defense)) / 50.0 + 2.0
+        let damage = effectiveness == 0 ? 0
+            : max(1, Int(base * stab * effectiveness * (isCritical ? 1.5 : 1.0) * roll))
+        return AttackOutcome(missed: false, damage: damage,
+                             effectiveness: effectiveness, isCritical: isCritical)
+    }
+
+    /// 두 공격자 중 누가 먼저인가 — 본가와 같은 순서로 본다: **기술 우선도 → 스피드 → 무작위**.
+    ///
+    /// 무작위는 앞의 둘이 모두 같을 때만 소비한다(예전 1v1 규칙 그대로). 멀티는 이 자리에서
+    /// UUID 문자열 순서로 갈랐는데, 그러면 앱을 켠 동안 사전순으로 앞선 참가자가 동점 때마다
+    /// 선공을 가져간다 — 실력과 무관한 데다 화면에 드러나지도 않는다.
+    static func firstMoverIsA(priorityA: Int, priorityB: Int, speedA: Int, speedB: Int,
+                              rng: inout SplitMix64) -> Bool {
+        if priorityA != priorityB { return priorityA > priorityB }
+        if speedA != speedB { return speedA > speedB }
+        return rng.next() & 1 == 0
+    }
 }
 
 // MARK: - 네트워크 대전 턴 해상
@@ -254,39 +312,21 @@ extension BattleEngine {
                             moveA: MoveSpec, moveB: MoveSpec,
                             rng: inout SplitMix64) -> [NetBattleEvent] {
         var events: [NetBattleEvent] = []
-        let order: [Bool]   // 공격 순서(isA)
-        if statsA.spe != statsB.spe {
-            order = statsA.spe > statsB.spe ? [true, false] : [false, true]
-        } else {
-            order = rng.next() & 1 == 0 ? [true, false] : [false, true]
-        }
-        for attackerIsA in order {
+        let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
+                                     speedA: statsA.spe, speedB: statsB.spe, rng: &rng)
+        for attackerIsA in aIsFirst ? [true, false] : [false, true] {
             guard hpA > 0 && hpB > 0 else { break }   // 선공에 기절하면 후공 없음
             let (atk, atkStats, move) = attackerIsA ? (a, statsA, moveA) : (b, statsB, moveB)
             let (def, defStats) = attackerIsA ? (b, statsB) : (a, statsA)
 
-            var missed = false
-            if let acc = move.accuracy { missed = Int(rng.next() % 100) >= acc }
+            let outcome = resolveAttack(attacker: atk, attackerStats: atkStats,
+                                        defender: def, defenderStats: defStats,
+                                        move: move, rng: &rng)
 
-            var damage = 0
-            var eff = 1.0
-            var crit = false
-            if !missed {
-                // 발버둥은 무속성(상성·STAB 미적용).
-                let isStruggle = move.id == MoveSpec.struggleID
-                eff = isStruggle ? 1.0 : TypeChart.effectiveness(move.type, against: def.types)
-                let stab = (!isStruggle && atk.types.contains(move.type)) ? 1.5 : 1.0
-                let attack = move.damageClass == .physical ? atkStats.atk : atkStats.spa
-                let defense = move.damageClass == .physical ? defStats.def : defStats.spd
-                crit = rng.next() % critDenominator == 0
-                let roll = 0.85 + Double(rng.next() % 16) / 100.0
-                let baseDamage = Double((2 * atk.level / 5 + 2) * move.power * attack / max(1, defense)) / 50.0 + 2.0
-                damage = eff == 0 ? 0 : max(1, Int(baseDamage * stab * eff * (crit ? 1.5 : 1.0) * roll))
-            }
-
-            if attackerIsA { hpB = max(0, hpB - damage) } else { hpA = max(0, hpA - damage) }
-            events.append(NetBattleEvent(attackerIsA: attackerIsA, moveID: move.id, missed: missed,
-                                         damage: damage, effectiveness: missed ? 1 : eff, isCritical: crit,
+            if attackerIsA { hpB = max(0, hpB - outcome.damage) } else { hpA = max(0, hpA - outcome.damage) }
+            events.append(NetBattleEvent(attackerIsA: attackerIsA, moveID: move.id, missed: outcome.missed,
+                                         damage: outcome.damage, effectiveness: outcome.effectiveness,
+                                         isCritical: outcome.isCritical,
                                          defenderHPAfter: attackerIsA ? hpB : hpA))
         }
         return events

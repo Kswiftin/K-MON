@@ -223,6 +223,67 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(first.round, 2)
     }
 
+    // MARK: 멀티 턴 순서 — 우선도 → 스피드 → 무작위
+
+    /// 스피드가 같은 두 명. UUID 를 사전순 양 끝으로 고정해 "UUID 로 갈리는지" 를 직접 본다.
+    private func tiedSpeedFighters(priorities: [Int?]) -> ([UUID], [MultiplayerFighter]) {
+        let ids = [UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+                   UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")!]
+        let fighters = ids.indices.map { index in
+            let move = MoveSpec(id: 10 + index, names: [:], type: .normal, power: 40,
+                                damageClass: .physical, accuracy: 100, pp: 20,
+                                priority: priorities[index])
+            let snapshot = BattleSnapshot(speciesID: index + 1, name: "M\(index)", trainer: "P\(index)",
+                                          level: 20, nature: nil, isShiny: false, types: [.normal],
+                                          base: BattleStats(hp: 80, atk: 60, def: 60, spa: 60, spd: 60,
+                                                            spe: 100), moves: [move])
+            return MultiplayerFighter(participant: LobbyParticipant(id: ids[index], trainerName: "P\(index)",
+                                                                    speciesID: index + 1, team: .solo,
+                                                                    isReady: true, isHost: index == 0),
+                                      snapshot: snapshot)
+        }
+        return (ids, fighters)
+    }
+
+    /// 회귀: 동률을 `attackerID.uuidString` 순으로 갈랐다. 앱을 켠 동안 사전순으로 앞선 참가자가
+    /// 동률 때마다 선공을 가져가는데, 실력과 무관한 데다 화면에 드러나지도 않는다.
+    /// 이제 무작위로 갈리므로 시드를 바꾸면 양쪽 모두 선공을 잡는다.
+    func testTiedSpeedDoesNotAlwaysFavourTheSmallerUUID() throws {
+        let (ids, fighters) = tiedSpeedFighters(priorities: [nil, nil])
+        let actions = [MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
+                       MultiplayerAction(attackerID: ids[1], targetID: ids[0], moveIndex: 0)]
+        var firstAttackers = Set<UUID>()
+        for seed in UInt64(0)..<40 {
+            var battle = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: seed)
+            if let first = try battle.resolveRound(actions).first { firstAttackers.insert(first.attackerID) }
+        }
+        XCTAssertEqual(firstAttackers, Set(ids), "두 참가자 모두 선공을 잡는 시드가 있어야 한다")
+    }
+
+    /// 무작위로 갈려도 **같은 시드면 같은 순서**여야 한다 — 두 피어가 각자 계산하는 구조라
+    /// 이게 깨지면 곧 desync 다. tie-break 난수를 정렬 비교 안에서 뽑으면 비교 횟수에 딸려가 깨진다.
+    func testTiedSpeedOrderStaysDeterministicForTheSameSeed() throws {
+        let (ids, fighters) = tiedSpeedFighters(priorities: [nil, nil])
+        let actions = [MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
+                       MultiplayerAction(attackerID: ids[1], targetID: ids[0], moveIndex: 0)]
+        var left = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: 4_242)
+        var right = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: 4_242)
+        XCTAssertEqual(try left.resolveRound(actions), try right.resolveRound(actions))
+    }
+
+    /// 멀티도 1v1 과 같은 규칙이다 — 우선도가 스피드·UUID 보다 앞선다.
+    /// 여기서는 스피드가 같으므로 우선도 +1 을 든 두 번째 참가자가 항상 먼저다.
+    func testPriorityOutranksTheTieBreakInMultiplayer() throws {
+        let (ids, fighters) = tiedSpeedFighters(priorities: [nil, 1])
+        let actions = [MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
+                       MultiplayerAction(attackerID: ids[1], targetID: ids[0], moveIndex: 0)]
+        for seed in UInt64(0)..<20 {
+            var battle = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: seed)
+            XCTAssertEqual(try battle.resolveRound(actions).first?.attackerID, ids[1],
+                           "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
+        }
+    }
+
     func testTeamBattleRejectsFriendlyFire() throws {
         func fighter(_ id: UUID, team: BattleTeam) -> MultiplayerFighter {
             let snapshot = BattleSnapshot(speciesID: 25, name: "Pika", trainer: nil, level: 10,

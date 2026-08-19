@@ -99,6 +99,69 @@ final class BattleTests: XCTestCase {
                  damageClass: .special, accuracy: 100, pp: 15)
     }
 
+    /// 전광석화(우선도 +1). 위력은 낮게 둬서 "먼저 때렸다" 가 위력 때문이 아님을 분명히 한다.
+    private func quickAttack() -> MoveSpec {
+        MoveSpec(id: 98, names: ["en": "Quick Attack"], type: .normal, power: 40,
+                 damageClass: .physical, accuracy: 100, pp: 30, priority: 1)
+    }
+
+    // MARK: 턴 순서 — 우선도 → 스피드 → 무작위
+
+    /// 본가 규칙: 우선도가 스피드를 이긴다. 거북왕(스피드 78)이 전광석화를 쓰면 리자몽(100)보다 먼저다.
+    /// 예전엔 우선도라는 개념 자체가 없어 스피드만 봤다 — 전광석화가 보통 기술과 똑같이 굴렀다.
+    func testPriorityBeatsSpeed() {
+        let (slow, fast) = (water(), fire())
+        let (slowStats, fastStats) = (slow.effectiveStats(), fast.effectiveStats())
+        XCTAssertLessThan(slowStats.spe, fastStats.spe, "스피드로는 거북왕이 후공인 상황이어야 한다")
+
+        for seed in UInt64(0)..<20 {
+            var rng = SplitMix64(seed: seed)
+            var slowHP = slowStats.hp, fastHP = fastStats.hp
+            let events = BattleEngine.resolveTurn(a: slow, b: fast, statsA: slowStats, statsB: fastStats,
+                                                  hpA: &slowHP, hpB: &fastHP,
+                                                  moveA: quickAttack(), moveB: flamethrower(), rng: &rng)
+            XCTAssertEqual(events.first?.attackerIsA, true, "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
+        }
+    }
+
+    /// 우선도가 같으면 예전 그대로 스피드 순이다 — 우선도 도입이 기존 순서를 흔들면 안 된다.
+    func testSpeedStillDecidesWhenPriorityIsEqual() {
+        let (slow, fast) = (water(), fire())
+        let (slowStats, fastStats) = (slow.effectiveStats(), fast.effectiveStats())
+        for seed in UInt64(0)..<20 {
+            var rng = SplitMix64(seed: seed)
+            var slowHP = slowStats.hp, fastHP = fastStats.hp
+            let events = BattleEngine.resolveTurn(a: slow, b: fast, statsA: slowStats, statsB: fastStats,
+                                                  hpA: &slowHP, hpB: &fastHP,
+                                                  moveA: hydroPump(), moveB: flamethrower(), rng: &rng)
+            XCTAssertEqual(events.first?.attackerIsA, false, "seed \(seed): 빠른 쪽이 먼저다")
+        }
+    }
+
+    /// 우선도·스피드가 모두 같으면 무작위 — 어느 한쪽이 늘 선공하면 그게 곧 보이지 않는 이점이다.
+    /// (멀티는 이 자리에서 UUID 문자열 순으로 갈라, 앱을 켠 동안 한쪽이 계속 선공했다.)
+    func testEqualPriorityAndSpeedBreaksRandomly() {
+        let mirror = water()
+        let stats = mirror.effectiveStats()
+        var firstMoverWasA = Set<Bool>()
+        for seed in UInt64(0)..<40 {
+            var rng = SplitMix64(seed: seed)
+            var hpA = stats.hp, hpB = stats.hp
+            let events = BattleEngine.resolveTurn(a: mirror, b: mirror, statsA: stats, statsB: stats,
+                                                  hpA: &hpA, hpB: &hpB,
+                                                  moveA: hydroPump(), moveB: hydroPump(), rng: &rng)
+            if let first = events.first?.attackerIsA { firstMoverWasA.insert(first) }
+        }
+        XCTAssertEqual(firstMoverWasA, [true, false], "양쪽 모두 선공을 잡는 seed 가 있어야 한다")
+    }
+
+    /// 우선도가 스냅샷에 없던 시절(구버전 세이브·구버전 피어)의 기술은 보통 기술로 읽는다.
+    func testMissingPriorityReadsAsZero() {
+        XCTAssertEqual(hydroPump().turnPriority, 0)
+        XCTAssertNil(hydroPump().priority)
+        XCTAssertEqual(quickAttack().turnPriority, 1)
+    }
+
     func testResolveTurnDeterministic() {
         let (a, b) = (water(), fire())
         let (sa, sb) = (a.effectiveStats(), b.effectiveStats())
