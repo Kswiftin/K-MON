@@ -129,7 +129,7 @@ final class MoveHoverTests: XCTestCase {
         host.view.layoutSubtreeIfNeeded()
         _ = host.view.fittingSize
         // SwiftUI 는 호버 영역을 호스팅 뷰 하나의 트래킹 영역으로 합쳐 자체 히트테스트한다 —
-        // 그래서 행 수가 아니라 "있느냐 없느냐" 가 판별점이다.
+        // 그래서 행 수를 세는 게 아니라 걸려 있느냐 없느냐를 본다.
         XCTAssertGreaterThanOrEqual(trackingAreaCount(host.view), 1,
                                     "기술 행에 마우스 트래킹이 안 걸려 있다 — 호버가 아예 안 온다")
 

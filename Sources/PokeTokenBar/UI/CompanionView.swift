@@ -773,12 +773,12 @@ struct MoveListView: View {
 
     private var l: L { store.l }
 
-    /// 마우스가 올라간 기술. 슬롯 문구는 여기서만 파생된다.
+    /// 마우스가 올라간 기술. 슬롯에 뭘 그릴지는 이 값 하나로 정해진다.
     @State private var hoveredMoveID: Int?
 
-    /// 호버 상태 전이 — 들어온 행으로 바꾸고, 이탈에서는 지우지 않는다.
+    /// 호버 상태 전이 — 들어온 행으로 바꾸기만 하고, 빠져나올 때는 지우지 않는다.
     /// 60초 방치 틱이 팝오버를 다시 그리면 AppKit 이 트래킹 영역을 재설치하는데, 커서가 안 움직였으면
-    /// `mouseExited` 만 오고 재진입은 안 온다 — 이탈에서 지우면 마우스를 올려둔 채로 설명이 사라진다.
+    /// `mouseExited` 만 오고 재진입은 안 온다 — 나갈 때 지우면 마우스를 올려둔 채로 설명이 사라진다.
     /// 행 A→B 이동 때 A 이탈이 B 진입보다 늦게 오는 순서 뒤집힘도 같이 막힌다.
     static func hoverState(current: Int?, moveID: Int, isInside: Bool) -> Int? {
         isInside ? moveID : current
@@ -847,7 +847,7 @@ struct MoveListView: View {
         .frame(maxWidth: maxWidth, alignment: .leading)
     }
 
-    /// 접근성 보조 문구 겸 팝오버 밖(창)에서의 네이티브 툴팁 — 슬롯과 같은 어휘를 쓴다(갈리면 #10 재발).
+    /// 접근성 보조 문구 겸, 팝오버 밖 일반 창에서 뜨는 네이티브 툴팁 — 슬롯과 같은 어휘를 쓴다(갈리면 #10 재발).
     /// **표시 경로로 믿으면 안 된다**: `.help()` 는 NSPopover 안에서 아무것도 띄우지 않는다(defect-log 참고).
     /// 사용자가 꼭 봐야 하는 정보는 위 `MoveHoverPanel` 에 직접 그린다.
     private func moveHelp(_ move: MoveSpec) -> String {
@@ -863,7 +863,7 @@ struct MoveListView: View {
 /// 지날 때마다 아래 콘텐츠가 밀려 팝오버 안이 떨린다(#9 와 같은 부류).
 /// 높이는 숫자 상수가 아니라 같은 폰트의 더미 줄에서 유도한다(폰트·OS 따라 실제 줄 높이가 다르다).
 ///
-/// 줄 수는 3 이다. 2 줄로 두면 PokéAPI 최장급 설명(157자, 예: 그래스필드)이 잘리는데,
+/// 줄 수는 3이다. 2줄로 두면 PokéAPI 최장급 설명(157자, 예: 그래스필드)이 잘리는데,
 /// 잘린 나머지를 볼 경로가 없다 — `.help()` 툴팁은 팝오버 안에서 안 뜬다(이 화면의 원래 결함).
 struct MoveHoverPanel: View {
     static let lines = 3

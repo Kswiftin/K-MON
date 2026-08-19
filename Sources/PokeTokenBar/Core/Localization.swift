@@ -413,7 +413,7 @@ struct L {
           "わざにカーソルを合わせると説明が出ます。")
     }
 
-    /// 기술 한 줄 요약 — 설명이 없을 때의 폴백이자 툴팁 상세줄. 두 자리가 같은 어휘를 쓰게 한 곳에 둔다.
+    /// 기술 한 줄 요약 — 설명이 없을 때 대신 쓰고, 툴팁 상세줄로도 쓴다. 두 자리가 같은 어휘를 쓰도록 한 곳에 둔다.
     func moveDetailLine(_ move: MoveSpec) -> String {
         let power = move.damageClass == .status ? "—" : "\(move.power)"
         let accuracy = move.accuracy.map(String.init) ?? moveAlwaysHits
@@ -421,7 +421,7 @@ struct L {
             + "\(movePowerLabel) \(power) · \(moveAccuracyLabel) \(accuracy) · \(movePP(move.pp))"
     }
 
-    /// 호버 슬롯 문구 — 호버 없음이면 안내, 설명이 있으면 설명, 없거나 빈 문자열이면 스탯 요약.
+    /// 호버 슬롯 문구 — 올린 기술이 없으면 안내, 설명이 있으면 설명, 없거나 비어 있으면 스탯 요약.
     /// 슬롯이 빈 채로 남으면 "고장난 것" 처럼 보이므로 어느 분기에서도 빈 문자열을 내지 않는다.
     func moveHoverText(_ move: MoveSpec?) -> String {
         guard let move else { return moveHoverHint }
