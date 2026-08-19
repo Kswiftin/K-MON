@@ -421,6 +421,40 @@ read_when:
   베팅)는 `placeBet` 의 현재-잔액 선검사로 막았고, 조작 클라이언트까지 막으려면 베팅마다 "차감 완료"
   확인 메시지를 왕복해야 한다(이슈 #4 후속). 관련 테스트: `PokeathlonPoolTests`, `StarPieceEscrowTests`.
 
+## 검증이 변경보다 늦게 오는 부류 (throw 는 롤백이 아니다)
+
+- **`mutating` 메서드가 throw 해도 그때까지의 변경은 호출자에게 남는다.** Swift 는 되돌려주지 않는다.
+  `MultiplayerBattle.resolveRound` 는 사전 검증 루프에서 무브셋 **인덱스만** 보고 PP 는 해상 루프
+  안에서 봤다 — 남지 않은 기술을 지목한 액션이 섞이면, 그보다 순서가 앞선 공격은 이미 HP·PP 에
+  적용된 뒤에 throw 가 났다. 라운드가 **반쯤 적용된** 상태로 버려지고, 호스트
+  (`MultiplayerRoomCenter.finishRoundIfReady`)의 catch 는 `scheduleTurnTimeout()` 을 부르지 않아
+  (그건 성공 경로에만 있다) 방의 진행이 멈춘다. **상태를 바꾸는 루프에 들어가기 전에 검증을 끝낸다.**
+- **"사전 검증 루프가 있다"는 "다 검증한다"가 아니다.** 위 결함은 검증 루프가 *존재하는데도* 생겼다 —
+  루프가 보는 항목과 해상이 요구하는 항목이 달랐다. 검증 루프를 늘릴 때는 해상 루프가 인덱싱·차감하는
+  값을 하나씩 대조한다. 지금은 `BattleSide.canUse(moveAt:)` 한 곳이 인덱스와 PP 를 같이 본다.
+- **와이어로 들어온 배열은 짝인 배열과 길이가 맞는다는 보장이 없다.** 상대가 보내는 `pp` 는
+  `moves` 와 별개 필드다 — 짧은 배열이 오면 예전 코드는 거절이 아니라 `pp[moveIndex]` 인덱스 범위
+  초과였다. 파생 배열을 신뢰 경계 밖에서 받으면 **두 배열의 인덱스를 같이** 검사한다
+  (`AdventureTests.testResolveRoundRejectsFighterWhosePPArrayIsTooShort`).
+- 회귀 테스트는 **부분 적용을 관측**해야 한다 — "throw 했다"만 보면 이 부류를 못 잡는다.
+  `testResolveRoundRejectsSpentMoveBeforeAnyDamage` 는 throw 뒤의 HP·PP·이벤트가 그대로인지 본다.
+  (위법 액션을 **느린 쪽**에 둬야 앞선 공격이 먼저 적용된다 — 순서가 트리거의 일부다.)
+
+## 테스트가 시스템 RNG 를 밟고 있는 부류
+
+- **엔진에 씨드 RNG 가 있어도 한 군데라도 `randomElement()`/`Bool.random()` 이 남아 있으면
+  그 경로는 재현되지 않는다.** 연습 배틀의 CPU 기술 선택이 그랬다. 로컬 전용이라 desync 는 없지만,
+  **seed 를 고정한 회귀 테스트를 쓸 수 없다** — 상태이상·랭크업처럼 확률 분기가 늘어나는 기전은
+  그 테스트 없이는 검증할 방법이 없다. 결정적 엔진을 만들었으면 그 위의 *선택* 도 같은 rng 에서 뽑는다.
+- **그 사이 기존 테스트는 조용히 flaky 하다.** `testSwitchingIntoAFatalHitEndsTheBattle` 의 상대는
+  `moves: nil` 이라 `MoveSpec.fallbackSet` 4개를 받는데(픽스처 주석은 "기술 하나만 준다"고 적혀
+  있었다 — 주석이 틀렸다), 그중 몸통박치기를 뽑고 데미지 난수가 하한(0.85)이면 데미지 75 로
+  대상의 76 HP 를 넘기지 못해 "맞고 쓰러진다" 단정이 깨진다. 실측: base 89.16 × 0.85 = 75.
+  **초록이 곧 결정적이라는 뜻이 아니다.** 픽스처가 무작위 선택 위에 서 있으면 통과는 그날의 운이다.
+- 결정성 단정은 **한 판 비교로 충분하지 않다** — 후보가 N개면 우연히 같아질 확률이 1/N 이다.
+  같은 seed 로 여러 판을 돌려 결과 집합이 1개인지 본다(`testPracticeBattleIsDeterministicForASeed`:
+  4지선다 × 6턴 × 10판).
+
 ## 한 지갑에 지급하는 경로가 여럿일 때
 
 - **정산이 반환하는 보상 객체는 그 정산이 늘린 지갑을 전부 설명해야 한다.** 트레이너 레벨과
