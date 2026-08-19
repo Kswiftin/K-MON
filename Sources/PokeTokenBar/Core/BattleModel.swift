@@ -64,9 +64,24 @@ enum TypeChart {
         .fairy:    [.fire: 0.5, .fighting: 2, .poison: 0.5, .dragon: 2, .dark: 2, .steel: 0.5],
     ]
 
-    /// 공격타입 → 방어타입 조합(단일/복합) 배율. 복합타입은 곱.
+    /// 공격타입 → 방어타입 조합(단일/복합) 배율. 복합타입은 곱. **표시용**이다 —
+    /// "효과가 굉장했다" 를 띄울지 판단하는 값이고, 데미지 계산은 `apply(_:of:against:)` 를 쓴다.
     static func effectiveness(_ attacking: PokemonType, against defending: [PokemonType]) -> Double {
         defending.reduce(1.0) { $0 * (multipliers[attacking]?[$1] ?? 1.0) }
+    }
+
+    /// 상성을 **정수 연산**으로 적용한다 — 방어 타입을 하나씩 곱하거나 나눈다(Gen 2 방식).
+    /// 배율을 Double 로 한 번에 곱하면 두 피어가 각자 계산하는 이 대전에서 부동소수 오차가
+    /// 결과를 가를 여지가 남는다. 표의 값은 0 / 0.5 / 2 뿐이라 정수 곱·나눗셈으로 정확히 옮겨진다.
+    static func apply(_ damage: Int, of attacking: PokemonType, against defending: [PokemonType]) -> Int {
+        var out = damage
+        for type in defending {
+            let multiplier = multipliers[attacking]?[type] ?? 1
+            if multiplier == 0 { return 0 }
+            if multiplier > 1 { out *= Int(multiplier) }
+            else if multiplier < 1 { out /= Int(1 / multiplier) }
+        }
+        return out
     }
 }
 
@@ -139,8 +154,17 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 이 키가 없다. 없으면 보통 기술(0)로 읽는다.
     var priority: Int? = nil
 
+    /// 급소율 보정(PokéAPI `meta.crit_rate`). 베어가르기·잎날가르기처럼 급소가 잘 나는 기술은
+    /// 여기에 양수가 온다. `priority` 와 같은 이유로 옵셔널이다 — 이 키가 없던 시절의 세이브와
+    /// 구버전 피어의 무브셋에는 값이 아예 없다. 그런 기술은 보통 급소율로 읽는다.
+    var critRate: Int? = nil
+
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
+
+    /// 급소 단계 — Gen 2 의 고급소기는 **+2 단계**(1/4)다. PokéAPI 의 `crit_rate` 는 세대에 따라
+    /// 뜻이 달라(Gen 6+ 는 +1 단계) 값을 그대로 쓰지 않고, 고급소기인지만 보고 Gen 2 단계로 옮긴다.
+    var critStage: Int { (critRate ?? 0) > 0 ? 2 : 0 }
 
     func name(_ lang: AppLanguage) -> String { lang.resolveName(names) ?? names.values.first ?? "?" }
     func description(_ lang: AppLanguage) -> String? {
@@ -280,11 +304,27 @@ struct SplitMix64: RandomNumberGenerator {
 }
 
 enum BattleEngine {
-    static let critDenominator: UInt64 = 16
+    /// 급소 배율 — Gen 2 는 ×2 고 공격측 랭크를 무시한다(Gen 6+ 는 ×1.5). 상수로 빼 둔 건 밸런스
+    /// 때문이다. 급소 ×2 와 상태이상이 겹치면 1턴 KO 가 흔해질 수 있으니, 랭크업(Phase 3)까지
+    /// 들어온 뒤 seed 를 여러 번 돌려 평균 턴 수를 재고 다시 판단한다.
+    static let critMultiplier = 2
+
+    /// 급소 확률의 분자(분모 256) — Gen 2 단계표. 0단계 17/256(≈6.6%), +1 은 1/8, +2 는 1/4,
+    /// +3 이상은 85/256 에서 멈춘다. 예전엔 단계 개념 없이 1/16(6.25%) 고정이었다.
+    /// 단계를 올리는 건 지금은 고급소기뿐이고, 급소율을 올리는 기술·특성은 Phase 3·5 에서 붙는다.
+    static func critThreshold(stage: Int) -> UInt64 {
+        switch max(0, stage) {
+        case 0: return 17
+        case 1: return 32
+        case 2: return 64
+        default: return 85
+        }
+    }
 
     /// 대전 규칙 버전 — 턴 순서나 데미지 계산을 바꿀 때마다 올린다. 두 피어가 결과를 주고받지 않고
-    /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다. 1 = 우선도 도입.
-    static let rulesVersion = 1
+    /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다.
+    /// 1 = 우선도 도입, 2 = Gen 2 데미지 파이프라인(정수 난수·급소 ×2·`+2` 위치).
+    static let rulesVersion = 2
 
     /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.
     struct AttackOutcome: Sendable {
@@ -311,16 +351,25 @@ enum BattleEngine {
         // 상성 배율을 계산하는 지점이 여기 한 곳뿐이다. 지금은 코드를 넣지 않는다.
         let effectiveness = isStruggle ? 1.0
             : TypeChart.effectiveness(move.type, against: defender.snapshot.types)
-        let stab = (!isStruggle && attacker.snapshot.types.contains(move.type)) ? 1.5 : 1.0
         let attack = move.damageClass == .physical ? attacker.stats.atk : attacker.stats.spa
         let defense = move.damageClass == .physical ? defender.stats.def : defender.stats.spd
-        let isCritical = rng.next() % critDenominator == 0
-        let roll = 0.85 + Double(rng.next() % 16) / 100.0
-        let base = Double((2 * attacker.snapshot.level / 5 + 2) * move.power * attack
-                          / max(1, defense)) / 50.0 + 2.0
-        let damage = effectiveness == 0 ? 0
-            : max(1, Int(base * stab * effectiveness * (isCritical ? 1.5 : 1.0) * roll))
-        return AttackOutcome(missed: false, damage: damage,
+        let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
+        // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수 나눗셈한다. 예전엔
+        // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
+        // 구조에서는 정수 연산이 유리하다(부동소수 오차가 끼어들 자리가 없다).
+        let random = 217 + Int(rng.next() % 39)
+
+        // Gen 2 의 계산 **순서** 그대로다. `+2` 가 급소 배율 뒤에 오고, STAB·상성은 그 뒤에 곱한다.
+        // 예전 식은 `+2` 를 먼저 더한 뒤 급소 ×1.5 를 곱해 급소 데미지가 다르게 나왔다.
+        // (배지·트레이너킥·날씨·기술보정은 §3.3 대로 안 가져온다.)
+        var damage = (2 * attacker.snapshot.level / 5 + 2) * move.power * attack / max(1, defense) / 50
+        damage = damage * (isCritical ? critMultiplier : 1) + 2
+        if !isStruggle {
+            if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }   // STAB ×1.5
+            damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
+        }
+        damage = damage * random / 255
+        return AttackOutcome(missed: false, damage: effectiveness == 0 ? 0 : max(1, damage),
                              effectiveness: effectiveness, isCritical: isCritical)
     }
 
@@ -337,41 +386,79 @@ enum BattleEngine {
     }
 }
 
-// MARK: - 네트워크 대전 턴 해상
+// MARK: - 이벤트 스트림
 
-/// 네트워크 대전에서 한 쪽의 공격 시도 1건(한 턴 = 최대 2건).
-struct NetBattleEvent: Codable, Sendable, Equatable {
-    var attackerIsA: Bool
-    var moveID: Int
-    var missed: Bool
-    var damage: Int
-    var effectiveness: Double   // 0 = 효과 없음(무효), missed 면 1
-    var isCritical: Bool
-    var defenderHPAfter: Int
+/// 이벤트가 가리키는 쪽. 1v1 LAN·연습 배틀은 좌우 두 자리뿐이고(엔진 좌변이 항상 challenger),
+/// 2~4인 방은 참가자가 여럿이라 UUID 로 가른다.
+enum BattleActor: Codable, Sendable, Equatable, Hashable {
+    case a, b
+    case fighter(UUID)
 }
 
+/// 배틀에서 일어난 일 하나. Showdown 시뮬레이터의 `|move|`·`|-damage|`·`|-crit|` 처럼 **타입된**
+/// 이벤트고, 로그·HP바·애니메이션은 모두 이 스트림의 렌더러다(`sim/SIM-PROTOCOL.md` 의 최소 부분집합).
+///
+/// 예전에는 `NetBattleEvent` 하나가 `missed`/`damage`/`effectiveness`/`isCritical` 을 플래그로 묶고
+/// 있었다. 그 모양으로는 "화상으로 깎였다", "마비로 못 움직였다", "쓰러졌다", "교체했다" 를 표현할
+/// 방법이 없어서, 상태이상(Phase 2)·랭크업(Phase 3)·교체(Phase 4)가 들어올 때마다 플래그를 덧붙이고
+/// 뷰의 if/else 사슬을 다시 뜯어야 했다. case 를 늘리는 쪽은 그럴 필요가 없다.
+///
+/// 여기 없는 case(상태이상·랭크·교체)는 **그 이벤트를 실제로 내보내는 코드와 함께** 추가한다.
+/// 내보내는 곳이 없는 case 를 미리 두면 아무도 밟지 않는 분기만 늘어난다.
+enum BattleEvent: Codable, Sendable, Equatable {
+    case turn(Int)
+    case move(BattleActor, moveID: Int)
+    case miss(BattleActor)
+    case immune(BattleActor)
+    case crit(BattleActor)
+    case superEffective(BattleActor)
+    case resisted(BattleActor)
+    /// 실제로 깎인 양. 남은 HP 는 싣지 않는다 — 뷰는 `BattleSide.hp` 를 그대로 읽으므로 읽는 데가
+    /// 없다. 재생 애니메이션(Phase 7)이 바를 보간할 때 필요해지면 그때 붙인다.
+    case damage(BattleActor, amount: Int)
+    case faint(BattleActor)
+}
+
+// MARK: - 네트워크 대전 턴 해상
+
 extension BattleEngine {
+    /// 공격 1회를 해상해 방어측 상태를 갱신하고, 그 결과를 이벤트로 남긴다.
+    /// 1v1·연습·멀티가 전부 이 함수를 지나므로 **세 모드의 이벤트 어휘가 같다** — 데미지 함수를
+    /// 하나로 모은 것(#46)과 배틀 상태를 `BattleSide` 로 모은 것(Phase 0)과 같은 이유다.
+    static func applyAttack(attacker: BattleSide, defender: inout BattleSide,
+                            attackerActor: BattleActor, defenderActor: BattleActor,
+                            move: MoveSpec, rng: inout SplitMix64) -> [BattleEvent] {
+        var events: [BattleEvent] = [.move(attackerActor, moveID: move.id)]
+        let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
+        if outcome.missed { return events + [.miss(attackerActor)] }
+        if outcome.effectiveness == 0 { return events + [.immune(defenderActor)] }
+        // 급소·상성 문구가 데미지보다 먼저 온다(Showdown 순서) — 재생할 때 "급소!" 뒤에 HP 가 줄어든다.
+        if outcome.isCritical { events.append(.crit(defenderActor)) }
+        if outcome.effectiveness > 1 { events.append(.superEffective(defenderActor)) }
+        else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }
+        defender.hp = max(0, defender.hp - outcome.damage)
+        events.append(.damage(defenderActor, amount: outcome.damage))
+        if !defender.isAlive { events.append(.faint(defenderActor)) }
+        return events
+    }
+
     /// 양쪽 기술 선택이 모이면 한 턴 해상. 순수·결정적 — 같은 rng 상태·입력이면 두 피어가 같은 결과를
     /// 각자 계산한다(결과 자체는 네트워크로 보내지 않는다 → 변조 여지 축소).
     /// rng 소비 순서가 프로토콜의 일부다 — 브랜치를 바꾸면 두 피어 결과가 갈라진다.
     static func resolveTurn(a: inout BattleSide, b: inout BattleSide,
-                            moveA: MoveSpec, moveB: MoveSpec,
-                            rng: inout SplitMix64) -> [NetBattleEvent] {
-        var events: [NetBattleEvent] = []
+                            moveA: MoveSpec, moveB: MoveSpec, turn: Int,
+                            rng: inout SplitMix64) -> [BattleEvent] {
+        var events: [BattleEvent] = [.turn(turn)]
         let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
                                      speedA: a.stats.spe, speedB: b.stats.spe, rng: &rng)
         for attackerIsA in aIsFirst ? [true, false] : [false, true] {
             guard a.isAlive && b.isAlive else { break }   // 선공에 기절하면 후공 없음
             let move = attackerIsA ? moveA : moveB
-            let outcome = attackerIsA
-                ? resolveAttack(attacker: a, defender: b, move: move, rng: &rng)
-                : resolveAttack(attacker: b, defender: a, move: move, rng: &rng)
-
-            if attackerIsA { b.hp = max(0, b.hp - outcome.damage) } else { a.hp = max(0, a.hp - outcome.damage) }
-            events.append(NetBattleEvent(attackerIsA: attackerIsA, moveID: move.id, missed: outcome.missed,
-                                         damage: outcome.damage, effectiveness: outcome.effectiveness,
-                                         isCritical: outcome.isCritical,
-                                         defenderHPAfter: attackerIsA ? b.hp : a.hp))
+            events += attackerIsA
+                ? applyAttack(attacker: a, defender: &b, attackerActor: .a, defenderActor: .b,
+                              move: move, rng: &rng)
+                : applyAttack(attacker: b, defender: &a, attackerActor: .b, defenderActor: .a,
+                              move: move, rng: &rng)
         }
         return events
     }

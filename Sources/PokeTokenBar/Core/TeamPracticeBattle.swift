@@ -6,7 +6,7 @@ struct TeamPracticeBattle {
     var myActive = 0
     var opponentActive = 0
     var turn = 1
-    var events: [NetBattleEvent] = []
+    var events: [BattleEvent] = []
     var rng: SplitMix64
     var result: Bool?
 
@@ -42,16 +42,14 @@ struct TeamPracticeBattle {
     }
 
     /// 상대 공격 1회만 해상 — 내가 교체에 턴을 썼을 때 상대 몫이다.
+    /// 이벤트는 `applyAttack` 이 만든다(엔진 좌변이 나 = `.a`, CPU = `.b`).
     private mutating func opponentAttacksAlone() {
         guard opponents[opponentActive].isAlive, mine[myActive].isAlive else { return }
         let (move, moveIndex) = cpuMoveChoice()
         if moveIndex >= 0 { opponents[opponentActive].pp[moveIndex] -= 1 }
-        let outcome = BattleEngine.resolveAttack(attacker: opponents[opponentActive],
-                                                 defender: mine[myActive], move: move, rng: &rng)
-        mine[myActive].hp = max(0, mine[myActive].hp - outcome.damage)
-        events.append(NetBattleEvent(attackerIsA: false, moveID: move.id, missed: outcome.missed,
-                                     damage: outcome.damage, effectiveness: outcome.effectiveness,
-                                     isCritical: outcome.isCritical, defenderHPAfter: mine[myActive].hp))
+        events.append(.turn(turn))
+        events += BattleEngine.applyAttack(attacker: opponents[opponentActive], defender: &mine[myActive],
+                                           attackerActor: .b, defenderActor: .a, move: move, rng: &rng)
     }
 
     mutating func useMove(_ index: Int) -> Bool {
@@ -63,7 +61,7 @@ struct TeamPracticeBattle {
         if myIndex >= 0 { mine[myActive].pp[myIndex] -= 1 }
         if cpuIndex >= 0 { opponents[opponentActive].pp[cpuIndex] -= 1 }
         let resolved = BattleEngine.resolveTurn(a: &mine[myActive], b: &opponents[opponentActive],
-                                                moveA: myMove, moveB: cpuMove, rng: &rng)
+                                                moveA: myMove, moveB: cpuMove, turn: turn, rng: &rng)
         events.append(contentsOf: resolved)
         turn += 1
         advanceFainted()

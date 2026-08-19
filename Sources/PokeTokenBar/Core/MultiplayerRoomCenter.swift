@@ -21,7 +21,7 @@ final class MultiplayerRoomCenter {
     private(set) var lobby: MultiplayerLobby?
     private(set) var combatFighters: [MultiplayerFighter] = []
     private(set) var combatRound = 0
-    private(set) var combatEvents: [MultiplayerBattleEvent] = []
+    private(set) var combatEvents: [BattleEvent] = []
     private(set) var hasSubmittedAction = false
     private(set) var turnEndsAt: Date?
     private(set) var battleReward: Int?

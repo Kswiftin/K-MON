@@ -103,6 +103,147 @@ final class BattleTests: XCTestCase {
                  damageClass: .physical, accuracy: 100, pp: 30, priority: 1)
     }
 
+    /// 필중 물 기술 — 명중 판정을 건너뛰므로 rng 소비가 **급소 → 난수** 두 번뿐이다.
+    /// 그래서 아래 골든값을 손으로 계산할 수 있다.
+    private func surf() -> MoveSpec {
+        MoveSpec(id: 57, names: ["en": "Surf"], type: .water, power: 90,
+                 damageClass: .special, accuracy: nil, pp: 15)
+    }
+
+    // MARK: 데미지 파이프라인 — Gen 2 순서
+
+    /// Gen 2 데미지 식의 **순서**를 골든값으로 잠근다. 거북왕(특공 105)의 파도타기(위력 90)가
+    /// 리자몽(특방 105, 불꽃/비행)을 때린다. 양쪽 레벨 50.
+    ///
+    ///     base   = (2·50/5 + 2)·90·105/105/50 = 39
+    ///     비급소 = (39·1 + 2)·3/2·2 = 122      급소 = (39·2 + 2)·3/2·2 = 240
+    ///     최종   = 위 값 · rand / 255          rand ∈ 217…255 (균등 정수)
+    ///
+    /// 값을 정하는 건 두 가지다 — 급소 배율이 ×2 라는 것과 `+2` 가 그 배율 **뒤에** 온다는 것.
+    /// 예전 식은 `+2` 를 먼저 더한 뒤 ×1.5 를 곱하고 난수도 0.85~1.00 Double 이었다(같은 seed 로
+    /// 각각 111 / 114 / 112). 이제 전 구간이 정수 연산이라 두 피어 사이에 Double 오차가 남지 않는다.
+    func testGen2DamageOrderAndCritMultiplier() {
+        let attacker = BattleSide(water()), defender = BattleSide(fire())
+        // (seed, 급소인가, 기대 데미지). seed 12 는 새 임계값(17/256)에서만 급소다 — 예전 `% 16 == 0`
+        // 에서는 급소가 아니었으므로 이 줄 하나가 배율과 임계값을 같이 잠근다.
+        // seed 0 은 rand 하한 217, seed 20 은 상한 255 를 밟는다.
+        let golden: [(seed: UInt64, crit: Bool, damage: Int)] = [(0, false, 103), (12, true, 224), (20, false, 122)]
+        for (seed, expectedCrit, expectedDamage) in golden {
+            var rng = SplitMix64(seed: seed)
+            let outcome = BattleEngine.resolveAttack(attacker: attacker, defender: defender,
+                                                     move: surf(), rng: &rng)
+            XCTAssertEqual(outcome.isCritical, expectedCrit, "seed \(seed): 급소 판정")
+            XCTAssertEqual(outcome.damage, expectedDamage, "seed \(seed): Gen 2 식의 값이어야 한다")
+            XCTAssertEqual(outcome.effectiveness, 2, "seed \(seed): 표시용 상성 배율은 그대로 2 다")
+        }
+    }
+
+    /// 데미지 값이 바뀌면 두 피어의 HP 가 갈린다 — 규칙 버전을 올리지 않으면 구버전 앱과 붙어
+    /// **같은 배틀을 서로 다르게 본다**(challenge/accept 가 거절하지 못한다). 위 골든값과 이 상수는
+    /// 같이 움직여야 한다.
+    func testRulesVersionMovesWithTheDamagePipeline() {
+        XCTAssertEqual(BattleEngine.rulesVersion, 2, "Gen 2 데미지 파이프라인 = 규칙 2")
+    }
+
+    // MARK: 급소 단계
+
+    /// Gen 2 급소 단계표(분모 256). 고급소기는 이 표에서 **+2 단계**다.
+    func testCriticalHitThresholdsFollowTheGen2StageTable() {
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 0), 17)   // 17/256 ≈ 6.6%
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 1), 32)   // 1/8
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 2), 64)   // 1/4
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 3), 85)   // 85/256 — 상한
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 9), 85, "3단계 이상은 전부 상한이다")
+        XCTAssertEqual(BattleEngine.critThreshold(stage: -1), 17, "단계가 음수여도 기본 확률")
+    }
+
+    /// 단계표가 `resolveAttack` 까지 **실제로 연결됐는지** 본다. 표만 맞고 배선이 없어도 위 테스트는
+    /// 초록으로 통과하니, 판정을 실제로 밟는 경로를 따로 확인한다.
+    func testHighCritMoveCritsFarMoreOftenThanANormalMove() {
+        let attacker = BattleSide(water()), defender = BattleSide(fire())
+        func critCount(_ move: MoveSpec) -> Int {
+            (UInt64(0)..<512).reduce(0) { count, seed in
+                var rng = SplitMix64(seed: seed)
+                let outcome = BattleEngine.resolveAttack(attacker: attacker, defender: defender,
+                                                         move: move, rng: &rng)
+                return count + (outcome.isCritical ? 1 : 0)
+            }
+        }
+        var highCrit = surf()
+        highCrit.critRate = 1                       // PokéAPI `meta.crit_rate` — 베어가르기 부류
+        let plain = critCount(surf()), boosted = critCount(highCrit)
+
+        // 512회 중 기대값은 34(17/256) 와 128(1/4) 이다. seed 를 고정한 순회라 값이 실행마다 같다.
+        XCTAssertGreaterThan(plain, 0, "기본 확률도 관측돼야 한다 — 0 이면 판정 자체가 죽었다")
+        XCTAssertGreaterThan(boosted, plain * 2, "고급소기가 두 배도 안 되면 단계가 연결되지 않았다")
+        XCTAssertEqual(Double(boosted) / 512, 0.25, accuracy: 0.05,
+                       "+2 단계는 1/4 이어야 한다 — 1단계(1/8)와 구분된다")
+    }
+
+    /// PokéAPI `/move` 응답 → `MoveSpec` 매핑. `meta.crit_rate` 는 이 경로로만 들어오므로
+    /// 필드가 스펙까지 실려오는지를 JSON 모양 그대로 확인한다.
+    private func slashJSON(includeMeta: Bool) -> Data {
+        let meta = includeMeta ? #", "meta": {"crit_rate": 1}"# : ""
+        return Data("""
+        {"id": 163, "power": 70, "accuracy": 100, "pp": 20, "priority": 0,
+         "type": {"name": "normal", "url": null},
+         "damage_class": {"name": "physical", "url": null},
+         "names": [{"name": "Slash", "language": {"name": "en", "url": null}},
+                   {"name": "베어가르기", "language": {"name": "ko", "url": null}}],
+         "flavor_text_entries": [{"flavor_text": "Cuts with claws.",
+                                  "language": {"name": "en", "url": null}}]\(meta)}
+        """.utf8)
+    }
+
+    func testMoveSpecFromPokeAPIJSONCarriesCritRate() throws {
+        let dto = try JSONDecoder().decode(MoveDTO.self, from: slashJSON(includeMeta: true))
+        let spec = try XCTUnwrap(MoveSpec.from(dto, fallbackName: "slash", languages: ["ko", "en"]))
+
+        XCTAssertEqual(spec.critRate, 1)
+        XCTAssertEqual(spec.critStage, 2, "Gen 2 고급소기는 +2 단계다")
+        XCTAssertEqual(spec.id, 163)
+        XCTAssertEqual(spec.power, 70)
+        XCTAssertEqual(spec.pp, 20)
+        XCTAssertEqual(spec.accuracy, 100)
+        XCTAssertEqual(spec.type, .normal)
+        XCTAssertEqual(spec.damageClass, .physical)
+        XCTAssertEqual(spec.turnPriority, 0)
+        XCTAssertEqual(spec.name(.ko), "베어가르기")
+        XCTAssertEqual(spec.name(.en), "Slash")
+    }
+
+    /// `meta` 가 없는 응답(옛 캐시)은 보통 급소율로 읽는다 — `nil` 이 곧 0단계다.
+    func testMoveSpecWithoutMetaReadsAsTheBaseCritRate() throws {
+        let dto = try JSONDecoder().decode(MoveDTO.self, from: slashJSON(includeMeta: false))
+        let spec = try XCTUnwrap(MoveSpec.from(dto, fallbackName: "slash", languages: ["ko", "en"]))
+
+        XCTAssertNil(spec.critRate)
+        XCTAssertEqual(spec.critStage, 0)
+    }
+
+    /// 앱이 모르는 타입·분류가 오면 스펙을 만들지 않는다(호출부가 그 기술을 건너뛴다).
+    /// 이름이 하나도 없으면 영어 자리에 요청 이름을 넣어 화면에 "?" 가 남지 않게 한다.
+    func testMoveSpecRejectsUnknownTypeAndFallsBackToTheRequestedName() throws {
+        let unknownType = Data("""
+        {"id": 1, "power": 40, "accuracy": 100, "pp": 35, "priority": 0,
+         "type": {"name": "cosmic", "url": null},
+         "damage_class": {"name": "physical", "url": null},
+         "names": [], "flavor_text_entries": []}
+        """.utf8)
+        let dto = try JSONDecoder().decode(MoveDTO.self, from: unknownType)
+        XCTAssertNil(MoveSpec.from(dto, fallbackName: "cosmic-blast", languages: ["ko", "en"]))
+
+        let noNames = Data("""
+        {"id": 33, "power": 40, "accuracy": 100, "pp": 35, "priority": 0,
+         "type": {"name": "normal", "url": null},
+         "damage_class": {"name": "physical", "url": null},
+         "names": [], "flavor_text_entries": []}
+        """.utf8)
+        let plain = try XCTUnwrap(MoveSpec.from(try JSONDecoder().decode(MoveDTO.self, from: noNames),
+                                               fallbackName: "tackle", languages: ["ko", "en"]))
+        XCTAssertEqual(plain.name(.en), "tackle")
+    }
+
     // MARK: 턴 순서 — 우선도 → 스피드 → 무작위
 
     /// 본가 규칙: 우선도가 스피드를 이긴다. 거북왕(스피드 78)이 전광석화를 쓰면 리자몽(100)보다 먼저다.
@@ -114,9 +255,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = slow, b = fast
-            let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                                  moveA: quickAttack(), moveB: flamethrower(), rng: &rng)
-            XCTAssertEqual(events.first?.attackerIsA, true, "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: quickAttack(),
+                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+            XCTAssertEqual(events.moveActors.first, .a, "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
         }
     }
 
@@ -126,9 +267,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = slow, b = fast
-            let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                                  moveA: hydroPump(), moveB: flamethrower(), rng: &rng)
-            XCTAssertEqual(events.first?.attackerIsA, false, "seed \(seed): 빠른 쪽이 먼저다")
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
+                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+            XCTAssertEqual(events.moveActors.first, .b, "seed \(seed): 빠른 쪽이 먼저다")
         }
     }
 
@@ -136,15 +277,15 @@ final class BattleTests: XCTestCase {
     /// (멀티는 이 자리에서 UUID 문자열 순으로 갈라, 앱을 켠 동안 한쪽이 계속 선공했다.)
     func testEqualPriorityAndSpeedBreaksRandomly() {
         let mirror = BattleSide(water())
-        var firstMoverWasA = Set<Bool>()
+        var firstMovers = Set<BattleActor>()
         for seed in UInt64(0)..<40 {
             var rng = SplitMix64(seed: seed)
             var a = mirror, b = mirror
-            let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                                  moveA: hydroPump(), moveB: hydroPump(), rng: &rng)
-            if let first = events.first?.attackerIsA { firstMoverWasA.insert(first) }
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
+                                                  moveB: hydroPump(), turn: 1, rng: &rng)
+            if let first = events.moveActors.first { firstMovers.insert(first) }
         }
-        XCTAssertEqual(firstMoverWasA, [true, false], "양쪽 모두 선공을 잡는 seed 가 있어야 한다")
+        XCTAssertEqual(firstMovers, [.a, .b], "양쪽 모두 선공을 잡는 seed 가 있어야 한다")
     }
 
     /// 우선도가 스냅샷에 없던 시절(구버전 세이브·구버전 피어)의 기술은 보통 기술로 읽는다.
@@ -154,14 +295,60 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(quickAttack().turnPriority, 1)
     }
 
+    // MARK: 이벤트 스트림 (Showdown 어휘)
+
+    /// 스트림의 첫 줄은 턴 번호다 — 로그가 턴 구분선을 끼울 수 있어야 한다.
+    func testResolveTurnEmitsTheTurnNumberFirst() {
+        var rng = SplitMix64(seed: 1)
+        var a = BattleSide(water()), b = BattleSide(fire())
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: surf(), moveB: flamethrower(),
+                                              turn: 7, rng: &rng)
+        XCTAssertEqual(events.first, .turn(7))
+    }
+
+    /// 쓰러졌다는 사실을 스트림이 **말한다**. 예전엔 이벤트에 그런 case 가 없어서 뷰가 HP 0 을
+    /// 보고 추론했다 — 기절 연출(Phase 7)도 그 추론 위에 얹을 수밖에 없었다.
+    func testResolveTurnAnnouncesTheFaint() {
+        let strong = BattleSnapshot(speciesID: 143, name: "잠만보", trainer: nil, level: 50, nature: nil,
+                                    isShiny: false, types: [.normal],
+                                    base: BattleStats(hp: 160, atk: 110, def: 65, spa: 65, spd: 110, spe: 30))
+        let frail = BattleSnapshot(speciesID: 92, name: "유령", trainer: nil, level: 5, nature: nil,
+                                   isShiny: false, types: [.ghost],
+                                   base: BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1))
+        var rng = SplitMix64(seed: 3)
+        var a = BattleSide(strong), b = BattleSide(frail)
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: .struggle(), moveB: .struggle(),
+                                              turn: 1, rng: &rng)
+        XCTAssertTrue(events.contains(.faint(.b)), "기절이 스트림에 있어야 한다")
+        XCTAssertFalse(events.contains(.faint(.a)), "쓰러지지 않은 쪽에는 없어야 한다")
+    }
+
+    /// 급소·상성은 데미지와 **따로** 실린다. 한 구조체에 플래그로 묶여 있던 값들이라,
+    /// 분리되지 않으면 상태이상(Phase 2)이 들어올 자리가 없다.
+    func testCritAndEffectivenessAreSeparateEvents() {
+        // 급소가 어느 seed 에서 나는지는 미리 알 수 없다(선공이 rng 를 먼저 쓴다). 순회해서 찾는다.
+        var sawCrit = false
+        for seed in UInt64(0)..<64 {
+            var rng = SplitMix64(seed: seed)
+            var a = BattleSide(water()), b = BattleSide(fire())
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: surf(), moveB: flamethrower(),
+                                                  turn: 1, rng: &rng)
+            XCTAssertTrue(events.contains(.superEffective(.b)), "seed \(seed): 물 → 불꽃/비행 = ×2")
+            XCTAssertTrue(events.contains(.resisted(.a)), "seed \(seed): 불꽃 → 물 = ×0.5")
+            XCTAssertTrue(events.contains { if case .damage(.b, _) = $0 { return true } else { return false } })
+            if events.contains(.crit(.b)) { sawCrit = true }
+        }
+        XCTAssertTrue(sawCrit, "급소가 데미지와 별개의 이벤트로 실려야 한다")
+    }
+
     func testResolveTurnDeterministic() {
         var rng1 = SplitMix64(seed: 99), rng2 = SplitMix64(seed: 99)
         var a1 = BattleSide(water()), b1 = BattleSide(fire())
         var a2 = BattleSide(water()), b2 = BattleSide(fire())
-        let e1 = BattleEngine.resolveTurn(a: &a1, b: &b1,
-                                          moveA: hydroPump(), moveB: flamethrower(), rng: &rng1)
-        let e2 = BattleEngine.resolveTurn(a: &a2, b: &b2,
-                                          moveA: hydroPump(), moveB: flamethrower(), rng: &rng2)
+        let e1 = BattleEngine.resolveTurn(a: &a1, b: &b1, moveA: hydroPump(),
+                                          moveB: flamethrower(), turn: 1, rng: &rng1)
+        let e2 = BattleEngine.resolveTurn(a: &a2, b: &b2, moveA: hydroPump(),
+                                          moveB: flamethrower(), turn: 1, rng: &rng2)
         XCTAssertEqual(e1, e2, "두 피어가 같은 seed 로 같은 결과를 얻어야 대전이 성립한다")
         XCTAssertEqual(a1.hp, a2.hp)
         XCTAssertEqual(b1.hp, b2.hp)
@@ -173,9 +360,13 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<40 {
             var rng = SplitMix64(seed: seed)
             var a = BattleSide(water()), b = BattleSide(fire())
-            let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                                  moveA: hydroPump(), moveB: flamethrower(), rng: &rng)
-            for e in events where e.attackerIsA { e.missed ? (missSeen = true) : (hitSeen = true) }
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
+                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+            // A 가 빗나갔으면 `.miss(.a)`, 맞았으면 B 쪽에 `.damage` 가 실린다.
+            if events.contains(.miss(.a)) { missSeen = true }
+            if events.contains(where: { if case .damage(.b, _) = $0 { return true } else { return false } }) {
+                hitSeen = true
+            }
         }
         XCTAssertTrue(missSeen && hitSeen)
     }
@@ -194,11 +385,12 @@ final class BattleTests: XCTestCase {
                            damageClass: .physical, accuracy: nil, pp: 10)
         var rng = SplitMix64(seed: 1)
         var a = BattleSide(pika), b = BattleSide(dugtrio)
-        let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                              moveA: thunderbolt, moveB: dig, rng: &rng)
-        let pikaAttack = events.first { $0.attackerIsA }
-        XCTAssertEqual(pikaAttack?.damage, 0)
-        XCTAssertEqual(pikaAttack?.effectiveness, 0)
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: thunderbolt, moveB: dig,
+                                              turn: 1, rng: &rng)
+        // 무효는 `.immune` 로 실리고 데미지 이벤트 자체가 없다 — "0 데미지" 로 새면 맞은 것처럼 읽힌다.
+        XCTAssertTrue(events.contains(.immune(.b)))
+        XCTAssertFalse(events.contains { if case .damage(.b, _) = $0 { return true } else { return false } })
+        XCTAssertEqual(b.hp, b.stats.hp, "닥트리오는 한 점도 깎이지 않는다")
     }
 
     func testResolveTurnFaintSkipsSecondAction() {
@@ -210,10 +402,10 @@ final class BattleTests: XCTestCase {
                                    base: BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1))
         var rng = SplitMix64(seed: 3)
         var a = BattleSide(strong), b = BattleSide(frail)
-        // 발버둥(무속성)이라 고스트에도 박힌다 — 선공 기절 시 이벤트는 1개여야 한다.
-        let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                              moveA: .struggle(), moveB: .struggle(), rng: &rng)
-        XCTAssertEqual(events.count, 1)
+        // 발버둥(무속성)이라 고스트에도 박힌다 — 선공에 기절하면 공격은 하나뿐이어야 한다.
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: .struggle(), moveB: .struggle(),
+                                              turn: 1, rng: &rng)
+        XCTAssertEqual(events.moveActors, [.a], "기절한 쪽은 반격하지 못한다")
         XCTAssertEqual(b.hp, 0)
     }
 
@@ -286,8 +478,7 @@ final class BattleTests: XCTestCase {
         XCTAssertTrue(battle.switchMine(to: 1))
 
         XCTAssertEqual(battle.myActive, 1, "교체는 이뤄진다")
-        XCTAssertEqual(battle.events.count, 1, "그 턴에 오간 공격은 상대 것 하나뿐이다")
-        XCTAssertEqual(battle.events.first?.attackerIsA, false, "내 공격은 없다")
+        XCTAssertEqual(battle.events.moveActors, [.b], "그 턴에 오간 공격은 상대(CPU) 것 하나뿐이다")
         XCTAssertLessThan(battle.mine[1].hp, before, "새로 나온 포켓몬이 그 공격을 맞는다")
         XCTAssertEqual(battle.turn, 2, "턴이 넘어간다")
     }
@@ -367,7 +558,7 @@ final class BattleTests: XCTestCase {
 
         XCTAssertTrue(battle.useMove(0))
 
-        XCTAssertEqual(battle.events.map(\.moveID), [MoveSpec.struggleID, MoveSpec.struggleID],
+        XCTAssertEqual(battle.events.moveIDs, [MoveSpec.struggleID, MoveSpec.struggleID],
                        "양쪽 모두 발버둥을 쓴다")
         XCTAssertEqual(battle.mine[0].pp, [0], "발버둥은 PP 를 쓰지 않는다")
     }
@@ -382,7 +573,7 @@ final class BattleTests: XCTestCase {
                                             opponents: [BattleSide(cpuWithFourMoves())],
                                             rng: SplitMix64(seed: 2_024))
             for turn in 0..<6 { XCTAssertTrue(battle.useMove(0), "\(turn + 1)번째 턴이 진행돼야 한다") }
-            return battle.events.map { $0.moveID }
+            return battle.events.moveIDs
         }
         let runs = Set((0..<10).map { _ in run() })
         XCTAssertEqual(runs.count, 1, "같은 seed 는 같은 배틀이어야 하는데 \(runs.count) 가지가 나왔다")
@@ -396,6 +587,18 @@ final class BattleTests: XCTestCase {
 
         XCTAssertTrue(battle.events.isEmpty, "거절된 교체는 상대에게 공격 기회를 주지 않는다")
         XCTAssertEqual(battle.turn, 1)
+    }
+}
+
+/// 스트림에서 "누가 무엇을 썼다" 만 골라낸다 — 선공 판정 테스트가 보는 건 그 순서다.
+/// 예전엔 이벤트가 공격 1건과 1:1 이라 `events.first` 로 됐지만, 이제 한 공격이 이벤트 여럿을
+/// 남기고 턴 구분선도 들어간다. (`AdventureTests` 의 멀티 라운드 테스트도 같이 쓴다.)
+extension Array where Element == BattleEvent {
+    var moveActors: [BattleActor] {
+        compactMap { if case .move(let actor, _) = $0 { return actor } else { return nil } }
+    }
+    var moveIDs: [Int] {
+        compactMap { if case .move(_, let id) = $0 { return id } else { return nil } }
     }
 }
 

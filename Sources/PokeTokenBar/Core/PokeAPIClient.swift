@@ -321,20 +321,9 @@ actor PokeAPIClient: PokeProviding {
     private func moveDetail(_ name: String) async throws -> MoveSpec {
         if let c = moveDetailCache[name] { return c }
         let dto: MoveDTO = try await get(base.appendingPathComponent("move/\(name)"))
-        var byLang: [String: String] = [:]
-        for n in dto.names where langCodes.contains(n.language.name) { byLang[n.language.name] = n.name }
-        let descriptions = Self.flavorTexts(dto.flavor_text_entries.map {
-            (language: $0.language.name, text: $0.flavor_text)
-        }, languages: langCodes)
-        if byLang["en"] == nil { byLang["en"] = name }
-        guard let type = PokemonType(rawValue: dto.type.name),
-              let cls = MoveDamageClass(rawValue: dto.damage_class.name) else {
+        guard let spec = MoveSpec.from(dto, fallbackName: name, languages: langCodes) else {
             throw URLError(.cannotParseResponse)
         }
-        let spec = MoveSpec(id: dto.id, names: byLang, type: type,
-                            power: dto.power ?? 0, damageClass: cls,
-                            accuracy: dto.accuracy, pp: dto.pp ?? 10,
-                            descriptions: descriptions, priority: dto.priority)
         moveDetailCache[name] = spec
         return spec
     }
@@ -454,6 +443,12 @@ struct MoveDTO: Decodable, Sendable {
         let flavor_text: String
         let language: NamedRef
     }
+    /// `/move` 응답의 `meta` 블록 — 실제로 쓰는 필드만 꺼낸다. 통째로 담으면 `MoveSpec` 이
+    /// 안 쓰는 값까지 세이브·와이어로 나른다(계획 §7 의 "MoveSpec 필드 증가" 리스크).
+    /// 상태이상(`ailment`)·랭크변화(`stat_chance`)는 Phase 2·3 에서 이 자리에 붙는다.
+    struct Meta: Decodable, Sendable {
+        let crit_rate: Int?
+    }
     let id: Int
     let power: Int?
     let accuracy: Int?
@@ -464,6 +459,33 @@ struct MoveDTO: Decodable, Sendable {
     let flavor_text_entries: [FlavorText]
     /// 턴 순서에서 스피드보다 먼저 보는 값. 응답에 늘 들어 있지만, 옛 캐시 응답을 대비해 옵셔널로 둔다.
     let priority: Int?
+    let meta: Meta?
+}
+
+extension MoveSpec {
+    /// `/move` 응답 하나를 대전용 스펙으로. 앱이 모르는 타입·분류면 `nil` — 호출부가 그 기술을
+    /// 건너뛴다. 이름이 하나도 없으면 요청에 쓴 이름을 영어 자리에 넣어 화면에 "?" 가 남지 않게 한다.
+    ///
+    /// DTO 를 스펙으로 옮기는 자리를 한 곳에 둔 건 필드가 계속 늘기 때문이다 —
+    /// `priority`(#46) 에 이어 `crit_rate` 가 붙었고 Phase 2·3 이 상태이상·랭크변화를 더한다.
+    /// 여기 있으면 네트워크 없이 JSON 모양 그대로 테스트할 수 있다.
+    static func from(_ dto: MoveDTO, fallbackName: String, languages: [String]) -> MoveSpec? {
+        guard let type = PokemonType(rawValue: dto.type.name),
+              let damageClass = MoveDamageClass(rawValue: dto.damage_class.name) else { return nil }
+        var names: [String: String] = [:]
+        for entry in dto.names where languages.contains(entry.language.name) {
+            names[entry.language.name] = entry.name
+        }
+        if names["en"] == nil { names["en"] = fallbackName }
+        let descriptions = PokeAPIClient.flavorTexts(dto.flavor_text_entries.map {
+            (language: $0.language.name, text: $0.flavor_text)
+        }, languages: languages)
+        return MoveSpec(id: dto.id, names: names, type: type,
+                        power: dto.power ?? 0, damageClass: damageClass,
+                        accuracy: dto.accuracy, pp: dto.pp ?? 10,
+                        descriptions: descriptions, priority: dto.priority,
+                        critRate: dto.meta?.crit_rate)
+    }
 }
 struct ChainLink: Decodable, Sendable {
     struct EvolutionDetail: Decodable, Sendable {

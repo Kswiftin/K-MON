@@ -99,9 +99,10 @@ final class LobbyRoleTests: XCTestCase {
 
     // MARK: 와이어 계약 — 버전 상승과 새 메시지 왕복
 
-    func testProtocolVersionIsBumpedForTheRoleField() {
-        // role 없는 옛 빌드가 레이스 중간에 깨지는 대신 핸드셰이크에서 거절되게 버전을 올린다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 2)
+    func testProtocolVersionIsBumpedWhenTheWireContractChanges() {
+        // 옛 빌드가 레이스·배틀 중간에 깨지는 대신 핸드셰이크에서 거절되게 버전을 올린다.
+        // 2 = LobbyParticipant.role + 관전자 베팅 메시지, 3 = 라운드 결과가 이벤트 스트림.
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 3)
     }
 
     func testBettingMessagesRoundTrip() throws {
