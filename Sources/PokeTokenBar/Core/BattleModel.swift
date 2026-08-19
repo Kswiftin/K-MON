@@ -154,8 +154,17 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 이 키가 없다. 없으면 보통 기술(0)로 읽는다.
     var priority: Int? = nil
 
+    /// 고급소 보정(PokéAPI `meta.crit_rate`). 베어가르기·잎날가르기처럼 급소가 잘 나는 기술은
+    /// 여기에 양수가 온다. `priority` 와 같은 이유로 옵셔널이다 — 이 키가 없던 시절의 세이브와
+    /// 구버전 피어의 무브셋에는 값이 없고, 없으면 보통 기술로 읽는다.
+    var critRate: Int? = nil
+
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
+
+    /// 급소 단계 — Gen 2 의 고급소기는 **+2 단계**(1/4)다. PokéAPI 의 `crit_rate` 는 세대에 따라
+    /// 뜻이 달라(Gen 6+ 는 +1 단계) 값을 그대로 쓰지 않고, 고급소기인지만 보고 Gen 2 단계로 옮긴다.
+    var critStage: Int { (critRate ?? 0) > 0 ? 2 : 0 }
 
     func name(_ lang: AppLanguage) -> String { lang.resolveName(names) ?? names.values.first ?? "?" }
     func description(_ lang: AppLanguage) -> String? {
@@ -299,8 +308,18 @@ enum BattleEngine {
     /// 밸런스다: 급소 ×2 와 상태이상이 겹치면 1턴 KO 가 흔해질 수 있어, 랭크업(Phase 3)까지
     /// 들어온 뒤 시드를 여러 번 돌려 평균 턴 수를 재고 다시 판단한다.
     static let critMultiplier = 2
-    /// 급소 확률 — Gen 2 는 256분의 17(≈6.6%). 예전엔 1/16(6.25%) 고정이었다.
-    static let critThreshold: UInt64 = 17
+
+    /// 급소 확률의 분자(분모 256) — Gen 2 단계표. 0단계 17/256(≈6.6%), +1 은 1/8, +2 는 1/4,
+    /// +3 이상은 85/256 에서 멈춘다. 예전엔 단계 개념 없이 1/16(6.25%) 고정이었다.
+    /// 단계를 올리는 건 지금은 고급소기뿐이고, 급소율을 올리는 기술·특성은 Phase 3·5 에서 붙는다.
+    static func critThreshold(stage: Int) -> UInt64 {
+        switch max(0, stage) {
+        case 0: return 17
+        case 1: return 32
+        case 2: return 64
+        default: return 85
+        }
+    }
 
     /// 대전 규칙 버전 — 턴 순서나 데미지 계산을 바꿀 때마다 올린다. 두 피어가 결과를 주고받지 않고
     /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다.
@@ -334,7 +353,7 @@ enum BattleEngine {
             : TypeChart.effectiveness(move.type, against: defender.snapshot.types)
         let attack = move.damageClass == .physical ? attacker.stats.atk : attacker.stats.spa
         let defense = move.damageClass == .physical ? defender.stats.def : defender.stats.spd
-        let isCritical = rng.next() % 256 < critThreshold
+        let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
         // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수나눗셈한다. 예전엔
         // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
         // 구조에서는 정수 연산이 유리하다(부동소수 오차가 결과를 가를 여지가 없다).
