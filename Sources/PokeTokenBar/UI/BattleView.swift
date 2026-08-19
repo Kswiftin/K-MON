@@ -153,6 +153,39 @@ struct BattleView: View {
         }
     }
 
+    /// 출전 팀 고르기 — 누르면 넣고 빼고, 배지 숫자가 출전 순서다.
+    ///
+    /// **가로** 스크롤인 이유가 있다. 이 탭은 이미 팝오버 본체 ScrollView 안에 있어서 세로로 또
+    /// 스크롤을 겹치면 안쪽이 움직이지 않는다(#42 에서 소유 포켓몬 목록이 그랬다). 축이 다르면 겹치지 않는다.
+    @ViewBuilder
+    private var teamPicker: some View {
+        if store.ownedMons.count > 1 {
+            HStack(spacing: 4) {
+                Text(store.language == .ko ? "출전 순서" : "Battle order")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(center.pickedTeam.count) / \(center.rankedTeamSize)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(center.pickedTeam.isEmpty ? .tertiary : .secondary)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    ForEach(store.ownedMons, id: \.id) { mon in
+                        TeamPickChip(mon: mon,
+                                     pickedIndex: center.pickedTeam.firstIndex(of: mon.id),
+                                     onTap: { center.toggleTeamPick(mon.id) })
+                    }
+                }
+            }
+            // 아무것도 안 고르면 예전처럼 소유 순서 앞에서 채운다 — 고르지 않고도 바로 시작할 수 있어야 한다.
+            if center.pickedTeam.isEmpty {
+                Text(store.language == .ko ? "고르지 않으면 목록 앞에서 자동으로 채워요"
+                                           : "Left empty, the first of your list are sent in")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+    }
+
     private var peerList: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(store.language == .ko ? "랭크배틀 · 전원 Lv.50" : "Ranked Battle · All Pokémon Lv.50",
@@ -163,6 +196,8 @@ struct BattleView: View {
                 Text("3 vs 3").tag(3)
                 Text("6 vs 6").tag(6)
             }.pickerStyle(.segmented).labelsHidden()
+
+            teamPicker
 
             Button {
                 center.startRankedPractice()
@@ -610,5 +645,36 @@ struct BattleView: View {
             .foregroundStyle(type.battleLabelColor)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Capsule().fill(type.battleColor))
+    }
+}
+
+/// 출전 팀 칩 하나. 고른 것에는 출전 순서를 배지로 얹는다 — 숫자가 없으면 무엇이 선봉인지 알 수 없다.
+private struct TeamPickChip: View {
+    let mon: MonState
+    let pickedIndex: Int?
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 1) {
+                ZStack(alignment: .topTrailing) {
+                    SpriteView(speciesID: mon.currentID, size: 30, shiny: mon.isShiny)
+                    if let pickedIndex {
+                        Text("\(pickedIndex + 1)")
+                            .font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+                            .frame(width: 13, height: 13)
+                            .background(Circle().fill(Color.accentColor))
+                    }
+                }
+                Text("Lv.\(mon.level)").font(.system(size: 7)).foregroundStyle(.secondary)
+            }
+            .frame(width: 44)
+            .padding(3)
+        }
+        .buttonStyle(.plain)
+        .background(RoundedRectangle(cornerRadius: 7)
+            .fill(pickedIndex == nil ? Color.clear : Color.accentColor.opacity(0.15)))
+        .overlay(RoundedRectangle(cornerRadius: 7)
+            .stroke(pickedIndex == nil ? Color.secondary.opacity(0.25) : Color.accentColor, lineWidth: 1))
     }
 }
