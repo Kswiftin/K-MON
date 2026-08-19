@@ -47,7 +47,9 @@ final class MultiplayerRoomCenter {
     private var pendingActions: [UUID: MultiplayerAction] = [:]
     private var turnTimeoutTask: Task<Void, Never>?
     private var rewardedBattle = false
-    private static let turnDuration: TimeInterval = 30
+    /// 한 턴에 주는 시간. 1v1 LAN 도 같은 값을 쓴다(`BattleCenter.turnDuration`) — 두 모드의
+    /// 체감이 갈리면 같은 앱에서 다른 게임을 하는 것처럼 느껴진다.
+    static let turnDuration: TimeInterval = 30
 
     init(companion: CompanionStore) { self.companion = companion }
 

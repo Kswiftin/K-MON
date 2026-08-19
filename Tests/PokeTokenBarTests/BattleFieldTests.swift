@@ -248,19 +248,34 @@ final class BattleFieldTests: XCTestCase {
 
     /// 안 A 를 고른 근거를 테스트로 남긴다 — 이 배치는 팝오버 332pt 에 애초에 들어가지 않는다.
     /// 이 대조군이 없으면 위의 fit 검증은 "애초에 통과할 조건" 이었는지 알 수 없다.
+    ///
+    /// **팝오버 폭을 제안하고 잰다.** 넉넉한 폭(4,000)을 제안하면 유연한 칸이 그 값을 그대로
+    /// 되돌려 주므로 어떤 구현이든 통과한다 — 좁은 폭을 제안했을 때도 더 요구하는지가 실제 질문이다.
     func testTheSameArenaDoesNotFitThePopoverContentWidth() {
-        XCTAssertGreaterThan(renderedWidth(arena(), proposing: 4_000), PopoverMetrics.contentWidth,
+        XCTAssertGreaterThan(renderedWidth(arena(), proposing: PopoverMetrics.contentWidth),
+                             PopoverMetrics.contentWidth,
                              "팝오버 폭에 들어간다면 전용 창을 만든 이유가 없다")
     }
 
-    /// defect-log 규칙: 배틀 화면에 세로 `ScrollView` 를 두면 안쪽이 스크롤되지 않고 잘린다.
-    /// 기억이 아니라 기계로 막는다 — 새 뷰 파일에 `ScrollView` 가 다시 들어오면 여기서 실패한다.
+    /// defect-log 규칙: 배틀 화면에 세로 스크롤 컨테이너를 두면 안쪽이 스크롤되지 않고 잘린다.
+    /// 기억이 아니라 기계로 막는다 — 배틀 뷰 파일에 그 컨테이너가 다시 들어오면 여기서 실패한다.
+    ///
+    /// **주석은 세지 않는다.** 규칙을 설명하는 문장에 그 타입 이름이 들어가는 건 당연하고, 그것까지
+    /// 세면 가드가 "이 규칙을 문서화하지 말라"는 뜻이 돼 버린다. 실제 구성(`ScrollView {` / `(`)만 본다.
     func testTheBattleFieldSourceHasNoScrollView() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(contentsOf: root.appendingPathComponent("Sources/PokeTokenBar/UI/BattleField.swift"),
-                                encoding: .utf8)
-        XCTAssertFalse(source.contains("ScrollView"),
-                       "배틀 화면은 고정 높이 칸으로 그린다 — 중첩 ScrollView 는 잘린다(defect-log)")
+        for file in ["Sources/PokeTokenBar/UI/BattleField.swift",
+                     "Sources/PokeTokenBar/UI/BattleWindow.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+            let code = source.split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line -> String in
+                    guard let comment = line.range(of: "///") ?? line.range(of: "//") else { return String(line) }
+                    return String(line[line.startIndex..<comment.lowerBound])
+                }
+                .joined(separator: "\n")
+            XCTAssertFalse(code.contains("ScrollView {") || code.contains("ScrollView("),
+                           "\(file): 배틀 화면은 고정 높이 칸으로 그린다 — 중첩 스크롤은 잘린다(defect-log)")
+        }
     }
 }

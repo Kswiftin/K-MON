@@ -56,6 +56,14 @@ struct L {
     var battleYourTurn: String { t("기술을 선택하세요", "Choose a move", "わざを選んでください") }
     var battleWaitingOpponent: String { t("상대가 기술을 고르는 중…", "Opponent is choosing…", "相手がわざを選んでいます…") }
     var battleForfeit: String { t("기권", "Forfeit", "降参") }
+    var battleSwitch: String { t("교체", "Switch", "こうたい") }
+    /// 배틀은 팝오버가 아니라 전용 창에서 돈다 — 팝오버 배틀 탭엔 그 창을 가리키는 안내만 둔다.
+    var battleRunsInItsOwnWindow: String {
+        t("배틀은 전용 창에서 진행 중입니다.",
+          "The battle is running in its own window.",
+          "バトルは専用ウィンドウで進行中です。")
+    }
+    var battleShowWindow: String { t("배틀 창 보기", "Show battle window", "バトルウィンドウを表示") }
     var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }
     var battleNoEffect: String { t("효과가 없었다…", "It had no effect…", "こうかがないようだ…") }
     var battleOppForfeited: String { t("상대가 기권했어요 — 승리!", "Opponent forfeited — you win!", "相手が降参しました — 勝ち！") }

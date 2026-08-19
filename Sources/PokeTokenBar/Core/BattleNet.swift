@@ -91,6 +91,26 @@ final class BattleCenter {
         default: return true   // preparing/challenging/incoming/battling/finished
         }
     }
+
+    /// 전용 배틀 창(계획 §6.3 안 A)을 띄울 조건 — **실제로 배틀이 돌고 있을 때만**이다.
+    /// 신청·수락·상대 목록은 팝오버가 계속 맡는다. `battle`/`teamPractice` 가 `dismissResult()`
+    /// 까지 살아 있으므로 결과 화면도 같은 창에서 보고, 확인을 누르면 창이 닫힌다.
+    var wantsBattleWindow: Bool { battle != nil || teamPractice != nil }
+
+    /// 한 턴에 주는 시간 — 멀티와 같은 값이다.
+    static let turnDuration: TimeInterval = MultiplayerRoomCenter.turnDuration
+
+    /// 이번 턴이 끝나는 시각. 멀티엔 이미 있던 값이고 1v1 만 없었다 — 상대가 자리를 비우면 1v1 은
+    /// 기권 말고는 나갈 길이 없었다.
+    private(set) var turnEndsAt: Date?
+    private var turnTimeoutTask: Task<Void, Never>?
+
+    /// 시간이 다 됐을 때 자동으로 고를 기술 — PP 가 남은 **첫** 칸이고, 전부 소진이면 발버둥(−1)이다.
+    /// 무작위로 고르지 않는 이유가 있다: 이 선택은 와이어로 나가므로 desync 는 없지만, 시스템 RNG 를
+    /// 쓰면 같은 상황이 재현되지 않아 회귀 테스트를 쓸 수 없다(연습 배틀에서 이미 겪은 부류다).
+    static func automaticMoveIndex(for side: BattleSide) -> Int {
+        side.pp.indices.first { side.canUse(moveAt: $0) } ?? -1
+    }
     private let companion: CompanionStore
     let multiplayer: MultiplayerRoomCenter
     private var listener: NWListener?
@@ -439,6 +459,7 @@ final class BattleCenter {
     }
 
     func forfeit() {
+        cancelTurnTimeout()
         if isPracticeBattle {
             phase = .finished(iWon: false, byForfeit: true)
             return
@@ -450,6 +471,7 @@ final class BattleCenter {
     }
 
     func dismissResult() {
+        cancelTurnTimeout()
         battle = nil
         teamPractice = nil
         if case .finished = phase { phase = .ready }
@@ -472,6 +494,38 @@ final class BattleCenter {
                                 rng: SplitMix64(seed: seed))
         phase = .battling
         pendingAttention = true
+        scheduleTurnTimeout()
+    }
+
+    /// 이번 턴의 마감을 건다. 연습 배틀엔 걸지 않는다 — CPU 는 즉시 답하므로 기다림이 없다.
+    private func scheduleTurnTimeout() {
+        turnTimeoutTask?.cancel()
+        guard case .battling = phase, let state = battle, !isPracticeBattle else {
+            turnEndsAt = nil
+            return
+        }
+        let turn = state.turn
+        turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
+        turnTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.turnDuration))
+            guard !Task.isCancelled else { return }
+            self?.fillTimedOutChoice(turn: turn)
+        }
+    }
+
+    private func cancelTurnTimeout() {
+        turnTimeoutTask?.cancel()
+        turnTimeoutTask = nil
+        turnEndsAt = nil
+    }
+
+    /// 시간이 다 됐는데 아직 안 골랐으면 자동으로 고른다. 그 선택은 사람이 고른 것과 **같은 경로로**
+    /// 상대에게 나가므로 두 피어가 갈라지지 않는다 — 규칙이 아니라 입력이 바뀌는 것이라
+    /// `rulesVersion` 도 올릴 필요가 없다.
+    private func fillTimedOutChoice(turn: Int) {
+        guard case .battling = phase, let state = battle, state.turn == turn, state.myChoice == nil else { return }
+        AppLog.write("battle turn \(turn) timed out — choosing a move automatically")
+        chooseMove(Self.automaticMoveIndex(for: state.me))
     }
 
     /// 양쪽 선택이 모이면 턴 해상 — challenger 를 A 로 고정해 양쪽이 같은 좌변으로 계산.
@@ -500,8 +554,11 @@ final class BattleCenter {
         if !b.me.isAlive || !b.opp.isAlive {
             let iWon: Bool? = b.me.isAlive ? true : (b.opp.isAlive ? false : nil)
             dropConnection()
+            cancelTurnTimeout()
             phase = .finished(iWon: iWon, byForfeit: false)
             if let iWon, !isPracticeBattle { settleRankedBrawlIfNeeded(won: iWon) }
+        } else {
+            scheduleTurnTimeout()   // 다음 턴의 마감 — 멀티의 `finishRoundIfReady` 와 같은 자리다
         }
     }
 
@@ -596,6 +653,7 @@ final class BattleCenter {
     private func connectionDropped() {
         guard connection != nil else { return }
         connection = nil
+        cancelTurnTimeout()   // 상대가 사라진 뒤에 마감이 돌면 이미 끝난 배틀에 기술을 보낸다
         switch phase {
         case .battling:
             // 상대 이탈 = 몰수승.
@@ -614,6 +672,7 @@ final class BattleCenter {
         let conn = connection
         connection = nil          // connectionDropped 재진입 차단(cancel 콜백)
         conn?.cancel()
+        cancelTurnTimeout()
         incomingSnapshot = nil
     }
 

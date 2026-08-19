@@ -3,10 +3,11 @@ import AppKit
 /// 포켓몬 스프라이트를 런타임에 받아 로컬(Application Support)에 캐시. 레포/번들에 미포함.
 actor SpriteStore {
     static let shared = SpriteStore()
-    private let base = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon"
+    /// `spriteURL` 이 actor 밖에서도 주소를 만들 수 있어야 해서 static 이다(테스트가 그 주소를 잰다).
+    private static let base = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon"
     /// Higher-quality animated battle sprites. Keep this cache namespace separate from the
     /// former Gen-V assets so an existing install does not keep serving stale GIFs.
-    private let animatedBase = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown"
+    private static let animatedBase = "\(base)/other/showdown"
     private let itemBase = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items"
     private var mem: [String: Data] = [:]
     private var memOrder: [String] = []   // LRU 순서(최근 접근이 뒤). 상한 초과 시 앞(오래된 것)부터 evict
@@ -23,27 +24,35 @@ actor SpriteStore {
 
     /// 캐시 파일명 키 — 정적 PNG 키는 기존 형식을 유지하고, 애니메이션은 showdown 전용
     /// 네임스페이스를 사용해 이전 Gen-V GIF 캐시를 자동으로 무효화한다.
-    static func cacheKey(speciesID: Int, animated: Bool, shiny: Bool) -> String {
+    ///
+    /// `back` 은 배틀 필드가 쓰는 등 스프라이트다. **앞·뒤가 반드시 다른 키여야 한다** — 같은 키를
+    /// 쓰면 먼저 받은 쪽이 양쪽에 나와서 "등 스프라이트가 안 붙는다" 가 아니라 "정면이 나온다" 로
+    /// 보인다. 기본값이 `false` 인 것도 이유가 있다: 앞면 키가 바뀌면 기존 설치의 디스크 캐시가
+    /// 통째로 무효화된다.
+    static func cacheKey(speciesID: Int, animated: Bool, shiny: Bool, back: Bool = false) -> String {
+        let facing = back ? "back-" : ""
         if animated {
-            return "\(speciesID)-showdown-\(shiny ? "shiny" : "normal")"
+            return "\(speciesID)-showdown-\(facing)\(shiny ? "shiny" : "normal")"
         }
-        return "\(speciesID)-\(shiny ? "sh" : "")s"
+        return "\(speciesID)-\(facing)\(shiny ? "sh" : "")s"
     }
 
-    func data(speciesID: Int, animated: Bool, shiny: Bool = false) async -> Data? {
+    /// 원격 스프라이트 주소. 등 스프라이트는 앞면과 **폴더 하나 차이**다(계획 §6.4 에서 200 확인).
+    /// 위치를 틀리면 조용히 404 → 앞면 폴백으로 떨어져 증상이 "정면이 나온다" 가 된다.
+    nonisolated static func spriteURL(speciesID: Int, animated: Bool, shiny: Bool, back: Bool) -> String {
+        let root = animated ? animatedBase : base
+        let folders = (back ? "/back" : "") + (shiny ? "/shiny" : "")
+        return "\(root)\(folders)/\(speciesID).\(animated ? "gif" : "png")"
+    }
+
+    func data(speciesID: Int, animated: Bool, shiny: Bool = false, back: Bool = false) async -> Data? {
         if animated, !PokemonAssets.hasAnimatedSprite(speciesID: speciesID) { return nil }
-        let key = Self.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny)
+        let key = Self.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
         if let d = mem[key] { touch(key); return d }
         let ext = animated ? "gif" : "png"
         let file = dir.appendingPathComponent("\(key).\(ext)")
         if let d = try? Data(contentsOf: file) { remember(key, d); return d }
-        let urlStr: String
-        switch (animated, shiny) {
-        case (true, false):  urlStr = "\(animatedBase)/\(speciesID).gif"
-        case (true, true):   urlStr = "\(animatedBase)/shiny/\(speciesID).gif"
-        case (false, false): urlStr = "\(base)/\(speciesID).png"
-        case (false, true):  urlStr = "\(base)/shiny/\(speciesID).png"
-        }
+        let urlStr = Self.spriteURL(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
         guard let url = URL(string: urlStr),
               let (d, resp) = try? await URLSession.shared.data(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }
@@ -73,7 +82,7 @@ actor SpriteStore {
         if let d = mem[key] { touch(key); return d }
         let file = dir.appendingPathComponent("egg.png")
         if let d = try? Data(contentsOf: file) { remember(key, d); return d }
-        guard let url = URL(string: "\(base)/egg.png"),
+        guard let url = URL(string: "\(Self.base)/egg.png"),
               let (d, resp) = try? await URLSession.shared.data(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }
         try? d.write(to: file, options: .atomic)
@@ -108,8 +117,9 @@ enum SpriteLoader {
 
     /// 디스크 캐시에 이미 있으면 동기 반환(네트워크 없음). 없으면 nil.
     /// shiny 캐시 미스는 일반 캐시로 폴백 — 오프라인에서 live mon 이 알 글리프로 보이는 것 방지.
-    static func cachedImage(speciesID: Int, animated: Bool = false, shiny: Bool = false) -> NSImage? {
-        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny)
+    static func cachedImage(speciesID: Int, animated: Bool = false, shiny: Bool = false,
+                            back: Bool = false) -> NSImage? {
+        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
         if let image = imageCache.object(forKey: key as NSString) { return image }
         let ext = animated ? "gif" : "png"
         let f = cacheDir.appendingPathComponent("\(key).\(ext)")
@@ -117,34 +127,45 @@ enum SpriteLoader {
             imageCache.setObject(img, forKey: key as NSString)
             return img
         }
-        guard shiny else { return nil }
-        return cachedImage(speciesID: speciesID, animated: animated, shiny: false)
+        if shiny { return cachedImage(speciesID: speciesID, animated: animated, shiny: false, back: back) }
+        guard back else { return nil }
+        return cachedImage(speciesID: speciesID, animated: animated, shiny: shiny, back: false)
     }
 
     /// 정적 스프라이트. animated=true 면 Gen-V 움직이는 스프라이트(없으면 정적으로 폴백).
     /// shiny=true 는 색이 다른 스프라이트 — 미제공 종이면 일반으로 폴백.
-    static func image(speciesID: Int, animated: Bool = false, shiny: Bool = false) async -> NSImage? {
-        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny)
+    /// back=true 는 배틀 필드의 내 쪽 등 스프라이트 — 커버리지가 앞면과 달라 폴백 사슬이 한 칸 길다.
+    static func image(speciesID: Int, animated: Bool = false, shiny: Bool = false,
+                      back: Bool = false) async -> NSImage? {
+        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
         if let image = imageCache.object(forKey: key as NSString) { return image }
-        if animated, let d = await SpriteStore.shared.data(speciesID: speciesID, animated: true, shiny: shiny),
+        if animated,
+           let d = await SpriteStore.shared.data(speciesID: speciesID, animated: true, shiny: shiny, back: back),
            let img = NSImage(data: d) {
             imageCache.setObject(img, forKey: key as NSString)
             return img
         }
-        if let d = await SpriteStore.shared.data(speciesID: speciesID, animated: false, shiny: shiny),
+        if let d = await SpriteStore.shared.data(speciesID: speciesID, animated: false, shiny: shiny, back: back),
            let img = NSImage(data: d) {
-            imageCache.setObject(img, forKey: SpriteStore.cacheKey(speciesID: speciesID, animated: false, shiny: shiny) as NSString)
+            imageCache.setObject(img, forKey: SpriteStore.cacheKey(speciesID: speciesID, animated: false,
+                                                                  shiny: shiny, back: back) as NSString)
             return img
         }
         // shiny 미제공 → 일반 폴백
-        guard shiny else { return nil }
-        return await image(speciesID: speciesID, animated: animated, shiny: false)
+        if shiny { return await image(speciesID: speciesID, animated: animated, shiny: false, back: back) }
+        // 등 스프라이트가 아예 없는 종 → 앞면. 배틀 중에 아무것도 안 그리는 것보다 낫지만, 이 폴백은
+        // "등이 안 붙는다" 가 아니라 "정면이 나온다" 로 보이는 부류라 조용히 넘기지 않는다.
+        guard back else { return nil }
+        AppLog.write("sprite: no back asset for species \(speciesID) — using the front sprite")
+        return await image(speciesID: speciesID, animated: animated, shiny: shiny, back: false)
     }
 
-    static func decodedFrames(speciesID: Int, shiny: Bool) async -> [(image: NSImage, delay: TimeInterval)] {
-        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: true, shiny: shiny)
+    static func decodedFrames(speciesID: Int, shiny: Bool,
+                              back: Bool = false) async -> [(image: NSImage, delay: TimeInterval)] {
+        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: true, shiny: shiny, back: back)
         if let cached = frameCache[key] { return cached }
-        guard let data = await SpriteStore.shared.data(speciesID: speciesID, animated: true, shiny: shiny) else { return [] }
+        guard let data = await SpriteStore.shared.data(speciesID: speciesID, animated: true,
+                                                      shiny: shiny, back: back) else { return [] }
         let decoded = GIFDecoder.frames(from: data)
         guard decoded.count >= 2 else { return [] }
         frameCache[key] = decoded
