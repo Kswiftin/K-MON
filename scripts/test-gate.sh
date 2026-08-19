@@ -36,8 +36,8 @@ TEST_LOG=$(mktemp)
 trap 'rm -f "$TEST_LOG"' EXIT
 swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG"
 
-# 자체 코드의 컴파일러 warning 은 게이트 실패로 취급한다 — 쌓아두면 새로 생긴 게 옛것에 묻힌다.
-# 경로로 걸러 의존성(.build/checkouts)의 warning 은 빼둔다. 같은 warning 이 frontend 잡마다
+# 자체 코드의 컴파일러 warning 은 게이트 실패로 취급한다 — 쌓아 두면 새로 생긴 게 옛것에 묻힌다.
+# 경로로 걸러 의존성(.build/checkouts)의 warning 은 빼 둔다. 같은 warning 이 frontend 잡마다
 # 반복해서 찍히므로 sort -u 로 접는다.
 # ponytail: 재컴파일이 없는 warm build 는 warning 을 다시 찍지 않아 로컬에서 놓칠 수 있다 —
 #           신뢰 기준은 매번 cold build 인 CI 다. 로컬에서 볼 때는 `swift package clean` 뒤에 돌린다.
