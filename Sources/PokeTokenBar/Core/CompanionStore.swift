@@ -595,7 +595,12 @@ final class CompanionStore {
     /// 태우므로 임계·이월·진화·졸업이 실동작과 동일하게 발화한다. 프로덕션 호출 경로 없음.
     func debugAccrue(_ dust: Int) { accrue(dust) }
     /// 테스트 전용 — 인벤토리에 사탕 n개 주입(일일 지급 경로를 우회). 사용(useRareCandy) 테스트용.
-    func debugAddCandy(_ n: Int) { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += n; save() }
+    func debugAddCandy(_ n: Int) { debugAddItem(.rareCandy, n) }
+    /// 테스트 전용 — 인벤토리에 아이템 주입(상점 구매 경로를 우회). 진화 아이템 사용 테스트용.
+    func debugAddItem(_ kind: ItemKind, _ count: Int = 1) {
+        state.inventory[kind.rawValue, default: 0] += count
+        save()
+    }
     /// 테스트 전용 — 스타터 선택 완료 후의 기존 사용자 상태를 재현한다.
     func debugMarkStarterChosen() { state.starterChosen = true; save() }
     /// 테스트 전용 — 레벨 경험치를 직접 주입하고 진화·졸업 판정까지 트리거한다(applyUsage(0) 은
@@ -1319,8 +1324,16 @@ final class CompanionStore {
     }
 
     /// 졸업 가능 여부 — 최종 진화형에 도달했으면 언제든 사용자가 직접 졸업시킬 수 있다.
-    /// 진화가 없는 종(totalForms==1)만 레벨 30을 함께 요구한다(#19): 진화를 거친 종은 그 마지막
-    /// 진화 요구 레벨이 이미 관문이었지만, 무진화 종은 그 관문이 아예 없어 대신 세우는 기준이다.
+    ///
+    /// 레벨 30 면제는 **레벨로 진화해 온 개체**에만 준다(#19). 자동 진화 경로가
+    /// `guard a.level >= requiredLevel` 로 막혀 있어, 최종형에 닿았다는 것 자체가 그 종의 마지막
+    /// 진화 요구 레벨을 통과했다는 뜻이기 때문이다. 무진화 종(totalForms==1)은 그 관문이 아예
+    /// 없어 레벨 30 을 대신 세운다.
+    ///
+    /// 아이템·교환 진화는 그 관문이 없다 — `useEvolutionItem` 은 레벨을 보지 않는다. 그래서
+    /// 500 짜리 돌 하나로 레벨 1 개체를 최종형으로 만든 뒤 졸업해, 20,000 짜리 알과 도감·트레이너
+    /// 포인트·주간 미션을 한 번에 받아내는 경로가 열려 있었다(개체는 박스에 버리면 그만이다).
+    /// 그 경로로 온 개체는 면제 대상이 아니다.
     var canGraduate: Bool {
         guard let a = state.active, let line = currentLine,
               line.tree.node(withID: a.currentID)?.children.isEmpty == true else { return false }
@@ -1328,7 +1341,22 @@ final class CompanionStore {
         // 다시 꺼내면 최종형·레벨 조건은 그대로 만족한다 — 이 검사가 없으면 졸업 → 스위치 → 졸업을
         // 반복해 알을 무한히 받아낼 수 있다. 도감 기록도 그 개체당 한 번이어야 한다.
         guard !a.isGraduated else { return false }
-        return a.totalForms > 1 || a.level >= PokemonBalance.graduationRequiredLevel
+        let earnedExemption = a.totalForms > 1 && !grewIntoFinalByItem(a, in: line)
+        return earnedExemption || a.level >= PokemonBalance.graduationRequiredLevel
+    }
+
+    /// 지금 형태까지 오는 동안 아이템·교환 진화를 한 번이라도 거쳤는가.
+    ///
+    /// 걸어온 길(`pathIDs`)의 전이를 하나씩 트리에서 조회한다 — 개체에는 "어떻게 진화했는지" 가
+    /// 남지 않아 경로를 되짚는 수밖에 없다. 한 번이라도 섞였으면 레벨 관문을 지나온 게 아니다.
+    private func grewIntoFinalByItem(_ mon: MonState, in line: EvoLine) -> Bool {
+        for (index, speciesID) in mon.pathIDs.enumerated() where index > 0 {
+            guard let parent = line.tree.node(withID: mon.pathIDs[index - 1]),
+                  let child = parent.children.first(where: { $0.speciesID == speciesID })
+            else { continue }
+            if child.evolutionTrigger == "use-item" || child.evolutionTrigger == "trade" { return true }
+        }
+        return false
     }
 
     /// 졸업 — 도감에 기록하고 **개체는 박스로 보낸 뒤** 새 알을 시작한다. 사용자가 직접 누르는

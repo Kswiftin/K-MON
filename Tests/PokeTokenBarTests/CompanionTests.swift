@@ -171,6 +171,10 @@ private let wurmpleLine = makeLine(base: 265, tree: node(265, [node(266, [node(2
 private let delayedBranchLine = makeLine(base: 43, tree: node(43, [node(44, [node(45), node(182)])]))
 // 무진화: 20
 private let noEvo = makeLine(base: 20, tree: node(20))
+// 돌 진화: 30 → 31. `useEvolutionItem` 은 레벨을 보지 않으므로 레벨 관문이 없는 유일한 경로다.
+private let stoneLine = makeLine(base: 30, tree: node(30, [
+    EvoNode(speciesID: 31, children: [], evolutionTrigger: "use-item", evolutionItem: "fire-stone"),
+]))
 private let fixedNow = Date(timeIntervalSince1970: 1_700_000_000)
 
 // MARK: 스토어
@@ -686,6 +690,52 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertNotNil(s.state.active, "사용자가 누르기 전엔 졸업하지 않는다")
         XCTAssertTrue(s.state.dex.isEmpty)
         XCTAssertTrue(s.canGraduate, "이제 졸업 버튼이 뜬다")
+    }
+
+    /// 트리거 재현: 500 짜리 돌 하나면 레벨 1 개체가 최종형이 된다(`useEvolutionItem` 은 레벨을
+    /// 보지 않는다). 예전엔 그 상태로 졸업돼 20,000 짜리 알과 도감·트레이너 포인트·주간 미션을
+    /// 한 번에 받아냈고, 개체는 박스에 버리면 그만이었다 — 이 앱의 육성 루프를 통째로 건너뛰는 값이다.
+    func testStoneEvolvedCompanionCannotGraduateBeforeLevelThirty() async {
+        let s = store(stoneLine)
+        await s.hatch(baseID: 30)
+        let eggsBefore = s.focusEggCount
+        s.debugAddItem(.fireStone)
+
+        XCTAssertTrue(s.useEvolutionItem(.fireStone), "돌 진화 자체는 막지 않는다")
+        XCTAssertEqual(s.currentSpeciesID, 31, "최종형에 도달했지만")
+        XCTAssertLessThan(s.state.active!.level, PokemonBalance.graduationRequiredLevel)
+
+        XCTAssertFalse(s.canGraduate, "레벨 관문을 지나온 개체가 아니다")
+        XCTAssertFalse(s.graduateCompanion())
+        XCTAssertTrue(s.state.dex.isEmpty, "도감도")
+        XCTAssertEqual(s.focusEggCount, eggsBefore, "졸업 보상 알도 나가지 않는다")
+    }
+
+    /// 관문을 채우면 열린다 — 돌 진화를 금지하는 게 아니라 졸업 보상에 레벨을 요구하는 것이다.
+    func testStoneEvolvedCompanionGraduatesOnceItReachesLevelThirty() async {
+        let s = store(stoneLine)
+        await s.hatch(baseID: 30)
+        s.debugAddItem(.fireStone)
+        XCTAssertTrue(s.useEvolutionItem(.fireStone))
+
+        s.debugAccrueLevelExperience(300_000_000)
+        XCTAssertTrue(s.canGraduate)
+        XCTAssertTrue(s.graduateCompanion())
+        XCTAssertEqual(s.dexEntries.count, 1)
+    }
+
+    /// 대조군: 레벨로 진화해 온 개체의 면제는 그대로다. 최종형에 닿았다는 것 자체가 그 종의 마지막
+    /// 진화 요구 레벨을 통과했다는 뜻이므로(#19), 아이템 경로를 막으면서 이쪽까지 막으면 과잉이다.
+    /// 이 대조군이 없으면 "전부 레벨 30 요구" 로 고쳐 놓고도 위 두 테스트는 초록이다.
+    func testLevelEvolvedCompanionKeepsItsExemption() async {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
+        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
+
+        XCTAssertEqual(s.currentSpeciesID, 3)
+        XCTAssertLessThan(s.state.active!.level, PokemonBalance.graduationRequiredLevel)
+        XCTAssertTrue(s.canGraduate, "레벨 진화 경로의 면제는 유지된다")
     }
 
     /// 졸업해도 개체는 박스로 간다 — 도감(DexEntry)엔 레벨·경험치가 안 남으므로, 개체를 버리면
