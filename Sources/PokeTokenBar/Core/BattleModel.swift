@@ -219,6 +219,51 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 
 }
 
+// MARK: - 배틀 중 한쪽의 상태
+
+/// 대전 중 한쪽이 들고 있는 것 전부 — 스냅샷은 *교환 단위*고, 이쪽은 **턴을 넘어 사는 상태**다.
+///
+/// 세 모드(1v1 LAN `NetBattleState`, 팀 연습 `TeamPracticeBattle`, 2~4인 `MultiplayerFighter`)가
+/// 각자 `hp`/`pp` 를 나열하고 있었다. 데미지 *함수* 는 `resolveAttack` 하나로 합쳐졌는데 상태는
+/// 아직 세 곳이었다. 그러면 상태이상·랭크업·지닌물건처럼 턴을 넘어 사는 기전은 같은 것을 세 번
+/// 쓰게 되고, 한쪽만 고치면 모드가 조용히 갈라진다. 그래서 상태도 이 타입 하나로 모은다.
+struct BattleSide: Sendable, Equatable {
+    var snapshot: BattleSnapshot
+    /// 유효 스탯 — 배틀에 들어올 때 1회 계산한다. `effectiveStats()` 를 그때그때 부르면 정렬
+    /// 비교자 안에서 비교 횟수만큼 다시 계산되고(멀티가 그랬다), 랭크업이 들어오는 순간
+    /// "부스트 없는 원래 스피드로 정렬" 이라는 오답이 된다.
+    let stats: BattleStats
+    var hp: Int
+    /// 이 배틀에서 쓸 무브셋 — 스냅샷에 없으면(구버전 세이브·fetch 실패) 합성 무브셋.
+    /// 세 모드가 각자 `snapshot.moves ?? fallbackSet(...)` 를 반복하던 자리다.
+    let moves: [MoveSpec]
+    var pp: [Int]
+
+    init(_ snapshot: BattleSnapshot) {
+        self.snapshot = snapshot
+        stats = snapshot.effectiveStats()
+        hp = stats.hp
+        moves = snapshot.moves ?? MoveSpec.fallbackSet(types: snapshot.types)
+        pp = moves.map(\.pp)
+    }
+
+    var isAlive: Bool { hp > 0 }
+
+    /// 고를 수 있는 기술이 하나도 없으면 발버둥.
+    var mustStruggle: Bool { !pp.contains { $0 > 0 } }
+
+    /// 인덱스로 기술 — 범위 밖이거나 음수면 발버둥(PP 소진 선택은 −1 로 온다).
+    func move(at index: Int) -> MoveSpec {
+        moves.indices.contains(index) ? moves[index] : .struggle()
+    }
+
+    /// 이번 턴에 이 인덱스의 기술을 쓸 수 있는가 — 인덱스 범위와 남은 PP 를 **같이** 본다.
+    /// `pp` 는 와이어로 들어오는 값이라 `moves` 와 길이가 어긋날 수 있다(경계에서 함께 막는다).
+    func canUse(moveAt index: Int) -> Bool {
+        moves.indices.contains(index) && pp.indices.contains(index) && pp[index] > 0
+    }
+}
+
 // MARK: - 배틀 엔진
 
 /// 결정적 RNG — 같은 seed 면 같은 배틀(두 참가자가 각자 실행해도 동일 결과).
@@ -255,21 +300,24 @@ enum BattleEngine {
     ///
     /// 예전엔 이 계산이 1v1(`resolveTurn`)과 멀티(`resolveAttack`)에 각각 복사돼 있었다. 한쪽만
     /// 고치면 두 모드가 조용히 갈라지고, 새 기전을 넣을 때마다 같은 코드를 두 번 써야 했다.
-    static func resolveAttack(attacker: BattleSnapshot, attackerStats: BattleStats,
-                              defender: BattleSnapshot, defenderStats: BattleStats,
+    static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         if let accuracy = move.accuracy, Int(rng.next() % 100) >= accuracy {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
         }
         // 발버둥은 무속성(상성·STAB 미적용).
         let isStruggle = move.id == MoveSpec.struggleID
-        let effectiveness = isStruggle ? 1.0 : TypeChart.effectiveness(move.type, against: defender.types)
-        let stab = (!isStruggle && attacker.types.contains(move.type)) ? 1.5 : 1.0
-        let attack = move.damageClass == .physical ? attackerStats.atk : attackerStats.spa
-        let defense = move.damageClass == .physical ? defenderStats.def : defenderStats.spd
+        // Phase 5(특성·지닌물건)의 타입 면역 특성(부유·타오르는불꽃·저수)이 들어올 자리다.
+        // 상성 배율을 계산하는 지점이 여기 한 곳뿐이다. 지금은 코드를 넣지 않는다.
+        let effectiveness = isStruggle ? 1.0
+            : TypeChart.effectiveness(move.type, against: defender.snapshot.types)
+        let stab = (!isStruggle && attacker.snapshot.types.contains(move.type)) ? 1.5 : 1.0
+        let attack = move.damageClass == .physical ? attacker.stats.atk : attacker.stats.spa
+        let defense = move.damageClass == .physical ? defender.stats.def : defender.stats.spd
         let isCritical = rng.next() % critDenominator == 0
         let roll = 0.85 + Double(rng.next() % 16) / 100.0
-        let base = Double((2 * attacker.level / 5 + 2) * move.power * attack / max(1, defense)) / 50.0 + 2.0
+        let base = Double((2 * attacker.snapshot.level / 5 + 2) * move.power * attack
+                          / max(1, defense)) / 50.0 + 2.0
         let damage = effectiveness == 0 ? 0
             : max(1, Int(base * stab * effectiveness * (isCritical ? 1.5 : 1.0) * roll))
         return AttackOutcome(missed: false, damage: damage,
@@ -306,28 +354,24 @@ extension BattleEngine {
     /// 양쪽 기술 선택이 모이면 한 턴 해상. 순수·결정적 — 같은 rng 상태·입력이면 두 피어가 같은 결과를
     /// 각자 계산한다(결과 자체는 네트워크로 보내지 않는다 → 변조 여지 축소).
     /// rng 소비 순서가 프로토콜의 일부다 — 브랜치를 바꾸면 두 피어 결과가 갈라진다.
-    static func resolveTurn(a: BattleSnapshot, b: BattleSnapshot,
-                            statsA: BattleStats, statsB: BattleStats,
-                            hpA: inout Int, hpB: inout Int,
+    static func resolveTurn(a: inout BattleSide, b: inout BattleSide,
                             moveA: MoveSpec, moveB: MoveSpec,
                             rng: inout SplitMix64) -> [NetBattleEvent] {
         var events: [NetBattleEvent] = []
         let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
-                                     speedA: statsA.spe, speedB: statsB.spe, rng: &rng)
+                                     speedA: a.stats.spe, speedB: b.stats.spe, rng: &rng)
         for attackerIsA in aIsFirst ? [true, false] : [false, true] {
-            guard hpA > 0 && hpB > 0 else { break }   // 선공에 기절하면 후공 없음
-            let (atk, atkStats, move) = attackerIsA ? (a, statsA, moveA) : (b, statsB, moveB)
-            let (def, defStats) = attackerIsA ? (b, statsB) : (a, statsA)
+            guard a.isAlive && b.isAlive else { break }   // 선공에 기절하면 후공 없음
+            let move = attackerIsA ? moveA : moveB
+            let outcome = attackerIsA
+                ? resolveAttack(attacker: a, defender: b, move: move, rng: &rng)
+                : resolveAttack(attacker: b, defender: a, move: move, rng: &rng)
 
-            let outcome = resolveAttack(attacker: atk, attackerStats: atkStats,
-                                        defender: def, defenderStats: defStats,
-                                        move: move, rng: &rng)
-
-            if attackerIsA { hpB = max(0, hpB - outcome.damage) } else { hpA = max(0, hpA - outcome.damage) }
+            if attackerIsA { b.hp = max(0, b.hp - outcome.damage) } else { a.hp = max(0, a.hp - outcome.damage) }
             events.append(NetBattleEvent(attackerIsA: attackerIsA, moveID: move.id, missed: outcome.missed,
                                          damage: outcome.damage, effectiveness: outcome.effectiveness,
                                          isCritical: outcome.isCritical,
-                                         defenderHPAfter: attackerIsA ? hpB : hpA))
+                                         defenderHPAfter: attackerIsA ? b.hp : a.hp))
         }
         return events
     }

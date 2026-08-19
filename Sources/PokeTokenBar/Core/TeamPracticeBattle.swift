@@ -1,23 +1,8 @@
 import Foundation
 
-struct TeamBattleSlot: Identifiable {
-    let id = UUID()
-    var snapshot: BattleSnapshot
-    var hp: Int
-    var pp: [Int]
-
-    init(_ snapshot: BattleSnapshot) {
-        self.snapshot = snapshot
-        hp = snapshot.effectiveStats().hp
-        pp = (snapshot.moves ?? MoveSpec.fallbackSet(types: snapshot.types)).map(\.pp)
-    }
-
-    var isAlive: Bool { hp > 0 }
-}
-
 struct TeamPracticeBattle {
-    var mine: [TeamBattleSlot]
-    var opponents: [TeamBattleSlot]
+    var mine: [BattleSide]
+    var opponents: [BattleSide]
     var myActive = 0
     var opponentActive = 0
     var turn = 1
@@ -25,8 +10,8 @@ struct TeamPracticeBattle {
     var rng: SplitMix64
     var result: Bool?
 
-    var mySlot: TeamBattleSlot { mine[myActive] }
-    var opponentSlot: TeamBattleSlot { opponents[opponentActive] }
+    var mySlot: BattleSide { mine[myActive] }
+    var opponentSlot: BattleSide { opponents[opponentActive] }
     var availableSwitches: [Int] { mine.indices.filter { $0 != myActive && mine[$0].isAlive } }
 
     /// 교체 — **그 턴의 행동이다.** 본가와 같이 교체하는 쪽은 공격하지 못하고, 새로 나온 포켓몬이
@@ -44,25 +29,25 @@ struct TeamPracticeBattle {
     }
 
     /// CPU 가 이번에 쓸 기술 — PP 가 남은 것 중 하나, 전부 떨어졌으면 발버둥(index −1).
-    private func cpuMoveChoice() -> (move: MoveSpec, index: Int) {
+    ///
+    /// **배틀의 `rng` 에서 뽑는다.** `randomElement()`(시스템 RNG)를 쓰던 때는 같은 seed 로도 배틀이
+    /// 재현되지 않았다. 로컬 전용이라 desync 는 없지만 seed 를 고정한 회귀 테스트를 쓸 수 없었고,
+    /// 상태이상·랭크업처럼 확률 분기가 늘어나는 기전은 그 테스트 없이 검증할 방법이 없다.
+    private mutating func cpuMoveChoice() -> (move: MoveSpec, index: Int) {
         let slot = opponents[opponentActive]
-        let moves = slot.snapshot.moves ?? MoveSpec.fallbackSet(types: slot.snapshot.types)
-        guard let index = slot.pp.indices.filter({ slot.pp[$0] > 0 }).randomElement() else {
-            return (MoveSpec.struggle(), -1)
-        }
-        return (moves[index], index)
+        let candidates = slot.pp.indices.filter { slot.pp[$0] > 0 }
+        guard !candidates.isEmpty else { return (MoveSpec.struggle(), -1) }
+        let index = candidates[Int(rng.next() % UInt64(candidates.count))]
+        return (slot.move(at: index), index)
     }
 
     /// 상대 공격 1회만 해상 — 내가 교체에 턴을 썼을 때 상대 몫이다.
     private mutating func opponentAttacksAlone() {
-        let opponent = opponents[opponentActive]
-        guard opponent.isAlive, mine[myActive].isAlive else { return }
+        guard opponents[opponentActive].isAlive, mine[myActive].isAlive else { return }
         let (move, moveIndex) = cpuMoveChoice()
         if moveIndex >= 0 { opponents[opponentActive].pp[moveIndex] -= 1 }
-        let outcome = BattleEngine.resolveAttack(
-            attacker: opponent.snapshot, attackerStats: opponent.snapshot.effectiveStats(),
-            defender: mine[myActive].snapshot, defenderStats: mine[myActive].snapshot.effectiveStats(),
-            move: move, rng: &rng)
+        let outcome = BattleEngine.resolveAttack(attacker: opponents[opponentActive],
+                                                 defender: mine[myActive], move: move, rng: &rng)
         mine[myActive].hp = max(0, mine[myActive].hp - outcome.damage)
         events.append(NetBattleEvent(attackerIsA: false, moveID: move.id, missed: outcome.missed,
                                      damage: outcome.damage, effectiveness: outcome.effectiveness,
@@ -71,21 +56,14 @@ struct TeamPracticeBattle {
 
     mutating func useMove(_ index: Int) -> Bool {
         guard result == nil, mine[myActive].isAlive, opponents[opponentActive].isAlive else { return false }
-        let myMoves = mine[myActive].snapshot.moves ?? MoveSpec.fallbackSet(types: mine[myActive].snapshot.types)
-        let myIndex = mine[myActive].pp.contains(where: { $0 > 0 }) ? index : -1
-        guard myIndex == -1 || (myMoves.indices.contains(myIndex) && mine[myActive].pp[myIndex] > 0) else { return false }
+        let myIndex = mine[myActive].mustStruggle ? -1 : index
+        guard myIndex == -1 || mine[myActive].canUse(moveAt: myIndex) else { return false }
+        let myMove = mine[myActive].move(at: myIndex)
         let (cpuMove, cpuIndex) = cpuMoveChoice()
-        let myMove = myIndex < 0 ? MoveSpec.struggle() : myMoves[myIndex]
         if myIndex >= 0 { mine[myActive].pp[myIndex] -= 1 }
         if cpuIndex >= 0 { opponents[opponentActive].pp[cpuIndex] -= 1 }
-        var myHP = mine[myActive].hp
-        var cpuHP = opponents[opponentActive].hp
-        let resolved = BattleEngine.resolveTurn(
-            a: mine[myActive].snapshot, b: opponents[opponentActive].snapshot,
-            statsA: mine[myActive].snapshot.effectiveStats(), statsB: opponents[opponentActive].snapshot.effectiveStats(),
-            hpA: &myHP, hpB: &cpuHP, moveA: myMove, moveB: cpuMove, rng: &rng)
-        mine[myActive].hp = myHP
-        opponents[opponentActive].hp = cpuHP
+        let resolved = BattleEngine.resolveTurn(a: &mine[myActive], b: &opponents[opponentActive],
+                                                moveA: myMove, moveB: cpuMove, rng: &rng)
         events.append(contentsOf: resolved)
         turn += 1
         advanceFainted()

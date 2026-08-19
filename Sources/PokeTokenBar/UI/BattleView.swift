@@ -282,12 +282,12 @@ struct BattleView: View {
                             }
                             Text(fighter.trainerName).font(.caption2).bold().lineLimit(1)
                         }
-                        SpriteView(speciesID: fighter.snapshot.speciesID, size: 38,
-                                   shiny: fighter.snapshot.isShiny)
+                        SpriteView(speciesID: fighter.side.snapshot.speciesID, size: 38,
+                                   shiny: fighter.side.snapshot.isShiny)
                             .opacity(fighter.isAlive ? 1 : 0.25)
-                        ProgressView(value: Double(fighter.hp), total: Double(max(1, fighter.snapshot.effectiveStats().hp)))
+                        ProgressView(value: Double(fighter.side.hp), total: Double(max(1, fighter.side.stats.hp)))
                             .tint(fighter.isAlive ? .green : .gray).controlSize(.mini)
-                        Text("HP \(fighter.hp)").font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
+                        Text("HP \(fighter.side.hp)").font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
                     }
                     .padding(5)
                     .background((multiplayerTargetID == fighter.id ? Color.red.opacity(0.12) : Color.primary.opacity(0.04)),
@@ -323,19 +323,19 @@ struct BattleView: View {
                      : (store.language == .ko ? "기술을 선택하세요." : "Choose a move."))
                     .font(.caption).bold()
                 if let me {
-                    let moves = me.snapshot.moves ?? MoveSpec.fallbackSet(types: me.snapshot.types)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
-                        ForEach(Array(moves.enumerated()), id: \.offset) { index, move in
+                        ForEach(Array(me.side.moves.enumerated()), id: \.offset) { index, move in
                             Button {
                                 guard let target = multiplayerTargetID else { return }
                                 center.multiplayer.submitAction(targetID: target, moveIndex: index)
                             } label: {
                                 VStack(spacing: 1) {
                                     Text(move.name(store.language)).font(.caption2).bold().lineLimit(1)
-                                    Text("PP \(me.pp[index])").font(.system(size: 8)).foregroundStyle(.secondary)
+                                    Text("PP \(me.side.pp[index])").font(.system(size: 8)).foregroundStyle(.secondary)
                                 }.frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.bordered).disabled(multiplayerTargetID == nil || me.pp[index] <= 0)
+                            .buttonStyle(.bordered)
+                            .disabled(multiplayerTargetID == nil || me.side.pp[index] <= 0)
                         }
                     }
                 }
@@ -343,8 +343,8 @@ struct BattleView: View {
             if !center.multiplayer.combatEvents.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(center.multiplayer.combatEvents.suffix(4).enumerated()), id: \.offset) { _, event in
-                        let attacker = fighters.first { $0.id == event.attackerID }?.snapshot.name ?? "?"
-                        let target = fighters.first { $0.id == event.targetID }?.snapshot.name ?? "?"
+                        let attacker = fighters.first { $0.id == event.attackerID }?.side.snapshot.name ?? "?"
+                        let target = fighters.first { $0.id == event.targetID }?.side.snapshot.name ?? "?"
                         Text(event.missed ? "\(attacker) → \(target): MISS"
                              : "\(attacker) → \(target): -\(event.damage)")
                             .font(.caption2).foregroundStyle(.secondary)
@@ -459,8 +459,8 @@ struct BattleView: View {
     private func arenaView(_ b: NetBattleState) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
-                snapshotCard(b.my, title: l.battleMyPokemon,
-                             hpRatio: Double(b.myHP) / Double(max(1, b.myStats.hp)))
+                snapshotCard(b.me.snapshot, title: l.battleMyPokemon,
+                             hpRatio: Double(b.me.hp) / Double(max(1, b.me.stats.hp)))
                 VStack(spacing: 2) {
                     Text(l.battleTurnLabel(b.turn))
                         .font(.caption2)
@@ -470,8 +470,9 @@ struct BattleView: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.top, 34)
-                snapshotCard(b.opp, title: b.opp.trainer.map { l.battleTrainerLabel($0) } ?? "?",
-                             hpRatio: Double(b.oppHP) / Double(max(1, b.oppStats.hp)))
+                snapshotCard(b.opp.snapshot,
+                             title: b.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
+                             hpRatio: Double(b.opp.hp) / Double(max(1, b.opp.stats.hp)))
             }
             if !b.events.isEmpty { eventLog(b) }
             if b.myChoice == nil {
@@ -502,7 +503,7 @@ struct BattleView: View {
                 teamSlotCard(practice.opponentSlot, title: "CPU")
             }
             HStack(spacing: 4) {
-                ForEach(Array(practice.mine.enumerated()), id: \.element.id) { index, slot in
+                ForEach(Array(practice.mine.enumerated()), id: \.offset) { index, slot in
                     Button { center.switchTeamPractice(to: index) } label: {
                         VStack(spacing: 1) {
                             SpriteView(speciesID: slot.snapshot.speciesID, size: 25, shiny: slot.snapshot.isShiny)
@@ -514,9 +515,8 @@ struct BattleView: View {
                 }
             }
             Text(store.language == .ko ? "기술" : "Moves").font(.caption.bold())
-            let moves = practice.mySlot.snapshot.moves ?? MoveSpec.fallbackSet(types: practice.mySlot.snapshot.types)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
-                ForEach(Array(moves.enumerated()), id: \.element.id) { index, move in
+                ForEach(Array(practice.mySlot.moves.enumerated()), id: \.element.id) { index, move in
                     moveButton(move, pp: practice.mySlot.pp[index]) { center.chooseTeamPracticeMove(index) }
                         .disabled(practice.mySlot.pp[index] <= 0)
                 }
@@ -529,12 +529,12 @@ struct BattleView: View {
         }
     }
 
-    private func teamSlotCard(_ slot: TeamBattleSlot, title: String) -> some View {
+    private func teamSlotCard(_ slot: BattleSide, title: String) -> some View {
         VStack(spacing: 3) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
             SpriteView(speciesID: slot.snapshot.speciesID, size: 52, animated: true, shiny: slot.snapshot.isShiny)
             Text(slot.snapshot.name).font(.caption.bold()).lineLimit(1)
-            ProgressView(value: Double(slot.hp), total: Double(max(1, slot.snapshot.effectiveStats().hp)))
+            ProgressView(value: Double(slot.hp), total: Double(max(1, slot.stats.hp)))
                 .tint(slot.hp > 0 ? .green : .red)
         }.frame(maxWidth: .infinity).padding(6).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
     }
@@ -545,9 +545,9 @@ struct BattleView: View {
             if b.mustStruggle {
                 moveButton(MoveSpec.struggle(), pp: nil) { center.chooseMove(-1) }
             } else {
-                ForEach(Array(b.myMoves.enumerated()), id: \.element.id) { idx, move in
-                    moveButton(move, pp: b.myPP[idx]) { center.chooseMove(idx) }
-                        .disabled(b.myPP[idx] <= 0)
+                ForEach(Array(b.me.moves.enumerated()), id: \.element.id) { idx, move in
+                    moveButton(move, pp: b.me.pp[idx]) { center.chooseMove(idx) }
+                        .disabled(b.me.pp[idx] <= 0)
                 }
             }
         }
@@ -632,8 +632,8 @@ struct BattleView: View {
     private func eventLine(_ e: NetBattleEvent, battle b: NetBattleState) -> some View {
         // 이벤트 좌변(A/B) → 내/상대 매핑.
         let mineActed = e.attackerIsA == b.iAmA
-        let attacker = mineActed ? b.my.name : b.opp.name
-        let moves = mineActed ? b.myMoves : b.oppMoves
+        let attacker = mineActed ? b.me.snapshot.name : b.opp.snapshot.name
+        let moves = mineActed ? b.me.moves : b.opp.moves
         let moveName = (moves.first { $0.id == e.moveID } ?? .struggle()).name(store.language)
         let text: String
         if e.missed {
