@@ -32,6 +32,7 @@ LOGIC_CORE=(
   # "이기지 않은 쪽까지 승리" 결함이 세 경로에 퍼졌다 — 판정은 순수 함수라 게이트 대상이다.
   "Sources/PokeTokenBar/Core/TeamPracticeBattle.swift"
   "Sources/PokeTokenBar/Core/MultiplayerBattle.swift"
+  "Sources/PokeTokenBar/Core/BattleReplay.swift"
   "Sources/PokeTokenBar/Core/PokeathlonPool.swift"
   "Sources/PokeTokenBar/Core/GameNumberFormatter.swift"
 )
