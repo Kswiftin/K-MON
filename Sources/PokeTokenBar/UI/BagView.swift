@@ -100,7 +100,7 @@ private struct ItemCard: View {
         case .rareCandy: return store.canUseRareCandy
         case .mint:      return store.canUseMint
         case .shinyCharm: return false   // 보유형 — 사용 개념 없음(상시 효과)
-        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone:
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone:
             return store.canUseEvolutionItem(kind)
         }
     }
@@ -110,7 +110,7 @@ private struct ItemCard: View {
         case .rareCandy: return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
         case .mint:      return l.mintEffectHint
         case .shinyCharm: return l.shinyCharmEffectHint
-        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone:
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone:
             return store.language == .ko ? "진화 가능할 때 사용" : "Use when evolution is available"
         }
     }
@@ -119,7 +119,7 @@ private struct ItemCard: View {
         case .rareCandy: _ = store.useRareCandy()
         case .mint:      _ = store.useMint()
         case .shinyCharm: break   // 보유형 — 사용 동작 없음
-        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone:
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone:
             _ = store.useEvolutionItem(kind)
         }
     }

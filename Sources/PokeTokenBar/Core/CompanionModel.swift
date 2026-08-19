@@ -148,6 +148,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case mint
     case shinyCharm
     case linkingCord, fireStone, waterStone, thunderStone, leafStone, iceStone, moonStone, sunStone
+    // 4세대 추가분 — 없으면 로즈레이드·눈여아·무레인 등 8종이 진화할 방법이 아예 없다.
+    case shinyStone, duskStone, dawnStone
 
     /// PokéAPI 아이템 스프라이트 파일명(.../sprites/items/{name}.png). nil = 스프라이트 없음(이모지 폴백만).
     var spriteName: String? {
@@ -159,6 +161,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .fireStone: return "fire-stone"; case .waterStone: return "water-stone"
         case .thunderStone: return "thunder-stone"; case .leafStone: return "leaf-stone"
         case .iceStone: return "ice-stone"; case .moonStone: return "moon-stone"; case .sunStone: return "sun-stone"
+        case .shinyStone: return "shiny-stone"; case .duskStone: return "dusk-stone"; case .dawnStone: return "dawn-stone"
         }
     }
     /// 스프라이트 로딩 전/미제공/실패 시 폴백 이모지.
@@ -170,6 +173,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .linkingCord: return "🔗"
         case .fireStone: return "🔥"; case .waterStone: return "💧"; case .thunderStone: return "⚡"
         case .leafStone: return "🍃"; case .iceStone: return "❄️"; case .moonStone: return "🌙"; case .sunStone: return "☀️"
+        case .shinyStone: return "💠"; case .duskStone: return "🌑"; case .dawnStone: return "🌅"
         }
     }
     /// 상점 판매가(재화 = 사용한 토큰). nil = 상점 미판매.
@@ -178,13 +182,13 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .rareCandy: return RareCandy.price
         case .mint: return Mint.price
         case .shinyCharm: return nil
-        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone: return 500
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone: return 500
         }
     }
     /// 보유형(패시브) 아이템 — 소비하지 않고 보유하는 동안 상시 효과. 1회 구매(재구매 불가), 가방엔 "적용 중" 표시.
     var isPassive: Bool {
         switch self {
-        case .rareCandy, .mint, .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone: return false
+        case .rareCandy, .mint, .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone: return false
         case .shinyCharm: return true
         }
     }
@@ -195,6 +199,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .fireStone: return "fire-stone"; case .waterStone: return "water-stone"
         case .thunderStone: return "thunder-stone"; case .leafStone: return "leaf-stone"
         case .iceStone: return "ice-stone"; case .moonStone: return "moon-stone"; case .sunStone: return "sun-stone"
+        case .shinyStone: return "shiny-stone"; case .duskStone: return "dusk-stone"; case .dawnStone: return "dawn-stone"
         default: return nil
         }
     }
