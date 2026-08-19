@@ -618,7 +618,6 @@ struct CompanionHeader: View {
                 .padding(8)
                 .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
             }
-            if !store.boxedMons.isEmpty { CompanionBoxView(store: store) }
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
             if store.canGraduate { GraduateCard(store: store) }
             if let prompt = store.moveLearningPrompt { MoveLearningCard(store: store, prompt: prompt) }
@@ -937,49 +936,6 @@ private struct EvolutionPromptCard: View {
         }
         .padding(9)
         .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
-    }
-}
-
-private struct CompanionBoxView: View {
-    let store: CompanionStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(store.language == .ko ? "포켓몬 박스" : "Pokémon Box", systemImage: "shippingbox.fill")
-                .font(.caption.weight(.semibold))
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    ForEach(store.boxedMons, id: \.id) { mon in
-                        BoxMonCard(store: store, mon: mon)
-                    }
-                }
-            }
-        }
-        .padding(8)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
-    }
-}
-
-private struct BoxMonCard: View {
-    let store: CompanionStore
-    let mon: MonState
-    @State private var name = ""
-    @State private var types: [PokemonType] = []
-
-    var body: some View {
-        Button { store.switchCompanion(to: mon.id) } label: {
-            VStack(spacing: 3) {
-                SpriteView(speciesID: mon.currentID, size: 42, shiny: mon.isShiny)
-                Text(name.isEmpty ? "#\(mon.currentID)" : name).font(.caption2.bold()).lineLimit(1)
-                Text("Lv.\(mon.level)").font(.system(size: 8)).foregroundStyle(.secondary)
-                HStack(spacing: 2) { ForEach(types, id: \.self) { TypeBadge(type: $0, language: store.language) } }
-            }.frame(width: 82).padding(5)
-        }
-        .buttonStyle(.bordered)
-        .task(id: mon.currentID) {
-            name = await store.resolveSpeciesName(mon.currentID)
-            types = (try? await PokeAPIClient.shared.battleProfile(speciesID: mon.currentID).types) ?? []
-        }
     }
 }
 
