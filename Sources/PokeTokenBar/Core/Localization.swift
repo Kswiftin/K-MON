@@ -407,6 +407,28 @@ struct L {
     func moveAccuracyShort(_ accuracy: Int) -> String { t("명중 \(accuracy)", "Acc \(accuracy)", "命中 \(accuracy)") }
     func movePP(_ pp: Int) -> String { "PP \(pp)" }
 
+    var moveHoverHint: String {
+        t("기술에 마우스를 올리면 설명이 나와요.",
+          "Hover a move to see what it does.",
+          "わざにカーソルを合わせると説明が出ます。")
+    }
+
+    /// 기술 한 줄 요약 — 설명이 없을 때 쓰는 폴백이자 툴팁 상세줄. 두 자리가 같은 어휘를 쓰도록 한 곳에 둔다.
+    func moveDetailLine(_ move: MoveSpec) -> String {
+        let power = move.damageClass == .status ? "—" : "\(move.power)"
+        let accuracy = move.accuracy.map(String.init) ?? moveAlwaysHits
+        return "\(move.type.name(lang)) · \(moveCategory(move.damageClass)) · "
+            + "\(movePowerLabel) \(power) · \(moveAccuracyLabel) \(accuracy) · \(movePP(move.pp))"
+    }
+
+    /// 호버 슬롯 문구 — 올린 기술이 없으면 안내, 설명이 있으면 설명, 없거나 비어 있으면 스탯 요약.
+    /// 슬롯이 빈 채로 남으면 "고장 난 것"처럼 보이므로 어느 분기에서도 빈 문자열을 내지 않는다.
+    func moveHoverText(_ move: MoveSpec?) -> String {
+        guard let move else { return moveHoverHint }
+        if let description = move.description(lang), !description.isEmpty { return description }
+        return moveDetailLine(move)
+    }
+
     // MARK: 집중 타이머 · 모험 재화 줄
     /// 알·조각·주간 모험 진행도 한 줄. 예전엔 "주간" 만 한국어로 박혀 있었다(#10 부류 스윕).
     func focusStash(eggs: Int, fragments: Int, weekly: Int) -> String {
