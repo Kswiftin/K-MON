@@ -71,6 +71,31 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertEqual(PopoverTab.shop.contentHeight, PopoverTab.collection.contentHeight)
     }
 
+    // MARK: 소유 포켓몬 — 페이지 도달성
+
+    /// 트리거 재현: 한 페이지를 넘긴 마릿수. 페이지가 하나로 머물면 초과분은 다시 도달 불가가 되고,
+    /// 그게 스크롤 시절의 결함이었다 — 팝오버 본체 ScrollView 안에 중첩된 격자 ScrollView 가
+    /// 스크롤되지 않아, 격자에 들어가는 만큼만 보이고 나머지는 볼 방법이 없었다.
+    /// (260 시절 9마리쯤, 520 으로 늘린 뒤 20마리쯤에서 끊겼다.)
+    func testARosterThatOverflowsOnePageGetsAnother() {
+        XCTAssertEqual(PokemonRosterView.pageCount(ownedCount: PokemonRosterView.pageSize), 1)
+        XCTAssertEqual(PokemonRosterView.pageCount(ownedCount: PokemonRosterView.pageSize + 1), 2)
+    }
+
+    /// 몇 마리를 가졌든 마지막 한 마리까지 어느 페이지엔가 들어간다 — 페이저로 도달할 수 있다.
+    func testEveryOwnedPokemonLandsOnSomePage() {
+        let pageSize = PokemonRosterView.pageSize
+        for ownedCount in [0, 1, pageSize - 1, pageSize, pageSize + 1, 21, 100] {
+            let pages = PokemonRosterView.pageCount(ownedCount: ownedCount)
+            XCTAssertGreaterThanOrEqual(pages, 1, "\(ownedCount)마리: 빈 격자라도 한 장은 있어야 한다")
+            XCTAssertGreaterThanOrEqual(pages * pageSize, ownedCount,
+                                        "\(ownedCount)마리가 \(pages)페이지에 다 안 들어간다")
+            // 마지막 페이지에 최소 한 마리는 있어야 한다 — 빈 페이지를 넘기게 두지 않는다.
+            XCTAssertLessThan((pages - 1) * pageSize, max(1, ownedCount),
+                              "\(ownedCount)마리인데 마지막 페이지가 비어 있다")
+        }
+    }
+
     // MARK: 미션 카드 — 세로 예산
 
     /// 홈 탭 스크롤 뷰포트 예산. 560pt 창에서 패딩·상단 바·타이머·탭 피커·푸터를 빼면 약 250pt 가
