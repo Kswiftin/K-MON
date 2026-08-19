@@ -954,7 +954,8 @@ private struct MoveLearningCard: View {
                 Text(store.language == .ko ? "잊을 기술을 선택하세요." : "Choose a move to forget.")
                     .font(.caption2).foregroundStyle(.secondary)
                 ForEach(Array(active.learnedMoves.enumerated()), id: \.element.id) { index, move in
-                    Button("\(move.name(store.language)) · \(move.type.name(store.language)) → \(prompt.move.name(store.language))") {
+                    // 잊을 기술의 타입만 괄호로 — 배울 기술의 타입은 카드 상단 TypeBadge 에 이미 있다.
+                    Button("\(move.name(store.language))(\(move.type.name(store.language))) → \(prompt.move.name(store.language))") {
                         store.acceptMoveLearning(replacing: index)
                     }.controlSize(.small)
                 }
