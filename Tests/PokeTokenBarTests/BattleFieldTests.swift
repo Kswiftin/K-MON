@@ -38,7 +38,7 @@ final class BattleFieldTests: XCTestCase {
 
     private func renderedWidth(_ view: some View, proposing: CGFloat) -> CGFloat {
         NSHostingController(rootView: view)
-            .sizeThatFits(in: CGSize(width: proposing, height: BattleFieldMetrics.windowHeight)).width
+            .sizeThatFits(in: CGSize(width: proposing, height: .greatestFiniteMagnitude)).width
     }
 
     // MARK: HP바 — 3단계 (트리거 브랜치: 예전엔 살았나 죽었나로 2색)
@@ -232,15 +232,25 @@ final class BattleFieldTests: XCTestCase {
         XCTAssertEqual(BattleCenter.turnDuration, MultiplayerRoomCenter.turnDuration)
     }
 
-    // MARK: 창 예산 (계획 §6.3 안 A — 전용 배틀 창)
+    // MARK: 팝오버 예산 (계획 §6.3 안 B — 기존 창 안에 압축)
 
-    /// 창 예산을 재는 표본. **최악 케이스로 채운다** — 상태 배지 두 개, 이로치 별표, 기절한 교체 슬롯,
+    /// 배틀 탭이 쓸 수 있는 세로 자리. 팝오버는 `tabHeight` 780pt 한 장을 모든 탭이 나눠 쓰고, 그중
+    /// 패딩·업데이트 배너·트레이너 바·집중 타이머·탭 피커·푸터가 먼저 가져간다(`PopoverView.mainContent`).
+    /// 홈 탭 예산 주석의 실측(560pt 창에서 뷰포트 약 250pt → 크롬 약 310pt)을 그대로 780 에 옮기면
+    /// 약 470pt 가 남는다. 폰트·OS 차이를 감당할 30pt 를 떼고 **440pt** 를 예산으로 쓴다.
+    ///
+    /// 이 값을 넘기면 팝오버가 스크롤이 아니라 **클리핑**으로 처리한다(#9) — 배틀 화면은 defect-log
+    /// 규칙상 자기 `ScrollView` 를 둘 수 없으니, 넘친 만큼은 볼 방법이 없어진다.
+    private static let battleViewportBudget: CGFloat = 440
+
+    /// 예산을 재는 표본. **최악 케이스로 채운다** — 상태 배지 두 개, 이로치 별표, 기절한 교체 슬롯,
     /// 양쪽 actor 의 로그 줄. 평온한 표본으로 재면 화면에서만 나타나는 분기를 한 번도 밟지 못한다.
     private func arena(logLines: Int = BattleFieldMetrics.logLines,
                        allPPSpent: Bool = false,
                        turnEndsAt: Date? = nil,
-                       theirHP: Int? = nil) -> BattleArenaView {
-        var theirs = BattleSide(mon([.fire, .flying], name: "상대"))
+                       theirHP: Int? = nil,
+                       language: AppLanguage = .ko) -> BattleArenaView {
+        var theirs = BattleSide(mon([.fire, .flying], name: "상대이름이제법긴트레이너"))
         theirs.hp = theirHP ?? theirs.stats.hp / 3
         theirs.status = .burn
         theirs.confusionTurns = 3
@@ -251,7 +261,7 @@ final class BattleFieldTests: XCTestCase {
         return BattleArenaView(
             mine: mine, theirs: theirs,
             myTitle: "내 포켓몬", theirTitle: "상대 트레이너",
-            l: L(.ko), turn: 7,
+            l: L(language), turn: 7,
             logLines: (0..<logLines).map {
                 BattleLog.Line(actor: $0.isMultiple(of: 2) ? .a : .b,
                                text: "탱커의 몸통박치기! 상대는 12 데미지를 받았다 (\($0))")
@@ -263,23 +273,44 @@ final class BattleFieldTests: XCTestCase {
             onChoose: { _ in }, onSwitch: { _ in }, onForfeit: {})
     }
 
-    /// 창 하나에 필드 + 선택 패널 + 옆 로그가 다 들어가야 한다. 넘치면 팝오버에서 겪은 클리핑(#9)을
-    /// 창에서 다시 겪는다 — 이번엔 스크롤도 없어(defect-log 의 중첩 ScrollView 금지) 그냥 잘린다.
-    func testTheArenaFitsTheBattleWindowBudget() {
-        let width = renderedWidth(arena(), proposing: BattleFieldMetrics.windowWidth)
-        XCTAssertLessThanOrEqual(width, BattleFieldMetrics.windowWidth)
-        XCTAssertLessThanOrEqual(renderedHeight(arena(), proposingWidth: BattleFieldMetrics.windowWidth),
-                                 BattleFieldMetrics.windowHeight)
+    /// 배틀 탭 전체가 팝오버 콘텐츠 폭과 세로 예산 안에 들어간다. 넘치면 NSPopover 가 스크롤이 아니라
+    /// 잘라 낸다(#9) — 기술 버튼이나 푸터가 화면 밖으로 사라지는 그 증상이다.
+    func testTheArenaFitsThePopoverBudget() {
+        XCTAssertLessThanOrEqual(renderedWidth(arena(), proposing: PopoverMetrics.contentWidth),
+                                 PopoverMetrics.contentWidth, "가로가 넘치면 오른쪽이 잘린다")
+        XCTAssertLessThanOrEqual(renderedHeight(arena(), proposingWidth: PopoverMetrics.contentWidth),
+                                 Self.battleViewportBudget, "세로가 넘치면 아래가 잘린다")
     }
 
-    /// PP 를 전부 쓴 배틀은 기술 4칸이 발버둥 한 칸으로 바뀐다. 그 분기가 창을 넘기면 마지막 턴에만
+    /// 넉넉한 폭을 줘도 팝오버 폭 이상은 **요구하지 않는다.** 좁은 폭에서만 재면 유연한 칸이 제안을
+    /// 그대로 받아들여 통과하므로, 실제로 그 폭에 맞춰 설계됐는지는 이쪽에서만 드러난다.
+    func testTheArenaNeverAsksForMoreWidthThanThePopoverGives() {
+        XCTAssertLessThanOrEqual(renderedWidth(arena(), proposing: 4_000), PopoverMetrics.contentWidth,
+                                 "이상 폭에서 더 요구하면 팝오버에선 매번 압축돼 그려진다")
+    }
+
+    /// 안 B 가 로그를 필드 **아래**로 내린 근거 — Showdown 처럼 옆에 두면 332pt 에 들어가지 않는다.
+    /// 이 대조군이 없으면 위의 fit 검증이 "애초에 통과할 조건" 이었는지 알 수 없다.
+    func testALogBesideTheFieldWouldNotFitThePopoverWidth() {
+        let sideBySide = HStack(spacing: 8) {
+            arena()
+            VStack(alignment: .leading) {
+                ForEach(0..<4, id: \.self) { _ in Text("탱커의 몸통박치기! 12 데미지").font(.system(size: 9)) }
+            }
+            .frame(width: 202)
+        }
+        XCTAssertGreaterThan(renderedWidth(sideBySide, proposing: 4_000), PopoverMetrics.contentWidth,
+                             "옆 로그가 332pt 에 들어간다면 아래로 내릴 이유가 없다")
+    }
+
+    /// PP 를 전부 쓴 배틀은 기술 4칸이 발버둥 한 칸으로 바뀐다. 그 분기가 예산을 넘기면 마지막 턴에만
     /// 화면이 깨지는데, 평온한 표본만 재면 그 경로를 한 번도 밟지 않는다.
     func testTheStruggleOnlyArenaStillFitsAndStaysNoTallerThanTheNormalOne() {
         let struggling = renderedHeight(arena(allPPSpent: true),
-                                        proposingWidth: BattleFieldMetrics.windowWidth)
-        XCTAssertLessThanOrEqual(struggling, BattleFieldMetrics.windowHeight)
+                                        proposingWidth: PopoverMetrics.contentWidth)
+        XCTAssertLessThanOrEqual(struggling, Self.battleViewportBudget)
         XCTAssertLessThanOrEqual(struggling,
-                                 renderedHeight(arena(), proposingWidth: BattleFieldMetrics.windowWidth) + 1,
+                                 renderedHeight(arena(), proposingWidth: PopoverMetrics.contentWidth) + 1,
                                  "발버둥 한 칸이 기술 4칸보다 커질 수는 없다")
     }
 
@@ -289,34 +320,37 @@ final class BattleFieldTests: XCTestCase {
     func testTheArenaWithATurnDeadlineFitsWhetherTimeIsLeftOrNot() {
         for deadline in [Date(timeIntervalSinceNow: 3_600), Date(timeIntervalSince1970: 0)] {
             XCTAssertLessThanOrEqual(
-                renderedHeight(arena(turnEndsAt: deadline), proposingWidth: BattleFieldMetrics.windowWidth),
-                BattleFieldMetrics.windowHeight, "마감 \(deadline) 에서 창을 넘긴다")
+                renderedHeight(arena(turnEndsAt: deadline), proposingWidth: PopoverMetrics.contentWidth),
+                Self.battleViewportBudget, "마감 \(deadline) 에서 예산을 넘긴다")
         }
     }
 
     /// 한쪽이 쓰러진 마지막 프레임도 같은 예산이다 — 스프라이트가 흐려지는 분기를 밟는다.
     func testTheArenaFitsWithAFaintedCombatantOnTheField() {
         XCTAssertLessThanOrEqual(
-            renderedHeight(arena(theirHP: 0), proposingWidth: BattleFieldMetrics.windowWidth),
-            BattleFieldMetrics.windowHeight)
+            renderedHeight(arena(theirHP: 0), proposingWidth: PopoverMetrics.contentWidth),
+            Self.battleViewportBudget)
     }
 
-    /// 로그가 길어져도(배틀 후반) 창 높이는 그대로다 — 고정 높이 칸이라야 창이 안 흔들린다.
-    func testALongLogDoesNotGrowTheWindow() {
-        XCTAssertEqual(renderedHeight(arena(logLines: 4), proposingWidth: BattleFieldMetrics.windowWidth),
-                       renderedHeight(arena(logLines: 200), proposingWidth: BattleFieldMetrics.windowWidth),
-                       accuracy: 1, "로그 줄 수가 창 높이를 흔들면 매 턴 창이 뛴다")
+    /// 로그가 길어져도(배틀 후반) 탭 높이는 그대로다. 팝오버는 고정 높이라 늘어난 만큼이 잘리고,
+    /// 잘리는 쪽은 아래에 있는 기술 버튼이다 — 로그가 길어질수록 조작이 사라지는 셈이 된다.
+    func testALongLogDoesNotGrowTheTab() {
+        XCTAssertEqual(renderedHeight(arena(logLines: 4), proposingWidth: PopoverMetrics.contentWidth),
+                       renderedHeight(arena(logLines: 200), proposingWidth: PopoverMetrics.contentWidth),
+                       accuracy: 1, "로그 줄 수가 높이를 흔들면 후반 턴에 버튼이 잘린다")
     }
 
-    /// 안 A 를 고른 근거를 테스트로 남긴다 — 이 배치는 팝오버 332pt 에 애초에 들어가지 않는다.
-    /// 이 대조군이 없으면 위의 fit 검증은 "애초에 통과할 조건" 이었는지 알 수 없다.
-    ///
-    /// **팝오버 폭을 제안하고 잰다.** 넉넉한 폭(4,000)을 제안하면 유연한 칸이 그 값을 그대로
-    /// 되돌려 주므로 어떤 구현이든 통과한다 — 좁은 폭을 제안했을 때도 더 요구하는지가 실제 질문이다.
-    func testTheSameArenaDoesNotFitThePopoverContentWidth() {
-        XCTAssertGreaterThan(renderedWidth(arena(), proposing: PopoverMetrics.contentWidth),
-                             PopoverMetrics.contentWidth,
-                             "팝오버 폭에 들어간다면 전용 창을 만든 이유가 없다")
+    /// 세 언어 어디서도 예산을 넘기지 않는다. 한국어 이름이 짧아 로컬에선 통과하고 영어로 도는 CI 에서만
+    /// 넘치는 회귀를 기술 목록에서 이미 겪었다(CI 118pt vs 로컬 78pt).
+    func testTheArenaFitsInEveryLanguage() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            XCTAssertLessThanOrEqual(
+                renderedHeight(arena(language: language), proposingWidth: PopoverMetrics.contentWidth),
+                Self.battleViewportBudget, "\(language.rawValue) 에서 예산을 넘긴다")
+            XCTAssertLessThanOrEqual(
+                renderedWidth(arena(language: language), proposing: 4_000), PopoverMetrics.contentWidth,
+                "\(language.rawValue) 에서 폭을 더 요구한다")
+        }
     }
 
     /// 예산 검증은 **자리를 얼마나 차지하는가**만 본다 — 아무것도 그리지 않는 뷰도 전부 통과한다.
@@ -328,7 +362,7 @@ final class BattleFieldTests: XCTestCase {
     func testTheArenaActuallyRastersSomethingRatherThanABlankBox() throws {
         let controller = NSHostingController(rootView: arena())
         let bounds = CGRect(x: 0, y: 0,
-                            width: BattleFieldMetrics.windowWidth, height: BattleFieldMetrics.windowHeight)
+                            width: PopoverMetrics.contentWidth, height: Self.battleViewportBudget)
         controller.view.frame = bounds
         controller.view.layoutSubtreeIfNeeded()
         let rep = try XCTUnwrap(controller.view.bitmapImageRepForCachingDisplay(in: bounds))
@@ -336,7 +370,7 @@ final class BattleFieldTests: XCTestCase {
 
         var seen = Set<String>()
         for x in stride(from: 4, to: Int(bounds.width) - 4, by: 12) {
-            for y in stride(from: 4, to: Int(bounds.height) - 4, by: 12) {
+            for y in stride(from: 4, to: Int(bounds.height) - 4, by: 8) {
                 guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
                 seen.insert(String(format: "%.2f-%.2f-%.2f",
                                    color.redComponent, color.greenComponent, color.blueComponent))
@@ -358,8 +392,10 @@ final class BattleFieldTests: XCTestCase {
     func testTheBattleFieldSourceHasNoScrollView() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        // 안 B 는 배틀 화면이 **팝오버 본체 ScrollView 안에** 들어가므로 이 규칙이 안 A 보다 더 세다 —
+        // 안쪽에 하나라도 두면 그 칸은 스크롤되지 않고 잘린다.
         for file in ["Sources/PokeTokenBar/UI/BattleField.swift",
-                     "Sources/PokeTokenBar/UI/BattleWindow.swift"] {
+                     "Sources/PokeTokenBar/UI/BattleView.swift"] {
             let source = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
             let code = source.split(separator: "\n", omittingEmptySubsequences: false)
                 .map { line -> String in
