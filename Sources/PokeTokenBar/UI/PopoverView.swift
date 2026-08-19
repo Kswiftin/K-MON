@@ -4,25 +4,23 @@ import SwiftUI
 enum PopoverTab {
     case home, pokemon, collection, battle, pokeathlon, shop, bag
 
-    /// 탭이 유지하는 팝오버 높이. 탭 안에서 콘텐츠가 늘고 줄어도(기술 목록 펼침, 로딩 자리표시자,
+    /// 팝오버가 유지하는 높이. 탭 안에서 콘텐츠가 늘고 줄어도(기술 목록 펼침, 로딩 자리표시자,
     /// 진화 프롬프트) 이 값은 그대로라 창이 다시 그려지지 않는다 — 펼칠 때마다 커졌다 작아지며
-    /// 떨리던 원인을 없앤다. 탭을 바꿀 때만 크기가 바뀐다.
-    var contentHeight: CGFloat {
-        switch self {
-        // 헤더·진화 라인·기술 4행까지 펼친 높이. 접어도 같은 높이라 아래가 조금 빈다.
-        case .home: return 560
-        // 도감·상점·가방은 안에 520pt 격자를 들고 있어 타이머·탭바·푸터까지 더하면 이만큼 든다.
-        case .collection, .shop, .bag, .pokemon: return 780
-        // 배틀·포켓슬론은 상대 목록·경기 상태에 따라 세로가 가장 많이 흔들리는 탭이다.
-        case .battle, .pokeathlon: return 780
-        }
-    }
+    /// 떨리던 원인을 없앤다.
+    ///
+    /// 모든 탭이 같은 값을 쓴다. 예전엔 홈만 560 이라 탭을 옮길 때마다 창이 220pt 씩 뛰었다.
+    /// 홈은 콘텐츠가 짧아 아래가 비지만, 창이 제자리에 있는 편이 낫다.
+    var contentHeight: CGFloat { PopoverMetrics.tabHeight }
 }
 
 enum PopoverMetrics {
     static let width: CGFloat = 360
     static let padding: CGFloat = 14
     static let contentWidth: CGFloat = width - padding * 2
+
+    /// 모든 탭이 함께 쓰는 팝오버 높이. 도감·상점·가방이 안에 520pt 격자를 들고 있어
+    /// 타이머·탭바·푸터까지 더하면 이만큼 든다 — 가장 큰 탭에 맞춰야 어느 탭에서도 잘리지 않는다.
+    static let tabHeight: CGFloat = 780
 
     /// 메뉴바·팝오버 화살표·화면 아래 여백이 먹는 세로 공간.
     static let verticalChrome: CGFloat = 80
@@ -174,7 +172,7 @@ struct PopoverView: View {
                     case .pokeathlon: PokeathlonView(store: companion)
                     case .battle: BattleView(store: companion)
                     case .collection: CollectionView(store: companion)
-                    case .pokemon: PokemonRosterView(store: companion, nav: nav)
+                    case .pokemon: PokemonRosterView(store: companion)
                     case .bag: BagView(store: companion, nav: nav)
                     case .shop: ShopView(store: companion, nav: nav)
                     case .home:
@@ -202,6 +200,9 @@ struct PopoverView: View {
             }
             Button { nav.tab = .shop } label: { Label(l.shop, systemImage: "cart") }
                 .buttonStyle(.borderless).help(l.shop)
+            // 가방은 포켓몬 탭 안에 있었다 — 어느 탭에서 쓰든 상관없는 소지품이라 상점 옆이 제자리다.
+            Button { nav.tab = .bag } label: { Label(l.bag, systemImage: "backpack.fill") }
+                .buttonStyle(.borderless).help(l.bag)
             Spacer()
             Button { nav.showSettings = true } label: { Image(systemName: "gearshape") }
                 .buttonStyle(.borderless).help(l.settings)

@@ -2,7 +2,13 @@ import SwiftUI
 
 struct PokemonRosterView: View {
     let store: CompanionStore
-    let nav: PopoverNavigation
+
+    /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
+    ///
+    /// 예전엔 격자에만 260 을 걸어, 탭 높이는 780 인데 목록은 그 절반에서 끊겼다 —
+    /// 아래 240pt 가 빈 채로 남는데도 포켓몬이 세 줄 넘으면 안에서 스크롤해야 했다.
+    /// 이제 이 높이를 헤더·알 줄이 쓰고 남는 만큼을 격자가 모두 가져간다.
+    private static let contentHeight: CGFloat = 520
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -21,14 +27,13 @@ struct PokemonRosterView: View {
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID)
                         }
                     }
-                }.frame(maxHeight: 260)
+                }.frame(maxHeight: .infinity)
             }
-            HStack {
-                Button { nav.tab = .bag } label: { Label(store.l.bag, systemImage: "backpack.fill") }
-                Spacer()
-                if store.focusEggCount > 0 { Text("🥚 × \(store.focusEggCount)").font(.caption.bold()) }
-            }.controlSize(.small)
+            if store.focusEggCount > 0 {
+                Text("🥚 × \(store.focusEggCount)").font(.caption.bold())
+            }
         }
+        .frame(height: Self.contentHeight, alignment: .top)
     }
 }
 
