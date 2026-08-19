@@ -96,6 +96,13 @@ struct L {
     func battleUsedMoveMissed(_ attacker: String, move: String) -> String {
         t("\(attacker)의 \(move)!", "\(attacker) used \(move)!", "\(attacker)の\(move)！")
     }
+    /// 기술과 무관하게 깎였을 때 — 상태이상 잔뎀(Phase 2)이 이 문구로 온다.
+    func battleTookDamage(_ name: String, damage: Int) -> String {
+        t("\(name)은(는) \(damage) 데미지", "\(name) took \(damage) damage", "\(name)は \(damage)ダメージ")
+    }
+    func battleFainted(_ name: String) -> String {
+        t("\(name)은(는) 쓰러졌다!", "\(name) fainted!", "\(name)はたおれた！")
+    }
 
     // MARK: 헤더 (오늘/주/월)
     var todayTokens: String { t("오늘 함께한 시간", "Time together today", "今日一緒にいた時間") }

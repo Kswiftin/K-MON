@@ -341,15 +341,10 @@ struct BattleView: View {
                 }
             }
             if !center.multiplayer.combatEvents.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(center.multiplayer.combatEvents.suffix(4).enumerated()), id: \.offset) { _, event in
-                        let attacker = fighters.first { $0.id == event.attackerID }?.side.snapshot.name ?? "?"
-                        let target = fighters.first { $0.id == event.targetID }?.side.snapshot.name ?? "?"
-                        Text(event.missed ? "\(attacker) → \(target): MISS"
-                             : "\(attacker) → \(target): -\(event.damage)")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                }.padding(5).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                // 1v1 과 **같은** 스트림·같은 접기를 쓴다. 예전엔 여기만 "이름 → 이름: -12" 라는
+                // 별도 문구였고, 기술 이름도 급소도 상성도 나오지 않았다.
+                logBox(multiplayerLogLines(center.multiplayer.combatEvents, fighters: fighters),
+                       mine: .fighter(center.multiplayer.myID))
             }
         }
         .onAppear {
@@ -619,37 +614,46 @@ struct BattleView: View {
     // MARK: 로그/카드 공용
 
     private func eventLog(_ b: NetBattleState) -> some View {
+        // 엔진 좌변(A)은 항상 challenger 다 — 내가 어느 쪽인지로 내 편/상대를 가른다.
+        let mine: BattleActor = b.iAmA ? .a : .b
+        let lines = BattleLog.lines(b.events, l: l,
+                                    name: { $0 == mine ? b.me.snapshot.name : b.opp.snapshot.name },
+                                    moveName: { actor, id in
+                                        let moves = actor == mine ? b.me.moves : b.opp.moves
+                                        return (moves.first { $0.id == id } ?? .struggle()).name(store.language)
+                                    })
+        return logBox(lines, mine: mine)
+    }
+
+    /// 멀티(2~4인)의 스트림은 참가자 UUID 로 쪽을 가린다 — 이름·기술명만 그 방의 파이터에서 찾아 준다.
+    private func multiplayerLogLines(_ events: [BattleEvent],
+                                     fighters: [MultiplayerFighter]) -> [BattleLog.Line] {
+        func fighter(_ actor: BattleActor) -> MultiplayerFighter? {
+            guard case .fighter(let id) = actor else { return nil }
+            return fighters.first { $0.id == id }
+        }
+        return BattleLog.lines(events, l: l,
+                               name: { fighter($0)?.side.snapshot.name ?? "?" },
+                               moveName: { actor, id in
+                                   let moves = fighter(actor)?.side.moves ?? []
+                                   return (moves.first { $0.id == id } ?? .struggle()).name(store.language)
+                               })
+    }
+
+    /// 스트림을 접은 줄만 그린다 — 문구 결정은 `BattleLog` 에 있다(뷰는 순수 렌더러).
+    /// 최근 몇 줄만 보이는 구조라 `ScrollView` 는 쓰지 않는다 — 팝오버 본체가 이미 스크롤이고,
+    /// 그 안에 세로 스크롤을 겹치면 안쪽이 스크롤되지 않고 잘린다(defect-log 규칙).
+    private func logBox(_ lines: [BattleLog.Line], mine: BattleActor?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(b.events.suffix(4).enumerated()), id: \.offset) { _, e in
-                eventLine(e, battle: b)
+            ForEach(Array(lines.suffix(4).enumerated()), id: \.offset) { _, line in
+                Text(line.text)
+                    .font(.caption2)
+                    .foregroundStyle(line.actor == mine ? .primary : .secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-    }
-
-    private func eventLine(_ e: NetBattleEvent, battle b: NetBattleState) -> some View {
-        // 이벤트 좌변(A/B) → 내/상대 매핑.
-        let mineActed = e.attackerIsA == b.iAmA
-        let attacker = mineActed ? b.me.snapshot.name : b.opp.snapshot.name
-        let moves = mineActed ? b.me.moves : b.opp.moves
-        let moveName = (moves.first { $0.id == e.moveID } ?? .struggle()).name(store.language)
-        let text: String
-        if e.missed {
-            text = l.battleUsedMoveMissed(attacker, move: moveName) + " " + l.battleMissed
-        } else if e.effectiveness == 0 {
-            text = l.battleUsedMoveMissed(attacker, move: moveName) + " " + l.battleNoEffect
-        } else {
-            var s = l.battleUsedMoveNamed(attacker, move: moveName, damage: e.damage)
-            if e.isCritical { s += " · " + l.battleCritical }
-            if e.effectiveness > 1 { s += " · " + l.battleSuperEffective }
-            else if e.effectiveness < 1 { s += " · " + l.battleNotVeryEffective }
-            text = s
-        }
-        return Text(text)
-            .font(.caption2)
-            .foregroundStyle(mineActed ? .primary : .secondary)
     }
 
     private func snapshotCard(_ snapshot: BattleSnapshot, title: String, hpRatio: Double?) -> some View {

@@ -219,7 +219,8 @@ final class AdventureTests: XCTestCase {
         var second = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: 77)
         let a = try first.resolveRound(actions), b = try second.resolveRound(actions)
         XCTAssertEqual(a, b)
-        XCTAssertNotNil(a.first?.attackerID)
+        XCTAssertEqual(a.moveActors.count, 4, "네 명이 각자 한 번 행동한다")
+        XCTAssertEqual(a.first, .turn(1), "라운드 번호가 스트림 앞에 온다")
         XCTAssertEqual(first.round, 2)
     }
 
@@ -332,12 +333,13 @@ final class AdventureTests: XCTestCase {
         let (ids, fighters) = tiedSpeedFighters(priorities: [nil, nil])
         let actions = [MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
                        MultiplayerAction(attackerID: ids[1], targetID: ids[0], moveIndex: 0)]
-        var firstAttackers = Set<UUID>()
+        var firstAttackers = Set<BattleActor>()
         for seed in UInt64(0)..<40 {
             var battle = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: seed)
-            if let first = try battle.resolveRound(actions).first { firstAttackers.insert(first.attackerID) }
+            if let first = try battle.resolveRound(actions).moveActors.first { firstAttackers.insert(first) }
         }
-        XCTAssertEqual(firstAttackers, Set(ids), "두 참가자 모두 선공을 잡는 시드가 있어야 한다")
+        XCTAssertEqual(firstAttackers, Set(ids.map(BattleActor.fighter)),
+                       "두 참가자 모두 선공을 잡는 시드가 있어야 한다")
     }
 
     /// 무작위로 갈려도 **같은 시드면 같은 순서**여야 한다 — 두 피어가 각자 계산하는 구조라
@@ -359,7 +361,7 @@ final class AdventureTests: XCTestCase {
                        MultiplayerAction(attackerID: ids[1], targetID: ids[0], moveIndex: 0)]
         for seed in UInt64(0)..<20 {
             var battle = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: seed)
-            XCTAssertEqual(try battle.resolveRound(actions).first?.attackerID, ids[1],
+            XCTAssertEqual(try battle.resolveRound(actions).moveActors.first, .fighter(ids[1]),
                            "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
         }
     }
@@ -391,9 +393,22 @@ final class AdventureTests: XCTestCase {
         let message = MultiplayerWireMessage.ready(participantID: id, ready: true)
         let data = try JSONEncoder().encode(message)
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
-        // 2 = LobbyParticipant.role + 관전자 베팅 메시지. 버전을 올려야 옛 빌드가 레이스 중간이
+        // 3 = 라운드 결과가 타입된 이벤트 스트림. 버전을 올려야 옛 빌드가 레이스·배틀 중간이
         // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 2)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 3)
+    }
+
+    /// 라운드 결과는 호스트가 게스트에게 **브로드캐스트**하는 유일한 배틀 페이로드다. 이벤트가
+    /// 타입된 스트림이 되면서 이 JSON 모양이 바뀌었으므로(그래서 protocolVersion 3), 왕복이
+    /// 되는지 직접 본다 — 깨지면 게스트 화면에 라운드가 아예 안 뜬다.
+    func testRoundResolvedCarriesTheEventStreamOverTheWire() throws {
+        let attacker = UUID(), target = UUID()
+        let events: [BattleEvent] = [.turn(4), .move(.fighter(attacker), moveID: 57),
+                                     .crit(.fighter(target)), .superEffective(.fighter(target)),
+                                     .damage(.fighter(target), amount: 122), .faint(.fighter(target))]
+        let message = MultiplayerWireMessage.roundResolved(round: 4, fighters: [], events: events)
+        let data = try JSONEncoder().encode(message)
+        XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
     }
 
     func testPokeathlonObstacleRequiresJumpAndSupportsFourRacers() {

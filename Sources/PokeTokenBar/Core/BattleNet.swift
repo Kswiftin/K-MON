@@ -41,7 +41,7 @@ struct NetBattleState {
     var turn = 1
     var myChoice: Int?
     var oppChoice: Int?
-    var events: [NetBattleEvent] = []
+    var events: [BattleEvent] = []
 
     /// 내가 고를 수 있는 기술이 하나도 없으면 발버둥.
     var mustStruggle: Bool { me.mustStruggle }
@@ -488,7 +488,7 @@ final class BattleCenter {
         let events = BattleEngine.resolveTurn(a: &sideA, b: &sideB,
                                              moveA: b.iAmA ? myMove : oppMove,
                                              moveB: b.iAmA ? oppMove : myMove,
-                                             rng: &b.rng)
+                                             turn: b.turn, rng: &b.rng)
         b.me = b.iAmA ? sideA : sideB
         b.opp = b.iAmA ? sideB : sideA
         b.events.append(contentsOf: events)

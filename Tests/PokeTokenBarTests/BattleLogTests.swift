@@ -21,6 +21,9 @@ final class BattleLogTests: XCTestCase {
                                      .superEffective(.b), .damage(.b, amount: 122)]
         XCTAssertEqual(lines(stream),
                        ["턴 1", "거북왕의 파도타기! 122 데미지 · 효과가 굉장했다!"])
+        // 반쪽 상성도 같은 자리에 붙는다 — 두 방향을 함께 봐야 한쪽만 배선된 경우를 걸러낸다.
+        XCTAssertEqual(lines([.move(.b, moveID: 53), .resisted(.a), .damage(.a, amount: 40)]),
+                       ["리자몽의 화염방사! 40 데미지 · 효과가 별로인 듯하다…"])
     }
 
     /// 3언어 모두 같은 접기 규칙을 따른다.
@@ -72,6 +75,20 @@ final class BattleLogTests: XCTestCase {
         XCTAssertEqual(out.count, 2)
         XCTAssertNil(out[0].actor, "턴 구분선은 주인이 없다")
         XCTAssertEqual(out[1].actor, .b, "때린 쪽이 그 줄의 주인이다")
+    }
+
+    /// 깎이지 않은 기술은 데미지 숫자를 달지 않는다. 지금 그런 이벤트를 내는 곳은 없지만
+    /// 변화기(Phase 3)가 이 모양이고, 기본값 0 을 채워 넣으면 "0 데미지" 라는 오해가 남는다.
+    func testAMoveThatDealtNoDamageShowsNoNumber() {
+        XCTAssertEqual(lines([.move(.a, moveID: 57)]), ["거북왕의 파도타기!"])
+        XCTAssertEqual(lines([.move(.a, moveID: 57), .crit(.b)]),
+                       ["거북왕의 파도타기! · 급소에 맞았다!"])
+    }
+
+    /// 피해 없이 주석만 온 스트림(정상 경로에는 없다)도 문구를 만들어 낸다 — 쓰지 않은 기술이나
+    /// 0 이라는 숫자를 지어내지 않는 것이 요점이다.
+    func testNotesWithoutAnActionRenderOnTheirOwn() {
+        XCTAssertEqual(lines([.crit(.a)]), ["급소에 맞았다!"])
     }
 
     /// 멀티(2~4인)는 참가자 UUID 로 쪽을 가린다 — 같은 스트림·같은 접기를 쓴다.

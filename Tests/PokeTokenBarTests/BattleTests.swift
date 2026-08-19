@@ -255,9 +255,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = slow, b = fast
-            let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                                  moveA: quickAttack(), moveB: flamethrower(), rng: &rng)
-            XCTAssertEqual(events.first?.attackerIsA, true, "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: quickAttack(),
+                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+            XCTAssertEqual(events.moveActors.first, .a, "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
         }
     }
 
@@ -267,9 +267,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = slow, b = fast
-            let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                                  moveA: hydroPump(), moveB: flamethrower(), rng: &rng)
-            XCTAssertEqual(events.first?.attackerIsA, false, "seed \(seed): 빠른 쪽이 먼저다")
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
+                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+            XCTAssertEqual(events.moveActors.first, .b, "seed \(seed): 빠른 쪽이 먼저다")
         }
     }
 
@@ -277,15 +277,15 @@ final class BattleTests: XCTestCase {
     /// (멀티는 이 자리에서 UUID 문자열 순으로 갈라, 앱을 켠 동안 한쪽이 계속 선공했다.)
     func testEqualPriorityAndSpeedBreaksRandomly() {
         let mirror = BattleSide(water())
-        var firstMoverWasA = Set<Bool>()
+        var firstMovers = Set<BattleActor>()
         for seed in UInt64(0)..<40 {
             var rng = SplitMix64(seed: seed)
             var a = mirror, b = mirror
-            let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                                  moveA: hydroPump(), moveB: hydroPump(), rng: &rng)
-            if let first = events.first?.attackerIsA { firstMoverWasA.insert(first) }
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
+                                                  moveB: hydroPump(), turn: 1, rng: &rng)
+            if let first = events.moveActors.first { firstMovers.insert(first) }
         }
-        XCTAssertEqual(firstMoverWasA, [true, false], "양쪽 모두 선공을 잡는 seed 가 있어야 한다")
+        XCTAssertEqual(firstMovers, [.a, .b], "양쪽 모두 선공을 잡는 seed 가 있어야 한다")
     }
 
     /// 우선도가 스냅샷에 없던 시절(구버전 세이브·구버전 피어)의 기술은 보통 기술로 읽는다.
@@ -326,24 +326,29 @@ final class BattleTests: XCTestCase {
     /// 급소·상성은 데미지와 **따로** 실린다. 한 구조체에 플래그로 묶여 있던 값들이라,
     /// 분리되지 않으면 상태이상(Phase 2)이 들어올 자리가 없다.
     func testCritAndEffectivenessAreSeparateEvents() {
-        // seed 12 는 급소가 나는 시드다(위 골든 테이블과 같은 자리).
-        var rng = SplitMix64(seed: 12)
-        var a = BattleSide(water()), b = BattleSide(fire())
-        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: surf(), moveB: flamethrower(),
-                                              turn: 1, rng: &rng)
-        XCTAssertTrue(events.contains(.crit(.b)))
-        XCTAssertTrue(events.contains(.superEffective(.b)), "물 → 불꽃/비행 = ×2")
-        XCTAssertTrue(events.contains { if case .damage(.b, _) = $0 { return true } else { return false } })
+        // 급소는 어느 시드에서 나는지 미리 알 수 없다(선공이 rng 를 먼저 쓴다) — 순회해서 찾는다.
+        var sawCrit = false
+        for seed in UInt64(0)..<64 {
+            var rng = SplitMix64(seed: seed)
+            var a = BattleSide(water()), b = BattleSide(fire())
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: surf(), moveB: flamethrower(),
+                                                  turn: 1, rng: &rng)
+            XCTAssertTrue(events.contains(.superEffective(.b)), "seed \(seed): 물 → 불꽃/비행 = ×2")
+            XCTAssertTrue(events.contains(.resisted(.a)), "seed \(seed): 불꽃 → 물 = ×0.5")
+            XCTAssertTrue(events.contains { if case .damage(.b, _) = $0 { return true } else { return false } })
+            if events.contains(.crit(.b)) { sawCrit = true }
+        }
+        XCTAssertTrue(sawCrit, "급소가 데미지와 별개의 이벤트로 실려야 한다")
     }
 
     func testResolveTurnDeterministic() {
         var rng1 = SplitMix64(seed: 99), rng2 = SplitMix64(seed: 99)
         var a1 = BattleSide(water()), b1 = BattleSide(fire())
         var a2 = BattleSide(water()), b2 = BattleSide(fire())
-        let e1 = BattleEngine.resolveTurn(a: &a1, b: &b1,
-                                          moveA: hydroPump(), moveB: flamethrower(), rng: &rng1)
-        let e2 = BattleEngine.resolveTurn(a: &a2, b: &b2,
-                                          moveA: hydroPump(), moveB: flamethrower(), rng: &rng2)
+        let e1 = BattleEngine.resolveTurn(a: &a1, b: &b1, moveA: hydroPump(),
+                                          moveB: flamethrower(), turn: 1, rng: &rng1)
+        let e2 = BattleEngine.resolveTurn(a: &a2, b: &b2, moveA: hydroPump(),
+                                          moveB: flamethrower(), turn: 1, rng: &rng2)
         XCTAssertEqual(e1, e2, "두 피어가 같은 seed 로 같은 결과를 얻어야 대전이 성립한다")
         XCTAssertEqual(a1.hp, a2.hp)
         XCTAssertEqual(b1.hp, b2.hp)
@@ -355,9 +360,13 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<40 {
             var rng = SplitMix64(seed: seed)
             var a = BattleSide(water()), b = BattleSide(fire())
-            let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                                  moveA: hydroPump(), moveB: flamethrower(), rng: &rng)
-            for e in events where e.attackerIsA { e.missed ? (missSeen = true) : (hitSeen = true) }
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
+                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+            // A 가 빗나갔으면 `.miss(.a)`, 맞았으면 B 쪽에 `.damage` 가 실린다.
+            if events.contains(.miss(.a)) { missSeen = true }
+            if events.contains(where: { if case .damage(.b, _) = $0 { return true } else { return false } }) {
+                hitSeen = true
+            }
         }
         XCTAssertTrue(missSeen && hitSeen)
     }
@@ -376,11 +385,12 @@ final class BattleTests: XCTestCase {
                            damageClass: .physical, accuracy: nil, pp: 10)
         var rng = SplitMix64(seed: 1)
         var a = BattleSide(pika), b = BattleSide(dugtrio)
-        let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                              moveA: thunderbolt, moveB: dig, rng: &rng)
-        let pikaAttack = events.first { $0.attackerIsA }
-        XCTAssertEqual(pikaAttack?.damage, 0)
-        XCTAssertEqual(pikaAttack?.effectiveness, 0)
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: thunderbolt, moveB: dig,
+                                              turn: 1, rng: &rng)
+        // 무효는 `.immune` 로 실리고 데미지 이벤트 자체가 없다 — "0 데미지" 로 새면 맞은 것처럼 읽힌다.
+        XCTAssertTrue(events.contains(.immune(.b)))
+        XCTAssertFalse(events.contains { if case .damage(.b, _) = $0 { return true } else { return false } })
+        XCTAssertEqual(b.hp, b.stats.hp, "닥트리오는 한 점도 깎이지 않는다")
     }
 
     func testResolveTurnFaintSkipsSecondAction() {
@@ -392,10 +402,10 @@ final class BattleTests: XCTestCase {
                                    base: BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1))
         var rng = SplitMix64(seed: 3)
         var a = BattleSide(strong), b = BattleSide(frail)
-        // 발버둥(무속성)이라 고스트에도 박힌다 — 선공 기절 시 이벤트는 1개여야 한다.
-        let events = BattleEngine.resolveTurn(a: &a, b: &b,
-                                              moveA: .struggle(), moveB: .struggle(), rng: &rng)
-        XCTAssertEqual(events.count, 1)
+        // 발버둥(무속성)이라 고스트에도 박힌다 — 선공에 기절하면 공격은 하나뿐이어야 한다.
+        let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: .struggle(), moveB: .struggle(),
+                                              turn: 1, rng: &rng)
+        XCTAssertEqual(events.moveActors, [.a], "기절한 쪽은 반격하지 못한다")
         XCTAssertEqual(b.hp, 0)
     }
 
@@ -468,8 +478,7 @@ final class BattleTests: XCTestCase {
         XCTAssertTrue(battle.switchMine(to: 1))
 
         XCTAssertEqual(battle.myActive, 1, "교체는 이뤄진다")
-        XCTAssertEqual(battle.events.count, 1, "그 턴에 오간 공격은 상대 것 하나뿐이다")
-        XCTAssertEqual(battle.events.first?.attackerIsA, false, "내 공격은 없다")
+        XCTAssertEqual(battle.events.moveActors, [.b], "그 턴에 오간 공격은 상대(CPU) 것 하나뿐이다")
         XCTAssertLessThan(battle.mine[1].hp, before, "새로 나온 포켓몬이 그 공격을 맞는다")
         XCTAssertEqual(battle.turn, 2, "턴이 넘어간다")
     }
@@ -549,7 +558,7 @@ final class BattleTests: XCTestCase {
 
         XCTAssertTrue(battle.useMove(0))
 
-        XCTAssertEqual(battle.events.map(\.moveID), [MoveSpec.struggleID, MoveSpec.struggleID],
+        XCTAssertEqual(battle.events.moveIDs, [MoveSpec.struggleID, MoveSpec.struggleID],
                        "양쪽 모두 발버둥을 쓴다")
         XCTAssertEqual(battle.mine[0].pp, [0], "발버둥은 PP 를 쓰지 않는다")
     }
@@ -564,7 +573,7 @@ final class BattleTests: XCTestCase {
                                             opponents: [BattleSide(cpuWithFourMoves())],
                                             rng: SplitMix64(seed: 2_024))
             for turn in 0..<6 { XCTAssertTrue(battle.useMove(0), "\(turn + 1)번째 턴이 진행돼야 한다") }
-            return battle.events.map { $0.moveID }
+            return battle.events.moveIDs
         }
         let runs = Set((0..<10).map { _ in run() })
         XCTAssertEqual(runs.count, 1, "같은 seed 는 같은 배틀이어야 하는데 \(runs.count) 가지가 나왔다")
@@ -578,6 +587,18 @@ final class BattleTests: XCTestCase {
 
         XCTAssertTrue(battle.events.isEmpty, "거절된 교체는 상대에게 공격 기회를 주지 않는다")
         XCTAssertEqual(battle.turn, 1)
+    }
+}
+
+/// 스트림에서 "누가 무엇을 썼다" 만 골라낸다 — 선공 판정 테스트가 보는 건 그 순서다.
+/// 예전엔 이벤트가 공격 1건과 1:1 이라 `events.first` 로 됐지만, 이제 한 공격이 이벤트 여럿을
+/// 남기고 턴 구분선도 낀다. (`AdventureTests` 의 멀티 라운드 테스트도 같이 쓴다.)
+extension Array where Element == BattleEvent {
+    var moveActors: [BattleActor] {
+        compactMap { if case .move(let actor, _) = $0 { return actor } else { return nil } }
+    }
+    var moveIDs: [Int] {
+        compactMap { if case .move(_, let id) = $0 { return id } else { return nil } }
     }
 }
 

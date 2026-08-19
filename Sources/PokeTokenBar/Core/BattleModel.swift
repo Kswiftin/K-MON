@@ -386,41 +386,79 @@ enum BattleEngine {
     }
 }
 
-// MARK: - 네트워크 대전 턴 해상
+// MARK: - 이벤트 스트림
 
-/// 네트워크 대전에서 한 쪽의 공격 시도 1건(한 턴 = 최대 2건).
-struct NetBattleEvent: Codable, Sendable, Equatable {
-    var attackerIsA: Bool
-    var moveID: Int
-    var missed: Bool
-    var damage: Int
-    var effectiveness: Double   // 0 = 효과 없음(무효), missed 면 1
-    var isCritical: Bool
-    var defenderHPAfter: Int
+/// 이벤트가 가리키는 쪽. 1v1 LAN·연습 배틀은 좌우 두 자리뿐이고(엔진 좌변이 항상 challenger),
+/// 2~4인 방은 참가자가 여럿이라 UUID 로 가린다.
+enum BattleActor: Codable, Sendable, Equatable, Hashable {
+    case a, b
+    case fighter(UUID)
 }
 
+/// 배틀에서 일어난 일 하나. Showdown 시뮬레이터의 `|move|`·`|-damage|`·`|-crit|` 처럼 **타입된**
+/// 이벤트고, 로그·HP바·애니메이션은 모두 이 스트림의 렌더러다(`sim/SIM-PROTOCOL.md` 의 최소 부분집합).
+///
+/// 예전에는 `NetBattleEvent` 하나가 `missed`/`damage`/`effectiveness`/`isCritical` 을 플래그로 묶고
+/// 있었다. 그 모양으로는 "화상으로 깎였다", "마비로 못 움직였다", "쓰러졌다", "교체했다" 를 표현할
+/// 방법이 없어서, 상태이상(Phase 2)·랭크업(Phase 3)·교체(Phase 4)가 들어올 때마다 플래그를 덧붙이고
+/// 뷰의 if/else 사슬을 다시 뜯어야 했다. case 를 늘리는 쪽은 그럴 필요가 없다.
+///
+/// 여기 없는 case(상태이상·랭크·교체)는 **그 기전을 넣는 단계에서 만드는 쪽을 함께** 추가한다.
+/// 만드는 곳 없는 case 를 미리 두면 아무도 밟지 않는 분기가 커버리지만 채운다.
+enum BattleEvent: Codable, Sendable, Equatable {
+    case turn(Int)
+    case move(BattleActor, moveID: Int)
+    case miss(BattleActor)
+    case immune(BattleActor)
+    case crit(BattleActor)
+    case superEffective(BattleActor)
+    case resisted(BattleActor)
+    /// 실제로 깎인 양. 남은 HP 는 싣지 않는다 — 뷰는 `BattleSide.hp` 를 그대로 읽으므로 읽는 데가
+    /// 없다. 재생 애니메이션(Phase 7)이 바를 보간할 때 필요해지면 그때 붙인다.
+    case damage(BattleActor, amount: Int)
+    case faint(BattleActor)
+}
+
+// MARK: - 네트워크 대전 턴 해상
+
 extension BattleEngine {
+    /// 공격 1회를 해상해 방어측 상태를 갱신하고, 그 결과를 이벤트로 남긴다.
+    /// 1v1·연습·멀티가 전부 이 함수를 지나므로 **세 모드의 이벤트 어휘가 같다** — 데미지 함수를
+    /// 하나로 모은 것(#46)과 배틀 상태를 `BattleSide` 로 모은 것(Phase 0)과 같은 이유다.
+    static func applyAttack(attacker: BattleSide, defender: inout BattleSide,
+                            attackerActor: BattleActor, defenderActor: BattleActor,
+                            move: MoveSpec, rng: inout SplitMix64) -> [BattleEvent] {
+        var events: [BattleEvent] = [.move(attackerActor, moveID: move.id)]
+        let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
+        if outcome.missed { return events + [.miss(attackerActor)] }
+        if outcome.effectiveness == 0 { return events + [.immune(defenderActor)] }
+        // 급소·상성 문구가 데미지보다 먼저 온다(Showdown 순서) — 재생할 때 "급소!" 뒤에 HP 가 준다.
+        if outcome.isCritical { events.append(.crit(defenderActor)) }
+        if outcome.effectiveness > 1 { events.append(.superEffective(defenderActor)) }
+        else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }
+        defender.hp = max(0, defender.hp - outcome.damage)
+        events.append(.damage(defenderActor, amount: outcome.damage))
+        if !defender.isAlive { events.append(.faint(defenderActor)) }
+        return events
+    }
+
     /// 양쪽 기술 선택이 모이면 한 턴 해상. 순수·결정적 — 같은 rng 상태·입력이면 두 피어가 같은 결과를
     /// 각자 계산한다(결과 자체는 네트워크로 보내지 않는다 → 변조 여지 축소).
     /// rng 소비 순서가 프로토콜의 일부다 — 브랜치를 바꾸면 두 피어 결과가 갈라진다.
     static func resolveTurn(a: inout BattleSide, b: inout BattleSide,
-                            moveA: MoveSpec, moveB: MoveSpec,
-                            rng: inout SplitMix64) -> [NetBattleEvent] {
-        var events: [NetBattleEvent] = []
+                            moveA: MoveSpec, moveB: MoveSpec, turn: Int,
+                            rng: inout SplitMix64) -> [BattleEvent] {
+        var events: [BattleEvent] = [.turn(turn)]
         let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
                                      speedA: a.stats.spe, speedB: b.stats.spe, rng: &rng)
         for attackerIsA in aIsFirst ? [true, false] : [false, true] {
             guard a.isAlive && b.isAlive else { break }   // 선공에 기절하면 후공 없음
             let move = attackerIsA ? moveA : moveB
-            let outcome = attackerIsA
-                ? resolveAttack(attacker: a, defender: b, move: move, rng: &rng)
-                : resolveAttack(attacker: b, defender: a, move: move, rng: &rng)
-
-            if attackerIsA { b.hp = max(0, b.hp - outcome.damage) } else { a.hp = max(0, a.hp - outcome.damage) }
-            events.append(NetBattleEvent(attackerIsA: attackerIsA, moveID: move.id, missed: outcome.missed,
-                                         damage: outcome.damage, effectiveness: outcome.effectiveness,
-                                         isCritical: outcome.isCritical,
-                                         defenderHPAfter: attackerIsA ? b.hp : a.hp))
+            events += attackerIsA
+                ? applyAttack(attacker: a, defender: &b, attackerActor: .a, defenderActor: .b,
+                              move: move, rng: &rng)
+                : applyAttack(attacker: b, defender: &a, attackerActor: .b, defenderActor: .a,
+                              move: move, rng: &rng)
         }
         return events
     }

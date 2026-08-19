@@ -148,17 +148,6 @@ struct MultiplayerAction: Codable, Sendable, Equatable {
     let moveIndex: Int
 }
 
-struct MultiplayerBattleEvent: Codable, Sendable, Equatable {
-    let attackerID: UUID
-    let targetID: UUID
-    let moveID: Int
-    let missed: Bool
-    let damage: Int
-    let effectiveness: Double
-    let isCritical: Bool
-    let defenderHPAfter: Int
-}
-
 enum MultiplayerBattleError: Error, Equatable {
     case invalidFighterCount, duplicateFighter, unknownFighter, invalidTarget, invalidMove, duplicateAction
 }
@@ -199,14 +188,17 @@ enum MultiplayerValidation {
 /// 4인 방의 와이어 계약. 호스트 권위형이라 클라이언트는 참가/준비/행동만 보내고,
 /// 로비 상태와 라운드 결과는 호스트가 전 참가자에게 브로드캐스트한다.
 enum MultiplayerWireMessage: Codable, Sendable, Equatable {
-    static let protocolVersion = 2   // 2: LobbyParticipant.role + 관전자 베팅 메시지
+    // 3: 라운드 결과가 타입된 이벤트 스트림(`[BattleEvent]`)이 됐다. 1v1 은 이벤트를 주고받지 않아
+    //    `rulesVersion` 만으로 충분하지만, 이쪽은 호스트가 `roundResolved` 로 브로드캐스트하므로
+    //    구버전 게스트는 라운드를 디코딩하지 못한다 → 버전을 올려 입장 단계에서 막는다.
+    static let protocolVersion = 3   // 2: LobbyParticipant.role + 관전자 베팅 메시지
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
     case team(participantID: UUID, team: BattleTeam)
     case start(seed: UInt64, fighters: [MultiplayerFighter], mode: MultiplayerBattleMode)
     case action(round: Int, action: MultiplayerAction)
-    case roundResolved(round: Int, fighters: [MultiplayerFighter], events: [MultiplayerBattleEvent])
+    case roundResolved(round: Int, fighters: [MultiplayerFighter], events: [BattleEvent])
     case leave(participantID: UUID)
     case rejected(reason: String)
     case pokeathlonStart(race: PokeathlonRace)
@@ -222,7 +214,7 @@ struct MultiplayerBattle: Sendable {
     private(set) var fighters: [MultiplayerFighter]
     let mode: MultiplayerBattleMode
     private(set) var round = 1
-    private(set) var events: [MultiplayerBattleEvent] = []
+    private(set) var events: [BattleEvent] = []
     private var rng: SplitMix64
 
     init(fighters: [MultiplayerFighter], mode: MultiplayerBattleMode, seed: UInt64) throws {
@@ -263,7 +255,7 @@ struct MultiplayerBattle: Sendable {
         }
     }
 
-    mutating func resolveRound(_ actions: [MultiplayerAction]) throws -> [MultiplayerBattleEvent] {
+    mutating func resolveRound(_ actions: [MultiplayerAction]) throws -> [BattleEvent] {
         let alive = livingFighters
         let actionIDs = actions.map(\.attackerID)
         guard Set(actionIDs).count == actionIDs.count else { throw MultiplayerBattleError.duplicateAction }
@@ -308,30 +300,24 @@ struct MultiplayerBattle: Sendable {
             if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }
             return lhs.1 < rhs.1
         }.map(\.0)
-        var roundEvents: [MultiplayerBattleEvent] = []
+        var roundEvents: [BattleEvent] = [.turn(round)]
         for action in ordered {
             guard let ai = fighters.firstIndex(where: { $0.id == action.attackerID }), fighters[ai].isAlive,
                   let ti = fighters.firstIndex(where: { $0.id == action.targetID }), fighters[ti].isAlive else { continue }
             // 인덱스·PP 는 위 사전 검증을 통과한 값이다.
             let move = fighters[ai].side.move(at: action.moveIndex)
             if action.moveIndex >= 0 { fighters[ai].side.pp[action.moveIndex] -= 1 }
-            let event = resolveAttack(attacker: fighters[ai], target: fighters[ti], move: move)
-            fighters[ti].side.hp = event.defenderHPAfter
-            roundEvents.append(event)
+            // 방어측을 지역 사본으로 꺼내 넘긴다 — 같은 배열의 두 원소를 동시에 inout 으로 잡으면
+            // 배타적 접근 위반이다. 데미지와 이벤트는 `applyAttack` 한 곳에서 만든다.
+            var target = fighters[ti].side
+            roundEvents += BattleEngine.applyAttack(attacker: fighters[ai].side, defender: &target,
+                                                    attackerActor: .fighter(fighters[ai].id),
+                                                    defenderActor: .fighter(fighters[ti].id),
+                                                    move: move, rng: &rng)
+            fighters[ti].side = target
         }
         events.append(contentsOf: roundEvents)
         round += 1
         return roundEvents
-    }
-
-    private mutating func resolveAttack(attacker: MultiplayerFighter, target: MultiplayerFighter,
-                                        move: MoveSpec) -> MultiplayerBattleEvent {
-        let outcome = BattleEngine.resolveAttack(attacker: attacker.side, defender: target.side,
-                                                 move: move, rng: &rng)
-        return MultiplayerBattleEvent(attackerID: attacker.id, targetID: target.id, moveID: move.id,
-                                      missed: outcome.missed, damage: outcome.damage,
-                                      effectiveness: outcome.effectiveness,
-                                      isCritical: outcome.isCritical,
-                                      defenderHPAfter: max(0, target.side.hp - outcome.damage))
     }
 }
