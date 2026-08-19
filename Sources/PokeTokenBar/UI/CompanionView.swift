@@ -563,6 +563,11 @@ struct CompanionHeader: View {
                             if let evolutionLevel = store.nextEvolutionLevel {
                                 Text(store.language == .ko ? "Lv.\(evolutionLevel)에 진화" : "Evolves at Lv.\(evolutionLevel)")
                                     .font(.caption2).foregroundStyle(.tertiary)
+                            } else if let evolutionItem = store.nextEvolutionItem {
+                                // 돌·교환 진화는 레벨이 아무리 올라도 저절로 일어나지 않는다 —
+                                // 무엇을 사야 하는지 여기서 말해주지 않으면 알 길이 없다.
+                                Text(store.l.evolutionNeedsItem(store.l.itemName(evolutionItem)))
+                                    .font(.caption2).foregroundStyle(.tertiary)
                             }
                         }
                     } else {
