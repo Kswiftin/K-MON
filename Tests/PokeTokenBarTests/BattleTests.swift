@@ -327,6 +327,43 @@ final class BattleTests: XCTestCase {
         XCTAssertNil(battle.result, "아직 한 마리 남았으므로 배틀은 계속된다")
     }
 
+    /// 6턴을 버티는 내 포켓몬 — 어느 쪽도 그 안에 쓰러지지 않아야 CPU 선택 분기를 6번 밟는다.
+    private func tank() -> BattleSnapshot {
+        BattleSnapshot(speciesID: 143, name: "탱커", trainer: nil, level: 50, nature: nil, isShiny: false,
+                       types: [.normal],
+                       base: BattleStats(hp: 200, atk: 5, def: 200, spa: 5, spd: 200, spe: 50),
+                       moves: [MoveSpec(id: 1, names: [:], type: .normal, power: 10,
+                                        damageClass: .physical, accuracy: 100, pp: 30)])
+    }
+
+    /// CPU 무브셋 4개 — id 가 다르므로 이벤트에 "무엇을 골랐는지" 가 그대로 드러난다.
+    private func cpuWithFourMoves() -> BattleSnapshot {
+        BattleSnapshot(speciesID: 25, name: "CPU", trainer: "CPU", level: 50, nature: nil, isShiny: false,
+                       types: [.normal],
+                       base: BattleStats(hp: 200, atk: 5, def: 200, spa: 5, spd: 200, spe: 40),
+                       moves: (0..<4).map { i in
+                           MoveSpec(id: 100 + i, names: [:], type: .normal, power: 40 + i * 20,
+                                    damageClass: .physical, accuracy: 100, pp: 20)
+                       })
+    }
+
+    /// 회귀: CPU 기술 선택이 `randomElement()`(시스템 RNG)라 같은 seed 로도 연습 배틀이 재현되지
+    /// 않았다. seed 를 고정한 회귀 테스트를 쓸 수 없다는 뜻이고 — 상태이상·랭크업처럼 확률 분기가
+    /// 늘어나는 기전은 그 테스트 없이는 검증할 방법이 없다. 이제 씨드 rng 에서 뽑는다.
+    ///
+    /// 한 판이 우연히 같아질 확률은 (1/4)^6 이라, 같은 seed 로 10판을 돌려 전부 같은지 본다.
+    func testPracticeBattleIsDeterministicForASeed() {
+        func run() -> [Int] {
+            var battle = TeamPracticeBattle(mine: [TeamBattleSlot(tank())],
+                                            opponents: [TeamBattleSlot(cpuWithFourMoves())],
+                                            rng: SplitMix64(seed: 2_024))
+            for turn in 0..<6 { XCTAssertTrue(battle.useMove(0), "turn \(turn) 이 진행돼야 한다") }
+            return battle.events.map { $0.moveID }
+        }
+        let runs = Set((0..<10).map { _ in run() })
+        XCTAssertEqual(runs.count, 1, "같은 seed 는 같은 배틀이어야 한다 — \(runs.count) 가지가 나왔다")
+    }
+
     /// 같은 자리로는 교체할 수 없다 — 턴만 버리는 조작이 된다.
     func testSwitchingToTheActiveSlotIsRejected() {
         var battle = practiceBattle(myTeam: [water(), fire()], opponent: fire())

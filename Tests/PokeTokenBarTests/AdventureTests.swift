@@ -223,6 +223,68 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(first.round, 2)
     }
 
+    /// 회귀: PP 검증이 **해상 루프 안**에 있었다(사전 검증 루프는 인덱스만 봤다). 남지 않은 기술을
+    /// 지목한 액션이 섞여 있으면, 그보다 순서가 앞선 공격은 이미 적용된 뒤에 throw 가 난다.
+    /// `mutating` 메서드는 throw 해도 그때까지의 변경이 호출자에게 남으므로, 라운드가 반쯤 적용된
+    /// 상태가 된다 — 호스트(`finishRoundIfReady`)는 그 라운드를 통째로 버리면서 턴 타이머를 다시
+    /// 걸지 않으니(`scheduleTurnTimeout()` 은 성공 경로에만 있다) 방의 진행이 멈춘다.
+    /// 상대가 보내오는 액션은 신뢰 경계 밖이라 이 조건은 원격에서 만들 수 있다.
+    func testResolveRoundRejectsSpentMoveBeforeAnyDamage() throws {
+        let fastID = UUID(), slowID = UUID()
+        func fighter(_ id: UUID, speed: Int) -> MultiplayerFighter {
+            let move = MoveSpec(id: 1, names: [:], type: .normal, power: 40,
+                                damageClass: .physical, accuracy: 100, pp: 20)
+            let snapshot = BattleSnapshot(speciesID: 1, name: "Mon", trainer: nil, level: 20,
+                                          nature: nil, isShiny: false, types: [.normal],
+                                          base: BattleStats(hp: 80, atk: 60, def: 60, spa: 60,
+                                                            spd: 60, spe: speed),
+                                          moves: [move])
+            return MultiplayerFighter(participant: LobbyParticipant(id: id, trainerName: "T", speciesID: 1,
+                                                                     team: .solo, isReady: true, isHost: false),
+                                      snapshot: snapshot)
+        }
+        // 빠른 쪽이 먼저 때린다 — 느린 쪽의 위법 액션은 그 뒤에 걸린다(부분 적용이 드러나는 순서).
+        let fast = fighter(fastID, speed: 200)
+        var slow = fighter(slowID, speed: 10)
+        slow.pp[0] = 0
+        var battle = try MultiplayerBattle(fighters: [fast, slow], mode: .freeForAll, seed: 7)
+        let fullHP = battle.fighters.map(\.hp)
+
+        XCTAssertThrowsError(try battle.resolveRound([
+            MultiplayerAction(attackerID: fastID, targetID: slowID, moveIndex: 0),
+            MultiplayerAction(attackerID: slowID, targetID: fastID, moveIndex: 0),
+        ])) { XCTAssertEqual($0 as? MultiplayerBattleError, .invalidMove) }
+
+        XCTAssertEqual(battle.fighters.map(\.hp), fullHP, "거절된 라운드는 데미지를 남기지 않는다")
+        XCTAssertEqual(battle.fighters.first { $0.id == fastID }?.pp, [20], "PP 도 소모되지 않는다")
+        XCTAssertTrue(battle.events.isEmpty, "버려진 라운드의 이벤트가 남으면 안 된다")
+    }
+
+    /// `MultiplayerFighter` 의 JSON 모양은 protocolVersion 2 의 계약이다 — 배틀 상태를 내부에서
+    /// 어떻게 묶든 이 키들이 평면으로 남아야 구버전과 계속 붙는다. 이 테스트가 깨지면 고칠 것은
+    /// 테스트가 아니라 `protocolVersion` 이다.
+    func testMultiplayerFighterWireShapeStaysFlat() throws {
+        let id = UUID()
+        let snapshot = BattleSnapshot(speciesID: 25, name: "Pika", trainer: "T", level: 50, nature: nil,
+                                      isShiny: false, types: [.electric],
+                                      base: BattleStats(hp: 35, atk: 55, def: 40, spa: 50, spd: 50, spe: 90),
+                                      moves: [MoveSpec(id: 85, names: [:], type: .electric, power: 90,
+                                                       damageClass: .special, accuracy: 100, pp: 15)])
+        var fighter = MultiplayerFighter(participant: LobbyParticipant(id: id, trainerName: "T", speciesID: 25,
+                                                                        team: .solo, isReady: true, isHost: true),
+                                        snapshot: snapshot)
+        fighter.hp = 42
+        fighter.pp = [7]
+        let encoded = try JSONEncoder().encode(fighter)
+        let json = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        XCTAssertEqual(Set(json?.keys.sorted() ?? []),
+                       ["id", "trainerName", "team", "snapshot", "hp", "pp"])
+        XCTAssertEqual(json?["hp"] as? Int, 42)
+        XCTAssertEqual(json?["pp"] as? [Int], [7])
+        // 왕복 — 받은 쪽이 hp/pp 를 복원한다(스냅샷 기본값으로 되돌아가지 않는다).
+        XCTAssertEqual(try JSONDecoder().decode(MultiplayerFighter.self, from: encoded), fighter)
+    }
+
     // MARK: 멀티 턴 순서 — 우선도 → 스피드 → 무작위
 
     /// 스피드가 같은 두 명. UUID 를 사전순 양 끝으로 고정해 "UUID 로 갈리는지" 를 직접 본다.
