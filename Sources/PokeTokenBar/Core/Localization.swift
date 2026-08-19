@@ -456,6 +456,7 @@ struct L {
     var catchLogTitle: String { t("포획 로그", "Catch log", "捕獲ログ") }
     /// 도감 총계는 개체가 아니라 종 수 — 로그의 dexTotal("총 N마리")과 단위가 다르다.
     func dexSpeciesTotal(_ n: Int) -> String { t("\(n)종", "\(n) species", "\(n)種") }
+    /// 페이저 접근성 문구 — 도감과 소유 포켓몬이 함께 쓴다(둘 다 페이지식 고정 격자).
     func dexPageLabel(_ page: Int, _ total: Int) -> String {
         t("\(total)페이지 중 \(page)페이지", "Page \(page) of \(total)", "\(total)ページ中 \(page)ページ")
     }
