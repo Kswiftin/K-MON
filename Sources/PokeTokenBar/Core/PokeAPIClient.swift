@@ -355,13 +355,13 @@ actor PokeAPIClient: PokeProviding {
         return out
     }
 
-    /// 삭제된 기술의 안내문인가. **접두사로만** 판정한다 — "사용할 수 없" 을 부분일치로 보면
+    /// 삭제된 기술의 안내문인가. **접두사로만** 판정한다 — "사용할 수 없"을 부분일치로 보면
     /// 금지어("4턴 동안 사용할 수 없게 만든다") 같은 진짜 설명까지 지운다.
     static func isUnusableMoveNotice(_ text: String) -> Bool {
         let normalized = text
             .replacingOccurrences(of: "\u{2019}", with: "'")     // PokéAPI 는 굽은 따옴표를 쓴다
             .replacingOccurrences(of: "\u{3000}", with: " ")     // 일본어 전각 공백
-            // 공백류는 개수까지 접는다 — 1:1 치환만 하면 "この技は　　使えません" 처럼 겹친 경우를 놓친다.
+            // 공백류는 개수까지 접는다 — 1:1 치환만 하면 "この技は　　使えません"처럼 겹친 경우를 놓친다.
             .replacingOccurrences(of: "[\\s\u{000C}]+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return unusableNoticePrefixes.contains { normalized.hasPrefix($0) }

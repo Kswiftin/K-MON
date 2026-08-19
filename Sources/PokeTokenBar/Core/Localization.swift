@@ -422,7 +422,7 @@ struct L {
     }
 
     /// 호버 슬롯 문구 — 올린 기술이 없으면 안내, 설명이 있으면 설명, 없거나 비어 있으면 스탯 요약.
-    /// 슬롯이 빈 채로 남으면 "고장난 것" 처럼 보이므로 어느 분기에서도 빈 문자열을 내지 않는다.
+    /// 슬롯이 빈 채로 남으면 "고장 난 것"처럼 보이므로 어느 분기에서도 빈 문자열을 내지 않는다.
     func moveHoverText(_ move: MoveSpec?) -> String {
         guard let move else { return moveHoverHint }
         if let description = move.description(lang), !description.isEmpty { return description }

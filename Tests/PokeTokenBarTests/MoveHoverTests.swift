@@ -65,7 +65,7 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertTrue(text.contains(L(.ko).moveAlwaysHits), text)
     }
 
-    /// 변화기는 위력이 0 이라 "위력 0" 이 아니라 "—" 로 나와야 한다.
+    /// 변화기는 위력이 0이라 "위력 0"이 아니라 "—"로 나와야 한다.
     /// (커버리지 게이트는 통과했지만 이 분기는 `^0` 이었다 — 라인 커버리지는 증거가 아니다.)
     func testStatusMoveShowsDashInsteadOfZeroPower() {
         let status = MoveSpec(id: 45, names: ["ko": "울음소리", "en": "Growl", "ja": "なきごえ"],
@@ -108,7 +108,7 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertEqual(MoveListView.hoverState(current: 8, moveID: 7, isInside: false), 8)
     }
 
-    /// 다른 행에 올리면 그 행으로 바뀐다 — 유지가 "안 바뀐다" 가 되면 안 된다.
+    /// 다른 행에 올리면 그 행으로 바뀐다 — 유지가 "안 바뀐다"가 되면 안 된다.
     func testEnteringAnotherRowReplacesTheSelection() {
         XCTAssertEqual(MoveListView.hoverState(current: 7, moveID: 9, isInside: true), 9)
     }
@@ -165,7 +165,7 @@ final class MoveHoverTests: XCTestCase {
     private let jaNotice = "この技は\u{3000}使えません\n思い出すことが\u{3000}できなくなりますが"
 
     /// 트리거 재현: 삭제된 기술은 *최신* 버전 항목이 설명이 아니라 안내문이다(실측: move/return).
-    /// 마지막 항목을 그대로 쓰면 "사용할 수 없는 기술입니다" 가 설명 자리에 뜬다.
+    /// 마지막 항목을 그대로 쓰면 "사용할 수 없는 기술입니다"가 설명 자리에 뜬다.
     func testSkipsUnusableNoticeAndKeepsTheRealDescription() {
         let picked = PokeAPIClient.flavorTexts([
             (language: "ko", text: "트레이너를 위해 전력으로 상대를 공격한다."),
@@ -195,7 +195,7 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertTrue(PokeAPIClient.isUnusableMoveNotice("このわざは\u{3000}つかえません"))
     }
 
-    /// 거짓양성 가드: 진짜 설명에도 "사용할 수 없" 이 들어간다(금지어·트집). 부분일치로 판정하면
+    /// 거짓양성 가드: 진짜 설명에도 "사용할 수 없"이 들어간다(금지어·트집). 부분일치로 판정하면
     /// 멀쩡한 설명이 통째로 사라진다 — 그래서 접두사로만 본다.
     func testRealDescriptionsMentioningUnusableAreNotDropped() {
         let disable = "상대가 마지막으로 사용한 기술을 4턴 동안 사용할 수 없게 만든다."
@@ -225,8 +225,8 @@ final class MoveHoverTests: XCTestCase {
     }
 
     /// 트리거 브랜치: 모든 언어 항목이 안내문이면 flavorTexts 는 빈 dict 를 만든다.
-    /// 그걸 "없음" 으로 보면 로드할 때마다 다시 받아 영원히 수렴하지 않는다 —
-    /// "안 받아봤다(nil)" 와 "받아봤지만 쓸 게 없다([:])" 는 다른 상태다.
+    /// 그걸 "없음"으로 보면 로드할 때마다 다시 받아 영원히 수렴하지 않는다 —
+    /// "안 받아봤다(nil)"와 "받아봤지만 쓸 게 없다([:])"는 다른 상태다.
     func testFetchedButEmptyDescriptionsDoNotRefetchForever() {
         let fetchedEmpty = MoveSpec(id: 216, names: ["ko": "은혜갚기"], type: .normal, power: 102,
                                     damageClass: .physical, accuracy: 100, pp: 20, descriptions: [:])
@@ -234,7 +234,7 @@ final class MoveHoverTests: XCTestCase {
                        "조회 결과가 빈 것뿐인데 매번 다시 받는다")
     }
 
-    /// 전각 공백이 두 번 이상 와도 안내문으로 잡아야 한다 — 1:1 치환만 하면 "この技は　　使えません" 을 놓친다.
+    /// 전각 공백이 두 번 이상 와도 안내문으로 잡아야 한다 — 1:1 치환만 하면 "この技は　　使えません"을 놓친다.
     func testDetectsNoticeWithRepeatedIdeographicSpaces() {
         XCTAssertTrue(PokeAPIClient.isUnusableMoveNotice("この技は\u{3000}\u{3000}使えません\n思い出すことが"))
         XCTAssertTrue(PokeAPIClient.isUnusableMoveNotice("사용할 수  없는  기술입니다."))
@@ -243,7 +243,7 @@ final class MoveHoverTests: XCTestCase {
     // MARK: 슬롯 배선 (id → 기술 → 문구)
 
     /// 호버 id 를 실제 기술로 되짚는 단계까지 한 함수에 두고 검증한다.
-    /// 이게 뷰 안에만 있으면 "되짚기를 통째로 지워도 테스트 전부 통과" 가 된다(#40 과 같은 false confidence).
+    /// 이게 뷰 안에만 있으면 "되짚기를 통째로 지워도 테스트 전부 통과"가 된다(#40과 같은 false confidence).
     func testPanelTextResolvesTheHoveredMove() {
         let moves = [move(descriptions: ["ko": "첫 번째 설명"]),
                      MoveSpec(id: 99, names: ["ko": "다른 기술"], type: .water, power: 60,
