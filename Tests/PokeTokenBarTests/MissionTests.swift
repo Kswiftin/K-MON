@@ -165,15 +165,22 @@ final class MissionBoardTests: XCTestCase {
 @MainActor
 final class MissionAccrualTests: XCTestCase {
 
-    private func makeStore(_ clock: TestClock) -> CompanionStore {
+    /// `trainerPoints` 는 미션 보상만 떼어 보기 위한 손잡이다. 모험 정산·졸업은 미션과 트레이너
+    /// 레벨 **양쪽**에 지급하므로, 지갑 증가분만 보면 어느 쪽 몫인지 구분되지 않는다. 상한값으로
+    /// 시드하면 트레이너는 더 오를 곳이 없어 0을 지급하고, 남는 증가분이 곧 미션 보상이다.
+    private func makeStore(_ clock: TestClock, trainerPoints: Int = 0) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-mission-\(UUID().uuidString).json")
+        if trainerPoints > 0 {
+            let json = #"{"economyVersion":2,"forcedResetVersion":1,"trainer":{"points":\#(trainerPoints)}}"#
+            try? Data(json.utf8).write(to: url)
+        }
         return CompanionStore(provider: StubProvider(value: missionTestLine), clock: clock.closure,
                               fileURL: url, rng: SeededRNG(seed: 11))
     }
 
-    private func hatchedStore(_ clock: TestClock) async -> CompanionStore {
-        let store = makeStore(clock)
+    private func hatchedStore(_ clock: TestClock, trainerPoints: Int = 0) async -> CompanionStore {
+        let store = makeStore(clock, trainerPoints: trainerPoints)
         await store.hatch(baseID: 1)
         XCTAssertNotNil(store.state.active, "테스트 전제: 활성 포켓몬이 있어야 모험을 보낼 수 있다")
         return store
@@ -220,21 +227,26 @@ final class MissionAccrualTests: XCTestCase {
         XCTAssertTrue(store.startFocusAdventure(minutes: 90))
         clock.advance(90 * 60)
         let first = try XCTUnwrap(store.claimAdventure())
-        XCTAssertEqual(store.state.starPieces - before, first.starPieces + dailyFocus.reward,
-                       "90분 정산으로 일간 집중 미션이 완료된다")
+        XCTAssertEqual(first.missionBonus, dailyFocus.reward, "90분 정산으로 일간 집중 미션이 완료된다")
+        // 같은 정산이 트레이너 레벨도 올린다 — 지갑 증가분은 두 지급의 합이다.
+        XCTAssertEqual(store.state.starPieces - before,
+                       first.starPieces + first.trainerBonus + first.missionBonus)
 
         before = store.state.starPieces
         XCTAssertTrue(store.startFocusAdventure(minutes: 25))
         clock.advance(25 * 60)
         let second = try XCTUnwrap(store.claimAdventure())
-        XCTAssertEqual(store.state.starPieces - before, second.starPieces + dailyAdventures.reward,
+        XCTAssertEqual(second.missionBonus, dailyAdventures.reward,
                        "두 번째 정산으로는 모험 횟수 미션만 완료된다 — 집중 미션은 재지급되지 않는다")
+        XCTAssertEqual(store.state.starPieces - before,
+                       second.starPieces + second.trainerBonus + second.missionBonus)
     }
 
     /// 졸업 단독 경로 — 모험을 **한 번도 하지 않고** 졸업만 해도 주간 미션이 완료된다.
     func testGraduationAloneCompletesTheWeeklyGraduationMission() async {
         let clock = TestClock()
-        let store = await hatchedStore(clock)
+        // 졸업은 트레이너 포인트도 적립한다. 상한으로 시드해 그쪽 지급을 0으로 묶고 미션 몫만 남긴다.
+        let store = await hatchedStore(clock, trainerPoints: TrainerLevel.maximumPoints)
         store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
         store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
         XCTAssertNil(store.activeAdventure, "이 경로엔 모험이 전혀 없다")
