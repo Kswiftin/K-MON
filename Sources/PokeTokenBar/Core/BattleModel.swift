@@ -64,9 +64,24 @@ enum TypeChart {
         .fairy:    [.fire: 0.5, .fighting: 2, .poison: 0.5, .dragon: 2, .dark: 2, .steel: 0.5],
     ]
 
-    /// 공격타입 → 방어타입 조합(단일/복합) 배율. 복합타입은 곱.
+    /// 공격타입 → 방어타입 조합(단일/복합) 배율. 복합타입은 곱. **표시용**이다 —
+    /// "효과가 굉장했다" 를 띄울지 판단하는 값이고, 데미지 계산은 `apply(_:of:against:)` 를 쓴다.
     static func effectiveness(_ attacking: PokemonType, against defending: [PokemonType]) -> Double {
         defending.reduce(1.0) { $0 * (multipliers[attacking]?[$1] ?? 1.0) }
+    }
+
+    /// 상성을 **정수 연산**으로 적용한다 — 방어 타입을 하나씩 곱하거나 나눈다(Gen 2 방식).
+    /// 배율을 Double 로 한 번에 곱하면 두 피어가 각자 계산하는 이 대전에서 부동소수 오차가
+    /// 결과를 가를 여지가 남는다. 표의 값은 0 / 0.5 / 2 뿐이라 정수 곱·나눗셈으로 정확히 옮겨진다.
+    static func apply(_ damage: Int, of attacking: PokemonType, against defending: [PokemonType]) -> Int {
+        var out = damage
+        for type in defending {
+            let multiplier = multipliers[attacking]?[type] ?? 1
+            if multiplier == 0 { return 0 }
+            if multiplier > 1 { out *= Int(multiplier) }
+            else if multiplier < 1 { out /= Int(1 / multiplier) }
+        }
+        return out
     }
 }
 
@@ -280,11 +295,17 @@ struct SplitMix64: RandomNumberGenerator {
 }
 
 enum BattleEngine {
-    static let critDenominator: UInt64 = 16
+    /// 급소 배율 — Gen 2 는 ×2 고 공격측 랭크를 무시한다(Gen 6+ 는 ×1.5). 상수로 빼 둔 이유는
+    /// 밸런스다: 급소 ×2 와 상태이상이 겹치면 1턴 KO 가 흔해질 수 있어, 랭크업(Phase 3)까지
+    /// 들어온 뒤 시드를 여러 번 돌려 평균 턴 수를 재고 다시 판단한다.
+    static let critMultiplier = 2
+    /// 급소 확률 — Gen 2 는 256분의 17(≈6.6%). 예전엔 1/16(6.25%) 고정이었다.
+    static let critThreshold: UInt64 = 17
 
     /// 대전 규칙 버전 — 턴 순서나 데미지 계산을 바꿀 때마다 올린다. 두 피어가 결과를 주고받지 않고
-    /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다. 1 = 우선도 도입.
-    static let rulesVersion = 1
+    /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다.
+    /// 1 = 우선도 도입, 2 = Gen 2 데미지 파이프라인(정수 난수·급소 ×2·`+2` 위치).
+    static let rulesVersion = 2
 
     /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.
     struct AttackOutcome: Sendable {
@@ -311,16 +332,25 @@ enum BattleEngine {
         // 상성 배율을 계산하는 지점이 여기 한 곳뿐이다. 지금은 코드를 넣지 않는다.
         let effectiveness = isStruggle ? 1.0
             : TypeChart.effectiveness(move.type, against: defender.snapshot.types)
-        let stab = (!isStruggle && attacker.snapshot.types.contains(move.type)) ? 1.5 : 1.0
         let attack = move.damageClass == .physical ? attacker.stats.atk : attacker.stats.spa
         let defense = move.damageClass == .physical ? defender.stats.def : defender.stats.spd
-        let isCritical = rng.next() % critDenominator == 0
-        let roll = 0.85 + Double(rng.next() % 16) / 100.0
-        let base = Double((2 * attacker.snapshot.level / 5 + 2) * move.power * attack
-                          / max(1, defense)) / 50.0 + 2.0
-        let damage = effectiveness == 0 ? 0
-            : max(1, Int(base * stab * effectiveness * (isCritical ? 1.5 : 1.0) * roll))
-        return AttackOutcome(missed: false, damage: damage,
+        let isCritical = rng.next() % 256 < critThreshold
+        // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수나눗셈한다. 예전엔
+        // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
+        // 구조에서는 정수 연산이 유리하다(부동소수 오차가 결과를 가를 여지가 없다).
+        let random = 217 + Int(rng.next() % 39)
+
+        // Gen 2 의 계산 **순서** 그대로다. `+2` 가 급소 배율 뒤에 오고, STAB·상성은 그 뒤에 곱한다.
+        // 예전 식은 `+2` 를 먼저 더한 뒤 급소 ×1.5 를 곱해 급소 데미지가 다르게 나왔다.
+        // (배지·트레이너킥·날씨·기술보정은 §3.3 대로 안 가져온다.)
+        var damage = (2 * attacker.snapshot.level / 5 + 2) * move.power * attack / max(1, defense) / 50
+        damage = damage * (isCritical ? critMultiplier : 1) + 2
+        if !isStruggle {
+            if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }   // STAB ×1.5
+            damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
+        }
+        damage = damage * random / 255
+        return AttackOutcome(missed: false, damage: effectiveness == 0 ? 0 : max(1, damage),
                              effectiveness: effectiveness, isCritical: isCritical)
     }
 
