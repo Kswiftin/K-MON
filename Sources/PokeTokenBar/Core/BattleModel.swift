@@ -224,9 +224,9 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 /// 대전 중 한 쪽이 들고 있는 것 전부 — 스냅샷은 *교환 단위*고, 이쪽은 **턴을 넘어 사는 상태**다.
 ///
 /// 세 모드(1v1 LAN `NetBattleState`, 팀 연습 `TeamPracticeBattle`, 2~4인 `MultiplayerFighter`)가
-/// 각자 `hp`/`pp` 를 나열하고 있었다. 데미지 *함수* 는 `resolveAttack` 하나로 합쳐졌지만 상태는
-/// 세 곳이라, 상태이상·랭크업·지닌물건처럼 턴을 넘어 사는 기전을 넣으면 같은 것을 세 번 쓰게 되고
-/// 한쪽만 고치면 모드가 조용히 갈라진다. 그래서 상태도 이 타입 하나로 모은다.
+/// 각자 `hp`/`pp` 를 나열하고 있었다. 데미지 *함수* 는 `resolveAttack` 하나로 합쳐졌는데 상태는
+/// 아직 세 곳이었다. 그러면 상태이상·랭크업·지닌물건처럼 턴을 넘어 사는 기전은 같은 것을 세 번
+/// 쓰게 되고, 한쪽만 고치면 모드가 조용히 갈라진다. 그래서 상태도 이 타입 하나로 모은다.
 struct BattleSide: Sendable, Equatable {
     var snapshot: BattleSnapshot
     /// 유효 스탯 — 배틀에 들어올 때 1회 계산한다. `effectiveStats()` 를 그때그때 부르면 정렬
@@ -307,8 +307,8 @@ enum BattleEngine {
         }
         // 발버둥은 무속성(상성·STAB 미적용).
         let isStruggle = move.id == MoveSpec.struggleID
-        // Phase 5(특성·지닌물건)의 타입 면역 특성(부유·타오르는불꽃·저수)이 들어올 자리는 여기다 —
-        // 상성 배율이 계산되는 지점이 이 한 곳이다. 지금은 코드를 넣지 않는다.
+        // Phase 5(특성·지닌물건)의 타입 면역 특성(부유·타오르는불꽃·저수)이 들어올 자리다.
+        // 상성 배율을 계산하는 지점이 여기 한 곳뿐이다. 지금은 코드를 넣지 않는다.
         let effectiveness = isStruggle ? 1.0
             : TypeChart.effectiveness(move.type, against: defender.snapshot.types)
         let stab = (!isStruggle && attacker.snapshot.types.contains(move.type)) ? 1.5 : 1.0

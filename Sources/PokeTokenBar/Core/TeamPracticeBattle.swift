@@ -30,9 +30,9 @@ struct TeamPracticeBattle {
 
     /// CPU 가 이번에 쓸 기술 — PP 가 남은 것 중 하나, 전부 떨어졌으면 발버둥(index −1).
     ///
-    /// **씨드 rng 에서 뽑는다.** 예전엔 `randomElement()`(시스템 RNG)라 같은 seed 로도 배틀이
-    /// 재현되지 않았다. 로컬 전용이라 desync 는 없지만, seed 를 고정한 회귀 테스트를 쓸 수 없었다 —
-    /// 상태이상·랭크업처럼 확률 분기가 늘어나는 기전은 그 테스트 없이는 검증할 방법이 없다.
+    /// **씨드 rng 에서 뽑는다.** `randomElement()`(시스템 RNG)를 쓰던 때는 같은 seed 로도 배틀이
+    /// 재현되지 않았다. 로컬 전용이라 desync 는 없지만 seed 를 고정한 회귀 테스트를 쓸 수 없었고,
+    /// 상태이상·랭크업처럼 확률 분기가 늘어나는 기전은 그 테스트 없이 검증할 방법이 없다.
     private mutating func cpuMoveChoice() -> (move: MoveSpec, index: Int) {
         let slot = opponents[opponentActive]
         let candidates = slot.pp.indices.filter { slot.pp[$0] > 0 }

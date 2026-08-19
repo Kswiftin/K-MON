@@ -482,7 +482,7 @@ final class BattleCenter {
         if myIdx >= 0 { b.me.pp[myIdx] = max(0, b.me.pp[myIdx] - 1) }
         if oppIdx >= 0 { b.opp.pp[oppIdx] = max(0, b.opp.pp[oppIdx] - 1) }
 
-        // 엔진 좌변은 항상 challenger(A) 다 — 양쪽이 같은 좌변으로 계산해야 같은 결과가 나온다.
+        // 엔진 좌변은 항상 challenger(A) 다. 양쪽이 같은 좌변으로 계산해야 같은 결과가 나온다.
         var sideA = b.iAmA ? b.me : b.opp
         var sideB = b.iAmA ? b.opp : b.me
         let events = BattleEngine.resolveTurn(a: &sideA, b: &sideB,

@@ -269,8 +269,8 @@ final class BattleTests: XCTestCase {
 
     // MARK: 팀 연습 배틀 — 교체는 그 턴을 쓴다
 
-    /// CPU 기술 선택은 이제 씨드 rng 에서 뽑으므로, 무브셋이 여러 개여도 seed 를 고정하면
-    /// 같은 선택이 나온다 — 아래 교체 테스트들이 데미지 값에 의존하지 않는 이유다.
+    /// CPU 기술 선택은 이제 씨드 rng 에서 뽑는다. 무브셋이 여러 개여도 seed 를 고정하면 같은
+    /// 선택이 나오므로, 아래 교체 테스트는 데미지 값에 의존하지 않는다.
     private func practiceBattle(myTeam: [BattleSnapshot], opponent: BattleSnapshot) -> TeamPracticeBattle {
         TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
                            opponents: [BattleSide(opponent)],
@@ -356,7 +356,7 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(side.move(at: 0).id, 1)
     }
 
-    /// PP 가 전부 떨어지면 발버둥으로 계속 싸운다 — 연습 배틀이 그 자리에서 멈추면 안 된다.
+    /// PP 가 전부 떨어지면 발버둥으로 계속 싸운다. 연습 배틀이 그 자리에서 멈추면 안 된다.
     /// (`move(at:)` 의 발버둥 폴백을 실제로 밟는 경로다.)
     func testPracticeBattleStrugglesWhenPPRunsOut() {
         var battle = TeamPracticeBattle(mine: [BattleSide(tank())],
@@ -373,10 +373,9 @@ final class BattleTests: XCTestCase {
     }
 
     /// 회귀: CPU 기술 선택이 `randomElement()`(시스템 RNG)라 같은 seed 로도 연습 배틀이 재현되지
-    /// 않았다. seed 를 고정한 회귀 테스트를 쓸 수 없다는 뜻이고 — 상태이상·랭크업처럼 확률 분기가
-    /// 늘어나는 기전은 그 테스트 없이는 검증할 방법이 없다. 이제 씨드 rng 에서 뽑는다.
+    /// 않았다. 그게 왜 발목을 잡는지는 `TeamPracticeBattle.cpuMoveChoice` 주석에 적어 뒀다.
     ///
-    /// 한 판이 우연히 같아질 확률은 (1/4)^6 이라, 같은 seed 로 10판을 돌려 전부 같은지 본다.
+    /// 한 판이 우연히 같아질 확률은 (1/4)^6 이므로 같은 seed 로 10판을 돌려 전부 같은지 본다.
     func testPracticeBattleIsDeterministicForASeed() {
         func run() -> [Int] {
             var battle = TeamPracticeBattle(mine: [BattleSide(tank())],
@@ -386,7 +385,7 @@ final class BattleTests: XCTestCase {
             return battle.events.map { $0.moveID }
         }
         let runs = Set((0..<10).map { _ in run() })
-        XCTAssertEqual(runs.count, 1, "같은 seed 는 같은 배틀이어야 한다 — \(runs.count) 가지가 나왔다")
+        XCTAssertEqual(runs.count, 1, "같은 seed 는 같은 배틀이어야 하는데 \(runs.count) 가지가 나왔다")
     }
 
     /// 같은 자리로는 교체할 수 없다 — 턴만 버리는 조작이 된다.

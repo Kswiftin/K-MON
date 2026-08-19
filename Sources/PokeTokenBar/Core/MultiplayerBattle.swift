@@ -269,12 +269,12 @@ struct MultiplayerBattle: Sendable {
         guard Set(actionIDs).count == actionIDs.count else { throw MultiplayerBattleError.duplicateAction }
         guard Set(actionIDs) == Set(alive.map(\.id)) else { throw MultiplayerBattleError.unknownFighter }
 
-        // 사전 검증은 **데미지가 한 점도 들어가기 전에** 끝난다. 예전엔 PP 검사만 해상 루프 안에
-        // 있어서, 남지 않은 기술을 지목한 액션 하나가 이미 해상된 앞 공격들과 함께 라운드를 통째로
+        // 사전 검증은 **데미지가 한 점도 들어가기 전에** 끝난다. PP 검사가 해상 루프 안에 있던
+        // 동안은, 남지 않은 기술을 지목한 액션 하나가 이미 해상된 앞 공격과 함께 라운드를 통째로
         // 무효로 만들었다. `mutating` 메서드는 throw 해도 그때까지의 변경이 호출자에게 남으므로
         // 라운드가 **반쯤 적용된** 상태가 되고, 호스트(`finishRoundIfReady`)는 그 라운드를 버리면서
-        // 턴 타이머를 다시 걸지 않아 방의 진행이 멈춘다. 액션은 상대가 보내오는 값이라 신뢰 경계
-        // 밖이다 — 검증은 경계 한 곳에서 끝내야 한다.
+        // 턴 타이머를 다시 걸지 않아 방의 진행이 멈춘다. 액션은 상대가 보내오는 값이니 신뢰 경계
+        // 밖이다. 검증은 경계 한 곳에서 끝내야 한다.
         for action in actions {
             guard let attacker = fighters.first(where: { $0.id == action.attackerID }),
                   let target = fighters.first(where: { $0.id == action.targetID }) else {
@@ -301,8 +301,8 @@ struct MultiplayerBattle: Sendable {
             let leftPriority = leftFighter.side.move(at: lhs.0.moveIndex).turnPriority
             let rightPriority = rightFighter.side.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
-            // `stats` 는 배틀 시작에 한 번 계산된 값이다 — 예전엔 여기서 `effectiveStats()` 를
-            // 불러 비교 횟수만큼 스탯을 다시 만들었다.
+            // `stats` 는 배틀 시작에 한 번 계산된 값이다. 여기서 `effectiveStats()` 를 부르던
+            // 때는 비교 횟수만큼 스탯을 다시 만들었다.
             let leftSpeed = leftFighter.side.stats.spe
             let rightSpeed = rightFighter.side.stats.spe
             if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }

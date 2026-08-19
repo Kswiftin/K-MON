@@ -254,14 +254,14 @@ final class AdventureTests: XCTestCase {
     }
 
     /// 회귀: PP 검증이 **해상 루프 안**에 있었다(사전 검증 루프는 인덱스만 봤다). 남지 않은 기술을
-    /// 지목한 액션이 섞여 있으면, 그보다 순서가 앞선 공격은 이미 적용된 뒤에 throw 가 난다.
-    /// `mutating` 메서드는 throw 해도 그때까지의 변경이 호출자에게 남으므로, 라운드가 반쯤 적용된
-    /// 상태가 된다 — 호스트(`finishRoundIfReady`)는 그 라운드를 통째로 버리면서 턴 타이머를 다시
+    /// 지목한 액션이 섞여 있으면 그보다 순서가 앞선 공격은 이미 적용된 뒤에 throw 가 난다.
+    /// `mutating` 메서드는 throw 해도 그때까지의 변경이 호출자에게 남으므로 라운드가 반쯤 적용된
+    /// 상태가 된다. 호스트(`finishRoundIfReady`)는 그 라운드를 통째로 버리면서 턴 타이머를 다시
     /// 걸지 않으니(`scheduleTurnTimeout()` 은 성공 경로에만 있다) 방의 진행이 멈춘다.
     /// 상대가 보내오는 액션은 신뢰 경계 밖이라 이 조건은 원격에서 만들 수 있다.
     func testResolveRoundRejectsSpentMoveBeforeAnyDamage() throws {
         let fastID = UUID(), slowID = UUID()
-        // 빠른 쪽이 먼저 때린다 — 느린 쪽의 위법 액션은 그 뒤에 걸린다(부분 적용이 드러나는 순서).
+        // 빠른 쪽이 먼저 때리고, 느린 쪽의 위법 액션은 그 뒤에 걸린다(부분 적용이 드러나는 순서).
         let fast = soloMoveFighter(fastID, speed: 200)
         var slow = soloMoveFighter(slowID, speed: 10)
         slow.side.pp[0] = 0
@@ -278,7 +278,7 @@ final class AdventureTests: XCTestCase {
         XCTAssertTrue(battle.events.isEmpty, "버려진 라운드의 이벤트가 남으면 안 된다")
     }
 
-    /// `MultiplayerFighter` 의 JSON 모양은 protocolVersion 2 의 계약이다 — 배틀 상태를 내부에서
+    /// `MultiplayerFighter` 의 JSON 모양은 protocolVersion 2 의 계약이다. 배틀 상태를 내부에서
     /// 어떻게 묶든 이 키들이 평면으로 남아야 구버전과 계속 붙는다. 이 테스트가 깨지면 고칠 것은
     /// 테스트가 아니라 `protocolVersion` 이다.
     func testMultiplayerFighterWireShapeStaysFlat() throws {
