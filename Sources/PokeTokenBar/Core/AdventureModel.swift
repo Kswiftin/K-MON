@@ -274,6 +274,9 @@ struct AdventureReward: Sendable, Equatable {
     /// 이 정산으로 트레이너 레벨이 올라 함께 지급된 별의조각. 보상 객체가 실제 지급액을 전부
     /// 설명해야 한다 — 밖에서 몰래 더하면 UI 가 알려준 값과 지갑이 어긋난다.
     var trainerBonus = 0
+    /// 이 정산으로 완료된 미션이 함께 지급한 별의조각. `trainerBonus` 와 같은 이유로 여기 실린다 —
+    /// 지갑에 더하는 경로가 하나 더 생겼는데 보상 객체가 모르면 그만큼이 설명되지 않는다.
+    var missionBonus = 0
     var stardust: Int { starPieces }
 }
 
@@ -282,6 +285,7 @@ struct FocusSessionReward: Sendable, Equatable {
     let stardust: Int
     let foundEgg: Bool
     var trainerBonus = 0
+    var missionBonus = 0
 }
 
 enum FocusRewardRules {

@@ -39,10 +39,29 @@ final class AdventureClaimTests: XCTestCase {
         XCTAssertNil(store.activeAdventure, "정산 후에는 모험 슬롯이 비어야 한다")
         XCTAssertGreaterThan(store.state.starPieces, starPiecesBefore)
         XCTAssertGreaterThan(store.state.active?.levelExperience ?? 0, expBefore)
-        // 보상 객체가 지갑 증가분을 **전부** 설명해야 한다. 트레이너 레벨업 보너스처럼 정산 중에
+        // 보상 객체가 지갑 증가분을 **전부** 설명해야 한다. 트레이너 레벨업·미션 완료처럼 정산 중에
         // 함께 지급되는 값도 여기 실려야, 알려준 값과 실제 잔액이 어긋나지 않는다.
-        XCTAssertEqual(reward.stardust + reward.trainerBonus, store.state.starPieces - starPiecesBefore,
+        XCTAssertEqual(reward.stardust + reward.trainerBonus + reward.missionBonus,
+                       store.state.starPieces - starPiecesBefore,
                        "세션 보상은 claimAdventure() 결과 그대로 — 별도 가산이면 이중 지급이다")
+    }
+
+    /// [회귀 가드] 위 테스트는 25분 세션이라 어떤 미션도 완료되지 않아, 미션이 지갑에 **몰래** 더해도
+    /// 통과했다(트레이너 레벨과 미션을 합칠 때 실제로 그랬다). 완전설명 불변식은 부가 지급이 실제로
+    /// 일어나는 세션에서 검사해야 의미가 있다 — 60분 목표를 넘기는 90분으로 그 분기를 밟는다.
+    func testRewardExplainsWalletEvenWhenAMissionCompletes() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        let starPiecesBefore = store.state.starPieces
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 90))
+        clock.advance(90 * 60)
+        let reward = store.completeFocusSession(minutes: 90)
+
+        XCTAssertGreaterThan(reward.missionBonus, 0, "테스트 전제: 이 세션은 일간 집중 미션을 완료시킨다")
+        XCTAssertEqual(reward.stardust + reward.trainerBonus + reward.missionBonus,
+                       store.state.starPieces - starPiecesBefore,
+                       "미션 보상까지 보상 객체가 설명해야 한다")
     }
 
     /// 이중 지급 가드: 세션 완료 후 한 번 더 정산해도 아무것도 늘지 않는다.

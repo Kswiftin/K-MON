@@ -354,6 +354,22 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(s.usedSinceInstall - s.spentTokens, 0)
     }
 
+    /// [부류 가드] 기본값 상태의 canonical 은 **동결**이다. 새 필드를 조건 없이 붙이면 여기서 깨진다 —
+    /// 그런 append 는 그 필드가 없던 시절의 정상 세이브를 전부 조작으로 판정해 진행을 초기화한다.
+    ///
+    /// 필드마다 있던 `hash(기본값) == hash(기본값)` 형태의 테스트 3개는 이걸 못 잡았다: 무조건 append 로
+    /// 바꿔도 비교 대상 양쪽이 똑같이 바뀌어 그대로 통과한다. 자기 자신이 아니라 **동결된 문자열**과 대조한다.
+    func testDefaultStateCanonicalFormIsFrozen() {
+        let canonical = SaveTransfer.canonicalString(CompanionState())
+        XCTAssertEqual(canonical.components(separatedBy: "|sec").first,
+                       "v2|u0|sp0|pc0|eg0|ef0|ab|wk|wc0|tier-|scfalse|cand|inv|act-|dex|cf",
+                       """
+                       기본값 canonical 이 바뀌었다. 새 필드를 조건 없이 붙였다면 되돌려라 —
+                       그 필드가 없던 세이브가 전부 조작 판정된다. 형식을 의도적으로 바꾼 것이라면
+                       integrityVersion 을 올리고 이 기대값을 갱신하라.
+                       """)
+    }
+
     // MARK: 필드 부류 (딥리뷰 M-g)
 
     /// [딥리뷰 M-g] 이전 시 필드 분류가 산문 규약뿐이라, 새 필드가 추가되면 아무 판단 없이 "진행"으로
@@ -364,7 +380,8 @@ final class SaveTransferTests: XCTestCase {
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
                                      "starterCandidates", "active", "dex", "collectedFinals", "inventory",
                                      "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
-                                     "care", "battleRank", "trainer", "battleHistory", "adventure", "adventureHistory",
+                                     "care", "battleRank", "trainer", "missions", "battleHistory",
+                                     "adventure", "adventureHistory",
                                      "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "focusEggReadyDates", "eggFragments",
                                      "starPieces", "forcedResetVersion", "integrityVersion", "lastAdventureBonusDate"]
         // 로컬 장부: 이 기기의 시계 기준값·서명 → 새 기기 기준 재설정(저장 시 재서명).

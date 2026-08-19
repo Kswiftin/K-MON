@@ -516,6 +516,38 @@ struct L {
     /// 상단 트레이너 바 라벨. `Lv.N` 만 쓰면 포켓몬 레벨(파트너·로스터·배틀에서 이미 쓰는 표기)로
     /// 잘못 읽힌다 — 이 단어가 계정 단위 값임을 알려주는 유일한 장치다.
     var trainerLevelLabel: String { t("트레이너", "Trainer", "トレーナー") }
+    var notifMissionDoneTitle: String { t("🎯 미션 완료!", "🎯 Mission complete!", "🎯 ミッション達成！") }
+    func notifMissionDoneBody(_ name: String, _ stardust: Int) -> String {
+        let amount = GameNumberFormatter.compact(stardust)
+        return t("\(name) — 별의조각 \(amount) 받았어요!",
+                 "\(name) — you earned \(amount) Star Pieces!",
+                 "\(name) — ほしのかけら \(amount) を獲得！")
+    }
+    /// 이름 없는 미션은 **빈 문자열**을 돌려준다 — 카탈로그에 미션을 더하고 문구를 빼먹으면
+    /// `MissionBoardTests` 가 그 자리에서 실패한다. id 를 폴백으로 쓰면 그 가드가 무력해진다.
+    /// 이름에 "오늘"·"이번 주"를 넣지 않는다 — 카드의 일간/주간 배지가 이미 그 말을 하고,
+    /// 360pt 팝오버에서 같은 정보를 두 번 쓰면 이름이 잘린다. 목표 수치가 들어가 있어
+    /// 알림에서도 어느 미션인지 구분된다(집중 60분 vs 300분).
+    func missionName(_ mission: Mission) -> String {
+        switch mission.id {
+        case "dailyAdventures":
+            return t("모험 정산 \(mission.target)회",
+                     "Claim \(mission.target) adventures",
+                     "冒険を\(mission.target)回精算")
+        case "dailyFocus", "weeklyFocus":
+            return t("집중 \(mission.target)분",
+                     "Focus \(mission.target) minutes",
+                     "\(mission.target)分集中")
+        case "weeklyGraduation":
+            return t("졸업 \(mission.target)회",
+                     "Graduate \(mission.target) partner",
+                     "\(mission.target)体を卒業")
+        default: return ""
+        }
+    }
+    var missionsTitle: String { t("미션", "Missions", "ミッション") }
+    /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.
+    var missionDaily: String { t("일간", "Daily", "デイリー") }
 
     var notifGraduateTitle: String { t("🎓 졸업!", "🎓 Graduated!", "🎓 卒業！") }
     func notifGraduateBody(_ name: String) -> String { t("\(name) — 도감에 보존! 새 알이 도착했어요.", "\(name) — saved to your Pokédex! A new egg has arrived.", "\(name) — 図鑑に保存！新しいタマゴが届きました。") }

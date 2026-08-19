@@ -700,6 +700,9 @@ final class CompanionStore {
         // 트레이너 포인트는 **정산된** 분만 인정한다 — 시작만으로 적립하면 타이머를 켜 두는 것이
         // 곧 성장이 돼 집중과 무관해진다.
         reward.trainerBonus = accrueTrainerPoints(minutes)
+        // 미션은 **정산된** 분만 인정한다 — 시작만으로 진행되면 타이머를 켜 두는 것이 곧 미션
+        // 진행이 되어 목표가 집중과 무관해진다.
+        reward.missionBonus = recordMission(.focusMinutes, minutes) + recordMission(.adventures, 1)
         var fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
         let today = Self.dayKey(now)
         if state.lastAdventureBonusDate != today {
@@ -817,6 +820,33 @@ final class CompanionStore {
         return bonus
     }
 
+    /// 미션 기록의 **유일한** 경로 — 완료 보상(별의조각)과 알림도 여기서 처리한다.
+    /// 적립 지점(모험 정산·졸업)마다 `state.missions` 를 직접 만지면 갱신과 클램프가 두 곳으로 갈라진다.
+    /// 완료된 미션만 돌아오므로 "이미 줬나"를 따로 기억하지 않는다.
+    /// 반환값은 이번에 지급한 별의조각 — `accrueTrainerPoints` 와 같은 계약이다. 정산 경로는 이 값을
+    /// 보상 객체에 실어야 한다. 지갑만 늘리고 보고하지 않으면 알려준 값과 실제 잔액이 어긋난다.
+    @discardableResult
+    private func recordMission(_ event: MissionEvent, _ amount: Int) -> Int {
+        let now = clock()
+        var paid = 0
+        for mission in state.missions.record(event, amount,
+                                             dayKey: Self.dayKey(now), weekKey: Self.weekKey(now)) {
+            state.starPieces += mission.reward
+            paid += mission.reward
+            notifyCompanionEvent(l.notifMissionDoneTitle,
+                                 l.notifMissionDoneBody(l.missionName(mission), mission.reward))
+        }
+        return paid
+    }
+
+    /// 화면용 미션 목록. 진행도는 **읽는 시점의** 날짜·주 키로 판정하므로, 자정이 지나면 아무 기록
+    /// 없이도 일간이 비어 보인다(상태는 그대로 — 다음 기록이 실제로 갱신한다).
+    var missionRows: [(mission: Mission, progress: Int)] {
+        let now = clock()
+        let day = Self.dayKey(now), week = Self.weekKey(now)
+        return MissionBoard.catalog.map { ($0, state.missions.progress($0, dayKey: day, weekKey: week)) }
+    }
+
     var focusEggCount: Int { state.focusEggs }
     var nextStoredEggHatchAt: Date? { state.focusEggReadyDates.min() }
     var eggFragmentCount: Int { state.eggFragments }
@@ -834,7 +864,8 @@ final class CompanionStore {
             return FocusSessionReward(minutes: minutes, stardust: 0, foundEgg: false)
         }
         return FocusSessionReward(minutes: minutes, stardust: reward.starPieces,
-                                  foundEgg: reward.bonusEggs > 0, trainerBonus: reward.trainerBonus)
+                                  foundEgg: reward.bonusEggs > 0, trainerBonus: reward.trainerBonus,
+                                  missionBonus: reward.missionBonus)
     }
 
     func beginIncubatingFocusEgg() -> Bool {
@@ -1308,6 +1339,9 @@ final class CompanionStore {
         // 졸업은 파트너를 초기화하지만 트레이너 성장은 여기서 이어진다 — 모험을 한 번도 하지 않고
         // 졸업만 해도 적립된다(집중 경로와 독립).
         accrueTrainerPoints(TrainerLevel.graduationPoints)
+        // 졸업은 파트너를 초기화하지만 미션 진행은 여기서 이어진다 — 모험을 한 번도 하지 않고
+        // 졸업만 해도 기록된다(집중 경로와 독립).
+        recordMission(.graduations, 1)
         state.dex.append(DexEntry(baseID: a.baseID, finalID: finalID,
                                   chainOrder: a.pathIDs, rarity: a.rarity, caughtAt: clock(),
                                   isShiny: a.isShiny, nature: a.nature,

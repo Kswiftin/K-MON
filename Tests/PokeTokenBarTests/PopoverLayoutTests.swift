@@ -70,6 +70,63 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertGreaterThan(PopoverTab.collection.contentHeight, PopoverTab.home.contentHeight)
     }
 
+    // MARK: 미션 카드 — 세로 예산
+
+    /// 홈 탭 스크롤 뷰포트 예산. 560pt 창에서 패딩·상단 바·타이머·탭 피커·푸터를 빼면 약 250pt 가
+    /// 남고, 파트너 카드(`CompanionHeader`)가 그중 176pt 를 쓴다. 미션 카드가 이 값을 넘으면
+    /// 파트너가 뷰포트 밖으로 밀려 홈 탭을 열었을 때 앱의 주인공이 안 보인다.
+    private static let missionCardBudget: CGFloat = 100
+
+    private func missionStore(_ language: AppLanguage = .ko) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-mission-layout-\(UUID().uuidString).json")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)"}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: StubProvider(value: moveTestLine),
+                              clock: { Date(timeIntervalSince1970: 1_755_000_000) },
+                              fileURL: url, rng: SeededRNG(seed: 5))
+    }
+
+    /// 트리거 재현: 미션마다 `ProgressView` 를 한 줄씩 깔면 예산을 두 배로 넘긴다(첫 버전이 211pt).
+    /// 이 대조군이 없으면 아래 예산 검증이 "애초에 통과할 조건이었다"는 false confidence 가 된다.
+    func testAGaugePerMissionRowBlowsThroughTheBudget() {
+        let gauged = VStack(alignment: .leading, spacing: 6) {
+            Text("🎯 미션").font(.caption.weight(.semibold))
+            ForEach(MissionBoard.catalog) { mission in
+                HStack {
+                    Text(mission.id).font(.caption2)
+                    Spacer()
+                    Text("0/\(mission.target)").font(.caption2)
+                }
+                ProgressView(value: 0.3)
+            }
+        }
+        .padding(9)
+        XCTAssertGreaterThan(renderedHeight(gauged), Self.missionCardBudget * 2,
+                             "대조군이 안 넘치면 예산 검증이 무의미해진다")
+    }
+
+    /// 미션 카드는 파트너와 한 화면에 공존해야 한다 — 게이지를 행마다 두지 않는 이유가 이것뿐이다.
+    func testMissionCardFitsTheHomeViewportBudget() {
+        XCTAssertLessThanOrEqual(renderedHeight(MissionBoardView(store: missionStore())),
+                                 Self.missionCardBudget)
+    }
+
+    /// 예산 여유가 3pt 뿐이라 **언어가 높이를 흔들면 안 된다**. 이름이 한 줄을 넘기는 순간 행이
+    /// 통째로 커지는데, 그 회귀를 기술 목록에서 이미 겪었다(CI 118pt vs 로컬 78pt — 한국어 이름만
+    /// 짧아 로컬에선 안 걸렸다).
+    ///
+    /// 지금은 세 언어 다 이름이 짧아 아무것도 줄바꿈되지 않는다 — 즉 이 테스트는 현재
+    /// `lineLimit(1)` 을 밟지 못한다. 미션을 더하거나 문구를 늘렸을 때 한 언어만 넘치는 상황을
+    /// 잡는 **전방 가드**다. 실패하면 예산이 아니라 그 문구를 줄여야 한다.
+    func testMissionCardHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(MissionBoardView(store: missionStore(.ko)))
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(MissionBoardView(store: missionStore(language))), korean,
+                           accuracy: 1, "\(language.rawValue) 에서 행 높이가 달라졌다")
+        }
+    }
+
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
 
     private func moveStore(_ moves: [MoveSpec]) -> CompanionStore {
