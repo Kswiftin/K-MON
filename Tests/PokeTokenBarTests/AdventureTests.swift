@@ -279,9 +279,9 @@ final class AdventureTests: XCTestCase {
         XCTAssertTrue(battle.events.isEmpty, "버려진 라운드의 이벤트가 남으면 안 된다")
     }
 
-    /// `MultiplayerFighter` 의 JSON 모양은 protocolVersion 2 의 계약이다. 배틀 상태를 내부에서
-    /// 어떻게 묶든 이 키들이 평면으로 남아야 구버전과 계속 붙는다. 이 테스트가 깨지면 고칠 것은
-    /// 테스트가 아니라 `protocolVersion` 이다.
+    /// `MultiplayerFighter` 의 JSON 모양은 와이어 계약이다. 배틀 상태를 내부에서 어떻게 묶든 키는
+    /// 평면으로 남는다. 키가 늘거나 줄면 고칠 것은 테스트가 아니라 `protocolVersion` 이다 —
+    /// 상태이상(protocolVersion 4)이 status 3종을 더했다.
     func testMultiplayerFighterWireShapeStaysFlat() throws {
         let id = UUID()
         let snapshot = BattleSnapshot(speciesID: 25, name: "Pika", trainer: "T", level: 50, nature: nil,
@@ -294,14 +294,25 @@ final class AdventureTests: XCTestCase {
                                         snapshot: snapshot)
         fighter.side.hp = 42
         fighter.side.pp = [7]
+        var rng = SplitMix64(seed: 3)
+        BattleEngine.inflict(.toxic, on: &fighter.side, actor: .fighter(id), rng: &rng)
         let encoded = try JSONEncoder().encode(fighter)
         let json = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
         XCTAssertEqual(Set(json?.keys.sorted() ?? []),
-                       ["id", "trainerName", "team", "snapshot", "hp", "pp"])
+                       ["id", "trainerName", "team", "snapshot", "hp", "pp",
+                        "status", "statusCounter", "confusionTurns"])
         XCTAssertEqual(json?["hp"] as? Int, 42)
         XCTAssertEqual(json?["pp"] as? [Int], [7])
-        // 왕복 — 받은 쪽이 hp/pp 를 복원한다(스냅샷 기본값으로 되돌아가지 않는다).
+        XCTAssertEqual(json?["status"] as? String, "toxic")
+        // 왕복 — 받은 쪽이 hp/pp/상태를 복원한다(스냅샷 기본값으로 되돌아가지 않는다).
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerFighter.self, from: encoded), fighter)
+
+        // 상태가 없으면 `status` 키 자체가 나가지 않는다 — 배지를 그릴 때 "없음"과 구분된다.
+        var healthy = fighter
+        healthy.side.status = nil
+        let healthyJSON = try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(healthy)) as? [String: Any]
+        XCTAssertNil(healthyJSON?["status"])
     }
 
     // MARK: 멀티 턴 순서 — 우선도 → 스피드 → 무작위
@@ -353,6 +364,55 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(try left.resolveRound(actions), try right.resolveRound(actions))
     }
 
+    /// 멀티의 순서 계산도 마비를 본다. 1v1 만 `effectiveSpeed` 로 고치고 여기를 `stats.spe` 로 두면
+    /// **같은 상태가 모드마다 다르게 굴러간다** — 이 계획이 상태를 `BattleSide` 하나로 모은 것이
+    /// 바로 이렇게 조용히 갈라지는 걸 막기 위해서다. 스피드가 동률인 두 참가자로 잡아 마비만
+    /// 차이가 되게 한다.
+    func testParalysisSlowsTheAttackerInMultiplayerToo() throws {
+        let (ids, fighters) = tiedSpeedFighters(priorities: [nil, nil])
+        let actions = [MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
+                       MultiplayerAction(attackerID: ids[1], targetID: ids[0], moveIndex: 0)]
+        // 마비 전에는 이쪽이 확실히 빠르다 — 순서가 뒤집히는 게 마비 때문임을 못 박는다.
+        var paralyzed = fighters
+        paralyzed[0].side.snapshot.base.spe = 200
+        paralyzed[0] = MultiplayerFighter(
+            participant: LobbyParticipant(id: ids[0], trainerName: "P0", speciesID: 1,
+                                          team: .solo, isReady: true, isHost: true),
+            snapshot: paralyzed[0].side.snapshot)
+        XCTAssertGreaterThan(paralyzed[0].side.stats.spe, paralyzed[1].side.stats.spe)
+
+        // 대조군 — 마비가 없으면 빠른 쪽이 선공이다.
+        var healthy = try MultiplayerBattle(fighters: paralyzed, mode: .freeForAll, seed: 1)
+        XCTAssertEqual(try healthy.resolveRound(actions).moveActors.first, .fighter(ids[0]))
+
+        paralyzed[0].side.status = .paralysis
+        XCTAssertLessThan(paralyzed[0].side.effectiveSpeed, paralyzed[1].side.effectiveSpeed)
+        for seed in UInt64(0)..<20 {
+            var battle = try MultiplayerBattle(fighters: paralyzed, mode: .freeForAll, seed: seed)
+            XCTAssertEqual(try battle.resolveRound(actions).moveActors.first, .fighter(ids[1]),
+                           "seed \(seed): 마비된 쪽이 후공이어야 한다")
+        }
+    }
+
+    /// 턴 끝 잔뎀도 멀티에 있어야 한다 — 1v1 에만 넣으면 같은 화상이 방에서는 아무 일도 하지 않는다.
+    func testResidualDamageAlsoRunsAtTheEndOfAMultiplayerRound() throws {
+        let (ids, fighters) = tiedSpeedFighters(priorities: [nil, nil])
+        var burning = fighters
+        burning[0].side.status = .burn
+        var battle = try MultiplayerBattle(fighters: burning, mode: .freeForAll, seed: 3)
+
+        let events = try battle.resolveRound(
+            [MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
+             MultiplayerAction(attackerID: ids[1], targetID: ids[0], moveIndex: 0)])
+
+        XCTAssertTrue(events.contains { event in
+            if case .damage(.fighter(ids[0]), _, .burn) = event { return true } else { return false }
+        }, "화상 잔뎀이 라운드 끝에 실려야 한다")
+        XCTAssertFalse(events.contains { event in
+            if case .damage(.fighter(ids[1]), _, .burn) = event { return true } else { return false }
+        }, "화상이 없는 쪽은 깎이지 않는다")
+    }
+
     /// 멀티도 1v1 과 같은 규칙이다 — 우선도가 스피드·UUID 보다 앞선다.
     /// 여기서는 스피드가 같으므로 우선도 +1 을 든 두 번째 참가자가 항상 먼저다.
     func testPriorityOutranksTheTieBreakInMultiplayer() throws {
@@ -395,7 +455,7 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
         // 3 = 라운드 결과가 타입된 이벤트 스트림. 버전을 올려야 옛 빌드가 레이스·배틀 중간이
         // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 3)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 4)
     }
 
     /// 라운드 결과는 호스트가 게스트에게 **브로드캐스트**하는 유일한 배틀 페이로드다. 이벤트가
@@ -405,7 +465,7 @@ final class AdventureTests: XCTestCase {
         let attacker = UUID(), target = UUID()
         let events: [BattleEvent] = [.turn(4), .move(.fighter(attacker), moveID: 57),
                                      .crit(.fighter(target)), .superEffective(.fighter(target)),
-                                     .damage(.fighter(target), amount: 122), .faint(.fighter(target))]
+                                     .damage(.fighter(target), amount: 122, cause: .move), .faint(.fighter(target))]
         let message = MultiplayerWireMessage.roundResolved(round: 4, fighters: [], events: events)
         let data = try JSONEncoder().encode(message)
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)

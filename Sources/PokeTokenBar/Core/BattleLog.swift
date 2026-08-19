@@ -50,11 +50,26 @@ enum BattleLog {
                 begin(actor); pending?.notes.append(l.battleSuperEffective)
             case .resisted(let actor):
                 begin(actor); pending?.notes.append(l.battleNotVeryEffective)
-            case .damage(let actor, let amount):
+            case .damage(let actor, let amount, .move):
                 begin(actor); pending?.damage = amount
+            case .damage(let actor, let amount, let cause):
+                // 기술이 아닌 데미지(화상·독·맹독·혼란 자멸)는 **자기 줄**이다. 진행 중인 행동에
+                // 접으면 쓰지도 않은 기술 이름이 잔뎀 줄에 붙는다.
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleStatusDamage(name(actor), damage: amount, cause: cause)))
             case .faint(let actor):
                 flush()
                 out.append(Line(actor: actor, text: l.battleFainted(name(actor))))
+            case .status(let actor, let status):
+                flush()
+                out.append(Line(actor: actor, text: l.battleStatusInflicted(name(actor), status: status)))
+            case .cureStatus(let actor, let status):
+                flush()
+                out.append(Line(actor: actor, text: l.battleStatusCured(name(actor), status: status)))
+            case .cant(let actor, let status):
+                flush()
+                out.append(Line(actor: actor, text: l.battleCantMove(name(actor), status: status)))
             }
         }
         flush()

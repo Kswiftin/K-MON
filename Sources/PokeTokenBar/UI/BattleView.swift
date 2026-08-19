@@ -288,6 +288,7 @@ struct BattleView: View {
                         ProgressView(value: Double(fighter.side.hp), total: Double(max(1, fighter.side.stats.hp)))
                             .tint(fighter.isAlive ? .green : .gray).controlSize(.mini)
                         Text("HP \(fighter.side.hp)").font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
+                        statusBadges(fighter.side)
                     }
                     .padding(5)
                     .background((multiplayerTargetID == fighter.id ? Color.red.opacity(0.12) : Color.primary.opacity(0.04)),
@@ -434,7 +435,7 @@ struct BattleView: View {
                 .font(.caption2)
             }
             if let opp = center.incomingSnapshot {
-                snapshotCard(opp, title: opp.trainer.map { l.battleTrainerLabel($0) } ?? "?", hpRatio: nil)
+                snapshotCard(opp, title: opp.trainer.map { l.battleTrainerLabel($0) } ?? "?", side: nil)
                     .frame(maxWidth: 180)
             }
             HStack(spacing: 12) {
@@ -454,8 +455,7 @@ struct BattleView: View {
     private func arenaView(_ b: NetBattleState) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
-                snapshotCard(b.me.snapshot, title: l.battleMyPokemon,
-                             hpRatio: Double(b.me.hp) / Double(max(1, b.me.stats.hp)))
+                snapshotCard(b.me.snapshot, title: l.battleMyPokemon, side: b.me)
                 VStack(spacing: 2) {
                     Text(l.battleTurnLabel(b.turn))
                         .font(.caption2)
@@ -467,7 +467,7 @@ struct BattleView: View {
                 .padding(.top, 34)
                 snapshotCard(b.opp.snapshot,
                              title: b.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
-                             hpRatio: Double(b.opp.hp) / Double(max(1, b.opp.stats.hp)))
+                             side: b.opp)
             }
             if !b.events.isEmpty { eventLog(b) }
             if b.myChoice == nil {
@@ -531,6 +531,7 @@ struct BattleView: View {
             Text(slot.snapshot.name).font(.caption.bold()).lineLimit(1)
             ProgressView(value: Double(slot.hp), total: Double(max(1, slot.stats.hp)))
                 .tint(slot.hp > 0 ? .green : .red)
+            statusBadges(slot)
         }.frame(maxWidth: .infinity).padding(6).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
     }
 
@@ -656,8 +657,42 @@ struct BattleView: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
     }
 
-    private func snapshotCard(_ snapshot: BattleSnapshot, title: String, hpRatio: Double?) -> some View {
-        VStack(spacing: 4) {
+    /// HP바 옆 상태 배지 — Showdown 과 같은 약어라 언어를 타지 않는다. 혼란은 주 상태와 함께 붙으므로
+    /// 두 자리를 따로 그린다(한 자리만 그리면 "화상 + 혼란" 이 화면에서 하나로 뭉개진다).
+    @ViewBuilder
+    private func statusBadges(_ side: BattleSide?) -> some View {
+        if let side, side.status != nil || side.isConfused {
+            HStack(spacing: 3) {
+                if let status = side.status { statusBadge(status) }
+                if side.isConfused { statusBadge(.confusion) }
+            }
+        }
+    }
+
+    private func statusBadge(_ status: Status) -> some View {
+        Text(status.badge)
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(statusTint(status)))
+    }
+
+    private func statusTint(_ status: Status) -> Color {
+        switch status {
+        case .burn:            return .orange
+        case .poison, .toxic:  return .purple
+        case .paralysis:       return .yellow
+        case .sleep:           return .gray
+        case .freeze:          return .cyan
+        case .confusion:       return .pink
+        }
+    }
+
+    /// `side` 는 대전 중일 때만 있다 — 신청 수락 화면의 미리보기는 HP 도 상태도 아직 없다.
+    private func snapshotCard(_ snapshot: BattleSnapshot, title: String, side: BattleSide?) -> some View {
+        let hpRatio = side.map { Double($0.hp) / Double(max(1, $0.stats.hp)) }
+        return VStack(spacing: 4) {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -676,6 +711,7 @@ struct BattleView: View {
                     .tint(hpRatio > 0.5 ? .green : hpRatio > 0.2 ? .yellow : .red)
                     .controlSize(.small)
             }
+            statusBadges(side)
         }
         .frame(maxWidth: .infinity)
         .padding(8)

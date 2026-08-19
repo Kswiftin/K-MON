@@ -21,6 +21,12 @@ struct TeamPracticeBattle {
     /// 상대만 때릴 수 있었고, 상대는 그동안 한 번도 움직이지 못했다.
     mutating func switchMine(to index: Int) -> Bool {
         guard mine.indices.contains(index), index != myActive, mine[index].isAlive, result == nil else { return false }
+        // Gen 2 는 물러난 포켓몬의 맹독을 보통 독으로 강등한다(Gen 3 부터는 유지 + 카운터만 리셋).
+        // 이게 없으면 한 번 걸린 맹독의 배수가 배틀이 끝날 때까지 계속 커진다.
+        if mine[myActive].status == .toxic {
+            mine[myActive].status = .poison
+            mine[myActive].statusCounter = 0
+        }
         myActive = index
         opponentAttacksAlone()
         turn += 1
@@ -48,8 +54,11 @@ struct TeamPracticeBattle {
         let (move, moveIndex) = cpuMoveChoice()
         if moveIndex >= 0 { opponents[opponentActive].pp[moveIndex] -= 1 }
         events.append(.turn(turn))
-        events += BattleEngine.applyAttack(attacker: opponents[opponentActive], defender: &mine[myActive],
+        events += BattleEngine.applyAttack(attacker: &opponents[opponentActive], defender: &mine[myActive],
                                            attackerActor: .b, defenderActor: .a, move: move, rng: &rng)
+        // 교체로 넘긴 턴도 턴이다 — 잔뎀은 그대로 들어간다.
+        events += BattleEngine.endOfTurnResidual(&mine[myActive], actor: .a)
+        events += BattleEngine.endOfTurnResidual(&opponents[opponentActive], actor: .b)
     }
 
     mutating func useMove(_ index: Int) -> Bool {

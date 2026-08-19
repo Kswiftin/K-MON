@@ -159,12 +159,39 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 구버전 피어의 무브셋에는 값이 아예 없다. 그런 기술은 보통 급소율로 읽는다.
     var critRate: Int? = nil
 
+    /// 이 기술이 거는 상태이상(PokéAPI `meta.ailment` 의 이름). `priority`·`critRate` 와 같은 이유로
+    /// 옵셔널이다 — 이 키가 없던 시절의 세이브와 구버전 피어의 무브셋에는 값이 아예 없다.
+    var ailment: String? = nil
+    /// 상태를 걸 확률(PokéAPI `meta.ailment_chance`). 0 은 "확률이 아니다" 라는 뜻이다.
+    var ailmentChance: Int? = nil
+
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
 
     /// 급소 단계 — Gen 2 의 고급소기는 **+2 단계**(1/4)다. PokéAPI 의 `crit_rate` 는 세대에 따라
     /// 뜻이 달라(Gen 6+ 는 +1 단계) 값을 그대로 쓰지 않고, 고급소기인지만 보고 Gen 2 단계로 옮긴다.
     var critStage: Int { (critRate ?? 0) > 0 ? 2 : 0 }
+
+    /// 실제로 걸 수 있는 상태 — 구현한 6종만. 나머지 14종은 `nil` 이라 부여 시도가 그냥 지나간다
+    /// (무엇을 건너뛰었는지는 스펙을 만들 때 `AppLog` 에 한 번 남긴다).
+    ///
+    /// 맹독은 PokéAPI 가 별도 ailment 로 주지 않는다 — 맹독(id 92)도 `ailment` 는 `poison` 이다.
+    /// 그래서 이 기술만 id 로 가른다.
+    var inflictedStatus: Status? {
+        if id == Self.toxicMoveID { return .toxic }
+        return ailment.flatMap(Status.init(ailment:))
+    }
+
+    /// 상태를 거는 확률(%) — 2차효과는 `ailment_chance` 를 그대로 쓰고, 위력 없는 변화기는
+    /// 상태 부여가 기술 **본체**라 늘 건다(PokéAPI 가 그런 기술에 0 을 준다).
+    var ailmentChancePercent: Int {
+        let chance = ailmentChance ?? 0
+        if chance > 0 { return chance }
+        return damageClass == .status ? 100 : 0
+    }
+
+    /// 맹독 — PokéAPI move id.
+    static let toxicMoveID = 92
 
     func name(_ lang: AppLanguage) -> String { lang.resolveName(names) ?? names.values.first ?? "?" }
     func description(_ lang: AppLanguage) -> String? {
@@ -243,6 +270,52 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 
 }
 
+// MARK: - 상태이상
+
+/// 상태이상 — Gen 2 의 6종 + 혼란. PokéAPI `/move-ailment` 이 주는 20종 중 6종만 가져다 쓴다
+/// (맹독은 그 20종에 이름이 없어 기술 id 로 가른다 — `MoveSpec.inflictedStatus`).
+/// 나머지 14종(trap·nightmare·torment·disable·yawn·heal-block·leech-seed 등)은 부여를 무시하고
+/// 로그만 남긴다.
+///
+/// 앞 6종은 **주 상태**라 한 번에 하나만 붙고, 혼란은 volatile 이라 주 상태와 같이 붙는다.
+/// 그런데도 한 enum 에 둔 건 화면에서 쓰는 어휘가 하나여야 하기 때문이다 — 배지도 로그 문구도
+/// 7종을 같은 방식으로 그린다. 둘 중 어느 쪽인지는 `BattleSide` 가 필드로 가른다.
+enum Status: String, Codable, Sendable, Equatable, CaseIterable {
+    case burn, poison, toxic, paralysis, sleep, freeze, confusion
+
+    /// PokéAPI `/move-ailment` 이름 → 구현한 상태. `none`·`unknown` 을 포함해 모르는 이름은 `nil` 이다.
+    init?(ailment: String) {
+        switch ailment {
+        case "burn":      self = .burn
+        case "poison":    self = .poison
+        case "paralysis": self = .paralysis
+        case "sleep":     self = .sleep
+        case "freeze":    self = .freeze
+        case "confusion": self = .confusion
+        default:          return nil   // toxic 은 ailment 이름이 없다 — `MoveSpec.inflictedStatus` 참조
+        }
+    }
+
+    /// HP바 옆 배지 — Showdown 과 같은 약어라 언어를 타지 않는다.
+    var badge: String {
+        switch self {
+        case .burn:      return "BRN"
+        case .poison:    return "PSN"
+        case .toxic:     return "TOX"
+        case .paralysis: return "PAR"
+        case .sleep:     return "SLP"
+        case .freeze:    return "FRZ"
+        case .confusion: return "CNF"
+        }
+    }
+}
+
+/// 데미지가 어디서 왔는가. 로그·연출은 "기술을 맞았다" 와 "화상으로 깎였다" 를 갈라야 하는데,
+/// 원인이 없으면 잔뎀이 직전 `.move` 에 접혀 **쓰지도 않은 기술 이름**이 붙는다.
+enum DamageCause: String, Codable, Sendable, Equatable {
+    case move, burn, poison, toxic, confusion
+}
+
 // MARK: - 배틀 중 한쪽의 상태
 
 /// 대전 중 한쪽이 들고 있는 것 전부 — 스냅샷은 *교환 단위*고, 이쪽은 **턴을 넘어 사는 상태**다.
@@ -262,6 +335,13 @@ struct BattleSide: Sendable, Equatable {
     /// 세 모드가 각자 `snapshot.moves ?? fallbackSet(...)` 를 반복하던 자리다.
     let moves: [MoveSpec]
     var pp: [Int]
+    /// 주 상태이상 — 한 번에 하나. 혼란은 volatile 이라 여기가 아니라 `confusionTurns` 에 둔다.
+    var status: Status?
+    /// 상태마다 뜻이 다른 한 칸 — 맹독은 누적 배수(1, 2, 3…), 잠듦은 남은 카운터다.
+    /// 주 상태가 하나뿐이라 두 값이 동시에 필요할 일이 없어 칸을 나누지 않는다.
+    var statusCounter = 0
+    /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
+    var confusionTurns = 0
 
     init(_ snapshot: BattleSnapshot) {
         self.snapshot = snapshot
@@ -272,6 +352,26 @@ struct BattleSide: Sendable, Equatable {
     }
 
     var isAlive: Bool { hp > 0 }
+    var isConfused: Bool { confusionTurns > 0 }
+
+    /// 턴 순서에 쓰는 스피드 — 마비면 Gen 2 기준 25%(Gen 7 부터 50%).
+    /// 순서 계산이 `stats.spe` 를 직접 읽으면 마비가 스탯 화면에만 보이고 실제 선공은 그대로다.
+    var effectiveSpeed: Int { status == .paralysis ? max(1, stats.spe / 4) : stats.spe }
+
+    /// 이 상태가 붙을 수 있는가. 타입 면역은 **Gen 2 것만** 가져온다 —
+    /// 전기 타입의 마비 면역, 풀 타입의 가루 면역은 Gen 6 규칙이라 여기 없다.
+    func canBeAfflicted(by status: Status) -> Bool {
+        guard isAlive else { return false }
+        if status == .confusion { return !isConfused }
+        guard self.status == nil else { return false }   // 주 상태는 하나
+        let types = snapshot.types
+        switch status {
+        case .burn:            return !types.contains(.fire)
+        case .freeze:          return !types.contains(.ice)
+        case .poison, .toxic:  return !types.contains(.poison) && !types.contains(.steel)
+        default:               return true
+        }
+    }
 
     /// 고를 수 있는 기술이 하나도 없으면 발버둥.
     var mustStruggle: Bool { !pp.contains { $0 > 0 } }
@@ -321,10 +421,21 @@ enum BattleEngine {
         }
     }
 
+    /// 얼음이 매턴 녹을 확률(%) — Gen 2 의 10% 는 평균 10턴이라 사실상 사망 선고다.
+    /// Gen 3 값(20%)을 기본으로 두고 상수로 노출한다(계획 §7 리스크 표).
+    static let thawChance = 20
+    /// 마비로 행동이 막힐 확률(%) — Gen 2 는 25%(Gen 7 부터 50%).
+    static let paralysisFailChance = 25
+    /// 혼란일 때 자기를 때릴 확률(%).
+    static let confusionSelfHitChance = 50
+    /// 혼란 자멸의 위력 — 무속성 물리 40.
+    static let confusionPower = 40
+
     /// 대전 규칙 버전 — 턴 순서나 데미지 계산을 바꿀 때마다 올린다. 두 피어가 결과를 주고받지 않고
     /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다.
-    /// 1 = 우선도 도입, 2 = Gen 2 데미지 파이프라인(정수 난수·급소 ×2·`+2` 위치).
-    static let rulesVersion = 2
+    /// 1 = 우선도 도입, 2 = Gen 2 데미지 파이프라인(정수 난수·급소 ×2·`+2` 위치),
+    /// 3 = 상태이상 6종 + 혼란(행동 가능 판정·화상 반감·마비 스피드·턴 끝 잔뎀).
+    static let rulesVersion = 3
 
     /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.
     struct AttackOutcome: Sendable {
@@ -333,6 +444,19 @@ enum BattleEngine {
         /// 빗나갔으면 1 — 화면이 "효과가 굉장했다" 를 띄우지 않게 한다.
         var effectiveness: Double
         var isCritical: Bool
+    }
+
+    /// Gen 2 데미지 식의 앞부분 — 배율이 붙기 전의 뼈대. 기술 공격과 혼란 자멸이 같은 값을 쓴다.
+    static func baseDamage(level: Int, power: Int, attack: Int, defense: Int) -> Int {
+        (2 * level / 5 + 2) * power * attack / max(1, defense) / 50
+    }
+
+    /// 혼란 자멸 데미지 — 무속성 물리 위력 40. 급소도 난수도 타지 않으므로 **rng 를 소비하지 않는다**
+    /// (분기마다 소비량이 달라지면 두 피어가 갈라진다). 물리라서 화상 반감은 그대로 받는다(Gen 2).
+    static func confusionDamage(_ side: BattleSide) -> Int {
+        let attack = side.status == .burn ? side.stats.atk / 2 : side.stats.atk
+        return max(1, baseDamage(level: side.snapshot.level, power: confusionPower,
+                                 attack: attack, defense: side.stats.def) + 2)
     }
 
     /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 급소 → 난수 폭 순서로 소비하며,
@@ -351,8 +475,12 @@ enum BattleEngine {
         // 상성 배율을 계산하는 지점이 여기 한 곳뿐이다. 지금은 코드를 넣지 않는다.
         let effectiveness = isStruggle ? 1.0
             : TypeChart.effectiveness(move.type, against: defender.snapshot.types)
-        let attack = move.damageClass == .physical ? attacker.stats.atk : attacker.stats.spa
-        let defense = move.damageClass == .physical ? defender.stats.def : defender.stats.spd
+        let isPhysical = move.damageClass == .physical
+        // 화상은 **물리** 공격만 절반이다(Gen 2 는 공격 스탯을 반으로 깎는다). 특수기는 그대로다 —
+        // 여기서 분류를 안 보면 화상이 공격 전체를 깎는 다른 게임이 된다.
+        var attack = isPhysical ? attacker.stats.atk : attacker.stats.spa
+        if isPhysical, attacker.status == .burn { attack /= 2 }
+        let defense = isPhysical ? defender.stats.def : defender.stats.spd
         let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
         // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수 나눗셈한다. 예전엔
         // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
@@ -362,7 +490,8 @@ enum BattleEngine {
         // Gen 2 의 계산 **순서** 그대로다. `+2` 가 급소 배율 뒤에 오고, STAB·상성은 그 뒤에 곱한다.
         // 예전 식은 `+2` 를 먼저 더한 뒤 급소 ×1.5 를 곱해 급소 데미지가 다르게 나왔다.
         // (배지·트레이너킥·날씨·기술보정은 §3.3 대로 안 가져온다.)
-        var damage = (2 * attacker.snapshot.level / 5 + 2) * move.power * attack / max(1, defense) / 50
+        var damage = baseDamage(level: attacker.snapshot.level, power: move.power,
+                                attack: attack, defense: defense)
         damage = damage * (isCritical ? critMultiplier : 1) + 2
         if !isStruggle {
             if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }   // STAB ×1.5
@@ -415,20 +544,126 @@ enum BattleEvent: Codable, Sendable, Equatable {
     case resisted(BattleActor)
     /// 실제로 깎인 양. 남은 HP 는 싣지 않는다 — 뷰는 `BattleSide.hp` 를 그대로 읽으므로 읽는 데가
     /// 없다. 재생 애니메이션(Phase 7)이 바를 보간할 때 필요해지면 그때 붙인다.
-    case damage(BattleActor, amount: Int)
+    case damage(BattleActor, amount: Int, cause: DamageCause)
     case faint(BattleActor)
+    /// 상태가 붙었다 / 나았다 / 그 상태 때문에 이번 턴을 못 썼다.
+    case status(BattleActor, Status)
+    case cureStatus(BattleActor, Status)
+    case cant(BattleActor, Status)
 }
 
 // MARK: - 네트워크 대전 턴 해상
 
 extension BattleEngine {
-    /// 공격 1회를 해상해 방어측 상태를 갱신하고, 그 결과를 이벤트로 남긴다.
+    /// 상태를 실제로 붙인다. 붙지 않으면(면역·이미 다른 주 상태·기절) 빈 배열이다.
+    ///
+    /// **rng 는 카운터가 필요한 상태(잠듦·혼란)에서만 소비한다.** 붙을 수 있는지를 먼저 보고
+    /// 그 뒤에만 뽑으므로, 두 피어가 같은 상태를 보고 있으면 소비량도 같다.
+    @discardableResult
+    static func inflict(_ status: Status, on side: inout BattleSide, actor: BattleActor,
+                        rng: inout SplitMix64) -> [BattleEvent] {
+        guard side.canBeAfflicted(by: status) else { return [] }
+        switch status {
+        case .confusion:
+            side.confusionTurns = 2 + Int(rng.next() % 4)      // 2~5턴
+        case .sleep:
+            side.status = .sleep
+            side.statusCounter = 2 + Int(rng.next() % 7)       // 카운터 2~8 → 행동불능 1~7턴
+        case .toxic:
+            side.status = .toxic
+            side.statusCounter = 1                             // 1/16 부터 매턴 1/16 누적
+        default:
+            side.status = status
+            side.statusCounter = 0
+        }
+        return [.status(actor, status)]
+    }
+
+    /// 턴 끝 잔뎀 — 화상·독은 최대 HP 의 1/8, 맹독은 n/16 으로 매턴 커진다.
+    /// rng 를 쓰지 않으므로 호출 순서만 고정하면 두 피어가 같은 값을 본다.
+    static func endOfTurnResidual(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
+        guard side.isAlive, let status = side.status else { return [] }
+        let full = side.stats.hp
+        let amount: Int
+        let cause: DamageCause
+        switch status {
+        case .burn:
+            amount = max(1, full / 8);  cause = .burn
+        case .poison:
+            amount = max(1, full / 8);  cause = .poison
+        case .toxic:
+            amount = max(1, full * side.statusCounter / 16); cause = .toxic
+            side.statusCounter += 1
+        case .paralysis, .sleep, .freeze, .confusion:
+            return []
+        }
+        side.hp = max(0, side.hp - amount)
+        var events: [BattleEvent] = [.damage(actor, amount: amount, cause: cause)]
+        if !side.isAlive { events.append(.faint(actor)) }
+        return events
+    }
+
+    /// 행동 가능 판정 — **잠듦 → 얼음 → 혼란 → 마비** 순서로 본다(Gen 2 의 검사 순서).
+    /// 분기마다 rng 소비량이 달라지므로 이 순서가 곧 프로토콜이다. 상태는 스냅샷에 실려 오는 값이
+    /// 아니라 배틀 중 파생값이라, `(스냅샷, seed, 행동열)` 만으로 두 피어가 같은 분기를 밟는다.
+    private static func canAct(_ side: inout BattleSide, actor: BattleActor,
+                               rng: inout SplitMix64, into events: inout [BattleEvent]) -> Bool {
+        if side.status == .sleep {
+            // 카운터를 먼저 줄이고 0 이면 그 턴에 바로 움직인다 — Gen 1 처럼 깬 턴을 버리지 않는다.
+            side.statusCounter -= 1
+            if side.statusCounter <= 0 {
+                side.status = nil
+                side.statusCounter = 0
+                events.append(.cureStatus(actor, .sleep))
+            } else {
+                events.append(.cant(actor, .sleep))
+                return false
+            }
+        }
+        if side.status == .freeze {
+            if Int(rng.next() % 100) < thawChance {
+                side.status = nil
+                events.append(.cureStatus(actor, .freeze))
+            } else {
+                events.append(.cant(actor, .freeze))
+                return false
+            }
+        }
+        if side.isConfused {
+            let hurtsItself = Int(rng.next() % 100) < confusionSelfHitChance
+            side.confusionTurns -= 1                 // 남은 턴 수만큼 판정을 굴린다(2~5회)
+            defer { if side.confusionTurns == 0 { events.append(.cureStatus(actor, .confusion)) } }
+            if hurtsItself {
+                events.append(.cant(actor, .confusion))
+                let damage = confusionDamage(side)
+                side.hp = max(0, side.hp - damage)
+                events.append(.damage(actor, amount: damage, cause: .confusion))
+                if !side.isAlive { events.append(.faint(actor)) }
+                return false
+            }
+        }
+        if side.status == .paralysis, Int(rng.next() % 100) < paralysisFailChance {
+            events.append(.cant(actor, .paralysis))
+            return false
+        }
+        return true
+    }
+
+    /// 공격 1회를 해상해 양쪽 상태를 갱신하고, 그 결과를 이벤트로 남긴다.
     /// 1v1·연습·멀티가 전부 이 함수를 지나므로 **세 모드의 이벤트 어휘가 같다** — 데미지 함수를
     /// 하나로 모은 것(#46)과 배틀 상태를 `BattleSide` 로 모은 것(Phase 0)과 같은 이유다.
-    static func applyAttack(attacker: BattleSide, defender: inout BattleSide,
+    /// 행동 가능 판정도 여기 있어야 세 모드가 상태이상을 같은 규칙으로 받는다.
+    ///
+    /// ponytail: 못 움직인 턴에도 PP 는 이미 호출부에서 깎인 뒤다(본가는 안 깎는다). 되돌리려면
+    ///           기술 선택 자체를 엔진 안으로 옮겨야 하는데, 그건 교체(Phase 4)와 같이 할 일이다.
+    ///           양쪽 피어가 똑같이 깎으므로 desync 는 없다.
+    static func applyAttack(attacker: inout BattleSide, defender: inout BattleSide,
                             attackerActor: BattleActor, defenderActor: BattleActor,
                             move: MoveSpec, rng: inout SplitMix64) -> [BattleEvent] {
-        var events: [BattleEvent] = [.move(attackerActor, moveID: move.id)]
+        var events: [BattleEvent] = []
+        // 못 움직이면 `.move` 자체가 나가지 않는다 — Showdown 도 `|move|` 대신 `|cant|` 를 보낸다.
+        guard canAct(&attacker, actor: attackerActor, rng: &rng, into: &events) else { return events }
+        events.append(.move(attackerActor, moveID: move.id))
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
         if outcome.missed { return events + [.miss(attackerActor)] }
         if outcome.effectiveness == 0 { return events + [.immune(defenderActor)] }
@@ -437,9 +672,19 @@ extension BattleEngine {
         if outcome.effectiveness > 1 { events.append(.superEffective(defenderActor)) }
         else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }
         defender.hp = max(0, defender.hp - outcome.damage)
-        events.append(.damage(defenderActor, amount: outcome.damage))
-        if !defender.isAlive { events.append(.faint(defenderActor)) }
-        return events
+        events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
+        if !defender.isAlive { return events + [.faint(defenderActor)] }
+        // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다.
+        return events + applySecondaryEffect(of: move, to: &defender, actor: defenderActor, rng: &rng)
+    }
+
+    /// 기술의 2차효과(상태 부여). 붙을 수 있는지를 **확률 판정보다 먼저** 보므로, 이미 다른 상태가
+    /// 걸려 있거나 면역인 상대에게는 rng 를 쓰지 않는다 — 두 피어의 소비량이 같아야 한다.
+    private static func applySecondaryEffect(of move: MoveSpec, to side: inout BattleSide,
+                                             actor: BattleActor, rng: inout SplitMix64) -> [BattleEvent] {
+        guard let status = move.inflictedStatus, side.canBeAfflicted(by: status) else { return [] }
+        guard Int(rng.next() % 100) < move.ailmentChancePercent else { return [] }
+        return inflict(status, on: &side, actor: actor, rng: &rng)
     }
 
     /// 양쪽 기술 선택이 모이면 한 턴 해상. 순수·결정적 — 같은 rng 상태·입력이면 두 피어가 같은 결과를
@@ -449,17 +694,23 @@ extension BattleEngine {
                             moveA: MoveSpec, moveB: MoveSpec, turn: Int,
                             rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = [.turn(turn)]
+        // 마비가 스피드를 깎으므로 순서 계산이 상태를 봐야 한다 — `stats.spe` 를 그대로 넘기면
+        // 마비가 스탯 표시에만 남고 선공은 그대로다.
         let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
-                                     speedA: a.stats.spe, speedB: b.stats.spe, rng: &rng)
+                                     speedA: a.effectiveSpeed, speedB: b.effectiveSpeed, rng: &rng)
         for attackerIsA in aIsFirst ? [true, false] : [false, true] {
             guard a.isAlive && b.isAlive else { break }   // 선공에 기절하면 후공 없음
             let move = attackerIsA ? moveA : moveB
             events += attackerIsA
-                ? applyAttack(attacker: a, defender: &b, attackerActor: .a, defenderActor: .b,
+                ? applyAttack(attacker: &a, defender: &b, attackerActor: .a, defenderActor: .b,
                               move: move, rng: &rng)
-                : applyAttack(attacker: b, defender: &a, attackerActor: .b, defenderActor: .a,
+                : applyAttack(attacker: &b, defender: &a, attackerActor: .b, defenderActor: .a,
                               move: move, rng: &rng)
         }
+        // 잔뎀은 두 공격이 **모두 끝난 뒤**다. 앞에 두면 그 턴의 데미지 계산과 기절 시점이 달라진다.
+        // 좌변부터 고정 순서 — 순서가 흔들리면 동시 기절 때 두 피어의 승패가 갈린다.
+        events += endOfTurnResidual(&a, actor: .a)
+        events += endOfTurnResidual(&b, actor: .b)
         return events
     }
 }
