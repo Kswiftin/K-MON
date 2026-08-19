@@ -26,7 +26,10 @@ enum BattleFieldMetrics {
     /// 로그 줄 수와 그 칸의 **고정** 높이. 배틀 후반에 로그가 길어져도 높이가 따라 커지면 늘어난
     /// 만큼이 잘리고, 잘리는 쪽은 아래에 있는 기술 버튼이다. 전체 로그는 Phase 9 에서 별 시트로 붙는다.
     static let logLines = 4
-    static let logHeight: CGFloat = 58
+    /// 4줄 × 9pt 폰트 + 줄간격 + 패딩 = 60pt 다. 58 로 뒀다가 마지막 줄이 2pt 넘쳤는데, 예산
+    /// 검증은 **보고하는** 높이만 보므로 전부 통과했다 — `testTheLogBoxIsTallEnoughForTheLinesItDraws`
+    /// 가 그 2pt 를 잡았다.
+    static let logHeight: CGFloat = 64
 }
 
 // MARK: - HP 표시
@@ -64,6 +67,17 @@ enum HPReadout {
     static func theirs(hp: Int, max maximum: Int) -> String {
         guard maximum > 0, hp > 0 else { return "0%" }
         return "\(Swift.max(1, hp * 100 / maximum))%"
+    }
+
+    /// HP바가 채울 비율 0…1. **뷰 밖에 있어야 한다** — `GeometryReader` 안에서 계산하면 그 클로저가
+    /// 실제 레이아웃 때만 돌아서, 0 나눗셈 가드가 `--show-regions` 에서 영영 미실행으로 남는다
+    /// (`badgeTint` 와 같은 부류다). 최대가 0 이하인 스냅샷은 손상 세이브·적대적 피어에서 온다.
+    ///
+    /// 미실행 표시(캐럿 + 0)를 주석에 그대로 적지 않는다 — 그 표시를 grep 하는 감사 스크립트가
+    /// 주석을 리전으로 세어 버린다(`ScrollView` 가드가 자기 주석에 걸린 것과 같은 부류다).
+    static func ratio(hp: Int, max maximum: Int) -> Double {
+        guard maximum > 0 else { return 0 }
+        return Swift.min(1, Swift.max(0, Double(hp) / Double(maximum)))
     }
 }
 
@@ -258,7 +272,7 @@ struct CombatantBar: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.primary.opacity(0.12))
                     Capsule().fill(tier.color)
-                        .frame(width: geometry.size.width * ratio)
+                        .frame(width: geometry.size.width * CGFloat(fillRatio))
                 }
             }
             .frame(height: 6)
@@ -277,10 +291,7 @@ struct CombatantBar: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
     }
 
-    private var ratio: CGFloat {
-        guard side.stats.hp > 0 else { return 0 }
-        return max(0, min(1, CGFloat(side.hp) / CGFloat(side.stats.hp)))
-    }
+    private var fillRatio: Double { HPReadout.ratio(hp: side.hp, max: side.stats.hp) }
 }
 
 // MARK: - 필드 (Showdown 배치)
@@ -506,6 +517,10 @@ struct BattleArenaView: View {
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, minHeight: BattleFieldMetrics.logHeight,
                maxHeight: BattleFieldMetrics.logHeight, alignment: .topLeading)
+        // 고정 높이는 **보고하는** 높이만 고정한다 — 내용이 넘치면 칸 밖에 그려져 아래 기술 버튼 위에
+        // 겹친다. 줄 수가 칸에 맞는지는 `testTheLogBoxIsTallEnoughForTheLinesItDraws` 가 지키고,
+        // 이 clip 은 그 가드를 넘어선 경우에도 조작을 가리지 않게 하는 두 번째 방어선이다.
+        .clipped()
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
     }
 }

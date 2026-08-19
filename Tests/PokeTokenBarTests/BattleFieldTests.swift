@@ -325,6 +325,30 @@ final class BattleFieldTests: XCTestCase {
         }
     }
 
+    /// 최대 HP 가 0 이하로 계산되는 스냅샷(손상 세이브·적대적 피어의 종족값)이 와도 HP바가 0 으로
+    /// 나누지 않는다. `HPTier` 쪽 가드는 이미 검증했지만 바 자체의 비율 계산은 다른 코드라,
+    /// 이 케이스를 그리지 않으면 그 분기가 `--show-regions` 에서 `^0` 으로 남는다.
+    func testTheHPBarSurvivesASnapshotWhoseMaximumComputesToZero() {
+        let broken = BattleSnapshot(speciesID: 1, name: "손상", trainer: nil, level: 1, nature: nil,
+                                    isShiny: false, types: [.normal],
+                                    base: BattleStats(hp: -9_999, atk: 1, def: 1, spa: 1, spd: 1, spe: 1),
+                                    moves: fourMoves)
+        let side = BattleSide(broken)
+        XCTAssertLessThanOrEqual(side.stats.hp, 0, "이 케이스를 만들지 못하면 아래 검증이 분기를 안 밟는다")
+        XCTAssertEqual(HPReadout.ratio(hp: side.hp, max: side.stats.hp), 0,
+                       "0 나눗셈은 NaN 폭이 되고, NaN 프레임은 레이아웃을 무너뜨린다")
+        let bar = CombatantBar(side: side, title: "손상", l: L(.ko), revealsExactHP: true)
+        XCTAssertGreaterThan(renderedHeight(bar, proposingWidth: BattleFieldMetrics.barWidth), 0)
+    }
+
+    /// HP바 비율은 0…1 로 잘린다 — 와이어로 최대치보다 큰 HP 가 와도 바가 칸을 넘지 않는다.
+    func testTheHPBarRatioIsClampedToItsTrack() {
+        XCTAssertEqual(HPReadout.ratio(hp: 84, max: 121), 84.0 / 121.0, accuracy: 0.0001)
+        XCTAssertEqual(HPReadout.ratio(hp: 200, max: 100), 1, "최대를 넘겨 오면 꽉 찬 바로 잘린다")
+        XCTAssertEqual(HPReadout.ratio(hp: -5, max: 100), 0, "음수 HP 는 빈 바다")
+        XCTAssertEqual(HPReadout.ratio(hp: 50, max: 0), 0)
+    }
+
     /// 한쪽이 쓰러진 마지막 프레임도 같은 예산이다 — 스프라이트가 흐려지는 분기를 밟는다.
     func testTheArenaFitsWithAFaintedCombatantOnTheField() {
         XCTAssertLessThanOrEqual(
@@ -338,6 +362,23 @@ final class BattleFieldTests: XCTestCase {
         XCTAssertEqual(renderedHeight(arena(logLines: 4), proposingWidth: PopoverMetrics.contentWidth),
                        renderedHeight(arena(logLines: 200), proposingWidth: PopoverMetrics.contentWidth),
                        accuracy: 1, "로그 줄 수가 높이를 흔들면 후반 턴에 버튼이 잘린다")
+    }
+
+    /// 로그 칸이 자기가 그리는 줄 수를 담을 만큼 높은가. 고정 높이 칸은 내용이 넘쳐도 **보고하는
+    /// 높이가 그대로**라, 위의 예산 검증은 줄 수를 늘려도 전부 통과한다(실제로 40줄을 주입했을 때
+    /// 아무 테스트도 실패하지 않았다). 넘친 줄은 칸 밖에 그려져 아래 기술 버튼 위에 겹친다.
+    func testTheLogBoxIsTallEnoughForTheLinesItDraws() {
+        let oneLine = renderedHeight(Text("탱커의 몸통박치기! 상대는 12 데미지를 받았다").font(.system(size: 9)),
+                                     proposingWidth: PopoverMetrics.contentWidth)
+        func needed(lines: Int) -> CGFloat {
+            oneLine * CGFloat(lines) + 2 * CGFloat(lines - 1) + 10   // 줄 + 줄간격 + 위아래 패딩
+        }
+        XCTAssertLessThanOrEqual(needed(lines: BattleFieldMetrics.logLines), BattleFieldMetrics.logHeight,
+                                 "\(BattleFieldMetrics.logLines)줄이 \(BattleFieldMetrics.logHeight)pt 칸에 안 들어간다 — 넘친 줄이 버튼 위에 그려진다")
+        // 대조군: 줄 수를 늘리면 이 가드가 실제로 깨진다. 이게 없으면 "지금 값이 우연히 맞았을 뿐"
+        // 인지 알 수 없다 — 실제로 40줄을 주입했을 때 다른 어떤 테스트도 실패하지 않았다.
+        XCTAssertGreaterThan(needed(lines: 40), BattleFieldMetrics.logHeight,
+                             "대조군이 안 넘치면 위 검증이 무의미해진다")
     }
 
     /// 세 언어 어디서도 예산을 넘기지 않는다. 한국어 이름이 짧아 로컬에선 통과하고 영어로 도는 CI 에서만
