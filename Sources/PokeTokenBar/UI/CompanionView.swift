@@ -773,6 +773,21 @@ struct MoveListView: View {
 
     private var l: L { store.l }
 
+    /// 마우스가 올라간 기술. 슬롯 문구는 여기서만 파생된다.
+    @State private var hoveredMoveID: Int?
+
+    /// 호버 상태 전이 — 행 A → B 로 옮기면 B 진입이 먼저 오고 A 이탈이 뒤늦게 온다.
+    /// 이탈에서 무조건 nil 로 지우면 방금 고른 B 가 지워져 슬롯이 깜빡인다.
+    static func hoverState(current: Int?, moveID: Int, isInside: Bool) -> Int? {
+        if isInside { return moveID }
+        return current == moveID ? nil : current
+    }
+
+    private var hoveredMove: MoveSpec? {
+        guard let hoveredMoveID else { return nil }
+        return store.displayedMoves.first { $0.id == hoveredMoveID }
+    }
+
     var body: some View {
         VStack(spacing: Self.rowSpacing) {
             if store.isLoadingDisplayedMoves {
@@ -792,8 +807,18 @@ struct MoveListView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
                 ForEach(store.displayedMoves) { move in
-                    row(move).help(moveHelp(move))
+                    row(move)
+                        // 배경이 없는 행이라 이게 없으면 글자 사이 빈칸에서 호버가 안 잡힌다.
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            hoveredMoveID = Self.hoverState(current: hoveredMoveID,
+                                                            moveID: move.id, isInside: inside)
+                        }
+                        .help(moveHelp(move))
                 }
+            }
+            if !store.displayedMoves.isEmpty || store.isLoadingDisplayedMoves {
+                MoveHoverPanel(text: l.moveHoverText(hoveredMove))
             }
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
@@ -818,15 +843,32 @@ struct MoveListView: View {
         .frame(maxWidth: maxWidth, alignment: .leading)
     }
 
+    /// 길게 머무르면 뜨는 네이티브 툴팁 — 슬롯과 같은 문구를 쓴다(어휘가 갈리면 #10 이 재발한다).
     private func moveHelp(_ move: MoveSpec) -> String {
-        let category = l.moveCategory(move.damageClass)
-        let power = move.damageClass == .status ? "—" : "\(move.power)"
-        let accuracy = move.accuracy.map(String.init) ?? l.moveAlwaysHits
-        let details = "\(move.type.name(store.language)) · \(category)\n\(l.movePowerLabel) \(power) · \(l.moveAccuracyLabel) \(accuracy) · \(l.movePP(move.pp))"
+        let details = l.moveDetailLine(move)
         if let description = move.description(store.language), !description.isEmpty {
             return "\(move.name(store.language))\n\(description)\n\(details)"
         }
         return "\(move.name(store.language))\n\(details)"
+    }
+}
+
+/// 호버한 기술의 설명 슬롯. 높이를 2줄로 고정한다 — 설명 길이를 따라 늘어나면 행 사이를
+/// 지날 때마다 아래 콘텐츠가 밀려 팝오버 안이 떨린다(#9 와 같은 부류).
+/// 높이는 숫자 상수가 아니라 같은 폰트의 2줄 더미에서 유도한다(폰트·OS 따라 실제 줄 높이가 다르다).
+struct MoveHoverPanel: View {
+    let text: String
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Text(verbatim: "—\n—").opacity(0).accessibilityHidden(true)
+            Text(text).lineLimit(2)
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(6)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
     }
 }
 

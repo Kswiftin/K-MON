@@ -77,6 +77,24 @@ final class MoveHoverTests: XCTestCase {
         XCTAssertTrue(containsHangul(L(.ko).moveHoverHint))   // 대조군
     }
 
+    // MARK: 호버 상태 전이
+
+    /// 행에 들어가면 그 행이 선택된다.
+    func testEnteringRowSelectsIt() {
+        XCTAssertEqual(MoveListView.hoverState(current: nil, moveID: 7, isInside: true), 7)
+    }
+
+    /// 트리거 브랜치: A→B 로 옮길 때 B 진입이 먼저 오고 A 이탈이 뒤늦게 온다.
+    /// 이탈 이벤트가 무조건 nil 로 지우면 방금 고른 B 가 사라져 슬롯이 깜빡인다.
+    func testLeavingAnotherRowKeepsTheCurrentSelection() {
+        XCTAssertEqual(MoveListView.hoverState(current: 8, moveID: 7, isInside: false), 8)
+    }
+
+    /// 선택된 그 행에서 빠져나오면 비운다.
+    func testLeavingTheSelectedRowClearsIt() {
+        XCTAssertNil(MoveListView.hoverState(current: 7, moveID: 7, isInside: false))
+    }
+
     // MARK: 레이아웃 (팝오버 흔들림 방지 — #9 부류)
 
     /// 호버 대상이 바뀌어도 슬롯 높이는 그대로다. 길이에 따라 늘어나면 마우스를 옮길 때마다
