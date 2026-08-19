@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// MARK: - 창 예산
+// MARK: - 레이아웃 예산
 
 /// 배틀 화면의 크기 예산 — 계획 §6.3 **안 B**(기존 팝오버 안). 모든 숫자가 팝오버 콘텐츠 폭에서
 /// 거꾸로 나온다. 화면이 **팝오버 본체 `ScrollView` 안**이라 자기 세로 스크롤을 둘 수 없으므로
@@ -35,7 +35,7 @@ enum HPTier: Equatable {
     case healthy, warning, critical
 
     static func of(hp: Int, max maximum: Int) -> HPTier {
-        guard maximum > 0 else { return .critical }   // 구버전 피어·손상 세이브의 0 을 0나눗셈으로 만들지 않는다
+        guard maximum > 0 else { return .critical }   // 구버전 피어·손상 세이브의 0 을 0 나눗셈으로 만들지 않는다
         let ratio = Double(hp) / Double(maximum)
         if ratio > 0.5 { return .healthy }
         if ratio > 0.2 { return .warning }
@@ -176,13 +176,13 @@ struct SwitchSlot: Identifiable, Equatable {
 
     var id: Int { index }
 
-    /// 지금 나와 있는 놈으로도, 쓰러진 놈으로도 교체할 수 없다.
+    /// 지금 나와 있는 포켓몬으로도, 쓰러진 포켓몬으로도 교체할 수 없다.
     var isSelectable: Bool { !isActive && side.isAlive }
 }
 
 enum SwitchStripModel {
     /// 쓰러진 슬롯도 자리는 남긴다 — 파티가 몇 마리 남았는지가 그 자체로 정보다.
-    /// 인덱스가 곧 교체 대상이라 걸러 내면 눌렀을 때 다른 놈이 나온다.
+    /// 인덱스가 곧 교체 대상이라 걸러내면 눌렀을 때 다른 포켓몬이 나온다.
     static func slots(_ sides: [BattleSide], active: Int) -> [SwitchSlot] {
         sides.indices.map { SwitchSlot(index: $0, side: sides[$0], isActive: $0 == active) }
     }

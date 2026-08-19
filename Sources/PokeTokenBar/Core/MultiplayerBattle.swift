@@ -187,7 +187,7 @@ enum MultiplayerValidation {
                                                 isReady: true, isHost: false),
                   snapshot: fighter.side.snapshot)
                 && fighter.side.hp == fighter.side.stats.hp
-                // 상태이상도 호스트가 보내오는 값이다. 만HP 로 시작하는 배틀이면 상태도 없어야 한다 —
+                // 상태이상도 호스트가 보내오는 값이다. 최대 HP 로 시작하는 배틀이면 상태도 없어야 한다 —
                 // 안 보면 `status: sleep, statusCounter: 9999` 로 시작해 게스트가 영구히 못 움직인다.
                 && fighter.side.status == nil && fighter.side.confusionTurns == 0
         }) else { return false }

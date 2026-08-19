@@ -579,7 +579,7 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertFalse(accepted(-1))
     }
 
-    /// 시작 스냅샷의 상태이상도 호스트가 보내오는 값이다. 만HP 만 보던 동안은 `sleep` +
+    /// 시작 스냅샷의 상태이상도 호스트가 보내오는 값이다. 최대 HP 만 보던 동안은 `sleep` +
     /// `statusCounter: 9999` 로 시작한 게스트가 배틀 내내 한 번도 못 움직였다.
     func testValidStartRejectsAFighterThatBeginsWithAStatus() {
         func fighter(_ configure: (inout BattleSide) -> Void = { _ in }) -> MultiplayerFighter {

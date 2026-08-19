@@ -5,8 +5,8 @@ import SwiftUI
 /// 배틀 필드 + 선택 패널 (계획 §6 Phase 6·8, §9 PR 4). 기전은 건드리지 않는다 — 화면만이다.
 ///
 /// UI 는 컴파일과 단위 테스트를 통과하면서 화면에서 깨진다(defect-log). 그래서 여기 있는 테스트는
-/// 뷰의 모양을 흉내내지 않고, **뷰가 읽는 순수 결정**을 겨냥한다 — 색 임계, 표기 규칙, PP 단계,
-/// 스프라이트 URL, 그리고 창 예산. 뷰 자체는 `NSHostingController.sizeThatFits` 로 실제 폭·높이를 잰다.
+/// 뷰의 모양을 베끼지 않고 **뷰가 읽는 순수 결정**을 겨냥한다 — 색 임계, 표기 규칙, PP 단계,
+/// 스프라이트 URL, 그리고 레이아웃 예산. 뷰 자체는 `NSHostingController.sizeThatFits` 로 폭·높이를 잰다.
 @MainActor
 final class BattleFieldTests: XCTestCase {
 
@@ -211,7 +211,7 @@ final class BattleFieldTests: XCTestCase {
         XCTAssertFalse(slots[0].isSelectable, "지금 나와 있는 포켓몬으로 교체할 수는 없다")
         XCTAssertTrue(slots[1].isSelectable)
         XCTAssertFalse(slots[2].isSelectable, "쓰러진 포켓몬으로 교체할 수는 없다")
-        XCTAssertEqual(slots.map(\.index), [0, 1, 2], "인덱스가 곧 교체 대상이다 — 어긋나면 다른 놈이 나온다")
+        XCTAssertEqual(slots.map(\.index), [0, 1, 2], "인덱스가 곧 교체 대상이다 — 어긋나면 다른 포켓몬이 나온다")
     }
 
     // MARK: 1v1 턴 타이머 (계획 Phase 8 — 멀티엔 이미 있고 1v1 만 없었다)
@@ -232,7 +232,7 @@ final class BattleFieldTests: XCTestCase {
         XCTAssertEqual(BattleCenter.turnDuration, MultiplayerRoomCenter.turnDuration)
     }
 
-    // MARK: 팝오버 예산 (계획 §6.3 안 B — 기존 창 안에 압축)
+    // MARK: 팝오버 예산 (계획 §6.3 안 B — 기존 팝오버 안에 압축)
 
     /// 배틀 탭이 쓸 수 있는 세로 자리. 팝오버는 `tabHeight` 780pt 한 장을 모든 탭이 나눠 쓰고, 그중
     /// 패딩·업데이트 배너·트레이너 바·집중 타이머·탭 피커·푸터가 먼저 가져간다(`PopoverView.mainContent`).

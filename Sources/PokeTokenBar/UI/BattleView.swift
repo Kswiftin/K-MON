@@ -564,7 +564,7 @@ struct BattleView: View {
     // MARK: 로그/카드 공용
 
     /// 멀티(2~4인)의 스트림은 참가자 UUID 로 쪽을 가른다 — 이름·기술명만 그 방의 파이터에서 찾아 준다.
-    /// 좌우 두 자리인 1v1·연습 배틀은 `BattleLogSource.twoSided` 가 맡는다(창이 그 화면을 그린다).
+    /// 좌우 두 자리인 1v1·연습 배틀은 `BattleLogSource.twoSided` 가 맡는다(배틀 탭이 그 화면을 그린다).
     private func multiplayerLogLines(_ events: [BattleEvent],
                                      fighters: [MultiplayerFighter]) -> [BattleLog.Line] {
         func fighter(_ actor: BattleActor) -> MultiplayerFighter? {
