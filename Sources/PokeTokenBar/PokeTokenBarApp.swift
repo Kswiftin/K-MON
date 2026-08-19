@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private func applyBattlePin() {
         if battleCenter.wantsPinnedWindow {
             // .applicationDefined = 명시적으로 닫기 전엔 안 닫힘(앱 전환·바깥 클릭에도 유지) → 일하면서 배틀.
+            // 배틀 화면이 이 팝오버 안에서 그려지므로(계획 §6.3 안 B) 고정이 곧 배틀 화면 유지다.
             popover.behavior = .applicationDefined
             battlePinned = true
             if !popover.isShown { openPopover() }

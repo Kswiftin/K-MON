@@ -114,10 +114,9 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
 
     var isAlive: Bool { side.isAlive }
 
-    // 와이어 계약은 `snapshot`/`hp`/`pp` 를 **평면으로** 보낸다. 상태를 `side` 로 모은 건 내부 구조
-    // 변경일 뿐이라 JSON 모양을 그대로 뒀다(기전이 안 바뀐 리팩터로 버전을 올리면 구버전은 이유 없이
-    // 못 들어온다). 상태이상은 반대다 — 라운드 결과를 받는 쪽이 배지를 그려야 하므로 필드가 늘었다.
-    // `stats`·`moves` 는 스냅샷에서 파생되므로 여전히 보내지 않고 받는 쪽이 다시 만든다.
+    // 와이어 계약은 `snapshot`/`hp`/`pp` 를 **평면으로** 보낸다 — `side` 로 묶은 건 내부 구조 변경일
+    // 뿐이라 JSON 모양을 그대로 뒀다. 상태이상은 받는 쪽이 배지를 그려야 해서 필드가 늘었다.
+    // `stats`·`moves` 는 스냅샷에서 파생되므로 보내지 않고 받는 쪽이 다시 만든다.
     private enum CodingKeys: String, CodingKey {
         case id, trainerName, team, snapshot, hp, pp, status, statusCounter, confusionTurns
     }
@@ -188,6 +187,9 @@ enum MultiplayerValidation {
                                                 isReady: true, isHost: false),
                   snapshot: fighter.side.snapshot)
                 && fighter.side.hp == fighter.side.stats.hp
+                // 상태이상도 호스트가 보내오는 값이다. 최대 HP 로 시작하는 배틀이면 상태도 없어야 한다 —
+                // 안 보면 `status: sleep, statusCounter: 9999` 로 시작해 게스트가 영구히 못 움직인다.
+                && fighter.side.status == nil && fighter.side.confusionTurns == 0
         }) else { return false }
         if mode == .freeForAll { return fighters.allSatisfy { $0.team == .solo } }
         return fighters.count == 4 && fighters.filter { $0.team == .red }.count == 2
@@ -198,12 +200,10 @@ enum MultiplayerValidation {
 /// 4인 방의 와이어 계약. 호스트 권위형이라 클라이언트는 참가/준비/행동만 보내고,
 /// 로비 상태와 라운드 결과는 호스트가 전 참가자에게 브로드캐스트한다.
 enum MultiplayerWireMessage: Codable, Sendable, Equatable {
-    // 3: 라운드 결과가 타입된 이벤트 스트림(`[BattleEvent]`)이 됐다. 1v1 은 이벤트를 주고받지 않아
-    //    `rulesVersion` 만으로 충분하지만, 이쪽은 호스트가 `roundResolved` 로 브로드캐스트하므로
-    //    구버전 게스트는 라운드를 디코딩하지 못한다 → 버전을 올려 입장 단계에서 막는다.
-    // 4: 상태이상. `MultiplayerFighter` 에 status 필드가 붙었고 스트림에 `.status`/`.cant` case 가
-    //    늘었다 — 구버전 게스트는 모르는 case 를 만나 라운드 전체를 디코딩하지 못하고 화면이 멈춘다.
-    static let protocolVersion = 4   // 2: LobbyParticipant.role + 관전자 베팅 메시지
+    // 호스트가 `roundResolved` 를 브로드캐스트하므로 구버전 게스트는 모르는 모양을 만나면 라운드를
+    // 디코딩하지 못하고 멈춘다 → 입장 단계에서 막는다.
+    // 2: LobbyParticipant.role + 관전자 베팅, 3: 이벤트 스트림, 4: 상태이상(status 필드 + case 추가).
+    static let protocolVersion = 4
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -273,12 +273,9 @@ struct MultiplayerBattle: Sendable {
         guard Set(actionIDs).count == actionIDs.count else { throw MultiplayerBattleError.duplicateAction }
         guard Set(actionIDs) == Set(alive.map(\.id)) else { throw MultiplayerBattleError.unknownFighter }
 
-        // 사전 검증은 **데미지가 한 점도 들어가기 전에** 끝난다. PP 검사가 해상 루프 안에 있던
-        // 동안은, 남지 않은 기술을 지목한 액션 하나가 이미 해상된 앞 공격과 함께 라운드를 통째로
-        // 무효로 만들었다. `mutating` 메서드는 throw 해도 그때까지의 변경이 호출자에게 남으므로
-        // 라운드가 **반쯤 적용된** 상태가 되고, 호스트(`finishRoundIfReady`)는 그 라운드를 버리면서
-        // 턴 타이머를 다시 걸지 않아 방의 진행이 멈춘다. 액션은 상대가 보내오는 값이니 신뢰 경계
-        // 밖이다. 검증은 경계 한 곳에서 끝내야 한다.
+        // 사전 검증은 **데미지가 한 점도 들어가기 전에** 끝난다. `mutating` 메서드는 throw 해도
+        // 그때까지의 변경이 호출자에게 남으므로, PP 검사가 해상 루프 안에 있으면 라운드가 반쯤
+        // 적용된 채 버려진다. 액션은 상대가 보내오는 값 — 검증은 경계 한 곳에서 끝낸다.
         for action in actions {
             guard let attacker = fighters.first(where: { $0.id == action.attackerID }),
                   let target = fighters.first(where: { $0.id == action.targetID }) else {

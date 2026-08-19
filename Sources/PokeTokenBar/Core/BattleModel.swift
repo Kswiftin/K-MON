@@ -272,14 +272,10 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 
 // MARK: - 상태이상
 
-/// 상태이상 — Gen 2 의 6종 + 혼란. PokéAPI `/move-ailment` 이 주는 20종 중 6종만 가져다 쓴다
-/// (맹독은 그 20종에 이름이 없어 기술 id 로 가른다 — `MoveSpec.inflictedStatus`).
-/// 나머지 14종(trap·nightmare·torment·disable·yawn·heal-block·leech-seed 등)은 부여를 무시하고
-/// 로그만 남긴다.
-///
-/// 앞 6종은 **주 상태**라 한 번에 하나만 붙고, 혼란은 volatile 이라 주 상태와 같이 붙는다.
-/// 그런데도 한 enum 에 둔 건 화면에서 쓰는 어휘가 하나여야 하기 때문이다 — 배지도 로그 문구도
-/// 7종을 같은 방식으로 그린다. 둘 중 어느 쪽인지는 `BattleSide` 가 필드로 가른다.
+/// 상태이상 — Gen 2 의 6종 + 혼란. PokéAPI `/move-ailment` 20종 중 6종만 쓰고 나머지는 무시한다
+/// (맹독은 이름이 없어 기술 id 로 가른다 — `MoveSpec.inflictedStatus`).
+/// 앞 6종은 주 상태(한 번에 하나), 혼란은 volatile 이다. 화면 어휘를 하나로 두려고 한 enum 에 있고,
+/// 어느 쪽인지는 `BattleSide` 가 필드로 가른다.
 enum Status: String, Codable, Sendable, Equatable, CaseIterable {
     case burn, poison, toxic, paralysis, sleep, freeze, confusion
 
@@ -319,11 +315,8 @@ enum DamageCause: String, Codable, Sendable, Equatable {
 // MARK: - 배틀 중 한쪽의 상태
 
 /// 대전 중 한쪽이 들고 있는 것 전부 — 스냅샷은 *교환 단위*고, 이쪽은 **턴을 넘어 사는 상태**다.
-///
-/// 세 모드(1v1 LAN `NetBattleState`, 팀 연습 `TeamPracticeBattle`, 2~4인 `MultiplayerFighter`)가
-/// 각자 `hp`/`pp` 를 나열하고 있었다. 데미지 *함수* 는 `resolveAttack` 하나로 합쳐졌는데 상태는
-/// 아직 세 곳이었다. 그러면 상태이상·랭크업·지닌물건처럼 턴을 넘어 사는 기전은 같은 것을 세 번
-/// 쓰게 되고, 한쪽만 고치면 모드가 조용히 갈라진다. 그래서 상태도 이 타입 하나로 모은다.
+/// 세 모드(`NetBattleState`·`TeamPracticeBattle`·`MultiplayerFighter`)가 각자 `hp`/`pp` 를 나열하던
+/// 자리다. 상태를 한 타입에 모아야 상태이상·랭크업 같은 기전을 세 번 쓰지 않는다.
 struct BattleSide: Sendable, Equatable {
     var snapshot: BattleSnapshot
     /// 유효 스탯 — 배틀에 들어올 때 1회 계산한다. `effectiveStats()` 를 그때그때 부르면 정렬
@@ -404,14 +397,11 @@ struct SplitMix64: RandomNumberGenerator {
 }
 
 enum BattleEngine {
-    /// 급소 배율 — Gen 2 는 ×2 고 공격측 랭크를 무시한다(Gen 6+ 는 ×1.5). 상수로 빼 둔 건 밸런스
-    /// 때문이다. 급소 ×2 와 상태이상이 겹치면 1턴 KO 가 흔해질 수 있으니, 랭크업(Phase 3)까지
-    /// 들어온 뒤 seed 를 여러 번 돌려 평균 턴 수를 재고 다시 판단한다.
+    /// 급소 배율 — Gen 2 는 ×2(Gen 6+ 는 ×1.5). 상수인 건 밸런스 재조정 여지를 남기려는 것이다.
     static let critMultiplier = 2
 
-    /// 급소 확률의 분자(분모 256) — Gen 2 단계표. 0단계 17/256(≈6.6%), +1 은 1/8, +2 는 1/4,
-    /// +3 이상은 85/256 에서 멈춘다. 예전엔 단계 개념 없이 1/16(6.25%) 고정이었다.
-    /// 단계를 올리는 건 지금은 고급소기뿐이고, 급소율을 올리는 기술·특성은 Phase 3·5 에서 붙는다.
+    /// 급소 확률의 분자(분모 256) — Gen 2 단계표. 0단계 17/256, +1 은 1/8, +2 는 1/4, +3 이상은 85/256.
+    /// 단계를 올리는 건 지금은 고급소기뿐이다(기술·특성 보정은 Phase 3·5).
     static func critThreshold(stage: Int) -> UInt64 {
         switch max(0, stage) {
         case 0: return 17
@@ -434,8 +424,9 @@ enum BattleEngine {
     /// 대전 규칙 버전 — 턴 순서나 데미지 계산을 바꿀 때마다 올린다. 두 피어가 결과를 주고받지 않고
     /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다.
     /// 1 = 우선도 도입, 2 = Gen 2 데미지 파이프라인(정수 난수·급소 ×2·`+2` 위치),
-    /// 3 = 상태이상 6종 + 혼란(행동 가능 판정·화상 반감·마비 스피드·턴 끝 잔뎀).
-    static let rulesVersion = 3
+    /// 3 = 상태이상 6종 + 혼란(행동 가능 판정·화상 반감·마비 스피드·턴 끝 잔뎀),
+    /// 4 = 위력 0(변화기) 데미지 0.
+    static let rulesVersion = 4
 
     /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.
     struct AttackOutcome: Sendable {
@@ -459,11 +450,8 @@ enum BattleEngine {
                                  attack: attack, defense: side.stats.def) + 2)
     }
 
-    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 급소 → 난수 폭 순서로 소비하며,
-    /// 빗나가면 뒤의 둘을 소비하지 않는다. 두 피어가 같은 입력이면 같은 분기를 타므로 소비량도 같다.
-    ///
-    /// 예전엔 이 계산이 1v1(`resolveTurn`)과 멀티(`resolveAttack`)에 각각 복사돼 있었다. 한쪽만
-    /// 고치면 두 모드가 조용히 갈라지고, 새 기전을 넣을 때마다 같은 코드를 두 번 써야 했다.
+    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 급소 → 난수 폭 순서고,
+    /// 빗나가면 뒤의 둘을 소비하지 않는다. 세 모드가 이 함수 하나만 쓴다(예전엔 복사돼 있었다).
     static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         if let accuracy = move.accuracy, Int(rng.next() % 100) >= accuracy {
@@ -498,7 +486,11 @@ enum BattleEngine {
             damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
         }
         damage = damage * random / 255
-        return AttackOutcome(missed: false, damage: effectiveness == 0 ? 0 : max(1, damage),
+        // 위력 0(변화기)은 데미지가 없다. `max(1, …)` 만 두면 식의 `+2` 가 살아남아 상태기가 2 데미지를
+        // 넣었다 — `learnedMoves` 는 변화기를 걸러내지 않으므로 실제로 밟히는 경로다.
+        // rng 소비는 그대로다(명중 → 급소 → 난수) — 값만 바뀌므로 `rulesVersion` 으로 막는다.
+        let dealt = (effectiveness == 0 || move.power <= 0) ? 0 : max(1, damage)
+        return AttackOutcome(missed: false, damage: dealt,
                              effectiveness: effectiveness, isCritical: isCritical)
     }
 
@@ -524,16 +516,10 @@ enum BattleActor: Codable, Sendable, Equatable, Hashable {
     case fighter(UUID)
 }
 
-/// 배틀에서 일어난 일 하나. Showdown 시뮬레이터의 `|move|`·`|-damage|`·`|-crit|` 처럼 **타입된**
-/// 이벤트고, 로그·HP바·애니메이션은 모두 이 스트림의 렌더러다(`sim/SIM-PROTOCOL.md` 의 최소 부분집합).
-///
-/// 예전에는 `NetBattleEvent` 하나가 `missed`/`damage`/`effectiveness`/`isCritical` 을 플래그로 묶고
-/// 있었다. 그 모양으로는 "화상으로 깎였다", "마비로 못 움직였다", "쓰러졌다", "교체했다" 를 표현할
-/// 방법이 없어서, 상태이상(Phase 2)·랭크업(Phase 3)·교체(Phase 4)가 들어올 때마다 플래그를 덧붙이고
-/// 뷰의 if/else 사슬을 다시 뜯어야 했다. case 를 늘리는 쪽은 그럴 필요가 없다.
-///
-/// 여기 없는 case(상태이상·랭크·교체)는 **그 이벤트를 실제로 내보내는 코드와 함께** 추가한다.
-/// 내보내는 곳이 없는 case 를 미리 두면 아무도 밟지 않는 분기만 늘어난다.
+/// 배틀에서 일어난 일 하나 — Showdown 의 `|move|`·`|-damage|`·`|-crit|` 처럼 **타입된** 이벤트다.
+/// 로그·HP바·애니메이션은 전부 이 스트림의 렌더러다. 플래그 묶음(`missed`/`damage`/…)으로는
+/// "화상으로 깎였다"·"마비로 못 움직였다" 를 표현할 수 없어 case 로 바꿨다.
+/// 새 case 는 **그것을 내보내는 코드와 함께** 추가한다 — 아무도 밟지 않는 분기를 미리 두지 않는다.
 enum BattleEvent: Codable, Sendable, Equatable {
     case turn(Int)
     case move(BattleActor, moveID: Int)
@@ -632,7 +618,8 @@ extension BattleEngine {
         if side.isConfused {
             let hurtsItself = Int(rng.next() % 100) < confusionSelfHitChance
             side.confusionTurns -= 1                 // 남은 턴 수만큼 판정을 굴린다(2~5회)
-            defer { if side.confusionTurns == 0 { events.append(.cureStatus(actor, .confusion)) } }
+            // 쓰러진 뒤에는 "혼란이 풀렸다" 를 쓰지 않는다 — 기절 다음 줄로 붙어 읽히기만 한다.
+            defer { if side.confusionTurns == 0, side.isAlive { events.append(.cureStatus(actor, .confusion)) } }
             if hurtsItself {
                 events.append(.cant(actor, .confusion))
                 let damage = confusionDamage(side)
@@ -671,9 +658,12 @@ extension BattleEngine {
         if outcome.isCritical { events.append(.crit(defenderActor)) }
         if outcome.effectiveness > 1 { events.append(.superEffective(defenderActor)) }
         else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }
-        defender.hp = max(0, defender.hp - outcome.damage)
-        events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
-        if !defender.isAlive { return events + [.faint(defenderActor)] }
+        // 데미지 0(변화기)은 `.damage` 를 내보내지 않는다 — "0 데미지" 줄은 맞았는데 안 깎인 것처럼 읽힌다.
+        if outcome.damage > 0 {
+            defender.hp = max(0, defender.hp - outcome.damage)
+            events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
+            if !defender.isAlive { return events + [.faint(defenderActor)] }
+        }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다.
         return events + applySecondaryEffect(of: move, to: &defender, actor: defenderActor, rng: &rng)
     }

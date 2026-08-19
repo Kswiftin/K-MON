@@ -27,6 +27,8 @@ struct TeamPracticeBattle {
             mine[myActive].status = .poison
             mine[myActive].statusCounter = 0
         }
+        // 혼란은 volatile — 물러나면 풀린다. 남겨 두면 다시 나올 때 옛 카운터로 계속 혼란이다.
+        mine[myActive].confusionTurns = 0
         myActive = index
         opponentAttacksAlone()
         turn += 1
@@ -35,10 +37,8 @@ struct TeamPracticeBattle {
     }
 
     /// CPU 가 이번에 쓸 기술 — PP 가 남은 것 중 하나, 전부 떨어졌으면 발버둥(index −1).
-    ///
-    /// **배틀의 `rng` 에서 뽑는다.** `randomElement()`(시스템 RNG)를 쓰던 때는 같은 seed 로도 배틀이
-    /// 재현되지 않았다. 로컬 전용이라 desync 는 없지만 seed 를 고정한 회귀 테스트를 쓸 수 없었고,
-    /// 상태이상·랭크업처럼 확률 분기가 늘어나는 기전은 그 테스트 없이 검증할 방법이 없다.
+    /// **배틀의 `rng` 에서 뽑는다** — `randomElement()`(시스템 RNG)면 같은 seed 로도 배틀이 재현되지
+    /// 않아, 확률 분기가 늘어나는 기전(상태이상·랭크업)을 회귀 테스트로 잡을 수 없다.
     private mutating func cpuMoveChoice() -> (move: MoveSpec, index: Int) {
         let slot = opponents[opponentActive]
         let candidates = slot.pp.indices.filter { slot.pp[$0] > 0 }

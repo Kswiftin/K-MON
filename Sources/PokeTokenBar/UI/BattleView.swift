@@ -15,6 +15,10 @@ struct BattleView: View {
 
     private var l: L { store.l }
 
+    /// 한 번에 그리는 상대 수 상한. 팝오버 안에서는 스크롤로 미룰 수 없으니(defect-log) 목록도
+    /// 예산을 지켜야 한다 — 넘치는 인원은 숫자로만 알린다.
+    static let visiblePeerLimit = 5
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if store.isEgg {
@@ -42,10 +46,110 @@ struct BattleView: View {
         case .incoming(let peer):
             incomingView(peer: peer)
         case .battling:
-            if let practice = center.teamPractice { teamPracticeView(practice) }
-            else if let b = center.battle { arenaView(b) }       // 맞짱
+            // 세 모드가 같은 `BattleArenaView` 를 쓴다(계획 §6.3 안 B — 팝오버 탭 안에서 그린다).
+            // 2~4인 방만 예외다: 참가자 넷은 좌우 두 자리 배치에 담기지 않아 격자를 유지하되,
+            // 그 격자도 같은 HP 단계·상태 배지·타입색 버튼을 읽는다.
+            if let practice = center.teamPractice { practiceArena(practice) }
+            else if let battle = center.battle { lanArena(battle) }
         case .finished(let iWon, let byForfeit):
             finishedView(iWon: iWon, byForfeit: byForfeit)
+        }
+    }
+
+    // MARK: 대전 화면 (팝오버 탭 안 — 계획 §6.3 안 B)
+
+    private func lanArena(_ battle: NetBattleState) -> some View {
+        // 엔진 좌변(A)은 항상 challenger 다 — 내가 어느 쪽인지로 내 편/상대를 가른다.
+        let mine: BattleActor = battle.iAmA ? .a : .b
+        return BattleArenaView(
+            mine: battle.me, theirs: battle.opp,
+            myTitle: l.battleMyPokemon,
+            theirTitle: battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
+            l: l, turn: battle.turn,
+            logLines: BattleLogSource.twoSided(battle.events, mine: mine, l: l,
+                                               myName: battle.me.snapshot.name,
+                                               theirName: battle.opp.snapshot.name,
+                                               myMoves: battle.me.moves, theirMoves: battle.opp.moves),
+            myActor: mine,
+            switchSlots: [],                       // 1v1 LAN 은 1마리 고정 — 교체는 Phase 4
+            turnEndsAt: center.turnEndsAt,
+            isWaitingForOpponent: battle.myChoice != nil,
+            onChoose: { center.chooseMove($0) },
+            onSwitch: { _ in },
+            onForfeit: { center.forfeit() })
+    }
+
+    private func practiceArena(_ practice: TeamPracticeBattle) -> some View {
+        BattleArenaView(
+            mine: practice.mySlot, theirs: practice.opponentSlot,
+            myTitle: l.battleMyPokemon, theirTitle: "CPU",
+            l: l, turn: practice.turn,
+            logLines: BattleLogSource.twoSided(practice.events, mine: .a, l: l,
+                                               myName: practice.mySlot.snapshot.name,
+                                               theirName: practice.opponentSlot.snapshot.name,
+                                               myMoves: practice.mySlot.moves,
+                                               theirMoves: practice.opponentSlot.moves),
+            myActor: .a,
+            switchSlots: SwitchStripModel.slots(practice.mine, active: practice.myActive),
+            turnEndsAt: nil,                       // CPU 는 즉시 답한다 — 기다림이 없으니 마감도 없다
+            isWaitingForOpponent: false,
+            onChoose: { center.chooseTeamPracticeMove($0) },
+            onSwitch: { center.switchTeamPractice(to: $0) },
+            onForfeit: { center.forfeit() })
+    }
+
+    /// 결과 — 마지막 장면(필드)을 남겨 두고 아래 칸만 결과로 갈아 끼운다.
+    @ViewBuilder
+    private func finishedView(iWon: Bool?, byForfeit: Bool) -> some View {
+        VStack(spacing: 8) {
+            if let sides = finishedSides {
+                BattleFieldView(mine: sides.mine, theirs: sides.theirs,
+                                myTitle: l.battleMyPokemon, theirTitle: sides.theirTitle, l: l)
+                    .frame(height: BattleFieldMetrics.fieldHeight)
+            }
+            Text(finishText(iWon: iWon, byForfeit: byForfeit)).font(.title3).bold()
+            if center.battle != nil || center.teamPractice != nil {
+                Text(center.isPracticeBattle
+                     ? (store.language == .ko ? "모의전 결과" : "Practice result")
+                     : store.battleRank.displayName)
+                    .font(.caption).bold()
+                if center.lastRankDelta != 0 {
+                    Text("\(center.lastRankDelta > 0 ? "+" : "")\(center.lastRankDelta) LP")
+                        .font(.caption2)
+                        .foregroundStyle(center.lastRankDelta > 0 ? .green : .red)
+                }
+                if center.rankedStake > 0, let iWon {
+                    Text("\(iWon ? "+" : "−")⭐ \(GameNumberFormatter.compact(center.rankedStake))")
+                        .font(.caption2).foregroundStyle(iWon ? .green : .orange)
+                }
+            }
+            Button(l.battleClose) { center.dismissResult() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+
+    /// 결과 화면이 남겨 둘 마지막 장면. 연습은 활성 슬롯, 1v1 은 그대로다.
+    private var finishedSides: (mine: BattleSide, theirs: BattleSide, theirTitle: String)? {
+        if let practice = center.teamPractice {
+            return (practice.mySlot, practice.opponentSlot, "CPU")
+        }
+        if let battle = center.battle {
+            return (battle.me, battle.opp,
+                    battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?")
+        }
+        return nil
+    }
+
+    private func finishText(iWon: Bool?, byForfeit: Bool) -> String {
+        switch (iWon, byForfeit) {
+        case (.some(true), true):   return l.battleOppForfeited
+        case (.some(false), true):  return l.battleYouForfeited
+        case (.some(true), false):  return l.battleWon
+        case (.some(false), false): return l.battleLost
+        default:                    return l.battleDraw
         }
     }
 
@@ -98,30 +202,36 @@ struct BattleView: View {
                 }
                 .padding(.vertical, 8)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(center.peers) { peer in
-                            HStack {
-                                Image(systemName: "person.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(peer.name).font(.callout).lineLimit(1)
-                                    Text(peer.rank?.displayName
-                                         ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
-                                        .font(.caption2)
-                                        .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
-                                }
-                                Spacer()
-                                Button(l.battleChallengeButton) { center.challenge(peer) }
-                                    .controlSize(.small)
-                                    .disabled(!isChallengeEnabled)
+                // 예전엔 이 목록이 `ScrollView` + `maxHeight: 180` 이었다. 팝오버 본체가 이미
+                // `ScrollView` 라 안쪽은 **스크롤되지 않고 잘린다**(defect-log) — 상대가 다섯 명을
+                // 넘어가면 뒤쪽은 신청할 방법이 없었다. 스크롤을 지우고 상한까지만 그린 뒤,
+                // 넘치는 인원은 숫자로 알린다(도감 페이저와 같은 처방의 축소판).
+                VStack(spacing: 4) {
+                    ForEach(center.peers.prefix(Self.visiblePeerLimit)) { peer in
+                        HStack {
+                            Image(systemName: "person.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(peer.name).font(.callout).lineLimit(1)
+                                Text(peer.rank?.displayName
+                                     ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
+                                    .font(.caption2)
+                                    .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
                             }
-                            .padding(.vertical, 2)
+                            Spacer()
+                            Button(l.battleChallengeButton) { center.challenge(peer) }
+                                .controlSize(.small)
+                                .disabled(!isChallengeEnabled)
                         }
+                        .padding(.vertical, 2)
+                    }
+                    if center.peers.count > Self.visiblePeerLimit {
+                        Text(l.battleMorePeers(center.peers.count - Self.visiblePeerLimit))
+                            .font(.caption2).foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .frame(maxHeight: 180)
             }
             manualConnect
         }
@@ -285,10 +395,17 @@ struct BattleView: View {
                         SpriteView(speciesID: fighter.side.snapshot.speciesID, size: 38,
                                    shiny: fighter.side.snapshot.isShiny)
                             .opacity(fighter.isAlive ? 1 : 0.25)
+                        // 필드와 같은 3단계 색·같은 표기 규칙을 읽는다. 예전엔 여기만
+                        // `isAlive ? .green : .gray` 라 HP 5% 와 100% 가 같은 색이었고, 남의 실수치가
+                        // 그대로 보였다 — 4인 방에서도 상대 HP 는 원래 모르는 정보다.
                         ProgressView(value: Double(fighter.side.hp), total: Double(max(1, fighter.side.stats.hp)))
-                            .tint(fighter.isAlive ? .green : .gray).controlSize(.mini)
-                        Text("HP \(fighter.side.hp)").font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
-                        statusBadges(fighter.side)
+                            .tint(HPTier.of(hp: fighter.side.hp, max: fighter.side.stats.hp).color)
+                            .controlSize(.mini)
+                        Text(fighter.id == center.multiplayer.myID
+                             ? HPReadout.mine(hp: fighter.side.hp, max: fighter.side.stats.hp)
+                             : HPReadout.theirs(hp: fighter.side.hp, max: fighter.side.stats.hp))
+                            .font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
+                        StatusBadgeRow(side: fighter.side)
                     }
                     .padding(5)
                     .background((multiplayerTargetID == fighter.id ? Color.red.opacity(0.12) : Color.primary.opacity(0.04)),
@@ -324,28 +441,22 @@ struct BattleView: View {
                      : (store.language == .ko ? "기술을 선택하세요." : "Choose a move."))
                     .font(.caption).bold()
                 if let me {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
-                        ForEach(Array(me.side.moves.enumerated()), id: \.offset) { index, move in
-                            Button {
-                                guard let target = multiplayerTargetID else { return }
-                                center.multiplayer.submitAction(targetID: target, moveIndex: index)
-                            } label: {
-                                VStack(spacing: 1) {
-                                    Text(move.name(store.language)).font(.caption2).bold().lineLimit(1)
-                                    Text("PP \(me.side.pp[index])").font(.system(size: 8)).foregroundStyle(.secondary)
-                                }.frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(multiplayerTargetID == nil || me.side.pp[index] <= 0)
-                        }
+                    // 1v1 과 같은 버튼·같은 발버둥 처리를 쓴다. 발버둥이 없던 동안은 PP 가 전부
+                    // 마르면 네 칸이 모두 비활성이라 마감(30초)까지 아무것도 할 수 없었다.
+                    let struggling = me.side.mustStruggle
+                    MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,
+                                 pp: struggling ? [] : me.side.pp, language: store.language,
+                                 isEnabled: multiplayerTargetID != nil) { index in
+                        guard let target = multiplayerTargetID else { return }
+                        center.multiplayer.submitAction(targetID: target, moveIndex: struggling ? -1 : index)
                     }
                 }
             }
             if !center.multiplayer.combatEvents.isEmpty {
                 // 1v1 과 스트림도 접기도 같다. 예전엔 여기만 "이름 → 이름: -12" 라는
                 // 별도 문구였고, 기술 이름도 급소도 상성도 나오지 않았다.
-                logBox(multiplayerLogLines(center.multiplayer.combatEvents, fighters: fighters),
-                       mine: .fighter(center.multiplayer.myID))
+                BattleLogBox(lines: multiplayerLogLines(center.multiplayer.combatEvents, fighters: fighters),
+                             myActor: .fighter(center.multiplayer.myID))
             }
         }
         .onAppear {
@@ -435,7 +546,7 @@ struct BattleView: View {
                 .font(.caption2)
             }
             if let opp = center.incomingSnapshot {
-                snapshotCard(opp, title: opp.trainer.map { l.battleTrainerLabel($0) } ?? "?", side: nil)
+                snapshotCard(opp, title: opp.trainer.map { l.battleTrainerLabel($0) } ?? "?")
                     .frame(maxWidth: 180)
             }
             HStack(spacing: 12) {
@@ -450,183 +561,10 @@ struct BattleView: View {
         .padding(.vertical, 8)
     }
 
-    // MARK: 대전 화면
-
-    private func arenaView(_ b: NetBattleState) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                snapshotCard(b.me.snapshot, title: l.battleMyPokemon, side: b.me)
-                VStack(spacing: 2) {
-                    Text(l.battleTurnLabel(b.turn))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("VS")
-                        .font(.system(size: 15, weight: .heavy, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 34)
-                snapshotCard(b.opp.snapshot,
-                             title: b.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
-                             side: b.opp)
-            }
-            if !b.events.isEmpty { eventLog(b) }
-            if b.myChoice == nil {
-                Text(l.battleYourTurn).font(.caption).bold()
-                moveButtons(b)
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(l.battleWaitingOpponent).font(.caption).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-            }
-            HStack {
-                Spacer()
-                Button(l.battleForfeit) { center.forfeit() }
-                    .controlSize(.mini)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func teamPracticeView(_ practice: TeamPracticeBattle) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                teamSlotCard(practice.mySlot, title: store.language == .ko ? "내 포켓몬" : "My Pokémon")
-                Text("VS").font(.headline).foregroundStyle(.secondary)
-                teamSlotCard(practice.opponentSlot, title: "CPU")
-            }
-            HStack(spacing: 4) {
-                ForEach(Array(practice.mine.enumerated()), id: \.offset) { index, slot in
-                    Button { center.switchTeamPractice(to: index) } label: {
-                        VStack(spacing: 1) {
-                            SpriteView(speciesID: slot.snapshot.speciesID, size: 25, shiny: slot.snapshot.isShiny)
-                            Text("\(slot.hp)").font(.system(size: 7).monospacedDigit())
-                        }
-                    }
-                    .buttonStyle(.bordered).controlSize(.mini)
-                    .disabled(index == practice.myActive || !slot.isAlive)
-                }
-            }
-            Text(store.language == .ko ? "기술" : "Moves").font(.caption.bold())
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
-                ForEach(Array(practice.mySlot.moves.enumerated()), id: \.element.id) { index, move in
-                    moveButton(move, pp: practice.mySlot.pp[index]) { center.chooseTeamPracticeMove(index) }
-                        .disabled(practice.mySlot.pp[index] <= 0)
-                }
-            }
-            HStack {
-                Text("\(practice.mine.filter(\.isAlive).count)/\(practice.mine.count)")
-                Spacer()
-                Text("CPU \(practice.opponents.filter(\.isAlive).count)/\(practice.opponents.count)")
-            }.font(.caption2).foregroundStyle(.secondary)
-        }
-    }
-
-    private func teamSlotCard(_ slot: BattleSide, title: String) -> some View {
-        VStack(spacing: 3) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            SpriteView(speciesID: slot.snapshot.speciesID, size: 52, animated: true, shiny: slot.snapshot.isShiny)
-            Text(slot.snapshot.name).font(.caption.bold()).lineLimit(1)
-            ProgressView(value: Double(slot.hp), total: Double(max(1, slot.stats.hp)))
-                .tint(slot.hp > 0 ? .green : .red)
-            statusBadges(slot)
-        }.frame(maxWidth: .infinity).padding(6).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
-    }
-
-    private func moveButtons(_ b: NetBattleState) -> some View {
-        let columns = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
-        return LazyVGrid(columns: columns, spacing: 6) {
-            if b.mustStruggle {
-                moveButton(MoveSpec.struggle(), pp: nil) { center.chooseMove(-1) }
-            } else {
-                ForEach(Array(b.me.moves.enumerated()), id: \.element.id) { idx, move in
-                    moveButton(move, pp: b.me.pp[idx]) { center.chooseMove(idx) }
-                        .disabled(b.me.pp[idx] <= 0)
-                }
-            }
-        }
-    }
-
-    private func moveButton(_ move: MoveSpec, pp: Int?, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(move.name(store.language))
-                    .font(.caption).bold()
-                    .lineLimit(1)
-                HStack(spacing: 4) {
-                    typeChip(move.type)
-                    Text("\(move.power)")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if let pp {
-                        Text("PP \(pp)/\(move.pp)")
-                            .font(.system(size: 9))
-                            .foregroundStyle(pp == 0 ? .red : .secondary)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(6)
-        }
-        .buttonStyle(.bordered)
-    }
-
-    private func finishedView(iWon: Bool?, byForfeit: Bool) -> some View {
-        VStack(spacing: 10) {
-            Text(finishText(iWon: iWon, byForfeit: byForfeit))
-                .font(.title3).bold()
-            if center.battle != nil {
-                Text(center.isPracticeBattle
-                     ? (store.language == .ko ? "모의전 결과" : "Practice result")
-                     : store.battleRank.displayName)
-                    .font(.caption).bold()
-                if center.lastRankDelta != 0 {
-                    Text("\(center.lastRankDelta > 0 ? "+" : "")\(center.lastRankDelta) LP")
-                        .font(.caption2)
-                        .foregroundStyle(center.lastRankDelta > 0 ? .green : .red)
-                }
-                if center.rankedStake > 0, let iWon {
-                    Text("\(iWon ? "+" : "−")⭐ \(GameNumberFormatter.compact(center.rankedStake))")
-                        .font(.caption2).foregroundStyle(iWon ? .green : .orange)
-                }
-            }
-            if let b = center.battle, !b.events.isEmpty { eventLog(b) }
-            Button(l.battleClose) { center.dismissResult() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-    }
-
-    private func finishText(iWon: Bool?, byForfeit: Bool) -> String {
-        switch (iWon, byForfeit) {
-        case (.some(true), true):   return l.battleOppForfeited
-        case (.some(false), true):  return l.battleYouForfeited
-        case (.some(true), false):  return l.battleWon
-        case (.some(false), false): return l.battleLost
-        default:                    return l.battleDraw
-        }
-    }
-
     // MARK: 로그/카드 공용
 
-    private func eventLog(_ b: NetBattleState) -> some View {
-        // 엔진 좌변(A)은 항상 challenger 다 — 내가 어느 쪽인지로 내 편/상대를 가른다.
-        let mine: BattleActor = b.iAmA ? .a : .b
-        let lines = BattleLog.lines(b.events, l: l,
-                                    name: { $0 == mine ? b.me.snapshot.name : b.opp.snapshot.name },
-                                    moveName: { actor, id in
-                                        let moves = actor == mine ? b.me.moves : b.opp.moves
-                                        return (moves.first { $0.id == id } ?? .struggle()).name(store.language)
-                                    })
-        return logBox(lines, mine: mine)
-    }
-
     /// 멀티(2~4인)의 스트림은 참가자 UUID 로 쪽을 가른다 — 이름·기술명만 그 방의 파이터에서 찾아 준다.
+    /// 좌우 두 자리인 1v1·연습 배틀은 `BattleLogSource.twoSided` 가 맡는다(배틀 탭이 그 화면을 그린다).
     private func multiplayerLogLines(_ events: [BattleEvent],
                                      fighters: [MultiplayerFighter]) -> [BattleLog.Line] {
         func fighter(_ actor: BattleActor) -> MultiplayerFighter? {
@@ -641,58 +579,10 @@ struct BattleView: View {
                                })
     }
 
-    /// 스트림을 접은 줄만 그린다 — 문구 결정은 `BattleLog` 에 있다(뷰는 순수 렌더러).
-    /// 최근 몇 줄만 보이는 구조라 `ScrollView` 는 쓰지 않는다 — 팝오버 본체가 이미 스크롤이고,
-    /// 그 안에 세로 스크롤을 겹치면 안쪽이 스크롤되지 않고 잘린다(defect-log 규칙).
-    private func logBox(_ lines: [BattleLog.Line], mine: BattleActor?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(lines.suffix(4).enumerated()), id: \.offset) { _, line in
-                Text(line.text)
-                    .font(.caption2)
-                    .foregroundStyle(line.actor == mine ? .primary : .secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-    }
-
-    /// HP바 옆 상태 배지 — Showdown 과 같은 약어라 언어를 타지 않는다. 혼란은 주 상태와 함께 붙으므로
-    /// 두 자리를 따로 그린다(한 자리만 그리면 "화상 + 혼란" 이 화면에서 하나로 뭉개진다).
-    @ViewBuilder
-    private func statusBadges(_ side: BattleSide?) -> some View {
-        if let side, side.status != nil || side.isConfused {
-            HStack(spacing: 3) {
-                if let status = side.status { statusBadge(status) }
-                if side.isConfused { statusBadge(.confusion) }
-            }
-        }
-    }
-
-    private func statusBadge(_ status: Status) -> some View {
-        Text(status.badge)
-            .font(.system(size: 8, weight: .bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
-            .background(Capsule().fill(statusTint(status)))
-    }
-
-    private func statusTint(_ status: Status) -> Color {
-        switch status {
-        case .burn:            return .orange
-        case .poison, .toxic:  return .purple
-        case .paralysis:       return .yellow
-        case .sleep:           return .gray
-        case .freeze:          return .cyan
-        case .confusion:       return .pink
-        }
-    }
-
-    /// `side` 는 대전 중일 때만 있다 — 신청 수락 화면의 미리보기는 HP 도 상태도 아직 없다.
-    private func snapshotCard(_ snapshot: BattleSnapshot, title: String, side: BattleSide?) -> some View {
-        let hpRatio = side.map { Double($0.hp) / Double(max(1, $0.stats.hp)) }
-        return VStack(spacing: 4) {
+    /// 신청 수락 화면의 상대 미리보기. HP 도 상태도 아직 없다 — 스냅샷만 왔고 배틀은 안 시작했다.
+    /// 대전 중 화면은 `CombatantBar` 가 맡는다(세 모드가 같은 칸을 쓴다).
+    private func snapshotCard(_ snapshot: BattleSnapshot, title: String) -> some View {
+        VStack(spacing: 4) {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -706,22 +596,19 @@ struct BattleView: View {
             HStack(spacing: 3) {
                 ForEach(snapshot.types, id: \.rawValue) { typeChip($0) }
             }
-            if let hpRatio {
-                ProgressView(value: max(0, min(1, hpRatio)))
-                    .tint(hpRatio > 0.5 ? .green : hpRatio > 0.2 ? .yellow : .red)
-                    .controlSize(.small)
-            }
-            statusBadges(side)
         }
         .frame(maxWidth: .infinity)
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.04)))
     }
 
+    /// 타입 배지 — 실제 타입색이다. 예전엔 18타입 전부를 accent 한 색으로 그려서 배지가 타입을
+    /// 전혀 전달하지 못했다(기술 버튼과 같은 색·같은 글자색 규칙을 읽는다).
     private func typeChip(_ type: PokemonType) -> some View {
         Text(type.name(store.language))
             .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(type.battleLabelColor)
             .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+            .background(Capsule().fill(type.battleColor))
     }
 }

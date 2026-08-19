@@ -47,7 +47,9 @@ final class MultiplayerRoomCenter {
     private var pendingActions: [UUID: MultiplayerAction] = [:]
     private var turnTimeoutTask: Task<Void, Never>?
     private var rewardedBattle = false
-    private static let turnDuration: TimeInterval = 30
+    /// 한 턴에 주는 시간. 1v1 LAN 도 같은 값을 쓴다(`BattleCenter.turnDuration`) — 두 모드의
+    /// 체감이 갈리면 같은 앱에서 다른 게임을 하는 것처럼 느껴진다.
+    static let turnDuration: TimeInterval = 30
 
     init(companion: CompanionStore) { self.companion = companion }
 
@@ -483,6 +485,9 @@ final class MultiplayerRoomCenter {
             } else { scheduleTurnTimeout() }
         } catch {
             lastError = error.localizedDescription; pendingActions.removeAll(); hasSubmittedAction = false
+            // 거절된 라운드에도 마감을 다시 건다. 이게 없으면 게스트가 보낸 엉뚱한 targetID 하나로
+            // 방이 영구히 멈춘다(마감 경로에서 throw 가 나면 다시 걸릴 타이머가 없다).
+            scheduleTurnTimeout()
         }
     }
 
