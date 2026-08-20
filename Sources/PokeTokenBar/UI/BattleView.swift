@@ -6,6 +6,7 @@ import SwiftUI
 struct BattleView: View {
     @Bindable var store: CompanionStore
     @Environment(BattleCenter.self) private var center
+    @Environment(PopoverNavigation.self) private var nav
 
     // 수동(IP) 연결 상태
     @State private var manualAddress = ""
@@ -227,13 +228,24 @@ struct BattleView: View {
 
             teamPicker
 
-            Button {
-                center.startRankedPractice()
-            } label: {
-                Label(store.language == .ko ? "CPU 모의전" : "Practice vs CPU", systemImage: "gamecontroller.fill")
+            HStack(spacing: 6) {
+                Button {
+                    center.startRankedPractice()
+                } label: {
+                    Label(store.language == .ko ? "CPU 모의전" : "Practice vs CPU", systemImage: "gamecontroller.fill")
+                }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+                .disabled(!isChallengeEnabled)
+                Button {
+                    nav.showGymLeague = true
+                } label: {
+                    Label(l.gymLeagueTitle, systemImage: "building.columns.fill")
+                }
+                .controlSize(.small)
+                .disabled(!isChallengeEnabled)
+                Text(l.gymBadgeCount(store.earnedGymBadges.count, GymLeague.catalog.count))
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             }
-            .buttonStyle(.borderedProminent).controlSize(.small)
-            .disabled(!isChallengeEnabled)
             Text(store.language == .ko
                  ? "키운 레벨 그대로 · 랭크와 별의조각은 변하지 않음"
                  : "At the levels you raised · rank and Star Pieces are unchanged")

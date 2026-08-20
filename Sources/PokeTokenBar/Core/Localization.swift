@@ -779,6 +779,22 @@ struct L {
     var useAfterHatch: String { t("부화 후 사용할 수 있어요", "Usable after hatching", "孵化後に使えます") }
     var useNeedsPokemon: String { t("사용할 포켓몬이 없어요", "No Pokémon to use it on", "使えるポケモンがいません") }
 
+    // MARK: 체육관
+    var gymLeagueTitle: String { t("체육관", "Gyms", "ジム") }
+    var gymBadgeEarned: String { t("배지 획득", "Badge earned", "バッジ獲得") }
+    func gymNeedsMorePokemon(_ count: Int) -> String {
+        t("체육관은 \(count)마리로 도전해요 — 포켓몬이 부족합니다.",
+          "Gyms take a team of \(count) — not enough Pokémon.",
+          "ジムは\(count)体で挑みます — ポケモンが足りません。")
+    }
+    func gymBadgeCount(_ earned: Int, _ total: Int) -> String {
+        t("배지 \(earned) / \(total)", "\(earned) / \(total) badges", "バッジ \(earned) / \(total)")
+    }
+    func gymLeaderLevel(_ level: Int) -> String {
+        t("관장 Lv.\(level)", "Leader Lv.\(level)", "ジムリーダー Lv.\(level)")
+    }
+    var gymChallenge: String { t("도전", "Challenge", "挑戦") }
+
     /// 최종형인데 아직 졸업 못 하는 개체의 파트너 카드 한 줄 — 남은 관문이 레벨뿐임을 알린다.
     /// "Lv.N 에 진화" 가 사라진 그 자리에 들어간다.
     func graduatesAtLevel(_ level: Int) -> String {
