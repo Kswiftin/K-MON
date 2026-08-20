@@ -378,7 +378,7 @@ final class SaveTransferTests: XCTestCase {
         // 진행: 어느 기기에서든 참. eggTier(알 등급 보증)도 산 물건이라 기기를 옮겨도 따라간다.
         let progress: Set<String> = ["economyVersion", "usedSinceInstall", "spentTokens", "eggUsage",
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
-                                     "starterCandidates", "active", "dex", "collectedFinals", "inventory",
+                                     "starterCandidates", "active", "dex", "collectedFinals", "gymBadges", "inventory",
                                      "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
                                      "care", "battleRank", "trainer", "missions", "battleHistory",
                                      "adventure", "adventureHistory",
