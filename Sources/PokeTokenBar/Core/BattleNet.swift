@@ -292,19 +292,26 @@ final class BattleCenter {
         }
         phase = .preparing
         Task {
+            // 모의전은 **키운 그대로** 나간다. 랭크도 별의조각도 걸리지 않는 자리라 Lv.50 으로
+            // 평준화할 이유가 없고, 평준화하면 갓 부화한 개체와 몇 주 키운 개체가 같은 전력이 되어
+            // 정작 키운 보람이 배틀에 드러나지 않는다. 랭크가 걸린 맞짱은 그대로 50 고정이다
+            // (`buildMySnapshot(levelOverride: 50)`).
             var myTeam: [BattleSnapshot] = []
             for mon in battleTeamMons {
-                if let snapshot = await companion.battleSnapshot(for: mon, level: 50) { myTeam.append(snapshot) }
+                if let snapshot = await companion.battleSnapshot(for: mon, level: mon.level) { myTeam.append(snapshot) }
             }
             guard myTeam.count == rankedTeamSize else {
                 phase = .ready; lastError = l.battleStatsFailed; return
             }
+            // CPU 는 마주 서는 슬롯과 같은 레벨로 세운다 — 내 1번이 Lv.12 면 상대 1번도 Lv.12 다.
+            // 고정 레벨로 두면 내 팀이 낮을 땐 이길 수 없고, 높을 땐 연습이 되지 않는다.
             var cpuTeam: [BattleSnapshot] = []
-            for opponentID in Array([25, 59, 94, 130, 143, 149].shuffled().prefix(rankedTeamSize)) {
+            for (slot, opponentID) in Array([25, 59, 94, 130, 143, 149].shuffled().prefix(rankedTeamSize)).enumerated() {
                 guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: opponentID) else { continue }
-                let moves = await PokeAPIClient.shared.moveSet(speciesID: opponentID, level: 50, types: profile.types)
+                let level = myTeam.indices.contains(slot) ? myTeam[slot].level : 50
+                let moves = await PokeAPIClient.shared.moveSet(speciesID: opponentID, level: level, types: profile.types)
                 cpuTeam.append(BattleSnapshot(speciesID: opponentID, name: "CPU #\(opponentID)", trainer: "CPU",
-                                              level: 50, nature: nil, isShiny: false, types: profile.types,
+                                              level: level, nature: nil, isShiny: false, types: profile.types,
                                               base: profile.stats, moves: moves))
             }
             guard cpuTeam.count == rankedTeamSize else { phase = .ready; lastError = l.battleStatsFailed; return }

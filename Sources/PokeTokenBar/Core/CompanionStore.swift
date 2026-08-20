@@ -213,8 +213,10 @@ final class CompanionStore {
     func battleSnapshot(for mon: MonState, level: Int = 50) async -> BattleSnapshot? {
         guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.currentID) else { return nil }
         let name = await resolveSpeciesName(mon.currentID)
+        // 자동 무브셋은 **스냅샷 레벨** 기준이다. 예전엔 여기만 `mon.level` 이라, Lv.50 으로 나가는
+        // 개체가 자기 실제 레벨까지 배우는 기술만 들고 갔다 — 몸은 50 인데 기술은 3 인 상태.
         let moves = mon.learnedMoves.isEmpty
-            ? await PokeAPIClient.shared.moveSet(speciesID: mon.currentID, level: mon.level, types: profile.types)
+            ? await PokeAPIClient.shared.moveSet(speciesID: mon.currentID, level: level, types: profile.types)
             : mon.learnedMoves
         return BattleSnapshot(speciesID: mon.currentID, name: mon.nickname ?? name, trainer: trainerName,
                               level: level, nature: mon.nature, isShiny: mon.isShiny,
