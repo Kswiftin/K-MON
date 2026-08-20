@@ -637,6 +637,10 @@ final class CompanionStore {
         displayedMoves = moves
         isLoadingDisplayedMoves = loading
     }
+    /// 테스트 전용 — 비동기 계승 기술 복원과 동행 교체의 경합을 네트워크 없이 재현한다.
+    func debugSetActiveLearnedMoves(_ moves: [MoveSpec]) {
+        state.active?.learnedMoves = moves
+    }
     #endif
 
     /// 생산 배율 — 도감에 등록한 종(고유 최종체) 1종당 +2%. 수집이 곧 성장 엔진.
