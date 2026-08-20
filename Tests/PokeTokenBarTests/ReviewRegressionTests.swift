@@ -36,12 +36,14 @@ final class ReviewRegressionTests: XCTestCase {
         XCTAssertEqual(battle.oppActive, 1, "픽스처가 자동 출전을 실제로 밟아야 한다")
 
         let lines = BattleLogSource.netBattle(battle, mine: .a, l: L(.en)).map(\.text)
+        let defenderLines = BattleLogSource.netBattle(battle, mine: .b, l: L(.en)).map(\.text)
 
         XCTAssertTrue(lines.contains { $0.contains("Fainted Lead used Lead Move") },
                       "교체 전 기술을 새 포켓몬의 무브셋으로 재해석하면 Struggle로 보인다")
         XCTAssertTrue(lines.contains("Fainted Lead fainted!"))
         XCTAssertFalse(lines.contains("Healthy Reserve fainted!"),
                        "자동 출전한 생존 포켓몬이 기절한 것으로 표시되어서는 안 된다")
+        XCTAssertEqual(defenderLines, lines, "challenger/defender 어느 화면에서도 전투원 문맥은 같아야 한다")
     }
 
     /// 한 마리 팀에는 선택 가능한 교체 대상이 없으므로 LAN 화면에 교체 줄을 만들지 않는다.

@@ -126,6 +126,7 @@ final class NetTeamBattleTests: XCTestCase {
             XCTAssertEqual(challenger.myActive, defender.oppActive)
             XCTAssertEqual(challenger.oppActive, defender.myActive)
             XCTAssertEqual(challenger.events, defender.events)
+            XCTAssertEqual(challenger.eventBatches, defender.eventBatches)
             XCTAssertEqual(challenger.rng.state, defender.rng.state)
             XCTAssertEqual(challengerResult, defenderResult)
         }

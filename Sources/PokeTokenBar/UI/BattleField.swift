@@ -551,12 +551,7 @@ enum BattleLogSource {
 
     /// LAN 팀전 누적 로그 — 각 턴이 발생했을 때의 활성 포켓몬 문맥으로 이름과 기술을 해석한다.
     static func netBattle(_ battle: NetBattleState, mine: BattleActor, l: L) -> [BattleLog.Line] {
-        if battle.eventBatches.isEmpty {
-            return twoSided(battle.events, mine: mine, l: l,
-                            myName: battle.me.snapshot.name, theirName: battle.opp.snapshot.name,
-                            myMoves: battle.me.moves, theirMoves: battle.opp.moves)
-        }
-        return battle.eventBatches.flatMap { batch in
+        battle.eventBatches.flatMap { batch in
             let myContext = mine == .a ? batch.a : batch.b
             let theirContext = mine == .a ? batch.b : batch.a
             return twoSided(batch.events, mine: mine, l: l,
