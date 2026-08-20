@@ -78,6 +78,10 @@ enum DexGoals {
     static func rows(in dex: [DexEntry]) -> [(goal: DexGoal, progress: Int)] {
         DexGoalKind.allCases.compactMap { kind in
             let ladder = catalog.filter { $0.kind == kind }
+            // 이 else 분기는 카탈로그상 도달할 수 없다 — 모든 축에 목표가 하나 이상임은
+            // `DexGoalTests.testCatalogTargetsAscendWithinEachKind` 가 강제한다. 그래서
+            // `--show-regions` 에 `^0` 으로 남는다(라인 커버리지 100% 와 별개). 축을 추가하고
+            // 카탈로그에 칸을 안 넣으면 그 축이 화면에서 빠지는 대신 크래시하지 않는다.
             guard let last = ladder.last else { return nil }
             let current = progress(kind, in: dex)
             return (ladder.first { current < $0.target } ?? last, current)
