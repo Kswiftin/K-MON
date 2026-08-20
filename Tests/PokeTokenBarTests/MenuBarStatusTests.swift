@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import PokeTokenBar
 
@@ -43,13 +44,48 @@ final class MenuBarStatusTests: XCTestCase {
         XCTAssertEqual(MenuBarStatus.remainingClockText(now.addingTimeInterval(60 * 60 + 23 * 60), at: now), "1h23m")
     }
 
-    /// text(_:) 도 세 언어 모두 요청한 세 상태를 다 렌더할 수 있어야 한다(문구 누락 방지).
-    func testTextRendersEveryStateInEveryLanguage() {
+    func testCompactTitleForEveryState() {
+        XCTAssertEqual(MenuBarStatus.focus(prefix: "FOCUS", clock: "24:59").compactTitle, "F 24:59")
+        XCTAssertEqual(MenuBarStatus.focus(prefix: "BREAK", clock: "04:59").compactTitle, "B 04:59")
+        XCTAssertEqual(MenuBarStatus.adventuring(remaining: "12:34").compactTitle, "A 12:34")
+        XCTAssertEqual(MenuBarStatus.adventuring(remaining: "1h23m").compactTitle, "A 1h23m")
+        XCTAssertEqual(MenuBarStatus.adventureClaimable.compactTitle, "!")
+        XCTAssertEqual(MenuBarStatus.resting.compactTitle, "R")
+    }
+
+    /// 1시간 경계에서 남은 시간 표기가 바뀌어도 컴팩트 접두사와 함께 그대로 보여야 한다.
+    func testCompactAdventureTitleKeepsCountdownFormatAcrossOneHourBoundary() {
+        let underOneHour = resolve(
+            focusRunning: false,
+            activeAdventure: adventure(endsAt: now.addingTimeInterval(59 * 60 + 59))
+        )
+        let atOneHour = resolve(
+            focusRunning: false,
+            activeAdventure: adventure(endsAt: now.addingTimeInterval(60 * 60))
+        )
+
+        XCTAssertEqual(underOneHour.compactTitle, "A 59:59")
+        XCTAssertEqual(atOneHour.compactTitle, "A 1h00m")
+    }
+
+    /// 최장 표기도 메뉴 막대에서 실제 사용하는 13pt 고정폭 숫자 폰트로 56pt 예산을 넘지 않는다.
+    func testCompactTitlesFitRenderedWidthBudget() {
+        let titles = ["F 24:59", "B 04:59", "A 12:34", "A 1h23m", "!", "R"]
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        let widest = titles.map {
+            ($0 as NSString).size(withAttributes: [.font: font]).width
+        }.max() ?? 0
+
+        XCTAssertLessThanOrEqual(widest, 56)
+    }
+
+    /// fullDescription(_:) 도 세 언어 모두 모든 상태를 렌더할 수 있어야 한다(툴팁 문구 누락 방지).
+    func testFullDescriptionRendersEveryStateInEveryLanguage() {
         let states: [MenuBarStatus] = [.focus(prefix: "FOCUS", clock: "24:59"),
                                        .adventuring(remaining: "12:34"), .adventureClaimable, .resting]
         for language in AppLanguage.allCases {
             for status in states {
-                XCTAssertFalse(status.text(L(language)).isEmpty)
+                XCTAssertFalse(status.fullDescription(L(language)).isEmpty)
             }
         }
     }
