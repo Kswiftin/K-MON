@@ -370,6 +370,41 @@ final class SaveTransferTests: XCTestCase {
                        """)
     }
 
+    /// [부류 가드] 서명 밖에 남은 필드는 **자유롭게 고칠 수 있는 필드다.** 미결 랭크전의 상대 랭크가
+    /// 그랬다: 패배 LP 는 `apply(win:false)` 의 `tier > opponent.tier` 로 결정되므로, 상대를 최고
+    /// 티어로 고쳐 두면 이탈이 LP 무손실이 된다 — 에스크로가 막으려던 "지고 있으면 앱 종료"가 그대로
+    /// 돌아온다. 판돈만 서명하고 상대 랭크를 빼 두면 가드가 없는 것과 같다.
+    func testThePendingEscrowSignatureCoversTheOpponentRank() {
+        var state = CompanionState()
+        state.pendingRanked = PendingRankedBattle(stake: 5_000, opponent: BattleRank(points: 0))
+        var tampered = state
+        tampered.pendingRanked = PendingRankedBattle(stake: 5_000,
+                                                    opponent: BattleRank(points: BattleRank.maximumPoints))
+
+        XCTAssertNotEqual(SaveTransfer.canonicalString(state), SaveTransfer.canonicalString(tampered),
+                          "상대 랭크를 고치면 서명이 달라져야 한다")
+        XCTAssertNotEqual(SaveTransfer.integrityHash(state), SaveTransfer.integrityHash(tampered))
+        // 대조군: 에스크로가 없는 세이브는 아무것도 붙이지 않는다(구버전 서명 호환).
+        XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|pr"))
+    }
+
+    /// 에스크로 판돈은 **판돈 상한**에서 자른다. 일반 수치 상한(10^15)까지 허용하면 승리 정산의
+    /// `escrowed * 2` 가 세이브 한 장으로 별의조각을 찍어낸다.
+    func testAnImportedEscrowIsClampedToTheStakeCeiling() {
+        var state = CompanionState()
+        state.pendingRanked = PendingRankedBattle(stake: SaveTransfer.maxTokenValue,
+                                                  opponent: BattleRank(points: 0))
+
+        let clean = SaveTransfer.sanitized(state)
+
+        XCTAssertEqual(clean.pendingRanked?.stake, BattleRank.maximumStake)
+        XCTAssertEqual(SaveTransfer.sanitized({
+            var s = CompanionState()
+            s.pendingRanked = PendingRankedBattle(stake: 5_000, opponent: BattleRank(points: 0))
+            return s
+        }()).pendingRanked?.stake, 5_000, "정상 판돈은 그대로 통과한다")
+    }
+
     // MARK: 필드 부류 (딥리뷰 M-g)
 
     /// [딥리뷰 M-g] 이전 시 필드 분류가 산문 규약뿐이라, 새 필드가 추가되면 아무 판단 없이 "진행"으로

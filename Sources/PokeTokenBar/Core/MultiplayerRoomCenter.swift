@@ -563,7 +563,9 @@ final class MultiplayerRoomCenter {
         // 별의조각은 지급하지 않는다 — 전적만 남긴다. 예전엔 여기서 표시용 보상액을 계산해
         // 화면이 "+20 ✨" 을 띄웠는데 `grantBattleReward` 는 아무것도 지급하지 않았다.
         let won = outcome == .win, count = combatFighters.count
-        let mode = lobby?.mode ?? .freeForAll
+        // 기록에 남는 모드도 판정과 **같은 근거**를 쓴다 — `lobby?.mode` 는 편성에서 파생되는 가변값이라
+        // 여기만 남겨 두면 판정은 팀전인데 전적은 개인전으로 적히는 자리가 다시 생긴다.
+        let mode = combatMode
         let opponents = combatFighters.filter { $0.id != myID }.map(\.trainerName)
         companion.grantBattleReward(won: won, participantCount: count, mode: mode,
                                     opponentNames: opponents)

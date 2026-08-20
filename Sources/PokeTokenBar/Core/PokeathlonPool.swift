@@ -7,6 +7,30 @@ struct PokeathlonBet: Codable, Sendable, Equatable {
     var amount: Int
 }
 
+/// 원장은 **호스트가 보내오는 값이다** — 게스트는 `.pokeathlonPool`/`.pokeathlonSettlement` 를 그대로
+/// 받아 `payouts` 를 다시 계산한다. 그래서 상한은 호스트측 `rejection` 이 아니라 **디코딩 경계**에
+/// 있어야 한다. 여기 없으면 조작된 호스트가 `Int.max` 한 건으로 모든 게스트를 오버플로 트랩으로
+/// 죽인다(`rejection` 은 호스트 자기 자신만 통과시킨다).
+extension PokeathlonBet {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bettorID = try c.decode(UUID.self, forKey: .bettorID)
+        runnerID = try c.decode(UUID.self, forKey: .runnerID)
+        amount = min(PokeathlonPool.maximumBet, max(0, try c.decode(Int.self, forKey: .amount)))
+    }
+}
+
+extension PokeathlonPool {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let ledger = try c.decodeIfPresent([UUID: PokeathlonBet].self, forKey: .bets) ?? [:]
+        // 건당 상한만으론 `pot` 이 안 묶인다 — 정원보다 많은 베팅이 오면 `pot × amount` 가 다시
+        // 넘친다. 관전자 정원을 넘는 원장은 정상 경로로 만들 수 없으므로 통째로 버린다.
+        bets = ledger.count <= MultiplayerLobby.spectatorCapacity ? ledger : [:]
+        isClosed = try c.decodeIfPresent(Bool.self, forKey: .isClosed) ?? false
+    }
+}
+
 /// 포켓슬론 관전자 베팅 원장. 파리뮤추얼 — 우승 러너에 건 관전자들이 전체 판돈을
 /// 자기 지분대로 나눠 갖는다. 별조각은 관전자 사이에서만 이동하고 새로 생성되지 않는다.
 ///
@@ -19,7 +43,7 @@ struct PokeathlonPool: Codable, Sendable, Equatable {
 
     /// 베팅 상한 — `payouts` 의 `pot * bet.amount` 가 오버플로 트랩나지 않는 값.
     /// pot ≤ 관전자 정원(8) × 상한 이므로 `8 × 상한²< Int.max` 여야 한다. 10^9 은 8×10^18 로
-    /// 여유가 없어 10^8 을 쓴다 — 랭크전 판돈 최대(50,000)의 2,000배라 정상 플레이는 닿지 않는다.
+    /// 여유가 없어 10^8 을 쓴다 — 랭크전 판돈 최대(45,000)의 2,000배 넘게라 정상 플레이는 닿지 않는다.
     ///
     /// 상한이 필요한 이유: 수용 검사가 `bet.amount <= member.reportedStarPieces` 만 봤고 그 잔액은
     /// 참가자가 **스스로 신고**하는 값이라 상한이 없었다. `Int.max` 한 건이 원장에 들어가면 배당

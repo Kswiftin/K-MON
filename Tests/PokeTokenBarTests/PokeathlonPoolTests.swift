@@ -269,6 +269,38 @@ final class PokeathlonPoolTests: XCTestCase {
         XCTAssertEqual(participant.reportedStarPieces, SaveTransfer.maxTokenValue)
     }
 
+    /// 상한이 **디코딩 경계**에 있어야 하는 이유: 게스트는 원장을 검사하지 않고 호스트가 보낸 것을
+    /// 그대로 받아(`.pokeathlonPool`/`.pokeathlonSettlement`) `payouts` 를 다시 계산한다. 호스트측
+    /// `rejection` 만 고치면 조작된 호스트가 `Int.max` 한 건으로 모든 게스트를 오버플로 트랩으로 죽인다.
+    func testAWireLedgerIsClampedWhenDecoded() throws {
+        func decoded(_ json: String) throws -> PokeathlonPool {
+            try JSONDecoder().decode(PokeathlonPool.self, from: Data(json.utf8))
+        }
+        func ledger(_ entries: [(bettor: Int, amount: String)]) -> String {
+            let bets = entries.map {
+                """
+                "\(id($0.bettor).uuidString)",
+                {"bettorID":"\(id($0.bettor).uuidString)","runnerID":"\(id(10).uuidString)","amount":\($0.amount)}
+                """
+            }
+            return "{\"bets\":[\(bets.joined(separator: ","))],\"isClosed\":false}"
+        }
+
+        let huge = try decoded(ledger([(1, "\(Int.max)"), (2, "-5")]))
+        XCTAssertEqual(huge.bets[id(1)]?.amount, PokeathlonPool.maximumBet, "건당 상한에서 잘린다")
+        XCTAssertEqual(huge.bets[id(2)]?.amount, 0, "음수도 경계에서 정리된다")
+        XCTAssertEqual(huge.payouts(winnerID: id(10)).values.reduce(0, +), huge.total,
+                       "배당이 트랩나지 않고 총액을 그대로 분배한다")
+
+        // 건당 상한만으론 `pot` 이 안 묶인다 — 정원을 넘는 원장은 통째로 버린다.
+        let flood = try decoded(ledger((1...(MultiplayerLobby.spectatorCapacity + 1))
+            .map { (bettor: $0, amount: "\(PokeathlonPool.maximumBet)") }))
+        XCTAssertTrue(flood.bets.isEmpty, "관전자 정원을 넘는 원장은 정상 경로로 만들 수 없다")
+
+        let normal = try decoded(ledger([(1, "500")]))
+        XCTAssertEqual(normal.bets[id(1)]?.amount, 500, "정상 값은 그대로 통과한다")
+    }
+
     private func lobbyWith(runner: UUID, spectator: UUID, reportedStarPieces: Int) -> MultiplayerLobby {
         var lobby = try! MultiplayerLobby(
             host: LobbyParticipant(id: runner, trainerName: "R", speciesID: 1, team: .solo,

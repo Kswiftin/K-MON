@@ -62,10 +62,16 @@ struct BattleRank: Codable, Sendable, Equatable {
         return points - before
     }
 
+    /// 판돈 상한 — `stake` 가 낼 수 있는 최대치다(티어 격차 최대 9 × 5,000). 세이브에 실려 오는
+    /// 에스크로(`PendingRankedBattle`)를 이 값으로 자른다: 승리 정산이 `escrowed * 2` 를 지급하므로,
+    /// 상한이 일반 수치 상한(`SaveTransfer.maxTokenValue`, 10^15)이면 손으로 만든 세이브 한 장이
+    /// 별의조각을 찍어낸다.
+    static let maximumStake = 45_000
+
     /// 낮은 랭크가 높은 랭크에 도전할 때만 발생하는 고정 판돈.
     static func stake(challenger: BattleRank, defender: BattleRank) -> Int {
         guard challenger.tier < defender.tier else { return 0 }
-        return min(50_000, max(5_000, (defender.tier.rawValue - challenger.tier.rawValue) * 5_000))
+        return min(maximumStake, max(5_000, (defender.tier.rawValue - challenger.tier.rawValue) * 5_000))
     }
 }
 

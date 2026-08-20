@@ -585,6 +585,12 @@ final class BattleCenter {
         // 앞단(`acceptIncoming`·`handle(.accept)`)이 이미 잔액을 확인하므로 여기 걸리는 건 이상 상황이다.
         if !isPracticeBattle, let opponentRankProfile,
            !companion.escrowRankedBattle(stake: rankedStake, opponent: opponentRankProfile.rank) {
+            // 상대는 이미 `.accept` 를 주고받아 `.battling` 으로 들어가 **자기 에스크로를 잡은** 상태다.
+            // 조용히 빠지면 상대는 오지 않는 턴을 영원히 기다리고(마감은 한 번 돌면 재예약되지 않는다)
+            // 판돈은 앱을 끌 때까지 묶인 채 다음 기동에서 패배로 마감된다 — 빠지는 쪽만 무손실이다.
+            // 내가 못 낸 것이므로 기권으로 알린다.
+            if let conn = connection { send(.forfeit, over: conn) }
+            dropConnection()
             phase = .ready
             lastError = "랭크전 판돈이 부족합니다."
             return
