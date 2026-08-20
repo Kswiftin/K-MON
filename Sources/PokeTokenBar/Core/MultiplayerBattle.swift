@@ -238,15 +238,46 @@ struct MultiplayerBattle: Sendable {
     }
 
     var livingFighters: [MultiplayerFighter] { fighters.filter(\.isAlive) }
-    var isFinished: Bool {
+    var isFinished: Bool { Self.isFinished(fighters: fighters, mode: mode) }
+    var winningIDs: [UUID] { Self.winners(fighters: fighters, mode: mode) }
+
+    // MARK: 승패 판정 — 호스트·게스트·관전자가 같은 규칙을 본다
+    //
+    // static 인 건 **게스트가 `battle` 을 갱신하지 않기** 때문이다. 게스트는 `.start` 로 받은
+    // 배틀만 들고 있고 라운드마다 오는 건 `fighters` 배열이라(`MultiplayerRoomCenter.combatFighters`),
+    // 인스턴스 프로퍼티로만 두면 게스트 쪽 판정이 개시 시점 상태에 굳는다. 판정이 방마다 따로 있던
+    // 시절엔 팀전에서 "이긴 팀의 쓰러진 대원 = 패배"가 됐다.
+
+    static func isFinished(fighters: [MultiplayerFighter], mode: MultiplayerBattleMode) -> Bool {
+        guard !fighters.isEmpty else { return false }
+        let living = fighters.filter(\.isAlive)
         switch mode {
-        case .freeForAll: return livingFighters.count <= 1
-        case .teams: return Set(livingFighters.map(\.team)).count <= 1
+        case .freeForAll: return living.count <= 1
+        case .teams: return Set(living.map(\.team)).count <= 1
         }
     }
-    var winningIDs: [UUID] {
-        guard isFinished else { return [] }
-        return livingFighters.map(\.id)
+
+    /// 이긴 쪽 전원. 팀전은 **쓰러진 대원까지** 포함한다 — 이긴 건 팀이지 생존자가 아니다.
+    /// 양쪽이 전멸하면 아무도 이기지 않았으므로 빈 배열이다(무승부).
+    static func winners(fighters: [MultiplayerFighter], mode: MultiplayerBattleMode) -> [UUID] {
+        guard isFinished(fighters: fighters, mode: mode) else { return [] }
+        let living = fighters.filter(\.isAlive)
+        guard let winningTeam = living.first?.team else { return [] }   // 동시 전멸
+        switch mode {
+        case .freeForAll: return living.map(\.id)
+        case .teams: return fighters.filter { $0.team == winningTeam }.map(\.id)
+        }
+    }
+
+    /// 한 참가자의 승패. `nil` 은 "이 사람에게 줄 결과가 없다" — 아직 안 끝났거나, 전투원이 아니다
+    /// (관전자). 관전자도 라운드 브로드캐스트를 받으므로 이 nil 이 없으면 배틀 기록이 남는다.
+    static func outcome(for id: UUID, fighters: [MultiplayerFighter],
+                        mode: MultiplayerBattleMode) -> BattleOutcome? {
+        guard fighters.contains(where: { $0.id == id }),
+              isFinished(fighters: fighters, mode: mode) else { return nil }
+        let winners = winners(fighters: fighters, mode: mode)
+        guard !winners.isEmpty else { return .draw }
+        return winners.contains(id) ? .win : .loss
     }
 
     mutating func forfeit(participantID: UUID) {

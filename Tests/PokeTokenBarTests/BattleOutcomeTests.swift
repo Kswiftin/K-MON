@@ -101,9 +101,10 @@ final class BattleOutcomeTests: XCTestCase {
     func testDisconnectAtEqualFootingIsANoContest() {
         XCTAssertNil(BattleEngine.disconnectOutcome(me: side(hpFraction: (1, 2)),
                                                     opp: side(hpFraction: (1, 2))))
-        XCTAssertNil(BattleEngine.disconnectOutcome(me: side(baseHP: 200, hpFraction: (1, 2)),
-                                                    opp: side(baseHP: 60, hpFraction: (1, 2))),
-                     "최대 HP 가 달라도 비율이 같으면 무효다")
+        // 최대 HP 가 다른 두 종이 나란히 만피 = 비율이 정확히 같다(첫 턴에 끊긴 경우).
+        // 절대값 비교였다면 덩치 큰 쪽이 이겼을 자리다.
+        XCTAssertNil(BattleEngine.disconnectOutcome(me: side(baseHP: 200), opp: side(baseHP: 60)),
+                     "최대 HP 가 달라도 비율이 같으면 무효다 — 시작하자마자 끊기면 아무도 이기지 않는다")
     }
 
     /// 판정은 남은 HP **비율**이다. 절대값으로 비교하면 덩치 큰 종이 항상 이긴다.

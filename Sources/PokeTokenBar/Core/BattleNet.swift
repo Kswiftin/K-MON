@@ -387,9 +387,11 @@ final class BattleCenter {
     /// 기술 사용과 교체 양쪽이 승부를 낼 수 있어 두 경로가 이 한 곳을 지난다.
     private func settlePracticeResult(_ practice: TeamPracticeBattle) {
         guard let result = practice.result else { return }
+        // 배지는 **`.win` 에서만** 나간다 — 무승부는 이긴 판이 아니다.
         // 재도전이면 `recordGymVictory` 가 0 을 돌려준다 — 배지가 이미 있으면 아무것도 지급하지 않는다.
-        lastGymReward = (result && activeGym != nil) ? companion.recordGymVictory(activeGym!) : 0
-        phase = .finished(iWon: result, byForfeit: false)
+        lastGymReward = (result == .win && activeGym != nil) ? companion.recordGymVictory(activeGym!) : 0
+        // 무승부는 `iWon: nil` — 결과 화면이 `l.battleDraw` 를 그린다(`BattleView.finishText`).
+        phase = .finished(iWon: result == .draw ? nil : result == .win, byForfeit: false)
     }
 
     func switchTeamPractice(to index: Int) {
@@ -747,9 +749,13 @@ final class BattleCenter {
         cancelTurnTimeout()   // 상대가 사라진 뒤에 마감이 돌면 이미 끝난 배틀에 기술을 보낸다
         switch phase {
         case .battling:
-            // 상대 이탈 = 몰수승.
-            phase = .finished(iWon: true, byForfeit: true)
-            settleRankedBrawlIfNeeded(won: true)
+            // 끊김은 몰수승이 **아니다** — 내 연결이 죽은 건 두 피어에게 똑같이 보이므로, 무조건
+            // 승리로 접으면 라우터가 한 번 껄떡일 때 양쪽이 동시에 이기고 양쪽이 판돈을 받았다.
+            // 남은 HP 비율로 판정하고 동률이면 무효다(정산 없음). 상대가 보낸 `.forfeit` 은 이 경로가
+            // 아니라 `handle(.forfeit)` 이 처리한다 — 그건 상대가 스스로 진 것이므로 그대로 몰수승이다.
+            let iWon = battle.flatMap { BattleEngine.disconnectOutcome(me: $0.me, opp: $0.opp) }
+            phase = .finished(iWon: iWon, byForfeit: true)
+            if let iWon { settleRankedBrawlIfNeeded(won: iWon) }
         case .challenging, .incoming, .preparing:
             phase = .ready
             lastError = l.battleConnectionLost

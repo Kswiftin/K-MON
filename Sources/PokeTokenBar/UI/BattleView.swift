@@ -159,6 +159,8 @@ struct BattleView: View {
         case (.some(false), true):  return l.battleYouForfeited
         case (.some(true), false):  return l.battleWon
         case (.some(false), false): return l.battleLost
+        // 끊김인데 남은 HP 도 같았다 = 무효. "무승부"보다 왜 그렇게 끝났는지가 먼저다.
+        case (.none, true):         return l.battleConnectionLost
         default:                    return l.battleDraw
         }
     }

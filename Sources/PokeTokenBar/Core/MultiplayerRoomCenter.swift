@@ -313,14 +313,20 @@ final class MultiplayerRoomCenter {
         else if let hostConnection { send(.action(round: combatRound, action: action), over: hostConnection) }
     }
 
-    var isBattleFinished: Bool {
-        guard !combatFighters.isEmpty else { return false }
-        let living = combatFighters.filter(\.isAlive)
-        let mode = lobby?.mode ?? (Set(living.map(\.team)).contains(.solo) ? .freeForAll : .teams)
-        return mode == .freeForAll ? living.count <= 1 : Set(living.map(\.team)).count <= 1
+    /// 판정에 쓸 모드. 로비를 못 보는 상황(호스트 이탈 등)에서는 전투원 편성에서 되짚는다 —
+    /// `solo` 가 하나라도 있으면 개인전이다(팀전은 2:2 로만 시작한다, `MultiplayerValidation.validStart`).
+    private var combatMode: MultiplayerBattleMode {
+        lobby?.mode ?? (combatFighters.contains { $0.team == .solo } ? .freeForAll : .teams)
     }
 
-    var didIWin: Bool { isBattleFinished && combatFighters.first(where: { $0.id == myID })?.isAlive == true }
+    var isBattleFinished: Bool {
+        MultiplayerBattle.isFinished(fighters: combatFighters, mode: combatMode)
+    }
+
+    /// 팀전은 내 생존이 아니라 **내 팀**이 이겼는지다 — 쓰러진 대원도 이긴 팀이면 이긴 것이다.
+    var didIWin: Bool {
+        MultiplayerBattle.outcome(for: myID, fighters: combatFighters, mode: combatMode) == .win
+    }
 
     func leaveRoom() {
         if isHost, pokeathlonRace != nil, !settledPool { settle(winnerID: pokeathlonRace?.winnerID) }
@@ -531,9 +537,13 @@ final class MultiplayerRoomCenter {
     }
 
     private func grantRewardIfFinished() {
-        guard isBattleFinished, !rewardedBattle else { return }
+        // 관전자는 전투원 목록에 없어 `outcome` 이 nil 이다 — 예전엔 관전자도 이 자리를 타서
+        // 싸우지도 않은 배틀의 패배 기록이 남았다.
+        guard !rewardedBattle,
+              let outcome = MultiplayerBattle.outcome(for: myID, fighters: combatFighters,
+                                                      mode: combatMode) else { return }
         rewardedBattle = true
-        let won = didIWin, count = combatFighters.count
+        let won = outcome == .win, count = combatFighters.count
         battleReward = max(20, count * (won ? 40 : 15))
         let mode = lobby?.mode ?? .freeForAll
         let opponents = combatFighters.filter { $0.id != myID }.map(\.trainerName)
