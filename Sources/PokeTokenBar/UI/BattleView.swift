@@ -13,7 +13,6 @@ struct BattleView: View {
     @State private var addressCopied = false
     @State private var roomMode: MultiplayerBattleMode = .freeForAll
     @State private var multiplayerTargetID: UUID?
-    @State private var teamPickPage = 0
     @State private var peerPage = 0
 
     private var l: L { store.l }
@@ -165,62 +164,6 @@ struct BattleView: View {
 
     /// 한 페이지에 그리는 칩 수. 팝오버 콘텐츠 폭(332) 안에 칩 6개(44)와 간격이 들어간다.
     /// 최대 팀 크기와 같은 수라, 한 페이지가 곧 한 팀 분량이다.
-    private static let teamPickPageSize = 6
-
-    /// 출전 팀 고르기 — 누르면 넣고 빼고, 배지 숫자가 출전 순서다.
-    ///
-    /// 스크롤을 쓰지 않는다. 이 화면은 팝오버 본체 ScrollView 안이라 안쪽에 또 두면 그 칸이
-    /// 잘린다(`BattleFieldTests.testTheBattleFieldSourceHasNoScrollView` 가 소스에서 막는다).
-    /// 대신 도감·소유 포켓몬과 같은 페이지식이다 — 넘치는 개체는 페이저로 넘겨서 고른다.
-    @ViewBuilder
-    private var teamPicker: some View {
-        if store.ownedMons.count > 1 {
-            let owned = store.ownedMons
-            let pageCount = max(1, (owned.count + Self.teamPickPageSize - 1) / Self.teamPickPageSize)
-            // 개체가 줄면(졸업·방출) 보던 페이지가 사라진다 — 범위 밖이면 마지막 페이지로 당긴다.
-            let page = min(teamPickPage, pageCount - 1)
-            let slice = Array(owned.dropFirst(page * Self.teamPickPageSize).prefix(Self.teamPickPageSize))
-            HStack(spacing: 4) {
-                Text(store.language == .ko ? "출전 순서" : "Battle order")
-                    .font(.caption2).foregroundStyle(.secondary)
-                Spacer()
-                if pageCount > 1 {
-                    Button { teamPickPage = max(0, page - 1) } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(.plain).disabled(page == 0)
-                        .accessibilityLabel(l.dexPagePrev)
-                    Text("\(page + 1) / \(pageCount)")
-                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                        .accessibilityLabel(l.dexPageLabel(page + 1, pageCount))
-                    Button { teamPickPage = min(pageCount - 1, page + 1) } label: { Image(systemName: "chevron.right") }
-                        .buttonStyle(.plain).disabled(page == pageCount - 1)
-                        .accessibilityLabel(l.dexPageNext)
-                }
-                Text("\(center.pickedTeam.count) / \(center.rankedTeamSize)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(center.pickedTeam.isEmpty ? .tertiary : .secondary)
-            }
-            HStack(spacing: 5) {
-                ForEach(slice, id: \.id) { mon in
-                    TeamPickChip(mon: mon,
-                                 pickedIndex: center.pickedTeam.firstIndex(of: mon.id),
-                                 onTap: { center.toggleTeamPick(mon.id) })
-                }
-                // 마지막 페이지가 덜 차도 칩 폭이 늘어나지 않게 빈 자리를 채운다.
-                if slice.count < Self.teamPickPageSize {
-                    ForEach(slice.count..<Self.teamPickPageSize, id: \.self) { _ in
-                        Color.clear.frame(width: 44)
-                    }
-                }
-            }
-            // 아무것도 안 고르면 예전처럼 소유 순서 앞에서 채운다 — 고르지 않고도 바로 시작할 수 있어야 한다.
-            if center.pickedTeam.isEmpty {
-                Text(store.language == .ko ? "고르지 않으면 목록 앞에서 자동으로 채워요"
-                                           : "Left empty, the first of your list are sent in")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-        }
-    }
-
     private var peerList: some View {
         // 상대는 Bonjour 탐색을 따라 수시로 들어오고 나간다 — 보던 페이지가 사라지면 마지막 페이지로 당긴다.
         let pageCount = Self.peerPageCount(center.peers.count)
@@ -238,7 +181,7 @@ struct BattleView: View {
                 Text("6 vs 6").tag(6)
             }.pickerStyle(.segmented).labelsHidden()
 
-            teamPicker
+            TeamPicker(store: store, limit: center.rankedTeamSize)
 
             HStack(spacing: 6) {
                 Button {
@@ -708,36 +651,5 @@ struct BattleView: View {
             .foregroundStyle(type.battleLabelColor)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Capsule().fill(type.battleColor))
-    }
-}
-
-/// 출전 팀 칩 하나. 고른 것에는 출전 순서를 배지로 얹는다 — 숫자가 없으면 무엇이 선봉인지 알 수 없다.
-private struct TeamPickChip: View {
-    let mon: MonState
-    let pickedIndex: Int?
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 1) {
-                ZStack(alignment: .topTrailing) {
-                    SpriteView(speciesID: mon.currentID, size: 30, shiny: mon.isShiny)
-                    if let pickedIndex {
-                        Text("\(pickedIndex + 1)")
-                            .font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
-                            .frame(width: 13, height: 13)
-                            .background(Circle().fill(Color.accentColor))
-                    }
-                }
-                Text("Lv.\(mon.level)").font(.system(size: 7)).foregroundStyle(.secondary)
-            }
-            .frame(width: 44)
-            .padding(3)
-        }
-        .buttonStyle(.plain)
-        .background(RoundedRectangle(cornerRadius: 7)
-            .fill(pickedIndex == nil ? Color.clear : Color.accentColor.opacity(0.15)))
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .stroke(pickedIndex == nil ? Color.secondary.opacity(0.25) : Color.accentColor, lineWidth: 1))
     }
 }
