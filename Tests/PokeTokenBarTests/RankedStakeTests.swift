@@ -145,6 +145,19 @@ final class RankedStakeTests: XCTestCase {
         XCTAssertLessThan(makeStore(at: url).battleRank.points, pointsBefore)
     }
 
+    /// 에스크로는 한 배틀에 한 번만 잡힌다 — `beginBattle` 이 두 번 도는 이상 상황(재신청·재수신)에서
+    /// 판돈을 두 번 걷으면 지갑이 조용히 비고, 정산은 한 번만 돌아 절반이 사라진다.
+    func testEscrowIsNotTakenTwiceForTheSameBattle() {
+        let store = makeStore()
+        store.creditStarPieces(20_000)
+        XCTAssertTrue(store.escrowRankedBattle(stake: 5_000, opponent: BattleRank(points: 400)))
+
+        XCTAssertFalse(store.escrowRankedBattle(stake: 5_000, opponent: BattleRank(points: 400)),
+                       "이미 잡힌 배틀이 있으면 거절한다")
+
+        XCTAssertEqual(store.availableTokens, 15_000, "한 번만 빠진다")
+    }
+
     /// 1v1 경로가 실제로 에스크로를 지나는지 — `beginBattle` 은 private 이고 `NWConnection` 이
     /// 필요해 인스턴스를 세울 수 없으므로 소스로 고정한다(방 판정 가드와 같은 방식).
     func testTheOneOnOnePathEscrowsAtStartAndRefundsANoContest() throws {
