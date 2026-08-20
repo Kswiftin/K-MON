@@ -3,8 +3,8 @@ import XCTest
 
 // 도감 완성 목표 — 종·타입·이로치 세 축.
 //
-// 진행도는 **어디에도 저장되지 않는다**. `state.dex` 는 항목이 빠지지 않으므로 진행도가 파생값이고,
-// 지급은 도감을 바꾸기 전후 완료 집합의 차집합으로만 일어난다. 그래서 수령 플래그도 클램프도 없다.
+// 진행도는 **어디에도 저장되지 않는다**. `state.dex` 는 항목이 빠지지 않으니 진행도가 파생값이고
+// 지급은 도감을 바꾸기 전후 완료 집합의 차집합으로만 일어난다 — 수령 플래그도 클램프도 없다.
 final class DexGoalTests: XCTestCase {
 
     // MARK: 카탈로그
@@ -420,9 +420,8 @@ final class OneShotRewardSignatureTests: XCTestCase {
     }
 
     /// **조건부 append 만으로는 부족한 경우** — `gymBadges`·`shinyEggCharges` 는 이전 배포에도 있던
-    /// 필드다. 값이 들어 있는 정상 세이브는 세그먼트가 붙어 구서명과 안 맞으므로, 방어는
-    /// `integrityVersion` 상향뿐이다(낮은 버전 서명은 검사 면제 → 다음 저장에서 새 서명으로 갱신).
-    /// 버전을 안 올리면 배지를 딴 세이브가 전부 초기화된다.
+    /// 필드라, 값이 든 정상 세이브는 세그먼트가 붙어 구서명과 안 맞는다. 방어는 `integrityVersion`
+    /// 상향뿐이다(낮은 버전은 검사 면제 → 다음 저장에서 갱신). 안 올리면 배지를 딴 세이브가 전부 초기화된다.
     func testASaveSignedBeforeTheCanonicalChangeIsNotJudgedTampered() {
         var old = CompanionState()
         old.gymBadges = ["bug"]
@@ -480,10 +479,10 @@ final class DexEntryTypeSourceTests: XCTestCase {
         XCTAssertEqual(store.currentSpeciesID, 3, "테스트 전제: 최종형(3)까지 자라야 한다")
     }
 
-    /// **트리거 재현** — 타입을 1단계(종 1)에서 받아 두고 최종형(종 3)으로 자란 뒤 졸업한다.
-    /// 로드한 타입에 "어느 종의 것인가"가 없으면 종 1 의 타입이 종 3 의 도감 항목에 영구 저장되고,
-    /// `types != nil` 이라 백필도 고치지 않는다. 개체가 바뀌는 경로(부화·박스 교체·불러오기)마다
-    /// 같은 일이 생긴다 — 그래서 리셋이 아니라 읽는 자리에서 막는다.
+    /// **트리거 재현** — 타입을 1단계(종 1)에서 받아 두고 최종형(종 3)까지 자란 뒤 졸업한다.
+    /// 로드한 타입에 "어느 종의 것인가"가 없으면 종 1 의 타입이 종 3 항목에 영구 저장되고
+    /// `types != nil` 이라 백필도 못 고친다. 개체가 바뀌는 경로(부화·박스 교체·불러오기)마다 같은 일이
+    /// 생기니 리셋이 아니라 읽는 자리에서 막는다.
     func testGraduationNeverStoresTypesLoadedForAnotherSpecies() async {
         let store = self.store([1: [.grass], 3: [.fire, .flying]])
         await store.hatch(baseID: 1)

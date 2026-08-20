@@ -66,11 +66,11 @@ enum ImportConfirmPolicy {
 }
 
 enum SaveTransfer {
-    /// canonical 구성이 바뀌면 **반드시 올린다** — 낮은 버전으로 서명된 세이브는 조작 검사에서
-    /// 면제되므로(`isTampered`) 구서명이 새 canonical 과 안 맞아 리셋되는 일이 없다.
-    /// 조건부 append 만으로 충분한 건 그 필드가 **이전 배포에 없던** 경우뿐이다(항상 기본값이라
-    /// 세그먼트가 안 붙는다). 이미 배포된 필드(`gymBadges`·`shinyEggCharges`)를 넣을 때는
-    /// 값이 들어 있는 정상 세이브가 전부 조작 판정되므로 이 버전 상향이 유일한 방어다. 6 → 7.
+    /// canonical 구성이 바뀌면 **반드시 올린다** — 낮은 버전 서명은 조작 검사에서 면제되니
+    /// (`isTampered`) 구서명이 새 canonical 과 안 맞아 리셋되는 일이 없다.
+    /// 조건부 append 로 버티는 건 **이전 배포에 없던 필드**뿐이다(구세이브는 항상 기본값이라
+    /// 세그먼트가 안 붙는다). 이미 배포된 필드를 넣으면 값이 든 정상 세이브가 전부 조작 판정되므로
+    /// 버전 상향이 유일한 방어다 — `gymBadges`·`shinyEggCharges` 때문에 6 → 7.
     static let integrityVersion = 7
     /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
     static let forcedResetVersion = 1
@@ -277,10 +277,8 @@ enum SaveTransfer {
         // 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
         if s.missions != MissionBoard() { p.append("ms\(s.missions.canonical)") }
         // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
-        // 세이브에서 배지 키를 지우는 것만으로 같은 체육관에서 알을 다시 받을 수 있다.
-        // 정렬 필수: Set 순회 순서는 실행마다 달라, 정렬하지 않으면 같은 상태가 다른 서명을 낸다.
-        // 이 두 필드는 **이미 배포된 필드**라 조건부 append 로는 구서명이 안 지켜진다(값이 들어 있는
-        // 정상 세이브가 조작 판정된다) — `integrityVersion` 6 → 7 상향이 그 방어다.
+        // 배지 키 한 줄을 지워 같은 체육관에서 알을 다시 받는다. 정렬 필수: `Set` 순회 순서는 실행마다
+        // 달라 정렬하지 않으면 같은 상태가 다른 서명을 낸다. (아래 두 필드가 이미 배포분이라 버전을 올렸다.)
         if !s.gymBadges.isEmpty { p.append("gb" + s.gymBadges.sorted().joined(separator: ",")) }
         // 이로치 확정 부화 횟수 — 받은 시점과 쓰는 시점이 떨어져 있어 세이브에 남는다. 손으로 올리면
         // 확정 이로치가 공짜다. 접두 `sec` 는 아래 기기 시드가 이미 쓰고 있어 `shc` 를 쓴다.
@@ -321,11 +319,10 @@ enum SaveTransfer {
             p.append("box" + s.boxedMons.map { "\($0.id):\($0.baseID):\($0.stageIndex):\($0.levelExperience)" }.joined(separator: ","))
         }
         p.append("dex" + s.dex.map { "\($0.baseID):\($0.finalID):\($0.rarity.rawValue)" }.sorted().joined(separator: ","))
-        // 도감 목표는 수령 플래그가 없다 — 멱등 가드가 **진행도의 단조성**뿐이다(`DexGoals`). 진행도가
-        // 읽는 `isShiny`·`chainOrder`·`types` 는 위 dex 줄에 없어, 손으로 내려 적으면 진행도가 되감기고
-        // 다음 졸업이 같은 보상을 재지급한다. 원자 필드를 각각 넣는 대신 **파생 진행도 숫자**를 넣는다:
-        // 목표 id 를 넣으면 카탈로그 목표값 조정(`species50` → `40`)이 정상 세이브를 전부 조작 판정으로
-        // 만든다. 조건부 — 도감이 비면 세그먼트가 안 붙어 기본값 canonical 이 동결된다.
+        // 도감 목표는 수령 플래그가 없어 멱등 가드가 **진행도의 단조성**뿐이다(`DexGoals`). 진행도가 읽는
+        // `isShiny`·`chainOrder`·`types` 는 위 dex 줄에 없어 손으로 내려 적으면 다음 졸업이 같은 보상을
+        // 재지급한다. 원자 필드 대신 **파생 진행도 숫자**를 넣는다 — 목표 id 를 넣으면 카탈로그 조정
+        // (`species50` → `40`)이 정상 세이브를 전부 조작 판정으로 만든다. 조건부라 빈 도감은 canonical 동결.
         let dexProgress = DexGoalKind.allCases.map { String(DexGoals.progress($0, in: s.dex)) }
         if dexProgress.contains(where: { $0 != "0" }) {
             p.append("dg" + dexProgress.joined(separator: "|"))

@@ -37,13 +37,12 @@ final class CompanionStore {
     private var declinedEvolutionLevel = 0
     private var declinedEvolutionTargetID = 0
     private var loadedTypes: [PokemonType] = []
-    /// `loadedTypes` 가 **어느 종의** 타입인가. 이 태그 없이 배열만 들고 있으면 개체가 바뀌어도
-    /// (부화·박스 교체·세이브 불러오기) 이전 종의 타입이 남는다 — 표시야 다음 조회에서 고쳐지지만,
-    /// 졸업이 이 값을 `DexEntry.types` 로 **영구 저장**하므로 오프라인 졸업 한 번이 남의 타입을
-    /// 도감에 박고 백필도 nil 이 아니라 재시도하지 않는다.
+    /// `loadedTypes` 가 **어느 종의** 타입인가. 태그 없이 배열만 들면 개체가 바뀌어도(부화·박스 교체·
+    /// 불러오기) 이전 종의 타입이 남는다. 표시는 다음 조회가 고치지만, 졸업이 이 값을 `DexEntry.types` 로
+    /// **영구 저장**하므로 오프라인 졸업 한 번이 남의 타입을 도감에 박고 백필도 재시도하지 않는다.
     private var loadedTypesSpeciesID: Int?
-    /// 지금 개체의 타입. 태그가 안 맞으면 빈 배열 — 개체 교체 지점마다 리셋을 심는 대신
-    /// 읽는 자리 한 곳에서 막는다(리셋 지점은 늘어나고, 하나만 빠뜨리면 같은 결함이 돌아온다).
+    /// 지금 개체의 타입. 태그가 안 맞으면 빈 배열 — 교체 지점마다 리셋을 심는 대신 읽는 자리 한 곳에서
+    /// 막는다(리셋 지점은 계속 늘어나고 하나만 빠뜨리면 같은 결함이 돌아온다).
     var currentTypes: [PokemonType] { loadedTypesSpeciesID == currentSpeciesID ? loadedTypes : [] }
     private(set) var displayedMoves: [MoveSpec] = []
     private(set) var isLoadingDisplayedMoves = false
@@ -555,14 +554,12 @@ final class CompanionStore {
         }
     }
 
-    /// 타입 미저장(구버전 졸업분·오프라인 졸업) 항목을 최종체 1회 조회로 채운다.
-    /// 채워진 뒤엔 아무 요청도 하지 않는다 — 이름 백필과 같은 계약이다.
+    /// 타입 미저장(구버전·오프라인 졸업) 항목을 최종체 1회 조회로 채운다. 채워진 뒤엔 아무 요청도
+    /// 하지 않는다(이름 백필과 같은 계약). 조회는 주입된 `provider` 를 지난다 — 저장까지 가는 값이라
+    /// 스텁으로 검증할 수 있어야 한다.
     ///
-    /// **여기서는 보상을 지급하지 않는다.** 지급하면 구버전 세이브가 백필 한 번에 타입 목표를
-    /// 소급 달성해 알을 한꺼번에 받는다. 다음 졸업의 `before` 스냅샷이 백필된 값을 이미 포함하므로
-    /// 소급분은 자연히 지급 대상에서 빠진다.
-    ///
-    /// 조회는 주입된 `provider` 를 지난다 — 저장까지 가는 값이라 스텁으로 검증할 수 있어야 한다.
+    /// **여기서 보상을 지급하지 않는다.** 지급하면 구버전 세이브가 백필 한 번에 타입 목표를 소급 달성해
+    /// 알을 한꺼번에 받는다. 다음 졸업의 `before` 스냅샷이 백필분을 이미 포함하므로 소급분은 자연히 빠진다.
     func backfillMissingDexTypes() async {
         var filled = false
         for entry in state.dex where entry.types == nil {
@@ -909,13 +906,11 @@ final class CompanionStore {
         return MissionBoard.catalog.map { ($0, state.missions.progress($0, dayKey: day, weekKey: week)) }
     }
 
-    /// 도감 완성 목표 지급의 **유일한** 경로. 호출부는 도감을 바꾸기 전에 `before` 를 잡아 두고
-    /// 바꾼 뒤 이 함수를 부른다 — 차집합이 곧 "이번에 넘은 목표"라 수령 플래그가 필요 없다.
+    /// 도감 완성 목표 지급의 **유일한** 경로. 호출부가 도감을 바꾸기 전에 `before` 를 잡아 두고 바꾼 뒤
+    /// 이 함수를 부른다 — 차집합이 곧 "이번에 넘은 목표"라 수령 플래그가 필요 없다.
     ///
-    /// `before` 를 **호출부가** 잡는 게 핵심이다. 여기서 잡으면 이미 도감이 바뀐 뒤라 차집합이
-    /// 항상 비어 아무것도 지급되지 않는다.
-    ///
-    /// `save()` 는 하지 않는다 — 유일한 호출부(`graduate()`)가 이어서 저장한다.
+    /// `before` 를 **호출부가** 잡는 게 핵심이다. 여기서 잡으면 이미 바뀐 뒤라 차집합이 항상 비어
+    /// 아무것도 지급되지 않는다. 저장은 호출부(`graduate()`)가 이어서 한다.
     private func grantNewlyCompletedDexGoals(before: Set<String>) {
         // 정렬 — Set 순회 순서는 실행마다 다르다. 두 목표를 한 번에 넘길 때 알림 순서가 흔들리면
         // 테스트가 간헐 실패한다.
@@ -926,9 +921,9 @@ final class CompanionStore {
         }
     }
 
-    /// 화면용 목표 행 — 축마다 아직 안 넘은 첫 목표 하나씩.
-    /// **졸업 기록만** 넘긴다. `dexEntries`(활성·박스 합성 포함)를 넘기면 표시 진행도가 알을
-    /// 새로 살 때 되감겨, 지급 판정과 화면이 서로 다른 수를 말한다.
+    /// 화면용 목표 행 — 축마다 아직 안 넘은 첫 목표 하나씩. **졸업 기록만** 넘긴다.
+    /// `dexEntries`(활성·박스 합성)를 넘기면 알을 새로 살 때 표시 진행도가 되감겨 지급 판정과
+    /// 화면이 다른 수를 말한다.
     var dexGoalRows: [(goal: DexGoal, progress: Int)] { DexGoals.rows(in: state.dex) }
 
     var focusEggCount: Int { state.focusEggs }
@@ -1593,8 +1588,8 @@ final class CompanionStore {
         // 이미 돌리고 있고, 활성이 비어 있으면 박스가 아니라 활성으로 부화한다.
         state.focusEggs = min(999, state.focusEggs + 1)
         state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
-        // 여기서 저장한다 — 도감 기록·졸업 알·도감 목표 보상이 모두 이 함수 안에서만 생기는데,
-        // 다음 틱(60초)까지 기다리면 그 사이 종료가 알림만 남기고 지급을 날린다.
+        // 도감 기록·졸업 알·목표 보상이 모두 이 함수에서만 생긴다 — 다음 틱(60초)을 기다리면
+        // 그 사이 종료가 알림만 남기고 지급을 날린다.
         save()
     }
 

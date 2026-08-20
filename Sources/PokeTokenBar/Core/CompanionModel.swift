@@ -523,11 +523,11 @@ struct DexEntry: Codable, Sendable, Identifiable {
     var names: [Int: [String: String]]?
     /// 최종체 타입 — 도감 완성 목표의 타입 커버리지가 읽는 값(`DexGoals.progress(.types,…)`).
     ///
-    /// **nil 과 `[]` 는 다르다.** nil = 아직 모름(구버전 졸업분·오프라인 졸업)이라 백필이 다음
-    /// 열람에서 채운다. `[]` 로 저장하면 "타입 없음" 이 되어 백필이 영영 재시도하지 않는다.
-    /// 이 필드는 무결성 서명 대상이다 — canonical 의 `dg` 세그먼트가 타입 커버리지를 세므로
-    /// (`SaveTransfer.canonicalString`) 손으로 지우면 조작으로 잡힌다. 백필이 채우는 값은
-    /// `save()` 가 재서명하니 정상 경로는 영향받지 않는다.
+    /// **nil 과 `[]` 는 다르다.** nil = 아직 모름(구버전·오프라인 졸업)이라 백필이 다음 열람에서 채운다.
+    /// `[]` 는 "타입 없음" 이 되어 백필이 영영 재시도하지 않는다.
+    ///
+    /// 무결성 서명 대상이다 — canonical 의 `dg` 세그먼트가 타입 수를 세니 손으로 지우면 잡히고
+    /// (`SaveTransfer.canonicalString`), 백필이 채운 값은 `save()` 가 재서명한다.
     var types: [PokemonType]?
 
     init(id: String = UUID().uuidString,

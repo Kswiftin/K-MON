@@ -193,11 +193,11 @@ final class PopoverLayoutTests: XCTestCase {
     // MARK: 도감 목표 줄 — 세로 예산
 
     /// 도감 헤더가 쓸 수 있는 여유. 컬렉션 탭 예산은 `520 − 세그먼트 24 − 헤더 39 − 하단 18 − 간격 24
-    /// = 격자 415` 인데(`CollectionView.contentHeight` 주석) 세그먼트는 아직 없다 — 그 24pt 가
-    /// 목표 줄이 쓸 수 있는 전부다. 넘으면 격자 6행이 눌려 스프라이트가 잘린다.
+    /// = 격자 415` 인데(`CollectionView.contentHeight`) 세그먼트가 아직 없어 그 24pt 가 목표 줄 몫이다.
+    /// 넘으면 격자 6행이 눌려 스프라이트가 잘린다.
     ///
-    /// 줄 자체가 아니라 **헤더가 실제로 커지는 양**을 재야 한다 — 헤더 VStack 의 spacing 5 가 줄과 함께
-    /// 따라오므로 줄 높이만 24 와 비교하면 5pt 를 공짜로 봐준다.
+    /// 재는 대상은 줄 높이가 아니라 **헤더가 실제로 커지는 양**이다 — 헤더 VStack 의 spacing 5 가 줄과
+    /// 함께 따라오므로 줄만 24 와 비교하면 5pt 를 공짜로 봐준다.
     private static let dexHeaderSpacing: CGFloat = 5
     private static let dexGoalStripBudget: CGFloat = 24 - dexHeaderSpacing
 
@@ -205,7 +205,7 @@ final class PopoverLayoutTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-dexgoal-layout-\(UUID().uuidString).json")
         // 세 축이 **모두 분수로 보이는** 상태 — 종 12/25, 타입 8/9, 이로치 2/3.
-        // 축이 하나라도 사다리 끝까지 넘으면 그 칸은 "✓" 한 글자가 되어 최악의 폭에서 빠진다.
+        // 한 축이라도 사다리 끝까지 넘으면 그 칸이 "✓" 한 글자가 되어 최악의 폭에서 빠진다.
         let types = ["normal", "fire", "water", "electric", "grass", "ice", "fighting", "poison"]
         let entries = (0..<12).map { i in
             #"{"baseID":\#(100 + i),"finalID":\#(100 + i),"chainOrder":[\#(100 + i)],"rarity":"common","#
