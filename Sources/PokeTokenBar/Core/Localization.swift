@@ -772,6 +772,9 @@ struct L {
     var useAfterHatch: String { t("부화 후 사용할 수 있어요", "Usable after hatching", "孵化後に使えます") }
     var useNeedsPokemon: String { t("사용할 포켓몬이 없어요", "No Pokémon to use it on", "使えるポケモンがいません") }
 
+    /// 팀 선택 타입 필터의 '거르지 않음' 항목.
+    var teamFilterAllTypes: String { t("전체 타입", "All types", "全タイプ") }
+
     // MARK: 체육관
     var gymLeagueTitle: String { t("체육관", "Gyms", "ジム") }
     var gymBadgeEarned: String { t("배지 획득", "Badge earned", "バッジ獲得") }
