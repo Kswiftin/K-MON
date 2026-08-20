@@ -409,7 +409,9 @@ struct MoveGridView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(move.type.battleColor.opacity(tier.isSelectable ? 1 : 0.35),
+            // 못 고르는 버튼은 못 고르게 **보여야** 한다. PP 가 마른 칸만 흐리게 두는 동안,
+            // 재생 중 잠긴 네 칸은 평소와 똑같아 보여서 눌러 보고서야 잠긴 걸 알았다.
+            .background(move.type.battleColor.opacity(isEnabled && tier.isSelectable ? 1 : 0.35),
                         in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
@@ -537,8 +539,10 @@ struct BattleArenaView: View {
                          onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
             if !switchSlots.isEmpty {
                 // 교체도 그 턴의 행동이다 — 기술만 잠그면 재생 중에 교체로 턴을 넘길 수 있다.
+                // 흐리게까지 해야 잠긴 게 보인다: 직접 그린 배경은 `.disabled` 로 어두워지지 않는다.
                 SwitchStripView(slots: switchSlots, label: l.battleSwitch,
                                 isEnabled: acceptsInput, onSwitch: onSwitch)
+                    .opacity(acceptsInput ? 1 : 0.45)
             }
             BattleLogBox(lines: logLines, myActor: myActor)
         }

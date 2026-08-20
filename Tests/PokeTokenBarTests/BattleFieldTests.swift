@@ -441,7 +441,21 @@ final class BattleFieldTests: XCTestCase {
         if let dir = ProcessInfo.processInfo.environment["KMON_SNAPSHOT_DIR"],
            let png = rep.representation(using: .png, properties: [:]) {
             try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("battle-arena.png"))
+            // 재생 프레임도 같이 떨군다 — 팝 문구와 피격 스프라이트는 정지 화면에서만 눈으로
+            // 확인할 수 있고, 예산 테스트는 자리만 볼 뿐 무엇이 그려졌는지는 보지 않는다.
+            try pngData(of: arena(overlay: ReplayOverlay(isPlaying: true, hit: .b, popped: .crit(.b))),
+                        in: bounds)?
+                .write(to: URL(fileURLWithPath: dir).appendingPathComponent("battle-arena-replay.png"))
         }
+    }
+
+    private func pngData(of view: some View, in bounds: CGRect) -> Data? {
+        let controller = NSHostingController(rootView: view)
+        controller.view.frame = bounds
+        controller.view.layoutSubtreeIfNeeded()
+        guard let rep = controller.view.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        controller.view.cacheDisplay(in: bounds, to: rep)
+        return rep.representation(using: .png, properties: [:])
     }
 
     /// defect-log 규칙: 배틀 화면에 세로 스크롤 컨테이너를 두면 안쪽이 스크롤되지 않고 잘린다.
