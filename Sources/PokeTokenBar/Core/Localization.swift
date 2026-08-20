@@ -522,7 +522,7 @@ struct L {
         t("고정 판돈 ⭐ \(amount)", "Fixed stake ⭐ \(amount)", "固定かけ金 ⭐ \(amount)")
     }
 
-    // MARK: 메뉴바 상태 (#20 — MenuBarStatus.text)
+    // MARK: 메뉴바 상태 (#20 — MenuBarStatus.fullDescription)
     var menuBarResting: String { t("휴식 중", "RESTING", "休憩中") }
     var menuBarAdventuring: String { t("모험 중", "ADVENTURING", "冒険中") }
     var menuBarAdventureClaimable: String { t("보상 받기", "CLAIM REWARD", "報酬あり") }

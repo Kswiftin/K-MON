@@ -70,10 +70,17 @@ final class MenuBarStatusTests: XCTestCase {
 
     /// 최장 표기도 메뉴 막대에서 실제 사용하는 13pt 고정폭 숫자 폰트로 56pt 예산을 넘지 않는다.
     func testCompactTitlesFitRenderedWidthBudget() {
-        let titles = ["F 24:59", "B 04:59", "A 12:34", "A 1h23m", "!", "R"]
+        let states: [MenuBarStatus] = [
+            .focus(prefix: "FOCUS", clock: "24:59"),
+            .focus(prefix: "BREAK", clock: "04:59"),
+            .adventuring(remaining: "12:34"),
+            .adventuring(remaining: "1h23m"),
+            .adventureClaimable,
+            .resting,
+        ]
         let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
-        let widest = titles.map {
-            ($0 as NSString).size(withAttributes: [.font: font]).width
+        let widest = states.map {
+            ($0.compactTitle as NSString).size(withAttributes: [.font: font]).width
         }.max() ?? 0
 
         XCTAssertLessThanOrEqual(widest, 56)

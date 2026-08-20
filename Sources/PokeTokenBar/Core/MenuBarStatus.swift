@@ -26,12 +26,27 @@ enum MenuBarStatus: Equatable {
         return .resting
     }
 
-    func text(_ l: L) -> String {
+    /// 툴팁과 VoiceOver에서 사용할 전체 상태 설명.
+    func fullDescription(_ l: L) -> String {
         switch self {
         case .focus(let prefix, let clock): return "\(prefix) \(clock)"
         case .adventuring(let remaining): return "\(l.menuBarAdventuring) \(remaining)"
         case .adventureClaimable: return l.menuBarAdventureClaimable
         case .resting: return l.menuBarResting
+        }
+    }
+
+    /// 한정된 메뉴 막대 공간에 표시할 언어 비의존적 컴팩트 제목.
+    var compactTitle: String {
+        switch self {
+        case .focus(let prefix, let clock):
+            return "\(prefix == "BREAK" ? "B" : "F") \(clock)"
+        case .adventuring(let remaining):
+            return "A \(remaining)"
+        case .adventureClaimable:
+            return "!"
+        case .resting:
+            return "R"
         }
     }
 
