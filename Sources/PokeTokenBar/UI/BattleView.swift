@@ -214,7 +214,9 @@ struct BattleView: View {
 
     private var peerList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(store.language == .ko ? "랭크배틀 · 전원 Lv.50" : "Ranked Battle · All Pokémon Lv.50",
+            // 제목이 Lv.50 을 말하지 않는다 — 그 규칙은 아래 상대 목록(맞짱)에만 해당하고,
+            // 같은 섹션의 모의전은 키운 레벨 그대로 나간다.
+            Label(store.language == .ko ? "랭크배틀" : "Ranked Battle",
                   systemImage: "shield.lefthalf.filled")
                 .font(.caption.bold())
             Picker("", selection: Binding(get: { center.rankedTeamSize }, set: { center.rankedTeamSize = $0 })) {
@@ -233,8 +235,8 @@ struct BattleView: View {
             .buttonStyle(.borderedProminent).controlSize(.small)
             .disabled(!isChallengeEnabled)
             Text(store.language == .ko
-                 ? "실전과 동일한 Lv.50 규칙 · 랭크와 별의조각은 변하지 않음"
-                 : "Same Lv.50 rules · rank and Star Pieces are unchanged")
+                 ? "키운 레벨 그대로 · 랭크와 별의조각은 변하지 않음"
+                 : "At the levels you raised · rank and Star Pieces are unchanged")
                 .font(.caption2).foregroundStyle(.secondary)
 
             HStack {
@@ -247,6 +249,8 @@ struct BattleView: View {
 
             HStack(spacing: 6) {
                 Text(l.battleNearby).font(.caption).bold()
+                Text(store.language == .ko ? "· 전원 Lv.50" : "· all Lv.50")
+                    .font(.caption2).foregroundStyle(.secondary)
                 if case .preparing = center.phase { ProgressView().controlSize(.mini) }
                 Spacer()
                 if !center.peers.isEmpty {
