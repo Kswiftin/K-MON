@@ -1287,7 +1287,10 @@ private struct DexGridView: View {
                 Text(store.l.dexTitle).font(.callout.weight(.semibold))
                 // 총계는 필터와 무관한 전체 종 수 — 로그 헤더(dexTotal)와 같은 규칙.
                 // 필터 중인 희귀도의 개수는 아래 캡슐이 이미 보여준다.
-                Text(store.l.dexSpeciesTotal(all.count)).font(.caption2).foregroundStyle(.secondary)
+                // 육성중 몫을 따로 밝힌다 — 총계는 키우는 개체까지 세지만 바로 아래 목표 줄은 졸업
+                // 기록만 세므로(`dexGoalRows`), 안 밝히면 "12종" 과 "종 9/10" 이 나란히 보인다.
+                Text(store.l.dexSpeciesTotal(all.count, raising: all.lazy.filter(\.isRaising).count))
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             HStack(spacing: 4) {
                 ForEach(rarityDisplayOrder, id: \.self) { r in

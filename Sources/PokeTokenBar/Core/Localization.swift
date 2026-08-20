@@ -560,7 +560,12 @@ struct L {
     /// 포획 로그 = 개체 단위 기록(같은 라인 중복이 정상). 도감 = 종 단위 집계.
     var catchLogTitle: String { t("포획 로그", "Catch log", "捕獲ログ") }
     /// 도감 총계는 개체가 아니라 종 수 — 로그의 dexTotal("총 N마리")과 단위가 다르다.
-    func dexSpeciesTotal(_ n: Int) -> String { t("\(n)종", "\(n) species", "\(n)種") }
+    /// 도감 총계 — `raising` 은 아직 졸업하지 않은(키우는 중인) 종 수다. 총계는 그 종까지 세지만
+    /// 목표 줄은 졸업 기록만 세므로, 갈라지는 몫을 여기서 밝혀 두 숫자가 서로를 설명하게 한다.
+    func dexSpeciesTotal(_ n: Int, raising: Int) -> String {
+        guard raising > 0 else { return t("\(n)종", "\(n) species", "\(n)種") }
+        return t("\(n)종 (\(raising) 육성중)", "\(n) species (\(raising) raising)", "\(n)種 (\(raising)育成中)")
+    }
     /// 페이저 접근성 문구 — 도감과 소유 포켓몬이 함께 쓴다(둘 다 페이지식 고정 격자).
     func dexPageLabel(_ page: Int, _ total: Int) -> String {
         t("\(total)페이지 중 \(page)페이지", "Page \(page) of \(total)", "\(total)ページ中 \(page)ページ")
