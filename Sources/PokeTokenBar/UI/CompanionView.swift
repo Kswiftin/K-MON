@@ -1168,6 +1168,38 @@ struct DexSummaryHeader: View {
     }
 }
 
+/// 도감 헤더의 목표 한 줄 — 축마다 "아직 안 넘은 첫 목표" 하나씩.
+///
+/// **목표마다 게이지를 두지 않는다.** 미션 카드가 그렇게 했다가 예산을 두 배로 넘겼다(211pt). 도감
+/// 헤더에 남은 여유는 24pt 뿐이라 한 줄이 상한이고, 진행도는 `12/25` 숫자로만 보인다
+/// (`PopoverLayoutTests.testDexGoalStripFitsTheDexHeaderBudget` 이 지킨다).
+///
+/// 새 탭·세그먼트도 만들지 않는다 — 탭을 늘리면 `PopoverTab` 높이 표와 360pt 세그먼트 피커가
+/// 따라오는데 얻는 건 세 칸짜리 줄 하나다.
+struct DexGoalStrip: View {
+    let store: CompanionStore
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("🎯").accessibilityHidden(true)   // 장식 — 스크린리더가 이모지를 일관되게 읽지 못한다
+            ForEach(store.dexGoalRows, id: \.goal.id) { row in
+                HStack(spacing: 2) {
+                    Text(store.l.dexGoalShortLabel(row.goal.kind)).foregroundStyle(.secondary)
+                    if row.progress >= row.goal.target {
+                        // 마지막 칸까지 넘겼다 — 남은 목표가 없으니 숫자 대신 완료 표식만 둔다.
+                        Text("✓").fontWeight(.bold).foregroundStyle(.green)
+                    } else {
+                        Text("\(row.progress)/\(row.goal.target)").monospacedDigit()
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 9))
+        .lineLimit(1)
+    }
+}
+
 /// 컬렉션 탭 — 도감과 포획 로그를 하위 세그먼트로 전환한다.
 ///
 /// 두 화면은 같은 데이터를 다른 축으로 본다:
@@ -1241,6 +1273,9 @@ private struct DexGridView: View {
         // 이름이 저장돼 있지 않은 구버전 졸업분을 채운다 — 격자는 저장분만 읽으므로 이게 없으면
         // 칸이 `#41` 로 남는다. 저장된 항목은 조회하지 않으므로 채워진 뒤로는 아무 일도 하지 않는다.
         .task { await store.backfillMissingDexNames() }
+        // 타입도 같은 자리에서 채운다 — 구버전 졸업분·오프라인 졸업은 타입이 nil 이라
+        // 목표 줄의 타입 칸이 실제보다 낮게 보인다. 채워진 뒤로는 아무 요청도 하지 않는다.
+        .task { await store.backfillMissingDexTypes() }
     }
 
     /// 희귀도 필터 — 로그와 같은 RarityTally 를 쓰되 개수는 **종 단위**다.
@@ -1252,7 +1287,10 @@ private struct DexGridView: View {
                 Text(store.l.dexTitle).font(.callout.weight(.semibold))
                 // 총계는 필터와 무관한 전체 종 수 — 로그 헤더(dexTotal)와 같은 규칙.
                 // 필터 중인 희귀도의 개수는 아래 캡슐이 이미 보여준다.
-                Text(store.l.dexSpeciesTotal(all.count)).font(.caption2).foregroundStyle(.secondary)
+                // 육성중 몫을 따로 밝힌다 — 총계는 키우는 개체까지 세고 아래 목표 줄은 졸업 기록만
+                // 센다(`dexGoalRows`). 안 밝히면 "12종" 과 "종 9/10" 이 나란히 보인다.
+                Text(store.l.dexSpeciesTotal(all.count, raising: all.lazy.filter(\.isRaising).count))
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             HStack(spacing: 4) {
                 ForEach(rarityDisplayOrder, id: \.self) { r in
@@ -1272,6 +1310,7 @@ private struct DexGridView: View {
                     .help(store.l.dexFilterHint)
                 }
             }
+            DexGoalStrip(store: store)
         }
     }
 

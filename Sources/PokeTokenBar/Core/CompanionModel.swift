@@ -521,11 +521,19 @@ struct DexEntry: Codable, Sendable, Identifiable {
     /// 도감의 단계별 스프라이트 밑 이름 표시가 네트워크 없이 즉시 + 언어 전환 대응. 구버전 저장분엔
     /// 없어(nil) 뷰가 line fetch 로 조회 후 백필한다.
     var names: [Int: [String: String]]?
+    /// 최종체 타입 — 도감 완성 목표의 타입 커버리지가 읽는 값(`DexGoals.progress(.types,…)`).
+    ///
+    /// **nil 과 `[]` 는 다르다.** nil = 아직 모름(구버전·오프라인 졸업)이라 백필이 다음 열람에서 채운다.
+    /// `[]` 는 "타입 없음" 이 되어 백필이 영영 재시도하지 않는다.
+    ///
+    /// 무결성 서명 대상이다 — canonical 의 `dg` 세그먼트가 타입 수를 세니 손으로 지우면 잡히고
+    /// (`SaveTransfer.canonicalString`), 백필이 채운 값은 `save()` 가 재서명한다.
+    var types: [PokemonType]?
 
     init(id: String = UUID().uuidString,
          baseID: Int, finalID: Int, chainOrder: [Int], rarity: Rarity,
          caughtAt: Date?, isShiny: Bool = false, nature: PokemonNature? = nil,
-         names: [Int: [String: String]]? = nil) {
+         names: [Int: [String: String]]? = nil, types: [PokemonType]? = nil) {
         self.id = id
         self.baseID = baseID
         self.finalID = finalID
@@ -535,6 +543,7 @@ struct DexEntry: Codable, Sendable, Identifiable {
         self.isShiny = isShiny
         self.nature = nature
         self.names = names
+        self.types = types
     }
 
     // 하위호환 디코딩 (MonState 와 동일 이유).
@@ -551,6 +560,9 @@ struct DexEntry: Codable, Sendable, Identifiable {
         // try? — 구버전(최종체 단일 [String:String]) 형식이 남아 있어도 종별 맵 디코딩 실패 시 nil 로
         // 강등(항목 전체 로드는 유지). 뷰가 line 조회로 백필한다.
         names = (try? c.decodeIfPresent([Int: [String: String]].self, forKey: .names)) ?? nil
+        // try? — 모르는 타입 이름이 섞여 있어도 항목 전체를 잃지 않는다. nil 로 강등되면
+        // 백필이 다시 채우므로 복구 가능한 방향이다.
+        types = (try? c.decodeIfPresent([PokemonType].self, forKey: .types)) ?? nil
     }
 }
 

@@ -36,7 +36,14 @@ final class CompanionStore {
     private var declinedEvolutionMonID: UUID?
     private var declinedEvolutionLevel = 0
     private var declinedEvolutionTargetID = 0
-    private(set) var currentTypes: [PokemonType] = []
+    private var loadedTypes: [PokemonType] = []
+    /// `loadedTypes` 가 **어느 종의** 타입인가. 태그 없이 배열만 들면 개체가 바뀌어도(부화·박스 교체·
+    /// 불러오기) 이전 종의 타입이 남는다. 표시는 다음 조회가 고치지만, 졸업이 이 값을 `DexEntry.types` 로
+    /// **영구 저장**하므로 오프라인 졸업 한 번이 남의 타입을 도감에 박고 백필도 재시도하지 않는다.
+    private var loadedTypesSpeciesID: Int?
+    /// 지금 개체의 타입. 태그가 안 맞으면 빈 배열 — 교체 지점마다 리셋을 심는 대신 읽는 자리 한 곳에서
+    /// 막는다(리셋 지점은 계속 늘어나고 하나만 빠뜨리면 같은 결함이 돌아온다).
+    var currentTypes: [PokemonType] { loadedTypesSpeciesID == currentSpeciesID ? loadedTypes : [] }
     private(set) var displayedMoves: [MoveSpec] = []
     private(set) var isLoadingDisplayedMoves = false
     private var moveLearningQueue: [MoveLearningPrompt] = []
@@ -547,6 +554,27 @@ final class CompanionStore {
         }
     }
 
+    /// 타입 미저장(구버전·오프라인 졸업) 항목을 최종체 1회 조회로 채운다. 채워진 뒤엔 아무 요청도
+    /// 하지 않는다(이름 백필과 같은 계약). 조회는 주입된 `provider` 를 지난다 — 저장까지 가는 값이라
+    /// 스텁으로 검증할 수 있어야 한다.
+    ///
+    /// **여기서 보상을 지급하지 않는다.** 지급하면 구버전 세이브가 백필 한 번에 타입 목표를 소급 달성해
+    /// 알을 한꺼번에 받는다. 다음 졸업의 `before` 스냅샷이 백필분을 이미 포함하므로 소급분은 자연히 빠진다.
+    func backfillMissingDexTypes() async {
+        var filled = false
+        for entry in state.dex where entry.types == nil {
+            // 뷰가 사라지면(.task 취소) 남은 항목까지 실패할 요청을 계속 쏘지 않고 멈춘다.
+            if Task.isCancelled { break }
+            guard let profile = try? await provider.battleProfile(speciesID: entry.finalID),
+                  !profile.types.isEmpty,
+                  // 조회 중에 도감이 바뀔 수 있다(졸업·불러오기) — 인덱스가 아니라 항목 id 로 되찾는다.
+                  let idx = state.dex.firstIndex(where: { $0.id == entry.id }) else { continue }
+            state.dex[idx].types = profile.types
+            filled = true
+        }
+        if filled { save() }   // 항목마다 저장하면 세이브 전체를 항목 수만큼 다시 쓴다
+    }
+
     /// 도감 항목 진화 체인 각 종의 이름(speciesID → 현재 언어 이름). 저장돼 있으면 즉시(네트워크 0),
     /// 없으면 nil(뷰가 async 조회로 폴백).
     func dexStoredChainNames(_ entry: DexEntry) -> [Int: String]? {
@@ -878,6 +906,26 @@ final class CompanionStore {
         return MissionBoard.catalog.map { ($0, state.missions.progress($0, dayKey: day, weekKey: week)) }
     }
 
+    /// 도감 완성 목표 지급의 **유일한** 경로. 호출부가 도감을 바꾸기 전에 `before` 를 잡아 두고 바꾼 뒤
+    /// 이 함수를 부른다 — 차집합이 곧 "이번에 넘은 목표"라 수령 플래그가 필요 없다.
+    ///
+    /// `before` 를 **호출부가** 잡는 게 핵심이다. 여기서 잡으면 이미 바뀐 뒤라 차집합이 항상 비어
+    /// 아무것도 지급되지 않는다. 저장은 호출부(`graduate()`)가 이어서 한다.
+    private func grantNewlyCompletedDexGoals(before: Set<String>) {
+        // 정렬 — Set 순회 순서는 실행마다 다르다. 두 목표를 한 번에 넘길 때 알림 순서가 흔들리면
+        // 테스트가 간헐 실패한다.
+        for id in DexGoals.completed(in: state.dex).subtracting(before).sorted() {
+            guard let goal = DexGoals.goal(id: id) else { continue }
+            grantReward(goal.reward)
+            notifyCompanionEvent(l.notifDexGoalTitle, l.notifDexGoalBody(l.dexGoalName(goal)))
+        }
+    }
+
+    /// 화면용 목표 행 — 축마다 아직 안 넘은 첫 목표 하나씩. **졸업 기록만** 넘긴다.
+    /// `dexEntries`(활성·박스 합성)를 넘기면 알을 새로 살 때 표시 진행도가 되감겨 지급 판정과
+    /// 화면이 다른 수를 말한다.
+    var dexGoalRows: [(goal: DexGoal, progress: Int)] { DexGoals.rows(in: state.dex) }
+
     var focusEggCount: Int { state.focusEggs }
     var nextStoredEggHatchAt: Date? { state.focusEggReadyDates.min() }
     var eggFragmentCount: Int { state.eggFragments }
@@ -921,7 +969,6 @@ final class CompanionStore {
         state.active = selected
         activeGeneration += 1
         currentLine = nil
-        currentTypes = []
         displayedMoves = []
         evolutionPrompt = nil
         // 이전 개체의 기술 학습 대기분까지 버린다 — 표시 게이트가 현재 카드는 막지만, 큐에 남은
@@ -1017,9 +1064,10 @@ final class CompanionStore {
 
     func loadCurrentTypes() async {
         guard let id = currentSpeciesID,
-              let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id),
+              let profile = try? await provider.battleProfile(speciesID: id),
               currentSpeciesID == id else { return }
-        currentTypes = profile.types
+        loadedTypes = profile.types
+        loadedTypesSpeciesID = id
     }
 
     /// 설명을 다시 받아야 하는가 — 아직 안 받아봤거나(nil), 예전 파서가 저장한
@@ -1057,7 +1105,7 @@ final class CompanionStore {
         let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID)
         let moves = await PokeAPIClient.shared.canonicalLevelUpMoves(speciesID: speciesID, level: active.level)
         guard state.active?.id == active.id else { return }
-        if let profile { currentTypes = profile.types }
+        if let profile { loadedTypes = profile.types; loadedTypesSpeciesID = speciesID }
         displayedMoves = moves
     }
 
@@ -1207,13 +1255,14 @@ final class CompanionStore {
         if state.gymBadges.count == GymLeague.catalog.count {
             reward = reward.merging(GymLeague.completionReward)
         }
-        grantGymReward(reward)
+        grantReward(reward)
         save()
         return reward
     }
 
     /// 보상 지급 — 알은 보관 알로 들어가고(5분 뒤 부화), 보증과 이로치 확정은 상태에 쌓인다.
-    private func grantGymReward(_ reward: GymReward) {
+    /// 체육관과 도감 목표가 같은 보상 형태를 쓰므로 지급 경로도 하나다.
+    private func grantReward(_ reward: GymReward) {
         state.starPieces += reward.starPieces
         if reward.eggs > 0 {
             state.focusEggs = min(999, state.focusEggs + reward.eggs)
@@ -1504,13 +1553,19 @@ final class CompanionStore {
         // 졸업은 파트너를 초기화하지만 미션 진행은 여기서 이어진다 — 모험을 한 번도 하지 않고
         // 졸업만 해도 기록된다(집중 경로와 독립).
         recordMission(.graduations, 1)
+        // 도감 목표는 이 항목이 들어가기 **전**의 완료 집합과 비교해 지급한다 — 스냅샷을 먼저 잡는다.
+        let goalsBefore = DexGoals.completed(in: state.dex)
         state.dex.append(DexEntry(baseID: a.baseID, finalID: finalID,
                                   chainOrder: a.pathIDs, rarity: a.rarity, caughtAt: clock(),
                                   isShiny: a.isShiny, nature: a.nature,
                                   names: currentLine.map { line in   // 체인 각 종의 다국어 이름 저장(표시 즉시)
                                       Dictionary(uniqueKeysWithValues:
                                           a.pathIDs.compactMap { id in line.names[id].map { (id, $0) } })
-                                  }))
+                                  },
+                                  // 타입을 모르면(오프라인) 빈 배열이 아니라 nil 로 남긴다 —
+                                  // 빈 배열은 "타입 없음"이라 백필이 영영 재시도하지 않는다.
+                                  types: currentTypes.isEmpty ? nil : currentTypes))
+        grantNewlyCompletedDexGoals(before: goalsBefore)
         let name = currentLine?.localizedName(finalID, state.language) ?? ""
         justGraduated = name
         notifyCompanionEvent(l.notifGraduateTitle, l.notifGraduateBody(name))
@@ -1533,6 +1588,9 @@ final class CompanionStore {
         // 이미 돌리고 있고, 활성이 비어 있으면 박스가 아니라 활성으로 부화한다.
         state.focusEggs = min(999, state.focusEggs + 1)
         state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        // 도감 기록·졸업 알·목표 보상이 모두 이 함수에서만 생긴다 — 다음 틱(60초)을 기다리면
+        // 그 사이 종료가 알림만 남기고 지급을 날린다.
+        save()
     }
 
     // MARK: 인벤토리 / 이상한 사탕

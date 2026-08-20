@@ -26,6 +26,7 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/AdventureModel.swift"
   "Sources/PokeTokenBar/Core/TrainerLevel.swift"
   "Sources/PokeTokenBar/Core/MissionBoard.swift"
+  "Sources/PokeTokenBar/Core/DexGoals.swift"
   "Sources/PokeTokenBar/Core/BattleModel.swift"
   "Sources/PokeTokenBar/Core/BattleLog.swift"
   # 승패 판정이 사는 두 파일. 게이트 밖에 있던 동안 무승부·팀전 분기가 무테스트로 남아

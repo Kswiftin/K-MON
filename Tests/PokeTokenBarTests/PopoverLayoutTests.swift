@@ -190,6 +190,64 @@ final class PopoverLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: 도감 목표 줄 — 세로 예산
+
+    /// 도감 헤더가 쓸 수 있는 여유. 컬렉션 탭 예산은 `520 − 세그먼트 24 − 헤더 39 − 하단 18 − 간격 24
+    /// = 격자 415` 인데(`CollectionView.contentHeight`) 세그먼트가 아직 없어 그 24pt 가 목표 줄 몫이다.
+    /// 넘으면 격자 6행이 눌려 스프라이트가 잘린다.
+    ///
+    /// 재는 대상은 줄 높이가 아니라 **헤더가 실제로 커지는 양**이다 — 헤더 VStack 의 spacing 5 가 줄과
+    /// 함께 따라오므로 줄만 24 와 비교하면 5pt 를 공짜로 봐준다.
+    private static let dexHeaderSpacing: CGFloat = 5
+    private static let dexGoalStripBudget: CGFloat = 24 - dexHeaderSpacing
+
+    private func dexGoalStore(_ language: AppLanguage = .ko) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-dexgoal-layout-\(UUID().uuidString).json")
+        // 세 축이 **모두 분수로 보이는** 상태 — 종 12/25, 타입 8/9, 이로치 2/3.
+        // 한 축이라도 사다리 끝까지 넘으면 그 칸이 "✓" 한 글자가 되어 최악의 폭에서 빠진다.
+        let types = ["normal", "fire", "water", "electric", "grass", "ice", "fighting", "poison"]
+        let entries = (0..<12).map { i in
+            #"{"baseID":\#(100 + i),"finalID":\#(100 + i),"chainOrder":[\#(100 + i)],"rarity":"common","#
+                + #""isShiny":\#(i < 2),"types":["\#(types[i % types.count])"]}"#
+        }
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
+            + #""dex":[\#(entries.joined(separator: ","))]}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: StubProvider(value: moveTestLine),
+                              clock: { Date(timeIntervalSince1970: 1_755_000_000) },
+                              fileURL: url, rng: SeededRNG(seed: 7))
+    }
+
+    /// 트리거 재현: 목표마다 게이지를 한 줄씩 깔면 예산을 통째로 넘긴다(미션 카드가 겪은 그 실수).
+    /// 이 대조군이 없으면 아래 예산 검증이 "애초에 통과할 조건이었다"는 false confidence 가 된다.
+    func testAGaugePerGoalRowBlowsThroughTheDexHeaderBudget() {
+        let gauged = VStack(alignment: .leading, spacing: 4) {
+            ForEach(DexGoals.catalog) { goal in
+                Text("\(goal.id) 0/\(goal.target)").font(.system(size: 9))
+                ProgressView(value: 0.3)
+            }
+        }
+        XCTAssertGreaterThan(renderedHeight(gauged), Self.dexGoalStripBudget * 2,
+                             "대조군이 안 넘치면 예산 검증이 무의미해진다")
+    }
+
+    /// 목표 줄은 도감 헤더의 남은 24pt 안에 들어가야 한다 — 한 줄로 유지하는 이유가 이것뿐이다.
+    func testDexGoalStripFitsTheDexHeaderBudget() {
+        XCTAssertLessThanOrEqual(renderedHeight(DexGoalStrip(store: dexGoalStore())),
+                                 Self.dexGoalStripBudget)
+    }
+
+    /// 축 라벨이 세 언어에서 길이가 다르다(종 / Species / 種). 한 언어에서 줄바꿈되면 그 언어에서만
+    /// 격자가 눌린다 — 기술 목록에서 이미 겪은 부류(CI 118pt vs 로컬 78pt)라 전방 가드를 둔다.
+    func testDexGoalStripHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(DexGoalStrip(store: dexGoalStore(.ko)))
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(DexGoalStrip(store: dexGoalStore(language))), korean,
+                           accuracy: 1, "\(language.rawValue) 에서 목표 줄 높이가 달라졌다")
+        }
+    }
+
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
 
     private func moveStore(_ moves: [MoveSpec]) -> CompanionStore {
