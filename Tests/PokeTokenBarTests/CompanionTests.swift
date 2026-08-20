@@ -752,7 +752,8 @@ final class CompanionStoreTests: XCTestCase {
 
         XCTAssertEqual(paid, bugGym.firstClearReward)
         XCTAssertTrue(s.hasBadge(bugGym))
-        XCTAssertEqual(s.availableTokens, before + bugGym.firstClearReward)
+        XCTAssertEqual(s.availableTokens, before + bugGym.firstClearReward.starPieces)
+        XCTAssertEqual(s.focusEggCount, bugGym.firstClearReward.eggs, "알도 함께 들어온다")
     }
 
     /// 트리거 재현: 체육관은 몇 번이고 다시 갈 수 있으므로 승리 지점을 반복해서 지난다.
@@ -762,10 +763,12 @@ final class CompanionStoreTests: XCTestCase {
         s.recordGymVictory(bugGym)
         let afterFirst = s.availableTokens
 
+        let eggsAfterFirst = s.focusEggCount
         let paid = s.recordGymVictory(bugGym)
 
-        XCTAssertEqual(paid, 0, "두 번째 승리는 지급이 없다")
+        XCTAssertNil(paid, "두 번째 승리는 지급이 없다")
         XCTAssertEqual(s.availableTokens, afterFirst, "지갑도 그대로다")
+        XCTAssertEqual(s.focusEggCount, eggsAfterFirst, "알도 더 들어오지 않는다")
         XCTAssertEqual(s.earnedGymBadges.count, 1, "배지도 하나뿐이다")
     }
 
@@ -797,7 +800,7 @@ final class CompanionStoreTests: XCTestCase {
             XCTAssertEqual(gym.teamSpeciesIDs.count, GymLeague.teamSize, "\(gym.id) 팀 크기")
             XCTAssertEqual(Set(gym.teamSpeciesIDs).count, gym.teamSpeciesIDs.count, "\(gym.id) 종 중복")
             XCTAssertGreaterThan(gym.level, 0)
-            XCTAssertGreaterThan(gym.firstClearReward, 0)
+            XCTAssertFalse(gym.firstClearReward.isEmpty, "\(gym.id): 보상이 비어 있다")
         }
     }
 
@@ -827,11 +830,57 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(GymLeague.catalog.first?.level, GymLeague.leaderLevel)
     }
 
-    /// 보상은 목록 순서를 따라 오른다 — 뒤로 갈수록 어렵다는 신호가 목록과 어긋나면 안 된다.
+    /// 보상은 목록 순서를 따라 무거워진다 — 뒤로 갈수록 어렵다는 신호가 목록과 어긋나면 안 된다.
+    /// 등급 보증이 오르거나(없음 → 고급 → 희귀) 별의조각이 늘어야 한다.
     func testRewardsRiseWithTheListedOrder() {
         let rewards = GymLeague.catalog.map(\.firstClearReward)
-        XCTAssertEqual(rewards, rewards.sorted())
-        XCTAssertEqual(Set(rewards).count, rewards.count, "같은 보상이 둘이면 순서가 뜻을 잃는다")
+        for gym in GymLeague.catalog {
+            XCTAssertGreaterThan(gym.firstClearReward.eggs, 0, "\(gym.id): 체육관 보상은 알이 중심이다")
+        }
+        let ranks = rewards.map { $0.eggGuarantee?.sortRank ?? 0 }
+        XCTAssertEqual(ranks, ranks.sorted(), "등급 보증이 뒤로 갈수록 낮아지면 안 된다")
+        let pieces = rewards.map(\.starPieces)
+        XCTAssertEqual(pieces, pieces.sorted(), "별의조각도 마찬가지")
+    }
+
+    /// 마지막 배지를 딴 순간 완주 보상이 함께 나간다 — 이로치 확정은 여기서만 나온다.
+    func testCompletingEveryGymGrantsTheShinyCharge() {
+        let s = store(noEvo)
+        for gym in GymLeague.catalog.dropLast() {
+            s.recordGymVictory(gym)
+            XCTAssertEqual(s.state.shinyEggCharges, 0, "\(gym.id) 까지는 확정이 없다")
+        }
+        let last = try! XCTUnwrap(GymLeague.catalog.last)
+
+        let final = s.recordGymVictory(last)
+
+        XCTAssertEqual(s.state.shinyEggCharges, GymLeague.completionReward.shinyCharges)
+        XCTAssertEqual(final?.shinyCharges, GymLeague.completionReward.shinyCharges,
+                       "결과 화면이 보여줄 값에도 실려야 한다")
+    }
+
+    /// 완주 보상도 배지가 가드다 — 다 모은 뒤 아무 체육관이나 다시 이겨도 확정이 또 나오면 안 된다.
+    func testCompletionRewardDoesNotRepeat() {
+        let s = store(noEvo)
+        for gym in GymLeague.catalog { s.recordGymVictory(gym) }
+        let charges = s.state.shinyEggCharges
+
+        for gym in GymLeague.catalog { s.recordGymVictory(gym) }
+
+        XCTAssertEqual(s.state.shinyEggCharges, charges, "재도전으로 확정이 늘지 않는다")
+    }
+
+    /// 보증은 상태에 하나뿐이라, 낮은 등급 보상이 이미 가진 높은 보증을 깎으면 안 된다.
+    func testWeakerGymRewardDoesNotDowngradeAnExistingGuarantee() {
+        let s = store(noEvo)
+        let rare = try! XCTUnwrap(GymLeague.catalog.first { $0.firstClearReward.eggGuarantee == .rare })
+        let plain = try! XCTUnwrap(GymLeague.catalog.first { $0.firstClearReward.eggGuarantee == nil })
+
+        s.recordGymVictory(rare)
+        XCTAssertEqual(s.state.eggTier, .rare)
+        s.recordGymVictory(plain)
+
+        XCTAssertEqual(s.state.eggTier, .rare, "보증 없는 알이 희귀 보증을 지우지 않는다")
     }
 
     /// 체육관 화면에서 고를 땐 정원이 관장 팀 크기다 — 화면에서 고른 1/3/6 과 무관하다.

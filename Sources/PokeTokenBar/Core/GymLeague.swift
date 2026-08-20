@@ -25,8 +25,8 @@ struct Gym: Identifiable, Sendable, Equatable {
     /// 관장 팀 레벨 — 도전자에 맞춰 움직이지 않는다. 맞추면 언제 가도 같은 난이도라 키운 보람이
     /// 드러나지 않는다. 값은 `GymLeague.leaderLevel` 로 **모든 체육관이 같다**(그 상수의 주석 참고).
     let level: Int
-    /// 첫 승리에만 나가는 별의조각. 재도전은 연습이지 수입이 아니다.
-    let firstClearReward: Int
+    /// 첫 승리에만 나가는 보상. 재도전은 연습이지 수입이 아니다.
+    let firstClearReward: GymReward
 
     func leaderName(_ language: AppLanguage) -> String {
         language.resolveName(names) ?? names["en"] ?? names.values.first ?? "?"
@@ -35,6 +35,33 @@ struct Gym: Identifiable, Sendable, Equatable {
 
 /// 체육관 목록. 넷으로 시작한다 — 구조가 자리를 잡으면 이 배열에 항목만 더하면 되고,
 /// 배지 키가 타입에서 나오므로 뒤에 끼워 넣어도 기존 배지에 영향이 없다.
+/// 체육관 첫 승리 보상.
+///
+/// 별의조각만 주던 시절엔 최고가 3,000 이었는데 알 한 개가 상점에서 20,000 이다 —
+/// 한 번 깨면 끝인 컨텐츠 보상으로는 약했다. 알을 주되 등급 보증을 얹어 뒤로 갈수록 무겁게 한다.
+struct GymReward: Sendable, Equatable {
+    var starPieces: Int = 0
+    /// 지급할 알 개수. 보관 알로 들어가 5분 뒤 부화한다.
+    var eggs: Int = 0
+    /// 그 알에 걸 등급 하한. nil = 보증 없음.
+    var eggGuarantee: Rarity? = nil
+    /// 이로치 확정 부화 횟수. 알과 별개로 쌓이며 다음 부화부터 하나씩 쓰인다.
+    var shinyCharges: Int = 0
+
+    var isEmpty: Bool { starPieces == 0 && eggs == 0 && shinyCharges == 0 }
+
+    /// 두 보상을 합친다 — 마지막 체육관을 깨면 그 보상과 완주 보상이 함께 나간다.
+    /// 등급 보증은 더하지 않고 **높은 쪽을 남긴다**(보증은 하나만 걸리므로).
+    func merging(_ other: GymReward) -> GymReward {
+        GymReward(starPieces: starPieces + other.starPieces,
+                  eggs: eggs + other.eggs,
+                  eggGuarantee: [eggGuarantee, other.eggGuarantee]
+                      .compactMap { $0 }
+                      .max { $0.sortRank < $1.sortRank },
+                  shinyCharges: shinyCharges + other.shinyCharges)
+    }
+}
+
 enum GymLeague {
     /// 모든 관장이 서는 레벨. **체육관마다 다르게 두지 않는다.**
     ///
@@ -69,7 +96,8 @@ enum GymLeague {
                 ["bug-buzz", "take-down", "headbutt", "fury-cutter"],
                 ["bug-buzz", "air-slash", "uproar", "night-slash"],
             ],
-            level: leaderLevel, firstClearReward: 500),
+            level: leaderLevel,
+            firstClearReward: GymReward(starPieces: 500, eggs: 1)),
         Gym(type: .rock,
             names: ["ko": "바위 체육관", "en": "Rock Gym", "ja": "いわジム"],
             teamSpeciesIDs: [526, 409, 476],        // 기가이어스 · 램펄드 · 대코파스
@@ -78,7 +106,8 @@ enum GymLeague {
                 ["rock-slide", "crunch", "iron-head", "headbutt"],
                 ["power-gem", "rock-slide", "spark", "tri-attack"],
             ],
-            level: leaderLevel, firstClearReward: 1_000),
+            level: leaderLevel,
+            firstClearReward: GymReward(starPieces: 500, eggs: 1, eggGuarantee: .uncommon)),
         Gym(type: .electric,
             names: ["ko": "전기 체육관", "en": "Electric Gym", "ja": "でんきジム"],
             teamSpeciesIDs: [466, 405, 181],        // 에레키블 · 렌트라 · 전룡
@@ -87,7 +116,8 @@ enum GymLeague {
                 ["crunch", "spark", "thunder-fang", "quick-attack"],
                 ["zap-cannon", "thunder-punch", "dragon-pulse", "fire-punch"],
             ],
-            level: leaderLevel, firstClearReward: 2_000),
+            level: leaderLevel,
+            firstClearReward: GymReward(starPieces: 1_000, eggs: 1, eggGuarantee: .rare)),
         Gym(type: .water,
             names: ["ko": "물 체육관", "en": "Water Gym", "ja": "みずジム"],
             teamSpeciesIDs: [350, 260, 121],        // 밀로틱 · 대짱이 · 아쿠스타
@@ -96,7 +126,8 @@ enum GymLeague {
                 ["earthquake", "surf", "rock-slide", "water-pulse"],
                 ["hydro-pump", "psychic", "power-gem", "psybeam"],
             ],
-            level: leaderLevel, firstClearReward: 3_000),
+            level: leaderLevel,
+            firstClearReward: GymReward(starPieces: 2_000, eggs: 1, eggGuarantee: .rare)),
     ]
 
     /// 배지 키로 되찾기 — 세이브에 남은 건 키뿐이라, 화면이 이름·타입을 그릴 때 거쳐 간다.
@@ -104,4 +135,13 @@ enum GymLeague {
 
     /// 관장 팀 크기. 도전자도 같은 수로 맞춰 내보낸다 — 머릿수가 다르면 이겨도 진 것 같다.
     static let teamSize = 3
+
+    /// 배지를 다 모은 순간 한 번 주는 완주 보상 — 이로치 확정 부화.
+    ///
+    /// 체육관마다 주면 이로치가 흔해져 뽑는 맛이 사라진다. 마지막에 한 번이라 "다 깨면 확정 하나"
+    /// 라는 목표가 되고, 한 곳만 깨고 마는 컨텐츠에서 벗어난다.
+    ///
+    /// 나중에 체육관을 더하면 배지 수가 다시 모자라지고, 새로 다 모으면 또 나간다 — 새 컨텐츠를
+    /// 완주한 값이니 의도한 대로다.
+    static let completionReward = GymReward(shinyCharges: 1)
 }

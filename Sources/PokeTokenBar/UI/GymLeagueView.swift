@@ -68,8 +68,7 @@ private struct GymRow: View {
                 Label(store.l.gymBadgeEarned, systemImage: "checkmark.seal.fill")
                     .font(.system(size: 9)).foregroundStyle(.green).labelStyle(.iconOnly)
             } else {
-                Text("⭐ \(GameNumberFormatter.compact(gym.firstClearReward))")
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                RewardLabel(reward: gym.firstClearReward, store: store)
             }
             Button(store.l.gymChallenge, action: onChallenge)
                 .controlSize(.small)
@@ -77,5 +76,31 @@ private struct GymRow: View {
         .padding(7)
         .background(RoundedRectangle(cornerRadius: 8)
             .fill(Color.primary.opacity(earned ? 0.07 : 0.03)))
+    }
+}
+
+/// 체육관 줄의 보상 표시 — 알이 무엇을 보증하는지가 별의조각보다 중요하다.
+private struct RewardLabel: View {
+    let reward: GymReward
+    let store: CompanionStore
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if reward.eggs > 0 {
+                HStack(spacing: 1) {
+                    Text("🥚")
+                    if let tier = reward.eggGuarantee {
+                        Text(store.l.rarityLabel(tier))
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
+            }
+            if reward.starPieces > 0 {
+                Text("⭐ \(GameNumberFormatter.compact(reward.starPieces))")
+            }
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.secondary)
     }
 }

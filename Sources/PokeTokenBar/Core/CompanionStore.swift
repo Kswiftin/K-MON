@@ -1195,12 +1195,40 @@ final class CompanionStore {
     /// 승리 지점을 반복해서 지나게 된다 — 졸업이 정확히 그 구조로 알을 무한히 뱉었다(#27→#34).
     /// 여기서는 배지가 그 가드다: 들어 있으면 아무것도 지급하지 않는다.
     @discardableResult
-    func recordGymVictory(_ gym: Gym) -> Int {
-        guard !state.gymBadges.contains(gym.id) else { return 0 }
+    func recordGymVictory(_ gym: Gym) -> GymReward? {
+        guard !state.gymBadges.contains(gym.id) else { return nil }
         state.gymBadges.insert(gym.id)
-        state.starPieces += gym.firstClearReward
+        var reward = gym.firstClearReward
+        // 배지가 다 모이는 순간 완주 보상이 함께 나간다. 배지는 빠지지 않으므로 이 순간은 한 번뿐이다.
+        if state.gymBadges.count == GymLeague.catalog.count {
+            reward = reward.merging(GymLeague.completionReward)
+        }
+        grantGymReward(reward)
         save()
-        return gym.firstClearReward
+        return reward
+    }
+
+    /// 보상 지급 — 알은 보관 알로 들어가고(5분 뒤 부화), 보증과 이로치 확정은 상태에 쌓인다.
+    private func grantGymReward(_ reward: GymReward) {
+        state.starPieces += reward.starPieces
+        if reward.eggs > 0 {
+            state.focusEggs = min(999, state.focusEggs + reward.eggs)
+            for _ in 0..<reward.eggs {
+                state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+            }
+            state.eggTier = Self.strongerGuarantee(state.eggTier, reward.eggGuarantee)
+        }
+        state.shinyEggCharges = min(99, state.shinyEggCharges + reward.shinyCharges)
+    }
+
+    /// 이로치 확정을 **한 번 쓴다.** 남아 있으면 true 를 돌려주고 하나 깎는다.
+    ///
+    /// 두 부화 경로가 모두 이걸 지나야 한다. `eggTier` 가 한쪽에서만 소비돼 영구 보증이 됐던 것과
+    /// 같은 부류다 — 확정이 안 깎이면 그 뒤 모든 부화가 이로치가 된다.
+    private func consumeShinyCharge() -> Bool {
+        guard state.shinyEggCharges > 0 else { return false }
+        state.shinyEggCharges -= 1
+        return true
     }
 
     /// 베팅 정산 지급. 환불도 "판돈과 같은 금액 지급" 이라 같은 경로를 쓴다.
@@ -1737,7 +1765,9 @@ final class CompanionStore {
         // **보증은 여기서 소비된다.** 예전엔 이 경로가 보증을 읽지도 지우지도 않아, 한 번 얻은
         // 보증이 남아 이후 모든 부화에 적용됐다(`hatchCore` 만 소비했다).
         state.eggTier = nil
-        let shiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        // rng 는 확정이든 아니든 항상 굴린다 — 소비량이 갈리면 같은 시드가 다른 결과를 낸다.
+        let rolledShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        let shiny = consumeShinyCharge() || rolledShiny
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let plan = makeEvolutionPlan(from: line.tree, baseID: line.baseID)
         let mon = MonState(baseID: line.baseID, pathIDs: [line.baseID], plannedPathIDs: plan,
@@ -1923,7 +1953,8 @@ final class CompanionStore {
         state.eggUsage = 0
         state.eggTier = nil   // 보증은 이 부화로 소비된다(다음 알은 다시 무보증)
         // 개체 롤 — shiny(1/64)·성격(25종)은 부화 순간 확정, 진화해도 유지.
-        let isShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        let rolledShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
+        let isShiny = consumeShinyCharge() || rolledShiny
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         // 메타몽 위장 롤 — common·≥2형태에 한해 1/128. .app 게이트(&& 단락 → 비앱에선 rng 미소비로
         // 기존 테스트 RNG 시퀀스 무영향). 위장/리빌 로직은 상태 기반으로 별도 테스트한다.
