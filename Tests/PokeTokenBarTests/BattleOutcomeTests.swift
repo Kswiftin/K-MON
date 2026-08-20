@@ -220,6 +220,25 @@ final class BattleOutcomeTests: XCTestCase {
                       "내가 고르는 팀도 경기 중에는 막힌다")
     }
 
+    /// 방 결과 화면은 승/패/무/관전 **네 갈래**다. 예전엔 `didIWin` 하나로 갈라 무승부(동시 전멸)와
+    /// 관전자에게 "패배" 라고 말했다 — 관전자는 싸우지도 않았고, 무승부는 진 게 아니다.
+    func testTheRoomResultCoversDrawAndSpectators() throws {
+        for lang in AppLanguage.allCases {
+            XCTAssertFalse(L(lang).battleSpectatorFinished.isEmpty, "\(lang) 문구가 있어야 한다")
+        }
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let view = try String(contentsOf: root.appendingPathComponent(
+            "Sources/PokeTokenBar/UI/BattleView.swift"), encoding: .utf8)
+
+        XCTAssertTrue(view.contains("center.multiplayer.myOutcome"),
+                      "방 결과는 네 갈래 `myOutcome` 을 쓴다")
+        XCTAssertFalse(view.contains("didIWin"),
+                       "두 갈래 판정으로 돌아가면 관전자·무승부가 다시 패배로 표시된다")
+        XCTAssertFalse(view.contains("battleReward"),
+                       "주지 않는 보상을 표시하지 않는다")
+    }
+
     /// 관전자(전투원이 아닌 참가자)와 진행 중인 배틀은 `nil` — 호출부가 이 nil 로 기록·보상을 건너뛴다.
     /// 예전엔 관전자도 라운드 브로드캐스트마다 `grantRewardIfFinished` 를 타 패배 기록이 남았다.
     func testOutcomeIsNilForSpectatorsAndForUnfinishedBattles() {

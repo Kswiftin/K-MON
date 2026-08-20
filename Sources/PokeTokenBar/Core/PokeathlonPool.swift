@@ -17,6 +17,8 @@ struct PokeathlonPool: Codable, Sendable, Equatable {
     var bets: [UUID: PokeathlonBet] = [:]
     var isClosed = false
 
+    static let maximumBet = 100_000_000
+
     var total: Int { bets.values.reduce(0) { $0 + $1.amount } }
 
     /// 우승자에 건 베팅들이 전체 판돈을 지분대로 분배. 아무도 우승자를 안 골랐거나

@@ -8,6 +8,19 @@ final class BattleRankTests: XCTestCase {
         XCTAssertEqual(BattleRank.stake(challenger: .init(points: 800), defender: .init(points: 400)), 0)
     }
 
+    /// 랭크는 와이어로도 온다(`BattleRankProfile` — 상대가 채우는 값) — 경계에서 자른다.
+    /// 세이브 경로는 `SaveTransfer.sanitized` 가 이미 자르지만 와이어 경로엔 가드가 없었다.
+    func testPointsAreClampedAtTheBoundary() throws {
+        func decoded(_ raw: String) throws -> BattleRank {
+            try JSONDecoder().decode(BattleRank.self, from: Data("{\"points\":\(raw)}".utf8))
+        }
+        XCTAssertEqual(try decoded("\(Int.max)").points, BattleRank.maximumPoints)
+        XCTAssertEqual(try decoded("-5").points, 0)
+        XCTAssertEqual(try decoded("450").points, 450, "정상 값은 그대로 통과한다")
+        XCTAssertEqual(BattleRank(points: Int.max).points, BattleRank.maximumPoints,
+                       "직접 생성도 같은 상한을 쓴다")
+    }
+
     func testOnlyHigherRankedLoserDrops() {
         var lower = BattleRank(points: 0)
         var higher = BattleRank(points: 450)
