@@ -715,6 +715,46 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertNil(s.nextEvolutionItem, "레벨로 진화하는 종이다")
     }
 
+    /// 돌로 진화시킨 최종형은 졸업 관문이 화면에 떠야 한다. 그 자리는 원래 "Lv.N 에 진화"·
+    /// "○○돌 필요" 가 쓰던 곳인데, 최종형에 닿으면 둘 다 사라져 빈 채로 남았다 —
+    /// 졸업 버튼은 조건을 채워야 나타나므로 왜 못 하는지 알 방법이 없었다.
+    func testStoneEvolvedFinalFormAnnouncesItsGraduationLevel() async {
+        let s = store(stoneLine)
+        await s.hatch(baseID: 30)
+        s.debugAddItem(.fireStone)
+        XCTAssertTrue(s.useEvolutionItem(.fireStone))
+
+        XCTAssertNil(s.nextEvolutionLevel, "최종형이라 진화 안내는 없고")
+        XCTAssertNil(s.nextEvolutionItem, "쓸 돌도 남지 않았다")
+        XCTAssertEqual(s.graduationLevelRequirement, PokemonBalance.graduationRequiredLevel,
+                       "그 빈 자리에 졸업 관문이 들어가야 한다")
+    }
+
+    /// 관문을 채우면 안내가 사라진다 — 졸업 버튼이 그 자리를 대신한다.
+    func testGraduationLevelHintDisappearsOnceReached() async {
+        let s = store(stoneLine)
+        await s.hatch(baseID: 30)
+        s.debugAddItem(.fireStone)
+        XCTAssertTrue(s.useEvolutionItem(.fireStone))
+        s.debugAccrueLevelExperience(300_000_000)
+
+        XCTAssertTrue(s.canGraduate)
+        XCTAssertNil(s.graduationLevelRequirement, "졸업할 수 있으면 관문 문구는 필요 없다")
+    }
+
+    /// 대조군: 레벨 진화로 최종형이 된 개체는 면제라 관문이 없다. 이게 없으면 "최종형이면 무조건
+    /// Lv.30 안내" 로 잘못 짜도 위 두 테스트는 통과한다.
+    func testLevelEvolvedFinalFormShowsNoGraduationGate() async {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
+        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
+
+        XCTAssertEqual(s.currentSpeciesID, 3, "최종형이지만")
+        XCTAssertTrue(s.canGraduate, "면제를 받았으므로")
+        XCTAssertNil(s.graduationLevelRequirement)
+    }
+
     /// 트리거 재현: 500 짜리 돌 하나면 레벨 1 개체가 최종형이 된다(`useEvolutionItem` 은 레벨을
     /// 보지 않는다). 예전엔 그 상태로 졸업돼 20,000 짜리 알과 도감·트레이너 포인트·주간 미션을
     /// 한 번에 받아냈고, 개체는 박스에 버리면 그만이었다 — 이 앱의 육성 루프를 통째로 건너뛰는 값이다.
