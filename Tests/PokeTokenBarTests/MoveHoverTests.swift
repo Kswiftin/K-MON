@@ -213,8 +213,8 @@ final class MoveHoverTests: XCTestCase {
 
     /// 세이브에 이미 안내문이 저장된 사용자는 다시 받아야 한다 — 없을 때만 받으면 영영 안 고쳐진다.
     func testStoredNoticeCountsAsMissingDescription() {
-        // `statChanges: []` 는 "랭크 변화까지 받아봤고 없다" 는 뜻이다 — 이 테스트가 보는 축은
-        // 설명뿐이라, 랭크 축을 nil 로 두면 그 이유로 다시 받게 되어 설명 판정이 죽어도 초록이 된다.
+        // `statChanges: []` 는 "랭크까지 받아봤고 없다" 는 뜻이다. 이 테스트가 보는 축은 설명뿐인데,
+        // 랭크 축을 nil 로 두면 그 이유로 다시 받게 되어 설명 판정이 죽어도 초록이 된다.
         var bad = MoveSpec(id: 216, names: ["ko": "은혜갚기"], type: .normal, power: 102,
                            damageClass: .physical, accuracy: 100, pp: 20,
                            descriptions: ["ko": koNotice])

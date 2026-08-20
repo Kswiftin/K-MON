@@ -1076,11 +1076,10 @@ final class CompanionStore {
     /// "없음"으로 보면 안 된다 — 안내문뿐인 기술은 조회해도 빈 dict 라 로드할 때마다 다시 받게 된다.
     ///
     /// 랭크 변화(Phase 3)도 같은 부류다. `statChanges == nil` 은 "랭크 이전 세이브" 라는 뜻이라
-    /// 한 번 다시 받아야 변화기가 실제로 동작한다 — `[]`(받았고 변화 없음)와 섞으면 안 된다.
-    /// 합성 기술(id ≤ 0)은 받을 데가 없으므로 제외한다(매 로드마다 헛도는 조회를 만들지 않는다).
+    /// 한 번 다시 받아야 변화기가 동작한다 — `[]`(받았고 변화 없음)와 섞으면 안 된다.
     static func needsDetailRefresh(_ move: MoveSpec) -> Bool {
-        // 합성 기술(발버둥·fetch 실패 폴백)은 `moveDetail(id:)` 가 애초에 거절하는 id 다 —
-        // "다시 받아야 한다" 고 답하면 매 로드마다 헛도는 반복이 된다.
+        // 합성 기술(발버둥·fetch 실패 폴백)은 `moveDetail(id:)` 가 거절하는 id 다. 여기서 참을
+        // 주면 매 로드마다 헛도는 조회가 된다.
         guard move.id > 0 else { return false }
         if move.statChanges == nil { return true }
         guard let descriptions = move.descriptions else { return true }

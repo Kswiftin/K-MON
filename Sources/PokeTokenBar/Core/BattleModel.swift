@@ -97,11 +97,11 @@ struct BattleStats: Codable, Sendable, Equatable {
     var spe: Int
 }
 
-/// 랭크(스탯 단계)가 붙는 스탯 — HP 는 랭크가 없어서 여기 없다. rawValue 는 세이브·와이어 키를
-/// 겸하고, PokéAPI 의 스탯 이름(`special-attack` …)은 `init(apiName:)` 이 옮긴다.
+/// 랭크(스탯 단계)가 붙는 스탯 — HP 는 랭크가 없어서 빠졌다. rawValue 가 세이브·와이어 키를
+/// 겸하고, PokéAPI 표기(`special-attack` …)는 `init(apiName:)` 이 옮긴다.
 ///
-/// `CodingKeyRepresentable` 인 건 `[BattleStat: Int]` 를 JSON **객체**로 내보내기 위해서다.
-/// 없으면 Swift 가 딕셔너리를 키·값 교대 배열로 인코딩해 와이어가 사람 눈에 읽히지 않는다.
+/// `CodingKeyRepresentable` 은 `[BattleStat: Int]` 를 JSON **객체**로 내보내기 위한 것이다.
+/// 없으면 Swift 가 키·값 교대 배열로 인코딩해 와이어를 사람이 못 읽는다.
 enum BattleStat: String, Codable, Sendable, Equatable, CaseIterable, CodingKeyRepresentable {
     case atk, def, spa, spd, spe, accuracy, evasion
 
@@ -253,10 +253,10 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
 
     /// 이 기술이 만드는 랭크 변화(PokéAPI `stat_changes`).
     ///
-    /// **`nil` 과 `[]` 를 구분한다** — 응답에는 이 키가 늘 있고 변화가 없으면 빈 배열이라,
-    /// `nil` 은 "아직 받아본 적이 없다"(랭크 이전 세이브·구버전 피어)는 뜻이다. 둘을 섞으면
-    /// 변화 없는 기술을 로드마다 다시 받거나(빈 배열을 nil 취급) 옛 세이브가 영영 안 고쳐진다
-    /// (nil 을 빈 배열 취급). `CompanionStore.needsDetailRefresh` 가 이 구분을 읽는다.
+    /// **`nil` 과 `[]` 를 구분한다.** 응답에 이 키는 늘 있고 변화가 없으면 빈 배열이므로,
+    /// `nil` 은 "아직 안 받아봤다"(랭크 이전 세이브·구버전 피어)는 뜻이다. 섞으면 변화 없는
+    /// 기술을 로드마다 다시 받거나, 옛 세이브가 영영 안 고쳐진다.
+    /// `CompanionStore.needsDetailRefresh` 가 이 구분을 읽는다.
     var statChanges: [StatChange]? = nil
     /// 랭크 변화가 걸릴 확률(PokéAPI `meta.stat_chance`). `ailmentChance` 와 같이 0 은 "확률이 아니다".
     var statChance: Int? = nil
@@ -289,10 +289,10 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
     /// 랭크 변화가 기술 **본체**라 늘 건다(PokéAPI 가 그런 기술에 0 을 준다).
     ///
-    /// 공격기 + 확률 없음(0) 은 **적용하지 않는다.** 그 조합은 인파이트·깨트리다처럼 *자기* 방어를
-    /// 확정으로 깎는 기술인데, PokéAPI 응답만으로는 대상이 자기인지 상대인지 알 수 없다
-    /// (`applyStatChanges` 의 부호 규칙으로는 상대를 깎어 완전히 뒤집힌다). 확률이 붙은 2차효과는
-    /// 잡기·오로라빔처럼 실제로 상대를 깎는 것들이라 부호 규칙이 맞다.
+    /// 공격기 + 확률 없음(0) 은 **적용하지 않는다.** 인파이트·깨트리다처럼 *자기* 방어를 확정으로
+    /// 깎는 기술인데, 응답만으로는 대상이 자기인지 상대인지 알 수 없다 — `applyStatChanges` 의
+    /// 부호 규칙에 맡기면 상대를 깎아 완전히 뒤집힌다. 확률이 붙은 2차효과는 오로라빔·
+    /// 사이코키네시스처럼 실제로 상대를 깎으므로 부호 규칙이 맞다.
     var statChangePercent: Int {
         let chance = statChance ?? 0
         if chance > 0 { return chance }
@@ -651,7 +651,7 @@ enum BattleEngine {
     /// 혼란 자멸 데미지 — 무속성 물리 위력 40. 급소도 난수도 타지 않으므로 **rng 를 소비하지 않는다**
     /// (분기마다 소비량이 달라지면 두 피어가 갈라진다). 물리라서 화상 반감은 그대로 받는다(Gen 2).
     static func confusionDamage(_ side: BattleSide) -> Int {
-        // 자기 공격·방어를 쓰므로 자기 랭크도 그대로 탄다 — 공격 랭크만 보면 방어를 올린 개체가
+        // 자기 공격·방어를 쓰니 자기 랭크도 탄다 — 공격 랭크만 보면 방어를 올린 개체가
         // 자멸 데미지를 그대로 받는다.
         let boosted = StatStages.apply(side.rawStat(.atk), stage: side.stage(.atk))
         let attack = side.status == .burn ? boosted / 2 : boosted
@@ -662,10 +662,10 @@ enum BattleEngine {
 
     /// 이 공격이 맞을 확률(%) — `nil` 은 필중기(명중 계산을 타지 않는다)다.
     ///
-    /// **명중 랭크와 회피 랭크를 따로 곱한다**(Gen 2). Gen 5+ 는 두 단계를 합산해 한 번만 곱하는데,
-    /// 그러면 (명중 +1, 회피 +1) 이 100% 가 된다 — Gen 2 에서는 133% × 75% = 99% 다.
-    /// 회피는 상대의 명중을 깎으므로 부호를 뒤집어 같은 표를 읽는다.
-    /// 100 을 넘는 값은 그대로 둔다(그 상태는 빗나갈 수 없다는 뜻이고, Gen 2 의 1/256 miss 는 §3.3 대로 뺐다).
+    /// **명중 랭크와 회피 랭크를 따로 곱한다**(Gen 2). 합산해 한 번만 곱하는 Gen 5+ 방식이면
+    /// (명중 +1, 회피 +1) 이 100% 인데, Gen 2 는 133% × 75% = 99% 다. 회피는 상대의 명중을
+    /// 깎으므로 부호를 뒤집어 같은 표를 읽는다. 100 초과는 그대로 둔다(안 빗나간다는 뜻이고,
+    /// Gen 2 의 1/256 miss 는 §3.3 대로 뺐다).
     static func hitChance(of move: MoveSpec, attacker: BattleSide, defender: BattleSide) -> Int? {
         guard let accuracy = move.accuracy else { return nil }
         let withAccuracy = accuracy * StatStages.accuracyPercent(stage: attacker.stage(.accuracy)) / 100
@@ -680,8 +680,8 @@ enum BattleEngine {
            Int(rng.next() % 100) >= chance {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
         }
-        // 발버둥은 무속성(상성·STAB 미적용). 위력 없는 변화기도 상성을 타지 않는다 — 상성은 데미지
-        // 기술의 규칙이라, 노말 변화기(울부짖기)가 고스트에게 안 걸리면 본가와 다른 게임이 된다.
+        // 발버둥은 무속성(상성·STAB 미적용). 위력 없는 변화기도 상성을 타지 않는다 — 상성은
+        // 공격기의 규칙이고, 노말 변화기(울음소리)가 고스트에게 안 걸리면 본가와 다른 게임이 된다.
         // **단 상태를 거는 변화기는 그대로 본다**: 전기자석파는 땅 타입에 실패해야 한다.
         let isStruggle = move.id == MoveSpec.struggleID
         let ignoresTypeChart = isStruggle || (move.power <= 0 && move.inflictedStatus == nil)
@@ -713,7 +713,9 @@ enum BattleEngine {
         var damage = baseDamage(level: attacker.snapshot.level, power: move.power,
                                 attack: attack, defense: defense)
         damage = damage * (isCritical ? critMultiplier : 1) + 2
-        if !isStruggle {
+        // 위의 `effectiveness` 와 **같은 게이트**여야 한다. 예전 `!isStruggle` 은 위력 0 이
+        // 데미지를 접어 준 덕에 우연히 같았을 뿐이다(위력 있는 무상성 기술이 생기면 갈라진다).
+        if !ignoresTypeChart {
             if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }   // STAB ×1.5
             damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
         }
@@ -915,13 +917,12 @@ extension BattleEngine {
                                          rng: &rng)
     }
 
-    /// 기술의 랭크 변화. **부호가 대상을 정한다** — 올리는 건 자기, 내리는 건 상대다. PokéAPI 의
-    /// `stat_changes` 에는 대상이 없고 `target` 은 공격 대상만 말하므로(자기 랭크를 깎는 공격기도
-    /// `selected-pokemon` 이다) 부호가 유일하게 쓸 수 있는 신호다. 확정 자기감소 기술은
-    /// `MoveSpec.statChangePercent` 가 애초에 걸러낸다(그 주석에 근거가 있다).
+    /// 기술의 랭크 변화. **부호가 대상을 정한다** — 올리면 자기, 내리면 상대다. `stat_changes` 에는
+    /// 대상이 없고 `target` 은 공격 대상만 가리키므로(자기 랭크를 깎는 공격기도 `selected-pokemon`)
+    /// 부호가 유일한 신호다. 확정 자기감소 기술은 `MoveSpec.statChangePercent` 가 미리 걸러낸다.
     ///
-    /// rng 는 **적용할 랭크 변화가 있을 때만** 한 번 소비한다 — 두 피어가 같은 조건에서 같은 횟수를
-    /// 불러야 한다(대상이 쓰러졌는지, 확률이 0 인지는 양쪽이 똑같이 본다).
+    /// rng 는 **적용할 변화가 있을 때만** 한 번 소비한다 — 두 피어가 같은 조건에서 같은 횟수를
+    /// 불러야 한다(쓰러졌는지, 확률이 0 인지는 양쪽이 똑같이 본다).
     private static func applyStatChanges(of move: MoveSpec, attacker: inout BattleSide,
                                          defender: inout BattleSide, attackerActor: BattleActor,
                                          defenderActor: BattleActor,

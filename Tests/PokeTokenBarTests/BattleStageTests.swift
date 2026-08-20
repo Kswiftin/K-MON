@@ -3,9 +3,9 @@ import XCTest
 
 /// Phase 3 — 랭크업(스탯 단계) + 변화기 무브셋 편입.
 ///
-/// 이 파일의 테스트는 대부분 **대조군을 낀다.** 랭크는 "전부 곱한다", "급소면 전부 무시한다",
-/// "명중·회피를 합산해서 한 번 곱한다" 같은 뭉뚱그린 오구현이 단독 테스트로는 전부 초록으로
-/// 통과하는 부류다. 세대별 값이 갈리는 자리(§3.2)는 어느 세대를 골랐는지까지 잠근다.
+/// 이 파일의 테스트는 대부분 **대조군을 낀다.** "전부 곱한다", "급소면 전부 무시한다",
+/// "명중·회피를 합산한다" 같은 뭉뚱그린 오구현은 단독 테스트로 전부 초록이 되는 부류다.
+/// 세대별로 값이 갈리는 자리(§3.2)는 어느 세대를 골랐는지까지 잠근다.
 final class BattleStageTests: XCTestCase {
 
     // MARK: 고정 재료
@@ -264,9 +264,9 @@ final class BattleStageTests: XCTestCase {
         XCTAssertEqual(attacker.stage(.atk), 6)
     }
 
-    /// 상성은 데미지 기술의 규칙이다. 변화기(위력 0)는 타입 면역을 타지 않는다 —
-    /// **단 상태를 거는 변화기는 그대로 본다**(전기자석파 → 땅). 대조군 없이 한쪽만 고치면
-    /// 두 오구현("전부 무시" / "전부 검사")이 모두 초록으로 통과한다.
+    /// 상성은 공격기의 규칙이라 변화기(위력 0)는 타입 면역을 타지 않는다.
+    /// **단 상태를 거는 변화기는 그대로 본다**(전기자석파 → 땅). 대조군 없이 한쪽만 보면
+    /// 두 오구현("전부 무시" / "전부 검사")이 모두 초록이다.
     func testStatChangeMovesIgnoreTypeImmunityButAilmentMovesDoNot() {
         var user = BattleSide(tank()), ghost = BattleSide(tank([.ghost]))
         let events = attack(&user, &ghost,
@@ -311,8 +311,8 @@ final class BattleStageTests: XCTestCase {
                        "변화기는 랭크 변화가 본체라 늘 걸린다")
     }
 
-    /// **트리거 브랜치**: 확률 판정이 *실패하는* 쪽. 확정(100%)·미적용(0%)만 테스트하면 굴림 자체가
-    /// 없거나 늘 성공하는 구현이 초록으로 통과한다 — `--show-regions` 에서 실패 분기가 `^0` 이었다.
+    /// **트리거 브랜치**: 확률 판정이 *실패하는* 쪽. 확정(100%)·미적용(0%)만 보면 굴림이 없거나
+    /// 늘 성공하는 구현도 초록이다(`--show-regions` 에서 실패 분기가 `^0` 이었다).
     /// 20% 짜리 2차효과를 seed 로 순회해 **두 결과가 모두** 나오는지 본다.
     func testPartialChanceStatDropSometimesFailsItsRoll() {
         var flinchy = tackle()
@@ -409,9 +409,8 @@ final class BattleStageTests: XCTestCase {
         XCTAssertEqual(spec.power, 0)
     }
 
-    /// 7종의 화면 약어·이름·기준값을 **전부** 밟는다. `--show-regions` 로 확인해 보면 로그·배지
-    /// 테스트는 자기가 쓴 두세 개만 실행하고 나머지 분기는 한 번도 돌지 않는다 — 라인 커버리지는
-    /// 그걸 초록으로 보고한다(`Status.badgeTint` 로 겪은 부류다).
+    /// 7종의 화면 약어·이름·기준값을 **전부** 밟는다. 로그·배지 테스트는 자기가 쓴 두세 개만
+    /// 실행하는데 라인 커버리지는 그걸 초록으로 보고한다(`Status.badgeTint` 로 겪은 부류다).
     func testEveryStatHasALabelANameAndABaseline() {
         XCTAssertEqual(BattleStat.allCases.map(\.shortLabel),
                        ["Atk", "Def", "SpA", "SpD", "Spe", "Acc", "Eva"])
@@ -438,9 +437,9 @@ final class BattleStageTests: XCTestCase {
         XCTAssertNil(BattleStat(apiName: "hp"), "랭크가 없는 스탯은 매핑하지 않는다")
     }
 
-    /// `stat_changes` 는 응답에 늘 있다(없으면 빈 배열). 그래서 **키가 없는 것**은 "아직 안 받아봤다"
-    /// 라는 뜻이고, `[]` 는 "받았고 변화가 없다" 다 — 둘을 섞으면 매 로드마다 다시 받거나 영영 안 고친다.
-    /// `CompanionStore` 는 `@MainActor` 라 이 한 테스트만 메인 액터에서 돈다.
+    /// `stat_changes` 는 응답에 늘 있다(없으면 빈 배열). 그래서 **키 없음**은 "아직 안 받아봤다",
+    /// `[]` 는 "받았고 변화 없음" 이다 — 섞으면 매 로드마다 다시 받거나 영영 안 고친다.
+    /// `CompanionStore` 가 `@MainActor` 라 이 한 테스트만 메인 액터에서 돈다.
     @MainActor
     func testMissingStatChangesStayNilSoTheSaveCanConverge() throws {
         let unfetched = try XCTUnwrap(MoveSpec.from(
@@ -479,7 +478,7 @@ final class BattleStageTests: XCTestCase {
                        "변화기는 4칸 중 한 칸까지다 — 두 칸이면 화력이 사라진다")
         XCTAssertEqual(picked.filter { $0.power > 0 }.count, 3)
 
-        // 위력 내림차순으로만 뽑으면 위력 0 인 변화기는 **절대** 안 들어온다 — 그래서 슬롯이 필요하다.
+        // 위력 내림차순으로만 뽑으면 위력 0 인 변화기는 **절대** 안 들어온다 — 그래서 칸을 나눈다.
         let attacksOnly = PokeAPIClient.pickFour(
             from: [attackSpec(1, .fire, 90), attackSpec(2, .normal, 100),
                    attackSpec(3, .flying, 75), attackSpec(4, .dragon, 80)],
@@ -488,13 +487,31 @@ final class BattleStageTests: XCTestCase {
         XCTAssertTrue(attacksOnly.allSatisfy { $0.power > 0 })
     }
 
-    /// 쓸 데 없는 변화기(랭크도 상태도 없는 미구현 부류)보다 실제로 뭔가 하는 변화기를 고른다.
+    /// 쓸데없는 변화기(랭크도 상태도 없는 미구현 부류)보다 실제로 뭔가 하는 변화기를 고른다.
     func testStatusSlotPrefersAMoveThatActuallyDoesSomething() {
         let inert = MoveSpec(id: 99, names: [:], type: .normal, power: 0,
                              damageClass: .status, accuracy: nil, pp: 10)
         let useful = statusMove(id: 14, changes: [StatChange(stat: .atk, change: 2)])
         let picked = PokeAPIClient.pickFour(from: [inert, useful], types: [.normal])
         XCTAssertEqual(picked.map(\.id), [14], "구현된 효과가 있는 변화기가 그 칸을 가진다")
+    }
+
+    /// **트리거 브랜치**: 쓸 만한 변화기가 하나도 없는 풀. 위 테스트는 *더 나은* 변화기를 고르는지만
+    /// 보므로 폴백이 남아 있어도 초록이다. 그 칸은 공격기에게 돌아가야 한다.
+    func testInertStatusMovesGiveTheirSlotBackToAttacks() {
+        func attackSpec(_ id: Int, _ type: PokemonType, _ power: Int) -> MoveSpec {
+            MoveSpec(id: id, names: [:], type: type, power: power,
+                     damageClass: .physical, accuracy: 100, pp: 10)
+        }
+        let inert = MoveSpec(id: 99, names: [:], type: .normal, power: 0,
+                             damageClass: .status, accuracy: nil, pp: 10)
+        let picked = PokeAPIClient.pickFour(
+            from: [attackSpec(1, .fire, 90), attackSpec(2, .normal, 100), attackSpec(3, .flying, 75),
+                   attackSpec(4, .dragon, 80), inert],
+            types: [.fire, .flying])
+        XCTAssertEqual(picked.count, 4)
+        XCTAssertTrue(picked.allSatisfy { $0.power > 0 },
+                      "효과 없는 변화기가 화력 한 칸을 먹으면 안 된다")
     }
 
     // MARK: 신뢰경계 — 상대가 보내오는 랭크 변화
@@ -538,8 +555,8 @@ final class BattleStageTests: XCTestCase {
         XCTAssertFalse(MultiplayerValidation.validStart(fighters: [fighter(0), fighter(6)], mode: .freeForAll))
     }
 
-    /// 라운드 결과는 호스트가 브로드캐스트한다 — 랭크가 와이어를 못 건너면 게스트 화면에서 화살표가
-    /// 사라지고, 게스트가 보는 배틀과 호스트가 보는 배틀이 갈린다.
+    /// 라운드 결과는 호스트가 브로드캐스트한다. 랭크가 와이어를 못 건너면 게스트 화면에서 화살표가
+    /// 사라지고, 게스트와 호스트가 서로 다른 배틀을 본다.
     func testFighterWireCarriesStages() throws {
         let participant = LobbyParticipant(id: UUID(), trainerName: "호스트", speciesID: 143,
                                            team: .solo, isReady: true, isHost: false)
@@ -558,6 +575,43 @@ final class BattleStageTests: XCTestCase {
         let legacy = try JSONDecoder().decode(
             MultiplayerFighter.self, from: try JSONSerialization.data(withJSONObject: json))
         XCTAssertTrue(legacy.side.stages.isEmpty)
+    }
+
+    /// **트리거 브랜치**: `validStart` 는 개시 시점만 본다 — 라운드마다 오는 랭크는 아무도 검사하지
+    /// 않는다. 클램프가 없으면 배지가 `Atk▲99` 로 뜨고 다음 `changeStage` 가 `-93` 을 로그에 쓴다.
+    func testWireStagesAreClampedAndZeroKeysDropped() throws {
+        let participant = LobbyParticipant(id: UUID(), trainerName: "호스트", speciesID: 143,
+                                           team: .solo, isReady: true, isHost: false)
+        let honest = MultiplayerFighter(participant: participant, snapshot: tank())
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(honest)) as? [String: Any])
+        json["stages"] = ["atk": 99, "spe": -50, "def": 0]
+
+        let forged = try JSONDecoder().decode(
+            MultiplayerFighter.self, from: try JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(forged.side.stage(.atk), StatStages.limit, "±6 밖은 경계에서 잘린다")
+        XCTAssertEqual(forged.side.stage(.spe), -StatStages.limit)
+        XCTAssertNil(forged.side.stages[.def], "0 인 스탯은 키를 두지 않는다 — `stages` 의 불변식")
+        XCTAssertEqual(StageReadout.text(forged.side.stages), "Atk▲6 Spe▼6",
+                       "화면에 6 밖의 숫자가 뜨면 클램프가 배선되지 않았다")
+    }
+
+    /// 랭크 0 짜리 `.boost` 는 줄이 없다 — 이벤트 스트림도 호스트가 보내오는 값이다.
+    func testZeroBoostEventDrawsNoLine() {
+        let lines = BattleLog.lines([.boost(.a, .atk, 0)], l: L(.ko),
+                                    name: { _ in "거북왕" }, moveName: { _, _ in "칼춤" })
+        XCTAssertTrue(lines.isEmpty, "0 만큼 바뀐 랭크에 줄을 내면 로그가 거짓말을 한다")
+    }
+
+    /// 무브셋 경계를 **두 경로가 공유하는 한 함수**로 못 박는다. 방에만 있으면 `statChance: 5000` 이
+    /// 1v1 에서 무검사로 들어간다. (핸드셰이크가 실제로 부르는지는 여기서 못 본다 — 리뷰 몫.)
+    func testMoveBoundsAreSharedByBothNetPaths() {
+        var hostile = statusMove(changes: [StatChange(stat: .atk, change: 2)])
+        hostile.statChance = 5_000
+        XCTAssertFalse(MultiplayerValidation.validMoves([hostile]))
+        XCTAssertTrue(MultiplayerValidation.validMoves(
+            [statusMove(changes: [StatChange(stat: .atk, change: 2)])]))
+        XCTAssertTrue(MultiplayerValidation.validMoves([]), "무브셋 없는 스냅샷은 폴백으로 간다")
     }
 
     /// 데미지 결과가 바뀌었고(랭크·명중), 이벤트 스트림에 case 가 늘었다 → 두 버전 다 올라가야 한다.

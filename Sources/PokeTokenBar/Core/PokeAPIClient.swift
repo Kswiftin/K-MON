@@ -231,9 +231,8 @@ actor PokeAPIClient: PokeProviding {
             for name in candidates {
                 if picked.count >= 8 { break }   // 상세 fetch 상한(PokéAPI 배려)
                 guard let spec = try? await moveDetail(named: name) else { continue }
-                // 변화기도 들인다(Phase 3). 다만 후보로 남기는 건 **두 개까지**다 — 상한 8건을
-                // 변화기가 채우면 `pickFour` 에 넘길 공격기가 남지 않는다(상한을 올리지 않는다는
-                // 계획 §5 Phase 3 의 조건 그대로다).
+                // 변화기도 들이되 후보는 **두 개까지**다. 상한 8건을 변화기가 채우면 `pickFour` 에
+                // 넘길 공격기가 남지 않는다(상한은 올리지 않는다 — 계획 §5 Phase 3).
                 guard spec.power > 0 || picked.filter({ $0.power <= 0 }).count < 2 else { continue }
                 picked.append(spec)
             }
@@ -309,25 +308,23 @@ actor PokeAPIClient: PokeProviding {
 
     /// 기술 4개 — 공격기는 STAB·고위력 우선하되 타입 중복은 뒤로(견제폭), **변화기는 최대 한 칸**.
     ///
-    /// 슬롯을 나누는 게 핵심이다. 위력 내림차순 한 줄에 변화기를 그냥 섞으면 위력 0 이라 늘 꼴찌라
+    /// 칸을 나누는 게 핵심이다. 위력 내림차순 한 줄에 변화기를 그냥 섞으면 위력 0 이라 늘 꼴찌라
     /// **절대 안 뽑힌다** — 이 함수가 `guard spec.power > 0` 을 대신하는 자리다.
     static func pickFour(from specs: [MoveSpec], types: [PokemonType]) -> [MoveSpec] {
         let attacks = specs.filter { $0.power > 0 }
         let statusPick = pickStatusMove(from: specs.filter { $0.power <= 0 })
+        // 남은 칸을 공격기로 되채우는 루프는 필요 없다 — `pickAttacks` 의 두 번째 루프가 이미
+        // 상한까지 전 공격기를 채우므로, 여기 도달하면 out 은 4개거나 attacks 를 전부 담고 있다.
         var out = pickAttacks(from: attacks, types: types, limit: statusPick == nil ? 4 : 3)
         if let statusPick { out.append(statusPick) }
-        // 공격기가 세 개도 안 되면 남은 칸은 다시 공격기로 채운다(같은 타입이어도 화력이 낫다).
-        for spec in attacks where out.count < 4 && !out.contains(where: { $0.id == spec.id }) {
-            out.append(spec)
-        }
         return out
     }
 
-    /// 변화기 한 칸의 주인 — **구현된 효과(랭크·상태)가 있는 것**이 먼저다. 효과를 모르는 변화기는
-    /// 지금 엔진에서 PP 만 태운다(미구현 ailment 14종이 그 부류다).
+    /// 변화기 한 칸의 주인 — **구현된 효과(랭크·상태)가 있는 것만**. 효과 미구현 변화기(ailment
+    /// 14종)는 PP 만 태우므로 `nil` 을 돌려 그 칸을 공격기에게 넘긴다.
     /// 순서는 후보 정렬(습득 레벨 내림차순)을 그대로 따라가므로 결정적이다.
     private static func pickStatusMove(from specs: [MoveSpec]) -> MoveSpec? {
-        specs.first { $0.inflictedStatus != nil || !($0.statChanges ?? []).isEmpty } ?? specs.first
+        specs.first { $0.inflictedStatus != nil || !($0.statChanges ?? []).isEmpty }
     }
 
     private static func pickAttacks(from attacks: [MoveSpec], types: [PokemonType],
@@ -508,8 +505,8 @@ struct MoveDTO: Decodable, Sendable {
     /// 턴 순서에서 스피드보다 먼저 보는 값. 응답에 늘 들어 있지만, 옛 캐시 응답을 대비해 옵셔널로 둔다.
     let priority: Int?
     let meta: Meta?
-    /// 응답에는 늘 있고, 변화가 없으면 **빈 배열**이다. 그래서 `nil`(키가 없다)은 "옛 캐시 응답"을
-    /// 뜻하고, 그 구분이 `MoveSpec.statChanges` 의 nil/[] 구분으로 그대로 넘어간다.
+    /// 응답에 늘 있고 변화가 없으면 **빈 배열**이다. 그래서 `nil`(키 없음)은 "옛 캐시 응답" 이고,
+    /// 그 구분이 `MoveSpec.statChanges` 로 그대로 넘어간다.
     let stat_changes: [StatChangeDTO]?
 }
 

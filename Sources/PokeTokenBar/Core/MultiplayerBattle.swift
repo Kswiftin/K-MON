@@ -133,7 +133,11 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         decoded.statusCounter = try container.decodeIfPresent(Int.self, forKey: .statusCounter) ?? 0
         decoded.confusionTurns = try container.decodeIfPresent(Int.self, forKey: .confusionTurns) ?? 0
         // 랭크가 없던 시절의 피어는 이 키를 보내지 않는다 — 없으면 랭크 없음이다.
-        decoded.stages = try container.decodeIfPresent([BattleStat: Int].self, forKey: .stages) ?? [:]
+        // **경계에서 클램프한다** — `validStart` 는 개시 시점만 보고, 라운드마다 오는 값은
+        // 호스트 소유다(`atk: 99` 를 들이면 다음 `changeStage` 가 −93 을 로그에 쓴다).
+        // 0 키는 버린다 — `stages` 의 불변식.
+        decoded.stages = (try container.decodeIfPresent([BattleStat: Int].self, forKey: .stages) ?? [:])
+            .compactMapValues { $0 == 0 ? nil : StatStages.clamped($0) }
         side = decoded
     }
 
@@ -172,7 +176,11 @@ enum MultiplayerValidation {
         let stats = snapshot.base
         guard [stats.hp, stats.atk, stats.def, stats.spa, stats.spd, stats.spe]
             .allSatisfy({ (1...255).contains($0) }) else { return false }
-        let moves = snapshot.moves ?? []
+        return validMoves(snapshot.moves ?? [])
+    }
+
+    /// 상대 무브셋 범위 검사. **1v1 LAN 도 이 함수를 쓴다** — 방에만 두면 1v1 이 무검사가 된다.
+    static func validMoves(_ moves: [MoveSpec]) -> Bool {
         guard moves.count <= 4 else { return false }
         return moves.allSatisfy {
             (0...250).contains($0.power) && (1...100).contains($0.pp)
