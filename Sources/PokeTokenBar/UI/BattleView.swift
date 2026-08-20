@@ -12,6 +12,7 @@ struct BattleView: View {
     @State private var addressCopied = false
     @State private var roomMode: MultiplayerBattleMode = .freeForAll
     @State private var multiplayerTargetID: UUID?
+    @State private var teamPickPage = 0
 
     private var l: L { store.l }
 
@@ -153,27 +154,52 @@ struct BattleView: View {
         }
     }
 
+    /// 한 페이지에 그리는 칩 수. 팝오버 콘텐츠 폭(332) 안에 칩 6개(44)와 간격이 들어간다.
+    /// 최대 팀 크기와 같은 수라, 한 페이지가 곧 한 팀 분량이다.
+    private static let teamPickPageSize = 6
+
     /// 출전 팀 고르기 — 누르면 넣고 빼고, 배지 숫자가 출전 순서다.
     ///
-    /// **가로** 스크롤인 이유가 있다. 이 탭은 이미 팝오버 본체 ScrollView 안에 있어서 세로로 또
-    /// 스크롤을 겹치면 안쪽이 움직이지 않는다(#42 에서 소유 포켓몬 목록이 그랬다). 축이 다르면 겹치지 않는다.
+    /// 스크롤을 쓰지 않는다. 이 화면은 팝오버 본체 ScrollView 안이라 안쪽에 또 두면 그 칸이
+    /// 잘린다(`BattleFieldTests.testTheBattleFieldSourceHasNoScrollView` 가 소스에서 막는다).
+    /// 대신 도감·소유 포켓몬과 같은 페이지식이다 — 넘치는 개체는 페이저로 넘겨서 고른다.
     @ViewBuilder
     private var teamPicker: some View {
         if store.ownedMons.count > 1 {
+            let owned = store.ownedMons
+            let pageCount = max(1, (owned.count + Self.teamPickPageSize - 1) / Self.teamPickPageSize)
+            // 개체가 줄면(졸업·방출) 보던 페이지가 사라진다 — 범위 밖이면 마지막 페이지로 당긴다.
+            let page = min(teamPickPage, pageCount - 1)
+            let slice = Array(owned.dropFirst(page * Self.teamPickPageSize).prefix(Self.teamPickPageSize))
             HStack(spacing: 4) {
                 Text(store.language == .ko ? "출전 순서" : "Battle order")
                     .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
+                if pageCount > 1 {
+                    Button { teamPickPage = max(0, page - 1) } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.plain).disabled(page == 0)
+                        .accessibilityLabel(l.dexPagePrev)
+                    Text("\(page + 1) / \(pageCount)")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        .accessibilityLabel(l.dexPageLabel(page + 1, pageCount))
+                    Button { teamPickPage = min(pageCount - 1, page + 1) } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.plain).disabled(page == pageCount - 1)
+                        .accessibilityLabel(l.dexPageNext)
+                }
                 Text("\(center.pickedTeam.count) / \(center.rankedTeamSize)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(center.pickedTeam.isEmpty ? .tertiary : .secondary)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 5) {
-                    ForEach(store.ownedMons, id: \.id) { mon in
-                        TeamPickChip(mon: mon,
-                                     pickedIndex: center.pickedTeam.firstIndex(of: mon.id),
-                                     onTap: { center.toggleTeamPick(mon.id) })
+            HStack(spacing: 5) {
+                ForEach(slice, id: \.id) { mon in
+                    TeamPickChip(mon: mon,
+                                 pickedIndex: center.pickedTeam.firstIndex(of: mon.id),
+                                 onTap: { center.toggleTeamPick(mon.id) })
+                }
+                // 마지막 페이지가 덜 차도 칩 폭이 늘어나지 않게 빈 자리를 채운다.
+                if slice.count < Self.teamPickPageSize {
+                    ForEach(slice.count..<Self.teamPickPageSize, id: \.self) { _ in
+                        Color.clear.frame(width: 44)
                     }
                 }
             }
