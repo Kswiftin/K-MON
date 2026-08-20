@@ -621,6 +621,9 @@ struct CompanionState: Codable, Sendable {
     var dex: [DexEntry] = []
     // 소유한 (base,final) 쌍 — 분기 다양성용
     var collectedFinals: Set<String> = []
+    /// 딴 체육관 배지(`Gym.id`). 기록이므로 한 번 들어가면 빠지지 않는다 —
+    /// 재도전은 연습이고, 보상은 첫 승리에만 나간다.
+    var gymBadges: Set<String> = []
     var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
@@ -677,6 +680,7 @@ struct CompanionState: Codable, Sendable {
         // 도감은 항목별 격리 — 손상 항목 하나가 도감 전체를 날리지 않게.
         dex                = c.lenient([Lossy<DexEntry>].self, forKey: .dex, default: []).compactMap(\.value)
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])
+        gymBadges          = c.lenient(Set<String>.self, forKey: .gymBadges, default: [])
         language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
         care               = c.lenient(PetCareState.self, forKey: .care, default: PetCareState())
