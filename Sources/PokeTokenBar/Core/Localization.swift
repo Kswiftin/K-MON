@@ -772,6 +772,9 @@ struct L {
     var useAfterHatch: String { t("부화 후 사용할 수 있어요", "Usable after hatching", "孵化後に使えます") }
     var useNeedsPokemon: String { t("사용할 포켓몬이 없어요", "No Pokémon to use it on", "使えるポケモンがいません") }
 
+    /// 팀 선택 영역 제목 — 이게 "내가 가진 것 중에서 고르는 자리" 임을 말해 준다.
+    var teamPickerTitle: String { t("내 포켓몬에서 고르기", "Pick from your Pokémon", "手持ちから選ぶ") }
+
     /// 팀 선택 타입 필터의 '거르지 않음' 항목.
     var teamFilterAllTypes: String { t("전체 타입", "All types", "全タイプ") }
 
