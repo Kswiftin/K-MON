@@ -1914,8 +1914,21 @@ final class PokeAPIGuardTests: XCTestCase {
 /// (예전엔 이 테스트들이 `PokeAPIGuardTests` 안에 있었다. 파일 끝에 덧붙이면 마지막 클래스에
 ///  딸려 들어가는데, 그쪽은 격리가 없어 `toggleTeamPick` 호출이 컴파일되지 않았다.)
 @MainActor
+private final class BattleCenterReference {
+    weak var value: BattleCenter?
+}
+
+@MainActor
 final class BattleTeamPickTests: XCTestCase {
+    private let testMove = MoveSpec(id: 33, names: ["ko": "몸통박치기"], type: .normal,
+                                    power: 40, damageClass: .physical, accuracy: 100, pp: 35)
+
     private func teamPickCenter(monCount: Int) -> (center: BattleCenter, mons: [MonState]) {
+        let (store, mons) = teamPickStore(monCount: monCount)
+        return (BattleCenter(companion: store), mons)
+    }
+
+    private func teamPickStore(monCount: Int) -> (store: CompanionStore, mons: [MonState]) {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-\(UUID().uuidString).json")
         let store = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
@@ -1924,7 +1937,29 @@ final class BattleTeamPickTests: XCTestCase {
             MonState(baseID: 20 + index, pathIDs: [20 + index], plannedPathIDs: [20 + index],
                      stageIndex: 0, usedAtStage: 0, rarity: .common, totalForms: 1)
         })
-        return (BattleCenter(companion: store), store.ownedMons)
+        return (store, store.ownedMons)
+    }
+
+    private func snapshot(for mon: MonState, level: Int) -> BattleSnapshot {
+        BattleSnapshot(speciesID: mon.currentID, name: mon.nickname ?? "#\(mon.currentID)",
+                       trainer: "Tester", level: level, nature: mon.nature, isShiny: mon.isShiny,
+                       types: [.normal], base: BattleStats(hp: 50, atk: 50, def: 50, spa: 50, spd: 50, spe: 50),
+                       moves: mon.learnedMoves.isEmpty ? [testMove] : mon.learnedMoves)
+    }
+
+    private func battleCenter(store: CompanionStore,
+                              builder: BattleCenter.MonSnapshotBuilder? = nil) -> BattleCenter {
+        BattleCenter(
+            companion: store,
+            monSnapshotBuilder: builder ?? { [self] mon, level in snapshot(for: mon, level: level) },
+            battleProfileLoader: { id in
+                PokemonBattleProfile(speciesID: id,
+                                     stats: BattleStats(hp: 50, atk: 50, def: 50, spa: 50, spd: 50, spe: 50),
+                                     types: [.normal])
+            },
+            moveSetLoader: { [testMove] _, _, _ in [testMove] },
+            moveDetailLoader: { [testMove] _ in testMove }
+        )
     }
 
     /// 아무것도 고르지 않으면 예전 그대로 소유 목록 앞에서 채운다 — 고르는 화면이 생겼다고
@@ -1982,5 +2017,157 @@ final class BattleTeamPickTests: XCTestCase {
         center.toggleTeamPick(mons[5].id)
 
         XCTAssertEqual(center.battleTeamMons.map(\.baseID), [25, 20, 21])
+    }
+
+    /// 저장돼 있지 않은 선택은 건너뛰고, 같은 UUID 가 중복돼도 한 번만 출전한다.
+    func testDeletedAndDuplicatePicksAreSkippedWithoutLosingOrder() {
+        let (center, mons) = teamPickCenter(monCount: 6)
+        center.rankedTeamSize = 3
+        center.pickedTeam = [UUID(), mons[4].id, mons[4].id]
+
+        XCTAssertEqual(center.battleTeamMons.map(\.id), [mons[4].id, mons[0].id, mons[1].id])
+    }
+
+    /// 중복 방지는 종 번호가 아니라 개체 UUID 기준이다. 같은 종 두 마리는 둘 다 팀에 들 수 있다.
+    func testDistinctMonsOfTheSameSpeciesCanBothBattle() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID()).json")
+        let store = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
+                                   fileURL: url, rng: SeededRNG(seed: 7))
+        let first = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1)
+        let second = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                              rarity: .common, totalForms: 1)
+        store.debugSetBoxedMons([first, second])
+        let center = BattleCenter(companion: store)
+        center.rankedTeamSize = 2
+        center.pickedTeam = [second.id, first.id]
+
+        XCTAssertEqual(center.battleTeamMons.map(\.id), [second.id, first.id])
+    }
+
+    func testSupportedTeamSizesPreserveSelectionAndAutofill() {
+        for size in [1, 3, 6] {
+            let (center, mons) = teamPickCenter(monCount: 6)
+            center.rankedTeamSize = size
+            center.pickedTeam = [mons[5].id, mons[2].id]
+
+            let expected = Array(([mons[5], mons[2]] + mons.filter { ![mons[5].id, mons[2].id].contains($0.id) })
+                .prefix(size)).map(\.id)
+            XCTAssertEqual(center.battleTeamMons.map(\.id), expected, "team size \(size)")
+        }
+    }
+
+    /// 스냅샷 조회가 await 하는 사이 선택이 바뀌어도, 시작할 때 확정한 배열을 끝까지 쓴다.
+    func testSnapshotPreparationFreezesInitialOrder() async {
+        let (store, mons) = teamPickStore(monCount: 6)
+        let reference = BattleCenterReference()
+        var callCount = 0
+        let center = battleCenter(store: store) { [self] mon, level in
+            callCount += 1
+            if callCount == 1 { reference.value?.pickedTeam = [mons[0].id, mons[1].id, mons[2].id] }
+            await Task.yield()
+            return snapshot(for: mon, level: level)
+        }
+        reference.value = center
+        center.rankedTeamSize = 3
+        center.pickedTeam = [mons[4].id, mons[1].id, mons[3].id]
+
+        let snapshots = await center.battleTeamSnapshots(size: 3)
+
+        XCTAssertEqual(snapshots?.map(\.speciesID), [24, 21, 23])
+    }
+
+    /// 계승 기술 복원 뒤 앞 슬롯을 준비하는 동안 동행이 바뀌어도, 뒤 슬롯의 원래 활성 개체는
+    /// UUID 로 고정해 둔 복원본을 사용해야 한다.
+    func testRestoredInheritedMovesSurviveCompanionSwitchDuringSnapshotPreparation() async {
+        let (store, _) = teamPickStore(monCount: 0)
+        await store.hatch(baseID: 20)
+        guard let originalActive = store.state.active else { return XCTFail("active mon missing") }
+        let lead = MonState(baseID: 21, pathIDs: [21], stageIndex: 0, usedAtStage: 0,
+                            rarity: .common, totalForms: 1)
+        store.debugSetBoxedMons([lead])
+        let restoredMove = MoveSpec(id: 98, names: ["ko": "전광석화"], type: .normal,
+                                    power: 40, damageClass: .physical, accuracy: 100, pp: 30)
+        let center = BattleCenter(
+            companion: store,
+            monSnapshotBuilder: { [self] mon, level in
+                if mon.id == lead.id {
+                    store.switchCompanion(to: lead.id)
+                    await Task.yield()
+                }
+                return snapshot(for: mon, level: level)
+            },
+            inheritedMovesPreparer: {
+                store.debugSetActiveLearnedMoves([restoredMove])
+            }
+        )
+        center.pickedTeam = [lead.id]
+
+        let snapshots = await center.battleTeamSnapshots(size: 2)
+
+        XCTAssertEqual(store.activeMonID, lead.id, "첫 슬롯 준비 중 실제 동행이 교체돼야 경합을 재현한다")
+        XCTAssertTrue(store.boxedMons.contains { $0.id == originalActive.id })
+        XCTAssertEqual(snapshots?.map(\.speciesID), [21, 20])
+        XCTAssertEqual(snapshots?[1].moves, [restoredMove])
+    }
+
+    /// CPU 모의전의 실제 상태가 선택 배열을 그대로 받고 0번을 선봉으로 시작한다.
+    func testPracticeBattleUsesPickedSnapshotOrderAndLead() async {
+        let (store, mons) = teamPickStore(monCount: 6)
+        let center = battleCenter(store: store)
+        center.rankedTeamSize = 3
+        center.pickedTeam = [mons[4].id, mons[1].id, mons[3].id]
+
+        center.startRankedPractice()
+        let started = await waitUntil { center.phase == .battling }
+        XCTAssertTrue(started)
+
+        XCTAssertEqual(center.teamPractice?.mine.map(\.snapshot.speciesID), [24, 21, 23])
+        XCTAssertEqual(center.teamPractice?.mySlot.snapshot.speciesID, 24)
+        XCTAssertEqual(center.teamPractice?.myActive, 0)
+    }
+
+    /// 체육관도 동일한 공용 배열을 쓰며 첫 선택이 진입 직후 선봉이다.
+    func testGymBattleUsesPickedSnapshotOrderAndLead() async {
+        let (store, mons) = teamPickStore(monCount: 6)
+        let center = battleCenter(store: store)
+        center.rankedTeamSize = 6
+        center.pickedTeam = [mons[5].id, mons[2].id, mons[4].id]
+
+        center.startGymChallenge(GymLeague.catalog[0])
+        let started = await waitUntil { center.phase == .battling }
+        XCTAssertTrue(started)
+
+        XCTAssertEqual(center.teamPractice?.mine.map(\.snapshot.speciesID), [25, 22, 24])
+        XCTAssertEqual(center.teamPractice?.mySlot.snapshot.speciesID, 25)
+        XCTAssertEqual(center.teamPractice?.myActive, 0)
+    }
+
+    /// 근거리 랭크 스냅샷은 현재 파트너가 아니라 선택 1번의 개체 정보를 Lv.50 으로 쓴다.
+    /// 도전 송신과 수락은 모두 이 메서드를 호출하므로 연속 두 준비에서도 같은 결과인지 확인한다.
+    func testRankedSnapshotUsesFirstPickMetadataForChallengeAndAccept() async {
+        let (store, _) = teamPickStore(monCount: 0)
+        await store.hatch(baseID: 20)
+        guard let activeID = store.activeMonID else { return XCTFail("active mon missing") }
+        var chosen = MonState(baseID: 21, pathIDs: [21], stageIndex: 0, usedAtStage: 0,
+                              rarity: .rare, totalForms: 1, isShiny: true, nature: .adamant,
+                              nickname: "선택한 개체")
+        chosen.learnedMoves = [testMove]
+        store.debugSetBoxedMons([chosen])
+        let center = battleCenter(store: store)
+        center.pickedTeam = [chosen.id]
+
+        let challengeSnapshot = await center.buildMySnapshot(levelOverride: 50)
+        let acceptSnapshot = await center.buildMySnapshot(levelOverride: 50)
+
+        XCTAssertNotEqual(chosen.id, activeID)
+        for result in [challengeSnapshot, acceptSnapshot] {
+            XCTAssertEqual(result?.speciesID, 21)
+            XCTAssertEqual(result?.name, "선택한 개체")
+            XCTAssertEqual(result?.level, 50)
+            XCTAssertEqual(result?.nature, .adamant)
+            XCTAssertEqual(result?.isShiny, true)
+            XCTAssertEqual(result?.moves, [testMove])
+        }
     }
 }

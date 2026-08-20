@@ -58,6 +58,12 @@ struct NetBattleState {
 @MainActor
 @Observable
 final class BattleCenter {
+    typealias MonSnapshotBuilder = @MainActor (MonState, Int) async -> BattleSnapshot?
+    typealias BattleProfileLoader = @MainActor (Int) async -> PokemonBattleProfile?
+    typealias MoveSetLoader = @MainActor (Int, Int, [PokemonType]) async -> [MoveSpec]
+    typealias MoveDetailLoader = @MainActor (String) async -> MoveSpec?
+    typealias InheritedMovesPreparer = @MainActor () async -> Void
+
     nonisolated static let serviceType = "_ptbbattle._tcp"
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
 
@@ -106,6 +112,11 @@ final class BattleCenter {
         side.pp.indices.first { side.canUse(moveAt: $0) } ?? -1
     }
     private let companion: CompanionStore
+    private let monSnapshotBuilder: MonSnapshotBuilder
+    private let battleProfileLoader: BattleProfileLoader
+    private let moveSetLoader: MoveSetLoader
+    private let moveDetailLoader: MoveDetailLoader
+    private let inheritedMovesPreparer: InheritedMovesPreparer
     let multiplayer: MultiplayerRoomCenter
     private var listener: NWListener?
     private var browser: NWBrowser?
@@ -145,15 +156,66 @@ final class BattleCenter {
 
     /// 정해진 머릿수의 출전 팀. 체육관은 관장 팀에 맞춰 3 을 넘기고, 모의전은 화면에서 고른 크기를 쓴다.
     func battleTeamMons(size: Int) -> [MonState] {
-        let picked = pickedTeam.compactMap { id in companion.ownedMons.first { $0.id == id } }
-        let pickedIDs = Set(picked.map(\.id))
-        let rest = companion.ownedMons.filter { !pickedIDs.contains($0.id) }
-        return Array((picked + rest).prefix(size))
+        guard size > 0 else { return [] }
+        let owned = companion.ownedMons
+        let byID = Dictionary(owned.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var included = Set<UUID>()
+        var team: [MonState] = []
+        for id in pickedTeam where included.insert(id).inserted {
+            if let mon = byID[id] { team.append(mon) }
+        }
+        for mon in owned where included.insert(mon.id).inserted { team.append(mon) }
+        return Array(team.prefix(size))
+    }
+
+    /// 출전 순서를 먼저 값으로 확정한 뒤 그 배열만 순차 변환한다. 스탯/기술 조회 중 사용자가
+    /// 선택을 바꾸거나 파트너가 교체돼도 이미 시작한 배틀의 슬롯 순서는 흔들리지 않는다.
+    func battleTeamSnapshots(size: Int, levelOverride: Int? = nil) async -> [BattleSnapshot]? {
+        var preparedMons = battleTeamMons(size: size)
+        guard preparedMons.count == size else { return nil }
+        // 기존 근거리전은 현재 파트너의 진화 전 기술까지 먼저 복원했다. 공용 경로로 옮긴 뒤에도
+        // 활성 개체가 팀에 있으면 그 동작을 보존하되, UUID/슬롯 순서는 위에서 고정한 배열을 쓴다.
+        if let activeID = companion.activeMonID,
+           let activeIndex = preparedMons.firstIndex(where: { $0.id == activeID && $0.learnedMoves.isEmpty }) {
+            await inheritedMovesPreparer()
+            // 다음 슬롯의 스냅샷을 기다리는 동안 동행이 바뀔 수 있다. 복원 직후 UUID 로 다시 찾은
+            // 값을 배열에 고정해야, 원래 활성 개체가 박스로 이동해도 복원된 기술이 유실되지 않는다.
+            if let refreshed = companion.ownedMons.first(where: { $0.id == activeID }) {
+                preparedMons[activeIndex] = refreshed
+            }
+        }
+        var snapshots: [BattleSnapshot] = []
+        snapshots.reserveCapacity(preparedMons.count)
+        for mon in preparedMons {
+            guard let snapshot = await monSnapshotBuilder(mon, levelOverride ?? mon.level) else { return nil }
+            snapshots.append(snapshot)
+        }
+        return snapshots
     }
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
 
-    init(companion: CompanionStore) {
+    init(companion: CompanionStore,
+         monSnapshotBuilder: MonSnapshotBuilder? = nil,
+         battleProfileLoader: BattleProfileLoader? = nil,
+         moveSetLoader: MoveSetLoader? = nil,
+         moveDetailLoader: MoveDetailLoader? = nil,
+         inheritedMovesPreparer: InheritedMovesPreparer? = nil) {
         self.companion = companion
+        self.monSnapshotBuilder = monSnapshotBuilder ?? { mon, level in
+            await companion.battleSnapshot(for: mon, level: level)
+        }
+        self.battleProfileLoader = battleProfileLoader ?? { speciesID in
+            try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID)
+        }
+        self.moveSetLoader = moveSetLoader ?? { speciesID, level, types in
+            await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: types)
+        }
+        self.moveDetailLoader = moveDetailLoader ?? { name in
+            try? await PokeAPIClient.shared.moveDetail(named: name)
+        }
+        self.inheritedMovesPreparer = inheritedMovesPreparer ?? {
+            await companion.ensureInheritedMoves()
+        }
         self.multiplayer = MultiplayerRoomCenter(companion: companion)
         // 표시 이름 우선순위: 사용자가 정한 트레이너 이름 → 계정 풀네임 → 호스트명 → "Trainer".
         let trainer = companion.trainerName.trimmingCharacters(in: .whitespaces)
@@ -307,20 +369,16 @@ final class BattleCenter {
             // 평준화할 이유가 없고, 평준화하면 갓 부화한 개체와 몇 주 키운 개체가 같은 전력이 되어
             // 정작 키운 보람이 배틀에 드러나지 않는다. 랭크가 걸린 맞짱은 그대로 50 고정이다
             // (`buildMySnapshot(levelOverride: 50)`).
-            var myTeam: [BattleSnapshot] = []
-            for mon in battleTeamMons {
-                if let snapshot = await companion.battleSnapshot(for: mon, level: mon.level) { myTeam.append(snapshot) }
-            }
-            guard myTeam.count == rankedTeamSize else {
+            guard let myTeam = await battleTeamSnapshots(size: rankedTeamSize) else {
                 phase = .ready; lastError = l.battleStatsFailed; return
             }
             // CPU 는 마주 서는 슬롯과 같은 레벨로 세운다 — 내 1번이 Lv.12 면 상대 1번도 Lv.12 다.
             // 고정 레벨로 두면 내 팀이 낮을 땐 이길 수 없고, 높을 땐 연습이 되지 않는다.
             var cpuTeam: [BattleSnapshot] = []
             for (slot, opponentID) in Array([25, 59, 94, 130, 143, 149].shuffled().prefix(rankedTeamSize)).enumerated() {
-                guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: opponentID) else { continue }
+                guard let profile = await battleProfileLoader(opponentID) else { continue }
                 let level = myTeam.indices.contains(slot) ? myTeam[slot].level : 50
-                let moves = await PokeAPIClient.shared.moveSet(speciesID: opponentID, level: level, types: profile.types)
+                let moves = await moveSetLoader(opponentID, level, profile.types)
                 cpuTeam.append(BattleSnapshot(speciesID: opponentID, name: "CPU #\(opponentID)", trainer: "CPU",
                                               level: level, nature: nil, isShiny: false, types: profile.types,
                                               base: profile.stats, moves: moves))
@@ -347,27 +405,20 @@ final class BattleCenter {
         }
         phase = .preparing
         Task {
-            var myTeam: [BattleSnapshot] = []
-            for mon in battleTeamMons(size: GymLeague.teamSize) {
-                if let snapshot = await companion.battleSnapshot(for: mon, level: mon.level) {
-                    myTeam.append(snapshot)
-                }
-            }
-            guard myTeam.count == GymLeague.teamSize else {
+            guard let myTeam = await battleTeamSnapshots(size: GymLeague.teamSize) else {
                 phase = .ready; lastError = l.battleStatsFailed; return
             }
             var leaderTeam: [BattleSnapshot] = []
             for (slot, speciesID) in gym.teamSpeciesIDs.enumerated() {
-                guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) else { continue }
+                guard let profile = await battleProfileLoader(speciesID) else { continue }
                 // 카탈로그가 정한 기술을 그대로 세운다. 이름이 틀렸거나 못 받아오면 그 종만
                 // 자동 선발로 돌아간다 — 관장 하나 때문에 체육관 전체가 막히지는 않는다.
                 var moves: [MoveSpec] = []
                 for name in gym.teamMoveNames.indices.contains(slot) ? gym.teamMoveNames[slot] : [] {
-                    if let spec = try? await PokeAPIClient.shared.moveDetail(named: name) { moves.append(spec) }
+                    if let spec = await moveDetailLoader(name) { moves.append(spec) }
                 }
                 if moves.isEmpty {
-                    moves = await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: gym.level,
-                                                               types: profile.types)
+                    moves = await moveSetLoader(speciesID, gym.level, profile.types)
                 }
                 let name = await companion.resolveSpeciesName(speciesID)
                 leaderTeam.append(BattleSnapshot(speciesID: speciesID, name: name,
@@ -870,23 +921,14 @@ final class BattleCenter {
 
     // MARK: 내 스냅샷 (무브셋 포함)
 
-    private func buildMySnapshot(levelOverride: Int? = nil) async -> BattleSnapshot? {
-        await companion.ensureInheritedMoves()
-        guard let active = companion.state.active, let speciesID = companion.currentSpeciesID else { return nil }
-        guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) else { return nil }
-        let level = levelOverride ?? active.level
-        let moves = active.learnedMoves.isEmpty
-            ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
-            : active.learnedMoves
-        return BattleSnapshot(speciesID: speciesID,
-                              name: companion.displayName,
-                              trainer: trainerDisplayName,
-                              level: level,
-                              nature: active.nature,
-                              isShiny: active.isShiny,
-                              types: profile.types,
-                              base: profile.stats,
-                              moves: moves)
+    func buildMySnapshot(levelOverride: Int? = nil) async -> BattleSnapshot? {
+        guard var snapshot = await battleTeamSnapshots(size: 1, levelOverride: levelOverride)?.first else {
+            return nil
+        }
+        // 근거리 랭크전은 기존처럼 비어 있지 않은 표시 이름을 보낸다. 공용 포켓몬 스냅샷은
+        // 연습전에서도 써서 저장된 trainerName 그대로 두므로, wire 로 내보내는 이 자리에서만 보정한다.
+        snapshot.trainer = trainerDisplayName
+        return snapshot
     }
 
     // MARK: 알림
