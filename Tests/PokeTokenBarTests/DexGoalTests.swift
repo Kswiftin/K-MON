@@ -307,19 +307,59 @@ final class DexGoalGrantTests: XCTestCase {
 
 final class OneShotRewardSignatureTests: XCTestCase {
 
-    /// `DexEntry.types` 는 무결성 canonical 에 들어가지 않는다(`dex` 줄은 baseID:finalID:rarity 뿐).
-    /// 들어가면 백필이 저장하는 순간 기존 서명이 전부 무효가 되어 정상 세이브가 조작 판정된다.
-    /// 해시가 아니라 **canonical 문자열**을 비교한다 — 해시끼리 비교하면 양쪽이 같이 바뀌어도 통과한다.
-    func testDexEntryTypesDoNotAffectTheIntegritySignature() {
-        var withoutTypes = CompanionState()
-        withoutTypes.dex = [DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3],
-                                     rarity: .common, caughtAt: nil)]
-        var withTypes = withoutTypes
-        withTypes.dex[0].types = [.grass, .poison]
+    /// 도감 목표의 멱등 가드는 **진행도의 단조성**뿐이다(수령 플래그가 없다 — `DexGoals` 주석).
+    /// 그래서 진행도가 읽는 `DexEntry` 필드가 서명 밖에 있으면, 그 값을 내려 적는 것만으로
+    /// 진행도가 되감기고 다음 졸업이 같은 보상을 재지급한다.
+    private func signedDex(_ entry: DexEntry) -> CompanionState {
+        var state = CompanionState()
+        state.dex = [entry]
+        let signed = SaveTransfer.signed(state)
+        XCTAssertFalse(SaveTransfer.isTampered(signed), "테스트 전제: 서명 직후는 정상이어야 한다")
+        return signed
+    }
 
-        XCTAssertEqual(SaveTransfer.canonicalString(withTypes),
-                       SaveTransfer.canonicalString(withoutTypes))
-        XCTAssertFalse(SaveTransfer.isTampered(SaveTransfer.signed(withTypes)))
+    /// 이로치 플래그를 내리면 이로치 진행도가 줄어 `shiny3` 이 다시 지급 가능해진다.
+    func testLoweringADexEntryShinyFlagAfterSigningIsDetected() {
+        var signed = signedDex(DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3],
+                                        rarity: .common, caughtAt: nil, isShiny: true))
+        signed.dex[0].isShiny = false
+        XCTAssertTrue(SaveTransfer.isTampered(signed),
+                      "이로치 진행도를 내려 적으면 shiny 목표를 다시 받을 수 있다")
+    }
+
+    /// 라인을 잘라내면 종 진행도가 줄어 `species50` 이 다시 지급 가능해진다.
+    func testShrinkingADexEntryChainAfterSigningIsDetected() {
+        var signed = signedDex(DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3],
+                                        rarity: .common, caughtAt: nil))
+        signed.dex[0].chainOrder = [1]
+        XCTAssertTrue(SaveTransfer.isTampered(signed))
+    }
+
+    /// 타입을 지우면 타입 커버리지가 줄어 `types18` 이 다시 지급 가능해진다.
+    ///
+    /// 이 필드는 한때 "백필이 저장하는 순간 기존 서명이 무효가 된다" 는 이유로 서명 밖에 두었지만,
+    /// 백필도 `save()` 를 지나며 재서명되므로 그 근거는 성립하지 않는다. 실제 제약은
+    /// "이미 배포된 필드" 규칙이고 `integrityVersion` 7 은 아직 미배포라 지금이 넣을 수 있는 창이다.
+    func testDeletingDexEntryTypesAfterSigningIsDetected() {
+        var signed = signedDex(DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3],
+                                        rarity: .common, caughtAt: nil, types: [.grass, .poison]))
+        signed.dex[0].types = nil
+        XCTAssertTrue(SaveTransfer.isTampered(signed))
+    }
+
+    /// 세그먼트에 담기는 건 **숫자 세 개**(종·타입·이로치)여야 한다 — 목표 id 를 담으면 카탈로그
+    /// 목표값 조정(`species50` → `40`)이 정상 세이브를 전부 조작 판정으로 만든다(밸런스 손잡이가
+    /// 세이브 파괴 손잡이가 된다). 해시가 아니라 canonical 문자열을 본다 — 해시끼리 비교하면
+    /// 양쪽이 같이 바뀌어도 통과한다.
+    func testTheDexProgressSegmentCarriesCountsNotGoalIDs() {
+        var state = CompanionState()
+        state.dex = [DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common,
+                              caughtAt: nil, isShiny: true, types: [.grass, .poison])]
+
+        let canonical = SaveTransfer.canonicalString(state)
+
+        XCTAssertTrue(canonical.contains("|dg3|2|1"), "종 3·타입 2·이로치 1 — 실제: \(canonical)")
+        XCTAssertFalse(canonical.contains("species10"), "목표 id 가 들어가면 카탈로그 조정이 서명을 깬다")
     }
 
     /// 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`). 서명 밖에 있으면
@@ -358,6 +398,7 @@ final class OneShotRewardSignatureTests: XCTestCase {
         let canonical = SaveTransfer.canonicalString(CompanionState())
         XCTAssertFalse(canonical.contains("|gb"))
         XCTAssertFalse(canonical.contains("|shc"))
+        XCTAssertFalse(canonical.contains("|dg"), "도감이 비면 진행도 세그먼트도 붙지 않는다")
     }
 
     /// **조건부 append 만으로는 부족한 경우** — `gymBadges`·`shinyEggCharges` 는 이전 배포에도 있던
