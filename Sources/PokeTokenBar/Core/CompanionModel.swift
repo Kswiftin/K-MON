@@ -631,6 +631,9 @@ struct CompanionState: Codable, Sendable {
     /// 딴 체육관 배지(`Gym.id`). 기록이므로 한 번 들어가면 빠지지 않는다 —
     /// 재도전은 연습이고, 보상은 첫 승리에만 나간다.
     var gymBadges: Set<String> = []
+    /// 남은 이로치 확정 부화 횟수. 부화 한 번에 하나씩 쓴다.
+    /// ★영속이어야 한다 — `eggTier` 와 같은 이유로, 받은 시점과 쓰는 시점이 떨어져 있다.
+    var shinyEggCharges = 0
     var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
@@ -692,6 +695,7 @@ struct CompanionState: Codable, Sendable {
         dex                = c.lenient([Lossy<DexEntry>].self, forKey: .dex, default: []).compactMap(\.value)
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])
         gymBadges          = c.lenient(Set<String>.self, forKey: .gymBadges, default: [])
+        shinyEggCharges    = c.lenient(Int.self, forKey: .shinyEggCharges, default: 0)
         language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
         care               = c.lenient(PetCareState.self, forKey: .care, default: PetCareState())

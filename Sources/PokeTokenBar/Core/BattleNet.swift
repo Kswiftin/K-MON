@@ -117,8 +117,8 @@ final class BattleCenter {
     private(set) var teamPractice: TeamPracticeBattle?
     /// 지금 도전 중인 체육관. 모의전과 같은 배틀을 쓰므로 이 값이 둘을 가른다.
     private(set) var activeGym: Gym?
-    /// 방금 승리로 받은 별의조각 — 결과 화면이 보여준다. 재도전이면 0 이다.
-    private(set) var lastGymReward = 0
+    /// 방금 승리로 받은 보상 — 결과 화면이 보여준다. 재도전이면 nil 이다.
+    private(set) var lastGymReward: GymReward?
     var rankedTeamSize = 1
 
     /// 모의전에 데려갈 개체 — **고른 순서가 곧 출전 순서**다(첫 번째가 선봉).
@@ -380,7 +380,7 @@ final class BattleCenter {
             }
             isPracticeBattle = true
             activeGym = gym
-            lastGymReward = 0
+            lastGymReward = nil
             teamPractice = TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
                                               opponents: leaderTeam.map(BattleSide.init),
                                               rng: SplitMix64(seed: UInt64.random(in: .min ... .max)))
@@ -401,7 +401,7 @@ final class BattleCenter {
         guard let result = practice.result else { return }
         // 배지는 **`.win` 에서만** 나간다 — 무승부는 이긴 판이 아니다.
         // 재도전이면 `recordGymVictory` 가 0 을 돌려준다 — 배지가 이미 있으면 아무것도 지급하지 않는다.
-        lastGymReward = (result == .win && activeGym != nil) ? companion.recordGymVictory(activeGym!) : 0
+        lastGymReward = (result == .win && activeGym != nil) ? companion.recordGymVictory(activeGym!) : nil
         // 무승부는 `iWon: nil` — 결과 화면이 `l.battleDraw` 를 그린다(`BattleView.finishText`).
         phase = .finished(iWon: result == .draw ? nil : result == .win, byForfeit: false)
     }
@@ -577,7 +577,7 @@ final class BattleCenter {
         if case .finished = phase { phase = .ready }
         isPracticeBattle = false
         activeGym = nil
-        lastGymReward = 0
+        lastGymReward = nil
         // 정산 표시값도 여기서 비운다 — 결과 화면(`finishedView`)이 이 둘을 그대로 그리는데, 다음 배틀이
         // 랭크전이 아니면(체육관·모의전) 아무도 다시 채우지 않아 체육관 결과에 직전 랭크전의
         // "−⭐ 5,000 / −25 LP"가 그대로 남는다.
