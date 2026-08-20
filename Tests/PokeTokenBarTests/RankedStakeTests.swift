@@ -19,13 +19,17 @@ final class RankedStakeTests: XCTestCase {
                               fileURL: fileURL, rng: SeededRNG(seed: 7))
     }
 
-    /// 같은 세이브 파일을 다시 열어 "앱을 껐다 켠" 상황을 만든다.
-    private func relaunch(_ store: CompanionStore) -> CompanionStore { makeStore(at: store.saveFileURL) }
+    /// 세이브 파일 경로 — "앱을 껐다 켠" 상황은 같은 경로로 스토어를 다시 여는 것이다.
+    /// 경로는 테스트가 들고 있는다(프로덕션에 테스트용 접근자를 만들지 않는다).
+    private func tempSaveURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-rank-\(UUID().uuidString).json")
+    }
 
     /// 내 티어가 상대보다 높아야 패배가 LP 를 깎는다(`BattleRank.apply` 의 조건).
     /// 판돈 0 짜리 승리를 쌓아 티어만 올린다 — 지갑은 그대로 0 이다.
-    private func storeAtBronze() -> CompanionStore {
-        let store = makeStore()
+    private func storeAtBronze(at url: URL? = nil) -> CompanionStore {
+        let store = makeStore(at: url)
         while store.battleRank.tier == .iron {
             store.settleRankedBrawl(won: true, opponent: BattleRank(points: 0))
         }
@@ -103,17 +107,18 @@ final class RankedStakeTests: XCTestCase {
     /// 크래시와 고의 종료는 로컬에서 구분할 수 없으므로 랭크 게임의 통상 규칙을 따른다 —
     /// 환급으로 두면 "지고 있으면 종료"가 다시 최적해가 된다.
     func testAbandonedRankedBattleIsSettledAsALossOnNextLaunch() {
-        let store = storeAtBronze()
+        let url = tempSaveURL()
+        let store = storeAtBronze(at: url)
         store.creditStarPieces(9_000)
         store.escrowRankedBattle(stake: 5_000, opponent: BattleRank(points: 0))
         let pointsBefore = store.battleRank.points
 
-        let next = relaunch(store)          // 정산 없이 앱이 죽었다
+        let next = makeStore(at: url)       // 정산 없이 앱이 죽었다 → 다시 켠다
 
         XCTAssertEqual(next.availableTokens, 4_000, "에스크로는 돌아오지 않는다")
         XCTAssertLessThan(next.battleRank.points, pointsBefore, "미결 배틀은 패배로 정산된다")
         XCTAssertFalse(next.hasPendingRankedBattle, "한 번만 정산된다")
-        XCTAssertEqual(relaunch(next).battleRank.points, next.battleRank.points,
+        XCTAssertEqual(makeStore(at: url).battleRank.points, next.battleRank.points,
                        "다음 실행에서 또 깎이지 않는다")
     }
 
@@ -131,13 +136,13 @@ final class RankedStakeTests: XCTestCase {
 
     /// 판돈 0(같은 티어끼리)이어도 에스크로는 잡힌다 — 종료 이탈의 **LP** 대가가 걸려 있다.
     func testAZeroStakeBattleStillRecordsAnEscrowSoLeavingCostsRank() {
-        let store = storeAtBronze()
+        let url = tempSaveURL()
+        let store = storeAtBronze(at: url)
         let pointsBefore = store.battleRank.points
 
         XCTAssertTrue(store.escrowRankedBattle(stake: 0, opponent: BattleRank(points: 0)))
-        let next = relaunch(store)
 
-        XCTAssertLessThan(next.battleRank.points, pointsBefore)
+        XCTAssertLessThan(makeStore(at: url).battleRank.points, pointsBefore)
     }
 
     /// 1v1 경로가 실제로 에스크로를 지나는지 — `beginBattle` 은 private 이고 `NWConnection` 이

@@ -90,6 +90,8 @@ final class CompanionStore {
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
         reconcileStoredEggDates()
+        // 정산 없이 앱이 죽은 랭크전은 여기서 패배로 마감한다(에스크로는 이미 빠져나가 있다).
+        settleAbandonedRankedBattleIfNeeded()
         // 앱이 종료된 사이 끝난 집중 모험은 기동 즉시 정산한다. FocusTimer 는 세션 메모리 상태라
         // 재실행하면 .idle 로 돌아오지만 모험은 디스크에 남으므로, 여기서 비우지 않으면 시작 버튼이
         // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
@@ -1118,23 +1120,56 @@ final class CompanionStore {
         BattleRankProfile(rank: state.battleRank, stardust: availableTokens)
     }
 
-    /// 1:1 맞짱 랭크전 정산. 판돈은 계산된 고정액만 이동한다.
+    var hasPendingRankedBattle: Bool { state.pendingRanked != nil }
+
+    /// 랭크전 개시 — 판돈을 **지금** 지갑에서 뺀다. 잔액이 모자라면 아무것도 하지 않고 false
+    /// (호출부가 배틀을 시작하지 않는다). 판돈 0 이어도 기록은 남긴다 — 이탈의 LP 대가가 걸려 있다.
+    ///
+    /// 정산이 배틀 끝에만 있던 때는 지고 있을 때 앱을 종료하면 내 쪽 정산이 아예 돌지 않아 판돈을
+    /// 안 냈다. 개시 시점은 앱이 확실히 살아 있는 순간이라, 여기로 옮기면 그 회피가 사라진다.
+    @discardableResult
+    func escrowRankedBattle(stake: Int, opponent: BattleRank) -> Bool {
+        guard state.pendingRanked == nil else { return false }   // 이중 차감 차단
+        let amount = max(0, stake)
+        guard availableTokens >= amount else { return false }
+        state.starPieces -= amount
+        state.pendingRanked = PendingRankedBattle(stake: amount, opponent: opponent)
+        save()
+        return true
+    }
+
+    /// 1:1 맞짱 랭크전 정산. 판돈은 개시 때 잡아 둔 에스크로에서만 움직인다 —
+    /// 이기면 내 몫이 돌아오고 상대 몫이 더해져 순증은 판돈 1배, 지면 이미 낸 것으로 끝난다.
+    /// 에스크로가 없으면(구버전 세이브에서 이어진 배틀) 판돈 이동 없이 LP 만 반영한다.
     ///
     /// **판돈(화폐)과 LP(실력 지표)는 다른 자원이다.** 예전엔 판돈을 못 내면 그 자리에서
-    /// `return 0` 해서 LP 차감까지 건너뛰었다 — 지갑을 판돈 아래로 비워 두면 랭크전에서 절대
-    /// LP 를 잃지 않는 무손실 랭크가 됐다. 빚은 지지 않지만(못 내면 안 낸다) 패배는 패배다.
+    /// `return 0` 해서 LP 차감까지 건너뛰었고, 지갑을 비워 두면 무손실 랭크가 됐다.
     @discardableResult
-    func settleRankedBrawl(won: Bool, opponent: BattleRank, stake: Int) -> Int {
-        if won {
-            state.starPieces += max(0, stake)
-        } else if stake > 0, availableTokens >= stake {
-            state.starPieces -= stake
-        } else if stake > 0 {
-            AppLog.write("ranked stake unpaid: balance \(availableTokens) short of \(stake)")
-        }
+    func settleRankedBrawl(won: Bool, opponent: BattleRank) -> Int {
+        let escrowed = state.pendingRanked?.stake ?? 0
+        state.pendingRanked = nil
+        if won { state.starPieces += escrowed * 2 }
         let delta = state.battleRank.apply(win: won, opponent: opponent)
         save()
         return delta
+    }
+
+    /// 무효(끊김 동률·무승부) — 에스크로만 돌려주고 랭크는 건드리지 않는다.
+    func refundRankedEscrow() {
+        guard let pending = state.pendingRanked else { return }
+        state.pendingRanked = nil
+        state.starPieces += max(0, pending.stake)
+        save()
+    }
+
+    /// 정산되지 않은 랭크전을 패배로 마감한다 — 기동 때 한 번 돈다.
+    ///
+    /// 크래시와 고의 종료는 로컬에서 구분할 수 없다. 환급으로 두면 "지고 있으면 앱을 끈다"가
+    /// 다시 최적해가 되므로, 랭크 게임의 통상 규칙대로 이탈은 패배로 본다.
+    private func settleAbandonedRankedBattleIfNeeded() {
+        guard let pending = state.pendingRanked else { return }
+        let delta = settleRankedBrawl(won: false, opponent: pending.opponent)
+        AppLog.write("abandoned ranked battle settled as a loss: stake \(pending.stake), \(delta) LP")
     }
 
     /// 관전자 베팅 에스크로 — 판돈을 지갑에서 뺀다. 잔액이 모자라거나 금액이 0 이하면 no-op(false).

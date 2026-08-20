@@ -580,6 +580,15 @@ final class BattleCenter {
         } else {
             rankedStake = 0
         }
+        // 판돈은 **여기서** 빠져나간다 — 정산을 배틀 끝에 두면 앱을 끄는 것으로 회피할 수 있었다.
+        // 판돈 0 이어도 기록은 남는다(이탈의 LP 대가). 못 내면 배틀을 시작하지 않는다 —
+        // 앞단(`acceptIncoming`·`handle(.accept)`)이 이미 잔액을 확인하므로 여기 걸리는 건 이상 상황이다.
+        if !isPracticeBattle, let opponentRankProfile,
+           !companion.escrowRankedBattle(stake: rankedStake, opponent: opponentRankProfile.rank) {
+            phase = .ready
+            lastError = "랭크전 판돈이 부족합니다."
+            return
+        }
         battle = NetBattleState(iAmA: iAmA, me: BattleSide(my), opp: BattleSide(opp),
                                 rng: SplitMix64(seed: seed))
         phase = .battling
@@ -647,7 +656,9 @@ final class BattleCenter {
             dropConnection()
             cancelTurnTimeout()
             phase = .finished(iWon: iWon, byForfeit: false)
-            if let iWon, !isPracticeBattle { settleRankedBrawlIfNeeded(won: iWon) }
+            if !isPracticeBattle {
+                if let iWon { settleRankedBrawlIfNeeded(won: iWon) } else { refundRankedBrawlIfNeeded() }
+            }
         } else {
             scheduleTurnTimeout()   // 다음 턴의 마감 — 멀티의 `finishRoundIfReady` 와 같은 자리다
         }
@@ -755,7 +766,7 @@ final class BattleCenter {
             // 아니라 `handle(.forfeit)` 이 처리한다 — 그건 상대가 스스로 진 것이므로 그대로 몰수승이다.
             let iWon = battle.flatMap { BattleEngine.disconnectOutcome(me: $0.me, opp: $0.opp) }
             phase = .finished(iWon: iWon, byForfeit: true)
-            if let iWon { settleRankedBrawlIfNeeded(won: iWon) }
+            if let iWon { settleRankedBrawlIfNeeded(won: iWon) } else { refundRankedBrawlIfNeeded() }
         case .challenging, .incoming, .preparing:
             phase = .ready
             lastError = l.battleConnectionLost
@@ -776,7 +787,15 @@ final class BattleCenter {
     private func settleRankedBrawlIfNeeded(won: Bool) {
         guard battle != nil, !didSettleRankedBrawl, let opponent = opponentRankProfile else { return }
         didSettleRankedBrawl = true
-        lastRankDelta = companion.settleRankedBrawl(won: won, opponent: opponent.rank, stake: rankedStake)
+        lastRankDelta = companion.settleRankedBrawl(won: won, opponent: opponent.rank)
+    }
+
+    /// 무효로 끝난 랭크전 — 에스크로를 돌려주고 랭크는 그대로 둔다. 승패 정산과 같은 자리에서
+    /// 한 번만 돈다(`didSettleRankedBrawl`).
+    private func refundRankedBrawlIfNeeded() {
+        guard battle != nil, !didSettleRankedBrawl, !isPracticeBattle else { return }
+        didSettleRankedBrawl = true
+        companion.refundRankedEscrow()
     }
 
     // MARK: 전송/수신 (길이 프리픽스 프레이밍)
