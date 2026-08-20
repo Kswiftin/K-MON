@@ -17,6 +17,10 @@ permissions:
 jobs:
   build-test:
     name: build-test
+    # Pull requests only. A squash-merged commit is the code this job already
+    # checked on the PR, and macOS minutes bill at 10x against a private repo —
+    # re-running it on main spent the month's allowance in five days.
+    if: github.event_name == 'pull_request'
     # macos-15 ships Xcode 16 / Swift 6, which Package.swift requires
     # (swift-tools-version: 6.0, platform macOS 14).
     runs-on: macos-15
@@ -37,6 +41,8 @@ jobs:
 
   secret-scan:
     name: secret-scan
+    # Same reason as build-test: the PR range already covers what lands on main.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -60,8 +66,14 @@ jobs:
 
   publish-development:
     name: publish-development
+    # Still runs on every push to main — this is what keeps the rolling
+    # development pre-release current, and it is not a duplicate of anything.
+    #
+    # `needs` is gone with the jobs it named: they no longer run on push, and a
+    # skipped dependency skips its dependents, which would have silently stopped
+    # publishing. What lands on main arrived through a PR that ran both, and a
+    # tagged release re-runs the gate anyway (release.yml).
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-test, secret-scan]
     runs-on: macos-15
     permissions:
       contents: write
