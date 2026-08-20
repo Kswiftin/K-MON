@@ -572,6 +572,13 @@ private extension KeyedDecodingContainer {
     }
 }
 
+/// 개시 시점에 잡아 둔 랭크전 판돈. 상대 랭크를 함께 적는 건 앱이 죽은 뒤의 패배 정산에도
+/// LP 계산(`BattleRank.apply(win:opponent:)`)에 상대 티어가 필요하기 때문이다.
+struct PendingRankedBattle: Codable, Sendable, Equatable {
+    var stake: Int
+    var opponent: BattleRank
+}
+
 /// 영속 상태(Application Support JSON). 포켓몬 전환 — 이전 커스텀 캐릭터 상태는 폐기(새로 시작).
 struct CompanionState: Codable, Sendable {
     /// 배포 단위 강제 초기화 버전. 기존 세이브에는 키가 없어서 0으로 읽히며, 현재 버전보다 낮으면
@@ -632,6 +639,10 @@ struct CompanionState: Codable, Sendable {
     var adventureHistory: [AdventureRecord] = []
     var battleHistory: [BattleRecord] = []
     var battleRank = BattleRank()
+    /// 진행 중인 랭크전의 에스크로 — 개시 때 지갑에서 빠져나간 판돈과 상대 랭크를 적어 둔다.
+    /// 정산이 배틀 **끝**에만 있던 때는 지고 있을 때 앱을 종료하면 판돈을 안 냈다(상대는 승리
+    /// 처리로 받으니 총량이 늘었다). 이 값이 남아 있는 채로 앱이 뜨면 그 배틀은 패배로 정산된다.
+    var pendingRanked: PendingRankedBattle?
     // 트레이너 성장 — 졸업으로 초기화되지 않는 계정 단위 누적. 파트너가 바뀌어도 이어진다.
     var trainer = TrainerLevel()
     // 일간·주간 미션 진행도. 갱신은 타이머가 아니라 날짜/주 키 비교로 일어난다(MissionBoard 참고).
@@ -688,6 +699,7 @@ struct CompanionState: Codable, Sendable {
         adventureHistory   = c.lenient([Lossy<AdventureRecord>].self, forKey: .adventureHistory, default: []).compactMap(\.value)
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)
         battleRank         = c.lenient(BattleRank.self, forKey: .battleRank, default: BattleRank())
+        pendingRanked      = c.lenientOptional(PendingRankedBattle.self, forKey: .pendingRanked)
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
         missions           = c.lenient(MissionBoard.self, forKey: .missions, default: MissionBoard())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)

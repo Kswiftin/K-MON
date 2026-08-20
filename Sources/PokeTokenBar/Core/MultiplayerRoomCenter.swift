@@ -24,7 +24,6 @@ final class MultiplayerRoomCenter {
     private(set) var combatEvents: [BattleEvent] = []
     private(set) var hasSubmittedAction = false
     private(set) var turnEndsAt: Date?
-    private(set) var battleReward: Int?
     private(set) var lastError: String?
     private(set) var pokeathlonRace: PokeathlonRace?
     private(set) var pokeathlonPool = PokeathlonPool()
@@ -158,15 +157,19 @@ final class MultiplayerRoomCenter {
         }
     }
 
+    /// 경기가 시작된 뒤엔 로비 편성을 건드리지 않는다 — `lobby.mode` 는 편성에서 파생되므로
+    /// 배틀 중에 바뀌면 승패 판정의 근거가 흔들린다(호스트 자기 자신도 예외가 아니다).
+    var isInPlay: Bool { phase == .battling || phase == .pokeathlon }
+
     func toggleReady() {
-        guard let me = myParticipant else { return }
+        guard let me = myParticipant, !isInPlay else { return }
         if isHost {
             lobby?.setReady(!me.isReady, participantID: myID); broadcastLobby()
         } else if let hostConnection { send(.ready(participantID: myID, ready: !me.isReady), over: hostConnection) }
     }
 
     func selectTeam(_ team: BattleTeam) {
-        guard lobby?.mode == .teams || team != .solo else { return }
+        guard !isInPlay, lobby?.mode == .teams || team != .solo else { return }
         if isHost { lobby?.setTeam(team, participantID: myID); broadcastLobby() }
         else if let hostConnection { send(.team(participantID: myID, team: team), over: hostConnection) }
     }
@@ -184,7 +187,7 @@ final class MultiplayerRoomCenter {
             battle = try MultiplayerBattle(fighters: fighters, mode: lobby.mode, seed: seed)
             combatFighters = fighters; combatRound = 1; combatEvents = []
             pendingActions.removeAll(); hasSubmittedAction = false; phase = .battling
-            rewardedBattle = false; battleReward = nil; scheduleTurnTimeout()
+            rewardedBattle = false; scheduleTurnTimeout()
             let message = MultiplayerWireMessage.start(seed: seed, fighters: fighters, mode: lobby.mode)
             for connection in guestConnections.values { send(message, over: connection) }
         } catch { lastError = error.localizedDescription }
@@ -313,14 +316,32 @@ final class MultiplayerRoomCenter {
         else if let hostConnection { send(.action(round: combatRound, action: action), over: hostConnection) }
     }
 
-    var isBattleFinished: Bool {
-        guard !combatFighters.isEmpty else { return false }
-        let living = combatFighters.filter(\.isAlive)
-        let mode = lobby?.mode ?? (Set(living.map(\.team)).contains(.solo) ? .freeForAll : .teams)
-        return mode == .freeForAll ? living.count <= 1 : Set(living.map(\.team)).count <= 1
+    /// 판정에 쓸 모드 — **배틀이 시작될 때 정해진 모드**다. 호스트·게스트·관전자 모두 `.start` 시점의
+    /// `battle` 을 들고 있어 같은 답이 나온다.
+    ///
+    /// `lobby.mode` 를 먼저 보면 안 된다 — 팀 편성에서 파생되는 **가변값**이라(`runners` 가 전부
+    /// `solo` 인가) 배틀 중에 바뀔 수 있고, 바뀌면 승패 판정 자체가 흔들린다. 개인전 도중 누군가 팀을
+    /// `red` 로 바꾸면 남은 `solo` 들이 "한 팀"으로 묶여 여럿이 살아 있는데 배틀이 끝난 것으로 판정되고
+    /// 생존자 전원이 승리가 된다. 편성은 이제 경기 중엔 바뀌지 않지만(`isInPlay` 게이트) 판정의 근거는
+    /// 애초에 불변인 쪽이어야 한다.
+    ///
+    /// 화면도 이 값을 쓴다 — 팀 배지·공격 대상 필터가 `lobby?.mode` 를 따로 보면 판정과 갈라진다.
+    /// 폴백은 `battle` 을 못 만든 경우의 최후 수단이다(그 상태면 `combatFighters` 도 비어 있어
+    /// 판정 자체가 성립하지 않는다).
+    var combatMode: MultiplayerBattleMode {
+        battle?.mode ?? lobby?.mode ?? .freeForAll
     }
 
-    var didIWin: Bool { isBattleFinished && combatFighters.first(where: { $0.id == myID })?.isAlive == true }
+    var isBattleFinished: Bool {
+        MultiplayerBattle.isFinished(fighters: combatFighters, mode: combatMode)
+    }
+
+    /// 내 승패. `nil` 은 "줄 결과가 없다" — 아직 안 끝났거나 전투원이 아니다(관전자).
+    /// 팀전은 내 생존이 아니라 **내 팀**이 이겼는지고, 동시 전멸은 `.draw` 다. 화면이 이 네 갈래를
+    /// 그대로 쓴다 — `Bool` 하나로 갈랐을 때는 관전자와 무승부가 "패배"로 표시됐다.
+    var myOutcome: BattleOutcome? {
+        MultiplayerBattle.outcome(for: myID, fighters: combatFighters, mode: combatMode)
+    }
 
     func leaveRoom() {
         if isHost, pokeathlonRace != nil, !settledPool { settle(winnerID: pokeathlonRace?.winnerID) }
@@ -337,7 +358,7 @@ final class MultiplayerRoomCenter {
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
-        turnEndsAt = nil; battleReward = nil; rewardedBattle = false
+        turnEndsAt = nil; rewardedBattle = false
         hasSubmittedAction = false; hostingRole = false; phase = .idle
     }
 
@@ -397,16 +418,17 @@ final class MultiplayerRoomCenter {
                 } catch {
                     self.send(.rejected(reason: "방이 가득 찼습니다."), over: connection); connection.cancel(); return
                 }
-            case .ready(let pid, let ready) where pid == id:
+            // 준비·팀 변경은 **로비에서만** 받는다. 경기 중에 받으면 `lobby.mode` 가 바뀌어 승패 판정이
+            // 흔들린다 — 개인전 중 한 명이 팀을 바꾸면 남은 `solo` 들이 한 팀으로 묶여 살아 있는 채로
+            // "종료 + 전원 승리"가 됐다. 편성은 상대가 보내오는 값이므로 화면에서 버튼을 감추는 것으로는
+            // 막지 못한다.
+            case .ready(let pid, let ready) where pid == id && !self.isInPlay:
                 self.lobby?.setReady(ready, participantID: pid); self.broadcastLobby()
-            case .team(let pid, let team) where pid == id:
+            case .team(let pid, let team) where pid == id && !self.isInPlay:
                 self.lobby?.setTeam(team, participantID: pid); self.broadcastLobby()
             case .leave(let pid) where pid == id:
-                if self.phase == .battling {
-                    self.battle?.forfeit(participantID: pid)
-                    self.combatFighters = self.battle?.fighters ?? self.combatFighters
-                    self.finishRoundIfReady()
-                } else { try? self.lobby?.leave(participantID: pid) }
+                if self.phase == .battling { self.retireFighter(pid) }
+                else { try? self.lobby?.leave(participantID: pid) }
                 self.snapshots.removeValue(forKey: pid); self.guestConnections.removeValue(forKey: pid)
                 connection.cancel(); self.broadcastLobby(); return
             case .action(let round, let action) where action.attackerID == id && round == self.combatRound:
@@ -433,7 +455,7 @@ final class MultiplayerRoomCenter {
                 }
                 self.battle = started; self.combatFighters = fighters; self.combatRound = 1
                 self.combatEvents = []; self.hasSubmittedAction = false; self.rewardedBattle = false
-                self.battleReward = nil; self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
+                self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.phase = .battling
             case .roundResolved(let round, let fighters, let events):
                 guard self.phase == .battling, round == self.combatRound else { return }
@@ -516,13 +538,7 @@ final class MultiplayerRoomCenter {
         guard let id = guestConnections.first(where: { $0.value === connection })?.key else { return }
         guestConnections.removeValue(forKey: id); snapshots.removeValue(forKey: id)
         if phase == .battling {
-            battle?.forfeit(participantID: id)
-            combatFighters = battle?.fighters ?? combatFighters
-            pendingActions.removeValue(forKey: id)
-            if battle?.isFinished == true {
-                turnTimeoutTask?.cancel(); turnEndsAt = nil; grantRewardIfFinished()
-                broadcastCombatState()
-            } else { finishRoundIfReady() }
+            retireFighter(id)
         } else {
             // 관전자가 떠나도 원장은 그대로 둔다 — 판돈은 이미 그 관전자 지갑에서 빠졌고,
             // 정산은 우승자 기준으로 계산되므로 남은 참가자들의 배당이 흔들리지 않는다.
@@ -530,12 +546,34 @@ final class MultiplayerRoomCenter {
         }
     }
 
+    /// 배틀 중 이탈한 참가자를 쓰러진 것으로 처리한다 — 명시적 `.leave` 와 연결 끊김이 **같은 자리**를
+    /// 지나야 한다. `.leave` 쪽에만 마감 처리가 없던 동안 상대가 "나가기"를 누르면 화면은 결과로
+    /// 넘어가는데 전적이 남지 않았고(`grantRewardIfFinished` 미호출) 게스트에게 최종 상태도 가지 않았다.
+    /// 게다가 내가 그 라운드에 행동을 안 냈으면 `finishRoundIfReady` 가 조용히 빠져 마감 타이머도
+    /// 다시 걸리지 않아 방이 멈췄다.
+    private func retireFighter(_ id: UUID) {
+        battle?.forfeit(participantID: id)
+        combatFighters = battle?.fighters ?? combatFighters
+        pendingActions.removeValue(forKey: id)
+        if battle?.isFinished == true {
+            turnTimeoutTask?.cancel(); turnEndsAt = nil
+            grantRewardIfFinished(); broadcastCombatState()
+        } else { finishRoundIfReady() }
+    }
+
     private func grantRewardIfFinished() {
-        guard isBattleFinished, !rewardedBattle else { return }
+        // 관전자는 전투원 목록에 없어 `outcome` 이 nil 이다 — 예전엔 관전자도 이 자리를 타서
+        // 싸우지도 않은 배틀의 패배 기록이 남았다.
+        guard !rewardedBattle,
+              let outcome = MultiplayerBattle.outcome(for: myID, fighters: combatFighters,
+                                                      mode: combatMode) else { return }
         rewardedBattle = true
-        let won = didIWin, count = combatFighters.count
-        battleReward = max(20, count * (won ? 40 : 15))
-        let mode = lobby?.mode ?? .freeForAll
+        // 별의조각은 지급하지 않는다 — 전적만 남긴다. 예전엔 여기서 표시용 보상액을 계산해
+        // 화면이 "+20 ✨"을 띄웠는데 `grantBattleReward` 는 아무것도 지급하지 않았다.
+        let won = outcome == .win, count = combatFighters.count
+        // 기록에 남는 모드도 판정과 **같은 근거**를 쓴다 — `lobby?.mode` 를 여기만 남겨 두면 판정은
+        // 팀전인데 전적은 개인전으로 적히는 자리가 다시 생긴다.
+        let mode = combatMode
         let opponents = combatFighters.filter { $0.id != myID }.map(\.trainerName)
         companion.grantBattleReward(won: won, participantCount: count, mode: mode,
                                     opponentNames: opponents)

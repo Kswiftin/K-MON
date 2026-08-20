@@ -396,6 +396,10 @@ struct SplitMix64: RandomNumberGenerator {
     }
 }
 
+/// 끝난 배틀의 승패. **무승부가 값으로 있어야 한다** — 없으면 동시 전멸이 한쪽 승리로 접히고
+/// (팀 연습이 그랬다) 보상·배지가 이기지 않은 판에서 나간다. 세 모드가 같은 enum 을 쓴다.
+enum BattleOutcome: Sendable { case win, loss, draw }
+
 enum BattleEngine {
     /// 급소 배율 — Gen 2 는 ×2(Gen 6+ 는 ×1.5). 상수인 건 밸런스 재조정 여지를 남기려는 것이다.
     static let critMultiplier = 2
@@ -425,8 +429,31 @@ enum BattleEngine {
     /// 각자 계산하므로, 규칙이 다른 앱끼리 붙으면 같은 배틀을 서로 다르게 본다.
     /// 1 = 우선도 도입, 2 = Gen 2 데미지 파이프라인(정수 난수·급소 ×2·`+2` 위치),
     /// 3 = 상태이상 6종 + 혼란(행동 가능 판정·화상 반감·마비 스피드·턴 끝 잔뎀),
-    /// 4 = 위력 0(변화기) 데미지 0.
-    static let rulesVersion = 4
+    /// 4 = 위력 0(변화기) 데미지 0,
+    /// 5 = 끊김을 남은 HP 비율로 판정(몰수승 폐지) + 개시 시점 판돈 에스크로(구버전은 이탈로 판돈 회피).
+    static let rulesVersion = 5
+
+    /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
+    ///
+    /// 예전엔 끊김을 무조건 `iWon: true` 로 접었다. 두 피어가 각자 자기 연결의 죽음을 보므로 한 번
+    /// 끊기면 **양쪽이 동시에 승리**해 둘 다 `settleRankedBrawl(won: true)` 로 판돈 ★ 과 LP 를 받았다 —
+    /// 어느 지갑에서도 빠져나가지 않아 총량만 늘었고, 지고 있으면 끊는 게 이득이었다. 판정을 두 피어가
+    /// 공유하는 **상태에서** 뽑으면 두 쪽 결론이 자동으로 반대가 된다.
+    ///
+    /// ponytail: 단, 상태가 같다는 전제는 **턴 경계에서만** 참이다. `resolveIfReady` 는 두 선택이 모이는
+    /// 즉시 해상하므로 한쪽 `.move` 만 도착한 채 링크가 죽으면 상태가 한 턴 어긋나고, 그 창에서는 양쪽이
+    /// 모두 "내가 앞선다"를 봐 판돈이 두 지갑에 동시에 들어간다. 닫으려면 턴별 ack(또는 합의된 턴 인덱스
+    /// 기준 판정)이 필요해 와이어 계약 변경 사안으로 남긴다 — 미해결(defect-log 참조).
+    ///
+    /// 명시적 `.forfeit` 메시지를 받은 몰수승은 이 판정을 타지 않는다 — 그건 상대가 스스로 진 것이다.
+    ///
+    /// 비교는 교차곱이다. `Double` 나눗셈은 최대 HP 가 다른 두 종에서 반올림이 갈릴 수 있고, 승패는
+    /// 두 피어가 **같은 값**으로 봐야 한다(`resolveRound` 의 tie-break 와 같은 이유).
+    static func disconnectOutcome(me: BattleSide, opp: BattleSide) -> Bool? {
+        let mine = me.hp * max(1, opp.stats.hp)
+        let theirs = opp.hp * max(1, me.stats.hp)
+        return mine == theirs ? nil : mine > theirs
+    }
 
     /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.
     struct AttackOutcome: Sendable {

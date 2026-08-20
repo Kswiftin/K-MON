@@ -28,6 +28,10 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/MissionBoard.swift"
   "Sources/PokeTokenBar/Core/BattleModel.swift"
   "Sources/PokeTokenBar/Core/BattleLog.swift"
+  # 승패 판정이 사는 두 파일. 게이트 밖에 있던 동안 무승부·팀전 분기가 무테스트로 남아
+  # "이기지 않은 쪽까지 승리" 결함이 세 경로에 퍼졌다 — 판정은 순수 함수라 게이트 대상이다.
+  "Sources/PokeTokenBar/Core/TeamPracticeBattle.swift"
+  "Sources/PokeTokenBar/Core/MultiplayerBattle.swift"
   "Sources/PokeTokenBar/Core/PokeathlonPool.swift"
   "Sources/PokeTokenBar/Core/GameNumberFormatter.swift"
 )

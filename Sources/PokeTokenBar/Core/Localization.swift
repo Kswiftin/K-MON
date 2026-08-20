@@ -25,6 +25,7 @@ struct L {
     var battleNeedHatch: String { t("알은 배틀할 수 없어요 — 먼저 부화시키세요.", "Eggs can't battle — hatch first.", "タマゴはバトルできません — まず孵化させましょう。") }
     var battleStatsFailed: String { t("스탯을 불러오지 못했어요 — 네트워크 확인 후 다시 시도하세요.", "Couldn't load stats — check your network and retry.", "ステータスを取得できません — 通信を確認して再試行してください。") }
     var battleDraw: String { t("무승부!", "It's a draw!", "引き分け！") }
+    var battleSpectatorFinished: String { t("관전한 배틀이 끝났어요.", "The battle you watched is over.", "観戦したバトルが終わりました。") }
     var battleSuperEffective: String { t("효과가 굉장했다!", "It's super effective!", "こうかはばつぐんだ！") }
     var battleNotVeryEffective: String { t("효과가 별로인 듯하다…", "It's not very effective…", "こうかはいまひとつのようだ…") }
     var battleCritical: String { t("급소에 맞았다!", "A critical hit!", "きゅうしょにあたった！") }
@@ -53,6 +54,11 @@ struct L {
     }
     var battleDeclined: String { t("상대가 거절했어요.", "They declined.", "相手に断られました。") }
     var battleConnectionLost: String { t("연결이 끊어졌어요.", "Connection lost.", "接続が切れました。") }
+    /// 랭크전 판돈을 못 낼 때 — 세 경로(수신 수락·수락 응답·개시 에스크로)가 같은 문구를 쓴다.
+    var battleStakeShort: String {
+        t("랭크전 판돈이 부족해요.", "Not enough Star Pieces for the ranked stake.",
+          "ランク戦の賭け星のかけらが足りません。")
+    }
     var battleYourTurn: String { t("기술을 선택하세요", "Choose a move", "わざを選んでください") }
     var battleWaitingOpponent: String { t("상대가 기술을 고르는 중…", "Opponent is choosing…", "相手がわざを選んでいます…") }
     var battleForfeit: String { t("기권", "Forfeit", "降参") }

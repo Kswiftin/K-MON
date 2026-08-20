@@ -152,12 +152,28 @@ struct BattleView: View {
         return nil
     }
 
+    /// 방 결과 문구 — 승/패/무/관전 네 갈래. `nil` 은 전투원이 아니었다는 뜻이다(관전자).
+    /// 1v1 의 `finishText` 와 같은 규칙 — 판정이 낸 값을 그대로 문구로 옮기고 화면에서 다시 갈라
+    /// 판단하지 않는다. 문구도 1v1 과 같은 `l.battleWon`/`l.battleLost` 를 쓴다. 여기서
+    /// `language == .ko ? … : …` 로 직접 갈랐을 때는 일본어 사용자에게 영어가 나갔고(세 갈래 중 두
+    /// 갈래만 번역됨), 같은 결과를 두 화면이 다른 문구로 말했다.
+    private func roomResultText(_ outcome: BattleOutcome?) -> String {
+        switch outcome {
+        case .win:  return l.battleWon
+        case .loss: return l.battleLost
+        case .draw: return l.battleDraw
+        case nil:   return l.battleSpectatorFinished
+        }
+    }
+
     private func finishText(iWon: Bool?, byForfeit: Bool) -> String {
         switch (iWon, byForfeit) {
         case (.some(true), true):   return l.battleOppForfeited
         case (.some(false), true):  return l.battleYouForfeited
         case (.some(true), false):  return l.battleWon
         case (.some(false), false): return l.battleLost
+        // 승패가 없는 끝(동시 전멸·끊김 동률)은 전부 무승부다. 끊김은 `byForfeit: false` 로 오고
+        // "왜 끝났는지"는 `lastError`(`battleConnectionLost`)가 따로 말한다 — 기권과 섞지 않는다.
         default:                    return l.battleDraw
         }
     }
@@ -405,9 +421,13 @@ struct BattleView: View {
     private var multiplayerArena: some View {
         let fighters = center.multiplayer.combatFighters
         let me = fighters.first { $0.id == center.multiplayer.myID }
+        // 팀 판정은 `combatMode`(= 배틀 시작 시점에 고정된 모드) 하나만 본다. `lobby?.mode` 는 편성에서
+        // 파생되는 가변값이라 여기서 따로 읽으면 승패 판정은 팀전인데 화면은 개인전인 상태가 생긴다 —
+        // 그러면 같은 팀을 대상으로 고를 수 있고, 그 라운드는 `resolveRound` 가 통째로 거절한다.
+        let isTeamBattle = center.multiplayer.combatMode == .teams
         let targets = fighters.filter { fighter in
             guard fighter.id != center.multiplayer.myID, fighter.isAlive else { return false }
-            if center.multiplayer.lobby?.mode == .teams, let myTeam = me?.team { return fighter.team != myTeam }
+            if isTeamBattle, let myTeam = me?.team { return fighter.team != myTeam }
             return true
         }
         return VStack(alignment: .leading, spacing: 8) {
@@ -428,7 +448,7 @@ struct BattleView: View {
                 ForEach(fighters) { fighter in
                     VStack(spacing: 2) {
                         HStack {
-                            if center.multiplayer.lobby?.mode == .teams {
+                            if isTeamBattle {
                                 Text(fighter.team == .red ? "🔴" : "🔵").font(.caption2)
                             }
                             Text(fighter.trainerName).font(.caption2).bold().lineLimit(1)
@@ -459,15 +479,8 @@ struct BattleView: View {
                 }
             }
             if center.multiplayer.isBattleFinished {
-                Text(center.multiplayer.didIWin
-                     ? (store.language == .ko ? "승리!" : "Victory!")
-                     : (store.language == .ko ? "패배" : "Defeated"))
+                Text(roomResultText(center.multiplayer.myOutcome))
                     .font(.title3).bold().frame(maxWidth: .infinity)
-                if let reward = center.multiplayer.battleReward {
-                    Text("+\(reward) ✨")
-                        .font(.callout.weight(.semibold)).foregroundStyle(.orange)
-                        .frame(maxWidth: .infinity)
-                }
                 Button(store.language == .ko ? "로비 나가기" : "Leave") { center.multiplayer.leaveRoom() }
                     .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
             } else if me?.isAlive == false {

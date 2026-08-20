@@ -154,7 +154,15 @@ enum SaveTransfer {
         s.usedSinceInstall = clampToken(s.usedSinceInstall)
         s.spentTokens = clampToken(s.spentTokens)
         s.starPieces = clampToken(s.starPieces)
-        s.battleRank.points = min(BattleRank.maximumPoints, max(0, s.battleRank.points))
+        s.battleRank.points = BattleRank.clamped(s.battleRank.points)
+        // 에스크로도 세이브에 실려 오는 수치다 — 산술(환급·2배 지급)에 쓰이므로 경계에서 자른다.
+        // 상한은 일반 수치 상한이 아니라 **판돈 상한**이다 — 승리 정산이 `escrowed * 2` 를 지급하므로
+        // 10^15 까지 허용하면 세이브 한 장으로 별의조각을 찍을 수 있다(정상 최대는 45,000).
+        if let pending = s.pendingRanked {
+            s.pendingRanked = PendingRankedBattle(
+                stake: min(BattleRank.maximumStake, clampToken(pending.stake)),
+                opponent: pending.opponent)
+        }
         s.trainer.points = min(TrainerLevel.maximumPoints, max(0, s.trainer.points))
         // 카탈로그에서 사라진 미션의 잔재를 버리고 진행도를 목표에서 클램프한다 — 클램프된 값은 곧 완료 상태라
         // 손편집으로 목표를 넘겨도 보상이 다시 나오지 않는다.
@@ -252,6 +260,11 @@ enum SaveTransfer {
         p.append("v\(s.economyVersion)")
         p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("pc\(s.starPieces)"); p.append("eg\(s.eggUsage)")
         if s.battleRank.points != 0 { p.append("br\(s.battleRank.points)") }
+        // 구버전 서명 호환: 에스크로가 없으면(대부분) 아무것도 붙이지 않는다.
+        // 상대 랭크도 서명에 넣는다 — 미결 배틀의 패배 LP 는 `apply(win:false)` 의 `tier > opponent.tier`
+        // 로 결정되므로, 이 값이 서명 밖에 있으면 상대를 최고 티어로 고쳐 두는 것만으로 이탈이 무손실이
+        // 된다(막으려던 "지고 있으면 앱 종료"가 그대로 돌아온다).
+        if let pending = s.pendingRanked { p.append("pr\(pending.stake)|\(pending.opponent.points)") }
         // 구버전 서명 호환: 기본값(0)이면 아무것도 붙이지 않는다. 무조건 붙이면 트레이너 필드가
         // 없던 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
         if s.trainer.points != 0 { p.append("tp\(s.trainer.points)") }

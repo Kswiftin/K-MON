@@ -221,4 +221,118 @@ final class PokeathlonPoolTests: XCTestCase {
         others.bets[id(2)] = PokeathlonBet(bettorID: id(2), runnerID: id(11), amount: 5)
         XCTAssertTrue(others.agreesWithSeenBet(mine, bettorID: id(1)))
     }
+
+    // MARK: 베팅 상한 — 자기 신고 잔액을 그대로 믿으면 배당 산술이 트랩난다
+
+    /// 회귀(오버플로 트랩): `rejection` 이 `bet.amount <= member.reportedStarPieces` 로만 봤고
+    /// `reportedStarPieces` 는 참가자가 **스스로 신고**하는 값이라 상한이 없었다. 그 금액이 원장에
+    /// 들어가면 `payouts` 의 `pot * bet.amount` 가 Swift 오버플로 트랩으로 프로세스를 죽인다
+    /// (defect-log 의 "외부 수치는 경계 한 곳에서 클램프" 규칙 그대로의 재발).
+    func testABetAboveTheCeilingIsRejected() {
+        let runner = id(10), spectator = id(1)
+        let lobby = lobbyWith(runner: runner, spectator: spectator, reportedStarPieces: Int.max)
+        let race = PokeathlonRace(racers: [racer(runner)], startsAt: Date().addingTimeInterval(60))
+        let now = Date()
+
+        func verdict(_ amount: Int) -> PokeathlonBetRejection? {
+            PokeathlonPool.rejection(for: PokeathlonBet(bettorID: spectator, runnerID: runner, amount: amount),
+                                     senderID: spectator, lobby: lobby, race: race,
+                                     pool: PokeathlonPool(), now: now)
+        }
+
+        XCTAssertNil(verdict(PokeathlonPool.maximumBet), "상한까지는 받는다")
+        XCTAssertEqual(verdict(PokeathlonPool.maximumBet + 1), .invalidAmount)
+        XCTAssertEqual(verdict(Int.max), .invalidAmount, "자기 신고 잔액이 Int.max 여도 막힌다")
+    }
+
+    /// 상한이 실제로 안전한 값인지 — 관전자 정원을 상한으로 꽉 채워도 배당이 트랩나지 않아야 한다.
+    /// (트랩은 프로세스를 죽이므로 이 테스트가 살아서 끝나는 것 자체가 단언이다.)
+    func testPayoutsAtTheBetCeilingDoNotTrap() {
+        let cap = PokeathlonPool.maximumBet
+        let seats = MultiplayerLobby.spectatorCapacity
+        let p = pool((1...seats).map { (bettor: $0, runner: 10, amount: cap) })
+
+        let payouts = p.payouts(winnerID: id(10))
+
+        XCTAssertEqual(payouts.values.reduce(0, +), p.total, "판돈 총액이 그대로 분배된다")
+        XCTAssertEqual(p.total, cap * seats)
+    }
+
+    /// 신고 잔액 자체도 경계에서 잘린다 — 원장에 들어오는 값의 상한이 한 곳에서 정해져야 한다.
+    func testReportedBalanceIsClampedWhenDecoded() throws {
+        let json = """
+        {"id":"\(id(1).uuidString)","trainerName":"T","speciesID":1,"team":"solo",
+         "isReady":true,"isHost":false,"role":"spectator","reportedStarPieces":\(Int.max)}
+        """
+        let participant = try JSONDecoder().decode(LobbyParticipant.self, from: Data(json.utf8))
+
+        XCTAssertEqual(participant.reportedStarPieces, SaveTransfer.maxTokenValue)
+    }
+
+    /// 상한이 **디코딩 경계**에 있어야 하는 이유: 게스트는 원장을 검사하지 않고 호스트가 보낸 것을
+    /// 그대로 받아(`.pokeathlonPool`/`.pokeathlonSettlement`) `payouts` 를 다시 계산한다. 호스트측
+    /// `rejection` 만 고치면 조작된 호스트가 `Int.max` 한 건으로 모든 게스트를 오버플로 트랩으로 죽인다.
+    func testAWireLedgerIsClampedWhenDecoded() throws {
+        func decoded(_ json: String) throws -> PokeathlonPool {
+            try JSONDecoder().decode(PokeathlonPool.self, from: Data(json.utf8))
+        }
+        func ledger(_ entries: [(bettor: Int, amount: String)]) -> String {
+            let bets = entries.map {
+                """
+                "\(id($0.bettor).uuidString)",
+                {"bettorID":"\(id($0.bettor).uuidString)","runnerID":"\(id(10).uuidString)","amount":\($0.amount)}
+                """
+            }
+            return "{\"bets\":[\(bets.joined(separator: ","))],\"isClosed\":false}"
+        }
+
+        let huge = try decoded(ledger([(1, "\(Int.max)"), (2, "-5")]))
+        XCTAssertEqual(huge.bets[id(1)]?.amount, PokeathlonPool.maximumBet, "건당 상한에서 잘린다")
+        XCTAssertEqual(huge.bets[id(2)]?.amount, 0, "음수도 경계에서 정리된다")
+        XCTAssertEqual(huge.payouts(winnerID: id(10)).values.reduce(0, +), huge.total,
+                       "배당이 트랩나지 않고 총액을 그대로 분배한다")
+
+        // 건당 상한만으론 `pot` 이 안 묶인다 — 정원을 넘는 원장은 통째로 버린다.
+        let flood = try decoded(ledger((1...(MultiplayerLobby.spectatorCapacity + 1))
+            .map { (bettor: $0, amount: "\(PokeathlonPool.maximumBet)") }))
+        XCTAssertTrue(flood.bets.isEmpty, "관전자 정원을 넘는 원장은 정상 경로로 만들 수 없다")
+
+        let normal = try decoded(ledger([(1, "500")]))
+        XCTAssertEqual(normal.bets[id(1)]?.amount, 500, "정상 값은 그대로 통과한다")
+    }
+
+    /// 회귀(0 나눗셈 트랩): 상한 클램프가 음수·0 을 **0 으로 만들어 원장에 남긴다.** 우승자에 걸린 게
+    /// 0 원 베팅뿐이면 `backed == 0` 이라 `pot * amount / backed` 가 프로세스를 죽였다 — 오버플로를
+    /// 막으면서 같은 공격자에게 다른 트랩을 열어 준 자리다(호스트측 `amount > 0` 은 와이어엔 안 걸린다).
+    /// (트랩은 프로세스를 죽이므로 이 테스트가 살아서 끝나는 것 자체가 단언이다.)
+    func testAZeroAmountLedgerDoesNotTrapOnPayout() throws {
+        let onlyZero = try JSONDecoder().decode(PokeathlonPool.self, from: Data("""
+        {"bets":["\(id(1).uuidString)",
+                 {"bettorID":"\(id(1).uuidString)","runnerID":"\(id(10).uuidString)","amount":-5}],
+         "isClosed":false}
+        """.utf8))
+        XCTAssertEqual(onlyZero.bets[id(1)]?.amount, 0, "음수는 경계에서 0 이 된다")
+        XCTAssertEqual(onlyZero.payouts(winnerID: id(10)), [id(1): 0], "0 원 베팅은 환불 경로로 빠진다")
+
+        // 0 원 베팅이 정상 베팅과 섞여도 배당이 흔들리지 않는다 — 판돈은 전액 분배된다.
+        let mixed = pool([(1, 10, 0), (2, 10, 100), (3, 20, 50)])
+        let payouts = mixed.payouts(winnerID: id(10))
+        XCTAssertEqual(payouts[id(2)], 150, "0 원 베팅은 지분에 끼지 않는다")
+        XCTAssertEqual(payouts.values.reduce(0, +), mixed.total)
+    }
+
+    private func lobbyWith(runner: UUID, spectator: UUID, reportedStarPieces: Int) -> MultiplayerLobby {
+        var lobby = try! MultiplayerLobby(
+            host: LobbyParticipant(id: runner, trainerName: "R", speciesID: 1, team: .solo,
+                                   isReady: true, isHost: true),
+            activity: .pokeathlon)
+        try! lobby.join(LobbyParticipant(id: spectator, trainerName: "S", speciesID: 1, team: .solo,
+                                        isReady: true, isHost: false, role: .spectator,
+                                        reportedStarPieces: reportedStarPieces))
+        return lobby
+    }
+
+    private func racer(_ id: UUID) -> PokeathlonRacer {
+        PokeathlonRacer(id: id, trainerName: "R", speciesID: 1)
+    }
 }
