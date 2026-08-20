@@ -250,15 +250,27 @@ final class BattleFieldTests: XCTestCase {
                        turnEndsAt: Date? = nil,
                        theirHP: Int? = nil,
                        language: AppLanguage = .ko,
-                       overlay: ReplayOverlay = .idle) -> BattleArenaView {
+                       overlay: ReplayOverlay = .idle,
+                       stagesOnEverySide: Bool = false) -> BattleArenaView {
         var theirs = BattleSide(mon([.fire, .flying], name: "상대이름이제법긴트레이너"))
         theirs.hp = theirHP ?? theirs.stats.hp / 3
         theirs.status = .burn
         theirs.confusionTurns = 3
+        theirs.changeStage(.def, by: -2)          // 랭크 화살표도 최악 케이스에 든다
+        theirs.changeStage(.accuracy, by: -1)
         var mine = BattleSide(mon([.water], name: "내 포켓몬", shiny: true))
+        mine.changeStage(.atk, by: 2)
+        mine.changeStage(.spe, by: 1)
         mine.pp = allPPSpent ? mine.pp.map { _ in 0 } : [1, mine.pp[1], mine.pp[2], 0]
         var fainted = BattleSide(mon([.grass], name: "기절"))
         fainted.hp = 0
+        if stagesOnEverySide {
+            // 일곱 축이 전부 붙은 상태 — 고대의힘 부류가 한 기술로 다섯 축을 올리므로 실제로 가능하다.
+            for stat in BattleStat.allCases {
+                mine.changeStage(stat, by: 6)
+                theirs.changeStage(stat, by: -6)
+            }
+        }
         return BattleArenaView(
             mine: mine, theirs: theirs,
             myTitle: "내 포켓몬", theirTitle: "상대 트레이너",
@@ -306,6 +318,26 @@ final class BattleFieldTests: XCTestCase {
     func testTheArenaNeverAsksForMoreWidthThanThePopoverGives() {
         XCTAssertLessThanOrEqual(renderedWidth(arena(), proposing: 4_000), PopoverMetrics.contentWidth,
                                  "이상 폭에서 더 요구하면 팝오버에선 매번 압축돼 그려진다")
+    }
+
+    /// 랭크가 일곱 축 전부 붙어도 HP바 칸은 자기 폭을 넘겨 요구하지 않는다. 우리 엔진에도 그 상태가
+    /// 실제로 가능하다 — 고대의힘 부류는 한 기술로 다섯 축을 올린다. 넘겨 요구하면 팝오버가 배틀
+    /// 화면 전체를 압축해 그리므로, 잘리는 건 화살표가 아니라 옆 칸이 된다.
+    func testAFullyBoostedFieldStillFitsThePopover() {
+        var side = BattleSide(mon([.water], name: "랭크덩어리"))
+        for stat in BattleStat.allCases { side.changeStage(stat, by: stat == .evasion ? -6 : 6) }
+        XCTAssertEqual(StageReadout.text(side.stages)?.split(separator: " ").count, 7,
+                       "일곱 축이 모두 표기되는 표본이어야 이 검증이 최악 케이스다")
+
+        // HP바 칸도 필드도 **자기 폭·높이를 스스로 정하지 않는다**(`Spacer`·그라데이션이 제안을
+        // 그대로 받는다). 예산을 정하는 건 `BattleArenaView` 의 `frame(maxWidth:)` 와 필드의
+        // `frame(height:)` 다 — 그래서 재는 대상은 화면 전체여야 한다.
+        let boosted = arena(stagesOnEverySide: true)
+        XCTAssertLessThanOrEqual(renderedWidth(boosted, proposing: 4_000), PopoverMetrics.contentWidth,
+                                 "화살표가 칸을 밀어내면 팝오버가 배틀 화면 전체를 압축해 그린다")
+        XCTAssertLessThanOrEqual(renderedHeight(boosted, proposingWidth: PopoverMetrics.contentWidth),
+                                 Self.battleViewportBudget,
+                                 "화살표가 줄을 늘리면 아래 기술 버튼이 잘린다")
     }
 
     /// 안 B 가 로그를 필드 **아래**로 내린 근거 — Showdown 처럼 옆에 두면 332pt 에 들어가지 않는다.

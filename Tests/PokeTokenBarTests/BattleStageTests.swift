@@ -311,6 +311,23 @@ final class BattleStageTests: XCTestCase {
                        "변화기는 랭크 변화가 본체라 늘 걸린다")
     }
 
+    /// **트리거 브랜치**: 확률 판정이 *실패하는* 쪽. 확정(100%)·미적용(0%)만 테스트하면 굴림 자체가
+    /// 없거나 늘 성공하는 구현이 초록으로 통과한다 — `--show-regions` 에서 실패 분기가 `^0` 이었다.
+    /// 20% 짜리 2차효과를 seed 로 순회해 **두 결과가 모두** 나오는지 본다.
+    func testPartialChanceStatDropSometimesFailsItsRoll() {
+        var flinchy = tackle()
+        flinchy.statChanges = [StatChange(stat: .def, change: -1)]
+        flinchy.statChance = 20
+        var applied = 0, skipped = 0
+        for seed in UInt64(0)..<80 {
+            var user = BattleSide(tank()), target = BattleSide(tank())
+            _ = attack(&user, &target, flinchy, seed: seed)
+            if target.stage(.def) == -1 { applied += 1 } else { skipped += 1 }
+        }
+        XCTAssertGreaterThan(applied, 0, "20% 는 걸리기도 해야 한다")
+        XCTAssertGreaterThan(skipped, applied, "20% 는 대부분 안 걸린다 — 늘 걸리면 확률을 안 본다")
+    }
+
     /// 쓰러진 상대에게는 랭크가 걸리지 않는다 — 상태이상과 같은 규칙이다.
     func testFaintedTargetTakesNoStatDrop() {
         var frail = tank()
@@ -390,6 +407,24 @@ final class BattleStageTests: XCTestCase {
         XCTAssertEqual(spec.statChance, 0)
         XCTAssertEqual(spec.damageClass, .status)
         XCTAssertEqual(spec.power, 0)
+    }
+
+    /// 7종의 화면 약어·이름·기준값을 **전부** 밟는다. `--show-regions` 로 확인해 보면 로그·배지
+    /// 테스트는 자기가 쓴 두세 개만 실행하고 나머지 분기는 한 번도 돌지 않는다 — 라인 커버리지는
+    /// 그걸 초록으로 보고한다(`Status.badgeTint` 로 겪은 부류다).
+    func testEveryStatHasALabelANameAndABaseline() {
+        XCTAssertEqual(BattleStat.allCases.map(\.shortLabel),
+                       ["Atk", "Def", "SpA", "SpD", "Spe", "Acc", "Eva"])
+        for lang in [AppLanguage.ko, .en, .ja] {
+            let names = BattleStat.allCases.map { $0.name(lang) }
+            XCTAssertEqual(Set(names).count, BattleStat.allCases.count,
+                           "\(lang): 이름이 겹치면 로그에서 어느 스탯인지 알 수 없다")
+            XCTAssertFalse(names.contains { $0.isEmpty }, "\(lang): 빈 이름")
+        }
+        let side = BattleSide(tank(speed: 100))
+        XCTAssertEqual(BattleStat.allCases.map { side.rawStat($0) },
+                       [120, 120, 120, 120, 120, 100, 100],
+                       "명중·회피는 스탯이 아니라 랭크만 있는 축이라 기준값 100 이다")
     }
 
     /// PokéAPI 스탯 이름 7종이 전부 매핑된다. 하나라도 빠지면 그 기술의 랭크 변화가 조용히 사라진다.

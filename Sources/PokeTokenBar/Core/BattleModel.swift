@@ -490,7 +490,7 @@ struct BattleSide: Sendable, Equatable {
     /// 턴 순서에 쓰는 스피드 — 랭크를 먼저 곱하고, 마비면 그 뒤에 Gen 2 기준 25%(Gen 7 부터 50%).
     /// 순서 계산이 `stats.spe` 를 직접 읽으면 마비·랭크가 스탯 화면에만 보이고 실제 선공은 그대로다.
     var effectiveSpeed: Int {
-        let boosted = StatStages.apply(stats.spe, stage: stage(.spe))
+        let boosted = StatStages.apply(rawStat(.spe), stage: stage(.spe))
         return status == .paralysis ? max(1, boosted / 4) : boosted
     }
 
