@@ -288,6 +288,24 @@ final class DexGoalGrantTests: XCTestCase {
                        "types9 에 못 닿았으면 도감 목표 몫은 없다")
     }
 
+    /// 도감 헤더의 두 숫자가 서로를 설명해야 한다 — **총계 − 육성중 = 목표 줄의 종 진행도**.
+    /// 총계(`dexSpecies`)는 키우는 개체까지 세고 목표 줄은 졸업 기록만 세므로, 육성중 수를 따로
+    /// 보여주지 않으면 "도감 12종" 과 "종 9/10" 이 나란히 보여 왜 보상이 없는지 알 수 없다.
+    func testDexHeaderTotalAccountsForRaisingSpecies() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock, species: 9)   // 졸업분 9종 + 키우는 라인 3종
+
+        let all = store.dexSpecies
+        let raising = all.filter(\.isRaising).count
+
+        XCTAssertEqual(raising, 3, "테스트 전제: 아직 졸업 안 한 라인이 총계에 섞여 있어야 한다")
+        XCTAssertEqual(all.count - raising, DexGoals.progress(.species, in: store.state.dex))
+        // 언어를 고정한다 — 신규 설치 기본값은 `.systemDefault` 라 `store.l` 은 CI 로케일에 딸려간다.
+        XCTAssertEqual(L(.ko).dexSpeciesTotal(all.count, raising: raising), "12종 (3 육성중)")
+        XCTAssertEqual(L(.ko).dexSpeciesTotal(9, raising: 0), "9종",
+                       "육성중이 없으면 기존 문구 그대로여야 한다")
+    }
+
     /// 표시용 행 — 종류마다 **아직 안 넘은 첫 목표** 하나씩.
     func testGoalRowsShowTheNextUnclearedTargetPerKind() async {
         let clock = TestClock()
