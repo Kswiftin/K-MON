@@ -672,7 +672,7 @@ struct L {
         switch kind {
         case .species: return t("종", "Species", "種")
         case .types:   return t("타입", "Types", "タイプ")
-        case .shiny:   return t("이로치", "Shiny", "色違い")
+        case .shiny:   return dexShinyLabel   // 같은 한 단어를 두 번 번역하지 않는다
         }
     }
     /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.

@@ -66,7 +66,12 @@ enum ImportConfirmPolicy {
 }
 
 enum SaveTransfer {
-    static let integrityVersion = 6
+    /// canonical 구성이 바뀌면 **반드시 올린다** — 낮은 버전으로 서명된 세이브는 조작 검사에서
+    /// 면제되므로(`isTampered`) 구서명이 새 canonical 과 안 맞아 리셋되는 일이 없다.
+    /// 조건부 append 만으로 충분한 건 그 필드가 **이전 배포에 없던** 경우뿐이다(항상 기본값이라
+    /// 세그먼트가 안 붙는다). 이미 배포된 필드(`gymBadges`·`shinyEggCharges`)를 넣을 때는
+    /// 값이 들어 있는 정상 세이브가 전부 조작 판정되므로 이 버전 상향이 유일한 방어다. 6 → 7.
+    static let integrityVersion = 7
     /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
     static let forcedResetVersion = 1
     /// 세이브 파일 크기 상한. 정상 세이브는 수 KB 이고 도감이 가득 차도 수백 KB 를 넘지 않는다.
@@ -274,7 +279,8 @@ enum SaveTransfer {
         // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
         // 세이브에서 배지 키를 지우는 것만으로 같은 체육관에서 알을 다시 받을 수 있다.
         // 정렬 필수: Set 순회 순서는 실행마다 달라, 정렬하지 않으면 같은 상태가 다른 서명을 낸다.
-        // 구버전 서명 호환: 비어 있으면 아무것도 붙이지 않는다.
+        // 이 두 필드는 **이미 배포된 필드**라 조건부 append 로는 구서명이 안 지켜진다(값이 들어 있는
+        // 정상 세이브가 조작 판정된다) — `integrityVersion` 6 → 7 상향이 그 방어다.
         if !s.gymBadges.isEmpty { p.append("gb" + s.gymBadges.sorted().joined(separator: ",")) }
         // 이로치 확정 부화 횟수 — 받은 시점과 쓰는 시점이 떨어져 있어 세이브에 남는다. 손으로 올리면
         // 확정 이로치가 공짜다. 접두 `sec` 는 아래 기기 시드가 이미 쓰고 있어 `shc` 를 쓴다.

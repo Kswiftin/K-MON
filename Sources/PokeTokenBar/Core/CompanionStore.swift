@@ -36,7 +36,15 @@ final class CompanionStore {
     private var declinedEvolutionMonID: UUID?
     private var declinedEvolutionLevel = 0
     private var declinedEvolutionTargetID = 0
-    private(set) var currentTypes: [PokemonType] = []
+    private var loadedTypes: [PokemonType] = []
+    /// `loadedTypes` 가 **어느 종의** 타입인가. 이 태그 없이 배열만 들고 있으면 개체가 바뀌어도
+    /// (부화·박스 교체·세이브 불러오기) 이전 종의 타입이 남는다 — 표시야 다음 조회에서 고쳐지지만,
+    /// 졸업이 이 값을 `DexEntry.types` 로 **영구 저장**하므로 오프라인 졸업 한 번이 남의 타입을
+    /// 도감에 박고 백필도 nil 이 아니라 재시도하지 않는다.
+    private var loadedTypesSpeciesID: Int?
+    /// 지금 개체의 타입. 태그가 안 맞으면 빈 배열 — 개체 교체 지점마다 리셋을 심는 대신
+    /// 읽는 자리 한 곳에서 막는다(리셋 지점은 늘어나고, 하나만 빠뜨리면 같은 결함이 돌아온다).
+    var currentTypes: [PokemonType] { loadedTypesSpeciesID == currentSpeciesID ? loadedTypes : [] }
     private(set) var displayedMoves: [MoveSpec] = []
     private(set) var isLoadingDisplayedMoves = false
     private var moveLearningQueue: [MoveLearningPrompt] = []
@@ -554,17 +562,20 @@ final class CompanionStore {
     /// 소급 달성해 알을 한꺼번에 받는다. 다음 졸업의 `before` 스냅샷이 백필된 값을 이미 포함하므로
     /// 소급분은 자연히 지급 대상에서 빠진다.
     ///
-    /// `provider` 가 아니라 `PokeAPIClient.shared` 를 쓴다 — 타입은 `PokeProviding` 에 없고
-    /// `loadCurrentTypes`·`loadDisplayedMoves` 가 이미 같은 방식이다.
+    /// 조회는 주입된 `provider` 를 지난다 — 저장까지 가는 값이라 스텁으로 검증할 수 있어야 한다.
     func backfillMissingDexTypes() async {
+        var filled = false
         for entry in state.dex where entry.types == nil {
-            guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: entry.finalID),
+            // 뷰가 사라지면(.task 취소) 남은 항목까지 실패할 요청을 계속 쏘지 않고 멈춘다.
+            if Task.isCancelled { break }
+            guard let profile = try? await provider.battleProfile(speciesID: entry.finalID),
                   !profile.types.isEmpty,
                   // 조회 중에 도감이 바뀔 수 있다(졸업·불러오기) — 인덱스가 아니라 항목 id 로 되찾는다.
                   let idx = state.dex.firstIndex(where: { $0.id == entry.id }) else { continue }
             state.dex[idx].types = profile.types
-            save()
+            filled = true
         }
+        if filled { save() }   // 항목마다 저장하면 세이브 전체를 항목 수만큼 다시 쓴다
     }
 
     /// 도감 항목 진화 체인 각 종의 이름(speciesID → 현재 언어 이름). 저장돼 있으면 즉시(네트워크 0),
@@ -963,7 +974,6 @@ final class CompanionStore {
         state.active = selected
         activeGeneration += 1
         currentLine = nil
-        currentTypes = []
         displayedMoves = []
         evolutionPrompt = nil
         // 이전 개체의 기술 학습 대기분까지 버린다 — 표시 게이트가 현재 카드는 막지만, 큐에 남은
@@ -1059,9 +1069,10 @@ final class CompanionStore {
 
     func loadCurrentTypes() async {
         guard let id = currentSpeciesID,
-              let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id),
+              let profile = try? await provider.battleProfile(speciesID: id),
               currentSpeciesID == id else { return }
-        currentTypes = profile.types
+        loadedTypes = profile.types
+        loadedTypesSpeciesID = id
     }
 
     /// 설명을 다시 받아야 하는가 — 아직 안 받아봤거나(nil), 예전 파서가 저장한
@@ -1099,7 +1110,7 @@ final class CompanionStore {
         let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID)
         let moves = await PokeAPIClient.shared.canonicalLevelUpMoves(speciesID: speciesID, level: active.level)
         guard state.active?.id == active.id else { return }
-        if let profile { currentTypes = profile.types }
+        if let profile { loadedTypes = profile.types; loadedTypesSpeciesID = speciesID }
         displayedMoves = moves
     }
 
@@ -1582,6 +1593,9 @@ final class CompanionStore {
         // 이미 돌리고 있고, 활성이 비어 있으면 박스가 아니라 활성으로 부화한다.
         state.focusEggs = min(999, state.focusEggs + 1)
         state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        // 여기서 저장한다 — 도감 기록·졸업 알·도감 목표 보상이 모두 이 함수 안에서만 생기는데,
+        // 다음 틱(60초)까지 기다리면 그 사이 종료가 알림만 남기고 지급을 날린다.
+        save()
     }
 
     // MARK: 인벤토리 / 이상한 사탕

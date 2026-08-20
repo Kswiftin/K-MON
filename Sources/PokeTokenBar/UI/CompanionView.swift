@@ -1181,7 +1181,7 @@ struct DexGoalStrip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("🎯")
+            Text("🎯").accessibilityHidden(true)   // 장식 — 스크린리더가 이모지를 일관되게 읽지 못한다
             ForEach(store.dexGoalRows, id: \.goal.id) { row in
                 HStack(spacing: 2) {
                     Text(store.l.dexGoalShortLabel(row.goal.kind)).foregroundStyle(.secondary)

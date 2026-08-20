@@ -359,6 +359,126 @@ final class OneShotRewardSignatureTests: XCTestCase {
         XCTAssertFalse(canonical.contains("|gb"))
         XCTAssertFalse(canonical.contains("|shc"))
     }
+
+    /// **조건부 append 만으로는 부족한 경우** — `gymBadges`·`shinyEggCharges` 는 이전 배포에도 있던
+    /// 필드다. 값이 들어 있는 정상 세이브는 세그먼트가 붙어 구서명과 안 맞으므로, 방어는
+    /// `integrityVersion` 상향뿐이다(낮은 버전 서명은 검사 면제 → 다음 저장에서 새 서명으로 갱신).
+    /// 버전을 안 올리면 배지를 딴 세이브가 전부 초기화된다.
+    func testASaveSignedBeforeTheCanonicalChangeIsNotJudgedTampered() {
+        var old = CompanionState()
+        old.gymBadges = ["bug"]
+        old.shinyEggCharges = 2
+        old.integrityVersion = 6          // gb·shc 가 canonical 에 없던 시절의 서명
+        old.integrity = "deadbeef"        // 새 canonical 로는 절대 안 맞는 값
+
+        XCTAssertFalse(SaveTransfer.isTampered(old),
+                       "구버전 서명이 조작 판정되면 배지·이로치 확정이 있던 세이브가 전부 초기화된다")
+
+        // 대조군: 현재 버전으로 다시 서명하면 같은 편집이 잡힌다(면제가 영구가 아니다).
+        var resigned = SaveTransfer.signed(old)
+        resigned.shinyEggCharges = 99
+        XCTAssertTrue(SaveTransfer.isTampered(resigned))
+    }
+}
+
+// MARK: 저장되는 타입의 출처 — 스테일 방어와 백필
+
+private enum TypedProviderError: Error { case unknownSpecies }
+
+/// 타입을 돌려주는 스텁. `DexEntry.types` 는 세이브에 남으므로 이 조회는 주입 가능해야 한다 —
+/// `PokeAPIClient.shared` 를 직접 부르면 이 파일의 테스트가 전부 실네트워크에 걸린다.
+private struct TypedProvider: PokeProviding {
+    let evoLine: EvoLine
+    /// 등록되지 않은 종은 throw — 오프라인과 같은 경로다.
+    let types: [Int: [PokemonType]]
+
+    func line(baseSpeciesID: Int) async throws -> EvoLine { evoLine }
+    func baseSpeciesIndex() async throws -> [BaseSpecies] { [BaseSpecies(id: evoLine.baseID, captureRate: 255)] }
+    func battleProfile(speciesID: Int) async throws -> PokemonBattleProfile {
+        guard let t = types[speciesID] else { throw TypedProviderError.unknownSpecies }
+        return PokemonBattleProfile(speciesID: speciesID,
+                                    stats: BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1),
+                                    types: t)
+    }
+}
+
+@MainActor
+final class DexEntryTypeSourceTests: XCTestCase {
+
+    private func store(_ types: [Int: [PokemonType]], dex: [String] = []) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-dextype-\(UUID().uuidString).json")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"dex":[\#(dex.joined(separator: ","))]}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: TypedProvider(evoLine: dexGoalTestLine, types: types),
+                              clock: TestClock().closure, fileURL: url, rng: SeededRNG(seed: 11))
+    }
+
+    private func growToFinal(_ store: CompanionStore) async {
+        await store.hatch(baseID: 1)
+        store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
+        store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
+        XCTAssertEqual(store.currentSpeciesID, 3, "테스트 전제: 최종형(3)까지 자라야 한다")
+    }
+
+    /// **트리거 재현** — 타입을 1단계(종 1)에서 받아 두고 최종형(종 3)으로 자란 뒤 졸업한다.
+    /// 로드한 타입에 "어느 종의 것인가"가 없으면 종 1 의 타입이 종 3 의 도감 항목에 영구 저장되고,
+    /// `types != nil` 이라 백필도 고치지 않는다. 개체가 바뀌는 경로(부화·박스 교체·불러오기)마다
+    /// 같은 일이 생긴다 — 그래서 리셋이 아니라 읽는 자리에서 막는다.
+    func testGraduationNeverStoresTypesLoadedForAnotherSpecies() async {
+        let store = self.store([1: [.grass], 3: [.fire, .flying]])
+        await store.hatch(baseID: 1)
+        await store.loadCurrentTypes()                     // 종 1 의 타입을 적재
+        XCTAssertEqual(store.currentTypes, [.grass], "테스트 전제: 1단계 타입이 실제로 적재돼야 한다")
+        store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
+        store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
+
+        XCTAssertTrue(store.graduateCompanion())
+
+        XCTAssertNil(store.state.dex.last?.types,
+                     "종 1 의 타입이 종 3 항목에 저장됐다 — nil 이어야 백필이 고칠 수 있다")
+    }
+
+    /// 대조군 — 최종형 타입을 적재한 뒤 졸업하면 그 값이 저장된다(게이트가 항상 nil 로 만들지 않는다).
+    func testGraduationStoresTheTypesLoadedForTheFinalForm() async {
+        let store = self.store([1: [.grass], 3: [.fire, .flying]])
+        await growToFinal(store)
+        await store.loadCurrentTypes()
+
+        XCTAssertTrue(store.graduateCompanion())
+
+        XCTAssertEqual(store.state.dex.last?.types, [.fire, .flying])
+    }
+
+    /// 백필은 타입만 채우고 **보상은 지급하지 않는다** — 지급하면 구버전 세이브가 백필 한 번에
+    /// 타입 목표를 소급 달성해 알을 한꺼번에 받는다.
+    func testBackfillFillsTypesWithoutPayingTypeGoals() async {
+        let nine: [PokemonType] = [.normal, .fire, .water, .electric, .grass, .ice, .fighting, .poison, .ground]
+        let entries = nine.indices.map { i in
+            #"{"baseID":\#(200 + i),"finalID":\#(200 + i),"chainOrder":[\#(200 + i)],"rarity":"common"}"#
+        }
+        let store = self.store(Dictionary(uniqueKeysWithValues: nine.indices.map { (200 + $0, [nine[$0]]) }),
+                              dex: entries)
+        XCTAssertEqual(DexGoals.progress(.types, in: store.state.dex), 0, "테스트 전제: 타입이 비어 있어야 한다")
+        let eggsBefore = store.state.focusEggs
+
+        await store.backfillMissingDexTypes()
+
+        XCTAssertEqual(DexGoals.progress(.types, in: store.state.dex), 9)
+        XCTAssertTrue(DexGoals.completed(in: store.state.dex).contains("types9"))
+        XCTAssertEqual(store.state.focusEggs, eggsBefore, "백필이 소급 지급하면 안 된다")
+    }
+
+    /// 조회가 실패하면(오프라인) `[]` 가 아니라 nil 로 남아야 한다 — `[]` 는 "타입 없음"이라
+    /// 백필이 영영 재시도하지 않는다.
+    func testBackfillLeavesTypesNilWhenTheLookupFails() async {
+        let entry = #"{"baseID":200,"finalID":200,"chainOrder":[200],"rarity":"common"}"#
+        let store = self.store([:], dex: [entry])
+
+        await store.backfillMissingDexTypes()
+
+        XCTAssertNil(store.state.dex.first?.types)
+    }
 }
 
 // 부화용 최소 진화 라인(1 → 2 → 3).

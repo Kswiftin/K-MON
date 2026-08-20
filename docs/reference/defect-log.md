@@ -570,8 +570,15 @@ read_when:
   (`testGymBadgeSignatureDoesNotDependOnSetOrder`).
 - **append 는 조건부여야 한다.** 무조건 붙이면 그 필드가 없던 시절의 정상 세이브가 전부 조작 판정돼
   진행이 초기화된다. 기본값 canonical 동결 테스트(`testDefaultStateCanonicalFormIsFrozen`)와
-  `testDefaultStateGainsNoNewCanonicalSegments` 가 짝으로 지킨다. (도감 완성 목표 작업 중 발견,
-  2026-08-21.)
+  `testDefaultStateGainsNoNewCanonicalSegments` 가 짝으로 지킨다.
+- **조건부 append 는 "이전 배포에 없던 필드" 에만 통한다 — 그래서 `integrityVersion` 을 올린다.**
+  없던 필드는 구세이브에서 항상 기본값이라 세그먼트가 안 붙어 구서명이 그대로 맞는다. 하지만
+  `gymBadges`·`shinyEggCharges` 는 **이미 배포된 필드**여서, 값이 들어 있는 정상 세이브는 세그먼트가
+  붙어 구서명과 어긋난다 → 배지를 딴 사람 전원 초기화. 방어는 `integrityVersion` 상향뿐이다
+  (낮은 버전 서명은 검사 면제, 다음 저장에서 새 서명으로 갱신). canonical 을 건드릴 때 묻는 순서는
+  **①이 필드가 이전 배포에 있었나 ②있었다면 버전을 올렸나** 다.
+  `testASaveSignedBeforeTheCanonicalChangeIsNotJudgedTampered` 가 그 면제 분기를 직접 밟는다.
+  (도감 완성 목표 작업 중 발견, 2026-08-21.)
 
 ## 파생 진행도를 화면용 목록으로 계산하면 되감기는 부류
 
@@ -584,6 +591,20 @@ read_when:
 - **네트워크 파생값은 `nil`(모름)과 `[]`(없음)을 구분한다.** `DexEntry.types` 를 오프라인 졸업에서
   `[]` 로 저장하면 백필이 "이미 아는 값" 으로 보고 영영 재시도하지 않아, 그 개체의 타입이 영구 누락된다.
   `testGraduatingWithoutTypeDataStoresNilNotEmpty` 가 그 구분을 고정한다. (2026-08-21.)
+
+## 표시용 캐시를 그대로 영구 저장하면 남의 값이 박히는 부류
+
+- **화면 캐시에는 "누구의 값인가" 가 없다.** `currentTypes` 는 타입 배지용 캐시였고, 개체가 바뀌어도
+  (부화·박스 교체·세이브 불러오기·졸업) 리셋되는 곳은 `switchCompanion` 한 곳뿐이었다 — 표시야 다음
+  조회가 고치니 무해했다. 그 값을 졸업이 `DexEntry.types` 로 **영구 저장**하기 시작한 순간, 오프라인
+  졸업 한 번이 이전 종의 타입을 도감에 박고 `types != nil` 이라 백필도 재시도하지 않는다.
+- **리셋 지점을 늘리지 말고 읽는 자리에서 막는다.** 개체 교체 경로는 계속 늘어나고 하나만 빠뜨리면
+  결함이 그대로 돌아온다. 캐시에 소유자 태그를 달고(`loadedTypesSpeciesID`) 읽을 때 대조한다.
+- **테스트가 못 걸렀던 이유는 조회 경로가 주입 불가였기 때문이다.** `PokeAPIClient.shared` 를 직접
+  부르면 스텁이 끼어들 수 없어 테스트에서 그 값은 항상 비어 있다 — 결함 분기를 밟을 방법이 없다.
+  저장까지 가는 조회는 `PokeProviding` 을 지나게 한다(기본 구현은 실 클라이언트라 스텁은 안 깨진다).
+  `DexEntryTypeSourceTests` 가 트리거(1단계 타입 적재 → 최종형 졸업)와 대조군을 함께 밟는다.
+  (2026-08-21.)
 
 ## 스크롤 컨테이너가 있다고 스크롤되는 건 아닌 부류
 

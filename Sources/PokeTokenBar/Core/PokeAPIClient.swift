@@ -14,6 +14,16 @@ protocol PokeProviding: Sendable {
     /// 단일 종이 base(진화 시작점)면 BaseSpecies, 아니면 nil.
     /// GraphQL 인덱스 엔드포인트 장애 시 REST(pokemon-species)로 부화 후보를 뽑는 폴백용.
     func baseSpecies(id: Int) async throws -> BaseSpecies?
+    /// 종의 타입·종족값. **타입이 도감에 영구 저장되므로**(`DexEntry.types`) 이 조회는 주입 가능해야
+    /// 한다 — `PokeAPIClient.shared` 를 직접 부르면 그 경로를 밟는 테스트를 쓸 수 없다.
+    func battleProfile(speciesID: Int) async throws -> PokemonBattleProfile
+}
+
+extension PokeProviding {
+    /// 기본값은 실 클라이언트 — 타입을 쓰지 않는 스텁은 그대로 두면 된다.
+    func battleProfile(speciesID: Int) async throws -> PokemonBattleProfile {
+        try await PokeAPIClient.shared.battleProfile(speciesID: speciesID)
+    }
 }
 
 /// PokéAPI 클라이언트 — 종/진화체인을 런타임 fetch + 파싱. 포켓몬 데이터는 레포에 번들하지 않는다.
