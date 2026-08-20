@@ -398,7 +398,7 @@ struct SplitMix64: RandomNumberGenerator {
 
 /// 끝난 배틀의 승패. **무승부가 값으로 있어야 한다** — 없으면 동시 전멸이 한쪽 승리로 접히고
 /// (팀 연습이 그랬다) 보상·배지가 이기지 않은 판에서 나간다. 세 모드가 같은 enum 을 쓴다.
-enum BattleOutcome: Sendable { case win, loss, draw }
+enum BattleOutcome: Sendable, Equatable { case win, loss, draw }
 
 enum BattleEngine {
     /// 급소 배율 — Gen 2 는 ×2(Gen 6+ 는 ×1.5). 상수인 건 밸런스 재조정 여지를 남기려는 것이다.
@@ -430,8 +430,9 @@ enum BattleEngine {
     /// 1 = 우선도 도입, 2 = Gen 2 데미지 파이프라인(정수 난수·급소 ×2·`+2` 위치),
     /// 3 = 상태이상 6종 + 혼란(행동 가능 판정·화상 반감·마비 스피드·턴 끝 잔뎀),
     /// 4 = 위력 0(변화기) 데미지 0,
-    /// 5 = 끊김을 남은 HP 비율로 판정(몰수승 폐지) + 개시 시점 판돈 에스크로(구버전은 이탈로 판돈 회피).
-    static let rulesVersion = 5
+    /// 5 = 끊김을 남은 HP 비율로 판정(몰수승 폐지) + 개시 시점 판돈 에스크로(구버전은 이탈로 판돈 회피),
+    /// 6 = LAN 팀전(교체 행동·자동 다음 출전·팀 전체 HP 기반 끊김 판정).
+    static let rulesVersion = 6
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -453,6 +454,30 @@ enum BattleEngine {
         let mine = me.hp * max(1, opp.stats.hp)
         let theirs = opp.hp * max(1, me.stats.hp)
         return mine == theirs ? nil : mine > theirs
+    }
+
+    /// 팀전 연결 종료 판정 — 한 슬롯이 아니라 양쪽 파티의 남은 HP 합 / 최대 HP 합을 비교한다.
+    /// 양쪽이 같은 정수 연산을 하도록 나눗셈 대신 교차곱을 쓴다.
+    static func disconnectOutcome(me: [BattleSide], opp: [BattleSide]) -> Bool? {
+        guard !me.isEmpty, !opp.isEmpty else { return nil }
+        let myHP = me.reduce(0) { $0 + $1.hp }
+        let myMax = me.reduce(0) { $0 + max(1, $1.stats.hp) }
+        let oppHP = opp.reduce(0) { $0 + $1.hp }
+        let oppMax = opp.reduce(0) { $0 + max(1, $1.stats.hp) }
+        let mine = myHP * oppMax
+        let theirs = oppHP * myMax
+        return mine == theirs ? nil : mine > theirs
+    }
+
+    /// 필드에서 물러나는 포켓몬의 volatile 상태를 정리한다. CPU/체육관과 LAN 교체가 이 한 규칙을 쓴다.
+    static func prepareForSwitch(_ side: inout BattleSide) {
+        // Gen 2 는 물러난 포켓몬의 맹독을 보통 독으로 강등한다.
+        if side.status == .toxic {
+            side.status = .poison
+            side.statusCounter = 0
+        }
+        // 혼란은 volatile — 다시 나왔을 때 이전 카운터를 이어 가지 않는다.
+        side.confusionTurns = 0
     }
 
     /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.

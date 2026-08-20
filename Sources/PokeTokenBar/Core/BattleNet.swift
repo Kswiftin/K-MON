@@ -9,16 +9,98 @@ import UserNotifications
 /// 엔진으로 해상한다. 결과 필드가 없으니 결과 변조도 없다.
 /// 1:1 LAN 대전은 맞짱(턴제 기술 대전) 하나다. 여러 명이 달리는 레이스는 포켓애슬론
 /// (`MultiplayerRoomCenter` + `PokeathlonRace`)이 담당한다 — 호스트가 판정하는 방식.
+enum NetBattleAction: Codable, Sendable, Equatable {
+    case move(index: Int)              // -1 = 발버둥(PP 소진)
+    case switchTo(index: Int)
+}
+
 enum NetMessage: Codable, Sendable {
     /// `rulesVersion` 은 대전 규칙(턴 순서·데미지 계산)의 버전이다. 이 대전은 결과를 주고받지 않고
     /// **두 피어가 각자 계산**하므로, 규칙이 다르면 같은 배틀을 서로 다르게 본다(HP·승패가 어긋난다).
     /// 옵셔널인 이유는 이 필드가 없던 버전이 보낸 메시지도 읽어서 "구버전이라 못 붙는다"고
     /// 알려주기 위해서다 — 필수 필드로 두면 디코딩이 실패해 아무 설명 없이 조용히 무시된다.
-    case challenge(snapshot: BattleSnapshot, seed: UInt64, profile: BattleRankProfile, rulesVersion: Int?)
-    case accept(snapshot: BattleSnapshot, profile: BattleRankProfile, rulesVersion: Int?)
+    case challenge(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
+                   seed: UInt64, profile: BattleRankProfile, rulesVersion: Int?)
+    case accept(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
+                profile: BattleRankProfile, rulesVersion: Int?)
     case decline
-    case move(turn: Int, moveIndex: Int)   // moveIndex -1 = 발버둥(PP 소진)
+    case action(turn: Int, action: NetBattleAction)
+    /// 구버전 와이어 메시지를 디코딩해 규칙 불일치 경로까지 보낼 때만 남긴다. 새 클라이언트는 전송하지 않는다.
+    case move(turn: Int, moveIndex: Int)
     case forfeit
+
+    private enum CodingKeys: String, CodingKey { case challenge, accept, decline, action, move, forfeit }
+    private struct EmptyPayload: Codable {}
+    private struct ChallengePayload: Codable {
+        var snapshot: BattleSnapshot
+        var lineup: [BattleSnapshot]?
+        var teamSize: Int?
+        var seed: UInt64
+        var profile: BattleRankProfile
+        var rulesVersion: Int?
+    }
+    private struct AcceptPayload: Codable {
+        var snapshot: BattleSnapshot
+        var lineup: [BattleSnapshot]?
+        var teamSize: Int?
+        var profile: BattleRankProfile
+        var rulesVersion: Int?
+    }
+    private struct ActionPayload: Codable { var turn: Int; var action: NetBattleAction }
+    private struct MovePayload: Codable { var turn: Int; var moveIndex: Int }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.challenge) {
+            let payload = try container.decode(ChallengePayload.self, forKey: .challenge)
+            self = .challenge(snapshot: payload.snapshot,
+                              lineup: payload.lineup ?? [payload.snapshot],
+                              teamSize: payload.teamSize ?? 1,
+                              seed: payload.seed, profile: payload.profile,
+                              rulesVersion: payload.rulesVersion)
+        } else if container.contains(.accept) {
+            let payload = try container.decode(AcceptPayload.self, forKey: .accept)
+            self = .accept(snapshot: payload.snapshot,
+                           lineup: payload.lineup ?? [payload.snapshot],
+                           teamSize: payload.teamSize ?? 1,
+                           profile: payload.profile, rulesVersion: payload.rulesVersion)
+        } else if container.contains(.decline) {
+            self = .decline
+        } else if container.contains(.action) {
+            let payload = try container.decode(ActionPayload.self, forKey: .action)
+            self = .action(turn: payload.turn, action: payload.action)
+        } else if container.contains(.move) {
+            let payload = try container.decode(MovePayload.self, forKey: .move)
+            self = .move(turn: payload.turn, moveIndex: payload.moveIndex)
+        } else if container.contains(.forfeit) {
+            self = .forfeit
+        } else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "Unknown battle message"))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion):
+            try container.encode(ChallengePayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
+                                                  seed: seed, profile: profile, rulesVersion: rulesVersion),
+                                 forKey: .challenge)
+        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion):
+            try container.encode(AcceptPayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
+                                               profile: profile, rulesVersion: rulesVersion),
+                                 forKey: .accept)
+        case .decline:
+            try container.encode(EmptyPayload(), forKey: .decline)
+        case .action(let turn, let action):
+            try container.encode(ActionPayload(turn: turn, action: action), forKey: .action)
+        case .move(let turn, let moveIndex):
+            try container.encode(MovePayload(turn: turn, moveIndex: moveIndex), forKey: .move)
+        case .forfeit:
+            try container.encode(EmptyPayload(), forKey: .forfeit)
+        }
+    }
 }
 
 /// 발견된 대전 상대.
@@ -31,23 +113,162 @@ struct BattlePeer: Identifiable, Equatable {
     static func == (l: Self, r: Self) -> Bool { l.serviceName == r.serviceName }
 }
 
+/// 한 턴의 이벤트가 가리키는 실제 전투원 문맥. `.a`/`.b` 만으로는 교체 뒤 과거 이름·기술을
+/// 복원할 수 없으므로, 이벤트가 생긴 시점의 활성 포켓몬 정보를 함께 보존한다.
+struct NetBattleLogCombatant: Sendable, Equatable {
+    let name: String
+    let moves: [MoveSpec]
+
+    init(_ side: BattleSide) {
+        name = side.snapshot.name
+        moves = side.moves
+    }
+}
+
+struct NetBattleEventBatch: Sendable, Equatable {
+    let events: [BattleEvent]
+    let a: NetBattleLogCombatant
+    let b: NetBattleLogCombatant
+
+    init(events: [BattleEvent], a: BattleSide, b: BattleSide) {
+        self.events = events
+        self.a = NetBattleLogCombatant(a)
+        self.b = NetBattleLogCombatant(b)
+    }
+}
+
 /// 진행 중 대전 상태(뷰 렌더 소스).
 struct NetBattleState {
     var iAmA: Bool                      // challenger = A (엔진 좌변)
-    /// 양쪽 배틀 상태 — 세 모드가 같은 `BattleSide` 를 쓴다(예전엔 `myHP`/`oppHP` 처럼 좌우로 나열).
-    var me: BattleSide
-    var opp: BattleSide
+    var myTeam: [BattleSide]
+    var oppTeam: [BattleSide]
+    var myActive = 0
+    var oppActive = 0
     var rng: SplitMix64
     var turn = 1
-    var myChoice: Int?
-    var oppChoice: Int?
+    var myAction: NetBattleAction?
+    var oppAction: NetBattleAction?
     var events: [BattleEvent] = []
+    var eventBatches: [NetBattleEventBatch] = []
+
+    var me: BattleSide {
+        get { myTeam[myActive] }
+        set { myTeam[myActive] = newValue }
+    }
+    var opp: BattleSide {
+        get { oppTeam[oppActive] }
+        set { oppTeam[oppActive] = newValue }
+    }
 
     /// 내가 고를 수 있는 기술이 하나도 없으면 발버둥.
     var mustStruggle: Bool { me.mustStruggle }
 
-    func move(forIndex idx: Int, mine: Bool) -> MoveSpec {
-        (mine ? me : opp).move(at: idx)
+    func canChoose(_ action: NetBattleAction, mine: Bool) -> Bool {
+        let team = mine ? myTeam : oppTeam
+        let active = mine ? myActive : oppActive
+        guard team.indices.contains(active), team[active].isAlive else { return false }
+        switch action {
+        case .move(let index):
+            return index == -1 ? team[active].mustStruggle : team[active].canUse(moveAt: index)
+        case .switchTo(let index):
+            return team.indices.contains(index) && index != active && team[index].isAlive
+        }
+    }
+
+    /// 양쪽 행동을 challenger=A 기준으로 해상한다. 반환값은 내 관점의 승/패/무다.
+    @discardableResult
+    mutating func resolveChosenActions() -> BattleOutcome? {
+        guard let myAction, let oppAction else { return nil }
+        var teamA = iAmA ? myTeam : oppTeam
+        var teamB = iAmA ? oppTeam : myTeam
+        var activeA = iAmA ? myActive : oppActive
+        var activeB = iAmA ? oppActive : myActive
+        let actionA = iAmA ? myAction : oppAction
+        let actionB = iAmA ? oppAction : myAction
+        var turnEvents: [BattleEvent] = []
+
+        func switchSlot(_ index: Int, team: inout [BattleSide], active: inout Int) {
+            BattleEngine.prepareForSwitch(&team[active])
+            active = index
+        }
+        func spendPP(_ index: Int, team: inout [BattleSide], active: Int) -> MoveSpec {
+            let move = team[active].move(at: index)
+            if team[active].pp.indices.contains(index) {
+                team[active].pp[index] = max(0, team[active].pp[index] - 1)
+            }
+            return move
+        }
+        func finishTurn(_ a: inout BattleSide, _ b: inout BattleSide,
+                        events: inout [BattleEvent]) {
+            events += BattleEngine.endOfTurnResidual(&a, actor: .a)
+            events += BattleEngine.endOfTurnResidual(&b, actor: .b)
+        }
+
+        switch (actionA, actionB) {
+        case (.move(let indexA), .move(let indexB)):
+            let moveA = spendPP(indexA, team: &teamA, active: activeA)
+            let moveB = spendPP(indexB, team: &teamB, active: activeB)
+            var a = teamA[activeA], b = teamB[activeB]
+            turnEvents = BattleEngine.resolveTurn(a: &a, b: &b, moveA: moveA, moveB: moveB,
+                                                  turn: turn, rng: &rng)
+            teamA[activeA] = a; teamB[activeB] = b
+        case (.switchTo(let indexA), .move(let indexB)):
+            switchSlot(indexA, team: &teamA, active: &activeA)
+            let moveB = spendPP(indexB, team: &teamB, active: activeB)
+            var a = teamA[activeA], b = teamB[activeB]
+            turnEvents = [.turn(turn)]
+            if a.isAlive && b.isAlive {
+                turnEvents += BattleEngine.applyAttack(attacker: &b, defender: &a,
+                                                       attackerActor: .b, defenderActor: .a,
+                                                       move: moveB, rng: &rng)
+            }
+            finishTurn(&a, &b, events: &turnEvents)
+            teamA[activeA] = a; teamB[activeB] = b
+        case (.move(let indexA), .switchTo(let indexB)):
+            switchSlot(indexB, team: &teamB, active: &activeB)
+            let moveA = spendPP(indexA, team: &teamA, active: activeA)
+            var a = teamA[activeA], b = teamB[activeB]
+            turnEvents = [.turn(turn)]
+            if a.isAlive && b.isAlive {
+                turnEvents += BattleEngine.applyAttack(attacker: &a, defender: &b,
+                                                       attackerActor: .a, defenderActor: .b,
+                                                       move: moveA, rng: &rng)
+            }
+            finishTurn(&a, &b, events: &turnEvents)
+            teamA[activeA] = a; teamB[activeB] = b
+        case (.switchTo(let indexA), .switchTo(let indexB)):
+            switchSlot(indexA, team: &teamA, active: &activeA)
+            switchSlot(indexB, team: &teamB, active: &activeB)
+            var a = teamA[activeA], b = teamB[activeB]
+            turnEvents = [.turn(turn)]
+            finishTurn(&a, &b, events: &turnEvents)
+            teamA[activeA] = a; teamB[activeB] = b
+        }
+
+        // 자동 출전으로 active index를 바꾸기 전에 이번 이벤트의 실제 이름·기술 문맥을 고정한다.
+        let eventBatch = NetBattleEventBatch(events: turnEvents,
+                                             a: teamA[activeA], b: teamB[activeB])
+        let aWiped = !teamA.contains(where: \.isAlive)
+        let bWiped = !teamB.contains(where: \.isAlive)
+        if !aWiped, !teamA[activeA].isAlive,
+           let next = teamA.indices.first(where: { teamA[$0].isAlive }) { activeA = next }
+        if !bWiped, !teamB[activeB].isAlive,
+           let next = teamB.indices.first(where: { teamB[$0].isAlive }) { activeB = next }
+
+        self.myTeam = iAmA ? teamA : teamB
+        self.oppTeam = iAmA ? teamB : teamA
+        self.myActive = iAmA ? activeA : activeB
+        self.oppActive = iAmA ? activeB : activeA
+        events.append(contentsOf: turnEvents)
+        eventBatches.append(eventBatch)
+        turn += 1
+        self.myAction = nil
+        self.oppAction = nil
+
+        guard aWiped || bWiped else { return nil }
+        if aWiped && bWiped { return .draw }
+        let aWon = !aWiped
+        return (iAmA == aWon) ? .win : .loss
     }
 }
 
@@ -83,6 +304,10 @@ final class BattleCenter {
     private(set) var listeningPort: UInt16?
     private(set) var battle: NetBattleState?
     private(set) var incomingSnapshot: BattleSnapshot?   // 수락 화면에서 상대 미리보기
+    private(set) var incomingLineup: [BattleSnapshot] = []
+    private(set) var incomingTeamSize = 1
+    /// 수락 화면 전용 초안. 수락 전에는 공용 `pickedTeam` 을 건드리지 않는다.
+    var incomingPickedTeam: [UUID] = []
     private(set) var opponentRankProfile: BattleRankProfile?
     private(set) var rankedStake = 0
     private(set) var lastRankDelta = 0
@@ -131,6 +356,7 @@ final class BattleCenter {
     /// 방금 승리로 받은 보상 — 결과 화면이 보여준다. 재도전이면 nil 이다.
     private(set) var lastGymReward: GymReward?
     var rankedTeamSize = 1
+    nonisolated static let supportedTeamSizes: Set<Int> = [1, 3, 6]
 
     /// 모의전에 데려갈 개체 — **고른 순서가 곧 출전 순서**다(첫 번째가 선봉).
     /// 비워 두면 예전처럼 소유 목록 앞에서 자동으로 채운다.
@@ -156,22 +382,48 @@ final class BattleCenter {
 
     /// 정해진 머릿수의 출전 팀. 체육관은 관장 팀에 맞춰 3 을 넘기고, 모의전은 화면에서 고른 크기를 쓴다.
     func battleTeamMons(size: Int) -> [MonState] {
+        battleTeamMons(size: size, selection: pickedTeam)
+    }
+
+    func battleTeamMons(size: Int, selection: [UUID]) -> [MonState] {
         guard size > 0 else { return [] }
         let owned = companion.ownedMons
         let byID = Dictionary(owned.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var included = Set<UUID>()
         var team: [MonState] = []
-        for id in pickedTeam where included.insert(id).inserted {
+        for id in selection where included.insert(id).inserted {
             if let mon = byID[id] { team.append(mon) }
         }
         for mon in owned where included.insert(mon.id).inserted { team.append(mon) }
         return Array(team.prefix(size))
     }
 
+    /// 선택이 덜 찼을 때 소유 목록 순으로 자동 보충한 실제 UUID 순서.
+    func resolvedTeamIDs(size: Int, selection: [UUID]) -> [UUID] {
+        battleTeamMons(size: size, selection: selection).map(\.id)
+    }
+
+    func prepareIncomingSelection(teamSize: Int) {
+        let owned = Set(companion.ownedMons.map(\.id))
+        var seen = Set<UUID>()
+        incomingPickedTeam = Array(pickedTeam.filter { owned.contains($0) && seen.insert($0).inserted }
+            .prefix(teamSize))
+    }
+
+    func discardIncomingSelection() {
+        incomingPickedTeam = []
+    }
+
+    func commitIncomingSelection(_ confirmedIDs: [UUID]) {
+        let confirmed = Set(confirmedIDs)
+        pickedTeam = Array((confirmedIDs + pickedTeam.filter { !confirmed.contains($0) }).prefix(6))
+    }
+
     /// 출전 순서를 먼저 값으로 확정한 뒤 그 배열만 순차 변환한다. 스탯/기술 조회 중 사용자가
     /// 선택을 바꾸거나 파트너가 교체돼도 이미 시작한 배틀의 슬롯 순서는 흔들리지 않는다.
-    func battleTeamSnapshots(size: Int, levelOverride: Int? = nil) async -> [BattleSnapshot]? {
-        var preparedMons = battleTeamMons(size: size)
+    func battleTeamSnapshots(size: Int, selection: [UUID]? = nil,
+                             levelOverride: Int? = nil) async -> [BattleSnapshot]? {
+        var preparedMons = battleTeamMons(size: size, selection: selection ?? pickedTeam)
         guard preparedMons.count == size else { return nil }
         // 기존 근거리전은 현재 파트너의 진화 전 기술까지 먼저 복원했다. 공용 경로로 옮긴 뒤에도
         // 활성 개체가 팀에 있으면 그 동작을 보존하되, UUID/슬롯 순서는 위에서 고정한 배열을 쓴다.
@@ -191,6 +443,13 @@ final class BattleCenter {
             snapshots.append(snapshot)
         }
         return snapshots
+    }
+
+    nonisolated static func validLineup(snapshot: BattleSnapshot, lineup: [BattleSnapshot],
+                                        teamSize: Int) -> Bool {
+        guard supportedTeamSizes.contains(teamSize), lineup.count == teamSize,
+              lineup.first == snapshot else { return false }
+        return lineup.allSatisfy { !$0.types.isEmpty && (1...100).contains($0.level) }
     }
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
 
@@ -489,10 +748,17 @@ final class BattleCenter {
 
     private func challengeEndpoint(_ endpoint: NWEndpoint, displayName: String) {
         guard case .ready = phase else { return }
+        let teamSize = rankedTeamSize
+        guard Self.supportedTeamSizes.contains(teamSize),
+              companion.ownedMons.count >= teamSize else {
+            lastError = l.battleNeedsPokemon(teamSize)
+            return
+        }
         phase = .preparing
         lastError = nil
         Task { @MainActor in
-            guard let snapshot = await buildMySnapshot(levelOverride: 50) else {
+            guard let lineup = await buildMyLineup(size: teamSize, levelOverride: 50),
+                  let snapshot = lineup.first else {
                 phase = .ready
                 lastError = l.battleStatsFailed
                 return
@@ -510,11 +776,12 @@ final class BattleCenter {
                 Task { @MainActor in self?.connectionState(state, conn: conn) }
             }
             conn.start(queue: .main)
-            send(.challenge(snapshot: snapshot, seed: seed,
+            pendingMyLineup = lineup
+            pendingMyTeamSize = teamSize
+            send(.challenge(snapshot: snapshot, lineup: lineup, teamSize: teamSize, seed: seed,
                             profile: companion.battleRankProfile,
                             rulesVersion: BattleEngine.rulesVersion), over: conn)
             receiveLoop(conn)
-            pendingMySnapshot = snapshot
         }
     }
 
@@ -543,7 +810,7 @@ final class BattleCenter {
 
     func cancelChallenge() {
         if case .challenging = phase { dropConnection(); phase = .ready }
-        if case .preparing = phase { phase = .ready }
+        if case .preparing = phase { clearPendingOutgoing(); phase = .ready }
     }
 
     // MARK: 수신 (defender = B)
@@ -565,10 +832,25 @@ final class BattleCenter {
     }
 
     func acceptIncoming() {
-        guard case .incoming = phase, let conn = connection, let oppSnapshot = incomingSnapshot else { return }
+        guard case .incoming = phase, let conn = connection, !incomingLineup.isEmpty else { return }
+        guard companion.ownedMons.count >= incomingTeamSize else {
+            lastError = l.battleNeedsPokemon(incomingTeamSize)
+            return
+        }
+        let confirmedIDs = resolvedTeamIDs(size: incomingTeamSize, selection: incomingPickedTeam)
+        guard confirmedIDs.count == incomingTeamSize else {
+            lastError = l.battleNeedsPokemon(incomingTeamSize)
+            return
+        }
+        let opponentTeam = incomingLineup
+        let teamSize = incomingTeamSize
         phase = .preparing
         Task { @MainActor in
-            guard let mine = await buildMySnapshot(levelOverride: 50) else {
+            let prepared = await buildMyLineup(size: teamSize, selection: confirmedIDs,
+                                               levelOverride: 50)
+            // 스냅샷을 준비하는 동안 상대 연결이 끊겼으면 초안도 이미 폐기됐다. 늦게 수락하지 않는다.
+            guard case .preparing = phase, conn === connection else { return }
+            guard let mine = prepared, let lead = mine.first else {
                 send(.decline, over: conn)
                 dropConnection()
                 phase = .ready
@@ -583,9 +865,11 @@ final class BattleCenter {
                 dropConnection(); phase = .ready; lastError = l.battleStakeShort
                 return
             }
-            send(.accept(snapshot: mine, profile: mineProfile,
+            // 수락이 확정된 뒤에만 공용 선택의 앞부분을 실제 출전 순서로 바꾼다.
+            commitIncomingSelection(confirmedIDs)
+            send(.accept(snapshot: lead, lineup: mine, teamSize: teamSize, profile: mineProfile,
                          rulesVersion: BattleEngine.rulesVersion), over: conn)
-            beginBattle(my: mine, opp: oppSnapshot, iAmA: false, seed: incomingSeed)
+            beginBattle(my: mine, opp: opponentTeam, iAmA: false, seed: incomingSeed)
         }
     }
 
@@ -599,13 +883,24 @@ final class BattleCenter {
     // MARK: 대전 진행
 
     func chooseMove(_ index: Int) {
-        guard case .battling = phase, var b = battle, b.myChoice == nil else { return }
+        guard case .battling = phase, var b = battle, b.myAction == nil else { return }
         let idx = b.mustStruggle ? -1 : index
-        guard idx == -1 || b.me.canUse(moveAt: idx) else { return }
-        b.myChoice = idx
+        let action = NetBattleAction.move(index: idx)
+        guard b.canChoose(action, mine: true) else { return }
+        b.myAction = action
         guard let conn = connection else { return }
         battle = b
-        send(.move(turn: b.turn, moveIndex: idx), over: conn)
+        send(.action(turn: b.turn, action: action), over: conn)
+        resolveIfReady()
+    }
+
+    func switchLAN(to index: Int) {
+        guard case .battling = phase, var b = battle, b.myAction == nil else { return }
+        let action = NetBattleAction.switchTo(index: index)
+        guard b.canChoose(action, mine: true), let conn = connection else { return }
+        b.myAction = action
+        battle = b
+        send(.action(turn: b.turn, action: action), over: conn)
         resolveIfReady()
     }
 
@@ -636,9 +931,15 @@ final class BattleCenter {
         lastRankDelta = 0
     }
 
-    private var pendingMySnapshot: BattleSnapshot?
+    private var pendingMyLineup: [BattleSnapshot] = []
+    private var pendingMyTeamSize = 1
 
-    private func beginBattle(my: BattleSnapshot, opp: BattleSnapshot, iAmA: Bool, seed: UInt64) {
+    private func clearPendingOutgoing() {
+        pendingMyLineup = []
+        pendingMyTeamSize = 1
+    }
+
+    private func beginBattle(my: [BattleSnapshot], opp: [BattleSnapshot], iAmA: Bool, seed: UInt64) {
         didSettleRankedBrawl = false
         lastRankDelta = 0
         if let opponentRankProfile {
@@ -664,8 +965,10 @@ final class BattleCenter {
             lastError = l.battleStakeShort
             return
         }
-        battle = NetBattleState(iAmA: iAmA, me: BattleSide(my), opp: BattleSide(opp),
+        battle = NetBattleState(iAmA: iAmA, myTeam: my.map(BattleSide.init),
+                                oppTeam: opp.map(BattleSide.init),
                                 rng: SplitMix64(seed: seed))
+        clearPendingOutgoing()
         phase = .battling
         pendingAttention = true
         scheduleTurnTimeout()
@@ -696,38 +999,24 @@ final class BattleCenter {
     /// 시간이 다 됐는데 아직 안 골랐으면 자동으로 고른다. 사람이 고른 것과 **같은 경로로** 나가므로
     /// 두 피어가 갈라지지 않고, 규칙이 아니라 입력이 바뀌는 것이라 `rulesVersion` 도 그대로다.
     private func fillTimedOutChoice(turn: Int) {
-        guard case .battling = phase, let state = battle, state.turn == turn, state.myChoice == nil else { return }
+        guard case .battling = phase, let state = battle, state.turn == turn, state.myAction == nil else { return }
         AppLog.write("battle turn \(turn) timed out — choosing a move automatically")
         chooseMove(Self.automaticMoveIndex(for: state.me))
     }
 
     /// 양쪽 선택이 모이면 턴 해상 — challenger 를 A 로 고정해 양쪽이 같은 좌변으로 계산.
     private func resolveIfReady() {
-        guard var b = battle, let myIdx = b.myChoice, let oppIdx = b.oppChoice else { return }
-        let myMove = b.move(forIndex: myIdx, mine: true)
-        let oppMove = b.move(forIndex: oppIdx, mine: false)
-        // 인덱스 검증은 경계(`chooseMove`/`handle(.move)`)에서 끝났지만, 여기서도 범위를 확인한다 —
-        // 배열 첨자는 틀리면 거절이 아니라 크래시다.
-        if b.me.pp.indices.contains(myIdx) { b.me.pp[myIdx] = max(0, b.me.pp[myIdx] - 1) }
-        if b.opp.pp.indices.contains(oppIdx) { b.opp.pp[oppIdx] = max(0, b.opp.pp[oppIdx] - 1) }
-
-        // 엔진 좌변은 항상 challenger(A) 다. 양쪽이 같은 좌변으로 계산해야 같은 결과가 나온다.
-        var sideA = b.iAmA ? b.me : b.opp
-        var sideB = b.iAmA ? b.opp : b.me
-        let events = BattleEngine.resolveTurn(a: &sideA, b: &sideB,
-                                             moveA: b.iAmA ? myMove : oppMove,
-                                             moveB: b.iAmA ? oppMove : myMove,
-                                             turn: b.turn, rng: &b.rng)
-        b.me = b.iAmA ? sideA : sideB
-        b.opp = b.iAmA ? sideB : sideA
-        b.events.append(contentsOf: events)
-        b.turn += 1
-        b.myChoice = nil
-        b.oppChoice = nil
+        guard var b = battle, b.myAction != nil, b.oppAction != nil else { return }
+        let outcome = b.resolveChosenActions()
         battle = b
 
-        if !b.me.isAlive || !b.opp.isAlive {
-            let iWon: Bool? = b.me.isAlive ? true : (b.opp.isAlive ? false : nil)
+        if let outcome {
+            let iWon: Bool?
+            switch outcome {
+            case .win: iWon = true
+            case .loss: iWon = false
+            case .draw: iWon = nil
+            }
             dropConnection()
             cancelTurnTimeout()
             phase = .finished(iWon: iWon, byForfeit: false)
@@ -743,7 +1032,7 @@ final class BattleCenter {
 
     private func handle(_ message: NetMessage) {
         switch message {
-        case .challenge(let snapshot, let seed, let profile, let rulesVersion):
+        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
             guard rulesVersion == BattleEngine.rulesVersion else {
                 send(.decline, over: connection)
@@ -760,24 +1049,28 @@ final class BattleCenter {
                 AppLog.write("battle challenge declined: do not disturb enabled")
                 return
             }
-            guard !snapshot.types.isEmpty, (1...100).contains(snapshot.level) else {
+            guard Self.validLineup(snapshot: snapshot, lineup: lineup, teamSize: teamSize) else {
                 send(.decline, over: connection)
                 dropConnection()
                 return
             }
             incomingSnapshot = snapshot
+            incomingLineup = lineup
+            incomingTeamSize = teamSize
+            prepareIncomingSelection(teamSize: teamSize)
             incomingSeed = seed
             opponentRankProfile = profile
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             pendingAttention = true
             postChallengeNotification(snapshot)
-        case .accept(let snapshot, let profile, let rulesVersion):
-            guard case .challenging = phase, let mine = pendingMySnapshot else { return }
+        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion):
+            guard case .challenging = phase, !pendingMyLineup.isEmpty else { return }
             guard rulesVersion == BattleEngine.rulesVersion else {
                 dropConnection(); phase = .ready; lastError = l.battleRulesMismatch
                 return
             }
-            guard !snapshot.types.isEmpty, (1...100).contains(snapshot.level) else {
+            guard teamSize == pendingMyTeamSize,
+                  Self.validLineup(snapshot: snapshot, lineup: lineup, teamSize: teamSize) else {
                 dropConnection(); phase = .ready; return
             }
             let stake = BattleRank.stake(challenger: companion.battleRank, defender: profile.rank)
@@ -786,21 +1079,22 @@ final class BattleCenter {
                 return
             }
             opponentRankProfile = profile
-            beginBattle(my: mine, opp: snapshot, iAmA: true, seed: incomingSeed)
+            beginBattle(my: pendingMyLineup, opp: lineup, iAmA: true, seed: incomingSeed)
         case .decline:
             if case .challenging = phase {
                 dropConnection()
                 phase = .ready
                 lastError = l.battleDeclined
             }
-        case .move(let turn, let moveIndex):
-            guard case .battling = phase, var b = battle, b.oppChoice == nil, turn == b.turn else { return }
-            // 인덱스는 상대가 보내오는 값이다. `< 4` 로 세던 때는 기술이 2개인 무브셋에 3 이 오면
-            // `resolveIfReady` 의 `opp.pp[3]` 이 범위를 벗어나 크래시였다 — 경계는 `canUse` 하나로 본다.
-            guard moveIndex == -1 || b.opp.canUse(moveAt: moveIndex) else { return }
-            b.oppChoice = moveIndex
+        case .action(let turn, let action):
+            guard case .battling = phase, var b = battle, b.oppAction == nil, turn == b.turn,
+                  b.canChoose(action, mine: false) else { return }
+            b.oppAction = action
             battle = b
             resolveIfReady()
+        case .move:
+            // 구버전 메시지는 디코딩만 한다. 팀 규칙 버전 핸드셰이크를 통과할 수 없어 적용하지 않는다.
+            return
         case .forfeit:
             if case .battling = phase {
                 dropConnection()
@@ -843,7 +1137,7 @@ final class BattleCenter {
             // `byForfeit: false` 다 — 끊김은 기권이 **아니다.** true 로 두면 결과 화면이 `battleYouForfeited`
             // ("기권했어요")를 그려, 와이파이가 끊겨 HP 비율로 진 사람에게 스스로 기권했다고 말한다.
             // 끊겼다는 사실은 `lastError` 가 따로 알린다(다른 phase 의 끊김과 같은 문구).
-            let iWon = battle.flatMap { BattleEngine.disconnectOutcome(me: $0.me, opp: $0.opp) }
+            let iWon = battle.flatMap { BattleEngine.disconnectOutcome(me: $0.myTeam, opp: $0.oppTeam) }
             phase = .finished(iWon: iWon, byForfeit: false)
             lastError = l.battleConnectionLost
             if let iWon { settleRankedBrawlIfNeeded(won: iWon) } else { refundRankedBrawlIfNeeded() }
@@ -854,6 +1148,10 @@ final class BattleCenter {
             break
         }
         incomingSnapshot = nil
+        incomingLineup = []
+        discardIncomingSelection()
+        incomingTeamSize = 1
+        clearPendingOutgoing()
     }
 
     private func dropConnection() {
@@ -862,6 +1160,10 @@ final class BattleCenter {
         conn?.cancel()
         cancelTurnTimeout()
         incomingSnapshot = nil
+        incomingLineup = []
+        discardIncomingSelection()
+        incomingTeamSize = 1
+        clearPendingOutgoing()
     }
 
     private func settleRankedBrawlIfNeeded(won: Bool) {
@@ -922,13 +1224,17 @@ final class BattleCenter {
     // MARK: 내 스냅샷 (무브셋 포함)
 
     func buildMySnapshot(levelOverride: Int? = nil) async -> BattleSnapshot? {
-        guard var snapshot = await battleTeamSnapshots(size: 1, levelOverride: levelOverride)?.first else {
-            return nil
-        }
+        await buildMyLineup(size: 1, levelOverride: levelOverride)?.first
+    }
+
+    func buildMyLineup(size: Int, selection: [UUID]? = nil,
+                       levelOverride: Int? = nil) async -> [BattleSnapshot]? {
+        guard var lineup = await battleTeamSnapshots(size: size, selection: selection,
+                                                     levelOverride: levelOverride) else { return nil }
         // 근거리 랭크전은 기존처럼 비어 있지 않은 표시 이름을 보낸다. 공용 포켓몬 스냅샷은
         // 연습전에서도 써서 저장된 trainerName 그대로 두므로, wire 로 내보내는 이 자리에서만 보정한다.
-        snapshot.trainer = trainerDisplayName
-        return snapshot
+        for index in lineup.indices { lineup[index].trainer = trainerDisplayName }
+        return lineup
     }
 
     // MARK: 알림
