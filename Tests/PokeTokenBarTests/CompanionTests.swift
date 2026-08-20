@@ -717,7 +717,11 @@ final class CompanionStoreTests: XCTestCase {
 
     // MARK: 체육관 배지
 
-    private var bugGym: Gym { GymLeague.catalog[0] }
+    /// 인덱스가 아니라 타입으로 집는다 — 카탈로그 순서는 밸런스에 따라 바뀐다.
+    private func gym(_ type: PokemonType) -> Gym {
+        GymLeague.catalog.first { $0.type == type } ?? GymLeague.catalog[0]
+    }
+    private var bugGym: Gym { gym(.bug) }
 
     /// 첫 승리에만 배지와 별의조각이 나간다.
     func testFirstGymVictoryAwardsTheBadgeAndReward() {
@@ -750,7 +754,7 @@ final class CompanionStoreTests: XCTestCase {
         let s = store(noEvo)
         s.recordGymVictory(bugGym)
 
-        let rockGym = GymLeague.catalog[1]
+        let rockGym = gym(.rock)
         XCTAssertFalse(s.hasBadge(rockGym))
         XCTAssertEqual(s.recordGymVictory(rockGym), rockGym.firstClearReward)
         XCTAssertEqual(s.earnedGymBadges, [bugGym.id, rockGym.id])
@@ -760,7 +764,8 @@ final class CompanionStoreTests: XCTestCase {
     func testBadgeKeysAreStableAndUnique() {
         let ids = GymLeague.catalog.map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count, "체육관 키가 겹치면 배지 하나가 둘을 덮는다")
-        XCTAssertEqual(GymLeague.catalog[0].id, PokemonType.bug.rawValue)
+        XCTAssertEqual(Set(ids), Set(GymLeague.catalog.map(\.type.rawValue)),
+                       "키는 타입에서 나온다 — 순서를 바꿔도 배지가 딴 데로 가지 않는다")
         for gym in GymLeague.catalog {
             XCTAssertEqual(GymLeague.gym(id: gym.id), gym, "키로 되찾을 수 있어야 화면이 이름을 그린다")
         }
@@ -776,12 +781,37 @@ final class CompanionStoreTests: XCTestCase {
         }
     }
 
-    /// 레벨이 곧 난이도이자 도전 순서다 — 카탈로그 순서와 어긋나면 목록이 거짓말을 한다.
-    func testGymsAreListedFromEasiestToHardest() {
-        let levels = GymLeague.catalog.map(\.level)
-        XCTAssertEqual(levels, levels.sorted(), "레벨 오름차순이어야 한다")
+    /// 관장은 넷을 다 들고 나온다. 자동 선발에 맡겼을 땐 종에 따라 둘밖에 못 채워 PP 가 금방
+    /// 떨어졌다 — 지정으로 바꾼 이유가 그것이라, 지정한 쪽이 모자라면 되돌아간 것과 같다.
+    func testEveryLeaderCarriesFourNamedMoves() {
+        for gym in GymLeague.catalog {
+            XCTAssertEqual(gym.teamMoveNames.count, gym.teamSpeciesIDs.count,
+                           "\(gym.id): 기술 목록이 팀과 짝이 맞지 않는다")
+            for (slot, moves) in gym.teamMoveNames.enumerated() {
+                XCTAssertEqual(moves.count, 4, "\(gym.id) \(slot)번: 기술 4개")
+                XCTAssertEqual(Set(moves).count, moves.count, "\(gym.id) \(slot)번: 같은 기술이 둘")
+                for name in moves {
+                    XCTAssertFalse(name.isEmpty)
+                    XCTAssertEqual(name, name.lowercased(),
+                                   "PokéAPI move 이름은 소문자 하이픈 표기다")
+                    XCTAssertFalse(name.contains(" "), "\(name): 공백이 아니라 하이픈을 쓴다")
+                }
+            }
+        }
+    }
+
+    /// 관장은 전부 같은 레벨에 선다. 레벨이 갈리면 낮은 곳부터 순서가 **강제**되고, 그 격차가
+    /// 타입 상성을 덮어 이 컨텐츠의 공략 자체가 사라진다(`GymLeague.leaderLevel` 주석의 계산).
+    func testEveryLeaderStandsAtTheSameLevel() {
+        XCTAssertEqual(Set(GymLeague.catalog.map(\.level)).count, 1)
+        XCTAssertEqual(GymLeague.catalog.first?.level, GymLeague.leaderLevel)
+    }
+
+    /// 보상은 목록 순서를 따라 오른다 — 뒤로 갈수록 어렵다는 신호가 목록과 어긋나면 안 된다.
+    func testRewardsRiseWithTheListedOrder() {
         let rewards = GymLeague.catalog.map(\.firstClearReward)
-        XCTAssertEqual(rewards, rewards.sorted(), "보상도 난이도를 따라가야 한다")
+        XCTAssertEqual(rewards, rewards.sorted())
+        XCTAssertEqual(Set(rewards).count, rewards.count, "같은 보상이 둘이면 순서가 뜻을 잃는다")
     }
 
     /// 체육관은 관장 팀 머릿수로 나간다 — 화면에서 고른 1/3/6 과 무관하다.
