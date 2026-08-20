@@ -688,6 +688,18 @@ struct L {
     /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.
     var missionDaily: String { t("일간", "Daily", "デイリー") }
 
+    /// 업적 트랙 이름. 미션·도감 목표와 달리 **id 문자열이 아니라 열거형으로 스위치**한다 —
+    /// 트랙을 더하면 컴파일이 막아 주므로 빈 문자열 폴백이 필요 없다.
+    /// 체육관 "배지" 와 겹치지 않는 말을 쓴다(같은 앱에 두 종류의 배지가 있으면 어느 쪽 진행인지 안 읽힌다).
+    func achievementName(_ track: AchievementTrack) -> String {
+        switch track {
+        case .focus:  return t("집중 시간", "Focus time", "集中時間")
+        case .evolve: return t("진화", "Evolutions", "進化")
+        case .battle: return t("배틀 승리", "Battle wins", "バトル勝利")
+        case .race:   return t("레이스 완주", "Races finished", "レース完走")
+        }
+    }
+
     var notifGraduateTitle: String { t("🎓 졸업!", "🎓 Graduated!", "🎓 卒業！") }
     func notifGraduateBody(_ name: String) -> String { t("\(name) — 도감에 보존! 새 알이 도착했어요.", "\(name) — saved to your Pokédex! A new egg has arrived.", "\(name) — 図鑑に保存！新しいタマゴが届きました。") }
 
