@@ -24,10 +24,6 @@ struct GymLeagueView: View {
             if let error = center.lastError {
                 Text(error).font(.caption2).foregroundStyle(.orange)
             }
-            // 데려갈 팀을 여기서 고른다. 예전엔 배틀 탭에서 미리 고르고 와야 했는데, 이 오버레이가
-            // 그 탭을 덮으므로 무엇을 데려가는지 못 본 채 도전 버튼을 누르게 됐다.
-            TeamPicker(store: store, limit: GymLeague.teamSize)
-                .padding(.bottom, 2)
             ScrollView {
                 VStack(spacing: 6) {
                     ForEach(GymLeague.catalog) { gym in
@@ -37,6 +33,10 @@ struct GymLeagueView: View {
                     }
                 }
             }
+            // 팀 고르기는 **맨 아래 고정**이다. 목록 위에 있을 땐 체육관을 훑어 내려가는 동안
+            // 화면 밖으로 밀려나, 도전 버튼을 누를 때는 누구를 데려가는지 보이지 않았다.
+            // 목록만 스크롤하고 이 영역은 제자리에 있는다.
+            TeamPicker(store: store, limit: GymLeague.teamSize)
         }
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))

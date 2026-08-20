@@ -19,9 +19,15 @@ struct TeamPicker: View {
     /// 종 id → 타입. `MonState` 는 종 id 만 들고 있어 타입은 따로 받아야 한다.
     /// `battleProfile` 이 메모리 캐시를 두므로 같은 종을 여러 마리 가져도 조회는 한 번이다.
     @State private var monTypes: [Int: [PokemonType]] = [:]
+    /// 종 id → 표시 이름. 스프라이트만으로는 무엇인지 알아보기 어렵다.
+    @State private var speciesNames: [Int: String] = [:]
 
-    /// 한 페이지에 그리는 칩 수. 팝오버 콘텐츠 폭(332) 안에 칩 6개(44)와 간격이 들어간다.
-    private static let pageSize = 6
+    /// 한 줄에 넷. 스프라이트 44 에 이름 한 줄이 들어가려면 칩이 이만큼은 돼야 한다 —
+    /// 여섯을 넣던 시절엔 칸이 44pt 라 스프라이트가 30 으로 줄어 무엇인지 알아보기 어려웠다.
+    private static let pageSize = 4
+    /// 칩 넷 + 간격 셋 + 자체 여백이 팝오버 콘텐츠 폭(332) 안에 들어가야 한다:
+    /// 70×4 + 6×3 + 16 = 314. 74 로 잡았을 땐 여유가 2pt 뿐이라 폰트가 조금만 커져도 넘쳤다.
+    private static let chipWidth: CGFloat = 70
 
     private var l: L { store.l }
 
@@ -32,116 +38,143 @@ struct TeamPicker: View {
             .sorted { $0.rawValue < $1.rawValue }
     }
 
+    private func displayName(_ mon: MonState) -> String {
+        mon.nickname ?? speciesNames[mon.currentID] ?? "#\(mon.currentID)"
+    }
+
     var body: some View {
         let all = store.ownedMons
-        let owned = typeFilter.map { type in
+        let shown = typeFilter.map { type in
             all.filter { (monTypes[$0.currentID] ?? []).contains(type) }
         } ?? all
         if all.count > 1 {
-            let pageCount = max(1, (owned.count + Self.pageSize - 1) / Self.pageSize)
-            // 개체가 줄면(졸업·방출) 보던 페이지가 사라진다 — 범위 밖이면 마지막 페이지로 당긴다.
+            let pageCount = max(1, (shown.count + Self.pageSize - 1) / Self.pageSize)
+            // 개체가 줄면(졸업·방출·필터) 보던 페이지가 사라진다 — 범위 밖이면 마지막 페이지로 당긴다.
             let current = min(page, pageCount - 1)
-            let slice = Array(owned.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    // 타입 필터가 '출전 순서' 라벨 자리를 쓴다 — 헤더에 페이저·카운터까지 들어가
-                    // 줄을 더 늘리면 좁아진다. 거르지 않을 땐 '전체 타입' 으로 보인다.
-                    Menu {
-                        Button(l.teamFilterAllTypes) { typeFilter = nil; page = 0 }
-                        ForEach(availableTypes, id: \.self) { type in
-                            Button(type.name(store.language)) { typeFilter = type; page = 0 }
-                        }
-                    } label: {
-                        HStack(spacing: 2) {
-                            Text(typeFilter?.name(store.language) ?? l.teamFilterAllTypes)
-                            Image(systemName: "chevron.down").font(.system(size: 6))
-                        }
-                        .font(.caption2)
-                        .foregroundStyle(typeFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
-                    }
-                    .menuStyle(.borderlessButton).fixedSize()
-                    .disabled(availableTypes.isEmpty)
-                    Spacer()
-                    if pageCount > 1 {
-                        Button { page = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
-                            .buttonStyle(.plain).disabled(current == 0)
-                            .accessibilityLabel(l.dexPagePrev)
-                        Text("\(current + 1) / \(pageCount)")
-                            .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                            .accessibilityLabel(l.dexPageLabel(current + 1, pageCount))
-                        Button { page = min(pageCount - 1, current + 1) } label: { Image(systemName: "chevron.right") }
-                            .buttonStyle(.plain).disabled(current == pageCount - 1)
-                            .accessibilityLabel(l.dexPageNext)
-                    }
-                    Text("\(center.pickedTeam.count) / \(limit)")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(center.pickedTeam.isEmpty ? .tertiary : .secondary)
-                }
-                HStack(spacing: 5) {
-                    ForEach(slice, id: \.id) { mon in
-                        TeamPickChip(mon: mon,
-                                     pickedIndex: center.pickedTeam.firstIndex(of: mon.id),
-                                     onTap: { center.toggleTeamPick(mon.id, limit: limit) })
-                    }
-                    // 마지막 페이지가 덜 차도 칩 폭이 늘어나지 않게 빈 자리를 채운다.
-                    if slice.count < Self.pageSize {
-                        ForEach(slice.count..<Self.pageSize, id: \.self) { _ in
-                            Color.clear.frame(width: 44)
-                        }
-                    }
-                }
-                // 필터가 아무도 안 남기면 빈 화면만 보인다 — 왜 비었는지 말해 준다.
-                if owned.isEmpty {
-                    Text(store.language == .ko ? "이 타입인 포켓몬이 없어요"
-                                               : "No Pokémon of that type")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
-                // 아무것도 안 고르면 소유 순서 앞에서 채운다 — 고르지 않고도 바로 시작할 수 있어야 한다.
-                if center.pickedTeam.isEmpty {
-                    Text(store.language == .ko ? "고르지 않으면 목록 앞에서 자동으로 채워요"
-                                               : "Left empty, the first of your list are sent in")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
+            let slice = Array(shown.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
+            VStack(alignment: .leading, spacing: 6) {
+                header
+                grid(slice)
+                footer(current: current, pageCount: pageCount)
             }
-            // 타입은 화면에 뜬 뒤 채워진다 — 받는 동안에도 목록은 그대로 보이고, 필터만 잠깐 비활성이다.
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.07)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.35), lineWidth: 1))
+            // 타입·이름은 화면에 뜬 뒤 채워진다 — 받는 동안에도 목록은 그대로 보인다.
             .task(id: all.map(\.currentID)) {
-                for speciesID in Set(all.map(\.currentID)) where monTypes[speciesID] == nil {
-                    if let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) {
+                for speciesID in Set(all.map(\.currentID)) {
+                    if monTypes[speciesID] == nil,
+                       let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) {
                         monTypes[speciesID] = profile.types
+                    }
+                    if speciesNames[speciesID] == nil {
+                        speciesNames[speciesID] = await store.resolveSpeciesName(speciesID)
                     }
                 }
             }
         }
     }
+
+    /// 제목 줄 — 이 자리가 무엇인지 먼저 말하고, 고른 수를 오른쪽에 둔다.
+    private var header: some View {
+        HStack(spacing: 6) {
+            Label(l.teamPickerTitle, systemImage: "person.2.badge.gearshape")
+                .font(.caption.weight(.semibold))
+            Spacer(minLength: 4)
+            Text("\(center.pickedTeam.count) / \(limit)")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(center.pickedTeam.count == limit ? AnyShapeStyle(Color.accentColor)
+                                                                  : AnyShapeStyle(.secondary))
+        }
+    }
+
+    /// 칩 줄 — **항상 `pageSize` 칸이다.** 필터로 한 마리만 남아도 빈 칸으로 자리를 채워
+    /// 높이가 그대로여야 한다. 예전엔 남는 수만큼만 그려 필터를 바꿀 때마다 아래가 출렁였다.
+    private func grid(_ slice: [MonState]) -> some View {
+        HStack(spacing: 6) {
+            ForEach(slice, id: \.id) { mon in
+                TeamPickChip(mon: mon, name: displayName(mon),
+                             width: Self.chipWidth,
+                             pickedIndex: center.pickedTeam.firstIndex(of: mon.id),
+                             onTap: { center.toggleTeamPick(mon.id, limit: limit) })
+            }
+            if slice.count < Self.pageSize {
+                ForEach(slice.count..<Self.pageSize, id: \.self) { _ in
+                    Color.clear.frame(width: Self.chipWidth, height: TeamPickChip.height)
+                }
+            }
+        }
+    }
+
+    /// 아래 줄 — 왼쪽은 안내, 오른쪽은 페이저. 페이저를 고른 수(헤더 오른쪽)에서 떼어 놓는다.
+    /// 둘이 붙어 있으면 `2 / 3` 과 `1 / 5` 가 나란히 놓여 어느 쪽이 팀 인원인지 헷갈린다.
+    private func footer(current: Int, pageCount: Int) -> some View {
+        HStack(spacing: 4) {
+            Menu {
+                Button(l.teamFilterAllTypes) { typeFilter = nil; page = 0 }
+                ForEach(availableTypes, id: \.self) { type in
+                    Button(type.name(store.language)) { typeFilter = type; page = 0 }
+                }
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "line.3.horizontal.decrease.circle").font(.system(size: 9))
+                    Text(typeFilter?.name(store.language) ?? l.teamFilterAllTypes)
+                }
+                .font(.caption2)
+                .foregroundStyle(typeFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+            .disabled(availableTypes.isEmpty)
+            Spacer(minLength: 8)
+            if pageCount > 1 {
+                Button { page = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
+                    .buttonStyle(.plain).disabled(current == 0)
+                    .accessibilityLabel(l.dexPagePrev)
+                Text("\(current + 1) / \(pageCount)")
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                    .accessibilityLabel(l.dexPageLabel(current + 1, pageCount))
+                Button { page = min(pageCount - 1, current + 1) } label: { Image(systemName: "chevron.right") }
+                    .buttonStyle(.plain).disabled(current == pageCount - 1)
+                    .accessibilityLabel(l.dexPageNext)
+            }
+        }
+        .frame(height: 16)   // 페이저가 없는 페이지에서도 아래 여백이 같도록 자리를 예약한다.
+    }
 }
 
-/// 출전 팀 칩 하나. 고른 것에는 출전 순서를 배지로 얹는다 — 숫자가 없으면 무엇이 선봉인지 알 수 없다.
+/// 출전 팀 칩 하나 — 스프라이트·이름·레벨. 고른 것에는 출전 순서를 배지로 얹는다.
 struct TeamPickChip: View {
     let mon: MonState
+    let name: String
+    let width: CGFloat
     let pickedIndex: Int?
     let onTap: () -> Void
+
+    /// 칩 높이 — 빈 자리도 같은 높이로 채워야 줄 높이가 흔들리지 않는다.
+    static let height: CGFloat = 74
 
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 1) {
                 ZStack(alignment: .topTrailing) {
-                    SpriteView(speciesID: mon.currentID, size: 30, shiny: mon.isShiny)
+                    SpriteView(speciesID: mon.currentID, size: 44, shiny: mon.isShiny)
                     if let pickedIndex {
                         Text("\(pickedIndex + 1)")
-                            .font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
-                            .frame(width: 13, height: 13)
+                            .font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                            .frame(width: 15, height: 15)
                             .background(Circle().fill(Color.accentColor))
                     }
                 }
-                Text("Lv.\(mon.level)").font(.system(size: 7)).foregroundStyle(.secondary)
+                Text(name).font(.system(size: 9, weight: .semibold)).lineLimit(1)
+                Text("Lv.\(mon.level)").font(.system(size: 8)).foregroundStyle(.secondary)
             }
-            .frame(width: 44)
-            .padding(3)
+            .frame(width: width, height: Self.height)
         }
         .buttonStyle(.plain)
-        .background(RoundedRectangle(cornerRadius: 7)
-            .fill(pickedIndex == nil ? Color.clear : Color.accentColor.opacity(0.15)))
-        .overlay(RoundedRectangle(cornerRadius: 7)
-            .stroke(pickedIndex == nil ? Color.secondary.opacity(0.25) : Color.accentColor, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 8)
+            .fill(pickedIndex == nil ? Color.clear : Color.accentColor.opacity(0.18)))
+        .overlay(RoundedRectangle(cornerRadius: 8)
+            .stroke(pickedIndex == nil ? Color.secondary.opacity(0.3) : Color.accentColor,
+                    lineWidth: pickedIndex == nil ? 1 : 1.5))
     }
 }
