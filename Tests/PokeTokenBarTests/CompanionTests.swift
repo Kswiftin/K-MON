@@ -2057,6 +2057,43 @@ final class BattleTeamPickTests: XCTestCase {
         }
     }
 
+    func testRankedLineupBuildsEverySupportedSizeInTheChosenOrder() async {
+        let (store, mons) = teamPickStore(monCount: 6)
+        let center = battleCenter(store: store)
+        center.pickedTeam = [mons[5].id, mons[2].id]
+
+        for size in [1, 3, 6] {
+            let lineup = await center.buildMyLineup(size: size, levelOverride: 50)
+            let expected = Array(([mons[5], mons[2]]
+                + mons.filter { ![mons[5].id, mons[2].id].contains($0.id) }).prefix(size))
+            XCTAssertEqual(lineup?.map(\.speciesID), expected.map(\.currentID), "team size \(size)")
+            XCTAssertEqual(lineup?.map(\.level), Array(repeating: 50, count: size))
+            XCTAssertTrue(lineup?.allSatisfy { !($0.trainer ?? "").isEmpty } == true)
+        }
+    }
+
+    func testIncomingDraftDoesNotChangeSharedSelectionUntilCommitted() {
+        let (center, mons) = teamPickCenter(monCount: 6)
+        center.pickedTeam = [mons[4].id, mons[1].id, mons[5].id]
+
+        center.prepareIncomingSelection(teamSize: 3)
+        center.incomingPickedTeam = [mons[2].id]
+        let confirmed = center.resolvedTeamIDs(size: 3, selection: center.incomingPickedTeam)
+        XCTAssertEqual(center.pickedTeam, [mons[4].id, mons[1].id, mons[5].id],
+                       "초안 편집은 기존 공용 순서를 덮어쓰지 않는다")
+        XCTAssertEqual(confirmed, [mons[2].id, mons[0].id, mons[1].id],
+                       "빈 슬롯은 소유 목록 순서로 보충된다")
+
+        center.discardIncomingSelection()
+        XCTAssertTrue(center.incomingPickedTeam.isEmpty)
+        XCTAssertEqual(center.pickedTeam, [mons[4].id, mons[1].id, mons[5].id],
+                       "거절/연결 종료에 해당하는 폐기는 공용 순서를 보존한다")
+
+        center.commitIncomingSelection(confirmed)
+        XCTAssertEqual(Array(center.pickedTeam.prefix(3)), confirmed,
+                       "수락 확정 때만 실제 출전 순서가 공용 앞부분에 반영된다")
+    }
+
     /// 스냅샷 조회가 await 하는 사이 선택이 바뀌어도, 시작할 때 확정한 배열을 끝까지 쓴다.
     func testSnapshotPreparationFreezesInitialOrder() async {
         let (store, mons) = teamPickStore(monCount: 6)

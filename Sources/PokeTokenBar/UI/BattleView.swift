@@ -75,16 +75,13 @@ struct BattleView: View {
             myTitle: l.battleMyPokemon,
             theirTitle: battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
             l: l, turn: battle.turn,
-            logLines: BattleLogSource.twoSided(battle.events, mine: mine, l: l,
-                                               myName: battle.me.snapshot.name,
-                                               theirName: battle.opp.snapshot.name,
-                                               myMoves: battle.me.moves, theirMoves: battle.opp.moves),
+            logLines: BattleLogSource.netBattle(battle, mine: mine, l: l),
             myActor: mine,
-            switchSlots: [],                       // 1v1 LAN 은 1마리 고정 — 교체는 Phase 4
+            switchSlots: SwitchStripModel.battleSlots(battle.myTeam, active: battle.myActive),
             turnEndsAt: center.turnEndsAt,
-            isWaitingForOpponent: battle.myChoice != nil,
+            isWaitingForOpponent: battle.myAction != nil,
             onChoose: { center.chooseMove($0) },
-            onSwitch: { _ in },
+            onSwitch: { center.switchLAN(to: $0) },
             onForfeit: { center.forfeit() })
     }
 
@@ -197,7 +194,9 @@ struct BattleView: View {
                 Text("6 vs 6").tag(6)
             }.pickerStyle(.segmented).labelsHidden()
 
-            TeamPicker(store: store, limit: center.rankedTeamSize)
+            TeamPicker(store: store,
+                       selection: Binding(get: { center.pickedTeam }, set: { center.pickedTeam = $0 }),
+                       limit: center.rankedTeamSize)
 
             HStack(spacing: 6) {
                 Button {
@@ -583,11 +582,11 @@ struct BattleView: View {
     }
 
     private func incomingView(peer: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 7) {
             Text("⚔️ \(l.battleIncomingFrom(peer))")
                 .font(.callout).bold()
                 .multilineTextAlignment(.center)
-            Text(l.battleKindBrawl)
+            Text("\(center.incomingTeamSize) vs \(center.incomingTeamSize)")
                 .font(.caption2).foregroundStyle(.secondary)
             if let profile = center.opponentRankProfile {
                 VStack(spacing: 2) {
@@ -603,16 +602,28 @@ struct BattleView: View {
                 snapshotCard(opp, title: opp.trainer.map { l.battleTrainerLabel($0) } ?? "?")
                     .frame(maxWidth: 180)
             }
+            TeamPicker(store: store,
+                       selection: Binding(get: { center.incomingPickedTeam },
+                                          set: { center.incomingPickedTeam = $0 }),
+                       limit: center.incomingTeamSize)
+            if store.ownedMons.count < center.incomingTeamSize {
+                Text(l.battleNeedsPokemon(center.incomingTeamSize))
+                    .font(.caption2).foregroundStyle(.orange)
+            } else if let error = center.lastError {
+                Text(error).font(.caption2).foregroundStyle(.orange)
+            }
+            Spacer(minLength: 0)
             HStack(spacing: 12) {
                 Button(l.battleAccept) { center.acceptIncoming() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .disabled(store.ownedMons.count < center.incomingTeamSize)
                 Button(l.battleDecline) { center.declineIncoming() }
                     .controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
     }
 
     // MARK: 로그/카드 공용

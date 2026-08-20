@@ -59,8 +59,13 @@ struct L {
         t("랭크전 판돈이 부족해요.", "Not enough Star Pieces for the ranked stake.",
           "ランク戦の賭け星のかけらが足りません。")
     }
-    var battleYourTurn: String { t("기술을 선택하세요", "Choose a move", "わざを選んでください") }
-    var battleWaitingOpponent: String { t("상대가 기술을 고르는 중…", "Opponent is choosing…", "相手がわざを選んでいます…") }
+    func battleNeedsPokemon(_ count: Int) -> String {
+        t("\(count) vs \(count) 대결에는 포켓몬이 \(count)마리 필요해요.",
+          "You need \(count) Pokémon for a \(count) vs \(count) battle.",
+          "\(count)対\(count)の対戦にはポケモンが\(count)匹必要です。")
+    }
+    var battleYourTurn: String { t("기술 또는 교체를 선택하세요", "Choose a move or switch", "わざか交代を選んでください") }
+    var battleWaitingOpponent: String { t("상대가 행동을 고르는 중…", "Opponent is choosing…", "相手が行動を選んでいます…") }
     var battleForfeit: String { t("기권", "Forfeit", "降参") }
     var battleSwitch: String { t("교체", "Switch", "こうたい") }
     var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }

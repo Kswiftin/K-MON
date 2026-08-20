@@ -186,6 +186,11 @@ enum SwitchStripModel {
     static func slots(_ sides: [BattleSide], active: Int) -> [SwitchSlot] {
         sides.indices.map { SwitchSlot(index: $0, side: sides[$0], isActive: $0 == active) }
     }
+
+    /// LAN 단일전에는 교체 대상이 없으므로 줄 자체를 숨긴다. 팀전은 인덱스 보존을 위해 전체 슬롯을 둔다.
+    static func battleSlots(_ sides: [BattleSide], active: Int) -> [SwitchSlot] {
+        sides.count > 1 ? slots(sides, active: active) : []
+    }
 }
 
 // MARK: - 상태 배지
@@ -393,6 +398,7 @@ struct MoveGridView: View {
 struct SwitchStripView: View {
     let slots: [SwitchSlot]
     let label: String
+    let isEnabled: Bool
     let onSwitch: (Int) -> Void
 
     var body: some View {
@@ -414,7 +420,7 @@ struct SwitchStripView: View {
                 .padding(2)
                 .background(RoundedRectangle(cornerRadius: 5)
                     .fill(slot.isActive ? Color.accentColor.opacity(0.20) : Color.primary.opacity(0.05)))
-                .disabled(!slot.isSelectable)
+                .disabled(!isEnabled || !slot.isSelectable)
             }
             Spacer(minLength: 0)
         }
@@ -468,7 +474,7 @@ struct BattleArenaView: View {
     let logLines: [BattleLog.Line]
     /// 로그에서 내 편 줄을 진하게 그리는 기준.
     let myActor: BattleActor
-    /// 비었으면 교체 줄을 안 그린다 — 1v1 LAN 은 1마리 고정이다(교체는 Phase 4).
+    /// 비었으면 교체 줄을 안 그린다 — 단일전과 교체할 아군이 없는 화면은 줄 자체가 필요 없다.
     let switchSlots: [SwitchSlot]
     let turnEndsAt: Date?
     let isWaitingForOpponent: Bool
@@ -497,7 +503,8 @@ struct BattleArenaView: View {
                          isEnabled: !isWaitingForOpponent,
                          onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
             if !switchSlots.isEmpty {
-                SwitchStripView(slots: switchSlots, label: l.battleSwitch, onSwitch: onSwitch)
+                SwitchStripView(slots: switchSlots, label: l.battleSwitch,
+                                isEnabled: !isWaitingForOpponent, onSwitch: onSwitch)
             }
             BattleLogBox(lines: logLines, myActor: myActor)
         }
@@ -541,5 +548,20 @@ enum BattleLogSource {
                             return (moves.first { $0.id == id } ?? .struggle()).name(l.lang)
                         })
     }
-}
 
+    /// LAN 팀전 누적 로그 — 각 턴이 발생했을 때의 활성 포켓몬 문맥으로 이름과 기술을 해석한다.
+    static func netBattle(_ battle: NetBattleState, mine: BattleActor, l: L) -> [BattleLog.Line] {
+        if battle.eventBatches.isEmpty {
+            return twoSided(battle.events, mine: mine, l: l,
+                            myName: battle.me.snapshot.name, theirName: battle.opp.snapshot.name,
+                            myMoves: battle.me.moves, theirMoves: battle.opp.moves)
+        }
+        return battle.eventBatches.flatMap { batch in
+            let myContext = mine == .a ? batch.a : batch.b
+            let theirContext = mine == .a ? batch.b : batch.a
+            return twoSided(batch.events, mine: mine, l: l,
+                            myName: myContext.name, theirName: theirContext.name,
+                            myMoves: myContext.moves, theirMoves: theirContext.moves)
+        }
+    }
+}

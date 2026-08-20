@@ -10,7 +10,7 @@ import SwiftUI
 /// 대신 도감·소유 포켓몬과 같은 페이지식이다.
 struct TeamPicker: View {
     let store: CompanionStore
-    @Environment(BattleCenter.self) private var center
+    @Binding var selection: [UUID]
     /// 이 화면에서 고를 수 있는 최대 인원. 체육관은 관장 팀에 맞춰 3, 모의전은 화면에서 고른 크기다.
     let limit: Int
     @State private var page = 0
@@ -40,6 +40,14 @@ struct TeamPicker: View {
 
     private func displayName(_ mon: MonState) -> String {
         mon.nickname ?? speciesNames[mon.currentID] ?? "#\(mon.currentID)"
+    }
+
+    private func toggle(_ monID: UUID) {
+        if let index = selection.firstIndex(of: monID) {
+            selection.remove(at: index)
+        } else if selection.count < limit {
+            selection.append(monID)
+        }
     }
 
     var body: some View {
@@ -83,10 +91,10 @@ struct TeamPicker: View {
             Label(l.teamPickerTitle, systemImage: "person.2.badge.gearshape")
                 .font(.caption.weight(.semibold))
             Spacer(minLength: 4)
-            Text("\(center.pickedTeam.count) / \(limit)")
+            Text("\(min(selection.count, limit)) / \(limit)")
                 .font(.caption.monospacedDigit().weight(.semibold))
-                .foregroundStyle(center.pickedTeam.count == limit ? AnyShapeStyle(Color.accentColor)
-                                                                  : AnyShapeStyle(.secondary))
+                .foregroundStyle(selection.count >= limit ? AnyShapeStyle(Color.accentColor)
+                                                           : AnyShapeStyle(.secondary))
         }
     }
 
@@ -99,10 +107,10 @@ struct TeamPicker: View {
     private var pickedRow: some View {
         HStack(spacing: 5) {
             ForEach(0..<limit, id: \.self) { slot in
-                if slot < center.pickedTeam.count,
-                   let mon = store.ownedMons.first(where: { $0.id == center.pickedTeam[slot] }) {
+                if slot < selection.count,
+                   let mon = store.ownedMons.first(where: { $0.id == selection[slot] }) {
                     PickedSlot(mon: mon, order: slot + 1,
-                               onRemove: { center.toggleTeamPick(mon.id, limit: limit) })
+                               onRemove: { toggle(mon.id) })
                 } else {
                     RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
@@ -121,8 +129,8 @@ struct TeamPicker: View {
             ForEach(slice, id: \.id) { mon in
                 TeamPickChip(mon: mon, name: displayName(mon),
                              width: Self.chipWidth,
-                             pickedIndex: center.pickedTeam.firstIndex(of: mon.id),
-                             onTap: { center.toggleTeamPick(mon.id, limit: limit) })
+                             pickedIndex: selection.firstIndex(of: mon.id),
+                             onTap: { toggle(mon.id) })
             }
             if slice.count < Self.pageSize {
                 ForEach(slice.count..<Self.pageSize, id: \.self) { _ in

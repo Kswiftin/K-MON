@@ -23,14 +23,7 @@ struct TeamPracticeBattle {
     /// 상대만 때릴 수 있었고, 상대는 그동안 한 번도 움직이지 못했다.
     mutating func switchMine(to index: Int) -> Bool {
         guard mine.indices.contains(index), index != myActive, mine[index].isAlive, result == nil else { return false }
-        // Gen 2 는 물러난 포켓몬의 맹독을 보통 독으로 강등한다(Gen 3 부터는 유지 + 카운터만 리셋).
-        // 이게 없으면 한 번 걸린 맹독의 배수가 배틀이 끝날 때까지 계속 커진다.
-        if mine[myActive].status == .toxic {
-            mine[myActive].status = .poison
-            mine[myActive].statusCounter = 0
-        }
-        // 혼란은 volatile — 물러나면 풀린다. 남겨 두면 다시 나올 때 옛 카운터로 계속 혼란이다.
-        mine[myActive].confusionTurns = 0
+        BattleEngine.prepareForSwitch(&mine[myActive])
         myActive = index
         opponentAttacksAlone()
         turn += 1
