@@ -572,7 +572,6 @@ private extension KeyedDecodingContainer {
     }
 }
 
-/// 영속 상태(Application Support JSON). 포켓몬 전환 — 이전 커스텀 캐릭터 상태는 폐기(새로 시작).
 /// 개시 시점에 잡아 둔 랭크전 판돈. 상대 랭크를 함께 적는 건 앱이 죽은 뒤의 패배 정산에도
 /// LP 계산(`BattleRank.apply(win:opponent:)`)이 상대 티어를 필요로 하기 때문이다.
 struct PendingRankedBattle: Codable, Sendable, Equatable {
@@ -580,6 +579,7 @@ struct PendingRankedBattle: Codable, Sendable, Equatable {
     var opponent: BattleRank
 }
 
+/// 영속 상태(Application Support JSON). 포켓몬 전환 — 이전 커스텀 캐릭터 상태는 폐기(새로 시작).
 struct CompanionState: Codable, Sendable {
     /// 배포 단위 강제 초기화 버전. 기존 세이브에는 키가 없어서 0으로 읽히며, 현재 버전보다 낮으면
     /// 최초 실행 한 번만 완전 초기화한다. 초기화 후 현재 값이 저장돼 다음 실행부터는 유지된다.

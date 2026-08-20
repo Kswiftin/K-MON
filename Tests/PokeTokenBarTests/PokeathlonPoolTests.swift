@@ -301,6 +301,26 @@ final class PokeathlonPoolTests: XCTestCase {
         XCTAssertEqual(normal.bets[id(1)]?.amount, 500, "정상 값은 그대로 통과한다")
     }
 
+    /// 회귀(0 나눗셈 트랩): 상한 클램프가 음수·0 을 **0 으로 만들어 원장에 남긴다.** 우승자에 걸린 게
+    /// 0 원 베팅뿐이면 `backed == 0` 이라 `pot * amount / backed` 가 프로세스를 죽였다 — 오버플로를
+    /// 막으면서 같은 공격자에게 다른 트랩을 열어 준 자리다(호스트측 `amount > 0` 은 와이어엔 안 걸린다).
+    /// (트랩은 프로세스를 죽이므로, 이 테스트가 살아서 끝나는 것 자체가 단언이다.)
+    func testAZeroAmountLedgerDoesNotTrapOnPayout() throws {
+        let onlyZero = try JSONDecoder().decode(PokeathlonPool.self, from: Data("""
+        {"bets":["\(id(1).uuidString)",
+                 {"bettorID":"\(id(1).uuidString)","runnerID":"\(id(10).uuidString)","amount":-5}],
+         "isClosed":false}
+        """.utf8))
+        XCTAssertEqual(onlyZero.bets[id(1)]?.amount, 0, "음수는 경계에서 0 이 된다")
+        XCTAssertEqual(onlyZero.payouts(winnerID: id(10)), [id(1): 0], "0 원 베팅은 환불 경로로 빠진다")
+
+        // 0 원 베팅이 정상 베팅과 섞여도 배당이 흔들리지 않는다 — 판돈은 전액 분배된다.
+        let mixed = pool([(1, 10, 0), (2, 10, 100), (3, 20, 50)])
+        let payouts = mixed.payouts(winnerID: id(10))
+        XCTAssertEqual(payouts[id(2)], 150, "0 원 베팅은 지분에 끼지 않는다")
+        XCTAssertEqual(payouts.values.reduce(0, +), mixed.total)
+    }
+
     private func lobbyWith(runner: UUID, spectator: UUID, reportedStarPieces: Int) -> MultiplayerLobby {
         var lobby = try! MultiplayerLobby(
             host: LobbyParticipant(id: runner, trainerName: "R", speciesID: 1, team: .solo,

@@ -325,9 +325,11 @@ final class MultiplayerRoomCenter {
     /// 판정되고 생존자 전원이 승리가 된다. 편성은 이제 경기 중엔 바뀌지 않지만(`isInPlay` 게이트),
     /// 판정의 근거는 애초에 불변인 쪽이어야 한다.
     ///
-    /// 뒤의 두 폴백은 `battle` 을 못 만든 경우의 최후 수단이다.
-    private var combatMode: MultiplayerBattleMode {
-        battle?.mode ?? lobby?.mode ?? (combatFighters.contains { $0.team == .solo } ? .freeForAll : .teams)
+    /// 화면도 이 값을 쓴다 — 팀 배지·공격 대상 필터가 `lobby?.mode` 를 따로 보면 판정과 갈라진다.
+    /// 폴백은 `battle` 을 못 만든 경우의 최후 수단이다(그 상태면 `combatFighters` 도 비어 있어
+    /// 판정 자체가 성립하지 않는다).
+    var combatMode: MultiplayerBattleMode {
+        battle?.mode ?? lobby?.mode ?? .freeForAll
     }
 
     var isBattleFinished: Bool {
@@ -425,11 +427,8 @@ final class MultiplayerRoomCenter {
             case .team(let pid, let team) where pid == id && !self.isInPlay:
                 self.lobby?.setTeam(team, participantID: pid); self.broadcastLobby()
             case .leave(let pid) where pid == id:
-                if self.phase == .battling {
-                    self.battle?.forfeit(participantID: pid)
-                    self.combatFighters = self.battle?.fighters ?? self.combatFighters
-                    self.finishRoundIfReady()
-                } else { try? self.lobby?.leave(participantID: pid) }
+                if self.phase == .battling { self.retireFighter(pid) }
+                else { try? self.lobby?.leave(participantID: pid) }
                 self.snapshots.removeValue(forKey: pid); self.guestConnections.removeValue(forKey: pid)
                 connection.cancel(); self.broadcastLobby(); return
             case .action(let round, let action) where action.attackerID == id && round == self.combatRound:
@@ -539,18 +538,27 @@ final class MultiplayerRoomCenter {
         guard let id = guestConnections.first(where: { $0.value === connection })?.key else { return }
         guestConnections.removeValue(forKey: id); snapshots.removeValue(forKey: id)
         if phase == .battling {
-            battle?.forfeit(participantID: id)
-            combatFighters = battle?.fighters ?? combatFighters
-            pendingActions.removeValue(forKey: id)
-            if battle?.isFinished == true {
-                turnTimeoutTask?.cancel(); turnEndsAt = nil; grantRewardIfFinished()
-                broadcastCombatState()
-            } else { finishRoundIfReady() }
+            retireFighter(id)
         } else {
             // 관전자가 떠나도 원장은 그대로 둔다 — 판돈은 이미 그 관전자 지갑에서 빠졌고,
             // 정산은 우승자 기준으로 계산되므로 남은 참가자들의 배당이 흔들리지 않는다.
             try? lobby?.leave(participantID: id); broadcastLobby()
         }
+    }
+
+    /// 배틀 중 이탈한 참가자를 쓰러진 것으로 처리한다 — 명시적 `.leave` 와 연결 끊김이 **같은 자리**를
+    /// 지나야 한다. `.leave` 쪽에만 마감 처리가 없던 동안, 상대가 "나가기"를 누르면 화면은 결과로
+    /// 넘어가는데 전적이 남지 않았고(`grantRewardIfFinished` 미호출) 게스트에게 최종 상태도 가지 않았다.
+    /// 게다가 내가 그 라운드에 행동을 안 냈으면 `finishRoundIfReady` 가 조용히 빠져 마감 타이머도
+    /// 다시 걸리지 않아 방이 멈췄다.
+    private func retireFighter(_ id: UUID) {
+        battle?.forfeit(participantID: id)
+        combatFighters = battle?.fighters ?? combatFighters
+        pendingActions.removeValue(forKey: id)
+        if battle?.isFinished == true {
+            turnTimeoutTask?.cancel(); turnEndsAt = nil
+            grantRewardIfFinished(); broadcastCombatState()
+        } else { finishRoundIfReady() }
     }
 
     private func grantRewardIfFinished() {

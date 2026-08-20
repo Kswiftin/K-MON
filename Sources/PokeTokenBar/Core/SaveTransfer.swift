@@ -154,7 +154,7 @@ enum SaveTransfer {
         s.usedSinceInstall = clampToken(s.usedSinceInstall)
         s.spentTokens = clampToken(s.spentTokens)
         s.starPieces = clampToken(s.starPieces)
-        s.battleRank.points = min(BattleRank.maximumPoints, max(0, s.battleRank.points))
+        s.battleRank.points = BattleRank.clamped(s.battleRank.points)
         // 에스크로도 세이브에 실려 오는 수치다 — 산술(환급·2배 지급)에 쓰이므로 경계에서 자른다.
         // 상한은 일반 수치 상한이 아니라 **판돈 상한**이다: 승리 정산이 `escrowed * 2` 를 지급하므로
         // 10^15 까지 허용하면 세이브 한 장으로 별의조각을 찍을 수 있다(정상 최대는 45,000).

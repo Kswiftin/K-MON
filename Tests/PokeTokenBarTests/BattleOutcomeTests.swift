@@ -212,8 +212,10 @@ final class BattleOutcomeTests: XCTestCase {
                       "판정 모드는 배틀에서 먼저 가져와야 한다 — `lobby?.mode` 를 먼저 보면 배틀 중 편성 변경이 승패를 바꾼다")
         // 편성 메시지·로컬 조작 양쪽에 게이트가 있어야 한다. 화면에서 버튼을 감추는 것만으로는
         // 상대가 보내오는 `.team` 메시지를 막지 못한다.
-        XCTAssertEqual(source.components(separatedBy: "!self.isInPlay").count - 1, 2,
-                       "`.ready`·`.team` 수신 두 곳이 경기 중에는 편성을 받지 않아야 한다")
+        // 하한으로 단언한다 — 정확히 2 로 고정하면 게이트를 **더** 다는 정상 변경이 테스트를 깨고,
+        // 여기서 지키고 싶은 건 "두 수신 경로가 게이트 뒤에 있다"뿐이다.
+        XCTAssertGreaterThanOrEqual(source.components(separatedBy: "!self.isInPlay").count - 1, 2,
+                                    "`.ready`·`.team` 수신 두 곳이 경기 중에는 편성을 받지 않아야 한다")
         XCTAssertTrue(source.contains("guard let me = myParticipant, !isInPlay"),
                       "내가 누르는 준비 토글도 경기 중에는 막힌다")
         XCTAssertTrue(source.contains("guard !isInPlay, lobby?.mode == .teams"),

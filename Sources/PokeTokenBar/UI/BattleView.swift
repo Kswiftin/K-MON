@@ -174,8 +174,8 @@ struct BattleView: View {
         case (.some(false), true):  return l.battleYouForfeited
         case (.some(true), false):  return l.battleWon
         case (.some(false), false): return l.battleLost
-        // 끊김인데 남은 HP 도 같았다 = 무효. "무승부"보다 왜 그렇게 끝났는지가 먼저다.
-        case (.none, true):         return l.battleConnectionLost
+        // 승패가 없는 끝(동시 전멸·끊김 동률)은 전부 무승부다. 끊김은 `byForfeit: false` 로 오고
+        // "왜 끝났는지"는 `lastError`(`battleConnectionLost`)가 따로 말한다 — 기권과 섞지 않는다.
         default:                    return l.battleDraw
         }
     }
@@ -479,9 +479,13 @@ struct BattleView: View {
     private var multiplayerArena: some View {
         let fighters = center.multiplayer.combatFighters
         let me = fighters.first { $0.id == center.multiplayer.myID }
+        // 팀 판정은 `combatMode`(= 배틀 시작 시점에 고정된 모드) 하나만 본다. `lobby?.mode` 는 편성에서
+        // 파생되는 가변값이라, 여기서 따로 읽으면 승패 판정은 팀전인데 화면은 개인전인 상태가 생긴다 —
+        // 그러면 같은 팀을 대상으로 고를 수 있고, 그 라운드는 `resolveRound` 가 통째로 거절한다.
+        let isTeamBattle = center.multiplayer.combatMode == .teams
         let targets = fighters.filter { fighter in
             guard fighter.id != center.multiplayer.myID, fighter.isAlive else { return false }
-            if center.multiplayer.lobby?.mode == .teams, let myTeam = me?.team { return fighter.team != myTeam }
+            if isTeamBattle, let myTeam = me?.team { return fighter.team != myTeam }
             return true
         }
         return VStack(alignment: .leading, spacing: 8) {
@@ -502,7 +506,7 @@ struct BattleView: View {
                 ForEach(fighters) { fighter in
                     VStack(spacing: 2) {
                         HStack {
-                            if center.multiplayer.lobby?.mode == .teams {
+                            if isTeamBattle {
                                 Text(fighter.team == .red ? "🔴" : "🔵").font(.caption2)
                             }
                             Text(fighter.trainerName).font(.caption2).bold().lineLimit(1)
