@@ -577,6 +577,11 @@ struct CompanionHeader: View {
                                 // 무엇을 사야 하는지 여기서 말해주지 않으면 알 길이 없다.
                                 Text(store.l.evolutionNeedsItem(store.l.itemName(evolutionItem)))
                                     .font(.caption2).foregroundStyle(.tertiary)
+                            } else if let graduationLevel = store.graduationLevelRequirement {
+                                // 최종형에 닿으면 위 두 안내가 모두 사라진다. 그대로 두면 졸업 버튼이
+                                // 안 뜨는 이유를 화면 어디서도 알 수 없다.
+                                Text(store.l.graduatesAtLevel(graduationLevel))
+                                    .font(.caption2).foregroundStyle(.tertiary)
                             }
                         }
                     } else {

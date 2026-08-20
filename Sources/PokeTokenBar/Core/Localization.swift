@@ -779,6 +779,12 @@ struct L {
     var useAfterHatch: String { t("부화 후 사용할 수 있어요", "Usable after hatching", "孵化後に使えます") }
     var useNeedsPokemon: String { t("사용할 포켓몬이 없어요", "No Pokémon to use it on", "使えるポケモンがいません") }
 
+    /// 최종형인데 아직 졸업 못 하는 개체의 파트너 카드 한 줄 — 남은 관문이 레벨뿐임을 알린다.
+    /// "Lv.N 에 진화" 가 사라진 그 자리에 들어간다.
+    func graduatesAtLevel(_ level: Int) -> String {
+        t("Lv.\(level)에 졸업", "Graduates at Lv.\(level)", "Lv.\(level)で卒業")
+    }
+
     /// 돌·교환 진화 종의 파트너 카드 한 줄 — 레벨 진화의 "Lv.N 에 진화" 자리에 대신 들어간다.
     /// 상점에서 사서 가방에서 쓴다는 것까지는 담지 않는다(caption 한 줄) — 이름만 알면 상점에서 찾는다.
     func evolutionNeedsItem(_ item: String) -> String {

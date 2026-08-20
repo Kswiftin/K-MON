@@ -1365,6 +1365,19 @@ final class CompanionStore {
         return earnedExemption || a.level >= PokemonBalance.graduationRequiredLevel
     }
 
+    /// 졸업까지 채워야 하는 레벨 — **관문에 걸려 있을 때만** 값이 있다.
+    /// 이미 졸업할 수 있거나, 최종형이 아니거나, 레벨 면제를 받은 개체면 nil 이다.
+    ///
+    /// 이게 없으면 화면이 아무 말도 하지 않는다. 최종형에 닿는 순간 "Lv.N 에 진화"도
+    /// "○○돌 필요"도 사라지고, 졸업 버튼은 조건을 채워야 나타나므로 **왜 못 하는지 알 길이 없다**.
+    /// 돌로 진화시킨 개체가 특히 그렇다 — 레벨 1 파르셀은 최종형이지만 졸업은 한참 남았다.
+    var graduationLevelRequirement: Int? {
+        guard let active = state.active, let line = currentLine,
+              line.tree.node(withID: active.currentID)?.children.isEmpty == true,
+              !active.isGraduated, !canGraduate else { return nil }
+        return PokemonBalance.graduationRequiredLevel
+    }
+
     /// 지금 형태까지 오는 동안 아이템·교환 진화를 한 번이라도 거쳤는가.
     ///
     /// 걸어온 길(`pathIDs`)의 전이를 하나씩 트리에서 조회한다 — 개체에는 "어떻게 진화했는지" 가
