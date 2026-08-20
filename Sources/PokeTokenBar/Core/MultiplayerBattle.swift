@@ -269,8 +269,8 @@ struct MultiplayerBattle: Sendable {
         }
     }
 
-    /// 한 참가자의 승패. `nil` 은 "이 사람에게 줄 결과가 없다" — 아직 안 끝났거나, 전투원이 아니다
-    /// (관전자). 관전자도 라운드 브로드캐스트를 받으므로 이 nil 이 없으면 배틀 기록이 남는다.
+    /// 한 참가자의 승패. `nil` 은 "이 사람에게 줄 결과가 없다" — 아직 안 끝났거나 전투원이 아니다(관전자).
+    /// 관전자도 라운드 브로드캐스트를 받으므로 이 nil 이 없으면 배틀 기록이 남는다.
     static func outcome(for id: UUID, fighters: [MultiplayerFighter],
                         mode: MultiplayerBattleMode) -> BattleOutcome? {
         guard fighters.contains(where: { $0.id == id }),

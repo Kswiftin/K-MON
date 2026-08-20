@@ -9,8 +9,8 @@ import XCTest
 /// `return` 해 동시 전멸(무승부)이 승리가 됐다(체육관이면 배지까지) ③ 반대로 팀전에서는 이긴 팀의
 /// 쓰러진 대원이 패배로 기록됐다.
 ///
-/// 판정은 이제 순수 함수 세 개(`BattleEngine.disconnectOutcome`·`MultiplayerBattle.outcome`/`isFinished`)
-/// 한 곳에 있고, 아래 테스트가 그 함수들의 트리거 브랜치를 직접 밟는다.
+/// 판정은 이제 순수 함수 세 개(`BattleEngine.disconnectOutcome`·`MultiplayerBattle.outcome`/`isFinished`)로
+/// 모였고, 아래 테스트가 그 함수들의 트리거 브랜치를 직접 밟는다.
 final class BattleOutcomeTests: XCTestCase {
 
     // MARK: 픽스처
@@ -43,8 +43,8 @@ final class BattleOutcomeTests: XCTestCase {
     /// 회귀: `advanceFainted` 가 상대 전멸을 먼저 판정하고 `return` 했다 → 내 팀도 같은 턴에 전멸했는데
     /// 승리가 됐고, 체육관이면 `settlePracticeResult` 가 그 자리에서 배지를 줬다.
     ///
-    /// 트리거: 내 공격이 상대 마지막 한 마리를 눕히고, 그 턴의 잔뎀이 내 마지막 한 마리를 눕힌다
-    /// (`resolveTurn` 은 두 공격이 끝난 뒤 잔뎀을 넣는다 — 그래서 동시 전멸이 실제로 도달 가능하다).
+    /// 트리거: 내 공격이 상대 마지막 한 마리를 눕히고, 그 턴의 잔뎀이 내 마지막 한 마리를 눕힌다.
+    /// `resolveTurn` 은 두 공격이 끝난 뒤 잔뎀을 넣으므로 동시 전멸이 실제로 도달 가능하다.
     func testMutualWipeInPracticeIsADrawNotAWin() {
         var battle = TeamPracticeBattle(mine: [BattleSide(snapshot())],
                                         opponents: [BattleSide(snapshot(speed: 40))],
@@ -125,7 +125,7 @@ final class BattleOutcomeTests: XCTestCase {
 
     /// 판정은 남은 HP **비율**이다. 절대값으로 비교하면 덩치 큰 종이 항상 이긴다.
     func testDisconnectComparesRatiosNotRawHitPoints() {
-        let small = side(baseHP: 60, hpFraction: (9, 10))     // 비율 0.9, 절대값은 적다
+        let small = side(baseHP: 60, hpFraction: (9, 10))     // 비율 0.9, 절대값은 작다
         let big = side(baseHP: 200, hpFraction: (1, 2))       // 비율 0.5, 절대값은 크다
         XCTAssertLessThan(small.hp, big.hp, "픽스처 전제: 절대값은 작은 쪽이 적다")
 
@@ -223,7 +223,7 @@ final class BattleOutcomeTests: XCTestCase {
     }
 
     /// 방 결과 화면은 승/패/무/관전 **네 갈래**다. 예전엔 `didIWin` 하나로 갈라 무승부(동시 전멸)와
-    /// 관전자에게 "패배" 라고 말했다 — 관전자는 싸우지도 않았고, 무승부는 진 게 아니다.
+    /// 관전자에게 "패배"라고 말했다 — 관전자는 싸우지도 않았고, 무승부는 진 게 아니다.
     func testTheRoomResultCoversDrawAndSpectators() throws {
         for lang in AppLanguage.allCases {
             XCTAssertFalse(L(lang).battleSpectatorFinished.isEmpty, "\(lang) 문구가 있어야 한다")

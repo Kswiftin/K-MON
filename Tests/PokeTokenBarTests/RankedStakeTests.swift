@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class RankedStakeTests: XCTestCase {
 
-    /// 정산은 활성 포켓몬을 요구하지 않으므로(`settleRankedBrawl` 은 지갑과 랭크만 본다) 라인은
+    /// 정산에 활성 포켓몬이 필요하지 않으므로(`settleRankedBrawl` 은 지갑과 랭크만 본다) 라인은
     /// 최소 형태로 둔다. `StubProvider`·`SeededRNG` 는 `CompanionTests.swift` 의 헬퍼다.
     private func makeStore(at url: URL? = nil) -> CompanionStore {
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []),
@@ -20,7 +20,7 @@ final class RankedStakeTests: XCTestCase {
     }
 
     /// 세이브 파일 경로 — "앱을 껐다 켠" 상황은 같은 경로로 스토어를 다시 여는 것이다.
-    /// 경로는 테스트가 들고 있는다(프로덕션에 테스트용 접근자를 만들지 않는다).
+    /// 경로는 테스트가 들고 있다(프로덕션에 테스트용 접근자를 만들지 않는다).
     private func tempSaveURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-rank-\(UUID().uuidString).json")
@@ -65,7 +65,7 @@ final class RankedStakeTests: XCTestCase {
 
     // MARK: 에스크로 — 정산 시점을 배틀 끝에서 배틀 시작으로 옮긴다
 
-    /// 회귀(판돈 회피): 정산이 배틀 **끝**에 있어서, 지고 있을 때 앱을 종료하면 내 쪽 정산이 아예
+    /// 회귀(판돈 회피): 정산이 배틀 **끝**에 있어서 지고 있을 때 앱을 종료하면 내 쪽 정산이 아예
     /// 돌지 않아 판돈을 안 냈다. 상대는 승리 처리로 판돈을 받으니 총량이 늘었다.
     func testEscrowTakesTheStakeUpFront() {
         let store = makeStore()

@@ -8,8 +8,8 @@ struct TeamPracticeBattle {
     var turn = 1
     var events: [BattleEvent] = []
     var rng: SplitMix64
-    /// 승부 — `nil` 은 아직 진행 중이다. 예전엔 `Bool?` 라 무승부를 담을 자리가 없었고,
-    /// 그래서 동시 전멸이 승리로 접혔다(체육관이면 배지까지 나갔다).
+    /// 승부 — `nil` 은 아직 진행 중이다. 예전엔 `Bool?` 라 무승부를 담을 자리가 없어
+    /// 동시 전멸이 승리로 접혔다(체육관이면 배지까지 나갔다).
     var result: BattleOutcome?
 
     var mySlot: BattleSide { mine[myActive] }
@@ -82,8 +82,8 @@ struct TeamPracticeBattle {
     /// 쓰러진 활성 슬롯을 다음 개체로 넘기고, 넘길 데가 없으면 승부를 적는다.
     ///
     /// **전멸 판정을 양쪽 다 먼저 본다.** 예전엔 상대 전멸을 확인한 자리에서 `result = true; return`
-    /// 했는데, 내 쪽도 같은 턴에 전멸할 수 있다 — `resolveTurn` 은 두 공격이 끝난 뒤 잔뎀을 넣으므로
-    /// "내 공격이 상대 마지막을 눕히고 잔뎀이 내 마지막을 눕히는" 턴이 실제로 존재한다. 그 턴이
+    /// 했는데 내 쪽도 같은 턴에 전멸할 수 있다 — `resolveTurn` 은 두 공격이 끝난 뒤 잔뎀을 넣으므로
+    /// "내 공격이 상대 마지막을 눕히고 잔뎀이 내 마지막을 눕히는" 턴이 실제로 존재하고, 그 턴이
     /// 승리로 접혀 체육관 배지까지 나갔다. 1v1(`resolveIfReady`)은 같은 상황을 무승부로 본다 —
     /// 두 엔진이 같은 규칙을 봐야 한다.
     private mutating func advanceFainted() {

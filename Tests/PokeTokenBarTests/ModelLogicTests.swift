@@ -8,7 +8,7 @@ final class BattleRankTests: XCTestCase {
         XCTAssertEqual(BattleRank.stake(challenger: .init(points: 800), defender: .init(points: 400)), 0)
     }
 
-    /// 랭크는 와이어로도 온다(`BattleRankProfile` — 상대가 채우는 값) — 경계에서 자른다.
+    /// 랭크는 와이어로도 온다(`BattleRankProfile` — 상대가 채우는 값). 그래서 경계에서 자른다.
     /// 세이브 경로는 `SaveTransfer.sanitized` 가 이미 자르지만 와이어 경로엔 가드가 없었다.
     func testPointsAreClampedAtTheBoundary() throws {
         func decoded(_ raw: String) throws -> BattleRank {

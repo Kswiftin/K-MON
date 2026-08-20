@@ -566,9 +566,9 @@ final class BattleCenter {
         isPracticeBattle = false
         activeGym = nil
         lastGymReward = 0
-        // 정산 표시값도 여기서 비운다 — 결과 화면(`finishedView`)은 이 둘을 그대로 그리는데,
-        // 다음 배틀이 랭크전이 아니면(체육관·모의전) 아무도 다시 채우지 않는다.
-        // 그러면 체육관 결과에 직전 랭크전의 "−⭐ 5,000 / −25 LP" 가 그대로 남는다.
+        // 정산 표시값도 여기서 비운다 — 결과 화면(`finishedView`)이 이 둘을 그대로 그리는데, 다음 배틀이
+        // 랭크전이 아니면(체육관·모의전) 아무도 다시 채우지 않아 체육관 결과에 직전 랭크전의
+        // "−⭐ 5,000 / −25 LP"가 그대로 남는다.
         rankedStake = 0
         lastRankDelta = 0
     }
@@ -591,11 +591,11 @@ final class BattleCenter {
         if !isPracticeBattle, let opponentRankProfile,
            !companion.escrowRankedBattle(stake: rankedStake, opponent: opponentRankProfile.rank) {
             // 상대는 이미 `.accept` 를 주고받아 `.battling` 으로 들어가 **자기 에스크로를 잡은** 상태다.
-            // 연결만 끊는다 — `.forfeit` 을 보내면 안 된다. 상대의 `handle(.forfeit)` 은 몰수승으로
+            // 연결만 끊는다 — `.forfeit` 은 보내면 안 된다. 상대의 `handle(.forfeit)` 이 몰수승으로
             // `escrowed * 2` 를 지급하는데 나는 판돈을 못 내서 빠지는 것이라, 아무도 내지 않은 판돈
-            // 1배가 그대로 생성된다(별의조각 총량 증가).
-            // 끊기만 해도 상대는 알게 된다 — `dropConnection` 이 연결을 닫으므로 상대의
-            // `connectionDropped` 가 돌고, 아직 한 턴도 안 지나 양쪽 HP 비율이 같아 **무효(환급)** 가 된다.
+            // 1배가 그대로 생성된다(별의조각 총량 증가). 끊기만 해도 상대는 안다 — `dropConnection` 이
+            // 연결을 닫으면 상대의 `connectionDropped` 가 돌고, 아직 한 턴도 안 지나 HP 비율이 같아
+            // **무효(환급)** 가 된다.
             dropConnection()
             phase = .ready
             lastError = l.battleStakeShort
@@ -772,14 +772,14 @@ final class BattleCenter {
         cancelTurnTimeout()   // 상대가 사라진 뒤에 마감이 돌면 이미 끝난 배틀에 기술을 보낸다
         switch phase {
         case .battling:
-            // 끊김은 몰수승이 **아니다** — 내 연결이 죽은 건 두 피어에게 똑같이 보이므로, 무조건
-            // 승리로 접으면 네트워크가 한 번 끊길 때 양쪽이 동시에 이기고 양쪽이 판돈을 받았다.
-            // 남은 HP 비율로 판정하고 동률이면 무효다(정산 없음). 상대가 보낸 `.forfeit` 은 이 경로가
-            // 아니라 `handle(.forfeit)` 이 처리한다 — 그건 상대가 스스로 진 것이므로 그대로 몰수승이다.
+            // 끊김은 몰수승이 **아니다** — 내 연결이 죽은 건 두 피어에게 똑같이 보이므로 무조건 승리로
+            // 접으면 네트워크가 한 번 끊길 때 양쪽이 동시에 이기고 양쪽이 판돈을 받았다. 남은 HP 비율로
+            // 판정하고 동률이면 무효다(정산 없음). 상대가 보낸 `.forfeit` 은 `handle(.forfeit)` 이 처리한다 —
+            // 그건 상대가 스스로 진 것이므로 그대로 몰수승이다.
             //
             // `byForfeit: false` 다 — 끊김은 기권이 **아니다.** true 로 두면 결과 화면이 `battleYouForfeited`
             // ("기권했어요")를 그려, 와이파이가 끊겨 HP 비율로 진 사람에게 스스로 기권했다고 말한다.
-            // 끊겼다는 사실은 `lastError` 로 알린다(다른 phase 의 끊김과 같은 문구).
+            // 끊겼다는 사실은 `lastError` 가 따로 알린다(다른 phase 의 끊김과 같은 문구).
             let iWon = battle.flatMap { BattleEngine.disconnectOutcome(me: $0.me, opp: $0.opp) }
             phase = .finished(iWon: iWon, byForfeit: false)
             lastError = l.battleConnectionLost

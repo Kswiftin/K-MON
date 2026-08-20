@@ -154,11 +154,10 @@ struct BattleView: View {
     }
 
     /// 방 결과 문구 — 승/패/무/관전 네 갈래. `nil` 은 전투원이 아니었다는 뜻이다(관전자).
-    /// 1v1 의 `finishText` 와 같은 규칙: 판정이 낸 값을 그대로 문구로 옮기고 화면에서 다시 갈라
-    /// 판단하지 않는다.
-    /// 문구는 1v1 과 같은 `l.battleWon`/`l.battleLost` 를 쓴다 — 여기서 `language == .ko ? … : …` 로
-    /// 직접 갈랐을 때는 일본어 사용자에게 영어가 나갔고(세 갈래 중 두 갈래만 번역됨), 같은 결과를
-    /// 두 화면이 다른 문구로 말했다.
+    /// 1v1 의 `finishText` 와 같은 규칙 — 판정이 낸 값을 그대로 문구로 옮기고 화면에서 다시 갈라
+    /// 판단하지 않는다. 문구도 1v1 과 같은 `l.battleWon`/`l.battleLost` 를 쓴다. 여기서
+    /// `language == .ko ? … : …` 로 직접 갈랐을 때는 일본어 사용자에게 영어가 나갔고(세 갈래 중 두
+    /// 갈래만 번역됨), 같은 결과를 두 화면이 다른 문구로 말했다.
     private func roomResultText(_ outcome: BattleOutcome?) -> String {
         switch outcome {
         case .win:  return l.battleWon
@@ -480,7 +479,7 @@ struct BattleView: View {
         let fighters = center.multiplayer.combatFighters
         let me = fighters.first { $0.id == center.multiplayer.myID }
         // 팀 판정은 `combatMode`(= 배틀 시작 시점에 고정된 모드) 하나만 본다. `lobby?.mode` 는 편성에서
-        // 파생되는 가변값이라, 여기서 따로 읽으면 승패 판정은 팀전인데 화면은 개인전인 상태가 생긴다 —
+        // 파생되는 가변값이라 여기서 따로 읽으면 승패 판정은 팀전인데 화면은 개인전인 상태가 생긴다 —
         // 그러면 같은 팀을 대상으로 고를 수 있고, 그 라운드는 `resolveRound` 가 통째로 거절한다.
         let isTeamBattle = center.multiplayer.combatMode == .teams
         let targets = fighters.filter { fighter in

@@ -42,8 +42,8 @@ struct PokeathlonPool: Codable, Sendable, Equatable {
     var isClosed = false
 
     /// 베팅 상한 — `payouts` 의 `pot * bet.amount` 가 오버플로 트랩나지 않는 값.
-    /// pot ≤ 관전자 정원(8) × 상한 이므로 `8 × 상한²< Int.max` 여야 한다. 10^9 은 8×10^18 로
-    /// 여유가 없어 10^8 을 쓴다 — 랭크전 판돈 최대(45,000)의 2,000배 넘게라 정상 플레이는 닿지 않는다.
+    /// pot ≤ 관전자 정원(8) × 상한이므로 `8 × 상한² < Int.max` 여야 한다. 10^9 은 8×10^18 로 여유가
+    /// 없어 10^8 을 쓴다 — 랭크전 판돈 최대(45,000)의 2,000배가 넘어 정상 플레이는 닿지 않는다.
     ///
     /// 상한이 필요한 이유: 수용 검사가 `bet.amount <= member.reportedStarPieces` 만 봤고 그 잔액은
     /// 참가자가 **스스로 신고**하는 값이라 상한이 없었다. `Int.max` 한 건이 원장에 들어가면 배당
@@ -56,7 +56,7 @@ struct PokeathlonPool: Codable, Sendable, Equatable {
     /// `winnerID == nil`(경기 미완주)이면 전원 자기 판돈 그대로 환불.
     /// 정수 나눗셈 잔여분은 금액 큰 순 → 동률이면 bettorID(uuidString) 오름차순으로 1개씩.
     ///
-    /// `amount > 0` 도 함께 걸러야 한다 — 디코딩 클램프가 음수·0 을 **0 으로 만들어** 원장에 남기므로,
+    /// `amount > 0` 도 함께 걸러야 한다 — 디코딩 클램프가 음수·0 을 **0 으로 만들어** 원장에 남기므로
     /// 우승자에 걸린 게 0 원 베팅뿐이면 `backed == 0` 이 되어 `pot * amount / backed` 가 0 나눗셈
     /// 트랩으로 프로세스를 죽인다(호스트측 `rejection` 의 `amount > 0` 은 와이어 원장엔 안 걸린다).
     func payouts(winnerID: UUID?) -> [UUID: Int] {

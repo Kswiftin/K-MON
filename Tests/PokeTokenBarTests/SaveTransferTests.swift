@@ -371,9 +371,9 @@ final class SaveTransferTests: XCTestCase {
     }
 
     /// [부류 가드] 서명 밖에 남은 필드는 **자유롭게 고칠 수 있는 필드다.** 미결 랭크전의 상대 랭크가
-    /// 그랬다: 패배 LP 는 `apply(win:false)` 의 `tier > opponent.tier` 로 결정되므로, 상대를 최고
-    /// 티어로 고쳐 두면 이탈이 LP 무손실이 된다 — 에스크로가 막으려던 "지고 있으면 앱 종료"가 그대로
-    /// 돌아온다. 판돈만 서명하고 상대 랭크를 빼 두면 가드가 없는 것과 같다.
+    /// 그랬다 — 패배 LP 는 `apply(win:false)` 의 `tier > opponent.tier` 로 결정되므로 상대를 최고
+    /// 티어로 고쳐 두면 이탈이 LP 무손실이 된다. 에스크로가 막으려던 "지고 있으면 앱 종료"가 그대로
+    /// 돌아오므로, 판돈만 서명하고 상대 랭크를 빼 두면 가드가 없는 것과 같다.
     func testThePendingEscrowSignatureCoversTheOpponentRank() {
         var state = CompanionState()
         state.pendingRanked = PendingRankedBattle(stake: 5_000, opponent: BattleRank(points: 0))

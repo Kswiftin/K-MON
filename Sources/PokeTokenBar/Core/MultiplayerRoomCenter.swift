@@ -319,11 +319,11 @@ final class MultiplayerRoomCenter {
     /// 판정에 쓸 모드 — **배틀이 시작될 때 정해진 모드**다. 호스트·게스트·관전자 모두 `.start` 시점의
     /// `battle` 을 들고 있어 같은 답이 나온다.
     ///
-    /// `lobby.mode` 를 먼저 보면 안 된다. 그건 팀 편성에서 파생되는 **가변값**이라(`runners` 가 전부
-    /// `solo` 인가) 배틀 중에 바뀔 수 있고, 바뀌면 승패 판정 자체가 흔들린다 — 개인전 도중 누군가
-    /// 팀을 `red` 로 바꾸면 남은 `solo` 들이 "한 팀"으로 묶여, 여럿이 살아 있는데 배틀이 끝난 것으로
-    /// 판정되고 생존자 전원이 승리가 된다. 편성은 이제 경기 중엔 바뀌지 않지만(`isInPlay` 게이트),
-    /// 판정의 근거는 애초에 불변인 쪽이어야 한다.
+    /// `lobby.mode` 를 먼저 보면 안 된다 — 팀 편성에서 파생되는 **가변값**이라(`runners` 가 전부
+    /// `solo` 인가) 배틀 중에 바뀔 수 있고, 바뀌면 승패 판정 자체가 흔들린다. 개인전 도중 누군가 팀을
+    /// `red` 로 바꾸면 남은 `solo` 들이 "한 팀"으로 묶여 여럿이 살아 있는데 배틀이 끝난 것으로 판정되고
+    /// 생존자 전원이 승리가 된다. 편성은 이제 경기 중엔 바뀌지 않지만(`isInPlay` 게이트) 판정의 근거는
+    /// 애초에 불변인 쪽이어야 한다.
     ///
     /// 화면도 이 값을 쓴다 — 팀 배지·공격 대상 필터가 `lobby?.mode` 를 따로 보면 판정과 갈라진다.
     /// 폴백은 `battle` 을 못 만든 경우의 최후 수단이다(그 상태면 `combatFighters` 도 비어 있어
@@ -418,10 +418,10 @@ final class MultiplayerRoomCenter {
                 } catch {
                     self.send(.rejected(reason: "방이 가득 찼습니다."), over: connection); connection.cancel(); return
                 }
-            // 준비·팀 변경은 **로비에서만** 받는다. 경기 중에 받으면 `lobby.mode` 가 배틀 도중에
-            // 바뀌어 승패 판정이 흔들린다 — 개인전 중 한 명이 팀을 바꾸면 남은 `solo` 들이 한 팀으로
-            // 묶여 살아 있는 채로 "종료 + 전원 승리"가 됐다. 편성은 상대가 보내오는 값이므로 화면에서
-            // 버튼을 감추는 것으로는 막지 못한다.
+            // 준비·팀 변경은 **로비에서만** 받는다. 경기 중에 받으면 `lobby.mode` 가 바뀌어 승패 판정이
+            // 흔들린다 — 개인전 중 한 명이 팀을 바꾸면 남은 `solo` 들이 한 팀으로 묶여 살아 있는 채로
+            // "종료 + 전원 승리"가 됐다. 편성은 상대가 보내오는 값이므로 화면에서 버튼을 감추는 것으로는
+            // 막지 못한다.
             case .ready(let pid, let ready) where pid == id && !self.isInPlay:
                 self.lobby?.setReady(ready, participantID: pid); self.broadcastLobby()
             case .team(let pid, let team) where pid == id && !self.isInPlay:
@@ -547,7 +547,7 @@ final class MultiplayerRoomCenter {
     }
 
     /// 배틀 중 이탈한 참가자를 쓰러진 것으로 처리한다 — 명시적 `.leave` 와 연결 끊김이 **같은 자리**를
-    /// 지나야 한다. `.leave` 쪽에만 마감 처리가 없던 동안, 상대가 "나가기"를 누르면 화면은 결과로
+    /// 지나야 한다. `.leave` 쪽에만 마감 처리가 없던 동안 상대가 "나가기"를 누르면 화면은 결과로
     /// 넘어가는데 전적이 남지 않았고(`grantRewardIfFinished` 미호출) 게스트에게 최종 상태도 가지 않았다.
     /// 게다가 내가 그 라운드에 행동을 안 냈으면 `finishRoundIfReady` 가 조용히 빠져 마감 타이머도
     /// 다시 걸리지 않아 방이 멈췄다.
@@ -569,10 +569,10 @@ final class MultiplayerRoomCenter {
                                                       mode: combatMode) else { return }
         rewardedBattle = true
         // 별의조각은 지급하지 않는다 — 전적만 남긴다. 예전엔 여기서 표시용 보상액을 계산해
-        // 화면이 "+20 ✨" 을 띄웠는데 `grantBattleReward` 는 아무것도 지급하지 않았다.
+        // 화면이 "+20 ✨"을 띄웠는데 `grantBattleReward` 는 아무것도 지급하지 않았다.
         let won = outcome == .win, count = combatFighters.count
-        // 기록에 남는 모드도 판정과 **같은 근거**를 쓴다 — `lobby?.mode` 는 편성에서 파생되는 가변값이라
-        // 여기만 남겨 두면 판정은 팀전인데 전적은 개인전으로 적히는 자리가 다시 생긴다.
+        // 기록에 남는 모드도 판정과 **같은 근거**를 쓴다 — `lobby?.mode` 를 여기만 남겨 두면 판정은
+        // 팀전인데 전적은 개인전으로 적히는 자리가 다시 생긴다.
         let mode = combatMode
         let opponents = combatFighters.filter { $0.id != myID }.map(\.trainerName)
         companion.grantBattleReward(won: won, participantCount: count, mode: mode,

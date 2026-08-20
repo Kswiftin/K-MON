@@ -573,7 +573,7 @@ private extension KeyedDecodingContainer {
 }
 
 /// 개시 시점에 잡아 둔 랭크전 판돈. 상대 랭크를 함께 적는 건 앱이 죽은 뒤의 패배 정산에도
-/// LP 계산(`BattleRank.apply(win:opponent:)`)이 상대 티어를 필요로 하기 때문이다.
+/// LP 계산(`BattleRank.apply(win:opponent:)`)에 상대 티어가 필요하기 때문이다.
 struct PendingRankedBattle: Codable, Sendable, Equatable {
     var stake: Int
     var opponent: BattleRank

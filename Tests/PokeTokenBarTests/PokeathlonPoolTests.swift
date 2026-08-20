@@ -246,7 +246,7 @@ final class PokeathlonPoolTests: XCTestCase {
     }
 
     /// 상한이 실제로 안전한 값인지 — 관전자 정원을 상한으로 꽉 채워도 배당이 트랩나지 않아야 한다.
-    /// (트랩은 프로세스를 죽이므로, 이 테스트가 살아서 끝나는 것 자체가 단언이다.)
+    /// (트랩은 프로세스를 죽이므로 이 테스트가 살아서 끝나는 것 자체가 단언이다.)
     func testPayoutsAtTheBetCeilingDoNotTrap() {
         let cap = PokeathlonPool.maximumBet
         let seats = MultiplayerLobby.spectatorCapacity
@@ -304,7 +304,7 @@ final class PokeathlonPoolTests: XCTestCase {
     /// 회귀(0 나눗셈 트랩): 상한 클램프가 음수·0 을 **0 으로 만들어 원장에 남긴다.** 우승자에 걸린 게
     /// 0 원 베팅뿐이면 `backed == 0` 이라 `pot * amount / backed` 가 프로세스를 죽였다 — 오버플로를
     /// 막으면서 같은 공격자에게 다른 트랩을 열어 준 자리다(호스트측 `amount > 0` 은 와이어엔 안 걸린다).
-    /// (트랩은 프로세스를 죽이므로, 이 테스트가 살아서 끝나는 것 자체가 단언이다.)
+    /// (트랩은 프로세스를 죽이므로 이 테스트가 살아서 끝나는 것 자체가 단언이다.)
     func testAZeroAmountLedgerDoesNotTrapOnPayout() throws {
         let onlyZero = try JSONDecoder().decode(PokeathlonPool.self, from: Data("""
         {"bets":["\(id(1).uuidString)",

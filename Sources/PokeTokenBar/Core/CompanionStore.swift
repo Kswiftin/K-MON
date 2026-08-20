@@ -1126,7 +1126,7 @@ final class CompanionStore {
     /// (호출부가 배틀을 시작하지 않는다). 판돈 0 이어도 기록은 남긴다 — 이탈의 LP 대가가 걸려 있다.
     ///
     /// 정산이 배틀 끝에만 있던 때는 지고 있을 때 앱을 종료하면 내 쪽 정산이 아예 돌지 않아 판돈을
-    /// 안 냈다. 개시 시점은 앱이 확실히 살아 있는 순간이라, 여기로 옮기면 그 회피가 사라진다.
+    /// 안 냈다. 개시 시점은 앱이 확실히 살아 있는 순간이라 여기로 옮기면 그 회피가 사라진다.
     @discardableResult
     func escrowRankedBattle(stake: Int, opponent: BattleRank) -> Bool {
         guard state.pendingRanked == nil else { return false }   // 이중 차감 차단
@@ -1165,7 +1165,7 @@ final class CompanionStore {
     /// 정산되지 않은 랭크전을 패배로 마감한다 — 기동 때 한 번 돈다.
     ///
     /// 크래시와 고의 종료는 로컬에서 구분할 수 없다. 환급으로 두면 "지고 있으면 앱을 끈다"가
-    /// 다시 최적해가 되므로, 랭크 게임의 통상 규칙대로 이탈은 패배로 본다.
+    /// 다시 최적해가 되므로 랭크 게임의 통상 규칙대로 이탈은 패배로 본다.
     private func settleAbandonedRankedBattleIfNeeded() {
         guard let pending = state.pendingRanked else { return }
         let delta = settleRankedBrawl(won: false, opponent: pending.opponent)
