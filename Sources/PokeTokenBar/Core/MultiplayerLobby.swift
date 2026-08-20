@@ -37,7 +37,9 @@ struct LobbyParticipant: Codable, Sendable, Equatable, Identifiable {
         isReady = try c.decode(Bool.self, forKey: .isReady)
         isHost = try c.decode(Bool.self, forKey: .isHost)
         role = try c.decodeIfPresent(LobbyRole.self, forKey: .role) ?? .runner
-        reportedStarPieces = try c.decodeIfPresent(Int.self, forKey: .reportedStarPieces) ?? 0
+        // 신고 잔액은 상대가 채우는 값이다 — 베팅 상한 검사가 이 값을 보므로 여기서 자른다.
+        reportedStarPieces = min(SaveTransfer.maxTokenValue,
+                                 max(0, try c.decodeIfPresent(Int.self, forKey: .reportedStarPieces) ?? 0))
     }
 }
 

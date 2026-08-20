@@ -17,6 +17,13 @@ struct PokeathlonPool: Codable, Sendable, Equatable {
     var bets: [UUID: PokeathlonBet] = [:]
     var isClosed = false
 
+    /// 베팅 상한 — `payouts` 의 `pot * bet.amount` 가 오버플로 트랩나지 않는 값.
+    /// pot ≤ 관전자 정원(8) × 상한 이므로 `8 × 상한²< Int.max` 여야 한다. 10^9 은 8×10^18 로
+    /// 여유가 없어 10^8 을 쓴다 — 랭크전 판돈 최대(50,000)의 2,000배라 정상 플레이는 닿지 않는다.
+    ///
+    /// 상한이 필요한 이유: 수용 검사가 `bet.amount <= member.reportedStarPieces` 만 봤고 그 잔액은
+    /// 참가자가 **스스로 신고**하는 값이라 상한이 없었다. `Int.max` 한 건이 원장에 들어가면 배당
+    /// 계산이 프로세스를 죽인다(defect-log "외부 수치는 경계 한 곳에서 클램프").
     static let maximumBet = 100_000_000
 
     var total: Int { bets.values.reduce(0) { $0 + $1.amount } }
@@ -65,7 +72,7 @@ extension PokeathlonPool {
         guard let member = lobby.participants.first(where: { $0.id == senderID }),
               member.role == .spectator else { return .notSpectator }
         guard !pool.isClosed, now < race.startsAt else { return .poolClosed }
-        guard bet.amount > 0 else { return .invalidAmount }
+        guard bet.amount > 0, bet.amount <= maximumBet else { return .invalidAmount }
         guard race.racers.contains(where: { $0.id == bet.runnerID }) else { return .unknownRunner }
         guard bet.amount <= member.reportedStarPieces else { return .insufficientBalance }
         return nil

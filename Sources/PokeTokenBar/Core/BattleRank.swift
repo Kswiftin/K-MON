@@ -25,6 +25,22 @@ struct BattleRank: Codable, Sendable, Equatable {
     static let maximumPoints = 3_999
     var points = 0
 
+    /// 랭크는 와이어로도 온다(`BattleRankProfile` — **상대가 채우는 값**). 그래서 값이 들어오는
+    /// 경계 한 곳에서 자른다. 세이브 경로는 `SaveTransfer.sanitized` 가 이미 자르지만 와이어
+    /// 경로엔 가드가 없었다 — 파생값(`tier`·`lp`)마다 `max(0, ·)` 를 흩뿌리는 대신 여기서 끝낸다.
+    ///
+    /// 이건 위생 조치다. **자기 랭크를 스스로 신고한다는 사실 자체는 클램프로 못 막는다** —
+    /// 높은 티어를 주장하면 내 승리 LP(최대 +70)와 판돈(최대 45,000)이 정상 범위 안에서 커진다.
+    /// 그건 공유 원장 없는 P2P 의 한계라 서명·서버가 필요하다(defect-log 참조).
+    static func clamped(_ points: Int) -> Int { min(maximumPoints, max(0, points)) }
+
+    init(points: Int = 0) { self.points = Self.clamped(points) }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        points = Self.clamped(try c.decodeIfPresent(Int.self, forKey: .points) ?? 0)
+    }
+
     var tier: BattleRankTier {
         BattleRankTier(rawValue: min(9, max(0, points) / 400)) ?? .iron
     }

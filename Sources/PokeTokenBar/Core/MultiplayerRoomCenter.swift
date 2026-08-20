@@ -24,7 +24,6 @@ final class MultiplayerRoomCenter {
     private(set) var combatEvents: [BattleEvent] = []
     private(set) var hasSubmittedAction = false
     private(set) var turnEndsAt: Date?
-    private(set) var battleReward: Int?
     private(set) var lastError: String?
     private(set) var pokeathlonRace: PokeathlonRace?
     private(set) var pokeathlonPool = PokeathlonPool()
@@ -188,7 +187,7 @@ final class MultiplayerRoomCenter {
             battle = try MultiplayerBattle(fighters: fighters, mode: lobby.mode, seed: seed)
             combatFighters = fighters; combatRound = 1; combatEvents = []
             pendingActions.removeAll(); hasSubmittedAction = false; phase = .battling
-            rewardedBattle = false; battleReward = nil; scheduleTurnTimeout()
+            rewardedBattle = false; scheduleTurnTimeout()
             let message = MultiplayerWireMessage.start(seed: seed, fighters: fighters, mode: lobby.mode)
             for connection in guestConnections.values { send(message, over: connection) }
         } catch { lastError = error.localizedDescription }
@@ -335,9 +334,11 @@ final class MultiplayerRoomCenter {
         MultiplayerBattle.isFinished(fighters: combatFighters, mode: combatMode)
     }
 
-    /// 팀전은 내 생존이 아니라 **내 팀**이 이겼는지다 — 쓰러진 대원도 이긴 팀이면 이긴 것이다.
-    var didIWin: Bool {
-        MultiplayerBattle.outcome(for: myID, fighters: combatFighters, mode: combatMode) == .win
+    /// 내 승패. `nil` 은 "줄 결과가 없다" — 아직 안 끝났거나 전투원이 아니다(관전자).
+    /// 팀전은 내 생존이 아니라 **내 팀**이 이겼는지고, 동시 전멸은 `.draw` 다. 화면이 이 네 갈래를
+    /// 그대로 쓴다 — `Bool` 하나로 갈랐을 때는 관전자와 무승부가 "패배"로 표시됐다.
+    var myOutcome: BattleOutcome? {
+        MultiplayerBattle.outcome(for: myID, fighters: combatFighters, mode: combatMode)
     }
 
     func leaveRoom() {
@@ -355,7 +356,7 @@ final class MultiplayerRoomCenter {
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
-        turnEndsAt = nil; battleReward = nil; rewardedBattle = false
+        turnEndsAt = nil; rewardedBattle = false
         hasSubmittedAction = false; hostingRole = false; phase = .idle
     }
 
@@ -455,7 +456,7 @@ final class MultiplayerRoomCenter {
                 }
                 self.battle = started; self.combatFighters = fighters; self.combatRound = 1
                 self.combatEvents = []; self.hasSubmittedAction = false; self.rewardedBattle = false
-                self.battleReward = nil; self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
+                self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.phase = .battling
             case .roundResolved(let round, let fighters, let events):
                 guard self.phase == .battling, round == self.combatRound else { return }
@@ -559,8 +560,9 @@ final class MultiplayerRoomCenter {
               let outcome = MultiplayerBattle.outcome(for: myID, fighters: combatFighters,
                                                       mode: combatMode) else { return }
         rewardedBattle = true
+        // 별의조각은 지급하지 않는다 — 전적만 남긴다. 예전엔 여기서 표시용 보상액을 계산해
+        // 화면이 "+20 ✨" 을 띄웠는데 `grantBattleReward` 는 아무것도 지급하지 않았다.
         let won = outcome == .win, count = combatFighters.count
-        battleReward = max(20, count * (won ? 40 : 15))
         let mode = lobby?.mode ?? .freeForAll
         let opponents = combatFighters.filter { $0.id != myID }.map(\.trainerName)
         companion.grantBattleReward(won: won, participantCount: count, mode: mode,

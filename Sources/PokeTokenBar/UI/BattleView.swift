@@ -153,6 +153,18 @@ struct BattleView: View {
         return nil
     }
 
+    /// 방 결과 문구 — 승/패/무/관전 네 갈래. `nil` 은 전투원이 아니었다는 뜻이다(관전자).
+    /// 1v1 의 `finishText` 와 같은 규칙: 판정이 낸 값을 그대로 문구로 옮기고 화면에서 다시 갈라
+    /// 판단하지 않는다.
+    private func roomResultText(_ outcome: BattleOutcome?) -> String {
+        switch outcome {
+        case .win:  return store.language == .ko ? "승리!" : "Victory!"
+        case .loss: return store.language == .ko ? "패배" : "Defeated"
+        case .draw: return l.battleDraw
+        case nil:   return l.battleSpectatorFinished
+        }
+    }
+
     private func finishText(iWon: Bool?, byForfeit: Bool) -> String {
         switch (iWon, byForfeit) {
         case (.some(true), true):   return l.battleOppForfeited
@@ -518,15 +530,8 @@ struct BattleView: View {
                 }
             }
             if center.multiplayer.isBattleFinished {
-                Text(center.multiplayer.didIWin
-                     ? (store.language == .ko ? "승리!" : "Victory!")
-                     : (store.language == .ko ? "패배" : "Defeated"))
+                Text(roomResultText(center.multiplayer.myOutcome))
                     .font(.title3).bold().frame(maxWidth: .infinity)
-                if let reward = center.multiplayer.battleReward {
-                    Text("+\(reward) ✨")
-                        .font(.callout.weight(.semibold)).foregroundStyle(.orange)
-                        .frame(maxWidth: .infinity)
-                }
                 Button(store.language == .ko ? "로비 나가기" : "Leave") { center.multiplayer.leaveRoom() }
                     .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
             } else if me?.isAlive == false {

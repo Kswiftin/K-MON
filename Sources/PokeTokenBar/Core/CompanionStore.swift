@@ -1119,13 +1119,18 @@ final class CompanionStore {
     }
 
     /// 1:1 맞짱 랭크전 정산. 판돈은 계산된 고정액만 이동한다.
+    ///
+    /// **판돈(화폐)과 LP(실력 지표)는 다른 자원이다.** 예전엔 판돈을 못 내면 그 자리에서
+    /// `return 0` 해서 LP 차감까지 건너뛰었다 — 지갑을 판돈 아래로 비워 두면 랭크전에서 절대
+    /// LP 를 잃지 않는 무손실 랭크가 됐다. 빚은 지지 않지만(못 내면 안 낸다) 패배는 패배다.
     @discardableResult
     func settleRankedBrawl(won: Bool, opponent: BattleRank, stake: Int) -> Int {
         if won {
             state.starPieces += max(0, stake)
-        } else if stake > 0 {
-            guard availableTokens >= stake else { return 0 }
+        } else if stake > 0, availableTokens >= stake {
             state.starPieces -= stake
+        } else if stake > 0 {
+            AppLog.write("ranked stake unpaid: balance \(availableTokens) short of \(stake)")
         }
         let delta = state.battleRank.apply(win: won, opponent: opponent)
         save()
