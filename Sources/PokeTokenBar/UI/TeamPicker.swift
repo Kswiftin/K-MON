@@ -54,6 +54,8 @@ struct TeamPicker: View {
             let slice = Array(shown.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
             VStack(alignment: .leading, spacing: 6) {
                 header
+                pickedRow
+                Divider().opacity(0.5)
                 grid(slice)
                 footer(current: current, pageCount: pageCount)
             }
@@ -85,6 +87,30 @@ struct TeamPicker: View {
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .foregroundStyle(center.pickedTeam.count == limit ? AnyShapeStyle(Color.accentColor)
                                                                   : AnyShapeStyle(.secondary))
+        }
+    }
+
+    /// 고른 팀 — **필터와 무관하게 항상 여기 보인다.**
+    ///
+    /// 아래 칩 줄은 필터에 걸린 것만 보여주므로, 다른 타입으로 옮기면 이미 고른 개체가 사라진다.
+    /// 그 상태로는 빼려고 원래 타입으로 되돌아가야 했다. 이 줄에서 바로 뺀다.
+    ///
+    /// 정원만큼 칸을 그린다 — 빈 칸이 남은 자리를 보여주고, 줄 높이도 고정된다.
+    private var pickedRow: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<limit, id: \.self) { slot in
+                if slot < center.pickedTeam.count,
+                   let mon = store.ownedMons.first(where: { $0.id == center.pickedTeam[slot] }) {
+                    PickedSlot(mon: mon, order: slot + 1,
+                               onRemove: { center.toggleTeamPick(mon.id, limit: limit) })
+                } else {
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: PickedSlot.width, height: PickedSlot.height)
+                }
+            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -139,6 +165,37 @@ struct TeamPicker: View {
             }
         }
         .frame(height: 16)   // 페이저가 없는 페이지에서도 아래 여백이 같도록 자리를 예약한다.
+    }
+}
+
+/// 고른 팀의 한 칸 — 스프라이트에 출전 순서, 누르면 뺀다.
+/// 이름은 넣지 않는다. 방금 고른 것이라 스프라이트로 알아보고, 좁은 줄에 정원만큼 들어가야 한다.
+private struct PickedSlot: View {
+    let mon: MonState
+    let order: Int
+    let onRemove: () -> Void
+
+    static let width: CGFloat = 38
+    static let height: CGFloat = 40
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 0) {
+                SpriteView(speciesID: mon.currentID, size: 28, shiny: mon.isShiny)
+                Text("\(order)").font(.system(size: 7, weight: .heavy)).foregroundStyle(.secondary)
+            }
+            .frame(width: Self.width, height: Self.height)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.18)))
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
+            }
+            .buttonStyle(.plain)
+            .offset(x: 3, y: -3)
+        }
+        .frame(width: Self.width, height: Self.height)
     }
 }
 
