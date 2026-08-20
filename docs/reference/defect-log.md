@@ -554,6 +554,37 @@ read_when:
   (`reward.missionBonus`), 알려줄 객체가 없는 경로(졸업)는 상대를 무력화해 시드한다(트레이너 포인트를
   상한으로 두면 더 오를 곳이 없어 0 을 지급한다). (트레이너 레벨 × 미션 리베이스, 2026-08-19.)
 
+## 1회성 보상의 멱등 가드가 서명 밖에 있는 부류
+
+- **"이미 받았다"를 기록하는 필드는 무결성 canonical 에 들어가야 한다.** `gymBadges` 는 체육관 첫 승리
+  보상의 **유일한** 멱등 가드인데(`recordGymVictory` 의 `guard !state.gymBadges.contains`) 서명에서
+  빠져 있었다 — 세이브에서 배지 키 한 줄을 지우면 같은 체육관에서 알을 다시 받는다. `shinyEggCharges`
+  도 같았다(손으로 올리면 확정 이로치가 공짜). 형제 필드인 `trainer`·`missions`·`pendingRanked` 는
+  같은 이유로 이미 서명돼 있었는데, 나중에 추가된 두 필드만 따라오지 않았다.
+- **찾는 방법이 정해져 있다.** `SaveTransfer.canonicalString` 이 읽는 필드 집합과 `CompanionState` 의
+  필드 목록을 대조해, **보상·재화·1회성 플래그**인데 canonical 에 없는 것을 찾는다. 새 필드를 더할 때는
+  "이 값을 지우거나 올리면 뭔가를 다시 받을 수 있나"를 묻는다. 그렇다면 조건부 append 대상이다.
+- **가드가 사는지는 "지우면 잡히나"로 검증한다.** 값을 올려 보는 테스트만 두면 집합형 필드에서
+  **삭제** 방향을 놓친다(재지급은 삭제로 일어난다). `testDeletingAGymBadgeAfterSigningIsDetected` 가
+  그 방향을 밟고, `Set` 은 순회 순서가 실행마다 다르므로 canonical 은 반드시 정렬한다
+  (`testGymBadgeSignatureDoesNotDependOnSetOrder`).
+- **append 는 조건부여야 한다.** 무조건 붙이면 그 필드가 없던 시절의 정상 세이브가 전부 조작 판정돼
+  진행이 초기화된다. 기본값 canonical 동결 테스트(`testDefaultStateCanonicalFormIsFrozen`)와
+  `testDefaultStateGainsNoNewCanonicalSegments` 가 짝으로 지킨다. (도감 완성 목표 작업 중 발견,
+  2026-08-21.)
+
+## 파생 진행도를 화면용 목록으로 계산하면 되감기는 부류
+
+- **누적 진행도는 영구 기록(`state.dex`)에서만 센다.** 화면용 `dexEntries`·`dexSpecies` 는 활성·박스
+  개체를 합성해 넣으므로(`livingDexEntries`) 알을 새로 사면 그 개체가 사라져 **진행도가 줄어든다.**
+  진행도가 줄 수 있으면 "완료 집합의 차집합으로 1회 지급" 이 무너져 같은 목표가 두 번 지급된다.
+- **저장하지 않는 진행도는 단조성이 계약이다.** 저장 필드 없이 파생값으로 지급을 판정할 때는 "이 값이
+  줄어들 수 있는 경로가 있나"를 먼저 답한다. `testRaisedButUngraduatedPokemonDoNotCountTowardGoals`
+  가 그 경로를 직접 밟는다(졸업 전 개체가 있어도 진행도 0).
+- **네트워크 파생값은 `nil`(모름)과 `[]`(없음)을 구분한다.** `DexEntry.types` 를 오프라인 졸업에서
+  `[]` 로 저장하면 백필이 "이미 아는 값" 으로 보고 영영 재시도하지 않아, 그 개체의 타입이 영구 누락된다.
+  `testGraduatingWithoutTypeDataStoresNilNotEmpty` 가 그 구분을 고정한다. (2026-08-21.)
+
 ## 스크롤 컨테이너가 있다고 스크롤되는 건 아닌 부류
 
 - **팝오버 본체가 이미 `ScrollView` 다 — 탭 안에 또 세로 `ScrollView` 를 두면 안쪽은 스크롤되지 않고,
