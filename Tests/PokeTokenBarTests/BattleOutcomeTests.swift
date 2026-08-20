@@ -79,6 +79,22 @@ final class BattleOutcomeTests: XCTestCase {
         XCTAssertEqual(loss.result, .loss, "내 쪽만 전멸하면 패배다")
     }
 
+    /// 전멸 판정을 앞으로 당기면서 **슬롯 교대**가 죽지 않았는지 — 상대 한 마리가 쓰러지고 다음이
+    /// 남아 있으면 배틀은 계속되고 활성 슬롯만 넘어간다(체육관은 상대가 3마리다).
+    func testFaintedOpponentSlotAdvancesWhileTheTeamStillStands() {
+        var battle = TeamPracticeBattle(mine: [BattleSide(snapshot())],
+                                        opponents: [BattleSide(snapshot(speed: 40)),
+                                                    BattleSide(snapshot(speed: 40))],
+                                        rng: SplitMix64(seed: 7))
+        battle.opponents[0].hp = 1
+
+        XCTAssertTrue(battle.useMove(0))
+
+        XCTAssertFalse(battle.opponents[0].isAlive)
+        XCTAssertEqual(battle.opponentActive, 1, "다음 상대가 나온다")
+        XCTAssertNil(battle.result, "한 마리 남았으므로 승부는 안 났다")
+    }
+
     // MARK: 1v1 연결 끊김 — 양쪽이 동시에 이길 수 없다
 
     /// 회귀(돈이 발행되던 자리): 끊김을 `iWon: true` 로 접었다. 라우터가 죽으면 두 피어가 각자
@@ -169,6 +185,12 @@ final class BattleOutcomeTests: XCTestCase {
         XCTAssertFalse(MultiplayerBattle.isFinished(fighters: ongoing, mode: .freeForAll))
         XCTAssertNil(MultiplayerBattle.outcome(for: alive, fighters: ongoing, mode: .freeForAll),
                      "아직 안 끝난 배틀엔 승패가 없다")
+        XCTAssertTrue(MultiplayerBattle.winners(fighters: ongoing, mode: .freeForAll).isEmpty,
+                      "안 끝난 배틀엔 승자가 없다")
+
+        // 배틀 시작 전 — `combatFighters` 가 빈 배열이다. 여기서 "끝났다"가 나오면 방에 들어서는
+        // 순간 결과 화면이 뜬다.
+        XCTAssertFalse(MultiplayerBattle.isFinished(fighters: [], mode: .freeForAll))
         XCTAssertNil(MultiplayerBattle.outcome(for: alive, fighters: [], mode: .freeForAll),
                      "전투원 목록이 비어 있으면(배틀 전) 승패가 없다")
     }
