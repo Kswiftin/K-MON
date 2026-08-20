@@ -127,10 +127,14 @@ final class BattleCenter {
 
     /// 칩을 눌렀을 때 — 이미 고른 것이면 빼고, 아니면 뒤에 붙인다. 정원이 차면 더 받지 않는다
     /// (앞을 밀어내면 애써 정한 순서가 조용히 바뀐다).
-    func toggleTeamPick(_ monID: UUID) {
+    ///
+    /// `limit` 은 그 화면의 정원이다 — 체육관은 관장 팀에 맞춰 3, 모의전은 화면에서 고른 크기.
+    /// 고른 목록 자체는 하나라 두 화면이 같은 팀을 본다.
+    func toggleTeamPick(_ monID: UUID, limit: Int? = nil) {
+        let cap = limit ?? rankedTeamSize
         if let index = pickedTeam.firstIndex(of: monID) {
             pickedTeam.remove(at: index)
-        } else if pickedTeam.count < rankedTeamSize {
+        } else if pickedTeam.count < cap {
             pickedTeam.append(monID)
         }
     }

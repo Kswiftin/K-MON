@@ -814,6 +814,30 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(Set(rewards).count, rewards.count, "같은 보상이 둘이면 순서가 뜻을 잃는다")
     }
 
+    /// 체육관 화면에서 고를 땐 정원이 관장 팀 크기다 — 화면에서 고른 1/3/6 과 무관하다.
+    /// 정원을 화면마다 달리 주지 않으면, 6vs6 을 켜 둔 채 체육관에 들어가 여섯을 고르고
+    /// 앞 셋만 나가는 일이 생긴다.
+    func testGymPickerCapsAtTheLeaderTeamSize() {
+        let (center, mons) = teamPickCenterForGym(monCount: 6)
+        center.rankedTeamSize = 6
+
+        for mon in mons { center.toggleTeamPick(mon.id, limit: GymLeague.teamSize) }
+
+        XCTAssertEqual(center.pickedTeam.count, GymLeague.teamSize)
+    }
+
+    /// 같은 목록을 두 화면이 공유한다 — 체육관에서 고른 팀이 모의전에도 그대로 나간다.
+    /// 목록이 둘이면 "내 출전 팀" 이 둘이 되어 어느 쪽이 나가는지 알 수 없다.
+    func testBothScreensShareOnePickedTeam() {
+        let (center, mons) = teamPickCenterForGym(monCount: 6)
+        center.rankedTeamSize = 6
+
+        center.toggleTeamPick(mons[3].id, limit: GymLeague.teamSize)
+
+        XCTAssertEqual(center.battleTeamMons(size: GymLeague.teamSize).first?.id, mons[3].id)
+        XCTAssertEqual(center.battleTeamMons.first?.id, mons[3].id, "모의전 팀도 같은 선봉을 본다")
+    }
+
     /// 체육관은 관장 팀 머릿수로 나간다 — 화면에서 고른 1/3/6 과 무관하다.
     /// 머릿수가 다르면 이겨도 이긴 것 같지 않다.
     func testGymChallengeFieldsTheLeaderTeamSize() {
