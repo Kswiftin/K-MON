@@ -715,6 +715,75 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertNil(s.nextEvolutionItem, "레벨로 진화하는 종이다")
     }
 
+    // MARK: 체육관 배지
+
+    private var bugGym: Gym { GymLeague.catalog[0] }
+
+    /// 첫 승리에만 배지와 별의조각이 나간다.
+    func testFirstGymVictoryAwardsTheBadgeAndReward() {
+        let s = store(noEvo)
+        let before = s.availableTokens
+
+        let paid = s.recordGymVictory(bugGym)
+
+        XCTAssertEqual(paid, bugGym.firstClearReward)
+        XCTAssertTrue(s.hasBadge(bugGym))
+        XCTAssertEqual(s.availableTokens, before + bugGym.firstClearReward)
+    }
+
+    /// 트리거 재현: 체육관은 몇 번이고 다시 갈 수 있으므로 승리 지점을 반복해서 지난다.
+    /// 졸업이 바로 그 구조로 알을 무한히 뱉었다 — 여기서는 배지가 가드다.
+    func testRepeatGymVictoryPaysNothing() {
+        let s = store(noEvo)
+        s.recordGymVictory(bugGym)
+        let afterFirst = s.availableTokens
+
+        let paid = s.recordGymVictory(bugGym)
+
+        XCTAssertEqual(paid, 0, "두 번째 승리는 지급이 없다")
+        XCTAssertEqual(s.availableTokens, afterFirst, "지갑도 그대로다")
+        XCTAssertEqual(s.earnedGymBadges.count, 1, "배지도 하나뿐이다")
+    }
+
+    /// 배지는 체육관마다 따로다 — 하나를 땄다고 다른 곳 보상이 막히면 안 된다.
+    func testBadgesAreTrackedPerGym() {
+        let s = store(noEvo)
+        s.recordGymVictory(bugGym)
+
+        let rockGym = GymLeague.catalog[1]
+        XCTAssertFalse(s.hasBadge(rockGym))
+        XCTAssertEqual(s.recordGymVictory(rockGym), rockGym.firstClearReward)
+        XCTAssertEqual(s.earnedGymBadges, [bugGym.id, rockGym.id])
+    }
+
+    /// 배지 키는 팀 구성이 아니라 타입에서 나온다 — 관장 팀을 나중에 손봐도 딴 배지가 사라지면 안 된다.
+    func testBadgeKeysAreStableAndUnique() {
+        let ids = GymLeague.catalog.map(\.id)
+        XCTAssertEqual(Set(ids).count, ids.count, "체육관 키가 겹치면 배지 하나가 둘을 덮는다")
+        XCTAssertEqual(GymLeague.catalog[0].id, PokemonType.bug.rawValue)
+        for gym in GymLeague.catalog {
+            XCTAssertEqual(GymLeague.gym(id: gym.id), gym, "키로 되찾을 수 있어야 화면이 이름을 그린다")
+        }
+    }
+
+    /// 관장 팀은 카탈로그가 약속한 머릿수를 채워야 한다 — 모자라면 도전자만 머릿수가 많아진다.
+    func testEveryGymFieldsAFullTeam() {
+        for gym in GymLeague.catalog {
+            XCTAssertEqual(gym.teamSpeciesIDs.count, GymLeague.teamSize, "\(gym.id) 팀 크기")
+            XCTAssertEqual(Set(gym.teamSpeciesIDs).count, gym.teamSpeciesIDs.count, "\(gym.id) 종 중복")
+            XCTAssertGreaterThan(gym.level, 0)
+            XCTAssertGreaterThan(gym.firstClearReward, 0)
+        }
+    }
+
+    /// 레벨이 곧 난이도이자 도전 순서다 — 카탈로그 순서와 어긋나면 목록이 거짓말을 한다.
+    func testGymsAreListedFromEasiestToHardest() {
+        let levels = GymLeague.catalog.map(\.level)
+        XCTAssertEqual(levels, levels.sorted(), "레벨 오름차순이어야 한다")
+        let rewards = GymLeague.catalog.map(\.firstClearReward)
+        XCTAssertEqual(rewards, rewards.sorted(), "보상도 난이도를 따라가야 한다")
+    }
+
     /// 돌로 진화시킨 최종형은 졸업 관문이 화면에 떠야 한다. 그 자리는 원래 "Lv.N 에 진화"·
     /// "○○돌 필요" 가 쓰던 곳인데, 최종형에 닿으면 둘 다 사라져 빈 채로 남았다 —
     /// 졸업 버튼은 조건을 채워야 나타나므로 왜 못 하는지 알 방법이 없었다.
