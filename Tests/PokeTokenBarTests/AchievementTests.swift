@@ -199,3 +199,85 @@ final class AchievementLadderTests: XCTestCase {
         XCTAssertEqual(forward.canonical, "battle:2,focus:30")
     }
 }
+
+// MARK: 세이브 (하위호환 · 무결성)
+
+final class AchievementSaveTests: XCTestCase {
+
+    /// 업적 필드가 없던 시절의 세이브는 빈 사다리로 읽히고, 나머지 진행은 그대로 살아야 한다.
+    func testLegacySaveWithoutAchievementsDecodesToAnEmptyLadder() throws {
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"starPieces":1234}"#
+        let state = try JSONDecoder().decode(CompanionState.self, from: Data(json.utf8))
+
+        XCTAssertEqual(state.achievements, AchievementLadder())
+        XCTAssertEqual(state.starPieces, 1234, "새 필드 부재가 다른 진행을 날리지 않는다")
+    }
+
+    /// 타입이 어긋난 값(손편집·손상)도 기본값으로 흡수돼야 한다 — 한 필드가 깨져도 상태 전체를
+    /// 날리지 않는 관대 디코딩 계약(`c.lenient`).
+    func testACorruptAchievementFieldFallsBackWithoutLosingTheRest() throws {
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"starPieces":77,"achievements":"nope"}"#
+        let state = try JSONDecoder().decode(CompanionState.self, from: Data(json.utf8))
+
+        XCTAssertEqual(state.achievements, AchievementLadder())
+        XCTAssertEqual(state.starPieces, 77)
+    }
+
+    /// 기본값이면 canonical 문자열에 아무것도 붙지 않는다 — 기존 세이브의 서명이 그대로 유효해야 한다.
+    /// (조건부 append 를 무조건 append 로 바꾸면 정상 세이브가 전부 조작 판정 → 진행 초기화된다.)
+    ///
+    /// 해시끼리 비교하면 **안 된다**: 기본값 상태를 자기 자신과 대조하게 돼 무조건 append 로 바꿔도
+    /// 양쪽이 똑같이 바뀌어 통과한다. 조각이 실제로 없는지를 문자열에서 직접 본다.
+    func testDefaultAchievementsAddNothingToTheIntegrityCanonical() {
+        XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|ac"))
+        XCTAssertFalse(SaveTransfer.isTampered(SaveTransfer.signed(CompanionState())))
+    }
+
+    /// 대조군 — 값이 들어가면 세그먼트가 실제로 붙는다. 위 테스트만 있으면 canonical 에서 업적을
+    /// 통째로 빼먹어도 통과한다.
+    func testAPopulatedLadderDoesAppendItsCanonicalSegment() {
+        var state = CompanionState()
+        _ = state.achievements.record(.battle, 2)
+
+        XCTAssertTrue(SaveTransfer.canonicalString(state).contains("|acbattle:2"),
+                      "실제: \(SaveTransfer.canonicalString(state))")
+    }
+
+    /// 가드가 실제로 지키는지 — 서명 후 카운터를 손으로 올리면 조작으로 잡혀야 한다.
+    /// 카운터가 곧 단계 판정이라, 서명 밖에 있으면 값을 올려 적는 것만으로 단계 보상을 받을 수 있다.
+    func testEditingAchievementCountsAfterSigningIsDetected() {
+        var state = CompanionState()
+        _ = state.achievements.record(.focus, 10)
+        var signed = SaveTransfer.signed(state)
+        XCTAssertFalse(SaveTransfer.isTampered(signed), "테스트 전제: 서명 직후는 정상이어야 한다")
+
+        signed.achievements.counts["focus"] = 3_000
+        XCTAssertTrue(SaveTransfer.isTampered(signed), "카운터가 무결성 해시에 들어가 있어야 한다")
+    }
+
+    /// 경계에서 한 번만 정규화한다 — 손편집으로 넣은 거대한 값이 그대로 저장되면 계속 상한 위에 앉는다.
+    func testExtremeAchievementCountsAreClampedAtTheBoundary() {
+        var state = CompanionState()
+        state.achievements.counts = ["focus": Int.max, "ghostTrack": 7]
+
+        let sanitized = SaveTransfer.sanitized(state)
+
+        XCTAssertEqual(sanitized.achievements.counts["focus"],
+                       AchievementLadder.catalog.first { $0.track == .focus }!.tiers.last)
+        XCTAssertNil(sanitized.achievements.counts["ghostTrack"])
+    }
+
+    /// 업적은 **새 필드**라 값이 든 기존 세이브가 존재하지 않는다 — 그래서 조건부 append 만으로
+    /// 충분하고 `integrityVersion` 을 올릴 필요가 없다(`gymBadges` 는 이전 배포에 이미 있던 필드라
+    /// 버전 상향이 필요했다 — `testASaveSignedBeforeTheCanonicalChangeIsNotJudgedTampered`).
+    /// 버전을 올리면 그 배포에서 **모든** 세이브가 한 번 검사 면제를 받아 다른 필드의 조작도 통과한다.
+    func testTheAchievementSegmentDoesNotRequireAnIntegrityVersionBump() {
+        XCTAssertEqual(SaveTransfer.integrityVersion, 7)
+
+        // 업적이 없는 상태로 현재 버전에서 서명된 세이브는 그대로 유효하다.
+        var old = CompanionState()
+        old.starPieces = 5_000
+        let signed = SaveTransfer.signed(old)
+        XCTAssertFalse(SaveTransfer.isTampered(signed))
+    }
+}
