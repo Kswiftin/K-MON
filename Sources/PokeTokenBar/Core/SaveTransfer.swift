@@ -271,6 +271,14 @@ enum SaveTransfer {
         // 구버전 서명 호환: 기본값이면 아무것도 붙이지 않는다. 무조건 붙이면 미션 필드가 없던
         // 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
         if s.missions != MissionBoard() { p.append("ms\(s.missions.canonical)") }
+        // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
+        // 세이브에서 배지 키를 지우는 것만으로 같은 체육관에서 알을 다시 받을 수 있다.
+        // 정렬 필수: Set 순회 순서는 실행마다 달라, 정렬하지 않으면 같은 상태가 다른 서명을 낸다.
+        // 구버전 서명 호환: 비어 있으면 아무것도 붙이지 않는다.
+        if !s.gymBadges.isEmpty { p.append("gb" + s.gymBadges.sorted().joined(separator: ",")) }
+        // 이로치 확정 부화 횟수 — 받은 시점과 쓰는 시점이 떨어져 있어 세이브에 남는다. 손으로 올리면
+        // 확정 이로치가 공짜다. 접두 `sec` 는 아래 기기 시드가 이미 쓰고 있어 `shc` 를 쓴다.
+        if s.shinyEggCharges != 0 { p.append("shc\(s.shinyEggCharges)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))

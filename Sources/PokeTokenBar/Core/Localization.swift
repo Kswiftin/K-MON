@@ -652,6 +652,29 @@ struct L {
         }
     }
     var missionsTitle: String { t("미션", "Missions", "ミッション") }
+
+    var notifDexGoalTitle: String { t("📘 도감 목표 달성!", "📘 Pokédex goal cleared!", "📘 図鑑目標を達成！") }
+    func notifDexGoalBody(_ name: String) -> String {
+        t("\(name) — 보상이 도착했어요!", "\(name) — your reward has arrived!", "\(name) — 報酬が届きました！")
+    }
+    /// 이름 없는 목표는 **빈 문자열**을 돌려준다 — 카탈로그에 목표를 더하고 문구를 빼먹으면
+    /// `DexGoalTests` 가 그 자리에서 실패한다. id 를 폴백으로 쓰면 그 가드가 무력해진다.
+    /// 목표값이 이름에 들어가 알림에서도 어느 칸인지 구분된다(종 10 vs 종 25).
+    func dexGoalName(_ goal: DexGoal) -> String {
+        switch goal.kind {
+        case .species: return t("도감 \(goal.target)종", "\(goal.target) species in the Pokédex", "図鑑\(goal.target)種")
+        case .types:   return t("타입 \(goal.target)종류", "\(goal.target) types covered", "タイプ\(goal.target)種類")
+        case .shiny:   return t("이로치 \(goal.target)마리", "\(goal.target) shiny graduates", "色違い\(goal.target)体")
+        }
+    }
+    /// 도감 헤더 목표 줄의 축 라벨 — 한 줄에 셋이 들어가므로 가장 짧은 말을 쓴다.
+    func dexGoalShortLabel(_ kind: DexGoalKind) -> String {
+        switch kind {
+        case .species: return t("종", "Species", "種")
+        case .types:   return t("타입", "Types", "タイプ")
+        case .shiny:   return t("이로치", "Shiny", "色違い")
+        }
+    }
     /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.
     var missionDaily: String { t("일간", "Daily", "デイリー") }
 

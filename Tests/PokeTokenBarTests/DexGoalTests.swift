@@ -129,6 +129,10 @@ final class DexGoalTests: XCTestCase {
 @MainActor
 final class DexGoalGrantTests: XCTestCase {
 
+    /// 졸업은 그 자체로 보상 알 1개를 준다(`CompanionStore.graduate()` 끝부분). 도감 목표 몫은
+    /// **그 위에 얹힌다** — 이 값을 빼놓으면 목표를 넘기지 않은 졸업도 "알이 늘었다"로 보인다.
+    private let eggsFromGraduationItself = 1
+
     /// 도감을 세이브 파일에 심는다 — `state` 세터는 비공개고, 테스트 편의로 그걸 열면
     /// 프로덕션에서도 상태를 통째로 갈아 끼울 수 있다(`TrainerLevelAccrualTests` 와 같은 판단).
     private func makeStore(_ clock: TestClock,
@@ -176,7 +180,8 @@ final class DexGoalGrantTests: XCTestCase {
         XCTAssertTrue(store.graduateCompanion())
 
         XCTAssertEqual(DexGoals.progress(.species, in: store.state.dex), 10)
-        XCTAssertEqual(store.state.focusEggs - eggsBefore, 1, "알 1개가 보관 알로 들어와야 한다")
+        XCTAssertEqual(store.state.focusEggs - eggsBefore, eggsFromGraduationItself + 1,
+                       "species10 의 알 1개가 졸업 보상 알 위에 더해져야 한다")
         XCTAssertEqual(store.state.focusEggReadyDates.count, store.state.focusEggs,
                        "보관 알 개수와 부화 예정 시각 개수가 어긋나면 안 된다")
     }
@@ -190,7 +195,8 @@ final class DexGoalGrantTests: XCTestCase {
         XCTAssertTrue(store.graduateCompanion())
 
         XCTAssertEqual(DexGoals.progress(.species, in: store.state.dex), 6)
-        XCTAssertEqual(store.state.focusEggs, eggsBefore)
+        XCTAssertEqual(store.state.focusEggs - eggsBefore, eggsFromGraduationItself,
+                       "졸업 보상 알만 들어오고 도감 목표 몫은 없어야 한다")
         XCTAssertTrue(DexGoals.completed(in: store.state.dex).isEmpty)
     }
 
@@ -203,7 +209,8 @@ final class DexGoalGrantTests: XCTestCase {
 
         XCTAssertTrue(store.graduateCompanion())
 
-        XCTAssertEqual(store.state.focusEggs, eggsBefore, "이미 넘긴 species10 이 다시 지급되면 안 된다")
+        XCTAssertEqual(store.state.focusEggs - eggsBefore, eggsFromGraduationItself,
+                       "이미 넘긴 species10 이 다시 지급되면 안 된다")
     }
 
     /// 같은 목표는 두 번 지급되지 않는다 — 넘긴 뒤 졸업을 더 해도 그대로다.
@@ -219,7 +226,8 @@ final class DexGoalGrantTests: XCTestCase {
         store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
         XCTAssertTrue(store.graduateCompanion())
 
-        XCTAssertEqual(store.state.focusEggs, eggsAfterFirst, "species10 이 두 번 지급됐다")
+        XCTAssertEqual(store.state.focusEggs - eggsAfterFirst, eggsFromGraduationItself,
+                       "두 번째 졸업에는 졸업 보상 알만 들어와야 한다 — species10 이 두 번 지급됐다")
     }
 
     /// 한 졸업이 두 목표를 넘기면 **둘 다** 지급된다 — 종 10 + 이로치 1.
@@ -233,7 +241,8 @@ final class DexGoalGrantTests: XCTestCase {
 
         XCTAssertTrue(store.graduateCompanion())
 
-        XCTAssertEqual(store.state.focusEggs - eggsBefore, 1, "species10 의 알")
+        XCTAssertEqual(store.state.focusEggs - eggsBefore, eggsFromGraduationItself + 1,
+                       "species10 의 알")
         XCTAssertGreaterThanOrEqual(store.state.starPieces - dustBefore, 2_000, "shiny1 의 별의조각")
     }
 
@@ -275,7 +284,8 @@ final class DexGoalGrantTests: XCTestCase {
         XCTAssertTrue(store.graduateCompanion())
 
         XCTAssertEqual(DexGoals.progress(.types, in: store.state.dex), 8)
-        XCTAssertEqual(store.state.focusEggs, eggsBefore, "types9 에 못 닿았으면 알이 없다")
+        XCTAssertEqual(store.state.focusEggs - eggsBefore, eggsFromGraduationItself,
+                       "types9 에 못 닿았으면 도감 목표 몫은 없다")
     }
 
     /// 표시용 행 — 종류마다 **아직 안 넘은 첫 목표** 하나씩.
