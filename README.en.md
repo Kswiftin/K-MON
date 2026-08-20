@@ -34,7 +34,8 @@ K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own
 
 When two Macs on the same network are both running K-MON, they discover each other automatically (Bonjour + AWDL). No IP typing — but a manual `IP:port` fallback is there for locked-down networks.
 
-- **Brawl** — a turn-based battle. Pick from four moves; type advantage, STAB, crits and misses all matter. Deterministic engine — both peers compute the same result, so nothing can be forged over the wire.
+- **Brawl** — a turn-based battle. Pick from four moves; type advantage, STAB, crits and misses all matter. Move **priority** outranks speed, and the six status conditions — burn, poison, toxic, paralysis, sleep, freeze — plus confusion all apply. Deterministic engine — both peers compute the same result, so nothing can be forged over the wire.
+- **Practice against the CPU** — 1v1, 3v3 or 6v6. Choose which Pokémon go in and in what order; switching costs the turn, as in the main series. Your team enters at the levels you raised, and the CPU matches them. Ranked duels stay flattened to Lv.50.
 - **Auto-accept** — flip it on and challenges are accepted the moment they arrive, so a battle happens even while you're away from the keyboard.
 - **Notifications & a pinned window** — a challenge raises a system notification even while you're working; when a battle starts, the window pins itself open (it won't close when you click away) so you can play while you work.
 - **Names everywhere** — your trainer name and your Pokémon's nickname show up on the challenge, the arena, and the notification.
