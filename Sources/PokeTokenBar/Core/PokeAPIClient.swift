@@ -240,7 +240,7 @@ actor PokeAPIClient: PokeProviding {
         let names = Self.levelUpMoveNames(dto, through: level)
         var moves: [MoveSpec] = []
         for name in names {
-            guard let move = try? await moveDetail(name) else { continue }
+            guard let move = try? await moveDetail(named: name) else { continue }
             moves.append(move)
             if moves.count == 4 { break }
         }
