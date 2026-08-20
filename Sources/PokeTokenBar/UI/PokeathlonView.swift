@@ -5,6 +5,15 @@ struct PokeathlonView: View {
     @Environment(BattleCenter.self) private var battleCenter
     private var center: MultiplayerRoomCenter { battleCenter.multiplayer }
     @State private var joinRole: LobbyRole = .runner
+    @State private var roomPage = 0
+
+    /// 한 페이지에 그리는 릴레이 방 수. 상대 목록과 같은 부류다 — 목록 길이를 LAN 이 정하므로
+    /// 상한 없이 그리면 팝오버가 잘리고, 상한만 걸면 뒤쪽 방에 참가할 방법이 없어진다.
+    static let roomPageSize = 5
+
+    static func roomPageCount(_ roomCount: Int) -> Int {
+        max(1, (roomCount + roomPageSize - 1) / roomPageSize)
+    }
     @State private var betRunnerID: UUID?
     @State private var betAmount = 10
 
@@ -48,12 +57,30 @@ struct PokeathlonView: View {
                 Text(store.language == .ko ? "관전·베팅" : "Spectate & bet").tag(LobbyRole.spectator)
             }
             .pickerStyle(.segmented).controlSize(.small)
-            ForEach(center.rooms.filter { $0.name.hasPrefix("RUN") }) { room in
+            let relayRooms = center.rooms.filter { $0.name.hasPrefix("RUN") }
+            let roomPageCount = Self.roomPageCount(relayRooms.count)
+            // 방은 수시로 열리고 닫힌다 — 보던 페이지가 사라지면 마지막 페이지로 당긴다.
+            let currentRoomPage = min(roomPage, roomPageCount - 1)
+            ForEach(relayRooms.dropFirst(currentRoomPage * Self.roomPageSize).prefix(Self.roomPageSize)) { room in
                 HStack {
                     Label(room.name, systemImage: "door.left.hand.open").font(.caption).lineLimit(1)
                     Spacer()
                     Button(store.language == .ko ? "참가" : "Join") { center.join(room, as: joinRole) }
                         .controlSize(.small)
+                }
+            }
+            if roomPageCount > 1 {
+                HStack(spacing: 8) {
+                    Spacer(minLength: 4)
+                    Button { roomPage = max(0, currentRoomPage - 1) } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.plain).disabled(currentRoomPage == 0)
+                        .accessibilityLabel(store.l.dexPagePrev)
+                    Text("\(currentRoomPage + 1) / \(roomPageCount)")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        .accessibilityLabel(store.l.dexPageLabel(currentRoomPage + 1, roomPageCount))
+                    Button { roomPage = min(roomPageCount - 1, currentRoomPage + 1) } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.plain).disabled(currentRoomPage == roomPageCount - 1)
+                        .accessibilityLabel(store.l.dexPageNext)
                 }
             }
             if center.rooms.allSatisfy({ !$0.name.hasPrefix("RUN") }) {

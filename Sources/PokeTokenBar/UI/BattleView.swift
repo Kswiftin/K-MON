@@ -14,12 +14,20 @@ struct BattleView: View {
     @State private var roomMode: MultiplayerBattleMode = .freeForAll
     @State private var multiplayerTargetID: UUID?
     @State private var teamPickPage = 0
+    @State private var peerPage = 0
 
     private var l: L { store.l }
 
-    /// 한 번에 그리는 상대 수 상한. 팝오버 안에서는 스크롤로 미룰 수 없으니(defect-log) 목록도
-    /// 예산을 지켜야 한다 — 넘치는 인원은 숫자로만 알린다.
-    static let visiblePeerLimit = 5
+    /// 한 페이지에 그리는 상대 수. 팝오버 안에서는 스크롤로 미룰 수 없어(defect-log) 이 목록도
+    /// 세로 예산을 지켜야 한다. 다만 예산은 **한 번에 몇 명을 그리나**만 정하고, 넘치는 상대는
+    /// 페이저로 넘겨서 본다. 예전엔 상한까지만 그리고 나머지를 "그 밖에 n명 더"로 알렸는데,
+    /// 그건 도달성 처방이 아니라 잘리는 지점만 옮기던 도감·로스터 시절 실수를 되풀이한 것이었다.
+    static let peerPageSize = 5
+
+    /// 마지막 페이지가 덜 차도 한 페이지다. 아무도 없으면 빈 목록 한 장(페이저는 그리지 않는다).
+    static func peerPageCount(_ peerCount: Int) -> Int {
+        max(1, (peerCount + peerPageSize - 1) / peerPageSize)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -214,7 +222,11 @@ struct BattleView: View {
     }
 
     private var peerList: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // 상대는 Bonjour 탐색을 따라 수시로 들어오고 나간다 — 보던 페이지가 사라지면 마지막 페이지로 당긴다.
+        let pageCount = Self.peerPageCount(center.peers.count)
+        let page = min(peerPage, pageCount - 1)
+        let slice = Array(center.peers.dropFirst(page * Self.peerPageSize).prefix(Self.peerPageSize))
+        return VStack(alignment: .leading, spacing: 6) {
             // 제목이 Lv.50 을 말하지 않는다 — 그 규칙은 아래 상대 목록(맞짱)에만 해당하고,
             // 같은 섹션의 모의전은 키운 레벨 그대로 나간다.
             Label(store.language == .ko ? "랭크배틀" : "Ranked Battle",
@@ -281,10 +293,10 @@ struct BattleView: View {
             } else {
                 // 예전엔 이 목록이 `ScrollView` + `maxHeight: 180` 이었다. 팝오버 본체가 이미
                 // `ScrollView` 라 안쪽은 **스크롤되지 않고 잘린다**(defect-log) — 상대가 다섯 명을
-                // 넘어가면 뒤쪽은 신청할 방법이 없었다. 스크롤을 지우고 상한까지만 그린 뒤,
-                // 넘치는 인원은 숫자로 알린다(도감 페이저와 같은 처방의 축소판).
+                // 넘어가면 뒤쪽은 신청할 방법이 없었다. 스크롤을 지우고 도감·로스터와 같은 페이지식으로
+                // 간다 — 한 페이지에 다섯 명씩, 나머지는 페이저로 넘겨서 신청한다.
                 VStack(spacing: 4) {
-                    ForEach(center.peers.prefix(Self.visiblePeerLimit)) { peer in
+                    ForEach(slice) { peer in
                         HStack {
                             Image(systemName: "person.fill")
                                 .font(.caption)
@@ -303,10 +315,19 @@ struct BattleView: View {
                         }
                         .padding(.vertical, 2)
                     }
-                    if center.peers.count > Self.visiblePeerLimit {
-                        Text(l.battleMorePeers(center.peers.count - Self.visiblePeerLimit))
-                            .font(.caption2).foregroundStyle(.tertiary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    if pageCount > 1 {
+                        HStack(spacing: 8) {
+                            Spacer(minLength: 4)
+                            Button { peerPage = max(0, page - 1) } label: { Image(systemName: "chevron.left") }
+                                .buttonStyle(.plain).disabled(page == 0)
+                                .accessibilityLabel(l.dexPagePrev)
+                            Text("\(page + 1) / \(pageCount)")
+                                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                                .accessibilityLabel(l.dexPageLabel(page + 1, pageCount))
+                            Button { peerPage = min(pageCount - 1, page + 1) } label: { Image(systemName: "chevron.right") }
+                                .buttonStyle(.plain).disabled(page == pageCount - 1)
+                                .accessibilityLabel(l.dexPageNext)
+                        }
                     }
                 }
             }
