@@ -1651,11 +1651,18 @@ final class PokeAPIGuardTests: XCTestCase {
         XCTAssertNil(PokeAPIClient.validatedChainURL("http://pokeapi.co/x"), "http 거부(https 고정)")
         XCTAssertNil(PokeAPIClient.validatedChainURL(""), "빈 문자열 거부")
     }
+}
 
-    // MARK: 출전 팀 고르기
-
+/// 출전 팀 고르기 — `BattleCenter` 가 `@MainActor` 라 이 클래스도 그래야 한다.
+/// (예전엔 이 테스트들이 `PokeAPIGuardTests` 안에 있었다. 파일 끝에 덧붙이면 마지막 클래스에
+///  딸려 들어가는데, 그쪽은 격리가 없어 `toggleTeamPick` 호출이 컴파일되지 않았다.)
+@MainActor
+final class BattleTeamPickTests: XCTestCase {
     private func teamPickCenter(monCount: Int) -> (center: BattleCenter, mons: [MonState]) {
-        let store = self.store(noEvo)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-\(UUID().uuidString).json")
+        let store = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
+                                   fileURL: url, rng: SeededRNG(seed: 7))
         store.debugSetBoxedMons((0..<monCount).map { index in
             MonState(baseID: 20 + index, pathIDs: [20 + index], plannedPathIDs: [20 + index],
                      stageIndex: 0, usedAtStage: 0, rarity: .common, totalForms: 1)
@@ -1720,4 +1727,3 @@ final class PokeAPIGuardTests: XCTestCase {
         XCTAssertEqual(center.battleTeamMons.map(\.baseID), [25, 20, 21])
     }
 }
-
