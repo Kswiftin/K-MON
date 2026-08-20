@@ -1657,11 +1657,22 @@ final class CompanionStore {
     func buyEgg(_ tier: Rarity?) -> Bool {
         guard canBuyEgg(tier) else { return false }
         state.starPieces -= FreshEgg.price(guaranteeing: tier)
+        // 값을 매길 때 쓴 보증을 상태에도 적는다. 이 줄이 없어서 등급 보증 알은 값만 비싸고
+        // 아무것도 보장하지 않았다 — 상점이 보증 알을 팔지 않아 드러나지 않았을 뿐이다.
+        state.eggTier = Self.strongerGuarantee(state.eggTier, tier)
         state.focusEggs = min(999, state.focusEggs + 1)
         state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
         AppLog.write("egg purchased: added to egg inventory")
         save()
         return true
+    }
+
+    /// 보증은 상태에 하나만 들어간다. 이미 들고 있는데 새로 받으면 **높은 쪽을 남긴다** —
+    /// 낮은 등급으로 덮으면 이미 얻은 보증이 조용히 깎인다.
+    static func strongerGuarantee(_ current: Rarity?, _ incoming: Rarity?) -> Rarity? {
+        guard let incoming else { return current }
+        guard let current else { return incoming }
+        return incoming.sortRank > current.sortRank ? incoming : current
     }
 
     // 보증 없는 기본 알 래퍼 — 기존 호출부/테스트 호환.
@@ -1677,6 +1688,15 @@ final class CompanionStore {
         defer { isStoredEggHatching = false }
         guard let baseID = await chooseBase(),
               let line = try? await provider.line(baseSpeciesID: baseID) else { return }
+        // 보증을 여기서도 검사한다. `chooseBase` 가 후보를 좁히지만 인덱스가 낡았거나 REST 폴백을
+        // 타면 미달이 올라온다 — `hatchCore` 와 같은 관문이다. 알과 보증을 그대로 두고 다음 틱에 다시.
+        if let tier = state.eggTier, line.rarity.sortRank < tier.sortRank {
+            AppLog.write("stored egg: rolled \(line.rarity) below guaranteed \(tier) — re-roll next tick")
+            return
+        }
+        // **보증은 여기서 소비된다.** 예전엔 이 경로가 보증을 읽지도 지우지도 않아, 한 번 얻은
+        // 보증이 남아 이후 모든 부화에 적용됐다(`hatchCore` 만 소비했다).
+        state.eggTier = nil
         let shiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let plan = makeEvolutionPlan(from: line.tree, baseID: line.baseID)
