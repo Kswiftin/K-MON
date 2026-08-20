@@ -14,23 +14,53 @@ struct TeamPicker: View {
     /// 이 화면에서 고를 수 있는 최대 인원. 체육관은 관장 팀에 맞춰 3, 모의전은 화면에서 고른 크기다.
     let limit: Int
     @State private var page = 0
+    /// 고를 타입. nil = 거르지 않음.
+    @State private var typeFilter: PokemonType?
+    /// 종 id → 타입. `MonState` 는 종 id 만 들고 있어 타입은 따로 받아야 한다.
+    /// `battleProfile` 이 메모리 캐시를 두므로 같은 종을 여러 마리 가져도 조회는 한 번이다.
+    @State private var monTypes: [Int: [PokemonType]] = [:]
 
     /// 한 페이지에 그리는 칩 수. 팝오버 콘텐츠 폭(332) 안에 칩 6개(44)와 간격이 들어간다.
     private static let pageSize = 6
 
     private var l: L { store.l }
 
+    /// 소유 포켓몬에 실제로 있는 타입만 — 안 가진 타입까지 늘어놓으면 고를 게 없는 항목이 대부분이다.
+    private var availableTypes: [PokemonType] {
+        let owned = Set(store.ownedMons.map(\.currentID))
+        return Array(Set(monTypes.filter { owned.contains($0.key) }.values.flatMap { $0 }))
+            .sorted { $0.rawValue < $1.rawValue }
+    }
+
     var body: some View {
-        let owned = store.ownedMons
-        if owned.count > 1 {
+        let all = store.ownedMons
+        let owned = typeFilter.map { type in
+            all.filter { (monTypes[$0.currentID] ?? []).contains(type) }
+        } ?? all
+        if all.count > 1 {
             let pageCount = max(1, (owned.count + Self.pageSize - 1) / Self.pageSize)
             // 개체가 줄면(졸업·방출) 보던 페이지가 사라진다 — 범위 밖이면 마지막 페이지로 당긴다.
             let current = min(page, pageCount - 1)
             let slice = Array(owned.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    Text(store.language == .ko ? "출전 순서" : "Battle order")
-                        .font(.caption2).foregroundStyle(.secondary)
+                    // 타입 필터가 '출전 순서' 라벨 자리를 쓴다 — 헤더에 페이저·카운터까지 들어가
+                    // 줄을 더 늘리면 좁아진다. 거르지 않을 땐 '전체 타입' 으로 보인다.
+                    Menu {
+                        Button(l.teamFilterAllTypes) { typeFilter = nil; page = 0 }
+                        ForEach(availableTypes, id: \.self) { type in
+                            Button(type.name(store.language)) { typeFilter = type; page = 0 }
+                        }
+                    } label: {
+                        HStack(spacing: 2) {
+                            Text(typeFilter?.name(store.language) ?? l.teamFilterAllTypes)
+                            Image(systemName: "chevron.down").font(.system(size: 6))
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(typeFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .disabled(availableTypes.isEmpty)
                     Spacer()
                     if pageCount > 1 {
                         Button { page = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
@@ -60,11 +90,25 @@ struct TeamPicker: View {
                         }
                     }
                 }
+                // 필터가 아무도 안 남기면 빈 화면만 보인다 — 왜 비었는지 말해 준다.
+                if owned.isEmpty {
+                    Text(store.language == .ko ? "이 타입인 포켓몬이 없어요"
+                                               : "No Pokémon of that type")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
                 // 아무것도 안 고르면 소유 순서 앞에서 채운다 — 고르지 않고도 바로 시작할 수 있어야 한다.
                 if center.pickedTeam.isEmpty {
                     Text(store.language == .ko ? "고르지 않으면 목록 앞에서 자동으로 채워요"
                                                : "Left empty, the first of your list are sent in")
                         .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            // 타입은 화면에 뜬 뒤 채워진다 — 받는 동안에도 목록은 그대로 보이고, 필터만 잠깐 비활성이다.
+            .task(id: all.map(\.currentID)) {
+                for speciesID in Set(all.map(\.currentID)) where monTypes[speciesID] == nil {
+                    if let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) {
+                        monTypes[speciesID] = profile.types
+                    }
                 }
             }
         }
