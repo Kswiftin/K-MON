@@ -750,7 +750,7 @@ final class BattleCenter {
         switch phase {
         case .battling:
             // 끊김은 몰수승이 **아니다** — 내 연결이 죽은 건 두 피어에게 똑같이 보이므로, 무조건
-            // 승리로 접으면 라우터가 한 번 껄떡일 때 양쪽이 동시에 이기고 양쪽이 판돈을 받았다.
+            // 승리로 접으면 네트워크가 한 번 끊길 때 양쪽이 동시에 이기고 양쪽이 판돈을 받았다.
             // 남은 HP 비율로 판정하고 동률이면 무효다(정산 없음). 상대가 보낸 `.forfeit` 은 이 경로가
             // 아니라 `handle(.forfeit)` 이 처리한다 — 그건 상대가 스스로 진 것이므로 그대로 몰수승이다.
             let iWon = battle.flatMap { BattleEngine.disconnectOutcome(me: $0.me, opp: $0.opp) }
