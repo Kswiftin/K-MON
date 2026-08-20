@@ -715,6 +715,26 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertNil(s.nextEvolutionItem, "레벨로 진화하는 종이다")
     }
 
+    // MARK: 알 등급 보증
+
+    /// 상점은 보증 알을 팔지 않는다(`shopTiers` 가 `[nil]`). `canBuyEgg` 가 그걸 강제하므로
+    /// 구매로는 보증을 만들 수 없다 — 만족 불가능한 보증을 사면 알이 영영 안 깨지기 때문이다.
+    /// 보증을 세우는 경로가 생기면 이 전제부터 다시 본다.
+    func testGuaranteedEggsAreNotPurchasable() {
+        let s = store(noEvo)
+        XCTAssertFalse(s.canBuyEgg(.rare), "팔지 않는 등급은 값이 계산돼도 구매를 막는다")
+        XCTAssertFalse(s.canBuyEgg(.legendary), "capture_rate 로 표현 못 하는 등급은 특히")
+    }
+
+    /// 보증은 상태에 하나뿐이라 덮어쓰기 규칙이 필요하다 — 낮은 쪽으로 덮이면 이미 얻은 게 깎인다.
+    func testGuaranteeKeepsTheStrongerOfTwo() {
+        XCTAssertEqual(CompanionStore.strongerGuarantee(.rare, .uncommon), .rare, "낮은 쪽으로 깎이지 않는다")
+        XCTAssertEqual(CompanionStore.strongerGuarantee(.uncommon, .rare), .rare)
+        XCTAssertEqual(CompanionStore.strongerGuarantee(nil, .rare), .rare)
+        XCTAssertEqual(CompanionStore.strongerGuarantee(.rare, nil), .rare, "보증 없는 알이 보증을 지우지 않는다")
+        XCTAssertNil(CompanionStore.strongerGuarantee(nil, nil))
+    }
+
     // MARK: 체육관 배지
 
     /// 인덱스가 아니라 타입으로 집는다 — 카탈로그 순서는 밸런스에 따라 바뀐다.
