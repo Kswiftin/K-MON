@@ -57,13 +57,6 @@ struct L {
     var battleWaitingOpponent: String { t("상대가 기술을 고르는 중…", "Opponent is choosing…", "相手がわざを選んでいます…") }
     var battleForfeit: String { t("기권", "Forfeit", "降参") }
     var battleSwitch: String { t("교체", "Switch", "こうたい") }
-    /// 상대 목록에서 그리지 못한 인원. 팝오버 안에서는 스크롤로 미룰 수 없어 상한까지만 그리므로,
-    /// 남은 수를 숫자로라도 알려야 "근처에 아무도 없다"로 잘못 읽히지 않는다.
-    func battleMorePeers(_ n: Int) -> String {
-        t("그 밖에 \(n)명 더 — 가까운 순으로 표시됩니다.",
-          "\(n) more nearby — the closest are shown first.",
-          "ほかに\(n)人 — 近い順に表示しています。")
-    }
     var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }
     var battleNoEffect: String { t("효과가 없었다…", "It had no effect…", "こうかがないようだ…") }
     var battleOppForfeited: String { t("상대가 기권했어요 — 승리!", "Opponent forfeited — you win!", "相手が降参しました — 勝ち！") }
