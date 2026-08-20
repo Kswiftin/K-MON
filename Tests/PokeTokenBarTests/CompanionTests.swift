@@ -784,6 +784,31 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(rewards, rewards.sorted(), "보상도 난이도를 따라가야 한다")
     }
 
+    /// 체육관은 관장 팀 머릿수로 나간다 — 화면에서 고른 1/3/6 과 무관하다.
+    /// 머릿수가 다르면 이겨도 이긴 것 같지 않다.
+    func testGymChallengeFieldsTheLeaderTeamSize() {
+        let (center, mons) = teamPickCenterForGym(monCount: 6)
+        center.rankedTeamSize = 6
+        center.toggleTeamPick(mons[4].id)
+
+        let team = center.battleTeamMons(size: GymLeague.teamSize)
+
+        XCTAssertEqual(team.count, GymLeague.teamSize)
+        XCTAssertEqual(team.first?.id, mons[4].id, "고른 개체가 선봉인 건 그대로다")
+    }
+
+    private func teamPickCenterForGym(monCount: Int) -> (center: BattleCenter, mons: [MonState]) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-\(UUID().uuidString).json")
+        let store = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
+                                   fileURL: url, rng: SeededRNG(seed: 7))
+        store.debugSetBoxedMons((0..<monCount).map { index in
+            MonState(baseID: 20 + index, pathIDs: [20 + index], plannedPathIDs: [20 + index],
+                     stageIndex: 0, usedAtStage: 0, rarity: .common, totalForms: 1)
+        })
+        return (BattleCenter(companion: store), store.ownedMons)
+    }
+
     /// 돌로 진화시킨 최종형은 졸업 관문이 화면에 떠야 한다. 그 자리는 원래 "Lv.N 에 진화"·
     /// "○○돌 필요" 가 쓰던 곳인데, 최종형에 닿으면 둘 다 사라져 빈 채로 남았다 —
     /// 졸업 버튼은 조건을 채워야 나타나므로 왜 못 하는지 알 방법이 없었다.

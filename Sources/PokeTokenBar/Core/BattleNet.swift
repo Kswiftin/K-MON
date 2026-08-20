@@ -115,6 +115,10 @@ final class BattleCenter {
     private var didSettleRankedBrawl = false
     private(set) var isPracticeBattle = false
     private(set) var teamPractice: TeamPracticeBattle?
+    /// 지금 도전 중인 체육관. 모의전과 같은 배틀을 쓰므로 이 값이 둘을 가른다.
+    private(set) var activeGym: Gym?
+    /// 방금 승리로 받은 별의조각 — 결과 화면이 보여준다. 재도전이면 0 이다.
+    private(set) var lastGymReward = 0
     var rankedTeamSize = 1
 
     /// 모의전에 데려갈 개체 — **고른 순서가 곧 출전 순서**다(첫 번째가 선봉).
@@ -133,11 +137,14 @@ final class BattleCenter {
 
     /// 실제 출전 팀. 고른 것을 그 순서대로 앞에 두고, 정원이 남으면 소유 순서로 채운다 —
     /// 하나도 안 골라도 배틀은 시작돼야 하고, 3마리만 고른 6vs6 도 그대로 성립해야 한다.
-    var battleTeamMons: [MonState] {
+    var battleTeamMons: [MonState] { battleTeamMons(size: rankedTeamSize) }
+
+    /// 정해진 머릿수의 출전 팀. 체육관은 관장 팀에 맞춰 3 을 넘기고, 모의전은 화면에서 고른 크기를 쓴다.
+    func battleTeamMons(size: Int) -> [MonState] {
         let picked = pickedTeam.compactMap { id in companion.ownedMons.first { $0.id == id } }
         let pickedIDs = Set(picked.map(\.id))
         let rest = companion.ownedMons.filter { !pickedIDs.contains($0.id) }
-        return Array((picked + rest).prefix(rankedTeamSize))
+        return Array((picked + rest).prefix(size))
     }
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
 
@@ -324,17 +331,72 @@ final class BattleCenter {
         }
     }
 
+    /// 체육관 도전 — 모의전과 같은 배틀이지만 상대는 카탈로그가 정한 관장 팀이다.
+    ///
+    /// 내 팀은 키운 레벨 그대로, 관장은 카탈로그의 고정 레벨이다(#57 과 같은 규칙, 방향만 반대).
+    /// 관장이 도전자를 따라오면 언제 가도 같은 난이도라 이 컨텐츠가 성립하지 않는다.
+    func startGymChallenge(_ gym: Gym) {
+        guard case .ready = phase else { return }
+        guard companion.ownedMons.count >= GymLeague.teamSize else {
+            lastError = l.gymNeedsMorePokemon(GymLeague.teamSize)
+            return
+        }
+        phase = .preparing
+        Task {
+            var myTeam: [BattleSnapshot] = []
+            for mon in battleTeamMons(size: GymLeague.teamSize) {
+                if let snapshot = await companion.battleSnapshot(for: mon, level: mon.level) {
+                    myTeam.append(snapshot)
+                }
+            }
+            guard myTeam.count == GymLeague.teamSize else {
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            var leaderTeam: [BattleSnapshot] = []
+            for speciesID in gym.teamSpeciesIDs {
+                guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) else { continue }
+                let moves = await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: gym.level,
+                                                              types: profile.types)
+                let name = await companion.resolveSpeciesName(speciesID)
+                leaderTeam.append(BattleSnapshot(speciesID: speciesID, name: name,
+                                                 trainer: gym.leaderName(companion.language),
+                                                 level: gym.level, nature: nil, isShiny: false,
+                                                 types: profile.types, base: profile.stats, moves: moves))
+            }
+            guard leaderTeam.count == GymLeague.teamSize else {
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            isPracticeBattle = true
+            activeGym = gym
+            lastGymReward = 0
+            teamPractice = TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
+                                              opponents: leaderTeam.map(BattleSide.init),
+                                              rng: SplitMix64(seed: UInt64.random(in: .min ... .max)))
+            phase = .battling
+            pendingAttention = true
+        }
+    }
+
     func chooseTeamPracticeMove(_ index: Int) {
         guard var practice = teamPractice, practice.useMove(index) else { return }
         teamPractice = practice
-        if let result = practice.result { phase = .finished(iWon: result, byForfeit: false) }
+        settlePracticeResult(practice)
+    }
+
+    /// 승부가 났으면 마무리한다 — 체육관이었고 이겼으면 배지가 여기서 나간다.
+    /// 기술 사용과 교체 양쪽이 승부를 낼 수 있어 두 경로가 이 한 곳을 지난다.
+    private func settlePracticeResult(_ practice: TeamPracticeBattle) {
+        guard let result = practice.result else { return }
+        // 재도전이면 `recordGymVictory` 가 0 을 돌려준다 — 배지가 이미 있으면 아무것도 지급하지 않는다.
+        lastGymReward = (result && activeGym != nil) ? companion.recordGymVictory(activeGym!) : 0
+        phase = .finished(iWon: result, byForfeit: false)
     }
 
     func switchTeamPractice(to index: Int) {
         guard var practice = teamPractice, practice.switchMine(to: index) else { return }
         teamPractice = practice
         // 교체는 이제 턴을 쓰므로 상대가 그 사이 공격한다 — 마지막 한 마리가 거기서 쓰러질 수 있다.
-        if let result = practice.result { phase = .finished(iWon: result, byForfeit: false) }
+        settlePracticeResult(practice)
     }
 
     func challenge(_ peer: BattlePeer) {
@@ -500,6 +562,8 @@ final class BattleCenter {
         teamPractice = nil
         if case .finished = phase { phase = .ready }
         isPracticeBattle = false
+        activeGym = nil
+        lastGymReward = 0
     }
 
     private var pendingMySnapshot: BattleSnapshot?
