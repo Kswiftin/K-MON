@@ -781,6 +781,25 @@ final class CompanionStoreTests: XCTestCase {
         }
     }
 
+    /// 관장은 넷을 다 들고 나온다. 자동 선발에 맡겼을 땐 종에 따라 둘밖에 못 채워 PP 가 금방
+    /// 떨어졌다 — 지정으로 바꾼 이유가 그것이라, 지정한 쪽이 모자라면 되돌아간 것과 같다.
+    func testEveryLeaderCarriesFourNamedMoves() {
+        for gym in GymLeague.catalog {
+            XCTAssertEqual(gym.teamMoveNames.count, gym.teamSpeciesIDs.count,
+                           "\(gym.id): 기술 목록이 팀과 짝이 맞지 않는다")
+            for (slot, moves) in gym.teamMoveNames.enumerated() {
+                XCTAssertEqual(moves.count, 4, "\(gym.id) \(slot)번: 기술 4개")
+                XCTAssertEqual(Set(moves).count, moves.count, "\(gym.id) \(slot)번: 같은 기술이 둘")
+                for name in moves {
+                    XCTAssertFalse(name.isEmpty)
+                    XCTAssertEqual(name, name.lowercased(),
+                                   "PokéAPI move 이름은 소문자 하이픈 표기다")
+                    XCTAssertFalse(name.contains(" "), "\(name): 공백이 아니라 하이픈을 쓴다")
+                }
+            }
+        }
+    }
+
     /// 관장은 전부 같은 레벨에 선다. 레벨이 갈리면 낮은 곳부터 순서가 **강제**되고, 그 격차가
     /// 타입 상성을 덮어 이 컨텐츠의 공략 자체가 사라진다(`GymLeague.leaderLevel` 주석의 계산).
     func testEveryLeaderStandsAtTheSameLevel() {

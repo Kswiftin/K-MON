@@ -12,6 +12,16 @@ struct Gym: Identifiable, Sendable, Equatable {
     /// langCode → 관장 이름.
     let names: [String: String]
     let teamSpeciesIDs: [Int]
+    /// 관장이 쓸 기술(PokéAPI move 이름), 팀 순서와 같다.
+    ///
+    /// 자동 선발(`moveSet`)에 맡기지 않는 이유: 그쪽은 "레벨 이하 습득 기술 중 최근 8개 → 변화기
+    /// 제외 → 타입 겹치지 않게 4개" 라, 종에 따라 **두 개밖에 못 채우고** 위력 20 짜리가 섞였다.
+    /// 라이츄가 스파크와 스위프트 둘만 들고 나오면 PP 가 금방 떨어져 발버둥으로 끝난다.
+    /// 관장 팀을 손으로 고르면서 기술만 뽑기에 맡길 이유가 없다.
+    ///
+    /// 이름이 틀리면 그 종만 자동 선발로 돌아간다 — 배틀이 서지는 않는다.
+    /// 이름·위력·상태이상은 `scripts/verify-gym-catalog.sh` 로 확인한다.
+    let teamMoveNames: [[String]]
     /// 관장 팀 레벨 — 도전자에 맞춰 움직이지 않는다. 맞추면 언제 가도 같은 난이도라 키운 보람이
     /// 드러나지 않는다. 값은 `GymLeague.leaderLevel` 로 **모든 체육관이 같다**(그 상수의 주석 참고).
     let level: Int
@@ -48,22 +58,44 @@ enum GymLeague {
     /// 순서는 관장 팀 **종족값 합의 대략적인 크기** 순이다 — 레벨이 같으니 난이도를 가르는 건
     /// 그쪽이다. 정확한 종족값은 PokéAPI 에서 오므로 여기 순서는 추정이고, 체감이 다르면
     /// 이 배열의 순서와 보상만 손보면 된다. 도전 순서를 막지는 않는다.
+    /// 순서는 관장 팀 **종족값 합** 순이다 — 레벨이 같으니 난이도를 가르는 건 그쪽과 기술이다.
+    /// 도전 순서를 막지는 않는다.
     static let catalog: [Gym] = [
-        Gym(type: .rock,
-            names: ["ko": "바위 체육관", "en": "Rock Gym", "ja": "いわジム"],
-            teamSpeciesIDs: [95, 111, 139],         // 롱스톤 · 코뿔코 · 암스타
-            level: leaderLevel, firstClearReward: 500),
         Gym(type: .bug,
             names: ["ko": "벌레 체육관", "en": "Bug Gym", "ja": "むしジム"],
-            teamSpeciesIDs: [12, 15, 123],          // 버터플 · 독침붕 · 스라크
+            teamSpeciesIDs: [617, 589, 469],        // 어위르 · 슈바르고 · 메가야느
+            teamMoveNames: [
+                ["leech-life", "body-slam", "giga-drain", "swift"],
+                ["bug-buzz", "take-down", "headbutt", "fury-cutter"],
+                ["bug-buzz", "air-slash", "uproar", "night-slash"],
+            ],
+            level: leaderLevel, firstClearReward: 500),
+        Gym(type: .rock,
+            names: ["ko": "바위 체육관", "en": "Rock Gym", "ja": "いわジム"],
+            teamSpeciesIDs: [526, 409, 476],        // 기가이어스 · 램펄드 · 대코파스
+            teamMoveNames: [
+                ["power-gem", "rock-slide", "headbutt", "smack-down"],
+                ["rock-slide", "crunch", "iron-head", "headbutt"],
+                ["power-gem", "rock-slide", "spark", "tri-attack"],
+            ],
             level: leaderLevel, firstClearReward: 1_000),
         Gym(type: .electric,
             names: ["ko": "전기 체육관", "en": "Electric Gym", "ja": "でんきジム"],
-            teamSpeciesIDs: [26, 125, 135],         // 라이츄 · 에레브 · 쥬피썬더
+            teamSpeciesIDs: [466, 405, 181],        // 에레키블 · 렌트라 · 전룡
+            teamMoveNames: [
+                ["wild-charge", "thunder-punch", "fire-punch", "swift"],
+                ["crunch", "spark", "thunder-fang", "quick-attack"],
+                ["zap-cannon", "thunder-punch", "dragon-pulse", "fire-punch"],
+            ],
             level: leaderLevel, firstClearReward: 2_000),
         Gym(type: .water,
             names: ["ko": "물 체육관", "en": "Water Gym", "ja": "みずジム"],
-            teamSpeciesIDs: [134, 131, 130],        // 샤미드 · 라프라스 · 갸라도스
+            teamSpeciesIDs: [350, 260, 121],        // 밀로틱 · 대짱이 · 아쿠스타
+            teamMoveNames: [
+                ["aqua-tail", "water-pulse", "dragon-tail", "disarming-voice"],
+                ["earthquake", "surf", "rock-slide", "water-pulse"],
+                ["hydro-pump", "psychic", "power-gem", "psybeam"],
+            ],
             level: leaderLevel, firstClearReward: 3_000),
     ]
 

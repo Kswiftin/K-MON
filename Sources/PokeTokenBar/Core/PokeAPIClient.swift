@@ -220,7 +220,7 @@ actor PokeAPIClient: PokeProviding {
             var picked: [MoveSpec] = []
             for name in candidates {
                 if picked.count >= 8 { break }   // 상세 fetch 상한(PokéAPI 배려)
-                guard let spec = try? await moveDetail(name) else { continue }
+                guard let spec = try? await moveDetail(named: name) else { continue }
                 guard spec.power > 0 else { continue }   // 변화기 제외(자동 판정 불가)
                 picked.append(spec)
             }
@@ -270,7 +270,7 @@ actor PokeAPIClient: PokeProviding {
         }
         var result: [MoveSpec] = []
         for name in Array(Set(names)).sorted() {
-            if let move = try? await moveDetail(name) { result.append(move) }
+            if let move = try? await moveDetail(named: name) { result.append(move) }
         }
         return result
     }
@@ -315,10 +315,11 @@ actor PokeAPIClient: PokeProviding {
     private var moveDetailCache: [String: MoveSpec] = [:]
     func moveDetail(id: Int) async -> MoveSpec? {
         guard id > 0 else { return nil }
-        return try? await moveDetail(String(id))
+        return try? await moveDetail(named: String(id))
     }
 
-    private func moveDetail(_ name: String) async throws -> MoveSpec {
+    /// 이름으로 기술 하나. 체육관 카탈로그가 관장 기술을 이름으로 지정하므로 외부에서도 쓴다.
+    func moveDetail(named name: String) async throws -> MoveSpec {
         if let c = moveDetailCache[name] { return c }
         let dto: MoveDTO = try await get(base.appendingPathComponent("move/\(name)"))
         guard let spec = MoveSpec.from(dto, fallbackName: name, languages: langCodes) else {
