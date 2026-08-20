@@ -173,7 +173,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         let status = MenuBarStatus.resolve(focusRunning: focusTimer.isRunning, focusPhase: focusTimer.phase,
                                            focusClockText: focusTimer.clockText(),
                                            activeAdventure: companion.activeAdventure)
-        Self.applyMenuText([status.text(companion.l)], to: button)
+        let fullDescription = status.fullDescription(companion.l)
+        Self.applyMenuText([status.compactTitle], to: button)
+        button.toolTip = fullDescription
+        button.setAccessibilityLabel(fullDescription)
         button.appearsDisabled = false
 
         if settings.doNotDisturb {
