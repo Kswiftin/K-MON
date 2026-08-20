@@ -127,10 +127,14 @@ final class BattleCenter {
 
     /// 칩을 눌렀을 때 — 이미 고른 것이면 빼고, 아니면 뒤에 붙인다. 정원이 차면 더 받지 않는다
     /// (앞을 밀어내면 애써 정한 순서가 조용히 바뀐다).
-    func toggleTeamPick(_ monID: UUID) {
+    ///
+    /// `limit` 은 그 화면의 정원이다 — 체육관은 관장 팀에 맞춰 3, 모의전은 화면에서 고른 크기.
+    /// 고른 목록 자체는 하나라 두 화면이 같은 팀을 본다.
+    func toggleTeamPick(_ monID: UUID, limit: Int? = nil) {
+        let cap = limit ?? rankedTeamSize
         if let index = pickedTeam.firstIndex(of: monID) {
             pickedTeam.remove(at: index)
-        } else if pickedTeam.count < rankedTeamSize {
+        } else if pickedTeam.count < cap {
             pickedTeam.append(monID)
         }
     }
@@ -353,10 +357,18 @@ final class BattleCenter {
                 phase = .ready; lastError = l.battleStatsFailed; return
             }
             var leaderTeam: [BattleSnapshot] = []
-            for speciesID in gym.teamSpeciesIDs {
+            for (slot, speciesID) in gym.teamSpeciesIDs.enumerated() {
                 guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) else { continue }
-                let moves = await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: gym.level,
-                                                              types: profile.types)
+                // 카탈로그가 정한 기술을 그대로 세운다. 이름이 틀렸거나 못 받아오면 그 종만
+                // 자동 선발로 돌아간다 — 관장 하나 때문에 체육관 전체가 막히지는 않는다.
+                var moves: [MoveSpec] = []
+                for name in gym.teamMoveNames.indices.contains(slot) ? gym.teamMoveNames[slot] : [] {
+                    if let spec = try? await PokeAPIClient.shared.moveDetail(named: name) { moves.append(spec) }
+                }
+                if moves.isEmpty {
+                    moves = await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: gym.level,
+                                                               types: profile.types)
+                }
                 let name = await companion.resolveSpeciesName(speciesID)
                 leaderTeam.append(BattleSnapshot(speciesID: speciesID, name: name,
                                                  trainer: gym.leaderName(companion.language),
