@@ -321,6 +321,15 @@ enum SaveTransfer {
             p.append("box" + s.boxedMons.map { "\($0.id):\($0.baseID):\($0.stageIndex):\($0.levelExperience)" }.joined(separator: ","))
         }
         p.append("dex" + s.dex.map { "\($0.baseID):\($0.finalID):\($0.rarity.rawValue)" }.sorted().joined(separator: ","))
+        // 도감 목표는 수령 플래그가 없다 — 멱등 가드가 **진행도의 단조성**뿐이다(`DexGoals`). 진행도가
+        // 읽는 `isShiny`·`chainOrder`·`types` 는 위 dex 줄에 없어, 손으로 내려 적으면 진행도가 되감기고
+        // 다음 졸업이 같은 보상을 재지급한다. 원자 필드를 각각 넣는 대신 **파생 진행도 숫자**를 넣는다:
+        // 목표 id 를 넣으면 카탈로그 목표값 조정(`species50` → `40`)이 정상 세이브를 전부 조작 판정으로
+        // 만든다. 조건부 — 도감이 비면 세그먼트가 안 붙어 기본값 canonical 이 동결된다.
+        let dexProgress = DexGoalKind.allCases.map { String(DexGoals.progress($0, in: s.dex)) }
+        if dexProgress.contains(where: { $0 != "0" }) {
+            p.append("dg" + dexProgress.joined(separator: "|"))
+        }
         p.append("cf" + s.collectedFinals.sorted().joined(separator: ","))
         p.append("sec\(DeviceID.stableIdentifier())")
         return p.joined(separator: "|")
