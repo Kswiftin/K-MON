@@ -118,7 +118,7 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
     // 뿐이라 JSON 모양을 그대로 뒀다. 상태이상은 받는 쪽이 배지를 그려야 해서 필드가 늘었다.
     // `stats`·`moves` 는 스냅샷에서 파생되므로 보내지 않고 받는 쪽이 다시 만든다.
     private enum CodingKeys: String, CodingKey {
-        case id, trainerName, team, snapshot, hp, pp, status, statusCounter, confusionTurns
+        case id, trainerName, team, snapshot, hp, pp, status, statusCounter, confusionTurns, stages
     }
 
     init(from decoder: Decoder) throws {
@@ -132,6 +132,8 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         decoded.status = try container.decodeIfPresent(Status.self, forKey: .status)
         decoded.statusCounter = try container.decodeIfPresent(Int.self, forKey: .statusCounter) ?? 0
         decoded.confusionTurns = try container.decodeIfPresent(Int.self, forKey: .confusionTurns) ?? 0
+        // 랭크가 없던 시절의 피어는 이 키를 보내지 않는다 — 없으면 랭크 없음이다.
+        decoded.stages = try container.decodeIfPresent([BattleStat: Int].self, forKey: .stages) ?? [:]
         side = decoded
     }
 
@@ -146,6 +148,7 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         try container.encodeIfPresent(side.status, forKey: .status)
         try container.encode(side.statusCounter, forKey: .statusCounter)
         try container.encode(side.confusionTurns, forKey: .confusionTurns)
+        try container.encode(side.stages, forKey: .stages)
     }
 }
 
@@ -176,6 +179,13 @@ enum MultiplayerValidation {
                 && ($0.accuracy.map { (1...100).contains($0) } ?? true)
                 // 상태 부여 확률은 상대가 보내오는 값이다 — 범위를 벗어나면 매번 확정 부여가 된다.
                 && ($0.ailmentChance.map { (0...100).contains($0) } ?? true)
+                && ($0.statChance.map { (0...100).contains($0) } ?? true)
+                // 랭크 변화도 상대가 보내오는 값이다. 개수 상한은 랭크가 있는 스탯 수 —
+                // 안 보면 `+6 공격` 이 열두 번 담긴 기술 하나로 첫 턴에 최대 랭크가 된다.
+                && ($0.statChanges.map { changes in
+                    changes.count <= BattleStat.allCases.count
+                        && changes.allSatisfy { (-StatStages.limit...StatStages.limit).contains($0.change) }
+                } ?? true)
         }
     }
 
@@ -190,6 +200,8 @@ enum MultiplayerValidation {
                 // 상태이상도 호스트가 보내오는 값이다. 최대 HP 로 시작하는 배틀이면 상태도 없어야 한다 —
                 // 안 보면 `status: sleep, statusCounter: 9999` 로 시작해 게스트가 영구히 못 움직인다.
                 && fighter.side.status == nil && fighter.side.confusionTurns == 0
+                // 랭크도 같은 이유로 0 이어야 한다 — `stages: [atk: 6]` 로 시작하는 방을 막는다.
+                && fighter.side.stages.isEmpty
         }) else { return false }
         if mode == .freeForAll { return fighters.allSatisfy { $0.team == .solo } }
         return fighters.count == 4 && fighters.filter { $0.team == .red }.count == 2
@@ -202,8 +214,9 @@ enum MultiplayerValidation {
 enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 호스트가 `roundResolved` 를 브로드캐스트하므로 구버전 게스트는 모르는 모양을 만나면 라운드를
     // 디코딩하지 못하고 멈춘다 → 입장 단계에서 막는다.
-    // 2: LobbyParticipant.role + 관전자 베팅, 3: 이벤트 스트림, 4: 상태이상(status 필드 + case 추가).
-    static let protocolVersion = 4
+    // 2: LobbyParticipant.role + 관전자 베팅, 3: 이벤트 스트림, 4: 상태이상(status 필드 + case 추가),
+    // 5: 랭크(stages 필드 + `.boost` case) — 구버전 게스트는 `.boost` 를 디코딩하지 못해 라운드에서 멈춘다.
+    static let protocolVersion = 5
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

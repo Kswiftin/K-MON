@@ -189,6 +189,36 @@ struct L {
         }
     }
 
+    // MARK: 배틀 (랭크)
+
+    /// 두 단계 이상은 본가처럼 "크게" 가 붙는다 — 한 단계와 두 단계가 화면에서 같으면 랭크가
+    /// 얼마나 올랐는지 로그로 알 방법이 없다(배지는 현재 값만 보여 준다).
+    func battleStatRose(_ name: String, stat: BattleStat, by amount: Int) -> String {
+        let much = amount >= 2
+        let subject = Self.koreanSubject(stat.name(.ko))
+        return t("\(name)의 \(subject) \(much ? "크게 " : "")올라갔다!",
+                 "\(name)'s \(stat.name(.en)) rose\(much ? " sharply" : "")!",
+                 "\(name)の \(stat.name(.ja))が \(much ? "ぐーんと " : "")あがった！")
+    }
+
+    func battleStatFell(_ name: String, stat: BattleStat, by amount: Int) -> String {
+        let much = amount >= 2
+        let subject = Self.koreanSubject(stat.name(.ko))
+        return t("\(name)의 \(subject) \(much ? "크게 " : "")떨어졌다!",
+                 "\(name)'s \(stat.name(.en)) fell\(much ? " harshly" : "")!",
+                 "\(name)の \(stat.name(.ja))が \(much ? "がくっと " : "")さがった！")
+    }
+
+    /// 한글 주격 조사를 붙인 낱말 — 받침이 있으면 "이", 없으면 "가". 스탯 이름은 7개로 고정이라
+    /// "이(가)" 로 도망칠 이유가 없다(로그가 본가 문장처럼 읽혀야 한다).
+    /// 판정은 한글 음절 블록의 종성 인덱스다: (스칼라 − 0xAC00) % 28 == 0 이면 받침이 없다.
+    static func koreanSubject(_ word: String) -> String {
+        guard let scalar = word.unicodeScalars.last?.value, (0xAC00...0xD7A3).contains(scalar) else {
+            return word + "가"
+        }
+        return word + ((scalar - 0xAC00) % 28 == 0 ? "가" : "이")
+    }
+
     // MARK: 헤더 (오늘/주/월)
     var todayTokens: String { t("오늘 함께한 시간", "Time together today", "今日一緒にいた時間") }
     var totalPlaytime: String { t("누적", "Total", "累計") }

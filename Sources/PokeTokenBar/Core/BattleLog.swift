@@ -71,6 +71,13 @@ enum BattleLog {
             case .cant(let actor, let status):
                 flush()
                 out.append(Line(actor: actor, text: l.battleCantMove(name(actor), status: status)))
+            case .boost(let actor, let stat, let amount):
+                // 랭크 변화는 **자기 줄**이다. 진행 중인 행동에 접으면 "칼춤! 0 데미지 · 공격이
+                // 올라갔다" 처럼 쓰지도 않은 데미지 칸에 붙어 읽힌다.
+                flush()
+                out.append(Line(actor: actor,
+                                text: amount > 0 ? l.battleStatRose(name(actor), stat: stat, by: amount)
+                                                 : l.battleStatFell(name(actor), stat: stat, by: -amount)))
             }
         }
         flush()

@@ -79,7 +79,7 @@ enum BattleReplay {
         // 교체·자동 출전은 한 박자 — 새 개체가 나오는 걸 보고 나서 다음 일이 일어나야 한다.
         case .sendOut:                                          return 0.40
         case .crit, .superEffective, .resisted, .miss, .immune: return 0.30
-        case .status, .cureStatus, .cant:                       return 0.40
+        case .status, .cureStatus, .cant, .boost:               return 0.40
         }
     }
 
@@ -123,7 +123,7 @@ enum BattleReplay {
         // 움직이는데 여기 빠지면 바가 배틀 내내 어긋난 채로 남는다. 컴파일이 깨지는 편이
         // `reconcile()` 로그를 한참 뒤에 발견하는 편보다 낫다.
         case .turn, .move, .miss, .immune, .crit, .superEffective, .resisted,
-             .faint, .status, .cureStatus, .cant:
+             .faint, .status, .cureStatus, .cant, .boost:
             return
         }
     }
@@ -155,7 +155,7 @@ enum BattleReplay {
         case .immune:         return \.battleNoEffect
         // 팝이 없는 이벤트 — 전부 팝으로 만들면 화면이 문구로 덮여 정작 급소가 묻힌다.
         // 교체(`.sendOut`)는 스프라이트가 바뀌는 것이 곧 문구다.
-        case .turn, .move, .damage, .faint, .sendOut, .status, .cureStatus, .cant:
+        case .turn, .move, .damage, .faint, .sendOut, .status, .cureStatus, .cant, .boost:
             return nil
         }
     }

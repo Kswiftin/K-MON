@@ -226,6 +226,34 @@ extension Status {
     }
 }
 
+/// 랭크 화살표 — `Atk▲2 Spe▼1`. **뷰 밖의 순수 함수다**(`badgeTint` 와 같은 이유): 뷰 안의
+/// `private var` 로 두면 화면에 뜬 조합만 실행되고 나머지는 커버리지에서 초록으로 보고된다.
+///
+/// 0 인 랭크는 빼고 캐논 순서(공·방·특공·특방·스피드·명중·회피)로 붙인다 — 순서가 흔들리면
+/// 같은 상태가 턴마다 다른 문자열로 보인다.
+enum StageReadout {
+    static func text(_ stages: [BattleStat: Int]) -> String? {
+        let parts = BattleStat.allCases.compactMap { stat -> String? in
+            guard let stage = stages[stat], stage != 0 else { return nil }
+            return "\(stat.shortLabel)\(stage > 0 ? "▲" : "▼")\(abs(stage))"
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+}
+
+struct StageArrows: View {
+    let side: BattleSide?
+
+    var body: some View {
+        if let text = StageReadout.text(side?.stages ?? [:]) {
+            Text(text)
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+}
+
 struct StatusBadge: View {
     let status: Status
 
@@ -244,7 +272,8 @@ struct StatusBadge: View {
 /// 이름 · Lv · 상태 배지 · HP바 · HP 표기. 세 모드가 같은 칸을 쓴다 — 모드마다 다른 카드를 쓰던
 /// 것도 지금의 조잡함 중 하나였다(`snapshotCard` 와 `teamSlotCard` 가 서로 달랐다).
 ///
-/// 랭크 화살표(▲▼)가 붙을 자리는 상태 배지 옆이다. 랭크는 Phase 3 에서 생기므로 지금은 없다.
+/// 랭크 화살표(▲▼)는 이름 줄이 아니라 **HP 표기 줄**에 있다 — 이름 줄에 넣으면 332pt 폭에서
+/// 이름이 먼저 잘린다(누가 싸우는지가 랭크보다 중요하다).
 struct CombatantBar: View {
     let side: BattleSide
     let title: String
@@ -283,6 +312,7 @@ struct CombatantBar: View {
             HStack(spacing: 4) {
                 Text(title).font(.system(size: 8)).foregroundStyle(.tertiary).lineLimit(1)
                 Spacer(minLength: 2)
+                StageArrows(side: side)
                 Text(revealsExactHP
                      ? HPReadout.mine(hp: side.hp, max: side.stats.hp)
                      : HPReadout.theirs(hp: side.hp, max: side.stats.hp))

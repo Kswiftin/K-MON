@@ -405,6 +405,8 @@ final class BattleStageTests: XCTestCase {
 
     /// `stat_changes` 는 응답에 늘 있다(없으면 빈 배열). 그래서 **키가 없는 것**은 "아직 안 받아봤다"
     /// 라는 뜻이고, `[]` 는 "받았고 변화가 없다" 다 — 둘을 섞으면 매 로드마다 다시 받거나 영영 안 고친다.
+    /// `CompanionStore` 는 `@MainActor` 라 이 한 테스트만 메인 액터에서 돈다.
+    @MainActor
     func testMissingStatChangesStayNilSoTheSaveCanConverge() throws {
         let unfetched = try XCTUnwrap(MoveSpec.from(
             try JSONDecoder().decode(MoveDTO.self, from: moveJSON(statChanges: nil, statChance: nil)),
