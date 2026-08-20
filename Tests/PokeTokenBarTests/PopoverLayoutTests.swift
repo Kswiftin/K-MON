@@ -96,6 +96,43 @@ final class PopoverLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: 근처 트레이너 — 페이지 도달성
+
+    /// 트리거 재현: 한 페이지를 넘긴 상대 수. 상한(5명)까지만 그리고 나머지는 "그 밖에 n명 더" 문구로만
+    /// 알리던 시절엔 **여섯 번째 트레이너에게 신청할 방법이 아예 없었다** — 중첩 스크롤을 걷어내며
+    /// 넣은 그 처방이 로스터·도감이 이미 겪은 부류를 그대로 되풀이했다. 상한을 늘리는 것도, 남은 수를
+    /// 문구로 알리는 것도 처방이 아니다. 기준은 하나다 — **마지막 한 명에게 도달할 수 있나**.
+    func testANearbyListThatOverflowsOnePageGetsAnother() {
+        XCTAssertEqual(BattleView.peerPageCount(BattleView.peerPageSize), 1)
+        XCTAssertEqual(BattleView.peerPageCount(BattleView.peerPageSize + 1), 2)
+    }
+
+    /// 몇 명이 잡히든 마지막 한 명까지 어느 페이지엔가 들어간다 — 페이저로 도달할 수 있다.
+    func testEveryNearbyTrainerLandsOnSomePage() {
+        let pageSize = BattleView.peerPageSize
+        for peerCount in [0, 1, pageSize - 1, pageSize, pageSize + 1, 12, 40] {
+            let pages = BattleView.peerPageCount(peerCount)
+            XCTAssertGreaterThanOrEqual(pages, 1, "\(peerCount)명: 빈 목록이라도 한 장은 있어야 한다")
+            XCTAssertGreaterThanOrEqual(pages * pageSize, peerCount,
+                                        "\(peerCount)명이 \(pages)페이지에 다 안 들어간다")
+            // 마지막 페이지에 최소 한 명은 있어야 한다 — 빈 페이지를 넘기게 두지 않는다.
+            XCTAssertLessThan((pages - 1) * pageSize, max(1, peerCount),
+                              "\(peerCount)명인데 마지막 페이지가 비어 있다")
+        }
+    }
+
+    /// 같은 부류 스윕: 릴레이 방 목록도 LAN 이 길이를 정한다 — 상한도 페이저도 없으면 팝오버가 잘린다.
+    func testEveryRelayRoomLandsOnSomePage() {
+        let pageSize = PokeathlonView.roomPageSize
+        for roomCount in [0, 1, pageSize, pageSize + 1, 20] {
+            let pages = PokeathlonView.roomPageCount(roomCount)
+            XCTAssertGreaterThanOrEqual(pages * pageSize, roomCount,
+                                        "\(roomCount)개 방이 \(pages)페이지에 다 안 들어간다")
+            XCTAssertLessThan((pages - 1) * pageSize, max(1, roomCount),
+                              "\(roomCount)개인데 마지막 페이지가 비어 있다")
+        }
+    }
+
     // MARK: 미션 카드 — 세로 예산
 
     /// 홈 탭 스크롤 뷰포트 예산. 560pt 창에서 패딩·상단 바·타이머·탭 피커·푸터를 빼면 약 250pt 가
