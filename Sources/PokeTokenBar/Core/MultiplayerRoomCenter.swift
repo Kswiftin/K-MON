@@ -158,15 +158,19 @@ final class MultiplayerRoomCenter {
         }
     }
 
+    /// 경기가 시작된 뒤엔 로비 편성을 건드리지 않는다 — `lobby.mode` 는 편성에서 파생되므로
+    /// 배틀 중에 바뀌면 승패 판정의 근거가 흔들린다(호스트 자기 자신도 예외가 아니다).
+    var isInPlay: Bool { phase == .battling || phase == .pokeathlon }
+
     func toggleReady() {
-        guard let me = myParticipant else { return }
+        guard let me = myParticipant, !isInPlay else { return }
         if isHost {
             lobby?.setReady(!me.isReady, participantID: myID); broadcastLobby()
         } else if let hostConnection { send(.ready(participantID: myID, ready: !me.isReady), over: hostConnection) }
     }
 
     func selectTeam(_ team: BattleTeam) {
-        guard lobby?.mode == .teams || team != .solo else { return }
+        guard !isInPlay, lobby?.mode == .teams || team != .solo else { return }
         if isHost { lobby?.setTeam(team, participantID: myID); broadcastLobby() }
         else if let hostConnection { send(.team(participantID: myID, team: team), over: hostConnection) }
     }
@@ -313,10 +317,18 @@ final class MultiplayerRoomCenter {
         else if let hostConnection { send(.action(round: combatRound, action: action), over: hostConnection) }
     }
 
-    /// 판정에 쓸 모드. 로비를 못 보는 상황(호스트 이탈 등)에서는 전투원 편성에서 되짚는다 —
-    /// `solo` 가 하나라도 있으면 개인전이다(팀전은 2:2 로만 시작한다, `MultiplayerValidation.validStart`).
+    /// 판정에 쓸 모드 — **배틀이 시작될 때 정해진 모드**다. 호스트·게스트·관전자 모두 `.start` 시점의
+    /// `battle` 을 들고 있어 같은 답이 나온다.
+    ///
+    /// `lobby.mode` 를 먼저 보면 안 된다. 그건 팀 편성에서 파생되는 **가변값**이라(`runners` 가 전부
+    /// `solo` 인가) 배틀 중에 바뀔 수 있고, 바뀌면 승패 판정 자체가 흔들린다 — 개인전 도중 누군가
+    /// 팀을 `red` 로 바꾸면 남은 `solo` 들이 "한 팀"으로 묶여, 여럿이 살아 있는데 배틀이 끝난 것으로
+    /// 판정되고 생존자 전원이 승리가 된다. 편성은 이제 경기 중엔 바뀌지 않지만(`isInPlay` 게이트),
+    /// 판정의 근거는 애초에 불변인 쪽이어야 한다.
+    ///
+    /// 뒤의 두 폴백은 `battle` 을 못 만든 경우의 최후 수단이다.
     private var combatMode: MultiplayerBattleMode {
-        lobby?.mode ?? (combatFighters.contains { $0.team == .solo } ? .freeForAll : .teams)
+        battle?.mode ?? lobby?.mode ?? (combatFighters.contains { $0.team == .solo } ? .freeForAll : .teams)
     }
 
     var isBattleFinished: Bool {
@@ -403,9 +415,13 @@ final class MultiplayerRoomCenter {
                 } catch {
                     self.send(.rejected(reason: "방이 가득 찼습니다."), over: connection); connection.cancel(); return
                 }
-            case .ready(let pid, let ready) where pid == id:
+            // 준비·팀 변경은 **로비에서만** 받는다. 경기 중에 받으면 `lobby.mode` 가 배틀 도중에
+            // 바뀌어 승패 판정이 흔들린다 — 개인전 중 한 명이 팀을 바꾸면 남은 `solo` 들이 한 팀으로
+            // 묶여 살아 있는 채로 "종료 + 전원 승리"가 됐다. 편성은 상대가 보내오는 값이므로 화면에서
+            // 버튼을 감추는 것으로는 막지 못한다.
+            case .ready(let pid, let ready) where pid == id && !self.isInPlay:
                 self.lobby?.setReady(ready, participantID: pid); self.broadcastLobby()
-            case .team(let pid, let team) where pid == id:
+            case .team(let pid, let team) where pid == id && !self.isInPlay:
                 self.lobby?.setTeam(team, participantID: pid); self.broadcastLobby()
             case .leave(let pid) where pid == id:
                 if self.phase == .battling {

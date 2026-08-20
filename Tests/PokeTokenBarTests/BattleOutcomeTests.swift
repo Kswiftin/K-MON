@@ -5,12 +5,12 @@ import XCTest
 ///
 /// 세 경로(1v1 연결 끊김·팀 연습/체육관·4인 방)가 각자 판정을 들고 있었고 그중 둘이 승리를 남발했다.
 /// ① `connectionDropped` 이 끊김을 무조건 내 승리로 접어 와이파이 한 번 끊기면 **양쪽이 동시에** 이기고
-/// 양쪽 다 판돈 ★ 과 LP 를 받았다(별의조각이 무에서 발행) ② `advanceFainted` 가 상대 전멸을 먼저 보고
+/// 양쪽 다 판돈 ★ 과 LP 를 받았다(별의조각 총량이 늘어난다) ② `advanceFainted` 가 상대 전멸을 먼저 보고
 /// `return` 해 동시 전멸(무승부)이 승리가 됐다(체육관이면 배지까지) ③ 반대로 팀전에서는 이긴 팀의
 /// 쓰러진 대원이 패배로 기록됐다.
 ///
 /// 판정은 이제 순수 함수 세 개(`BattleEngine.disconnectOutcome`·`MultiplayerBattle.outcome`/`isFinished`)
-/// 한 곳에 있고, 아래 테스트가 그 함수들의 **트리거 브랜치**를 직접 밟는다.
+/// 한 곳에 있고, 아래 테스트가 그 함수들의 트리거 브랜치를 직접 밟는다.
 final class BattleOutcomeTests: XCTestCase {
 
     // MARK: 픽스처
@@ -43,7 +43,7 @@ final class BattleOutcomeTests: XCTestCase {
     /// 회귀: `advanceFainted` 가 상대 전멸을 먼저 판정하고 `return` 했다 → 내 팀도 같은 턴에 전멸했는데
     /// 승리가 됐고, 체육관이면 `settlePracticeResult` 가 그 자리에서 배지를 줬다.
     ///
-    /// 트리거: 내 공격이 상대 마지막 한 마리를 눕히고, 그 턴의 **잔뎀**이 내 마지막 한 마리를 눕힌다
+    /// 트리거: 내 공격이 상대 마지막 한 마리를 눕히고, 그 턴의 잔뎀이 내 마지막 한 마리를 눕힌다
     /// (`resolveTurn` 은 두 공격이 끝난 뒤 잔뎀을 넣는다 — 그래서 동시 전멸이 실제로 도달 가능하다).
     func testMutualWipeInPracticeIsADrawNotAWin() {
         var battle = TeamPracticeBattle(mine: [BattleSide(snapshot())],
@@ -79,7 +79,7 @@ final class BattleOutcomeTests: XCTestCase {
         XCTAssertEqual(loss.result, .loss, "내 쪽만 전멸하면 패배다")
     }
 
-    /// 전멸 판정을 앞으로 당기면서 **슬롯 교대**가 죽지 않았는지 — 상대 한 마리가 쓰러지고 다음이
+    /// 전멸 판정을 앞으로 당기면서 슬롯 교대가 죽지 않았는지 — 상대 한 마리가 쓰러지고 다음이
     /// 남아 있으면 배틀은 계속되고 활성 슬롯만 넘어간다(체육관은 상대가 3마리다).
     func testFaintedOpponentSlotAdvancesWhileTheTeamStillStands() {
         var battle = TeamPracticeBattle(mine: [BattleSide(snapshot())],
@@ -97,8 +97,8 @@ final class BattleOutcomeTests: XCTestCase {
 
     // MARK: 1v1 연결 끊김 — 양쪽이 동시에 이길 수 없다
 
-    /// 회귀(돈이 발행되던 자리): 끊김을 `iWon: true` 로 접었다. 라우터가 죽으면 두 피어가 각자
-    /// 몰수승을 선언하고 각자 `settleRankedBrawl(won: true)` 로 판돈과 +25 LP 를 받았다.
+    /// 회귀(별의조각이 늘어나던 자리): 끊김을 `iWon: true` 로 접었다. 네트워크가 죽으면 두 피어가
+    /// 각자 몰수승을 선언하고 각자 `settleRankedBrawl(won: true)` 로 판돈과 +25 LP 를 받았다.
     ///
     /// 두 피어는 같은 배틀 상태를 보고 있으므로 판정을 상태에서 뽑으면 결론이 **서로 반대**여야 한다.
     /// 같은 상태를 me/opp 만 뒤집어 넣어 그걸 단언한다.
@@ -117,7 +117,7 @@ final class BattleOutcomeTests: XCTestCase {
     func testDisconnectAtEqualFootingIsANoContest() {
         XCTAssertNil(BattleEngine.disconnectOutcome(me: side(hpFraction: (1, 2)),
                                                     opp: side(hpFraction: (1, 2))))
-        // 최대 HP 가 다른 두 종이 나란히 만피 = 비율이 정확히 같다(첫 턴에 끊긴 경우).
+        // 최대 HP 가 다른 두 종이 둘 다 한 대도 안 맞았으면 비율은 정확히 같다(첫 턴에 끊긴 경우).
         // 절대값 비교였다면 덩치 큰 쪽이 이겼을 자리다.
         XCTAssertNil(BattleEngine.disconnectOutcome(me: side(baseHP: 200), opp: side(baseHP: 60)),
                      "최대 HP 가 달라도 비율이 같으면 무효다 — 시작하자마자 끊기면 아무도 이기지 않는다")
@@ -170,6 +170,54 @@ final class BattleOutcomeTests: XCTestCase {
 
         let teams = [fighter(a, team: .red, alive: false), fighter(b, team: .blue, alive: false)]
         XCTAssertEqual(MultiplayerBattle.outcome(for: b, fighters: teams, mode: .teams), .draw)
+    }
+
+    // MARK: 판정의 근거는 불변이어야 한다 — 모드가 배틀 중에 바뀌면 안 된다
+
+    /// 회귀(끊김과 무관한 두 번째 "동시 승리" 경로): 방 판정이 `lobby.mode` 를 봤다. 그 값은 팀 편성에서
+    /// 파생되는 **가변값**이라(`runners` 가 전부 `solo` 인가) 배틀 중에도 바뀌었고, 편성 메시지에는
+    /// phase 게이트가 없었다.
+    ///
+    /// 개인전 도중 한 명이 팀을 `red` 로 바꾸고 그 사람이 쓰러지면, 남은 `solo` 들이 "한 팀"으로 묶여
+    /// **여럿이 살아 있는데 배틀이 끝난 것으로 판정**되고 생존자 전원이 승리가 된다. 아래는 그 판정
+    /// 민감도를 고정한다 — 같은 전투원 목록이 모드에 따라 정반대로 읽힌다.
+    func testTheSameFightersReadOppositelyUnderTheWrongMode() {
+        let a = UUID(), b = UUID(), dead = UUID()
+        let fighters = [fighter(a, team: .solo), fighter(b, team: .solo),
+                        fighter(dead, team: .red, alive: false)]
+
+        XCTAssertFalse(MultiplayerBattle.isFinished(fighters: fighters, mode: .freeForAll),
+                       "개인전이면 둘이 살아 있으므로 아직 안 끝났다")
+        XCTAssertTrue(MultiplayerBattle.isFinished(fighters: fighters, mode: .teams),
+                      "팀전으로 읽으면 살아 있는 둘이 같은 팀이라 끝난 것으로 보인다")
+        XCTAssertEqual(MultiplayerBattle.outcome(for: a, fighters: fighters, mode: .teams), .win)
+        XCTAssertEqual(MultiplayerBattle.outcome(for: b, fighters: fighters, mode: .teams), .win,
+                       "그래서 잘못된 모드로 판정하면 생존자 전원이 승리가 된다")
+        XCTAssertNil(MultiplayerBattle.outcome(for: a, fighters: fighters, mode: .freeForAll),
+                     "바른 모드에서는 승패가 아직 없다")
+    }
+
+    /// 그래서 판정은 **배틀 시작 시점에 고정된** 모드를 봐야 한다. `MultiplayerBattle.mode` 가 `let` 이고
+    /// 호스트·게스트·관전자 모두 `.start` 로 같은 값을 받으므로, 그 값이 유일한 근거다.
+    ///
+    /// 소스 스캔으로 고정한다 — `MultiplayerRoomCenter` 는 `@MainActor` + 리스너 소유라 테스트에서
+    /// 인스턴스를 세울 수 없고, 여기서 막고 싶은 건 "판정이 어느 값을 먼저 보는가"라는 한 줄이다.
+    func testTheRoomTakesItsVerdictModeFromTheBattleNotTheLobby() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "Sources/PokeTokenBar/Core/MultiplayerRoomCenter.swift"), encoding: .utf8)
+
+        XCTAssertTrue(source.contains("battle?.mode ?? lobby?.mode"),
+                      "판정 모드는 배틀에서 먼저 가져와야 한다 — `lobby?.mode` 를 먼저 보면 배틀 중 편성 변경이 승패를 바꾼다")
+        // 편성 메시지·로컬 조작 양쪽에 게이트가 있어야 한다. 화면에서 버튼을 감추는 것만으로는
+        // 상대가 보내오는 `.team` 메시지를 막지 못한다.
+        XCTAssertEqual(source.components(separatedBy: "!self.isInPlay").count - 1, 2,
+                       "`.ready`·`.team` 수신 두 곳이 경기 중에는 편성을 받지 않아야 한다")
+        XCTAssertTrue(source.contains("guard let me = myParticipant, !isInPlay"),
+                      "내가 누르는 준비 토글도 경기 중에는 막힌다")
+        XCTAssertTrue(source.contains("guard !isInPlay, lobby?.mode == .teams"),
+                      "내가 고르는 팀도 경기 중에는 막힌다")
     }
 
     /// 관전자(전투원이 아닌 참가자)와 진행 중인 배틀은 `nil` — 호출부가 이 nil 로 기록·보상을 건너뛴다.
