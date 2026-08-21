@@ -561,6 +561,9 @@ struct L {
         let progress = t("주간 \(weekly)/10", "Weekly \(weekly)/10", "週間 \(weekly)/10")
         return "🥚 ×\(eggs) · 🧩 \(fragments)/10 · \(progress)"
     }
+    /// 보관 알 자동 부화 줄의 제목과, 예정 시각을 지난 뒤의 대기 문구(#86).
+    var eggAutoHatchLabel: String { t("🥚 자동 부화까지", "🥚 Auto hatch", "🥚 自動ふ化まで") }
+    var eggHatchingSoon: String { t("곧 부화", "Hatching soon", "まもなくふ化") }
     func battleFixedStake(_ amount: String) -> String {
         t("고정 판돈 ⭐ \(amount)", "Fixed stake ⭐ \(amount)", "固定かけ金 ⭐ \(amount)")
     }
