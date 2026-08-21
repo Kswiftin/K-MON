@@ -20,19 +20,19 @@ struct PokeathlonView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label(store.language == .ko ? "포켓슬론 · 체인지릴레이" : "Pokéathlon · Relay Run",
+                Label(store.l.t("포켓슬론 · 체인지릴레이", "Pokéathlon · Relay Run", "ポケスロン · チェンジリレー"),
                       systemImage: "figure.run")
                     .font(.headline)
                 Spacer()
                 if center.phase != .idle {
-                    Button(store.language == .ko ? "나가기" : "Leave") { center.leaveRoom() }.controlSize(.small)
+                    Button(store.l.t("나가기", "Leave", "退出")) { center.leaveRoom() }.controlSize(.small)
                 }
             }
             switch center.phase {
             case .pokeathlon: raceView
             case .hosting, .joined, .joining, .creating: lobbyView
             case .battling:
-                Text(store.language == .ko ? "배틀 방이 진행 중입니다." : "A battle room is active.")
+                Text(store.l.t("배틀 방이 진행 중입니다.", "A battle room is active.", "バトルの部屋が進行中です。"))
             case .idle: roomBrowser
             }
         }
@@ -40,21 +40,21 @@ struct PokeathlonView: View {
 
     private var roomBrowser: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(store.language == .ko
-                 ? "포켓몬 3마리가 이어 달립니다. 지치기 전에 교대하고 장애물을 넘으세요."
-                 : "Three Pokémon run as a team. Switch before they tire and clear obstacles.")
+            Text(store.l.t("포켓몬 3마리가 이어 달립니다. 지치기 전에 교대하고 장애물을 넘으세요.",
+                     "Three Pokémon run as a team. Switch before they tire and clear obstacles.",
+                     "ポケモン3匹がリレーで走ります。疲れる前に交代して障害物を越えましょう。"))
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button(store.language == .ko ? "혼자 연습하기" : "Solo practice") {
+                Button(store.l.t("혼자 연습하기", "Solo practice", "ひとりで練習")) {
                     center.startSoloPokeathlon()
                 }.buttonStyle(.borderedProminent).controlSize(.small)
-                Button(store.language == .ko ? "릴레이 방 만들기" : "Create relay room") {
+                Button(store.l.t("릴레이 방 만들기", "Create relay room", "リレーの部屋を作る")) {
                     center.createPokeathlonRoom()
                 }.controlSize(.small)
             }
             Picker("", selection: $joinRole) {
-                Text(store.language == .ko ? "선수로 참가" : "Join as runner").tag(LobbyRole.runner)
-                Text(store.language == .ko ? "관전·베팅" : "Spectate & bet").tag(LobbyRole.spectator)
+                Text(store.l.t("선수로 참가", "Join as runner", "選手として参加")).tag(LobbyRole.runner)
+                Text(store.l.t("관전·베팅", "Spectate & bet", "観戦・ベット")).tag(LobbyRole.spectator)
             }
             .pickerStyle(.segmented).controlSize(.small)
             let relayRooms = center.rooms.filter { $0.name.hasPrefix("RUN") }
@@ -65,7 +65,7 @@ struct PokeathlonView: View {
                 HStack {
                     Label(room.name, systemImage: "door.left.hand.open").font(.caption).lineLimit(1)
                     Spacer()
-                    Button(store.language == .ko ? "참가" : "Join") { center.join(room, as: joinRole) }
+                    Button(store.l.t("참가", "Join", "参加")) { center.join(room, as: joinRole) }
                         .controlSize(.small)
                 }
             }
@@ -84,7 +84,7 @@ struct PokeathlonView: View {
                 }
             }
             if center.rooms.allSatisfy({ !$0.name.hasPrefix("RUN") }) {
-                Text(store.language == .ko ? "발견된 릴레이 방이 없습니다." : "No relay rooms found.")
+                Text(store.l.t("발견된 릴레이 방이 없습니다.", "No relay rooms found.", "リレーの部屋が見つかりません。"))
                     .font(.caption2).foregroundStyle(.tertiary)
             }
         }
@@ -94,30 +94,30 @@ struct PokeathlonView: View {
     private var lobbyView: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let lobby = center.lobby {
-                sectionHeader(store.language == .ko ? "선수" : "Racers",
+                sectionHeader(store.l.t("선수", "Racers", "選手"),
                               count: lobby.runners.count, limit: lobby.capacity)
                 ForEach(lobby.runners) { player in participantRow(player, showsReady: true) }
-                sectionHeader(store.language == .ko ? "관전" : "Spectators",
+                sectionHeader(store.l.t("관전", "Spectators", "観戦"),
                               count: lobby.spectators.count, limit: MultiplayerLobby.spectatorCapacity)
                 if lobby.spectators.isEmpty {
-                    Text(store.language == .ko ? "관전자가 없습니다." : "No spectators yet.")
+                    Text(store.l.t("관전자가 없습니다.", "No spectators yet.", "観戦者はまだいません。"))
                         .font(.caption2).foregroundStyle(.tertiary)
                 } else {
                     ForEach(lobby.spectators) { player in participantRow(player, showsReady: false) }
                 }
                 if !center.amSpectator {
                     Button(center.myParticipant?.isReady == true
-                           ? (store.language == .ko ? "준비 취소" : "Cancel ready")
-                           : (store.language == .ko ? "준비" : "Ready")) { center.toggleReady() }
+                           ? store.l.t("준비 취소", "Cancel ready", "準備をやめる")
+                           : store.l.t("준비", "Ready", "準備完了")) { center.toggleReady() }
                         .controlSize(.small)
                 } else {
-                    Text(store.language == .ko
-                         ? "경기가 시작되면 베팅이 마감됩니다."
-                         : "Betting closes when the race starts.")
+                    Text(store.l.t("경기가 시작되면 베팅이 마감됩니다.",
+                             "Betting closes when the race starts.",
+                             "レースが始まるとベットは締め切られます。"))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 if center.isHost {
-                    Button(store.language == .ko ? "경기 시작" : "Start race") { center.startPokeathlon() }
+                    Button(store.l.t("경기 시작", "Start race", "レース開始")) { center.startPokeathlon() }
                         .buttonStyle(.borderedProminent).controlSize(.small).disabled(!lobby.canStart)
                 }
             } else { ProgressView().controlSize(.small) }
@@ -177,10 +177,10 @@ struct PokeathlonView: View {
         }
         return VStack(spacing: 7) {
             HStack {
-                Label(store.language == .ko ? "체인지릴레이" : "Relay Run", systemImage: "flag.checkered")
+                Label(store.l.t("체인지릴레이", "Relay Run", "チェンジリレー"), systemImage: "flag.checkered")
                     .font(.caption.bold()).foregroundStyle(.white)
                 Spacer()
-                Text(store.language == .ko ? "실시간 순위" : "LIVE STANDINGS")
+                Text(store.l.t("실시간 순위", "LIVE STANDINGS", "リアルタイム順位"))
                     .font(.system(size: 9, weight: .black)).foregroundStyle(.white.opacity(0.75))
             }
             HStack(spacing: 5) {
@@ -282,14 +282,14 @@ struct PokeathlonView: View {
     private func raceControls(_ race: PokeathlonRace, now: Date) -> some View {
         if let winner = race.racers.first(where: { $0.id == race.winnerID }) {
             VStack(spacing: 7) {
-                Text("🏆 \(winner.trainerName) " + (store.language == .ko ? "우승!" : "wins!"))
+                Text("🏆 \(winner.trainerName) " + store.l.t("우승!", "wins!", "優勝！"))
                     .font(.title3.bold())
                 if let payout = center.settlementPayout, let mine = center.myBet {
                     Text(settlementText(payout: payout, stake: mine.amount,
                                         backedWinner: mine.runnerID == winner.id))
                         .font(.caption).foregroundStyle(payout > mine.amount ? .green : .secondary)
                 }
-                Button(store.language == .ko ? "연습 종료" : "Finish practice") { center.leaveRoom() }
+                Button(store.l.t("연습 종료", "Finish practice", "練習を終える")) { center.leaveRoom() }
             }.frame(maxWidth: .infinity).padding(10).background(.yellow.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
         } else if center.amSpectator {
             bettingPanel(race, now: now)
@@ -308,13 +308,13 @@ struct PokeathlonView: View {
                                     in: RoundedRectangle(cornerRadius: 7))
                     }
                     Spacer()
-                    Text(store.language == .ko ? "스태미나" : "Stamina")
+                    Text(store.l.t("스태미나", "Stamina", "スタミナ"))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
             HStack(spacing: 7) {
                 Button { center.pokeathlonInput(.run) } label: {
-                    Label(store.language == .ko ? "달리기  →" : "RUN  →", systemImage: "figure.run")
+                    Label(store.l.t("달리기  →", "RUN  →", "はしる  →"), systemImage: "figure.run")
                         .frame(maxWidth: .infinity).padding(.vertical, 5)
                 }
                 .buttonStyle(.borderedProminent).tint(.green).keyboardShortcut(.rightArrow, modifiers: [])
@@ -323,7 +323,7 @@ struct PokeathlonView: View {
                 Button { center.pokeathlonInput(.dodgeRight) } label: { Image(systemName: "arrow.down") }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.downArrow, modifiers: [])
                 Button { center.pokeathlonInput(.switchPokemon) } label: {
-                    Label(store.language == .ko ? "교대  C" : "SWITCH  C", systemImage: "arrow.triangle.2.circlepath")
+                    Label(store.l.t("교대  C", "SWITCH  C", "交代  C"), systemImage: "arrow.triangle.2.circlepath")
                         .frame(maxWidth: .infinity).padding(.vertical, 5)
                 }
                 .buttonStyle(.borderedProminent).tint(.blue).keyboardShortcut("c", modifiers: [])
@@ -340,7 +340,7 @@ struct PokeathlonView: View {
         let open = now < race.startsAt && !pool.isClosed
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Label(store.language == .ko ? "관전 베팅" : "Spectator betting", systemImage: "ticket")
+                Label(store.l.t("관전 베팅", "Spectator betting", "観戦ベット"), systemImage: "ticket")
                     .font(.caption.bold())
                 Spacer()
                 Text("\(pool.total) ⭐").font(.caption.monospacedDigit())
@@ -357,8 +357,8 @@ struct PokeathlonView: View {
                     }
                     .controlSize(.small)
                     Button(center.myBet == nil
-                           ? (store.language == .ko ? "베팅" : "Bet")
-                           : (store.language == .ko ? "변경" : "Change")) {
+                           ? store.l.t("베팅", "Bet", "ベット")
+                           : store.l.t("변경", "Change", "変更")) {
                         if let runnerID = betRunnerID ?? race.racers.first?.id {
                             center.placeBet(runnerID: runnerID, amount: betAmount)
                         }
@@ -367,13 +367,13 @@ struct PokeathlonView: View {
                     .disabled(store.availableTokens < betAmount)
                 }
             } else {
-                Text(store.language == .ko ? "베팅 마감" : "Betting closed")
+                Text(store.l.t("베팅 마감", "Betting closed", "ベット締め切り"))
                     .font(.caption2).foregroundStyle(.secondary)
             }
             oddsBoard(race, pool: pool)
             if let mine = center.myBet,
                let backed = race.racers.first(where: { $0.id == mine.runnerID }) {
-                Text((store.language == .ko ? "내 베팅: " : "My bet: ")
+                Text(store.l.t("내 베팅: ", "My bet: ", "自分のベット: ")
                      + "\(backed.trainerName) · \(mine.amount) ⭐ → \(pool.payouts(winnerID: mine.runnerID)[center.myID] ?? 0) ⭐")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -404,24 +404,27 @@ struct PokeathlonView: View {
     /// 정산 문구 — 딴 금액, 또는 환불과 그 이유.
     private func settlementText(payout: Int, stake: Int, backedWinner: Bool) -> String {
         if backedWinner && payout > stake {
-            return store.language == .ko ? "+\(payout - stake) ⭐ 획득 (총 \(payout) ⭐ 수령)"
-                                         : "Won +\(payout - stake) ⭐ (received \(payout) ⭐)"
+            return store.l.t("+\(payout - stake) ⭐ 획득 (총 \(payout) ⭐ 수령)",
+                          "Won +\(payout - stake) ⭐ (received \(payout) ⭐)",
+                          "+\(payout - stake) ⭐ 獲得（合計 \(payout) ⭐ 受け取り）")
         }
         if payout == stake {
-            return store.language == .ko ? "환불 \(stake) ⭐ — 우승자에 건 관전자가 없습니다."
-                                         : "Refunded \(stake) ⭐ — nobody backed the winner."
+            return store.l.t("환불 \(stake) ⭐ — 우승자에 건 관전자가 없습니다.",
+                          "Refunded \(stake) ⭐ — nobody backed the winner.",
+                          "\(stake) ⭐ を返金 — 優勝者に賭けた観戦者がいません。")
         }
         if payout == 0 {
-            return store.language == .ko ? "판돈 \(stake) ⭐ 를 잃었습니다."
-                                         : "Lost the \(stake) ⭐ stake."
+            return store.l.t("판돈 \(stake) ⭐ 를 잃었습니다.",
+                          "Lost the \(stake) ⭐ stake.",
+                          "\(stake) ⭐ の賭け金を失いました。")
         }
-        return store.language == .ko ? "정산 \(payout) ⭐" : "Settled \(payout) ⭐"
+        return store.l.t("정산 \(payout) ⭐", "Settled \(payout) ⭐", "精算 \(payout) ⭐")
     }
 
     private func countdownLabel(_ race: PokeathlonRace, now: Date) -> String? {
         let remaining = race.startsAt.timeIntervalSince(now)
         if remaining > 0 { return String(max(1, Int(ceil(remaining)))) }
-        if remaining > -0.7 { return store.language == .ko ? "시작!" : "GO!" }
+        if remaining > -0.7 { return store.l.t("시작!", "GO!", "スタート！") }
         return nil
     }
 

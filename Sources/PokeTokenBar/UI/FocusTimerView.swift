@@ -13,7 +13,7 @@ struct FocusTimerView: View {
                 Label(title, systemImage: timer.phase == .rest ? "cup.and.saucer.fill" : "timer")
                     .font(.callout.weight(.semibold))
                 Spacer()
-                Toggle(companion.language == .ko ? "방해금지" : "Do Not Disturb", isOn: $settings.doNotDisturb)
+                Toggle(companion.l.t("방해금지", "Do Not Disturb", "おやすみ"), isOn: $settings.doNotDisturb)
                     .toggleStyle(.checkbox).font(.caption2)
             }
             if timer.isRunning, timer.endsAt != nil {
@@ -24,7 +24,7 @@ struct FocusTimerView: View {
                         Spacer()
                         Text(timer.phase == .focus ? focusHint : restHint)
                             .font(.caption2).foregroundStyle(.secondary)
-                        Button(companion.language == .ko ? "종료" : "Stop") {
+                        Button(companion.l.t("종료", "Stop", "終了")) {
                             timer.stop()
                             companion.cancelFocusAdventure()
                         }
@@ -42,12 +42,12 @@ struct FocusTimerView: View {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Label(companion.language == .ko ? "진행 중인 모험" : "Active adventure",
+                            Label(companion.l.t("진행 중인 모험", "Active adventure", "進行中の冒険"),
                                   systemImage: "map.fill")
                                 .font(.caption.weight(.semibold))
                             Spacer()
                             if adventure.isComplete(at: context.date) {
-                                Button(companion.language == .ko ? "보상 받기" : "Claim") {
+                                Button(companion.l.t("보상 받기", "Claim", "受け取る")) {
                                     _ = companion.claimAdventure()
                                 }
                                 .buttonStyle(.borderedProminent).controlSize(.small)
@@ -57,16 +57,16 @@ struct FocusTimerView: View {
                             }
                         }
                         ProgressView(value: adventure.progress(at: context.date)).tint(.green)
-                        Text(companion.language == .ko
-                             ? (adventure.isComplete(at: context.date)
-                                ? "완료된 모험의 보상을 받아야 다음 집중을 시작할 수 있어요."
-                                : "앱을 다시 열어도 모험은 계속 진행됩니다.")
-                             : (adventure.isComplete(at: context.date)
-                                ? "Claim this reward before starting another focus session."
-                                : "The adventure continues after reopening the app."))
+                        Text(adventure.isComplete(at: context.date)
+                             ? companion.l.t("완료된 모험의 보상을 받아야 다음 집중을 시작할 수 있어요.",
+                                     "Claim this reward before starting another focus session.",
+                                     "この報酬を受け取ってから次の集中を始められます。")
+                             : companion.l.t("앱을 다시 열어도 모험은 계속 진행됩니다.",
+                                     "The adventure continues after reopening the app.",
+                                     "アプリを開き直しても冒険は続きます。"))
                             .font(.caption2).foregroundStyle(.secondary)
                         if !adventure.isComplete(at: context.date) {
-                            Button(companion.language == .ko ? "모험 취소" : "Cancel adventure") {
+                            Button(companion.l.t("모험 취소", "Cancel adventure", "冒険をやめる")) {
                                 companion.cancelFocusAdventure()
                             }
                             .controlSize(.small)
@@ -81,7 +81,7 @@ struct FocusTimerView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 HStack {
-                    Button(companion.language == .ko ? "모험 보내고 집중 시작" : "Send on adventure & focus") {
+                    Button(companion.l.t("모험 보내고 집중 시작", "Send on adventure & focus", "冒険に送って集中開始")) {
                         if companion.startFocusAdventure(minutes: selectedMinutes) {
                             timer.startFocus(minutes: selectedMinutes)
                         }
@@ -104,8 +104,8 @@ struct FocusTimerView: View {
                 }
                 if let reward = timer.lastReward {
                     Text(reward.foundEgg
-                         ? (companion.language == .ko ? "🎉 신비한 알 발견!" : "🎉 Mystery Egg found!")
-                         : (companion.language == .ko ? "집중 세션 완료" : "Focus session complete"))
+                         ? companion.l.t("🎉 신비한 알 발견!", "🎉 Mystery Egg found!", "🎉 ふしぎなタマゴ発見！")
+                         : companion.l.t("집중 세션 완료", "Focus session complete", "集中セッション完了"))
                         .font(.caption.weight(.semibold)).foregroundStyle(reward.foundEgg ? .purple : .green)
                 }
             }
@@ -135,24 +135,22 @@ struct FocusTimerView: View {
     }
 
     private var title: String {
-        switch (companion.language, timer.phase) {
-        case (.ko, .focus): "집중 중"
-        case (.ko, .rest): "휴식 중"
-        case (.ko, .idle): "집중 타이머"
-        case (_, .focus): "Focus session"
-        case (_, .rest): "Break"
-        default: "Focus timer"
+        switch timer.phase {
+        case .focus: companion.l.t("집중 중", "Focus session", "集中中")
+        case .rest: companion.l.t("휴식 중", "Break", "休憩中")
+        case .idle: companion.l.t("집중 타이머", "Focus timer", "集中タイマー")
         }
     }
-    private var focusHint: String { companion.language == .ko ? "완료 시 파트너 보상" : "Partner reward on completion" }
-    private var restHint: String { companion.language == .ko ? "잠깐 쉬어가세요" : "Take a short break" }
+    private var focusHint: String { companion.l.t("완료 시 파트너 보상", "Partner reward on completion", "完了でパートナーに報酬") }
+    private var restHint: String { companion.l.t("잠깐 쉬어가세요", "Take a short break", "少し休みましょう") }
     private func adventureText(_ minutes: Int) -> String {
-        if companion.language == .ko { return "파트너가 \(minutes)분 모험 중 · 완료해야 보상" }
-        return "Partner exploring for \(minutes)m · finish to claim"
+        companion.l.t("파트너가 \(minutes)분 모험 중 · 완료해야 보상",
+                      "Partner exploring for \(minutes)m · finish to claim",
+                      "パートナーが\(minutes)分の冒険中 · 完了で報酬")
     }
     private func eggChanceText(_ minutes: Int) -> String {
         let chance = Double(FocusRewardRules.eggChanceBasisPoints(minutes: minutes)) / 100
-        return companion.language == .ko ? "신비한 알 확률 \(chance.formatted())%" : "Mystery Egg chance \(chance.formatted())%"
+        return companion.l.t("신비한 알 확률 \(chance.formatted())%", "Mystery Egg chance \(chance.formatted())%", "ふしぎなタマゴ確率 \(chance.formatted())%")
     }
     private func rewardText(_ minutes: Int) -> String {
         let reward = AdventureRules.amounts(minutes: minutes)

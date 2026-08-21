@@ -561,10 +561,10 @@ struct CompanionHeader: View {
                         }
                         HStack {
                             Text(store.experienceToNextLevel > 0
-                                 ? (store.language == .ko
-                                    ? "다음 레벨까지 \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP"
-                                    : "\(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP to next level")
-                                 : (store.language == .ko ? "최고 레벨" : "Max level"))
+                                 ? store.l.t("다음 레벨까지 \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP",
+                                         "\(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP to next level",
+                                         "次のレベルまで \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP")
+                                 : store.l.t("최고 레벨", "Max level", "最高レベル"))
                                 .font(.caption2).foregroundStyle(.tertiary)
                             Spacer()
                         }
@@ -573,7 +573,7 @@ struct CompanionHeader: View {
                         HStack(spacing: 6) {
                             Spacer(minLength: 0)
                             if let evolutionLevel = store.nextEvolutionLevel {
-                                Text(store.language == .ko ? "Lv.\(evolutionLevel)에 진화" : "Evolves at Lv.\(evolutionLevel)")
+                                Text(store.l.t("Lv.\(evolutionLevel)에 진화", "Evolves at Lv.\(evolutionLevel)", "Lv.\(evolutionLevel) で進化"))
                                     .font(.caption2).foregroundStyle(.tertiary)
                             } else if let evolutionItem = store.nextEvolutionItem {
                                 // 돌·교환 진화는 레벨이 아무리 올라도 저절로 일어나지 않는다 —
@@ -607,7 +607,7 @@ struct CompanionHeader: View {
                             Text(store.l.eggToHatch(GameNumberFormatter.compact(store.eggTokensToHatch)))
                                 .font(.caption2).foregroundStyle(.tertiary)
                             Spacer(minLength: 0)
-                            Text(store.language == .ko ? "집중 세션을 완료하면 부화" : "Complete focus sessions to hatch")
+                            Text(store.l.t("집중 세션을 완료하면 부화", "Complete focus sessions to hatch", "集中セッションの完了でふ化"))
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                         // 첫 실행(적립 0) — 정적 알 앞에서 "고장났나" 오해 방지용 한 줄 안내
@@ -912,13 +912,13 @@ private struct GraduateCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(store.language == .ko ? "다 키웠어요!" : "Fully grown!", systemImage: "graduationcap.fill")
+            Label(store.l.t("다 키웠어요!", "Fully grown!", "育ちきりました！"), systemImage: "graduationcap.fill")
                 .font(.caption.weight(.semibold))
-            Text(store.language == .ko
-                 ? "도감에 기록하고 새 알을 받아요. 이 포켓몬은 박스에 보관돼 언제든 다시 데려올 수 있어요."
-                 : "Records it in the Pokédex and starts a new egg. This Pokémon moves to your box, so you can bring it back anytime.")
+            Text(store.l.t("도감에 기록하고 새 알을 받아요. 이 포켓몬은 박스에 보관돼 언제든 다시 데려올 수 있어요.",
+                     "Records it in the Pokédex and starts a new egg. This Pokémon moves to your box, so you can bring it back anytime.",
+                     "図鑑に記録して新しいタマゴを受け取ります。このポケモンはボックスに預けられ、いつでも連れ戻せます。"))
                 .font(.caption2).foregroundStyle(.secondary)
-            Button(store.language == .ko ? "도감에 등록하고 새 알 받기" : "Record and get a new egg") {
+            Button(store.l.t("도감에 등록하고 새 알 받기", "Record and get a new egg", "図鑑に登録して新しいタマゴ")) {
                 store.graduateCompanion()
             }
             .buttonStyle(.borderedProminent).controlSize(.small)
@@ -934,7 +934,7 @@ private struct EvolutionPromptCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(store.language == .ko ? "진화할 수 있어요!" : "Evolution is available!", systemImage: "sparkles")
+            Label(store.l.t("진화할 수 있어요!", "Evolution is available!", "進化できます！"), systemImage: "sparkles")
                 .font(.caption.weight(.semibold)).foregroundStyle(.orange)
             HStack(spacing: 10) {
                 SpriteView(speciesID: prompt.fromSpeciesID, size: 46, shiny: store.state.active?.isShiny ?? false)
@@ -942,17 +942,17 @@ private struct EvolutionPromptCard: View {
                 SpriteView(speciesID: prompt.toSpeciesID, size: 46, shiny: store.state.active?.isShiny ?? false)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(prompt.toName).font(.callout.bold())
-                    Text(store.language == .ko ? "Lv.\(prompt.requiredLevel) 진화" : "Evolves at Lv. \(prompt.requiredLevel)")
+                    Text(store.l.t("Lv.\(prompt.requiredLevel) 진화", "Evolves at Lv. \(prompt.requiredLevel)", "Lv.\(prompt.requiredLevel) で進化"))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
-            Text(store.language == .ko ? "\(prompt.toName)(으)로 진화할까요?" : "Evolve into \(prompt.toName)?")
+            Text(store.l.t("\(prompt.toName)(으)로 진화할까요?", "Evolve into \(prompt.toName)?", "\(prompt.toName) に進化させますか？"))
                 .font(.caption)
             HStack {
-                Button(store.language == .ko ? "예, 진화할래요" : "Yes, evolve") { store.acceptEvolution() }
+                Button(store.l.t("예, 진화할래요", "Yes, evolve", "はい、進化させる")) { store.acceptEvolution() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
-                Button(store.language == .ko ? "아니오" : "No") { store.declineEvolution() }
+                Button(store.l.t("아니오", "No", "いいえ")) { store.declineEvolution() }
                     .controlSize(.small)
             }
         }
@@ -967,7 +967,7 @@ private struct MoveLearningCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label(store.language == .ko ? "새로운 기술을 배울 수 있어요" : "A new move is available",
+            Label(store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます"),
                   systemImage: "sparkles")
                 .font(.caption.weight(.semibold)).foregroundStyle(.purple)
             HStack {
@@ -990,7 +990,7 @@ private struct MoveLearningCard: View {
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let active = store.state.active, active.learnedMoves.count >= 4 {
-                Text(store.language == .ko ? "잊을 기술을 선택하세요." : "Choose a move to forget.")
+                Text(store.l.t("잊을 기술을 선택하세요.", "Choose a move to forget.", "忘れるわざを選んでください。"))
                     .font(.caption2).foregroundStyle(.secondary)
                 ForEach(Array(active.learnedMoves.enumerated()), id: \.element.id) { index, move in
                     // 잊을 기술의 타입만 괄호로 — 배울 기술의 타입은 카드 상단 TypeBadge 에 이미 있다.
@@ -1000,15 +1000,15 @@ private struct MoveLearningCard: View {
                 }
             } else {
                 HStack {
-                    Button(store.language == .ko ? "예, 배울래요" : "Yes, learn it") {
+                    Button(store.l.t("예, 배울래요", "Yes, learn it", "はい、覚える")) {
                         store.acceptMoveLearning()
                     }.buttonStyle(.borderedProminent).controlSize(.small)
-                    Button(store.language == .ko ? "아니오" : "No") { store.declineMoveLearning() }
+                    Button(store.l.t("아니오", "No", "いいえ")) { store.declineMoveLearning() }
                         .controlSize(.small)
                 }
             }
             if store.state.active?.learnedMoves.count ?? 0 >= 4 {
-                Button(store.language == .ko ? "배우지 않기" : "Don't learn") { store.declineMoveLearning() }
+                Button(store.l.t("배우지 않기", "Don't learn", "覚えない")) { store.declineMoveLearning() }
                     .controlSize(.small)
             }
         }
@@ -1041,12 +1041,12 @@ struct StarterPickerView: View {
             Divider()
 
             // 2) 타입 선택 — 해당 타입의 1세대 미진화체 한 마리가 알에서 무작위로 부화한다.
-            Text(store.language == .ko ? "원하는 타입을 골라요" : "Choose a type")
+            Text(store.l.t("원하는 타입을 골라요", "Choose a type", "好きなタイプを選ぼう"))
                 .font(.callout.weight(.semibold))
             if picking {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(store.language == .ko ? "알 속의 포켓몬을 만나고 있어요…" : "Meeting the Pokémon inside the Egg…")
+                    Text(store.l.t("알 속의 포켓몬을 만나고 있어요…", "Meeting the Pokémon inside the Egg…", "タマゴの中のポケモンに会っています…"))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -1068,9 +1068,9 @@ struct StarterPickerView: View {
                     }
                 }
                 Text(nameReady
-                     ? (store.language == .ko
-                        ? "선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다."
-                        : "A random unevolved Gen I Pokémon of that type will hatch. Legendary and Mythical Pokémon are excluded.")
+                     ? store.l.t("선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다.",
+                             "A random unevolved Gen I Pokémon of that type will hatch. Legendary and Mythical Pokémon are excluded.",
+                             "選んだタイプの第1世代・未進化ポケモンがランダムでふ化します。伝説・幻は除きます。")
                      : l.starterNeedName)
                     .font(.caption2).foregroundStyle(nameReady ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.orange))
                     .fixedSize(horizontal: false, vertical: true)

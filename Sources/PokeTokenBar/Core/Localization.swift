@@ -7,7 +7,11 @@ struct L {
     let lang: AppLanguage
     init(_ lang: AppLanguage) { self.lang = lang }
 
-    private func t(_ ko: String, _ en: String, _ ja: String) -> String {
+    /// 세 언어를 한자리에서 고른다. 뷰에서도 직접 쓴다. 일회성 문구까지 이름 붙인 프로퍼티로
+    /// 올리면 이 파일이 뒤덮이고, 그걸 피하려다 두 갈래 삼항이 115곳 쌓여 일본어 사용자에게
+    /// 영어가 나갔다. 인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다. 두 화면이 같은 문구를
+    /// 쓰면 그때 프로퍼티로 승격한다. 가드는 `LanguageSplitGuardTests`.
+    func t(_ ko: String, _ en: String, _ ja: String) -> String {
         switch lang {
         case .ko: return ko
         case .en: return en
@@ -56,6 +60,8 @@ struct L {
           "同じネットワークで対戦相手を探しています… 相手もアプリを起動している必要があります。")
     }
     var battleChallengeButton: String { t("대결 신청", "Challenge", "対戦を申し込む") }
+    /// 구버전 상대는 랭크를 광고하지 않는다. 최하위 티어와 구별돼야 하므로 빈칸이 아니라 문구다.
+    var battleRankUnknown: String { t("랭크 정보 없음", "Rank unavailable", "ランク情報なし") }
     var battleWaitingAccept: String { t("수락 대기 중…", "Waiting for accept…", "承諾を待っています…") }
     var battleCancel: String { t("취소", "Cancel", "キャンセル") }
     var battleIncomingTitle: String { t("배틀 신청이 왔습니다!", "Incoming battle challenge!", "バトルの申し込みが来ました！") }
@@ -741,6 +747,19 @@ struct L {
     func achievementTierLabel(_ reached: Int, _ total: Int) -> String {
         t("\(total)단계 중 \(reached)단계", "tier \(reached) of \(total)", "\(total)段階中\(reached)段階")
     }
+    /// 카드 진행도 줄의 스크린리더 대체 문구. `Lv.12 · 🏅8/16` 을 그대로 읽히면 뜻이 안 통한다.
+    /// 광고에 없는 칸은 문구에서도 빠진다.
+    func peerProgressLabel(_ level: Int?, _ tiers: Int?, _ total: Int) -> String {
+        var parts: [String] = []
+        if let level {
+            parts.append(t("트레이너 Lv.\(level)", "Trainer Lv.\(level)", "トレーナー Lv.\(level)"))
+        }
+        if let tiers {
+            parts.append(t("업적 \(tiers)/\(total)", "\(tiers) of \(total) achievements", "実績 \(tiers)/\(total)"))
+        }
+        return parts.joined(separator: ", ")
+    }
+
     var notifAchievementTitle: String { t("🏅 업적 달성!", "🏅 Achievement unlocked!", "🏅 実績を達成！") }
     func notifAchievementBody(_ name: String, _ tier: Int, _ stardust: Int) -> String {
         let amount = GameNumberFormatter.compact(stardust)

@@ -168,10 +168,10 @@ struct PopoverView: View {
             FocusTimerView()
             Picker("", selection: $nav.tab) {
                 Text(l.home).tag(PopoverTab.home)
-                Text(companion.language == .ko ? "포켓몬" : "Pokémon").tag(PopoverTab.pokemon)
+                Text(l.t("포켓몬", "Pokémon", "ポケモン")).tag(PopoverTab.pokemon)
                 Text(l.collection).tag(PopoverTab.collection)
                 Text(l.battle).tag(PopoverTab.battle)
-                Text(companion.language == .ko ? "포켓슬론" : "Pokéathlon").tag(PopoverTab.pokeathlon)
+                Text(l.t("포켓슬론", "Pokéathlon", "ポケスロン")).tag(PopoverTab.pokeathlon)
             }
             .pickerStyle(.segmented)
             .labelsHidden()

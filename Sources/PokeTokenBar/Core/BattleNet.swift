@@ -108,9 +108,17 @@ struct BattlePeer: Identifiable, Equatable {
     let name: String            // 표시 이름(고유 접미 제거)
     let serviceName: String     // Bonjour 광고 원본(고유) — id·self 판정용
     let endpoint: NWEndpoint
-    let rank: BattleRank?
+    /// 상대가 광고한 표시용 진행도. 쓰임과 한계는 `PeerAdvertisement` 에 적어 뒀다.
+    let advertisement: PeerAdvertisement
+    /// 광고 안의 랭크. 기존 호출부를 살려 두는 어댑터.
+    var rank: BattleRank? { advertisement.rank }
     var id: String { serviceName }
-    static func == (l: Self, r: Self) -> Bool { l.serviceName == r.serviceName }
+    /// 광고까지 비교한다. 신원은 `id`(=`serviceName`)가 맡는다. 이름만 비교하면 상대가 레벨을
+    /// 올려도 같은 값이 되어, 동등성으로 갱신을 판단하는 쪽(SwiftUI 뷰 비교·`onChange`)이 실시간
+    /// 갱신을 삼킨다.
+    static func == (l: Self, r: Self) -> Bool {
+        l.serviceName == r.serviceName && l.advertisement == r.advertisement
+    }
 }
 
 /// 한 턴의 이벤트가 가리키는 실제 전투원 문맥. `.a`/`.b` 만으로는 교체 뒤 과거 이름·기술을
@@ -369,7 +377,7 @@ final class BattleCenter {
     private let moveDetailLoader: MoveDetailLoader
     private let inheritedMovesPreparer: InheritedMovesPreparer
     /// TXT 레코드 재발행 지점 — nil 이면 실제 리스너의 `service` 를 갈아 끼운다(테스트 주입 seam).
-    private let rankRecordPublisher: ((NWTXTRecord) -> Void)?
+    private let advertisementPublisher: ((NWTXTRecord) -> Void)?
     let multiplayer: MultiplayerRoomCenter
     private var listener: NWListener?
     private var browser: NWBrowser?
@@ -492,9 +500,9 @@ final class BattleCenter {
          moveSetLoader: MoveSetLoader? = nil,
          moveDetailLoader: MoveDetailLoader? = nil,
          inheritedMovesPreparer: InheritedMovesPreparer? = nil,
-         rankRecordPublisher: ((NWTXTRecord) -> Void)? = nil) {
+         advertisementPublisher: ((NWTXTRecord) -> Void)? = nil) {
         self.companion = companion
-        self.rankRecordPublisher = rankRecordPublisher
+        self.advertisementPublisher = advertisementPublisher
         self.monSnapshotBuilder = monSnapshotBuilder ?? { mon, level in
             await companion.battleSnapshot(for: mon, level: level)
         }
@@ -519,26 +527,31 @@ final class BattleCenter {
         // 고유 접미(#xxxxxx) — 같은 사람 이름의 두 Mac이 서로를 "자기"로 오인 필터링하지 않게 한다.
         // 표시할 땐 접미를 떼고, self·id 판정은 이 전체 문자열로 한다.
         self.myServiceName = "\(name)#\(String(UUID().uuidString.prefix(6)))"
-        trackRankChanges()
+        trackAdvertisedValues()
     }
 
-    // MARK: 광고 중인 랭크 (Bonjour TXT)
+    // MARK: 광고 중인 진행도 (Bonjour TXT)
 
-    /// 지금 TXT 레코드에 실려 있는 랭크 포인트. 같은 값이면 재발행하지 않는다.
-    private(set) var advertisedRankPoints: Int?
+    /// 지금 TXT 레코드에 실려 있는 값들. 셋이 모두 그대로면 재발행하지 않는다.
+    private(set) var advertisedProfile: PeerAdvertisement?
 
-    nonisolated static func rankTXTRecord(points: Int) -> NWTXTRecord {
-        NWTXTRecord(["rankPoints": String(points)])
+    /// 지금 광고해야 할 값. 형식과 클램프는 `PeerAdvertisement` 가 맡는다.
+    private var myAdvertisement: PeerAdvertisement {
+        PeerAdvertisement(rankPoints: companion.battleRank.points,
+                          trainerLevel: companion.trainerLevel.level,
+                          achievementTiers: companion.achievementTierTotal,
+                          // 내 분모도 싣는다. 카탈로그가 늘어난 뒤 상대가 나를 옳게 그릴 근거다.
+                          achievementCeiling: AchievementLadder.tierCeiling)
     }
 
-    /// 랭크가 바뀌면 광고를 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 승패 뒤에도
-    /// 옛 점수가 계속 광고되어 상대 목록엔 stale 랭크가 남았다(#85).
-    func refreshAdvertisedRank() {
-        let points = companion.battleRank.points
-        guard advertisedRankPoints != points else { return }
-        let record = Self.rankTXTRecord(points: points)
-        if let rankRecordPublisher {
-            rankRecordPublisher(record)
+    /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 구워서 랭크전 뒤에도 옛 점수가
+    /// 계속 광고됐다(#85). 레벨·업적도 같은 부류라 재발행 지점은 여기 하나다.
+    func refreshAdvertisedProfile() {
+        let profile = myAdvertisement
+        guard advertisedProfile != profile else { return }
+        let record = profile.txtRecord
+        if let advertisementPublisher {
+            advertisementPublisher(record)
         } else {
             // 리스너가 없으면 광고 자체가 없다 — 나중에 만들 때 그 시점의 현재 값을 굽으므로
             // 여기서 기록해 두면 그 값이 최신인지 판단할 근거를 잃는다.
@@ -546,19 +559,22 @@ final class BattleCenter {
             listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
                                                   domain: nil, txtRecord: record)
         }
-        advertisedRankPoints = points
+        advertisedProfile = profile
     }
 
-    /// `companion` 상태 변화를 계속 따라간다 — `withObservationTracking` 은 1회성이라
-    /// 콜백에서 다시 등록해야 한다. 정산·세이브 이전 등 랭크가 바뀌는 모든 경로를 한자리에서 덮는다.
-    private func trackRankChanges() {
+    /// `companion` 변화를 계속 따라간다. `withObservationTracking` 은 1회성이라 콜백에서 다시
+    /// 등록해야 한다. 세 원본을 각각 읽는 이유: 지금은 셋이 모두 `state` 를 지나 하나만 읽어도
+    /// 발화하지만, 하나가 `state` 밖으로 나가면 한 줄짜리 추적은 그 값을 조용히 놓친다(#85).
+    private func trackAdvertisedValues() {
         withObservationTracking {
             _ = companion.battleRank.points
+            _ = companion.trainerLevel.points
+            _ = companion.achievementTierTotal
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.refreshAdvertisedRank()
-                self.trackRankChanges()
+                self.refreshAdvertisedProfile()
+                self.trackAdvertisedValues()
             }
         }
     }
@@ -600,13 +616,17 @@ final class BattleCenter {
     }
 
     private func startListener() {
+        // 재시작이면 옛 리스너를 먼저 취소한다. 참조만 버리면 실패한 객체가 큐·포트를 붙든 채
+        // 남아 슬립 복귀마다 누적된다. 형제인 `MultiplayerRoomCenter.leaveRoom` 은 취소하고
+        // 있었다. 호출부가 아니라 입구에 두면 새 재시작 경로가 생겨도 덮인다.
+        listener?.cancel()
         do {
             let listener = try NWListener(using: Self.discoveryParameters())
-            let points = companion.battleRank.points
+            let profile = myAdvertisement
             listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
                                                   domain: nil,
-                                                  txtRecord: Self.rankTXTRecord(points: points))
-            advertisedRankPoints = points
+                                                  txtRecord: profile.txtRecord)
+            advertisedProfile = profile
             listener.newConnectionHandler = { [weak self] conn in
                 Task { @MainActor in self?.acceptConnection(conn) }
             }
@@ -646,6 +666,7 @@ final class BattleCenter {
     }
 
     private func startBrowser() {
+        browser?.cancel()   // 재시작 시 옛 브라우저 취소. `startListener` 와 같은 이유.
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil),
                                 using: Self.discoveryParameters())
         browser.browseResultsChangedHandler = { [weak self] results, _ in
@@ -675,19 +696,27 @@ final class BattleCenter {
         self.browser = browser
     }
 
+    /// 발견된 광고 하나를 카드 한 장으로 옮긴다. 자기 필터·표시 이름·광고 파싱이 여기 모인다.
+    /// `updatePeers` 의 클로저 안에 두면 `NWBrowser.Result` 를 만들 수 없어 테스트가 닿지 못한다.
+    /// `endpoint` 에 기본값을 두지 않는 이유: 브라우저가 해석해 준 엔드포인트 대신 손으로 지은
+    /// 것이 쓰이는데, 그 경로는 테스트에서만 밟혀 틀린 채로 남는다.
+    nonisolated static func peer(fromService name: String, txtRecord: NWTXTRecord?,
+                                 excluding myServiceName: String,
+                                 endpoint: NWEndpoint) -> BattlePeer? {
+        guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
+        // 레코드가 없거나 값이 쓰레기여도 피어를 버리지 않는다. 구버전 상대도 목록에 남아야
+        // 신청할 수 있다.
+        return BattlePeer(name: displayName(fromService: name), serviceName: name,
+                          endpoint: endpoint,
+                          advertisement: txtRecord.map(PeerAdvertisement.init) ?? PeerAdvertisement())
+    }
+
     private func updatePeers(_ results: Set<NWBrowser.Result>) {
         peers = results.compactMap { r in
             guard case .service(let name, _, _, _) = r.endpoint else { return nil }
-            guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
-            let points: Int?
-            if case .bonjour(let record) = r.metadata,
-               let raw = record["rankPoints"], let value = Int(raw) {
-                points = value      // 클램프는 `BattleRank.init(points:)` 가 한다
-            } else {
-                points = nil   // 업데이트 전 클라이언트도 목록에서 숨기지 않는다.
-            }
-            return BattlePeer(name: Self.displayName(fromService: name), serviceName: name,
-                              endpoint: r.endpoint, rank: points.map { BattleRank(points: $0) })
+            let record: NWTXTRecord? = if case .bonjour(let txt) = r.metadata { txt } else { nil }
+            return Self.peer(fromService: name, txtRecord: record,
+                             excluding: myServiceName, endpoint: r.endpoint)
         }.sorted { $0.name < $1.name }
         AppLog.write("battle peers updated: \(results.count) result(s), \(peers.count) after self-filter")
         if !peers.isEmpty { lastError = nil }   // 상대가 보이면 이전 차단 경고 해제

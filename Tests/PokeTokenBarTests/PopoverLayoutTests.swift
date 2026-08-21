@@ -1,3 +1,4 @@
+import Network
 import XCTest
 import SwiftUI
 @testable import PokeTokenBar
@@ -118,6 +119,106 @@ final class PopoverLayoutTests: XCTestCase {
             // 마지막 페이지에 최소 한 명은 있어야 한다 — 빈 페이지를 넘기게 두지 않는다.
             XCTAssertLessThan((pages - 1) * pageSize, max(1, peerCount),
                               "\(peerCount)명인데 마지막 페이지가 비어 있다")
+        }
+    }
+
+    // MARK: 근처 트레이너 카드 (진행도가 잘리지 않는가)
+
+    private func peerStore(_ language: AppLanguage = .ko) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-peer-layout-\(UUID().uuidString).json")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)"}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: StubProvider(value: moveTestLine),
+                              clock: { Date(timeIntervalSince1970: 1_755_000_000) },
+                              fileURL: url, rng: SeededRNG(seed: 13))
+    }
+
+    private func peer(_ name: String, _ advertisement: PeerAdvertisement) -> BattlePeer {
+        BattlePeer(name: name, serviceName: "\(name)#abc123",
+                   endpoint: .hostPort(host: "127.0.0.1", port: 4_242),
+                   advertisement: advertisement)
+    }
+
+    /// 가장 긴 랭크 문구를 내는 점수. `maximumPoints` 가 아니다. 최고점은 "Challenger · 99 LP"
+    /// (18자)인데 티어 이름이 더 긴 "Grandmaster · 10 LP"(19자) 구간이 있다. 상한값을 최악으로
+    /// 가정하면 폭 검증이 진짜 최악보다 좁은 입력을 재고 통과한다.
+    private var widestRankPoints: Int {
+        (0...BattleRank.maximumPoints).max {
+            BattleRank(points: $0).displayName.count < BattleRank(points: $1).displayName.count
+        }!
+    }
+
+    /// 카드가 그릴 수 있는 최악의 진행도. 여기서 안 잘리면 어떤 상대에서도 안 잘린다. 배지
+    /// 분모는 상대가 광고하니 내 카탈로그(16)가 아니라 표시 상한까지 커질 수 있다.
+    private var widestAdvertisement: PeerAdvertisement {
+        PeerAdvertisement(rankPoints: widestRankPoints,
+                          trainerLevel: TrainerLevel.maximumLevel,
+                          achievementTiers: PeerAdvertisement.maximumTierCeiling,
+                          achievementCeiling: PeerAdvertisement.maximumTierCeiling)
+    }
+
+    private func peerRow(_ name: String, _ advertisement: PeerAdvertisement,
+                         _ language: AppLanguage = .ko) -> some View {
+        PeerRow(store: peerStore(language), peer: peer(name, advertisement),
+                isEnabled: true, onChallenge: {})
+    }
+
+    /// 카드가 원하는 폭. 행 안에 `Spacer()` 가 있어 넉넉한 제안을 주면 그대로 채우니
+    /// (제안 4,000 → 4,000) 이상 폭 측정만으로는 아무것도 알 수 없다. 내용의 이상 크기를 보려면
+    /// `fixedSize` 로 고정해야 한다. 기술 목록은 Spacer 가 없어 그냥 재도 됐다.
+    private func intrinsicWidth(_ view: some View) -> CGFloat {
+        renderedWidth(view.fixedSize(horizontal: true, vertical: false), proposing: 4_000)
+    }
+
+    /// 대조군: 광고가 실린 카드는 빈 카드보다 넓어야 한다. 이게 없으면 누가 레벨·배지 칸을 지워도
+    /// 아래 폭 검증이 그냥 통과한다. 총폭 검증은 누가 빠졌는지를 못 잡는다(defect-log).
+    func testPeerRowActuallyCarriesTheAdvertisedProgress() {
+        let bare = intrinsicWidth(peerRow("Ash", PeerAdvertisement()))
+        let advertised = intrinsicWidth(peerRow("Ash", widestAdvertisement))
+        XCTAssertGreaterThan(advertised, bare + 20,
+                             "레벨·배지가 카드에 실제로 그려지지 않으면 폭 검증이 무의미해진다")
+    }
+
+    /// 최악의 진행도를 실은 카드가 세 언어 모두 팝오버 콘텐츠 폭 안에 들어와야 한다.
+    /// 버튼 문구가 언어마다 다르다(대결 신청 / Challenge / 対戦を申し込む).
+    func testPeerRowFitsTheContentWidthInEveryLanguage() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            let width = intrinsicWidth(peerRow("Ash", widestAdvertisement, language))
+            XCTAssertLessThanOrEqual(width, PopoverMetrics.contentWidth,
+                                     "\(language.rawValue): 진행도 줄이 카드 폭을 넘겼다")
+        }
+    }
+
+    /// 두 줄을 유지해야 한다. 진행도 때문에 세 번째 줄이 생기면 한 페이지 5명 예산이 깨지고,
+    /// 여섯 번째 상대에게 도달 못 하던 부류로 되돌아간다.
+    func testPeerRowKeepsItsTwoLineHeightRegardlessOfAdvertisement() {
+        let bare = renderedHeight(peerRow("Ash", PeerAdvertisement()),
+                                  proposingWidth: PopoverMetrics.contentWidth)
+        let advertised = renderedHeight(peerRow("Ash", widestAdvertisement),
+                                       proposingWidth: PopoverMetrics.contentWidth)
+        XCTAssertEqual(advertised, bare, accuracy: 1, "광고가 실리면서 줄이 늘었다")
+    }
+
+    /// 상대 이름은 Bonjour 에서 와 길이를 우리가 정하지 못한다. 길면 줄바꿈이 아니라 잘려야
+    /// 한다. 줄바꿈되면 카드가 커져 페이지 예산이 무너진다.
+    func testALongPeerNameTruncatesInsteadOfGrowingTheRow() {
+        let short = renderedHeight(peerRow("Ash", widestAdvertisement),
+                                   proposingWidth: PopoverMetrics.contentWidth)
+        let long = renderedHeight(peerRow(String(repeating: "트레이너", count: 10), widestAdvertisement),
+                                  proposingWidth: PopoverMetrics.contentWidth)
+        XCTAssertEqual(long, short, accuracy: 1, "긴 이름이 카드 높이를 키웠다")
+    }
+
+    /// 세 언어에서 카드 높이가 같아야 한다. 한 언어에서만 줄바꿈되면 그 언어에서만 목록이 넘친다.
+    /// 기술 목록에서 이미 겪은 부류다(CI 118pt vs 로컬 78pt).
+    func testPeerRowHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(peerRow("Ash", widestAdvertisement, .ko),
+                                    proposingWidth: PopoverMetrics.contentWidth)
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(peerRow("Ash", widestAdvertisement, language),
+                                          proposingWidth: PopoverMetrics.contentWidth),
+                           korean, accuracy: 1, "\(language.rawValue) 에서 카드 높이가 달라졌다")
         }
     }
 

@@ -729,7 +729,7 @@ final class PetHostingView: NSHostingView<AnyView> {
                                 action: #selector(handleOpen(_:)), keyEquivalent: "")
         open.target = self
         open.isEnabled = true
-        let pet = menu.addItem(withTitle: languageProvider() == .ko ? "쓰다듬기" : "Pet",
+        let pet = menu.addItem(withTitle: l.t("쓰다듬기", "Pet", "なでる"),
                                action: #selector(handlePet(_:)), keyEquivalent: "")
         pet.target = self
         pet.isEnabled = true

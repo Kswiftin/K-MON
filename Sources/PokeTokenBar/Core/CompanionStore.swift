@@ -957,6 +957,10 @@ final class CompanionStore {
     /// 화면용 업적 행 — 카탈로그 순서 그대로.
     var achievementRows: [(achievement: Achievement, count: Int, tier: Int)] { state.achievements.rows }
 
+    /// 도달한 업적 단계의 합계. 카드와 LAN 광고가 쓴다. 뷰·네트워크가 `state` 를 직접 만지지
+    /// 않게 하는 자리다(`achievementRows` 와 같은 이유).
+    var achievementTierTotal: Int { state.achievements.tierTotal }
+
     /// 아직 안 넘은 첫 문턱. 최고 단계면 nil — 선반이 숫자 대신 완료 표식을 띄운다.
     func nextAchievementTier(_ track: AchievementTrack) -> (goal: Int, tier: Int)? {
         state.achievements.next(track)
