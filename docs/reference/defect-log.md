@@ -1365,3 +1365,21 @@ read_when:
 - **스크립트도 가드다 — 빈 통과를 확인한다.** 인증이 없으면 모든 프로브가 "도구를 못 썼다" 로
   통과해 거짓 합격이 난다. 그래서 스모크 프롬프트로 응답을 먼저 확인하고, 프로브 로직 자체는
   탈출하는 스텁으로 FAIL 이 잡히는지 검증했다. (2026-08-23.)
+## `default:` 가 "특정 부류 전체"를 뜻하면 새 케이스는 조용히 그 부류가 된다
+
+- 아이템 스위치들이 `default: // 진화 아이템 전체` 로 끝나 있었다(`BagView` 의 `canUse`·`effectHint`·
+  `performUse`, `Localization.itemDescription`, `ItemKind` 의 `spriteName`·`shopPrice`). 케이스 30개를
+  스위치마다 나열하지 않으려는 선택이라 그 자체론 합리적이다. 문제는 **진화 아이템이 아닌 케이스를
+  새로 넣을 때** 드러난다 — 하트비늘(#97)을 명시하지 않으면 가방이 "진화 가능할 때 사용" 을 띄우고
+  탭이 `useEvolutionItem` 으로 흘러가며, 설명은 `evolutionRule == nil` 분기를 타 **빈 문자열**이 된다.
+- **컴파일러가 절반만 잡는다.** `itemName` 은 `default:` 가 없어 `switch must be exhaustive` 로 즉시
+  걸렸지만, `default:` 가 있는 나머지 여섯 곳은 아무 경고 없이 통과했다. "빌드가 되니 다 넣었다"는
+  판단이 여기서 깨진다.
+- **처방**: 비진화 아이템은 `.rareCandy, .mint, .shinyCharm, .heartScale` 처럼 **명시 케이스로** 넣고,
+  `default:` 주석에 그 분기가 뜻하는 부류를 적어 둔다. 새 아이템을 넣을 때는
+  `grep -n "default:" ` 로 `ItemKind` 스위치 전체를 훑는다(현재 7곳).
+- 회귀 가드는 "진화 경로로 새지 않는다"를 직접 밟는다 —
+  `HeartScaleTests.testHeartScaleIsNotTreatedAsEvolutionItem`(`canUseEvolutionItem`·`useEvolutionItem`
+  이 거절하고 재고가 그대로) + `testHeartScaleCopyExistsInAllThreeLanguages`(설명이 빈 문자열이면 실패).
+  설명 누락은 화면을 봐야 아는 결함이라 문구 테스트가 세 언어 전부를 훑는 편이 싸다.
+  (`CompanionModel.swift` · `Localization.swift` · `BagView.swift`, 2026-08-21.)
