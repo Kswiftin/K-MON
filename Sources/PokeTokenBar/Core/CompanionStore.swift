@@ -960,6 +960,11 @@ final class CompanionStore {
     /// 화면용 업적 행 — 카탈로그 순서 그대로.
     var achievementRows: [(achievement: Achievement, count: Int, tier: Int)] { state.achievements.rows }
 
+    /// 아직 안 넘은 첫 문턱. 최고 단계면 nil — 선반이 숫자 대신 완료 표식을 띄운다.
+    func nextAchievementTier(_ track: AchievementTrack) -> (goal: Int, tier: Int)? {
+        state.achievements.next(track)
+    }
+
     /// 화면용 목표 행 — 축마다 아직 안 넘은 첫 목표 하나씩. **졸업 기록만** 넘긴다.
     /// `dexEntries`(활성·박스 합성)를 넘기면 알을 새로 살 때 표시 진행도가 되감겨 지급 판정과
     /// 화면이 다른 수를 말한다.

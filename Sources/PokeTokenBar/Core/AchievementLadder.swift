@@ -54,6 +54,10 @@ struct AchievementLadder: Codable, Sendable, Equatable {
         guard amount > 0 else { return [] }
         var crossed: [(achievement: Achievement, tier: Int)] = []
         for entry in Self.catalog where entry.track == track {
+            // 카탈로그상 도달 불가 — 문턱이 빈 칸은 없다(`AchievementLadderTests` 의
+            // `testCatalogTiersAscendAndPairWithRewards` 가 강제). 그래서 `--show-regions` 에
+            // `^0` 으로 남는다. 빈 칸을 넣으면 크래시 대신 그 트랙이 조용히 멈춘다.
+            // (`DexGoals.rows` 의 `guard let last` 와 같은 부류다.)
             guard let ceiling = entry.tiers.last else { continue }
             let before = counts[entry.id] ?? 0
             // 이미 상한이면 건드리지 않는다 — 같은 문턱을 두 번 지나지 못하게 하는 지점.
@@ -70,6 +74,9 @@ struct AchievementLadder: Codable, Sendable, Equatable {
     func count(_ track: AchievementTrack) -> Int { max(0, counts[track.rawValue] ?? 0) }
 
     /// 도달 단계 수(0...문턱 개수). 저장하지 않고 카운터에서 계산한다.
+    ///
+    /// 아래 `?? 0` 과 `next(_:)` 의 `else { return nil }` 은 **트랙이 카탈로그에 없을 때**의 폴백이라
+    /// 도달 불가다(`testCatalogCoversEveryTrackExactlyOnce` 가 강제) — `--show-regions` 에 `^0` 으로 남는다.
     func tier(_ track: AchievementTrack) -> Int {
         let current = count(track)
         return Self.catalog.first { $0.track == track }?.tiers.filter { $0 <= current }.count ?? 0

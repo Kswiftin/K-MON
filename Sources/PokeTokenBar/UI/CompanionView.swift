@@ -1174,8 +1174,9 @@ struct DexSummaryHeader: View {
 /// 헤더에 남은 여유는 24pt 뿐이라 한 줄이 상한이고, 진행도는 `12/25` 숫자로만 보인다
 /// (`PopoverLayoutTests.testDexGoalStripFitsTheDexHeaderBudget` 이 지킨다).
 ///
-/// 새 탭·세그먼트도 만들지 않는다 — 탭을 늘리면 `PopoverTab` 높이 표와 360pt 세그먼트 피커가
-/// 따라오는데 얻는 건 세 칸짜리 줄 하나다.
+/// 이 줄 때문에 새 탭을 만들지 않는다 — 탭을 늘리면 `PopoverTab` 높이 표와 360pt 세그먼트 피커가
+/// 따라오는데 얻는 건 세 칸짜리 줄 하나다. (컬렉션 탭의 하위 세그먼트는 나중에 업적이 들어오면서
+/// 생겼고, 이 줄이 쓰던 24pt 를 빼앗지 않도록 그 프레임 **밖에** 얹혀 있다 — `CollectionView` 참고.)
 struct DexGoalStrip: View {
     let store: CompanionStore
 
@@ -1210,18 +1211,43 @@ struct DexGoalStrip: View {
 struct CollectionView: View {
     let store: CompanionStore
 
-    /// 도감·로그 공통 높이 — 상점·가방과 같은 520. 세그먼트를 전환할 때도, 탭을 넘나들 때도
-    /// 팝오버가 리사이즈되지 않는다.
+    private enum Section: Hashable { case dex, achievements }
+    @State private var section: Section = .dex
+
+    private var l: L { store.l }
+
+    /// 하위 화면 공통 높이 — 상점·가방과 같은 520. 세그먼트를 전환해도 이 프레임이 같으므로
+    /// 두 화면 사이를 오갈 때 높이가 튀지 않는다.
     ///
-    /// 예산: 520 − 세그먼트 24 − 헤더 39 − 하단 줄 18 − 간격 24 = 격자 415. 6행 spacing 4 면
+    /// 예산: 520 − 헤더 39 − 목표 줄 24 − 하단 줄 18 − 간격 24 = 격자 415. 6행 spacing 4 면
     /// 행이 65.8 이고, 칸 여백 6 과 이름 12 를 빼면 스프라이트에 47.8 이 남는다(현재 44).
+    ///
+    /// 이 예산의 24pt 는 원래 "하위 세그먼트" 몫이었지만 도감 목표 줄이 먼저 썼다. 그래서 세그먼트는
+    /// 이 프레임 **밖에** 얹고 격자는 건드리지 않는다 — 안으로 넣으면 6행이 눌려 스프라이트가 잘린다.
     private static let contentHeight: CGFloat = 520
 
     var body: some View {
-        if store.dexEntries.isEmpty {
-            emptyState
-        } else {
-            DexGridView(store: store).frame(height: Self.contentHeight)
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: $section) {
+                Text(l.collection).tag(Section.dex)
+                Text(l.achievementsTitle).tag(Section.achievements)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            // 두 분기가 **같은 프레임**을 공유한다 — 각자 프레임을 가지면 전환마다 높이가 달라진다.
+            content.frame(height: Self.contentHeight, alignment: .top)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch section {
+        case .dex:
+            // 도감이 비어도 업적은 볼 수 있어야 한다 — 빈 화면은 도감 분기 안에만 둔다.
+            if store.dexEntries.isEmpty { emptyState } else { DexGridView(store: store) }
+        case .achievements:
+            AchievementShelfView(store: store)
         }
     }
 

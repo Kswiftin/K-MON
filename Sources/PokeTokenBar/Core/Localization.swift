@@ -688,6 +688,13 @@ struct L {
     /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.
     var missionDaily: String { t("일간", "Daily", "デイリー") }
 
+    /// 컬렉션 탭 세그먼트 라벨 겸 선반 제목. 체육관 "배지" 와 다른 말이어야 한다 — 한 앱에 두
+    /// 종류의 배지가 있으면 어느 쪽 진행인지 안 읽힌다.
+    var achievementsTitle: String { t("업적", "Achievements", "実績") }
+    /// 단계 표시(`●●○○`)의 스크린리더 대체 문구 — 점 문자를 그대로 읽히면 "검은 원 흰 원" 이 된다.
+    func achievementTierLabel(_ reached: Int, _ total: Int) -> String {
+        t("\(total)단계 중 \(reached)단계", "tier \(reached) of \(total)", "\(total)段階中\(reached)段階")
+    }
     var notifAchievementTitle: String { t("🏅 업적 달성!", "🏅 Achievement unlocked!", "🏅 実績を達成！") }
     func notifAchievementBody(_ name: String, _ tier: Int, _ stardust: Int) -> String {
         let amount = GameNumberFormatter.compact(stardust)
