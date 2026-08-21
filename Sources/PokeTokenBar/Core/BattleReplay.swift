@@ -2,7 +2,7 @@ import Foundation
 
 /// 재생 속도 — Showdown 에도 있는 설정이다. **끄기가 필수인 이유**는 저전력·접근성이다:
 /// 움직임에 민감한 사용자와 배터리로 도는 기기 모두에게 "안 움직이는 화면" 이 있어야 한다.
-enum ReplaySpeed: String, Codable, Sendable, CaseIterable {
+enum ReplaySpeed: String, Sendable, CaseIterable {
     case normal, fast, off
 
     /// 기본 지속시간에 곱하는 배수. 0 이면 기다림이 없다(결과가 즉시 보인다).
@@ -15,14 +15,33 @@ enum ReplaySpeed: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// 재생이 도달한 **한쪽의** 표시 상태 — 엔진의 최종 상태와 다를 수 있다는 것이 이 타입의 존재
+/// 이유다. 활성 칸까지 들고 있어야 기절·교체 턴에 새로 나온 개체를 이전 개체 HP 로 그리지 않는다.
+///
+/// 팀 전체를 드는 이유는 둘이다 — 교체 스트립의 미니 바도 같은 진행도를 읽어야 하고,
+/// `.sendOut` 이 팀 인덱스만 실으므로 들어오는 개체의 상태를 여기서 읽어야 한다. 벤치에 있던
+/// 개체는 그 턴에 바뀌지 않으므로 **지난 배치 끝의 값이 곧 출전 시점의 값**이다(엔진의 최종 팀에서
+/// 읽으면 새로 나온 개체가 그 턴에 맞은 데미지까지 이미 반영돼 결과가 샌다).
+struct ReplaySide: Equatable, Sendable {
+    var team: [BattleSide]
+    var active: Int
+
+    /// 지금 필드에 서 있는 개체 — 활성 칸이 범위 밖이면 `nil` 이다. 0번으로 대신하면 엉뚱한 개체의
+    /// 바를 그린다(`.sendOut` 이 범위를 검사하고 넘어가므로 정상 경로에선 언제나 값이 있다).
+    var side: BattleSide? { team.indices.contains(active) ? team[active] : nil }
+}
+
 /// 이벤트 하나를 화면에 보여 주는 한 스텝.
 struct ReplayStep: Equatable, Sendable {
     let event: BattleEvent
     /// 이 스텝을 보여 준 뒤 다음 스텝까지 기다리는 시간.
     let duration: TimeInterval
-    /// 이 스텝까지 반영한 **표시** HP. 스트림 끝의 값은 엔진이 계산한 HP 와 같다 —
+    /// 이 스텝까지 반영한 **표시** 상태. 움직이는 건 HP 와 활성 칸 둘뿐이다 — 상태이상·PP 는 여기서
+    /// 재구성하지 않는다(엔진 규칙이 두 벌이 되고, `statusCounter` 처럼 이벤트만 보고는 알 수 없는
+    /// 값이 있다). 대신 **배치가 끝날 때 엔진 값으로 한 번에 맞춘다**: 그래서 화상 배지·줄어든 PP 가
+    /// 재생 첫 프레임부터 결과를 알려 주지 않는다. 스트림 끝의 HP 는 엔진이 계산한 HP 와 같다 —
     /// 어긋나면 바가 엉뚱한 데서 멈췄다가 다음 턴에 튀면서 보정된다.
-    let hp: [BattleActor: Int]
+    let sides: [BattleActor: ReplaySide]
 }
 
 /// 재생 중 화면에 얹히는 것 — 필드가 이 값만 보고 흔들림·문구를 그린다.
@@ -57,6 +76,8 @@ enum BattleReplay {
         case .move:                                             return 0.35
         case .damage:                                           return 0.45
         case .faint:                                            return 0.60
+        // 교체·자동 출전은 한 박자 — 새 개체가 나오는 걸 보고 나서 다음 일이 일어나야 한다.
+        case .sendOut:                                          return 0.40
         case .crit, .superEffective, .resisted, .miss, .immune: return 0.30
         case .status, .cureStatus, .cant:                       return 0.40
         }
@@ -69,22 +90,41 @@ enum BattleReplay {
     /// 스트림을 큐로. **이벤트 하나가 스텝 하나다** — 접거나 건너뛰면 로그를 재생 진행도만큼
     /// 잘라 보여 줄 수 없다(로그도 이벤트 순서로 접힌다).
     ///
-    /// `hp` 는 이 배치가 시작할 때의 표시 HP다. 각 스텝의 HP 는 거기서부터 `.damage` 를 순서대로
-    /// 적용해 만든다 — 최종값에서 거꾸로 빼면 오버킬(남은 HP 보다 큰 데미지)에서 엔진과 갈라진다.
-    static func steps(_ events: [BattleEvent], from hp: [BattleActor: Int],
+    /// `sides` 는 이 배치가 시작할 때의 표시 상태다. 각 스텝은 거기서부터 이벤트를 순서대로 적용해
+    /// 만든다 — 최종값에서 거꾸로 빼면 오버킬(남은 HP 보다 큰 데미지)에서 엔진과 갈라진다.
+    static func steps(_ events: [BattleEvent], from sides: [BattleActor: ReplaySide],
                       speed: ReplaySpeed) -> [ReplayStep] {
         let base = events.map(duration(of:))
         let total = base.reduce(0, +) * speed.scale
         // 예산 안에 드는 턴은 그대로 둔다 — 전부 압축하면 데미지 두 방이 같은 프레임에 겹친다.
         let scale = total > budget ? speed.scale * budget / total : speed.scale
-        var running = hp
+        var running = sides
         return zip(events, base).map { event, seconds in
-            // 엔진과 같은 자리에서 자른다(`side.hp = max(0, …)`). 모르는 actor 는 만들지 않는다 —
-            // 없는 쪽의 바를 0 으로 그리는 것보다 안 그리는 쪽이 낫다.
-            if case .damage(let actor, let amount, _) = event, let current = running[actor] {
-                running[actor] = max(0, current - amount)
-            }
-            return ReplayStep(event: event, duration: seconds * scale, hp: running)
+            apply(event, to: &running)
+            return ReplayStep(event: event, duration: seconds * scale, sides: running)
+        }
+    }
+
+    /// 표시 상태를 한 이벤트만큼 앞으로 민다. **HP 와 활성 칸만 움직인다**(이유는 `ReplayStep.sides`).
+    /// 모르는 actor·범위 밖 인덱스는 만들지 않는다: 없는 쪽의 바를 0 으로 그리는 것보다 안 그리는
+    /// 쪽이 낫고, 엉뚱한 개체로 갈아타는 것보다 안 갈아타는 쪽이 낫다.
+    private static func apply(_ event: BattleEvent, to sides: inout [BattleActor: ReplaySide]) {
+        switch event {
+        case .damage(let actor, let amount, _):
+            guard var one = sides[actor], one.team.indices.contains(one.active) else { return }
+            // 엔진과 같은 자리에서 자른다(`side.hp = max(0, …)`) — 오버킬에서 갈라지지 않는다.
+            one.team[one.active].hp = max(0, one.team[one.active].hp - amount)
+            sides[actor] = one
+        case .sendOut(let actor, let index):
+            guard var one = sides[actor], one.team.indices.contains(index) else { return }
+            one.active = index
+            sides[actor] = one
+        // 표시 상태를 움직이지 않는 이벤트. **`default:` 를 두지 않는다** — 새 이벤트가 HP 를
+        // 움직이는데 여기 빠지면 바가 배틀 내내 어긋난 채로 남는다. 컴파일이 깨지는 편이
+        // `reconcile()` 로그를 한참 뒤에 발견하는 편보다 낫다.
+        case .turn, .move, .miss, .immune, .crit, .superEffective, .resisted,
+             .faint, .status, .cureStatus, .cant:
+            return
         }
     }
 
@@ -100,18 +140,35 @@ enum BattleReplay {
         !isWaitingForOpponent && !isReplaying
     }
 
-    /// 재생 중 화면에 한 번 뜨는 문구. 로그는 재생이 그 줄에 닿아야 나오므로, 이 팝이 없으면
+    /// 재생 중 화면에 뜨는 문구의 자리. 로그는 재생이 그 줄에 닿아야 나오므로, 이 팝이 없으면
     /// 급소가 화면 어디에도 안 보인 채 HP 만 크게 깎인다.
-    /// 여기 없는 이벤트는 팝이 없다 — 전부 팝으로 만들면 화면이 문구로 덮여 정작 급소가 묻힌다.
-    static func popup(for event: BattleEvent, l: L) -> String? {
+    ///
+    /// 문구가 아니라 `KeyPath` 인 이유는 언어다 — 뷰가 자기 `L` 로 푼다. `default:` 를 두지 않는
+    /// 이유는 새 이벤트가 문구 없이 지나가는 것(이 함수가 있는 이유와 정반대다)을 컴파일로 막기
+    /// 위해서다. `duration(of:)` 가 같은 이유로 전 case 를 나열한다.
+    static func popupKey(for event: BattleEvent) -> KeyPath<L, String>? {
         switch event {
-        case .crit:           return l.battleCritical
-        case .superEffective: return l.battleSuperEffective
-        case .resisted:       return l.battleNotVeryEffective
-        case .miss:           return l.battleMissed
-        case .immune:         return l.battleNoEffect
-        default:              return nil
+        case .crit:           return \.battleCritical
+        case .superEffective: return \.battleSuperEffective
+        case .resisted:       return \.battleNotVeryEffective
+        case .miss:           return \.battleMissed
+        case .immune:         return \.battleNoEffect
+        // 팝이 없는 이벤트 — 전부 팝으로 만들면 화면이 문구로 덮여 정작 급소가 묻힌다.
+        // 교체(`.sendOut`)는 스프라이트가 바뀌는 것이 곧 문구다.
+        case .turn, .move, .damage, .faint, .sendOut, .status, .cureStatus, .cant:
+            return nil
         }
+    }
+
+    static func popup(for event: BattleEvent, l: L) -> String? {
+        popupKey(for: event).map { l[keyPath: $0] }
+    }
+
+    /// 팝은 **다음 팝이 뜰 때까지** 남는다. 자기 스텝(0.3초)만 뜨면 '급소에 맞았다!' 가 사라진 뒤에
+    /// 바가 움직여(엔진 순서가 `.crit` → `.damage` 다) 원인과 결과가 화면에 같이 있는 순간이 없다 —
+    /// 이벤트가 많은 턴은 예산 압축으로 문구가 60ms 도 못 뜬다.
+    static func popped(_ event: BattleEvent, carrying previous: BattleEvent?) -> BattleEvent? {
+        popupKey(for: event) != nil ? event : previous
     }
 
     /// 이 이벤트로 **맞은** 쪽 — shake·flash 를 거는 대상이다. 때린 쪽에 걸면 누가 맞았는지

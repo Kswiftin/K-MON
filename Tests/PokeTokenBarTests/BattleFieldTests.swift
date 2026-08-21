@@ -420,13 +420,9 @@ final class BattleFieldTests: XCTestCase {
     /// `KMON_SNAPSHOT_DIR` 이 있으면 그 폴더에 PNG 로도 떨어뜨린다 — 사람이 눈으로 확인할 때 쓴다.
     /// CI 는 그 변수를 두지 않으므로 파일을 만들지 않는다.
     func testTheArenaActuallyRastersSomethingRatherThanABlankBox() throws {
-        let controller = NSHostingController(rootView: arena())
         let bounds = CGRect(x: 0, y: 0,
                             width: PopoverMetrics.contentWidth, height: Self.battleViewportBudget)
-        controller.view.frame = bounds
-        controller.view.layoutSubtreeIfNeeded()
-        let rep = try XCTUnwrap(controller.view.bitmapImageRepForCachingDisplay(in: bounds))
-        controller.view.cacheDisplay(in: bounds, to: rep)
+        let rep = try XCTUnwrap(raster(arena(), in: bounds))
 
         var seen = Set<String>()
         for x in stride(from: 4, to: Int(bounds.width) - 4, by: 12) {
@@ -443,19 +439,22 @@ final class BattleFieldTests: XCTestCase {
             try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("battle-arena.png"))
             // 재생 프레임도 같이 떨군다 — 팝 문구와 피격 스프라이트는 정지 화면에서만 눈으로
             // 확인할 수 있고, 예산 테스트는 자리만 볼 뿐 무엇이 그려졌는지는 보지 않는다.
-            try pngData(of: arena(overlay: ReplayOverlay(isPlaying: true, hit: .b, popped: .crit(.b))),
-                        in: bounds)?
+            let playing = ReplayOverlay(isPlaying: true, hit: .b, popped: .crit(.b))
+            try raster(arena(overlay: playing), in: bounds)?
+                .representation(using: .png, properties: [:])?
                 .write(to: URL(fileURLWithPath: dir).appendingPathComponent("battle-arena-replay.png"))
         }
     }
 
-    private func pngData(of view: some View, in bounds: CGRect) -> Data? {
+    /// 창을 띄우지 않는 오프스크린 래스터. 색 검증과 PNG 떨구기가 같은 경로를 쓴다 —
+    /// 두 벌로 두면 한쪽만 손봐서 "눈으로 본 그림" 과 "테스트가 본 그림" 이 갈라진다.
+    private func raster(_ view: some View, in bounds: CGRect) -> NSBitmapImageRep? {
         let controller = NSHostingController(rootView: view)
         controller.view.frame = bounds
         controller.view.layoutSubtreeIfNeeded()
         guard let rep = controller.view.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
         controller.view.cacheDisplay(in: bounds, to: rep)
-        return rep.representation(using: .png, properties: [:])
+        return rep
     }
 
     /// defect-log 규칙: 배틀 화면에 세로 스크롤 컨테이너를 두면 안쪽이 스크롤되지 않고 잘린다.

@@ -170,6 +170,86 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertTrue(state.oppTeam[1].isAlive)
     }
 
+    /// 자동 출전이 **스트림에 남는다**. 재생기는 이 이벤트를 보고서야 표시 상태를 새 개체로
+    /// 갈아탄다 — 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그리고, `isAlive`
+    /// 가 false 라 흐린 '쓰러진' 스프라이트로 보여 준다(리뷰 #1).
+    func testTheAutomaticSendOutIsRecordedInTheEventStream() {
+        let attacker = BattleSide(snapshot(1, speed: 200, power: 500))
+        var lead = BattleSide(snapshot(2, speed: 10, power: 1))
+        lead.hp = 1
+        let reserve = BattleSide(snapshot(3))
+        var state = NetBattleState(iAmA: true, myTeam: [attacker], oppTeam: [lead, reserve],
+                                   rng: SplitMix64(seed: 1))
+        state.myAction = .move(index: 0)
+        state.oppAction = .move(index: 0)
+
+        XCTAssertNil(state.resolveChosenActions())
+
+        XCTAssertEqual(state.oppActive, 1)
+        XCTAssertEqual(state.events.last, .sendOut(.b, teamIndex: 1),
+                       "출전은 기절 **뒤**다 — 앞에 두면 기절이 새 개체에 그려진다")
+        XCTAssertTrue(state.events.contains(.faint(.b)))
+    }
+
+    /// 미러 분기 — **내 쪽(A)** 자동 출전. B 쪽만 검증하면 A 쪽 블록은 한 번도 돌지 않고, 그래도
+    /// 라인 커버리지는 초록으로 보고한다(`--show-regions` 에서 `^0` 으로 잡힌 자리다).
+    func testTheAutomaticSendOutIsRecordedForMyOwnSideToo() {
+        var lead = BattleSide(snapshot(1, speed: 10, power: 1))
+        lead.hp = 1
+        let reserve = BattleSide(snapshot(2))
+        var state = NetBattleState(iAmA: true, myTeam: [lead, reserve],
+                                   oppTeam: [BattleSide(snapshot(3, speed: 200, power: 500))],
+                                   rng: SplitMix64(seed: 1))
+        state.myAction = .move(index: 0)
+        state.oppAction = .move(index: 0)
+
+        XCTAssertNil(state.resolveChosenActions())
+
+        XCTAssertEqual(state.myActive, 1)
+        XCTAssertEqual(state.events.last, .sendOut(.a, teamIndex: 1))
+    }
+
+    /// 자기 교체도 스트림에 남고 **상대 공격보다 앞**이다. 뒤에 두면 재생이 이전 개체에 남의
+    /// 데미지를 그린다(교체한 쪽은 그 턴에 공격을 맞으며 시작한다).
+    func testAVoluntarySwitchIsRecordedBeforeTheOpponentsAttack() {
+        var state = NetBattleState(iAmA: true,
+                                   myTeam: [BattleSide(snapshot(1)), BattleSide(snapshot(2))],
+                                   oppTeam: [BattleSide(snapshot(3, power: 80))],
+                                   rng: SplitMix64(seed: 5))
+        state.myAction = .switchTo(index: 1)
+        state.oppAction = .move(index: 0)
+
+        XCTAssertNil(state.resolveChosenActions())
+
+        let sendOut = state.events.firstIndex(of: .sendOut(.a, teamIndex: 1))
+        let damage = state.events.firstIndex { if case .damage(.a, _, _) = $0 { return true } else { return false } }
+        XCTAssertNotNil(sendOut)
+        XCTAssertNotNil(damage, "교체해 들어온 쪽이 맞지 않으면 순서를 볼 수 없다")
+        XCTAssertLessThan(sendOut ?? .max, damage ?? -1, "출전이 데미지 뒤면 이전 개체가 남의 데미지를 맞는다")
+    }
+
+    /// 배치의 이벤트 수는 평평한 스트림과 **정확히** 같다. 자동 출전 이벤트가 배치에 빠지면
+    /// `BattleLogSource.netBattle` 이 진행도로 자를 때 그만큼 밀려, 로그가 재생보다 앞서거나
+    /// 뒤처진다(배치 문맥을 자동 출전 전에 고정하면서 실수하기 쉬운 자리다).
+    func testEveryEventLandsInABatchSoTheLogSliceStaysAligned() {
+        let attacker = BattleSide(snapshot(1, speed: 200, power: 500))
+        var lead = BattleSide(snapshot(2, speed: 10, power: 1))
+        lead.hp = 1
+        var state = NetBattleState(iAmA: true, myTeam: [attacker],
+                                   oppTeam: [lead, BattleSide(snapshot(3)), BattleSide(snapshot(4))],
+                                   rng: SplitMix64(seed: 1))
+        for _ in 0..<2 {
+            state.myAction = .move(index: 0)
+            state.oppAction = .move(index: 0)
+            _ = state.resolveChosenActions()
+        }
+
+        XCTAssertEqual(state.eventBatches.flatMap(\.events), state.events,
+                       "배치와 평평한 스트림이 어긋나면 로그 진행도가 밀린다")
+        XCTAssertTrue(state.events.contains { if case .sendOut = $0 { return true } else { return false } },
+                      "자동 출전이 안 일어난 픽스처면 이 검증이 아무것도 안 본다")
+    }
+
     func testSimultaneousTeamWipeIsADraw() {
         var a = BattleSide(snapshot(1, power: 0))
         var b = BattleSide(snapshot(2, power: 0))

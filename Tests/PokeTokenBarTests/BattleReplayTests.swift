@@ -1,6 +1,48 @@
 import XCTest
 @testable import PokeTokenBar
 
+/// 재생 테스트용 표시 상태 만들기. 세 클래스가 같은 재료를 쓰므로 파일 최상단에 둔다.
+/// 투영이 실제로 보는 값은 팀의 `hp` 와 활성 칸뿐이라, 최대 HP 는 넉넉히 두고 현재 HP 만 정한다.
+enum ReplayFixture {
+    static func snapshot(_ name: String = "탱커", baseHP: Int = 600,
+                         types: [PokemonType] = [.normal], spe: Int = 100) -> BattleSnapshot {
+        BattleSnapshot(speciesID: 143, name: name, trainer: nil, level: 50, nature: nil,
+                       isShiny: false, types: types,
+                       base: BattleStats(hp: baseHP, atk: 100, def: 100, spa: 100, spd: 100, spe: spe),
+                       moves: [MoveSpec(id: 1, names: ["ko": "몸통박치기"], type: .normal, power: 40,
+                                        damageClass: .physical, accuracy: 100, pp: 35)])
+    }
+
+    static func side(hp: Int, name: String = "칸") -> BattleSide {
+        var side = BattleSide(snapshot(name))
+        side.hp = hp
+        return side
+    }
+
+    /// 한 칸짜리 팀 — 활성 개체의 HP 만 보는 검증에 쓴다.
+    static func sides(_ hp: [BattleActor: Int]) -> [BattleActor: ReplaySide] {
+        hp.mapValues { ReplaySide(team: [side(hp: $0)], active: 0) }
+    }
+
+    /// 여러 칸짜리 팀 — `.sendOut` 투영 검증에 쓴다.
+    static func team(_ hp: [Int], active: Int = 0) -> ReplaySide {
+        ReplaySide(team: hp.enumerated().map { side(hp: $0.element, name: "칸\($0.offset)") },
+                   active: active)
+    }
+}
+
+extension ReplayStep {
+    /// 이 스텝에서 화면에 서 있는 개체의 HP — 검증문이 `sides[.a]?.side?.hp` 로 길어지지 않게.
+    func hp(_ actor: BattleActor) -> Int? { sides[actor]?.side?.hp }
+    /// 이 스텝의 활성 칸 — `.sendOut` 이 개체를 갈아탔는지 본다.
+    func active(_ actor: BattleActor) -> Int? { sides[actor]?.active }
+}
+
+extension BattleAnimator {
+    /// 표시 HP — 검증문이 `side(for:)?.side?.hp` 로 길어지지 않게.
+    func hp(for actor: BattleActor) -> Int? { side(for: actor)?.side?.hp }
+}
+
 /// 재생 애니메이션의 **큐 로직** (계획 §6 Phase 7, §9 PR 5). 애니메이션 자체는 UI라 단위 테스트가
 /// 얕으므로, 계획대로 큐를 순수 함수로 분리해 그쪽만 겨냥한다 — 스텝 수·재생 시간 상한·끄기 모드·
 /// 입력 잠김, 그리고 **재생 중 HP 가 엔진과 같은 값으로 수렴하는가**.
@@ -38,7 +80,7 @@ final class BattleReplayTests: XCTestCase {
     /// 재생이 서로 다른 개수를 세게 되고, 로그를 재생 진행도만큼 잘라 보여 줄 수 없다.
     func testEveryEventBecomesExactlyOneStepInOrder() {
         let turn = resolvedTurn()
-        let steps = BattleReplay.steps(turn.events, from: [.a: 200, .b: 200], speed: .normal)
+        let steps = BattleReplay.steps(turn.events, from: ReplayFixture.sides([.a: 200, .b: 200]), speed: .normal)
 
         XCTAssertEqual(steps.count, turn.events.count, "이벤트와 스텝 수가 어긋나면 로그를 진행도로 자를 수 없다")
         XCTAssertEqual(steps.map(\.event), turn.events, "순서가 바뀌면 급소 문구가 데미지 뒤로 간다")
@@ -46,7 +88,7 @@ final class BattleReplayTests: XCTestCase {
 
     /// 빈 스트림은 빈 큐다 — 재생할 게 없는데 재생 상태로 들어가면 입력이 영영 잠긴다.
     func testAnEmptyStreamProducesNoSteps() {
-        XCTAssertTrue(BattleReplay.steps([], from: [.a: 100], speed: .normal).isEmpty)
+        XCTAssertTrue(BattleReplay.steps([], from: ReplayFixture.sides([.a: 100]), speed: .normal).isEmpty)
     }
 
     // MARK: 재생 시간 — 상한이 있다
@@ -55,7 +97,7 @@ final class BattleReplayTests: XCTestCase {
     /// 상한이 없으면 이벤트가 늘어난 만큼 재생이 길어져 상대는 그동안 기다린다.
     func testALongStreamIsCompressedIntoTheBudget() {
         let long: [BattleEvent] = (0..<40).map { _ in .damage(.b, amount: 3, cause: .move) }
-        let steps = BattleReplay.steps(long, from: [.b: 500], speed: .normal)
+        let steps = BattleReplay.steps(long, from: ReplayFixture.sides([.b: 500]), speed: .normal)
 
         XCTAssertEqual(steps.count, 40, "압축이 스텝을 버리면 로그 진행도가 어긋난다")
         XCTAssertLessThanOrEqual(BattleReplay.totalDuration(steps), BattleReplay.budget + 0.001)
@@ -64,7 +106,7 @@ final class BattleReplayTests: XCTestCase {
     /// 대조군 — 짧은 턴은 압축되지 않는다. 위 검증만 있으면 "전부 0 으로 만들기" 오구현이 통과한다.
     func testAShortStreamKeepsItsFullTiming() {
         let short: [BattleEvent] = [.move(.a, moveID: 1), .damage(.b, amount: 12, cause: .move)]
-        let steps = BattleReplay.steps(short, from: [.b: 100], speed: .normal)
+        let steps = BattleReplay.steps(short, from: ReplayFixture.sides([.b: 100]), speed: .normal)
 
         XCTAssertEqual(BattleReplay.totalDuration(steps),
                        short.reduce(0) { $0 + BattleReplay.duration(of: $1) }, accuracy: 0.001,
@@ -77,7 +119,7 @@ final class BattleReplayTests: XCTestCase {
     /// **끄기는 필수다**(저전력·접근성, 계획 Phase 7). 끄면 기다림이 0 이라 결과가 즉시 보인다.
     func testTurningPlaybackOffFinishesImmediately() {
         let turn = resolvedTurn()
-        let steps = BattleReplay.steps(turn.events, from: [.a: 200, .b: 200], speed: .off)
+        let steps = BattleReplay.steps(turn.events, from: ReplayFixture.sides([.a: 200, .b: 200]), speed: .off)
 
         XCTAssertEqual(steps.count, turn.events.count, "끄기여도 스텝은 남는다 — 로그·HP 는 그대로 갱신된다")
         XCTAssertEqual(BattleReplay.totalDuration(steps), 0)
@@ -109,11 +151,12 @@ final class BattleReplayTests: XCTestCase {
     /// 손으로 적으면 데미지 식이 바뀔 때 이 테스트가 같이 틀린 채로 통과한다.
     func testPlaybackEndsOnExactlyTheEngineHP() {
         let turn = resolvedTurn()
-        let steps = BattleReplay.steps(turn.events,
-                                       from: [.a: turn.a.stats.hp, .b: turn.b.stats.hp], speed: .normal)
+        let steps = BattleReplay.steps(
+            turn.events,
+            from: ReplayFixture.sides([.a: turn.a.stats.hp, .b: turn.b.stats.hp]), speed: .normal)
 
-        XCTAssertEqual(steps.last?.hp[.a], turn.a.hp)
-        XCTAssertEqual(steps.last?.hp[.b], turn.b.hp)
+        XCTAssertEqual(steps.last?.hp(.a), turn.a.hp)
+        XCTAssertEqual(steps.last?.hp(.b), turn.b.hp)
         XCTAssertLessThan(turn.b.hp, turn.b.stats.hp, "데미지가 0 이면 이 검증이 아무것도 안 본다")
     }
 
@@ -121,10 +164,10 @@ final class BattleReplayTests: XCTestCase {
     /// 엔진도 `max(0, …)` 로 자른다. 자르지 않으면 바가 음수 비율이 되고 "-3/121" 같은 표기가 나온다.
     func testOverkillDamageStopsAtZeroInsteadOfGoingNegative() {
         let steps = BattleReplay.steps([.damage(.b, amount: 999, cause: .move), .faint(.b)],
-                                       from: [.b: 12], speed: .normal)
+                                       from: ReplayFixture.sides([.b: 12]), speed: .normal)
 
-        XCTAssertEqual(steps.first?.hp[.b], 0, "음수 HP 는 바 비율을 음수로 만든다")
-        XCTAssertEqual(steps.last?.hp[.b], 0)
+        XCTAssertEqual(steps.first?.hp(.b), 0, "음수 HP 는 바 비율을 음수로 만든다")
+        XCTAssertEqual(steps.last?.hp(.b), 0)
     }
 
     /// 잔뎀·자멸도 HP 를 깎는다 — 원인이 무엇이든 `.damage` 면 바가 움직여야 한다.
@@ -132,28 +175,83 @@ final class BattleReplayTests: XCTestCase {
     func testResidualAndSelfInflictedDamageMoveTheBarToo() {
         let steps = BattleReplay.steps([.damage(.a, amount: 15, cause: .burn),
                                         .damage(.a, amount: 10, cause: .confusion)],
-                                       from: [.a: 100], speed: .normal)
+                                       from: ReplayFixture.sides([.a: 100]), speed: .normal)
 
-        XCTAssertEqual(steps.first?.hp[.a], 85)
-        XCTAssertEqual(steps.last?.hp[.a], 75)
+        XCTAssertEqual(steps.first?.hp(.a), 85)
+        XCTAssertEqual(steps.last?.hp(.a), 75)
     }
 
     /// 데미지가 아닌 이벤트는 HP 를 건드리지 않는다 — 상태가 걸렸다고 바가 움직이면 안 된다.
     func testNonDamageEventsLeaveTheBarWhereItWas() {
         let steps = BattleReplay.steps([.status(.b, .burn), .cant(.b, .paralysis), .turn(2)],
-                                       from: [.a: 90, .b: 80], speed: .normal)
+                                       from: ReplayFixture.sides([.a: 90, .b: 80]), speed: .normal)
 
-        XCTAssertEqual(steps.map { $0.hp[.b] }, [80, 80, 80])
-        XCTAssertEqual(steps.map { $0.hp[.a] }, [90, 90, 90], "다른 쪽 HP 도 그대로다")
+        XCTAssertEqual(steps.map { $0.hp(.b) }, [80, 80, 80])
+        XCTAssertEqual(steps.map { $0.hp(.a) }, [90, 90, 90], "다른 쪽 HP 도 그대로다")
+    }
+
+    // MARK: 개체 전환 투영 — 기절·교체 턴
+
+    /// 트리거 브랜치 — **기절 자동 출전 턴**(리뷰 #1). 표시 상태가 활성 칸을 모르면 새로 나온
+    /// 만피 개체를 이전 개체의 HP 로 깎아 그리고, `isAlive == false` 라 흐린 '쓰러진' 스프라이트로
+    /// 보여 준다. 그리고 매 교체·기절 턴마다 `reconcile()` 이 정상 동작인데도 로그를 쌓는다.
+    func testSendingOutANewPokemonSwapsTheDisplayedSlotInsteadOfKeepingTheOldHP() {
+        let steps = BattleReplay.steps([.damage(.a, amount: 30, cause: .move), .faint(.a),
+                                        .sendOut(.a, teamIndex: 1)],
+                                       from: [.a: ReplayFixture.team([25, 121])], speed: .normal)
+
+        XCTAssertEqual(steps[0].hp(.a), 0, "오버킬은 0 에서 멈춘다 — 선봉이 쓰러지는 그림이다")
+        XCTAssertEqual(steps[0].active(.a), 0, "출전 전에 칸이 넘어가면 기절이 새 개체에 그려진다")
+        XCTAssertEqual(steps[1].active(.a), 0, "기절 스텝도 아직 이전 개체다")
+        XCTAssertEqual(steps[2].active(.a), 1)
+        XCTAssertEqual(steps[2].hp(.a), 121,
+                       "새로 나온 개체는 자기 HP 다 — 이전 개체 값을 물려받으면 만피가 0 으로 보인다")
+    }
+
+    /// 트리거 브랜치 — **자기 교체 턴**. 새로 나온 개체는 그 턴에 맞을 데미지가 반영되기 **전**
+    /// 값으로 나와야 한다. 엔진의 최종 팀에서 읽으면 출전과 동시에 이미 깎여 있고, 그 뒤 데미지
+    /// 스텝이 한 번 더 들어가 재생 끝값이 엔진과 갈라진다.
+    func testSwitchingInStartsFromTheBenchValueAndThenTakesTheHitOnce() {
+        let steps = BattleReplay.steps([.turn(3), .sendOut(.a, teamIndex: 1),
+                                        .move(.b, moveID: 1), .damage(.a, amount: 30, cause: .move)],
+                                       from: [.a: ReplayFixture.team([100, 90])], speed: .normal)
+
+        XCTAssertEqual(steps[1].hp(.a), 90, "출전 시점엔 아직 안 맞았다")
+        XCTAssertEqual(steps.last?.hp(.a), 60, "출전 뒤 한 번만 맞는다")
+        XCTAssertEqual(steps.last?.active(.a), 1)
+    }
+
+    /// 범위 밖 인덱스는 갈아타지 않는다 — 엉뚱한 개체로 갈아타는 것보다 안 갈아타는 쪽이 낫다
+    /// (모르는 actor 를 만들지 않는 것과 같은 규칙).
+    func testASendOutBeyondTheTeamIsIgnoredInsteadOfDrawingTheWrongPokemon() {
+        let steps = BattleReplay.steps([.sendOut(.a, teamIndex: 9), .sendOut(.b, teamIndex: 0)],
+                                       from: [.a: ReplayFixture.team([50, 60])], speed: .normal)
+
+        XCTAssertEqual(steps.last?.active(.a), 0)
+        XCTAssertEqual(steps.last?.hp(.a), 50)
+        XCTAssertNil(steps.last?.sides[.b], "모르는 쪽을 만들어 주면 뷰가 없는 개체의 바를 그린다")
+    }
+
+    /// 재생은 **HP 와 활성 칸만** 민다. 상태이상·PP 를 스텝마다 재구성하면 엔진 규칙이 두 벌이 되고,
+    /// `statusCounter` 처럼 이벤트만 보고는 알 수 없는 값이 생긴다 — 미루기의 끝은 배치가 끝날 때의
+    /// 스냅이고 그건 애니메이터가 한다(`testStatusAndPPStayAtLastTurnsValueUntilThePlaybackEnds`).
+    func testThePlaybackDoesNotInventStatusOrPPChanges() {
+        let start = ReplayFixture.team([100])
+        let steps = BattleReplay.steps([.status(.a, .burn), .damage(.a, amount: 10, cause: .burn)],
+                                       from: [.a: start], speed: .normal)
+
+        XCTAssertNil(steps.last?.sides[.a]?.side?.status, "재생이 상태를 만들면 엔진 규칙이 두 벌이 된다")
+        XCTAssertEqual(steps.last?.sides[.a]?.side?.pp, start.side?.pp)
+        XCTAssertEqual(steps.last?.hp(.a), 90, "HP 는 움직인다 — 아무것도 안 움직이면 이 검증이 무의미하다")
     }
 
     /// 여러 턴이 한꺼번에 들어와도(팝오버를 닫아 둔 사이 쌓인 스트림) 순서대로 누적된다.
     func testDamageAccumulatesAcrossSeveralTurns() {
         let steps = BattleReplay.steps([.turn(1), .damage(.b, amount: 20, cause: .move),
                                         .turn(2), .damage(.b, amount: 30, cause: .move)],
-                                       from: [.b: 100], speed: .normal)
+                                       from: ReplayFixture.sides([.b: 100]), speed: .normal)
 
-        XCTAssertEqual(steps.map { $0.hp[.b] }, [100, 80, 80, 50])
+        XCTAssertEqual(steps.map { $0.hp(.b) }, [100, 80, 80, 50])
     }
 
     // MARK: 입력 잠김
@@ -192,6 +290,19 @@ final class BattleReplayTests: XCTestCase {
         XCTAssertNil(BattleReplay.popup(for: .move(.a, moveID: 1), l: l))
         XCTAssertNil(BattleReplay.popup(for: .turn(3), l: l))
         XCTAssertNil(BattleReplay.popup(for: .faint(.b), l: l))
+        XCTAssertNil(BattleReplay.popup(for: .sendOut(.a, teamIndex: 1), l: l),
+                     "교체는 스프라이트가 바뀌는 것이 곧 문구다 — 문구까지 띄우면 급소가 묻힌다")
+    }
+
+    /// 리뷰 #7 — 팝은 **다음 팝이 뜰 때까지** 남는다. 엔진 순서가 `.crit` → `.damage` 라, 자기
+    /// 스텝(0.3초)만 뜨면 '급소에 맞았다!' 가 사라진 뒤에 바가 움직여 원인과 결과가 화면에 같이
+    /// 있는 순간이 없다. 이벤트가 많은 턴은 예산 압축으로 문구가 60ms 도 못 뜬다.
+    func testAPoppedPhraseStaysUpUntilTheNextOneReplacesIt() {
+        XCTAssertEqual(BattleReplay.popped(.damage(.b, amount: 30, cause: .move), carrying: .crit(.b)),
+                       .crit(.b), "급소 문구가 데미지 스텝에서 사라지면 원인이 화면에 안 남는다")
+        XCTAssertEqual(BattleReplay.popped(.superEffective(.b), carrying: .crit(.b)),
+                       .superEffective(.b), "새 팝은 옛 팝을 밀어낸다")
+        XCTAssertNil(BattleReplay.popped(.turn(2), carrying: nil), "팝이 없던 자리에 없던 문구를 만들지 않는다")
     }
 
     /// 세 언어 모두 팝 문구가 있다 — 한 언어만 채우면 나머지 언어에서 빈 팝이 뜬다.
@@ -234,7 +345,7 @@ final class BattleAnimatorTests: XCTestCase {
     /// 이미 지나간 턴을 다시 보게 되고, 그동안 입력이 잠긴다 — 첫 동기화는 **끝으로 건너뛴다**.
     func testOpeningAnInProgressBattleDoesNotReplayItsHistory() {
         let animator = BattleAnimator()
-        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .normal)
 
         XCTAssertEqual(animator.playedCount, oneTurn.count, "이미 지나간 턴을 다시 재생하면 안 된다")
         XCTAssertFalse(animator.overlay.isPlaying, "재생 중이면 입력이 잠긴 채 화면이 열린다")
@@ -245,8 +356,8 @@ final class BattleAnimatorTests: XCTestCase {
     /// 비동기로 한 프레임이라도 미루면 "끄기" 인데도 입력이 한 순간 잠긴다.
     func testTurningPlaybackOffRevealsTheOutcomeWithoutWaiting() {
         let animator = BattleAnimator()
-        animator.sync(events: [], hp: [.a: 100, .b: 100], speed: .off)
-        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .off)
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 100, .b: 100]), speed: .off)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .off)
 
         XCTAssertEqual(animator.playedCount, oneTurn.count)
         XCTAssertFalse(animator.overlay.isPlaying)
@@ -257,8 +368,8 @@ final class BattleAnimatorTests: XCTestCase {
     /// HP 고, 재생이 끝나야 엔진 값에 도달한다. 로그도 같은 진행도로 잘리므로 결과가 미리 새지 않는다.
     func testANewTurnIsPlayedBackInsteadOfSnappingToTheFinalHP() async {
         let animator = BattleAnimator()
-        animator.sync(events: [], hp: [.a: 100, .b: 100], speed: .normal)
-        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 100, .b: 100]), speed: .normal)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .normal)
 
         XCTAssertTrue(animator.overlay.isPlaying, "재생이 시작되지 않으면 입력이 잠기지 않는다")
         XCTAssertEqual(animator.hp(for: .b), 100, "동기화 직후 최종 HP 로 튀면 재생할 게 남지 않는다")
@@ -276,8 +387,8 @@ final class BattleAnimatorTests: XCTestCase {
     /// 안 되돌리면 새 배틀의 첫 턴들이 "이미 재생한 것" 으로 취급돼 화면이 멈춘 채로 있는다.
     func testStartingANewBattleForgetsTheOldOne() {
         let animator = BattleAnimator()
-        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .off)
-        animator.sync(events: [], hp: [.a: 120, .b: 120], speed: .off)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .off)
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 120, .b: 120]), speed: .off)
 
         XCTAssertEqual(animator.playedCount, 0)
         XCTAssertEqual(animator.hp(for: .b), 120, "새 배틀의 만피로 갈아탄다")
@@ -287,8 +398,8 @@ final class BattleAnimatorTests: XCTestCase {
     /// 다시 시작하면 재생할 것도 없이 입력만 잠긴다(스크롤 한 번에 화면이 굳는다).
     func testRedrawingWithTheSameStreamDoesNotRestartPlayback() {
         let animator = BattleAnimator()
-        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
-        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .normal)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .normal)
 
         XCTAssertFalse(animator.overlay.isPlaying, "같은 스트림에 재생이 다시 걸리면 입력이 잠긴다")
         XCTAssertEqual(animator.playedCount, oneTurn.count)
@@ -298,17 +409,22 @@ final class BattleAnimatorTests: XCTestCase {
     /// 새 배틀의 HP 를 이전 배틀 값으로 덮는다 — 화면이 혼자 되돌아간다.
     func testANewBattleInterruptsPlaybackInsteadOfOverwritingIt() async {
         let animator = BattleAnimator()
-        animator.sync(events: [], hp: [.a: 100, .b: 100], speed: .normal)
-        animator.sync(events: oneTurn, hp: [.a: 100, .b: 70], speed: .normal)
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 100, .b: 100]), speed: .normal)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .normal)
         XCTAssertTrue(animator.overlay.isPlaying, "재생이 안 걸리면 끊을 것도 없어 이 테스트가 무의미하다")
 
         // **재생 한가운데서** 끊어야 한다. 시작하기도 전에 끊으면 남은 스텝이 없어 아무것도
         // 검증하지 못한다 — 위험한 건 이미 뽑아 둔 스텝이 살아남아 뒤늦게 값을 쓰는 경우다.
-        try? await Task.sleep(for: .milliseconds(200))
+        // 고정 대기로 그 창을 맞추면 부하가 걸린 CI 에서 창을 지나쳐 버린다(`waitUntilIdle` 과
+        // 같은 이유) — 첫 스텝이 소비되는 순간까지만 폴링한다.
+        let deadline = Date().addingTimeInterval(5)
+        while animator.playedCount == 0, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
         XCTAssertGreaterThan(animator.playedCount, 0, "아직 시작도 안 했다면 끊는 시점이 너무 이르다")
         XCTAssertLessThan(animator.playedCount, oneTurn.count, "이미 끝났다면 끊을 게 없다")
 
-        animator.sync(events: [], hp: [.a: 130, .b: 130], speed: .normal)
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 130, .b: 130]), speed: .normal)
         XCTAssertEqual(animator.playedCount, 0)
         XCTAssertEqual(animator.hp(for: .b), 130)
 
@@ -318,10 +434,96 @@ final class BattleAnimatorTests: XCTestCase {
         XCTAssertFalse(animator.overlay.isPlaying)
     }
 
+    /// 트리거 브랜치 — **재생 한가운데서 끄기로 바뀌는 경우**(설정을 바꾸거나 저전력이 켜지면
+    /// 다음 턴의 `sync` 가 `.off` 로 온다). 즉시 소진(`drain`)이 돌고 있는 재생을 끊지 않으면,
+    /// 이미 뽑아 둔 스텝이 뒤늦게 살아나 ① `isPlaying` 을 다시 켜고(끄기인데 입력이 잠긴다)
+    /// ② 옛 HP 를 덮어쓰고 ③ `playedCount` 를 스트림 길이보다 크게 밀어 다음 턴 이벤트를
+    /// 투영에서 건너뛰게 한다.
+    func testSwitchingToOffMidPlaybackDoesNotLetTheOldStepsComeBack() async {
+        let animator = BattleAnimator()
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 100, .b: 100]), speed: .normal)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .normal)
+        XCTAssertTrue(animator.overlay.isPlaying, "재생이 안 걸리면 끊을 것도 없어 이 테스트가 무의미하다")
+
+        // 재생 한가운데임을 먼저 단언한다 — 시작 전에 끄면 살아남을 스텝이 없어 아무것도 안 본다.
+        let deadline = Date().addingTimeInterval(5)
+        while animator.playedCount == 0, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertGreaterThan(animator.playedCount, 0, "아직 시작도 안 했다면 끄는 시점이 너무 이르다")
+        XCTAssertLessThan(animator.playedCount, oneTurn.count, "이미 끝났다면 끊을 게 없다")
+
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .off)
+        XCTAssertEqual(animator.playedCount, oneTurn.count, "끄기는 즉시 끝난다")
+        XCTAssertFalse(animator.overlay.isPlaying)
+        XCTAssertEqual(animator.hp(for: .b), 70)
+
+        // 끊기지 않은 재생이 살아 있으면 이 사이에 진행도가 스트림 길이를 넘고 잠금이 다시 걸린다.
+        try? await Task.sleep(for: .milliseconds(700))
+        XCTAssertEqual(animator.playedCount, oneTurn.count,
+                       "끊긴 재생이 진행도를 스트림 길이 밖으로 밀면 다음 턴 이벤트가 투영에서 빠진다")
+        XCTAssertFalse(animator.overlay.isPlaying, "끄기인데 뒤늦게 입력이 다시 잠겼다")
+        XCTAssertEqual(animator.hp(for: .b), 70, "끊긴 재생이 옛 HP 를 덮었다")
+    }
+
+    /// 리뷰 #6 — **상태 배지·PP 도 재생 진행도를 따른다.** HP 만 미루면 화상 배지가 재생 첫
+    /// 프레임부터 떠 있고 쓴 기술의 PP 는 이미 줄어 있어, 로그가 결과를 먼저 알려 주는 것과 똑같이
+    /// 재생할 이유가 사라진다. 재생 중엔 지난 턴 값을 그대로 보여 주고 끝날 때 한 번에 맞춘다.
+    func testStatusAndPPStayAtLastTurnsValueUntilThePlaybackEnds() async {
+        let animator = BattleAnimator()
+        let before = ReplayFixture.side(hp: 100)
+        var after = before
+        after.hp = 70
+        after.status = .burn
+        after.pp[0] -= 1
+
+        animator.sync(events: [], sides: [.a: ReplaySide(team: [before], active: 0)], speed: .normal)
+        animator.sync(events: [.turn(2), .move(.b, moveID: 1), .damage(.a, amount: 30, cause: .move)],
+                      sides: [.a: ReplaySide(team: [after], active: 0)], speed: .normal)
+
+        XCTAssertNil(animator.side(for: .a)?.side?.status, "화상 배지가 재생 첫 프레임부터 뜨면 결과가 샌다")
+        XCTAssertEqual(animator.side(for: .a)?.side?.pp, before.pp, "쓴 기술 PP 가 미리 줄면 결과가 샌다")
+
+        await waitUntilIdle(animator)
+
+        XCTAssertEqual(animator.side(for: .a)?.side?.status, .burn, "재생이 끝나면 엔진 값으로 맞춘다")
+        XCTAssertEqual(animator.side(for: .a)?.side?.pp, after.pp)
+        XCTAssertEqual(animator.hp(for: .a), 70)
+    }
+
+    /// 표시가 엔진을 따라잡으면 한 번 알린다 — 승부가 난 턴의 결과 화면을 재생 뒤로 미루는 연결이다.
+    /// 재생이 도는 동안 부르면 결정타가 결과 화면으로 스냅한다.
+    func testTheAnimatorAnnouncesOnlyAfterItHasCaughtUp() async {
+        let animator = BattleAnimator()
+        var caughtUp = 0
+        animator.onCaughtUp = { caughtUp += 1 }
+
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 100, .b: 100]), speed: .normal)
+        XCTAssertEqual(caughtUp, 1, "첫 화면은 건너뛴 즉시 따라잡은 상태다")
+
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .normal)
+        XCTAssertEqual(caughtUp, 1, "재생 중에 알리면 결정타가 결과 화면으로 스냅한다")
+
+        await waitUntilIdle(animator)
+        XCTAssertEqual(caughtUp, 2)
+    }
+
+    /// 끄기·저전력에서도 알린다 — 이 경로만 빠지면 재생을 끈 사용자의 배틀이 `.battling` 에 갇힌다.
+    func testTurningPlaybackOffStillAnnouncesThatItCaughtUp() {
+        let animator = BattleAnimator()
+        var caughtUp = 0
+        animator.onCaughtUp = { caughtUp += 1 }
+
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 100, .b: 100]), speed: .off)
+        animator.sync(events: oneTurn, sides: ReplayFixture.sides([.a: 100, .b: 70]), speed: .off)
+
+        XCTAssertEqual(caughtUp, 2)
+    }
+
     /// 모르는 쪽(멀티의 다른 참가자 등)을 물으면 nil 이다 — 0 을 돌려주면 뷰가 쓰러진 것처럼 그린다.
     func testAnUnknownSideHasNoDisplayHP() {
         let animator = BattleAnimator()
-        animator.sync(events: [], hp: [.a: 100], speed: .off)
+        animator.sync(events: [], sides: ReplayFixture.sides([.a: 100]), speed: .off)
 
         XCTAssertNil(animator.hp(for: .b))
     }

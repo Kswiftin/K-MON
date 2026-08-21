@@ -251,6 +251,10 @@ struct CombatantBar: View {
     let l: L
     /// 내 쪽만 실수치를 보여 준다 — 상대는 % 다(`HPReadout`).
     let revealsExactHP: Bool
+    /// 재생이 값을 움직이는 동안만 바를 보간한다. **끄기·저전력에서는 보간도 없어야 한다** —
+    /// 끄기가 있는 이유가 저전력과 접근성이라, 여기에 상시 애니메이션을 걸면 "안 움직이는 화면"
+    /// 이라는 그 설정의 약속이 깨진다(값은 한 번에 오는데 바만 0.4초 흐른다).
+    var animatesHP = false
 
     private var tier: HPTier { HPTier.of(hp: side.hp, max: side.stats.hp) }
 
@@ -270,8 +274,9 @@ struct CombatantBar: View {
                     Capsule().fill(tier.color)
                         .frame(width: geometry.size.width * CGFloat(fillRatio))
                         // 재생이 HP 를 스텝마다 바꾸므로 바는 그 사이를 보간하기만 하면 된다.
-                        // 연출이 꺼져 있으면 값이 한 번에 최종치로 오므로 결과가 늦게 보이지 않는다.
-                        .animation(.easeOut(duration: 0.4), value: side.hp)
+                        // 연출이 꺼져 있으면(`animatesHP == false`) 보간도 걸지 않는다 —
+                        // 값만 즉시 오고 바가 0.4초 흐르면 "끄기" 가 끄기가 아니다.
+                        .animation(animatesHP ? .easeOut(duration: 0.4) : nil, value: side.hp)
                 }
             }
             .frame(height: 6)
@@ -314,7 +319,8 @@ struct BattleFieldView: View {
                            startPoint: .top, endPoint: .bottom)
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 6) {
-                    CombatantBar(side: theirs, title: theirTitle, l: l, revealsExactHP: false)
+                    CombatantBar(side: theirs, title: theirTitle, l: l, revealsExactHP: false,
+                                 animatesHP: overlay.isPlaying)
                         .frame(width: BattleFieldMetrics.barWidth)
                     Spacer(minLength: 0)
                     combatant(theirs, size: BattleFieldMetrics.opponentSpriteSize, back: false,
@@ -325,7 +331,8 @@ struct BattleFieldView: View {
                     combatant(mine, size: BattleFieldMetrics.mySpriteSize, back: true,
                               isStruck: overlay.hit == myActor)
                     Spacer(minLength: 0)
-                    CombatantBar(side: mine, title: myTitle, l: l, revealsExactHP: true)
+                    CombatantBar(side: mine, title: myTitle, l: l, revealsExactHP: true,
+                                 animatesHP: overlay.isPlaying)
                         .frame(width: BattleFieldMetrics.barWidth)
                 }
             }
@@ -338,7 +345,6 @@ struct BattleFieldView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Capsule().fill(Color.black.opacity(0.55)))
-                    .transition(.opacity)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -450,6 +456,10 @@ struct SwitchStripView: View {
             }
             Spacer(minLength: 0)
         }
+        // 잠근 줄은 잠긴 것처럼 보여야 한다 — 직접 그린 배경은 `.disabled` 로 어두워지지 않는다
+        // (defect-log: 같은 이유로 `MoveGridView` 도 배경 불투명도에 잠금을 태운다). 호출부가 아니라
+        // 여기서 거는 이유는 잠금을 아는 쪽이 여기라서다.
+        .opacity(isEnabled ? 1 : 0.45)
     }
 }
 
@@ -539,10 +549,9 @@ struct BattleArenaView: View {
                          onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
             if !switchSlots.isEmpty {
                 // 교체도 그 턴의 행동이다 — 기술만 잠그면 재생 중에 교체로 턴을 넘길 수 있다.
-                // 흐리게까지 해야 잠긴 게 보인다: 직접 그린 배경은 `.disabled` 로 어두워지지 않는다.
+                // 흐리게 그리는 건 `SwitchStripView` 가 자기 잠금 상태로 한다.
                 SwitchStripView(slots: switchSlots, label: l.battleSwitch,
                                 isEnabled: acceptsInput, onSwitch: onSwitch)
-                    .opacity(acceptsInput ? 1 : 0.45)
             }
             BattleLogBox(lines: logLines, myActor: myActor)
         }

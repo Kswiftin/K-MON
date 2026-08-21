@@ -57,6 +57,11 @@ enum BattleLog {
             case .faint(let actor):
                 flush()
                 out.append(Line(actor: actor, text: l.battleFainted(name(actor))))
+            case .sendOut:
+                // 줄을 만들지 않는다 — 이 이벤트의 렌더러는 **필드**다(스프라이트와 바가 새 개체로
+                // 바뀌는 것이 곧 문구다). 이름을 쓰려면 팀 인덱스를 풀 팀이 필요하고, 그건 로그가
+                // 아는 값이 아니다. 진행 중인 행동은 접는다 — 출전은 배치의 머리 아니면 끝이다.
+                flush()
             case .status(let actor, let status):
                 flush()
                 out.append(Line(actor: actor, text: l.battleStatusInflicted(name(actor), status: status)))
