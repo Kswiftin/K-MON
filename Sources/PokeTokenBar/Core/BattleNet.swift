@@ -368,6 +368,8 @@ final class BattleCenter {
     private let moveSetLoader: MoveSetLoader
     private let moveDetailLoader: MoveDetailLoader
     private let inheritedMovesPreparer: InheritedMovesPreparer
+    /// TXT 레코드 재발행 지점 — nil 이면 실제 리스너의 `service` 를 갈아 끼운다(테스트 주입 seam).
+    private let rankRecordPublisher: ((NWTXTRecord) -> Void)?
     let multiplayer: MultiplayerRoomCenter
     private var listener: NWListener?
     private var browser: NWBrowser?
@@ -489,8 +491,10 @@ final class BattleCenter {
          battleProfileLoader: BattleProfileLoader? = nil,
          moveSetLoader: MoveSetLoader? = nil,
          moveDetailLoader: MoveDetailLoader? = nil,
-         inheritedMovesPreparer: InheritedMovesPreparer? = nil) {
+         inheritedMovesPreparer: InheritedMovesPreparer? = nil,
+         rankRecordPublisher: ((NWTXTRecord) -> Void)? = nil) {
         self.companion = companion
+        self.rankRecordPublisher = rankRecordPublisher
         self.monSnapshotBuilder = monSnapshotBuilder ?? { mon, level in
             await companion.battleSnapshot(for: mon, level: level)
         }
@@ -515,6 +519,48 @@ final class BattleCenter {
         // 고유 접미(#xxxxxx) — 같은 사람 이름의 두 Mac이 서로를 "자기"로 오인 필터링하지 않게 한다.
         // 표시할 땐 접미를 떼고, self·id 판정은 이 전체 문자열로 한다.
         self.myServiceName = "\(name)#\(String(UUID().uuidString.prefix(6)))"
+        trackRankChanges()
+    }
+
+    // MARK: 광고 중인 랭크 (Bonjour TXT)
+
+    /// 지금 TXT 레코드에 실려 있는 랭크 포인트. 같은 값이면 재발행하지 않는다.
+    private(set) var advertisedRankPoints: Int?
+
+    nonisolated static func rankTXTRecord(points: Int) -> NWTXTRecord {
+        NWTXTRecord(["rankPoints": String(points)])
+    }
+
+    /// 랭크가 바뀌면 광고를 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 승패 뒤에도
+    /// 옛 점수가 계속 광고되어 상대 목록엔 stale 랭크가 남았다(#85).
+    func refreshAdvertisedRank() {
+        let points = companion.battleRank.points
+        guard advertisedRankPoints != points else { return }
+        let record = Self.rankTXTRecord(points: points)
+        if let rankRecordPublisher {
+            rankRecordPublisher(record)
+        } else {
+            // 리스너가 없으면 광고 자체가 없다 — 나중에 만들 때 그 시점의 현재 값을 굽으므로
+            // 여기서 기록해 두면 그 값이 최신인지 판단할 근거를 잃는다.
+            guard let listener else { return }
+            listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
+                                                  domain: nil, txtRecord: record)
+        }
+        advertisedRankPoints = points
+    }
+
+    /// `companion` 상태 변화를 계속 따라간다 — `withObservationTracking` 은 1회성이라
+    /// 콜백에서 다시 등록해야 한다. 정산·세이브 이전 등 랭크가 바뀌는 모든 경로를 한자리에서 덮는다.
+    private func trackRankChanges() {
+        withObservationTracking {
+            _ = companion.battleRank.points
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.refreshAdvertisedRank()
+                self.trackRankChanges()
+            }
+        }
     }
 
     /// 현재 트레이너 표시 이름 — 스냅샷 trainer 필드에 넣는다(설정 후 바뀌어도 최신값).
@@ -556,9 +602,11 @@ final class BattleCenter {
     private func startListener() {
         do {
             let listener = try NWListener(using: Self.discoveryParameters())
-            let rankRecord = NWTXTRecord(["rankPoints": String(companion.battleRank.points)])
+            let points = companion.battleRank.points
             listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
-                                                  domain: nil, txtRecord: rankRecord)
+                                                  domain: nil,
+                                                  txtRecord: Self.rankTXTRecord(points: points))
+            advertisedRankPoints = points
             listener.newConnectionHandler = { [weak self] conn in
                 Task { @MainActor in self?.acceptConnection(conn) }
             }
