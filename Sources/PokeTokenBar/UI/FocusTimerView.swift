@@ -110,13 +110,24 @@ struct FocusTimerView: View {
                 }
             }
             if companion.focusEggCount > 0, let readyAt = companion.nextStoredEggHatchAt {
-                HStack {
-                    Text(companion.language == .ko ? "🥚 자동 부화까지" : "🥚 Auto hatch")
-                    Spacer()
-                    Text(readyAt, style: .timer).monospacedDigit()
+                // `Text(readyAt, style: .timer)` 를 쓰면 예정 시각을 지난 뒤 SwiftUI 가 경과
+                // 시간을 세어 올려 카운트다운이 0 에서 다시 증가한다(#86). 부화 트리거는 60초
+                // 방치 틱이고 종 추첨엔 네트워크가 필요해 그 구간은 항상 생긴다 — 남은 시간을
+                // 직접 계산해 0 에서 멈추고, 그 뒤엔 "곧 부화" 로 바꾼다.
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    HStack {
+                        Text(companion.l.eggAutoHatchLabel)
+                        Spacer()
+                        switch StoredEggCountdown.resolve(readyAt: readyAt, now: context.date) {
+                        case .counting(let clock):
+                            Text(clock).monospacedDigit()
+                        case .due:
+                            Text(companion.l.eggHatchingSoon)
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.purple)
                 }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.purple)
             }
         }
         .padding(9)
