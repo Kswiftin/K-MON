@@ -40,7 +40,7 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 
 <table>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-home.gif" width="260" alt="집중 타이머와 모험 조작이 있는 홈 화면"></td>
+<td width="45%" align="center"><img src="assets/screenshot-home.gif" width="220" alt="집중 타이머와 모험 조작이 있는 홈 화면"></td>
 <td width="55%" valign="middle">
 <h3>집중, 모험, 보상 수령</h3>
 집중 시간을 고르고 파트너의 모험을 확인한 다음, 홈에서 완료 보상을 수령합니다.
@@ -51,10 +51,10 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 <h3>포켓몬과 도감</h3>
 보유 포켓몬을 확인하고 파트너를 교체하며, 기술·경험치와 발견한 종을 볼 수 있습니다.
 </td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="220" alt="도감"><br><br><img src="assets/screenshot-collection-catchlog.png" width="220" alt="포켓몬 수집 기록"></td>
+<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="180" alt="도감"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="포켓몬 수집 기록"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop-ko.png" width="220" alt="상점"></td>
+<td width="45%" align="center"><img src="assets/screenshot-shop-ko.png" width="180" alt="상점"></td>
 <td width="55%" valign="middle">
 <h3>상점과 가방</h3>
 별의조각으로 알, 이상한 사탕, 민트, 연결의끈, 진화의 돌을 구매하고 가방의 아이템을 사용합니다.
@@ -65,7 +65,7 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 <h3>작업과 업데이트 설정</h3>
 설정에서 방해금지, 알림, 로그인 시 실행, 플로팅 펫, 업데이트 확인을 관리합니다.
 </td>
-<td width="45%" align="center"><img src="assets/settings-ko.png" width="220" alt="설정"></td>
+<td width="45%" align="center"><img src="assets/settings-ko.png" width="180" alt="설정"></td>
 </tr>
 </table>
 

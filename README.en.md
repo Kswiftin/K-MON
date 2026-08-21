@@ -40,7 +40,7 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 
 <table>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-home.gif" width="260" alt="Home screen with the focus timer and adventure controls"></td>
+<td width="45%" align="center"><img src="assets/screenshot-home.gif" width="220" alt="Home screen with the focus timer and adventure controls"></td>
 <td width="55%" valign="middle">
 <h3>Focus, adventure, claim</h3>
 Choose a focus duration, track the partner's adventure, and claim the completed reward from Home.
@@ -51,10 +51,10 @@ Choose a focus duration, track the partner's adventure, and claim the completed 
 <h3>Your Pokémon and Pokédex</h3>
 Review your owned Pokémon, select a partner, check moves and experience, and see the species you have discovered.
 </td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="220" alt="Pokédex collection"><br><br><img src="assets/screenshot-collection-catchlog.png" width="220" alt="Pokémon collection log"></td>
+<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="180" alt="Pokédex collection"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="Pokémon collection log"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="220" alt="Shop"></td>
+<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="180" alt="Shop"></td>
 <td width="55%" valign="middle">
 <h3>Shop and Bag</h3>
 Spend Star Pieces on eggs, Rare Candy, Mints, Link Cords, and evolution stones; use held items from the Bag.
@@ -65,7 +65,7 @@ Spend Star Pieces on eggs, Rare Candy, Mints, Link Cords, and evolution stones; 
 <h3>Settings for work and updates</h3>
 Control Do Not Disturb, notifications, launch at login, the floating pet, and update checks from Settings.
 </td>
-<td width="45%" align="center"><img src="assets/settings.png" width="220" alt="Settings"></td>
+<td width="45%" align="center"><img src="assets/settings.png" width="180" alt="Settings"></td>
 </tr>
 </table>
 

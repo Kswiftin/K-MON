@@ -40,7 +40,7 @@ Pokédoro は集中している間にパートナーのポケモンを冒険へ�
 
 <table>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-home.gif" width="260" alt="集中タイマーと冒険操作があるホーム画面"></td>
+<td width="45%" align="center"><img src="assets/screenshot-home.gif" width="220" alt="集中タイマーと冒険操作があるホーム画面"></td>
 <td width="55%" valign="middle">
 <h3>集中、冒険、報酬受け取り</h3>
 集中時間を選び、パートナーの冒険を確認し、ホームで完了報酬を受け取ります。
@@ -51,10 +51,10 @@ Pokédoro は集中している間にパートナーのポケモンを冒険へ�
 <h3>ポケモンと図鑑</h3>
 手持ちの確認、パートナー交代、わざ・経験値の確認、発見した種の閲覧ができます。
 </td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="220" alt="図鑑"><br><br><img src="assets/screenshot-collection-catchlog.png" width="220" alt="ポケモンのコレクションログ"></td>
+<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="180" alt="図鑑"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="ポケモンのコレクションログ"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop-ja.png" width="220" alt="ショップ"></td>
+<td width="45%" align="center"><img src="assets/screenshot-shop-ja.png" width="180" alt="ショップ"></td>
 <td width="55%" valign="middle">
 <h3>ショップとバッグ</h3>
 ほしのかけらでタマゴ、ふしぎなアメ、ミント、つながりのヒモ、進化のいしを購入し、バッグのアイテムを使えます。
@@ -65,7 +65,7 @@ Pokédoro は集中している間にパートナーのポケモンを冒険へ�
 <h3>作業と更新の設定</h3>
 設定から、おやすみモード、通知、ログイン時の起動、フローティングペット、更新確認を管理できます。
 </td>
-<td width="45%" align="center"><img src="assets/settings-ja.png" width="220" alt="設定"></td>
+<td width="45%" align="center"><img src="assets/settings-ja.png" width="180" alt="設定"></td>
 </tr>
 </table>
 
