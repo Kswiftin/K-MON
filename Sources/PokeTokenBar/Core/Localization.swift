@@ -688,6 +688,13 @@ struct L {
     /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.
     var missionDaily: String { t("일간", "Daily", "デイリー") }
 
+    var notifAchievementTitle: String { t("🏅 업적 달성!", "🏅 Achievement unlocked!", "🏅 実績を達成！") }
+    func notifAchievementBody(_ name: String, _ tier: Int, _ stardust: Int) -> String {
+        let amount = GameNumberFormatter.compact(stardust)
+        return t("\(name) \(tier)단계 — 별의조각 \(amount) 받았어요!",
+                 "\(name) tier \(tier) — you earned \(amount) Star Pieces!",
+                 "\(name) ティア\(tier) — ほしのかけら \(amount) を獲得！")
+    }
     /// 업적 트랙 이름. 미션·도감 목표와 달리 **id 문자열이 아니라 열거형으로 스위치**한다 —
     /// 트랙을 더하면 컴파일이 막아 주므로 빈 문자열 폴백이 필요 없다.
     /// 체육관 "배지" 와 겹치지 않는 말을 쓴다(같은 앱에 두 종류의 배지가 있으면 어느 쪽 진행인지 안 읽힌다).

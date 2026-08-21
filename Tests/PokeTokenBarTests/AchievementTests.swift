@@ -381,19 +381,26 @@ final class AchievementAccrualTests: XCTestCase {
                        reward.starPieces + reward.trainerBonus + reward.missionBonus)
     }
 
-    /// 한 번에 두 단계를 넘기면 **둘 다** 지급된다 — 1단계 직전에서 큰 정산 한 방을 넣는다.
+    /// 한 정산이 두 단계를 넘기면 **둘 다** 지급되고, 보고액도 두 몫의 합이다 — 마지막 하나만
+    /// 실어 보내면 그만큼이 설명되지 않는다.
+    ///
+    /// 0 에서 2단계 문턱(\(300)분)까지 한 번에 가는 정산이라야 두 칸을 함께 넘는다. 1단계 위
+    /// 어딘가에서 출발하면 1단계는 이미 지나 있어 한 칸만 넘는다 — 처음엔 그렇게 세워 두고
+    /// 1,300 을 기대했다가 1,000 을 받았다.
     func testOneClaimCanPayTwoFocusTiersAtOnce() async throws {
         let clock = TestClock()
         let store = makeStore(achievementAutoLine, clock)
         await store.hatch(baseID: 1)
-        // 2단계 문턱 − 90분 지점에서 시작하면 90분 정산 한 번이 1·2단계를 함께 넘는다.
-        store.debugSetAchievementCount(.focus, tiers(.focus)[1] - 90)
+        let spanBothTiers = tiers(.focus)[1]
+        XCTAssertEqual(store.achievementRows.first { $0.achievement.track == .focus }?.count, 0,
+                       "테스트 전제: 0 에서 출발해야 1단계도 함께 넘는다")
 
-        XCTAssertTrue(store.startFocusAdventure(minutes: 90))
-        clock.advance(90 * 60)
+        XCTAssertTrue(store.startFocusAdventure(minutes: spanBothTiers))
+        clock.advance(TimeInterval(spanBothTiers * 60))
         let reward = try XCTUnwrap(store.claimAdventure())
 
         XCTAssertEqual(reward.achievementBonus, rewards(.focus)[0] + rewards(.focus)[1])
+        XCTAssertEqual(count(store, .focus), spanBothTiers)
     }
 
     // MARK: 진화 — 세 경로를 각각 단독으로
