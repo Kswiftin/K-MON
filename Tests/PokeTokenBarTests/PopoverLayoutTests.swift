@@ -154,11 +154,18 @@ final class PopoverLayoutTests: XCTestCase {
                 isEnabled: true, onChallenge: {})
     }
 
+    /// 카드가 **원하는** 폭. 행 안에 `Spacer()` 가 있어 넉넉한 제안을 주면 그 제안을 그대로
+    /// 채우므로(제안 4,000 → 4,000) 이상 폭 측정만으로는 아무것도 알 수 없다 — 내용의 이상
+    /// 크기를 보려면 `fixedSize` 로 고정해야 한다. (기술 목록은 Spacer 가 없어 그냥 재도 됐다.)
+    private func intrinsicWidth(_ view: some View) -> CGFloat {
+        renderedWidth(view.fixedSize(horizontal: true, vertical: false), proposing: 4_000)
+    }
+
     /// 대조군: 광고가 실린 카드는 빈 카드보다 **실제로 넓어야** 한다. 이게 없으면 누가 레벨·배지
     /// 칸을 지워도 아래 폭 검증이 그냥 통과한다 — 총폭 검증은 "누가 빠졌는가" 를 못 잡는다(defect-log).
     func testPeerRowActuallyCarriesTheAdvertisedProgress() {
-        let bare = renderedWidth(peerRow("Ash", PeerAdvertisement()), proposing: 4_000)
-        let advertised = renderedWidth(peerRow("Ash", widestAdvertisement), proposing: 4_000)
+        let bare = intrinsicWidth(peerRow("Ash", PeerAdvertisement()))
+        let advertised = intrinsicWidth(peerRow("Ash", widestAdvertisement))
         XCTAssertGreaterThan(advertised, bare + 20,
                              "레벨·배지가 카드에 실제로 그려지지 않으면 폭 검증이 무의미해진다")
     }
@@ -167,7 +174,7 @@ final class PopoverLayoutTests: XCTestCase {
     /// (버튼 문구가 언어마다 다르다: 대결 신청 / Challenge / 対戦を申し込む)
     func testPeerRowFitsTheContentWidthInEveryLanguage() {
         for language in [AppLanguage.ko, .en, .ja] {
-            let width = renderedWidth(peerRow("Ash", widestAdvertisement, language), proposing: 4_000)
+            let width = intrinsicWidth(peerRow("Ash", widestAdvertisement, language))
             XCTAssertLessThanOrEqual(width, PopoverMetrics.contentWidth,
                                      "\(language.rawValue): 진행도 줄이 카드 폭을 넘겼다")
         }

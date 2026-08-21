@@ -309,23 +309,9 @@ struct BattleView: View {
                 // 간다 — 한 페이지에 다섯 명씩, 나머지는 페이저로 넘겨서 신청한다.
                 VStack(spacing: 4) {
                     ForEach(slice) { peer in
-                        HStack {
-                            Image(systemName: "person.fill")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(peer.name).font(.callout).lineLimit(1)
-                                Text(peer.rank?.displayName
-                                     ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
-                                    .font(.caption2)
-                                    .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
-                            }
-                            Spacer()
-                            Button(l.battleChallengeButton) { center.challenge(peer) }
-                                .controlSize(.small)
-                                .disabled(!isChallengeEnabled)
+                        PeerRow(store: store, peer: peer, isEnabled: isChallengeEnabled) {
+                            center.challenge(peer)
                         }
-                        .padding(.vertical, 2)
                     }
                     if pageCount > 1 {
                         HStack(spacing: 8) {
@@ -731,5 +717,74 @@ struct BattleView: View {
             .foregroundStyle(type.battleLabelColor)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Capsule().fill(type.battleColor))
+    }
+}
+
+/// 근처 트레이너 한 명 — 이름 줄과 진행도 줄, **두 줄**이다.
+///
+/// 두 줄을 유지하는 게 요구사항이다. 세 번째 줄이 생기면 한 페이지 5명(`BattleView.peerPageSize`)
+/// 예산이 깨지고, 그건 여섯 번째 상대에게 도달할 방법이 없던 부류로 되돌아가는 길이다.
+/// 세로·가로 예산은 `PopoverLayoutTests` 의 카드 절이 지킨다.
+///
+/// 진행도는 **이름과 같은 줄에 두지 않는다.** 이름은 Bonjour 광고에서 오므로 길이를 우리가 정하지
+/// 못하는데, 같은 줄에 두면 긴 이름이 레벨·배지를 밀어내 조용히 잘린다. 아래 줄은 전부 길이가
+/// 정해진 값이라(랭크 문구·Lv.·배지) 최악의 폭을 미리 잴 수 있다.
+///
+/// 여기 그리는 값은 전부 **상대가 스스로 신고한 표시용 값**이다 — 판정에 쓰지 않는다
+/// (`PeerAdvertisement` 주석 참고).
+struct PeerRow: View {
+    let store: CompanionStore
+    let peer: BattlePeer
+    let isEnabled: Bool
+    let onChallenge: () -> Void
+
+    private var l: L { store.l }
+
+    var body: some View {
+        HStack {
+            Image(systemName: "person.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(peer.name).font(.callout).lineLimit(1)
+                progressLine
+            }
+            Spacer()
+            Button(l.battleChallengeButton, action: onChallenge)
+                .controlSize(.small)
+                .disabled(!isEnabled)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// 랭크 · 트레이너 레벨 · 업적 단계. 광고에 없는 칸은 아예 그리지 않는다 — 구버전 상대는
+    /// 랭크만 보이고, "정보 없음" 을 세 번 반복하지 않는다.
+    private var progressLine: some View {
+        HStack(spacing: 4) {
+            Text(peer.rank?.displayName
+                 ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
+                .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
+            if let level = peer.advertisement.trainerLevel {
+                Text("· Lv.\(level)").monospacedDigit().foregroundStyle(.secondary)
+            }
+            if let tiers = peer.advertisement.achievementTiers {
+                Text("· 🏅\(tiers)/\(AchievementLadder.tierCeiling)")
+                    .monospacedDigit().foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption2)
+        .lineLimit(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    /// 스크린리더용 — 화면의 짧은 표기(`Lv.12 · 🏅8/16`)를 그대로 읽히면 뜻이 안 통한다.
+    private var accessibilityText: String {
+        let rank = peer.rank?.displayName
+            ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable")
+        let progress = l.peerProgressLabel(peer.advertisement.trainerLevel,
+                                          peer.advertisement.achievementTiers,
+                                          AchievementLadder.tierCeiling)
+        return progress.isEmpty ? rank : "\(rank), \(progress)"
     }
 }

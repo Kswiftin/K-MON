@@ -741,6 +741,20 @@ struct L {
     func achievementTierLabel(_ reached: Int, _ total: Int) -> String {
         t("\(total)단계 중 \(reached)단계", "tier \(reached) of \(total)", "\(total)段階中\(reached)段階")
     }
+    /// 근처 트레이너 카드의 진행도 줄에 붙는 스크린리더 대체 문구. 화면에는 `Lv.12 · 🏅8/16` 처럼
+    /// 짧게 그리는데, 그대로 읽히면 "L V 점 십이 메달 팔 슬래시 십육" 이 된다
+    /// (`achievementTierLabel` 이 같은 이유로 생겼다). 광고에 없는 칸은 문구에서도 빠진다.
+    func peerProgressLabel(_ level: Int?, _ tiers: Int?, _ total: Int) -> String {
+        var parts: [String] = []
+        if let level {
+            parts.append(t("트레이너 Lv.\(level)", "Trainer Lv.\(level)", "トレーナー Lv.\(level)"))
+        }
+        if let tiers {
+            parts.append(t("업적 \(tiers)/\(total)", "\(tiers) of \(total) achievements", "実績 \(tiers)/\(total)"))
+        }
+        return parts.joined(separator: ", ")
+    }
+
     var notifAchievementTitle: String { t("🏅 업적 달성!", "🏅 Achievement unlocked!", "🏅 実績を達成！") }
     func notifAchievementBody(_ name: String, _ tier: Int, _ stardust: Int) -> String {
         let amount = GameNumberFormatter.compact(stardust)
