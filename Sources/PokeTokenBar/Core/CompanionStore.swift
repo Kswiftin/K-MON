@@ -958,6 +958,24 @@ final class CompanionStore {
         return true
     }
 
+    /// 방생 — 박스의 개체를 놓아준다. 박스는 지금까지 늘기만 했고(부화는 영구), 줄어드는 길은
+    /// 동행으로 올리는 것과 디버그 훅뿐이었다(#88).
+    ///
+    /// **활성 개체는 대상이 아니다** — 동행이 사라지면 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
+    ///
+    /// **도감 영구 기록은 건드리지 않는다.** 졸업분은 `state.dex` 에 남고 도감 목표도 그 기록만
+    /// 세므로(`DexGoals.completed(in: state.dex)`), 졸업한 개체를 놓아줘도 달성도는 그대로다.
+    /// 미졸업 개체는 박스에 있는 동안만 도감에 합성되던 줄이라(`livingDexEntries`) 개체와 함께 사라진다 —
+    /// 애초에 영구 기록이 아니었던 것이고, 그래서 방생이 달성도를 지우는 경로가 되지 않는다.
+    @discardableResult
+    func releaseMon(_ id: UUID) -> Bool {
+        guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return false }
+        let released = state.boxedMons.remove(at: index)
+        AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
+        save()
+        return true
+    }
+
     func switchCompanion(to id: UUID) {
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return }
         let selected = state.boxedMons.remove(at: index)
