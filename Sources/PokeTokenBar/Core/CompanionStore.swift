@@ -9,11 +9,23 @@ import UserNotifications
 @Observable
 final class CompanionStore {
     static let storedEggHatchDelay: TimeInterval = 5 * 60
+    /// 학습 제안의 출처. 하트비늘 유래일 때만 아이템을 소모하므로 구분이 필요하다.
+    /// 기본값이 `.levelUp` 이라 기존 생성부(레벨업·이상한 사탕)는 손대지 않는다.
+    enum MoveLearningOrigin: Sendable { case levelUp, heartScale }
+
     struct MoveLearningPrompt: Identifiable {
         let id = UUID()
         let monID: UUID
         let level: Int
         let move: MoveSpec
+        var origin: MoveLearningOrigin = .levelUp
+    }
+
+    /// 하트비늘 후보 목록 카드(#97). 개체 단위로만 유효하다.
+    struct RelearnPrompt: Identifiable {
+        let id = UUID()
+        let monID: UUID
+        let candidates: [MoveSpec]
     }
     struct EvolutionPrompt: Identifiable {
         let id = UUID()
@@ -32,6 +44,16 @@ final class CompanionStore {
         guard let prompt = pendingMoveLearningPrompt, state.active?.id == prompt.monID else { return nil }
         return prompt
     }
+    /// 저장된 원본 — 표시는 `relearnPrompt` 를 쓴다.
+    private(set) var pendingRelearnPrompt: RelearnPrompt?
+    /// `moveLearningPrompt` 와 같은 이유의 표시 게이트 — 개체가 바뀌면 이전 개체의 후보 목록이 그대로
+    /// 떠 있는 문제를 해제 지점마다 막는 대신 읽는 자리 한 곳에서 막는다(새 전환 경로도 자동으로 막힌다).
+    var relearnPrompt: RelearnPrompt? {
+        guard let prompt = pendingRelearnPrompt, state.active?.id == prompt.monID else { return nil }
+        return prompt
+    }
+    /// 후보 조회 중 — 가방의 재사용 방지 + 홈의 로딩 표시.
+    private(set) var isLoadingRelearnCandidates = false
     private(set) var evolutionPrompt: EvolutionPrompt?
     private var declinedEvolutionMonID: UUID?
     private var declinedEvolutionLevel = 0
@@ -711,6 +733,21 @@ final class CompanionStore {
         state.inventory[kind.rawValue, default: 0] += count
         save()
     }
+    /// 테스트 전용 — 인벤토리 개수를 직접 세팅한다(카드가 뜬 사이 재고가 사라진 상황 재현).
+    func debugSetItemCount(_ kind: ItemKind, _ count: Int) {
+        state.inventory[kind.rawValue] = count
+        save()
+    }
+    /// 테스트 전용 — 후보 조회(비동기)를 우회해 하트비늘 목록 카드를 세운다.
+    func debugPresentRelearnPrompt(candidates: [MoveSpec]) {
+        guard let mon = state.active else { return }
+        pendingRelearnPrompt = RelearnPrompt(monID: mon.id, candidates: candidates)
+    }
+    /// 테스트 전용 — 레벨업 유래 학습 카드를 세운다(하트비늘 소모 분기의 대조군).
+    func debugPresentLevelUpPrompt(move: MoveSpec, level: Int) {
+        guard let mon = state.active else { return }
+        pendingMoveLearningPrompt = MoveLearningPrompt(monID: mon.id, level: level, move: move)
+    }
     /// 테스트 전용 — 스타터 선택 완료 후의 기존 사용자 상태를 재현한다.
     func debugMarkStarterChosen() { state.starterChosen = true; save() }
     /// 테스트 전용 — 레벨 경험치를 직접 주입하고 진화·졸업 판정까지 트리거한다(applyUsage(0) 은
@@ -1218,7 +1255,12 @@ final class CompanionStore {
             state.active!.learnedMoves.append(prompt.move)
         } else if let index, state.active!.learnedMoves.indices.contains(index) {
             state.active!.learnedMoves[index] = prompt.move
-        } else { return }
+        } else { return }   // 무변경(범위 밖 인덱스) — 아래 하트비늘 소모도 타지 않는다
+        // 하트비늘은 **무브셋이 실제로 바뀐 뒤에만** 소모한다. 목록에서 취소하거나 교체를 거절한
+        // 경우까지 태우면 클릭 한 번에 500 별의조각이 사라지는 함정이 된다.
+        if prompt.origin == .heartScale {
+            state.inventory[ItemKind.heartScale.rawValue] = max(0, itemCount(.heartScale) - 1)
+        }
         save()
         pendingMoveLearningPrompt = nil
         showNextMoveLearningPrompt()
@@ -1880,6 +1922,55 @@ final class CompanionStore {
         save()
         return new
     }
+
+    // MARK: 하트비늘 (기술 다시 배우기 — #97)
+
+    /// 사용 가능 — 활성 개체 + 재고>0 + 조회 중 아님. `currentLine` 은 보지 않는다(민트와 같은 이유:
+    /// pathIDs·level 은 MonState 에 있어 재시작 직후·오프라인에도 판정할 수 있다).
+    var canUseHeartScale: Bool {
+        hasActive && itemCount(.heartScale) > 0 && !isLoadingRelearnCandidates
+    }
+
+    /// 하트비늘 사용 — 후보를 조회해 목록 카드를 띄운다. **여기서는 아무것도 소모하지 않는다**
+    /// (소모는 `acceptMoveLearning` 이 무브셋을 바꿀 때).
+    func useHeartScale() {
+        guard canUseHeartScale, let mon = state.active else { return }
+        let monID = mon.id
+        isLoadingRelearnCandidates = true
+        Task { @MainActor in
+            defer { isLoadingRelearnCandidates = false }
+            var inherited: [[MoveSpec]] = []
+            for speciesID in mon.pathIDs {
+                // 도중에 개체가 바뀌었으면(교체·졸업·리롤) 남은 조회는 그 개체 몫이 아니다.
+                guard let current = state.active, current.id == monID else { return }
+                let moves = await PokeAPIClient.shared
+                    .canonicalLevelUpMoves(speciesID: speciesID, level: current.level)
+                guard state.active?.id == monID else { return }   // await 뒤 재확인
+                inherited.append(moves)
+            }
+            // 배운 기술은 루프가 끝난 **지금** 다시 읽는다 — await 사이에 다른 카드에서 기술을
+            // 배웠을 수 있고, 캡처본으로 계산하면 이미 배운 기술을 후보로 내놓는다(queueMoveLearning 과 같은 함정).
+            guard let fresh = state.active, fresh.id == monID else { return }
+            pendingRelearnPrompt = RelearnPrompt(
+                monID: monID,
+                candidates: MoveRelearn.candidates(inherited: inherited, learned: fresh.learnedMoves))
+        }
+    }
+
+    /// 후보 하나를 고른다 → 기존 학습 카드로 넘긴다(4개 꽉 찬 개체의 교체 UI 를 새로 만들지 않는다).
+    /// 카드가 떠 있는 동안 재고가 사라졌으면(다른 경로 소모) 넘기지 않고 목록만 닫는다.
+    func pickRelearnCandidate(_ move: MoveSpec) {
+        guard let prompt = relearnPrompt, itemCount(.heartScale) > 0 else {
+            pendingRelearnPrompt = nil
+            return
+        }
+        pendingRelearnPrompt = nil
+        pendingMoveLearningPrompt = MoveLearningPrompt(
+            monID: prompt.monID, level: state.active?.level ?? 0, move: move, origin: .heartScale)
+    }
+
+    /// 후보 목록 닫기 — 무소모.
+    func cancelRelearn() { pendingRelearnPrompt = nil }
 
     func canUseEvolutionItem(_ kind: ItemKind) -> Bool {
         guard itemCount(kind) > 0, let rule = kind.evolutionRule,
