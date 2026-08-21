@@ -104,6 +104,69 @@ final class PeerAdvertisementTests: XCTestCase {
         XCTAssertEqual(hostile.achievementTiers, 0)
     }
 
+    // MARK: 수신 측 — 광고 하나를 카드 한 장으로 옮기는 지점
+    //
+    // 이 구간은 지금까지 무검증이었다(private 클로저 안). 아래 입력들은 **실제로 관찰한 값**이다 —
+    // 이 저장소의 릴리스판이 광고 중인 서비스 이름 `유썽#44D580` 과 TXT `rankPoints=0` 을
+    // `dns-sd -B` / `dns-sd -L` 로 읽어 그대로 옮겼다.
+
+    /// 내 광고는 목록에서 빠져야 한다 — 자기 자신에게 대전을 신청할 수는 없다.
+    func testMyOwnServiceIsFilteredOut() {
+        XCTAssertNil(BattleCenter.peer(fromService: "유썽#44D580", txtRecord: nil,
+                                       excluding: "유썽#44D580"))
+    }
+
+    /// **같은 트레이너 이름의 다른 기기는 남이다.** 고유 접미가 그걸 가른다 — 이름으로 걸렀다면
+    /// 같은 이름을 쓰는 두 Mac 이 서로를 "자기" 로 오인해 목록에서 사라진다.
+    func testTheSameTrainerNameOnAnotherMachineIsStillAPeer() {
+        let other = BattleCenter.peer(fromService: "유썽#FFFFFF", txtRecord: nil,
+                                      excluding: "유썽#44D580")
+        XCTAssertEqual(other?.name, "유썽")
+        XCTAssertEqual(other?.serviceName, "유썽#FFFFFF")
+    }
+
+    /// 표시 이름은 **마지막** `#` 에서 자른다. 첫 `#` 에서 자르면 이름에 `#` 을 쓴 사람의 이름이
+    /// 잘려 보인다.
+    func testDisplayNameStripsOnlyTheUniqueSuffix() {
+        XCTAssertEqual(BattleCenter.peer(fromService: "유썽#44D580", txtRecord: nil,
+                                        excluding: "me#000000")?.name, "유썽")
+        XCTAssertEqual(BattleCenter.peer(fromService: "A#B#c1d2e3", txtRecord: nil,
+                                        excluding: "me#000000")?.name, "A#B")
+        // 접미가 없는 광고(다른 구현·손으로 띄운 서비스)도 이름 그대로 살린다.
+        XCTAssertEqual(BattleCenter.peer(fromService: "NoSuffix", txtRecord: nil,
+                                        excluding: "me#000000")?.name, "NoSuffix")
+    }
+
+    /// 실제로 관찰한 구버전 광고 — 랭크만 있고 레벨·배지는 없다. 목록에 남아야 하고 랭크는 보여야 한다.
+    func testTheReleasedBuildsRealRecordParsesAsRankOnly() {
+        let live = BattleCenter.peer(fromService: "유썽#44D580",
+                                     txtRecord: NWTXTRecord(["rankPoints": "0"]),
+                                     excluding: "me#000000")
+        XCTAssertEqual(live?.rank, BattleRank(points: 0))
+        XCTAssertNil(live?.advertisement.trainerLevel)
+        XCTAssertNil(live?.advertisement.achievementTiers)
+    }
+
+    /// TXT 가 아예 없는 결과(비-Bonjour 메타데이터)도 피어로 남는다 — 숨기면 신청할 방법이 없다.
+    func testAPeerWithoutAnyRecordIsStillListed() {
+        let peer = BattleCenter.peer(fromService: "Ash#abc123", txtRecord: nil,
+                                     excluding: "me#000000")
+        XCTAssertNotNil(peer)
+        XCTAssertNil(peer?.rank)
+        XCTAssertEqual(peer?.advertisement, PeerAdvertisement())
+    }
+
+    func testANewBuildsRecordCarriesAllThreeValues() {
+        let peer = BattleCenter.peer(fromService: "Ash#abc123",
+                                     txtRecord: NWTXTRecord(["rankPoints": "1200",
+                                                             "trainerLevel": "12",
+                                                             "achievementTiers": "8"]),
+                                     excluding: "me#000000")
+        XCTAssertEqual(peer?.rank, BattleRank(points: 1_200))
+        XCTAssertEqual(peer?.advertisement.trainerLevel, 12)
+        XCTAssertEqual(peer?.advertisement.achievementTiers, 8)
+    }
+
     // MARK: 랭크 어댑터
 
     /// 기존 `peer.rank` 호출부가 그대로 살아 있게 하는 자리. 랭크가 없으면 nil 이어야 한다 —
