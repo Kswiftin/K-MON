@@ -7,6 +7,9 @@ struct BattleView: View {
     @Bindable var store: CompanionStore
     @Environment(BattleCenter.self) private var center
     @Environment(PopoverNavigation.self) private var nav
+    @Environment(AppSettings.self) private var settings
+    /// 턴 해상 결과를 시간축에 푸는 재생기 — 배틀이 바뀌어도 같은 객체를 쓴다(스스로 되감는다).
+    @State private var animator = BattleAnimator()
 
     // 수동(IP) 연결 상태
     @State private var manualAddress = ""
@@ -70,38 +73,89 @@ struct BattleView: View {
     private func lanArena(_ battle: NetBattleState) -> some View {
         // 엔진 좌변(A)은 항상 challenger 다 — 내가 어느 쪽인지로 내 편/상대를 가른다.
         let mine: BattleActor = battle.iAmA ? .a : .b
+        let theirs: BattleActor = battle.iAmA ? .b : .a
+        // 재생 중엔 엔진의 최종 상태가 아니라 **재생이 도달한 상태**를 그리고, 로그도 같은 진행도로
+        // 자른다. 한쪽만 미루면 로그가 결과를 먼저 알려 줘 재생할 이유가 사라진다.
+        //
+        // HP 만이 아니라 **활성 칸과 팀 전체**를 재생기에서 읽는다 — 엔진의 활성 칸을 쓰면 기절
+        // 자동 출전 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그리고(그리고 흐린 '쓰러진'
+        // 스프라이트로 보여 준다), 교체 스트립의 미니 바도 큰 바보다 먼저 최종값으로 넘어간다.
+        let engineMine = ReplaySide(team: battle.myTeam, active: battle.myActive)
+        let engineTheirs = ReplaySide(team: battle.oppTeam, active: battle.oppActive)
+        let shownMine = animator.side(for: mine) ?? engineMine
+        let shownTheirs = animator.side(for: theirs) ?? engineTheirs
+        let me = shownMine.side ?? battle.me
+        let opp = shownTheirs.side ?? battle.opp
         return BattleArenaView(
-            mine: battle.me, theirs: battle.opp,
+            mine: me, theirs: opp,
             myTitle: l.battleMyPokemon,
             theirTitle: battle.opp.snapshot.trainer.map { l.battleTrainerLabel($0) } ?? "?",
             l: l, turn: battle.turn,
-            logLines: BattleLogSource.netBattle(battle, mine: mine, l: l),
+            logLines: BattleLogSource.netBattle(battle, mine: mine, l: l,
+                                                playedCount: animator.playedCount),
             myActor: mine,
-            switchSlots: SwitchStripModel.battleSlots(battle.myTeam, active: battle.myActive),
+            switchSlots: SwitchStripModel.battleSlots(shownMine.team, active: shownMine.active),
             turnEndsAt: center.turnEndsAt,
             isWaitingForOpponent: battle.myAction != nil,
+            overlay: animator.overlay,
             onChoose: { center.chooseMove($0) },
             onSwitch: { center.switchLAN(to: $0) },
             onForfeit: { center.forfeit() })
+        .onAppear { replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs]) }
+        .onChange(of: battle.events.count) {
+            replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs])
+        }
     }
 
     private func practiceArena(_ practice: TeamPracticeBattle) -> some View {
-        BattleArenaView(
-            mine: practice.mySlot, theirs: practice.opponentSlot,
+        // LAN 과 같은 규칙이다 — 표시 상태(팀·활성 칸·HP)는 전부 재생기에서 읽는다.
+        let engineMine = ReplaySide(team: practice.mine, active: practice.myActive)
+        let engineTheirs = ReplaySide(team: practice.opponents, active: practice.opponentActive)
+        let shownMine = animator.side(for: .a) ?? engineMine
+        let shownTheirs = animator.side(for: .b) ?? engineTheirs
+        let me = shownMine.side ?? practice.mySlot
+        let opp = shownTheirs.side ?? practice.opponentSlot
+        return BattleArenaView(
+            mine: me, theirs: opp,
             myTitle: l.battleMyPokemon, theirTitle: "CPU",
             l: l, turn: practice.turn,
-            logLines: BattleLogSource.twoSided(practice.events, mine: .a, l: l,
-                                               myName: practice.mySlot.snapshot.name,
-                                               theirName: practice.opponentSlot.snapshot.name,
-                                               myMoves: practice.mySlot.moves,
-                                               theirMoves: practice.opponentSlot.moves),
+            // 이름·기술도 **화면에 서 있는 개체** 기준이다 — 엔진의 활성 개체로 풀면 기절 턴의
+            // 로그가 아직 나오지도 않은 개체 이름으로 쓰러진다(LAN 은 배치 문맥이 같은 일을 한다).
+            logLines: BattleLogSource.twoSided(played(practice.events), mine: .a, l: l,
+                                               myName: me.snapshot.name,
+                                               theirName: opp.snapshot.name,
+                                               myMoves: me.moves,
+                                               theirMoves: opp.moves),
             myActor: .a,
-            switchSlots: SwitchStripModel.slots(practice.mine, active: practice.myActive),
+            switchSlots: SwitchStripModel.slots(shownMine.team, active: shownMine.active),
             turnEndsAt: nil,                       // CPU 는 즉시 답한다 — 기다림이 없으니 마감도 없다
             isWaitingForOpponent: false,
+            overlay: animator.overlay,
             onChoose: { center.chooseTeamPracticeMove($0) },
             onSwitch: { center.switchTeamPractice(to: $0) },
             onForfeit: { center.forfeit() })
+        .onAppear { replay(practice.events, sides: [.a: engineMine, .b: engineTheirs]) }
+        .onChange(of: practice.events.count) {
+            replay(practice.events, sides: [.a: engineMine, .b: engineTheirs])
+        }
+    }
+
+    /// 재생이 아직 닿지 않은 이벤트는 화면에 없다 — 로그도 스트림도 같은 진행도로 자른다.
+    private func played(_ events: [BattleEvent]) -> [BattleEvent] {
+        Array(events.prefix(animator.playedCount))
+    }
+
+    /// 스트림이 길어질 때마다 재생기에 넘긴다. **저전력이면 설정과 무관하게 끈다** —
+    /// `FloatingPetController.shouldAnimate(lowPower:)` 와 같은 가드다.
+    private func replay(_ events: [BattleEvent], sides: [BattleActor: ReplaySide]) {
+        // 승부가 난 턴의 결과 화면을 재생 뒤로 미루는 연결. 재생기는 뷰가 들고 있어 센터가 직접
+        // 알 수 없으므로, 따라잡았다는 사실을 이 콜백으로 전한다(팝오버가 닫혀 있으면 센터의
+        // `finishDeadline` 이 대신 부른다).
+        animator.onCaughtUp = { center.commitPendingFinish() }
+        animator.sync(events: events, sides: sides,
+                      speed: BattleReplay.effectiveSpeed(
+                        settings.battleReplaySpeed,
+                        lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled))
     }
 
     /// 결과 — 마지막 장면(필드)을 남겨 두고 아래 칸만 결과로 갈아 끼운다.

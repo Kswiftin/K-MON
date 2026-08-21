@@ -29,6 +29,15 @@ struct L {
     var battleSuperEffective: String { t("효과가 굉장했다!", "It's super effective!", "こうかはばつぐんだ！") }
     var battleNotVeryEffective: String { t("효과가 별로인 듯하다…", "It's not very effective…", "こうかはいまひとつのようだ…") }
     var battleCritical: String { t("급소에 맞았다!", "A critical hit!", "きゅうしょにあたった！") }
+    /// 재생 속도 설정 — 끄기는 저전력·접근성 때문에 반드시 고를 수 있어야 한다.
+    var battleReplaySpeedLabel: String { t("배틀 연출", "Battle playback", "バトル演出") }
+    func battleReplaySpeedName(_ speed: ReplaySpeed) -> String {
+        switch speed {
+        case .normal: return t("보통", "Normal", "ふつう")
+        case .fast:   return t("빠름", "Fast", "はやい")
+        case .off:    return t("끄기", "Off", "オフ")
+        }
+    }
     func battleLv(_ n: Int) -> String { "Lv.\(n)" }
     func battleTrainerLabel(_ trainer: String) -> String {
         t("\(trainer)의 포켓몬", "\(trainer)'s Pokémon", "\(trainer)のポケモン")

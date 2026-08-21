@@ -216,7 +216,9 @@ struct NetBattleState {
             switchSlot(indexA, team: &teamA, active: &activeA)
             let moveB = spendPP(indexB, team: &teamB, active: activeB)
             var a = teamA[activeA], b = teamB[activeB]
-            turnEvents = [.turn(turn)]
+            // 출전은 상대 공격보다 **앞**이다 — 재생기가 이 순서대로 개체를 갈아타야 새로 나온
+            // 개체가 맞는 그림이 된다(뒤에 두면 이전 개체가 남의 데미지를 맞는다).
+            turnEvents = [.turn(turn), .sendOut(.a, teamIndex: indexA)]
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &b, defender: &a,
                                                        attackerActor: .b, defenderActor: .a,
@@ -228,7 +230,7 @@ struct NetBattleState {
             switchSlot(indexB, team: &teamB, active: &activeB)
             let moveA = spendPP(indexA, team: &teamA, active: activeA)
             var a = teamA[activeA], b = teamB[activeB]
-            turnEvents = [.turn(turn)]
+            turnEvents = [.turn(turn), .sendOut(.b, teamIndex: indexB)]
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &a, defender: &b,
                                                        attackerActor: .a, defenderActor: .b,
@@ -240,20 +242,31 @@ struct NetBattleState {
             switchSlot(indexA, team: &teamA, active: &activeA)
             switchSlot(indexB, team: &teamB, active: &activeB)
             var a = teamA[activeA], b = teamB[activeB]
-            turnEvents = [.turn(turn)]
+            turnEvents = [.turn(turn),
+                          .sendOut(.a, teamIndex: indexA), .sendOut(.b, teamIndex: indexB)]
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b
         }
 
         // 자동 출전으로 active index를 바꾸기 전에 이번 이벤트의 실제 이름·기술 문맥을 고정한다.
-        let eventBatch = NetBattleEventBatch(events: turnEvents,
-                                             a: teamA[activeA], b: teamB[activeB])
+        let contextA = teamA[activeA], contextB = teamB[activeB]
         let aWiped = !teamA.contains(where: \.isAlive)
         let bWiped = !teamB.contains(where: \.isAlive)
+        // 자동 출전도 스트림에 남는다 — 재생기가 이 이벤트를 보고서야 표시 상태를 새 개체로
+        // 갈아탄다. 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그린다.
         if !aWiped, !teamA[activeA].isAlive,
-           let next = teamA.indices.first(where: { teamA[$0].isAlive }) { activeA = next }
+           let next = teamA.indices.first(where: { teamA[$0].isAlive }) {
+            activeA = next
+            turnEvents.append(.sendOut(.a, teamIndex: next))
+        }
         if !bWiped, !teamB[activeB].isAlive,
-           let next = teamB.indices.first(where: { teamB[$0].isAlive }) { activeB = next }
+           let next = teamB.indices.first(where: { teamB[$0].isAlive }) {
+            activeB = next
+            turnEvents.append(.sendOut(.b, teamIndex: next))
+        }
+        // 배치는 **자동 출전 이벤트까지 담은 뒤** 만든다 — 배치 이벤트 수가 평평한 `events` 와
+        // 어긋나면 `BattleLogSource.netBattle` 의 진행도 자르기가 그만큼 밀린다.
+        let eventBatch = NetBattleEventBatch(events: turnEvents, a: contextA, b: contextB)
 
         self.myTeam = iAmA ? teamA : teamB
         self.oppTeam = iAmA ? teamB : teamA
@@ -297,7 +310,20 @@ final class BattleCenter {
         case finished(iWon: Bool?, byForfeit: Bool)
     }
 
-    private(set) var phase: Phase = .ready
+    private(set) var phase: Phase = .ready {
+        // 국면이 바뀌면 미뤄 둔 결과는 무효다 — 항복·끊김·새 배틀이 국면을 먼저 옮긴 뒤에 옛 배틀의
+        // 마감이 뒤늦게 깨어나 엉뚱한 결과 화면을 올리는 것을 막는다.
+        didSet { dropPendingFinish() }
+    }
+    /// 승부는 났지만 재생이 아직 안 끝나 미뤄 둔 결과. **`phase` 를 바로 넘기지 않는 이유**는
+    /// 이벤트 append 와 `phase = .finished` 가 같은 동기 블록이면 SwiftUI 가 한 번만 다시 그려
+    /// 결정타·기절이 재생을 한 프레임도 못 본 채 결과 화면으로 스냅하기 때문이다 — 재생기가 생긴
+    /// 이유가 바로 그 턴이다.
+    private(set) var pendingFinish: (iWon: Bool?, byForfeit: Bool)?
+    /// 재생기가 아무 말도 없을 때의 안전망. 팝오버가 닫혀 있으면 `onCaughtUp` 을 부를 뷰가 없어
+    /// 배틀이 `.battling` 에 갇힌다. 한 배치의 재생은 `BattleReplay.budget` 을 넘길 수 없으므로
+    /// 그보다 넉넉한 한 번의 마감으로 충분하다.
+    private var finishDeadline: Task<Void, Never>?
     private(set) var peers: [BattlePeer] = []
     /// 수동(IP) 연결용 — 사내망 등 mDNS 멀티캐스트가 막힌 네트워크에선 자동 탐색이 안 되므로
     /// 이 주소를 상대에게 알려주고 직접 연결받는다.
@@ -713,7 +739,8 @@ final class BattleCenter {
         // 재도전이면 `recordGymVictory` 가 0 을 돌려준다 — 배지가 이미 있으면 아무것도 지급하지 않는다.
         lastGymReward = (result == .win && activeGym != nil) ? companion.recordGymVictory(activeGym!) : nil
         // 무승부는 `iWon: nil` — 결과 화면이 `l.battleDraw` 를 그린다(`BattleView.finishText`).
-        phase = .finished(iWon: result == .draw ? nil : result == .win, byForfeit: false)
+        // 결정타가 재생되기 전에 결과 화면으로 스냅하지 않게 재생 뒤로 미룬다.
+        deferFinish(iWon: result == .draw ? nil : result == .win, byForfeit: false)
     }
 
     func switchTeamPractice(to index: Int) {
@@ -883,7 +910,10 @@ final class BattleCenter {
     // MARK: 대전 진행
 
     func chooseMove(_ index: Int) {
-        guard case .battling = phase, var b = battle, b.myAction == nil else { return }
+        // `pendingFinish` 는 승부가 이미 난 상태다 — 재생이 도는 동안 국면은 아직 `.battling` 이라
+        // 이 가드가 없으면 끝난 배틀에 기술을 보낸다.
+        guard case .battling = phase, pendingFinish == nil,
+              var b = battle, b.myAction == nil else { return }
         let idx = b.mustStruggle ? -1 : index
         let action = NetBattleAction.move(index: idx)
         guard b.canChoose(action, mine: true) else { return }
@@ -895,7 +925,8 @@ final class BattleCenter {
     }
 
     func switchLAN(to index: Int) {
-        guard case .battling = phase, var b = battle, b.myAction == nil else { return }
+        guard case .battling = phase, pendingFinish == nil,
+              var b = battle, b.myAction == nil else { return }
         let action = NetBattleAction.switchTo(index: index)
         guard b.canChoose(action, mine: true), let conn = connection else { return }
         b.myAction = action
@@ -1004,6 +1035,32 @@ final class BattleCenter {
         chooseMove(Self.automaticMoveIndex(for: state.me))
     }
 
+    /// 재생이 엔진을 따라잡았다 — 미뤄 둔 결과를 화면에 올린다.
+    /// `BattleAnimator.onCaughtUp` 이 부르고, 팝오버가 닫혀 있으면 `finishDeadline` 이 부른다.
+    func commitPendingFinish() {
+        // 국면이 이미 넘어갔으면(항복·끊김·새 배틀) 미뤄 둔 결과는 버린다.
+        guard case .battling = phase, let finish = pendingFinish else { return dropPendingFinish() }
+        dropPendingFinish()
+        phase = .finished(iWon: finish.iWon, byForfeit: finish.byForfeit)
+    }
+
+    /// 결과를 재생 뒤로 미룬다. 정산·연결 정리는 미루지 않는다 — 결과 화면이 뜰 때 LP·판돈 숫자가
+    /// 이미 준비돼 있어야 하고, 끊긴 연결을 재생 시간만큼 붙잡아 둘 이유도 없다.
+    private func deferFinish(iWon: Bool?, byForfeit: Bool) {
+        dropPendingFinish()
+        pendingFinish = (iWon, byForfeit)
+        finishDeadline = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(BattleReplay.budget + 0.6))
+            self?.commitPendingFinish()
+        }
+    }
+
+    private func dropPendingFinish() {
+        pendingFinish = nil
+        finishDeadline?.cancel()
+        finishDeadline = nil
+    }
+
     /// 양쪽 선택이 모이면 턴 해상 — challenger 를 A 로 고정해 양쪽이 같은 좌변으로 계산.
     private func resolveIfReady() {
         guard var b = battle, b.myAction != nil, b.oppAction != nil else { return }
@@ -1019,7 +1076,7 @@ final class BattleCenter {
             }
             dropConnection()
             cancelTurnTimeout()
-            phase = .finished(iWon: iWon, byForfeit: false)
+            deferFinish(iWon: iWon, byForfeit: false)
             if !isPracticeBattle {
                 if let iWon { settleRankedBrawlIfNeeded(won: iWon) } else { refundRankedBrawlIfNeeded() }
             }

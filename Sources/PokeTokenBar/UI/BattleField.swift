@@ -251,6 +251,10 @@ struct CombatantBar: View {
     let l: L
     /// 내 쪽만 실수치를 보여 준다 — 상대는 % 다(`HPReadout`).
     let revealsExactHP: Bool
+    /// 재생이 값을 움직이는 동안만 바를 보간한다. **끄기·저전력에서는 보간도 없어야 한다** —
+    /// 끄기가 있는 이유가 저전력과 접근성이라, 여기에 상시 애니메이션을 걸면 "안 움직이는 화면"
+    /// 이라는 그 설정의 약속이 깨진다(값은 한 번에 오는데 바만 0.4초 흐른다).
+    var animatesHP = false
 
     private var tier: HPTier { HPTier.of(hp: side.hp, max: side.stats.hp) }
 
@@ -269,6 +273,10 @@ struct CombatantBar: View {
                     Capsule().fill(Color.primary.opacity(0.12))
                     Capsule().fill(tier.color)
                         .frame(width: geometry.size.width * CGFloat(fillRatio))
+                        // 재생이 HP 를 스텝마다 바꾸므로 바는 그 사이를 보간하기만 하면 된다.
+                        // 연출이 꺼져 있으면(`animatesHP == false`) 보간도 걸지 않는다 —
+                        // 값만 즉시 오고 바가 0.4초 흐르면 "끄기" 가 끄기가 아니다.
+                        .animation(animatesHP ? .easeOut(duration: 0.4) : nil, value: side.hp)
                 }
             }
             .frame(height: 6)
@@ -300,6 +308,10 @@ struct BattleFieldView: View {
     let myTitle: String
     let theirTitle: String
     let l: L
+    /// 좌우 두 자리인 배틀에서 내가 어느 쪽인가 — 재생 오버레이가 가리키는 `BattleActor` 를
+    /// 화면의 위·아래로 옮기는 데만 쓴다. 결과 화면처럼 재생이 없으면 필요 없다.
+    var myActor: BattleActor = .a
+    var overlay: ReplayOverlay = .idle
 
     var body: some View {
         ZStack {
@@ -307,30 +319,48 @@ struct BattleFieldView: View {
                            startPoint: .top, endPoint: .bottom)
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 6) {
-                    CombatantBar(side: theirs, title: theirTitle, l: l, revealsExactHP: false)
+                    CombatantBar(side: theirs, title: theirTitle, l: l, revealsExactHP: false,
+                                 animatesHP: overlay.isPlaying)
                         .frame(width: BattleFieldMetrics.barWidth)
                     Spacer(minLength: 0)
-                    combatant(theirs, size: BattleFieldMetrics.opponentSpriteSize, back: false)
+                    combatant(theirs, size: BattleFieldMetrics.opponentSpriteSize, back: false,
+                              isStruck: overlay.hit != nil && overlay.hit != myActor)
                 }
                 Spacer(minLength: 0)
                 HStack(alignment: .bottom, spacing: 6) {
-                    combatant(mine, size: BattleFieldMetrics.mySpriteSize, back: true)
+                    combatant(mine, size: BattleFieldMetrics.mySpriteSize, back: true,
+                              isStruck: overlay.hit == myActor)
                     Spacer(minLength: 0)
-                    CombatantBar(side: mine, title: myTitle, l: l, revealsExactHP: true)
+                    CombatantBar(side: mine, title: myTitle, l: l, revealsExactHP: true,
+                                 animatesHP: overlay.isPlaying)
                         .frame(width: BattleFieldMetrics.barWidth)
                 }
             }
             .padding(8)
+            // 팝 문구는 **필드 위에 겹쳐** 그린다. 흐름에 넣으면 뜰 때마다 아래 기술 버튼이 밀려
+            // 내려가고, 팝오버는 넘친 만큼을 잘라 낸다(`testTheArenaKeepsItsBudgetWhileAPhrasePopped`).
+            if let phrase = overlay.popped.flatMap({ BattleReplay.popup(for: $0, l: l) }) {
+                Text(phrase)
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.black.opacity(0.55)))
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    /// 스프라이트 + 지면 타원 그림자. 기절하면 흐려진다(Phase 7 이 여기에 낙하 연출을 얹는다).
-    private func combatant(_ side: BattleSide, size: CGFloat, back: Bool) -> some View {
+    /// 스프라이트 + 지면 타원 그림자. 기절하면 흐려지고, 맞은 턴엔 잠깐 흔들리며 번쩍인다.
+    /// 흔들림은 **맞은 쪽**에만 건다 — 때린 쪽이 흔들리면 누가 맞았는지 반대로 읽힌다.
+    private func combatant(_ side: BattleSide, size: CGFloat, back: Bool,
+                           isStruck: Bool) -> some View {
         VStack(spacing: -3) {
             SpriteView(speciesID: side.snapshot.speciesID, size: size, animated: true,
                        shiny: side.snapshot.isShiny, back: back)
-                .opacity(side.isAlive ? 1 : 0.3)
+                .opacity(side.isAlive ? (isStruck ? 0.45 : 1) : 0.3)
+                .offset(x: isStruck ? 4 : 0)
+                .animation(.easeInOut(duration: 0.08).repeatCount(4, autoreverses: true),
+                           value: isStruck)
             Ellipse()
                 .fill(Color.primary.opacity(0.14))
                 .frame(width: size * 0.62, height: size * 0.12)
@@ -385,7 +415,9 @@ struct MoveGridView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(move.type.battleColor.opacity(tier.isSelectable ? 1 : 0.35),
+            // 못 고르는 버튼은 못 고르게 **보여야** 한다. PP 가 마른 칸만 흐리게 두는 동안,
+            // 재생 중 잠긴 네 칸은 평소와 똑같아 보여서 눌러 보고서야 잠긴 걸 알았다.
+            .background(move.type.battleColor.opacity(isEnabled && tier.isSelectable ? 1 : 0.35),
                         in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
@@ -424,6 +456,10 @@ struct SwitchStripView: View {
             }
             Spacer(minLength: 0)
         }
+        // 잠근 줄은 잠긴 것처럼 보여야 한다 — 직접 그린 배경은 `.disabled` 로 어두워지지 않는다
+        // (defect-log: 같은 이유로 `MoveGridView` 도 배경 불투명도에 잠금을 태운다). 호출부가 아니라
+        // 여기서 거는 이유는 잠금을 아는 쪽이 여기라서다.
+        .opacity(isEnabled ? 1 : 0.45)
     }
 }
 
@@ -478,15 +514,24 @@ struct BattleArenaView: View {
     let switchSlots: [SwitchSlot]
     let turnEndsAt: Date?
     let isWaitingForOpponent: Bool
+    /// 재생 중인가 · 누가 맞았나 · 무슨 문구가 떠 있나. 재생이 없으면 `.idle` 이라 예전 화면 그대로다.
+    var overlay: ReplayOverlay = .idle
     let onChoose: (Int) -> Void
     let onSwitch: (Int) -> Void
     let onForfeit: () -> Void
+
+    /// 재생이 끝나기 전에 다음 기술을 고르면 무엇이 일어났는지 보지 못한 채 턴이 넘어간다.
+    private var acceptsInput: Bool {
+        BattleReplay.acceptsInput(isWaitingForOpponent: isWaitingForOpponent,
+                                  isReplaying: overlay.isPlaying)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: BattleFieldMetrics.spacing) {
             header
             BattleFieldView(mine: mine, theirs: theirs,
-                            myTitle: myTitle, theirTitle: theirTitle, l: l)
+                            myTitle: myTitle, theirTitle: theirTitle, l: l,
+                            myActor: myActor, overlay: overlay)
                 .frame(height: BattleFieldMetrics.fieldHeight)
             if isWaitingForOpponent {
                 HStack(spacing: 6) {
@@ -500,11 +545,13 @@ struct BattleArenaView: View {
             MoveGridView(moves: mine.mustStruggle ? [.struggle()] : mine.moves,
                          pp: mine.mustStruggle ? [] : mine.pp,
                          language: l.lang,
-                         isEnabled: !isWaitingForOpponent,
+                         isEnabled: acceptsInput,
                          onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
             if !switchSlots.isEmpty {
+                // 교체도 그 턴의 행동이다 — 기술만 잠그면 재생 중에 교체로 턴을 넘길 수 있다.
+                // 흐리게 그리는 건 `SwitchStripView` 가 자기 잠금 상태로 한다.
                 SwitchStripView(slots: switchSlots, label: l.battleSwitch,
-                                isEnabled: !isWaitingForOpponent, onSwitch: onSwitch)
+                                isEnabled: acceptsInput, onSwitch: onSwitch)
             }
             BattleLogBox(lines: logLines, myActor: myActor)
         }
@@ -550,11 +597,20 @@ enum BattleLogSource {
     }
 
     /// LAN 팀전 누적 로그 — 각 턴이 발생했을 때의 활성 포켓몬 문맥으로 이름과 기술을 해석한다.
-    static func netBattle(_ battle: NetBattleState, mine: BattleActor, l: L) -> [BattleLog.Line] {
-        battle.eventBatches.flatMap { batch in
+    ///
+    /// `playedCount` 는 재생이 도달한 **평평한** 이벤트 수(`NetBattleState.events` 기준)다.
+    /// 배치는 그 평평한 스트림과 같은 순서로만 쌓이므로(`resolveChosenActions`) 배치들을 가로질러
+    /// 같은 개수만큼 자르면 재생 진행도와 정확히 맞는다 — 로그가 결과를 먼저 알려 주지 않는다.
+    static func netBattle(_ battle: NetBattleState, mine: BattleActor, l: L,
+                          playedCount: Int = .max) -> [BattleLog.Line] {
+        var remaining = playedCount
+        return battle.eventBatches.flatMap { batch -> [BattleLog.Line] in
+            guard remaining > 0 else { return [] }
+            let events = Array(batch.events.prefix(remaining))
+            remaining -= events.count
             let myContext = mine == .a ? batch.a : batch.b
             let theirContext = mine == .a ? batch.b : batch.a
-            return twoSided(batch.events, mine: mine, l: l,
+            return twoSided(events, mine: mine, l: l,
                             myName: myContext.name, theirName: theirContext.name,
                             myMoves: myContext.moves, theirMoves: theirContext.moves)
         }

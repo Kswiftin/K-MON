@@ -79,6 +79,38 @@ final class BattleOutcomeTests: XCTestCase {
         XCTAssertEqual(loss.result, .loss, "내 쪽만 전멸하면 패배다")
     }
 
+    /// 연습전도 자동 출전을 스트림에 남긴다 — LAN 과 같은 규칙이다(재생기는 한 벌뿐이라,
+    /// 한 엔진만 이벤트를 안 내보내면 그 모드에서만 새로 나온 개체가 이전 개체 HP 로 그려진다).
+    func testPracticeRecordsTheAutomaticSendOutForTheReplay() {
+        var battle = TeamPracticeBattle(mine: [BattleSide(snapshot())],
+                                        opponents: [BattleSide(snapshot(power: 0)),
+                                                    BattleSide(snapshot(power: 0))],
+                                        rng: SplitMix64(seed: 7))
+        battle.opponents[0].hp = 1
+        XCTAssertTrue(battle.useMove(0))
+
+        XCTAssertNil(battle.result, "상대가 한 마리 남았으면 배틀은 계속된다")
+        XCTAssertEqual(battle.opponentActive, 1)
+        XCTAssertEqual(battle.events.last, .sendOut(.b, teamIndex: 1),
+                       "출전은 기절 뒤다 — 앞에 두면 기절이 새 개체에 그려진다")
+    }
+
+    /// 연습전 교체도 출전을 남기고, 그 출전은 **턴 머리 다음·상대 공격 앞**이다.
+    /// 뒤에 두면 재생이 이전 개체에 남의 데미지를 그린다.
+    func testPracticeSwitchRecordsTheSendOutBeforeTheOpponentAttacks() {
+        var battle = TeamPracticeBattle(mine: [BattleSide(snapshot(power: 0)),
+                                               BattleSide(snapshot(power: 0))],
+                                        opponents: [BattleSide(snapshot(speed: 200, power: 80))],
+                                        rng: SplitMix64(seed: 7))
+        XCTAssertTrue(battle.switchMine(to: 1))
+
+        XCTAssertEqual(battle.events.first, BattleEvent.turn(1), "턴 머리가 빠지면 로그에 턴 구분이 없다")
+        XCTAssertEqual(battle.events.dropFirst().first, BattleEvent.sendOut(.a, teamIndex: 1))
+        let damage = battle.events.firstIndex { if case .damage(.a, _, _) = $0 { return true } else { return false } }
+        XCTAssertNotNil(damage, "교체해 들어온 쪽이 맞지 않으면 순서를 볼 수 없다")
+        XCTAssertGreaterThan(damage ?? -1, 1, "출전이 데미지 뒤면 이전 개체가 남의 데미지를 맞는다")
+    }
+
     /// 전멸 판정을 앞으로 당기면서 슬롯 교대가 죽지 않았는지 — 상대 한 마리가 쓰러지고 다음이
     /// 남아 있으면 배틀은 계속되고 활성 슬롯만 넘어간다(체육관은 상대가 3마리다).
     func testFaintedOpponentSlotAdvancesWhileTheTeamStillStands() {

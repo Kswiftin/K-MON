@@ -431,8 +431,13 @@ enum BattleEngine {
     /// 3 = 상태이상 6종 + 혼란(행동 가능 판정·화상 반감·마비 스피드·턴 끝 잔뎀),
     /// 4 = 위력 0(변화기) 데미지 0,
     /// 5 = 끊김을 남은 HP 비율로 판정(몰수승 폐지) + 개시 시점 판돈 에스크로(구버전은 이탈로 판돈 회피),
-    /// 6 = LAN 팀전(교체 행동·자동 다음 출전·팀 전체 HP 기반 끊김 판정).
-    static let rulesVersion = 6
+    /// 6 = LAN 팀전(교체 행동·자동 다음 출전·팀 전체 HP 기반 끊김 판정),
+    /// 7 = 출전 이벤트(`.sendOut`) — 스트림에만 생기는 변화라 팀·활성 칸·rng 는 구버전과 같다.
+    ///     그래도 올린다: 이 스트림은 멀티 `roundResolved` 로 와이어에 실리고, `BattleEvent` 는
+    ///     case 이름으로 디코딩하므로 모르는 case 를 받은 구버전은 **메시지 전체를 못 읽는다.**
+    ///     지금은 멀티가 교체를 안 해 실릴 일이 없지만, "실릴 일이 없다" 를 근거로 두는 것보다
+    ///     핸드셰이크에서 막는 쪽이 싸다.
+    static let rulesVersion = 7
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -584,6 +589,15 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 없다. 재생 애니메이션(Phase 7)이 바를 보간할 때 필요해지면 그때 붙인다.
     case damage(BattleActor, amount: Int, cause: DamageCause)
     case faint(BattleActor)
+    /// 새 개체가 필드에 나왔다 — 자기 교체(턴 머리)와 기절 자동 출전(턴 끝) 양쪽이 이 case 다.
+    ///
+    /// **재생기가 개체 전환을 알아야 하는 이유**: 표시 상태가 활성 칸을 모르면 기절 턴에 새로 나온
+    /// 만피 포켓몬을 이전 개체의 HP 로 깎아 그린다(그리고 `isAlive == false` 라 흐린 스프라이트로).
+    /// 실을 수 있는 건 **팀 인덱스뿐**이다 — 이 스트림은 와이어에 실리므로(멀티 `roundResolved`)
+    /// `BattleSide` 를 담을 수 없고, 들어온 개체의 상태는 받는 쪽이 자기 팀에서 읽는다.
+    /// (Showdown 의 `|switch|` 가 남은 HP 를 같이 싣는 것과 다른 선택이다: 여기선 받는 쪽이
+    /// 같은 팀 배열을 들고 있어 인덱스만으로 충분하다.)
+    case sendOut(BattleActor, teamIndex: Int)
     /// 상태가 붙었다 / 나았다 / 그 상태 때문에 이번 턴을 못 썼다.
     case status(BattleActor, Status)
     case cureStatus(BattleActor, Status)

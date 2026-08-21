@@ -249,7 +249,8 @@ final class BattleFieldTests: XCTestCase {
                        allPPSpent: Bool = false,
                        turnEndsAt: Date? = nil,
                        theirHP: Int? = nil,
-                       language: AppLanguage = .ko) -> BattleArenaView {
+                       language: AppLanguage = .ko,
+                       overlay: ReplayOverlay = .idle) -> BattleArenaView {
         var theirs = BattleSide(mon([.fire, .flying], name: "상대이름이제법긴트레이너"))
         theirs.hp = theirHP ?? theirs.stats.hp / 3
         theirs.status = .burn
@@ -270,7 +271,25 @@ final class BattleFieldTests: XCTestCase {
             switchSlots: SwitchStripModel.slots([mine, theirs, fainted], active: 0),
             turnEndsAt: turnEndsAt,
             isWaitingForOpponent: false,
+            overlay: overlay,
             onChoose: { _ in }, onSwitch: { _ in }, onForfeit: {})
+    }
+
+    /// 재생 중 화면도 같은 예산이다 — 급소 문구가 뜨고 한쪽이 흔들리는 그 프레임이다.
+    /// 팝 문구가 자리를 **차지하면** 재생될 때마다 아래 기술 버튼이 밀려 내려가 잘린다.
+    /// 세 언어를 다 재는 이유는 문구 길이가 언어마다 다르기 때문이다(영어 CI 에서만 넘친 전례가 있다).
+    func testTheArenaKeepsItsBudgetWhileAPhraseIsPoppedOnTheField() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            let playing = ReplayOverlay(isPlaying: true, hit: .b, popped: .crit(.b))
+            let height = renderedHeight(arena(language: language, overlay: playing),
+                                        proposingWidth: PopoverMetrics.contentWidth)
+            XCTAssertLessThanOrEqual(height, Self.battleViewportBudget,
+                                     "\(language.rawValue) 재생 프레임이 예산을 넘긴다")
+            XCTAssertEqual(height,
+                           renderedHeight(arena(language: language), proposingWidth: PopoverMetrics.contentWidth),
+                           accuracy: 1,
+                           "\(language.rawValue): 팝 문구가 레이아웃을 밀면 재생 중에만 버튼이 내려간다")
+        }
     }
 
     /// 배틀 탭 전체가 팝오버 콘텐츠 폭과 세로 예산 안에 들어간다. 넘치면 NSPopover 가 스크롤이 아니라
@@ -401,13 +420,9 @@ final class BattleFieldTests: XCTestCase {
     /// `KMON_SNAPSHOT_DIR` 이 있으면 그 폴더에 PNG 로도 떨어뜨린다 — 사람이 눈으로 확인할 때 쓴다.
     /// CI 는 그 변수를 두지 않으므로 파일을 만들지 않는다.
     func testTheArenaActuallyRastersSomethingRatherThanABlankBox() throws {
-        let controller = NSHostingController(rootView: arena())
         let bounds = CGRect(x: 0, y: 0,
                             width: PopoverMetrics.contentWidth, height: Self.battleViewportBudget)
-        controller.view.frame = bounds
-        controller.view.layoutSubtreeIfNeeded()
-        let rep = try XCTUnwrap(controller.view.bitmapImageRepForCachingDisplay(in: bounds))
-        controller.view.cacheDisplay(in: bounds, to: rep)
+        let rep = try XCTUnwrap(raster(arena(), in: bounds))
 
         var seen = Set<String>()
         for x in stride(from: 4, to: Int(bounds.width) - 4, by: 12) {
@@ -422,7 +437,24 @@ final class BattleFieldTests: XCTestCase {
         if let dir = ProcessInfo.processInfo.environment["KMON_SNAPSHOT_DIR"],
            let png = rep.representation(using: .png, properties: [:]) {
             try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("battle-arena.png"))
+            // 재생 프레임도 같이 떨군다 — 팝 문구와 피격 스프라이트는 정지 화면에서만 눈으로
+            // 확인할 수 있고, 예산 테스트는 자리만 볼 뿐 무엇이 그려졌는지는 보지 않는다.
+            let playing = ReplayOverlay(isPlaying: true, hit: .b, popped: .crit(.b))
+            try raster(arena(overlay: playing), in: bounds)?
+                .representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: dir).appendingPathComponent("battle-arena-replay.png"))
         }
+    }
+
+    /// 창을 띄우지 않는 오프스크린 래스터. 색 검증과 PNG 떨구기가 같은 경로를 쓴다 —
+    /// 두 벌로 두면 한쪽만 손봐서 "눈으로 본 그림" 과 "테스트가 본 그림" 이 갈라진다.
+    private func raster(_ view: some View, in bounds: CGRect) -> NSBitmapImageRep? {
+        let controller = NSHostingController(rootView: view)
+        controller.view.frame = bounds
+        controller.view.layoutSubtreeIfNeeded()
+        guard let rep = controller.view.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        controller.view.cacheDisplay(in: bounds, to: rep)
+        return rep
     }
 
     /// defect-log 규칙: 배틀 화면에 세로 스크롤 컨테이너를 두면 안쪽이 스크롤되지 않고 잘린다.

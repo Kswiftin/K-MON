@@ -25,6 +25,10 @@ struct TeamPracticeBattle {
         guard mine.indices.contains(index), index != myActive, mine[index].isAlive, result == nil else { return false }
         BattleEngine.prepareForSwitch(&mine[myActive])
         myActive = index
+        // 턴 머리와 출전을 **여기서** 적는다 — 재생기가 개체 전환을 알아야 새로 나온 개체를
+        // 이전 개체 HP 로 그리지 않고, 출전이 상대 공격보다 먼저여야 순서가 실제와 맞는다.
+        events.append(.turn(turn))
+        events.append(.sendOut(.a, teamIndex: index))
         opponentAttacksAlone()
         turn += 1
         advanceFainted()
@@ -48,7 +52,6 @@ struct TeamPracticeBattle {
         guard opponents[opponentActive].isAlive, mine[myActive].isAlive else { return }
         let (move, moveIndex) = cpuMoveChoice()
         if moveIndex >= 0 { opponents[opponentActive].pp[moveIndex] -= 1 }
-        events.append(.turn(turn))
         events += BattleEngine.applyAttack(attacker: &opponents[opponentActive], defender: &mine[myActive],
                                            attackerActor: .b, defenderActor: .a, move: move, rng: &rng)
         // 교체로 넘긴 턴도 턴이다 — 잔뎀은 그대로 들어간다.
@@ -86,9 +89,17 @@ struct TeamPracticeBattle {
             result = myTeamWiped ? (opponentTeamWiped ? .draw : .loss) : .win
             return
         }
+        // 자동 출전도 스트림에 남는다 — 재생기가 이 이벤트를 보고서야 표시 상태를 새 개체로
+        // 갈아탄다. 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그린다.
         if !opponents[opponentActive].isAlive,
-           let next = opponents.indices.first(where: { opponents[$0].isAlive }) { opponentActive = next }
+           let next = opponents.indices.first(where: { opponents[$0].isAlive }) {
+            opponentActive = next
+            events.append(.sendOut(.b, teamIndex: next))
+        }
         if !mine[myActive].isAlive,
-           let next = mine.indices.first(where: { mine[$0].isAlive }) { myActive = next }
+           let next = mine.indices.first(where: { mine[$0].isAlive }) {
+            myActive = next
+            events.append(.sendOut(.a, teamIndex: next))
+        }
     }
 }

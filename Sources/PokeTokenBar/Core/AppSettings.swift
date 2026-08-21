@@ -20,6 +20,11 @@ final class AppSettings {
         didSet { defaults.set(floatingPetMovementSpeed, forKey: "floatingPetMovementSpeed") }
     }
     var imageAntialiasing: Bool { didSet { defaults.set(imageAntialiasing, forKey: "imageAntialiasing") } }
+    /// 배틀 재생 속도. **끄기가 있어야 하는 설정**이다 — 저전력과 접근성 둘 다 걸린다.
+    /// 저전력 모드에선 이 값과 무관하게 재생하지 않는다(`BattleReplay.effectiveSpeed`).
+    var battleReplaySpeed: ReplaySpeed {
+        didSet { defaults.set(battleReplaySpeed.rawValue, forKey: "battleReplaySpeed") }
+    }
     /// 플로팅에 고정해 둘 도감 종. nil = 지금 키우는 파트너를 따라간다(기본).
     /// 키를 지우는 쪽으로 nil 을 표현한다 — 0 같은 센티넬을 쓰면 종 번호와 구분되지 않는다.
     var floatingPetSpeciesID: Int? {
@@ -43,6 +48,8 @@ final class AppSettings {
         floatingPetMouseChaseEnabled = defaults.object(forKey: "floatingPetMouseChaseEnabled") as? Bool ?? false
         floatingPetMovementSpeed = defaults.object(forKey: "floatingPetMovementSpeed") as? Double ?? 80
         imageAntialiasing = defaults.object(forKey: "imageAntialiasing") as? Bool ?? true
+        battleReplaySpeed = (defaults.string(forKey: "battleReplaySpeed")
+            .flatMap(ReplaySpeed.init(rawValue:))) ?? .normal
         floatingPetSpeciesID = defaults.object(forKey: "floatingPetSpeciesID") as? Int
         companionNotifications = defaults.object(forKey: "companionNotifications") as? Bool ?? true
         updateNotificationsEnabled = defaults.object(forKey: "updateNotificationsEnabled") as? Bool ?? true

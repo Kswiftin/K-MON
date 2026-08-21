@@ -2164,6 +2164,61 @@ final class BattleTeamPickTests: XCTestCase {
         XCTAssertEqual(center.teamPractice?.myActive, 0)
     }
 
+    /// 승부가 난 마지막 턴은 **재생 뒤에** 결과 화면으로 넘어간다. 이벤트 append 와
+    /// `phase = .finished` 가 같은 동기 블록이면 SwiftUI 는 한 번만 다시 그리므로 arena 가
+    /// 마지막 배치를 한 프레임도 못 보고, 결정타·기절이 결과 화면으로 스냅한다 — 재생기가 생긴
+    /// 이유가 바로 그 턴이다(리뷰 #2).
+    func testTheDecidingTurnWaitsForTheReplayBeforeShowingTheResult() async {
+        let (store, mons) = teamPickStore(monCount: 6)
+        let center = battleCenter(store: store)
+        center.rankedTeamSize = 1
+        center.pickedTeam = [mons[0].id]
+
+        center.startRankedPractice()
+        let started = await waitUntil { center.phase == .battling }
+        XCTAssertTrue(started)
+
+        // CPU 의 rng 는 seed 고정이 아니라 턴 수를 못 박을 수 없다 — 승부가 날 때까지 돈다.
+        for _ in 0..<500 where center.pendingFinish == nil {
+            center.chooseTeamPracticeMove(0)
+        }
+
+        XCTAssertNotNil(center.pendingFinish, "500턴 안에 승부가 안 났다면 픽스처가 잘못됐다")
+        XCTAssertEqual(center.phase, .battling,
+                       "결과 화면으로 먼저 스냅하면 결정타·기절이 재생되지 않는다")
+
+        center.commitPendingFinish()
+        guard case .finished = center.phase else {
+            return XCTFail("재생이 끝났는데 결과 화면으로 넘어가지 않았다")
+        }
+        XCTAssertNil(center.pendingFinish, "미뤄 둔 결과가 남으면 다음 배틀에서 뒤늦게 튀어나온다")
+    }
+
+    /// 항복·새 배틀이 먼저 국면을 옮겼으면 미뤄 둔 결과는 버린다 — 안 버리면 재생기의 뒤늦은
+    /// 알림(또는 마감 타이머)이 항복 화면을 실제 결과로 덮어쓴다.
+    func testAForfeitDuringTheDeferredWindowKeepsItsOwnResult() async {
+        let (store, mons) = teamPickStore(monCount: 6)
+        let center = battleCenter(store: store)
+        center.rankedTeamSize = 1
+        center.pickedTeam = [mons[0].id]
+
+        center.startRankedPractice()
+        let started = await waitUntil { center.phase == .battling }
+        XCTAssertTrue(started)
+        for _ in 0..<500 where center.pendingFinish == nil {
+            center.chooseTeamPracticeMove(0)
+        }
+        XCTAssertNotNil(center.pendingFinish)
+
+        center.forfeit()
+        XCTAssertEqual(center.phase, .finished(iWon: false, byForfeit: true))
+        XCTAssertNil(center.pendingFinish, "국면이 넘어간 뒤에도 남으면 항복 화면이 덮인다")
+
+        center.commitPendingFinish()
+        XCTAssertEqual(center.phase, .finished(iWon: false, byForfeit: true),
+                       "뒤늦은 알림이 항복 결과를 갈아치웠다")
+    }
+
     /// 체육관도 동일한 공용 배열을 쓰며 첫 선택이 진입 직후 선봉이다.
     func testGymBattleUsesPickedSnapshotOrderAndLead() async {
         let (store, mons) = teamPickStore(monCount: 6)
