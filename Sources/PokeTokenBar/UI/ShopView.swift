@@ -11,7 +11,10 @@ struct ShopView: View {
         let l = store.l
         // 고정 높이 — 컬렉션/가방과 동일(팝오버 재오픈 시 fitting size 축소 방지).
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            // 판매 목록이 30줄 가까이 된다(진화 아이템 28종, #89) — VStack 은 열자마자 전부 그려서
+            // 아이템 스프라이트 27장을 한꺼번에 받아온다. Lazy 로 화면에 들어온 카드만 그린다.
+            // 고정 높이(520)는 ScrollView 쪽에 그대로 있어 팝오버 fitting size 규약은 그대로다.
+            LazyVStack(alignment: .leading, spacing: 10) {
                 walletHeader(l)
                 // shopEntries = 판매 아이템 + 알 3종(보증 없음·고급 이상·희귀 이상)을 가격 오름차순으로
                 // 병합한 단일 목록. 알은 활성 포켓몬이 있을 때만 포함된다(즉시 액션이라 ItemKind 가 아님).

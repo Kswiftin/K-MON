@@ -900,6 +900,24 @@ struct L {
         case .shinyStone: return t("빛의돌", "Shiny Stone", "ひかりのいし")
         case .duskStone: return t("어둠의돌", "Dusk Stone", "やみのいし")
         case .dawnStone: return t("각성의돌", "Dawn Stone", "めざめいし")
+        // 지닌물건 진화 아이템(#89) — 본가 공식 현지명 그대로.
+        case .kingsRock: return t("왕의징표석", "King's Rock", "おうじゃのしるし")
+        case .metalCoat: return t("금속코트", "Metal Coat", "メタルコート")
+        case .dragonScale: return t("용의비늘", "Dragon Scale", "りゅうのウロコ")
+        case .upgrade: return t("업그레이드", "Up-Grade", "アップグレード")
+        case .dubiousDisc: return t("괴상한패치", "Dubious Disc", "あやしいパッチ")
+        case .deepSeaTooth: return t("심해의이빨", "Deep Sea Tooth", "しんかいのキバ")
+        case .deepSeaScale: return t("심해의비늘", "Deep Sea Scale", "しんかいのウロコ")
+        case .protector: return t("프로텍터", "Protector", "プロテクター")
+        case .electirizer: return t("에레키부스터", "Electirizer", "エレキブースター")
+        case .magmarizer: return t("마그마부스터", "Magmarizer", "マグマブースター")
+        case .reaperCloth: return t("영계의천", "Reaper Cloth", "れいかいのぬの")
+        case .razorClaw: return t("예리한손톱", "Razor Claw", "するどいツメ")
+        case .razorFang: return t("예리한이빨", "Razor Fang", "するどいキバ")
+        case .prismScale: return t("아름다운비늘", "Prism Scale", "きれいなウロコ")
+        case .sachet: return t("향기주머니", "Sachet", "においぶくろ")
+        case .whippedDream: return t("휘핑팝", "Whipped Dream", "ホイップポップ")
+        case .ovalStone: return t("둥근돌", "Oval Stone", "まるいいし")
         }
     }
     func itemDescription(_ kind: ItemKind) -> String {
@@ -917,11 +935,20 @@ struct L {
             return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
                      "While owned, raises the chance of hatching a shiny.",
                      "持っていると色違いが生まれる確率が上がります。")
-        case .linkingCord:
-            return t("통신교환으로 진화하는 포켓몬을 진화시켜요.", "Evolves a Pokémon that normally evolves by trade.", "通信交換で進化するポケモンを進化させます。")
-        case .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone,
-             .shinyStone, .duskStone, .dawnStone:
-            return t("이 돌에 반응하는 포켓몬을 진화시켜요.", "Evolves a Pokémon that reacts to this stone.", "この石に反応するポケモンを進化させます。")
+        default:
+            // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 27개 나열하면 새 아이템을 넣을 때 빠뜨린다.
+            switch kind.evolutionRule {
+            case .plainTrade:
+                return t("통신교환으로 진화하는 포켓몬을 진화시켜요.", "Evolves a Pokémon that normally evolves by trade.", "通信交換で進化するポケモンを進化させます。")
+            case .useItem:
+                return t("이 돌에 반응하는 포켓몬을 진화시켜요.", "Evolves a Pokémon that reacts to this stone.", "この石に反応するポケモンを進化させます。")
+            case .heldItem:
+                return t("이 도구를 지녀야 진화하는 포켓몬을 진화시켜요.",
+                         "Evolves a Pokémon that needs to hold this item.",
+                         "この道具を持たせると進化するポケモンを進化させます。")
+            case nil:
+                return ""   // 진화 아이템이 아닌데 설명이 없는 경우(도달 불가 — 위 케이스가 다 덮는다)
+            }
         }
     }
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
