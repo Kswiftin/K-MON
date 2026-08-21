@@ -662,6 +662,8 @@ struct CompanionState: Codable, Sendable {
     var trainer = TrainerLevel()
     // 일간·주간 미션 진행도. 갱신은 타이머가 아니라 날짜/주 키 비교로 일어난다(MissionBoard 참고).
     var missions = MissionBoard()
+    // 누적 행동 업적(집중·진화·배틀·레이스). 도달 단계는 저장하지 않는다 — 카운터에서 계산된다.
+    var achievements = AchievementLadder()
     var focusEggs = 0
     // 보관 중인 알마다 자동 부화 예정 시각. 알은 획득 5분 뒤 현재 동행과 무관하게 박스에서 부화한다.
     var focusEggReadyDates: [Date] = []
@@ -718,6 +720,8 @@ struct CompanionState: Codable, Sendable {
         pendingRanked      = c.lenientOptional(PendingRankedBattle.self, forKey: .pendingRanked)
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
         missions           = c.lenient(MissionBoard.self, forKey: .missions, default: MissionBoard())
+        achievements       = c.lenient(AchievementLadder.self, forKey: .achievements,
+                                       default: AchievementLadder())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
         focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
         eggFragments       = c.lenient(Int.self, forKey: .eggFragments, default: 0)

@@ -229,7 +229,7 @@ final class AchievementSaveTests: XCTestCase {
     /// 해시끼리 비교하면 **안 된다**: 기본값 상태를 자기 자신과 대조하게 돼 무조건 append 로 바꿔도
     /// 양쪽이 똑같이 바뀌어 통과한다. 조각이 실제로 없는지를 문자열에서 직접 본다.
     func testDefaultAchievementsAddNothingToTheIntegrityCanonical() {
-        XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|ac"))
+        XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|ach"))
         XCTAssertFalse(SaveTransfer.isTampered(SaveTransfer.signed(CompanionState())))
     }
 
@@ -239,8 +239,17 @@ final class AchievementSaveTests: XCTestCase {
         var state = CompanionState()
         _ = state.achievements.record(.battle, 2)
 
-        XCTAssertTrue(SaveTransfer.canonicalString(state).contains("|acbattle:2"),
+        XCTAssertTrue(SaveTransfer.canonicalString(state).contains("|achbattle:2"),
                       "실제: \(SaveTransfer.canonicalString(state))")
+    }
+
+    /// 접두가 `ac` 였을 때 위의 "기본값엔 안 붙는다" 가 **거짓 통과**했다: 기본값 canonical 에도
+    /// 활성 포켓몬 세그먼트 `|act-` 가 있어 `contains("|ac")` 가 항상 참이었다. 그 함정을 고정한다 —
+    /// 세그먼트 유무를 보는 테스트는 다른 세그먼트의 접두에 걸리지 않는 접두를 써야 한다.
+    func testTheAchievementPrefixDoesNotCollideWithTheActivePokemonSegment() {
+        let canonical = SaveTransfer.canonicalString(CompanionState())
+        XCTAssertTrue(canonical.contains("|act"), "활성 포켓몬 세그먼트가 여전히 `act` 를 쓴다")
+        XCTAssertFalse(canonical.contains("|ach"), "업적 접두가 `act` 와 겹치면 안 된다")
     }
 
     /// 가드가 실제로 지키는지 — 서명 후 카운터를 손으로 올리면 조작으로 잡혀야 한다.
