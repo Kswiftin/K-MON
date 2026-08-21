@@ -661,6 +661,15 @@ struct CompanionHeader: View {
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
             if store.canGraduate { GraduateCard(store: store) }
             if let prompt = store.moveLearningPrompt { MoveLearningCard(store: store, prompt: prompt) }
+            if store.isLoadingRelearnCandidates {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(store.l.relearnLoading).font(.caption2).foregroundStyle(.secondary)
+                }
+            } else if store.moveLearningPrompt == nil, let relearn = store.relearnPrompt {
+                // 학습 카드가 떠 있을 땐 그리지 않는다 — 두 카드가 겹쳐 뜨면 어느 쪽 결정인지 알 수 없다.
+                MoveRelearnCard(store: store, prompt: relearn)
+            }
             if let g = store.justGraduated {
                 Text(store.l.graduated(g))
                     .font(.caption2).foregroundStyle(.orange)
@@ -979,20 +988,71 @@ private struct EvolutionPromptCard: View {
     }
 }
 
+/// 하트비늘 후보 목록(#97) — 고르면 기존 MoveLearningCard 로 넘어간다(교체 UI 는 그쪽 한 곳만).
+private struct MoveRelearnCard: View {
+    let store: CompanionStore
+    let prompt: CompanionStore.RelearnPrompt
+
+    var body: some View {
+        let l = store.l
+        VStack(alignment: .leading, spacing: 7) {
+            Label(l.relearnHeader, systemImage: "arrow.counterclockwise")
+                .font(.caption.weight(.semibold)).foregroundStyle(.pink)
+            if prompt.candidates.isEmpty {
+                Text(l.relearnEmpty).font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Text(l.relearnPickTitle).font(.caption2).foregroundStyle(.secondary)
+                // 후보가 수십 개까지 늘 수 있다 — 높이를 묶어 카드가 팝오버를 밀어내지 않게 한다.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(prompt.candidates) { move in
+                            Button {
+                                store.pickRelearnCandidate(move)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Text(move.name(store.language)).font(.caption)
+                                    TypeBadge(type: move.type, language: store.language)
+                                    Text(move.damageClass == .status
+                                         ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 180)
+            }
+            Button(l.relearnClose) { store.cancelRelearn() }.controlSize(.small)
+        }
+        .padding(9)
+        .background(Color.pink.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
 private struct MoveLearningCard: View {
     let store: CompanionStore
     let prompt: CompanionStore.MoveLearningPrompt
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label(store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます"),
-                  systemImage: "sparkles")
-                .font(.caption.weight(.semibold)).foregroundStyle(.purple)
+            // 하트비늘 유래면 "다시 떠올리기" 로 말한다 — 레벨업으로 새로 얻은 기술이 아니다.
+            Label(prompt.origin == .heartScale
+                  ? store.l.relearnHeader
+                  : store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます"),
+                  systemImage: prompt.origin == .heartScale ? "arrow.counterclockwise" : "sparkles")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(prompt.origin == .heartScale ? Color.pink : Color.purple)
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(prompt.move.name(store.language)).font(.callout.bold())
                     HStack(spacing: 5) {
-                        Text("Lv.\(prompt.level)").font(.caption2).foregroundStyle(.secondary)
+                        // 다시 배우는 기술엔 습득 레벨이 없다 — 현재 레벨을 여기 찍으면 없는 숫자를 만든다.
+                        if prompt.origin == .levelUp {
+                            Text("Lv.\(prompt.level)").font(.caption2).foregroundStyle(.secondary)
+                        }
                         TypeBadge(type: prompt.move.type, language: store.language)
                         // 행 라벨과 같은 L 어휘를 쓴다 — 예전엔 "변화"/"Power N"이 박혀 있어
                         // 한국어 UI 에 "Power 90", 영어 UI 에 "변화"가 나왔다(#10 부류).
