@@ -1261,6 +1261,10 @@ final class CompanionStore {
         if prompt.origin == .heartScale {
             state.inventory[ItemKind.heartScale.rawValue] = max(0, itemCount(.heartScale) - 1)
         }
+        // 표시 목록을 여기서 맞춘다. 기술 목록의 `.task(id:)` 는 "개체 id + 레벨" 이라 **레벨이
+        // 바뀌지 않는 학습**(하트비늘)에서는 다시 돌지 않는다 — 레벨업 경로는 레벨이 함께 바뀌어
+        // 이 공백이 가려져 있었다. 상세(설명·랭크 변화)는 다음 로드가 채운다.
+        displayedMoves = state.active!.learnedMoves
         save()
         pendingMoveLearningPrompt = nil
         showNextMoveLearningPrompt()
@@ -1940,13 +1944,19 @@ final class CompanionStore {
         Task { @MainActor in
             defer { isLoadingRelearnCandidates = false }
             var inherited: [[MoveSpec]] = []
-            for speciesID in mon.pathIDs {
+            var index = 0
+            // pathIDs 도 매 반복 다시 읽는다 — 조회 중에 진화하면 경로에 종이 **붙는다**. 캡처본으로
+            // 돌면 새로 붙은 종의 기술이 후보에서 통째로 빠진다.
+            while true {
                 // 도중에 개체가 바뀌었으면(교체·졸업·리롤) 남은 조회는 그 개체 몫이 아니다.
                 guard let current = state.active, current.id == monID else { return }
+                guard index < current.pathIDs.count else { break }
+                let speciesID = current.pathIDs[index]
                 let moves = await PokeAPIClient.shared
                     .canonicalLevelUpMoves(speciesID: speciesID, level: current.level)
                 guard state.active?.id == monID else { return }   // await 뒤 재확인
                 inherited.append(moves)
+                index += 1
             }
             // 배운 기술은 루프가 끝난 **지금** 다시 읽는다 — await 사이에 다른 카드에서 기술을
             // 배웠을 수 있고, 캡처본으로 계산하면 이미 배운 기술을 후보로 내놓는다(queueMoveLearning 과 같은 함정).
