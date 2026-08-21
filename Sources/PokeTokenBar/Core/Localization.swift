@@ -7,7 +7,13 @@ struct L {
     let lang: AppLanguage
     init(_ lang: AppLanguage) { self.lang = lang }
 
-    private func t(_ ko: String, _ en: String, _ ja: String) -> String {
+    /// 세 언어를 한자리에서 고른다. **뷰에서도 직접 쓴다** — 한 화면에서만 쓰는 일회성 문구까지
+    /// 이름 붙인 프로퍼티로 올리면 이 파일이 그런 문구로 뒤덮이고, 그걸 피하려다 뷰에
+    /// `language == .ko ? ko : en` 이 115곳 쌓였다(일본어 사용자에게 영어가 나갔다).
+    /// 인자가 세 개 필수라 한 칸을 비우면 컴파일이 막는다. 두 화면이 같은 문구를 쓰면 그때
+    /// 이름 붙인 프로퍼티로 올린다 — 같은 말을 두 번 번역하지 않는다.
+    /// 가드: `LanguageSplitGuardTests`.
+    func t(_ ko: String, _ en: String, _ ja: String) -> String {
         switch lang {
         case .ko: return ko
         case .en: return en

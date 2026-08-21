@@ -67,13 +67,13 @@ struct SettingsView: View {
     @ViewBuilder
     private func workModeGroup(_ settings: AppSettings) -> some View {
         @Bindable var settings = settings
-        settingsSection(companion.language == .ko ? "집중 타이머" : "Focus timer") {
+        settingsSection(l.t("집중 타이머", "Focus timer", "集中タイマー")) {
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(companion.language == .ko ? "방해금지 모드" : "Do Not Disturb")
-                    Text(companion.language == .ko
-                         ? "알림과 배틀 신청을 받지 않습니다."
-                         : "Blocks notifications and incoming battle challenges.")
+                    Text(l.t("방해금지 모드", "Do Not Disturb", "おやすみモード"))
+                    Text(l.t("알림과 배틀 신청을 받지 않습니다.",
+                             "Blocks notifications and incoming battle challenges.",
+                             "通知とバトルの申し込みを受け取りません。"))
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
