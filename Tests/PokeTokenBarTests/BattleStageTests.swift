@@ -360,6 +360,22 @@ final class BattleStageTests: XCTestCase {
         XCTAssertTrue(battle.mine[0].stages.isEmpty, "0 을 남기지 않고 비운다")
     }
 
+    /// 랭크 리셋은 **공유 헬퍼 안**에 있어야 한다 — LAN 교체(`BattleNet` 의 `switchSlot`)는 팀 연습을
+    /// 거치지 않고 `prepareForSwitch` 만 부른다. 리셋이 팀 연습 호출부에 인라인으로 있으면 위
+    /// 테스트는 통과하는데 LAN 교체만 랭크를 들고 나온다(무료 세팅).
+    func testPrepareForSwitchItselfClearsStages() {
+        var side = BattleSide(tank())
+        side.changeStage(.atk, by: 6)
+        side.confusionTurns = 3
+        side.status = .toxic
+
+        BattleEngine.prepareForSwitch(&side)
+
+        XCTAssertTrue(side.stages.isEmpty, "교체 정리를 부른 경로는 전부 랭크가 사라진다")
+        XCTAssertEqual(side.confusionTurns, 0)
+        XCTAssertEqual(side.status, .poison, "맹독 강등은 그대로 — 같은 헬퍼가 세 규칙을 다 쓴다")
+    }
+
     // MARK: 로그 — 랭크 변화가 자기 줄로 나간다
 
     func testBoostEventsBecomeTheirOwnLocalizedLine() {

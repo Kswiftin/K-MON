@@ -96,6 +96,21 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertFalse(BattleCenter.validLineup(snapshot: noType, lineup: [noType], teamSize: 1))
         XCTAssertFalse(BattleCenter.validLineup(snapshot: one, lineup: [snapshot(9)], teamSize: 1),
                        "미리보기 선봉과 실제 1번 슬롯이 달라서는 안 된다")
+
+        // 무브셋 범위는 **선봉이 아닌 슬롯**도 본다. 검사를 리드 스냅샷에만 걸면 2번 이후 슬롯이
+        // 무검사로 들어와, 교체된 뒤부터 `statChance: 5000`(2차효과 확정)이 살아난다.
+        var hostile = snapshot(2)
+        var move = hostile.moves?.first
+        move?.statChance = 5_000
+        hostile.moves = move.map { [$0] }
+        // teamSize 는 **지원 크기(1/3/6)** 로 잡는다 — 2 로 재면 크기 가드에서 먼저 걸려
+        // 무브셋 검사에 닿지도 못한 채 초록으로 통과한다(검사를 지워도 통과한다).
+        XCTAssertTrue(BattleCenter.validLineup(snapshot: one, lineup: [one, snapshot(2), snapshot(3)],
+                                               teamSize: 3),
+                      "정상 3인 라인업이 먼저 통과해야 아래 거절이 무브셋 때문임을 안다")
+        XCTAssertFalse(BattleCenter.validLineup(snapshot: one, lineup: [one, hostile, snapshot(3)],
+                                                teamSize: 3),
+                       "2번 슬롯의 범위 밖 무브셋도 핸드셰이크에서 거절한다")
     }
 
     func testAllFourActionCombinationsStayIdenticalFromBothPeerViews() {
