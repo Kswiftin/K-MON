@@ -1229,7 +1229,9 @@ struct CollectionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Picker("", selection: $section) {
-                Text(l.collection).tag(Section.dex)
+                // 상위 탭이 "컬렉션" 이라 여기서는 `dexTitle`("도감") 을 쓴다 — `l.collection` 을
+                // 쓰면 탭 이름과 세그먼트 이름이 같은 말이 되어 계층이 안 읽힌다.
+                Text(l.dexTitle).tag(Section.dex)
                 Text(l.achievementsTitle).tag(Section.achievements)
             }
             .pickerStyle(.segmented)

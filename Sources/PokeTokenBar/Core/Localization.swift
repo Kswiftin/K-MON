@@ -17,7 +17,10 @@ struct L {
 
     // MARK: 탭
     var home: String { t("홈", "Home", "ホーム") }
-    var collection: String { t("도감", "Pokédex", "ポケモン図鑑") }
+    /// 최상위 탭 라벨. **하위 세그먼트(도감 | 업적)의 상위어여야 한다** — 예전엔 이 값이 "도감" 이라
+    /// 도감 탭 안에 다시 "도감" 세그먼트가 들어가는 중복이 보였다. 도감 쪽 라벨은 `dexTitle` 을 쓴다.
+    /// 언어별 최장 탭 라벨은 그대로다(ko 포켓슬론 4자 · en Pokéathlon 10자 · ja 6자) — 피커가 안 넘친다.
+    var collection: String { t("컬렉션", "Collection", "コレクション") }
     var battle: String { t("배틀", "Battle", "バトル") }
 
     // MARK: 배틀
