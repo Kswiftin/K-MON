@@ -108,15 +108,14 @@ struct BattlePeer: Identifiable, Equatable {
     let name: String            // 표시 이름(고유 접미 제거)
     let serviceName: String     // Bonjour 광고 원본(고유) — id·self 판정용
     let endpoint: NWEndpoint
-    /// 상대가 광고한 표시용 진행도. **표시 전용이다** — 판돈은 핸드셰이크의 `BattleRankProfile`
-    /// 에서 온다(`PeerAdvertisement` 주석 참고).
+    /// 상대가 광고한 표시용 진행도. 쓰임과 한계는 `PeerAdvertisement` 에 적어 뒀다.
     let advertisement: PeerAdvertisement
-    /// 광고 안의 랭크 — 기존 호출부를 살려 두는 어댑터.
+    /// 광고 안의 랭크. 기존 호출부를 살려 두는 어댑터.
     var rank: BattleRank? { advertisement.rank }
     var id: String { serviceName }
-    /// **광고까지 비교한다.** 신원은 `id`(=`serviceName`)가 맡는다. 여기서 이름만 비교하면 상대가
-    /// 레벨을 올려도 "같은 값" 이 되어, 동등성으로 갱신을 판단하는 쪽(SwiftUI 뷰 비교·`onChange`)이
-    /// 이 기능의 존재 이유인 실시간 갱신을 그대로 삼킨다.
+    /// 광고까지 비교한다. 신원은 `id`(=`serviceName`)가 맡는다. 이름만 비교하면 상대가 레벨을
+    /// 올려도 같은 값이 되어, 동등성으로 갱신을 판단하는 쪽(SwiftUI 뷰 비교·`onChange`)이 실시간
+    /// 갱신을 삼킨다.
     static func == (l: Self, r: Self) -> Bool {
         l.serviceName == r.serviceName && l.advertisement == r.advertisement
     }
@@ -536,18 +535,17 @@ final class BattleCenter {
     /// 지금 TXT 레코드에 실려 있는 값들. 셋이 모두 그대로면 재발행하지 않는다.
     private(set) var advertisedProfile: PeerAdvertisement?
 
-    /// 지금 광고해야 할 값. 굽는 형식·클램프는 `PeerAdvertisement` 한 곳에 있다.
+    /// 지금 광고해야 할 값. 형식과 클램프는 `PeerAdvertisement` 가 맡는다.
     private var myAdvertisement: PeerAdvertisement {
         PeerAdvertisement(rankPoints: companion.battleRank.points,
                           trainerLevel: companion.trainerLevel.level,
                           achievementTiers: companion.achievementTierTotal,
-                          // 내 분모도 싣는다 — 카탈로그가 늘어난 뒤 상대가 나를 옳게 그릴 근거다.
+                          // 내 분모도 싣는다. 카탈로그가 늘어난 뒤 상대가 나를 옳게 그릴 근거다.
                           achievementCeiling: AchievementLadder.tierCeiling)
     }
 
-    /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 뒤에도 옛 점수가
-    /// 계속 광고돼 상대 목록에 stale 랭크가 남았다(#85). 레벨·업적도 같은 부류라 재발행 지점은
-    /// 여기 하나로 둔다.
+    /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 구워서 랭크전 뒤에도 옛 점수가
+    /// 계속 광고됐다(#85). 레벨·업적도 같은 부류라 재발행 지점은 여기 하나다.
     func refreshAdvertisedProfile() {
         let profile = myAdvertisement
         guard advertisedProfile != profile else { return }
@@ -564,9 +562,9 @@ final class BattleCenter {
         advertisedProfile = profile
     }
 
-    /// `companion` 변화를 계속 따라간다 — `withObservationTracking` 은 1회성이라 콜백에서 다시
-    /// 등록해야 한다. **세 원본을 각각 읽는다**: 지금은 셋이 모두 `state` 를 지나 하나만 읽어도
-    /// 발화하지만, 원본 하나가 `state` 밖으로 나가면 한 줄짜리 추적은 그 값을 조용히 놓친다(#85).
+    /// `companion` 변화를 계속 따라간다. `withObservationTracking` 은 1회성이라 콜백에서 다시
+    /// 등록해야 한다. 세 원본을 각각 읽는 이유: 지금은 셋이 모두 `state` 를 지나 하나만 읽어도
+    /// 발화하지만, 하나가 `state` 밖으로 나가면 한 줄짜리 추적은 그 값을 조용히 놓친다(#85).
     private func trackAdvertisedValues() {
         withObservationTracking {
             _ = companion.battleRank.points
@@ -618,10 +616,9 @@ final class BattleCenter {
     }
 
     private func startListener() {
-        // 재시작이면 옛 리스너를 **먼저 취소한다.** `cancel()` 없이 참조만 버리면 실패한 객체가
-        // 큐·포트를 붙든 채 남고, 24/7 앱에서 슬립 복귀마다 누적된다(형제인
-        // `MultiplayerRoomCenter.leaveRoom` 은 취소한다 — 한 모드만 고친 부류였다).
-        // 호출부가 아니라 이 입구에 두는 이유: 새 재시작 경로가 생겨도 자동으로 덮인다.
+        // 재시작이면 옛 리스너를 먼저 취소한다. 참조만 버리면 실패한 객체가 큐·포트를 붙든 채
+        // 남아 슬립 복귀마다 누적된다. 형제인 `MultiplayerRoomCenter.leaveRoom` 은 취소하고
+        // 있었다. 호출부가 아니라 입구에 두면 새 재시작 경로가 생겨도 덮인다.
         listener?.cancel()
         do {
             let listener = try NWListener(using: Self.discoveryParameters())
@@ -669,7 +666,7 @@ final class BattleCenter {
     }
 
     private func startBrowser() {
-        browser?.cancel()   // 재시작 시 옛 브라우저 취소 — `startListener` 와 같은 이유.
+        browser?.cancel()   // 재시작 시 옛 브라우저 취소. `startListener` 와 같은 이유.
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil),
                                 using: Self.discoveryParameters())
         browser.browseResultsChangedHandler = { [weak self] results, _ in
@@ -699,16 +696,16 @@ final class BattleCenter {
         self.browser = browser
     }
 
-    /// 발견된 광고 하나를 카드 한 장으로 옮긴다 — 자기 필터·표시 이름·광고 파싱이 여기 모여 있다.
+    /// 발견된 광고 하나를 카드 한 장으로 옮긴다. 자기 필터·표시 이름·광고 파싱이 여기 모인다.
     /// `updatePeers` 의 클로저 안에 두면 `NWBrowser.Result` 를 만들 수 없어 테스트가 닿지 못한다.
-    /// `endpoint` 는 **필수**다 — 기본값을 두면 브라우저가 해석해 준 엔드포인트 대신 손으로 지은
-    /// 것이 쓰일 수 있고, 그 경로는 테스트에서만 밟히므로 아무도 틀린 걸 못 본다.
+    /// `endpoint` 에 기본값을 두지 않는 이유: 브라우저가 해석해 준 엔드포인트 대신 손으로 지은
+    /// 것이 쓰이는데, 그 경로는 테스트에서만 밟혀 틀린 채로 남는다.
     nonisolated static func peer(fromService name: String, txtRecord: NWTXTRecord?,
                                  excluding myServiceName: String,
                                  endpoint: NWEndpoint) -> BattlePeer? {
         guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
-        // 레코드가 없거나 값이 쓰레기여도 **피어를 버리지 않는다** — 구버전 상대도 목록에 남아야
-        // 신청할 수 있다. 파싱·클램프는 `PeerAdvertisement` 한 곳에서 한다.
+        // 레코드가 없거나 값이 쓰레기여도 피어를 버리지 않는다. 구버전 상대도 목록에 남아야
+        // 신청할 수 있다.
         return BattlePeer(name: displayName(fromService: name), serviceName: name,
                           endpoint: endpoint,
                           advertisement: txtRecord.map(PeerAdvertisement.init) ?? PeerAdvertisement())

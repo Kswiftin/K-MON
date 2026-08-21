@@ -1,22 +1,22 @@
 import XCTest
 @testable import PokeTokenBar
 
-/// 세 언어 중 **두 갈래만** 번역하는 부류를 기계로 막는다 — 일본어 사용자에게 영어가 나간다.
+/// 세 언어 중 둘만 번역하는 부류를 기계로 막는다. 그대로 두면 일본어 사용자에게 영어가 나간다.
 ///
-/// 처방은 `L.t(ko, en, ja)` 다(인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다). 이 가드는
+/// 처방은 `L.t(ko, en, ja)` 다. 인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다. 이 가드는
 /// 그 처방을 우회하는 길, 즉 코드가 언어를 직접 갈라 보는 길을 닫는다.
 ///
-/// **검사 규칙: 한 파일의 `.ko` 와 `.ja` 등장 횟수가 같아야 한다.** `language == .ko ? ko : en`
-/// 만 찾는 문자열 스캔은 같은 부류의 다른 표기를 놓쳤다 — 실제로 두 곳을 흘렸다:
+/// 검사 규칙은 한 파일의 `.ko` 와 `.ja` 등장 횟수가 같아야 한다는 것이다. `language == .ko ?`
+/// 표기만 찾는 스캔은 같은 부류의 다른 표기를 놓쳤고, 실제로 두 곳을 흘렸다.
 /// `switch (language, phase)` 의 `case (.ko, …)`(FocusTimerView) 와
-/// `languageProvider() == .ko ? … : …`(FloatingPetPanel). 세 언어 표는 반드시 `.ko` 와 `.ja` 를
-/// 함께 쓰므로 개수 대칭이 곧 "세 갈래인가" 의 대리 지표가 된다.
+/// `languageProvider() == .ko`(FloatingPetPanel). 세 언어 표는 `.ko` 와 `.ja` 를 함께 쓰므로
+/// 개수 대칭이 세 갈래인지의 대리 지표가 된다.
 ///
-/// 한계: `.ko` 만 필요한 헬퍼(한국어 조사 판정 같은 것)가 짝 없이 늘면 오탐이 난다. 그때는
-/// 그 파일을 예외에 넣지 말고 `L` 로 올린다 — 오탐은 빌드를 막고 끝나지만 미탐은 배포된다.
+/// 한계: `.ko` 만 필요한 헬퍼(한국어 조사 판정 같은 것)가 짝 없이 늘면 오탐이 난다. 그때는 그
+/// 파일을 예외에 넣지 말고 `L` 로 올린다. 오탐은 빌드를 막고 끝나지만 미탐은 배포된다.
 ///
-/// **주석은 제외한다.** 규칙을 설명하는 주석 자체가 패턴을 담고 있어(이 파일이 그렇다) 제외하지
-/// 않으면 가드가 자기 설명에 걸린다.
+/// 주석은 제외한다. 규칙을 설명하는 주석이 패턴을 담고 있어(이 파일이 그렇다) 제외하지 않으면
+/// 가드가 자기 설명에 걸린다.
 final class LanguageSplitGuardTests: XCTestCase {
 
     private var sourceRoot: URL {
@@ -27,7 +27,7 @@ final class LanguageSplitGuardTests: XCTestCase {
             .appendingPathComponent("Sources")
     }
 
-    /// `.ko` 처럼 **열거형 케이스로 쓰인** 토큰만 센다. 뒤에 글자가 붙으면(`koreanSubject`) 다른 뜻이다.
+    /// 열거형 케이스로 쓰인 토큰만 센다. 뒤에 글자가 붙으면(`koreanSubject`) 다른 뜻이다.
     private func caseTokenCount(_ token: String, in line: String) -> Int {
         var rest = Substring(line)
         var count = 0

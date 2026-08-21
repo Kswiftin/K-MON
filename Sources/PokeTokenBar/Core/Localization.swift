@@ -7,10 +7,10 @@ struct L {
     let lang: AppLanguage
     init(_ lang: AppLanguage) { self.lang = lang }
 
-    /// 세 언어를 한자리에서 고른다. **뷰에서도 직접 쓴다** — 일회성 문구까지 이름 붙인 프로퍼티로
-    /// 올리면 이 파일이 뒤덮이고, 그걸 피하려다 뷰에 두 갈래 삼항이 115곳 쌓였다(일본어 사용자에게
-    /// 영어가 나갔다). 인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다. 두 화면이 같은 문구를
-    /// 쓰면 그때 프로퍼티로 승격한다. 가드: `LanguageSplitGuardTests`.
+    /// 세 언어를 한자리에서 고른다. 뷰에서도 직접 쓴다. 일회성 문구까지 이름 붙인 프로퍼티로
+    /// 올리면 이 파일이 뒤덮이고, 그걸 피하려다 두 갈래 삼항이 115곳 쌓여 일본어 사용자에게
+    /// 영어가 나갔다. 인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다. 두 화면이 같은 문구를
+    /// 쓰면 그때 프로퍼티로 승격한다. 가드는 `LanguageSplitGuardTests`.
     func t(_ ko: String, _ en: String, _ ja: String) -> String {
         switch lang {
         case .ko: return ko
@@ -747,8 +747,8 @@ struct L {
     func achievementTierLabel(_ reached: Int, _ total: Int) -> String {
         t("\(total)단계 중 \(reached)단계", "tier \(reached) of \(total)", "\(total)段階中\(reached)段階")
     }
-    /// 근처 트레이너 카드 진행도 줄의 스크린리더 대체 문구. 화면의 짧은 표기(`Lv.12 · 🏅8/16`)를
-    /// 그대로 읽히면 뜻이 안 통한다. 광고에 없는 칸은 문구에서도 빠진다.
+    /// 카드 진행도 줄의 스크린리더 대체 문구. `Lv.12 · 🏅8/16` 을 그대로 읽히면 뜻이 안 통한다.
+    /// 광고에 없는 칸은 문구에서도 빠진다.
     func peerProgressLabel(_ level: Int?, _ tiers: Int?, _ total: Int) -> String {
         var parts: [String] = []
         if let level {

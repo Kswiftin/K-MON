@@ -720,14 +720,11 @@ struct BattleView: View {
     }
 }
 
-/// 근처 트레이너 한 명 — 이름 줄과 진행도 줄, **두 줄 고정**이다.
+/// 근처 트레이너 한 명. 이름 줄과 진행도 줄, 두 줄 고정이다.
 ///
-/// 세 번째 줄이 생기면 한 페이지 5명(`BattleView.peerPageSize`) 예산이 깨진다(가드:
-/// `PopoverLayoutTests` 카드 절). 진행도를 이름과 같은 줄에 두지 않는 이유도 같다 — 이름은
-/// Bonjour 광고에서 와 길이를 우리가 정하지 못하지만, 아래 줄은 전부 길이가 정해진 값이라
-/// 최악의 폭을 미리 잴 수 있다.
-///
-/// 그리는 값은 전부 **상대가 스스로 신고한 표시용 값**이다 — 판정에 쓰지 않는다.
+/// 세 번째 줄이 생기면 한 페이지 5명(`BattleView.peerPageSize`) 예산이 깨진다. 진행도를 이름
+/// 옆에 두지 않는 이유도 같다. 이름은 Bonjour 에서 와 길이를 우리가 정하지 못하지만, 아래 줄은
+/// 전부 길이가 정해진 값이라 최악의 폭을 미리 잴 수 있다. 가드는 `PopoverLayoutTests` 카드 절.
 struct PeerRow: View {
     let store: CompanionStore
     let peer: BattlePeer
@@ -753,8 +750,8 @@ struct PeerRow: View {
         .padding(.vertical, 2)
     }
 
-    /// 랭크 · 트레이너 레벨 · 업적 단계. 광고에 없는 칸은 아예 그리지 않는다 — 구버전 상대는
-    /// 랭크만 보이고, "정보 없음" 을 세 번 반복하지 않는다.
+    /// 랭크·트레이너 레벨·업적 단계. 광고에 없는 칸은 그리지 않는다. 구버전 상대는 랭크만
+    /// 보이고, 정보 없음을 세 번 반복하지 않는다.
     private var progressLine: some View {
         HStack(spacing: 4) {
             Text(rankText)
@@ -762,7 +759,7 @@ struct PeerRow: View {
             if let level = peer.advertisement.trainerLevel {
                 Text("· Lv.\(level)").monospacedDigit().foregroundStyle(.secondary)
             }
-            // 분모는 **상대가 광고한 것**이다 — 내 카탈로그로 그리면 새 버전 상대가 완료로 보인다.
+            // 분모는 상대가 광고한 것을 쓴다. 내 카탈로그로 그리면 새 버전 상대가 완료로 보인다.
             if let badge = peer.advertisement.achievementProgress {
                 Text("· 🏅\(badge.tiers)/\(badge.ceiling)")
                     .monospacedDigit().foregroundStyle(.secondary)
@@ -774,10 +771,10 @@ struct PeerRow: View {
         .accessibilityLabel(accessibilityText)
     }
 
-    /// 화면과 스크린리더가 **같은 값**을 써야 한다 — 두 곳에서 따로 만들면 한쪽만 번역된다.
+    /// 화면과 스크린리더가 같은 값을 써야 한다. 따로 만들면 한쪽만 번역된다.
     private var rankText: String { peer.rank?.displayName ?? l.battleRankUnknown }
 
-    /// 스크린리더용 — 화면의 짧은 표기(`Lv.12 · 🏅8/16`)를 그대로 읽히면 뜻이 안 통한다.
+    /// 스크린리더용. 화면의 짧은 표기(`Lv.12 · 🏅8/16`)를 그대로 읽히면 뜻이 안 통한다.
     private var accessibilityText: String {
         let badge = peer.advertisement.achievementProgress
         let progress = l.peerProgressLabel(peer.advertisement.trainerLevel,

@@ -2,18 +2,18 @@ import Network
 import XCTest
 @testable import PokeTokenBar
 
-/// 근처 트레이너 목록이 보는 값은 Bonjour TXT 레코드로 전달된다 — 랭크, 트레이너 레벨, 업적 단계.
+/// 근처 트레이너 목록이 보는 값은 Bonjour TXT 로 전달된다. 랭크, 트레이너 레벨, 업적 단계다.
 ///
-/// 회귀(#85): 그 레코드를 **리스너를 만드는 순간에 한 번만** 굽고 있었다. 랭크전에서 이기든 지든
-/// 광고에는 옛 점수가 그대로 남아, 상대 화면엔 세션이 끝날 때까지 stale 랭크가 보였다.
-/// 리스너 생성 직후만 확인하는 테스트는 이 결함이 그대로 있는데도 통과한다 — 그래서 여기서는
-/// **값이 바뀐 뒤** 광고된 것을 본다. 레벨·업적도 같은 부류라 각자 자기 트리거로 검증한다.
+/// 회귀(#85): 그 레코드를 리스너를 만드는 순간에 한 번만 굽고 있었다. 랭크전에서 이기든 지든
+/// 광고에는 옛 점수가 남아 상대 화면엔 세션이 끝날 때까지 stale 랭크가 보였다. 리스너 생성
+/// 직후만 확인하는 테스트는 결함이 그대로 있는데도 통과하니, 여기서는 값이 바뀐 뒤 광고된 것을
+/// 본다. 레벨·업적도 같은 부류라 각자 자기 트리거로 검증한다.
 @MainActor
 final class RankAdvertisementTests: XCTestCase {
 
     /// TXT 레코드 재발행을 기록한다. 실제 `NWListener` 는 띄우지 않는다(테스트에 로컬 네트워크
     /// 권한을 요구하지 않으려고 BattleCenter 에 발행 지점 주입 seam 을 뒀다).
-    /// 구운 레코드를 **다시 파싱해서** 담는다 — 발행 경로가 실제로 왕복하는지까지 함께 본다.
+    /// 구운 레코드를 다시 파싱해서 담는다. 발행 경로가 실제로 왕복하는지까지 함께 본다.
     private final class Recorder {
         var published: [PeerAdvertisement] = []
         func record(_ record: NWTXTRecord) { published.append(PeerAdvertisement(record)) }
@@ -35,8 +35,8 @@ final class RankAdvertisementTests: XCTestCase {
 
     // MARK: 첫 광고
 
-    /// 첫 광고부터 세 값이 다 실려야 한다 — 레벨·업적을 "바뀔 때만" 실으면 앱을 켜고 아무것도
-    /// 하지 않은 상대는 카드에서 영원히 빈 칸으로 보인다.
+    /// 첫 광고부터 세 값이 다 실려야 한다. 바뀔 때만 실으면 앱을 켜고 아무것도 하지 않은 상대는
+    /// 카드에서 영원히 빈 칸으로 보인다.
     func testTheFirstAdvertisementCarriesAllThreeValues() {
         let store = makeStore(TestClock())
         let recorder = Recorder()
@@ -50,7 +50,7 @@ final class RankAdvertisementTests: XCTestCase {
         XCTAssertEqual(recorder.published.last?.achievementTiers, store.achievementTierTotal)
     }
 
-    // MARK: 값이 바뀐 뒤 (트리거 브랜치 — 세 축을 각각 단독으로)
+    // MARK: 값이 바뀐 뒤 (세 축을 각각 단독으로)
 
     func testRankChangeRepublishesTheAdvertisedRecord() async {
         let store = makeStore(TestClock())
@@ -68,8 +68,7 @@ final class RankAdvertisementTests: XCTestCase {
         XCTAssertEqual(net.advertisedProfile?.rankPoints, store.battleRank.points)
     }
 
-    /// 트레이너 레벨 단독 — 모험을 정산해 레벨이 오른다(랭크·업적은 그대로).
-    /// 랭크만 관찰하던 코드에서는 이 테스트가 실패해야 한다.
+    /// 트레이너 레벨 단독. 모험을 정산해 레벨만 오른다. 랭크만 관찰하던 코드에서는 실패해야 한다.
     func testTrainerLevelChangeRepublishesTheAdvertisedRecord() async {
         let clock = TestClock()
         let store = makeStore(clock)
@@ -92,7 +91,7 @@ final class RankAdvertisementTests: XCTestCase {
         XCTAssertEqual(net.advertisedProfile?.trainerLevel, store.trainerLevel.level)
     }
 
-    /// 업적 단계 단독 — 레이스 완주 한 번으로 1단계를 넘는다(랭크·레벨은 그대로).
+    /// 업적 단계 단독. 레이스 완주 한 번으로 1단계를 넘고 랭크·레벨은 그대로다.
     func testAchievementTierChangeRepublishesTheAdvertisedRecord() async {
         let store = makeStore(TestClock())
         let recorder = Recorder()
@@ -126,8 +125,8 @@ final class RankAdvertisementTests: XCTestCase {
         XCTAssertEqual(recorder.published.count, 1, "세 값이 그대로면 재발행하지 않는다")
     }
 
-    /// 한 정산이 레벨과 업적을 함께 올릴 때도 **마지막 광고가 현재 상태와 일치**해야 한다.
-    /// 발행 횟수는 관찰이 몇 번 발화하느냐에 따라 달라지므로 최종값으로 잰다.
+    /// 한 정산이 레벨과 업적을 함께 올릴 때도 마지막 광고가 현재 상태와 일치해야 한다. 발행
+    /// 횟수는 관찰이 몇 번 발화하느냐에 따라 달라지니 최종값으로 잰다.
     func testTheLastAdvertisementMatchesTheCurrentStateWhenTwoValuesMoveTogether() async {
         let clock = TestClock()
         let store = makeStore(clock)
