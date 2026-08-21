@@ -761,8 +761,7 @@ struct PeerRow: View {
     /// 랭크만 보이고, "정보 없음" 을 세 번 반복하지 않는다.
     private var progressLine: some View {
         HStack(spacing: 4) {
-            Text(peer.rank?.displayName
-                 ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
+            Text(rankText)
                 .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
             if let level = peer.advertisement.trainerLevel {
                 Text("· Lv.\(level)").monospacedDigit().foregroundStyle(.secondary)
@@ -778,13 +777,15 @@ struct PeerRow: View {
         .accessibilityLabel(accessibilityText)
     }
 
+    /// 랭크 문구는 화면과 스크린리더가 **같은 값**을 써야 한다 — 두 곳에서 따로 만들면 한쪽만
+    /// 번역되는 부류가 생긴다(실제로 ja 가 영어 문구를 읽고 있었다).
+    private var rankText: String { peer.rank?.displayName ?? l.battleRankUnknown }
+
     /// 스크린리더용 — 화면의 짧은 표기(`Lv.12 · 🏅8/16`)를 그대로 읽히면 뜻이 안 통한다.
     private var accessibilityText: String {
-        let rank = peer.rank?.displayName
-            ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable")
         let progress = l.peerProgressLabel(peer.advertisement.trainerLevel,
                                           peer.advertisement.achievementTiers,
                                           AchievementLadder.tierCeiling)
-        return progress.isEmpty ? rank : "\(rank), \(progress)"
+        return progress.isEmpty ? rankText : "\(rankText), \(progress)"
     }
 }

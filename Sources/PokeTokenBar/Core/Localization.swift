@@ -56,6 +56,8 @@ struct L {
           "同じネットワークで対戦相手を探しています… 相手もアプリを起動している必要があります。")
     }
     var battleChallengeButton: String { t("대결 신청", "Challenge", "対戦を申し込む") }
+    /// 구버전 상대는 랭크를 광고하지 않는다. 최하위 티어와 구별돼야 하므로 빈칸이 아니라 문구다.
+    var battleRankUnknown: String { t("랭크 정보 없음", "Rank unavailable", "ランク情報なし") }
     var battleWaitingAccept: String { t("수락 대기 중…", "Waiting for accept…", "承諾を待っています…") }
     var battleCancel: String { t("취소", "Cancel", "キャンセル") }
     var battleIncomingTitle: String { t("배틀 신청이 왔습니다!", "Incoming battle challenge!", "バトルの申し込みが来ました！") }
