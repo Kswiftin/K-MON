@@ -9,6 +9,16 @@ import SwiftUI
 struct PokemonRosterView: View {
     let store: CompanionStore
     @State private var page = 0
+    @State private var sort: RosterSort = .caught
+    @State private var ascending = true
+    @State private var typeFilter: PokemonType?
+    /// 종별로 한 번만 해석해 두는 표시값. 카드마다 따로 받아오면 정렬 키(이름·타입)를 화면과
+    /// 맞출 수 없다 — 정렬·필터는 박스 전체를 봐야 하는데 행은 자기 것만 알기 때문이다.
+    @State private var names: [Int: String] = [:]
+    @State private var types: [Int: [PokemonType]] = [:]
+    /// 타입 해석이 한 바퀴 돌았는지. 돌기 전엔 필터 메뉴를 열지 않는다 — 절반만 해석된 표로
+    /// 거르면 "왜 얘가 안 보이지"가 로딩 순서에 따라 달라진다.
+    @State private var didResolveTypes = false
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
     private static let contentHeight: CGFloat = 520
@@ -26,26 +36,95 @@ struct PokemonRosterView: View {
 
     var body: some View {
         let owned = store.ownedMons
-        let pageCount = Self.pageCount(ownedCount: owned.count)
-        // 졸업·방출로 마릿수가 줄면 보던 페이지가 사라진다 — 범위 밖이면 마지막 페이지로 당긴다.
+        let arranged = RosterOrdering.arrange(owned, sort: sort, ascending: ascending,
+                                              typeFilter: typeFilter, types: types,
+                                              language: store.language, names: names)
+        let pageCount = Self.pageCount(ownedCount: arranged.count)
+        // 졸업·방출·필터로 마릿수가 줄면 보던 페이지가 사라진다 — 범위 밖이면 마지막 페이지로 당긴다.
         let current = min(page, pageCount - 1)
-        let slice = Array(owned.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
+        let slice = Array(arranged.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 6) {
-            header(ownedCount: owned.count)
+            header(shownCount: arranged.count, ownedCount: owned.count, owned: owned)
             grid(slice)
             footer(current: current, pageCount: pageCount)
         }
         .frame(height: Self.contentHeight, alignment: .top)
+        .task(id: owned.map(\.currentID).sorted()) { await resolveDisplayValues(for: owned) }
     }
 
-    private func header(ownedCount: Int) -> some View {
-        HStack {
+    /// 박스 전체의 이름·타입을 한 번 해석한다. 이름은 개체에 저장된 다국어 이름으로 대부분 끝나고
+    /// (`MonState.names`), 없는 것만 조회한다. 타입은 `battleProfile` 이 캐시하므로 두 번째부터 공짜다.
+    private func resolveDisplayValues(for owned: [MonState]) async {
+        for mon in owned {
+            let id = mon.currentID
+            if names[id] == nil {
+                let local = RosterOrdering.displayName(mon, language: store.language)
+                names[id] = local.hasPrefix("#") ? await store.resolveSpeciesName(id) : local
+            }
+            if types[id] == nil,
+               let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id) {
+                types[id] = profile.types
+            }
+        }
+        didResolveTypes = true
+    }
+
+    private func header(shownCount: Int, ownedCount: Int, owned: [MonState]) -> some View {
+        HStack(spacing: 6) {
             Label(store.language == .ko ? "소유 포켓몬" : "Owned Pokémon", systemImage: "square.grid.2x2.fill")
                 .font(.headline)
-            Spacer()
-            Text("\(ownedCount)")
+            Spacer(minLength: 2)
+            sortMenu
+            typeMenu(owned: owned)
+            // 필터가 걸렸을 땐 "보이는 수 / 전체 수" — 숫자 하나만 두면 필터가 켜진 걸 놓친다.
+            Text(shownCount == ownedCount ? "\(ownedCount)" : "\(shownCount)/\(ownedCount)")
                 .font(.caption.bold()).padding(.horizontal, 7).padding(.vertical, 3)
                 .background(Color.accentColor.opacity(0.12), in: Capsule())
+        }
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            ForEach(RosterSort.allCases, id: \.self) { option in
+                Button {
+                    if sort == option { ascending.toggle() } else { sort = option; ascending = true }
+                    page = 0
+                } label: {
+                    Label(sortLabel(option), systemImage: sort == option
+                          ? (ascending ? "arrow.up" : "arrow.down") : "")
+                }
+            }
+        } label: {
+            Label(sortLabel(sort), systemImage: ascending ? "arrow.up.arrow.down" : "arrow.down.arrow.up")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .accessibilityLabel(store.language == .ko ? "정렬" : "Sort")
+    }
+
+    private func typeMenu(owned: [MonState]) -> some View {
+        let available = RosterOrdering.availableTypes(owned, types: types)
+        return Menu {
+            Button(store.language == .ko ? "전체 타입" : "All types") { typeFilter = nil; page = 0 }
+            ForEach(available, id: \.self) { type in
+                Button(type.name(store.language)) { typeFilter = type; page = 0 }
+            }
+        } label: {
+            Label(typeFilter?.name(store.language) ?? (store.language == .ko ? "타입" : "Type"),
+                  systemImage: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .disabled(!didResolveTypes || available.isEmpty)
+        .accessibilityLabel(store.language == .ko ? "타입 필터" : "Type filter")
+    }
+
+    private func sortLabel(_ option: RosterSort) -> String {
+        let ko = store.language == .ko
+        switch option {
+        case .caught: return ko ? "부화순" : "Caught"
+        case .name:   return ko ? "이름순" : "Name"
+        case .level:  return ko ? "레벨순" : "Level"
         }
     }
 
@@ -59,7 +138,9 @@ struct PokemonRosterView: View {
                         let index = row * Self.columns + column
                         if index < slice.count {
                             let mon = slice[index]
-                            RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID)
+                            RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
+                                          name: names[mon.currentID] ?? "",
+                                          types: types[mon.currentID] ?? [])
                                 .frame(maxWidth: .infinity)
                         } else {
                             Color.clear.frame(maxWidth: .infinity)
@@ -102,8 +183,10 @@ private struct RosterMonCard: View {
     let store: CompanionStore
     let mon: MonState
     let isActive: Bool
-    @State private var name = ""
-    @State private var types: [PokemonType] = []
+    /// 이름·타입은 부모가 박스 단위로 해석해 넘긴다 — 정렬·필터가 쓰는 값과 카드가 그리는 값이
+    /// 갈라지지 않게 한다(행마다 따로 받아오면 정렬 키를 화면과 맞출 수 없다).
+    let name: String
+    let types: [PokemonType]
 
     var body: some View {
         Button { if !isActive { store.switchCompanion(to: mon.id) } } label: {
@@ -126,10 +209,6 @@ private struct RosterMonCard: View {
                     .foregroundStyle(isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
         }.buttonStyle(.bordered).disabled(isActive)
-        .task(id: mon.currentID) {
-            name = await store.resolveSpeciesName(mon.currentID)
-            types = (try? await PokeAPIClient.shared.battleProfile(speciesID: mon.currentID).types) ?? []
-        }
     }
 }
 

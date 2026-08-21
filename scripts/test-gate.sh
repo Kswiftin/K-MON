@@ -37,6 +37,7 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/PokeathlonPool.swift"
   "Sources/PokeTokenBar/Core/GymLeague.swift"
   "Sources/PokeTokenBar/Core/GameNumberFormatter.swift"
+  "Sources/PokeTokenBar/Core/RosterOrdering.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"
