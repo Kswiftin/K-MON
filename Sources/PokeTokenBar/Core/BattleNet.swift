@@ -540,7 +540,9 @@ final class BattleCenter {
     private var myAdvertisement: PeerAdvertisement {
         PeerAdvertisement(rankPoints: companion.battleRank.points,
                           trainerLevel: companion.trainerLevel.level,
-                          achievementTiers: companion.achievementTierTotal)
+                          achievementTiers: companion.achievementTierTotal,
+                          // 내 분모도 싣는다 — 카탈로그가 늘어난 뒤 상대가 나를 옳게 그릴 근거다.
+                          achievementCeiling: AchievementLadder.tierCeiling)
     }
 
     /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 뒤에도 옛 점수가

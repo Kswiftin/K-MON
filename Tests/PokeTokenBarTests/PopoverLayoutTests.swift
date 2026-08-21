@@ -151,10 +151,12 @@ final class PopoverLayoutTests: XCTestCase {
 
     /// 카드가 그릴 수 있는 **최악의 진행도** — 가장 긴 랭크 문구에 레벨·배지도 최대다.
     /// 여기서 안 잘리면 어떤 상대에서도 안 잘린다.
+    /// 배지 분모는 **상대가 광고**하므로 내 카탈로그(16)가 아니라 표시 상한까지 커질 수 있다.
     private var widestAdvertisement: PeerAdvertisement {
         PeerAdvertisement(rankPoints: widestRankPoints,
                           trainerLevel: TrainerLevel.maximumLevel,
-                          achievementTiers: AchievementLadder.tierCeiling)
+                          achievementTiers: PeerAdvertisement.maximumTierCeiling,
+                          achievementCeiling: PeerAdvertisement.maximumTierCeiling)
     }
 
     private func peerRow(_ name: String, _ advertisement: PeerAdvertisement,

@@ -762,8 +762,9 @@ struct PeerRow: View {
             if let level = peer.advertisement.trainerLevel {
                 Text("· Lv.\(level)").monospacedDigit().foregroundStyle(.secondary)
             }
-            if let tiers = peer.advertisement.achievementTiers {
-                Text("· 🏅\(tiers)/\(AchievementLadder.tierCeiling)")
+            // 분모는 **상대가 광고한 것**이다 — 내 카탈로그로 그리면 새 버전 상대가 완료로 보인다.
+            if let badge = peer.advertisement.achievementProgress {
+                Text("· 🏅\(badge.tiers)/\(badge.ceiling)")
                     .monospacedDigit().foregroundStyle(.secondary)
             }
         }
@@ -778,9 +779,10 @@ struct PeerRow: View {
 
     /// 스크린리더용 — 화면의 짧은 표기(`Lv.12 · 🏅8/16`)를 그대로 읽히면 뜻이 안 통한다.
     private var accessibilityText: String {
+        let badge = peer.advertisement.achievementProgress
         let progress = l.peerProgressLabel(peer.advertisement.trainerLevel,
-                                          peer.advertisement.achievementTiers,
-                                          AchievementLadder.tierCeiling)
+                                          badge?.tiers,
+                                          badge?.ceiling ?? AchievementLadder.tierCeiling)
         return progress.isEmpty ? rankText : "\(rankText), \(progress)"
     }
 }

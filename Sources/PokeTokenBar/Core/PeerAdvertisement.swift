@@ -16,22 +16,38 @@ struct PeerAdvertisement: Equatable, Sendable {
         static let rank = "rankPoints"
         static let level = "trainerLevel"
         static let tiers = "achievementTiers"
+        static let ceiling = "achievementCeiling"
     }
+
+    /// 광고된 분모의 표시 상한. 카탈로그가 늘어도 두 자리에서 멈춘다 — 세 자리가 되면 카드가 밀려
+    /// 배지 칸이 잘린다(폭 예산은 두 자리 최악으로 잰다).
+    static let maximumTierCeiling = 99
 
     /// 랭크는 **원본 포인트** — 이미 배포된 형식이고 읽는 쪽이 `BattleRank` 로 파생한다.
     let rankPoints: Int?
     /// 레벨은 **표시값**이다(포인트가 아니다). 곡선(`TrainerLevel.pointsPerStep`)은 조절 손잡이라
     /// 포인트를 실으면 곡선을 바꾼 순간 구버전이 남의 레벨을 틀리게 계산한다.
     let trainerLevel: Int?
-    /// 도달 단계 합계(0...`AchievementLadder.tierCeiling`). 같은 이유로 표시값이다.
+    /// 도달 단계 합계. 같은 이유로 표시값이다.
     let achievementTiers: Int?
+    /// **상대의 분모.** 카탈로그는 조절 손잡이라 언젠가 늘어난다. 이걸 안 실으면 구버전이 상대를
+    /// 자기 분모로 그려 18/20 인 상대가 `16/16`(완료)으로 보인다 — 없으면 나중에 못 고친다.
+    let achievementCeiling: Int?
 
     /// 굽는 쪽 진입점. **클램프는 여기 한 곳**이고 파싱도 이 자리를 지난다.
-    init(rankPoints: Int? = nil, trainerLevel: Int? = nil, achievementTiers: Int? = nil) {
+    init(rankPoints: Int? = nil, trainerLevel: Int? = nil,
+         achievementTiers: Int? = nil, achievementCeiling: Int? = nil) {
         self.rankPoints = rankPoints.map { BattleRank.clamped($0) }
         // 레벨 하한은 1 이다 — `TrainerLevel.level` 이 1 부터라 Lv.0 은 없는 값이다.
         self.trainerLevel = trainerLevel.map { min(TrainerLevel.maximumLevel, max(1, $0)) }
-        self.achievementTiers = achievementTiers.map { min(AchievementLadder.tierCeiling, max(0, $0)) }
+        // 분모 하한은 1 이다 — 0 을 분모로 그리면 나눗셈이 아니다.
+        let ceiling = achievementCeiling.map { min(Self.maximumTierCeiling, max(1, $0)) }
+        self.achievementCeiling = ceiling
+        // 단계는 **상대가 신고한 분모** 안으로 자른다. 내 상한으로 자르면 새 카탈로그 상대의
+        // 진행이 깎여 완료로 보인다(분모를 안 보낸 구버전만 내 상한을 쓴다).
+        self.achievementTiers = achievementTiers.map {
+            min(ceiling ?? AchievementLadder.tierCeiling, max(0, $0))
+        }
     }
 
     /// 읽는 쪽 진입점 — **관대 파싱이고 실패하지 않는다**(`init?` 가 아니다). 실패시키면 그 피어가
@@ -40,7 +56,8 @@ struct PeerAdvertisement: Equatable, Sendable {
     init(_ record: NWTXTRecord) {
         self.init(rankPoints: record[Key.rank].flatMap(Int.init),
                   trainerLevel: record[Key.level].flatMap(Int.init),
-                  achievementTiers: record[Key.tiers].flatMap(Int.init))
+                  achievementTiers: record[Key.tiers].flatMap(Int.init),
+                  achievementCeiling: record[Key.ceiling].flatMap(Int.init))
     }
 
     /// 빈 칸은 키를 싣지 않는다 — 읽는 쪽이 "없음"과 "0"을 구별해야 한다.
@@ -49,7 +66,15 @@ struct PeerAdvertisement: Equatable, Sendable {
         if let rankPoints { entries[Key.rank] = String(rankPoints) }
         if let trainerLevel { entries[Key.level] = String(trainerLevel) }
         if let achievementTiers { entries[Key.tiers] = String(achievementTiers) }
+        if let achievementCeiling { entries[Key.ceiling] = String(achievementCeiling) }
         return NWTXTRecord(entries)
+    }
+
+    /// 카드가 그릴 분수 — **상대의 분모**를 쓴다. 분모를 안 보낸 구버전은 내 카탈로그로 그린다.
+    /// 단계가 없으면 분수도 없다(분모만 온 광고로 `0/20` 을 그리면 없는 정보를 만든다).
+    var achievementProgress: (tiers: Int, ceiling: Int)? {
+        guard let achievementTiers else { return nil }
+        return (achievementTiers, achievementCeiling ?? AchievementLadder.tierCeiling)
     }
 
     /// 카드가 쓰는 랭크. 랭크가 없으면 nil 이어야 한다 — 빈 `BattleRank()` 는 Iron 4 로 그려져
