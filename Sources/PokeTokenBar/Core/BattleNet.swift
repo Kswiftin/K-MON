@@ -689,20 +689,29 @@ final class BattleCenter {
         self.browser = browser
     }
 
+    /// 발견된 광고 하나를 카드 한 장으로 옮긴다 — 자기 필터·표시 이름·광고 파싱이 여기 모여 있다.
+    ///
+    /// `updatePeers` 안의 클로저에 두면 프레임워크 타입(`NWBrowser.Result`)을 만들 수 없어
+    /// 테스트가 닿지 못한다. `endpoint` 는 연결에만 쓰이므로 인자로 받아 넘긴다.
+    /// (`PeerAdvertisementTests` 가 실제로 관찰한 서비스 이름·TXT 로 이 함수를 검증한다.)
+    nonisolated static func peer(fromService name: String, txtRecord: NWTXTRecord?,
+                                 excluding myServiceName: String,
+                                 endpoint: NWEndpoint? = nil) -> BattlePeer? {
+        guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
+        // 파싱·클램프는 `PeerAdvertisement` 한 곳에서 한다. 레코드가 없거나 값이 쓰레기여도
+        // **피어를 버리지 않는다** — 업데이트 전 클라이언트도 목록에 남아야 신청할 수 있다.
+        return BattlePeer(name: displayName(fromService: name), serviceName: name,
+                          endpoint: endpoint ?? .service(name: name, type: serviceType,
+                                                         domain: "local.", interface: nil),
+                          advertisement: txtRecord.map(PeerAdvertisement.init) ?? PeerAdvertisement())
+    }
+
     private func updatePeers(_ results: Set<NWBrowser.Result>) {
         peers = results.compactMap { r in
             guard case .service(let name, _, _, _) = r.endpoint else { return nil }
-            guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
-            // 파싱·클램프는 `PeerAdvertisement` 한 곳에서 한다. 레코드가 없거나 값이 쓰레기여도
-            // **피어를 버리지 않는다** — 업데이트 전 클라이언트도 목록에 남아야 신청할 수 있다.
-            let advertisement: PeerAdvertisement
-            if case .bonjour(let record) = r.metadata {
-                advertisement = PeerAdvertisement(record)
-            } else {
-                advertisement = PeerAdvertisement()
-            }
-            return BattlePeer(name: Self.displayName(fromService: name), serviceName: name,
-                              endpoint: r.endpoint, advertisement: advertisement)
+            let record: NWTXTRecord? = if case .bonjour(let txt) = r.metadata { txt } else { nil }
+            return Self.peer(fromService: name, txtRecord: record,
+                             excluding: myServiceName, endpoint: r.endpoint)
         }.sorted { $0.name < $1.name }
         AppLog.write("battle peers updated: \(results.count) result(s), \(peers.count) after self-filter")
         if !peers.isEmpty { lastError = nil }   // 상대가 보이면 이전 차단 경고 해제
