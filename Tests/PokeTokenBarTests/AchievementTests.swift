@@ -290,3 +290,287 @@ final class AchievementSaveTests: XCTestCase {
         XCTAssertFalse(SaveTransfer.isTampered(signed))
     }
 }
+
+// MARK: 적립 경로 (스토어)
+
+@MainActor
+final class AchievementAccrualTests: XCTestCase {
+
+    private func tiers(_ track: AchievementTrack) -> [Int] {
+        AchievementLadder.catalog.first { $0.track == track }!.tiers
+    }
+    private func rewards(_ track: AchievementTrack) -> [Int] {
+        AchievementLadder.catalog.first { $0.track == track }!.rewards
+    }
+
+    private func makeStore(_ line: EvoLine, _ clock: TestClock) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-achievement-\(UUID().uuidString).json")
+        return CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
+                              fileURL: url, rng: SeededRNG(seed: 11))
+    }
+
+    private func count(_ store: CompanionStore, _ track: AchievementTrack) -> Int {
+        store.achievementRows.first { $0.achievement.track == track }?.count ?? -1
+    }
+
+    // MARK: 집중 — 정산된 분만
+
+    /// 모험을 정산하면 **정산된 분**이 집중 카운터로 들어간다.
+    func testClaimingAnAdventureAdvancesTheFocusTrack() async {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        clock.advance(25 * 60)
+        XCTAssertNotNil(store.claimAdventure())
+
+        XCTAssertEqual(count(store, .focus), 25)
+        XCTAssertEqual(count(store, .battle), 0, "다른 트랙이 딸려 오르면 안 된다")
+    }
+
+    /// 정산하지 않은 모험은 아무것도 적립하지 않는다 — 시작만으로 오르면 타이머를 켜 두는 것이
+    /// 곧 업적 진행이 되어 목표가 집중과 무관해진다.
+    func testStartingAnAdventureAloneAccruesNothing() async {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 90))
+        clock.advance(10 * 60)
+        XCTAssertNil(store.claimAdventure())
+
+        XCTAssertEqual(count(store, .focus), 0)
+    }
+
+    /// 지급액은 **보상 객체가 설명해야 한다** — 지갑에만 더하고 보고하지 않으면 화면이 알려준 값과
+    /// 실제 잔액이 어긋난다(`trainerBonus`·`missionBonus` 와 같은 계약).
+    func testTheReportedAchievementBonusMatchesTheWalletIncrease() async throws {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+        let before = store.state.starPieces
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 90))
+        clock.advance(90 * 60)
+        let reward = try XCTUnwrap(store.claimAdventure())
+
+        XCTAssertEqual(reward.achievementBonus, rewards(.focus)[0],
+                       "90분 정산이 집중 1단계(\(tiers(.focus)[0])분)를 넘긴다")
+        XCTAssertEqual(store.state.starPieces - before,
+                       reward.starPieces + reward.trainerBonus + reward.missionBonus
+                           + reward.achievementBonus,
+                       "보고한 합과 실제 지갑 증가가 어긋난다")
+    }
+
+    /// 최고 단계를 넘긴 뒤로는 더 지급되지 않는다 — 카운터 클램프가 곧 재지급 차단이다.
+    func testNoFurtherPayoutOnceTheLastFocusTierIsCleared() async throws {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+        store.debugSetAchievementCount(.focus, tiers(.focus).last!)
+        let before = store.state.starPieces
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 90))
+        clock.advance(90 * 60)
+        let reward = try XCTUnwrap(store.claimAdventure())
+
+        XCTAssertEqual(reward.achievementBonus, 0)
+        XCTAssertEqual(store.state.starPieces - before,
+                       reward.starPieces + reward.trainerBonus + reward.missionBonus)
+    }
+
+    /// 한 번에 두 단계를 넘기면 **둘 다** 지급된다 — 1단계 직전에서 큰 정산 한 방을 넣는다.
+    func testOneClaimCanPayTwoFocusTiersAtOnce() async throws {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+        // 2단계 문턱 − 90분 지점에서 시작하면 90분 정산 한 번이 1·2단계를 함께 넘는다.
+        store.debugSetAchievementCount(.focus, tiers(.focus)[1] - 90)
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 90))
+        clock.advance(90 * 60)
+        let reward = try XCTUnwrap(store.claimAdventure())
+
+        XCTAssertEqual(reward.achievementBonus, rewards(.focus)[0] + rewards(.focus)[1])
+    }
+
+    // MARK: 진화 — 세 경로를 각각 단독으로
+
+    /// 경로 ① 자동 진화(`applyUsage` 안의 성장치 게이트). 레벨 메타데이터가 없는 라인이 이 경로를 탄다.
+    func testAutomaticEvolutionAdvancesTheEvolveTrack() async {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+        XCTAssertEqual(count(store, .evolve), 0, "테스트 전제: 부화만으로는 오르지 않는다")
+
+        store.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
+
+        XCTAssertEqual(count(store, .evolve), 1)
+    }
+
+    /// 경로 ② 진화 프롬프트 수락(`acceptEvolution`). 레벨 관문이 있는 라인만 이 경로를 탄다.
+    func testAcceptingAnEvolutionPromptAdvancesTheEvolveTrack() async {
+        let clock = TestClock()
+        let store = makeStore(achievementPromptLine, clock)
+        await store.hatch(baseID: 40)
+        store.debugAccrueLevelExperience(300_000_000)
+        store.applyUsage(0)
+        XCTAssertNotNil(store.evolutionPrompt, "테스트 전제: 프롬프트가 떠야 이 경로를 밟는다")
+        XCTAssertEqual(count(store, .evolve), 0, "프롬프트가 뜨는 것만으로는 오르지 않는다")
+
+        store.acceptEvolution()
+
+        XCTAssertEqual(count(store, .evolve), 1)
+    }
+
+    /// 경로 ③ 돌 진화(`useEvolutionItem`). 레벨을 보지 않는 유일한 경로다.
+    func testStoneEvolutionAdvancesTheEvolveTrack() async {
+        let clock = TestClock()
+        let store = makeStore(achievementStoneLine, clock)
+        await store.hatch(baseID: 30)
+        store.debugAddItem(.fireStone)
+
+        XCTAssertTrue(store.useEvolutionItem(.fireStone))
+
+        XCTAssertEqual(count(store, .evolve), 1)
+    }
+
+    /// 진화가 아닌 연출(`.hatch`·`.dittoReveal`)은 세지 않는다 — 적립을 `fireCelebration` 단일
+    /// 퍼널에 걸었으므로, case 를 안 가리면 부화마다 진화 카운터가 오른다.
+    func testHatchingDoesNotAdvanceTheEvolveTrack() async {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+        await store.hatch(baseID: 1)
+
+        XCTAssertEqual(count(store, .evolve), 0, "부화 연출이 진화로 세어졌다")
+    }
+
+    // MARK: 배틀 — 승리만
+
+    func testAWonBattleAdvancesTheBattleTrack() async {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+        let before = store.state.starPieces
+
+        store.grantBattleReward(won: true, participantCount: 2, mode: .freeForAll,
+                                opponentNames: ["Rival"])
+
+        XCTAssertEqual(count(store, .battle), 1)
+        XCTAssertEqual(store.state.starPieces - before, rewards(.battle)[0],
+                       "1단계 문턱이 1승이라 첫 승리에서 바로 보상이 나간다")
+    }
+
+    func testALostBattleAdvancesNothing() async {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+        let before = store.state.starPieces
+
+        store.grantBattleReward(won: false, participantCount: 2, mode: .freeForAll,
+                                opponentNames: ["Rival"])
+
+        XCTAssertEqual(count(store, .battle), 0)
+        XCTAssertEqual(store.state.starPieces, before)
+    }
+
+    // MARK: 레이스 — 완주
+
+    func testFinishingARaceAdvancesTheRaceTrack() async {
+        let clock = TestClock()
+        let store = makeStore(achievementAutoLine, clock)
+        await store.hatch(baseID: 1)
+
+        store.recordRaceFinish()
+
+        XCTAssertEqual(count(store, .race), 1)
+    }
+}
+
+// MARK: 레이스 완주 판정 (순수)
+
+/// 완주 적립은 `pokeathlonRace` 의 **nil → 우승자 확정 전이**에서만 일어나야 한다.
+/// 경기 중에도 상태가 계속 대입되므로(호스트 입력 반영·게스트 수신), 판정을 순수 함수로 떼어
+/// 네트워크 없이 모든 분기를 밟는다. `MultiplayerBattle.outcome` 이 같은 이유로 static 이다.
+final class RaceFinishCreditTests: XCTestCase {
+
+    private let me = UUID()
+    private let other = UUID()
+
+    private func race(winner: UUID?, racers: [UUID]) -> PokeathlonRace {
+        PokeathlonRace(racers: racers.map {
+            PokeathlonRacer(id: $0, trainerName: "T", speciesID: 1)
+        }, winnerID: winner)
+    }
+
+    func testCreditsWhenAWinnerIsFirstDecidedAndIRaced() {
+        XCTAssertTrue(MultiplayerRoomCenter.creditsRaceFinish(
+            old: race(winner: nil, racers: [me, other]),
+            new: race(winner: other, racers: [me, other]), myID: me),
+            "우승하지 않아도 완주는 완주다")
+    }
+
+    /// 관전자는 `racers` 에 없다 — 세면 싸우지도 않은 경기가 업적이 된다.
+    func testDoesNotCreditASpectator() {
+        XCTAssertFalse(MultiplayerRoomCenter.creditsRaceFinish(
+            old: race(winner: nil, racers: [other]),
+            new: race(winner: other, racers: [other]), myID: me))
+    }
+
+    /// 우승자가 확정된 뒤에도 상태 브로드캐스트가 이어진다 — 매번 세면 한 경기가 여러 번 적립된다.
+    func testDoesNotCreditARepeatedFinishedState() {
+        XCTAssertFalse(MultiplayerRoomCenter.creditsRaceFinish(
+            old: race(winner: other, racers: [me, other]),
+            new: race(winner: other, racers: [me, other]), myID: me))
+    }
+
+    /// 경기 중 갱신(우승자 없음 → 없음)은 적립하지 않는다.
+    func testDoesNotCreditAnInProgressUpdate() {
+        XCTAssertFalse(MultiplayerRoomCenter.creditsRaceFinish(
+            old: race(winner: nil, racers: [me, other]),
+            new: race(winner: nil, racers: [me, other]), myID: me))
+    }
+
+    /// 방을 닫을 때의 `= nil` 대입도 적립하지 않는다.
+    func testDoesNotCreditARoomTeardown() {
+        XCTAssertFalse(MultiplayerRoomCenter.creditsRaceFinish(
+            old: race(winner: other, racers: [me, other]), new: nil, myID: me))
+        XCTAssertFalse(MultiplayerRoomCenter.creditsRaceFinish(
+            old: nil, new: nil, myID: me))
+    }
+
+    /// 방에 처음 들어설 때(nil → 경기 시작)도 적립하지 않는다.
+    func testDoesNotCreditRaceStart() {
+        XCTAssertFalse(MultiplayerRoomCenter.creditsRaceFinish(
+            old: nil, new: race(winner: nil, racers: [me]), myID: me))
+    }
+}
+
+// 부화용 최소 진화 라인들 — 진화 경로마다 다른 라인이 필요하다.
+private func achievementLine(base: Int, tree: EvoNode) -> EvoLine {
+    func ids(_ n: EvoNode) -> [Int] { [n.speciesID] + n.children.flatMap(ids) }
+    var names: [Int: [String: String]] = [:]
+    for id in ids(tree) { names[id] = ["en": "A\(id)", "ko": "업\(id)", "ja": "ア\(id)"] }
+    return EvoLine(baseID: base, tree: tree, rarity: .common, names: names)
+}
+
+// 레벨 메타데이터 없음 → `applyUsage` 안의 성장치 게이트로 자동 진화한다.
+private let achievementAutoLine = achievementLine(
+    base: 1, tree: EvoNode(speciesID: 1, children: [
+        EvoNode(speciesID: 2, children: [EvoNode(speciesID: 3, children: [])])
+    ]))
+
+// 레벨 관문 있음 → 프롬프트가 뜨고 `acceptEvolution` 으로만 넘어간다.
+private let achievementPromptLine = achievementLine(
+    base: 40, tree: EvoNode(speciesID: 40, children: [
+        EvoNode(speciesID: 41, children: [], evolutionLevel: 5)
+    ]))
+
+// 돌 진화 → `useEvolutionItem` 만 통한다.
+private let achievementStoneLine = achievementLine(
+    base: 30, tree: EvoNode(speciesID: 30, children: [
+        EvoNode(speciesID: 31, children: [], evolutionTrigger: "use-item", evolutionItem: "fire-stone")
+    ]))
