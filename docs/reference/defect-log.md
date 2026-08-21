@@ -1054,3 +1054,18 @@ read_when:
   결정적으로 단위 테스트 가능한지가 기준이고, 넣은 뒤 TOTAL 이 임계값 위인지 확인한다
   (`GymLeague.swift` 는 라인 80.77%, 추가 후 TOTAL 85.10% → 85.07%).
   (`scripts/test-gate.sh`, 2026-08-21.)
+
+## 매 세션 로드되는 지침에 죽은 규약이 남는 부류
+
+- **`CLAUDE.md` 가 존재하지 않는 코드와 문서를 규약으로 가리키고 있었다.** "확장 규약(새
+  프로바이더/툴 추가 시)" 이 `UsageProvider` · `UsageStore.init(providers:)` ·
+  `BinaryLocator.commonToolDirectories()` · `LocalUsageReader.claudeProjectRoots` 를 손댈 지점으로
+  지정하고 `docs/reference/provider-extension.md` 를 참조 문서로 인덱스했는데, 사용량 추적 코드와 그
+  문서는 게임으로 방향을 바꾼 커밋(`2179921`)에서 함께 사라졌다. `grep` 결과 0건.
+- 이건 다른 죽은 문서보다 비싸다 — `CLAUDE.md` 는 **매 세션 전문이 로드**되므로 없는 심볼을 찾다가
+  헛돌거나, 규약을 지키려고 있지도 않은 구조를 새로 만들 수 있다. 어느 테스트·게이트도 문서가 가리키는
+  심볼이 실재하는지 보지 않는다.
+- **처방**: 코드를 대량으로 걷어내는 커밋은 그 심볼 이름으로 `CLAUDE.md`·`docs/`·`*.md` 를 grep 해
+  같은 커밋에서 규약을 걷는다. 참조 문서 인덱스에 줄을 추가할 때는 그 파일이 실제로 있는지 확인한다
+  (인덱스만 남고 파일이 없는 상태가 이번 경우다).
+  (`CLAUDE.md`, 2026-08-21.)

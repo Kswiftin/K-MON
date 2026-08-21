@@ -9,7 +9,6 @@
 | 문서 | 언제 읽나 |
 |---|---|
 | `docs/reference/release-workflow.md` | 버전을 배포할 때, `release.sh` 게이트에 막혔을 때, UI 변경으로 스크린샷·랜딩을 갱신할 때 |
-| `docs/reference/provider-extension.md` | 새 사용량 소스·버전매니저·로그 루트를 추가할 때, 프로바이더 분기를 리뷰할 때 |
 | `docs/reference/defect-log.md` | 결함·회귀를 고치는 중(부류 스윕 근거), 동시성·캐시·외부 로그 포맷·상시 애니메이션·세이브 이전을 건드릴 때 |
 
 각 문서의 frontmatter(`summary`/`read_when`)가 그 문서의 적용 범위를 다시 명시한다.
@@ -41,16 +40,6 @@
 실행 절차·에셋 게이트·함정은 `docs/reference/release-workflow.md`, 체크리스트는 `RELEASE.md`.
 
 릴리스는 외부 공개(비가역)이므로 실행 직전 **적용할 버전과 노트 요약을 한 번 보여준 뒤** 진행한다.
-
-## 확장 규약 (새 프로바이더/툴 추가 시)
-
-특정 플랫폼에 종속된 분기를 만들지 않는다. 손댈 지점은 정해져 있다 — 사용량 소스는
-`UsageProvider` 구현체 + `UsageStore.init` 의 `providers:` 배열, 버전매니저는
-`BinaryLocator.commonToolDirectories()`, 로그 루트는 프로바이더별 루트 목록(예:
-`LocalUsageReader.claudeProjectRoots`). 범용 경로(오늘/주/월 합계·burn·companion)에
-`== "claude_code"` 류 리터럴 분기를 넣는 건 금지.
-
-전체 규약과 리뷰 기준은 `docs/reference/provider-extension.md`.
 
 ## 결함 대응 프로토콜 (잘못·회귀·공백·결함이 드러날 때마다 매번)
 
