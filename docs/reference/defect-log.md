@@ -696,6 +696,19 @@ read_when:
   지우기 전에 왜 남았는지 한 번 보면 주석이 거짓말하는 자리가 같이 나온다.
   (자체 코드 warning 게이트 도입, 2026-08-19.)
 
+- **Xcode 없는 머신에서는 테스트가 "실패"하지 않는다 — 아예 컴파일되지 않아 아무 신호가 없다.**
+  Command Line Tools 만 있는 Mac 은 `swift test` 가 `no such module 'XCTest'` 로 멈춘다. 그래서 테스트가
+  존재하지 않는 심볼을 부르고 있어도(파일명 `BattleNet.swift` 를 타입명으로 착각 — 실제 클래스는
+  `BattleCenter`) 로컬에서는 초록도 빨강도 없고 PR CI 에서 처음 터진다. 그 부류로 CI 를 두 번 깨뜨렸다.
+  영구 캡처는 `scripts/typecheck-tests.sh` 다 — XCTest 최소 스텁(단정은 빈 몸)을 만들고 테스트 소스를
+  앱 소스와 한 모듈로 `swiftc -typecheck` 한다. **단정이 참인지는 검사하지 않는다**(테스트를 실행하는
+  게 아니다) — 잡는 것은 "부르는 심볼이 실재하는가" 하나이고, 그게 이 환경에서 유일하게 못 보던 것이다.
+  스텁을 쓸 때 실제 XCTest 시그니처와 다르면 없던 에러가 생긴다: `XCTFail` 은 `Void` 를 돌려줘야 하고
+  (`return XCTFail(...)` 관용구가 이미 쓰인다), `XCTestExpectation` 은 `Sendable` 이어야 하며,
+  `import XCTest` 를 지울 때 그 자리에 `Foundation`·`SwiftUI`·`AppKit` 을 넣어야 한다 —
+  테스트들이 `URL`·`FileManager` 를 XCTest 가 끌어오는 것에 얹혀 쓰고 있다.
+  (#79 퍼즐 던전 작업 중 도입, 2026-08-21.)
+
 ## 가드가 중복이라 하나를 지워도 아무 테스트가 안 깨지는 부류
 
 - **결함을 주입했는데 전부 초록이면, 가드가 튼튼한 게 아니라 중복이라는 뜻일 수 있다.**
