@@ -26,6 +26,7 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/AdventureModel.swift"
   "Sources/PokeTokenBar/Core/TrainerLevel.swift"
   "Sources/PokeTokenBar/Core/MissionBoard.swift"
+  "Sources/PokeTokenBar/Core/AchievementLadder.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
   "Sources/PokeTokenBar/Core/BattleModel.swift"
   "Sources/PokeTokenBar/Core/BattleLog.swift"

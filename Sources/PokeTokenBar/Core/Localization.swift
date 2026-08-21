@@ -17,7 +17,12 @@ struct L {
 
     // MARK: 탭
     var home: String { t("홈", "Home", "ホーム") }
-    var collection: String { t("도감", "Pokédex", "ポケモン図鑑") }
+    /// 최상위 탭 라벨. **하위 세그먼트(도감 | 업적)의 상위어여야 한다** — "도감" 이던 때는 도감 탭
+    /// 안에 다시 "도감" 세그먼트가 보였다. 도감 쪽은 `dexTitle` 을 쓴다.
+    /// 이름을 늘려도 상단 피커 폭은 그대로다 — 계측 ko 330pt · en 445pt(변화 없음) · ja 445pt
+    /// (옛 "ポケモン図鑑" 455pt 보다 10pt 좁다). en·ja 는 다섯 라벨이 이미 콘텐츠 폭 332pt 를 넘어
+    /// macOS 가 압축하는 기존 상태다 — **더 늘리지 않는다**.
+    var collection: String { t("컬렉션", "Collection", "コレクション") }
     var battle: String { t("배틀", "Battle", "バトル") }
 
     // MARK: 배틀
@@ -728,6 +733,31 @@ struct L {
     }
     /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.
     var missionDaily: String { t("일간", "Daily", "デイリー") }
+
+    /// 컬렉션 탭 세그먼트 라벨 겸 선반 제목. 체육관 "배지" 와 다른 말을 쓴다 — 한 앱에 배지가
+    /// 두 종류면 어느 쪽 진행인지 안 읽힌다.
+    var achievementsTitle: String { t("업적", "Achievements", "実績") }
+    /// 단계 표시(`●●○○`)의 스크린리더 대체 문구 — 점 문자를 그대로 읽히면 "검은 원 흰 원" 이 된다.
+    func achievementTierLabel(_ reached: Int, _ total: Int) -> String {
+        t("\(total)단계 중 \(reached)단계", "tier \(reached) of \(total)", "\(total)段階中\(reached)段階")
+    }
+    var notifAchievementTitle: String { t("🏅 업적 달성!", "🏅 Achievement unlocked!", "🏅 実績を達成！") }
+    func notifAchievementBody(_ name: String, _ tier: Int, _ stardust: Int) -> String {
+        let amount = GameNumberFormatter.compact(stardust)
+        return t("\(name) \(tier)단계 — 별의조각 \(amount) 받았어요!",
+                 "\(name) tier \(tier) — you earned \(amount) Star Pieces!",
+                 "\(name) ティア\(tier) — ほしのかけら \(amount) を獲得！")
+    }
+    /// 업적 트랙 이름. 미션·도감 목표와 달리 **id 문자열이 아니라 열거형으로 스위치**한다 —
+    /// 트랙을 더하면 컴파일이 막으니 빈 문자열 폴백이 필요 없다.
+    func achievementName(_ track: AchievementTrack) -> String {
+        switch track {
+        case .focus:  return t("집중 시간", "Focus time", "集中時間")
+        case .evolve: return t("진화", "Evolutions", "進化")
+        case .battle: return t("배틀 승리", "Battle wins", "バトル勝利")
+        case .race:   return t("레이스 완주", "Races finished", "レース完走")
+        }
+    }
 
     var notifGraduateTitle: String { t("🎓 졸업!", "🎓 Graduated!", "🎓 卒業！") }
     func notifGraduateBody(_ name: String) -> String { t("\(name) — 도감에 보존! 새 알이 도착했어요.", "\(name) — saved to your Pokédex! A new egg has arrived.", "\(name) — 図鑑に保存！新しいタマゴが届きました。") }

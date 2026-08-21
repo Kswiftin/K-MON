@@ -25,7 +25,28 @@ final class MultiplayerRoomCenter {
     private(set) var hasSubmittedAction = false
     private(set) var turnEndsAt: Date?
     private(set) var lastError: String?
-    private(set) var pokeathlonRace: PokeathlonRace?
+    /// 경기 중에도 매 입력마다 대입된다(호스트 반영·게스트 수신). 그래서 완주 적립은
+    /// **nil → 우승자 확정 전이**에서만 발화한다 — 판정은 아래 순수 함수가 한다.
+    private(set) var pokeathlonRace: PokeathlonRace? {
+        didSet {
+            guard Self.creditsRaceFinish(old: oldValue, new: pokeathlonRace, myID: myID) else { return }
+            companion.recordRaceFinish()
+        }
+    }
+
+    /// 이번 대입이 "내 완주" 인지. 네트워크 없이 전 분기를 검증하려고 순수 함수로 떼어 뒀다
+    /// (`MultiplayerBattle.outcome` 과 같은 이유).
+    ///
+    /// 우승 확정 뒤에도 브로드캐스트가 이어지니 `old` 가 이미 확정이면 세지 않는다. 관전자는
+    /// `racers` 에 없어 자동으로 빠진다. 이 한 곳이 호스트·게스트·솔로를 모두 덮는다 —
+    /// `applySettlement` 에 걸면 베팅 없는 솔로 레이스가 조기 반환에 통째로 빠진다.
+    /// `nonisolated` 가 없으면 클래스의 `@MainActor` 를 물려받아 동기 테스트에서 못 부른다
+    /// (`parameters()`·`displayName(_:)` 도 같다).
+    nonisolated static func creditsRaceFinish(old: PokeathlonRace?, new: PokeathlonRace?, myID: UUID) -> Bool {
+        guard old?.winnerID == nil, let new, new.winnerID != nil,
+              new.racers.contains(where: { $0.id == myID }) else { return false }
+        return true
+    }
     private(set) var pokeathlonPool = PokeathlonPool()
     private(set) var settlementPayout: Int?
     /// 내가 이미 지갑에서 뺀 베팅. 원장이 바뀌면 차액만 조정하고, 정산 때 이 값으로 호스트 원장을 검증한다.

@@ -61,7 +61,13 @@ final class CompanionStore {
     enum Celebration: Equatable { case hatch(shiny: Bool), evolve, dittoReveal(shiny: Bool) }
     private(set) var celebration: Celebration?
     private(set) var celebrationSeq = 0
-    private func fireCelebration(_ c: Celebration) { celebration = c; celebrationSeq += 1 }
+    /// 진화 업적이 오르는 **유일한** 지점. 진화 호출부 셋(프롬프트 수락·자동 진화·돌 진화)이 모두
+    /// 여기를 지난다 — 호출부마다 심으면 네 번째 경로가 생길 때 조용히 빠진다. `.hatch`·`.dittoReveal`
+    /// 은 세지 않는다. 연출 재생용으로 재사용하면 이중 계수가 되니 그때는 적립을 떼낸다.
+    private func fireCelebration(_ c: Celebration) {
+        celebration = c; celebrationSeq += 1
+        if case .evolve = c { recordAchievement(.evolve, 1) }
+    }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
     func consumeCelebration() { celebration = nil }
 
@@ -761,6 +767,8 @@ final class CompanionStore {
         // 미션은 **정산된** 분만 인정한다 — 시작만으로 진행되면 타이머를 켜 두는 것이 곧 미션
         // 진행이 되어 목표가 집중과 무관해진다.
         reward.missionBonus = recordMission(.focusMinutes, minutes) + recordMission(.adventures, 1)
+        // 업적도 **정산된** 분만 센다. 세 시작 경로가 모두 여기를 지나니 훅은 이 한 줄이다.
+        reward.achievementBonus = recordAchievement(.focus, minutes)
         var fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
         let today = Self.dayKey(now)
         if state.lastAdventureBonusDate != today {
@@ -920,6 +928,40 @@ final class CompanionStore {
         }
     }
 
+    /// 업적 기록의 **유일한** 경로 — 보상(별의조각)과 알림까지 여기서 끝낸다. 적립 지점마다
+    /// `state.achievements` 를 직접 만지면 클램프와 경계 판정이 갈라진다.
+    /// 반환값은 이번에 지급한 별의조각(`recordMission` 과 같은 계약). 정산 경로는 이 값을 보상
+    /// 객체에 실어야 한다 — 지갑만 늘리면 보고액과 잔액이 어긋난다.
+    /// `save()` 는 호출부 몫이다(레이스만 예외 — `recordRaceFinish`).
+    @discardableResult
+    private func recordAchievement(_ track: AchievementTrack, _ amount: Int) -> Int {
+        var paid = 0
+        for award in state.achievements.record(track, amount) {
+            let reward = award.achievement.rewards[award.tier - 1]
+            state.starPieces += reward
+            paid += reward
+            notifyCompanionEvent(l.notifAchievementTitle,
+                                 l.notifAchievementBody(l.achievementName(award.achievement.track),
+                                                        award.tier, reward))
+        }
+        return paid
+    }
+
+    /// 포켓슬론 완주 적립. 호출부가 스토어 밖(`MultiplayerRoomCenter`)이라 저장도 여기서 한다.
+    /// 세는 건 우승이 아니라 **완주**다 — 우승만 세면 4인 방에서 ¾은 영원히 못 넘는다.
+    func recordRaceFinish() {
+        recordAchievement(.race, 1)
+        save()
+    }
+
+    /// 화면용 업적 행 — 카탈로그 순서 그대로.
+    var achievementRows: [(achievement: Achievement, count: Int, tier: Int)] { state.achievements.rows }
+
+    /// 아직 안 넘은 첫 문턱. 최고 단계면 nil — 선반이 숫자 대신 완료 표식을 띄운다.
+    func nextAchievementTier(_ track: AchievementTrack) -> (goal: Int, tier: Int)? {
+        state.achievements.next(track)
+    }
+
     /// 화면용 목표 행 — 축마다 아직 안 넘은 첫 목표 하나씩. **졸업 기록만** 넘긴다.
     /// `dexEntries`(활성·박스 합성)를 넘기면 알을 새로 살 때 표시 진행도가 되감겨 지급 판정과
     /// 화면이 다른 수를 말한다.
@@ -943,7 +985,8 @@ final class CompanionStore {
         }
         return FocusSessionReward(minutes: minutes, stardust: reward.starPieces,
                                   foundEgg: reward.bonusEggs > 0, trainerBonus: reward.trainerBonus,
-                                  missionBonus: reward.missionBonus)
+                                  missionBonus: reward.missionBonus,
+                                  achievementBonus: reward.achievementBonus)
     }
 
     func beginIncubatingFocusEgg() -> Bool {
@@ -1189,6 +1232,9 @@ final class CompanionStore {
                                                 participantCount: participantCount, won: won,
                                                 reward: dust, opponentNames: opponentNames), at: 0)
         if state.battleHistory.count > 30 { state.battleHistory.removeLast(state.battleHistory.count - 30) }
+        // LAN 배틀 **승리만**. 연습 배틀은 혼자 무한 반복이라 업적이 클릭 노동이 된다 — 호출부가
+        // 하나(`MultiplayerRoomCenter.grantRewardIfFinished`)라 그 경계가 지켜진다.
+        if won { recordAchievement(.battle, 1) }
         save()
     }
 
@@ -2274,6 +2320,13 @@ final class CompanionStore {
     #if DEBUG
     /// 테스트 전용 — 도감을 직접 세팅(생산 배율·마이그레이션 계승 검증용). 프로덕션 경로 없음.
     func debugSetDex(_ entries: [DexEntry]) { state.dex = entries; save() }
+
+    /// 업적 카운터를 원하는 지점에 세운다 — 문턱 직전·상한 도달처럼 실제 플레이로 수천 분이 드는
+    /// 상태를 테스트가 밟는 유일한 수단이다. 보상 지급은 거치지 않는다.
+    func debugSetAchievementCount(_ track: AchievementTrack, _ count: Int) {
+        state.achievements.counts[track.rawValue] = count
+        save()
+    }
     /// 테스트 전용 — 박스를 직접 세팅(보관 알 부화의 네트워크 경로 없이 박스 상태만 재현). 프로덕션 경로 없음.
     func debugSetBoxedMons(_ mons: [MonState]) { state.boxedMons = mons; save() }
     /// 테스트 전용 — 레벨업 없이 기술 학습 제안을 세운다(네트워크 무브 조회 우회). 프로덕션 경로 없음.

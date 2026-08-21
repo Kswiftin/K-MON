@@ -172,6 +172,9 @@ enum SaveTransfer {
         // 카탈로그에서 사라진 미션의 잔재를 버리고 진행도를 목표에서 클램프한다 — 클램프된 값은 곧 완료 상태라
         // 손편집으로 목표를 넘겨도 보상이 다시 나오지 않는다.
         s.missions.normalize()
+        // 업적도 경계에서 한 번만 자른다 — 사라진 트랙의 잔재를 버리고 마지막 문턱으로 클램프한다.
+        // 클램프된 값이 곧 최고 단계라 손편집으로 넘겨도 보상이 다시 나오지 않는다.
+        s.achievements.normalize()
         s.focusEggs = min(max(0, s.focusEggs), 999)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
@@ -279,6 +282,14 @@ enum SaveTransfer {
         // 구버전 서명 호환: 기본값이면 아무것도 붙이지 않는다. 무조건 붙이면 미션 필드가 없던
         // 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
         if s.missions != MissionBoard() { p.append("ms\(s.missions.canonical)") }
+        // 업적 카운터가 곧 단계 판정이다 — 서명 밖에 두면 값을 올려 적는 것만으로 보상을 받는다.
+        // 조건부인 이유는 위 두 필드와 같다. 새 필드라 값이 든 기존 세이브가 없으니
+        // `integrityVersion` 은 올리지 않는다(올리면 그 배포의 모든 세이브가 검사를 면제받는다).
+        //
+        // 접두는 `ac` 가 아니라 `ach` 다. 아래 활성 포켓몬이 `act` 를 쓰므로 `ac` 면 기본값 세이브의
+        // `|act-` 가 업적 세그먼트로 읽힌다(`shc` 가 `sec` 를 피한 것과 같다). 위조가 되는 건
+        // 아니지만 세그먼트 유무를 보는 테스트가 조용히 거짓이 된다.
+        if s.achievements != AchievementLadder() { p.append("ach\(s.achievements.canonical)") }
         // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
         // 배지 키 한 줄을 지워 같은 체육관에서 알을 다시 받는다. 정렬 필수: `Set` 순회 순서는 실행마다
         // 달라 정렬하지 않으면 같은 상태가 다른 서명을 낸다. (아래 두 필드가 이미 배포분이라 버전을 올렸다.)

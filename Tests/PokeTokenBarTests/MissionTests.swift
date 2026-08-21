@@ -230,7 +230,8 @@ final class MissionAccrualTests: XCTestCase {
         XCTAssertEqual(first.missionBonus, dailyFocus.reward, "90분 정산으로 일간 집중 미션이 완료된다")
         // 같은 정산이 트레이너 레벨도 올린다 — 지갑 증가분은 두 지급의 합이다.
         XCTAssertEqual(store.state.starPieces - before,
-                       first.starPieces + first.trainerBonus + first.missionBonus)
+                       first.starPieces + first.trainerBonus + first.missionBonus
+                           + first.achievementBonus)
 
         before = store.state.starPieces
         XCTAssertTrue(store.startFocusAdventure(minutes: 25))
@@ -239,7 +240,8 @@ final class MissionAccrualTests: XCTestCase {
         XCTAssertEqual(second.missionBonus, dailyAdventures.reward,
                        "두 번째 정산으로는 모험 횟수 미션만 완료된다 — 집중 미션은 재지급되지 않는다")
         XCTAssertEqual(store.state.starPieces - before,
-                       second.starPieces + second.trainerBonus + second.missionBonus)
+                       second.starPieces + second.trainerBonus + second.missionBonus
+                           + second.achievementBonus)
     }
 
     /// 졸업 단독 경로 — 모험을 **한 번도 하지 않고** 졸업만 해도 주간 미션이 완료된다.
