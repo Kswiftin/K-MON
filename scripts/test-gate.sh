@@ -35,6 +35,7 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/MultiplayerBattle.swift"
   "Sources/PokeTokenBar/Core/BattleReplay.swift"
   "Sources/PokeTokenBar/Core/PokeathlonPool.swift"
+  "Sources/PokeTokenBar/Core/GymLeague.swift"
   "Sources/PokeTokenBar/Core/GameNumberFormatter.swift"
 )
 

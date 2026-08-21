@@ -36,6 +36,10 @@ When two Macs on the same network are both running K-MON, they discover each oth
 
 - **Brawl** — a turn-based battle. Pick from four moves; type advantage, STAB, crits and misses all matter. Move **priority** outranks speed, and the six status conditions — burn, poison, toxic, paralysis, sleep, freeze — plus confusion all apply. Deterministic engine — both peers compute the same result, so nothing can be forged over the wire.
 - **Practice against the CPU** — 1v1, 3v3 or 6v6. Choose which Pokémon go in and in what order; switching costs the turn, as in the main series. Your team enters at the levels you raised, and the CPU matches them. Ranked duels stay flattened to Lv.50.
+- **Gyms** — four type gyms (Bug, Rock, Electric, Water), fought 3v3. Every leader's team stands at Lv.30, and only the first clear pays out: Stardust plus an egg with a rarity floor. Collect every badge and one guaranteed shiny hatch is yours. You pick the team inside the challenge screen, filtered by type.
+- **Stat stages** — Attack, Defense, Sp. Atk, Sp. Def, Speed, accuracy and evasion all move up and down. A crit ignores only the unfavourable stages, switching out clears them, and one of the four move slots is held for a status move.
+- **Turn playback** — a resolved turn plays back a step at a time instead of snapping to the result. Replay speed is a setting (normal / fast / off) and low power mode turns it off.
+- **LAN teams** — a LAN duel takes a full team in the order you choose, the same way CPU practice does.
 - **Auto-accept** — flip it on and challenges are accepted the moment they arrive, so a battle happens even while you're away from the keyboard.
 - **Notifications & a pinned window** — a challenge raises a system notification even while you're working; when a battle starts, the window pins itself open (it won't close when you click away) so you can play while you work.
 - **Names everywhere** — your trainer name and your Pokémon's nickname show up on the challenge, the arena, and the notification.
@@ -67,7 +71,7 @@ Shiny hatches keep their distinct colors through every evolution — menu bar, h
 <tr>
 <td width="55%" valign="middle">
 <h3>A Pokédex worth filling</h3>
-The <b>Pokédex</b> folds every species you've owned into one cell — in dex-number order, with a ✨ on the ones you own shiny. The <b>Catch log</b> keeps the individuals: newest first, each with its full evolution line, rarity, nature, and capture date. Every species you collect speeds up your Stardust.
+The <b>Pokédex</b> folds every species you've owned into one cell — in dex-number order, with a ✨ on the ones you own shiny. The <b>Catch log</b> keeps the individuals: newest first, each with its full evolution line, rarity, nature, and capture date. Every species you collect speeds up your Stardust. <b>Completion goals</b> track species, types and shinies — reach one and its egg, rarity floor or guaranteed shiny lands right then.
 </td>
 <td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="300" alt="Pokédex — one cell per species"><br><br><img src="assets/screenshot-collection-catchlog.png" width="300" alt="Catch log — one row per Pokémon raised"></td>
 </tr>
@@ -84,6 +88,13 @@ The Stardust you collect over time is your currency. Spend it on <b>Rare Candy</
 Menu-bar items, refresh interval, launch at login, companion event notifications, and battle auto-accept. Full <b>KO / EN / JA</b> UI and Pokémon names.
 </td>
 <td width="45%" align="center"><img src="assets/settings.png" width="300" alt="Settings"></td>
+</tr>
+<tr>
+<td width="45%" align="center"><img src="assets/screenshot-gyms.png" width="300" alt="Gyms — four type gyms, badges, and the team picker"></td>
+<td width="55%" valign="middle">
+<h3>🏛 Four gyms, four badges</h3>
+Every gym fields a hand-picked team of three at Lv.30. The first clear pays Stardust plus an egg with a rarity floor, and holding every badge at once grants one guaranteed shiny hatch. The team picker stays pinned to the bottom — filter your Pokémon by type and tap them in the order they'll enter.
+</td>
 </tr>
 </table>
 

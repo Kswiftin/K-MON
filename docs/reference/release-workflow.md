@@ -1,52 +1,72 @@
 ---
-summary: "릴리스 실행 절차 — 문서·에셋 갱신 의무, 스크린샷 재생성 방법, release.sh 게이트의 함정."
+summary: "릴리스 실행 절차 — 태그 전용 release.sh, 문서·에셋 갱신 의무, 스크린샷 렌더 방법, 게이트의 함정."
 read_when:
   - 버전을 배포할 때 (자연어 트리거 포함: "배포해줘", "릴리스 올려줘", "패치 배포")
-  - release.sh 가 문서·에셋 경고나 하드 게이트로 중단됐을 때
-  - UI 를 바꿔 스크린샷·랜딩을 갱신해야 할 때
+  - release.sh 나 release.yml 게이트에 막혔을 때
+  - UI 를 바꿔 스크린샷을 갱신해야 할 때
 ---
 
 # 릴리스 실행 절차
 
-버전 결정 규칙과 트리거는 `CLAUDE.md` §릴리스에 있다. 이 문서는 그 다음의 *실행 세부*를 담는다.
-체크리스트 원본은 `RELEASE.md`.
+버전 결정 규칙과 트리거는 `CLAUDE.md` §릴리스에 있다. 단계 목록과 스크립트 책임 분담은 `RELEASE.md`.
+이 문서는 그 사이에 사람이 판단해야 하는 *실행 세부*를 담는다.
 
-## 1. 문서·이미지 갱신 (매 릴리스 필수 — "할까요?" 묻지 말고 무조건 한다)
+## 1. 문서·에셋 갱신 (매 릴리스 필수 — "할까요?" 묻지 말고 무조건 한다)
 
-`./scripts/release.sh --check-only` 로 경고를 확인한 뒤 아래를 모두 반영한다.
+**스크립트가 이걸 검사하지 않는다.** 예전 `release.sh` 에는 문서 경고와 "신규 기능 = 신규 에셋"
+하드 게이트가 있었지만, 태그 전용으로 축소되면서 함께 사라졌다. 지금 이 단계를 지키는 것은
+`RELEASE.md` 체크리스트와 사람뿐이다.
 
-- **README.md/ko/ja**: 기능 목록·how-it-works·스크린샷 참조.
-- **랜딩(gh-pages orphan 브랜치) — 필수.** `git worktree add /tmp/ptb-ghpages gh-pages` → `index.html`
-  기능 카드(f#) + i18n 사전(en/ko/ja 동시·키 정합) 갱신 → 커밋 → `git push origin gh-pages` →
-  `git worktree remove`. (Pages 자동 재빌드. 커밋은 gh-pages log 모방 = `landing:` 프리픽스.)
-- **스크린샷(`assets/`)**: UI(`Sources/PokeTokenBar/UI/`) 변경 시 재생성. 기존 방식 = **HTML 렌더**
-  (팝오버 라이브 캡처 아님) — Chrome `--headless --screenshot --force-device-scale-factor=2` 로 다크
-  팝오버를 720px PNG 로 그린다. 애니 GIF(home)는 프레임 합성 후 `gifsicle -O3 --lossy` 로 최적화
-  (PIL 재인코딩 단독은 용량 팽창 주의). 언어별 이미지(`settings.png`/`-ko`/`-ja` 등) 각 README 참조.
-- homebrew-tap cask caveat.
+- **README.md / README.en.md / README.ja.md** — 기능 목록·화면 구성. 세 파일의 구조가 서로 다르다
+  (한국어는 스크린샷 없는 기능 목록, en/ja 는 "Tour" 표에 이미지를 싣는다). 같은 문장을 세 번
+  붙여넣지 말고 각 파일의 서술 방식에 맞춘다.
+- **`assets/` 스크린샷** — 갱신(stale)과 커버리지(신규)는 다른 질문이다. 기존 이미지를 다시 그려도
+  새 화면은 여전히 문서에 없다. 2.5.0 에서 플로팅 펫이 이미지 없이 나간 경로가 정확히 이것이다.
+- 파일명 규약: 영어가 기본(`screenshot-gyms.png`), 일본어는 `-ja` 접미(`screenshot-gyms-ja.png`).
+  한국어 README 는 스크린샷을 싣지 않으므로 `-ko` 는 기존 파일에만 남아 있다.
 
-### 게이트의 함정
+### 스크린샷 만드는 방법 (HTML 렌더 — 라이브 캡처가 아니다)
 
-- `release.sh` 문서검토는 *커밋된* 상태를 비교 → 스크린샷을 스테이징만 하면 경고 프롬프트가
-  여전히 뜬다. 미리 커밋하거나 프롬프트에 `y`(스테이징분이 release.sh line 93-94 에서 릴리스 커밋에 함께 담김).
-- **신규 기능 = 신규 에셋 (하드 게이트, 프롬프트로 못 넘김).** 직전 태그 이후 `Sources/**/UI/` 를 건드린
-  `feat:` 커밋이 있는데 `assets/` 에 **새로 추가된** 파일이 없으면 `release.sh` 가 중단한다
-  (**예외 없음** — 통과시키려면 에셋을 만들거나 커밋 타입을 바꿔야 한다). 기존 staleness 검사는 "에셋이 하나라도 바뀌었나"만
-  보기 때문에 **기존 스크린샷만 다시 그려도 통과**한다 — 2.5.0 에서 플로팅 펫이 이미지 없이 나간 경로가
-  정확히 이것이다(`settings.png` 를 갱신해 둔 탓에 조용히 통과). 갱신(stale)과 커버리지(신규)는 다른 질문이다.
+팝오버를 실제로 띄워 찍지 않는다. 같은 치수의 HTML 목업을 그려 Chrome 헤드리스로 렌더한다.
+렌더 자산은 저장소에 커밋하지 않으므로 매번 임시 디렉터리에서 만든다.
 
-## 2. 실행
+1. 치수를 소스에서 가져온다 — `PopoverMetrics.width` 360, `padding` 14(콘텐츠 폭 332),
+   칩·슬롯 크기는 해당 View 의 `static let` (예: `TeamPickChip.height` 74, `chipWidth` 70).
+2. 문구는 `Localization.swift` 의 실제 문자열을 쓴다(`t(ko, en, ja)`). 언어별로 치환만 바꿔 두 번 렌더한다.
+3. 스프라이트는 앱과 같은 출처에서 받는다 — `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/<id>.png`
+   (`SpriteStore.base`). CSS 는 `image-rendering: pixelated`.
+4. 다크 팝오버 배경 `#1c1c1e`, 강조색 `#0a84ff`, 본문 `rgba(255,255,255,0.92)` / 보조 `0.55` / 3차 `0.32`.
+5. 렌더:
+   ```bash
+   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+     --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
+     --window-size=360,460 --screenshot=out.png "file://$PWD/mock.html"
+   ```
+   창 높이가 콘텐츠보다 크면 아래에 배경만 남는다 — PIL 로 균일한 아래쪽 줄을 잘라내고
+   패딩 몫(14pt × 2배 = 28px)만 남긴다.
+6. 결과는 폭 720px PNG(2배)다. 기존 에셋이 40~230KB 라 별도 최적화 없이 커밋해도 된다.
+   애니 GIF(home)는 프레임 합성 후 `gifsicle -O3 --lossy` 로 줄인다(PIL 재인코딩 단독은 용량이 커진다).
 
-릴리스 노트를 작성한 뒤 반드시 `main` 브랜치에서:
+## 2. 게이트의 함정
+
+- **태그 push 후 `main` 머지 금지.** `release.yml` 은 태그 커밋이 `origin/main` HEAD 인지 확인한다.
+  런 도중 다른 PR 이 머지되면 릴리스가 그 자리에서 실패한다.
+- **같은 버전 재사용 불가.** `release.sh` 가 로컬·원격 태그 존재를 막으므로, 실패한 태그는
+  `git tag -d` + `git push origin :refs/tags/<tag>` 로 지운 뒤 다시 시작한다.
+- **로컬 warm build 는 warning 을 숨긴다.** `test-gate.sh` 의 warning 검사는 재컴파일 로그에 의존하므로
+  로컬에서는 `swift package clean` 뒤에 돌린다. 신뢰 기준은 매번 cold build 인 CI 다.
+- **커버리지 숫자는 증거가 아니다.** 새 조건 분기를 넣었으면 `xcrun llvm-cov show ... --show-regions` 로
+  `^0` 을 직접 본다. 새 로직 코어 파일은 `test-gate.sh` 의 `LOGIC_CORE` 배열에 넣어야 세어진다 —
+  넣지 않으면 게이트 밖에서 무테스트로 남는다(2.9.0 에서 `GymLeague.swift` 가 그 상태였다).
+- **이 저장소에 랜딩(gh-pages)과 homebrew cask 는 없다.** 예전 문서가 지시했던 단계이니 찾지 않는다.
+  README·인앱 업데이트 알림의 릴리스 표기는 동적이라 손댈 것도 없다.
+
+## 3. 실행과 검증
 
 ```bash
-# 직전 릴리스 이후 변경을 요약해 노트 파일 작성
-PTB_NOTES_FILE=/tmp/ptb-notes.md ./scripts/release.sh <version>
+./scripts/release.sh 2.9.0                # 태그 생성·push (v 없이)
+gh run watch --workflow=release.yml       # 2~3분
+gh release view v2.9.0                    # zip · sha256 · appcast
 ```
 
-스크립트가 test-gate → 문서검토 → 범프 → 빌드검증 → 커밋·push → GitHub Release → cask → Pages 를
-순서대로 수행한다.
-
-## 3. 검증
-
-완료 후 `brew upgrade --cask poke-token-bar` 로 실제 업그레이드 동작을 확인한다.
+마지막으로 설치된 앱에서 업데이트 확인을 눌러 Sparkle 경로를 확인한다.
