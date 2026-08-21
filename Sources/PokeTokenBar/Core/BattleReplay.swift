@@ -79,7 +79,12 @@ enum BattleReplay {
         // 교체·자동 출전은 한 박자 — 새 개체가 나오는 걸 보고 나서 다음 일이 일어나야 한다.
         case .sendOut:                                          return 0.40
         case .crit, .superEffective, .resisted, .miss, .immune: return 0.30
-        case .status, .cureStatus, .cant, .boost:               return 0.40
+        case .status, .cureStatus, .cant:                       return 0.40
+        // 랭크는 **로그 줄만** 늘린다 — 팝 문구가 없고(`popupKey` 가 nil), 랭크 배지는 배치 끝에
+        // 엔진 값으로 스냅하므로 재생 중 화면이 바뀌지 않는다. 상태이상과 같은 0.40 을 주면
+        // 다축 한 방(고대의힘 부류, 다섯 축)이 2.0초로 예산을 혼자 채워 같은 턴의 HP 보간과
+        // 급소 문구가 비례 압축된다.
+        case .boost:                                            return 0.20
         }
     }
 
