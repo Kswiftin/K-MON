@@ -130,6 +130,39 @@ final class AchievementLadderTests: XCTestCase {
         XCTAssertEqual(ladder, before, "0·음수 기록으로 되감기지 않는다")
     }
 
+    // MARK: 단계 합계 (LAN 카드가 보여주는 한 숫자)
+
+    /// 상한은 **카탈로그에서 계산한다.** 16 을 상수로 박으면 트랙이나 단계를 더한 날 카드의
+    /// 분모가 조용히 어긋나고, 광고 클램프도 같이 어긋난다.
+    func testTierCeilingIsDerivedFromTheCatalog() {
+        XCTAssertEqual(AchievementLadder.tierCeiling,
+                       AchievementLadder.catalog.reduce(0) { $0 + $1.tiers.count })
+        XCTAssertGreaterThan(AchievementLadder.tierCeiling, 0)
+    }
+
+    /// 합계는 네 트랙의 도달 단계를 더한 값이다 — 한 트랙만 세면 카드가 진행을 축소해 보여준다.
+    func testTierTotalSumsEveryTrack() {
+        var ladder = AchievementLadder()
+        XCTAssertEqual(ladder.tierTotal, 0)
+
+        _ = ladder.record(.focus, achievement(.focus).tiers[1])    // 2단계
+        XCTAssertEqual(ladder.tierTotal, 2)
+
+        _ = ladder.record(.battle, achievement(.battle).tiers[0])   // +1단계
+        XCTAssertEqual(ladder.tierTotal, 3)
+        XCTAssertEqual(ladder.tierTotal,
+                       AchievementTrack.allCases.reduce(0) { $0 + ladder.tier($1) })
+    }
+
+    /// 전부 최고 단계면 합계가 상한과 같다 — 카드가 `16/16` 에 닿을 수 있다는 증거.
+    func testTierTotalReachesTheCeilingWhenEveryTrackIsMaxed() {
+        var ladder = AchievementLadder()
+        for entry in AchievementLadder.catalog {
+            _ = ladder.record(entry.track, entry.tiers.last! * 2)
+        }
+        XCTAssertEqual(ladder.tierTotal, AchievementLadder.tierCeiling)
+    }
+
     // MARK: 표시용 파생값
 
     /// 다음 문턱은 "아직 안 넘은 첫 칸" 이다. 최고 단계면 nil — 화면이 ✓ 로 바꾼다.
