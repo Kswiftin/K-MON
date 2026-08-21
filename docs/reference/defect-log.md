@@ -1151,3 +1151,22 @@ read_when:
   바닥이 잡혀 있다. 남은 규칙: **표시할 시간차를 프레임워크에 계산시키지 않는다.**
   (`Sources/PokeTokenBar/Core/StoredEggCountdown.swift` · `Sources/PokeTokenBar/UI/FocusTimerView.swift`,
   2026-08-21.)
+## 상한 클램프가 누적 지점마다 흩어지면 한 곳은 반드시 빠진다
+
+- **경험치 상한(990,000,000 = Lv.100)이 리터럴로 세 누적 지점에 흩어져 있었고, 이상한 사탕 경로만
+  클램프가 없었다**(#81). 화면은 `level = min(100, …)` 이라 멀쩡해 보이지만 저장값은 상한 위였고,
+  `SaveTransfer.sanitized` 가 그 값을 조용히 되돌려 **세이브를 옮긴 사람과 안 옮긴 사람의 데이터가
+  갈렸다**. 도달 불가 케이스도 아니다 — 해안 모험 한 번이 108,000,000 이라 열 번이면 상한이다.
+- 같은 상수를 흩어 놓은 대가가 하나 더 있었다: `sanitized` 는 **박스 개체만** 잘랐고 활성 개체의
+  경험치는 무검증이었다. 손편집 세이브의 `Int.max` 에 사탕 XP 를 더하는 순간 Swift 오버플로 트랩으로
+  프로세스가 죽는다(재기동해도 같은 파일을 읽어 다시 죽는 그 부류).
+- **처방**: 상한이 걸린 값은 **클램프가 붙은 입구 하나**만 남긴다(`MonState.gainExperience(_:)`).
+  누적 지점은 그 함수를 부르고 직접 `+=` 하지 않는다. 상수도 한 곳(`PokemonBalance.maxLevel` ·
+  `experiencePerLevel` · `maxLevelExperience`)에 두고 검사 코드까지 그 상수를 쓴다 — 리터럴이 남아
+  있으면 상한을 바꿀 때 검사 쪽만 옛 값으로 남는다.
+- **곁가지**: 구간 진행도 getter 는 **상한에서 나머지가 0** 이 된다. `990_000_000 % 10_000_000 == 0`
+  이라 만렙 개체의 막대가 텅 비어 보였다. 형제 구현(`experienceToNextLevel` · `TrainerLevel.progress`)은
+  둘 다 최고 레벨 가드가 있었고 이 하나만 없었다 — **형제 구현이 셋이면 셋을 나란히 놓고 본다.**
+- 회귀 테스트는 정확히 상한값과 상한 초과 시도를 밟아야 한다. 낮은 레벨에서 적립하는 테스트는
+  클램프를 한 번도 지나지 않고 통과한다.
+  (`CompanionModel.swift` · `CompanionStore.swift` · `SaveTransfer.swift`, 2026-08-21.)

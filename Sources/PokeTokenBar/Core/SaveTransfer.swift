@@ -193,11 +193,14 @@ enum SaveTransfer {
             // totalForms 는 `kk * (kk + 1)` 형태로 쓰여(PokemonBalance.phaseThreshold) 큰 값이 그 자체로 트랩이다.
             active.totalForms = min(max(1, active.totalForms), 12)
             active.stageIndex = min(max(0, active.stageIndex), max(0, active.pathIDs.count - 1))
+            // 박스 개체만 자르고 활성 개체를 빼 두면, 손편집으로 들어온 큰 값에 이상한 사탕 XP 를
+            // 더하는 순간 Swift 오버플로 트랩으로 프로세스가 죽는다(#81 부류 스윕).
+            active.levelExperience = min(max(0, active.levelExperience), PokemonBalance.maxLevelExperience)
             s.active = active
         }
         s.boxedMons = Array(s.boxedMons.prefix(100)).map { mon in
             var m = mon
-            m.levelExperience = min(max(0, m.levelExperience), 990_000_000)
+            m.levelExperience = min(max(0, m.levelExperience), PokemonBalance.maxLevelExperience)
             m.learnedMoves = Array(m.learnedMoves.prefix(4))
             return m
         }

@@ -141,12 +141,16 @@ final class CompanionStore {
     var currentNature: PokemonNature? { state.active?.nature }
     var currentLevel: Int { state.active?.level ?? 1 }
     var experienceToNextLevel: Int {
-        guard let mon = state.active, mon.level < 100 else { return 0 }
-        return mon.level * 10_000_000 - mon.levelExperience
+        guard let mon = state.active, !mon.isMaxLevel else { return 0 }
+        return mon.level * PokemonBalance.experiencePerLevel - mon.levelExperience
     }
+    /// 현재 레벨 구간 진행도(0...1). **만렙은 1이다** — 990,000,000 은 구간 폭으로 나눈 나머지가 0 이라
+    /// 가드가 없으면 다 키운 개체의 막대가 텅 빈 채로 그려졌다(#81). `TrainerLevel.progress` 와 같은 규칙.
     var levelProgress: Double {
         guard let mon = state.active else { return 0 }
-        return Double(mon.levelExperience % 10_000_000) / 10_000_000
+        guard !mon.isMaxLevel else { return 1 }
+        let within = max(0, mon.levelExperience) % PokemonBalance.experiencePerLevel
+        return Double(within) / Double(PokemonBalance.experiencePerLevel)
     }
     /// 지금 형태에서 다음으로 갈 노드 — 미리 정한 경로가 있으면 그쪽, 없으면 첫 자식.
     private var nextEvolutionNode: EvoNode? {
@@ -653,7 +657,7 @@ final class CompanionStore {
     /// claimAdventure() 가 레벨만 올릴 때 쓰는 것과 같은 형태). 프로덕션 호출 경로 없음.
     func debugAccrueLevelExperience(_ amount: Int) {
         guard state.active != nil else { return }
-        state.active!.levelExperience = min(990_000_000, state.active!.levelExperience + amount)
+        state.active!.gainExperience(amount)
         applyUsage(0)
     }
     /// 테스트 전용 — 기술 목록 표시 상태를 직접 세팅(네트워크 로드 없이 행 레이아웃을 재기 위함).
@@ -744,8 +748,7 @@ final class CompanionStore {
         state.starPieces += reward.starPieces
         if state.active != nil {
             let oldLevel = state.active!.level
-            state.active!.levelExperience = min(990_000_000,
-                state.active!.levelExperience + reward.experience)
+            state.active!.gainExperience(reward.experience)
             let newLevel = state.active!.level
             applyUsage(0)
             if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
@@ -1657,7 +1660,7 @@ final class CompanionStore {
         candyFeedbackSeq += 1
         let oldLevel = state.active!.level
         state.active!.usedAtStage += RareCandy.xp
-        state.active!.levelExperience += RareCandy.xp
+        state.active!.gainExperience(RareCandy.xp)
         let newLevel = state.active!.level
         if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
         applyUsage(0, maxTransitions: 1)   // 사탕 1개는 최대 1단계만 진행한다.
