@@ -266,6 +266,14 @@ struct BattleView: View {
                     Label(l.gymLeagueTitle, systemImage: "building.columns.fill")
                 }
                 .controlSize(.small)
+                // 던전은 배틀 준비 상태와 무관하다 — 팀도 상대도 필요 없고 혼자 푸는 퍼즐이라
+                // 체육관과 달리 `isChallengeEnabled` 로 막지 않는다.
+                Button {
+                    nav.showDungeon = true
+                } label: {
+                    Label(l.dungeonTitle, systemImage: "map.fill")
+                }
+                .controlSize(.small)
                 .disabled(!isChallengeEnabled)
                 Text(l.gymBadgeCount(store.earnedGymBadges.count, GymLeague.catalog.count))
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)

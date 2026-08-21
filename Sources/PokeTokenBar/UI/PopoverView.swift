@@ -60,11 +60,14 @@ final class PopoverNavigation {
     var showSettings = false
     /// 체육관 오버레이. 설정과 같은 층이라 **둘이 동시에 뜨지 않게** 한쪽을 열면 다른 쪽을 닫는다.
     var showGymLeague = false
+    /// 던전 오버레이(#79). 설정·체육관과 같은 층이다.
+    var showDungeon = false
     var tab: PopoverTab = .home
 
     func reset() {
         showSettings = false
         showGymLeague = false
+        showDungeon = false
         tab = .home
     }
 
@@ -73,6 +76,7 @@ final class PopoverNavigation {
     func goToBattle() {
         showSettings = false
         showGymLeague = false
+        showDungeon = false
         tab = .battle
     }
 }
@@ -97,6 +101,8 @@ struct PopoverView: View {
                     .environment(updater)
             } else if nav.showGymLeague {
                 GymLeagueView(store: companion, onClose: { nav.showGymLeague = false })
+            } else if nav.showDungeon {
+                DungeonView(store: companion, onClose: { nav.showDungeon = false })
             } else {
                 // 고정 높이 + 탭 안 스크롤. 콘텐츠가 늘 때마다 창이 커지면 NSPopover 가 매번 다시
                 // 그려 떨리고, 화면을 넘기면 스크롤 대신 잘라낸다(#9). 창 크기는 고정하고 넘치는
@@ -112,6 +118,8 @@ struct PopoverView: View {
         // 도전을 누르면 배틀이 시작된다 — 목록에 그대로 있으면 자기가 시작한 배틀을 못 본다.
         .onChange(of: battleCenter.phase) { _, phase in
             if nav.showGymLeague, phase != .ready { nav.showGymLeague = false }
+            // 던전도 같이 접는다 — 배틀이 시작됐는데 던전을 보고 있으면 자기가 시작한 배틀을 못 본다.
+            if nav.showDungeon, phase != .ready { nav.showDungeon = false }
         }
     }
 
