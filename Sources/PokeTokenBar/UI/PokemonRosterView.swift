@@ -19,6 +19,8 @@ struct PokemonRosterView: View {
     /// 타입 해석이 한 바퀴 돌았는지. 돌기 전엔 필터 메뉴를 열지 않는다 — 절반만 해석된 표로
     /// 거르면 "왜 얘가 안 보이지"가 로딩 순서에 따라 달라진다.
     @State private var didResolveTypes = false
+    /// 방생 확인 대상. 되돌릴 수 없으므로 카드에서 바로 놓아주지 않고 한 번 물어본다.
+    @State private var releaseTarget: MonState?
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
     private static let contentHeight: CGFloat = 520
@@ -50,6 +52,29 @@ struct PokemonRosterView: View {
         }
         .frame(height: Self.contentHeight, alignment: .top)
         .task(id: owned.map(\.currentID).sorted()) { await resolveDisplayValues(for: owned) }
+        .confirmationDialog(releaseQuestion(releaseTarget), isPresented: releaseDialogBinding,
+                            titleVisibility: .visible) {
+            Button(store.language == .ko ? "놓아주기" : "Release", role: .destructive) {
+                if let target = releaseTarget { store.releaseMon(target.id) }
+                releaseTarget = nil
+            }
+            Button(store.language == .ko ? "취소" : "Cancel", role: .cancel) { releaseTarget = nil }
+        } message: {
+            Text(store.language == .ko
+                 ? "놓아준 포켓몬은 돌아오지 않습니다. 졸업해 도감에 기록된 개체라면 도감 기록은 남습니다."
+                 : "A released Pokémon does not come back. If it had graduated, its Pokédex record stays.")
+        }
+    }
+
+    private var releaseDialogBinding: Binding<Bool> {
+        Binding(get: { releaseTarget != nil }, set: { if !$0 { releaseTarget = nil } })
+    }
+
+    private func releaseQuestion(_ mon: MonState?) -> String {
+        guard let mon else { return "" }
+        return store.language == .ko
+            ? "Lv.\(mon.level) 포켓몬을 놓아줄까요?"
+            : "Release this Lv.\(mon.level) Pokémon?"
     }
 
     /// 박스 전체의 이름·타입을 한 번 해석한다. 이름은 개체에 저장된 다국어 이름으로 대부분 끝나고
@@ -140,7 +165,8 @@ struct PokemonRosterView: View {
                             let mon = slice[index]
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
                                           name: names[mon.currentID] ?? "",
-                                          types: types[mon.currentID] ?? [])
+                                          types: types[mon.currentID] ?? [],
+                                          onRelease: { releaseTarget = mon })
                                 .frame(maxWidth: .infinity)
                         } else {
                             Color.clear.frame(maxWidth: .infinity)
@@ -187,6 +213,8 @@ private struct RosterMonCard: View {
     /// 갈라지지 않게 한다(행마다 따로 받아오면 정렬 키를 화면과 맞출 수 없다).
     let name: String
     let types: [PokemonType]
+    /// 방생 요청 — 확인 대화상자는 부모가 띄운다(카드는 격자 칸이라 대화상자를 붙일 자리가 아니다).
+    let onRelease: () -> Void
 
     var body: some View {
         Button { if !isActive { store.switchCompanion(to: mon.id) } } label: {
@@ -209,6 +237,14 @@ private struct RosterMonCard: View {
                     .foregroundStyle(isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
         }.buttonStyle(.bordered).disabled(isActive)
+        // 동행 중인 개체는 놓아줄 수 없다 — 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
+        .contextMenu {
+            if !isActive {
+                Button(role: .destructive, action: onRelease) {
+                    Label(store.language == .ko ? "놓아주기" : "Release", systemImage: "hand.wave")
+                }
+            }
+        }
     }
 }
 
