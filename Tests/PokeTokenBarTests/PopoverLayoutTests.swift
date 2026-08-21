@@ -248,6 +248,61 @@ final class PopoverLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: 업적 선반 — 세로 예산
+
+    /// 업적 선반은 컬렉션 탭의 하위 세그먼트 하나를 차지한다. 4행짜리 선반이라 예산은 넉넉하지만,
+    /// 행마다 게이지를 깔면 미션 카드(211pt)·도감 목표 줄이 겪은 그 초과를 그대로 반복한다.
+    /// 상한을 두는 이유는 선반이 도감 격자와 **같은 프레임**을 공유하기 때문이다 — 넘치면
+    /// 세그먼트를 바꿀 때 팝오버 안에서 스크롤이 생겨 두 화면의 높이가 달라 보인다.
+    private static let achievementShelfBudget: CGFloat = 160
+
+    private func achievementStore(_ language: AppLanguage = .ko) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-achievement-layout-\(UUID().uuidString).json")
+        // 네 트랙이 **모두 분수로 보이는** 상태 — 한 트랙이라도 사다리 끝을 넘으면 그 행이 "✓" 한
+        // 글자가 되어 최악의 폭에서 빠진다.
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
+            + #""achievements":{"counts":{"focus":100,"evolve":4,"battle":2,"race":2}}}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: StubProvider(value: moveTestLine),
+                              clock: { Date(timeIntervalSince1970: 1_755_000_000) },
+                              fileURL: url, rng: SeededRNG(seed: 9))
+    }
+
+    /// 트리거 재현: 행마다 `ProgressView` 를 깔면 예산을 넘긴다. 이 대조군이 없으면 아래 예산
+    /// 검증이 "애초에 통과할 조건이었다" 는 false confidence 가 된다.
+    func testAGaugePerAchievementRowBlowsThroughTheShelfBudget() {
+        let gauged = VStack(alignment: .leading, spacing: 6) {
+            Text("🏅 업적").font(.caption.weight(.semibold))
+            ForEach(AchievementLadder.catalog) { entry in
+                HStack {
+                    Text(entry.id).font(.caption2)
+                    Spacer()
+                    Text("0/\(entry.tiers[0])").font(.caption2)
+                }
+                ProgressView(value: 0.3)
+            }
+        }
+        .padding(9)
+        XCTAssertGreaterThan(renderedHeight(gauged), Self.achievementShelfBudget,
+                             "대조군이 안 넘치면 예산 검증이 무의미해진다")
+    }
+
+    func testAchievementShelfFitsItsBudget() {
+        XCTAssertLessThanOrEqual(renderedHeight(AchievementShelfView(store: achievementStore())),
+                                 Self.achievementShelfBudget)
+    }
+
+    /// 트랙 이름이 세 언어에서 길이가 다르다(집중 시간 / Focus time / 集中時間). 한 언어에서
+    /// 줄바꿈되면 그 언어에서만 선반이 커진다 — 기술 목록에서 이미 겪은 부류(CI 118pt vs 로컬 78pt).
+    func testAchievementShelfHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(AchievementShelfView(store: achievementStore(.ko)))
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(AchievementShelfView(store: achievementStore(language))),
+                           korean, accuracy: 1, "\(language.rawValue) 에서 선반 높이가 달라졌다")
+        }
+    }
+
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
 
     private func moveStore(_ moves: [MoveSpec]) -> CompanionStore {
