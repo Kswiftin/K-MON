@@ -67,7 +67,15 @@ struct AchievementLadder: Codable, Sendable, Equatable {
         return crossed
     }
 
+    /// 모든 트랙의 단계 수 합 — **카탈로그에서 계산한다.** 상수로 박으면 트랙이나 문턱을 더한 날
+    /// LAN 카드의 분모(`n/16`)와 광고 클램프가 조용히 어긋난다.
+    static var tierCeiling: Int { catalog.reduce(0) { $0 + $1.tiers.count } }
+
     func count(_ track: AchievementTrack) -> Int { max(0, counts[track.rawValue] ?? 0) }
+
+    /// 도달한 단계의 총합(0...`tierCeiling`). 근처 트레이너 카드가 보여주는 한 숫자다 —
+    /// 네 트랙을 한 칸에 담아야 카드가 두 줄을 유지한다.
+    var tierTotal: Int { Self.catalog.reduce(0) { $0 + tier($1.track) } }
 
     /// 도달 단계 수(0...문턱 개수). 저장하지 않고 카운터에서 계산한다.
     ///
