@@ -121,6 +121,39 @@ final class PuzzleDungeonTests: XCTestCase {
                        PuzzleDungeon.baseBudget)
     }
 
+    /// 여유 예산 배분 — 생성기를 통해서는 밟히지 않는 분기까지 직접 검사한다.
+    /// 커버리지 퍼센트로는 이 분기가 도는지 알 수 없다(줄 커버리지는 조건 평가만으로 세므로).
+    func testAllowanceSplitSpendsEverythingAndDegradesGracefully() {
+        // 나머지는 버리지 않고 앞쪽에 1씩 얹는다 — 합이 예산과 정확히 같아야 여유가 15 로 남는다.
+        let split = PuzzleDungeon.splitAllowance(37, among: 3)
+        XCTAssertEqual(split, [13, 12, 12])
+        XCTAssertEqual(split.reduce(0, +), 37, "예산을 남기면 척추 여유가 설계값보다 커진다")
+
+        // 예산이 교전 수보다 적으면 교전 수를 예산까지 줄인다(각 1 데미지) — 남는 교전은 빈 방이 된다.
+        XCTAssertEqual(PuzzleDungeon.splitAllowance(2, among: 5), [1, 1])
+        XCTAssertEqual(PuzzleDungeon.splitAllowance(0, among: 3), [])
+        XCTAssertEqual(PuzzleDungeon.splitAllowance(-5, among: 3), [], "음수 예산도 교전 0 개로 접힌다")
+        XCTAssertEqual(PuzzleDungeon.splitAllowance(10, among: 0), [])
+        // 배분된 데미지는 항상 1 이상이다 — 0 데미지 교전은 빈 방과 구별되지 않는다.
+        for count in 1...6 {
+            for allowance in 1...60 {
+                let values = PuzzleDungeon.splitAllowance(allowance, among: count)
+                XCTAssertTrue(values.allSatisfy { $0 >= 1 }, "\(allowance)/\(count): \(values)")
+                XCTAssertLessThanOrEqual(values.reduce(0, +), allowance, "예산을 넘겨 배분했다")
+            }
+        }
+    }
+
+    /// 척추 밖 방이 항상 남는다는 불변식 — 회복샘 보장이 이걸 전제로 빈 배열 가드를 두지 않는다.
+    func testSpineNeverSwallowsEveryRoom() {
+        for offset in 0..<365 {
+            let map = PuzzleDungeon.map(dayKey: Self.dayKey(offset))
+            XCTAssertLessThanOrEqual(map.spine.count, 8)
+            XCTAssertGreaterThanOrEqual(PuzzleDungeon.roomCount - map.spine.count, 6,
+                                        "\(map.dayKey): 척추 밖 방이 6개 미만")
+        }
+    }
+
     static func dayKey(_ offset: Int) -> String {
         let day = Date(timeIntervalSince1970: 1_767_225_600 + Double(offset) * 86_400)
         return CompanionStore.dayKey(day)

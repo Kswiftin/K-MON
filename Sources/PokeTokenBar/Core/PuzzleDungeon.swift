@@ -183,6 +183,22 @@ enum PuzzleDungeon {
 
     // MARK: 방 배치 — 클리어 가능성이 나오는 곳
 
+    /// 척추 여유 예산을 교전들에 나눈다 — **테스트가 직접 부를 수 있게 따로 뺐다.**
+    /// 예산이 교전 수보다 적은 경우(척추가 아주 길고 통로가 비싼 맵)는 실제 날짜 키 365일에서
+    /// 한 번도 나오지 않아, 생성기를 통해서는 그 분기를 밟을 방법이 없다.
+    ///
+    /// - 나머지는 버리지 않고 앞쪽 교전에 1씩 얹는다. 버리면 척추 여유가 15 가 아니라 35 가 되고
+    ///   (실측) 방문 순서를 고민할 이유가 사라진다.
+    /// - 반환 길이가 `count` 보다 짧으면 남는 교전은 빈 방으로 되돌려야 한다는 뜻이다.
+    static func splitAllowance(_ allowance: Int, among count: Int) -> [Int] {
+        guard count > 0, allowance > 0 else { return [] }
+        // 한 칸에 1 도 못 주면 교전 수를 예산까지 줄인다(각 1 데미지).
+        guard allowance >= count else { return [Int](repeating: 1, count: allowance) }
+        let each = allowance / count
+        let remainder = allowance - each * count
+        return (0..<count).map { each + ($0 < remainder ? 1 : 0) }
+    }
+
     private static func placeRooms(spine: [Int], coords: [(x: Int, y: Int)],
                                    _ rng: inout SplitMix64) -> [DungeonRoom] {
         let boss = spine[spine.count - 1]
@@ -204,32 +220,24 @@ enum PuzzleDungeon {
         let spineCost = (0..<(spine.count - 1))
             .reduce(0) { $0 + corridorCost(coords, spine[$1], spine[$1 + 1]) }
         let allowance = baseBudget - clearSlack - spineCost - bossDamage
-        // 데미지 1 도 못 주는 교전은 교전이 아니다 — 예산이 모자라면 빈 방으로 되돌린다.
-        while allowance < encounters.count, let demoted = encounters.popLast() {
-            kinds[demoted] = .empty
-        }
+        let split = splitAllowance(allowance, among: encounters.count)
 
         var damages = [Int](repeating: 0, count: roomCount)
         damages[boss] = bossDamage
-        if !encounters.isEmpty {
-            // 나머지를 버리지 않고 앞쪽 교전에 1씩 얹는다. 버리면 척추 여유가 15 가 아니라 30 을
-            // 넘어(실측 35) 순서를 고민할 이유가 사라진다 — 예산을 남기지 않고 다 쓴다.
-            let each = max(1, allowance / encounters.count)
-            var remainder = max(0, allowance - each * encounters.count)
-            for room in encounters {
-                damages[room] = each + (remainder > 0 ? 1 : 0)
-                remainder -= 1
-            }
+        for (offset, room) in encounters.enumerated() {
+            // 배분에서 빠진 교전은 빈 방으로 되돌린다 — 데미지 1 도 못 주는 교전은 교전이 아니다.
+            if offset < split.count { damages[room] = split[offset] } else { kinds[room] = .empty }
         }
 
         // 척추 밖은 자유롭게 채운다 — 클리어 가능성이 척추에서 나오므로 여기 값은 난이도 장식이다.
+        // 척추는 최대 8방이고 방은 14개라 이 배열은 **항상 6개 이상**이다(`PuzzleDungeonTests` 가 잠근다).
+        // 빈 배열 가드를 두지 않는 이유다 — 도달할 수 없는 분기는 테스트로 밟을 수도 없다.
         let offSpine = (0..<roomCount).filter { !spine.contains($0) }
         // 회복샘 **하나는 보장한다.** 확률에만 맡기면 365일 중 87일이 샘 없는 맵이었다(실측) —
         // 방 종류 넷 중 하나가 그날 아예 존재하지 않으면 그만큼 판단거리가 사라진다.
-        if let guaranteed = offSpine.isEmpty ? nil : offSpine[Int(rng.next() % UInt64(offSpine.count))] {
-            kinds[guaranteed] = .spring
-            damages[guaranteed] = springHeal
-        }
+        let guaranteed = offSpine[Int(rng.next() % UInt64(offSpine.count))]
+        kinds[guaranteed] = .spring
+        damages[guaranteed] = springHeal
         for room in offSpine where kinds[room] == .empty {
             switch rng.next() % 5 {
             case 0, 1: break                                   // 빈 방
