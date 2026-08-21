@@ -618,6 +618,11 @@ final class BattleCenter {
     }
 
     private func startListener() {
+        // 재시작이면 옛 리스너를 **먼저 취소한다.** `cancel()` 없이 참조만 버리면 실패한 객체가
+        // 큐·포트를 붙든 채 남고, 24/7 앱에서 슬립 복귀마다 누적된다(형제인
+        // `MultiplayerRoomCenter.leaveRoom` 은 취소한다 — 한 모드만 고친 부류였다).
+        // 호출부가 아니라 이 입구에 두는 이유: 새 재시작 경로가 생겨도 자동으로 덮인다.
+        listener?.cancel()
         do {
             let listener = try NWListener(using: Self.discoveryParameters())
             let profile = myAdvertisement
@@ -664,6 +669,7 @@ final class BattleCenter {
     }
 
     private func startBrowser() {
+        browser?.cancel()   // 재시작 시 옛 브라우저 취소 — `startListener` 와 같은 이유.
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil),
                                 using: Self.discoveryParameters())
         browser.browseResultsChangedHandler = { [weak self] results, _ in
