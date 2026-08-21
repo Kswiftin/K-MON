@@ -218,7 +218,7 @@ actor PokeAPIClient: PokeProviding {
 
     private var moveSetCache: [String: [MoveSpec]] = [:]   // "speciesID-level" → 4기술
 
-    /// 현재 레벨까지 레벨업으로 배우는 기술 중 공격기 4개 선택(위력·타입 다양성 우선).
+    /// 현재 레벨까지 레벨업으로 배우는 기술 중 4개 선택(위력·타입 다양성 우선, 변화기 최대 한 칸).
     /// 후보가 모자라면 레벨 제한을 풀고, 그래도 없거나 fetch 실패면 합성 무브셋 폴백 —
     /// 대전 성립이 기술 데이터 fetch 성공에 묶이면 안 된다.
     func moveSet(speciesID: Int, level: Int, types: [PokemonType]) async -> [MoveSpec] {
@@ -231,11 +231,14 @@ actor PokeAPIClient: PokeProviding {
             for name in candidates {
                 if picked.count >= 8 { break }   // 상세 fetch 상한(PokéAPI 배려)
                 guard let spec = try? await moveDetail(named: name) else { continue }
-                guard spec.power > 0 else { continue }   // 변화기 제외(자동 판정 불가)
+                // 변화기도 들이되 후보는 **두 개까지**다. 상한 8건을 변화기가 채우면 `pickFour` 에
+                // 넘길 공격기가 남지 않는다(상한은 올리지 않는다 — 계획 §5 Phase 3).
+                guard spec.power > 0 || picked.filter({ $0.power <= 0 }).count < 2 else { continue }
                 picked.append(spec)
             }
             let four = Self.pickFour(from: picked, types: types)
-            guard !four.isEmpty else { throw URLError(.cannotParseResponse) }
+            // 공격기가 한 개도 없으면 데미지를 낼 방법이 없다 → 합성 무브셋으로 떨어뜨린다.
+            guard four.contains(where: { $0.power > 0 }) else { throw URLError(.cannotParseResponse) }
             moveSetCache[cacheKey] = four
             return four
         } catch {
@@ -303,9 +306,37 @@ actor PokeAPIClient: PokeProviding {
         return pool.sorted { $0.level == $1.level ? $0.name < $1.name : $0.level > $1.level }.map(\.name)
     }
 
-    /// 공격기 목록에서 4개 — STAB·고위력 우선하되 타입 중복은 뒤로(견제폭).
+    /// 기술 4개 — 공격기는 STAB·고위력 우선하되 타입 중복은 뒤로(견제폭), **변화기는 최대 한 칸**.
+    ///
+    /// 칸을 나누는 게 핵심이다. 위력 내림차순 한 줄에 변화기를 그냥 섞으면 위력 0 이라 늘 꼴찌라
+    /// **절대 안 뽑힌다** — 이 함수가 `guard spec.power > 0` 을 대신하는 자리다.
     static func pickFour(from specs: [MoveSpec], types: [PokemonType]) -> [MoveSpec] {
-        let ranked = specs.sorted {
+        let attacks = specs.filter { $0.power > 0 }
+        let statusPick = pickStatusMove(from: specs.filter { $0.power <= 0 })
+        // 남은 칸을 공격기로 되채우는 루프는 필요 없다 — `pickAttacks` 의 두 번째 루프가 이미
+        // 상한까지 전 공격기를 채우므로, 여기 도달하면 out 은 4개거나 attacks 를 전부 담고 있다.
+        var out = pickAttacks(from: attacks, types: types, limit: statusPick == nil ? 4 : 3)
+        if let statusPick { out.append(statusPick) }
+        return out
+    }
+
+    /// 변화기 한 칸의 주인 — **엔진이 실제로 적용하는 효과가 있는 것만**. PP 만 태우는 기술은
+    /// `nil` 을 돌려 그 칸을 공격기에게 넘긴다. 걸러야 하는 셋:
+    /// 효과 미구현 변화기(ailment 14종), 자기 대상 상태기(잠자기 — 회복이 없어 엔진이 건너뛴다),
+    /// 부호가 섞인 랭크 변화(저주 — 대상을 가릴 수 없어 엔진이 건너뛴다), 대가를 모델링하지 않은
+    /// 큰 상승(배가르기 — `statChangePercent` 가 0 으로 접는다).
+    /// **엔진의 게이트와 같은 값을 본다** — 여기서만 거르면 `learnedMoves` 경로가 갈라진다.
+    /// 순서는 후보 정렬(습득 레벨 내림차순)을 그대로 따라가므로 결정적이다.
+    private static func pickStatusMove(from specs: [MoveSpec]) -> MoveSpec? {
+        specs.first { spec in
+            if spec.inflictedStatus != nil, spec.targetsUser != true { return true }
+            return !(spec.statChanges ?? []).isEmpty && spec.statChangePercent > 0
+        }
+    }
+
+    private static func pickAttacks(from attacks: [MoveSpec], types: [PokemonType],
+                                    limit: Int) -> [MoveSpec] {
+        let ranked = attacks.sorted {
             let stab0 = types.contains($0.type), stab1 = types.contains($1.type)
             if stab0 != stab1 { return stab0 }
             return $0.power > $1.power
@@ -313,11 +344,11 @@ actor PokeAPIClient: PokeProviding {
         var out: [MoveSpec] = []
         for s in ranked where !out.contains(where: { $0.type == s.type }) {
             out.append(s)
-            if out.count == 4 { return out }
+            if out.count == limit { return out }
         }
         for s in ranked where !out.contains(where: { $0.id == s.id }) {
             out.append(s)
-            if out.count == 4 { break }
+            if out.count == limit { break }
         }
         return out
     }
@@ -462,6 +493,13 @@ struct MoveDTO: Decodable, Sendable {
         /// `/move-ailment` 이름. 상태를 걸지 않는 기술은 `none` 이 온다(키가 빠지는 게 아니다).
         let ailment: NamedRef?
         let ailment_chance: Int?
+        /// 랭크 변화가 걸릴 확률. 변화기(본체가 랭크 변화)는 0 이 온다.
+        let stat_chance: Int?
+    }
+    /// 랭크 변화 한 항목. `stat.name` 은 `special-attack` 처럼 PokéAPI 표기다.
+    struct StatChangeDTO: Decodable, Sendable {
+        let change: Int
+        let stat: NamedRef
     }
     let id: Int
     let power: Int?
@@ -474,6 +512,16 @@ struct MoveDTO: Decodable, Sendable {
     /// 턴 순서에서 스피드보다 먼저 보는 값. 응답에 늘 들어 있지만, 옛 캐시 응답을 대비해 옵셔널로 둔다.
     let priority: Int?
     let meta: Meta?
+    /// 응답에 늘 있고 변화가 없으면 **빈 배열**이다. 그래서 `nil`(키 없음)은 "옛 캐시 응답" 이고,
+    /// 그 구분이 `MoveSpec.statChanges` 로 그대로 넘어간다.
+    let stat_changes: [StatChangeDTO]?
+    /// 기술의 대상(`user`·`selected-pokemon` …). `meta.ailment` 와 `stat_changes` 에는 대상이 없어서
+    /// **이 값이 자기 대상 기술을 가리는 유일한 신호다** — 없으면 잠자기가 상대를 재운다.
+    let target: NamedRef?
+
+    /// `target` 이 자기 자신(또는 자기 진영)을 가리키는 이름들. `selected-pokemon` 은 자기 랭크를
+    /// 깎는 공격기(인파이트)도 쓰므로 여기 없다 — 그쪽은 `statChangePercent` 가 따로 걸러낸다.
+    static let userTargets: Set<String> = ["user", "users-field", "user-and-allies", "user-or-ally"]
 }
 
 extension MoveSpec {
@@ -497,12 +545,22 @@ extension MoveSpec {
         if let ailment, ailment != "none", Status(ailment: ailment) == nil, dto.id != MoveSpec.toxicMoveID {
             AppLog.write("move \(dto.id) (\(fallbackName)): ailment '\(ailment)' not implemented — ignored")
         }
+        // 모르는 스탯 이름(랭크가 없는 `hp` 등)은 건너뛰되 조용히 삼키지 않는다 — ailment 와 같은 규칙.
+        let statChanges = dto.stat_changes?.compactMap { change -> StatChange? in
+            guard let stat = BattleStat(apiName: change.stat.name) else {
+                AppLog.write("move \(dto.id) (\(fallbackName)): stat '\(change.stat.name)' has no stage — ignored")
+                return nil
+            }
+            return StatChange(stat: stat, change: change.change)
+        }
         return MoveSpec(id: dto.id, names: names, type: type,
                         power: dto.power ?? 0, damageClass: damageClass,
                         accuracy: dto.accuracy, pp: dto.pp ?? 10,
                         descriptions: descriptions, priority: dto.priority,
                         critRate: dto.meta?.crit_rate,
-                        ailment: ailment, ailmentChance: dto.meta?.ailment_chance)
+                        ailment: ailment, ailmentChance: dto.meta?.ailment_chance,
+                        statChanges: statChanges, statChance: dto.meta?.stat_chance,
+                        targetsUser: dto.target.map { MoveDTO.userTargets.contains($0.name) })
     }
 }
 struct ChainLink: Decodable, Sendable {

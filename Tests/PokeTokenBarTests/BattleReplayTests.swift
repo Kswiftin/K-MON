@@ -114,6 +114,39 @@ final class BattleReplayTests: XCTestCase {
         XCTAssertGreaterThan(BattleReplay.totalDuration(steps), 0)
     }
 
+    /// 다축 랭크 변화(고대의힘 부류 — 한 방에 다섯 축)가 **같은 턴의 나머지를 압축하지 않는다.**
+    /// `.boost` 하나가 상태이상과 같은 0.40초를 먹으면 다섯 개로 2.0초라 예산(2.4)을 혼자 채우고,
+    /// 비례 압축이 걸려 `.damage` 보간과 급소 문구가 같이 짧아진다 — defect-log 에 이미
+    /// "문구가 60ms 도 못 뜬다" 로 기록된 부류다. 랭크는 재생 중 화면을 바꾸지 않고(랭크 배지는
+    /// 배치 끝에 엔진 값으로 스냅한다) 로그 줄만 늘리므로 짧아야 맞다.
+    func testAMultiAxisBoostTurnDoesNotSqueezeTheRestOfTheTurn() {
+        let axes = Array(BattleStat.allCases.prefix(5))
+        let stream: [BattleEvent] = [.turn(1), .move(.a, moveID: 246),
+                                     .damage(.b, amount: 30, cause: .move)]
+            + axes.map { .boost(.a, $0, 1) }
+        let steps = BattleReplay.steps(stream, from: ReplayFixture.sides([.b: 500]), speed: .normal)
+
+        XCTAssertLessThanOrEqual(stream.reduce(0) { $0 + BattleReplay.duration(of: $1) },
+                                 BattleReplay.budget,
+                                 "다축 랭크 한 방이 예산을 넘기면 그 턴은 늘 압축된다")
+        // 대조군: 압축이 안 걸렸으므로 `.damage` 스텝은 제 지속시간을 그대로 갖는다.
+        let damageStep = try? XCTUnwrap(steps.first {
+            if case .damage = $0.event { return true } else { return false }
+        })
+        XCTAssertEqual(damageStep?.duration ?? 0, BattleReplay.duration(of: .damage(.b, amount: 30, cause: .move)),
+                       accuracy: 0.001, "랭크가 예산을 먹으면 HP 보간이 짧아진다")
+    }
+
+    /// 랭크가 짧아도 **0 은 아니다** — 로그 줄을 읽을 시간이 있어야 한다. 위 검증만 있으면
+    /// "`.boost` 는 0초" 라는 오구현이 통과한다.
+    func testABoostStillGetsTimeToBeRead() {
+        XCTAssertGreaterThanOrEqual(BattleReplay.duration(of: .boost(.a, .atk, 1)), 0.15,
+                                    "턴 머리(0.15)보다 짧으면 로그 줄이 스치고 지나간다")
+        XCTAssertLessThan(BattleReplay.duration(of: .boost(.a, .atk, 1)),
+                          BattleReplay.duration(of: .move(.a, moveID: 1)),
+                          "기술 이름 줄보다 길 이유가 없다 — 랭크는 화면을 바꾸지 않는다")
+    }
+
     // MARK: 속도 — 보통 / 빠름 / 끄기
 
     /// **끄기는 필수다**(저전력·접근성, 계획 Phase 7). 끄면 기다림이 0 이라 결과가 즉시 보인다.

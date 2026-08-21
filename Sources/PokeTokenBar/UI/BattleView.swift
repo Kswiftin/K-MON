@@ -520,6 +520,8 @@ struct BattleView: View {
                              : HPReadout.theirs(hp: fighter.side.hp, max: fighter.side.stats.hp))
                             .font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
                         StatusBadgeRow(side: fighter.side)
+                        // 방 화면도 랭크를 그린다 — 없으면 4인 방에선 로그 문장으로만 남는다.
+                        StageArrows(side: fighter.side)
                     }
                     .padding(5)
                     .background((multiplayerTargetID == fighter.id ? Color.red.opacity(0.12) : Color.primary.opacity(0.04)),

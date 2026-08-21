@@ -97,6 +97,92 @@ struct BattleStats: Codable, Sendable, Equatable {
     var spe: Int
 }
 
+/// 랭크(스탯 단계)가 붙는 스탯 — HP 는 랭크가 없어서 빠졌다. rawValue 가 세이브·와이어 키를
+/// 겸하고, PokéAPI 표기(`special-attack` …)는 `init(apiName:)` 이 옮긴다.
+///
+/// `CodingKeyRepresentable` 은 `[BattleStat: Int]` 를 JSON **객체**로 내보내기 위한 것이다.
+/// 없으면 Swift 가 키·값 교대 배열로 인코딩해 와이어를 사람이 못 읽는다.
+enum BattleStat: String, Codable, Sendable, Equatable, CaseIterable, CodingKeyRepresentable {
+    case atk, def, spa, spd, spe, accuracy, evasion
+
+    /// PokéAPI `stat_changes[].stat.name` → 랭크 스탯. `hp` 처럼 랭크가 없는 이름은 `nil` 이다.
+    init?(apiName: String) {
+        switch apiName {
+        case "attack":          self = .atk
+        case "defense":         self = .def
+        case "special-attack":  self = .spa
+        case "special-defense": self = .spd
+        case "speed":           self = .spe
+        case "accuracy":        self = .accuracy
+        case "evasion":         self = .evasion
+        default:                return nil
+        }
+    }
+
+    /// 화면 배지용 약어 — 상태 배지(`BRN`·`PAR`)와 같은 이유로 언어를 타지 않는다.
+    var shortLabel: String {
+        switch self {
+        case .atk:      return "Atk"
+        case .def:      return "Def"
+        case .spa:      return "SpA"
+        case .spd:      return "SpD"
+        case .spe:      return "Spe"
+        case .accuracy: return "Acc"
+        case .evasion:  return "Eva"
+        }
+    }
+
+    /// 로그 문구용 이름 — `PokemonType.name` 과 같은 자리에 둔다(본가 공식 명칭).
+    func name(_ lang: AppLanguage) -> String {
+        let names: (String, String, String)
+        switch self {
+        case .atk:      names = ("공격", "Attack", "こうげき")
+        case .def:      names = ("방어", "Defense", "ぼうぎょ")
+        case .spa:      names = ("특수공격", "Sp. Atk", "とくこう")
+        case .spd:      names = ("특수방어", "Sp. Def", "とくぼう")
+        case .spe:      names = ("스피드", "Speed", "すばやさ")
+        case .accuracy: names = ("명중률", "accuracy", "めいちゅう")
+        case .evasion:  names = ("회피율", "evasiveness", "かいひ")
+        }
+        switch lang { case .ko: return names.0; case .en: return names.1; case .ja: return names.2 }
+    }
+}
+
+/// 기술 하나가 만드는 랭크 변화. PokéAPI `stat_changes` 한 항목이다. 튜플이 아니라 값 타입인 건
+/// 스냅샷에 실려 와이어·세이브를 건너야 하기 때문이다(`Codable`).
+struct StatChange: Codable, Sendable, Equatable {
+    var stat: BattleStat
+    var change: Int
+}
+
+/// 랭크 배율. **데미지 스탯과 명중·회피가 서로 다른 표를 쓴다**(§3.2) — 한 표로 합치면
+/// 명중 +1 이 150% 가 되거나 공격 +1 이 133% 가 된다.
+enum StatStages {
+    /// 랭크 상·하한. 본가와 같이 ±6 에서 멈춘다.
+    static let limit = 6
+
+    static func clamped(_ stage: Int) -> Int { min(limit, max(-limit, stage)) }
+
+    /// 데미지 스탯 배율 — **Gen 3+ 정수 분수**(2/8 … 2/2 … 8/2). Gen 2 는 같은 값의 근사 소수
+    /// (25/28/33/…/400 ÷100)를 썼는데, 두 피어가 각자 계산하는 이 대전에서는 정수 분수가 안전하다.
+    static func fraction(stage: Int) -> (numerator: Int, denominator: Int) {
+        let stage = clamped(stage)
+        return stage >= 0 ? (2 + stage, 2) : (2, 2 - stage)
+    }
+
+    /// 랭크를 적용한 스탯. 곱을 먼저 하고 나눠야 정수 나눗셈의 손실이 한 번만 생긴다.
+    static func apply(_ value: Int, stage: Int) -> Int {
+        let (numerator, denominator) = fraction(stage: stage)
+        return value * numerator / denominator
+    }
+
+    /// 명중·회피 배율(%) — **Gen 2 표**. 인덱스는 단계 + 6.
+    /// Gen 5+ 는 명중 단계와 회피 단계를 합산해 한 번만 곱한다 — 그건 다른 방식이고 값도 다르다.
+    static let accuracyTable = [33, 36, 43, 50, 60, 75, 100, 133, 166, 200, 233, 266, 300]
+
+    static func accuracyPercent(stage: Int) -> Int { accuracyTable[clamped(stage) + limit] }
+}
+
 /// 성격의 스탯 보정 — 본가 공식 표(오른 스탯 ×1.1, 내린 스탯 ×0.9, 중립 5종은 무보정).
 enum NatureEffect {
     /// (오르는 스탯, 내리는 스탯). nil = 중립.
@@ -165,6 +251,24 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 상태를 걸 확률(PokéAPI `meta.ailment_chance`). 0 은 "확률이 아니다" 라는 뜻이다.
     var ailmentChance: Int? = nil
 
+    /// 이 기술이 만드는 랭크 변화(PokéAPI `stat_changes`).
+    ///
+    /// **`nil` 과 `[]` 를 구분한다.** 응답에 이 키는 늘 있고 변화가 없으면 빈 배열이므로,
+    /// `nil` 은 "아직 안 받아봤다"(랭크 이전 세이브·구버전 피어)는 뜻이다. 섞으면 변화 없는
+    /// 기술을 로드마다 다시 받거나, 옛 세이브가 영영 안 고쳐진다.
+    /// `CompanionStore.needsDetailRefresh` 가 이 구분을 읽는다.
+    var statChanges: [StatChange]? = nil
+    /// 랭크 변화가 걸릴 확률(PokéAPI `meta.stat_chance`). `ailmentChance` 와 같이 0 은 "확률이 아니다".
+    var statChance: Int? = nil
+
+    /// 이 기술이 **자기**를 대상으로 하는가(PokéAPI `target` 이 `user` 계열). `statChanges` 와 같은
+    /// 이유로 옵셔널이다 — 이 키가 없던 시절의 세이브·구버전 피어에는 값이 없다.
+    ///
+    /// 없으면 안 되는 값이다: 잠자기는 `damage_class: status` + `ailment: sleep` 이라
+    /// `ailmentChancePercent` 가 100 을 주고, `applySecondaryEffect` 는 상태를 늘 **상대**에게 건다.
+    /// 대상을 안 보면 회복 없는 필중 100% 수면기가 되어 CPU 가 무작위로 그걸 쓴다.
+    var targetsUser: Bool? = nil
+
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
 
@@ -182,12 +286,47 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
         return ailment.flatMap(Status.init(ailment:))
     }
 
-    /// 상태를 거는 확률(%) — 2차효과는 `ailment_chance` 를 그대로 쓰고, 위력 없는 변화기는
-    /// 상태 부여가 기술 **본체**라 늘 건다(PokéAPI 가 그런 기술에 0 을 준다).
-    var ailmentChancePercent: Int {
-        let chance = ailmentChance ?? 0
-        if chance > 0 { return chance }
+    /// 2차효과 확률의 기본값 규칙 — **상태·랭크가 이 한 곳을 공유한다.** 명시 확률이 있으면 그
+    /// 값이고, 없으면 변화기는 100(효과가 기술 본체라 PokéAPI 가 0 을 준다) 공격기는 0 이다.
+    /// 복제해 두면 한쪽만 고쳐도 컴파일·테스트가 아무것도 알려주지 않고 두 축이 갈라진다.
+    private func chancePercent(_ declared: Int?) -> Int {
+        if let declared, declared > 0 { return declared }
         return damageClass == .status ? 100 : 0
+    }
+
+    /// 상태를 거는 확률(%).
+    var ailmentChancePercent: Int { chancePercent(ailmentChance) }
+
+    /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
+    /// 랭크 변화가 기술 **본체**라 늘 건다(PokéAPI 가 그런 기술에 0 을 준다).
+    ///
+    /// 공격기 + 확률 없음(0) 은 **적용하지 않는다.** 인파이트·깨트리다처럼 *자기* 방어를 확정으로
+    /// 깎는 기술인데, 응답만으로는 대상이 자기인지 상대인지 알 수 없다 — `applyStatChanges` 의
+    /// 부호 규칙에 맡기면 상대를 깎아 완전히 뒤집힌다. 확률이 붙은 2차효과는 오로라빔·
+    /// 사이코키네시스처럼 실제로 상대를 깎으므로 부호 규칙이 맞다.
+    /// 부호가 대상을 정하는 규칙이 **통하지 않는** 랭크 변화 — 올리는 것과 내리는 것이 한 기술에
+    /// 같이 있는 경우다. 저주(자기 스피드 −1 + 공격·방어 +1)가 그렇고, 부호로 가르면 스피드 감소가
+    /// 상대에게 걸려 자기 버프 두 개 + 상대 디버프 하나가 된다. 가릴 수 없으면 걸지 않는다.
+    var hasAmbiguousStatTargets: Bool {
+        guard let statChanges else { return false }
+        return statChanges.contains { $0.change > 0 } && statChanges.contains { $0.change < 0 }
+    }
+
+    /// 대가를 **모델링하지 않은** 큰 상승. 배가르기(공격 +6 + 최대 HP 절반)는 HP 소모가 어디에도
+    /// 없어서, 그대로 통과시키면 첫 턴 공짜 +6 공격이 된다(CPU 도 무작위로 쓴다). 저주의 Ghost
+    /// HP 반감도 같은 부류다.
+    ///
+    /// ponytail: `|변화| >= 3` 은 휴리스틱이다 — Gen 2 범위에서 이 문턱에 걸리는 건 배가르기뿐이고
+    ///           (칼춤·방어막·기억상실은 ±2), 대가를 실제로 구현하면 이 게이트를 지우고 코스트를
+    ///           태운다. 문턱을 넘는 기술이 늘면 여기 대신 기술별 코스트 표가 필요하다.
+    var hasUnpricedGain: Bool {
+        guard damageClass == .status else { return false }
+        return (statChanges ?? []).contains { abs($0.change) >= 3 }
+    }
+
+    var statChangePercent: Int {
+        if hasAmbiguousStatTargets || hasUnpricedGain { return 0 }
+        return chancePercent(statChance)
     }
 
     /// 맹독 — PokéAPI move id.
@@ -335,6 +474,9 @@ struct BattleSide: Sendable, Equatable {
     var statusCounter = 0
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
+    /// 랭크(−6…+6). 0 인 스탯은 **키를 두지 않는다** — 그래야 "랭크가 하나도 없다" 가
+    /// `stages.isEmpty` 한 번으로 읽히고, 와이어 JSON 도 붙은 랭크만 나른다.
+    var stages: [BattleStat: Int] = [:]
 
     init(_ snapshot: BattleSnapshot) {
         self.snapshot = snapshot
@@ -347,9 +489,40 @@ struct BattleSide: Sendable, Equatable {
     var isAlive: Bool { hp > 0 }
     var isConfused: Bool { confusionTurns > 0 }
 
-    /// 턴 순서에 쓰는 스피드 — 마비면 Gen 2 기준 25%(Gen 7 부터 50%).
-    /// 순서 계산이 `stats.spe` 를 직접 읽으면 마비가 스탯 화면에만 보이고 실제 선공은 그대로다.
-    var effectiveSpeed: Int { status == .paralysis ? max(1, stats.spe / 4) : stats.spe }
+    /// 이 스탯의 랭크. 없으면 0 이다.
+    func stage(_ stat: BattleStat) -> Int { stages[stat] ?? 0 }
+
+    /// 랭크를 움직이고 **실제로 적용된 양**을 돌려준다. ±6 에 닿아 있으면 0 이고, 호출부는 그
+    /// 0 을 보고 이벤트를 내지 않는다 — "0 만큼 올랐다" 줄이 로그에 남으면 거짓말이다.
+    @discardableResult
+    mutating func changeStage(_ stat: BattleStat, by delta: Int) -> Int {
+        let before = stage(stat)
+        let after = StatStages.clamped(before + delta)
+        if after == 0 { stages[stat] = nil } else { stages[stat] = after }
+        return after - before
+    }
+
+    /// 교체하면 랭크는 전부 사라진다(본가와 같다). 남겨 두면 다시 나올 때 옛 랭크로 싸운다.
+    mutating func resetStages() { stages = [:] }
+
+    /// 랭크 **전**의 스탯. 명중·회피는 스탯이 아니라 랭크만 있는 축이라 기준값 100 이다.
+    func rawStat(_ stat: BattleStat) -> Int {
+        switch stat {
+        case .atk: return stats.atk
+        case .def: return stats.def
+        case .spa: return stats.spa
+        case .spd: return stats.spd
+        case .spe: return stats.spe
+        case .accuracy, .evasion: return 100
+        }
+    }
+
+    /// 턴 순서에 쓰는 스피드 — 랭크를 먼저 곱하고, 마비면 그 뒤에 Gen 2 기준 25%(Gen 7 부터 50%).
+    /// 순서 계산이 `stats.spe` 를 직접 읽으면 마비·랭크가 스탯 화면에만 보이고 실제 선공은 그대로다.
+    var effectiveSpeed: Int {
+        let boosted = StatStages.apply(rawStat(.spe), stage: stage(.spe))
+        return status == .paralysis ? max(1, boosted / 4) : boosted
+    }
 
     /// 이 상태가 붙을 수 있는가. 타입 면역은 **Gen 2 것만** 가져온다 —
     /// 전기 타입의 마비 면역, 풀 타입의 가루 면역은 Gen 6 규칙이라 여기 없다.
@@ -437,7 +610,10 @@ enum BattleEngine {
     ///     case 이름으로 디코딩하므로 모르는 case 를 받은 구버전은 **메시지 전체를 못 읽는다.**
     ///     지금은 멀티가 교체를 안 해 실릴 일이 없지만, "실릴 일이 없다" 를 근거로 두는 것보다
     ///     핸드셰이크에서 막는 쪽이 싸다.
-    static let rulesVersion = 7
+    /// 8 = 랭크(스탯 단계) + 명중·회피 랭크 + 변화기 무브셋 편입(변화기는 상성을 타지 않는다),
+    ///     그리고 교체할 때 랭크가 사라진다 — 데미지와 명중이 둘 다 달라지므로 구버전과 붙으면
+    ///     같은 배틀을 다르게 본다.
+    static let rulesVersion = 8
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -483,6 +659,9 @@ enum BattleEngine {
         }
         // 혼란은 volatile — 다시 나왔을 때 이전 카운터를 이어 가지 않는다.
         side.confusionTurns = 0
+        // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
+        // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.
+        side.resetStages()
     }
 
     /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.
@@ -502,31 +681,57 @@ enum BattleEngine {
     /// 혼란 자멸 데미지 — 무속성 물리 위력 40. 급소도 난수도 타지 않으므로 **rng 를 소비하지 않는다**
     /// (분기마다 소비량이 달라지면 두 피어가 갈라진다). 물리라서 화상 반감은 그대로 받는다(Gen 2).
     static func confusionDamage(_ side: BattleSide) -> Int {
-        let attack = side.status == .burn ? side.stats.atk / 2 : side.stats.atk
+        // 자기 공격·방어를 쓰니 자기 랭크도 탄다 — 공격 랭크만 보면 방어를 올린 개체가
+        // 자멸 데미지를 그대로 받는다.
+        let boosted = StatStages.apply(side.rawStat(.atk), stage: side.stage(.atk))
+        let attack = side.status == .burn ? boosted / 2 : boosted
+        let defense = StatStages.apply(side.rawStat(.def), stage: side.stage(.def))
         return max(1, baseDamage(level: side.snapshot.level, power: confusionPower,
-                                 attack: attack, defense: side.stats.def) + 2)
+                                 attack: attack, defense: defense) + 2)
+    }
+
+    /// 이 공격이 맞을 확률(%) — `nil` 은 필중기(명중 계산을 타지 않는다)다.
+    ///
+    /// **명중 랭크와 회피 랭크를 따로 곱한다**(Gen 2). 합산해 한 번만 곱하는 Gen 5+ 방식이면
+    /// (명중 +1, 회피 +1) 이 100% 인데, Gen 2 는 133% × 75% = 99% 다. 회피는 상대의 명중을
+    /// 깎으므로 부호를 뒤집어 같은 표를 읽는다. 100 초과는 그대로 둔다(안 빗나간다는 뜻이고,
+    /// Gen 2 의 1/256 miss 는 §3.3 대로 뺐다).
+    static func hitChance(of move: MoveSpec, attacker: BattleSide, defender: BattleSide) -> Int? {
+        guard let accuracy = move.accuracy else { return nil }
+        let withAccuracy = accuracy * StatStages.accuracyPercent(stage: attacker.stage(.accuracy)) / 100
+        return withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
     }
 
     /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 급소 → 난수 폭 순서고,
     /// 빗나가면 뒤의 둘을 소비하지 않는다. 세 모드가 이 함수 하나만 쓴다(예전엔 복사돼 있었다).
     static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
-        if let accuracy = move.accuracy, Int(rng.next() % 100) >= accuracy {
+        if let chance = hitChance(of: move, attacker: attacker, defender: defender),
+           Int(rng.next() % 100) >= chance {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
         }
-        // 발버둥은 무속성(상성·STAB 미적용).
+        // 발버둥은 무속성(상성·STAB 미적용). 위력 없는 변화기도 상성을 타지 않는다 — 상성은
+        // 공격기의 규칙이고, 노말 변화기(울음소리)가 고스트에게 안 걸리면 본가와 다른 게임이 된다.
+        // **단 상태를 거는 변화기는 그대로 본다**: 전기자석파는 땅 타입에 실패해야 한다.
         let isStruggle = move.id == MoveSpec.struggleID
+        let ignoresTypeChart = isStruggle || (move.power <= 0 && move.inflictedStatus == nil)
         // Phase 5(특성·지닌물건)의 타입 면역 특성(부유·타오르는불꽃·저수)이 들어올 자리다.
         // 상성 배율을 계산하는 지점이 여기 한 곳뿐이다. 지금은 코드를 넣지 않는다.
-        let effectiveness = isStruggle ? 1.0
+        let effectiveness = ignoresTypeChart ? 1.0
             : TypeChart.effectiveness(move.type, against: defender.snapshot.types)
         let isPhysical = move.damageClass == .physical
+        let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
+        // 급소는 **불리한 랭크만** 무시한다(Gen 3+): 공격측의 마이너스와 방어측의 플러스가 빠진다.
+        // 전부 무시하는 Gen 1·2 방식이면 랭크를 올린 쪽이 급소에서 손해를 봐 올릴 이유가 없어진다.
+        let offense: BattleStat = isPhysical ? .atk : .spa
+        let guardStat: BattleStat = isPhysical ? .def : .spd
+        let offenseStage = isCritical ? max(0, attacker.stage(offense)) : attacker.stage(offense)
+        let guardStage = isCritical ? min(0, defender.stage(guardStat)) : defender.stage(guardStat)
         // 화상은 **물리** 공격만 절반이다(Gen 2 는 공격 스탯을 반으로 깎는다). 특수기는 그대로다 —
         // 여기서 분류를 안 보면 화상이 공격 전체를 깎는 다른 게임이 된다.
-        var attack = isPhysical ? attacker.stats.atk : attacker.stats.spa
+        var attack = StatStages.apply(attacker.rawStat(offense), stage: offenseStage)
         if isPhysical, attacker.status == .burn { attack /= 2 }
-        let defense = isPhysical ? defender.stats.def : defender.stats.spd
-        let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
+        let defense = StatStages.apply(defender.rawStat(guardStat), stage: guardStage)
         // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수 나눗셈한다. 예전엔
         // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
         // 구조에서는 정수 연산이 유리하다(부동소수 오차가 끼어들 자리가 없다).
@@ -538,7 +743,9 @@ enum BattleEngine {
         var damage = baseDamage(level: attacker.snapshot.level, power: move.power,
                                 attack: attack, defense: defense)
         damage = damage * (isCritical ? critMultiplier : 1) + 2
-        if !isStruggle {
+        // 위의 `effectiveness` 와 **같은 게이트**여야 한다. 예전 `!isStruggle` 은 위력 0 이
+        // 데미지를 접어 준 덕에 우연히 같았을 뿐이다(위력 있는 무상성 기술이 생기면 갈라진다).
+        if !ignoresTypeChart {
             if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }   // STAB ×1.5
             damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
         }
@@ -602,6 +809,9 @@ enum BattleEvent: Codable, Sendable, Equatable {
     case status(BattleActor, Status)
     case cureStatus(BattleActor, Status)
     case cant(BattleActor, Status)
+    /// 랭크가 움직였다 — 값은 **실제로 적용된 양**이다(±6 에 닿아 0 이면 이 이벤트가 나가지 않는다).
+    /// Showdown 의 `|-boost|`·`|-unboost|` 를 부호 하나로 합쳤다.
+    case boost(BattleActor, BattleStat, Int)
 }
 
 // MARK: - 네트워크 대전 턴 해상
@@ -728,16 +938,62 @@ extension BattleEngine {
         if outcome.damage > 0 {
             defender.hp = max(0, defender.hp - outcome.damage)
             events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
-            if !defender.isAlive { return events + [.faint(defenderActor)] }
         }
-        // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다.
-        return events + applySecondaryEffect(of: move, to: &defender, actor: defenderActor, rng: &rng)
+        // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
+        if defender.isAlive {
+            events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor, rng: &rng)
+        }
+        // **랭크는 기절 앞에서 본다.** 예전엔 기절이 여기서 조기반환해 상대를 쓰러뜨린 턴의 자기
+        // 랭크 상승(고대의힘 부류)이 통째로 사라졌다 — 본가는 KO 여부와 무관하게 오른다. 상대 몫만
+        // `applyStatChanges` 가 걸러낸다. `.faint` 를 맨 뒤로 미루는 건 Showdown 순서와도 같다.
+        events += applyStatChanges(of: move, attacker: &attacker, defender: &defender,
+                                   attackerActor: attackerActor, defenderActor: defenderActor,
+                                   rng: &rng)
+        if !defender.isAlive { events.append(.faint(defenderActor)) }
+        return events
+    }
+
+    /// 기술의 랭크 변화. **부호가 대상을 정한다** — 올리면 자기, 내리면 상대다. `stat_changes` 에는
+    /// 대상이 없고 `target` 은 공격 대상만 가리키므로(자기 랭크를 깎는 공격기도 `selected-pokemon`)
+    /// 부호가 유일한 신호다. 부호로 **가릴 수 없는** 두 부류는 `MoveSpec.statChangePercent` 가 0 을
+    /// 주어 미리 걸러낸다: 확정 자기감소 공격기(인파이트)와 부호가 섞인 기술(저주).
+    ///
+    /// rng 는 **적용할 변화가 있을 때만** 한 번 소비한다 — 두 피어가 같은 조건에서 같은 횟수를
+    /// 불러야 한다(쓰러졌는지, 확률이 0 인지는 양쪽이 똑같이 본다). 대가를 모델링하지 않은 큰
+    /// 상승(배가르기)도 `statChangePercent` 가 0 으로 접는다.
+    private static func applyStatChanges(of move: MoveSpec, attacker: inout BattleSide,
+                                         defender: inout BattleSide, attackerActor: BattleActor,
+                                         defenderActor: BattleActor,
+                                         rng: inout SplitMix64) -> [BattleEvent] {
+        let changes = move.statChanges ?? []
+        let percent = move.statChangePercent
+        // 쓰러진 상대에게는 못 걸지만 **자기 랭크 상승은 KO 여부와 무관하다**(본가와 같다). 상대가
+        // 쓰러졌으면 자기 몫(양수)만 남기고 본다 — 남는 게 없으면 rng 도 쓰지 않는다. 조건은 두
+        // 피어가 똑같이 보므로(누가 쓰러졌는지) 소비량이 갈라지지 않는다.
+        let applicable = defender.isAlive ? changes : changes.filter { $0.change > 0 }
+        guard !applicable.isEmpty, percent > 0, attacker.isAlive else { return [] }
+        guard Int(rng.next() % 100) < percent else { return [] }
+        var events: [BattleEvent] = []
+        for change in applicable {
+            let targetsSelf = change.change > 0
+            let applied = targetsSelf
+                ? attacker.changeStage(change.stat, by: change.change)
+                : defender.changeStage(change.stat, by: change.change)
+            // 0 은 ±6 에 닿아 아무 일도 없었다는 뜻이다 — 줄을 내면 로그가 거짓말을 한다.
+            guard applied != 0 else { continue }
+            events.append(.boost(targetsSelf ? attackerActor : defenderActor, change.stat, applied))
+        }
+        return events
     }
 
     /// 기술의 2차효과(상태 부여). 붙을 수 있는지를 **확률 판정보다 먼저** 보므로, 이미 다른 상태가
     /// 걸려 있거나 면역인 상대에게는 rng 를 쓰지 않는다 — 두 피어의 소비량이 같아야 한다.
     private static func applySecondaryEffect(of move: MoveSpec, to side: inout BattleSide,
                                              actor: BattleActor, rng: inout SplitMix64) -> [BattleEvent] {
+        // **자기 대상 상태기는 상대에게 걸지 않는다.** 잠자기는 `ailment: sleep` 이라 여기까지 오는데
+        // 회복은 구현이 없어서, 걸면 남는 게 필중 100% 수면기다(대상을 모르는 게 아니라 아는데
+        // 반대로 거는 경우다). 구현할 때는 `targetsUser` 를 보고 회복까지 같이 넣는다.
+        guard move.targetsUser != true else { return [] }
         guard let status = move.inflictedStatus, side.canBeAfflicted(by: status) else { return [] }
         guard Int(rng.next() % 100) < move.ailmentChancePercent else { return [] }
         return inflict(status, on: &side, actor: actor, rng: &rng)

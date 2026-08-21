@@ -102,8 +102,9 @@ final class LobbyRoleTests: XCTestCase {
     func testProtocolVersionIsBumpedWhenTheWireContractChanges() {
         // 옛 빌드가 레이스·배틀 중간에 깨지는 대신 핸드셰이크에서 거절되게 버전을 올린다.
         // 2 = LobbyParticipant.role + 관전자 베팅 메시지, 3 = 라운드 결과가 이벤트 스트림,
-        // 4 = 상태이상(파이터에 status 필드, 스트림에 `.status`/`.cant` case).
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 4)
+        // 4 = 상태이상(파이터에 status 필드, 스트림에 `.status`/`.cant` case),
+        // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case).
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 5)
     }
 
     func testBettingMessagesRoundTrip() throws {

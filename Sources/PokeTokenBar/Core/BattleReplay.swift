@@ -80,6 +80,11 @@ enum BattleReplay {
         case .sendOut:                                          return 0.40
         case .crit, .superEffective, .resisted, .miss, .immune: return 0.30
         case .status, .cureStatus, .cant:                       return 0.40
+        // 랭크는 **로그 줄만** 늘린다 — 팝 문구가 없고(`popupKey` 가 nil), 랭크 배지는 배치 끝에
+        // 엔진 값으로 스냅하므로 재생 중 화면이 바뀌지 않는다. 상태이상과 같은 0.40 을 주면
+        // 다축 한 방(고대의힘 부류, 다섯 축)이 2.0초로 예산을 혼자 채워 같은 턴의 HP 보간과
+        // 급소 문구가 비례 압축된다.
+        case .boost:                                            return 0.20
         }
     }
 
@@ -123,7 +128,7 @@ enum BattleReplay {
         // 움직이는데 여기 빠지면 바가 배틀 내내 어긋난 채로 남는다. 컴파일이 깨지는 편이
         // `reconcile()` 로그를 한참 뒤에 발견하는 편보다 낫다.
         case .turn, .move, .miss, .immune, .crit, .superEffective, .resisted,
-             .faint, .status, .cureStatus, .cant:
+             .faint, .status, .cureStatus, .cant, .boost:
             return
         }
     }
@@ -155,7 +160,7 @@ enum BattleReplay {
         case .immune:         return \.battleNoEffect
         // 팝이 없는 이벤트 — 전부 팝으로 만들면 화면이 문구로 덮여 정작 급소가 묻힌다.
         // 교체(`.sendOut`)는 스프라이트가 바뀌는 것이 곧 문구다.
-        case .turn, .move, .damage, .faint, .sendOut, .status, .cureStatus, .cant:
+        case .turn, .move, .damage, .faint, .sendOut, .status, .cureStatus, .cant, .boost:
             return nil
         }
     }

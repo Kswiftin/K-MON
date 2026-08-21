@@ -1070,11 +1070,21 @@ final class CompanionStore {
         loadedTypesSpeciesID = id
     }
 
-    /// 설명을 다시 받아야 하는가 — 아직 안 받아봤거나(nil), 예전 파서가 저장한
+    /// 스펙을 다시 받아야 하는가 — 아직 안 받아봤거나(nil), 예전 파서가 저장한
     /// "사용할 수 없는 기술입니다" 안내문이 들어 있으면 다시 받는다.
     /// nil 일 때만 받으면 이미 세이브에 박힌 안내문이 영영 안 고쳐진다. 반대로 빈 dict 까지
     /// "없음"으로 보면 안 된다 — 안내문뿐인 기술은 조회해도 빈 dict 라 로드할 때마다 다시 받게 된다.
-    static func needsDescriptionRefresh(_ move: MoveSpec) -> Bool {
+    ///
+    /// 랭크 변화(Phase 3)도 같은 부류다. `statChanges == nil` 은 "랭크 이전 세이브" 라는 뜻이라
+    /// 한 번 다시 받아야 변화기가 동작한다 — `[]`(받았고 변화 없음)와 섞으면 안 된다.
+    static func needsDetailRefresh(_ move: MoveSpec) -> Bool {
+        // 합성 기술(발버둥·fetch 실패 폴백)은 `moveDetail(id:)` 가 거절하는 id 다. 여기서 참을
+        // 주면 매 로드마다 헛도는 조회가 된다.
+        guard move.id > 0 else { return false }
+        if move.statChanges == nil { return true }
+        // **축을 더할 때 이 판정도 같이 늘린다.** `statChanges` 만 보면, 그 축으로 한 번 갱신된
+        // 세이브는 이후 어떤 새 축이 비어 있어도 다시 받지 않고 옛 데이터로 싸운다.
+        if move.targetsUser == nil { return true }
         guard let descriptions = move.descriptions else { return true }
         return descriptions.values.contains(where: PokeAPIClient.isUnusableMoveNotice)
     }
@@ -1089,7 +1099,7 @@ final class CompanionStore {
             isLoadingDisplayedMoves = true
             defer { isLoadingDisplayedMoves = false }
             var enriched = refreshed.learnedMoves
-            for index in enriched.indices where Self.needsDescriptionRefresh(enriched[index]) {
+            for index in enriched.indices where Self.needsDetailRefresh(enriched[index]) {
                 if let detail = await PokeAPIClient.shared.moveDetail(id: enriched[index].id) {
                     enriched[index] = detail
                 }
