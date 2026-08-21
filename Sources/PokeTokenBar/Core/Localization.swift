@@ -968,6 +968,7 @@ struct L {
         case .razorFang: return t("예리한이빨", "Razor Fang", "するどいキバ")
         case .prismScale: return t("아름다운비늘", "Prism Scale", "きれいなウロコ")
         case .ovalStone: return t("둥근돌", "Oval Stone", "まるいいし")
+        case .heartScale: return t("하트비늘", "Heart Scale", "ハートのウロコ")
         }
     }
     func itemDescription(_ kind: ItemKind) -> String {
@@ -981,6 +982,12 @@ struct L {
             return t("현재 포켓몬의 성격을 랜덤으로 바꿔줘요.",
                      "Randomly changes your Pokémon's nature.",
                      "ポケモンのせいかくをランダムに変えます。")
+        // 하트비늘(#97) — 아래 `default:` 는 진화 아이템 전용이라 여기에 명시하지 않으면
+        // `evolutionRule == nil` 로 흘러가 설명이 빈 문자열이 된다.
+        case .heartScale:
+            return t("지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요.",
+                     "Recalls one move it could have learned by now. With four moves, one is forgotten.",
+                     "これまでに覚えられた技をひとつ思い出します。技が4つなら1つ忘れます。")
         case .shinyCharm:
             return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
                      "While owned, raises the chance of hatching a shiny.",
@@ -1003,6 +1010,14 @@ struct L {
     }
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
     var mintEffectHint: String { t("성격 랜덤 변경", "Random nature", "せいかくランダム変更") }
+
+    // MARK: 하트비늘 (기술 다시 배우기 — #97)
+    var heartScaleEffectHint: String { t("기술 다시 배우기", "Relearn a move", "技を思い出す") }
+    var relearnHeader: String { t("기술을 다시 떠올릴까요?", "Relearn a move?", "技を思い出しますか？") }
+    var relearnPickTitle: String { t("떠올릴 기술을 고르세요.", "Choose a move to relearn.", "思い出す技を選んでください。") }
+    var relearnLoading: String { t("떠올릴 수 있는 기술을 찾고 있어요…", "Looking for moves to relearn…", "思い出せる技を探しています…") }
+    var relearnEmpty: String { t("지금 떠올릴 수 있는 기술이 없어요.", "There are no moves to relearn right now.", "いま思い出せる技はありません。") }
+    var relearnClose: String { t("닫기", "Close", "閉じる") }
 
     // MARK: 상점 (재화 = 별의모래)
     var shop: String { t("상점", "Shop", "ショップ") }
