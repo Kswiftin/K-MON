@@ -140,10 +140,19 @@ final class PopoverLayoutTests: XCTestCase {
                    advertisement: advertisement)
     }
 
-    /// 카드가 그릴 수 있는 **최악의 진행도** — 랭크 문구가 가장 길고(Grandmaster · 99 LP)
-    /// 레벨·배지도 두 자리다. 여기서 안 잘리면 어떤 상대에서도 안 잘린다.
+    /// 가장 긴 랭크 문구를 내는 점수. **`maximumPoints` 가 아니다** — 최고점은
+    /// "Challenger · 99 LP"(18자)인데 티어 이름이 더 긴 "Grandmaster · 10 LP"(19자) 구간이 있다.
+    /// 상한값을 최악으로 가정하면 폭 검증이 진짜 최악보다 좁은 입력을 재고 통과한다.
+    private var widestRankPoints: Int {
+        (0...BattleRank.maximumPoints).max {
+            BattleRank(points: $0).displayName.count < BattleRank(points: $1).displayName.count
+        }!
+    }
+
+    /// 카드가 그릴 수 있는 **최악의 진행도** — 가장 긴 랭크 문구에 레벨·배지도 최대다.
+    /// 여기서 안 잘리면 어떤 상대에서도 안 잘린다.
     private var widestAdvertisement: PeerAdvertisement {
-        PeerAdvertisement(rankPoints: BattleRank.maximumPoints,
+        PeerAdvertisement(rankPoints: widestRankPoints,
                           trainerLevel: TrainerLevel.maximumLevel,
                           achievementTiers: AchievementLadder.tierCeiling)
     }

@@ -1171,23 +1171,41 @@ read_when:
   클램프를 한 번도 지나지 않고 통과한다.
   (`CompanionModel.swift` · `CompanionStore.swift` · `SaveTransfer.swift`, 2026-08-21.)
 
-## 세 갈래 중 두 갈래만 번역하는 부류 (주석은 새 코드를 막지 못한다)
+## 세 갈래 중 두 갈래만 번역하는 부류 (가드가 표기 하나만 알면 스윕이 끝나지 않는다)
 
-- **뷰가 `store.language == .ko ? "한국어" : "English"` 로 언어를 직접 갈랐다.** 이 앱은 ko/en/ja
-  세 언어인데 이 삼항은 두 갈래뿐이라 **일본어 사용자에게 영어가 나간다.** `BattleView`
-  (`roomResultText` 주석)가 이 부류를 이미 문장으로 적어 뒀지만, 주석은 새 코드를 막지 못해
-  스윕 시점에 UI 8개 파일에 **115곳**이 쌓여 있었다(BattleView 26 · PokeathlonView 34 ·
-  CompanionView 20 · FocusTimerView 13 · PokemonRosterView 13 · BagView 4 · SettingsView 3 ·
-  PopoverView 2). 한 곳을 고칠 때 전수 grep 을 하지 않으면 같은 화면의 옆 줄이 그대로 남는다.
+- **코드가 언어를 직접 갈랐다** — `store.language == .ko ? "한국어" : "English"`. 이 앱은 ko/en/ja
+  세 언어인데 삼항은 두 갈래뿐이라 **일본어 사용자에게 영어가 나간다.** `BattleView` 주석이 이
+  부류를 이미 적어 뒀지만 주석은 새 코드를 막지 못해 UI 8개 파일에 **115곳**이 쌓여 있었다.
 - **테스트가 못 잡은 이유**: 문구는 렌더 결과라 단위 테스트가 값을 단언하지 않았고, 레이아웃
-  테스트는 **높이·폭만** 봤다(세 언어 높이가 같은지는 보면서 *내용이 그 언어인지*는 안 봤다).
+  테스트는 **높이·폭만** 봤다(세 언어 높이는 보면서 *내용이 그 언어인지*는 안 봤다).
   ko 로 개발하고 ko 로 확인하면 이 결함은 영원히 보이지 않는다.
+- **1차 스윕이 흘린 것 — 부류는 표기 하나가 아니다.** `language == .ko` 문자열만 찾은 스캔이
+  같은 결함의 다른 표기 두 곳을 통과시켰다: `switch (companion.language, timer.phase)` 의
+  `case (.ko, …)`(`FocusTimerView.title`)와 `languageProvider() == .ko ? … : …`
+  (`FloatingPetPanel` 우클릭 메뉴 — 바로 위·아래 줄은 `l.floatingPetMenu*` 로 제대로 번역돼
+  있었다). **가드를 표기에 맞추면 스윕 범위도 그 표기까지만 좁아진다.**
 - **처방**: `L.t(ko, en, ja)` 를 뷰에서도 쓴다 — 인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다.
-  일회성 문구까지 이름 붙인 프로퍼티로 올리면 `Localization.swift` 가 그런 문구로 뒤덮이므로
-  올리지 않는다(두 화면이 같은 말을 쓸 때만 프로퍼티로 승격 — 같은 말을 두 번 번역하지 않는다).
-- **영구 캡처**: `LanguageSplitGuardTests` 가 `Sources/PokeTokenBar/UI/*.swift` 를 스캔해
-  `language == .ko` 가 하나라도 있으면 실패한다. **주석 줄은 제외한다** — 규칙을 설명하는 주석이
-  패턴을 담고 있어(가드 자신의 doc 주석도 그렇다) 제외하지 않으면 가드가 자기 설명에 걸린다.
-  가드를 넣은 뒤 삼항 하나를 일부러 되살려 실패하는지 확인했다(통과만 보면 스캔 경로가 깨져
-  빈 목록을 훑고 있어도 구별할 수 없다 — 그래서 파일 목록이 비면 실패하는 단언도 함께 둔다).
-  (`Sources/PokeTokenBar/UI/*.swift` · `Localization.swift`, 2026-08-21.)
+  일회성 문구까지 이름 붙인 프로퍼티로 올리면 `Localization.swift` 가 뒤덮이므로 올리지 않는다
+  (두 화면이 같은 말을 쓸 때만 승격 — 같은 말을 두 번 번역하지 않는다).
+- **영구 캡처**: `LanguageSplitGuardTests` 가 `Sources/**/*.swift` 전체를 훑어 한 파일의
+  **`.ko` 와 `.ja` 등장 횟수가 다르면 실패**한다. 표기가 아니라 *대칭*을 보므로 삼항·튜플
+  `switch`·`languageProvider() == .ko` 를 한 규칙으로 덮고, `UI/` 밖(`PokeTokenBarApp.swift`·
+  `Core/`)도 포함한다. 주석 줄은 제외한다 — 규칙을 설명하는 주석이 패턴을 담고 있어(가드 자신의
+  doc 주석도) 제외하지 않으면 가드가 자기 설명에 걸린다. 위 두 표기를 각각 되살려 실제로
+  실패하는지 확인했고, 파일 목록이 비면 실패하는 단언도 함께 뒀다(경로가 깨지면 빈 목록을 훑고
+  조용히 통과한다). 한계: `.ko` 만 필요한 헬퍼가 짝 없이 늘면 오탐이 난다 — 오탐은 빌드를 막고
+  끝나지만 미탐은 배포되므로 그 방향으로 기울여 뒀다.
+  (`Sources/**/*.swift` · `Localization.swift`, 2026-08-22.)
+
+## LAN 카드가 보는 값의 동등성 — 신원만 비교하면 갱신이 사라진다
+
+- **`BattlePeer.==` 가 `serviceName` 만 비교했다.** 신원 판정용으로는 맞지만, 상대가 레벨을 올려
+  광고가 갱신돼도 두 값이 "같다" 고 나온다. 동등성으로 갱신을 판단하는 쪽(SwiftUI 뷰 비교,
+  `onChange(of:)`)이 붙으면 실시간 갱신이 조용히 삼켜진다 — 광고를 실시간으로 싣는 기능의 존재
+  이유가 사라지는 형태다(#85 의 수신 측 판본).
+- **처방**: `id`(`serviceName`)가 신원을 맡고 `==` 는 **표시값까지** 비교한다. 회귀 테스트는 같은
+  `serviceName` + 다른 `trainerLevel` 로 `id` 는 같고 `==` 는 다름을 함께 단언한다.
+- 같은 부류로, 최악 폭 레이아웃 가드가 `BattleRank.maximumPoints` 를 최악으로 가정했다. 최고점은
+  `Challenger · 99 LP`(18자)이고 진짜 최악은 티어 이름이 더 긴 `Grandmaster · 10 LP`(19자)다 —
+  **상한값이 곧 최장 문구는 아니다.** 문구 길이로 최악을 골라야 한다.
+  (`BattleNet.swift` · `PopoverLayoutTests.swift`, 2026-08-22.)

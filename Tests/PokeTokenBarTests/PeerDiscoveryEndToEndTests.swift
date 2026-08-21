@@ -4,17 +4,19 @@ import XCTest
 
 /// 실제 Bonjour 광고·탐색을 **한 프로세스 안에서** 왕복시키는 하네스.
 ///
-/// 나머지 광고 테스트는 전부 발행 지점(`advertisementPublisher`)까지만 본다 — 실 `NWListener` 를
-/// 띄우면 로컬 네트워크 권한이 필요해 기본 스위트에 넣을 수 없기 때문이다. 그래서 **수신 측**
-/// (`NWBrowser` → `updatePeers` → `BattlePeer.advertisement`)은 지금까지 무검증이었고, 두 대를
-/// 띄워 눈으로 보는 것 말고는 확인 방법이 없었다.
+/// 나머지 광고 테스트는 발행 지점(`advertisementPublisher`)까지만 본다 — 실 `NWListener` 는 로컬
+/// 네트워크 권한이 필요해 기본 스위트에 못 넣는다. 그래서 수신 측(`NWBrowser` → `updatePeers` →
+/// `BattlePeer.advertisement`)은 두 대를 띄워 눈으로 보는 것 외에 확인 방법이 없었다.
 ///
-/// `BattleCenter` 는 자기 광고를 **서비스 이름의 고유 접미(#xxxxxx)로만** 걸러낸다. 그래서 같은
-/// 프로세스에 두 개를 세우면 서로를 남으로 본다 — 두 번째 기기 없이 같은 경로를 밟을 수 있다.
+/// 자기 광고는 **서비스 이름의 고유 접미로만** 걸러내므로, 같은 프로세스의 두 센터는 서로를 남으로
+/// 본다 — 두 번째 기기 없이 같은 경로를 밟는다.
 ///
-/// 권한 프롬프트·mDNS 차단이 CI 를 막지 않도록 **환경변수로 잠가 둔다**:
+/// 권한 프롬프트·mDNS 차단이 CI 를 막지 않게 환경변수로 잠가 둔다:
 ///
 ///     KMON_LAN_E2E=1 swift test --filter PeerDiscoveryEndToEndTests
+///
+/// 한계: `BattleCenter` 에 정지 API 가 없어 이 테스트가 띄운 리스너·브라우저는 프로세스가 끝날
+/// 때까지 살아 있다. 그래서 기본 스위트에서 켜지 않는다.
 @MainActor
 final class PeerDiscoveryEndToEndTests: XCTestCase {
 

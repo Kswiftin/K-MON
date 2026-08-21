@@ -2,14 +2,14 @@ import Network
 import XCTest
 @testable import PokeTokenBar
 
-// 근처 트레이너 카드가 보여줄 표시용 진행도 — Bonjour TXT 레코드로 오간다.
-//
-// 굽는 쪽과 읽는 쪽이 **같은 구조체**를 지나야 하는 이유가 두 가지다.
-//  ① 키 이름이 와이어 계약이다 — `rankPoints` 는 #85 수정과 함께 이미 배포됐다. 이름을 고치면
-//     구버전 클라이언트 목록에서 랭크가 사라지는데 컴파일은 통과한다.
-//  ② 클램프가 한 곳이어야 한다 — 상한 클램프가 누적 지점마다 흩어지면 한 곳은 반드시 빠진다
-//     (defect-log). 들어오는 값은 상대가 채우므로 신뢰경계다.
+// 표시용 진행도의 와이어 계약(`PeerAdvertisement`)을 동결한다.
+//  ① 키 이름 — `rankPoints` 는 #85 와 함께 배포됐다. 고치면 구버전 목록에서 랭크가 사라지는데
+//     컴파일은 통과한다.
+//  ② 클램프 — 들어오는 값은 상대가 채우는 신뢰경계다. 지점마다 흩어지면 한 곳은 반드시 빠진다.
 final class PeerAdvertisementTests: XCTestCase {
+
+    /// 피어 변환 테스트용 엔드포인트. 연결에 쓰지 않으므로 값 자체는 의미가 없다.
+    private let anyEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: 4_242)
 
     // MARK: 와이어 계약 (구버전과의 호환)
 
@@ -106,42 +106,39 @@ final class PeerAdvertisementTests: XCTestCase {
 
     // MARK: 수신 측 — 광고 하나를 카드 한 장으로 옮기는 지점
     //
-    // 이 구간은 지금까지 무검증이었다(private 클로저 안). 아래 입력들은 **실제로 관찰한 값**이다 —
-    // 이 저장소의 릴리스판이 광고 중인 서비스 이름 `유썽#44D580` 과 TXT `rankPoints=0` 을
-    // `dns-sd -B` / `dns-sd -L` 로 읽어 그대로 옮겼다.
+    // 이 구간은 지금까지 무검증이었다(private 클로저 안). 아래 서비스 이름·TXT 는 **실제로 관찰한
+    // 값**이다 — 릴리스판이 광고 중인 `유썽#44D580` / `rankPoints=0` 을 `dns-sd` 로 읽어 옮겼다.
+
+    private func peer(_ name: String, _ record: NWTXTRecord? = nil,
+                      mine: String = "me#000000") -> BattlePeer? {
+        BattleCenter.peer(fromService: name, txtRecord: record,
+                          excluding: mine, endpoint: anyEndpoint)
+    }
 
     /// 내 광고는 목록에서 빠져야 한다 — 자기 자신에게 대전을 신청할 수는 없다.
     func testMyOwnServiceIsFilteredOut() {
-        XCTAssertNil(BattleCenter.peer(fromService: "유썽#44D580", txtRecord: nil,
-                                       excluding: "유썽#44D580"))
+        XCTAssertNil(peer("유썽#44D580", mine: "유썽#44D580"))
     }
 
     /// **같은 트레이너 이름의 다른 기기는 남이다.** 고유 접미가 그걸 가른다 — 이름으로 걸렀다면
     /// 같은 이름을 쓰는 두 Mac 이 서로를 "자기" 로 오인해 목록에서 사라진다.
     func testTheSameTrainerNameOnAnotherMachineIsStillAPeer() {
-        let other = BattleCenter.peer(fromService: "유썽#FFFFFF", txtRecord: nil,
-                                      excluding: "유썽#44D580")
+        let other = peer("유썽#FFFFFF", mine: "유썽#44D580")
         XCTAssertEqual(other?.name, "유썽")
         XCTAssertEqual(other?.serviceName, "유썽#FFFFFF")
     }
 
-    /// 표시 이름은 **마지막** `#` 에서 자른다. 첫 `#` 에서 자르면 이름에 `#` 을 쓴 사람의 이름이
-    /// 잘려 보인다.
+    /// 표시 이름은 **마지막** `#` 에서 자른다 — 첫 `#` 에서 자르면 이름에 `#` 을 쓴 사람이 잘린다.
     func testDisplayNameStripsOnlyTheUniqueSuffix() {
-        XCTAssertEqual(BattleCenter.peer(fromService: "유썽#44D580", txtRecord: nil,
-                                        excluding: "me#000000")?.name, "유썽")
-        XCTAssertEqual(BattleCenter.peer(fromService: "A#B#c1d2e3", txtRecord: nil,
-                                        excluding: "me#000000")?.name, "A#B")
+        XCTAssertEqual(peer("유썽#44D580")?.name, "유썽")
+        XCTAssertEqual(peer("A#B#c1d2e3")?.name, "A#B")
         // 접미가 없는 광고(다른 구현·손으로 띄운 서비스)도 이름 그대로 살린다.
-        XCTAssertEqual(BattleCenter.peer(fromService: "NoSuffix", txtRecord: nil,
-                                        excluding: "me#000000")?.name, "NoSuffix")
+        XCTAssertEqual(peer("NoSuffix")?.name, "NoSuffix")
     }
 
-    /// 실제로 관찰한 구버전 광고 — 랭크만 있고 레벨·배지는 없다. 목록에 남아야 하고 랭크는 보여야 한다.
+    /// 실제로 관찰한 구버전 광고 — 랭크만 있다. 목록에 남아야 하고 랭크는 보여야 한다.
     func testTheReleasedBuildsRealRecordParsesAsRankOnly() {
-        let live = BattleCenter.peer(fromService: "유썽#44D580",
-                                     txtRecord: NWTXTRecord(["rankPoints": "0"]),
-                                     excluding: "me#000000")
+        let live = peer("유썽#44D580", NWTXTRecord(["rankPoints": "0"]))
         XCTAssertEqual(live?.rank, BattleRank(points: 0))
         XCTAssertNil(live?.advertisement.trainerLevel)
         XCTAssertNil(live?.advertisement.achievementTiers)
@@ -149,28 +146,34 @@ final class PeerAdvertisementTests: XCTestCase {
 
     /// TXT 가 아예 없는 결과(비-Bonjour 메타데이터)도 피어로 남는다 — 숨기면 신청할 방법이 없다.
     func testAPeerWithoutAnyRecordIsStillListed() {
-        let peer = BattleCenter.peer(fromService: "Ash#abc123", txtRecord: nil,
-                                     excluding: "me#000000")
-        XCTAssertNotNil(peer)
-        XCTAssertNil(peer?.rank)
-        XCTAssertEqual(peer?.advertisement, PeerAdvertisement())
+        let found = peer("Ash#abc123")
+        XCTAssertNotNil(found)
+        XCTAssertNil(found?.rank)
+        XCTAssertEqual(found?.advertisement, PeerAdvertisement())
     }
 
     func testANewBuildsRecordCarriesAllThreeValues() {
-        let peer = BattleCenter.peer(fromService: "Ash#abc123",
-                                     txtRecord: NWTXTRecord(["rankPoints": "1200",
-                                                             "trainerLevel": "12",
-                                                             "achievementTiers": "8"]),
-                                     excluding: "me#000000")
-        XCTAssertEqual(peer?.rank, BattleRank(points: 1_200))
-        XCTAssertEqual(peer?.advertisement.trainerLevel, 12)
-        XCTAssertEqual(peer?.advertisement.achievementTiers, 8)
+        let found = peer("Ash#abc123", NWTXTRecord(["rankPoints": "1200",
+                                                    "trainerLevel": "12",
+                                                    "achievementTiers": "8"]))
+        XCTAssertEqual(found?.rank, BattleRank(points: 1_200))
+        XCTAssertEqual(found?.advertisement.trainerLevel, 12)
+        XCTAssertEqual(found?.advertisement.achievementTiers, 8)
+    }
+
+    /// 같은 상대가 레벨을 올리면 **다른 값**이어야 한다. 신원(`serviceName`)만 비교하면 동등성으로
+    /// 갱신을 판단하는 쪽이 실시간 갱신을 삼킨다 — 이 기능의 존재 이유가 사라진다.
+    func testAdvertisementChangeMakesThePeerUnequal() {
+        let before = peer("Ash#abc123", NWTXTRecord(["trainerLevel": "12"]))
+        let after = peer("Ash#abc123", NWTXTRecord(["trainerLevel": "13"]))
+        XCTAssertEqual(before?.id, after?.id, "신원은 그대로여야 한다(행이 새로 그려지면 안 된다)")
+        XCTAssertNotEqual(before, after)
     }
 
     // MARK: 랭크 어댑터
 
-    /// 기존 `peer.rank` 호출부가 그대로 살아 있게 하는 자리. 랭크가 없으면 nil 이어야 한다 —
-    /// 빈 `BattleRank()` 를 돌려주면 카드가 "정보 없음" 대신 Iron 4 를 그린다.
+    /// 기존 `peer.rank` 호출부를 살려 두는 자리. 랭크가 없으면 nil 이어야 한다 — 빈 `BattleRank()`
+    /// 는 "정보 없음" 대신 Iron 4 로 그려진다.
     func testRankAdapterMirrorsBattleRankAndStaysNilWhenAbsent() {
         XCTAssertEqual(PeerAdvertisement(rankPoints: 1_234).rank, BattleRank(points: 1_234))
         XCTAssertNil(PeerAdvertisement().rank)

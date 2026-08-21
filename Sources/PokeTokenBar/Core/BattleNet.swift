@@ -108,13 +108,18 @@ struct BattlePeer: Identifiable, Equatable {
     let name: String            // 표시 이름(고유 접미 제거)
     let serviceName: String     // Bonjour 광고 원본(고유) — id·self 판정용
     let endpoint: NWEndpoint
-    /// 상대가 광고한 표시용 진행도(랭크·트레이너 레벨·업적 단계). **표시 전용이다** —
-    /// 판돈은 핸드셰이크로 받은 `BattleRankProfile` 에서 온다(`PeerAdvertisement` 주석 참고).
+    /// 상대가 광고한 표시용 진행도. **표시 전용이다** — 판돈은 핸드셰이크의 `BattleRankProfile`
+    /// 에서 온다(`PeerAdvertisement` 주석 참고).
     let advertisement: PeerAdvertisement
-    /// 광고 안의 랭크. 기존 호출부가 그대로 살아 있게 두는 어댑터다.
+    /// 광고 안의 랭크 — 기존 호출부를 살려 두는 어댑터.
     var rank: BattleRank? { advertisement.rank }
     var id: String { serviceName }
-    static func == (l: Self, r: Self) -> Bool { l.serviceName == r.serviceName }
+    /// **광고까지 비교한다.** 신원은 `id`(=`serviceName`)가 맡는다. 여기서 이름만 비교하면 상대가
+    /// 레벨을 올려도 "같은 값" 이 되어, 동등성으로 갱신을 판단하는 쪽(SwiftUI 뷰 비교·`onChange`)이
+    /// 이 기능의 존재 이유인 실시간 갱신을 그대로 삼킨다.
+    static func == (l: Self, r: Self) -> Bool {
+        l.serviceName == r.serviceName && l.advertisement == r.advertisement
+    }
 }
 
 /// 한 턴의 이벤트가 가리키는 실제 전투원 문맥. `.a`/`.b` 만으로는 교체 뒤 과거 이름·기술을
@@ -538,9 +543,9 @@ final class BattleCenter {
                           achievementTiers: companion.achievementTierTotal)
     }
 
-    /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 승패 뒤에도
-    /// 옛 점수가 계속 광고되어 상대 목록엔 stale 랭크가 남았다(#85). 레벨·업적도 같은 부류다 —
-    /// 굽는 코드와 값이 바뀌는 코드가 서로를 모르는 것이 원인이므로 재발행 지점은 여기 하나다.
+    /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 뒤에도 옛 점수가
+    /// 계속 광고돼 상대 목록에 stale 랭크가 남았다(#85). 레벨·업적도 같은 부류라 재발행 지점은
+    /// 여기 하나로 둔다.
     func refreshAdvertisedProfile() {
         let profile = myAdvertisement
         guard advertisedProfile != profile else { return }
@@ -557,12 +562,9 @@ final class BattleCenter {
         advertisedProfile = profile
     }
 
-    /// `companion` 상태 변화를 계속 따라간다 — `withObservationTracking` 은 1회성이라
-    /// 콜백에서 다시 등록해야 한다. 정산·세이브 이전 등 값이 바뀌는 모든 경로를 한자리에서 덮는다.
-    ///
-    /// **세 원본을 각각 읽는다.** 지금은 셋이 모두 `state` 를 지나므로 하나만 읽어도 발화하지만,
-    /// 원본 하나가 나중에 `state` 밖으로 나가면 한 줄짜리 추적은 그 값을 **조용히** 놓친다 —
-    /// 그게 #85 의 형태다(광고하는 코드가 값이 바뀌는 코드를 모른다).
+    /// `companion` 변화를 계속 따라간다 — `withObservationTracking` 은 1회성이라 콜백에서 다시
+    /// 등록해야 한다. **세 원본을 각각 읽는다**: 지금은 셋이 모두 `state` 를 지나 하나만 읽어도
+    /// 발화하지만, 원본 하나가 `state` 밖으로 나가면 한 줄짜리 추적은 그 값을 조용히 놓친다(#85).
     private func trackAdvertisedValues() {
         withObservationTracking {
             _ = companion.battleRank.points
@@ -690,19 +692,17 @@ final class BattleCenter {
     }
 
     /// 발견된 광고 하나를 카드 한 장으로 옮긴다 — 자기 필터·표시 이름·광고 파싱이 여기 모여 있다.
-    ///
-    /// `updatePeers` 안의 클로저에 두면 프레임워크 타입(`NWBrowser.Result`)을 만들 수 없어
-    /// 테스트가 닿지 못한다. `endpoint` 는 연결에만 쓰이므로 인자로 받아 넘긴다.
-    /// (`PeerAdvertisementTests` 가 실제로 관찰한 서비스 이름·TXT 로 이 함수를 검증한다.)
+    /// `updatePeers` 의 클로저 안에 두면 `NWBrowser.Result` 를 만들 수 없어 테스트가 닿지 못한다.
+    /// `endpoint` 는 **필수**다 — 기본값을 두면 브라우저가 해석해 준 엔드포인트 대신 손으로 지은
+    /// 것이 쓰일 수 있고, 그 경로는 테스트에서만 밟히므로 아무도 틀린 걸 못 본다.
     nonisolated static func peer(fromService name: String, txtRecord: NWTXTRecord?,
                                  excluding myServiceName: String,
-                                 endpoint: NWEndpoint? = nil) -> BattlePeer? {
+                                 endpoint: NWEndpoint) -> BattlePeer? {
         guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
-        // 파싱·클램프는 `PeerAdvertisement` 한 곳에서 한다. 레코드가 없거나 값이 쓰레기여도
-        // **피어를 버리지 않는다** — 업데이트 전 클라이언트도 목록에 남아야 신청할 수 있다.
+        // 레코드가 없거나 값이 쓰레기여도 **피어를 버리지 않는다** — 구버전 상대도 목록에 남아야
+        // 신청할 수 있다. 파싱·클램프는 `PeerAdvertisement` 한 곳에서 한다.
         return BattlePeer(name: displayName(fromService: name), serviceName: name,
-                          endpoint: endpoint ?? .service(name: name, type: serviceType,
-                                                         domain: "local.", interface: nil),
+                          endpoint: endpoint,
                           advertisement: txtRecord.map(PeerAdvertisement.init) ?? PeerAdvertisement())
     }
 

@@ -135,21 +135,18 @@ struct FocusTimerView: View {
     }
 
     private var title: String {
-        switch (companion.language, timer.phase) {
-        case (.ko, .focus): "집중 중"
-        case (.ko, .rest): "휴식 중"
-        case (.ko, .idle): "집중 타이머"
-        case (_, .focus): "Focus session"
-        case (_, .rest): "Break"
-        default: "Focus timer"
+        switch timer.phase {
+        case .focus: companion.l.t("집중 중", "Focus session", "集中中")
+        case .rest: companion.l.t("휴식 중", "Break", "休憩中")
+        case .idle: companion.l.t("집중 타이머", "Focus timer", "集中タイマー")
         }
     }
     private var focusHint: String { companion.l.t("완료 시 파트너 보상", "Partner reward on completion", "完了でパートナーに報酬") }
     private var restHint: String { companion.l.t("잠깐 쉬어가세요", "Take a short break", "少し休みましょう") }
     private func adventureText(_ minutes: Int) -> String {
-        return companion.l.t("파트너가 \(minutes)분 모험 중 · 완료해야 보상",
-                          "Partner exploring for \(minutes)m · finish to claim",
-                          "パートナーが\(minutes)分の冒険中 · 完了で報酬")
+        companion.l.t("파트너가 \(minutes)분 모험 중 · 완료해야 보상",
+                      "Partner exploring for \(minutes)m · finish to claim",
+                      "パートナーが\(minutes)分の冒険中 · 完了で報酬")
     }
     private func eggChanceText(_ minutes: Int) -> String {
         let chance = Double(FocusRewardRules.eggChanceBasisPoints(minutes: minutes)) / 100
