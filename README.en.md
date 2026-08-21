@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="assets/icon.png" width="128" alt="K-MON icon">
+<img src="assets/icon.png" width="128" alt="Pokédoro icon">
 
 # Pokédoro
 
-**An idle Pokémon companion that grows in your macOS menu bar — then battles your friends over LAN.**
+**A macOS menu-bar game that pairs Pomodoro focus with Pokémon adventures.**
 
 [![macOS](https://img.shields.io/badge/macOS-14%2B-0969da)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-6-f05138)](https://swift.org)
@@ -14,138 +14,87 @@
 
 </div>
 
-K-MON lives in your macOS menu bar and grows a **Pokémon companion** on its own — just keep the app running. Pick your first partner, watch it evolve through its real evolution line, name it, graduate it into your Pokédex, and start again. When a friend on the same network is running K-MON too, challenge them to a live turn-based **Brawl**. Races for several trainers at once are their own event — the **Pokéathlon**.
+Pokédoro sends your Pokémon partner on an adventure while you focus, then lets you battle or play Pokéathlon with the Pokémon you collect. The menu bar normally shows `Resting` or the timer, so it fits naturally into a workday.
 
-> Built on top of [PokeTokenBar](https://github.com/chattymin/PokeTokenBar). Unofficial, non-commercial Pokémon fan project — see [License & disclaimer](#license--disclaimer).
+> An unofficial, non-commercial Pokémon fan project. Pokémon data and sprites are fetched at runtime from [PokéAPI](https://pokeapi.co/).
 
 ## How it works
 
-1. 🎒 **Choose your starter.** On first launch you enter a **trainer name** and pick one of **three Gen-1 starters** drawn just for you. The three are locked to your Mac — reinstalling won't re-roll them (no starter fishing).
-2. ⏳ **It grows while the app runs.** Your companion earns **✨ Stardust** every second the app is open — no tokens required. Stardust incubates the egg, evolves your Pokémon through its real evolution tree, and graduates it into the Pokédex. The more species you've collected, the faster it grows (**+2% per species**).
-3. 🐣 **Hatch, evolve, name.** Eggs and starters hatch into Pokémon with real evolution lines from [PokéAPI](https://pokeapi.co/). Every hatch rolls one of 25 natures, and once in a rare while — **✨ Shiny**. Give any Pokémon a **nickname** with the ✏️ button.
-4. 🎓 **Graduate & collect.** Final form + threshold permanently archives it in your **Pokédex**, and a fresh egg arrives. From then on, eggs hatch a variety of Pokémon (weighted by capture rate — legendaries are rare).
-5. 🍬 **Daily treat.** Every day you open the app, you get a **Rare Candy** — spend it from the **Bag** to instantly grow your current Pokémon.
-6. 🎯 **Chase daily & weekly missions.** The home tab tracks claimed adventures, focused minutes, and graduations. Hit a target and the **✨ Stardust** reward lands right then — no claim button. Daily goals reset with the date, weekly ones with the week.
-7. 🛒 **Spend at the Shop.** Your Stardust is spendable currency — buy **Rare Candy**, a **Mint** to re-roll nature, a **Shiny Charm** for permanently better shiny odds, or an egg to send off your current companion and start over.
-8. 💗 **Care when it calls.** Build affection and growth through favorite treats and petting, then manage messes, hygiene, illness, training, and sleep as its needs change.
-9. ⏱️ **Grow only through focus adventures.** Stardust comes exclusively from completed 25, 50, or 90-minute sessions. Longer focus pays more per minute and improves the Mystery Egg chance. Work mode uses a neutral timer and hides the floating pet.
+1. Choose a 25-, 50-, or 90-minute focus session and send your current partner on an adventure of the same length.
+2. When the adventure is complete, claim its reward. Claiming grants experience and Star Pieces; longer sessions grant more. Merely leaving the app open records app time, but does not grant Star Pieces automatically.
+3. Each completed session awards egg fragments and has a chance to find a Mystery Egg. Ten fragments make an egg; the first adventure of the day grants an extra fragment, and ten adventures in a week grant a bonus egg.
+4. Use experience to level your partner, and spend Star Pieces in the shop or as ranked-battle stakes. Home also tracks daily and weekly missions for adventure claims, focus time, and graduations; Pokédex goals reward collecting species, types, and shinies.
 
-## ⚔️ Battle a friend over LAN
+You can enable Do Not Disturb to block system notifications, the floating pet, and incoming battle challenges while you focus.
 
-When two Macs on the same network are both running K-MON, they discover each other automatically (Bonjour + AWDL). No IP typing — but a manual `IP:port` fallback is there for locked-down networks.
+## Battle & Pokéathlon
 
-- **Brawl** — a turn-based battle. Pick from four moves; type advantage, STAB, crits and misses all matter. Move **priority** outranks speed, and the six status conditions — burn, poison, toxic, paralysis, sleep, freeze — plus confusion all apply. Deterministic engine — both peers compute the same result, so nothing can be forged over the wire.
-- **Practice against the CPU** — 1v1, 3v3 or 6v6. Choose which Pokémon go in and in what order; switching costs the turn, as in the main series. Your team enters at the levels you raised, and the CPU matches them. Ranked duels stay flattened to Lv.50.
-- **Gyms** — four type gyms (Bug, Rock, Electric, Water), fought 3v3. Every leader's team stands at Lv.30, and only the first clear pays out: Stardust plus an egg with a rarity floor. Collect every badge and one guaranteed shiny hatch is yours. You pick the team inside the challenge screen, filtered by type.
-- **Stat stages** — Attack, Defense, Sp. Atk, Sp. Def, Speed, accuracy and evasion all move up and down. A crit ignores only the unfavourable stages, switching out clears them, and one of the four move slots is held for a status move.
-- **Turn playback** — a resolved turn plays back a step at a time instead of snapping to the result. Replay speed is a setting (normal / fast / off) and low power mode turns it off.
-- **LAN teams** — a LAN duel takes a full team in the order you choose, the same way CPU practice does.
-- **Auto-accept** — flip it on and challenges are accepted the moment they arrive, so a battle happens even while you're away from the keyboard.
-- **Notifications & a pinned window** — a challenge raises a system notification even while you're working; when a battle starts, the window pins itself open (it won't close when you click away) so you can play while you work.
-- **Names everywhere** — your trainer name and your Pokémon's nickname show up on the challenge, the arena, and the notification.
+- **LAN battles** — discover people on the same local network with Bonjour, send a challenge, and have the other player accept it manually. A received challenge can raise a notification; during a battle the window stays pinned open.
+- **Practice and ranked battles** — practice against the CPU in 1v1, 3v3, or 6v6 with a chosen team and order. Ranked LAN battles normalize Pokémon to Lv.50; CPU practice uses the levels you raised.
+- **Battle rules** — type matchups, STAB, physical and special stats, accuracy, critical hits, PP, move priority, six status conditions, and confusion are supported.
+- **Gyms and stat stages** — challenge four type gyms in 3v3, with rewards for each first clear. Attack, Defense, Sp. Atk, Sp. Def, Speed, accuracy, and evasion can change during battle; switching resets those stages.
+- **Team battles and turn playback** — LAN battles also use the team and order you choose. Resolved turns play step by step, with playback speed configurable in Settings.
+- **Pokéathlon: Change Relay** — practice alone or race with up to four players on a local network. Run with `→`, switch lanes with `↑`/`↓`, avoid obstacles, and change Pokémon with `C`.
 
 ## Tour
 
 <table>
 <tr>
-<td width="45%" align="center"><img src="assets/floating-pet.gif" width="340" alt="Floating desktop pet with a hover callout and right-click menu"></td>
+<td width="45%" align="center"><img src="assets/screenshot-home.gif" width="340" alt="Home screen with the focus timer and adventure controls"></td>
 <td width="55%" valign="middle">
-<h3>🐾 Let it live on your desktop</h3>
-Move your companion out of the menu bar and onto the desktop, at any size from 48 to 192px. Hover it for today's stats, click to open the popover, right-click for a menu, drag it wherever you like.
+<h3>Focus, adventure, claim</h3>
+Choose a focus duration, track the partner's adventure, and claim the completed reward from Home.
 </td>
 </tr>
 <tr>
 <td width="55%" valign="middle">
-<h3>In your menu bar</h3>
-An animated Gen-V sprite lives next to <b>today's time together</b>. It updates every minute the app is open.
+<h3>Your Pokémon and Pokédex</h3>
+Review your owned Pokémon, select a partner, check moves and experience, and see the species you have discovered.
 </td>
-<td width="45%" align="center"><img src="assets/menubar.gif" width="240" alt="Menu bar"></td>
+<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="300" alt="Pokédex collection"><br><br><img src="assets/screenshot-collection-catchlog.png" width="300" alt="Pokémon collection log"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/shiny-banner.gif" width="340" alt="Normal vs shiny"></td>
+<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="300" alt="Shop"></td>
 <td width="55%" valign="middle">
-<h3>✨ Once in a rare while — Shiny</h3>
-Shiny hatches keep their distinct colors through every evolution — menu bar, home card, evolution line. In the Pokédex a ✨ sits next to the dex number. A dedicated notification makes sure you don't miss the moment.
-</td>
-</tr>
-<tr>
-<td width="55%" valign="middle">
-<h3>A Pokédex worth filling</h3>
-The <b>Pokédex</b> folds every species you've owned into one cell — in dex-number order, with a ✨ on the ones you own shiny. The <b>Catch log</b> keeps the individuals: newest first, each with its full evolution line, rarity, nature, and capture date. Every species you collect speeds up your Stardust. <b>Completion goals</b> track species, types and shinies — reach one and its egg, rarity floor or guaranteed shiny lands right then.
-</td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="300" alt="Pokédex — one cell per species"><br><br><img src="assets/screenshot-collection-catchlog.png" width="300" alt="Catch log — one row per Pokémon raised"></td>
-</tr>
-<tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="300" alt="Shop — Rare Candy, Mint, Shiny Charm, eggs"></td>
-<td width="55%" valign="middle">
-<h3>🛒 A shop that runs on Stardust</h3>
-The Stardust you collect over time is your currency. Spend it on <b>Rare Candy</b> to grow your current Pokémon, a <b>Mint</b> to re-roll its nature, a <b>Shiny Charm</b> that permanently raises your shiny hatch odds, or an egg to send off your companion and start over. Eggs come in three grades — plain, Uncommon-or-better, and Rare-or-better.
+<h3>Shop and Bag</h3>
+Spend Star Pieces on eggs, Rare Candy, Mints, Link Cords, and evolution stones; use held items from the Bag.
 </td>
 </tr>
 <tr>
 <td width="55%" valign="middle">
-<h3>Tune it your way</h3>
-Menu-bar items, refresh interval, launch at login, companion event notifications, and battle auto-accept. Full <b>KO / EN / JA</b> UI and Pokémon names.
+<h3>Settings for work and updates</h3>
+Control Do Not Disturb, notifications, launch at login, the floating pet, and update checks from Settings.
 </td>
 <td width="45%" align="center"><img src="assets/settings.png" width="300" alt="Settings"></td>
 </tr>
-<tr>
-<td width="45%" align="center"><img src="assets/screenshot-gyms.png" width="300" alt="Gyms — four type gyms, badges, and the team picker"></td>
-<td width="55%" valign="middle">
-<h3>🏛 Four gyms, four badges</h3>
-Every gym fields a hand-picked team of three at Lv.30. The first clear pays Stardust plus an egg with a rarity floor, and holding every badge at once grants one guaranteed shiny hatch. The team picker stays pinned to the bottom — filter your Pokémon by type and tap them in the order they'll enter.
-</td>
-</tr>
 </table>
 
-> Screenshots may lag the latest UI — the app has moved from a token counter to a time-based idle game.
+> Screenshots may lag behind the latest UI; their captions describe only features available in the current app.
 
-## Install
+## Install & build
 
-### Requirements
+Requires macOS 14 or later (Apple Silicon or Intel).
 
-macOS 14+ (Apple Silicon or Intel).
+Download `Pokedoro.zip` from [Kswiftin/K-MON releases](https://github.com/Kswiftin/K-MON/releases), unzip it, and drag `Pokédoro.app` into `/Applications`.
 
-### Download
+The release is signed. If macOS shows a first-launch Gatekeeper prompt, open it once using either path:
 
-Grab `Pokedoro.zip` from the [releases](https://github.com/2giduck/K-MON/releases), unzip it, and drag `Pokédoro.app` into `/Applications`.
+- **Finder:** Control-click `Pokédoro.app` → **Open** → **Open** again in the dialog.
+- **Terminal:** `xattr -dr com.apple.quarantine /Applications/Pokédoro.app`
 
-Because the app is ad-hoc/self-signed (not notarized under an Apple Developer account), Gatekeeper shows an "unidentified developer" warning on first launch. Clear it once:
+Allow notifications for battle challenges when prompted, and allow Local Network access when you first open Battle for LAN discovery.
 
-- **Finder:** right-click (or Control-click) `PokeTokenBar.app` → **Open** → **Open** again in the dialog.
-- **Terminal:** `xattr -dr com.apple.quarantine /Applications/PokeTokenBar.app`
-
-On first launch, **allow the notification prompt** (for battle challenges) and, when you first open the Battle tab, **allow Local Network access** (for auto-discovery) in System Settings → Privacy.
-
-### Build from source
+To build from source:
 
 ```bash
-swift build                  # debug
-./scripts/build-app.sh       # release → PokeTokenBar.app → /Applications
+swift build
+./scripts/build-app.sh
 ```
 
-> Running the full test suite (`swift test`) requires Xcode (for XCTest); Command Line Tools alone build the app but not the tests.
+`build-app.sh` creates and installs `/Applications/Pokédoro.app` (or leaves it at `build/Pokédoro.app` when installation is skipped).
 
-## Fair play
+## Data, privacy & disclaimer
 
-- **Starters are device-locked.** Your three starter choices are derived from a stable hardware identifier — deleting the app and reinstalling gives you the same three, so there's no re-rolling for a legendary. (Legendaries never appear as starters anyway.)
-- **Save integrity.** The save file is signed with a device-keyed checksum. Hand-editing `companion-state.json` to inflate currency or hand yourself items is detected on the next launch and resets the tampered progress.
-- **Deterministic battles.** Both peers compute the same battle result from a shared seed; results are never sent over the wire, so they can't be forged.
-
-## Privacy & permissions
-
-- **Local network.** Battle discovery uses Bonjour/AWDL on your LAN only. Battles connect peer-to-peer; nothing goes to a server.
-- **Outbound requests.** The app talks to [PokéAPI](https://pokeapi.co/) (`pokeapi.co`, `graphql.pokeapi.co`) and `raw.githubusercontent.com` for species/evolution data and sprites, and uses the GitHub API to check for app updates.
-- **Pokémon assets** are fetched at runtime from PokéAPI and cached only under `~/Library/Application Support/PokeTokenBar/`. The app binary bundles no Pokémon assets.
-
-## License & disclaimer
-
-**MIT** — see [LICENSE](LICENSE). The MIT license covers this project's original source code only; it grants no rights to any third-party trademarks, artwork, or data accessed through the app. K-MON is based on the MIT-licensed [PokeTokenBar](https://github.com/chattymin/PokeTokenBar).
-
-K-MON is an **unofficial, non-commercial fan project**. It is **not affiliated with, endorsed, sponsored, or approved by Nintendo, Game Freak, Creatures Inc., or The Pokémon Company.** "Pokémon" and all related names, characters, and imagery are trademarks and copyrights of their respective owners. This project claims no ownership of, and asserts no rights over, any Pokémon intellectual property.
-
-- **The app binary and its release artifacts bundle no Pokémon assets.** Species data and sprites are fetched **at runtime** from the public [PokéAPI](https://pokeapi.co) and cached locally on the user's own device.
-- Any Pokémon imagery in this repository's documentation (screenshots/GIFs) is shown solely to illustrate the app's functionality.
-- The app is provided free of charge for **personal, non-commercial use only.**
-
-*Provided "as is", without warranty of any kind. This notice is not legal advice.*
+- Progress and cached data are stored in `~/Library/Application Support/PokeTokenBar/`.
+- Battles and Pokéathlon use peer-to-peer connections on the local network. The app fetches Pokémon species, evolution, move, and sprite data from PokéAPI and related static asset hosts; it also checks GitHub for updates.
+- The source code is available under the [MIT License](LICENSE). Pokédoro is not affiliated with, endorsed by, sponsored by, or approved by Nintendo, Game Freak, Creatures, or The Pokémon Company. Pokémon names, characters, and imagery belong to their respective rights holders.
