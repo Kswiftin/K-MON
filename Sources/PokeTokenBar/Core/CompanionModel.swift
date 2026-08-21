@@ -217,6 +217,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case reaperCloth, razorClaw, razorFang, prismScale
     // 해피너스는 '둥근돌을 지닌 채 낮에 레벨업' 이라 돌 이름이지만 use-item 이 아니다.
     case ovalStone
+    /// 하트비늘(#97) — 진화가 아니라 "기술 다시 배우기". 진화 아이템이 아니라 `evolutionRule` 이 nil 이므로
+    /// **가방·문구의 `default:`(= 진화 아이템 전체) 분기에 명시 케이스로 반드시 넣어야 한다** — 빠뜨리면
+    /// "진화 가능할 때 사용" 이 뜨고 설명이 빈 문자열이 되며 `useEvolutionItem` 으로 흘러간다.
+    case heartScale
 
     /// 진화 아이템 공통가 — 돌과 지닌물건을 구분하지 않는다(둘 다 진화 1회분의 값).
     static let evolutionItemPrice = 500
@@ -224,7 +228,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .shinyCharm: return nil
+        case .rareCandy, .mint, .shinyCharm, .heartScale: return nil
         case .linkingCord: return .plainTrade
         case .fireStone: return .useItem("fire-stone")
         case .waterStone: return .useItem("water-stone")
@@ -264,6 +268,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .rareCandy: return "rare-candy"
         case .mint: return nil   // PokéAPI 에 민트 스프라이트 없음(8세대 아이템) → 이모지 폴백
         case .shinyCharm: return "shiny-charm"
+        case .heartScale: return "heart-scale"
         default: return evolutionRule?.apiItemName
         }
     }
@@ -284,6 +289,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .reaperCloth: return "🧵"; case .razorClaw: return "✂️"; case .razorFang: return "🗡️"
         case .prismScale: return "🌈"
         case .ovalStone: return "🥚"
+        case .heartScale: return "💗"
         }
     }
     /// 상점 판매가(재화 = 별의조각). nil = 상점 미판매.
@@ -292,6 +298,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .rareCandy: return RareCandy.price
         case .mint: return Mint.price
         case .shinyCharm: return nil
+        case .heartScale: return MoveRelearn.price
         default: return isEvolutionItem ? Self.evolutionItemPrice : nil
         }
     }

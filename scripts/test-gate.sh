@@ -50,6 +50,8 @@ LOGIC_CORE=(
   # 포켓몬 페르소나 조립과 응답 안전 가드가 사는 순수 로직. 게이트 밖에 있으면 프로필 조립을
   # 직접 밟지 않는 fixture 테스트만 있어도 무테스트 분기가 커버리지에 드러나지 않는다.
   "Sources/PokeTokenBar/Core/PokemonChat.swift"
+  # 하트비늘 후보 계산(#97). 순수 함수라 게이트 대상 — 넣지 않으면 커버리지에서 조용히 빠진다.
+  "Sources/PokeTokenBar/Core/MoveRelearn.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"
