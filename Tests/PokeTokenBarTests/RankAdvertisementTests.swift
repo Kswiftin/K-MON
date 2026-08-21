@@ -42,7 +42,7 @@ final class RankAdvertisementTests: XCTestCase {
         XCTAssertEqual(recorder.points, [store.battleRank.points], "전제: 현재 랭크가 한 번 광고된다")
 
         let before = store.battleRank.points
-        store.settleRankedBrawl(won: true, opponent: BattleRank(points: 0))
+        _ = store.settleRankedBrawl(won: true, opponent: BattleRank(points: 0))
         XCTAssertNotEqual(store.battleRank.points, before, "전제: 승리로 LP 가 움직였다")
 
         await waitForPublish(recorder, count: 2)
