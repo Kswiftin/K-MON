@@ -136,8 +136,15 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         // **경계에서 클램프한다** — `validStart` 는 개시 시점만 보고, 라운드마다 오는 값은
         // 호스트 소유다(`atk: 99` 를 들이면 다음 `changeStage` 가 −93 을 로그에 쓴다).
         // 0 키는 버린다 — `stages` 의 불변식.
-        decoded.stages = (try container.decodeIfPresent([BattleStat: Int].self, forKey: .stages) ?? [:])
-            .compactMapValues { $0 == 0 ? nil : StatStages.clamped($0) }
+        //
+        // 키도 문자열로 받아서 **모르는 이름은 버린다.** `[BattleStat: Int]` 로 바로 디코딩하면
+        // 키 하나(`"hp": 1`)가 라운드 메시지 **전체**의 디코딩을 던져서 게스트가 그 자리에 멈춘다 —
+        // 값은 막고 키는 안 막으면 경계가 반쪽이다.
+        decoded.stages = (try container.decodeIfPresent([String: Int].self, forKey: .stages) ?? [:])
+            .reduce(into: [:]) { out, pair in
+                guard let stat = BattleStat(rawValue: pair.key), pair.value != 0 else { return }
+                out[stat] = StatStages.clamped(pair.value)
+            }
         side = decoded
     }
 
@@ -192,6 +199,9 @@ enum MultiplayerValidation {
                 // 안 보면 `+6 공격` 이 열두 번 담긴 기술 하나로 첫 턴에 최대 랭크가 된다.
                 && ($0.statChanges.map { changes in
                     changes.count <= BattleStat.allCases.count
+                        // 중복 스탯도 막는다 — 안 보면 개수 상한이 뜻을 잃는다(`+2 공격` 일곱 개면
+                        // 상한 안에서 한 방에 최대 랭크이고 로그도 일곱 줄이다).
+                        && Set(changes.map(\.stat)).count == changes.count
                         && changes.allSatisfy { (-StatStages.limit...StatStages.limit).contains($0.change) }
                 } ?? true)
         }

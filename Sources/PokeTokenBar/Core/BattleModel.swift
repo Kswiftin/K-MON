@@ -261,6 +261,14 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 랭크 변화가 걸릴 확률(PokéAPI `meta.stat_chance`). `ailmentChance` 와 같이 0 은 "확률이 아니다".
     var statChance: Int? = nil
 
+    /// 이 기술이 **자기**를 대상으로 하는가(PokéAPI `target` 이 `user` 계열). `statChanges` 와 같은
+    /// 이유로 옵셔널이다 — 이 키가 없던 시절의 세이브·구버전 피어에는 값이 없다.
+    ///
+    /// 없으면 안 되는 값이다: 잠자기는 `damage_class: status` + `ailment: sleep` 이라
+    /// `ailmentChancePercent` 가 100 을 주고, `applySecondaryEffect` 는 상태를 늘 **상대**에게 건다.
+    /// 대상을 안 보면 회복 없는 필중 100% 수면기가 되어 CPU 가 무작위로 그걸 쓴다.
+    var targetsUser: Bool? = nil
+
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
 
@@ -293,7 +301,28 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 깎는 기술인데, 응답만으로는 대상이 자기인지 상대인지 알 수 없다 — `applyStatChanges` 의
     /// 부호 규칙에 맡기면 상대를 깎아 완전히 뒤집힌다. 확률이 붙은 2차효과는 오로라빔·
     /// 사이코키네시스처럼 실제로 상대를 깎으므로 부호 규칙이 맞다.
+    /// 부호가 대상을 정하는 규칙이 **통하지 않는** 랭크 변화 — 올리는 것과 내리는 것이 한 기술에
+    /// 같이 있는 경우다. 저주(자기 스피드 −1 + 공격·방어 +1)가 그렇고, 부호로 가르면 스피드 감소가
+    /// 상대에게 걸려 자기 버프 두 개 + 상대 디버프 하나가 된다. 가릴 수 없으면 걸지 않는다.
+    var hasAmbiguousStatTargets: Bool {
+        guard let statChanges else { return false }
+        return statChanges.contains { $0.change > 0 } && statChanges.contains { $0.change < 0 }
+    }
+
+    /// 대가를 **모델링하지 않은** 큰 상승. 배가르기(공격 +6 + 최대 HP 절반)는 HP 소모가 어디에도
+    /// 없어서, 그대로 통과시키면 첫 턴 공짜 +6 공격이 된다(CPU 도 무작위로 쓴다). 저주의 Ghost
+    /// HP 반감도 같은 부류다.
+    ///
+    /// ponytail: `|변화| >= 3` 은 휴리스틱이다 — Gen 2 범위에서 이 문턱에 걸리는 건 배가르기뿐이고
+    ///           (칼춤·방어막·기억상실은 ±2), 대가를 실제로 구현하면 이 게이트를 지우고 코스트를
+    ///           태운다. 문턱을 넘는 기술이 늘면 여기 대신 기술별 코스트 표가 필요하다.
+    var hasUnpricedGain: Bool {
+        guard damageClass == .status else { return false }
+        return (statChanges ?? []).contains { abs($0.change) >= 3 }
+    }
+
     var statChangePercent: Int {
+        if hasAmbiguousStatTargets || hasUnpricedGain { return 0 }
         let chance = statChance ?? 0
         if chance > 0 { return chance }
         return damageClass == .status ? 100 : 0
@@ -908,31 +937,43 @@ extension BattleEngine {
         if outcome.damage > 0 {
             defender.hp = max(0, defender.hp - outcome.damage)
             events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
-            if !defender.isAlive { return events + [.faint(defenderActor)] }
         }
-        // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다.
-        events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor, rng: &rng)
-        return events + applyStatChanges(of: move, attacker: &attacker, defender: &defender,
-                                         attackerActor: attackerActor, defenderActor: defenderActor,
-                                         rng: &rng)
+        // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
+        if defender.isAlive {
+            events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor, rng: &rng)
+        }
+        // **랭크는 기절 앞에서 본다.** 예전엔 기절이 여기서 조기반환해 상대를 쓰러뜨린 턴의 자기
+        // 랭크 상승(고대의힘 부류)이 통째로 사라졌다 — 본가는 KO 여부와 무관하게 오른다. 상대 몫만
+        // `applyStatChanges` 가 걸러낸다. `.faint` 를 맨 뒤로 미루는 건 Showdown 순서와도 같다.
+        events += applyStatChanges(of: move, attacker: &attacker, defender: &defender,
+                                   attackerActor: attackerActor, defenderActor: defenderActor,
+                                   rng: &rng)
+        if !defender.isAlive { events.append(.faint(defenderActor)) }
+        return events
     }
 
     /// 기술의 랭크 변화. **부호가 대상을 정한다** — 올리면 자기, 내리면 상대다. `stat_changes` 에는
     /// 대상이 없고 `target` 은 공격 대상만 가리키므로(자기 랭크를 깎는 공격기도 `selected-pokemon`)
-    /// 부호가 유일한 신호다. 확정 자기감소 기술은 `MoveSpec.statChangePercent` 가 미리 걸러낸다.
+    /// 부호가 유일한 신호다. 부호로 **가릴 수 없는** 두 부류는 `MoveSpec.statChangePercent` 가 0 을
+    /// 주어 미리 걸러낸다: 확정 자기감소 공격기(인파이트)와 부호가 섞인 기술(저주).
     ///
     /// rng 는 **적용할 변화가 있을 때만** 한 번 소비한다 — 두 피어가 같은 조건에서 같은 횟수를
-    /// 불러야 한다(쓰러졌는지, 확률이 0 인지는 양쪽이 똑같이 본다).
+    /// 불러야 한다(쓰러졌는지, 확률이 0 인지는 양쪽이 똑같이 본다). 대가를 모델링하지 않은 큰
+    /// 상승(배가르기)도 `statChangePercent` 가 0 으로 접는다.
     private static func applyStatChanges(of move: MoveSpec, attacker: inout BattleSide,
                                          defender: inout BattleSide, attackerActor: BattleActor,
                                          defenderActor: BattleActor,
                                          rng: inout SplitMix64) -> [BattleEvent] {
         let changes = move.statChanges ?? []
         let percent = move.statChangePercent
-        guard !changes.isEmpty, percent > 0, attacker.isAlive, defender.isAlive else { return [] }
+        // 쓰러진 상대에게는 못 걸지만 **자기 랭크 상승은 KO 여부와 무관하다**(본가와 같다). 상대가
+        // 쓰러졌으면 자기 몫(양수)만 남기고 본다 — 남는 게 없으면 rng 도 쓰지 않는다. 조건은 두
+        // 피어가 똑같이 보므로(누가 쓰러졌는지) 소비량이 갈라지지 않는다.
+        let applicable = defender.isAlive ? changes : changes.filter { $0.change > 0 }
+        guard !applicable.isEmpty, percent > 0, attacker.isAlive else { return [] }
         guard Int(rng.next() % 100) < percent else { return [] }
         var events: [BattleEvent] = []
-        for change in changes {
+        for change in applicable {
             let targetsSelf = change.change > 0
             let applied = targetsSelf
                 ? attacker.changeStage(change.stat, by: change.change)
@@ -948,6 +989,10 @@ extension BattleEngine {
     /// 걸려 있거나 면역인 상대에게는 rng 를 쓰지 않는다 — 두 피어의 소비량이 같아야 한다.
     private static func applySecondaryEffect(of move: MoveSpec, to side: inout BattleSide,
                                              actor: BattleActor, rng: inout SplitMix64) -> [BattleEvent] {
+        // **자기 대상 상태기는 상대에게 걸지 않는다.** 잠자기는 `ailment: sleep` 이라 여기까지 오는데
+        // 회복은 구현이 없어서, 걸면 남는 게 필중 100% 수면기다(대상을 모르는 게 아니라 아는데
+        // 반대로 거는 경우다). 구현할 때는 `targetsUser` 를 보고 회복까지 같이 넣는다.
+        guard move.targetsUser != true else { return [] }
         guard let status = move.inflictedStatus, side.canBeAfflicted(by: status) else { return [] }
         guard Int(rng.next() % 100) < move.ailmentChancePercent else { return [] }
         return inflict(status, on: &side, actor: actor, rng: &rng)

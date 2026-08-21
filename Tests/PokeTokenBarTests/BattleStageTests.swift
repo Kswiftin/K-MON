@@ -284,6 +284,57 @@ final class BattleStageTests: XCTestCase {
         XCTAssertNil(ground.status, "땅 타입은 전기자석파에 마비되지 않는다")
     }
 
+    /// **자기 대상 상태기는 상대에게 걸지 않는다.** 잠자기는 `damage_class: status` + `ailment: sleep`
+    /// 이라 `ailmentChancePercent` 가 100 을 주고, `applySecondaryEffect` 는 상태를 늘 상대에게 건다 —
+    /// 대상을 안 보면 회복 없는 **필중 100% 수면기**가 되고 CPU 는 무작위로 그것을 쓴다.
+    /// 대조군(`targetsUser = false`)이 없으면 "상태기를 아예 안 건다" 는 오구현도 초록이다.
+    func testSelfTargetingAilmentMovesAreNotCastOnTheOpponent() {
+        func rest(targetsUser: Bool?) -> MoveSpec {
+            var move = MoveSpec(id: 156, names: ["en": "Rest"], type: .psychic, power: 0,
+                                damageClass: .status, accuracy: nil, pp: 10)
+            move.ailment = "sleep"
+            move.targetsUser = targetsUser
+            return move
+        }
+        var user = BattleSide(tank()), target = BattleSide(tank())
+        let events = attack(&user, &target, rest(targetsUser: true))
+        XCTAssertNil(target.status, "자기 대상 수면기가 상대를 재우면 안 된다")
+        XCTAssertNil(user.status, "회복·수면을 구현하지 않았으므로 자기에게도 걸지 않는다")
+        XCTAssertFalse(events.contains { if case .status = $0 { return true } else { return false } })
+
+        // 대조군: 같은 모양인데 대상이 상대인 상태기(수면가루)는 그대로 걸려야 한다.
+        var caster = BattleSide(tank()), victim = BattleSide(tank())
+        _ = attack(&caster, &victim, rest(targetsUser: false))
+        XCTAssertEqual(victim.status, .sleep, "상대 대상 상태기는 계속 걸린다")
+    }
+
+    /// **부호가 섞인 랭크 변화는 대상을 가릴 수 없다.** 저주(자기 스피드 −1 + 공격·방어 +1)를
+    /// 부호 규칙에 맡기면 스피드 감소가 상대에게 걸려 자기 버프 둘 + 상대 디버프 하나가 된다.
+    /// 확정 자기감소 공격기와 같은 자리(`statChangePercent == 0`)에서 걸러야 한 규칙만 남는다.
+    func testMixedSignStatChangesAreSkippedBecauseTheSignCannotPickATarget() {
+        let curse = statusMove(id: 174, type: .ghost,
+                               changes: [StatChange(stat: .spe, change: -1),
+                                         StatChange(stat: .atk, change: 1),
+                                         StatChange(stat: .def, change: 1)])
+        XCTAssertTrue(curse.hasAmbiguousStatTargets)
+        XCTAssertEqual(curse.statChangePercent, 0, "가릴 수 없으면 걸지 않는다")
+
+        var user = BattleSide(tank()), target = BattleSide(tank())
+        let events = attack(&user, &target, curse)
+        XCTAssertEqual(target.stage(.spe), 0, "자기 스피드 감소가 상대에게 걸리면 완전히 뒤집힌다")
+        XCTAssertEqual(user.stage(.atk), 0, "한 기술의 랭크 변화는 통째로 걸리거나 통째로 안 걸린다")
+        XCTAssertFalse(events.contains { if case .boost = $0 { return true } else { return false } })
+
+        // 대조군: 부호가 하나뿐이면(고대의힘 부류) 여러 축이어도 그대로 걸린다.
+        let manyUp = statusMove(changes: [StatChange(stat: .atk, change: 1),
+                                          StatChange(stat: .def, change: 1)])
+        XCTAssertFalse(manyUp.hasAmbiguousStatTargets)
+        var boosted = BattleSide(tank()), other = BattleSide(tank())
+        _ = attack(&boosted, &other, manyUp)
+        XCTAssertEqual(boosted.stage(.atk), 1)
+        XCTAssertEqual(boosted.stage(.def), 1)
+    }
+
     /// 공격기의 2차 랭크 변화는 PokéAPI 가 확률을 준 것만 적용한다. 확률 0 짜리 랭크 변화는
     /// 인파이트·깨트리다처럼 **자기를** 깎는 기술이라, 부호 규칙으로 처리하면 상대를 깎는다.
     func testDamagingMoveAppliesStatChangesOnlyWithAnExplicitChance() {
@@ -401,16 +452,33 @@ final class BattleStageTests: XCTestCase {
 
     // MARK: PokéAPI 매핑
 
-    private func moveJSON(statChanges: String?, statChance: Int?) -> Data {
+    private func moveJSON(statChanges: String?, statChance: Int?, target: String? = nil) -> Data {
         let changes = statChanges.map { #", "stat_changes": \#($0)"# } ?? ""
         let chance = statChance.map { #", "meta": {"stat_chance": \#($0)}"# } ?? ""
+        let targetRef = target.map { #", "target": {"name": "\#($0)", "url": null}"# } ?? ""
         return Data("""
         {"id": 14, "power": 0, "accuracy": null, "pp": 20, "priority": 0,
          "type": {"name": "normal", "url": null},
          "damage_class": {"name": "status", "url": null},
          "names": [{"name": "Swords Dance", "language": {"name": "en", "url": null}}],
-         "flavor_text_entries": []\(changes)\(chance)}
+         "flavor_text_entries": []\(changes)\(chance)\(targetRef)}
         """.utf8)
+    }
+
+    /// `target` 이 자기 대상 기술을 가리는 **유일한 신호다** — `stat_changes`·`meta.ailment` 에는
+    /// 대상이 없다. 키가 없으면 `nil`(구버전 응답)이고, 그때는 부호 규칙으로 떨어진다.
+    func testMoveSpecCarriesTheTargetFromPokeAPI() throws {
+        func spec(target: String?) throws -> MoveSpec {
+            try XCTUnwrap(MoveSpec.from(
+                try JSONDecoder().decode(MoveDTO.self,
+                                         from: moveJSON(statChanges: "[]", statChance: 0, target: target)),
+                fallbackName: "swords-dance", languages: ["en"]))
+        }
+        XCTAssertEqual(try spec(target: "user").targetsUser, true)
+        XCTAssertEqual(try spec(target: "users-field").targetsUser, true)
+        XCTAssertEqual(try spec(target: "selected-pokemon").targetsUser, false,
+                       "`selected-pokemon` 은 자기 랭크를 깎는 공격기도 쓰므로 자기 대상이 아니다")
+        XCTAssertNil(try spec(target: nil).targetsUser, "키가 없으면 모른다 — 부호 규칙으로 떨어진다")
     }
 
     func testMoveSpecCarriesStatChangesFromPokeAPI() throws {
@@ -464,8 +532,11 @@ final class BattleStageTests: XCTestCase {
         XCTAssertNil(unfetched.statChanges)
         XCTAssertTrue(CompanionStore.needsDetailRefresh(unfetched), "안 받아본 스펙은 다시 받는다")
 
+        // `target` 을 같이 넣는다 — 이 테스트가 보는 축은 `statChanges` 뿐인데, 대상 축을 nil 로
+        // 두면 그 축 때문에 다시 받게 되어 랭크 축 판정이 죽어도 초록이 된다.
         let fetchedEmpty = try XCTUnwrap(MoveSpec.from(
-            try JSONDecoder().decode(MoveDTO.self, from: moveJSON(statChanges: "[]", statChance: 0)),
+            try JSONDecoder().decode(MoveDTO.self, from: moveJSON(statChanges: "[]", statChance: 0,
+                                                                 target: "selected-pokemon")),
             fallbackName: "swords-dance", languages: ["en"]))
         XCTAssertEqual(fetchedEmpty.statChanges, [])
         XCTAssertFalse(CompanionStore.needsDetailRefresh(fetchedEmpty),
@@ -512,6 +583,36 @@ final class BattleStageTests: XCTestCase {
         XCTAssertEqual(picked.map(\.id), [14], "구현된 효과가 있는 변화기가 그 칸을 가진다")
     }
 
+    /// 변화기 칸의 기준은 **엔진이 실제로 적용하는가** 다. 자기 대상 상태기(잠자기)와 부호가 섞인
+    /// 랭크 변화(저주)는 엔진이 건너뛰므로 그 칸에 앉히면 PP 만 태운다 — 효과 미구현 변화기와 같다.
+    func testStatusSlotSkipsMovesTheEngineWillNotApply() {
+        func attackSpec(_ id: Int, _ type: PokemonType, _ power: Int) -> MoveSpec {
+            MoveSpec(id: id, names: [:], type: type, power: power,
+                     damageClass: .physical, accuracy: 100, pp: 10)
+        }
+        var rest = MoveSpec(id: 156, names: [:], type: .psychic, power: 0,
+                            damageClass: .status, accuracy: nil, pp: 10)
+        rest.ailment = "sleep"
+        rest.targetsUser = true
+        let curse = statusMove(id: 174, type: .ghost,
+                               changes: [StatChange(stat: .spe, change: -1),
+                                         StatChange(stat: .atk, change: 1)])
+        let attacks = [attackSpec(1, .fire, 90), attackSpec(2, .normal, 100),
+                       attackSpec(3, .flying, 75), attackSpec(4, .dragon, 80)]
+
+        for useless in [rest, curse] {
+            let picked = PokeAPIClient.pickFour(from: attacks + [useless], types: [.fire, .flying])
+            XCTAssertEqual(picked.count, 4)
+            XCTAssertTrue(picked.allSatisfy { $0.power > 0 },
+                          "기술 \(useless.id): 엔진이 건너뛰는 변화기가 화력 한 칸을 먹었다")
+        }
+        // 대조군: 같은 자리에 걸리는 상태기(수면가루)가 오면 그 칸을 가진다.
+        var powder = rest
+        powder.targetsUser = false
+        XCTAssertEqual(PokeAPIClient.pickFour(from: attacks + [powder], types: [.fire, .flying])
+                        .filter { $0.power <= 0 }.count, 1)
+    }
+
     /// **트리거 브랜치**: 쓸 만한 변화기가 하나도 없는 풀. 위 테스트는 *더 나은* 변화기를 고르는지만
     /// 보므로 폴백이 남아 있어도 초록이다. 그 칸은 공격기에게 돌아가야 한다.
     func testInertStatusMovesGiveTheirSlotBackToAttacks() {
@@ -556,6 +657,15 @@ final class BattleStageTests: XCTestCase {
         var badChance = sane
         badChance.statChance = 101
         XCTAssertFalse(MultiplayerValidation.valid(participant: participant, snapshot: snapshot(with: badChance)))
+
+        // 개수 상한만 보면 **중복**으로 그 상한을 빠져나간다 — `+2 공격` 일곱 개는 7 ≤ 7 을
+        // 통과하고 한 방에 최대 랭크를 만든다(로그도 일곱 줄).
+        var duplicated = sane
+        duplicated.statChanges = Array(repeating: StatChange(stat: .atk, change: 2),
+                                       count: BattleStat.allCases.count)
+        XCTAssertFalse(MultiplayerValidation.valid(participant: participant,
+                                                   snapshot: snapshot(with: duplicated)),
+                       "같은 스탯을 여러 번 담은 무브셋은 거절한다")
     }
 
     /// 최대 HP 로 시작하는 배틀이면 랭크도 0 이어야 한다 — 안 보면 `stages: [atk: 6]` 으로 시작한다.
@@ -612,6 +722,23 @@ final class BattleStageTests: XCTestCase {
                        "화면에 6 밖의 숫자가 뜨면 클램프가 배선되지 않았다")
     }
 
+    /// **트리거 브랜치**: 값이 아니라 **키**가 이상한 경우. `[BattleStat: Int]` 로 바로 디코딩하면
+    /// 모르는 키 하나가 파이터 — 곧 라운드 메시지 전체 — 의 디코딩을 던져서 게스트가 그 자리에
+    /// 멈춘다. 값 클램프만 있으면 이 경로는 한 번도 밟히지 않는다.
+    func testWireStagesDropUnknownStatKeysInsteadOfFailingTheWholeRound() throws {
+        let participant = LobbyParticipant(id: UUID(), trainerName: "호스트", speciesID: 143,
+                                           team: .solo, isReady: true, isHost: false)
+        let honest = MultiplayerFighter(participant: participant, snapshot: tank())
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(honest)) as? [String: Any])
+        json["stages"] = ["hp": 3, "sp_atk": 2, "atk": 2]
+
+        let forged = try JSONDecoder().decode(
+            MultiplayerFighter.self, from: try JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(forged.side.stage(.atk), 2, "아는 키는 그대로 읽는다")
+        XCTAssertEqual(forged.side.stages.count, 1, "랭크가 없는 `hp`·모르는 이름은 버린다")
+    }
+
     /// 랭크 0 짜리 `.boost` 는 줄이 없다 — 이벤트 스트림도 호스트가 보내오는 값이다.
     func testZeroBoostEventDrawsNoLine() {
         let lines = BattleLog.lines([.boost(.a, .atk, 0)], l: L(.ko),
@@ -630,11 +757,103 @@ final class BattleStageTests: XCTestCase {
         XCTAssertTrue(MultiplayerValidation.validMoves([]), "무브셋 없는 스냅샷은 폴백으로 간다")
     }
 
-    /// 데미지 결과가 바뀌었고(랭크·명중), 이벤트 스트림에 case 가 늘었다 → 두 버전 다 올라가야 한다.
-    /// 안 올리면 구버전 피어와 붙어 같은 배틀을 서로 다르게 보고, 구버전 게스트는 `.boost` 를
-    /// 디코딩하지 못해 라운드에서 멈춘다.
-    func testRuleAndProtocolVersionsMovedWithStages() {
-        XCTAssertGreaterThanOrEqual(BattleEngine.rulesVersion, 6, "랭크업부터 규칙 6 이상")
+    /// 이벤트 스트림에 case 가 늘었다(`.boost`) → 와이어 계약 버전이 올라가야 한다. 안 올리면
+    /// 구버전 게스트가 모르는 case 를 만나 라운드 메시지 **전체**를 디코딩하지 못한다.
+    ///
+    /// `rulesVersion` 은 여기서 보지 않는다 — `BattleStatusTests` 가 `== 8` 로 못 박고 그 파일에
+    /// 버전 히스토리 근거가 누적돼 있다. 두 곳에서 같은 값을 단정하면 올릴 때 한 곳을 잊는다.
+    func testProtocolVersionMovedWithStages() {
+        // 하한을 실제 값으로 잡는다 — 6 으로 두면 랭크가 들어오기 **전** 버전에서도 통과해
+        // "버전을 올렸는가" 를 아무것도 검증하지 않는다.
         XCTAssertGreaterThanOrEqual(MultiplayerWireMessage.protocolVersion, 5, "`.boost` 가 늘어난 계약")
+    }
+
+    // MARK: 대가를 모델링하지 않은 큰 상승 — 배가르기 부류
+
+    /// 배가르기(공격 +6, 대가는 최대 HP 절반)는 HP 소모가 어디에도 없어서, 통과시키면 첫 턴 공짜
+    /// +6 이다. **엔진에서** 접어야 한다 — 무브셋 선택에만 게이트를 두면 `learnedMoves` 경로(변화기를
+    /// 안 걸러낸다)로 들어온 같은 기술이 그대로 적용된다.
+    func testUnpricedBigGainIsNotApplied() {
+        let bellyDrum = statusMove(id: 187, changes: [StatChange(stat: .atk, change: 6)])
+        var attacker = BattleSide(tank()), defender = BattleSide(tank())
+        let events = attack(&attacker, &defender, bellyDrum)
+
+        XCTAssertEqual(attacker.stage(.atk), 0, "대가가 없는 +6 은 걸리지 않는다")
+        XCTAssertFalse(events.contains { if case .boost = $0 { return true } else { return false } },
+                       "적용도 안 되는 랭크에 로그 줄이 나가면 화면이 거짓말을 한다")
+        // 대조군: 대가가 없어도 정상 범위(±2)인 칼춤은 그대로 걸린다 — 문턱이 변화기를 통째로
+        // 막아 버리면 랭크 기능 자체가 죽는다.
+        var second = BattleSide(tank())
+        _ = attack(&second, &defender, statusMove(changes: [StatChange(stat: .atk, change: 2)]))
+        XCTAssertEqual(second.stage(.atk), 2, "±2 짜리 변화기는 계속 걸린다")
+    }
+
+    /// 무브셋 칸도 같이 비어야 한다 — 엔진이 건너뛰는 기술이 칸을 차지하면 PP 만 태우는 칸이 된다.
+    /// 엔진과 **같은 값**(`statChangePercent`)을 보는지 확인한다.
+    func testUnpricedBigGainDoesNotHoldAMoveSlot() {
+        let bellyDrum = statusMove(id: 187, changes: [StatChange(stat: .atk, change: 6)])
+        XCTAssertEqual(bellyDrum.statChangePercent, 0, "엔진이 0 으로 접는다")
+        XCTAssertTrue(bellyDrum.hasUnpricedGain)
+        XCTAssertFalse(statusMove(changes: [StatChange(stat: .atk, change: 2)]).hasUnpricedGain,
+                       "±2 는 대가 없이도 정상 범위다")
+    }
+
+    // MARK: KO 낸 턴의 자기 랭크 상승
+
+    /// 고대의힘 부류(공격기 + 자기 랭크 상승)로 상대를 쓰러뜨려도 **내 랭크는 오른다**(본가와 같다).
+    /// 예전엔 기절이 `applyAttack` 에서 조기반환해 랭크 적용이 통째로 사라졌다 — 랭크를 올릴 기회가
+    /// KO 여부에 따라 무작위로 없어졌다.
+    func testSelfBoostSurvivesAKnockout() {
+        var boosting = tackle(power: 200)
+        boosting.statChanges = [StatChange(stat: .atk, change: 1), StatChange(stat: .def, change: 1)]
+        boosting.statChance = 100            // 확률이 붙어야 부호 규칙이 자기 상승으로 읽는다
+        var attacker = BattleSide(tank()), defender = BattleSide(tank())
+        defender.hp = 1                      // 무엇을 맞아도 쓰러진다
+
+        let events = attack(&attacker, &defender, boosting)
+
+        XCTAssertFalse(defender.isAlive)
+        XCTAssertEqual(attacker.stage(.atk), 1, "KO 낸 턴에도 자기 랭크는 오른다")
+        XCTAssertEqual(attacker.stage(.def), 1)
+        // `.faint` 는 맨 뒤다 — 쓰러진 뒤에 랭크가 오르는 것처럼 읽히면 안 된다(Showdown 순서).
+        let boostIndex = events.firstIndex { if case .boost = $0 { return true } else { return false } }
+        let faintIndex = events.firstIndex { if case .faint = $0 { return true } else { return false } }
+        XCTAssertNotNil(boostIndex)
+        XCTAssertNotNil(faintIndex)
+        XCTAssertLessThan(try XCTUnwrap(boostIndex), try XCTUnwrap(faintIndex))
+    }
+
+    /// 반대 방향 — **쓰러진 상대의 랭크는 안 깎는다.** 다 적용하게 풀면 기절한 개체에 `.boost` 가
+    /// 나가 로그가 "쓰러진 포켓몬의 방어가 떨어졌다" 를 찍는다.
+    func testOpponentDropIsSkippedWhenTheTargetFaints() {
+        var dropping = tackle(power: 200)
+        dropping.statChanges = [StatChange(stat: .def, change: -1)]
+        dropping.statChance = 100
+        var attacker = BattleSide(tank()), defender = BattleSide(tank())
+        defender.hp = 1
+
+        let events = attack(&attacker, &defender, dropping)
+
+        XCTAssertFalse(defender.isAlive)
+        XCTAssertEqual(defender.stage(.def), 0, "쓰러진 상대에게는 걸지 않는다")
+        XCTAssertFalse(events.contains { if case .boost = $0 { return true } else { return false } })
+    }
+
+    // MARK: 세이브 수렴 — 축을 더하면 판정도 같이 늘린다
+
+    /// 랭크 축으로 이미 한 번 갱신된 세이브(= `statChanges` 가 채워진)는 대상 축이 비어 있으면
+    /// **다시 받아야 한다.** 안 그러면 그 기기는 영영 `targetsUser` 가 nil 이라, 잠자기·저주 처방이
+    /// 자기 기기에서만 안 먹는다.
+    @MainActor
+    func testFilledStatChangesStillRefetchWhenTheTargetAxisIsMissing() {
+        var halfFetched = statusMove(changes: [])
+        halfFetched.descriptions = ["en": "A move."]
+        XCTAssertNil(halfFetched.targetsUser)
+        XCTAssertTrue(CompanionStore.needsDetailRefresh(halfFetched),
+                      "축을 더했는데 판정을 안 늘리면 옛 데이터로 계속 싸운다")
+
+        halfFetched.targetsUser = false
+        XCTAssertFalse(CompanionStore.needsDetailRefresh(halfFetched),
+                       "두 축을 다 받은 스펙을 또 받으면 로드마다 네트워크가 돈다")
     }
 }

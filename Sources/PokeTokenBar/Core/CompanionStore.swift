@@ -1082,6 +1082,9 @@ final class CompanionStore {
         // 주면 매 로드마다 헛도는 조회가 된다.
         guard move.id > 0 else { return false }
         if move.statChanges == nil { return true }
+        // **축을 더할 때 이 판정도 같이 늘린다.** `statChanges` 만 보면, 그 축으로 한 번 갱신된
+        // 세이브는 이후 어떤 새 축이 비어 있어도 다시 받지 않고 옛 데이터로 싸운다.
+        if move.targetsUser == nil { return true }
         guard let descriptions = move.descriptions else { return true }
         return descriptions.values.contains(where: PokeAPIClient.isUnusableMoveNotice)
     }

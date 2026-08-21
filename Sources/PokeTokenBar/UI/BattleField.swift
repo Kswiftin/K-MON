@@ -242,10 +242,10 @@ enum StageReadout {
 }
 
 struct StageArrows: View {
-    let side: BattleSide?
+    let side: BattleSide
 
     var body: some View {
-        if let text = StageReadout.text(side?.stages ?? [:]) {
+        if let text = StageReadout.text(side.stages) {
             Text(text)
                 .font(.system(size: 8, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)

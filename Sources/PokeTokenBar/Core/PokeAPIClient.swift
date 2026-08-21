@@ -320,11 +320,18 @@ actor PokeAPIClient: PokeProviding {
         return out
     }
 
-    /// 변화기 한 칸의 주인 — **구현된 효과(랭크·상태)가 있는 것만**. 효과 미구현 변화기(ailment
-    /// 14종)는 PP 만 태우므로 `nil` 을 돌려 그 칸을 공격기에게 넘긴다.
+    /// 변화기 한 칸의 주인 — **엔진이 실제로 적용하는 효과가 있는 것만**. PP 만 태우는 기술은
+    /// `nil` 을 돌려 그 칸을 공격기에게 넘긴다. 걸러야 하는 셋:
+    /// 효과 미구현 변화기(ailment 14종), 자기 대상 상태기(잠자기 — 회복이 없어 엔진이 건너뛴다),
+    /// 부호가 섞인 랭크 변화(저주 — 대상을 가릴 수 없어 엔진이 건너뛴다), 대가를 모델링하지 않은
+    /// 큰 상승(배가르기 — `statChangePercent` 가 0 으로 접는다).
+    /// **엔진의 게이트와 같은 값을 본다** — 여기서만 거르면 `learnedMoves` 경로가 갈라진다.
     /// 순서는 후보 정렬(습득 레벨 내림차순)을 그대로 따라가므로 결정적이다.
     private static func pickStatusMove(from specs: [MoveSpec]) -> MoveSpec? {
-        specs.first { $0.inflictedStatus != nil || !($0.statChanges ?? []).isEmpty }
+        specs.first { spec in
+            if spec.inflictedStatus != nil, spec.targetsUser != true { return true }
+            return !(spec.statChanges ?? []).isEmpty && spec.statChangePercent > 0
+        }
     }
 
     private static func pickAttacks(from attacks: [MoveSpec], types: [PokemonType],
@@ -508,6 +515,13 @@ struct MoveDTO: Decodable, Sendable {
     /// 응답에 늘 있고 변화가 없으면 **빈 배열**이다. 그래서 `nil`(키 없음)은 "옛 캐시 응답" 이고,
     /// 그 구분이 `MoveSpec.statChanges` 로 그대로 넘어간다.
     let stat_changes: [StatChangeDTO]?
+    /// 기술의 대상(`user`·`selected-pokemon` …). `meta.ailment` 와 `stat_changes` 에는 대상이 없어서
+    /// **이 값이 자기 대상 기술을 가리는 유일한 신호다** — 없으면 잠자기가 상대를 재운다.
+    let target: NamedRef?
+
+    /// `target` 이 자기 자신(또는 자기 진영)을 가리키는 이름들. `selected-pokemon` 은 자기 랭크를
+    /// 깎는 공격기(인파이트)도 쓰므로 여기 없다 — 그쪽은 `statChangePercent` 가 따로 걸러낸다.
+    static let userTargets: Set<String> = ["user", "users-field", "user-and-allies", "user-or-ally"]
 }
 
 extension MoveSpec {
@@ -545,7 +559,8 @@ extension MoveSpec {
                         descriptions: descriptions, priority: dto.priority,
                         critRate: dto.meta?.crit_rate,
                         ailment: ailment, ailmentChance: dto.meta?.ailment_chance,
-                        statChanges: statChanges, statChance: dto.meta?.stat_chance)
+                        statChanges: statChanges, statChance: dto.meta?.stat_chance,
+                        targetsUser: dto.target.map { MoveDTO.userTargets.contains($0.name) })
     }
 }
 struct ChainLink: Decodable, Sendable {

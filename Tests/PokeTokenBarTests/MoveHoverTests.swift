@@ -213,16 +213,19 @@ final class MoveHoverTests: XCTestCase {
 
     /// 세이브에 이미 안내문이 저장된 사용자는 다시 받아야 한다 — 없을 때만 받으면 영영 안 고쳐진다.
     func testStoredNoticeCountsAsMissingDescription() {
-        // `statChanges: []` 는 "랭크까지 받아봤고 없다" 는 뜻이다. 이 테스트가 보는 축은 설명뿐인데,
-        // 랭크 축을 nil 로 두면 그 이유로 다시 받게 되어 설명 판정이 죽어도 초록이 된다.
+        // `statChanges: []`·`targetsUser` 는 "그 축까지 받아봤다" 는 뜻이다. 이 테스트가 보는 축은
+        // 설명뿐인데, 다른 축을 nil 로 두면 그 이유로 다시 받게 되어 설명 판정이 죽어도 초록이 된다.
+        // 축을 더할 때 이 고정값도 같이 늘린다(`CompanionStore.needsDetailRefresh`).
         var bad = MoveSpec(id: 216, names: ["ko": "은혜갚기"], type: .normal, power: 102,
                            damageClass: .physical, accuracy: 100, pp: 20,
                            descriptions: ["ko": koNotice])
         bad.statChanges = []
+        bad.targetsUser = false
         var good = MoveSpec(id: 33, names: ["ko": "몸통박치기"], type: .normal, power: 40,
                             damageClass: .physical, accuracy: 100, pp: 35,
                             descriptions: ["ko": "몸 전체로 부딪쳐 공격한다."])
         good.statChanges = []
+        good.targetsUser = false
         XCTAssertTrue(CompanionStore.needsDetailRefresh(bad))
         XCTAssertFalse(CompanionStore.needsDetailRefresh(good))
         XCTAssertTrue(CompanionStore.needsDetailRefresh(good.withoutDescriptions()))
@@ -235,6 +238,7 @@ final class MoveHoverTests: XCTestCase {
         var fetchedEmpty = MoveSpec(id: 216, names: ["ko": "은혜갚기"], type: .normal, power: 102,
                                     damageClass: .physical, accuracy: 100, pp: 20, descriptions: [:])
         fetchedEmpty.statChanges = []   // 랭크 축도 "받아봤고 없다" — 보는 축은 설명이다
+        fetchedEmpty.targetsUser = false
         XCTAssertFalse(CompanionStore.needsDetailRefresh(fetchedEmpty),
                        "조회 결과가 빈 것뿐인데 매번 다시 받는다")
     }
