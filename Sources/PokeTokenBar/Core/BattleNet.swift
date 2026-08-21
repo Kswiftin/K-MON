@@ -108,7 +108,11 @@ struct BattlePeer: Identifiable, Equatable {
     let name: String            // 표시 이름(고유 접미 제거)
     let serviceName: String     // Bonjour 광고 원본(고유) — id·self 판정용
     let endpoint: NWEndpoint
-    let rank: BattleRank?
+    /// 상대가 광고한 표시용 진행도(랭크·트레이너 레벨·업적 단계). **표시 전용이다** —
+    /// 판돈은 핸드셰이크로 받은 `BattleRankProfile` 에서 온다(`PeerAdvertisement` 주석 참고).
+    let advertisement: PeerAdvertisement
+    /// 광고 안의 랭크. 기존 호출부가 그대로 살아 있게 두는 어댑터다.
+    var rank: BattleRank? { advertisement.rank }
     var id: String { serviceName }
     static func == (l: Self, r: Self) -> Bool { l.serviceName == r.serviceName }
 }
@@ -369,7 +373,7 @@ final class BattleCenter {
     private let moveDetailLoader: MoveDetailLoader
     private let inheritedMovesPreparer: InheritedMovesPreparer
     /// TXT 레코드 재발행 지점 — nil 이면 실제 리스너의 `service` 를 갈아 끼운다(테스트 주입 seam).
-    private let rankRecordPublisher: ((NWTXTRecord) -> Void)?
+    private let advertisementPublisher: ((NWTXTRecord) -> Void)?
     let multiplayer: MultiplayerRoomCenter
     private var listener: NWListener?
     private var browser: NWBrowser?
@@ -492,9 +496,9 @@ final class BattleCenter {
          moveSetLoader: MoveSetLoader? = nil,
          moveDetailLoader: MoveDetailLoader? = nil,
          inheritedMovesPreparer: InheritedMovesPreparer? = nil,
-         rankRecordPublisher: ((NWTXTRecord) -> Void)? = nil) {
+         advertisementPublisher: ((NWTXTRecord) -> Void)? = nil) {
         self.companion = companion
-        self.rankRecordPublisher = rankRecordPublisher
+        self.advertisementPublisher = advertisementPublisher
         self.monSnapshotBuilder = monSnapshotBuilder ?? { mon, level in
             await companion.battleSnapshot(for: mon, level: level)
         }
@@ -519,26 +523,30 @@ final class BattleCenter {
         // 고유 접미(#xxxxxx) — 같은 사람 이름의 두 Mac이 서로를 "자기"로 오인 필터링하지 않게 한다.
         // 표시할 땐 접미를 떼고, self·id 판정은 이 전체 문자열로 한다.
         self.myServiceName = "\(name)#\(String(UUID().uuidString.prefix(6)))"
-        trackRankChanges()
+        trackAdvertisedValues()
     }
 
-    // MARK: 광고 중인 랭크 (Bonjour TXT)
+    // MARK: 광고 중인 진행도 (Bonjour TXT)
 
-    /// 지금 TXT 레코드에 실려 있는 랭크 포인트. 같은 값이면 재발행하지 않는다.
-    private(set) var advertisedRankPoints: Int?
+    /// 지금 TXT 레코드에 실려 있는 값들. 셋이 모두 그대로면 재발행하지 않는다.
+    private(set) var advertisedProfile: PeerAdvertisement?
 
-    nonisolated static func rankTXTRecord(points: Int) -> NWTXTRecord {
-        NWTXTRecord(["rankPoints": String(points)])
+    /// 지금 광고해야 할 값. 굽는 형식·클램프는 `PeerAdvertisement` 한 곳에 있다.
+    private var myAdvertisement: PeerAdvertisement {
+        PeerAdvertisement(rankPoints: companion.battleRank.points,
+                          trainerLevel: companion.trainerLevel.level,
+                          achievementTiers: companion.achievementTierTotal)
     }
 
-    /// 랭크가 바뀌면 광고를 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 승패 뒤에도
-    /// 옛 점수가 계속 광고되어 상대 목록엔 stale 랭크가 남았다(#85).
-    func refreshAdvertisedRank() {
-        let points = companion.battleRank.points
-        guard advertisedRankPoints != points else { return }
-        let record = Self.rankTXTRecord(points: points)
-        if let rankRecordPublisher {
-            rankRecordPublisher(record)
+    /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 승패 뒤에도
+    /// 옛 점수가 계속 광고되어 상대 목록엔 stale 랭크가 남았다(#85). 레벨·업적도 같은 부류다 —
+    /// 굽는 코드와 값이 바뀌는 코드가 서로를 모르는 것이 원인이므로 재발행 지점은 여기 하나다.
+    func refreshAdvertisedProfile() {
+        let profile = myAdvertisement
+        guard advertisedProfile != profile else { return }
+        let record = profile.txtRecord
+        if let advertisementPublisher {
+            advertisementPublisher(record)
         } else {
             // 리스너가 없으면 광고 자체가 없다 — 나중에 만들 때 그 시점의 현재 값을 굽으므로
             // 여기서 기록해 두면 그 값이 최신인지 판단할 근거를 잃는다.
@@ -546,19 +554,25 @@ final class BattleCenter {
             listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
                                                   domain: nil, txtRecord: record)
         }
-        advertisedRankPoints = points
+        advertisedProfile = profile
     }
 
     /// `companion` 상태 변화를 계속 따라간다 — `withObservationTracking` 은 1회성이라
-    /// 콜백에서 다시 등록해야 한다. 정산·세이브 이전 등 랭크가 바뀌는 모든 경로를 한자리에서 덮는다.
-    private func trackRankChanges() {
+    /// 콜백에서 다시 등록해야 한다. 정산·세이브 이전 등 값이 바뀌는 모든 경로를 한자리에서 덮는다.
+    ///
+    /// **세 원본을 각각 읽는다.** 지금은 셋이 모두 `state` 를 지나므로 하나만 읽어도 발화하지만,
+    /// 원본 하나가 나중에 `state` 밖으로 나가면 한 줄짜리 추적은 그 값을 **조용히** 놓친다 —
+    /// 그게 #85 의 형태다(광고하는 코드가 값이 바뀌는 코드를 모른다).
+    private func trackAdvertisedValues() {
         withObservationTracking {
             _ = companion.battleRank.points
+            _ = companion.trainerLevel.points
+            _ = companion.achievementTierTotal
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.refreshAdvertisedRank()
-                self.trackRankChanges()
+                self.refreshAdvertisedProfile()
+                self.trackAdvertisedValues()
             }
         }
     }
@@ -602,11 +616,11 @@ final class BattleCenter {
     private func startListener() {
         do {
             let listener = try NWListener(using: Self.discoveryParameters())
-            let points = companion.battleRank.points
+            let profile = myAdvertisement
             listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
                                                   domain: nil,
-                                                  txtRecord: Self.rankTXTRecord(points: points))
-            advertisedRankPoints = points
+                                                  txtRecord: profile.txtRecord)
+            advertisedProfile = profile
             listener.newConnectionHandler = { [weak self] conn in
                 Task { @MainActor in self?.acceptConnection(conn) }
             }
@@ -679,15 +693,16 @@ final class BattleCenter {
         peers = results.compactMap { r in
             guard case .service(let name, _, _, _) = r.endpoint else { return nil }
             guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
-            let points: Int?
-            if case .bonjour(let record) = r.metadata,
-               let raw = record["rankPoints"], let value = Int(raw) {
-                points = value      // 클램프는 `BattleRank.init(points:)` 가 한다
+            // 파싱·클램프는 `PeerAdvertisement` 한 곳에서 한다. 레코드가 없거나 값이 쓰레기여도
+            // **피어를 버리지 않는다** — 업데이트 전 클라이언트도 목록에 남아야 신청할 수 있다.
+            let advertisement: PeerAdvertisement
+            if case .bonjour(let record) = r.metadata {
+                advertisement = PeerAdvertisement(record)
             } else {
-                points = nil   // 업데이트 전 클라이언트도 목록에서 숨기지 않는다.
+                advertisement = PeerAdvertisement()
             }
             return BattlePeer(name: Self.displayName(fromService: name), serviceName: name,
-                              endpoint: r.endpoint, rank: points.map { BattleRank(points: $0) })
+                              endpoint: r.endpoint, advertisement: advertisement)
         }.sorted { $0.name < $1.name }
         AppLog.write("battle peers updated: \(results.count) result(s), \(peers.count) after self-filter")
         if !peers.isEmpty { lastError = nil }   // 상대가 보이면 이전 차단 경고 해제
