@@ -286,13 +286,16 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
         return ailment.flatMap(Status.init(ailment:))
     }
 
-    /// 상태를 거는 확률(%) — 2차효과는 `ailment_chance` 를 그대로 쓰고, 위력 없는 변화기는
-    /// 상태 부여가 기술 **본체**라 늘 건다(PokéAPI 가 그런 기술에 0 을 준다).
-    var ailmentChancePercent: Int {
-        let chance = ailmentChance ?? 0
-        if chance > 0 { return chance }
+    /// 2차효과 확률의 기본값 규칙 — **상태·랭크가 이 한 곳을 공유한다.** 명시 확률이 있으면 그
+    /// 값이고, 없으면 변화기는 100(효과가 기술 본체라 PokéAPI 가 0 을 준다) 공격기는 0 이다.
+    /// 복제해 두면 한쪽만 고쳐도 컴파일·테스트가 아무것도 알려주지 않고 두 축이 갈라진다.
+    private func chancePercent(_ declared: Int?) -> Int {
+        if let declared, declared > 0 { return declared }
         return damageClass == .status ? 100 : 0
     }
+
+    /// 상태를 거는 확률(%).
+    var ailmentChancePercent: Int { chancePercent(ailmentChance) }
 
     /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
     /// 랭크 변화가 기술 **본체**라 늘 건다(PokéAPI 가 그런 기술에 0 을 준다).
@@ -323,9 +326,7 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
 
     var statChangePercent: Int {
         if hasAmbiguousStatTargets || hasUnpricedGain { return 0 }
-        let chance = statChance ?? 0
-        if chance > 0 { return chance }
-        return damageClass == .status ? 100 : 0
+        return chancePercent(statChance)
     }
 
     /// 맹독 — PokéAPI move id.
