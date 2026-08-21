@@ -1170,3 +1170,24 @@ read_when:
 - 회귀 테스트는 정확히 상한값과 상한 초과 시도를 밟아야 한다. 낮은 레벨에서 적립하는 테스트는
   클램프를 한 번도 지나지 않고 통과한다.
   (`CompanionModel.swift` · `CompanionStore.swift` · `SaveTransfer.swift`, 2026-08-21.)
+
+## 세 갈래 중 두 갈래만 번역하는 부류 (주석은 새 코드를 막지 못한다)
+
+- **뷰가 `store.language == .ko ? "한국어" : "English"` 로 언어를 직접 갈랐다.** 이 앱은 ko/en/ja
+  세 언어인데 이 삼항은 두 갈래뿐이라 **일본어 사용자에게 영어가 나간다.** `BattleView`
+  (`roomResultText` 주석)가 이 부류를 이미 문장으로 적어 뒀지만, 주석은 새 코드를 막지 못해
+  스윕 시점에 UI 8개 파일에 **115곳**이 쌓여 있었다(BattleView 26 · PokeathlonView 34 ·
+  CompanionView 20 · FocusTimerView 13 · PokemonRosterView 13 · BagView 4 · SettingsView 3 ·
+  PopoverView 2). 한 곳을 고칠 때 전수 grep 을 하지 않으면 같은 화면의 옆 줄이 그대로 남는다.
+- **테스트가 못 잡은 이유**: 문구는 렌더 결과라 단위 테스트가 값을 단언하지 않았고, 레이아웃
+  테스트는 **높이·폭만** 봤다(세 언어 높이가 같은지는 보면서 *내용이 그 언어인지*는 안 봤다).
+  ko 로 개발하고 ko 로 확인하면 이 결함은 영원히 보이지 않는다.
+- **처방**: `L.t(ko, en, ja)` 를 뷰에서도 쓴다 — 인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다.
+  일회성 문구까지 이름 붙인 프로퍼티로 올리면 `Localization.swift` 가 그런 문구로 뒤덮이므로
+  올리지 않는다(두 화면이 같은 말을 쓸 때만 프로퍼티로 승격 — 같은 말을 두 번 번역하지 않는다).
+- **영구 캡처**: `LanguageSplitGuardTests` 가 `Sources/PokeTokenBar/UI/*.swift` 를 스캔해
+  `language == .ko` 가 하나라도 있으면 실패한다. **주석 줄은 제외한다** — 규칙을 설명하는 주석이
+  패턴을 담고 있어(가드 자신의 doc 주석도 그렇다) 제외하지 않으면 가드가 자기 설명에 걸린다.
+  가드를 넣은 뒤 삼항 하나를 일부러 되살려 실패하는지 확인했다(통과만 보면 스캔 경로가 깨져
+  빈 목록을 훑고 있어도 구별할 수 없다 — 그래서 파일 목록이 비면 실패하는 단언도 함께 둔다).
+  (`Sources/PokeTokenBar/UI/*.swift` · `Localization.swift`, 2026-08-21.)
