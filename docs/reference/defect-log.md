@@ -708,6 +708,12 @@ read_when:
   `import XCTest` 를 지울 때 그 자리에 `Foundation`·`SwiftUI`·`AppKit` 을 넣어야 한다 —
   테스트들이 `URL`·`FileManager` 를 XCTest 가 끌어오는 것에 얹혀 쓰고 있다.
   (#79 퍼즐 던전 작업 중 도입, 2026-08-21.)
+  **이 스크립트가 못 잡는 것도 적어 둔다** — 타입체크는 "심볼이 있나" 만 본다. `CompanionState` 에
+  필드를 더할 때 `SaveTransferTests.testEveryCompanionStateFieldIsClassifiedForTransfer` 가 요구하는
+  **분류**(진행 / 로컬 장부 / 계정 원장 / 기기 환경설정)는 단정이라 CI 에서만 걸린다. 새 필드를 넣었으면
+  그 테스트의 목록과 `SaveTransfer.rebasedForThisDevice` 를 같이 손대야 한다 — 던전 진행도가 그 예로,
+  날짜 키가 로컬 날짜 문자열이라 계정 원장이고 **같은 날이면 정산 플래그를 OR 로 합쳐야** 한다
+  (맥 A 에서 클리어해 내보낸 세이브를 아직 안 푼 맥 B 로 불러오면 같은 날 보상이 두 번 나간다).
 
 ## 가드가 중복이라 하나를 지워도 아무 테스트가 안 깨지는 부류
 

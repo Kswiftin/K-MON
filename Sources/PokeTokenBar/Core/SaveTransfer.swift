@@ -399,6 +399,24 @@ enum SaveTransfer {
         state.lastTickAt = nil
         // 일일 사탕 원장은 로컬 날짜 문자열이라 기기 간 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
         state.lastCandyDate = max(imported.lastCandyDate, current.lastCandyDate)
+        // 던전 진행도 같은 부류다 — 날짜 키가 로컬 날짜 문자열이라 비교할 수 있다.
+        // 같은 날이면 **합친다**: 한쪽에서 이미 정산했는데 다른 쪽 값을 그대로 쓰면 같은 날 보상을
+        // 두 번 받는다(맥 A 에서 클리어하고 내보내 맥 B 로 불러오는 경로). 다른 날이면 더 최근 쪽을
+        // 남긴다 — 지난 날 기록은 어차피 다음 기록에서 비워진다.
+        state.dungeon = Self.mergedDungeon(imported.dungeon, current.dungeon)
         return state
+    }
+
+    /// 두 기기의 던전 진행도를 합친다 — 같은 날이면 "한쪽이라도 정산했으면 정산된 것" 으로 본다.
+    static func mergedDungeon(_ imported: DungeonProgress, _ current: DungeonProgress) -> DungeonProgress {
+        guard imported.dayKey == current.dayKey else {
+            return imported.dayKey > current.dayKey ? imported : current
+        }
+        var merged = imported
+        merged.cleared = imported.cleared || current.cleared
+        merged.rewardPaid = imported.rewardPaid || current.rewardPaid
+        merged.remembered.merge(current.remembered) { existing, _ in existing }
+        merged.normalize()
+        return merged
     }
 }
