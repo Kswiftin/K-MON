@@ -142,7 +142,47 @@ enum PokemonBalance {
     }
 }
 
-/// 인벤토리 아이템 종류 — 확장 대비 enum(현재 이상한 사탕 1종). rawValue 로 CompanionState.inventory 에 저장.
+/// 진화 아이템이 어떤 진화 노드를 열 수 있는지 정하는 규칙.
+///
+/// 예전엔 아이템마다 문자열 키 하나(`evolutionKey`)만 들고, 키가 `"trade"` 면 **모든** 교환 진화에
+/// 통했다. PokéAPI 는 킹스록·금속코트 진화를 `trigger=trade` + `held_item` 으로 표현하는데 앱이
+/// `held_item` 을 읽지 않아, 연결의끈 하나로 야도킹·킹크로스까지 공짜로 진화됐다. 조건을 규칙으로
+/// 표현해 "지닌물건이 필요한 진화" 와 "순수 교환 진화" 를 분리한다.
+enum EvolutionItemRule: Sendable, Equatable {
+    /// 지닌물건이 필요 없는 교환 진화만(괴력몬·홍수몬 …) — 연결의끈 담당.
+    case plainTrade
+    /// 대상에게 직접 쓰는 아이템(돌 전부) — `trigger=use-item`.
+    case useItem(String)
+    /// 지닌물건을 들려 교환/레벨업해야 하는 진화. 앱엔 '지닌물건' 축이 없어 같은 아이템을 그냥 쓴다
+    /// (이슈 #89 — 도구를 구현하는 대신 진화 아이템으로 퉁쳐 상점에서 판다).
+    case heldItem(String)
+
+    /// PokéAPI 아이템 이름(kebab-case). 스프라이트 파일명과 같은 값이다. 교환 전용은 아이템이 없어 nil.
+    var apiItemName: String? {
+        switch self {
+        case .plainTrade: return nil
+        case .useItem(let name), .heldItem(let name): return name
+        }
+    }
+
+    /// 이 아이템으로 그 진화 노드를 열 수 있는가.
+    func opens(_ node: EvoNode) -> Bool {
+        switch self {
+        case .plainTrade:
+            // 지닌물건이 필요한 교환 진화는 제외 — 그 종에는 전용 아이템이 따로 있다.
+            return node.evolutionTrigger == "trade" && node.evolutionHeldItem == nil
+        case .useItem(let name):
+            return node.evolutionTrigger == "use-item" && node.evolutionItem == name
+        case .heldItem(let name):
+            // 트리거는 보지 않는다 — 같은 아이템이 교환(야도킹)·레벨업(어둠대신) 양쪽에 붙고,
+            // 아름다운비늘처럼 종에 따라 use-item 으로 표현되는 것도 있다.
+            return node.evolutionHeldItem == name
+                || (node.evolutionTrigger == "use-item" && node.evolutionItem == name)
+        }
+    }
+}
+
+/// 인벤토리 아이템 종류 — 확장 대비 enum. rawValue 로 CompanionState.inventory 에 저장.
 enum ItemKind: String, Codable, Sendable, CaseIterable {
     case rareCandy
     case mint
@@ -150,18 +190,66 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case linkingCord, fireStone, waterStone, thunderStone, leafStone, iceStone, moonStone, sunStone
     // 4세대 추가분 — 없으면 로즈레이드·눈여아·무레인 등 8종이 진화할 방법이 아예 없다.
     case shinyStone, duskStone, dawnStone
+    // 지닌물건 진화용(#89) — 야도킹·킹크로스·강철톤·밀로틱 등도 같은 이유로 진화 경로가 아예 없었다.
+    // 도구 시스템을 만들지 않고 돌과 똑같이 "쓰면 소모되는 진화 아이템" 으로 취급한다.
+    //
+    // **대상 종이 `PokemonAssets.animatedSpeciesIDs`(1~649) 안에 있는 아이템만 넣는다.** 범위 밖 종은
+    // `EvoNode.keepingAnimatedSprites()` 가 트리에서 지우므로 그 아이템은 어떤 진화도 열지 못한다 —
+    // 상점에 올리면 사는 순간 500 별의조각을 버리는 함정 구매가 된다(향기주머니·휘핑팝이 그래서
+    // 빠졌다: 마이앵·나룸퍼프 682~685). 범위가 6세대로 넓어지면 그때 함께 넣는다.
+    case kingsRock, metalCoat, dragonScale, upgrade, dubiousDisc
+    case deepSeaTooth, deepSeaScale, protector, electirizer, magmarizer
+    case reaperCloth, razorClaw, razorFang, prismScale
+    // 해피너스는 '둥근돌을 지닌 채 낮에 레벨업' 이라 돌 이름이지만 use-item 이 아니다.
+    case ovalStone
+
+    /// 진화 아이템 공통가 — 돌과 지닌물건을 구분하지 않는다(둘 다 진화 1회분의 값).
+    static let evolutionItemPrice = 500
+
+    /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
+    var evolutionRule: EvolutionItemRule? {
+        switch self {
+        case .rareCandy, .mint, .shinyCharm: return nil
+        case .linkingCord: return .plainTrade
+        case .fireStone: return .useItem("fire-stone")
+        case .waterStone: return .useItem("water-stone")
+        case .thunderStone: return .useItem("thunder-stone")
+        case .leafStone: return .useItem("leaf-stone")
+        case .iceStone: return .useItem("ice-stone")
+        case .moonStone: return .useItem("moon-stone")
+        case .sunStone: return .useItem("sun-stone")
+        case .shinyStone: return .useItem("shiny-stone")
+        case .duskStone: return .useItem("dusk-stone")
+        case .dawnStone: return .useItem("dawn-stone")
+        case .kingsRock: return .heldItem("kings-rock")
+        case .metalCoat: return .heldItem("metal-coat")
+        case .dragonScale: return .heldItem("dragon-scale")
+        case .upgrade: return .heldItem("up-grade")
+        case .dubiousDisc: return .heldItem("dubious-disc")
+        case .deepSeaTooth: return .heldItem("deep-sea-tooth")
+        case .deepSeaScale: return .heldItem("deep-sea-scale")
+        case .protector: return .heldItem("protector")
+        case .electirizer: return .heldItem("electirizer")
+        case .magmarizer: return .heldItem("magmarizer")
+        case .reaperCloth: return .heldItem("reaper-cloth")
+        case .razorClaw: return .heldItem("razor-claw")
+        case .razorFang: return .heldItem("razor-fang")
+        case .prismScale: return .heldItem("prism-scale")
+        case .ovalStone: return .heldItem("oval-stone")
+        }
+    }
+    /// 진화에 쓰는 아이템인가 — 가방·상점의 "쓰면 진화" 분기가 이걸로 묶인다(케이스 30여 개를
+    /// 스위치마다 다시 나열하면 새 아이템을 넣을 때 한 곳을 빠뜨린다).
+    var isEvolutionItem: Bool { evolutionRule != nil }
 
     /// PokéAPI 아이템 스프라이트 파일명(.../sprites/items/{name}.png). nil = 스프라이트 없음(이모지 폴백만).
+    /// 진화 아이템은 파일명이 곧 API 아이템명이라 규칙에서 파생한다(둘을 따로 적어 어긋나는 일 방지).
     var spriteName: String? {
         switch self {
         case .rareCandy: return "rare-candy"
         case .mint: return nil   // PokéAPI 에 민트 스프라이트 없음(8세대 아이템) → 이모지 폴백
         case .shinyCharm: return "shiny-charm"
-        case .linkingCord: return nil
-        case .fireStone: return "fire-stone"; case .waterStone: return "water-stone"
-        case .thunderStone: return "thunder-stone"; case .leafStone: return "leaf-stone"
-        case .iceStone: return "ice-stone"; case .moonStone: return "moon-stone"; case .sunStone: return "sun-stone"
-        case .shinyStone: return "shiny-stone"; case .duskStone: return "dusk-stone"; case .dawnStone: return "dawn-stone"
+        default: return evolutionRule?.apiItemName
         }
     }
     /// 스프라이트 로딩 전/미제공/실패 시 폴백 이모지.
@@ -174,33 +262,29 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .fireStone: return "🔥"; case .waterStone: return "💧"; case .thunderStone: return "⚡"
         case .leafStone: return "🍃"; case .iceStone: return "❄️"; case .moonStone: return "🌙"; case .sunStone: return "☀️"
         case .shinyStone: return "💠"; case .duskStone: return "🌑"; case .dawnStone: return "🌅"
+        case .kingsRock: return "👑"; case .metalCoat: return "🔩"; case .dragonScale: return "🐉"
+        case .upgrade: return "💾"; case .dubiousDisc: return "💿"
+        case .deepSeaTooth: return "🦷"; case .deepSeaScale: return "🐚"; case .protector: return "🛡️"
+        case .electirizer: return "🔌"; case .magmarizer: return "🌋"
+        case .reaperCloth: return "🧵"; case .razorClaw: return "✂️"; case .razorFang: return "🗡️"
+        case .prismScale: return "🌈"
+        case .ovalStone: return "🥚"
         }
     }
-    /// 상점 판매가(재화 = 사용한 토큰). nil = 상점 미판매.
+    /// 상점 판매가(재화 = 별의조각). nil = 상점 미판매.
     var shopPrice: Int? {
         switch self {
         case .rareCandy: return RareCandy.price
         case .mint: return Mint.price
         case .shinyCharm: return nil
-        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone: return 500
+        default: return isEvolutionItem ? Self.evolutionItemPrice : nil
         }
     }
     /// 보유형(패시브) 아이템 — 소비하지 않고 보유하는 동안 상시 효과. 1회 구매(재구매 불가), 가방엔 "적용 중" 표시.
     var isPassive: Bool {
         switch self {
-        case .rareCandy, .mint, .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone, .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone: return false
         case .shinyCharm: return true
-        }
-    }
-
-    var evolutionKey: String? {
-        switch self {
-        case .linkingCord: return "trade"
-        case .fireStone: return "fire-stone"; case .waterStone: return "water-stone"
-        case .thunderStone: return "thunder-stone"; case .leafStone: return "leaf-stone"
-        case .iceStone: return "ice-stone"; case .moonStone: return "moon-stone"; case .sunStone: return "sun-stone"
-        case .shinyStone: return "shiny-stone"; case .duskStone: return "dusk-stone"; case .dawnStone: return "dawn-stone"
-        default: return nil
+        default: return false
         }
     }
 }
@@ -306,6 +390,9 @@ struct EvoNode: Codable, Sendable {
     var evolutionLevel: Int? = nil
     var evolutionTrigger: String? = nil
     var evolutionItem: String? = nil
+    /// 지닌물건 진화 조건(PokéAPI `held_item`). trade/level-up 트리거와 함께 오고 `evolutionItem` 은
+    /// 비어 있다 — 이 값을 무시하면 킹스록·금속코트 진화가 순수 교환 진화와 구별되지 않는다.
+    var evolutionHeldItem: String? = nil
 
     /// 최장 경로 길이(형태 수). 분기는 보통 같은 깊이라 대표값으로 사용.
     var depth: Int { 1 + (children.map(\.depth).max() ?? 0) }
@@ -324,7 +411,7 @@ struct EvoNode: Codable, Sendable {
         guard PokemonAssets.hasAnimatedSprite(speciesID: speciesID) else { return nil }
         return EvoNode(speciesID: speciesID, children: children.compactMap { $0.keepingAnimatedSprites() },
                        evolutionLevel: evolutionLevel, evolutionTrigger: evolutionTrigger,
-                       evolutionItem: evolutionItem)
+                       evolutionItem: evolutionItem, evolutionHeldItem: evolutionHeldItem)
     }
 }
 

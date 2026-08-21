@@ -43,7 +43,7 @@ actor PokeAPIClient: PokeProviding {
             throw URLError(.badURL)
         }
         let chainDTO: ChainDTO = try await get(chainURL)
-        let tree = node(from: chainDTO.chain)
+        let tree = Self.evoNode(from: chainDTO.chain)
         let rarity = Rarity.from(captureRate: baseSpecies.capture_rate,
                                  isLegendary: baseSpecies.is_legendary,
                                  isMythical: baseSpecies.is_mythical)
@@ -412,9 +412,11 @@ actor PokeAPIClient: PokeProviding {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    private func node(from link: ChainLink) -> EvoNode {
+    /// 진화체인 DTO → EvoNode. 순수 변환이라 actor 상태와 무관하고(nonisolated static), 조건 파싱을
+    /// 테스트에서 직접 검증할 수 있어야 한다 — 필드 하나를 안 읽으면 진화 조건이 조용히 뭉개진다.
+    static func evoNode(from link: ChainLink) -> EvoNode {
         EvoNode(speciesID: Self.id(from: link.species.url ?? ""),
-                children: link.evolves_to.map(node(from:)),
+                children: link.evolves_to.map(evoNode(from:)),
                 // 친밀도 진화는 min_level 이 없다(trigger=level-up, min_happiness 만 존재) → 그대로 두면
                 // 레벨 게이트를 못 타고 아이템/트리거 게이트에도 막혀 영영 진화하지 않는다.
                 // 앱에 친밀도 축이 없으므로 요구 친밀도를 레벨로 환산해 같은 레벨 게이트에 태운다.
@@ -422,7 +424,9 @@ actor PokeAPIClient: PokeProviding {
                     ?? link.evolution_details.compactMap(\.min_happiness).first
                         .map(PokemonBalance.friendshipLevel(minHappiness:)),
                 evolutionTrigger: link.evolution_details.first?.trigger.name,
-                evolutionItem: link.evolution_details.first?.item?.name)
+                evolutionItem: link.evolution_details.first?.item?.name,
+                // held_item 은 details[0] 이 아닐 수 있어(시간대 조건이 details 를 쪼갠다) 전체에서 찾는다.
+                evolutionHeldItem: link.evolution_details.compactMap(\.held_item).first?.name)
     }
     private func allIDs(_ n: EvoNode) -> [Int] { [n.speciesID] + n.children.flatMap(allIDs) }
 
@@ -570,6 +574,10 @@ struct ChainLink: Decodable, Sendable {
         let min_happiness: Int?
         let trigger: NamedRef
         let item: NamedRef?
+        /// 지닌물건 진화 조건(킹스록·금속코트 …). `trigger` 는 trade 또는 level-up 이고 `item` 은 비어
+        /// 있어, 이 필드를 읽지 않으면 "교환 진화" 전부가 한 조건으로 뭉개진다 — 연결의끈 하나로
+        /// 야도킹·킹크로스까지 진화되던 원인이다.
+        let held_item: NamedRef?
     }
     let species: NamedRef
     let evolves_to: [ChainLink]

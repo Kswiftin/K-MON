@@ -167,13 +167,9 @@ final class CompanionStore {
     /// (치라미가 그랬다 — 빛의돌을 쓰기 전엔 레벨을 아무리 올려도 아무 일도 일어나지 않는다).
     var nextEvolutionItem: ItemKind? {
         guard let next = nextEvolutionNode else { return nil }
-        switch next.evolutionTrigger {
-        case "use-item":
-            guard let key = next.evolutionItem else { return nil }
-            return ItemKind.allCases.first { $0.evolutionKey == key }
-        case "trade": return .linkingCord
-        default: return nil
-        }
+        // 규칙 매칭 하나로 돌·순수 교환·지닌물건 진화를 모두 덮는다. 트리거로 분기하던 예전 코드는
+        // 지닌물건 진화(trade+held_item, level-up+held_item)를 연결의끈으로 잘못 안내했다.
+        return ItemKind.allCases.first { $0.evolutionRule?.opens(next) == true }
     }
     var boxedMons: [MonState] { state.boxedMons }
     var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }
@@ -1420,7 +1416,10 @@ final class CompanionStore {
             // 레벨 메타데이터가 없는 진화(구버전 픽스처 등)만 성장치로 게이팅한다 — 본가에 대응하는
             // 레벨 값이 없어 게이트로 삼을 다른 기준이 없다.
             guard a.usedAtStage >= threshold else { break }
-            guard next.evolutionTrigger == nil, next.evolutionItem == nil else { break }
+            // 아이템·지닌물건이 필요한 진화는 성장치만으로 열리면 안 된다 — 열리면 진화 아이템이
+            // 무의미해지고 졸업 면제 판정(grewIntoFinalByItem)도 실제 경로와 어긋난다.
+            guard next.evolutionTrigger == nil, next.evolutionItem == nil,
+                  next.evolutionHeldItem == nil else { break }
             state.active!.pathIDs = Array(a.pathIDs.prefix(a.stageIndex + 1)) + [next.speciesID]
             state.active!.stageIndex += 1
             state.active!.usedAtStage = max(0, a.usedAtStage - threshold)
@@ -1538,7 +1537,10 @@ final class CompanionStore {
             guard let parent = line.tree.node(withID: mon.pathIDs[index - 1]),
                   let child = parent.children.first(where: { $0.speciesID == speciesID })
             else { continue }
-            if child.evolutionTrigger == "use-item" || child.evolutionTrigger == "trade" { return true }
+            // 지닌물건 진화(#89)도 같은 부류다 — trigger 가 level-up 인 것(어둠대신·붐볼)까지 있어
+            // 트리거만 보면 예리한손톱으로 최종형이 된 개체가 레벨 면제를 그대로 받아 간다.
+            if child.evolutionTrigger == "use-item" || child.evolutionTrigger == "trade"
+                || child.evolutionHeldItem != nil { return true }
         }
         return false
     }
@@ -1669,23 +1671,17 @@ final class CompanionStore {
     }
 
     func canUseEvolutionItem(_ kind: ItemKind) -> Bool {
-        guard itemCount(kind) > 0, let key = kind.evolutionKey,
+        guard itemCount(kind) > 0, let rule = kind.evolutionRule,
               let mon = state.active, let node = currentLine?.tree.node(withID: mon.currentID) else { return false }
-        return node.children.contains { child in
-            key == "trade" ? child.evolutionTrigger == "trade"
-                : child.evolutionTrigger == "use-item" && child.evolutionItem == key
-        }
+        return node.children.contains(where: rule.opens)
     }
 
     @discardableResult
     func useEvolutionItem(_ kind: ItemKind) -> Bool {
-        guard canUseEvolutionItem(kind), let key = kind.evolutionKey,
+        guard canUseEvolutionItem(kind), let rule = kind.evolutionRule,
               let line = currentLine, let mon = state.active,
               let node = line.tree.node(withID: mon.currentID),
-              let next = node.children.first(where: { child in
-                  key == "trade" ? child.evolutionTrigger == "trade"
-                      : child.evolutionTrigger == "use-item" && child.evolutionItem == key
-              }) else { return false }
+              let next = node.children.first(where: rule.opens) else { return false }
         state.inventory[kind.rawValue] = itemCount(kind) - 1
         state.active!.pathIDs = Array(mon.pathIDs.prefix(mon.stageIndex + 1)) + [next.speciesID]
         state.active!.plannedPathIDs = state.active!.pathIDs
@@ -1717,8 +1713,17 @@ final class CompanionStore {
                 let aDone = a.isPassive && itemCount(a) > 0
                 let bDone = b.isPassive && itemCount(b) > 0
                 if aDone != bDone { return !aDone }
-                return (a.shopPrice ?? 0) < (b.shopPrice ?? 0)   // 나머지는 가격 저렴한 순
+                let (pa, pb) = (a.shopPrice ?? 0, b.shopPrice ?? 0)
+                // 진화 아이템 28종이 모두 같은 값이라 가격만으로는 순서가 정해지지 않는다(sort 는
+                // 안정 정렬이 아니라 목록이 실행마다 뒤바뀔 수 있다) → 선언 순서로 고정한다.
+                if pa != pb { return pa < pb }
+                return Self.declarationOrder(a) < Self.declarationOrder(b)
             }
+    }
+
+    /// ItemKind 선언 순서 — 같은 가격 아이템의 표시 순서를 결정적으로 만드는 tiebreaker.
+    private static func declarationOrder(_ kind: ItemKind) -> Int {
+        ItemKind.allCases.firstIndex(of: kind) ?? Int.max
     }
 
     /// 상점 표시 순서 — 판매 아이템 + (활성 포켓몬 있을 때) 알 3종을 하나의 가격 오름차순 목록으로 병합.
@@ -1732,12 +1737,15 @@ final class CompanionStore {
     var shopEntries: [ShopEntry] {
         var entries: [ShopEntry] = purchasableItems.map { ShopEntry.item($0) }
         entries += FreshEgg.shopTiers.map { ShopEntry.egg($0) }
-        return entries.sorted { a, b in
-            let aDone = isPurchasedPassive(a)
-            let bDone = isPurchasedPassive(b)
+        // enumerated 인덱스를 tiebreaker 로 써서 같은 가격끼리는 위 병합 순서(= purchasableItems 의
+        // 선언 순서)를 유지한다. 진화 아이템 28종이 전부 같은 값이라 이게 없으면 매 호출 순서가 다를 수 있다.
+        return entries.enumerated().sorted { a, b in
+            let aDone = isPurchasedPassive(a.element)
+            let bDone = isPurchasedPassive(b.element)
             if aDone != bDone { return !aDone }
-            return a.price < b.price
-        }
+            if a.element.price != b.element.price { return a.element.price < b.element.price }
+            return a.offset < b.offset
+        }.map(\.element)
     }
 
     /// 구매 완료한 보유형(이로치 부적 등)인지 — shopEntries 정렬에서 맨 아래로 보낼 판정.

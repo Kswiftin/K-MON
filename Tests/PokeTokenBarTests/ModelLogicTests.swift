@@ -252,19 +252,82 @@ final class EvolutionItemCoverageTests: XCTestCase {
         "moon-stone", "sun-stone", "shiny-stone", "dusk-stone", "dawn-stone",
     ]
 
+    /// 지닌물건 진화(#89)가 요구하는 아이템 — 앱 지원 범위(1~649)에서 실제로 쓰이는 것만.
+    /// 이게 없으면 야도킹·킹크로스·강철톤·밀로틱 등이 진화할 방법이 아예 없다.
+    private let requiredHeldItemKeys: Set<String> = [
+        "kings-rock", "metal-coat", "dragon-scale", "up-grade", "dubious-disc",
+        "deep-sea-tooth", "deep-sea-scale", "protector", "electirizer", "magmarizer",
+        "reaper-cloth", "razor-claw", "razor-fang", "prism-scale", "oval-stone",
+    ]
+
+    private var soldKeys: Set<String> {
+        Set(ItemKind.allCases.compactMap(\.evolutionRule?.apiItemName))
+    }
+
     func testEveryRequiredEvolutionItemIsSold() {
-        let sold = Set(ItemKind.allCases.compactMap(\.evolutionKey))
-        let missing = requiredKeys.subtracting(sold)
+        let missing = requiredKeys.subtracting(soldKeys)
         XCTAssertTrue(missing.isEmpty, "이 아이템이 없으면 해당 진화는 도달 불가: \(missing.sorted())")
     }
 
-    /// 진화 아이템은 evolutionKey 가 PokéAPI 의 item.name 과 정확히 같아야 매칭된다 —
-    /// 오타 하나면 그 돌은 아무 포켓몬도 진화시키지 못하고 조용히 재화만 소모한다.
+    func testEveryRequiredHeldItemIsSold() {
+        let missing = requiredHeldItemKeys.subtracting(soldKeys)
+        XCTAssertTrue(missing.isEmpty, "지닌물건 진화가 도달 불가: \(missing.sorted())")
+    }
+
+    /// 진화 아이템 키는 PokéAPI 의 item.name 과 정확히 같아야 매칭된다 — 오타 하나면 그 아이템은
+    /// 아무 포켓몬도 진화시키지 못하고(조용히 재화만 소모) 스프라이트도 깨진다(파일명이 같은 값).
     func testEvolutionKeysUseApiItemNaming() {
+        let allowed = requiredKeys.union(requiredHeldItemKeys)
+            .union(["ice-stone"])   // 지역폼 전용이라 requiredKeys 엔 없지만 예전부터 파는 것
         for kind in ItemKind.allCases {
-            guard let key = kind.evolutionKey, key != "trade" else { continue }
+            guard let key = kind.evolutionRule?.apiItemName else { continue }
             XCTAssertEqual(key, key.lowercased(), "\(kind) 키는 소문자여야 한다: \(key)")
-            XCTAssertTrue(key.hasSuffix("-stone"), "\(kind) 키가 API 명명과 다르다: \(key)")
+            XCTAssertFalse(key.contains("_"), "\(kind) 키는 kebab-case 여야 한다: \(key)")
+            XCTAssertTrue(allowed.contains(key), "\(kind) 키가 API 명명과 다르다: \(key)")
+            XCTAssertEqual(kind.spriteName, key, "\(kind) 스프라이트 파일명은 API 아이템명과 같다")
+        }
+    }
+
+    /// 지닌물건 아이템이 실제로 진화시키는 종 — 상점에 올린 아이템이 "쓸 수 있는 것" 인지 재는 기준.
+    /// 손으로 적는 목록이지만 손으로 적는 것 자체가 게이트다: 새 아이템을 넣으면서 여기에 대상 종을
+    /// 적어야 하고, 그 종이 스프라이트 범위 밖이면 아래 테스트가 막는다.
+    private let heldItemTargets: [String: [Int]] = [
+        "kings-rock": [186, 199],        // 왕구리·야도킹
+        "metal-coat": [208, 212],        // 강철톤·핫삼
+        "dragon-scale": [230],           // 킹드라
+        "up-grade": [233],               // 폴리곤2
+        "dubious-disc": [474],           // 폴리곤Z
+        "deep-sea-tooth": [367],         // 헌테일
+        "deep-sea-scale": [368],         // 분홍장이
+        "protector": [464],              // 거대코뿔
+        "electirizer": [466],            // 에레키블
+        "magmarizer": [467],             // 마그마번
+        "reaper-cloth": [477],           // 야느와르몬
+        "razor-claw": [461],             // 포푸니라
+        "razor-fang": [472],             // 글라이온
+        "prism-scale": [350],            // 밀로틱
+        "oval-stone": [113],             // 럭키
+    ]
+
+    /// 상점에 올린 아이템이 **쓸 수 있는 아이템인지** 재는 게이트.
+    ///
+    /// 앱은 애니메이션 스프라이트가 있는 종(1~649)만 다루고, 범위 밖 종은
+    /// `EvoNode.keepingAnimatedSprites()` 가 진화 트리에서 지운다. 그래서 대상 종이 범위 밖인 아이템은
+    /// **어떤 진화도 열지 못하는데 상점에는 그대로 뜬다** — 사는 순간 500 별의조각을 버리는 함정이다.
+    /// 향기주머니·휘핑팝(마이앵·나룸퍼프 682~685)이 그래서 빠졌다.
+    ///
+    /// 스프라이트 범위가 아이템 유효성의 숨은 전제라는 게 요점이다. 아이템 쪽만 보면 아무 문제가 없어
+    /// 보이고, 리뷰에서도 "PokéAPI 에 있는 아이템이니 맞다" 로 통과한다.
+    func testEveryHeldItemHasATargetInsideTheSpriteRange() {
+        for kind in ItemKind.allCases {
+            guard case .heldItem(let key)? = kind.evolutionRule else { continue }
+            let targets = heldItemTargets[key]
+            XCTAssertNotNil(targets, "\(kind): 대상 종을 heldItemTargets 에 적어야 한다")
+            for id in targets ?? [] {
+                XCTAssertTrue(PokemonAssets.hasAnimatedSprite(speciesID: id),
+                              "\(kind) 대상 #\(id) 이 스프라이트 범위 밖 — 이 아이템은 아무 진화도 못 열고 함정 구매가 된다")
+            }
+            XCTAssertFalse(targets?.isEmpty ?? true, "\(kind) 는 열 수 있는 진화가 없다")
         }
     }
 
@@ -273,6 +336,15 @@ final class EvolutionItemCoverageTests: XCTestCase {
         for kind in [ItemKind.shinyStone, .duskStone, .dawnStone] {
             XCTAssertEqual(kind.shopPrice, 500, "\(kind) 가격이 기존 돌과 달라졌다")
             XCTAssertFalse(kind.isPassive)
+        }
+    }
+
+    /// 진화 아이템은 종류를 가리지 않고 같은 값·같은 소모형이어야 한다 — 하나라도 shopPrice 가
+    /// nil 이면 상점 목록에서 빠져 그 종은 진화 경로가 없는 상태로 되돌아간다.
+    func testEveryEvolutionItemIsSoldAtTheSamePrice() {
+        for kind in ItemKind.allCases where kind.isEvolutionItem {
+            XCTAssertEqual(kind.shopPrice, ItemKind.evolutionItemPrice, "\(kind) 가격이 다르다")
+            XCTAssertFalse(kind.isPassive, "\(kind) 는 쓰면 소모되는 아이템이다")
         }
     }
 }
