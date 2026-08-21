@@ -1175,8 +1175,8 @@ struct DexSummaryHeader: View {
 /// (`PopoverLayoutTests.testDexGoalStripFitsTheDexHeaderBudget` 이 지킨다).
 ///
 /// 이 줄 때문에 새 탭을 만들지 않는다 — 탭을 늘리면 `PopoverTab` 높이 표와 360pt 세그먼트 피커가
-/// 따라오는데 얻는 건 세 칸짜리 줄 하나다. (컬렉션 탭의 하위 세그먼트는 나중에 업적이 들어오면서
-/// 생겼고, 이 줄이 쓰던 24pt 를 빼앗지 않도록 그 프레임 **밖에** 얹혀 있다 — `CollectionView` 참고.)
+/// 따라오는데 얻는 건 세 칸짜리 줄 하나다. 나중에 들어온 업적 세그먼트는 이 줄의 24pt 를 빼앗지
+/// 않도록 `CollectionView` 프레임 **밖에** 얹혀 있다.
 struct DexGoalStrip: View {
     let store: CompanionStore
 
@@ -1216,21 +1216,21 @@ struct CollectionView: View {
 
     private var l: L { store.l }
 
-    /// 하위 화면 공통 높이 — 상점·가방과 같은 520. 세그먼트를 전환해도 이 프레임이 같으므로
-    /// 두 화면 사이를 오갈 때 높이가 튀지 않는다.
+    /// 하위 화면 공통 높이 — 상점·가방과 같은 520. 두 세그먼트가 이 프레임을 공유하니 전환해도
+    /// 높이가 튀지 않는다.
     ///
     /// 예산: 520 − 헤더 39 − 목표 줄 24 − 하단 줄 18 − 간격 24 = 격자 415. 6행 spacing 4 면
     /// 행이 65.8 이고, 칸 여백 6 과 이름 12 를 빼면 스프라이트에 47.8 이 남는다(현재 44).
     ///
-    /// 이 예산의 24pt 는 원래 "하위 세그먼트" 몫이었지만 도감 목표 줄이 먼저 썼다. 그래서 세그먼트는
-    /// 이 프레임 **밖에** 얹고 격자는 건드리지 않는다 — 안으로 넣으면 6행이 눌려 스프라이트가 잘린다.
+    /// 이 24pt 는 원래 세그먼트 몫이었지만 목표 줄이 먼저 썼다 — 그래서 세그먼트는 이 프레임 밖에
+    /// 얹는다. 안으로 넣으면 6행이 눌려 스프라이트가 잘린다.
     private static let contentHeight: CGFloat = 520
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Picker("", selection: $section) {
-                // 상위 탭이 "컬렉션" 이라 여기서는 `dexTitle`("도감") 을 쓴다 — `l.collection` 을
-                // 쓰면 탭 이름과 세그먼트 이름이 같은 말이 되어 계층이 안 읽힌다.
+                // 상위 탭이 "컬렉션" 이라 여기서는 `dexTitle`("도감") 을 쓴다 — `l.collection` 이면
+                // 탭과 세그먼트가 같은 말이 되어 계층이 안 읽힌다.
                 Text(l.dexTitle).tag(Section.dex)
                 Text(l.achievementsTitle).tag(Section.achievements)
             }

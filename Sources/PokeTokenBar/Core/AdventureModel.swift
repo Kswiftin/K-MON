@@ -277,7 +277,7 @@ struct AdventureReward: Sendable, Equatable {
     /// 이 정산으로 완료된 미션이 함께 지급한 별의조각. `trainerBonus` 와 같은 이유로 여기 실린다 —
     /// 지갑에 더하는 경로가 하나 더 생겼는데 보상 객체가 모르면 그만큼이 설명되지 않는다.
     var missionBonus = 0
-    /// 이 정산으로 넘은 업적 단계가 함께 지급한 별의조각. 위 둘과 같은 계약이다.
+    /// 이번 정산에서 넘은 업적 단계가 지급한 별의조각. 위 둘과 같은 계약이다.
     var achievementBonus = 0
     var stardust: Int { starPieces }
 }

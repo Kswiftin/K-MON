@@ -3,11 +3,9 @@ import XCTest
 
 // 업적 사다리 — 집중·진화·배틀·레이스 네 트랙에 각 4단계 문턱.
 //
-// 세이브에 담기는 건 **누적 카운터 사전 하나**뿐이다. 도달 단계는 저장하지 않는다 — 카운터가
-// 단조 증가라 단계가 파생값이고, "이번에 넘은 문턱"만 반환하면 재지급 기억이 필요 없다
-// (`TrainerLevel.add` 가 오른 레벨 수를 돌려주는 것과 같은 계약).
-//
-// 체육관 배지(`state.gymBadges`)와는 다른 층이다 — 그쪽은 컨텐츠 첫 승리 기록이고 이쪽은 누적 행동이다.
+// 세이브에는 카운터 사전 하나만 담고 도달 단계는 계산한다. "이번에 넘은 문턱" 만 반환하니
+// 재지급 기억이 필요 없다(`TrainerLevel.add` 와 같은 계약).
+// 체육관 배지(`state.gymBadges`)와 층이 다르다 — 그쪽은 컨텐츠 첫 승리, 이쪽은 누적 행동이다.
 final class AchievementLadderTests: XCTestCase {
 
     private func achievement(_ track: AchievementTrack) -> Achievement {
@@ -55,9 +53,9 @@ final class AchievementLadderTests: XCTestCase {
         XCTAssertLessThan(lifetime, FreshEgg.price(guaranteeing: nil) * 3)
     }
 
-    /// 업적 이름은 세 언어 모두에서 채워져야 한다 — 한 언어만 비면 그 언어 사용자에겐 빈 줄이 보인다.
-    /// (트랙 추가 자체는 `achievementName` 의 exhaustive switch 가 컴파일에서 막는다. 이 테스트가
-    ///  잡는 건 `t()` 인자 중 하나를 빈 문자열로 두고 넘어가는 경우다.)
+    /// 업적 이름은 세 언어 모두 채워져야 한다 — 한 언어만 비면 그 사용자에겐 빈 줄이 보인다.
+    /// 트랙 추가는 `achievementName` 의 exhaustive switch 가 컴파일에서 막으니, 여기서 잡는 건
+    /// `t()` 인자 하나를 빈 문자열로 두고 넘어가는 경우다.
     func testEveryTrackIsNamedInAllThreeLanguages() {
         for track in AchievementTrack.allCases {
             for lang in [AppLanguage.ko, .en, .ja] {
@@ -243,9 +241,9 @@ final class AchievementSaveTests: XCTestCase {
                       "실제: \(SaveTransfer.canonicalString(state))")
     }
 
-    /// 접두가 `ac` 였을 때 위의 "기본값엔 안 붙는다" 가 **거짓 통과**했다: 기본값 canonical 에도
-    /// 활성 포켓몬 세그먼트 `|act-` 가 있어 `contains("|ac")` 가 항상 참이었다. 그 함정을 고정한다 —
-    /// 세그먼트 유무를 보는 테스트는 다른 세그먼트의 접두에 걸리지 않는 접두를 써야 한다.
+    /// 접두가 `ac` 였을 때 위의 "기본값엔 안 붙는다" 가 **거짓 통과**했다 — 기본값 canonical 에도
+    /// 활성 포켓몬 세그먼트 `|act-` 가 있어 `contains("|ac")` 가 항상 참이었다. 세그먼트 유무를
+    /// 보는 테스트는 다른 세그먼트 접두에 걸리지 않는 접두를 써야 한다.
     func testTheAchievementPrefixDoesNotCollideWithTheActivePokemonSegment() {
         let canonical = SaveTransfer.canonicalString(CompanionState())
         XCTAssertTrue(canonical.contains("|act"), "활성 포켓몬 세그먼트가 여전히 `act` 를 쓴다")
@@ -276,10 +274,10 @@ final class AchievementSaveTests: XCTestCase {
         XCTAssertNil(sanitized.achievements.counts["ghostTrack"])
     }
 
-    /// 업적은 **새 필드**라 값이 든 기존 세이브가 존재하지 않는다 — 그래서 조건부 append 만으로
-    /// 충분하고 `integrityVersion` 을 올릴 필요가 없다(`gymBadges` 는 이전 배포에 이미 있던 필드라
-    /// 버전 상향이 필요했다 — `testASaveSignedBeforeTheCanonicalChangeIsNotJudgedTampered`).
-    /// 버전을 올리면 그 배포에서 **모든** 세이브가 한 번 검사 면제를 받아 다른 필드의 조작도 통과한다.
+    /// **새 필드**라 값이 든 기존 세이브가 없다 — 조건부 append 만으로 충분하고 `integrityVersion`
+    /// 은 올리지 않는다. `gymBadges` 는 이전 배포에 이미 있던 필드라 버전 상향이 필요했다
+    /// (`testASaveSignedBeforeTheCanonicalChangeIsNotJudgedTampered`).
+    /// 버전을 올리면 그 배포의 **모든** 세이브가 검사를 한 번 면제받아 다른 필드 조작도 통과한다.
     func testTheAchievementSegmentDoesNotRequireAnIntegrityVersionBump() {
         XCTAssertEqual(SaveTransfer.integrityVersion, 7)
 
@@ -384,9 +382,8 @@ final class AchievementAccrualTests: XCTestCase {
     /// 한 정산이 두 단계를 넘기면 **둘 다** 지급되고, 보고액도 두 몫의 합이다 — 마지막 하나만
     /// 실어 보내면 그만큼이 설명되지 않는다.
     ///
-    /// 0 에서 2단계 문턱(\(300)분)까지 한 번에 가는 정산이라야 두 칸을 함께 넘는다. 1단계 위
-    /// 어딘가에서 출발하면 1단계는 이미 지나 있어 한 칸만 넘는다 — 처음엔 그렇게 세워 두고
-    /// 1,300 을 기대했다가 1,000 을 받았다.
+    /// 0 에서 2단계 문턱(300분)까지 한 번에 가야 두 칸을 함께 넘는다. 1단계 위에서 출발하면 한
+    /// 칸만 넘는다 — 처음엔 그렇게 세워 두고 1,300 을 기대했다가 1,000 을 받았다.
     func testOneClaimCanPayTwoFocusTiersAtOnce() async throws {
         let clock = TestClock()
         let store = makeStore(achievementAutoLine, clock)
@@ -500,8 +497,8 @@ final class AchievementAccrualTests: XCTestCase {
 // MARK: 레이스 완주 판정 (순수)
 
 /// 완주 적립은 `pokeathlonRace` 의 **nil → 우승자 확정 전이**에서만 일어나야 한다.
-/// 경기 중에도 상태가 계속 대입되므로(호스트 입력 반영·게스트 수신), 판정을 순수 함수로 떼어
-/// 네트워크 없이 모든 분기를 밟는다. `MultiplayerBattle.outcome` 이 같은 이유로 static 이다.
+/// 경기 중에도 상태가 계속 대입되니(호스트 반영·게스트 수신) 판정을 순수 함수로 떼어 네트워크
+/// 없이 전 분기를 밟는다 — `MultiplayerBattle.outcome` 이 static 인 것과 같은 이유다.
 final class RaceFinishCreditTests: XCTestCase {
 
     private let me = UUID()

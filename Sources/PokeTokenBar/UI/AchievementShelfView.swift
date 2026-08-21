@@ -2,13 +2,11 @@ import SwiftUI
 
 /// 컬렉션 탭의 업적 선반. 트랙 4행 — 이름 · 단계 표시 · 다음 문턱까지의 진행도.
 ///
-/// **행마다 `ProgressView` 를 두지 않는다.** 미션 카드가 그렇게 만들었다가 예산을 두 배 넘겼고
-/// (211pt), 도감 목표 줄도 같은 실수를 반복했다. 단계 표시(`●●○○`)가 게이지 몫을 대신한다 —
-/// 4단계뿐이라 점 네 개가 게이지보다 오히려 정확하다.
-/// 세로 예산은 `PopoverLayoutTests.testAchievementShelfFitsItsBudget` 이 지킨다.
+/// **행마다 `ProgressView` 를 두지 않는다.** 미션 카드가 그렇게 예산을 두 배 넘겼고(211pt) 도감
+/// 목표 줄이 되풀이했다. 4단계뿐이라 점 네 개(`●●○○`)가 게이지보다 정확하다. 세로 예산은
+/// `PopoverLayoutTests.testAchievementShelfFitsItsBudget` 이 지킨다.
 ///
-/// 체육관 배지 화면(`GymLeagueView`)과는 다른 층이다: 그쪽은 컨텐츠 첫 승리 기록이고 이쪽은
-/// 파트너와 무관하게 쌓이는 누적 행동이다. 그래서 배지가 아니라 "업적" 이라고 부른다.
+/// 체육관 배지 화면(`GymLeagueView`)과 층이 다르다 — 구분 근거는 `AchievementLadder` 주석에 있다.
 struct AchievementShelfView: View {
     let store: CompanionStore
 
@@ -40,7 +38,7 @@ struct AchievementShelfView: View {
                         Text("\(row.count)/\(next.goal)")
                             .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                     } else {
-                        // 마지막 문턱까지 넘겼다 — 남은 목표가 없으니 숫자 대신 완료 표식만 둔다.
+                        // 마지막 문턱까지 넘겼다 — 남은 목표가 없으니 완료 표식만 둔다.
                         Text("✓").font(.caption2.weight(.bold)).foregroundStyle(.green)
                     }
                 }
@@ -51,8 +49,8 @@ struct AchievementShelfView: View {
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    /// 채운 점 + 빈 점. 스크린리더는 위의 `accessibilityLabel` 로 읽는다 — 점 문자를 그대로
-    /// 읽히면 "검은 원 검은 원 흰 원" 이 된다.
+    /// 채운 점 + 빈 점. 스크린리더는 위 `accessibilityLabel` 로 읽는다 — 점 문자를 그대로 읽히면
+    /// "검은 원 검은 원 흰 원" 이 된다.
     private func tierDots(reached: Int, of total: Int) -> String {
         String(repeating: "●", count: max(0, min(reached, total)))
             + String(repeating: "○", count: max(0, total - reached))
