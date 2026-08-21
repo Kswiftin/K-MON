@@ -1,74 +1,82 @@
 # 릴리스 프로세스
 
-버전 배포 시 **코드뿐 아니라 문서(README·웹페이지·cask)까지 일관되게** 갱신하기 위한 런북.
-기계적 단계는 `scripts/release.sh` 가 자동화하고, 내용 판단이 필요한 부분은 아래 체크리스트로 검토한다.
+버전 배포는 **태그 하나로 시작한다.** 로컬 스크립트는 태그를 안전하게 만드는 일만 하고,
+빌드·서명·appcast·Release 공개는 GitHub Actions(`.github/workflows/release.yml`)가 전부 맡는다.
+로컬과 CI 가 서로 다른 바이너리를 배포하거나 Asset 없는 Release 가 먼저 공개되는 일을 막는 구조다.
 
 ## 한 줄 배포
 
 ```bash
-# (선택) 릴리스 노트를 파일로 작성
-cat > /tmp/notes.md <<'EOF'
-## What's new
-- ...
-EOF
-
-PTB_NOTES_FILE=/tmp/notes.md ./scripts/release.sh 2.1.1
+./scripts/release.sh 2.9.0     # v 접두어 없이 x.y.z
 ```
 
-`scripts/release.sh <version>` 가 순서대로 수행:
+### `release.sh` 가 검사하는 것
 
-1. **test-gate** (`./scripts/test-gate.sh`) — 전체 테스트 + 로직 커버리지. 실패 시 중단.
-2. **문서 일관성 검토** — 정적 버전 배지·제거된 의존성(예: `ccusage`) 잔존을 자동 경고 + 아래 수동 체크리스트 출력. 경고 시 진행 여부를 묻는다.
-3. **VERSION 범프** (`scripts/build-app.sh`, 아직 미커밋).
-4. **빌드 + zip** (`build/Pokedoro.zip`) + 빌드 버전 일치 확인 — **push 전 검증**(실패해도 범프 미커밋이라 origin/main 무손상).
-5. **커밋 + push** (`git push origin main`, 빌드 성공 후).
-6. **GitHub Release** 생성 (노트는 `PTB_NOTES_FILE` 또는 최소 노트).
-7. **Homebrew cask** 버전 갱신 (`chattymin/homebrew-tap`).
-8. **GitHub Pages 재빌드** 요청 (랜딩 동적 배지 갱신 유도).
+1. 버전 형식이 `x.y.z` 인가
+2. 현재 브랜치가 `main` 인가
+3. 커밋되지 않은 변경이 없는가
+4. `HEAD` 가 `origin/main` 과 같은가 (`git fetch --no-tags origin main`)
+5. `v<version>` 태그가 로컬·원격에 없는가
+6. `./scripts/test-gate.sh` 가 통과하는가 (전체 테스트 + 자체 warning 0 + 로직 코어 커버리지)
+7. 통과하면 주석 태그를 만들어 push → 여기서부터 비가역
 
-> `main` 브랜치에서만 실행(스크립트가 가드). 비-main 에서 실행 시 즉시 중단.
+### `release.yml` 이 하는 것
 
-검토만 하려면: `./scripts/release.sh --check-only`
+태그 push 로 시작해 순서대로 수행한다.
 
-## E2E 스모크 (선택 — GUI 세션 필요)
+1. 태그 형식 + **태그 커밋이 `origin/main` HEAD 인지** 검증
+2. Sparkle 서명키·macOS 서명 인증서(`MACOS_SIGNING_CERTIFICATE_P12`)·`KMON_GITHUB_OAUTH_CLIENT_ID` 존재 확인
+3. `test-gate.sh` 재실행 (cold build — 로컬 warm build 가 숨긴 warning 이 여기서 잡힌다)
+4. `build-app.sh` 로 앱 빌드 (`KMON_VERSION` 은 태그에서 주입, `CODESIGN_IDENTITY=K-MON Release`,
+   `PTB_REQUIRE_STABLE_SIGN=1` 이라 ad-hoc 폴백이 금지된다)
+5. Sparkle 프레임워크 임베드·서명·OAuth Client ID 확인
+6. `Pokedoro.zip` + `Pokedoro.zip.sha256` + 서명된 `appcast.xml` 생성
+7. 모든 검사를 통과한 **뒤에** GitHub Release 공개 (`--generate-notes`)
+
+> 태그를 push 한 뒤 워크플로가 끝나기 전에 다른 PR 을 `main` 에 머지하면 2단계에서 실패한다.
+> 런이 끝날 때까지 머지를 멈춘다.
+
+## 릴리스 전 문서 체크리스트
+
+기능·동작이 바뀐 릴리스면 **태그를 만들기 전에** 반영한다. 자세한 절차와 함정은
+`docs/reference/release-workflow.md`.
+
+- [ ] **README.md / README.en.md / README.ja.md** — 기능 목록, 화면 구성, 요구사항. 3개 언어 동시.
+- [ ] **`assets/` 스크린샷** — UI(`Sources/PokeTokenBar/UI/`)가 바뀌었으면 갱신하고, **신규 기능이면
+      새 에셋을 추가**한다(기존 이미지 재생성만으로는 새 화면이 문서에 없는 상태로 나간다).
+- [ ] **`scripts/build-app.sh` 의 `DEFAULT_VERSION`** — 손으로 빌드한 앱만 옛 버전으로 뜨지 않게
+      새 버전으로 올린다. 배포 산출물은 태그에서 주입받으므로 이 값을 쓰지 않는다.
+
+## 릴리스 노트
+
+CI 가 `gh release create --generate-notes` 로 PR 목록에서 자동 생성한다. 요약을 손보려면 공개 후:
 
 ```bash
-./scripts/e2e.sh
+gh release edit v2.9.0 --notes-file /tmp/notes.md
 ```
 
-실제 앱 번들로 빌드→기동→데이터 파이프라인(스냅샷 갱신·구조 검증·AppLog)→메뉴바
-status item(AX)→팝오버 오픈(AXPress)까지 7개 체크. 5단계는 터미널에 손쉬운 사용
-(Accessibility) 권한 필요 — 미허용이면 해당 단계만 SKIP. release.sh 에 포함하지 않는
-이유: GUI 세션·권한 의존이라 헤드리스 실행이 깨질 수 있음. 릴리스 전 수동 1회 권장.
+## 실패했을 때
 
-## 문서 검토 체크리스트 (내용 변경 시)
-
-`release.sh` 2단계가 출력하는 것 — **기능/동작이 바뀐 릴리스면 반드시 갱신**:
-
-- [ ] **README.md / README.en.md / README.ja.md** — 기능 목록, 요구사항, 데이터 소스, 스크린샷. 3개 언어 동시.
-- [ ] **랜딩 페이지** (`gh-pages` 브랜치 `index.html`) — hero·features·companion·install·works-with·요구사항·푸터.
-  - 릴리스 배지는 **동적**(`img.shields.io/github/v/release/...`) → 버전 자동 반영. **기능/문구만 수동.**
-  - i18n 사전 **en/ko/ja 동시** 갱신 + 마크업 키 ⊆ 사전, en==ko==ja 키 정합 유지.
-  - 갱신은 worktree 로: `git worktree add /tmp/ptb-gh-pages gh-pages` → 편집 → commit/push → `git worktree remove`.
-- [ ] **homebrew-tap cask** caveats — 설치 요구사항(의존성 등) 최신인지. 버전은 release.sh 가 갱신.
-
-## 자동으로 갱신되는 것 (수동 불필요)
-
-- README·랜딩의 **release 배지** = shields 동적 배지 → 최신 릴리스 자동(캐시로 수 분 지연 가능).
-- 인앱 업데이트 알림 — `releases/latest` 기준 자동.
+- **공개 전 실패**(빌드·서명·appcast 단계) — 태그를 지우고 고친 뒤 같은 버전으로 다시 시작한다.
+  ```bash
+  git tag -d v2.9.0 && git push origin :refs/tags/v2.9.0
+  ```
+- **공개 후 발견** — 이미 배포된 버전은 되돌리지 않고 다음 패치로 올린다.
 
 ## 배포 후 검증
 
 ```bash
-brew update && brew upgrade --cask poke-token-bar
+gh run watch --workflow=release.yml       # 약 2~3분
+gh release view v2.9.0                    # zip · sha256 · appcast 3개 확인
 ```
 
-`brew list --cask --versions poke-token-bar` 와 `/Applications/PokeTokenBar.app` 버전이 새 버전인지 확인.
+설치된 앱에서 업데이트 확인을 한 번 눌러 Sparkle 경로까지 확인한다.
 
-## 서명 (2026-07-08 부터)
+## 서명
 
-릴리스 빌드는 이 머신의 `PokeTokenBar Local` 자체서명 인증서로 서명된다
-(`scripts/create-signing-cert.sh` 로 생성, keychain 에만 존재 — 레포 미커밋).
-- designated requirement 가 버전 간 고정 → 사용자의 Keychain "항상 허용"이 업데이트 후에도 유지.
-- 전환 직후 첫 업데이트 1회는 기존(ad-hoc 시절) 허용이 무효라 마지막 프롬프트가 뜰 수 있음.
-- 인증서를 분실/재생성하면 DR 이 바뀌어 전 사용자 재프롬프트 — 재생성 금지(스크립트가 가드).
+- 릴리스 빌드는 `K-MON Release` 인증서로 CI 에서 서명한다. 개인키는 Actions secret
+  (`MACOS_SIGNING_CERTIFICATE_P12` / `MACOS_SIGNING_CERTIFICATE_PASSWORD`)에만 있고 레포에 없다.
+- designated requirement 가 버전 간 고정되므로 사용자의 Keychain "항상 허용"이 업데이트 후에도 유지된다.
+- 인증서를 재생성하면 DR 이 바뀌어 전 사용자가 다시 프롬프트를 본다 — 재생성 금지.
+- 로컬 수동 빌드는 같은 이름의 자체서명 인증서를 `scripts/create-signing-cert.sh` 로 만들어 쓰고,
+  없으면 ad-hoc 으로 떨어진다(로컬 개발용).
