@@ -768,6 +768,55 @@ final class BattleStageTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(MultiplayerWireMessage.protocolVersion, 5, "`.boost` 가 늘어난 계약")
     }
 
+    // MARK: 상태·랭크 확률의 기본값 규칙은 한 곳이다
+
+    /// `ailmentChancePercent` 와 `statChangePercent` 는 **같은 기본값 규칙**을 쓴다: 명시 확률이
+    /// 있으면 그 값, 없으면 변화기는 100(효과가 기술 본체다) 공격기는 0. 규칙이 두 벌로 복제돼
+    /// 있으면 한쪽만 고쳐도 컴파일·테스트가 아무것도 알려주지 않고 상태 부여와 랭크 변화가
+    /// 서로 다른 확률로 갈라진다.
+    func testAilmentAndStatChanceShareOneDefaultRule() {
+        func spec(_ damageClass: MoveDamageClass, chance: Int?) -> MoveSpec {
+            var move = MoveSpec(id: 14, names: ["en": "M"], type: .normal,
+                                power: damageClass == .status ? 0 : 60,
+                                damageClass: damageClass, accuracy: nil, pp: 20)
+            move.ailmentChance = chance
+            move.statChance = chance
+            move.statChanges = [StatChange(stat: .atk, change: 1)]
+            return move
+        }
+        for (damageClass, chance, expected) in [(MoveDamageClass.status, nil, 100),
+                                                (.status, 30, 30),
+                                                (.physical, nil, 0),
+                                                (.physical, 10, 10)] {
+            let move = spec(damageClass, chance: chance)
+            XCTAssertEqual(move.ailmentChancePercent, expected,
+                           "\(damageClass) + \(chance.map(String.init) ?? "nil")")
+            XCTAssertEqual(move.statChangePercent, expected,
+                           "두 축이 갈라졌다 — 기본값 규칙은 한 곳에서만 온다")
+        }
+    }
+
+    // MARK: 스피드 하한 — 랭크 −6 이 0 을 만들지 않는다
+
+    /// 선공 판정이 스피드를 그대로 비교하므로 0 이 나오면 **어떤 상대에게도 무조건 후공**이 되고
+    /// 0 끼리는 무작위로 떨어진다. 마비 분기에는 `max(1, …)` 하한이 있고 비마비 분기에는 없어
+    /// 비대칭인데, 실제로 0 에 닿는지를 **최악값으로** 확인한다: 종족값 1 · 레벨 1 · 스피드가
+    /// 내려가는 성격 · 랭크 −6. `effectiveStats()` 의 `+5` 가 하한이라 여기서 0 이 나오지 않는다.
+    /// 스탯 공식을 건드리면 이 테스트가 먼저 깨진다.
+    func testSpeedNeverCollapsesToZeroAtTheWorstStage() {
+        let slowest = BattleSnapshot(speciesID: 213, name: "느림", trainer: nil, level: 1,
+                                     nature: .brave,   // 공격↑ 스피드↓
+                                     isShiny: false, types: [.normal],
+                                     base: BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1))
+        var side = BattleSide(slowest)
+        side.changeStage(.spe, by: -6)
+
+        XCTAssertGreaterThanOrEqual(side.effectiveSpeed, 1,
+                                    "0 이면 선공 판정이 무조건 후공 + 0 끼리 무작위가 된다")
+        side.status = .paralysis
+        XCTAssertGreaterThanOrEqual(side.effectiveSpeed, 1, "마비까지 겹쳐도 하한은 유지된다")
+    }
+
     // MARK: 대가를 모델링하지 않은 큰 상승 — 배가르기 부류
 
     /// 배가르기(공격 +6, 대가는 최대 HP 절반)는 HP 소모가 어디에도 없어서, 통과시키면 첫 턴 공짜
