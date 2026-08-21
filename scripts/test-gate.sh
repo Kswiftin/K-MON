@@ -41,6 +41,10 @@ LOGIC_CORE=(
   # 남은시간 표시가 0 에서 멈추는지를 결정하는 순수 함수. 뷰 안에 있던 동안 예정 시각을 지난
   # 구간이 무테스트로 남아 카운트다운이 되올라갔다(#86).
   "Sources/PokeTokenBar/Core/StoredEggCountdown.swift"
+  # 하루 한 판 퍼즐 던전(#79)의 순수 코어. 맵 생성과 이동 판정이 둘 다 여기 있고, 게이트 밖에
+  # 두면 커버리지 집계에서 조용히 빠져 무테스트로 나갈 수 있다.
+  "Sources/PokeTokenBar/Core/PuzzleDungeon.swift"
+  "Sources/PokeTokenBar/Core/DungeonRun.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"

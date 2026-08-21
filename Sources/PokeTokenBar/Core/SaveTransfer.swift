@@ -172,6 +172,8 @@ enum SaveTransfer {
         // 카탈로그에서 사라진 미션의 잔재를 버리고 진행도를 목표에서 클램프한다 — 클램프된 값은 곧 완료 상태라
         // 손편집으로 목표를 넘겨도 보상이 다시 나오지 않는다.
         s.missions.normalize()
+        // 던전 기억에서 오늘 맵에 없는 방 번호를 버리고, 정산된 세이브의 클리어 플래그를 맞춘다.
+        s.dungeon.normalize()
         s.focusEggs = min(max(0, s.focusEggs), 999)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
@@ -279,6 +281,10 @@ enum SaveTransfer {
         // 구버전 서명 호환: 기본값이면 아무것도 붙이지 않는다. 무조건 붙이면 미션 필드가 없던
         // 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
         if s.missions != MissionBoard() { p.append("ms\(s.missions.canonical)") }
+        // 던전 첫 클리어 보상의 멱등 가드는 `rewardPaid` 하나뿐이다 — 서명 밖에 두면 그 한 줄을
+        // 고쳐 매일 1,000 을 다시 받는다. 이번에 처음 나가는 필드라 **조건부**로 붙인다:
+        // 기본값이면 세그먼트가 없어 구서명이 그대로 유효하고 `integrityVersion` 을 올릴 필요가 없다.
+        if s.dungeon != DungeonProgress() { p.append("dun\(s.dungeon.canonical)") }
         // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
         // 배지 키 한 줄을 지워 같은 체육관에서 알을 다시 받는다. 정렬 필수: `Set` 순회 순서는 실행마다
         // 달라 정렬하지 않으면 같은 상태가 다른 서명을 낸다. (아래 두 필드가 이미 배포분이라 버전을 올렸다.)
@@ -393,6 +399,24 @@ enum SaveTransfer {
         state.lastTickAt = nil
         // 일일 사탕 원장은 로컬 날짜 문자열이라 기기 간 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
         state.lastCandyDate = max(imported.lastCandyDate, current.lastCandyDate)
+        // 던전 진행도 같은 부류다 — 날짜 키가 로컬 날짜 문자열이라 비교할 수 있다.
+        // 같은 날이면 **합친다**: 한쪽에서 이미 정산했는데 다른 쪽 값을 그대로 쓰면 같은 날 보상을
+        // 두 번 받는다(맥 A 에서 클리어하고 내보내 맥 B 로 불러오는 경로). 다른 날이면 더 최근 쪽을
+        // 남긴다 — 지난 날 기록은 어차피 다음 기록에서 비워진다.
+        state.dungeon = Self.mergedDungeon(imported.dungeon, current.dungeon)
         return state
+    }
+
+    /// 두 기기의 던전 진행도를 합친다 — 같은 날이면 "한쪽이라도 정산했으면 정산된 것" 으로 본다.
+    static func mergedDungeon(_ imported: DungeonProgress, _ current: DungeonProgress) -> DungeonProgress {
+        guard imported.dayKey == current.dayKey else {
+            return imported.dayKey > current.dayKey ? imported : current
+        }
+        var merged = imported
+        merged.cleared = imported.cleared || current.cleared
+        merged.rewardPaid = imported.rewardPaid || current.rewardPaid
+        merged.remembered.merge(current.remembered) { existing, _ in existing }
+        merged.normalize()
+        return merged
     }
 }

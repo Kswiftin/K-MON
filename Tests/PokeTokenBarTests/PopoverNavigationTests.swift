@@ -19,4 +19,19 @@ final class PopoverNavigationTests: XCTestCase {
         XCTAssertFalse(nav.showSettings)   // 설정 화면 닫힘
         XCTAssertEqual(nav.tab, .home)     // 탭도 Home 으로
     }
+
+    /// 던전(#79)은 설정·체육관과 같은 층이다 — 배틀 신청이 오면 접혀야 하고 `reset()` 이 닫아야 한다.
+    /// 접히지 않으면 신청이 온 줄 모른 채 던전만 보게 된다(체육관에서 겪은 그 함정).
+    func testDungeonOverlayFoldsWithTheOthers() {
+        let nav = PopoverNavigation()
+        nav.showDungeon = true
+        nav.goToBattle()
+        XCTAssertFalse(nav.showDungeon)
+        XCTAssertEqual(nav.tab, .battle)
+
+        nav.showDungeon = true
+        nav.reset()
+        XCTAssertFalse(nav.showDungeon)
+        XCTAssertEqual(nav.tab, .home)
+    }
 }

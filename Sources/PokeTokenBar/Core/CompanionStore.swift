@@ -1287,6 +1287,70 @@ final class CompanionStore {
         return reward
     }
 
+    // MARK: 퍼즐 던전 (#79)
+
+    /// 오늘의 맵. 날짜 키에서 나오므로 저장하지 않는다 — 매번 같은 값이 다시 계산된다.
+    var dungeonMap: DungeonMap { PuzzleDungeon.map(dayKey: Self.dayKey(clock())) }
+
+    /// 오늘 쓸 체력 예산. 기준선 100 에 보정만 더한다. `usedItem` 은 시도 시작에서 실제로
+    /// 먹는샘물을 마셨는지이고, 화면에 예산을 미리 보여줄 때는 보유 여부로 가늠한다.
+    func dungeonBudget(usedItem: Bool) -> Int {
+        PuzzleDungeon.budget(partnerTypes: currentTypes,
+                             against: dungeonMap.affinity,
+                             usedItem: usedItem,
+                             trainerLevel: state.trainer.level)
+    }
+
+    /// 먹는샘물을 마시면 얼마가 되는지 — 카드에 "지금 들어가면 103" 을 그리는 값.
+    var dungeonBudgetPreview: Int { dungeonBudget(usedItem: itemCount(.freshWater) > 0) }
+
+    var dungeonCleared: Bool {
+        var progress = state.dungeon
+        progress.roll(dayKey: Self.dayKey(clock()))
+        return progress.cleared
+    }
+
+    /// 새 시도 — 오늘 기억한 방을 들려 보낸다. 시도 중 상태는 저장되지 않는다.
+    ///
+    /// `drinkFreshWater` 가 참이고 재고가 있으면 **여기서 한 병을 소모한다.** 소모와 예산 계산이
+    /// 갈라지면 마셨는데 예산이 안 오르거나(재고만 줄고) 그 반대가 된다 — 한 지점에서 같이 한다.
+    func startDungeonRun(drinkFreshWater: Bool = false) -> DungeonRun {
+        state.dungeon.roll(dayKey: Self.dayKey(clock()))
+        var drank = false
+        if drinkFreshWater, itemCount(.freshWater) > 0 {
+            state.inventory[ItemKind.freshWater.rawValue] = itemCount(.freshWater) - 1
+            drank = true
+            save()
+        }
+        return DungeonRun(map: dungeonMap, budget: dungeonBudget(usedItem: drank),
+                          remembered: state.dungeon.remembered)
+    }
+
+    /// 시도가 끝나거나 화면을 닫을 때 맵 기억만 남긴다(실패·이탈은 시도만 버린다).
+    func rememberDungeon(_ revealed: [Int: RoomKind]) {
+        state.dungeon.roll(dayKey: Self.dayKey(clock()))
+        state.dungeon.remembered.merge(revealed) { _, new in new }
+        state.dungeon.normalize()
+        save()
+    }
+
+    /// 클리어 정산 — **여기 한 곳에서만** 보상이 나간다. 이미 정산했으면 0 을 돌려주고
+    /// 그 뒤 재플레이는 보상 없는 연습으로 열려 있다.
+    @discardableResult
+    func settleDungeonClear(revealed: [Int: RoomKind]) -> Int {
+        state.dungeon.roll(dayKey: Self.dayKey(clock()))
+        state.dungeon.remembered.merge(revealed) { _, new in new }
+        state.dungeon.cleared = true
+        state.dungeon.normalize()
+        guard !state.dungeon.rewardPaid else { save(); return 0 }
+        state.dungeon.rewardPaid = true
+        state.starPieces += PuzzleDungeon.firstClearReward
+        save()
+        notifyCompanionEvent(l.dungeonClearedTitle,
+                             l.dungeonRewardBody(PuzzleDungeon.firstClearReward))
+        return PuzzleDungeon.firstClearReward
+    }
+
     /// 보상 지급 — 알은 보관 알로 들어가고(5분 뒤 부화), 보증과 이로치 확정은 상태에 쌓인다.
     /// 체육관과 도감 목표가 같은 보상 형태를 쓰므로 지급 경로도 하나다.
     private func grantReward(_ reward: GymReward) {

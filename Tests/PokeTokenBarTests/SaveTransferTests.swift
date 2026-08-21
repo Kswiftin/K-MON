@@ -425,7 +425,8 @@ final class SaveTransferTests: XCTestCase {
         // 로컬 장부: 이 기기의 시계 기준값·서명 → 새 기기 기준 재설정(저장 시 재서명).
         let deviceLedger: Set<String> = ["lastTickAt", "integrity"]
         // 계정 원장(로컬 날짜 문자열 — 비교 가능): 더 최근 값 유지.
-        let accountLedger: Set<String> = ["lastCandyDate"]
+        // 던전 진행도도 같은 부류다 — 같은 날이면 정산 플래그를 OR 로 합쳐 재지급을 막는다.
+        let accountLedger: Set<String> = ["lastCandyDate", "dungeon"]
         // 기기 환경설정: 현재 기기 값 유지.
         let devicePreference: Set<String> = ["language"]
 
@@ -455,6 +456,35 @@ final class SaveTransferTests: XCTestCase {
 
         XCTAssertEqual(s.language, .en, "불러온 세이브의 언어가 이 기기 설정을 덮으면 안 된다")
         XCTAssertEqual(s.state.dex.count, imported.dex.count, "진행은 그대로 들어와야 한다")
+    }
+
+    /// 던전 진행도는 같은 날이면 **합쳐야** 한다 — 맥 A 에서 클리어하고 내보낸 세이브를 아직 안 푼
+    /// 맥 B 로 불러올 때 B 의 빈 값을 쓰면 같은 날 보상을 두 번 받는다.
+    func testImportedDungeonProgressMergesOnTheSameDay() {
+        var imported = DungeonProgress()
+        imported.roll(dayKey: "2026-08-21")
+        imported.cleared = true
+        imported.rewardPaid = true
+        imported.remembered = [1: .encounter]
+
+        var current = DungeonProgress()
+        current.roll(dayKey: "2026-08-21")
+        current.remembered = [2: .empty]
+
+        let merged = SaveTransfer.mergedDungeon(imported, current)
+        XCTAssertTrue(merged.rewardPaid, "한쪽이 정산했으면 정산된 것이다 — 아니면 보상이 두 번 나간다")
+        XCTAssertTrue(merged.cleared)
+        XCTAssertEqual(Set(merged.remembered.keys), [1, 2], "두 기기가 밝힌 방을 합친다")
+    }
+
+    /// 날짜가 다르면 더 최근 쪽만 남는다 — 지난 날 기록은 다음 기록에서 어차피 비워진다.
+    func testImportedDungeonProgressKeepsTheNewerDay() {
+        var older = DungeonProgress(); older.roll(dayKey: "2026-08-20"); older.rewardPaid = true
+        var newer = DungeonProgress(); newer.roll(dayKey: "2026-08-21")
+        XCTAssertEqual(SaveTransfer.mergedDungeon(older, newer).dayKey, "2026-08-21")
+        XCTAssertFalse(SaveTransfer.mergedDungeon(older, newer).rewardPaid,
+                       "어제 정산 플래그가 오늘로 넘어오면 오늘 보상이 막힌다")
+        XCTAssertEqual(SaveTransfer.mergedDungeon(newer, older).dayKey, "2026-08-21")
     }
 
     /// 일일 사탕 원장은 로컬 날짜라 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
