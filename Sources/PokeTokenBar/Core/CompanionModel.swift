@@ -116,6 +116,14 @@ enum PokemonBalance {
     /// 진화(구버전 픽스처 등)의 성장치 게이트로만 남는다.
     static let graduationRequiredLevel = 30
 
+    /// 포켓몬 레벨 상한과 한 레벨의 경험치 폭. 990,000,000 이 정확히 Lv.100 이다.
+    ///
+    /// 상한을 리터럴로 흩어 두면 누적 지점마다 클램프를 기억해야 한다 — 실제로 이상한 사탕 경로가
+    /// 클램프를 빠뜨렸다(#81). 누적은 `MonState.gainExperience(_:)` 한 곳으로 모은다.
+    static let maxLevel = 100
+    static let experiencePerLevel = 10_000_000
+    static var maxLevelExperience: Int { (maxLevel - 1) * experiencePerLevel }
+
     /// 친밀도 진화의 레벨 환산 — 앱엔 친밀도 축이 없다(돌봄 UI 는 제거됐고 affection 은 플로팅 펫
     /// 쓰다듬기로만 오른다). PokéAPI 의 `min_happiness` 는 실제로 160/220 두 값뿐이라 그 두 단계를
     /// 레벨 두 단계로 옮긴다. 하한 25 는 직전 진화 레벨(예: 주뱃→골뱃 22)보다 뒤에 오게 하는 값이고,
@@ -534,7 +542,18 @@ struct MonState: Codable, Sendable {
     /// 이미 졸업해 영구 `DexEntry` 가 기록된 개체. 졸업해도 개체는 박스에 남아 계속 키울 수 있는데(#27),
     /// 도감이 박스도 집계하므로(#28) 이 표식이 없으면 같은 개체가 영구 기록과 화면용 행으로 두 번 잡힌다.
     var isGraduated = false
-    var level: Int { min(100, 1 + max(0, levelExperience) / 10_000_000) }
+    var level: Int {
+        min(PokemonBalance.maxLevel, 1 + max(0, levelExperience) / PokemonBalance.experiencePerLevel)
+    }
+    var isMaxLevel: Bool { level >= PokemonBalance.maxLevel }
+
+    /// 경험치 적립 — **상한 클램프가 붙은 유일한 입구**. 누적 지점이 직접 `+=` 하면 클램프를 빠뜨리게
+    /// 되고(#81 의 이상한 사탕 경로), 외부에서 들어온 큰 값에 더하면 오버플로 트랩까지 난다.
+    mutating func gainExperience(_ amount: Int) {
+        guard amount > 0 else { return }
+        let current = min(max(0, levelExperience), PokemonBalance.maxLevelExperience)
+        levelExperience = min(PokemonBalance.maxLevelExperience, current + amount)
+    }
     // pathIDs 가 비면(손상된 상태 파일) baseID 로 폴백 — 렌더마다 읽히므로 out-of-bounds 크래시 방지.
     var currentID: Int { pathIDs.isEmpty ? baseID : pathIDs[min(stageIndex, pathIDs.count - 1)] }
 
