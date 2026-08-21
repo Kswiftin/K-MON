@@ -104,6 +104,50 @@ final class PeerAdvertisementTests: XCTestCase {
         XCTAssertEqual(hostile.achievementTiers, 0)
     }
 
+    // MARK: 버전 스큐 — 상대의 카탈로그가 내 것과 다를 때
+
+    /// 카탈로그는 조절 손잡이라 언젠가 트랙·문턱이 늘어난다. 그때 상대의 단계 수를 **내 분모**로
+    /// 그리면 18/20 인 상대가 `16/16`(완료)으로 보인다 — 진행도를 보는 기능이 거짓을 말한다.
+    /// 분모를 함께 광고하면 이 빌드가 먼저 배포돼 있어야 미래 상대를 옳게 그린다.
+    func testAPeerOnANewerCatalogKeepsItsOwnDenominator() {
+        let newer = PeerAdvertisement(NWTXTRecord(["achievementTiers": "18",
+                                                   "achievementCeiling": "20"]))
+        XCTAssertEqual(newer.achievementProgress?.tiers, 18, "내 상한(16)으로 깎으면 안 된다")
+        XCTAssertEqual(newer.achievementProgress?.ceiling, 20)
+    }
+
+    /// 분모를 안 싣는 구버전 상대는 내 카탈로그를 쓴다 — 그게 가진 정보의 전부다.
+    func testAPeerWithoutACeilingFallsBackToMyCatalog() {
+        let older = PeerAdvertisement(NWTXTRecord(["achievementTiers": "8"]))
+        XCTAssertEqual(older.achievementProgress?.tiers, 8)
+        XCTAssertEqual(older.achievementProgress?.ceiling, AchievementLadder.tierCeiling)
+    }
+
+    /// 분모도 상대가 신고하는 값이라 신뢰경계다. 자릿수가 늘면 카드가 밀려 잘리므로 표시 상한으로 자른다.
+    func testAnAdvertisedCeilingIsClampedForDisplay() {
+        let hostile = PeerAdvertisement(NWTXTRecord(["achievementTiers": "999999",
+                                                     "achievementCeiling": "999999"]))
+        XCTAssertEqual(hostile.achievementProgress?.ceiling, PeerAdvertisement.maximumTierCeiling)
+        XCTAssertEqual(hostile.achievementProgress?.tiers, PeerAdvertisement.maximumTierCeiling,
+                       "단계는 분모를 넘을 수 없다")
+        XCTAssertEqual(PeerAdvertisement(achievementTiers: 5, achievementCeiling: 0)
+                        .achievementProgress?.ceiling, 1, "분모 0 은 나눗셈이 아니다")
+    }
+
+    /// 단계가 없으면 분수 자체가 없다 — 분모만 온 광고로 `0/20` 을 그리면 없는 정보를 만든다.
+    func testNoTiersMeansNoFraction() {
+        XCTAssertNil(PeerAdvertisement(NWTXTRecord(["achievementCeiling": "20"])).achievementProgress)
+    }
+
+    /// 내 광고에도 분모가 실려야 한다 — 안 실으면 **미래 빌드**가 나를 잘못 그린다(대칭 요구).
+    func testMyOwnAdvertisementCarriesMyCeiling() {
+        let mine = PeerAdvertisement(rankPoints: 0, trainerLevel: 1,
+                                     achievementTiers: 3,
+                                     achievementCeiling: AchievementLadder.tierCeiling)
+        XCTAssertEqual(mine.txtRecord["achievementCeiling"], String(AchievementLadder.tierCeiling))
+        XCTAssertEqual(PeerAdvertisement.Key.ceiling, "achievementCeiling")
+    }
+
     // MARK: 수신 측 — 광고 하나를 카드 한 장으로 옮기는 지점
     //
     // 이 구간은 지금까지 무검증이었다(private 클로저 안). 아래 서비스 이름·TXT 는 **실제로 관찰한
