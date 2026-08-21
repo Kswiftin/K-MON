@@ -31,14 +31,18 @@ final class StoredEggCountdownTests: XCTestCase {
         XCTAssertEqual(StoredEggCountdown.resolve(readyAt: now, now: now), .due)
     }
 
-    /// 1초 미만 남음도 `.due` 로 접는다 — 올림(.rounded(.up)) 뒤 0 이하가 되는 구간.
-    func testSubSecondRemainderIsDue() {
-        XCTAssertEqual(StoredEggCountdown.resolve(readyAt: now.addingTimeInterval(0.4), now: now), .due)
+    /// 1초 미만 남은 구간은 아직 `.counting` 이다 — 올림(`.rounded(.up)`)이라 "00:01" 로 보이고,
+    /// 예정 시각에 닿는 순간 `.due` 로 넘어간다. "00:00" 이 화면에 굳는 구간은 없다.
+    func testSubSecondRemainderStillCountsAsOneSecond() {
+        XCTAssertEqual(StoredEggCountdown.resolve(readyAt: now.addingTimeInterval(0.4), now: now),
+                       .counting(clock: "00:01"))
+        XCTAssertEqual(StoredEggCountdown.resolve(readyAt: now.addingTimeInterval(0.001), now: now),
+                       .counting(clock: "00:01"))
     }
 
     // MARK: 남아 있는 구간
 
-    func testCountingShowsFlooredClock() {
+    func testCountingShowsRemainingClock() {
         XCTAssertEqual(StoredEggCountdown.resolve(readyAt: now.addingTimeInterval(300), now: now),
                        .counting(clock: "05:00"))
         XCTAssertEqual(StoredEggCountdown.resolve(readyAt: now.addingTimeInterval(1), now: now),

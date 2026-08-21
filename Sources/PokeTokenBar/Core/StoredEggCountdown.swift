@@ -14,8 +14,10 @@ enum StoredEggCountdown: Equatable {
     /// 예정 시각 도달(또는 경과) — 부화 대기 중. 숫자를 보여주지 않는다.
     case due
 
-    /// 남은 시간 판정. 1초 미만이면 `.due` — 초 단위 표시가 "00:00" 으로 굳는 구간을 숫자로
-    /// 남기지 않기 위해 올림(`.rounded(.up)`) 뒤 0 이하를 모두 `.due` 로 접는다.
+    /// 남은 시간 판정. 올림(`.rounded(.up)`)이라 마지막 1초 구간은 "00:01" 로 보이고, 예정 시각에
+    /// 닿거나 지나면(0 이하) 모두 `.due` 다 — "00:00" 이 굳는 구간도, 되올라가는 구간도 없다.
+    /// 올림 규칙은 표시에 쓰는 `MenuBarStatus.remainingClockText` 와 같아야 한다. 다르면 게이트가
+    /// `.counting` 이라 판정한 구간에서 시계가 "00:00" 을 그린다.
     static func resolve(readyAt: Date, now: Date) -> StoredEggCountdown {
         let seconds = Int(readyAt.timeIntervalSince(now).rounded(.up))
         guard seconds > 0 else { return .due }
