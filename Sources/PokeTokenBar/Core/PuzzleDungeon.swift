@@ -66,6 +66,8 @@ enum PuzzleDungeon {
     /// 척추 경로만 따라갔을 때 남기는 최소 여유. 보정 상한(+10)보다 커야 퍼즐이 남는다.
     static let clearSlack = 15
     static let firstClearReward = 1_000
+    /// 먹는샘물 상점가. 진화 아이템(500)보다 싸다 — 보정이 +3 뿐이라 값이 붙으면 아무도 안 산다.
+    static let freshWaterPrice = 200
     /// 좌표 격자 한 변. 14방을 담고 통로 길이에 편차를 주려면 방 수의 두 배 이상 칸이 필요하다.
     static let gridSide = 6
 

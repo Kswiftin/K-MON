@@ -172,6 +172,8 @@ enum SaveTransfer {
         // 카탈로그에서 사라진 미션의 잔재를 버리고 진행도를 목표에서 클램프한다 — 클램프된 값은 곧 완료 상태라
         // 손편집으로 목표를 넘겨도 보상이 다시 나오지 않는다.
         s.missions.normalize()
+        // 던전 기억에서 오늘 맵에 없는 방 번호를 버리고, 정산된 세이브의 클리어 플래그를 맞춘다.
+        s.dungeon.normalize()
         s.focusEggs = min(max(0, s.focusEggs), 999)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
@@ -279,6 +281,10 @@ enum SaveTransfer {
         // 구버전 서명 호환: 기본값이면 아무것도 붙이지 않는다. 무조건 붙이면 미션 필드가 없던
         // 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
         if s.missions != MissionBoard() { p.append("ms\(s.missions.canonical)") }
+        // 던전 첫 클리어 보상의 멱등 가드는 `rewardPaid` 하나뿐이다 — 서명 밖에 두면 그 한 줄을
+        // 고쳐 매일 1,000 을 다시 받는다. 이번에 처음 나가는 필드라 **조건부**로 붙인다:
+        // 기본값이면 세그먼트가 없어 구서명이 그대로 유효하고 `integrityVersion` 을 올릴 필요가 없다.
+        if s.dungeon != DungeonProgress() { p.append("dun\(s.dungeon.canonical)") }
         // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
         // 배지 키 한 줄을 지워 같은 체육관에서 알을 다시 받는다. 정렬 필수: `Set` 순회 순서는 실행마다
         // 달라 정렬하지 않으면 같은 상태가 다른 서명을 낸다. (아래 두 필드가 이미 배포분이라 버전을 올렸다.)
