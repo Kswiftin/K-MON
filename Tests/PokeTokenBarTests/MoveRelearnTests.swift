@@ -56,6 +56,6 @@ final class MoveRelearnTests: XCTestCase {
 
     func testHeartScaleHasItsOwnSpriteAndEmoji() {
         XCTAssertEqual(ItemKind.heartScale.spriteName, "heart-scale")
-        XCTAssertEqual(ItemKind.heartScale.emoji, "💗")
+        XCTAssertEqual(ItemKind.heartScale.fallbackEmoji, "💗")
     }
 }
