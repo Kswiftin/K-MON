@@ -124,6 +124,15 @@ final class HeartScaleTests: XCTestCase {
         XCTAssertNil(s.relearnPrompt)
     }
 
+    /// 표시 목록도 함께 바뀐다 — 기술 목록의 `.task(id:)` 는 레벨이 안 바뀌면 다시 돌지 않는다.
+    func testAcceptingRelearnUpdatesDisplayedMoves() {
+        let s = store(scales: 1, learned: [11, 22])
+        s.debugPresentRelearnPrompt(candidates: [move(33)])
+        s.pickRelearnCandidate(move(33))
+        s.acceptMoveLearning()
+        XCTAssertEqual(s.displayedMoves.map(\.id), [11, 22, 33], "화면 목록이 옛 무브셋으로 남으면 안 된다")
+    }
+
     // MARK: 진화 경로와의 격리
 
     /// 가방·상점의 진화 분기로 새지 않아야 한다 — `default:` 부류 회귀 가드.

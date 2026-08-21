@@ -1247,3 +1247,15 @@ read_when:
   이 거절하고 재고가 그대로) + `testHeartScaleCopyExistsInAllThreeLanguages`(설명이 빈 문자열이면 실패).
   설명 누락은 화면을 봐야 아는 결함이라 문구 테스트가 세 언어 전부를 훑는 편이 싸다.
   (`CompanionModel.swift` · `Localization.swift` · `BagView.swift`, 2026-08-21.)
+## `.task(id:)` 의 id 에 없는 값이 바뀌면 화면은 옛 데이터로 남는다
+
+- 기술 목록은 `.task(id: "\(개체 id)-\(레벨)")` 로 다시 읽는다. 지금까지 무브셋이 바뀌는 유일한 경로가
+  레벨업이라 **레벨이 항상 같이 바뀌었고**, 그래서 이 id 로 충분해 보였다. 하트비늘(#97)은 레벨을
+  건드리지 않고 무브셋만 바꾸는 첫 경로다 — 학습을 수락해도 목록이 옛 기술 네 개를 그대로 보여 준다.
+- **부류**: `.task(id:)`·`onChange(of:)` 의 키는 "무엇이 바뀌면 다시 해야 하는가"의 **완전한** 목록이어야
+  한다. 키에 안 들어간 축을 바꾸는 경로가 나중에 하나 생기면 화면만 조용히 뒤처진다. 기존 테스트는
+  전부 레벨업 경로라 이 공백을 밟지 않는다.
+- **처방**: 상태를 바꾸는 쪽(`acceptMoveLearning`)이 표시 값(`displayedMoves`)까지 맞춘다 — 뷰의 재조회
+  키에 축을 하나 더 매다는 방식은 다음 경로에서 또 빠진다. 회귀 가드는 레벨을 바꾸지 않는 학습 뒤
+  `displayedMoves` 를 직접 본다(`HeartScaleTests.testAcceptingRelearnUpdatesDisplayedMoves`).
+  (`CompanionStore.swift` · `CompanionView.swift`, 2026-08-21.)
