@@ -915,8 +915,6 @@ struct L {
         case .razorClaw: return t("예리한손톱", "Razor Claw", "するどいツメ")
         case .razorFang: return t("예리한이빨", "Razor Fang", "するどいキバ")
         case .prismScale: return t("아름다운비늘", "Prism Scale", "きれいなウロコ")
-        case .sachet: return t("향기주머니", "Sachet", "においぶくろ")
-        case .whippedDream: return t("휘핑팝", "Whipped Dream", "ホイップポップ")
         case .ovalStone: return t("둥근돌", "Oval Stone", "まるいいし")
         }
     }

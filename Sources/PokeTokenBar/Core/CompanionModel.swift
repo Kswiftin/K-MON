@@ -192,9 +192,14 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case shinyStone, duskStone, dawnStone
     // 지닌물건 진화용(#89) — 야도킹·킹크로스·강철톤·밀로틱 등도 같은 이유로 진화 경로가 아예 없었다.
     // 도구 시스템을 만들지 않고 돌과 똑같이 "쓰면 소모되는 진화 아이템" 으로 취급한다.
+    //
+    // **대상 종이 `PokemonAssets.animatedSpeciesIDs`(1~649) 안에 있는 아이템만 넣는다.** 범위 밖 종은
+    // `EvoNode.keepingAnimatedSprites()` 가 트리에서 지우므로 그 아이템은 어떤 진화도 열지 못한다 —
+    // 상점에 올리면 사는 순간 500 별의조각을 버리는 함정 구매가 된다(향기주머니·휘핑팝이 그래서
+    // 빠졌다: 마이앵·나룸퍼프 682~685). 범위가 6세대로 넓어지면 그때 함께 넣는다.
     case kingsRock, metalCoat, dragonScale, upgrade, dubiousDisc
     case deepSeaTooth, deepSeaScale, protector, electirizer, magmarizer
-    case reaperCloth, razorClaw, razorFang, prismScale, sachet, whippedDream
+    case reaperCloth, razorClaw, razorFang, prismScale
     // 해피너스는 '둥근돌을 지닌 채 낮에 레벨업' 이라 돌 이름이지만 use-item 이 아니다.
     case ovalStone
 
@@ -230,8 +235,6 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .razorClaw: return .heldItem("razor-claw")
         case .razorFang: return .heldItem("razor-fang")
         case .prismScale: return .heldItem("prism-scale")
-        case .sachet: return .heldItem("sachet")
-        case .whippedDream: return .heldItem("whipped-dream")
         case .ovalStone: return .heldItem("oval-stone")
         }
     }
@@ -264,7 +267,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .deepSeaTooth: return "🦷"; case .deepSeaScale: return "🐚"; case .protector: return "🛡️"
         case .electirizer: return "🔌"; case .magmarizer: return "🌋"
         case .reaperCloth: return "🧵"; case .razorClaw: return "✂️"; case .razorFang: return "🗡️"
-        case .prismScale: return "🌈"; case .sachet: return "👝"; case .whippedDream: return "🍰"
+        case .prismScale: return "🌈"
         case .ovalStone: return "🥚"
         }
     }

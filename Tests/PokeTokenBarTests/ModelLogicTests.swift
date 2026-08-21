@@ -278,13 +278,56 @@ final class EvolutionItemCoverageTests: XCTestCase {
     /// 아무 포켓몬도 진화시키지 못하고(조용히 재화만 소모) 스프라이트도 깨진다(파일명이 같은 값).
     func testEvolutionKeysUseApiItemNaming() {
         let allowed = requiredKeys.union(requiredHeldItemKeys)
-            .union(["ice-stone", "sachet", "whipped-dream"])   // 앱 범위 밖이지만 함께 파는 것
+            .union(["ice-stone"])   // 지역폼 전용이라 requiredKeys 엔 없지만 예전부터 파는 것
         for kind in ItemKind.allCases {
             guard let key = kind.evolutionRule?.apiItemName else { continue }
             XCTAssertEqual(key, key.lowercased(), "\(kind) 키는 소문자여야 한다: \(key)")
             XCTAssertFalse(key.contains("_"), "\(kind) 키는 kebab-case 여야 한다: \(key)")
             XCTAssertTrue(allowed.contains(key), "\(kind) 키가 API 명명과 다르다: \(key)")
             XCTAssertEqual(kind.spriteName, key, "\(kind) 스프라이트 파일명은 API 아이템명과 같다")
+        }
+    }
+
+    /// 지닌물건 아이템이 실제로 진화시키는 종 — 상점에 올린 아이템이 "쓸 수 있는 것" 인지 재는 기준.
+    /// 손으로 적는 목록이지만 손으로 적는 것 자체가 게이트다: 새 아이템을 넣으면서 여기에 대상 종을
+    /// 적어야 하고, 그 종이 스프라이트 범위 밖이면 아래 테스트가 막는다.
+    private let heldItemTargets: [String: [Int]] = [
+        "kings-rock": [186, 199],        // 왕구리·야도킹
+        "metal-coat": [208, 212],        // 강철톤·핫삼
+        "dragon-scale": [230],           // 킹드라
+        "up-grade": [233],               // 폴리곤2
+        "dubious-disc": [474],           // 폴리곤Z
+        "deep-sea-tooth": [367],         // 헌테일
+        "deep-sea-scale": [368],         // 분홍장이
+        "protector": [464],              // 거대코뿔
+        "electirizer": [466],            // 에레키블
+        "magmarizer": [467],             // 마그마번
+        "reaper-cloth": [477],           // 야느와르몬
+        "razor-claw": [461],             // 포푸니라
+        "razor-fang": [472],             // 글라이온
+        "prism-scale": [350],            // 밀로틱
+        "oval-stone": [113],             // 럭키
+    ]
+
+    /// 상점에 올린 아이템이 **쓸 수 있는 아이템인지** 재는 게이트.
+    ///
+    /// 앱은 애니메이션 스프라이트가 있는 종(1~649)만 다루고, 범위 밖 종은
+    /// `EvoNode.keepingAnimatedSprites()` 가 진화 트리에서 지운다. 그래서 대상 종이 범위 밖인 아이템은
+    /// **어떤 진화도 열지 못하는데 상점에는 그대로 뜬다** — 사는 순간 500 별의조각을 버리는 함정이다.
+    /// 향기주머니·휘핑팝(마이앵·나룸퍼프 682~685)이 그래서 빠졌다.
+    ///
+    /// 스프라이트 범위가 아이템 유효성의 숨은 전제라는 게 요점이다. 아이템 쪽만 보면 아무 문제가 없어
+    /// 보이고, 리뷰에서도 "PokéAPI 에 있는 아이템이니 맞다" 로 통과한다.
+    func testEveryHeldItemHasATargetInsideTheSpriteRange() {
+        for kind in ItemKind.allCases {
+            guard case .heldItem(let key)? = kind.evolutionRule else { continue }
+            let targets = heldItemTargets[key]
+            XCTAssertNotNil(targets, "\(kind): 대상 종을 heldItemTargets 에 적어야 한다")
+            for id in targets ?? [] {
+                XCTAssertTrue(PokemonAssets.hasAnimatedSprite(speciesID: id),
+                              "\(kind) 대상 #\(id) 이 스프라이트 범위 밖 — 이 아이템은 아무 진화도 못 열고 함정 구매가 된다")
+            }
+            XCTAssertFalse(targets?.isEmpty ?? true, "\(kind) 는 열 수 있는 진화가 없다")
         }
     }
 
