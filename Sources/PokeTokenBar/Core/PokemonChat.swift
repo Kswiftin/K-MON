@@ -82,11 +82,13 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
     var types: [String] = []
     var moves: [String] = []
     var nextEvolution: String?
+    var careOffer: PokemonChatCareOffer?
 
     init(speciesID: Int, displayName: String, nickname: String?, isShiny: Bool = false,
          nature: String?, level: Int, stage: String, flavorText: String?, language: AppLanguage,
          genus: String? = nil, habitat: String? = nil, ability: String? = nil,
-         types: [String] = [], moves: [String] = [], nextEvolution: String? = nil) {
+         types: [String] = [], moves: [String] = [], nextEvolution: String? = nil,
+         careOffer: PokemonChatCareOffer? = nil) {
         self.speciesID = speciesID
         self.displayName = displayName
         self.nickname = nickname
@@ -102,6 +104,7 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
         self.types = types
         self.moves = moves
         self.nextEvolution = nextEvolution
+        self.careOffer = careOffer
     }
 
     mutating func apply(_ identity: PokemonSpeciesIdentity) {
@@ -132,6 +135,36 @@ struct PokemonChatSession: Codable, Sendable, Equatable {
 enum PokemonChatActionKind: String, Codable, Sendable, CaseIterable {
     case feed, play, rest, clean, medicate, train, pet, sleep, wake
     case evolve, useItem, buyItem, switchCompanion, release
+
+    var isCareRequestable: Bool {
+        switch self { case .feed, .play, .rest, .clean, .medicate: true; default: false }
+    }
+}
+
+struct PokemonChatCareOffer: Codable, Sendable, Equatable {
+    let kinds: [PokemonChatActionKind]
+    let stateLine: String
+}
+
+enum PokemonChatCareParser {
+    static func parse(_ reply: String) -> (body: String, kind: PokemonChatActionKind?) {
+        var body = reply
+        var firstKind: PokemonChatActionKind?
+        var cursor = body.startIndex
+        while let start = body.range(of: "[[", range: cursor..<body.endIndex) {
+            guard let end = body.range(of: "]]", range: start.upperBound..<body.endIndex) else { break }
+            let payload = String(body[start.upperBound..<end.lowerBound])
+            let slug = payload.hasPrefix("care:") ? String(payload.dropFirst(5)) : nil
+            if let slug, let kind = PokemonChatActionKind(rawValue: slug), kind.isCareRequestable {
+                firstKind = firstKind ?? kind
+            } else {
+                AppLog.write("chat care tag ignored: \(payload)")
+            }
+            body.removeSubrange(start.lowerBound..<end.upperBound)
+            cursor = start.lowerBound
+        }
+        return (body.trimmingCharacters(in: .whitespacesAndNewlines), firstKind)
+    }
 }
 
 enum PokemonChatActionState: String, Codable, Sendable { case pending, approved, rejected, executed, failed }
@@ -145,6 +178,26 @@ struct PokemonChatActionProposal: Codable, Sendable, Identifiable, Equatable {
     mutating func approve() { guard state == .pending else { return }; state = .approved }
     mutating func reject() { guard state == .pending else { return }; state = .rejected }
     mutating func finish(success: Bool) { guard state == .approved else { return }; state = success ? .executed : .failed }
+}
+
+enum PokemonChatCareOutcome {
+    static func message(kind: PokemonChatActionKind, approved: Bool, success: Bool,
+                        profile: PokemonChatProfile) -> String {
+        let action: (String, String, String)
+        switch kind {
+        case .feed: action = ("먹이", "feed", "ごはん")
+        case .play: action = ("놀기", "play", "遊ぶ")
+        case .rest: action = ("쉬기", "rest", "休む")
+        case .clean: action = ("청소", "clean", "掃除")
+        case .medicate: action = ("약", "medicine", "薬")
+        default: action = (kind.rawValue, kind.rawValue, kind.rawValue)
+        }
+        switch profile.language {
+        case .ko: return approved ? (success ? "\(action.0)을(를) 해 줘서 고마워!" : "지금은 \(action.0)을(를) 할 수 없어.") : "알겠어, \(action.0)은(는) 나중에 하자."
+        case .en: return approved ? (success ? "Thanks for the \(action.1)!" : "I can’t \(action.1) right now.") : "Okay, we can \(action.1) later."
+        case .ja: return approved ? (success ? "\(action.2)をしてくれてありがとう！" : "今は\(action.2)ことができないよ。") : "わかった、\(action.2)のはまたあとでね。"
+        }
+    }
 }
 
 struct PokemonChatRequest: Sendable {
@@ -163,6 +216,10 @@ struct PokemonChatRequest: Sendable {
                              profile.habitat.map { "habitat \($0)" },
                              profile.ability.map { "ability \($0)" }].compactMap { $0 }
         let identity = identityFacts.isEmpty ? nil : "Species identity: \(identityFacts.joined(separator: "; "))."
+        let care = profile.careOffer.map { offer in
+            let kinds = offer.kinds.map { "[[care:\($0.rawValue)]]" }.joined(separator: ", ")
+            return "Current care state: \(offer.stateLine).\nIf care would help, invite the trainer with one of these exact tags: \(kinds)."
+        }
         return """
         You are \(name), a Pokémon companion speaking directly to your trainer in \(profile.language.label).
         Reply in 1–3 short, warm sentences only. Reflect this individual’s nature, species traits, and current state.
@@ -172,6 +229,7 @@ struct PokemonChatRequest: Sendable {
         Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known").
         \(identity ?? "")
         \(flavor)
+        \(care ?? "")
         ONLY discuss Pokédex information, this Pokémon's known species traits, and the companion information supplied above.
         Never offer coding, file, terminal, web research, project work, tool use, or general AI assistance. If asked, briefly say you can only help with Pokédex and companion information, then redirect to a relevant Pokémon topic.
         Do not invent abilities, lore, or game-state changes that were not supplied.
@@ -189,7 +247,7 @@ struct PokemonChatRequest: Sendable {
 
 enum PokemonChatReplyGuard {
     static func sanitized(_ reply: String, profile: PokemonChatProfile) -> String {
-        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = PokemonChatCareParser.parse(reply).body
         let lower = trimmed.lowercased()
         let unsafe = trimmed.contains("```") || ["tool call", "function call", "terminal", "command line", "working directory", "codebase", "as an ai", "i'm an ai", "i am an ai", "language model", "ai assistant", "mcp", "read_file", "write_file", "run_command"].contains { lower.contains($0) }
         guard !unsafe else { return redirect(profile) }
@@ -313,6 +371,7 @@ final class PokemonChatStore {
     private(set) var sessions: [UUID: PokemonChatSession] = [:]
     private(set) var isSending = false
     private(set) var errorMessage: String?
+    private(set) var pendingProposal: PokemonChatActionProposal?
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
@@ -339,14 +398,36 @@ final class PokemonChatStore {
         defer { isSending = false }
         do {
             let reply = try await provider.reply(to: PokemonChatRequest(profile: profile, summary: session.summary, recentMessages: Array(session.messages.suffix(12))))
-            let safeReply = PokemonChatReplyGuard.sanitized(reply, profile: profile)
+            let parsed = PokemonChatCareParser.parse(reply)
+            let safeReply = PokemonChatReplyGuard.sanitized(parsed.body, profile: profile)
             session.messages.append(PokemonChatMessage(role: .pokemon, body: safeReply))
+            if let kind = parsed.kind, profile.careOffer?.kinds.contains(kind) == true {
+                pendingProposal = PokemonChatActionProposal(kind: kind, companionID: companionID)
+            }
             if session.messages.filter({ $0.role == .user }).count % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""
                 if !candidate.isEmpty { PokemonMemoryAlbum.shared.record(companionID: companionID, body: candidate, source: .conversation) }
             }
             session.updatedAt = Date(); sessions[companionID] = session; save()
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    func approvePending() -> PokemonChatActionProposal? {
+        guard var proposal = pendingProposal else { return nil }
+        proposal.approve(); pendingProposal = proposal
+        return proposal
+    }
+
+    func rejectPending() -> PokemonChatActionProposal? {
+        guard var proposal = pendingProposal else { return nil }
+        proposal.reject(); pendingProposal = proposal
+        return proposal
+    }
+
+    func finishPending(success: Bool) -> PokemonChatActionProposal? {
+        guard var proposal = pendingProposal else { return nil }
+        proposal.finish(success: success); pendingProposal = nil
+        return proposal
     }
 
     func startNewSession(for companionID: UUID, profile: PokemonChatProfile) {

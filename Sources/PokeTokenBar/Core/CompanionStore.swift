@@ -317,7 +317,22 @@ final class CompanionStore {
                                   flavorText: nil, language: language,
                                   types: types,
                                   moves: mon.learnedMoves.map { $0.name(language) },
-                                  nextEvolution: nextEvolutionName(for: mon))
+                                  nextEvolution: nextEvolutionName(for: mon),
+                                  careOffer: mon.id == activeMonID ? careOffer(for: mon) : nil)
+    }
+
+    private func careOffer(for mon: MonState) -> PokemonChatCareOffer? {
+        guard canPerformCare, mon.id == activeMonID else { return nil }
+        let threshold = 60.0
+        var kinds: [PokemonChatActionKind] = []
+        if state.care.hunger <= threshold || state.care.pendingNeed == .hungry { kinds.append(.feed) }
+        if state.care.happiness <= threshold || state.care.pendingNeed == .lonely { kinds.append(.play) }
+        if state.care.energy <= threshold || state.care.pendingNeed == .tired { kinds.append(.rest) }
+        if state.care.hygiene <= threshold || state.care.messCount > 0 { kinds.append(.clean) }
+        if state.care.isSick && state.care.hygiene >= 40 { kinds.append(.medicate) }
+        guard !kinds.isEmpty else { return nil }
+        let line = "hunger \(Int(state.care.hunger)), happiness \(Int(state.care.happiness)), energy \(Int(state.care.energy)), hygiene \(Int(state.care.hygiene))"
+        return PokemonChatCareOffer(kinds: kinds, stateLine: line)
     }
 
     private func nextEvolutionName(for mon: MonState) -> String? {
@@ -725,6 +740,9 @@ final class CompanionStore {
     // MARK: 돌봄·모험
 
     var care: PetCareState { state.care }
+    var canPerformCare: Bool {
+        state.active != nil && state.adventure == nil && !state.care.isSleeping
+    }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
     /// "지금 나가 있는 중" — 끝났지만 아직 정산 안 된 모험은 포함하지 않는다.
@@ -840,6 +858,19 @@ final class CompanionStore {
     }
 
     var favoriteFood: CareFood { CareFood.favorite(for: currentSpeciesID ?? 0) }
+
+    @discardableResult
+    func applyChatCare(_ kind: PokemonChatActionKind) -> Bool {
+        guard kind.isCareRequestable, canPerformCare else { return false }
+        switch kind {
+        case .feed: feedCompanion(); return true
+        case .play: playWithCompanion(); return true
+        case .rest: restCompanion(); return true
+        case .clean: cleanCompanion(); return true
+        case .medicate: return medicateCompanion()
+        default: return false
+        }
+    }
 
     func feedCompanion(_ food: CareFood = .apple) {
         guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
