@@ -405,6 +405,71 @@ final class PopoverLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: 시즌 카드 — 세로 예산
+
+    /// 시즌 카드는 업적 선반과 **같은 세그먼트**에 얹힌다(컬렉션 탭, 520pt 프레임). 둘을 합쳐도
+    /// 프레임 안에 있어야 세그먼트를 바꿀 때 스크롤이 생기지 않는다. 3행이라 선반(4행·160pt)보다
+    /// 작아야 하고, 행마다 게이지를 깔면 미션 카드(211pt)가 겪은 초과를 되풀이한다.
+    private static let seasonCardBudget: CGFloat = 140
+    /// 두 카드가 함께 쓰는 프레임(`CollectionView.contentHeight`). 세그먼트 24pt 는 이 프레임 밖이다.
+    private static let collectionSegmentHeight: CGFloat = 520
+
+    private func seasonStore(_ language: AppLanguage = .ko) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-season-layout-\(UUID().uuidString).json")
+        // 세 챌린지가 **모두 분수로 보이는** 상태 — 하나라도 목표를 넘으면 그 행이 "✓" 로 짧아져
+        // 최악의 폭에서 빠진다. 시즌 키는 아래 고정 시계(2025-08)와 맞춘다.
+        let counts = SeasonBoard.challenges(forSeasonKey: "2025-08")
+            .map { "\"\($0.id)\":\($0.target / 2)" }.joined(separator: ",")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
+            + #""seasons":{"seasonKey":"2025-08","counts":{\#(counts)}}}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: StubProvider(value: moveTestLine),
+                              clock: { Date(timeIntervalSince1970: 1_755_000_000) },
+                              fileURL: url, rng: SeededRNG(seed: 17))
+    }
+
+    /// 트리거 재현: 행마다 `ProgressView` 를 깔면 예산을 넘긴다. 이 대조군이 없으면 아래 예산
+    /// 검증이 "애초에 통과할 조건이었다" 는 false confidence 가 된다.
+    func testAGaugePerSeasonRowBlowsThroughTheCardBudget() {
+        let gauged = VStack(alignment: .leading, spacing: 6) {
+            Text("🗓️ 시즌").font(.caption.weight(.semibold))
+            ForEach(SeasonBoard.challenges(forSeasonKey: "2025-08")) { challenge in
+                HStack {
+                    Text(challenge.id).font(.caption2)
+                    Spacer()
+                    Text("0/\(challenge.target)").font(.caption2)
+                }
+                ProgressView(value: 0.3)
+            }
+        }
+        .padding(9)
+        XCTAssertGreaterThan(renderedHeight(gauged), Self.seasonCardBudget,
+                             "대조군이 안 넘치면 예산 검증이 무의미해진다")
+    }
+
+    func testSeasonCardFitsItsBudget() {
+        XCTAssertLessThanOrEqual(renderedHeight(SeasonChallengeView(store: seasonStore())),
+                                 Self.seasonCardBudget)
+    }
+
+    /// 두 카드가 한 세그먼트를 공유한다 — 합이 프레임을 넘으면 업적 선반이 잘리거나 스크롤이 생긴다.
+    func testSeasonCardAndAchievementShelfShareTheSegmentWithoutOverflowing() {
+        let combined = renderedHeight(SeasonChallengeView(store: seasonStore()))
+            + renderedHeight(AchievementShelfView(store: achievementStore()))
+        XCTAssertLessThanOrEqual(combined, Self.collectionSegmentHeight)
+    }
+
+    /// 남은 일수 문구가 세 언어에서 길이가 다르다(12일 남음 / 12d left / 残り12日). 한 언어에서
+    /// 헤더가 줄바꿈되면 그 언어에서만 카드가 커진다 — 기술 목록에서 이미 겪은 부류다.
+    func testSeasonCardHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(SeasonChallengeView(store: seasonStore(.ko)))
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(SeasonChallengeView(store: seasonStore(language))),
+                           korean, accuracy: 1, "\(language.rawValue) 에서 카드 높이가 달라졌다")
+        }
+    }
+
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
 
     private func moveStore(_ moves: [MoveSpec]) -> CompanionStore {
