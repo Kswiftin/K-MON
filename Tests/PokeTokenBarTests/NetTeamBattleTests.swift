@@ -22,10 +22,10 @@ final class NetTeamBattleTests: XCTestCase {
         let lineup = [snapshot(1), snapshot(2), snapshot(3)]
         let challenge = NetMessage.challenge(snapshot: lineup[0], lineup: lineup, teamSize: 3,
                                              seed: 99, profile: profile,
-                                             rulesVersion: BattleEngine.rulesVersion)
+                                             rulesVersion: BattleEngine.rulesVersion, chatSupported: true)
         let decodedChallenge = try JSONDecoder().decode(NetMessage.self,
                                                         from: JSONEncoder().encode(challenge))
-        guard case .challenge(let lead, let decodedLineup, let size, let seed, let decodedProfile, let version)
+        guard case .challenge(let lead, let decodedLineup, let size, let seed, let decodedProfile, let version, let chatSupported)
                 = decodedChallenge else { return XCTFail("challenge case") }
         XCTAssertEqual(lead, lineup[0])
         XCTAssertEqual(decodedLineup, lineup)
@@ -33,16 +33,18 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertEqual(seed, 99)
         XCTAssertEqual(decodedProfile, profile)
         XCTAssertEqual(version, BattleEngine.rulesVersion)
+        XCTAssertEqual(chatSupported, true)
 
         let accept = NetMessage.accept(snapshot: lineup[0], lineup: lineup, teamSize: 3,
-                                       profile: profile, rulesVersion: BattleEngine.rulesVersion)
-        guard case .accept(let acceptedLead, let acceptedLineup, let acceptedSize, _, _)
+                                       profile: profile, rulesVersion: BattleEngine.rulesVersion, chatSupported: true)
+        guard case .accept(let acceptedLead, let acceptedLineup, let acceptedSize, _, _, let acceptedChat)
                 = try JSONDecoder().decode(NetMessage.self, from: JSONEncoder().encode(accept)) else {
             return XCTFail("accept case")
         }
         XCTAssertEqual(acceptedLead, lineup[0])
         XCTAssertEqual(acceptedLineup, lineup)
         XCTAssertEqual(acceptedSize, 3)
+        XCTAssertEqual(acceptedChat, true)
 
         let action = NetMessage.action(turn: 7, action: .switchTo(index: 2))
         guard case .action(let turn, let decodedAction)
@@ -56,16 +58,16 @@ final class NetTeamBattleTests: XCTestCase {
     func testLegacyChallengeAndMoveStillDecode() throws {
         let lead = snapshot(1)
         let modern = NetMessage.challenge(snapshot: lead, lineup: [lead], teamSize: 1,
-                                          seed: 4, profile: profile, rulesVersion: 5)
+                                          seed: 4, profile: profile, rulesVersion: 5, chatSupported: true)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(modern))
             as? [String: Any])
         var payload = try XCTUnwrap(object["challenge"] as? [String: Any])
         payload.removeValue(forKey: "lineup")
         payload.removeValue(forKey: "teamSize")
+        payload.removeValue(forKey: "chatSupported")
         object["challenge"] = payload
         let legacyData = try JSONSerialization.data(withJSONObject: object)
-
-        guard case .challenge(let decodedLead, let lineup, let size, _, _, let version)
+        guard case .challenge(let decodedLead, let lineup, let size, _, _, let version, let chatSupported)
                 = try JSONDecoder().decode(NetMessage.self, from: legacyData) else {
             return XCTFail("legacy challenge case")
         }
@@ -73,6 +75,7 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertEqual(lineup, [lead])
         XCTAssertEqual(size, 1)
         XCTAssertEqual(version, 5, "구버전은 디코딩된 뒤 규칙 불일치 경로에서 거절된다")
+        XCTAssertNil(chatSupported)
 
         let oldMove = NetMessage.move(turn: 2, moveIndex: 0)
         guard case .move(let turn, let index)

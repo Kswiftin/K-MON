@@ -233,8 +233,8 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 호스트가 `roundResolved` 를 브로드캐스트하므로 구버전 게스트는 모르는 모양을 만나면 라운드를
     // 디코딩하지 못하고 멈춘다 → 입장 단계에서 막는다.
     // 2: LobbyParticipant.role + 관전자 베팅, 3: 이벤트 스트림, 4: 상태이상(status 필드 + case 추가),
-    // 5: 랭크(stages 필드 + `.boost` case) — 구버전 게스트는 `.boost` 를 디코딩하지 못해 라운드에서 멈춘다.
-    static let protocolVersion = 5
+    // 5: 랭크(stages 필드 + `.boost` case), 6: 방 전체 자유 채팅.
+    static let protocolVersion = 6
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -250,6 +250,7 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     case pokeathlonBet(participantID: UUID, runnerID: UUID, amount: Int)
     case pokeathlonPool(PokeathlonPool)
     case pokeathlonSettlement(pool: PokeathlonPool, winnerID: UUID?)
+    case chat(BattleChatMessage)
 }
 
 /// 2~4명 개인전/2:2 공용 결정적 전투 상태. 네트워크는 action만 모아 호스트가 resolveRound를 호출한다.

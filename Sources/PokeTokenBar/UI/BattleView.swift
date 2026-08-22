@@ -100,7 +100,11 @@ struct BattleView: View {
             overlay: animator.overlay,
             onChoose: { center.chooseMove($0) },
             onSwitch: { center.switchLAN(to: $0) },
-            onForfeit: { center.forfeit() })
+            onForfeit: { center.forfeit() },
+            chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.chatSenderID,
+                                          isEnabled: center.chatIsAvailable,
+                                          unavailableMessage: center.chatIsAvailable ? nil : l.battleChatUnavailable,
+                                          l: l, onSend: center.sendChat))
         .onAppear { replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs]) }
         .onChange(of: battle.events.count) {
             replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs])
@@ -553,6 +557,10 @@ struct BattleView: View {
                 BattleLogBox(lines: multiplayerLogLines(center.multiplayer.combatEvents, fighters: fighters),
                              myActor: .fighter(center.multiplayer.myID))
             }
+            BattleChatPanel(configuration: BattleChatConfiguration(
+                messages: center.multiplayer.chatMessages, mySenderID: center.multiplayer.myID,
+                isEnabled: true, unavailableMessage: nil, l: l,
+                onSend: center.multiplayer.sendChat))
         }
         .onAppear {
             if multiplayerTargetID == nil { multiplayerTargetID = targets.first?.id }

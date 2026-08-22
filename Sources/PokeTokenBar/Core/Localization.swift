@@ -87,6 +87,15 @@ struct L {
     var battleYourTurn: String { t("기술 또는 교체를 선택하세요", "Choose a move or switch", "わざか交代を選んでください") }
     var battleWaitingOpponent: String { t("상대가 행동을 고르는 중…", "Opponent is choosing…", "相手が行動を選んでいます…") }
     var battleForfeit: String { t("기권", "Forfeit", "降参") }
+    var battleChatTitle: String { t("채팅", "Chat", "チャット") }
+    var battleChatPlaceholder: String { t("메시지 입력", "Type a message", "メッセージを入力") }
+    var battleChatSend: String { t("전송", "Send", "送信") }
+    var battleChatUnavailable: String {
+        t("상대 앱 버전에서는 채팅을 지원하지 않습니다.", "Chat is unavailable with this app version.", "相手のアプリのバージョンではチャットを利用できません。")
+    }
+    func battleChatNewMessages(_ count: Int) -> String {
+        t("새 메시지 (count)개", "(count) new messages", "新着メッセージ (count)件")
+    }
     var battleSwitch: String { t("교체", "Switch", "こうたい") }
     var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }
     var battleNoEffect: String { t("효과가 없었다…", "It had no effect…", "こうかがないようだ…") }
