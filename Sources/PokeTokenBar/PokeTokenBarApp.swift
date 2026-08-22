@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private let popover = NSPopover()
     private var settings: AppSettings!
     private var companion: CompanionStore!
+    private var memoryAlbum: PokemonMemoryAlbum!
+    private var chatStore: PokemonChatStore!
+    private var chatPresenter: PokemonChatPresenter!
     private var updater: UpdateChecker!
     private var battleCenter: BattleCenter!
     private let focusTimer = FocusTimer()
@@ -43,7 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         Self.migrateLegacyStorageIfNeeded()   // TokenMac → PokeTokenBar 리네임: 기존 companion/캐시 보존
         LoginItem.migrateFromLegacyLoginItemIfNeeded()   // 로그인아이템 → KeepAlive 에이전트(크래시 자동 재실행)
         settings = AppSettings()
-        companion = CompanionStore()
+        memoryAlbum = PokemonMemoryAlbum()
+        chatStore = PokemonChatStore(album: memoryAlbum)
+        companion = CompanionStore(memoryAlbum: memoryAlbum, chatStore: chatStore)
+        chatPresenter = PokemonChatPresenter(store: companion, chat: chatStore, album: memoryAlbum)
         Task { await companion.ensureInheritedMoves() }
         focusTimer.onFocusCompleted = { [weak self] minutes in
             self?.companion.completeFocusSession(minutes: minutes)
@@ -63,8 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             settings: settings, companion: companion,
             onOpenPopover: { [weak self] in self?.openPopover() },
             onChat: { [weak self] in
-                self?.openPopover()
-                DispatchQueue.main.async { NotificationCenter.default.post(name: .openPokemonChat, object: nil) }
+                guard let self, let id = self.companion.activeMonID else { return }
+                self.chatPresenter.open(companionID: id)
             },
             onHide: { [weak self] in self?.settings.floatingPetEnabled = false }
         )   // 데스크톱 플로팅 펫(옵트인)
@@ -454,7 +460,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         popover.contentViewController = NSHostingController(
             rootView: PopoverView()
                 .environment(settings).environment(companion).environment(updater).environment(navigation)
-                .environment(battleCenter).environment(focusTimer))
+                .environment(battleCenter).environment(focusTimer).environment(chatPresenter))
     }
 
     @objc private func togglePopover() {

@@ -360,13 +360,13 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertTrue(safe.contains("도감"))
     }
 
-    func testAlbumDeduplicatesCapsAndDeletes() {
+    func testAlbumRetainsRepeatedEventsCapsAndDeletes() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-memory-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
         let album = PokemonMemoryAlbum(fileURL: url), id = UUID()
         album.record(companionID: id, body: "함께 산책했다.", source: .event)
         album.record(companionID: id, body: "함께 산책했다.", source: .event)
-        XCTAssertEqual(album.entries(for: id).count, 1)
+        XCTAssertEqual(album.entries(for: id).count, 2)
         album.deleteAll(for: id)
         XCTAssertTrue(album.entries(for: id).isEmpty)
     }
@@ -376,6 +376,47 @@ final class PokemonChatTests: XCTestCase {
 
         XCTAssertEqual(arguments, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only",
                                    "--ephemeral", "--ignore-user-config", "--ignore-rules", "--config", "mcp_servers={}"])
+    }
+
+    func testCodexWritesOnlyTheFinalMessageToItsTemporaryOutputFile() {
+        let provider = PokemonChatCLIProvider(executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                                              arguments: PokemonChatProviderSafety.arguments(for: .codex)!, kind: .codex)
+        let output = URL(fileURLWithPath: "/tmp/final-message.txt")
+        let arguments = provider.invocationArguments(for: PokemonChatRequest(profile: .fixture, recentMessages: []), outputFileURL: output)
+        XCTAssertEqual(arguments.suffix(2), ["--output-last-message", output.path])
+    }
+
+    func testOnlyTheNewestEightDurableMemoriesReachARequest() {
+        let id = UUID()
+        let memories = (0..<10).map { PokemonMemory(companionID: id, createdAt: Date(), source: .event, body: "event \($0)") }
+        let request = PokemonChatRequest(profile: .fixture, memories: memories, recentMessages: [])
+        XCTAssertEqual(request.memories.map(\.body), (2..<10).map { "event \($0)" })
+        XCTAssertFalse(request.conversationInput.contains("event 1"))
+        XCTAssertTrue(request.conversationInput.contains("event 9"))
+    }
+
+    func testConcurrentRepliesAndReloadPreserveEveryMessage() async {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = PokemonChatStore(fileURL: url), id = UUID(), provider = QueuedReplyProvider()
+        let first = Task { await store.send("first", for: id, profile: .fixture, provider: provider) }
+        let second = Task { await store.send("second", for: id, profile: .fixture, provider: provider) }
+        for _ in 0..<20 where store.outstandingSendCount < 2 { await Task.yield() }
+        XCTAssertEqual(store.outstandingSendCount, 2)
+        await provider.resolve(with: "reply one"); await provider.resolve(with: "reply two")
+        await first.value; await second.value
+        XCTAssertFalse(store.isSending)
+        XCTAssertEqual(store.messages(for: id).count, 4)
+        XCTAssertEqual(PokemonChatStore(fileURL: url).messages(for: id).count, 4)
+    }
+
+    func testTranscriptIsCappedAtTwoHundredMessages() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = PokemonChatStore(fileURL: url), id = UUID()
+        for index in 0..<205 { store.appendLocalMessage("message \(index)", for: id, profile: .fixture) }
+        XCTAssertEqual(store.messages(for: id).count, 200)
+        XCTAssertEqual(store.messages(for: id).first?.body, "message 5")
     }
 
     func testProvidersWithoutAVerifiedToolFreeContractAreBlocked() {
@@ -446,6 +487,14 @@ private actor DeferredReplyProvider: PokemonChatProviding {
         continuation?.resume(returning: reply)
         continuation = nil
     }
+}
+
+private actor QueuedReplyProvider: PokemonChatProviding {
+    private var continuations: [CheckedContinuation<String, Error>] = []
+    func reply(to request: PokemonChatRequest) async throws -> String {
+        try await withCheckedThrowingContinuation { continuations.append($0) }
+    }
+    func resolve(with reply: String) { guard !continuations.isEmpty else { return }; continuations.removeFirst().resume(returning: reply) }
 }
 
 private extension PokemonChatProfile {

@@ -223,11 +223,14 @@ enum PokemonChatCareOutcome {
 
 struct PokemonChatRequest: Sendable {
     let profile: PokemonChatProfile
+    /// Kept for backwards-compatible saved callers; durable memories are the only relationship
+    /// context sent to a provider.
     let summary: String
+    let memories: [PokemonMemory]
     let recentMessages: [PokemonChatMessage]
 
-    init(profile: PokemonChatProfile, summary: String, recentMessages: [PokemonChatMessage]) {
-        self.profile = profile; self.summary = summary; self.recentMessages = recentMessages
+    init(profile: PokemonChatProfile, summary: String = "", memories: [PokemonMemory] = [], recentMessages: [PokemonChatMessage]) {
+        self.profile = profile; self.summary = summary; self.memories = Array(memories.suffix(8)); self.recentMessages = recentMessages
     }
 
     var systemPrompt: String {
@@ -258,8 +261,8 @@ struct PokemonChatRequest: Sendable {
     }
 
     var conversationInput: String {
-        ([summary.isEmpty ? nil : "Relationship memory: \(summary)"]
-            .compactMap { $0 } + recentMessages.map { "\($0.role.rawValue): \($0.body)" })
+        (memories.map { "Relationship memory (\($0.source.rawValue)): \($0.body)" }
+            + recentMessages.map { "\($0.role.rawValue): \($0.body)" })
             .joined(separator: "\n")
     }
 
@@ -300,21 +303,21 @@ struct PokemonMemory: Codable, Sendable, Identifiable, Equatable {
 @MainActor @Observable
 final class PokemonMemoryAlbum {
     private struct Snapshot: Codable { var memories: [UUID: [PokemonMemory]] }
-    static let shared = PokemonMemoryAlbum()
     private(set) var memories: [UUID: [PokemonMemory]] = [:]
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
         self.fileURL = fileURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PokeTokenBar", isDirectory: true).appendingPathComponent("pokemon-memories.json")
-        if let data = try? Data(contentsOf: self.fileURL), let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) { memories = snapshot.memories }
+        if let data = try? Data(contentsOf: self.fileURL), let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
+            memories = snapshot.memories.mapValues { Array($0.suffix(200)) }
+        }
     }
     func entries(for id: UUID) -> [PokemonMemory] { memories[id] ?? [] }
     func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil) {
         let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, body.count <= 180 else { return }
         var entries = memories[companionID] ?? []
-        guard !entries.contains(where: { $0.body == body }) else { return }
         entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: source, body: body, eventID: eventID))
         memories[companionID] = Array(entries.suffix(200)); save()
     }
@@ -357,30 +360,96 @@ struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
     let arguments: [String]
     let kind: PokemonChatProviderKind
 
-    func invocationArguments(for request: PokemonChatRequest) -> [String] {
-        kind == .claude ? arguments + ["--system-prompt", request.systemPrompt] : arguments
+    func invocationArguments(for request: PokemonChatRequest, outputFileURL: URL? = nil) -> [String] {
+        if kind == .claude { return arguments + ["--system-prompt", request.systemPrompt] }
+        if kind == .codex, let outputFileURL { return arguments + ["--output-last-message", outputFileURL.path] }
+        return arguments
     }
 
     func reply(to request: PokemonChatRequest) async throws -> String {
         let prompt = kind == .codex ? request.codexInput : request.conversationInput
-        let invocation = invocationArguments(for: request)
-        return try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            let input = Pipe(), output = Pipe(), error = Pipe()
-            process.executableURL = executableURL; process.arguments = invocation
-            process.standardInput = input; process.standardOutput = output; process.standardError = error
-            process.terminationHandler = { process in
-                let data = output.fileHandleForReading.readDataToEndOfFile()
-                let stderr = error.fileHandleForReading.readDataToEndOfFile()
-                let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-                if process.terminationStatus == 0, !text.isEmpty { continuation.resume(returning: text) }
-                else { continuation.resume(throwing: NSError(domain: "PokemonChat", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: String(decoding: stderr, as: UTF8.self).isEmpty ? "AI tool returned no response." : String(decoding: stderr, as: UTF8.self)])) }
+        let outputFileURL = kind == .codex
+            ? FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).txt")
+            : nil
+        defer { if let outputFileURL { try? FileManager.default.removeItem(at: outputFileURL) } }
+        let result = try await PokemonChatCommandRunner.run(executableURL: executableURL,
+                                                            arguments: invocationArguments(for: request, outputFileURL: outputFileURL),
+                                                            input: prompt, timeout: 30)
+        if let outputFileURL {
+            let text = (try? String(contentsOf: outputFileURL, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !text.isEmpty else { throw PokemonChatCommandRunner.Error.noResponse(stderr: result.stderr) }
+            return text
+        }
+        guard !result.stdout.isEmpty else { throw PokemonChatCommandRunner.Error.noResponse(stderr: result.stderr) }
+        return result.stdout
+    }
+}
+
+/// Drains both pipes while the child is alive. Reading only from `terminationHandler` deadlocks
+/// whenever a provider fills an OS pipe buffer with event output.
+enum PokemonChatCommandRunner {
+    struct Result: Sendable { let stdout: String; let stderr: String }
+    enum Error: LocalizedError { case timedOut, cancelled, noResponse(stderr: String)
+        var errorDescription: String? { switch self {
+        case .timedOut: return "AI tool timed out."
+        case .cancelled: return "AI request cancelled."
+        case .noResponse(let stderr): return stderr.isEmpty ? "AI tool returned no response." : stderr
+        } }
+    }
+    static func run(executableURL: URL, arguments: [String], input: String, timeout: TimeInterval) async throws -> Result {
+        let job = Job(executableURL: executableURL, arguments: arguments, input: input)
+        return try await withTaskCancellationHandler(operation: {
+            try await withThrowingTaskGroup(of: Result.self) { group in
+                group.addTask { try await job.start() }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(timeout))
+                    job.terminate(); throw Error.timedOut
+                }
+                do {
+                    let value = try await group.next()!
+                    group.cancelAll(); job.terminate()
+                    return value
+                } catch {
+                    group.cancelAll(); job.terminate(); throw error
+                }
             }
-            do {
-                try process.run()
-                input.fileHandleForWriting.write(Data(prompt.utf8))
-                try? input.fileHandleForWriting.close()
-            } catch { continuation.resume(throwing: error) }
+        }, onCancel: { job.terminate() })
+    }
+
+    private final class Job: @unchecked Sendable {
+        private let executableURL: URL, arguments: [String], input: String
+        private let lock = NSLock(); private var process: Process?
+        init(executableURL: URL, arguments: [String], input: String) { self.executableURL = executableURL; self.arguments = arguments; self.input = input }
+        func terminate() { lock.lock(); let process = process; lock.unlock(); if process?.isRunning == true { process?.terminate() } }
+        func start() async throws -> Result {
+            try await withCheckedThrowingContinuation { continuation in
+                let process = Process(), inputPipe = Pipe(), output = Pipe(), error = Pipe()
+                let state = State(continuation: continuation)
+                output.fileHandleForReading.readabilityHandler = { handle in state.appendOutput(handle.availableData) }
+                error.fileHandleForReading.readabilityHandler = { handle in state.appendError(handle.availableData) }
+                process.executableURL = executableURL; process.arguments = arguments; process.standardInput = inputPipe; process.standardOutput = output; process.standardError = error
+                process.terminationHandler = { process in
+                    state.appendOutput(output.fileHandleForReading.readDataToEndOfFile())
+                    state.appendError(error.fileHandleForReading.readDataToEndOfFile())
+                    output.fileHandleForReading.readabilityHandler = nil; error.fileHandleForReading.readabilityHandler = nil
+                    if process.terminationStatus == 0 { state.finish(.success(state.result())) }
+                    else { state.finish(.failure(Error.noResponse(stderr: state.result().stderr))) }
+                }
+                lock.lock(); self.process = process; lock.unlock()
+                do { try process.run(); inputPipe.fileHandleForWriting.write(Data(input.utf8)); try? inputPipe.fileHandleForWriting.close() }
+                catch { state.finish(.failure(error)) }
+            }
+        }
+
+        private final class State: @unchecked Sendable {
+            private let lock = NSLock(); private var stdout = Data(), stderr = Data(), resumed = false
+            private var continuation: CheckedContinuation<Result, Swift.Error>?
+            init(continuation: CheckedContinuation<Result, Swift.Error>) { self.continuation = continuation }
+            func appendOutput(_ data: Data) { guard !data.isEmpty else { return }; lock.lock(); stdout.append(data); lock.unlock() }
+            func appendError(_ data: Data) { guard !data.isEmpty else { return }; lock.lock(); stderr.append(data); lock.unlock() }
+            func result() -> Result { lock.lock(); defer { lock.unlock() }; return Result(stdout: String(decoding: stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines), stderr: String(decoding: stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) }
+            func finish(_ result: Swift.Result<Result, Swift.Error>) { lock.lock(); guard !resumed, let continuation else { lock.unlock(); return }; resumed = true; self.continuation = nil; lock.unlock(); continuation.resume(with: result) }
         }
     }
 }
@@ -390,14 +459,19 @@ struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
 final class PokemonChatStore {
     private struct Snapshot: Codable { var sessions: [UUID: PokemonChatSession] }
     private(set) var sessions: [UUID: PokemonChatSession] = [:]
-    private(set) var isSending = false
+    private(set) var outstandingSendCount = 0
+    var isSending: Bool { outstandingSendCount > 0 }
     private(set) var errorMessage: String?
     private(set) var pendingProposal: PokemonChatActionProposal?
     private let fileURL: URL
+    let album: PokemonMemoryAlbum
 
-    init(fileURL: URL? = nil) {
+    init(fileURL: URL? = nil, album: PokemonMemoryAlbum? = nil) {
         self.fileURL = fileURL ?? Self.defaultURL()
-        if let data = try? Data(contentsOf: self.fileURL), let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) { sessions = snapshot.sessions }
+        self.album = album ?? PokemonMemoryAlbum(fileURL: Self.siblingMemoryURL(for: self.fileURL))
+        if let data = try? Data(contentsOf: self.fileURL), let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
+            sessions = snapshot.sessions.mapValues { session in var session = session; session.messages = Array(session.messages.suffix(200)); return session }
+        }
     }
 
     func session(for companionID: UUID) -> PokemonChatSession? { sessions[companionID] }
@@ -408,34 +482,36 @@ final class PokemonChatStore {
         guard !trimmed.isEmpty else { return }
         var session = sessions[companionID] ?? PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName)
         session.refreshIdentity(speciesID: profile.speciesID, displayName: profile.displayName)
-        session.messages.append(PokemonChatMessage(role: .user, body: trimmed))
+        session.messages.append(PokemonChatMessage(role: .user, body: trimmed)); session.messages = Array(session.messages.suffix(200))
         session.updatedAt = Date(); sessions[companionID] = session; save()
     }
 
     func appendSystemMessage(_ body: String, for companionID: UUID, profile: PokemonChatProfile) {
         var session = sessions[companionID] ?? PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName)
-        session.messages.append(PokemonChatMessage(role: .system, body: body))
+        session.messages.append(PokemonChatMessage(role: .system, body: body)); session.messages = Array(session.messages.suffix(200))
         session.updatedAt = Date(); sessions[companionID] = session; save()
     }
 
     func send(_ body: String, for companionID: UUID, profile: PokemonChatProfile, provider: any PokemonChatProviding) async {
         appendLocalMessage(body, for: companionID, profile: profile)
-        guard var session = sessions[companionID] else { return }
-        isSending = true; errorMessage = nil
-        defer { isSending = false }
+        guard let session = sessions[companionID] else { return }
+        outstandingSendCount += 1; errorMessage = nil
+        defer { outstandingSendCount -= 1 }
         do {
-            let reply = try await provider.reply(to: PokemonChatRequest(profile: profile, summary: session.summary, recentMessages: Array(session.messages.suffix(12))))
+            let reply = try await provider.reply(to: PokemonChatRequest(profile: profile, memories: Array(album.entries(for: companionID).suffix(8)), recentMessages: Array(session.messages.suffix(12))))
             let parsed = PokemonChatCareParser.parse(reply)
             let safeReply = PokemonChatReplyGuard.sanitized(parsed.body, profile: profile)
-            session.messages.append(PokemonChatMessage(role: .pokemon, body: safeReply))
+            guard var current = sessions[companionID] else { return }
+            current.refreshIdentity(speciesID: profile.speciesID, displayName: profile.displayName)
+            current.messages.append(PokemonChatMessage(role: .pokemon, body: safeReply)); current.messages = Array(current.messages.suffix(200))
             if let kind = parsed.kind, profile.careOffer?.kinds.contains(kind) == true {
                 pendingProposal = PokemonChatActionProposal(kind: kind, companionID: companionID)
             }
             if session.messages.filter({ $0.role == .user }).count % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""
-                if !candidate.isEmpty { PokemonMemoryAlbum.shared.record(companionID: companionID, body: candidate, source: .conversation) }
+                if !candidate.isEmpty { album.record(companionID: companionID, body: candidate, source: .conversation) }
             }
-            session.updatedAt = Date(); sessions[companionID] = session; save()
+            current.updatedAt = Date(); sessions[companionID] = current; save()
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -457,10 +533,28 @@ final class PokemonChatStore {
         return proposal
     }
 
+    /// Keeps approval orchestration out of SwiftUI and binds execution to the proposal's exact
+    /// companion ID. The executor is deliberately explicit so a visible card can never retarget
+    /// whichever companion happens to be active later.
+    func resolvePending(approved: Bool, profile: PokemonChatProfile,
+                        executor: (PokemonChatActionKind, UUID) -> Bool) {
+        guard let proposal = pendingProposal, proposal.state == .pending else { return }
+        if approved {
+            _ = approvePending()
+            let success = executor(proposal.kind, proposal.companionID)
+            _ = finishPending(success: success)
+            appendSystemMessage(PokemonChatCareOutcome.message(kind: proposal.kind, approved: true, success: success, profile: profile), for: proposal.companionID, profile: profile)
+        } else {
+            _ = rejectPending(); _ = finishPending(success: false)
+            appendSystemMessage(PokemonChatCareOutcome.message(kind: proposal.kind, approved: false, success: false, profile: profile), for: proposal.companionID, profile: profile)
+        }
+    }
+
     func startNewSession(for companionID: UUID, profile: PokemonChatProfile) {
         sessions[companionID] = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName); save()
     }
     func deleteSession(for companionID: UUID) { sessions.removeValue(forKey: companionID); save() }
+    func prune(validCompanionIDs: Set<UUID>) { sessions = sessions.filter { validCompanionIDs.contains($0.key) }; save() }
 
     private func save() {
         let dir = fileURL.deletingLastPathComponent(); try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -470,5 +564,8 @@ final class PokemonChatStore {
     private static func defaultURL() -> URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PokeTokenBar", isDirectory: true).appendingPathComponent("pokemon-chat.json")
+    }
+    private static func siblingMemoryURL(for fileURL: URL) -> URL {
+        fileURL.deletingPathExtension().appendingPathExtension("pokemon-memories.json")
     }
 }

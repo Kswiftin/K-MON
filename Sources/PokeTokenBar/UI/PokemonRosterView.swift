@@ -21,7 +21,7 @@ struct PokemonRosterView: View {
     @State private var didResolveTypes = false
     /// 방생 확인 대상. 되돌릴 수 없으므로 카드에서 바로 놓아주지 않고 한 번 물어본다.
     @State private var releaseTarget: MonState?
-    @State private var chatTarget: MonState?
+    @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
     private static let contentHeight: CGFloat = 520
@@ -64,9 +64,6 @@ struct PokemonRosterView: View {
             Text(store.l.t("놓아준 포켓몬은 돌아오지 않습니다. 졸업해 도감에 기록된 개체라면 도감 기록은 남습니다.",
                      "A released Pokémon does not come back. If it had graduated, its Pokédex record stays.",
                      "にがしたポケモンは戻りません。卒業して図鑑に記録された個体なら記録は残ります。"))
-        }
-        .sheet(isPresented: Binding(get: { chatTarget != nil }, set: { if !$0 { chatTarget = nil } })) {
-            if let mon = chatTarget { PokemonChatView(store: store, companionID: mon.id, profile: store.chatProfile(for: mon)) }
         }
     }
 
@@ -169,7 +166,7 @@ struct PokemonRosterView: View {
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
                                           name: names[mon.currentID] ?? "",
                                           types: types[mon.currentID] ?? [],
-                                          onRelease: { releaseTarget = mon }, onChat: { chatTarget = mon })
+            onRelease: { releaseTarget = mon }, onChat: { chatPresenter.open(companionID: mon.id) })
                                 .frame(maxWidth: .infinity)
                         } else {
                             Color.clear.frame(maxWidth: .infinity)

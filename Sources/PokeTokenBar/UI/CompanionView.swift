@@ -462,7 +462,7 @@ struct CompanionHeader: View {
     // 별명 인라인 편집
     @State private var editingName = false
     @State private var nameDraft = ""
-    @State private var showingChat = false
+    @Environment(PokemonChatPresenter.self) private var chatPresenter
     /// 기술 목록은 처음부터 펼쳐 둔다. 파트너에게 무엇이 있는지가 홈에서 가장 자주 보는 정보인데,
     /// 접혀 있으면 팝오버를 열 때마다 한 번 더 눌러야 했다. 접으면 그 팝오버가 열려 있는 동안은
     /// 접힌 채로 있고, 닫았다 열면 다시 펼쳐진다(`@State` 라 팝오버 생명주기를 따른다).
@@ -559,7 +559,7 @@ struct CompanionHeader: View {
                                 .clipShape(Capsule())
                         }
                         if store.hasActive, !editingName {
-                            Button { showingChat = true } label: {
+                            Button { if let id = store.activeMonID { chatPresenter.open(companionID: id) } } label: {
                                 Image(systemName: "bubble.left.and.bubble.right")
                                     .font(.system(size: 11, weight: .semibold))
                             }
@@ -677,13 +677,6 @@ struct CompanionHeader: View {
         .onChange(of: store.candyFeedbackSeq) { showCandyXPIfNeeded() }
         .onChange(of: store.mintFeedbackSeq) { showMintIfNeeded() }
         .onChange(of: eggImminent) { syncEggWiggle() }
-        .onReceive(NotificationCenter.default.publisher(for: .openPokemonChat)) { _ in
-            guard store.hasActive else { return }
-            showingChat = true
-        }
-        .sheet(isPresented: $showingChat) {
-            if let mon = store.state.active { PokemonChatView(store: store, companionID: mon.id, profile: store.chatProfile(for: mon)) }
-        }
     }
 
     /// 부화/진화 연출 1회 재생 — 흰 플래시 페이드아웃 + 스프링 팝. shiny 부화는 ✨ 버스트 추가.

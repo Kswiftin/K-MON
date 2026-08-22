@@ -184,7 +184,9 @@ actor PokeAPIClient: PokeProviding {
         var genera: [String: String] = [:]
         var habitatSlug: String?
         var flavorTexts: [String: String] = [:]
+        let speciesSucceeded: Bool
         if let dto = try? await species(speciesID) {
+            speciesSucceeded = true
             for entry in dto.genera ?? [] where langCodes.contains(entry.language.name) {
                 genera[entry.language.name] = entry.genus
             }
@@ -192,12 +194,14 @@ actor PokeAPIClient: PokeProviding {
             flavorTexts = Self.flavorTexts((dto.flavor_text_entries ?? []).map {
                 (language: $0.language.name, text: $0.flavor_text)
             }, languages: langCodes)
-        }
+        } else { speciesSucceeded = false }
 
         var abilityNames: [String: String] = [:]
         var abilityTexts: [String: String] = [:]
+        var pokemonSucceeded = false
         do {
             let dto: PokemonAbilitiesDTO = try await get(base.appendingPathComponent("pokemon/\(speciesID)"))
+            pokemonSucceeded = true
             let entries = dto.abilities.map {
                 (slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot)
             }
@@ -218,7 +222,9 @@ actor PokeAPIClient: PokeProviding {
             genera: genera, habitatSlug: habitatSlug, flavorTexts: flavorTexts,
             abilityNames: abilityNames, abilityTexts: abilityTexts, language: language
         )
-        chatSpeciesIdentityCache[cacheKey] = identity
+        // Do not turn a total transient outage into a permanent empty identity. A successful
+        // species response is useful even if optional ability enrichment failed.
+        if speciesSucceeded || pokemonSucceeded { chatSpeciesIdentityCache[cacheKey] = identity }
         return identity
     }
 

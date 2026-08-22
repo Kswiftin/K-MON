@@ -3,18 +3,26 @@ import SwiftUI
 struct PokemonChatView: View {
     let store: CompanionStore
     let companionID: UUID
-    @State private var profile: PokemonChatProfile
-    @State private var chat = PokemonChatStore()
+    let chat: PokemonChatStore
+    let album: PokemonMemoryAlbum
+    @State private var identity: PokemonSpeciesIdentity?
     @State private var draft = ""
-    @State private var showingAlbum = false
-    @State private var showingDailyDex = false
+    @State private var destination: Destination?
     @AppStorage("pokemonChatProvider") private var providerRaw = ""
 
-    init(store: CompanionStore, companionID: UUID, profile: PokemonChatProfile) {
+    private enum Destination: String, Identifiable { case album, dailyDex; var id: String { rawValue } }
+
+    init(store: CompanionStore, companionID: UUID, chat: PokemonChatStore? = nil, album: PokemonMemoryAlbum? = nil) {
         self.store = store
         self.companionID = companionID
-        _profile = State(initialValue: profile)
+        self.chat = chat ?? store.chatStore
+        self.album = album ?? store.memoryAlbum
     }
+    private var baseProfile: PokemonChatProfile {
+        store.ownedMons.first(where: { $0.id == companionID }).map(store.chatProfile(for:))
+            ?? PokemonChatProfile(speciesID: 0, displayName: "?", nickname: nil, nature: nil, level: 1, stage: "", flavorText: nil, language: store.language)
+    }
+    private var profile: PokemonChatProfile { var value = baseProfile; if let identity { value.apply(identity) }; return value }
     private var l: L { L(profile.language) }
 
     private var provider: (any PokemonChatProviding)? {
@@ -66,18 +74,18 @@ struct PokemonChatView: View {
                     .textFieldStyle(.roundedBorder).lineLimit(1...4)
                     .onSubmit(send)
                 Button(action: send) { Image(systemName: "paperplane.fill") }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil || chat.isSending)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
             }.padding(12)
         }
         .frame(width: 420, height: 520)
-        .sheet(isPresented: $showingAlbum) { PokemonMemoryAlbumView(companionID: companionID, language: profile.language) }
-        .sheet(isPresented: $showingDailyDex) { TodayPokedexView(profile: profile) }
-        .task(id: profile.speciesID) {
-            profile.apply(await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID, language: profile.language))
-            if profile.types.isEmpty,
-               let battleProfile = try? await PokeAPIClient.shared.battleProfile(speciesID: profile.speciesID) {
-                profile.types = battleProfile.types.map { $0.name(profile.language) }
+        .sheet(item: $destination) { destination in
+            switch destination {
+            case .album: PokemonMemoryAlbumView(companionID: companionID, language: profile.language, album: album)
+            case .dailyDex: TodayPokedexView(profile: profile)
             }
+        }
+        .task(id: profile.speciesID) {
+            identity = await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID, language: profile.language)
         }
     }
 
@@ -95,7 +103,7 @@ struct PokemonChatView: View {
                 Text("OpenCode (disabled)").tag(PokemonChatProviderKind.opencode.rawValue)
                 Text(l.t("사용자 CLI (사용 안 함)", "Custom CLI (disabled)", "カスタム CLI（無効）")).tag(PokemonChatProviderKind.custom.rawValue)
             }.labelsHidden().frame(width: 120)
-            Menu { Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { showingAlbum = true }
+            Menu { Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
                 Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
                 Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
             } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton)
@@ -115,7 +123,7 @@ struct PokemonChatView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(chips, id: \.self) { chip in
-                    Button(chip) { if chip == dailyDexQuestion { showingDailyDex = true } else { draft = chip } }.buttonStyle(.bordered).controlSize(.small)
+                    Button(chip) { if chip == dailyDexQuestion { destination = .dailyDex } else { draft = chip } }.buttonStyle(.bordered).controlSize(.small)
                 }
             }.padding(.horizontal, 12).padding(.bottom, 8)
         }
@@ -158,20 +166,11 @@ struct PokemonChatView: View {
     }
 
     private func approve(_ proposal: PokemonChatActionProposal) {
-        guard chat.approvePending() != nil else { return }
-        let success = store.applyChatCare(proposal.kind, for: proposal.companionID)
-        _ = chat.finishPending(success: success)
-        chat.appendSystemMessage(PokemonChatCareOutcome.message(kind: proposal.kind, approved: true,
-                                                                success: success, profile: profile),
-                                 for: companionID, profile: profile)
+        chat.resolvePending(approved: true, profile: profile, executor: store.applyChatCare)
     }
 
     private func reject(_ proposal: PokemonChatActionProposal) {
-        guard chat.rejectPending() != nil else { return }
-        _ = chat.finishPending(success: false)
-        chat.appendSystemMessage(PokemonChatCareOutcome.message(kind: proposal.kind, approved: false,
-                                                                success: false, profile: profile),
-                                 for: companionID, profile: profile)
+        chat.resolvePending(approved: false, profile: profile, executor: store.applyChatCare)
     }
 }
 
@@ -198,7 +197,7 @@ private struct TodayPokedexView: View {
 private struct PokemonMemoryAlbumView: View {
     let companionID: UUID
     let language: AppLanguage
-    @State private var album = PokemonMemoryAlbum.shared
+    let album: PokemonMemoryAlbum
     private var l: L { L(language) }
     var body: some View {
         VStack(alignment: .leading) {
@@ -311,7 +310,7 @@ private struct PokemonThinkingBubble: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 9)
             .background(.secondary.opacity(0.12), in: Capsule())
-            Text("생각 중").font(.caption).foregroundStyle(.secondary)
+            Text(L(profile.language).t("생각 중", "Thinking", "考え中")).font(.caption).foregroundStyle(.secondary)
             Spacer()
         }
         .accessibilityElement(children: .ignore)
