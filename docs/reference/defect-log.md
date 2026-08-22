@@ -591,12 +591,12 @@ read_when:
   기존 서명이 무효가 된다" 는 성립하지 않았다 — 백필도 `save()` 를 지나며 재서명된다. 실제 제약은
   위의 배포 규칙 하나뿐이다. (2026-08-21.)
 - **그 구멍은 막지 않는다 — 상한이 다른 문에서 정해진다.** `isTampered` 는 `integrityVersion` 이
-  낮으면 검사를 면제하고, 그 값을 낮게 써 넣으면 어떤 필드를 서명해도 무력화된다. 그런데 **불러오기
-  경로는 애초에 무결성을 검사하지 않는다**(남의 세이브는 이 기기 서명을 가질 수 없다) — 같은 이득이
-  파일 선택 한 번으로 항상 열려 있으니 하한을 둬도 조작 상한은 그대로다. 반대로 하한을 세이브 밖
-  (UserDefaults)에 두면 앱을 다운그레이드한 사용자의 정상 세이브를 초기화하는 오탐이 새로 생긴다.
-  **막는 이득 0 · 데이터 손실 위험 신설**이라 유지하고, 근거를 `testImportIsNotSubjectToTheIntegrityCheck`
-  로 못박았다. 무결성 검사의 실제 범위는 "로컬 파일 손편집" 이고 "결심한 치팅" 이 아니다. (2026-08-22.)
+  낮으면 검사를 면제하니 그 값을 낮게 써 넣으면 어떤 서명도 무력해진다. 그런데 **불러오기는 애초에
+  무결성을 검사하지 않는다**(남의 세이브는 이 기기 서명을 가질 수 없다) — 같은 이득이 파일 선택 한
+  번으로 늘 열려 있어 하한을 둬도 조작 상한은 그대로다. 반대로 하한을 세이브 밖(UserDefaults)에 두면
+  다운그레이드 사용자의 정상 세이브를 초기화하는 오탐만 새로 생긴다. **막아서 얻는 건 없고 데이터
+  손실 위험만 늘어** 그대로 뒀다 — 근거는 `testImportIsNotSubjectToTheIntegrityCheck`. 무결성 검사가
+  막는 건 "로컬 파일 손편집" 이고 "작정한 치팅" 이 아니다. (2026-08-22.)
 
 ## 파생 진행도를 화면용 목록으로 계산하면 되감기는 부류
 
@@ -1278,7 +1278,7 @@ read_when:
   가운뎃점, 보상은 합산). 새 문구를 만들지 않고 기존 "이름 — 별의조각 N" 문장을 재사용한다.
 - **테스트 가능한 자리로 뽑는다.** `notifyCompanionEvent` 는 `AppEnv.isBundledApp` 가드에 막혀 테스트에서
   아무것도 관측할 수 없다 — 병합 규칙을 순수 함수로 분리해야 검사할 수 있다
-  (`testCompletionsInOneSettlementMergeIntoASingleNotice`).
+  (`testCompletionsInOneSettlementMergeIntoASingleNotice`, 2026-08-22.)
 
 ## 주기 축만 다른 두 원장에 같은 진행도 규칙을 복제하는 부류
 
@@ -1286,4 +1286,5 @@ read_when:
   곧 멱등 가드인데 그 규칙이 두 곳에 있으면 한쪽만 고쳐져 미션과 시즌이 다르게 동작한다.
 - **처방**: `protocol Goal` + `Array<Goal>.advance/normalized` + `Dictionary.canonicalCounts` 로 규칙을
   한 곳에 두고, 주기 축(일·주 vs 월)만 각 원장이 갖는다. **canonical 문자열은 바이트 단위로 동일해야
-  한다** — 달라지면 정상 세이브가 전부 조작 판정된다(`testDefaultStateCanonicalFormIsFrozen` 이 가드).
+  한다** — 달라지면 정상 세이브가 전부 조작 판정된다(`testDefaultStateCanonicalFormIsFrozen` 이 가드,
+  2026-08-22.)

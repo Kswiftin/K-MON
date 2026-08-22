@@ -30,8 +30,8 @@ final class SeasonBoardTests: XCTestCase {
         XCTAssertTrue(SeasonBoard.rotation.allSatisfy { $0.allSatisfy { $0.target > 0 && $0.reward > 0 } })
     }
 
-    /// 세트는 세 이벤트를 정확히 하나씩 다룬다 — 한 이벤트가 빠지면 그 시즌엔 그 축을 아무리 해도
-    /// 채울 칸이 없고, 두 번 들어가면 한 정산이 같은 세트에서 두 칸을 민다.
+    /// 세트는 세 이벤트를 정확히 하나씩 다룬다 — 한 이벤트가 빠지면 그 축을 아무리 밀어도 채울 칸이
+    /// 없고, 두 번 들어가면 한 정산이 같은 세트에서 두 칸을 민다.
     func testEverySetCoversEachEventExactlyOnce() {
         for (index, set) in SeasonBoard.rotation.enumerated() {
             XCTAssertEqual(set.count, 3, "세트 \(index)")
@@ -500,7 +500,7 @@ final class SeasonSaveTests: XCTestCase {
         XCTAssertTrue(SaveTransfer.isTampered(signed), "시즌 키도 서명에 들어가 있어야 한다")
     }
 
-    /// 경계가 시즌 키를 트랩 없이 통과시킨다 — 트랩나면 세이브 한 줄로 앱이 못 뜬다
+    /// 경계가 시즌 키를 트랩 없이 통과시킨다 — 트랩이 걸리면 세이브 한 줄로 앱이 못 뜬다
     /// (`integrityVersion` 을 지운 세이브는 조작 판정도 안 되어 곧장 이 경로로 온다).
     func testAbsurdSeasonKeyPassesTheBoundaryWithoutTrapping() {
         var state = CompanionState()

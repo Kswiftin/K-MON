@@ -3,8 +3,8 @@ import Foundation
 /// 한 시즌짜리 목표 하나. 어휘는 미션과 같은 `MissionEvent` — 적립 훅이 이미 뚫린 곳(모험 정산·
 /// 졸업)만 쓴다. 배틀·레이스는 훅이 LAN 전용이라 혼자 하는 사람에겐 못 채우는 칸이 된다.
 struct SeasonChallenge: Identifiable, Sendable, Goal {
-    /// 진행도 사전의 키이자 무결성 canonical 의 일부. 목표값을 품어(`focus900`) 같은 이름이면 세트를
-    /// 넘나들어도 같은 목표다 — 깨지면 정규화 클램프가 시즌마다 다른 값을 남긴다.
+    /// 진행도 사전의 키이자 무결성 canonical 의 일부. id 에 목표값을 품는다(`focus900`) — 세트가
+    /// 달라도 같은 id 면 같은 목표다. 이 규칙이 깨지면 정규화 클램프가 시즌마다 다른 값을 남긴다.
     let id: String
     let event: MissionEvent
     let target: Int
@@ -14,8 +14,8 @@ struct SeasonChallenge: Identifiable, Sendable, Goal {
 
 /// 시즌 순환 챌린지 — 달력 월마다 만료·갱신되는 기간 한정 목표 세트.
 ///
-/// **콘텐츠를 저작하지 않는다.** 세트를 시즌 인덱스로 고르는 공식이라 서버도, 시즌마다의 앱
-/// 업데이트도 없다. 대가는 3개월 주기 반복 — 표에 세트를 더하면 주기가 늘어난다
+/// **콘텐츠를 저작하지 않는다.** 세트를 시즌 인덱스로 고르는 공식이라 서버도, 시즌마다 앱을
+/// 업데이트할 일도 없다. 대가는 3개월 주기 반복 — 표에 세트를 더하면 주기가 늘어난다
 /// (`SeasonBoardTests` 가 현재 주기를 못박는다).
 ///
 /// 갱신은 자정 타이머가 아니라 **키 비교**(`MissionBoard` 와 같은 방식): `yyyy-MM` 이 바뀐 첫
@@ -49,6 +49,8 @@ struct SeasonBoard: Codable, Sendable, Equatable {
     ///
     /// `let` 이 아니라 계산 프로퍼티인 이유: `Calendar` 는 생성 시점의 `TimeZone.current` 를 굳히는데
     /// `seasonKey` 는 호출마다 새로 읽는다. 굳히면 실행 중 시간대 변경 후 월초에 둘이 다른 달을 센다.
+    /// `timeZone = .current` 로 덮는 것도 같은 함정이다 — `TimeZone.current` 자체가 프로세스 첫 값에
+    /// 캐시된다. 시간대를 다시 읽는 건 `Calendar(identifier:)` 뿐이다.
     static var gregorian: Calendar { Calendar(identifier: .gregorian) }
 
     var seasonKey = ""
@@ -71,8 +73,8 @@ struct SeasonBoard: Codable, Sendable, Equatable {
         rotation[seasonIndex(key) % rotation.count]
     }
 
-    /// 시즌 종료까지 남은 일수 — **오늘 포함**. 말일에 0이면 아직 채울 수 있는 시즌이 끝난 것으로 읽힌다.
-    /// `?? 31` 은 달력이 월 범위를 못 줄 때의 폴백이라 그레고리력에서는 도달하지 않는다.
+    /// 시즌 종료까지 남은 일수 — **오늘 포함**. 말일에 0을 주면 아직 채울 수 있는 시즌이 끝난 것으로
+    /// 읽힌다. `?? 31` 은 달력이 월 범위를 못 줄 때의 폴백이라 그레고리력에서는 닿지 않는다.
     static func daysRemaining(at date: Date, calendar: Calendar = SeasonBoard.gregorian) -> Int {
         let length = calendar.range(of: .day, in: .month, for: date)?.count ?? 31
         return max(1, length - calendar.component(.day, from: date) + 1)

@@ -917,7 +917,8 @@ final class CompanionStore {
     }
 
     /// 시즌 기록의 **유일한** 경로 — 완료 보상(별의조각)과 알림까지 여기서 끝낸다.
-    /// 계약은 `recordMission` 과 같다(반환값 = 이번에 지급한 별의조각, 정산 경로가 보상 객체에 실음).
+    /// 계약은 `recordMission` 과 같다: 반환값은 이번에 지급한 별의조각이고, 정산 경로가 그 값을
+    /// 보상 객체에 실어 보고한다.
     @discardableResult
     private func recordSeason(_ event: MissionEvent, _ amount: Int) -> Int {
         let done = state.seasons.record(event, amount, seasonKey: Self.seasonKey(clock()))
@@ -1415,15 +1416,12 @@ final class CompanionStore {
                              l.notifDailyCandyBody)
     }
 
-    /// 로컬 시간대 기준 YYYY-MM-DD — 일일 보상 원장 키. 달력은 그레고리력 고정이다(시스템 달력이
-    /// 이슬람력이면 시즌 만료 계산과 다른 달을 센다).
+    /// 로컬 시간대 기준 YYYY-MM-DD — 일일 보상 원장 키.
     ///
     /// 달력은 시즌 만료와 **같은 접근자**(`SeasonBoard.gregorian`)를 쓴다 — 갈라지면 자정 근처에서
-    /// 원장 키와 남은 일수가 다른 날을 센다. 그 접근자가 계산 프로퍼티인 이유도 여기 걸려 있다:
-    /// `Calendar` 를 굳히면 생성 시점 시간대가 박혀 실행 중 시간대 변경을 못 따라간다.
-    /// (`timeZone = .current` 로 덮어써도 같은 함정이다 — `TimeZone.current` 는 프로세스 첫 값에
-    /// 캐시돼 시간대를 바꿔도 옛 값을 준다. `Calendar(identifier:)` 는 매번 새로 읽는다.)
-    /// `DateFormatter` 대신 성분을 조립하는 건 매 호출 생성 비용 때문이다(실측 16.3µs → 1.6µs).
+    /// 원장 키와 남은 일수가 다른 날을 센다. 그 접근자를 굳히거나 `timeZone = .current` 로 덮으면
+    /// 실행 중 시간대 변경을 놓친다(이유는 `SeasonBoard.gregorian` 주석).
+    /// `DateFormatter` 대신 성분을 조립하는 건 호출당 생성 비용 때문이다(실측 16.3µs → 1.6µs).
     nonisolated static func dayKey(_ date: Date) -> String {
         let parts = SeasonBoard.gregorian.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)

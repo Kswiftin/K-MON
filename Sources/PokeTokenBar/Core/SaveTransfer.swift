@@ -317,8 +317,7 @@ enum SaveTransfer {
         if s.achievements != AchievementLadder() { p.append("ach\(s.achievements.canonical)") }
         // 시즌 진행도도 서명에 넣는다 — 밖에 두면 목표 직전 값을 적어 넣는 것만으로 보상이 공짜다.
         // 조건부인 이유는 위 세 필드와 같고, 새 필드라 `integrityVersion` 은 올리지 않는다.
-        // 접두가 `s` 가 아닌 이유는 `ach` 가 `ac` 를 피한 것과 같다(`sp0`·`scfalse` 와 겹친다).
-        // 주의: `integrityVersion` 을 지운 세이브는 애초에 조작 판정 대상이 아니다(`isTampered`).
+        // 접두는 `sn` — `s` 하나면 `sp0`·`scfalse` 와 겹친다(`ach` 가 `ac` 를 피한 것과 같다).
         if s.seasons != SeasonBoard() { p.append("sn\(s.seasons.canonical)") }
         // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
         // 배지 키 한 줄을 지워 같은 체육관에서 알을 다시 받는다. 정렬 필수: `Set` 순회 순서는 실행마다
@@ -392,11 +391,11 @@ enum SaveTransfer {
 
     /// 서명이 있는데 안 맞는가(= 손편집됨). 서명 전(빈 값)·구버전은 조작으로 보지 않는다.
     ///
-    /// 구버전 면제는 **의도적으로 남긴 구멍**이다: `integrityVersion` 을 낮게 써 넣으면 검사를
-    /// 건너뛴다. 막지 않는 이유는 조작 상한이 이 함수가 아니라 **불러오기**로 정해지기 때문이다 —
-    /// 남의 세이브는 이 기기 서명을 가질 수 없어 불러오기 경로는 애초에 검사하지 않는다
-    /// (`testImportIsNotSubjectToTheIntegrityCheck`). 버전 하한을 세이브 밖(UserDefaults)에 두면
-    /// 상한은 그대로인데 앱 다운그레이드 사용자의 정상 세이브를 초기화하는 오탐만 생긴다.
+    /// 구버전 면제(`integrityVersion` 을 낮게 써 넣으면 검사를 건너뛴다)는 **의도적으로 남긴 구멍**
+    /// 이다. 조작 상한은 이 함수가 아니라 **불러오기**가 정한다 — 남의 세이브는 이 기기 서명을 가질
+    /// 수 없어 불러오기는 애초에 검사하지 않는다(`testImportIsNotSubjectToTheIntegrityCheck`).
+    /// 버전 하한을 세이브 밖(UserDefaults)에 두면 앱을 다운그레이드한 사용자의 정상 세이브를
+    /// 초기화하는 오탐만 새로 생긴다.
     static func isTampered(_ state: CompanionState) -> Bool {
         guard state.integrityVersion >= integrityVersion else { return false }
         return !state.integrity.isEmpty && state.integrity != integrityHash(state)
