@@ -1224,7 +1224,10 @@ struct CollectionView: View {
     ///
     /// 이 24pt 는 원래 세그먼트 몫이었지만 목표 줄이 먼저 썼다 — 그래서 세그먼트는 이 프레임 밖에
     /// 얹는다. 안으로 넣으면 6행이 눌려 스프라이트가 잘린다.
-    private static let contentHeight: CGFloat = 520
+    /// `PopoverLayoutTests` 가 읽는다 — 예산 검증이 실제 프레임을 따라오게 하려고 internal 이다.
+    static let contentHeight: CGFloat = 520
+    /// 업적 세그먼트에서 시즌 카드와 업적 선반 사이 간격. 예산 합산에 들어가므로 상수로 둔다.
+    static let cardSpacing: CGFloat = 8
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1249,7 +1252,11 @@ struct CollectionView: View {
             // 도감이 비어도 업적은 볼 수 있어야 한다 — 빈 화면은 도감 분기 안에만 둔다.
             if store.dexEntries.isEmpty { emptyState } else { DexGridView(store: store) }
         case .achievements:
-            AchievementShelfView(store: store)
+            // 시즌 카드가 위 — 만료되는 쪽이 먼저 보여야 한다. 업적은 사라지지 않는다.
+            VStack(alignment: .leading, spacing: Self.cardSpacing) {
+                SeasonChallengeView(store: store)
+                AchievementShelfView(store: store)
+            }
         }
     }
 

@@ -691,29 +691,39 @@ struct L {
                  "\(name) — you earned \(amount) Star Pieces!",
                  "\(name) — ほしのかけら \(amount) を獲得！")
     }
-    /// 이름 없는 미션은 **빈 문자열**을 돌려준다 — 카탈로그에 미션을 더하고 문구를 빼먹으면
-    /// `MissionBoardTests` 가 그 자리에서 실패한다. id 를 폴백으로 쓰면 그 가드가 무력해진다.
-    /// 이름에 "오늘"·"이번 주"를 넣지 않는다 — 카드의 일간/주간 배지가 이미 그 말을 하고,
-    /// 360pt 팝오버에서 같은 정보를 두 번 쓰면 이름이 잘린다. 목표 수치가 들어가 있어
-    /// 알림에서도 어느 미션인지 구분된다(집중 60분 vs 300분).
-    func missionName(_ mission: Mission) -> String {
-        switch mission.id {
-        case "dailyAdventures":
-            return t("모험 정산 \(mission.target)회",
-                     "Claim \(mission.target) adventures",
-                     "冒険を\(mission.target)回精算")
-        case "dailyFocus", "weeklyFocus":
-            return t("집중 \(mission.target)분",
-                     "Focus \(mission.target) minutes",
-                     "\(mission.target)分集中")
-        case "weeklyGraduation":
-            return t("졸업 \(mission.target)회",
-                     "Graduate \(mission.target) partner",
-                     "\(mission.target)体を卒業")
-        default: return ""
+    /// 목표 이름 — 미션과 시즌 챌린지가 **같은 문구를 공유**한다. 두 곳에 두면 한쪽만 고쳐진다.
+    ///
+    /// id 가 아니라 **이벤트로 스위치**한다: 이벤트를 더하면 컴파일러가 막으니 빈 문자열 폴백이
+    /// 필요 없다(`achievementName` 과 같은 이유). "오늘"·"이번 주" 는 넣지 않는다 — 카드의 주기
+    /// 배지가 이미 말하고, 360pt 팝오버에서 두 번 쓰면 이름이 잘린다. 목표 수치가 들어가 알림에서도
+    /// 구분된다(집중 60분 vs 300분).
+    func goalName(_ event: MissionEvent, _ target: Int) -> String {
+        switch event {
+        case .adventures:
+            return t("모험 정산 \(target)회", "Claim \(plural(target, "adventure"))", "冒険を\(target)回精算")
+        case .focusMinutes:
+            return t("집중 \(target)분", "Focus \(plural(target, "minute"))", "\(target)分集中")
+        case .graduations:
+            return t("졸업 \(target)회", "Graduate \(plural(target, "partner"))", "\(target)体を卒業")
         }
     }
+
+    /// 영어 복수형 — 세 이벤트가 공유한다. 한 케이스만 처리하면 목표값을 1 로 조절하는 순간
+    /// 나머지에서 "Claim 1 adventures" 가 나온다.
+    private func plural(_ count: Int, _ noun: String) -> String {
+        "\(count) \(noun)\(count == 1 ? "" : "s")"
+    }
+
+    func missionName(_ mission: Mission) -> String { goalName(mission.event, mission.target) }
     var missionsTitle: String { t("미션", "Missions", "ミッション") }
+
+    /// 시즌 카드 제목과 남은 일수. 완료 알림 본문은 미션 것을 재사용한다(같은 문장을 두 번 번역하지
+    /// 않는다). 남은 일수는 한 줄 헤더에 들어가므로 가장 짧은 말을 쓴다.
+    var seasonTitle: String { t("시즌 챌린지", "Season challenges", "シーズンチャレンジ") }
+    func seasonDaysLeft(_ days: Int) -> String {
+        t("\(days)일 남음", "\(days)d left", "残り\(days)日")
+    }
+    var notifSeasonDoneTitle: String { t("🗓️ 시즌 챌린지 달성!", "🗓️ Season challenge cleared!", "🗓️ シーズンチャレンジ達成！") }
 
     var notifDexGoalTitle: String { t("📘 도감 목표 달성!", "📘 Pokédex goal cleared!", "📘 図鑑目標を達成！") }
     func notifDexGoalBody(_ name: String) -> String {

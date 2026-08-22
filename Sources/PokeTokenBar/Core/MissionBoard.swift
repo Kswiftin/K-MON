@@ -12,7 +12,49 @@ enum MissionPeriod: Sendable {
     case daily, weekly
 }
 
-struct Mission: Identifiable, Sendable {
+/// 미션과 시즌 챌린지가 공유하는 목표. 두 원장은 주기 축(일·주 vs 월)만 다르고 **진행도 규칙은
+/// 같다** — 클램프가 곧 멱등 가드다(진행도가 목표를 넘을 수 없어 완료 순간을 두 번 지나지 못한다).
+/// 규칙을 양쪽에 복제하면 한쪽만 고쳐져 미션과 시즌이 다르게 동작한다.
+protocol Goal: Identifiable, Sendable where ID == String {
+    var event: MissionEvent { get }
+    var target: Int { get }
+}
+
+extension Array where Element: Goal {
+    /// 진행도를 올리고 **이번에 완료된** 목표만 돌려준다. 호출부는 반환된 것에만 보상을 주므로
+    /// "이미 줬나"를 기억하지 않는다.
+    func advance(_ event: MissionEvent, _ amount: Int, in counts: inout [String: Int]) -> [Element] {
+        var completed: [Element] = []
+        for goal in self where goal.event == event {
+            let before = counts[goal.id] ?? 0
+            // 이미 목표에 닿았으면 건드리지 않는다 — 완료 순간을 두 번 지나지 못하게 하는 지점.
+            guard before < goal.target else { continue }
+            let after = Swift.min(goal.target, before + amount)
+            counts[goal.id] = after
+            if after == goal.target { completed.append(goal) }
+        }
+        return completed
+    }
+
+    /// 이 목록에 없는 키를 버리고 값을 `0...target` 으로 클램프한다. 클램프된 값이 곧 완료 상태라
+    /// 손편집으로 목표를 넘겨도 재지급되지 않는다.
+    func normalized(_ counts: [String: Int]) -> [String: Int] {
+        counts.reduce(into: [:]) { result, entry in
+            guard let goal = first(where: { $0.id == entry.key }) else { return }
+            result[entry.key] = Swift.min(Swift.max(0, entry.value), goal.target)
+        }
+    }
+}
+
+extension Dictionary where Key == String, Value == Int {
+    /// 무결성 해시 입력의 진행도 부분 — **정렬** 필수. 사전 순회 순서에 기대면 같은 상태가 실행마다
+    /// 다른 문자열을 내서 정상 세이브가 무작위로 조작 판정된다.
+    var canonicalCounts: String {
+        sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")
+    }
+}
+
+struct Mission: Identifiable, Sendable, Goal {
     /// 진행도 사전의 키이자 무결성 canonical 의 일부라 카탈로그 안에서 유일해야 한다.
     let id: String
     let period: MissionPeriod
@@ -51,40 +93,28 @@ struct MissionBoard: Codable, Sendable, Equatable {
                          dayKey: String, weekKey: String) -> [Mission] {
         roll(dayKey: dayKey, weekKey: weekKey)
         guard amount > 0 else { return [] }
-        var completed: [Mission] = []
-        for mission in Self.catalog where mission.event == event {
-            let before = self[mission]
-            // 이미 목표에 닿았으면 건드리지 않는다 — 완료 순간을 두 번 지나지 못하게 하는 지점.
-            guard before < mission.target else { continue }
-            let after = min(mission.target, before + amount)
-            self[mission] = after
-            if after == mission.target { completed.append(mission) }
-        }
-        return completed
+        return Self.missions(in: .daily).advance(event, amount, in: &daily)
+             + Self.missions(in: .weekly).advance(event, amount, in: &weekly)
     }
 
     /// 표시용 진행도. 주기가 지났으면 **상태를 바꾸지 않고** 0을 돌려준다 —
     /// 화면을 그리려고 세이브를 더럽히지 않으면서도 자정이 지나면 즉시 비어 보인다.
     func progress(_ mission: Mission, dayKey: String, weekKey: String) -> Int {
-        let current = mission.period == .daily ? self.dayKey == dayKey : self.weekKey == weekKey
-        return current ? self[mission] : 0
+        let daily = mission.period == .daily
+        guard daily ? self.dayKey == dayKey : self.weekKey == weekKey else { return 0 }
+        return (daily ? self.daily : weekly)[mission.id] ?? 0
     }
 
-    /// 신뢰경계 정규화 — 카탈로그에서 사라진 미션의 잔재를 버리고 값을 `0...target` 으로 클램프한다.
-    /// 손편집으로 목표를 넘긴 값이 들어와도 클램프된 값은 곧 완료 상태라 재지급되지 않는다.
+    /// 신뢰경계 정규화 — 카탈로그에서 사라진 미션의 잔재를 버리고 값을 클램프한다. 키 길이도 여기서
+    /// 자른다: 세이브에서 온 임의 길이 문자열이 canonical(해시 입력)에 그대로 실린다.
     mutating func normalize() {
-        daily = Self.normalized(daily, period: .daily)
-        weekly = Self.normalized(weekly, period: .weekly)
+        dayKey = SaveTransfer.clampedKey(dayKey)
+        weekKey = SaveTransfer.clampedKey(weekKey)
+        daily = Self.missions(in: .daily).normalized(daily)
+        weekly = Self.missions(in: .weekly).normalized(weekly)
     }
 
-    /// 무결성 해시 입력 — **정렬**해야 한다. 사전 순회 순서에 기대면 같은 상태가 실행마다 다른
-    /// 문자열을 내서, 정상 세이브가 무작위로 조작 판정된다.
-    var canonical: String {
-        let counts = [daily, weekly].map { dict in
-            dict.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")
-        }
-        return "d\(dayKey)|w\(weekKey)|\(counts[0])|\(counts[1])"
-    }
+    var canonical: String { "d\(dayKey)|w\(weekKey)|\(daily.canonicalCounts)|\(weekly.canonicalCounts)" }
 
     private mutating func roll(dayKey: String, weekKey: String) {
         // 두 주기를 따로 본다 — 같이 비우면 주간 목표가 매일 초기화돼 도달할 수 없게 된다.
@@ -92,18 +122,8 @@ struct MissionBoard: Codable, Sendable, Equatable {
         if self.weekKey != weekKey { self.weekKey = weekKey; weekly = [:] }
     }
 
-    private subscript(mission: Mission) -> Int {
-        get { (mission.period == .daily ? daily : weekly)[mission.id] ?? 0 }
-        set {
-            if mission.period == .daily { daily[mission.id] = newValue } else { weekly[mission.id] = newValue }
-        }
-    }
-
-    private static func normalized(_ counts: [String: Int], period: MissionPeriod) -> [String: Int] {
-        counts.reduce(into: [:]) { result, entry in
-            guard let mission = catalog.first(where: { $0.id == entry.key && $0.period == period })
-            else { return }
-            result[entry.key] = min(max(0, entry.value), mission.target)
-        }
+    /// 주기별 목록 — 진행도 사전이 주기마다 따로라 목록도 나눠서 넘긴다.
+    private static func missions(in period: MissionPeriod) -> [Mission] {
+        catalog.filter { $0.period == period }
     }
 }

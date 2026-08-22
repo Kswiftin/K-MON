@@ -279,6 +279,8 @@ struct AdventureReward: Sendable, Equatable {
     var missionBonus = 0
     /// 이번 정산에서 넘은 업적 단계가 지급한 별의조각. 위 둘과 같은 계약이다.
     var achievementBonus = 0
+    /// 이번 정산으로 완료된 시즌 챌린지가 지급한 별의조각. 위 셋과 같은 계약이다.
+    var seasonBonus = 0
     var stardust: Int { starPieces }
 }
 
@@ -289,6 +291,7 @@ struct FocusSessionReward: Sendable, Equatable {
     var trainerBonus = 0
     var missionBonus = 0
     var achievementBonus = 0
+    var seasonBonus = 0
 }
 
 enum FocusRewardRules {

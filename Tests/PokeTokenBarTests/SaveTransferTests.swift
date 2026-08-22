@@ -354,6 +354,60 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(s.usedSinceInstall - s.spentTokens, 0)
     }
 
+    /// [부류] 세이브에서 온 **문자열은 길이가 무제한**이었다 — 원장 키·이름이 그대로 무결성 canonical
+    /// (매 저장의 해시 입력)과 화면·LAN 전송에 실린다. 숫자만 자르고 문자열을 빼 둔 자리다.
+    /// 잘린 키는 어떤 실제 키와도 안 맞아 진행도가 0으로 읽히고 다음 기록에서 갱신된다.
+    func testOversizedStringsFromASaveAreClampedAtTheBoundary() {
+        let long = String(repeating: "x", count: 100_000)
+        var evil = CompanionState()
+        evil.seasons.seasonKey = long
+        evil.missions.dayKey = long
+        evil.missions.weekKey = long
+        evil.adventureWeekKey = long
+        evil.lastAdventureBonusDate = long
+        evil.lastCandyDate = long
+        evil.activeSecondsDate = long
+        evil.trainerName = long
+        evil.gymBadges = [long]
+        evil.active = MonState(baseID: 1, pathIDs: [1], plannedPathIDs: [1], stageIndex: 0,
+                               usedAtStage: 0, rarity: .common, totalForms: 1, nickname: long)
+        evil.boxedMons = [MonState(baseID: 2, pathIDs: [2], plannedPathIDs: [2], stageIndex: 0,
+                                   usedAtStage: 0, rarity: .common, totalForms: 1, nickname: long)]
+
+        let s = SaveTransfer.sanitized(evil)
+
+        for key in [s.seasons.seasonKey, s.missions.dayKey, s.missions.weekKey, s.adventureWeekKey,
+                    s.lastAdventureBonusDate, s.lastCandyDate, s.activeSecondsDate] {
+            XCTAssertEqual(key.count, SaveTransfer.maxKeyLength)
+        }
+        XCTAssertEqual(s.trainerName.count, SaveTransfer.maxNameLength)
+        XCTAssertEqual(s.active?.nickname?.count, SaveTransfer.maxNameLength)
+        XCTAssertEqual(s.boxedMons.first?.nickname?.count, SaveTransfer.maxNameLength,
+                       "박스 개체도 같은 경계를 지난다 — 활성만 자르면 부류가 반만 막힌다")
+        XCTAssertEqual(s.gymBadges.first?.count, SaveTransfer.maxNameLength)
+        XCTAssertLessThan(SaveTransfer.canonicalString(s).count, 1_000,
+                          "해시 입력이 세이브 한 장으로 무한히 커지면 매 저장이 그만큼 느려진다")
+    }
+
+    /// [설계 못박기] 불러오기는 **무결성 검사를 지나지 않는다** — 사용자가 고른 파일은 이 기기 서명을
+    /// 가질 수 없다. 그래서 `isTampered` 의 구버전 면제 구멍(`integrityVersion` 을 낮게 써 넣으면 검사
+    /// 면제)을 막아도 **조작 상한은 그대로다**: 같은 이득이 불러오기로 늘 열려 있다. 반대로 버전 하한을
+    /// 세이브 밖에 두면 다운그레이드 사용자의 정상 세이브만 초기화된다. 그래서 그 구멍은 막지 않는다.
+    func testImportIsNotSubjectToTheIntegrityCheck() throws {
+        var crafted = CompanionState()
+        crafted.starPieces = 999_999
+        crafted.integrityVersion = SaveTransfer.integrityVersion
+        crafted.integrity = "deadbeef"   // 이 기기 해시와 맞지 않는 서명
+        XCTAssertTrue(SaveTransfer.isTampered(crafted), "같은 상태가 로컬 파일이면 조작으로 잡힌다")
+
+        let data = try SaveTransfer.encode(state: crafted, appVersion: "2.9.0",
+                                           deviceName: "Other", now: transferNow)
+        let store = store(at: tempURL("crafted"))
+        try store.applySave(try SaveTransfer.decode(data))
+
+        XCTAssertEqual(store.state.starPieces, 999_999, "불러오기는 서명을 보지 않는다 — 의도된 설계")
+    }
+
     /// [부류 가드] 기본값 상태의 canonical 은 **동결**이다. 새 필드를 조건 없이 붙이면 여기서 깨진다 —
     /// 그런 append 는 그 필드가 없던 시절의 정상 세이브를 전부 조작으로 판정해 진행을 초기화한다.
     ///
@@ -415,7 +469,7 @@ final class SaveTransferTests: XCTestCase {
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
                                      "starterCandidates", "active", "dex", "collectedFinals", "gymBadges", "shinyEggCharges", "inventory",
                                      "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
-                                     "care", "battleRank", "trainer", "missions", "achievements", "battleHistory",
+                                     "care", "battleRank", "trainer", "missions", "achievements", "seasons", "battleHistory",
                                      // 진행 중인 랭크전 에스크로 — 이미 지갑에서 빠져나간 돈이다.
                                      // 기기를 옮길 때 안 따라가면 배틀 중에 이전해서 판돈을 챙길 수 있다.
                                      "pendingRanked",

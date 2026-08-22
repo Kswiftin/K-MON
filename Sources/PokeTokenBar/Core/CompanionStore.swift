@@ -305,7 +305,8 @@ final class CompanionStore {
     func setNickname(_ name: String) {
         guard state.active != nil else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        state.active!.nickname = trimmed.isEmpty ? nil : String(trimmed.prefix(20))
+        // 상한은 세이브 경계와 **같은 상수**를 쓴다 — 경계가 더 짧으면 방금 넣은 이름이 로드 때 잘린다.
+        state.active!.nickname = trimmed.isEmpty ? nil : String(trimmed.prefix(SaveTransfer.maxNameLength))
         save()
     }
 
@@ -313,7 +314,8 @@ final class CompanionStore {
     var trainerName: String { state.trainerName }
     var hasTrainerName: Bool { !state.trainerName.trimmingCharacters(in: .whitespaces).isEmpty }
     func setTrainerName(_ name: String) {
-        state.trainerName = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20))
+        state.trainerName = String(name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(SaveTransfer.maxNameLength))
         save()
     }
     var currentSpeciesID: Int? { state.active?.currentID }
@@ -767,6 +769,8 @@ final class CompanionStore {
         // 미션은 **정산된** 분만 인정한다 — 시작만으로 진행되면 타이머를 켜 두는 것이 곧 미션
         // 진행이 되어 목표가 집중과 무관해진다.
         reward.missionBonus = recordMission(.focusMinutes, minutes) + recordMission(.adventures, 1)
+        // 시즌 챌린지도 같은 정산분을 센다 — 미션과 이벤트 어휘가 같아 훅이 이 한 줄로 끝난다.
+        reward.seasonBonus = recordSeason(.focusMinutes, minutes) + recordSeason(.adventures, 1)
         // 업적도 **정산된** 분만 센다. 세 시작 경로가 모두 여기를 지나니 훅은 이 한 줄이다.
         reward.achievementBonus = recordAchievement(.focus, minutes)
         var fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
@@ -894,16 +898,49 @@ final class CompanionStore {
     @discardableResult
     private func recordMission(_ event: MissionEvent, _ amount: Int) -> Int {
         let now = clock()
-        var paid = 0
-        for mission in state.missions.record(event, amount,
-                                             dayKey: Self.dayKey(now), weekKey: Self.weekKey(now)) {
-            state.starPieces += mission.reward
-            paid += mission.reward
-            notifyCompanionEvent(l.notifMissionDoneTitle,
-                                 l.notifMissionDoneBody(l.missionName(mission), mission.reward))
-        }
-        return paid
+        let done = state.missions.record(event, amount,
+                                        dayKey: Self.dayKey(now), weekKey: Self.weekKey(now))
+            .map { (name: l.missionName($0), reward: $0.reward) }
+        guard let merged = Self.mergedCompletion(done) else { return 0 }
+        state.starPieces += merged.reward
+        notifyCompanionEvent(l.notifMissionDoneTitle,
+                             l.notifMissionDoneBody(merged.name, merged.reward))
+        return merged.reward
     }
+
+    /// 한 정산에서 완료된 목표를 **한 통**으로 묶는다 — 이름은 가운뎃점으로 잇고 보상은 합산한다.
+    /// 완료마다 한 통씩 띄우면 시즌·미션이 함께 완료되는 정산에서 배너가 6개 연달아 뜬다.
+    nonisolated static func mergedCompletion(_ done: [(name: String, reward: Int)])
+        -> (name: String, reward: Int)? {
+        guard !done.isEmpty else { return nil }
+        return (done.map(\.name).joined(separator: " · "), done.reduce(0) { $0 + $1.reward })
+    }
+
+    /// 시즌 기록의 **유일한** 경로 — 완료 보상(별의조각)과 알림까지 여기서 끝낸다.
+    /// 계약은 `recordMission` 과 같다: 반환값은 이번에 지급한 별의조각이고, 정산 경로가 그 값을
+    /// 보상 객체에 실어 보고한다.
+    @discardableResult
+    private func recordSeason(_ event: MissionEvent, _ amount: Int) -> Int {
+        let done = state.seasons.record(event, amount, seasonKey: Self.seasonKey(clock()))
+            .map { (name: l.goalName($0.event, $0.target), reward: $0.reward) }
+        guard let merged = Self.mergedCompletion(done) else { return 0 }
+        state.starPieces += merged.reward
+        notifyCompanionEvent(l.notifSeasonDoneTitle,
+                             l.notifMissionDoneBody(merged.name, merged.reward))
+        return merged.reward
+    }
+
+    /// 화면용 시즌 목록 — 세트도 진행도도 **읽는 시점의** 시즌 키로 판정한다. 달이 바뀌면 기록 없이도
+    /// 새 세트가 빈 채로 보인다(상태는 그대로 — 다음 기록이 갱신한다).
+    var seasonRows: [(challenge: SeasonChallenge, progress: Int)] {
+        let key = Self.seasonKey(clock())
+        return SeasonBoard.challenges(forSeasonKey: key).map {
+            ($0, state.seasons.progress($0, seasonKey: key))
+        }
+    }
+
+    /// 시즌 카드 헤더가 읽는 남은 일수. 뷰가 달력을 직접 만지지 않게 하는 자리다.
+    var seasonDaysRemaining: Int { SeasonBoard.daysRemaining(at: clock()) }
 
     /// 화면용 미션 목록. 진행도는 **읽는 시점의** 날짜·주 키로 판정하므로, 자정이 지나면 아무 기록
     /// 없이도 일간이 비어 보인다(상태는 그대로 — 다음 기록이 실제로 갱신한다).
@@ -990,7 +1027,8 @@ final class CompanionStore {
         return FocusSessionReward(minutes: minutes, stardust: reward.starPieces,
                                   foundEgg: reward.bonusEggs > 0, trainerBonus: reward.trainerBonus,
                                   missionBonus: reward.missionBonus,
-                                  achievementBonus: reward.achievementBonus)
+                                  achievementBonus: reward.achievementBonus,
+                                  seasonBonus: reward.seasonBonus)
     }
 
     func beginIncubatingFocusEgg() -> Bool {
@@ -1378,12 +1416,21 @@ final class CompanionStore {
                              l.notifDailyCandyBody)
     }
 
-    /// 로컬 달력 기준 YYYY-MM-DD — 일일 보상 원장 키.
+    /// 로컬 시간대 기준 YYYY-MM-DD — 일일 보상 원장 키.
+    ///
+    /// 달력은 시즌 만료와 **같은 접근자**(`SeasonBoard.gregorian`)를 쓴다 — 갈라지면 자정 근처에서
+    /// 원장 키와 남은 일수가 다른 날을 센다. 그 접근자를 굳히거나 `timeZone = .current` 로 덮으면
+    /// 실행 중 시간대 변경을 놓친다(이유는 `SeasonBoard.gregorian` 주석).
+    /// `DateFormatter` 대신 성분을 조립하는 건 호출당 생성 비용 때문이다(실측 16.3µs → 1.6µs).
     nonisolated static func dayKey(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+        let parts = SeasonBoard.gregorian.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    /// 로컬 달력 기준 YYYY-MM — 시즌 원장 키. 포맷터를 하나 더 두지 않고 `dayKey` 를 자른다 —
+    /// 두 원장 키가 다른 로케일·달력으로 갈라질 여지를 없앤다.
+    nonisolated static func seasonKey(_ date: Date) -> String {
+        String(dayKey(date).prefix(7))
     }
 
     nonisolated static func weekKey(_ date: Date) -> String {
@@ -1636,6 +1683,7 @@ final class CompanionStore {
         // 졸업은 파트너를 초기화하지만 미션 진행은 여기서 이어진다 — 모험을 한 번도 하지 않고
         // 졸업만 해도 기록된다(집중 경로와 독립).
         recordMission(.graduations, 1)
+        recordSeason(.graduations, 1)
         // 도감 목표는 이 항목이 들어가기 **전**의 완료 집합과 비교해 지급한다 — 스냅샷을 먼저 잡는다.
         let goalsBefore = DexGoals.completed(in: state.dex)
         state.dex.append(DexEntry(baseID: a.baseID, finalID: finalID,

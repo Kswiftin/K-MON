@@ -42,7 +42,7 @@ final class AdventureClaimTests: XCTestCase {
         // 보상 객체가 지갑 증가분을 **전부** 설명해야 한다. 트레이너 레벨업·미션 완료처럼 정산 중에
         // 함께 지급되는 값도 여기 실려야, 알려준 값과 실제 잔액이 어긋나지 않는다.
         XCTAssertEqual(reward.stardust + reward.trainerBonus + reward.missionBonus
-                           + reward.achievementBonus,
+                           + reward.achievementBonus + reward.seasonBonus,
                        store.state.starPieces - starPiecesBefore,
                        "세션 보상은 claimAdventure() 결과 그대로 — 별도 가산이면 이중 지급이다")
     }
@@ -63,9 +63,9 @@ final class AdventureClaimTests: XCTestCase {
         // 90분 세션은 집중 업적 1단계(60분)도 함께 넘긴다 — 지급 경로가 넷이 됐으니 넷 다 실려야 한다.
         XCTAssertGreaterThan(reward.achievementBonus, 0, "테스트 전제: 이 세션은 집중 업적 1단계도 넘긴다")
         XCTAssertEqual(reward.stardust + reward.trainerBonus + reward.missionBonus
-                           + reward.achievementBonus,
+                           + reward.achievementBonus + reward.seasonBonus,
                        store.state.starPieces - starPiecesBefore,
-                       "미션·업적 보상까지 보상 객체가 설명해야 한다")
+                       "미션·업적·시즌 보상까지 보상 객체가 설명해야 한다")
     }
 
     /// 이중 지급 가드: 세션 완료 후 한 번 더 정산해도 아무것도 늘지 않는다.

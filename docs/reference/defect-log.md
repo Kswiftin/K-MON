@@ -590,9 +590,13 @@ read_when:
 - **"서명에 안 넣는다" 는 근거는 재검증한다.** `types` 를 뺀 이유로 적혀 있던 "백필이 저장하는 순간
   기존 서명이 무효가 된다" 는 성립하지 않았다 — 백필도 `save()` 를 지나며 재서명된다. 실제 제약은
   위의 배포 규칙 하나뿐이다. (2026-08-21.)
-- **남은 구멍**: `isTampered` 는 `integrityVersion` 이 낮으면 검사를 면제한다. 그 값을 낮게 써 넣으면
-  어떤 필드를 서명해도 무력화된다. 막으려면 버전 하한을 세이브 밖에 둬야 하고 구버전 세이브 불러오기가
-  오탐이 된다 — 별건으로 미결.
+- **그 구멍은 막지 않는다 — 상한이 다른 문에서 정해진다.** `isTampered` 는 `integrityVersion` 이
+  낮으면 검사를 면제하니 그 값을 낮게 써 넣으면 어떤 서명도 무력해진다. 그런데 **불러오기는 애초에
+  무결성을 검사하지 않는다**(남의 세이브는 이 기기 서명을 가질 수 없다) — 같은 이득이 파일 선택 한
+  번으로 늘 열려 있어 하한을 둬도 조작 상한은 그대로다. 반대로 하한을 세이브 밖(UserDefaults)에 두면
+  다운그레이드 사용자의 정상 세이브를 초기화하는 오탐만 새로 생긴다. **막아서 얻는 건 없고 데이터
+  손실 위험만 늘어** 그대로 뒀다 — 근거는 `testImportIsNotSubjectToTheIntegrityCheck`. 무결성 검사가
+  막는 건 "로컬 파일 손편집" 이고 "작정한 치팅" 이 아니다. (2026-08-22.)
 
 ## 파생 진행도를 화면용 목록으로 계산하면 되감기는 부류
 
@@ -1229,3 +1233,58 @@ read_when:
   네트워크 권한이 없어 리스너가 `.ready` 조차 못 간다. 근거는 단일 입구라는 구조다. 같은 이유로
   정지 API 는 두지 않았다 — 프로덕션 호출부가 없어 그 API 자체가 무검증으로 남는다.
   (`BattleNet.swift`, 2026-08-22.)
+
+## 신뢰경계에서 숫자만 자르고 **문자열**을 빼 두는 부류
+
+- **세이브에서 온 문자열은 길이 상한이 없었다.** `sanitized` 는 수치·배열·집합 크기를 촘촘히
+  클램프하면서 `seasonKey`·`missions.dayKey/weekKey`·`adventureWeekKey`·`lastCandyDate`·
+  `activeSecondsDate`·`trainerName`·별명·`gymBadges`/`collectedFinals` 원소는 그대로 통과시켰다.
+  임의 길이 문자열은 무결성 canonical(**매 저장의 해시 입력**)과 화면·LAN 전송에 그대로 실린다.
+  실측: 100KB 문자열 9개 → canonical 700KB.
+- **찾는 방법**: `CompanionModel` 의 `lenient(String.self, …)`·`Set<String>`·`nickname` 목록과
+  `sanitized` 가 실제로 자르는 필드를 대조한다. 새 문자열 필드를 더할 때 묻는 질문은 "이 값이 canonical
+  이나 화면·wire 로 나가나" 다.
+- **상한은 입력 경로와 같은 상수여야 한다.** 경계가 더 짧으면 방금 입력한 정상 이름이 다음 로드에서
+  잘린다 — `setTrainerName`·별명 설정과 `SaveTransfer.maxNameLength` 를 한 상수로 묶었다.
+  원장 키는 `SaveTransfer.clampedKey` 하나로 세 원장이 같은 규칙을 쓴다.
+  (`testOversizedStringsFromASaveAreClampedAtTheBoundary`, 2026-08-22.)
+
+## `TimeZone.current` 는 프로세스 첫 값에 캐시된다 — 시간대를 다시 읽는 건 `Calendar(identifier:)`
+
+- **`calendar.timeZone = .current` 는 "시간대를 매번 읽는다" 가 아니다.** 시즌 달력을 `static let` →
+  계산 프로퍼티로 바꿔 시간대 변경을 따라가게 한 뒤, 같은 의도로 원장 키에 `timeZone = .current` 를
+  넣었더니 **거기서 다시 굳었다**: 실측으로 `NSTimeZone.default` 를 바꿔도 `TimeZone.current` 는
+  첫 값(Asia/Seoul)을 계속 준 반면 `Calendar(identifier:)` 는 매번 새 값을 읽었다.
+- **처방**: 시간대를 명시적으로 대입하지 않고 `Calendar(identifier: .gregorian)` 를 그때 만든다.
+  세 원장 키와 시즌 만료가 **같은 접근자**(`SeasonBoard.gregorian`)를 쓰게 해 갈라질 자리를 없앴다.
+- **가드**: `testLedgerKeysFollowTimeZoneChanges` — 같은 순간을 UTC+14/UTC-11 에서 굽는다. 이 가드가
+  `.current` 대입을 실제로 잡았다(작성 당시 실패 → 원인 발견).
+- 곁가지: `DateFormatter` 는 호출당 16.3µs, 성분 조립은 1.6µs(실측). 뷰 body 에서 읽는 경로라 포맷터를
+  캐시하는 대신 없앴다 — 캐시는 위의 시간대 함정을 되살린다.
+
+## 로테이션·순환 콘텐츠는 "세트 비교" 가 아니라 **인접 비교**로 검사한다
+
+- **세트 배열이 서로 다르면 통과하는 테스트는 절반 중복을 못 잡는다.** 시즌 세트 1·2 가 `focus900` 을
+  공유해 **연속 두 달**에 같은 집중 목표가 나왔는데, `testConsecutiveSeasonsDifferAndCycleAtTheRotationLength`
+  는 배열 전체를 비교하므로 초록이었다. 순환 콘텐츠의 계약은 "다르다" 가 아니라 "인접이 겹치지 않는다".
+- **처방**: `testAdjacentSeasonsShareNoGoal` — 세트 i 와 i+1(마지막↔첫 포함)의 id 집합이 disjoint.
+  (2026-08-22.)
+
+## 완료마다 알림 한 통이면 한 정산이 배너를 여러 개 띄운다
+
+- **한 번의 모험 정산이 트레이너 레벨업·일간·주간 미션·시즌 챌린지·업적을 동시에 완료시킬 수 있다.**
+  완료 항목마다 `notifyCompanionEvent` 를 부르면 배너가 6개 연달아 뜬다(시즌 도입 전에도 4개였다).
+- **처방**: 원장별로 완료 목록을 모아 **한 통**으로 묶는다(`CompanionStore.mergedCompletion` — 이름은
+  가운뎃점, 보상은 합산). 새 문구를 만들지 않고 기존 "이름 — 별의조각 N" 문장을 재사용한다.
+- **테스트 가능한 자리로 뽑는다.** `notifyCompanionEvent` 는 `AppEnv.isBundledApp` 가드에 막혀 테스트에서
+  아무것도 관측할 수 없다 — 병합 규칙을 순수 함수로 분리해야 검사할 수 있다
+  (`testCompletionsInOneSettlementMergeIntoASingleNotice`, 2026-08-22.)
+
+## 주기 축만 다른 두 원장에 같은 진행도 규칙을 복제하는 부류
+
+- **`MissionBoard` 와 `SeasonBoard` 가 record·normalize·canonical 규칙을 통째로 복제했다.** 클램프가
+  곧 멱등 가드인데 그 규칙이 두 곳에 있으면 한쪽만 고쳐져 미션과 시즌이 다르게 동작한다.
+- **처방**: `protocol Goal` + `Array<Goal>.advance/normalized` + `Dictionary.canonicalCounts` 로 규칙을
+  한 곳에 두고, 주기 축(일·주 vs 월)만 각 원장이 갖는다. **canonical 문자열은 바이트 단위로 동일해야
+  한다** — 달라지면 정상 세이브가 전부 조작 판정된다(`testDefaultStateCanonicalFormIsFrozen` 이 가드,
+  2026-08-22.)

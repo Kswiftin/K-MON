@@ -391,7 +391,7 @@ final class AchievementAccrualTests: XCTestCase {
                        "90분 정산이 집중 1단계(\(tiers(.focus)[0])분)를 넘긴다")
         XCTAssertEqual(store.state.starPieces - before,
                        reward.starPieces + reward.trainerBonus + reward.missionBonus
-                           + reward.achievementBonus,
+                           + reward.achievementBonus + reward.seasonBonus,
                        "보고한 합과 실제 지갑 증가가 어긋난다")
     }
 
@@ -409,7 +409,8 @@ final class AchievementAccrualTests: XCTestCase {
 
         XCTAssertEqual(reward.achievementBonus, 0)
         XCTAssertEqual(store.state.starPieces - before,
-                       reward.starPieces + reward.trainerBonus + reward.missionBonus)
+                       reward.starPieces + reward.trainerBonus + reward.missionBonus
+                           + reward.seasonBonus)
     }
 
     /// 한 정산이 두 단계를 넘기면 **둘 다** 지급되고, 보고액도 두 몫의 합이다 — 마지막 하나만
