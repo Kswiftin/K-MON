@@ -1072,6 +1072,13 @@ read_when:
   (`grewIntoFinalByItem`)가 `use-item`/`trade` 두 문자열만 봐서, `level-up` + 지닌물건(예리한손톱)
   진화가 "레벨로 키운 개체"로 오인돼 아이템 진화 착취 경로가 다시 열릴 뻔했다.
   (`PokeAPIClient.evoNode` · `EvolutionItemRule` · `CompanionStore.grewIntoFinalByItem`, 2026-08-21.)
+- **같은 부류 — 대표 특성의 `is_hidden`.** `/pokemon/{id}`의 특성 목록에서 `is_hidden`을 읽지 않고
+  첫 slot만 고르면 특성이 없어지는 게 아니라 **숨은 특성까지 대표 후보로 넓어진다**. 대화 페르소나는
+  `is_hidden == false`인 항목만 남긴 뒤 최소 slot을 고르고, 회귀 테스트는 숨은 특성을 목록 앞·더 낮은
+  slot에 놓아도 일반 특성을 선택하는지 직접 밟는다. 부류 스윕에서 `PokemonDTO.is_default` 미파싱도
+  확인했지만 현재 앱은 기본 폼 species id 1~649만 요청하므로 동작을 뭉개지 않는다. 폼 범위를 넓힐 때는
+  이 필드를 먼저 DTO와 테스트에 올려야 한다.
+  (`PokemonAbilitiesDTO` · `PokemonSpeciesIdentity.primaryAbilitySlug`, 2026-08-23.)
 
 ## 쓸 수 없는 대상에만 쓰이는 아이템을 상점에 올리면 함정 구매가 된다
 
@@ -1204,6 +1211,13 @@ read_when:
   목록이 비면 실패하는 단언도 뒀다. 한계: `.ko` 만 쓰는 헬퍼가 늘면 오탐이 난다 — 오탐은 빌드를
   막고 끝나지만 미탐은 배포되므로 그쪽으로 기울여 뒀다.
   (`Sources/**/*.swift` · `Localization.swift`, 2026-08-22.)
+- **페르소나 언어 폴백은 이름과 문장이 다르다.** 이름 한 단어는 요청 언어가 없으면 영어로 폴백해
+  식별 가능성을 유지하지만(`resolveName`), 도감·특성 설명 문장 전체는 정확한 요청 언어가 없으면
+  생략한다(`resolveProse`). 둘을 `CompanionModel.swift`에서 나란히 두고 같은 테스트에서 영어 전용
+  딕셔너리를 각각 통과시켜, 한쪽 규칙을 다른 쪽으로 복사하면 깨지게 했다. 스윕 결과 배틀 기술 설명의
+  en→임의 값 폴백은 빈 툴팁보다 이름 있는 설명이 나은 UI 정책이라 유지했고, 대화 프롬프트의 prose
+  경로에는 같은 폴백이 더 없었다.
+  (`AppLanguage.resolveName` · `resolveProse`, 2026-08-23.)
 
 ## 표시값을 담은 값 타입의 `==` 가 신원만 비교하면 갱신이 사라진다
 
