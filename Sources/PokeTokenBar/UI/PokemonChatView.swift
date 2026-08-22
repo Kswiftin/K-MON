@@ -142,7 +142,9 @@ struct PokemonChatView: View {
         if let proposal = chat.pendingProposal, proposal.state == .pending {
             VStack(alignment: .leading, spacing: 6) {
                 Text(l.t("돌봄 제안", "Care proposal", "お世話の提案")).font(.caption.weight(.semibold))
-                Text(l.t("\(proposal.kind.rawValue)을 해 줄까?", "Would you like me to \(proposal.kind.rawValue)?", "\(proposal.kind.rawValue)をしてくれる？"))
+                Text(l.t("\(proposal.kind.localizedCareLabel(.ko)) 해 줄까?",
+                         "Would you like me to \(proposal.kind.localizedCareLabel(.en))?",
+                         "\(proposal.kind.localizedCareLabel(.ja))？"))
                     .font(.callout)
                 HStack {
                     Button(l.t("승인", "Approve", "承認")) { approve(proposal) }.buttonStyle(.borderedProminent)
@@ -157,7 +159,7 @@ struct PokemonChatView: View {
 
     private func approve(_ proposal: PokemonChatActionProposal) {
         guard chat.approvePending() != nil else { return }
-        let success = store.applyChatCare(proposal.kind)
+        let success = store.applyChatCare(proposal.kind, for: proposal.companionID)
         _ = chat.finishPending(success: success)
         chat.appendSystemMessage(PokemonChatCareOutcome.message(kind: proposal.kind, approved: true,
                                                                 success: success, profile: profile),

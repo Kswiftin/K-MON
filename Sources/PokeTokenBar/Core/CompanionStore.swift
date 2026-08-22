@@ -745,9 +745,12 @@ final class CompanionStore {
         state.active != nil && state.adventure == nil && !state.care.isSleeping
     }
 
-    func resumeCareClock() {
-        state.care.resumeClock(at: clock())
+    @discardableResult
+    func resumeCareClock() -> CareAdvanceEvent? {
+        let event = state.care.resumeClock(at: clock())
+        if let event { handleCareEvent(event) }
         save()
+        return event
     }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
@@ -866,8 +869,8 @@ final class CompanionStore {
     var favoriteFood: CareFood { CareFood.favorite(for: currentSpeciesID ?? 0) }
 
     @discardableResult
-    func applyChatCare(_ kind: PokemonChatActionKind) -> Bool {
-        guard kind.isCareRequestable, canPerformCare else { return false }
+    func applyChatCare(_ kind: PokemonChatActionKind, for companionID: UUID) -> Bool {
+        guard kind.isCareRequestable, canPerformCare, companionID == activeMonID else { return false }
         switch kind {
         case .feed: feedCompanion(); return true
         case .play: playWithCompanion(); return true

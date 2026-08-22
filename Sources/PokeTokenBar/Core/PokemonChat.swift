@@ -139,6 +139,27 @@ enum PokemonChatActionKind: String, Codable, Sendable, CaseIterable {
     var isCareRequestable: Bool {
         switch self { case .feed, .play, .rest, .clean, .medicate: true; default: false }
     }
+
+    func localizedCareLabel(_ language: AppLanguage) -> String {
+        switch (self, language) {
+        case (.feed, .ko): return "먹이 주기"
+        case (.feed, .en): return "Feed"
+        case (.feed, .ja): return "ごはん"
+        case (.play, .ko): return "놀아 주기"
+        case (.play, .en): return "Play"
+        case (.play, .ja): return "遊ぶ"
+        case (.rest, .ko): return "쉬게 하기"
+        case (.rest, .en): return "Rest"
+        case (.rest, .ja): return "休む"
+        case (.clean, .ko): return "청소하기"
+        case (.clean, .en): return "Clean"
+        case (.clean, .ja): return "掃除"
+        case (.medicate, .ko): return "약 먹이기"
+        case (.medicate, .en): return "Give medicine"
+        case (.medicate, .ja): return "薬をあげる"
+        default: return rawValue
+        }
+    }
 }
 
 struct PokemonChatCareOffer: Codable, Sendable, Equatable {

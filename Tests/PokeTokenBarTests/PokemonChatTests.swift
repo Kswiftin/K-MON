@@ -61,6 +61,7 @@ final class PokemonChatTests: XCTestCase {
         let store = makeCompanionStore()
         await store.hatch(baseID: 25)
         let activeID = try XCTUnwrap(store.state.active?.id)
+        store.debugSetCare(PetCareState(hunger: 30, lastUpdatedAt: Date(timeIntervalSince1970: 1_000)))
         let before = store.state.care.hunger
 
         XCTAssertFalse(store.applyChatCare(.feed, for: UUID()))

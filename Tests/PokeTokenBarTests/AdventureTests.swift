@@ -17,12 +17,12 @@ final class AdventureTests: XCTestCase {
     func testResumingARecentClockAppliesNormalDecay() {
         let old = Date(timeIntervalSince1970: 100_000)
         let now = old.addingTimeInterval(2 * 3600)
-        var care = PetCareState(hunger: 80, lastUpdatedAt: old)
+        var care = PetCareState(hunger: 30, lastNeedAt: old.addingTimeInterval(-3600), lastUpdatedAt: old)
 
         let event = care.resumeClock(at: now)
 
         XCTAssertEqual(event, .requested(.hungry))
-        XCTAssertEqual(care.hunger, 72, accuracy: 0.001)
+        XCTAssertEqual(care.hunger, 22, accuracy: 0.001)
     }
 
     func testLongResumeResetsAllCareClockStateWithoutApplyingDecay() {
