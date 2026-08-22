@@ -95,6 +95,8 @@ struct SpriteView: View {
     var bob: Bool = false
     var animated: Bool = false
     var shiny: Bool = false
+    /// 네트워크/캐시 실패 때 알 이모지 대신 호출자가 정한 식별자를 유지한다.
+    var fallbackLabel: String? = nil
     /// 배틀 필드의 내 쪽만 등 스프라이트다. 한 뷰의 방향은 평생 바뀌지 않으므로 `needsReload` 의
     /// 축이 아니다 — 앞을 보던 스프라이트가 뒤로 도는 일은 없다.
     var back: Bool = false
@@ -111,12 +113,13 @@ struct SpriteView: View {
     @State private var frameIndex = 0
 
     init(speciesID: Int?, size: CGFloat = 84, bob: Bool = false, animated: Bool = false,
-         shiny: Bool = false, back: Bool = false, minFrameDelay: TimeInterval = 0) {
+         shiny: Bool = false, fallbackLabel: String? = nil, back: Bool = false, minFrameDelay: TimeInterval = 0) {
         self.speciesID = speciesID
         self.size = size
         self.bob = bob
         self.animated = animated
         self.shiny = shiny
+        self.fallbackLabel = fallbackLabel
         self.back = back
         self.minFrameDelay = minFrameDelay
         // 캐시에 있으면 즉시(동기) 표시 — 재렌더 플래시 방지 + 정적 스냅샷에서도 보임.
@@ -166,6 +169,12 @@ struct SpriteView: View {
             } else if let img {
                 Image(nsImage: img).resizable().interpolation(antialiasing ? .high : .none)
                     .frame(width: size, height: size)
+            } else if let fallbackLabel {
+                Text(fallbackLabel)
+                    .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(width: size, height: size)
+                    .background(Color.secondary.opacity(0.14), in: Circle())
             } else {
                 Text("🥚").font(.system(size: size * 0.62)).frame(width: size, height: size)
             }

@@ -22,11 +22,33 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
     let speciesID: Int
     let displayName: String
     let nickname: String?
+    /// 대화에서도 실제 동행 개체와 같은 색의 스프라이트를 사용한다.
+    let isShiny: Bool
     let nature: String?
     let level: Int
     let stage: String
     var flavorText: String?
     let language: AppLanguage
+    var types: [String] = []
+    var moves: [String] = []
+    var nextEvolution: String?
+
+    init(speciesID: Int, displayName: String, nickname: String?, isShiny: Bool = false,
+         nature: String?, level: Int, stage: String, flavorText: String?, language: AppLanguage,
+         types: [String] = [], moves: [String] = [], nextEvolution: String? = nil) {
+        self.speciesID = speciesID
+        self.displayName = displayName
+        self.nickname = nickname
+        self.isShiny = isShiny
+        self.nature = nature
+        self.level = level
+        self.stage = stage
+        self.flavorText = flavorText
+        self.language = language
+        self.types = types
+        self.moves = moves
+        self.nextEvolution = nextEvolution
+    }
 }
 
 struct PokemonChatSession: Codable, Sendable, Equatable {
@@ -77,15 +99,83 @@ struct PokemonChatRequest: Sendable {
         let name = profile.nickname?.isEmpty == false ? "\(profile.nickname!) (\(profile.displayName))" : profile.displayName
         let flavor = profile.flavorText.map { "Pokédex note: \($0)" } ?? "Use broadly known, non-invented species traits."
         return """
-        You are \(name), a Pokémon companion speaking to your trainer in \(profile.language.label).
-        Role-play as a warm, concise animation-style companion. Never claim to be an AI or invent canon facts.
+        You are \(name), a Pokémon companion speaking directly to your trainer in \(profile.language.label).
+        Reply in 1–3 short, warm sentences only. Reflect this individual’s nature, species traits, and current state.
+        Never claim to be an AI, assistant, model, tool, or software, and never explain code, files, terminals, web research, projects, or your own capabilities.
         Current identity: level \(profile.level), \(profile.stage), nature \(profile.nature ?? "unknown").
+        Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known").
         \(flavor)
         ONLY discuss Pokédex information, this Pokémon's known species traits, and the companion information supplied above.
         Never offer coding, file, terminal, web research, project work, tool use, or general AI assistance. If asked, briefly say you can only help with Pokédex and companion information, then redirect to a relevant Pokémon topic.
         Do not invent abilities, lore, or game-state changes that were not supplied.
         """
     }
+
+    var conversationInput: String {
+        ([summary.isEmpty ? nil : "Relationship memory: \(summary)"]
+            .compactMap { $0 } + recentMessages.map { "\($0.role.rawValue): \($0.body)" })
+            .joined(separator: "\n")
+    }
+
+    var codexInput: String { [systemPrompt, conversationInput].filter { !$0.isEmpty }.joined(separator: "\n\n") }
+}
+
+enum PokemonChatReplyGuard {
+    static func sanitized(_ reply: String, profile: PokemonChatProfile) -> String {
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        let unsafe = trimmed.contains("```") || ["tool call", "function call", "terminal", "command line", "working directory", "codebase", "as an ai", "i'm an ai", "i am an ai", "language model", "ai assistant", "mcp", "read_file", "write_file", "run_command"].contains { lower.contains($0) }
+        guard !unsafe else { return redirect(profile) }
+        let sentences = trimmed.split(whereSeparator: { ".!?。！？\n".contains($0) })
+        guard !trimmed.isEmpty, sentences.count <= 3, trimmed.count <= 500 else { return redirect(profile) }
+        return trimmed
+    }
+
+    static func redirect(_ profile: PokemonChatProfile) -> String {
+        switch profile.language {
+        case .ko: return "그건 잘 모르겠어. 대신 내 기분이나 모험 이야기, 혹은 도감 이야기를 들려줄까?"
+        case .ja: return "それはよくわからないな。かわりに、ぼくの気分や冒険、図鑑の話をしよう！"
+        case .en: return "I’m not sure about that. Want to talk about how I feel, our adventures, or my Pokédex entry instead?"
+        }
+    }
+}
+
+enum PokemonMemorySource: String, Codable, Sendable { case event, conversation }
+
+struct PokemonMemory: Codable, Sendable, Identifiable, Equatable {
+    var id = UUID()
+    let companionID: UUID
+    let createdAt: Date
+    let source: PokemonMemorySource
+    let body: String
+    var eventID: String?
+}
+
+@MainActor @Observable
+final class PokemonMemoryAlbum {
+    private struct Snapshot: Codable { var memories: [UUID: [PokemonMemory]] }
+    static let shared = PokemonMemoryAlbum()
+    private(set) var memories: [UUID: [PokemonMemory]] = [:]
+    private let fileURL: URL
+
+    init(fileURL: URL? = nil) {
+        self.fileURL = fileURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PokeTokenBar", isDirectory: true).appendingPathComponent("pokemon-memories.json")
+        if let data = try? Data(contentsOf: self.fileURL), let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) { memories = snapshot.memories }
+    }
+    func entries(for id: UUID) -> [PokemonMemory] { memories[id] ?? [] }
+    func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil) {
+        let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, body.count <= 180 else { return }
+        var entries = memories[companionID] ?? []
+        guard !entries.contains(where: { $0.body == body }) else { return }
+        entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: source, body: body, eventID: eventID))
+        memories[companionID] = Array(entries.suffix(200)); save()
+    }
+    func delete(_ memory: PokemonMemory) { memories[memory.companionID]?.removeAll { $0.id == memory.id }; save() }
+    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); save() }
+    func prune(validCompanionIDs: Set<UUID>) { memories = memories.filter { validCompanionIDs.contains($0.key) }; save() }
+    private func save() { try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true); guard let data = try? JSONEncoder().encode(Snapshot(memories: memories)) else { return }; try? data.write(to: fileURL, options: .atomic) }
 }
 
 protocol PokemonChatProviding: Sendable {
@@ -119,15 +209,19 @@ enum PokemonChatProviderSafety {
 struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
     let executableURL: URL
     let arguments: [String]
+    let kind: PokemonChatProviderKind
+
+    func invocationArguments(for request: PokemonChatRequest) -> [String] {
+        kind == .claude ? arguments + ["--system-prompt", request.systemPrompt] : arguments
+    }
 
     func reply(to request: PokemonChatRequest) async throws -> String {
-        let prompt = ([request.systemPrompt, request.summary.isEmpty ? nil : "Conversation summary: \(request.summary)"]
-            .compactMap { $0 } + request.recentMessages.map { "\($0.role.rawValue): \($0.body)" })
-            .joined(separator: "\n")
+        let prompt = kind == .codex ? request.codexInput : request.conversationInput
+        let invocation = invocationArguments(for: request)
         return try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             let input = Pipe(), output = Pipe(), error = Pipe()
-            process.executableURL = executableURL; process.arguments = arguments
+            process.executableURL = executableURL; process.arguments = invocation
             process.standardInput = input; process.standardOutput = output; process.standardError = error
             process.terminationHandler = { process in
                 let data = output.fileHandleForReading.readDataToEndOfFile()
@@ -178,7 +272,12 @@ final class PokemonChatStore {
         defer { isSending = false }
         do {
             let reply = try await provider.reply(to: PokemonChatRequest(profile: profile, summary: session.summary, recentMessages: Array(session.messages.suffix(12))))
-            session.messages.append(PokemonChatMessage(role: .pokemon, body: reply))
+            let safeReply = PokemonChatReplyGuard.sanitized(reply, profile: profile)
+            session.messages.append(PokemonChatMessage(role: .pokemon, body: safeReply))
+            if session.messages.filter({ $0.role == .user }).count % 6 == 0 {
+                let candidate = safeReply.count <= 180 ? safeReply : ""
+                if !candidate.isEmpty { PokemonMemoryAlbum.shared.record(companionID: companionID, body: candidate, source: .conversation) }
+            }
             session.updatedAt = Date(); sessions[companionID] = session; save()
         } catch { errorMessage = error.localizedDescription }
     }

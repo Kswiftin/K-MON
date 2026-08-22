@@ -28,6 +28,39 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(request.summary, "트레이너와 산책을 약속했다.")
     }
 
+    func testShinyProfileIsRetainedForChatSpriteRendering() {
+        let profile = PokemonChatProfile(speciesID: 25, displayName: "피카츄", nickname: nil,
+                                         isShiny: true, nature: nil, level: 5, stage: "첫 번째 형태",
+                                         flavorText: nil, language: .ko)
+        XCTAssertTrue(profile.isShiny)
+    }
+
+    func testOnlyMostRecentPokemonMessageUsesEmphasizedPresentation() {
+        let first = PokemonChatMessage(role: .pokemon, body: "처음")
+        let user = PokemonChatMessage(role: .user, body: "안녕")
+        let last = PokemonChatMessage(role: .pokemon, body: "마지막")
+        XCTAssertEqual(PokemonChatMessagePresentation.emphasizedPokemonMessageID(in: [first, user, last]), last.id)
+        XCTAssertEqual(PokemonChatMessagePresentation.avatarSize(isEmphasized: true), 72)
+        XCTAssertEqual(PokemonChatMessagePresentation.avatarSize(isEmphasized: false), 28)
+    }
+
+    func testSendingStateChangesFromThinkingToPokemonReply() async {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = PokemonChatStore(fileURL: url)
+        let companionID = UUID()
+        let provider = DeferredReplyProvider()
+        let task = Task { await store.send("안녕", for: companionID, profile: .fixture, provider: provider) }
+
+        for _ in 0..<10 where !store.isSending { await Task.yield() }
+        XCTAssertTrue(store.isSending)
+        await provider.resolve(with: "반가워!")
+        await task.value
+
+        XCTAssertFalse(store.isSending)
+        XCTAssertEqual(store.messages(for: companionID).last?.role, .pokemon)
+    }
+
     func testPromptRestrictsThePokemonToPokedexAndCompanionTopics() {
         let request = PokemonChatRequest(profile: .fixture, summary: "", recentMessages: [])
 
@@ -41,6 +74,34 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(arguments, ["claude", "--print", "--tools", "", "--safe-mode", "--strict-mcp-config",
                                    "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence",
                                    "--disable-slash-commands", "--permission-mode", "dontAsk"])
+    }
+
+    func testClaudePassesPersonaAsSystemPromptAndKeepsItOutOfConversationInput() {
+        let request = PokemonChatRequest(profile: .fixture, summary: "산책 약속", recentMessages: [PokemonChatMessage(role: .user, body: "안녕")])
+        let provider = PokemonChatCLIProvider(executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                                              arguments: PokemonChatProviderSafety.arguments(for: .claude)!, kind: .claude)
+        let invocation = provider.invocationArguments(for: request)
+        XCTAssertEqual(invocation.suffix(2), ["--system-prompt", request.systemPrompt])
+        XCTAssertFalse(request.conversationInput.contains("You are"))
+        XCTAssertTrue(request.conversationInput.contains("user: 안녕"))
+    }
+
+    func testRoleBreakingReplyIsReplacedBeforeDisplayOrPersistence() {
+        let safe = PokemonChatReplyGuard.sanitized("```swift\nread_file(\"secret\")\n```", profile: .fixture)
+        XCTAssertFalse(safe.contains("```"))
+        XCTAssertFalse(safe.lowercased().contains("read_file"))
+        XCTAssertTrue(safe.contains("도감"))
+    }
+
+    func testAlbumDeduplicatesCapsAndDeletes() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-memory-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url), id = UUID()
+        album.record(companionID: id, body: "함께 산책했다.", source: .event)
+        album.record(companionID: id, body: "함께 산책했다.", source: .event)
+        XCTAssertEqual(album.entries(for: id).count, 1)
+        album.deleteAll(for: id)
+        XCTAssertTrue(album.entries(for: id).isEmpty)
     }
 
     func testCodexProviderIgnoresConfigurationAndUsesReadOnlySandbox() {
@@ -73,6 +134,21 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(proposal.state, .pending)
         proposal.approve()
         XCTAssertEqual(proposal.state, .approved)
+    }
+}
+
+private actor DeferredReplyProvider: PokemonChatProviding {
+    private var continuation: CheckedContinuation<String, Error>?
+
+    func reply(to request: PokemonChatRequest) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resolve(with reply: String) {
+        continuation?.resume(returning: reply)
+        continuation = nil
     }
 }
 

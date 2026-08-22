@@ -66,7 +66,10 @@ final class CompanionStore {
     /// 은 세지 않는다. 연출 재생용으로 재사용하면 이중 계수가 되니 그때는 적립을 떼낸다.
     private func fireCelebration(_ c: Celebration) {
         celebration = c; celebrationSeq += 1
-        if case .evolve = c { recordAchievement(.evolve, 1) }
+        if case .evolve = c {
+            recordAchievement(.evolve, 1)
+            if let mon = state.active { PokemonMemoryAlbum.shared.record(companionID: mon.id, body: "진화하여 \(speciesName)이 되었다.", source: .event, eventID: "evolve") }
+        }
     }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
     func consumeCelebration() { celebration = nil }
@@ -304,9 +307,18 @@ final class CompanionStore {
     func chatProfile(for mon: MonState) -> PokemonChatProfile {
         let speciesName = mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
         return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
+                                  isShiny: mon.isShiny,
                                   nature: mon.nature?.name(language), level: mon.level,
                                   stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
-                                  flavorText: nil, language: language)
+                                  flavorText: nil, language: language,
+                                  types: currentTypes.map { $0.name(language) },
+                                  moves: displayedMoves.map { $0.name(language) },
+                                  nextEvolution: nextEvolutionName(for: mon))
+    }
+
+    private func nextEvolutionName(for mon: MonState) -> String? {
+        guard let node = currentLine?.tree.node(withID: mon.currentID), let next = node.children.first else { return nil }
+        return currentLine?.localizedName(next.speciesID, language)
     }
 
     /// 현재 포켓몬 별명 설정 — 공백이면 nil(종 이름으로 표시). 진화해도 유지.
@@ -727,6 +739,7 @@ final class CompanionStore {
         state.adventure = AdventureRun(zone: zone, startedAt: now,
                                        endsAt: now.addingTimeInterval(zone.duration),
                                        companionSpeciesID: speciesID)
+        if let mon = state.active { PokemonMemoryAlbum.shared.record(companionID: mon.id, body: "\(zone.rawValue) 모험을 떠났다.", source: .event, eventID: "adventure-start") }
         save()
         return true
     }
@@ -810,6 +823,7 @@ final class CompanionStore {
                                                        companionSpeciesID: run.companionSpeciesID,
                                                        completedAt: now, stardust: reward.starPieces,
                                                        foundRareCandy: reward.foundRareCandy), at: 0)
+        if let mon = state.active { PokemonMemoryAlbum.shared.record(companionID: mon.id, body: "\(run.zone.rawValue) 모험을 무사히 마쳤다.", source: .event, eventID: "adventure-claim") }
         if state.adventureHistory.count > 30 { state.adventureHistory.removeLast(state.adventureHistory.count - 30) }
         save()
         return reward
@@ -820,7 +834,9 @@ final class CompanionStore {
     func feedCompanion(_ food: CareFood = .apple) {
         guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        state.care.feed(favorite: food == favoriteFood); save()
+        state.care.feed(favorite: food == favoriteFood)
+        if let mon = state.active { PokemonMemoryAlbum.shared.record(companionID: mon.id, body: "트레이너와 함께 맛있게 먹었다.", source: .event, eventID: "care-feed") }
+        save()
     }
     func playWithCompanion() {
         guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
@@ -863,7 +879,7 @@ final class CompanionStore {
         guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return false }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         let accepted = state.care.pet(at: clock())
-        if accepted { save() }
+        if accepted { if let mon = state.active { PokemonMemoryAlbum.shared.record(companionID: mon.id, body: "트레이너의 쓰다듬을 받고 기뻐했다.", source: .event, eventID: "care-pet") }; save() }
         return accepted
     }
 
@@ -1068,6 +1084,7 @@ final class CompanionStore {
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return false }
         let released = state.boxedMons.remove(at: index)
         AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
+        PokemonMemoryAlbum.shared.deleteAll(for: released.id)
         save()
         return true
     }
@@ -1996,6 +2013,7 @@ final class CompanionStore {
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
         let name = line.localizedName(line.baseID, state.language)
+        if let mon = state.active { PokemonMemoryAlbum.shared.record(companionID: mon.id, body: "\(name)이(가) 알에서 태어났다.", source: .event, eventID: "hatch") }
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
@@ -2330,6 +2348,7 @@ final class CompanionStore {
     func applySave(_ envelope: SaveEnvelope) throws {
         try backupStateBeforeImport()
         state = SaveTransfer.rebasedForThisDevice(envelope.state, current: state)
+        PokemonMemoryAlbum.shared.prune(validCompanionIDs: Set(([state.active].compactMap { $0 } + state.boxedMons).map(\.id)))
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
         // 않으면 먼저 떠 있던 라인 로드가 완료되며 새로 불러온 개체를 덮어쓴다.
         activeGeneration += 1
