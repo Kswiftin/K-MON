@@ -28,6 +28,13 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(request.summary, "트레이너와 산책을 약속했다.")
     }
 
+    func testPromptRestrictsThePokemonToPokedexAndCompanionTopics() {
+        let request = PokemonChatRequest(profile: .fixture, summary: "", recentMessages: [])
+
+        XCTAssertTrue(request.systemPrompt.contains("ONLY discuss Pokédex information"))
+        XCTAssertTrue(request.systemPrompt.contains("Never offer coding, file, terminal, web research"))
+    }
+
     func testDeletingSessionRemovesPersistedConversation() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
