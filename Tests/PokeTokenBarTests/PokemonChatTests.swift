@@ -52,8 +52,31 @@ final class PokemonChatTests: XCTestCase {
         let store = makeCompanionStore()
         await store.hatch(baseID: 25)
 
-        XCTAssertFalse(store.applyChatCare(.release))
-        XCTAssertFalse(store.applyChatCare(.evolve))
+        let activeID = try XCTUnwrap(store.state.active?.id)
+        XCTAssertFalse(store.applyChatCare(.release, for: activeID))
+        XCTAssertFalse(store.applyChatCare(.evolve, for: activeID))
+    }
+
+    func testChatCareProposalCannotRetargetAnotherCompanion() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let activeID = try XCTUnwrap(store.state.active?.id)
+        let before = store.state.care.hunger
+
+        XCTAssertFalse(store.applyChatCare(.feed, for: UUID()))
+        XCTAssertEqual(store.state.care.hunger, before)
+        XCTAssertTrue(store.applyChatCare(.feed, for: activeID))
+        XCTAssertGreaterThan(store.state.care.hunger, before)
+    }
+
+    func testCareProposalLabelsAreLocalizedAndNeverUseEnumSlugs() {
+        let slugs = Set(PokemonChatActionKind.allCases.map(\.rawValue))
+        for language in [AppLanguage.ko, .en, .ja] {
+            let labels = [PokemonChatActionKind.feed, .play, .rest, .clean, .medicate]
+                .map { $0.localizedCareLabel(language) }
+            XCTAssertEqual(Set(labels).count, 5)
+            XCTAssertTrue(labels.allSatisfy { !slugs.contains($0) }, "\(language.rawValue): \(labels)")
+        }
     }
 
     func testBoxedPokemonPersonaUsesItsOwnTypesAndMovesNotTheActivePartners() async throws {

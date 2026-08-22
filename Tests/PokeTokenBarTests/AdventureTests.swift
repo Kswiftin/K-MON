@@ -7,8 +7,9 @@ final class AdventureTests: XCTestCase {
         let now = old.addingTimeInterval(13 * 3600)
         var care = PetCareState(hunger: 80, lastUpdatedAt: old)
 
-        care.resumeClock(at: now)
+        let event = care.resumeClock(at: now)
 
+        XCTAssertNil(event)
         XCTAssertEqual(care.hunger, 80)
         XCTAssertEqual(care.lastUpdatedAt, now)
     }
@@ -18,9 +19,36 @@ final class AdventureTests: XCTestCase {
         let now = old.addingTimeInterval(2 * 3600)
         var care = PetCareState(hunger: 80, lastUpdatedAt: old)
 
-        care.resumeClock(at: now)
+        let event = care.resumeClock(at: now)
 
+        XCTAssertEqual(event, .requested(.hungry))
         XCTAssertEqual(care.hunger, 72, accuracy: 0.001)
+    }
+
+    func testLongResumeResetsAllCareClockStateWithoutApplyingDecay() {
+        let old = Date(timeIntervalSince1970: 100_000)
+        let now = old.addingTimeInterval(13 * 3600)
+        var care = PetCareState(hunger: 80, happiness: 70, energy: 60, affection: 40, hygiene: 50,
+                                messCount: 1,
+                                lastMessAt: old.addingTimeInterval(-4 * 3600),
+                                pendingNeed: .hungry,
+                                needDeadline: old.addingTimeInterval(30 * 60),
+                                lastNeedAt: old, lastUpdatedAt: old)
+
+        XCTAssertNil(care.resumeClock(at: now))
+        XCTAssertEqual(care.hunger, 80)
+        XCTAssertEqual(care.happiness, 70)
+        XCTAssertEqual(care.energy, 60)
+        XCTAssertEqual(care.hygiene, 50)
+        XCTAssertEqual(care.affection, 40)
+        XCTAssertEqual(care.messCount, 1)
+        XCTAssertEqual(care.lastUpdatedAt, now)
+        XCTAssertEqual(care.lastMessAt, now)
+        XCTAssertEqual(care.lastNeedAt, now)
+        XCTAssertNil(care.pendingNeed)
+        XCTAssertNil(care.needDeadline)
+        XCTAssertNil(care.advance(to: now))
+        XCTAssertEqual(care.careMistakes, 0)
     }
 
     func testLegacyIntegrityVersionDoesNotResetOnSchemaUpgrade() {

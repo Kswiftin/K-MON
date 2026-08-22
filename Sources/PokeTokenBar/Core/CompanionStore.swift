@@ -688,6 +688,7 @@ final class CompanionStore {
     }
 
     #if DEBUG
+    func debugSetCare(_ care: PetCareState) { state.care = care; save() }
     /// 테스트 전용 — 시간을 전진시키지 않고 생산분을 직접 주입한다. tick 의 적립 경로(accrue)를 그대로
     /// 태우므로 임계·이월·진화·졸업이 실동작과 동일하게 발화한다. 프로덕션 호출 경로 없음.
     func debugAccrue(_ dust: Int) { accrue(dust) }
