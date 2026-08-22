@@ -35,6 +35,26 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertTrue(request.systemPrompt.contains("Never offer coding, file, terminal, web research"))
     }
 
+    func testClaudeProviderDisablesBuiltInToolsAndMCPConfiguration() {
+        let arguments = PokemonChatProviderSafety.arguments(for: .claude)
+
+        XCTAssertEqual(arguments, ["claude", "--print", "--tools", "", "--safe-mode", "--strict-mcp-config",
+                                   "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence",
+                                   "--disable-slash-commands", "--permission-mode", "dontAsk"])
+    }
+
+    func testCodexProviderIgnoresConfigurationAndUsesReadOnlySandbox() {
+        let arguments = PokemonChatProviderSafety.arguments(for: .codex)
+
+        XCTAssertEqual(arguments, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only",
+                                   "--ephemeral", "--ignore-user-config", "--ignore-rules", "--config", "mcp_servers={}"])
+    }
+
+    func testProvidersWithoutAVerifiedToolFreeContractAreBlocked() {
+        XCTAssertNil(PokemonChatProviderSafety.arguments(for: .opencode))
+        XCTAssertNil(PokemonChatProviderSafety.arguments(for: .custom))
+    }
+
     func testDeletingSessionRemovesPersistedConversation() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
