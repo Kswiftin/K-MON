@@ -41,9 +41,8 @@ final class SeasonBoardTests: XCTestCase {
         }
     }
 
-    /// id 는 진행도 사전의 키이자 무결성 canonical 의 일부다 — 한 세트 안에서 겹치면 두 챌린지가
-    /// 서로를 덮어쓴다. 세트를 넘나드는 같은 id 는 허용하되 **목표·보상이 같아야** 한다:
-    /// 다르면 정규화 클램프가 시즌마다 다른 값을 남긴다.
+    /// id 는 진행도 사전의 키다 — 한 세트 안에서 겹치면 두 챌린지가 서로를 덮어쓴다. 세트를 넘나드는
+    /// 같은 id 는 허용하되 **목표·보상이 같아야** 한다(다르면 정규화 클램프가 시즌마다 다른 값을 남긴다).
     func testChallengeIDsAreUniquePerSetAndConsistentAcrossSets() {
         var known: [String: (target: Int, reward: Int)] = [:]
         for set in SeasonBoard.rotation {
@@ -76,6 +75,16 @@ final class SeasonBoardTests: XCTestCase {
         XCTAssertEqual(sets[3], sets[0], "로테이션 길이만큼 지나면 첫 세트로 돌아온다")
     }
 
+    /// 인접한 두 달은 목표를 **하나도** 공유하지 않는다. 위의 세트 배열 비교는 세 칸 중 두 칸이 같아도
+    /// 통과해, `focus900` 이 세트 1·2 에 함께 들어 연속 두 달에 같은 집중 목표가 나온 걸 못 잡았다.
+    func testAdjacentSeasonsShareNoGoal() {
+        for (index, set) in SeasonBoard.rotation.enumerated() {
+            let next = SeasonBoard.rotation[(index + 1) % SeasonBoard.rotation.count]
+            XCTAssertTrue(Set(set.map(\.id)).isDisjoint(with: next.map(\.id)),
+                          "세트 \(index) 가 다음 세트와 같은 목표를 공유한다")
+        }
+    }
+
     /// 12월 → 1월은 인덱스가 `year * 12` 를 넘는 유일한 경계다. 연도만 보고 계산하면 여기서 멈춘다.
     func testTheYearBoundaryAdvancesTheRotationByExactlyOne() {
         XCTAssertEqual(SeasonBoard.seasonIndex("2027-01") - SeasonBoard.seasonIndex("2026-12"), 1)
@@ -89,6 +98,21 @@ final class SeasonBoardTests: XCTestCase {
             XCTAssertEqual(SeasonBoard.seasonIndex(key), 0, key)
             XCTAssertEqual(ids(key), SeasonBoard.rotation[0].map(\.id), key)
         }
+    }
+
+    /// 이 키는 **세이브에서 온다**(`normalize`). 연도 상한이 없으면 `year * 12` 오버플로 트랩으로
+    /// 프로세스가 죽고 재기동해도 같은 파일을 읽어 또 죽는다 — 파일을 지울 때까지 앱 사용 불가.
+    func testAbsurdSeasonYearsFallBackInsteadOfTrapping() {
+        for key in ["\(Int.max)-01", "1000000000000000000-06", "10000-06", "0-06"] {
+            XCTAssertEqual(SeasonBoard.seasonIndex(key), 0, key)
+        }
+        var board = SeasonBoard()
+        board.seasonKey = "\(Int.max)-01"
+        board.counts = [SeasonBoard.rotation[0][0].id: 5]
+
+        board.normalize()   // 상한이 없으면 이 줄에서 프로세스가 죽는다
+
+        XCTAssertEqual(board.counts[SeasonBoard.rotation[0][0].id], 5)
     }
 
     // MARK: 기록·완료
@@ -228,6 +252,32 @@ final class SeasonBoardTests: XCTestCase {
         XCTAssertEqual(SeasonBoard.daysRemaining(at: date(2026, 8, 31), calendar: utc), 1)
     }
 
+    /// 남은 일수는 `seasonKey`(en_US_POSIX = 그레고리력)와 **같은 달**을 세야 한다. 기본 달력이
+    /// `.current` 면 시스템 달력을 이슬람력으로 둔 사용자에게 다른 달의 길이가 나온다.
+    /// 아래 두 값이 실제로 다르다는 게 그 근거다.
+    func testDaysRemainingIsPinnedToTheGregorianCalendar() {
+        XCTAssertEqual(SeasonBoard.gregorian.identifier, .gregorian)
+        var islamic = Calendar(identifier: .islamicUmmAlQura)
+        islamic.timeZone = TimeZone(secondsFromGMT: 0)!
+        XCTAssertNotEqual(SeasonBoard.daysRemaining(at: date(2026, 8, 22), calendar: islamic),
+                          SeasonBoard.daysRemaining(at: date(2026, 8, 22), calendar: utc))
+    }
+
+    /// 달력만 고정하면 절반만 맞춘 것이다 — `Calendar` 는 생성 시점의 시간대를 굳히는데 `seasonKey` 는
+    /// 호출마다 새로 읽는다. `static let` 으로 굳히면 실행 중 시간대가 바뀐 뒤 월말·월초에 둘이 다른
+    /// 달을 세어 새 세트가 "1일 남음" 으로 보인다.
+    func testTheSeasonCalendarFollowsTimeZoneChanges() {
+        let original = NSTimeZone.default
+        defer { NSTimeZone.default = original }
+
+        NSTimeZone.default = TimeZone(identifier: "Pacific/Kiritimati")!
+        let first = SeasonBoard.gregorian.timeZone
+        NSTimeZone.default = TimeZone(identifier: "Pacific/Midway")!
+
+        XCTAssertNotEqual(SeasonBoard.gregorian.timeZone, first,
+                          "달력을 한 번 굳히면 시간대 변경을 따라가지 못한다")
+    }
+
     /// 달마다 길이가 다르다 — 30/31 을 상수로 박으면 2월에서 음수가 나온다.
     func testDaysRemainingFollowsTheLengthOfEachMonth() {
         XCTAssertEqual(SeasonBoard.daysRemaining(at: date(2024, 2, 1), calendar: utc), 29, "윤년")
@@ -261,6 +311,15 @@ final class SeasonBoardTests: XCTestCase {
         XCTAssertTrue(L(.en).goalName(.graduations, 1).hasSuffix("partner"))
         XCTAssertTrue(L(.en).goalName(.graduations, 3).hasSuffix("partners"))
     }
+
+    /// 복수형은 **세 이벤트 전부**에 걸려야 한다 — 졸업만 고쳐 두면 목표값 조절로 1 이 되는 순간
+    /// "Claim 1 adventures"·"Focus 1 minutes" 가 나온다(같은 부류를 한 케이스만 고친 자리).
+    func testEnglishGoalCopyIsSingularForEveryEventAtOne() {
+        XCTAssertTrue(L(.en).goalName(.adventures, 1).hasSuffix("adventure"), L(.en).goalName(.adventures, 1))
+        XCTAssertTrue(L(.en).goalName(.focusMinutes, 1).hasSuffix("minute"), L(.en).goalName(.focusMinutes, 1))
+        XCTAssertTrue(L(.en).goalName(.adventures, 2).hasSuffix("adventures"))
+        XCTAssertTrue(L(.en).goalName(.focusMinutes, 60).hasSuffix("minutes"))
+    }
 }
 
 // MARK: 적립 경로 (스토어)
@@ -276,8 +335,8 @@ final class SeasonAccrualTests: XCTestCase {
         SeasonBoard.challenges(forSeasonKey: currentSeason).first { $0.event == event }!
     }
 
-    /// `seeding` 은 이번 시즌 진행도를 목표 근처에 앉히는 손잡이다. 시즌 목표는 한 달치라
-    /// (집중 900~1,200분) 테스트에서 정직하게 채울 수 없다 — 마지막 한 걸음만 실제로 밟는다.
+    /// `seeding` 은 진행도를 목표 근처에 앉히는 손잡이다. 시즌 목표는 한 달치(집중 900~1,200분)라
+    /// 테스트에서 정직하게 채울 수 없어 마지막 한 걸음만 실제로 밟는다.
     private func makeStore(seeding progress: [String: Int] = [:], trainerPoints: Int = 0) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-season-\(UUID().uuidString).json")
@@ -439,6 +498,16 @@ final class SeasonSaveTests: XCTestCase {
 
         signed.seasons.seasonKey = "2026-09"
         XCTAssertTrue(SaveTransfer.isTampered(signed), "시즌 키도 서명에 들어가 있어야 한다")
+    }
+
+    /// 경계가 시즌 키를 트랩 없이 통과시킨다 — 트랩나면 세이브 한 줄로 앱이 못 뜬다
+    /// (`integrityVersion` 을 지운 세이브는 조작 판정도 안 되어 곧장 이 경로로 온다).
+    func testAbsurdSeasonKeyPassesTheBoundaryWithoutTrapping() {
+        var state = CompanionState()
+        state.seasons.seasonKey = "\(Int.max)-12"
+        state.seasons.counts = ["ghostChallenge": 3]
+
+        XCTAssertNil(SaveTransfer.sanitized(state).seasons.counts["ghostChallenge"])
     }
 
     /// 경계에서 한 번만 정규화한다 — 손편집으로 넣은 거대한 값이 그대로 저장되면 재지급 대상이 된다.

@@ -16,10 +16,10 @@ struct MissionBoardView: View {
 
     private var l: L { store.l }
 
-    private var rows: [(mission: Mission, progress: Int)] { store.missionRows }
-    private var doneCount: Int { rows.filter { $0.progress >= $0.mission.target }.count }
-
     var body: some View {
+        // 한 번만 읽는다 — `missionRows` 는 접근마다 날짜·주 키를 다시 굽고 배열을 다시 만든다.
+        let rows = store.missionRows
+        let doneCount = rows.filter { $0.progress >= $0.mission.target }.count
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text("🎯 \(l.missionsTitle)").font(.caption.weight(.semibold))
@@ -42,6 +42,7 @@ struct MissionBoardView: View {
                     if done {
                         Text("✓ \(GameNumberFormatter.compact(row.mission.reward)) ⭐")
                             .font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                            .lineLimit(1)
                     } else {
                         Text("\(row.progress)/\(row.mission.target)")
                             .font(.caption2).monospacedDigit().foregroundStyle(.secondary)

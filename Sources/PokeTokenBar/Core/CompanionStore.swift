@@ -305,7 +305,8 @@ final class CompanionStore {
     func setNickname(_ name: String) {
         guard state.active != nil else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        state.active!.nickname = trimmed.isEmpty ? nil : String(trimmed.prefix(20))
+        // 상한은 세이브 경계와 **같은 상수**를 쓴다 — 경계가 더 짧으면 방금 넣은 이름이 로드 때 잘린다.
+        state.active!.nickname = trimmed.isEmpty ? nil : String(trimmed.prefix(SaveTransfer.maxNameLength))
         save()
     }
 
@@ -313,7 +314,8 @@ final class CompanionStore {
     var trainerName: String { state.trainerName }
     var hasTrainerName: Bool { !state.trainerName.trimmingCharacters(in: .whitespaces).isEmpty }
     func setTrainerName(_ name: String) {
-        state.trainerName = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20))
+        state.trainerName = String(name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(SaveTransfer.maxNameLength))
         save()
     }
     var currentSpeciesID: Int? { state.active?.currentID }
@@ -896,35 +898,39 @@ final class CompanionStore {
     @discardableResult
     private func recordMission(_ event: MissionEvent, _ amount: Int) -> Int {
         let now = clock()
-        var paid = 0
-        for mission in state.missions.record(event, amount,
-                                             dayKey: Self.dayKey(now), weekKey: Self.weekKey(now)) {
-            state.starPieces += mission.reward
-            paid += mission.reward
-            notifyCompanionEvent(l.notifMissionDoneTitle,
-                                 l.notifMissionDoneBody(l.missionName(mission), mission.reward))
-        }
-        return paid
+        let done = state.missions.record(event, amount,
+                                        dayKey: Self.dayKey(now), weekKey: Self.weekKey(now))
+            .map { (name: l.missionName($0), reward: $0.reward) }
+        guard let merged = Self.mergedCompletion(done) else { return 0 }
+        state.starPieces += merged.reward
+        notifyCompanionEvent(l.notifMissionDoneTitle,
+                             l.notifMissionDoneBody(merged.name, merged.reward))
+        return merged.reward
+    }
+
+    /// 한 정산에서 완료된 목표를 **한 통**으로 묶는다 — 이름은 가운뎃점으로 잇고 보상은 합산한다.
+    /// 완료마다 한 통씩 띄우면 시즌·미션이 함께 완료되는 정산에서 배너가 6개 연달아 뜬다.
+    nonisolated static func mergedCompletion(_ done: [(name: String, reward: Int)])
+        -> (name: String, reward: Int)? {
+        guard !done.isEmpty else { return nil }
+        return (done.map(\.name).joined(separator: " · "), done.reduce(0) { $0 + $1.reward })
     }
 
     /// 시즌 기록의 **유일한** 경로 — 완료 보상(별의조각)과 알림까지 여기서 끝낸다.
-    /// 계약은 `recordMission` 과 같다: 반환값은 이번에 지급한 별의조각이고, 정산 경로는 그 값을
-    /// 보상 객체에 실어야 한다. 지갑만 늘리고 보고하지 않으면 알려준 값과 잔액이 어긋난다.
+    /// 계약은 `recordMission` 과 같다(반환값 = 이번에 지급한 별의조각, 정산 경로가 보상 객체에 실음).
     @discardableResult
     private func recordSeason(_ event: MissionEvent, _ amount: Int) -> Int {
-        var paid = 0
-        for challenge in state.seasons.record(event, amount, seasonKey: Self.seasonKey(clock())) {
-            state.starPieces += challenge.reward
-            paid += challenge.reward
-            notifyCompanionEvent(l.notifSeasonDoneTitle,
-                                 l.notifMissionDoneBody(l.goalName(challenge.event, challenge.target),
-                                                        challenge.reward))
-        }
-        return paid
+        let done = state.seasons.record(event, amount, seasonKey: Self.seasonKey(clock()))
+            .map { (name: l.goalName($0.event, $0.target), reward: $0.reward) }
+        guard let merged = Self.mergedCompletion(done) else { return 0 }
+        state.starPieces += merged.reward
+        notifyCompanionEvent(l.notifSeasonDoneTitle,
+                             l.notifMissionDoneBody(merged.name, merged.reward))
+        return merged.reward
     }
 
-    /// 화면용 시즌 목록 — 세트도 진행도도 **읽는 시점의** 시즌 키로 판정한다. 달이 바뀌면 아무 기록
-    /// 없이도 새 세트가 빈 채로 보인다(상태는 그대로 — 다음 기록이 실제로 갱신한다).
+    /// 화면용 시즌 목록 — 세트도 진행도도 **읽는 시점의** 시즌 키로 판정한다. 달이 바뀌면 기록 없이도
+    /// 새 세트가 빈 채로 보인다(상태는 그대로 — 다음 기록이 갱신한다).
     var seasonRows: [(challenge: SeasonChallenge, progress: Int)] {
         let key = Self.seasonKey(clock())
         return SeasonBoard.challenges(forSeasonKey: key).map {
@@ -1409,20 +1415,24 @@ final class CompanionStore {
                              l.notifDailyCandyBody)
     }
 
-    /// 로컬 달력 기준 YYYY-MM-DD — 일일 보상 원장 키.
+    /// 로컬 시간대 기준 YYYY-MM-DD — 일일 보상 원장 키. 달력은 그레고리력 고정이다(시스템 달력이
+    /// 이슬람력이면 시즌 만료 계산과 다른 달을 센다).
+    ///
+    /// 달력은 시즌 만료와 **같은 접근자**(`SeasonBoard.gregorian`)를 쓴다 — 갈라지면 자정 근처에서
+    /// 원장 키와 남은 일수가 다른 날을 센다. 그 접근자가 계산 프로퍼티인 이유도 여기 걸려 있다:
+    /// `Calendar` 를 굳히면 생성 시점 시간대가 박혀 실행 중 시간대 변경을 못 따라간다.
+    /// (`timeZone = .current` 로 덮어써도 같은 함정이다 — `TimeZone.current` 는 프로세스 첫 값에
+    /// 캐시돼 시간대를 바꿔도 옛 값을 준다. `Calendar(identifier:)` 는 매번 새로 읽는다.)
+    /// `DateFormatter` 대신 성분을 조립하는 건 매 호출 생성 비용 때문이다(실측 16.3µs → 1.6µs).
     nonisolated static func dayKey(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+        let parts = SeasonBoard.gregorian.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
-    /// 로컬 달력 기준 YYYY-MM — 시즌 원장 키. 시즌은 달력 월이라 이 한 줄이 만료·갱신 규칙 전부다.
+    /// 로컬 달력 기준 YYYY-MM — 시즌 원장 키. 포맷터를 하나 더 두지 않고 `dayKey` 를 자른다 —
+    /// 두 원장 키가 다른 로케일·달력으로 갈라질 여지를 없앤다.
     nonisolated static func seasonKey(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM"
-        return f.string(from: date)
+        String(dayKey(date).prefix(7))
     }
 
     nonisolated static func weekKey(_ date: Date) -> String {

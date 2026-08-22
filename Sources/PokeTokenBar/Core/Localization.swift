@@ -691,31 +691,34 @@ struct L {
                  "\(name) — you earned \(amount) Star Pieces!",
                  "\(name) — ほしのかけら \(amount) を獲得！")
     }
-    /// 목표 이름 — 미션과 시즌 챌린지가 **같은 문구를 공유**한다. 두 곳에 같은 말을 두면 한쪽만 고쳐진다.
+    /// 목표 이름 — 미션과 시즌 챌린지가 **같은 문구를 공유**한다. 두 곳에 두면 한쪽만 고쳐진다.
     ///
-    /// id 가 아니라 **이벤트로 스위치**한다: 이벤트를 더하면 컴파일이 막으니 예전의 빈 문자열 폴백이
-    /// 필요 없다(`achievementName` 과 같은 이유). 이름에 "오늘"·"이번 주"를 넣지 않는다 — 카드의
-    /// 주기 배지가 이미 그 말을 하고, 360pt 팝오버에서 같은 정보를 두 번 쓰면 이름이 잘린다.
-    /// 목표 수치가 들어가 있어 알림에서도 어느 목표인지 구분된다(집중 60분 vs 300분).
+    /// id 가 아니라 **이벤트로 스위치**한다: 이벤트를 더하면 컴파일이 막으니 빈 문자열 폴백이 필요
+    /// 없다(`achievementName` 과 같은 이유). "오늘"·"이번 주" 는 넣지 않는다 — 카드의 주기 배지가
+    /// 이미 말하고, 360pt 팝오버에서 두 번 쓰면 이름이 잘린다. 목표 수치가 들어가 알림에서도
+    /// 구분된다(집중 60분 vs 300분).
     func goalName(_ event: MissionEvent, _ target: Int) -> String {
         switch event {
         case .adventures:
-            return t("모험 정산 \(target)회", "Claim \(target) adventures", "冒険を\(target)回精算")
+            return t("모험 정산 \(target)회", "Claim \(plural(target, "adventure"))", "冒険を\(target)回精算")
         case .focusMinutes:
-            return t("집중 \(target)분", "Focus \(target) minutes", "\(target)分集中")
+            return t("집중 \(target)분", "Focus \(plural(target, "minute"))", "\(target)分集中")
         case .graduations:
-            // 시즌 목표는 2~5 라 영어 단수형을 고정하면 "Graduate 3 partner" 가 된다.
-            return t("졸업 \(target)회",
-                     "Graduate \(target) partner\(target == 1 ? "" : "s")",
-                     "\(target)体を卒業")
+            return t("졸업 \(target)회", "Graduate \(plural(target, "partner"))", "\(target)体を卒業")
         }
+    }
+
+    /// 영어 복수형 — 세 이벤트가 공유한다. 한 케이스만 처리하면 목표값을 1 로 조절하는 순간
+    /// 나머지에서 "Claim 1 adventures" 가 나온다.
+    private func plural(_ count: Int, _ noun: String) -> String {
+        "\(count) \(noun)\(count == 1 ? "" : "s")"
     }
 
     func missionName(_ mission: Mission) -> String { goalName(mission.event, mission.target) }
     var missionsTitle: String { t("미션", "Missions", "ミッション") }
 
-    /// 시즌 카드 제목과 남은 일수. 완료 알림 본문은 미션 것을 그대로 쓴다 — 같은 문장을 두 번
-    /// 번역하지 않는다. 남은 일수는 한 줄 헤더에 들어가므로 가장 짧은 말을 쓴다.
+    /// 시즌 카드 제목과 남은 일수. 완료 알림 본문은 미션 것을 재사용한다(같은 문장을 두 번 번역하지
+    /// 않는다). 남은 일수는 한 줄 헤더에 들어가므로 가장 짧은 말을 쓴다.
     var seasonTitle: String { t("시즌 챌린지", "Season challenges", "シーズンチャレンジ") }
     func seasonDaysLeft(_ days: Int) -> String {
         t("\(days)일 남음", "\(days)d left", "残り\(days)日")

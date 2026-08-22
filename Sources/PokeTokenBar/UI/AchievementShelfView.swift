@@ -12,10 +12,10 @@ struct AchievementShelfView: View {
 
     private var l: L { store.l }
 
-    private var rows: [(achievement: Achievement, count: Int, tier: Int)] { store.achievementRows }
-    private var clearedCount: Int { rows.filter { $0.tier >= $0.achievement.tiers.count }.count }
-
     var body: some View {
+        // 한 번만 읽는다 — `achievementRows` 는 접근마다 배열을 다시 만든다.
+        let rows = store.achievementRows
+        let clearedCount = rows.filter { $0.tier >= $0.achievement.tiers.count }.count
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text("🏅 \(l.achievementsTitle)").font(.caption.weight(.semibold))

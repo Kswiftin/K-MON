@@ -411,21 +411,29 @@ final class PopoverLayoutTests: XCTestCase {
     /// 프레임 안에 있어야 세그먼트를 바꿀 때 스크롤이 생기지 않는다. 3행이라 선반(4행·160pt)보다
     /// 작아야 하고, 행마다 게이지를 깔면 미션 카드(211pt)가 겪은 초과를 되풀이한다.
     private static let seasonCardBudget: CGFloat = 140
-    /// 두 카드가 함께 쓰는 프레임(`CollectionView.contentHeight`). 세그먼트 24pt 는 이 프레임 밖이다.
-    private static let collectionSegmentHeight: CGFloat = 520
 
-    private func seasonStore(_ language: AppLanguage = .ko) -> CompanionStore {
+    /// 로테이션 세트마다 행 문구 길이가 다르다(`집중 1200분`·`600/1200` vs `집중 900분`·`450/900`,
+    /// 완료 보상 9,000 vs 5,000). 한 달만 재면 나머지 세트가 무검증으로 남으므로 **세트 수만큼**
+    /// 달을 옮겨 가며 잰다. 31일 간격이면 시즌 인덱스가 매번 1~2 늘어 세 세트를 모두 밟는다.
+    private static let seasonDates: [Date] = (0..<SeasonBoard.rotation.count).map {
+        Date(timeIntervalSince1970: 1_755_000_000 + Double($0) * 31 * 86_400)
+    }
+
+    /// `progressRatio` 로 행 상태를 고른다 — 0.5 는 분수(`600/1200`), 1 은 완료(`✓ 9000 ⭐`).
+    /// 어느 쪽 문구가 더 긴지 단정할 수 없어 둘 다 예산에 넣는다.
+    /// 시즌 키는 **시계에서 뽑는다** — 상수로 박으면 시계를 옮길 때 세트가 어긋나 진행도가 전부 0 이
+    /// 되고, 예산 검증이 가장 짧은 화면을 재면서 조용히 통과한다.
+    private func seasonStore(_ language: AppLanguage = .ko, progressRatio: Double = 0.5,
+                             at date: Date = seasonDates[0]) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("poke-season-layout-\(UUID().uuidString).json")
-        // 세 챌린지가 **모두 분수로 보이는** 상태 — 하나라도 목표를 넘으면 그 행이 "✓" 로 짧아져
-        // 최악의 폭에서 빠진다. 시즌 키는 아래 고정 시계(2025-08)와 맞춘다.
-        let counts = SeasonBoard.challenges(forSeasonKey: "2025-08")
-            .map { "\"\($0.id)\":\($0.target / 2)" }.joined(separator: ",")
+        let key = CompanionStore.seasonKey(date)
+        let counts = SeasonBoard.challenges(forSeasonKey: key)
+            .map { "\"\($0.id)\":\(Int(Double($0.target) * progressRatio))" }.joined(separator: ",")
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
-            + #""seasons":{"seasonKey":"2025-08","counts":{\#(counts)}}}"#
+            + #""seasons":{"seasonKey":"\#(key)","counts":{\#(counts)}}}"#
         try? Data(json.utf8).write(to: url)
-        return CompanionStore(provider: StubProvider(value: moveTestLine),
-                              clock: { Date(timeIntervalSince1970: 1_755_000_000) },
+        return CompanionStore(provider: StubProvider(value: moveTestLine), clock: { date },
                               fileURL: url, rng: SeededRNG(seed: 17))
     }
 
@@ -434,7 +442,7 @@ final class PopoverLayoutTests: XCTestCase {
     func testAGaugePerSeasonRowBlowsThroughTheCardBudget() {
         let gauged = VStack(alignment: .leading, spacing: 6) {
             Text("🗓️ 시즌").font(.caption.weight(.semibold))
-            ForEach(SeasonBoard.challenges(forSeasonKey: "2025-08")) { challenge in
+            ForEach(SeasonBoard.rotation[0]) { challenge in
                 HStack {
                     Text(challenge.id).font(.caption2)
                     Spacer()
@@ -448,16 +456,31 @@ final class PopoverLayoutTests: XCTestCase {
                              "대조군이 안 넘치면 예산 검증이 무의미해진다")
     }
 
+    /// 분수 상태 — 로테이션 세트 전부.
     func testSeasonCardFitsItsBudget() {
-        XCTAssertLessThanOrEqual(renderedHeight(SeasonChallengeView(store: seasonStore())),
-                                 Self.seasonCardBudget)
+        for date in Self.seasonDates {
+            XCTAssertLessThanOrEqual(renderedHeight(SeasonChallengeView(store: seasonStore(at: date))),
+                                     Self.seasonCardBudget, CompanionStore.seasonKey(date))
+        }
+    }
+
+    /// 시즌 말에는 세 행이 모두 완료 상태로 보인다 — 분수 상태만 재면 사용자가 매달 도달하는 화면이
+    /// 무검증으로 남는다. `compact` 는 10,000 미만을 줄이지 않아 완료 문구가 더 길다.
+    func testCompletedSeasonCardFitsItsBudget() {
+        for date in Self.seasonDates {
+            XCTAssertLessThanOrEqual(
+                renderedHeight(SeasonChallengeView(store: seasonStore(progressRatio: 1, at: date))),
+                Self.seasonCardBudget, CompanionStore.seasonKey(date))
+        }
     }
 
     /// 두 카드가 한 세그먼트를 공유한다 — 합이 프레임을 넘으면 업적 선반이 잘리거나 스크롤이 생긴다.
+    /// 프레임·간격은 `CollectionView` 의 상수를 그대로 읽는다(테스트가 실제 레이아웃을 따라오게).
     func testSeasonCardAndAchievementShelfShareTheSegmentWithoutOverflowing() {
         let combined = renderedHeight(SeasonChallengeView(store: seasonStore()))
+            + CollectionView.cardSpacing
             + renderedHeight(AchievementShelfView(store: achievementStore()))
-        XCTAssertLessThanOrEqual(combined, Self.collectionSegmentHeight)
+        XCTAssertLessThanOrEqual(combined, CollectionView.contentHeight)
     }
 
     /// 남은 일수 문구가 세 언어에서 길이가 다르다(12일 남음 / 12d left / 残り12日). 한 언어에서
