@@ -1249,7 +1249,11 @@ struct CollectionView: View {
             // 도감이 비어도 업적은 볼 수 있어야 한다 — 빈 화면은 도감 분기 안에만 둔다.
             if store.dexEntries.isEmpty { emptyState } else { DexGridView(store: store) }
         case .achievements:
-            AchievementShelfView(store: store)
+            // 시즌 카드가 위 — 만료되는 쪽이 먼저 보여야 한다. 업적은 사라지지 않는다.
+            VStack(alignment: .leading, spacing: 8) {
+                SeasonChallengeView(store: store)
+                AchievementShelfView(store: store)
+            }
         }
     }
 

@@ -27,6 +27,7 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/TrainerLevel.swift"
   "Sources/PokeTokenBar/Core/MissionBoard.swift"
   "Sources/PokeTokenBar/Core/AchievementLadder.swift"
+  "Sources/PokeTokenBar/Core/SeasonBoard.swift"
   # 근처 트레이너 카드에 실리는 값을 굽고·읽고·자르는 곳. 게이트 밖에 두면 신뢰경계 클램프가
   # 무테스트로 남는다(새 로직 파일을 배열에 넣지 않으면 커버리지에서 아예 빠진다).
   "Sources/PokeTokenBar/Core/PeerAdvertisement.swift"
