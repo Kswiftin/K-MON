@@ -175,6 +175,8 @@ enum SaveTransfer {
         // 업적도 경계에서 한 번만 자른다 — 사라진 트랙의 잔재를 버리고 마지막 문턱으로 클램프한다.
         // 클램프된 값이 곧 최고 단계라 손편집으로 넘겨도 보상이 다시 나오지 않는다.
         s.achievements.normalize()
+        // 시즌도 같은 자리에서 자른다 — 저장된 시즌의 세트에 없는 키를 버리고 목표에서 클램프한다.
+        s.seasons.normalize()
         s.focusEggs = min(max(0, s.focusEggs), 999)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
@@ -290,6 +292,12 @@ enum SaveTransfer {
         // `|act-` 가 업적 세그먼트로 읽힌다(`shc` 가 `sec` 를 피한 것과 같다). 위조가 되는 건
         // 아니지만 세그먼트 유무를 보는 테스트가 조용히 거짓이 된다.
         if s.achievements != AchievementLadder() { p.append("ach\(s.achievements.canonical)") }
+        // 시즌 진행도도 서명에 넣는다 — 밖에 두면 목표 직전 값을 적어 넣는 것만으로 보상이 공짜다.
+        // 조건부인 이유는 위 세 필드와 같고, 새 필드라 `integrityVersion` 은 올리지 않는다.
+        //
+        // 접두는 `s` 가 아니라 `sn` 이다. `s` 면 기본값 세이브의 `sp0`·`scfalse` 가 시즌 세그먼트로
+        // 읽혀 세그먼트 유무를 보는 테스트가 조용히 거짓이 된다(`ach` 가 `ac` 를 피한 것과 같다).
+        if s.seasons != SeasonBoard() { p.append("sn\(s.seasons.canonical)") }
         // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
         // 배지 키 한 줄을 지워 같은 체육관에서 알을 다시 받는다. 정렬 필수: `Set` 순회 순서는 실행마다
         // 달라 정렬하지 않으면 같은 상태가 다른 서명을 낸다. (아래 두 필드가 이미 배포분이라 버전을 올렸다.)

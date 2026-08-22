@@ -415,7 +415,7 @@ final class SaveTransferTests: XCTestCase {
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
                                      "starterCandidates", "active", "dex", "collectedFinals", "gymBadges", "shinyEggCharges", "inventory",
                                      "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
-                                     "care", "battleRank", "trainer", "missions", "achievements", "battleHistory",
+                                     "care", "battleRank", "trainer", "missions", "achievements", "seasons", "battleHistory",
                                      // 진행 중인 랭크전 에스크로 — 이미 지갑에서 빠져나간 돈이다.
                                      // 기기를 옮길 때 안 따라가면 배틀 중에 이전해서 판돈을 챙길 수 있다.
                                      "pendingRanked",
