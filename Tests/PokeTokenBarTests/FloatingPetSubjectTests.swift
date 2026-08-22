@@ -13,7 +13,7 @@ final class FloatingPetSubjectTests: XCTestCase {
 
         XCTAssertTrue(panel.contains("var onChat: (() -> Void)?"))
         XCTAssertTrue(panel.contains("l.t(\"대화하기\", \"Chat\", \"話す\")"))
-        XCTAssertTrue(panel.contains("#selector(handleChat:)"))
+        XCTAssertTrue(panel.contains("#selector(handleChat(_:))"))
         XCTAssertTrue(panel.contains("@objc func handleChat"))
         XCTAssertTrue(app.contains("onChat: { [weak self]"))
     }

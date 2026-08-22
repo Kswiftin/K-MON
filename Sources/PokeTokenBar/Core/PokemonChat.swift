@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 
+extension Notification.Name {
+    static let openPokemonChat = Notification.Name("openPokemonChat")
+}
+
 enum PokemonChatRole: String, Codable, Sendable { case user, pokemon, system }
 
 struct PokemonChatMessage: Codable, Sendable, Identifiable, Equatable {

@@ -668,6 +668,10 @@ struct CompanionHeader: View {
         .onChange(of: store.candyFeedbackSeq) { showCandyXPIfNeeded() }
         .onChange(of: store.mintFeedbackSeq) { showMintIfNeeded() }
         .onChange(of: eggImminent) { syncEggWiggle() }
+        .onReceive(NotificationCenter.default.publisher(for: .openPokemonChat)) { _ in
+            guard store.hasActive else { return }
+            showingChat = true
+        }
         .sheet(isPresented: $showingChat) {
             if let mon = store.state.active { PokemonChatView(companionID: mon.id, profile: store.chatProfile(for: mon)) }
         }

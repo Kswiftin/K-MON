@@ -62,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         floatingPet = FloatingPetController(
             settings: settings, companion: companion,
             onOpenPopover: { [weak self] in self?.openPopover() },
+            onChat: { [weak self] in
+                self?.openPopover()
+                DispatchQueue.main.async { NotificationCenter.default.post(name: .openPokemonChat, object: nil) }
+            },
             onHide: { [weak self] in self?.settings.floatingPetEnabled = false }
         )   // 데스크톱 플로팅 펫(옵트인)
         Task { await updater.check() }                    // 기동 시 1회 업데이트 확인
