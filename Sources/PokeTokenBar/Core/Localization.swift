@@ -74,6 +74,18 @@ struct L {
     }
     var battleDeclined: String { t("상대가 거절했어요.", "They declined.", "相手に断られました。") }
     var battleConnectionLost: String { t("연결이 끊어졌어요.", "Connection lost.", "接続が切れました。") }
+    var battleChallengeTimedOut: String { t("신청 시간이 초과됐어요.", "The challenge timed out.", "対戦の申請時間が切れました。") }
+    func battleChallengeTimeRemaining(_ seconds: Int) -> String {
+        t("수락까지 \(seconds)초", "\(seconds)s to accept", "承諾まで \(seconds)秒")
+    }
+    func menuBarBattleChallengeSent(_ peer: String) -> String { t("\(peer) 응답 대기", "Waiting for \(peer)", "\(peer)の応答待ち") }
+    func menuBarBattleChallengeReceived(_ peer: String) -> String { t("\(peer) 수락 대기", "Accept \(peer)'s challenge", "\(peer)の承諾待ち") }
+    func menuBarBattling(_ peer: String, isMyTurn: Bool) -> String {
+        let koTurn = isMyTurn ? "내 턴" : "상대 턴"
+        let enTurn = isMyTurn ? "Your turn" : "Opponent's turn"
+        let jaTurn = isMyTurn ? "自分のターン" : "相手のターン"
+        return t("\(peer)와 대결 중 · \(koTurn)", "Battling \(peer) · \(enTurn)", "\(peer)と対戦中 · \(jaTurn)")
+    }
     /// 랭크전 판돈을 못 낼 때 — 세 경로(수신 수락·수락 응답·개시 에스크로)가 같은 문구를 쓴다.
     var battleStakeShort: String {
         t("랭크전 판돈이 부족해요.", "Not enough Star Pieces for the ranked stake.",

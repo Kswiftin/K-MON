@@ -81,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
 
         observeCompanionSprite()
         observeBattlePin()
+        observeBattleMenuStatus()
         observeDisplaySleep()
         startIdleTick()
         startFocusTick()
@@ -110,6 +111,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 guard let self else { return }
                 self.applyBattlePin()
                 self.observeBattlePin()
+            }
+        }
+    }
+
+    /// 같은 pinned 상태 안에서도 신청→대결, 내 턴→상대 턴으로 바뀐다. 그 변화를 메뉴바에 즉시 반영한다.
+    private func observeBattleMenuStatus() {
+        withObservationTracking {
+            _ = battleCenter.phase
+            _ = battleCenter.battle?.myAction
+            _ = battleCenter.battle?.opp.snapshot.trainer
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.applyState()
+                self.observeBattleMenuStatus()
             }
         }
     }
@@ -168,9 +184,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
 
     private func applyState() {
         guard let button = statusItem.button else { return }
-        // focus > adventuring > resting 우선순위와 시간 포맷은 MenuBarStatus 에 고정돼 있다(#20) —
+        // 대결 > focus > adventuring > resting 우선순위와 시간 포맷은 MenuBarStatus 에 고정돼 있다(#20) —
         // 여기서 다시 if 사슬로 풀면 상태가 하나 늘 때 분기 누락이 재발한다.
-        let status = MenuBarStatus.resolve(focusRunning: focusTimer.isRunning, focusPhase: focusTimer.phase,
+        let status = MenuBarStatus.resolve(battlePhase: battleCenter.phase, battle: battleCenter.battle,
+                                           focusRunning: focusTimer.isRunning, focusPhase: focusTimer.phase,
                                            focusClockText: focusTimer.clockText(),
                                            activeAdventure: companion.activeAdventure)
         let fullDescription = status.fullDescription(companion.l)
