@@ -693,6 +693,12 @@ final class CompanionStore {
         displayedMoves = moves
         isLoadingDisplayedMoves = loading
     }
+    /// 테스트 전용 — 타입 표시 캐시와 소유자 태그를 함께 세팅한다. 둘을 분리하면 프로덕션에서
+    /// 만들 수 없는 태그 없는 캐시 상태가 생겨 회귀 테스트가 실제 결함과 다른 조건을 검증한다.
+    func debugSetLoadedTypes(_ types: [PokemonType], speciesID: Int) {
+        loadedTypes = types
+        loadedTypesSpeciesID = speciesID
+    }
     /// 테스트 전용 — 비동기 계승 기술 복원과 동행 교체의 경합을 네트워크 없이 재현한다.
     func debugSetActiveLearnedMoves(_ moves: [MoveSpec]) {
         state.active?.learnedMoves = moves

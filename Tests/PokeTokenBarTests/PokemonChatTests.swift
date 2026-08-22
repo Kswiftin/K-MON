@@ -3,6 +3,48 @@ import XCTest
 
 @MainActor
 final class PokemonChatTests: XCTestCase {
+    func testBoxedPokemonPersonaUsesItsOwnTypesAndMovesNotTheActivePartners() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let activeMove = move(id: 84, name: "전기쇼크", type: .electric)
+        store.debugSetActiveLearnedMoves([activeMove])
+        store.debugSetDisplayedMoves([activeMove])
+        store.debugSetLoadedTypes([.electric], speciesID: 25)
+
+        var boxed = mon(speciesID: 4, name: "파이리")
+        let boxedMove = move(id: 10, name: "할퀴기", type: .normal)
+        boxed.learnedMoves = [boxedMove]
+        store.debugSetBoxedMons([boxed])
+
+        let profile = store.chatProfile(for: try XCTUnwrap(store.boxedMons.first))
+
+        XCTAssertTrue(profile.types.isEmpty)
+        XCTAssertEqual(profile.moves, [boxedMove.name(.ko)])
+        XCTAssertNotEqual(profile.moves, [activeMove.name(.ko)])
+    }
+
+    func testActivePartnerPersonaStillCarriesItsLoadedTypes() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        store.debugSetLoadedTypes([.electric], speciesID: 25)
+
+        let profile = store.chatProfile(for: try XCTUnwrap(store.state.active))
+
+        XCTAssertEqual(profile.types, [PokemonType.electric.name(.ko)])
+    }
+
+    func testBoxedPokemonOfTheSameSpeciesKeepsCorrectTypes() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        store.debugSetLoadedTypes([.electric], speciesID: 25)
+        let boxed = mon(speciesID: 25, name: "피카츄")
+        store.debugSetBoxedMons([boxed])
+
+        let profile = store.chatProfile(for: try XCTUnwrap(store.boxedMons.first))
+
+        XCTAssertEqual(profile.types, [PokemonType.electric.name(.ko)])
+    }
+
     func testSessionStaysAttachedToIndividualAcrossSpeciesChange() throws {
         let id = UUID()
         var session = PokemonChatSession(companionID: id, speciesID: 1, displayName: "이상해씨")
@@ -134,6 +176,35 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(proposal.state, .pending)
         proposal.approve()
         XCTAssertEqual(proposal.state, .approved)
+    }
+
+    private func makeCompanionStore() -> CompanionStore {
+        let line = EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
+                           names: [25: ["ko": "피카츄", "en": "Pikachu"]])
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pokemon-chat-companion-\(UUID().uuidString).json")
+        return CompanionStore(provider: ChatLineProvider(line: line),
+                              clock: { Date(timeIntervalSince1970: 1_000) },
+                              fileURL: url, rng: SeededRNG(seed: 1))
+    }
+
+    private func mon(speciesID: Int, name: String) -> MonState {
+        MonState(baseID: speciesID, pathIDs: [speciesID], stageIndex: 0, usedAtStage: 0,
+                 rarity: .common, totalForms: 1,
+                 names: [speciesID: ["ko": name, "en": name]])
+    }
+
+    private func move(id: Int, name: String, type: PokemonType) -> MoveSpec {
+        MoveSpec(id: id, names: ["ko": name, "en": name], type: type,
+                 power: 40, damageClass: .physical, accuracy: 100, pp: 35)
+    }
+}
+
+private struct ChatLineProvider: PokeProviding {
+    let line: EvoLine
+    func line(baseSpeciesID: Int) async throws -> EvoLine { line }
+    func baseSpeciesIndex() async throws -> [BaseSpecies] {
+        [BaseSpecies(id: line.baseID, captureRate: 255)]
     }
 }
 
