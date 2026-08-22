@@ -743,6 +743,11 @@ final class CompanionStore {
     var canPerformCare: Bool {
         state.active != nil && state.adventure == nil && !state.care.isSleeping
     }
+
+    func resumeCareClock() {
+        state.care.resumeClock(at: clock())
+        save()
+    }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
     /// "지금 나가 있는 중" — 끝났지만 아직 정산 안 된 모험은 포함하지 않는다.
@@ -873,32 +878,32 @@ final class CompanionStore {
     }
 
     func feedCompanion(_ food: CareFood = .apple) {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         state.care.feed(favorite: food == favoriteFood)
         if let mon = state.active { PokemonMemoryAlbum.shared.record(companionID: mon.id, body: "트레이너와 함께 맛있게 먹었다.", source: .event, eventID: "care-feed") }
         save()
     }
     func playWithCompanion() {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         state.care.play(); save()
     }
     func restCompanion() {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         state.care.rest(); save()
     }
 
     func cleanCompanion() {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         state.care.clean(); save()
     }
 
     @discardableResult
     func medicateCompanion() -> Bool {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return false }
+        guard canPerformCare else { return false }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         let healed = state.care.giveMedicine()
         if healed { save() }
@@ -917,7 +922,7 @@ final class CompanionStore {
 
     @discardableResult
     func petCompanion() -> Bool {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return false }
+        guard canPerformCare else { return false }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         let accepted = state.care.pet(at: clock())
         if accepted { if let mon = state.active { PokemonMemoryAlbum.shared.record(companionID: mon.id, body: "트레이너의 쓰다듬을 받고 기뻐했다.", source: .event, eventID: "care-pet") }; save() }

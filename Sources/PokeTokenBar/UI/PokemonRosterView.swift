@@ -66,7 +66,7 @@ struct PokemonRosterView: View {
                      "にがしたポケモンは戻りません。卒業して図鑑に記録された個体なら記録は残ります。"))
         }
         .sheet(isPresented: Binding(get: { chatTarget != nil }, set: { if !$0 { chatTarget = nil } })) {
-            if let mon = chatTarget { PokemonChatView(companionID: mon.id, profile: store.chatProfile(for: mon)) }
+            if let mon = chatTarget { PokemonChatView(store: store, companionID: mon.id, profile: store.chatProfile(for: mon)) }
         }
     }
 

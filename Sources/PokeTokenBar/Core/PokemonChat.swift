@@ -391,6 +391,12 @@ final class PokemonChatStore {
         session.updatedAt = Date(); sessions[companionID] = session; save()
     }
 
+    func appendSystemMessage(_ body: String, for companionID: UUID, profile: PokemonChatProfile) {
+        var session = sessions[companionID] ?? PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName)
+        session.messages.append(PokemonChatMessage(role: .system, body: body))
+        session.updatedAt = Date(); sessions[companionID] = session; save()
+    }
+
     func send(_ body: String, for companionID: UUID, profile: PokemonChatProfile, provider: any PokemonChatProviding) async {
         appendLocalMessage(body, for: companionID, profile: profile)
         guard var session = sessions[companionID] else { return }

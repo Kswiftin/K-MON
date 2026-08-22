@@ -682,7 +682,7 @@ struct CompanionHeader: View {
             showingChat = true
         }
         .sheet(isPresented: $showingChat) {
-            if let mon = store.state.active { PokemonChatView(companionID: mon.id, profile: store.chatProfile(for: mon)) }
+            if let mon = store.state.active { PokemonChatView(store: store, companionID: mon.id, profile: store.chatProfile(for: mon)) }
         }
     }
 

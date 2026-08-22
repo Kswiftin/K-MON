@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PokemonChatView: View {
+    let store: CompanionStore
     let companionID: UUID
     @State private var profile: PokemonChatProfile
     @State private var chat = PokemonChatStore()
@@ -9,7 +10,8 @@ struct PokemonChatView: View {
     @State private var showingDailyDex = false
     @AppStorage("pokemonChatProvider") private var providerRaw = ""
 
-    init(companionID: UUID, profile: PokemonChatProfile) {
+    init(store: CompanionStore, companionID: UUID, profile: PokemonChatProfile) {
+        self.store = store
         self.companionID = companionID
         _profile = State(initialValue: profile)
     }
@@ -56,6 +58,7 @@ struct PokemonChatView: View {
                     else if let id = chat.messages(for: companionID).last?.id { proxy.scrollTo(id, anchor: .bottom) }
                 }
             }
+            proposalCard
             if let error = chat.errorMessage { Text(error).font(.caption2).foregroundStyle(.red).padding(.horizontal, 12) }
             Divider()
             HStack(alignment: .bottom, spacing: 8) {
@@ -133,6 +136,40 @@ struct PokemonChatView: View {
         guard let provider else { return }
         let message = draft; draft = ""
         Task { await chat.send(message, for: companionID, profile: profile, provider: provider) }
+    }
+
+    @ViewBuilder private var proposalCard: some View {
+        if let proposal = chat.pendingProposal, proposal.state == .pending {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(l.t("돌봄 제안", "Care proposal", "お世話の提案")).font(.caption.weight(.semibold))
+                Text(l.t("\(proposal.kind.rawValue)을 해 줄까?", "Would you like me to \(proposal.kind.rawValue)?", "\(proposal.kind.rawValue)をしてくれる？"))
+                    .font(.callout)
+                HStack {
+                    Button(l.t("승인", "Approve", "承認")) { approve(proposal) }.buttonStyle(.borderedProminent)
+                    Button(l.t("거절", "Reject", "断る")) { reject(proposal) }.buttonStyle(.bordered)
+                }
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 12)
+        }
+    }
+
+    private func approve(_ proposal: PokemonChatActionProposal) {
+        guard chat.approvePending() != nil else { return }
+        let success = store.applyChatCare(proposal.kind)
+        _ = chat.finishPending(success: success)
+        chat.appendSystemMessage(PokemonChatCareOutcome.message(kind: proposal.kind, approved: true,
+                                                                success: success, profile: profile),
+                                 for: companionID, profile: profile)
+    }
+
+    private func reject(_ proposal: PokemonChatActionProposal) {
+        guard chat.rejectPending() != nil else { return }
+        _ = chat.finishPending(success: false)
+        chat.appendSystemMessage(PokemonChatCareOutcome.message(kind: proposal.kind, approved: false,
+                                                                success: false, profile: profile),
+                                 for: companionID, profile: profile)
     }
 }
 
