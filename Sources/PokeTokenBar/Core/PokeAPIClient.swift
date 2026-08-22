@@ -33,6 +33,7 @@ actor PokeAPIClient: PokeProviding {
     private let base = URL(string: "https://pokeapi.co/api/v2")!
     private let langCodes = ["ko", "en", "ja-Hrkt", "ja"]
     private var speciesCache: [Int: SpeciesDTO] = [:]
+    private var chatSpeciesIdentityCache: [String: PokemonSpeciesIdentity] = [:]
     private var lineCache: [Int: EvoLine] = [:]   // 프리패칭 → 부화 순간 네트워크 0
 
     func line(baseSpeciesID: Int) async throws -> EvoLine {
@@ -175,17 +176,50 @@ actor PokeAPIClient: PokeProviding {
         return dto
     }
 
-    /// 대화 페르소나에 쓸 종 설명. PokéAPI의 가장 최신 언어별 도감 문구만 사용한다.
-    func chatFlavorText(speciesID: Int, language: AppLanguage) async throws -> String? {
-        let dto = try await species(speciesID)
-        let texts = dto.flavor_text_entries ?? []
-        var selected: String?
-        for entry in texts where language.apiCodes.contains(entry.language.name) {
-            selected = entry.flavor_text
-                .replacingOccurrences(of: "\n", with: " ")
-                .replacingOccurrences(of: "\u{000C}", with: " ")
+    /// 대화에 필요한 종 정보만 fetch 한다. 각 응답은 독립적으로 실패할 수 있고 결과는 부분 정체성으로 남긴다.
+    func chatSpeciesIdentity(speciesID: Int, language: AppLanguage) async -> PokemonSpeciesIdentity {
+        let cacheKey = "\(speciesID)-\(language.rawValue)"
+        if let cached = chatSpeciesIdentityCache[cacheKey] { return cached }
+
+        var genera: [String: String] = [:]
+        var habitatSlug: String?
+        var flavorTexts: [String: String] = [:]
+        if let dto = try? await species(speciesID) {
+            for entry in dto.genera ?? [] where langCodes.contains(entry.language.name) {
+                genera[entry.language.name] = entry.genus
+            }
+            habitatSlug = dto.habitat?.name
+            flavorTexts = Self.flavorTexts((dto.flavor_text_entries ?? []).map {
+                (language: $0.language.name, text: $0.flavor_text)
+            }, languages: langCodes)
         }
-        return selected
+
+        var abilityNames: [String: String] = [:]
+        var abilityTexts: [String: String] = [:]
+        do {
+            let dto: PokemonAbilitiesDTO = try await get(base.appendingPathComponent("pokemon/\(speciesID)"))
+            let entries = dto.abilities.map {
+                (slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot)
+            }
+            if let slug = PokemonSpeciesIdentity.primaryAbilitySlug(entries) {
+                let ability: AbilityDTO = try await get(base.appendingPathComponent("ability/\(slug)"))
+                for entry in ability.names where langCodes.contains(entry.language.name) {
+                    abilityNames[entry.language.name] = entry.name
+                }
+                abilityTexts = Self.flavorTexts(ability.flavor_text_entries.map {
+                    (language: $0.language.name, text: $0.flavor_text)
+                }, languages: langCodes)
+            }
+        } catch {
+            AppLog.write("chat species identity: ability fetch failed for \(speciesID): \(error)")
+        }
+
+        let identity = PokemonSpeciesIdentity(
+            genera: genera, habitatSlug: habitatSlug, flavorTexts: flavorTexts,
+            abilityNames: abilityNames, abilityTexts: abilityTexts, language: language
+        )
+        chatSpeciesIdentityCache[cacheKey] = identity
+        return identity
     }
 
     /// REST 폴백 — 단일 종 상세(pokemon-species/{id})로 base 여부·capture_rate 판정.
@@ -467,8 +501,11 @@ struct SpeciesDTO: Decodable, Sendable {
     let evolution_chain: URLRef
     let evolves_from_species: NamedRef?   // nil = 진화라인 시작점(base)
     let flavor_text_entries: [SpeciesFlavorTextDTO]?
+    let genera: [GenusDTO]?
+    let habitat: NamedRef?
 }
 struct SpeciesFlavorTextDTO: Decodable, Sendable { let flavor_text: String; let language: NamedRef }
+struct GenusDTO: Decodable, Sendable { let genus: String; let language: NamedRef }
 struct NameDTO: Decodable, Sendable { let name: String; let language: NamedRef }
 struct NamedRef: Decodable, Sendable { let name: String; let url: String? }
 struct URLRef: Decodable, Sendable { let url: String }
@@ -497,6 +534,20 @@ struct PokemonMovesDTO: Decodable, Sendable {
         let version_group_details: [Detail]
     }
     let moves: [MoveEntry]
+}
+/// `/pokemon/{id}` 의 abilities 부분만 — 대화 페르소나가 대표 특성을 고르는 데 쓴다.
+struct PokemonAbilitiesDTO: Decodable, Sendable {
+    struct Entry: Decodable, Sendable {
+        let ability: NamedRef
+        let is_hidden: Bool
+        let slot: Int
+    }
+    let abilities: [Entry]
+}
+/// `/ability/{slug}` 의 현지화 이름과 설명만.
+struct AbilityDTO: Decodable, Sendable {
+    let names: [NameDTO]
+    let flavor_text_entries: [SpeciesFlavorTextDTO]
 }
 /// `/move/{name}` 부분 디코드.
 struct MoveDTO: Decodable, Sendable {

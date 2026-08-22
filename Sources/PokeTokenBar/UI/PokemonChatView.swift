@@ -70,7 +70,7 @@ struct PokemonChatView: View {
         .sheet(isPresented: $showingAlbum) { PokemonMemoryAlbumView(companionID: companionID, language: profile.language) }
         .sheet(isPresented: $showingDailyDex) { TodayPokedexView(profile: profile) }
         .task(id: profile.speciesID) {
-            profile.flavorText = try? await PokeAPIClient.shared.chatFlavorText(speciesID: profile.speciesID, language: profile.language)
+            profile.apply(await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID, language: profile.language))
             if profile.types.isEmpty,
                let battleProfile = try? await PokeAPIClient.shared.battleProfile(speciesID: profile.speciesID) {
                 profile.types = battleProfile.types.map { $0.name(profile.language) }
@@ -123,6 +123,7 @@ struct PokemonChatView: View {
                       l.t("지금 기분은 어때?", "How are you feeling?", "いまの気分は？"),
                       dailyDexQuestion]
         if !profile.moves.isEmpty { values.insert(l.t("배운 기술을 알려 줘", "Tell me your moves", "覚えた技を教えて"), at: 1) }
+        if profile.genus != nil { values.insert(l.t("너는 어떤 포켓몬이야?", "What kind of Pokémon are you?", "どんなポケモンなの？"), at: 1) }
         if profile.nextEvolution != nil { values.insert(l.t("다음 진화는 언제야?", "When is your next evolution?", "次の進化はいつ？"), at: 2) }
         return values
     }
@@ -143,6 +144,9 @@ private struct TodayPokedexView: View {
             Text(l.t("오늘의 도감", "Today’s Pokédex", "今日の図鑑")).font(.headline)
             Text(profile.displayName).font(.title2)
             if let flavor = profile.flavorText { Text(flavor) }
+            if let genus = profile.genus { Text(l.t("분류: \(genus)", "Genus: \(genus)", "分類: \(genus)")) }
+            if let habitat = profile.habitat { Text(l.t("서식지: \(habitat)", "Habitat: \(habitat)", "生息地: \(habitat)")) }
+            if let ability = profile.ability { Text(l.t("특성: \(ability)", "Ability: \(ability)", "特性: \(ability)")) }
             if !profile.types.isEmpty { Label(profile.types.joined(separator: " · "), systemImage: "circle.hexagongrid") }
             Text(l.t("현재 형태: \(profile.stage)", "Current form: \(profile.stage)", "現在の姿: \(profile.stage)"))
             if let next = profile.nextEvolution { Text(l.t("다음 진화: \(next)", "Next evolution: \(next)", "次の進化: \(next)")) }

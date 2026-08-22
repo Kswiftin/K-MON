@@ -28,6 +28,13 @@ enum AppLanguage: String, Codable, Sendable, CaseIterable {
         return byLang["en"]
     }
 
+    /// 설명 문장은 요청 언어와 정확히 맞을 때만 쓴다. 이름 한 단어와 달리 영어 설명 전체를
+    /// 폴백하면 포켓몬의 말투와 페르소나가 요청 언어 밖으로 새어 나간다.
+    func resolveProse(_ byLang: [String: String]) -> String? {
+        for code in apiCodes { if let text = byLang[code] { return text } }
+        return nil
+    }
+
     /// 신규 설치 기본 언어 — 시스템 선호 언어에서 유추(글로벌 출시: 한국어 강제 금지).
     /// ko/ja 만 매칭, 그 외 전부 영어(fallback-of-fallback). 기존 사용자는 저장된 언어를 그대로 쓴다.
     static var systemDefault: AppLanguage {

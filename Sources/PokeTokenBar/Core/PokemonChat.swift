@@ -18,6 +18,53 @@ struct PokemonChatMessage: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
+enum PokemonHabitat: String, Codable, Sendable, CaseIterable {
+    case cave, forest, grassland, mountain, rare, sea, urban
+    case roughTerrain = "rough-terrain"
+    case watersEdge = "waters-edge"
+
+    func name(_ lang: AppLanguage) -> String {
+        let names: (String, String, String)
+        switch self {
+        case .cave:         names = ("동굴", "Cave", "洞窟")
+        case .forest:       names = ("숲", "Forest", "森")
+        case .grassland:    names = ("초원", "Grassland", "草原")
+        case .mountain:     names = ("산", "Mountain", "山")
+        case .rare:         names = ("희귀한 장소", "Rare", "珍しい場所")
+        case .roughTerrain: names = ("험한 지형", "Rough terrain", "荒れ地")
+        case .sea:          names = ("바다", "Sea", "海")
+        case .urban:        names = ("도시", "Urban", "都市")
+        case .watersEdge:   names = ("물가", "Water's edge", "水辺")
+        }
+        switch lang { case .ko: return names.0; case .en: return names.1; case .ja: return names.2 }
+    }
+}
+
+struct PokemonSpeciesIdentity: Codable, Sendable, Equatable {
+    let flavorText: String?
+    let genus: String?
+    let habitat: String?
+    let ability: String?
+
+    init(genera: [String: String], habitatSlug: String?, flavorTexts: [String: String],
+         abilityNames: [String: String], abilityTexts: [String: String], language: AppLanguage) {
+        flavorText = language.resolveProse(flavorTexts)
+        genus = language.resolveProse(genera)
+        habitat = habitatSlug.flatMap(PokemonHabitat.init(rawValue:))?.name(language)
+        if let name = language.resolveName(abilityNames) {
+            ability = language.resolveProse(abilityTexts).map { "\(name) — \($0)" } ?? name
+        } else {
+            ability = nil
+        }
+    }
+
+    static func primaryAbilitySlug(
+        _ entries: [(slug: String, isHidden: Bool, slot: Int)]
+    ) -> String? {
+        entries.filter { !$0.isHidden }.min { $0.slot < $1.slot }?.slug
+    }
+}
+
 struct PokemonChatProfile: Codable, Sendable, Equatable {
     let speciesID: Int
     let displayName: String
@@ -28,6 +75,9 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
     let level: Int
     let stage: String
     var flavorText: String?
+    var genus: String?
+    var habitat: String?
+    var ability: String?
     let language: AppLanguage
     var types: [String] = []
     var moves: [String] = []
@@ -35,6 +85,7 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
 
     init(speciesID: Int, displayName: String, nickname: String?, isShiny: Bool = false,
          nature: String?, level: Int, stage: String, flavorText: String?, language: AppLanguage,
+         genus: String? = nil, habitat: String? = nil, ability: String? = nil,
          types: [String] = [], moves: [String] = [], nextEvolution: String? = nil) {
         self.speciesID = speciesID
         self.displayName = displayName
@@ -44,10 +95,20 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
         self.level = level
         self.stage = stage
         self.flavorText = flavorText
+        self.genus = genus
+        self.habitat = habitat
+        self.ability = ability
         self.language = language
         self.types = types
         self.moves = moves
         self.nextEvolution = nextEvolution
+    }
+
+    mutating func apply(_ identity: PokemonSpeciesIdentity) {
+        flavorText = identity.flavorText
+        genus = identity.genus
+        habitat = identity.habitat
+        ability = identity.ability
     }
 }
 
@@ -98,12 +159,18 @@ struct PokemonChatRequest: Sendable {
     var systemPrompt: String {
         let name = profile.nickname?.isEmpty == false ? "\(profile.nickname!) (\(profile.displayName))" : profile.displayName
         let flavor = profile.flavorText.map { "Pokédex note: \($0)" } ?? "Use broadly known, non-invented species traits."
+        let identityFacts = [profile.genus.map { "genus \($0)" },
+                             profile.habitat.map { "habitat \($0)" },
+                             profile.ability.map { "ability \($0)" }].compactMap { $0 }
+        let identity = identityFacts.isEmpty ? nil : "Species identity: \(identityFacts.joined(separator: "; "))."
         return """
         You are \(name), a Pokémon companion speaking directly to your trainer in \(profile.language.label).
         Reply in 1–3 short, warm sentences only. Reflect this individual’s nature, species traits, and current state.
+        Let supplied species details shape how this Pokémon describes itself and its everyday perspective.
         Never claim to be an AI, assistant, model, tool, or software, and never explain code, files, terminals, web research, projects, or your own capabilities.
         Current identity: level \(profile.level), \(profile.stage), nature \(profile.nature ?? "unknown").
         Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known").
+        \(identity ?? "")
         \(flavor)
         ONLY discuss Pokédex information, this Pokémon's known species traits, and the companion information supplied above.
         Never offer coding, file, terminal, web research, project work, tool use, or general AI assistance. If asked, briefly say you can only help with Pokédex and companion information, then redirect to a relevant Pokémon topic.
