@@ -306,13 +306,17 @@ final class CompanionStore {
     /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
     func chatProfile(for mon: MonState) -> PokemonChatProfile {
         let speciesName = mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
+        // currentTypes/displayedMoves are presentation caches for the active species. A boxed mon can ask
+        // for a profile while those caches still belong to another species, so assemble individual data
+        // from MonState and reuse the tagged type cache only when the requested species owns it.
+        let types = mon.currentID == currentSpeciesID ? currentTypes.map { $0.name(language) } : []
         return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
                                   isShiny: mon.isShiny,
                                   nature: mon.nature?.name(language), level: mon.level,
                                   stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
                                   flavorText: nil, language: language,
-                                  types: currentTypes.map { $0.name(language) },
-                                  moves: displayedMoves.map { $0.name(language) },
+                                  types: types,
+                                  moves: mon.learnedMoves.map { $0.name(language) },
                                   nextEvolution: nextEvolutionName(for: mon))
     }
 
