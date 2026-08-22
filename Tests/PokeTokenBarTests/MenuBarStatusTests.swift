@@ -22,6 +22,27 @@ final class MenuBarStatusTests: XCTestCase {
         guard case .focus = status else { return XCTFail("포커스가 진행 중인 모험을 이겨야 한다: \(status)") }
     }
 
+    func testBattleStatusWinsOverFocusAndAdventureWithCompactBattleTitle() {
+        let status = MenuBarStatus.resolve(battlePhase: .challenging(peer: "Misty"),
+                                           focusRunning: true, focusPhase: .focus,
+                                           focusClockText: "24:59",
+                                           activeAdventure: adventure(endsAt: now.addingTimeInterval(600)), now: now)
+        XCTAssertEqual(status, .battleChallengeSent(peer: "Misty"))
+        XCTAssertEqual(status.compactTitle, "B")
+    }
+
+    func testBattleDescriptionsAreLocalizedForEveryLanguage() {
+        let states: [MenuBarStatus] = [.battleChallengeSent(peer: "Misty"),
+                                       .battleChallengeReceived(peer: "Kasumi"),
+                                       .battling(peer: "Brock", isMyTurn: true),
+                                       .battling(peer: "Takeshi", isMyTurn: false)]
+        for language in AppLanguage.allCases {
+            for status in states {
+                XCTAssertFalse(status.fullDescription(L(language)).isEmpty)
+            }
+        }
+    }
+
     func testRunningAdventureBeatsResting() {
         let status = resolve(focusRunning: false, activeAdventure: adventure(endsAt: now.addingTimeInterval(600)))
         guard case .adventuring = status else { return XCTFail("모험이 휴식을 이겨야 한다: \(status)") }

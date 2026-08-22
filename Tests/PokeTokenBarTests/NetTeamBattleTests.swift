@@ -2,6 +2,18 @@ import XCTest
 @testable import PokeTokenBar
 
 final class NetTeamBattleTests: XCTestCase {
+    @MainActor
+    private final class ManualChallengeTimeoutScheduler: BattleChallengeTimeoutScheduling {
+        private(set) var action: (@MainActor () -> Void)?
+        private(set) var cancellationCount = 0
+
+        func schedule(_ action: @escaping @MainActor () -> Void) -> BattleChallengeTimeout {
+            self.action = action
+            return BattleChallengeTimeout { [weak self] in self?.cancellationCount += 1 }
+        }
+
+        func fire() { action?() }
+    }
     private func move(id: Int = 1, power: Int = 20) -> MoveSpec {
         MoveSpec(id: id, names: ["en": "Move \(id)"], type: .normal, power: power,
                  damageClass: power == 0 ? .status : .physical, accuracy: nil, pp: 20)
@@ -84,6 +96,58 @@ final class NetTeamBattleTests: XCTestCase {
         }
         XCTAssertEqual(turn, 2)
         XCTAssertEqual(index, 0)
+    }
+
+    func testChallengeCancellationReasonRoundTripsWithoutChangingLegacyMessages() throws {
+        let timeout = NetMessage.challengeCancelled(reason: .timedOut)
+        guard case .challengeCancelled(let reason) = try JSONDecoder().decode(NetMessage.self,
+                                                                                from: JSONEncoder().encode(timeout)) else {
+            return XCTFail("challenge cancellation case")
+        }
+        XCTAssertEqual(reason, .timedOut)
+
+        let legacyDecline = try JSONSerialization.data(withJSONObject: ["decline": [:]])
+        guard case .decline = try JSONDecoder().decode(NetMessage.self, from: legacyDecline) else {
+            return XCTFail("legacy decline must remain decodable")
+        }
+    }
+
+    @MainActor
+    func testChallengeTimeoutReturnsPendingChallengeToReadyAndClearsTemporarySelection() {
+        let scheduler = ManualChallengeTimeoutScheduler()
+        let store = CompanionStore(provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []), rarity: .common, names: [:])),
+                                   clock: { Date() },
+                                   fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                   rng: SeededRNG(seed: 1))
+        let center = BattleCenter(companion: store, challengeTimeoutScheduler: scheduler)
+        center.phase = .incoming(peer: "Misty")
+        center.incomingPickedTeam = [UUID()]
+        center.startChallengeTimeout()
+
+        XCTAssertNotNil(center.challengeEndsAt)
+        scheduler.fire()
+
+        XCTAssertEqual(center.phase, .ready)
+        XCTAssertNil(center.challengeEndsAt)
+        XCTAssertTrue(center.incomingPickedTeam.isEmpty)
+        XCTAssertEqual(center.lastError, store.l.battleChallengeTimedOut)
+    }
+
+    @MainActor
+    func testCancellingAChallengeCancelsItsPendingTimeout() {
+        let scheduler = ManualChallengeTimeoutScheduler()
+        let store = CompanionStore(provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []), rarity: .common, names: [:])),
+                                   clock: { Date() },
+                                   fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                   rng: SeededRNG(seed: 1))
+        let center = BattleCenter(companion: store, challengeTimeoutScheduler: scheduler)
+        center.phase = .challenging(peer: "Brock")
+        center.startChallengeTimeout()
+        center.cancelChallenge()
+
+        XCTAssertEqual(center.phase, .ready)
+        XCTAssertNil(center.challengeEndsAt)
+        XCTAssertEqual(scheduler.cancellationCount, 1)
     }
 
     func testLineupValidationRejectsUnsupportedSizesCountsAndBadSnapshots() {
