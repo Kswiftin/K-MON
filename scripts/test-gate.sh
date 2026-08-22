@@ -45,6 +45,8 @@ LOGIC_CORE=(
   # 남은시간 표시가 0 에서 멈추는지를 결정하는 순수 함수. 뷰 안에 있던 동안 예정 시각을 지난
   # 구간이 무테스트로 남아 카운트다운이 되올라갔다(#86).
   "Sources/PokeTokenBar/Core/StoredEggCountdown.swift"
+  # 하트비늘 후보 계산(#97). 순수 함수라 게이트 대상 — 넣지 않으면 커버리지에서 조용히 빠진다.
+  "Sources/PokeTokenBar/Core/MoveRelearn.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"
