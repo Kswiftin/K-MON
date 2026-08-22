@@ -20,16 +20,17 @@ enum NetMessage: Codable, Sendable {
     /// 옵셔널인 이유는 이 필드가 없던 버전이 보낸 메시지도 읽어서 "구버전이라 못 붙는다"고
     /// 알려주기 위해서다 — 필수 필드로 두면 디코딩이 실패해 아무 설명 없이 조용히 무시된다.
     case challenge(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
-                   seed: UInt64, profile: BattleRankProfile, rulesVersion: Int?)
+                   seed: UInt64, profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
     case accept(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
-                profile: BattleRankProfile, rulesVersion: Int?)
+                profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
     case decline
     case action(turn: Int, action: NetBattleAction)
     /// 구버전 와이어 메시지를 디코딩해 규칙 불일치 경로까지 보낼 때만 남긴다. 새 클라이언트는 전송하지 않는다.
     case move(turn: Int, moveIndex: Int)
     case forfeit
+    case chat(BattleChatMessage)
 
-    private enum CodingKeys: String, CodingKey { case challenge, accept, decline, action, move, forfeit }
+    private enum CodingKeys: String, CodingKey { case challenge, accept, decline, action, move, forfeit, chat }
     private struct EmptyPayload: Codable {}
     private struct ChallengePayload: Codable {
         var snapshot: BattleSnapshot
@@ -38,6 +39,7 @@ enum NetMessage: Codable, Sendable {
         var seed: UInt64
         var profile: BattleRankProfile
         var rulesVersion: Int?
+        var chatSupported: Bool?
     }
     private struct AcceptPayload: Codable {
         var snapshot: BattleSnapshot
@@ -45,6 +47,7 @@ enum NetMessage: Codable, Sendable {
         var teamSize: Int?
         var profile: BattleRankProfile
         var rulesVersion: Int?
+        var chatSupported: Bool?
     }
     private struct ActionPayload: Codable { var turn: Int; var action: NetBattleAction }
     private struct MovePayload: Codable { var turn: Int; var moveIndex: Int }
@@ -57,13 +60,14 @@ enum NetMessage: Codable, Sendable {
                               lineup: payload.lineup ?? [payload.snapshot],
                               teamSize: payload.teamSize ?? 1,
                               seed: payload.seed, profile: payload.profile,
-                              rulesVersion: payload.rulesVersion)
+                              rulesVersion: payload.rulesVersion, chatSupported: payload.chatSupported)
         } else if container.contains(.accept) {
             let payload = try container.decode(AcceptPayload.self, forKey: .accept)
             self = .accept(snapshot: payload.snapshot,
                            lineup: payload.lineup ?? [payload.snapshot],
                            teamSize: payload.teamSize ?? 1,
-                           profile: payload.profile, rulesVersion: payload.rulesVersion)
+                           profile: payload.profile, rulesVersion: payload.rulesVersion,
+                           chatSupported: payload.chatSupported)
         } else if container.contains(.decline) {
             self = .decline
         } else if container.contains(.action) {
@@ -74,6 +78,8 @@ enum NetMessage: Codable, Sendable {
             self = .move(turn: payload.turn, moveIndex: payload.moveIndex)
         } else if container.contains(.forfeit) {
             self = .forfeit
+        } else if container.contains(.chat) {
+            self = .chat(try container.decode(BattleChatMessage.self, forKey: .chat))
         } else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                     debugDescription: "Unknown battle message"))
@@ -83,13 +89,13 @@ enum NetMessage: Codable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion):
+        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let chatSupported):
             try container.encode(ChallengePayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
-                                                  seed: seed, profile: profile, rulesVersion: rulesVersion),
+                                                  seed: seed, profile: profile, rulesVersion: rulesVersion, chatSupported: chatSupported),
                                  forKey: .challenge)
-        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion):
+        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let chatSupported):
             try container.encode(AcceptPayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
-                                               profile: profile, rulesVersion: rulesVersion),
+                                               profile: profile, rulesVersion: rulesVersion, chatSupported: chatSupported),
                                  forKey: .accept)
         case .decline:
             try container.encode(EmptyPayload(), forKey: .decline)
@@ -99,6 +105,8 @@ enum NetMessage: Codable, Sendable {
             try container.encode(MovePayload(turn: turn, moveIndex: moveIndex), forKey: .move)
         case .forfeit:
             try container.encode(EmptyPayload(), forKey: .forfeit)
+        case .chat(let message):
+            try container.encode(message, forKey: .chat)
         }
     }
 }
@@ -346,6 +354,11 @@ final class BattleCenter {
     private(set) var rankedStake = 0
     private(set) var lastRankDelta = 0
     private(set) var lastError: String?
+    private(set) var chatMessages: [BattleChatMessage] = []
+    private(set) var chatIsAvailable = false
+    private var chatHistory = BattleChatHistory()
+    private var chatRateLimiter = BattleChatRateLimiter()
+    let chatSenderID = UUID()
     /// 팝오버가 열려 있을 때 배틀 탭으로 유도하기 위한 신호(뷰가 소비).
     var pendingAttention = false
     /// 배틀이 잡히거나 걸릴 때 창을 자동으로 열고 고정하게 하는 신호(AppDelegate 가 관찰).
@@ -889,7 +902,7 @@ final class BattleCenter {
             pendingMyTeamSize = teamSize
             send(.challenge(snapshot: snapshot, lineup: lineup, teamSize: teamSize, seed: seed,
                             profile: companion.battleRankProfile,
-                            rulesVersion: BattleEngine.rulesVersion), over: conn)
+                            rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
             receiveLoop(conn)
         }
     }
@@ -977,7 +990,7 @@ final class BattleCenter {
             // 수락이 확정된 뒤에만 공용 선택의 앞부분을 실제 출전 순서로 바꾼다.
             commitIncomingSelection(confirmedIDs)
             send(.accept(snapshot: lead, lineup: mine, teamSize: teamSize, profile: mineProfile,
-                         rulesVersion: BattleEngine.rulesVersion), over: conn)
+                         rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
             beginBattle(my: mine, opp: opponentTeam, iAmA: false, seed: incomingSeed)
         }
     }
@@ -1029,6 +1042,15 @@ final class BattleCenter {
         settleRankedBrawlIfNeeded(won: false)
     }
 
+    /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
+    func sendChat(_ body: String) {
+        guard case .battling = phase, chatIsAvailable,
+              let text = BattleChatPolicy.normalizedBody(body), chatRateLimiter.allows(chatSenderID) else { return }
+        let message = BattleChatMessage(senderID: chatSenderID, senderName: myName, body: text)
+        chatHistory.append(message); chatMessages = chatHistory.messages
+        send(.chat(message), over: connection)
+    }
+
     func dismissResult() {
         cancelTurnTimeout()
         battle = nil
@@ -1053,6 +1075,7 @@ final class BattleCenter {
     }
 
     private func beginBattle(my: [BattleSnapshot], opp: [BattleSnapshot], iAmA: Bool, seed: UInt64) {
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
         didSettleRankedBrawl = false
         lastRankDelta = 0
         if let opponentRankProfile {
@@ -1171,7 +1194,7 @@ final class BattleCenter {
 
     private func handle(_ message: NetMessage) {
         switch message {
-        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion):
+        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
             guard rulesVersion == BattleEngine.rulesVersion else {
                 send(.decline, over: connection)
@@ -1199,10 +1222,11 @@ final class BattleCenter {
             prepareIncomingSelection(teamSize: teamSize)
             incomingSeed = seed
             opponentRankProfile = profile
+            chatIsAvailable = peerChatSupported == true
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             pendingAttention = true
             postChallengeNotification(snapshot)
-        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion):
+        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let peerChatSupported):
             guard case .challenging = phase, !pendingMyLineup.isEmpty else { return }
             guard rulesVersion == BattleEngine.rulesVersion else {
                 dropConnection(); phase = .ready; lastError = l.battleRulesMismatch
@@ -1218,6 +1242,7 @@ final class BattleCenter {
                 return
             }
             opponentRankProfile = profile
+            chatIsAvailable = peerChatSupported == true
             beginBattle(my: pendingMyLineup, opp: lineup, iAmA: true, seed: incomingSeed)
         case .decline:
             if case .challenging = phase {
@@ -1240,6 +1265,11 @@ final class BattleCenter {
                 phase = .finished(iWon: true, byForfeit: true)
                 settleRankedBrawlIfNeeded(won: true)
             }
+        case .chat(let message):
+            guard case .battling = phase, chatIsAvailable,
+                  BattleChatPolicy.normalizedBody(message.body) == message.body,
+                  chatRateLimiter.allows(message.senderID) else { return }
+            chatHistory.append(message); chatMessages = chatHistory.messages
         }
     }
 
@@ -1291,6 +1321,7 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
     }
 
     private func dropConnection() {
@@ -1303,6 +1334,7 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
     }
 
     private func settleRankedBrawlIfNeeded(won: Bool) {

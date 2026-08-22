@@ -529,6 +529,88 @@ struct BattleLogBox: View {
     }
 }
 
+struct BattleChatConfiguration {
+    let messages: [BattleChatMessage]
+    let mySenderID: UUID
+    let isEnabled: Bool
+    let unavailableMessage: String?
+    let l: L
+    let onSend: (String) -> Void
+}
+
+/// 전투 로그와 분리된 고정 높이 세션 채팅. ScrollView 안에서만 과거를 탐색한다.
+struct BattleChatPanel: View {
+    let configuration: BattleChatConfiguration
+    @State private var draft = ""
+    @State private var isReadingHistory = false
+    @State private var unseenCount = 0
+
+    private let bottomID = "battle-chat-bottom"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(configuration.l.battleChatTitle).font(.caption.bold())
+                Spacer()
+                Text("\(draft.count)/\(BattleChatPolicy.maximumLength)")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 3) {
+                        ForEach(configuration.messages) { message in
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text(message.senderName).font(.system(size: 10, weight: message.senderID == configuration.mySenderID ? .bold : .regular))
+                                Text(message.body).font(.system(size: 10))
+                            }
+                            .foregroundStyle(message.senderID == configuration.mySenderID ? .primary : .secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        Color.clear.frame(height: 1).id(bottomID)
+                    }
+                }
+                .frame(height: 82)
+                .onAppear { proxy.scrollTo(bottomID, anchor: .bottom) }
+                .onChange(of: configuration.messages.count) {
+                    guard !isReadingHistory else { unseenCount += 1; return }
+                    withAnimation { proxy.scrollTo(bottomID, anchor: .bottom) }
+                }
+                .simultaneousGesture(DragGesture().onChanged { _ in isReadingHistory = true })
+                if unseenCount > 0 {
+                    Button(configuration.l.battleChatNewMessages(unseenCount)) {
+                        isReadingHistory = false; unseenCount = 0
+                        withAnimation { proxy.scrollTo(bottomID, anchor: .bottom) }
+                    }.font(.caption2)
+                }
+            }
+            if let unavailable = configuration.unavailableMessage {
+                Text(unavailable).font(.caption2).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 5) {
+                TextField(configuration.l.battleChatPlaceholder, text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1)
+                    .onSubmit(send)
+                    .disabled(!configuration.isEnabled)
+                Button(configuration.l.battleChatSend, action: send)
+                    .controlSize(.small).disabled(!canSend)
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+    }
+
+    private var canSend: Bool {
+        configuration.isEnabled && BattleChatPolicy.normalizedBody(draft) != nil
+    }
+
+    private func send() {
+        guard canSend else { return }
+        configuration.onSend(draft); draft = ""
+    }
+}
+
 // MARK: - 배틀 화면 전체 (순수 렌더러)
 
 /// 필드 + 선택 패널 + 옆 로그. 상태를 하나도 들지 않는 **순수 렌더러**라 세 모드가 같은 화면을
@@ -552,6 +634,7 @@ struct BattleArenaView: View {
     let onChoose: (Int) -> Void
     let onSwitch: (Int) -> Void
     let onForfeit: () -> Void
+    var chat: BattleChatConfiguration? = nil
 
     /// 재생이 끝나기 전에 다음 기술을 고르면 무엇이 일어났는지 보지 못한 채 턴이 넘어간다.
     private var acceptsInput: Bool {
@@ -587,6 +670,7 @@ struct BattleArenaView: View {
                                 isEnabled: acceptsInput, onSwitch: onSwitch)
             }
             BattleLogBox(lines: logLines, myActor: myActor)
+            if let chat { BattleChatPanel(configuration: chat) }
         }
         // 팝오버가 주는 폭을 넘겨 요구하지 않는다 — 넘기면 매번 압축돼 그려진다. 바깥 여백은
         // 팝오버(`PopoverMetrics.padding`)가 이미 준다.

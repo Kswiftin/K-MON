@@ -25,6 +25,9 @@ final class MultiplayerRoomCenter {
     private(set) var hasSubmittedAction = false
     private(set) var turnEndsAt: Date?
     private(set) var lastError: String?
+    private(set) var chatMessages: [BattleChatMessage] = []
+    private var chatHistory = BattleChatHistory()
+    private var chatRateLimiter = BattleChatRateLimiter()
     /// 경기 중에도 매 입력마다 대입된다(호스트 반영·게스트 수신). 그래서 완주 적립은
     /// **nil → 우승자 확정 전이**에서만 발화한다 — 판정은 아래 순수 함수가 한다.
     private(set) var pokeathlonRace: PokeathlonRace? {
@@ -208,6 +211,7 @@ final class MultiplayerRoomCenter {
             battle = try MultiplayerBattle(fighters: fighters, mode: lobby.mode, seed: seed)
             combatFighters = fighters; combatRound = 1; combatEvents = []
             pendingActions.removeAll(); hasSubmittedAction = false; phase = .battling
+            chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
             rewardedBattle = false; scheduleTurnTimeout()
             let message = MultiplayerWireMessage.start(seed: seed, fighters: fighters, mode: lobby.mode)
             for connection in guestConnections.values { send(message, over: connection) }
@@ -381,6 +385,7 @@ final class MultiplayerRoomCenter {
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
         hasSubmittedAction = false; hostingRole = false; phase = .idle
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
     }
 
     private func startHosting() throws {
@@ -454,6 +459,8 @@ final class MultiplayerRoomCenter {
                 connection.cancel(); self.broadcastLobby(); return
             case .action(let round, let action) where action.attackerID == id && round == self.combatRound:
                 if let id { self.acceptAction(action, from: id) }
+            case .chat(let message) where message.senderID == id:
+                if let id { self.acceptChat(message, from: id) }
             case .pokeathlonInput(let pid, let input) where pid == id:
                 self.applyPokeathlonInput(input, participantID: pid)
             case .pokeathlonBet(let pid, let runnerID, let amount) where pid == id:
@@ -476,6 +483,7 @@ final class MultiplayerRoomCenter {
                 }
                 self.battle = started; self.combatFighters = fighters; self.combatRound = 1
                 self.combatEvents = []; self.hasSubmittedAction = false; self.rewardedBattle = false
+                self.chatHistory.reset(); self.chatMessages = []; self.chatRateLimiter.reset()
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.phase = .battling
             case .roundResolved(let round, let fighters, let events):
@@ -484,6 +492,8 @@ final class MultiplayerRoomCenter {
                 self.combatRound += 1; self.hasSubmittedAction = false
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.grantRewardIfFinished()
+            case .chat(let message):
+                self.chatHistory.append(message); self.chatMessages = self.chatHistory.messages
             case .pokeathlonStart(let race): self.pokeathlonRace = race; self.phase = .pokeathlon
             case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
             case .pokeathlonPool(let pool):
@@ -508,6 +518,25 @@ final class MultiplayerRoomCenter {
               pendingActions[participantID] == nil else { return }
         pendingActions[participantID] = action
         finishRoundIfReady()
+    }
+
+    /// 호스트가 연결에 묶인 참가자 ID를 기준으로 발신자를 인증하고, 전투 중인 방에만 전달한다.
+    private func acceptChat(_ incoming: BattleChatMessage, from participantID: UUID) {
+        guard phase == .battling, incoming.senderID == participantID,
+              let participant = lobby?.participants.first(where: { $0.id == participantID }),
+              let body = BattleChatPolicy.normalizedBody(incoming.body),
+              chatRateLimiter.allows(participantID) else { return }
+        let message = BattleChatMessage(id: incoming.id, senderID: participantID,
+                                        senderName: participant.trainerName, body: body, sentAt: incoming.sentAt)
+        chatHistory.append(message); chatMessages = chatHistory.messages
+        for connection in guestConnections.values { send(.chat(message), over: connection) }
+    }
+
+    func sendChat(_ body: String) {
+        guard phase == .battling, let normalized = BattleChatPolicy.normalizedBody(body) else { return }
+        let message = BattleChatMessage(senderID: myID, senderName: trainerName, body: normalized)
+        if isHost { acceptChat(message, from: myID) }
+        else if let hostConnection { send(.chat(message), over: hostConnection) }
     }
 
     private func finishRoundIfReady() {

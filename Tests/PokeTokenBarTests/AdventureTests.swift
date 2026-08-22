@@ -455,8 +455,8 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
         // 3 = 라운드 결과가 타입된 이벤트 스트림. 버전을 올려야 옛 빌드가 레이스·배틀 중간이
         // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
-        // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case).
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 5)
+        // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case), 6 = 방 채팅.
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 6)
     }
 
     /// 라운드 결과는 호스트가 게스트에게 **브로드캐스트**하는 유일한 배틀 페이로드다. 이벤트가
