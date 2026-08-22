@@ -479,7 +479,11 @@ struct BattleView: View {
                     .font(.callout).bold()
                 Spacer()
                 Text("R\(center.multiplayer.combatRound)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                if let end = center.multiplayer.turnEndsAt, !center.multiplayer.isBattleFinished {
+                // 내 행동을 보낸 뒤에는 상대 입력을 기다리는 상태다. 이때 남은 시간은 내게
+                // 행동을 요구하는 것처럼 보이므로, 1:1 화면과 동일하게 카운트다운을 숨긴다.
+                if let end = center.multiplayer.turnEndsAt,
+                   !center.multiplayer.isBattleFinished,
+                   !center.multiplayer.hasSubmittedAction {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text("\(max(0, Int(end.timeIntervalSince(context.date))))s")
                             .font(.caption.monospacedDigit().bold())
