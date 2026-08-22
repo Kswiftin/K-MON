@@ -70,6 +70,154 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(request.summary, "트레이너와 산책을 약속했다.")
     }
 
+    func testSpeciesIdentityLineCarriesGenusHabitatAndAbility() {
+        var profile = PokemonChatProfile.fixture
+        profile.apply(PokemonSpeciesIdentity(
+            genera: ["ko": "쥐포켓몬"], habitatSlug: "forest",
+            flavorTexts: ["ko": "볼의 양쪽에는 전기를 모으는 주머니가 있다."],
+            abilityNames: ["ko": "정전기"], abilityTexts: ["ko": "접촉한 상대를 마비시킬 때가 있다."],
+            language: .ko
+        ))
+
+        let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
+
+        XCTAssertTrue(prompt.contains("쥐포켓몬"))
+        XCTAssertTrue(prompt.contains("숲"))
+        XCTAssertTrue(prompt.contains("정전기"))
+        XCTAssertTrue(prompt.contains("접촉한 상대를 마비시킬 때가 있다."))
+    }
+
+    func testMissingSpeciesFactsAreOmittedInsteadOfLabelledUnknown() {
+        var profile = PokemonChatProfile.fixture
+        profile.apply(PokemonSpeciesIdentity(
+            genera: [:], habitatSlug: nil, flavorTexts: [:], abilityNames: [:], abilityTexts: [:],
+            language: .ko
+        ))
+
+        let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
+
+        XCTAssertFalse(prompt.contains("Species identity:"))
+        XCTAssertFalse(prompt.contains("genus "))
+        XCTAssertFalse(prompt.contains("habitat "))
+        XCTAssertFalse(prompt.contains("ability "))
+        XCTAssertFalse(prompt.contains("unknown"))
+        XCTAssertFalse(prompt.contains("()"))
+    }
+
+    func testAbilityNameSurvivesWhenItsDescriptionIsMissing() {
+        let identity = PokemonSpeciesIdentity(
+            genera: [:], habitatSlug: nil, flavorTexts: [:],
+            abilityNames: ["ko": "정전기"], abilityTexts: ["en": "May paralyze on contact."],
+            language: .ko
+        )
+
+        XCTAssertEqual(identity.ability, "정전기")
+        XCTAssertFalse(identity.ability?.contains("—") ?? true)
+    }
+
+    func testProseFieldsDoNotFallBackToEnglishWhileNamesDo() {
+        let englishOnly = ["en": "Static"]
+
+        XCTAssertEqual(AppLanguage.ko.resolveName(englishOnly), "Static")
+        XCTAssertNil(AppLanguage.ko.resolveProse(englishOnly))
+    }
+
+    func testUnknownHabitatSlugIsDroppedRatherThanShownRaw() {
+        let identity = PokemonSpeciesIdentity(
+            genera: [:], habitatSlug: "temple", flavorTexts: [:], abilityNames: [:], abilityTexts: [:],
+            language: .ko
+        )
+
+        XCTAssertNil(PokemonHabitat(rawValue: "temple"))
+        XCTAssertNil(identity.habitat)
+    }
+
+    func testEveryHabitatHasThreeDistinctLanguageNames() {
+        XCTAssertEqual(PokemonHabitat.allCases.count, 9)
+        for habitat in PokemonHabitat.allCases {
+            let names = AppLanguage.allCases.map(habitat.name)
+            XCTAssertTrue(names.allSatisfy { !$0.isEmpty }, "Missing habitat translation for \(habitat.rawValue)")
+            XCTAssertEqual(Set(names).count, 3, "Habitat translations must be distinct for \(habitat.rawValue)")
+        }
+    }
+
+    func testHiddenAbilityIsNeverChosenAsTheRepresentativeOne() {
+        let entries = [
+            (slug: "lightning-rod", isHidden: true, slot: 1),
+            (slug: "static", isHidden: false, slot: 2),
+            (slug: "run-away", isHidden: false, slot: 3),
+        ]
+
+        XCTAssertEqual(PokemonSpeciesIdentity.primaryAbilitySlug(entries), "static")
+    }
+
+    func testProfileApplyFillsEveryIdentitySlot() {
+        var profile = PokemonChatProfile.fixture
+        let identity = PokemonSpeciesIdentity(
+            genera: ["ko": "쥐포켓몬"], habitatSlug: "forest",
+            flavorTexts: ["ko": "전기를 볼에 저장한다."],
+            abilityNames: ["ko": "정전기"], abilityTexts: ["ko": "접촉한 상대를 마비시킨다."],
+            language: .ko
+        )
+
+        profile.apply(identity)
+
+        XCTAssertEqual(profile.flavorText, identity.flavorText)
+        XCTAssertEqual(profile.genus, identity.genus)
+        XCTAssertEqual(profile.habitat, identity.habitat)
+        XCTAssertEqual(profile.ability, identity.ability)
+    }
+
+    func testSystemPromptStaysWithinTheChatBudgetWithAFullIdentity() {
+        var profile = PokemonChatProfile.fixture
+        profile.apply(PokemonSpeciesIdentity(
+            genera: ["ko": String(repeating: "분류", count: 20)], habitatSlug: "rough-terrain",
+            flavorTexts: ["ko": String(repeating: "도감 설명 ", count: 25)],
+            abilityNames: ["ko": String(repeating: "특성", count: 12)],
+            abilityTexts: ["ko": String(repeating: "특성 설명 ", count: 20)],
+            language: .ko
+        ))
+
+        let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
+
+        XCTAssertLessThanOrEqual(prompt.count, 1_600)
+    }
+
+    func testSpeciesDTODecodesWithAndWithoutGeneraAndHabitat() throws {
+        let full = Data("""
+        {
+          "capture_rate": 190,
+          "is_legendary": false,
+          "is_mythical": false,
+          "names": [],
+          "evolution_chain": {"url": "https://pokeapi.co/api/v2/evolution-chain/10/"},
+          "evolves_from_species": null,
+          "flavor_text_entries": [],
+          "genera": [{"genus": "쥐포켓몬", "language": {"name": "ko", "url": null}}],
+          "habitat": {"name": "forest", "url": null}
+        }
+        """.utf8)
+        let sparse = Data("""
+        {
+          "capture_rate": 45,
+          "is_legendary": false,
+          "is_mythical": false,
+          "names": [],
+          "evolution_chain": {"url": "https://pokeapi.co/api/v2/evolution-chain/1/"},
+          "evolves_from_species": null,
+          "flavor_text_entries": []
+        }
+        """.utf8)
+
+        let decodedFull = try JSONDecoder().decode(SpeciesDTO.self, from: full)
+        let decodedSparse = try JSONDecoder().decode(SpeciesDTO.self, from: sparse)
+
+        XCTAssertEqual(decodedFull.genera?.first?.genus, "쥐포켓몬")
+        XCTAssertEqual(decodedFull.habitat?.name, "forest")
+        XCTAssertNil(decodedSparse.genera)
+        XCTAssertNil(decodedSparse.habitat)
+    }
+
     func testShinyProfileIsRetainedForChatSpriteRendering() {
         let profile = PokemonChatProfile(speciesID: 25, displayName: "피카츄", nickname: nil,
                                          isShiny: true, nature: nil, level: 5, stage: "첫 번째 형태",
