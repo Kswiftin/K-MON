@@ -46,6 +46,9 @@ LOGIC_CORE=(
   # 남은시간 표시가 0 에서 멈추는지를 결정하는 순수 함수. 뷰 안에 있던 동안 예정 시각을 지난
   # 구간이 무테스트로 남아 카운트다운이 되올라갔다(#86).
   "Sources/PokeTokenBar/Core/StoredEggCountdown.swift"
+  # 포켓몬 페르소나 조립과 응답 안전 가드가 사는 순수 로직. 게이트 밖에 있으면 프로필 조립을
+  # 직접 밟지 않는 fixture 테스트만 있어도 무테스트 분기가 커버리지에 드러나지 않는다.
+  "Sources/PokeTokenBar/Core/PokemonChat.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"

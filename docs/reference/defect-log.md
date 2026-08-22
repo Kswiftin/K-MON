@@ -625,6 +625,15 @@ read_when:
 - **테스트가 못 걸른 이유는 조회 경로가 주입 불가였기 때문이다.** `PokeAPIClient.shared` 를 직접 부르면
   스텁이 끼어들 수 없어 테스트에서 그 값은 늘 비어 있다 — 결함 분기를 밟을 방법이 없다. 저장까지 가는
   조회는 `PokeProviding` 을 지나게 한다(기본 구현이 실 클라이언트라 기존 스텁은 안 깨진다).
+- **소유자 태그가 있어도 대조 상대가 고정돼 있으면 새 읽는 자리에서 다시 샌다.** `currentTypes` 는
+  `loadedTypesSpeciesID == currentSpeciesID` 로 활성 표시에는 안전했지만, 임의의 `MonState` 를 받는
+  `chatProfile(for:)` 가 그대로 읽자 박스 개체에 활성 종의 타입·기술이 들어갔다. 태그 검사는
+  "활성 개체에 최신인가"가 아니라 **"이번에 요청한 개체의 종인가"** 를 답해야 한다. 개체별 값은
+  `MonState` 에서 읽고, 표시 캐시는 요청 종이 소유자와 일치할 때만 재사용한다.
+- **프로필 리터럴 테스트는 조립 경로를 증명하지 않는다.** 기존 `PokemonChatTests` 는 완성된
+  `PokemonChatProfile` fixture만 검증해 `CompanionStore.chatProfile(for:)` 의 잘못된 출처를 한 번도
+  밟지 않았다. 활성 종 A의 캐시를 채운 뒤 다른 종 B를 요청하는 트리거와, 활성 개체·같은 종 박스 개체
+  대조군을 함께 둬 "전부 비우기"도 막는다. (`PokemonChatTests`, 2026-08-23.)
   `DexEntryTypeSourceTests` 가 트리거(1단계 타입 적재 → 최종형 졸업)와 대조군을 함께 밟는다.
   (2026-08-21.)
 

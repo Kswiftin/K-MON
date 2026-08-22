@@ -71,6 +71,10 @@ struct PokemonChatView: View {
         .sheet(isPresented: $showingDailyDex) { TodayPokedexView(profile: profile) }
         .task(id: profile.speciesID) {
             profile.flavorText = try? await PokeAPIClient.shared.chatFlavorText(speciesID: profile.speciesID, language: profile.language)
+            if profile.types.isEmpty,
+               let battleProfile = try? await PokeAPIClient.shared.battleProfile(speciesID: profile.speciesID) {
+                profile.types = battleProfile.types.map { $0.name(profile.language) }
+            }
         }
     }
 
