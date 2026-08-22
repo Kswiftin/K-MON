@@ -300,6 +300,14 @@ final class CompanionStore {
         return line.localizedName(a.currentID, state.language)
     }
     var currentNickname: String? { state.active?.nickname }
+    /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
+    func chatProfile(for mon: MonState) -> PokemonChatProfile {
+        let speciesName = mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
+        return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
+                                  nature: mon.nature?.name(language), level: mon.level,
+                                  stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
+                                  flavorText: nil, language: language)
+    }
 
     /// 현재 포켓몬 별명 설정 — 공백이면 nil(종 이름으로 표시). 진화해도 유지.
     func setNickname(_ name: String) {

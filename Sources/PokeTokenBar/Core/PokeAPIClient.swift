@@ -175,6 +175,19 @@ actor PokeAPIClient: PokeProviding {
         return dto
     }
 
+    /// 대화 페르소나에 쓸 종 설명. PokéAPI의 가장 최신 언어별 도감 문구만 사용한다.
+    func chatFlavorText(speciesID: Int, language: AppLanguage) async throws -> String? {
+        let dto = try await species(speciesID)
+        let texts = dto.flavor_text_entries ?? []
+        var selected: String?
+        for entry in texts where language.apiCodes.contains(entry.language.name) {
+            selected = entry.flavor_text
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\u{000C}", with: " ")
+        }
+        return selected
+    }
+
     /// REST 폴백 — 단일 종 상세(pokemon-species/{id})로 base 여부·capture_rate 판정.
     /// GraphQL base 인덱스가 죽어도 REST(pokeapi.co/api/v2)는 별개 엔드포인트라 동작한다.
     func baseSpecies(id: Int) async throws -> BaseSpecies? {
@@ -453,7 +466,9 @@ struct SpeciesDTO: Decodable, Sendable {
     let names: [NameDTO]
     let evolution_chain: URLRef
     let evolves_from_species: NamedRef?   // nil = 진화라인 시작점(base)
+    let flavor_text_entries: [SpeciesFlavorTextDTO]?
 }
+struct SpeciesFlavorTextDTO: Decodable, Sendable { let flavor_text: String; let language: NamedRef }
 struct NameDTO: Decodable, Sendable { let name: String; let language: NamedRef }
 struct NamedRef: Decodable, Sendable { let name: String; let url: String? }
 struct URLRef: Decodable, Sendable { let url: String }
