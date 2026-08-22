@@ -90,6 +90,28 @@ protocol PokemonChatProviding: Sendable {
 
 enum PokemonChatProviderKind: String, Codable, CaseIterable, Sendable { case codex, claude, opencode, custom }
 
+/// 대화용 CLI는 모델의 응답 품질보다 도구 격리가 우선이다. 검증되지 않은 제공자는 실행하지 않는다.
+enum PokemonChatProviderSafety {
+    static func arguments(for provider: PokemonChatProviderKind) -> [String]? {
+        switch provider {
+        case .claude:
+            // `--tools ""`는 Claude Code 내장 도구 전체를 제거한다. strict MCP 설정과 빈 설정을 함께
+            // 주어 사용자·프로젝트 MCP 구성이 섞이지 않게 한다.
+            return ["claude", "--print", "--tools", "", "--safe-mode", "--strict-mcp-config",
+                    "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence",
+                    "--disable-slash-commands", "--permission-mode", "dontAsk"]
+        case .codex:
+            // Codex CLI에는 이 버전에서 tool-free 플래그가 없다. MCP·사용자 설정·규칙을 배제하고,
+            // 남는 내장 실행 기능은 읽기 전용 샌드박스로 제한한다. 따라서 파일 수정은 불가능하다.
+            return ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only",
+                    "--ephemeral", "--ignore-user-config", "--ignore-rules", "--config", "mcp_servers={}"]
+        case .opencode, .custom:
+            // OpenCode/임의 CLI는 앱이 보장 가능한 무도구 실행 계약이 확인되기 전까지 실행 금지.
+            return nil
+        }
+    }
+}
+
 struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
     let executableURL: URL
     let arguments: [String]

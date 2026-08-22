@@ -6,8 +6,6 @@ struct PokemonChatView: View {
     @State private var chat = PokemonChatStore()
     @State private var draft = ""
     @AppStorage("pokemonChatProvider") private var providerRaw = ""
-    @AppStorage("pokemonChatCustomExecutable") private var customExecutable = ""
-    @AppStorage("pokemonChatCustomArguments") private var customArguments = ""
 
     init(companionID: UUID, profile: PokemonChatProfile) {
         self.companionID = companionID
@@ -16,28 +14,19 @@ struct PokemonChatView: View {
     private var l: L { L(profile.language) }
 
     private var provider: (any PokemonChatProviding)? {
-        switch PokemonChatProviderKind(rawValue: providerRaw) {
-        case .codex: return PokemonChatCLIProvider(executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: ["codex", "exec", "--skip-git-repo-check"])
-        case .claude: return PokemonChatCLIProvider(executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: ["claude", "-p", "--output-format", "text"])
-        case .opencode: return PokemonChatCLIProvider(executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: ["opencode", "run"])
-        case .custom:
-            guard !customExecutable.isEmpty else { return nil }
-            return PokemonChatCLIProvider(executableURL: URL(fileURLWithPath: customExecutable), arguments: customArguments.split(separator: " ").map(String.init))
-        case nil: return nil
-        }
+        guard let kind = PokemonChatProviderKind(rawValue: providerRaw),
+              let arguments = PokemonChatProviderSafety.arguments(for: kind) else { return nil }
+        return PokemonChatCLIProvider(executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: arguments)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            if providerRaw == PokemonChatProviderKind.custom.rawValue {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(l.t("사용자 CLI (셸 명령이 아닌 실행 파일 경로)", "Custom CLI (executable path, not a shell command)", "カスタム CLI（シェルではなく実行ファイルのパス）"))
-                        .font(.caption2).foregroundStyle(.secondary)
-                    TextField("/path/to/executable", text: $customExecutable).textFieldStyle(.roundedBorder)
-                    TextField(l.t("공백으로 구분한 인수", "Space-separated arguments", "空白区切りの引数"), text: $customArguments)
-                        .textFieldStyle(.roundedBorder)
-                }.padding(.horizontal, 12).padding(.bottom, 8)
+            if provider == nil, !providerRaw.isEmpty {
+                Text(l.t("이 제공자는 MCP·도구를 완전히 격리할 수 없어 포켓몬 대화에서 사용할 수 없습니다.",
+                         "This provider is unavailable because its MCP and tool access cannot be fully isolated for Pokémon chat.",
+                         "このプロバイダーは、MCP とツールへのアクセスを完全に隔離できないため使用できません。"))
+                    .font(.caption2).foregroundStyle(.orange).padding(.horizontal, 12).padding(.bottom, 8)
             }
             Divider()
             ScrollViewReader { proxy in
@@ -81,8 +70,8 @@ struct PokemonChatView: View {
                 Text(l.t("AI 선택", "Choose AI", "AI を選択")).tag("")
                 Text("Codex").tag(PokemonChatProviderKind.codex.rawValue)
                 Text("Claude Code").tag(PokemonChatProviderKind.claude.rawValue)
-                Text("OpenCode").tag(PokemonChatProviderKind.opencode.rawValue)
-                Text(l.t("사용자 CLI", "Custom CLI", "カスタム CLI")).tag(PokemonChatProviderKind.custom.rawValue)
+                Text("OpenCode (disabled)").tag(PokemonChatProviderKind.opencode.rawValue)
+                Text(l.t("사용자 CLI (사용 안 함)", "Custom CLI (disabled)", "カスタム CLI（無効）")).tag(PokemonChatProviderKind.custom.rawValue)
             }.labelsHidden().frame(width: 120)
             Menu { Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
                 Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
