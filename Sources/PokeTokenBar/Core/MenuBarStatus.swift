@@ -4,6 +4,9 @@ import Foundation
 /// 뷰(AppDelegate) 안의 if 사슬로 두면 상태가 하나 늘 때(예: 완료된 모험) 분기 누락이 컴파일도
 /// 테스트도 안 걸러 그대로 배포된다 — resolve() 하나로 강제하고 테스트로 표를 잠근다.
 enum MenuBarStatus: Equatable {
+    case battleChallengeSent(peer: String)
+    case battleChallengeReceived(peer: String)
+    case battling(peer: String, isMyTurn: Bool)
     case focus(prefix: String, clock: String)
     case adventuring(remaining: String)
     /// 모험이 끝났는데 아직 수령 전 — 다음 집중 세션을 막는 상태라 "휴식 중"과 구분해야 한다.
@@ -12,8 +15,17 @@ enum MenuBarStatus: Equatable {
 
     /// FocusTimer 인스턴스를 통째로 받지 않는다 — FocusTimer 는 @MainActor 라 그러면 이 함수까지
     /// 액터에 묶여 진짜 순수 함수가 아니게 된다. 호출부(MainActor 컨텍스트)가 값만 미리 뽑아 넘긴다.
-    static func resolve(focusRunning: Bool, focusPhase: FocusPhase, focusClockText: String,
+    static func resolve(battlePhase: BattleCenter.Phase = .ready, battle: NetBattleState? = nil,
+                        focusRunning: Bool, focusPhase: FocusPhase, focusClockText: String,
                         activeAdventure: AdventureRun?, now: Date = Date()) -> MenuBarStatus {
+        switch battlePhase {
+        case .challenging(let peer): return .battleChallengeSent(peer: peer)
+        case .incoming(let peer): return .battleChallengeReceived(peer: peer)
+        case .battling:
+            let peer = battle?.opp.snapshot.trainer ?? "?"
+            return .battling(peer: peer, isMyTurn: battle?.myAction == nil)
+        default: break
+        }
         if focusRunning {
             let prefix = focusPhase == .focus ? "FOCUS" : "BREAK"
             return .focus(prefix: prefix, clock: focusClockText)
@@ -29,6 +41,9 @@ enum MenuBarStatus: Equatable {
     /// 툴팁과 VoiceOver에서 사용할 전체 상태 설명.
     func fullDescription(_ l: L) -> String {
         switch self {
+        case .battleChallengeSent(let peer): return l.menuBarBattleChallengeSent(peer)
+        case .battleChallengeReceived(let peer): return l.menuBarBattleChallengeReceived(peer)
+        case .battling(let peer, let isMyTurn): return l.menuBarBattling(peer, isMyTurn: isMyTurn)
         case .focus(let prefix, let clock): return "\(prefix) \(clock)"
         case .adventuring(let remaining): return "\(l.menuBarAdventuring) \(remaining)"
         case .adventureClaimable: return l.menuBarAdventureClaimable
@@ -39,6 +54,8 @@ enum MenuBarStatus: Equatable {
     /// 한정된 메뉴 막대 공간에 표시할 언어 비의존적 컴팩트 제목.
     var compactTitle: String {
         switch self {
+        case .battleChallengeSent, .battleChallengeReceived, .battling:
+            return "B"
         case .focus(let prefix, let clock):
             return "\(prefix == "BREAK" ? "B" : "F") \(clock)"
         case .adventuring(let remaining):

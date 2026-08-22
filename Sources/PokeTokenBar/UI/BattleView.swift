@@ -628,6 +628,7 @@ struct BattleView: View {
             Text("\(peer) — \(l.battleWaitingAccept)")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            challengeCountdown
             Button(l.battleCancel) { center.cancelChallenge() }
                 .controlSize(.small)
         }
@@ -640,6 +641,7 @@ struct BattleView: View {
             Text("⚔️ \(l.battleIncomingFrom(peer))")
                 .font(.callout).bold()
                 .multilineTextAlignment(.center)
+            challengeCountdown
             Text("\(center.incomingTeamSize) vs \(center.incomingTeamSize)")
                 .font(.caption2).foregroundStyle(.secondary)
             if let profile = center.opponentRankProfile {
@@ -678,6 +680,19 @@ struct BattleView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var challengeCountdown: some View {
+        if let endsAt = center.challengeEndsAt {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let seconds = max(0, Int(endsAt.timeIntervalSince(context.date).rounded(.up)))
+                Text(l.battleChallengeTimeRemaining(seconds))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(seconds <= 10 ? .orange : .secondary)
+                    .accessibilityLabel(l.battleChallengeTimeRemaining(seconds))
+            }
+        }
     }
 
     // MARK: 로그/카드 공용

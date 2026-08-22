@@ -14,6 +14,12 @@ enum NetBattleAction: Codable, Sendable, Equatable {
     case switchTo(index: Int)
 }
 
+/// 신청 취소 사유는 연결 단절과 구분한다. 특히 시간 초과는 양쪽에 같은 설명을 보여야 한다.
+enum BattleChallengeCancellationReason: String, Codable, Sendable, Equatable {
+    case cancelled
+    case timedOut
+}
+
 enum NetMessage: Codable, Sendable {
     /// `rulesVersion` 은 대전 규칙(턴 순서·데미지 계산)의 버전이다. 이 대전은 결과를 주고받지 않고
     /// **두 피어가 각자 계산**하므로, 규칙이 다르면 같은 배틀을 서로 다르게 본다(HP·승패가 어긋난다).
@@ -24,13 +30,14 @@ enum NetMessage: Codable, Sendable {
     case accept(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
                 profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
     case decline
+    case challengeCancelled(reason: BattleChallengeCancellationReason)
     case action(turn: Int, action: NetBattleAction)
     /// 구버전 와이어 메시지를 디코딩해 규칙 불일치 경로까지 보낼 때만 남긴다. 새 클라이언트는 전송하지 않는다.
     case move(turn: Int, moveIndex: Int)
     case forfeit
     case chat(BattleChatMessage)
 
-    private enum CodingKeys: String, CodingKey { case challenge, accept, decline, action, move, forfeit, chat }
+    private enum CodingKeys: String, CodingKey { case challenge, accept, decline, challengeCancelled, action, move, forfeit, chat }
     private struct EmptyPayload: Codable {}
     private struct ChallengePayload: Codable {
         var snapshot: BattleSnapshot
@@ -70,6 +77,9 @@ enum NetMessage: Codable, Sendable {
                            chatSupported: payload.chatSupported)
         } else if container.contains(.decline) {
             self = .decline
+        } else if container.contains(.challengeCancelled) {
+            self = .challengeCancelled(reason: try container.decode(BattleChallengeCancellationReason.self,
+                                                                    forKey: .challengeCancelled))
         } else if container.contains(.action) {
             let payload = try container.decode(ActionPayload.self, forKey: .action)
             self = .action(turn: payload.turn, action: payload.action)
@@ -99,6 +109,8 @@ enum NetMessage: Codable, Sendable {
                                  forKey: .accept)
         case .decline:
             try container.encode(EmptyPayload(), forKey: .decline)
+        case .challengeCancelled(let reason):
+            try container.encode(reason, forKey: .challengeCancelled)
         case .action(let turn, let action):
             try container.encode(ActionPayload(turn: turn, action: action), forKey: .action)
         case .move(let turn, let moveIndex):
@@ -108,6 +120,31 @@ enum NetMessage: Codable, Sendable {
         case .chat(let message):
             try container.encode(message, forKey: .chat)
         }
+    }
+}
+
+/// 신청 마감 작업의 작은 취소 핸들. 실제 시간 대신 테스트 스케줄러를 주입할 수 있다.
+@MainActor
+final class BattleChallengeTimeout {
+    private let cancellation: () -> Void
+    init(cancellation: @escaping () -> Void) { self.cancellation = cancellation }
+    func cancel() { cancellation() }
+}
+
+@MainActor
+protocol BattleChallengeTimeoutScheduling: AnyObject {
+    func schedule(_ action: @escaping @MainActor () -> Void) -> BattleChallengeTimeout
+}
+
+@MainActor
+private final class SystemBattleChallengeTimeoutScheduler: BattleChallengeTimeoutScheduling {
+    func schedule(_ action: @escaping @MainActor () -> Void) -> BattleChallengeTimeout {
+        let task = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(BattleCenter.challengeDuration))
+            guard !Task.isCancelled else { return }
+            action()
+        }
+        return BattleChallengeTimeout { task.cancel() }
     }
 }
 
@@ -326,7 +363,7 @@ final class BattleCenter {
         case finished(iWon: Bool?, byForfeit: Bool)
     }
 
-    private(set) var phase: Phase = .ready {
+    var phase: Phase = .ready {
         // 국면이 바뀌면 미뤄 둔 결과는 무효다 — 항복·끊김·새 배틀이 국면을 먼저 옮긴 뒤에 옛 배틀의
         // 마감이 뒤늦게 깨어나 엉뚱한 결과 화면을 올리는 것을 막는다.
         didSet { dropPendingFinish() }
@@ -372,6 +409,12 @@ final class BattleCenter {
 
     /// 한 턴에 주는 시간 — 멀티와 같은 값이다.
     static let turnDuration: TimeInterval = MultiplayerRoomCenter.turnDuration
+
+    /// 대결 신청은 양쪽 모두 받은 시점부터 60초 안에 수락해야 한다.
+    static let challengeDuration: TimeInterval = 60
+    private(set) var challengeEndsAt: Date?
+    private var challengeTimeout: BattleChallengeTimeout?
+    private let challengeTimeoutScheduler: BattleChallengeTimeoutScheduling
 
     /// 이번 턴이 끝나는 시각. 멀티엔 이미 있던 값이고 1v1 만 없었다 — 상대가 자리를 비우면 1v1 은
     /// 기권 말고는 나갈 길이 없었다.
@@ -513,9 +556,11 @@ final class BattleCenter {
          moveSetLoader: MoveSetLoader? = nil,
          moveDetailLoader: MoveDetailLoader? = nil,
          inheritedMovesPreparer: InheritedMovesPreparer? = nil,
-         advertisementPublisher: ((NWTXTRecord) -> Void)? = nil) {
+         advertisementPublisher: ((NWTXTRecord) -> Void)? = nil,
+         challengeTimeoutScheduler: BattleChallengeTimeoutScheduling? = nil) {
         self.companion = companion
         self.advertisementPublisher = advertisementPublisher
+        self.challengeTimeoutScheduler = challengeTimeoutScheduler ?? SystemBattleChallengeTimeoutScheduler()
         self.monSnapshotBuilder = monSnapshotBuilder ?? { mon, level in
             await companion.battleSnapshot(for: mon, level: level)
         }
@@ -609,6 +654,13 @@ final class BattleCenter {
     var incomingRankedStake: Int {
         guard let opponentRankProfile else { return 0 }
         return BattleRank.stake(challenger: opponentRankProfile.rank, defender: companion.battleRank)
+    }
+
+    private var isChallengePending: Bool {
+        switch phase {
+        case .challenging, .incoming: true
+        default: false
+        }
     }
 
     // MARK: 기동/정지
@@ -894,6 +946,7 @@ final class BattleCenter {
             let conn = NWConnection(to: endpoint, using: Self.discoveryParameters())
             connection = conn
             phase = .challenging(peer: displayName)
+            startChallengeTimeout()
             conn.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in self?.connectionState(state, conn: conn) }
             }
@@ -931,7 +984,10 @@ final class BattleCenter {
     }
 
     func cancelChallenge() {
-        if case .challenging = phase { dropConnection(); phase = .ready }
+        if case .challenging = phase {
+            send(.challengeCancelled(reason: .cancelled), over: connection)
+            dropConnection(); phase = .ready
+        }
         if case .preparing = phase { clearPendingOutgoing(); phase = .ready }
     }
 
@@ -966,6 +1022,7 @@ final class BattleCenter {
         }
         let opponentTeam = incomingLineup
         let teamSize = incomingTeamSize
+        cancelChallengeTimeout()
         phase = .preparing
         Task { @MainActor in
             let prepared = await buildMyLineup(size: teamSize, selection: confirmedIDs,
@@ -1075,6 +1132,7 @@ final class BattleCenter {
     }
 
     private func beginBattle(my: [BattleSnapshot], opp: [BattleSnapshot], iAmA: Bool, seed: UInt64) {
+        cancelChallengeTimeout()
         chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
         didSettleRankedBrawl = false
         lastRankDelta = 0
@@ -1224,6 +1282,7 @@ final class BattleCenter {
             opponentRankProfile = profile
             chatIsAvailable = peerChatSupported == true
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
+            startChallengeTimeout()
             pendingAttention = true
             postChallengeNotification(snapshot)
         case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let peerChatSupported):
@@ -1250,6 +1309,11 @@ final class BattleCenter {
                 phase = .ready
                 lastError = l.battleDeclined
             }
+        case .challengeCancelled(let reason):
+            guard isChallengePending else { return }
+            dropConnection()
+            phase = .ready
+            if reason == .timedOut { lastError = l.battleChallengeTimedOut }
         case .action(let turn, let action):
             guard case .battling = phase, var b = battle, b.oppAction == nil, turn == b.turn,
                   b.canChoose(action, mine: false) else { return }
@@ -1295,6 +1359,7 @@ final class BattleCenter {
     private func connectionDropped() {
         guard connection != nil else { return }
         connection = nil
+        cancelChallengeTimeout()
         cancelTurnTimeout()   // 상대가 사라진 뒤에 마감이 돌면 이미 끝난 배틀에 기술을 보낸다
         switch phase {
         case .battling:
@@ -1328,6 +1393,7 @@ final class BattleCenter {
         let conn = connection
         connection = nil          // connectionDropped 재진입 차단(cancel 콜백)
         conn?.cancel()
+        cancelChallengeTimeout()
         cancelTurnTimeout()
         incomingSnapshot = nil
         incomingLineup = []
@@ -1335,6 +1401,30 @@ final class BattleCenter {
         incomingTeamSize = 1
         clearPendingOutgoing()
         chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
+    }
+
+    /// 신청 상태에서만 실행되는 별도 마감. 배틀 턴 타이머와 독립적이다.
+    func startChallengeTimeout() {
+        cancelChallengeTimeout()
+        guard isChallengePending else { return }
+        challengeEndsAt = Date().addingTimeInterval(Self.challengeDuration)
+        challengeTimeout = challengeTimeoutScheduler.schedule { [weak self] in
+            self?.expireChallenge()
+        }
+    }
+
+    private func cancelChallengeTimeout() {
+        challengeTimeout?.cancel()
+        challengeTimeout = nil
+        challengeEndsAt = nil
+    }
+
+    private func expireChallenge() {
+        guard isChallengePending else { return }
+        send(.challengeCancelled(reason: .timedOut), over: connection)
+        dropConnection()
+        phase = .ready
+        lastError = l.battleChallengeTimedOut
     }
 
     private func settleRankedBrawlIfNeeded(won: Bool) {
