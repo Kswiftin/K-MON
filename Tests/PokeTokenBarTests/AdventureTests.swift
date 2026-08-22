@@ -2,6 +2,27 @@ import XCTest
 @testable import PokeTokenBar
 
 final class AdventureTests: XCTestCase {
+    func testResumingAStoppedClockDoesNotChargeOfflineDecay() {
+        let old = Date(timeIntervalSince1970: 100_000)
+        let now = old.addingTimeInterval(13 * 3600)
+        var care = PetCareState(hunger: 80, lastUpdatedAt: old)
+
+        care.resumeClock(at: now)
+
+        XCTAssertEqual(care.hunger, 80)
+        XCTAssertEqual(care.lastUpdatedAt, now)
+    }
+
+    func testResumingARecentClockAppliesNormalDecay() {
+        let old = Date(timeIntervalSince1970: 100_000)
+        let now = old.addingTimeInterval(2 * 3600)
+        var care = PetCareState(hunger: 80, lastUpdatedAt: old)
+
+        care.resumeClock(at: now)
+
+        XCTAssertEqual(care.hunger, 72, accuracy: 0.001)
+    }
+
     func testLegacyIntegrityVersionDoesNotResetOnSchemaUpgrade() {
         var state = CompanionState()
         state.integrityVersion = 0

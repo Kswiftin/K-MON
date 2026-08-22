@@ -3,6 +3,59 @@ import XCTest
 
 @MainActor
 final class PokemonChatTests: XCTestCase {
+    func testCareTagIsStrippedBeforeTheGuardCountsSentences() {
+        let parsed = PokemonChatCareParser.parse("첫 문장. 둘째 문장! 셋째 문장.\n[[care:feed]]")
+
+        XCTAssertEqual(parsed.kind, .feed)
+        XCTAssertEqual(parsed.body, "첫 문장. 둘째 문장! 셋째 문장.")
+    }
+
+    func testUnknownCareTagIsDroppedAndTreatedAsPlainConversation() {
+        for reply in ["괜찮아 [[care:dance]]", "괜찮아 [[care:]]", "괜찮아 [[ care : feed ]]" ] {
+            let parsed = PokemonChatCareParser.parse(reply)
+            XCTAssertNil(parsed.kind)
+            XCTAssertFalse(parsed.body.contains("[["))
+        }
+    }
+
+    func testOnlyStateVerifiedCareKindsAreRequestable() {
+        XCTAssertTrue(PokemonChatActionKind.feed.isCareRequestable)
+        XCTAssertTrue(PokemonChatActionKind.medicate.isCareRequestable)
+        XCTAssertFalse(PokemonChatActionKind.train.isCareRequestable)
+        XCTAssertFalse(PokemonChatActionKind.release.isCareRequestable)
+    }
+
+    func testCareOfferIsIncludedInPromptWithinTheUpdatedBudget() {
+        var profile = PokemonChatProfile.fixture
+        profile.careOffer = PokemonChatCareOffer(kinds: [.feed, .rest], stateLine: "배고픔 40, 에너지 50")
+
+        let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
+
+        XCTAssertTrue(prompt.contains("배고픔 40"))
+        XCTAssertTrue(prompt.contains("[[care:feed]]"))
+        XCTAssertLessThanOrEqual(prompt.count, 1_750)
+    }
+
+    func testBoxedPokemonGetsNoCareOfferOrInvitation() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let boxed = mon(speciesID: 4, name: "파이리")
+        store.debugSetBoxedMons([boxed])
+
+        let profile = store.chatProfile(for: try XCTUnwrap(store.boxedMons.first))
+
+        XCTAssertNil(profile.careOffer)
+        XCTAssertFalse(PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt.contains("[[care:"))
+    }
+
+    func testNonCareKindsAreRejectedByTheChatExecutor() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+
+        XCTAssertFalse(store.applyChatCare(.release))
+        XCTAssertFalse(store.applyChatCare(.evolve))
+    }
+
     func testBoxedPokemonPersonaUsesItsOwnTypesAndMovesNotTheActivePartners() async throws {
         let store = makeCompanionStore()
         await store.hatch(baseID: 25)
