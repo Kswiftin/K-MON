@@ -217,6 +217,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case reaperCloth, razorClaw, razorFang, prismScale
     // 해피너스는 '둥근돌을 지닌 채 낮에 레벨업' 이라 돌 이름이지만 use-item 이 아니다.
     case ovalStone
+    /// 던전 입장 전에 마시는 소모품(#79) — 체력 예산 +3. 값을 싸게 두는 이유는 크게 주면
+    /// "아이템 갈아넣기" 가 최적 전략이 되어 퍼즐이 사라지기 때문이다(+3 은 100 대비 3%).
+    case freshWater
     /// 하트비늘(#97) — 진화가 아니라 "기술 다시 배우기". 진화 아이템이 아니라 `evolutionRule` 이 nil 이므로
     /// **가방·문구의 `default:`(= 진화 아이템 전체) 분기에 명시 케이스로 반드시 넣어야 한다** — 빠뜨리면
     /// "진화 가능할 때 사용" 이 뜨고 설명이 빈 문자열이 되며 `useEvolutionItem` 으로 흘러간다.
@@ -228,7 +231,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .shinyCharm, .heartScale: return nil
+        case .rareCandy, .mint, .shinyCharm, .freshWater, .heartScale: return nil
         case .linkingCord: return .plainTrade
         case .fireStone: return .useItem("fire-stone")
         case .waterStone: return .useItem("water-stone")
@@ -268,6 +271,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .rareCandy: return "rare-candy"
         case .mint: return nil   // PokéAPI 에 민트 스프라이트 없음(8세대 아이템) → 이모지 폴백
         case .shinyCharm: return "shiny-charm"
+        case .freshWater: return "fresh-water"
         case .heartScale: return "heart-scale"
         default: return evolutionRule?.apiItemName
         }
@@ -289,6 +293,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .reaperCloth: return "🧵"; case .razorClaw: return "✂️"; case .razorFang: return "🗡️"
         case .prismScale: return "🌈"
         case .ovalStone: return "🥚"
+        case .freshWater: return "🥤"
         case .heartScale: return "💗"
         }
     }
@@ -298,6 +303,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .rareCandy: return RareCandy.price
         case .mint: return Mint.price
         case .shinyCharm: return nil
+        case .freshWater: return PuzzleDungeon.freshWaterPrice
         case .heartScale: return MoveRelearn.price
         default: return isEvolutionItem ? Self.evolutionItemPrice : nil
         }
@@ -782,6 +788,9 @@ struct CompanionState: Codable, Sendable {
     var trainer = TrainerLevel()
     // 일간·주간 미션 진행도. 갱신은 타이머가 아니라 날짜/주 키 비교로 일어난다(MissionBoard 참고).
     var missions = MissionBoard()
+    /// 하루 한 판 퍼즐 던전(#79). 리셋은 날짜 키 비교이고, 시도 중 상태(현재 방·남은 체력)는
+    /// 여기 없다 — 저장 대상을 늘리면 이상 상태 복구 경로가 그만큼 늘어난다.
+    var dungeon = DungeonProgress()
     // 누적 행동 업적(집중·진화·배틀·레이스). 도달 단계는 저장하지 않고 카운터에서 계산한다.
     var achievements = AchievementLadder()
     // 시즌 순환 챌린지 진행도. 세트는 저장하지 않고 시즌 키에서 고른다(SeasonBoard 참고).
@@ -842,6 +851,7 @@ struct CompanionState: Codable, Sendable {
         pendingRanked      = c.lenientOptional(PendingRankedBattle.self, forKey: .pendingRanked)
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
         missions           = c.lenient(MissionBoard.self, forKey: .missions, default: MissionBoard())
+        dungeon            = c.lenient(DungeonProgress.self, forKey: .dungeon, default: DungeonProgress())
         seasons            = c.lenient(SeasonBoard.self, forKey: .seasons, default: SeasonBoard())
         achievements       = c.lenient(AchievementLadder.self, forKey: .achievements,
                                        default: AchievementLadder())

@@ -940,6 +940,76 @@ struct L {
 
     // MARK: 체육관
     var gymLeagueTitle: String { t("체육관", "Gyms", "ジム") }
+
+    // MARK: 퍼즐 던전 (#79)
+    var dungeonTitle: String { t("오늘의 던전", "Today's Dungeon", "きょうのダンジョン") }
+    var dungeonEnter: String { t("들어가기", "Enter", "はいる") }
+    var dungeonRetry: String { t("다시 도전", "Try again", "もういちど") }
+    var dungeonLeave: String { t("나가기", "Leave", "でる") }
+    var dungeonFailed: String {
+        t("쓰러졌다… 밟은 방은 기억에 남았어요.",
+          "You collapsed… the rooms you walked stay remembered.",
+          "たおれた… 歩いたへやは記憶に残りました。")
+    }
+    var dungeonClearedTitle: String { t("던전 클리어!", "Dungeon cleared!", "ダンジョンクリア！") }
+    var dungeonAlreadyCleared: String {
+        t("오늘 보상은 이미 받았어요 — 지금부터는 연습이에요.",
+          "Today's reward is already paid — this is practice now.",
+          "きょうの報酬は受け取りました — ここからは練習です。")
+    }
+    func dungeonRewardBody(_ amount: Int) -> String {
+        t("별의조각 \(GameNumberFormatter.compact(amount))개를 받았어요.",
+          "You received \(GameNumberFormatter.compact(amount)) Star Pieces.",
+          "ほしのかけらを\(GameNumberFormatter.compact(amount))こ受け取りました。")
+    }
+    func dungeonRewardPreview(_ amount: Int) -> String {
+        t("첫 클리어 보상 ⭐\(GameNumberFormatter.compact(amount))",
+          "First clear pays ⭐\(GameNumberFormatter.compact(amount))",
+          "初クリア報酬 ⭐\(GameNumberFormatter.compact(amount))")
+    }
+    func dungeonRoomCounter(_ visited: Int, _ total: Int) -> String {
+        t("방 \(visited)/\(total)", "Room \(visited)/\(total)", "へや \(visited)/\(total)")
+    }
+    func dungeonHitPoints(_ hp: Int, _ budget: Int) -> String { "HP \(hp)/\(budget)" }
+    /// 오늘의 상성 축과 예산을 한 줄로 — 왜 내 예산이 105 인지 화면에서 읽혀야 한다.
+    func dungeonBudgetLine(_ type: PokemonType, _ budget: Int) -> String {
+        t("\(type.name(lang))에 강한 파트너면 유리 · 예산 \(budget)",
+          "A partner strong against \(type.name(lang)) helps · budget \(budget)",
+          "\(type.name(lang))に強いパートナーが有利 · 予算\(budget)")
+    }
+    /// 먹는샘물 체크박스 — 재고가 없으면 개수 0 으로 그려 왜 못 쓰는지 보이게 한다.
+    func dungeonDrinkFreshWater(_ count: Int) -> String {
+        t("먹는샘물 마시고 시작 (+3, 보유 \(count))",
+          "Drink Fresh Water first (+3, \(count) left)",
+          "おいしいみずを飲んで開始（+3・残り\(count)）")
+    }
+    var freshWaterEffectHint: String {
+        t("던전 입장 시 +3", "+3 on dungeon entry", "ダンジョン入場時 +3")
+    }
+    var dungeonExitUnknown: String { t("미탐사", "Unexplored", "未探索") }
+    func dungeonRoomName(_ kind: RoomKind) -> String {
+        switch kind {
+        case .empty: return t("빈 방", "Empty room", "空きへや")
+        case .encounter: return t("교전", "Encounter", "せんとう")
+        case .spring: return t("회복의 샘", "Healing spring", "かいふくのいずみ")
+        case .boss: return t("가장 깊은 방", "Deepest room", "いちばん深いへや")
+        }
+    }
+    func dungeonExitCost(_ cost: Int) -> String {
+        t("통로 \(cost)", "corridor \(cost)", "通路 \(cost)")
+    }
+    var dungeonSpringSpent: String { t("(사용됨)", "(spent)", "（使用済み）") }
+    /// 로그 한 줄 — 코어는 값(`DungeonEvent`)만 남기고 문구는 여기서 만든다.
+    func dungeonEventLine(_ event: DungeonEvent) -> String {
+        switch event {
+        case .entered(_, let kind): return dungeonRoomName(kind)
+        case .damaged(let amount): return t("−\(amount) HP", "−\(amount) HP", "−\(amount) HP")
+        case .healed(let amount): return t("+\(amount) HP", "+\(amount) HP", "+\(amount) HP")
+        case .springAlreadyUsed: return t("샘이 말랐다", "The spring is dry", "いずみは枯れている")
+        case .bossFelled: return t("가장 깊은 방을 넘었다!", "You cleared the deepest room!", "いちばん深いへやを越えた！")
+        case .collapsed: return t("쓰러졌다", "You collapsed", "たおれた")
+        }
+    }
     var gymBadgeEarned: String { t("배지 획득", "Badge earned", "バッジ獲得") }
     func gymNeedsMorePokemon(_ count: Int) -> String {
         t("체육관은 \(count)마리로 도전해요 — 포켓몬이 부족합니다.",
@@ -998,6 +1068,7 @@ struct L {
         case .razorClaw: return t("예리한손톱", "Razor Claw", "するどいツメ")
         case .razorFang: return t("예리한이빨", "Razor Fang", "するどいキバ")
         case .prismScale: return t("아름다운비늘", "Prism Scale", "きれいなウロコ")
+        case .freshWater: return t("먹는샘물", "Fresh Water", "おいしいみず")
         case .ovalStone: return t("둥근돌", "Oval Stone", "まるいいし")
         case .heartScale: return t("하트비늘", "Heart Scale", "ハートのウロコ")
         }
@@ -1023,6 +1094,10 @@ struct L {
             return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
                      "While owned, raises the chance of hatching a shiny.",
                      "持っていると色違いが生まれる確率が上がります。")
+        case .freshWater:
+            return t("던전에 들어갈 때 한 병 마셔 체력 예산을 3 올려줘요.",
+                     "Drink one on entering the dungeon to raise the hit-point budget by 3.",
+                     "ダンジョンに入るとき1本飲んで体力予算を3上げます。")
         default:
             // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 27개 나열하면 새 아이템을 넣을 때 빠뜨린다.
             switch kind.evolutionRule {
