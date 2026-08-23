@@ -92,9 +92,9 @@ struct SettingsView: View {
                      "The app never uses Finder or launchd PATH. Choose an executable if its standard install location is not found.",
                      "Finder/launchd の PATH は使いません。標準の場所で見つからない場合は実行ファイルを選んでください。"))
                 .font(.caption2).foregroundStyle(.secondary)
-            ForEach([PokemonChatProviderKind.codex, .claude], id: \.self) { kind in
+            ForEach(PokemonChatProviderSafety.verifiedKinds, id: \.self) { kind in
                 HStack {
-                    Text(kind == .codex ? "Codex" : "Claude Code")
+                    Text(kind.label(l.lang))
                     Spacer()
                     Text(settings.chatProviderExecutablePath(for: kind) ??
                          (PokemonChatProviderExecutableResolver.executableURL(for: kind)?.path ?? l.t("찾지 못함", "Not found", "未検出")))

@@ -25,20 +25,33 @@ struct PokemonChatView: View {
     private var profile: PokemonChatProfile { var value = baseProfile; if let identity { value.apply(identity) }; return value }
     private var l: L { L(profile.language) }
 
+    private var selectedKind: PokemonChatProviderKind? { PokemonChatProviderKind(rawValue: providerRaw) }
+
     private var provider: (any PokemonChatProviding)? {
-        guard let kind = PokemonChatProviderKind(rawValue: providerRaw),
+        guard let kind = selectedKind,
               let arguments = PokemonChatProviderSafety.arguments(for: kind),
               let executableURL = PokemonChatProviderExecutableResolver.executableURL(for: kind) else { return nil }
         return PokemonChatCLIProvider(executableURL: executableURL, arguments: arguments, kind: kind)
     }
 
+    /// 차단(사용자가 할 수 있는 일이 없다)과 실행 파일 미발견(설정에서 경로를 지정하면 된다)은
+    /// 다른 사유다. 한 문장으로 뭉개면 어느 쪽도 안내가 되지 않는다.
+    private var unavailableReason: String? {
+        guard let kind = selectedKind, provider == nil else { return nil }
+        if let reason = PokemonChatProviderSafety.availability(for: kind).blockReason {
+            return reason.message(profile.language)
+        }
+        let name = kind.label(profile.language)
+        return l.t("\(name) 실행 파일을 찾지 못했습니다. 설정에서 경로를 지정하세요.",
+                   "Could not find the \(name) executable. Set its path in Settings.",
+                   "\(name) の実行ファイルが見つかりません。設定でパスを指定してください。")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
-            if provider == nil, !providerRaw.isEmpty {
-                Text(l.t("이 제공자는 MCP·도구를 완전히 격리할 수 없어 포켓몬 대화에서 사용할 수 없습니다.",
-                         "This provider is unavailable because it is unsupported or its executable could not be found.",
-                         "このプロバイダーは未対応、または実行ファイルが見つからないため使用できません。"))
+            if let unavailableReason {
+                Text(unavailableReason)
                     .font(.caption2).foregroundStyle(.orange).padding(.horizontal, 12).padding(.bottom, 8)
             }
             Divider()
@@ -99,11 +112,17 @@ struct PokemonChatView: View {
             Spacer()
             Picker("AI", selection: $providerRaw) {
                 Text(l.t("AI 선택", "Choose AI", "AI を選択")).tag("")
-                Text("Codex").tag(PokemonChatProviderKind.codex.rawValue)
-                Text("Claude Code").tag(PokemonChatProviderKind.claude.rawValue)
-                Text("OpenCode (disabled)").tag(PokemonChatProviderKind.opencode.rawValue)
-                Text(l.t("사용자 CLI (사용 안 함)", "Custom CLI (disabled)", "カスタム CLI（無効）")).tag(PokemonChatProviderKind.custom.rawValue)
-            }.labelsHidden().frame(width: 120)
+                // 차단된 제공자도 보여 준다 — 목록에서 지우면 왜 못 쓰는지 알 길이 없다. 대신
+                // 자물쇠를 달고 고를 수 없게 한다(`(disabled)` 라고 *쓰기만* 하면 골라진다).
+                ForEach(PokemonChatProviderKind.allCases, id: \.self) { kind in
+                    if PokemonChatProviderSafety.availability(for: kind).isVerified {
+                        Text(kind.label(profile.language)).tag(kind.rawValue)
+                    } else {
+                        Label(kind.label(profile.language), systemImage: "lock.fill")
+                            .disabled(true).tag(kind.rawValue)
+                    }
+                }
+            }.labelsHidden().frame(width: 140)
             Menu { Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
                 Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
                 Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
@@ -113,10 +132,15 @@ struct PokemonChatView: View {
 
     private var statusBar: some View {
         HStack(spacing: 6) {
-            let name = PokemonChatProviderKind(rawValue: providerRaw)?.rawValue.capitalized ?? l.t("AI 미선택", "No AI", "AI 未選択")
+            let name = selectedKind?.label(profile.language) ?? l.t("AI 미선택", "No AI", "AI 未選択")
             Label(name, systemImage: "sparkles").font(.caption2)
             Text(l.t("외부 전송", "Sent externally", "外部送信")).font(.caption2).foregroundStyle(.secondary)
-            Label(l.t("도구·MCP 격리", "Tools & MCP isolated", "ツール・MCP 隔離"), systemImage: "lock.fill").font(.caption2).foregroundStyle(.green)
+            // 자물쇠는 실제로 격리된 provider 가 해석됐을 때만 — 상시로 그리면 차단·미선택
+            // 상태에서 없는 보증을 광고한다.
+            if provider != nil {
+                Label(l.t("도구·MCP 격리", "Tools & MCP isolated", "ツール・MCP 隔離"), systemImage: "lock.fill")
+                    .font(.caption2).foregroundStyle(.green)
+            }
         }.padding(.horizontal, 12).padding(.vertical, 6)
     }
 
