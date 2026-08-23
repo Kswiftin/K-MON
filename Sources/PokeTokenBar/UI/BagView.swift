@@ -100,6 +100,7 @@ private struct ItemCard: View {
         case .rareCandy: return store.canUseRareCandy
         case .mint:      return store.canUseMint
         case .shinyCharm: return false   // 보유형 — 사용 개념 없음(상시 효과)
+        case .heartScale: return store.canUseHeartScale
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
             return store.canUseEvolutionItem(kind)
         }
@@ -110,6 +111,7 @@ private struct ItemCard: View {
         case .rareCandy: return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
         case .mint:      return l.mintEffectHint
         case .shinyCharm: return l.shinyCharmEffectHint
+        case .heartScale: return l.heartScaleEffectHint
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
             return l.t("진화 가능할 때 사용", "Use when evolution is available", "進化できるときに使う")
         }
@@ -119,6 +121,7 @@ private struct ItemCard: View {
         case .rareCandy: _ = store.useRareCandy()
         case .mint:      _ = store.useMint()
         case .shinyCharm: break   // 보유형 — 사용 동작 없음
+        case .heartScale: store.useHeartScale()
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
             _ = store.useEvolutionItem(kind)
         }
