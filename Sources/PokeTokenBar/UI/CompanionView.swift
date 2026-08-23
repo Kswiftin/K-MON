@@ -95,6 +95,8 @@ struct SpriteView: View {
     var bob: Bool = false
     var animated: Bool = false
     var shiny: Bool = false
+    /// 네트워크/캐시 실패 때 알 이모지 대신 호출자가 정한 식별자를 유지한다.
+    var fallbackLabel: String? = nil
     /// 배틀 필드의 내 쪽만 등 스프라이트다. 한 뷰의 방향은 평생 바뀌지 않으므로 `needsReload` 의
     /// 축이 아니다 — 앞을 보던 스프라이트가 뒤로 도는 일은 없다.
     var back: Bool = false
@@ -111,12 +113,13 @@ struct SpriteView: View {
     @State private var frameIndex = 0
 
     init(speciesID: Int?, size: CGFloat = 84, bob: Bool = false, animated: Bool = false,
-         shiny: Bool = false, back: Bool = false, minFrameDelay: TimeInterval = 0) {
+         shiny: Bool = false, fallbackLabel: String? = nil, back: Bool = false, minFrameDelay: TimeInterval = 0) {
         self.speciesID = speciesID
         self.size = size
         self.bob = bob
         self.animated = animated
         self.shiny = shiny
+        self.fallbackLabel = fallbackLabel
         self.back = back
         self.minFrameDelay = minFrameDelay
         // 캐시에 있으면 즉시(동기) 표시 — 재렌더 플래시 방지 + 정적 스냅샷에서도 보임.
@@ -166,6 +169,12 @@ struct SpriteView: View {
             } else if let img {
                 Image(nsImage: img).resizable().interpolation(antialiasing ? .high : .none)
                     .frame(width: size, height: size)
+            } else if let fallbackLabel {
+                Text(fallbackLabel)
+                    .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(width: size, height: size)
+                    .background(Color.secondary.opacity(0.14), in: Circle())
             } else {
                 Text("🥚").font(.system(size: size * 0.62)).frame(width: size, height: size)
             }
@@ -453,6 +462,7 @@ struct CompanionHeader: View {
     // 별명 인라인 편집
     @State private var editingName = false
     @State private var nameDraft = ""
+    @Environment(PokemonChatPresenter.self) private var chatPresenter
     /// 기술 목록은 처음부터 펼쳐 둔다. 파트너에게 무엇이 있는지가 홈에서 가장 자주 보는 정보인데,
     /// 접혀 있으면 팝오버를 열 때마다 한 번 더 눌러야 했다. 접으면 그 팝오버가 열려 있는 동안은
     /// 접힌 채로 있고, 닫았다 열면 다시 펼쳐진다(`@State` 라 팝오버 생명주기를 따른다).
@@ -547,6 +557,14 @@ struct CompanionHeader: View {
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(rarityColor(r)).foregroundStyle(.white)
                                 .clipShape(Capsule())
+                        }
+                        if store.hasActive, !editingName {
+                            Button { if let id = store.activeMonID { chatPresenter.open(companionID: id) } } label: {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .buttonStyle(.borderless).controlSize(.mini)
+                            .accessibilityLabel(store.l.t("포켓몬과 대화", "Chat with Pokémon", "ポケモンと話す"))
                         }
                     }
                     if store.hasActive {

@@ -57,6 +57,25 @@ struct PetCareState: Codable, Sendable, Equatable {
     var sleepStartedAt: Date?
 
     @discardableResult
+    mutating func resumeClock(at now: Date) -> CareAdvanceEvent? {
+        guard let lastUpdatedAt else {
+            self.lastUpdatedAt = now
+            return nil
+        }
+        // Do not charge a newly visible care subsystem for time the user could not see.
+        if now.timeIntervalSince(lastUpdatedAt) > 12 * 3600 {
+            self.lastUpdatedAt = now
+            self.lastMessAt = now
+            self.lastNeedAt = now
+            self.pendingNeed = nil
+            self.needDeadline = nil
+            return nil
+        } else {
+            return advance(to: now)
+        }
+    }
+
+    @discardableResult
     mutating func advance(to now: Date) -> CareAdvanceEvent? {
         guard let lastUpdatedAt else {
             self.lastUpdatedAt = now

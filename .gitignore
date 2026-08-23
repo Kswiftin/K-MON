@@ -29,6 +29,10 @@ build/
 docs/*
 !docs/reference/
 
+# TDD 워크플로우가 만드는 증거 문서 — 로컬 전용, 원격에 올리지 않는다.
+# (`.claude/`·`docs/*` 는 이미 무시되지만 `docs/reference/` 가 예외라 확장자로 한 번 더 막는다.)
+*.tdd.md
+
 # Agent worktrees / local state
 .claude/
 .worktrees/
