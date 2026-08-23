@@ -2,6 +2,18 @@ import XCTest
 @testable import PokeTokenBar
 
 final class NetTeamBattleTests: XCTestCase {
+    @MainActor
+    private final class ManualChallengeTimeoutScheduler: BattleChallengeTimeoutScheduling {
+        private(set) var action: (@MainActor () -> Void)?
+        private(set) var cancellationCount = 0
+
+        func schedule(_ action: @escaping @MainActor () -> Void) -> BattleChallengeTimeout {
+            self.action = action
+            return BattleChallengeTimeout { [weak self] in self?.cancellationCount += 1 }
+        }
+
+        func fire() { action?() }
+    }
     private func move(id: Int = 1, power: Int = 20) -> MoveSpec {
         MoveSpec(id: id, names: ["en": "Move \(id)"], type: .normal, power: power,
                  damageClass: power == 0 ? .status : .physical, accuracy: nil, pp: 20)
@@ -22,10 +34,10 @@ final class NetTeamBattleTests: XCTestCase {
         let lineup = [snapshot(1), snapshot(2), snapshot(3)]
         let challenge = NetMessage.challenge(snapshot: lineup[0], lineup: lineup, teamSize: 3,
                                              seed: 99, profile: profile,
-                                             rulesVersion: BattleEngine.rulesVersion)
+                                             rulesVersion: BattleEngine.rulesVersion, chatSupported: true)
         let decodedChallenge = try JSONDecoder().decode(NetMessage.self,
                                                         from: JSONEncoder().encode(challenge))
-        guard case .challenge(let lead, let decodedLineup, let size, let seed, let decodedProfile, let version)
+        guard case .challenge(let lead, let decodedLineup, let size, let seed, let decodedProfile, let version, let chatSupported)
                 = decodedChallenge else { return XCTFail("challenge case") }
         XCTAssertEqual(lead, lineup[0])
         XCTAssertEqual(decodedLineup, lineup)
@@ -33,16 +45,18 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertEqual(seed, 99)
         XCTAssertEqual(decodedProfile, profile)
         XCTAssertEqual(version, BattleEngine.rulesVersion)
+        XCTAssertEqual(chatSupported, true)
 
         let accept = NetMessage.accept(snapshot: lineup[0], lineup: lineup, teamSize: 3,
-                                       profile: profile, rulesVersion: BattleEngine.rulesVersion)
-        guard case .accept(let acceptedLead, let acceptedLineup, let acceptedSize, _, _)
+                                       profile: profile, rulesVersion: BattleEngine.rulesVersion, chatSupported: true)
+        guard case .accept(let acceptedLead, let acceptedLineup, let acceptedSize, _, _, let acceptedChat)
                 = try JSONDecoder().decode(NetMessage.self, from: JSONEncoder().encode(accept)) else {
             return XCTFail("accept case")
         }
         XCTAssertEqual(acceptedLead, lineup[0])
         XCTAssertEqual(acceptedLineup, lineup)
         XCTAssertEqual(acceptedSize, 3)
+        XCTAssertEqual(acceptedChat, true)
 
         let action = NetMessage.action(turn: 7, action: .switchTo(index: 2))
         guard case .action(let turn, let decodedAction)
@@ -56,16 +70,16 @@ final class NetTeamBattleTests: XCTestCase {
     func testLegacyChallengeAndMoveStillDecode() throws {
         let lead = snapshot(1)
         let modern = NetMessage.challenge(snapshot: lead, lineup: [lead], teamSize: 1,
-                                          seed: 4, profile: profile, rulesVersion: 5)
+                                          seed: 4, profile: profile, rulesVersion: 5, chatSupported: true)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(modern))
             as? [String: Any])
         var payload = try XCTUnwrap(object["challenge"] as? [String: Any])
         payload.removeValue(forKey: "lineup")
         payload.removeValue(forKey: "teamSize")
+        payload.removeValue(forKey: "chatSupported")
         object["challenge"] = payload
         let legacyData = try JSONSerialization.data(withJSONObject: object)
-
-        guard case .challenge(let decodedLead, let lineup, let size, _, _, let version)
+        guard case .challenge(let decodedLead, let lineup, let size, _, _, let version, let chatSupported)
                 = try JSONDecoder().decode(NetMessage.self, from: legacyData) else {
             return XCTFail("legacy challenge case")
         }
@@ -73,6 +87,7 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertEqual(lineup, [lead])
         XCTAssertEqual(size, 1)
         XCTAssertEqual(version, 5, "구버전은 디코딩된 뒤 규칙 불일치 경로에서 거절된다")
+        XCTAssertNil(chatSupported)
 
         let oldMove = NetMessage.move(turn: 2, moveIndex: 0)
         guard case .move(let turn, let index)
@@ -81,6 +96,58 @@ final class NetTeamBattleTests: XCTestCase {
         }
         XCTAssertEqual(turn, 2)
         XCTAssertEqual(index, 0)
+    }
+
+    func testChallengeCancellationReasonRoundTripsWithoutChangingLegacyMessages() throws {
+        let timeout = NetMessage.challengeCancelled(reason: .timedOut)
+        guard case .challengeCancelled(let reason) = try JSONDecoder().decode(NetMessage.self,
+                                                                                from: JSONEncoder().encode(timeout)) else {
+            return XCTFail("challenge cancellation case")
+        }
+        XCTAssertEqual(reason, .timedOut)
+
+        let legacyDecline = try JSONSerialization.data(withJSONObject: ["decline": [:]])
+        guard case .decline = try JSONDecoder().decode(NetMessage.self, from: legacyDecline) else {
+            return XCTFail("legacy decline must remain decodable")
+        }
+    }
+
+    @MainActor
+    func testChallengeTimeoutReturnsPendingChallengeToReadyAndClearsTemporarySelection() {
+        let scheduler = ManualChallengeTimeoutScheduler()
+        let store = CompanionStore(provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []), rarity: .common, names: [:])),
+                                   clock: { Date() },
+                                   fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                   rng: SeededRNG(seed: 1))
+        let center = BattleCenter(companion: store, challengeTimeoutScheduler: scheduler)
+        center.phase = .incoming(peer: "Misty")
+        center.incomingPickedTeam = [UUID()]
+        center.startChallengeTimeout()
+
+        XCTAssertNotNil(center.challengeEndsAt)
+        scheduler.fire()
+
+        XCTAssertEqual(center.phase, .ready)
+        XCTAssertNil(center.challengeEndsAt)
+        XCTAssertTrue(center.incomingPickedTeam.isEmpty)
+        XCTAssertEqual(center.lastError, store.l.battleChallengeTimedOut)
+    }
+
+    @MainActor
+    func testCancellingAChallengeCancelsItsPendingTimeout() {
+        let scheduler = ManualChallengeTimeoutScheduler()
+        let store = CompanionStore(provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []), rarity: .common, names: [:])),
+                                   clock: { Date() },
+                                   fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                   rng: SeededRNG(seed: 1))
+        let center = BattleCenter(companion: store, challengeTimeoutScheduler: scheduler)
+        center.phase = .challenging(peer: "Brock")
+        center.startChallengeTimeout()
+        center.cancelChallenge()
+
+        XCTAssertEqual(center.phase, .ready)
+        XCTAssertNil(center.challengeEndsAt)
+        XCTAssertEqual(scheduler.cancellationCount, 1)
     }
 
     func testLineupValidationRejectsUnsupportedSizesCountsAndBadSnapshots() {

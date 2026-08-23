@@ -40,6 +40,16 @@ final class MissionBoardTests: XCTestCase {
         }
     }
 
+    /// 이름은 `L.goalName(event, target)` 이 짓는다 — id 별 분기가 없어 위의 "비어 있나" 검사는 절대
+    /// 실패할 수 없다. 이벤트·목표가 같은 미션을 더하면 카드에 **같은 이름 두 줄**이 보이고 알림도
+    /// 구분되지 않는다. 사라진 빈 문자열 폴백 가드를 이 검사가 대신한다.
+    func testMissionNamesTellTheMissionsApart() {
+        for lang in [AppLanguage.ko, .en, .ja] {
+            let names = MissionBoard.catalog.map { L(lang).missionName($0) }
+            XCTAssertEqual(Set(names).count, names.count, "\(lang.rawValue): \(names)")
+        }
+    }
+
     // MARK: 기록·완료
 
     func testRecordingBelowTargetCompletesNothing() {
@@ -158,6 +168,54 @@ final class MissionBoardTests: XCTestCase {
         XCTAssertTrue(forward.canonical.contains("dailyAdventures:1"))
         XCTAssertTrue(forward.canonical.contains(day))
     }
+
+    // MARK: 원장 키 (세 원장이 같은 달력·시간대를 봐야 한다)
+
+    /// 키는 그레고리력 고정이다 — 시스템 달력이 이슬람력이면 시즌 만료 계산
+    /// (`SeasonBoard.daysRemaining`, 그레고리력)과 다른 달을 센다.
+    func testLedgerKeysAreGregorianAndZeroPadded() {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0)!
+        let original = NSTimeZone.default
+        defer { NSTimeZone.default = original }
+        NSTimeZone.default = TimeZone(secondsFromGMT: 0)!
+
+        let date = utc.date(from: DateComponents(year: 2026, month: 3, day: 9, hour: 12))!
+        XCTAssertEqual(CompanionStore.dayKey(date), "2026-03-09", "월·일은 두 자리로 채운다")
+        XCTAssertEqual(CompanionStore.seasonKey(date), "2026-03")
+        XCTAssertEqual(CompanionStore.weekKey(date), "2026-W11")
+    }
+
+    /// 포맷터·달력을 한 번 굳히면 실행 중 시간대 변경을 따라가지 못한다 — 자정 근처에서 원장 키가
+    /// 시즌 만료와 다른 날을 세어 "1일 남음" 이 잘못 뜬다(시즌 달력에서 같은 부류를 이미 고쳤다).
+    func testLedgerKeysFollowTimeZoneChanges() {
+        let original = NSTimeZone.default
+        defer { NSTimeZone.default = original }
+        let instant = Date(timeIntervalSince1970: 1_775_000_000)   // UTC 자정 근처
+
+        NSTimeZone.default = TimeZone(identifier: "Pacific/Kiritimati")!   // UTC+14
+        let ahead = CompanionStore.dayKey(instant)
+        NSTimeZone.default = TimeZone(identifier: "Pacific/Midway")!       // UTC-11
+        XCTAssertNotEqual(CompanionStore.dayKey(instant), ahead,
+                          "달력·포맷터를 굳히면 시간대 변경 뒤에도 옛 날짜를 돌려준다")
+    }
+
+    // MARK: 완료 알림 병합
+
+    /// 한 정산에서 여러 개가 완료되면 알림은 **한 통**이다. 완료마다 한 통씩 띄우면 시즌·미션이 함께
+    /// 완료되는 정산에서 배너가 6개 연달아 뜬다.
+    func testCompletionsInOneSettlementMergeIntoASingleNotice() {
+        XCTAssertNil(CompanionStore.mergedCompletion([]), "완료가 없으면 알림도 없다")
+
+        let one = CompanionStore.mergedCompletion([(name: "집중 60분", reward: 500)])
+        XCTAssertEqual(one?.name, "집중 60분")
+        XCTAssertEqual(one?.reward, 500)
+
+        let two = CompanionStore.mergedCompletion([(name: "집중 60분", reward: 500),
+                                                   (name: "모험 정산 2회", reward: 300)])
+        XCTAssertEqual(two?.name, "집중 60분 · 모험 정산 2회")
+        XCTAssertEqual(two?.reward, 800, "보상은 합산해 한 줄로 알린다")
+    }
 }
 
 // MARK: 적립 경로 (스토어)
@@ -230,7 +288,8 @@ final class MissionAccrualTests: XCTestCase {
         XCTAssertEqual(first.missionBonus, dailyFocus.reward, "90분 정산으로 일간 집중 미션이 완료된다")
         // 같은 정산이 트레이너 레벨도 올린다 — 지갑 증가분은 두 지급의 합이다.
         XCTAssertEqual(store.state.starPieces - before,
-                       first.starPieces + first.trainerBonus + first.missionBonus)
+                       first.starPieces + first.trainerBonus + first.missionBonus
+                           + first.achievementBonus + first.seasonBonus)
 
         before = store.state.starPieces
         XCTAssertTrue(store.startFocusAdventure(minutes: 25))
@@ -239,7 +298,8 @@ final class MissionAccrualTests: XCTestCase {
         XCTAssertEqual(second.missionBonus, dailyAdventures.reward,
                        "두 번째 정산으로는 모험 횟수 미션만 완료된다 — 집중 미션은 재지급되지 않는다")
         XCTAssertEqual(store.state.starPieces - before,
-                       second.starPieces + second.trainerBonus + second.missionBonus)
+                       second.starPieces + second.trainerBonus + second.missionBonus
+                           + second.achievementBonus + second.seasonBonus)
     }
 
     /// 졸업 단독 경로 — 모험을 **한 번도 하지 않고** 졸업만 해도 주간 미션이 완료된다.

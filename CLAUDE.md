@@ -11,6 +11,7 @@
 | `docs/reference/release-workflow.md` | 버전을 배포할 때, `release.sh` 게이트에 막혔을 때, UI 변경으로 스크린샷·랜딩을 갱신할 때 |
 | `docs/reference/puzzle-dungeon-design.md` | 하루 한 판 퍼즐 던전(#79)을 구현·수정할 때, 날짜 seed 결정론 생성이나 dayKey 리셋을 새 기능에 쓸 때 |
 | `docs/reference/defect-log.md` | 결함·회귀를 고치는 중(부류 스윕 근거), 동시성·캐시·외부 로그 포맷·상시 애니메이션·세이브 이전을 건드릴 때 |
+| `docs/reference/opencode-isolation.md` | 대화 CLI 제공자를 추가·해제할 때, OpenCode 차단 사유나 `PokemonChatProviderSafety.availability` 를 손댈 때 |
 
 각 문서의 frontmatter(`summary`/`read_when`)가 그 문서의 적용 범위를 다시 명시한다.
 

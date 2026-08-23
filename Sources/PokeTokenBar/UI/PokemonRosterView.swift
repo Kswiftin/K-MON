@@ -21,6 +21,7 @@ struct PokemonRosterView: View {
     @State private var didResolveTypes = false
     /// 방생 확인 대상. 되돌릴 수 없으므로 카드에서 바로 놓아주지 않고 한 번 물어본다.
     @State private var releaseTarget: MonState?
+    @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
     private static let contentHeight: CGFloat = 520
@@ -54,15 +55,15 @@ struct PokemonRosterView: View {
         .task(id: owned.map(\.currentID).sorted()) { await resolveDisplayValues(for: owned) }
         .confirmationDialog(releaseQuestion(releaseTarget), isPresented: releaseDialogBinding,
                             titleVisibility: .visible) {
-            Button(store.language == .ko ? "놓아주기" : "Release", role: .destructive) {
+            Button(store.l.t("놓아주기", "Release", "にがす"), role: .destructive) {
                 if let target = releaseTarget { store.releaseMon(target.id) }
                 releaseTarget = nil
             }
-            Button(store.language == .ko ? "취소" : "Cancel", role: .cancel) { releaseTarget = nil }
+            Button(store.l.t("취소", "Cancel", "キャンセル"), role: .cancel) { releaseTarget = nil }
         } message: {
-            Text(store.language == .ko
-                 ? "놓아준 포켓몬은 돌아오지 않습니다. 졸업해 도감에 기록된 개체라면 도감 기록은 남습니다."
-                 : "A released Pokémon does not come back. If it had graduated, its Pokédex record stays.")
+            Text(store.l.t("놓아준 포켓몬은 돌아오지 않습니다. 졸업해 도감에 기록된 개체라면 도감 기록은 남습니다.",
+                     "A released Pokémon does not come back. If it had graduated, its Pokédex record stays.",
+                     "にがしたポケモンは戻りません。卒業して図鑑に記録された個体なら記録は残ります。"))
         }
     }
 
@@ -72,9 +73,9 @@ struct PokemonRosterView: View {
 
     private func releaseQuestion(_ mon: MonState?) -> String {
         guard let mon else { return "" }
-        return store.language == .ko
-            ? "Lv.\(mon.level) 포켓몬을 놓아줄까요?"
-            : "Release this Lv.\(mon.level) Pokémon?"
+        return store.l.t("Lv.\(mon.level) 포켓몬을 놓아줄까요?",
+                          "Release this Lv.\(mon.level) Pokémon?",
+                          "Lv.\(mon.level) のポケモンをにがしますか？")
     }
 
     /// 박스 전체의 이름·타입을 한 번 해석한다. 이름은 개체에 저장된 다국어 이름으로 대부분 끝나고
@@ -96,7 +97,7 @@ struct PokemonRosterView: View {
 
     private func header(shownCount: Int, ownedCount: Int, owned: [MonState]) -> some View {
         HStack(spacing: 6) {
-            Label(store.language == .ko ? "소유 포켓몬" : "Owned Pokémon", systemImage: "square.grid.2x2.fill")
+            Label(store.l.t("소유 포켓몬", "Owned Pokémon", "手持ちポケモン"), systemImage: "square.grid.2x2.fill")
                 .font(.headline)
             Spacer(minLength: 2)
             sortMenu
@@ -124,32 +125,31 @@ struct PokemonRosterView: View {
                 .font(.system(size: 10, weight: .semibold))
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .accessibilityLabel(store.language == .ko ? "정렬" : "Sort")
+        .accessibilityLabel(store.l.t("정렬", "Sort", "並べ替え"))
     }
 
     private func typeMenu(owned: [MonState]) -> some View {
         let available = RosterOrdering.availableTypes(owned, types: types)
         return Menu {
-            Button(store.language == .ko ? "전체 타입" : "All types") { typeFilter = nil; page = 0 }
+            Button(store.l.t("전체 타입", "All types", "すべてのタイプ")) { typeFilter = nil; page = 0 }
             ForEach(available, id: \.self) { type in
                 Button(type.name(store.language)) { typeFilter = type; page = 0 }
             }
         } label: {
-            Label(typeFilter?.name(store.language) ?? (store.language == .ko ? "타입" : "Type"),
+            Label(typeFilter?.name(store.language) ?? store.l.t("타입", "Type", "タイプ"),
                   systemImage: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 10, weight: .semibold))
         }
         .menuStyle(.borderlessButton).fixedSize()
         .disabled(!didResolveTypes || available.isEmpty)
-        .accessibilityLabel(store.language == .ko ? "타입 필터" : "Type filter")
+        .accessibilityLabel(store.l.t("타입 필터", "Type filter", "タイプで絞り込み"))
     }
 
     private func sortLabel(_ option: RosterSort) -> String {
-        let ko = store.language == .ko
         switch option {
-        case .caught: return ko ? "부화순" : "Caught"
-        case .name:   return ko ? "이름순" : "Name"
-        case .level:  return ko ? "레벨순" : "Level"
+        case .caught: return store.l.t("부화순", "Caught", "ふ化順")
+        case .name:   return store.l.t("이름순", "Name", "名前順")
+        case .level:  return store.l.t("레벨순", "Level", "レベル順")
         }
     }
 
@@ -166,7 +166,7 @@ struct PokemonRosterView: View {
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
                                           name: names[mon.currentID] ?? "",
                                           types: types[mon.currentID] ?? [],
-                                          onRelease: { releaseTarget = mon })
+            onRelease: { releaseTarget = mon }, onChat: { chatPresenter.open(companionID: mon.id) })
                                 .frame(maxWidth: .infinity)
                         } else {
                             Color.clear.frame(maxWidth: .infinity)
@@ -215,6 +215,7 @@ private struct RosterMonCard: View {
     let types: [PokemonType]
     /// 방생 요청 — 확인 대화상자는 부모가 띄운다(카드는 격자 칸이라 대화상자를 붙일 자리가 아니다).
     let onRelease: () -> Void
+    let onChat: () -> Void
 
     var body: some View {
         Button { if !isActive { store.switchCompanion(to: mon.id) } } label: {
@@ -231,17 +232,23 @@ private struct RosterMonCard: View {
                     }
                 }
                 Text(isActive
-                     ? (store.language == .ko ? "동행 중" : "Active")
-                     : (store.language == .ko ? "교체" : "Switch"))
+                     ? store.l.t("동행 중", "Active", "同行中")
+                     : store.l.t("교체", "Switch", "交代"))
                     .font(.system(size: 7, weight: .bold))
                     .foregroundStyle(isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
         }.buttonStyle(.bordered).disabled(isActive)
+        .overlay(alignment: .topTrailing) {
+            Button(action: onChat) { Image(systemName: "bubble.left") }
+                .buttonStyle(.borderless).controlSize(.mini).padding(3)
+                .accessibilityLabel(store.l.t("대화", "Chat", "話す"))
+        }
         // 동행 중인 개체는 놓아줄 수 없다 — 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
         .contextMenu {
+            Button(action: onChat) { Label(store.l.t("대화", "Chat", "話す"), systemImage: "bubble.left.and.bubble.right") }
             if !isActive {
                 Button(role: .destructive, action: onRelease) {
-                    Label(store.language == .ko ? "놓아주기" : "Release", systemImage: "hand.wave")
+                    Label(store.l.t("놓아주기", "Release", "にがす"), systemImage: "hand.wave")
                 }
             }
         }

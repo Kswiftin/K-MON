@@ -57,6 +57,25 @@ struct PetCareState: Codable, Sendable, Equatable {
     var sleepStartedAt: Date?
 
     @discardableResult
+    mutating func resumeClock(at now: Date) -> CareAdvanceEvent? {
+        guard let lastUpdatedAt else {
+            self.lastUpdatedAt = now
+            return nil
+        }
+        // Do not charge a newly visible care subsystem for time the user could not see.
+        if now.timeIntervalSince(lastUpdatedAt) > 12 * 3600 {
+            self.lastUpdatedAt = now
+            self.lastMessAt = now
+            self.lastNeedAt = now
+            self.pendingNeed = nil
+            self.needDeadline = nil
+            return nil
+        } else {
+            return advance(to: now)
+        }
+    }
+
+    @discardableResult
     mutating func advance(to now: Date) -> CareAdvanceEvent? {
         guard let lastUpdatedAt else {
             self.lastUpdatedAt = now
@@ -277,6 +296,10 @@ struct AdventureReward: Sendable, Equatable {
     /// 이 정산으로 완료된 미션이 함께 지급한 별의조각. `trainerBonus` 와 같은 이유로 여기 실린다 —
     /// 지갑에 더하는 경로가 하나 더 생겼는데 보상 객체가 모르면 그만큼이 설명되지 않는다.
     var missionBonus = 0
+    /// 이번 정산에서 넘은 업적 단계가 지급한 별의조각. 위 둘과 같은 계약이다.
+    var achievementBonus = 0
+    /// 이번 정산으로 완료된 시즌 챌린지가 지급한 별의조각. 위 셋과 같은 계약이다.
+    var seasonBonus = 0
     var stardust: Int { starPieces }
 }
 
@@ -286,6 +309,8 @@ struct FocusSessionReward: Sendable, Equatable {
     let foundEgg: Bool
     var trainerBonus = 0
     var missionBonus = 0
+    var achievementBonus = 0
+    var seasonBonus = 0
 }
 
 enum FocusRewardRules {

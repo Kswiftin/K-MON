@@ -165,9 +165,11 @@ final class TrainerLevelAccrualTests: XCTestCase {
 
         XCTAssertEqual(store.trainerLevel.level, 3, "20p + 90p = 110p → 3레벨")
         let bonus = TrainerLevel.reward(forReaching: 2) + TrainerLevel.reward(forReaching: 3)
-        // 90분 정산은 일간 집중 미션(60분)도 함께 완료시킨다 — 지갑에는 그 몫도 들어온다.
+        // 90분 정산은 일간 집중 미션(60분)과 집중 업적 1단계(60분)도 함께 넘긴다 — 지갑에는 그 몫도 들어온다.
         // 트레이너 지급액의 정확성은 아래 `reward.trainerBonus` 비교가 따로 잡는다.
-        XCTAssertEqual(store.state.starPieces - before, reward.starPieces + bonus + reward.missionBonus,
+        XCTAssertEqual(store.state.starPieces - before,
+                       reward.starPieces + bonus + reward.missionBonus
+                           + reward.achievementBonus + reward.seasonBonus,
                        "모험 보상 + 레벨 2·3 보상이 모두 들어와야 한다")
         XCTAssertEqual(reward.trainerBonus, bonus, "지급액을 보상 객체가 그대로 설명해야 한다")
     }

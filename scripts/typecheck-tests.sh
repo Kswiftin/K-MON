@@ -63,6 +63,10 @@ public func XCTUnwrap<T>(_ e: @autoclosure () throws -> T?, _ m: @autoclosure ()
 }
 public func XCTAssertThrowsError<T>(_ e: @autoclosure () throws -> T, _ m: @autoclosure () -> String = "", file: StaticString = #filePath, line: UInt = #line, _ handler: (Error) -> Void = { _ in }) {}
 public func XCTAssertNoThrow<T>(_ e: @autoclosure () throws -> T, _ m: @autoclosure () -> String = "", file: StaticString = #filePath, line: UInt = #line) {}
+public func XCTSkipUnless(_ e: @autoclosure () throws -> Bool, _ m: @autoclosure () -> String = "", file: StaticString = #filePath, line: UInt = #line) throws {}
+public func XCTSkipIf(_ e: @autoclosure () throws -> Bool, _ m: @autoclosure () -> String = "", file: StaticString = #filePath, line: UInt = #line) throws {}
+public func XCTSkip(_ m: @autoclosure () -> String = "", file: StaticString = #filePath, line: UInt = #line) throws {}
+public struct XCTSkipError: Error { public init() {} }
 public func XCTAssertIdentical(_ a: @autoclosure () throws -> AnyObject?, _ b: @autoclosure () throws -> AnyObject?, _ m: @autoclosure () -> String = "", file: StaticString = #filePath, line: UInt = #line) {}
 STUB
 

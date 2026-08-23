@@ -9,11 +9,23 @@ import UserNotifications
 @Observable
 final class CompanionStore {
     static let storedEggHatchDelay: TimeInterval = 5 * 60
+    /// 학습 제안의 출처. 하트비늘 유래일 때만 아이템을 소모하므로 구분이 필요하다.
+    /// 기본값이 `.levelUp` 이라 기존 생성부(레벨업·이상한 사탕)는 손대지 않는다.
+    enum MoveLearningOrigin: Sendable { case levelUp, heartScale }
+
     struct MoveLearningPrompt: Identifiable {
         let id = UUID()
         let monID: UUID
         let level: Int
         let move: MoveSpec
+        var origin: MoveLearningOrigin = .levelUp
+    }
+
+    /// 하트비늘 후보 목록 카드(#97). 개체 단위로만 유효하다.
+    struct RelearnPrompt: Identifiable {
+        let id = UUID()
+        let monID: UUID
+        let candidates: [MoveSpec]
     }
     struct EvolutionPrompt: Identifiable {
         let id = UUID()
@@ -32,6 +44,16 @@ final class CompanionStore {
         guard let prompt = pendingMoveLearningPrompt, state.active?.id == prompt.monID else { return nil }
         return prompt
     }
+    /// 저장된 원본 — 표시는 `relearnPrompt` 를 쓴다.
+    private(set) var pendingRelearnPrompt: RelearnPrompt?
+    /// `moveLearningPrompt` 와 같은 이유의 표시 게이트 — 개체가 바뀌면 이전 개체의 후보 목록이 그대로
+    /// 떠 있는 문제를 해제 지점마다 막는 대신 읽는 자리 한 곳에서 막는다(새 전환 경로도 자동으로 막힌다).
+    var relearnPrompt: RelearnPrompt? {
+        guard let prompt = pendingRelearnPrompt, state.active?.id == prompt.monID else { return nil }
+        return prompt
+    }
+    /// 후보 조회 중 — 가방의 재사용 방지 + 홈의 로딩 표시.
+    private(set) var isLoadingRelearnCandidates = false
     private(set) var evolutionPrompt: EvolutionPrompt?
     private var declinedEvolutionMonID: UUID?
     private var declinedEvolutionLevel = 0
@@ -61,7 +83,16 @@ final class CompanionStore {
     enum Celebration: Equatable { case hatch(shiny: Bool), evolve, dittoReveal(shiny: Bool) }
     private(set) var celebration: Celebration?
     private(set) var celebrationSeq = 0
-    private func fireCelebration(_ c: Celebration) { celebration = c; celebrationSeq += 1 }
+    /// 진화 업적이 오르는 **유일한** 지점. 진화 호출부 셋(프롬프트 수락·자동 진화·돌 진화)이 모두
+    /// 여기를 지난다 — 호출부마다 심으면 네 번째 경로가 생길 때 조용히 빠진다. `.hatch`·`.dittoReveal`
+    /// 은 세지 않는다. 연출 재생용으로 재사용하면 이중 계수가 되니 그때는 적립을 떼낸다.
+    private func fireCelebration(_ c: Celebration) {
+        celebration = c; celebrationSeq += 1
+        if case .evolve = c {
+            recordAchievement(.evolve, 1)
+            recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。", eventID: "evolve")
+        }
+    }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
     func consumeCelebration() { celebration = nil }
 
@@ -80,6 +111,8 @@ final class CompanionStore {
     private let provider: any PokeProviding
     private let clock: () -> Date
     private let fileURL: URL
+    let memoryAlbum: PokemonMemoryAlbum
+    let chatStore: PokemonChatStore
     private var rng: any RandomNumberGenerator
     private let dittoDisguiseRollingEnabled: Bool
     /// 세션 내 활성 개체 교체 감지용. await 뒤 이전 개체의 결과가 새 개체를 덮지 않게 한다.
@@ -88,11 +121,18 @@ final class CompanionStore {
     init(provider: any PokeProviding = PokeAPIClient.shared,
          clock: @escaping () -> Date = Date.init,
          fileURL: URL? = nil,
+         memoryAlbum: PokemonMemoryAlbum? = nil,
+         chatStore: PokemonChatStore? = nil,
          rng: any RandomNumberGenerator = SystemRandomNumberGenerator(),
          dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp) {
         self.provider = provider
         self.clock = clock
-        self.fileURL = fileURL ?? Self.defaultURL()
+        let locations = CompanionStorageLocations(stateURL: fileURL)
+        // An injected URL is an explicit test/embedding contract; only default construction uses
+        // the canonical state filename.
+        self.fileURL = fileURL ?? locations.stateURL
+        self.memoryAlbum = memoryAlbum ?? PokemonMemoryAlbum(fileURL: locations.memoryURL)
+        self.chatStore = chatStore ?? PokemonChatStore(fileURL: locations.chatURL, album: self.memoryAlbum)
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
@@ -111,17 +151,13 @@ final class CompanionStore {
         // 그 디렉토리를 쓴다 — 개발/QA 격리용(실제 companion 상태를 건드리지 않고 데모 상태로 실행).
         // 프로덕션은 이 변수가 없어 무영향.
         // 공백만 있는 값은 무시(URL(fileURLWithPath:)가 CWD 상대경로로 해석되는 것 방지).
-        let override = (ProcessInfo.processInfo.environment["PTB_STATE_DIR"] ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let dir: URL
-        if !override.isEmpty {
-            dir = URL(fileURLWithPath: override, isDirectory: true)
-        } else {
-            dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("PokeTokenBar")
-        }
+        let locations = CompanionStorageLocations()
+        let dir = locations.directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("companion-state.json")
+        return locations.stateURL
+    }
+    static func storageLocations(stateURL: URL? = nil) -> CompanionStorageLocations {
+        CompanionStorageLocations(stateURL: stateURL)
     }
 
     // MARK: 파생값 (UI)
@@ -294,12 +330,56 @@ final class CompanionStore {
         return line.localizedName(a.currentID, state.language)
     }
     var currentNickname: String? { state.active?.nickname }
+    /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
+    func chatProfile(for mon: MonState) -> PokemonChatProfile {
+        let speciesName = mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
+        // currentTypes/displayedMoves are presentation caches for the active species. A boxed mon can ask
+        // for a profile while those caches still belong to another species, so assemble individual data
+        // from MonState and reuse the tagged type cache only when the requested species owns it.
+        let types = mon.currentID == currentSpeciesID ? currentTypes.map { $0.name(language) } : []
+        return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
+                                  isShiny: mon.isShiny,
+                                  nature: mon.nature?.name(language), level: mon.level,
+                                  stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
+                                  flavorText: nil, language: language,
+                                  types: types,
+                                  moves: mon.learnedMoves.map { $0.name(language) },
+                                  nextEvolution: nextEvolutionName(for: mon),
+                                  careOffer: mon.id == activeMonID ? careOffer(for: mon) : nil)
+    }
+
+    /// Opening or explicitly refreshing the active companion’s chat is a lifecycle boundary: it
+    /// catches up care exactly once and persists any resulting event before deriving the profile.
+    func prepareChatProfile(for mon: MonState) -> PokemonChatProfile {
+        if mon.id == activeMonID { _ = resumeCareClock() }
+        return chatProfile(for: mon)
+    }
+
+    private func careOffer(for mon: MonState) -> PokemonChatCareOffer? {
+        guard canPerformCare, mon.id == activeMonID else { return nil }
+        let threshold = 60.0
+        var kinds: [PokemonChatActionKind] = []
+        if state.care.hunger <= threshold || state.care.pendingNeed == .hungry { kinds.append(.feed) }
+        if state.care.happiness <= threshold || state.care.pendingNeed == .lonely { kinds.append(.play) }
+        if state.care.energy <= threshold || state.care.pendingNeed == .tired { kinds.append(.rest) }
+        if state.care.hygiene <= threshold || state.care.messCount > 0 { kinds.append(.clean) }
+        if state.care.isSick && state.care.hygiene >= 40 { kinds.append(.medicate) }
+        guard !kinds.isEmpty else { return nil }
+        let line = "hunger \(Int(state.care.hunger)), happiness \(Int(state.care.happiness)), energy \(Int(state.care.energy)), hygiene \(Int(state.care.hygiene))"
+        return PokemonChatCareOffer(kinds: kinds, stateLine: line)
+    }
+
+    private func nextEvolutionName(for mon: MonState) -> String? {
+        guard let node = currentLine?.tree.node(withID: mon.currentID), let next = node.children.first else { return nil }
+        return currentLine?.localizedName(next.speciesID, language)
+    }
 
     /// 현재 포켓몬 별명 설정 — 공백이면 nil(종 이름으로 표시). 진화해도 유지.
     func setNickname(_ name: String) {
         guard state.active != nil else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        state.active!.nickname = trimmed.isEmpty ? nil : String(trimmed.prefix(20))
+        // 상한은 세이브 경계와 **같은 상수**를 쓴다 — 경계가 더 짧으면 방금 넣은 이름이 로드 때 잘린다.
+        state.active!.nickname = trimmed.isEmpty ? nil : String(trimmed.prefix(SaveTransfer.maxNameLength))
         save()
     }
 
@@ -307,7 +387,8 @@ final class CompanionStore {
     var trainerName: String { state.trainerName }
     var hasTrainerName: Bool { !state.trainerName.trimmingCharacters(in: .whitespaces).isEmpty }
     func setTrainerName(_ name: String) {
-        state.trainerName = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20))
+        state.trainerName = String(name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(SaveTransfer.maxNameLength))
         save()
     }
     var currentSpeciesID: Int? { state.active?.currentID }
@@ -641,6 +722,7 @@ final class CompanionStore {
     }
 
     #if DEBUG
+    func debugSetCare(_ care: PetCareState) { state.care = care; save() }
     /// 테스트 전용 — 시간을 전진시키지 않고 생산분을 직접 주입한다. tick 의 적립 경로(accrue)를 그대로
     /// 태우므로 임계·이월·진화·졸업이 실동작과 동일하게 발화한다. 프로덕션 호출 경로 없음.
     func debugAccrue(_ dust: Int) { accrue(dust) }
@@ -650,6 +732,21 @@ final class CompanionStore {
     func debugAddItem(_ kind: ItemKind, _ count: Int = 1) {
         state.inventory[kind.rawValue, default: 0] += count
         save()
+    }
+    /// 테스트 전용 — 인벤토리 개수를 직접 세팅한다(카드가 뜬 사이 재고가 사라진 상황 재현).
+    func debugSetItemCount(_ kind: ItemKind, _ count: Int) {
+        state.inventory[kind.rawValue] = count
+        save()
+    }
+    /// 테스트 전용 — 후보 조회(비동기)를 우회해 하트비늘 목록 카드를 세운다.
+    func debugPresentRelearnPrompt(candidates: [MoveSpec]) {
+        guard let mon = state.active else { return }
+        pendingRelearnPrompt = RelearnPrompt(monID: mon.id, candidates: candidates)
+    }
+    /// 테스트 전용 — 레벨업 유래 학습 카드를 세운다(하트비늘 소모 분기의 대조군).
+    func debugPresentLevelUpPrompt(move: MoveSpec, level: Int) {
+        guard let mon = state.active else { return }
+        pendingMoveLearningPrompt = MoveLearningPrompt(monID: mon.id, level: level, move: move)
     }
     /// 테스트 전용 — 스타터 선택 완료 후의 기존 사용자 상태를 재현한다.
     func debugMarkStarterChosen() { state.starterChosen = true; save() }
@@ -664,6 +761,12 @@ final class CompanionStore {
     func debugSetDisplayedMoves(_ moves: [MoveSpec], loading: Bool = false) {
         displayedMoves = moves
         isLoadingDisplayedMoves = loading
+    }
+    /// 테스트 전용 — 타입 표시 캐시와 소유자 태그를 함께 세팅한다. 둘을 분리하면 프로덕션에서
+    /// 만들 수 없는 태그 없는 캐시 상태가 생겨 회귀 테스트가 실제 결함과 다른 조건을 검증한다.
+    func debugSetLoadedTypes(_ types: [PokemonType], speciesID: Int) {
+        loadedTypes = types
+        loadedTypesSpeciesID = speciesID
     }
     /// 테스트 전용 — 비동기 계승 기술 복원과 동행 교체의 경합을 네트워크 없이 재현한다.
     func debugSetActiveLearnedMoves(_ moves: [MoveSpec]) {
@@ -687,6 +790,21 @@ final class CompanionStore {
     // MARK: 돌봄·모험
 
     var care: PetCareState { state.care }
+    private func recordEventMemory(_ ko: String, _ en: String, _ ja: String, eventID: String) {
+        guard let mon = state.active else { return }
+        memoryAlbum.record(companionID: mon.id, body: l.t(ko, en, ja), source: .event, eventID: eventID)
+    }
+    var canPerformCare: Bool {
+        state.active != nil && state.adventure == nil && !state.care.isSleeping
+    }
+
+    @discardableResult
+    func resumeCareClock() -> CareAdvanceEvent? {
+        let event = state.care.resumeClock(at: clock())
+        if let event { handleCareEvent(event) }
+        save()
+        return event
+    }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
     /// "지금 나가 있는 중" — 끝났지만 아직 정산 안 된 모험은 포함하지 않는다.
@@ -711,6 +829,7 @@ final class CompanionStore {
         state.adventure = AdventureRun(zone: zone, startedAt: now,
                                        endsAt: now.addingTimeInterval(zone.duration),
                                        companionSpeciesID: speciesID)
+        recordEventMemory("모험을 떠났다.", "Set off on an adventure.", "冒険に出かけた。", eventID: "adventure-start")
         save()
         return true
     }
@@ -761,6 +880,10 @@ final class CompanionStore {
         // 미션은 **정산된** 분만 인정한다 — 시작만으로 진행되면 타이머를 켜 두는 것이 곧 미션
         // 진행이 되어 목표가 집중과 무관해진다.
         reward.missionBonus = recordMission(.focusMinutes, minutes) + recordMission(.adventures, 1)
+        // 시즌 챌린지도 같은 정산분을 센다 — 미션과 이벤트 어휘가 같아 훅이 이 한 줄로 끝난다.
+        reward.seasonBonus = recordSeason(.focusMinutes, minutes) + recordSeason(.adventures, 1)
+        // 업적도 **정산된** 분만 센다. 세 시작 경로가 모두 여기를 지나니 훅은 이 한 줄이다.
+        reward.achievementBonus = recordAchievement(.focus, minutes)
         var fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
         let today = Self.dayKey(now)
         if state.lastAdventureBonusDate != today {
@@ -790,6 +913,7 @@ final class CompanionStore {
                                                        companionSpeciesID: run.companionSpeciesID,
                                                        completedAt: now, stardust: reward.starPieces,
                                                        foundRareCandy: reward.foundRareCandy), at: 0)
+        recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。", eventID: "adventure-claim")
         if state.adventureHistory.count > 30 { state.adventureHistory.removeLast(state.adventureHistory.count - 30) }
         save()
         return reward
@@ -797,31 +921,46 @@ final class CompanionStore {
 
     var favoriteFood: CareFood { CareFood.favorite(for: currentSpeciesID ?? 0) }
 
+    @discardableResult
+    func applyChatCare(_ kind: PokemonChatActionKind, for companionID: UUID) -> Bool {
+        guard kind.isCareRequestable, canPerformCare, companionID == activeMonID else { return false }
+        switch kind {
+        case .feed: feedCompanion(); return true
+        case .play: playWithCompanion(); return true
+        case .rest: restCompanion(); return true
+        case .clean: cleanCompanion(); return true
+        case .medicate: return medicateCompanion()
+        default: return false
+        }
+    }
+
     func feedCompanion(_ food: CareFood = .apple) {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        state.care.feed(favorite: food == favoriteFood); save()
+        state.care.feed(favorite: food == favoriteFood)
+        recordEventMemory("트레이너와 함께 맛있게 먹었다.", "Enjoyed a tasty meal with the trainer.", "トレーナーとおいしく食べた。", eventID: "care-feed")
+        save()
     }
     func playWithCompanion() {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         state.care.play(); save()
     }
     func restCompanion() {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         state.care.rest(); save()
     }
 
     func cleanCompanion() {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return }
+        guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         state.care.clean(); save()
     }
 
     @discardableResult
     func medicateCompanion() -> Bool {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return false }
+        guard canPerformCare, state.care.isSick, state.care.hygiene >= 40 else { return false }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         let healed = state.care.giveMedicine()
         if healed { save() }
@@ -840,10 +979,10 @@ final class CompanionStore {
 
     @discardableResult
     func petCompanion() -> Bool {
-        guard state.active != nil, state.adventure == nil, !state.care.isSleeping else { return false }
-        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        guard canPerformCare else { return false }
+        _ = resumeCareClock()
         let accepted = state.care.pet(at: clock())
-        if accepted { save() }
+        if accepted { recordEventMemory("트레이너의 쓰다듬을 받고 기뻐했다.", "Was happy to be petted by the trainer.", "トレーナーになでられてうれしかった。", eventID: "care-pet"); save() }
         return accepted
     }
 
@@ -886,16 +1025,49 @@ final class CompanionStore {
     @discardableResult
     private func recordMission(_ event: MissionEvent, _ amount: Int) -> Int {
         let now = clock()
-        var paid = 0
-        for mission in state.missions.record(event, amount,
-                                             dayKey: Self.dayKey(now), weekKey: Self.weekKey(now)) {
-            state.starPieces += mission.reward
-            paid += mission.reward
-            notifyCompanionEvent(l.notifMissionDoneTitle,
-                                 l.notifMissionDoneBody(l.missionName(mission), mission.reward))
-        }
-        return paid
+        let done = state.missions.record(event, amount,
+                                        dayKey: Self.dayKey(now), weekKey: Self.weekKey(now))
+            .map { (name: l.missionName($0), reward: $0.reward) }
+        guard let merged = Self.mergedCompletion(done) else { return 0 }
+        state.starPieces += merged.reward
+        notifyCompanionEvent(l.notifMissionDoneTitle,
+                             l.notifMissionDoneBody(merged.name, merged.reward))
+        return merged.reward
     }
+
+    /// 한 정산에서 완료된 목표를 **한 통**으로 묶는다 — 이름은 가운뎃점으로 잇고 보상은 합산한다.
+    /// 완료마다 한 통씩 띄우면 시즌·미션이 함께 완료되는 정산에서 배너가 6개 연달아 뜬다.
+    nonisolated static func mergedCompletion(_ done: [(name: String, reward: Int)])
+        -> (name: String, reward: Int)? {
+        guard !done.isEmpty else { return nil }
+        return (done.map(\.name).joined(separator: " · "), done.reduce(0) { $0 + $1.reward })
+    }
+
+    /// 시즌 기록의 **유일한** 경로 — 완료 보상(별의조각)과 알림까지 여기서 끝낸다.
+    /// 계약은 `recordMission` 과 같다: 반환값은 이번에 지급한 별의조각이고, 정산 경로가 그 값을
+    /// 보상 객체에 실어 보고한다.
+    @discardableResult
+    private func recordSeason(_ event: MissionEvent, _ amount: Int) -> Int {
+        let done = state.seasons.record(event, amount, seasonKey: Self.seasonKey(clock()))
+            .map { (name: l.goalName($0.event, $0.target), reward: $0.reward) }
+        guard let merged = Self.mergedCompletion(done) else { return 0 }
+        state.starPieces += merged.reward
+        notifyCompanionEvent(l.notifSeasonDoneTitle,
+                             l.notifMissionDoneBody(merged.name, merged.reward))
+        return merged.reward
+    }
+
+    /// 화면용 시즌 목록 — 세트도 진행도도 **읽는 시점의** 시즌 키로 판정한다. 달이 바뀌면 기록 없이도
+    /// 새 세트가 빈 채로 보인다(상태는 그대로 — 다음 기록이 갱신한다).
+    var seasonRows: [(challenge: SeasonChallenge, progress: Int)] {
+        let key = Self.seasonKey(clock())
+        return SeasonBoard.challenges(forSeasonKey: key).map {
+            ($0, state.seasons.progress($0, seasonKey: key))
+        }
+    }
+
+    /// 시즌 카드 헤더가 읽는 남은 일수. 뷰가 달력을 직접 만지지 않게 하는 자리다.
+    var seasonDaysRemaining: Int { SeasonBoard.daysRemaining(at: clock()) }
 
     /// 화면용 미션 목록. 진행도는 **읽는 시점의** 날짜·주 키로 판정하므로, 자정이 지나면 아무 기록
     /// 없이도 일간이 비어 보인다(상태는 그대로 — 다음 기록이 실제로 갱신한다).
@@ -918,6 +1090,44 @@ final class CompanionStore {
             grantReward(goal.reward)
             notifyCompanionEvent(l.notifDexGoalTitle, l.notifDexGoalBody(l.dexGoalName(goal)))
         }
+    }
+
+    /// 업적 기록의 **유일한** 경로 — 보상(별의조각)과 알림까지 여기서 끝낸다. 적립 지점마다
+    /// `state.achievements` 를 직접 만지면 클램프와 경계 판정이 갈라진다.
+    /// 반환값은 이번에 지급한 별의조각(`recordMission` 과 같은 계약). 정산 경로는 이 값을 보상
+    /// 객체에 실어야 한다 — 지갑만 늘리면 보고액과 잔액이 어긋난다.
+    /// `save()` 는 호출부 몫이다(레이스만 예외 — `recordRaceFinish`).
+    @discardableResult
+    private func recordAchievement(_ track: AchievementTrack, _ amount: Int) -> Int {
+        var paid = 0
+        for award in state.achievements.record(track, amount) {
+            let reward = award.achievement.rewards[award.tier - 1]
+            state.starPieces += reward
+            paid += reward
+            notifyCompanionEvent(l.notifAchievementTitle,
+                                 l.notifAchievementBody(l.achievementName(award.achievement.track),
+                                                        award.tier, reward))
+        }
+        return paid
+    }
+
+    /// 포켓슬론 완주 적립. 호출부가 스토어 밖(`MultiplayerRoomCenter`)이라 저장도 여기서 한다.
+    /// 세는 건 우승이 아니라 **완주**다 — 우승만 세면 4인 방에서 ¾은 영원히 못 넘는다.
+    func recordRaceFinish() {
+        recordAchievement(.race, 1)
+        save()
+    }
+
+    /// 화면용 업적 행 — 카탈로그 순서 그대로.
+    var achievementRows: [(achievement: Achievement, count: Int, tier: Int)] { state.achievements.rows }
+
+    /// 도달한 업적 단계의 합계. 카드와 LAN 광고가 쓴다. 뷰·네트워크가 `state` 를 직접 만지지
+    /// 않게 하는 자리다(`achievementRows` 와 같은 이유).
+    var achievementTierTotal: Int { state.achievements.tierTotal }
+
+    /// 아직 안 넘은 첫 문턱. 최고 단계면 nil — 선반이 숫자 대신 완료 표식을 띄운다.
+    func nextAchievementTier(_ track: AchievementTrack) -> (goal: Int, tier: Int)? {
+        state.achievements.next(track)
     }
 
     /// 화면용 목표 행 — 축마다 아직 안 넘은 첫 목표 하나씩. **졸업 기록만** 넘긴다.
@@ -943,7 +1153,9 @@ final class CompanionStore {
         }
         return FocusSessionReward(minutes: minutes, stardust: reward.starPieces,
                                   foundEgg: reward.bonusEggs > 0, trainerBonus: reward.trainerBonus,
-                                  missionBonus: reward.missionBonus)
+                                  missionBonus: reward.missionBonus,
+                                  achievementBonus: reward.achievementBonus,
+                                  seasonBonus: reward.seasonBonus)
     }
 
     func beginIncubatingFocusEgg() -> Bool {
@@ -975,6 +1187,8 @@ final class CompanionStore {
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return false }
         let released = state.boxedMons.remove(at: index)
         AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
+        memoryAlbum.deleteAll(for: released.id)
+        chatStore.deleteSession(for: released.id)
         save()
         return true
     }
@@ -1041,7 +1255,16 @@ final class CompanionStore {
             state.active!.learnedMoves.append(prompt.move)
         } else if let index, state.active!.learnedMoves.indices.contains(index) {
             state.active!.learnedMoves[index] = prompt.move
-        } else { return }
+        } else { return }   // 무변경(범위 밖 인덱스) — 아래 하트비늘 소모도 타지 않는다
+        // 하트비늘은 **무브셋이 실제로 바뀐 뒤에만** 소모한다. 목록에서 취소하거나 교체를 거절한
+        // 경우까지 태우면 클릭 한 번에 500 별의조각이 사라지는 함정이 된다.
+        if prompt.origin == .heartScale {
+            state.inventory[ItemKind.heartScale.rawValue] = max(0, itemCount(.heartScale) - 1)
+        }
+        // 표시 목록을 여기서 맞춘다. 기술 목록의 `.task(id:)` 는 "개체 id + 레벨" 이라 **레벨이
+        // 바뀌지 않는 학습**(하트비늘)에서는 다시 돌지 않는다 — 레벨업 경로는 레벨이 함께 바뀌어
+        // 이 공백이 가려져 있었다. 상세(설명·랭크 변화)는 다음 로드가 채운다.
+        displayedMoves = state.active!.learnedMoves
         save()
         pendingMoveLearningPrompt = nil
         showNextMoveLearningPrompt()
@@ -1189,6 +1412,9 @@ final class CompanionStore {
                                                 participantCount: participantCount, won: won,
                                                 reward: dust, opponentNames: opponentNames), at: 0)
         if state.battleHistory.count > 30 { state.battleHistory.removeLast(state.battleHistory.count - 30) }
+        // LAN 배틀 **승리만**. 연습 배틀은 혼자 무한 반복이라 업적이 클릭 노동이 된다 — 호출부가
+        // 하나(`MultiplayerRoomCenter.grantRewardIfFinished`)라 그 경계가 지켜진다.
+        if won { recordAchievement(.battle, 1) }
         save()
     }
 
@@ -1392,12 +1618,21 @@ final class CompanionStore {
                              l.notifDailyCandyBody)
     }
 
-    /// 로컬 달력 기준 YYYY-MM-DD — 일일 보상 원장 키.
+    /// 로컬 시간대 기준 YYYY-MM-DD — 일일 보상 원장 키.
+    ///
+    /// 달력은 시즌 만료와 **같은 접근자**(`SeasonBoard.gregorian`)를 쓴다 — 갈라지면 자정 근처에서
+    /// 원장 키와 남은 일수가 다른 날을 센다. 그 접근자를 굳히거나 `timeZone = .current` 로 덮으면
+    /// 실행 중 시간대 변경을 놓친다(이유는 `SeasonBoard.gregorian` 주석).
+    /// `DateFormatter` 대신 성분을 조립하는 건 호출당 생성 비용 때문이다(실측 16.3µs → 1.6µs).
     nonisolated static func dayKey(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+        let parts = SeasonBoard.gregorian.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    /// 로컬 달력 기준 YYYY-MM — 시즌 원장 키. 포맷터를 하나 더 두지 않고 `dayKey` 를 자른다 —
+    /// 두 원장 키가 다른 로케일·달력으로 갈라질 여지를 없앤다.
+    nonisolated static func seasonKey(_ date: Date) -> String {
+        String(dayKey(date).prefix(7))
     }
 
     nonisolated static func weekKey(_ date: Date) -> String {
@@ -1650,6 +1885,7 @@ final class CompanionStore {
         // 졸업은 파트너를 초기화하지만 미션 진행은 여기서 이어진다 — 모험을 한 번도 하지 않고
         // 졸업만 해도 기록된다(집중 경로와 독립).
         recordMission(.graduations, 1)
+        recordSeason(.graduations, 1)
         // 도감 목표는 이 항목이 들어가기 **전**의 완료 집합과 비교해 지급한다 — 스냅샷을 먼저 잡는다.
         let goalsBefore = DexGoals.completed(in: state.dex)
         state.dex.append(DexEntry(baseID: a.baseID, finalID: finalID,
@@ -1754,6 +1990,61 @@ final class CompanionStore {
         save()
         return new
     }
+
+    // MARK: 하트비늘 (기술 다시 배우기 — #97)
+
+    /// 사용 가능 — 활성 개체 + 재고>0 + 조회 중 아님. `currentLine` 은 보지 않는다(민트와 같은 이유:
+    /// pathIDs·level 은 MonState 에 있어 재시작 직후·오프라인에도 판정할 수 있다).
+    var canUseHeartScale: Bool {
+        hasActive && itemCount(.heartScale) > 0 && !isLoadingRelearnCandidates
+    }
+
+    /// 하트비늘 사용 — 후보를 조회해 목록 카드를 띄운다. **여기서는 아무것도 소모하지 않는다**
+    /// (소모는 `acceptMoveLearning` 이 무브셋을 바꿀 때).
+    func useHeartScale() {
+        guard canUseHeartScale, let mon = state.active else { return }
+        let monID = mon.id
+        isLoadingRelearnCandidates = true
+        Task { @MainActor in
+            defer { isLoadingRelearnCandidates = false }
+            var inherited: [[MoveSpec]] = []
+            var index = 0
+            // pathIDs 도 매 반복 다시 읽는다 — 조회 중에 진화하면 경로에 종이 **붙는다**. 캡처본으로
+            // 돌면 새로 붙은 종의 기술이 후보에서 통째로 빠진다.
+            while true {
+                // 도중에 개체가 바뀌었으면(교체·졸업·리롤) 남은 조회는 그 개체 몫이 아니다.
+                guard let current = state.active, current.id == monID else { return }
+                guard index < current.pathIDs.count else { break }
+                let speciesID = current.pathIDs[index]
+                let moves = await PokeAPIClient.shared
+                    .canonicalLevelUpMoves(speciesID: speciesID, level: current.level)
+                guard state.active?.id == monID else { return }   // await 뒤 재확인
+                inherited.append(moves)
+                index += 1
+            }
+            // 배운 기술은 루프가 끝난 **지금** 다시 읽는다 — await 사이에 다른 카드에서 기술을
+            // 배웠을 수 있고, 캡처본으로 계산하면 이미 배운 기술을 후보로 내놓는다(queueMoveLearning 과 같은 함정).
+            guard let fresh = state.active, fresh.id == monID else { return }
+            pendingRelearnPrompt = RelearnPrompt(
+                monID: monID,
+                candidates: MoveRelearn.candidates(inherited: inherited, learned: fresh.learnedMoves))
+        }
+    }
+
+    /// 후보 하나를 고른다 → 기존 학습 카드로 넘긴다(4개 꽉 찬 개체의 교체 UI 를 새로 만들지 않는다).
+    /// 카드가 떠 있는 동안 재고가 사라졌으면(다른 경로 소모) 넘기지 않고 목록만 닫는다.
+    func pickRelearnCandidate(_ move: MoveSpec) {
+        guard let prompt = relearnPrompt, itemCount(.heartScale) > 0 else {
+            pendingRelearnPrompt = nil
+            return
+        }
+        pendingRelearnPrompt = nil
+        pendingMoveLearningPrompt = MoveLearningPrompt(
+            monID: prompt.monID, level: state.active?.level ?? 0, move: move, origin: .heartScale)
+    }
+
+    /// 후보 목록 닫기 — 무소모.
+    func cancelRelearn() { pendingRelearnPrompt = nil }
 
     func canUseEvolutionItem(_ kind: ItemKind) -> Bool {
         guard itemCount(kind) > 0, let rule = kind.evolutionRule,
@@ -1954,6 +2245,7 @@ final class CompanionStore {
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
         let name = line.localizedName(line.baseID, state.language)
+        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。", eventID: "hatch")
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
@@ -2288,6 +2580,9 @@ final class CompanionStore {
     func applySave(_ envelope: SaveEnvelope) throws {
         try backupStateBeforeImport()
         state = SaveTransfer.rebasedForThisDevice(envelope.state, current: state)
+        let validIDs = Set(([state.active].compactMap { $0 } + state.boxedMons).map(\.id))
+        memoryAlbum.prune(validCompanionIDs: validIDs)
+        chatStore.prune(validCompanionIDs: validIDs)
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
         // 않으면 먼저 떠 있던 라인 로드가 완료되며 새로 불러온 개체를 덮어쓴다.
         activeGeneration += 1
@@ -2312,12 +2607,19 @@ final class CompanionStore {
     /// 상황에서 되돌릴 대상이 사라진다. 불러올 때마다 새 슬롯을 쓰고 오래된 것부터 정리한다.
     @discardableResult
     private func backupStateBeforeImport() throws -> URL {
-        guard let data = try? JSONEncoder().encode(state) else { throw SaveTransferError.backupFailed }
+        guard let stateData = try? JSONEncoder().encode(state),
+              let memoryData = try? memoryAlbum.snapshotData(),
+              let chatData = try? chatStore.snapshotData() else { throw SaveTransferError.backupFailed }
         let dir = fileURL.deletingLastPathComponent()
-        let backup = dir.appendingPathComponent(SaveTransfer.backupFileName(date: clock()))
+        let names = SaveTransfer.importBackupFileNames(date: clock())
+        let backup = dir.appendingPathComponent(names.state)
+        let targets = [(backup, stateData), (dir.appendingPathComponent(names.memory), memoryData),
+                       (dir.appendingPathComponent(names.chat), chatData)]
         do {
-            try data.write(to: backup, options: .atomic)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for (url, data) in targets { try data.write(to: url, options: .atomic) }
         } catch {
+            for (url, _) in targets { try? FileManager.default.removeItem(at: url) }
             AppLog.write("save import aborted — backup write failed: \(error)")
             throw SaveTransferError.backupFailed
         }
@@ -2325,19 +2627,34 @@ final class CompanionStore {
         return backup
     }
 
-    /// 최근 N 개만 남기고 오래된 백업을 지운다. 파일명이 `yyyy-MM-dd-HHmmss` 라 사전순 = 시간순이다.
+    /// Retain complete snapshot groups, rather than letting one component outlive its state peer.
     private func pruneImportBackups(in dir: URL) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
-        let backups = names.filter { $0.hasPrefix(SaveTransfer.backupFilePrefix) }.sorted()
-        guard backups.count > SaveTransfer.backupsToKeep else { return }
-        for stale in backups.dropLast(SaveTransfer.backupsToKeep) {
-            try? FileManager.default.removeItem(at: dir.appendingPathComponent(stale))
+        let stateNames = names.filter { $0.hasPrefix(SaveTransfer.backupFilePrefix) }.sorted()
+        let complete = stateNames.filter { state in
+            let stamp = state.replacingOccurrences(of: SaveTransfer.backupFilePrefix, with: "")
+            return names.contains(SaveTransfer.memoryBackupFilePrefix + stamp)
+                && names.contains(SaveTransfer.chatBackupFilePrefix + stamp)
+        }
+        guard complete.count > SaveTransfer.backupsToKeep else { return }
+        for stale in complete.dropLast(SaveTransfer.backupsToKeep) {
+            let stamp = stale.replacingOccurrences(of: SaveTransfer.backupFilePrefix, with: "")
+            for name in [stale, SaveTransfer.memoryBackupFilePrefix + stamp, SaveTransfer.chatBackupFilePrefix + stamp] {
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+            }
         }
     }
 
     #if DEBUG
     /// 테스트 전용 — 도감을 직접 세팅(생산 배율·마이그레이션 계승 검증용). 프로덕션 경로 없음.
     func debugSetDex(_ entries: [DexEntry]) { state.dex = entries; save() }
+
+    /// 업적 카운터를 원하는 지점에 세운다 — 문턱 직전·상한 도달처럼 실제 플레이로 수천 분이 드는
+    /// 상태를 테스트가 밟는 유일한 수단이다. 보상 지급은 거치지 않는다.
+    func debugSetAchievementCount(_ track: AchievementTrack, _ count: Int) {
+        state.achievements.counts[track.rawValue] = count
+        save()
+    }
     /// 테스트 전용 — 박스를 직접 세팅(보관 알 부화의 네트워크 경로 없이 박스 상태만 재현). 프로덕션 경로 없음.
     func debugSetBoxedMons(_ mons: [MonState]) { state.boxedMons = mons; save() }
     /// 테스트 전용 — 레벨업 없이 기술 학습 제안을 세운다(네트워크 무브 조회 우회). 프로덕션 경로 없음.

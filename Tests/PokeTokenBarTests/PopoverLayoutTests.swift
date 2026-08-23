@@ -1,3 +1,4 @@
+import Network
 import XCTest
 import SwiftUI
 @testable import PokeTokenBar
@@ -121,6 +122,106 @@ final class PopoverLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: 근처 트레이너 카드 (진행도가 잘리지 않는가)
+
+    private func peerStore(_ language: AppLanguage = .ko) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-peer-layout-\(UUID().uuidString).json")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)"}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: StubProvider(value: moveTestLine),
+                              clock: { Date(timeIntervalSince1970: 1_755_000_000) },
+                              fileURL: url, rng: SeededRNG(seed: 13))
+    }
+
+    private func peer(_ name: String, _ advertisement: PeerAdvertisement) -> BattlePeer {
+        BattlePeer(name: name, serviceName: "\(name)#abc123",
+                   endpoint: .hostPort(host: "127.0.0.1", port: 4_242),
+                   advertisement: advertisement)
+    }
+
+    /// 가장 긴 랭크 문구를 내는 점수. `maximumPoints` 가 아니다. 최고점은 "Challenger · 99 LP"
+    /// (18자)인데 티어 이름이 더 긴 "Grandmaster · 10 LP"(19자) 구간이 있다. 상한값을 최악으로
+    /// 가정하면 폭 검증이 진짜 최악보다 좁은 입력을 재고 통과한다.
+    private var widestRankPoints: Int {
+        (0...BattleRank.maximumPoints).max {
+            BattleRank(points: $0).displayName.count < BattleRank(points: $1).displayName.count
+        }!
+    }
+
+    /// 카드가 그릴 수 있는 최악의 진행도. 여기서 안 잘리면 어떤 상대에서도 안 잘린다. 배지
+    /// 분모는 상대가 광고하니 내 카탈로그(16)가 아니라 표시 상한까지 커질 수 있다.
+    private var widestAdvertisement: PeerAdvertisement {
+        PeerAdvertisement(rankPoints: widestRankPoints,
+                          trainerLevel: TrainerLevel.maximumLevel,
+                          achievementTiers: PeerAdvertisement.maximumTierCeiling,
+                          achievementCeiling: PeerAdvertisement.maximumTierCeiling)
+    }
+
+    private func peerRow(_ name: String, _ advertisement: PeerAdvertisement,
+                         _ language: AppLanguage = .ko) -> some View {
+        PeerRow(store: peerStore(language), peer: peer(name, advertisement),
+                isEnabled: true, onChallenge: {})
+    }
+
+    /// 카드가 원하는 폭. 행 안에 `Spacer()` 가 있어 넉넉한 제안을 주면 그대로 채우니
+    /// (제안 4,000 → 4,000) 이상 폭 측정만으로는 아무것도 알 수 없다. 내용의 이상 크기를 보려면
+    /// `fixedSize` 로 고정해야 한다. 기술 목록은 Spacer 가 없어 그냥 재도 됐다.
+    private func intrinsicWidth(_ view: some View) -> CGFloat {
+        renderedWidth(view.fixedSize(horizontal: true, vertical: false), proposing: 4_000)
+    }
+
+    /// 대조군: 광고가 실린 카드는 빈 카드보다 넓어야 한다. 이게 없으면 누가 레벨·배지 칸을 지워도
+    /// 아래 폭 검증이 그냥 통과한다. 총폭 검증은 누가 빠졌는지를 못 잡는다(defect-log).
+    func testPeerRowActuallyCarriesTheAdvertisedProgress() {
+        let bare = intrinsicWidth(peerRow("Ash", PeerAdvertisement()))
+        let advertised = intrinsicWidth(peerRow("Ash", widestAdvertisement))
+        XCTAssertGreaterThan(advertised, bare + 20,
+                             "레벨·배지가 카드에 실제로 그려지지 않으면 폭 검증이 무의미해진다")
+    }
+
+    /// 최악의 진행도를 실은 카드가 세 언어 모두 팝오버 콘텐츠 폭 안에 들어와야 한다.
+    /// 버튼 문구가 언어마다 다르다(대결 신청 / Challenge / 対戦を申し込む).
+    func testPeerRowFitsTheContentWidthInEveryLanguage() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            let width = intrinsicWidth(peerRow("Ash", widestAdvertisement, language))
+            XCTAssertLessThanOrEqual(width, PopoverMetrics.contentWidth,
+                                     "\(language.rawValue): 진행도 줄이 카드 폭을 넘겼다")
+        }
+    }
+
+    /// 두 줄을 유지해야 한다. 진행도 때문에 세 번째 줄이 생기면 한 페이지 5명 예산이 깨지고,
+    /// 여섯 번째 상대에게 도달 못 하던 부류로 되돌아간다.
+    func testPeerRowKeepsItsTwoLineHeightRegardlessOfAdvertisement() {
+        let bare = renderedHeight(peerRow("Ash", PeerAdvertisement()),
+                                  proposingWidth: PopoverMetrics.contentWidth)
+        let advertised = renderedHeight(peerRow("Ash", widestAdvertisement),
+                                       proposingWidth: PopoverMetrics.contentWidth)
+        XCTAssertEqual(advertised, bare, accuracy: 1, "광고가 실리면서 줄이 늘었다")
+    }
+
+    /// 상대 이름은 Bonjour 에서 와 길이를 우리가 정하지 못한다. 길면 줄바꿈이 아니라 잘려야
+    /// 한다. 줄바꿈되면 카드가 커져 페이지 예산이 무너진다.
+    func testALongPeerNameTruncatesInsteadOfGrowingTheRow() {
+        let short = renderedHeight(peerRow("Ash", widestAdvertisement),
+                                   proposingWidth: PopoverMetrics.contentWidth)
+        let long = renderedHeight(peerRow(String(repeating: "트레이너", count: 10), widestAdvertisement),
+                                  proposingWidth: PopoverMetrics.contentWidth)
+        XCTAssertEqual(long, short, accuracy: 1, "긴 이름이 카드 높이를 키웠다")
+    }
+
+    /// 세 언어에서 카드 높이가 같아야 한다. 한 언어에서만 줄바꿈되면 그 언어에서만 목록이 넘친다.
+    /// 기술 목록에서 이미 겪은 부류다(CI 118pt vs 로컬 78pt).
+    func testPeerRowHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(peerRow("Ash", widestAdvertisement, .ko),
+                                    proposingWidth: PopoverMetrics.contentWidth)
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(peerRow("Ash", widestAdvertisement, language),
+                                          proposingWidth: PopoverMetrics.contentWidth),
+                           korean, accuracy: 1, "\(language.rawValue) 에서 카드 높이가 달라졌다")
+        }
+    }
+
     /// 같은 부류 스윕: 릴레이 방 목록도 LAN 이 길이를 정한다 — 상한도 페이저도 없으면 팝오버가 잘린다.
     func testEveryRelayRoomLandsOnSomePage() {
         let pageSize = PokeathlonView.roomPageSize
@@ -193,8 +294,9 @@ final class PopoverLayoutTests: XCTestCase {
     // MARK: 도감 목표 줄 — 세로 예산
 
     /// 도감 헤더가 쓸 수 있는 여유. 컬렉션 탭 예산은 `520 − 세그먼트 24 − 헤더 39 − 하단 18 − 간격 24
-    /// = 격자 415` 인데(`CollectionView.contentHeight`) 세그먼트가 아직 없어 그 24pt 가 목표 줄 몫이다.
-    /// 넘으면 격자 6행이 눌려 스프라이트가 잘린다.
+    /// = 격자 415` 로 잡혔고(`CollectionView.contentHeight`), 그 세그먼트 24pt 를 **목표 줄이 먼저 썼다.**
+    /// 그래서 나중에 들어온 도감 | 업적 세그먼트는 이 프레임 밖에 얹혀 있다 — 안으로 넣으면 24pt 가
+    /// 이중 장부가 되어 격자 6행이 눌리고 스프라이트가 잘린다.
     ///
     /// 재는 대상은 줄 높이가 아니라 **헤더가 실제로 커지는 양**이다 — 헤더 VStack 의 spacing 5 가 줄과
     /// 함께 따라오므로 줄만 24 와 비교하면 5pt 를 공짜로 봐준다.
@@ -245,6 +347,149 @@ final class PopoverLayoutTests: XCTestCase {
         for language in [AppLanguage.en, .ja] {
             XCTAssertEqual(renderedHeight(DexGoalStrip(store: dexGoalStore(language))), korean,
                            accuracy: 1, "\(language.rawValue) 에서 목표 줄 높이가 달라졌다")
+        }
+    }
+
+    // MARK: 업적 선반 — 세로 예산
+
+    /// 업적 선반은 컬렉션 탭 세그먼트 하나를 차지한다. 4행이라 예산은 넉넉하지만 행마다 게이지를
+    /// 깔면 미션 카드(211pt)·도감 목표 줄이 겪은 초과를 되풀이한다. 상한을 두는 이유는 선반이 도감
+    /// 격자와 **같은 프레임**을 쓰기 때문이다 — 넘치면 세그먼트를 바꿀 때 스크롤이 생겨 두 화면의
+    /// 높이가 달라 보인다.
+    private static let achievementShelfBudget: CGFloat = 160
+
+    private func achievementStore(_ language: AppLanguage = .ko) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-achievement-layout-\(UUID().uuidString).json")
+        // 네 트랙이 **모두 분수로 보이는** 상태 — 한 트랙이라도 사다리 끝을 넘으면 그 행이 "✓" 한
+        // 글자가 되어 최악의 폭에서 빠진다.
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
+            + #""achievements":{"counts":{"focus":100,"evolve":4,"battle":2,"race":2}}}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: StubProvider(value: moveTestLine),
+                              clock: { Date(timeIntervalSince1970: 1_755_000_000) },
+                              fileURL: url, rng: SeededRNG(seed: 9))
+    }
+
+    /// 트리거 재현: 행마다 `ProgressView` 를 깔면 예산을 넘긴다. 이 대조군이 없으면 아래 예산
+    /// 검증이 "애초에 통과할 조건이었다" 는 false confidence 가 된다.
+    func testAGaugePerAchievementRowBlowsThroughTheShelfBudget() {
+        let gauged = VStack(alignment: .leading, spacing: 6) {
+            Text("🏅 업적").font(.caption.weight(.semibold))
+            ForEach(AchievementLadder.catalog) { entry in
+                HStack {
+                    Text(entry.id).font(.caption2)
+                    Spacer()
+                    Text("0/\(entry.tiers[0])").font(.caption2)
+                }
+                ProgressView(value: 0.3)
+            }
+        }
+        .padding(9)
+        XCTAssertGreaterThan(renderedHeight(gauged), Self.achievementShelfBudget,
+                             "대조군이 안 넘치면 예산 검증이 무의미해진다")
+    }
+
+    func testAchievementShelfFitsItsBudget() {
+        XCTAssertLessThanOrEqual(renderedHeight(AchievementShelfView(store: achievementStore())),
+                                 Self.achievementShelfBudget)
+    }
+
+    /// 트랙 이름이 세 언어에서 길이가 다르다(집중 시간 / Focus time / 集中時間). 한 언어에서
+    /// 줄바꿈되면 그 언어에서만 선반이 커진다 — 기술 목록에서 이미 겪은 부류(CI 118pt vs 로컬 78pt).
+    func testAchievementShelfHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(AchievementShelfView(store: achievementStore(.ko)))
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(AchievementShelfView(store: achievementStore(language))),
+                           korean, accuracy: 1, "\(language.rawValue) 에서 선반 높이가 달라졌다")
+        }
+    }
+
+    // MARK: 시즌 카드 — 세로 예산
+
+    /// 시즌 카드는 업적 선반과 **같은 세그먼트**에 얹힌다(컬렉션 탭, 520pt 프레임). 둘을 합쳐도
+    /// 프레임 안에 있어야 세그먼트를 바꿀 때 스크롤이 생기지 않는다. 3행이라 선반(4행·160pt)보다
+    /// 작아야 하고, 행마다 게이지를 깔면 미션 카드(211pt)가 겪은 초과를 되풀이한다.
+    private static let seasonCardBudget: CGFloat = 140
+
+    /// 로테이션 세트마다 행 문구 길이가 다르다(`집중 1200분`·`600/1200` vs `집중 900분`·`450/900`,
+    /// 완료 보상 9,000 vs 5,000). 한 달만 재면 나머지 세트가 무검증으로 남으므로 **세트 수만큼**
+    /// 달을 옮겨 가며 잰다. 31일 간격이면 시즌 인덱스가 매번 1~2 늘어 세 세트를 모두 밟는다.
+    private static let seasonDates: [Date] = (0..<SeasonBoard.rotation.count).map {
+        Date(timeIntervalSince1970: 1_755_000_000 + Double($0) * 31 * 86_400)
+    }
+
+    /// `progressRatio` 로 행 상태를 고른다 — 0.5 는 분수(`600/1200`), 1 은 완료(`✓ 9000 ⭐`).
+    /// 어느 쪽 문구가 더 긴지 단정할 수 없어 둘 다 예산에 넣는다.
+    /// 시즌 키는 **시계에서 뽑는다** — 상수로 박으면 시계를 옮길 때 세트가 어긋나 진행도가 전부 0 이
+    /// 되고, 예산 검증이 가장 짧은 화면을 재면서 조용히 통과한다.
+    private func seasonStore(_ language: AppLanguage = .ko, progressRatio: Double = 0.5,
+                             at date: Date = seasonDates[0]) -> CompanionStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poke-season-layout-\(UUID().uuidString).json")
+        let key = CompanionStore.seasonKey(date)
+        let counts = SeasonBoard.challenges(forSeasonKey: key)
+            .map { "\"\($0.id)\":\(Int(Double($0.target) * progressRatio))" }.joined(separator: ",")
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
+            + #""seasons":{"seasonKey":"\#(key)","counts":{\#(counts)}}}"#
+        try? Data(json.utf8).write(to: url)
+        return CompanionStore(provider: StubProvider(value: moveTestLine), clock: { date },
+                              fileURL: url, rng: SeededRNG(seed: 17))
+    }
+
+    /// 트리거 재현: 행마다 `ProgressView` 를 깔면 예산을 넘긴다. 이 대조군이 없으면 아래 예산
+    /// 검증이 "애초에 통과할 조건이었다" 는 false confidence 가 된다.
+    func testAGaugePerSeasonRowBlowsThroughTheCardBudget() {
+        let gauged = VStack(alignment: .leading, spacing: 6) {
+            Text("🗓️ 시즌").font(.caption.weight(.semibold))
+            ForEach(SeasonBoard.rotation[0]) { challenge in
+                HStack {
+                    Text(challenge.id).font(.caption2)
+                    Spacer()
+                    Text("0/\(challenge.target)").font(.caption2)
+                }
+                ProgressView(value: 0.3)
+            }
+        }
+        .padding(9)
+        XCTAssertGreaterThan(renderedHeight(gauged), Self.seasonCardBudget,
+                             "대조군이 안 넘치면 예산 검증이 무의미해진다")
+    }
+
+    /// 분수 상태 — 로테이션 세트 전부.
+    func testSeasonCardFitsItsBudget() {
+        for date in Self.seasonDates {
+            XCTAssertLessThanOrEqual(renderedHeight(SeasonChallengeView(store: seasonStore(at: date))),
+                                     Self.seasonCardBudget, CompanionStore.seasonKey(date))
+        }
+    }
+
+    /// 시즌 말에는 세 행이 모두 완료 상태로 보인다 — 분수 상태만 재면 사용자가 매달 도달하는 화면이
+    /// 무검증으로 남는다. `compact` 는 10,000 미만을 줄이지 않아 완료 문구가 더 길다.
+    func testCompletedSeasonCardFitsItsBudget() {
+        for date in Self.seasonDates {
+            XCTAssertLessThanOrEqual(
+                renderedHeight(SeasonChallengeView(store: seasonStore(progressRatio: 1, at: date))),
+                Self.seasonCardBudget, CompanionStore.seasonKey(date))
+        }
+    }
+
+    /// 두 카드가 한 세그먼트를 공유한다 — 합이 프레임을 넘으면 업적 선반이 잘리거나 스크롤이 생긴다.
+    /// 프레임·간격은 `CollectionView` 의 상수를 그대로 읽는다(테스트가 실제 레이아웃을 따라오게).
+    func testSeasonCardAndAchievementShelfShareTheSegmentWithoutOverflowing() {
+        let combined = renderedHeight(SeasonChallengeView(store: seasonStore()))
+            + CollectionView.cardSpacing
+            + renderedHeight(AchievementShelfView(store: achievementStore()))
+        XCTAssertLessThanOrEqual(combined, CollectionView.contentHeight)
+    }
+
+    /// 남은 일수 문구가 세 언어에서 길이가 다르다(12일 남음 / 12d left / 残り12日). 한 언어에서
+    /// 헤더가 줄바꿈되면 그 언어에서만 카드가 커진다 — 기술 목록에서 이미 겪은 부류다.
+    func testSeasonCardHeightDoesNotDependOnLanguage() {
+        let korean = renderedHeight(SeasonChallengeView(store: seasonStore(.ko)))
+        for language in [AppLanguage.en, .ja] {
+            XCTAssertEqual(renderedHeight(SeasonChallengeView(store: seasonStore(language))),
+                           korean, accuracy: 1, "\(language.rawValue) 에서 카드 높이가 달라졌다")
         }
     }
 

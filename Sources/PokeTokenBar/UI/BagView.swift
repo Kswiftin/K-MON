@@ -15,9 +15,9 @@ struct BagView: View {
                     if store.eggFragmentCount > 0 {
                         HStack {
                             Text("🧩").font(.title2)
-                            Text(store.language == .ko
-                                 ? "알 조각 \(store.eggFragmentCount)/10 · 주간 모험 \(store.weeklyAdventureProgress)/10"
-                                 : "Egg Fragments \(store.eggFragmentCount)/10 · Weekly \(store.weeklyAdventureProgress)/10")
+                            Text(store.l.t("알 조각 \(store.eggFragmentCount)/10 · 주간 모험 \(store.weeklyAdventureProgress)/10",
+                                     "Egg Fragments \(store.eggFragmentCount)/10 · Weekly \(store.weeklyAdventureProgress)/10",
+                                     "タマゴのかけら \(store.eggFragmentCount)/10 · 週間 \(store.weeklyAdventureProgress)/10"))
                                 .font(.caption.bold())
                         }
                     }
@@ -25,11 +25,11 @@ struct BagView: View {
                         HStack(spacing: 10) {
                             Text("🥚").font(.system(size: 30))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(store.language == .ko ? "신비한 알 ×\(store.focusEggCount)" : "Mystery Egg ×\(store.focusEggCount)")
+                                Text(store.l.t("신비한 알 ×\(store.focusEggCount)", "Mystery Egg ×\(store.focusEggCount)", "ふしぎなタマゴ ×\(store.focusEggCount)"))
                                     .font(.callout.weight(.semibold))
-                                Text(store.language == .ko
-                                     ? "집중 모험에서 발견한 알입니다. 안전하게 보관 중이에요."
-                                     : "Found during focus adventures and stored safely.")
+                                Text(store.l.t("집중 모험에서 발견한 알입니다. 안전하게 보관 중이에요.",
+                                         "Found during focus adventures and stored safely.",
+                                         "集中の冒険で見つけたタマゴです。安全に保管中です。"))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -101,6 +101,7 @@ private struct ItemCard: View {
         case .mint:      return store.canUseMint
         case .shinyCharm: return false   // 보유형 — 사용 개념 없음(상시 효과)
         case .freshWater: return false   // 던전 입장 화면에서 마신다 — 가방에서 쓰는 물건이 아니다
+        case .heartScale: return store.canUseHeartScale
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
             return store.canUseEvolutionItem(kind)
         }
@@ -112,8 +113,9 @@ private struct ItemCard: View {
         case .mint:      return l.mintEffectHint
         case .shinyCharm: return l.shinyCharmEffectHint
         case .freshWater: return l.freshWaterEffectHint
+        case .heartScale: return l.heartScaleEffectHint
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
-            return store.language == .ko ? "진화 가능할 때 사용" : "Use when evolution is available"
+            return l.t("진화 가능할 때 사용", "Use when evolution is available", "進化できるときに使う")
         }
     }
     private func performUse() {
@@ -122,6 +124,7 @@ private struct ItemCard: View {
         case .mint:      _ = store.useMint()
         case .shinyCharm: break   // 보유형 — 사용 동작 없음
         case .freshWater: break   // 소모는 던전 시도 시작에서만 일어난다(입구를 하나로 둔다)
+        case .heartScale: store.useHeartScale()
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
             _ = store.useEvolutionItem(kind)
         }

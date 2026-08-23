@@ -14,22 +14,30 @@ enum NetBattleAction: Codable, Sendable, Equatable {
     case switchTo(index: Int)
 }
 
+/// 신청 취소 사유는 연결 단절과 구분한다. 특히 시간 초과는 양쪽에 같은 설명을 보여야 한다.
+enum BattleChallengeCancellationReason: String, Codable, Sendable, Equatable {
+    case cancelled
+    case timedOut
+}
+
 enum NetMessage: Codable, Sendable {
     /// `rulesVersion` 은 대전 규칙(턴 순서·데미지 계산)의 버전이다. 이 대전은 결과를 주고받지 않고
     /// **두 피어가 각자 계산**하므로, 규칙이 다르면 같은 배틀을 서로 다르게 본다(HP·승패가 어긋난다).
     /// 옵셔널인 이유는 이 필드가 없던 버전이 보낸 메시지도 읽어서 "구버전이라 못 붙는다"고
     /// 알려주기 위해서다 — 필수 필드로 두면 디코딩이 실패해 아무 설명 없이 조용히 무시된다.
     case challenge(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
-                   seed: UInt64, profile: BattleRankProfile, rulesVersion: Int?)
+                   seed: UInt64, profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
     case accept(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
-                profile: BattleRankProfile, rulesVersion: Int?)
+                profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
     case decline
+    case challengeCancelled(reason: BattleChallengeCancellationReason)
     case action(turn: Int, action: NetBattleAction)
     /// 구버전 와이어 메시지를 디코딩해 규칙 불일치 경로까지 보낼 때만 남긴다. 새 클라이언트는 전송하지 않는다.
     case move(turn: Int, moveIndex: Int)
     case forfeit
+    case chat(BattleChatMessage)
 
-    private enum CodingKeys: String, CodingKey { case challenge, accept, decline, action, move, forfeit }
+    private enum CodingKeys: String, CodingKey { case challenge, accept, decline, challengeCancelled, action, move, forfeit, chat }
     private struct EmptyPayload: Codable {}
     private struct ChallengePayload: Codable {
         var snapshot: BattleSnapshot
@@ -38,6 +46,7 @@ enum NetMessage: Codable, Sendable {
         var seed: UInt64
         var profile: BattleRankProfile
         var rulesVersion: Int?
+        var chatSupported: Bool?
     }
     private struct AcceptPayload: Codable {
         var snapshot: BattleSnapshot
@@ -45,6 +54,7 @@ enum NetMessage: Codable, Sendable {
         var teamSize: Int?
         var profile: BattleRankProfile
         var rulesVersion: Int?
+        var chatSupported: Bool?
     }
     private struct ActionPayload: Codable { var turn: Int; var action: NetBattleAction }
     private struct MovePayload: Codable { var turn: Int; var moveIndex: Int }
@@ -57,15 +67,19 @@ enum NetMessage: Codable, Sendable {
                               lineup: payload.lineup ?? [payload.snapshot],
                               teamSize: payload.teamSize ?? 1,
                               seed: payload.seed, profile: payload.profile,
-                              rulesVersion: payload.rulesVersion)
+                              rulesVersion: payload.rulesVersion, chatSupported: payload.chatSupported)
         } else if container.contains(.accept) {
             let payload = try container.decode(AcceptPayload.self, forKey: .accept)
             self = .accept(snapshot: payload.snapshot,
                            lineup: payload.lineup ?? [payload.snapshot],
                            teamSize: payload.teamSize ?? 1,
-                           profile: payload.profile, rulesVersion: payload.rulesVersion)
+                           profile: payload.profile, rulesVersion: payload.rulesVersion,
+                           chatSupported: payload.chatSupported)
         } else if container.contains(.decline) {
             self = .decline
+        } else if container.contains(.challengeCancelled) {
+            self = .challengeCancelled(reason: try container.decode(BattleChallengeCancellationReason.self,
+                                                                    forKey: .challengeCancelled))
         } else if container.contains(.action) {
             let payload = try container.decode(ActionPayload.self, forKey: .action)
             self = .action(turn: payload.turn, action: payload.action)
@@ -74,6 +88,8 @@ enum NetMessage: Codable, Sendable {
             self = .move(turn: payload.turn, moveIndex: payload.moveIndex)
         } else if container.contains(.forfeit) {
             self = .forfeit
+        } else if container.contains(.chat) {
+            self = .chat(try container.decode(BattleChatMessage.self, forKey: .chat))
         } else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                     debugDescription: "Unknown battle message"))
@@ -83,23 +99,52 @@ enum NetMessage: Codable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion):
+        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let chatSupported):
             try container.encode(ChallengePayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
-                                                  seed: seed, profile: profile, rulesVersion: rulesVersion),
+                                                  seed: seed, profile: profile, rulesVersion: rulesVersion, chatSupported: chatSupported),
                                  forKey: .challenge)
-        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion):
+        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let chatSupported):
             try container.encode(AcceptPayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
-                                               profile: profile, rulesVersion: rulesVersion),
+                                               profile: profile, rulesVersion: rulesVersion, chatSupported: chatSupported),
                                  forKey: .accept)
         case .decline:
             try container.encode(EmptyPayload(), forKey: .decline)
+        case .challengeCancelled(let reason):
+            try container.encode(reason, forKey: .challengeCancelled)
         case .action(let turn, let action):
             try container.encode(ActionPayload(turn: turn, action: action), forKey: .action)
         case .move(let turn, let moveIndex):
             try container.encode(MovePayload(turn: turn, moveIndex: moveIndex), forKey: .move)
         case .forfeit:
             try container.encode(EmptyPayload(), forKey: .forfeit)
+        case .chat(let message):
+            try container.encode(message, forKey: .chat)
         }
+    }
+}
+
+/// 신청 마감 작업의 작은 취소 핸들. 실제 시간 대신 테스트 스케줄러를 주입할 수 있다.
+@MainActor
+final class BattleChallengeTimeout {
+    private let cancellation: () -> Void
+    init(cancellation: @escaping () -> Void) { self.cancellation = cancellation }
+    func cancel() { cancellation() }
+}
+
+@MainActor
+protocol BattleChallengeTimeoutScheduling: AnyObject {
+    func schedule(_ action: @escaping @MainActor () -> Void) -> BattleChallengeTimeout
+}
+
+@MainActor
+private final class SystemBattleChallengeTimeoutScheduler: BattleChallengeTimeoutScheduling {
+    func schedule(_ action: @escaping @MainActor () -> Void) -> BattleChallengeTimeout {
+        let task = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(BattleCenter.challengeDuration))
+            guard !Task.isCancelled else { return }
+            action()
+        }
+        return BattleChallengeTimeout { task.cancel() }
     }
 }
 
@@ -108,9 +153,17 @@ struct BattlePeer: Identifiable, Equatable {
     let name: String            // 표시 이름(고유 접미 제거)
     let serviceName: String     // Bonjour 광고 원본(고유) — id·self 판정용
     let endpoint: NWEndpoint
-    let rank: BattleRank?
+    /// 상대가 광고한 표시용 진행도. 쓰임과 한계는 `PeerAdvertisement` 에 적어 뒀다.
+    let advertisement: PeerAdvertisement
+    /// 광고 안의 랭크. 기존 호출부를 살려 두는 어댑터.
+    var rank: BattleRank? { advertisement.rank }
     var id: String { serviceName }
-    static func == (l: Self, r: Self) -> Bool { l.serviceName == r.serviceName }
+    /// 광고까지 비교한다. 신원은 `id`(=`serviceName`)가 맡는다. 이름만 비교하면 상대가 레벨을
+    /// 올려도 같은 값이 되어, 동등성으로 갱신을 판단하는 쪽(SwiftUI 뷰 비교·`onChange`)이 실시간
+    /// 갱신을 삼킨다.
+    static func == (l: Self, r: Self) -> Bool {
+        l.serviceName == r.serviceName && l.advertisement == r.advertisement
+    }
 }
 
 /// 한 턴의 이벤트가 가리키는 실제 전투원 문맥. `.a`/`.b` 만으로는 교체 뒤 과거 이름·기술을
@@ -310,7 +363,7 @@ final class BattleCenter {
         case finished(iWon: Bool?, byForfeit: Bool)
     }
 
-    private(set) var phase: Phase = .ready {
+    var phase: Phase = .ready {
         // 국면이 바뀌면 미뤄 둔 결과는 무효다 — 항복·끊김·새 배틀이 국면을 먼저 옮긴 뒤에 옛 배틀의
         // 마감이 뒤늦게 깨어나 엉뚱한 결과 화면을 올리는 것을 막는다.
         didSet { dropPendingFinish() }
@@ -338,6 +391,11 @@ final class BattleCenter {
     private(set) var rankedStake = 0
     private(set) var lastRankDelta = 0
     private(set) var lastError: String?
+    private(set) var chatMessages: [BattleChatMessage] = []
+    private(set) var chatIsAvailable = false
+    private var chatHistory = BattleChatHistory()
+    private var chatRateLimiter = BattleChatRateLimiter()
+    let chatSenderID = UUID()
     /// 팝오버가 열려 있을 때 배틀 탭으로 유도하기 위한 신호(뷰가 소비).
     var pendingAttention = false
     /// 배틀이 잡히거나 걸릴 때 창을 자동으로 열고 고정하게 하는 신호(AppDelegate 가 관찰).
@@ -351,6 +409,12 @@ final class BattleCenter {
 
     /// 한 턴에 주는 시간 — 멀티와 같은 값이다.
     static let turnDuration: TimeInterval = MultiplayerRoomCenter.turnDuration
+
+    /// 대결 신청은 양쪽 모두 받은 시점부터 60초 안에 수락해야 한다.
+    static let challengeDuration: TimeInterval = 60
+    private(set) var challengeEndsAt: Date?
+    private var challengeTimeout: BattleChallengeTimeout?
+    private let challengeTimeoutScheduler: BattleChallengeTimeoutScheduling
 
     /// 이번 턴이 끝나는 시각. 멀티엔 이미 있던 값이고 1v1 만 없었다 — 상대가 자리를 비우면 1v1 은
     /// 기권 말고는 나갈 길이 없었다.
@@ -369,7 +433,7 @@ final class BattleCenter {
     private let moveDetailLoader: MoveDetailLoader
     private let inheritedMovesPreparer: InheritedMovesPreparer
     /// TXT 레코드 재발행 지점 — nil 이면 실제 리스너의 `service` 를 갈아 끼운다(테스트 주입 seam).
-    private let rankRecordPublisher: ((NWTXTRecord) -> Void)?
+    private let advertisementPublisher: ((NWTXTRecord) -> Void)?
     let multiplayer: MultiplayerRoomCenter
     private var listener: NWListener?
     private var browser: NWBrowser?
@@ -492,9 +556,11 @@ final class BattleCenter {
          moveSetLoader: MoveSetLoader? = nil,
          moveDetailLoader: MoveDetailLoader? = nil,
          inheritedMovesPreparer: InheritedMovesPreparer? = nil,
-         rankRecordPublisher: ((NWTXTRecord) -> Void)? = nil) {
+         advertisementPublisher: ((NWTXTRecord) -> Void)? = nil,
+         challengeTimeoutScheduler: BattleChallengeTimeoutScheduling? = nil) {
         self.companion = companion
-        self.rankRecordPublisher = rankRecordPublisher
+        self.advertisementPublisher = advertisementPublisher
+        self.challengeTimeoutScheduler = challengeTimeoutScheduler ?? SystemBattleChallengeTimeoutScheduler()
         self.monSnapshotBuilder = monSnapshotBuilder ?? { mon, level in
             await companion.battleSnapshot(for: mon, level: level)
         }
@@ -519,26 +585,31 @@ final class BattleCenter {
         // 고유 접미(#xxxxxx) — 같은 사람 이름의 두 Mac이 서로를 "자기"로 오인 필터링하지 않게 한다.
         // 표시할 땐 접미를 떼고, self·id 판정은 이 전체 문자열로 한다.
         self.myServiceName = "\(name)#\(String(UUID().uuidString.prefix(6)))"
-        trackRankChanges()
+        trackAdvertisedValues()
     }
 
-    // MARK: 광고 중인 랭크 (Bonjour TXT)
+    // MARK: 광고 중인 진행도 (Bonjour TXT)
 
-    /// 지금 TXT 레코드에 실려 있는 랭크 포인트. 같은 값이면 재발행하지 않는다.
-    private(set) var advertisedRankPoints: Int?
+    /// 지금 TXT 레코드에 실려 있는 값들. 셋이 모두 그대로면 재발행하지 않는다.
+    private(set) var advertisedProfile: PeerAdvertisement?
 
-    nonisolated static func rankTXTRecord(points: Int) -> NWTXTRecord {
-        NWTXTRecord(["rankPoints": String(points)])
+    /// 지금 광고해야 할 값. 형식과 클램프는 `PeerAdvertisement` 가 맡는다.
+    private var myAdvertisement: PeerAdvertisement {
+        PeerAdvertisement(rankPoints: companion.battleRank.points,
+                          trainerLevel: companion.trainerLevel.level,
+                          achievementTiers: companion.achievementTierTotal,
+                          // 내 분모도 싣는다. 카탈로그가 늘어난 뒤 상대가 나를 옳게 그릴 근거다.
+                          achievementCeiling: AchievementLadder.tierCeiling)
     }
 
-    /// 랭크가 바뀌면 광고를 다시 굽는다. 리스너를 만들 때 한 번만 굽던 탓에 랭크전 승패 뒤에도
-    /// 옛 점수가 계속 광고되어 상대 목록엔 stale 랭크가 남았다(#85).
-    func refreshAdvertisedRank() {
-        let points = companion.battleRank.points
-        guard advertisedRankPoints != points else { return }
-        let record = Self.rankTXTRecord(points: points)
-        if let rankRecordPublisher {
-            rankRecordPublisher(record)
+    /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 구워서 랭크전 뒤에도 옛 점수가
+    /// 계속 광고됐다(#85). 레벨·업적도 같은 부류라 재발행 지점은 여기 하나다.
+    func refreshAdvertisedProfile() {
+        let profile = myAdvertisement
+        guard advertisedProfile != profile else { return }
+        let record = profile.txtRecord
+        if let advertisementPublisher {
+            advertisementPublisher(record)
         } else {
             // 리스너가 없으면 광고 자체가 없다 — 나중에 만들 때 그 시점의 현재 값을 굽으므로
             // 여기서 기록해 두면 그 값이 최신인지 판단할 근거를 잃는다.
@@ -546,19 +617,22 @@ final class BattleCenter {
             listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
                                                   domain: nil, txtRecord: record)
         }
-        advertisedRankPoints = points
+        advertisedProfile = profile
     }
 
-    /// `companion` 상태 변화를 계속 따라간다 — `withObservationTracking` 은 1회성이라
-    /// 콜백에서 다시 등록해야 한다. 정산·세이브 이전 등 랭크가 바뀌는 모든 경로를 한자리에서 덮는다.
-    private func trackRankChanges() {
+    /// `companion` 변화를 계속 따라간다. `withObservationTracking` 은 1회성이라 콜백에서 다시
+    /// 등록해야 한다. 세 원본을 각각 읽는 이유: 지금은 셋이 모두 `state` 를 지나 하나만 읽어도
+    /// 발화하지만, 하나가 `state` 밖으로 나가면 한 줄짜리 추적은 그 값을 조용히 놓친다(#85).
+    private func trackAdvertisedValues() {
         withObservationTracking {
             _ = companion.battleRank.points
+            _ = companion.trainerLevel.points
+            _ = companion.achievementTierTotal
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.refreshAdvertisedRank()
-                self.trackRankChanges()
+                self.refreshAdvertisedProfile()
+                self.trackAdvertisedValues()
             }
         }
     }
@@ -582,6 +656,13 @@ final class BattleCenter {
         return BattleRank.stake(challenger: opponentRankProfile.rank, defender: companion.battleRank)
     }
 
+    private var isChallengePending: Bool {
+        switch phase {
+        case .challenging, .incoming: true
+        default: false
+        }
+    }
+
     // MARK: 기동/정지
 
     func start() {
@@ -600,13 +681,17 @@ final class BattleCenter {
     }
 
     private func startListener() {
+        // 재시작이면 옛 리스너를 먼저 취소한다. 참조만 버리면 실패한 객체가 큐·포트를 붙든 채
+        // 남아 슬립 복귀마다 누적된다. 형제인 `MultiplayerRoomCenter.leaveRoom` 은 취소하고
+        // 있었다. 호출부가 아니라 입구에 두면 새 재시작 경로가 생겨도 덮인다.
+        listener?.cancel()
         do {
             let listener = try NWListener(using: Self.discoveryParameters())
-            let points = companion.battleRank.points
+            let profile = myAdvertisement
             listener.service = NWListener.Service(name: myServiceName, type: Self.serviceType,
                                                   domain: nil,
-                                                  txtRecord: Self.rankTXTRecord(points: points))
-            advertisedRankPoints = points
+                                                  txtRecord: profile.txtRecord)
+            advertisedProfile = profile
             listener.newConnectionHandler = { [weak self] conn in
                 Task { @MainActor in self?.acceptConnection(conn) }
             }
@@ -646,6 +731,7 @@ final class BattleCenter {
     }
 
     private func startBrowser() {
+        browser?.cancel()   // 재시작 시 옛 브라우저 취소. `startListener` 와 같은 이유.
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil),
                                 using: Self.discoveryParameters())
         browser.browseResultsChangedHandler = { [weak self] results, _ in
@@ -675,19 +761,27 @@ final class BattleCenter {
         self.browser = browser
     }
 
+    /// 발견된 광고 하나를 카드 한 장으로 옮긴다. 자기 필터·표시 이름·광고 파싱이 여기 모인다.
+    /// `updatePeers` 의 클로저 안에 두면 `NWBrowser.Result` 를 만들 수 없어 테스트가 닿지 못한다.
+    /// `endpoint` 에 기본값을 두지 않는 이유: 브라우저가 해석해 준 엔드포인트 대신 손으로 지은
+    /// 것이 쓰이는데, 그 경로는 테스트에서만 밟혀 틀린 채로 남는다.
+    nonisolated static func peer(fromService name: String, txtRecord: NWTXTRecord?,
+                                 excluding myServiceName: String,
+                                 endpoint: NWEndpoint) -> BattlePeer? {
+        guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
+        // 레코드가 없거나 값이 쓰레기여도 피어를 버리지 않는다. 구버전 상대도 목록에 남아야
+        // 신청할 수 있다.
+        return BattlePeer(name: displayName(fromService: name), serviceName: name,
+                          endpoint: endpoint,
+                          advertisement: txtRecord.map(PeerAdvertisement.init) ?? PeerAdvertisement())
+    }
+
     private func updatePeers(_ results: Set<NWBrowser.Result>) {
         peers = results.compactMap { r in
             guard case .service(let name, _, _, _) = r.endpoint else { return nil }
-            guard name != myServiceName else { return nil }   // 내 광고만 제외(고유 접미로 정확히 판정)
-            let points: Int?
-            if case .bonjour(let record) = r.metadata,
-               let raw = record["rankPoints"], let value = Int(raw) {
-                points = value      // 클램프는 `BattleRank.init(points:)` 가 한다
-            } else {
-                points = nil   // 업데이트 전 클라이언트도 목록에서 숨기지 않는다.
-            }
-            return BattlePeer(name: Self.displayName(fromService: name), serviceName: name,
-                              endpoint: r.endpoint, rank: points.map { BattleRank(points: $0) })
+            let record: NWTXTRecord? = if case .bonjour(let txt) = r.metadata { txt } else { nil }
+            return Self.peer(fromService: name, txtRecord: record,
+                             excluding: myServiceName, endpoint: r.endpoint)
         }.sorted { $0.name < $1.name }
         AppLog.write("battle peers updated: \(results.count) result(s), \(peers.count) after self-filter")
         if !peers.isEmpty { lastError = nil }   // 상대가 보이면 이전 차단 경고 해제
@@ -852,6 +946,7 @@ final class BattleCenter {
             let conn = NWConnection(to: endpoint, using: Self.discoveryParameters())
             connection = conn
             phase = .challenging(peer: displayName)
+            startChallengeTimeout()
             conn.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in self?.connectionState(state, conn: conn) }
             }
@@ -860,7 +955,7 @@ final class BattleCenter {
             pendingMyTeamSize = teamSize
             send(.challenge(snapshot: snapshot, lineup: lineup, teamSize: teamSize, seed: seed,
                             profile: companion.battleRankProfile,
-                            rulesVersion: BattleEngine.rulesVersion), over: conn)
+                            rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
             receiveLoop(conn)
         }
     }
@@ -889,7 +984,10 @@ final class BattleCenter {
     }
 
     func cancelChallenge() {
-        if case .challenging = phase { dropConnection(); phase = .ready }
+        if case .challenging = phase {
+            send(.challengeCancelled(reason: .cancelled), over: connection)
+            dropConnection(); phase = .ready
+        }
         if case .preparing = phase { clearPendingOutgoing(); phase = .ready }
     }
 
@@ -924,6 +1022,7 @@ final class BattleCenter {
         }
         let opponentTeam = incomingLineup
         let teamSize = incomingTeamSize
+        cancelChallengeTimeout()
         phase = .preparing
         Task { @MainActor in
             let prepared = await buildMyLineup(size: teamSize, selection: confirmedIDs,
@@ -948,7 +1047,7 @@ final class BattleCenter {
             // 수락이 확정된 뒤에만 공용 선택의 앞부분을 실제 출전 순서로 바꾼다.
             commitIncomingSelection(confirmedIDs)
             send(.accept(snapshot: lead, lineup: mine, teamSize: teamSize, profile: mineProfile,
-                         rulesVersion: BattleEngine.rulesVersion), over: conn)
+                         rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
             beginBattle(my: mine, opp: opponentTeam, iAmA: false, seed: incomingSeed)
         }
     }
@@ -1000,6 +1099,15 @@ final class BattleCenter {
         settleRankedBrawlIfNeeded(won: false)
     }
 
+    /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
+    func sendChat(_ body: String) {
+        guard case .battling = phase, chatIsAvailable,
+              let text = BattleChatPolicy.normalizedBody(body), chatRateLimiter.allows(chatSenderID) else { return }
+        let message = BattleChatMessage(senderID: chatSenderID, senderName: myName, body: text)
+        chatHistory.append(message); chatMessages = chatHistory.messages
+        send(.chat(message), over: connection)
+    }
+
     func dismissResult() {
         cancelTurnTimeout()
         battle = nil
@@ -1024,6 +1132,8 @@ final class BattleCenter {
     }
 
     private func beginBattle(my: [BattleSnapshot], opp: [BattleSnapshot], iAmA: Bool, seed: UInt64) {
+        cancelChallengeTimeout()
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
         didSettleRankedBrawl = false
         lastRankDelta = 0
         if let opponentRankProfile {
@@ -1142,7 +1252,7 @@ final class BattleCenter {
 
     private func handle(_ message: NetMessage) {
         switch message {
-        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion):
+        case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
             guard rulesVersion == BattleEngine.rulesVersion else {
                 send(.decline, over: connection)
@@ -1170,10 +1280,12 @@ final class BattleCenter {
             prepareIncomingSelection(teamSize: teamSize)
             incomingSeed = seed
             opponentRankProfile = profile
+            chatIsAvailable = peerChatSupported == true
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
+            startChallengeTimeout()
             pendingAttention = true
             postChallengeNotification(snapshot)
-        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion):
+        case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let peerChatSupported):
             guard case .challenging = phase, !pendingMyLineup.isEmpty else { return }
             guard rulesVersion == BattleEngine.rulesVersion else {
                 dropConnection(); phase = .ready; lastError = l.battleRulesMismatch
@@ -1189,6 +1301,7 @@ final class BattleCenter {
                 return
             }
             opponentRankProfile = profile
+            chatIsAvailable = peerChatSupported == true
             beginBattle(my: pendingMyLineup, opp: lineup, iAmA: true, seed: incomingSeed)
         case .decline:
             if case .challenging = phase {
@@ -1196,6 +1309,11 @@ final class BattleCenter {
                 phase = .ready
                 lastError = l.battleDeclined
             }
+        case .challengeCancelled(let reason):
+            guard isChallengePending else { return }
+            dropConnection()
+            phase = .ready
+            if reason == .timedOut { lastError = l.battleChallengeTimedOut }
         case .action(let turn, let action):
             guard case .battling = phase, var b = battle, b.oppAction == nil, turn == b.turn,
                   b.canChoose(action, mine: false) else { return }
@@ -1211,6 +1329,11 @@ final class BattleCenter {
                 phase = .finished(iWon: true, byForfeit: true)
                 settleRankedBrawlIfNeeded(won: true)
             }
+        case .chat(let message):
+            guard case .battling = phase, chatIsAvailable,
+                  BattleChatPolicy.normalizedBody(message.body) == message.body,
+                  chatRateLimiter.allows(message.senderID) else { return }
+            chatHistory.append(message); chatMessages = chatHistory.messages
         }
     }
 
@@ -1236,6 +1359,7 @@ final class BattleCenter {
     private func connectionDropped() {
         guard connection != nil else { return }
         connection = nil
+        cancelChallengeTimeout()
         cancelTurnTimeout()   // 상대가 사라진 뒤에 마감이 돌면 이미 끝난 배틀에 기술을 보낸다
         switch phase {
         case .battling:
@@ -1262,18 +1386,45 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
     }
 
     private func dropConnection() {
         let conn = connection
         connection = nil          // connectionDropped 재진입 차단(cancel 콜백)
         conn?.cancel()
+        cancelChallengeTimeout()
         cancelTurnTimeout()
         incomingSnapshot = nil
         incomingLineup = []
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
+    }
+
+    /// 신청 상태에서만 실행되는 별도 마감. 배틀 턴 타이머와 독립적이다.
+    func startChallengeTimeout() {
+        cancelChallengeTimeout()
+        guard isChallengePending else { return }
+        challengeEndsAt = Date().addingTimeInterval(Self.challengeDuration)
+        challengeTimeout = challengeTimeoutScheduler.schedule { [weak self] in
+            self?.expireChallenge()
+        }
+    }
+
+    private func cancelChallengeTimeout() {
+        challengeTimeout?.cancel()
+        challengeTimeout = nil
+        challengeEndsAt = nil
+    }
+
+    private func expireChallenge() {
+        guard isChallengePending else { return }
+        send(.challengeCancelled(reason: .timedOut), over: connection)
+        dropConnection()
+        phase = .ready
+        lastError = l.battleChallengeTimedOut
     }
 
     private func settleRankedBrawlIfNeeded(won: Bool) {

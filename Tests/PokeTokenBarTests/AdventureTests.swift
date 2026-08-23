@@ -2,6 +2,55 @@ import XCTest
 @testable import PokeTokenBar
 
 final class AdventureTests: XCTestCase {
+    func testResumingAStoppedClockDoesNotChargeOfflineDecay() {
+        let old = Date(timeIntervalSince1970: 100_000)
+        let now = old.addingTimeInterval(13 * 3600)
+        var care = PetCareState(hunger: 80, lastUpdatedAt: old)
+
+        let event = care.resumeClock(at: now)
+
+        XCTAssertNil(event)
+        XCTAssertEqual(care.hunger, 80)
+        XCTAssertEqual(care.lastUpdatedAt, now)
+    }
+
+    func testResumingARecentClockAppliesNormalDecay() {
+        let old = Date(timeIntervalSince1970: 100_000)
+        let now = old.addingTimeInterval(2 * 3600)
+        var care = PetCareState(hunger: 30, lastNeedAt: old.addingTimeInterval(-3600), lastUpdatedAt: old)
+
+        let event = care.resumeClock(at: now)
+
+        XCTAssertEqual(event, .requested(.hungry))
+        XCTAssertEqual(care.hunger, 22, accuracy: 0.001)
+    }
+
+    func testLongResumeResetsAllCareClockStateWithoutApplyingDecay() {
+        let old = Date(timeIntervalSince1970: 100_000)
+        let now = old.addingTimeInterval(13 * 3600)
+        var care = PetCareState(hunger: 80, happiness: 70, energy: 60, affection: 40, hygiene: 50,
+                                messCount: 1,
+                                lastMessAt: old.addingTimeInterval(-4 * 3600),
+                                pendingNeed: .hungry,
+                                needDeadline: old.addingTimeInterval(30 * 60),
+                                lastNeedAt: old, lastUpdatedAt: old)
+
+        XCTAssertNil(care.resumeClock(at: now))
+        XCTAssertEqual(care.hunger, 80)
+        XCTAssertEqual(care.happiness, 70)
+        XCTAssertEqual(care.energy, 60)
+        XCTAssertEqual(care.hygiene, 50)
+        XCTAssertEqual(care.affection, 40)
+        XCTAssertEqual(care.messCount, 1)
+        XCTAssertEqual(care.lastUpdatedAt, now)
+        XCTAssertEqual(care.lastMessAt, now)
+        XCTAssertEqual(care.lastNeedAt, now)
+        XCTAssertNil(care.pendingNeed)
+        XCTAssertNil(care.needDeadline)
+        XCTAssertNil(care.advance(to: now))
+        XCTAssertEqual(care.careMistakes, 0)
+    }
+
     func testLegacyIntegrityVersionDoesNotResetOnSchemaUpgrade() {
         var state = CompanionState()
         state.integrityVersion = 0
@@ -455,8 +504,8 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
         // 3 = 라운드 결과가 타입된 이벤트 스트림. 버전을 올려야 옛 빌드가 레이스·배틀 중간이
         // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
-        // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case).
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 5)
+        // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case), 6 = 방 채팅.
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 6)
     }
 
     /// 라운드 결과는 호스트가 게스트에게 **브로드캐스트**하는 유일한 배틀 페이로드다. 이벤트가

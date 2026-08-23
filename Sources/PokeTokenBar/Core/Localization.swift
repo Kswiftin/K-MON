@@ -7,7 +7,11 @@ struct L {
     let lang: AppLanguage
     init(_ lang: AppLanguage) { self.lang = lang }
 
-    private func t(_ ko: String, _ en: String, _ ja: String) -> String {
+    /// 세 언어를 한자리에서 고른다. 뷰에서도 직접 쓴다. 일회성 문구까지 이름 붙인 프로퍼티로
+    /// 올리면 이 파일이 뒤덮이고, 그걸 피하려다 두 갈래 삼항이 115곳 쌓여 일본어 사용자에게
+    /// 영어가 나갔다. 인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다. 두 화면이 같은 문구를
+    /// 쓰면 그때 프로퍼티로 승격한다. 가드는 `LanguageSplitGuardTests`.
+    func t(_ ko: String, _ en: String, _ ja: String) -> String {
         switch lang {
         case .ko: return ko
         case .en: return en
@@ -17,7 +21,12 @@ struct L {
 
     // MARK: 탭
     var home: String { t("홈", "Home", "ホーム") }
-    var collection: String { t("도감", "Pokédex", "ポケモン図鑑") }
+    /// 최상위 탭 라벨. **하위 세그먼트(도감 | 업적)의 상위어여야 한다** — "도감" 이던 때는 도감 탭
+    /// 안에 다시 "도감" 세그먼트가 보였다. 도감 쪽은 `dexTitle` 을 쓴다.
+    /// 이름을 늘려도 상단 피커 폭은 그대로다 — 계측 ko 330pt · en 445pt(변화 없음) · ja 445pt
+    /// (옛 "ポケモン図鑑" 455pt 보다 10pt 좁다). en·ja 는 다섯 라벨이 이미 콘텐츠 폭 332pt 를 넘어
+    /// macOS 가 압축하는 기존 상태다 — **더 늘리지 않는다**.
+    var collection: String { t("컬렉션", "Collection", "コレクション") }
     var battle: String { t("배틀", "Battle", "バトル") }
 
     // MARK: 배틀
@@ -51,6 +60,8 @@ struct L {
           "同じネットワークで対戦相手を探しています… 相手もアプリを起動している必要があります。")
     }
     var battleChallengeButton: String { t("대결 신청", "Challenge", "対戦を申し込む") }
+    /// 구버전 상대는 랭크를 광고하지 않는다. 최하위 티어와 구별돼야 하므로 빈칸이 아니라 문구다.
+    var battleRankUnknown: String { t("랭크 정보 없음", "Rank unavailable", "ランク情報なし") }
     var battleWaitingAccept: String { t("수락 대기 중…", "Waiting for accept…", "承諾を待っています…") }
     var battleCancel: String { t("취소", "Cancel", "キャンセル") }
     var battleIncomingTitle: String { t("배틀 신청이 왔습니다!", "Incoming battle challenge!", "バトルの申し込みが来ました！") }
@@ -63,6 +74,18 @@ struct L {
     }
     var battleDeclined: String { t("상대가 거절했어요.", "They declined.", "相手に断られました。") }
     var battleConnectionLost: String { t("연결이 끊어졌어요.", "Connection lost.", "接続が切れました。") }
+    var battleChallengeTimedOut: String { t("신청 시간이 초과됐어요.", "The challenge timed out.", "対戦の申請時間が切れました。") }
+    func battleChallengeTimeRemaining(_ seconds: Int) -> String {
+        t("수락까지 \(seconds)초", "\(seconds)s to accept", "承諾まで \(seconds)秒")
+    }
+    func menuBarBattleChallengeSent(_ peer: String) -> String { t("\(peer) 응답 대기", "Waiting for \(peer)", "\(peer)の応答待ち") }
+    func menuBarBattleChallengeReceived(_ peer: String) -> String { t("\(peer) 수락 대기", "Accept \(peer)'s challenge", "\(peer)の承諾待ち") }
+    func menuBarBattling(_ peer: String, isMyTurn: Bool) -> String {
+        let koTurn = isMyTurn ? "내 턴" : "상대 턴"
+        let enTurn = isMyTurn ? "Your turn" : "Opponent's turn"
+        let jaTurn = isMyTurn ? "自分のターン" : "相手のターン"
+        return t("\(peer)와 대결 중 · \(koTurn)", "Battling \(peer) · \(enTurn)", "\(peer)と対戦中 · \(jaTurn)")
+    }
     /// 랭크전 판돈을 못 낼 때 — 세 경로(수신 수락·수락 응답·개시 에스크로)가 같은 문구를 쓴다.
     var battleStakeShort: String {
         t("랭크전 판돈이 부족해요.", "Not enough Star Pieces for the ranked stake.",
@@ -76,6 +99,15 @@ struct L {
     var battleYourTurn: String { t("기술 또는 교체를 선택하세요", "Choose a move or switch", "わざか交代を選んでください") }
     var battleWaitingOpponent: String { t("상대가 행동을 고르는 중…", "Opponent is choosing…", "相手が行動を選んでいます…") }
     var battleForfeit: String { t("기권", "Forfeit", "降参") }
+    var battleChatTitle: String { t("채팅", "Chat", "チャット") }
+    var battleChatPlaceholder: String { t("메시지 입력", "Type a message", "メッセージを入力") }
+    var battleChatSend: String { t("전송", "Send", "送信") }
+    var battleChatUnavailable: String {
+        t("상대 앱 버전에서는 채팅을 지원하지 않습니다.", "Chat is unavailable with this app version.", "相手のアプリのバージョンではチャットを利用できません。")
+    }
+    func battleChatNewMessages(_ count: Int) -> String {
+        t("새 메시지 (count)개", "(count) new messages", "新着メッセージ (count)件")
+    }
     var battleSwitch: String { t("교체", "Switch", "こうたい") }
     var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }
     var battleNoEffect: String { t("효과가 없었다…", "It had no effect…", "こうかがないようだ…") }
@@ -680,29 +712,39 @@ struct L {
                  "\(name) — you earned \(amount) Star Pieces!",
                  "\(name) — ほしのかけら \(amount) を獲得！")
     }
-    /// 이름 없는 미션은 **빈 문자열**을 돌려준다 — 카탈로그에 미션을 더하고 문구를 빼먹으면
-    /// `MissionBoardTests` 가 그 자리에서 실패한다. id 를 폴백으로 쓰면 그 가드가 무력해진다.
-    /// 이름에 "오늘"·"이번 주"를 넣지 않는다 — 카드의 일간/주간 배지가 이미 그 말을 하고,
-    /// 360pt 팝오버에서 같은 정보를 두 번 쓰면 이름이 잘린다. 목표 수치가 들어가 있어
-    /// 알림에서도 어느 미션인지 구분된다(집중 60분 vs 300분).
-    func missionName(_ mission: Mission) -> String {
-        switch mission.id {
-        case "dailyAdventures":
-            return t("모험 정산 \(mission.target)회",
-                     "Claim \(mission.target) adventures",
-                     "冒険を\(mission.target)回精算")
-        case "dailyFocus", "weeklyFocus":
-            return t("집중 \(mission.target)분",
-                     "Focus \(mission.target) minutes",
-                     "\(mission.target)分集中")
-        case "weeklyGraduation":
-            return t("졸업 \(mission.target)회",
-                     "Graduate \(mission.target) partner",
-                     "\(mission.target)体を卒業")
-        default: return ""
+    /// 목표 이름 — 미션과 시즌 챌린지가 **같은 문구를 공유**한다. 두 곳에 두면 한쪽만 고쳐진다.
+    ///
+    /// id 가 아니라 **이벤트로 스위치**한다: 이벤트를 더하면 컴파일러가 막으니 빈 문자열 폴백이
+    /// 필요 없다(`achievementName` 과 같은 이유). "오늘"·"이번 주" 는 넣지 않는다 — 카드의 주기
+    /// 배지가 이미 말하고, 360pt 팝오버에서 두 번 쓰면 이름이 잘린다. 목표 수치가 들어가 알림에서도
+    /// 구분된다(집중 60분 vs 300분).
+    func goalName(_ event: MissionEvent, _ target: Int) -> String {
+        switch event {
+        case .adventures:
+            return t("모험 정산 \(target)회", "Claim \(plural(target, "adventure"))", "冒険を\(target)回精算")
+        case .focusMinutes:
+            return t("집중 \(target)분", "Focus \(plural(target, "minute"))", "\(target)分集中")
+        case .graduations:
+            return t("졸업 \(target)회", "Graduate \(plural(target, "partner"))", "\(target)体を卒業")
         }
     }
+
+    /// 영어 복수형 — 세 이벤트가 공유한다. 한 케이스만 처리하면 목표값을 1 로 조절하는 순간
+    /// 나머지에서 "Claim 1 adventures" 가 나온다.
+    private func plural(_ count: Int, _ noun: String) -> String {
+        "\(count) \(noun)\(count == 1 ? "" : "s")"
+    }
+
+    func missionName(_ mission: Mission) -> String { goalName(mission.event, mission.target) }
     var missionsTitle: String { t("미션", "Missions", "ミッション") }
+
+    /// 시즌 카드 제목과 남은 일수. 완료 알림 본문은 미션 것을 재사용한다(같은 문장을 두 번 번역하지
+    /// 않는다). 남은 일수는 한 줄 헤더에 들어가므로 가장 짧은 말을 쓴다.
+    var seasonTitle: String { t("시즌 챌린지", "Season challenges", "シーズンチャレンジ") }
+    func seasonDaysLeft(_ days: Int) -> String {
+        t("\(days)일 남음", "\(days)d left", "残り\(days)日")
+    }
+    var notifSeasonDoneTitle: String { t("🗓️ 시즌 챌린지 달성!", "🗓️ Season challenge cleared!", "🗓️ シーズンチャレンジ達成！") }
 
     var notifDexGoalTitle: String { t("📘 도감 목표 달성!", "📘 Pokédex goal cleared!", "📘 図鑑目標を達成！") }
     func notifDexGoalBody(_ name: String) -> String {
@@ -728,6 +770,44 @@ struct L {
     }
     /// 주간 배지는 위쪽 한도 섹션의 `weekly` 를 그대로 쓴다 — 같은 한 단어를 두 번 번역하지 않는다.
     var missionDaily: String { t("일간", "Daily", "デイリー") }
+
+    /// 컬렉션 탭 세그먼트 라벨 겸 선반 제목. 체육관 "배지" 와 다른 말을 쓴다 — 한 앱에 배지가
+    /// 두 종류면 어느 쪽 진행인지 안 읽힌다.
+    var achievementsTitle: String { t("업적", "Achievements", "実績") }
+    /// 단계 표시(`●●○○`)의 스크린리더 대체 문구 — 점 문자를 그대로 읽히면 "검은 원 흰 원" 이 된다.
+    func achievementTierLabel(_ reached: Int, _ total: Int) -> String {
+        t("\(total)단계 중 \(reached)단계", "tier \(reached) of \(total)", "\(total)段階中\(reached)段階")
+    }
+    /// 카드 진행도 줄의 스크린리더 대체 문구. `Lv.12 · 🏅8/16` 을 그대로 읽히면 뜻이 안 통한다.
+    /// 광고에 없는 칸은 문구에서도 빠진다.
+    func peerProgressLabel(_ level: Int?, _ tiers: Int?, _ total: Int) -> String {
+        var parts: [String] = []
+        if let level {
+            parts.append(t("트레이너 Lv.\(level)", "Trainer Lv.\(level)", "トレーナー Lv.\(level)"))
+        }
+        if let tiers {
+            parts.append(t("업적 \(tiers)/\(total)", "\(tiers) of \(total) achievements", "実績 \(tiers)/\(total)"))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    var notifAchievementTitle: String { t("🏅 업적 달성!", "🏅 Achievement unlocked!", "🏅 実績を達成！") }
+    func notifAchievementBody(_ name: String, _ tier: Int, _ stardust: Int) -> String {
+        let amount = GameNumberFormatter.compact(stardust)
+        return t("\(name) \(tier)단계 — 별의조각 \(amount) 받았어요!",
+                 "\(name) tier \(tier) — you earned \(amount) Star Pieces!",
+                 "\(name) ティア\(tier) — ほしのかけら \(amount) を獲得！")
+    }
+    /// 업적 트랙 이름. 미션·도감 목표와 달리 **id 문자열이 아니라 열거형으로 스위치**한다 —
+    /// 트랙을 더하면 컴파일이 막으니 빈 문자열 폴백이 필요 없다.
+    func achievementName(_ track: AchievementTrack) -> String {
+        switch track {
+        case .focus:  return t("집중 시간", "Focus time", "集中時間")
+        case .evolve: return t("진화", "Evolutions", "進化")
+        case .battle: return t("배틀 승리", "Battle wins", "バトル勝利")
+        case .race:   return t("레이스 완주", "Races finished", "レース完走")
+        }
+    }
 
     var notifGraduateTitle: String { t("🎓 졸업!", "🎓 Graduated!", "🎓 卒業！") }
     func notifGraduateBody(_ name: String) -> String { t("\(name) — 도감에 보존! 새 알이 도착했어요.", "\(name) — saved to your Pokédex! A new egg has arrived.", "\(name) — 図鑑に保存！新しいタマゴが届きました。") }
@@ -990,6 +1070,7 @@ struct L {
         case .prismScale: return t("아름다운비늘", "Prism Scale", "きれいなウロコ")
         case .freshWater: return t("먹는샘물", "Fresh Water", "おいしいみず")
         case .ovalStone: return t("둥근돌", "Oval Stone", "まるいいし")
+        case .heartScale: return t("하트비늘", "Heart Scale", "ハートのウロコ")
         }
     }
     func itemDescription(_ kind: ItemKind) -> String {
@@ -1003,6 +1084,12 @@ struct L {
             return t("현재 포켓몬의 성격을 랜덤으로 바꿔줘요.",
                      "Randomly changes your Pokémon's nature.",
                      "ポケモンのせいかくをランダムに変えます。")
+        // 하트비늘(#97) — 아래 `default:` 는 진화 아이템 전용이라 여기에 명시하지 않으면
+        // `evolutionRule == nil` 로 흘러가 설명이 빈 문자열이 된다.
+        case .heartScale:
+            return t("지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요.",
+                     "Recalls one move it could have learned by now. With four moves, one is forgotten.",
+                     "これまでに覚えられた技をひとつ思い出します。技が4つなら1つ忘れます。")
         case .shinyCharm:
             return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
                      "While owned, raises the chance of hatching a shiny.",
@@ -1029,6 +1116,14 @@ struct L {
     }
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
     var mintEffectHint: String { t("성격 랜덤 변경", "Random nature", "せいかくランダム変更") }
+
+    // MARK: 하트비늘 (기술 다시 배우기 — #97)
+    var heartScaleEffectHint: String { t("기술 다시 배우기", "Relearn a move", "技を思い出す") }
+    var relearnHeader: String { t("기술을 다시 떠올릴까요?", "Relearn a move?", "技を思い出しますか？") }
+    var relearnPickTitle: String { t("떠올릴 기술을 고르세요.", "Choose a move to relearn.", "思い出す技を選んでください。") }
+    var relearnLoading: String { t("떠올릴 수 있는 기술을 찾고 있어요…", "Looking for moves to relearn…", "思い出せる技を探しています…") }
+    var relearnEmpty: String { t("지금 떠올릴 수 있는 기술이 없어요.", "There are no moves to relearn right now.", "いま思い出せる技はありません。") }
+    var relearnClose: String { t("닫기", "Close", "閉じる") }
 
     // MARK: 상점 (재화 = 별의모래)
     var shop: String { t("상점", "Shop", "ショップ") }

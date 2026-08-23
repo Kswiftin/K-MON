@@ -95,6 +95,8 @@ struct SpriteView: View {
     var bob: Bool = false
     var animated: Bool = false
     var shiny: Bool = false
+    /// 네트워크/캐시 실패 때 알 이모지 대신 호출자가 정한 식별자를 유지한다.
+    var fallbackLabel: String? = nil
     /// 배틀 필드의 내 쪽만 등 스프라이트다. 한 뷰의 방향은 평생 바뀌지 않으므로 `needsReload` 의
     /// 축이 아니다 — 앞을 보던 스프라이트가 뒤로 도는 일은 없다.
     var back: Bool = false
@@ -111,12 +113,13 @@ struct SpriteView: View {
     @State private var frameIndex = 0
 
     init(speciesID: Int?, size: CGFloat = 84, bob: Bool = false, animated: Bool = false,
-         shiny: Bool = false, back: Bool = false, minFrameDelay: TimeInterval = 0) {
+         shiny: Bool = false, fallbackLabel: String? = nil, back: Bool = false, minFrameDelay: TimeInterval = 0) {
         self.speciesID = speciesID
         self.size = size
         self.bob = bob
         self.animated = animated
         self.shiny = shiny
+        self.fallbackLabel = fallbackLabel
         self.back = back
         self.minFrameDelay = minFrameDelay
         // 캐시에 있으면 즉시(동기) 표시 — 재렌더 플래시 방지 + 정적 스냅샷에서도 보임.
@@ -166,6 +169,12 @@ struct SpriteView: View {
             } else if let img {
                 Image(nsImage: img).resizable().interpolation(antialiasing ? .high : .none)
                     .frame(width: size, height: size)
+            } else if let fallbackLabel {
+                Text(fallbackLabel)
+                    .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(width: size, height: size)
+                    .background(Color.secondary.opacity(0.14), in: Circle())
             } else {
                 Text("🥚").font(.system(size: size * 0.62)).frame(width: size, height: size)
             }
@@ -453,6 +462,7 @@ struct CompanionHeader: View {
     // 별명 인라인 편집
     @State private var editingName = false
     @State private var nameDraft = ""
+    @Environment(PokemonChatPresenter.self) private var chatPresenter
     /// 기술 목록은 처음부터 펼쳐 둔다. 파트너에게 무엇이 있는지가 홈에서 가장 자주 보는 정보인데,
     /// 접혀 있으면 팝오버를 열 때마다 한 번 더 눌러야 했다. 접으면 그 팝오버가 열려 있는 동안은
     /// 접힌 채로 있고, 닫았다 열면 다시 펼쳐진다(`@State` 라 팝오버 생명주기를 따른다).
@@ -548,6 +558,14 @@ struct CompanionHeader: View {
                                 .background(rarityColor(r)).foregroundStyle(.white)
                                 .clipShape(Capsule())
                         }
+                        if store.hasActive, !editingName {
+                            Button { if let id = store.activeMonID { chatPresenter.open(companionID: id) } } label: {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .buttonStyle(.borderless).controlSize(.mini)
+                            .accessibilityLabel(store.l.t("포켓몬과 대화", "Chat with Pokémon", "ポケモンと話す"))
+                        }
                     }
                     if store.hasActive {
                         // 단계 + 성격(부화 시 확정된 개체 아이덴티티)
@@ -561,10 +579,10 @@ struct CompanionHeader: View {
                         }
                         HStack {
                             Text(store.experienceToNextLevel > 0
-                                 ? (store.language == .ko
-                                    ? "다음 레벨까지 \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP"
-                                    : "\(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP to next level")
-                                 : (store.language == .ko ? "최고 레벨" : "Max level"))
+                                 ? store.l.t("다음 레벨까지 \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP",
+                                         "\(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP to next level",
+                                         "次のレベルまで \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP")
+                                 : store.l.t("최고 레벨", "Max level", "最高レベル"))
                                 .font(.caption2).foregroundStyle(.tertiary)
                             Spacer()
                         }
@@ -573,7 +591,7 @@ struct CompanionHeader: View {
                         HStack(spacing: 6) {
                             Spacer(minLength: 0)
                             if let evolutionLevel = store.nextEvolutionLevel {
-                                Text(store.language == .ko ? "Lv.\(evolutionLevel)에 진화" : "Evolves at Lv.\(evolutionLevel)")
+                                Text(store.l.t("Lv.\(evolutionLevel)에 진화", "Evolves at Lv.\(evolutionLevel)", "Lv.\(evolutionLevel) で進化"))
                                     .font(.caption2).foregroundStyle(.tertiary)
                             } else if let evolutionItem = store.nextEvolutionItem {
                                 // 돌·교환 진화는 레벨이 아무리 올라도 저절로 일어나지 않는다 —
@@ -607,7 +625,7 @@ struct CompanionHeader: View {
                             Text(store.l.eggToHatch(GameNumberFormatter.compact(store.eggTokensToHatch)))
                                 .font(.caption2).foregroundStyle(.tertiary)
                             Spacer(minLength: 0)
-                            Text(store.language == .ko ? "집중 세션을 완료하면 부화" : "Complete focus sessions to hatch")
+                            Text(store.l.t("집중 세션을 완료하면 부화", "Complete focus sessions to hatch", "集中セッションの完了でふ化"))
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                         // 첫 실행(적립 0) — 정적 알 앞에서 "고장났나" 오해 방지용 한 줄 안내
@@ -643,6 +661,15 @@ struct CompanionHeader: View {
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
             if store.canGraduate { GraduateCard(store: store) }
             if let prompt = store.moveLearningPrompt { MoveLearningCard(store: store, prompt: prompt) }
+            if store.isLoadingRelearnCandidates {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(store.l.relearnLoading).font(.caption2).foregroundStyle(.secondary)
+                }
+            } else if store.moveLearningPrompt == nil, let relearn = store.relearnPrompt {
+                // 학습 카드가 떠 있을 땐 그리지 않는다 — 두 카드가 겹쳐 뜨면 어느 쪽 결정인지 알 수 없다.
+                MoveRelearnCard(store: store, prompt: relearn)
+            }
             if let g = store.justGraduated {
                 Text(store.l.graduated(g))
                     .font(.caption2).foregroundStyle(.orange)
@@ -912,13 +939,13 @@ private struct GraduateCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(store.language == .ko ? "다 키웠어요!" : "Fully grown!", systemImage: "graduationcap.fill")
+            Label(store.l.t("다 키웠어요!", "Fully grown!", "育ちきりました！"), systemImage: "graduationcap.fill")
                 .font(.caption.weight(.semibold))
-            Text(store.language == .ko
-                 ? "도감에 기록하고 새 알을 받아요. 이 포켓몬은 박스에 보관돼 언제든 다시 데려올 수 있어요."
-                 : "Records it in the Pokédex and starts a new egg. This Pokémon moves to your box, so you can bring it back anytime.")
+            Text(store.l.t("도감에 기록하고 새 알을 받아요. 이 포켓몬은 박스에 보관돼 언제든 다시 데려올 수 있어요.",
+                     "Records it in the Pokédex and starts a new egg. This Pokémon moves to your box, so you can bring it back anytime.",
+                     "図鑑に記録して新しいタマゴを受け取ります。このポケモンはボックスに預けられ、いつでも連れ戻せます。"))
                 .font(.caption2).foregroundStyle(.secondary)
-            Button(store.language == .ko ? "도감에 등록하고 새 알 받기" : "Record and get a new egg") {
+            Button(store.l.t("도감에 등록하고 새 알 받기", "Record and get a new egg", "図鑑に登録して新しいタマゴ")) {
                 store.graduateCompanion()
             }
             .buttonStyle(.borderedProminent).controlSize(.small)
@@ -934,7 +961,7 @@ private struct EvolutionPromptCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(store.language == .ko ? "진화할 수 있어요!" : "Evolution is available!", systemImage: "sparkles")
+            Label(store.l.t("진화할 수 있어요!", "Evolution is available!", "進化できます！"), systemImage: "sparkles")
                 .font(.caption.weight(.semibold)).foregroundStyle(.orange)
             HStack(spacing: 10) {
                 SpriteView(speciesID: prompt.fromSpeciesID, size: 46, shiny: store.state.active?.isShiny ?? false)
@@ -942,22 +969,66 @@ private struct EvolutionPromptCard: View {
                 SpriteView(speciesID: prompt.toSpeciesID, size: 46, shiny: store.state.active?.isShiny ?? false)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(prompt.toName).font(.callout.bold())
-                    Text(store.language == .ko ? "Lv.\(prompt.requiredLevel) 진화" : "Evolves at Lv. \(prompt.requiredLevel)")
+                    Text(store.l.t("Lv.\(prompt.requiredLevel) 진화", "Evolves at Lv. \(prompt.requiredLevel)", "Lv.\(prompt.requiredLevel) で進化"))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
-            Text(store.language == .ko ? "\(prompt.toName)(으)로 진화할까요?" : "Evolve into \(prompt.toName)?")
+            Text(store.l.t("\(prompt.toName)(으)로 진화할까요?", "Evolve into \(prompt.toName)?", "\(prompt.toName) に進化させますか？"))
                 .font(.caption)
             HStack {
-                Button(store.language == .ko ? "예, 진화할래요" : "Yes, evolve") { store.acceptEvolution() }
+                Button(store.l.t("예, 진화할래요", "Yes, evolve", "はい、進化させる")) { store.acceptEvolution() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
-                Button(store.language == .ko ? "아니오" : "No") { store.declineEvolution() }
+                Button(store.l.t("아니오", "No", "いいえ")) { store.declineEvolution() }
                     .controlSize(.small)
             }
         }
         .padding(9)
         .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+/// 하트비늘 후보 목록(#97) — 고르면 기존 MoveLearningCard 로 넘어간다(교체 UI 는 그쪽 한 곳만).
+private struct MoveRelearnCard: View {
+    let store: CompanionStore
+    let prompt: CompanionStore.RelearnPrompt
+
+    var body: some View {
+        let l = store.l
+        VStack(alignment: .leading, spacing: 7) {
+            Label(l.relearnHeader, systemImage: "arrow.counterclockwise")
+                .font(.caption.weight(.semibold)).foregroundStyle(.pink)
+            if prompt.candidates.isEmpty {
+                Text(l.relearnEmpty).font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Text(l.relearnPickTitle).font(.caption2).foregroundStyle(.secondary)
+                // 후보가 수십 개까지 늘 수 있다 — 높이를 묶어 카드가 팝오버를 밀어내지 않게 한다.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(prompt.candidates) { move in
+                            Button {
+                                store.pickRelearnCandidate(move)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Text(move.name(store.language)).font(.caption)
+                                    TypeBadge(type: move.type, language: store.language)
+                                    Text(move.damageClass == .status
+                                         ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 180)
+            }
+            Button(l.relearnClose) { store.cancelRelearn() }.controlSize(.small)
+        }
+        .padding(9)
+        .background(Color.pink.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
     }
 }
 
@@ -967,14 +1038,21 @@ private struct MoveLearningCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label(store.language == .ko ? "새로운 기술을 배울 수 있어요" : "A new move is available",
-                  systemImage: "sparkles")
-                .font(.caption.weight(.semibold)).foregroundStyle(.purple)
+            // 하트비늘 유래면 "다시 떠올리기" 로 말한다 — 레벨업으로 새로 얻은 기술이 아니다.
+            Label(prompt.origin == .heartScale
+                  ? store.l.relearnHeader
+                  : store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます"),
+                  systemImage: prompt.origin == .heartScale ? "arrow.counterclockwise" : "sparkles")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(prompt.origin == .heartScale ? Color.pink : Color.purple)
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(prompt.move.name(store.language)).font(.callout.bold())
                     HStack(spacing: 5) {
-                        Text("Lv.\(prompt.level)").font(.caption2).foregroundStyle(.secondary)
+                        // 다시 배우는 기술엔 습득 레벨이 없다 — 현재 레벨을 여기 찍으면 없는 숫자를 만든다.
+                        if prompt.origin == .levelUp {
+                            Text("Lv.\(prompt.level)").font(.caption2).foregroundStyle(.secondary)
+                        }
                         TypeBadge(type: prompt.move.type, language: store.language)
                         // 행 라벨과 같은 L 어휘를 쓴다 — 예전엔 "변화"/"Power N"이 박혀 있어
                         // 한국어 UI 에 "Power 90", 영어 UI 에 "변화"가 나왔다(#10 부류).
@@ -990,7 +1068,7 @@ private struct MoveLearningCard: View {
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let active = store.state.active, active.learnedMoves.count >= 4 {
-                Text(store.language == .ko ? "잊을 기술을 선택하세요." : "Choose a move to forget.")
+                Text(store.l.t("잊을 기술을 선택하세요.", "Choose a move to forget.", "忘れるわざを選んでください。"))
                     .font(.caption2).foregroundStyle(.secondary)
                 ForEach(Array(active.learnedMoves.enumerated()), id: \.element.id) { index, move in
                     // 잊을 기술의 타입만 괄호로 — 배울 기술의 타입은 카드 상단 TypeBadge 에 이미 있다.
@@ -1000,15 +1078,15 @@ private struct MoveLearningCard: View {
                 }
             } else {
                 HStack {
-                    Button(store.language == .ko ? "예, 배울래요" : "Yes, learn it") {
+                    Button(store.l.t("예, 배울래요", "Yes, learn it", "はい、覚える")) {
                         store.acceptMoveLearning()
                     }.buttonStyle(.borderedProminent).controlSize(.small)
-                    Button(store.language == .ko ? "아니오" : "No") { store.declineMoveLearning() }
+                    Button(store.l.t("아니오", "No", "いいえ")) { store.declineMoveLearning() }
                         .controlSize(.small)
                 }
             }
             if store.state.active?.learnedMoves.count ?? 0 >= 4 {
-                Button(store.language == .ko ? "배우지 않기" : "Don't learn") { store.declineMoveLearning() }
+                Button(store.l.t("배우지 않기", "Don't learn", "覚えない")) { store.declineMoveLearning() }
                     .controlSize(.small)
             }
         }
@@ -1041,12 +1119,12 @@ struct StarterPickerView: View {
             Divider()
 
             // 2) 타입 선택 — 해당 타입의 1세대 미진화체 한 마리가 알에서 무작위로 부화한다.
-            Text(store.language == .ko ? "원하는 타입을 골라요" : "Choose a type")
+            Text(store.l.t("원하는 타입을 골라요", "Choose a type", "好きなタイプを選ぼう"))
                 .font(.callout.weight(.semibold))
             if picking {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(store.language == .ko ? "알 속의 포켓몬을 만나고 있어요…" : "Meeting the Pokémon inside the Egg…")
+                    Text(store.l.t("알 속의 포켓몬을 만나고 있어요…", "Meeting the Pokémon inside the Egg…", "タマゴの中のポケモンに会っています…"))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -1068,9 +1146,9 @@ struct StarterPickerView: View {
                     }
                 }
                 Text(nameReady
-                     ? (store.language == .ko
-                        ? "선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다."
-                        : "A random unevolved Gen I Pokémon of that type will hatch. Legendary and Mythical Pokémon are excluded.")
+                     ? store.l.t("선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다.",
+                             "A random unevolved Gen I Pokémon of that type will hatch. Legendary and Mythical Pokémon are excluded.",
+                             "選んだタイプの第1世代・未進化ポケモンがランダムでふ化します。伝説・幻は除きます。")
                      : l.starterNeedName)
                     .font(.caption2).foregroundStyle(nameReady ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.orange))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1174,8 +1252,9 @@ struct DexSummaryHeader: View {
 /// 헤더에 남은 여유는 24pt 뿐이라 한 줄이 상한이고, 진행도는 `12/25` 숫자로만 보인다
 /// (`PopoverLayoutTests.testDexGoalStripFitsTheDexHeaderBudget` 이 지킨다).
 ///
-/// 새 탭·세그먼트도 만들지 않는다 — 탭을 늘리면 `PopoverTab` 높이 표와 360pt 세그먼트 피커가
-/// 따라오는데 얻는 건 세 칸짜리 줄 하나다.
+/// 이 줄 때문에 새 탭을 만들지 않는다 — 탭을 늘리면 `PopoverTab` 높이 표와 360pt 세그먼트 피커가
+/// 따라오는데 얻는 건 세 칸짜리 줄 하나다. 나중에 들어온 업적 세그먼트는 이 줄의 24pt 를 빼앗지
+/// 않도록 `CollectionView` 프레임 **밖에** 얹혀 있다.
 struct DexGoalStrip: View {
     let store: CompanionStore
 
@@ -1210,18 +1289,52 @@ struct DexGoalStrip: View {
 struct CollectionView: View {
     let store: CompanionStore
 
-    /// 도감·로그 공통 높이 — 상점·가방과 같은 520. 세그먼트를 전환할 때도, 탭을 넘나들 때도
-    /// 팝오버가 리사이즈되지 않는다.
+    private enum Section: Hashable { case dex, achievements }
+    @State private var section: Section = .dex
+
+    private var l: L { store.l }
+
+    /// 하위 화면 공통 높이 — 상점·가방과 같은 520. 두 세그먼트가 이 프레임을 공유하니 전환해도
+    /// 높이가 튀지 않는다.
     ///
-    /// 예산: 520 − 세그먼트 24 − 헤더 39 − 하단 줄 18 − 간격 24 = 격자 415. 6행 spacing 4 면
+    /// 예산: 520 − 헤더 39 − 목표 줄 24 − 하단 줄 18 − 간격 24 = 격자 415. 6행 spacing 4 면
     /// 행이 65.8 이고, 칸 여백 6 과 이름 12 를 빼면 스프라이트에 47.8 이 남는다(현재 44).
-    private static let contentHeight: CGFloat = 520
+    ///
+    /// 이 24pt 는 원래 세그먼트 몫이었지만 목표 줄이 먼저 썼다 — 그래서 세그먼트는 이 프레임 밖에
+    /// 얹는다. 안으로 넣으면 6행이 눌려 스프라이트가 잘린다.
+    /// `PopoverLayoutTests` 가 읽는다 — 예산 검증이 실제 프레임을 따라오게 하려고 internal 이다.
+    static let contentHeight: CGFloat = 520
+    /// 업적 세그먼트에서 시즌 카드와 업적 선반 사이 간격. 예산 합산에 들어가므로 상수로 둔다.
+    static let cardSpacing: CGFloat = 8
 
     var body: some View {
-        if store.dexEntries.isEmpty {
-            emptyState
-        } else {
-            DexGridView(store: store).frame(height: Self.contentHeight)
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: $section) {
+                // 상위 탭이 "컬렉션" 이라 여기서는 `dexTitle`("도감") 을 쓴다 — `l.collection` 이면
+                // 탭과 세그먼트가 같은 말이 되어 계층이 안 읽힌다.
+                Text(l.dexTitle).tag(Section.dex)
+                Text(l.achievementsTitle).tag(Section.achievements)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            // 두 분기가 **같은 프레임**을 공유한다 — 각자 프레임을 가지면 전환마다 높이가 달라진다.
+            content.frame(height: Self.contentHeight, alignment: .top)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch section {
+        case .dex:
+            // 도감이 비어도 업적은 볼 수 있어야 한다 — 빈 화면은 도감 분기 안에만 둔다.
+            if store.dexEntries.isEmpty { emptyState } else { DexGridView(store: store) }
+        case .achievements:
+            // 시즌 카드가 위 — 만료되는 쪽이 먼저 보여야 한다. 업적은 사라지지 않는다.
+            VStack(alignment: .leading, spacing: Self.cardSpacing) {
+                SeasonChallengeView(store: store)
+                AchievementShelfView(store: store)
+            }
         }
     }
 

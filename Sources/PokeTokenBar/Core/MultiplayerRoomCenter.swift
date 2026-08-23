@@ -25,7 +25,31 @@ final class MultiplayerRoomCenter {
     private(set) var hasSubmittedAction = false
     private(set) var turnEndsAt: Date?
     private(set) var lastError: String?
-    private(set) var pokeathlonRace: PokeathlonRace?
+    private(set) var chatMessages: [BattleChatMessage] = []
+    private var chatHistory = BattleChatHistory()
+    private var chatRateLimiter = BattleChatRateLimiter()
+    /// 경기 중에도 매 입력마다 대입된다(호스트 반영·게스트 수신). 그래서 완주 적립은
+    /// **nil → 우승자 확정 전이**에서만 발화한다 — 판정은 아래 순수 함수가 한다.
+    private(set) var pokeathlonRace: PokeathlonRace? {
+        didSet {
+            guard Self.creditsRaceFinish(old: oldValue, new: pokeathlonRace, myID: myID) else { return }
+            companion.recordRaceFinish()
+        }
+    }
+
+    /// 이번 대입이 "내 완주" 인지. 네트워크 없이 전 분기를 검증하려고 순수 함수로 떼어 뒀다
+    /// (`MultiplayerBattle.outcome` 과 같은 이유).
+    ///
+    /// 우승 확정 뒤에도 브로드캐스트가 이어지니 `old` 가 이미 확정이면 세지 않는다. 관전자는
+    /// `racers` 에 없어 자동으로 빠진다. 이 한 곳이 호스트·게스트·솔로를 모두 덮는다 —
+    /// `applySettlement` 에 걸면 베팅 없는 솔로 레이스가 조기 반환에 통째로 빠진다.
+    /// `nonisolated` 가 없으면 클래스의 `@MainActor` 를 물려받아 동기 테스트에서 못 부른다
+    /// (`parameters()`·`displayName(_:)` 도 같다).
+    nonisolated static func creditsRaceFinish(old: PokeathlonRace?, new: PokeathlonRace?, myID: UUID) -> Bool {
+        guard old?.winnerID == nil, let new, new.winnerID != nil,
+              new.racers.contains(where: { $0.id == myID }) else { return false }
+        return true
+    }
     private(set) var pokeathlonPool = PokeathlonPool()
     private(set) var settlementPayout: Int?
     /// 내가 이미 지갑에서 뺀 베팅. 원장이 바뀌면 차액만 조정하고, 정산 때 이 값으로 호스트 원장을 검증한다.
@@ -187,6 +211,7 @@ final class MultiplayerRoomCenter {
             battle = try MultiplayerBattle(fighters: fighters, mode: lobby.mode, seed: seed)
             combatFighters = fighters; combatRound = 1; combatEvents = []
             pendingActions.removeAll(); hasSubmittedAction = false; phase = .battling
+            chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
             rewardedBattle = false; scheduleTurnTimeout()
             let message = MultiplayerWireMessage.start(seed: seed, fighters: fighters, mode: lobby.mode)
             for connection in guestConnections.values { send(message, over: connection) }
@@ -360,6 +385,7 @@ final class MultiplayerRoomCenter {
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
         hasSubmittedAction = false; hostingRole = false; phase = .idle
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
     }
 
     private func startHosting() throws {
@@ -433,6 +459,8 @@ final class MultiplayerRoomCenter {
                 connection.cancel(); self.broadcastLobby(); return
             case .action(let round, let action) where action.attackerID == id && round == self.combatRound:
                 if let id { self.acceptAction(action, from: id) }
+            case .chat(let message) where message.senderID == id:
+                if let id { self.acceptChat(message, from: id) }
             case .pokeathlonInput(let pid, let input) where pid == id:
                 self.applyPokeathlonInput(input, participantID: pid)
             case .pokeathlonBet(let pid, let runnerID, let amount) where pid == id:
@@ -455,6 +483,7 @@ final class MultiplayerRoomCenter {
                 }
                 self.battle = started; self.combatFighters = fighters; self.combatRound = 1
                 self.combatEvents = []; self.hasSubmittedAction = false; self.rewardedBattle = false
+                self.chatHistory.reset(); self.chatMessages = []; self.chatRateLimiter.reset()
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.phase = .battling
             case .roundResolved(let round, let fighters, let events):
@@ -463,6 +492,8 @@ final class MultiplayerRoomCenter {
                 self.combatRound += 1; self.hasSubmittedAction = false
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.grantRewardIfFinished()
+            case .chat(let message):
+                self.chatHistory.append(message); self.chatMessages = self.chatHistory.messages
             case .pokeathlonStart(let race): self.pokeathlonRace = race; self.phase = .pokeathlon
             case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
             case .pokeathlonPool(let pool):
@@ -487,6 +518,25 @@ final class MultiplayerRoomCenter {
               pendingActions[participantID] == nil else { return }
         pendingActions[participantID] = action
         finishRoundIfReady()
+    }
+
+    /// 호스트가 연결에 묶인 참가자 ID를 기준으로 발신자를 인증하고, 전투 중인 방에만 전달한다.
+    private func acceptChat(_ incoming: BattleChatMessage, from participantID: UUID) {
+        guard phase == .battling, incoming.senderID == participantID,
+              let participant = lobby?.participants.first(where: { $0.id == participantID }),
+              let body = BattleChatPolicy.normalizedBody(incoming.body),
+              chatRateLimiter.allows(participantID) else { return }
+        let message = BattleChatMessage(id: incoming.id, senderID: participantID,
+                                        senderName: participant.trainerName, body: body, sentAt: incoming.sentAt)
+        chatHistory.append(message); chatMessages = chatHistory.messages
+        for connection in guestConnections.values { send(.chat(message), over: connection) }
+    }
+
+    func sendChat(_ body: String) {
+        guard phase == .battling, let normalized = BattleChatPolicy.normalizedBody(body) else { return }
+        let message = BattleChatMessage(senderID: myID, senderName: trainerName, body: normalized)
+        if isHost { acceptChat(message, from: myID) }
+        else if let hostConnection { send(.chat(message), over: hostConnection) }
     }
 
     private func finishRoundIfReady() {

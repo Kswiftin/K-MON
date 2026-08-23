@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
@@ -50,6 +51,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     generalGroup
                     workModeGroup(settings)
+                    chatProviderGroup(settings)
                     floatingPetGroup(settings)
                     notificationsGroup(settings)
                     updateGroup(settings)
@@ -67,13 +69,13 @@ struct SettingsView: View {
     @ViewBuilder
     private func workModeGroup(_ settings: AppSettings) -> some View {
         @Bindable var settings = settings
-        settingsSection(companion.language == .ko ? "집중 타이머" : "Focus timer") {
+        settingsSection(l.t("집중 타이머", "Focus timer", "集中タイマー")) {
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(companion.language == .ko ? "방해금지 모드" : "Do Not Disturb")
-                    Text(companion.language == .ko
-                         ? "알림과 배틀 신청을 받지 않습니다."
-                         : "Blocks notifications and incoming battle challenges.")
+                    Text(l.t("방해금지 모드", "Do Not Disturb", "おやすみモード"))
+                    Text(l.t("알림과 배틀 신청을 받지 않습니다.",
+                             "Blocks notifications and incoming battle challenges.",
+                             "通知とバトルの申し込みを受け取りません。"))
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -81,6 +83,36 @@ struct SettingsView: View {
                     .labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
         }
+    }
+
+    @ViewBuilder
+    private func chatProviderGroup(_ settings: AppSettings) -> some View {
+        settingsSection(l.t("포켓몬 대화 CLI", "Pokémon chat CLI", "ポケモン会話 CLI")) {
+            Text(l.t("Finder/launchd의 PATH를 사용하지 않습니다. 설치 위치가 자동으로 발견되지 않으면 실행 파일을 직접 선택하세요.",
+                     "The app never uses Finder or launchd PATH. Choose an executable if its standard install location is not found.",
+                     "Finder/launchd の PATH は使いません。標準の場所で見つからない場合は実行ファイルを選んでください。"))
+                .font(.caption2).foregroundStyle(.secondary)
+            ForEach(PokemonChatProviderSafety.verifiedKinds, id: \.self) { kind in
+                HStack {
+                    Text(kind.label(l.lang))
+                    Spacer()
+                    Text(settings.chatProviderExecutablePath(for: kind) ??
+                         (PokemonChatProviderExecutableResolver.executableURL(for: kind)?.path ?? l.t("찾지 못함", "Not found", "未検出")))
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Button(l.t("선택…", "Choose…", "選択…")) { chooseChatExecutable(kind, settings: settings) }
+                    if settings.chatProviderExecutablePath(for: kind) != nil {
+                        Button(l.t("지우기", "Clear", "消去")) { settings.setChatProviderExecutablePath(nil, for: kind) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func chooseChatExecutable(_ kind: PokemonChatProviderKind, settings: AppSettings) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
+        panel.message = l.t("CLI 실행 파일을 선택하세요.", "Choose the CLI executable.", "CLI 実行ファイルを選んでください。")
+        if panel.runModal() == .OK, let url = panel.url { settings.setChatProviderExecutablePath(url.path, for: kind) }
     }
 
     private var header: some View {

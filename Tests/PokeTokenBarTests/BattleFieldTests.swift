@@ -489,27 +489,40 @@ final class BattleFieldTests: XCTestCase {
         return rep
     }
 
-    /// defect-log 규칙: 배틀 화면에 세로 스크롤 컨테이너를 두면 안쪽이 스크롤되지 않고 잘린다.
-    /// 기억이 아니라 기계로 막는다 — 배틀 뷰 파일에 그 컨테이너가 다시 들어오면 여기서 실패한다.
+    /// 전투 본문에는 중첩 스크롤을 두지 않되, 채팅의 고정 높이 이력에는 내부 스크롤을 허용한다.
     ///
     /// **주석은 세지 않는다.** 규칙을 설명하는 문장에 그 타입 이름이 들어가는 건 당연하고, 그것까지
     /// 세면 가드가 "이 규칙을 문서화하지 말라"는 뜻이 돼 버린다. 실제 구성(`ScrollView {` / `(`)만 본다.
-    func testTheBattleFieldSourceHasNoScrollView() throws {
+    func testOnlyTheFixedHeightChatHistoryUsesScrollView() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        // 안 B 는 배틀 화면이 **팝오버 본체 ScrollView 안에** 들어가므로 이 규칙이 안 A 보다 더 세다 —
-        // 안쪽에 하나라도 두면 그 칸은 스크롤되지 않고 잘린다.
-        for file in ["Sources/PokeTokenBar/UI/BattleField.swift",
-                     "Sources/PokeTokenBar/UI/BattleView.swift"] {
-            let source = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
-            let code = source.split(separator: "\n", omittingEmptySubsequences: false)
-                .map { line -> String in
-                    guard let comment = line.range(of: "///") ?? line.range(of: "//") else { return String(line) }
-                    return String(line[line.startIndex..<comment.lowerBound])
-                }
-                .joined(separator: "\n")
-            XCTAssertFalse(code.contains("ScrollView {") || code.contains("ScrollView("),
-                           "\(file): 배틀 화면은 고정 높이 칸으로 그린다 — 중첩 스크롤은 잘린다(defect-log)")
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/PokeTokenBar/UI/BattleField.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("struct BattleChatPanel"))
+        XCTAssertTrue(source.contains("ScrollView {"))
+        XCTAssertTrue(source.contains(".frame(height: 82)"), "채팅 이력은 고정 높이 내부에서만 스크롤한다")
+    }
+
+    /// 문서용 캡처도 실제 SwiftUI 렌더러로 만든다. `KMON_SNAPSHOT_DIR` 을 주면 사람이 검토할 PNG를
+    /// 남기고, 평소 CI에서는 파일 시스템에 흔적을 남기지 않는다.
+    func testBattleChatPanelKeepsHistoryInsideItsFixedViewportAndRasters() throws {
+        let me = UUID(), other = UUID()
+        let messages = (0..<BattleChatPolicy.historyLimit).map { index in
+            BattleChatMessage(senderID: index.isMultiple(of: 2) ? me : other,
+                              senderName: index.isMultiple(of: 2) ? "나" : "Misty",
+                              body: "채팅 메시지 \(index + 1)", sentAt: .distantPast)
+        }
+        let panel = BattleChatPanel(configuration: BattleChatConfiguration(
+            messages: messages, mySenderID: me, isEnabled: true, unavailableMessage: nil,
+            l: L(.ko), onSend: { _ in }))
+        let bounds = CGRect(x: 0, y: 0, width: PopoverMetrics.contentWidth, height: 158)
+        // 문서 이미지도 앱의 밝은 팝오버 바탕에서 읽히게 만든다.
+        let screenshot = ZStack { Color.white; panel.padding(8) }.preferredColorScheme(.light)
+        let rep = try XCTUnwrap(raster(screenshot, in: bounds))
+        XCTAssertLessThanOrEqual(renderedHeight(panel, proposingWidth: PopoverMetrics.contentWidth), bounds.height,
+                                 "50개 이력도 내부 스크롤 밖으로 패널을 키우면 안 된다")
+        if let dir = ProcessInfo.processInfo.environment["KMON_SNAPSHOT_DIR"],
+           let png = rep.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("screenshot-battle-chat.png"))
         }
     }
 }

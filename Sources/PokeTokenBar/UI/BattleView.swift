@@ -100,7 +100,11 @@ struct BattleView: View {
             overlay: animator.overlay,
             onChoose: { center.chooseMove($0) },
             onSwitch: { center.switchLAN(to: $0) },
-            onForfeit: { center.forfeit() })
+            onForfeit: { center.forfeit() },
+            chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.chatSenderID,
+                                          isEnabled: center.chatIsAvailable,
+                                          unavailableMessage: center.chatIsAvailable ? nil : l.battleChatUnavailable,
+                                          l: l, onSend: center.sendChat))
         .onAppear { replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs]) }
         .onChange(of: battle.events.count) {
             replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs])
@@ -170,7 +174,7 @@ struct BattleView: View {
             Text(finishText(iWon: iWon, byForfeit: byForfeit)).font(.title3).bold()
             if center.battle != nil || center.teamPractice != nil {
                 Text(center.isPracticeBattle
-                     ? (store.language == .ko ? "모의전 결과" : "Practice result")
+                     ? l.t("모의전 결과", "Practice result", "練習バトルの結果")
                      : store.battleRank.displayName)
                     .font(.caption).bold()
                 if center.lastRankDelta != 0 {
@@ -239,7 +243,7 @@ struct BattleView: View {
         return VStack(alignment: .leading, spacing: 6) {
             // 제목이 Lv.50 을 말하지 않는다 — 그 규칙은 아래 상대 목록(맞짱)에만 해당하고,
             // 같은 섹션의 모의전은 키운 레벨 그대로 나간다.
-            Label(store.language == .ko ? "랭크배틀" : "Ranked Battle",
+            Label(l.t("랭크배틀", "Ranked Battle", "ランクバトル"),
                   systemImage: "shield.lefthalf.filled")
                 .font(.caption.bold())
             Picker("", selection: Binding(get: { center.rankedTeamSize }, set: { center.rankedTeamSize = $0 })) {
@@ -256,7 +260,7 @@ struct BattleView: View {
                 Button {
                     center.startRankedPractice()
                 } label: {
-                    Label(store.language == .ko ? "CPU 모의전" : "Practice vs CPU", systemImage: "gamecontroller.fill")
+                    Label(l.t("CPU 모의전", "Practice vs CPU", "CPU と練習"), systemImage: "gamecontroller.fill")
                 }
                 .buttonStyle(.borderedProminent).controlSize(.small)
                 .disabled(!isChallengeEnabled)
@@ -278,9 +282,9 @@ struct BattleView: View {
                 Text(l.gymBadgeCount(store.earnedGymBadges.count, GymLeague.catalog.count))
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             }
-            Text(store.language == .ko
-                 ? "키운 레벨 그대로 · 랭크와 별의조각은 변하지 않음"
-                 : "At the levels you raised · rank and Star Pieces are unchanged")
+            Text(l.t("키운 레벨 그대로 · 랭크와 별의조각은 변하지 않음",
+                     "At the levels you raised · rank and Star Pieces are unchanged",
+                     "育てたレベルそのまま · ランクとほしのかけらは変わりません"))
                 .font(.caption2).foregroundStyle(.secondary)
 
             HStack {
@@ -293,7 +297,7 @@ struct BattleView: View {
 
             HStack(spacing: 6) {
                 Text(l.battleNearby).font(.caption).bold()
-                Text(store.language == .ko ? "· 전원 Lv.50" : "· all Lv.50")
+                Text(l.t("· 전원 Lv.50", "· all Lv.50", "· 全員 Lv.50"))
                     .font(.caption2).foregroundStyle(.secondary)
                 if case .preparing = center.phase { ProgressView().controlSize(.mini) }
                 Spacer()
@@ -317,23 +321,9 @@ struct BattleView: View {
                 // 간다 — 한 페이지에 다섯 명씩, 나머지는 페이저로 넘겨서 신청한다.
                 VStack(spacing: 4) {
                     ForEach(slice) { peer in
-                        HStack {
-                            Image(systemName: "person.fill")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(peer.name).font(.callout).lineLimit(1)
-                                Text(peer.rank?.displayName
-                                     ?? (store.language == .ko ? "랭크 정보 없음" : "Rank unavailable"))
-                                    .font(.caption2)
-                                    .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
-                            }
-                            Spacer()
-                            Button(l.battleChallengeButton) { center.challenge(peer) }
-                                .controlSize(.small)
-                                .disabled(!isChallengeEnabled)
+                        PeerRow(store: store, peer: peer, isEnabled: isChallengeEnabled) {
+                            center.challenge(peer)
                         }
-                        .padding(.vertical, 2)
                     }
                     if pageCount > 1 {
                         HStack(spacing: 8) {
@@ -358,16 +348,16 @@ struct BattleView: View {
     private var multiplayerRooms: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Label(store.language == .ko ? "최대 4인 배틀" : "Up to 4 players",
+                Label(l.t("최대 4인 배틀", "Up to 4 players", "最大4人バトル"),
                       systemImage: "person.3.fill").font(.caption).bold()
                 Spacer()
             }
             Picker("", selection: $roomMode) {
-                Text(store.language == .ko ? "개인전" : "Free-for-all").tag(MultiplayerBattleMode.freeForAll)
+                Text(l.t("개인전", "Free-for-all", "個人戦")).tag(MultiplayerBattleMode.freeForAll)
                 Text("2 vs 2").tag(MultiplayerBattleMode.teams)
             }.pickerStyle(.segmented).labelsHidden()
             HStack {
-                Button(store.language == .ko ? "방 만들기" : "Create room") {
+                Button(l.t("방 만들기", "Create room", "部屋を作る")) {
                     center.multiplayer.createRoom(mode: roomMode)
                 }.buttonStyle(.borderedProminent).controlSize(.small)
                 Spacer()
@@ -378,7 +368,7 @@ struct BattleView: View {
                         Image(systemName: "door.left.hand.open").foregroundStyle(.secondary)
                         Text(room.name).font(.caption).lineLimit(1)
                         Spacer()
-                        Button(store.language == .ko ? "참가" : "Join") { center.multiplayer.join(room) }
+                        Button(l.t("참가", "Join", "参加")) { center.multiplayer.join(room) }
                             .controlSize(.small)
                     }
                 }
@@ -388,7 +378,7 @@ struct BattleView: View {
             }
             if !store.recentBattles.isEmpty {
                 Divider().padding(.vertical, 1)
-                Text(store.language == .ko ? "최근 배틀" : "Recent battles").font(.caption2).bold()
+                Text(l.t("최근 배틀", "Recent battles", "最近のバトル")).font(.caption2).bold()
                 ForEach(store.recentBattles.prefix(3)) { record in
                     HStack(spacing: 5) {
                         Image(systemName: record.won ? "trophy.fill" : "shield.fill")
@@ -417,19 +407,19 @@ struct BattleView: View {
     private var multiplayerLobbyContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label(store.language == .ko ? "4인 배틀 로비" : "Multiplayer lobby",
+                Label(l.t("4인 배틀 로비", "Multiplayer lobby", "マルチバトルのロビー"),
                       systemImage: "person.3.fill").font(.callout).bold()
                 Spacer()
-                Text(center.multiplayer.isHost ? (store.language == .ko ? "방장" : "HOST") : "")
+                Text(center.multiplayer.isHost ? l.t("방장", "HOST", "ホスト") : "")
                     .font(.system(size: 9, weight: .bold)).foregroundStyle(.orange)
             }
             if case .creating = center.multiplayer.phase {
-                ProgressView(store.language == .ko ? "방을 만드는 중…" : "Creating room…")
+                ProgressView(l.t("방을 만드는 중…", "Creating room…", "部屋を作成中…"))
             } else if case .joining(let name) = center.multiplayer.phase {
                 ProgressView("\(name)…")
             }
             if let lobby = center.multiplayer.lobby {
-                Text(lobby.mode == .teams ? "2 vs 2" : (store.language == .ko ? "개인전" : "Free-for-all"))
+                Text(lobby.mode == .teams ? "2 vs 2" : l.t("개인전", "Free-for-all", "個人戦"))
                     .font(.caption2).foregroundStyle(.secondary)
                 ForEach(lobby.participants) { participant in
                     HStack(spacing: 7) {
@@ -449,7 +439,7 @@ struct BattleView: View {
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
                 }
                 ForEach(lobby.runners.count..<max(lobby.runners.count, lobby.capacity), id: \.self) { _ in
-                    HStack { Image(systemName: "person.crop.circle.dashed"); Text(store.language == .ko ? "참가자 대기 중" : "Waiting for player") }
+                    HStack { Image(systemName: "person.crop.circle.dashed"); Text(l.t("참가자 대기 중", "Waiting for player", "参加者を待っています")) }
                         .font(.caption2).foregroundStyle(.tertiary).padding(5)
                 }
                 if lobby.mode == .teams, let me = center.multiplayer.myParticipant {
@@ -459,17 +449,17 @@ struct BattleView: View {
                 }
                 HStack {
                     Button(center.multiplayer.myParticipant?.isReady == true
-                           ? (store.language == .ko ? "준비 취소" : "Cancel ready")
-                           : (store.language == .ko ? "준비" : "Ready")) {
+                           ? l.t("준비 취소", "Cancel ready", "準備をやめる")
+                           : l.t("준비", "Ready", "準備完了")) {
                         center.multiplayer.toggleReady()
                     }.buttonStyle(.borderedProminent).controlSize(.small)
                     Spacer()
                     if center.multiplayer.isHost, lobby.canStart {
-                        Button(store.language == .ko ? "배틀 시작" : "Start battle") {
+                        Button(l.t("배틀 시작", "Start battle", "バトル開始")) {
                             center.multiplayer.startBattle()
                         }.buttonStyle(.borderedProminent).controlSize(.small)
                     }
-                    Button(store.language == .ko ? "나가기" : "Leave") { center.multiplayer.leaveRoom() }
+                    Button(l.t("나가기", "Leave", "退出")) { center.multiplayer.leaveRoom() }
                         .controlSize(.small)
                 }
             }
@@ -493,11 +483,15 @@ struct BattleView: View {
         }
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("⚔️ \(store.language == .ko ? "4인 배틀" : "Multiplayer Battle")")
+                Text("⚔️ \(l.t("4인 배틀", "Multiplayer Battle", "マルチバトル"))")
                     .font(.callout).bold()
                 Spacer()
                 Text("R\(center.multiplayer.combatRound)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                if let end = center.multiplayer.turnEndsAt, !center.multiplayer.isBattleFinished {
+                // 내 행동을 보낸 뒤에는 상대 입력을 기다리는 상태다. 이때 남은 시간은 내게
+                // 행동을 요구하는 것처럼 보이므로, 1:1 화면과 동일하게 카운트다운을 숨긴다.
+                if let end = center.multiplayer.turnEndsAt,
+                   !center.multiplayer.isBattleFinished,
+                   !center.multiplayer.hasSubmittedAction {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Text("\(max(0, Int(end.timeIntervalSince(context.date))))s")
                             .font(.caption.monospacedDigit().bold())
@@ -544,18 +538,18 @@ struct BattleView: View {
             if center.multiplayer.isBattleFinished {
                 Text(roomResultText(center.multiplayer.myOutcome))
                     .font(.title3).bold().frame(maxWidth: .infinity)
-                Button(store.language == .ko ? "로비 나가기" : "Leave") { center.multiplayer.leaveRoom() }
+                Button(l.t("로비 나가기", "Leave", "ロビーを出る")) { center.multiplayer.leaveRoom() }
                     .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
             } else if me?.isAlive == false {
-                Text(store.language == .ko ? "탈락 — 배틀을 관전하고 있습니다." : "Knocked out — spectating.")
+                Text(l.t("탈락 — 배틀을 관전하고 있습니다.", "Knocked out — spectating.", "戦闘不能 — 観戦中です。"))
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             } else if center.multiplayer.hasSubmittedAction {
-                HStack { ProgressView().controlSize(.small); Text(store.language == .ko ? "다른 참가자의 행동을 기다리는 중…" : "Waiting for other players…") }
+                HStack { ProgressView().controlSize(.small); Text(l.t("다른 참가자의 행동을 기다리는 중…", "Waiting for other players…", "ほかの参加者の行動を待っています…")) }
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             } else {
                 Text(multiplayerTargetID == nil
-                     ? (store.language == .ko ? "공격할 상대를 선택하세요." : "Choose a target.")
-                     : (store.language == .ko ? "기술을 선택하세요." : "Choose a move."))
+                     ? l.t("공격할 상대를 선택하세요.", "Choose a target.", "攻撃する相手を選んでください。")
+                     : l.t("기술을 선택하세요.", "Choose a move.", "わざを選んでください。"))
                     .font(.caption).bold()
                 if let me {
                     // 1v1 과 같은 버튼·같은 발버둥 처리를 쓴다. 발버둥이 없던 동안은 PP 가 전부
@@ -575,6 +569,10 @@ struct BattleView: View {
                 BattleLogBox(lines: multiplayerLogLines(center.multiplayer.combatEvents, fighters: fighters),
                              myActor: .fighter(center.multiplayer.myID))
             }
+            BattleChatPanel(configuration: BattleChatConfiguration(
+                messages: center.multiplayer.chatMessages, mySenderID: center.multiplayer.myID,
+                isEnabled: true, unavailableMessage: nil, l: l,
+                onSend: center.multiplayer.sendChat))
         }
         .onAppear {
             if multiplayerTargetID == nil { multiplayerTargetID = targets.first?.id }
@@ -638,6 +636,7 @@ struct BattleView: View {
             Text("\(peer) — \(l.battleWaitingAccept)")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            challengeCountdown
             Button(l.battleCancel) { center.cancelChallenge() }
                 .controlSize(.small)
         }
@@ -650,6 +649,7 @@ struct BattleView: View {
             Text("⚔️ \(l.battleIncomingFrom(peer))")
                 .font(.callout).bold()
                 .multilineTextAlignment(.center)
+            challengeCountdown
             Text("\(center.incomingTeamSize) vs \(center.incomingTeamSize)")
                 .font(.caption2).foregroundStyle(.secondary)
             if let profile = center.opponentRankProfile {
@@ -688,6 +688,19 @@ struct BattleView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var challengeCountdown: some View {
+        if let endsAt = center.challengeEndsAt {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let seconds = max(0, Int(endsAt.timeIntervalSince(context.date).rounded(.up)))
+                Text(l.battleChallengeTimeRemaining(seconds))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(seconds <= 10 ? .orange : .secondary)
+                    .accessibilityLabel(l.battleChallengeTimeRemaining(seconds))
+            }
+        }
     }
 
     // MARK: 로그/카드 공용
@@ -739,5 +752,69 @@ struct BattleView: View {
             .foregroundStyle(type.battleLabelColor)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Capsule().fill(type.battleColor))
+    }
+}
+
+/// 근처 트레이너 한 명. 이름 줄과 진행도 줄, 두 줄 고정이다.
+///
+/// 세 번째 줄이 생기면 한 페이지 5명(`BattleView.peerPageSize`) 예산이 깨진다. 진행도를 이름
+/// 옆에 두지 않는 이유도 같다. 이름은 Bonjour 에서 와 길이를 우리가 정하지 못하지만, 아래 줄은
+/// 전부 길이가 정해진 값이라 최악의 폭을 미리 잴 수 있다. 가드는 `PopoverLayoutTests` 카드 절.
+struct PeerRow: View {
+    let store: CompanionStore
+    let peer: BattlePeer
+    let isEnabled: Bool
+    let onChallenge: () -> Void
+
+    private var l: L { store.l }
+
+    var body: some View {
+        HStack {
+            Image(systemName: "person.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(peer.name).font(.callout).lineLimit(1)
+                progressLine
+            }
+            Spacer()
+            Button(l.battleChallengeButton, action: onChallenge)
+                .controlSize(.small)
+                .disabled(!isEnabled)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// 랭크·트레이너 레벨·업적 단계. 광고에 없는 칸은 그리지 않는다. 구버전 상대는 랭크만
+    /// 보이고, 정보 없음을 세 번 반복하지 않는다.
+    private var progressLine: some View {
+        HStack(spacing: 4) {
+            Text(rankText)
+                .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
+            if let level = peer.advertisement.trainerLevel {
+                Text("· Lv.\(level)").monospacedDigit().foregroundStyle(.secondary)
+            }
+            // 분모는 상대가 광고한 것을 쓴다. 내 카탈로그로 그리면 새 버전 상대가 완료로 보인다.
+            if let badge = peer.advertisement.achievementProgress {
+                Text("· 🏅\(badge.tiers)/\(badge.ceiling)")
+                    .monospacedDigit().foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption2)
+        .lineLimit(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    /// 화면과 스크린리더가 같은 값을 써야 한다. 따로 만들면 한쪽만 번역된다.
+    private var rankText: String { peer.rank?.displayName ?? l.battleRankUnknown }
+
+    /// 스크린리더용. 화면의 짧은 표기(`Lv.12 · 🏅8/16`)를 그대로 읽히면 뜻이 안 통한다.
+    private var accessibilityText: String {
+        let badge = peer.advertisement.achievementProgress
+        let progress = l.peerProgressLabel(peer.advertisement.trainerLevel,
+                                          badge?.tiers,
+                                          badge?.ceiling ?? AchievementLadder.tierCeiling)
+        return progress.isEmpty ? rankText : "\(rankText), \(progress)"
     }
 }

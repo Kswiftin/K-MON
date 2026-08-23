@@ -590,9 +590,13 @@ read_when:
 - **"서명에 안 넣는다" 는 근거는 재검증한다.** `types` 를 뺀 이유로 적혀 있던 "백필이 저장하는 순간
   기존 서명이 무효가 된다" 는 성립하지 않았다 — 백필도 `save()` 를 지나며 재서명된다. 실제 제약은
   위의 배포 규칙 하나뿐이다. (2026-08-21.)
-- **남은 구멍**: `isTampered` 는 `integrityVersion` 이 낮으면 검사를 면제한다. 그 값을 낮게 써 넣으면
-  어떤 필드를 서명해도 무력화된다. 막으려면 버전 하한을 세이브 밖에 둬야 하고 구버전 세이브 불러오기가
-  오탐이 된다 — 별건으로 미결.
+- **그 구멍은 막지 않는다 — 상한이 다른 문에서 정해진다.** `isTampered` 는 `integrityVersion` 이
+  낮으면 검사를 면제하니 그 값을 낮게 써 넣으면 어떤 서명도 무력해진다. 그런데 **불러오기는 애초에
+  무결성을 검사하지 않는다**(남의 세이브는 이 기기 서명을 가질 수 없다) — 같은 이득이 파일 선택 한
+  번으로 늘 열려 있어 하한을 둬도 조작 상한은 그대로다. 반대로 하한을 세이브 밖(UserDefaults)에 두면
+  다운그레이드 사용자의 정상 세이브를 초기화하는 오탐만 새로 생긴다. **막아서 얻는 건 없고 데이터
+  손실 위험만 늘어** 그대로 뒀다 — 근거는 `testImportIsNotSubjectToTheIntegrityCheck`. 무결성 검사가
+  막는 건 "로컬 파일 손편집" 이고 "작정한 치팅" 이 아니다. (2026-08-22.)
 
 ## 파생 진행도를 화면용 목록으로 계산하면 되감기는 부류
 
@@ -621,6 +625,15 @@ read_when:
 - **테스트가 못 걸른 이유는 조회 경로가 주입 불가였기 때문이다.** `PokeAPIClient.shared` 를 직접 부르면
   스텁이 끼어들 수 없어 테스트에서 그 값은 늘 비어 있다 — 결함 분기를 밟을 방법이 없다. 저장까지 가는
   조회는 `PokeProviding` 을 지나게 한다(기본 구현이 실 클라이언트라 기존 스텁은 안 깨진다).
+- **소유자 태그가 있어도 대조 상대가 고정돼 있으면 새 읽는 자리에서 다시 샌다.** `currentTypes` 는
+  `loadedTypesSpeciesID == currentSpeciesID` 로 활성 표시에는 안전했지만, 임의의 `MonState` 를 받는
+  `chatProfile(for:)` 가 그대로 읽자 박스 개체에 활성 종의 타입·기술이 들어갔다. 태그 검사는
+  "활성 개체에 최신인가"가 아니라 **"이번에 요청한 개체의 종인가"** 를 답해야 한다. 개체별 값은
+  `MonState` 에서 읽고, 표시 캐시는 요청 종이 소유자와 일치할 때만 재사용한다.
+- **프로필 리터럴 테스트는 조립 경로를 증명하지 않는다.** 기존 `PokemonChatTests` 는 완성된
+  `PokemonChatProfile` fixture만 검증해 `CompanionStore.chatProfile(for:)` 의 잘못된 출처를 한 번도
+  밟지 않았다. 활성 종 A의 캐시를 채운 뒤 다른 종 B를 요청하는 트리거와, 활성 개체·같은 종 박스 개체
+  대조군을 함께 둬 "전부 비우기"도 막는다. (`PokemonChatTests`, 2026-08-23.)
   `DexEntryTypeSourceTests` 가 트리거(1단계 타입 적재 → 최종형 졸업)와 대조군을 함께 밟는다.
   (2026-08-21.)
 
@@ -714,6 +727,24 @@ read_when:
   그 테스트의 목록과 `SaveTransfer.rebasedForThisDevice` 를 같이 손대야 한다 — 던전 진행도가 그 예로,
   날짜 키가 로컬 날짜 문자열이라 계정 원장이고 **같은 날이면 정산 플래그를 OR 로 합쳐야** 한다
   (맥 A 에서 클리어해 내보낸 세이브를 아직 안 푼 맥 B 로 불러오면 같은 날 보상이 두 번 나간다).
+## 호스트 로케일이 테스트 기대값에 새는 부류 (로컬 초록 / CI 빨강)
+
+- **새 세이브의 언어는 `AppLanguage.systemDefault` 라 호스트 로케일을 따라간다.** 개발 Mac 은
+  `ko-KR`, GitHub 러너는 영어다. 그래서 실 `CompanionStore` 를 만들어 한국어 이름을 기대하는 테스트는
+  **로컬에서만** 통과한다. #107 의 `PokemonChatTests` 두 개가 그랬다 — `profile.types` 가 로컬에선
+  `["전기"]`, CI 에선 `["Electric"]` 이었다. 리터럴 fixture(`PokemonChatProfile.fixture`)는 `language`
+  를 직접 받아 안전하고, **스토어를 통과하는 순간부터** 로케일에 딸려간다.
+- **같은 파일의 다른 단언이 통과한 것이 false confidence 였다.** `mon()`·`move()` 픽스처가
+  `["ko": 같은값, "en": 같은값]` 이라 이름 단언은 어느 로케일에서도 통과했다 — 기술 이름을 `.ko` 로
+  비교하는 테스트가 바로 옆에 있는데도 신호가 없었다.
+- **처방은 스토어 생성 직후 언어를 못 박는 것이다** (`store.setLanguage(.ko)`). 기대값을
+  `store.language` 로 바꾸면 로케일 독립이 되지만 "요청 언어의 이름이 실렸는가"를 더 이상 묻지 않는다.
+- **영구 캡처는 기억이 아니라 게이트다.** `test-gate.sh` 가 `swift test` 뒤에 같은 `.xctest` 번들을
+  `xcrun xctest -AppleLanguages "(en-US)" -XCTest All` 로 한 번 더 돌린다(≈9초). `swift test` 는
+  테스트 바이너리에 인자를 넘기지 못해서 이 경로를 쓴다. 계측 바이너리가 저장소 루트에
+  `default.profraw` 를 떨구지 않도록 `LLVM_PROFILE_FILE` 을 임시 경로로 돌려 커버리지 산출물과 분리한다.
+  가드 검증: `setLanguage(.ko)` 를 주석 처리하니 게이트가 CI 와 **같은 두 실패**로 죽었다.
+  (`scripts/test-gate.sh`, 2026-08-23.)
 
 ## 가드가 중복이라 하나를 지워도 아무 테스트가 안 깨지는 부류
 
@@ -1078,6 +1109,13 @@ read_when:
   (`grewIntoFinalByItem`)가 `use-item`/`trade` 두 문자열만 봐서, `level-up` + 지닌물건(예리한손톱)
   진화가 "레벨로 키운 개체"로 오인돼 아이템 진화 착취 경로가 다시 열릴 뻔했다.
   (`PokeAPIClient.evoNode` · `EvolutionItemRule` · `CompanionStore.grewIntoFinalByItem`, 2026-08-21.)
+- **같은 부류 — 대표 특성의 `is_hidden`.** `/pokemon/{id}`의 특성 목록에서 `is_hidden`을 읽지 않고
+  첫 slot만 고르면 특성이 없어지는 게 아니라 **숨은 특성까지 대표 후보로 넓어진다**. 대화 페르소나는
+  `is_hidden == false`인 항목만 남긴 뒤 최소 slot을 고르고, 회귀 테스트는 숨은 특성을 목록 앞·더 낮은
+  slot에 놓아도 일반 특성을 선택하는지 직접 밟는다. 부류 스윕에서 `PokemonDTO.is_default` 미파싱도
+  확인했지만 현재 앱은 기본 폼 species id 1~649만 요청하므로 동작을 뭉개지 않는다. 폼 범위를 넓힐 때는
+  이 필드를 먼저 DTO와 테스트에 올려야 한다.
+  (`PokemonAbilitiesDTO` · `PokemonSpeciesIdentity.primaryAbilitySlug`, 2026-08-23.)
 
 ## 쓸 수 없는 대상에만 쓰이는 아이템을 상점에 올리면 함정 구매가 된다
 
@@ -1189,3 +1227,189 @@ read_when:
 - 회귀 테스트는 정확히 상한값과 상한 초과 시도를 밟아야 한다. 낮은 레벨에서 적립하는 테스트는
   클램프를 한 번도 지나지 않고 통과한다.
   (`CompanionModel.swift` · `CompanionStore.swift` · `SaveTransfer.swift`, 2026-08-21.)
+
+## 세 갈래 중 두 갈래만 번역하는 부류 (가드가 표기 하나만 알면 스윕이 끝나지 않는다)
+
+- **코드가 언어를 직접 갈랐다** — `store.language == .ko ? "한국어" : "English"`. 세 언어인데
+  삼항은 두 갈래뿐이라 **일본어 사용자에게 영어가 나간다.** `BattleView` 주석이 이 부류를 이미
+  적어 뒀지만 주석은 새 코드를 막지 못해 UI 8개 파일에 **115곳**이 쌓였다.
+- **테스트가 못 잡은 이유**: 문구는 렌더 결과라 단위 테스트가 값을 단언하지 않고, 레이아웃
+  테스트는 높이·폭만 봤다. ko 로 개발하고 ko 로 확인하면 영원히 안 보인다.
+- **1차 스윕이 흘린 것**: `language == .ko` 문자열만 찾은 스캔이 같은 결함의 다른 표기 두 곳을
+  통과시켰다 — `case (.ko, …)`(`FocusTimerView.title`), `languageProvider() == .ko`
+  (`FloatingPetPanel`). **가드를 표기에 맞추면 스윕 범위도 그 표기까지만 좁아진다.**
+- **처방**: 뷰에서도 `L.t(ko, en, ja)` 를 쓴다. 인자 세 개가 필수라 한 칸을 비우면 컴파일이 막는다.
+  일회성 문구를 프로퍼티로 올리면 `Localization.swift` 가 뒤덮이므로, 두 화면이 같은 말을 쓸 때만
+  승격한다.
+- **영구 캡처**: `LanguageSplitGuardTests` 가 `Sources/**` 를 훑어 한 파일의 **`.ko` 와 `.ja`
+  등장 횟수가 다르면 실패**한다. 표기가 아니라 대칭을 보므로 삼항·튜플 `switch`·provider 비교를
+  한 규칙으로 덮고 `Core/` 도 포함한다. 주석 줄은 제외한다(규칙을 설명하는 주석이 패턴을 담고
+  있어 제외하지 않으면 가드가 자기 설명에 걸린다). 두 표기를 각각 되살려 실패를 확인했고, 파일
+  목록이 비면 실패하는 단언도 뒀다. 한계: `.ko` 만 쓰는 헬퍼가 늘면 오탐이 난다 — 오탐은 빌드를
+  막고 끝나지만 미탐은 배포되므로 그쪽으로 기울여 뒀다.
+  (`Sources/**/*.swift` · `Localization.swift`, 2026-08-22.)
+- **페르소나 언어 폴백은 이름과 문장이 다르다.** 이름 한 단어는 요청 언어가 없으면 영어로 폴백해
+  식별 가능성을 유지하지만(`resolveName`), 도감·특성 설명 문장 전체는 정확한 요청 언어가 없으면
+  생략한다(`resolveProse`). 둘을 `CompanionModel.swift`에서 나란히 두고 같은 테스트에서 영어 전용
+  딕셔너리를 각각 통과시켜, 한쪽 규칙을 다른 쪽으로 복사하면 깨지게 했다. 스윕 결과 배틀 기술 설명의
+  en→임의 값 폴백은 빈 툴팁보다 이름 있는 설명이 나은 UI 정책이라 유지했고, 대화 프롬프트의 prose
+  경로에는 같은 폴백이 더 없었다.
+  (`AppLanguage.resolveName` · `resolveProse`, 2026-08-23.)
+
+## 표시값을 담은 값 타입의 `==` 가 신원만 비교하면 갱신이 사라진다
+
+- **`BattlePeer.==` 가 `serviceName` 만 비교했다.** 신원 판정으로는 맞지만 상대가 레벨을 올려
+  광고가 갱신돼도 두 값이 같다고 나온다. 동등성으로 갱신을 판단하는 쪽(SwiftUI 뷰 비교,
+  `onChange(of:)`)이 붙으면 실시간 갱신이 조용히 삼켜진다 — 그 갱신이 기능의 존재 이유였다.
+- **처방**: 신원은 `id` 가 맡고 `==` 는 표시값까지 비교한다. 회귀는 같은 `serviceName` + 다른
+  `trainerLevel` 로 `id` 는 같고 `==` 는 다름을 함께 단언한다.
+- **곁가지 — 상한값이 곧 최장 문구는 아니다.** 최악 폭 가드가 `BattleRank.maximumPoints` 를
+  최악으로 가정했는데, 최고점은 `Challenger · 99 LP`(18자)이고 진짜 최악은 티어 이름이 더 긴
+  `Grandmaster · 10 LP`(19자)다. 최악은 문구 길이로 골라야 한다.
+  (`BattleNet.swift` · `PopoverLayoutTests.swift`, 2026-08-22.)
+
+## 버전이 갈리는 상대의 값을 내 상수로 그리는 부류
+
+- **광고된 업적 단계를 내 카탈로그 상한으로 클램프하고 내 분모로 그렸다.** 카탈로그는 조절
+  손잡이라 언젠가 늘어나고, 그 뒤 18/20 인 상대가 구버전 화면에서 `16/16`(완료)으로 보인다.
+  진행도를 보여주는 기능이 거짓을 말하는데 클램프가 그걸 가린다.
+- **처방**: 분자와 함께 **분모도 광고**한다(`achievementCeiling`). 읽는 쪽은 상대의 분모로 그리고
+  분모를 안 보낸 구버전만 내 카탈로그로 폴백한다. 분모도 신고값이라 표시 상한으로 자른다 —
+  자릿수가 늘면 카드가 밀린다.
+- **타이밍이 본질이다.** 이 키는 카탈로그가 바뀌기 **전에** 배포돼 있어야 효과가 있다. 나중에
+  넣으면 그 사이 버전들은 이미 틀리게 그린다.
+- 회귀: 새 분모(18/20)·분모 없음·적대적 분모·분자 없음을 각각 밟고, 옛 클램프를 주입해 실패를 봤다.
+  (`PeerAdvertisement.swift`, 2026-08-22.)
+
+## 네트워크 객체를 취소하지 않고 참조만 버리는 부류
+
+- **`BattleNet` 의 리스너·브라우저 재시작 경로가 `cancel()` 없이 `= nil` 만 했다.** 실패한
+  `NWListener`/`NWBrowser` 는 취소해야 큐·포트를 놓는다 — 24/7 앱에서 슬립 복귀마다 누적된다.
+  형제인 `MultiplayerRoomCenter`·`LocalAppcastServer` 는 취소하고 있었으니 "같은 기전을 한
+  모드에서만 고치는 부류" 의 재발이다.
+- **처방**: 호출부가 아니라 `startListener`/`startBrowser` **입구**에서 취소한다. 재시작은 반드시
+  입구를 지나므로 새 경로가 생겨도 덮인다.
+- **테스트 없음(한계)**: 실패 상태를 만들려면 실 네트워크가 필요하고, 테스트 바이너리는 로컬
+  네트워크 권한이 없어 리스너가 `.ready` 조차 못 간다. 근거는 단일 입구라는 구조다. 같은 이유로
+  정지 API 는 두지 않았다 — 프로덕션 호출부가 없어 그 API 자체가 무검증으로 남는다.
+  (`BattleNet.swift`, 2026-08-22.)
+
+## 신뢰경계에서 숫자만 자르고 **문자열**을 빼 두는 부류
+
+- **세이브에서 온 문자열은 길이 상한이 없었다.** `sanitized` 는 수치·배열·집합 크기를 촘촘히
+  클램프하면서 `seasonKey`·`missions.dayKey/weekKey`·`adventureWeekKey`·`lastCandyDate`·
+  `activeSecondsDate`·`trainerName`·별명·`gymBadges`/`collectedFinals` 원소는 그대로 통과시켰다.
+  임의 길이 문자열은 무결성 canonical(**매 저장의 해시 입력**)과 화면·LAN 전송에 그대로 실린다.
+  실측: 100KB 문자열 9개 → canonical 700KB.
+- **찾는 방법**: `CompanionModel` 의 `lenient(String.self, …)`·`Set<String>`·`nickname` 목록과
+  `sanitized` 가 실제로 자르는 필드를 대조한다. 새 문자열 필드를 더할 때 묻는 질문은 "이 값이 canonical
+  이나 화면·wire 로 나가나" 다.
+- **상한은 입력 경로와 같은 상수여야 한다.** 경계가 더 짧으면 방금 입력한 정상 이름이 다음 로드에서
+  잘린다 — `setTrainerName`·별명 설정과 `SaveTransfer.maxNameLength` 를 한 상수로 묶었다.
+  원장 키는 `SaveTransfer.clampedKey` 하나로 세 원장이 같은 규칙을 쓴다.
+  (`testOversizedStringsFromASaveAreClampedAtTheBoundary`, 2026-08-22.)
+
+## `TimeZone.current` 는 프로세스 첫 값에 캐시된다 — 시간대를 다시 읽는 건 `Calendar(identifier:)`
+
+- **`calendar.timeZone = .current` 는 "시간대를 매번 읽는다" 가 아니다.** 시즌 달력을 `static let` →
+  계산 프로퍼티로 바꿔 시간대 변경을 따라가게 한 뒤, 같은 의도로 원장 키에 `timeZone = .current` 를
+  넣었더니 **거기서 다시 굳었다**: 실측으로 `NSTimeZone.default` 를 바꿔도 `TimeZone.current` 는
+  첫 값(Asia/Seoul)을 계속 준 반면 `Calendar(identifier:)` 는 매번 새 값을 읽었다.
+- **처방**: 시간대를 명시적으로 대입하지 않고 `Calendar(identifier: .gregorian)` 를 그때 만든다.
+  세 원장 키와 시즌 만료가 **같은 접근자**(`SeasonBoard.gregorian`)를 쓰게 해 갈라질 자리를 없앴다.
+- **가드**: `testLedgerKeysFollowTimeZoneChanges` — 같은 순간을 UTC+14/UTC-11 에서 굽는다. 이 가드가
+  `.current` 대입을 실제로 잡았다(작성 당시 실패 → 원인 발견).
+- 곁가지: `DateFormatter` 는 호출당 16.3µs, 성분 조립은 1.6µs(실측). 뷰 body 에서 읽는 경로라 포맷터를
+  캐시하는 대신 없앴다 — 캐시는 위의 시간대 함정을 되살린다.
+
+## 로테이션·순환 콘텐츠는 "세트 비교" 가 아니라 **인접 비교**로 검사한다
+
+- **세트 배열이 서로 다르면 통과하는 테스트는 절반 중복을 못 잡는다.** 시즌 세트 1·2 가 `focus900` 을
+  공유해 **연속 두 달**에 같은 집중 목표가 나왔는데, `testConsecutiveSeasonsDifferAndCycleAtTheRotationLength`
+  는 배열 전체를 비교하므로 초록이었다. 순환 콘텐츠의 계약은 "다르다" 가 아니라 "인접이 겹치지 않는다".
+- **처방**: `testAdjacentSeasonsShareNoGoal` — 세트 i 와 i+1(마지막↔첫 포함)의 id 집합이 disjoint.
+  (2026-08-22.)
+
+## 완료마다 알림 한 통이면 한 정산이 배너를 여러 개 띄운다
+
+- **한 번의 모험 정산이 트레이너 레벨업·일간·주간 미션·시즌 챌린지·업적을 동시에 완료시킬 수 있다.**
+  완료 항목마다 `notifyCompanionEvent` 를 부르면 배너가 6개 연달아 뜬다(시즌 도입 전에도 4개였다).
+- **처방**: 원장별로 완료 목록을 모아 **한 통**으로 묶는다(`CompanionStore.mergedCompletion` — 이름은
+  가운뎃점, 보상은 합산). 새 문구를 만들지 않고 기존 "이름 — 별의조각 N" 문장을 재사용한다.
+- **테스트 가능한 자리로 뽑는다.** `notifyCompanionEvent` 는 `AppEnv.isBundledApp` 가드에 막혀 테스트에서
+  아무것도 관측할 수 없다 — 병합 규칙을 순수 함수로 분리해야 검사할 수 있다
+  (`testCompletionsInOneSettlementMergeIntoASingleNotice`, 2026-08-22.)
+
+## 주기 축만 다른 두 원장에 같은 진행도 규칙을 복제하는 부류
+
+- **`MissionBoard` 와 `SeasonBoard` 가 record·normalize·canonical 규칙을 통째로 복제했다.** 클램프가
+  곧 멱등 가드인데 그 규칙이 두 곳에 있으면 한쪽만 고쳐져 미션과 시즌이 다르게 동작한다.
+- **처방**: `protocol Goal` + `Array<Goal>.advance/normalized` + `Dictionary.canonicalCounts` 로 규칙을
+  한 곳에 두고, 주기 축(일·주 vs 월)만 각 원장이 갖는다. **canonical 문자열은 바이트 단위로 동일해야
+  한다** — 달라지면 정상 세이브가 전부 조작 판정된다(`testDefaultStateCanonicalFormIsFrozen` 이 가드,
+  2026-08-22.)
+
+## 보증 배지를 상태와 무관하게 상시로 그리는 부류
+
+- **초록 자물쇠 "도구·MCP 격리" 가 AI 미선택·차단 제공자 선택 상태에서도 떠 있었다**
+  (`PokemonChatView.statusBar`). 없는 보증을 광고하는 쪽이 배지를 아예 안 그리는 쪽보다 나쁘다 —
+  사용자는 격리를 믿고 대화를 보낸다.
+- **테스트가 못 잡은 이유**: 배지는 렌더 결과라 단위 테스트가 값을 단언하지 않고, 제공자 차단
+  테스트(`testProvidersWithoutAVerifiedToolFreeContractAreBlocked`)는 **모델만** 보고 화면을 안 봤다.
+  모델이 초록이어도 화면은 거짓말할 수 있다.
+- **처방**: 배지를 해석 결과에 태운다 — `if provider != nil` 일 때만 그린다. 판단(`availability`)은
+  커버리지 게이트 안(`PokemonChat.swift`)에 두고 뷰는 표시만 한다. (2026-08-23.)
+
+## 선택 가능한 비활성 항목은 사용자를 실패로 안내하는 부류
+
+- **피커에 `OpenCode (disabled)` 가 선택 가능한 항목으로 있었다.** `(disabled)` 라고 *쓰는* 것은
+  아무것도 비활성화하지 않는다. 골라진 뒤에야 경고가 뜨니, 사용자는 이미 실패한 상태에서 배운다.
+  853 부류(잠갔는데 잠긴 것처럼 안 보인다)의 피커판.
+- **처방**: 목록을 `allCases` 로 만들고 차단 항목에 자물쇠 + `.disabled(true)`. 목록에서 **지우지는
+  않는다** — 지우면 왜 못 쓰는지 알 길이 없다. 보이되 고를 수 없어야 한다.
+- **덧붙는 부류: 서로 다른 사유를 한 문장으로 뭉개기.** "미지원 또는 실행 파일 못 찾음" 은 사용자가
+  할 수 있는 일을 못 알려 준다 — 전자는 없고 후자는 설정에서 경로 지정이다. 사유를 나눠야 안내가
+  된다(`PokemonChatBlockReason`). (2026-08-23.)
+
+## 외부 CLI 계약을 "확인 못 했다" 와 "확인했더니 안 된다" 로 나눠 적지 않는 부류
+
+- **OpenCode 격리 계약은 실측하지 못했다 — CLI 가 설치돼 있지 않아서다.** 이걸 "실패" 로 적으면
+  나중에 누구도 다시 재보지 않는다. 반대로 "미확인" 을 근거로 차단을 풀면 무방비로 나간다.
+- **처방**: 판정을 사람 기억이 아니라 **종료코드**로 남긴다 —
+  `scripts/verify-opencode-isolation.sh` 는 `0`(4/4 통과)·`1`(프로브 실패)·`2`(시험 불가)를 구분한다.
+  실측 기록·재검증 방법·무엇이 바뀌면 다시 볼 것인지는 `docs/reference/opencode-isolation.md`.
+- **플래그가 없는 CLI 의 계약은 버전 종속이다.** 설정 병합 우선순위에 기댄 격리는 상류 릴리스가
+  조용히 깰 수 있다. 그래서 계약을 버전에 못 박고 재실행 스크립트를 같이 남긴다.
+- **스크립트도 가드다 — 빈 통과를 확인한다.** 인증이 없으면 모든 프로브가 "도구를 못 썼다" 로
+  통과해 거짓 합격이 난다. 그래서 스모크 프롬프트로 응답을 먼저 확인하고, 프로브 로직 자체는
+  탈출하는 스텁으로 FAIL 이 잡히는지 검증했다. (2026-08-23.)
+## `default:` 가 "특정 부류 전체"를 뜻하면 새 케이스는 조용히 그 부류가 된다
+
+- 아이템 스위치들이 `default: // 진화 아이템 전체` 로 끝나 있었다(`BagView` 의 `canUse`·`effectHint`·
+  `performUse`, `Localization.itemDescription`, `ItemKind` 의 `spriteName`·`shopPrice`). 케이스 30개를
+  스위치마다 나열하지 않으려는 선택이라 그 자체론 합리적이다. 문제는 **진화 아이템이 아닌 케이스를
+  새로 넣을 때** 드러난다 — 하트비늘(#97)을 명시하지 않으면 가방이 "진화 가능할 때 사용" 을 띄우고
+  탭이 `useEvolutionItem` 으로 흘러가며, 설명은 `evolutionRule == nil` 분기를 타 **빈 문자열**이 된다.
+- **컴파일러가 절반만 잡는다.** `itemName` 은 `default:` 가 없어 `switch must be exhaustive` 로 즉시
+  걸렸지만, `default:` 가 있는 나머지 여섯 곳은 아무 경고 없이 통과했다. "빌드가 되니 다 넣었다"는
+  판단이 여기서 깨진다.
+- **처방**: 비진화 아이템은 `.rareCandy, .mint, .shinyCharm, .heartScale` 처럼 **명시 케이스로** 넣고,
+  `default:` 주석에 그 분기가 뜻하는 부류를 적어 둔다. 새 아이템을 넣을 때는
+  `grep -n "default:" ` 로 `ItemKind` 스위치 전체를 훑는다(현재 7곳).
+- 회귀 가드는 "진화 경로로 새지 않는다"를 직접 밟는다 —
+  `HeartScaleTests.testHeartScaleIsNotTreatedAsEvolutionItem`(`canUseEvolutionItem`·`useEvolutionItem`
+  이 거절하고 재고가 그대로) + `testHeartScaleCopyExistsInAllThreeLanguages`(설명이 빈 문자열이면 실패).
+  설명 누락은 화면을 봐야 아는 결함이라 문구 테스트가 세 언어 전부를 훑는 편이 싸다.
+  (`CompanionModel.swift` · `Localization.swift` · `BagView.swift`, 2026-08-21.)
+## `.task(id:)` 의 id 에 없는 값이 바뀌면 화면은 옛 데이터로 남는다
+
+- 기술 목록은 `.task(id: "\(개체 id)-\(레벨)")` 로 다시 읽는다. 지금까지 무브셋이 바뀌는 유일한 경로가
+  레벨업이라 **레벨이 항상 같이 바뀌었고**, 그래서 이 id 로 충분해 보였다. 하트비늘(#97)은 레벨을
+  건드리지 않고 무브셋만 바꾸는 첫 경로다 — 학습을 수락해도 목록이 옛 기술 네 개를 그대로 보여 준다.
+- **부류**: `.task(id:)`·`onChange(of:)` 의 키는 "무엇이 바뀌면 다시 해야 하는가"의 **완전한** 목록이어야
+  한다. 키에 안 들어간 축을 바꾸는 경로가 나중에 하나 생기면 화면만 조용히 뒤처진다. 기존 테스트는
+  전부 레벨업 경로라 이 공백을 밟지 않는다.
+- **처방**: 상태를 바꾸는 쪽(`acceptMoveLearning`)이 표시 값(`displayedMoves`)까지 맞춘다 — 뷰의 재조회
+  키에 축을 하나 더 매다는 방식은 다음 경로에서 또 빠진다. 회귀 가드는 레벨을 바꾸지 않는 학습 뒤
+  `displayedMoves` 를 직접 본다(`HeartScaleTests.testAcceptingRelearnUpdatesDisplayedMoves`).
+  (`CompanionStore.swift` · `CompanionView.swift`, 2026-08-21.)

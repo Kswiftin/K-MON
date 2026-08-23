@@ -82,6 +82,17 @@ enum SaveTransfer {
     /// 이 값끼리 더하고 빼도 Int64 범위 안에 머문다.
     static let maxTokenValue = 1_000_000_000_000_000
 
+    /// 세이브에서 온 **문자열** 상한. 숫자만 자르고 문자열을 빼 두면 임의 길이 문자열이 무결성
+    /// canonical(매 저장의 해시 입력)과 화면·LAN 전송에 그대로 실린다.
+    /// 원장 키는 `yyyy-MM-dd`(10)·`yyyy-Www`(8)·`yyyy-MM`(7) 이라 10 이면 정상 키를 자르지 않는다.
+    static let maxKeyLength = 10
+    /// 이름·집합 id 상한. 앱이 입력에서 자르는 값과 같아야 한다(`setTrainerName`·별명) — 경계가 더
+    /// 짧으면 정상 이름이 로드 때 잘린다. 배지 id(타입명)·`collectedFinals`("base:final") 도 이 안이다.
+    static let maxNameLength = 20
+
+    /// 원장 키를 상한으로 자른다 — 세 원장(일·주·시즌)이 같은 규칙을 쓰게 하는 자리.
+    static func clampedKey(_ key: String) -> String { String(key.prefix(maxKeyLength)) }
+
     /// 내보내기 파일명 — 날짜가 들어가야 여러 번 내보내도 덮어쓰지 않는다.
     static func suggestedFileName(date: Date) -> String {
         "PokeTokenBar-Save-\(dayStamp(date)).json"
@@ -93,6 +104,14 @@ enum SaveTransfer {
         "companion-state.pre-import-\(secondStamp(date)).json"
     }
     static let backupFilePrefix = "companion-state.pre-import-"
+    static let memoryBackupFilePrefix = "pokemon-memories.pre-import-"
+    static let chatBackupFilePrefix = "pokemon-chat.pre-import-"
+    static func importBackupFileNames(date: Date) -> (state: String, memory: String, chat: String) {
+        let stamp = secondStamp(date)
+        return ("companion-state.pre-import-\(stamp).json",
+                "pokemon-memories.pre-import-\(stamp).json",
+                "pokemon-chat.pre-import-\(stamp).json")
+    }
     /// 유지할 백업 개수 — 오래된 것부터 지운다.
     static let backupsToKeep = 5
 
@@ -155,7 +174,18 @@ enum SaveTransfer {
             return CompanionState()
         }
         func clampToken(_ v: Int) -> Int { min(max(0, v), maxTokenValue) }
+        func clampText(_ v: String, _ limit: Int) -> String { String(v.prefix(limit)) }
         var s = migratedToIdleEconomy(state)
+        // 문자열도 숫자와 같은 이유로 자른다 — 임의 길이 값이 canonical(매 저장의 해시 입력)과
+        // 화면·LAN 전송에 그대로 실린다. 잘린 원장 키는 어떤 실제 키와도 안 맞아 진행도가 0으로
+        // 읽히고 다음 기록에서 갱신된다.
+        s.lastCandyDate = clampedKey(s.lastCandyDate)
+        s.activeSecondsDate = clampedKey(s.activeSecondsDate)
+        s.lastAdventureBonusDate = clampedKey(s.lastAdventureBonusDate)
+        s.adventureWeekKey = clampedKey(s.adventureWeekKey)
+        s.trainerName = clampText(s.trainerName, maxNameLength)
+        s.gymBadges = Set(s.gymBadges.map { clampText($0, maxNameLength) })
+        s.collectedFinals = Set(s.collectedFinals.map { clampText($0, maxNameLength) })
         s.usedSinceInstall = clampToken(s.usedSinceInstall)
         s.spentTokens = clampToken(s.spentTokens)
         s.starPieces = clampToken(s.starPieces)
@@ -174,6 +204,11 @@ enum SaveTransfer {
         s.missions.normalize()
         // 던전 기억에서 오늘 맵에 없는 방 번호를 버리고, 정산된 세이브의 클리어 플래그를 맞춘다.
         s.dungeon.normalize()
+        // 업적도 경계에서 한 번만 자른다 — 사라진 트랙의 잔재를 버리고 마지막 문턱으로 클램프한다.
+        // 클램프된 값이 곧 최고 단계라 손편집으로 넘겨도 보상이 다시 나오지 않는다.
+        s.achievements.normalize()
+        // 시즌도 같은 자리에서 자른다 — 저장된 시즌의 세트에 없는 키를 버리고 목표에서 클램프한다.
+        s.seasons.normalize()
         s.focusEggs = min(max(0, s.focusEggs), 999)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
@@ -190,22 +225,10 @@ enum SaveTransfer {
         // load() 의 .corrupt 복구도 안 걸려 파일을 손으로 지우기 전엔 앱을 못 쓴다.
         // 관대 디코딩은 모르는 rawValue 만 걸러낼 뿐 **아는데 만족 불가능한 값**은 그대로 통과시킨다.
         if s.eggTier?.captureRateCeiling == nil { s.eggTier = nil }
-        if var active = s.active {
-            active.usedAtStage = clampToken(active.usedAtStage)
-            // totalForms 는 `kk * (kk + 1)` 형태로 쓰여(PokemonBalance.phaseThreshold) 큰 값이 그 자체로 트랩이다.
-            active.totalForms = min(max(1, active.totalForms), 12)
-            active.stageIndex = min(max(0, active.stageIndex), max(0, active.pathIDs.count - 1))
-            // 박스 개체만 자르고 활성 개체를 빼 두면, 손편집으로 들어온 큰 값에 이상한 사탕 XP 를
-            // 더하는 순간 Swift 오버플로 트랩으로 프로세스가 죽는다(#81 부류 스윕).
-            active.levelExperience = min(max(0, active.levelExperience), PokemonBalance.maxLevelExperience)
-            s.active = active
-        }
-        s.boxedMons = Array(s.boxedMons.prefix(100)).map { mon in
-            var m = mon
-            m.levelExperience = min(max(0, m.levelExperience), PokemonBalance.maxLevelExperience)
-            m.learnedMoves = Array(m.learnedMoves.prefix(4))
-            return m
-        }
+        // 활성·박스가 **같은 함수**를 지난다. 한쪽만 자르면 다른 쪽 경로의 산술이 손편집 값에 죽는다
+        // (#81 — 박스만 자르고 활성을 빼 뒀더니 사탕 XP 를 더하는 순간 오버플로 트랩).
+        s.active = s.active.map(sanitizedMon)
+        s.boxedMons = Array(s.boxedMons.prefix(100)).map(sanitizedMon)
         // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
         s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
         s.care.hunger = min(max(0, s.care.hunger), 100)
@@ -253,6 +276,19 @@ enum SaveTransfer {
         return s
     }
 
+    /// 개체 하나의 신뢰경계 클램프. `totalForms` 는 `kk * (kk + 1)` 형태로 쓰여
+    /// (`PokemonBalance.phaseThreshold`) 큰 값이 그 자체로 트랩이고, 기술은 4개가 게임 상한이다.
+    private static func sanitizedMon(_ mon: MonState) -> MonState {
+        var m = mon
+        m.usedAtStage = min(max(0, m.usedAtStage), maxTokenValue)
+        m.totalForms = min(max(1, m.totalForms), 12)
+        m.stageIndex = min(max(0, m.stageIndex), max(0, m.pathIDs.count - 1))
+        m.levelExperience = min(max(0, m.levelExperience), PokemonBalance.maxLevelExperience)
+        m.learnedMoves = Array(m.learnedMoves.prefix(4))
+        m.nickname = m.nickname.map { String($0.prefix(maxNameLength)) }
+        return m
+    }
+
     // MARK: 세이브 무결성 (손편집 조작 방어)
 
     /// 조작에 민감한 필드의 canonical 문자열 → 기기 시드 FNV 해시. `integrity` 자신은 입력에서 제외.
@@ -285,6 +321,18 @@ enum SaveTransfer {
         // 고쳐 매일 1,000 을 다시 받는다. 이번에 처음 나가는 필드라 **조건부**로 붙인다:
         // 기본값이면 세그먼트가 없어 구서명이 그대로 유효하고 `integrityVersion` 을 올릴 필요가 없다.
         if s.dungeon != DungeonProgress() { p.append("dun\(s.dungeon.canonical)") }
+        // 업적 카운터가 곧 단계 판정이다 — 서명 밖에 두면 값을 올려 적는 것만으로 보상을 받는다.
+        // 조건부인 이유는 위 두 필드와 같다. 새 필드라 값이 든 기존 세이브가 없으니
+        // `integrityVersion` 은 올리지 않는다(올리면 그 배포의 모든 세이브가 검사를 면제받는다).
+        //
+        // 접두는 `ac` 가 아니라 `ach` 다. 아래 활성 포켓몬이 `act` 를 쓰므로 `ac` 면 기본값 세이브의
+        // `|act-` 가 업적 세그먼트로 읽힌다(`shc` 가 `sec` 를 피한 것과 같다). 위조가 되는 건
+        // 아니지만 세그먼트 유무를 보는 테스트가 조용히 거짓이 된다.
+        if s.achievements != AchievementLadder() { p.append("ach\(s.achievements.canonical)") }
+        // 시즌 진행도도 서명에 넣는다 — 밖에 두면 목표 직전 값을 적어 넣는 것만으로 보상이 공짜다.
+        // 조건부인 이유는 위 세 필드와 같고, 새 필드라 `integrityVersion` 은 올리지 않는다.
+        // 접두는 `sn` — `s` 하나면 `sp0`·`scfalse` 와 겹친다(`ach` 가 `ac` 를 피한 것과 같다).
+        if s.seasons != SeasonBoard() { p.append("sn\(s.seasons.canonical)") }
         // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
         // 배지 키 한 줄을 지워 같은 체육관에서 알을 다시 받는다. 정렬 필수: `Set` 순회 순서는 실행마다
         // 달라 정렬하지 않으면 같은 상태가 다른 서명을 낸다. (아래 두 필드가 이미 배포분이라 버전을 올렸다.)
@@ -356,6 +404,12 @@ enum SaveTransfer {
     }
 
     /// 서명이 있는데 안 맞는가(= 손편집됨). 서명 전(빈 값)·구버전은 조작으로 보지 않는다.
+    ///
+    /// 구버전 면제(`integrityVersion` 을 낮게 써 넣으면 검사를 건너뛴다)는 **의도적으로 남긴 구멍**
+    /// 이다. 조작 상한은 이 함수가 아니라 **불러오기**가 정한다 — 남의 세이브는 이 기기 서명을 가질
+    /// 수 없어 불러오기는 애초에 검사하지 않는다(`testImportIsNotSubjectToTheIntegrityCheck`).
+    /// 버전 하한을 세이브 밖(UserDefaults)에 두면 앱을 다운그레이드한 사용자의 정상 세이브를
+    /// 초기화하는 오탐만 새로 생긴다.
     static func isTampered(_ state: CompanionState) -> Bool {
         guard state.integrityVersion >= integrityVersion else { return false }
         return !state.integrity.isEmpty && state.integrity != integrityHash(state)

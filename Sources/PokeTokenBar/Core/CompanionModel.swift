@@ -28,6 +28,13 @@ enum AppLanguage: String, Codable, Sendable, CaseIterable {
         return byLang["en"]
     }
 
+    /// 설명 문장은 요청 언어와 정확히 맞을 때만 쓴다. 이름 한 단어와 달리 영어 설명 전체를
+    /// 폴백하면 포켓몬의 말투와 페르소나가 요청 언어 밖으로 새어 나간다.
+    func resolveProse(_ byLang: [String: String]) -> String? {
+        for code in apiCodes { if let text = byLang[code] { return text } }
+        return nil
+    }
+
     /// 신규 설치 기본 언어 — 시스템 선호 언어에서 유추(글로벌 출시: 한국어 강제 금지).
     /// ko/ja 만 매칭, 그 외 전부 영어(fallback-of-fallback). 기존 사용자는 저장된 언어를 그대로 쓴다.
     static var systemDefault: AppLanguage {
@@ -213,6 +220,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 던전 입장 전에 마시는 소모품(#79) — 체력 예산 +3. 값을 싸게 두는 이유는 크게 주면
     /// "아이템 갈아넣기" 가 최적 전략이 되어 퍼즐이 사라지기 때문이다(+3 은 100 대비 3%).
     case freshWater
+    /// 하트비늘(#97) — 진화가 아니라 "기술 다시 배우기". 진화 아이템이 아니라 `evolutionRule` 이 nil 이므로
+    /// **가방·문구의 `default:`(= 진화 아이템 전체) 분기에 명시 케이스로 반드시 넣어야 한다** — 빠뜨리면
+    /// "진화 가능할 때 사용" 이 뜨고 설명이 빈 문자열이 되며 `useEvolutionItem` 으로 흘러간다.
+    case heartScale
 
     /// 진화 아이템 공통가 — 돌과 지닌물건을 구분하지 않는다(둘 다 진화 1회분의 값).
     static let evolutionItemPrice = 500
@@ -220,7 +231,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .shinyCharm, .freshWater: return nil
+        case .rareCandy, .mint, .shinyCharm, .freshWater, .heartScale: return nil
         case .linkingCord: return .plainTrade
         case .fireStone: return .useItem("fire-stone")
         case .waterStone: return .useItem("water-stone")
@@ -261,6 +272,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint: return nil   // PokéAPI 에 민트 스프라이트 없음(8세대 아이템) → 이모지 폴백
         case .shinyCharm: return "shiny-charm"
         case .freshWater: return "fresh-water"
+        case .heartScale: return "heart-scale"
         default: return evolutionRule?.apiItemName
         }
     }
@@ -282,6 +294,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .prismScale: return "🌈"
         case .ovalStone: return "🥚"
         case .freshWater: return "🥤"
+        case .heartScale: return "💗"
         }
     }
     /// 상점 판매가(재화 = 별의조각). nil = 상점 미판매.
@@ -291,6 +304,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint: return Mint.price
         case .shinyCharm: return nil
         case .freshWater: return PuzzleDungeon.freshWaterPrice
+        case .heartScale: return MoveRelearn.price
         default: return isEvolutionItem ? Self.evolutionItemPrice : nil
         }
     }
@@ -777,6 +791,10 @@ struct CompanionState: Codable, Sendable {
     /// 하루 한 판 퍼즐 던전(#79). 리셋은 날짜 키 비교이고, 시도 중 상태(현재 방·남은 체력)는
     /// 여기 없다 — 저장 대상을 늘리면 이상 상태 복구 경로가 그만큼 늘어난다.
     var dungeon = DungeonProgress()
+    // 누적 행동 업적(집중·진화·배틀·레이스). 도달 단계는 저장하지 않고 카운터에서 계산한다.
+    var achievements = AchievementLadder()
+    // 시즌 순환 챌린지 진행도. 세트는 저장하지 않고 시즌 키에서 고른다(SeasonBoard 참고).
+    var seasons = SeasonBoard()
     var focusEggs = 0
     // 보관 중인 알마다 자동 부화 예정 시각. 알은 획득 5분 뒤 현재 동행과 무관하게 박스에서 부화한다.
     var focusEggReadyDates: [Date] = []
@@ -834,6 +852,9 @@ struct CompanionState: Codable, Sendable {
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
         missions           = c.lenient(MissionBoard.self, forKey: .missions, default: MissionBoard())
         dungeon            = c.lenient(DungeonProgress.self, forKey: .dungeon, default: DungeonProgress())
+        seasons            = c.lenient(SeasonBoard.self, forKey: .seasons, default: SeasonBoard())
+        achievements       = c.lenient(AchievementLadder.self, forKey: .achievements,
+                                       default: AchievementLadder())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
         focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
         eggFragments       = c.lenient(Int.self, forKey: .eggFragments, default: 0)
