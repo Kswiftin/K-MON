@@ -5,7 +5,8 @@
 #
 #   1) swift test 전체 통과
 #   2) 자체 코드(Sources/·Tests/)에 컴파일러 warning 0건
-#   3) "로직 코어" 파일 집합의 라인 커버리지 >= THRESHOLD
+#   3) 같은 테스트 번들을 영어 로케일로 재실행 (CI 로케일 패리티)
+#   4) "로직 코어" 파일 집합의 라인 커버리지 >= THRESHOLD
 #
 # 로직 코어 = 결정적으로 단위 테스트 가능한 게임 파일만 포함.
 #
@@ -53,7 +54,8 @@ LOGIC_CORE=(
 
 echo "▶ swift test (--enable-code-coverage)"
 TEST_LOG=$(mktemp)
-trap 'rm -f "$TEST_LOG"' EXIT
+LOCALE_LOG=$(mktemp)
+trap 'rm -f "$TEST_LOG" "$LOCALE_LOG"' EXIT
 swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG"
 
 # 자체 코드의 컴파일러 warning 은 게이트 실패로 취급한다 — 쌓아 두면 새로 생긴 게 옛것에 묻힌다.
@@ -66,6 +68,28 @@ if [[ -n "$OWN_WARNINGS" ]]; then
   echo
   echo "✗ 자체 코드 warning $(wc -l <<< "$OWN_WARNINGS" | tr -d ' ')건 — 고친 뒤 다시 실행하세요." >&2
   echo "$OWN_WARNINGS" >&2
+  exit 1
+fi
+
+# CI 러너는 영어 로케일, 개발 Mac 은 한국어다. 신규 세이브의 언어는 `AppLanguage.systemDefault` 라
+# 호스트 로케일을 따라가므로 한국어 문구를 기대하는 테스트는 **로컬에서만** 통과하고 CI 에서 깨진다
+# (#107). `swift test` 는 테스트 바이너리에 인자를 넘기지 못하니, 같은 번들을 `xctest` 로 한 번 더
+# 영어 로케일로 돌려 그 격차를 커밋 전에 드러낸다.
+echo
+echo "▶ 영어 로케일 재실행 (CI 로케일 패리티)"
+BUNDLE=$(find .build -maxdepth 4 -name '*.xctest' | head -1)
+if [[ -z "$BUNDLE" ]]; then
+  echo "✗ 테스트 번들(.xctest)을 찾지 못했습니다." >&2
+  exit 1
+fi
+# 계측 바이너리가 저장소 루트에 default.profraw 를 떨구지 않도록 커버리지 출력을 임시 경로로 돌린다.
+if LLVM_PROFILE_FILE="$(mktemp -d)/locale.profraw" \
+     xcrun xctest -AppleLanguages "(en-US)" -XCTest All "$BUNDLE" > "$LOCALE_LOG" 2>&1; then
+  grep -E 'Executed [0-9]+ tests' "$LOCALE_LOG" | tail -1
+else
+  grep -E 'error:' "$LOCALE_LOG" >&2 || tail -20 "$LOCALE_LOG" >&2
+  echo "✗ 영어 로케일에서 실패 — 호스트 로케일에 의존하는 테스트가 있습니다." >&2
+  echo "  기대값을 언어로 못 박으세요(예: 스토어 생성 직후 setLanguage(.ko))." >&2
   exit 1
 fi
 

@@ -494,9 +494,13 @@ final class PokemonChatTests: XCTestCase {
                            names: [25: ["ko": "피카츄", "en": "Pikachu"]])
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("pokemon-chat-companion-\(UUID().uuidString).json")
-        return CompanionStore(provider: ChatLineProvider(line: line),
-                              clock: { Date(timeIntervalSince1970: 1_000) },
-                              fileURL: url, rng: SeededRNG(seed: 1))
+        let store = CompanionStore(provider: ChatLineProvider(line: line),
+                                   clock: { Date(timeIntervalSince1970: 1_000) },
+                                   fileURL: url, rng: SeededRNG(seed: 1))
+        // 신규 세이브의 언어는 `.systemDefault` 라 호스트 로케일을 따라간다(한국어 Mac=ko, CI=en).
+        // 페르소나 단언이 한국어 이름을 기대하므로 여기서 못 박는다 — 안 박으면 로컬에서만 통과한다.
+        store.setLanguage(.ko)
+        return store
     }
 
     private func mon(speciesID: Int, name: String) -> MonState {

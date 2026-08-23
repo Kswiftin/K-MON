@@ -709,6 +709,25 @@ read_when:
   지우기 전에 왜 남았는지 한 번 보면 주석이 거짓말하는 자리가 같이 나온다.
   (자체 코드 warning 게이트 도입, 2026-08-19.)
 
+## 호스트 로케일이 테스트 기대값에 새는 부류 (로컬 초록 / CI 빨강)
+
+- **새 세이브의 언어는 `AppLanguage.systemDefault` 라 호스트 로케일을 따라간다.** 개발 Mac 은
+  `ko-KR`, GitHub 러너는 영어다. 그래서 실 `CompanionStore` 를 만들어 한국어 이름을 기대하는 테스트는
+  **로컬에서만** 통과한다. #107 의 `PokemonChatTests` 두 개가 그랬다 — `profile.types` 가 로컬에선
+  `["전기"]`, CI 에선 `["Electric"]` 이었다. 리터럴 fixture(`PokemonChatProfile.fixture`)는 `language`
+  를 직접 받아 안전하고, **스토어를 통과하는 순간부터** 로케일에 딸려간다.
+- **같은 파일의 다른 단언이 통과한 것이 false confidence 였다.** `mon()`·`move()` 픽스처가
+  `["ko": 같은값, "en": 같은값]` 이라 이름 단언은 어느 로케일에서도 통과했다 — 기술 이름을 `.ko` 로
+  비교하는 테스트가 바로 옆에 있는데도 신호가 없었다.
+- **처방은 스토어 생성 직후 언어를 못 박는 것이다** (`store.setLanguage(.ko)`). 기대값을
+  `store.language` 로 바꾸면 로케일 독립이 되지만 "요청 언어의 이름이 실렸는가"를 더 이상 묻지 않는다.
+- **영구 캡처는 기억이 아니라 게이트다.** `test-gate.sh` 가 `swift test` 뒤에 같은 `.xctest` 번들을
+  `xcrun xctest -AppleLanguages "(en-US)" -XCTest All` 로 한 번 더 돌린다(≈9초). `swift test` 는
+  테스트 바이너리에 인자를 넘기지 못해서 이 경로를 쓴다. 계측 바이너리가 저장소 루트에
+  `default.profraw` 를 떨구지 않도록 `LLVM_PROFILE_FILE` 을 임시 경로로 돌려 커버리지 산출물과 분리한다.
+  가드 검증: `setLanguage(.ko)` 를 주석 처리하니 게이트가 CI 와 **같은 두 실패**로 죽었다.
+  (`scripts/test-gate.sh`, 2026-08-23.)
+
 ## 가드가 중복이라 하나를 지워도 아무 테스트가 안 깨지는 부류
 
 - **결함을 주입했는데 전부 초록이면, 가드가 튼튼한 게 아니라 중복이라는 뜻일 수 있다.**
