@@ -121,10 +121,25 @@ struct PokemonChatSession: Codable, Sendable, Equatable {
     private(set) var displayName: String
     var summary: String = ""
     var messages: [PokemonChatMessage] = []
+    /// Kept independently from the rolling transcript so relationship milestones survive pruning.
+    var lifetimeUserMessageCount: Int = 0
     var updatedAt = Date()
 
     init(companionID: UUID, speciesID: Int, displayName: String) {
         self.companionID = companionID; self.speciesID = speciesID; self.displayName = displayName
+    }
+
+    private enum CodingKeys: String, CodingKey { case companionID, speciesID, displayName, summary, messages, updatedAt, lifetimeUserMessageCount }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        companionID = try c.decode(UUID.self, forKey: .companionID)
+        speciesID = try c.decode(Int.self, forKey: .speciesID)
+        displayName = try c.decode(String.self, forKey: .displayName)
+        summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        messages = try c.decodeIfPresent([PokemonChatMessage].self, forKey: .messages) ?? []
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        lifetimeUserMessageCount = try c.decodeIfPresent(Int.self, forKey: .lifetimeUserMessageCount)
+            ?? messages.filter { $0.role == .user }.count
     }
 
     mutating func refreshIdentity(speciesID: Int, displayName: String) {
@@ -307,8 +322,7 @@ final class PokemonMemoryAlbum {
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
-        self.fileURL = fileURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("PokeTokenBar", isDirectory: true).appendingPathComponent("pokemon-memories.json")
+        self.fileURL = fileURL ?? CompanionStorageLocations().memoryURL
         if let data = try? Data(contentsOf: self.fileURL), let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
             memories = snapshot.memories.mapValues { Array($0.suffix(200)) }
         }
@@ -318,12 +332,15 @@ final class PokemonMemoryAlbum {
         let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, body.count <= 180 else { return }
         var entries = memories[companionID] ?? []
+        if source == .event, let eventID, !eventID.isEmpty,
+           entries.contains(where: { $0.eventID == eventID }) { return }
         entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: source, body: body, eventID: eventID))
         memories[companionID] = Array(entries.suffix(200)); save()
     }
     func delete(_ memory: PokemonMemory) { memories[memory.companionID]?.removeAll { $0.id == memory.id }; save() }
     func deleteAll(for id: UUID) { memories.removeValue(forKey: id); save() }
     func prune(validCompanionIDs: Set<UUID>) { memories = memories.filter { validCompanionIDs.contains($0.key) }; save() }
+    func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(memories: memories)) }
     private func save() { try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true); guard let data = try? JSONEncoder().encode(Snapshot(memories: memories)) else { return }; try? data.write(to: fileURL, options: .atomic) }
 }
 
@@ -355,6 +372,32 @@ enum PokemonChatProviderSafety {
     }
 }
 
+/// Resolves only an explicit, executable file.  GUI applications must not inherit a shell PATH.
+enum PokemonChatProviderExecutableResolver {
+    static func executableURL(for kind: PokemonChatProviderKind) -> URL? {
+        guard PokemonChatProviderSafety.arguments(for: kind) != nil else { return nil }
+        let override = UserDefaults.standard.string(forKey: "pokemonChatExecutablePath.\(kind.rawValue)")
+        if let override, let url = validated(URL(fileURLWithPath: override)) { return url }
+        for path in standardPaths(for: kind) {
+            if let url = validated(URL(fileURLWithPath: path)) { return url }
+        }
+        return nil
+    }
+    static func standardPaths(for kind: PokemonChatProviderKind) -> [String] {
+        switch kind {
+        case .codex: return ["/usr/local/bin/codex", "/opt/homebrew/bin/codex", "/usr/bin/codex"]
+        case .claude: return ["/usr/local/bin/claude", "/opt/homebrew/bin/claude", "/usr/bin/claude"]
+        case .opencode, .custom: return []
+        }
+    }
+    private static func validated(_ url: URL) -> URL? {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue,
+              FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
+        return url.standardizedFileURL
+    }
+}
+
 struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
     let executableURL: URL
     let arguments: [String]
@@ -372,8 +415,12 @@ struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
             ? FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).txt")
             : nil
         defer { if let outputFileURL { try? FileManager.default.removeItem(at: outputFileURL) } }
+        let invocation = invocationArguments(for: request, outputFileURL: outputFileURL)
+        // Safety arguments retain their command name for compatibility/audit readability, but an
+        // absolute executable has already selected that command and must never receive it again.
+        let processArguments = (kind == .codex || kind == .claude) ? Array(invocation.dropFirst()) : invocation
         let result = try await PokemonChatCommandRunner.run(executableURL: executableURL,
-                                                            arguments: invocationArguments(for: request, outputFileURL: outputFileURL),
+                                                            arguments: processArguments,
                                                             input: prompt, timeout: 30)
         if let outputFileURL {
             let text = (try? String(contentsOf: outputFileURL, encoding: .utf8))?
@@ -430,15 +477,19 @@ enum PokemonChatCommandRunner {
                 error.fileHandleForReading.readabilityHandler = { handle in state.appendError(handle.availableData) }
                 process.executableURL = executableURL; process.arguments = arguments; process.standardInput = inputPipe; process.standardOutput = output; process.standardError = error
                 process.terminationHandler = { process in
+                    output.fileHandleForReading.readabilityHandler = nil; error.fileHandleForReading.readabilityHandler = nil
                     state.appendOutput(output.fileHandleForReading.readDataToEndOfFile())
                     state.appendError(error.fileHandleForReading.readDataToEndOfFile())
-                    output.fileHandleForReading.readabilityHandler = nil; error.fileHandleForReading.readabilityHandler = nil
                     if process.terminationStatus == 0 { state.finish(.success(state.result())) }
                     else { state.finish(.failure(Error.noResponse(stderr: state.result().stderr))) }
                 }
                 lock.lock(); self.process = process; lock.unlock()
-                do { try process.run(); inputPipe.fileHandleForWriting.write(Data(input.utf8)); try? inputPipe.fileHandleForWriting.close() }
-                catch { state.finish(.failure(error)) }
+                do {
+                    try process.run()
+                    do { try inputPipe.fileHandleForWriting.write(contentsOf: Data(input.utf8)) }
+                    catch { try? inputPipe.fileHandleForWriting.close(); process.terminate(); state.finish(.failure(error)); return }
+                    try inputPipe.fileHandleForWriting.close()
+                } catch { try? inputPipe.fileHandleForWriting.close(); process.terminate(); state.finish(.failure(error)) }
             }
         }
 
@@ -482,7 +533,7 @@ final class PokemonChatStore {
         guard !trimmed.isEmpty else { return }
         var session = sessions[companionID] ?? PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName)
         session.refreshIdentity(speciesID: profile.speciesID, displayName: profile.displayName)
-        session.messages.append(PokemonChatMessage(role: .user, body: trimmed)); session.messages = Array(session.messages.suffix(200))
+        session.messages.append(PokemonChatMessage(role: .user, body: trimmed)); session.lifetimeUserMessageCount += 1; session.messages = Array(session.messages.suffix(200))
         session.updatedAt = Date(); sessions[companionID] = session; save()
     }
 
@@ -493,6 +544,7 @@ final class PokemonChatStore {
     }
 
     func send(_ body: String, for companionID: UUID, profile: PokemonChatProfile, provider: any PokemonChatProviding) async {
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         appendLocalMessage(body, for: companionID, profile: profile)
         guard let session = sessions[companionID] else { return }
         outstandingSendCount += 1; errorMessage = nil
@@ -504,10 +556,10 @@ final class PokemonChatStore {
             guard var current = sessions[companionID] else { return }
             current.refreshIdentity(speciesID: profile.speciesID, displayName: profile.displayName)
             current.messages.append(PokemonChatMessage(role: .pokemon, body: safeReply)); current.messages = Array(current.messages.suffix(200))
-            if let kind = parsed.kind, profile.careOffer?.kinds.contains(kind) == true {
+            if safeReply == parsed.body, let kind = parsed.kind, profile.careOffer?.kinds.contains(kind) == true {
                 pendingProposal = PokemonChatActionProposal(kind: kind, companionID: companionID)
             }
-            if session.messages.filter({ $0.role == .user }).count % 6 == 0 {
+            if current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""
                 if !candidate.isEmpty { album.record(companionID: companionID, body: candidate, source: .conversation) }
             }
@@ -538,7 +590,13 @@ final class PokemonChatStore {
     /// whichever companion happens to be active later.
     func resolvePending(approved: Bool, profile: PokemonChatProfile,
                         executor: (PokemonChatActionKind, UUID) -> Bool) {
+        resolvePending(approved: approved, profileForCompanion: { _ in profile }, executor: executor)
+    }
+
+    func resolvePending(approved: Bool, profileForCompanion: (UUID) -> PokemonChatProfile,
+                        executor: (PokemonChatActionKind, UUID) -> Bool) {
         guard let proposal = pendingProposal, proposal.state == .pending else { return }
+        let profile = profileForCompanion(proposal.companionID)
         if approved {
             _ = approvePending()
             let success = executor(proposal.kind, proposal.companionID)
@@ -555,17 +613,15 @@ final class PokemonChatStore {
     }
     func deleteSession(for companionID: UUID) { sessions.removeValue(forKey: companionID); save() }
     func prune(validCompanionIDs: Set<UUID>) { sessions = sessions.filter { validCompanionIDs.contains($0.key) }; save() }
+    func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(sessions: sessions)) }
 
     private func save() {
         let dir = fileURL.deletingLastPathComponent(); try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(Snapshot(sessions: sessions)) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
-    private static func defaultURL() -> URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("PokeTokenBar", isDirectory: true).appendingPathComponent("pokemon-chat.json")
-    }
+    private static func defaultURL() -> URL { CompanionStorageLocations().chatURL }
     private static func siblingMemoryURL(for fileURL: URL) -> URL {
-        fileURL.deletingPathExtension().appendingPathExtension("pokemon-memories.json")
+        fileURL.deletingLastPathComponent().appendingPathComponent(CompanionStorageLocations.memoryFileName)
     }
 }

@@ -39,6 +39,7 @@ final class AppSettings {
         didSet { defaults.set(automaticUpdateDownloadsEnabled, forKey: "automaticUpdateDownloadsEnabled") }
     }
     var doNotDisturb: Bool { didSet { defaults.set(doNotDisturb, forKey: "doNotDisturb") } }
+    private var chatExecutablePaths: [String: String]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -56,6 +57,16 @@ final class AppSettings {
         automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
+        chatExecutablePaths = defaults.dictionary(forKey: "pokemonChatExecutablePaths") as? [String: String] ?? [:]
+    }
+
+    static func chatProviderPathKey(_ kind: PokemonChatProviderKind) -> String { "pokemonChatExecutablePath.\(kind.rawValue)" }
+    func chatProviderExecutablePath(for kind: PokemonChatProviderKind) -> String? { chatExecutablePaths[kind.rawValue] }
+    func setChatProviderExecutablePath(_ path: String?, for kind: PokemonChatProviderKind) {
+        if let path, !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { chatExecutablePaths[kind.rawValue] = path }
+        else { chatExecutablePaths.removeValue(forKey: kind.rawValue) }
+        defaults.set(chatExecutablePaths, forKey: "pokemonChatExecutablePaths")
+        if let path { defaults.set(path, forKey: Self.chatProviderPathKey(kind)) } else { defaults.removeObject(forKey: Self.chatProviderPathKey(kind)) }
     }
 
     func requestNotificationAuthorizationIfNeeded() {

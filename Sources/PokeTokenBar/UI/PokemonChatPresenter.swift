@@ -22,6 +22,7 @@ final class PokemonChatPresenter {
             .environment(self)
         if let window {
             window.contentViewController = NSHostingController(rootView: view)
+            window.title = store.chatProfile(for: mon).displayName
             window.makeKeyAndOrderFront(nil)
         } else {
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))

@@ -104,6 +104,14 @@ enum SaveTransfer {
         "companion-state.pre-import-\(secondStamp(date)).json"
     }
     static let backupFilePrefix = "companion-state.pre-import-"
+    static let memoryBackupFilePrefix = "pokemon-memories.pre-import-"
+    static let chatBackupFilePrefix = "pokemon-chat.pre-import-"
+    static func importBackupFileNames(date: Date) -> (state: String, memory: String, chat: String) {
+        let stamp = secondStamp(date)
+        return ("companion-state.pre-import-\(stamp).json",
+                "pokemon-memories.pre-import-\(stamp).json",
+                "pokemon-chat.pre-import-\(stamp).json")
+    }
     /// 유지할 백업 개수 — 오래된 것부터 지운다.
     static let backupsToKeep = 5
 

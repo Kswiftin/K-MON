@@ -25,7 +25,7 @@ struct CareCardView: View {
                 action("🛏️", l.t("쉬기", "Rest", "休む")) { store.restCompanion() }
                 action("🫧", l.t("청소", "Clean", "掃除")) { store.cleanCompanion() }
                 action("💊", l.t("약", "Medicine", "薬")) { _ = store.medicateCompanion() }
-                    .disabled(!store.canPerformCare || !care.isSick)
+                    .disabled(!store.canPerformCare || !care.isSick || care.hygiene < 40)
             }
         }
         .padding(10)

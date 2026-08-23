@@ -27,8 +27,9 @@ struct PokemonChatView: View {
 
     private var provider: (any PokemonChatProviding)? {
         guard let kind = PokemonChatProviderKind(rawValue: providerRaw),
-              let arguments = PokemonChatProviderSafety.arguments(for: kind) else { return nil }
-        return PokemonChatCLIProvider(executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: arguments, kind: kind)
+              let arguments = PokemonChatProviderSafety.arguments(for: kind),
+              let executableURL = PokemonChatProviderExecutableResolver.executableURL(for: kind) else { return nil }
+        return PokemonChatCLIProvider(executableURL: executableURL, arguments: arguments, kind: kind)
     }
 
     var body: some View {
@@ -36,8 +37,8 @@ struct PokemonChatView: View {
             header
             if provider == nil, !providerRaw.isEmpty {
                 Text(l.t("이 제공자는 MCP·도구를 완전히 격리할 수 없어 포켓몬 대화에서 사용할 수 없습니다.",
-                         "This provider is unavailable because its MCP and tool access cannot be fully isolated for Pokémon chat.",
-                         "このプロバイダーは、MCP とツールへのアクセスを完全に隔離できないため使用できません。"))
+                         "This provider is unavailable because it is unsupported or its executable could not be found.",
+                         "このプロバイダーは未対応、または実行ファイルが見つからないため使用できません。"))
                     .font(.caption2).foregroundStyle(.orange).padding(.horizontal, 12).padding(.bottom, 8)
             }
             Divider()
@@ -147,7 +148,7 @@ struct PokemonChatView: View {
     }
 
     @ViewBuilder private var proposalCard: some View {
-        if let proposal = chat.pendingProposal, proposal.state == .pending {
+        if let proposal = chat.pendingProposal, proposal.companionID == companionID, proposal.state == .pending {
             VStack(alignment: .leading, spacing: 6) {
                 Text(l.t("돌봄 제안", "Care proposal", "お世話の提案")).font(.caption.weight(.semibold))
                 Text(l.t("\(proposal.kind.localizedCareLabel(.ko)) 해 줄까?",
@@ -166,11 +167,18 @@ struct PokemonChatView: View {
     }
 
     private func approve(_ proposal: PokemonChatActionProposal) {
-        chat.resolvePending(approved: true, profile: profile, executor: store.applyChatCare)
+        chat.resolvePending(approved: true, profileForCompanion: profileForOwner, executor: store.applyChatCare)
     }
 
     private func reject(_ proposal: PokemonChatActionProposal) {
-        chat.resolvePending(approved: false, profile: profile, executor: store.applyChatCare)
+        chat.resolvePending(approved: false, profileForCompanion: profileForOwner, executor: store.applyChatCare)
+    }
+
+    private func profileForOwner(_ id: UUID) -> PokemonChatProfile {
+        guard let mon = store.ownedMons.first(where: { $0.id == id }) else { return profile }
+        var owner = store.chatProfile(for: mon)
+        if id == companionID, let identity { owner.apply(identity) }
+        return owner
     }
 }
 

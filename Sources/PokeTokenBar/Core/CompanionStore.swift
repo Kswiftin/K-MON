@@ -68,7 +68,7 @@ final class CompanionStore {
         celebration = c; celebrationSeq += 1
         if case .evolve = c {
             recordAchievement(.evolve, 1)
-            if let mon = state.active { memoryAlbum.record(companionID: mon.id, body: "진화하여 \(speciesName)이 되었다.", source: .event, eventID: "evolve") }
+            recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。", eventID: "evolve")
         }
     }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
@@ -105,10 +105,12 @@ final class CompanionStore {
          dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp) {
         self.provider = provider
         self.clock = clock
-        self.fileURL = fileURL ?? Self.defaultURL()
-        let siblingBase = self.fileURL.deletingPathExtension()
-        self.memoryAlbum = memoryAlbum ?? PokemonMemoryAlbum(fileURL: siblingBase.appendingPathExtension("pokemon-memories.json"))
-        self.chatStore = chatStore ?? PokemonChatStore(fileURL: siblingBase.appendingPathExtension("pokemon-chat.json"), album: self.memoryAlbum)
+        let locations = CompanionStorageLocations(stateURL: fileURL)
+        // An injected URL is an explicit test/embedding contract; only default construction uses
+        // the canonical state filename.
+        self.fileURL = fileURL ?? locations.stateURL
+        self.memoryAlbum = memoryAlbum ?? PokemonMemoryAlbum(fileURL: locations.memoryURL)
+        self.chatStore = chatStore ?? PokemonChatStore(fileURL: locations.chatURL, album: self.memoryAlbum)
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
@@ -127,17 +129,13 @@ final class CompanionStore {
         // 그 디렉토리를 쓴다 — 개발/QA 격리용(실제 companion 상태를 건드리지 않고 데모 상태로 실행).
         // 프로덕션은 이 변수가 없어 무영향.
         // 공백만 있는 값은 무시(URL(fileURLWithPath:)가 CWD 상대경로로 해석되는 것 방지).
-        let override = (ProcessInfo.processInfo.environment["PTB_STATE_DIR"] ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let dir: URL
-        if !override.isEmpty {
-            dir = URL(fileURLWithPath: override, isDirectory: true)
-        } else {
-            dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("PokeTokenBar")
-        }
+        let locations = CompanionStorageLocations()
+        let dir = locations.directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("companion-state.json")
+        return locations.stateURL
+    }
+    static func storageLocations(stateURL: URL? = nil) -> CompanionStorageLocations {
+        CompanionStorageLocations(stateURL: stateURL)
     }
 
     // MARK: 파생값 (UI)
@@ -331,8 +329,7 @@ final class CompanionStore {
     /// Opening or explicitly refreshing the active companion’s chat is a lifecycle boundary: it
     /// catches up care exactly once and persists any resulting event before deriving the profile.
     func prepareChatProfile(for mon: MonState) -> PokemonChatProfile {
-        if mon.id == activeMonID, let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        if mon.id == activeMonID { save() }
+        if mon.id == activeMonID { _ = resumeCareClock() }
         return chatProfile(for: mon)
     }
 
@@ -756,6 +753,10 @@ final class CompanionStore {
     // MARK: 돌봄·모험
 
     var care: PetCareState { state.care }
+    private func recordEventMemory(_ ko: String, _ en: String, _ ja: String, eventID: String) {
+        guard let mon = state.active else { return }
+        memoryAlbum.record(companionID: mon.id, body: l.t(ko, en, ja), source: .event, eventID: eventID)
+    }
     var canPerformCare: Bool {
         state.active != nil && state.adventure == nil && !state.care.isSleeping
     }
@@ -791,7 +792,7 @@ final class CompanionStore {
         state.adventure = AdventureRun(zone: zone, startedAt: now,
                                        endsAt: now.addingTimeInterval(zone.duration),
                                        companionSpeciesID: speciesID)
-        if let mon = state.active { memoryAlbum.record(companionID: mon.id, body: "\(zone.rawValue) 모험을 떠났다.", source: .event, eventID: "adventure-start") }
+        recordEventMemory("모험을 떠났다.", "Set off on an adventure.", "冒険に出かけた。", eventID: "adventure-start")
         save()
         return true
     }
@@ -875,7 +876,7 @@ final class CompanionStore {
                                                        companionSpeciesID: run.companionSpeciesID,
                                                        completedAt: now, stardust: reward.starPieces,
                                                        foundRareCandy: reward.foundRareCandy), at: 0)
-        if let mon = state.active { memoryAlbum.record(companionID: mon.id, body: "\(run.zone.rawValue) 모험을 무사히 마쳤다.", source: .event, eventID: "adventure-claim") }
+        recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。", eventID: "adventure-claim")
         if state.adventureHistory.count > 30 { state.adventureHistory.removeLast(state.adventureHistory.count - 30) }
         save()
         return reward
@@ -900,7 +901,7 @@ final class CompanionStore {
         guard canPerformCare else { return }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         state.care.feed(favorite: food == favoriteFood)
-        if let mon = state.active { memoryAlbum.record(companionID: mon.id, body: "트레이너와 함께 맛있게 먹었다.", source: .event, eventID: "care-feed") }
+        recordEventMemory("트레이너와 함께 맛있게 먹었다.", "Enjoyed a tasty meal with the trainer.", "トレーナーとおいしく食べた。", eventID: "care-feed")
         save()
     }
     func playWithCompanion() {
@@ -922,7 +923,7 @@ final class CompanionStore {
 
     @discardableResult
     func medicateCompanion() -> Bool {
-        guard canPerformCare else { return false }
+        guard canPerformCare, state.care.isSick, state.care.hygiene >= 40 else { return false }
         if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
         let healed = state.care.giveMedicine()
         if healed { save() }
@@ -942,9 +943,9 @@ final class CompanionStore {
     @discardableResult
     func petCompanion() -> Bool {
         guard canPerformCare else { return false }
-        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
+        _ = resumeCareClock()
         let accepted = state.care.pet(at: clock())
-        if accepted { if let mon = state.active { memoryAlbum.record(companionID: mon.id, body: "트레이너의 쓰다듬을 받고 기뻐했다.", source: .event, eventID: "care-pet") }; save() }
+        if accepted { recordEventMemory("트레이너의 쓰다듬을 받고 기뻐했다.", "Was happy to be petted by the trainer.", "トレーナーになでられてうれしかった。", eventID: "care-pet"); save() }
         return accepted
     }
 
@@ -2079,7 +2080,7 @@ final class CompanionStore {
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
         let name = line.localizedName(line.baseID, state.language)
-        if let mon = state.active { memoryAlbum.record(companionID: mon.id, body: "\(name)이(가) 알에서 태어났다.", source: .event, eventID: "hatch") }
+        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。", eventID: "hatch")
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
@@ -2441,12 +2442,19 @@ final class CompanionStore {
     /// 상황에서 되돌릴 대상이 사라진다. 불러올 때마다 새 슬롯을 쓰고 오래된 것부터 정리한다.
     @discardableResult
     private func backupStateBeforeImport() throws -> URL {
-        guard let data = try? JSONEncoder().encode(state) else { throw SaveTransferError.backupFailed }
+        guard let stateData = try? JSONEncoder().encode(state),
+              let memoryData = try? memoryAlbum.snapshotData(),
+              let chatData = try? chatStore.snapshotData() else { throw SaveTransferError.backupFailed }
         let dir = fileURL.deletingLastPathComponent()
-        let backup = dir.appendingPathComponent(SaveTransfer.backupFileName(date: clock()))
+        let names = SaveTransfer.importBackupFileNames(date: clock())
+        let backup = dir.appendingPathComponent(names.state)
+        let targets = [(backup, stateData), (dir.appendingPathComponent(names.memory), memoryData),
+                       (dir.appendingPathComponent(names.chat), chatData)]
         do {
-            try data.write(to: backup, options: .atomic)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for (url, data) in targets { try data.write(to: url, options: .atomic) }
         } catch {
+            for (url, _) in targets { try? FileManager.default.removeItem(at: url) }
             AppLog.write("save import aborted — backup write failed: \(error)")
             throw SaveTransferError.backupFailed
         }
@@ -2454,13 +2462,21 @@ final class CompanionStore {
         return backup
     }
 
-    /// 최근 N 개만 남기고 오래된 백업을 지운다. 파일명이 `yyyy-MM-dd-HHmmss` 라 사전순 = 시간순이다.
+    /// Retain complete snapshot groups, rather than letting one component outlive its state peer.
     private func pruneImportBackups(in dir: URL) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
-        let backups = names.filter { $0.hasPrefix(SaveTransfer.backupFilePrefix) }.sorted()
-        guard backups.count > SaveTransfer.backupsToKeep else { return }
-        for stale in backups.dropLast(SaveTransfer.backupsToKeep) {
-            try? FileManager.default.removeItem(at: dir.appendingPathComponent(stale))
+        let stateNames = names.filter { $0.hasPrefix(SaveTransfer.backupFilePrefix) }.sorted()
+        let complete = stateNames.filter { state in
+            let stamp = state.replacingOccurrences(of: SaveTransfer.backupFilePrefix, with: "")
+            return names.contains(SaveTransfer.memoryBackupFilePrefix + stamp)
+                && names.contains(SaveTransfer.chatBackupFilePrefix + stamp)
+        }
+        guard complete.count > SaveTransfer.backupsToKeep else { return }
+        for stale in complete.dropLast(SaveTransfer.backupsToKeep) {
+            let stamp = stale.replacingOccurrences(of: SaveTransfer.backupFilePrefix, with: "")
+            for name in [stale, SaveTransfer.memoryBackupFilePrefix + stamp, SaveTransfer.chatBackupFilePrefix + stamp] {
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+            }
         }
     }
 

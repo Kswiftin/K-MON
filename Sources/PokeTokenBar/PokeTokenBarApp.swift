@@ -20,8 +20,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private let popover = NSPopover()
     private var settings: AppSettings!
     private var companion: CompanionStore!
-    private var memoryAlbum: PokemonMemoryAlbum!
-    private var chatStore: PokemonChatStore!
     private var chatPresenter: PokemonChatPresenter!
     private var updater: UpdateChecker!
     private var battleCenter: BattleCenter!
@@ -46,10 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         Self.migrateLegacyStorageIfNeeded()   // TokenMac → PokeTokenBar 리네임: 기존 companion/캐시 보존
         LoginItem.migrateFromLegacyLoginItemIfNeeded()   // 로그인아이템 → KeepAlive 에이전트(크래시 자동 재실행)
         settings = AppSettings()
-        memoryAlbum = PokemonMemoryAlbum()
-        chatStore = PokemonChatStore(album: memoryAlbum)
-        companion = CompanionStore(memoryAlbum: memoryAlbum, chatStore: chatStore)
-        chatPresenter = PokemonChatPresenter(store: companion, chat: chatStore, album: memoryAlbum)
+        companion = CompanionStore()
+        chatPresenter = PokemonChatPresenter(store: companion, chat: companion.chatStore, album: companion.memoryAlbum)
         Task { await companion.ensureInheritedMoves() }
         focusTimer.onFocusCompleted = { [weak self] minutes in
             self?.companion.completeFocusSession(minutes: minutes)
