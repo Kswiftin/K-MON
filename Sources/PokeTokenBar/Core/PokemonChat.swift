@@ -348,11 +348,73 @@ protocol PokemonChatProviding: Sendable {
     func reply(to request: PokemonChatRequest) async throws -> String
 }
 
-enum PokemonChatProviderKind: String, Codable, CaseIterable, Sendable { case codex, claude, opencode, custom }
+enum PokemonChatProviderKind: String, Codable, CaseIterable, Sendable {
+    case codex, claude, opencode, custom
+
+    /// 제공자 이름은 피커·설정 두 화면이 함께 쓴다. 화면마다 하드코딩하면 한 곳을 빠뜨린다.
+    func label(_ language: AppLanguage) -> String {
+        switch self {
+        case .codex: return "Codex"
+        case .claude: return "Claude Code"
+        case .opencode: return "OpenCode"
+        case .custom: return L(language).t("사용자 CLI", "Custom CLI", "カスタム CLI")
+        }
+    }
+}
+
+/// 차단 사유는 사용자가 할 수 있는 일이 서로 다르다 — 뭉개면 "설정에서 경로를 지정하라" 는
+/// 헛된 안내가 된다. 문구는 커버리지 게이트 안(이 파일)에 두고 뷰는 표시만 한다.
+enum PokemonChatBlockReason: Sendable, Equatable {
+    /// 실행별로 도구·MCP 를 끄는 방법이 CLI 에 없다. OpenCode 실측 기록:
+    /// `docs/reference/opencode-isolation.md`.
+    case unverifiedToolContract
+    /// 앱이 내용을 모르는 임의 실행 파일이다 — 어떤 격리도 약속할 수 없다.
+    case arbitraryExecutable
+
+    func message(_ language: AppLanguage) -> String {
+        switch self {
+        case .unverifiedToolContract:
+            return L(language).t("이 CLI 는 실행별로 도구·MCP 를 끄는 방법을 제공하지 않아, 앱이 격리를 보장할 수 없습니다.",
+                                 "This CLI offers no per-run way to disable tools and MCP, so the app cannot guarantee isolation.",
+                                 "この CLI は実行ごとにツール・MCP を無効化する手段がないため、アプリが隔離を保証できません。")
+        case .arbitraryExecutable:
+            return L(language).t("임의의 실행 파일이라 도구 격리를 보장할 수 없어 대화에 쓸 수 없습니다.",
+                                 "An arbitrary executable cannot be tool-isolated, so it is unavailable for chat.",
+                                 "任意の実行ファイルはツール隔離を保証できないため、会話には使えません。")
+        }
+    }
+}
+
+enum PokemonChatProviderAvailability: Sendable, Equatable {
+    /// 무도구 실행 계약이 실측으로 확인됨.
+    case verified
+    case blocked(PokemonChatBlockReason)
+
+    var isVerified: Bool { self == .verified }
+    var blockReason: PokemonChatBlockReason? {
+        if case .blocked(let reason) = self { return reason }
+        return nil
+    }
+}
 
 /// 대화용 CLI는 모델의 응답 품질보다 도구 격리가 우선이다. 검증되지 않은 제공자는 실행하지 않는다.
 enum PokemonChatProviderSafety {
+    /// 가용성이 진실 원천이다. `arguments` → `executableURL` → 뷰가 모두 여기서 파생돼야
+    /// 한 곳만 고쳐지고 형제 경로가 무검사로 남는 일이 없다.
+    static func availability(for provider: PokemonChatProviderKind) -> PokemonChatProviderAvailability {
+        switch provider {
+        case .codex, .claude: return .verified
+        case .opencode: return .blocked(.unverifiedToolContract)
+        case .custom: return .blocked(.arbitraryExecutable)
+        }
+    }
+
+    static var verifiedKinds: [PokemonChatProviderKind] {
+        PokemonChatProviderKind.allCases.filter { availability(for: $0).isVerified }
+    }
+
     static func arguments(for provider: PokemonChatProviderKind) -> [String]? {
+        guard availability(for: provider).isVerified else { return nil }
         switch provider {
         case .claude:
             // `--tools ""`는 Claude Code 내장 도구 전체를 제거한다. strict MCP 설정과 빈 설정을 함께
@@ -366,7 +428,8 @@ enum PokemonChatProviderSafety {
             return ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only",
                     "--ephemeral", "--ignore-user-config", "--ignore-rules", "--config", "mcp_servers={}"]
         case .opencode, .custom:
-            // OpenCode/임의 CLI는 앱이 보장 가능한 무도구 실행 계약이 확인되기 전까지 실행 금지.
+            // 위 `availability` 관문이 이미 걸렀다. 망라성 때문에 남기며, 두 번째 진실 원천이
+            // 되지 않도록 판단은 하지 않는다.
             return nil
         }
     }
