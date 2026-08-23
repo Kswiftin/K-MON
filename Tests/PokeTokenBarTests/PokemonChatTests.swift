@@ -444,6 +444,23 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertNil(PokemonChatProviderExecutableResolver.executableURL(for: .opencode))
     }
 
+    /// 라인 커버리지 84% 를 통과하는 동안 `label`·`verifiedKinds`·`blockReason` 는 **한 번도
+    /// 실행되지 않았다**(`llvm-cov --show-functions` 로 0.00% 확인). 피커·설정 두 화면이 이 셋에
+    /// 의존하므로 실행되는지를 여기서 못 박는다.
+    func testProviderLabelsAndVerifiedKindsFeedBothScreensFromOneList() {
+        XCTAssertEqual(PokemonChatProviderSafety.verifiedKinds, [.codex, .claude])
+        for kind in PokemonChatProviderKind.allCases {
+            for language in [AppLanguage.ko, .en, .ja] {
+                XCTAssertFalse(kind.label(language).isEmpty, "\(kind.rawValue)/\(language): 빈 이름")
+            }
+        }
+        XCTAssertEqual(Set(PokemonChatProviderKind.allCases.map { $0.label(.en) }).count,
+                       PokemonChatProviderKind.allCases.count, "제공자 이름이 겹친다")
+        XCTAssertEqual(PokemonChatProviderSafety.availability(for: .opencode).blockReason,
+                       .unverifiedToolContract)
+        XCTAssertNil(PokemonChatProviderSafety.availability(for: .codex).blockReason)
+    }
+
     func testBlockReasonIsLocalizedInAllThreeLanguages() {
         for reason in [PokemonChatBlockReason.unverifiedToolContract, .arbitraryExecutable] {
             let messages = [AppLanguage.ko, .en, .ja].map { reason.message($0) }
