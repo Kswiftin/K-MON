@@ -419,9 +419,37 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(store.messages(for: id).first?.body, "message 5")
     }
 
-    func testProvidersWithoutAVerifiedToolFreeContractAreBlocked() {
-        XCTAssertNil(PokemonChatProviderSafety.arguments(for: .opencode))
-        XCTAssertNil(PokemonChatProviderSafety.arguments(for: .custom))
+    /// 가용성과 실행 인자가 각자 판단하면 한쪽만 고쳐져 차단이 새어 나간다. `allCases` 전수로
+    /// 두 값이 같은 진실을 말하는지 묶는다 — 새 제공자가 늘어도 이 단언이 따라간다.
+    func testEveryProviderKindAgreesBetweenAvailabilityAndArguments() {
+        for kind in PokemonChatProviderKind.allCases {
+            XCTAssertEqual(PokemonChatProviderSafety.arguments(for: kind) != nil,
+                           PokemonChatProviderSafety.availability(for: kind).isVerified,
+                           "\(kind.rawValue): 가용성과 실행 인자가 어긋난다")
+        }
+        XCTAssertEqual(PokemonChatProviderSafety.availability(for: .opencode),
+                       .blocked(.unverifiedToolContract))
+        XCTAssertEqual(PokemonChatProviderSafety.availability(for: .custom),
+                       .blocked(.arbitraryExecutable))
+    }
+
+    /// 트리거 분기: 사용자 설정(경로 override)이 안전 관문을 우회하는 경로. 실존 실행 파일을
+    /// 넣어도 차단 제공자는 해석되지 않아야 한다.
+    func testBlockedProviderStaysBlockedEvenWithAnExplicitExecutableOverride() {
+        let key = "pokemonChatExecutablePath.opencode"
+        UserDefaults.standard.set("/usr/bin/env", forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: "/usr/bin/env"),
+                      "테스트 전제가 깨졌다 — 실존 실행 파일이어야 우회 시도가 성립한다")
+        XCTAssertNil(PokemonChatProviderExecutableResolver.executableURL(for: .opencode))
+    }
+
+    func testBlockReasonIsLocalizedInAllThreeLanguages() {
+        for reason in [PokemonChatBlockReason.unverifiedToolContract, .arbitraryExecutable] {
+            let messages = [AppLanguage.ko, .en, .ja].map { reason.message($0) }
+            XCTAssertFalse(messages.contains(where: \.isEmpty), "\(reason): 빈 문구")
+            XCTAssertEqual(Set(messages).count, 3, "\(reason): 세 언어가 같은 문구다")
+        }
     }
 
     func testDeletingSessionRemovesPersistedConversation() throws {
