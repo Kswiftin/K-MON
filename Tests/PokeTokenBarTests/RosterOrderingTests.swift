@@ -86,6 +86,27 @@ final class RosterOrderingTests: XCTestCase {
                        "되돌릴 수 없으면 한 번 누른 사용자는 부화순을 잃는다")
     }
 
+    /// 정렬은 **탭을 떠나도 남아야 한다.** 뷰의 `@State` 에 있던 동안 홈에 갔다 오는 것만으로
+    /// 기본값으로 돌아갔다 — 60마리 박스에서 매번 다시 고르게 된다.
+    @MainActor
+    func testRosterSortSurvivesLeavingTheTab() {
+        let suiteName = "roster-sort-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertEqual(settings.rosterSort, .caught, "기본은 부화순")
+        XCTAssertTrue(settings.rosterSortAscending)
+
+        settings.rosterSort = .level
+        settings.rosterSortAscending = false
+
+        // 탭을 떠났다 오면 화면은 새로 만들어진다 — 설정을 다시 읽는 것과 같다.
+        let reopened = AppSettings(defaults: defaults)
+        XCTAssertEqual(reopened.rosterSort, .level)
+        XCTAssertFalse(reopened.rosterSortAscending)
+    }
+
     /// 아이콘이 방향을 말한다 — 세 상태가 같은 그림이면 지금 어느 정렬인지 화면에서 알 수 없다.
     func testEachTeamPickerLevelOrderShowsItsOwnIcon() {
         let icons = TeamPickerLevelOrder.allCases.map(\.iconName)
