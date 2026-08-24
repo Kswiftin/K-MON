@@ -9,7 +9,7 @@ final class PokemonOXQuizTests: XCTestCase {
         PokemonOXGame(players: [
             PokemonOXPlayer(id: left, trainerName: "Left", speciesID: 1, position: -1),
             PokemonOXPlayer(id: right, trainerName: "Right", speciesID: 25, position: 1),
-        ], questions: [PokemonOXQuestion(id: 999, ko: "", en: "", ja: "", answer: answer)], startsAt: .now)
+        ], questions: [PokemonOXQuestion(id: 999, speciesID: 25, ko: "", en: "", ja: "", answer: answer)], startsAt: .now)
     }
 
     func testCorrectPlatformAwardsTenPoints() {
@@ -30,7 +30,7 @@ final class PokemonOXQuizTests: XCTestCase {
 
     func testTenQuestionsFinishAndStandingsUseScore() {
         let questions = (0..<10).map {
-            PokemonOXQuestion(id: $0, ko: "Q\($0)", en: "Q\($0)", ja: "Q\($0)", answer: $0.isMultiple(of: 2))
+            PokemonOXQuestion(id: $0, speciesID: $0 + 1, ko: "Q\($0)", en: "Q\($0)", ja: "Q\($0)", answer: $0.isMultiple(of: 2))
         }
         var quiz = PokemonOXGame(players: [
             PokemonOXPlayer(id: left, trainerName: "A", speciesID: 1, position: -1),
@@ -43,7 +43,7 @@ final class PokemonOXQuizTests: XCTestCase {
     }
 
     func testFactoryBuildsTenQuestionsOnlyFromFacts() {
-        let facts = (1...4).map { id in
+        let facts = (1...5).map { id in
             PokemonQuizFact(speciesID: id,
                             names: ["ko": "포켓몬\(id)", "en": "Pokemon\(id)", "ja-Hrkt": "ポケモン\(id)"],
                             types: [.grass], evolvesFromNames: id == 1 ? nil : ["ko": "포켓몬1", "en": "Pokemon1", "ja-Hrkt": "ポケモン1"])

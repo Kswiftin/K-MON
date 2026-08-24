@@ -208,9 +208,12 @@ struct PokeathlonView: View {
                 }
             }
             if let question = game.currentQuestion {
-                Text(store.l.t(question.ko, question.en, question.ja))
-                    .font(.callout.bold()).foregroundStyle(.white).multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, minHeight: 38)
+                HStack(spacing: 8) {
+                    SpriteView(speciesID: question.speciesID, size: 44)
+                    Text(store.l.t(question.ko, question.en, question.ja))
+                        .font(.callout.bold()).foregroundStyle(.white).multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
                 if game.isRevealing {
                     Text(question.answer ? "⭕ O" : "❌ X")
                         .font(.title2.weight(.black)).foregroundStyle(.yellow)
