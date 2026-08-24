@@ -7,32 +7,37 @@ import XCTest
 /// 그대로 실었다. `ailment` 축이 생기기 전의 세이브로 싸우면 수면가루·이상한빛이 **아무 로그도
 /// 없이** 무효가 된다 — `inflictedStatus` 가 nil 이라 부여 시도 자체가 없고, 위력 0 이라
 /// 데미지 줄도 안 나가서 기술명 한 줄만 남는다. 화면을 한 번도 안 펼친 사용자는 영영 못 고친다.
+/// 스텁이 쓰는 재료는 **클래스 밖**에 둔다. `@MainActor` 클래스의 static 은 그 액터에 격리돼
+/// 있어서, 액터 밖인 `MoveDetailProvider`(nonisolated) 에서 그냥 읽을 수 없다.
+private let oddishSpeciesID = 43
+private let sleepPowderID = 79
+
+private let oddishLine = EvoLine(baseID: oddishSpeciesID,
+                                 tree: EvoNode(speciesID: oddishSpeciesID, children: []),
+                                 rarity: .common,
+                                 names: [oddishSpeciesID: ["en": "Oddish", "ko": "뚜벅쵸"]])
+
+/// 옛 세이브의 수면가루 — 이름·타입·위력만 있고 `ailment` 이후의 축이 전부 비어 있다.
+private func staleSleepPowder() -> MoveSpec {
+    MoveSpec(id: sleepPowderID, names: ["ko": "수면가루", "en": "Sleep Powder"],
+             type: .grass, power: 0, damageClass: .status, accuracy: 75, pp: 15)
+}
+
+/// 지금 파서가 돌려주는 같은 기술 — 축이 다 차 있다.
+private func freshSleepPowder() -> MoveSpec {
+    var move = MoveSpec(id: sleepPowderID, names: ["ko": "수면가루", "en": "Sleep Powder"],
+                        type: .grass, power: 0, damageClass: .status, accuracy: 75, pp: 15)
+    move.descriptions = ["en": "Puts the target to sleep."]
+    move.ailment = "sleep"
+    move.ailmentChance = 0
+    move.statChanges = []
+    move.statChance = 0
+    move.targetsUser = false
+    return move
+}
+
 @MainActor
 final class BattleMoveDetailTests: XCTestCase {
-
-    fileprivate static let sleepPowderID = 79
-
-    fileprivate static let line = EvoLine(baseID: 43, tree: EvoNode(speciesID: 43, children: []),
-                                          rarity: .common, names: [43: ["en": "Oddish", "ko": "뚜벅쵸"]])
-
-    /// 옛 세이브의 수면가루 — 이름·타입·위력만 있고 `ailment` 이후의 축이 전부 비어 있다.
-    private func staleSleepPowder() -> MoveSpec {
-        MoveSpec(id: Self.sleepPowderID, names: ["ko": "수면가루", "en": "Sleep Powder"],
-                 type: .grass, power: 0, damageClass: .status, accuracy: 75, pp: 15)
-    }
-
-    /// 지금 파서가 돌려주는 같은 기술 — 축이 다 차 있다.
-    fileprivate static func freshSleepPowder() -> MoveSpec {
-        var move = MoveSpec(id: sleepPowderID, names: ["ko": "수면가루", "en": "Sleep Powder"],
-                            type: .grass, power: 0, damageClass: .status, accuracy: 75, pp: 15)
-        move.descriptions = ["en": "Puts the target to sleep."]
-        move.ailment = "sleep"
-        move.ailmentChance = 0
-        move.statChanges = []
-        move.statChance = 0
-        move.targetsUser = false
-        return move
-    }
 
     private func tempURL() -> URL {
         FileManager.default.temporaryDirectory
@@ -45,9 +50,9 @@ final class BattleMoveDetailTests: XCTestCase {
     }
 
     private func oddish(moves: [MoveSpec]) -> MonState {
-        var mon = MonState(baseID: 43, pathIDs: [43], stageIndex: 0, usedAtStage: 0,
+        var mon = MonState(baseID: oddishSpeciesID, pathIDs: [oddishSpeciesID], stageIndex: 0, usedAtStage: 0,
                            rarity: .common, totalForms: 1,
-                           names: [43: ["en": "Oddish", "ko": "뚜벅쵸"]])
+                           names: [oddishSpeciesID: ["en": "Oddish", "ko": "뚜벅쵸"]])
         mon.learnedMoves = moves
         return mon
     }
@@ -59,7 +64,9 @@ final class BattleMoveDetailTests: XCTestCase {
         let mon = oddish(moves: [staleSleepPowder()])
         store.debugSetBoxedMons([mon])
 
-        let snapshot = try XCTUnwrap(await store.battleSnapshot(for: mon))
+        // `await` 는 XCTUnwrap 의 autoclosure 안에 못 들어간다 — 먼저 받고 나서 푼다.
+        let built = await store.battleSnapshot(for: mon)
+        let snapshot = try XCTUnwrap(built)
         let carried = try XCTUnwrap(snapshot.moves?.first)
         XCTAssertEqual(carried.ailment, "sleep",
                        "대전이 옛 스펙을 그대로 실으면 상태기가 로그 없이 무효가 된다")
@@ -73,12 +80,14 @@ final class BattleMoveDetailTests: XCTestCase {
         let store = makeStore(provider)
         store.debugSetBoxedMons([oddish(moves: [staleSleepPowder()])])
 
-        _ = await store.battleSnapshot(for: try XCTUnwrap(store.boxedMons.first))
+        let boxed = try XCTUnwrap(store.boxedMons.first)
+        _ = await store.battleSnapshot(for: boxed)
         XCTAssertEqual(provider.moveDetailCalls, 1)
         XCTAssertEqual(store.boxedMons.first?.learnedMoves.first?.ailment, "sleep",
                        "세이브에 안 되쓰면 대전마다 같은 조회가 돈다")
 
-        _ = await store.battleSnapshot(for: try XCTUnwrap(store.boxedMons.first))
+        let refilled = try XCTUnwrap(store.boxedMons.first)
+        _ = await store.battleSnapshot(for: refilled)
         XCTAssertEqual(provider.moveDetailCalls, 1)
     }
 
@@ -86,7 +95,7 @@ final class BattleMoveDetailTests: XCTestCase {
     func testAFullySpecifiedMoveIsNotRefetched() async {
         let provider = MoveDetailProvider()
         let store = makeStore(provider)
-        let mon = oddish(moves: [Self.freshSleepPowder()])
+        let mon = oddish(moves: [freshSleepPowder()])
         store.debugSetBoxedMons([mon])
 
         _ = await store.battleSnapshot(for: mon)
@@ -97,8 +106,8 @@ final class BattleMoveDetailTests: XCTestCase {
 /// `moveDetail` 호출 횟수를 세는 스텁 — 되쓰기가 안 되면 대전마다 같은 조회가 반복된다.
 private final class MoveDetailProvider: PokeProviding, @unchecked Sendable {
     private(set) var moveDetailCalls = 0
-    func line(baseSpeciesID: Int) async throws -> EvoLine { BattleMoveDetailTests.line }
-    func baseSpeciesIndex() async throws -> [BaseSpecies] { [BaseSpecies(id: 43, captureRate: 255)] }
+    func line(baseSpeciesID: Int) async throws -> EvoLine { oddishLine }
+    func baseSpeciesIndex() async throws -> [BaseSpecies] { [BaseSpecies(id: oddishSpeciesID, captureRate: 255)] }
     func battleProfile(speciesID: Int) async throws -> PokemonBattleProfile {
         PokemonBattleProfile(speciesID: speciesID,
                              stats: BattleStats(hp: 45, atk: 50, def: 55, spa: 75, spd: 65, spe: 30),
@@ -106,6 +115,6 @@ private final class MoveDetailProvider: PokeProviding, @unchecked Sendable {
     }
     func moveDetail(id: Int) async -> MoveSpec? {
         moveDetailCalls += 1
-        return id == BattleMoveDetailTests.sleepPowderID ? BattleMoveDetailTests.freshSleepPowder() : nil
+        return id == sleepPowderID ? freshSleepPowder() : nil
     }
 }
