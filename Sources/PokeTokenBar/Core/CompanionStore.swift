@@ -2062,8 +2062,10 @@ final class CompanionStore {
                 guard let current = state.active, current.id == monID else { return }
                 guard index < current.pathIDs.count else { break }
                 let speciesID = current.pathIDs[index]
+                // 무브셋용(`canonicalLevelUpMoves`)이 아니라 **전체 이력**이다. 그쪽은 기술 칸 넷을
+                // 채우는 함수라 4개에서 멈추는데, 다시 배우기는 배울 수 있었던 것 전부에서 고른다.
                 let moves = await PokeAPIClient.shared
-                    .canonicalLevelUpMoves(speciesID: speciesID, level: current.level)
+                    .levelUpMoveHistory(speciesID: speciesID, level: current.level)
                 guard state.active?.id == monID else { return }   // await 뒤 재확인
                 inherited.append(moves)
                 index += 1

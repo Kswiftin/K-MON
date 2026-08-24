@@ -33,6 +33,12 @@ final class AppSettings {
             else { defaults.removeObject(forKey: "floatingPetSpeciesID") }
         }
     }
+    /// 소유 포켓몬 탭의 정렬. **탭을 오가도 유지돼야 한다** — 뷰의 `@State` 에 두면 탭을 떠날 때
+    /// 뷰가 사라지면서 기본값으로 돌아가, 60마리 박스에서 매번 다시 고르게 된다.
+    var rosterSort: RosterSort { didSet { defaults.set(rosterSort.rawValue, forKey: "rosterSort") } }
+    var rosterSortAscending: Bool {
+        didSet { defaults.set(rosterSortAscending, forKey: "rosterSortAscending") }
+    }
     var companionNotifications: Bool { didSet { defaults.set(companionNotifications, forKey: "companionNotifications") } }
     var updateNotificationsEnabled: Bool { didSet { defaults.set(updateNotificationsEnabled, forKey: "updateNotificationsEnabled") } }
     var automaticUpdateDownloadsEnabled: Bool {
@@ -52,6 +58,8 @@ final class AppSettings {
         battleReplaySpeed = (defaults.string(forKey: "battleReplaySpeed")
             .flatMap(ReplaySpeed.init(rawValue:))) ?? .normal
         floatingPetSpeciesID = defaults.object(forKey: "floatingPetSpeciesID") as? Int
+        rosterSort = (defaults.string(forKey: "rosterSort").flatMap(RosterSort.init(rawValue:))) ?? .caught
+        rosterSortAscending = defaults.object(forKey: "rosterSortAscending") as? Bool ?? true
         companionNotifications = defaults.object(forKey: "companionNotifications") as? Bool ?? true
         updateNotificationsEnabled = defaults.object(forKey: "updateNotificationsEnabled") as? Bool ?? true
         automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true

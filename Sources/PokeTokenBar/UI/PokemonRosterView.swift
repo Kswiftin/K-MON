@@ -9,8 +9,10 @@ import SwiftUI
 struct PokemonRosterView: View {
     let store: CompanionStore
     @State private var page = 0
-    @State private var sort: RosterSort = .caught
-    @State private var ascending = true
+    /// 정렬은 **탭을 떠나도 남는다** — `@State` 로 두면 홈에 갔다 오는 것만으로 기본값으로
+    /// 돌아가, 60마리 박스에서 매번 다시 고르게 된다. 화면이 사라져도 남아야 하는 값이라
+    /// 뷰가 아니라 설정에 둔다.
+    @Environment(AppSettings.self) private var settings
     @State private var typeFilter: PokemonType?
     /// 종별로 한 번만 해석해 두는 표시값. 카드마다 따로 받아오면 정렬 키(이름·타입)를 화면과
     /// 맞출 수 없다 — 정렬·필터는 박스 전체를 봐야 하는데 행은 자기 것만 알기 때문이다.
@@ -39,7 +41,8 @@ struct PokemonRosterView: View {
 
     var body: some View {
         let owned = store.ownedMons
-        let arranged = RosterOrdering.arrange(owned, sort: sort, ascending: ascending,
+        let arranged = RosterOrdering.arrange(owned, sort: settings.rosterSort,
+                                              ascending: settings.rosterSortAscending,
                                               typeFilter: typeFilter, types: types,
                                               language: store.language, names: names)
         let pageCount = Self.pageCount(ownedCount: arranged.count)
@@ -109,23 +112,33 @@ struct PokemonRosterView: View {
         }
     }
 
+    /// 정렬 메뉴 — **버튼 자체가 방향을 말한다.**
+    ///
+    /// 예전 버튼 아이콘은 `arrow.up.arrow.down` / `arrow.down.arrow.up` 이었다. 둘은 화살표 두 개가
+    /// 자리만 바뀐 그림이라 나란히 놓고 봐야 겨우 구별되고, 하나만 보면 지금이 오름인지 내림인지
+    /// 알 수 없다. 메뉴를 열어야만 알 수 있는 상태는 없는 것과 같다 — 한쪽 화살표로 바꾼다.
     private var sortMenu: some View {
-        Menu {
+        @Bindable var settings = settings
+        return Menu {
             ForEach(RosterSort.allCases, id: \.self) { option in
                 Button {
-                    if sort == option { ascending.toggle() } else { sort = option; ascending = true }
+                    if settings.rosterSort == option { settings.rosterSortAscending.toggle() }
+                    else { settings.rosterSort = option; settings.rosterSortAscending = true }
                     page = 0
                 } label: {
-                    Label(sortLabel(option), systemImage: sort == option
-                          ? (ascending ? "arrow.up" : "arrow.down") : "")
+                    Label(sortLabel(option), systemImage: settings.rosterSort == option
+                          ? (settings.rosterSortAscending ? "arrow.up" : "arrow.down") : "")
                 }
             }
         } label: {
-            Label(sortLabel(sort), systemImage: ascending ? "arrow.up.arrow.down" : "arrow.down.arrow.up")
+            Label(sortLabel(settings.rosterSort),
+                  systemImage: settings.rosterSortAscending ? "arrow.up" : "arrow.down")
                 .font(.system(size: 10, weight: .semibold))
         }
         .menuStyle(.borderlessButton).fixedSize()
-        .accessibilityLabel(store.l.t("정렬", "Sort", "並べ替え"))
+        .accessibilityLabel(settings.rosterSortAscending
+                            ? store.l.t("정렬 — 오름차순", "Sort — ascending", "並べ替え — 昇順")
+                            : store.l.t("정렬 — 내림차순", "Sort — descending", "並べ替え — 降順"))
     }
 
     private func typeMenu(owned: [MonState]) -> some View {
