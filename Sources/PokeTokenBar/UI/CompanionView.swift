@@ -1056,9 +1056,18 @@ private struct MoveLearningCard: View {
                         TypeBadge(type: prompt.move.type, language: store.language)
                         // 행 라벨과 같은 L 어휘를 쓴다 — 예전엔 "변화"/"Power N"이 박혀 있어
                         // 한국어 UI 에 "Power 90", 영어 UI 에 "변화"가 나왔다(#10 부류).
-                        Text(prompt.move.damageClass == .status
-                             ? store.l.moveCategoryStatus : store.l.movePowerShort(prompt.move.power))
-                            .font(.caption2).foregroundStyle(.secondary)
+                        //
+                        // 명중·PP 까지 세운다. 아래 후보 줄과 **같은 세 칸**이어야 위아래를 눈으로
+                        // 맞대 볼 수 있다 — 배울 쪽만 위력을 보여주면 무엇과 바꾸는지는 여전히 모른다.
+                        Group {
+                            Text(prompt.move.damageClass == .status
+                                 ? store.l.moveCategoryStatus : store.l.movePowerShort(prompt.move.power))
+                            Text(prompt.move.accuracy.map { store.l.moveAccuracyShort($0) }
+                                 ?? store.l.moveAlwaysHits)
+                            Text(store.l.movePP(prompt.move.pp))
+                        }
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.75)
                     }
                 }
                 Spacer()
@@ -1071,10 +1080,10 @@ private struct MoveLearningCard: View {
                 Text(store.l.t("잊을 기술을 선택하세요.", "Choose a move to forget.", "忘れるわざを選んでください。"))
                     .font(.caption2).foregroundStyle(.secondary)
                 ForEach(Array(active.learnedMoves.enumerated()), id: \.element.id) { index, move in
-                    // 잊을 기술의 타입만 괄호로 — 배울 기술의 타입은 카드 상단 TypeBadge 에 이미 있다.
-                    Button("\(move.name(store.language))(\(move.type.name(store.language))) → \(prompt.move.name(store.language))") {
+                    MoveReplacementRow(move: move, newMoveName: prompt.move.name(store.language),
+                                       language: store.language, l: store.l) {
                         store.acceptMoveLearning(replacing: index)
-                    }.controlSize(.small)
+                    }
                 }
             } else {
                 HStack {
@@ -1092,6 +1101,50 @@ private struct MoveLearningCard: View {
         }
         .padding(9)
         .background(Color.purple.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+/// 잊을 후보 한 줄 — 버리는 기술의 수치를 배울 기술과 **같은 어휘·같은 칸**으로 늘어놓는다.
+///
+/// 예전엔 `거품(물) → 일렉트릭볼` 한 줄이 전부였다. 위력 40 을 버리고 위력 0 을 배우는 선택과
+/// 그 반대가 화면에서 똑같이 생겨서, 되돌릴 수 없는 결정을 이름만 보고 내려야 했다.
+///
+/// 줄마다 `→ 배울기술` 을 반복하지 않는다. 카드 전체가 그 기술 이야기이고, 같은 이름을 네 번
+/// 되풀이하면 정작 비교해야 할 수치가 오른쪽으로 밀린다. 대신 접근성 라벨에 남긴다 —
+/// 화면에서 얻던 문맥을 소리로 듣는 쪽에서 잃으면 안 된다.
+private struct MoveReplacementRow: View {
+    let move: MoveSpec
+    let newMoveName: String
+    let language: AppLanguage
+    let l: L
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                Text(move.name(language)).font(.caption.weight(.semibold))
+                    .lineLimit(1).layoutPriority(1)
+                TypeBadge(type: move.type, language: language)
+                Spacer(minLength: 2)
+                Group {
+                    Text(move.damageClass == .status ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                    Text(move.accuracy.map { l.moveAccuracyShort($0) } ?? l.moveAlwaysHits)
+                    Text(l.movePP(move.pp))
+                }
+                .font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.75)
+            }
+            .padding(.horizontal, 7).padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.28), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(l.t("\(move.name(language)) 잊고 \(newMoveName) 배우기",
+                                "Forget \(move.name(language)) and learn \(newMoveName)",
+                                "\(move.name(language))を忘れて\(newMoveName)を覚える"))
+        .accessibilityValue(l.moveDetailLine(move))
     }
 }
 
