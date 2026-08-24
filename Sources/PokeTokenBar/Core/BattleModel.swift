@@ -823,7 +823,11 @@ enum BattleEngine {
     /// 두 피어는 같은 무브셋을 들고 있어 히트 수도 소비 횟수도 같다.
     ///
     /// 히트마다 급소·난수 폭을 다시 뽑는 것도 본가와 같다 — 5회 히트는 rng 를 10번 쓴다.
-    /// 가변위력기와 다단기는 겹치지 않는다. 겹치는 기술이 생기면 위력 뽑기를 루프 앞으로 끌어올린다.
+    ///
+    /// ponytail: 가변위력기와 다단기가 겹치지 않는다는 전제로 위력을 루프 **안**에서 뽑는다.
+    ///           오늘 도감(1~5세대 37개)에 겹치는 기술은 없어서 밟는 경로가 0 이다 — 생기면
+    ///           히트마다 위력이 다시 뽑히므로 뽑기를 루프 앞으로 끌어올린다(rng 순서가
+    ///           바뀌니 `rulesVersion` 도 같이 올린다).
     static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         if let chance = hitChance(of: move, attacker: attacker, defender: defender),

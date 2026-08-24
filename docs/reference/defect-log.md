@@ -1532,3 +1532,20 @@ read_when:
   가드는 합성 스펙을 **그대로** 엔진에 넣어 값을 단언한다
   (`BattlePhase5Tests.testStruggleCostsTheUserAQuarterOfTheDamageDealt`).
   (`MoveSpec.struggle`, 2026-08-25.)
+
+## 읽는 사람이 없는 필드를 "정확히" 전파하려다 코드가 는다
+
+- `AttackOutcome.isOneHitKO` 는 쓰기 6곳·읽기 0곳이었다. 주석에는 "상성·급소 문구를 붙이지 않는
+  근거" 라고 적혀 있었지만, 실제 억제는 `fixedOutcome` 이 `effectiveness = 1`·`isCritical = false`
+  로 못박아서 되는 것이었다 — 플래그는 아무 하중도 안 받고 있었다. 게다가 다단 루프가
+  `AttackOutcome` 을 히트 결과에서 다시 만들기 때문에 **접어올림 코드가 필요했고**, 리뷰가
+  "플래그가 유실된다" 를 결함으로 잡아 그 전파 코드를 실제로 늘렸다. 아무도 안 읽는 값을 정확히
+  옮기려고 루프에 줄을 더한 셈이다.
+- **부류**: "이 값이 유실된다" 는 리뷰 지적을 받으면 **고치기 전에 읽는 쪽을 grep** 한다. 읽기가
+  0이면 정답은 전파가 아니라 삭제다. 필드의 존재 이유가 주석에만 있고 그 보장을 단언하는 테스트가
+  없으면, 필드가 그 일을 하고 있는지 아무도 확인한 적이 없다는 뜻이다.
+- **처방**: 주석이 주장하는 보장을 **먼저 테스트로 고정**하고(그 테스트는 결함 주입으로 RED 를
+  확인한다 — 기전이 이미 동작하므로 "미구현 RED" 가 성립하지 않는다), 그다음 필드를 지운다.
+  보장은 남고 전파 코드는 사라진다
+  (`VariableDamageTests.testAOneHitKOSuppressesTheCritAndEffectivenessLines`).
+  (`BattleEngine.AttackOutcome`, 2026-08-25.)
