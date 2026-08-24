@@ -1134,7 +1134,9 @@ final class BattleCenter {
     /// 채팅이 잠긴 **이유**. 열려 있으면 nil 이다. 사유가 둘이므로 문구도 둘이다 —
     /// 상대 버전을 탓하는 문구는 핸드셰이크가 실제로 미지원이라고 말한 경우에만 나간다.
     var chatLockMessage: String? {
-        guard !chatIsAvailable else { return nil }
+        // 결정타 재생 중에는 소켓 정리로 입력만 잠긴다. 아직 대전 화면이므로 세션 종료 안내를
+        // 겹쳐 그리지 않는다 — 재생이 끝나 `phase = .finished` 로 넘어간 뒤에만 알려 준다.
+        guard !chatIsAvailable, pendingFinish == nil else { return nil }
         return peerSupportsChat ? l.battleChatSessionOver : l.battleChatUnavailable
     }
 
@@ -1209,6 +1211,20 @@ final class BattleCenter {
         pendingAttention = true
         scheduleTurnTimeout()
     }
+
+    #if DEBUG
+    /// 단위 테스트가 실제 수신 행동 → 턴 해상 → 재생 지연 마감 경로를 연결 없이 검증하는 진입점.
+    /// 이미 고른 내 행동만 받는다. 상대 행동은 반드시 `handle(.action)` 으로 넣어야 한다.
+    func stageBattleForTesting(_ state: NetBattleState, peerSupportsChat: Bool = true) {
+        precondition(state.myAction != nil, "the local action must already be selected")
+        precondition(state.oppAction == nil, "the remote action must arrive through handle(_:)")
+        cancelTurnTimeout()
+        battle = state
+        phase = .battling
+        self.peerSupportsChat = peerSupportsChat
+        chatIsAvailable = peerSupportsChat
+    }
+    #endif
 
     /// 이번 턴의 마감을 건다. 연습 배틀엔 걸지 않는다 — CPU 는 즉시 답하므로 기다림이 없다.
     private func scheduleTurnTimeout() {

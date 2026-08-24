@@ -87,6 +87,18 @@ extension BattleChatTests {
         return (center, store)
     }
 
+    /// 내 공격은 이미 고르고, 상대는 한 번 맞으면 쓰러진 상태. 상대 행동을 수신하면 실제
+    /// `handle(.action)` → `resolveIfReady()` → `deferFinish()` 경로가 결정타를 처리한다.
+    private func terminalBattleWithLocalAction() -> NetBattleState {
+        let mine = chatSnapshot()
+        let opponent = chatSnapshot()
+        var state = NetBattleState(iAmA: true, myTeam: [BattleSide(mine)],
+                                   oppTeam: [BattleSide(opponent)], rng: SplitMix64(seed: 7))
+        state.myAction = .move(index: 0)
+        state.opp.hp = 1
+        return state
+    }
+
     /// 결함 트리거: 배틀이 끝나는 순간 `dropConnection()` 이 도는데 화면은 아직 대전 화면이다
     /// (`resolveIfReady` → `deferFinish`, 연출 2.4~3.0초). 그 정리가 대화까지 지우면 사용자에겐
     /// "방금 한 말이 사라지고 채팅이 죽었다"로 보인다.
@@ -103,6 +115,28 @@ extension BattleChatTests {
 
         center.dismissResult()
         XCTAssertTrue(center.chatMessages.isEmpty, "세션이 끝나면(결과 확인) 비운다")
+    }
+
+    /// 결정타는 `dropConnection()` 으로 입력을 닫지만, arena 는 마지막 배치를 재생하려고 아직
+    /// `.battling` 이다. 이 창에는 채팅 사유 문구를 겹쳐 보이지 않는다.
+    @MainActor
+    func testFinalHitReplayHidesChatLockMessageUntilTheSessionEnds() {
+        let (center, store) = centerInBattle(peerChatSupported: true)
+        let state = terminalBattleWithLocalAction()
+        center.stageBattleForTesting(state)
+
+        center.handle(.action(turn: state.turn, action: .move(index: 0)))
+
+        XCTAssertEqual(center.phase, .battling, "결정타 배치는 결과 화면 전에 재생한다")
+        XCTAssertNotNil(center.pendingFinish, "결과는 재생이 따라잡을 때까지 미룬다")
+        XCTAssertFalse(center.chatIsAvailable, "재생 중에는 새 대화를 보내지 않는다")
+        XCTAssertNil(center.chatLockMessage, "재생 중에는 잠긴 이유를 겹쳐 보이지 않는다")
+
+        center.commitPendingFinish()
+
+        XCTAssertEqual(center.phase, .finished(iWon: true, byForfeit: false))
+        XCTAssertEqual(center.chatLockMessage, store.l.battleChatSessionOver,
+                       "재생이 끝난 뒤에는 정상적인 세션 종료 안내가 돌아온다")
     }
 
     /// 새 메시지 버튼이 개수를 그린다. 보간 백슬래시가 빠져 리터럴 "(count)" 가 나가고 있었다.
