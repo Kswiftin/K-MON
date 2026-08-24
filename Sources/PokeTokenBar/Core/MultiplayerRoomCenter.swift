@@ -52,6 +52,7 @@ final class MultiplayerRoomCenter {
     }
     private(set) var pokeathlonPool = PokeathlonPool()
     private(set) var pokemonQuizGame: PokemonOXGame?
+    private(set) var isPreparingPokemonQuiz = false
     private var pokemonQuizTask: Task<Void, Never>?
     private(set) var settlementPayout: Int?
     /// 내가 이미 지갑에서 뺀 베팅. 원장이 바뀌면 차액만 조정하고, 정산 때 이 값으로 호스트 원장을 검증한다.
@@ -117,8 +118,8 @@ final class MultiplayerRoomCenter {
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
             hostingRole = true; lobby = nil
-            startPokemonQuiz(players: [PokemonOXPlayer(id: myID, trainerName: trainerName,
-                                                       speciesID: snapshot.speciesID)])
+            await preparePokemonQuiz(players: [PokemonOXPlayer(id: myID, trainerName: trainerName,
+                                                               speciesID: snapshot.speciesID)])
         }
     }
 
@@ -154,7 +155,8 @@ final class MultiplayerRoomCenter {
                                         team: team, isReady: false, isHost: true, role: .runner,
                                         reportedStarPieces: companion.availableTokens)
             do {
-                lobby = try MultiplayerLobby(host: host, activity: activity)
+                let capacity = activity == .pokemonQuiz ? MultiplayerLobby.quizCapacity : 4
+                lobby = try MultiplayerLobby(host: host, capacity: capacity, activity: activity)
                 hostingRole = true
                 try startHosting()
                 phase = .hosting
@@ -246,15 +248,30 @@ final class MultiplayerRoomCenter {
     }
 
     func startPokemonQuiz() {
-        guard isHost, let lobby, lobby.canStart, lobby.activity == .pokemonQuiz else { return }
-        startPokemonQuiz(players: lobby.runners.map {
+        guard isHost, let lobby, lobby.canStart, lobby.activity == .pokemonQuiz,
+              !isPreparingPokemonQuiz else { return }
+        let players = lobby.runners.map {
             PokemonOXPlayer(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID)
-        })
+        }
+        Task { await preparePokemonQuiz(players: players) }
     }
 
-    private func startPokemonQuiz(players: [PokemonOXPlayer]) {
+    private func preparePokemonQuiz(players: [PokemonOXPlayer]) async {
         guard !players.isEmpty else { return }
-        let game = PokemonOXGame(players: players, questions: PokemonOXQuestion.bank.shuffled())
+        isPreparingPokemonQuiz = true; lastError = nil
+        defer { isPreparingPokemonQuiz = false }
+        guard let facts = try? await PokeAPIClient.shared.pokemonQuizFacts() else {
+            lastError = "PokéAPI에서 퀴즈 데이터를 불러오지 못했습니다. 네트워크를 확인해 주세요."
+            if lobby == nil { hostingRole = false; phase = .idle }
+            return
+        }
+        let questions = PokemonOXQuestionFactory.make(from: facts)
+        guard questions.count == PokemonOXGame.questionCount else {
+            lastError = "퀴즈 문제를 충분히 만들지 못했습니다. 다시 시도해 주세요."
+            if lobby == nil { hostingRole = false; phase = .idle }
+            return
+        }
+        let game = PokemonOXGame(players: players, questions: questions)
         pokemonQuizGame = game; phase = .pokemonQuiz
         broadcastPokemonQuiz(.pokemonQuizStart(game: game))
         schedulePokemonQuizTransition()
@@ -448,7 +465,7 @@ final class MultiplayerRoomCenter {
         turnTimeoutTask?.cancel(); turnTimeoutTask = nil
         pokemonQuizTask?.cancel(); pokemonQuizTask = nil
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
-        pokemonQuizGame = nil
+        pokemonQuizGame = nil; isPreparingPokemonQuiz = false
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
@@ -476,7 +493,9 @@ final class MultiplayerRoomCenter {
     }
 
     private func acceptGuest(_ connection: NWConnection) {
-        let maxGuests = 3 + MultiplayerLobby.spectatorCapacity   // 러너 3 + 관전 8
+        let maxGuests = lobby?.activity == .pokemonQuiz
+            ? MultiplayerLobby.quizCapacity - 1
+            : 3 + MultiplayerLobby.spectatorCapacity   // 러너 3 + 관전 8
         guard isHost, guestConnections.count + pendingGuestConnections.count < maxGuests else {
             connection.cancel(); return
         }

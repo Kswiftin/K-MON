@@ -176,6 +176,39 @@ actor PokeAPIClient: PokeProviding {
         return dto
     }
 
+    /// OX 퀴즈용 사실 데이터. 문제 문장은 이 응답에서만 조립하며 레포에 정답 목록을 두지 않는다.
+    func pokemonQuizFacts(count: Int = 8) async throws -> [PokemonQuizFact] {
+        let maximum = PokemonAssets.animatedSpeciesIDs.upperBound
+        let ids = Array(1...maximum).shuffled().prefix(max(count * 2, 12))
+        let facts = await withTaskGroup(of: PokemonQuizFact?.self) { group in
+            for id in ids { group.addTask { try? await self.pokemonQuizFact(speciesID: id) } }
+            var values: [PokemonQuizFact] = []
+            for await fact in group where fact != nil { values.append(fact!) }
+            return values
+        }
+        guard facts.count >= 4 else { throw URLError(.cannotLoadFromNetwork) }
+        return Array(facts.shuffled().prefix(count))
+    }
+
+    private func pokemonQuizFact(speciesID: Int) async throws -> PokemonQuizFact {
+        let detail = try await species(speciesID)
+        let profile = try await battleProfile(speciesID: speciesID)
+        let names = localizedNames(detail.names)
+        var parentNames: [String: String]?
+        if let url = detail.evolves_from_species?.url {
+            let parentID = Self.id(from: url)
+            if parentID > 0 { parentNames = localizedNames(try await species(parentID).names) }
+        }
+        guard !names.isEmpty, !profile.types.isEmpty else { throw URLError(.cannotParseResponse) }
+        return PokemonQuizFact(speciesID: speciesID, names: names, types: profile.types,
+                               evolvesFromNames: parentNames)
+    }
+
+    private func localizedNames(_ entries: [NameDTO]) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: entries.filter { langCodes.contains($0.language.name) }
+            .map { ($0.language.name, $0.name) })
+    }
+
     /// 대화에 필요한 종 정보만 fetch 한다. 각 응답은 독립적으로 실패할 수 있고 결과는 부분 정체성으로 남긴다.
     func chatSpeciesIdentity(speciesID: Int, language: AppLanguage) async -> PokemonSpeciesIdentity {
         let cacheKey = "\(speciesID)-\(language.rawValue)"

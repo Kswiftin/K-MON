@@ -44,16 +44,18 @@ struct LobbyParticipant: Codable, Sendable, Equatable, Identifiable {
 }
 
 enum LobbyError: Error, Equatable {
-    case runnersFull, spectatorsFull, duplicate, invalidCapacity, hostCannotLeave
+    case runnersFull, spectatorsFull, duplicate, invalidCapacity, hostCannotLeave, unsupportedRole
 }
 
 /// 네트워크와 분리된 2~4인 로비 규칙. 호스트가 단일 진실 공급원으로 이 상태를 갱신한다.
 struct MultiplayerLobby: Codable, Sendable, Equatable {
+    static let quizCapacity = 10
     private(set) var participants: [LobbyParticipant]
     let capacity: Int
     let activity: RoomActivity
     init(host: LobbyParticipant, capacity: Int = 4, activity: RoomActivity = .battle) throws {
-        guard (2...4).contains(capacity) else { throw LobbyError.invalidCapacity }
+        let allowed = activity == .pokemonQuiz ? (2...Self.quizCapacity).contains(capacity) : (2...4).contains(capacity)
+        guard allowed else { throw LobbyError.invalidCapacity }
         var host = host; host.isHost = true
         participants = [host]; self.capacity = capacity; self.activity = activity
     }
@@ -75,6 +77,7 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
             && runners.filter { $0.team == .blue }.count == 2
     }
     mutating func join(_ participant: LobbyParticipant) throws {
+        guard activity != .pokemonQuiz || participant.role == .runner else { throw LobbyError.unsupportedRole }
         switch participant.role {
         case .runner: guard runners.count < capacity else { throw LobbyError.runnersFull }
         case .spectator: guard spectators.count < Self.spectatorCapacity else { throw LobbyError.spectatorsFull }

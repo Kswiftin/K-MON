@@ -144,11 +144,14 @@ struct PokeathlonView: View {
                 if center.isHost {
                     let quiz = lobby.activity == .pokemonQuiz
                     Button(quiz
-                           ? store.l.t("OX 퀴즈 시작", "Start OX quiz", "OXクイズ開始")
+                           ? (center.isPreparingPokemonQuiz
+                              ? store.l.t("문제 생성 중…", "Generating…", "問題を生成中…")
+                              : store.l.t("OX 퀴즈 시작", "Start OX quiz", "OXクイズ開始"))
                            : store.l.t("경기 시작", "Start race", "レース開始")) {
                         if quiz { center.startPokemonQuiz() } else { center.startPokeathlon() }
                     }
-                        .buttonStyle(.borderedProminent).controlSize(.small).disabled(!lobby.canStart)
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(!lobby.canStart || center.isPreparingPokemonQuiz)
                 }
             } else { ProgressView().controlSize(.small) }
         }
@@ -234,13 +237,13 @@ struct PokeathlonView: View {
                     let usable = max(1, geo.size.width - 42)
                     let x = usable * CGFloat((player.position + 1) / 2)
                     VStack(spacing: -3) {
-                        SpriteView(speciesID: player.speciesID, size: 34)
+                        SpriteView(speciesID: player.speciesID, size: 28)
                         Text(player.trainerName).font(.system(size: 8, weight: .bold)).lineLimit(1)
                             .padding(.horizontal, 3).background(.white.opacity(0.86), in: Capsule())
                         Text("\(player.score)점").font(.system(size: 8, weight: .black).monospacedDigit())
                     }
                     .frame(width: 42)
-                    .offset(x: x, y: 40 + CGFloat(index % 2) * 38 + (game.isRevealing && player.lastCorrect == false ? 28 : 0))
+                    .offset(x: x, y: 20 + CGFloat(index % 5) * 32 + (game.isRevealing && player.lastCorrect == false ? 24 : 0))
                     .opacity(game.isRevealing && player.lastCorrect == false ? 0.32 : 1)
                     .animation(.snappy(duration: 0.18), value: player.position)
                     .animation(.easeIn(duration: 0.35), value: player.lastCorrect)
@@ -248,7 +251,7 @@ struct PokeathlonView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.8), lineWidth: 2))
-        }.frame(height: 145)
+        }.frame(height: 190)
     }
 
     private func quizPlatform(label: String, color: Color) -> some View {
