@@ -106,7 +106,7 @@ struct L {
         t("상대 앱 버전에서는 채팅을 지원하지 않습니다.", "Chat is unavailable with this app version.", "相手のアプリのバージョンではチャットを利用できません。")
     }
     func battleChatNewMessages(_ count: Int) -> String {
-        t("새 메시지 (count)개", "(count) new messages", "新着メッセージ (count)件")
+        t("새 메시지 \(count)개", "\(count) new messages", "新着メッセージ \(count)件")
     }
     var battleSwitch: String { t("교체", "Switch", "こうたい") }
     var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }

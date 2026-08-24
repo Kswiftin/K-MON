@@ -1436,3 +1436,44 @@ read_when:
   키에 축을 하나 더 매다는 방식은 다음 경로에서 또 빠진다. 회귀 가드는 레벨을 바꾸지 않는 학습 뒤
   `displayedMoves` 를 직접 본다(`HeartScaleTests.testAcceptingRelearnUpdatesDisplayedMoves`).
   (`CompanionStore.swift` · `CompanionView.swift`, 2026-08-21.)
+
+## 전송 계층 정리가 UI 가 아직 그리는 세션 상태를 지우는 부류 (그리고 Bool 하나가 두 사실을 겸하면 진단이 거짓말한다)
+
+- 대전 채팅이 "첫 대화 뒤 갑자기 **상대 앱 버전에서는 채팅을 지원하지 않습니다**"로 죽었다. 상대 버전은
+  원인이 될 수 없다 — `rulesVersion` 이 다르면 대전 자체가 성립하지 않으므로(`handle(.challenge)`·
+  `handle(.accept)`) **대전 중인 상대는 항상 채팅을 지원한다.** 실제 원인은 두 개였다.
+- **① 정리 함수가 세션 상태까지 지웠다.** `dropConnection()`/`connectionDropped()` 가 대화 기록을 비웠는데,
+  배틀이 끝나는 순간 `resolveIfReady` 가 그 정리를 지나고 결과는 재생 뒤로 미뤄진다(`deferFinish`,
+  `BattleReplay.budget + 0.6` = 최대 3.0초). 그 사이 국면은 아직 `.battling` 이라 **대전 화면이 계속
+  그려지고**, 방금 한 말이 사라진 빈 채팅 칸이 남는다. `connection = nil` 이 되는 자리는 4곳뿐이고
+  (전수 확인) `.battling` 을 유지한 채 정리하는 경로는 이 하나다.
+- **부류**: 소켓 종료 ≠ 세션 종료. 정리 함수는 **전송만** 닫고, 화면이 읽는 상태는 세션 경계
+  (`beginBattle` · `dismissResult`)에서만 비운다. 형제 경로인 `MultiplayerRoomCenter` 는 이미 그렇게
+  하고 있었다(배틀 시작·`leaveRoom` 에서만 리셋) — 같은 파일 안의 옳은 선례를 못 본 것이 공백이다.
+- **② 사유가 둘인데 Bool 이 하나였다.** `chatIsAvailable` 이 "상대 빌드가 지원하나"와 "연결이 살아 있나"를
+  겹쳐 담아, 정리가 지나간 뒤 뷰가 고를 수 있는 문구가 버전 탓 하나뿐이었다. 사용자에게 **원인을
+  알려 주는 값은 사유별로 쪼갠다**(`peerSupportsChat` + `chatLockMessage`). 안 쪼개면 화면은 반드시
+  없는 원인을 말한다.
+- **테스트가 못 걸른 이유**: `BattleChatTests` 는 순수 조각(정규화·토큰버킷·히스토리 상한·와이어 왕복)만
+  검증했고 상태 수명주기는 0건이었다 — 수신 루프가 `NWConnection` 을 요구해 상태기계를 밟을 수단이
+  아예 없었기 때문이다. `handle(_:)` 을 internal 로 열어 **테스트가 실제 핸드셰이크·채팅 경로를 밟게** 했다.
+  (`RankedStakeTests` 처럼 소스 문자열을 검사하는 폴백은 이 부류를 못 잡는다 — 어느 줄이 어느 국면에서
+  도는지가 결함의 본체다.)
+- **결함 주입에서 배운 것**: 되살린 결함을 `connectionDropped()` 쪽에만 넣었을 때는 **테스트가 통과했다**
+  (공개 진입점 `forfeit()` 은 `dropConnection()` 만 지난다). 그래서 두 정리 경로가 `closeChatInput()`
+  한 곳을 지나게 묶었다 — 형제 경로가 무검사로 남는 부류(위 §신뢰경계)의 같은 처방이다.
+- 회귀 가드: `BattleChatTests.testTheConversationSurvivesTheSocketTeardownAndDiesWithTheSession`,
+  `testAClosedSessionIsNotBlamedOnThePeerAppVersion`, `testAPeerBuildWithoutChatKeepsTheVersionMessage`.
+  세 개 모두 결함을 되살려 빨간지 확인했고, 새 분기는 `llvm-cov --show-regions` 로 `^0` 이 없음을 봤다.
+  (`BattleNet.swift` · `BattleView.swift` · `Localization.swift`, 2026-08-24.)
+
+## 문구 보간에서 백슬래시가 빠지면 리터럴이 그대로 화면에 나간다
+
+- `t("새 메시지 (count)개", "(count) new messages", "新着メッセージ (count)件")` — `\(count)` 의 백슬래시가
+  빠져 세 언어 모두 화면에 `(count)` 를 그렸다. 컴파일은 통과한다(그냥 문자열이다), 타입 검사도 못 잡는다.
+- **부류**: 인자를 받는 `L` 함수는 인자가 결과에 **실제로 들어갔는지**를 봐야 한다. "빈 문자열이 아니다"만
+  검사하는 기존 문구 테스트(`AchievementTests` 방식)는 이 결함을 통과시킨다.
+- **처방**: 전수 grep 으로 부류를 훑고(`grep -nE '"[^"]*[^\\]\((count|name|amount|…)\)'`, 이 저장소는 1건),
+  회귀 가드는 세 언어에서 인자값 포함·리터럴 미포함을 같이 본다
+  (`BattleChatTests.testTheNewMessageButtonShowsTheActualCount`).
+  (`Localization.swift`, 2026-08-24.)
