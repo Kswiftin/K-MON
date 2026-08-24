@@ -368,7 +368,12 @@ final class BattleCenter {
     var phase: Phase = .ready {
         // 국면이 바뀌면 미뤄 둔 결과는 무효다 — 항복·끊김·새 배틀이 국면을 먼저 옮긴 뒤에 옛 배틀의
         // 마감이 뒤늦게 깨어나 엉뚱한 결과 화면을 올리는 것을 막는다.
-        didSet { dropPendingFinish() }
+        didSet {
+            dropPendingFinish()
+            // `.ready` 는 어떤 경로로 돌아왔든 세션 경계다. 신청 취소·거절·연결 실패처럼 배틀을
+            // 시작하지 못한 경우까지 한 곳에서 비워야, 다음 상대에게 이전 대화나 지원 여부가 남지 않는다.
+            if case .ready = phase { endChatSession() }
+        }
     }
     /// 승부는 났지만 재생이 아직 안 끝나 미뤄 둔 결과. **`phase` 를 바로 넘기지 않는 이유**는
     /// 이벤트 append 와 `phase = .finished` 가 같은 동기 블록이면 SwiftUI 가 한 번만 다시 그려
@@ -1118,26 +1123,26 @@ final class BattleCenter {
     ///
     /// **주고받은 대화는 여기서 지우지 않는다.** 배틀이 끝나는 순간 `resolveIfReady` 가 여기를
     /// 지나는데 결과는 재생 뒤로 미뤄져(`deferFinish`) 국면은 아직 `.battling` 이다 — 지우면 화면에
-    /// 남아 있는 대전 화면에서 방금 한 말이 사라진다(리포트된 증상). 비우는 자리는 세션 경계
-    /// (`beginBattle`·`dismissResult`)뿐이다.
+    /// 남아 있는 대전 화면에서 방금 한 말이 사라진다(리포트된 증상). 비우는 자리는 새 배틀 시작과
+    /// 세션 경계인 `.ready` 진입뿐이다.
     private func closeChatInput() {
         chatIsAvailable = false
     }
 
     /// 세션 종료 — 다음 핸드셰이크가 다시 열 때까지 아무것도 남기지 않는다.
+    /// `.ready` 진입점에서만 부른다. 결과·결정타 재생은 아직 같은 세션이므로 대화와 상대 지원
+    /// 사실을 유지해야 한다.
     private func endChatSession() {
         resetChatHistory()
         chatIsAvailable = false
         peerSupportsChat = false
     }
 
-    /// 채팅이 잠긴 **이유**. 열려 있으면 nil 이다. 사유가 둘이므로 문구도 둘이다 —
-    /// 상대 버전을 탓하는 문구는 핸드셰이크가 실제로 미지원이라고 말한 경우에만 나간다.
+    /// 채팅이 잠긴 **이유**. 상대 빌드가 채팅을 명시적으로 지원하지 않을 때만 안내한다.
+    /// 정상적인 연결 종료·결과·결정타 재생에는 원인을 추측하는 문구를 그리지 않는다.
     var chatLockMessage: String? {
-        // 결정타 재생 중에는 소켓 정리로 입력만 잠긴다. 아직 대전 화면이므로 세션 종료 안내를
-        // 겹쳐 그리지 않는다 — 재생이 끝나 `phase = .finished` 로 넘어간 뒤에만 알려 준다.
-        guard !chatIsAvailable, pendingFinish == nil else { return nil }
-        return peerSupportsChat ? l.battleChatSessionOver : l.battleChatUnavailable
+        guard !chatIsAvailable, !peerSupportsChat else { return nil }
+        return l.battleChatUnavailable
     }
 
     /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
@@ -1162,9 +1167,8 @@ final class BattleCenter {
         // "−⭐ 5,000 / −25 LP"가 그대로 남는다.
         rankedStake = 0
         lastRankDelta = 0
-        // 채팅 세션은 여기서 끝난다 — 연결 정리(`dropConnection`)는 소켓만 닫으므로, 결과를 확인하는
-        // 이 자리가 대화를 비우는 유일한 출구다(`beginBattle` 이 시작 쪽을 맡는다).
-        endChatSession()
+        // `.ready` 전환이 모든 세션 상태를 정리한다. 연결 정리(`dropConnection`)는 소켓 입력만 닫아
+        // 결과 화면과 결정타 재생에서 대화가 유지되게 한다.
     }
 
     private var pendingMyLineup: [BattleSnapshot] = []

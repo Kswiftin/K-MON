@@ -105,10 +105,6 @@ struct L {
     var battleChatUnavailable: String {
         t("상대 앱 버전에서는 채팅을 지원하지 않습니다.", "Chat is unavailable with this app version.", "相手のアプリのバージョンではチャットを利用できません。")
     }
-    /// 세션이 닫힌 경우 — 위 문구를 여기에 쓰면 멀쩡한 상대의 버전을 탓한다.
-    var battleChatSessionOver: String {
-        t("대전이 끝나 채팅이 닫혔습니다.", "Chat closed — the battle is over.", "対戦が終わったのでチャットを閉じました。")
-    }
     func battleChatNewMessages(_ count: Int) -> String {
         t("새 메시지 \(count)개", "\(count) new messages", "新着メッセージ \(count)件")
     }
