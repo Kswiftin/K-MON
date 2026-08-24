@@ -1113,6 +1113,17 @@ final class BattleCenter {
         chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
     }
 
+    /// 소켓이 닫혔다 — 입력만 잠근다. 두 정리 경로(`connectionDropped`·`dropConnection`)가
+    /// 이 한 곳을 지나므로 "닫는다"의 정의가 하나다.
+    ///
+    /// **주고받은 대화는 여기서 지우지 않는다.** 배틀이 끝나는 순간 `resolveIfReady` 가 여기를
+    /// 지나는데 결과는 재생 뒤로 미뤄져(`deferFinish`) 국면은 아직 `.battling` 이다 — 지우면 화면에
+    /// 남아 있는 대전 화면에서 방금 한 말이 사라진다(리포트된 증상). 비우는 자리는 세션 경계
+    /// (`beginBattle`·`dismissResult`)뿐이다.
+    private func closeChatInput() {
+        chatIsAvailable = false
+    }
+
     /// 세션 종료 — 다음 핸드셰이크가 다시 열 때까지 아무것도 남기지 않는다.
     private func endChatSession() {
         resetChatHistory()
@@ -1424,11 +1435,7 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
-        // 소켓만 닫는다 — 주고받은 대화는 **세션 경계**(`beginBattle`·`dismissResult`)에서만 비운다.
-        // 배틀이 끝나는 순간 `resolveIfReady` 가 여기를 지나는데 결과는 재생 뒤로 미뤄져 국면은
-        // 아직 `.battling` 이다 — 여기서 대화를 지우면 화면에 남아 있는 대전 화면에서 방금 한 말이
-        // 사라진다(리포트된 증상).
-        chatIsAvailable = false
+        closeChatInput()
     }
 
     private func dropConnection() {
@@ -1442,11 +1449,7 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
-        // 소켓만 닫는다 — 주고받은 대화는 **세션 경계**(`beginBattle`·`dismissResult`)에서만 비운다.
-        // 배틀이 끝나는 순간 `resolveIfReady` 가 여기를 지나는데 결과는 재생 뒤로 미뤄져 국면은
-        // 아직 `.battling` 이다 — 여기서 대화를 지우면 화면에 남아 있는 대전 화면에서 방금 한 말이
-        // 사라진다(리포트된 증상).
-        chatIsAvailable = false
+        closeChatInput()
     }
 
     /// 신청 상태에서만 실행되는 별도 마감. 배틀 턴 타이머와 독립적이다.
