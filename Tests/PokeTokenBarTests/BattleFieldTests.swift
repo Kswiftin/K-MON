@@ -118,8 +118,8 @@ final class BattleFieldTests: XCTestCase {
     /// 한 번도 돌지 않는데, 라인 커버리지는 그걸 초록으로 보고한다(PR 3 에서 겪은 부류).
     func testEveryStatusHasABadgeTintAndTheyAreNotAllTheSame() {
         let tints = Status.allCases.map { String(describing: $0.badgeTint) }
-        XCTAssertEqual(tints.count, 7)
-        XCTAssertGreaterThanOrEqual(Set(tints).count, 6, "독·맹독만 같은 색을 공유한다")
+        XCTAssertEqual(tints.count, 8)
+        XCTAssertEqual(Set(tints).count, 7, "독·맹독만 같은 색을 공유한다")
         XCTAssertEqual(Status.poison.badgeTint, Status.toxic.badgeTint, "독 계열은 한 색으로 읽힌다")
         XCTAssertNotEqual(Status.burn.badgeTint, Status.freeze.badgeTint)
     }

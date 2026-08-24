@@ -143,6 +143,25 @@ final class VariableDamageTests: XCTestCase {
                       "실패도 줄을 남겨야 한다")
     }
 
+    /// 일격필살은 **공식을 안 탄다** — 배율 문구를 붙이면 상성·급소가 곱해진 것처럼 읽힌다.
+    /// 억제하는 주체는 플래그가 아니라 `fixedOutcome` 이다(상성을 1, 급소를 false 로 못박는다).
+    /// 지구쪼개기(땅)를 전기 타입에게 쓴다 — 상성표를 타면 2배라, 억제가 풀리면 여기서 새어 나온다.
+    func testAOneHitKOSuppressesTheCritAndEffectivenessLines() throws {
+        let fissure = spec(VariableDamage.MoveID.fissure, type: .ground, accuracy: 30)
+        var landed: (dealt: Int, events: [BattleEvent], attacker: BattleSide)?
+        for seed in UInt64(1)...200 where landed == nil {
+            let result = attack(fissure, side([.ground], level: 50), side([.electric], level: 50), seed: seed)
+            if result.dealt > 0 { landed = result }
+        }
+        let hit = try XCTUnwrap(landed, "200 seed 안에 한 번도 안 맞았다")
+
+        XCTAssertFalse(hit.events.contains { if case .crit = $0 { return true }; return false },
+                       "공식을 안 탄 기술에 급소 문구를 붙이면 배율이 곱해진 것처럼 읽힌다")
+        XCTAssertFalse(hit.events.contains { if case .superEffective = $0 { return true }; return false },
+                       "땅 → 전기는 상성표로 2배지만, 일격필살은 배율을 쓰지 않는다")
+        XCTAssertFalse(hit.events.contains { if case .resisted = $0 { return true }; return false })
+    }
+
     /// 맞으면 남은 HP 와 무관하게 쓰러진다.
     func testAOneHitKOEmptiesTheTargetWhenItLands() {
         let fissure = spec(VariableDamage.MoveID.fissure, type: .ground, accuracy: 30)

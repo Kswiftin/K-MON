@@ -268,6 +268,10 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// `ailmentChancePercent` 가 100 을 주고, `applySecondaryEffect` 는 상태를 늘 **상대**에게 건다.
     /// 대상을 안 보면 회복 없는 필중 100% 수면기가 되어 CPU 가 무작위로 그걸 쓴다.
     var targetsUser: Bool? = nil
+    var drain: Int? = nil
+    var flinchChance: Int? = nil
+    var minHits: Int? = nil
+    var maxHits: Int? = nil
 
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
@@ -296,6 +300,31 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
 
     /// 상태를 거는 확률(%).
     var ailmentChancePercent: Int { chancePercent(ailmentChance) }
+    var drainPercent: Int { min(100, max(-100, drain ?? 0)) }
+
+    /// 풀린치 확률(%). 상한 30 은 게이트 없는 기술들이 쓰는 최대치다.
+    ///
+    /// 도감에서 30 을 넘는 건 속임수(252) 하나뿐이고, 그 100% 는 "교체하고 나온 첫 턴에만"이라는
+    /// 게이트와 한 몸이다. 게이트 없이 100 을 쓰면 우선도 +3 이 늘 선공을 보장해 **상대가 배틀
+    /// 내내 한 번도 못 움직인다** — 냐옹이 레벨 1 습득기라 실제로 뽑힌다.
+    ///
+    /// ponytail: 첫 턴 게이트를 만들려면 `BattleSide` 가 필드에 나온 턴 수를 들고 교체·자동 출전이
+    ///           리셋해야 한다. 만들면 클램프를 지우고 속임수에 게이트를 태운다.
+    static let flinchChanceCap = 30
+    var flinchPercent: Int { min(Self.flinchChanceCap, max(0, flinchChance ?? 0)) }
+    func hitCount(rng: inout SplitMix64) -> Int {
+        let low = min(10, max(1, minHits ?? 1))
+        let high = min(10, max(low, maxHits ?? low))
+        guard low != high else { return low }
+        if low == 2, high == 5 {
+            switch rng.next() % 8 { case 0...2: return 2; case 3...5: return 3; case 6: return 4; default: return 5 }
+        }
+        return low + Int(rng.next() % UInt64(high - low + 1))
+    }
+    var hasModeledStatusEffect: Bool {
+        (inflictedStatus != nil && targetsUser != true)
+            || (!(statChanges ?? []).isEmpty && statChangePercent > 0)
+    }
 
     /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
     /// 랭크 변화가 기술 **본체**라 늘 건다(PokéAPI 가 그런 기술에 0 을 준다).
@@ -352,11 +381,16 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     }
 
     /// 발버둥 — PP 전부 소진 시 폴백(무속성 취급은 엔진에서 id 로 판정).
+    ///
+    /// **반동이 이 기술의 본질이다** — 넣은 데미지의 1/4 을 자기가 받는다(Gen 2·3).
+    /// 반동 축(`drain` 음수)이 없던 동안은 대가 없는 위력 50 무상성기였고, PP 가 마르면
+    /// 오히려 더 나은 선택이 됐다. 합성 기술이라 `moveDetail` 이 못 채우니 여기에 직접 박는다.
     static let struggleID = -999
     static func struggle() -> MoveSpec {
         MoveSpec(id: struggleID,
                  names: ["ko": "발버둥", "en": "Struggle", "ja": "わるあがき"],
-                 type: .normal, power: 50, damageClass: .physical, accuracy: nil, pp: 999)
+                 type: .normal, power: 50, damageClass: .physical, accuracy: nil, pp: 999,
+                 drain: -25)
     }
 
     /// 기술 fetch 실패 시 합성 무브셋 — 자기 타입 기반 4개(대전 자체는 항상 가능해야 한다).
@@ -435,7 +469,7 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 /// 앞 6종은 주 상태(한 번에 하나), 혼란은 volatile 이다. 화면 어휘를 하나로 두려고 한 enum 에 있고,
 /// 어느 쪽인지는 `BattleSide` 가 필드로 가른다.
 enum Status: String, Codable, Sendable, Equatable, CaseIterable {
-    case burn, poison, toxic, paralysis, sleep, freeze, confusion
+    case burn, poison, toxic, paralysis, sleep, freeze, confusion, flinch
 
     /// PokéAPI `/move-ailment` 이름 → 구현한 상태. `none`·`unknown` 을 포함해 모르는 이름은 `nil` 이다.
     init?(ailment: String) {
@@ -460,6 +494,7 @@ enum Status: String, Codable, Sendable, Equatable, CaseIterable {
         case .sleep:     return "SLP"
         case .freeze:    return "FRZ"
         case .confusion: return "CNF"
+        case .flinch:    return "FLN"
         }
     }
 }
@@ -467,7 +502,7 @@ enum Status: String, Codable, Sendable, Equatable, CaseIterable {
 /// 데미지가 어디서 왔는가. 로그·연출은 "기술을 맞았다" 와 "화상으로 깎였다" 를 갈라야 하는데,
 /// 원인이 없으면 잔뎀이 직전 `.move` 에 접혀 **쓰지도 않은 기술 이름**이 붙는다.
 enum DamageCause: String, Codable, Sendable, Equatable {
-    case move, burn, poison, toxic, confusion
+    case move, burn, poison, toxic, confusion, recoil
 }
 
 // MARK: - 배틀 중 한쪽의 상태
@@ -509,6 +544,7 @@ struct BattleSide: Sendable, Equatable {
     var statusCounter = 0
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
+    var flinched = false
     /// 랭크(−6…+6). 0 인 스탯은 **키를 두지 않는다** — 그래야 "랭크가 하나도 없다" 가
     /// `stages.isEmpty` 한 번으로 읽히고, 와이어 JSON 도 붙은 랭크만 나른다.
     var stages: [BattleStat: Int] = [:]
@@ -564,6 +600,7 @@ struct BattleSide: Sendable, Equatable {
     func canBeAfflicted(by status: Status) -> Bool {
         guard isAlive else { return false }
         if status == .confusion { return !isConfused }
+        if status == .flinch { return false }
         guard self.status == nil else { return false }   // 주 상태는 하나
         let types = snapshot.types
         switch status {
@@ -661,7 +698,11 @@ enum BattleEngine {
     /// 12 = 변화기가 상성표를 안 탄다(전기자석파 제외). 예전엔 안 걸리던 상태가 걸리므로
     ///     같은 입력에서 배틀이 통째로 갈라진다. rng 소비는 그대로다 — 면역으로 조기반환하던
     ///     자리가 정상 경로로 바뀌는 것뿐이라 뽑는 횟수는 같다(명중 → 가변위력 → 급소 → 난수 폭).
-    static let rulesVersion = 12
+    /// 13 = 안 읽던 `meta` 필드 넷(드레인·반동·다단 히트·풀린치). rng 소비가 두 군데 는다:
+    ///     다단기는 명중 직후 히트 수를 뽑고 히트마다 급소·난수를 다시 뽑는다
+    ///     (명중 → 히트 수 → (가변위력 → 급소 → 난수) × 히트). 풀린치는 상태 부여 앞에서 한 번 더
+    ///     뽑는다. 드레인·반동은 비율 계산이라 안 쓴다. 횟수가 갈리면 뒤 판정이 전부 밀린다.
+    static let rulesVersion = 13
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -705,8 +746,9 @@ enum BattleEngine {
             side.status = .poison
             side.statusCounter = 0
         }
-        // 혼란은 volatile — 다시 나왔을 때 이전 카운터를 이어 가지 않는다.
+        // 혼란·풀죽음은 volatile — 다시 나왔을 때 이전 상태를 이어 가지 않는다.
         side.confusionTurns = 0
+        side.flinched = false
         // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
         // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.
         side.resetStages()
@@ -719,21 +761,27 @@ enum BattleEngine {
         /// 빗나갔으면 1 — 화면이 "효과가 굉장했다" 를 띄우지 않게 한다.
         var effectiveness: Double
         var isCritical: Bool
-        /// 일격필살(지구밟기 부류). `damage` 가 이미 남은 HP 전부라 계산은 달라지지 않지만,
-        /// 상성·급소 문구를 붙이지 않는 근거로 쓴다.
-        var isOneHitKO = false
+        /// 실제로 들어간 히트 수 — 다단기(더블킥·고드름침)만 1 보다 크다. 상대가 중간에 쓰러지면
+        /// 요청 횟수보다 적다.
+        var hits = 1
+        /// **마지막 히트**가 넣은 데미지. 되돌려주는 기술(카운터·미러코트·메탈버스트)이 읽는다.
+        /// 본가는 마지막 히트만 되돌려주므로, 합계를 주면 되돌아오는 데미지가 히트 수만큼 뻥튀기된다.
+        /// `resolveAttack` 은 늘 채운다(단발기는 `damage` 와 같은 값). 히트 하나를 그대로 돌려주는
+        /// 내부 경로(`resolveSingleHit`·`fixedOutcome`)만 `nil` 이라 읽는 쪽이 `?? damage` 로 접는다.
+        var lastHitDamage: Int? = nil
     }
 
     /// 공식을 타지 않는 데미지(고정·일격필살)의 결과.
     ///
     /// 상성은 **면역만** 본다 — 나이트헤드는 노말에게 통하지 않지만, 통할 때는 2배도 절반도 되지
-    /// 않는다. 급소·상성 문구를 막으려고 `effectiveness` 를 1 로, `isCritical` 을 false 로 둔다.
-    private static func fixedOutcome(_ amount: Int, move: MoveSpec, defender: BattleSide,
-                                     isOneHitKO: Bool = false) -> AttackOutcome {
+    /// 않는다. 급소·상성 문구를 막는 것도 여기다: `effectiveness` 를 1 로, `isCritical` 을 false 로
+    /// 두면 `applyAttack` 의 문구 분기가 저절로 안 걸린다. 일격필살을 표시할 플래그는 두지 않는다 —
+    /// 읽는 쪽이 없는데 다단 루프까지 전파해야 하는 값이 된다
+    /// (`VariableDamageTests.testAOneHitKOSuppressesTheCritAndEffectivenessLines` 가 억제를 잠근다).
+    private static func fixedOutcome(_ amount: Int, move: MoveSpec, defender: BattleSide) -> AttackOutcome {
         let immune = TypeChart.effectiveness(move.type, against: defender.snapshot.types) == 0
         return AttackOutcome(missed: false, damage: immune ? 0 : max(0, amount),
-                             effectiveness: immune ? 0 : 1, isCritical: false,
-                             isOneHitKO: !immune && isOneHitKO)
+                             effectiveness: immune ? 0 : 1, isCritical: false)
     }
 
     /// Gen 2 데미지 식의 앞부분 — 배율이 붙기 전의 뼈대. 기술 공격과 혼란 자멸이 같은 값을 쓴다.
@@ -765,26 +813,58 @@ enum BattleEngine {
         return withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
     }
 
-    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 가변위력 → 급소 → 난수 폭
-    /// 순서고, 빗나가면 뒤의 셋을 소비하지 않는다. 세 모드가 이 함수 하나만 쓴다(예전엔 복사돼 있었다).
+    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 히트 수 →
+    /// (가변위력 → 급소 → 난수 폭) × 히트. 빗나가면 뒤를 하나도 소비하지 않는다.
+    /// 세 모드가 이 함수 하나만 쓴다(예전엔 복사돼 있었다).
     ///
-    /// 가변위력이 명중 바로 뒤인 이유: 매그니튜드·사이코웨이브만 여기서 난수를 한 번 더 뽑고,
-    /// 나머지 기술은 한 번도 뽑지 않는다. 자리를 뒤로 미루면 "언제 뽑는지" 가 급소·난수 폭과
-    /// 얽혀 두 피어의 소비 횟수를 눈으로 못 세게 된다.
+    /// 순서를 이렇게 잡은 건 **안 뽑는 기술이 다수**라서다. 히트 수는 다단기만 뽑고
+    /// (`min == max` 인 더블킥은 그조차 안 뽑는다), 가변위력은 매그니튜드·사이코웨이브만 뽑는다.
+    /// 뒤로 미룰수록 "언제 뽑는지"가 급소·난수 폭과 얽혀 두 피어의 소비 횟수를 눈으로 못 센다.
+    /// 두 피어는 같은 무브셋을 들고 있어 히트 수도 소비 횟수도 같다.
+    ///
+    /// 히트마다 급소·난수 폭을 다시 뽑는 것도 본가와 같다 — 5회 히트는 rng 를 10번 쓴다.
+    ///
+    /// ponytail: 가변위력기와 다단기가 겹치지 않는다는 전제로 위력을 루프 **안**에서 뽑는다.
+    ///           오늘 도감(1~5세대 37개)에 겹치는 기술은 없어서 밟는 경로가 0 이다 — 생기면
+    ///           히트마다 위력이 다시 뽑히므로 뽑기를 루프 앞으로 끌어올린다(rng 순서가
+    ///           바뀌니 `rulesVersion` 도 같이 올린다).
     static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         if let chance = hitChance(of: move, attacker: attacker, defender: defender),
            Int(rng.next() % 100) >= chance {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
         }
+        let requestedHits = move.hitCount(rng: &rng)
+        // 남은 HP 는 지역에서 센다 — `defender` 는 값 사본이라 히트 사이에 줄지 않는다.
+        // 안 세면 이미 쓰러진 상대를 남은 횟수만큼 계속 때린다.
+        var remaining = defender.hp
+        var total = 0, actualHits = 0, lastHit = 0
+        var effectiveness = 1.0, critical = false
+        for _ in 0..<requestedHits where remaining > 0 {
+            let one = resolveSingleHit(attacker: attacker, defender: defender, move: move, rng: &rng)
+            total += one.damage
+            remaining -= one.damage
+            actualHits += 1
+            lastHit = one.damage
+            effectiveness = one.effectiveness
+            critical = critical || one.isCritical
+            if one.effectiveness == 0 { break }
+        }
+        return AttackOutcome(missed: false, damage: total, effectiveness: effectiveness,
+                             isCritical: critical, hits: actualHits, lastHitDamage: lastHit)
+    }
+
+    /// 히트 하나. 다단기는 이 함수를 히트마다 부르므로 급소·난수 폭이 히트별로 독립이다
+    /// (본가와 같다 — 한 번 뽑아 곱하면 급소가 나면 전 히트가 급소가 된다).
+    private static func resolveSingleHit(attacker: BattleSide, defender: BattleSide,
+                                         move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
         // 그대로 쓰면 아래 식이 데미지를 0 으로 접는다(그게 이 기술들이 죽어 있던 원인이다).
         var power = move.power
         switch VariableDamage.from(move, attacker: attacker, defender: defender, rng: &rng) {
         case .power(let computed):  power = computed
         case .fixedHP(let amount):  return fixedOutcome(amount, move: move, defender: defender)
-        case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender,
-                                                       isOneHitKO: true)
+        case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender)
         // 통하지 않음은 면역과 **같은 줄**로 낸다("효과가 없는 것 같다"). 데미지 0 으로 두면
         // `applyAttack` 이 이벤트를 안 내서 기술명 한 줄만 남는다.
         case .noEffect:             return AttackOutcome(missed: false, damage: 0,
@@ -882,6 +962,11 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 실제로 깎인 양. 남은 HP 는 싣지 않는다 — 뷰는 `BattleSide.hp` 를 그대로 읽으므로 읽는 데가
     /// 없다. 재생 애니메이션(Phase 7)이 바를 보간할 때 필요해지면 그때 붙인다.
     case damage(BattleActor, amount: Int, cause: DamageCause)
+    /// 회복량. **원인은 싣지 않는다** — 지금 내는 건 드레인 하나뿐이고, 무엇으로 회복했는지는
+    /// 바로 앞 줄의 기술명이 이미 말한다. 문구를 갈라야 하는 두 번째 발신자(특성 흡수, Phase 5)가
+    /// 생기면 그때 붙인다. 아무도 밟지 않는 분기를 미리 두지 않는다.
+    case heal(BattleActor, amount: Int)
+    case multiHit(BattleActor, hits: Int)
     case faint(BattleActor)
     /// 새 개체가 필드에 나왔다 — 자기 교체(턴 머리)와 기절 자동 출전(턴 끝) 양쪽이 이 case 다.
     ///
@@ -943,7 +1028,7 @@ extension BattleEngine {
         case .toxic:
             amount = max(1, full * side.statusCounter / 16); cause = .toxic
             side.statusCounter += 1
-        case .paralysis, .sleep, .freeze, .confusion:
+        case .paralysis, .sleep, .freeze, .confusion, .flinch:
             return []
         }
         side.hp = max(0, side.hp - amount)
@@ -957,6 +1042,7 @@ extension BattleEngine {
     /// 아니라 배틀 중 파생값이라, `(스냅샷, seed, 행동열)` 만으로 두 피어가 같은 분기를 밟는다.
     private static func canAct(_ side: inout BattleSide, actor: BattleActor,
                                rng: inout SplitMix64, into events: inout [BattleEvent]) -> Bool {
+        if side.flinched { events.append(.cant(actor, .flinch)); return false }
         if side.status == .sleep {
             // 카운터를 먼저 줄이고 0 이면 그 턴에 바로 움직인다 — Gen 1 처럼 깬 턴을 버리지 않는다.
             side.statusCounter -= 1
@@ -1004,7 +1090,7 @@ extension BattleEngine {
     /// **`applyAttack` 을 직접 부르는 모든 턴 루프가 이걸 먼저 불러야 한다.** 한 곳만 빠지면 그
     /// 모드에서만 카운터가 지난 턴 데미지를 되돌려준다 — 화면에는 정상으로 보이고 숫자만 틀린다.
     /// 빠뜨림은 `VariableDamageTests.testEveryTurnLoopClearsTheIncomingHit` 이 소스에서 막는다.
-    static func beginTurn(_ side: inout BattleSide) { side.lastHitThisTurn = nil }
+    static func beginTurn(_ side: inout BattleSide) { side.lastHitThisTurn = nil; side.flinched = false }
 
     /// 공격 1회를 해상해 양쪽 상태를 갱신하고, 그 결과를 이벤트로 남긴다.
     /// 1v1·연습·멀티가 전부 이 함수를 지나므로 **세 모드의 이벤트 어휘가 같다** — 데미지 함수를
@@ -1024,6 +1110,7 @@ extension BattleEngine {
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
         if outcome.missed { return events + [.miss(attackerActor)] }
         if outcome.effectiveness == 0 { return events + [.immune(defenderActor)] }
+        if outcome.hits > 1 { events.append(.multiHit(attackerActor, hits: outcome.hits)) }
         // 급소·상성 문구가 데미지보다 먼저 온다(Showdown 순서) — 재생할 때 "급소!" 뒤에 HP 가 줄어든다.
         // 고정 데미지·일격필살은 `fixedOutcome` 이 급소를 false, 상성을 1 로 두므로 여기 안 걸린다 —
         // 공식을 안 탄 기술에 "효과가 굉장했다" 를 붙이면 상성이 곱해진 것처럼 읽힌다.
@@ -1041,9 +1128,26 @@ extension BattleEngine {
             defender.hp = max(0, defender.hp - outcome.damage)
             // 되돌려주는 기술(카운터 계열)이 이번 턴에 읽는다. 잔뎀·혼란 자멸은 여기를 지나지 않으므로
             // 기록되지 않는다 — 본가도 기술 데미지만 되돌려준다.
-            defender.lastHitThisTurn = IncomingHit(amount: outcome.damage,
+            //
+            // **다단기는 마지막 히트만 기록한다**(본가와 같다). 합계를 넣으면 카운터가 5회 히트의
+            // 총합을 2배로 되돌려줘 되돌리기가 히트 수만큼 세진다.
+            defender.lastHitThisTurn = IncomingHit(amount: outcome.lastHitDamage ?? outcome.damage,
                                                    damageClass: move.damageClass)
             events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
+            // 드레인·반동은 **넣은 데미지의 비율**이다. PokéAPI `meta.drain` 하나가 양쪽을 겸한다 —
+            // 양수는 흡수, 음수는 반동. rng 를 안 쓰므로 소비 순서가 흔들리지 않는다.
+            // 다단기는 합계로 한 번만 계산한다. 히트마다 회복하면 로그가 다섯 줄이 된다.
+            let percent = move.drainPercent
+            if percent > 0 {
+                let amount = min(attacker.stats.hp - attacker.hp, outcome.damage * percent / 100)
+                if amount > 0 { attacker.hp += amount; events.append(.heal(attackerActor, amount: amount)) }
+            } else if percent < 0 {
+                let amount = max(1, outcome.damage * -percent / 100)
+                attacker.hp = max(0, attacker.hp - amount)
+                events.append(.damage(attackerActor, amount: amount, cause: .recoil))
+                // 기절 줄은 여기서 내지 않는다. `.faint` 는 2차효과·랭크 뒤(맨 뒤)가 이 파일의
+                // 순서고, 여기서 내면 "때린 쪽이 쓰러졌다 → 맞은 쪽이 독에 걸렸다"로 읽힌다.
+            }
         }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         if defender.isAlive {
@@ -1056,6 +1160,9 @@ extension BattleEngine {
                                    attackerActor: attackerActor, defenderActor: defenderActor,
                                    rng: &rng)
         if !defender.isAlive { events.append(.faint(defenderActor)) }
+        // 반동으로 때린 쪽이 쓰러졌으면 맞은 쪽 **뒤에** 적는다(Showdown 순서). 여기 오기 전에
+        // 공격측이 죽는 길은 반동뿐이다. 혼란 자멸은 `canAct` 에서 조기반환한다.
+        if !attacker.isAlive { events.append(.faint(attackerActor)) }
         // **변화기가 아무것도 못 했으면 그 사실을 말한다.** 데미지가 없는 기술이라 이벤트를 안 내면
         // 로그에 기술명 한 줄만 남아 무반응이 된다 — 독가루를 강철에게 쓰면(`canBeAfflicted` 가
         // 막는다) 정확히 그 모양이었다. 이 파일에서 세 번째로 밟는 부류라 여기서 한 번에 막는다.
@@ -1113,8 +1220,9 @@ extension BattleEngine {
         // 회복은 구현이 없어서, 걸면 남는 게 필중 100% 수면기다(대상을 모르는 게 아니라 아는데
         // 반대로 거는 경우다). 구현할 때는 `targetsUser` 를 보고 회복까지 같이 넣는다.
         guard move.targetsUser != true else { return [] }
-        guard let status = move.inflictedStatus, side.canBeAfflicted(by: status) else { return [] }
-        guard Int(rng.next() % 100) < move.ailmentChancePercent else { return [] }
+        if move.flinchPercent > 0, side.isAlive, Int(rng.next() % 100) < move.flinchPercent { side.flinched = true }
+        guard let status = move.inflictedStatus, side.canBeAfflicted(by: status),
+              Int(rng.next() % 100) < move.ailmentChancePercent else { return [] }
         return inflict(status, on: &side, actor: actor, rng: &rng)
     }
 

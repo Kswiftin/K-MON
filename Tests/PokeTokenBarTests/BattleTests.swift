@@ -601,4 +601,3 @@ extension Array where Element == BattleEvent {
         compactMap { if case .move(_, let id) = $0 { return id } else { return nil } }
     }
 }
-

@@ -297,6 +297,9 @@ struct NetBattleState {
             switchSlot(indexA, team: &teamA, active: &activeA)
             switchSlot(indexB, team: &teamB, active: &activeB)
             var a = teamA[activeA], b = teamB[activeB]
+            // 공격이 없는 턴도 턴이다. 여기만 `beginTurn` 을 빼면 volatile(맞은 기록·풀죽음)이
+            // 한 턴을 건너뛰고 살아남는다 — 네 갈래가 같은 규칙을 써야 한다.
+            BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             turnEvents = [.turn(turn),
                           .sendOut(.a, teamIndex: indexA), .sendOut(.b, teamIndex: indexB)]
             finishTurn(&a, &b, events: &turnEvents)

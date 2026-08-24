@@ -1477,3 +1477,75 @@ read_when:
   회귀 가드는 세 언어에서 인자값 포함·리터럴 미포함을 같이 본다
   (`BattleChatTests.testTheNewMessageButtonShowsTheActualCount`).
   (`Localization.swift`, 2026-08-24.)
+
+## 신뢰경계 상한을 축마다 따로 보면 **곱해서** 뚫린다
+
+- 다단 히트(`min_hits`/`max_hits`)를 더하면서 상한을 축별로만 봤다: `위력 250`(통과) × `10 히트`(통과)
+  = 한 턴 데미지 2500. 250 이 지키던 천장이 10배로 열리는데 세 검사 전부 초록이다. 흡수(`drain`)도
+  같은 부류 — `100` 은 범위 안이지만 넣은 데미지를 그대로 돌려받아 매 턴 만피로 돌아간다.
+- **부류**: 검증이 여러 축을 보게 되면 축의 **조합**이 만드는 값에도 상한이 있어야 한다. "필드마다
+  `contains` 한 줄"은 곱·합으로 결합되는 축에서는 검증이 아니다.
+- **처방**: 결합값에 직접 상한을 걸고(`power * (maxHits ?? 1) <= 250`) 상한 숫자는 **도감 최대치**를
+  근거로 적는다(다단기 총합 최대 100, 흡수 최대 75 = 드레인키스). 가드는 축 하나만 극단으로
+  민 케이스가 아니라 **전부 범위 안인 조합**을 쓴다
+  (`BattlePhase5Tests.testStackedNewFieldsCannotSlipPastThePerFieldBounds`).
+  (`MultiplayerValidation.validMoves`, 2026-08-25.)
+
+## 본가에서 게이트와 한 몸인 확률을 게이트 없이 옮기면 배틀이 잠긴다
+
+- 풀린치를 `meta.flinch_chance` 그대로 구현했다. 도감에서 30 을 넘는 값은 속임수(100) 하나뿐이고
+  그 100% 는 "교체하고 나온 **첫 턴만**" 게이트와 한 몸이다. 게이트 없이 옮기니 우선도 +3 이 늘
+  선공을 보장해 **상대가 배틀 내내 한 번도 움직이지 못한다**(냐옹이 레벨 1 습득기다).
+- **부류**: 외부 데이터의 확률·배율을 그대로 쓰기 전에 **그 값이 극단인 항목**을 먼저 찾아, 그 항목이
+  본가에서 무엇과 짝이 되어 있는지 본다. 평균적인 값(30%)만으로 테스트하면 극단값 하나가 기전을
+  잠그는 걸 못 본다.
+- **처방**: 게이트를 못 만들 땐 클램프에 **상한의 근거**를 적고(`ponytail:` 로 천장·해제 조건 명시),
+  가드는 "확률이 접혔다"가 아니라 **행동 기회가 남는다**를 단언한다
+  (`BattlePhase5Tests.testAHundredPercentFlinchMoveCannotLockTheOpponentOutOfTheBattle`).
+  (`MoveSpec.flinchPercent`, 2026-08-25.)
+
+## 값 하나를 두 게이트가 각자 판정하면 "같은 기준"이라는 주석만 남는다
+
+- 도감 위력이 0 인 공격기(일렉트릭볼·지구던지기·자이로볼 …)를 `VariableDamage` 로 살렸는데,
+  자동 무브셋(`pickFour`)은 `power > 0` 으로 갈라 그 부류를 **공격기 칸에도 변화기 칸에도** 못
+  넣었다. 사용자 습득 경로(`canonicalLevelUpMoves`·하트비늘)는 `isUsable` 을 봐서 통과시켰으니,
+  "같은 기준을 쓴다"는 주석을 달고 두 함수가 갈라져 있던 셈이다. 기전을 만든 커밋이 소비자
+  하나만 고친 부류다 — `VariableDamage` 는 살렸고 `pickFour` 는 안 봤다.
+- **부류**: 한 판정을 두 곳이 **각자 표현**하면(한쪽은 `power > 0`, 한쪽은 `damageClass`) 주석이
+  동기화를 대신하지 못한다. 새 기전이 어떤 값의 의미를 바꿨으면(위력 0 = 변화기 → 공격기일 수도)
+  **그 값을 읽는 전 지점을 grep** 한다. `power > 0` 은 "공격기냐"와 같은 뜻이 아니다.
+- **처방**: 판정을 함수 하나로 올려(`VariableDamage.dealsDamage` 가 `isUsable` 을 **재사용**한다)
+  갈라질 자리를 없앤다. 가드는 새 부류 **단독** 풀을 쓴다. 위력 있는 공격기를 같이 넣으면 옛
+  분할에서도 초록이라 아무것도 안 지킨다
+  (`BattleStageTests.testPickFourSelectsVariablePowerAttacks`).
+  (`PokeAPIClient.pickFour`, 2026-08-25.)
+
+## 축을 새로 만들면 그 축이 **정의**인 항목을 먼저 확인한다
+
+- 반동 축(`drain` 음수)을 만들고 도감 기술은 `meta.drain` 으로 다 채웠는데, 반동이 정의인 유일한
+  합성 기술 발버둥만 `drain` 이 `nil` 로 남았다. `moveDetail` 이 못 채우는 스펙이라
+  (`id` 가 음수 → `needsDetailRefresh` 가 조기반환) 수렴 경로가 아예 없다. 결과는 대가 없는
+  위력 50 무상성기 — PP 가 마른 쪽이 오히려 유리해진다.
+- **부류**: 새 축은 **외부에서 오는 값**만 챙기고 앱이 직접 합성하는 값(`struggle`·`fallbackSet`)을
+  빠뜨린다. 기존 테스트는 축을 직접 박은 스펙을 쓰니 그 구멍이 초록으로 덮인다.
+- **처방**: 축을 더하면 그 축을 쓰는 합성 스펙을 grep 하고(`MoveSpec.struggle`·`fallbackSet`),
+  가드는 합성 스펙을 **그대로** 엔진에 넣어 값을 단언한다
+  (`BattlePhase5Tests.testStruggleCostsTheUserAQuarterOfTheDamageDealt`).
+  (`MoveSpec.struggle`, 2026-08-25.)
+
+## 읽는 사람이 없는 필드를 "정확히" 전파하려다 코드가 는다
+
+- `AttackOutcome.isOneHitKO` 는 쓰기 6곳·읽기 0곳이었다. 주석에는 "상성·급소 문구를 붙이지 않는
+  근거" 라고 적혀 있었지만, 실제 억제는 `fixedOutcome` 이 `effectiveness = 1`·`isCritical = false`
+  로 못박아서 되는 것이었다 — 플래그는 아무 하중도 안 받고 있었다. 게다가 다단 루프가
+  `AttackOutcome` 을 히트 결과에서 다시 만들기 때문에 **접어올림 코드가 필요했고**, 리뷰가
+  "플래그가 유실된다" 를 결함으로 잡아 그 전파 코드를 실제로 늘렸다. 아무도 안 읽는 값을 정확히
+  옮기려고 루프에 줄을 더한 셈이다.
+- **부류**: "이 값이 유실된다" 는 리뷰 지적을 받으면 **고치기 전에 읽는 쪽을 grep** 한다. 읽기가
+  0이면 정답은 전파가 아니라 삭제다. 필드의 존재 이유가 주석에만 있고 그 보장을 단언하는 테스트가
+  없으면, 필드가 그 일을 하고 있는지 아무도 확인한 적이 없다는 뜻이다.
+- **처방**: 주석이 주장하는 보장을 **먼저 테스트로 고정**하고(그 테스트는 결함 주입으로 RED 를
+  확인한다 — 기전이 이미 동작하므로 "미구현 RED" 가 성립하지 않는다), 그다음 필드를 지운다.
+  보장은 남고 전파 코드는 사라진다
+  (`VariableDamageTests.testAOneHitKOSuppressesTheCritAndEffectivenessLines`).
+  (`BattleEngine.AttackOutcome`, 2026-08-25.)

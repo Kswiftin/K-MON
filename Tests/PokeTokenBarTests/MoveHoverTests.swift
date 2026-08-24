@@ -221,11 +221,13 @@ final class MoveHoverTests: XCTestCase {
                            descriptions: ["ko": koNotice])
         bad.statChanges = []
         bad.targetsUser = false
+        bad.drain = 0
         var good = MoveSpec(id: 33, names: ["ko": "몸통박치기"], type: .normal, power: 40,
                             damageClass: .physical, accuracy: 100, pp: 35,
                             descriptions: ["ko": "몸 전체로 부딪쳐 공격한다."])
         good.statChanges = []
         good.targetsUser = false
+        good.drain = 0
         XCTAssertTrue(CompanionStore.needsDetailRefresh(bad))
         XCTAssertFalse(CompanionStore.needsDetailRefresh(good))
         XCTAssertTrue(CompanionStore.needsDetailRefresh(good.withoutDescriptions()))
@@ -239,6 +241,7 @@ final class MoveHoverTests: XCTestCase {
                                     damageClass: .physical, accuracy: 100, pp: 20, descriptions: [:])
         fetchedEmpty.statChanges = []   // 랭크 축도 "받아봤고 없다" — 보는 축은 설명이다
         fetchedEmpty.targetsUser = false
+        fetchedEmpty.drain = 0          // Phase 5 축도 같은 이유로 고정한다
         XCTAssertFalse(CompanionStore.needsDetailRefresh(fetchedEmpty),
                        "조회 결과가 빈 것뿐인데 매번 다시 받는다")
     }

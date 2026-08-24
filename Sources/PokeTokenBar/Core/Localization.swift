@@ -170,6 +170,7 @@ struct L {
         case .sleep:     return t("\(name)은(는) 잠들어 버렸다!", "\(name) fell asleep!", "\(name)は 眠ってしまった！")
         case .freeze:    return t("\(name)은(는) 얼어붙었다!", "\(name) was frozen solid!", "\(name)は こおりついた！")
         case .confusion: return t("\(name)은(는) 혼란에 빠졌다!", "\(name) became confused!", "\(name)は 混乱した！")
+        case .flinch:    return t("\(name)은(는) 풀죽었다!", "\(name) flinched!", "\(name)は ひるんだ！")
         }
     }
 
@@ -181,6 +182,11 @@ struct L {
         case .sleep:           return t("\(name)은(는) 잠에서 깨어났다!", "\(name) woke up!", "\(name)は 目を覚ました！")
         case .freeze:          return t("\(name)의 얼음이 녹았다!", "\(name) thawed out!", "\(name)の こおりが とけた！")
         case .confusion:       return t("\(name)의 혼란이 풀렸다!", "\(name) snapped out of its confusion!", "\(name)の 混乱が とけた！")
+        // 풀죽음은 주 상태가 아니라 `.cureStatus` 가 나올 일이 없다. 그래도 빈 문자열은 안 둔다 —
+        // 빈 줄이 로그로 나가는 걸 막으려고 이 switch 를 다 채운다(위 주석).
+        case .flinch:          return t("\(name)의 풀죽음이 풀렸다!",
+                                        "\(name) recovered from flinching!",
+                                        "\(name)の ひるみが とけた！")
         }
     }
 
@@ -197,6 +203,7 @@ struct L {
         case .confusion: return t("\(name)은(는) 혼란에 빠져 자신을 공격했다!",
                                   "\(name) hurt itself in its confusion!",
                                   "\(name)は わけも わからず 自分を 攻撃した！")
+        case .flinch:    return t("\(name)은(는) 풀죽어서 움직일 수 없다!", "\(name) flinched and can't move!", "\(name)は ひるんで 動けない！")
         case .burn, .poison, .toxic:
             return t("\(name)은(는) 움직일 수 없다!", "\(name) can't move!", "\(name)は 動けない！")
         }
@@ -218,7 +225,22 @@ struct L {
                                   "\(name) hurt itself in confusion! \(damage)",
                                   "\(name)は 混乱で \(damage)ダメージ")
         case .move:      return battleTookDamage(name, damage: damage)
+        case .recoil:    return t("\(name)은(는) 반동으로 \(damage) 데미지",
+                                  "\(name) was hurt by recoil! \(damage)",
+                                  "\(name)は 反動で \(damage)ダメージ")
         }
+    }
+
+    /// 회복 — 드레인기(흡수·기가드레인)가 쓴다. **원인으로 문구를 가르지 않는다.** 플레이어가
+    /// 알아야 하는 건 "누가 얼마나 회복했나"뿐이고, 무엇으로 회복했는지는 앞 줄의 기술명이 이미 말한다.
+    func battleHealed(_ name: String, amount: Int) -> String {
+        t("\(name)은(는) \(amount) 회복했다", "\(name) restored \(amount) HP", "\(name)は \(amount)かいふくした")
+    }
+
+    /// 다단 히트 — 몇 번 맞았는지 안 쓰면 플레이어에겐 "위력이 이상하게 센 기술"로만 보인다.
+    /// 급소·상성 문구와 같은 자리(공격 줄의 노트)에 붙는다.
+    func battleMultiHit(_ hits: Int) -> String {
+        t("\(hits)번 맞았다!", "Hit \(hits) times!", "\(hits)かい あたった！")
     }
 
     // MARK: 배틀 (랭크)

@@ -129,7 +129,11 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         var decoded = BattleSide(try container.decode(BattleSnapshot.self, forKey: .snapshot))
         decoded.hp = try container.decode(Int.self, forKey: .hp)
         decoded.pp = try container.decode([Int].self, forKey: .pp)
-        decoded.status = try container.decodeIfPresent(Status.self, forKey: .status)
+        // 풀죽음은 **volatile** 이라 주 상태 슬롯으로 오면 안 된다. 받아들이면 `canBeAfflicted` 가
+        // "이미 주 상태가 있다"로 읽어 그 개체가 **모든 상태이상에 영구 면역**이 되고 턴 끝 잔뎀도
+        // 안 받는다 — 호스트가 자기에게 붙이면 그대로 이득이다. 랭크 클램프와 같은 자리에서 버린다.
+        let wireStatus = try container.decodeIfPresent(Status.self, forKey: .status)
+        decoded.status = wireStatus == .flinch ? nil : wireStatus
         decoded.statusCounter = try container.decodeIfPresent(Int.self, forKey: .statusCounter) ?? 0
         decoded.confusionTurns = try container.decodeIfPresent(Int.self, forKey: .confusionTurns) ?? 0
         // 랭크가 없던 시절의 피어는 이 키를 보내지 않는다 — 없으면 랭크 없음이다.
@@ -195,6 +199,19 @@ enum MultiplayerValidation {
                 // 상태 부여 확률은 상대가 보내오는 값이다 — 범위를 벗어나면 매번 확정 부여가 된다.
                 && ($0.ailmentChance.map { (0...100).contains($0) } ?? true)
                 && ($0.statChance.map { (0...100).contains($0) } ?? true)
+                // 흡수 상한은 도감 최대치(75, 드레인키스). 100 을 들이면 넣은 데미지를 그대로
+                // 되돌려받아 매 턴 만피로 돌아간다. 반동(음수)은 자기 손해라 안 막는다.
+                && ($0.drain.map { (-100...75).contains($0) } ?? true)
+                && ($0.flinchChance.map { (0...100).contains($0) } ?? true)
+                && ($0.minHits.map { (1...10).contains($0) } ?? true)
+                && ($0.maxHits.map { (1...10).contains($0) } ?? true)
+                && (($0.minHits ?? 1) <= ($0.maxHits ?? $0.minHits ?? 1))
+                // **히트 수는 위력 상한을 곱한다.** 축마다 따로 보면 `위력 250 × 10 히트` 가 전부
+                // 범위 안이라 250 이 지키던 한 턴 천장이 10배로 열린다.
+                //
+                // ponytail: 250 은 도감 다단기 총합 최대 100(드래곤애로우·기어소서) 기준으로 잡은
+                //           천장이다 — 총합 100 을 넘는 다단기가 도감에 생기면 다시 계산한다.
+                && $0.power * ($0.maxHits ?? 1) <= 250
                 // 랭크 변화도 상대가 보내오는 값이다. 개수 상한은 랭크가 있는 스탯 수 —
                 // 안 보면 `+6 공격` 이 열두 번 담긴 기술 하나로 첫 턴에 최대 랭크가 된다.
                 && ($0.statChanges.map { changes in
@@ -234,7 +251,7 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 디코딩하지 못하고 멈춘다 → 입장 단계에서 막는다.
     // 2: LobbyParticipant.role + 관전자 베팅, 3: 이벤트 스트림, 4: 상태이상(status 필드 + case 추가),
     // 5: 랭크(stages 필드 + `.boost` case), 6: 방 전체 자유 채팅, 7: 포켓몬 OX 퀴즈.
-    static let protocolVersion = 7
+    static let protocolVersion = 8
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
