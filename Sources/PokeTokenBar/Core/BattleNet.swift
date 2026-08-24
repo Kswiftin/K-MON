@@ -1103,6 +1103,17 @@ final class BattleCenter {
         settleRankedBrawlIfNeeded(won: false)
     }
 
+    /// 새 대전이 시작될 때 대화만 비운다. 상대 지원 여부는 핸드셰이크가 이미 정했으므로 건드리지 않는다.
+    private func resetChatHistory() {
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
+    }
+
+    /// 세션 종료 — 다음 핸드셰이크가 다시 열 때까지 아무것도 남기지 않는다.
+    private func endChatSession() {
+        resetChatHistory()
+        chatIsAvailable = false
+    }
+
     /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
     func sendChat(_ body: String) {
         guard case .battling = phase, chatIsAvailable,
@@ -1125,6 +1136,9 @@ final class BattleCenter {
         // "−⭐ 5,000 / −25 LP"가 그대로 남는다.
         rankedStake = 0
         lastRankDelta = 0
+        // 채팅 세션은 여기서 끝난다 — 연결 정리(`dropConnection`)는 소켓만 닫으므로, 결과를 확인하는
+        // 이 자리가 대화를 비우는 유일한 출구다(`beginBattle` 이 시작 쪽을 맡는다).
+        endChatSession()
     }
 
     private var pendingMyLineup: [BattleSnapshot] = []
@@ -1137,7 +1151,7 @@ final class BattleCenter {
 
     private func beginBattle(my: [BattleSnapshot], opp: [BattleSnapshot], iAmA: Bool, seed: UInt64) {
         cancelChallengeTimeout()
-        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
+        resetChatHistory()
         didSettleRankedBrawl = false
         lastRankDelta = 0
         if let opponentRankProfile {
@@ -1393,7 +1407,11 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
-        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
+        // 소켓만 닫는다 — 주고받은 대화는 **세션 경계**(`beginBattle`·`dismissResult`)에서만 비운다.
+        // 배틀이 끝나는 순간 `resolveIfReady` 가 여기를 지나는데 결과는 재생 뒤로 미뤄져 국면은
+        // 아직 `.battling` 이다 — 여기서 대화를 지우면 화면에 남아 있는 대전 화면에서 방금 한 말이
+        // 사라진다(리포트된 증상).
+        chatIsAvailable = false
     }
 
     private func dropConnection() {
@@ -1407,7 +1425,11 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
-        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
+        // 소켓만 닫는다 — 주고받은 대화는 **세션 경계**(`beginBattle`·`dismissResult`)에서만 비운다.
+        // 배틀이 끝나는 순간 `resolveIfReady` 가 여기를 지나는데 결과는 재생 뒤로 미뤄져 국면은
+        // 아직 `.battling` 이다 — 여기서 대화를 지우면 화면에 남아 있는 대전 화면에서 방금 한 말이
+        // 사라진다(리포트된 증상).
+        chatIsAvailable = false
     }
 
     /// 신청 상태에서만 실행되는 별도 마감. 배틀 턴 타이머와 독립적이다.
