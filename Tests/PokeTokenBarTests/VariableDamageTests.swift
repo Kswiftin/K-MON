@@ -206,9 +206,12 @@ final class VariableDamageTests: XCTestCase {
 
     /// 상대가 때리고 내가 되돌려준다. `applyAttack` 한 번이 아니라 **턴 전체**를 돌려야
     /// 의미가 있다 — 맞은 기록이 턴 안에서 만들어지고 읽히기 때문이다.
+    /// 되돌려주는 쪽은 **느리게** 둔다. 카운터·미러코트는 우선도 −5 라 순서가 저절로 맞지만,
+    /// 메탈버스트는 우선도 0 이라 동속이면 선공을 잡을 수 있다 — 그러면 맞은 게 없어 실패한다.
+    /// 동속으로 두면 rng 가 순서를 정해 테스트가 seed 에 따라 흔들린다.
     private func counterTurn(_ counter: MoveSpec, against incoming: MoveSpec)
         -> (taken: Int, returned: Int, events: [BattleEvent]) {
-        var attacker = side([.normal]), counterer = side([.fighting])
+        var attacker = side([.normal], speed: 200), counterer = side([.fighting], speed: 50)
         var rng = SplitMix64(seed: 7)
         let attackerHP = attacker.hp
         let events = BattleEngine.resolveTurn(a: &attacker, b: &counterer, moveA: incoming,
