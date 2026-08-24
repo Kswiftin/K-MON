@@ -1,11 +1,13 @@
 import SwiftUI
 
 struct PokeathlonView: View {
+    private enum Event: String, CaseIterable { case relay, quiz }
     let store: CompanionStore
     @Environment(BattleCenter.self) private var battleCenter
     private var center: MultiplayerRoomCenter { battleCenter.multiplayer }
     @State private var joinRole: LobbyRole = .runner
     @State private var roomPage = 0
+    @State private var selectedEvent: Event = .quiz
 
     /// 한 페이지에 그리는 릴레이 방 수. 상대 목록과 같은 부류다 — 목록 길이를 LAN 이 정하므로
     /// 상한 없이 그리면 팝오버가 잘리고, 상한만 걸면 뒤쪽 방에 참가할 방법이 없어진다.
@@ -20,8 +22,10 @@ struct PokeathlonView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label(store.l.t("포켓슬론 · 체인지릴레이", "Pokéathlon · Relay Run", "ポケスロン · チェンジリレー"),
-                      systemImage: "figure.run")
+                Label(selectedEvent == .quiz
+                      ? store.l.t("포켓슬론 · 포켓몬 OX", "Pokéathlon · Pokémon OX", "ポケスロン · ポケモンOX")
+                      : store.l.t("포켓슬론 · 체인지릴레이", "Pokéathlon · Relay Run", "ポケスロン · チェンジリレー"),
+                      systemImage: selectedEvent == .quiz ? "questionmark.circle.fill" : "figure.run")
                     .font(.headline)
                 Spacer()
                 if center.phase != .idle {
@@ -30,6 +34,7 @@ struct PokeathlonView: View {
             }
             switch center.phase {
             case .pokeathlon: raceView
+            case .pokemonQuiz: pokemonQuizView
             case .hosting, .joined, .joining, .creating: lobbyView
             case .battling:
                 Text(store.l.t("배틀 방이 진행 중입니다.", "A battle room is active.", "バトルの部屋が進行中です。"))
@@ -40,32 +45,50 @@ struct PokeathlonView: View {
 
     private var roomBrowser: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(store.l.t("포켓몬 3마리가 이어 달립니다. 지치기 전에 교대하고 장애물을 넘으세요.",
-                     "Three Pokémon run as a team. Switch before they tire and clear obstacles.",
-                     "ポケモン3匹がリレーで走ります。疲れる前に交代して障害物を越えましょう。"))
+            Picker("", selection: $selectedEvent) {
+                Text(store.l.t("포켓몬 OX", "Pokémon OX", "ポケモンOX")).tag(Event.quiz)
+                Text(store.l.t("체인지릴레이", "Relay Run", "チェンジリレー")).tag(Event.relay)
+            }
+            .pickerStyle(.segmented)
+            Text(selectedEvent == .quiz
+                 ? store.l.t("포켓몬 퀴즈를 읽고 O 또는 X 발판으로 이동하세요. 정답마다 10점, 총 10문제로 순위를 정합니다.",
+                             "Move onto the O or X platform. Each correct answer is worth 10 points across 10 questions.",
+                             "問題を読んでOかXの足場へ移動。正解は10点、全10問で順位を決めます。")
+                 : store.l.t("포켓몬 3마리가 이어 달립니다. 지치기 전에 교대하고 장애물을 넘으세요.",
+                             "Three Pokémon run as a team. Switch before they tire and clear obstacles.",
+                             "ポケモン3匹がリレーで走ります。疲れる前に交代して障害物を越えましょう。"))
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button(store.l.t("혼자 연습하기", "Solo practice", "ひとりで練習")) {
-                    center.startSoloPokeathlon()
+                    if selectedEvent == .quiz { center.startSoloPokemonQuiz() }
+                    else { center.startSoloPokeathlon() }
                 }.buttonStyle(.borderedProminent).controlSize(.small)
-                Button(store.l.t("릴레이 방 만들기", "Create relay room", "リレーの部屋を作る")) {
-                    center.createPokeathlonRoom()
+                Button(selectedEvent == .quiz
+                       ? store.l.t("OX 방 만들기", "Create OX room", "OXの部屋を作る")
+                       : store.l.t("릴레이 방 만들기", "Create relay room", "リレーの部屋を作る")) {
+                    if selectedEvent == .quiz { center.createPokemonQuizRoom() }
+                    else { center.createPokeathlonRoom() }
                 }.controlSize(.small)
             }
-            Picker("", selection: $joinRole) {
-                Text(store.l.t("선수로 참가", "Join as runner", "選手として参加")).tag(LobbyRole.runner)
-                Text(store.l.t("관전·베팅", "Spectate & bet", "観戦・ベット")).tag(LobbyRole.spectator)
+            if selectedEvent == .relay {
+                Picker("", selection: $joinRole) {
+                    Text(store.l.t("선수로 참가", "Join as runner", "選手として参加")).tag(LobbyRole.runner)
+                    Text(store.l.t("관전·베팅", "Spectate & bet", "観戦・ベット")).tag(LobbyRole.spectator)
+                }
+                .pickerStyle(.segmented).controlSize(.small)
             }
-            .pickerStyle(.segmented).controlSize(.small)
-            let relayRooms = center.rooms.filter { $0.name.hasPrefix("RUN") }
-            let roomPageCount = Self.roomPageCount(relayRooms.count)
+            let prefix = selectedEvent == .quiz ? "QUIZ" : "RUN"
+            let eventRooms = center.rooms.filter { $0.name.hasPrefix(prefix) }
+            let roomPageCount = Self.roomPageCount(eventRooms.count)
             // 방은 수시로 열리고 닫힌다 — 보던 페이지가 사라지면 마지막 페이지로 당긴다.
             let currentRoomPage = min(roomPage, roomPageCount - 1)
-            ForEach(relayRooms.dropFirst(currentRoomPage * Self.roomPageSize).prefix(Self.roomPageSize)) { room in
+            ForEach(eventRooms.dropFirst(currentRoomPage * Self.roomPageSize).prefix(Self.roomPageSize)) { room in
                 HStack {
                     Label(room.name, systemImage: "door.left.hand.open").font(.caption).lineLimit(1)
                     Spacer()
-                    Button(store.l.t("참가", "Join", "参加")) { center.join(room, as: joinRole) }
+                    Button(store.l.t("참가", "Join", "参加")) {
+                        center.join(room, as: selectedEvent == .quiz ? .runner : joinRole)
+                    }
                         .controlSize(.small)
                 }
             }
@@ -83,8 +106,10 @@ struct PokeathlonView: View {
                         .accessibilityLabel(store.l.dexPageNext)
                 }
             }
-            if center.rooms.allSatisfy({ !$0.name.hasPrefix("RUN") }) {
-                Text(store.l.t("발견된 릴레이 방이 없습니다.", "No relay rooms found.", "リレーの部屋が見つかりません。"))
+            if eventRooms.isEmpty {
+                Text(selectedEvent == .quiz
+                     ? store.l.t("발견된 OX 방이 없습니다.", "No OX rooms found.", "OXの部屋が見つかりません。")
+                     : store.l.t("발견된 릴레이 방이 없습니다.", "No relay rooms found.", "リレーの部屋が見つかりません。"))
                     .font(.caption2).foregroundStyle(.tertiary)
             }
         }
@@ -117,7 +142,12 @@ struct PokeathlonView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 if center.isHost {
-                    Button(store.l.t("경기 시작", "Start race", "レース開始")) { center.startPokeathlon() }
+                    let quiz = lobby.activity == .pokemonQuiz
+                    Button(quiz
+                           ? store.l.t("OX 퀴즈 시작", "Start OX quiz", "OXクイズ開始")
+                           : store.l.t("경기 시작", "Start race", "レース開始")) {
+                        if quiz { center.startPokemonQuiz() } else { center.startPokeathlon() }
+                    }
                         .buttonStyle(.borderedProminent).controlSize(.small).disabled(!lobby.canStart)
                 }
             } else { ProgressView().controlSize(.small) }
@@ -144,6 +174,130 @@ struct PokeathlonView: View {
             } else {
                 Image(systemName: "eye").foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var pokemonQuizView: some View {
+        Group {
+            if let game = center.pokemonQuizGame {
+                TimelineView(.periodic(from: .now, by: 0.1)) { timeline in
+                    VStack(spacing: 9) {
+                        pokemonQuizHeader(game, now: timeline.date)
+                        pokemonQuizArena(game)
+                        if game.isFinished { pokemonQuizResults(game) }
+                        else { pokemonQuizControls(game, now: timeline.date) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func pokemonQuizHeader(_ game: PokemonOXGame, now: Date) -> some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text(game.isFinished ? store.l.t("최종 결과", "Final results", "最終結果")
+                     : "Q\(game.questionIndex + 1) / \(game.questions.count)")
+                    .font(.caption.bold()).foregroundStyle(.white)
+                Spacer()
+                if !game.isFinished {
+                    Text(String(format: "%.1f초", max(0, game.deadline.timeIntervalSince(now))))
+                        .font(.caption.monospacedDigit().bold()).foregroundStyle(.yellow)
+                }
+            }
+            if let question = game.currentQuestion {
+                Text(store.l.t(question.ko, question.en, question.ja))
+                    .font(.callout.bold()).foregroundStyle(.white).multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 38)
+                if game.isRevealing {
+                    Text(question.answer ? "⭕ O" : "❌ X")
+                        .font(.title2.weight(.black)).foregroundStyle(.yellow)
+                }
+            }
+        }
+        .padding(10)
+        .background(LinearGradient(colors: [.indigo, .purple], startPoint: .leading, endPoint: .trailing),
+                    in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func pokemonQuizArena(_ game: PokemonOXGame) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                LinearGradient(colors: [.cyan.opacity(0.2), .blue.opacity(0.08)],
+                               startPoint: .top, endPoint: .bottom)
+                HStack(spacing: 8) {
+                    quizPlatform(label: "X", color: .red)
+                    quizPlatform(label: "O", color: .blue)
+                }.padding(8)
+                Rectangle().fill(.white.opacity(0.8)).frame(width: 2)
+                    .offset(x: geo.size.width / 2 - 1)
+                ForEach(Array(game.players.enumerated()), id: \.element.id) { index, player in
+                    let usable = max(1, geo.size.width - 42)
+                    let x = usable * CGFloat((player.position + 1) / 2)
+                    VStack(spacing: -3) {
+                        SpriteView(speciesID: player.speciesID, size: 34)
+                        Text(player.trainerName).font(.system(size: 8, weight: .bold)).lineLimit(1)
+                            .padding(.horizontal, 3).background(.white.opacity(0.86), in: Capsule())
+                        Text("\(player.score)점").font(.system(size: 8, weight: .black).monospacedDigit())
+                    }
+                    .frame(width: 42)
+                    .offset(x: x, y: 40 + CGFloat(index % 2) * 38 + (game.isRevealing && player.lastCorrect == false ? 28 : 0))
+                    .opacity(game.isRevealing && player.lastCorrect == false ? 0.32 : 1)
+                    .animation(.snappy(duration: 0.18), value: player.position)
+                    .animation(.easeIn(duration: 0.35), value: player.lastCorrect)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.8), lineWidth: 2))
+        }.frame(height: 145)
+    }
+
+    private func quizPlatform(label: String, color: Color) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10).fill(color.opacity(0.36))
+            Text(label).font(.system(size: 44, weight: .black, design: .rounded)).foregroundStyle(.white.opacity(0.72))
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func pokemonQuizControls(_ game: PokemonOXGame, now: Date) -> some View {
+        if game.isRevealing {
+            let mine = game.players.first(where: { $0.id == center.myID })
+            Text(mine?.lastCorrect == true
+                 ? store.l.t("정답! +10점", "Correct! +10", "正解！+10点")
+                 : store.l.t("아쉽지만 오답!", "Not quite!", "残念、不正解！"))
+                .font(.headline).foregroundStyle(mine?.lastCorrect == true ? .green : .red)
+                .frame(maxWidth: .infinity).padding(8)
+        } else {
+            HStack(spacing: 10) {
+                Button { center.pokemonQuizInput(.left) } label: {
+                    Label("X", systemImage: "arrow.left").frame(maxWidth: .infinity).padding(.vertical, 7)
+                }
+                .buttonStyle(.borderedProminent).tint(.red).keyboardShortcut(.leftArrow, modifiers: [])
+                Button { center.pokemonQuizInput(.right) } label: {
+                    Label("O", systemImage: "arrow.right").frame(maxWidth: .infinity).padding(.vertical, 7)
+                }
+                .buttonStyle(.borderedProminent).tint(.blue).keyboardShortcut(.rightArrow, modifiers: [])
+            }
+            .controlSize(.large).disabled(now >= game.deadline)
+        }
+    }
+
+    private func pokemonQuizResults(_ game: PokemonOXGame) -> some View {
+        VStack(spacing: 5) {
+            ForEach(Array(game.standings.enumerated()), id: \.element.id) { index, player in
+                HStack {
+                    Text(index == 0 ? "🏆" : "\(index + 1).")
+                        .font(.caption.bold()).frame(width: 28)
+                    SpriteView(speciesID: player.speciesID, size: 25)
+                    Text(player.trainerName).font(.caption.bold()).lineLimit(1)
+                    Spacer()
+                    Text("\(player.score)점").font(.caption.monospacedDigit().bold())
+                }.padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(player.id == center.myID ? Color.yellow.opacity(0.18) : .clear,
+                                in: RoundedRectangle(cornerRadius: 7))
+            }
+            Button(store.l.t("퀴즈 종료", "Finish quiz", "クイズ終了")) { center.leaveRoom() }
+                .controlSize(.small)
         }
     }
 

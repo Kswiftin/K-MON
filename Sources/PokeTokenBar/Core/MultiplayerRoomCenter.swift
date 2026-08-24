@@ -12,7 +12,7 @@ struct MultiplayerRoomPeer: Identifiable, Equatable {
 @MainActor
 @Observable
 final class MultiplayerRoomCenter {
-    enum Phase: Equatable { case idle, creating, hosting, joining(String), joined, battling, pokeathlon }
+    enum Phase: Equatable { case idle, creating, hosting, joining(String), joined, battling, pokeathlon, pokemonQuiz }
     nonisolated static let serviceType = "_kmonroom._tcp"
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
 
@@ -51,6 +51,8 @@ final class MultiplayerRoomCenter {
         return true
     }
     private(set) var pokeathlonPool = PokeathlonPool()
+    private(set) var pokemonQuizGame: PokemonOXGame?
+    private var pokemonQuizTask: Task<Void, Never>?
     private(set) var settlementPayout: Int?
     /// 내가 이미 지갑에서 뺀 베팅. 원장이 바뀌면 차액만 조정하고, 정산 때 이 값으로 호스트 원장을 검증한다.
     private var escrowedBet: PokeathlonBet?
@@ -105,6 +107,20 @@ final class MultiplayerRoomCenter {
     }
 
     func createPokeathlonRoom() { createRoom(mode: .freeForAll, activity: .pokeathlon) }
+    func createPokemonQuizRoom() { createRoom(mode: .freeForAll, activity: .pokemonQuiz) }
+
+    func startSoloPokemonQuiz() {
+        guard phase == .idle else { return }
+        phase = .creating; lastError = nil
+        Task {
+            guard let snapshot = await buildSnapshot() else {
+                phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
+            }
+            hostingRole = true; lobby = nil
+            startPokemonQuiz(players: [PokemonOXPlayer(id: myID, trainerName: trainerName,
+                                                       speciesID: snapshot.speciesID)])
+        }
+    }
 
     func startSoloPokeathlon() {
         guard phase == .idle else { return }
@@ -183,7 +199,7 @@ final class MultiplayerRoomCenter {
 
     /// 경기가 시작된 뒤엔 로비 편성을 건드리지 않는다 — `lobby.mode` 는 편성에서 파생되므로
     /// 배틀 중에 바뀌면 승패 판정의 근거가 흔들린다(호스트 자기 자신도 예외가 아니다).
-    var isInPlay: Bool { phase == .battling || phase == .pokeathlon }
+    var isInPlay: Bool { phase == .battling || phase == .pokeathlon || phase == .pokemonQuiz }
 
     func toggleReady() {
         guard let me = myParticipant, !isInPlay else { return }
@@ -227,6 +243,56 @@ final class MultiplayerRoomCenter {
         pokeathlonRace = race; phase = .pokeathlon
         settlementPayout = nil; settledPool = false
         for connection in guestConnections.values { send(.pokeathlonStart(race: race), over: connection) }
+    }
+
+    func startPokemonQuiz() {
+        guard isHost, let lobby, lobby.canStart, lobby.activity == .pokemonQuiz else { return }
+        startPokemonQuiz(players: lobby.runners.map {
+            PokemonOXPlayer(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID)
+        })
+    }
+
+    private func startPokemonQuiz(players: [PokemonOXPlayer]) {
+        guard !players.isEmpty else { return }
+        let game = PokemonOXGame(players: players, questions: PokemonOXQuestion.bank.shuffled())
+        pokemonQuizGame = game; phase = .pokemonQuiz
+        broadcastPokemonQuiz(.pokemonQuizStart(game: game))
+        schedulePokemonQuizTransition()
+    }
+
+    func pokemonQuizInput(_ input: PokemonOXInput) {
+        guard phase == .pokemonQuiz else { return }
+        if isHost { applyPokemonQuizInput(input, participantID: myID) }
+        else if let hostConnection { send(.pokemonQuizInput(participantID: myID, input: input), over: hostConnection) }
+    }
+
+    private func applyPokemonQuizInput(_ input: PokemonOXInput, participantID: UUID) {
+        guard isHost, var game = pokemonQuizGame, Date() < game.deadline else { return }
+        game.move(input, playerID: participantID); pokemonQuizGame = game
+        broadcastPokemonQuiz(.pokemonQuizState(game: game))
+    }
+
+    private func schedulePokemonQuizTransition() {
+        pokemonQuizTask?.cancel()
+        guard isHost, let game = pokemonQuizGame, !game.isFinished else { return }
+        let delay = max(0, game.deadline.timeIntervalSinceNow)
+        pokemonQuizTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self?.advancePokemonQuiz()
+        }
+    }
+
+    private func advancePokemonQuiz() {
+        guard isHost, var game = pokemonQuizGame else { return }
+        if game.isRevealing { game.advance() } else { game.reveal() }
+        pokemonQuizGame = game
+        broadcastPokemonQuiz(.pokemonQuizState(game: game))
+        schedulePokemonQuizTransition()
+    }
+
+    private func broadcastPokemonQuiz(_ message: MultiplayerWireMessage) {
+        for connection in guestConnections.values { send(message, over: connection) }
     }
 
     func pokeathlonInput(_ input: PokeathlonInput) {
@@ -380,7 +446,9 @@ final class MultiplayerRoomCenter {
         pendingGuestConnections.values.forEach { $0.cancel() }; pendingGuestConnections.removeAll()
         listener?.cancel(); listener = nil
         turnTimeoutTask?.cancel(); turnTimeoutTask = nil
+        pokemonQuizTask?.cancel(); pokemonQuizTask = nil
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
+        pokemonQuizGame = nil
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
@@ -390,7 +458,12 @@ final class MultiplayerRoomCenter {
 
     private func startHosting() throws {
         let listener = try NWListener(using: Self.parameters())
-        let prefix = lobby?.activity == .pokeathlon ? "RUN" : "BATTLE"
+        let prefix: String
+        switch lobby?.activity {
+        case .pokeathlon: prefix = "RUN"
+        case .pokemonQuiz: prefix = "QUIZ"
+        default: prefix = "BATTLE"
+        }
         listener.service = NWListener.Service(name: "\(prefix) · \(trainerName)#\(String(myID.uuidString.prefix(6)))",
                                               type: Self.serviceType)
         listener.newConnectionHandler = { [weak self] connection in
@@ -463,6 +536,8 @@ final class MultiplayerRoomCenter {
                 if let id { self.acceptChat(message, from: id) }
             case .pokeathlonInput(let pid, let input) where pid == id:
                 self.applyPokeathlonInput(input, participantID: pid)
+            case .pokemonQuizInput(let pid, let input) where pid == id:
+                self.applyPokemonQuizInput(input, participantID: pid)
             case .pokeathlonBet(let pid, let runnerID, let amount) where pid == id:
                 self.acceptBet(PokeathlonBet(bettorID: pid, runnerID: runnerID, amount: amount), from: pid)
             default: break
@@ -501,6 +576,8 @@ final class MultiplayerRoomCenter {
                 self.syncEscrow()
             case .pokeathlonSettlement(let pool, let winnerID):
                 self.applySettlement(pool: pool, winnerID: winnerID)
+            case .pokemonQuizStart(let game): self.pokemonQuizGame = game; self.phase = .pokemonQuiz
+            case .pokemonQuizState(let game) where self.phase == .pokemonQuiz: self.pokemonQuizGame = game
             case .rejected(let reason): self.lastError = reason; self.leaveRoom(); return
             default: break
             }
