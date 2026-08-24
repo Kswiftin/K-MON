@@ -12,10 +12,12 @@ final class DungeonProgressTests: XCTestCase {
         progress.cleared = true
         progress.rewardPaid = true
         progress.remembered = [3: .encounter]
+        progress.looted = [7]
         progress.roll(dayKey: "2026-08-22")
         XCTAssertFalse(progress.cleared)
         XCTAssertFalse(progress.rewardPaid)
         XCTAssertTrue(progress.remembered.isEmpty)
+        XCTAssertTrue(progress.looted.isEmpty, "어제 턴 보물방 번호가 오늘 보물을 막는다")
         XCTAssertEqual(progress.dayKey, "2026-08-22")
     }
 
@@ -28,15 +30,50 @@ final class DungeonProgressTests: XCTestCase {
         XCTAssertEqual(progress.remembered, [3: .encounter])
     }
 
-    /// 손편집 방어 — 맵에 없는 방 번호는 버리고, 정산됐으면 클리어도 참으로 맞춘다.
+    /// 손편집 방어 — **그날 맵**에 없는 방 번호는 버리고, 정산됐으면 클리어도 참으로 맞춘다.
+    /// 방 수가 날마다 다르므로 상한은 고정값이 아니라 그 날짜 맵의 방 수다 — 방 수가 정확히 그 값인
+    /// 번호(첫 번째 없는 방)로 경계를 밟는다.
     func testNormalizeDropsOutOfRangeRoomsAndRepairsClearedFlag() {
         var progress = DungeonProgress()
-        progress.remembered = [0: .empty, 99: .boss, -1: .spring]
+        progress.roll(dayKey: "2026-08-21")
+        let count = PuzzleDungeon.map(dayKey: "2026-08-21").rooms.count
+        progress.remembered = [0: .empty, count - 1: .empty, count: .boss, 99: .boss, -1: .spring]
+        progress.looted = [1, count, 999]
         progress.rewardPaid = true
         progress.cleared = false
         progress.normalize()
-        XCTAssertEqual(Set(progress.remembered.keys), [0])
+        XCTAssertEqual(Set(progress.remembered.keys), [0, count - 1])
+        XCTAssertEqual(progress.looted, [1])
         XCTAssertTrue(progress.cleared, "정산됐는데 클리어가 거짓이면 화면이 보상을 다시 권한다")
+    }
+
+    /// `looted` 는 나중에 붙은 필드다 — 키가 없는 옛 세이브가 그대로 읽혀야 한다. 디코드가 실패해
+    /// 기본값으로 떨어지면 업데이트 당일 클리어·정산 기록이 사라져 보상이 두 번 나간다.
+    func testOldSaveWithoutLootedFieldStillDecodes() throws {
+        let json = Data("""
+        {"dayKey":"2026-08-21","cleared":true,"rewardPaid":true,"remembered":{"3":"encounter"}}
+        """.utf8)
+        let progress = try JSONDecoder().decode(DungeonProgress.self, from: json)
+        XCTAssertTrue(progress.rewardPaid)
+        XCTAssertEqual(progress.remembered, [3: .encounter])
+        XCTAssertTrue(progress.looted.isEmpty)
+
+        var full = progress
+        full.looted = [4, 2]
+        let again = try JSONDecoder().decode(DungeonProgress.self, from: JSONEncoder().encode(full))
+        XCTAssertEqual(again, full)
+    }
+
+    /// 턴 보물방 번호는 서명에 들어가되 **비어 있으면 붙지 않는다** — 이 필드가 없던 시절의 세이브와
+    /// 같은 문자열을 내야 정상 세이브가 조작 판정되지 않는다.
+    func testLootedJoinsCanonicalOnlyWhenPresent() {
+        var progress = DungeonProgress()
+        let before = progress.canonical
+        progress.looted = []
+        XCTAssertEqual(progress.canonical, before)
+        progress.looted = [9, 2]
+        XCTAssertNotEqual(progress.canonical, before, "턴 보물방이 서명 밖이면 그 줄을 지워 매일 다시 턴다")
+        XCTAssertTrue(progress.canonical.hasSuffix("|l2,9"), "정렬돼야 한다: \(progress.canonical)")
     }
 
     /// 무결성 canonical 은 **키로 정렬**해야 한다. 사전 순회 순서에 기대면 같은 상태가 실행마다
@@ -109,6 +146,28 @@ final class DungeonSettlementTests: XCTestCase {
         clock.advance(24 * 60 * 60)
         XCTAssertFalse(store.dungeonCleared, "날짜가 바뀌었는데 어제 클리어가 남아 있다")
         XCTAssertEqual(store.settleDungeonClear(revealed: [:]), PuzzleDungeon.firstClearReward)
+    }
+
+    /// 곁방 보물 정산 — 하루 한 번만 별의조각이 나가고, 보물방이 아닌 번호나 화면이 보낸 액수는 믿지 않는다.
+    func testCacheLootPaysOnceAndTrustsTheMapNotTheCaller() {
+        let store = makeStore(TestClock())
+        let map = store.dungeonMap
+        guard let cache = map.rooms.first(where: { $0.kind == .cache }) else {
+            // 이 날짜 맵에 보물방이 없으면 정산 가드만 본다.
+            XCTAssertEqual(store.lootDungeonCache(room: 0, starPieces: 500), 0)
+            return
+        }
+        let before = store.state.starPieces
+        XCTAssertEqual(store.lootDungeonCache(room: cache.id, starPieces: 9_999), cache.damage, "액수는 맵이 정한다")
+        XCTAssertEqual(store.state.starPieces, before + cache.damage)
+        XCTAssertEqual(store.state.dungeon.looted, [cache.id])
+        XCTAssertEqual(store.lootDungeonCache(room: cache.id, starPieces: cache.damage), 0, "같은 방을 두 번 털었다")
+        XCTAssertEqual(store.state.starPieces, before + cache.damage)
+        let notCache = map.rooms.first { $0.kind != .cache }!.id
+        XCTAssertEqual(store.lootDungeonCache(room: notCache, starPieces: 100), 0, "보물방이 아닌데 별의조각이 나갔다")
+        XCTAssertEqual(store.lootDungeonCache(room: 999, starPieces: 100), 0)
+        // 다음 시도가 턴 방을 들고 시작한다 — 재도전으로 다시 털 수 없다.
+        XCTAssertEqual(store.startDungeonRun().looted, [cache.id])
     }
 
     /// 실패·이탈은 시도만 버리고 맵 기억은 남긴다.

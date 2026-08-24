@@ -1579,7 +1579,23 @@ final class CompanionStore {
             save()
         }
         return DungeonRun(map: dungeonMap, budget: dungeonBudget(usedItem: drank),
-                          remembered: state.dungeon.remembered)
+                          remembered: state.dungeon.remembered, looted: state.dungeon.looted)
+    }
+
+    /// 곁방 보물 정산 — **하루 한 번만.** 이미 턴 방이면 0 을 돌려주고 아무것도 바꾸지 않는다.
+    /// 시도가 실패로 끝나도 턴 보물은 남는다(하루 상한이 방 단위라 시도 결과와 무관하다).
+    @discardableResult
+    func lootDungeonCache(room: Int, starPieces: Int) -> Int {
+        state.dungeon.roll(dayKey: Self.dayKey(clock()))
+        guard dungeonMap.rooms.indices.contains(room), dungeonMap.room(room).kind == .cache,
+              !state.dungeon.looted.contains(room) else { return 0 }
+        // 액수는 맵이 정한다 — 화면이 보낸 값을 믿지 않는다.
+        let amount = dungeonMap.room(room).damage
+        state.dungeon.looted.insert(room)
+        state.dungeon.remembered[room] = .cache
+        state.starPieces += amount
+        save()
+        return amount
     }
 
     /// 시도가 끝나거나 화면을 닫을 때 맵 기억만 남긴다(실패·이탈은 시도만 버린다).
