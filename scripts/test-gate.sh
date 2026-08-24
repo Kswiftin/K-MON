@@ -37,6 +37,9 @@ LOGIC_CORE=(
   # 가변 위력(PokéAPI `power: null`) 계산. 순수 함수라 게이트 대상이고, 배열에 안 넣으면
   # 커버리지에서 아예 빠져 다음 기술을 추가할 때 무테스트로 남는다.
   "Sources/PokeTokenBar/Core/VariableDamage.swift"
+  # 특성 표(면역·흡수). 순수 표 조회라 게이트 대상이고, 배열에 안 넣으면 커버리지에서 아예 빠져
+  # 다음 특성을 추가할 때 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/BattleAbility.swift"
   "Sources/PokeTokenBar/Core/BattleLog.swift"
   # 승패 판정이 사는 두 파일. 게이트 밖에 있던 동안 무승부·팀전 분기가 무테스트로 남아
   # "이기지 않은 쪽까지 승리" 결함이 세 경로에 퍼졌다 — 판정은 순수 함수라 게이트 대상이다.
@@ -75,6 +78,8 @@ swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG"
 # 반복해서 찍히므로 sort -u 로 접는다.
 # ponytail: 재컴파일이 없는 warm build 는 warning 을 다시 찍지 않아 로컬에서 놓칠 수 있다 —
 #           신뢰 기준은 매번 cold build 인 CI 다. 로컬에서 볼 때는 `swift package clean` 뒤에 돌린다.
+#           해제 조건 없음(영구): CI 가 cold build 인 동안은 이게 답이고 올릴 단계가 없다.
+#           CI 가 빌드 캐시를 쓰기 시작하면 그때 이 게이트를 clean build 로 고정해야 한다.
 OWN_WARNINGS=$(grep -oE '(Sources|Tests)/PokeTokenBar[^ ]*\.swift:[0-9]+:[0-9]+: warning: .*' "$TEST_LOG" | sort -u || true)
 if [[ -n "$OWN_WARNINGS" ]]; then
   echo

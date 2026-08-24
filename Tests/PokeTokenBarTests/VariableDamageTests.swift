@@ -143,6 +143,25 @@ final class VariableDamageTests: XCTestCase {
                       "실패도 줄을 남겨야 한다")
     }
 
+    /// 일격필살은 **공식을 안 탄다** — 배율 문구를 붙이면 상성·급소가 곱해진 것처럼 읽힌다.
+    /// 억제하는 주체는 플래그가 아니라 `fixedOutcome` 이다(상성을 1, 급소를 false 로 못박는다).
+    /// 지구쪼개기(땅)를 전기 타입에게 쓴다 — 상성표를 타면 2배라, 억제가 풀리면 여기서 새어 나온다.
+    func testAOneHitKOSuppressesTheCritAndEffectivenessLines() throws {
+        let fissure = spec(VariableDamage.MoveID.fissure, type: .ground, accuracy: 30)
+        var landed: (dealt: Int, events: [BattleEvent], attacker: BattleSide)?
+        for seed in UInt64(1)...200 where landed == nil {
+            let result = attack(fissure, side([.ground], level: 50), side([.electric], level: 50), seed: seed)
+            if result.dealt > 0 { landed = result }
+        }
+        let hit = try XCTUnwrap(landed, "200 seed 안에 한 번도 안 맞았다")
+
+        XCTAssertFalse(hit.events.contains { if case .crit = $0 { return true }; return false },
+                       "공식을 안 탄 기술에 급소 문구를 붙이면 배율이 곱해진 것처럼 읽힌다")
+        XCTAssertFalse(hit.events.contains { if case .superEffective = $0 { return true }; return false },
+                       "땅 → 전기는 상성표로 2배지만, 일격필살은 배율을 쓰지 않는다")
+        XCTAssertFalse(hit.events.contains { if case .resisted = $0 { return true }; return false })
+    }
+
     /// 맞으면 남은 HP 와 무관하게 쓰러진다.
     func testAOneHitKOEmptiesTheTargetWhenItLands() {
         let fissure = spec(VariableDamage.MoveID.fissure, type: .ground, accuracy: 30)
@@ -318,30 +337,44 @@ final class VariableDamageTests: XCTestCase {
         XCTAssertTrue(VariableDamage.isUsable(spec(209)), "보통 기술은 당연히 통과")
     }
 
-    /// 체중을 실어 보내는 자리를 하나라도 빠뜨리면 **그 상대에게만** 체중 기술이 실패한다.
-    /// 컴파일러가 못 잡는 부류라(전부 기본값 nil 인 옵셔널 인자) 소스에서 직접 센다.
+    /// 스냅샷에만 실려 나가는 옵셔널 축(체중·특성)을 한 자리라도 빠뜨리면 **그 모드에서만** 조용히
+    /// 동작이 달라진다. 전부 기본값 `nil` 인 옵셔널 인자라 컴파일러가 못 잡으므로 소스에서 직접 센다.
     /// 스냅샷을 만드는 새 자리가 생기면 이 테스트가 먼저 깨진다.
-    func testEveryBattleSnapshotSiteCarriesTheWeight() throws {
+    ///
+    /// 축마다 스캔을 따로 두지 않는다 — 순회가 두 벌이면 새 자리가 생겼을 때 한쪽만 고치게 된다.
+    /// 새 옵셔널 축은 아래 배열에 이름만 더한다.
+    func testEveryBattleSnapshotSiteCarriesTheWireOnlyFields() throws {
+        // 창은 **양쪽으로** 틀릴 수 있다. 짧으면 인자 목록을 다 못 담아 **있는데 없다고** 읽고
+        // (체육관 스냅샷이 특성 인자가 붙으면서 400자를 넘겨 실제로 그렇게 실패했다), 길면
+        // **다음 호출의 인자**를 이 호출 것으로 읽어 빠뜨림을 덮는다. 그래서 다음 `BattleSnapshot(`
+        // 앞에서 먼저 자르고, 남은 길이를 이 상한으로 다시 자른다.
+        let window = 800
+        let required = ["weightHectograms:", "ability:"]
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources")
         let files = try XCTUnwrap(FileManager.default.enumerator(at: sources,
                                                                 includingPropertiesForKeys: nil))
-        var sitesWithoutWeight: [String] = []
+        var gaps: [String] = []
+        var sites = 0
         for case let url as URL in files where url.pathExtension == "swift" {
             let text = try String(contentsOf: url, encoding: .utf8)
-            // `BattleSnapshot(` 로 시작하는 호출 하나를 닫는 괄호까지 훑어 `weightHectograms:` 를 찾는다.
+            // `BattleSnapshot(` 로 시작하는 호출 하나를 인자 목록 끝까지 훑는다.
             var rest = Substring(text)
             while let start = rest.range(of: "BattleSnapshot(") {
-                let call = rest[start.upperBound...].prefix(400)
-                if !call.contains("weightHectograms:") {
-                    sitesWithoutWeight.append(url.lastPathComponent)
+                let after = rest[start.upperBound...]
+                let end = after.range(of: "BattleSnapshot(")?.lowerBound ?? after.endIndex
+                let call = after[..<end].prefix(window)
+                sites += 1
+                for field in required where !call.contains(field) {
+                    gaps.append("\(url.lastPathComponent): \(field)")
                 }
                 rest = rest[start.upperBound...]
             }
         }
-        XCTAssertEqual(sitesWithoutWeight, [],
-                       "체중을 안 실으면 그 상대에게만 저공격·헤비봄버가 조용히 실패한다")
+        XCTAssertEqual(gaps, [],
+                       "체중을 빠뜨리면 저공격·헤비봄버가 그 상대에게만 실패하고, 특성을 빠뜨리면 그 모드만 특성이 없다")
+        XCTAssertGreaterThanOrEqual(sites, 4, "스냅샷 생성 자리를 하나도 못 찾았으면 스캔이 고장 난 것이다")
     }
 
     /// 구현한 id 와 뺀 id 가 겹치면, 구현해 놓고 후보에서 빼는 모순이 조용히 생긴다.

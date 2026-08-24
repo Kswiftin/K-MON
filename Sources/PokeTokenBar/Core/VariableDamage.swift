@@ -5,8 +5,9 @@ import Foundation
 /// **왜 있어야 하는가.** `MoveSpec.from` 은 `dto.power ?? 0` 으로 null 을 0 에 접고, 엔진은
 /// `power <= 0` 을 변화기로 보아 데미지를 0 으로 확정한다. 그래서 일렉트릭볼·지구던지기·자이로볼
 /// 같은 공격기가 **PP 만 태우고 로그 한 줄만 남기는** 죽은 기술이 됐다(1~5세대에 37개, 그중 36개가
-/// 레벨업으로 배워진다). 자동 무브셋은 `pickFour` 가 `power > 0` 으로 걸러 무사했지만, 사용자가
-/// 직접 배우는 경로(레벨업 습득창·하트비늘·`canonicalLevelUpMoves`)에는 필터가 없었다.
+/// 레벨업으로 배운다). 사용자가 직접 배우는 경로(레벨업 습득창·하트비늘·`canonicalLevelUpMoves`)
+/// 는 필터가 없어 죽은 기술을 그대로 실었고, 자동 무브셋은 반대로 `power > 0` 으로 걸러
+/// **살아난 뒤에도 한 번도 안 뽑았다.** 두 경로가 이제 `dealsDamage` 하나를 본다.
 ///
 /// **결정성.** 여기서 쓰는 rng 는 두 피어가 **같은 횟수·같은 순서**로 소비해야 한다. 소비는
 /// `resolveAttack` 의 명중 판정 **직후** 한 자리에서만 일어나고(명중 → 가변위력 → 급소 → 난수 폭),
@@ -232,10 +233,11 @@ enum VariableDamage: Equatable, Sendable {
     /// - 지닌물건(던지기·자연의은혜): 대전에 지닌물건이 없다(이슈 #24 의 Phase 5).
     /// - 참기: 3턴간 사용자를 그 기술에 **묶어야** 하는데, 기술을 강제하는 상태가 엔진에 없다.
     ///   만들면 화면(매 턴 기술 선택)과 네트워크가 다 따라와야 한다.
-    /// - 토해내기: 비축하기 카운터가 필요하고, 짝인 삼키기는 회복이라 `BattleEvent` 에 회복이 없다.
-    /// - 동료(집단구타): 대전이 파티를 안 본다. 1대1 에는 파티 자체가 없고(스냅샷 하나),
-    ///   `min_hits 6` 인 다단기라 다단 히트도 같이 있어야 한다.
-    /// - 선물: 회복 분기가 있는데 `BattleEvent` 에 회복이 없다.
+    /// - 토해내기: 비축하기 카운터가 없다(회복 이벤트는 Phase 5 에서 생겼으니 남은 건 카운터뿐).
+    /// - 동료(집단구타): 대전이 파티를 안 본다 — 1대1 에는 파티 자체가 없다(스냅샷 하나).
+    ///   다단 히트는 Phase 5 에서 생겼으니 남은 건 파티뿐이다.
+    /// - 선물: 위력이 확률로 갈리는데(40/80/120/회복) 그 분포가 엔진에 없다.
+    ///   회복 자체는 Phase 5 의 `BattleEvent.heal` 로 표현할 수 있다.
     /// - 섀도하프: 본편 밖 기술이다.
     static let unmodeledMoveIDs: Set<Int> = [
         216, 218,               // 은혜갚기 · 화풀이 (친밀도)
@@ -250,5 +252,20 @@ enum VariableDamage: Equatable, Sendable {
     /// 무브셋에 올려도 되는 기술인가 — 위력이 0 인데 효과도 없는 기술을 걸러낸다.
     /// `PokeAPIClient.pickStatusMove` 와 **같은 기준**을 쓰되, 여기는 사용자가 직접 고르는
     /// 경로(레벨업 습득창·하트비늘)를 위한 것이다.
-    static func isUsable(_ move: MoveSpec) -> Bool { !unmodeledMoveIDs.contains(move.id) }
+    static func isUsable(_ move: MoveSpec) -> Bool {
+        !unmodeledMoveIDs.contains(move.id)
+            && (move.damageClass != .status || move.hasModeledStatusEffect)
+    }
+
+    /// 엔진이 실제로 데미지를 내는 기술인가 — **무브셋 선택은 `power > 0` 대신 이걸 본다.**
+    ///
+    /// `power > 0` 은 "공격기냐"와 같은 뜻이 아니다. PokéAPI 가 `power: null` 로 주는 공격기는
+    /// `MoveSpec.power` 가 0 이고 위력은 `from` 이 뽑아 준다. 위력으로 가르면 그 부류가 공격기
+    /// 칸에도(위력 0) 변화기 칸에도(`hasModeledStatusEffect` 가 false) 못 들어가 **자동 무브셋에서
+    /// 영원히 안 뽑혔다.** `isUsable` 을 보는 사용자 습득 경로(`canonicalLevelUpMoves`·하트비늘)는
+    /// 같은 기술을 통과시켰으니, "같은 기준"이라던 두 게이트가 갈라져 있던 셈이다.
+    /// `isUsable` 을 그대로 재사용해 갈라질 자리를 없앤다.
+    static func dealsDamage(_ move: MoveSpec) -> Bool {
+        move.damageClass != .status && isUsable(move)
+    }
 }

@@ -297,6 +297,9 @@ struct NetBattleState {
             switchSlot(indexA, team: &teamA, active: &activeA)
             switchSlot(indexB, team: &teamB, active: &activeB)
             var a = teamA[activeA], b = teamB[activeB]
+            // 공격이 없는 턴도 턴이다. 여기만 `beginTurn` 을 빼면 volatile(맞은 기록·풀죽음)이
+            // 한 턴을 건너뛰고 살아남는다 — 네 갈래가 같은 규칙을 써야 한다.
+            BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             turnEvents = [.turn(turn),
                           .sendOut(.a, teamIndex: indexA), .sendOut(.b, teamIndex: indexB)]
             finishTurn(&a, &b, events: &turnEvents)
@@ -368,7 +371,12 @@ final class BattleCenter {
     var phase: Phase = .ready {
         // 국면이 바뀌면 미뤄 둔 결과는 무효다 — 항복·끊김·새 배틀이 국면을 먼저 옮긴 뒤에 옛 배틀의
         // 마감이 뒤늦게 깨어나 엉뚱한 결과 화면을 올리는 것을 막는다.
-        didSet { dropPendingFinish() }
+        didSet {
+            dropPendingFinish()
+            // `.ready` 는 어떤 경로로 돌아왔든 세션 경계다. 신청 취소·거절·연결 실패처럼 배틀을
+            // 시작하지 못한 경우까지 한 곳에서 비워야, 다음 상대에게 이전 대화나 지원 여부가 남지 않는다.
+            if case .ready = phase { endChatSession() }
+        }
     }
     /// 승부는 났지만 재생이 아직 안 끝나 미뤄 둔 결과. **`phase` 를 바로 넘기지 않는 이유**는
     /// 이벤트 append 와 `phase = .finished` 가 같은 동기 블록이면 SwiftUI 가 한 번만 다시 그려
@@ -394,7 +402,12 @@ final class BattleCenter {
     private(set) var lastRankDelta = 0
     private(set) var lastError: String?
     private(set) var chatMessages: [BattleChatMessage] = []
+    /// 채팅 입력이 열려 있나. 연결이 닫히면 닫힌다.
     private(set) var chatIsAvailable = false
+    /// 상대 빌드가 채팅을 지원하나 — **핸드셰이크가 정하는 사실**이라 연결 정리가 지우지 않는다.
+    /// 이 사실을 `chatIsAvailable` 하나에 겹쳐 담았던 탓에, 배틀이 끝나며 소켓이 닫힌 것을
+    /// "상대 앱 버전이 채팅을 지원하지 않는다"고 말했다. 두 사실은 문구가 다르므로 따로 든다.
+    private(set) var peerSupportsChat = false
     private var chatHistory = BattleChatHistory()
     private var chatRateLimiter = BattleChatRateLimiter()
     let chatSenderID = UUID()
@@ -545,9 +558,11 @@ final class BattleCenter {
               lineup.first == snapshot else { return false }
         // 무브셋 범위도 **여기서** 본다. 호출부에 두면 도전/수락 중 한쪽이 무검사가 되고
         // (`statChance: 5000` → 2차효과 확정), 리드 스냅샷만 보면 팀전 2번째 이후 슬롯이 무검사다.
+        // 특성 슬러그도 같은 이유로 여기다 — 방 입장에만 두면 1v1 LAN 이 문자열 무검사가 된다.
         return lineup.allSatisfy {
             !$0.types.isEmpty && (1...100).contains($0.level)
                 && MultiplayerValidation.validMoves($0.moves ?? [])
+                && MultiplayerValidation.validAbility($0.ability)
         }
     }
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
@@ -816,6 +831,7 @@ final class BattleCenter {
                 cpuTeam.append(BattleSnapshot(speciesID: opponentID, name: "CPU #\(opponentID)", trainer: "CPU",
                                               level: level, nature: nil, isShiny: false, types: profile.types,
                                               base: profile.stats, moves: moves,
+                                              ability: profile.abilitySlug,
                                               weightHectograms: profile.weightHectograms))
             }
             guard cpuTeam.count == rankedTeamSize else { phase = .ready; lastError = l.battleStatsFailed; return }
@@ -860,6 +876,7 @@ final class BattleCenter {
                                                  trainer: gym.leaderName(companion.language),
                                                  level: gym.level, nature: nil, isShiny: false,
                                                  types: profile.types, base: profile.stats, moves: moves,
+                                                 ability: profile.abilitySlug,
                                                  weightHectograms: profile.weightHectograms))
             }
             guard leaderTeam.count == GymLeague.teamSize else {
@@ -1103,6 +1120,38 @@ final class BattleCenter {
         settleRankedBrawlIfNeeded(won: false)
     }
 
+    /// 새 대전이 시작될 때 대화만 비운다. 상대 지원 여부는 핸드셰이크가 이미 정했으므로 건드리지 않는다.
+    private func resetChatHistory() {
+        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
+    }
+
+    /// 소켓이 닫혔다 — 입력만 잠근다. 두 정리 경로(`connectionDropped`·`dropConnection`)가
+    /// 이 한 곳을 지나므로 "닫는다"의 정의가 하나다.
+    ///
+    /// **주고받은 대화는 여기서 지우지 않는다.** 배틀이 끝나는 순간 `resolveIfReady` 가 여기를
+    /// 지나는데 결과는 재생 뒤로 미뤄져(`deferFinish`) 국면은 아직 `.battling` 이다 — 지우면 화면에
+    /// 남아 있는 대전 화면에서 방금 한 말이 사라진다(리포트된 증상). 비우는 자리는 새 배틀 시작과
+    /// 세션 경계인 `.ready` 진입뿐이다.
+    private func closeChatInput() {
+        chatIsAvailable = false
+    }
+
+    /// 세션 종료 — 다음 핸드셰이크가 다시 열 때까지 아무것도 남기지 않는다.
+    /// `.ready` 진입점에서만 부른다. 결과·결정타 재생은 아직 같은 세션이므로 대화와 상대 지원
+    /// 사실을 유지해야 한다.
+    private func endChatSession() {
+        resetChatHistory()
+        chatIsAvailable = false
+        peerSupportsChat = false
+    }
+
+    /// 채팅이 잠긴 **이유**. 상대 빌드가 채팅을 명시적으로 지원하지 않을 때만 안내한다.
+    /// 정상적인 연결 종료·결과·결정타 재생에는 원인을 추측하는 문구를 그리지 않는다.
+    var chatLockMessage: String? {
+        guard !chatIsAvailable, !peerSupportsChat else { return nil }
+        return l.battleChatUnavailable
+    }
+
     /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
     func sendChat(_ body: String) {
         guard case .battling = phase, chatIsAvailable,
@@ -1125,6 +1174,8 @@ final class BattleCenter {
         // "−⭐ 5,000 / −25 LP"가 그대로 남는다.
         rankedStake = 0
         lastRankDelta = 0
+        // `.ready` 전환이 모든 세션 상태를 정리한다. 연결 정리(`dropConnection`)는 소켓 입력만 닫아
+        // 결과 화면과 결정타 재생에서 대화가 유지되게 한다.
     }
 
     private var pendingMyLineup: [BattleSnapshot] = []
@@ -1137,7 +1188,7 @@ final class BattleCenter {
 
     private func beginBattle(my: [BattleSnapshot], opp: [BattleSnapshot], iAmA: Bool, seed: UInt64) {
         cancelChallengeTimeout()
-        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
+        resetChatHistory()
         didSettleRankedBrawl = false
         lastRankDelta = 0
         if let opponentRankProfile {
@@ -1171,6 +1222,20 @@ final class BattleCenter {
         pendingAttention = true
         scheduleTurnTimeout()
     }
+
+    #if DEBUG
+    /// 단위 테스트가 실제 수신 행동 → 턴 해상 → 재생 지연 마감 경로를 연결 없이 검증하는 진입점.
+    /// 이미 고른 내 행동만 받는다. 상대 행동은 반드시 `handle(.action)` 으로 넣어야 한다.
+    func stageBattleForTesting(_ state: NetBattleState, peerSupportsChat: Bool = true) {
+        precondition(state.myAction != nil, "the local action must already be selected")
+        precondition(state.oppAction == nil, "the remote action must arrive through handle(_:)")
+        cancelTurnTimeout()
+        battle = state
+        phase = .battling
+        self.peerSupportsChat = peerSupportsChat
+        chatIsAvailable = peerSupportsChat
+    }
+    #endif
 
     /// 이번 턴의 마감을 건다. 연습 배틀엔 걸지 않는다 — CPU 는 즉시 답하므로 기다림이 없다.
     private func scheduleTurnTimeout() {
@@ -1254,7 +1319,10 @@ final class BattleCenter {
 
     // MARK: 메시지 처리
 
-    private func handle(_ message: NetMessage) {
+    /// 와이어 메시지 하나를 상태기계에 넣는다. `internal` 인 이유는 **테스트 진입점**이다 —
+    /// 수신 루프는 `NWConnection` 이 필요해 단위 테스트가 실제 핸드셰이크·채팅 경로를 밟을 다른
+    /// 수단이 없다(그래서 채팅 상태 수명주기에 테스트가 0건이었고 이 결함이 나갔다).
+    func handle(_ message: NetMessage) {
         switch message {
         case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
@@ -1284,7 +1352,9 @@ final class BattleCenter {
             prepareIncomingSelection(teamSize: teamSize)
             incomingSeed = seed
             opponentRankProfile = profile
-            chatIsAvailable = peerChatSupported == true
+            peerSupportsChat = peerChatSupported == true
+            chatIsAvailable = peerSupportsChat
+            AppLog.write("battle chat \(peerSupportsChat ? "enabled" : "disabled — peer build sent no chatSupported")")
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             startChallengeTimeout()
             pendingAttention = true
@@ -1305,7 +1375,9 @@ final class BattleCenter {
                 return
             }
             opponentRankProfile = profile
-            chatIsAvailable = peerChatSupported == true
+            peerSupportsChat = peerChatSupported == true
+            chatIsAvailable = peerSupportsChat
+            AppLog.write("battle chat \(peerSupportsChat ? "enabled" : "disabled — peer build sent no chatSupported")")
             beginBattle(my: pendingMyLineup, opp: lineup, iAmA: true, seed: incomingSeed)
         case .decline:
             if case .challenging = phase {
@@ -1390,7 +1462,7 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
-        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
+        closeChatInput()
     }
 
     private func dropConnection() {
@@ -1404,7 +1476,7 @@ final class BattleCenter {
         discardIncomingSelection()
         incomingTeamSize = 1
         clearPendingOutgoing()
-        chatHistory.reset(); chatMessages = []; chatRateLimiter.reset(); chatIsAvailable = false
+        closeChatInput()
     }
 
     /// 신청 상태에서만 실행되는 별도 마감. 배틀 턴 타이머와 독립적이다.

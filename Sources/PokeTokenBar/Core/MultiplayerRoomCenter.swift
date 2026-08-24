@@ -54,6 +54,10 @@ final class MultiplayerRoomCenter {
     private(set) var pokemonQuizGame: PokemonOXGame?
     private(set) var isPreparingPokemonQuiz = false
     private var pokemonQuizTask: Task<Void, Never>?
+    /// 방향키 입력마다 10명 전체 상태를 즉시 보내면 입력 수 × 접속자 수만큼 send 큐가 불어난다.
+    /// 최신 상태 하나만 10Hz로 합쳐 보내 네트워크 역압으로 게스트 전원이 끊기는 일을 막는다.
+    private var pokemonQuizBroadcastTask: Task<Void, Never>?
+    private var lastPokemonQuizInputAt = Date.distantPast
     private(set) var settlementPayout: Int?
     /// 내가 이미 지갑에서 뺀 베팅. 원장이 바뀌면 차액만 조정하고, 정산 때 이 값으로 호스트 원장을 검증한다.
     private var escrowedBet: PokeathlonBet?
@@ -279,6 +283,9 @@ final class MultiplayerRoomCenter {
 
     func pokemonQuizInput(_ input: PokemonOXInput) {
         guard phase == .pokemonQuiz else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastPokemonQuizInputAt) >= 0.05 else { return }
+        lastPokemonQuizInputAt = now
         if isHost { applyPokemonQuizInput(input, participantID: myID) }
         else if let hostConnection { send(.pokemonQuizInput(participantID: myID, input: input), over: hostConnection) }
     }
@@ -286,6 +293,22 @@ final class MultiplayerRoomCenter {
     private func applyPokemonQuizInput(_ input: PokemonOXInput, participantID: UUID) {
         guard isHost, var game = pokemonQuizGame, Date() < game.deadline else { return }
         game.move(input, playerID: participantID); pokemonQuizGame = game
+        schedulePokemonQuizStateBroadcast()
+    }
+
+    private func schedulePokemonQuizStateBroadcast() {
+        guard pokemonQuizBroadcastTask == nil else { return }
+        pokemonQuizBroadcastTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled, let self else { return }
+            self.pokemonQuizBroadcastTask = nil
+            guard self.isHost, self.phase == .pokemonQuiz, let latest = self.pokemonQuizGame else { return }
+            self.broadcastPokemonQuiz(.pokemonQuizState(game: latest))
+        }
+    }
+
+    private func broadcastPokemonQuizStateImmediately(_ game: PokemonOXGame) {
+        pokemonQuizBroadcastTask?.cancel(); pokemonQuizBroadcastTask = nil
         broadcastPokemonQuiz(.pokemonQuizState(game: game))
     }
 
@@ -304,7 +327,7 @@ final class MultiplayerRoomCenter {
         guard isHost, var game = pokemonQuizGame else { return }
         if game.isRevealing { game.advance() } else { game.reveal() }
         pokemonQuizGame = game
-        broadcastPokemonQuiz(.pokemonQuizState(game: game))
+        broadcastPokemonQuizStateImmediately(game)
         schedulePokemonQuizTransition()
     }
 
@@ -464,8 +487,9 @@ final class MultiplayerRoomCenter {
         listener?.cancel(); listener = nil
         turnTimeoutTask?.cancel(); turnTimeoutTask = nil
         pokemonQuizTask?.cancel(); pokemonQuizTask = nil
+        pokemonQuizBroadcastTask?.cancel(); pokemonQuizBroadcastTask = nil
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
-        pokemonQuizGame = nil; isPreparingPokemonQuiz = false
+        pokemonQuizGame = nil; isPreparingPokemonQuiz = false; lastPokemonQuizInputAt = .distantPast
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
@@ -734,7 +758,9 @@ final class MultiplayerRoomCenter {
     private func send(_ message: MultiplayerWireMessage, over connection: NWConnection) {
         guard let payload = try? JSONEncoder().encode(message), payload.count <= Self.maxMessageBytes else { return }
         var frame = withUnsafeBytes(of: UInt32(payload.count).bigEndian) { Data($0) }; frame.append(payload)
-        connection.send(content: frame, completion: .contentProcessed { _ in })
+        connection.send(content: frame, completion: .contentProcessed { error in
+            if let error { AppLog.write("multiplayer send failed: \(error)") }
+        })
     }
 
     private func receive(over connection: NWConnection, completion: @escaping @MainActor (MultiplayerWireMessage) -> Void) {
@@ -774,6 +800,7 @@ final class MultiplayerRoomCenter {
         return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
                               level: level, nature: active.nature, isShiny: active.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
+                              ability: profile.abilitySlug,
                               weightHectograms: profile.weightHectograms)
     }
 
