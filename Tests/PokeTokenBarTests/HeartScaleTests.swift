@@ -170,4 +170,38 @@ final class HeartScaleTests: XCTestCase {
         XCTAssertNotEqual(L(.ko).itemName(.heartScale), L(.en).itemName(.heartScale))
         XCTAssertNotEqual(L(.ko).itemDescription(.heartScale), L(.ja).itemDescription(.heartScale))
     }
+
+    // MARK: 후보 개수 — 무브셋 상한을 물려받지 않는다
+
+    /// **회귀 원본.** 후보 목록을 `canonicalLevelUpMoves` 로 만들던 동안 종당 4개만 보였다.
+    /// 그 함수는 기술 칸 넷을 채우는 용도라 4개에서 멈추는데(`limit: 4`), 다시 배우기는
+    /// 배울 수 있었던 것 **전부**에서 고르는 기능이다.
+    ///
+    /// 개수 상한은 네트워크 조회 루프 안에 있어 순수 함수로 잴 수 없다. 그래서 후보를 만드는
+    /// 자리가 상한 없는 쪽(`levelUpMoveHistory`)을 부르는지 소스에서 본다 — 다시 `canonical…`
+    /// 로 돌아가면 여기서 깨진다.
+    func testRelearnCandidatesAreNotBuiltFromTheCappedMovesetQuery() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PokeTokenBar/Core/CompanionStore.swift")
+        let text = try String(contentsOf: sources, encoding: .utf8)
+        let relearn = try XCTUnwrap(text.range(of: "MoveRelearn.candidates"))
+        // 후보를 만드는 Task 안에서 어느 조회를 쓰는지 — 그 호출은 `candidates` 위에 있다.
+        let above = text[..<relearn.lowerBound].suffix(1_200)
+        XCTAssertTrue(above.contains("levelUpMoveHistory"),
+                      "다시 배우기 후보는 상한 없는 조회로 만들어야 한다")
+        XCTAssertFalse(above.contains("canonicalLevelUpMoves"),
+                       "무브셋용 조회는 4개에서 끊긴다 — 후보가 그 상한을 물려받는다")
+    }
+
+    /// 두 조회가 갈라지지 않게 잠근다 — 무브셋에는 들어가는데 다시 배우기에는 안 뜨는 기술이
+    /// 생기면 "왜 이건 못 배우지" 가 된다. 필터·정렬은 한 함수(`levelUpMoves`)가 공유한다.
+    func testBothLevelUpQueriesShareOneFilterAndOrder() throws {
+        let client = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PokeTokenBar/Core/PokeAPIClient.swift")
+        let text = try String(contentsOf: client, encoding: .utf8)
+        XCTAssertTrue(text.contains("levelUpMoves(speciesID: speciesID, level: level, limit: 4)"))
+        XCTAssertTrue(text.contains("levelUpMoves(speciesID: speciesID, level: level, limit: nil)"))
+    }
 }

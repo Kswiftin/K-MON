@@ -348,13 +348,28 @@ actor PokeAPIClient: PokeProviding {
     /// 아직 위력을 못 뽑는 기술(`VariableDamage.unmodeledMoveIDs`)은 뺀다 — 넣어 두면 PP 만
     /// 태우는 칸이 되고, 넷뿐인 자리를 죽은 기술이 차지한다.
     func canonicalLevelUpMoves(speciesID: Int, level: Int) async -> [MoveSpec] {
+        await levelUpMoves(speciesID: speciesID, level: level, limit: 4)
+    }
+
+    /// 현재 레벨까지 배울 수 있었던 레벨업 기술 **전부** — 하트비늘(다시 배우기) 후보용.
+    ///
+    /// `canonicalLevelUpMoves` 와 나눠 둔다. 그쪽은 **무브셋을 채우는** 함수라 4개에서 멈추는데
+    /// (기술 칸이 넷이다), 다시 배우기는 "지금까지 배울 수 있었던 것 중에 고른다" 라 상한이 없다.
+    /// 한 함수를 두 용도로 쓰던 동안 후보 목록이 무브셋 상한을 물려받아 **종당 4개만** 보였다.
+    func levelUpMoveHistory(speciesID: Int, level: Int) async -> [MoveSpec] {
+        await levelUpMoves(speciesID: speciesID, level: level, limit: nil)
+    }
+
+    /// `limit` 이 nil 이면 전부. 개수만 다른 두 용도가 같은 필터·같은 순서를 쓰게 한 곳에 둔다 —
+    /// 갈라 두면 무브셋에는 들어가는데 다시 배우기에는 안 뜨는 기술이 생긴다.
+    private func levelUpMoves(speciesID: Int, level: Int, limit: Int?) async -> [MoveSpec] {
         guard let dto: PokemonMovesDTO = try? await get(base.appendingPathComponent("pokemon/\(speciesID)")) else { return [] }
         let names = Self.levelUpMoveNames(dto, through: level)
         var moves: [MoveSpec] = []
         for name in names {
             guard let move = try? await moveDetail(named: name), VariableDamage.isUsable(move) else { continue }
             moves.append(move)
-            if moves.count == 4 { break }
+            if let limit, moves.count == limit { break }
         }
         return moves
     }
