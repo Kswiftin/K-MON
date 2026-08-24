@@ -429,8 +429,7 @@ actor PokeAPIClient: PokeProviding {
     /// 순서는 후보 정렬(습득 레벨 내림차순)을 그대로 따라가므로 결정적이다.
     private static func pickStatusMove(from specs: [MoveSpec]) -> MoveSpec? {
         specs.first { spec in
-            if spec.inflictedStatus != nil, spec.targetsUser != true { return true }
-            return !(spec.statChanges ?? []).isEmpty && spec.statChangePercent > 0
+            return spec.hasModeledStatusEffect
         }
     }
 
@@ -624,6 +623,10 @@ struct MoveDTO: Decodable, Sendable {
         let ailment_chance: Int?
         /// 랭크 변화가 걸릴 확률. 변화기(본체가 랭크 변화)는 0 이 온다.
         let stat_chance: Int?
+        let drain: Int?
+        let flinch_chance: Int?
+        let min_hits: Int?
+        let max_hits: Int?
     }
     /// 랭크 변화 한 항목. `stat.name` 은 `special-attack` 처럼 PokéAPI 표기다.
     struct StatChangeDTO: Decodable, Sendable {
@@ -689,7 +692,9 @@ extension MoveSpec {
                         critRate: dto.meta?.crit_rate,
                         ailment: ailment, ailmentChance: dto.meta?.ailment_chance,
                         statChanges: statChanges, statChance: dto.meta?.stat_chance,
-                        targetsUser: dto.target.map { MoveDTO.userTargets.contains($0.name) })
+                        targetsUser: dto.target.map { MoveDTO.userTargets.contains($0.name) },
+                        drain: dto.meta?.drain, flinchChance: dto.meta?.flinch_chance,
+                        minHits: dto.meta?.min_hits, maxHits: dto.meta?.max_hits)
     }
 }
 struct ChainLink: Decodable, Sendable {

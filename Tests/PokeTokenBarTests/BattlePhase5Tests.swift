@@ -64,11 +64,12 @@ final class BattlePhase5Tests: XCTestCase {
         let first = BattleEngine.resolveTurn(a: &a, b: &b, moveA: flinching, moveB: ordinary,
                                              turn: 1, rng: &rng)
         XCTAssertTrue(first.contains(.cant(.b, .flinch)))
-        XCTAssertFalse(b.flinched)
+        XCTAssertTrue(b.flinched, "flinch remains volatile until the next turn begins")
 
         let second = BattleEngine.resolveTurn(a: &a, b: &b, moveA: ordinary, moveB: ordinary,
                                               turn: 2, rng: &rng)
         XCTAssertTrue(second.contains(.move(.b, moveID: 2)))
+        XCTAssertFalse(b.flinched)
     }
 
     func testNewMoveFieldsAreValidatedAtTheMultiplayerBoundary() {

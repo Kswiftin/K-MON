@@ -54,6 +54,11 @@ enum BattleLog {
                 flush()
                 out.append(Line(actor: actor,
                                 text: l.battleStatusDamage(name(actor), damage: amount, cause: cause)))
+            case .heal(let actor, let amount, _):
+                flush()
+                out.append(Line(actor: actor, text: "+\(amount) HP"))
+            case .multiHit:
+                break
             case .faint(let actor):
                 flush()
                 out.append(Line(actor: actor, text: l.battleFainted(name(actor))))

@@ -170,6 +170,7 @@ struct L {
         case .sleep:     return t("\(name)은(는) 잠들어 버렸다!", "\(name) fell asleep!", "\(name)は 眠ってしまった！")
         case .freeze:    return t("\(name)은(는) 얼어붙었다!", "\(name) was frozen solid!", "\(name)は こおりついた！")
         case .confusion: return t("\(name)은(는) 혼란에 빠졌다!", "\(name) became confused!", "\(name)は 混乱した！")
+        case .flinch:    return t("\(name)은(는) 풀죽었다!", "\(name) flinched!", "\(name)は ひるんだ！")
         }
     }
 
@@ -181,6 +182,7 @@ struct L {
         case .sleep:           return t("\(name)은(는) 잠에서 깨어났다!", "\(name) woke up!", "\(name)は 目を覚ました！")
         case .freeze:          return t("\(name)의 얼음이 녹았다!", "\(name) thawed out!", "\(name)の こおりが とけた！")
         case .confusion:       return t("\(name)의 혼란이 풀렸다!", "\(name) snapped out of its confusion!", "\(name)の 混乱が とけた！")
+        case .flinch:          return ""
         }
     }
 
@@ -197,6 +199,7 @@ struct L {
         case .confusion: return t("\(name)은(는) 혼란에 빠져 자신을 공격했다!",
                                   "\(name) hurt itself in its confusion!",
                                   "\(name)は わけも わからず 自分を 攻撃した！")
+        case .flinch:    return t("\(name)은(는) 풀죽어서 움직일 수 없다!", "\(name) flinched and can't move!", "\(name)は ひるんで 動けない！")
         case .burn, .poison, .toxic:
             return t("\(name)은(는) 움직일 수 없다!", "\(name) can't move!", "\(name)は 動けない！")
         }
@@ -218,6 +221,7 @@ struct L {
                                   "\(name) hurt itself in confusion! \(damage)",
                                   "\(name)は 混乱で \(damage)ダメージ")
         case .move:      return battleTookDamage(name, damage: damage)
+        case .recoil:    return t("\(name)은(는) 반동으로 \(damage) 데미지", "\(name) was hurt by recoil! \(damage)", "\(name)は 反動で\(damage)ダメージ")
         }
     }
 

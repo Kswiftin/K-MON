@@ -74,7 +74,8 @@ enum BattleReplay {
         switch event {
         case .turn:                                             return 0.15
         case .move:                                             return 0.35
-        case .damage:                                           return 0.45
+        case .damage, .heal:                                    return 0.45
+        case .multiHit:                                         return 0.20
         case .faint:                                            return 0.60
         // 교체·자동 출전은 한 박자 — 새 개체가 나오는 걸 보고 나서 다음 일이 일어나야 한다.
         case .sendOut:                                          return 0.40
@@ -120,6 +121,10 @@ enum BattleReplay {
             // 엔진과 같은 자리에서 자른다(`side.hp = max(0, …)`) — 오버킬에서 갈라지지 않는다.
             one.team[one.active].hp = max(0, one.team[one.active].hp - amount)
             sides[actor] = one
+        case .heal(let actor, let amount, _):
+            guard var one = sides[actor], one.team.indices.contains(one.active) else { return }
+            one.team[one.active].hp = min(one.team[one.active].stats.hp, one.team[one.active].hp + amount)
+            sides[actor] = one
         case .sendOut(let actor, let index):
             guard var one = sides[actor], one.team.indices.contains(index) else { return }
             one.active = index
@@ -128,7 +133,7 @@ enum BattleReplay {
         // 움직이는데 여기 빠지면 바가 배틀 내내 어긋난 채로 남는다. 컴파일이 깨지는 편이
         // `reconcile()` 로그를 한참 뒤에 발견하는 편보다 낫다.
         case .turn, .move, .miss, .immune, .crit, .superEffective, .resisted,
-             .faint, .status, .cureStatus, .cant, .boost:
+             .faint, .status, .cureStatus, .cant, .boost, .multiHit:
             return
         }
     }
@@ -160,7 +165,7 @@ enum BattleReplay {
         case .immune:         return \.battleNoEffect
         // 팝이 없는 이벤트 — 전부 팝으로 만들면 화면이 문구로 덮여 정작 급소가 묻힌다.
         // 교체(`.sendOut`)는 스프라이트가 바뀌는 것이 곧 문구다.
-        case .turn, .move, .damage, .faint, .sendOut, .status, .cureStatus, .cant, .boost:
+        case .turn, .move, .damage, .heal, .multiHit, .faint, .sendOut, .status, .cureStatus, .cant, .boost:
             return nil
         }
     }

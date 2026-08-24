@@ -195,6 +195,11 @@ enum MultiplayerValidation {
                 // 상태 부여 확률은 상대가 보내오는 값이다 — 범위를 벗어나면 매번 확정 부여가 된다.
                 && ($0.ailmentChance.map { (0...100).contains($0) } ?? true)
                 && ($0.statChance.map { (0...100).contains($0) } ?? true)
+                && ($0.drain.map { (-100...100).contains($0) } ?? true)
+                && ($0.flinchChance.map { (0...100).contains($0) } ?? true)
+                && ($0.minHits.map { (1...10).contains($0) } ?? true)
+                && ($0.maxHits.map { (1...10).contains($0) } ?? true)
+                && (($0.minHits ?? 1) <= ($0.maxHits ?? $0.minHits ?? 1))
                 // 랭크 변화도 상대가 보내오는 값이다. 개수 상한은 랭크가 있는 스탯 수 —
                 // 안 보면 `+6 공격` 이 열두 번 담긴 기술 하나로 첫 턴에 최대 랭크가 된다.
                 && ($0.statChanges.map { changes in
@@ -234,7 +239,7 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 디코딩하지 못하고 멈춘다 → 입장 단계에서 막는다.
     // 2: LobbyParticipant.role + 관전자 베팅, 3: 이벤트 스트림, 4: 상태이상(status 필드 + case 추가),
     // 5: 랭크(stages 필드 + `.boost` case), 6: 방 전체 자유 채팅, 7: 포켓몬 OX 퀴즈.
-    static let protocolVersion = 7
+    static let protocolVersion = 8
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

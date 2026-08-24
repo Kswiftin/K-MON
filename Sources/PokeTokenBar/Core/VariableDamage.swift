@@ -250,5 +250,8 @@ enum VariableDamage: Equatable, Sendable {
     /// 무브셋에 올려도 되는 기술인가 — 위력이 0 인데 효과도 없는 기술을 걸러낸다.
     /// `PokeAPIClient.pickStatusMove` 와 **같은 기준**을 쓰되, 여기는 사용자가 직접 고르는
     /// 경로(레벨업 습득창·하트비늘)를 위한 것이다.
-    static func isUsable(_ move: MoveSpec) -> Bool { !unmodeledMoveIDs.contains(move.id) }
+    static func isUsable(_ move: MoveSpec) -> Bool {
+        !unmodeledMoveIDs.contains(move.id)
+            && (move.damageClass != .status || move.hasModeledStatusEffect)
+    }
 }

@@ -222,6 +222,7 @@ extension Status {
         case .sleep:           return .gray
         case .freeze:          return .cyan
         case .confusion:       return .pink
+        case .flinch:          return .gray
         }
     }
 }
