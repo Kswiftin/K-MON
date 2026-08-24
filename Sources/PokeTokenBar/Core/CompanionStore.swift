@@ -256,16 +256,17 @@ final class CompanionStore {
     }
 
     func battleSnapshot(for mon: MonState, level: Int = 50) async -> BattleSnapshot? {
-        guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.currentID) else { return nil }
+        guard let profile = try? await provider.battleProfile(speciesID: mon.currentID) else { return nil }
         let name = await resolveSpeciesName(mon.currentID)
         // 자동 무브셋은 **스냅샷 레벨** 기준이다. 예전엔 여기만 `mon.level` 이라, Lv.50 으로 나가는
         // 개체가 자기 실제 레벨까지 배우는 기술만 들고 갔다 — 몸은 50 인데 기술은 3 인 상태.
         let moves = mon.learnedMoves.isEmpty
             ? await PokeAPIClient.shared.moveSet(speciesID: mon.currentID, level: level, types: profile.types)
-            : mon.learnedMoves
+            : await detailedMoves(of: mon)
         return BattleSnapshot(speciesID: mon.currentID, name: mon.nickname ?? name, trainer: trainerName,
                               level: level, nature: mon.nature, isShiny: mon.isShiny,
-                              types: profile.types, base: profile.stats, moves: moves)
+                              types: profile.types, base: profile.stats, moves: moves,
+                              weightHectograms: profile.weightHectograms)
     }
 
     /// 스타터 확정 — 고른 종으로 즉시 부화(알 단계 건너뜀). 이후 졸업하면 기존 알/부화 루프로 돌아간다.
@@ -1329,6 +1330,37 @@ final class CompanionStore {
         return descriptions.values.contains(where: PokeAPIClient.isUnusableMoveNotice)
     }
 
+    /// 축이 빠진 기술만 다시 받아 채우고, 채운 값을 세이브에 되쓴다.
+    ///
+    /// **대전 스냅샷도 반드시 여기를 지나야 한다.** 예전엔 기술 목록 화면만 보강했고 스냅샷은
+    /// `learnedMoves` 를 그대로 실어 보냈다 — 축이 늘어나기 전(`ailment` 이전)의 세이브로
+    /// 싸우면 상태기가 **조용히** 무효가 된다. `ailment` 가 없으면 `inflictedStatus` 가 nil 이라
+    /// `applySecondaryEffect` 가 이벤트 없이 빠져나가고, 위력 0 이라 데미지 줄도 안 나가서
+    /// 로그에는 기술명 한 줄만 남는다(수면가루를 써도 아무 일도 안 일어난 것처럼 보인다).
+    /// 화면을 한 번도 안 펼친 사용자는 그 상태에서 빠져나올 길이 없었다.
+    ///
+    /// 되쓰기가 있어야 한 번 채운 개체가 대전마다 같은 조회를 반복하지 않는다. 조회 중 개체가
+    /// 바뀔 수 있으므로 같은 id 를 다시 찾았을 때만 쓴다.
+    func detailedMoves(of mon: MonState) async -> [MoveSpec] {
+        var enriched = mon.learnedMoves
+        var filled = false
+        for index in enriched.indices where Self.needsDetailRefresh(enriched[index]) {
+            if let detail = await provider.moveDetail(id: enriched[index].id) {
+                enriched[index] = detail
+                filled = true
+            }
+        }
+        guard filled else { return mon.learnedMoves }
+        if state.active?.id == mon.id {
+            state.active!.learnedMoves = enriched
+            save()
+        } else if let index = state.boxedMons.firstIndex(where: { $0.id == mon.id }) {
+            state.boxedMons[index].learnedMoves = enriched
+            save()
+        }
+        return enriched
+    }
+
     func loadDisplayedMoves() async {
         guard let active = state.active, let speciesID = currentSpeciesID else {
             displayedMoves = []; return
@@ -1338,16 +1370,9 @@ final class CompanionStore {
         if !refreshed.learnedMoves.isEmpty {
             isLoadingDisplayedMoves = true
             defer { isLoadingDisplayedMoves = false }
-            var enriched = refreshed.learnedMoves
-            for index in enriched.indices where Self.needsDetailRefresh(enriched[index]) {
-                if let detail = await PokeAPIClient.shared.moveDetail(id: enriched[index].id) {
-                    enriched[index] = detail
-                }
-            }
+            let enriched = await detailedMoves(of: refreshed)
             guard state.active?.id == active.id else { return }
-            state.active!.learnedMoves = enriched
             displayedMoves = enriched
-            save()
             return
         }
         isLoadingDisplayedMoves = true

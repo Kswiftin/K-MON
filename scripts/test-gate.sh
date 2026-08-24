@@ -34,6 +34,9 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/PeerAdvertisement.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
   "Sources/PokeTokenBar/Core/BattleModel.swift"
+  # 가변 위력(PokéAPI `power: null`) 계산. 순수 함수라 게이트 대상이고, 배열에 안 넣으면
+  # 커버리지에서 아예 빠져 다음 기술을 추가할 때 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/VariableDamage.swift"
   "Sources/PokeTokenBar/Core/BattleLog.swift"
   # 승패 판정이 사는 두 파일. 게이트 밖에 있던 동안 무승부·팀전 분기가 무테스트로 남아
   # "이기지 않은 쪽까지 승리" 결함이 세 경로에 퍼졌다 — 판정은 순수 함수라 게이트 대상이다.

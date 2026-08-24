@@ -17,12 +17,19 @@ protocol PokeProviding: Sendable {
     /// 종의 타입·종족값. **타입이 도감에 영구 저장되므로**(`DexEntry.types`) 이 조회는 주입 가능해야
     /// 한다 — `PokeAPIClient.shared` 를 직접 부르면 그 경로를 밟는 테스트를 쓸 수 없다.
     func battleProfile(speciesID: Int) async throws -> PokemonBattleProfile
+    /// 세이브에 든 기술 스펙의 빠진 축을 채우는 조회. `battleProfile` 과 같은 이유로 주입 가능해야
+    /// 한다 — 대전 스냅샷이 이 보강을 지나는지를 네트워크 없이 테스트한다.
+    func moveDetail(id: Int) async -> MoveSpec?
 }
 
 extension PokeProviding {
     /// 기본값은 실 클라이언트 — 타입을 쓰지 않는 스텁은 그대로 두면 된다.
     func battleProfile(speciesID: Int) async throws -> PokemonBattleProfile {
         try await PokeAPIClient.shared.battleProfile(speciesID: speciesID)
+    }
+
+    func moveDetail(id: Int) async -> MoveSpec? {
+        await PokeAPIClient.shared.moveDetail(id: id)
     }
 }
 
@@ -295,7 +302,8 @@ actor PokeAPIClient: PokeProviding {
             .sorted { $0.slot < $1.slot }
             .compactMap { PokemonType(rawValue: $0.type.name) }
         guard !types.isEmpty else { throw URLError(.cannotParseResponse) }
-        let profile = PokemonBattleProfile(speciesID: speciesID, stats: stats, types: types)
+        let profile = PokemonBattleProfile(speciesID: speciesID, stats: stats, types: types,
+                                           weightHectograms: dto.weight)
         battleProfileCache[speciesID] = profile
         return profile
     }
@@ -334,12 +342,14 @@ actor PokeAPIClient: PokeProviding {
     }
 
     /// 본가 레벨업 습득표에서 현재 레벨까지 배울 수 있는 최근 기술 4개. 변화기도 포함한다.
+    /// 아직 위력을 못 뽑는 기술(`VariableDamage.unmodeledMoveIDs`)은 뺀다 — 넣어 두면 PP 만
+    /// 태우는 칸이 되고, 넷뿐인 자리를 죽은 기술이 차지한다.
     func canonicalLevelUpMoves(speciesID: Int, level: Int) async -> [MoveSpec] {
         guard let dto: PokemonMovesDTO = try? await get(base.appendingPathComponent("pokemon/\(speciesID)")) else { return [] }
         let names = Self.levelUpMoveNames(dto, through: level)
         var moves: [MoveSpec] = []
         for name in names {
-            guard let move = try? await moveDetail(named: name) else { continue }
+            guard let move = try? await moveDetail(named: name), VariableDamage.isUsable(move) else { continue }
             moves.append(move)
             if moves.count == 4 { break }
         }
@@ -359,6 +369,8 @@ actor PokeAPIClient: PokeProviding {
     }
 
     /// 정확히 이 레벨에 배우는 공격 기술. 사용자 기술 습득 선택창에서 사용한다.
+    /// `canonicalLevelUpMoves` 와 같은 이유로 위력을 못 뽑는 기술은 권하지 않는다 —
+    /// 여기는 **쓰던 기술을 버리고** 고르는 자리라 죽은 기술을 올리면 손해가 더 크다.
     func movesLearned(speciesID: Int, at level: Int) async -> [MoveSpec] {
         guard let dto: PokemonMovesDTO = try? await get(base.appendingPathComponent("pokemon/\(speciesID)")) else { return [] }
         let names = dto.moves.compactMap { entry -> String? in
@@ -369,7 +381,9 @@ actor PokeAPIClient: PokeProviding {
         }
         var result: [MoveSpec] = []
         for name in Array(Set(names)).sorted() {
-            if let move = try? await moveDetail(named: name) { result.append(move) }
+            if let move = try? await moveDetail(named: name), VariableDamage.isUsable(move) {
+                result.append(move)
+            }
         }
         return result
     }
@@ -555,12 +569,18 @@ struct PokemonBattleProfile: Sendable {
     let speciesID: Int
     let stats: BattleStats
     let types: [PokemonType]
+    /// 헥토그램(0.1kg). 체중으로 위력이 정해지는 기술(저공격·풀묶기·헤비봄버·히트스탬프)이 쓴다.
+    /// 기본값을 둔 이유는 타입만 쓰는 테스트 스텁을 그대로 두기 위함이다 — 실 클라이언트는 늘 채운다.
+    var weightHectograms: Int = 0
 }
 struct PokemonDTO: Decodable, Sendable {
     struct StatEntry: Decodable, Sendable { let base_stat: Int; let stat: NamedRef }
     struct TypeEntry: Decodable, Sendable { let slot: Int; let type: NamedRef }
     let stats: [StatEntry]
     let types: [TypeEntry]
+    /// 헥토그램(0.1kg). 본가가 이 단위로 위력 구간을 나누므로 kg 으로 바꾸지 않고 그대로 들고 간다 —
+    /// 저공격·헤비봄버 구간표가 정수 비교로 끝난다(`VariableDamage`).
+    let weight: Int
 }
 /// `/pokemon/{id}` 의 moves 부분만 — 배틀 프로필과 별도 디코드(무브셋은 대전 시작 때만 필요).
 struct PokemonMovesDTO: Decodable, Sendable {

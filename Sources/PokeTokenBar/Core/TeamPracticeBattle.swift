@@ -50,6 +50,7 @@ struct TeamPracticeBattle {
     /// 이벤트는 `applyAttack` 이 만든다(엔진 좌변이 나 = `.a`, CPU = `.b`).
     private mutating func opponentAttacksAlone() {
         guard opponents[opponentActive].isAlive, mine[myActive].isAlive else { return }
+        BattleEngine.beginTurn(&mine[myActive]); BattleEngine.beginTurn(&opponents[opponentActive])
         let (move, moveIndex) = cpuMoveChoice()
         if moveIndex >= 0 { opponents[opponentActive].pp[moveIndex] -= 1 }
         events += BattleEngine.applyAttack(attacker: &opponents[opponentActive], defender: &mine[myActive],

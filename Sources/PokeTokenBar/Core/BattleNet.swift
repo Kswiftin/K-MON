@@ -269,6 +269,7 @@ struct NetBattleState {
             switchSlot(indexA, team: &teamA, active: &activeA)
             let moveB = spendPP(indexB, team: &teamB, active: activeB)
             var a = teamA[activeA], b = teamB[activeB]
+            BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             // 출전은 상대 공격보다 **앞**이다 — 재생기가 이 순서대로 개체를 갈아타야 새로 나온
             // 개체가 맞는 그림이 된다(뒤에 두면 이전 개체가 남의 데미지를 맞는다).
             turnEvents = [.turn(turn), .sendOut(.a, teamIndex: indexA)]
@@ -283,6 +284,7 @@ struct NetBattleState {
             switchSlot(indexB, team: &teamB, active: &activeB)
             let moveA = spendPP(indexA, team: &teamA, active: activeA)
             var a = teamA[activeA], b = teamB[activeB]
+            BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             turnEvents = [.turn(turn), .sendOut(.b, teamIndex: indexB)]
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &a, defender: &b,
@@ -813,7 +815,8 @@ final class BattleCenter {
                 let moves = await moveSetLoader(opponentID, level, profile.types)
                 cpuTeam.append(BattleSnapshot(speciesID: opponentID, name: "CPU #\(opponentID)", trainer: "CPU",
                                               level: level, nature: nil, isShiny: false, types: profile.types,
-                                              base: profile.stats, moves: moves))
+                                              base: profile.stats, moves: moves,
+                                              weightHectograms: profile.weightHectograms))
             }
             guard cpuTeam.count == rankedTeamSize else { phase = .ready; lastError = l.battleStatsFailed; return }
             isPracticeBattle = true
@@ -856,7 +859,8 @@ final class BattleCenter {
                 leaderTeam.append(BattleSnapshot(speciesID: speciesID, name: name,
                                                  trainer: gym.leaderName(companion.language),
                                                  level: gym.level, nature: nil, isShiny: false,
-                                                 types: profile.types, base: profile.stats, moves: moves))
+                                                 types: profile.types, base: profile.stats, moves: moves,
+                                                 weightHectograms: profile.weightHectograms))
             }
             guard leaderTeam.count == GymLeague.teamSize else {
                 phase = .ready; lastError = l.battleStatsFailed; return

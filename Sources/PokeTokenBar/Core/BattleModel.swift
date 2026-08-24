@@ -332,6 +332,19 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 맹독 — PokéAPI move id.
     static let toxicMoveID = 92
 
+    /// 전기자석파 — PokéAPI move id.
+    static let thunderWaveID = 86
+
+    /// 상성표를 **그대로 보는** 상태기. 여기 없는 변화기는 상성을 타지 않는다.
+    ///
+    /// 노말↔고스트 면역은 **데미지 기술의 규칙**이다 — 이상한빛(고스트)은 노말에게, 노래(노말)는
+    /// 고스트에게, 최면술(에스퍼)은 악에게 통해야 한다. 예전엔 "상태를 거는 변화기는 전부 상성표를
+    /// 본다" 였고, 그 한 줄이 해당 12개 중 8개를 잘못 막았다.
+    ///
+    /// 독·화상·얼음 면역은 여기가 아니라 `BattleSide.canBeAfflicted` 가 본다 — 기술 타입이 아니라
+    /// **거는 상태**로 판정하므로(강철은 독을 안 받는다) 상성표를 꺼도 그대로 막힌다.
+    static let typeBlockedStatusMoveIDs: Set<Int> = [thunderWaveID]
+
     func name(_ lang: AppLanguage) -> String { lang.resolveName(names) ?? names.values.first ?? "?" }
     func description(_ lang: AppLanguage) -> String? {
         guard let descriptions else { return nil }
@@ -381,6 +394,12 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     var base: BattleStats
     /// 네트워크 대전용 무브셋(최대 4).
     var moves: [MoveSpec]? = nil
+    /// 헥토그램(0.1kg). 체중으로 위력이 정해지는 기술이 본다.
+    ///
+    /// 옵셔널인 이유는 **조회 실패**다(피어 호환이 아니다 — 이 필드가 없던 시절과는 `rulesVersion`
+    /// 이 이미 대전을 막는다). 0 으로 접으면 안 된다: 저공격이 "가장 가벼움"으로 최저 위력이 되고
+    /// 헤비봄버는 0 나눗셈 자리로 간다. 값이 없으면 그 기술만 실패시킨다(`VariableDamage.noEffect`).
+    var weightHectograms: Int? = nil
 
     /// 레벨 유도 — 성장 진행도(단계 + 단계 내 진행)를 5~100 레벨로 사상.
     /// stageProgress 는 0~1 로 클램프, totalForms ≥ 1 보장.
@@ -456,6 +475,13 @@ enum DamageCause: String, Codable, Sendable, Equatable {
 /// 대전 중 한쪽이 들고 있는 것 전부 — 스냅샷은 *교환 단위*고, 이쪽은 **턴을 넘어 사는 상태**다.
 /// 세 모드(`NetBattleState`·`TeamPracticeBattle`·`MultiplayerFighter`)가 각자 `hp`/`pp` 를 나열하던
 /// 자리다. 상태를 한 타입에 모아야 상태이상·랭크업 같은 기전을 세 번 쓰지 않는다.
+/// 한 번 맞은 기록 — 되돌려주는 기술이 얼마를 어떤 분류로 맞았는지 알아야 한다.
+/// 카운터는 물리만, 미러코트는 특수만, 메탈버스트는 둘 다 되돌려준다.
+struct IncomingHit: Sendable, Equatable {
+    var amount: Int
+    var damageClass: MoveDamageClass
+}
+
 struct BattleSide: Sendable, Equatable {
     var snapshot: BattleSnapshot
     /// 유효 스탯 — 배틀에 들어올 때 1회 계산한다. `effectiveStats()` 를 그때그때 부르면 정렬
@@ -467,6 +493,15 @@ struct BattleSide: Sendable, Equatable {
     /// 세 모드가 각자 `snapshot.moves ?? fallbackSet(...)` 를 반복하던 자리다.
     let moves: [MoveSpec]
     var pp: [Int]
+    /// **이번 턴에** 기술로 맞은 데미지 — 카운터·미러코트·메탈버스트가 되돌려준다.
+    ///
+    /// 턴이 시작될 때 `BattleEngine.beginTurn` 이 비운다. 안 비우면 지난 턴 데미지가 되돌아온다.
+    /// 혼란 자멸·독·화상은 여기 안 들어간다 — `applyAttack` 의 기술 데미지 자리에서만 기록한다.
+    ///
+    /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다. 두 피어가 각자 같은 규칙으로
+    /// 채우므로 값이 오갈 필요가 없다(그래서 이 필드는 `rulesVersion` 만 올리면 된다).
+    var lastHitThisTurn: IncomingHit?
+
     /// 주 상태이상 — 한 번에 하나. 혼란은 volatile 이라 여기가 아니라 `confusionTurns` 에 둔다.
     var status: Status?
     /// 상태마다 뜻이 다른 한 칸 — 맹독은 누적 배수(1, 2, 3…), 잠듦은 남은 카운터다.
@@ -613,7 +648,20 @@ enum BattleEngine {
     /// 8 = 랭크(스탯 단계) + 명중·회피 랭크 + 변화기 무브셋 편입(변화기는 상성을 타지 않는다),
     ///     그리고 교체할 때 랭크가 사라진다 — 데미지와 명중이 둘 다 달라지므로 구버전과 붙으면
     ///     같은 배틀을 다르게 본다.
-    static let rulesVersion = 8
+    /// 9 = PokéAPI 가 `power: null` 로 주는 공격기의 데미지(`VariableDamage`). 세 가지가 한꺼번에
+    ///     달라진다: ① 위력이 0 이 아니게 되어 데미지가 생기고, ② 고정 데미지·일격필살은 공식을
+    ///     아예 안 타며, ③ 매그니튜드·사이코웨이브가 **rng 를 한 번 더** 소비한다(명중 → 가변위력 →
+    ///     급소 → 난수 폭). 소비 횟수가 갈리면 그 뒤 모든 판정이 어긋나므로 구버전과 붙으면 안 된다.
+    /// 10 = 체중 기반 위력(저공격·풀묶기·헤비봄버·히트스탬프). `BattleSnapshot.weightHectograms` 가
+    ///     와이어에 새로 실린다 — 구버전이 보낸 스냅샷에는 이 값이 없어 같은 기술이 한쪽에서만
+    ///     실패한다. rng 소비는 그대로다.
+    /// 11 = 되돌려주는 기술(카운터·미러코트·메탈버스트). `BattleSide.lastHitThisTurn` 은 두 피어가
+    ///     각자 채우는 지역 상태라 와이어는 그대로지만, 같은 입력에서 나오는 데미지가 달라진다.
+    ///     rng 소비도 그대로다(되돌려주기는 난수를 쓰지 않는다).
+    /// 12 = 변화기가 상성표를 안 탄다(전기자석파 제외). 예전엔 안 걸리던 상태가 걸리므로
+    ///     같은 입력에서 배틀이 통째로 갈라진다. rng 소비는 그대로다 — 면역으로 조기반환하던
+    ///     자리가 정상 경로로 바뀌는 것뿐이라 뽑는 횟수는 같다(명중 → 가변위력 → 급소 → 난수 폭).
+    static let rulesVersion = 12
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -671,6 +719,21 @@ enum BattleEngine {
         /// 빗나갔으면 1 — 화면이 "효과가 굉장했다" 를 띄우지 않게 한다.
         var effectiveness: Double
         var isCritical: Bool
+        /// 일격필살(지구밟기 부류). `damage` 가 이미 남은 HP 전부라 계산은 달라지지 않지만,
+        /// 상성·급소 문구를 붙이지 않는 근거로 쓴다.
+        var isOneHitKO = false
+    }
+
+    /// 공식을 타지 않는 데미지(고정·일격필살)의 결과.
+    ///
+    /// 상성은 **면역만** 본다 — 나이트헤드는 노말에게 통하지 않지만, 통할 때는 2배도 절반도 되지
+    /// 않는다. 급소·상성 문구를 막으려고 `effectiveness` 를 1 로, `isCritical` 을 false 로 둔다.
+    private static func fixedOutcome(_ amount: Int, move: MoveSpec, defender: BattleSide,
+                                     isOneHitKO: Bool = false) -> AttackOutcome {
+        let immune = TypeChart.effectiveness(move.type, against: defender.snapshot.types) == 0
+        return AttackOutcome(missed: false, damage: immune ? 0 : max(0, amount),
+                             effectiveness: immune ? 0 : 1, isCritical: false,
+                             isOneHitKO: !immune && isOneHitKO)
     }
 
     /// Gen 2 데미지 식의 앞부분 — 배율이 붙기 전의 뼈대. 기술 공격과 혼란 자멸이 같은 값을 쓴다.
@@ -702,19 +765,43 @@ enum BattleEngine {
         return withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
     }
 
-    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 급소 → 난수 폭 순서고,
-    /// 빗나가면 뒤의 둘을 소비하지 않는다. 세 모드가 이 함수 하나만 쓴다(예전엔 복사돼 있었다).
+    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 가변위력 → 급소 → 난수 폭
+    /// 순서고, 빗나가면 뒤의 셋을 소비하지 않는다. 세 모드가 이 함수 하나만 쓴다(예전엔 복사돼 있었다).
+    ///
+    /// 가변위력이 명중 바로 뒤인 이유: 매그니튜드·사이코웨이브만 여기서 난수를 한 번 더 뽑고,
+    /// 나머지 기술은 한 번도 뽑지 않는다. 자리를 뒤로 미루면 "언제 뽑는지" 가 급소·난수 폭과
+    /// 얽혀 두 피어의 소비 횟수를 눈으로 못 세게 된다.
     static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         if let chance = hitChance(of: move, attacker: attacker, defender: defender),
            Int(rng.next() % 100) >= chance {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
         }
-        // 발버둥은 무속성(상성·STAB 미적용). 위력 없는 변화기도 상성을 타지 않는다 — 상성은
-        // 공격기의 규칙이고, 노말 변화기(울음소리)가 고스트에게 안 걸리면 본가와 다른 게임이 된다.
-        // **단 상태를 거는 변화기는 그대로 본다**: 전기자석파는 땅 타입에 실패해야 한다.
+        // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
+        // 그대로 쓰면 아래 식이 데미지를 0 으로 접는다(그게 이 기술들이 죽어 있던 원인이다).
+        var power = move.power
+        switch VariableDamage.from(move, attacker: attacker, defender: defender, rng: &rng) {
+        case .power(let computed):  power = computed
+        case .fixedHP(let amount):  return fixedOutcome(amount, move: move, defender: defender)
+        case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender,
+                                                       isOneHitKO: true)
+        // 통하지 않음은 면역과 **같은 줄**로 낸다("효과가 없는 것 같다"). 데미지 0 으로 두면
+        // `applyAttack` 이 이벤트를 안 내서 기술명 한 줄만 남는다.
+        case .noEffect:             return AttackOutcome(missed: false, damage: 0,
+                                                        effectiveness: 0, isCritical: false)
+        case nil:                   break
+        }
+        // 발버둥은 무속성(상성·STAB 미적용). 변화기도 상성을 타지 않는다 — 노말↔고스트 면역은
+        // **데미지 기술의 규칙**이라, 이상한빛은 노말에게 노래는 고스트에게 통해야 한다.
+        // 상성으로 막히는 상태기(전기자석파)만 `typeBlockedStatusMoveIDs` 에 명시한다.
+        //
+        // **`move.power` 가 아니라 위에서 뽑은 `power` 를 본다.** 일렉트릭볼은 스펙상 0 이지만
+        // 공격기라 상성·STAB 를 타야 한다 — 스펙 값으로 판정하면 전기가 물에게 2배로 안 들어간다.
+        // 고정 데미지·일격필살은 이 줄에 오기 전에 `fixedOutcome` 으로 빠져나가고, 거기서 면역만
+        // 본다(카운터는 격투 데미지 기술이라 고스트에게 실패한다 — 그건 맞는 동작이다).
         let isStruggle = move.id == MoveSpec.struggleID
-        let ignoresTypeChart = isStruggle || (move.power <= 0 && move.inflictedStatus == nil)
+        let ignoresTypeChart = isStruggle
+            || (power <= 0 && !MoveSpec.typeBlockedStatusMoveIDs.contains(move.id))
         // Phase 5(특성·지닌물건)의 타입 면역 특성(부유·타오르는불꽃·저수)이 들어올 자리다.
         // 상성 배율을 계산하는 지점이 여기 한 곳뿐이다. 지금은 코드를 넣지 않는다.
         let effectiveness = ignoresTypeChart ? 1.0
@@ -740,7 +827,7 @@ enum BattleEngine {
         // Gen 2 의 계산 **순서** 그대로다. `+2` 가 급소 배율 뒤에 오고, STAB·상성은 그 뒤에 곱한다.
         // 예전 식은 `+2` 를 먼저 더한 뒤 급소 ×1.5 를 곱해 급소 데미지가 다르게 나왔다.
         // (배지·트레이너킥·날씨·기술보정은 §3.3 대로 안 가져온다.)
-        var damage = baseDamage(level: attacker.snapshot.level, power: move.power,
+        var damage = baseDamage(level: attacker.snapshot.level, power: power,
                                 attack: attack, defense: defense)
         damage = damage * (isCritical ? critMultiplier : 1) + 2
         // 위의 `effectiveness` 와 **같은 게이트**여야 한다. 예전 `!isStruggle` 은 위력 0 이
@@ -752,8 +839,8 @@ enum BattleEngine {
         damage = damage * random / 255
         // 위력 0(변화기)은 데미지가 없다. `max(1, …)` 만 두면 식의 `+2` 가 살아남아 상태기가 2 데미지를
         // 넣었다 — `learnedMoves` 는 변화기를 걸러내지 않으므로 실제로 밟히는 경로다.
-        // rng 소비는 그대로다(명중 → 급소 → 난수) — 값만 바뀌므로 `rulesVersion` 으로 막는다.
-        let dealt = (effectiveness == 0 || move.power <= 0) ? 0 : max(1, damage)
+        // rng 소비는 그대로다(명중 → 가변위력 → 급소 → 난수) — 값이 바뀌므로 `rulesVersion` 으로 막는다.
+        let dealt = (effectiveness == 0 || power <= 0) ? 0 : max(1, damage)
         return AttackOutcome(missed: false, damage: dealt,
                              effectiveness: effectiveness, isCritical: isCritical)
     }
@@ -912,6 +999,13 @@ extension BattleEngine {
         return true
     }
 
+    /// 턴이 시작될 때 "이번 턴에 맞은 것" 을 비운다.
+    ///
+    /// **`applyAttack` 을 직접 부르는 모든 턴 루프가 이걸 먼저 불러야 한다.** 한 곳만 빠지면 그
+    /// 모드에서만 카운터가 지난 턴 데미지를 되돌려준다 — 화면에는 정상으로 보이고 숫자만 틀린다.
+    /// 빠뜨림은 `VariableDamageTests.testEveryTurnLoopClearsTheIncomingHit` 이 소스에서 막는다.
+    static func beginTurn(_ side: inout BattleSide) { side.lastHitThisTurn = nil }
+
     /// 공격 1회를 해상해 양쪽 상태를 갱신하고, 그 결과를 이벤트로 남긴다.
     /// 1v1·연습·멀티가 전부 이 함수를 지나므로 **세 모드의 이벤트 어휘가 같다** — 데미지 함수를
     /// 하나로 모은 것(#46)과 배틀 상태를 `BattleSide` 로 모은 것(Phase 0)과 같은 이유다.
@@ -931,12 +1025,24 @@ extension BattleEngine {
         if outcome.missed { return events + [.miss(attackerActor)] }
         if outcome.effectiveness == 0 { return events + [.immune(defenderActor)] }
         // 급소·상성 문구가 데미지보다 먼저 온다(Showdown 순서) — 재생할 때 "급소!" 뒤에 HP 가 줄어든다.
-        if outcome.isCritical { events.append(.crit(defenderActor)) }
-        if outcome.effectiveness > 1 { events.append(.superEffective(defenderActor)) }
-        else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }
+        // 고정 데미지·일격필살은 `fixedOutcome` 이 급소를 false, 상성을 1 로 두므로 여기 안 걸린다 —
+        // 공식을 안 탄 기술에 "효과가 굉장했다" 를 붙이면 상성이 곱해진 것처럼 읽힌다.
+        //
+        // **변화기에는 급소·상성 문구를 안 붙인다.** 깎을 데미지가 없어서 배율이 아무 데도 안 쓰이는데,
+        // 전기자석파(상성표를 보는 유일한 상태기)가 물 타입에게 "효과가 굉장했다" 를 달면 마비가 2배로
+        // 걸린 것처럼 읽힌다. 무효(0배)는 위에서 이미 처리했다 — 그건 실제로 실패했다는 뜻이라 남긴다.
+        if move.damageClass != .status {
+            if outcome.isCritical { events.append(.crit(defenderActor)) }
+            if outcome.effectiveness > 1 { events.append(.superEffective(defenderActor)) }
+            else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }
+        }
         // 데미지 0(변화기)은 `.damage` 를 내보내지 않는다 — "0 데미지" 줄은 맞았는데 안 깎인 것처럼 읽힌다.
         if outcome.damage > 0 {
             defender.hp = max(0, defender.hp - outcome.damage)
+            // 되돌려주는 기술(카운터 계열)이 이번 턴에 읽는다. 잔뎀·혼란 자멸은 여기를 지나지 않으므로
+            // 기록되지 않는다 — 본가도 기술 데미지만 되돌려준다.
+            defender.lastHitThisTurn = IncomingHit(amount: outcome.damage,
+                                                   damageClass: move.damageClass)
             events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
         }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
@@ -950,6 +1056,19 @@ extension BattleEngine {
                                    attackerActor: attackerActor, defenderActor: defenderActor,
                                    rng: &rng)
         if !defender.isAlive { events.append(.faint(defenderActor)) }
+        // **변화기가 아무것도 못 했으면 그 사실을 말한다.** 데미지가 없는 기술이라 이벤트를 안 내면
+        // 로그에 기술명 한 줄만 남아 무반응이 된다 — 독가루를 강철에게 쓰면(`canBeAfflicted` 가
+        // 막는다) 정확히 그 모양이었다. 이 파일에서 세 번째로 밟는 부류라 여기서 한 번에 막는다.
+        // `.move` 하나뿐이면 부여도 랭크 변화도 없었다는 뜻이다.
+        if move.damageClass == .status, events.count == 1 {
+            events.append(.immune(defenderActor))
+        }
+        // 자폭기(命がけの突撃)는 데미지를 넣은 **뒤에** 자기가 쓰러진다. 상대보다 먼저 쓰러뜨리면
+        // 데미지 계산이 이미 끝난 뒤라 순서가 결과를 바꾸지 않지만, 로그는 때린 다음에 쓰러져야 읽힌다.
+        if VariableDamage.userFaints(after: move), attacker.isAlive {
+            attacker.hp = 0
+            events.append(.faint(attackerActor))
+        }
         return events
     }
 
@@ -1005,6 +1124,7 @@ extension BattleEngine {
     static func resolveTurn(a: inout BattleSide, b: inout BattleSide,
                             moveA: MoveSpec, moveB: MoveSpec, turn: Int,
                             rng: inout SplitMix64) -> [BattleEvent] {
+        beginTurn(&a); beginTurn(&b)
         var events: [BattleEvent] = [.turn(turn)]
         // 마비가 스피드를 깎으므로 순서 계산이 상태를 봐야 한다 — `stats.spe` 를 그대로 넘기면
         // 마비가 스탯 표시에만 남고 선공은 그대로다.
