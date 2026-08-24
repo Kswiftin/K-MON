@@ -13,6 +13,12 @@ struct DungeonRoom: Sendable, Equatable {
     let damage: Int
 }
 
+/// 격자 위 방 위치. **화면에 지도를 그리기 위한 값이 아니다** — 통로 비용과 출구 방위(`DungeonNarration`)를
+/// 만드는 데 쓴다. `y` 는 아래로 증가한다(북쪽이 `y` 가 작은 쪽).
+struct DungeonCoord: Hashable, Sendable {
+    let x: Int, y: Int
+}
+
 /// 방 사이 통로. `cost` 는 지나갈 때 깎이는 체력(1~3)이고 좌표에서 나온다.
 /// `a < b` 로 정규화해 같은 통로가 두 번 들어가지 않게 한다.
 struct DungeonEdge: Hashable, Sendable {
@@ -25,10 +31,13 @@ struct DungeonEdge: Hashable, Sendable {
     func other(than room: Int) -> Int? { room == a ? b : (room == b ? a : nil) }
 }
 
-/// 하루치 맵. 좌표는 담지 않는다 — 통로 비용을 만드는 데만 쓰고 화면에 그리지 않는다.
+/// 하루치 맵. **타일 지도는 그리지 않지만 좌표는 담는다** — 출구가 여러 개일 때 방위 없이는
+/// "미탐사" 줄이 글자까지 똑같아져 어느 길인지 구분할 수 없다(#79 사용성 결함).
 struct DungeonMap: Sendable {
     let dayKey: String
     let rooms: [DungeonRoom]
+    /// 방 번호 순 격자 좌표. 통로 비용의 근거이고, 출구 방위를 만드는 입력이다.
+    let coords: [DungeonCoord]
     let edges: [DungeonEdge]
     /// 시작 방에서 보스까지 이어지는 경로. **클리어 가능성의 근거**라 생성 결과로 남긴다
     /// (기본 예산 100 으로 이 경로만 따라가면 여유를 남기고 도달한다). 화면에는 쓰지 않는다.
@@ -106,23 +115,23 @@ enum PuzzleDungeon {
 
         let rooms = placeRooms(spine: spine, coords: coords, &rng)
         let affinity = PokemonType.allCases[Int(rng.next() % UInt64(PokemonType.allCases.count))]
-        return DungeonMap(dayKey: dayKey, rooms: rooms,
+        return DungeonMap(dayKey: dayKey, rooms: rooms, coords: coords,
                           edges: edges.sorted { ($0.a, $0.b) < ($1.a, $1.b) },
                           spine: spine, affinity: affinity, mstEdgeCount: mstEdgeCount)
     }
 
     // MARK: 좌표·통로
 
-    private static func pickCoordinates(_ rng: inout SplitMix64) -> [(x: Int, y: Int)] {
+    private static func pickCoordinates(_ rng: inout SplitMix64) -> [DungeonCoord] {
         var cells = Array(0..<(gridSide * gridSide))
         for i in stride(from: cells.count - 1, to: 0, by: -1) {
             cells.swapAt(i, Int(rng.next() % UInt64(i + 1)))
         }
-        return cells.prefix(roomCount).map { (x: $0 % gridSide, y: $0 / gridSide) }
+        return cells.prefix(roomCount).map { DungeonCoord(x: $0 % gridSide, y: $0 / gridSide) }
     }
 
     /// 통로 길이 1~3. 격자 거리를 그대로 쓰면 최대 10 이라 통로만으로 예산이 사라진다.
-    private static func corridorCost(_ coords: [(x: Int, y: Int)], _ a: Int, _ b: Int) -> Int {
+    private static func corridorCost(_ coords: [DungeonCoord], _ a: Int, _ b: Int) -> Int {
         let distance = abs(coords[a].x - coords[b].x) + abs(coords[a].y - coords[b].y)
         return min(3, max(1, (distance + 1) / 3))
     }
@@ -140,7 +149,7 @@ enum PuzzleDungeon {
 
     /// 척추에 없는 방을 최소 비용으로 붙인다(Prim). 씨앗은 척추 전체다.
     private static func connectAll(_ edges: inout Set<DungeonEdge>,
-                                   coords: [(x: Int, y: Int)], seeded: Set<Int>) {
+                                   coords: [DungeonCoord], seeded: Set<Int>) {
         var inTree = seeded
         while inTree.count < roomCount {
             var best: (from: Int, to: Int, cost: Int)?
@@ -163,7 +172,7 @@ enum PuzzleDungeon {
     /// 버린 간선의 10~20% 를 되살린다. 트리만 두면 순환이 없어 모든 가지가 막다른 길이고
     /// 되돌아오기밖에 할 게 없다 — 순환이 있어야 경로 선택이 판단이 된다.
     private static func addExtraEdges(_ edges: inout Set<DungeonEdge>,
-                                      coords: [(x: Int, y: Int)], _ rng: inout SplitMix64) {
+                                      coords: [DungeonCoord], _ rng: inout SplitMix64) {
         var discarded: [DungeonEdge] = []
         for a in 0..<roomCount {
             for b in (a + 1)..<roomCount {
@@ -199,7 +208,7 @@ enum PuzzleDungeon {
         return (0..<count).map { each + ($0 < remainder ? 1 : 0) }
     }
 
-    private static func placeRooms(spine: [Int], coords: [(x: Int, y: Int)],
+    private static func placeRooms(spine: [Int], coords: [DungeonCoord],
                                    _ rng: inout SplitMix64) -> [DungeonRoom] {
         let boss = spine[spine.count - 1]
         let interior = Array(spine.dropFirst().dropLast())

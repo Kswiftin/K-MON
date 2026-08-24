@@ -999,6 +999,85 @@ struct L {
         t("통로 \(cost)", "corridor \(cost)", "通路 \(cost)")
     }
     var dungeonSpringSpent: String { t("(사용됨)", "(spent)", "（使用済み）") }
+    var dungeonSpringUnused: String { t("(아직)", "(unused)", "（未使用）") }
+
+    /// 방 이름 — **정체를 암시하지 않는 중립 명사만** 쓴다. 이름은 안개와 무관하게 항상 보여
+    /// 미탐사 방도 서로 구분되게 하는 값이라, 이름이 종류를 흘리면 퍼즐이 앉은 자리에서 풀린다.
+    /// 슬롯 수(`DungeonNarration.roomNameSlots`)는 방 수보다 커서 한 맵에 같은 이름이 없다.
+    func dungeonRoomTitle(_ slot: Int) -> String {
+        switch slot % DungeonNarration.roomNameSlots {
+        case 0: return t("이끼 낀 방", "Mossy Room", "こけのへや")
+        case 1: return t("무너진 회랑", "Collapsed Hall", "くずれた回廊")
+        case 2: return t("마른 우물방", "Dry Well Room", "かれ井戸のへや")
+        case 3: return t("돌기둥 방", "Pillared Room", "石柱のへや")
+        case 4: return t("좁은 굴", "Narrow Burrow", "せまいあな")
+        case 5: return t("낮은 천장방", "Low Ceiling Room", "低い天井のへや")
+        case 6: return t("높은 천장방", "High Ceiling Room", "高い天井のへや")
+        case 7: return t("재가 쌓인 방", "Ash-Filled Room", "灰のへや")
+        case 8: return t("금 간 벽방", "Cracked Wall Room", "ひび割れた壁のへや")
+        case 9: return t("모래 방", "Sand Room", "すなのへや")
+        case 10: return t("쇠창살 방", "Iron Grate Room", "鉄格子のへや")
+        case 11: return t("부러진 다리방", "Broken Bridge Room", "こわれた橋のへや")
+        case 12: return t("그림자 방", "Shadowed Room", "かげのへや")
+        case 13: return t("뿌리 방", "Root Room", "ねっこのへや")
+        case 14: return t("자갈 방", "Gravel Room", "じゃりのへや")
+        default: return t("기울어진 방", "Tilted Room", "かたむいたへや")
+        }
+    }
+
+    func dungeonDirectionName(_ direction: DungeonDirection) -> String {
+        switch direction {
+        case .north: return t("북", "N", "北")
+        case .northEast: return t("북동", "NE", "北東")
+        case .east: return t("동", "E", "東")
+        case .southEast: return t("남동", "SE", "南東")
+        case .south: return t("남", "S", "南")
+        case .southWest: return t("남서", "SW", "南西")
+        case .west: return t("서", "W", "西")
+        case .northWest: return t("북서", "NW", "北西")
+        }
+    }
+
+    /// 헤더 오른쪽 — **기억과 이번 시도를 갈라 쓴다.** 하나로 합치면 지난 시도 기억까지 세어
+    /// 시작하자마자 "8/14" 로 뜨고, 이번 판 진행도로 읽힌다.
+    func dungeonProgressLine(remembered: Int, total: Int, attemptRooms: Int) -> String {
+        t("기억 \(remembered)/\(total) · 이번 시도 \(attemptRooms)방",
+          "Known \(remembered)/\(total) · this run \(attemptRooms)",
+          "記憶 \(remembered)/\(total)・今回 \(attemptRooms)へや")
+    }
+
+    /// 서술 줄 — 밝혀진 사실만 말한다. 물소리는 **아직 마시지 않은** 샘이 인접해 밝혀졌을 때만.
+    func dungeonSceneLine(_ note: DungeonSceneNote) -> String {
+        var parts = [t("\(dungeonRoomName(note.kind))이다.",
+                       "\(dungeonRoomName(note.kind)).",
+                       "\(dungeonRoomName(note.kind))だ。")]
+        if let spring = note.springDirection {
+            let name = dungeonDirectionName(spring)
+            parts.append(t("\(name)쪽에서 물소리가 난다.",
+                           "Water murmurs to the \(name).",
+                           "\(name)のほうから水音がする。"))
+        }
+        if note.darkExitCount > 0 {
+            parts.append(t("아직 어두운 길이 \(note.darkExitCount)개.",
+                           "\(note.darkExitCount) paths still dark.",
+                           "まだ暗い道が\(note.darkExitCount)つ。"))
+        }
+        return parts.joined(separator: " ")
+    }
+
+    var dungeonExitsFresh: String { t("새 길", "New paths", "あたらしい道") }
+    var dungeonExitsBack: String { t("되돌아가기", "Back the way you came", "もどる") }
+    /// 시작 방은 출구가 8개까지 나온다 — 다 펼치면 목록이 화면 절반을 먹는다.
+    func dungeonMoreExits(_ count: Int) -> String {
+        t("\(count)개 더 보기", "\(count) more", "あと\(count)つ")
+    }
+    /// 통로 비용만으로 쓰러지는 길. 방 내용은 들어가야 알 수 있으니 통로만 두고 경고한다.
+    var dungeonLethalExit: String { t("이 통로에서 쓰러진다", "This corridor would fell you", "この通路でたおれる") }
+    var dungeonTrailTitle: String { t("지나온 길", "Where you walked", "歩いた道") }
+    /// 지나온 길의 체력 변화 묶음 — 음수는 소모, 양수는 회복.
+    func dungeonDeltaList(_ deltas: [Int]) -> String {
+        deltas.map { $0 < 0 ? "−\(-$0)" : "+\($0)" }.joined(separator: " ")
+    }
     /// 로그 한 줄 — 코어는 값(`DungeonEvent`)만 남기고 문구는 여기서 만든다.
     func dungeonEventLine(_ event: DungeonEvent) -> String {
         switch event {
