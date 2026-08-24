@@ -8,7 +8,9 @@ import Foundation
 ///
 /// 모르는 슬러그는 `nil` 이고, `nil` 은 특성이 없는 것과 **완전히 같게** 동작한다 — ailment 14종과
 /// 같은 규칙이다(조용히 삼키지 않되 배틀은 바꾸지 않는다).
-enum BattleAbility: String, Codable, Sendable, Equatable, CaseIterable {
+/// 와이어에 실리는 건 **슬러그 문자열**(`BattleSnapshot.ability`)이라 이 타입은 `Codable` 이 아니다 —
+/// 여기에 case 를 늘려도 스냅샷 계약은 그대로다.
+enum BattleAbility: String, Sendable {
     case levitate
     case flashFire = "flash-fire"
     case voltAbsorb = "volt-absorb"
@@ -64,7 +66,7 @@ enum BattleAbility: String, Codable, Sendable, Equatable, CaseIterable {
         slug.flatMap(BattleAbility.init(rawValue:))
     }
 
-    /// 와이어 상한 — 특성은 상대가 보내오는 **문자열**이라 숫자와 같은 경계가 필요하다.
-    /// 도감 최장 슬러그(`as-one-shadow-rider`, 19자)의 두 배로 잡는다.
+    /// 와이어 상한(**UTF-8 바이트**) — 특성은 상대가 보내오는 **문자열**이라 숫자와 같은 경계가
+    /// 필요하다. 도감 최장 슬러그(`as-one-shadow-rider`, 19바이트)의 두 배로 잡는다.
     static let maxSlugLength = 40
 }

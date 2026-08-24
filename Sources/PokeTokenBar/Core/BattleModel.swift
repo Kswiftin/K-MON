@@ -434,9 +434,9 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     /// case 를 늘릴 때 스냅샷 계약을 다시 바꾸지 않아도 된다. 모르는 값은 해석 시점에 `nil` 로 접힌다.
     /// 세이브에는 없다 — 특성은 종에서 파생되므로 저장할 값이 아니다.
     ///
-    /// 선언 순서가 `weightHectograms` **앞**인 건 우연이 아니다. 스냅샷을 만드는 네 자리가 특성을
-    /// 싣는지를 소스 스캔으로 지키는데(`BattleAbilityTests`), 그 스캔이 "무게 인자 앞에 특성 인자가
-    /// 있는가" 로 읽는다 — 뒤로 옮기면 스캔이 인자 목록의 끝을 못 찾는다.
+    /// 스냅샷을 만드는 네 자리가 이 값을 싣는지는
+    /// `VariableDamageTests.testEveryBattleSnapshotSiteCarriesTheWireOnlyFields` 가 소스에서 센다
+    /// (인자 이름만 보므로 선언 순서는 자유다). 전부 기본값 `nil` 이라 빠뜨려도 컴파일은 통과한다.
     var ability: String? = nil
     /// 헥토그램(0.1kg). 체중으로 위력이 정해지는 기술이 본다.
     ///
@@ -613,8 +613,17 @@ struct BattleSide: Sendable, Equatable {
     /// 전기 타입의 마비 면역, 풀 타입의 가루 면역은 Gen 6 규칙이라 여기 없다.
     func canBeAfflicted(by status: Status) -> Bool {
         guard isAlive else { return false }
-        // 상태 면역 특성은 **여기 한 곳**에서 갈린다. 타입 면역과 자리가 다른 이유는 판정 기준이
+        // 주 상태와 혼란의 면역 특성은 여기서 갈린다. 타입 면역과 자리가 다른 이유는 판정 기준이
         // 달라서다 — 저기는 기술 타입, 여기는 걸리는 상태다(그래서 상성표를 안 타는 최면술도 막힌다).
+        //
+        // **풀죽음은 여기를 지나지 않는다.** `applySecondaryEffect` 가 `flinched` 를 직접 쓰고,
+        // 이 함수는 `.flinch` 를 무조건 false 로 접는다(아래 줄). 지금은 풀죽음을 막는 특성이
+        // 없어서 그 차이가 화면에 안 드러날 뿐이다.
+        //
+        // ponytail: 정신력(Inner Focus)은 `blocks` 에 case 를 더하는 것으로는 **안 걸린다** —
+        //           컴파일도 되고 읽히기도 맞게 읽히는데 아무 일도 안 한다. 넣으려면 풀죽음 쓰기를
+        //           먼저 이 함수로 끌어오고(`.flinch` 조기 false 도 같이 걷어낸다), 그 자리에
+        //           rng 소비가 붙지 않는지 확인한다.
         if ability?.blocks(status) == true { return false }
         if status == .confusion { return !isConfused }
         if status == .flinch { return false }
@@ -800,9 +809,19 @@ enum BattleEngine {
     /// 읽는 쪽이 없는데 다단 루프까지 전파해야 하는 값이 된다
     /// (`VariableDamageTests.testAOneHitKOSuppressesTheCritAndEffectivenessLines` 가 억제를 잠근다).
     private static func fixedOutcome(_ amount: Int, move: MoveSpec, defender: BattleSide) -> AttackOutcome {
-        let immune = TypeChart.effectiveness(move.type, against: defender.snapshot.types) == 0
+        let immune = typeMultiplier(of: move, against: defender) == 0
         return AttackOutcome(missed: false, damage: immune ? 0 : max(0, amount),
                              effectiveness: immune ? 0 : 1, isCritical: false)
+    }
+
+    /// 이 기술이 이 상대에게 몇 배인가 — 상성표와 타입 면역 특성(부유·타오르는불꽃·저수·전기흡수)을
+    /// **한 함수**에서 본다.
+    ///
+    /// 공식을 타는 히트(`resolveSingleHit`)와 안 타는 히트(`fixedOutcome`)가 각자 상성을 보던 동안
+    /// 부유는 지진을 막고 갈라진땅은 못 막았다 — 특성이 붙는 갈림길은 여기 하나여야 한다.
+    static func typeMultiplier(of move: MoveSpec, against defender: BattleSide) -> Double {
+        if defender.ability?.immuneMoveType == move.type { return 0 }
+        return TypeChart.effectiveness(move.type, against: defender.snapshot.types)
     }
 
     /// Gen 2 데미지 식의 앞부분 — 배율이 붙기 전의 뼈대. 기술 공격과 혼란 자멸이 같은 값을 쓴다.
@@ -888,6 +907,12 @@ enum BattleEngine {
         case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender)
         // 통하지 않음은 면역과 **같은 줄**로 낸다("효과가 없는 것 같다"). 데미지 0 으로 두면
         // `applyAttack` 이 이벤트를 안 내서 기술명 한 줄만 남는다.
+        //
+        // ponytail: 그래서 **실패와 면역이 `effectiveness == 0` 하나로 합쳐진다.** 흡수 특성은
+        //           그 값 하나로 갈리므로, 물·전기 기술이 이 자리로 오면 저수·전기흡수가 실패한
+        //           기술에서 회복한다. 오늘 `.noEffect` 로 오는 기술은 격투·풀·강철·불꽃·에스퍼·
+        //           땅·노말·얼음뿐이라 밟는 경로가 0 이다 — 물·전기가 하나라도 생기면 `AttackOutcome`
+        //           에서 실패를 면역과 갈라야 한다(0배 하나로는 구별할 수 없다).
         case .noEffect:             return AttackOutcome(missed: false, damage: 0,
                                                         effectiveness: 0, isCritical: false)
         case nil:                   break
@@ -903,15 +928,12 @@ enum BattleEngine {
         let isStruggle = move.id == MoveSpec.struggleID
         let ignoresTypeChart = isStruggle
             || (power <= 0 && !MoveSpec.typeBlockedStatusMoveIDs.contains(move.id))
-        // 타입 면역 특성(부유·타오르는불꽃·저수·전기흡수)은 **여기 한 곳**에서 갈린다 — 상성 배율을
-        // 내는 줄이 이것뿐이라 모드마다 특성이 달라질 수 없다. rng 를 안 쓰므로 소비 순서도 그대로다.
+        // 상성과 타입 면역 특성은 `typeMultiplier` 한 곳에서 갈린다 — 공식을 안 타는 히트
+        // (`fixedOutcome`)도 같은 함수를 본다. rng 를 안 쓰므로 소비 순서는 그대로다.
         //
         // 상성표를 안 보는 기술(발버둥·변화기)은 특성도 안 본다. 부유가 발버둥을 막으면 PP 가 마른
         // 쪽이 아무것도 못 하게 되고, 그 상태로는 배틀이 끝나지 않는다.
-        let blockedByAbility = defender.ability?.immuneMoveType == move.type
-        let effectiveness = ignoresTypeChart ? 1.0
-            : (blockedByAbility ? 0
-                : TypeChart.effectiveness(move.type, against: defender.snapshot.types))
+        let effectiveness = ignoresTypeChart ? 1.0 : typeMultiplier(of: move, against: defender)
         let isPhysical = move.damageClass == .physical
         let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
         // 급소는 **불리한 랭크만** 무시한다(Gen 3+): 공격측의 마이너스와 방어측의 플러스가 빠진다.
@@ -1111,6 +1133,17 @@ extension BattleEngine {
         return true
     }
 
+    /// 만피를 넘지 않게 잘라 회복하고 **실제로 찬 만큼**만 줄을 낸다. 0 회복 줄은 로그가 거짓말을 한다.
+    ///
+    /// 드레인(기술)과 흡수 특성이 같은 자름을 두 벌 들고 있으면 한쪽만 고치게 된다 — 자름이 빠진
+    /// 쪽은 만피를 넘겨 회복하고, 그 뒤로는 HP 바가 최대치보다 길게 그려진다.
+    private static func heal(_ side: inout BattleSide, actor: BattleActor, upTo amount: Int) -> [BattleEvent] {
+        let healed = min(side.stats.hp - side.hp, amount)
+        guard healed > 0 else { return [] }
+        side.hp += healed
+        return [.heal(actor, amount: healed)]
+    }
+
     /// 턴이 시작될 때 "이번 턴에 맞은 것" 을 비운다.
     ///
     /// **`applyAttack` 을 직접 부르는 모든 턴 루프가 이걸 먼저 불러야 한다.** 한 곳만 빠지면 그
@@ -1136,18 +1169,15 @@ extension BattleEngine {
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
         if outcome.missed { return events + [.miss(attackerActor)] }
         if outcome.effectiveness == 0 {
+            events.append(.immune(defenderActor))
             // 흡수 특성(저수·전기흡수)은 무효 **위에** 회복을 얹는다. 만피면 회복량이 0 이라 줄을
             // 내지 않지만 무효는 그대로다 — 회복만 확인하면 만피에서 데미지가 들어가도 초록이다.
             // 부유처럼 흡수가 아닌 면역은 여기 안 걸린다(면역 전부를 회복으로 만들면 안 된다).
-            var absorbed: [BattleEvent] = []
-            if defender.ability?.absorbs(move.type) == true {
-                let amount = min(defender.stats.hp - defender.hp, defender.stats.hp / 4)
-                if amount > 0 {
-                    defender.hp += amount
-                    absorbed.append(.heal(defenderActor, amount: amount))
-                }
+            // 쓰러진 쪽은 회복하지 않는다 — 이 파일의 다른 회복·부여가 전부 `isAlive` 를 먼저 본다.
+            if defender.isAlive, defender.ability?.absorbs(move.type) == true {
+                events += heal(&defender, actor: defenderActor, upTo: defender.stats.hp / 4)
             }
-            return events + [.immune(defenderActor)] + absorbed
+            return events
         }
         if outcome.hits > 1 { events.append(.multiHit(attackerActor, hits: outcome.hits)) }
         // 급소·상성 문구가 데미지보다 먼저 온다(Showdown 순서) — 재생할 때 "급소!" 뒤에 HP 가 줄어든다.
@@ -1178,8 +1208,7 @@ extension BattleEngine {
             // 다단기는 합계로 한 번만 계산한다. 히트마다 회복하면 로그가 다섯 줄이 된다.
             let percent = move.drainPercent
             if percent > 0 {
-                let amount = min(attacker.stats.hp - attacker.hp, outcome.damage * percent / 100)
-                if amount > 0 { attacker.hp += amount; events.append(.heal(attackerActor, amount: amount)) }
+                events += heal(&attacker, actor: attackerActor, upTo: outcome.damage * percent / 100)
             } else if percent < 0 {
                 let amount = max(1, outcome.damage * -percent / 100)
                 attacker.hp = max(0, attacker.hp - amount)

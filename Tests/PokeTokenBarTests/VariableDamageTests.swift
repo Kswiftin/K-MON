@@ -344,8 +344,10 @@ final class VariableDamageTests: XCTestCase {
     /// 축마다 스캔을 따로 두지 않는다 — 같은 순회를 두 벌 들고 있으면 새 자리가 생겼을 때
     /// 한쪽만 고치게 된다. 새 옵셔널 축은 이 배열에 이름만 더한다.
     func testEveryBattleSnapshotSiteCarriesTheWireOnlyFields() throws {
-        // 인자 목록 전체를 담을 만큼 넉넉해야 한다. 창이 짧으면 **있는데 없다고** 읽는다
-        // (체육관 스냅샷이 특성 인자가 붙으면서 400자를 넘겨 실제로 그렇게 실패했다).
+        // 창은 **양쪽으로** 틀릴 수 있다. 짧으면 인자 목록을 다 못 담아 **있는데 없다고** 읽고
+        // (체육관 스냅샷이 특성 인자가 붙으면서 400자를 넘겨 실제로 그렇게 실패했다), 길면
+        // **다음 호출의 인자**를 이 호출 것으로 읽어 빠뜨림을 덮는다. 그래서 다음 `BattleSnapshot(`
+        // 앞에서 먼저 자르고, 남은 길이만 이 상한으로 다시 자른다.
         let window = 800
         let required = ["weightHectograms:", "ability:"]
         let sources = URL(fileURLWithPath: #filePath)
@@ -360,7 +362,9 @@ final class VariableDamageTests: XCTestCase {
             // `BattleSnapshot(` 로 시작하는 호출 하나를 인자 목록 끝까지 훑는다.
             var rest = Substring(text)
             while let start = rest.range(of: "BattleSnapshot(") {
-                let call = rest[start.upperBound...].prefix(window)
+                let after = rest[start.upperBound...]
+                let end = after.range(of: "BattleSnapshot(")?.lowerBound ?? after.endIndex
+                let call = after[..<end].prefix(window)
                 sites += 1
                 for field in required where !call.contains(field) {
                     gaps.append("\(url.lastPathComponent): \(field)")

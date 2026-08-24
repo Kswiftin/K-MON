@@ -194,10 +194,14 @@ enum MultiplayerValidation {
     /// 특성 슬러그 범위. **문자열도 신뢰경계다** — 숫자만 자르면 500자 슬러그가 라운드 메시지마다
     /// 실려 나간다. 빈 문자열도 막는다("특성이 없다"는 `nil` 하나로만 표현한다).
     ///
+    /// **글자 수가 아니라 바이트로 잰다.** `count` 는 grapheme 을 세므로 40 글자가 수 KB 일 수 있고
+    /// (ZWJ 이모지 한 글자가 수십 바이트다), 스냅샷은 `roundResolved` 로 매 라운드 참가자 수만큼
+    /// 다시 나간다 — 막으려던 증폭이 상한을 지킨 채로 그대로 일어난다.
+    ///
     /// 모르는 슬러그는 **여기서 거르지 않는다.** 해석 시점(`BattleAbility.resolve`)에 `nil` 로 접혀
     /// 배틀을 안 바꾸고, 여기서 거르면 신버전 피어가 특성을 하나 늘릴 때마다 입장 자체가 거절된다.
     static func validAbility(_ slug: String?) -> Bool {
-        slug.map { !$0.isEmpty && $0.count <= BattleAbility.maxSlugLength } ?? true
+        slug.map { !$0.isEmpty && $0.utf8.count <= BattleAbility.maxSlugLength } ?? true
     }
 
     /// 상대 무브셋 범위 검사. **1v1 LAN 도 이 함수를 쓴다** — 방에만 두면 1v1 이 무검사가 된다.

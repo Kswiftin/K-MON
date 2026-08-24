@@ -77,6 +77,25 @@ final class BattleAbilityTests: XCTestCase {
         XCTAssertLessThan(wrongType.hp, 10, "저수는 전기를 흡수하지 않는다")
     }
 
+    /// 공식을 **안 타는** 히트(고정 데미지·일격필살)도 면역은 탄다. `fixedOutcome` 이 상성표만 보던
+    /// 동안 부유는 지진을 막고 갈라진땅은 못 막았다 — 상성 배율을 내는 자리가 두 곳이었다는 뜻이고,
+    /// 데미지 기술만으로 테스트하면 그 두 번째 자리를 한 번도 안 밟는다.
+    func testAFixedDamageMoveStillRespectsAbilityImmunity() {
+        let fissure = MoveSpec(id: VariableDamage.MoveID.fissure, names: ["en": "Fissure"],
+                               type: .ground, power: 0, damageClass: .physical, accuracy: nil, pp: 5)
+        let floating = hit(defender: snapshot(ability: "levitate"), with: fissure)
+        XCTAssertEqual(floating.hp, floating.maxHP, "부유는 갈라진땅도 막는다")
+        XCTAssertTrue(floating.events.contains(.immune(.b)))
+
+        // 대조군: 특성이 없으면 일격필살이 그대로 들어간다(면역이 아니라 기술이 죽은 게 아니다).
+        let grounded = hit(defender: snapshot(), with: fissure)
+        XCTAssertEqual(grounded.hp, 0, "특성이 없으면 갈라진땅은 그대로 쓰러뜨린다")
+
+        // 부유는 흡수가 아니다 — 막은 자리에서 회복이 따라붙으면 안 된다.
+        let hurt = hit(defender: snapshot(ability: "levitate"), with: fissure, defenderHP: 10)
+        XCTAssertEqual(hurt.hp, 10)
+    }
+
     /// 부유가 무효로 만든 기술은 흡수가 아니다 — 무효 전부를 회복으로 만들면 부유가 회복 특성이 된다.
     func testANonAbsorbingImmunityDoesNotHeal() {
         let floating = hit(defender: snapshot(ability: "levitate"), with: attack(.ground), defenderHP: 10)
@@ -150,6 +169,12 @@ final class BattleAbilityTests: XCTestCase {
              (slug: "overgrow", isHidden: false, slot: 1)]), "overgrow")
         XCTAssertNil(PokemonSpeciesIdentity.primaryAbilitySlug(
             [(slug: "chlorophyll", isHidden: true, slot: 3)]))
+
+        // **slot 이 배열 순서와 어긋난 경우.** 이게 없으면 `min(slot)` 을 `first` 로 써도 통과한다 —
+        // PokéAPI 가 `abilities` 를 slot 순으로 준다는 보장이 계약에 없다.
+        XCTAssertEqual(PokemonSpeciesIdentity.primaryAbilitySlug(
+            [(slug: "shield-dust", isHidden: false, slot: 2),
+             (slug: "run-away", isHidden: false, slot: 1)]), "run-away")
     }
 
     // MARK: 신뢰경계
