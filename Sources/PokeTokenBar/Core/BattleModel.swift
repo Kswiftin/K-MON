@@ -301,7 +301,17 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 상태를 거는 확률(%).
     var ailmentChancePercent: Int { chancePercent(ailmentChance) }
     var drainPercent: Int { min(100, max(-100, drain ?? 0)) }
-    var flinchPercent: Int { min(100, max(0, flinchChance ?? 0)) }
+
+    /// 풀린치 확률(%) — **상한이 있다.** 도감에서 `flinch_chance` 가 30 을 넘는 기술은 속임수(252)
+    /// 하나뿐이고, 그 100% 는 "교체하고 나온 **첫 턴에만**" 이라는 게이트와 한 몸이다. 게이트가
+    /// 없는 엔진에서 100 을 그대로 쓰면 우선도 +3 이 늘 선공을 보장하므로 **상대가 배틀 내내 한 번도
+    /// 움직이지 못한다**(냐옹이 레벨 1 습득기라 실제로 뽑힌다). 첫 턴 게이트를 만들려면 개체가
+    /// 필드에 나온 턴 수를 `BattleSide` 가 들고 교체·자동 출전이 그걸 리셋해야 한다.
+    ///
+    /// ponytail: 상한 30 은 "게이트 없는 기술들이 쓰는 최대치" 다 — 첫 턴 게이트를 구현하면 이
+    ///           클램프를 지우고 속임수에 게이트를 태운다.
+    static let flinchChanceCap = 30
+    var flinchPercent: Int { min(Self.flinchChanceCap, max(0, flinchChance ?? 0)) }
     func hitCount(rng: inout SplitMix64) -> Int {
         let low = min(10, max(1, minHits ?? 1))
         let high = min(10, max(low, maxHits ?? low))
@@ -371,11 +381,17 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     }
 
     /// 발버둥 — PP 전부 소진 시 폴백(무속성 취급은 엔진에서 id 로 판정).
+    ///
+    /// **반동이 이 기술의 본질이다.** 넣은 데미지의 1/4 을 자기가 받는다(Gen 2·3 규칙 —
+    /// 이 파일이 따르는 세대다). 반동 축(`drain` 음수)이 없던 동안은 표현할 방법이 없어
+    /// 대가 없는 위력 50 무상성기였고, PP 가 마르면 오히려 더 나은 선택이 됐다.
+    /// 합성 기술이라 `moveDetail` 이 채워 줄 수 없으니 여기에 직접 박는다.
     static let struggleID = -999
     static func struggle() -> MoveSpec {
         MoveSpec(id: struggleID,
                  names: ["ko": "발버둥", "en": "Struggle", "ja": "わるあがき"],
-                 type: .normal, power: 50, damageClass: .physical, accuracy: nil, pp: 999)
+                 type: .normal, power: 50, damageClass: .physical, accuracy: nil, pp: 999,
+                 drain: -25)
     }
 
     /// 기술 fetch 실패 시 합성 무브셋 — 자기 타입 기반 4개(대전 자체는 항상 가능해야 한다).
@@ -489,7 +505,6 @@ enum Status: String, Codable, Sendable, Equatable, CaseIterable {
 enum DamageCause: String, Codable, Sendable, Equatable {
     case move, burn, poison, toxic, confusion, recoil
 }
-enum HealCause: String, Codable, Sendable, Equatable { case drain, ability }
 
 // MARK: - 배틀 중 한쪽의 상태
 
@@ -733,8 +748,9 @@ enum BattleEngine {
             side.status = .poison
             side.statusCounter = 0
         }
-        // 혼란은 volatile — 다시 나왔을 때 이전 카운터를 이어 가지 않는다.
+        // 혼란·풀죽음은 volatile — 다시 나왔을 때 이전 상태를 이어 가지 않는다.
         side.confusionTurns = 0
+        side.flinched = false
         // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
         // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.
         side.resetStages()
@@ -755,7 +771,8 @@ enum BattleEngine {
         var hits = 1
         /// **마지막 히트**가 넣은 데미지. 되돌려주는 기술(카운터·미러코트·메탈버스트)이 이 값을 읽는다 —
         /// 본가는 마지막 히트만 되돌려주므로 합계를 주면 되돌아오는 데미지가 히트 수만큼 뻥튀기된다.
-        /// 단발기는 `damage` 와 같아서 `nil` 이고, 읽는 쪽이 `?? damage` 로 접는다.
+        /// `resolveAttack` 은 늘 채우고(단발기는 `damage` 와 같은 값), 히트 하나를 그대로 돌려주는
+        /// 내부 경로(`resolveSingleHit`·`fixedOutcome`)만 `nil` 이라 읽는 쪽이 `?? damage` 로 접는다.
         var lastHitDamage: Int? = nil
     }
 
@@ -824,7 +841,7 @@ enum BattleEngine {
         // 이미 쓰러진 상대를 남은 횟수만큼 계속 때린다.
         var remaining = defender.hp
         var total = 0, actualHits = 0, lastHit = 0
-        var effectiveness = 1.0, critical = false
+        var effectiveness = 1.0, critical = false, oneHitKO = false
         for _ in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move, rng: &rng)
             total += one.damage
@@ -833,10 +850,14 @@ enum BattleEngine {
             lastHit = one.damage
             effectiveness = one.effectiveness
             critical = critical || one.isCritical
+            // 일격필살 플래그는 **여기서 접어 올려야 한다.** 히트 결과를 새 값으로 다시 만들면서
+            // 안 옮기면 `fixedOutcome` 이 세운 플래그가 조용히 false 로 접힌다.
+            oneHitKO = oneHitKO || one.isOneHitKO
             if one.effectiveness == 0 { break }
         }
         return AttackOutcome(missed: false, damage: total, effectiveness: effectiveness,
-                             isCritical: critical, hits: actualHits, lastHitDamage: lastHit)
+                             isCritical: critical, isOneHitKO: oneHitKO,
+                             hits: actualHits, lastHitDamage: lastHit)
     }
 
     /// 히트 하나. 다단기는 이 함수를 히트마다 부르므로 급소·난수 폭이 히트별로 독립이다
@@ -948,7 +969,10 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 실제로 깎인 양. 남은 HP 는 싣지 않는다 — 뷰는 `BattleSide.hp` 를 그대로 읽으므로 읽는 데가
     /// 없다. 재생 애니메이션(Phase 7)이 바를 보간할 때 필요해지면 그때 붙인다.
     case damage(BattleActor, amount: Int, cause: DamageCause)
-    case heal(BattleActor, amount: Int, cause: HealCause)
+    /// 회복량. **원인은 싣지 않는다** — 문구가 원인으로 갈리지 않고(바로 앞 줄의 기술명이 이미
+    /// 말한다) 지금 이걸 내는 건 드레인 하나뿐이다. 특성 흡수(Phase 5)처럼 문구를 갈라야 하는
+    /// 두 번째 발신자가 생기면 그때 원인을 붙인다 — 아무도 밟지 않는 분기를 미리 두지 않는다.
+    case heal(BattleActor, amount: Int)
     case multiHit(BattleActor, hits: Int)
     case faint(BattleActor)
     /// 새 개체가 필드에 나왔다 — 자기 교체(턴 머리)와 기절 자동 출전(턴 끝) 양쪽이 이 case 다.
@@ -1123,12 +1147,13 @@ extension BattleEngine {
             let percent = move.drainPercent
             if percent > 0 {
                 let amount = min(attacker.stats.hp - attacker.hp, outcome.damage * percent / 100)
-                if amount > 0 { attacker.hp += amount; events.append(.heal(attackerActor, amount: amount, cause: .drain)) }
+                if amount > 0 { attacker.hp += amount; events.append(.heal(attackerActor, amount: amount)) }
             } else if percent < 0 {
                 let amount = max(1, outcome.damage * -percent / 100)
                 attacker.hp = max(0, attacker.hp - amount)
                 events.append(.damage(attackerActor, amount: amount, cause: .recoil))
-                if !attacker.isAlive { events.append(.faint(attackerActor)) }
+                // 기절 줄은 여기서 내지 않는다 — `.faint` 는 2차효과·랭크 뒤(맨 뒤)가 이 파일의
+                // 순서다. 여기서 내면 "때린 쪽이 쓰러졌다 → 맞은 쪽이 독에 걸렸다" 로 읽힌다.
             }
         }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
@@ -1142,6 +1167,9 @@ extension BattleEngine {
                                    attackerActor: attackerActor, defenderActor: defenderActor,
                                    rng: &rng)
         if !defender.isAlive { events.append(.faint(defenderActor)) }
+        // 반동으로 때린 쪽이 쓰러졌으면 맞은 쪽 **뒤에** 적는다(Showdown 순서). 여기 오기 전에
+        // 공격측이 죽는 길은 반동뿐이다 — 혼란 자멸은 `canAct` 에서 조기반환한다.
+        if !attacker.isAlive { events.append(.faint(attackerActor)) }
         // **변화기가 아무것도 못 했으면 그 사실을 말한다.** 데미지가 없는 기술이라 이벤트를 안 내면
         // 로그에 기술명 한 줄만 남아 무반응이 된다 — 독가루를 강철에게 쓰면(`canBeAfflicted` 가
         // 막는다) 정확히 그 모양이었다. 이 파일에서 세 번째로 밟는 부류라 여기서 한 번에 막는다.

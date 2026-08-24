@@ -327,12 +327,15 @@ actor PokeAPIClient: PokeProviding {
                 guard let spec = try? await moveDetail(named: name) else { continue }
                 // 변화기도 들이되 후보는 **두 개까지**다. 상한 8건을 변화기가 채우면 `pickFour` 에
                 // 넘길 공격기가 남지 않는다(상한은 올리지 않는다 — 계획 §5 Phase 3).
-                guard spec.power > 0 || picked.filter({ $0.power <= 0 }).count < 2 else { continue }
+                // 세는 기준은 `power > 0` 이 아니라 `dealsDamage` 다 — 일렉트릭볼 부류는 위력이
+                // 0 으로 오지만 공격기라, 위력으로 세면 변화기 두 칸을 대신 잡아먹는다.
+                guard VariableDamage.dealsDamage(spec)
+                        || picked.filter({ !VariableDamage.dealsDamage($0) }).count < 2 else { continue }
                 picked.append(spec)
             }
             let four = Self.pickFour(from: picked, types: types)
             // 공격기가 한 개도 없으면 데미지를 낼 방법이 없다 → 합성 무브셋으로 떨어뜨린다.
-            guard four.contains(where: { $0.power > 0 }) else { throw URLError(.cannotParseResponse) }
+            guard four.contains(where: VariableDamage.dealsDamage) else { throw URLError(.cannotParseResponse) }
             moveSetCache[cacheKey] = four
             return four
         } catch {
@@ -410,9 +413,16 @@ actor PokeAPIClient: PokeProviding {
     ///
     /// 칸을 나누는 게 핵심이다. 위력 내림차순 한 줄에 변화기를 그냥 섞으면 위력 0 이라 늘 꼴찌라
     /// **절대 안 뽑힌다** — 이 함수가 `guard spec.power > 0` 을 대신하는 자리다.
+    ///
+    /// 칸을 가르는 기준은 `VariableDamage.dealsDamage` 다. `power > 0` 으로 가르면 도감 위력이
+    /// 0 인 공격기(일렉트릭볼·지구던지기·자이로볼 …)가 변화기 쪽으로 떨어져 거기서도 거절당해
+    /// **어느 칸에도 못 들어갔다.**
+    ///
+    /// ponytail: 그 부류는 `pickAttacks` 의 위력 정렬에서 0 이라 늘 꼴찌다 — 같은 타입에 더 나은
+    ///           공격기가 없을 때만 칸을 받는다. 상황 위력의 기댓값 표를 만들 이유가 아직 없다.
     static func pickFour(from specs: [MoveSpec], types: [PokemonType]) -> [MoveSpec] {
-        let attacks = specs.filter { $0.power > 0 }
-        let statusPick = pickStatusMove(from: specs.filter { $0.power <= 0 })
+        let attacks = specs.filter(VariableDamage.dealsDamage)
+        let statusPick = pickStatusMove(from: specs.filter { !VariableDamage.dealsDamage($0) })
         // 남은 칸을 공격기로 되채우는 루프는 필요 없다 — `pickAttacks` 의 두 번째 루프가 이미
         // 상한까지 전 공격기를 채우므로, 여기 도달하면 out 은 4개거나 attacks 를 전부 담고 있다.
         var out = pickAttacks(from: attacks, types: types, limit: statusPick == nil ? 4 : 3)
@@ -428,9 +438,7 @@ actor PokeAPIClient: PokeProviding {
     /// **엔진의 게이트와 같은 값을 본다** — 여기서만 거르면 `learnedMoves` 경로가 갈라진다.
     /// 순서는 후보 정렬(습득 레벨 내림차순)을 그대로 따라가므로 결정적이다.
     private static func pickStatusMove(from specs: [MoveSpec]) -> MoveSpec? {
-        specs.first { spec in
-            return spec.hasModeledStatusEffect
-        }
+        specs.first { $0.hasModeledStatusEffect }
     }
 
     private static func pickAttacks(from attacks: [MoveSpec], types: [PokemonType],
@@ -693,7 +701,12 @@ extension MoveSpec {
                         ailment: ailment, ailmentChance: dto.meta?.ailment_chance,
                         statChanges: statChanges, statChance: dto.meta?.stat_chance,
                         targetsUser: dto.target.map { MoveDTO.userTargets.contains($0.name) },
-                        drain: dto.meta?.drain, flinchChance: dto.meta?.flinch_chance,
+                        // **`?? 0` 이 세이브 수렴의 앵커다.** `drain` 이 nil 로 남으면
+                        // `needsDetailRefresh` 가 "안 받아봤다" 로 읽어 로드마다 헛도는 조회가
+                        // 영구히 남는다(defect-log: "받을 수 없는 값을 참으로 만들면 안 된다").
+                        // `meta` 가 통째로 없는 기술도 한 번 받으면 0 으로 확정된다.
+                        // `min_hits`/`max_hits` 는 단발기에서 null 이 **뜻이 있는** 값이라 그대로 둔다.
+                        drain: dto.meta?.drain ?? 0, flinchChance: dto.meta?.flinch_chance ?? 0,
                         minHits: dto.meta?.min_hits, maxHits: dto.meta?.max_hits)
     }
 }

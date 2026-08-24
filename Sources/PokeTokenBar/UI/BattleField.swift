@@ -222,7 +222,9 @@ extension Status {
         case .sleep:           return .gray
         case .freeze:          return .cyan
         case .confusion:       return .pink
-        case .flinch:          return .gray
+        // 잠듦과 같은 회색을 주면 `독·맹독만 색을 공유한다` 는 배지 불변식이 조용히 깨진다
+        // (테스트의 하한 단언은 그걸 통과시킨다).
+        case .flinch:          return .brown
         }
     }
 }

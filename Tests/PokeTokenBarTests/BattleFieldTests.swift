@@ -119,7 +119,7 @@ final class BattleFieldTests: XCTestCase {
     func testEveryStatusHasABadgeTintAndTheyAreNotAllTheSame() {
         let tints = Status.allCases.map { String(describing: $0.badgeTint) }
         XCTAssertEqual(tints.count, 8)
-        XCTAssertGreaterThanOrEqual(Set(tints).count, 6, "독·맹독만 같은 색을 공유한다")
+        XCTAssertEqual(Set(tints).count, 7, "독·맹독만 같은 색을 공유한다")
         XCTAssertEqual(Status.poison.badgeTint, Status.toxic.badgeTint, "독 계열은 한 색으로 읽힌다")
         XCTAssertNotEqual(Status.burn.badgeTint, Status.freeze.badgeTint)
     }

@@ -182,7 +182,11 @@ struct L {
         case .sleep:           return t("\(name)은(는) 잠에서 깨어났다!", "\(name) woke up!", "\(name)は 目を覚ました！")
         case .freeze:          return t("\(name)의 얼음이 녹았다!", "\(name) thawed out!", "\(name)の こおりが とけた！")
         case .confusion:       return t("\(name)의 혼란이 풀렸다!", "\(name) snapped out of its confusion!", "\(name)の 混乱が とけた！")
-        case .flinch:          return ""
+        // 풀죽음은 주 상태가 아니라 `.cureStatus` 가 나올 일이 없다. 그래도 빈 문자열은 두지
+        // 않는다 — 빈 줄이 로그로 나가는 게 이 switch 를 다 채우는 이유다(위 주석).
+        case .flinch:          return t("\(name)의 풀죽음이 풀렸다!",
+                                        "\(name) recovered from flinching!",
+                                        "\(name)の ひるみが とけた！")
         }
     }
 
@@ -227,10 +231,10 @@ struct L {
         }
     }
 
-    /// 회복 — 드레인기(흡수·기가드레인)와 특성 흡수가 같은 줄을 쓴다. **원인으로 문구를 가르지
-    /// 않는다**: 플레이어가 알아야 하는 건 "누가 얼마나 회복했나" 이고, 무엇으로 회복했는지는
-    /// 바로 앞 줄의 기술명이 이미 말한다.
-    func battleHealed(_ name: String, amount: Int, cause: HealCause) -> String {
+    /// 회복 — 드레인기(흡수·기가드레인)가 쓴다. **원인으로 문구를 가르지 않는다**: 플레이어가
+    /// 알아야 하는 건 "누가 얼마나 회복했나" 이고, 무엇으로 회복했는지는 바로 앞 줄의 기술명이
+    /// 이미 말한다.
+    func battleHealed(_ name: String, amount: Int) -> String {
         t("\(name)은(는) \(amount) 회복했다", "\(name) restored \(amount) HP", "\(name)は \(amount)かいふくした")
     }
 

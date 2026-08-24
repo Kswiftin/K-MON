@@ -199,11 +199,17 @@ enum MultiplayerValidation {
                 // 상태 부여 확률은 상대가 보내오는 값이다 — 범위를 벗어나면 매번 확정 부여가 된다.
                 && ($0.ailmentChance.map { (0...100).contains($0) } ?? true)
                 && ($0.statChance.map { (0...100).contains($0) } ?? true)
-                && ($0.drain.map { (-100...100).contains($0) } ?? true)
+                // 흡수 상한은 도감 최대치(75, 드레인키스)다. 100 을 들이면 넣은 데미지를 그대로
+                // 되돌려받아 매 턴 만피로 돌아가는 개체가 된다 — 반동(음수)은 자기 손해라 안 막는다.
+                && ($0.drain.map { (-100...75).contains($0) } ?? true)
                 && ($0.flinchChance.map { (0...100).contains($0) } ?? true)
                 && ($0.minHits.map { (1...10).contains($0) } ?? true)
                 && ($0.maxHits.map { (1...10).contains($0) } ?? true)
                 && (($0.minHits ?? 1) <= ($0.maxHits ?? $0.minHits ?? 1))
+                // **히트 수는 위력 상한을 곱한다.** 축마다 따로 보면 `위력 250 × 10히트` 가 전부
+                // 범위 안이라, 250 이 지키던 한 턴 데미지 천장이 10배로 열린다. 도감의 다단기는
+                // 총합이 100(드래곤애로우·기어소서)을 넘지 않으므로 250 이면 넉넉하다.
+                && $0.power * ($0.maxHits ?? 1) <= 250
                 // 랭크 변화도 상대가 보내오는 값이다. 개수 상한은 랭크가 있는 스탯 수 —
                 // 안 보면 `+6 공격` 이 열두 번 담긴 기술 하나로 첫 턴에 최대 랭크가 된다.
                 && ($0.statChanges.map { changes in

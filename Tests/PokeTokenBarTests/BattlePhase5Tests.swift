@@ -25,7 +25,7 @@ final class BattlePhase5Tests: XCTestCase {
                                               move: move, rng: &rng)
 
         XCTAssertEqual(attacker.hp, attacker.stats.hp, "drain must not exceed maximum HP")
-        XCTAssertTrue(events.contains { if case .heal(.a, amount: 1, cause: .drain) = $0 { return true }; return false })
+        XCTAssertTrue(events.contains(.heal(.a, amount: 1)))
     }
 
     func testRecoilCanFaintTheAttacker() {
@@ -43,6 +43,24 @@ final class BattlePhase5Tests: XCTestCase {
         XCTAssertTrue(events.contains(.faint(.a)))
     }
 
+    /// **트리거 브랜치**: 반동 축(`drain` 음수)이 생긴 뒤에도 발버둥만 `nil` 이었다. 위 두 테스트는
+    /// `drain` 을 직접 박은 스펙으로 통과하므로, 반동이 *정의*인 그 한 기술이 빠져 있어도 초록이다.
+    /// 빠지면 발버둥이 대가 없는 위력 50 무상성기가 되어 PP 가 마른 쪽이 오히려 유리해진다.
+    /// 합성 스펙이라 `moveDetail` 이 채워 줄 수 없어 이 값은 여기서만 확인할 수 있다.
+    func testStruggleCostsTheUserAQuarterOfTheDamageDealt() {
+        var attacker = BattleSide(snapshot()), defender = BattleSide(snapshot())
+        var rng = SplitMix64(seed: 1)
+        let events = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
+                                              attackerActor: .a, defenderActor: .b,
+                                              move: .struggle(), rng: &rng)
+
+        let dealt = defender.stats.hp - defender.hp
+        XCTAssertGreaterThan(dealt, 0, "발버둥은 상성을 안 타는 공격기다")
+        XCTAssertEqual(attacker.stats.hp - attacker.hp, max(1, dealt / 4),
+                       "발버둥의 반동은 넣은 데미지의 1/4 이다(Gen 2·3)")
+        XCTAssertTrue(events.contains { if case .damage(.a, _, cause: .recoil) = $0 { return true }; return false })
+    }
+
     func testFixedMultiHitReportsEachHitInItsOutcomeAndOneAggregateDamageEvent() {
         var attacker = BattleSide(snapshot()), defender = BattleSide(snapshot())
         var move = attack(); move.minHits = 2; move.maxHits = 2
@@ -56,14 +74,24 @@ final class BattlePhase5Tests: XCTestCase {
     }
 
     func testFlinchStopsOnlyTheLaterActorAndClearsAtNextTurn() {
-        var a = BattleSide(snapshot(speed: 10)), b = BattleSide(snapshot(speed: 200))
-        var flinching = attack(); flinching.flinchChance = 100; flinching.priority = 1
+        var flinching = attack(); flinching.flinchChance = MoveSpec.flinchChanceCap
+        flinching.priority = 1
         let ordinary = attack(id: 2)
-        var rng = SplitMix64(seed: 2)
-
-        let first = BattleEngine.resolveTurn(a: &a, b: &b, moveA: flinching, moveB: ordinary,
+        // 상한이 30% 라 확정 풀린치가 없다 — 실제로 걸리는 seed 를 찾아 그 seed 로 검증한다.
+        // (확정 100% 를 쓰면 `flinchChanceCap` 회귀를 이 테스트가 대신 잡아 버린다.)
+        var a = BattleSide(snapshot(speed: 10)), b = BattleSide(snapshot(speed: 200))
+        var rng = SplitMix64(seed: 0)
+        var first: [BattleEvent] = []
+        for seed in UInt64(1)...200 {
+            a = BattleSide(snapshot(speed: 10)); b = BattleSide(snapshot(speed: 200))
+            rng = SplitMix64(seed: seed)
+            first = BattleEngine.resolveTurn(a: &a, b: &b, moveA: flinching, moveB: ordinary,
                                              turn: 1, rng: &rng)
-        XCTAssertTrue(first.contains(.cant(.b, .flinch)))
+            if first.contains(.cant(.b, .flinch)) { break }
+        }
+        XCTAssertTrue(first.contains(.cant(.b, .flinch)), "200 seed 안에 풀린치가 한 번도 안 걸렸다")
+        XCTAssertFalse(first.contains { if case .cant(.a, .flinch) = $0 { return true }; return false },
+                       "선공한 쪽이 자기 풀린치에 걸리면 안 된다")
         XCTAssertTrue(b.flinched, "flinch remains volatile until the next turn begins")
 
         let second = BattleEngine.resolveTurn(a: &a, b: &b, moveA: ordinary, moveB: ordinary,
@@ -72,8 +100,61 @@ final class BattlePhase5Tests: XCTestCase {
         XCTAssertFalse(b.flinched)
     }
 
+    /// 속임수(`flinch_chance 100` + 우선도 +3)는 "교체 후 첫 턴만" 이라는 게이트와 한 몸이다.
+    /// 게이트가 없는 엔진에서 100 을 그대로 쓰면 우선도가 늘 선공을 보장해 **상대가 배틀 내내
+    /// 한 번도 움직이지 못한다** — 냐옹이 레벨 1 습득기라 실제로 뽑히는 무브셋이다.
+    func testAHundredPercentFlinchMoveCannotLockTheOpponentOutOfTheBattle() {
+        var fakeOut = attack(power: 40); fakeOut.flinchChance = 100; fakeOut.priority = 3
+        XCTAssertEqual(fakeOut.flinchPercent, MoveSpec.flinchChanceCap, "확률은 상한에서 접힌다")
+
+        var a = BattleSide(snapshot()), b = BattleSide(snapshot())
+        a.hp = 100_000; b.hp = 100_000                   // 승부가 아니라 행동 기회를 본다
+        var rng = SplitMix64(seed: 99)
+        var opponentMoved = 0
+        for turn in 1...20 {
+            let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: fakeOut,
+                                                  moveB: attack(id: 2), turn: turn, rng: &rng)
+            if events.contains(.move(.b, moveID: 2)) { opponentMoved += 1 }
+        }
+        XCTAssertGreaterThan(opponentMoved, 10, "20턴 중 절반도 못 움직이면 배틀이 잠긴 것이다")
+    }
+
+    /// 프로토콜 상한은 **축마다** 보면 안 된다 — `위력 250 × 10히트` 는 세 검사를 다 통과하면서
+    /// 한 턴 데미지 천장을 10배로 연다. 흡수 100% 도 같은 부류(매 턴 만피 복귀)다.
+    func testStackedNewFieldsCannotSlipPastThePerFieldBounds() {
+        var forged = attack(power: 250); forged.minHits = 10; forged.maxHits = 10
+        XCTAssertFalse(MultiplayerValidation.validMoves([forged]), "위력 × 히트 수 상한이 없다")
+
+        var fullHeal = attack(power: 120); fullHeal.drain = 100
+        XCTAssertFalse(MultiplayerValidation.validMoves([fullHeal]), "흡수 100% 는 무한 회복이다")
+
+        // 대조군 — 도감에 실제로 있는 다단기·드레인기는 그대로 통과해야 한다.
+        var icicleSpear = attack(power: 25); icicleSpear.minHits = 2; icicleSpear.maxHits = 5
+        var drainingKiss = attack(power: 50); drainingKiss.drain = 75
+        XCTAssertTrue(MultiplayerValidation.validMoves([icicleSpear, drainingKiss]))
+    }
+
+    /// 세이브 수렴 — 새 축 넷을 더했으면 "다시 받아야 하는가" 판정도 같이 늘려야 한다.
+    /// 안 늘리면 이미 랭크·대상 축을 받아 둔 기존 세이브는 **영영** 드레인·다단·풀린치가 nil 이라,
+    /// 새 기전이 그 기기에서만 조용히 죽는다(defect-log: "판정 하나가 두 축을 보게 되면…").
+    @MainActor
+    func testExistingSavesRefetchForThePhaseFiveAxes() {
+        var older = attack()
+        older.statChanges = []          // 랭크 축은 받아봤다
+        older.targetsUser = false       // 대상 축도 받아봤다
+        older.descriptions = ["en": "A move."]
+        XCTAssertNil(older.drain, "Phase 5 이전 세이브는 이 축이 비어 있다")
+        XCTAssertTrue(CompanionStore.needsDetailRefresh(older),
+                      "축을 더했는데 판정을 안 늘리면 옛 데이터로 계속 싸운다")
+
+        older.drain = 0                 // 받아봤고 드레인 없음 — 0 은 "없음", nil 은 "안 받아봤다"
+        XCTAssertFalse(CompanionStore.needsDetailRefresh(older),
+                       "다 받은 스펙을 또 받으면 로드마다 네트워크가 돈다")
+    }
+
     func testNewMoveFieldsAreValidatedAtTheMultiplayerBoundary() {
-        var valid = attack(); valid.drain = -100; valid.flinchChance = 100; valid.minHits = 2; valid.maxHits = 5
+        var valid = attack(power: 25)
+        valid.drain = -100; valid.flinchChance = 100; valid.minHits = 2; valid.maxHits = 5
         XCTAssertTrue(MultiplayerValidation.validMoves([valid]))
         valid.minHits = 6; valid.maxHits = 2
         XCTAssertFalse(MultiplayerValidation.validMoves([valid]))
@@ -186,7 +267,7 @@ final class BattlePhase5Tests: XCTestCase {
     /// `.ko`/`.ja` 대칭만 보는 `LanguageSplitGuardTests` 는 이 부류를 못 잡는다.
     func testDrainHealLineIsLocalized() {
         func line(_ language: AppLanguage) -> String {
-            BattleLog.lines([.heal(.a, amount: 12, cause: .drain)], l: L(language),
+            BattleLog.lines([.heal(.a, amount: 12)], l: L(language),
                             name: { _ in "거북왕" }, moveName: { _, _ in "메가드레인" })
                 .map(\.text).joined()
         }

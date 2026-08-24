@@ -121,7 +121,7 @@ enum BattleReplay {
             // 엔진과 같은 자리에서 자른다(`side.hp = max(0, …)`) — 오버킬에서 갈라지지 않는다.
             one.team[one.active].hp = max(0, one.team[one.active].hp - amount)
             sides[actor] = one
-        case .heal(let actor, let amount, _):
+        case .heal(let actor, let amount):
             guard var one = sides[actor], one.team.indices.contains(one.active) else { return }
             one.team[one.active].hp = min(one.team[one.active].stats.hp, one.team[one.active].hp + amount)
             sides[actor] = one
