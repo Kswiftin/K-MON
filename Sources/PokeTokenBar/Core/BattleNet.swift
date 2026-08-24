@@ -1254,7 +1254,10 @@ final class BattleCenter {
 
     // MARK: 메시지 처리
 
-    private func handle(_ message: NetMessage) {
+    /// 와이어 메시지 하나를 상태기계에 넣는다. `internal` 인 이유는 **테스트 진입점**이다 —
+    /// 수신 루프는 `NWConnection` 이 필요해 단위 테스트가 실제 핸드셰이크·채팅 경로를 밟을 다른
+    /// 수단이 없다(그래서 채팅 상태 수명주기에 테스트가 0건이었고 이 결함이 나갔다).
+    func handle(_ message: NetMessage) {
         switch message {
         case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
