@@ -178,16 +178,25 @@ final class HeartScaleTests: XCTestCase {
     /// 배울 수 있었던 것 **전부**에서 고르는 기능이다.
     ///
     /// 개수 상한은 네트워크 조회 루프 안에 있어 순수 함수로 잴 수 없다. 그래서 후보를 만드는
-    /// 자리가 상한 없는 쪽(`levelUpMoveHistory`)을 부르는지 소스에서 본다 — 다시 `canonical…`
-    /// 로 돌아가면 여기서 깨진다.
+    /// 자리가 상한 없는 쪽(`levelUpMoveHistory`)을 부르는지 소스에서 본다.
+    ///
+    /// **주석은 뺀다.** 규칙을 설명하는 주석이 그 함수 이름을 담게 되고(실제로 이 수정의 설명
+    /// 주석이 그랬다), 빼지 않으면 가드가 자기 설명에 걸려 빨간불이 된다 —
+    /// `LanguageSplitGuardTests` 가 같은 이유로 주석을 뺀다.
     func testRelearnCandidatesAreNotBuiltFromTheCappedMovesetQuery() throws {
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/PokeTokenBar/Core/CompanionStore.swift")
-        let text = try String(contentsOf: sources, encoding: .utf8)
-        let relearn = try XCTUnwrap(text.range(of: "MoveRelearn.candidates"))
+        let code = try String(contentsOf: sources, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                guard let comment = line.range(of: "//") else { return String(line) }
+                return String(line[..<comment.lowerBound])
+            }
+            .joined(separator: "\n")
+        let relearn = try XCTUnwrap(code.range(of: "MoveRelearn.candidates"))
         // 후보를 만드는 Task 안에서 어느 조회를 쓰는지 — 그 호출은 `candidates` 위에 있다.
-        let above = text[..<relearn.lowerBound].suffix(1_200)
+        let above = code[..<relearn.lowerBound].suffix(1_200)
         XCTAssertTrue(above.contains("levelUpMoveHistory"),
                       "다시 배우기 후보는 상한 없는 조회로 만들어야 한다")
         XCTAssertFalse(above.contains("canonicalLevelUpMoves"),
