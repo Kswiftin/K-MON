@@ -31,6 +31,9 @@ struct DungeonExitChoice: Sendable, Equatable {
     let springSpent: Bool
     /// 통로 비용만으로 쓰러지는 길. 방 내용은 들어가야 알 수 있으니 통로만 본다.
     let isLethal: Bool
+    /// 막다른 곁방 — 들어가면 같은 통로로 되나와야 하니 비용을 두 번 낸다. 안 보이면 전진 통로와
+    /// 같은 값으로 읽힌다.
+    let isSpur: Bool
 
     /// 이미 밟아 본 방으로 되돌아가는 길.
     var isBacktrack: Bool { known != nil }
@@ -53,6 +56,9 @@ struct DungeonTrailStep: Sendable, Equatable {
     /// 이 방에 들어오며 겪은 체력 변화. 통로 비용과 방 내용이 순서대로 들어간다(음수는 소모).
     var deltas: [Int] = []
     var springWasDry = false
+    /// 이 방에서 턴 별의조각. 이미 턴 방에 다시 들어왔으면 `cacheWasEmpty`.
+    var looted = 0
+    var cacheWasEmpty = false
     var felledBoss = false
     var collapsed = false
 }
@@ -64,8 +70,9 @@ struct DungeonTrailStep: Sendable, Equatable {
 /// (#79 실측: 설계 목업 6줄 중 온전히 구현된 것이 0개였다). 이 파일은 `test-gate.sh` 의
 /// `LOGIC_CORE` 에 들어간다.
 enum DungeonNarration {
-    /// 방 이름 슬롯 수. **방 수보다 커야** 한 맵에 같은 이름이 두 번 나오지 않는다.
-    static let roomNameSlots = 16
+    /// 방 이름 슬롯 수. **방 수 상한(`PuzzleDungeon.maxRoomCount`) 이상**이어야 한 맵에 같은 이름이
+    /// 두 번 나오지 않는다.
+    static let roomNameSlots = 40
 
     /// 격자 좌표에서 방위를 만든다. 주축이 뚜렷하면(다른 축의 두 배 이상) 한 방위로 줄인다 —
     /// 여덟 방위를 다 쓰면 "북동"·"북"이 사실상 같은 길인데 다르게 읽힌다.
@@ -90,7 +97,7 @@ enum DungeonNarration {
         for i in stride(from: pool.count - 1, to: 0, by: -1) {
             pool.swapAt(i, Int(rng.next() % UInt64(i + 1)))
         }
-        return Array(pool.prefix(PuzzleDungeon.roomCount))
+        return Array(pool.prefix(PuzzleDungeon.maxRoomCount))
     }
 
     /// 체력 게이지. 숫자만 두면 남은 여유가 감으로 안 온다(설계 목업의 `▓▓▓▓▓▓░░`).
@@ -115,7 +122,8 @@ enum DungeonNarration {
                               direction: direction(from: coords[run.current], to: coords[exit.room]),
                               known: exit.known,
                               springSpent: run.usedSprings.contains(exit.room),
-                              isLethal: exit.cost >= run.hp)
+                              isLethal: exit.cost >= run.hp,
+                              isSpur: run.map.isSpur(exit.room))
         }
         // 동점은 방 번호 순 — 순서가 흔들리면 같은 화면에서 버튼이 매번 자리를 바꾼다.
         let ordered = rows.sorted { ($0.cost, $0.room) < ($1.cost, $1.room) }
@@ -164,6 +172,10 @@ enum DungeonNarration {
                 steps[steps.count - 1].deltas.append(amount)
             case .springAlreadyUsed:
                 steps[steps.count - 1].springWasDry = true
+            case .looted(_, let starPieces):
+                steps[steps.count - 1].looted = starPieces
+            case .cacheAlreadyLooted:
+                steps[steps.count - 1].cacheWasEmpty = true
             case .bossFelled:
                 steps[steps.count - 1].felledBoss = true
             case .collapsed:

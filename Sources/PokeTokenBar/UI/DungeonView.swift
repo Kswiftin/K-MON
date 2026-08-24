@@ -90,7 +90,7 @@ struct DungeonView: View {
     @ViewBuilder
     private func exploring(_ run: DungeonRun) -> some View {
         let trail = DungeonNarration.trail(run.events, start: run.map.room(0).kind)
-        vitals(run, attemptRooms: trail.count)
+        vitals(run)
         Text(l.dungeonSceneLine(DungeonNarration.scene(for: run)))
             .font(.caption).fixedSize(horizontal: false, vertical: true)
         Divider()
@@ -100,16 +100,14 @@ struct DungeonView: View {
     }
 
     /// 체력 게이지와 진행도. 숫자만 두면 남은 여유가 감으로 안 온다.
-    private func vitals(_ run: DungeonRun, attemptRooms: Int) -> some View {
+    private func vitals(_ run: DungeonRun) -> some View {
         HStack(spacing: 6) {
             Text(DungeonNarration.gauge(hp: run.hp, budget: run.budget))
                 .font(.caption2.monospaced())
             Text(l.dungeonHitPoints(run.hp, run.budget))
                 .font(.caption2.monospacedDigit())
             Spacer()
-            Text(l.dungeonProgressLine(remembered: run.revealed.count,
-                                       total: PuzzleDungeon.roomCount,
-                                       attemptRooms: attemptRooms))
+            Text(l.dungeonFloorLine(layer: run.layer + 1, total: run.map.layerCount))
                 .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
         }
     }
@@ -176,6 +174,7 @@ struct DungeonView: View {
     private func exitDetail(_ choice: DungeonExitChoice) -> String {
         var parts: [String] = []
         if let direction = choice.direction { parts.append(l.dungeonDirectionName(direction)) }
+        if choice.isSpur { parts.append(l.dungeonSpurMark) }
         if let known = choice.known {
             parts.append(l.dungeonRoomName(known))
             if known == .spring { parts.append(choice.springSpent ? l.dungeonSpringSpent : l.dungeonSpringUnused) }
@@ -214,6 +213,12 @@ struct DungeonView: View {
             if step.springWasDry {
                 Text(l.dungeonEventLine(.springAlreadyUsed(step.room))).font(.caption2).foregroundStyle(.tertiary)
             }
+            if step.looted > 0 {
+                Text(l.dungeonEventLine(.looted(room: step.room, starPieces: step.looted))).font(.caption2)
+            }
+            if step.cacheWasEmpty {
+                Text(l.dungeonEventLine(.cacheAlreadyLooted(step.room))).font(.caption2).foregroundStyle(.tertiary)
+            }
             Spacer()
             if !step.deltas.isEmpty {
                 Text(l.dungeonDeltaList(step.deltas)).font(.caption2.monospacedDigit())
@@ -236,8 +241,13 @@ struct DungeonView: View {
 
     private func move(to room: Int) {
         guard var session = run else { return }
+        let lootedBefore = session.looted
         session.move(to: room)
         run = session
+        // 보물은 밟은 순간 정산한다 — 시도가 실패로 끝나도 턴 보물은 남는다(하루 상한은 방 단위).
+        for cache in session.looted.subtracting(lootedBefore) {
+            store.lootDungeonCache(room: cache, starPieces: session.map.room(cache).damage)
+        }
         // 방이 바뀌면 출구 구성이 달라진다 — 펼친 상태를 물고 가면 새 방에서 8줄이 그대로 뜬다.
         showAllFreshExits = false
         // 정산은 클리어 순간 한 번만 부른다. 스토어가 재지급을 막지만 알림이 겹치지 않게 한다.

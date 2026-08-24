@@ -45,7 +45,7 @@ final class DungeonRunTests: XCTestCase {
     func testMoveToNonAdjacentRoomIsRejected() {
         var session = makeRun()
         let adjacent = Set(map.exits(from: 0).map(\.room))
-        guard let far = (1..<PuzzleDungeon.roomCount).first(where: { !adjacent.contains($0) }) else {
+        guard let far = map.rooms.indices.dropFirst().first(where: { !adjacent.contains($0) }) else {
             return XCTFail("시작 방이 모든 방과 붙어 있어 검사할 수 없다")
         }
         let before = session.hp
@@ -98,15 +98,122 @@ final class DungeonRunTests: XCTestCase {
         XCTAssertFalse(session.events.contains(.bossFelled))
     }
 
-    /// 척추 경로를 `move(to:)` 로 실제로 걸어 365일 전부 클리어되는지 — 생성기 쪽 계산이 아니라
-    /// 이동 판정을 거친 결과를 본다. 두 곳의 계산이 어긋나면 여기서 갈린다.
+    /// 가장 비싼 전진 경로(`spine`)를 `move(to:)` 로 실제로 걸어 365일 전부 클리어되고 남는 체력이
+    /// 정확히 `clearSlack` 인지 — 생성기 쪽 계산이 아니라 이동 판정을 거친 결과를 본다.
+    /// 두 곳의 계산이 어긋나면 여기서 갈린다.
     func testEveryDaySpineWalkClearsThroughMoveEntry() {
         for offset in 0..<365 {
             let daily = PuzzleDungeon.map(dayKey: PuzzleDungeonTests.dayKey(offset))
             var session = DungeonRun(map: daily, budget: PuzzleDungeon.baseBudget)
             for step in 1..<daily.spine.count { _ = session.move(to: daily.spine[step]) }
             XCTAssertEqual(session.stage, .cleared, "\(daily.dayKey): hp=\(session.hp)")
+            XCTAssertEqual(session.hp, PuzzleDungeon.clearSlack, "\(daily.dayKey): 최악 경로 남는 체력")
         }
+    }
+
+    /// 본선에서는 **왼쪽으로 못 간다.** 한 층 나아간 뒤 시작 방으로 되돌아가려는 이동은 거부된다 —
+    /// 되돌아갈 수 있으면 층 구조가 잠근 판 길이가 다시 풀린다.
+    func testMainlineCannotGoBack() {
+        var session = makeRun(budget: 10_000)
+        let forward = map.exits(from: 0)[0].room
+        XCTAssertTrue(session.move(to: forward))
+        XCTAssertFalse(session.move(to: 0), "본선에서 뒤로 갔다")
+        XCTAssertEqual(session.current, forward)
+    }
+
+    /// 곁방은 들어간 통로로 되나온다 — 왕복이라 통로 비용을 두 번 내고, **그 밖의 비용은 곁방 내용뿐**이다.
+    /// 되나온 본선 방의 교전이 다시 붙으면 안 된다(그러면 교전 층의 곁방은 설계보다 훨씬 비싸진다).
+    /// 교전 층에 매달린 곁방으로 검사해야 그 분기를 밟는다.
+    func testSpurIsARoundTripAndParentEncounterIsNotRefought() {
+        var found = false
+        for offset in 0..<365 {
+            let daily = PuzzleDungeon.map(dayKey: PuzzleDungeonTests.dayKey(offset))
+            guard let (spur, parent) = daily.spurParent
+                .first(where: { daily.room($0.value).kind == .encounter }) else { continue }
+            found = true
+            var session = DungeonRun(map: daily, budget: 10_000)
+            session.debugTeleport(to: parent)
+            let cost = daily.cost(from: parent, to: spur) ?? 0
+            let before = session.hp
+            XCTAssertTrue(session.move(to: spur))
+            XCTAssertEqual(session.exits.map(\.room), [parent], "곁방의 출구는 들어온 길 하나")
+            XCTAssertTrue(session.move(to: parent))
+            let content = daily.room(spur)
+            var expected = before - cost * 2
+            switch content.kind {
+            case .encounter: expected -= content.damage
+            case .spring: expected += content.damage
+            default: break
+            }
+            XCTAssertEqual(session.hp, expected, "\(daily.dayKey): 왕복 비용이 통로 두 번 + 곁방 내용이 아니다")
+            break
+        }
+        XCTAssertTrue(found, "교전 층에 곁방이 달린 날이 하나도 없다")
+    }
+
+    /// 교전은 시도 안에서 **방마다 한 번**이다. 곁방이 교전인 날을 골라 두 번 왕복하면 두 번째는
+    /// 통로 비용만 빠진다. 결함을 되넣으면(`fought` 검사를 빼면) 두 번째 왕복에 교전이 다시 붙어 깨진다.
+    func testEncounterIsFoughtOncePerRun() {
+        var found = false
+        for offset in 0..<365 {
+            let daily = PuzzleDungeon.map(dayKey: PuzzleDungeonTests.dayKey(offset))
+            guard let (spur, parent) = daily.spurParent.first(where: { daily.room($0.key).kind == .encounter }) else { continue }
+            found = true
+            var session = DungeonRun(map: daily, budget: 10_000)
+            session.debugTeleport(to: parent)
+            let cost = daily.cost(from: parent, to: spur) ?? 0
+            session.move(to: spur); session.move(to: parent)
+            XCTAssertEqual(session.hp, 10_000 - cost * 2 - daily.room(spur).damage, "\(daily.dayKey): 첫 왕복")
+            let afterFirst = session.hp
+            session.move(to: spur); session.move(to: parent)
+            XCTAssertEqual(session.hp, afterFirst - cost * 2, "\(daily.dayKey): 두 번째 왕복에 교전이 다시 붙었다")
+            XCTAssertEqual(session.events.filter { $0 == .entered(room: spur, kind: .encounter) }.count, 2)
+            break
+        }
+        XCTAssertTrue(found, "곁방 교전이 있는 날이 하나도 없다")
+    }
+
+    // MARK: 보물
+
+    /// 보물은 **하루 한 번만.** 같은 시도에서 두 번째로 밟으면 빈 손이고, 앞선 시도가 턴 방
+    /// (`looted`)을 들고 시작하면 첫 방문부터 빈 손이다 — 재도전으로 하루 상한을 넘길 수 없다.
+    func testCacheIsLootedOnlyOncePerDay() {
+        guard let cache = firstCache() else { return }
+        let parent = cache.map.spurParent[cache.room]!
+        var session = DungeonRun(map: cache.map, budget: 10_000)
+        session.debugTeleport(to: parent)
+        XCTAssertTrue(session.move(to: cache.room))
+        XCTAssertTrue(session.events.contains(.looted(room: cache.room, starPieces: cache.map.room(cache.room).damage)))
+        XCTAssertEqual(session.looted, [cache.room])
+        XCTAssertTrue(session.move(to: parent))
+        XCTAssertTrue(session.move(to: cache.room))
+        XCTAssertTrue(session.events.contains(.cacheAlreadyLooted(cache.room)))
+        XCTAssertEqual(session.events.filter { if case .looted = $0 { return true }; return false }.count, 1)
+
+        var retry = DungeonRun(map: cache.map, budget: 10_000, looted: [cache.room])
+        retry.debugTeleport(to: parent)
+        retry.move(to: cache.room)
+        XCTAssertFalse(retry.events.contains { if case .looted = $0 { return true }; return false },
+                       "재도전이 같은 보물방을 다시 털었다")
+        XCTAssertTrue(retry.events.contains(.cacheAlreadyLooted(cache.room)))
+    }
+
+    /// 세이브의 `looted` 에 보물방이 아닌 번호가 있어도 시도가 그걸 믿지 않는다.
+    func testTamperedLootIsDiscarded() {
+        guard let cache = firstCache() else { return }
+        let notCache = cache.map.rooms.first { $0.kind != .cache }!.id
+        let session = DungeonRun(map: cache.map, budget: 100, looted: [notCache, 999, cache.room])
+        XCTAssertEqual(session.looted, [cache.room])
+    }
+
+    /// 365일 안에서 보물방이 있는 첫 맵. 보물 비율이 30% 라 첫 며칠 안에 반드시 나온다.
+    private func firstCache() -> (map: DungeonMap, room: Int)? {
+        for offset in 0..<365 {
+            let daily = PuzzleDungeon.map(dayKey: PuzzleDungeonTests.dayKey(offset))
+            if let cache = daily.rooms.first(where: { $0.kind == .cache }) { return (daily, cache.id) }
+        }
+        XCTFail("365일 동안 보물방이 하나도 없다")
+        return nil
     }
 
     // MARK: 회복의 샘

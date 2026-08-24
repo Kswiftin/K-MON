@@ -56,11 +56,12 @@ final class DungeonNarrationTests: XCTestCase {
 
     /// 한 맵에 같은 이름이 두 번 나오면 이름으로 방을 구분하는 이 화면의 전제가 깨진다.
     func testNameSlotsAreUniqueWithinADay() {
-        XCTAssertGreaterThan(DungeonNarration.roomNameSlots, PuzzleDungeon.roomCount)
+        XCTAssertGreaterThanOrEqual(DungeonNarration.roomNameSlots, PuzzleDungeon.maxRoomCount)
         for offset in 0..<365 {
             let slots = DungeonNarration.nameSlots(dayKey: Self.dayKey(offset))
-            XCTAssertEqual(slots.count, PuzzleDungeon.roomCount)
-            XCTAssertEqual(Set(slots).count, PuzzleDungeon.roomCount, "\(Self.dayKey(offset)): 이름 중복")
+            let roomCount = PuzzleDungeon.map(dayKey: Self.dayKey(offset)).rooms.count
+            XCTAssertGreaterThanOrEqual(slots.count, roomCount, "\(Self.dayKey(offset)): 방보다 이름이 적다")
+            XCTAssertEqual(Set(slots.prefix(roomCount)).count, roomCount, "\(Self.dayKey(offset)): 이름 중복")
         }
     }
 
@@ -111,15 +112,24 @@ final class DungeonNarrationTests: XCTestCase {
         }
     }
 
-    /// 밟아 본 방은 되돌아가기로 갈라지고, 두 목록 모두 비용 오름차순이어야 한다.
+    /// 곁방에서 나오는 길이 되돌아가기로 갈라지고, 두 목록 모두 비용 오름차순이어야 한다.
+    /// 본선은 되돌아갈 수 없으니 되돌아가기 줄은 곁방에서만 나온다.
     func testChoicesSplitBacktrackAndSortByCost() {
         let map = PuzzleDungeon.map(dayKey: "2026-08-24")
+        guard let (spur, parent) = map.spurParent.min(by: { $0.key < $1.key }) else {
+            return XCTFail("이 날짜 맵에 곁방이 없다")
+        }
         var run = DungeonRun(map: map, budget: 200)
-        let firstStep = map.exits(from: 0)[0].room
-        run.move(to: firstStep)
+        run.debugTeleport(to: parent)
+        let atParent = DungeonNarration.choices(for: run)
+        XCTAssertTrue(atParent.back.isEmpty, "본선 방에는 되돌아갈 길이 없다")
+        XCTAssertEqual(atParent.fresh.first { $0.room == spur }?.isSpur, true, "곁방 줄에 왕복 표시가 없다")
+        XCTAssertTrue(atParent.fresh.filter { $0.room != spur }.allSatisfy { !$0.isSpur }, "전진 통로가 곁방으로 표시됐다")
+        run.move(to: spur)
 
         let choices = DungeonNarration.choices(for: run)
-        XCTAssertTrue(choices.back.contains { $0.room == 0 }, "왔던 방이 되돌아가기에 없다")
+        XCTAssertTrue(choices.back.contains { $0.room == parent }, "왔던 방이 되돌아가기에 없다")
+        XCTAssertTrue(choices.fresh.isEmpty, "곁방은 막다른 길이다")
         XCTAssertTrue(choices.fresh.allSatisfy { $0.known == nil })
         XCTAssertTrue(choices.back.allSatisfy { $0.known != nil })
         XCTAssertEqual(choices.fresh.map(\.cost), choices.fresh.map(\.cost).sorted())
@@ -217,6 +227,22 @@ final class DungeonNarrationTests: XCTestCase {
         XCTAssertEqual(fell.count, 1)
         XCTAssertTrue(fell[0].collapsed)
         XCTAssertEqual(fell[0].deltas, [-3])
+    }
+
+    /// 보물은 줄에 액수로 붙고, 이미 턴 방은 빈 손 표시가 붙는다. 체력 변화가 아니라 `deltas` 에는 안 들어간다.
+    func testTrailMarksLootAndEmptyCache() {
+        let events: [DungeonEvent] = [
+            .damaged(2), .entered(room: 5, kind: .cache), .looted(room: 5, starPieces: 90),
+            .damaged(2), .entered(room: 3, kind: .empty),
+            .damaged(2), .entered(room: 5, kind: .cache), .cacheAlreadyLooted(5),
+        ]
+        let trail = DungeonNarration.trail(events, start: .empty)
+        XCTAssertEqual(trail.map(\.room), [0, 5, 3, 5])
+        XCTAssertEqual(trail[1].looted, 90)
+        XCTAssertEqual(trail[1].deltas, [-2], "보물 액수가 체력 변화에 섞였다")
+        XCTAssertFalse(trail[1].cacheWasEmpty)
+        XCTAssertTrue(trail[3].cacheWasEmpty)
+        XCTAssertEqual(trail[3].looted, 0)
     }
 
     /// 실제 시도에서 나온 이벤트로도 방 수가 맞아야 한다 — 손으로 만든 배열만 통과하면

@@ -993,6 +993,7 @@ struct L {
         case .encounter: return t("교전", "Encounter", "せんとう")
         case .spring: return t("회복의 샘", "Healing spring", "かいふくのいずみ")
         case .boss: return t("가장 깊은 방", "Deepest room", "いちばん深いへや")
+        case .cache: return t("보물방", "Treasure room", "たからのへや")
         }
     }
     func dungeonExitCost(_ cost: Int) -> String {
@@ -1021,7 +1022,31 @@ struct L {
         case 12: return t("그림자 방", "Shadowed Room", "かげのへや")
         case 13: return t("뿌리 방", "Root Room", "ねっこのへや")
         case 14: return t("자갈 방", "Gravel Room", "じゃりのへや")
-        default: return t("기울어진 방", "Tilted Room", "かたむいたへや")
+        case 15: return t("기울어진 방", "Tilted Room", "かたむいたへや")
+        case 16: return t("물웅덩이 방", "Puddle Room", "水たまりのへや")
+        case 17: return t("거미줄 방", "Cobweb Room", "くものすのへや")
+        case 18: return t("둥근 천장방", "Domed Room", "丸天井のへや")
+        case 19: return t("긴 회랑", "Long Gallery", "長い回廊")
+        case 20: return t("석회 기둥방", "Limestone Room", "石灰柱のへや")
+        case 21: return t("바람 드는 방", "Drafty Room", "風のとおるへや")
+        case 22: return t("메아리 방", "Echoing Room", "こだまのへや")
+        case 23: return t("검은 돌방", "Black Stone Room", "黒石のへや")
+        case 24: return t("흰 돌방", "White Stone Room", "白石のへや")
+        case 25: return t("얕은 계단방", "Shallow Stair Room", "浅い階段のへや")
+        case 26: return t("깊은 계단방", "Steep Stair Room", "急な階段のへや")
+        case 27: return t("녹슨 문방", "Rusted Door Room", "さびた扉のへや")
+        case 28: return t("무너진 계단방", "Fallen Stair Room", "くずれた階段のへや")
+        case 29: return t("젖은 바닥방", "Wet Floor Room", "ぬれた床のへや")
+        case 30: return t("갈라진 바닥방", "Split Floor Room", "割れた床のへや")
+        case 31: return t("둥근 돌방", "Boulder Room", "丸石のへや")
+        case 32: return t("좁은 회랑", "Narrow Gallery", "せまい回廊")
+        case 33: return t("넓은 방", "Wide Room", "広いへや")
+        case 34: return t("낡은 제단방", "Old Altar Room", "古い祭壇のへや")
+        case 35: return t("부서진 항아리방", "Broken Jar Room", "こわれた壺のへや")
+        case 36: return t("이끼 회랑", "Mossy Gallery", "こけの回廊")
+        case 37: return t("먼지 방", "Dusty Room", "ほこりのへや")
+        case 38: return t("잔돌 방", "Pebble Room", "小石のへや")
+        default: return t("서늘한 방", "Cool Room", "ひんやりしたへや")
         }
     }
 
@@ -1038,13 +1063,13 @@ struct L {
         }
     }
 
-    /// 헤더 오른쪽 — **기억과 이번 시도를 갈라 쓴다.** 하나로 합치면 지난 시도 기억까지 세어
-    /// 시작하자마자 "8/14" 로 뜨고, 이번 판 진행도로 읽힌다.
-    func dungeonProgressLine(remembered: Int, total: Int, attemptRooms: Int) -> String {
-        t("기억 \(remembered)/\(total) · 이번 시도 \(attemptRooms)방",
-          "Known \(remembered)/\(total) · this run \(attemptRooms)",
-          "記憶 \(remembered)/\(total)・今回 \(attemptRooms)へや")
+    /// 헤더 오른쪽 — 층이 곧 진행도다(왼쪽에서 오른쪽으로만 가는 구조라 층 번호가 남은 거리를 말한다).
+    /// `layer` 는 1 부터.
+    func dungeonFloorLine(layer: Int, total: Int) -> String {
+        t("\(layer)층 / \(total)층", "Floor \(layer) / \(total)", "\(layer)階 / \(total)階")
     }
+    /// 곁방 출구 표기 — 들어가면 같은 통로로 되나와야 한다는 사실. 없으면 전진 통로와 같은 값으로 읽힌다.
+    var dungeonSpurMark: String { t("곁방 · 왕복", "side room · round trip", "わき道・往復") }
 
     /// 서술 줄 — 밝혀진 사실만 말한다. 물소리는 **아직 마시지 않은** 샘이 인접해 밝혀졌을 때만.
     func dungeonSceneLine(_ note: DungeonSceneNote) -> String {
@@ -1085,6 +1110,9 @@ struct L {
         case .damaged(let amount): return t("−\(amount) HP", "−\(amount) HP", "−\(amount) HP")
         case .healed(let amount): return t("+\(amount) HP", "+\(amount) HP", "+\(amount) HP")
         case .springAlreadyUsed: return t("샘이 말랐다", "The spring is dry", "いずみは枯れている")
+        case .looted(_, let starPieces):
+            return t("별의조각 +\(starPieces)", "+\(starPieces) star pieces", "ほしのかけら +\(starPieces)")
+        case .cacheAlreadyLooted: return t("이미 턴 방이다", "Already looted", "もう空っぽだ")
         case .bossFelled: return t("가장 깊은 방을 넘었다!", "You cleared the deepest room!", "いちばん深いへやを越えた！")
         case .collapsed: return t("쓰러졌다", "You collapsed", "たおれた")
         }
