@@ -63,7 +63,7 @@ extension BattleChatTests {
 
     /// 신청을 받아 대전에 들어간 상태. `beginBattle` 은 `NWConnection` 이 필요해 국면만 맞춘다.
     @MainActor
-    private func centerInBattle(peerChatSupported: Bool?) -> BattleCenter {
+    private func centerInBattle(peerChatSupported: Bool?) -> (BattleCenter, CompanionStore) {
         let previous = UserDefaults.standard.object(forKey: "doNotDisturb")
         UserDefaults.standard.set(false, forKey: "doNotDisturb")
         addTeardownBlock {
@@ -84,7 +84,7 @@ extension BattleChatTests {
                                  chatSupported: peerChatSupported))
         XCTAssertEqual(center.phase, .incoming(peer: "Trainer"), "신청이 들어와야 이후 단계가 성립한다")
         center.phase = .battling
-        return center
+        return (center, store)
     }
 
     /// 결함 트리거: 배틀이 끝나는 순간 `dropConnection()` 이 도는데 화면은 아직 대전 화면이다
@@ -92,7 +92,7 @@ extension BattleChatTests {
     /// "방금 한 말이 사라지고 채팅이 죽었다"로 보인다.
     @MainActor
     func testTheConversationSurvivesTheSocketTeardownAndDiesWithTheSession() {
-        let center = centerInBattle(peerChatSupported: true)
+        let (center, _) = centerInBattle(peerChatSupported: true)
         center.sendChat("잘 부탁해")
         XCTAssertEqual(center.chatMessages.count, 1, "대전 중 보낸 말은 화면에 남는다")
 
@@ -112,5 +112,33 @@ extension BattleChatTests {
             XCTAssertTrue(text.contains("3"), "\(lang): 개수가 들어가야 한다 — \(text)")
             XCTAssertFalse(text.contains("(count)"), "\(lang): 보간이 빠졌다 — \(text)")
         }
+    }
+}
+
+extension BattleChatTests {
+    /// 대전이 성립하려면 `rulesVersion` 이 같아야 하므로(`handle(.challenge)`·`handle(.accept)`)
+    /// **대전 중인 상대는 항상 채팅을 지원한다.** 연결이 닫혔다는 이유로 "상대 버전 미지원"을 그리면
+    /// 사용자에게 없는 원인을 알려 주는 것이다 — 리포트된 증상이 정확히 이것이다.
+    @MainActor
+    func testAClosedSessionIsNotBlamedOnThePeerAppVersion() {
+        let (center, store) = centerInBattle(peerChatSupported: true)
+        XCTAssertTrue(center.chatIsAvailable, "대전 중에는 열려 있다")
+        XCTAssertNil(center.chatLockMessage, "열려 있으면 안내 문구가 없다")
+
+        center.forfeit()   // 배틀이 끝나는 순간과 같은 상태 — 소켓은 닫혔고 화면은 아직 대전 화면이다
+
+        XCTAssertFalse(center.chatIsAvailable, "닫힌 세션에는 입력을 열지 않는다")
+        XCTAssertEqual(center.chatLockMessage, store.l.battleChatSessionOver,
+                       "세션이 닫힌 것을 상대 버전 탓으로 말하면 안 된다")
+    }
+
+    /// 반대 방향 — 옛 빌드는 `chatSupported` 를 아예 안 보낸다(옵셔널 필드). 그 경우에만 버전 문구다.
+    @MainActor
+    func testAPeerBuildWithoutChatKeepsTheVersionMessage() {
+        let (center, store) = centerInBattle(peerChatSupported: nil)
+
+        XCTAssertFalse(center.chatIsAvailable)
+        XCTAssertEqual(center.chatLockMessage, store.l.battleChatUnavailable,
+                       "핸드셰이크가 미지원이라고 말한 경우가 버전 문구의 유일한 자리다")
     }
 }
