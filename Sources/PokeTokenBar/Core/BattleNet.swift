@@ -394,7 +394,12 @@ final class BattleCenter {
     private(set) var lastRankDelta = 0
     private(set) var lastError: String?
     private(set) var chatMessages: [BattleChatMessage] = []
+    /// 채팅 입력이 열려 있나. 연결이 닫히면 닫힌다.
     private(set) var chatIsAvailable = false
+    /// 상대 빌드가 채팅을 지원하나 — **핸드셰이크가 정하는 사실**이라 연결 정리가 지우지 않는다.
+    /// 이 사실을 `chatIsAvailable` 하나에 겹쳐 담았던 탓에, 배틀이 끝나며 소켓이 닫힌 것을
+    /// "상대 앱 버전이 채팅을 지원하지 않는다"고 말했다. 두 사실은 문구가 다르므로 따로 든다.
+    private(set) var peerSupportsChat = false
     private var chatHistory = BattleChatHistory()
     private var chatRateLimiter = BattleChatRateLimiter()
     let chatSenderID = UUID()
@@ -1112,6 +1117,14 @@ final class BattleCenter {
     private func endChatSession() {
         resetChatHistory()
         chatIsAvailable = false
+        peerSupportsChat = false
+    }
+
+    /// 채팅이 잠긴 **이유**. 열려 있으면 nil 이다. 사유가 둘이므로 문구도 둘이다 —
+    /// 상대 버전을 탓하는 문구는 핸드셰이크가 실제로 미지원이라고 말한 경우에만 나간다.
+    var chatLockMessage: String? {
+        guard !chatIsAvailable else { return nil }
+        return peerSupportsChat ? l.battleChatSessionOver : l.battleChatUnavailable
     }
 
     /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
@@ -1301,7 +1314,9 @@ final class BattleCenter {
             prepareIncomingSelection(teamSize: teamSize)
             incomingSeed = seed
             opponentRankProfile = profile
-            chatIsAvailable = peerChatSupported == true
+            peerSupportsChat = peerChatSupported == true
+            chatIsAvailable = peerSupportsChat
+            AppLog.write("battle chat \(peerSupportsChat ? "enabled" : "disabled — peer build sent no chatSupported")")
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             startChallengeTimeout()
             pendingAttention = true
@@ -1322,7 +1337,9 @@ final class BattleCenter {
                 return
             }
             opponentRankProfile = profile
-            chatIsAvailable = peerChatSupported == true
+            peerSupportsChat = peerChatSupported == true
+            chatIsAvailable = peerSupportsChat
+            AppLog.write("battle chat \(peerSupportsChat ? "enabled" : "disabled — peer build sent no chatSupported")")
             beginBattle(my: pendingMyLineup, opp: lineup, iAmA: true, seed: incomingSeed)
         case .decline:
             if case .challenging = phase {

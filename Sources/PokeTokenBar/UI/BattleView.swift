@@ -103,7 +103,7 @@ struct BattleView: View {
             onForfeit: { center.forfeit() },
             chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.chatSenderID,
                                           isEnabled: center.chatIsAvailable,
-                                          unavailableMessage: center.chatIsAvailable ? nil : l.battleChatUnavailable,
+                                          unavailableMessage: center.chatLockMessage,
                                           l: l, onSend: center.sendChat))
         .onAppear { replay(battle.events, sides: [mine: engineMine, theirs: engineTheirs]) }
         .onChange(of: battle.events.count) {
