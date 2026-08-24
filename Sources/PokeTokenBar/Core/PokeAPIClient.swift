@@ -327,8 +327,8 @@ actor PokeAPIClient: PokeProviding {
                 guard let spec = try? await moveDetail(named: name) else { continue }
                 // 변화기도 들이되 후보는 **두 개까지**다. 상한 8건을 변화기가 채우면 `pickFour` 에
                 // 넘길 공격기가 남지 않는다(상한은 올리지 않는다 — 계획 §5 Phase 3).
-                // 세는 기준은 `power > 0` 이 아니라 `dealsDamage` 다 — 일렉트릭볼 부류는 위력이
-                // 0 으로 오지만 공격기라, 위력으로 세면 변화기 두 칸을 대신 잡아먹는다.
+                // 세는 기준은 `power > 0` 이 아니라 `dealsDamage` 다. 일렉트릭볼 부류는 위력이
+                // 0 으로 오는 공격기라, 위력으로 세면 변화기 두 칸을 대신 잡아먹는다.
                 guard VariableDamage.dealsDamage(spec)
                         || picked.filter({ !VariableDamage.dealsDamage($0) }).count < 2 else { continue }
                 picked.append(spec)
@@ -415,11 +415,11 @@ actor PokeAPIClient: PokeProviding {
     /// **절대 안 뽑힌다** — 이 함수가 `guard spec.power > 0` 을 대신하는 자리다.
     ///
     /// 칸을 가르는 기준은 `VariableDamage.dealsDamage` 다. `power > 0` 으로 가르면 도감 위력이
-    /// 0 인 공격기(일렉트릭볼·지구던지기·자이로볼 …)가 변화기 쪽으로 떨어져 거기서도 거절당해
+    /// 0 인 공격기(일렉트릭볼·지구던지기·자이로볼 …)가 변화기 쪽으로 떨어지고 거기서도 거절당해
     /// **어느 칸에도 못 들어갔다.**
     ///
-    /// ponytail: 그 부류는 `pickAttacks` 의 위력 정렬에서 0 이라 늘 꼴찌다 — 같은 타입에 더 나은
-    ///           공격기가 없을 때만 칸을 받는다. 상황 위력의 기댓값 표를 만들 이유가 아직 없다.
+    /// ponytail: 그 부류는 `pickAttacks` 의 위력 정렬에서 0 이라 늘 꼴찌고, 같은 타입에 더 나은
+    ///           공격기가 없을 때만 칸을 받는다. 기댓값 표를 만들 이유는 아직 없다.
     static func pickFour(from specs: [MoveSpec], types: [PokemonType]) -> [MoveSpec] {
         let attacks = specs.filter(VariableDamage.dealsDamage)
         let statusPick = pickStatusMove(from: specs.filter { !VariableDamage.dealsDamage($0) })
@@ -702,10 +702,10 @@ extension MoveSpec {
                         statChanges: statChanges, statChance: dto.meta?.stat_chance,
                         targetsUser: dto.target.map { MoveDTO.userTargets.contains($0.name) },
                         // **`?? 0` 이 세이브 수렴의 앵커다.** `drain` 이 nil 로 남으면
-                        // `needsDetailRefresh` 가 "안 받아봤다" 로 읽어 로드마다 헛도는 조회가
+                        // `needsDetailRefresh` 가 "안 받아봤다"로 읽어 헛도는 조회가 로드마다
                         // 영구히 남는다(defect-log: "받을 수 없는 값을 참으로 만들면 안 된다").
                         // `meta` 가 통째로 없는 기술도 한 번 받으면 0 으로 확정된다.
-                        // `min_hits`/`max_hits` 는 단발기에서 null 이 **뜻이 있는** 값이라 그대로 둔다.
+                        // `min_hits`/`max_hits` 는 단발기의 null 이 **뜻이 있는** 값이라 그대로 둔다.
                         drain: dto.meta?.drain ?? 0, flinchChance: dto.meta?.flinch_chance ?? 0,
                         minHits: dto.meta?.min_hits, maxHits: dto.meta?.max_hits)
     }

@@ -677,8 +677,8 @@ final class BattleStageTests: XCTestCase {
                       "효과 없는 변화기가 화력 한 칸을 먹으면 안 된다")
     }
 
-    /// **트리거 브랜치**: 도감 위력이 0 인 *공격기*만 있는 풀. 위 테스트들은 위력 있는 공격기를 늘
-    /// 같이 넣으므로 `power > 0` 분할이 살아 있어도 초록이다 — 그 분할에서는 이 부류가 공격기
+    /// **트리거 브랜치**: 도감 위력이 0 인 *공격기*만 있는 풀. 위 테스트들은 위력 있는 공격기를
+    /// 늘 같이 넣으니 `power > 0` 분할이 살아 있어도 초록이다. 그 분할에서 이 부류는 공격기
     /// 칸에도(위력 0) 변화기 칸에도(효과 없음) 못 들어가 결과가 **빈 배열**이 된다.
     /// 사용자 습득 경로(`VariableDamage.isUsable`)는 같은 기술을 통과시켜 두 게이트가 갈라졌다.
     func testPickFourSelectsVariablePowerAttacks() {
@@ -693,8 +693,8 @@ final class BattleStageTests: XCTestCase {
                        [VariableDamage.MoveID.electroBall, VariableDamage.MoveID.seismicToss],
                        "도감 위력 0 인 공격기가 자동 무브셋에서 빠지면 그 포켓몬은 화력이 없다")
 
-        // 대조군: 아직 위력을 못 뽑는 가변 위력 기술(은혜갚기)은 여전히 빠진다 — 두 게이트가
-        // `unmodeledMoveIDs` 라는 같은 목록을 본다.
+        // 대조군: 아직 위력을 못 뽑는 가변 위력 기술(은혜갚기)은 여전히 빠진다.
+        // 두 게이트가 `unmodeledMoveIDs` 라는 같은 목록을 본다.
         let returnMove = MoveSpec(id: 216, names: [:], type: .normal, power: 0,
                                   damageClass: .physical, accuracy: 100, pp: 20)
         XCTAssertTrue(PokeAPIClient.pickFour(from: [returnMove], types: [.normal]).isEmpty,
@@ -967,8 +967,8 @@ final class BattleStageTests: XCTestCase {
     func testFilledStatChangesStillRefetchWhenTheTargetAxisIsMissing() {
         var halfFetched = statusMove(changes: [])
         halfFetched.descriptions = ["en": "A move."]
-        // Phase 5 축(드레인)도 "받아봤음"으로 고정한다 — 이 테스트가 보는 축은 `targetsUser` 뿐인데,
-        // 다른 축을 nil 로 두면 그 축 때문에 다시 받게 되어 대상 축 판정이 죽어도 초록이 된다.
+        // Phase 5 축(드레인)도 "받아봤음"으로 고정한다. 이 테스트가 보는 축은 `targetsUser` 뿐인데,
+        // 다른 축을 nil 로 두면 그것 때문에 다시 받게 되어 대상 축 판정이 죽어도 초록이 된다.
         halfFetched.drain = 0
         XCTAssertNil(halfFetched.targetsUser)
         XCTAssertTrue(CompanionStore.needsDetailRefresh(halfFetched),

@@ -1326,9 +1326,9 @@ final class CompanionStore {
         // **축을 더할 때 이 판정도 같이 늘린다.** `statChanges` 만 보면, 그 축으로 한 번 갱신된
         // 세이브는 이후 어떤 새 축이 비어 있어도 다시 받지 않고 옛 데이터로 싸운다.
         if move.targetsUser == nil { return true }
-        // 드레인·반동·다단·풀린치(Phase 5)도 같은 부류다. `drain` 하나로 네 축을 대표한다 —
-        // 넷이 같은 `meta` 블록에서 한 번에 오므로 하나가 비었으면 나머지도 비어 있다.
-        // `minHits`/`maxHits` 를 보면 안 된다: 단발기는 받아봐도 nil 이라 영원히 수렴하지 않는다.
+        // 드레인·반동·다단·풀린치(Phase 5)도 같은 부류다. 넷이 같은 `meta` 블록에서 한 번에
+        // 오므로 `drain` 하나가 넷을 대표한다. `minHits`/`maxHits` 로는 못 본다 — 단발기는
+        // 받아봐도 nil 이라 영원히 수렴하지 않는다.
         if move.drain == nil { return true }
         guard let descriptions = move.descriptions else { return true }
         return descriptions.values.contains(where: PokeAPIClient.isUnusableMoveNotice)
