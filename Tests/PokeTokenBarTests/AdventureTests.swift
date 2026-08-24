@@ -249,7 +249,11 @@ final class AdventureTests: XCTestCase {
     func testFourPlayerRoundResolvesInSpeedOrderAndIsDeterministic() throws {
         let ids = (1...4).map { _ in UUID() }
         func fighter(_ index: Int) -> MultiplayerFighter {
-            let move = MoveSpec(id: 10 + index, names: [:], type: .normal, power: 40,
+            // **id 는 음수로 둔다.** 양수는 PokéAPI 의 실제 기술 번호라, 지어낸 값이 우연히
+            // 특수 기술과 겹친다 — 예전 `10 + index` 는 12 에서 조르기(일격필살)에 걸려
+            // 한 명이 첫 라운드에 쓰러졌고, 그 대상의 공격이 통째로 건너뛰어졌다.
+            // 앱의 합성 기술도 같은 이유로 음수를 쓴다(`MoveSpec.fallbackSet`·`struggle`).
+            let move = MoveSpec(id: -(10 + index), names: [:], type: .normal, power: 40,
                                 damageClass: .physical, accuracy: 100, pp: 20)
             let snapshot = BattleSnapshot(speciesID: index, name: "M\(index)", trainer: "P\(index)",
                                           level: 20, nature: nil, isShiny: false, types: [.normal],
@@ -504,8 +508,8 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self, from: data), message)
         // 3 = 라운드 결과가 타입된 이벤트 스트림. 버전을 올려야 옛 빌드가 레이스·배틀 중간이
         // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
-        // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case), 6 = 방 채팅.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 6)
+        // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case), 6 = 방 채팅, 7 = 포켓몬 OX 퀴즈.
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 7)
     }
 
     /// 라운드 결과는 호스트가 게스트에게 **브로드캐스트**하는 유일한 배틀 페이로드다. 이벤트가

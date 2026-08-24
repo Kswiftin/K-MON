@@ -770,10 +770,11 @@ final class MultiplayerRoomCenter {
         let level = active.level
         let moves = active.learnedMoves.isEmpty
             ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
-            : active.learnedMoves
+            : await companion.detailedMoves(of: active)
         return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
                               level: level, nature: active.nature, isShiny: active.isShiny,
-                              types: profile.types, base: profile.stats, moves: moves)
+                              types: profile.types, base: profile.stats, moves: moves,
+                              weightHectograms: profile.weightHectograms)
     }
 
     private func restartBrowser() { browser?.cancel(); browser = nil; startBrowsing() }

@@ -372,8 +372,11 @@ final class BattleStatusTests: XCTestCase {
 
     /// 규칙이 바뀌면 버전을 올린다 — 구버전 피어는 같은 배틀을 다르게 보므로 핸드셰이크에서 막아야 한다.
     func testRulesVersionMovesWithTheStatusConditions() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 8,
-                       "상태이상 = 3, 변화기 = 4, 끊김/에스크로 = 5, LAN 팀전 = 6, 출전 이벤트 = 7, 랭크 = 8")
+        XCTAssertEqual(BattleEngine.rulesVersion, 12,
+                       """
+                       상태이상 = 3, 변화기 = 4, 끊김/에스크로 = 5, LAN 팀전 = 6, 출전 이벤트 = 7, \
+                       랭크 = 8, 가변 위력 = 9, 체중 = 10, 되돌려주기 = 11, 변화기 상성 = 12
+                       """)
     }
 
     /// 위력 0 인 변화기는 데미지를 넣지 않는다. 예전엔 식의 `+2` 가 남아 2 데미지가 박혔고,

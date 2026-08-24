@@ -264,24 +264,70 @@ final class BattleStageTests: XCTestCase {
         XCTAssertEqual(attacker.stage(.atk), 6)
     }
 
-    /// 상성은 공격기의 규칙이라 변화기(위력 0)는 타입 면역을 타지 않는다.
-    /// **단 상태를 거는 변화기는 그대로 본다**(전기자석파 → 땅). 대조군 없이 한쪽만 보면
+    /// 상성은 **데미지 기술의 규칙**이라 변화기(위력 0)는 타입 면역을 타지 않는다.
+    /// 예외는 `MoveSpec.typeBlockedStatusMoveIDs` 에 명시한 것뿐이다(전기자석파 → 땅).
+    ///
+    /// 예전엔 "상태를 **거는** 변화기는 전부 상성표를 본다" 였고, 그 한 줄이 이상한빛(고스트→노말),
+    /// 노래(노말→고스트), 최면술(에스퍼→악)까지 같이 막았다. 대조군 없이 한쪽만 보면
     /// 두 오구현("전부 무시" / "전부 검사")이 모두 초록이다.
-    func testStatChangeMovesIgnoreTypeImmunityButAilmentMovesDoNot() {
+    func testStatusMovesIgnoreTypeImmunityExceptTheListedOnes() {
         var user = BattleSide(tank()), ghost = BattleSide(tank([.ghost]))
         let events = attack(&user, &ghost,
                             statusMove(changes: [StatChange(stat: .atk, change: -1)]))
         XCTAssertEqual(ghost.stage(.atk), -1, "노말 변화기는 고스트에게도 걸린다")
         XCTAssertFalse(events.contains(.immune(.b)))
 
+        // 상태를 거는 변화기도 마찬가지다 — 이상한빛은 고스트지만 노말에게 통해야 한다.
+        var ghostCaster = BattleSide(tank([.ghost]))
+        var normal = BattleSide(tank())
+        var confuseRay = MoveSpec(id: 109, names: ["en": "Confuse Ray"], type: .ghost, power: 0,
+                                  damageClass: .status, accuracy: nil, pp: 10)
+        confuseRay.ailment = "confusion"
+        confuseRay.targetsUser = false
+        let confused = attack(&ghostCaster, &normal, confuseRay)
+        XCTAssertFalse(confused.contains(.immune(.b)), "노말↔고스트 면역은 데미지 기술의 규칙이다")
+        XCTAssertTrue(normal.isConfused)
+
         var caster = BattleSide(tank())
         var ground = BattleSide(tank([.ground]))
-        var thunderWave = MoveSpec(id: 86, names: ["en": "Thunder Wave"], type: .electric, power: 0,
+        var thunderWave = MoveSpec(id: MoveSpec.thunderWaveID, names: ["en": "Thunder Wave"],
+                                   type: .electric, power: 0,
                                    damageClass: .status, accuracy: nil, pp: 20)
         thunderWave.ailment = "paralysis"
         let blocked = attack(&caster, &ground, thunderWave)
-        XCTAssertTrue(blocked.contains(.immune(.b)), "상태를 거는 변화기는 상성을 본다")
+        XCTAssertTrue(blocked.contains(.immune(.b)), "명시한 예외는 상성을 본다")
         XCTAssertNil(ground.status, "땅 타입은 전기자석파에 마비되지 않는다")
+    }
+
+    /// 변화기에는 급소·상성 문구를 붙이지 않는다 — 깎을 데미지가 없어 배율이 아무 데도 안 쓰인다.
+    /// 전기자석파(상성표를 보는 유일한 상태기)가 물에게 "효과가 굉장했다" 를 달면 마비가 2배로
+    /// 걸린 것처럼 읽힌다. 무효(0배)는 실제로 실패했다는 뜻이라 그대로 남긴다.
+    func testStatusMovesDoNotCarryCriticalOrEffectivenessLines() {
+        var caster = BattleSide(tank())
+        var water = BattleSide(tank([.water]))
+        var thunderWave = MoveSpec(id: MoveSpec.thunderWaveID, names: ["en": "Thunder Wave"],
+                                   type: .electric, power: 0,
+                                   damageClass: .status, accuracy: nil, pp: 20)
+        thunderWave.ailment = "paralysis"
+        let events = attack(&caster, &water, thunderWave)
+        XCTAssertEqual(water.status, .paralysis)
+        XCTAssertFalse(events.contains(.superEffective(.b)), "전기가 물에게 2배여도 마비는 2배가 없다")
+        XCTAssertFalse(events.contains { if case .crit = $0 { return true } else { return false } })
+    }
+
+    /// **아무것도 못 한 변화기는 그 사실을 말해야 한다.** 데미지가 없는 기술이라 이벤트를 안 내면
+    /// 로그에 기술명 한 줄만 남아 무반응이 된다 — 독가루를 강철에게 쓰면 정확히 그 모양이었다.
+    /// 상성표가 아니라 `canBeAfflicted`(상태 기준 면역)가 막는 경로라 위 테스트로는 안 잡힌다.
+    func testAStatusMoveThatDidNothingSaysSo() {
+        var caster = BattleSide(tank())
+        var steel = BattleSide(tank([.steel]))
+        var poisonPowder = MoveSpec(id: 77, names: ["en": "Poison Powder"], type: .poison, power: 0,
+                                    damageClass: .status, accuracy: nil, pp: 35)
+        poisonPowder.ailment = "poison"
+        poisonPowder.targetsUser = false
+        let events = attack(&caster, &steel, poisonPowder)
+        XCTAssertNil(steel.status, "강철은 독에 걸리지 않는다")
+        XCTAssertTrue(events.contains(.immune(.b)), "조용히 지나가면 고치려던 그 무반응이 된다")
     }
 
     /// **자기 대상 상태기는 상대에게 걸지 않는다.** 잠자기는 `damage_class: status` + `ailment: sleep`

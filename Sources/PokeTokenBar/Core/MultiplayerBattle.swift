@@ -376,6 +376,9 @@ struct MultiplayerBattle: Sendable {
             if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }
             return lhs.1 < rhs.1
         }.map(\.0)
+        // 라운드가 시작될 때 "이번 턴에 맞은 것" 을 비운다 — 참가자 전원이다. 한 명만 빠져도
+        // 그 참가자의 카운터가 지난 라운드 데미지를 되돌려준다.
+        for index in fighters.indices { BattleEngine.beginTurn(&fighters[index].side) }
         var roundEvents: [BattleEvent] = [.turn(round)]
         for action in ordered {
             guard let ai = fighters.firstIndex(where: { $0.id == action.attackerID }), fighters[ai].isAlive,

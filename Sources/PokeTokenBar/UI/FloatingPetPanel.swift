@@ -157,7 +157,6 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             hosting.onOpenPopover = onOpenPopover
             hosting.onChat = onChat
             hosting.onHide = onHide
-            hosting.onPet = { [weak self] in _ = self?.companion.petCompanion() }
             hosting.languageProvider = { [weak self] in self?.companion.language ?? .systemDefault }
             hosting.onHoverChange = { [weak self] hovering in
                 if hovering { self?.showHoverCallout() } else { self?.hideHoverCallout() }
@@ -658,7 +657,6 @@ final class PetHostingView: NSHostingView<AnyView> {
     var onOpenPopover: (() -> Void)?
     var onChat: (() -> Void)?
     var onHide: (() -> Void)?
-    var onPet: (() -> Void)?
     var onHoverChange: ((Bool) -> Void)?
     var onDragChange: ((Bool) -> Void)?
     var languageProvider: () -> AppLanguage = { .systemDefault }
@@ -737,10 +735,6 @@ final class PetHostingView: NSHostingView<AnyView> {
                                 action: #selector(handleChat(_:)), keyEquivalent: "")
         chat.target = self
         chat.isEnabled = true
-        let pet = menu.addItem(withTitle: l.t("쓰다듬기", "Pet", "なでる"),
-                               action: #selector(handlePet(_:)), keyEquivalent: "")
-        pet.target = self
-        pet.isEnabled = true
         let hide = menu.addItem(withTitle: l.floatingPetMenuHide,
                                 action: #selector(handleHide(_:)), keyEquivalent: "")
         hide.target = self
@@ -750,7 +744,6 @@ final class PetHostingView: NSHostingView<AnyView> {
 
     @objc func handleOpen(_ sender: Any?) { onOpenPopover?() }
     @objc func handleChat(_ sender: Any?) { onChat?() }
-    @objc func handlePet(_ sender: Any?) { onPet?() }
     @objc func handleHide(_ sender: Any?) { onHide?() }
 }
 

@@ -76,4 +76,21 @@ final class RosterOrderingTests: XCTestCase {
         XCTAssertTrue(RosterOrdering.availableTypes(box, types: [:]).isEmpty,
                       "해석 전엔 필터에 올릴 게 없다")
     }
+
+    /// 출전 팀 고르기 줄의 레벨 정렬 버튼. 오름·내림 **두 상태만** 두면 이 줄의 원래 순서인
+    /// 부화순으로 돌아갈 길이 없어진다 — 사이클이 기본을 지나야 정렬을 되돌릴 수 있다.
+    func testTeamPickerLevelOrderCyclesBackToTheCaughtOrder() {
+        XCTAssertEqual(TeamPickerLevelOrder.caught.next, .ascending)
+        XCTAssertEqual(TeamPickerLevelOrder.ascending.next, .descending)
+        XCTAssertEqual(TeamPickerLevelOrder.descending.next, .caught,
+                       "되돌릴 수 없으면 한 번 누른 사용자는 부화순을 잃는다")
+    }
+
+    /// 아이콘이 방향을 말한다 — 세 상태가 같은 그림이면 지금 어느 정렬인지 화면에서 알 수 없다.
+    func testEachTeamPickerLevelOrderShowsItsOwnIcon() {
+        let icons = TeamPickerLevelOrder.allCases.map(\.iconName)
+        XCTAssertEqual(Set(icons).count, TeamPickerLevelOrder.allCases.count)
+        XCTAssertEqual(TeamPickerLevelOrder.ascending.iconName, "arrow.up")
+        XCTAssertEqual(TeamPickerLevelOrder.descending.iconName, "arrow.down")
+    }
 }
