@@ -761,9 +761,6 @@ enum BattleEngine {
         /// 빗나갔으면 1 — 화면이 "효과가 굉장했다" 를 띄우지 않게 한다.
         var effectiveness: Double
         var isCritical: Bool
-        /// 일격필살(지구밟기 부류). `damage` 가 이미 남은 HP 전부라 계산은 달라지지 않지만,
-        /// 상성·급소 문구를 붙이지 않는 근거로 쓴다.
-        var isOneHitKO = false
         /// 실제로 들어간 히트 수 — 다단기(더블킥·고드름침)만 1 보다 크다. 상대가 중간에 쓰러지면
         /// 요청 횟수보다 적다.
         var hits = 1
@@ -777,13 +774,14 @@ enum BattleEngine {
     /// 공식을 타지 않는 데미지(고정·일격필살)의 결과.
     ///
     /// 상성은 **면역만** 본다 — 나이트헤드는 노말에게 통하지 않지만, 통할 때는 2배도 절반도 되지
-    /// 않는다. 급소·상성 문구를 막으려고 `effectiveness` 를 1 로, `isCritical` 을 false 로 둔다.
-    private static func fixedOutcome(_ amount: Int, move: MoveSpec, defender: BattleSide,
-                                     isOneHitKO: Bool = false) -> AttackOutcome {
+    /// 않는다. 급소·상성 문구를 막는 것도 여기다: `effectiveness` 를 1 로, `isCritical` 을 false 로
+    /// 두면 `applyAttack` 의 문구 분기가 저절로 안 걸린다. 일격필살을 표시할 플래그는 두지 않는다 —
+    /// 읽는 쪽이 없는데 다단 루프까지 전파해야 하는 값이 된다
+    /// (`VariableDamageTests.testAOneHitKOSuppressesTheCritAndEffectivenessLines` 가 억제를 잠근다).
+    private static func fixedOutcome(_ amount: Int, move: MoveSpec, defender: BattleSide) -> AttackOutcome {
         let immune = TypeChart.effectiveness(move.type, against: defender.snapshot.types) == 0
         return AttackOutcome(missed: false, damage: immune ? 0 : max(0, amount),
-                             effectiveness: immune ? 0 : 1, isCritical: false,
-                             isOneHitKO: !immune && isOneHitKO)
+                             effectiveness: immune ? 0 : 1, isCritical: false)
     }
 
     /// Gen 2 데미지 식의 앞부분 — 배율이 붙기 전의 뼈대. 기술 공격과 혼란 자멸이 같은 값을 쓴다.
@@ -837,7 +835,7 @@ enum BattleEngine {
         // 안 세면 이미 쓰러진 상대를 남은 횟수만큼 계속 때린다.
         var remaining = defender.hp
         var total = 0, actualHits = 0, lastHit = 0
-        var effectiveness = 1.0, critical = false, oneHitKO = false
+        var effectiveness = 1.0, critical = false
         for _ in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move, rng: &rng)
             total += one.damage
@@ -846,14 +844,10 @@ enum BattleEngine {
             lastHit = one.damage
             effectiveness = one.effectiveness
             critical = critical || one.isCritical
-            // 일격필살 플래그는 **여기서 접어 올린다.** 히트 결과를 새 값으로 다시 만들면서
-            // 안 옮기면 `fixedOutcome` 이 세운 플래그가 조용히 false 가 된다.
-            oneHitKO = oneHitKO || one.isOneHitKO
             if one.effectiveness == 0 { break }
         }
         return AttackOutcome(missed: false, damage: total, effectiveness: effectiveness,
-                             isCritical: critical, isOneHitKO: oneHitKO,
-                             hits: actualHits, lastHitDamage: lastHit)
+                             isCritical: critical, hits: actualHits, lastHitDamage: lastHit)
     }
 
     /// 히트 하나. 다단기는 이 함수를 히트마다 부르므로 급소·난수 폭이 히트별로 독립이다
@@ -866,8 +860,7 @@ enum BattleEngine {
         switch VariableDamage.from(move, attacker: attacker, defender: defender, rng: &rng) {
         case .power(let computed):  power = computed
         case .fixedHP(let amount):  return fixedOutcome(amount, move: move, defender: defender)
-        case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender,
-                                                       isOneHitKO: true)
+        case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender)
         // 통하지 않음은 면역과 **같은 줄**로 낸다("효과가 없는 것 같다"). 데미지 0 으로 두면
         // `applyAttack` 이 이벤트를 안 내서 기술명 한 줄만 남는다.
         case .noEffect:             return AttackOutcome(missed: false, damage: 0,
