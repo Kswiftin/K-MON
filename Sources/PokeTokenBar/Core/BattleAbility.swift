@@ -2,13 +2,13 @@ import Foundation
 
 /// 특성 — **엔진이 실제로 적용하는 것만** case 로 둔다(#24 Phase 5 / PR 9).
 ///
-/// 1단계는 면역뿐이다. 면역은 표 조회라 rng 를 한 번도 안 쓰므로 두 피어의 소비 순서가 흔들릴 수
-/// 없다 — 특성 축에서 desync 위험이 가장 낮은 지점이다. 스탯·데미지 보정과 접촉 특성(rng 소비가
-/// 늘어나는 유일한 부류)은 다음 단계로 미룬다.
+/// 1단계는 면역뿐이다. 표 조회라 rng 를 한 번도 안 써서 두 피어의 소비 순서가 갈릴 수 없다 —
+/// 특성 축에서 desync 위험이 가장 낮은 지점이다. 스탯·데미지 보정과 접촉 특성(rng 소비가 늘어나는
+/// 유일한 부류)은 다음 단계다.
 ///
-/// 모르는 슬러그는 `nil` 이고, `nil` 은 특성이 없는 것과 **완전히 같게** 동작한다 — ailment 14종과
-/// 같은 규칙이다(조용히 삼키지 않되 배틀은 바꾸지 않는다).
-/// 와이어에 실리는 건 **슬러그 문자열**(`BattleSnapshot.ability`)이라 이 타입은 `Codable` 이 아니다 —
+/// 모르는 슬러그는 `nil` 이고, `nil` 은 특성이 없는 것과 **완전히 같게** 동작한다(ailment 14종과
+/// 같은 규칙 — 조용히 삼키지 않되 배틀은 바꾸지 않는다).
+/// 와이어에 실리는 건 **슬러그 문자열**(`BattleSnapshot.ability`)이라 이 타입은 `Codable` 이 아니다.
 /// 여기에 case 를 늘려도 스냅샷 계약은 그대로다.
 enum BattleAbility: String, Sendable {
     case levitate
@@ -45,7 +45,7 @@ enum BattleAbility: String, Sendable {
     func absorbs(_ type: PokemonType) -> Bool { absorbsIntoHP && immuneMoveType == type }
 
     /// 이 상태를 막는가. 기술 타입이 아니라 **걸리는 상태**로 판정한다 — `canBeAfflicted` 와 같은
-    /// 기준이고(강철의 독 면역이 이미 거기 있다), 그래서 상성표를 안 타는 상태기도 같이 막힌다.
+    /// 기준이라(강철의 독 면역이 이미 거기 있다) 상성표를 안 타는 변화기도 같이 막힌다.
     func blocks(_ status: Status) -> Bool {
         switch self {
         case .limber:                  return status == .paralysis

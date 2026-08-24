@@ -430,8 +430,8 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     var moves: [MoveSpec]? = nil
     /// 특성 슬러그 원문(`levitate`) — 옵셔널은 `priority` 와 같은 호환 규칙이다(구버전 피어는 안 보낸다).
     ///
-    /// **원문을 싣는 이유**: 아직 구현하지 않은 특성도 그대로 날라 두면, 나중에 `BattleAbility` 에
-    /// case 를 늘릴 때 스냅샷 계약을 다시 바꾸지 않아도 된다. 모르는 값은 해석 시점에 `nil` 로 접힌다.
+    /// **원문을 싣는 이유**: 아직 구현하지 않은 특성도 그대로 실어 두면 `BattleAbility` 에 case 를
+    /// 늘릴 때 스냅샷 계약을 안 건드려도 된다. 모르는 값은 해석 시점에 `nil` 로 접힌다.
     /// 세이브에는 없다 — 특성은 종에서 파생되므로 저장할 값이 아니다.
     ///
     /// 스냅샷을 만드는 네 자리가 이 값을 싣는지는
@@ -613,17 +613,15 @@ struct BattleSide: Sendable, Equatable {
     /// 전기 타입의 마비 면역, 풀 타입의 가루 면역은 Gen 6 규칙이라 여기 없다.
     func canBeAfflicted(by status: Status) -> Bool {
         guard isAlive else { return false }
-        // 주 상태와 혼란의 면역 특성은 여기서 갈린다. 타입 면역과 자리가 다른 이유는 판정 기준이
-        // 달라서다 — 저기는 기술 타입, 여기는 걸리는 상태다(그래서 상성표를 안 타는 최면술도 막힌다).
+        // 주 상태와 혼란의 면역 특성은 여기서 갈린다. 타입 면역과 자리가 다른 건 판정 기준이 달라서다 —
+        // 저기는 기술 타입, 여기는 걸리는 상태다(그래서 상성표를 안 타는 최면술도 막힌다).
         //
-        // **풀죽음은 여기를 지나지 않는다.** `applySecondaryEffect` 가 `flinched` 를 직접 쓰고,
-        // 이 함수는 `.flinch` 를 무조건 false 로 접는다(아래 줄). 지금은 풀죽음을 막는 특성이
-        // 없어서 그 차이가 화면에 안 드러날 뿐이다.
+        // **풀죽음은 여기를 지나지 않는다.** `applySecondaryEffect` 가 `flinched` 를 직접 쓰고, 이
+        // 함수는 `.flinch` 를 무조건 false 로 접는다(아래 줄). 지금은 막는 특성이 없어 차이가 안 보일 뿐이다.
         //
-        // ponytail: 정신력(Inner Focus)은 `blocks` 에 case 를 더하는 것으로는 **안 걸린다** —
-        //           컴파일도 되고 읽히기도 맞게 읽히는데 아무 일도 안 한다. 넣으려면 풀죽음 쓰기를
-        //           먼저 이 함수로 끌어오고(`.flinch` 조기 false 도 같이 걷어낸다), 그 자리에
-        //           rng 소비가 붙지 않는지 확인한다.
+        // ponytail: 정신력(Inner Focus)은 `blocks` 에 case 만 더해선 **안 걸린다** — 컴파일도 되고
+        //           읽히기도 맞게 읽히는데 아무 일도 안 한다. 넣으려면 풀죽음 쓰기를 이 함수로 먼저
+        //           끌어오고(`.flinch` 조기 false 도 같이 걷어낸다), rng 소비가 붙는지 확인한다.
         if ability?.blocks(status) == true { return false }
         if status == .confusion { return !isConfused }
         if status == .flinch { return false }
@@ -730,8 +728,8 @@ enum BattleEngine {
     ///     뽑는다. 드레인·반동은 비율 계산이라 안 쓴다. 횟수가 갈리면 뒤 판정이 전부 밀린다.
     /// 14 = 특성 1단계 — 타입 면역(부유·타오르는불꽃)과 흡수(저수·전기흡수), 상태 면역 7종.
     ///     `BattleSnapshot.ability` 가 와이어에 새로 실린다: 구버전이 보낸 스냅샷에는 이 값이 없어
-    ///     같은 기술이 한쪽에서만 통한다. rng 소비는 **그대로다** — 면역은 표 조회뿐이고, 흡수 회복도
-    ///     비율 계산이다. 갈리는 건 소비 횟수가 아니라 값이라 여기서 막는다.
+    ///     같은 기술이 한쪽에서만 통한다. rng 소비는 **그대로다**(표 조회와 비율 계산뿐).
+    ///     갈리는 건 소비 횟수가 아니라 값이라 여기서 막는다.
     static let rulesVersion = 14
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1135,8 +1133,8 @@ extension BattleEngine {
 
     /// 만피를 넘지 않게 잘라 회복하고 **실제로 찬 만큼**만 줄을 낸다. 0 회복 줄은 로그가 거짓말을 한다.
     ///
-    /// 드레인(기술)과 흡수 특성이 같은 자름을 두 벌 들고 있으면 한쪽만 고치게 된다 — 자름이 빠진
-    /// 쪽은 만피를 넘겨 회복하고, 그 뒤로는 HP 바가 최대치보다 길게 그려진다.
+    /// 드레인(기술)과 흡수 특성이 같은 상한 처리를 두 벌 들고 있으면 한쪽만 고치게 된다 — 빠뜨린
+    /// 쪽은 만피를 넘겨 회복하고 HP 바가 최대치보다 길게 그려진다.
     private static func heal(_ side: inout BattleSide, actor: BattleActor, upTo amount: Int) -> [BattleEvent] {
         let healed = min(side.stats.hp - side.hp, amount)
         guard healed > 0 else { return [] }

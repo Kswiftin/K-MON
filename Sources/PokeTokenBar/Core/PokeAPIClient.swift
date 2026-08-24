@@ -597,7 +597,7 @@ struct PokemonDTO: Decodable, Sendable {
     /// 저공격·헤비봄버 구간표가 정수 비교로 끝난다(`VariableDamage`).
     let weight: Int
     /// 같은 응답에 이미 들어 있는 특성 목록 — **추가 요청 없이** 대표 특성을 고른다.
-    /// 옵셔널인 이유는 이 필드를 안 읽던 시절의 캐시 응답이다(없으면 특성 없는 개체가 된다).
+    /// 옵셔널인 이유는 이 필드를 안 읽던 시절의 캐시 응답 때문이다(없으면 특성 없는 개체가 된다).
     let abilities: [PokemonAbilitiesDTO.Entry]?
 }
 /// `/pokemon/{id}` 의 moves 부분만 — 배틀 프로필과 별도 디코드(무브셋은 대전 시작 때만 필요).

@@ -4,7 +4,7 @@ import XCTest
 /// 특성 1단계 — 면역만(#24 Phase 5 / PR 9).
 ///
 /// 면역은 표 조회뿐이라 rng 를 한 번도 안 쓴다. 그래서 두 피어가 갈라질 수 없는 지점부터 들어간다.
-/// 여기서 지키는 건 **갈림길이 두 곳뿐**이라는 것이다 — 데미지는 상성 배율 한 지점,
+/// 이 파일이 잠그는 건 **갈림길이 두 곳뿐**이라는 점이다 — 데미지는 상성 배율 한 지점,
 /// 상태는 `canBeAfflicted` 한 지점. 세 번째 자리가 생기면 모드마다 특성이 달라진다.
 final class BattleAbilityTests: XCTestCase {
     private func snapshot(types: [PokemonType] = [.normal], ability: String? = nil) -> BattleSnapshot {
@@ -19,7 +19,7 @@ final class BattleAbilityTests: XCTestCase {
                  damageClass: .physical, accuracy: nil, pp: 20)
     }
 
-    /// 같은 조건으로 한 대 때리고 (남은 HP, 이벤트) 를 돌려준다 — 대조군과 나란히 세우기 위한 헬퍼.
+    /// 같은 조건으로 한 대 때리고 (남은 HP, 최대 HP, 이벤트)를 돌려준다 — 대조군과 나란히 세우기 위한 헬퍼.
     private func hit(defender: BattleSnapshot, with move: MoveSpec,
                      defenderHP: Int? = nil, seed: UInt64 = 1) -> (hp: Int, maxHP: Int, events: [BattleEvent]) {
         var attacker = BattleSide(snapshot())
@@ -87,7 +87,7 @@ final class BattleAbilityTests: XCTestCase {
         XCTAssertEqual(floating.hp, floating.maxHP, "부유는 갈라진땅도 막는다")
         XCTAssertTrue(floating.events.contains(.immune(.b)))
 
-        // 대조군: 특성이 없으면 일격필살이 그대로 들어간다(면역이 아니라 기술이 죽은 게 아니다).
+        // 대조군: 특성이 없으면 일격필살이 그대로 들어간다(기술이 죽은 게 아니라 면역이 막은 것이다).
         let grounded = hit(defender: snapshot(), with: fissure)
         XCTAssertEqual(grounded.hp, 0, "특성이 없으면 갈라진땅은 그대로 쓰러뜨린다")
 
@@ -160,7 +160,7 @@ final class BattleAbilityTests: XCTestCase {
 
     // 네 자리 전부가 슬러그를 싣는지는 `VariableDamageTests
     // .testEveryBattleSnapshotSiteCarriesTheWireOnlyFields` 가 지킨다 — 체중과 **같은 부류**(스냅샷에만
-    // 실리는 옵셔널 축)라 순회를 두 벌 두지 않았다. 여기서는 슬러그의 출처만 본다.
+    // 실리는 옵셔널 축)라 순회를 두 벌 두지 않는다. 여기서는 슬러그의 출처만 본다.
 
     /// 종에서 파생된다 — 세이브가 아니라 `/pokemon/{id}` 응답이 원천이고, 숨은 특성은 빼고 slot 이 낮은 쪽.
     func testTheBattleProfileTakesTheFirstNonHiddenAbility() {
