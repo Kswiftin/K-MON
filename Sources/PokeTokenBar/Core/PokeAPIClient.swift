@@ -242,10 +242,7 @@ actor PokeAPIClient: PokeProviding {
         do {
             let dto: PokemonAbilitiesDTO = try await get(base.appendingPathComponent("pokemon/\(speciesID)"))
             pokemonSucceeded = true
-            let entries = dto.abilities.map {
-                (slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot)
-            }
-            if let slug = PokemonSpeciesIdentity.primaryAbilitySlug(entries) {
+            if let slug = PokemonAbilitiesDTO.primarySlug(of: dto.abilities) {
                 let ability: AbilityDTO = try await get(base.appendingPathComponent("ability/\(slug)"))
                 for entry in ability.names where langCodes.contains(entry.language.name) {
                     abilityNames[entry.language.name] = entry.name
@@ -302,8 +299,16 @@ actor PokeAPIClient: PokeProviding {
             .sorted { $0.slot < $1.slot }
             .compactMap { PokemonType(rawValue: $0.type.name) }
         guard !types.isEmpty else { throw URLError(.cannotParseResponse) }
+        // 대화 페르소나가 쓰던 선택 규칙을 그대로 재사용한다 — 두 화면이 같은 개체를 두고 서로 다른
+        // 특성을 말하면 안 된다(숨은 특성 제외, slot 최소).
+        let abilitySlug = PokemonAbilitiesDTO.primarySlug(of: dto.abilities ?? [])
+        // 구현하지 않은 특성은 조용히 삼키지 않고 한 번 남긴다 — 프로필은 캐시되므로 종당 한 줄이다
+        // (ailment 14종과 같은 규칙). 배틀은 바뀌지 않는다: 해석이 `nil` 로 접는다.
+        if let abilitySlug, BattleAbility.resolve(abilitySlug) == nil {
+            AppLog.write("battle profile \(speciesID): ability '\(abilitySlug)' not implemented — ignored")
+        }
         let profile = PokemonBattleProfile(speciesID: speciesID, stats: stats, types: types,
-                                           weightHectograms: dto.weight)
+                                           weightHectograms: dto.weight, abilitySlug: abilitySlug)
         battleProfileCache[speciesID] = profile
         return profile
     }
@@ -579,6 +584,9 @@ struct PokemonBattleProfile: Sendable {
     /// 헥토그램(0.1kg). 체중으로 위력이 정해지는 기술(저공격·풀묶기·헤비봄버·히트스탬프)이 쓴다.
     /// 기본값을 둔 이유는 타입만 쓰는 테스트 스텁을 그대로 두기 위함이다 — 실 클라이언트는 늘 채운다.
     var weightHectograms: Int = 0
+    /// 대표 특성 슬러그(숨은 특성 제외, slot 이 가장 낮은 쪽). 조회 실패·미보유면 `nil` 이고,
+    /// 그 경우 스냅샷도 `nil` 을 실어 특성이 없는 개체가 된다.
+    var abilitySlug: String? = nil
 }
 struct PokemonDTO: Decodable, Sendable {
     struct StatEntry: Decodable, Sendable { let base_stat: Int; let stat: NamedRef }
@@ -588,6 +596,9 @@ struct PokemonDTO: Decodable, Sendable {
     /// 헥토그램(0.1kg). 본가가 이 단위로 위력 구간을 나누므로 kg 으로 바꾸지 않고 그대로 들고 간다 —
     /// 저공격·헤비봄버 구간표가 정수 비교로 끝난다(`VariableDamage`).
     let weight: Int
+    /// 같은 응답에 이미 들어 있는 특성 목록 — **추가 요청 없이** 대표 특성을 고른다.
+    /// 옵셔널인 이유는 이 필드를 안 읽던 시절의 캐시 응답 때문이다(없으면 특성 없는 개체가 된다).
+    let abilities: [PokemonAbilitiesDTO.Entry]?
 }
 /// `/pokemon/{id}` 의 moves 부분만 — 배틀 프로필과 별도 디코드(무브셋은 대전 시작 때만 필요).
 struct PokemonMovesDTO: Decodable, Sendable {
@@ -609,6 +620,13 @@ struct PokemonAbilitiesDTO: Decodable, Sendable {
         let slot: Int
     }
     let abilities: [Entry]
+
+    /// 대표 특성 슬러그 — 대화 페르소나와 배틀 프로필이 **같은 개체를 두고 같은 특성**을 골라야 한다.
+    /// 매핑을 호출부마다 두면 한쪽만 규칙이 바뀌어 두 화면이 다른 특성을 말한다.
+    static func primarySlug(of entries: [Entry]) -> String? {
+        PokemonSpeciesIdentity.primaryAbilitySlug(
+            entries.map { (slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot) })
+    }
 }
 /// `/ability/{slug}` 의 현지화 이름과 설명만.
 struct AbilityDTO: Decodable, Sendable {

@@ -183,11 +183,25 @@ enum MultiplayerValidation {
         guard !name.isEmpty, name.count <= 30,
               participant.speciesID == snapshot.speciesID,
               (1...10_000).contains(snapshot.speciesID), (1...100).contains(snapshot.level),
-              (1...2).contains(snapshot.types.count) else { return false }
+              (1...2).contains(snapshot.types.count),
+              validAbility(snapshot.ability) else { return false }
         let stats = snapshot.base
         guard [stats.hp, stats.atk, stats.def, stats.spa, stats.spd, stats.spe]
             .allSatisfy({ (1...255).contains($0) }) else { return false }
         return validMoves(snapshot.moves ?? [])
+    }
+
+    /// 특성 슬러그 범위. **문자열도 신뢰경계다** — 숫자만 자르면 500자 슬러그가 라운드 메시지마다
+    /// 실려 나간다. 빈 문자열도 막는다("특성이 없다"는 `nil` 하나로만 표현한다).
+    ///
+    /// **글자 수가 아니라 바이트로 잰다.** `count` 는 grapheme 을 세므로 40글자가 수 KB 일 수 있다
+    /// (ZWJ 이모지 한 글자가 수십 바이트). 스냅샷은 `roundResolved` 로 매 라운드 참가자 수만큼 다시
+    /// 나가므로, 막으려던 증폭이 상한을 지킨 채로 그대로 일어난다.
+    ///
+    /// 모르는 슬러그는 **여기서 거르지 않는다.** 해석 시점(`BattleAbility.resolve`)에 `nil` 로 접혀
+    /// 배틀을 안 바꾸고, 여기서 거르면 신버전 피어가 특성을 하나 늘릴 때마다 입장 자체가 거절된다.
+    static func validAbility(_ slug: String?) -> Bool {
+        slug.map { !$0.isEmpty && $0.utf8.count <= BattleAbility.maxSlugLength } ?? true
     }
 
     /// 상대 무브셋 범위 검사. **1v1 LAN 도 이 함수를 쓴다** — 방에만 두면 1v1 이 무검사가 된다.
@@ -250,8 +264,11 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 호스트가 `roundResolved` 를 브로드캐스트하므로 구버전 게스트는 모르는 모양을 만나면 라운드를
     // 디코딩하지 못하고 멈춘다 → 입장 단계에서 막는다.
     // 2: LobbyParticipant.role + 관전자 베팅, 3: 이벤트 스트림, 4: 상태이상(status 필드 + case 추가),
-    // 5: 랭크(stages 필드 + `.boost` case), 6: 방 전체 자유 채팅, 7: 포켓몬 OX 퀴즈.
-    static let protocolVersion = 8
+    // 5: 랭크(stages 필드 + `.boost` case), 6: 방 전체 자유 채팅, 7: 포켓몬 OX 퀴즈,
+    // 8: 안 읽던 `meta` 필드 넷(드레인·반동·다단 히트·풀린치 — `Status.flinch` case 추가),
+    // 9: 특성 1단계(`BattleSnapshot.ability`). 새 이벤트 case 는 없지만 **방은 `rulesVersion` 을
+    //    안 본다** — 규칙 차이를 막을 곳이 여기뿐이라 규칙이 바뀌면 이 값도 같이 올린다.
+    static let protocolVersion = 9
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
