@@ -112,6 +112,20 @@ final class BattleAbilityTests: XCTestCase {
         }
     }
 
+    /// 두 축은 **서로 넘어오지 않는다.** 상태 특성이 데미지를 막거나 타입 특성이 상태를 막으면,
+    /// 표 하나가 두 축을 다 덮는 오구현이다 — 각 표의 `default` 가름이 여기서만 실행된다
+    /// (`--show-regions` 에서 두 `default` 가 `^0` 이던 자리다).
+    func testTheTwoImmunityAxesDoNotLeakIntoEachOther() {
+        let limber = hit(defender: snapshot(ability: "limber"), with: attack(.ground))
+        XCTAssertLessThan(limber.hp, limber.maxHP, "유연은 상태 특성이다 — 데미지는 그대로 들어간다")
+
+        let levitate = BattleSide(snapshot(ability: "levitate"))
+        for status in [Status.paralysis, .sleep, .burn, .confusion] {
+            XCTAssertTrue(levitate.canBeAfflicted(by: status),
+                          "부유는 타입 특성이다 — \(status) 를 막으면 안 된다")
+        }
+    }
+
     // MARK: 미구현 슬러그
 
     /// 모르는 슬러그는 배틀을 **한 눈금도** 바꾸지 않는다. 이벤트 전체를 비교한다 —
@@ -125,28 +139,9 @@ final class BattleAbilityTests: XCTestCase {
 
     // MARK: 스냅샷 4경로
 
-    /// 스냅샷을 만드는 네 자리 전부가 특성을 실어야 한다. 한 곳을 빠뜨리면 **그 모드만** 특성이 없다.
-    /// 소스 스캔으로 고정하는 이유는 `MultiplayerRoomCenter` 가 테스트에서 세워지지 않기 때문이고,
-    /// 덤으로 앞으로 생길 다섯 번째 자리도 같이 잡힌다.
-    func testEverySnapshotBuilderCarriesTheAbility() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        var found = 0
-        for path in ["CompanionStore.swift", "MultiplayerRoomCenter.swift", "BattleNet.swift"] {
-            let source = try String(contentsOf: root.appendingPathComponent(
-                "Sources/PokeTokenBar/Core/\(path)"), encoding: .utf8)
-            let calls = source.components(separatedBy: "BattleSnapshot(speciesID:").dropFirst()
-            XCTAssertFalse(calls.isEmpty, "\(path) 에 스냅샷 생성이 있어야 한다")
-            for call in calls {
-                found += 1
-                let weight = try XCTUnwrap(call.range(of: "weightHectograms:"),
-                                           "\(path): 스냅샷 생성 인자 끝을 못 찾았다")
-                XCTAssertNotNil(call.range(of: "ability:", range: call.startIndex..<weight.lowerBound),
-                                "\(path): 스냅샷 하나가 특성을 안 싣는다 — 그 모드만 특성이 없어진다")
-            }
-        }
-        XCTAssertEqual(found, 4, "스냅샷 생성 자리는 네 곳이다(늘었으면 이 테스트도 같이 본다)")
-    }
+    // 네 자리 전부가 슬러그를 싣는지는 `VariableDamageTests
+    // .testEveryBattleSnapshotSiteCarriesTheWireOnlyFields` 가 지킨다 — 체중과 **같은 부류**(스냅샷에만
+    // 실리는 옵셔널 축)라 순회를 두 벌 두지 않았다. 여기서는 슬러그의 출처만 본다.
 
     /// 종에서 파생된다 — 세이브가 아니라 `/pokemon/{id}` 응답이 원천이고, 숨은 특성은 빼고 slot 이 낮은 쪽.
     func testTheBattleProfileTakesTheFirstNonHiddenAbility() {

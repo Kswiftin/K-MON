@@ -428,6 +428,16 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     var base: BattleStats
     /// 네트워크 대전용 무브셋(최대 4).
     var moves: [MoveSpec]? = nil
+    /// 특성 슬러그 원문(`levitate`) — 옵셔널은 `priority` 와 같은 호환 규칙이다(구버전 피어는 안 보낸다).
+    ///
+    /// **원문을 싣는 이유**: 아직 구현하지 않은 특성도 그대로 날라 두면, 나중에 `BattleAbility` 에
+    /// case 를 늘릴 때 스냅샷 계약을 다시 바꾸지 않아도 된다. 모르는 값은 해석 시점에 `nil` 로 접힌다.
+    /// 세이브에는 없다 — 특성은 종에서 파생되므로 저장할 값이 아니다.
+    ///
+    /// 선언 순서가 `weightHectograms` **앞**인 건 우연이 아니다. 스냅샷을 만드는 네 자리가 특성을
+    /// 싣는지를 소스 스캔으로 지키는데(`BattleAbilityTests`), 그 스캔이 "무게 인자 앞에 특성 인자가
+    /// 있는가" 로 읽는다 — 뒤로 옮기면 스캔이 인자 목록의 끝을 못 찾는다.
+    var ability: String? = nil
     /// 헥토그램(0.1kg). 체중으로 위력이 정해지는 기술이 본다.
     ///
     /// 옵셔널인 이유는 **조회 실패**다(피어 호환이 아니다 — 이 필드가 없던 시절과는 `rulesVersion`
@@ -560,6 +570,10 @@ struct BattleSide: Sendable, Equatable {
     var isAlive: Bool { hp > 0 }
     var isConfused: Bool { confusionTurns > 0 }
 
+    /// 이 개체의 특성 — 스냅샷의 슬러그를 해석한 값. 모르는 슬러그는 `nil` 이라 특성이 없는 것과 같다.
+    /// 해석은 사전 조회 한 번이라 턴마다 불러도 싸다(그래서 저장하지 않고 스냅샷 하나만 진실로 둔다).
+    var ability: BattleAbility? { BattleAbility.resolve(snapshot.ability) }
+
     /// 이 스탯의 랭크. 없으면 0 이다.
     func stage(_ stat: BattleStat) -> Int { stages[stat] ?? 0 }
 
@@ -599,6 +613,9 @@ struct BattleSide: Sendable, Equatable {
     /// 전기 타입의 마비 면역, 풀 타입의 가루 면역은 Gen 6 규칙이라 여기 없다.
     func canBeAfflicted(by status: Status) -> Bool {
         guard isAlive else { return false }
+        // 상태 면역 특성은 **여기 한 곳**에서 갈린다. 타입 면역과 자리가 다른 이유는 판정 기준이
+        // 달라서다 — 저기는 기술 타입, 여기는 걸리는 상태다(그래서 상성표를 안 타는 최면술도 막힌다).
+        if ability?.blocks(status) == true { return false }
         if status == .confusion { return !isConfused }
         if status == .flinch { return false }
         guard self.status == nil else { return false }   // 주 상태는 하나
@@ -702,7 +719,11 @@ enum BattleEngine {
     ///     다단기는 명중 직후 히트 수를 뽑고 히트마다 급소·난수를 다시 뽑는다
     ///     (명중 → 히트 수 → (가변위력 → 급소 → 난수) × 히트). 풀린치는 상태 부여 앞에서 한 번 더
     ///     뽑는다. 드레인·반동은 비율 계산이라 안 쓴다. 횟수가 갈리면 뒤 판정이 전부 밀린다.
-    static let rulesVersion = 13
+    /// 14 = 특성 1단계 — 타입 면역(부유·타오르는불꽃)과 흡수(저수·전기흡수), 상태 면역 7종.
+    ///     `BattleSnapshot.ability` 가 와이어에 새로 실린다: 구버전이 보낸 스냅샷에는 이 값이 없어
+    ///     같은 기술이 한쪽에서만 통한다. rng 소비는 **그대로다** — 면역은 표 조회뿐이고, 흡수 회복도
+    ///     비율 계산이다. 갈리는 건 소비 횟수가 아니라 값이라 여기서 막는다.
+    static let rulesVersion = 14
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -882,10 +903,15 @@ enum BattleEngine {
         let isStruggle = move.id == MoveSpec.struggleID
         let ignoresTypeChart = isStruggle
             || (power <= 0 && !MoveSpec.typeBlockedStatusMoveIDs.contains(move.id))
-        // Phase 5(특성·지닌물건)의 타입 면역 특성(부유·타오르는불꽃·저수)이 들어올 자리다.
-        // 상성 배율을 계산하는 지점이 여기 한 곳뿐이다. 지금은 코드를 넣지 않는다.
+        // 타입 면역 특성(부유·타오르는불꽃·저수·전기흡수)은 **여기 한 곳**에서 갈린다 — 상성 배율을
+        // 내는 줄이 이것뿐이라 모드마다 특성이 달라질 수 없다. rng 를 안 쓰므로 소비 순서도 그대로다.
+        //
+        // 상성표를 안 보는 기술(발버둥·변화기)은 특성도 안 본다. 부유가 발버둥을 막으면 PP 가 마른
+        // 쪽이 아무것도 못 하게 되고, 그 상태로는 배틀이 끝나지 않는다.
+        let blockedByAbility = defender.ability?.immuneMoveType == move.type
         let effectiveness = ignoresTypeChart ? 1.0
-            : TypeChart.effectiveness(move.type, against: defender.snapshot.types)
+            : (blockedByAbility ? 0
+                : TypeChart.effectiveness(move.type, against: defender.snapshot.types))
         let isPhysical = move.damageClass == .physical
         let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
         // 급소는 **불리한 랭크만** 무시한다(Gen 3+): 공격측의 마이너스와 방어측의 플러스가 빠진다.
@@ -1109,7 +1135,20 @@ extension BattleEngine {
         events.append(.move(attackerActor, moveID: move.id))
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
         if outcome.missed { return events + [.miss(attackerActor)] }
-        if outcome.effectiveness == 0 { return events + [.immune(defenderActor)] }
+        if outcome.effectiveness == 0 {
+            // 흡수 특성(저수·전기흡수)은 무효 **위에** 회복을 얹는다. 만피면 회복량이 0 이라 줄을
+            // 내지 않지만 무효는 그대로다 — 회복만 확인하면 만피에서 데미지가 들어가도 초록이다.
+            // 부유처럼 흡수가 아닌 면역은 여기 안 걸린다(면역 전부를 회복으로 만들면 안 된다).
+            var absorbed: [BattleEvent] = []
+            if defender.ability?.absorbs(move.type) == true {
+                let amount = min(defender.stats.hp - defender.hp, defender.stats.hp / 4)
+                if amount > 0 {
+                    defender.hp += amount
+                    absorbed.append(.heal(defenderActor, amount: amount))
+                }
+            }
+            return events + [.immune(defenderActor)] + absorbed
+        }
         if outcome.hits > 1 { events.append(.multiHit(attackerActor, hits: outcome.hits)) }
         // 급소·상성 문구가 데미지보다 먼저 온다(Showdown 순서) — 재생할 때 "급소!" 뒤에 HP 가 줄어든다.
         // 고정 데미지·일격필살은 `fixedOutcome` 이 급소를 false, 상성을 1 로 두므로 여기 안 걸린다 —

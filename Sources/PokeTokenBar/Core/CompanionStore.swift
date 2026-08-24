@@ -266,6 +266,7 @@ final class CompanionStore {
         return BattleSnapshot(speciesID: mon.currentID, name: mon.nickname ?? name, trainer: trainerName,
                               level: level, nature: mon.nature, isShiny: mon.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
+                              ability: profile.abilitySlug,
                               weightHectograms: profile.weightHectograms)
     }
 

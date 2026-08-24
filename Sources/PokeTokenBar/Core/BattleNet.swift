@@ -558,9 +558,11 @@ final class BattleCenter {
               lineup.first == snapshot else { return false }
         // 무브셋 범위도 **여기서** 본다. 호출부에 두면 도전/수락 중 한쪽이 무검사가 되고
         // (`statChance: 5000` → 2차효과 확정), 리드 스냅샷만 보면 팀전 2번째 이후 슬롯이 무검사다.
+        // 특성 슬러그도 같은 이유로 여기다 — 방 입장에만 두면 1v1 LAN 이 문자열 무검사가 된다.
         return lineup.allSatisfy {
             !$0.types.isEmpty && (1...100).contains($0.level)
                 && MultiplayerValidation.validMoves($0.moves ?? [])
+                && MultiplayerValidation.validAbility($0.ability)
         }
     }
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
@@ -829,6 +831,7 @@ final class BattleCenter {
                 cpuTeam.append(BattleSnapshot(speciesID: opponentID, name: "CPU #\(opponentID)", trainer: "CPU",
                                               level: level, nature: nil, isShiny: false, types: profile.types,
                                               base: profile.stats, moves: moves,
+                                              ability: profile.abilitySlug,
                                               weightHectograms: profile.weightHectograms))
             }
             guard cpuTeam.count == rankedTeamSize else { phase = .ready; lastError = l.battleStatsFailed; return }
@@ -873,6 +876,7 @@ final class BattleCenter {
                                                  trainer: gym.leaderName(companion.language),
                                                  level: gym.level, nature: nil, isShiny: false,
                                                  types: profile.types, base: profile.stats, moves: moves,
+                                                 ability: profile.abilitySlug,
                                                  weightHectograms: profile.weightHectograms))
             }
             guard leaderTeam.count == GymLeague.teamSize else {

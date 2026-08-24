@@ -800,6 +800,7 @@ final class MultiplayerRoomCenter {
         return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
                               level: level, nature: active.nature, isShiny: active.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
+                              ability: profile.abilitySlug,
                               weightHectograms: profile.weightHectograms)
     }
 
