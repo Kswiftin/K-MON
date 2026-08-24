@@ -684,6 +684,11 @@ enum BattleEngine {
     /// 12 = 변화기가 상성표를 안 탄다(전기자석파 제외). 예전엔 안 걸리던 상태가 걸리므로
     ///     같은 입력에서 배틀이 통째로 갈라진다. rng 소비는 그대로다 — 면역으로 조기반환하던
     ///     자리가 정상 경로로 바뀌는 것뿐이라 뽑는 횟수는 같다(명중 → 가변위력 → 급소 → 난수 폭).
+    /// 13 = 안 읽던 `meta` 필드 넷(드레인·반동·다단 히트·풀린치). rng 소비가 **두 군데** 늘어난다:
+    ///     다단기는 명중 직후 히트 수를 한 번 뽑고 히트마다 급소·난수를 다시 뽑으며(명중 → 히트 수 →
+    ///     (가변위력 → 급소 → 난수) × 히트), 풀린치 확률이 붙은 기술은 상태 부여 **앞에서** 한 번
+    ///     더 뽑는다. 드레인·반동은 비율 계산이라 rng 를 안 쓴다. 소비 횟수가 갈리면 그 뒤 모든
+    ///     판정이 어긋나므로 구버전과 붙으면 안 된다.
     static let rulesVersion = 13
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -745,7 +750,13 @@ enum BattleEngine {
         /// 일격필살(지구밟기 부류). `damage` 가 이미 남은 HP 전부라 계산은 달라지지 않지만,
         /// 상성·급소 문구를 붙이지 않는 근거로 쓴다.
         var isOneHitKO = false
+        /// 실제로 들어간 히트 수 — 다단기(더블킥·고드름침)만 1 보다 크다. 상대가 중간에 쓰러지면
+        /// 요청 횟수보다 적다.
         var hits = 1
+        /// **마지막 히트**가 넣은 데미지. 되돌려주는 기술(카운터·미러코트·메탈버스트)이 이 값을 읽는다 —
+        /// 본가는 마지막 히트만 되돌려주므로 합계를 주면 되돌아오는 데미지가 히트 수만큼 뻥튀기된다.
+        /// 단발기는 `damage` 와 같아서 `nil` 이고, 읽는 쪽이 `?? damage` 로 접는다.
+        var lastHitDamage: Int? = nil
     }
 
     /// 공식을 타지 않는 데미지(고정·일격필살)의 결과.
@@ -789,12 +800,19 @@ enum BattleEngine {
         return withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
     }
 
-    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 가변위력 → 급소 → 난수 폭
-    /// 순서고, 빗나가면 뒤의 셋을 소비하지 않는다. 세 모드가 이 함수 하나만 쓴다(예전엔 복사돼 있었다).
+    /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** —
+    /// 명중 → 히트 수 → (가변위력 → 급소 → 난수 폭) × 히트 순서고, 빗나가면 뒤를 하나도 소비하지
+    /// 않는다. 세 모드가 이 함수 하나만 쓴다(예전엔 복사돼 있었다).
     ///
-    /// 가변위력이 명중 바로 뒤인 이유: 매그니튜드·사이코웨이브만 여기서 난수를 한 번 더 뽑고,
-    /// 나머지 기술은 한 번도 뽑지 않는다. 자리를 뒤로 미루면 "언제 뽑는지" 가 급소·난수 폭과
-    /// 얽혀 두 피어의 소비 횟수를 눈으로 못 세게 된다.
+    /// 히트 수가 명중 바로 뒤인 이유: 다단기만 여기서 한 번 뽑고(`min == max` 인 더블킥은 그조차
+    /// 안 뽑는다) 나머지는 한 번도 안 뽑는다. 히트마다 급소와 난수 폭을 **다시** 뽑는 것도 본가와
+    /// 같다 — 그래서 5회 히트는 rng 를 10번 소비한다. 두 피어가 같은 무브셋을 들고 있으므로
+    /// 히트 수도 같고, 소비 횟수도 같다.
+    ///
+    /// 가변위력이 그 뒤인 이유: 매그니튜드·사이코웨이브만 난수를 한 번 더 뽑고, 나머지 기술은 한
+    /// 번도 뽑지 않는다. 자리를 뒤로 미루면 "언제 뽑는지" 가 급소·난수 폭과 얽혀 두 피어의 소비
+    /// 횟수를 눈으로 못 세게 된다. (가변위력기와 다단기는 겹치지 않는다 — 겹치면 히트마다 위력을
+    /// 다시 뽑게 되므로 그런 기술이 생기면 여기서 한 번만 뽑도록 끌어올려야 한다.)
     static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         if let chance = hitChance(of: move, attacker: attacker, defender: defender),
@@ -802,22 +820,27 @@ enum BattleEngine {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
         }
         let requestedHits = move.hitCount(rng: &rng)
+        // 남은 HP 는 지역에서 센다 — `defender` 는 값 사본이라 히트 사이에 줄지 않는다. 이걸 안 세면
+        // 이미 쓰러진 상대를 남은 횟수만큼 계속 때린다.
         var remaining = defender.hp
-        var total = 0, actualHits = 0
+        var total = 0, actualHits = 0, lastHit = 0
         var effectiveness = 1.0, critical = false
         for _ in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move, rng: &rng)
             total += one.damage
             remaining -= one.damage
             actualHits += 1
+            lastHit = one.damage
             effectiveness = one.effectiveness
             critical = critical || one.isCritical
             if one.effectiveness == 0 { break }
         }
         return AttackOutcome(missed: false, damage: total, effectiveness: effectiveness,
-                             isCritical: critical, hits: actualHits)
+                             isCritical: critical, hits: actualHits, lastHitDamage: lastHit)
     }
 
+    /// 히트 하나. 다단기는 이 함수를 히트마다 부르므로 급소·난수 폭이 히트별로 독립이다
+    /// (본가와 같다 — 한 번 뽑아 곱하면 급소가 나면 전 히트가 급소가 된다).
     private static func resolveSingleHit(attacker: BattleSide, defender: BattleSide,
                                          move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
@@ -1088,9 +1111,15 @@ extension BattleEngine {
             defender.hp = max(0, defender.hp - outcome.damage)
             // 되돌려주는 기술(카운터 계열)이 이번 턴에 읽는다. 잔뎀·혼란 자멸은 여기를 지나지 않으므로
             // 기록되지 않는다 — 본가도 기술 데미지만 되돌려준다.
-            defender.lastHitThisTurn = IncomingHit(amount: outcome.damage,
+            //
+            // **다단기는 마지막 히트만 기록한다.** 합계를 넣으면 카운터가 5회 히트의 총합을 2배로
+            // 되돌려줘 되돌리기가 히트 수만큼 세진다(본가는 마지막 히트만 되돌려준다).
+            defender.lastHitThisTurn = IncomingHit(amount: outcome.lastHitDamage ?? outcome.damage,
                                                    damageClass: move.damageClass)
             events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
+            // 드레인·반동은 **넣은 데미지의 비율**이다(PokéAPI `meta.drain` 하나가 양쪽을 겸한다:
+            // 양수는 흡수, 음수는 반동). rng 를 쓰지 않으므로 소비 순서가 흔들리지 않는다.
+            // 다단기는 합계를 기준으로 한 번만 계산한다 — 히트마다 회복하면 로그가 다섯 줄이 된다.
             let percent = move.drainPercent
             if percent > 0 {
                 let amount = min(attacker.stats.hp - attacker.hp, outcome.damage * percent / 100)

@@ -54,11 +54,17 @@ enum BattleLog {
                 flush()
                 out.append(Line(actor: actor,
                                 text: l.battleStatusDamage(name(actor), damage: amount, cause: cause)))
-            case .heal(let actor, let amount, _):
+            case .heal(let actor, let amount, let cause):
+                // 회복은 **자기 줄**이다 — 잔뎀과 같은 이유다. 진행 중인 행동에 접으면 드레인은
+                // 맞지만(때린 쪽이 회복한다) 특성 흡수(Phase 5)는 *맞은* 쪽이 회복하므로 남의
+                // 기술 줄에 내 회복이 붙는다.
                 flush()
-                out.append(Line(actor: actor, text: "+\(amount) HP"))
-            case .multiHit:
-                break
+                out.append(Line(actor: actor,
+                                text: l.battleHealed(name(actor), amount: amount, cause: cause)))
+            case .multiHit(let actor, let hits):
+                // 급소·상성과 같은 자리(공격 줄의 노트)다. 자기 줄로 빼면 "3번 맞았다" 가 데미지
+                // 줄과 떨어져 무엇이 세 번 맞은 건지 읽히지 않는다.
+                begin(actor); pending?.notes.append(l.battleMultiHit(hits))
             case .faint(let actor):
                 flush()
                 out.append(Line(actor: actor, text: l.battleFainted(name(actor))))

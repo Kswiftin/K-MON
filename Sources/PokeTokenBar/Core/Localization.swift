@@ -221,8 +221,23 @@ struct L {
                                   "\(name) hurt itself in confusion! \(damage)",
                                   "\(name)は 混乱で \(damage)ダメージ")
         case .move:      return battleTookDamage(name, damage: damage)
-        case .recoil:    return t("\(name)은(는) 반동으로 \(damage) 데미지", "\(name) was hurt by recoil! \(damage)", "\(name)は 反動で\(damage)ダメージ")
+        case .recoil:    return t("\(name)은(는) 반동으로 \(damage) 데미지",
+                                  "\(name) was hurt by recoil! \(damage)",
+                                  "\(name)は 反動で \(damage)ダメージ")
         }
+    }
+
+    /// 회복 — 드레인기(흡수·기가드레인)와 특성 흡수가 같은 줄을 쓴다. **원인으로 문구를 가르지
+    /// 않는다**: 플레이어가 알아야 하는 건 "누가 얼마나 회복했나" 이고, 무엇으로 회복했는지는
+    /// 바로 앞 줄의 기술명이 이미 말한다.
+    func battleHealed(_ name: String, amount: Int, cause: HealCause) -> String {
+        t("\(name)은(는) \(amount) 회복했다", "\(name) restored \(amount) HP", "\(name)は \(amount)かいふくした")
+    }
+
+    /// 다단 히트 — 몇 번 맞았는지 말하지 않으면 이 기전은 "위력이 이상하게 센 기술" 로만 보인다.
+    /// 급소·상성 문구와 같은 자리(공격 줄의 노트)에 붙는다.
+    func battleMultiHit(_ hits: Int) -> String {
+        t("\(hits)번 맞았다!", "Hit \(hits) times!", "\(hits)かい あたった！")
     }
 
     // MARK: 배틀 (랭크)
