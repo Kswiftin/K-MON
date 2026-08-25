@@ -91,9 +91,13 @@ final class PokemonChatToolTests: XCTestCase {
 
     // MARK: 인자 클램프
 
-    /// 길이는 화면이 제시하는 세 값으로 접힌다. 접지 않으면 모델의 한 글자가 99999분짜리 타이머가 된다.
-    func testFocusMinutesAreClampedToTheThreeOfferedLengths() {
-        let cases = [(1, 25), (25, 25), (30, 25), (38, 50), (50, 50), (60, 50), (71, 90), (90, 90), (99_999, 90)]
+    /// 길이는 화면이 제시하는 값으로 접힌다. 접지 않으면 모델의 한 글자가 99999분짜리 타이머가 된다.
+    /// 프리셋 5종(15/20/25/50/90)이 들어오며 **의도적으로** 바뀐 기대값: 1분은 이제 25가 아니라
+    /// 가장 가까운 15로 접힌다. 목록이 넓어졌는데 이 표가 옛 셋을 그대로 기대하면, 새 길이는
+    /// 화면에만 있고 대화는 영영 못 켜는 상태를 테스트가 지켜 준다.
+    func testFocusMinutesAreClampedToTheOfferedLengths() {
+        let cases = [(1, 15), (15, 15), (17, 15), (18, 20), (20, 20), (23, 25), (25, 25), (30, 25),
+                     (38, 50), (50, 50), (60, 50), (71, 90), (90, 90), (99_999, 90)]
         for (asked, expected) in cases {
             XCTAssertEqual(PokemonChatToolParser.parse("[[tool:pokedoro.start(\(asked))]]").call,
                            .pokedoroStart(minutes: expected), "\(asked)분")
