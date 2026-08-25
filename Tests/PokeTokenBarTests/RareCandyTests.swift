@@ -280,4 +280,40 @@ final class CandyNotificationCopyTests: XCTestCase {
             XCTAssertFalse(title.isEmpty)
         }
     }
+
+    // MARK: 홈 헤더 바로가기
+
+    /// 홈 헤더의 사탕 버튼은 **가방과 같은 판정**(`canUseRareCandy`)으로 나타나야 한다.
+    /// 조건을 따로 쓰면 가방에선 회색인데 홈에선 눌리는(또는 그 반대) 두 화면이 생긴다.
+    /// 뷰 계층이라 순수 함수로 못 재서 소스에서 본다 — 주석은 뺀다(가드가 자기 설명에 걸린다).
+    func testHomeCandyShortcutSharesTheBagsEligibilityCheck() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        func code(_ path: String) throws -> String {
+            try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line -> String in
+                    guard let comment = line.range(of: "//") else { return String(line) }
+                    return String(line[..<comment.lowerBound])
+                }
+                .joined(separator: "\n")
+        }
+        let home = try code("Sources/PokeTokenBar/UI/CompanionView.swift")
+        XCTAssertTrue(home.contains("store.canUseRareCandy"),
+                      "재고·알 상태 판정을 여기서 다시 쓰면 가방과 갈린다")
+        XCTAssertTrue(home.contains("store.useRareCandy()"), "실제 소비는 스토어가 한다")
+        // 확인 없이 바로 먹으면 되돌릴 수 없는 소비가 오탭 한 번으로 일어난다.
+        XCTAssertTrue(home.contains("confirmationDialog"), "한 번 물어야 한다")
+        XCTAssertTrue(home.contains("l.useOnCurrent"), "확인 문구도 가방과 같은 것을 쓴다")
+    }
+
+    /// 재고가 없으면 버튼이 나오지 않아야 한다 — 판정 자체를 잠근다(위 가드가 보는 그 값).
+    func testEligibilityFollowsStockAndHatchState() async {
+        let s = store(rcLinear3)
+        XCTAssertFalse(s.canUseRareCandy, "부화 전에는 버튼이 없어야 한다")
+        await s.hatch(baseID: 1)
+        XCTAssertFalse(s.canUseRareCandy, "재고가 없으면 버튼이 없어야 한다")
+        giveCandies(s, 2)
+        XCTAssertTrue(s.canUseRareCandy)
+    }
 }

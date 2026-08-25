@@ -459,6 +459,8 @@ struct CompanionHeader: View {
     // 민트 사용 시 "반짝" 스파클 (성격 변경 피드백 — 텍스트 없이 짧은 이펙트)
     @State private var seenMintSeq = -1
     @State private var mintSparkle = false
+    /// 사탕 확인창을 열어 둔 상태. 되돌릴 수 없는 소비라 한 번 묻는다(가방과 같은 규칙).
+    @State private var confirmingCandy = false
     // 별명 인라인 편집
     @State private var editingName = false
     @State private var nameDraft = ""
@@ -475,6 +477,27 @@ struct CompanionHeader: View {
 
     /// 부화 임박(90%+) — 알이 흔들리고 문구가 바뀐다.
     private var eggImminent: Bool { store.isEgg && store.eggProgress >= 0.9 }
+
+    /// 이름 옆 이상한사탕 — **쓸 수 있을 때만** 나온다. 가방까지 가지 않고 홈에서 바로 먹인다.
+    ///
+    /// 되돌릴 수 없는 소비라 한 번 묻는다(가방과 같은 규칙). 확인은 `confirmationDialog` 로
+    /// 띄운다 — 인라인으로 펼치면 헤더 높이가 그 순간 늘어나 아래 카드가 통째로 밀린다.
+    ///
+    /// 사용 뒤 피드백("+XP"·진화 연출)은 이 헤더가 이미 `candyFeedbackSeq` 로 재생하고 있다.
+    /// 가방에서 쓰면 홈 탭으로 보내는 것도 그 연출을 보여주기 위함이라, 여기서 쓰면 탭 이동조차
+    /// 없이 그 자리에서 재생된다.
+    private var rareCandyButton: some View {
+        Button { confirmingCandy = true } label: {
+            ItemIconView(kind: .rareCandy, size: 14)
+        }
+        .buttonStyle(.borderless).controlSize(.mini)
+        .accessibilityLabel(store.l.itemName(.rareCandy))
+        // 문구는 가방과 **같은 것**을 쓴다. 여기서 새로 지으면 같은 행동을 두 화면이 다르게 말한다.
+        .confirmationDialog(store.l.useOnCurrent(store.displayName), isPresented: $confirmingCandy) {
+            Button(store.l.use) { store.useRareCandy() }
+            Button(store.l.cancel, role: .cancel) { confirmingCandy = false }
+        }
+    }
 
     var body: some View {
         if store.needsStarterSelection {
@@ -566,6 +589,10 @@ struct CompanionHeader: View {
                             .buttonStyle(.borderless).controlSize(.mini)
                             .accessibilityLabel(store.l.t("포켓몬과 대화", "Chat with Pokémon", "ポケモンと話す"))
                         }
+                        // 쓸 수 있을 때만 나온다 — 재고가 0 이거나 알 상태면 자리조차 잡지 않는다.
+                        // `canUseRareCandy` 는 가방이 보는 것과 **같은 판정**이다. 여기서 조건을
+                        // 다시 쓰면 가방에선 회색인데 여기선 눌리는 두 화면이 생긴다.
+                        if store.canUseRareCandy, !editingName { rareCandyButton }
                     }
                     if store.hasActive {
                         // 단계 + 성격(부화 시 확정된 개체 아이덴티티)
