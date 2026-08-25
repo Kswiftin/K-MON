@@ -311,8 +311,20 @@ final class AchievementSaveTests: XCTestCase {
     /// 은 올리지 않는다. `gymBadges` 는 이전 배포에 이미 있던 필드라 버전 상향이 필요했다
     /// (`testASaveSignedBeforeTheCanonicalChangeIsNotJudgedTampered`).
     /// 버전을 올리면 그 배포의 **모든** 세이브가 검사를 한 번 면제받아 다른 필드 조작도 통과한다.
+    ///
+    /// 예전엔 `integrityVersion == 7` 리터럴로 이걸 확인했는데, 그러면 **다른 필드가 정당하게**
+    /// 버전을 올릴 때마다(돌봄 제거가 7 → 8 을 했다) 업적과 무관한 이유로 여기가 깨진다.
+    /// 정말 확인해야 하는 건 숫자가 아니라 **기본값 상태에 업적 세그먼트가 안 붙는다**는 사실이다.
     func testTheAchievementSegmentDoesNotRequireAnIntegrityVersionBump() {
-        XCTAssertEqual(SaveTransfer.integrityVersion, 7)
+        // 기본값이면 세그먼트가 없다 → 세그먼트가 생기기 전 서명이 그대로 유효하다.
+        let segments = SaveTransfer.canonicalString(CompanionState()).split(separator: "|")
+        XCTAssertFalse(segments.contains { $0.hasPrefix("ach") })
+
+        // 대조군 — 값이 들면 실제로 붙는다(위 단언이 "언제나 참"인 빈 검사가 아님을 보인다).
+        var earned = CompanionState()
+        earned.achievements.counts = ["focus": 60]
+        XCTAssertTrue(SaveTransfer.canonicalString(earned).split(separator: "|")
+            .contains { $0.hasPrefix("ach") })
 
         // 업적이 없는 상태로 현재 버전에서 서명된 세이브는 그대로 유효하다.
         var old = CompanionState()

@@ -186,21 +186,6 @@ final class CompanionStoreTests: XCTestCase {
         return CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: seed))
     }
 
-    func testResumeCareClockReturnsAndForwardsCareEvent() {
-        let old = Date(timeIntervalSince1970: 100_000)
-        let now = old.addingTimeInterval(2 * 3600)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-care-clock-\(UUID().uuidString).json")
-        let s = CompanionStore(provider: StubProvider(value: linear3), clock: { now }, fileURL: url,
-                               rng: SeededRNG(seed: 7))
-        s.debugSetCare(PetCareState(hunger: 30, lastNeedAt: old.addingTimeInterval(-3600), lastUpdatedAt: old))
-
-        let event = s.resumeCareClock()
-
-        XCTAssertEqual(event, .requested(.hungry))
-        XCTAssertEqual(s.state.care.pendingNeed, .hungry)
-        try? FileManager.default.removeItem(at: url)
-    }
-
     // MARK: 상태 파일 decode 복원력 (회귀)
 
     /// [회귀] 도감 항목 하나가 손상돼도(구버전/필드 누락) 나머지 도감·companion·인벤토리를 지킨다 —
@@ -1451,6 +1436,27 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.dexEntries.count, 1)
         let chain = s.dexEntries[0].chainOrder
         XCTAssertTrue(chain == [1, 2] || chain == [1, 3, 4], "실제 진화 경로 보존: \(chain)")
+    }
+}
+
+// MARK: 이름 폴백 (AppLanguage.resolveName)
+
+/// [회귀] `resolveName` 의 폴백 순서(요청 언어 → 영어)를 재는 유일한 단언이 삭제된 대화 테스트
+/// 파일 안에 있었다. 이 함수는 종·기술·특성·체육관 이름 전부가 지나는 길이라, 커버는 붙어 있던
+/// 기능이 아니라 함수 쪽에 있어야 한다. 대조군까지 둬 "언제나 영어"·"언제나 nil" 을 배제한다.
+final class NameFallbackTests: XCTestCase {
+    func testResolveNameFallsBackToEnglishButPrefersTheRequestedLanguage() {
+        let englishOnly = ["en": "Static"]
+        XCTAssertEqual(AppLanguage.ko.resolveName(englishOnly), "Static")
+        XCTAssertEqual(AppLanguage.ja.resolveName(englishOnly), "Static")
+
+        // 요청 언어가 있으면 영어를 쓰지 않는다.
+        let both = ["en": "Static", "ko": "정전기", "ja": "せいでんき"]
+        XCTAssertEqual(AppLanguage.ko.resolveName(both), "정전기")
+        XCTAssertEqual(AppLanguage.ja.resolveName(both), "せいでんき")
+
+        // 폴백 대상조차 없으면 nil — 빈 문자열이나 아무 값이나 고르지 않는다.
+        XCTAssertNil(AppLanguage.ko.resolveName(["de": "Statik"]))
     }
 }
 

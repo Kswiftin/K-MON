@@ -71,7 +71,9 @@ enum SaveTransfer {
     /// 조건부 append 로 버티는 건 **이전 배포에 없던 필드**뿐이다(구세이브는 항상 기본값이라
     /// 세그먼트가 안 붙는다). 이미 배포된 필드를 넣으면 값이 든 정상 세이브가 전부 조작 판정되므로
     /// 버전 상향이 유일한 방어다 — `gymBadges`·`shinyEggCharges` 때문에 6 → 7.
-    static let integrityVersion = 7
+    /// 필드를 **빼는** 것도 같은 부류다: 돌봄을 지우며 `care`·`care2`·`health`·`disc`·`sleep`
+    /// 세그먼트가 사라져, 값이 든 기존 세이브의 서명을 이 빌드가 재현할 수 없다 → 7 → 8.
+    static let integrityVersion = 8
     /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
     static let forcedResetVersion = 1
     /// 세이브 파일 크기 상한. 정상 세이브는 수 KB 이고 도감이 가득 차도 수백 KB 를 넘지 않는다.
@@ -104,14 +106,6 @@ enum SaveTransfer {
         "companion-state.pre-import-\(secondStamp(date)).json"
     }
     static let backupFilePrefix = "companion-state.pre-import-"
-    static let memoryBackupFilePrefix = "pokemon-memories.pre-import-"
-    static let chatBackupFilePrefix = "pokemon-chat.pre-import-"
-    static func importBackupFileNames(date: Date) -> (state: String, memory: String, chat: String) {
-        let stamp = secondStamp(date)
-        return ("companion-state.pre-import-\(stamp).json",
-                "pokemon-memories.pre-import-\(stamp).json",
-                "pokemon-chat.pre-import-\(stamp).json")
-    }
     /// 유지할 백업 개수 — 오래된 것부터 지운다.
     static let backupsToKeep = 5
 
@@ -231,16 +225,6 @@ enum SaveTransfer {
         s.boxedMons = Array(s.boxedMons.prefix(100)).map(sanitizedMon)
         // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
         s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
-        s.care.hunger = min(max(0, s.care.hunger), 100)
-        s.care.happiness = min(max(0, s.care.happiness), 100)
-        s.care.energy = min(max(0, s.care.energy), 100)
-        s.care.affection = min(max(0, s.care.affection), 100)
-        s.care.hygiene = min(max(0, s.care.hygiene), 100)
-        s.care.messCount = min(max(0, s.care.messCount), 3)
-        s.care.discipline = min(max(0, s.care.discipline), 100)
-        s.care.careMistakes = min(max(0, s.care.careMistakes), 99_999)
-        if s.care.pendingNeed == nil { s.care.needDeadline = nil }
-        if !s.care.isSleeping { s.care.sleepStartedAt = nil }
         if let adventure = s.adventure,
            adventure.endsAt <= adventure.startedAt ||
            adventure.endsAt.timeIntervalSince(adventure.startedAt) > 24 * 60 * 60 {
@@ -348,18 +332,6 @@ enum SaveTransfer {
         p.append("tier\(s.eggTier?.rawValue ?? "-")"); p.append("sc\(s.starterChosen)")
         p.append("cand" + s.starterCandidates.map(String.init).joined(separator: ","))
         p.append("inv" + s.inventory.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))
-        // 구버전 서명 호환: 새 필드가 완전히 기본값이면 기존 canonical 문자열을 유지한다.
-        if s.care != PetCareState() {
-            p.append("care\(Int(s.care.hunger))|\(Int(s.care.happiness))|\(Int(s.care.energy))")
-        }
-        if s.care.affection != 50 || s.care.careMistakes != 0 || s.care.pendingNeed != nil {
-            p.append("care2\(Int(s.care.affection))|\(s.care.careMistakes)|\(s.care.pendingNeed?.rawValue ?? "-")")
-        }
-        if s.care.hygiene != 100 || s.care.isSick || s.care.messCount != 0 {
-            p.append("health\(Int(s.care.hygiene))|\(s.care.isSick)|\(s.care.messCount)")
-        }
-        if s.care.discipline != 0 { p.append("disc\(Int(s.care.discipline))") }
-        if s.care.isSleeping { p.append("sleep\(s.care.sleepStartedAt?.timeIntervalSince1970 ?? 0)") }
         if let run = s.adventure {
             p.append("adv\(run.id)|\(run.zone.rawValue)|\(run.startedAt.timeIntervalSince1970)|\(run.endsAt.timeIntervalSince1970)|\(run.companionSpeciesID)")
         }

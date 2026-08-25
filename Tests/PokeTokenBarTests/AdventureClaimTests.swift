@@ -116,17 +116,16 @@ final class AdventureClaimTests: XCTestCase {
         XCTAssertTrue(store.isAdventureInProgress)
     }
 
-    /// 존 모험 버튼도 같은 자동 정산 경로를 탄다(부류 스윕 — 시작 경로가 둘이다).
-    func testZoneAdventureStartAlsoClaimsStaleRun() async {
-        let clock = TestClock()
-        let store = await hatchedStore(clock)
-        XCTAssertTrue(store.startAdventure(.forest))
-        clock.advance(AdventureZone.forest.duration + 3600)
-
-        let starPiecesBefore = store.state.starPieces
-        XCTAssertTrue(store.startAdventure(.cave))
-        XCTAssertGreaterThan(store.state.starPieces, starPiecesBefore)
-        XCTAssertEqual(store.activeAdventure?.zone, .cave)
+    /// 집중 시간이 존을 고른다 — 존은 보상 계산의 입력이라(`AdventureRules.reward`) 경계가 밀리면
+    /// 같은 25분이 다른 값을 낸다. 이 매핑이 유일한 존 선택 경로다(존 버튼은 사라졌다).
+    func testFocusMinutesPickTheZoneAtEveryBoundary() async {
+        for (minutes, zone) in [(25, AdventureZone.forest), (49, .forest), (50, .cave),
+                                (89, .cave), (90, .coast)] {
+            let clock = TestClock()
+            let store = await hatchedStore(clock)
+            XCTAssertTrue(store.startFocusAdventure(minutes: minutes))
+            XCTAssertEqual(store.activeAdventure?.zone, zone, "\(minutes)분")
+        }
     }
 
     /// 모험을 안 보낸 집중 세션은 정산할 게 없다 — 보상 0, 크래시 없음.

@@ -2,7 +2,7 @@ import Foundation
 
 /// 표시 상태 — 사용량/burn 으로 결정(스프라이트 모션 강도·상태 문구).
 enum CompanionStateKind: String, Sendable {
-    case egg, idle, working, focus, tired, sleep, levelUp
+    case egg, idle, working, focus, levelUp
 }
 
 /// 앱 언어. 포켓몬 이름은 PokéAPI 다국어 names 에서 가져온다.
@@ -26,13 +26,6 @@ enum AppLanguage: String, Codable, Sendable, CaseIterable {
     func resolveName(_ byLang: [String: String]) -> String? {
         for code in apiCodes { if let n = byLang[code] { return n } }
         return byLang["en"]
-    }
-
-    /// 설명 문장은 요청 언어와 정확히 맞을 때만 쓴다. 이름 한 단어와 달리 영어 설명 전체를
-    /// 폴백하면 포켓몬의 말투와 페르소나가 요청 언어 밖으로 새어 나간다.
-    func resolveProse(_ byLang: [String: String]) -> String? {
-        for code in apiCodes { if let text = byLang[code] { return text } }
-        return nil
     }
 
     /// 신규 설치 기본 언어 — 시스템 선호 언어에서 유추(글로벌 출시: 한국어 강제 금지).
@@ -131,8 +124,8 @@ enum PokemonBalance {
     static let experiencePerLevel = 10_000_000
     static var maxLevelExperience: Int { (maxLevel - 1) * experiencePerLevel }
 
-    /// 친밀도 진화의 레벨 환산 — 앱엔 친밀도 축이 없다(돌봄 UI 는 제거됐고 affection 은 플로팅 펫
-    /// 쓰다듬기로만 오른다). PokéAPI 의 `min_happiness` 는 실제로 160/220 두 값뿐이라 그 두 단계를
+    /// 친밀도 진화의 레벨 환산 — 앱엔 친밀도 축이 없다. PokéAPI 의 `min_happiness` 는 실제로
+    /// 160/220 두 값뿐이라 그 두 단계를
     /// 레벨 두 단계로 옮긴다. 하한 25 는 직전 진화 레벨(예: 주뱃→골뱃 22)보다 뒤에 오게 하는 값이고,
     /// 상한은 무진화 종 졸업 기준과 같은 30이다. 원본 값이 바뀌어도 이 규칙만 유지하면 된다.
     static func friendshipLevel(minHappiness: Int) -> Int {
@@ -775,7 +768,6 @@ struct CompanionState: Codable, Sendable {
     var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
-    var care = PetCareState()
     var adventure: AdventureRun?
     var adventureHistory: [AdventureRecord] = []
     var battleHistory: [BattleRecord] = []
@@ -843,7 +835,6 @@ struct CompanionState: Codable, Sendable {
         shinyEggCharges    = c.lenient(Int.self, forKey: .shinyEggCharges, default: 0)
         language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
-        care               = c.lenient(PetCareState.self, forKey: .care, default: PetCareState())
         adventure          = c.lenientOptional(AdventureRun.self, forKey: .adventure)
         adventureHistory   = c.lenient([Lossy<AdventureRecord>].self, forKey: .adventureHistory, default: []).compactMap(\.value)
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)

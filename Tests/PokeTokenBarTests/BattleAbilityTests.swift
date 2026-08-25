@@ -164,15 +164,15 @@ final class BattleAbilityTests: XCTestCase {
 
     /// 종에서 파생된다 — 세이브가 아니라 `/pokemon/{id}` 응답이 원천이고, 숨은 특성은 빼고 slot 이 낮은 쪽.
     func testTheBattleProfileTakesTheFirstNonHiddenAbility() {
-        XCTAssertEqual(PokemonSpeciesIdentity.primaryAbilitySlug(
+        XCTAssertEqual(PokemonAbilitiesDTO.primaryAbilitySlug(
             [(slug: "chlorophyll", isHidden: true, slot: 3),
              (slug: "overgrow", isHidden: false, slot: 1)]), "overgrow")
-        XCTAssertNil(PokemonSpeciesIdentity.primaryAbilitySlug(
+        XCTAssertNil(PokemonAbilitiesDTO.primaryAbilitySlug(
             [(slug: "chlorophyll", isHidden: true, slot: 3)]))
 
         // **slot 이 배열 순서와 어긋난 경우.** 이게 없으면 `min(slot)` 을 `first` 로 써도 통과한다 —
         // PokéAPI 가 `abilities` 를 slot 순으로 준다는 보장이 계약에 없다.
-        XCTAssertEqual(PokemonSpeciesIdentity.primaryAbilitySlug(
+        XCTAssertEqual(PokemonAbilitiesDTO.primaryAbilitySlug(
             [(slug: "shield-dust", isHidden: false, slot: 2),
              (slug: "run-away", isHidden: false, slot: 1)]), "run-away")
     }
