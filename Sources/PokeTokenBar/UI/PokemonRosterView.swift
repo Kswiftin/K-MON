@@ -246,7 +246,19 @@ private struct RosterMonCard: View {
     private var card: some View {
         Button { if !isActive { store.switchCompanion(to: mon.id) } } label: {
             VStack(spacing: 2) {
+                // ✨ 는 도감 칸과 **같은 표식**이다(`DexCell`). 이로치 스프라이트는 색만 다를 뿐이라
+                // 원래 색을 모르면 알아볼 수 없다 — 특히 색 차이가 작은 종(잉어킹 등)에서 그렇다.
+                // 좌상단인 이유는 우상단을 대화 버튼이 쓰기 때문이다.
                 SpriteView(speciesID: mon.currentID, size: 28, shiny: mon.isShiny)
+                    .overlay(alignment: .topLeading) {
+                        if mon.isShiny {
+                            Text("✨")
+                                .font(.system(size: 8))
+                                .padding(.horizontal, 2)
+                                .background(.regularMaterial, in: Capsule())
+                                .accessibilityLabel(store.l.dexShinyLabel)
+                        }
+                    }
                 Text(name.isEmpty ? "#\(mon.currentID)" : name).font(.system(size: 10, weight: .bold)).lineLimit(1)
                 Text("Lv.\(mon.level)").font(.system(size: 8)).foregroundStyle(.secondary)
                 HStack(spacing: 3) {
