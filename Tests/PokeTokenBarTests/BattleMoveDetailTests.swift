@@ -36,6 +36,7 @@ private func freshSleepPowder() -> MoveSpec {
     // Phase 5 축. `min_hits`/`max_hits` 는 단발기에서 null 이 정답이라 안 채운다.
     // 수렴 판정이 보는 축은 `drain` 이다(`CompanionStore.needsDetailRefresh`).
     move.drain = 0
+    move.healing = 0
     move.flinchChance = 0
     return move
 }

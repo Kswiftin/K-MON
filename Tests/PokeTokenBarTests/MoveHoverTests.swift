@@ -228,6 +228,7 @@ final class MoveHoverTests: XCTestCase {
         good.statChanges = []
         good.targetsUser = false
         good.drain = 0
+        good.healing = 0
         XCTAssertTrue(CompanionStore.needsDetailRefresh(bad))
         XCTAssertFalse(CompanionStore.needsDetailRefresh(good))
         XCTAssertTrue(CompanionStore.needsDetailRefresh(good.withoutDescriptions()))
@@ -242,6 +243,7 @@ final class MoveHoverTests: XCTestCase {
         fetchedEmpty.statChanges = []   // 랭크 축도 "받아봤고 없다" — 보는 축은 설명이다
         fetchedEmpty.targetsUser = false
         fetchedEmpty.drain = 0          // Phase 5 축도 같은 이유로 고정한다
+        fetchedEmpty.healing = 0
         XCTAssertFalse(CompanionStore.needsDetailRefresh(fetchedEmpty),
                        "조회 결과가 빈 것뿐인데 매번 다시 받는다")
     }

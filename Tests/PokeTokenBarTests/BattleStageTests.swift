@@ -343,14 +343,22 @@ final class BattleStageTests: XCTestCase {
             return move
         }
         var user = BattleSide(tank()), target = BattleSide(tank())
-        let events = attack(&user, &target, rest(targetsUser: true))
+        user.hp = user.stats.hp / 2          // 만피면 잠자기가 실패한다 — 실패로는 이 규칙을 못 본다
+        _ = attack(&user, &target, rest(targetsUser: true))
         XCTAssertNil(target.status, "자기 대상 수면기가 상대를 재우면 안 된다")
-        XCTAssertNil(user.status, "회복·수면을 구현하지 않았으므로 자기에게도 걸지 않는다")
-        XCTAssertFalse(events.contains { if case .status = $0 { return true } else { return false } })
+        // 잠자기가 구현된 뒤로는 **자기에게** 걸린다(전회복 + 2턴 수면). 예전엔 회복이 없어
+        // 아무에게도 안 걸렸고, 그 시절 기대값을 그대로 두면 구현이 죽어도 초록이 된다.
+        XCTAssertEqual(user.status, .sleep)
+        XCTAssertEqual(user.hp, user.stats.hp)
 
-        // 대조군: 같은 모양인데 대상이 상대인 상태기(수면가루)는 그대로 걸려야 한다.
+        // 대조군: 대상이 상대인 상태기(수면가루)는 그대로 걸려야 한다. **id 를 바꾼다** —
+        // 156 은 이제 잠자기로 특별 취급되므로, 같은 id 로 대조군을 만들면 다른 걸 재게 된다.
+        var powder = MoveSpec(id: 79, names: ["en": "Sleep Powder"], type: .grass, power: 0,
+                              damageClass: .status, accuracy: nil, pp: 15)
+        powder.ailment = "sleep"
+        powder.targetsUser = false
         var caster = BattleSide(tank()), victim = BattleSide(tank())
-        _ = attack(&caster, &victim, rest(targetsUser: false))
+        _ = attack(&caster, &victim, powder)
         XCTAssertEqual(victim.status, .sleep, "상대 대상 상태기는 계속 걸린다")
     }
 
@@ -970,6 +978,7 @@ final class BattleStageTests: XCTestCase {
         // Phase 5 축(드레인)도 "받아봤음"으로 고정한다. 이 테스트가 보는 축은 `targetsUser` 뿐인데,
         // 다른 축을 nil 로 두면 그것 때문에 다시 받게 되어 대상 축 판정이 죽어도 초록이 된다.
         halfFetched.drain = 0
+        halfFetched.healing = 0
         XCTAssertNil(halfFetched.targetsUser)
         XCTAssertTrue(CompanionStore.needsDetailRefresh(halfFetched),
                       "축을 더했는데 판정을 안 늘리면 옛 데이터로 계속 싸운다")

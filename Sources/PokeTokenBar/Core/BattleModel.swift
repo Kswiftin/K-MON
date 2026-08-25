@@ -269,6 +269,9 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 대상을 안 보면 회복 없는 필중 100% 수면기가 되어 CPU 가 무작위로 그걸 쓴다.
     var targetsUser: Bool? = nil
     var drain: Int? = nil
+    /// 자기 회복량(PokéAPI `meta.healing`) — **최대 HP 대비 %**. 회복·아침햇살 계열이 50 이다.
+    /// `drain` 과 다르다: 저쪽은 넣은 데미지의 비율이라 때려야 회복하고, 이쪽은 데미지와 무관하다.
+    var healing: Int? = nil
     var flinchChance: Int? = nil
     var minHits: Int? = nil
     var maxHits: Int? = nil
@@ -301,6 +304,16 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 상태를 거는 확률(%).
     var ailmentChancePercent: Int { chancePercent(ailmentChance) }
     var drainPercent: Int { min(100, max(-100, drain ?? 0)) }
+    /// 자기 회복 비율(%). 0 이면 회복기가 아니다 — 잠자기는 `meta.healing` 이 0 이라 여기 안 걸리고
+    /// `MoveSpec.restMoveID` 로 따로 판정한다(전회복 + 자기 수면이라 규칙이 다르다).
+    var healingPercent: Int { min(100, max(0, healing ?? 0)) }
+
+    /// 잠자기 — PokéAPI move id. 회복량이 `meta` 에 없어(0) 이 기술만 id 로 가른다.
+    static let restMoveID = 156
+
+    /// 잠자기의 수면 턴 — 원작대로 **2턴 고정**이다. 일반 수면(1~7턴)을 쓰면 운에 따라 7턴을
+    /// 날려 쓸 이유가 없는 기술이 된다. `canAct` 이 카운터를 먼저 줄이므로 3을 넣어야 2턴 쉰다.
+    static let restSleepCounter = 3
 
     /// 풀린치 확률(%). 상한 30 은 게이트 없는 기술들이 쓰는 최대치다.
     ///
@@ -730,7 +743,10 @@ enum BattleEngine {
     ///     `BattleSnapshot.ability` 가 와이어에 새로 실린다: 구버전이 보낸 스냅샷에는 이 값이 없어
     ///     같은 기술이 한쪽에서만 통한다. rng 소비는 **그대로다**(표 조회와 비율 계산뿐).
     ///     갈리는 건 소비 횟수가 아니라 값이라 여기서 막는다.
-    static let rulesVersion = 14
+    /// 15 = 자기 회복기(회복·아침햇살·광합성·달빛·둥지틀기 = 최대 HP 절반, 잠자기 = 전회복 +
+    ///     상태 해제 + 2턴 수면). 예전엔 위력 0 짜리 무동작이라 턴만 태웠다 — 이제 HP 가 오르므로
+    ///     같은 입력에서 배틀이 갈라진다. rng 소비는 그대로다(회복량·수면 턴이 전부 고정값).
+    static let rulesVersion = 15
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -1142,6 +1158,45 @@ extension BattleEngine {
         return [.heal(actor, amount: healed)]
     }
 
+    /// 자기 회복기(회복·아침햇살·광합성·달빛·둥지틀기·잠자기)를 처리한다.
+    /// 회복기가 아니면 `nil` — 호출부가 보통 공격 경로로 넘어간다.
+    ///
+    /// **꽉 찼으면 실패시킨다.** 원작 규칙이자, 없으면 멀쩡한 상태에서 눌러 턴만 날리는 사고가 난다.
+    /// 실패도 줄을 남긴다 — 데미지 0 은 무반응과 구별되지 않는다(이 파일이 여러 번 밟은 부류).
+    ///
+    /// rng 는 쓰지 않는다. 회복량이 최대 HP 비율로 고정이고 잠자기 턴도 고정이라, 두 피어의
+    /// 소비 횟수가 이 분기에서 갈라지지 않는다.
+    private static func selfHealing(of move: MoveSpec, user: inout BattleSide, actor: BattleActor,
+                                    rng: inout SplitMix64) -> [BattleEvent]? {
+        // **대상이 상대라고 적힌 스펙은 자기 회복으로 보지 않는다.** 잠자기는 id 로 가르는데,
+        // id 만 보면 `targetsUser: false` 로 조작한 스펙이 "필중 100% 자기 전회복"이 아니라
+        // 반대로 읽힐 여지가 남는다 — 무브셋은 피어가 보내는 값이다. nil(옛 세이브)은 통과시킨다.
+        let isRest = move.id == MoveSpec.restMoveID && move.targetsUser != false
+        let percent = move.healingPercent
+        guard isRest || percent > 0 else { return nil }
+        // 잠자기는 상태이상까지 지우므로 **만피여도 상태가 있으면 성공**한다(원작 규칙).
+        // 그 예외가 없으면 독에 걸린 만피 개체가 해독할 방법을 잃는다.
+        let missingHP = user.stats.hp - user.hp
+        guard missingHP > 0 || (isRest && user.status != nil) else { return [.immune(actor)] }
+        var events: [BattleEvent] = []
+        if isRest {
+            // 순서: 상태 해제 → 전회복 → 자기 수면. 회복을 먼저 내면 "독이 낫기 전에 회복했다"로
+            // 읽히고, 수면을 먼저 걸면 아래 해제가 그 수면을 지운다.
+            if let cured = user.status {
+                user.status = nil
+                user.statusCounter = 0
+                events.append(.cureStatus(actor, cured))
+            }
+            events += heal(&user, actor: actor, upTo: user.stats.hp)
+            user.status = .sleep
+            user.statusCounter = MoveSpec.restSleepCounter
+            events.append(.status(actor, .sleep))
+        } else {
+            events += heal(&user, actor: actor, upTo: user.stats.hp * percent / 100)
+        }
+        return events
+    }
+
     /// 턴이 시작될 때 "이번 턴에 맞은 것" 을 비운다.
     ///
     /// **`applyAttack` 을 직접 부르는 모든 턴 루프가 이걸 먼저 불러야 한다.** 한 곳만 빠지면 그
@@ -1164,6 +1219,11 @@ extension BattleEngine {
         // 못 움직이면 `.move` 자체가 나가지 않는다 — Showdown 도 `|move|` 대신 `|cant|` 를 보낸다.
         guard canAct(&attacker, actor: attackerActor, rng: &rng, into: &events) else { return events }
         events.append(.move(attackerActor, moveID: move.id))
+        // 자기 회복기는 상대를 보지 않는다 — 명중·상성·데미지 계산을 통째로 건너뛴다.
+        // `resolveAttack` 에 태우면 위력 0 이라 rng 만 태우고 아무것도 안 하는 기술이 된다.
+        if let restored = selfHealing(of: move, user: &attacker, actor: attackerActor, rng: &rng) {
+            return events + restored
+        }
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
         if outcome.missed { return events + [.miss(attackerActor)] }
         if outcome.effectiveness == 0 {

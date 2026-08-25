@@ -148,6 +148,9 @@ final class BattlePhase5Tests: XCTestCase {
                       "축을 더했는데 판정을 안 늘리면 옛 데이터로 계속 싸운다")
 
         older.drain = 0                 // 받아봤고 드레인 없음 — 0 은 "없음", nil 은 "안 받아봤다"
+        XCTAssertTrue(CompanionStore.needsDetailRefresh(older),
+                      "`healing` 은 `drain` 보다 늦게 생긴 축이라 따로 봐야 한다")
+        older.healing = 0
         XCTAssertFalse(CompanionStore.needsDetailRefresh(older),
                        "다 받은 스펙을 또 받으면 로드마다 네트워크가 돈다")
     }

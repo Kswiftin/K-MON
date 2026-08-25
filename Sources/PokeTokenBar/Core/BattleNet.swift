@@ -21,6 +21,12 @@ enum BattleChallengeCancellationReason: String, Codable, Sendable, Equatable {
 }
 
 enum NetMessage: Codable, Sendable {
+    /// 2단계 신청: 이 메시지에는 포켓몬 스냅샷이 없다. 수락 뒤 양쪽이 `teamReady`를 보내야 시작한다.
+    case request(trainer: String, teamSize: Int, seed: UInt64, profile: BattleRankProfile,
+                 rulesVersion: Int?, chatSupported: Bool?)
+    case approve
+    case teamReady(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
+                   profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
     /// `rulesVersion` 은 대전 규칙(턴 순서·데미지 계산)의 버전이다. 이 대전은 결과를 주고받지 않고
     /// **두 피어가 각자 계산**하므로, 규칙이 다르면 같은 배틀을 서로 다르게 본다(HP·승패가 어긋난다).
     /// 옵셔널인 이유는 이 필드가 없던 버전이 보낸 메시지도 읽어서 "구버전이라 못 붙는다"고
@@ -37,8 +43,12 @@ enum NetMessage: Codable, Sendable {
     case forfeit
     case chat(BattleChatMessage)
 
-    private enum CodingKeys: String, CodingKey { case challenge, accept, decline, challengeCancelled, action, move, forfeit, chat }
+    private enum CodingKeys: String, CodingKey { case request, approve, teamReady, challenge, accept, decline, challengeCancelled, action, move, forfeit, chat }
     private struct EmptyPayload: Codable {}
+    private struct RequestPayload: Codable {
+        var trainer: String; var teamSize: Int; var seed: UInt64; var profile: BattleRankProfile
+        var rulesVersion: Int?; var chatSupported: Bool?
+    }
     private struct ChallengePayload: Codable {
         var snapshot: BattleSnapshot
         var lineup: [BattleSnapshot]?
@@ -61,7 +71,17 @@ enum NetMessage: Codable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        if container.contains(.challenge) {
+        if container.contains(.request) {
+            let p = try container.decode(RequestPayload.self, forKey: .request)
+            self = .request(trainer: p.trainer, teamSize: p.teamSize, seed: p.seed, profile: p.profile,
+                            rulesVersion: p.rulesVersion, chatSupported: p.chatSupported)
+        } else if container.contains(.approve) {
+            self = .approve
+        } else if container.contains(.teamReady) {
+            let p = try container.decode(AcceptPayload.self, forKey: .teamReady)
+            self = .teamReady(snapshot: p.snapshot, lineup: p.lineup ?? [p.snapshot], teamSize: p.teamSize ?? 1,
+                              profile: p.profile, rulesVersion: p.rulesVersion, chatSupported: p.chatSupported)
+        } else if container.contains(.challenge) {
             let payload = try container.decode(ChallengePayload.self, forKey: .challenge)
             self = .challenge(snapshot: payload.snapshot,
                               lineup: payload.lineup ?? [payload.snapshot],
@@ -99,6 +119,15 @@ enum NetMessage: Codable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let chatSupported):
+            try container.encode(RequestPayload(trainer: trainer, teamSize: teamSize, seed: seed, profile: profile,
+                                                rulesVersion: rulesVersion, chatSupported: chatSupported), forKey: .request)
+        case .approve:
+            try container.encode(EmptyPayload(), forKey: .approve)
+        case .teamReady(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let chatSupported):
+            try container.encode(AcceptPayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
+                                               profile: profile, rulesVersion: rulesVersion, chatSupported: chatSupported),
+                                 forKey: .teamReady)
         case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let chatSupported):
             try container.encode(ChallengePayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
                                                   seed: seed, profile: profile, rulesVersion: rulesVersion, chatSupported: chatSupported),
@@ -364,6 +393,8 @@ final class BattleCenter {
         case preparing                      // 내 스냅샷·무브셋 로딩
         case challenging(peer: String)      // 신청 보냄
         case incoming(peer: String)         // 신청 받음
+        case teamBuilding(peer: String)     // 수락 후 양쪽 파티 편성
+        case waitingTeam(peer: String)      // 내 확인 완료, 상대 확인 대기
         case battling
         case finished(iWon: Bool?, byForfeit: Bool)
     }
@@ -416,9 +447,13 @@ final class BattleCenter {
     /// 배틀이 잡히거나 걸릴 때 창을 자동으로 열고 고정하게 하는 신호(AppDelegate 가 관찰).
     /// 배틀 관련 phase 면 true — 창을 띄우고 닫히지 않게 유지한다.
     var wantsPinnedWindow: Bool {
+        // 받은 신청은 화면을 자동으로 열지 않는다. 옆 사람이 모니터를 보고 있어도 신청자와
+        // 게임 내용이 노출되지 않고, 사용자가 일반 알림을 눌렀을 때만 상세 화면을 연다.
+        if case .incoming = trading.phase { return false }
+        if trading.phase != .ready { return true }
         switch phase {
-        case .ready: return false
-        default: return true   // preparing/challenging/incoming/battling/finished
+        case .ready, .incoming: return false
+        default: return true
         }
     }
 
@@ -450,10 +485,13 @@ final class BattleCenter {
     /// TXT 레코드 재발행 지점 — nil 이면 실제 리스너의 `service` 를 갈아 끼운다(테스트 주입 seam).
     private let advertisementPublisher: ((NWTXTRecord) -> Void)?
     let multiplayer: MultiplayerRoomCenter
+    let trading: PokemonTradeCenter
     private var listener: NWListener?
     private var browser: NWBrowser?
     private var connection: NWConnection?
     private var incomingSeed: UInt64 = 0
+    private var pendingPeerName = ""
+    private var iAmPendingChallenger = false
     private var myName: String          // 표시 이름(상대 카드·스냅샷 trainer)
     private var didSettleRankedBrawl = false
     private(set) var isPracticeBattle = false
@@ -594,6 +632,7 @@ final class BattleCenter {
             await companion.ensureInheritedMoves()
         }
         self.multiplayer = MultiplayerRoomCenter(companion: companion)
+        self.trading = PokemonTradeCenter(companion: companion)
         // 표시 이름 우선순위: 사용자가 정한 트레이너 이름 → 계정 풀네임 → 호스트명 → "Trainer".
         let trainer = companion.trainerName.trimmingCharacters(in: .whitespaces)
         let name = !trainer.isEmpty ? trainer
@@ -675,7 +714,7 @@ final class BattleCenter {
 
     private var isChallengePending: Bool {
         switch phase {
-        case .challenging, .incoming: true
+        case .challenging, .incoming, .teamBuilding, .waitingTeam: true
         default: false
         }
     }
@@ -686,6 +725,7 @@ final class BattleCenter {
         startListener()
         startBrowser()
         multiplayer.startBrowsing()
+        trading.start()
     }
 
     /// Bonjour 광고/탐색 파라미터 — `includePeerToPeer` 로 AWDL(피어투피어)까지 켠다.
@@ -949,36 +989,27 @@ final class BattleCenter {
             lastError = l.battleNeedsPokemon(teamSize)
             return
         }
-        phase = .preparing
         lastError = nil
-        Task { @MainActor in
-            guard let lineup = await buildMyLineup(size: teamSize, levelOverride: 50),
-                  let snapshot = lineup.first else {
-                phase = .ready
-                lastError = l.battleStatsFailed
-                return
-            }
-            guard case .preparing = phase else { return }   // 준비 중 취소/신청 수신
-            let seed = UInt64.random(in: .min ... .max)
-            incomingSeed = seed
+        let seed = UInt64.random(in: .min ... .max)
+        incomingSeed = seed
+        pendingMyTeamSize = teamSize
+        pendingPeerName = displayName
+        iAmPendingChallenger = true
             // includePeerToPeer 파라미터로 연결 — 브라우저가 AWDL(피어투피어)로 찾은 상대는
             // 평범한 .tcp 로는 연결이 안 붙는다(수동 IP 는 직접 hostPort 라 됐던 이유). 리스너/브라우저와
             // 같은 파라미터를 써야 mDNS·AWDL 어느 경로로 발견됐든 연결이 성립한다.
-            let conn = NWConnection(to: endpoint, using: Self.discoveryParameters())
-            connection = conn
-            phase = .challenging(peer: displayName)
-            startChallengeTimeout()
-            conn.stateUpdateHandler = { [weak self] state in
-                Task { @MainActor in self?.connectionState(state, conn: conn) }
-            }
-            conn.start(queue: .main)
-            pendingMyLineup = lineup
-            pendingMyTeamSize = teamSize
-            send(.challenge(snapshot: snapshot, lineup: lineup, teamSize: teamSize, seed: seed,
-                            profile: companion.battleRankProfile,
-                            rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
-            receiveLoop(conn)
+        let conn = NWConnection(to: endpoint, using: Self.discoveryParameters())
+        connection = conn
+        phase = .challenging(peer: displayName)
+        startChallengeTimeout()
+        conn.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor in self?.connectionState(state, conn: conn) }
         }
+        conn.start(queue: .main)
+        send(.request(trainer: trainerDisplayName, teamSize: teamSize, seed: seed,
+                      profile: companion.battleRankProfile, rulesVersion: BattleEngine.rulesVersion,
+                      chatSupported: true), over: conn)
+        receiveLoop(conn)
     }
 
     /// en0 우선 IPv4 — 수동 연결 주소 표기용.
@@ -1005,7 +1036,7 @@ final class BattleCenter {
     }
 
     func cancelChallenge() {
-        if case .challenging = phase {
+        if isChallengePending {
             send(.challengeCancelled(reason: .cancelled), over: connection)
             dropConnection(); phase = .ready
         }
@@ -1031,7 +1062,17 @@ final class BattleCenter {
     }
 
     func acceptIncoming() {
-        guard case .incoming = phase, let conn = connection, !incomingLineup.isEmpty else { return }
+        guard case .incoming(let peer) = phase, let conn = connection else { return }
+        // 새 신청은 포켓몬을 싣지 않는다. 수락 뒤 양쪽을 같은 파티 편성 단계로 보낸다.
+        if incomingLineup.isEmpty {
+            cancelChallengeTimeout()
+            prepareIncomingSelection(teamSize: incomingTeamSize)
+            pendingPeerName = peer
+            iAmPendingChallenger = false
+            send(.approve, over: conn)
+            phase = .teamBuilding(peer: peer)
+            return
+        }
         guard companion.ownedMons.count >= incomingTeamSize else {
             lastError = l.battleNeedsPokemon(incomingTeamSize)
             return
@@ -1070,6 +1111,31 @@ final class BattleCenter {
             send(.accept(snapshot: lead, lineup: mine, teamSize: teamSize, profile: mineProfile,
                          rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
             beginBattle(my: mine, opp: opponentTeam, iAmA: false, seed: incomingSeed)
+        }
+    }
+
+    /// 수락 뒤 편성 확정. 내 스냅샷은 이 시점에 처음 상대에게 전송된다.
+    func confirmBattleTeam() {
+        guard case .teamBuilding(let peer) = phase, let conn = connection else { return }
+        let ids = resolvedTeamIDs(size: incomingTeamSize,
+                                  selection: iAmPendingChallenger ? pickedTeam : incomingPickedTeam)
+        guard ids.count == incomingTeamSize else { lastError = l.battleNeedsPokemon(incomingTeamSize); return }
+        phase = .preparing
+        Task { @MainActor in
+            guard let mine = await buildMyLineup(size: incomingTeamSize, selection: ids, levelOverride: 50),
+                  let lead = mine.first, conn === connection else {
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            pendingMyLineup = mine
+            if !iAmPendingChallenger { commitIncomingSelection(ids) }
+            send(.teamReady(snapshot: lead, lineup: mine, teamSize: incomingTeamSize,
+                            profile: companion.battleRankProfile, rulesVersion: BattleEngine.rulesVersion,
+                            chatSupported: true), over: conn)
+            if !incomingLineup.isEmpty {
+                beginBattle(my: mine, opp: incomingLineup, iAmA: iAmPendingChallenger, seed: incomingSeed)
+            } else {
+                phase = .waitingTeam(peer: peer)
+            }
         }
     }
 
@@ -1324,6 +1390,47 @@ final class BattleCenter {
     /// 수단이 없다(그래서 채팅 상태 수명주기에 테스트가 0건이었고 이 결함이 나갔다).
     func handle(_ message: NetMessage) {
         switch message {
+        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported):
+            guard case .ready = phase, Self.supportedTeamSizes.contains(teamSize),
+                  rulesVersion == BattleEngine.rulesVersion else {
+                send(.decline, over: connection); dropConnection(); phase = .ready; return
+            }
+            if UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false {
+                send(.decline, over: connection); dropConnection(); phase = .ready; return
+            }
+            incomingLineup = []
+            incomingSnapshot = nil
+            incomingTeamSize = teamSize
+            incomingSeed = seed
+            opponentRankProfile = profile
+            peerSupportsChat = peerChatSupported == true
+            pendingPeerName = trainer
+            iAmPendingChallenger = false
+            phase = .incoming(peer: trainer)
+            startChallengeTimeout()
+            pendingAttention = true
+            postPrivateMessageNotification(kind: "battle", nonce: seed)
+        case .approve:
+            guard case .challenging(let peer) = phase else { return }
+            cancelChallengeTimeout()
+            incomingTeamSize = pendingMyTeamSize
+            incomingLineup = []
+            incomingPickedTeam = resolvedTeamIDs(size: incomingTeamSize, selection: pickedTeam)
+            phase = .teamBuilding(peer: peer)
+        case .teamReady(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let peerChatSupported):
+            guard rulesVersion == BattleEngine.rulesVersion,
+                  teamSize == incomingTeamSize,
+                  Self.validLineup(snapshot: snapshot, lineup: lineup, teamSize: teamSize) else {
+                send(.decline, over: connection); dropConnection(); phase = .ready; return
+            }
+            incomingSnapshot = snapshot
+            incomingLineup = lineup
+            opponentRankProfile = profile
+            peerSupportsChat = peerChatSupported == true
+            chatIsAvailable = peerSupportsChat
+            if !pendingMyLineup.isEmpty {
+                beginBattle(my: pendingMyLineup, opp: lineup, iAmA: iAmPendingChallenger, seed: incomingSeed)
+            }
         case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported):
             guard case .ready = phase else { return }   // 자기 연결로 challenge 재수신 등 비정상
             guard rulesVersion == BattleEngine.rulesVersion else {
@@ -1358,7 +1465,7 @@ final class BattleCenter {
             phase = .incoming(peer: snapshot.trainer ?? snapshot.name)
             startChallengeTimeout()
             pendingAttention = true
-            postChallengeNotification(snapshot)
+            postPrivateMessageNotification(kind: "battle", nonce: incomingSeed)
         case .accept(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let peerChatSupported):
             guard case .challenging = phase, !pendingMyLineup.isEmpty else { return }
             guard rulesVersion == BattleEngine.rulesVersion else {
@@ -1380,7 +1487,7 @@ final class BattleCenter {
             AppLog.write("battle chat \(peerSupportsChat ? "enabled" : "disabled — peer build sent no chatSupported")")
             beginBattle(my: pendingMyLineup, opp: lineup, iAmA: true, seed: incomingSeed)
         case .decline:
-            if case .challenging = phase {
+            if isChallengePending {
                 dropConnection()
                 phase = .ready
                 lastError = l.battleDeclined
@@ -1451,7 +1558,7 @@ final class BattleCenter {
             phase = .finished(iWon: iWon, byForfeit: false)
             lastError = l.battleConnectionLost
             if let iWon { settleRankedBrawlIfNeeded(won: iWon) } else { refundRankedBrawlIfNeeded() }
-        case .challenging, .incoming, .preparing:
+        case .challenging, .incoming, .teamBuilding, .waitingTeam, .preparing:
             phase = .ready
             lastError = l.battleConnectionLost
         default:
@@ -1576,14 +1683,13 @@ final class BattleCenter {
 
     // MARK: 알림
 
-    private func postChallengeNotification(_ snapshot: BattleSnapshot) {
+    private func postPrivateMessageNotification(kind: String, nonce: UInt64) {
         guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false) else { return }
-        AppLog.write("battle challenge received from \(snapshot.trainer ?? "?") — posting notification")
+        AppLog.write("private \(kind) request received — posting generic notification")
         guard AppEnv.isBundledApp else { AppLog.write("battle notif skipped: not bundled app"); return }
         let content = UNMutableNotificationContent()
-        content.title = l.battleChallengeNotifTitle
-        content.body = l.battleChallengeNotifBody(snapshot.trainer ?? "?",
-                                                  pokemon: snapshot.name, level: snapshot.level)
+        content.title = l.t("메시지가 왔습니다", "You have a message", "メッセージが届きました")
+        content.body = l.t("눌러서 확인하세요.", "Click to view it.", "クリックして確認してください。")
         content.sound = .default
         let center = UNUserNotificationCenter.current()
         // completion 은 시스템이 **백그라운드 큐**에서 부른다 — @MainActor 문맥에서 만든 클로저가 격리를
@@ -1593,7 +1699,7 @@ final class BattleCenter {
             AppLog.write("battle notif auth status=\(settings.authorizationStatus.rawValue) (0=notDetermined 1=denied 2=authorized 3=provisional)")
         }
         center.add(
-            UNNotificationRequest(identifier: "battle-challenge-\(snapshot.speciesID)-\(incomingSeed)",
+            UNNotificationRequest(identifier: "private-message-\(kind)-\(nonce)",
                                   content: content, trigger: nil)) { @Sendable error in
             if let error { AppLog.write("battle notif add failed: \(error)") }
             else { AppLog.write("battle notif posted") }

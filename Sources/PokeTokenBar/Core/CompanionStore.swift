@@ -1019,6 +1019,35 @@ final class CompanionStore {
         return true
     }
 
+    /// 통신 교환을 한 번에 반영한다. 동행을 내보내면 받은 포켓몬이 그 자리를 이어받고,
+    /// 박스 개체를 내보내면 같은 박스 칸에 들어간다. 상대의 대화/추억은 개인정보라 전송하지 않는다.
+    @discardableResult
+    func performTrade(offeredID: UUID, received incoming: MonState) -> Bool {
+        guard incoming.id != offeredID,
+              (1...649).contains(incoming.currentID),
+              !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
+
+        let received = incoming
+        if state.active?.id == offeredID {
+            guard state.active != nil else { return false }
+            state.active = received
+            activeGeneration += 1
+            currentLine = nil
+            displayedMoves = []
+            evolutionPrompt = nil
+            pendingMoveLearningPrompt = nil
+            moveLearningQueue.removeAll()
+            displayState = .idle
+            save()
+            Task { await loadCurrentLine() }
+            return true
+        }
+        guard let index = state.boxedMons.firstIndex(where: { $0.id == offeredID }) else { return false }
+        state.boxedMons[index] = received
+        save()
+        return true
+    }
+
     func switchCompanion(to id: UUID) {
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return }
         let selected = state.boxedMons.remove(at: index)
@@ -1155,6 +1184,10 @@ final class CompanionStore {
         // 오므로 `drain` 하나가 넷을 대표한다. `minHits`/`maxHits` 로는 못 본다 — 단발기는
         // 받아봐도 nil 이라 영원히 수렴하지 않는다.
         if move.drain == nil { return true }
+        // **`drain` 이 `healing` 을 대표하지 못한다.** 같은 `meta` 블록에서 오지만 `healing` 은
+        // 나중에 추가된 축이라, 그 사이에 받은 세이브는 `drain` 만 차 있고 `healing` 은 비어 있다.
+        // 그 상태로 두면 회복기가 조용히 0 회복이 된다 — 상태기가 죽어 있던 것과 같은 부류다.
+        if move.healing == nil { return true }
         guard let descriptions = move.descriptions else { return true }
         return descriptions.values.contains(where: PokeAPIClient.isUnusableMoveNotice)
     }

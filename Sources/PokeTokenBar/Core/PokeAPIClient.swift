@@ -609,6 +609,9 @@ struct MoveDTO: Decodable, Sendable {
         /// 랭크 변화가 걸릴 확률. 변화기(본체가 랭크 변화)는 0 이 온다.
         let stat_chance: Int?
         let drain: Int?
+        /// 자기 회복량(최대 HP 대비 %). 회복·아침햇살 계열이 50 이고, 잠자기는 0 이다
+        /// (전회복이라 `meta` 로 표현되지 않는다 — `MoveSpec.restMoveID` 가 따로 본다).
+        let healing: Int?
         let flinch_chance: Int?
         let min_hits: Int?
         let max_hits: Int?
@@ -683,7 +686,8 @@ extension MoveSpec {
                         // 영구히 남는다(defect-log: "받을 수 없는 값을 참으로 만들면 안 된다").
                         // `meta` 가 통째로 없는 기술도 한 번 받으면 0 으로 확정된다.
                         // `min_hits`/`max_hits` 는 단발기의 null 이 **뜻이 있는** 값이라 그대로 둔다.
-                        drain: dto.meta?.drain ?? 0, flinchChance: dto.meta?.flinch_chance ?? 0,
+                        drain: dto.meta?.drain ?? 0, healing: dto.meta?.healing ?? 0,
+                        flinchChance: dto.meta?.flinch_chance ?? 0,
                         minHits: dto.meta?.min_hits, maxHits: dto.meta?.max_hits)
     }
 }
