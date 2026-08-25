@@ -1168,7 +1168,10 @@ extension BattleEngine {
     /// 소비 횟수가 이 분기에서 갈라지지 않는다.
     private static func selfHealing(of move: MoveSpec, user: inout BattleSide, actor: BattleActor,
                                     rng: inout SplitMix64) -> [BattleEvent]? {
-        let isRest = move.id == MoveSpec.restMoveID
+        // **대상이 상대라고 적힌 스펙은 자기 회복으로 보지 않는다.** 잠자기는 id 로 가르는데,
+        // id 만 보면 `targetsUser: false` 로 조작한 스펙이 "필중 100% 자기 전회복"이 아니라
+        // 반대로 읽힐 여지가 남는다 — 무브셋은 피어가 보내는 값이다. nil(옛 세이브)은 통과시킨다.
+        let isRest = move.id == MoveSpec.restMoveID && move.targetsUser != false
         let percent = move.healingPercent
         guard isRest || percent > 0 else { return nil }
         // 잠자기는 상태이상까지 지우므로 **만피여도 상태가 있으면 성공**한다(원작 규칙).
