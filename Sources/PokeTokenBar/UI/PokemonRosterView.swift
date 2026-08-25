@@ -229,6 +229,18 @@ private struct RosterMonCard: View {
     let onRelease: () -> Void
 
     var body: some View {
+        // 동행 중인 개체는 놓아줄 수 없다 — 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
+        // 메뉴 자체를 안 붙인다: 항목이 0개인 `contextMenu` 는 빈 팝업이거나 "우클릭이 죽은" 카드다.
+        if isActive { card } else { card.contextMenu { releaseButton } }
+    }
+
+    private var releaseButton: some View {
+        Button(role: .destructive, action: onRelease) {
+            Label(store.l.t("놓아주기", "Release", "にがす"), systemImage: "hand.wave")
+        }
+    }
+
+    private var card: some View {
         Button { if !isActive { store.switchCompanion(to: mon.id) } } label: {
             VStack(spacing: 2) {
                 SpriteView(speciesID: mon.currentID, size: 28, shiny: mon.isShiny)
@@ -249,14 +261,6 @@ private struct RosterMonCard: View {
                     .foregroundStyle(isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
         }.buttonStyle(.bordered).disabled(isActive)
-        // 동행 중인 개체는 놓아줄 수 없다 — 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
-        .contextMenu {
-            if !isActive {
-                Button(role: .destructive, action: onRelease) {
-                    Label(store.l.t("놓아주기", "Release", "にがす"), systemImage: "hand.wave")
-                }
-            }
-        }
     }
 }
 
