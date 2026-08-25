@@ -75,6 +75,12 @@ final class RareCandyStoreTests: XCTestCase {
         XCTAssertTrue(home.contains("store.useRareCandy()"), "실제 소비는 스토어가 한다")
         // 확인 없이 바로 먹으면 되돌릴 수 없는 소비가 오탭 한 번으로 일어난다.
         XCTAssertTrue(home.contains("confirmationDialog"), "한 번 물어야 한다")
+        // 확인창은 버튼이 아니라 사라지지 않는 부모에 붙어야 한다. 마지막 사탕을 쓰면 버튼이
+        // 없어지는데, 창을 그 버튼에 매달면 자기 액션 때문에 창의 주인이 사라진다.
+        let buttonBody = try XCTUnwrap(home.range(of: "private var rareCandyButton"))
+        let afterButton = home[buttonBody.upperBound...].prefix(400)
+        XCTAssertFalse(afterButton.contains("confirmationDialog"),
+                       "확인창을 사라질 뷰에 매달면 안 된다")
         XCTAssertTrue(home.contains("l.useOnCurrent"), "확인 문구도 가방과 같은 것을 쓴다")
     }
 
@@ -86,6 +92,22 @@ final class RareCandyStoreTests: XCTestCase {
         XCTAssertFalse(s.canUseRareCandy, "재고가 없으면 버튼이 없어야 한다")
         giveCandies(s, 2)
         XCTAssertTrue(s.canUseRareCandy)
+    }
+
+    /// **마지막 하나를 쓰면 그 자리에서 사라진다.** 남은 개수가 0 인데 아이콘이 남아 있으면
+    /// 눌렀을 때 아무 일도 안 나는 버튼이 된다 — 이 파일이 여러 번 밟은 "무반응" 부류다.
+    func testTheShortcutDisappearsAfterSpendingTheLastCandy() async {
+        let s = store(rcLinear3)
+        await s.hatch(baseID: 1)
+        giveCandies(s, 2)
+
+        XCTAssertEqual(s.useRareCandy(), .progressed)
+        XCTAssertTrue(s.canUseRareCandy, "아직 하나 남았으면 그대로 보인다")
+
+        XCTAssertEqual(s.useRareCandy(), .progressed)
+        XCTAssertEqual(s.rareCandyCount, 0)
+        XCTAssertFalse(s.canUseRareCandy, "다 쓰면 아이콘이 사라져야 한다")
+        XCTAssertEqual(s.useRareCandy(), .unavailable, "그래도 눌렀다면 아무 일도 없어야 한다")
     }
 
 

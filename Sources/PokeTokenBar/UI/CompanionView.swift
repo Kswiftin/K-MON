@@ -492,11 +492,6 @@ struct CompanionHeader: View {
         }
         .buttonStyle(.borderless).controlSize(.mini)
         .accessibilityLabel(store.l.itemName(.rareCandy))
-        // 문구는 가방과 **같은 것**을 쓴다. 여기서 새로 지으면 같은 행동을 두 화면이 다르게 말한다.
-        .confirmationDialog(store.l.useOnCurrent(store.displayName), isPresented: $confirmingCandy) {
-            Button(store.l.use) { store.useRareCandy() }
-            Button(store.l.cancel, role: .cancel) { confirmingCandy = false }
-        }
     }
 
     var body: some View {
@@ -713,6 +708,13 @@ struct CompanionHeader: View {
         .onChange(of: store.candyFeedbackSeq) { showCandyXPIfNeeded() }
         .onChange(of: store.mintFeedbackSeq) { showMintIfNeeded() }
         .onChange(of: eggImminent) { syncEggWiggle() }
+        // **확인창은 버튼이 아니라 여기 붙인다.** 마지막 사탕을 쓰면 재고가 0 이 되어 버튼 자체가
+        // 사라지는데, 창을 그 버튼에 매달아 두면 자기 액션 때문에 창의 주인이 없어진다.
+        // 문구는 가방과 **같은 것**을 쓴다 — 여기서 새로 지으면 같은 행동을 두 화면이 다르게 말한다.
+        .confirmationDialog(store.l.useOnCurrent(store.displayName), isPresented: $confirmingCandy) {
+            Button(store.l.use) { store.useRareCandy() }
+            Button(store.l.cancel, role: .cancel) { confirmingCandy = false }
+        }
     }
 
     /// 부화/진화 연출 1회 재생 — 흰 플래시 페이드아웃 + 스프링 팝. shiny 부화는 ✨ 버스트 추가.
