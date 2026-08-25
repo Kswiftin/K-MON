@@ -120,10 +120,13 @@ final class CompanionStore {
          dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp) {
         self.provider = provider
         self.clock = clock
-        let locations = CompanionStorageLocations(stateURL: fileURL)
         // An injected URL is an explicit test/embedding contract; only default construction uses
         // the canonical state filename.
-        self.fileURL = fileURL ?? locations.stateURL
+        self.fileURL = fileURL ?? CompanionStorageLocations().stateURL
+        // 디렉토리가 없으면 `save()` 의 `try?` 가 조용히 아무것도 안 쓴다 — 신규 설치와
+        // 존재하지 않는 `PTB_STATE_DIR` 가 그 경로다. 상태 파일을 잡는 이 자리에서 한 번 만든다.
+        try? FileManager.default.createDirectory(at: self.fileURL.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
@@ -135,20 +138,6 @@ final class CompanionStore {
         // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
         claimAdventure()   // 끝난 run 만 정산한다 — 진행 중이면 그대로 둔다.
         if state.active != nil { displayState = .idle }
-    }
-
-    static func defaultURL() -> URL {
-        // 상태 파일 위치. 기본은 Application Support/PokeTokenBar. `PTB_STATE_DIR` 환경변수가 있으면
-        // 그 디렉토리를 쓴다 — 개발/QA 격리용(실제 companion 상태를 건드리지 않고 데모 상태로 실행).
-        // 프로덕션은 이 변수가 없어 무영향.
-        // 공백만 있는 값은 무시(URL(fileURLWithPath:)가 CWD 상대경로로 해석되는 것 방지).
-        let locations = CompanionStorageLocations()
-        let dir = locations.directory
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return locations.stateURL
-    }
-    static func storageLocations(stateURL: URL? = nil) -> CompanionStorageLocations {
-        CompanionStorageLocations(stateURL: stateURL)
     }
 
     // MARK: 파생값 (UI)
@@ -756,18 +745,6 @@ final class CompanionStore {
     }
 
     @discardableResult
-    func startAdventure(_ zone: AdventureZone) -> Bool {
-        claimAdventure()
-        let now = clock()
-        guard let speciesID = currentSpeciesID, state.adventure == nil else { return false }
-        state.adventure = AdventureRun(zone: zone, startedAt: now,
-                                       endsAt: now.addingTimeInterval(zone.duration),
-                                       companionSpeciesID: speciesID)
-        save()
-        return true
-    }
-
-    @discardableResult
     func startFocusAdventure(minutes: Int) -> Bool {
         claimAdventure()
         let now = clock()
@@ -789,7 +766,7 @@ final class CompanionStore {
 
     /// 모험 정산의 **유일한** 진입점. 끝난 run 만 정산하고(미완료면 nil) 보상 계산도 여기 한 곳에만 있다.
     /// 정산 계기는 "보상 받기" 버튼, 집중 세션 완료(`completeFocusSession`), 새 모험 시작
-    /// (`startAdventure`·`startFocusAdventure`) 셋이지만 모두 이 함수를 부른다 — 완료 판정을 감싸는
+    /// (`startFocusAdventure`) 셋이지만 모두 이 함수를 부른다 — 완료 판정을 감싸는
     /// 래퍼를 따로 두면 같은 가드가 두 곳에 생겨 한쪽만 바뀌는 사고가 난다.
     @discardableResult
     func claimAdventure() -> AdventureReward? {
