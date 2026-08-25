@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum PopoverTab {
-    case home, pokemon, collection, battle, pokeathlon, shop, bag
+    case home, pokemon, collection, battle, challenge, shop, bag
 
     /// 팝오버가 유지하는 높이. 탭 안에서 콘텐츠가 늘고 줄어도(기술 목록 펼침, 로딩 자리표시자,
     /// 진화 프롬프트) 이 값은 그대로라 창이 다시 그려지지 않는다 — 펼칠 때마다 커졌다 작아지며
@@ -182,7 +182,7 @@ struct PopoverView: View {
                 Text(l.t("포켓몬", "Pokémon", "ポケモン")).tag(PopoverTab.pokemon)
                 Text(l.collection).tag(PopoverTab.collection)
                 Text(l.t("친구", "Friends", "フレンド")).tag(PopoverTab.battle)
-                Text(l.t("포켓슬론", "Pokéathlon", "ポケスロン")).tag(PopoverTab.pokeathlon)
+                Text(l.t("도전", "Challenge", "チャレンジ")).tag(PopoverTab.challenge)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -192,7 +192,7 @@ struct PopoverView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     switch nav.tab {
-                    case .pokeathlon: PokeathlonView(store: companion)
+                    case .challenge: ChallengeView(store: companion)
                     case .battle: FriendView(store: companion)
                     case .collection: CollectionView(store: companion)
                     case .pokemon: PokemonRosterView(store: companion)
