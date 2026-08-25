@@ -185,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         Task { @MainActor in self.openPopover() }
+        Task { @MainActor in self.navigation.goToBattle() }
         completionHandler()
     }
 

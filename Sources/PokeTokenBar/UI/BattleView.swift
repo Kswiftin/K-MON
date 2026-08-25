@@ -57,6 +57,10 @@ struct BattleView: View {
             waitingView(peer: peer)
         case .incoming(let peer):
             incomingView(peer: peer)
+        case .teamBuilding(let peer):
+            teamBuildingView(peer: peer, waiting: false)
+        case .waitingTeam(let peer):
+            teamBuildingView(peer: peer, waiting: true)
         case .battling:
             // 세 모드가 같은 `BattleArenaView` 를 쓴다(계획 §6.3 안 B — 팝오버 탭 안에서 그린다).
             // 2~4인 방만 예외다: 참가자 넷은 좌우 두 자리 배치에 담기지 않아 격자를 유지하되,
@@ -662,14 +666,6 @@ struct BattleView: View {
                 }
                 .font(.caption2)
             }
-            if let opp = center.incomingSnapshot {
-                snapshotCard(opp, title: opp.trainer.map { l.battleTrainerLabel($0) } ?? "?")
-                    .frame(maxWidth: 180)
-            }
-            TeamPicker(store: store,
-                       selection: Binding(get: { center.incomingPickedTeam },
-                                          set: { center.incomingPickedTeam = $0 }),
-                       limit: center.incomingTeamSize)
             if store.ownedMons.count < center.incomingTeamSize {
                 Text(l.battleNeedsPokemon(center.incomingTeamSize))
                     .font(.caption2).foregroundStyle(.orange)
@@ -688,6 +684,38 @@ struct BattleView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
+    }
+
+    private func teamBuildingView(peer: String, waiting: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(l.t("파티 편성", "Choose Your Party", "パーティ編成"), systemImage: "person.3.fill")
+                .font(.headline)
+            Text(l.t("\(peer)님이 수락했습니다. 두 트레이너가 모두 확인하면 배틀이 시작됩니다.",
+                     "\(peer) accepted. The battle starts after both trainers confirm.",
+                     "\(peer)が承認しました。両方が確認するとバトル開始です。"))
+                .font(.caption).foregroundStyle(.secondary)
+            Picker("", selection: Binding(get: { center.incomingTeamSize }, set: { _ in })) {
+                Text("\(center.incomingTeamSize) vs \(center.incomingTeamSize)").tag(center.incomingTeamSize)
+            }.pickerStyle(.segmented).labelsHidden().disabled(true)
+            TeamPicker(store: store,
+                       selection: Binding(get: { center.incomingPickedTeam },
+                                          set: { center.incomingPickedTeam = $0 }),
+                       limit: center.incomingTeamSize)
+                .disabled(waiting)
+            HStack {
+                Button(l.battleCancel) { center.cancelChallenge() }.disabled(waiting)
+                Spacer()
+                if waiting {
+                    ProgressView().controlSize(.small)
+                    Text(l.t("상대 확인 대기 중…", "Waiting for opponent…", "相手の確認待ち…"))
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Button(l.t("파티 확인", "Confirm Party", "パーティ確認")) { center.confirmBattleTeam() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(store.ownedMons.count < center.incomingTeamSize)
+                }
+            }
+        }.padding(.vertical, 4)
     }
 
     @ViewBuilder

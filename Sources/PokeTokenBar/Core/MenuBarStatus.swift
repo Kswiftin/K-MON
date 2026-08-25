@@ -6,6 +6,7 @@ import Foundation
 enum MenuBarStatus: Equatable {
     case battleChallengeSent(peer: String)
     case battleChallengeReceived(peer: String)
+    case privateMessage
     case battling(peer: String, isMyTurn: Bool)
     case focus(prefix: String, clock: String)
     case adventuring(remaining: String)
@@ -20,7 +21,8 @@ enum MenuBarStatus: Equatable {
                         activeAdventure: AdventureRun?, now: Date = Date()) -> MenuBarStatus {
         switch battlePhase {
         case .challenging(let peer): return .battleChallengeSent(peer: peer)
-        case .incoming(let peer): return .battleChallengeReceived(peer: peer)
+        case .incoming: return .privateMessage
+        case .teamBuilding(let peer), .waitingTeam(let peer): return .battleChallengeSent(peer: peer)
         case .battling:
             let peer = battle?.opp.snapshot.trainer ?? "?"
             return .battling(peer: peer, isMyTurn: battle?.myAction == nil)
@@ -43,6 +45,7 @@ enum MenuBarStatus: Equatable {
         switch self {
         case .battleChallengeSent(let peer): return l.menuBarBattleChallengeSent(peer)
         case .battleChallengeReceived(let peer): return l.menuBarBattleChallengeReceived(peer)
+        case .privateMessage: return l.t("메시지가 왔습니다", "You have a message", "メッセージが届きました")
         case .battling(let peer, let isMyTurn): return l.menuBarBattling(peer, isMyTurn: isMyTurn)
         case .focus(let prefix, let clock): return "\(prefix) \(clock)"
         case .adventuring(let remaining): return "\(l.menuBarAdventuring) \(remaining)"
@@ -56,6 +59,8 @@ enum MenuBarStatus: Equatable {
         switch self {
         case .battleChallengeSent, .battleChallengeReceived, .battling:
             return "B"
+        case .privateMessage:
+            return "!"
         case .focus(let prefix, let clock):
             return "\(prefix == "BREAK" ? "B" : "F") \(clock)"
         case .adventuring(let remaining):

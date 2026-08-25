@@ -1195,6 +1195,40 @@ final class CompanionStore {
         return true
     }
 
+    /// 통신 교환을 한 번에 반영한다. 동행을 내보내면 받은 포켓몬이 그 자리를 이어받고,
+    /// 박스 개체를 내보내면 같은 박스 칸에 들어간다. 상대의 대화/추억은 개인정보라 전송하지 않는다.
+    @discardableResult
+    func performTrade(offeredID: UUID, received incoming: MonState) -> Bool {
+        guard incoming.id != offeredID,
+              (1...649).contains(incoming.currentID),
+              !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
+
+        let received = incoming
+        if state.active?.id == offeredID {
+            guard let sent = state.active else { return false }
+            memoryAlbum.deleteAll(for: sent.id)
+            chatStore.deleteSession(for: sent.id)
+            state.active = received
+            activeGeneration += 1
+            currentLine = nil
+            displayedMoves = []
+            evolutionPrompt = nil
+            pendingMoveLearningPrompt = nil
+            moveLearningQueue.removeAll()
+            displayState = .idle
+            save()
+            Task { await loadCurrentLine() }
+            return true
+        }
+        guard let index = state.boxedMons.firstIndex(where: { $0.id == offeredID }) else { return false }
+        let sent = state.boxedMons[index]
+        memoryAlbum.deleteAll(for: sent.id)
+        chatStore.deleteSession(for: sent.id)
+        state.boxedMons[index] = received
+        save()
+        return true
+    }
+
     func switchCompanion(to id: UUID) {
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return }
         let selected = state.boxedMons.remove(at: index)

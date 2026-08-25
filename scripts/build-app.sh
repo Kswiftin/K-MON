@@ -58,6 +58,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <array>
         <string>_ptbbattle._tcp</string>
         <string>_kmonroom._tcp</string>
+        <string>_kmontrade._tcp</string>
     </array>
 </dict>
 </plist>

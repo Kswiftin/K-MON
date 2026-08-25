@@ -121,6 +121,9 @@ struct PopoverView: View {
             // 던전도 같이 접는다 — 배틀이 시작됐는데 던전을 보고 있으면 자기가 시작한 배틀을 못 본다.
             if nav.showDungeon, phase != .ready { nav.showDungeon = false }
         }
+        .onChange(of: battleCenter.trading.phase) { _, phase in
+            if phase != .ready { nav.tab = .battle }
+        }
     }
 
     @ViewBuilder
@@ -178,7 +181,7 @@ struct PopoverView: View {
                 Text(l.home).tag(PopoverTab.home)
                 Text(l.t("포켓몬", "Pokémon", "ポケモン")).tag(PopoverTab.pokemon)
                 Text(l.collection).tag(PopoverTab.collection)
-                Text(l.battle).tag(PopoverTab.battle)
+                Text(l.t("친구", "Friends", "フレンド")).tag(PopoverTab.battle)
                 Text(l.t("포켓슬론", "Pokéathlon", "ポケスロン")).tag(PopoverTab.pokeathlon)
             }
             .pickerStyle(.segmented)
@@ -190,7 +193,7 @@ struct PopoverView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     switch nav.tab {
                     case .pokeathlon: PokeathlonView(store: companion)
-                    case .battle: BattleView(store: companion)
+                    case .battle: FriendView(store: companion)
                     case .collection: CollectionView(store: companion)
                     case .pokemon: PokemonRosterView(store: companion)
                     case .bag: BagView(store: companion, nav: nav)
