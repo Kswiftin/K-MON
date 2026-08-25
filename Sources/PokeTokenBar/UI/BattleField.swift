@@ -349,6 +349,13 @@ struct BattleFieldView: View {
     var myActor: BattleActor = .a
     var overlay: ReplayOverlay = .idle
 
+    private var activeMove: MoveSpec? {
+        guard let actor = overlay.moveActor, let moveID = overlay.moveID else { return nil }
+        let side = actor == myActor ? mine : theirs
+        return side.moves.first { $0.id == moveID }
+            ?? (moveID == MoveSpec.struggleID ? .struggle() : nil)
+    }
+
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color.accentColor.opacity(0.10), Color.primary.opacity(0.03)],
@@ -373,6 +380,11 @@ struct BattleFieldView: View {
                 }
             }
             .padding(8)
+            if let move = activeMove, let actor = overlay.moveActor {
+                BattleMoveEffect(move: move, attacksFromMine: actor == myActor)
+                    .id("\(actor)-\(move.id)-\(overlay.isPlaying)")
+                    .allowsHitTesting(false)
+            }
             // 팝 문구는 **필드 위에 겹쳐** 그린다. 흐름에 넣으면 뜰 때마다 아래 기술 버튼이 밀려
             // 내려가고, 팝오버는 넘친 만큼을 잘라 낸다(`testTheArenaKeepsItsBudgetWhileAPhrasePopped`).
             if let phrase = overlay.popped.flatMap({ BattleReplay.popup(for: $0, l: l) }) {
@@ -402,6 +414,270 @@ struct BattleFieldView: View {
                 .frame(width: size * 0.62, height: size * 0.12)
                 .blur(radius: 1.5)
         }
+    }
+}
+
+/// 기술 타입과 분류를 짧은 벡터 연출로 표현한다. 외부 이미지가 없어 오프라인 배틀에서도 동일하며,
+/// 저전력/연출 끄기는 재생기에서 오버레이 자체를 내리지 않으므로 자동으로 정지 화면이 된다.
+private enum BattleMoveAnimationStyle {
+    case hydroPump, fireBlast, beam, wave, slash, punch, bite, charge, quake, storm
+    case drain, heal, buff, ailment, projectile
+
+    /// 모든 기술이 반드시 한 프로필을 얻는다. 잘 알려진 동작군은 ID로 고정하고, 새 기술이나
+    /// 미분류 기술은 분류·타입·부가효과로 의미 있는 폴백을 고른다.
+    static func resolve(_ move: MoveSpec) -> Self {
+        if move.id == 56 { return .hydroPump }
+        if move.id == 126 { return .fireBlast }
+        if [13, 15, 75, 163, 210, 314, 332, 400, 403, 427, 440].contains(move.id) { return .slash }
+        if [4, 5, 7, 8, 9, 146, 183, 223, 264, 309, 325, 327, 359, 409, 418].contains(move.id) { return .punch }
+        if [44, 158, 242, 305, 422, 423, 424].contains(move.id) { return .bite }
+        if [33, 34, 36, 38, 66, 98, 130, 224, 229, 263, 276, 394, 428].contains(move.id) { return .charge }
+        if [89, 90, 222, 284, 328, 414, 523].contains(move.id) { return .quake }
+        if [16, 19, 59, 87, 239, 257, 542].contains(move.id) { return .storm }
+        if [58, 63, 76, 85, 93, 94, 247, 324, 406, 408, 411, 430, 434, 451, 473].contains(move.id) { return .beam }
+        if [55, 57, 61, 83, 127, 145, 250, 352, 503].contains(move.id) { return .wave }
+        if move.drainPercent > 0 { return .drain }
+        if move.healingPercent > 0 || move.id == MoveSpec.restMoveID { return .heal }
+        if move.damageClass == .status {
+            if move.inflictedStatus != nil { return .ailment }
+            return .buff
+        }
+        if move.damageClass == .physical { return move.power >= 90 ? .charge : .punch }
+        if move.power >= 100 { return .beam }
+        return .projectile
+    }
+}
+
+private struct BattleMoveEffect: View {
+    let move: MoveSpec
+    let attacksFromMine: Bool
+    @State private var progress = false
+    private var style: BattleMoveAnimationStyle { .resolve(move) }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let start = attacksFromMine
+                ? CGPoint(x: proxy.size.width * 0.24, y: proxy.size.height * 0.72)
+                : CGPoint(x: proxy.size.width * 0.78, y: proxy.size.height * 0.27)
+            let end = attacksFromMine
+                ? CGPoint(x: proxy.size.width * 0.77, y: proxy.size.height * 0.28)
+                : CGPoint(x: proxy.size.width * 0.25, y: proxy.size.height * 0.70)
+
+            ZStack {
+                switch style {
+                case .hydroPump:
+                    hydroPump(from: start, to: end)
+                case .fireBlast:
+                    fireBlast(from: start, to: end)
+                case .beam, .wave:
+                    energyLine(from: start, to: end, isWave: style == .wave)
+                case .slash:
+                    slashEffect(at: end)
+                case .punch, .bite, .charge:
+                    projectile
+                        .position(progress ? end : start)
+                    impact
+                        .position(end)
+                        .opacity(progress ? 0.9 : 0)
+                        .scaleEffect(progress ? 1.25 : 0.25)
+                case .quake, .storm:
+                    fieldEffect(at: end, storm: style == .storm)
+                case .drain:
+                    drainEffect(from: end, to: start)
+                case .heal, .buff, .ailment:
+                    statusAura.position(style == .heal || style == .buff ? start : end)
+                case .projectile:
+                    projectile.position(progress ? end : start)
+                    impact.position(end).opacity(progress ? 0.9 : 0).scaleEffect(progress ? 1.25 : 0.25)
+                }
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.28)) { progress = true }
+            }
+        }
+    }
+
+    private func attackPath(from start: CGPoint, to end: CGPoint) -> Path {
+        Path { path in
+            path.move(to: start)
+            path.addLine(to: end)
+        }
+    }
+
+    /// 하이드로펌프 — 굵은 고압 물줄기와 물방울이 공격자에서 상대까지 뻗는다.
+    @ViewBuilder
+    private func hydroPump(from start: CGPoint, to end: CGPoint) -> some View {
+        ZStack {
+            attackPath(from: start, to: end)
+                .trim(from: 0, to: progress ? 1 : 0)
+                .stroke(Color.cyan.opacity(0.32), style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                .blur(radius: 3)
+            attackPath(from: start, to: end)
+                .trim(from: 0, to: progress ? 1 : 0)
+                .stroke(Color.blue, style: StrokeStyle(lineWidth: 11, lineCap: .round))
+            attackPath(from: start, to: end)
+                .trim(from: 0, to: progress ? 1 : 0)
+                .stroke(Color.white.opacity(0.8), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            ForEach(0..<7, id: \.self) { index in
+                let ratio = CGFloat(index + 1) / 8
+                Circle()
+                    .fill(index.isMultiple(of: 2) ? Color.cyan : Color.blue)
+                    .frame(width: 5, height: 5)
+                    .position(x: start.x + (end.x - start.x) * ratio,
+                              y: start.y + (end.y - start.y) * ratio + (index.isMultiple(of: 2) ? -9 : 9))
+                    .opacity(progress ? 0.9 : 0)
+                    .scaleEffect(progress ? 1 : 0.2)
+            }
+            impact.position(end).opacity(progress ? 1 : 0).scaleEffect(progress ? 1.5 : 0.2)
+        }
+    }
+
+    /// 불대문자 — 불꽃으로 된 大 문양이 날아가며 착탄 지점에서 크게 번진다.
+    @ViewBuilder
+    private func fireBlast(from start: CGPoint, to end: CGPoint) -> some View {
+        ZStack {
+            Text("大")
+                .font(.system(size: progress ? 38 : 18, weight: .black, design: .rounded))
+                .foregroundStyle(.yellow)
+                .shadow(color: .orange, radius: 3)
+                .shadow(color: .red, radius: 7)
+                .position(progress ? end : start)
+            ForEach(0..<8, id: \.self) { index in
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 9 + CGFloat(index % 3) * 2))
+                    .foregroundStyle(index.isMultiple(of: 2) ? Color.yellow : Color.orange)
+                    .offset(y: progress ? -CGFloat(22 + index * 3) : 0)
+                    .rotationEffect(.degrees(Double(index) * 45))
+                    .position(end)
+                    .opacity(progress ? 0.15 : 0.9)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func energyLine(from start: CGPoint, to end: CGPoint, isWave: Bool) -> some View {
+        ZStack {
+            attackPath(from: start, to: end)
+                .trim(from: 0, to: progress ? 1 : 0)
+                .stroke(move.type.battleColor.opacity(0.28),
+                        style: StrokeStyle(lineWidth: isWave ? 15 : 10, lineCap: .round,
+                                           dash: isWave ? [7, 5] : []))
+                .blur(radius: 3)
+            attackPath(from: start, to: end)
+                .trim(from: 0, to: progress ? 1 : 0)
+                .stroke(move.type.battleColor,
+                        style: StrokeStyle(lineWidth: isWave ? 5 : 4, lineCap: .round,
+                                           dash: isWave ? [7, 5] : []))
+            if !isWave {
+                Circle().fill(Color.white).frame(width: 8, height: 8)
+                    .shadow(color: move.type.battleColor, radius: 7)
+                    .position(progress ? end : start)
+            }
+            impact.position(end).opacity(progress ? 1 : 0).scaleEffect(progress ? 1.2 : 0.2)
+        }
+    }
+
+    @ViewBuilder
+    private func slashEffect(at point: CGPoint) -> some View {
+        ZStack {
+            ForEach(0..<3, id: \.self) { index in
+                Capsule()
+                    .fill(LinearGradient(colors: [.white, move.type.battleColor],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(width: progress ? 54 : 5, height: 4)
+                    .rotationEffect(.degrees(-38))
+                    .offset(y: CGFloat(index - 1) * 13)
+                    .opacity(progress ? 0.9 : 0)
+            }
+        }
+        .position(point)
+    }
+
+    @ViewBuilder
+    private func fieldEffect(at point: CGPoint, storm: Bool) -> some View {
+        ZStack {
+            ForEach(0..<9, id: \.self) { index in
+                Image(systemName: storm ? projectileSymbol : "diamond.fill")
+                    .font(.system(size: CGFloat(7 + index % 4)))
+                    .foregroundStyle(move.type.battleColor)
+                    .offset(x: CGFloat((index % 3) - 1) * 24,
+                            y: progress ? CGFloat(30 - (index / 3) * 25) : -45)
+                    .rotationEffect(.degrees(progress ? Double(index * 55) : 0))
+                    .opacity(progress ? 0.2 : 0.95)
+            }
+            if !storm {
+                Ellipse().stroke(move.type.battleColor, lineWidth: 4)
+                    .frame(width: progress ? 82 : 18, height: progress ? 28 : 7)
+                    .opacity(progress ? 0.1 : 0.9)
+            }
+        }
+        .position(point)
+    }
+
+    @ViewBuilder
+    private func drainEffect(from start: CGPoint, to end: CGPoint) -> some View {
+        ZStack {
+            ForEach(0..<6, id: \.self) { index in
+                Circle()
+                    .fill(index.isMultiple(of: 2) ? move.type.battleColor : Color.green)
+                    .frame(width: CGFloat(6 + index % 3), height: CGFloat(6 + index % 3))
+                    .position(progress ? end : CGPoint(x: start.x + CGFloat(index - 3) * 6,
+                                                       y: start.y + CGFloat(index % 2) * 8))
+                    .shadow(color: .green.opacity(0.7), radius: 4)
+            }
+        }
+    }
+
+    private var projectile: some View {
+        ZStack {
+            Circle().fill(move.type.battleColor.opacity(0.24)).frame(width: 34, height: 34).blur(radius: 3)
+            Image(systemName: projectileSymbol)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(move.type.battleColor)
+                .shadow(color: move.type.battleColor.opacity(0.8), radius: 5)
+        }
+    }
+
+    /// 전용 연출이 아직 없는 기술도 타입에 맞는 모양으로 보인다. 기술 ID별 연출은 위 분기에
+    /// 계속 추가할 수 있고, 여기 폴백 덕분에 새 PokéAPI 기술이 무표정하게 지나가지 않는다.
+    private var projectileSymbol: String {
+        if move.damageClass == .physical { return "burst.fill" }
+        switch move.type {
+        case .fire:                         return "flame.fill"
+        case .water, .ice:                  return "drop.fill"
+        case .electric:                     return "bolt.fill"
+        case .grass, .bug:                  return "leaf.fill"
+        case .flying:                       return "wind"
+        case .rock, .ground, .steel:        return "diamond.fill"
+        case .poison, .ghost, .dark:        return "smoke.fill"
+        case .psychic, .fairy, .dragon:     return "sparkles"
+        case .normal, .fighting:            return "circle.fill"
+        }
+    }
+
+    private var impact: some View {
+        ZStack {
+            Circle().stroke(move.type.battleColor, lineWidth: 3).frame(width: 38, height: 38)
+            ForEach(0..<6, id: \.self) { index in
+                Capsule().fill(move.type.battleColor)
+                    .frame(width: 3, height: 13)
+                    .offset(y: -27)
+                    .rotationEffect(.degrees(Double(index) * 60))
+            }
+        }
+    }
+
+    private var statusAura: some View {
+        ZStack {
+            Circle().stroke(move.type.battleColor.opacity(0.75), lineWidth: 3)
+                .frame(width: progress ? 58 : 18, height: progress ? 58 : 18)
+                .opacity(progress ? 0.1 : 1)
+            Image(systemName: "sparkles")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(move.type.battleColor)
+                .scaleEffect(progress ? 1.15 : 0.65)
+        }
+        .animation(.easeOut(duration: 0.4), value: progress)
     }
 }
 

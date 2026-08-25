@@ -116,24 +116,21 @@ final class BattleTests: XCTestCase {
     /// 리자몽(특방 105, 불꽃/비행)을 때린다. 양쪽 레벨 50.
     ///
     ///     base   = (2·50/5 + 2)·90·105/105/50 = 39
-    ///     비급소 = (39·1 + 2)·3/2·2 = 122      급소 = (39·2 + 2)·3/2·2 = 240
+    ///     비급소 = (39 + 2)·3/2·2 = 122      급소 = (39 + 2)·3/2·3/2·2 = 182
     ///     최종   = 위 값 · rand / 255          rand ∈ 217…255 (균등 정수)
     ///
-    /// 값을 정하는 건 두 가지다 — 급소 배율이 ×2 라는 것과 `+2` 가 그 배율 **뒤에** 온다는 것.
-    /// 예전 식은 `+2` 를 먼저 더한 뒤 ×1.5 를 곱하고 난수도 0.85~1.00 Double 이었다(같은 seed 로
-    /// 각각 111 / 114 / 112). 이제 전 구간이 정수 연산이라 두 피어 사이에 Double 오차가 남지 않는다.
-    func testGen2DamageOrderAndCritMultiplier() {
+    /// 현행 급소 배율 ×1.5와 정수 난수 파이프라인을 고정한다.
+    func testCurrentDamageOrderAndCritMultiplier() {
         let attacker = BattleSide(water()), defender = BattleSide(fire())
-        // (seed, 급소인가, 기대 데미지). seed 12 는 새 임계값(17/256)에서만 급소다 — 예전 `% 16 == 0`
-        // 에서는 급소가 아니었으므로 이 줄 하나가 배율과 임계값을 같이 잠근다.
+        // (seed, 급소인가, 기대 데미지). seed 18은 현행 기본 확률 1/24에서 급소다.
         // seed 0 은 rand 하한 217, seed 20 은 상한 255 를 밟는다.
-        let golden: [(seed: UInt64, crit: Bool, damage: Int)] = [(0, false, 103), (12, true, 224), (20, false, 122)]
+        let golden: [(seed: UInt64, crit: Bool, damage: Int)] = [(0, false, 103), (18, true, 157), (20, false, 122)]
         for (seed, expectedCrit, expectedDamage) in golden {
             var rng = SplitMix64(seed: seed)
             let outcome = BattleEngine.resolveAttack(attacker: attacker, defender: defender,
                                                      move: surf(), rng: &rng)
             XCTAssertEqual(outcome.isCritical, expectedCrit, "seed \(seed): 급소 판정")
-            XCTAssertEqual(outcome.damage, expectedDamage, "seed \(seed): Gen 2 식의 값이어야 한다")
+            XCTAssertEqual(outcome.damage, expectedDamage, "seed \(seed): 현행 식의 값이어야 한다")
             XCTAssertEqual(outcome.effectiveness, 2, "seed \(seed): 표시용 상성 배율은 그대로 2 다")
         }
     }
@@ -147,14 +144,14 @@ final class BattleTests: XCTestCase {
 
     // MARK: 급소 단계
 
-    /// Gen 2 급소 단계표(분모 256). 고급소기는 이 표에서 **+2 단계**다.
-    func testCriticalHitThresholdsFollowTheGen2StageTable() {
-        XCTAssertEqual(BattleEngine.critThreshold(stage: 0), 17)   // 17/256 ≈ 6.6%
-        XCTAssertEqual(BattleEngine.critThreshold(stage: 1), 32)   // 1/8
-        XCTAssertEqual(BattleEngine.critThreshold(stage: 2), 64)   // 1/4
-        XCTAssertEqual(BattleEngine.critThreshold(stage: 3), 85)   // 85/256 — 상한
-        XCTAssertEqual(BattleEngine.critThreshold(stage: 9), 85, "3단계 이상은 전부 상한이다")
-        XCTAssertEqual(BattleEngine.critThreshold(stage: -1), 17, "단계가 음수여도 기본 확률")
+    /// 현행 급소 단계표(분모 24). 고급소기는 이 표에서 **+1 단계**다.
+    func testCriticalHitThresholdsFollowTheCurrentStageTable() {
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 0), 1)    // 1/24 ≈ 4.17%
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 1), 3)    // 1/8
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 2), 12)   // 1/2
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 3), 24)   // 100%
+        XCTAssertEqual(BattleEngine.critThreshold(stage: 9), 24)
+        XCTAssertEqual(BattleEngine.critThreshold(stage: -1), 1)
     }
 
     /// 단계표가 `resolveAttack` 까지 **실제로 연결됐는지** 본다. 표만 맞고 배선이 없어도 위 테스트는
@@ -173,11 +170,11 @@ final class BattleTests: XCTestCase {
         highCrit.critRate = 1                       // PokéAPI `meta.crit_rate` — 베어가르기 부류
         let plain = critCount(surf()), boosted = critCount(highCrit)
 
-        // 512회 중 기대값은 34(17/256) 와 128(1/4) 이다. seed 를 고정한 순회라 값이 실행마다 같다.
+        // 512회 중 기대값은 약 21(1/24) 과 64(1/8)다. seed 를 고정한 순회라 값이 실행마다 같다.
         XCTAssertGreaterThan(plain, 0, "기본 확률도 관측돼야 한다 — 0 이면 판정 자체가 죽었다")
         XCTAssertGreaterThan(boosted, plain * 2, "고급소기가 두 배도 안 되면 단계가 연결되지 않았다")
-        XCTAssertEqual(Double(boosted) / 512, 0.25, accuracy: 0.05,
-                       "+2 단계는 1/4 이어야 한다 — 1단계(1/8)와 구분된다")
+        XCTAssertEqual(Double(boosted) / 512, 0.125, accuracy: 0.04,
+                       "고급소기의 +1 단계는 1/8 이어야 한다")
     }
 
     /// PokéAPI `/move` 응답 → `MoveSpec` 매핑. `meta.crit_rate` 는 이 경로로만 들어오므로

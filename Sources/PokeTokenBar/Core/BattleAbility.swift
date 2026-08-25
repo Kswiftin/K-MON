@@ -20,6 +20,7 @@ enum BattleAbility: String, Sendable {
     case vitalSpirit = "vital-spirit"
     case immunity
     case waterVeil = "water-veil"
+    case waterBubble = "water-bubble"
     case magmaArmor = "magma-armor"
     case ownTempo = "own-tempo"
 
@@ -51,7 +52,7 @@ enum BattleAbility: String, Sendable {
         case .limber:                  return status == .paralysis
         case .insomnia, .vitalSpirit:  return status == .sleep
         case .immunity:                return status == .poison || status == .toxic
-        case .waterVeil:               return status == .burn
+        case .waterVeil, .waterBubble: return status == .burn
         case .magmaArmor:              return status == .freeze
         case .ownTempo:                return status == .confusion
         default:                       return false

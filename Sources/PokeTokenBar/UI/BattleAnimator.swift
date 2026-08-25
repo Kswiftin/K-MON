@@ -90,8 +90,13 @@ final class BattleAnimator {
             for step in steps() {
                 if Task.isCancelled { break }
                 displaySides = step.sides
+                let activeMove = BattleReplay.activeMove(after: step.event,
+                                                         actor: overlay.moveActor,
+                                                         moveID: overlay.moveID)
                 overlay = ReplayOverlay(isPlaying: true,
                                         hit: BattleReplay.struck(by: step.event),
+                                        moveActor: activeMove.0,
+                                        moveID: activeMove.1,
                                         popped: BattleReplay.popped(step.event,
                                                                     carrying: overlay.popped))
                 playedCount += 1

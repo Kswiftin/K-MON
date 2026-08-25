@@ -205,7 +205,7 @@ final class BattleStageTests: XCTestCase {
     // MARK: 스피드 랭크 — 순서를 실제로 뒤집는다
 
     /// 스탯만 확인하면 순서 계산 경로를 밟지 않는다. 마비와 함께 걸리는 경우도 같이 본다 —
-    /// 마비(25%)가 랭크 **뒤에** 곱해져야 한다.
+    /// 마비(50%)가 랭크 **뒤에** 곱해져야 한다.
     func testSpeedStagesFlipTurnOrderAndStackWithParalysis() {
         var boosted = BattleSide(tank(speed: 100))
         let rival = BattleSide(tank(speed: 100))
@@ -215,7 +215,7 @@ final class BattleStageTests: XCTestCase {
         XCTAssertEqual(boosted.effectiveSpeed, 180, "120 × 3/2")
 
         boosted.status = .paralysis
-        XCTAssertEqual(boosted.effectiveSpeed, 45, "랭크 뒤에 마비 25% — 180/4")
+        XCTAssertEqual(boosted.effectiveSpeed, 90, "랭크 뒤에 마비 50% — 180/2")
 
         // 실제 턴 순서: 스피드 랭크 +2 가 붙은 쪽이 원래 느려도 선공한다.
         var slow = BattleSide(tank(speed: 60))

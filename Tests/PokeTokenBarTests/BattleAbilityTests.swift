@@ -118,7 +118,7 @@ final class BattleAbilityTests: XCTestCase {
             ("insomnia", [.sleep]),
             ("vital-spirit", [.sleep]),
             ("immunity", [.poison, .toxic]),
-            ("water-veil", [.burn]),
+            ("water-veil", [.burn]), ("water-bubble", [.burn]),
             ("magma-armor", [.freeze]),
             ("own-tempo", [.confusion]),
         ]
@@ -206,7 +206,7 @@ final class BattleAbilityTests: XCTestCase {
     /// 규칙이 바뀌면 **둘 다** 올린다 — 멀티는 `rulesVersion` 을 안 보고 `protocolVersion` 만 본다.
     /// 하나만 올리면 구버전 호스트와 신버전 게스트가 붙어 특성 유무가 갈린 채로 싸운다.
     func testTheRuleAndProtocolVersionsMovedTogetherForAbilities() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 15)
+        XCTAssertEqual(BattleEngine.rulesVersion, 16)
         XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 9)
     }
 }

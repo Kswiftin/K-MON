@@ -279,9 +279,8 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
 
-    /// 급소 단계 — Gen 2 의 고급소기는 **+2 단계**(1/4)다. PokéAPI 의 `crit_rate` 는 세대에 따라
-    /// 뜻이 달라(Gen 6+ 는 +1 단계) 값을 그대로 쓰지 않고, 고급소기인지만 보고 Gen 2 단계로 옮긴다.
-    var critStage: Int { (critRate ?? 0) > 0 ? 2 : 0 }
+    /// 급소 단계 — PokéAPI `meta.crit_rate` 를 현행 본가 단계표에 그대로 연결한다.
+    var critStage: Int { max(0, critRate ?? 0) }
 
     /// 실제로 걸 수 있는 상태 — 구현한 6종만. 나머지 14종은 `nil` 이라 부여 시도가 그냥 지나간다
     /// (무엇을 건너뛰었는지는 스펙을 만들 때 `AppLog` 에 한 번 남긴다).
@@ -615,15 +614,14 @@ struct BattleSide: Sendable, Equatable {
         }
     }
 
-    /// 턴 순서에 쓰는 스피드 — 랭크를 먼저 곱하고, 마비면 그 뒤에 Gen 2 기준 25%(Gen 7 부터 50%).
+    /// 턴 순서에 쓰는 스피드 — 랭크를 먼저 곱하고, 마비면 그 뒤에 50%.
     /// 순서 계산이 `stats.spe` 를 직접 읽으면 마비·랭크가 스탯 화면에만 보이고 실제 선공은 그대로다.
     var effectiveSpeed: Int {
         let boosted = StatStages.apply(rawStat(.spe), stage: stage(.spe))
-        return status == .paralysis ? max(1, boosted / 4) : boosted
+        return status == .paralysis ? max(1, boosted / 2) : boosted
     }
 
-    /// 이 상태가 붙을 수 있는가. 타입 면역은 **Gen 2 것만** 가져온다 —
-    /// 전기 타입의 마비 면역, 풀 타입의 가루 면역은 Gen 6 규칙이라 여기 없다.
+    /// 이 상태가 붙을 수 있는가. 불꽃·얼음·독·강철·전기 타입의 본가 면역을 같이 본다.
     func canBeAfflicted(by status: Status) -> Bool {
         guard isAlive else { return false }
         // 주 상태와 혼란의 면역 특성은 여기서 갈린다. 타입 면역과 자리가 다른 건 판정 기준이 달라서다 —
@@ -643,6 +641,7 @@ struct BattleSide: Sendable, Equatable {
         switch status {
         case .burn:            return !types.contains(.fire)
         case .freeze:          return !types.contains(.ice)
+        case .paralysis:       return !types.contains(.electric)
         case .poison, .toxic:  return !types.contains(.poison) && !types.contains(.steel)
         default:               return true
         }
@@ -683,25 +682,21 @@ struct SplitMix64: RandomNumberGenerator {
 enum BattleOutcome: Sendable, Equatable { case win, loss, draw }
 
 enum BattleEngine {
-    /// 급소 배율 — Gen 2 는 ×2(Gen 6+ 는 ×1.5). 상수인 건 밸런스 재조정 여지를 남기려는 것이다.
-    static let critMultiplier = 2
-
-    /// 급소 확률의 분자(분모 256) — Gen 2 단계표. 0단계 17/256, +1 은 1/8, +2 는 1/4, +3 이상은 85/256.
-    /// 단계를 올리는 건 지금은 고급소기뿐이다(기술·특성 보정은 Phase 3·5).
+    /// 급소 확률의 분자(분모 24). 현행 본가 단계표를 정확한 분수로 표현한다.
+    static let critDenominator: UInt64 = 24
     static func critThreshold(stage: Int) -> UInt64 {
         switch max(0, stage) {
-        case 0: return 17
-        case 1: return 32
-        case 2: return 64
-        default: return 85
+        case 0: return 1       // 1/24 ≈ 4.17%
+        case 1: return 3       // 1/8 = 12.5%
+        case 2: return 12      // 1/2 = 50%
+        default: return 24     // 100%
         }
     }
 
-    /// 얼음이 매턴 녹을 확률(%) — Gen 2 의 10% 는 평균 10턴이라 사실상 사망 선고다.
-    /// Gen 3 값(20%)을 기본으로 두고 상수로 노출한다(계획 §7 리스크 표).
-    static let thawChance = 20
-    /// 마비로 행동이 막힐 확률(%) — Gen 2 는 25%(Gen 7 부터 50%).
-    static let paralysisFailChance = 25
+    /// 얼음이 행동 전에 자연 해동될 확률(%).
+    static let thawChance = 25
+    /// 마비로 행동이 막힐 확률. 1/8을 정확히 표현하기 위해 분모를 노출한다.
+    static let paralysisFailDenominator: UInt64 = 8
     /// 혼란일 때 자기를 때릴 확률(%).
     static let confusionSelfHitChance = 50
     /// 혼란 자멸의 위력 — 무속성 물리 40.
@@ -746,7 +741,9 @@ enum BattleEngine {
     /// 15 = 자기 회복기(회복·아침햇살·광합성·달빛·둥지틀기 = 최대 HP 절반, 잠자기 = 전회복 +
     ///     상태 해제 + 2턴 수면). 예전엔 위력 0 짜리 무동작이라 턴만 태웠다 — 이제 HP 가 오르므로
     ///     같은 입력에서 배틀이 갈라진다. rng 소비는 그대로다(회복량·수면 턴이 전부 고정값).
-    static let rulesVersion = 15
+    /// 16 = 현행 상태이상·급소 규칙(마비 1/2·1/8, 잠듦 1~3턴, 해동 25%,
+    ///      화상 1/16, 맹독 교체 카운터 초기화, 급소 1.5배·현행 단계표).
+    static let rulesVersion = 16
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -785,10 +782,9 @@ enum BattleEngine {
 
     /// 필드에서 물러나는 포켓몬의 volatile 상태를 정리한다. CPU/체육관과 LAN 교체가 이 한 규칙을 쓴다.
     static func prepareForSwitch(_ side: inout BattleSide) {
-        // Gen 2 는 물러난 포켓몬의 맹독을 보통 독으로 강등한다.
+        // 맹독 상태는 유지하되, 누적 배수는 다시 1/16 부터 시작한다.
         if side.status == .toxic {
-            side.status = .poison
-            side.statusCounter = 0
+            side.statusCounter = 1
         }
         // 혼란·풀죽음은 volatile — 다시 나왔을 때 이전 상태를 이어 가지 않는다.
         side.confusionTurns = 0
@@ -884,7 +880,9 @@ enum BattleEngine {
     ///           바뀌니 `rulesVersion` 도 같이 올린다).
     static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
-        if let chance = hitChance(of: move, attacker: attacker, defender: defender),
+        // 독 타입이 쓰는 맹독은 명중·회피 랭크를 포함한 명중 판정을 건너뛴다.
+        let poisonTypeToxic = move.id == MoveSpec.toxicMoveID && attacker.snapshot.types.contains(.poison)
+        if !poisonTypeToxic, let chance = hitChance(of: move, attacker: attacker, defender: defender),
            Int(rng.next() % 100) >= chance {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
         }
@@ -949,7 +947,7 @@ enum BattleEngine {
         // 쪽이 아무것도 못 하게 되고, 그 상태로는 배틀이 끝나지 않는다.
         let effectiveness = ignoresTypeChart ? 1.0 : typeMultiplier(of: move, against: defender)
         let isPhysical = move.damageClass == .physical
-        let isCritical = rng.next() % 256 < critThreshold(stage: move.critStage)
+        let isCritical = rng.next() % critDenominator < critThreshold(stage: move.critStage)
         // 급소는 **불리한 랭크만** 무시한다(Gen 3+): 공격측의 마이너스와 방어측의 플러스가 빠진다.
         // 전부 무시하는 Gen 1·2 방식이면 랭크를 올린 쪽이 급소에서 손해를 봐 올릴 이유가 없어진다.
         let offense: BattleStat = isPhysical ? .atk : .spa
@@ -966,12 +964,12 @@ enum BattleEngine {
         // 구조에서는 정수 연산이 유리하다(부동소수 오차가 끼어들 자리가 없다).
         let random = 217 + Int(rng.next() % 39)
 
-        // Gen 2 의 계산 **순서** 그대로다. `+2` 가 급소 배율 뒤에 오고, STAB·상성은 그 뒤에 곱한다.
-        // 예전 식은 `+2` 를 먼저 더한 뒤 급소 ×1.5 를 곱해 급소 데미지가 다르게 나왔다.
+        // 기본 데미지의 `+2` 뒤에 현행 급소 ×1.5를 적용하고, STAB·상성은 그 뒤에 곱한다.
         // (배지·트레이너킥·날씨·기술보정은 §3.3 대로 안 가져온다.)
         var damage = baseDamage(level: attacker.snapshot.level, power: power,
                                 attack: attack, defense: defense)
-        damage = damage * (isCritical ? critMultiplier : 1) + 2
+        damage += 2
+        if isCritical { damage = damage * 3 / 2 }
         // 위의 `effectiveness` 와 **같은 게이트**여야 한다. 예전 `!isStruggle` 은 위력 0 이
         // 데미지를 접어 준 덕에 우연히 같았을 뿐이다(위력 있는 무상성 기술이 생기면 갈라진다).
         if !ignoresTypeChart {
@@ -1064,7 +1062,7 @@ extension BattleEngine {
             side.confusionTurns = 2 + Int(rng.next() % 4)      // 2~5턴
         case .sleep:
             side.status = .sleep
-            side.statusCounter = 2 + Int(rng.next() % 7)       // 카운터 2~8 → 행동불능 1~7턴
+            side.statusCounter = 2 + Int(rng.next() % 3)       // 카운터 2~4 → 행동불능 1~3턴
         case .toxic:
             side.status = .toxic
             side.statusCounter = 1                             // 1/16 부터 매턴 1/16 누적
@@ -1075,7 +1073,7 @@ extension BattleEngine {
         return [.status(actor, status)]
     }
 
-    /// 턴 끝 잔뎀 — 화상·독은 최대 HP 의 1/8, 맹독은 n/16 으로 매턴 커진다.
+    /// 턴 끝 잔뎀 — 화상은 1/16, 독은 1/8, 맹독은 n/16 으로 매턴 커진다.
     /// rng 를 쓰지 않으므로 호출 순서만 고정하면 두 피어가 같은 값을 본다.
     static func endOfTurnResidual(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
         guard side.isAlive, let status = side.status else { return [] }
@@ -1084,7 +1082,7 @@ extension BattleEngine {
         let cause: DamageCause
         switch status {
         case .burn:
-            amount = max(1, full / 8);  cause = .burn
+            amount = max(1, full / 16); cause = .burn
         case .poison:
             amount = max(1, full / 8);  cause = .poison
         case .toxic:
@@ -1140,7 +1138,7 @@ extension BattleEngine {
                 return false
             }
         }
-        if side.status == .paralysis, Int(rng.next() % 100) < paralysisFailChance {
+        if side.status == .paralysis, rng.next() % paralysisFailDenominator == 0 {
             events.append(.cant(actor, .paralysis))
             return false
         }

@@ -51,6 +51,9 @@ struct ReplayOverlay: Equatable, Sendable {
     var isPlaying = false
     /// 지금 맞은 쪽 — 이 스프라이트만 흔들리고 번쩍인다.
     var hit: BattleActor?
+    /// 현재 재생 중인 기술. 다음 기술 또는 턴 경계까지 유지해 투사체와 타격 프레임이 이어진다.
+    var moveActor: BattleActor?
+    var moveID: Int?
     /// 지금 떠 있는 팝의 **원인 이벤트**. 문구가 아니라 이벤트를 들고 있는 이유는 언어다 —
     /// 뷰가 자기 `L` 로 푼다(`BattleReplay.popup`).
     var popped: BattleEvent?
@@ -186,5 +189,15 @@ enum BattleReplay {
     static func struck(by event: BattleEvent) -> BattleActor? {
         guard case .damage(let actor, _, _) = event else { return nil }
         return actor
+    }
+
+    /// 기술 큐는 `.move`에서 시작해 뒤따르는 급소·데미지 스텝까지 유지한다.
+    static func activeMove(after event: BattleEvent, actor: BattleActor?, moveID: Int?)
+        -> (BattleActor?, Int?) {
+        switch event {
+        case .move(let nextActor, let nextMoveID): return (nextActor, nextMoveID)
+        case .turn, .sendOut, .faint:               return (nil, nil)
+        default:                                    return (actor, moveID)
+        }
     }
 }

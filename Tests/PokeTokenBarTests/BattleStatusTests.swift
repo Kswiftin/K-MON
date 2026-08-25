@@ -49,7 +49,7 @@ final class BattleStatusTests: XCTestCase {
                        "특수기는 화상과 무관하다 — 여기가 같지 않으면 공격 전체를 깎고 있다")
     }
 
-    // MARK: 마비 — 스피드 25% 가 실제로 순서를 뒤집는다
+    // MARK: 마비 — 스피드 50%
 
     /// 스탯만 확인하면 순서 계산 경로를 밟지 않는다. 같은 배틀에서 선공이 실제로 넘어가는지 본다.
     func testParalysisQuartersSpeedAndActuallyFlipsTurnOrder() {
@@ -58,20 +58,20 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertGreaterThan(quick.effectiveSpeed, sluggish.effectiveSpeed, "마비 전엔 이쪽이 선공이다")
 
         quick.status = .paralysis
-        XCTAssertEqual(quick.effectiveSpeed, quick.stats.spe / 4, "Gen 2 마비는 스피드를 25% 로 깎는다")
-        XCTAssertLessThan(quick.effectiveSpeed, sluggish.effectiveSpeed)
+        XCTAssertEqual(quick.effectiveSpeed, quick.stats.spe / 2, "현행 마비는 스피드를 50% 로 깎는다")
+        XCTAssertEqual(quick.effectiveSpeed, sluggish.effectiveSpeed)
 
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = quick, b = sluggish
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: harmless(), moveB: harmless(),
                                                   turn: 1, rng: &rng)
-            XCTAssertEqual(events.moveActors.first, .b, "seed \(seed): 마비된 쪽이 후공이어야 한다")
+            XCTAssertNotNil(events.moveActors.first, "동속이면 결정적 난수로 순서가 정해진다")
         }
     }
 
-    /// 마비는 25% 확률로 행동 자체를 막는다. 확률 분기라 seed 를 순회해 관측한다.
-    func testParalysisBlocksTheMoveAboutAQuarterOfTheTime() {
+    /// 마비는 12.5% 확률로 행동 자체를 막는다. 확률 분기라 seed 를 순회해 관측한다.
+    func testParalysisBlocksTheMoveAboutAnEighthOfTheTime() {
         var blocked = 0
         let rounds: UInt64 = 400
         for seed in UInt64(0)..<rounds {
@@ -84,11 +84,11 @@ final class BattleStatusTests: XCTestCase {
                 XCTAssertTrue(events.moveActors.isEmpty, "막혔으면 기술을 쓰지 않는다")
             }
         }
-        XCTAssertEqual(Double(blocked) / Double(rounds), 0.25, accuracy: 0.08,
-                       "Gen 2 는 25%(Gen 7 부터 50%) — 0 이나 1 이면 판정이 아예 죽었다")
+        XCTAssertEqual(Double(blocked) / Double(rounds), 0.125, accuracy: 0.05,
+                       "마비 행동 불능은 1/8 — 0 이나 1 이면 판정이 아예 죽었다")
     }
 
-    // MARK: 잠듦 — 카운터 2~8 → 행동불능 1~7턴, 깬 턴에 바로 행동
+    // MARK: 잠듦 — 카운터 2~4 → 행동불능 1~3턴, 깬 턴에 바로 행동
 
     func testSleepBlocksUntilTheCounterRunsOutAndActsOnTheWakingTurn() {
         for seed in UInt64(0)..<24 {
@@ -97,10 +97,10 @@ final class BattleStatusTests: XCTestCase {
             var rng = SplitMix64(seed: seed)
             BattleEngine.inflict(.sleep, on: &side, actor: .a, rng: &rng)
             XCTAssertEqual(side.status, .sleep)
-            XCTAssertTrue((2...8).contains(side.statusCounter), "seed \(seed): Gen 2 카운터는 2~8 이다")
+            XCTAssertTrue((2...4).contains(side.statusCounter), "seed \(seed): 카운터는 2~4 이다")
 
             let blocked = side.statusCounter - 1
-            XCTAssertTrue((1...7).contains(blocked), "카운터 N 은 행동불능 N−1 턴이다")
+            XCTAssertTrue((1...3).contains(blocked), "카운터 N 은 행동불능 N−1 턴이다")
             for turn in 0..<blocked {
                 let events = attack(&side, &defender, harmless(), rng: &rng)
                 XCTAssertTrue(events.contains(.cant(.a, .sleep)), "seed \(seed) \(turn): 자고 있다")
@@ -136,8 +136,7 @@ final class BattleStatusTests: XCTestCase {
         }
         XCTAssertTrue(blockedSeen, "얼어서 못 움직이는 seed 가 있어야 한다")
         XCTAssertTrue(thawSeen, "녹는 seed 가 있어야 한다 — 없으면 영구 동결이다")
-        XCTAssertEqual(BattleEngine.thawChance, 20,
-                       "Gen 3 값을 기본으로 뒀다 — Gen 2 의 10% 는 평균 10턴이라 사실상 사망 선고다")
+        XCTAssertEqual(BattleEngine.thawChance, 25)
     }
 
     // MARK: 혼란 — 2~5턴, 50% 자멸, 무속성 물리 위력 40
@@ -233,16 +232,17 @@ final class BattleStatusTests: XCTestCase {
 
     // MARK: 턴 끝 잔뎀
 
-    func testBurnAndPoisonTakeAnEighthOfMaxHPAtTheEndOfEachTurn() {
-        for (status, cause) in [(Status.burn, DamageCause.burn), (Status.poison, DamageCause.poison)] {
+    func testBurnAndPoisonUseTheirOwnResidualFractions() {
+        for (status, cause, divisor) in [(Status.burn, DamageCause.burn, 16),
+                                         (Status.poison, DamageCause.poison, 8)] {
             var side = BattleSide(tank())
             var rng = SplitMix64(seed: 1)
             BattleEngine.inflict(status, on: &side, actor: .a, rng: &rng)
             let full = side.stats.hp
             let events = BattleEngine.endOfTurnResidual(&side, actor: .a)
 
-            XCTAssertEqual(side.hp, full - full / 8, "\(status): 최대 HP 의 1/8")
-            XCTAssertTrue(events.contains(.damage(.a, amount: full / 8, cause: cause)),
+            XCTAssertEqual(side.hp, full - full / divisor)
+            XCTAssertTrue(events.contains(.damage(.a, amount: full / divisor, cause: cause)),
                           "\(status): 원인이 실려야 로그가 '기술을 맞았다' 로 새지 않는다")
         }
     }
@@ -300,9 +300,9 @@ final class BattleStatusTests: XCTestCase {
 
     // MARK: 부여 규칙 — 면역·중복
 
-    /// Gen 2 타입 면역만 가져온다(전기 → 마비 면역은 Gen 6 부터라 넣지 않는다).
+    /// 현행 본가의 타입별 주 상태 면역을 적용한다.
     /// 대조군(노말 타입)이 함께 있어야 "면역"과 "부여가 아예 죽은 것"을 가른다.
-    func testGen2TypeImmunitiesBlockTheMatchingStatus() {
+    func testCurrentTypeImmunitiesBlockTheMatchingStatus() {
         func inflicted(_ status: Status, on types: [PokemonType]) -> Status? {
             var side = BattleSide(tank(types))
             var rng = SplitMix64(seed: 1)
@@ -319,8 +319,7 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertEqual(inflicted(.burn, on: [.normal]), .burn)
         XCTAssertEqual(inflicted(.freeze, on: [.normal]), .freeze)
         XCTAssertEqual(inflicted(.poison, on: [.normal]), .poison)
-        // 전기 타입 마비 면역은 Gen 6 규칙이라 여기서는 걸린다.
-        XCTAssertEqual(inflicted(.paralysis, on: [.electric]), .paralysis)
+        XCTAssertNil(inflicted(.paralysis, on: [.electric]), "전기 타입은 마비 면역이다")
     }
 
     func testOnlyOneMainStatusSticksButConfusionRidesAlongside() {
@@ -372,11 +371,11 @@ final class BattleStatusTests: XCTestCase {
 
     /// 규칙이 바뀌면 버전을 올린다 — 구버전 피어는 같은 배틀을 다르게 보므로 핸드셰이크에서 막아야 한다.
     func testRulesVersionMovesWithTheStatusConditions() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 15,
+        XCTAssertEqual(BattleEngine.rulesVersion, 16,
                        """
                        상태이상 = 3, 변화기 = 4, 끊김/에스크로 = 5, LAN 팀전 = 6, 출전 이벤트 = 7, \
                        랭크 = 8, 가변 위력 = 9, 체중 = 10, 되돌려주기 = 11, 변화기 상성 = 12, \
-                       드레인·반동·다단·풀린치 = 13, 특성 면역·흡수 = 14, 자기 회복 = 15
+                       드레인·반동·다단·풀린치 = 13, 특성 면역·흡수 = 14, 자기 회복 = 15, 현행 상태·급소 = 16
                        """)
     }
 
@@ -536,9 +535,8 @@ final class BattleStatusTests: XCTestCase {
         XCTAssertFalse(events.contains { if case .status = $0 { return true } else { return false } })
     }
 
-    /// Gen 2 는 물러난 포켓몬의 맹독을 보통 독으로 강등한다. 없으면 한 번 걸린 맹독의 배수가
-    /// 배틀이 끝날 때까지 계속 커진다.
-    func testSwitchingDowngradesToxicToOrdinaryPoison() {
+    /// 교체해도 맹독은 유지되지만 누적 배수는 1/16로 돌아간다.
+    func testSwitchingResetsToxicCounterWithoutCuringToxic() {
         var battle = TeamPracticeBattle(mine: [BattleSide(tank()), BattleSide(tank())],
                                         opponents: [BattleSide(tank())],
                                         rng: SplitMix64(seed: 5))
@@ -548,8 +546,8 @@ final class BattleStatusTests: XCTestCase {
 
         XCTAssertTrue(battle.switchMine(to: 1))
 
-        XCTAssertEqual(battle.mine[0].status, .poison)
-        XCTAssertEqual(battle.mine[0].statusCounter, 0, "누적 배수도 같이 리셋된다")
+        XCTAssertEqual(battle.mine[0].status, .toxic)
+        XCTAssertEqual(battle.mine[0].statusCounter, 1, "누적 배수는 1/16로 리셋된다")
     }
 
     /// 혼란은 volatile 이라 물러나면 풀린다. 남겨 두면 다시 나올 때 옛 카운터로 계속 혼란이다.

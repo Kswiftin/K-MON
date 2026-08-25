@@ -259,23 +259,6 @@ struct BattleView: View {
                        selection: Binding(get: { center.pickedTeam }, set: { center.pickedTeam = $0 }),
                        limit: center.rankedTeamSize)
 
-            HStack(spacing: 6) {
-                Button {
-                    center.startRankedPractice()
-                } label: {
-                    Label(l.t("CPU 모의전", "Practice vs CPU", "CPU と練習"), systemImage: "gamecontroller.fill")
-                }
-                .buttonStyle(.borderedProminent).controlSize(.small)
-                .disabled(!isChallengeEnabled)
-                // 체육관·던전은 **도전 탭**으로 옮겼다(`ChallengeView`). 친구가 필요 없는
-                // 콘텐츠인데 친구 탭 두 단계 안에 있어 사실상 닿을 수 없었다.
-                Spacer(minLength: 0)
-            }
-            Text(l.t("키운 레벨 그대로 · 랭크와 별의조각은 변하지 않음",
-                     "At the levels you raised · rank and Star Pieces are unchanged",
-                     "育てたレベルそのまま · ランクとほしのかけらは変わりません"))
-                .font(.caption2).foregroundStyle(.secondary)
-
             HStack {
                 Label(store.battleRank.displayName, systemImage: "shield.lefthalf.filled")
                 Spacer()
