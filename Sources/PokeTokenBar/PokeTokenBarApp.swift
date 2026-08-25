@@ -57,7 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)
         observeAutomaticUpdates()
         battleCenter = BattleCenter(companion: companion)
-        battleCenter.start()   // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신
+        // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신. 다만 리스너를 올리는
+        // 순간 macOS 가 로컬 네트워크 권한을 묻기 때문에, 배틀을 끈 사용자에게는 시작하지 않는다.
+        if settings.shouldStartLANDiscovery { battleCenter.start() }
         // 배틀 신청은 팝오버가 닫힌(=앱 실행 중) 상태에서 오는 게 정상이라, 알림 표시가 핵심이다.
         // ① delegate 없으면 foreground(accessory 앱은 항상 그렇다) 알림이 억제돼 배너가 안 뜬다.
         // ② 권한을 팝오버 첫 오픈 때만 요청하면 팝오버를 안 연 사용자는 권한이 없어 알림이 안 온다 → 기동 시 요청.

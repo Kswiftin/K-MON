@@ -94,19 +94,32 @@ echo "==> codesign"
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-K-MON Release}"
 # 안정적 Keychain ACL 을 위해서는 인증서 존재가 아니라 유효한 codesigning identity 가 필요하다.
 if security find-identity -v -p codesigning | grep -F "\"$SIGN_IDENTITY\"" >/dev/null; then
-    # 안정적 자체 서명 신원 → 재빌드해도 Keychain "항상 허용" 유지
+    # 안정적 자체 서명 신원 → 재빌드해도 Keychain "항상 허용" 과 TCC 승인이 유지된다.
     codesign --force -s "$SIGN_IDENTITY" "$APP"
-else
-    # 인증서 없음 → ad-hoc (빌드마다 cdhash 변경 = Keychain 재프롬프트 가능)
-    if [[ "${PTB_REQUIRE_STABLE_SIGN:-0}" == "1" ]]; then
-        # 릴리스 경로(release.sh 가 세팅). ad-hoc 릴리스는 사용자 Keychain 승인을 깨므로 절대 금지.
-        echo "   ✗ PTB_REQUIRE_STABLE_SIGN=1 인데 '$SIGN_IDENTITY' 유효 identity 없음 → ad-hoc 금지, 중단." >&2
-        echo "     ./scripts/create-signing-cert.sh 실행 후 다시 시도하세요." >&2
-        exit 1
-    fi
-    echo "   ('$SIGN_IDENTITY' 유효 codesigning identity 없음 → ad-hoc 서명 — 로컬 개발용)"
-    echo "   반복 Keychain 허용 프롬프트를 줄이려면 ./scripts/create-signing-cert.sh 실행 후 다시 빌드하세요."
+elif [[ "${PTB_ALLOW_ADHOC:-0}" == "1" ]]; then
+    # 명시적으로 요청했을 때만. ad-hoc 은 DR 이 cdhash 라 빌드마다 앱 신원이 바뀐다.
+    echo "   ⚠ PTB_ALLOW_ADHOC=1 → ad-hoc 서명."
+    echo "     이 빌드는 macOS 에 '처음 보는 앱' 으로 보입니다 — 알림·로컬 네트워크 권한을 다시 묻습니다."
     codesign --force -s - "$APP"
+else
+    # 예전에는 여기서 조용히 ad-hoc 으로 폴백했다. 그 폴백이 "버전을 올릴 때마다 권한 창이 뜬다" 의
+    # 원인이었다 — 개발자는 경고 한 줄을 빌드 로그에서 놓치고, 사용자는 매번 다시 승인했다.
+    # 릴리스 전용이던 PTB_REQUIRE_STABLE_SIGN 게이트를 기본값으로 올린 것이다(CI 는 계속 세팅한다).
+    cat >&2 <<UNSIGNED
+   ✗ '$SIGN_IDENTITY' 유효 codesigning identity 가 없습니다 → 중단합니다.
+
+     ad-hoc 으로 서명하면 DR 이 cdhash 라 빌드마다 앱 신원이 바뀌고, macOS 는 매 버전을
+     다른 앱으로 보아 알림·로컬 네트워크 권한을 처음부터 다시 묻습니다.
+
+     한 번만 실행하세요:  ./scripts/create-signing-cert.sh
+     그래도 ad-hoc 이 필요하면:  PTB_ALLOW_ADHOC=1 ./scripts/build-app.sh
+UNSIGNED
+    exit 1
+fi
+
+# 서명이 안정적인지는 의도가 아니라 산출물로 확인한다. CI(release.yml)와 같은 한 벌을 쓴다.
+if [[ "${PTB_ALLOW_ADHOC:-0}" != "1" ]]; then
+    ./scripts/verify-signing-identity.sh "$APP"
 fi
 
 if [[ "${KMON_SKIP_INSTALL:-0}" == "1" ]]; then

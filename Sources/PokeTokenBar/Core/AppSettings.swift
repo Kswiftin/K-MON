@@ -45,6 +45,10 @@ final class AppSettings {
         didSet { defaults.set(automaticUpdateDownloadsEnabled, forKey: "automaticUpdateDownloadsEnabled") }
     }
     var doNotDisturb: Bool { didSet { defaults.set(doNotDisturb, forKey: "doNotDisturb") } }
+    /// 팝오버를 열지 않아도 LAN 배틀 신청을 받는다. **켜져 있는 동안에만** Bonjour 리스너가 뜨고,
+    /// 리스너가 뜨는 순간 macOS 가 로컬 네트워크 권한을 묻는다 — 배틀을 안 하는 사용자가 그 창을
+    /// 영영 안 보게 하는 유일한 스위치다. 기본값은 기존 동작(켜짐)이다.
+    var battleInvitesEnabled: Bool { didSet { defaults.set(battleInvitesEnabled, forKey: "battleInvitesEnabled") } }
     private var chatExecutablePaths: [String: String]
 
     init(defaults: UserDefaults = .standard) {
@@ -65,8 +69,13 @@ final class AppSettings {
         automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
+        battleInvitesEnabled = defaults.object(forKey: "battleInvitesEnabled") as? Bool ?? true
         chatExecutablePaths = defaults.dictionary(forKey: "pokemonChatExecutablePaths") as? [String: String] ?? [:]
     }
+
+    /// LAN 탐색을 시작해도 되는가. 설정값을 읽는 자리와 리스너를 올리는 자리가 각각 판정하면
+    /// 한쪽만 바뀌어도 아무 테스트가 안 깨진다 — 판정은 여기 한 곳이다.
+    var shouldStartLANDiscovery: Bool { battleInvitesEnabled }
 
     static func chatProviderPathKey(_ kind: PokemonChatProviderKind) -> String { "pokemonChatExecutablePath.\(kind.rawValue)" }
     func chatProviderExecutablePath(for kind: PokemonChatProviderKind) -> String? { chatExecutablePaths[kind.rawValue] }

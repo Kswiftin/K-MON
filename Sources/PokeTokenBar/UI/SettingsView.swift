@@ -319,6 +319,17 @@ struct SettingsView: View {
         @Bindable var settings = settings
         settingsSection(l.notificationsSection) {
             toggleRow(l.companionNotificationsLabel, $settings.companionNotifications)
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(l.t("배틀 신청 받기", "Receive battle invites", "バトル招待を受け取る"))
+                    Text(l.t("끄면 LAN 탐색을 시작하지 않아 로컬 네트워크 권한을 묻지 않습니다. 적용은 재시작 후.",
+                             "Off skips LAN discovery, so macOS never asks for local network access. Takes effect after a restart.",
+                             "オフにすると LAN 探索を行わないため、ローカルネットワーク権限を聞かれません。再起動後に反映。"))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.battleInvitesEnabled).labelsHidden()
+            }
         }
     }
 

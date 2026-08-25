@@ -9,12 +9,19 @@ final class PokemonChatToolTests: XCTestCase {
     // MARK: 화이트리스트
 
     /// 네 도구는 파싱되고, 그 밖의 무엇도 호출이 되지 않는다. 실패하면 대화가 앱 밖으로 나간다.
-    func testOnlyTheFourDeclaredToolsParseAsCalls() {
+    func testOnlyTheDeclaredToolsParseAsCalls() {
         let allowed: [(String, PokemonChatToolCall)] = [
             ("[[tool:pokedex.lookup(4)]]", .pokedexLookup(speciesID: 4)),
             ("[[tool:pokedoro.status]]", .pokedoroStatus),
             ("[[tool:pokedoro.start(25)]]", .pokedoroStart(minutes: 25)),
             ("[[tool:pokedoro.stop]]", .pokedoroStop),
+            ("[[tool:bag.list]]", .bagList),
+            ("[[tool:roster.list]]", .rosterList),
+            ("[[tool:item.use(rareCandy)]]", .itemUse(kind: .rareCandy)),
+            ("[[tool:item.use(fireStone)]]", .itemUse(kind: .fireStone)),
+            ("[[tool:evolution.accept]]", .evolutionAccept),
+            ("[[tool:companion.switch(0)]]", .companionSwitch(index: 0)),
+            ("[[tool:memory.record]]", .memoryRecord(body: "")),
         ]
         for (marker, expected) in allowed {
             XCTAssertEqual(PokemonChatToolParser.parse("좋아! " + marker).call, expected, marker)
@@ -36,6 +43,21 @@ final class PokemonChatToolTests: XCTestCase {
             "[[care:feed]]",
             "[[tool:]]",
             "[[tool:pokedex.lookup]]",
+            // 새 도구가 목록을 넓힌 만큼, 그 이름 주변의 목록 밖도 다시 확인한다.
+            "[[tool:item.use(bash)]]",              // ItemKind 밖 이름
+            "[[tool:item.use(/bin/sh)]]",           // 경로 조각
+            "[[tool:item.use()]]",                  // 빈 인자
+            "[[tool:item.use]]",                    // 인자 없는 소모 요구
+            "[[tool:companion.switch(-1)]]",        // 음수 인덱스
+            "[[tool:companion.switch(abc)]]",       // 숫자가 아닌 인덱스
+            "[[tool:companion.switch]]",            // 누구로 바꿀지 없는 교체
+            "[[tool:evolution.accept(1)]]",         // 인자를 받지 않는 도구
+            "[[tool:memory.record(내가 정한 기억)]]",   // 임의 문자열 인자
+            "[[tool:bag.list(all)]]",
+            "[[tool:roster.list(1)]]",
+            "[[tool:memory.delete]]",               // 지우는 도구는 존재하지 않는다
+            "[[tool:companion.release(0)]]",        // 놓아 주기는 도구가 아니다
+            "[[tool:shop.buy(rareCandy)]]",         // 소비는 도구가 아니다
         ]
         for marker in refused {
             let parsed = PokemonChatToolParser.parse("괜찮아 " + marker)
@@ -96,11 +118,19 @@ final class PokemonChatToolTests: XCTestCase {
     // MARK: 승인 게이트
 
     /// 읽기는 그냥 돌고, 상태를 바꾸는 것은 사용자를 거친다. 이 구분이 "시스템 영향도" 의 전부다.
-    func testTimerToolsNeedApprovalAndLookupToolsDoNot() {
-        XCTAssertTrue(PokemonChatToolCall.pokedoroStart(minutes: 25).needsApproval)
-        XCTAssertTrue(PokemonChatToolCall.pokedoroStop.needsApproval)
-        XCTAssertFalse(PokemonChatToolCall.pokedoroStatus.needsApproval)
-        XCTAssertFalse(PokemonChatToolCall.pokedexLookup(speciesID: 25).needsApproval)
+    func testEveryToolThatSpendsOrChangesSomethingNeedsApproval() {
+        for call: PokemonChatToolCall in [.pokedoroStart(minutes: 25), .pokedoroStop,
+                                          .itemUse(kind: .rareCandy), .itemUse(kind: .fireStone),
+                                          .evolutionAccept, .companionSwitch(index: 0)] {
+            XCTAssertTrue(call.needsApproval, "\(call) 는 승인 없이 상태를 바꾼다")
+        }
+        for call: PokemonChatToolCall in [.pokedoroStatus, .pokedexLookup(speciesID: 25),
+                                          .bagList, .rosterList] {
+            XCTAssertFalse(call.needsApproval, "\(call) 는 읽기인데 승인을 요구한다")
+        }
+        // 기억하기만 예외다. 저장되는 건 사용자가 화면에서 이미 읽은 문장뿐이고, 승인을 붙이면
+        // 매 대화가 카드로 끊긴다. 근거는 docs/reference/chat-tool-sandbox.md.
+        XCTAssertFalse(PokemonChatToolCall.memoryRecord(body: "오늘 같이 집중했어").needsApproval)
     }
 
     /// 승인 카드가 떠 있는 사이 동행이 바뀌어도, 실행은 제안이 지목한 개체에만 간다.
@@ -135,7 +165,10 @@ final class PokemonChatToolTests: XCTestCase {
     func testApprovalTextIsHumanInEveryLanguageAndNeverLeaksASlug() {
         let slugs = Set(PokemonChatTool.allCases.map(\.rawValue))
         let calls: [PokemonChatToolCall] = [.pokedoroStart(minutes: 25), .pokedoroStop,
-                                            .pokedoroStatus, .pokedexLookup(speciesID: 25)]
+                                            .pokedoroStatus, .pokedexLookup(speciesID: 25),
+                                            .bagList, .rosterList, .evolutionAccept,
+                                            .itemUse(kind: .rareCandy), .companionSwitch(index: 2),
+                                            .memoryRecord(body: "오늘 같이 집중했어")]
         for language in [AppLanguage.ko, .en, .ja] {
             var lines: [String] = []
             for call in calls {
@@ -366,6 +399,10 @@ private struct StubToolbox: PokemonChatToolRunning {
         case .pokedoroStatus: return (status, true)
         case .pokedexLookup(let id): return ("pokedex #\(id)", true)
         case .pokedoroStart, .pokedoroStop: return ("unreachable — approval gated", false)
+        case .bagList: return ("bag empty", true)
+        case .rosterList: return ("roster index=0 name=피카츄 active=true", true)
+        case .itemUse, .evolutionAccept, .companionSwitch: return ("unreachable — approval gated", false)
+        case .memoryRecord(let body): return ("memory recorded len=\(body.count)", true)
         }
     }
 }
