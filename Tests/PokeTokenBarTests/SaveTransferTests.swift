@@ -424,6 +424,74 @@ final class SaveTransferTests: XCTestCase {
                        """)
     }
 
+    /// 조건부 세그먼트를 **전부 켠** 상태에서 canonical 이 내보내는 접두 어휘를 동결한다.
+    ///
+    /// 위 `testDefaultStateCanonicalFormIsFrozen` 은 기본값만 본다 — 조건부 세그먼트는 기본값
+    /// canonical 에 애초에 없으므로, 돌봄(`care`·`care2`·`health`·`disc`·`sleep`)을 통째로 지웠을 때
+    /// 아무것도 걸리지 않았다. 그 순간 이미 배포된 세이브의 서명은 이 빌드가 재현할 수 없는 문자열이
+    /// 되고, `integrityVersion` 을 안 올리면 정상 사용자가 조작 판정으로 진행을 잃는다.
+    ///
+    /// 값이 아니라 **접두 집합**을 고정하는 이유: 값을 통째로 박으면 무관한 값 변경마다 깨져 fixture
+    /// 유지비가 가드값을 넘는다. 열거형 rawValue 처럼 값에서 나온 토큰도 같이 얼어붙는데 이건 의도한
+    /// 것이다 — rawValue 를 바꾸는 것도 기존 서명을 못 맞추게 만드는 같은 부류의 변경이다.
+    func testEveryConditionalCanonicalSegmentPrefixIsFrozen() {
+        let prefixes = Set(SaveTransfer.canonicalString(fullyPopulatedState())
+            .components(separatedBy: "|")
+            .map { String($0.prefix(while: { $0.isLowercase })) })
+
+        XCTAssertEqual(prefixes, Self.frozenCanonicalPrefixes, """
+                       canonical 의 세그먼트 어휘가 바뀌었다. 세그먼트를 지웠거나 접두를 바꿨다면
+                       **integrityVersion 을 올려라** — 안 올리면 그 세그먼트가 들어 있던 기존 세이브가
+                       전부 조작 판정을 받는다. 세그먼트를 새로 추가한 것이라면(조건부 append) 이 집합에
+                       더하면 된다.
+                       """)
+    }
+
+    /// 위 가드의 기대값. 목록을 본문 밖에 두는 이유는 실패 메시지에서 diff 가 읽히게 하기 위해서다.
+    private static let frozenCanonicalPrefixes: Set<String> = [
+        // 세그먼트 접두 — 하나라도 사라지면 이미 배포된 서명을 재현할 수 없다.
+        "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "dund", "achfocus", "sn",
+        "gbbrock", "shc", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
+        "adv", "ah", "bh", "act", "box", "dex", "dg", "cf", "sec",
+        // 값에서 나온 토큰 — fixture 가 고정하므로 결정적이다. 열거형 rawValue 변경도 기존 서명을
+        // 깨는 같은 부류라 일부러 얼려 둔다. `""` 는 숫자로만 된 이어붙임 조각.
+        "", "w", "cfalse", "pfalse", "scfalse", "false", "forest", "free", "common"
+    ]
+
+    /// 조건부 append 를 **전부 켜는** 최소 상태. 값 자체는 의미가 없고 "기본값이 아니다"만 만족하면
+    /// 된다 — 접두 어휘만 보는 가드라 값이 커질수록 fixture 유지비만 는다.
+    private func fullyPopulatedState() -> CompanionState {
+        var s = CompanionState()
+        s.battleRank = BattleRank(points: 10)
+        s.pendingRanked = PendingRankedBattle(stake: 5, opponent: BattleRank(points: 1))
+        s.trainer.points = 7
+        s.missions.dayKey = "1"
+        s.dungeon.dayKey = "1"
+        s.achievements.counts["focus"] = 1
+        s.seasons.seasonKey = "1"
+        s.gymBadges = ["brock"]
+        s.shinyEggCharges = 1
+        s.focusEggs = 1
+        s.focusEggReadyDates = [Date(timeIntervalSince1970: 0)]
+        s.adventure = AdventureRun(zone: .forest, startedAt: Date(timeIntervalSince1970: 0),
+                                   endsAt: Date(timeIntervalSince1970: 60), companionSpeciesID: 1)
+        s.adventureHistory = [AdventureRecord(id: UUID(), zone: .forest, companionSpeciesID: 1,
+                                              completedAt: Date(timeIntervalSince1970: 0),
+                                              stardust: 1, foundRareCandy: false)]
+        s.battleHistory = [BattleRecord(playedAt: Date(timeIntervalSince1970: 0), mode: .freeForAll,
+                                        participantCount: 2, won: false, reward: 1, opponentNames: [])]
+        s.active = populatedMon(1)
+        s.boxedMons = [populatedMon(2)]
+        s.dex = [DexEntry(baseID: 1, finalID: 1, chainOrder: [1], rarity: .common,
+                          caughtAt: Date(timeIntervalSince1970: 0))]
+        return s
+    }
+
+    private func populatedMon(_ id: Int) -> MonState {
+        MonState(baseID: id, pathIDs: [id], stageIndex: 0, usedAtStage: 0,
+                 rarity: .common, totalForms: 1, names: [id: ["en": "P\(id)"]])
+    }
+
     /// [부류 가드] 서명 밖에 남은 필드는 **자유롭게 고칠 수 있는 필드다.** 미결 랭크전의 상대 랭크가
     /// 그랬다 — 패배 LP 는 `apply(win:false)` 의 `tier > opponent.tier` 로 결정되므로 상대를 최고
     /// 티어로 고쳐 두면 이탈이 LP 무손실이 된다. 에스크로가 막으려던 "지고 있으면 앱 종료"가 그대로
@@ -461,7 +529,6 @@ final class SaveTransferTests: XCTestCase {
 
     // MARK: 필드 부류 (딥리뷰 M-g)
 
-    /// [딥리뷰 M-g] 이전 시 필드 분류가 산문 규약뿐이라, 새 필드가 추가되면 아무 판단 없이 "진행"으로
     /// 돌봄을 지우며 canonical 구성이 바뀌었다 — 그 순간 **이미 배포된 세이브의 서명은 이 빌드가
     /// 재현할 수 없는 문자열**이 된다(돌봄 세그먼트가 빠지므로). `integrityVersion` 을 올려 두지
     /// 않으면 그 세이브 전부가 조작 판정을 받아, 정상 사용자가 자기 진행을 잃는다.
@@ -482,6 +549,7 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertTrue(SaveTransfer.isTampered(current))
     }
 
+    /// [딥리뷰 M-g] 이전 시 필드 분류가 산문 규약뿐이라, 새 필드가 추가되면 아무 판단 없이 "진행"으로
     /// 딸려 들어간다(`language` 가 실제로 그랬다). 필드 목록을 테스트로 고정해 **분류를 강제**한다.
     func testEveryCompanionStateFieldIsClassifiedForTransfer() {
         // 진행: 어느 기기에서든 참. eggTier(알 등급 보증)도 산 물건이라 기기를 옮겨도 따라간다.
