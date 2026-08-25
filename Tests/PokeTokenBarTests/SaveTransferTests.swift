@@ -462,6 +462,26 @@ final class SaveTransferTests: XCTestCase {
     // MARK: 필드 부류 (딥리뷰 M-g)
 
     /// [딥리뷰 M-g] 이전 시 필드 분류가 산문 규약뿐이라, 새 필드가 추가되면 아무 판단 없이 "진행"으로
+    /// 돌봄을 지우며 canonical 구성이 바뀌었다 — 그 순간 **이미 배포된 세이브의 서명은 이 빌드가
+    /// 재현할 수 없는 문자열**이 된다(돌봄 세그먼트가 빠지므로). `integrityVersion` 을 올려 두지
+    /// 않으면 그 세이브 전부가 조작 판정을 받아, 정상 사용자가 자기 진행을 잃는다.
+    ///
+    /// 그래서 이 가드는 "구서명이 안 맞는다"가 아니라 **"직전 배포 버전으로 찍힌 세이브가 면제된다"**
+    /// 를 본다. 리터럴 7 은 돌봄이 canonical 에 들어 있던 마지막 버전이고, 이 상수를 안 올린 채
+    /// canonical 만 바꾸면 여기서 걸린다(고의 주입으로 확인 — 7 인 상태에서 실패한다).
+    func testASaveStampedByTheReleaseThatStillHadCareIsNotBlamedAsTampered() {
+        var legacy = CompanionState()
+        legacy.integrityVersion = 7
+        legacy.integrity = "signature-computed-with-care-segments"
+        XCTAssertFalse(SaveTransfer.isTampered(legacy))
+
+        // 대조군 — 이 빌드가 찍은 세이브는 면제 대상이 아니다. 서명을 손대면 조작으로 잡혀야 한다.
+        var current = SaveTransfer.signed(CompanionState())
+        XCTAssertFalse(SaveTransfer.isTampered(current))
+        current.integrity = "tampered"
+        XCTAssertTrue(SaveTransfer.isTampered(current))
+    }
+
     /// 딸려 들어간다(`language` 가 실제로 그랬다). 필드 목록을 테스트로 고정해 **분류를 강제**한다.
     func testEveryCompanionStateFieldIsClassifiedForTransfer() {
         // 진행: 어느 기기에서든 참. eggTier(알 등급 보증)도 산 물건이라 기기를 옮겨도 따라간다.
@@ -469,7 +489,7 @@ final class SaveTransferTests: XCTestCase {
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
                                      "starterCandidates", "active", "dex", "collectedFinals", "gymBadges", "shinyEggCharges", "inventory",
                                      "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
-                                     "care", "battleRank", "trainer", "missions", "achievements", "seasons", "battleHistory",
+                                     "battleRank", "trainer", "missions", "achievements", "seasons", "battleHistory",
                                      // 진행 중인 랭크전 에스크로 — 이미 지갑에서 빠져나간 돈이다.
                                      // 기기를 옮길 때 안 따라가면 배틀 중에 이전해서 판돈을 챙길 수 있다.
                                      "pendingRanked",

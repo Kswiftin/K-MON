@@ -40,7 +40,6 @@ actor PokeAPIClient: PokeProviding {
     private let base = URL(string: "https://pokeapi.co/api/v2")!
     private let langCodes = ["ko", "en", "ja-Hrkt", "ja"]
     private var speciesCache: [Int: SpeciesDTO] = [:]
-    private var chatSpeciesIdentityCache: [String: PokemonSpeciesIdentity] = [:]
     private var lineCache: [Int: EvoLine] = [:]   // 프리패칭 → 부화 순간 네트워크 0
 
     func line(baseSpeciesID: Int) async throws -> EvoLine {
@@ -214,55 +213,6 @@ actor PokeAPIClient: PokeProviding {
     private func localizedNames(_ entries: [NameDTO]) -> [String: String] {
         Dictionary(uniqueKeysWithValues: entries.filter { langCodes.contains($0.language.name) }
             .map { ($0.language.name, $0.name) })
-    }
-
-    /// 대화에 필요한 종 정보만 fetch 한다. 각 응답은 독립적으로 실패할 수 있고 결과는 부분 정체성으로 남긴다.
-    func chatSpeciesIdentity(speciesID: Int, language: AppLanguage) async -> PokemonSpeciesIdentity {
-        let cacheKey = "\(speciesID)-\(language.rawValue)"
-        if let cached = chatSpeciesIdentityCache[cacheKey] { return cached }
-
-        var genera: [String: String] = [:]
-        var habitatSlug: String?
-        var flavorTexts: [String: String] = [:]
-        let speciesSucceeded: Bool
-        if let dto = try? await species(speciesID) {
-            speciesSucceeded = true
-            for entry in dto.genera ?? [] where langCodes.contains(entry.language.name) {
-                genera[entry.language.name] = entry.genus
-            }
-            habitatSlug = dto.habitat?.name
-            flavorTexts = Self.flavorTexts((dto.flavor_text_entries ?? []).map {
-                (language: $0.language.name, text: $0.flavor_text)
-            }, languages: langCodes)
-        } else { speciesSucceeded = false }
-
-        var abilityNames: [String: String] = [:]
-        var abilityTexts: [String: String] = [:]
-        var pokemonSucceeded = false
-        do {
-            let dto: PokemonAbilitiesDTO = try await get(base.appendingPathComponent("pokemon/\(speciesID)"))
-            pokemonSucceeded = true
-            if let slug = PokemonAbilitiesDTO.primarySlug(of: dto.abilities) {
-                let ability: AbilityDTO = try await get(base.appendingPathComponent("ability/\(slug)"))
-                for entry in ability.names where langCodes.contains(entry.language.name) {
-                    abilityNames[entry.language.name] = entry.name
-                }
-                abilityTexts = Self.flavorTexts(ability.flavor_text_entries.map {
-                    (language: $0.language.name, text: $0.flavor_text)
-                }, languages: langCodes)
-            }
-        } catch {
-            AppLog.write("chat species identity: ability fetch failed for \(speciesID): \(error)")
-        }
-
-        let identity = PokemonSpeciesIdentity(
-            genera: genera, habitatSlug: habitatSlug, flavorTexts: flavorTexts,
-            abilityNames: abilityNames, abilityTexts: abilityTexts, language: language
-        )
-        // Do not turn a total transient outage into a permanent empty identity. A successful
-        // species response is useful even if optional ability enrichment failed.
-        if speciesSucceeded || pokemonSucceeded { chatSpeciesIdentityCache[cacheKey] = identity }
-        return identity
     }
 
     /// REST 폴백 — 단일 종 상세(pokemon-species/{id})로 base 여부·capture_rate 판정.
@@ -627,7 +577,7 @@ struct PokemonMovesDTO: Decodable, Sendable {
     }
     let moves: [MoveEntry]
 }
-/// `/pokemon/{id}` 의 abilities 부분만 — 대화 페르소나가 대표 특성을 고르는 데 쓴다.
+/// `/pokemon/{id}` 의 abilities 부분만 — 배틀 프로필이 대표 특성을 고르는 데 쓴다.
 struct PokemonAbilitiesDTO: Decodable, Sendable {
     struct Entry: Decodable, Sendable {
         let ability: NamedRef
@@ -636,11 +586,17 @@ struct PokemonAbilitiesDTO: Decodable, Sendable {
     }
     let abilities: [Entry]
 
-    /// 대표 특성 슬러그 — 대화 페르소나와 배틀 프로필이 **같은 개체를 두고 같은 특성**을 골라야 한다.
-    /// 매핑을 호출부마다 두면 한쪽만 규칙이 바뀌어 두 화면이 다른 특성을 말한다.
+    /// 대표 특성 슬러그 — 숨은 특성은 빼고 slot 이 가장 낮은 쪽. 매핑을 호출부마다 두면
+    /// 한쪽만 규칙이 바뀌어 같은 개체가 화면마다 다른 특성을 말한다.
+    /// 튜플을 받는 이유는 DTO 를 만들지 않고도 규칙만 시험할 수 있게 하려는 것이다.
+    static func primaryAbilitySlug(
+        _ entries: [(slug: String, isHidden: Bool, slot: Int)]
+    ) -> String? {
+        entries.filter { !$0.isHidden }.min { $0.slot < $1.slot }?.slug
+    }
+
     static func primarySlug(of entries: [Entry]) -> String? {
-        PokemonSpeciesIdentity.primaryAbilitySlug(
-            entries.map { (slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot) })
+        primaryAbilitySlug(entries.map { (slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot) })
     }
 }
 /// `/ability/{slug}` 의 현지화 이름과 설명만.

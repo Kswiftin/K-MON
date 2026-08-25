@@ -23,7 +23,6 @@ struct PokemonRosterView: View {
     @State private var didResolveTypes = false
     /// 방생 확인 대상. 되돌릴 수 없으므로 카드에서 바로 놓아주지 않고 한 번 물어본다.
     @State private var releaseTarget: MonState?
-    @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
     private static let contentHeight: CGFloat = 520
@@ -179,7 +178,7 @@ struct PokemonRosterView: View {
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
                                           name: names[mon.currentID] ?? "",
                                           types: types[mon.currentID] ?? [],
-            onRelease: { releaseTarget = mon }, onChat: { chatPresenter.open(companionID: mon.id) })
+                                          onRelease: { releaseTarget = mon })
                                 .frame(maxWidth: .infinity)
                         } else {
                             Color.clear.frame(maxWidth: .infinity)
@@ -228,7 +227,6 @@ private struct RosterMonCard: View {
     let types: [PokemonType]
     /// 방생 요청 — 확인 대화상자는 부모가 띄운다(카드는 격자 칸이라 대화상자를 붙일 자리가 아니다).
     let onRelease: () -> Void
-    let onChat: () -> Void
 
     var body: some View {
         Button { if !isActive { store.switchCompanion(to: mon.id) } } label: {
@@ -251,14 +249,8 @@ private struct RosterMonCard: View {
                     .foregroundStyle(isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
         }.buttonStyle(.bordered).disabled(isActive)
-        .overlay(alignment: .topTrailing) {
-            Button(action: onChat) { Image(systemName: "bubble.left") }
-                .buttonStyle(.borderless).controlSize(.mini).padding(3)
-                .accessibilityLabel(store.l.t("대화", "Chat", "話す"))
-        }
         // 동행 중인 개체는 놓아줄 수 없다 — 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
         .contextMenu {
-            Button(action: onChat) { Label(store.l.t("대화", "Chat", "話す"), systemImage: "bubble.left.and.bubble.right") }
             if !isActive {
                 Button(role: .destructive, action: onRelease) {
                     Label(store.l.t("놓아주기", "Release", "にがす"), systemImage: "hand.wave")

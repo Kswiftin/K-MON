@@ -4,11 +4,9 @@ import XCTest
 // companion 표시 상태(displayState) 전이 — refreshLifecycle() 의 규칙을 고정한다.
 //
 // 2026-08-13 게임 구조 개편으로 표시 상태는 더 이상 사용량/burn tier 입력이 아니라, 매 tick() 마다
-// refreshLifecycle() 이 활성 여부·이벤트 창(eventUntil)·돌봄 에너지(care.energy)만으로 정한다:
+// refreshLifecycle() 이 활성 여부·이벤트 창(eventUntil)만으로 정한다:
 //   active == nil                          → .egg
 //   justGraduated != nil || 이벤트 창 안    → .levelUp
-//   care.energy < 20                       → .tired
-//   care.energy < 45                       → .sleep
 //   그 외                                   → .idle
 // SeededRNG / StubProvider 는 CompanionTests.swift 의 내부 헬퍼를 재사용한다.
 

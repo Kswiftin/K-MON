@@ -88,10 +88,7 @@ final class CompanionStore {
     /// 은 세지 않는다. 연출 재생용으로 재사용하면 이중 계수가 되니 그때는 적립을 떼낸다.
     private func fireCelebration(_ c: Celebration) {
         celebration = c; celebrationSeq += 1
-        if case .evolve = c {
-            recordAchievement(.evolve, 1)
-            recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。", eventID: "evolve")
-        }
+        if case .evolve = c { recordAchievement(.evolve, 1) }
     }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
     func consumeCelebration() { celebration = nil }
@@ -111,8 +108,6 @@ final class CompanionStore {
     private let provider: any PokeProviding
     private let clock: () -> Date
     private let fileURL: URL
-    let memoryAlbum: PokemonMemoryAlbum
-    let chatStore: PokemonChatStore
     private var rng: any RandomNumberGenerator
     private let dittoDisguiseRollingEnabled: Bool
     /// 세션 내 활성 개체 교체 감지용. await 뒤 이전 개체의 결과가 새 개체를 덮지 않게 한다.
@@ -121,8 +116,6 @@ final class CompanionStore {
     init(provider: any PokeProviding = PokeAPIClient.shared,
          clock: @escaping () -> Date = Date.init,
          fileURL: URL? = nil,
-         memoryAlbum: PokemonMemoryAlbum? = nil,
-         chatStore: PokemonChatStore? = nil,
          rng: any RandomNumberGenerator = SystemRandomNumberGenerator(),
          dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp) {
         self.provider = provider
@@ -131,8 +124,6 @@ final class CompanionStore {
         // An injected URL is an explicit test/embedding contract; only default construction uses
         // the canonical state filename.
         self.fileURL = fileURL ?? locations.stateURL
-        self.memoryAlbum = memoryAlbum ?? PokemonMemoryAlbum(fileURL: locations.memoryURL)
-        self.chatStore = chatStore ?? PokemonChatStore(fileURL: locations.chatURL, album: self.memoryAlbum)
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
@@ -332,45 +323,6 @@ final class CompanionStore {
         return line.localizedName(a.currentID, state.language)
     }
     var currentNickname: String? { state.active?.nickname }
-    /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
-    func chatProfile(for mon: MonState) -> PokemonChatProfile {
-        let speciesName = mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
-        // currentTypes/displayedMoves are presentation caches for the active species. A boxed mon can ask
-        // for a profile while those caches still belong to another species, so assemble individual data
-        // from MonState and reuse the tagged type cache only when the requested species owns it.
-        let types = mon.currentID == currentSpeciesID ? currentTypes.map { $0.name(language) } : []
-        return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
-                                  isShiny: mon.isShiny,
-                                  nature: mon.nature?.name(language), level: mon.level,
-                                  stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
-                                  flavorText: nil, language: language,
-                                  types: types,
-                                  moves: mon.learnedMoves.map { $0.name(language) },
-                                  nextEvolution: nextEvolutionName(for: mon),
-                                  careOffer: mon.id == activeMonID ? careOffer(for: mon) : nil)
-    }
-
-    /// Opening or explicitly refreshing the active companion’s chat is a lifecycle boundary: it
-    /// catches up care exactly once and persists any resulting event before deriving the profile.
-    func prepareChatProfile(for mon: MonState) -> PokemonChatProfile {
-        if mon.id == activeMonID { _ = resumeCareClock() }
-        return chatProfile(for: mon)
-    }
-
-    private func careOffer(for mon: MonState) -> PokemonChatCareOffer? {
-        guard canPerformCare, mon.id == activeMonID else { return nil }
-        let threshold = 60.0
-        var kinds: [PokemonChatActionKind] = []
-        if state.care.hunger <= threshold || state.care.pendingNeed == .hungry { kinds.append(.feed) }
-        if state.care.happiness <= threshold || state.care.pendingNeed == .lonely { kinds.append(.play) }
-        if state.care.energy <= threshold || state.care.pendingNeed == .tired { kinds.append(.rest) }
-        if state.care.hygiene <= threshold || state.care.messCount > 0 { kinds.append(.clean) }
-        if state.care.isSick && state.care.hygiene >= 40 { kinds.append(.medicate) }
-        guard !kinds.isEmpty else { return nil }
-        let line = "hunger \(Int(state.care.hunger)), happiness \(Int(state.care.happiness)), energy \(Int(state.care.energy)), hygiene \(Int(state.care.hygiene))"
-        return PokemonChatCareOffer(kinds: kinds, stateLine: line)
-    }
-
     private func nextEvolutionName(for mon: MonState) -> String? {
         guard let node = currentLine?.tree.node(withID: mon.currentID), let next = node.children.first else { return nil }
         return currentLine?.localizedName(next.speciesID, language)
@@ -724,7 +676,6 @@ final class CompanionStore {
     }
 
     #if DEBUG
-    func debugSetCare(_ care: PetCareState) { state.care = care; save() }
     /// 테스트 전용 — 시간을 전진시키지 않고 생산분을 직접 주입한다. tick 의 적립 경로(accrue)를 그대로
     /// 태우므로 임계·이월·진화·졸업이 실동작과 동일하게 발화한다. 프로덕션 호출 경로 없음.
     func debugAccrue(_ dust: Int) { accrue(dust) }
@@ -789,24 +740,8 @@ final class CompanionStore {
     var activeSecondsToday: Double { state.activeSecondsToday }
     var activeSecondsTotal: Double { state.activeSecondsTotal }
 
-    // MARK: 돌봄·모험
+    // MARK: 모험
 
-    var care: PetCareState { state.care }
-    private func recordEventMemory(_ ko: String, _ en: String, _ ja: String, eventID: String) {
-        guard let mon = state.active else { return }
-        memoryAlbum.record(companionID: mon.id, body: l.t(ko, en, ja), source: .event, eventID: eventID)
-    }
-    var canPerformCare: Bool {
-        state.active != nil && state.adventure == nil && !state.care.isSleeping
-    }
-
-    @discardableResult
-    func resumeCareClock() -> CareAdvanceEvent? {
-        let event = state.care.resumeClock(at: clock())
-        if let event { handleCareEvent(event) }
-        save()
-        return event
-    }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
     /// "지금 나가 있는 중" — 끝났지만 아직 정산 안 된 모험은 포함하지 않는다.
@@ -824,14 +759,10 @@ final class CompanionStore {
     func startAdventure(_ zone: AdventureZone) -> Bool {
         claimAdventure()
         let now = clock()
-        state.care.advance(to: now)
-        guard let speciesID = currentSpeciesID, state.adventure == nil,
-              !state.care.isSick, !state.care.isSleeping, state.care.energy >= 15 else { return false }
-        state.care.energy -= 15
+        guard let speciesID = currentSpeciesID, state.adventure == nil else { return false }
         state.adventure = AdventureRun(zone: zone, startedAt: now,
                                        endsAt: now.addingTimeInterval(zone.duration),
                                        companionSpeciesID: speciesID)
-        recordEventMemory("모험을 떠났다.", "Set off on an adventure.", "冒険に出かけた。", eventID: "adventure-start")
         save()
         return true
     }
@@ -910,95 +841,13 @@ final class CompanionStore {
             repeatElement(now.addingTimeInterval(Self.storedEggHatchDelay), count: acceptedEggs))
         reward.eggFragments = fragments
         reward.bonusEggs = earnedEggs
-        state.care.happiness = min(100, state.care.happiness + 10)
         state.adventureHistory.insert(AdventureRecord(id: run.id, zone: run.zone,
                                                        companionSpeciesID: run.companionSpeciesID,
                                                        completedAt: now, stardust: reward.starPieces,
                                                        foundRareCandy: reward.foundRareCandy), at: 0)
-        recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。", eventID: "adventure-claim")
         if state.adventureHistory.count > 30 { state.adventureHistory.removeLast(state.adventureHistory.count - 30) }
         save()
         return reward
-    }
-
-    var favoriteFood: CareFood { CareFood.favorite(for: currentSpeciesID ?? 0) }
-
-    @discardableResult
-    func applyChatCare(_ kind: PokemonChatActionKind, for companionID: UUID) -> Bool {
-        guard kind.isCareRequestable, canPerformCare, companionID == activeMonID else { return false }
-        switch kind {
-        case .feed: feedCompanion(); return true
-        case .play: playWithCompanion(); return true
-        case .rest: restCompanion(); return true
-        case .clean: cleanCompanion(); return true
-        case .medicate: return medicateCompanion()
-        default: return false
-        }
-    }
-
-    func feedCompanion(_ food: CareFood = .apple) {
-        guard canPerformCare else { return }
-        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        state.care.feed(favorite: food == favoriteFood)
-        recordEventMemory("트레이너와 함께 맛있게 먹었다.", "Enjoyed a tasty meal with the trainer.", "トレーナーとおいしく食べた。", eventID: "care-feed")
-        save()
-    }
-    func playWithCompanion() {
-        guard canPerformCare else { return }
-        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        state.care.play(); save()
-    }
-    func restCompanion() {
-        guard canPerformCare else { return }
-        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        state.care.rest(); save()
-    }
-
-    func cleanCompanion() {
-        guard canPerformCare else { return }
-        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        state.care.clean(); save()
-    }
-
-    @discardableResult
-    func medicateCompanion() -> Bool {
-        guard canPerformCare, state.care.isSick, state.care.hygiene >= 40 else { return false }
-        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        let healed = state.care.giveMedicine()
-        if healed { save() }
-        return healed
-    }
-
-    @discardableResult
-    func trainCompanion() -> CareTrainingResult {
-        guard state.active != nil, state.adventure == nil, !state.care.isSick,
-              !state.care.isSleeping else { return .tooTired }
-        if let event = state.care.advance(to: clock()) { handleCareEvent(event) }
-        let result = state.care.train(at: clock())
-        if result == .trained { save() }
-        return result
-    }
-
-    @discardableResult
-    func petCompanion() -> Bool {
-        guard canPerformCare else { return false }
-        _ = resumeCareClock()
-        let accepted = state.care.pet(at: clock())
-        if accepted { recordEventMemory("트레이너의 쓰다듬을 받고 기뻐했다.", "Was happy to be petted by the trainer.", "トレーナーになでられてうれしかった。", eventID: "care-pet"); save() }
-        return accepted
-    }
-
-    @discardableResult
-    func sleepCompanion() -> Bool {
-        guard state.active != nil, state.adventure == nil, !state.care.isSick else { return false }
-        let started = state.care.sleep(at: clock())
-        if started { save() }
-        return started
-    }
-
-    func wakeCompanion() {
-        guard state.care.wake(at: clock()) else { return }
-        save()
     }
 
     var trainerLevel: TrainerLevel { state.trainer }
@@ -1189,8 +1038,6 @@ final class CompanionStore {
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return false }
         let released = state.boxedMons.remove(at: index)
         AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
-        memoryAlbum.deleteAll(for: released.id)
-        chatStore.deleteSession(for: released.id)
         save()
         return true
     }
@@ -1405,33 +1252,6 @@ final class CompanionStore {
         state.active!.learnedMoves = Array(inherited.prefix(4))
         displayedMoves = state.active!.learnedMoves
         if !inherited.isEmpty { save() }
-    }
-
-    private func handleCareEvent(_ event: CareAdvanceEvent) {
-        if case .becameSick = event {
-            let copy: (String, String)
-            switch state.language {
-            case .ko: copy = ("파트너가 아파요!", "먼저 씻긴 뒤 약을 먹여 주세요.")
-            case .ja: copy = ("パートナーが病気です！", "きれいにしてから薬をあげてください。")
-            case .en: copy = ("Your partner is sick!", "Clean it first, then give medicine.")
-            }
-            notifyCompanionEvent(copy.0, copy.1)
-            return
-        }
-        guard case let .requested(need) = event else { return }
-        let copy: (String, String)
-        switch (state.language, need) {
-        case (.ko, .hungry): copy = ("배가 고파요!", "30분 안에 사과를 주세요.")
-        case (.ko, .lonely): copy = ("같이 놀고 싶어요!", "30분 안에 공으로 놀아주세요.")
-        case (.ko, .tired): copy = ("졸려요!", "30분 안에 쉬게 해주세요.")
-        case (.ja, .hungry): copy = ("おなかがすいた！", "30分以内に食べ物をあげてください。")
-        case (.ja, .lonely): copy = ("遊びたい！", "30分以内に一緒に遊んでください。")
-        case (.ja, .tired): copy = ("ねむい！", "30分以内に休ませてください。")
-        case (_, .hungry): copy = ("I'm hungry!", "Please feed me within 30 minutes.")
-        case (_, .lonely): copy = ("Let's play!", "Please play with me within 30 minutes.")
-        case (_, .tired): copy = ("I'm sleepy!", "Please let me rest within 30 minutes.")
-        }
-        notifyCompanionEvent(copy.0, copy.1)
     }
 
     func grantBattleReward(won: Bool, participantCount: Int, mode: MultiplayerBattleMode,
@@ -1958,7 +1778,6 @@ final class CompanionStore {
         // 졸업도 개체 교체다 — 남은 학습 제안은 그 개체 몫이므로 함께 버린다.
         pendingMoveLearningPrompt = nil
         moveLearningQueue.removeAll()
-        state.care = PetCareState(lastNeedAt: clock(), lastUpdatedAt: clock())
         activeGeneration += 1
         currentLine = nil
         // 졸업 보상 알은 보관 알과 같은 5분 타이머를 쓴다. 예전엔 eggUsage(누적 임계) 알을 줬는데,
@@ -2293,7 +2112,6 @@ final class CompanionStore {
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
         let name = line.localizedName(line.baseID, state.language)
-        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。", eventID: "hatch")
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
@@ -2628,9 +2446,6 @@ final class CompanionStore {
     func applySave(_ envelope: SaveEnvelope) throws {
         try backupStateBeforeImport()
         state = SaveTransfer.rebasedForThisDevice(envelope.state, current: state)
-        let validIDs = Set(([state.active].compactMap { $0 } + state.boxedMons).map(\.id))
-        memoryAlbum.prune(validCompanionIDs: validIDs)
-        chatStore.prune(validCompanionIDs: validIDs)
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
         // 않으면 먼저 떠 있던 라인 로드가 완료되며 새로 불러온 개체를 덮어쓴다.
         activeGeneration += 1
@@ -2655,19 +2470,14 @@ final class CompanionStore {
     /// 상황에서 되돌릴 대상이 사라진다. 불러올 때마다 새 슬롯을 쓰고 오래된 것부터 정리한다.
     @discardableResult
     private func backupStateBeforeImport() throws -> URL {
-        guard let stateData = try? JSONEncoder().encode(state),
-              let memoryData = try? memoryAlbum.snapshotData(),
-              let chatData = try? chatStore.snapshotData() else { throw SaveTransferError.backupFailed }
+        guard let stateData = try? JSONEncoder().encode(state) else { throw SaveTransferError.backupFailed }
         let dir = fileURL.deletingLastPathComponent()
-        let names = SaveTransfer.importBackupFileNames(date: clock())
-        let backup = dir.appendingPathComponent(names.state)
-        let targets = [(backup, stateData), (dir.appendingPathComponent(names.memory), memoryData),
-                       (dir.appendingPathComponent(names.chat), chatData)]
+        let backup = dir.appendingPathComponent(SaveTransfer.backupFileName(date: clock()))
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            for (url, data) in targets { try data.write(to: url, options: .atomic) }
+            try stateData.write(to: backup, options: .atomic)
         } catch {
-            for (url, _) in targets { try? FileManager.default.removeItem(at: url) }
+            try? FileManager.default.removeItem(at: backup)
             AppLog.write("save import aborted — backup write failed: \(error)")
             throw SaveTransferError.backupFailed
         }
@@ -2675,21 +2485,14 @@ final class CompanionStore {
         return backup
     }
 
-    /// Retain complete snapshot groups, rather than letting one component outlive its state peer.
+    /// 오래된 백업부터 지우고 최근 `backupsToKeep` 개만 남긴다. 파일명 접미가 초 단위 타임스탬프라
+    /// 사전순 정렬이 곧 시간순이다.
     private func pruneImportBackups(in dir: URL) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
-        let stateNames = names.filter { $0.hasPrefix(SaveTransfer.backupFilePrefix) }.sorted()
-        let complete = stateNames.filter { state in
-            let stamp = state.replacingOccurrences(of: SaveTransfer.backupFilePrefix, with: "")
-            return names.contains(SaveTransfer.memoryBackupFilePrefix + stamp)
-                && names.contains(SaveTransfer.chatBackupFilePrefix + stamp)
-        }
-        guard complete.count > SaveTransfer.backupsToKeep else { return }
-        for stale in complete.dropLast(SaveTransfer.backupsToKeep) {
-            let stamp = stale.replacingOccurrences(of: SaveTransfer.backupFilePrefix, with: "")
-            for name in [stale, SaveTransfer.memoryBackupFilePrefix + stamp, SaveTransfer.chatBackupFilePrefix + stamp] {
-                try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
-            }
+        let backups = names.filter { $0.hasPrefix(SaveTransfer.backupFilePrefix) }.sorted()
+        guard backups.count > SaveTransfer.backupsToKeep else { return }
+        for stale in backups.dropLast(SaveTransfer.backupsToKeep) {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent(stale))
         }
     }
 

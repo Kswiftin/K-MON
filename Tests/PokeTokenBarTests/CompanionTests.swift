@@ -186,21 +186,6 @@ final class CompanionStoreTests: XCTestCase {
         return CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: seed))
     }
 
-    func testResumeCareClockReturnsAndForwardsCareEvent() {
-        let old = Date(timeIntervalSince1970: 100_000)
-        let now = old.addingTimeInterval(2 * 3600)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-care-clock-\(UUID().uuidString).json")
-        let s = CompanionStore(provider: StubProvider(value: linear3), clock: { now }, fileURL: url,
-                               rng: SeededRNG(seed: 7))
-        s.debugSetCare(PetCareState(hunger: 30, lastNeedAt: old.addingTimeInterval(-3600), lastUpdatedAt: old))
-
-        let event = s.resumeCareClock()
-
-        XCTAssertEqual(event, .requested(.hungry))
-        XCTAssertEqual(s.state.care.pendingNeed, .hungry)
-        try? FileManager.default.removeItem(at: url)
-    }
-
     // MARK: 상태 파일 decode 복원력 (회귀)
 
     /// [회귀] 도감 항목 하나가 손상돼도(구버전/필드 누락) 나머지 도감·companion·인벤토리를 지킨다 —

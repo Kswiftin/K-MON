@@ -5,19 +5,6 @@ import XCTest
 @MainActor
 final class FloatingPetSubjectTests: XCTestCase {
 
-    func testFloatingPetContextMenuOffersChatAndRoutesItToTheApp() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let panel = try String(contentsOf: root.appendingPathComponent("Sources/PokeTokenBar/UI/FloatingPetPanel.swift"), encoding: .utf8)
-        let app = try String(contentsOf: root.appendingPathComponent("Sources/PokeTokenBar/PokeTokenBarApp.swift"), encoding: .utf8)
-
-        XCTAssertTrue(panel.contains("var onChat: (() -> Void)?"))
-        XCTAssertTrue(panel.contains("l.t(\"대화하기\", \"Chat\", \"話す\")"))
-        XCTAssertTrue(panel.contains("#selector(handleChat(_:))"))
-        XCTAssertTrue(panel.contains("@objc func handleChat"))
-        XCTAssertTrue(app.contains("onChat: { [weak self]"))
-    }
-
     private func makeStore() -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("floating-\(UUID().uuidString).json")

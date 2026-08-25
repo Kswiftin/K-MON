@@ -1,16 +1,12 @@
 import Foundation
 
-/// The three durable companion stores deliberately live together.  In particular this makes
+/// The durable companion state lives under one directory.  In particular this makes
 /// `PTB_STATE_DIR` a complete, isolated test/demo profile rather than only an isolated save file.
 struct CompanionStorageLocations: Sendable {
     static let stateFileName = "companion-state.json"
-    static let memoryFileName = "pokemon-memories.json"
-    static let chatFileName = "pokemon-chat.json"
 
     let directory: URL
     var stateURL: URL { directory.appendingPathComponent(Self.stateFileName) }
-    var memoryURL: URL { directory.appendingPathComponent(Self.memoryFileName) }
-    var chatURL: URL { directory.appendingPathComponent(Self.chatFileName) }
 
     init(stateURL: URL? = nil) {
         if let stateURL { directory = stateURL.deletingLastPathComponent() }

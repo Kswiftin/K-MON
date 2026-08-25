@@ -462,7 +462,6 @@ struct CompanionHeader: View {
     // 별명 인라인 편집
     @State private var editingName = false
     @State private var nameDraft = ""
-    @Environment(PokemonChatPresenter.self) private var chatPresenter
     /// 기술 목록은 처음부터 펼쳐 둔다. 파트너에게 무엇이 있는지가 홈에서 가장 자주 보는 정보인데,
     /// 접혀 있으면 팝오버를 열 때마다 한 번 더 눌러야 했다. 접으면 그 팝오버가 열려 있는 동안은
     /// 접힌 채로 있고, 닫았다 열면 다시 펼쳐진다(`@State` 라 팝오버 생명주기를 따른다).
@@ -557,14 +556,6 @@ struct CompanionHeader: View {
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(rarityColor(r)).foregroundStyle(.white)
                                 .clipShape(Capsule())
-                        }
-                        if store.hasActive, !editingName {
-                            Button { if let id = store.activeMonID { chatPresenter.open(companionID: id) } } label: {
-                                Image(systemName: "bubble.left.and.bubble.right")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                            .buttonStyle(.borderless).controlSize(.mini)
-                            .accessibilityLabel(store.l.t("포켓몬과 대화", "Chat with Pokémon", "ポケモンと話す"))
                         }
                     }
                     if store.hasActive {
