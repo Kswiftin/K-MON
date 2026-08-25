@@ -680,6 +680,14 @@ struct L {
     var dexFilterHint: String { t("탭하면 이 희귀도만 보기 · 다시 탭하면 전체", "Tap to show only this rarity · tap again to clear", "タップでこの希少度のみ表示・再タップで全体") }
     /// 도감 칸의 ✨ 를 읽어주는 명사 — 이모지는 스크린리더가 일관되게 읽지 못한다.
     var dexShinyLabel: String { t("이로치", "Shiny", "色違い") }
+    /// 이로치만 보기 필터의 캡슐 라벨. `dexShinyLabel` 과 나눠 둔다 — 저쪽은 칸 하나를 읽어주는
+    /// 명사고 이쪽은 필터 이름이라, 한쪽 문구를 다듬으면 다른 쪽이 어색해진다.
+    var dexShinyFilter: String { t("이로치", "Shiny", "色違い") }
+    var dexShinyFilterHint: String {
+        t("탭하면 이로치만 보기 · 다시 탭하면 전체 (희귀도 필터와 함께 걸립니다)",
+          "Tap to show only shinies · tap again to clear (combines with the rarity filter)",
+          "タップで色違いのみ表示・再タップで全体（希少度フィルターと併用）")
+    }
     func rarityLabel(_ r: Rarity) -> String {
         switch r {
         case .common:    return rarityCommon

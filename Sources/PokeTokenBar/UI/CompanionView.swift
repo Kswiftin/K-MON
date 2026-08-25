@@ -1440,6 +1440,9 @@ struct CollectionView: View {
 private struct DexGridView: View {
     let store: CompanionStore
     @State private var selectedRarity: Rarity?
+    /// 이로치만 보기. 희귀도 필터와 **겹쳐 걸린다** — "레어 중에 이로치" 를 볼 수 있어야 한다.
+    /// 둘을 배타로 두면 희귀도를 고른 사람이 이로치를 보려고 필터를 먼저 풀어야 한다.
+    @State private var shinyOnly = false
     @State private var page = 0
 
     /// 선택한 칸 — 하단 줄에 희귀도를 띄우고, 이로치를 잡은 종이면 스프라이트를 그 색으로 바꾼다.
@@ -1453,7 +1456,8 @@ private struct DexGridView: View {
     var body: some View {
         // 종별 집계는 한 번만 훑고 하위로 넘긴다 — 칸마다 재집계하면 도감이 O(칸×도감) 이 된다.
         let all = store.dexSpecies
-        let visible = selectedRarity.map { r in all.filter { $0.rarity == r } } ?? all
+        let byRarity = selectedRarity.map { r in all.filter { $0.rarity == r } } ?? all
+        let visible = shinyOnly ? byRarity.filter(\.isShiny) : byRarity
         let pageCount = max(1, (visible.count + Self.pageSize - 1) / Self.pageSize)
         let current = min(page, pageCount - 1)   // 보유 종이 줄어든 경우(필터 등) 범위 방어
         let slice = Array(visible.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
@@ -1501,9 +1505,32 @@ private struct DexGridView: View {
                     .disabled(count == 0)          // 0종 희귀도는 필터 불가
                     .help(store.l.dexFilterHint)
                 }
+                shinyFilter(all)
             }
             DexGoalStrip(store: store)
         }
+    }
+
+    /// 이로치만 보기 — 희귀도 캡슐과 **같은 모양**을 쓴다. 나란히 선 필터가 서로 다르게 생기면
+    /// 하나는 필터고 하나는 표시등처럼 읽힌다.
+    ///
+    /// 개수는 **희귀도 필터를 적용하기 전 전체** 기준이다. 희귀도를 고른 상태에서 이 숫자가 같이
+    /// 줄면 "이로치가 사라졌다"로 읽히는데, 실제로는 다른 희귀도에 그대로 있다.
+    private func shinyFilter(_ all: [CompanionStore.DexSpecies]) -> some View {
+        let count = all.lazy.filter(\.isShiny).count
+        return Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                shinyOnly.toggle()
+                page = 0          // 희귀도 필터와 같은 이유 — 페이지 범위가 바뀐다
+                selectedID = nil  // 고른 칸이 필터 밖으로 나가면 하단 줄이 유령 정보를 남긴다
+            }
+        } label: {
+            RarityTally(label: store.l.dexShinyFilter, count: count,
+                        color: .yellow, isSelected: shinyOnly)
+        }
+        .buttonStyle(.plain)
+        .disabled(count == 0)     // 한 마리도 없으면 눌러도 빈 화면만 나온다
+        .help(store.l.dexShinyFilterHint)
     }
 
     /// 고정 격자 — 남는 칸은 투명(테두리·물음표 없이 정렬만 유지).
