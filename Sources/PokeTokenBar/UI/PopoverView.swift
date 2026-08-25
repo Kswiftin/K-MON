@@ -33,7 +33,7 @@ enum PopoverMetrics {
     ///
     /// 상한은 오직 화면 가용 높이에서만 나온다. 예전엔 720pt 짜리 고정 천장을 같이 걸었는데,
     /// 1440pt 화면에서도 상한이 720 이라 "기술 보기" 를 펼친 홈 탭(약 760pt)이 화면에 다 들어가는데도
-    /// 스크롤로 넘어가 헤더와 돌봄·모험 카드가 잘려 보였다. 화면보다 작은 고정 천장은 두지 않는다.
+    /// 스크롤로 넘어가 헤더와 그 아래 카드가 잘려 보였다. 화면보다 작은 고정 천장은 두지 않는다.
     static func maxHeight(screenHeight: CGFloat) -> CGFloat {
         max(minHeight, screenHeight - verticalChrome)
     }

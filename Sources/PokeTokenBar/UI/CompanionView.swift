@@ -756,7 +756,6 @@ struct CompanionHeader: View {
     }
 }
 
-/// 동물농장식 돌봄 + 시간 기반 모험의 첫 플레이 루프.
 private struct TypeBadge: View {
     let type: PokemonType
     let language: AppLanguage
