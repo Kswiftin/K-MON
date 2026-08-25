@@ -2115,6 +2115,19 @@ final class BattleTeamPickTests: XCTestCase {
                        "수락 확정 때만 실제 출전 순서가 공용 앞부분에 반영된다")
     }
 
+    /// 신청자도 파티 편성 화면의 초안을 사용해야 한다. 예전에는 확인 화면이 이 배열을 바꿔도
+    /// `confirmBattleTeam`이 오래된 `pickedTeam`을 읽어 다른 포켓몬이 선봉으로 나갔다.
+    func testConfirmedBattleTeamUsesTheVisibleDraftInsteadOfTheOldSharedSelection() {
+        let (center, mons) = teamPickCenter(monCount: 6)
+        center.pickedTeam = [mons[0].id, mons[1].id, mons[2].id]
+        center.incomingPickedTeam = [mons[5].id, mons[4].id, mons[3].id]
+
+        let confirmed = center.confirmedBattleTeamIDs(size: 3)
+
+        XCTAssertEqual(confirmed, [mons[5].id, mons[4].id, mons[3].id])
+        XCTAssertNotEqual(confirmed, Array(center.pickedTeam.prefix(3)))
+    }
+
     /// 스냅샷 조회가 await 하는 사이 선택이 바뀌어도, 시작할 때 확정한 배열을 끝까지 쓴다.
     func testSnapshotPreparationFreezesInitialOrder() async {
         let (store, mons) = teamPickStore(monCount: 6)

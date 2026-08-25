@@ -564,6 +564,13 @@ final class BattleCenter {
         pickedTeam = Array((confirmedIDs + pickedTeam.filter { !confirmed.contains($0) }).prefix(6))
     }
 
+    /// 파티 편성 화면에서 확정할 실제 출전 순서. 신청자와 수락자 모두 화면이 편집하는
+    /// `incomingPickedTeam`을 써야 한다. 신청자만 이전 `pickedTeam`을 읽으면 화면에서 고른 포켓몬과
+    /// 실제 선봉이 달라진다.
+    func confirmedBattleTeamIDs(size: Int) -> [UUID] {
+        resolvedTeamIDs(size: size, selection: incomingPickedTeam)
+    }
+
     /// 출전 순서를 먼저 값으로 확정한 뒤 그 배열만 순차 변환한다. 스탯/기술 조회 중 사용자가
     /// 선택을 바꾸거나 파트너가 교체돼도 이미 시작한 배틀의 슬롯 순서는 흔들리지 않는다.
     func battleTeamSnapshots(size: Int, selection: [UUID]? = nil,
@@ -1117,8 +1124,7 @@ final class BattleCenter {
     /// 수락 뒤 편성 확정. 내 스냅샷은 이 시점에 처음 상대에게 전송된다.
     func confirmBattleTeam() {
         guard case .teamBuilding(let peer) = phase, let conn = connection else { return }
-        let ids = resolvedTeamIDs(size: incomingTeamSize,
-                                  selection: iAmPendingChallenger ? pickedTeam : incomingPickedTeam)
+        let ids = confirmedBattleTeamIDs(size: incomingTeamSize)
         guard ids.count == incomingTeamSize else { lastError = l.battleNeedsPokemon(incomingTeamSize); return }
         phase = .preparing
         Task { @MainActor in
@@ -1127,7 +1133,7 @@ final class BattleCenter {
                 phase = .ready; lastError = l.battleStatsFailed; return
             }
             pendingMyLineup = mine
-            if !iAmPendingChallenger { commitIncomingSelection(ids) }
+            commitIncomingSelection(ids)
             send(.teamReady(snapshot: lead, lineup: mine, teamSize: incomingTeamSize,
                             profile: companion.battleRankProfile, rulesVersion: BattleEngine.rulesVersion,
                             chatSupported: true), over: conn)
