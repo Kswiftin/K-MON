@@ -229,8 +229,8 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertNil(state.resolveChosenActions())
 
         XCTAssertEqual(state.myActive, 1)
-        XCTAssertEqual(state.myTeam[0].status, .poison)
-        XCTAssertEqual(state.myTeam[0].statusCounter, 0)
+        XCTAssertEqual(state.myTeam[0].status, .toxic)
+        XCTAssertEqual(state.myTeam[0].statusCounter, 1)
         XCTAssertEqual(state.myTeam[0].confusionTurns, 0)
         XCTAssertLessThan(state.myTeam[1].hp, state.myTeam[1].stats.hp,
                           "교체해 들어온 포켓몬이 상대 공격을 받아야 한다")

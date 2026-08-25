@@ -122,9 +122,9 @@ final class BattleTests: XCTestCase {
     /// 현행 급소 배율 ×1.5와 정수 난수 파이프라인을 고정한다.
     func testCurrentDamageOrderAndCritMultiplier() {
         let attacker = BattleSide(water()), defender = BattleSide(fire())
-        // (seed, 급소인가, 기대 데미지). seed 18은 현행 기본 확률 1/24에서 급소다.
+        // (seed, 급소인가, 기대 데미지). seed 33은 현행 기본 확률 1/24에서 급소다.
         // seed 0 은 rand 하한 217, seed 20 은 상한 255 를 밟는다.
-        let golden: [(seed: UInt64, crit: Bool, damage: Int)] = [(0, false, 103), (18, true, 157), (20, false, 122)]
+        let golden: [(seed: UInt64, crit: Bool, damage: Int)] = [(0, false, 103), (33, true, 160), (20, false, 122)]
         for (seed, expectedCrit, expectedDamage) in golden {
             var rng = SplitMix64(seed: seed)
             let outcome = BattleEngine.resolveAttack(attacker: attacker, defender: defender,
@@ -197,7 +197,7 @@ final class BattleTests: XCTestCase {
         let spec = try XCTUnwrap(MoveSpec.from(dto, fallbackName: "slash", languages: ["ko", "en"]))
 
         XCTAssertEqual(spec.critRate, 1)
-        XCTAssertEqual(spec.critStage, 2, "Gen 2 고급소기는 +2 단계다")
+        XCTAssertEqual(spec.critStage, 1, "현행 고급소기는 +1 단계다")
         XCTAssertEqual(spec.id, 163)
         XCTAssertEqual(spec.power, 70)
         XCTAssertEqual(spec.pp, 20)

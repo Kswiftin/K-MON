@@ -478,7 +478,8 @@ final class BattleStageTests: XCTestCase {
 
         XCTAssertTrue(side.stages.isEmpty, "교체 정리를 부른 경로는 전부 랭크가 사라진다")
         XCTAssertEqual(side.confusionTurns, 0)
-        XCTAssertEqual(side.status, .poison, "맹독 강등은 그대로 — 같은 헬퍼가 세 규칙을 다 쓴다")
+        XCTAssertEqual(side.status, .toxic, "맹독 상태는 유지하고 누적 배수만 초기화한다")
+        XCTAssertEqual(side.statusCounter, 1)
     }
 
     // MARK: 로그 — 랭크 변화가 자기 줄로 나간다

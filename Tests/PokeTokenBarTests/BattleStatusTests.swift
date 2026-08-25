@@ -59,14 +59,14 @@ final class BattleStatusTests: XCTestCase {
 
         quick.status = .paralysis
         XCTAssertEqual(quick.effectiveSpeed, quick.stats.spe / 2, "현행 마비는 스피드를 50% 로 깎는다")
-        XCTAssertEqual(quick.effectiveSpeed, sluggish.effectiveSpeed)
+        XCTAssertLessThan(quick.effectiveSpeed, sluggish.effectiveSpeed)
 
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = quick, b = sluggish
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: harmless(), moveB: harmless(),
                                                   turn: 1, rng: &rng)
-            XCTAssertNotNil(events.moveActors.first, "동속이면 결정적 난수로 순서가 정해진다")
+            XCTAssertEqual(events.moveActors.first, .b, "마비로 느려진 쪽은 후공이어야 한다")
         }
     }
 
