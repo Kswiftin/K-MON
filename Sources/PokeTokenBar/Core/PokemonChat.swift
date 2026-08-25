@@ -540,7 +540,9 @@ final class PokemonChatStore {
     private(set) var pendingProposal: PokemonChatToolProposal?
     /// 한 번의 전송이 CLI 를 띄우는 최대 추가 횟수. 상한이 없으면 매 턴 도구를 부르는 모델에
     /// 한 문장이 무한 왕복이 된다.
-    static let maxToolRounds = 2
+    /// 읽고-쓰는 2단 체인(`bag.list` → `item.use`)이 생기면서 2 라운드로는 마지막 턴에 실행이
+    /// 잘린다. 숫자는 여전히 여기 한 곳뿐이다.
+    static let maxToolRounds = 3
     private let fileURL: URL
     let album: PokemonMemoryAlbum
 
@@ -608,6 +610,12 @@ final class PokemonChatStore {
             // 가드가 답변을 갈아치웠다면 그 답변이 딸고 온 제안도 사용자의 의도와 무관하다.
             if safeReply == reply, let call, call.needsApproval {
                 pendingProposal = PokemonChatToolProposal(call: call, companionID: companionID)
+            }
+            // `memory.record` 만 인자를 파서가 채우지 않는다. 모델이 기억 문구를 직접 쓰면 그게
+            // 임의 문자열 인자이고, 다음 요청의 컨텍스트로 되돌아온다. 그래서 **가드를 통과한**
+            // 답변만 기록한다 — 가드가 답변을 갈아치웠다면 기록할 것도 없다.
+            if safeReply == reply, case .memoryRecord = call, let toolbox {
+                _ = await toolbox.run(.memoryRecord(body: safeReply))
             }
             if current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""

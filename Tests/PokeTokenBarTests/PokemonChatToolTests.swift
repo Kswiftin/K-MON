@@ -292,7 +292,7 @@ final class PokemonChatToolTests: XCTestCase {
         let store = makeCompanionStore()
         await store.hatch(baseID: 25)
         let timer = FocusTimer()
-        let toolbox = PokemonChatToolbox(timer: timer, companion: store, lookup: Self.emptyLookup)
+        let toolbox = PokemonChatToolbox(timer: timer, companion: store, album: makeAlbum(), lookup: Self.emptyLookup)
 
         let idle = await toolbox.run(.pokedoroStatus)
         XCTAssertTrue(idle.line.contains("state=idle"), idle.line)
@@ -312,7 +312,7 @@ final class PokemonChatToolTests: XCTestCase {
     /// 모험을 못 나가면 시작은 거절이고, 거절은 상태 문자열이 아니라 거절로 보여야 한다.
     func testTheToolboxSaysSoWhenAFocusSessionCannotStart() async {
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: makeCompanionStore(),
-                                         lookup: Self.emptyLookup)
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
 
         let refused = await toolbox.run(.pokedoroStart(minutes: 25))
         XCTAssertFalse(refused.succeeded, "거절이 성공으로 보고되면 승인 카드가 실패를 침묵으로 만든다")
@@ -322,7 +322,7 @@ final class PokemonChatToolTests: XCTestCase {
     /// 도감 조회는 받은 사실만 싣는다. 빈 조회를 빈 줄로 돌려주면 모델이 침묵을 사실로 읽는다.
     func testTheToolboxTurnsASpeciesLookupIntoFactsOrSaysItHasNone() async {
         let store = makeCompanionStore()
-        let full = PokemonChatToolbox(timer: FocusTimer(), companion: store) { _, language in
+        let full = PokemonChatToolbox(timer: FocusTimer(), companion: store, album: makeAlbum()) { _, language in
             PokemonSpeciesIdentity(genera: ["ko": "쥐포켓몬"], habitatSlug: "forest",
                                    flavorTexts: ["ko": "전기를 볼에 저장한다."],
                                    abilityNames: ["ko": "정전기"], abilityTexts: [:], language: language)
@@ -335,11 +335,223 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(found.line.contains("habitat=숲"), found.line)
         XCTAssertTrue(found.line.contains("entry=전기를 볼에 저장한다."), found.line)
 
-        let empty = PokemonChatToolbox(timer: FocusTimer(), companion: store, lookup: Self.emptyLookup)
+        let empty = PokemonChatToolbox(timer: FocusTimer(), companion: store, album: makeAlbum(), lookup: Self.emptyLookup)
         let blank = await empty.run(.pokedexLookup(speciesID: 999))
         XCTAssertFalse(blank.succeeded)
         XCTAssertEqual(blank.line, "pokedex #999 unavailable")
     }
+
+    // MARK: 새 도구 — 실행
+
+    /// 아이템은 종류마다 **다른 진짜 경로**로 간다. 여기서 인벤토리를 직접 깎으면 화면 버튼과
+    /// 경로가 갈려 한쪽만 고쳐진다. 소모품·성격·진화·사용 불가를 각각 밟는다.
+    func testItemUseRoutesEachKindToItsOwnStorePathAndReportsFailureHonestly() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        // 재고가 없으면 실패다 — 성공으로 뭉개면 모델이 "썼어" 라고 말한다.
+        let broke = await toolbox.run(.itemUse(kind: .rareCandy))
+        XCTAssertFalse(broke.succeeded, broke.line)
+
+        store.debugAddItem(.rareCandy, 1)
+        let candy = await toolbox.run(.itemUse(kind: .rareCandy))
+        XCTAssertTrue(candy.succeeded, candy.line)
+        XCTAssertEqual(store.itemCount(.rareCandy), 0, "진짜 사용 경로를 안 탔다")
+
+        store.debugAddItem(.mint, 1)
+        let mint = await toolbox.run(.itemUse(kind: .mint))
+        XCTAssertTrue(mint.succeeded, mint.line)
+        XCTAssertEqual(store.itemCount(.mint), 0)
+
+        // 보유형·던전 소모품은 대화에서 "지금 쓴다" 는 개념이 없다. 재고가 있어도 실패다.
+        store.debugAddItem(.shinyCharm, 1)
+        store.debugAddItem(.freshWater, 1)
+        for kind in [ItemKind.shinyCharm, .freshWater] {
+            let result = await toolbox.run(.itemUse(kind: kind))
+            XCTAssertFalse(result.succeeded, result.line)
+            XCTAssertEqual(store.itemCount(kind), 1, "쓸 수 없다고 해 놓고 소모했다")
+        }
+    }
+
+    /// 가방·로스터는 모델이 **되돌려 줄 수 있는 값**으로 찍힌다. 현지화된 이름을 주면 모델이
+    /// 그걸 인자로 써서 파싱에서 떨어지고, 사용자에겐 "아무 일도 안 일어남" 으로 보인다.
+    func testReadToolsPrintNamesTheModelCanHandBackAsArguments() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        store.debugAddItem(.fireStone, 2)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let bag = await toolbox.run(.bagList)
+        XCTAssertTrue(bag.line.contains("fireStone=2"), bag.line)
+        XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(불꽃의돌)]]").call,
+                     "현지화된 이름이 인자로 통과하면 안 된다")
+        XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(fireStone)]]").call,
+                       .itemUse(kind: .fireStone), "가방이 찍은 이름이 그대로 인자가 돼야 한다")
+
+        let roster = await toolbox.run(.rosterList)
+        XCTAssertTrue(roster.line.contains("index=0"), roster.line)
+        XCTAssertTrue(roster.line.contains("active=true"), roster.line)
+    }
+
+    /// 인덱스는 파서가 아니라 **로스터를 아는 실행기**가 자른다. 범위 밖은 실패이고,
+    /// 이미 나와 있는 개체로의 교체도 실패다 — 성공으로 보고하면 모델이 바뀌었다고 말한다.
+    func testCompanionSwitchOnlyMovesToARealTeammate() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        for index in [999, 1] {   // 범위 밖 · 비어 있는 자리
+            let result = await toolbox.run(.companionSwitch(index: index))
+            XCTAssertFalse(result.succeeded, "index=\(index): \(result.line)")
+        }
+        // 0번은 지금 나와 있는 개체다. 자기 자신으로의 교체는 아무 일도 아니다.
+        let noop = await toolbox.run(.companionSwitch(index: 0))
+        XCTAssertFalse(noop.succeeded, noop.line)
+    }
+
+    /// 대기 중인 진화가 없으면 실패다. 이 분기를 성공으로 두면 모델이 매번 "진화했어" 라고 말한다.
+    func testEvolutionAcceptFailsWhenNothingIsWaitingToEvolve() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let result = await toolbox.run(.evolutionAccept)
+
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(result.line, "evolution none pending")
+    }
+
+    /// 기억은 **가드를 통과한 답변**으로만 남는다. 모델이 문구를 직접 정하면 그게 임의 문자열
+    /// 인자이고, 다음 요청의 컨텍스트로 되돌아온다.
+    func testMemoryRecordStoresTheGuardedReplyAndNeverAModelWrittenString() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let album = makeAlbum()
+        let chat = PokemonChatStore(fileURL: temporaryURL(), album: album)
+        let id = store.activeMonID!
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: album, lookup: Self.emptyLookup)
+
+        // 모델이 기억 문구를 인자로 넣는 마커는 애초에 호출이 되지 않는다.
+        XCTAssertNil(PokemonChatToolParser.parse("[[tool:memory.record(내가 정한 기억)]]").call)
+
+        await chat.send("오늘 고마웠어", for: id, profile: .toolFixture,
+                        provider: CountingToolProvider(reply: "나도 즐거웠어! [[tool:memory.record]]"),
+                        toolbox: toolbox)
+
+        XCTAssertEqual(album.entries(for: id).map(\.body), ["나도 즐거웠어!"],
+                       "앨범에 남은 건 화면에 보인 문장 그대로여야 한다")
+        // 빈 본문은 앨범에 빈 줄을 남긴다 — 스토어가 채우기 전에 실행되면 안 된다.
+        let blank = await toolbox.run(.memoryRecord(body: "   "))
+        XCTAssertFalse(blank.succeeded)
+        XCTAssertEqual(album.entries(for: id).count, 1)
+    }
+
+    /// 가드가 답변을 갈아치웠다면 그 답변이 딸고 온 기억도 사용자의 대화가 아니다.
+    func testARedirectedReplyIsNeverKeptAsAMemory() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let album = makeAlbum()
+        let chat = PokemonChatStore(fileURL: temporaryURL(), album: album)
+        let id = store.activeMonID!
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: album, lookup: Self.emptyLookup)
+
+        await chat.send("코드 짜 줘", for: id, profile: .toolFixture,
+                        provider: CountingToolProvider(reply: "```swift\nprint(1)\n``` [[tool:memory.record]]"),
+                        toolbox: toolbox)
+
+        XCTAssertTrue(album.entries(for: id).isEmpty, "가드가 지운 답변이 기억으로 남았다")
+    }
+
+    // MARK: 새 도구 — 성공 경로
+    //
+    // 아래 넷은 커버리지 게이트(87.8%)를 통과하고도 `llvm-cov show --show-regions` 에서 `^0` 이던
+    // 자리다. 실패 분기만 시험하면 "정말 그 일이 일어나는가" 는 한 번도 안 밟힌다.
+
+    /// 진화 수락이 실제로 한 단계 올린다. 실패 분기만 지키면 "수락했지만 아무 일도 안 일어남" 이
+    /// 통과한다 — 모델은 진화했다고 말하고 화면은 그대로다.
+    func testEvolutionAcceptActuallyAdvancesTheStage() async {
+        let store = makeCompanionStore(line: Self.levelGatedLine)
+        await store.hatch(baseID: 40)
+        store.debugAccrueLevelExperience(300_000_000)
+        store.applyUsage(0)
+        XCTAssertNotNil(store.evolutionPrompt, "전제: 프롬프트가 떠야 이 경로를 밟는다")
+        let before = store.activeStageIndex
+
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        let result = await toolbox.run(.evolutionAccept)
+
+        XCTAssertTrue(result.succeeded, result.line)
+        XCTAssertEqual(store.activeStageIndex, (before ?? 0) + 1, "수락했는데 형태가 그대로다")
+        XCTAssertNil(store.evolutionPrompt)
+    }
+
+    /// 교체가 실제로 활성 개체를 바꾼다. 그리고 바뀐 뒤의 인덱스는 다시 `roster.list` 와 맞아야
+    /// 한다 — 어긋나면 다음 교체가 엉뚱한 개체를 지목한다.
+    func testCompanionSwitchActuallyChangesWhoIsOutAndRenumbersTheRoster() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let first = store.activeMonID!
+        store.debugSetBoxedMons([MonState(baseID: 25, pathIDs: [25], plannedPathIDs: [25],
+                                          stageIndex: 0, usedAtStage: 0, rarity: .common, totalForms: 1)])
+        let benched = store.chatRosterEntries.first { !$0.isActive }!
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let result = await toolbox.run(.companionSwitch(index: benched.index))
+
+        XCTAssertTrue(result.succeeded, result.line)
+        XCTAssertEqual(store.activeMonID, benched.id, "교체했는데 나와 있는 개체가 그대로다")
+        XCTAssertEqual(store.chatRosterEntries.first { $0.isActive }?.index, 0,
+                       "활성은 언제나 0번이어야 roster.list 와 companion.switch 가 같은 번호를 센다")
+        XCTAssertTrue(store.chatRosterEntries.contains { $0.id == first && !$0.isActive })
+    }
+
+    /// 돌은 진짜로 진화시킨다 — `useEvolutionItem` 경로를 밟지 않으면 소모만 되고 형태는 그대로다.
+    func testAnEvolutionStoneGoesThroughTheRealEvolutionPath() async {
+        let store = makeCompanionStore(line: Self.stoneLine)
+        await store.hatch(baseID: 30)
+        store.debugAddItem(.fireStone, 1)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let result = await toolbox.run(.itemUse(kind: .fireStone))
+
+        XCTAssertTrue(result.succeeded, result.line)
+        XCTAssertEqual(store.itemCount(.fireStone), 0)
+        XCTAssertEqual(store.activeStageIndex, 1, "돌을 썼는데 형태가 그대로다")
+    }
+
+    /// 하트비늘은 후보 카드를 여는 것까지다. 아직 기술이 바뀌지 않았으므로 **소모하지 않는다** —
+    /// 여기서 소모로 보고하면 모델이 "기술을 바꿨어" 라고 말한다.
+    func testAHeartScaleOnlyOpensTheRelearnChoicesAndSpendsNothingYet() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        store.debugAddItem(.heartScale, 1)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let result = await toolbox.run(.itemUse(kind: .heartScale))
+
+        XCTAssertTrue(result.succeeded, result.line)
+        XCTAssertEqual(store.itemCount(.heartScale), 1, "고르기도 전에 소모됐다")
+    }
+
+    private static let levelGatedLine = EvoLine(
+        baseID: 40, tree: EvoNode(speciesID: 40, children: [EvoNode(speciesID: 41, children: [], evolutionLevel: 5)]),
+        rarity: .common, names: [40: ["ko": "푸린"], 41: ["ko": "푸크린"]])
+
+    private static let stoneLine = EvoLine(
+        baseID: 30, tree: EvoNode(speciesID: 30, children: [
+            EvoNode(speciesID: 31, children: [], evolutionTrigger: "use-item", evolutionItem: "fire-stone")]),
+        rarity: .common, names: [30: ["ko": "니드리나"], 31: ["ko": "니드퀸"]])
 
     private static let emptyLookup: (Int, AppLanguage) async -> PokemonSpeciesIdentity = { _, language in
         PokemonSpeciesIdentity(genera: [:], habitatSlug: nil, flavorTexts: [:],
@@ -350,9 +562,14 @@ final class PokemonChatToolTests: XCTestCase {
         FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-tool-\(UUID().uuidString).json")
     }
 
-    private func makeCompanionStore() -> CompanionStore {
-        let line = EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
-                           names: [25: ["ko": "피카츄", "en": "Pikachu"]])
+    private func makeAlbum() -> PokemonMemoryAlbum {
+        PokemonMemoryAlbum(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("pokemon-chat-album-\(UUID().uuidString).json"))
+    }
+
+    private func makeCompanionStore(line: EvoLine? = nil) -> CompanionStore {
+        let line = line ?? EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
+                                   names: [25: ["ko": "피카츄", "en": "Pikachu"]])
         let store = CompanionStore(provider: ToolLineProvider(line: line),
                                    clock: { Date(timeIntervalSince1970: 1_000) },
                                    fileURL: temporaryURL(), rng: SeededRNG(seed: 1))

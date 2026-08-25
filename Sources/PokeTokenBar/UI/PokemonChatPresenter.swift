@@ -20,7 +20,7 @@ final class PokemonChatPresenter {
     init(store: CompanionStore, chat: PokemonChatStore, album: PokemonMemoryAlbum,
          timer: FocusTimer, settings: AppSettings) {
         self.store = store; self.chat = chat; self.album = album; self.settings = settings
-        self.toolbox = PokemonChatToolbox(timer: timer, companion: store,
+        self.toolbox = PokemonChatToolbox(timer: timer, companion: store, album: album,
                                           lookup: PokemonChatToolbox.apiLookup)
     }
 

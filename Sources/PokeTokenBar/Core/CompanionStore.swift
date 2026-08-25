@@ -343,6 +343,30 @@ final class CompanionStore {
                                   nextEvolution: nextEvolutionName(for: mon))
     }
 
+    /// 대화가 동료를 지목하는 **유일한** 방법. 모델에게 UUID 를 문자열로 넘기면 그게 곧 임의 문자열
+    /// 인자다 — 대신 안정된 인덱스를 찍어 주고, 그 인덱스로만 교체를 받는다.
+    ///
+    /// 순서는 `ownedMons`(활성이 0번, 나머지는 박스 순서)를 그대로 따른다. 도구가 자기만의 정렬을
+    /// 만들면 `roster.list` 가 찍은 번호와 `companion.switch` 가 세는 번호가 갈린다.
+    struct ChatRosterEntry: Equatable, Sendable {
+        let index: Int
+        let id: UUID
+        let name: String
+        let level: Int
+        let isActive: Bool
+    }
+
+    var chatRosterEntries: [ChatRosterEntry] {
+        ownedMons.enumerated().map { index, mon in
+            ChatRosterEntry(index: index, id: mon.id,
+                            name: chatProfile(for: mon).nickname ?? chatProfile(for: mon).displayName,
+                            level: mon.level, isActive: mon.id == activeMonID)
+        }
+    }
+
+    /// 진화 도구가 "정말 한 단계 올라갔는가" 를 사실로 돌려주기 위한 값.
+    var activeStageIndex: Int? { state.active?.stageIndex }
+
     private func nextEvolutionName(for mon: MonState) -> String? {
         guard let node = currentLine?.tree.node(withID: mon.currentID), let next = node.children.first else { return nil }
         return currentLine?.localizedName(next.speciesID, language)

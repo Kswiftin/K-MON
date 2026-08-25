@@ -14,6 +14,12 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
     case pokedoroStatus = "pokedoro.status"
     case pokedoroStart = "pokedoro.start"
     case pokedoroStop = "pokedoro.stop"
+    case bagList = "bag.list"
+    case rosterList = "roster.list"
+    case itemUse = "item.use"
+    case evolutionAccept = "evolution.accept"
+    case companionSwitch = "companion.switch"
+    case memoryRecord = "memory.record"
 
     /// 화면이 제시하는 집중 길이. 모델이 말한 값은 이 셋 중 가장 가까운 것으로 접힌다.
     static let focusMinutes = [25, 50, 90]
@@ -33,6 +39,20 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
             return "[[tool:\(rawValue)(<\(lengths)>)]] — ask the trainer to start a focus session"
         case .pokedoroStop:
             return "[[tool:\(rawValue)]] — ask the trainer to stop the focus session"
+        case .bagList:
+            return "[[tool:\(rawValue)]] — see which items the trainer is carrying"
+        case .rosterList:
+            return "[[tool:\(rawValue)]] — see the other Pokémon on the team, with their index numbers"
+        case .itemUse:
+            // 이름을 전부 나열하지 않는다(30종 가까이다). 대신 bag.list 가 찍어 주는 이름만
+            // 쓰라고 못 박는다 — 모델이 지어낸 이름은 어차피 파싱에서 떨어진다.
+            return "[[tool:\(rawValue)(<item name exactly as bag.list printed it>)]] — ask the trainer to use one item"
+        case .evolutionAccept:
+            return "[[tool:\(rawValue)]] — ask the trainer to let you evolve (only when evolution is waiting)"
+        case .companionSwitch:
+            return "[[tool:\(rawValue)(<index from roster.list>)]] — ask the trainer to bring out another Pokémon"
+        case .memoryRecord:
+            return "[[tool:\(rawValue)]] — keep what you just said as a memory you two share"
         }
     }
 }
@@ -44,13 +64,27 @@ enum PokemonChatToolCall: Equatable, Sendable {
     case pokedoroStatus
     case pokedoroStart(minutes: Int)
     case pokedoroStop
+    case bagList
+    case rosterList
+    /// 인자가 닫힌 enum 이다. 임의 문자열을 그대로 받는 인자는 이 목록에 넣지 않는다.
+    case itemUse(kind: ItemKind)
+    case evolutionAccept
+    /// `roster.list` 가 찍은 인덱스. UUID 를 문자열로 받으면 그게 곧 임의 문자열 인자다.
+    case companionSwitch(index: Int)
+    /// **파서가 채우지 않는 유일한 인자.** 마커에는 인자가 없고(`[[tool:memory.record]]`),
+    /// 본문은 가드를 통과한 답변으로 `PokemonChatStore` 가 채워 넣는다. 모델이 기억 내용을
+    /// 직접 쓰게 하면 그게 임의 문자열 인자이고, 다음 요청의 컨텍스트로 되돌아온다.
+    case memoryRecord(body: String)
 
     /// 상태를 바꾸는 도구는 사용자의 명시 승인 뒤에만 실행된다. 읽기는 그냥 돈다.
     /// 이 한 줄이 "시스템 영향도" 의 전부다 — 나머지는 아예 실행 경로가 없는 것들이다.
     var needsApproval: Bool {
         switch self {
-        case .pokedoroStart, .pokedoroStop: return true
-        case .pokedexLookup, .pokedoroStatus: return false
+        case .pokedoroStart, .pokedoroStop, .itemUse, .evolutionAccept, .companionSwitch: return true
+        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList: return false
+        // 기억하기만 예외다. 남는 건 사용자가 화면에서 방금 읽은 문장뿐이고(모델이 문구를 못 정한다),
+        // 앨범에 전체 삭제가 있다. 승인을 붙이면 대화가 매번 카드로 끊긴다.
+        case .memoryRecord: return false
         }
     }
 
@@ -63,7 +97,18 @@ enum PokemonChatToolCall: Equatable, Sendable {
                                  "\(minutes)分の集中を始める？")
         case .pokedoroStop:
             return L(language).t("집중을 여기서 끝낼까?", "Shall we stop the focus session?", "集中をここで終える？")
-        case .pokedexLookup, .pokedoroStatus:
+        case .itemUse(let kind):
+            let name = L(language).itemName(kind)
+            return L(language).t("\(name)을(를) 하나 써 볼까?",
+                                 "Shall we use one \(name)?",
+                                 "\(name)を1つ使ってみる？")
+        case .evolutionAccept:
+            return L(language).t("나, 진화해도 될까?", "May I evolve?", "ぼく、進化してもいい？")
+        case .companionSwitch(let index):
+            return L(language).t("\(index + 1)번째 친구를 데리고 나갈까?",
+                                 "Shall we bring out teammate #\(index + 1)?",
+                                 "\(index + 1)番目の子を連れて行く？")
+        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList, .memoryRecord:
             return L(language).t("확인해 볼까?", "Shall I check?", "確認してみる？")
         }
     }
@@ -85,7 +130,16 @@ enum PokemonChatToolCall: Equatable, Sendable {
                        "\(minutes)分の集中を始めたよ。いっしょにがんばろう！")
         case .pokedoroStop:
             return l.t("집중을 끝냈어. 수고했어!", "Focus session stopped. Nice work!", "集中を終えたよ。おつかれさま！")
-        case .pokedexLookup, .pokedoroStatus:
+        case .itemUse(let kind):
+            let name = l.itemName(kind)
+            return l.t("\(name)을(를) 썼어. 고마워!", "Used one \(name). Thank you!", "\(name)を使ったよ。ありがとう！")
+        case .evolutionAccept:
+            return l.t("나, 진화했어! 잘 부탁해.", "I evolved! Look after me.", "進化したよ！これからもよろしく。")
+        case .companionSwitch:
+            return l.t("친구랑 자리를 바꿨어.", "We swapped places.", "友だちと交代したよ。")
+        case .memoryRecord:
+            return l.t("방금 이야기를 기억해 둘게.", "I'll remember what we just said.", "いまの話、覚えておくね。")
+        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList:
             return l.t("확인했어.", "Checked.", "確認したよ。")
         }
     }
@@ -129,10 +183,27 @@ enum PokemonChatToolParser {
         guard let tool = PokemonChatTool(rawValue: name) else { return nil }
 
         switch tool {
-        case .pokedoroStatus, .pokedoroStop:
+        case .pokedoroStatus, .pokedoroStop, .bagList, .rosterList, .evolutionAccept, .memoryRecord:
             // 인자를 받지 않는 도구에 인자가 붙었으면 모델이 다른 것을 의도한 것이다. 추측하지 않는다.
             guard argument == nil else { return nil }
-            return tool == .pokedoroStatus ? .pokedoroStatus : .pokedoroStop
+            switch tool {
+            case .pokedoroStatus: return .pokedoroStatus
+            case .pokedoroStop: return .pokedoroStop
+            case .bagList: return .bagList
+            case .rosterList: return .rosterList
+            case .evolutionAccept: return .evolutionAccept
+            // 본문은 여기서 채우지 않는다 — 가드를 통과한 답변으로 스토어가 갈아 끼운다.
+            default: return .memoryRecord(body: "")
+            }
+        case .itemUse:
+            // 닫힌 enum 만 인자가 된다. 목록 밖 이름은 거부되는 게 아니라 호출이 되지 않는다.
+            guard let raw = argument, let kind = ItemKind(rawValue: raw) else { return nil }
+            return .itemUse(kind: kind)
+        case .companionSwitch:
+            // 인덱스는 `roster.list` 가 찍은 값이다. 범위 상한은 로스터를 아는 실행기가 본다 —
+            // 파서가 그때그때의 로스터 크기를 알면 파싱이 앱 상태에 의존하게 된다.
+            guard let index = wholeNumber(argument) else { return nil }
+            return .companionSwitch(index: index)
         case .pokedoroStart:
             guard let minutes = wholeNumber(argument) else { return nil }
             return .pokedoroStart(minutes: nearestFocusLength(to: minutes))
@@ -171,6 +242,9 @@ protocol PokemonChatToolRunning {
 struct PokemonChatToolbox: PokemonChatToolRunning {
     let timer: FocusTimer
     let companion: CompanionStore
+    /// 기억 앨범. 대화 창이 이미 들고 있는 것과 **같은 인스턴스**를 받아야 한다 — 새로 만들면
+    /// 도구가 적은 기억이 앨범 화면에 영영 안 보인다.
+    let album: PokemonMemoryAlbum
     /// 종 정보 조회. 주입받는 이유는 실행기 자체를 네트워크 없이 시험하기 위해서다. 기본값을 두지
     /// 않는 건 프로덕션 생성 지점이 하나뿐이라서다 — 기본값은 그 하나가 무엇을 넣었는지 가린다.
     let lookup: (Int, AppLanguage) async -> PokemonSpeciesIdentity
@@ -182,6 +256,45 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
 
     func run(_ call: PokemonChatToolCall) async -> (line: String, succeeded: Bool) {
         switch call {
+        case .bagList:
+            let items = companion.ownedItems
+            guard !items.isEmpty else { return ("bag empty", true) }
+            // 이름을 rawValue 로 돌려준다 — 모델이 `item.use` 에 그대로 되돌려 줄 값이어야 한다.
+            // 현지화된 이름을 주면 모델이 그걸 인자로 써서 파싱에서 떨어진다.
+            return ("bag " + items.map { "\($0.kind.rawValue)=\($0.count)" }.joined(separator: " "), true)
+
+        case .rosterList:
+            let lines = companion.chatRosterEntries.map {
+                "index=\($0.index) name=\($0.name) level=\($0.level) active=\($0.isActive)"
+            }
+            guard !lines.isEmpty else { return ("roster empty", true) }
+            return ("roster " + lines.joined(separator: " | "), true)
+
+        case .itemUse(let kind):
+            let (line, succeeded) = useItem(kind)
+            return (line, succeeded)
+
+        case .evolutionAccept:
+            // 대기 중인 진화가 없으면 정직하게 실패다. 성공으로 돌려주면 모델이 진화했다고 말한다.
+            guard companion.evolutionPrompt != nil else { return ("evolution none pending", false) }
+            companion.acceptEvolution()
+            return ("evolution accepted stage=\(companion.activeStageIndex ?? 0)", true)
+
+        case .companionSwitch(let index):
+            guard let target = companion.chatRosterEntries.first(where: { $0.index == index }),
+                  !target.isActive else { return ("companion switch index=\(index) unavailable", false) }
+            companion.switchCompanion(to: target.id)
+            return ("companion switched to=\(target.name)", true)
+
+        case .memoryRecord(let body):
+            // 빈 본문은 기록하지 않는다. 스토어가 채우기 전에 실행되면 앨범에 빈 줄이 남는다.
+            guard let companionID = companion.activeMonID,
+                  !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return ("memory not recorded", false)
+            }
+            album.record(companionID: companionID, body: body, source: .conversation)
+            return ("memory recorded", true)
+
         case .pokedoroStatus:
             return (statusLine(), true)
         case .pokedexLookup(let id):
@@ -201,6 +314,33 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         case .pokedoroStop:
             timer.stopFocusSession(companion: companion)
             return (statusLine(), true)
+        }
+    }
+
+    /// 아이템 한 종류를 그 종류의 **진짜 사용 경로**로 보낸다. 여기서 인벤토리를 직접 깎지 않는다 —
+    /// 화면 버튼과 다른 경로가 되면 한쪽만 고쳐져 소모·연출·진화가 어긋난다.
+    private func useItem(_ kind: ItemKind) -> (String, Bool) {
+        switch kind {
+        case .rareCandy:
+            let result = companion.useRareCandy()
+            guard result != .unavailable else { return ("item rareCandy unavailable", false) }
+            return ("item rareCandy used result=\(result)", true)
+        case .mint:
+            guard let nature = companion.useMint() else { return ("item mint unavailable", false) }
+            return ("item mint used nature=\(nature.rawValue)", true)
+        case .heartScale:
+            guard companion.canUseHeartScale else { return ("item heartScale unavailable", false) }
+            companion.useHeartScale()
+            // 후보 목록 카드가 뜰 뿐 아직 아무것도 바뀌지 않았다. 성공으로 뭉개면 모델이
+            // "기술을 바꿨어" 라고 말한다.
+            return ("item heartScale opened relearn choices", true)
+        case .shinyCharm, .freshWater:
+            // 보유형(부적)과 던전 입장 소모품은 대화에서 "지금 쓴다" 는 개념이 없다.
+            return ("item \(kind.rawValue) is not used from chat", false)
+        default:
+            guard companion.canUseEvolutionItem(kind) else { return ("item \(kind.rawValue) unavailable", false) }
+            guard companion.useEvolutionItem(kind) else { return ("item \(kind.rawValue) refused", false) }
+            return ("item \(kind.rawValue) used", true)
         }
     }
 
