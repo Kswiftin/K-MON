@@ -249,8 +249,7 @@ actor PokeAPIClient: PokeProviding {
             .sorted { $0.slot < $1.slot }
             .compactMap { PokemonType(rawValue: $0.type.name) }
         guard !types.isEmpty else { throw URLError(.cannotParseResponse) }
-        // 대화 페르소나가 쓰던 선택 규칙을 그대로 재사용한다 — 두 화면이 같은 개체를 두고 서로 다른
-        // 특성을 말하면 안 된다(숨은 특성 제외, slot 최소).
+        // 대표 특성 선택 규칙은 `PokemonAbilitiesDTO` 한 곳에만 둔다(숨은 특성 제외, slot 최소).
         let abilitySlug = PokemonAbilitiesDTO.primarySlug(of: dto.abilities ?? [])
         // 구현하지 않은 특성은 조용히 삼키지 않고 한 번 남긴다 — 프로필은 캐시되므로 종당 한 줄이다
         // (ailment 14종과 같은 규칙). 배틀은 바뀌지 않는다: 해석이 `nil` 로 접는다.
@@ -530,12 +529,7 @@ struct SpeciesDTO: Decodable, Sendable {
     let names: [NameDTO]
     let evolution_chain: URLRef
     let evolves_from_species: NamedRef?   // nil = 진화라인 시작점(base)
-    let flavor_text_entries: [SpeciesFlavorTextDTO]?
-    let genera: [GenusDTO]?
-    let habitat: NamedRef?
 }
-struct SpeciesFlavorTextDTO: Decodable, Sendable { let flavor_text: String; let language: NamedRef }
-struct GenusDTO: Decodable, Sendable { let genus: String; let language: NamedRef }
 struct NameDTO: Decodable, Sendable { let name: String; let language: NamedRef }
 struct NamedRef: Decodable, Sendable { let name: String; let url: String? }
 struct URLRef: Decodable, Sendable { let url: String }
@@ -586,8 +580,7 @@ struct PokemonAbilitiesDTO: Decodable, Sendable {
     }
     let abilities: [Entry]
 
-    /// 대표 특성 슬러그 — 숨은 특성은 빼고 slot 이 가장 낮은 쪽. 매핑을 호출부마다 두면
-    /// 한쪽만 규칙이 바뀌어 같은 개체가 화면마다 다른 특성을 말한다.
+    /// 대표 특성 슬러그 — 숨은 특성은 빼고 slot 이 가장 낮은 쪽.
     /// 튜플을 받는 이유는 DTO 를 만들지 않고도 규칙만 시험할 수 있게 하려는 것이다.
     static func primaryAbilitySlug(
         _ entries: [(slug: String, isHidden: Bool, slot: Int)]
@@ -598,11 +591,6 @@ struct PokemonAbilitiesDTO: Decodable, Sendable {
     static func primarySlug(of entries: [Entry]) -> String? {
         primaryAbilitySlug(entries.map { (slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot) })
     }
-}
-/// `/ability/{slug}` 의 현지화 이름과 설명만.
-struct AbilityDTO: Decodable, Sendable {
-    let names: [NameDTO]
-    let flavor_text_entries: [SpeciesFlavorTextDTO]
 }
 /// `/move/{name}` 부분 디코드.
 struct MoveDTO: Decodable, Sendable {

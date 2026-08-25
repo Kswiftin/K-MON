@@ -749,8 +749,6 @@ struct CompanionHeader: View {
         case .idle:    return l.statusIdle
         case .working: return l.statusWorking
         case .focus:   return l.statusFocus
-        case .tired:   return l.statusTired
-        case .sleep:   return l.statusSleep
         case .levelUp: return store.justEvolvedTo.map { l.statusEvolved($0) } ?? l.statusGrew
         }
     }

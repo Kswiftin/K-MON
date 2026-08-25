@@ -694,8 +694,6 @@ struct L {
     var statusIdle: String { t("오늘은 조용히 자리를 지켜요.", "Keeping quiet today.", "今日は静かにしています。") }
     var statusWorking: String { t("오늘의 작업 흔적이 쌓이고 있어요.", "Today's work is piling up.", "本日の作業が積み重なっています。") }
     var statusFocus: String { t("지금은 집중 모드예요.", "In focus mode now.", "今は集中モードです。") }
-    var statusTired: String { t("에너지가 부족해요. 잠깐 쉬어도 괜찮아요.", "Low on energy. A short rest would help.", "エネルギーが少ないです。少し休みましょう。") }
-    var statusSleep: String { t("지금은 자고 있어요.", "Sleeping now.", "今は眠っています。") }
     func statusEvolved(_ name: String) -> String { t("\(name)(으)로 진화했어요!", "Evolved into \(name)!", "\(name) に進化しました！") }
     var statusGrew: String { t("성장했어요!", "It grew!", "成長しました！") }
 
