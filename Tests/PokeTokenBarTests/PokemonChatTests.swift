@@ -141,15 +141,10 @@ final class PokemonChatTests: XCTestCase {
         }
     }
 
-    func testHiddenAbilityIsNeverChosenAsTheRepresentativeOne() {
-        let entries = [
-            (slug: "lightning-rod", isHidden: true, slot: 1),
-            (slug: "static", isHidden: false, slot: 2),
-            (slug: "run-away", isHidden: false, slot: 3),
-        ]
-
-        XCTAssertEqual(PokemonSpeciesIdentity.primaryAbilitySlug(entries), "static")
-    }
+    // 대표 특성 선택 규칙(숨은 특성 제외 · slot 최소)의 가드는
+    // `BattleAbilityTests.testTheBattleProfileTakesTheFirstNonHiddenAbility` 한 곳에 둔다.
+    // 페르소나와 배틀이 같은 `PokemonAbilitiesDTO.primaryAbilitySlug` 를 호출하므로 두 화면이
+    // 다른 특성을 말할 수 없다 — 여기 사본을 두면 한쪽을 지워도 아무 테스트가 안 깨진다.
 
     func testProfileApplyFillsEveryIdentitySlot() {
         var profile = PokemonChatProfile.fixture

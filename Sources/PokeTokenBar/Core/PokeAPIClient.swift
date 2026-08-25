@@ -40,6 +40,7 @@ actor PokeAPIClient: PokeProviding {
     private let base = URL(string: "https://pokeapi.co/api/v2")!
     private let langCodes = ["ko", "en", "ja-Hrkt", "ja"]
     private var speciesCache: [Int: SpeciesDTO] = [:]
+    private var chatSpeciesIdentityCache: [String: PokemonSpeciesIdentity] = [:]
     private var lineCache: [Int: EvoLine] = [:]   // 프리패칭 → 부화 순간 네트워크 0
 
     func line(baseSpeciesID: Int) async throws -> EvoLine {
@@ -213,6 +214,57 @@ actor PokeAPIClient: PokeProviding {
     private func localizedNames(_ entries: [NameDTO]) -> [String: String] {
         Dictionary(uniqueKeysWithValues: entries.filter { langCodes.contains($0.language.name) }
             .map { ($0.language.name, $0.name) })
+    }
+
+    /// 대화에 필요한 종 정보만 fetch 한다. 각 응답은 독립적으로 실패할 수 있고 결과는 부분 정체성으로 남긴다.
+    /// 페르소나 필드는 `SpeciesDTO` 가 아니라 `ChatSpeciesDTO` 로 따로 받는다 — 그래야 부화·진화라인
+    /// 로드가 종 응답에서 가장 큰 배열(`flavor_text_entries`)을 매번 디코딩하고 버리지 않는다.
+    func chatSpeciesIdentity(speciesID: Int, language: AppLanguage) async -> PokemonSpeciesIdentity {
+        let cacheKey = "\(speciesID)-\(language.rawValue)"
+        if let cached = chatSpeciesIdentityCache[cacheKey] { return cached }
+
+        var genera: [String: String] = [:]
+        var habitatSlug: String?
+        var flavorTexts: [String: String] = [:]
+        let speciesSucceeded: Bool
+        if let dto: ChatSpeciesDTO = try? await get(base.appendingPathComponent("pokemon-species/\(speciesID)")) {
+            speciesSucceeded = true
+            for entry in dto.genera ?? [] where langCodes.contains(entry.language.name) {
+                genera[entry.language.name] = entry.genus
+            }
+            habitatSlug = dto.habitat?.name
+            flavorTexts = Self.flavorTexts((dto.flavor_text_entries ?? []).map {
+                (language: $0.language.name, text: $0.flavor_text)
+            }, languages: langCodes)
+        } else { speciesSucceeded = false }
+
+        var abilityNames: [String: String] = [:]
+        var abilityTexts: [String: String] = [:]
+        var pokemonSucceeded = false
+        do {
+            let dto: PokemonAbilitiesDTO = try await get(base.appendingPathComponent("pokemon/\(speciesID)"))
+            pokemonSucceeded = true
+            if let slug = PokemonAbilitiesDTO.primarySlug(of: dto.abilities) {
+                let ability: AbilityDTO = try await get(base.appendingPathComponent("ability/\(slug)"))
+                for entry in ability.names where langCodes.contains(entry.language.name) {
+                    abilityNames[entry.language.name] = entry.name
+                }
+                abilityTexts = Self.flavorTexts(ability.flavor_text_entries.map {
+                    (language: $0.language.name, text: $0.flavor_text)
+                }, languages: langCodes)
+            }
+        } catch {
+            AppLog.write("chat species identity: ability fetch failed for \(speciesID): \(error)")
+        }
+
+        let identity = PokemonSpeciesIdentity(
+            genera: genera, habitatSlug: habitatSlug, flavorTexts: flavorTexts,
+            abilityNames: abilityNames, abilityTexts: abilityTexts, language: language
+        )
+        // Do not turn a total transient outage into a permanent empty identity. A successful
+        // species response is useful even if optional ability enrichment failed.
+        if speciesSucceeded || pokemonSucceeded { chatSpeciesIdentityCache[cacheKey] = identity }
+        return identity
     }
 
     /// REST 폴백 — 단일 종 상세(pokemon-species/{id})로 base 여부·capture_rate 판정.
@@ -530,6 +582,16 @@ struct SpeciesDTO: Decodable, Sendable {
     let evolution_chain: URLRef
     let evolves_from_species: NamedRef?   // nil = 진화라인 시작점(base)
 }
+/// `/pokemon-species/{id}` 중 **대화 페르소나만** 쓰는 부분. `SpeciesDTO` 에 합치지 않는다 —
+/// `flavor_text_entries` 는 그 응답에서 가장 큰 배열(버전 × 언어 수십 개)이라, 부화와 진화라인
+/// 로드마다 디코딩하고 버리는 값이 된다. 대화 화면이 열릴 때만 이 DTO 로 한 번 더 받는다.
+struct ChatSpeciesDTO: Decodable, Sendable {
+    let flavor_text_entries: [SpeciesFlavorTextDTO]?
+    let genera: [GenusDTO]?
+    let habitat: NamedRef?
+}
+struct SpeciesFlavorTextDTO: Decodable, Sendable { let flavor_text: String; let language: NamedRef }
+struct GenusDTO: Decodable, Sendable { let genus: String; let language: NamedRef }
 struct NameDTO: Decodable, Sendable { let name: String; let language: NamedRef }
 struct NamedRef: Decodable, Sendable { let name: String; let url: String? }
 struct URLRef: Decodable, Sendable { let url: String }
@@ -591,6 +653,11 @@ struct PokemonAbilitiesDTO: Decodable, Sendable {
     static func primarySlug(of entries: [Entry]) -> String? {
         primaryAbilitySlug(entries.map { (slug: $0.ability.name, isHidden: $0.is_hidden, slot: $0.slot) })
     }
+}
+/// `/ability/{slug}` 의 현지화 이름과 설명만.
+struct AbilityDTO: Decodable, Sendable {
+    let names: [NameDTO]
+    let flavor_text_entries: [SpeciesFlavorTextDTO]
 }
 /// `/move/{name}` 부분 디코드.
 struct MoveDTO: Decodable, Sendable {
