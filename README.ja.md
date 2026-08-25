@@ -83,14 +83,17 @@ macOS 14 以降（Apple Silicon または Intel）が必要です。
 - **Finder:** `Pokédoro.app` を Control-クリック → **開く** → ダイアログでもう一度 **開く**。
 - **ターミナル:** `xattr -dr com.apple.quarantine /Applications/Pokédoro.app`
 
-バトル申し込み用の通知と、LAN 検出用のローカルネットワークアクセスを、表示されたときに許可してください。
+バトル申し込み用の通知と、LAN 検出用のローカルネットワークアクセスを、表示されたときに許可してください。許可は一度だけです — リリースはバージョンが変わっても同じ署名 ID を使うため、アップグレードで再度聞かれません。バトルを使わない場合は **設定 → 通知 → バトル招待を受け取る** をオフにすると LAN 探索自体を開始しないため、ローカルネットワーク権限を聞かれません。
 
 ソースからビルドする場合：
 
 ```bash
+./scripts/create-signing-cert.sh   # 初回のみ — 安定した自己署名 ID
 swift build
 ./scripts/build-app.sh
 ```
+
+`create-signing-cert.sh` を省くと `build-app.sh` は中断します。ad-hoc 署名はビルドごとにアプリの ID が変わるため、macOS が毎回別のアプリとみなし、権限を最初から聞き直すからです。
 
 `build-app.sh` は `/Applications/Pokédoro.app` を作成・インストールします（インストールを省略した場合は `build/Pokédoro.app`）。
 

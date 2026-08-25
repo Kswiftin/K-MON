@@ -25,8 +25,7 @@ struct FocusTimerView: View {
                         Text(timer.phase == .focus ? focusHint : restHint)
                             .font(.caption2).foregroundStyle(.secondary)
                         Button(companion.l.t("종료", "Stop", "終了")) {
-                            timer.stop()
-                            companion.cancelFocusAdventure()
+                            timer.stopFocusSession(companion: companion)
                         }
                             .controlSize(.small)
                     }
@@ -75,16 +74,14 @@ struct FocusTimerView: View {
                 }
             } else {
                 Picker("", selection: $selectedMinutes) {
-                    Text("25m").tag(25)
-                    Text("50m").tag(50)
-                    Text("90m").tag(90)
+                    // 대화의 `pokedoro.start` 도 같은 목록으로 인자를 접는다 — 두 벌이면 화면이
+                    // 제시하지 않는 길이를 도구만 켤 수 있게 된다.
+                    ForEach(PokemonChatTool.focusMinutes, id: \.self) { Text("\($0)m").tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 HStack {
                     Button(companion.l.t("모험 보내고 집중 시작", "Send on adventure & focus", "冒険に送って集中開始")) {
-                        if companion.startFocusAdventure(minutes: selectedMinutes) {
-                            timer.startFocus(minutes: selectedMinutes)
-                        }
+                        timer.startFocusSession(minutes: selectedMinutes, companion: companion)
                     }
                     .buttonStyle(.borderedProminent).controlSize(.small)
                     // 진행 중일 때만 막는다. 끝난 모험은 시작 시 자동 정산되므로 여기서 잠그면

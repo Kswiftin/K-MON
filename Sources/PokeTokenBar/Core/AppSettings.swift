@@ -45,6 +45,11 @@ final class AppSettings {
         didSet { defaults.set(automaticUpdateDownloadsEnabled, forKey: "automaticUpdateDownloadsEnabled") }
     }
     var doNotDisturb: Bool { didSet { defaults.set(doNotDisturb, forKey: "doNotDisturb") } }
+    /// 팝오버를 열지 않아도 LAN 배틀 신청을 받는다. **켜져 있는 동안에만** Bonjour 리스너가 뜨고,
+    /// 리스너가 뜨는 순간 macOS 가 로컬 네트워크 권한을 묻는다 — 배틀을 안 하는 사용자가 그 창을
+    /// 영영 안 보게 하는 유일한 스위치다. 기본값은 기존 동작(켜짐)이다.
+    var battleInvitesEnabled: Bool { didSet { defaults.set(battleInvitesEnabled, forKey: "battleInvitesEnabled") } }
+    private var chatExecutablePaths: [String: String]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -64,19 +69,22 @@ final class AppSettings {
         automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
-        Self.removeRetiredKeys(from: defaults)
+        battleInvitesEnabled = defaults.object(forKey: "battleInvitesEnabled") as? Bool ?? true
+        chatExecutablePaths = defaults.dictionary(forKey: "pokemonChatExecutablePaths") as? [String: String] ?? [:]
     }
 
-    /// 기능이 사라진 설정의 키는 앱이 지운다 — 안 지우면 사용자 prefs 에 영구히 남고, 오픈소스
-    /// 저장소라 남의 머신 CLI 경로가 plist 에 남는 것도 좋지 않다. 매 실행 5회 삭제라 플래그로
-    /// 1회성을 만들 이유가 없다(플래그 자체가 지워야 할 다음 키가 된다).
-    private static func removeRetiredKeys(from defaults: UserDefaults) {
-        for key in retiredKeys { defaults.removeObject(forKey: key) }
-    }
+    /// LAN 탐색을 시작해도 되는가. 설정값을 읽는 자리와 리스너를 올리는 자리가 각각 판정하면
+    /// 한쪽만 바뀌어도 아무 테스트가 안 깨진다 — 판정은 여기 한 곳이다.
+    var shouldStartLANDiscovery: Bool { battleInvitesEnabled }
 
-    /// 포켓몬 대화 기능(2.x)이 쓰던 키. 되살아나면 그때 여기서 빼면 된다.
-    static let retiredKeys = ["pokemonChatExecutablePaths"]
-        + ["codex", "claude", "opencode", "custom"].map { "pokemonChatExecutablePath.\($0)" }
+    static func chatProviderPathKey(_ kind: PokemonChatProviderKind) -> String { "pokemonChatExecutablePath.\(kind.rawValue)" }
+    func chatProviderExecutablePath(for kind: PokemonChatProviderKind) -> String? { chatExecutablePaths[kind.rawValue] }
+    func setChatProviderExecutablePath(_ path: String?, for kind: PokemonChatProviderKind) {
+        if let path, !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { chatExecutablePaths[kind.rawValue] = path }
+        else { chatExecutablePaths.removeValue(forKey: kind.rawValue) }
+        defaults.set(chatExecutablePaths, forKey: "pokemonChatExecutablePaths")
+        if let path { defaults.set(path, forKey: Self.chatProviderPathKey(kind)) } else { defaults.removeObject(forKey: Self.chatProviderPathKey(kind)) }
+    }
 
     func requestNotificationAuthorizationIfNeeded() {
         Task {

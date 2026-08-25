@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private let popover = NSPopover()
     private var settings: AppSettings!
     private var companion: CompanionStore!
+    private var chatPresenter: PokemonChatPresenter!
     private var updater: UpdateChecker!
     private var battleCenter: BattleCenter!
     private let focusTimer = FocusTimer()
@@ -44,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         LoginItem.migrateFromLegacyLoginItemIfNeeded()   // 로그인아이템 → KeepAlive 에이전트(크래시 자동 재실행)
         settings = AppSettings()
         companion = CompanionStore()
+        chatPresenter = PokemonChatPresenter(store: companion, chat: companion.chatStore,
+                                             album: companion.memoryAlbum, timer: focusTimer,
+                                             settings: settings)
         Task { await companion.ensureInheritedMoves() }
         focusTimer.onFocusCompleted = { [weak self] minutes in
             self?.companion.completeFocusSession(minutes: minutes)
@@ -53,7 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)
         observeAutomaticUpdates()
         battleCenter = BattleCenter(companion: companion)
-        battleCenter.start()   // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신
+        // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신. 다만 리스너를 올리는
+        // 순간 macOS 가 로컬 네트워크 권한을 묻기 때문에, 배틀을 끈 사용자에게는 시작하지 않는다.
+        if settings.shouldStartLANDiscovery { battleCenter.start() }
         // 배틀 신청은 팝오버가 닫힌(=앱 실행 중) 상태에서 오는 게 정상이라, 알림 표시가 핵심이다.
         // ① delegate 없으면 foreground(accessory 앱은 항상 그렇다) 알림이 억제돼 배너가 안 뜬다.
         // ② 권한을 팝오버 첫 오픈 때만 요청하면 팝오버를 안 연 사용자는 권한이 없어 알림이 안 온다 → 기동 시 요청.
@@ -62,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         floatingPet = FloatingPetController(
             settings: settings, companion: companion,
             onOpenPopover: { [weak self] in self?.openPopover() },
+            onChat: { [weak self] in
+                guard let self, let id = self.companion.activeMonID else { return }
+                self.chatPresenter.open(companionID: id)
+            },
             onHide: { [weak self] in self?.settings.floatingPetEnabled = false }
         )   // 데스크톱 플로팅 펫(옵트인)
         Task { await updater.check() }                    // 기동 시 1회 업데이트 확인
@@ -451,7 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         popover.contentViewController = NSHostingController(
             rootView: PopoverView()
                 .environment(settings).environment(companion).environment(updater).environment(navigation)
-                .environment(battleCenter).environment(focusTimer))
+                .environment(battleCenter).environment(focusTimer).environment(chatPresenter))
     }
 
     @objc private func togglePopover() {

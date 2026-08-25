@@ -83,14 +83,17 @@ The release is signed. If macOS shows a first-launch Gatekeeper prompt, open it 
 - **Finder:** Control-click `Pokédoro.app` → **Open** → **Open** again in the dialog.
 - **Terminal:** `xattr -dr com.apple.quarantine /Applications/Pokédoro.app`
 
-Allow notifications for battle challenges when prompted, and allow Local Network access when you first open Battle for LAN discovery.
+Allow notifications for battle challenges when prompted, and allow Local Network access when you first open Battle for LAN discovery. You are asked once: releases keep the same signing identity across versions, so upgrades do not ask again. If you never use Battle, turn off **Settings → Notifications → Receive battle invites** and LAN discovery never starts, so macOS never asks for local network access at all.
 
 To build from source:
 
 ```bash
+./scripts/create-signing-cert.sh   # once — a stable self-signed identity
 swift build
 ./scripts/build-app.sh
 ```
+
+Skipping `create-signing-cert.sh` makes `build-app.sh` stop. An ad-hoc signature changes the app's identity on every build, so macOS treats each build as a different app and asks for every permission again.
 
 `build-app.sh` creates and installs `/Applications/Pokédoro.app` (or leaves it at `build/Pokédoro.app` when installation is skipped).
 

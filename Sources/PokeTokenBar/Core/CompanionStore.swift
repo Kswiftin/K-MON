@@ -88,7 +88,10 @@ final class CompanionStore {
     /// 은 세지 않는다. 연출 재생용으로 재사용하면 이중 계수가 되니 그때는 적립을 떼낸다.
     private func fireCelebration(_ c: Celebration) {
         celebration = c; celebrationSeq += 1
-        if case .evolve = c { recordAchievement(.evolve, 1) }
+        if case .evolve = c {
+            recordAchievement(.evolve, 1)
+            recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。", eventID: "evolve")
+        }
     }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
     func consumeCelebration() { celebration = nil }
@@ -108,6 +111,8 @@ final class CompanionStore {
     private let provider: any PokeProviding
     private let clock: () -> Date
     private let fileURL: URL
+    let memoryAlbum: PokemonMemoryAlbum
+    let chatStore: PokemonChatStore
     private var rng: any RandomNumberGenerator
     private let dittoDisguiseRollingEnabled: Bool
     /// 세션 내 활성 개체 교체 감지용. await 뒤 이전 개체의 결과가 새 개체를 덮지 않게 한다.
@@ -116,6 +121,8 @@ final class CompanionStore {
     init(provider: any PokeProviding = PokeAPIClient.shared,
          clock: @escaping () -> Date = Date.init,
          fileURL: URL? = nil,
+         memoryAlbum: PokemonMemoryAlbum? = nil,
+         chatStore: PokemonChatStore? = nil,
          rng: any RandomNumberGenerator = SystemRandomNumberGenerator(),
          dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp) {
         self.provider = provider
@@ -125,8 +132,15 @@ final class CompanionStore {
         self.fileURL = fileURL ?? CompanionStorageLocations().stateURL
         // 디렉토리가 없으면 `save()` 의 `try?` 가 조용히 아무것도 안 쓴다 — 신규 설치와
         // 존재하지 않는 `PTB_STATE_DIR` 가 그 경로다. 상태 파일을 잡는 이 자리에서 한 번 만든다.
-        try? FileManager.default.createDirectory(at: self.fileURL.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
+        let directory = self.fileURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // 대화·기억은 상태 파일 **옆에** 산다. 주입된 URL 은 명시적 테스트/임베딩 계약이므로
+        // 그 디렉토리를 따라가야 한다 — 기본 위치로 새면 테스트가 실제 사용자 파일을 건드린다.
+        self.memoryAlbum = memoryAlbum
+            ?? PokemonMemoryAlbum(fileURL: directory.appendingPathComponent(CompanionStorageLocations.memoryFileName))
+        self.chatStore = chatStore
+            ?? PokemonChatStore(fileURL: directory.appendingPathComponent(CompanionStorageLocations.chatFileName),
+                                album: self.memoryAlbum)
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
@@ -312,6 +326,47 @@ final class CompanionStore {
         return line.localizedName(a.currentID, state.language)
     }
     var currentNickname: String? { state.active?.nickname }
+    /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
+    func chatProfile(for mon: MonState) -> PokemonChatProfile {
+        let speciesName = mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
+        // currentTypes/displayedMoves are presentation caches for the active species. A boxed mon can ask
+        // for a profile while those caches still belong to another species, so assemble individual data
+        // from MonState and reuse the tagged type cache only when the requested species owns it.
+        let types = mon.currentID == currentSpeciesID ? currentTypes.map { $0.name(language) } : []
+        return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
+                                  isShiny: mon.isShiny,
+                                  nature: mon.nature?.name(language), level: mon.level,
+                                  stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
+                                  flavorText: nil, language: language,
+                                  types: types,
+                                  moves: mon.learnedMoves.map { $0.name(language) },
+                                  nextEvolution: nextEvolutionName(for: mon))
+    }
+
+    /// 대화가 동료를 지목하는 **유일한** 방법. 모델에게 UUID 를 문자열로 넘기면 그게 곧 임의 문자열
+    /// 인자다 — 대신 안정된 인덱스를 찍어 주고, 그 인덱스로만 교체를 받는다.
+    ///
+    /// 순서는 `ownedMons`(활성이 0번, 나머지는 박스 순서)를 그대로 따른다. 도구가 자기만의 정렬을
+    /// 만들면 `roster.list` 가 찍은 번호와 `companion.switch` 가 세는 번호가 갈린다.
+    struct ChatRosterEntry: Equatable, Sendable {
+        let index: Int
+        let id: UUID
+        let name: String
+        let level: Int
+        let isActive: Bool
+    }
+
+    var chatRosterEntries: [ChatRosterEntry] {
+        ownedMons.enumerated().map { index, mon in
+            ChatRosterEntry(index: index, id: mon.id,
+                            name: chatProfile(for: mon).nickname ?? chatProfile(for: mon).displayName,
+                            level: mon.level, isActive: mon.id == activeMonID)
+        }
+    }
+
+    /// 진화 도구가 "정말 한 단계 올라갔는가" 를 사실로 돌려주기 위한 값.
+    var activeStageIndex: Int? { state.active?.stageIndex }
+
     private func nextEvolutionName(for mon: MonState) -> String? {
         guard let node = currentLine?.tree.node(withID: mon.currentID), let next = node.children.first else { return nil }
         return currentLine?.localizedName(next.speciesID, language)
@@ -729,8 +784,12 @@ final class CompanionStore {
     var activeSecondsToday: Double { state.activeSecondsToday }
     var activeSecondsTotal: Double { state.activeSecondsTotal }
 
-    // MARK: 모험
+    // MARK: 기억·모험
 
+    private func recordEventMemory(_ ko: String, _ en: String, _ ja: String, eventID: String) {
+        guard let mon = state.active else { return }
+        memoryAlbum.record(companionID: mon.id, body: l.t(ko, en, ja), source: .event, eventID: eventID)
+    }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
     /// "지금 나가 있는 중" — 끝났지만 아직 정산 안 된 모험은 포함하지 않는다.
@@ -818,6 +877,7 @@ final class CompanionStore {
             repeatElement(now.addingTimeInterval(Self.storedEggHatchDelay), count: acceptedEggs))
         reward.eggFragments = fragments
         reward.bonusEggs = earnedEggs
+        recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。", eventID: "adventure-claim")
         state.adventureHistory.insert(AdventureRecord(id: run.id, zone: run.zone,
                                                        companionSpeciesID: run.companionSpeciesID,
                                                        completedAt: now, stardust: reward.starPieces,
@@ -1015,6 +1075,8 @@ final class CompanionStore {
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return false }
         let released = state.boxedMons.remove(at: index)
         AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
+        memoryAlbum.deleteAll(for: released.id)
+        chatStore.deleteSession(for: released.id)
         save()
         return true
     }
@@ -1029,7 +1091,9 @@ final class CompanionStore {
 
         let received = incoming
         if state.active?.id == offeredID {
-            guard state.active != nil else { return false }
+            guard let sent = state.active else { return false }
+            memoryAlbum.deleteAll(for: sent.id)
+            chatStore.deleteSession(for: sent.id)
             state.active = received
             activeGeneration += 1
             currentLine = nil
@@ -1043,6 +1107,9 @@ final class CompanionStore {
             return true
         }
         guard let index = state.boxedMons.firstIndex(where: { $0.id == offeredID }) else { return false }
+        let sent = state.boxedMons[index]
+        memoryAlbum.deleteAll(for: sent.id)
+        chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
         save()
         return true
@@ -2122,6 +2189,7 @@ final class CompanionStore {
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
         let name = line.localizedName(line.baseID, state.language)
+        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。", eventID: "hatch")
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
@@ -2456,6 +2524,9 @@ final class CompanionStore {
     func applySave(_ envelope: SaveEnvelope) throws {
         try backupStateBeforeImport()
         state = SaveTransfer.rebasedForThisDevice(envelope.state, current: state)
+        let validIDs = Set(([state.active].compactMap { $0 } + state.boxedMons).map(\.id))
+        memoryAlbum.prune(validCompanionIDs: validIDs)
+        chatStore.prune(validCompanionIDs: validIDs)
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
         // 않으면 먼저 떠 있던 라인 로드가 완료되며 새로 불러온 개체를 덮어쓴다.
         activeGeneration += 1
@@ -2480,14 +2551,19 @@ final class CompanionStore {
     /// 상황에서 되돌릴 대상이 사라진다. 불러올 때마다 새 슬롯을 쓰고 오래된 것부터 정리한다.
     @discardableResult
     private func backupStateBeforeImport() throws -> URL {
-        guard let stateData = try? JSONEncoder().encode(state) else { throw SaveTransferError.backupFailed }
+        guard let stateData = try? JSONEncoder().encode(state),
+              let memoryData = try? memoryAlbum.snapshotData(),
+              let chatData = try? chatStore.snapshotData() else { throw SaveTransferError.backupFailed }
         let dir = fileURL.deletingLastPathComponent()
-        let backup = dir.appendingPathComponent(SaveTransfer.backupFileName(date: clock()))
+        let names = SaveTransfer.importBackupFileNames(date: clock())
+        let backup = dir.appendingPathComponent(names.state)
+        let targets = [(backup, stateData), (dir.appendingPathComponent(names.memory), memoryData),
+                       (dir.appendingPathComponent(names.chat), chatData)]
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try stateData.write(to: backup, options: .atomic)
+            for (url, data) in targets { try data.write(to: url, options: .atomic) }
         } catch {
-            try? FileManager.default.removeItem(at: backup)
+            for (url, _) in targets { try? FileManager.default.removeItem(at: url) }
             AppLog.write("save import aborted — backup write failed: \(error)")
             throw SaveTransferError.backupFailed
         }
@@ -2495,14 +2571,22 @@ final class CompanionStore {
         return backup
     }
 
-    /// 오래된 백업부터 지우고 최근 `backupsToKeep` 개만 남긴다. 파일명 접미가 초 단위 타임스탬프라
-    /// 사전순 정렬이 곧 시간순이다.
+    /// 세 파일을 한 묶음으로 유지한다 — 한쪽만 살아남으면 되돌릴 때 상태와 대화가 어긋난다.
+    /// 파일명 접미가 초 단위 타임스탬프라 사전순 정렬이 곧 시간순이다.
     private func pruneImportBackups(in dir: URL) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
-        let backups = names.filter { $0.hasPrefix(SaveTransfer.backupFilePrefix) }.sorted()
-        guard backups.count > SaveTransfer.backupsToKeep else { return }
-        for stale in backups.dropLast(SaveTransfer.backupsToKeep) {
-            try? FileManager.default.removeItem(at: dir.appendingPathComponent(stale))
+        let stateNames = names.filter { $0.hasPrefix(SaveTransfer.backupFilePrefix) }.sorted()
+        let complete = stateNames.filter { state in
+            let stamp = state.replacingOccurrences(of: SaveTransfer.backupFilePrefix, with: "")
+            return names.contains(SaveTransfer.memoryBackupFilePrefix + stamp)
+                && names.contains(SaveTransfer.chatBackupFilePrefix + stamp)
+        }
+        guard complete.count > SaveTransfer.backupsToKeep else { return }
+        for stale in complete.dropLast(SaveTransfer.backupsToKeep) {
+            let stamp = stale.replacingOccurrences(of: SaveTransfer.backupFilePrefix, with: "")
+            for name in [stale, SaveTransfer.memoryBackupFilePrefix + stamp, SaveTransfer.chatBackupFilePrefix + stamp] {
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+            }
         }
     }
 

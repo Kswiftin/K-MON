@@ -101,12 +101,12 @@ jobs:
       - name: Verify embedded updater and app signature
         run: |
           test -d build/Pokédoro.app/Contents/Frameworks/Sparkle.framework
-          codesign --verify --deep --strict --verbose=2 build/Pokédoro.app
           otool -L build/Pokédoro.app/Contents/MacOS/PokeTokenBar | grep -F '@rpath/Sparkle.framework'
           /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' build/Pokédoro.app/Contents/Info.plist >/dev/null
           test -n "$(/usr/libexec/PlistBuddy -c 'Print :KMONGitHubOAuthClientID' build/Pokédoro.app/Contents/Info.plist)"
-          ! codesign -d --verbose=4 build/Pokédoro.app 2>&1 | grep -F 'Signature=adhoc'
-          codesign -d -r- build/Pokédoro.app 2>&1 | grep -F 'certificate leaf = H'
+          # 서명 신원 검사는 로컬 빌드와 같은 한 벌을 쓴다. 여기에 grep 을 다시 적으면
+          # 두 벌이 되어, 한쪽만 느슨해져도 아무것도 안 깨진다.
+          ./scripts/verify-signing-identity.sh build/Pokédoro.app
 
       - name: Package and generate signed appcast
         env:
