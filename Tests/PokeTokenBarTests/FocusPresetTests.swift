@@ -57,10 +57,11 @@ final class FocusPresetTests: XCTestCase {
         let store = makeStore()
         await store.hatch(baseID: 25)
         let timer = FocusTimer()
-        let start = Date(timeIntervalSince1970: 1_000)
 
+        // 대화 경로는 시작 시각을 인자로 받지 않는다(실제 `Date()`). 그래서 tick 도 실제 시각
+        // 기준으로 미래를 준다 — 고정 시각을 주면 이미 지난 시각이라 tick 이 아무 일도 안 한다.
         XCTAssertTrue(timer.startFocusSession(minutes: 90, companion: store))
-        timer.tick(now: start.addingTimeInterval(10 * 365 * 24 * 60 * 60))
+        timer.tick(now: Date().addingTimeInterval(91 * 60))
 
         XCTAssertEqual(timer.phase, .rest)
         XCTAssertEqual(timer.restMinutes, 15)

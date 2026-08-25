@@ -12,6 +12,11 @@ enum AdventureZone: String, Codable, Sendable, CaseIterable, Identifiable {
     var symbol: String {
         switch self { case .forest: "leaf.fill"; case .cave: "mountain.2.fill"; case .coast: "water.waves" }
     }
+    /// 집중 세션 길이가 정하는 모험지. 이 판정이 두 곳(보상 배수·모험 생성)에 복사돼 있던 동안
+    /// 한쪽만 고치면 "숲으로 보내 놓고 동굴 보상" 같은 어긋남이 조용히 생길 수 있었다.
+    static func forFocus(minutes: Int) -> AdventureZone {
+        minutes >= 90 ? .coast : (minutes >= 50 ? .cave : .forest)
+    }
 }
 
 struct AdventureRun: Codable, Sendable, Equatable, Identifiable {
@@ -66,10 +71,25 @@ enum FocusRewardRules {
     }
 
     /// 25/50/90분 기준 알 확률 1%/3%/7%. roll은 0..<10,000.
+    /// 25분 미만은 계단이 아니라 **분당 비례**(4bp/분)다 — 계단으로 두면 15분 세션도 1% 라
+    /// 15분을 네 번 도는 게 25분을 2.4번 도는 것보다 시간당 유리해져, 짧은 프리셋이 집중 도구가
+    /// 아니라 파밍 경로가 된다.
     static func eggChanceBasisPoints(minutes: Int) -> Int {
         if minutes >= 90 { return 700 }
         if minutes >= 50 { return 300 }
-        return 100
+        if minutes >= 25 { return 100 }
+        return max(1, minutes * 4)
+    }
+
+    /// 세션 길이 몫의 알 조각. 25분 미만은 0 — 위와 같은 이유다(계단을 그대로 두면 15분에도
+    /// 1개가 나가 시간당 4개가 되고, 25분은 2.4개다).
+    ///
+    /// 정산(`CompanionStore.claimAdventure`)과 화면 미리보기가 **같은 함수**를 쓴다. 두 벌이던
+    /// 동안 화면이 약속한 조각 수와 실제 지급이 각자 바뀔 수 있었다.
+    static func eggFragments(minutes: Int) -> Int {
+        if minutes >= 90 { return 6 }
+        if minutes >= 50 { return 3 }
+        return minutes >= 25 ? 1 : 0
     }
 
     static func reward(minutes: Int, roll: Int) -> FocusSessionReward {
@@ -90,8 +110,7 @@ struct AdventureRecord: Codable, Sendable, Equatable, Identifiable {
 enum AdventureRules {
     static func amounts(minutes: Int) -> (experience: Int, starPieces: Int) {
         let m = Double(max(1, minutes))
-        let multiplier = minutes >= 90 ? AdventureZone.coast.rewardMultiplier
-            : (minutes >= 50 ? AdventureZone.cave.rewardMultiplier : AdventureZone.forest.rewardMultiplier)
+        let multiplier = AdventureZone.forFocus(minutes: minutes).rewardMultiplier
         return (max(1, Int((m * 120_000 * multiplier).rounded())),
                 max(1, Int((m * 8 * multiplier).rounded())))
     }

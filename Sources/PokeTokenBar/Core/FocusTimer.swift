@@ -8,15 +8,21 @@ final class FocusTimer {
     private(set) var phase: FocusPhase = .idle
     private(set) var endsAt: Date?
     private(set) var completedSessions = 0
-    private(set) var focusMinutes = 25
+    private(set) var focusMinutes = FocusPreset.classic.minutes
+    /// 이번 세션이 끝나면 이어질 휴식 길이. 집중을 시작할 때 프리셋에서 정해 둔다 — `tick()` 이
+    /// 기본값 5분으로 휴식을 열던 동안 90분 세션 뒤에도 5분만 쉬었다.
+    private(set) var restMinutes = FocusPreset.classic.restMinutes
     private(set) var lastReward: FocusSessionReward?
     var onFocusCompleted: ((Int) -> FocusSessionReward)?
 
     var isRunning: Bool { phase != .idle && endsAt != nil }
 
-    func startFocus(minutes: Int = 25, now: Date = Date()) {
+    /// 휴식 길이는 인자로 받지 않는다 — 분에서 프리셋을 접어 함께 정한다. 두 값을 따로 받으면
+    /// 버튼 경로와 대화 경로가 각자 다른 조합을 넘길 수 있다.
+    func startFocus(minutes: Int = FocusPreset.classic.minutes, now: Date = Date()) {
         phase = .focus
         focusMinutes = max(1, minutes)
+        restMinutes = FocusPreset.nearest(toMinutes: focusMinutes).restMinutes
         endsAt = now.addingTimeInterval(TimeInterval(focusMinutes * 60))
     }
 
@@ -32,7 +38,7 @@ final class FocusTimer {
         if phase == .focus {
             completedSessions += 1
             lastReward = onFocusCompleted?(focusMinutes)
-            startRest(now: now)
+            startRest(minutes: restMinutes, now: now)
         } else {
             stop()
         }

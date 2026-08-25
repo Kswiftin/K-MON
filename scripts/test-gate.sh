@@ -25,6 +25,9 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/CompanionModel.swift"
   "Sources/PokeTokenBar/Core/CompanionStore.swift"
   "Sources/PokeTokenBar/Core/AdventureModel.swift"
+  # 집중 프리셋(길이·휴식 쌍)과 최근접 접기. 화면 피커와 대화 도구가 같은 목록을 보는지가 여기
+  # 달렸고, 배열에 안 넣으면 커버리지에서 아예 빠져 다음 프리셋을 추가할 때 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/FocusPreset.swift"
   "Sources/PokeTokenBar/Core/TrainerLevel.swift"
   "Sources/PokeTokenBar/Core/MissionBoard.swift"
   "Sources/PokeTokenBar/Core/AchievementLadder.swift"

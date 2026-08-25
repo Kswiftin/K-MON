@@ -163,9 +163,11 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(profile.ability, identity.ability)
     }
 
-    /// 상한은 1_600 → 2_100 → 2_500 으로 올랐다. 도구가 4종에서 10종이 되며 광고 줄이 여섯 개
-    /// 늘어 398자를 더 쓴다. **늘어난 만큼만** 올린다 — 넉넉히 잡으면 다음에 무엇이 새어 들어와도
-    /// 아무도 모른다. 도구를 더할 때 여기가 깨지는 건 정상이고, 깨진 만큼만 올리는 게 규칙이다.
+    /// 상한은 1_600 → 2_100 → 2_500 → 2_506 으로 올랐다. 도구가 4종에서 10종이 되며 광고 줄이
+    /// 여섯 개 늘어 398자를 더 썼고, 집중 프리셋이 다섯이 되며 `pokedoro.start` 의 길이 목록이
+    /// `<25|50|90>` 에서 `<15|20|25|50|90>` 으로 6자 늘었다. **늘어난 만큼만** 올린다 — 넉넉히
+    /// 잡으면 다음에 무엇이 새어 들어와도 아무도 모른다. 도구를 더하거나 인자 목록을 넓힐 때
+    /// 여기가 깨지는 건 정상이고, 깨진 만큼만 올리는 게 규칙이다.
     func testSystemPromptStaysWithinTheChatBudgetWithAFullIdentity() {
         var profile = PokemonChatProfile.fixture
         profile.apply(PokemonSpeciesIdentity(
@@ -178,7 +180,7 @@ final class PokemonChatTests: XCTestCase {
 
         let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
 
-        XCTAssertLessThanOrEqual(prompt.count, 2_500)
+        XCTAssertLessThanOrEqual(prompt.count, 2_506)
     }
 
     /// 페르소나 전용 DTO 는 `SpeciesDTO` 와 따로 산다 — `flavor_text_entries` 는 종 응답에서 가장 큰

@@ -21,8 +21,9 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
     case companionSwitch = "companion.switch"
     case memoryRecord = "memory.record"
 
-    /// 화면이 제시하는 집중 길이. 모델이 말한 값은 이 셋 중 가장 가까운 것으로 접힌다.
-    static let focusMinutes = [25, 50, 90]
+    /// 화면이 제시하는 집중 길이. 모델이 말한 값은 이 중 가장 가까운 것으로 접힌다.
+    /// 목록을 여기서 다시 적지 않는다 — `FocusPreset` 이 화면 피커와 이 프롬프트를 함께 먹인다.
+    static let focusMinutes = FocusPreset.allCases.map(\.minutes)
     /// 도감 번호 상한. 범위를 두는 이유는 주입이 아니라(인자는 이미 `Int` 다) 404 를 부르는
     /// 무의미한 왕복을 막기 위해서다.
     static let highestDexNumber = 1_025
@@ -224,7 +225,7 @@ enum PokemonChatToolParser {
     /// 왜 아무 일도 안 일어났는지 모른 채 같은 실수를 반복하기 때문이다. 승인 카드가 실제 분을
     /// 그대로 보여 주므로 사용자는 무엇을 켜는지 정확히 안다.
     private static func nearestFocusLength(to minutes: Int) -> Int {
-        PokemonChatTool.focusMinutes.min { abs($0 - minutes) < abs($1 - minutes) } ?? PokemonChatTool.focusMinutes[0]
+        FocusPreset.nearest(toMinutes: minutes).minutes
     }
 }
 

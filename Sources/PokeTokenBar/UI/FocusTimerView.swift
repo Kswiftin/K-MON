@@ -4,7 +4,7 @@ struct FocusTimerView: View {
     @Environment(FocusTimer.self) private var timer
     @Environment(AppSettings.self) private var settings
     @Environment(CompanionStore.self) private var companion
-    @State private var selectedMinutes = 25
+    @State private var selectedPreset = FocusPreset.classic
 
     var body: some View {
         @Bindable var settings = settings
@@ -73,26 +73,29 @@ struct FocusTimerView: View {
                     }
                 }
             } else {
-                Picker("", selection: $selectedMinutes) {
-                    // 대화의 `pokedoro.start` 도 같은 목록으로 인자를 접는다 — 두 벌이면 화면이
-                    // 제시하지 않는 길이를 도구만 켤 수 있게 된다.
-                    ForEach(PokemonChatTool.focusMinutes, id: \.self) { Text("\($0)m").tag($0) }
+                // 세그먼트 라벨은 분 숫자만 쓴다 — 팝오버 콘텐츠 폭이 332pt 라(`PopoverMetrics`)
+                // 다섯 칸에 이름까지 넣으면 en·ja 에서 압축된다. 이름과 휴식은 아래 캡션에 둔다.
+                // 대화의 `pokedoro.start` 도 `FocusPreset` 같은 목록으로 인자를 접는다 — 두 벌이면
+                // 화면이 제시하지 않는 길이를 도구만 켤 수 있게 된다.
+                Picker("", selection: $selectedPreset) {
+                    ForEach(FocusPreset.allCases) { Text("\($0.minutes)m").tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden()
+                Text(presetCaption(selectedPreset)).font(.caption2).foregroundStyle(.secondary)
                 HStack {
                     Button(companion.l.t("모험 보내고 집중 시작", "Send on adventure & focus", "冒険に送って集中開始")) {
-                        timer.startFocusSession(minutes: selectedMinutes, companion: companion)
+                        timer.startFocusSession(minutes: selectedPreset.minutes, companion: companion)
                     }
                     .buttonStyle(.borderedProminent).controlSize(.small)
                     // 진행 중일 때만 막는다. 끝난 모험은 시작 시 자동 정산되므로 여기서 잠그면
                     // 정산 전 상태에서 버튼이 영영 비활성이 된다(#8).
                     .disabled(!companion.hasActive || companion.isAdventureInProgress)
                     Spacer()
-                    Text(rewardText(selectedMinutes))
+                    Text(rewardText(selectedPreset.minutes))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 HStack {
-                    Text(eggChanceText(selectedMinutes)).font(.caption2).foregroundStyle(.secondary)
+                    Text(eggChanceText(selectedPreset.minutes)).font(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     Text(companion.l.focusStash(eggs: companion.focusEggCount,
                                                 fragments: companion.eggFragmentCount,
@@ -138,6 +141,21 @@ struct FocusTimerView: View {
         case .idle: companion.l.t("집중 타이머", "Focus timer", "集中タイマー")
         }
     }
+    /// 프리셋 이름 + 집중/휴식 분. 이름은 이 화면에서만 쓰므로 `L` 프로퍼티로 올리지 않는다.
+    private func presetCaption(_ preset: FocusPreset) -> String {
+        let l = companion.l
+        let name = switch preset {
+        case .warmup: l.t("워밍업", "Warm-up", "ウォームアップ")
+        case .sprint: l.t("스프린트", "Sprint", "スプリント")
+        case .classic: l.t("클래식", "Classic", "クラシック")
+        case .deep: l.t("딥워크", "Deep work", "ディープワーク")
+        case .longDeep: l.t("롱 딥워크", "Long deep work", "ロングディープ")
+        }
+        return l.t("\(name) · 집중 \(preset.minutes)분 · 휴식 \(preset.restMinutes)분",
+                   "\(name) · \(preset.minutes)m focus · \(preset.restMinutes)m break",
+                   "\(name) · 集中\(preset.minutes)分 · 休憩\(preset.restMinutes)分")
+    }
+
     private var focusHint: String { companion.l.t("완료 시 파트너 보상", "Partner reward on completion", "完了でパートナーに報酬") }
     private var restHint: String { companion.l.t("잠깐 쉬어가세요", "Take a short break", "少し休みましょう") }
     private func adventureText(_ minutes: Int) -> String {
@@ -151,7 +169,7 @@ struct FocusTimerView: View {
     }
     private func rewardText(_ minutes: Int) -> String {
         let reward = AdventureRules.amounts(minutes: minutes)
-        let fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
+        let fragments = FocusRewardRules.eggFragments(minutes: minutes)
         return "+\(GameNumberFormatter.compact(reward.experience)) EXP · +\(GameNumberFormatter.compact(reward.starPieces)) ⭐ · +\(fragments) 🧩"
     }
 }

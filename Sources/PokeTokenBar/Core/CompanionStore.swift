@@ -808,7 +808,7 @@ final class CompanionStore {
         claimAdventure()
         let now = clock()
         guard let speciesID = currentSpeciesID, state.adventure == nil else { return false }
-        let zone: AdventureZone = minutes >= 90 ? .coast : (minutes >= 50 ? .cave : .forest)
+        let zone = AdventureZone.forFocus(minutes: minutes)
         state.adventure = AdventureRun(zone: zone, startedAt: now,
                                        endsAt: now.addingTimeInterval(TimeInterval(max(1, minutes) * 60)),
                                        companionSpeciesID: speciesID)
@@ -853,7 +853,7 @@ final class CompanionStore {
         reward.seasonBonus = recordSeason(.focusMinutes, minutes) + recordSeason(.adventures, 1)
         // 업적도 **정산된** 분만 센다. 세 시작 경로가 모두 여기를 지나니 훅은 이 한 줄이다.
         reward.achievementBonus = recordAchievement(.focus, minutes)
-        var fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
+        var fragments = FocusRewardRules.eggFragments(minutes: minutes)
         let today = Self.dayKey(now)
         if state.lastAdventureBonusDate != today {
             state.lastAdventureBonusDate = today
