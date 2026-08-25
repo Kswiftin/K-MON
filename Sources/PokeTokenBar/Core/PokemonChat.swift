@@ -139,6 +139,20 @@ struct PokemonChatSession: Codable, Sendable, Equatable {
     }
 }
 
+enum PokemonChatActionState: String, Sendable { case pending, approved, rejected, executed, failed }
+
+/// 승인 대기 중인 도구 호출 하나. 개체 ID 를 들고 다니는 이유는, 카드가 떠 있는 사이 사용자가
+/// 동행을 바꿔도 실행이 **제안이 지목한 개체**로만 가게 하기 위해서다.
+struct PokemonChatToolProposal: Sendable, Identifiable, Equatable {
+    var id = UUID()
+    let call: PokemonChatToolCall
+    let companionID: UUID
+    private(set) var state: PokemonChatActionState = .pending
+    mutating func approve() { guard state == .pending else { return }; state = .approved }
+    mutating func reject() { guard state == .pending else { return }; state = .rejected }
+    mutating func finish(success: Bool) { guard state == .approved else { return }; state = success ? .executed : .failed }
+}
+
 struct PokemonChatRequest: Sendable {
     let profile: PokemonChatProfile
     /// Kept for backwards-compatible saved callers; durable memories are the only relationship
@@ -170,6 +184,9 @@ struct PokemonChatRequest: Sendable {
         ONLY discuss Pokédex information, this Pokémon's known species traits, and the companion information supplied above.
         Never offer coding, file, terminal, web research, project work, tool use, or general AI assistance. If asked, briefly say you can only help with Pokédex and companion information, then redirect to a relevant Pokémon topic.
         Do not invent abilities, lore, or game-state changes that were not supplied.
+        When you need a Pokédex fact you were not given, or the trainer asks about the Pokédoro focus timer, end your reply with exactly one tag:
+        \(PokemonChatTool.allCases.map(\.promptLine).joined(separator: "\n"))
+        Those tags are the only actions that exist for you. You cannot read files, run commands, browse the web, or write code, and you must never mention the tags themselves.
         """
     }
 
@@ -474,6 +491,10 @@ final class PokemonChatStore {
     private(set) var outstandingSendCount = 0
     var isSending: Bool { outstandingSendCount > 0 }
     private(set) var errorMessage: String?
+    private(set) var pendingProposal: PokemonChatToolProposal?
+    /// 한 번의 전송이 CLI 를 띄우는 최대 추가 횟수. 상한이 없으면 매 턴 도구를 부르는 모델에
+    /// 한 문장이 무한 왕복이 된다.
+    static let maxToolRounds = 2
     private let fileURL: URL
     let album: PokemonMemoryAlbum
 
@@ -503,24 +524,82 @@ final class PokemonChatStore {
         session.updatedAt = Date(); sessions[companionID] = session; save()
     }
 
-    func send(_ body: String, for companionID: UUID, profile: PokemonChatProfile, provider: any PokemonChatProviding) async {
+    func send(_ body: String, for companionID: UUID, profile: PokemonChatProfile,
+              provider: any PokemonChatProviding,
+              toolbox: (any PokemonChatToolRunning)? = nil) async {
         guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         appendLocalMessage(body, for: companionID, profile: profile)
-        guard let session = sessions[companionID] else { return }
+        guard sessions[companionID] != nil else { return }
         outstandingSendCount += 1; errorMessage = nil
         defer { outstandingSendCount -= 1 }
         do {
-            let reply = try await provider.reply(to: PokemonChatRequest(profile: profile, memories: Array(album.entries(for: companionID).suffix(8)), recentMessages: Array(session.messages.suffix(12))))
+            // 도구 결과는 이 배열에만 실린다 — 대화 기록에 넣으면 사용자가 기계 문자열을 읽는다.
+            var toolResults: [PokemonChatMessage] = []
+            var reply = ""
+            var call: PokemonChatToolCall?
+            // 왕복 한 벌만 둔다. 범위와 "마지막인가" 판정이 각각 숫자를 들면 서로를 가려서,
+            // 한쪽을 넓혀도 아무 테스트가 안 깨진다.
+            let rounds = 0...Self.maxToolRounds
+            for round in rounds {
+                guard let session = sessions[companionID] else { return }
+                let request = PokemonChatRequest(profile: profile,
+                                                 memories: Array(album.entries(for: companionID).suffix(8)),
+                                                 recentMessages: Array(session.messages.suffix(12)) + toolResults)
+                let parsed = PokemonChatToolParser.parse(try await provider.reply(to: request))
+                reply = parsed.body
+                call = parsed.call
+                // 승인이 필요한 도구는 여기서 멈춘다. 사용자가 누르기 전에 다시 물으면 승인이 무의미하다.
+                guard let pending = parsed.call, let toolbox, !pending.needsApproval else { break }
+                // 마지막 요청 뒤의 실행은 결과를 전할 턴이 없다 — 부작용만 남기고 끝난다.
+                guard round != rounds.upperBound else { break }
+                toolResults.append(PokemonChatMessage(role: .system, body: await toolbox.run(pending).line))
+            }
+
             let safeReply = PokemonChatReplyGuard.sanitized(reply, profile: profile)
             guard var current = sessions[companionID] else { return }
             current.refreshIdentity(speciesID: profile.speciesID, displayName: profile.displayName)
             current.messages.append(PokemonChatMessage(role: .pokemon, body: safeReply)); current.messages = Array(current.messages.suffix(200))
+            // 가드가 답변을 갈아치웠다면 그 답변이 딸고 온 제안도 사용자의 의도와 무관하다.
+            if safeReply == reply, let call, call.needsApproval {
+                pendingProposal = PokemonChatToolProposal(call: call, companionID: companionID)
+            }
             if current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""
                 if !candidate.isEmpty { album.record(companionID: companionID, body: candidate, source: .conversation) }
             }
             current.updatedAt = Date(); sessions[companionID] = current; save()
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    #if DEBUG
+    /// 테스트 전용 — 승인 카드가 뜬 상태를 프로바이더 왕복 없이 만든다.
+    func proposeForTesting(_ call: PokemonChatToolCall, companionID: UUID) {
+        pendingProposal = PokemonChatToolProposal(call: call, companionID: companionID)
+    }
+    #endif
+
+    /// 승인 절차를 SwiftUI 밖에 두고, 실행을 제안이 지목한 개체 ID 에 묶는다. 실행기를 명시적으로
+    /// 받는 이유는 눈에 보이는 카드가 나중에 활성이 된 다른 개체를 겨냥할 수 없게 하기 위해서다.
+    func resolvePending(approved: Bool, profile: PokemonChatProfile,
+                        executor: (PokemonChatToolCall, UUID) async -> Bool) async {
+        await resolvePending(approved: approved, profileForCompanion: { _ in profile }, executor: executor)
+    }
+
+    func resolvePending(approved: Bool, profileForCompanion: (UUID) -> PokemonChatProfile,
+                        executor: (PokemonChatToolCall, UUID) async -> Bool) async {
+        guard var proposal = pendingProposal, proposal.state == .pending else { return }
+        let profile = profileForCompanion(proposal.companionID)
+        var success = false
+        if approved {
+            proposal.approve()
+            success = await executor(proposal.call, proposal.companionID)
+            proposal.finish(success: success)
+        } else {
+            proposal.reject()
+        }
+        pendingProposal = nil
+        appendSystemMessage(proposal.call.outcome(approved: approved, success: success, language: profile.language),
+                            for: proposal.companionID, profile: profile)
     }
 
     func startNewSession(for companionID: UUID, profile: PokemonChatProfile) {

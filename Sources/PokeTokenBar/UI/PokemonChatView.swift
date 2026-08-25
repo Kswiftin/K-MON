@@ -5,6 +5,7 @@ struct PokemonChatView: View {
     let companionID: UUID
     let chat: PokemonChatStore
     let album: PokemonMemoryAlbum
+    let toolbox: any PokemonChatToolRunning
     @State private var identity: PokemonSpeciesIdentity?
     @State private var draft = ""
     @State private var destination: Destination?
@@ -12,11 +13,13 @@ struct PokemonChatView: View {
 
     private enum Destination: String, Identifiable { case album, dailyDex; var id: String { rawValue } }
 
-    init(store: CompanionStore, companionID: UUID, chat: PokemonChatStore? = nil, album: PokemonMemoryAlbum? = nil) {
+    init(store: CompanionStore, companionID: UUID, chat: PokemonChatStore? = nil,
+         album: PokemonMemoryAlbum? = nil, toolbox: any PokemonChatToolRunning) {
         self.store = store
         self.companionID = companionID
         self.chat = chat ?? store.chatStore
         self.album = album ?? store.memoryAlbum
+        self.toolbox = toolbox
     }
     private var baseProfile: PokemonChatProfile {
         store.ownedMons.first(where: { $0.id == companionID }).map(store.chatProfile(for:))
@@ -80,6 +83,7 @@ struct PokemonChatView: View {
                     else if let id = chat.messages(for: companionID).last?.id { proxy.scrollTo(id, anchor: .bottom) }
                 }
             }
+            proposalCard
             if let error = chat.errorMessage { Text(error).font(.caption2).foregroundStyle(.red).padding(.horizontal, 12) }
             Divider()
             HStack(alignment: .bottom, spacing: 8) {
@@ -164,10 +168,36 @@ struct PokemonChatView: View {
     }
     private var dailyDexQuestion: String { l.t("오늘의 도감을 보여 줘", "Show today’s Pokédex", "今日の図鑑を見せて") }
 
+    /// 상태를 바꾸는 도구는 여기를 지나야만 실행된다. 카드가 실제 인자(분 수)를 그대로 보여 주므로
+    /// 사용자는 무엇을 켜는지 정확히 알고 누른다.
+    @ViewBuilder private var proposalCard: some View {
+        if let proposal = chat.pendingProposal, proposal.companionID == companionID, proposal.state == .pending {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(proposal.call.approvalQuestion(profile.language)).font(.callout)
+                HStack {
+                    Button(l.t("승인", "Approve", "承認")) { resolve(approved: true) }.buttonStyle(.borderedProminent)
+                    Button(l.t("거절", "Reject", "断る")) { resolve(approved: false) }.buttonStyle(.bordered)
+                }
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 12)
+        }
+    }
+
+    /// 승인된 호출도 루프와 **같은 실행기**로 간다. 뷰에 스위치를 한 벌 더 두면 두 경로가 갈라진다.
+    private func resolve(approved: Bool) {
+        Task {
+            await chat.resolvePending(approved: approved, profileForCompanion: profileForOwner) { call, _ in
+                await toolbox.run(call).succeeded
+            }
+        }
+    }
+
     private func send() {
         guard let provider else { return }
         let message = draft; draft = ""
-        Task { await chat.send(message, for: companionID, profile: profile, provider: provider) }
+        Task { await chat.send(message, for: companionID, profile: profile, provider: provider, toolbox: toolbox) }
     }
 
     private func profileForOwner(_ id: UUID) -> PokemonChatProfile {

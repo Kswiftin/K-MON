@@ -110,7 +110,7 @@ final class PokemonChatToolTests: XCTestCase {
         chat.proposeForTesting(.pokedoroStart(minutes: 25), companionID: owner)
 
         var executedFor: [UUID] = []
-        chat.resolvePending(approved: true, profile: .toolFixture) { _, id in
+        await chat.resolvePending(approved: true, profile: .toolFixture) { _, id in
             executedFor.append(id); return true
         }
 
@@ -119,15 +119,43 @@ final class PokemonChatToolTests: XCTestCase {
     }
 
     /// 거절하면 아무것도 실행되지 않는다.
-    func testRejectedTimerCallNeverReachesTheExecutor() {
+    func testRejectedTimerCallNeverReachesTheExecutor() async {
         let chat = PokemonChatStore(fileURL: temporaryURL())
         chat.proposeForTesting(.pokedoroStop, companionID: UUID())
 
         var executed = false
-        chat.resolvePending(approved: false, profile: .toolFixture) { _, _ in executed = true; return true }
+        await chat.resolvePending(approved: false, profile: .toolFixture) { _, _ in executed = true; return true }
 
         XCTAssertFalse(executed)
         XCTAssertNil(chat.pendingProposal)
+    }
+
+    /// 승인 카드와 결과 문구는 세 언어 모두에서 사람 문장이다. enum 슬러그가 새면 사용자는
+    /// 자기가 무엇을 켜는지 모른 채 누르게 된다.
+    func testApprovalTextIsHumanInEveryLanguageAndNeverLeaksASlug() {
+        let slugs = Set(PokemonChatTool.allCases.map(\.rawValue))
+        let calls: [PokemonChatToolCall] = [.pokedoroStart(minutes: 25), .pokedoroStop,
+                                            .pokedoroStatus, .pokedexLookup(speciesID: 25)]
+        for language in [AppLanguage.ko, .en, .ja] {
+            var lines: [String] = []
+            for call in calls {
+                lines.append(call.approvalQuestion(language))
+                lines.append(call.outcome(approved: true, success: true, language: language))
+                lines.append(call.outcome(approved: true, success: false, language: language))
+                lines.append(call.outcome(approved: false, success: false, language: language))
+            }
+            XCTAssertFalse(lines.contains { $0.isEmpty }, "\(language.rawValue) 에 빈 문구가 있다")
+            XCTAssertFalse(lines.contains { line in slugs.contains(where: line.contains) },
+                           "\(language.rawValue): \(lines)")
+        }
+
+        // 승인·거절·실패는 서로 다른 문장이어야 한다 — 같으면 눌러도 무슨 일이 났는지 알 수 없다.
+        let start = PokemonChatToolCall.pokedoroStart(minutes: 25)
+        XCTAssertEqual(Set([start.outcome(approved: true, success: true, language: .ko),
+                            start.outcome(approved: true, success: false, language: .ko),
+                            start.outcome(approved: false, success: false, language: .ko)]).count, 3)
+        // 실제 인자가 문장에 실린다 — 25분 승인이 50분을 켜는 걸 사용자가 볼 수 있어야 한다.
+        XCTAssertTrue(PokemonChatToolCall.pokedoroStart(minutes: 50).approvalQuestion(.ko).contains("50"))
     }
 
     // MARK: 루프
@@ -142,6 +170,19 @@ final class PokemonChatToolTests: XCTestCase {
 
         let calls = await provider.callCount
         XCTAssertEqual(calls, PokemonChatStore.maxToolRounds + 1)
+    }
+
+    /// 마지막 왕복에서는 도구를 돌리지 않는다 — 결과를 전할 턴이 남지 않은 실행은 부작용만 남긴다.
+    /// (상한 자체는 위 테스트가 지킨다. 이건 "상한에 걸린 턴에 무엇을 하는가" 라는 다른 성질이다.)
+    func testTheLastRoundDoesNotRunAToolItCannotReportBack() async {
+        let chat = PokemonChatStore(fileURL: temporaryURL())
+        let toolbox = CountingToolbox()
+
+        await chat.send("계속 확인해 줘", for: UUID(), profile: .toolFixture,
+                        provider: CountingToolProvider(reply: "확인할게. [[tool:pokedoro.status]]"),
+                        toolbox: toolbox)
+
+        XCTAssertEqual(toolbox.runCount, PokemonChatStore.maxToolRounds)
     }
 
     /// 도구 결과는 모델에게만 간다. 대화 기록에 넣으면 사용자가 기계 문자열을 읽게 된다.
@@ -210,6 +251,68 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertNil(store.activeAdventure)
     }
 
+    // MARK: 실물 실행기
+
+    /// 상태 문자열은 타이머가 **실제로 움직인 결과**를 읽는다 — 요청한 값을 되읽으면 실행이
+    /// 실패해도 성공처럼 보인다.
+    func testTheToolboxReportsTheTimerStateItActuallyMoved() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let timer = FocusTimer()
+        let toolbox = PokemonChatToolbox(timer: timer, companion: store, lookup: Self.emptyLookup)
+
+        let idle = await toolbox.run(.pokedoroStatus)
+        XCTAssertTrue(idle.line.contains("state=idle"), idle.line)
+
+        let started = await toolbox.run(.pokedoroStart(minutes: 50))
+        XCTAssertTrue(started.succeeded)
+        XCTAssertTrue(started.line.contains("state=focus"), started.line)
+        XCTAssertEqual(timer.focusMinutes, 50)
+        XCTAssertNotNil(store.activeAdventure)
+
+        let stopped = await toolbox.run(.pokedoroStop)
+        XCTAssertTrue(stopped.succeeded)
+        XCTAssertTrue(stopped.line.contains("state=idle"), stopped.line)
+        XCTAssertNil(store.activeAdventure)
+    }
+
+    /// 모험을 못 나가면 시작은 거절이고, 거절은 상태 문자열이 아니라 거절로 보여야 한다.
+    func testTheToolboxSaysSoWhenAFocusSessionCannotStart() async {
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: makeCompanionStore(),
+                                         lookup: Self.emptyLookup)
+
+        let refused = await toolbox.run(.pokedoroStart(minutes: 25))
+        XCTAssertFalse(refused.succeeded, "거절이 성공으로 보고되면 승인 카드가 실패를 침묵으로 만든다")
+        XCTAssertEqual(refused.line, "pokedoro start refused")
+    }
+
+    /// 도감 조회는 받은 사실만 싣는다. 빈 조회를 빈 줄로 돌려주면 모델이 침묵을 사실로 읽는다.
+    func testTheToolboxTurnsASpeciesLookupIntoFactsOrSaysItHasNone() async {
+        let store = makeCompanionStore()
+        let full = PokemonChatToolbox(timer: FocusTimer(), companion: store) { _, language in
+            PokemonSpeciesIdentity(genera: ["ko": "쥐포켓몬"], habitatSlug: "forest",
+                                   flavorTexts: ["ko": "전기를 볼에 저장한다."],
+                                   abilityNames: ["ko": "정전기"], abilityTexts: [:], language: language)
+        }
+
+        let found = await full.run(.pokedexLookup(speciesID: 25))
+        XCTAssertTrue(found.succeeded)
+        XCTAssertTrue(found.line.contains("#25"), found.line)
+        XCTAssertTrue(found.line.contains("genus=쥐포켓몬"), found.line)
+        XCTAssertTrue(found.line.contains("habitat=숲"), found.line)
+        XCTAssertTrue(found.line.contains("entry=전기를 볼에 저장한다."), found.line)
+
+        let empty = PokemonChatToolbox(timer: FocusTimer(), companion: store, lookup: Self.emptyLookup)
+        let blank = await empty.run(.pokedexLookup(speciesID: 999))
+        XCTAssertFalse(blank.succeeded)
+        XCTAssertEqual(blank.line, "pokedex #999 unavailable")
+    }
+
+    private static let emptyLookup: (Int, AppLanguage) async -> PokemonSpeciesIdentity = { _, language in
+        PokemonSpeciesIdentity(genera: [:], habitatSlug: nil, flavorTexts: [:],
+                               abilityNames: [:], abilityTexts: [:], language: language)
+    }
+
     private func temporaryURL() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-tool-\(UUID().uuidString).json")
     }
@@ -248,13 +351,21 @@ private actor ScriptedToolProvider: PokemonChatProviding {
     }
 }
 
+@MainActor
+private final class CountingToolbox: PokemonChatToolRunning {
+    private(set) var runCount = 0
+    func run(_ call: PokemonChatToolCall) async -> (line: String, succeeded: Bool) {
+        runCount += 1; return ("pokedoro state=idle", true)
+    }
+}
+
 private struct StubToolbox: PokemonChatToolRunning {
     var status = "pokedoro state=idle"
-    func run(_ call: PokemonChatToolCall) async -> String {
+    func run(_ call: PokemonChatToolCall) async -> (line: String, succeeded: Bool) {
         switch call {
-        case .pokedoroStatus: return status
-        case .pokedexLookup(let id): return "pokedex #\(id)"
-        case .pokedoroStart, .pokedoroStop: return "unreachable — approval gated"
+        case .pokedoroStatus: return (status, true)
+        case .pokedexLookup(let id): return ("pokedex #\(id)", true)
+        case .pokedoroStart, .pokedoroStop: return ("unreachable — approval gated", false)
         }
     }
 }
