@@ -352,23 +352,69 @@ enum PokemonChatProviderSafety {
 
 /// Resolves only an explicit, executable file.  GUI applications must not inherit a shell PATH.
 enum PokemonChatProviderExecutableResolver {
-    static func executableURL(for kind: PokemonChatProviderKind) -> URL? {
-        guard PokemonChatProviderSafety.arguments(for: kind) != nil else { return nil }
-        let override = UserDefaults.standard.string(forKey: "pokemonChatExecutablePath.\(kind.rawValue)")
-        if let override, let url = validated(URL(fileURLWithPath: override)) { return url }
-        for path in standardPaths(for: kind) {
-            if let url = validated(URL(fileURLWithPath: path)) { return url }
-        }
-        return nil
-    }
-    static func standardPaths(for kind: PokemonChatProviderKind) -> [String] {
+    /// CLI 가 실제로 설치되는 자리. **종류별로 목록을 따로 두지 않는다** — 두 벌이면 새 설치 자리가
+    /// 한쪽에만 들어가 다른 CLI 는 영영 못 찾는다. 이름만 갈아 끼운다.
+    ///
+    /// 순서는 우선순위다. 사용자 홈 설치분이 앞에 오는 이유는, 그게 사용자가 방금 설치해 `which` 가
+    /// 가리키는 것이기 때문이다 — 시스템 자리에 남은 옛 사본이 그걸 가려서는 안 된다.
+    static let searchDirectories: [String] = [
+        "~/.local/bin",        // npm/uv 사용자 설치 — 자동 탐색이 여기를 빠뜨려 대화가 통째로 죽어 있었다
+        "~/.claude/local",     // Claude Code 자체 설치 관리자
+        "/opt/homebrew/bin",   // Homebrew (Apple Silicon)
+        "/usr/local/bin",      // Homebrew (Intel) · 수동 설치
+        "~/.bun/bin",
+        "~/.volta/bin",
+        "~/.npm-global/bin",
+        "~/.cargo/bin",
+        "~/.asdf/shims",
+        "~/.mise/shims",
+        "~/.deno/bin",
+        "/opt/local/bin",      // MacPorts
+        "/usr/bin",
+    ]
+
+    /// ponytail: nvm(`~/.nvm/versions/node/<버전>/bin`)처럼 경로에 버전이 박히는 관리자는 글롭이
+    /// 필요해 넣지 않았다. 설정의 직접 입력이 그 경우를 덮는다 — 필요해지면 여기에 글롭을 더한다.
+    static func binaryName(for kind: PokemonChatProviderKind) -> String? {
         switch kind {
-        case .codex: return ["/usr/local/bin/codex", "/opt/homebrew/bin/codex", "/usr/bin/codex"]
-        case .claude: return ["/usr/local/bin/claude", "/opt/homebrew/bin/claude", "/usr/bin/claude"]
-        case .opencode, .custom: return []
+        case .codex: return "codex"
+        case .claude: return "claude"
+        case .opencode, .custom: return nil
         }
     }
-    private static func validated(_ url: URL) -> URL? {
+
+    static func standardPaths(for kind: PokemonChatProviderKind) -> [String] {
+        guard let name = binaryName(for: kind) else { return [] }
+        return searchDirectories.map { NSString(string: $0).expandingTildeInPath + "/" + name }
+    }
+
+    static func executableURL(for kind: PokemonChatProviderKind) -> URL? {
+        executableURL(for: kind,
+                      override: UserDefaults.standard.string(forKey: "pokemonChatExecutablePath.\(kind.rawValue)"),
+                      searchPaths: standardPaths(for: kind))
+    }
+
+    /// 주입 가능한 실체. 탐색 자리를 넓히는 변경이 실제로 그 자리를 밟는지, 실행하는 홈 디렉터리
+    /// 상태에 기대지 않고 시험하기 위해서다.
+    ///
+    /// 쓸 수 없는 override 는 실패가 아니라 폴백이다 — 오래된 지정 하나로 표준 설치분까지 못 쓰게
+    /// 되면 사용자는 왜 안 되는지 알 길이 없다.
+    static func executableURL(for kind: PokemonChatProviderKind,
+                              override: String?, searchPaths: [String]) -> URL? {
+        guard PokemonChatProviderSafety.arguments(for: kind) != nil else { return nil }
+        if let override, let url = validatedExecutable(override) { return url }
+        return searchPaths.lazy.compactMap(validatedExecutable).first
+    }
+
+    /// 설정이 저장 **전에** 쓰는 판정과 대화가 실행 **직전에** 쓰는 판정은 이 한 벌이다. 두 벌이면
+    /// 설정에서 통과한 경로가 대화에서 조용히 실패한다.
+    ///
+    /// 심볼릭 링크를 풀지 않는다(`standardizedFileURL` 은 `..` 만 접는다). `~/.local/bin/claude` 는
+    /// 버전 디렉터리를 가리키는 링크라, 대상 경로를 들고 있으면 CLI 가 업데이트되는 순간 죽는다.
+    static func validatedExecutable(_ path: String) -> URL? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: NSString(string: trimmed).expandingTildeInPath)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue,
               FileManager.default.isExecutableFile(atPath: url.path) else { return nil }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct PokemonChatView: View {
@@ -6,6 +7,7 @@ struct PokemonChatView: View {
     let chat: PokemonChatStore
     let album: PokemonMemoryAlbum
     let toolbox: any PokemonChatToolRunning
+    let settings: AppSettings
     @State private var identity: PokemonSpeciesIdentity?
     @State private var draft = ""
     @State private var destination: Destination?
@@ -14,12 +16,13 @@ struct PokemonChatView: View {
     private enum Destination: String, Identifiable { case album, dailyDex; var id: String { rawValue } }
 
     init(store: CompanionStore, companionID: UUID, chat: PokemonChatStore? = nil,
-         album: PokemonMemoryAlbum? = nil, toolbox: any PokemonChatToolRunning) {
+         album: PokemonMemoryAlbum? = nil, toolbox: any PokemonChatToolRunning, settings: AppSettings) {
         self.store = store
         self.companionID = companionID
         self.chat = chat ?? store.chatStore
         self.album = album ?? store.memoryAlbum
         self.toolbox = toolbox
+        self.settings = settings
     }
     private var baseProfile: PokemonChatProfile {
         store.ownedMons.first(where: { $0.id == companionID }).map(store.chatProfile(for:))
@@ -45,17 +48,38 @@ struct PokemonChatView: View {
             return reason.message(profile.language)
         }
         let name = kind.label(profile.language)
-        return l.t("\(name) 실행 파일을 찾지 못했습니다. 설정에서 경로를 지정하세요.",
-                   "Could not find the \(name) executable. Set its path in Settings.",
-                   "\(name) の実行ファイルが見つかりません。設定でパスを指定してください。")
+        return l.t("\(name) 실행 파일을 흔한 설치 위치에서 찾지 못했습니다. 아래에서 직접 고르거나 설정에서 경로를 넣으세요.",
+                   "Could not find the \(name) executable in the usual install locations. Choose it below, or type its path in Settings.",
+                   "\(name) の実行ファイルが標準の場所で見つかりません。下で選ぶか、設定でパスを入力してください。")
+    }
+
+    /// 실행 파일을 못 찾은 자리에서 **바로** 고를 수 있게 한다. 설정 화면은 팝오버 안에 있고 대화는
+    /// 별도 창이라, "설정으로 가세요" 한 줄은 사용자에게 창을 두 번 옮기라는 뜻이 된다.
+    private func chooseExecutable(_ kind: PokemonChatProviderKind) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/.local/bin")
+        panel.message = l.t("CLI 실행 파일을 선택하세요.", "Choose the CLI executable.", "CLI 実行ファイルを選んでください。")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        settings.setChatProviderExecutablePath(url.path, for: kind)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             if let unavailableReason {
-                Text(unavailableReason)
-                    .font(.caption2).foregroundStyle(.orange).padding(.horizontal, 12).padding(.bottom, 8)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(unavailableReason).font(.caption2).foregroundStyle(.orange)
+                    // 차단된 제공자에는 고를 실행 파일이 없다 — 버튼을 그리면 사용자가 할 수 있는
+                    // 일이 있는 것처럼 보인다.
+                    if let kind = selectedKind,
+                       PokemonChatProviderSafety.availability(for: kind).isVerified {
+                        Button(l.t("실행 파일 선택…", "Choose executable…", "実行ファイルを選択…")) {
+                            chooseExecutable(kind)
+                        }.buttonStyle(.link).font(.caption2)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
             }
             Divider()
             statusBar

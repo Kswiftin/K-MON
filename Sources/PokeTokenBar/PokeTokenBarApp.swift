@@ -45,7 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         LoginItem.migrateFromLegacyLoginItemIfNeeded()   // 로그인아이템 → KeepAlive 에이전트(크래시 자동 재실행)
         settings = AppSettings()
         companion = CompanionStore()
-        chatPresenter = PokemonChatPresenter(store: companion, chat: companion.chatStore, album: companion.memoryAlbum, timer: focusTimer)
+        chatPresenter = PokemonChatPresenter(store: companion, chat: companion.chatStore,
+                                             album: companion.memoryAlbum, timer: focusTimer,
+                                             settings: settings)
         Task { await companion.ensureInheritedMoves() }
         focusTimer.onFocusCompleted = { [weak self] minutes in
             self?.companion.completeFocusSession(minutes: minutes)

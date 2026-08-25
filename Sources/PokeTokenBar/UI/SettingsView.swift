@@ -88,29 +88,78 @@ struct SettingsView: View {
     @ViewBuilder
     private func chatProviderGroup(_ settings: AppSettings) -> some View {
         settingsSection(l.t("포켓몬 대화 CLI", "Pokémon chat CLI", "ポケモン会話 CLI")) {
-            Text(l.t("Finder/launchd의 PATH를 사용하지 않습니다. 설치 위치가 자동으로 발견되지 않으면 실행 파일을 직접 선택하세요.",
-                     "The app never uses Finder or launchd PATH. Choose an executable if its standard install location is not found.",
-                     "Finder/launchd の PATH は使いません。標準の場所で見つからない場合は実行ファイルを選んでください。"))
+            Text(l.t("Finder/launchd의 PATH를 사용하지 않습니다. 흔한 설치 위치를 먼저 찾아보고, 없으면 아래에 경로를 직접 넣으세요.",
+                     "The app never uses Finder or launchd PATH. Common install locations are searched first; type a path below if none matched.",
+                     "Finder/launchd の PATH は使いません。よくあるインストール先を先に探し、見つからなければ下にパスを直接入力してください。"))
                 .font(.caption2).foregroundStyle(.secondary)
             ForEach(PokemonChatProviderSafety.verifiedKinds, id: \.self) { kind in
-                HStack {
-                    Text(kind.label(l.lang))
-                    Spacer()
-                    Text(settings.chatProviderExecutablePath(for: kind) ??
-                         (PokemonChatProviderExecutableResolver.executableURL(for: kind)?.path ?? l.t("찾지 못함", "Not found", "未検出")))
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    Button(l.t("선택…", "Choose…", "選択…")) { chooseChatExecutable(kind, settings: settings) }
-                    if settings.chatProviderExecutablePath(for: kind) != nil {
-                        Button(l.t("지우기", "Clear", "消去")) { settings.setChatProviderExecutablePath(nil, for: kind) }
-                    }
-                }
+                chatProviderRow(kind, settings: settings)
             }
         }
+    }
+
+    /// 한 CLI 의 상태 + 고치는 방법을 한 줄에 둔다. 상태만 보여 주고 고치는 자리가 다른 화면이면,
+    /// "찾지 못함" 을 본 사용자가 다음에 무엇을 눌러야 하는지 알 수 없다.
+    @ViewBuilder
+    private func chatProviderRow(_ kind: PokemonChatProviderKind, settings: AppSettings) -> some View {
+        let resolved = PokemonChatProviderExecutableResolver.executableURL(for: kind)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(kind.label(l.lang))
+                Spacer()
+                if let resolved {
+                    Label(resolved.path, systemImage: "checkmark.circle.fill")
+                        .font(.caption2).foregroundStyle(.green).lineLimit(1).truncationMode(.middle)
+                } else {
+                    Label(l.t("찾지 못함", "Not found", "未検出"), systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
+                Button(l.t("선택…", "Choose…", "選択…")) { chooseChatExecutable(kind, settings: settings) }
+                if settings.chatProviderExecutablePath(for: kind) != nil {
+                    Button(l.t("지우기", "Clear", "消去")) { settings.setChatProviderExecutablePath(nil, for: kind) }
+                }
+            }
+            // 직접 입력을 파일 선택창과 함께 둔다 — NSOpenPanel 은 `~/.local` 같은 숨김 폴더로
+            // Cmd+Shift+G 없이 갈 수 없어, 정작 CLI 가 가장 많이 사는 자리를 못 고른다.
+            TextField(l.t("예: \(NSHomeDirectory())/.local/bin/\(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")",
+                          "e.g. \(NSHomeDirectory())/.local/bin/\(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")",
+                          "例: \(NSHomeDirectory())/.local/bin/\(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")"),
+                      text: chatExecutablePathBinding(kind, settings: settings))
+                .textFieldStyle(.roundedBorder).font(.caption2)
+            if let typed = settings.chatProviderExecutablePath(for: kind), !typed.isEmpty,
+               PokemonChatProviderExecutableResolver.validatedExecutable(typed) == nil {
+                // 저장은 막지 않는다(오타를 고치는 중일 수 있다). 다만 이 경로로는 아무것도 실행되지
+                // 않는다는 사실을 대화 창까지 끌고 가지 않는다.
+                Text(l.t("이 경로에는 실행 가능한 파일이 없습니다.",
+                         "No executable file at this path.",
+                         "このパスに実行可能なファイルがありません。"))
+                    .font(.caption2).foregroundStyle(.red)
+            }
+            if resolved == nil {
+                Text(l.t("찾아본 곳: \(PokemonChatProviderExecutableResolver.searchDirectories.joined(separator: ", "))",
+                         "Searched: \(PokemonChatProviderExecutableResolver.searchDirectories.joined(separator: ", "))",
+                         "探した場所: \(PokemonChatProviderExecutableResolver.searchDirectories.joined(separator: ", "))"))
+                    .font(.caption2).foregroundStyle(.secondary)
+                Text(l.t("터미널에서 `which \(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")` 결과를 위에 붙여 넣으면 됩니다.",
+                         "Paste the output of `which \(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")` above.",
+                         "ターミナルの `which \(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")` の結果を上に貼り付けてください。"))
+                    .font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+        }
+    }
+
+    private func chatExecutablePathBinding(_ kind: PokemonChatProviderKind, settings: AppSettings) -> Binding<String> {
+        Binding(get: { settings.chatProviderExecutablePath(for: kind) ?? "" },
+                set: { settings.setChatProviderExecutablePath($0, for: kind) })
     }
 
     private func chooseChatExecutable(_ kind: PokemonChatProviderKind, settings: AppSettings) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
+        // CLI 가 사는 자리는 대부분 숨김 폴더다. 기본값으로 열어 주지 않으면 사용자가 Cmd+Shift+G 를
+        // 알아야만 자기 설치분에 닿는다.
+        panel.showsHiddenFiles = true
+        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/.local/bin")
         panel.message = l.t("CLI 실행 파일을 선택하세요.", "Choose the CLI executable.", "CLI 実行ファイルを選んでください。")
         if panel.runModal() == .OK, let url = panel.url { settings.setChatProviderExecutablePath(url.path, for: kind) }
     }
