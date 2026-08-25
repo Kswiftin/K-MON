@@ -580,6 +580,24 @@ final class ReplaySpeedSettingTests: XCTestCase {
                        "끄기를 고른 사용자에게 다시 켜서 애니메이션을 보여 주면 안 된다")
     }
 
+    /// 기능이 사라진 설정의 키는 실행 한 번으로 사라진다. 안 지우면 대화 기능에서 고른 CLI 경로가
+    /// 사용자 prefs 에 영구 잔류한다 — 코드에서 필드만 지우는 것으로는 파일이 정리되지 않는다.
+    func testRetiredSettingKeysAreRemovedOnLaunch() throws {
+        let suite = "retired-keys-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        for key in AppSettings.retiredKeys { defaults.set("/usr/local/bin/whatever", forKey: key) }
+        _ = AppSettings(defaults: defaults)
+
+        for key in AppSettings.retiredKeys {
+            XCTAssertNil(defaults.object(forKey: key), "\(key) 가 남았다")
+        }
+        // 대조군: 살아 있는 설정은 건드리지 않는다.
+        defaults.set(false, forKey: "imageAntialiasing")
+        XCTAssertFalse(AppSettings(defaults: defaults).imageAntialiasing)
+    }
+
     /// 세 속도가 세 언어에서 각각 다른 이름을 가진다 — 같은 이름 두 개면 고를 수 없다.
     func testEverySpeedIsLabelledInEveryLanguage() {
         for language in [AppLanguage.ko, .en, .ja] {

@@ -64,7 +64,19 @@ final class AppSettings {
         automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
+        Self.removeRetiredKeys(from: defaults)
     }
+
+    /// 기능이 사라진 설정의 키는 앱이 지운다 — 안 지우면 사용자 prefs 에 영구히 남고, 오픈소스
+    /// 저장소라 남의 머신 CLI 경로가 plist 에 남는 것도 좋지 않다. 매 실행 5회 삭제라 플래그로
+    /// 1회성을 만들 이유가 없다(플래그 자체가 지워야 할 다음 키가 된다).
+    private static func removeRetiredKeys(from defaults: UserDefaults) {
+        for key in retiredKeys { defaults.removeObject(forKey: key) }
+    }
+
+    /// 포켓몬 대화 기능(2.x)이 쓰던 키. 되살아나면 그때 여기서 빼면 된다.
+    static let retiredKeys = ["pokemonChatExecutablePaths"]
+        + ["codex", "claude", "opencode", "custom"].map { "pokemonChatExecutablePath.\($0)" }
 
     func requestNotificationAuthorizationIfNeeded() {
         Task {
