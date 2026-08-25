@@ -101,10 +101,13 @@ final class RareCandyStoreTests: XCTestCase {
         await s.hatch(baseID: 1)
         giveCandies(s, 2)
 
-        XCTAssertEqual(s.useRareCandy(), .progressed)
+        // 결과 종류(진행/진화)는 이 테스트의 관심사가 아니다 — 다른 테스트가 잠근다.
+        // 여기서 보는 건 **재고와 노출 판정**뿐이다.
+        _ = s.useRareCandy()
+        XCTAssertEqual(s.rareCandyCount, 1)
         XCTAssertTrue(s.canUseRareCandy, "아직 하나 남았으면 그대로 보인다")
 
-        XCTAssertEqual(s.useRareCandy(), .progressed)
+        _ = s.useRareCandy()
         XCTAssertEqual(s.rareCandyCount, 0)
         XCTAssertFalse(s.canUseRareCandy, "다 쓰면 아이콘이 사라져야 한다")
         XCTAssertEqual(s.useRareCandy(), .unavailable, "그래도 눌렀다면 아무 일도 없어야 한다")
