@@ -72,6 +72,39 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertEqual(PopoverTab.shop.contentHeight, PopoverTab.collection.contentHeight)
     }
 
+    // MARK: 도전 탭 — 진입점 도달성
+
+    /// **회귀 원본.** 체육관·던전은 친구가 필요 없는 콘텐츠인데 친구 탭 두 단계 안
+    /// (친구 → 배틀 → 버튼 줄)에 있었다. 배틀 화면이 `FriendView` 아래로 한 겹 들어가면서
+    /// 사실상 닿을 수 없게 됐고, 사용자가 "체육관이 사라졌다"고 보고했다.
+    ///
+    /// 도달성은 뷰 계층이라 순수 함수로 못 잰다 — 어느 화면이 그 문을 여는지를 소스에서 본다.
+    /// 주석은 뺀다(규칙을 설명하는 주석이 같은 이름을 담아 가드가 자기 설명에 걸린다).
+    func testSoloChallengesAreReachableFromTheChallengeTabNotBuriedInFriends() throws {
+        func code(_ file: String) throws -> String {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/PokeTokenBar/UI/\(file)")
+            return try String(contentsOf: url, encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line -> String in
+                    guard let comment = line.range(of: "//") else { return String(line) }
+                    return String(line[..<comment.lowerBound])
+                }
+                .joined(separator: "\n")
+        }
+        let challenge = try code("ChallengeView.swift")
+        XCTAssertTrue(challenge.contains("nav.showGymLeague = true"), "체육관은 도전 탭에서 연다")
+        XCTAssertTrue(challenge.contains("nav.showDungeon = true"), "던전도 같은 자리에서 연다")
+
+        let battle = try code("BattleView.swift")
+        XCTAssertFalse(battle.contains("showGymLeague"), "친구 탭 안으로 되돌아가면 다시 파묻힌다")
+        XCTAssertFalse(battle.contains("showDungeon"))
+
+        let popover = try code("PopoverView.swift")
+        XCTAssertTrue(popover.contains("case .challenge: ChallengeView"), "도전 탭이 이 화면을 연다")
+    }
+
     // MARK: 소유 포켓몬 — 페이지 도달성
 
     /// 트리거 재현: 한 페이지를 넘긴 마릿수. 페이지가 하나로 머물면 초과분은 다시 도달 불가가 되고,

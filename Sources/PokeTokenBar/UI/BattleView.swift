@@ -6,7 +6,6 @@ import SwiftUI
 struct BattleView: View {
     @Bindable var store: CompanionStore
     @Environment(BattleCenter.self) private var center
-    @Environment(PopoverNavigation.self) private var nav
     @Environment(AppSettings.self) private var settings
     /// 턴 해상 결과를 시간축에 푸는 재생기 — 배틀이 바뀌어도 같은 객체를 쓴다(스스로 되감는다).
     @State private var animator = BattleAnimator()
@@ -268,23 +267,9 @@ struct BattleView: View {
                 }
                 .buttonStyle(.borderedProminent).controlSize(.small)
                 .disabled(!isChallengeEnabled)
-                Button {
-                    nav.showGymLeague = true
-                } label: {
-                    Label(l.gymLeagueTitle, systemImage: "building.columns.fill")
-                }
-                .controlSize(.small)
-                // 던전은 배틀 준비 상태와 무관하다 — 팀도 상대도 필요 없고 혼자 푸는 퍼즐이라
-                // 체육관과 달리 `isChallengeEnabled` 로 막지 않는다.
-                Button {
-                    nav.showDungeon = true
-                } label: {
-                    Label(l.dungeonTitle, systemImage: "map.fill")
-                }
-                .controlSize(.small)
-                .disabled(!isChallengeEnabled)
-                Text(l.gymBadgeCount(store.earnedGymBadges.count, GymLeague.catalog.count))
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                // 체육관·던전은 **도전 탭**으로 옮겼다(`ChallengeView`). 친구가 필요 없는
+                // 콘텐츠인데 친구 탭 두 단계 안에 있어 사실상 닿을 수 없었다.
+                Spacer(minLength: 0)
             }
             Text(l.t("키운 레벨 그대로 · 랭크와 별의조각은 변하지 않음",
                      "At the levels you raised · rank and Star Pieces are unchanged",
