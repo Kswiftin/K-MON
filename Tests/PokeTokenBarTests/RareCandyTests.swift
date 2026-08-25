@@ -52,6 +52,68 @@ final class RareCandyStoreTests: XCTestCase {
     /// 사탕 n개 주입 — 일일 지급 경로를 우회하는 테스트 헬퍼(사용 로직만 검증).
     private func giveCandies(_ s: CompanionStore, _ n: Int) { s.debugAddCandy(n) }
 
+    // MARK: 홈 헤더 바로가기
+
+    /// 홈 헤더의 사탕 버튼은 **가방과 같은 판정**(`canUseRareCandy`)으로 나타나야 한다.
+    /// 조건을 따로 쓰면 가방에선 회색인데 홈에선 눌리는(또는 그 반대) 두 화면이 생긴다.
+    /// 뷰 계층이라 순수 함수로 못 재서 소스에서 본다 — 주석은 뺀다(가드가 자기 설명에 걸린다).
+    func testHomeCandyShortcutSharesTheBagsEligibilityCheck() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        func code(_ path: String) throws -> String {
+            try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line -> String in
+                    guard let comment = line.range(of: "//") else { return String(line) }
+                    return String(line[..<comment.lowerBound])
+                }
+                .joined(separator: "\n")
+        }
+        let home = try code("Sources/PokeTokenBar/UI/CompanionView.swift")
+        XCTAssertTrue(home.contains("store.canUseRareCandy"),
+                      "재고·알 상태 판정을 여기서 다시 쓰면 가방과 갈린다")
+        XCTAssertTrue(home.contains("store.useRareCandy()"), "실제 소비는 스토어가 한다")
+        // 확인 없이 바로 먹으면 되돌릴 수 없는 소비가 오탭 한 번으로 일어난다.
+        XCTAssertTrue(home.contains("confirmationDialog"), "한 번 물어야 한다")
+        // 확인창은 버튼이 아니라 사라지지 않는 부모에 붙어야 한다. 마지막 사탕을 쓰면 버튼이
+        // 없어지는데, 창을 그 버튼에 매달면 자기 액션 때문에 창의 주인이 사라진다.
+        let buttonBody = try XCTUnwrap(home.range(of: "private var rareCandyButton"))
+        let afterButton = home[buttonBody.upperBound...].prefix(400)
+        XCTAssertFalse(afterButton.contains("confirmationDialog"),
+                       "확인창을 사라질 뷰에 매달면 안 된다")
+        XCTAssertTrue(home.contains("l.useOnCurrent"), "확인 문구도 가방과 같은 것을 쓴다")
+    }
+
+    /// 재고가 없으면 버튼이 나오지 않아야 한다 — 판정 자체를 잠근다(위 가드가 보는 그 값).
+    func testEligibilityFollowsStockAndHatchState() async {
+        let s = store(rcLinear3)
+        XCTAssertFalse(s.canUseRareCandy, "부화 전에는 버튼이 없어야 한다")
+        await s.hatch(baseID: 1)
+        XCTAssertFalse(s.canUseRareCandy, "재고가 없으면 버튼이 없어야 한다")
+        giveCandies(s, 2)
+        XCTAssertTrue(s.canUseRareCandy)
+    }
+
+    /// **마지막 하나를 쓰면 그 자리에서 사라진다.** 남은 개수가 0 인데 아이콘이 남아 있으면
+    /// 눌렀을 때 아무 일도 안 나는 버튼이 된다 — 이 파일이 여러 번 밟은 "무반응" 부류다.
+    func testTheShortcutDisappearsAfterSpendingTheLastCandy() async {
+        let s = store(rcLinear3)
+        await s.hatch(baseID: 1)
+        giveCandies(s, 2)
+
+        // 결과 종류(진행/진화)는 이 테스트의 관심사가 아니다 — 다른 테스트가 잠근다.
+        // 여기서 보는 건 **재고와 노출 판정**뿐이다.
+        _ = s.useRareCandy()
+        XCTAssertEqual(s.rareCandyCount, 1)
+        XCTAssertTrue(s.canUseRareCandy, "아직 하나 남았으면 그대로 보인다")
+
+        _ = s.useRareCandy()
+        XCTAssertEqual(s.rareCandyCount, 0)
+        XCTAssertFalse(s.canUseRareCandy, "다 쓰면 아이콘이 사라져야 한다")
+        XCTAssertEqual(s.useRareCandy(), .unavailable, "그래도 눌렀다면 아무 일도 없어야 한다")
+    }
+
+
     /// 사탕 XP(100M) < 최소 임계(125M) → 진화 못 시키는 케이스는 부분 진행(.progressed), 통계 불변.
     func testUseProgressesWithoutEvolution() async {
         let s = store(rcLinear3)
@@ -280,4 +342,5 @@ final class CandyNotificationCopyTests: XCTestCase {
             XCTAssertFalse(title.isEmpty)
         }
     }
+
 }
