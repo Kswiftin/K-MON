@@ -71,7 +71,9 @@ enum SaveTransfer {
     /// 조건부 append 로 버티는 건 **이전 배포에 없던 필드**뿐이다(구세이브는 항상 기본값이라
     /// 세그먼트가 안 붙는다). 이미 배포된 필드를 넣으면 값이 든 정상 세이브가 전부 조작 판정되므로
     /// 버전 상향이 유일한 방어다 — `gymBadges`·`shinyEggCharges` 때문에 6 → 7.
-    static let integrityVersion = 7
+    /// 필드를 **빼는** 것도 같은 부류다: 돌봄을 지우며 `care`·`care2`·`health`·`disc`·`sleep`
+    /// 세그먼트가 사라져, 값이 든 기존 세이브의 서명을 이 빌드가 재현할 수 없다 → 7 → 8.
+    static let integrityVersion = 8
     /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
     static let forcedResetVersion = 1
     /// 세이브 파일 크기 상한. 정상 세이브는 수 KB 이고 도감이 가득 차도 수백 KB 를 넘지 않는다.

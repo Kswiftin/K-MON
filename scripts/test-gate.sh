@@ -60,9 +60,6 @@ LOGIC_CORE=(
   # 던전 화면이 쓰는 순수 계산(방위·방 이름·게이지·출구 분류·서술). 뷰 안에 있던 동안 설계 목업
   # 6줄 중 온전히 구현된 줄이 0개였는데, 순수 코어만 게이트에 있어 아무도 못 잡았다.
   "Sources/PokeTokenBar/Core/DungeonNarration.swift"
-  # 포켓몬 페르소나 조립과 응답 안전 가드가 사는 순수 로직. 게이트 밖에 있으면 프로필 조립을
-  # 직접 밟지 않는 fixture 테스트만 있어도 무테스트 분기가 커버리지에 드러나지 않는다.
-  "Sources/PokeTokenBar/Core/PokemonChat.swift"
   # 하트비늘 후보 계산(#97). 순수 함수라 게이트 대상 — 넣지 않으면 커버리지에서 조용히 빠진다.
   "Sources/PokeTokenBar/Core/MoveRelearn.swift"
 )
