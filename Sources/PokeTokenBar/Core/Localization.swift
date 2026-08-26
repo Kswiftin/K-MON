@@ -672,6 +672,12 @@ struct L {
     }
     var dexPagePrev: String { t("이전 페이지", "Previous page", "前のページ") }
     var dexPageNext: String { t("다음 페이지", "Next page", "次のページ") }
+    /// 페이지 표시를 누르면 바로 건너뛴다 — 전체를 펼치면 28페이지라 화살표만으로는 멀다.
+    var dexPageJumpHint: String {
+        t("눌러서 다른 페이지로 바로 이동",
+          "Click to jump straight to another page",
+          "クリックで他のページへ直接移動")
+    }
     var dexRaising: String { t("키우는 중", "Raising", "育成中") }
     var rarityCommon: String { t("일반", "Common", "ノーマル") }
     var rarityUncommon: String { t("고급", "Uncommon", "アンコモン") }
@@ -687,6 +693,34 @@ struct L {
         t("탭하면 이로치만 보기 · 다시 탭하면 전체 (희귀도 필터와 함께 걸립니다)",
           "Tap to show only shinies · tap again to clear (combines with the rarity filter)",
           "タップで色違いのみ表示・再タップで全体（希少度フィルターと併用）")
+    }
+    /// 잡은 것만 보기 — 끄면 아직 안 잡은 종이 실루엣으로 함께 나온다.
+    var dexCaughtOnly: String { t("잡은 것만", "Caught only", "捕まえた分のみ") }
+    var dexCaughtOnlyHint: String {
+        t("끄면 아직 안 잡은 종도 실루엣으로 보입니다",
+          "Turn off to show species you haven't caught as silhouettes",
+          "オフにすると未捕獲の種もシルエットで表示されます")
+    }
+    /// 희귀도·이로치는 잡아야 생기는 값이라, 그 필터를 켜면 미포획 칸이 함께 빠진다는 안내.
+    var dexCaughtOnlyLocked: String {
+        t("희귀도·이로치는 잡은 종에만 있는 정보라 미포획은 빠집니다",
+          "Rarity and shiny only exist for caught species, so uncaught ones drop out",
+          "希少度・色違いは捕まえた種にしかない情報なので未捕獲は除かれます")
+    }
+    /// 미포획 칸을 읽어주는 문구 — 화면에는 `???` 만 보이지만 스크린리더는 물음표를 못 읽는다.
+    var dexNotCaught: String { t("아직 안 잡음", "Not caught yet", "未捕獲") }
+    var dexTypeFilter: String { t("타입", "Type", "タイプ") }
+    var dexTypeFilterAll: String { t("모든 타입", "All types", "全タイプ") }
+    /// 타입은 미포획 종도 아는 유일한 축이라 실루엣에도 걸린다 — 다른 필터와 다른 점이라 밝힌다.
+    var dexTypeFilterHint: String {
+        t("아직 안 잡은 종에도 걸립니다",
+          "Also applies to species you haven't caught",
+          "未捕獲の種にも適用されます")
+    }
+    var dexTypeFilterUnavailable: String {
+        t("타입 정보를 아직 못 받았어요 (인터넷 연결 후 다시 열어 주세요)",
+          "Type data hasn't arrived yet (reconnect and reopen)",
+          "タイプ情報をまだ取得できていません（接続後に開き直してください）")
     }
     func rarityLabel(_ r: Rarity) -> String {
         switch r {

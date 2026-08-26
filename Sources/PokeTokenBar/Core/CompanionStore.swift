@@ -572,6 +572,74 @@ final class CompanionStore {
         }
     }
 
+    /// 도감 격자 한 칸. 아직 안 잡은 칸도 자리를 차지하므로 `species` 가 nil 일 수 있다.
+    ///
+    /// 미포획 칸이 아는 건 **번호와 타입뿐**이다 — 이름·희귀도·이로치는 개체를 잡아야 생기는 값이라
+    /// `DexSpecies` 를 옵셔널 필드투성이로 만드는 대신 통째로 비운다.
+    struct DexSlot: Identifiable, Sendable {
+        let id: Int
+        let species: DexSpecies?
+        var isCaught: Bool { species != nil }
+    }
+
+    /// 도감 격자에 걸린 필터. **판정은 뷰가 아니라 여기 있다** — 어떤 축이 미포획 칸에도 걸리는지가
+    /// 이 화면의 규칙 전부라, 뷰 안에 두면 그 규칙을 테스트가 흉내 내는 수밖에 없다.
+    struct DexFilter: Sendable {
+        var caughtOnly = true
+        var rarity: Rarity?
+        var shinyOnly = false
+        var type: PokemonType?
+
+        /// 희귀도·이로치는 **잡아야 생기는 값**이라 미포획 칸에는 없다. 하나라도 걸리면
+        /// 잡은 것만 보기가 켜진 것과 같아진다 — 조용히 그러면 "실루엣이 사라졌다" 로 읽힌다.
+        var caughtOnlyLocked: Bool { rarity != nil || shinyOnly }
+
+        /// 타입만 별도 인자인 이유: 종별 타입은 세이브가 아니라 PokéAPI 인덱스에서 온다.
+        /// 인덱스를 아직 못 받았으면(빈 표) 타입 필터는 아무것도 통과시키지 못하므로 뷰가 잠근다.
+        func matches(_ slot: DexSlot, typesBySpecies: [Int: [PokemonType]]) -> Bool {
+            if caughtOnly || caughtOnlyLocked, !slot.isCaught { return false }
+            if let rarity, slot.species?.rarity != rarity { return false }
+            if shinyOnly, slot.species?.isShiny != true { return false }
+            // 타입은 미포획 칸도 아는 유일한 축이다 — 잡기 전에 "남은 물타입" 을 볼 수 있어야 한다.
+            if let type, typesBySpecies[slot.id]?.contains(type) != true { return false }
+            return true
+        }
+    }
+
+    /// 전체 도감 — 획득 가능 범위(`PokemonAssets.animatedSpeciesIDs`) ∪ 보유 종, 번호 오름차순.
+    ///
+    /// 보유 종을 합집합으로 얹는 이유: 진화 체인이 범위 밖으로 나가는 라인이 있다(이브이 → 님피아 #700).
+    /// 범위만 쓰면 실제로 가진 종이 자기 도감에서 빠진다.
+    var dexSlots: [DexSlot] {
+        let caught = Dictionary(dexSpecies.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ids = Set(PokemonAssets.animatedSpeciesIDs).union(caught.keys)
+        return ids.sorted().map { DexSlot(id: $0, species: caught[$0]) }
+    }
+
+    /// 한 페이지가 덮는 도감 번호 구간(첫 칸·끝 칸). 페이지가 비어 있으면 nil.
+    ///
+    /// **`page × pageSize` 로 계산하면 안 된다.** 필터가 걸리면 번호가 띄엄띄엄해져서, 3페이지가
+    /// 덮는 게 `#49~#72` 가 아니라 `#150~#498` 일 수 있다. 실제로 그 자리에 놓이는 칸을 읽는다.
+    ///
+    /// 마지막 페이지는 칸이 덜 차므로 끝 인덱스를 자른다 — 안 자르면 범위를 벗어난다.
+    nonisolated static func dexPageBounds(_ slots: [DexSlot], page: Int,
+                                          pageSize: Int) -> (first: Int, last: Int)? {
+        let start = page * pageSize
+        guard pageSize > 0, page >= 0, start < slots.count else { return nil }
+        return (slots[start].id, slots[min(start + pageSize - 1, slots.count - 1)].id)
+    }
+
+    /// 종별 타입 — 도감 타입 필터가 읽는다. 비어 있으면 아직 못 받았다는 뜻이고, 그때는 필터가 잠긴다.
+    /// 세이브에 넣지 않는다 — PokéAPI 사실 데이터라 `PokeAPIClient` 의 디스크 캐시가 이미 주인이다.
+    private(set) var speciesTypes: [Int: [PokemonType]] = [:]
+
+    /// 타입 인덱스를 1회 채운다(뷰의 `.task` 에서 호출). 받아 둔 뒤로는 아무 일도 하지 않는다.
+    func loadSpeciesTypeIndex() async {
+        guard speciesTypes.isEmpty else { return }
+        guard let index = try? await provider.speciesTypeIndex(), !index.isEmpty else { return }
+        speciesTypes = index
+    }
+
     /// 도감 한 줄 = 진화 라인 하나. 선택 메뉴가 기본형 아래에 단계들을 접어 보여주기 위한 묶음이다.
     struct DexLine: Identifiable, Sendable {
         let id: Int                  // 기본형 종 번호 — 라인 식별자이자 메뉴 제목의 근거

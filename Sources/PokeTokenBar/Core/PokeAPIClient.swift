@@ -20,6 +20,9 @@ protocol PokeProviding: Sendable {
     /// 세이브에 든 기술 스펙의 빠진 축을 채우는 조회. `battleProfile` 과 같은 이유로 주입 가능해야
     /// 한다 — 대전 스냅샷이 이 보강을 지나는지를 네트워크 없이 테스트한다.
     func moveDetail(id: Int) async -> MoveSpec?
+    /// 획득 가능 범위 전 종의 타입 (GraphQL 1쿼리, 디스크 캐시). 도감 타입 필터가 읽는다 —
+    /// **아직 안 잡은 종에도 걸려야** 해서 `battleProfile` 종별 조회로는 대체할 수 없다(649회).
+    func speciesTypeIndex() async throws -> [Int: [PokemonType]]
 }
 
 extension PokeProviding {
@@ -30,6 +33,10 @@ extension PokeProviding {
 
     func moveDetail(id: Int) async -> MoveSpec? {
         await PokeAPIClient.shared.moveDetail(id: id)
+    }
+
+    func speciesTypeIndex() async throws -> [Int: [PokemonType]] {
+        try await PokeAPIClient.shared.speciesTypeIndex()
     }
 }
 
@@ -83,6 +90,21 @@ actor PokeAPIClient: PokeProviding {
     private struct GraphQLBaseResponse: Decodable {
         struct DataBox: Decodable { let pokemonspecies: [Row] }
         struct Row: Decodable { let id: Int; let capture_rate: Int }
+        let data: DataBox
+    }
+
+    private var speciesTypeCache: [Int: [PokemonType]]?
+    private static let speciesTypeFile: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PokeTokenBar")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("species-types.json")
+    }()
+    private struct SpeciesTypeSnapshot: Codable { let fetchedAt: Date; let entries: [Int: [PokemonType]] }
+    private struct GraphQLTypeResponse: Decodable {
+        struct DataBox: Decodable { let pokemon: [Row] }
+        struct Row: Decodable { let id: Int; let pokemontypes: [Slot] }
+        struct Slot: Decodable { struct Named: Decodable { let name: String }; let type: Named }
         let data: DataBox
     }
 
@@ -157,9 +179,12 @@ actor PokeAPIClient: PokeProviding {
         AppLog.write("base index: REST build done — \(bases.count) bases persisted (offline-capable now)")
     }
 
+    /// 공식 GraphQL 엔드포인트 — base 인덱스와 타입 인덱스가 함께 쓴다.
+    private static let graphQLEndpoint = "https://graphql.pokeapi.co/v1beta2"
+
     private func fetchBaseIndex() async throws -> [BaseSpecies] {
-        // 공식 GraphQL — evolves_from IS NULL(=base) + id ≤ 649(Gen-V 애니메이션 스프라이트 상한)
-        guard let url = URL(string: "https://graphql.pokeapi.co/v1beta2") else { throw URLError(.badURL) }
+        // evolves_from IS NULL(=base) + id ≤ 649(Gen-V 애니메이션 스프라이트 상한)
+        guard let url = URL(string: Self.graphQLEndpoint) else { throw URLError(.badURL) }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = 15
@@ -174,6 +199,60 @@ actor PokeAPIClient: PokeProviding {
         let entries = decoded.data.pokemonspecies.map { BaseSpecies(id: $0.id, captureRate: $0.capture_rate) }
         guard !entries.isEmpty else { throw URLError(.cannotParseResponse) }
         return entries
+    }
+
+    // MARK: 종별 타입 인덱스
+
+    /// 획득 가능 범위(1~649) 전 종의 타입 — GraphQL 1쿼리(약 44KB), 30일 디스크 캐시.
+    ///
+    /// **base 인덱스와 달리 REST 폴백을 두지 않는다.** 부화는 인덱스가 없으면 게임이 멈추지만,
+    /// 이건 없어도 도감 타입 필터 하나가 잠길 뿐이다 — 649회 REST 조회를 걸 값어치가 없다.
+    func speciesTypeIndex() async throws -> [Int: [PokemonType]] {
+        if let cached = speciesTypeCache { return cached }
+        let disk = (try? Data(contentsOf: Self.speciesTypeFile))
+            .flatMap { try? JSONDecoder().decode(SpeciesTypeSnapshot.self, from: $0) }
+        if let disk, Date().timeIntervalSince(disk.fetchedAt) < 30 * 86400, !disk.entries.isEmpty {
+            speciesTypeCache = disk.entries
+            return disk.entries
+        }
+        do {
+            let entries = try await fetchSpeciesTypeIndex()
+            speciesTypeCache = entries
+            if let data = try? JSONEncoder().encode(SpeciesTypeSnapshot(fetchedAt: Date(), entries: entries)) {
+                try? data.write(to: Self.speciesTypeFile, options: .atomic)
+            }
+            return entries
+        } catch {
+            if let disk, !disk.entries.isEmpty {   // 오프라인 — 오래된 인덱스라도 사용
+                speciesTypeCache = disk.entries
+                return disk.entries
+            }
+            throw error
+        }
+    }
+
+    private func fetchSpeciesTypeIndex() async throws -> [Int: [PokemonType]] {
+        guard let url = URL(string: Self.graphQLEndpoint) else { throw URLError(.badURL) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 15
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // slot 순으로 정렬 — 1번이 주 타입이다. 안 걸면 이중타입 표기 순서가 응답마다 흔들린다.
+        let maxID = PokemonAssets.animatedSpeciesIDs.upperBound
+        let query = "{ pokemon(where: {id: {_lte: \(maxID)}}, order_by: {id: asc})"
+            + " { id pokemontypes(order_by: {slot: asc}) { type { name } } } }"
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["query": query])
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        let decoded = try JSONDecoder().decode(GraphQLTypeResponse.self, from: data)
+        var index: [Int: [PokemonType]] = [:]
+        for row in decoded.data.pokemon {
+            // 모르는 타입 이름은 버린다 — 새 타입이 생겨도 나머지 종이 함께 무효가 되지 않게.
+            let types = row.pokemontypes.compactMap { PokemonType(rawValue: $0.type.name) }
+            if !types.isEmpty { index[row.id] = types }
+        }
+        guard !index.isEmpty else { throw URLError(.cannotParseResponse) }
+        return index
     }
 
     private func species(_ id: Int) async throws -> SpeciesDTO {
