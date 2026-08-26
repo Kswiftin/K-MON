@@ -612,7 +612,11 @@ struct CompanionHeader: View {
                             .controlSize(.small).tint(.blue)
                         HStack(spacing: 6) {
                             Spacer(minLength: 0)
-                            if let evolutionLevel = store.nextEvolutionLevel {
+                            if !store.evolutionBranches.isEmpty {
+                                // 갈래가 여럿이면 한 줄로 못 적는다(이브이는 여덟이다). 아래 안내들은
+                                // **정해진 경로 쪽 갈래 하나만** 말해서, 나머지가 막힌 것처럼 보였다.
+                                EvolutionBranchMenu(store: store)
+                            } else if let evolutionLevel = store.nextEvolutionLevel {
                                 Text(store.l.t("Lv.\(evolutionLevel)에 진화", "Evolves at Lv.\(evolutionLevel)", "Lv.\(evolutionLevel) で進化"))
                                     .font(.caption2).foregroundStyle(.tertiary)
                             } else if let evolutionItem = store.nextEvolutionItem {
@@ -1021,6 +1025,38 @@ private struct EvolutionPromptCard: View {
         }
         .padding(9)
         .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+/// 갈라지는 진화의 갈래 목록 — 라벨은 개수만, 펼치면 "무엇을 하면 무엇이 되는가".
+///
+/// 메뉴로 접는 이유는 자리다. 이 줄은 레벨 게이지 아래 한 줄이고, 이브이는 갈래가 여덟이다.
+/// 다 펼치면 홈 탭 높이가 종에 따라 들쭉날쭉해진다 — 도감 페이저를 메뉴로 만든 것과 같은 판단이다.
+///
+/// 라벨에 개수를 박는 게 요점이다. "○○을 쓰면 진화" 한 줄만 보이던 동안, 나머지 갈래는 존재
+/// 자체가 화면에 없었다(가방에서는 멀쩡히 쓸 수 있는데도).
+private struct EvolutionBranchMenu: View {
+    let store: CompanionStore
+
+    var body: some View {
+        let branches = store.evolutionBranches
+        Menu {
+            ForEach(branches) { branch in
+                Text(store.l.evolutionBranchRow(condition: condition(branch), target: branch.targetName))
+            }
+        } label: {
+            Text(store.l.evolutionBranchCount(branches.count))
+                .font(.caption2).foregroundStyle(.tertiary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    /// 갈래를 여는 조건. 아이템이 있으면 그 이름, 없으면 레벨 — 둘 다 없으면 지어내지 않는다.
+    private func condition(_ branch: CompanionStore.EvolutionBranch) -> String {
+        if let item = branch.item { return store.l.itemName(item) }
+        if let level = branch.level { return "Lv.\(level)" }
+        return store.l.evolutionBranchUnknownCondition
     }
 }
 

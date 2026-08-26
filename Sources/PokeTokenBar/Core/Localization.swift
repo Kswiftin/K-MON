@@ -670,6 +670,17 @@ struct L {
     func dexPageLabel(_ page: Int, _ total: Int) -> String {
         t("\(total)페이지 중 \(page)페이지", "Page \(page) of \(total)", "\(total)ページ中 \(page)ページ")
     }
+    /// 갈라지는 진화 — 갈래가 몇 개인지부터 알려야 나머지가 막힌 게 아니란 걸 안다.
+    func evolutionBranchCount(_ count: Int) -> String {
+        t("진화 갈래 \(count)가지", "\(count) evolution paths", "進化の分岐 \(count)通り")
+    }
+    /// 갈래 한 줄 — "물의돌 → 강챙이". 무엇을 하면 무엇이 되는지가 한눈에 붙어 있어야 한다.
+    func evolutionBranchRow(condition: String, target: String) -> String {
+        "\(condition) → \(target)"
+    }
+    /// 조건을 못 밝히는 갈래(장소·파티처럼 앱에 축이 없는 것). 이름만 적고 조건 자리는 비운다 —
+    /// 거짓 조건을 지어내면 그걸 채우려다 시간을 버린다.
+    var evolutionBranchUnknownCondition: String { t("조건 불명", "Unknown condition", "条件不明") }
     /// 기술 조건 진화(원시의힘·흉내내기 …) — 레벨 조건이 없어서, 안 알려주면 아무리 키워도
     /// 왜 진화가 안 오는지 알 길이 없다.
     func evolutionNeedsMove(_ move: String, into target: String) -> String {
