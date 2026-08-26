@@ -72,6 +72,24 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         XCTAssertFalse(reloaded.delete(hidden), "Automatic evidence cannot be deleted")
     }
 
+    func testDistinctStableEventIDsKeepRepeatedEventsWhileReplayIsIdempotent() {
+        let url = temporaryURL(), companionID = UUID()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+
+        album.record(companionID: companionID, body: "First adventure", source: .event,
+                     eventID: "adventure:run-1")
+        album.record(companionID: companionID, body: "Second adventure", source: .event,
+                     eventID: "adventure:run-2")
+        album.record(companionID: companionID, body: "Replay", source: .event,
+                     eventID: "adventure:run-1")
+
+        XCTAssertEqual(album.entries(for: companionID).map(\.eventID),
+                       ["adventure:run-1", "adventure:run-2"])
+        XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).entries(for: companionID).count, 2,
+                       "Persisted event IDs must also suppress a replay after relaunch")
+    }
+
     func testTimelineHidesEntriesAndLimitsToTwentyNewest() {
         let album = PokemonMemoryAlbum(fileURL: temporaryURL()), companionID = UUID()
         for number in 0..<20 { album.record(companionID: companionID, body: "Event \(number)", source: .event) }

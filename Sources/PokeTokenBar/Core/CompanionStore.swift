@@ -104,7 +104,13 @@ final class CompanionStore {
         celebration = c; celebrationSeq += 1
         if case .evolve = c {
             recordAchievement(.evolve, 1)
-            recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。", eventID: "evolve")
+            // A species or event-kind key would collapse every later evolution for this
+            // individual.  The post-transition stage and species identify this one durable
+            // transition, while the UUID prevents cross-companion collisions.
+            guard let mon = state.active else { return }
+            recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。",
+                              companionID: mon.id,
+                              eventID: "evolution:\(mon.id.uuidString):\(mon.stageIndex):\(mon.currentID)")
         }
     }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
@@ -1095,9 +1101,9 @@ final class CompanionStore {
 
     // MARK: 기억·모험
 
-    private func recordEventMemory(_ ko: String, _ en: String, _ ja: String, eventID: String) {
-        guard let mon = state.active else { return }
-        memoryAlbum.record(companionID: mon.id, body: l.t(ko, en, ja), source: .event, eventID: eventID)
+    private func recordEventMemory(_ ko: String, _ en: String, _ ja: String,
+                                   companionID: UUID, eventID: String) {
+        memoryAlbum.record(companionID: companionID, body: l.t(ko, en, ja), source: .event, eventID: eventID)
     }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
@@ -1186,7 +1192,13 @@ final class CompanionStore {
             repeatElement(now.addingTimeInterval(Self.storedEggHatchDelay), count: acceptedEggs))
         reward.eggFragments = fragments
         reward.bonusEggs = earnedEggs
-        recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。", eventID: "adventure-claim")
+        // `AdventureRun.id` is persisted before a run can be claimed.  Replaying a claim
+        // after a relaunch therefore hits the same idempotency key, but each new run gets
+        // its own memory.
+        if let mon = state.active {
+            recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。",
+                              companionID: mon.id, eventID: "adventure:\(run.id.uuidString)")
+        }
         state.adventureHistory.insert(AdventureRecord(id: run.id, zone: run.zone,
                                                        companionSpeciesID: run.companionSpeciesID,
                                                        completedAt: now, stardust: reward.starPieces,
@@ -2750,7 +2762,10 @@ final class CompanionStore {
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
         let name = line.localizedName(line.baseID, state.language)
-        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。", eventID: "hatch")
+        // Stored eggs can hatch into the box while another companion is active.  Attribute
+        // the evidence to the newborn rather than whichever companion happens to be active.
+        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。",
+                          companionID: mon.id, eventID: "hatch:\(mon.id.uuidString)")
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
@@ -2938,8 +2953,11 @@ final class CompanionStore {
                                 isShiny: isShiny, nature: nature, gender: gender,
                                 evolutionStatRelation: statRelation, dittoDisguise: dittoDisguise,
                                 names: line.names)   // 박스로 들어가도 도감이 이름을 그릴 수 있게 개체에 저장
+        let hatchedID = state.active!.id
         AppLog.write("hatch: base=\(line.baseID) rarity=\(line.rarity) shiny=\(isShiny) forms=\(evolutionPlan.count) ditto=\(dittoDisguise != nil)")
         let name = line.localizedName(line.baseID, state.language)
+        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。",
+                          companionID: hatchedID, eventID: "hatch:\(hatchedID.uuidString)")
         notifyCompanionEvent(showShiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              showShiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         justEvolvedTo = nil        // 새 부화는 "성장" 문구(진화 아님) — 직전 진화명이 남아 표시되지 않게

@@ -78,7 +78,9 @@ final class AppSettings {
     init(defaults: UserDefaults = .standard, clock: @escaping () -> Date = Date.init) {
         self.defaults = defaults
         self.clock = clock
-        memoryHomeEnabled = defaults.object(forKey: "memoryHomeEnabled") as? Bool ?? false
+        // Memory Home is part of the default experience.  `object(forKey:)` deliberately
+        // distinguishes an existing user's explicit `false` choice from an unset legacy key.
+        memoryHomeEnabled = defaults.object(forKey: "memoryHomeEnabled") as? Bool ?? true
         memoryHomeDiagnosticsEnabled = defaults.object(forKey: "memoryHomeDiagnosticsEnabled") as? Bool ?? false
         floatingPetEnabled = defaults.object(forKey: "floatingPetEnabled") as? Bool ?? false
         floatingPetSize = defaults.object(forKey: "floatingPetSize") as? Double ?? 96

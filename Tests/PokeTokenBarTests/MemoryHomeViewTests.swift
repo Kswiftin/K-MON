@@ -10,14 +10,14 @@ final class MemoryHomeViewTests: XCTestCase {
         XCTAssertNotNil(MemoryHomeView(store: store))
     }
 
-    func testMemoryHomeIsDisabledAndDiagnosticsRecordOnlyAfterOptIn() throws {
+    func testMemoryHomeIsEnabledAndDiagnosticsRecordOnlyAfterOptIn() throws {
         let suite = "memory-home-settings-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         let settings = AppSettings(defaults: defaults, clock: { date })
 
-        XCTAssertFalse(settings.memoryHomeEnabled)
+        XCTAssertTrue(settings.memoryHomeEnabled)
         XCTAssertFalse(settings.memoryHomeDiagnosticsEnabled)
         settings.recordMemoryHomeEntry(); settings.recordManualMemoryCreated()
         let beforeOptIn = try XCTUnwrap(JSONSerialization.jsonObject(with: settings.memoryHomeDiagnosticsData()) as? [String: Any])

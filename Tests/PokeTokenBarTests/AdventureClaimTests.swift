@@ -83,6 +83,25 @@ final class AdventureClaimTests: XCTestCase {
         XCTAssertEqual(store.eggFragmentCount, fragments)
     }
 
+    func testEachCompletedAdventureRecordsOnePersistentAutomaticMemory() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        let companionID = try! XCTUnwrap(store.state.active?.id)
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        clock.advance(25 * 60)
+        XCTAssertNotNil(store.claimAdventure())
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        clock.advance(25 * 60)
+        XCTAssertNotNil(store.claimAdventure())
+
+        let adventureMemories = store.memoryAlbum.entries(for: companionID)
+            .filter { $0.eventID?.hasPrefix("adventure:") == true }
+        XCTAssertEqual(adventureMemories.count, 2)
+        XCTAssertEqual(Set(adventureMemories.compactMap(\.eventID)).count, 2,
+                       "Each persisted run UUID identifies exactly one automatic memory")
+    }
+
     /// 트리거 재현 — 진행 중 / 완료-미정산 두 브랜치를 각각 확인한다.
     /// 예전 게이트(`isAdventuring`)는 완료-미정산에서도 참이라 버튼이 영구 비활성이었다.
     func testGateBlocksOnlyWhileRunIsStillInProgress() async {
