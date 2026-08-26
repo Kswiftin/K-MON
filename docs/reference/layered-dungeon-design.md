@@ -3,7 +3,7 @@ summary: "오늘의 던전을 층 그래프(왼→오른 진행 + 1뎊스 곁방
 read_when:
   - 던전 맵 생성기(`PuzzleDungeon`)를 손볼 때
   - 판 길이·난이도·보상 균형을 바꿀 때
-  - 던전 화면(`DungeonView`)의 진행 표시·출구 목록을 손볼 때
+  - 던전 화면의 층 표시를 손볼 때 (방 화면·이동은 `room-walk-dungeon-design.md`)
   - 세이브의 던전 진행(`DungeonProgress`)을 건드릴 때
 ---
 
