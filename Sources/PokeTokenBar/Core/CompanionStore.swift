@@ -205,6 +205,31 @@ final class CompanionStore {
         // 지닌물건 진화(trade+held_item, level-up+held_item)를 연결의끈으로 잘못 안내했다.
         return ItemKind.allCases.first { $0.evolutionRule?.opens(next) == true }
     }
+    /// 갈라지는 진화의 한 갈래 — "무엇을 하면 무엇이 되는가".
+    struct EvolutionBranch: Identifiable, Sendable {
+        let id: Int              // 대상 종 번호
+        let targetName: String
+        let item: ItemKind?      // 돌·지닌물건·교환으로 여는 갈래
+        let level: Int?          // 레벨로 열리는 갈래
+    }
+
+    /// 지금 개체가 갈 수 있는 **모든** 갈래. 갈래가 하나뿐이면 빈 배열이다(그때는 기존 한 줄 안내가 맡는다).
+    ///
+    /// 이게 없던 동안 화면은 **정해진 경로 쪽 갈래 하나만** 말했다(`nextEvolutionItem` 이 계획을 본다).
+    /// 그런데 아이템 사용은 계획을 보지 않는다 — `useEvolutionItem` 은 그 아이템이 여는 갈래로 간다.
+    /// 즉 물의돌로 강챙이가 되는데 화면엔 왕의징표석만 떠서, 나머지 갈래가 막힌 것처럼 보였다.
+    var evolutionBranches: [EvolutionBranch] {
+        guard let mon = state.active, let line = currentLine,
+              let node = line.tree.node(withID: mon.currentID),
+              node.children.count >= 2 else { return [] }
+        return node.children.map { child in
+            EvolutionBranch(id: child.speciesID,
+                            targetName: line.localizedName(child.speciesID, state.language),
+                            item: ItemKind.allCases.first { $0.evolutionRule?.opens(child) == true },
+                            level: child.evolutionLevel)
+        }
+    }
+
     /// 다음 진화가 요구하는 기술의 id — 기술 습득 카드가 "이건 진화 기술" 표식을 다는 근거다.
     /// 이미 배웠는지는 보지 않는다. 카드는 아직 안 배운 기술만 제안하므로 그 구분이 필요 없다.
     var nextEvolutionKnownMoveID: Int? { nextEvolutionNode?.evolutionKnownMoveID }
