@@ -20,6 +20,40 @@ final class RosterOrderingTests: XCTestCase {
                        [2, 1, 3], "내림차순은 저장 순서를 뒤집는다")
     }
 
+    /// 도감 번호순 — 도감 격자와 같은 순서다. 두 화면이 같은 순서라야 "도감의 그 칸" 을 박스에서
+    /// 같은 자리로 찾는다.
+    func testDexNumberSortOrdersByTheNumberOnTheCard() {
+        let box = [mon(25), mon(1), mon(150)]
+        XCTAssertEqual(RosterOrdering.arrange(box, sort: .dexNumber).map(\.currentID), [1, 25, 150])
+        XCTAssertEqual(RosterOrdering.arrange(box, sort: .dexNumber, ascending: false).map(\.currentID),
+                       [150, 25, 1])
+    }
+
+    /// **현재 형태의 번호**로 센다. 기본형 번호로 묶으면 이상해꽃이 3번이 아니라 1번 자리에 서서,
+    /// 카드가 그리는 스프라이트·이름과 순서가 어긋난다.
+    func testDexNumberSortFollowsTheCurrentFormNotTheBaseForm() {
+        var venusaur = MonState(baseID: 1, pathIDs: [1, 2, 3], stageIndex: 2, usedAtStage: 0,
+                                rarity: .common, totalForms: 3)
+        venusaur.levelExperience = 0
+        let box = [venusaur, mon(2)]
+        XCTAssertEqual(venusaur.currentID, 3, "이 개체는 카드에 3번으로 그려진다")
+        XCTAssertEqual(RosterOrdering.arrange(box, sort: .dexNumber).map(\.currentID), [2, 3])
+    }
+
+    /// 같은 종이 여러 마리면 저장 순서를 지킨다 — 안 그러면 볼 때마다 자리가 바뀐다.
+    func testDexNumberSortIsStableWithinTheSameSpecies() {
+        let box = [mon(25, level: 9), mon(4), mon(25, level: 3)]
+        let arranged = RosterOrdering.arrange(box, sort: .dexNumber)
+        XCTAssertEqual(arranged.map(\.currentID), [4, 25, 25])
+        XCTAssertEqual(arranged.map(\.level), [1, 9, 3], "같은 번호끼리는 넣은 순서 그대로")
+    }
+
+    /// 세이브에 rawValue 로 남는다 — case 이름을 바꾸면 예전 세이브가 조용히 기본값으로 되돌아간다.
+    func testTheStoredSortKeyStaysStable() {
+        XCTAssertEqual(RosterSort.dexNumber.rawValue, "dexNumber")
+        XCTAssertEqual(RosterSort(rawValue: "dexNumber"), .dexNumber)
+    }
+
     func testNameSortUsesTheNameTheCardDraws() {
         // 개체에 저장된 다국어 이름으로 정렬한다 — 카드가 그리는 값과 같아야 한다.
         let box = [mon(3, name: "Venusaur"), mon(1, name: "Bulbasaur"), mon(2, name: "Ivysaur")]

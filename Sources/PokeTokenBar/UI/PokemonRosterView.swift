@@ -160,9 +160,10 @@ struct PokemonRosterView: View {
 
     private func sortLabel(_ option: RosterSort) -> String {
         switch option {
-        case .caught: return store.l.t("부화순", "Caught", "ふ化順")
-        case .name:   return store.l.t("이름순", "Name", "名前順")
-        case .level:  return store.l.t("레벨순", "Level", "レベル順")
+        case .caught:    return store.l.t("부화순", "Caught", "ふ化順")
+        case .dexNumber: return store.l.t("도감번호순", "Dex No.", "図鑑番号順")
+        case .name:      return store.l.t("이름순", "Name", "名前順")
+        case .level:     return store.l.t("레벨순", "Level", "レベル順")
         }
     }
 
