@@ -65,6 +65,31 @@ final class DexShinyFilterTests: XCTestCase {
         XCTAssertEqual(s.dexSpecies.lazy.filter(\.isShiny).count, 2)
     }
 
+    /// 포켓몬 탭 카드도 **도감과 같은 표식**을 단다. 이로치 스프라이트는 색만 다를 뿐이라
+    /// 원래 색을 모르면 알아볼 수 없다(색 차이가 작은 종이 특히 그렇다).
+    ///
+    /// 두 화면이 다른 표식을 쓰면 같은 사실을 두 가지로 배우게 된다. 표식과 접근성 라벨을
+    /// 같은 것으로 쓰는지 소스에서 본다 — 주석은 뺀다(가드가 자기 설명에 걸린다).
+    func testRosterCardMarksShiniesTheSameWayTheDexDoes() throws {
+        func code(_ path: String) throws -> String {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent(path)
+            return try String(contentsOf: url, encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line -> String in
+                    guard let comment = line.range(of: "//") else { return String(line) }
+                    return String(line[..<comment.lowerBound])
+                }
+                .joined(separator: "\n")
+        }
+        let roster = try code("Sources/PokeTokenBar/UI/PokemonRosterView.swift")
+        XCTAssertTrue(roster.contains("mon.isShiny"), "카드가 이로치 여부를 읽어야 한다")
+        XCTAssertTrue(roster.contains("✨"), "도감과 같은 표식")
+        XCTAssertTrue(roster.contains("dexShinyLabel"),
+                      "이모지는 스크린리더가 일관되게 읽지 못한다 — 명사를 같이 단다")
+    }
+
     /// 문구는 세 언어 모두 있어야 한다 — 두 언어만 채우는 부류를 막는 게 이 레포의 규칙이다.
     func testFilterCopyExistsInAllThreeLanguages() {
         for lang in AppLanguage.allCases {
