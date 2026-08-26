@@ -333,8 +333,7 @@ final class PokemonMemoryAlbum {
     }
     @discardableResult
     func setHidden(_ memory: PokemonMemory, isHidden: Bool) -> Bool {
-        guard memory.source == .manual,
-              var entries = memories[memory.companionID],
+        guard var entries = memories[memory.companionID],
               let index = entries.firstIndex(where: { $0.id == memory.id }) else { return false }
         entries[index].isHidden = isHidden
         memories[memory.companionID] = entries; save()

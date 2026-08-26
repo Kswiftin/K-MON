@@ -13,6 +13,7 @@ struct MemoryHomeView: View {
         let album = store.memoryAlbum
         let entries = album.entries(for: mon.id)
         let timeline = album.timeline(for: mon.id)
+        let hidden = entries.filter(\.isHidden).sorted { $0.createdAt > $1.createdAt }
 
         return AnyView(VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -68,6 +69,13 @@ struct MemoryHomeView: View {
             ForEach(timeline) { memory in
                 memoryRow(memory, album: album)
             }
+            if !hidden.isEmpty {
+                DisclosureGroup(l.t("숨긴 기억", "Hidden memories", "非表示の思い出")) {
+                    ForEach(hidden) { memory in
+                        memoryRow(memory, album: album)
+                    }
+                }
+            }
         }
         .padding(10).pokedoroCard(tint: PokedoroTheme.mint)
         .onAppear { settings.recordMemoryHomeExposure() })
@@ -90,10 +98,10 @@ struct MemoryHomeView: View {
             Spacer(minLength: 0)
             Menu {
                 Button(l.t("고정", "Pin", "固定")) { album.pin(memory) }
+                Button(memory.isHidden ? l.t("다시 표시", "Show", "再表示") : l.t("숨기기", "Hide", "非表示")) {
+                    _ = album.setHidden(memory, isHidden: !memory.isHidden)
+                }
                 if memory.source == .manual {
-                    Button(memory.isHidden ? l.t("다시 표시", "Show", "再表示") : l.t("숨기기", "Hide", "非表示")) {
-                        _ = album.setHidden(memory, isHidden: !memory.isHidden)
-                    }
                     Button(l.t("삭제", "Delete", "削除"), role: .destructive) { _ = album.delete(memory) }
                 }
             } label: {

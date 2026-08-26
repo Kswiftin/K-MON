@@ -55,6 +55,23 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         XCTAssertNil(album.pinned(for: firstID))
     }
 
+    func testAutomaticMemoryCanBeHiddenRestoredAndPersists() {
+        let url = temporaryURL(), companionID = UUID()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+        album.record(companionID: companionID, body: "Event", source: .event)
+        let automatic = album.entries(for: companionID)[0]
+
+        XCTAssertTrue(album.setHidden(automatic, isHidden: true))
+        XCTAssertTrue(PokemonMemoryAlbum(fileURL: url).entries(for: companionID)[0].isHidden)
+
+        let reloaded = PokemonMemoryAlbum(fileURL: url)
+        let hidden = reloaded.entries(for: companionID)[0]
+        XCTAssertTrue(reloaded.setHidden(hidden, isHidden: false))
+        XCTAssertFalse(PokemonMemoryAlbum(fileURL: url).entries(for: companionID)[0].isHidden)
+        XCTAssertFalse(reloaded.delete(hidden), "Automatic evidence cannot be deleted")
+    }
+
     func testTimelineHidesEntriesAndLimitsToTwentyNewest() {
         let album = PokemonMemoryAlbum(fileURL: temporaryURL()), companionID = UUID()
         for number in 0..<20 { album.record(companionID: companionID, body: "Event \(number)", source: .event) }
