@@ -442,8 +442,28 @@ final class BattleCenter {
     private var chatHistory = BattleChatHistory()
     private var chatRateLimiter = BattleChatRateLimiter()
     let chatSenderID = UUID()
-    /// 팝오버가 열려 있을 때 배틀 탭으로 유도하기 위한 신호(뷰가 소비).
-    var pendingAttention = false
+    /// 팝오버를 열 때 친구 탭으로 데려가라는 신호. **한 번 쓰면 꺼진다**(`consumePendingAttention`).
+    ///
+    /// 직접 끄지 말 것. 예전엔 `BattleView.onAppear` 가 껐는데, 친구 탭에 관문(`FriendView`)이
+    /// 생기면서 그 화면은 **배틀이 진행 중일 때만** 그려지게 됐다. 배틀이 끝나 `phase == .ready` 가
+    /// 되면 관문이 선택 화면을 그리므로 신호를 끌 화면이 영영 안 뜨고, 팝오버를 열 때마다 친구
+    /// 탭으로 튀었다(체육관 한 판만 해도 그 뒤로 계속).
+    private(set) var pendingAttention = false
+
+    /// 신호를 **소비한다** — 켜져 있었으면 끄고 true. 끄는 일과 읽는 일을 한 호출로 묶어,
+    /// 신호를 읽고 끄지 않는 경로가 생기지 않게 한다.
+    @discardableResult
+    func consumePendingAttention() -> Bool {
+        guard pendingAttention else { return false }
+        pendingAttention = false
+        return true
+    }
+
+    #if DEBUG
+    /// 테스트 전용 — 신호를 세운다. 실제로는 배틀 시작·신청 수신이 세우는데, 그 경로는 네트워크와
+    /// 파티 편성을 지나므로 이 한 축만 보려면 여기로 들어온다.
+    func debugRaisePendingAttention() { pendingAttention = true }
+    #endif
     /// 배틀이 잡히거나 걸릴 때 창을 자동으로 열고 고정하게 하는 신호(AppDelegate 가 관찰).
     /// 배틀 관련 phase 면 true — 창을 띄우고 닫히지 않게 유지한다.
     var wantsPinnedWindow: Bool {

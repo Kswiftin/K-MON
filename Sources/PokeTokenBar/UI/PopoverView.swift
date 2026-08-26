@@ -114,7 +114,9 @@ struct PopoverView: View {
         .frame(width: PopoverMetrics.width)
         .environment(\.spriteAntialiasing, settings.imageAntialiasing)
         .environment(\.locale, companion.language.displayLocale)
-        .onAppear { if battleCenter.pendingAttention { nav.tab = .battle } }
+        // 신호를 읽는 **바로 그 자리에서** 끈다. 끄는 일을 아래 화면에 맡기면 그 화면이 조건부로
+        // 그려지는 순간(친구 탭 관문이 그랬다) 신호가 영영 안 꺼져 열 때마다 여기로 튄다.
+        .onAppear { if battleCenter.consumePendingAttention() { nav.tab = .battle } }
         // 도전을 누르면 배틀이 시작된다 — 목록에 그대로 있으면 자기가 시작한 배틀을 못 본다.
         .onChange(of: battleCenter.phase) { _, phase in
             if nav.showGymLeague, phase != .ready { nav.showGymLeague = false }
