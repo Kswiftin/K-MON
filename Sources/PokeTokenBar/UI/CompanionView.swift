@@ -508,8 +508,11 @@ struct CompanionHeader: View {
                 SpriteView(speciesID: store.currentSpeciesID, size: 76, bob: true, animated: true,
                            shiny: store.currentIsShiny)
                     .frame(width: 76, height: 76)
-                    .background(Color.secondary.opacity(0.06))
+                    .background(Color.secondary.opacity(0.055))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                        .allowsHitTesting(false))
                     .rotationEffect(.degrees(eggImminent && eggWiggle ? 5 : (eggImminent ? -5 : 0)))
                     .scaleEffect(celebScale)
                     .overlay(RoundedRectangle(cornerRadius: 12).fill(.white).opacity(flashOpacity))
@@ -682,7 +685,7 @@ struct CompanionHeader: View {
                         .font(.caption.weight(.semibold))
                 }
                 .padding(8)
-                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+                .pokedoroCard(tint: PokedoroTheme.yellow)
             }
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
             if store.canGraduate { GraduateCard(store: store) }
@@ -798,7 +801,7 @@ struct CompanionHeader: View {
     }
 }
 
-private struct TypeBadge: View {
+struct TypeBadge: View {
     let type: PokemonType
     let language: AppLanguage
 
@@ -1221,10 +1224,7 @@ private struct MoveLearningCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             // 하트비늘 유래면 "다시 떠올리기" 로 말한다 — 레벨업으로 새로 얻은 기술이 아니다.
-            Label(prompt.origin == .heartScale
-                  ? store.l.relearnHeader
-                  : store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます"),
-                  systemImage: prompt.origin == .heartScale ? "arrow.counterclockwise" : "sparkles")
+            Label(learningTitle, systemImage: learningIcon)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(prompt.origin == .heartScale ? Color.pink : Color.purple)
             if let s = profile?.stats {
@@ -1304,6 +1304,26 @@ private struct MoveLearningCard: View {
         .task(id: store.currentSpeciesID) {
             guard let id = store.currentSpeciesID else { profile = nil; return }
             profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id)
+        }
+    }
+
+    private var learningTitle: String {
+        switch prompt.origin {
+        case .heartScale: return store.l.relearnHeader
+        case .technicalMachine:
+            return store.l.t("기술머신으로 기술을 배울 수 있어요",
+                             "A Technical Machine can teach this move",
+                             "わざマシンでわざを覚えられます")
+        case .levelUp:
+            return store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます")
+        }
+    }
+
+    private var learningIcon: String {
+        switch prompt.origin {
+        case .heartScale: return "arrow.counterclockwise"
+        case .technicalMachine: return "opticaldisc"
+        case .levelUp: return "sparkles"
         }
     }
 
@@ -1961,13 +1981,12 @@ private struct DexSpeciesCell: View {
                 }
             }
             .padding(3)
-            .background(Color.secondary.opacity(isSelected ? 0.16 : 0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.accentColor, lineWidth: 1.5)
-                }
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSelected ? PokedoroTheme.blue.opacity(0.50) : Color.primary.opacity(0.07),
+                                  lineWidth: 1)
+                    .allowsHitTesting(false)
             }
         }
         .buttonStyle(.plain)

@@ -6,7 +6,8 @@ struct BagView: View {
     let nav: PopoverNavigation
 
     var body: some View {
-        if store.ownedItems.isEmpty && store.focusEggCount == 0 && store.eggFragmentCount == 0 {
+        if store.ownedItems.isEmpty && store.ownedTechnicalMachines.isEmpty
+            && store.focusEggCount == 0 && store.eggFragmentCount == 0 {
             emptyState
         } else {
             // 고정 높이 — 컬렉션과 동일(팝오버 재오픈 시 fitting size 축소 방지).
@@ -35,10 +36,14 @@ struct BagView: View {
                             Spacer()
                         }
                         .padding(10)
-                        .background(Color.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        .pokedoroCard(tint: .purple)
                     }
                     ForEach(store.ownedItems, id: \.kind) { item in
                         ItemCard(store: store, nav: nav, kind: item.kind, count: item.count)
+                    }
+                    ForEach(store.ownedTechnicalMachines, id: \.machine.id) { entry in
+                        TechnicalMachineBagCard(store: store, nav: nav,
+                                                machine: entry.machine, count: entry.count)
                     }
                 }
             }
@@ -55,6 +60,86 @@ struct BagView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
+    }
+}
+
+private struct TechnicalMachineBagCard: View {
+    let store: CompanionStore
+    let nav: PopoverNavigation
+    let machine: TechnicalMachine
+    let count: Int
+    @State private var move: MoveSpec?
+    @State private var canLearn = false
+    @State private var checking = true
+    @State private var applying = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "opticaldisc.fill")
+                    .font(.system(size: 27)).foregroundStyle(.purple)
+                    .frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(machine.label).font(.system(size: 9, weight: .black, design: .rounded))
+                            .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(.purple, in: Capsule())
+                        Text(move?.name(store.language) ?? machine.slug).font(.callout.weight(.semibold))
+                        Text("×\(count)").font(.caption.bold()).foregroundStyle(.secondary)
+                        if let move {
+                            TypeBadge(type: move.type, language: store.language)
+                            MoveCategoryIcon(damageClass: move.damageClass, l: store.l)
+                        }
+                    }
+                    Text(move?.description(store.language)
+                         ?? store.l.t("포켓몬에게 기술을 가르칩니다.", "Teaches a move to a Pokémon.", "ポケモンにわざを教えます。"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer()
+            }
+            HStack {
+                Text(statusText).font(.caption2).foregroundStyle(.tertiary)
+                Spacer()
+                Button(store.l.useItem) { teach() }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .disabled(checking || applying || !canLearn || move == nil)
+            }
+        }
+        .padding(10)
+        .pokedoroCard(tint: .purple)
+        .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") { await refresh() }
+    }
+
+    private var statusText: String {
+        if store.state.active?.learnedMoves.contains(where: { $0.id == machine.moveID }) == true {
+            return store.l.t("이미 배운 기술", "Already learned", "すでに覚えています")
+        }
+        if checking { return store.l.t("배울 수 있는지 확인 중…", "Checking compatibility…", "覚えられるか確認中…") }
+        return canLearn
+            ? store.l.t("현재 포켓몬이 배울 수 있어요", "The current Pokémon can learn it", "今のポケモンが覚えられます")
+            : store.l.t("현재 포켓몬은 배울 수 없어요", "The current Pokémon cannot learn it", "今のポケモンは覚えられません")
+    }
+
+    @MainActor private func refresh() async {
+        checking = true
+        move = await PokeAPIClient.shared.moveDetail(id: machine.moveID)
+        if let speciesID = store.currentSpeciesID {
+            canLearn = await PokeAPIClient.shared.canLearnMachine(speciesID: speciesID, moveID: machine.moveID)
+                && store.state.active?.learnedMoves.contains(where: { $0.id == machine.moveID }) == false
+        } else {
+            canLearn = false
+        }
+        checking = false
+    }
+
+    private func teach() {
+        applying = true
+        Task { @MainActor in
+            let opened = await store.useTechnicalMachine(machine)
+            applying = false
+            if opened { nav.tab = .home }
+            else { await refresh() }
+        }
     }
 }
 
@@ -90,8 +175,7 @@ private struct ItemCard: View {
             useControls(l)
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .pokedoroCard(tint: PokedoroTheme.blue)
     }
 
     /// 이 아이템을 지금 쓸 수 있나 (kind 별 — 사탕은 라인 로딩 필요, 민트는 활성 포켓몬만).

@@ -112,6 +112,9 @@ struct PopoverView: View {
             }
         }
         .frame(width: PopoverMetrics.width)
+        .background { PokedoroTheme.pageBackground }
+        .tint(PokedoroTheme.blue)
+        .fontDesign(.rounded)
         .environment(\.spriteAntialiasing, settings.imageAntialiasing)
         .environment(\.locale, companion.language.displayLocale)
         // 신호를 읽는 **바로 그 자리에서** 끈다. 끄는 일을 아래 화면에 맡기면 그 화면이 조건부로
@@ -144,7 +147,7 @@ struct PopoverView: View {
                 }
             }
             .padding(8)
-            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            .pokedoroCard(tint: PokedoroTheme.blue, emphasized: true)
         }
     }
 
@@ -155,22 +158,26 @@ struct PopoverView: View {
     /// 겹쳐 포켓몬 레벨로 잘못 읽힌다. 게이지와 남은 포인트가 있어야 배지가 아니라 좇을 목표가 되고,
     /// 옆의 잔액이 레벨업 보상이 어디로 들어왔는지 연결해 준다(그 전엔 상점 안에서만 보였다).
     private var trainerBar: some View {
-        HStack(spacing: 8) {
-            Text("👑 \(l.trainerLevelLabel) Lv.\(companion.trainerLevel.level)")
-                .font(.caption.weight(.semibold)).monospacedDigit()
-            ProgressView(value: companion.trainerLevel.progress)
-                .tint(.orange).frame(width: 64)
-            if let remaining = companion.trainerLevel.pointsToNextLevel {
-                Text("\(remaining)p")
-                    .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
+        VStack(spacing: 5) {
+            HStack(spacing: 7) {
+                PokeBallMark(size: 22)
+                Text("\(l.trainerLevelLabel) Lv.\(companion.trainerLevel.level)")
+                    .font(.caption.weight(.bold)).monospacedDigit()
+                if let remaining = companion.trainerLevel.pointsToNextLevel {
+                    Text("NEXT \(remaining)p")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .monospacedDigit().foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("✦ " + GameNumberFormatter.compact(companion.availableTokens))
+                    .font(.caption.weight(.bold)).foregroundStyle(.orange).monospacedDigit()
             }
-            Spacer()
-            Text("⭐ " + GameNumberFormatter.compact(companion.availableTokens))
-                .font(.caption.weight(.semibold)).monospacedDigit()
+            ProgressView(value: companion.trainerLevel.progress)
+                .tint(PokedoroTheme.blue)
+                .scaleEffect(x: 1, y: 1.35)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 11).padding(.vertical, 8)
+        .pokedoroCard(tint: PokedoroTheme.yellow)
     }
 
     private var mainContent: some View {
@@ -179,15 +186,7 @@ struct PopoverView: View {
             updateBanner
             trainerBar
             FocusTimerView()
-            Picker("", selection: $nav.tab) {
-                Text(l.home).tag(PopoverTab.home)
-                Text(l.t("포켓몬", "Pokémon", "ポケモン")).tag(PopoverTab.pokemon)
-                Text(l.collection).tag(PopoverTab.collection)
-                Text(l.t("친구", "Friends", "フレンド")).tag(PopoverTab.battle)
-                Text(l.t("도전", "Challenge", "チャレンジ")).tag(PopoverTab.challenge)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            PokedoroTabBar(selection: $nav.tab, l: l)
 
             // 탭 콘텐츠만 스크롤한다. 짧은 탭은 위로 붙고 남는 자리는 빈 공간으로 둔다 —
             // 창 높이가 고정이라 탭을 바꾸거나 기술 목록을 펼쳐도 팝오버는 그대로다.
@@ -215,10 +214,11 @@ struct PopoverView: View {
             footer
         }
         .padding(PopoverMetrics.padding)
+        .animation(.snappy(duration: 0.22), value: nav.tab)
     }
 
     private var footer: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             if nav.tab == .home {
                 Text("\(l.totalPlaytime) \(l.duration(companion.activeSecondsTotal))")
                     .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
@@ -234,5 +234,9 @@ struct PopoverView: View {
             Button { NSApplication.shared.terminate(nil) } label: { Image(systemName: "power") }
                 .buttonStyle(.borderless).help(l.quit)
         }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.94), in: Capsule())
+        .overlay(Capsule().strokeBorder(PokedoroTheme.ink.opacity(0.28), lineWidth: 1.25)
+            .allowsHitTesting(false))
     }
 }

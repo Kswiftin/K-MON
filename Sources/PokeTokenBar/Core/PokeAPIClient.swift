@@ -20,6 +20,8 @@ protocol PokeProviding: Sendable {
     /// 세이브에 든 기술 스펙의 빠진 축을 채우는 조회. `battleProfile` 과 같은 이유로 주입 가능해야
     /// 한다 — 대전 스냅샷이 이 보강을 지나는지를 네트워크 없이 테스트한다.
     func moveDetail(id: Int) async -> MoveSpec?
+    /// 해당 종이 본가 기술머신(machine 방식)으로 기술을 배울 수 있는지 확인한다.
+    func canLearnMachine(speciesID: Int, moveID: Int) async -> Bool
     /// 획득 가능 범위 전 종의 타입 (GraphQL 1쿼리, 디스크 캐시). 도감 타입 필터가 읽는다 —
     /// **아직 안 잡은 종에도 걸려야** 해서 `battleProfile` 종별 조회로는 대체할 수 없다(649회).
     func speciesTypeIndex() async throws -> [Int: [PokemonType]]
@@ -33,6 +35,10 @@ extension PokeProviding {
 
     func moveDetail(id: Int) async -> MoveSpec? {
         await PokeAPIClient.shared.moveDetail(id: id)
+    }
+
+    func canLearnMachine(speciesID: Int, moveID: Int) async -> Bool {
+        await PokeAPIClient.shared.canLearnMachine(speciesID: speciesID, moveID: moveID)
     }
 
     func speciesTypeIndex() async throws -> [Int: [PokemonType]] {
@@ -402,6 +408,26 @@ actor PokeAPIClient: PokeProviding {
     // MARK: 무브셋 (네트워크 대전)
 
     private var moveSetCache: [String: [MoveSpec]] = [:]   // "speciesID-level" → 4기술
+    private var machineCompatibilityCache: [String: Bool] = [:]
+
+    func canLearnMachine(speciesID: Int, moveID: Int) async -> Bool {
+        let key = "gen5-\(speciesID)-\(moveID)"
+        if let cached = machineCompatibilityCache[key] { return cached }
+        guard let dto: PokemonMovesDTO = try? await get(base.appendingPathComponent("pokemon/\(speciesID)")) else {
+            return false
+        }
+        let result = dto.moves.contains { entry in
+            Self.id(from: entry.move.url ?? "") == moveID
+                && entry.version_group_details.contains {
+                    $0.move_learn_method.name == "machine"
+                        && $0.version_group.map {
+                            ["black-white", "black-2-white-2"].contains($0.name)
+                        } == true
+                }
+        }
+        machineCompatibilityCache[key] = result
+        return result
+    }
 
     /// 현재 레벨까지 레벨업으로 배우는 기술 중 4개 선택(위력·타입 다양성 우선, 변화기 최대 한 칸).
     /// 후보가 모자라면 레벨 제한을 풀고, 그래도 없거나 fetch 실패면 합성 무브셋 폴백 —
@@ -746,6 +772,7 @@ struct PokemonMovesDTO: Decodable, Sendable {
         struct Detail: Decodable, Sendable {
             let level_learned_at: Int
             let move_learn_method: NamedRef
+            let version_group: NamedRef?
         }
         let move: NamedRef
         let version_group_details: [Detail]

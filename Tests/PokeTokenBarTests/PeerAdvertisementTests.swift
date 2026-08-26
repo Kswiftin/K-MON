@@ -11,6 +11,18 @@ final class PeerAdvertisementTests: XCTestCase {
     /// 피어 변환 테스트용 엔드포인트. 연결에 쓰지 않으므로 값 자체는 의미가 없다.
     private let anyEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: 4_242)
 
+    /// `.bonjour` 는 서비스만 찾아 실제 광고에 TXT가 있어도 `metadata == .none` 을 돌려준다.
+    /// 랭크·레벨 카드가 다시 전부 빈 칸이 되지 않도록 TXT 요청 descriptor를 고정한다.
+    func testBattleDiscoveryExplicitlyRequestsTXTRecords() {
+        switch BattleCenter.discoveryDescriptor() {
+        case .bonjourWithTXTRecord(let type, let domain):
+            XCTAssertEqual(type, BattleCenter.serviceType)
+            XCTAssertNil(domain)
+        default:
+            XCTFail("Battle discovery must use bonjourWithTXTRecord")
+        }
+    }
+
     // MARK: 와이어 계약 (구버전과의 호환)
 
     /// 키 이름을 리터럴로 동결한다. 상수끼리 비교하면 이름을 바꿔도 테스트가 따라가서, 구버전과

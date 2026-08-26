@@ -288,7 +288,13 @@ private struct RosterMonCard: View {
                     .font(.system(size: 7, weight: .bold))
                     .foregroundStyle(isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
-        }.buttonStyle(.bordered).disabled(isActive)
+        }
+        .buttonStyle(.plain).disabled(isActive)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(isActive ? PokedoroTheme.mint.opacity(0.45) : Color.primary.opacity(0.075),
+                          lineWidth: 1)
+            .allowsHitTesting(false))
         .overlay(alignment: .topTrailing) {
             Button(action: onChat) { Image(systemName: "bubble.left") }
                 .buttonStyle(.borderless).controlSize(.mini).padding(3)

@@ -6,6 +6,12 @@ import SwiftUI
 struct ShopView: View {
     let store: CompanionStore
     let nav: PopoverNavigation
+    @State private var category: ShopCategory = .general
+
+    private enum ShopCategory: String, CaseIterable, Identifiable {
+        case general, evolution, eggs, machines
+        var id: String { rawValue }
+    }
 
     var body: some View {
         let l = store.l
@@ -16,14 +22,30 @@ struct ShopView: View {
             // 고정 높이(520)는 ScrollView 쪽에 그대로 있어 팝오버 fitting size 규약은 그대로다.
             LazyVStack(alignment: .leading, spacing: 10) {
                 walletHeader(l)
-                // shopEntries = 판매 아이템 + 알 3종(보증 없음·고급 이상·희귀 이상)을 가격 오름차순으로
-                // 병합한 단일 목록. 알은 활성 포켓몬이 있을 때만 포함된다(즉시 액션이라 ItemKind 가 아님).
-                ForEach(store.shopEntries, id: \.self) { entry in
-                    switch entry {
-                    case .item(let kind):
+                Picker("", selection: $category) {
+                    Text(l.t("도구", "Items", "どうぐ")).tag(ShopCategory.general)
+                    Text(l.t("진화", "Evolution", "進化")).tag(ShopCategory.evolution)
+                    Text(l.t("알", "Eggs", "タマゴ")).tag(ShopCategory.eggs)
+                    Text(l.t("기술머신", "TMs", "わざマシン")).tag(ShopCategory.machines)
+                }
+                .pickerStyle(.segmented)
+
+                switch category {
+                case .general:
+                    ForEach(store.purchasableItems.filter { !$0.isEvolutionItem }, id: \.self) { kind in
                         ShopItemCard(store: store, kind: kind)
-                    case .egg(let tier):
+                    }
+                case .evolution:
+                    ForEach(store.purchasableItems.filter(\.isEvolutionItem), id: \.self) { kind in
+                        ShopItemCard(store: store, kind: kind)
+                    }
+                case .eggs:
+                    ForEach(FreshEgg.shopTiers, id: \.self) { tier in
                         EggCard(store: store, nav: nav, tier: tier)
+                    }
+                case .machines:
+                    ForEach(TechnicalMachine.catalog) { machine in
+                        TechnicalMachineShopCard(store: store, machine: machine)
                     }
                 }
             }
@@ -42,8 +64,71 @@ struct ShopView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .pokedoroCard(tint: PokedoroTheme.yellow, emphasized: true)
+    }
+}
+
+private struct TechnicalMachineShopCard: View {
+    let store: CompanionStore
+    let machine: TechnicalMachine
+    @State private var move: MoveSpec?
+    @State private var confirming = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "opticaldisc.fill")
+                    .font(.system(size: 27)).foregroundStyle(.purple)
+                    .frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(machine.label).font(.system(size: 9, weight: .black, design: .rounded))
+                            .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(.purple, in: Capsule())
+                        Text(move?.name(store.language) ?? machine.slug.replacingOccurrences(of: "-", with: " ").capitalized)
+                            .font(.callout.weight(.semibold))
+                        if let move {
+                            TypeBadge(type: move.type, language: store.language)
+                            MoveCategoryIcon(damageClass: move.damageClass, l: store.l)
+                        }
+                        let owned = store.technicalMachineCount(machine.moveID)
+                        if owned > 0 {
+                            Text("×\(owned)").font(.caption2.bold()).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(move?.description(store.language)
+                         ?? store.l.t("포켓몬에게 기술을 가르치는 일회용 기술머신입니다.",
+                                      "A single-use machine that teaches a move.",
+                                      "ポケモンにわざを教える使い切りのマシンです。"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer()
+            }
+            if confirming {
+                HStack {
+                    Text(store.l.buyConfirm(move?.name(store.language) ?? machine.slug))
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(store.l.buy) { _ = store.buyTechnicalMachine(machine); confirming = false }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                    Button(store.l.cancel) { confirming = false }.buttonStyle(.borderless).controlSize(.small)
+                }
+            } else {
+                HStack {
+                    Text("\(store.l.shopPriceLabel) ⭐\(GameNumberFormatter.compact(machine.price))")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                    Spacer()
+                    if store.canBuyTechnicalMachine(machine) {
+                        Button(store.l.buy) { confirming = true }.buttonStyle(.bordered).controlSize(.small)
+                    } else {
+                        Text(store.l.notEnoughTokens).font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .pokedoroCard(tint: .purple)
+        .task(id: machine.moveID) { move = await PokeAPIClient.shared.moveDetail(id: machine.moveID) }
     }
 }
 
@@ -79,8 +164,7 @@ private struct ShopItemCard: View {
             buyControls(l)
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .pokedoroCard(tint: PokedoroTheme.blue)
     }
 
     @ViewBuilder
@@ -166,8 +250,7 @@ private struct EggCard: View {
             controls(l)
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .pokedoroCard(tint: .orange)
     }
 
     @ViewBuilder

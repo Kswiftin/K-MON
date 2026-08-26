@@ -11,7 +11,7 @@ final class CompanionStore {
     static let storedEggHatchDelay: TimeInterval = 5 * 60
     /// 학습 제안의 출처. 하트비늘 유래일 때만 아이템을 소모하므로 구분이 필요하다.
     /// 기본값이 `.levelUp` 이라 기존 생성부(레벨업·이상한 사탕)는 손대지 않는다.
-    enum MoveLearningOrigin: Sendable { case levelUp, heartScale }
+    enum MoveLearningOrigin: Sendable { case levelUp, heartScale, technicalMachine }
 
     struct MoveLearningPrompt: Identifiable {
         let id = UUID()
@@ -1442,6 +1442,13 @@ final class CompanionStore {
 
     func acceptMoveLearning(replacing index: Int? = nil) {
         guard let prompt = moveLearningPrompt else { declineMoveLearning(); return }
+        if prompt.origin == .technicalMachine {
+            guard technicalMachineCount(prompt.move.id) > 0 else {
+                pendingMoveLearningPrompt = nil
+                showNextMoveLearningPrompt()
+                return
+            }
+        }
         if state.active!.learnedMoves.count < 4 {
             state.active!.learnedMoves.append(prompt.move)
         } else if let index, state.active!.learnedMoves.indices.contains(index) {
@@ -1451,6 +1458,9 @@ final class CompanionStore {
         // 경우까지 태우면 클릭 한 번에 500 별의조각이 사라지는 함정이 된다.
         if prompt.origin == .heartScale {
             state.inventory[ItemKind.heartScale.rawValue] = max(0, itemCount(.heartScale) - 1)
+        } else if prompt.origin == .technicalMachine {
+            let count = technicalMachineCount(prompt.move.id)
+            state.technicalMachines[prompt.move.id] = count - 1
         }
         // 표시 목록을 여기서 맞춘다. 기술 목록의 `.task(id:)` 는 "개체 id + 레벨" 이라 **레벨이
         // 바뀌지 않는 학습**(하트비늘)에서는 다시 돌지 않는다 — 레벨업 경로는 레벨이 함께 바뀌어
@@ -2366,6 +2376,43 @@ final class CompanionStore {
     /// 상점에서 쓸 수 있는 별의모래 = 누적 생산량 − 상점 지출 누적. 성장 미터(usedSinceInstall)는
     /// 여기선 읽기만 — 구매는 spentTokens 만 올려 잔액을 깎는다(진화 진행·오늘/주/월 통계 무영향).
     var availableTokens: Int { max(0, state.starPieces) }
+
+    func technicalMachineCount(_ moveID: Int) -> Int { state.technicalMachines[moveID] ?? 0 }
+
+    var ownedTechnicalMachines: [(machine: TechnicalMachine, count: Int)] {
+        TechnicalMachine.catalog.compactMap { machine in
+            let count = technicalMachineCount(machine.moveID)
+            return count > 0 ? (machine, count) : nil
+        }
+    }
+
+    func canBuyTechnicalMachine(_ machine: TechnicalMachine) -> Bool {
+        availableTokens >= machine.price
+    }
+
+    @discardableResult
+    func buyTechnicalMachine(_ machine: TechnicalMachine) -> Bool {
+        guard canBuyTechnicalMachine(machine) else { return false }
+        state.starPieces -= machine.price
+        state.technicalMachines[machine.moveID, default: 0] += 1
+        save()
+        return true
+    }
+
+    /// 기술머신 사용은 구매와 분리한다. 호환되지 않거나 이미 배운 기술이면 재고를 소모하지 않는다.
+    /// 실제 소모는 학습/교체가 확정되는 `acceptMoveLearning`에서만 일어난다.
+    @discardableResult
+    func useTechnicalMachine(_ machine: TechnicalMachine) async -> Bool {
+        guard let mon = state.active, technicalMachineCount(machine.moveID) > 0,
+              pendingMoveLearningPrompt == nil,
+              !mon.learnedMoves.contains(where: { $0.id == machine.moveID }),
+              await provider.canLearnMachine(speciesID: mon.currentID, moveID: machine.moveID),
+              let move = await provider.moveDetail(id: machine.moveID),
+              state.active?.id == mon.id else { return false }
+        pendingMoveLearningPrompt = MoveLearningPrompt(monID: mon.id, level: mon.level,
+                                                       move: move, origin: .technicalMachine)
+        return true
+    }
 
     /// 상점 판매 아이템 — shopPrice 있는 것만. 가격 저렴한 순, 단 구매 완료한 보유형은 맨 아래로.
     var purchasableItems: [ItemKind] {

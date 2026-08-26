@@ -318,6 +318,61 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// 상점에서 판매하는 기술머신. 기술 데이터와 습득 가능 여부는 PokéAPI를 사용하고, 카탈로그에는
+/// 판매할 본가 기술 번호와 가격만 둔다. 인벤토리는 moveID를 키로 저장해 이름 번역 변경과 무관하다.
+struct TechnicalMachine: Identifiable, Hashable, Sendable {
+    let number: Int
+    let moveID: Int
+    let slug: String
+    let price: Int
+    var id: Int { moveID }
+    var label: String { String(format: "TM%02d", number) }
+
+    /// 5세대 블랙·화이트 기준 TM01~TM95. HM01~HM06은 기술머신 상점에서 판매하지 않는다.
+    static let catalog: [TechnicalMachine] = [
+        tm(1, 468, "hone-claws"), tm(2, 337, "dragon-claw"), tm(3, 473, "psyshock"),
+        tm(4, 347, "calm-mind"), tm(5, 46, "roar"), tm(6, 92, "toxic"),
+        tm(7, 258, "hail"), tm(8, 339, "bulk-up"), tm(9, 474, "venoshock"),
+        tm(10, 237, "hidden-power"), tm(11, 241, "sunny-day"), tm(12, 269, "taunt"),
+        tm(13, 58, "ice-beam"), tm(14, 59, "blizzard"), tm(15, 63, "hyper-beam"),
+        tm(16, 113, "light-screen"), tm(17, 182, "protect"), tm(18, 240, "rain-dance"),
+        tm(19, 477, "telekinesis"), tm(20, 219, "safeguard"), tm(21, 218, "frustration"),
+        tm(22, 76, "solar-beam"), tm(23, 479, "smack-down"), tm(24, 85, "thunderbolt"),
+        tm(25, 87, "thunder"), tm(26, 89, "earthquake"), tm(27, 216, "return"),
+        tm(28, 91, "dig"), tm(29, 94, "psychic"), tm(30, 247, "shadow-ball"),
+        tm(31, 280, "brick-break"), tm(32, 104, "double-team"), tm(33, 115, "reflect"),
+        tm(34, 482, "sludge-wave"), tm(35, 53, "flamethrower"), tm(36, 188, "sludge-bomb"),
+        tm(37, 201, "sandstorm"), tm(38, 126, "fire-blast"), tm(39, 317, "rock-tomb"),
+        tm(40, 332, "aerial-ace"), tm(41, 259, "torment"), tm(42, 263, "facade"),
+        tm(43, 488, "flame-charge"), tm(44, 156, "rest"), tm(45, 213, "attract"),
+        tm(46, 168, "thief"), tm(47, 490, "low-sweep"), tm(48, 496, "round"),
+        tm(49, 497, "echoed-voice"), tm(50, 315, "overheat"), tm(51, 502, "ally-switch"),
+        tm(52, 411, "focus-blast"), tm(53, 412, "energy-ball"), tm(54, 206, "false-swipe"),
+        tm(55, 503, "scald"), tm(56, 374, "fling"), tm(57, 451, "charge-beam"),
+        tm(58, 507, "sky-drop"), tm(59, 510, "incinerate"), tm(60, 511, "quash"),
+        tm(61, 261, "will-o-wisp"), tm(62, 512, "acrobatics"), tm(63, 373, "embargo"),
+        tm(64, 153, "explosion"), tm(65, 421, "shadow-claw"), tm(66, 371, "payback"),
+        tm(67, 514, "retaliate"), tm(68, 416, "giga-impact"), tm(69, 397, "rock-polish"),
+        tm(70, 148, "flash"), tm(71, 444, "stone-edge"), tm(72, 521, "volt-switch"),
+        tm(73, 86, "thunder-wave"), tm(74, 360, "gyro-ball"), tm(75, 14, "swords-dance"),
+        tm(76, 522, "struggle-bug"), tm(77, 244, "psych-up"), tm(78, 523, "bulldoze"),
+        tm(79, 524, "frost-breath"), tm(80, 157, "rock-slide"), tm(81, 404, "x-scissor"),
+        tm(82, 525, "dragon-tail"), tm(83, 526, "work-up"), tm(84, 398, "poison-jab"),
+        tm(85, 138, "dream-eater"), tm(86, 447, "grass-knot"), tm(87, 207, "swagger"),
+        tm(88, 365, "pluck"), tm(89, 369, "u-turn"), tm(90, 164, "substitute"),
+        tm(91, 430, "flash-cannon"), tm(92, 433, "trick-room"), tm(93, 528, "wild-charge"),
+        tm(94, 249, "rock-smash"), tm(95, 555, "snarl")
+    ]
+
+    private static func tm(_ number: Int, _ moveID: Int, _ slug: String) -> TechnicalMachine {
+        let premiumMoves: Set<Int> = [14, 53, 58, 59, 63, 76, 85, 87, 89, 94, 126, 153,
+                                      182, 188, 247, 315, 337, 347, 404, 411, 412, 416, 421,
+                                      430, 433, 444, 503, 512, 521, 528]
+        return TechnicalMachine(number: number, moveID: moveID, slug: slug,
+                                price: premiumMoves.contains(moveID) ? 2_000 : 1_200)
+    }
+}
+
 /// 이상한 사탕 밸런스 상수.
 enum RareCandy {
     /// 사용 시 현재 포켓몬에 주입하는 XP(별의모래 환산). 최소 진화 임계(커먼 1형태 125M)보다 작아
@@ -833,6 +888,8 @@ struct CompanionState: Codable, Sendable {
     var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
+    // 기술머신 인벤토리 (본가 move id → 개수). 별도 키라 ItemKind 확장 없이 카탈로그를 늘릴 수 있다.
+    var technicalMachines: [Int: Int] = [:]
     var adventure: AdventureRun?
     var adventureHistory: [AdventureRecord] = []
     var battleHistory: [BattleRecord] = []
@@ -900,6 +957,7 @@ struct CompanionState: Codable, Sendable {
         shinyEggCharges    = c.lenient(Int.self, forKey: .shinyEggCharges, default: 0)
         language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
+        technicalMachines  = c.lenient([Int: Int].self, forKey: .technicalMachines, default: [:])
         adventure          = c.lenientOptional(AdventureRun.self, forKey: .adventure)
         adventureHistory   = c.lenient([Lossy<AdventureRecord>].self, forKey: .adventureHistory, default: []).compactMap(\.value)
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)

@@ -69,6 +69,7 @@ struct FriendView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 44)
+        .pokedoroCard(tint: PokedoroTheme.blue, emphasized: true)
     }
 
     private var chooser: some View {
@@ -164,7 +165,7 @@ struct FriendView: View {
             .controlSize(.small)
         }
         .padding(10)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+        .pokedoroCard(tint: PokedoroTheme.blue)
     }
 
 }

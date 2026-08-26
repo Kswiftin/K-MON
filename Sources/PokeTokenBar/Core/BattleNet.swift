@@ -764,6 +764,12 @@ final class BattleCenter {
         return params
     }
 
+    /// 기본 `.bonjour` 탐색은 서비스만 찾고 TXT 레코드를 요청하지 않아 `metadata == .none` 이다.
+    /// 근처 트레이너 카드의 랭크·레벨을 받으려면 TXT 포함 descriptor를 명시해야 한다.
+    nonisolated static func discoveryDescriptor() -> NWBrowser.Descriptor {
+        .bonjourWithTXTRecord(type: Self.serviceType, domain: nil)
+    }
+
     private func startListener() {
         // 재시작이면 옛 리스너를 먼저 취소한다. 참조만 버리면 실패한 객체가 큐·포트를 붙든 채
         // 남아 슬립 복귀마다 누적된다. 형제인 `MultiplayerRoomCenter.leaveRoom` 은 취소하고
@@ -816,7 +822,7 @@ final class BattleCenter {
 
     private func startBrowser() {
         browser?.cancel()   // 재시작 시 옛 브라우저 취소. `startListener` 와 같은 이유.
-        let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil),
+        let browser = NWBrowser(for: Self.discoveryDescriptor(),
                                 using: Self.discoveryParameters())
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             Task { @MainActor in self?.updatePeers(results) }
