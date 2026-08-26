@@ -50,8 +50,11 @@ struct OutfitView: View {
 
     private var preview: some View {
         VStack(spacing: 6) {
-            TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                let step = isVisible ? walkStep(at: context.date) : 0
+            // `.periodic` 에는 멈춤 파라미터가 없다 — `.animation(paused:)` 로 바꿔야 오버레이가 닫힌
+            // 뒤(`isVisible = false`) 타이머 자체가 서고, 위 헤더 주석("닫히면 확실히 멈추게")이 실제로
+            // 맞는 말이 된다.
+            TimelineView(.animation(minimumInterval: 0.25, paused: !isVisible)) { context in
+                let step = walkStep(at: context.date)
                 let images = frames[facing] ?? []
                 if images.indices.contains(step) {
                     Image(decorative: images[step], scale: 1)
@@ -136,10 +139,12 @@ struct OutfitView: View {
     }
 
     private func rebuildFrames() {
+        // 착장은 4 facing 이 다 같이 입는다 — `TrainerSprite` 를 facing 루프 밖에서 한 번만 만들어야
+        // 12장(4 facing × 3 step)만 합성한다. 안에서 새로 만들면 매 facing 마다 다시 합성해 48장이 된다.
+        let sprite = TrainerSprite(outfit: store.outfit)
         var built: [Facing: [CGImage]] = [:]
-        for facing in Facing.allCases {
-            let sprite = TrainerSprite(outfit: store.outfit)
-            built[facing] = (0...2).compactMap { sprite.frame(facing, step: $0).cgImage(palette: TrainerPixelArt.palette) }
+        for target in Facing.allCases {
+            built[target] = (0...2).compactMap { sprite.frame(target, step: $0).cgImage(palette: TrainerPixelArt.palette) }
         }
         frames = built
     }

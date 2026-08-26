@@ -98,6 +98,14 @@ final class OutfitStoreTests: XCTestCase {
     func testShopEntryOutfitPrice() {
         XCTAssertEqual(ShopEntry.outfit(.backpack).price, 800)
     }
+
+    /// 미래 빌드가 저장한 rawValue(`future_hat`)는 이 빌드가 모른다 — 항목만 걸러내고
+    /// (`Lossy<OutfitItem>`) 나머지 소유(`cap_red`)는 살아야 한다.
+    func testUnknownOwnedOutfitIdsAreDroppedNotFatal() throws {
+        let json = #"{"ownedOutfits":["cap_red","future_hat"]}"#.data(using: .utf8)!
+        let state = try JSONDecoder().decode(CompanionState.self, from: json)
+        XCTAssertEqual(state.ownedOutfits, [.capRed])
+    }
 }
 
 /// 스토어를 세우기 위한 최소 진화 라인 — 의상은 종·진화와 무관하므로 내용은 아무래도 좋다.

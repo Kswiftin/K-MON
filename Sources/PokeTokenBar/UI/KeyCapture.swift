@@ -28,6 +28,9 @@ struct KeyCaptureModifier: ViewModifier {
                     NSEvent.removeMonitor(monitor)
                 }
                 monitor = nil
+                // 모니터가 내려가는 순간까지 눌려 있던 키는 다시는 keyUp 을 못 받는다 — 여기서 전부
+                // 놓아주지 않으면 `DungeonWalker.held` 가 latch 된 채로 남아 트레이너가 혼자 걷는다.
+                for direction in WalkDirection.allCases { onRelease(direction) }
             }
     }
 
@@ -36,16 +39,18 @@ struct KeyCaptureModifier: ViewModifier {
         if NSApp.keyWindow?.firstResponder is NSTextView {
             return event
         }
-        // 단축키 조합은 걷기 입력이 아니다 — ⌘/⌃/⌥ 가 눌려 있으면 ⌘W(닫기)·⌘A(전체선택) 같은
-        // 시스템·앱 단축키를 그대로 흘려보낸다.
-        if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
-            return event
-        }
         guard let direction = walkDirection(for: event) else {
             return event
         }
         switch event.type {
         case .keyDown:
+            // 단축키 조합은 누르는 쪽만 걷기 입력이 아니다 — ⌘/⌃/⌥ 가 눌려 있으면 ⌘W(닫기)·⌘A(전체선택)
+            // 같은 시스템·앱 단축키를 그대로 흘려보낸다. keyUp 에는 이 가드를 걸지 않는다 — 모디파이어를
+            // 누른 채로 걷기 키를 놓으면(예: 걷다가 ⌘ 로 팝오버를 닫으려는 순간) 여기서 걸러지면
+            // `onRelease` 가 영영 안 불려 `held` 가 latch 되고 트레이너가 혼자 계속 걷는다.
+            if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+                return event
+            }
             // 키를 누르고 있는 동안 OS 가 반복 keyDown 을 계속 보내는데, 눌림 상태는
             // `DungeonWalker.held` 가 이미 추적하므로 반복 이벤트는 무시한다.
             if !event.isARepeat {

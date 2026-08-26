@@ -14,7 +14,10 @@ struct TrainerSprite: Sendable {
     }
 
     func frame(_ facing: Facing, step: Int) -> PixelSprite {
-        frames[Facing.allCases.firstIndex(of: facing)! * 3 + step]
+        // `TrainerFrameCache.image` 처럼 범위를 벗어난 step 을 클램프한다 — 트랩 대신
+        // 가장 가까운 유효 프레임을 돌려줘야 애니메이션 타이밍 계산이 살짝 어긋나도 크래시하지 않는다.
+        let clampedStep = min(max(step, 0), 2)
+        return frames[Facing.allCases.firstIndex(of: facing)! * 3 + clampedStep]
     }
 
     static func compose(outfit: TrainerOutfit, facing: Facing, step: Int) -> PixelSprite {

@@ -80,13 +80,16 @@ struct DungeonWalker: Sendable {
         // 동쪽 문(x=13)은 벽 칸이라 가로 이동은 안쪽 칸(12)까지만 가고, 세로로 문 높이에 맞춘 뒤
         // 마지막 한 걸음으로 문 칸 자체에 들어간다. 북/남 문은 x=6 이 이미 안쪽이라 그대로 쓴다.
         let interiorX = door.side == .east ? min(door.cell.x, DungeonRoomLayout.columns - 2) : door.cell.x
+        // 걷는 중간에 문을 클릭하면 `cell`(마지막으로 확정된 칸)이 아니라 진행 중인 걸음의 목적지에서
+        // 이어야 한다 — 안 그러면 확정 안 된 한 걸음을 건너뛰어 두 칸이 한 번에 미끄러진다.
+        let start = motion?.to ?? cell
         var path: [GridPoint] = []
-        var x = cell.x
+        var x = start.x
         while x != interiorX {
             x += x < interiorX ? 1 : -1
-            path.append(GridPoint(x: x, y: cell.y))
+            path.append(GridPoint(x: x, y: start.y))
         }
-        var y = cell.y
+        var y = start.y
         while y != door.cell.y {
             y += y < door.cell.y ? 1 : -1
             path.append(GridPoint(x: x, y: y))

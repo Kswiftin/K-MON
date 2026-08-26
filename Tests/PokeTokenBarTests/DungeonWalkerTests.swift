@@ -19,7 +19,8 @@ final class DungeonWalkerTests: XCTestCase {
     }
 
     func testHoldingKeepsWalkingCellByCell() {
-        var w = walker(); w.press(.right); settle(&w, seconds: 0.18 * 3 + 0.05)
+        // 3칸(0.54s) 뒤 딱 걸음 경계에 걸리면 부동소수 오차로 한 칸 더/덜 갈 수 있다 — 여유를 둔다.
+        var w = walker(); w.press(.right); settle(&w, seconds: 0.18 * 3 + 0.1)
         XCTAssertEqual(w.cell.x, 4)
     }
 
@@ -103,6 +104,29 @@ final class DungeonWalkerTests: XCTestCase {
         XCTAssertNotNil(w.consumeArrival())
         XCTAssertTrue(w.locked)
         XCTAssertTrue(w.isIdle)
+    }
+
+    /// 걷는 중간(`motion.progress` 가 0 도 1 도 아닐 때)에 문을 클릭하면 아직 확정 안 된 `motion.to`
+    /// 에서 경로가 이어야 한다 — `cell`(마지막 확정 칸)에서 이으면 진행 중인 한 걸음을 건너뛰어
+    /// 두 칸이 한 번에 미끄러진다.
+    func testWalkToMidStepStartsFromMotionDestinationNotConfirmedCell() {
+        var w = walker(); w.press(.right); w.tick(0.05)
+        guard let motion = w.motion else { return XCTFail("걷는 중이어야 한다") }
+        let door = w.layout.doors.first { $0.side == .east }!
+        w.walkTo(door: door)
+        guard let first = w.autoPath.first else { return XCTFail("경로가 비어 있다") }
+        let dx = abs(first.x - motion.to.x), dy = abs(first.y - motion.to.y)
+        XCTAssertEqual(dx + dy, 1, "경로 첫 칸은 motion.to 의 바로 옆이어야 한다")
+    }
+
+    /// `KeyCaptureModifier` 가 재현하는 시나리오 — press → 한 틱 → release → 진행 마무리.
+    /// `release` 가 `held`/`heldOrder` 를 제대로 비워야 다음 프레임부터 `isIdle` 이 true 로 돌아온다.
+    func testReleaseClearsHeldAndRestoresIdle() {
+        var w = walker(); w.press(.right); w.tick(0.016)
+        w.release(.right)
+        settle(&w, seconds: 0.2)
+        XCTAssertTrue(w.isIdle)
+        XCTAssertTrue(w.held.isEmpty)
     }
 
     func testWalkCycleAlternatesBetweenStepsOnConsecutiveCells() {

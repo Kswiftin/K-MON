@@ -52,7 +52,16 @@ struct DungeonView: View {
         .onAppear { frames = TrainerFrameCache(outfit: store.outfit) }
         .onChange(of: store.outfit) { frames = TrainerFrameCache(outfit: store.outfit) }
         // 팝오버가 닫히거나 화면이 바뀌어도 맵 기억은 남긴다 — 실패·이탈은 시도만 버린다.
-        .onDisappear { if let walker { store.rememberDungeon(walker.run.revealed) } }
+        // 클리어 연출이 뜬 채로 팝오버가 닫히면 `release()` 가 못 불려 보상이 안 나간다 — 여기서
+        // 클리어 확정을 한 번 더 부른다. `rewardPaid` 가드가 있어 이미 정산됐어도 중복 지급은 없다.
+        .onDisappear {
+            guard let walker else { return }
+            if walker.run.stage == .cleared {
+                store.settleDungeonClear(revealed: walker.run.revealed, sweptAllCaches: walker.run.sweptAllCaches)
+            } else {
+                store.rememberDungeon(walker.run.revealed)
+            }
+        }
     }
 
     private func roomTitle(_ room: Int) -> String { l.dungeonRoomTitle(nameSlots[room]) }
