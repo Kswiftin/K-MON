@@ -84,6 +84,17 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         XCTAssertFalse(album.timeline(for: companionID).contains(where: { $0.id == hidden.id }))
     }
 
+    func testAlbumKeepsTwoHundredEntriesAndClearsAnEvictedPin() {
+        let album = PokemonMemoryAlbum(fileURL: temporaryURL()), companionID = UUID()
+        for number in 0..<200 { album.record(companionID: companionID, body: "Event \(number)", source: .event) }
+        album.pin(album.entries(for: companionID)[0])
+
+        album.record(companionID: companionID, body: "Event 200", source: .event)
+
+        XCTAssertEqual(album.entries(for: companionID).count, 200)
+        XCTAssertNil(album.pinned(for: companionID))
+    }
+
     func testPruningRemovesDanglingEntriesAndPins() {
         let album = PokemonMemoryAlbum(fileURL: temporaryURL())
         let retainedID = UUID(), releasedID = UUID()

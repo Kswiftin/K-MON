@@ -315,7 +315,7 @@ final class PokemonMemoryAlbum {
         if source == .event, let eventID, !eventID.isEmpty,
            entries.contains(where: { $0.eventID == eventID }) { return false }
         entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: source, body: body, eventID: eventID))
-        memories[companionID] = Array(entries.suffix(200)); save()
+        memories[companionID] = Array(entries.suffix(200)); normalizePins(); save()
         return true
     }
     @discardableResult
