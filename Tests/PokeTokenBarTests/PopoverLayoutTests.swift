@@ -439,6 +439,30 @@ final class PopoverLayoutTests: XCTestCase {
                                  PopoverMetrics.currentHeight(for: .battle))
     }
 
+    // MARK: 던전 오버레이 — 방 캔버스가 팝오버를 밀어내지 않는가.
+
+    /// 던전은 옷장과 같은 프레임 예산을 쓴다. 로비는 캔버스가 없어 넘칠 수 없으니 **탐색 중**
+    /// 상태(체력 줄 + 336×216 캔버스 + 안내 + 로그)까지 재야 의미가 있다.
+    func testDungeonViewFitsTheOverlayHeight() {
+        let store = achievementStore()
+        XCTAssertLessThanOrEqual(renderedHeight(DungeonView(store: store, onClose: {})),
+                                 PopoverMetrics.currentHeight(for: .battle))
+        let run = store.startDungeonRun()
+        let exploring = DungeonView(store: store, onClose: {}, initialRun: run)
+        XCTAssertLessThanOrEqual(renderedHeight(exploring),
+                                 PopoverMetrics.currentHeight(for: .battle))
+        // 캔버스가 콘텐츠 폭보다 넓어 팝오버를 밀면 다른 탭까지 폭이 흔들린다.
+        XCTAssertLessThanOrEqual(renderedWidth(exploring, proposing: PopoverMetrics.width),
+                                 PopoverMetrics.width)
+    }
+
+    /// 방 캔버스는 정수 픽셀 배율(16px 타일 × 1.5)이라 **눌리면 흐려진다** — 팝오버 폭에서
+    /// 가로 여백 12pt 를 뺀 자리에 정확히 들어가야 한다.
+    func testRoomCanvasFitsThePopoverWidthWithoutScaling() {
+        XCTAssertEqual(RoomCanvas.width, PopoverMetrics.width - 24)
+        XCTAssertEqual(RoomCanvas.width, CGFloat(DungeonRoomLayout.columns) * RoomCanvas.cell)
+    }
+
     /// 트랙 이름이 세 언어에서 길이가 다르다(집중 시간 / Focus time / 集中時間). 한 언어에서
     /// 줄바꿈되면 그 언어에서만 선반이 커진다 — 기술 목록에서 이미 겪은 부류(CI 118pt vs 로컬 78pt).
     func testAchievementShelfHeightDoesNotDependOnLanguage() {

@@ -1076,6 +1076,18 @@ struct L {
         t("던전 입장 시 +3", "+3 on dungeon entry", "ダンジョン入場時 +3")
     }
     var dungeonExitUnknown: String { t("미탐사", "Unexplored", "未探索") }
+    /// 방 화면 조작 안내 — 키를 모르면 화면이 멈춰 있는 것으로 보인다.
+    var dungeonKeyHint: String {
+        t("방향키/WASD 로 걷기 · 문을 클릭해도 갑니다",
+          "Arrow keys or WASD to walk · click a door to go",
+          "矢印キー/WASDで歩く・ドアをクリックでも移動")
+    }
+    /// 0번 방 전용 — 여기가 던전이 아니라 시작 방이고 어디가 입구인지 알려 준다.
+    var dungeonHomeHint: String {
+        t("내 방 — 동쪽 문이 1층",
+          "Your room — the east door leads to floor 1",
+          "じぶんの部屋 — 東のドアが1階")
+    }
     func dungeonRoomName(_ kind: RoomKind) -> String {
         switch kind {
         case .empty: return t("빈 방", "Empty room", "空きへや")
