@@ -30,6 +30,9 @@ struct DungeonView: View {
         _walker = State(initialValue: initialRun.map { DungeonWalker(run: $0) })
     }
 
+    /// 방 캔버스 줄만 쓰는 가로 여백 — 팝오버 폭에서 이만큼을 양쪽으로 빼면 `RoomCanvas.width` 다.
+    private static let canvasInset: CGFloat = (PopoverMetrics.width - RoomCanvas.width) / 2
+
     private var l: L { store.l }
 
     /// 방 번호 → 이름 슬롯. 날짜가 같으면 어느 기기에서나 같은 이름이다.
@@ -104,9 +107,9 @@ struct DungeonView: View {
             RoomCanvas(walker: current, frames: frames, presentation: presentation,
                        onDoorTap: { door in walker?.walkTo(door: door) },
                        onTick: { date in tick(at: date) })
-                // 캔버스는 14칸 × 24pt = 336pt 다. 팝오버 패딩 14pt 를 그대로 두면 332pt 로 눌려
-                // 타일이 정수 픽셀 배율을 잃고 흐려진다 — 이 줄만 가로 여백을 12pt 로 되돌린다.
-                .padding(.horizontal, -2)
+                // 캔버스는 14칸 × 24pt = 336pt 다. 팝오버 패딩을 그대로 두면 332pt 로 눌려
+                // 타일이 정수 픽셀 배율을 잃고 흐려진다 — 이 줄만 여백을 `canvasInset` 으로 되돌린다.
+                .padding(.horizontal, Self.canvasInset - PopoverMetrics.padding)
             Text(run.current == 0 ? l.dungeonHomeHint : l.dungeonKeyHint)
                 .font(.caption2).foregroundStyle(.secondary)
             footer(run)

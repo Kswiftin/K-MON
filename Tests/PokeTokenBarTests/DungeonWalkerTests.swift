@@ -72,6 +72,39 @@ final class DungeonWalkerTests: XCTestCase {
         var w = walker(); XCTAssertTrue(w.isIdle); w.press(.right); XCTAssertFalse(w.isIdle)
     }
 
+    /// 도착 이벤트를 아직 안 읽었으면 멈추면 안 된다 — 화면이 루프를 세우면 연출도, 잠금 해제도 없다.
+    func testPendingArrivalIsNeverIdle() {
+        var w = walker()
+        let door = w.layout.doors.first { $0.side == .east }!
+        w.walkTo(door: door); settle(&w, seconds: 0.18 * 14)
+        XCTAssertNotNil(w.arrival)
+        XCTAssertTrue(w.locked)
+        XCTAssertFalse(w.isIdle)
+    }
+
+    /// 잠긴 walker 의 `tick` 은 아무것도 하지 않는다 — 키가 눌려 있고 걷던 중이어도 화면이 루프를
+    /// 멈춰야 한다. 잠금은 `locked` 로 바깥에서도 걸 수 있으니(판정이 끝난 시도를 세워 두는 용도)
+    /// "눌린 키가 남은 채 잠긴" 조합을 직접 만들어 검증한다.
+    func testLockedWalkerIsIdleEvenWithAKeyHeldMidStep() {
+        var w = walker()
+        w.press(.right); w.tick(0.05)
+        XCTAssertNotNil(w.motion); XCTAssertFalse(w.isIdle)
+        w.locked = true
+        XCTAssertTrue(w.isIdle, "잠긴 walker 를 계속 틱하면 60fps 로 헛돈다")
+        w.tick(0.2)
+        XCTAssertEqual(w.cell, GridPoint(x: 1, y: 4), "잠긴 동안엔 한 칸도 나아가지 않는다")
+    }
+
+    /// 도착을 이미 읽었고 잠금만 남은 상태(연출 중)도 걷기 계산은 없다 — 그림은 연출이 그린다.
+    func testConsumedArrivalWithTheLockStillOnIsIdle() {
+        var w = walker()
+        let door = w.layout.doors.first { $0.side == .east }!
+        w.walkTo(door: door); settle(&w, seconds: 0.18 * 14)
+        XCTAssertNotNil(w.consumeArrival())
+        XCTAssertTrue(w.locked)
+        XCTAssertTrue(w.isIdle)
+    }
+
     func testWalkCycleAlternatesBetweenStepsOnConsecutiveCells() {
         var w = walker(); w.press(.right)
         w.tick(0.05); let first = w.animationStep

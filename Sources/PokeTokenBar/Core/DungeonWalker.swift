@@ -174,8 +174,15 @@ struct DungeonWalker: Sendable {
         return arrival
     }
 
+    /// 그릴 것도 계산할 것도 없는 상태 — 화면이 게임루프를 멈춰도 되는지의 판단이다.
+    ///
+    /// 잠긴 walker 는 키가 눌려 있어도 `tick` 이 아무것도 하지 않으므로 멈춘 것으로 센다.
+    /// 판정이 끝난 시도(클리어·실패)는 영구 잠금이라, 이걸 빼면 손가락을 올린 채 두기만 해도
+    /// 60fps 루프가 계속 헛돈다. **단 `arrival` 이 남아 있으면 멈추지 않는다** — 도착 이벤트를
+    /// 아직 아무도 읽지 않은 상태에서 루프가 서면 연출도 잠금 해제도 오지 않는다.
     var isIdle: Bool {
-        motion == nil && held.isEmpty && autoPath.isEmpty && arrival == nil
+        guard arrival == nil else { return false }
+        return locked || (motion == nil && held.isEmpty && autoPath.isEmpty)
     }
 
     /// 서 있으면 0, 걷는 중이면 진행률 절반을 기준으로 1/2 를 내되 `stepParity` 로 번갈아 순서를 뒤집는다

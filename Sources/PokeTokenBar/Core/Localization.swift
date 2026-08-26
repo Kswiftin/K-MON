@@ -1075,7 +1075,6 @@ struct L {
     var freshWaterEffectHint: String {
         t("던전 입장 시 +3", "+3 on dungeon entry", "ダンジョン入場時 +3")
     }
-    var dungeonExitUnknown: String { t("미탐사", "Unexplored", "未探索") }
     /// 방 화면 조작 안내 — 키를 모르면 화면이 멈춰 있는 것으로 보인다.
     var dungeonKeyHint: String {
         t("방향키/WASD 로 걷기 · 문을 클릭해도 갑니다",
@@ -1097,11 +1096,6 @@ struct L {
         case .cache: return t("보물방", "Treasure room", "たからのへや")
         }
     }
-    func dungeonExitCost(_ cost: Int) -> String {
-        t("통로 \(cost)", "corridor \(cost)", "通路 \(cost)")
-    }
-    var dungeonSpringSpent: String { t("(사용됨)", "(spent)", "（使用済み）") }
-    var dungeonSpringUnused: String { t("(아직)", "(unused)", "（未使用）") }
 
     /// 방 이름 — **정체를 암시하지 않는 중립 명사만** 쓴다. 이름은 안개와 무관하게 항상 보여
     /// 미탐사 방도 서로 구분되게 하는 값이라, 이름이 종류를 흘리면 퍼즐이 앉은 자리에서 풀린다.
@@ -1151,54 +1145,11 @@ struct L {
         }
     }
 
-    func dungeonDirectionName(_ direction: DungeonDirection) -> String {
-        switch direction {
-        case .north: return t("북", "N", "北")
-        case .northEast: return t("북동", "NE", "北東")
-        case .east: return t("동", "E", "東")
-        case .southEast: return t("남동", "SE", "南東")
-        case .south: return t("남", "S", "南")
-        case .southWest: return t("남서", "SW", "南西")
-        case .west: return t("서", "W", "西")
-        case .northWest: return t("북서", "NW", "北西")
-        }
-    }
-
     /// 헤더 오른쪽 — 층이 곧 진행도다(왼쪽에서 오른쪽으로만 가는 구조라 층 번호가 남은 거리를 말한다).
     /// `layer` 는 1 부터.
     func dungeonFloorLine(layer: Int, total: Int) -> String {
         t("\(layer)층 / \(total)층", "Floor \(layer) / \(total)", "\(layer)階 / \(total)階")
     }
-    /// 곁방 출구 표기 — 들어가면 같은 통로로 되나와야 한다는 사실. 없으면 전진 통로와 같은 값으로 읽힌다.
-    var dungeonSpurMark: String { t("곁방 · 왕복", "side room · round trip", "わき道・往復") }
-
-    /// 서술 줄 — 밝혀진 사실만 말한다. 물소리는 **아직 마시지 않은** 샘이 인접해 밝혀졌을 때만.
-    func dungeonSceneLine(_ note: DungeonSceneNote) -> String {
-        var parts = [t("\(dungeonRoomName(note.kind))이다.",
-                       "\(dungeonRoomName(note.kind)).",
-                       "\(dungeonRoomName(note.kind))だ。")]
-        if let spring = note.springDirection {
-            let name = dungeonDirectionName(spring)
-            parts.append(t("\(name)쪽에서 물소리가 난다.",
-                           "Water murmurs to the \(name).",
-                           "\(name)のほうから水音がする。"))
-        }
-        if note.darkExitCount > 0 {
-            parts.append(t("아직 어두운 길이 \(note.darkExitCount)개.",
-                           "\(note.darkExitCount) paths still dark.",
-                           "まだ暗い道が\(note.darkExitCount)つ。"))
-        }
-        return parts.joined(separator: " ")
-    }
-
-    var dungeonExitsFresh: String { t("새 길", "New paths", "あたらしい道") }
-    var dungeonExitsBack: String { t("되돌아가기", "Back the way you came", "もどる") }
-    /// 시작 방은 출구가 8개까지 나온다 — 다 펼치면 목록이 화면 절반을 먹는다.
-    func dungeonMoreExits(_ count: Int) -> String {
-        t("\(count)개 더 보기", "\(count) more", "あと\(count)つ")
-    }
-    /// 통로 비용만으로 쓰러지는 길. 방 내용은 들어가야 알 수 있으니 통로만 두고 경고한다.
-    var dungeonLethalExit: String { t("이 통로에서 쓰러진다", "This corridor would fell you", "この通路でたおれる") }
     var dungeonTrailTitle: String { t("지나온 길", "Where you walked", "歩いた道") }
     /// 지나온 길의 체력 변화 묶음 — 음수는 소모, 양수는 회복.
     func dungeonDeltaList(_ deltas: [Int]) -> String {

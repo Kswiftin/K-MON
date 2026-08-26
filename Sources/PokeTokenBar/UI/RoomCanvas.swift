@@ -83,7 +83,9 @@ struct RoomCanvas: View {
     private func loadActor() async {
         guard let species = presentation?.species, actorImages[species] == nil else { return }
         guard let image = await SpriteLoader.image(speciesID: species) else { return }
-        actorImages[species] = image
+        // 연출은 한 번에 하나뿐이다 — 방을 지날 때마다 쌓아 두면 판이 길어질수록 메모리만 먹는다
+        // (원본 캐시는 `SpriteLoader` 가 LRU 로 들고 있어 되돌아가도 네트워크를 다시 타지 않는다).
+        actorImages = [species: image]
     }
 
     // MARK: 그리기
@@ -161,8 +163,9 @@ struct RoomCanvas: View {
             drawActor(&ctx, species: species, side: 64, at: middle)
             drawRising(&ctx, felled ? "-\(damage) ★" : "-\(damage)", color: .red, from: middle, progress: progress)
         case .heal(let amount):
-            drawSparkles(&ctx, around: center(of: Self.featureCell), progress: progress)
-            drawRising(&ctx, "+\(amount)", color: .green, from: middle, progress: progress)
+            let spring = center(of: Self.featureCell)
+            drawSparkles(&ctx, around: spring, progress: progress)
+            drawRising(&ctx, "+\(amount)", color: .green, from: spring, progress: progress)
         case .springDry:
             ctx.draw(Text("♨").font(.system(size: 20)).foregroundStyle(.secondary), at: middle)
         case .loot(let starPieces):
@@ -177,7 +180,8 @@ struct RoomCanvas: View {
     private func drawActor(_ ctx: inout GraphicsContext, species: Int, side: CGFloat, at point: CGPoint) {
         guard let image = actorImages[species] else { return }
         let rect = CGRect(x: point.x - side / 2, y: point.y - side, width: side, height: side)
-        ctx.draw(Image(nsImage: image), in: rect)
+        // 포켓몬 스프라이트도 도트다 — 보간을 켜면 이 그림만 흐릿해 화면에서 혼자 튄다.
+        ctx.draw(Image(nsImage: image).interpolation(.none), in: rect)
     }
 
     /// 데미지·보상 숫자는 연출 동안 12pt 떠오르며 흐려진다 — 숫자가 제자리에 있으면 뭐가 바뀐 건지 안 읽힌다.
