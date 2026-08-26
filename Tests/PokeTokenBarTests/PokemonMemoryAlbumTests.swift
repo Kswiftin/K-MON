@@ -1,6 +1,19 @@
 import XCTest
 @testable import PokeTokenBar
 
+private struct LegacyMemorySnapshot: Codable {
+    let memories: [UUID: [LegacyMemory]]
+}
+
+private struct LegacyMemory: Codable {
+    let id: UUID
+    let companionID: UUID
+    let createdAt: Date
+    let source: PokemonMemorySource
+    let body: String
+    let eventID: String?
+}
+
 @MainActor
 final class PokemonMemoryAlbumTests: XCTestCase {
     private func temporaryURL() -> URL {
@@ -44,7 +57,8 @@ final class PokemonMemoryAlbumTests: XCTestCase {
 
     func testTimelineHidesEntriesAndLimitsToTwentyNewest() {
         let album = PokemonMemoryAlbum(fileURL: temporaryURL()), companionID = UUID()
-        for number in 0..<21 { album.record(companionID: companionID, body: "Event \(number)", source: .event) }
+        for number in 0..<20 { album.record(companionID: companionID, body: "Event \(number)", source: .event) }
+        XCTAssertTrue(album.addManual(companionID: companionID, body: "Private note"))
         let hidden = album.entries(for: companionID)[20]
 
         album.setHidden(hidden, isHidden: true)
@@ -53,16 +67,30 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         XCTAssertFalse(album.timeline(for: companionID).contains(where: { $0.id == hidden.id }))
     }
 
+    func testPruningRemovesDanglingEntriesAndPins() {
+        let album = PokemonMemoryAlbum(fileURL: temporaryURL())
+        let retainedID = UUID(), releasedID = UUID()
+        album.record(companionID: retainedID, body: "Keep", source: .event)
+        album.record(companionID: releasedID, body: "Remove", source: .event)
+        album.pin(album.entries(for: releasedID)[0])
+
+        album.prune(validCompanionIDs: [retainedID])
+
+        XCTAssertTrue(album.entries(for: releasedID).isEmpty)
+        XCTAssertNil(album.pinned(for: releasedID))
+    }
+
     func testLegacySnapshotDecodesAndCorruptFileIsBackedUp() throws {
         let url = temporaryURL(), companionID = UUID()
         defer {
             try? FileManager.default.removeItem(at: url)
             try? FileManager.default.removeItem(at: url.appendingPathExtension("corrupt"))
         }
-        let legacy = """
-        {"memories":{"\(companionID.uuidString)":[{"id":"\(UUID().uuidString)","companionID":"\(companionID.uuidString)","createdAt":1,"source":"event","body":"Legacy"}]}}
-        """
-        try Data(legacy.utf8).write(to: url)
+        let legacy = LegacyMemorySnapshot(memories: [companionID: [
+            LegacyMemory(id: UUID(), companionID: companionID, createdAt: Date(), source: .event,
+                         body: "Legacy", eventID: nil)
+        ]])
+        try JSONEncoder().encode(legacy).write(to: url)
         XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).entries(for: companionID).count, 1)
 
         try Data("not json".utf8).write(to: url)

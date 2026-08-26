@@ -223,36 +223,91 @@ enum PokemonChatReplyGuard {
     }
 }
 
-enum PokemonMemorySource: String, Codable, Sendable { case event, conversation }
+enum PokemonMemorySource: String, Codable, Sendable { case event, conversation, manual }
 
 struct PokemonMemory: Codable, Sendable, Identifiable, Equatable {
-    var id = UUID()
+    var id: UUID
     let companionID: UUID
     let createdAt: Date
     let source: PokemonMemorySource
     let body: String
     var eventID: String?
+    var isHidden: Bool
+
+    init(id: UUID = UUID(), companionID: UUID, createdAt: Date, source: PokemonMemorySource,
+         body: String, eventID: String? = nil, isHidden: Bool = false) {
+        self.id = id
+        self.companionID = companionID
+        self.createdAt = createdAt
+        self.source = source
+        self.body = body
+        self.eventID = eventID
+        self.isHidden = isHidden
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, companionID, createdAt, source, body, eventID, isHidden }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        companionID = try c.decode(UUID.self, forKey: .companionID)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        source = try c.decode(PokemonMemorySource.self, forKey: .source)
+        body = try c.decode(String.self, forKey: .body)
+        eventID = try c.decodeIfPresent(String.self, forKey: .eventID)
+        isHidden = try c.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
+    }
 }
 
 @MainActor @Observable
 final class PokemonMemoryAlbum {
-    private struct Snapshot: Codable { var memories: [UUID: [PokemonMemory]] }
+    private struct Snapshot: Codable {
+        var memories: [UUID: [PokemonMemory]]
+        var pinnedMemoryIDs: [UUID: UUID]
+
+        init(memories: [UUID: [PokemonMemory]], pinnedMemoryIDs: [UUID: UUID]) {
+            self.memories = memories
+            self.pinnedMemoryIDs = pinnedMemoryIDs
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            memories = try c.decode([UUID: [PokemonMemory]].self, forKey: .memories)
+            pinnedMemoryIDs = try c.decodeIfPresent([UUID: UUID].self, forKey: .pinnedMemoryIDs) ?? [:]
+        }
+    }
     private(set) var memories: [UUID: [PokemonMemory]] = [:]
+    private var pinnedMemoryIDs: [UUID: UUID] = [:]
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
         self.fileURL = fileURL ?? CompanionStorageLocations().memoryURL
-        if let data = try? Data(contentsOf: self.fileURL), let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
+        guard FileManager.default.fileExists(atPath: self.fileURL.path) else { return }
+        do {
+            let snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: self.fileURL))
             memories = snapshot.memories.mapValues { Array($0.suffix(200)) }
+            pinnedMemoryIDs = snapshot.pinnedMemoryIDs
+            normalizePins()
+        } catch {
+            let backup = self.fileURL.appendingPathExtension("corrupt")
+            try? FileManager.default.removeItem(at: backup)
+            try? FileManager.default.moveItem(at: self.fileURL, to: backup)
+            AppLog.write("pokemon memory decode failed — original backed up to \(backup.lastPathComponent), starting empty")
         }
     }
     func entries(for id: UUID) -> [PokemonMemory] { memories[id] ?? [] }
+    func timeline(for id: UUID) -> [PokemonMemory] {
+        entries(for: id).filter { !$0.isHidden }.sorted { $0.createdAt > $1.createdAt }.prefix(20).map { $0 }
+    }
+    func pinned(for id: UUID) -> PokemonMemory? {
+        guard let pinnedID = pinnedMemoryIDs[id] else { return nil }
+        return entries(for: id).first { $0.id == pinnedID }
+    }
     /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
     /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
     @discardableResult
     func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil) -> Bool {
         let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty, body.count <= 180 else { return false }
+        guard source != .manual, !body.isEmpty, body.count <= 180 else { return false }
         var entries = memories[companionID] ?? []
         if source == .event, let eventID, !eventID.isEmpty,
            entries.contains(where: { $0.eventID == eventID }) { return false }
@@ -260,11 +315,56 @@ final class PokemonMemoryAlbum {
         memories[companionID] = Array(entries.suffix(200)); save()
         return true
     }
-    func delete(_ memory: PokemonMemory) { memories[memory.companionID]?.removeAll { $0.id == memory.id }; save() }
-    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); save() }
-    func prune(validCompanionIDs: Set<UUID>) { memories = memories.filter { validCompanionIDs.contains($0.key) }; save() }
-    func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(memories: memories)) }
-    private func save() { try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true); guard let data = try? JSONEncoder().encode(Snapshot(memories: memories)) else { return }; try? data.write(to: fileURL, options: .atomic) }
+    @discardableResult
+    func addManual(companionID: UUID, body: String) -> Bool {
+        let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, body.count <= 280 else { return false }
+        var entries = memories[companionID] ?? []
+        entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: .manual, body: body))
+        memories[companionID] = Array(entries.suffix(200)); normalizePins(); save()
+        return true
+    }
+    func pin(_ memory: PokemonMemory) {
+        guard entries(for: memory.companionID).contains(where: { $0.id == memory.id }) else { return }
+        pinnedMemoryIDs[memory.companionID] = memory.id; save()
+    }
+    @discardableResult
+    func setHidden(_ memory: PokemonMemory, isHidden: Bool) -> Bool {
+        guard memory.source == .manual,
+              var entries = memories[memory.companionID],
+              let index = entries.firstIndex(where: { $0.id == memory.id }) else { return false }
+        entries[index].isHidden = isHidden
+        memories[memory.companionID] = entries; save()
+        return true
+    }
+    @discardableResult
+    func delete(_ memory: PokemonMemory) -> Bool {
+        guard memory.source == .manual, var entries = memories[memory.companionID] else { return false }
+        let oldCount = entries.count
+        entries.removeAll { $0.id == memory.id }
+        guard entries.count != oldCount else { return false }
+        memories[memory.companionID] = entries
+        if pinnedMemoryIDs[memory.companionID] == memory.id { pinnedMemoryIDs.removeValue(forKey: memory.companionID) }
+        save()
+        return true
+    }
+    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); pinnedMemoryIDs.removeValue(forKey: id); save() }
+    func prune(validCompanionIDs: Set<UUID>) {
+        memories = memories.filter { validCompanionIDs.contains($0.key) }
+        pinnedMemoryIDs = pinnedMemoryIDs.filter { validCompanionIDs.contains($0.key) }
+        normalizePins(); save()
+    }
+    func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs)) }
+    private func normalizePins() {
+        pinnedMemoryIDs = pinnedMemoryIDs.filter { companionID, memoryID in
+            memories[companionID]?.contains(where: { $0.id == memoryID }) == true
+        }
+    }
+    private func save() {
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(Snapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs)) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
 }
 
 protocol PokemonChatProviding: Sendable {
