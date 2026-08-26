@@ -1,6 +1,21 @@
 import Foundation
 import UserNotifications
 
+/// 플로팅 펫 그림 — 움직임과 선명함 중 하나를 고른다. **둘 다는 안 된다.**
+///
+/// 공식 애니메이션 스프라이트는 5세대(블랙·화이트)가 마지막이고 6세대부터는 3D 모델로 넘어가서,
+/// GIF 로 배포되는 소스가 아예 존재하지 않는다. 그래서 어느 사이트를 가도 같은 45~133px 원본을
+/// 재배포한다(Showdown·PokemonDB·projectpokemon 전부 실측 동일). 그보다 선명한 건 정지 렌더뿐이다.
+///
+/// 정지를 골라도 펫이 화면을 돌아다니는 건 그대로다 — 그건 창 이동이라 스프라이트와 무관하다.
+/// 없어지는 건 제자리 팔다리 움직임뿐이고, 대신 위아래로 살짝 흔들린다.
+enum FloatingPetArtwork: String, Sendable, CaseIterable {
+    /// 5세대 도트 GIF — 45~133px. 96pt 로 띄우면 레티나에서 평균 2.5배 확대된다.
+    case animated
+    /// Pokémon HOME 렌더 — 512×512 정지.
+    case sharp
+}
+
 /// 게임과 앱 동작에 필요한 사용자 설정만 보관한다.
 /// 게임과 앱 자체 동작에 필요한 설정 표면이다.
 @MainActor
@@ -18,6 +33,11 @@ final class AppSettings {
     }
     var floatingPetMovementSpeed: Double {
         didSet { defaults.set(floatingPetMovementSpeed, forKey: "floatingPetMovementSpeed") }
+    }
+    /// 플로팅 펫 그림 — 움직임과 선명함은 맞바꿈이다. 애니메이션 소스는 5세대 도트가 마지막이라
+    /// 원본이 45~133px 뿐이고, 그보다 선명한 건 정지 렌더(512×512)밖에 없다.
+    var floatingPetArtwork: FloatingPetArtwork {
+        didSet { defaults.set(floatingPetArtwork.rawValue, forKey: "floatingPetArtwork") }
     }
     var imageAntialiasing: Bool { didSet { defaults.set(imageAntialiasing, forKey: "imageAntialiasing") } }
     /// 배틀 재생 속도. **끄기가 있어야 하는 설정**이다 — 저전력과 접근성 둘 다 걸린다.
@@ -58,6 +78,9 @@ final class AppSettings {
         floatingPetRoamingEnabled = defaults.object(forKey: "floatingPetRoamingEnabled") as? Bool ?? false
         floatingPetMouseChaseEnabled = defaults.object(forKey: "floatingPetMouseChaseEnabled") as? Bool ?? false
         floatingPetMovementSpeed = defaults.object(forKey: "floatingPetMovementSpeed") as? Double ?? 80
+        // 기본은 지금까지의 모습(움직임) — 설정을 새로 넣었다고 남의 펫이 말없이 정지하면 안 된다.
+        floatingPetArtwork = defaults.string(forKey: "floatingPetArtwork")
+            .flatMap(FloatingPetArtwork.init(rawValue:)) ?? .animated
         imageAntialiasing = defaults.object(forKey: "imageAntialiasing") as? Bool ?? true
         battleReplaySpeed = (defaults.string(forKey: "battleReplaySpeed")
             .flatMap(ReplaySpeed.init(rawValue:))) ?? .normal

@@ -373,6 +373,28 @@ struct L {
           "ポケモンが画面の上に浮かびます — ドラッグで移動できます")
     }
     var floatingPetSizeLabel: String { t("크기", "Size", "サイズ") }
+    var floatingPetArtworkTitle: String { t("그림", "Artwork", "画像") }
+    /// 라벨에 맞바꿈을 넣는다 — "선명하게" 만 있으면 왜 기본이 아닌지 알 수 없다.
+    func floatingPetArtworkLabel(_ artwork: FloatingPetArtwork) -> String {
+        switch artwork {
+        case .animated: return t("움직이게", "Animated", "アニメ")
+        case .sharp:    return t("선명하게", "Sharp", "高精細")
+        }
+    }
+    /// 고른 쪽이 무엇을 포기하는지 밝힌다. 특히 "선명하게" 를 골라도 **돌아다니기는 그대로**라는
+    /// 걸 말해야 한다 — 안 그러면 펫이 아예 멈추는 줄 알고 안 고른다.
+    func floatingPetArtworkHint(_ artwork: FloatingPetArtwork) -> String {
+        switch artwork {
+        case .animated:
+            return t("5세대 도트 그림이라 크게 띄우면 흐려져요.",
+                     "Gen-5 pixel art — it blurs at larger sizes.",
+                     "第5世代のドット絵なので大きくすると粗くなります。")
+        case .sharp:
+            return t("4배 선명한 정지 그림이에요. 돌아다니기는 그대로예요.",
+                     "A still render, 4× sharper. Roaming still works.",
+                     "4倍精細な静止画です。歩き回りはそのままです。")
+        }
+    }
     var floatingPetRoamingLabel: String { t("화면 돌아다니기", "Roam across screens", "画面を歩き回る") }
     var floatingPetMouseChaseLabel: String { t("마우스 따라가기", "Follow the pointer", "マウスを追いかける") }
     var floatingPetSpeedLabel: String { t("이동 속도", "Movement speed", "移動速度") }
