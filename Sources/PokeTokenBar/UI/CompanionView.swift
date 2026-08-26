@@ -625,6 +625,12 @@ struct CompanionHeader: View {
                                 Text(requirement).font(.caption2).foregroundStyle(.tertiary)
                             }
                         }
+                        // 능력치 여섯 칸 — 고정 표시. 타입과 같은 조회에서 오므로 여기 두는 데
+                        // 추가 네트워크가 없다. 아직 못 받았으면 줄 자체를 그리지 않는다.
+                        if let stats = store.currentStats {
+                            StatBlock(stats: stats, level: store.currentLevel, l: store.l,
+                                      language: store.language)
+                        }
                     } else {
                         // 알 인큐베이션 — 부화까지 진행 (임박 시 문구·색 전환)
                         HStack(spacing: 6) {
@@ -1036,6 +1042,56 @@ private struct EvolutionPromptCard: View {
         }
         .padding(9)
         .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+/// 능력치 여섯 칸 — 3열 × 2행 고정.
+///
+/// **종족값이 아니라 이 개체의 실제 능력치다.** 이 앱엔 성격과 민트가 있어서, 종족값만 띄우면
+/// 성격을 바꿔도 숫자가 안 움직인다 — 민트를 쓰는 의미가 화면에서 사라진다. 그래서 머리글에
+/// 기준 레벨을 함께 적는다(안 적으면 종족값으로 오해한다).
+///
+/// 3열로 자른 이유는 폭이다. 한 줄에 여섯을 세우면 일본어 라벨(`とくこう`)에서 넘친다.
+/// 칸마다 `maxWidth: .infinity` 를 걸어 숫자 자리를 맞춘다 — 안 걸면 라벨 길이에 따라
+/// 열이 어긋나 표로 안 읽힌다.
+private struct StatBlock: View {
+    let stats: BattleStats
+    let level: Int
+    let l: L
+    let language: AppLanguage
+
+    private var cells: [(label: String, value: Int)] {
+        [(l.statHP, stats.hp),
+         (BattleStat.atk.name(language), stats.atk),
+         (BattleStat.def.name(language), stats.def),
+         (BattleStat.spa.name(language), stats.spa),
+         (BattleStat.spd.name(language), stats.spd),
+         (BattleStat.spe.name(language), stats.spe)]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(l.statsAtLevel(level))
+                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+            ForEach(0..<2, id: \.self) { row in
+                HStack(spacing: 4) {
+                    ForEach(0..<3, id: \.self) { column in
+                        let cell = cells[row * 3 + column]
+                        HStack(spacing: 3) {
+                            Text(cell.label)
+                                .font(.system(size: 9)).foregroundStyle(.secondary)
+                                .lineLimit(1).minimumScaleFactor(0.8)
+                            Text("\(cell.value)")
+                                .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(cells.map { "\($0.label) \($0.value)" }.joined(separator: ", "))
     }
 }
 

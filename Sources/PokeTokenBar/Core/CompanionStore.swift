@@ -66,6 +66,20 @@ final class CompanionStore {
     /// 지금 개체의 타입. 태그가 안 맞으면 빈 배열 — 교체 지점마다 리셋을 심는 대신 읽는 자리 한 곳에서
     /// 막는다(리셋 지점은 계속 늘어나고 하나만 빠뜨리면 같은 결함이 돌아온다).
     var currentTypes: [PokemonType] { loadedTypesSpeciesID == currentSpeciesID ? loadedTypes : [] }
+    /// 종족값 — 타입과 **같은 조회**(`battleProfile`)에서 온다. 따로 받지 않는다.
+    private var loadedBaseStats: BattleStats?
+    /// 지금 개체의 실제 능력치 — 종족값에 **이 개체의 레벨과 성격**을 먹인 값이다.
+    ///
+    /// 종족값을 그대로 띄우지 않는 이유: 이 앱엔 성격과 민트가 있다. 종족값만 보이면 성격을 바꿔도
+    /// 숫자가 안 움직여, 민트를 쓰는 의미가 화면에서 사라진다.
+    ///
+    /// 태그 검사는 `currentTypes` 와 같은 이유다 — 개체가 바뀌었는데 남의 종족값으로 계산하면
+    /// 그럴듯하게 틀린 숫자가 나온다(빈 값은 화면이 자리를 비우지만, 틀린 숫자는 안 들킨다).
+    var currentStats: BattleStats? {
+        guard loadedTypesSpeciesID == currentSpeciesID, let base = loadedBaseStats,
+              let mon = state.active else { return nil }
+        return base.effective(level: mon.level, nature: mon.nature)
+    }
     private(set) var displayedMoves: [MoveSpec] = []
     private(set) var isLoadingDisplayedMoves = false
     private var moveLearningQueue: [MoveLearningPrompt] = []
@@ -960,8 +974,9 @@ final class CompanionStore {
     }
     /// 테스트 전용 — 타입 표시 캐시와 소유자 태그를 함께 세팅한다. 둘을 분리하면 프로덕션에서
     /// 만들 수 없는 태그 없는 캐시 상태가 생겨 회귀 테스트가 실제 결함과 다른 조건을 검증한다.
-    func debugSetLoadedTypes(_ types: [PokemonType], speciesID: Int) {
+    func debugSetLoadedTypes(_ types: [PokemonType], speciesID: Int, base: BattleStats? = nil) {
         loadedTypes = types
+        loadedBaseStats = base
         loadedTypesSpeciesID = speciesID
     }
     /// 테스트 전용 — 비동기 계승 기술 복원과 동행 교체의 경합을 네트워크 없이 재현한다.
@@ -1486,6 +1501,7 @@ final class CompanionStore {
               let profile = try? await provider.battleProfile(speciesID: id),
               currentSpeciesID == id else { return }
         loadedTypes = profile.types
+        loadedBaseStats = profile.stats
         loadedTypesSpeciesID = id
     }
 

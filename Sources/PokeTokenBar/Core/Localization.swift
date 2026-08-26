@@ -670,6 +670,14 @@ struct L {
     func dexPageLabel(_ page: Int, _ total: Int) -> String {
         t("\(total)페이지 중 \(page)페이지", "Page \(page) of \(total)", "\(total)ページ中 \(page)ページ")
     }
+    /// 능력치 표의 HP 칸. 나머지 다섯은 `BattleStat.name` 이 든다(랭크가 붙는 스탯이라 그쪽에 있다).
+    /// HP 만 여기 있는 게 어색해 보여도, 이름을 두 벌로 만들면 배틀 로그와 표가 다른 말을 쓴다.
+    var statHP: String { t("HP", "HP", "HP") }
+    /// 능력치가 **이 개체의 레벨·성격 기준**임을 밝힌다. 종족값으로 오해하면 성격을 바꿔도
+    /// 안 변한다고 생각한다.
+    func statsAtLevel(_ level: Int) -> String {
+        t("Lv.\(level) 기준 능력치", "Stats at Lv.\(level)", "Lv.\(level) 時のステータス")
+    }
     /// 갈라지는 진화 — 갈래가 몇 개인지부터 알려야 나머지가 막힌 게 아니란 걸 안다.
     func evolutionBranchCount(_ count: Int) -> String {
         t("진화 갈래 \(count)가지", "\(count) evolution paths", "進化の分岐 \(count)通り")

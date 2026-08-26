@@ -95,6 +95,24 @@ struct BattleStats: Codable, Sendable, Equatable {
     var spa: Int
     var spd: Int
     var spe: Int
+
+    /// 종족값 → 실제 능력치 (IV 31 고정, EV 0, 성격 보정 포함) — 본가 공식.
+    ///
+    /// **식이 여기 한 곳에만 있어야 한다.** 화면이 자기 식으로 계산하면 홈에 뜨는 숫자와 배틀이
+    /// 쓰는 숫자가 갈라지고, 갈라진 걸 알아챌 방법은 둘을 손으로 맞대 보는 것뿐이다.
+    func effective(level: Int, nature: PokemonNature?) -> BattleStats {
+        func other(_ base: Int, _ stat: WritableKeyPath<BattleStats, Int>) -> Int {
+            let raw = (2 * base + 31) * level / 100 + 5
+            return Int(Double(raw) * NatureEffect.multiplier(nature, for: stat))
+        }
+        return BattleStats(
+            hp: (2 * hp + 31) * level / 100 + level + 10,
+            atk: other(atk, \.atk),
+            def: other(def, \.def),
+            spa: other(spa, \.spa),
+            spd: other(spd, \.spd),
+            spe: other(spe, \.spe))
+    }
 }
 
 /// 랭크(스탯 단계)가 붙는 스탯 — HP 는 랭크가 없어서 빠졌다. rawValue 가 세이브·와이어 키를
@@ -466,21 +484,8 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
         return min(100, max(5, 5 + Int((overall * 95.0).rounded())))
     }
 
-    /// 유효 스탯 (IV 31 고정, EV 0, 성격 보정 포함) — 본가 공식.
-    func effectiveStats() -> BattleStats {
-        let l = level
-        func other(_ base: Int, _ stat: WritableKeyPath<BattleStats, Int>) -> Int {
-            let raw = (2 * base + 31) * l / 100 + 5
-            return Int(Double(raw) * NatureEffect.multiplier(nature, for: stat))
-        }
-        return BattleStats(
-            hp: (2 * base.hp + 31) * l / 100 + l + 10,
-            atk: other(base.atk, \.atk),
-            def: other(base.def, \.def),
-            spa: other(base.spa, \.spa),
-            spd: other(base.spd, \.spd),
-            spe: other(base.spe, \.spe))
-    }
+    /// 유효 스탯 — 식은 `BattleStats.effective` 한 곳에 있다(홈 화면도 같은 식을 쓴다).
+    func effectiveStats() -> BattleStats { base.effective(level: level, nature: nature) }
 
 }
 
