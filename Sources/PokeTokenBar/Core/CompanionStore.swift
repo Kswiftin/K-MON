@@ -205,6 +205,43 @@ final class CompanionStore {
         // 지닌물건 진화(trade+held_item, level-up+held_item)를 연결의끈으로 잘못 안내했다.
         return ItemKind.allCases.first { $0.evolutionRule?.opens(next) == true }
     }
+    /// 다음 진화가 요구하는 기술의 id — 기술 습득 카드가 "이건 진화 기술" 표식을 다는 근거다.
+    /// 이미 배웠는지는 보지 않는다. 카드는 아직 안 배운 기술만 제안하므로 그 구분이 필요 없다.
+    var nextEvolutionKnownMoveID: Int? { nextEvolutionNode?.evolutionKnownMoveID }
+
+    /// 다음 진화 대상의 표시 이름 — 안내 문구가 "무엇으로" 진화하는지 말하려면 필요하다.
+    var nextEvolutionName: String? {
+        guard let next = nextEvolutionNode, let line = currentLine else { return nil }
+        return line.localizedName(next.speciesID, state.language)
+    }
+
+    /// 지금 개체의 "종 + 배운 기술" 을 한 값으로 묶은 것. 뷰가 이 값이 바뀔 때만 안내를 다시 받는다 —
+    /// 기술을 배우는 순간 진화 조건이 채워지므로 종만 보면 안내가 낡은 채로 남는다.
+    var currentMoveSetIdentity: String {
+        guard let mon = state.active else { return "none" }
+        return "\(mon.currentID):" + mon.learnedMoves.map { String($0.id) }.sorted().joined(separator: ",")
+    }
+
+    /// 다음 진화가 요구하는데 **아직 안 배운** 기술. 이게 있으면 아무리 키워도 진화가 열리지 않는다.
+    ///
+    /// 스펙을 통째로 들고 있는 이유: 이름은 언어를 타는데, 문자열로 굳혀 두면 언어를 바꿔도 안 바뀐다.
+    /// 조회가 필요해 뷰의 `.task` 가 채운다(`loadEvolutionRequiredMove`).
+    private(set) var evolutionRequiredMove: MoveSpec?
+
+    /// 요구 기술의 이름을 1회 받아 둔다. 이미 배웠거나 요구가 없으면 비운다 —
+    /// 안 비우면 진화 조건을 채운 뒤에도 "이 기술이 필요해요" 가 남는다.
+    func loadEvolutionRequiredMove() async {
+        guard let requiredID = nextEvolutionKnownMoveID,
+              state.active?.learnedMoves.contains(where: { $0.id == requiredID }) == false else {
+            evolutionRequiredMove = nil
+            return
+        }
+        if evolutionRequiredMove?.id == requiredID { return }   // 이름은 이미 받아 뒀다
+        guard let move = await provider.moveDetail(id: requiredID),
+              nextEvolutionKnownMoveID == requiredID else { return }   // await 뒤 재확인
+        evolutionRequiredMove = move
+    }
+
     var boxedMons: [MonState] { state.boxedMons }
     var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }
     var activeMonID: UUID? { state.active?.id }
@@ -1749,8 +1786,17 @@ final class CompanionStore {
             guard a.usedAtStage >= threshold else { break }
             // 아이템·지닌물건이 필요한 진화는 성장치만으로 열리면 안 된다 — 열리면 진화 아이템이
             // 무의미해지고 졸업 면제 판정(grewIntoFinalByItem)도 실제 경로와 어긋난다.
-            guard next.evolutionTrigger == nil, next.evolutionItem == nil,
-                  next.evolutionHeldItem == nil else { break }
+            guard next.evolutionItem == nil, next.evolutionHeldItem == nil else { break }
+            // 특정 기술을 배운 채로 자라야 하는 진화(원시의힘·흉내내기·구르기·더블어택)는 그 기술을
+            // 들고 있을 때만 연다. 본가와 같은 조건이고, 앱이 판정할 재료(learnedMoves)도 이미 있다.
+            //
+            // 기술 조건이 **아닌** 나머지(장소·파티·shed)는 판정할 축이 없어 여전히 닫아 둔다 —
+            // 트리거가 채워져 있으면 우리가 모르는 조건이라는 뜻이므로 성장치만으로 열지 않는다.
+            if let requiredMoveID = next.evolutionKnownMoveID {
+                guard a.learnedMoves.contains(where: { $0.id == requiredMoveID }) else { break }
+            } else {
+                guard next.evolutionTrigger == nil else { break }
+            }
             state.active!.pathIDs = Array(a.pathIDs.prefix(a.stageIndex + 1)) + [next.speciesID]
             state.active!.stageIndex += 1
             state.active!.usedAtStage = max(0, a.usedAtStage - threshold)

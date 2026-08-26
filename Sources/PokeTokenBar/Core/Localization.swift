@@ -670,6 +670,20 @@ struct L {
     func dexPageLabel(_ page: Int, _ total: Int) -> String {
         t("\(total)페이지 중 \(page)페이지", "Page \(page) of \(total)", "\(total)ページ中 \(page)ページ")
     }
+    /// 기술 조건 진화(원시의힘·흉내내기 …) — 레벨 조건이 없어서, 안 알려주면 아무리 키워도
+    /// 왜 진화가 안 오는지 알 길이 없다.
+    func evolutionNeedsMove(_ move: String, into target: String) -> String {
+        t("\(target)(으)로 진화하려면 ‘\(move)’이(가) 필요해요",
+          "Needs \(move) to evolve into \(target)",
+          "\(target)に進化するには『\(move)』が必要です")
+    }
+    /// 기술 습득 카드의 표식 — 이 기술을 넣으면 진화가 열린다는 사실은 카드를 볼 때 알아야 한다.
+    /// 거절하면 다음 기회가 하트비늘뿐이라, 고른 뒤에 알려주면 늦다.
+    func evolutionMoveUnlocks(_ target: String) -> String {
+        t("배우면 \(target)(으)로 진화할 수 있어요",
+          "Learning this unlocks \(target)",
+          "覚えると\(target)に進化できます")
+    }
     var dexPagePrev: String { t("이전 페이지", "Previous page", "前のページ") }
     var dexPageNext: String { t("다음 페이지", "Next page", "次のページ") }
     /// 페이지 표시를 누르면 바로 건너뛴다 — 전체를 펼치면 28페이지라 화살표만으로는 멀다.

@@ -620,6 +620,14 @@ struct CompanionHeader: View {
                                 // 무엇을 사야 하는지 여기서 말해주지 않으면 알 길이 없다.
                                 Text(store.l.evolutionNeedsItem(store.l.itemName(evolutionItem)))
                                     .font(.caption2).foregroundStyle(.tertiary)
+                            } else if let requiredMove = store.evolutionRequiredMove,
+                                      let target = store.nextEvolutionName {
+                                // 기술 조건 진화도 레벨로는 안 열린다. 돌과 달리 상점에서 살 수도
+                                // 없어서, 무슨 기술인지 말해주지 않으면 되찾을 단서조차 없다
+                                // (하트비늘로 다시 배우는 게 유일한 길이다).
+                                Text(store.l.evolutionNeedsMove(requiredMove.name(store.language), into: target))
+                                    .font(.caption2).foregroundStyle(.tertiary)
+                                    .lineLimit(1).minimumScaleFactor(0.75)
                             } else if let graduationLevel = store.graduationLevelRequirement {
                                 // 최종형에 닿으면 위 두 안내가 모두 사라진다. 그대로 두면 졸업 버튼이
                                 // 안 뜨는 이유를 화면 어디서도 알 수 없다.
@@ -698,6 +706,8 @@ struct CompanionHeader: View {
             }
         }
         .task(id: store.currentSpeciesID) { await store.loadCurrentTypes() }
+        // 진화에 필요한 기술 이름. 기술을 배우면 요구가 사라지므로 무브셋이 바뀔 때도 다시 본다.
+        .task(id: store.currentMoveSetIdentity) { await store.loadEvolutionRequiredMove() }
         .onAppear {
             playCelebrationIfNeeded()
             showCandyXPIfNeeded()
@@ -1142,6 +1152,13 @@ private struct MoveLearningCard: View {
             Text(store.l.moveHoverText(prompt.move))
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            // 진화 조건인 기술은 **여기서** 밝힌다. 거절하면 다음 기회가 하트비늘뿐이라,
+            // 고른 뒤에 알려주면 늦다.
+            if prompt.move.id == store.nextEvolutionKnownMoveID, let target = store.nextEvolutionName {
+                Label(store.l.evolutionMoveUnlocks(target), systemImage: "arrow.up.circle.fill")
+                    .font(.caption2.weight(.semibold)).foregroundStyle(.purple)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let active = store.state.active, active.learnedMoves.count >= 4 {
                 Text(store.l.t("잊을 기술을 선택하세요.", "Choose a move to forget.", "忘れるわざを選んでください。"))
                     .font(.caption2).foregroundStyle(.secondary)
