@@ -223,7 +223,7 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(decoded.capture_rate, 190)
         XCTAssertEqual(Mirror(reflecting: decoded).children.compactMap(\.label).sorted(),
                        ["capture_rate", "evolution_chain", "evolves_from_species",
-                        "is_legendary", "is_mythical", "names"])
+                        "gender_rate", "is_legendary", "is_mythical", "names"])
     }
 
     func testShinyProfileIsRetainedForChatSpriteRendering() {

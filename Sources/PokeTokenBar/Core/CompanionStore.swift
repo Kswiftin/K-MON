@@ -2687,8 +2687,6 @@ final class CompanionStore {
         let rolledShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let isShiny = consumeShinyCharge() || rolledShiny
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
-        let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
-        let statRelation = Int(rng.next() % 3) - 1
         // 메타몽 위장 롤 — common·≥2형태에 한해 1/128. .app 게이트(&& 단락 → 비앱에선 rng 미소비로
         // 기존 테스트 RNG 시퀀스 무영향). 위장/리빌 로직은 상태 기반으로 별도 테스트한다.
         var dittoDisguise: Int?
@@ -2696,6 +2694,10 @@ final class CompanionStore {
            Self.dittoDisguiseHit(rarity: line.rarity, totalForms: line.totalForms, roll: rng.next()) {
             dittoDisguise = line.baseID
         }
+        // 새 개체 속성은 기존 메타몽 위장 롤 뒤에서 뽑는다. 앞에 끼우면 같은 시드의 위장 확률이
+        // 앱 업데이트만으로 달라져 기존 결정론과 재현 가능한 테스트가 깨진다.
+        let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
+        let statRelation = Int(rng.next() % 3) - 1
         let evolutionPlan = makeEvolutionPlan(from: line.tree, baseID: line.baseID, gender: gender)
         // 위장 중엔 이로치를 숨긴다 — 부화 알림·연출도 일반체로(정체는 리빌 때 공개).
         let showShiny = isShiny && dittoDisguise == nil
@@ -2772,13 +2774,16 @@ final class CompanionStore {
                   let latest = state.active, latest.baseID == a.baseID, currentLine == nil else { return }
             var migrated = latest
             if migrated.gender == nil {
-                migrated.gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
+                // 구버전 세이브 보완은 난수를 소비하지 않는다. 재실행할 때마다 이후 진화 경로·알 결과가
+                // 달라지지 않도록 종 번호에서 안정적으로 성별을 정한다.
+                migrated.gender = PokemonGender.from(genderRate: line.genderRate,
+                                                      roll: UInt64(migrated.baseID))
                 // 구버전의 계획 경로는 성별을 모르고 뽑혔다. 이미 도달한 경로는 지키되 이후 분기는
                 // 새 성별에 맞춰 다시 계획하도록 현재 경로까지만 남긴다.
                 migrated.plannedPathIDs = migrated.pathIDs
             }
             if migrated.evolutionStatRelation == nil {
-                migrated.evolutionStatRelation = Int(rng.next() % 3) - 1
+                migrated.evolutionStatRelation = (migrated.baseID % 3) - 1
                 migrated.plannedPathIDs = migrated.pathIDs
             }
             state.active = normalizedEvolutionState(migrated, from: line.tree)

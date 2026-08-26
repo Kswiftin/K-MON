@@ -103,6 +103,8 @@ final class KnownMoveEvolutionTests: XCTestCase {
         await companion.hatch(baseID: 221)
         companion.debugSetActiveLearnedMoves([move(33), move(ancientPowerID)])
         growPastOneStage(companion)
+        XCTAssertEqual(companion.evolutionPrompt?.toSpeciesID, 473)
+        companion.acceptEvolution()
         XCTAssertEqual(companion.currentSpeciesID, 473)
     }
 
