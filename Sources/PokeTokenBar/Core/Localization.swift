@@ -1294,6 +1294,10 @@ struct L {
         case .helmetExplorer: return t("탐험가 헬멧", "Explorer helmet", "探検家のヘルメット")
         }
     }
+    var outfitTitle: String { t("꾸미기", "Wardrobe", "きせかえ") }
+    var outfitWardrobe: String { t("꾸미기", "Wardrobe", "きせかえ") }
+    var outfitTakeOff: String { t("벗기", "Take off", "はずす") }
+    var outfitLocked: String { t("업적으로 해금", "Unlock via achievements", "実績で解放") }
     func itemDescription(_ kind: ItemKind) -> String {
         switch kind {
         case .rareCandy:

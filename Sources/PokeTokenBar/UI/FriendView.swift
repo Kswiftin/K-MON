@@ -5,6 +5,7 @@ struct FriendView: View {
     enum Destination { case battle, trade }
 
     let store: CompanionStore
+    let nav: PopoverNavigation
     @Environment(BattleCenter.self) private var battleCenter
     @State private var destination: Destination?
     @State private var revealsIncomingMessage = false
@@ -73,6 +74,7 @@ struct FriendView: View {
 
     private var chooser: some View {
         VStack(alignment: .leading, spacing: 14) {
+            myTrainerCard
             VStack(alignment: .leading, spacing: 4) {
                 Label(store.l.t("친구와 함께", "Play with Friends", "フレンドと遊ぶ"),
                       systemImage: "person.2.fill")
@@ -109,6 +111,27 @@ struct FriendView: View {
 
         }
         .padding(.top, 4)
+    }
+
+    /// 내 트레이너 카드 — 친구 목록 맨 위에 둔다. 친구 행이 상대 착장을 보여주니, 내 착장도
+    /// 여기서 바로 바꿀 수 있어야 대칭이 맞는다("꾸미기" 진입점이 상점 안에만 있으면 못 찾는다).
+    private var myTrainerCard: some View {
+        HStack(spacing: 8) {
+            TrainerAvatarView(outfit: store.outfit, scale: 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.hasTrainerName ? store.trainerName
+                     : store.l.t("나", "You", "自分")).font(.headline).lineLimit(1)
+                Text(store.l.t("트레이너 Lv.\(store.trainerLevel.level)",
+                               "Trainer Lv.\(store.trainerLevel.level)",
+                               "トレーナー Lv.\(store.trainerLevel.level)"))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(store.l.outfitWardrobe) { nav.showOutfit = true }
+                .buttonStyle(.bordered).controlSize(.small)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func trainerRow(_ peer: BattlePeer) -> some View {

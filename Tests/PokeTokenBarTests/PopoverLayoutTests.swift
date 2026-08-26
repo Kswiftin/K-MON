@@ -429,6 +429,16 @@ final class PopoverLayoutTests: XCTestCase {
                                  Self.achievementShelfBudget)
     }
 
+    // MARK: 꾸미기(옷장) 오버레이 — 던전과 같은 층, 같은 높이 예산.
+
+    /// 던전 오버레이와 같은 `PopoverMetrics.currentHeight(for: .battle)` 프레임을 쓴다 — 아이템
+    /// 목록을 가로 스크롤로 묶은 이유가 바로 이 예산을 넘기지 않기 위해서다.
+    func testOutfitViewFitsTheOverlayHeight() {
+        let store = achievementStore()
+        XCTAssertLessThanOrEqual(renderedHeight(OutfitView(store: store, onClose: {})),
+                                 PopoverMetrics.currentHeight(for: .battle))
+    }
+
     /// 트랙 이름이 세 언어에서 길이가 다르다(집중 시간 / Focus time / 集中時間). 한 언어에서
     /// 줄바꿈되면 그 언어에서만 선반이 커진다 — 기술 목록에서 이미 겪은 부류(CI 118pt vs 로컬 78pt).
     func testAchievementShelfHeightDoesNotDependOnLanguage() {
