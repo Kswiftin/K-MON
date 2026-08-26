@@ -421,6 +421,9 @@ struct EvoNode: Codable, Sendable {
     /// 지닌물건 진화 조건(PokéAPI `held_item`). trade/level-up 트리거와 함께 오고 `evolutionItem` 은
     /// 비어 있다 — 이 값을 무시하면 킹스록·금속코트 진화가 순수 교환 진화와 구별되지 않는다.
     var evolutionHeldItem: String? = nil
+    /// 이 기술을 배운 채로 자라야 진화한다(원시의힘·흉내내기·구르기·더블어택). **레벨 조건이 없다** —
+    /// 기술이 없으면 아무리 키워도 진화하지 않으므로, 이 값을 안 읽으면 일곱 종이 영영 막힌다.
+    var evolutionKnownMoveID: Int? = nil
 
     /// 최장 경로 길이(형태 수). 분기는 보통 같은 깊이라 대표값으로 사용.
     var depth: Int { 1 + (children.map(\.depth).max() ?? 0) }
@@ -439,7 +442,8 @@ struct EvoNode: Codable, Sendable {
         guard PokemonAssets.hasAnimatedSprite(speciesID: speciesID) else { return nil }
         return EvoNode(speciesID: speciesID, children: children.compactMap { $0.keepingAnimatedSprites() },
                        evolutionLevel: evolutionLevel, evolutionTrigger: evolutionTrigger,
-                       evolutionItem: evolutionItem, evolutionHeldItem: evolutionHeldItem)
+                       evolutionItem: evolutionItem, evolutionHeldItem: evolutionHeldItem,
+                       evolutionKnownMoveID: evolutionKnownMoveID)
     }
 }
 
