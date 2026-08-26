@@ -2778,13 +2778,11 @@ final class CompanionStore {
                 // 달라지지 않도록 종 번호에서 안정적으로 성별을 정한다.
                 migrated.gender = PokemonGender.from(genderRate: line.genderRate,
                                                       roll: UInt64(migrated.baseID))
-                // 구버전의 계획 경로는 성별을 모르고 뽑혔다. 이미 도달한 경로는 지키되 이후 분기는
-                // 새 성별에 맞춰 다시 계획하도록 현재 경로까지만 남긴다.
-                migrated.plannedPathIDs = migrated.pathIDs
+                // 이미 저장된 유효 진화 경로는 유지한다. 성별 필드를 보완한다는 이유로 경로를 지우면
+                // 업데이트 직후 사용자가 보던 진화 대상이 바뀌고 불필요한 RNG까지 소비된다.
             }
             if migrated.evolutionStatRelation == nil {
                 migrated.evolutionStatRelation = (migrated.baseID % 3) - 1
-                migrated.plannedPathIDs = migrated.pathIDs
             }
             state.active = normalizedEvolutionState(migrated, from: line.tree)
             currentLine = line
