@@ -700,6 +700,8 @@ final class CompanionStoreTests: XCTestCase {
 
         XCTAssertNil(s.nextEvolutionLevel, "레벨로는 진화하지 않는 종이라 이 자리가 비어 있었다")
         XCTAssertEqual(s.nextEvolutionItem, .fireStone)
+        s.setLanguage(.ko)
+        XCTAssertEqual(s.evolutionRequirementText, "불꽃의돌 필요")
         // 언어는 신규 설치 기본값이 `.systemDefault` 라 CI 로케일에 딸려간다 — `store.l` 로 재면
         // 로컬(한국어)만 통과하고 CI(영어)에서 깨진다. 문구는 언어를 고정해 잰다.
         XCTAssertEqual(L(.ko).evolutionNeedsItem(L(.ko).itemName(.fireStone)), "불꽃의돌 필요")
@@ -713,6 +715,31 @@ final class CompanionStoreTests: XCTestCase {
         await s.hatch(baseID: 1)
 
         XCTAssertNil(s.nextEvolutionItem, "레벨로 진화하는 종이다")
+        XCTAssertNotNil(s.evolutionRequirementText, "홈에는 레벨 진화 조건도 항상 표시한다")
+    }
+
+    func testFinalFormStillShowsEvolutionStatusOnHome() async {
+        let s = store(noEvo)
+        await s.hatch(baseID: 20)
+        s.setLanguage(.ko)
+        XCTAssertEqual(s.evolutionRequirementText, "최종 진화체 · Lv.30에 졸업")
+    }
+
+    /// 미졸업 개체는 소유 목록에서만 도감에 합성되므로 교환으로 내보내는 순간 사라지던 회귀.
+    /// 교환 전에 도달한 종은 이후에도 영구 도감 기록으로 남아야 한다.
+    func testTradedAwayPokemonRemainsRegisteredInDex() async throws {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let offered = try XCTUnwrap(s.state.active)
+        let incoming = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                                rarity: .common, totalForms: 1,
+                                names: [20: ["ko": "포20", "en": "P20"]])
+
+        XCTAssertTrue(s.performTrade(offeredID: offered.id, received: incoming))
+        XCTAssertEqual(s.currentSpeciesID, 20)
+        XCTAssertTrue(s.dexSpecies.contains { $0.id == 1 && !$0.isRaising },
+                      "보낸 포켓몬은 소유 중이 아니어도 도감에 영구 등록돼야 한다")
+        XCTAssertEqual(s.state.dex.last?.chainOrder, [1])
     }
 
     // MARK: 알 등급 보증
@@ -1572,6 +1599,60 @@ final class CompanionIdentityTests: XCTestCase {
         let shiny = rng.next() % PokemonOdds.shinyDenominator == 0
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         return (shiny, nature)
+    }
+
+    func testGenderRateUsesOfficialEighthsAndSupportsGenderlessSpecies() {
+        XCTAssertEqual(PokemonGender.from(genderRate: -1, roll: 0), .genderless)
+        XCTAssertEqual(PokemonGender.from(genderRate: 0, roll: 0), .male)
+        XCTAssertEqual(PokemonGender.from(genderRate: 8, roll: 7), .female)
+        XCTAssertEqual(PokemonGender.from(genderRate: 1, roll: 0), .female)
+        XCTAssertEqual(PokemonGender.from(genderRate: 1, roll: 1), .male)
+    }
+
+    /// 수컷 세꿀버리처럼 해당 성별에 진화 경로가 없으면 암컷 전용 진화를 대신 고르면 안 된다.
+    func testGenderRestrictedEvolutionOnlyAppearsForMatchingGender() async {
+        let tree = EvoNode(speciesID: 415, children: [
+            EvoNode(speciesID: 416, children: [], evolutionLevel: 21, evolutionGender: .female),
+        ])
+        let names = [415: ["ko": "세꿀버리"], 416: ["ko": "비퀸"]]
+
+        let male = store(EvoLine(baseID: 415, tree: tree, rarity: .common, names: names, genderRate: 0), seed: 7)
+        await male.hatch(baseID: 415)
+        XCTAssertEqual(male.state.active?.gender, .male)
+        XCTAssertEqual(male.state.active?.plannedPathIDs, [415])
+        XCTAssertNil(male.nextEvolutionLevel, "수컷에게 암컷 전용 비퀸 진화를 안내하면 안 된다")
+
+        let female = store(EvoLine(baseID: 415, tree: tree, rarity: .common, names: names, genderRate: 8), seed: 7)
+        await female.hatch(baseID: 415)
+        female.setLanguage(.ko)
+        XCTAssertEqual(female.state.active?.gender, .female)
+        XCTAssertEqual(female.state.active?.plannedPathIDs, [415, 416])
+        XCTAssertEqual(female.evolutionRequirementText, "암컷 · Lv.21에 진화")
+    }
+
+    func testKnownMoveEvolutionRequiresMoveInActualMoveSet() async throws {
+        let rollout = MoveSpec(id: 205, names: ["ko": "구르기", "en": "Rollout"], type: .rock,
+                               power: 30, damageClass: .physical, accuracy: 90, pp: 20)
+        let tree = EvoNode(speciesID: 108, children: [
+            EvoNode(speciesID: 463, children: [], evolutionTrigger: "level-up",
+                    evolutionKnownMoveID: rollout.id),
+        ])
+        let line = EvoLine(baseID: 108, tree: tree, rarity: .common,
+                           names: [108: ["ko": "내루미"], 463: ["ko": "내룸벨트"]],
+                           evolutionMoveNames: [rollout.id: rollout.names])
+        let s = store(line, seed: 7)
+        await s.hatch(baseID: 108)
+        s.setLanguage(.ko)
+        XCTAssertEqual(s.evolutionRequirementText, "구르기 습득 후 레벨업")
+
+        s.debugAccrueLevelExperience(PokemonBalance.experiencePerLevel)
+        XCTAssertNil(s.evolutionPrompt, "필요 기술을 모르면 레벨이 올라도 진화할 수 없다")
+
+        s.debugSetActiveLearnedMoves([rollout])
+        s.debugAccrueLevelExperience(PokemonBalance.experiencePerLevel)
+        XCTAssertNotNil(s.evolutionPrompt, "구르기를 아는 상태의 레벨업은 진화 확인을 띄운다")
+        s.acceptEvolution()
+        XCTAssertEqual(s.currentSpeciesID, 463)
     }
 
     /// 임의 시드에서 부화 롤이 결정적이고 성격이 항상 부여되는지.

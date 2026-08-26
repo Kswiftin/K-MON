@@ -51,6 +51,9 @@ final class PokemonOXQuizTests: XCTestCase {
         let questions = PokemonOXQuestionFactory.make(from: facts)
         XCTAssertEqual(questions.count, 10)
         XCTAssertTrue(questions.allSatisfy { !$0.ko.isEmpty && !$0.en.isEmpty && !$0.ja.isEmpty })
+        XCTAssertEqual(questions.filter(\.answer).count, 5, "타입·진화 정답이 한쪽으로 쏠리지 않아야 한다")
+        XCTAssertTrue(questions.contains { !$0.answer && $0.ko.contains("에서 진화한다") },
+                      "다른 포켓몬을 부모처럼 제시하는 조금 더 어려운 오답이 포함돼야 한다")
     }
 
     func testQuizLobbyAllowsTenRunners() throws {

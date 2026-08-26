@@ -70,7 +70,13 @@ actor PokeAPIClient: PokeProviding {
             for n in sp.names where langCodes.contains(n.language.name) { byLang[n.language.name] = n.name }
             names[id] = byLang
         }
-        let line = EvoLine(baseID: baseSpeciesID, tree: tree, rarity: rarity, names: names)
+        var evolutionMoveNames: [Int: [String: String]] = [:]
+        for id in Set(Self.allKnownMoveIDs(tree)) {
+            if let move = await moveDetail(id: id) { evolutionMoveNames[id] = move.names }
+        }
+        let line = EvoLine(baseID: baseSpeciesID, tree: tree, rarity: rarity, names: names,
+                           genderRate: baseSpecies.gender_rate ?? -1,
+                           evolutionMoveNames: evolutionMoveNames)
         lineCache[baseSpeciesID] = line
         return line
     }
@@ -622,36 +628,42 @@ actor PokeAPIClient: PokeProviding {
     /// 진화체인 DTO → EvoNode. 순수 변환이라 actor 상태와 무관하고(nonisolated static), 조건 파싱을
     /// 테스트에서 직접 검증할 수 있어야 한다 — 필드 하나를 안 읽으면 진화 조건이 조용히 뭉개진다.
     static func evoNode(from link: ChainLink) -> EvoNode {
-        EvoNode(speciesID: Self.id(from: link.species.url ?? ""),
-                children: link.evolves_to.map(evoNode(from:)),
+        let speciesID = Self.id(from: link.species.url ?? "")
+        // 레어코일→자포코일은 구작 데이터에서 `level-up + 특정 장소`로만 내려오고 min_level/item 이
+        // 비어 있다. 앱에는 장소 진화 축이 없고, 현행 본가에서는 천둥의돌로 진화하므로 그 규칙으로
+        // 정규화한다. 그대로 두면 applyUsage 의 특수조건 가드와 아이템 매칭 양쪽에서 모두 막힌다.
+        let stoneOverride: String? = [462: "thunder-stone", 470: "leaf-stone",
+                                      471: "ice-stone", 476: "thunder-stone"][speciesID]
+        return EvoNode(speciesID: speciesID,
+                // 피오네→마나피는 진화가 아니라 번식 관계인데 체인 응답에 연결돼 있다. 앱에서
+                // 성장 진화로 오인하지 않도록 지원 트리에서 제거한다.
+                children: link.evolves_to.filter { Self.id(from: $0.species.url ?? "") != 490 }
+                    .map(evoNode(from:)),
                 // 친밀도 진화는 min_level 이 없다(trigger=level-up, min_happiness 만 존재) → 그대로 두면
                 // 레벨 게이트를 못 타고 아이템/트리거 게이트에도 막혀 영영 진화하지 않는다.
                 // 앱에 친밀도 축이 없으므로 요구 친밀도를 레벨로 환산해 같은 레벨 게이트에 태운다.
                 evolutionLevel: link.evolution_details.compactMap(\.min_level).first
                     ?? link.evolution_details.compactMap(\.min_happiness).first
                         .map(PokemonBalance.friendshipLevel(minHappiness:)),
-                evolutionTrigger: Self.evolutionCondition(link.evolution_details)?.trigger.name,
-                evolutionItem: Self.evolutionCondition(link.evolution_details)?.item?.name,
+                evolutionTrigger: stoneOverride != nil
+                    ? "use-item" : Self.evolutionCondition(link.evolution_details)?.trigger.name,
+                evolutionItem: stoneOverride ?? Self.evolutionCondition(link.evolution_details)?.item?.name,
                 // held_item 은 details[0] 이 아닐 수 있어(시간대 조건이 details 를 쪼갠다) 전체에서 찾는다.
                 evolutionHeldItem: link.evolution_details.compactMap(\.held_item).first?.name,
-                evolutionKnownMoveID: link.evolution_details.compactMap(\.known_move?.url)
-                    .first.map(Self.id(from:)))
+                evolutionGender: PokemonGender.fromEvolutionCode(
+                    link.evolution_details.compactMap(\.gender).first),
+                evolutionKnownMoveID: link.evolution_details.compactMap(\.known_move).first
+                    .map { Self.id(from: $0.url ?? "") },
+                evolutionTimeOfDay: link.evolution_details.contains(where: { ($0.time_of_day ?? "").isEmpty })
+                    ? nil : link.evolution_details.compactMap(\.time_of_day).first(where: { !$0.isEmpty }),
+                evolutionRelativePhysicalStats: link.evolution_details.compactMap(\.relative_physical_stats).first,
+                evolutionPartySpeciesID: link.evolution_details.compactMap(\.party_species).first
+                    .map { Self.id(from: $0.url ?? "") },
+                evolutionTradeSpeciesID: link.evolution_details.compactMap(\.trade_species).first
+                    .map { Self.id(from: $0.url ?? "") })
     }
 
-    /// 이 진화의 조건으로 삼을 줄 하나.
-    ///
-    /// 보통은 첫 줄이다. 하지만 **첫 줄이 막다른 길인 진화**가 있다 — 자포코일·대코파스·리피아·
-    /// 글레이시아는 첫 줄이 "특정 장소에서 레벨업" 이고, 앱에는 장소가 없어 열 방법이 없다.
-    /// 이 종들은 8세대부터 돌 진화가 생겼고 그 줄이 목록 **뒤쪽**에 있다. 첫 줄만 읽는 동안
-    /// 네 종은 영영 진화하지 못했다.
-    ///
-    /// 그렇다고 항상 전체를 훑으면 안 된다. 뒤쪽 줄에는 **리전폼 진화**가 섞여 있다 — 모래두지에
-    /// 얼음의돌은 알로라 고지로 가는 길이지 표준 고지가 아니다. 그 종들은 레벨로 이미 진화하므로
-    /// 첫 줄만 본다. 지닌물건으로 열리는 진화(야도킹)도 같은 이유로 건드리지 않는다.
-    ///
-    /// **줄 하나를 통째로 고르는 게 요점이다.** 아이템만 뒤쪽에서 읽고 트리거는 첫 줄에서 읽으면
-    /// 노드가 "level-up 인데 돌이 필요하다" 는 모순된 설명을 들고 다닌다 — 아이템 사용 판정
-    /// (`ItemKind.evolutionRule`)이 트리거를 함께 보므로 그 상태로는 돌을 써도 안 열린다.
+    /// 여러 조건 중 앱에서 실제로 실행 가능한 진화 조건 한 줄을 고른다.
     static func evolutionCondition(_ details: [ChainLink.EvolutionDetail]) -> ChainLink.EvolutionDetail? {
         let opensWithoutItem = details.contains {
             $0.min_level != nil || $0.min_happiness != nil || $0.held_item != nil
@@ -660,6 +672,9 @@ actor PokeAPIClient: PokeProviding {
         return details.first { $0.item != nil } ?? details.first
     }
     private func allIDs(_ n: EvoNode) -> [Int] { [n.speciesID] + n.children.flatMap(allIDs) }
+    private static func allKnownMoveIDs(_ n: EvoNode) -> [Int] {
+        (n.evolutionKnownMoveID.map { [$0] } ?? []) + n.children.flatMap(allKnownMoveIDs)
+    }
 
     static func id(from speciesURL: String) -> Int {
         // ".../pokemon-species/{id}/"
@@ -681,6 +696,7 @@ struct SpeciesDTO: Decodable, Sendable {
     let capture_rate: Int
     let is_legendary: Bool
     let is_mythical: Bool
+    let gender_rate: Int?
     let names: [NameDTO]
     let evolution_chain: URLRef
     let evolves_from_species: NamedRef?   // nil = 진화라인 시작점(base)
@@ -872,9 +888,14 @@ struct ChainLink: Decodable, Sendable {
         /// 있어, 이 필드를 읽지 않으면 "교환 진화" 전부가 한 조건으로 뭉개진다 — 연결의끈 하나로
         /// 야도킹·킹크로스까지 진화되던 원인이다.
         let held_item: NamedRef?
+        /// 1=암컷, 2=수컷. 성별 분기가 아닌 진화는 null.
+        let gender: Int?
         /// 특정 기술을 배운 채로 레벨업해야 하는 진화(원시의힘·흉내내기·구르기·더블어택).
-        /// **레벨 조건이 아예 없다** — 기술이 없으면 100레벨이어도 진화하지 않는다.
         let known_move: NamedRef?
+        let time_of_day: String?
+        let relative_physical_stats: Int?
+        let party_species: NamedRef?
+        let trade_species: NamedRef?
     }
     let species: NamedRef
     let evolves_to: [ChainLink]

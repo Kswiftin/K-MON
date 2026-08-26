@@ -186,6 +186,7 @@ enum EvolutionItemRule: Sendable, Equatable {
         case .plainTrade:
             // 지닌물건이 필요한 교환 진화는 제외 — 그 종에는 전용 아이템이 따로 있다.
             return node.evolutionTrigger == "trade" && node.evolutionHeldItem == nil
+                && node.evolutionTradeSpeciesID == nil
         case .useItem(let name):
             return node.evolutionTrigger == "use-item" && node.evolutionItem == name
         case .heldItem(let name):
@@ -423,7 +424,14 @@ struct EvoNode: Codable, Sendable {
     var evolutionHeldItem: String? = nil
     /// 이 기술을 배운 채로 자라야 진화한다(원시의힘·흉내내기·구르기·더블어택). **레벨 조건이 없다** —
     /// 기술이 없으면 아무리 키워도 진화하지 않으므로, 이 값을 안 읽으면 일곱 종이 영영 막힌다.
+    /// 성별 분기 조건(PokéAPI: 1=암컷, 2=수컷). nil이면 성별 무관.
+    var evolutionGender: PokemonGender? = nil
+    /// 이 기술을 알고 레벨업해야 하는 진화 조건. PokéAPI move id로 저장해 실제 무브셋과 비교한다.
     var evolutionKnownMoveID: Int? = nil
+    var evolutionTimeOfDay: String? = nil
+    var evolutionRelativePhysicalStats: Int? = nil
+    var evolutionPartySpeciesID: Int? = nil
+    var evolutionTradeSpeciesID: Int? = nil
 
     /// 최장 경로 길이(형태 수). 분기는 보통 같은 깊이라 대표값으로 사용.
     var depth: Int { 1 + (children.map(\.depth).max() ?? 0) }
@@ -443,7 +451,11 @@ struct EvoNode: Codable, Sendable {
         return EvoNode(speciesID: speciesID, children: children.compactMap { $0.keepingAnimatedSprites() },
                        evolutionLevel: evolutionLevel, evolutionTrigger: evolutionTrigger,
                        evolutionItem: evolutionItem, evolutionHeldItem: evolutionHeldItem,
-                       evolutionKnownMoveID: evolutionKnownMoveID)
+                       evolutionGender: evolutionGender, evolutionKnownMoveID: evolutionKnownMoveID,
+                       evolutionTimeOfDay: evolutionTimeOfDay,
+                       evolutionRelativePhysicalStats: evolutionRelativePhysicalStats,
+                       evolutionPartySpeciesID: evolutionPartySpeciesID,
+                       evolutionTradeSpeciesID: evolutionTradeSpeciesID)
     }
 }
 
@@ -475,17 +487,50 @@ struct EvoLine: Sendable {
     let rarity: Rarity
     /// speciesID → (langCode → name)
     let names: [Int: [String: String]]
+    /// PokéAPI gender_rate: -1=무성, 0=수컷만, 8=암컷만, 그 사이는 1/8 단위 암컷 확률.
+    let genderRate: Int
+    /// 진화 조건 기술 id → 다국어 이름. 홈에서 `#205` 대신 본가 기술명을 안내하기 위한 라인 메타데이터.
+    let evolutionMoveNames: [Int: [String: String]]
     var totalForms: Int { tree.depth }
 
-    init(baseID: Int, tree: EvoNode, rarity: Rarity, names: [Int: [String: String]]) {
+    init(baseID: Int, tree: EvoNode, rarity: Rarity, names: [Int: [String: String]], genderRate: Int = -1,
+         evolutionMoveNames: [Int: [String: String]] = [:]) {
         self.baseID = baseID
         self.tree = tree.keepingAnimatedSprites() ?? EvoNode(speciesID: baseID, children: [])
         self.rarity = rarity
         self.names = names
+        self.genderRate = genderRate
+        self.evolutionMoveNames = evolutionMoveNames
     }
 
     func localizedName(_ id: Int, _ lang: AppLanguage) -> String {
         lang.resolveName(names[id] ?? [:]) ?? "#\(id)"   // 폴백 순서는 AppLanguage.resolveName 단일 소스
+    }
+}
+
+/// 포켓몬 개체 성별. 저장·교환되는 개체 속성이며 진화 후에도 유지된다.
+enum PokemonGender: String, Codable, Sendable {
+    case male, female, genderless
+
+    var symbol: String {
+        switch self { case .male: return "♂"; case .female: return "♀"; case .genderless: return "—" }
+    }
+
+    func name(_ language: AppLanguage) -> String {
+        switch self {
+        case .male: return L(language).t("수컷", "Male", "オス")
+        case .female: return L(language).t("암컷", "Female", "メス")
+        case .genderless: return L(language).t("무성", "Gender unknown", "性別不明")
+        }
+    }
+
+    static func from(genderRate: Int, roll: UInt64) -> PokemonGender {
+        guard genderRate >= 0 else { return .genderless }
+        return Int(roll % 8) < min(8, genderRate) ? .female : .male
+    }
+
+    static func fromEvolutionCode(_ code: Int?) -> PokemonGender? {
+        switch code { case 1: return .female; case 2: return .male; default: return nil }
     }
 }
 
@@ -542,7 +587,7 @@ enum PokemonOdds {
 }
 
 /// 현재 키우는 포켓몬.
-struct MonState: Codable, Sendable {
+struct MonState: Codable, Sendable, Identifiable {
     var id = UUID()
     var baseID: Int
     var pathIDs: [Int]      // 실제 진화 경로(분기 선택 반영)
@@ -553,6 +598,9 @@ struct MonState: Codable, Sendable {
     var totalForms: Int
     var isShiny = false             // 부화 시 확정, 진화해도 유지
     var nature: PokemonNature?      // 부화 시 확정 (구버전 저장은 nil)
+    var gender: PokemonGender?      // 부화 시 종별 성비로 확정 (구버전 저장은 활성화 시 백필)
+    /// 배루키 분기용 개체 공격·방어 관계(-1 공격<방어, 0 동일, 1 공격>방어).
+    var evolutionStatRelation: Int?
     var nickname: String?           // 사용자 지정 별명(없으면 종 이름 표시). 진화해도 유지.
     // 메타몽 위장 — nil=일반. 값=정체 메타몽, 이 종으로 위장 중(위장 구간엔 baseID 와 동일, 리빌 후에도 원 위장체 보존).
     var dittoDisguise: Int?
@@ -583,6 +631,8 @@ struct MonState: Codable, Sendable {
 
     init(baseID: Int, pathIDs: [Int], plannedPathIDs: [Int]? = nil, stageIndex: Int, usedAtStage: Int,
          rarity: Rarity, totalForms: Int, isShiny: Bool = false, nature: PokemonNature? = nil,
+         gender: PokemonGender? = nil,
+         evolutionStatRelation: Int? = nil,
          nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false,
          names: [Int: [String: String]]? = nil, isGraduated: Bool = false) {
         self.baseID = baseID
@@ -598,6 +648,8 @@ struct MonState: Codable, Sendable {
         self.totalForms = totalForms
         self.isShiny = isShiny
         self.nature = nature
+        self.gender = gender
+        self.evolutionStatRelation = evolutionStatRelation
         self.nickname = nickname
         self.names = names
         self.isGraduated = isGraduated
@@ -626,6 +678,8 @@ struct MonState: Codable, Sendable {
         totalForms = try c.decode(Int.self, forKey: .totalForms)
         isShiny = try c.decodeIfPresent(Bool.self, forKey: .isShiny) ?? false
         nature = try c.decodeIfPresent(PokemonNature.self, forKey: .nature)
+        gender = try c.decodeIfPresent(PokemonGender.self, forKey: .gender)
+        evolutionStatRelation = try c.decodeIfPresent(Int.self, forKey: .evolutionStatRelation)
         nickname = try c.decodeIfPresent(String.self, forKey: .nickname)
         dittoDisguise = try c.decodeIfPresent(Int.self, forKey: .dittoDisguise)
         dittoRevealed = try c.decodeIfPresent(Bool.self, forKey: .dittoRevealed) ?? false
