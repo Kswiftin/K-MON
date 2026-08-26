@@ -165,9 +165,11 @@ struct SpriteView: View {
                 // GIF 애니메이션 경로 — 현재 프레임만 렌더
                 Image(nsImage: frames[frameIndex % frames.count].image)
                     .resizable().interpolation(antialiasing ? .high : .none)
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: size, height: size)
             } else if let img {
                 Image(nsImage: img).resizable().interpolation(antialiasing ? .high : .none)
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: size, height: size)
             } else if let fallbackLabel {
                 Text(fallbackLabel)
