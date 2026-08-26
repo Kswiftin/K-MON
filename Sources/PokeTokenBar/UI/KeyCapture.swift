@@ -36,6 +36,11 @@ struct KeyCaptureModifier: ViewModifier {
         if NSApp.keyWindow?.firstResponder is NSTextView {
             return event
         }
+        // 단축키 조합은 걷기 입력이 아니다 — ⌘/⌃/⌥ 가 눌려 있으면 ⌘W(닫기)·⌘A(전체선택) 같은
+        // 시스템·앱 단축키를 그대로 흘려보낸다.
+        if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            return event
+        }
         guard let direction = walkDirection(for: event) else {
             return event
         }
