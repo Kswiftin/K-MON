@@ -203,6 +203,31 @@ final class HeartScaleTests: XCTestCase {
                        "무브셋용 조회는 4개에서 끊긴다 — 후보가 그 상한을 물려받는다")
     }
 
+    /// **고르는 자리에는 고를 근거가 다 있어야 한다.** 후보 줄이 이름·타입·위력만 보여주던 동안,
+    /// 명중 70 짜리와 PP 5 짜리를 위력만 보고 고르고 나서야 손해를 알았다.
+    ///
+    /// 교체 화면(`MoveReplacementRow`)은 이미 셋을 다 보여준다 — 그 앞 단계인 후보 줄이 덜 보여주면
+    /// 같은 결정을 두 번 하게 만든다. 뷰가 private 이라 소스에서 본다(주석은 뺀다 — 위와 같은 이유).
+    func testTheRelearnCandidateRowShowsEverythingNeededToChoose() throws {
+        let view = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PokeTokenBar/UI/CompanionView.swift")
+        let code = try String(contentsOf: view, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                guard let comment = line.range(of: "//") else { return String(line) }
+                return String(line[..<comment.lowerBound])
+            }
+            .joined(separator: "\n")
+        let start = try XCTUnwrap(code.range(of: "struct RelearnCandidateRow"))
+        let row = code[start.lowerBound...].prefix(1_600)
+        XCTAssertTrue(row.contains("moveAccuracyShort"), "명중이 없다")
+        XCTAssertTrue(row.contains("moveAlwaysHits"), "명중 판정이 없는 기술도 그 자리를 채워야 한다")
+        XCTAssertTrue(row.contains("movePP"), "PP 가 없다")
+        XCTAssertTrue(row.contains("movePowerShort"), "위력이 없다")
+        XCTAssertTrue(row.contains("move.description("), "설명이 없다")
+    }
+
     /// 두 조회가 갈라지지 않게 잠근다 — 무브셋에는 들어가는데 다시 배우기에는 안 뜨는 기술이
     /// 생기면 "왜 이건 못 배우지" 가 된다. 필터·정렬은 한 함수(`levelUpMoves`)가 공유한다.
     func testBothLevelUpQueriesShareOneFilterAndOrder() throws {
