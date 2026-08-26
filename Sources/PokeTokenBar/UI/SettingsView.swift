@@ -263,9 +263,9 @@ struct SettingsView: View {
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(l.t("홈에 기억 표시", "Show memories on Home", "ホームに思い出を表示"))
-                    Text(l.t("기본으로 꺼져 있으며, 켜도 개인 메모는 대화 제공자에게 전달되지 않습니다.",
-                             "Off by default. Private notes are never sent to chat providers.",
-                             "初期設定はオフです。個人メモは会話プロバイダに送信されません。"))
+                    Text(l.t("기본으로 켜져 있으며, 개인 메모는 대화 제공자에게 전달되지 않습니다.",
+                             "On by default. Private notes are never sent to chat providers.",
+                             "初期設定はオンです。個人メモは会話プロバイダに送信されません。"))
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
