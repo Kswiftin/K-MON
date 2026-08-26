@@ -71,6 +71,11 @@ LOGIC_CORE=(
   # 트레이너 코스튬 카탈로그·착용 상태·와이어 문자열(#79 던전 방걷기 뷰). 순수 모델이라
   # 게이트 대상 — 넣지 않으면 관대 파싱의 unknown/malformed 분기가 커버리지에서 조용히 빠진다.
   "Sources/PokeTokenBar/Core/TrainerOutfit.swift"
+  # 도트 격자·합성, 방 격자 레이아웃, 교전 종 선택 — 던전 방걷기 뷰의 순수 코어. 게이트 밖에
+  # 두면 새 조건 분기(문 방위·관대 파싱)가 커버리지에서 조용히 빠진다.
+  "Sources/PokeTokenBar/Core/PixelSprite.swift"
+  "Sources/PokeTokenBar/Core/DungeonRoomLayout.swift"
+  "Sources/PokeTokenBar/Core/DungeonEncounterSprite.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"
