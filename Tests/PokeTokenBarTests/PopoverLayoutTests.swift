@@ -385,11 +385,12 @@ final class PopoverLayoutTests: XCTestCase {
 
     // MARK: 업적 선반 — 세로 예산
 
-    /// 업적 선반은 컬렉션 탭 세그먼트 하나를 차지한다. 4행이라 예산은 넉넉하지만 행마다 게이지를
-    /// 깔면 미션 카드(211pt)·도감 목표 줄이 겪은 초과를 되풀이한다. 상한을 두는 이유는 선반이 도감
-    /// 격자와 **같은 프레임**을 쓰기 때문이다 — 넘치면 세그먼트를 바꿀 때 스크롤이 생겨 두 화면의
-    /// 높이가 달라 보인다.
-    private static let achievementShelfBudget: CGFloat = 160
+    /// 업적 선반은 컬렉션 탭 세그먼트 하나를 차지한다. 6행이라(던전 트랙 2개 추가) 예산은 넉넉하지만
+    /// 행마다 게이지를 깔면 미션 카드(211pt)·도감 목표 줄이 겪은 초과를 되풀이한다. 상한을 두는
+    /// 이유는 선반이 도감 격자와 **같은 프레임**을 쓰기 때문이다 — 넘치면 세그먼트를 바꿀 때
+    /// 스크롤이 생겨 두 화면의 높이가 달라 보인다.
+    /// 4행 160pt 기준에서 던전 트랙 2행만큼(행당 ~14pt) 얹었다.
+    private static let achievementShelfBudget: CGFloat = 188
 
     private func achievementStore(_ language: AppLanguage = .ko) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory

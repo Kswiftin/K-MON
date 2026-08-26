@@ -252,7 +252,7 @@ struct DungeonView: View {
         showAllFreshExits = false
         // 정산은 클리어 순간 한 번만 부른다. 스토어가 재지급을 막지만 알림이 겹치지 않게 한다.
         switch session.stage {
-        case .cleared: store.settleDungeonClear(revealed: session.revealed)
+        case .cleared: store.settleDungeonClear(revealed: session.revealed, sweptAllCaches: session.sweptAllCaches)
         case .failed: store.rememberDungeon(session.revealed)
         case .exploring: break
         }

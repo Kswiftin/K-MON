@@ -2,7 +2,7 @@ import Foundation
 
 /// 업적이 세는 축. **rawValue 가 세이브 사전의 키다** — 이름을 바꾸면 `normalize()` 가 모르는 키로
 /// 버려서 기존 진행이 조용히 0 이 된다.
-enum AchievementTrack: String, Sendable, CaseIterable { case focus, evolve, battle, race }
+enum AchievementTrack: String, Sendable, CaseIterable { case focus, evolve, battle, race, dungeon, dungeonSweep }
 
 struct Achievement: Identifiable, Sendable {
     let track: AchievementTrack
@@ -10,6 +10,14 @@ struct Achievement: Identifiable, Sendable {
     let tiers: [Int]
     /// 단계별 보상(별의조각). `tiers` 와 같은 길이여야 한다 — `rewards[tier - 1]` 로 꺼낸다.
     let rewards: [Int]
+    /// 단계별 의상 보상(`outfits[tier - 1]`). nil = 별의조각만. `tiers` 와 같은 길이다.
+    let outfits: [OutfitItem?]
+    init(track: AchievementTrack, tiers: [Int], rewards: [Int], outfits: [OutfitItem?]? = nil) {
+        self.track = track
+        self.tiers = tiers
+        self.rewards = rewards
+        self.outfits = outfits ?? Array(repeating: nil, count: tiers.count)
+    }
     /// 진행도 사전의 키. 트랙과 1:1 이라 rawValue 를 그대로 쓴다.
     var id: String { track.rawValue }
 }
@@ -29,7 +37,7 @@ struct AchievementLadder: Codable, Sendable, Equatable {
     /// 조절 손잡이는 이 표뿐이다. 기준선 — 25분 모험 200⭐ · 90분 5,400⭐ · 사탕 5,000⭐ ·
     /// 알 20,000⭐ · 주간 미션 상한 10,600⭐/주.
     ///
-    /// 트랙당 10,300⭐, 네 트랙 41,200⭐ ≈ 알 2개. 평생 1회라 반복 수입인 주간 미션보다 유량이
+    /// 트랙당 10,300⭐, 여섯 트랙 61,800⭐ ≈ 알 3.1개. 평생 1회라 반복 수입인 주간 미션보다 유량이
     /// 낮다(`AchievementLadderTests` 가 총액 상한을 강제한다). 1단계는 첫날에 닿도록 낮게 둔다 —
     /// 첫 칸이 보여야 사다리를 오른다.
     static let catalog: [Achievement] = [
@@ -40,7 +48,13 @@ struct AchievementLadder: Codable, Sendable, Equatable {
         Achievement(track: .battle, tiers: [1, 5, 20, 50],
                     rewards: [300, 1_000, 3_000, 6_000]),
         Achievement(track: .race,   tiers: [1, 5, 20, 50],
-                    rewards: [300, 1_000, 3_000, 6_000])
+                    rewards: [300, 1_000, 3_000, 6_000]),
+        // 던전 — 클리어 횟수. 첫 칸은 첫 클리어. 의상은 상점 미판매분(`room-walk-dungeon-design.md`).
+        Achievement(track: .dungeon, tiers: [1, 5, 20, 50], rewards: [300, 1_000, 3_000, 6_000],
+                    outfits: [.hairMessy, .cloakWorn, nil, nil]),
+        // 던전 — 오늘 보물방을 **전부** 털고 클리어. 곁방을 다 열 만큼 체력을 관리해야 하는 난이도 축.
+        Achievement(track: .dungeonSweep, tiers: [1, 5, 20, 50], rewards: [300, 1_000, 3_000, 6_000],
+                    outfits: [.bootsLong, nil, .helmetExplorer, nil])
     ]
 
     var counts: [String: Int] = [:]

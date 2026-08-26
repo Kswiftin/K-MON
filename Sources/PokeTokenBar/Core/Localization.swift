@@ -893,6 +893,8 @@ struct L {
         case .evolve: return t("진화", "Evolutions", "進化")
         case .battle: return t("배틀 승리", "Battle wins", "バトル勝利")
         case .race:   return t("레이스 완주", "Races finished", "レース完走")
+        case .dungeon: return t("던전 클리어", "Dungeon clears", "ダンジョンクリア")
+        case .dungeonSweep: return t("보물 싹쓸이", "Treasure sweeps", "宝物コンプリート")
         }
     }
 

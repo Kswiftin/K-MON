@@ -1122,6 +1122,7 @@ final class CompanionStore {
             let reward = award.achievement.rewards[award.tier - 1]
             state.starPieces += reward
             paid += reward
+            if let outfit = award.achievement.outfits[award.tier - 1] { grantOutfit(outfit) }
             notifyCompanionEvent(l.notifAchievementTitle,
                                  l.notifAchievementBody(l.achievementName(award.achievement.track),
                                                         award.tier, reward))
@@ -1636,7 +1637,7 @@ final class CompanionStore {
     /// 클리어 정산 — **여기 한 곳에서만** 보상이 나간다. 이미 정산했으면 0 을 돌려주고
     /// 그 뒤 재플레이는 보상 없는 연습으로 열려 있다.
     @discardableResult
-    func settleDungeonClear(revealed: [Int: RoomKind]) -> Int {
+    func settleDungeonClear(revealed: [Int: RoomKind], sweptAllCaches: Bool = false) -> Int {
         state.dungeon.roll(dayKey: Self.dayKey(clock()))
         state.dungeon.remembered.merge(revealed) { _, new in new }
         state.dungeon.cleared = true
@@ -1644,6 +1645,9 @@ final class CompanionStore {
         guard !state.dungeon.rewardPaid else { save(); return 0 }
         state.dungeon.rewardPaid = true
         state.starPieces += PuzzleDungeon.firstClearReward
+        // 재정산은 위 guard 가 막는다 — 업적 기록도 그 안쪽이라야 재플레이가 카운터를 올리지 않는다.
+        recordAchievement(.dungeon, 1)
+        if sweptAllCaches { recordAchievement(.dungeonSweep, 1) }
         save()
         notifyCompanionEvent(l.dungeonClearedTitle,
                              l.dungeonRewardBody(PuzzleDungeon.firstClearReward))

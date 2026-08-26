@@ -207,6 +207,29 @@ final class DungeonSettlementTests: XCTestCase {
         XCTAssertTrue(makeStore(TestClock()).purchasableItems.contains(.freshWater))
         XCTAssertNil(ItemKind.freshWater.evolutionRule, "진화 아이템으로 분류되면 값이 500 으로 덮인다")
     }
+
+    /// 클리어 정산이 `dungeon` 업적 트랙을 기록하고 첫 단계 의상을 지급한다. 재정산(재플레이)은
+    /// `rewardPaid` 가드 안쪽이라 세지 않는다 — 위 `testFirstClearPaysOnceAndReplayIsFree` 와 같은 경계.
+    func testClearRecordsDungeonTrackOnceAndGrantsFirstOutfit() {
+        let store = makeStore(TestClock())
+        store.settleDungeonClear(revealed: [:])
+        XCTAssertEqual(store.achievementRows.first { $0.achievement.track == .dungeon }?.count, 1)
+        XCTAssertTrue(store.ownsOutfit(.hairMessy))
+        store.settleDungeonClear(revealed: [:])
+        XCTAssertEqual(store.achievementRows.first { $0.achievement.track == .dungeon }?.count, 1, "재정산은 세지 않는다")
+    }
+
+    /// `dungeonSweep` 트랙은 보물방을 전부 턴 클리어만 센다 — 부분 정산으로는 오르지 않는다.
+    func testSweepTrackOnlyCountsWhenEveryCacheWasLooted() {
+        let store = makeStore(TestClock())
+        store.settleDungeonClear(revealed: [:], sweptAllCaches: false)
+        XCTAssertEqual(store.achievementRows.first { $0.achievement.track == .dungeonSweep }?.count, 0)
+        XCTAssertFalse(store.ownsOutfit(.bootsLong))
+        let clock = TestClock(); let second = makeStore(clock)
+        second.settleDungeonClear(revealed: [:], sweptAllCaches: true)
+        XCTAssertEqual(second.achievementRows.first { $0.achievement.track == .dungeonSweep }?.count, 1)
+        XCTAssertTrue(second.ownsOutfit(.bootsLong))
+    }
 }
 
 /// 스토어를 세우기 위한 최소 진화 라인 — 던전은 종·진화와 무관하므로 내용은 아무래도 좋다.

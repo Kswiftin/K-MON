@@ -248,4 +248,18 @@ final class DungeonRunTests: XCTestCase {
         _ = session.move(to: spring.id)
         XCTAssertLessThanOrEqual(session.hp, 60)
     }
+
+    // MARK: 보물 싹쓸이 (업적 `dungeonSweep` 판정)
+
+    /// 곁방 보물을 하나라도 남기면 참이 아니고, 전부 털어야만 참이다.
+    func testSweptAllCachesIsTrueOnlyWhenEveryCacheRoomIsLooted() {
+        let caches = Set(map.rooms.filter { $0.kind == .cache }.map(\.id))
+        XCTAssertFalse(caches.isEmpty, "테스트 날짜에 보물방이 없다 — 날짜를 바꾼다")
+        var run = makeRun()
+        XCTAssertFalse(run.sweptAllCaches)
+        for cache in caches.dropLast() { run.debugLoot(cache) }
+        XCTAssertFalse(run.sweptAllCaches, "하나 남기면 안 된다")
+        run.debugLoot(caches.max()!)
+        XCTAssertTrue(run.sweptAllCaches)
+    }
 }
