@@ -138,6 +138,52 @@ final class DexFullListTests: XCTestCase {
                                       typesBySpecies: types), "물타입이 아니다")
     }
 
+    // MARK: 페이지 점프
+
+    /// 점프 메뉴는 페이지마다 어느 번호대인지 적는다 — 번호만 적으면 어디로 가는지 모른다.
+    func testAPageAdvertisesTheNumbersItActuallyCovers() {
+        let slots = (1...50).map { slot($0, caught: true) }
+        XCTAssertEqual(bounds(slots, page: 0)?.first, 1)
+        XCTAssertEqual(bounds(slots, page: 0)?.last, 24)
+        XCTAssertEqual(bounds(slots, page: 1)?.first, 25)
+        XCTAssertEqual(bounds(slots, page: 1)?.last, 48)
+    }
+
+    /// **마지막 페이지는 칸이 덜 찬다.** 끝 인덱스를 안 자르면 범위를 벗어나 앱이 죽는다 —
+    /// 50칸이면 3페이지에 두 칸만 남는다.
+    func testTheLastPageStopsAtTheLastCellInsteadOfRunningOff() {
+        let slots = (1...50).map { slot($0, caught: true) }
+        XCTAssertEqual(bounds(slots, page: 2)?.first, 49)
+        XCTAssertEqual(bounds(slots, page: 2)?.last, 50, "24칸을 채우려 들면 여기서 넘친다")
+    }
+
+    /// 필터가 걸리면 번호가 띄엄띄엄해진다. `page × 24` 로 셈하면 그 순간부터 거짓말이 된다.
+    func testTheRangeFollowsTheFilteredCellsNotTheRawIndex() {
+        let slots = [7, 54, 60, 79, 90, 116, 129, 130, 131, 134].map { slot($0, caught: true) }
+        XCTAssertEqual(bounds(slots, page: 0)?.first, 7)
+        XCTAssertEqual(bounds(slots, page: 0)?.last, 134, "한 페이지에 다 들어간다")
+    }
+
+    /// 한 칸뿐인 페이지는 구간이 아니라 번호 하나다(화면이 `#25–25` 로 적지 않게).
+    func testASinglecellPageCollapsesToOneNumber() {
+        let slots = (1...25).map { slot($0, caught: true) }
+        let last = try? XCTUnwrap(bounds(slots, page: 1))
+        XCTAssertEqual(last?.first, 25)
+        XCTAssertEqual(last?.last, 25)
+    }
+
+    /// 범위 밖 페이지는 nil 이다 — 빈 문자열을 지어내면 메뉴에 빈 줄이 생긴다.
+    func testAPageBeyondTheEndHasNoRange() {
+        let slots = (1...10).map { slot($0, caught: true) }
+        XCTAssertNil(bounds(slots, page: 1))
+        XCTAssertNil(bounds([], page: 0))
+        XCTAssertNil(bounds(slots, page: -1), "화살표가 비활성이어도 음수는 막아 둔다")
+    }
+
+    private func bounds(_ slots: [CompanionStore.DexSlot], page: Int) -> (first: Int, last: Int)? {
+        CompanionStore.dexPageBounds(slots, page: page, pageSize: 24)
+    }
+
     // MARK: 타입 인덱스 싣기
 
     func testTheTypeIndexIsLoadedOnceAndKept() async throws {

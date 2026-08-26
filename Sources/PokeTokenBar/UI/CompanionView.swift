@@ -1477,7 +1477,7 @@ private struct DexGridView: View {
         VStack(alignment: .leading, spacing: 8) {
             header(all)
             grid(slice)
-            footer(slice, current: current, pageCount: pageCount)
+            footer(visible, current: current, pageCount: pageCount)
         }
         // 이름이 저장돼 있지 않은 구버전 졸업분을 채운다 — 격자는 저장분만 읽으므로 이게 없으면
         // 칸이 `#41` 로 남는다. 저장된 항목은 조회하지 않으므로 채워진 뒤로는 아무 일도 하지 않는다.
@@ -1644,10 +1644,14 @@ private struct DexGridView: View {
     /// 하단 한 줄 — 왼쪽은 선택한 칸의 희귀도, 오른쪽은 페이저.
     /// 페이저가 1페이지라 안 보일 때도 이 줄을 **항상** 예약한다 — 페이지 수나 선택 여부에 따라
     /// 격자 높이가 흔들리지 않게.
-    private func footer(_ slice: [CompanionStore.DexSlot],
+    ///
+    /// 받는 건 이번 페이지가 아니라 **필터를 통과한 전체**다 — 점프 메뉴가 페이지마다 어느 번호대인지
+    /// 적으려면 다른 페이지의 칸도 봐야 한다. 고른 칸을 여기서 찾아도 결과는 같다: 페이지·필터가
+    /// 바뀔 때마다 `selectedID` 를 지우므로 선택은 항상 현재 페이지 안에 있다.
+    private func footer(_ visible: [CompanionStore.DexSlot],
                         current: Int, pageCount: Int) -> some View {
         HStack(spacing: 8) {
-            if let sel = slice.first(where: { $0.id == selectedID }) {
+            if let sel = visible.first(where: { $0.id == selectedID }) {
                 // 칸은 번호·스프라이트·이름만 보여주므로 희귀도가 선택으로 얻는 정보다.
                 // 미포획 칸은 타입을 밝히지 않는다 — 실루엣을 세워 놓고 정체를 옆줄에 적으면
                 // 가릴 이유가 없어진다. 타입을 알고 싶으면 타입 필터로 좁히면 된다.
@@ -1657,24 +1661,59 @@ private struct DexGridView: View {
             }
             Spacer(minLength: 4)
             if pageCount > 1 {
-                Button { page = max(0, current - 1); selectedID = nil } label: {
-                    Image(systemName: "chevron.left")
-                }
+                Button { jump(to: current - 1, in: pageCount) } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain).disabled(current == 0)
                 .accessibilityLabel(store.l.dexPagePrev)
-                Text("\(current + 1) / \(pageCount)")
-                    .font(.system(size: 10, weight: .semibold)).monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(store.l.dexPageLabel(current + 1, pageCount))
-                Button { page = min(pageCount - 1, current + 1); selectedID = nil } label: {
-                    Image(systemName: "chevron.right")
-                }
+                pageJumpMenu(visible, current: current, pageCount: pageCount)
+                Button { jump(to: current + 1, in: pageCount) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.plain).disabled(current == pageCount - 1)
                 .accessibilityLabel(store.l.dexPageNext)
             }
         }
         .font(.system(size: 11, weight: .semibold))
         .frame(height: 18)
+    }
+
+    /// 페이지 점프 — 페이지 표시 자체를 메뉴로 만든다. 전체를 펼치면 28페이지가 되는데
+    /// 화살표만으로는 끝까지 스물일곱 번을 눌러야 한다.
+    ///
+    /// 새 버튼을 옆에 달지 않은 이유: 하단 줄은 18pt 한 줄이고 왼쪽은 고른 칸 설명이 쓴다.
+    /// 이미 있는 표시를 누를 수 있게 만들면 자리를 더 안 쓰고, 처음·끝으로 가기도 메뉴 첫/끝 줄이
+    /// 대신한다(따로 ⏮⏭ 버튼을 둘 필요가 없다).
+    private func pageJumpMenu(_ visible: [CompanionStore.DexSlot],
+                              current: Int, pageCount: Int) -> some View {
+        Menu {
+            ForEach(0..<pageCount, id: \.self) { index in
+                Button { jump(to: index, in: pageCount) } label: {
+                    // 페이지 번호만 적으면 "3페이지에 뭐가 있는지" 를 알 수 없다 — 격자가 도감
+                    // 번호순이므로 그 페이지가 덮는 번호대가 곧 목적지 이름이다.
+                    Text("\(index + 1)   \(pageNumberRange(visible, page: index))")
+                }
+            }
+        } label: {
+            Text("\(current + 1) / \(pageCount)")
+                .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel(store.l.dexPageLabel(current + 1, pageCount))
+        .help(store.l.dexPageJumpHint)
+    }
+
+    /// 그 페이지가 덮는 도감 번호 구간. 경계 계산은 `CompanionStore.dexPageBounds` 가 한다.
+    private func pageNumberRange(_ visible: [CompanionStore.DexSlot], page: Int) -> String {
+        guard let bounds = CompanionStore.dexPageBounds(visible, page: page,
+                                                        pageSize: Self.pageSize) else { return "" }
+        return bounds.first == bounds.last ? "#\(bounds.first)"
+                                           : "#\(bounds.first)–\(bounds.last)"
+    }
+
+    /// 화살표는 양 끝에서 비활성이지만 **여기서도 자른다** — `body` 의 방어(`min(page, pageCount-1)`)는
+    /// 위쪽만 막아서, 음수가 들어오면 `dropFirst` 가 음수 인자로 트랩한다.
+    private func jump(to target: Int, in pageCount: Int) {
+        page = min(max(0, target), pageCount - 1)
+        selectedID = nil   // 고른 칸은 다른 페이지에 남는다 — 안 지우면 하단 줄이 유령 정보를 남긴다
     }
 }
 

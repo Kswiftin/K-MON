@@ -616,6 +616,19 @@ final class CompanionStore {
         return ids.sorted().map { DexSlot(id: $0, species: caught[$0]) }
     }
 
+    /// 한 페이지가 덮는 도감 번호 구간(첫 칸·끝 칸). 페이지가 비어 있으면 nil.
+    ///
+    /// **`page × pageSize` 로 계산하면 안 된다.** 필터가 걸리면 번호가 띄엄띄엄해져서, 3페이지가
+    /// 덮는 게 `#49~#72` 가 아니라 `#150~#498` 일 수 있다. 실제로 그 자리에 놓이는 칸을 읽는다.
+    ///
+    /// 마지막 페이지는 칸이 덜 차므로 끝 인덱스를 자른다 — 안 자르면 범위를 벗어난다.
+    nonisolated static func dexPageBounds(_ slots: [DexSlot], page: Int,
+                                          pageSize: Int) -> (first: Int, last: Int)? {
+        let start = page * pageSize
+        guard pageSize > 0, page >= 0, start < slots.count else { return nil }
+        return (slots[start].id, slots[min(start + pageSize - 1, slots.count - 1)].id)
+    }
+
     /// 종별 타입 — 도감 타입 필터가 읽는다. 비어 있으면 아직 못 받았다는 뜻이고, 그때는 필터가 잠긴다.
     /// 세이브에 넣지 않는다 — PokéAPI 사실 데이터라 `PokeAPIClient` 의 디스크 캐시가 이미 주인이다.
     private(set) var speciesTypes: [Int: [PokemonType]] = [:]

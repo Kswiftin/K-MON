@@ -672,6 +672,12 @@ struct L {
     }
     var dexPagePrev: String { t("이전 페이지", "Previous page", "前のページ") }
     var dexPageNext: String { t("다음 페이지", "Next page", "次のページ") }
+    /// 페이지 표시를 누르면 바로 건너뛴다 — 전체를 펼치면 28페이지라 화살표만으로는 멀다.
+    var dexPageJumpHint: String {
+        t("눌러서 다른 페이지로 바로 이동",
+          "Click to jump straight to another page",
+          "クリックで他のページへ直接移動")
+    }
     var dexRaising: String { t("키우는 중", "Raising", "育成中") }
     var rarityCommon: String { t("일반", "Common", "ノーマル") }
     var rarityUncommon: String { t("고급", "Uncommon", "アンコモン") }
