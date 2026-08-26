@@ -24,6 +24,8 @@ struct ShopView: View {
                         ShopItemCard(store: store, kind: kind)
                     case .egg(let tier):
                         EggCard(store: store, nav: nav, tier: tier)
+                    case .outfit:
+                        EmptyView()   // TODO(Task 7): 의상 카드 뷰로 교체
                     }
                 }
             }

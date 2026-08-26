@@ -381,11 +381,13 @@ enum FreshEgg {
 enum ShopEntry: Hashable, Sendable {
     case item(ItemKind)
     case egg(Rarity?)
+    case outfit(OutfitItem)
 
     var price: Int {
         switch self {
         case .item(let kind): return kind.shopPrice ?? 0
         case .egg(let tier): return FreshEgg.price(guaranteeing: tier)
+        case .outfit(let item): return item.shopPrice ?? 0
         }
     }
 }
@@ -801,6 +803,9 @@ struct CompanionState: Codable, Sendable {
     var focusEggs = 0
     // 보관 중인 알마다 자동 부화 예정 시각. 알은 획득 5분 뒤 현재 동행과 무관하게 박스에서 부화한다.
     var focusEggReadyDates: [Date] = []
+    /// 트레이너 꾸미기 — 착용 상태(표시 전용, 서명 밖)와 소유 집합(재화로 산 것, 서명 안).
+    var outfit = TrainerOutfit()
+    var ownedOutfits: Set<OutfitItem> = []
     var eggFragments = 0
     var lastAdventureBonusDate = ""
     var adventureWeekKey = ""
@@ -859,6 +864,10 @@ struct CompanionState: Codable, Sendable {
                                        default: AchievementLadder())
         focusEggs          = c.lenient(Int.self, forKey: .focusEggs, default: 0)
         focusEggReadyDates = c.lenient([Date].self, forKey: .focusEggReadyDates, default: [])
+        outfit             = c.lenient(TrainerOutfit.self, forKey: .outfit, default: TrainerOutfit())
+        // 모르는 rawValue(미래 빌드가 새 아이템을 저장한 세이브)는 항목 격리로 걸러낸다 —
+        // 하나가 걸리면 전체가 통째로 사라지지 않게.
+        ownedOutfits       = Set(c.lenient([Lossy<OutfitItem>].self, forKey: .ownedOutfits, default: []).compactMap(\.value))
         eggFragments       = c.lenient(Int.self, forKey: .eggFragments, default: 0)
         lastAdventureBonusDate = c.lenient(String.self, forKey: .lastAdventureBonusDate, default: "")
         adventureWeekKey   = c.lenient(String.self, forKey: .adventureWeekKey, default: "")

@@ -2196,6 +2196,7 @@ final class CompanionStore {
     var shopEntries: [ShopEntry] {
         var entries: [ShopEntry] = purchasableItems.map { ShopEntry.item($0) }
         entries += FreshEgg.shopTiers.map { ShopEntry.egg($0) }
+        entries += OutfitItem.allCases.filter { $0.shopPrice != nil }.map { ShopEntry.outfit($0) }
         // enumerated 인덱스를 tiebreaker 로 써서 같은 가격끼리는 위 병합 순서(= purchasableItems 의
         // 선언 순서)를 유지한다. 진화 아이템 28종이 전부 같은 값이라 이게 없으면 매 호출 순서가 다를 수 있다.
         return entries.enumerated().sorted { a, b in
@@ -2207,10 +2208,13 @@ final class CompanionStore {
         }.map(\.element)
     }
 
-    /// 구매 완료한 보유형(이로치 부적 등)인지 — shopEntries 정렬에서 맨 아래로 보낼 판정.
+    /// 구매 완료한 보유형(이로치 부적·의상 등)인지 — shopEntries 정렬에서 맨 아래로 보낼 판정.
     private func isPurchasedPassive(_ entry: ShopEntry) -> Bool {
-        guard case .item(let kind) = entry else { return false }   // 알은 즉시 액션 — 보유 개념 없음
-        return kind.isPassive && itemCount(kind) > 0
+        switch entry {
+        case .item(let kind): return kind.isPassive && itemCount(kind) > 0
+        case .outfit(let item): return ownsOutfit(item)   // 재구매 불가라 위에 있을 이유가 없다
+        case .egg: return false   // 즉시 액션 — 보유 개념 없음
+        }
     }
 
     /// 구매 가능 — 잔액이 그 아이템 가격 이상(상점 미판매면 false). 활성/알 무관(재고는 미리 쌓아둘 수 있음).
@@ -2236,6 +2240,44 @@ final class CompanionStore {
     var canBuyRareCandy: Bool { canBuy(.rareCandy) }
     @discardableResult
     func buyRareCandy() -> Bool { buy(.rareCandy) }
+
+    // MARK: 의상
+
+    var outfit: TrainerOutfit { state.outfit }
+    func ownsOutfit(_ item: OutfitItem) -> Bool { state.ownedOutfits.contains(item) }
+
+    /// 구매 가능 — 상점 판매(업적 전용은 nil) + 미소유 + 잔액 충분.
+    func canBuyOutfit(_ item: OutfitItem) -> Bool {
+        guard let price = item.shopPrice, !ownsOutfit(item) else { return false }
+        return availableTokens >= price
+    }
+
+    /// 의상 1개 구매 — `buy(_:)` 와 같은 규칙(지갑 차감, 소유 추가, 저장). 미판매·소유·잔액 부족은 no-op.
+    @discardableResult
+    func buyOutfit(_ item: OutfitItem) -> Bool {
+        guard canBuyOutfit(item), let price = item.shopPrice else { return false }
+        state.starPieces -= price
+        state.ownedOutfits.insert(item)
+        save()
+        return true
+    }
+
+    /// 업적 보상 경로 — 값을 받지 않는다. 이미 있으면 false(중복 지급 아님).
+    @discardableResult
+    func grantOutfit(_ item: OutfitItem) -> Bool {
+        guard !ownsOutfit(item) else { return false }
+        state.ownedOutfits.insert(item)
+        save()
+        return true
+    }
+
+    /// nil 이면 벗는다. 미소유·슬롯 불일치는 무시 — 신뢰경계는 `normalized(owned:)` 하나다.
+    func wear(_ item: OutfitItem?, in slot: OutfitSlot) {
+        var worn = state.outfit.worn
+        if let item { worn[slot] = item } else { worn.removeValue(forKey: slot) }
+        state.outfit = TrainerOutfit(worn: worn).normalized(owned: state.ownedOutfits)
+        save()
+    }
 
     // MARK: 알 (리롤 — 현재 포켓몬 폐기, 도감·확률 무영향)
 
