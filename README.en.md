@@ -44,7 +44,7 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 <td width="45%" align="center"><img src="assets/screenshot-home.gif" width="220" alt="Home screen with the focus timer and adventure controls"></td>
 <td width="55%" valign="middle">
 <h3>Focus, adventure, claim</h3>
-Choose a focus duration, track the partner's adventure, and claim the completed reward from Home.
+Choose a focus duration, track the partner's adventure, and claim the completed reward from Home. Your partner's HP, Attack, Defense, Sp. Atk, Sp. Def, and Speed sit on Home at all times — the real numbers for its current level and nature.
 </td>
 </tr>
 <tr>
@@ -64,7 +64,7 @@ Spend Star Pieces on eggs, Rare Candy, Mints, Link Cords, and evolution stones; 
 <tr>
 <td width="55%" valign="middle">
 <h3>Settings for work and updates</h3>
-Control Do Not Disturb, notifications, launch at login, the floating pet, and update checks from Settings.
+Control Do Not Disturb, notifications, launch at login, the floating pet, and update checks from Settings. The floating pet takes an artwork choice alongside its size — `Animated` uses the pixel-art loop, `Sharp` a still render at four times the resolution. Either way it still roams your screens.
 </td>
 <td width="45%" align="center"><img src="assets/settings.png" width="180" alt="Settings"></td>
 </tr>
