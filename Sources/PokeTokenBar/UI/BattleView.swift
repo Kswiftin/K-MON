@@ -42,7 +42,6 @@ struct BattleView: View {
                 networkSection
             }
         }
-        .onAppear { center.pendingAttention = false }
     }
 
     // MARK: 네트워크 대전
