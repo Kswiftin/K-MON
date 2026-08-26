@@ -117,7 +117,7 @@ struct FriendView: View {
         }
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.blue)
+                TrainerAvatarView(outfit: peer.advertisement.outfit ?? TrainerOutfit())
                 VStack(alignment: .leading, spacing: 4) {
                     Text(peer.name).font(.headline).lineLimit(1)
                     HStack(spacing: 6) {

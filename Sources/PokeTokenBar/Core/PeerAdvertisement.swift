@@ -15,6 +15,7 @@ struct PeerAdvertisement: Equatable, Sendable {
         static let level = "trainerLevel"
         static let tiers = "achievementTiers"
         static let ceiling = "achievementCeiling"
+        static let outfit = "outfit"
     }
 
     /// 광고된 분모의 표시 상한. 세 자리가 되면 카드가 밀려 배지 칸이 잘린다.
@@ -30,10 +31,13 @@ struct PeerAdvertisement: Equatable, Sendable {
     /// 상대의 분모. 카탈로그는 조절 손잡이라 언젠가 늘어난다. 안 실으면 구버전이 18/20 인 상대를
     /// `16/16`(완료)으로 그리고, 그때는 고칠 방법이 없다.
     let achievementCeiling: Int?
+    /// 상대 카드에 그릴 착장. 표시 전용이라 소유 검증은 안 한다(그건 세이브 신뢰경계 몫).
+    let outfit: TrainerOutfit?
 
     /// 굽는 쪽 진입점. 클램프는 여기 한 곳이고 파싱도 이 자리를 지난다.
     init(rankPoints: Int? = nil, trainerLevel: Int? = nil,
-         achievementTiers: Int? = nil, achievementCeiling: Int? = nil) {
+         achievementTiers: Int? = nil, achievementCeiling: Int? = nil,
+         outfit: TrainerOutfit? = nil) {
         self.rankPoints = rankPoints.map { BattleRank.clamped($0) }
         // 레벨 하한은 1. `TrainerLevel.level` 이 1 부터라 Lv.0 은 없는 값이다.
         self.trainerLevel = trainerLevel.map { min(TrainerLevel.maximumLevel, max(1, $0)) }
@@ -45,6 +49,8 @@ struct PeerAdvertisement: Equatable, Sendable {
         self.achievementTiers = achievementTiers.map {
             min(ceiling ?? AchievementLadder.tierCeiling, max(0, $0))
         }
+        // 빈 착장은 nil 로 정규화 — 키를 안 실어야 `wireString` 규칙과 왕복이 맞는다.
+        self.outfit = outfit.flatMap { $0.worn.isEmpty ? nil : $0 }
     }
 
     /// 읽는 쪽 진입점. 관대 파싱이고 실패하지 않는다(`init?` 가 아니다). 실패시키면 그 피어가
@@ -54,7 +60,8 @@ struct PeerAdvertisement: Equatable, Sendable {
         self.init(rankPoints: record[Key.rank].flatMap(Int.init),
                   trainerLevel: record[Key.level].flatMap(Int.init),
                   achievementTiers: record[Key.tiers].flatMap(Int.init),
-                  achievementCeiling: record[Key.ceiling].flatMap(Int.init))
+                  achievementCeiling: record[Key.ceiling].flatMap(Int.init),
+                  outfit: record[Key.outfit].map(TrainerOutfit.init(wireString:)))
     }
 
     /// 빈 칸은 키를 싣지 않는다. 읽는 쪽이 "없음"과 "0"을 구별해야 한다.
@@ -64,6 +71,7 @@ struct PeerAdvertisement: Equatable, Sendable {
         if let trainerLevel { entries[Key.level] = String(trainerLevel) }
         if let achievementTiers { entries[Key.tiers] = String(achievementTiers) }
         if let achievementCeiling { entries[Key.ceiling] = String(achievementCeiling) }
+        if let wire = outfit?.wireString { entries[Key.outfit] = wire }
         return NWTXTRecord(entries)
     }
 
