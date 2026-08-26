@@ -9,4 +9,27 @@ final class MemoryHomeViewTests: XCTestCase {
 
         XCTAssertNotNil(MemoryHomeView(store: store))
     }
+
+    func testMemoryHomeIsDisabledAndDiagnosticsRecordOnlyAfterOptIn() throws {
+        let suite = "memory-home-settings-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let settings = AppSettings(defaults: defaults, clock: { date })
+
+        XCTAssertFalse(settings.memoryHomeEnabled)
+        XCTAssertFalse(settings.memoryHomeDiagnosticsEnabled)
+        settings.recordMemoryHomeEntry(); settings.recordManualMemoryCreated()
+        let beforeOptIn = try XCTUnwrap(JSONSerialization.jsonObject(with: settings.memoryHomeDiagnosticsData()) as? [String: Any])
+        XCTAssertEqual(beforeOptIn["homeEntriesByWeek"] as? [String: Int], [:])
+        XCTAssertEqual(beforeOptIn["manualMemoriesByWeek"] as? [String: Int], [:])
+
+        settings.memoryHomeDiagnosticsEnabled = true
+        settings.recordMemoryHomeEntry(); settings.recordManualMemoryCreated()
+        let json = String(decoding: try settings.memoryHomeDiagnosticsData(), as: UTF8.self)
+        XCTAssertTrue(json.contains("homeEntriesByWeek"))
+        XCTAssertTrue(json.contains("manualMemoriesByWeek"))
+        XCTAssertFalse(json.contains("private note"))
+        XCTAssertFalse(json.contains("companionID"))
+    }
 }

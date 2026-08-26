@@ -166,7 +166,9 @@ struct PokemonChatRequest: Sendable {
     let recentMessages: [PokemonChatMessage]
 
     init(profile: PokemonChatProfile, summary: String = "", memories: [PokemonMemory] = [], recentMessages: [PokemonChatMessage]) {
-        self.profile = profile; self.summary = summary; self.memories = Array(memories.suffix(8)); self.recentMessages = recentMessages
+        self.profile = profile; self.summary = summary
+        self.memories = Array(memories.filter { $0.source != .manual }.suffix(8))
+        self.recentMessages = recentMessages
     }
 
     var systemPrompt: String {
@@ -258,17 +260,18 @@ struct PokemonMemory: Codable, Sendable, Identifiable, Equatable {
     }
 }
 
+/// The portable album payload. This is intentionally separate from the on-disk implementation so
+/// save transfer does not need to know the album's file format.
+struct PokemonMemoryAlbumSnapshot: Codable, Sendable, Equatable {
+    var memories: [UUID: [PokemonMemory]]
+    var pinnedMemoryIDs: [UUID: UUID]
+}
+
 @MainActor @Observable
 final class PokemonMemoryAlbum {
     private struct Snapshot: Codable {
         var memories: [UUID: [PokemonMemory]]
         var pinnedMemoryIDs: [UUID: UUID]
-
-        init(memories: [UUID: [PokemonMemory]], pinnedMemoryIDs: [UUID: UUID]) {
-            self.memories = memories
-            self.pinnedMemoryIDs = pinnedMemoryIDs
-        }
-
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             memories = try c.decode([UUID: [PokemonMemory]].self, forKey: .memories)
@@ -354,7 +357,20 @@ final class PokemonMemoryAlbum {
         pinnedMemoryIDs = pinnedMemoryIDs.filter { validCompanionIDs.contains($0.key) }
         normalizePins(); save()
     }
-    func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs)) }
+    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs) }
+    func replace(with snapshot: PokemonMemoryAlbumSnapshot, validCompanionIDs: Set<UUID>) {
+        memories = snapshot.memories.reduce(into: [:]) { result, entry in
+            guard validCompanionIDs.contains(entry.key) else { return }
+            result[entry.key] = Array(entry.value.filter { memory in
+                guard memory.companionID == entry.key else { return false }
+                let limit = memory.source == .manual ? 280 : 180
+                return !memory.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && memory.body.count <= limit
+            }.suffix(200))
+        }
+        pinnedMemoryIDs = snapshot.pinnedMemoryIDs
+        normalizePins(); save()
+    }
+    func snapshotData() throws -> Data { try JSONEncoder().encode(snapshot) }
     private func normalizePins() {
         pinnedMemoryIDs = pinnedMemoryIDs.filter { companionID, memoryID in
             memories[companionID]?.contains(where: { $0.id == memoryID }) == true
@@ -362,7 +378,7 @@ final class PokemonMemoryAlbum {
     }
     private func save() {
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard let data = try? JSONEncoder().encode(Snapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs)) else { return }
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
 }
@@ -736,7 +752,7 @@ final class PokemonChatStore {
             for round in rounds {
                 guard let session = sessions[companionID] else { return }
                 let request = PokemonChatRequest(profile: profile,
-                                                 memories: Array(album.entries(for: companionID).suffix(8)),
+                                                 memories: Array(album.entries(for: companionID).filter { $0.source != .manual }.suffix(8)),
                                                  recentMessages: Array(session.messages.suffix(12)) + toolResults)
                 let parsed = PokemonChatToolParser.parse(try await provider.reply(to: request))
                 reply = parsed.body

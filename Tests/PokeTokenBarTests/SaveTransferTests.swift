@@ -190,6 +190,46 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertEqual(s.state.inventory["rareCandy"], 2)
     }
 
+    func testImportReplacesMemoryAlbumAndNormalizesInvalidEntriesAndPins() throws {
+        let url = tempURL("memory-album")
+        let store = store(at: url)
+        let valid = populatedMon(25), orphan = UUID(), validMemoryID = UUID()
+        store.memoryAlbum.addManual(companionID: orphan, body: "local orphan")
+        var imported = oldMacState(); imported.active = valid
+        let validMemory = PokemonMemory(id: validMemoryID, companionID: valid.id, createdAt: transferNow,
+                                        source: .manual, body: "imported private note", isHidden: true)
+        let badCompanion = PokemonMemory(companionID: orphan, createdAt: transferNow, source: .event, body: "orphan")
+        let tooLong = PokemonMemory(companionID: valid.id, createdAt: transferNow, source: .event,
+                                    body: String(repeating: "x", count: 181))
+        let album = PokemonMemoryAlbumSnapshot(memories: [valid.id: [validMemory, badCompanion, tooLong], orphan: [badCompanion]],
+                                               pinnedMemoryIDs: [valid.id: validMemoryID, orphan: badCompanion.id])
+        let data = try SaveTransfer.encode(state: imported, memoryAlbum: album, appVersion: "2.5.0",
+                                           deviceName: "Old Mac", now: transferNow)
+
+        try store.applySave(try SaveTransfer.decode(data))
+
+        XCTAssertEqual(store.memoryAlbum.entries(for: valid.id), [validMemory])
+        XCTAssertEqual(store.memoryAlbum.pinned(for: valid.id)?.id, validMemoryID)
+        XCTAssertTrue(store.memoryAlbum.entries(for: orphan).isEmpty)
+    }
+
+    func testSchemaTwoImportKeepsTheExistingMemoryPruningPolicy() throws {
+        let url = tempURL("legacy-memory")
+        let store = store(at: url)
+        let retained = populatedMon(25), orphan = UUID()
+        store.memoryAlbum.addManual(companionID: retained.id, body: "keep me")
+        store.memoryAlbum.addManual(companionID: orphan, body: "remove me")
+        var imported = oldMacState(); imported.active = retained
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: SaveTransfer.encode(state: imported, appVersion: "2.5.0", deviceName: "Old Mac", now: transferNow)) as? [String: Any])
+        json["schema"] = 2
+        json.removeValue(forKey: "memoryAlbum")
+
+        try store.applySave(try SaveTransfer.decode(JSONSerialization.data(withJSONObject: json)))
+
+        XCTAssertEqual(store.memoryAlbum.entries(for: retained.id).map(\.body), ["keep me"])
+        XCTAssertTrue(store.memoryAlbum.entries(for: orphan).isEmpty)
+    }
+
     /// 덮어쓰기 전 직전 상태를 남긴다 — 잘못 불러왔을 때 손으로 되돌릴 수단.
     func testPreviousStateIsBackedUpBeforeOverwrite() throws {
         let url = tempURL("backup")

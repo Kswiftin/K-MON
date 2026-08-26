@@ -50,6 +50,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     generalGroup
+                    memoryHomeGroup(settings)
                     workModeGroup(settings)
                     chatProviderGroup(settings)
                     floatingPetGroup(settings)
@@ -251,6 +252,44 @@ struct SettingsView: View {
                     ForEach(ReplaySpeed.allCases, id: \.self) { Text(l.battleReplaySpeedName($0)).tag($0) }
                 }
                 .labelsHidden().pickerStyle(.menu).fixedSize()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func memoryHomeGroup(_ settings: AppSettings) -> some View {
+        @Bindable var settings = settings
+        settingsSection(l.t("기억 홈", "Memory Home", "メモリーホーム")) {
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(l.t("홈에 기억 표시", "Show memories on Home", "ホームに思い出を表示"))
+                    Text(l.t("기본으로 꺼져 있으며, 켜도 개인 메모는 대화 제공자에게 전달되지 않습니다.",
+                             "Off by default. Private notes are never sent to chat providers.",
+                             "初期設定はオフです。個人メモは会話プロバイダに送信されません。"))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.memoryHomeEnabled).labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+            Divider()
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(l.t("로컬 사용 진단", "Local usage diagnostics", "ローカル利用診断"))
+                    Text(l.t("동의 시 홈 방문과 메모 생성 횟수만 이 Mac에 집계합니다.",
+                             "With consent, only Home visits and note counts are aggregated on this Mac.",
+                             "同意すると、ホーム閲覧とメモ作成数だけをこの Mac に集計します。"))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.memoryHomeDiagnosticsEnabled).labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
+            if settings.memoryHomeDiagnosticsEnabled {
+                Divider()
+                groupRow {
+                    Text(l.t("진단 JSON 내보내기", "Export diagnostics JSON", "診断 JSON を書き出す"))
+                    Spacer()
+                    Button(l.t("내보내기", "Export", "書き出す")) { exportMemoryHomeDiagnostics() }
+                }
             }
         }
     }
@@ -574,6 +613,21 @@ struct SettingsView: View {
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
             presentAlert(title: l.exportSaveLabel, message: error.localizedDescription, style: .warning)
+        }
+    }
+
+    private func exportMemoryHomeDiagnostics() {
+        let panel = NSSavePanel()
+        panel.title = l.t("기억 홈 진단 내보내기", "Export Memory Home diagnostics", "メモリーホーム診断を書き出す")
+        panel.nameFieldStringValue = "PokeTokenBar-MemoryHome-Diagnostics.json"
+        panel.allowedContentTypes = [.json]
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try settings.memoryHomeDiagnosticsData().write(to: url, options: .atomic)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            presentAlert(title: panel.title, message: error.localizedDescription, style: .warning)
         }
     }
 

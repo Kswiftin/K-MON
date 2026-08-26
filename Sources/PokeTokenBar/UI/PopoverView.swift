@@ -146,6 +146,9 @@ struct PopoverView: View {
         .onChange(of: battleCenter.trading.phase) { _, phase in
             if phase != .ready { nav.tab = .battle }
         }
+        .onChange(of: nav.tab) { _, tab in
+            if tab == .home { settings.recordMemoryHomeEntry() }
+        }
     }
 
     @ViewBuilder
@@ -220,7 +223,7 @@ struct PopoverView: View {
                         // 스타터를 아직 안 고른 첫 화면에는 띄우지 않는다 — 첫 한 시간은 대상이 아니다.
                         if !companion.needsStarterSelection { MissionBoardView(store: companion) }
                         CompanionHeader(store: companion)
-                        MemoryHomeView(store: companion)
+                        if settings.memoryHomeEnabled { MemoryHomeView(store: companion) }
                     }
                     Spacer(minLength: 0)
                 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MemoryHomeView: View {
+    @Environment(AppSettings.self) private var settings
     let store: CompanionStore
     @State private var note = ""
     @State private var validationMessage: String?
@@ -45,6 +46,7 @@ struct MemoryHomeView: View {
                     Spacer()
                     Button(l.t("기억 남기기", "Save memory", "思い出を残す")) {
                         if album.addManual(companionID: mon.id, body: note) {
+                            settings.recordManualMemoryCreated()
                             note = ""; validationMessage = nil
                         } else {
                             validationMessage = l.t("1~280자로 적어 주세요.", "Enter 1–280 characters.", "1〜280文字で入力してください。")
@@ -67,7 +69,8 @@ struct MemoryHomeView: View {
                 memoryRow(memory, album: album)
             }
         }
-        .padding(10).pokedoroCard(tint: PokedoroTheme.mint))
+        .padding(10).pokedoroCard(tint: PokedoroTheme.mint)
+        .onAppear { settings.recordMemoryHomeExposure() })
     }
 
     private func firstRecordedText(_ entries: [PokemonMemory]) -> String {

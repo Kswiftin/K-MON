@@ -3093,7 +3093,7 @@ final class CompanionStore {
 
     /// 내보내기 페이로드. 파일 쓰기는 호출자(UI)가 사용자가 고른 위치에 수행한다.
     func exportedSaveData(appVersion: String, deviceName: String) throws -> Data {
-        try SaveTransfer.encode(state: state, appVersion: appVersion, deviceName: deviceName, now: clock())
+        try SaveTransfer.encode(state: state, memoryAlbum: memoryAlbum.snapshot, appVersion: appVersion, deviceName: deviceName, now: clock())
     }
 
     /// 검증된 세이브를 이 기기에 적용 — 기존 상태 백업 → 기기 기준 재정렬 → 저장 → 라인 재로딩.
@@ -3103,7 +3103,11 @@ final class CompanionStore {
         try backupStateBeforeImport()
         state = SaveTransfer.rebasedForThisDevice(envelope.state, current: state)
         let validIDs = Set(([state.active].compactMap { $0 } + state.boxedMons).map(\.id))
-        memoryAlbum.prune(validCompanionIDs: validIDs)
+        if let importedAlbum = envelope.memoryAlbum {
+            memoryAlbum.replace(with: importedAlbum, validCompanionIDs: validIDs)
+        } else {
+            memoryAlbum.prune(validCompanionIDs: validIDs)
+        }
         chatStore.prune(validCompanionIDs: validIDs)
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
         // 않으면 먼저 떠 있던 라인 로드가 완료되며 새로 불러온 개체를 덮어쓴다.

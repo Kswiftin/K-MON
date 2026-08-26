@@ -9,9 +9,9 @@ import Foundation
 /// 봉투의 `format`/`schema` 는 관대 디코딩 대상이 아니라(기본값 없음) 이 오인을 먼저 차단한다.
 struct SaveEnvelope: Codable, Sendable {
     static let formatID = "poketokenbar.save"
-    /// 2 = 방치형 경제(별의모래). 구버전 앱이 새 세이브를 토큰 경제로 오독하지 않게 올렸다 —
-    /// 구버전은 `newerSchema` 로 거절하고, 이 빌드는 schema 1(토큰 시절)도 받아 리셋 마이그레이션한다.
-    static let schemaVersion = 2
+    /// 3 = 메모리 앨범과 핀을 함께 이전한다. 구버전 앱은 `newerSchema` 로 거절하고,
+    /// 이 빌드는 schema 1–2도 받아 기존 마이그레이션을 유지한다.
+    static let schemaVersion = 3
 
     var format: String
     var schema: Int
@@ -19,6 +19,7 @@ struct SaveEnvelope: Codable, Sendable {
     var exportedAt: Date
     var sourceDevice: String
     var state: CompanionState
+    var memoryAlbum: PokemonMemoryAlbumSnapshot?
 }
 
 /// 봉투의 앞부분만 읽는 최소 구조 — 본문(`state`)이 상위 스키마라 못 읽히더라도 "새 버전 세이브"임을
@@ -136,13 +137,14 @@ enum SaveTransfer {
     private static func dayStamp(_ date: Date) -> String { stamp(date, "yyyy-MM-dd") }
     private static func secondStamp(_ date: Date) -> String { stamp(date, "yyyy-MM-dd-HHmmss") }
 
-    static func encode(state: CompanionState, appVersion: String, deviceName: String, now: Date) throws -> Data {
+    static func encode(state: CompanionState, memoryAlbum: PokemonMemoryAlbumSnapshot? = nil, appVersion: String, deviceName: String, now: Date) throws -> Data {
         let envelope = SaveEnvelope(format: SaveEnvelope.formatID,
                                     schema: SaveEnvelope.schemaVersion,
                                     appVersion: appVersion,
                                     exportedAt: now,
                                     sourceDevice: deviceName,
-                                    state: state)
+                                    state: state,
+                                    memoryAlbum: memoryAlbum)
         let encoder = JSONEncoder()
         // 사람이 열어봤을 때 읽히도록(무엇이 옮겨가는지 확인 가능) — 4KB 라 크기는 무의미.
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

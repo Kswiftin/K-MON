@@ -22,6 +22,10 @@ enum FloatingPetArtwork: String, Sendable, CaseIterable {
 @Observable
 final class AppSettings {
     private let defaults: UserDefaults
+    private let clock: () -> Date
+
+    var memoryHomeEnabled: Bool { didSet { defaults.set(memoryHomeEnabled, forKey: "memoryHomeEnabled") } }
+    var memoryHomeDiagnosticsEnabled: Bool { didSet { defaults.set(memoryHomeDiagnosticsEnabled, forKey: "memoryHomeDiagnosticsEnabled") } }
 
     var floatingPetEnabled: Bool { didSet { defaults.set(floatingPetEnabled, forKey: "floatingPetEnabled") } }
     var floatingPetSize: Double { didSet { defaults.set(floatingPetSize, forKey: "floatingPetSize") } }
@@ -71,8 +75,11 @@ final class AppSettings {
     var battleInvitesEnabled: Bool { didSet { defaults.set(battleInvitesEnabled, forKey: "battleInvitesEnabled") } }
     private var chatExecutablePaths: [String: String]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, clock: @escaping () -> Date = Date.init) {
         self.defaults = defaults
+        self.clock = clock
+        memoryHomeEnabled = defaults.object(forKey: "memoryHomeEnabled") as? Bool ?? false
+        memoryHomeDiagnosticsEnabled = defaults.object(forKey: "memoryHomeDiagnosticsEnabled") as? Bool ?? false
         floatingPetEnabled = defaults.object(forKey: "floatingPetEnabled") as? Bool ?? false
         floatingPetSize = defaults.object(forKey: "floatingPetSize") as? Double ?? 96
         floatingPetRoamingEnabled = defaults.object(forKey: "floatingPetRoamingEnabled") as? Bool ?? false
@@ -99,6 +106,60 @@ final class AppSettings {
     /// LAN 탐색을 시작해도 되는가. 설정값을 읽는 자리와 리스너를 올리는 자리가 각각 판정하면
     /// 한쪽만 바뀌어도 아무 테스트가 안 깨진다 — 판정은 여기 한 곳이다.
     var shouldStartLANDiscovery: Bool { battleInvitesEnabled }
+
+    /// Opt-in only, local-only aggregate. No companion, memory, or chat content is retained here.
+    func recordMemoryHomeEntry() {
+        guard memoryHomeDiagnosticsEnabled else { return }
+        let now = clock()
+        recordMemoryHomeExposure(at: now)
+        incrementDiagnostic("memoryHomeDiagnosticsHomeEntries", weekKey(for: now))
+    }
+
+    /// Visibility and entry are deliberately distinct: revealing the card while Home is already
+    /// selected sets the period start but must not inflate the tab-entry counter.
+    func recordMemoryHomeExposure() {
+        guard memoryHomeDiagnosticsEnabled else { return }
+        recordMemoryHomeExposure(at: clock())
+    }
+
+    func recordManualMemoryCreated() {
+        guard memoryHomeDiagnosticsEnabled else { return }
+        incrementDiagnostic("memoryHomeDiagnosticsManualCreations", weekKey(for: clock()))
+    }
+
+    func memoryHomeDiagnosticsData() throws -> Data {
+        struct Export: Codable {
+            let periodStart: Date?
+            let periodEnd: Date
+            let homeEntriesByWeek: [String: Int]
+            let manualMemoriesByWeek: [String: Int]
+        }
+        let export = Export(periodStart: defaults.object(forKey: "memoryHomeDiagnosticsFirstSeen") as? Date,
+                            periodEnd: clock(),
+                            homeEntriesByWeek: defaults.dictionary(forKey: "memoryHomeDiagnosticsHomeEntries") as? [String: Int] ?? [:],
+                            manualMemoriesByWeek: defaults.dictionary(forKey: "memoryHomeDiagnosticsManualCreations") as? [String: Int] ?? [:])
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(export)
+    }
+
+    private func incrementDiagnostic(_ key: String, _ week: String) {
+        var counts = defaults.dictionary(forKey: key) as? [String: Int] ?? [:]
+        counts[week, default: 0] += 1
+        defaults.set(counts, forKey: key)
+    }
+
+    private func recordMemoryHomeExposure(at date: Date) {
+        if defaults.object(forKey: "memoryHomeDiagnosticsFirstSeen") == nil {
+            defaults.set(date, forKey: "memoryHomeDiagnosticsFirstSeen")
+        }
+    }
+
+    private func weekKey(for date: Date) -> String {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = .current
+        let parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return String(format: "%04d-W%02d", parts.yearForWeekOfYear ?? 0, parts.weekOfYear ?? 0)
+    }
 
     static func chatProviderPathKey(_ kind: PokemonChatProviderKind) -> String { "pokemonChatExecutablePath.\(kind.rawValue)" }
     func chatProviderExecutablePath(for kind: PokemonChatProviderKind) -> String? { chatExecutablePaths[kind.rawValue] }
