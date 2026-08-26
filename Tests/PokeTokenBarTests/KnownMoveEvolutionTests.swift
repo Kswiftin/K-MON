@@ -131,7 +131,11 @@ final class KnownMoveEvolutionTests: XCTestCase {
         let companion = store(knownMoveLine)
         await companion.hatch(baseID: 221)
         XCTAssertEqual(companion.nextEvolutionKnownMoveID, ancientPowerID)
-        XCTAssertEqual(companion.nextEvolutionName, "포473", "무엇으로 진화하는지도 말해야 한다")
+        // 이름 문자열을 박으면 로케일을 탄다 — 게이트가 영어로도 한 번 더 돌린다.
+        // 확인할 건 "무엇으로 진화하는지 말하는가" 이지 어느 언어로 말하는가가 아니다.
+        XCTAssertEqual(companion.nextEvolutionName,
+                       knownMoveLine.localizedName(473, companion.language),
+                       "무엇으로 진화하는지도 말해야 한다")
 
         companion.debugSetActiveLearnedMoves([move(ancientPowerID)])
         await companion.loadEvolutionRequiredMove()
