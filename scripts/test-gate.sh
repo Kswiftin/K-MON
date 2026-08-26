@@ -76,6 +76,8 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/PixelSprite.swift"
   "Sources/PokeTokenBar/Core/DungeonRoomLayout.swift"
   "Sources/PokeTokenBar/Core/DungeonEncounterSprite.swift"
+  "Sources/PokeTokenBar/Core/TrainerPixelArt.swift"
+  "Sources/PokeTokenBar/Core/TrainerSprite.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"
