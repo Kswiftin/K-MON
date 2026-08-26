@@ -69,6 +69,14 @@ enum TrainerPixelArt {
         return g.rows
     }
 
+    /// 여러 도형(사각·점)을 한 레이어에 겹쳐 그린다 — 모자 챙, 소매, 꽁지머리처럼
+    /// 밑 사각형 하나로 못 그리는 실루엣용.
+    private static func layerRows(_ paint: (inout Grid) -> Void) -> [String] {
+        var g = Grid()
+        paint(&g)
+        return g.rows
+    }
+
     // MARK: - 본체(맨몸)
 
     /// 얼굴 rows2–8, 몸통 rows9–15(손은 몸통 폭 바깥 `handXs` 열에 튀어나와 옷에 안 가려진다),
@@ -129,29 +137,138 @@ enum TrainerPixelArt {
     /// 쓴다 — 본체만 걸음마다 달라지면 충분하다(#79 던전 방걷기 설계).
     private static func stillLayer(_ rows: [String]) -> [[String]] { Array(repeating: rows, count: 3) }
 
-    private static func hatSet(char: Character) -> LayerSet {
-        LayerSet(
-            down: stillLayer(rectLayer(cols: 4...11, rows: 0...5, char)),
-            up: stillLayer(rectLayer(cols: 4...11, rows: 0...5, char)),
-            left: stillLayer(rectLayer(cols: 5...10, rows: 0...5, char))
-        )
-    }
+    // MARK: 모자 — 색만 다르면 같은 슬롯 안에서 구분이 안 된다. 챙 모양으로 실루엣을 가른다.
 
-    private static func hairSet(char: Character) -> LayerSet {
-        LayerSet(
-            down: stillLayer(rectLayer(cols: 4...11, rows: 2...8, char)),
-            up: stillLayer(rectLayer(cols: 4...11, rows: 2...8, char)),
-            left: stillLayer(rectLayer(cols: 5...10, rows: 2...8, char))
-        )
-    }
+    private static let capRedSet = LayerSet(
+        down: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 0...4, "r")
+            g.fillRect(cols: 3...12, rows: 5...5, "r") // 챙 — 정면에서 좌우로 1칸씩 더 나온다
+        }),
+        up: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 0...4, "r")
+            g.fillRect(cols: 3...12, rows: 5...5, "r")
+        }),
+        left: stillLayer(layerRows { g in
+            g.fillRect(cols: 5...10, rows: 0...4, "r")
+            g.fillRect(cols: 4...10, rows: 5...5, "r") // 챙이 진행 방향(왼쪽)으로만 1칸 나온다
+        })
+    )
 
-    private static func topSet(rows: ClosedRange<Int>, char: Character) -> LayerSet {
-        LayerSet(
-            down: stillLayer(rectLayer(cols: 4...11, rows: rows, char)),
-            up: stillLayer(rectLayer(cols: 4...11, rows: rows, char)),
-            left: stillLayer(rectLayer(cols: 5...10, rows: rows, char))
-        )
-    }
+    private static let strawHatSet = LayerSet(
+        down: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 0...4, "y")
+            g.fillRect(cols: 2...13, rows: 5...5, "y") // 밀짚모자 챙 — 캡보다 훨씬 넓다
+        }),
+        up: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 0...4, "y")
+            g.fillRect(cols: 2...13, rows: 5...5, "y")
+        }),
+        left: stillLayer(layerRows { g in
+            g.fillRect(cols: 5...10, rows: 0...4, "y")
+            g.fillRect(cols: 3...12, rows: 5...5, "y")
+        })
+    )
+
+    private static let helmetExplorerSet = LayerSet(
+        down: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 0...5, "g") // 챙 없이 머리 전체를 덮는 헬멧
+            g.set(7, 0, "y") // 정면 랜턴 장식
+        }),
+        up: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 0...5, "g")
+            g.set(7, 0, "y")
+        }),
+        left: stillLayer(layerRows { g in
+            g.fillRect(cols: 5...10, rows: 0...5, "g")
+            g.set(5, 2, "y")
+        })
+    )
+
+    // MARK: 머리 — 단발은 아래가 둥글게 퍼지고, 묶은 머리는 뒤/옆에 꽁지가 삐친다.
+
+    private static let hairBobSet = LayerSet(
+        down: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 2...8, "h")
+            g.fillRect(cols: 3...12, rows: 6...8, "h") // 단발 — 아래쪽이 옆으로 둥글게 퍼진다
+        }),
+        up: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 2...8, "h")
+            g.fillRect(cols: 3...12, rows: 6...8, "h")
+        }),
+        left: stillLayer(layerRows { g in
+            g.fillRect(cols: 5...10, rows: 2...8, "h")
+            g.fillRect(cols: 4...11, rows: 6...8, "h")
+        })
+    )
+
+    private static let hairPonySet = LayerSet(
+        down: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 2...8, "h") // 정면은 앞머리만 — 묶은 머리는 안 보인다
+        }),
+        up: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 2...8, "h")
+            g.fillRect(cols: 7...8, rows: 9...11, "h") // 뒷모습 — 묶은 머리가 등 위로 늘어진다
+        }),
+        left: stillLayer(layerRows { g in
+            g.fillRect(cols: 5...10, rows: 2...8, "h")
+            g.fillRect(cols: 10...11, rows: 7...9, "h") // 옆모습 — 뒤통수 밖으로 꽁지가 삐친다
+        })
+    )
+
+    private static let hairMessySet = LayerSet(
+        down: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 2...8, "H")
+            g.set(5, 1, "H"); g.set(9, 1, "H") // 뻗친 머리 — 정수리 위로 두 갈래가 삐친다
+        }),
+        up: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 2...8, "H")
+            g.set(5, 1, "H"); g.set(9, 1, "H")
+        }),
+        left: stillLayer(layerRows { g in
+            g.fillRect(cols: 5...10, rows: 2...8, "H")
+            g.set(6, 1, "H"); g.set(9, 1, "H")
+        })
+    )
+
+    // MARK: 상의 — 재킷은 손목까지 오는 소매(그래도 손끝 한 줄은 남겨 살이 보인다) + 깃,
+    // 티셔츠는 반팔(그 아래는 그냥 몸통뿐이라 소매가 없다).
+
+    private static let jacketBlueSet = LayerSet(
+        down: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 9...15, "b")
+            g.fillRect(cols: 3...3, rows: 12...13, "b")
+            g.fillRect(cols: 12...12, rows: 12...13, "b") // 소매가 손목까지 — 손끝(14행)만 남긴다
+            g.fillRect(cols: 7...8, rows: 9...9, "w") // 깃
+        }),
+        up: stillLayer(layerRows { g in
+            g.fillRect(cols: 4...11, rows: 9...15, "b")
+            g.fillRect(cols: 3...3, rows: 12...13, "b")
+            g.fillRect(cols: 12...12, rows: 12...13, "b")
+            g.fillRect(cols: 7...8, rows: 9...9, "w")
+        }),
+        left: stillLayer(layerRows { g in
+            g.fillRect(cols: 5...10, rows: 9...15, "b")
+            g.fillRect(cols: 4...4, rows: 12...13, "b")
+            g.fillRect(cols: 11...11, rows: 12...13, "b")
+            g.fillRect(cols: 7...8, rows: 9...9, "w")
+        })
+    )
+
+    private static let teeWhiteSet = LayerSet(
+        down: stillLayer(layerRows { g in g.fillRect(cols: 4...11, rows: 9...15, "w") }),
+        up: stillLayer(layerRows { g in g.fillRect(cols: 4...11, rows: 9...15, "w") }),
+        left: stillLayer(layerRows { g in g.fillRect(cols: 5...10, rows: 9...15, "w") })
+    )
+
+    // 업적 보상 — 웃옷보다 길게 걸쳐(rows9–18) 확실히 구분되는 롱코트.
+    private static let cloakWornSet = LayerSet(
+        down: stillLayer(layerRows { g in g.fillRect(cols: 4...11, rows: 9...18, "n") }),
+        up: stillLayer(layerRows { g in g.fillRect(cols: 4...11, rows: 9...18, "n") }),
+        left: stillLayer(layerRows { g in g.fillRect(cols: 5...10, rows: 9...18, "n") })
+    )
+
+    // MARK: 하의 — 반바지와 장화는 같은 슬롯(`OutfitSlot.bottom`)이라 동시 착용이 없고,
+    // 덮는 행 범위 자체가 달라(15–20 대 18–23) 실루엣이 이미 갈린다.
 
     private static func legSpanSet(rows: ClosedRange<Int>, char: Character) -> LayerSet {
         LayerSet(
@@ -170,19 +287,16 @@ enum TrainerPixelArt {
     )
 
     static let layers: [OutfitItem: LayerSet] = [
-        .capRed: hatSet(char: "r"),
-        .strawHat: hatSet(char: "y"),
-        .helmetExplorer: hatSet(char: "g"),
-        .hairBob: hairSet(char: "h"),
-        .hairPony: hairSet(char: "h"),
-        .hairMessy: hairSet(char: "H"),
-        .jacketBlue: topSet(rows: 9...15, char: "b"),
-        .teeWhite: topSet(rows: 9...15, char: "w"),
-        // 업적 보상 — 웃옷보다 길게 걸쳐 확실히 구분되는 롱코트.
-        .cloakWorn: topSet(rows: 9...18, char: "n"),
+        .capRed: capRedSet,
+        .strawHat: strawHatSet,
+        .helmetExplorer: helmetExplorerSet,
+        .hairBob: hairBobSet,
+        .hairPony: hairPonySet,
+        .hairMessy: hairMessySet,
+        .jacketBlue: jacketBlueSet,
+        .teeWhite: teeWhiteSet,
+        .cloakWorn: cloakWornSet,
         .shortsKhaki: legSpanSet(rows: 15...20, char: "k"),
-        // 업적 보상 — 무릎 위까지 오는 장화. 하의와 같은 슬롯(`OutfitSlot.bottom`)이라
-        // 반바지와 동시 착용은 없다(설계 그대로).
         .bootsLong: legSpanSet(rows: 18...23, char: "g"),
         .backpack: backpackSet,
     ]

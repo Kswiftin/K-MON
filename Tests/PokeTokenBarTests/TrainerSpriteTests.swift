@@ -60,4 +60,19 @@ final class TrainerSpriteTests: XCTestCase {
         let sprite = TrainerSprite(outfit: TrainerOutfit(worn: [.top: .cloakWorn]))
         for frame in sprite.frames { XCTAssertNotNil(frame.cgImage(palette: TrainerPixelArt.palette)) }
     }
+
+    func testItemsInTheSameSlotHaveDistinctShapes() {
+        func shape(_ item: OutfitItem) -> [UInt8] {
+            TrainerPixelArt.layer(item, facing: .down, step: 0).pixels.map { $0 == 0 ? 0 : 1 }
+        }
+        let itemsBySlot = Dictionary(grouping: OutfitItem.allCases, by: { $0.slot })
+        for (slot, items) in itemsBySlot {
+            for i in 0..<items.count {
+                for j in (i + 1)..<items.count {
+                    XCTAssertNotEqual(shape(items[i]), shape(items[j]),
+                                       "\(slot) 슬롯의 \(items[i])와 \(items[j]) 실루엣이 같다")
+                }
+            }
+        }
+    }
 }
