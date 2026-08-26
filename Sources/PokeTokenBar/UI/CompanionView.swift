@@ -1029,32 +1029,72 @@ private struct MoveRelearnCard: View {
             } else {
                 Text(l.relearnPickTitle).font(.caption2).foregroundStyle(.secondary)
                 // 후보가 수십 개까지 늘 수 있다 — 높이를 묶어 카드가 팝오버를 밀어내지 않게 한다.
+                // 행이 설명 줄까지 두 줄이 되면서 같은 높이에 담기는 개수가 절반으로 줄어 상한을 올렸다.
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(prompt.candidates) { move in
-                            Button {
+                            RelearnCandidateRow(move: move, language: store.language, l: l) {
                                 store.pickRelearnCandidate(move)
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Text(move.name(store.language)).font(.caption)
-                                    TypeBadge(type: move.type, language: store.language)
-                                    Text(move.damageClass == .status
-                                         ? l.moveCategoryStatus : l.movePowerShort(move.power))
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                    Spacer()
-                                }
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
-                .frame(maxHeight: 180)
+                .frame(maxHeight: 220)
             }
             Button(l.relearnClose) { store.cancelRelearn() }.controlSize(.small)
         }
         .padding(9)
         .background(Color.pink.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+/// 다시 떠올릴 기술 한 줄 — 이름·타입·위력/명중/PP + 설명.
+///
+/// **고르는 자리에는 고를 근거가 다 있어야 한다.** 예전엔 이름·타입·위력뿐이라, 명중이 낮은 기술과
+/// PP 가 5뿐인 기술을 위력만 보고 골랐다. 교체 화면(`MoveReplacementRow`)은 이미 세 값을 다 보여주는데
+/// 그 앞 단계인 여기서 못 보면, 고르고 나서야 손해를 안다.
+///
+/// 설명은 두 줄로 자른다 — PokéAPI 설명문은 길이가 제각각이라 안 자르면 행 높이가 기술마다 달라져
+/// 목록이 읽히지 않는다. 잘린 뒷부분은 툴팁이 들고 있다.
+private struct RelearnCandidateRow: View {
+    let move: MoveSpec
+    let language: AppLanguage
+    let l: L
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(move.name(language)).font(.caption.weight(.semibold))
+                        .lineLimit(1).layoutPriority(1)
+                    TypeBadge(type: move.type, language: language)
+                    Spacer(minLength: 2)
+                    Group {
+                        Text(move.damageClass == .status
+                             ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                        Text(move.accuracy.map { l.moveAccuracyShort($0) } ?? l.moveAlwaysHits)
+                        Text(l.movePP(move.pp))
+                    }
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+                }
+                // 설명이 없는 기술도 있다(번역 누락·구기술). 빈 Text 를 그리면 행 높이만 들쭉날쭉해진다.
+                if let description = move.description(language), !description.isEmpty {
+                    Text(description)
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(2).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 7).padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(move.description(language) ?? l.moveDetailLine(move))
+        .accessibilityLabel(move.name(language))
+        .accessibilityValue(l.moveDetailLine(move))
     }
 }
 
