@@ -104,6 +104,10 @@ struct SpriteView: View {
     /// idle 배터리를 통제한다 — 항상 떠 있는 플로팅 펫(0.4s≈2.5fps)이 메뉴바 GIF 규율과 동치가 되게.
     /// 팝오버 등 일시적 표시는 0(기본)으로 두어 네이티브 fps 유지.
     var minFrameDelay: TimeInterval = 0
+    /// 정지로 그릴 때 HOME 512×512 렌더를 쓴다. 애니메이션 원본(45~133px)의 4배 가까이 선명하지만
+    /// 움직이지 않는다 — 크게 띄우는 플로팅 펫에서만 값어치가 있어 기본은 꺼져 있다.
+    /// `animated` 가 켜져 있으면 무시된다(GIF 가 이긴다).
+    var highResolution: Bool = false
     @State private var img: NSImage?
     @State private var up = false
     @State private var loadedID: Int?   // img 가 어느 speciesID 것인지(id 변경 시 갱신 판단)
@@ -113,7 +117,8 @@ struct SpriteView: View {
     @State private var frameIndex = 0
 
     init(speciesID: Int?, size: CGFloat = 84, bob: Bool = false, animated: Bool = false,
-         shiny: Bool = false, fallbackLabel: String? = nil, back: Bool = false, minFrameDelay: TimeInterval = 0) {
+         shiny: Bool = false, fallbackLabel: String? = nil, back: Bool = false,
+         minFrameDelay: TimeInterval = 0, highResolution: Bool = false) {
         self.speciesID = speciesID
         self.size = size
         self.bob = bob
@@ -122,9 +127,13 @@ struct SpriteView: View {
         self.fallbackLabel = fallbackLabel
         self.back = back
         self.minFrameDelay = minFrameDelay
+        self.highResolution = highResolution
         // 캐시에 있으면 즉시(동기) 표시 — 재렌더 플래시 방지 + 정적 스냅샷에서도 보임.
         // speciesID==nil(알 상태)이면 알 스프라이트를 시드(없으면 body 가 🥚 폴백).
-        let cached = speciesID.map { SpriteLoader.cachedImage(speciesID: $0, shiny: shiny, back: back) }
+        let cached = speciesID.map {
+            SpriteLoader.cachedImage(speciesID: $0, shiny: shiny, back: back,
+                                     highResolution: highResolution && !animated)
+        }
             ?? SpriteLoader.cachedEggImage()
         _img = State(initialValue: cached)
         _loadedID = State(initialValue: (speciesID != nil && cached != nil) ? speciesID : nil)
@@ -201,7 +210,9 @@ struct SpriteView: View {
             // 정적 스프라이트 먼저(즉시 표시 + 폴백 보장).
             // 캐시 시드로 이미 같은 종·같은 이로치 여부면 재요청 생략(플래시 방지)
             if Self.needsReload(loadedID: loadedID, loadedShiny: loadedShiny, id: id, shiny: shiny) {
-                let loaded = await SpriteLoader.image(speciesID: id, animated: false, shiny: shiny, back: back)
+                let loaded = await SpriteLoader.image(speciesID: id, animated: false, shiny: shiny,
+                                                      back: back,
+                                                      highResolution: highResolution && !animated)
                 // 취소된 로드는 반영하지 않는다(#138). 이로치 축은 **반영될 때만** 기록해
                 // subject(종)와 loadedShiny 가 어긋나 다음 판정이 틀어지는 것을 막는다.
                 if let next = subject.applyingLoad(loaded, for: id, cancelled: Task.isCancelled) {

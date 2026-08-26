@@ -277,6 +277,21 @@ struct SettingsView: View {
                         .font(.caption).monospacedDigit().frame(width: 44, alignment: .trailing)
                 }
                 Divider()
+                // 크기 바로 아래에 둔다 — 크게 띄울수록 흐려지므로 두 설정을 같이 만지게 된다.
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker(selection: $settings.floatingPetArtwork) {
+                        ForEach(FloatingPetArtwork.allCases, id: \.self) { artwork in
+                            Text(l.floatingPetArtworkLabel(artwork)).tag(artwork)
+                        }
+                    } label: {
+                        Text(l.floatingPetArtworkTitle).font(.callout)
+                    }
+                    .pickerStyle(.segmented)
+                    Text(l.floatingPetArtworkHint(settings.floatingPetArtwork))
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Divider()
                 toggleRow(l.floatingPetRoamingLabel, $settings.floatingPetRoamingEnabled)
                 Divider()
                 toggleRow(l.floatingPetMouseChaseLabel, $settings.floatingPetMouseChaseEnabled)
