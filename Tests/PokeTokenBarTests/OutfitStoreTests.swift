@@ -79,11 +79,20 @@ final class OutfitStoreTests: XCTestCase {
         XCTAssertEqual(SaveTransfer.canonicalString(state), canonical, "착용은 서명에 들어가지 않는다")
     }
 
+    /// 원래 이 테스트는 기본 `CompanionState()` 로 돌렸는데, `forcedResetVersion`(기본 0)이
+    /// `SaveTransfer.forcedResetVersion`(1) 보다 낮아 강제 초기화 조기 반환에 걸려 새 `CompanionState()`
+    /// 를 그대로 돌려준다 — `outfit.worn` 이 비어 있는 게 애초에 기본값이라 통과하지만, 검증 대상인
+    /// `s.outfit = s.outfit.normalized(owned:)` 줄은 타지 않는다. `economyVersion` 도 기본값(0)이면
+    /// `migratedToIdleEconomy` 가 진행을 통째로 새 `CompanionState()` 로 갈아엎어(도감·언어만 승계)
+    /// `ownedOutfits` 까지 날린다. 두 조기 반환을 모두 지나야 이 줄에 실제로 도달한다(경로 고정).
     func testSanitizeStripsUnownedWornItems() {
         var state = CompanionState()
-        state.outfit = TrainerOutfit(worn: [.hat: .capRed])
+        state.forcedResetVersion = SaveTransfer.forcedResetVersion
+        state.economyVersion = IdleEconomy.currentVersion
+        state.ownedOutfits = [.teeWhite]
+        state.outfit = TrainerOutfit(worn: [.hat: .capRed, .top: .teeWhite])
         let clean = SaveTransfer.sanitized(state)
-        XCTAssertEqual(clean.outfit.worn, [:])
+        XCTAssertEqual(clean.outfit.worn, [.top: .teeWhite], "미소유(.capRed)는 벗기고 소유(.teeWhite)는 남긴다")
     }
 
     func testShopEntryOutfitPrice() {
