@@ -6,6 +6,9 @@ import Foundation
 /// 눈으로 찾는 수밖에 없었다(#87).
 enum RosterSort: String, CaseIterable, Sendable {
     case caught     // 저장 순서(부화한 순서)
+    /// 도감 번호순 — 도감 격자와 같은 순서다. 두 화면을 같은 순서로 두면 "도감 몇 번째 칸의 그 개체"
+    /// 를 박스에서 같은 자리로 찾는다. rawValue 를 세이브에 쓰므로 case 를 나중에 지우면 안 된다.
+    case dexNumber
     case name
     case level
 }
@@ -50,6 +53,13 @@ enum RosterOrdering {
         switch sort {
         case .caught:
             sorted = indexed   // 저장 순서 그대로
+        case .dexNumber:
+            // **현재 형태의 번호**다. 카드가 그리는 스프라이트·이름과 같은 종이라야 순서가 납득된다
+            // (기본형 번호로 묶으면 이상해꽃이 3번이 아니라 1번 자리에 선다).
+            sorted = indexed.sorted { a, b in
+                if a.element.currentID == b.element.currentID { return a.offset < b.offset }
+                return a.element.currentID < b.element.currentID
+            }
         case .name:
             sorted = indexed.sorted { a, b in
                 let l = displayName(a.element, language: language, resolved: names)
