@@ -27,7 +27,7 @@ read_when:
 |---|---|
 | 방 화면 렌더링·격자 이동·사방 문 전환 | 방 안 가구 배치·장애물 |
 | 방 이벤트 짧은 연출(교전·샘·보물·보스) | 실시간 전투·적 AI |
-| 트레이너 base + 꾸미기 레이어 12개, 상점·클리어 보상 획득 | 아이템 대량 추가, 계절·한정 아이템 |
+| 트레이너 base + 꾸미기 레이어 12개, 상점·업적 단계 보상 획득 | 아이템 대량 추가, 계절·한정 아이템 |
 | 친구 목록 카드에 상대 아바타 표시 | 친구 방 방문, 방 배치 전송 |
 | 시작 방(0번) = 내 방(벽지·바닥만 다름) | 내 방 꾸미기 UI |
 
@@ -124,8 +124,25 @@ struct TrainerOutfit: Codable, Equatable { var worn: [OutfitSlot: OutfitItem] }
 - `OutfitItem` 마다 `slot`, `price: Int?`(nil = 상점 판매 안 함), 4방향 레이어 픽셀. 머리카락은 모자 아래
   레이어이고 모자가 가리는 픽셀은 모자 레이어가 위에 덮는다 — 합성 순서 `body < bottom < top < hair < hat < accessory`.
 - 초기 12개: hat 3 · hair 3 · top 3 · bottom 2 · accessory 1. base 는 성별 중립 실루엣, 16×24px, 팔레트 ~12색.
-- 획득: 상점 구매 8개(별의조각 300~800, `ShopView` "의상" 섹션), 던전 첫 클리어 보상에 **미소유 아이템 중
-  결정론(dayKey seed) 1개** 4개(상점 미판매). 미소유가 없으면 별의조각만. 별의조각 1,000 은 그대로.
+- 획득 경로는 둘이다.
+  - **상점 구매 8개** (`ShopView` "의상" 섹션, 별의조각): 빨간 캡 300 · 밀짚모자 400 · 단발 300 · 포니테일 300 ·
+    파란 재킷 500 · 흰 티셔츠 300 · 반바지 300 · 백팩 800.
+  - **업적 단계 보상 4개** (상점 미판매) — 컬렉션 > 업적(`AchievementLadder`)에 던전 트랙 둘을 더하고 단계에
+    의상을 붙인다. 별의조각 단계 보상(300/1,000/3,000/6,000)은 다른 트랙과 같다.
+
+    | 트랙 | 세는 것 | 문턱 | 의상 |
+    |---|---|---|---|
+    | `dungeon` | 던전 클리어 횟수 | 1 / 5 / 20 / 50 | 1단계 흐트러진 머리 · 2단계 낡은 망토 |
+    | `dungeonSweep` | 오늘 보물방을 **전부** 털고 클리어한 횟수 | 1 / 5 / 20 / 50 | 1단계 부츠 · 3단계 탐험가 헬멧 |
+
+    sweep 이 난이도 축이다 — 곁방을 다 열 만큼 체력을 관리해야 한다. "체력 N 남기고 클리어" 는 넣지 않는다
+    (안개 때문에 운 요소가 크고 N 튜닝에 365일 실측이 필요하다). 판정은 `DungeonRun` 이 이미 가진 값
+    (`looted`, 맵의 `cache` 방 집합)으로 하며 코어 규칙은 바꾸지 않는다. 기록 지점은 클리어 정산(`rewardPaid`
+    를 세우는 곳) 한 곳 — `record(.dungeon, 1)`, 조건이 맞으면 `record(.dungeonSweep, 1)`.
+  - `Achievement` 에 `outfits: [OutfitItem?]`(`tiers` 와 같은 길이) 을 더한다. 카탈로그 정합 테스트가 길이를
+    강제한다. `AchievementLadderTests` 의 총액 상한(41,200)은 트랙 둘이 늘어 61,800 으로 올리고 근거(평생 1회,
+    알 3개 규모)를 주석에 남긴다. LAN 카드 분모(`tierCeiling`)는 카탈로그에서 파생되므로 따로 손대지 않는다.
+  - 던전 첫 클리어 즉시 보상 별의조각 1,000 은 그대로다.
 - 세이브: `CompanionState.outfit: TrainerOutfit`, `ownedOutfits: Set<OutfitItem>` — 둘 다 `lenient` 디코드,
   옛 세이브는 기본값. 미소유 아이템 착용은 정규화에서 벗긴다. 무결성 서명에는 `ownedOutfits` 만 넣는다
   (재화로 산 것이라 조작 가드 대상; 착용 상태는 표시 전용).
@@ -151,7 +168,7 @@ struct TrainerOutfit: Codable, Equatable { var worn: [OutfitSlot: OutfitItem] }
 | `TrainerSpriteTests` | 모든 아이템 × 4방향 × 3프레임 합성 성공 · 크기 16×24 · 불투명 픽셀 존재 · 슬롯당 레이어 하나만 · 모자가 머리카락 위 |
 | `TrainerOutfitTests` | Codable 왕복 · 옛 세이브(키 없음) 기본값 · 미소유 착용 정규화에서 벗김 · `ownedOutfits` 서명 포함, 착용은 미포함 |
 | `PeerAdvertisementTests` | `outfit` 왕복 · 모르는 ID 무시 · 빈 착용은 키 없음 · 잘못된 문자열에도 피어 유지 |
-| 클리어 보상 | 미소유 있으면 1개 지급·소유에 추가, 없으면 별의조각만, `rewardPaid` 재지급 방지 — **결함 주입**(가드 제거)으로 테스트가 실패하는지 확인 |
+| 업적 던전 트랙 | 클리어 정산 1회에 `dungeon` 카운터 +1 · 보물방 전부 턴 날만 `dungeonSweep` +1(하나 남기면 안 오름) · 단계 넘을 때 의상이 `ownedOutfits` 에 들어감 · `rewardPaid` 뒤 재정산에도 카운터 안 오름 — **결함 주입**(가드 제거)으로 테스트가 실패하는지 확인 · 카탈로그 `outfits` 길이 == `tiers` 길이 |
 | 기존 | `DungeonRunTests`·`PuzzleDungeonTests` 무변경 통과 — 코어 규칙을 건드리지 않았다는 증거 |
 
 새 조건 분기는 `xcrun llvm-cov show ... --show-regions` 로 `^0` 을 직접 본다(CLAUDE.md 결함 대응 프로토콜 3).
