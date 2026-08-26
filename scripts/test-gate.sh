@@ -68,6 +68,9 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/PokemonChatTools.swift"
   # 하트비늘 후보 계산(#97). 순수 함수라 게이트 대상 — 넣지 않으면 커버리지에서 조용히 빠진다.
   "Sources/PokeTokenBar/Core/MoveRelearn.swift"
+  # 트레이너 코스튬 카탈로그·착용 상태·와이어 문자열(#79 던전 방걷기 뷰). 순수 모델이라
+  # 게이트 대상 — 넣지 않으면 관대 파싱의 unknown/malformed 분기가 커버리지에서 조용히 빠진다.
+  "Sources/PokeTokenBar/Core/TrainerOutfit.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"
