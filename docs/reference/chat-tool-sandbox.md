@@ -4,6 +4,7 @@ read_when:
   - 대화에 새 도구를 더하거나 기존 도구를 빼려 할 때
   - `[[tool:...]]` 마커 문법·인자 클램프·승인 구분을 손댈 때
   - "대화가 X 를 할 수 있게 해 달라" 는 요청을 받았을 때 (대개 답은 "그 겹에 넣을 수 없다" 다)
+  - 실행기에 새 의존성을 붙이거나, 도구가 어느 개체에 작용하는지를 바꿀 때
 ---
 
 # 대화 도구 샌드박스
@@ -21,15 +22,23 @@ read_when:
 | 도구 | 인자 | 승인 | 하는 일 |
 |---|---|---|---|
 | `pokedex.lookup` | 도감 번호 `1..1025` | 불필요 | PokéAPI 종 정보(분류·서식지·특성·도감 설명) |
-| `pokedoro.status` | 없음 | 불필요 | 집중 타이머의 현재 상태 |
+| `pokedoro.status` | 없음 | 불필요 | 타이머 + **모험 루프**(none/running/ready·구역·진행률) + 알 재고 |
 | `bag.list` | 없음 | 불필요 | 소유 아이템과 개수 |
-| `roster.list` | 없음 | 불필요 | 팀 목록 — 인덱스·이름·레벨·활성 여부 |
+| `roster.list` | 없음 | 불필요 | 팀 목록 — 인덱스·이름·레벨·이로치·활성 여부 |
+| `dex.progress` | 없음 | 불필요 | 도감 진행도 — 종·타입·이로치 각 축의 `현재/다음 목표` |
+| `challenge.status` | 없음 | 불필요 | 오늘 던전(클리어 여부·체력 예산)·배지·미션 |
 | `memory.record` | **없음**(본문은 앱이 채운다) | 불필요 — 아래 참조 | 방금 한 답변을 기억 앨범에 남긴다 |
 | `pokedoro.start` | `25` \| `50` \| `90` | **필요** | 집중 세션 시작(모험 출발 + 타이머) |
-| `pokedoro.stop` | 없음 | **필요** | 집중 세션 종료 |
+| `pokedoro.stop` | 없음 | **필요** | 집중 세션 종료 — **나가 있는 모험은 보상 없이 취소된다** |
+| `adventure.claim` | 없음 | **필요** | 끝난 모험을 정산(별의조각·경험치·알) |
 | `item.use` | `ItemKind` case 이름 | **필요** | 아이템 1개를 그 종류의 진짜 사용 경로로 |
 | `evolution.accept` | 없음 | **필요** | 대기 중인 진화를 수락 |
 | `companion.switch` | `roster.list` 가 찍은 인덱스 | **필요** | 다른 동료를 활성으로 |
+
+능력치 여섯 칸은 **도구가 아니다.** 프로필(시스템 프롬프트)이 타입·기술·다음 진화를 싣는 자리에
+같이 실린다 — 도구로 만들면 왕복 한 번과 광고 줄 하나를 더 쓰면서 같은 값을 준다. 개체의 값이라
+`chatProfile` 은 **활성 개체의 대화에서만** 채운다(`currentStats` 가 활성 개체의 레벨·성격으로
+계산하므로, 종만 맞춰 싣는 타입과 달리 남의 프로필에 실으면 그럴듯하게 틀린 숫자가 된다).
 
 열이 전부다. 목록은 `PokemonChatTool` 한 곳에 있고 프롬프트가 광고하는 이름도 여기서 나온다 —
 두 벌이면 한쪽만 바뀌어 모델이 없는 도구를 부르거나 있는 도구를 영영 모른다.
@@ -49,6 +58,33 @@ read_when:
   인자이고, 그 문자열이 다음 요청의 컨텍스트로 되돌아온다(자기 오염). 가드가 답변을 갈아치웠다면
   기록도 남기지 않는다.
 
+### 대상을 인자로 받지 않는 도구는 **그 개체의 대화에서만** 돈다
+
+대화 창은 활성 개체뿐 아니라 로스터에서 **박스 개체로도 열린다**(`PokemonRosterView`). 실행기는
+`CompanionStore` 를 통째로 들고 있어서, 방어가 없으면 모든 도구가 "지금 나와 있는 개체" 에 작용한다 —
+박스 피카츄 창에서 승인했는데 활성 파이리가 사탕을 먹는다(2026-08-27 결함, `defect-log.md`).
+
+그래서 실행은 **대화의 주인**(`run(_:owner:)`)을 반드시 받는다. 프로토콜에 기본값을 두지 않는다 —
+안 넘기면 컴파일이 안 되는 편이, 부르는 자리가 활성 개체를 암묵 대상으로 삼는 것보다 낫다.
+
+분류는 `PokemonChatToolCall.actsOnTheActiveCompanion` 한 곳이고 가드도 한 곳에서 읽는다. case 마다
+두면 다음에 더하는 도구가 조용히 빠진다.
+
+- **주인만** — `pokedoro.start`·`pokedoro.stop`·`adventure.claim`·`item.use`·`evolution.accept`
+- **누구의 대화에서도** — 읽기 도구 전부, 그리고 `companion.switch`(인자로 대상을 지목하므로 남의
+  대화에서도 뜻이 분명하다), `memory.record`(활성 개체가 아니라 **주인** 앨범에 적는다)
+
+예외는 취향이 아니라 성질이다. 뭉뚱그려 막으면 박스 개체가 "나를 데리고 나가 줘" 라고 말할 수 없다.
+
+### 실패는 사유를 싣는다
+
+거절을 한 줄로 뭉개면 모델은 왜 안 되는지 모른 채 같은 호출을 반복하고, 사용자에게는 아무 일도 안
+난 것으로 보인다(분을 버리지 않고 접는 것과 같은 이유). 지금 갈라 두는 사유:
+
+- `tool refused: no active companion` / `... not the active companion`
+- `pokedoro start refused: adventure in progress` / `... adventure reward unclaimed`
+- `adventure none ready` · `evolution none pending` · `item <kind> unavailable`
+
 ### `memory.record` 만 승인이 없다
 
 "상태를 바꾸면 무조건 승인" 규칙의 유일한 예외다. 근거는 둘이다.
@@ -66,6 +102,7 @@ read_when:
 | 2. 화이트리스트 | 목록 밖 이름은 호출로 파싱되지 않는다 | `PokemonChatToolParser` | `testOnlyTheDeclaredToolsParseAsCalls` |
 | 3. 인자 클램프 | 분은 세 값으로 접히고, 도감 번호·로스터 인덱스는 정수뿐, 아이템은 `ItemKind` case 뿐 | 같은 파일 | `testFocusMinutesAreClampedToTheThreeOfferedLengths`, `testSpeciesLookupRejectsAnythingThatIsNotADexNumberInRange` |
 | 4. 승인 게이트 | 상태를 바꾸는 도구는 사용자 1탭 뒤에만 | `PokemonChatStore.resolvePending` | `testApprovedTimerCallExecutesOnlyForItsOwnCompanion`, `testApprovalGatedToolPausesTheLoopInsteadOfAskingAgain` |
+| 4b. 주인 게이트 | 승인 카드가 가리킨 개체와 실행 대상이 갈라지지 않는다 | `PokemonChatToolbox.run(_:owner:)` | `testToolsThatActOnMeRefuseFromABoxedCompanionsChat`, `testTargetedAndReadOnlyToolsStillWorkFromABoxedCompanionsChat`, `testApprovalPathCarriesTheProposalsCompanionIntoTheExecutor` |
 | 5. 응답 가드 | 코드펜스·"as an AI"·terminal 유출 시 리다이렉트 | `PokemonChatReplyGuard` | `testRoleBreakingReplyIsReplacedBeforeDisplayOrPersistence` |
 
 겹 1 은 **차단되지 않은 제공자를 실행하지 않는다**는 원칙까지 포함한다. 도구를 끌 수 없는 CLI 는
@@ -92,8 +129,9 @@ read_when:
 ## 프롬프트 예산
 
 도구 줄은 시스템 프롬프트에 그대로 실린다. `testSystemPromptStaysWithinTheChatBudgetWithAFullIdentity`
-가 상한을 지키고, 도구를 더하면 **깨지는 게 정상**이다. 깨진 만큼만 올린다(1_600 → 2_100 → 2_500) —
-넉넉히 잡으면 다음에 무엇이 새어 들어와도 아무도 모른다.
+가 상한을 지키고, 도구를 더하면 **깨지는 게 정상**이다. 깨진 만큼만 올린다(1_600 → 2_100 → 2_500 →
+2_800) — 넉넉히 잡으면 다음에 무엇이 새어 들어와도 아무도 모른다. 예산은 **최악의 경우로** 잰다:
+능력치가 `nil`("not loaded")인 프로필로 재면 실제 프롬프트보다 짧게 나온다.
 
 ## 도구를 더하려면
 
@@ -101,6 +139,8 @@ read_when:
 2. `PokemonChatToolCall` 에 **검증을 마친** 인자로 case 를 넣는다 — 잘못된 값을 담은 호출이
    만들어질 수 없어야 한다. 클램프는 생성 시점 한 곳에만 둔다.
 3. `needsApproval` 을 정한다. **상태를 바꾸면 무조건 `true`.**
+   그리고 `actsOnTheActiveCompanion` 을 정한다 — 대상을 인자로 받지 않고 "지금 나와 있는 나" 에
+   작용하면 `true`. 둘 다 `switch` 가 망라적이라 빠뜨리면 컴파일이 안 된다.
 4. `PokemonChatToolbox.run` 에 실행을 넣고 `(line:succeeded:)` 를 정직하게 돌려준다.
    거절과 실패가 같은 값이면 승인 카드에서 둘이 구분되지 않는다.
 5. 거부 케이스를 `testOnlyTheDeclaredToolsParseAsCalls` 에 **더한다** — 새 도구가 목록을
@@ -116,4 +156,10 @@ read_when:
 - **놓아 주기·판매·구매처럼 되돌릴 수 없거나 재화를 쓰는 일.** 승인 카드 한 번으로 감당할 무게가
   아니다. `companion.release`·`shop.buy` 가 목록에 없는 이유이고, 거부 케이스로 고정돼 있다.
 - **도구 결과를 대화 기록에 넣는 것.** 사용자가 기계 문자열을 읽게 된다. 결과는 다음 요청에만 실린다.
+- **화면이 있어야 성립하는 일.** 던전 입장은 맵 이동이고 체육관 도전은 배틀 화면이다. 하루 한 판인
+  자원을 승인 카드 한 번으로 태울 수 없다 — 대화는 `challenge.status` 로 **가리키는** 데까지다.
+- **동행을 밀어내거나 되돌릴 수 없는 일.** 저장 알 품기(`beginIncubatingFocusEgg`)는 지금 동행을
+  박스로 보내고, 졸업(`graduateCompanion`)은 도감으로 떠나보낸다. 거부 케이스로 고정돼 있다.
+- **화면 설정.** 방해금지·정렬·필터·스프라이트 선명도는 사용자 취향이고, 실행기에 `AppSettings`
+  의존성을 새로 붙일 값이 아니다.
 - **코딩·파일·셸·범용 검색.** 이 앱의 대화에는 그 요구가 없다. 필요해지면 그건 다른 제품이다.
