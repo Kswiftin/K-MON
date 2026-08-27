@@ -322,6 +322,7 @@ private struct PokemonDetailCard: View {
     let mon: MonState
     @State private var profile: PokemonBattleProfile?
     @State private var line: EvoLine?
+    @State private var abilityText: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -332,6 +333,15 @@ private struct PokemonDetailCard: View {
                     Text("#\(String(format: "%03d", mon.currentID)) · Lv.\(mon.level) \(mon.gender?.symbol ?? "")")
                         .font(.caption).foregroundStyle(.secondary)
                     Text(evolutionText).font(.caption2).foregroundStyle(.orange)
+                }
+            }
+            if let abilityText, !abilityText.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label(store.l.t("특성", "Ability", "とくせい"), systemImage: "sparkles")
+                        .font(.caption.bold())
+                    Text(abilityText)
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if let stats = profile?.stats { statGrid(stats) }
@@ -354,9 +364,11 @@ private struct PokemonDetailCard: View {
             }
         }
         .padding(14).frame(width: 330)
-        .task {
+        .task(id: "\(mon.presentationID)-\(store.language.rawValue)") {
             profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.presentationID)
             line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID)
+            abilityText = await PokeAPIClient.shared
+                .chatSpeciesIdentity(speciesID: mon.presentationID, language: store.language).ability
         }
     }
 
