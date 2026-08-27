@@ -909,6 +909,9 @@ struct CompanionState: Codable, Sendable {
     var pendingHatchID: Int?
     // 트레이너 이름 — 첫 시작에 입력받아 배틀에 표시. 빈 문자열이면 아직 미입력(이름 입력 화면).
     var trainerName = ""
+    /// 친구 목록의 배틀 프로필에 공개할 대표 포켓몬. 개체 UUID만 저장하고 실제 종·이로치 정보는
+    /// 현재 소유 목록에서 매번 계산한다. 교환/방출로 없어지면 자동으로 광고되지 않는다.
+    var battleRepresentativeID: UUID?
     // 첫 파트너를 골랐는지 — false면 알이 아니라 스타터 선택 화면으로 시작(맨 처음 1회).
     // 졸업 후 새 알부터는 true 라 기존 알/부화 루프로 돌아간다.
     var starterChosen = false
@@ -990,6 +993,7 @@ struct CompanionState: Codable, Sendable {
         eggTier            = c.lenientOptional(Rarity.self, forKey: .eggTier)
         pendingHatchID     = c.lenientOptional(Int.self, forKey: .pendingHatchID)
         trainerName        = c.lenient(String.self, forKey: .trainerName, default: "")
+        battleRepresentativeID = c.lenientOptional(UUID.self, forKey: .battleRepresentativeID)
         starterChosen      = c.lenient(Bool.self, forKey: .starterChosen, default: false)
         starterCandidates  = c.lenient([Int].self, forKey: .starterCandidates, default: [])
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.

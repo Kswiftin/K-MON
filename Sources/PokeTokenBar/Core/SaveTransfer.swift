@@ -231,6 +231,11 @@ enum SaveTransfer {
         // (#81 — 박스만 자르고 활성을 빼 뒀더니 사탕 XP 를 더하는 순간 오버플로 트랩).
         s.active = s.active.map(sanitizedMon)
         s.boxedMons = Array(s.boxedMons.prefix(100)).map(sanitizedMon)
+        if let representativeID = s.battleRepresentativeID,
+           s.active?.id != representativeID,
+           !s.boxedMons.contains(where: { $0.id == representativeID }) {
+            s.battleRepresentativeID = nil
+        }
         // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
         s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
         let soldMachineIDs = Set(TechnicalMachine.catalog.map(\.moveID))

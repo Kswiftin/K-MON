@@ -261,6 +261,7 @@ struct BattleView: View {
 
             HStack {
                 Label(store.battleRank.displayName, systemImage: "shield.lefthalf.filled")
+                    .foregroundStyle(store.battleRank.tier.tint)
                 Spacer()
                 Text("⭐ \(GameNumberFormatter.compact(store.availableTokens))")
             }
@@ -786,7 +787,7 @@ struct PeerRow: View {
     private var progressLine: some View {
         HStack(spacing: 4) {
             Text(rankText)
-                .foregroundStyle(peer.rank == nil ? .tertiary : .secondary)
+                .foregroundStyle(peer.rank?.tier.tint ?? Color.secondary)
             if let level = peer.advertisement.trainerLevel {
                 Text("· Lv.\(level)").monospacedDigit().foregroundStyle(.secondary)
             }

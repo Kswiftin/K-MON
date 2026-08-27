@@ -705,12 +705,15 @@ final class BattleCenter {
 
     /// 지금 광고해야 할 값. 형식과 클램프는 `PeerAdvertisement` 가 맡는다.
     private var myAdvertisement: PeerAdvertisement {
-        PeerAdvertisement(rankPoints: companion.battleRank.points,
+        let representative = companion.battleRepresentative
+        return PeerAdvertisement(rankPoints: companion.battleRank.points,
                           trainerLevel: companion.trainerLevel.level,
                           achievementTiers: companion.achievementTierTotal,
                           // 내 분모도 싣는다. 카탈로그가 늘어난 뒤 상대가 나를 옳게 그릴 근거다.
                           achievementCeiling: AchievementLadder.tierCeiling,
-                          outfit: companion.outfit)
+                          outfit: companion.outfit,
+                          representativeSpeciesID: representative?.presentationID,
+                          representativeIsShiny: representative?.isShiny ?? false)
     }
 
     /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 구워서 랭크전 뒤에도 옛 점수가
@@ -742,6 +745,9 @@ final class BattleCenter {
             // 착장도 같은 부류 — 안 읽으면 옷을 입어도(`wear`/`buyOutfit`/`grantOutfit`) 재발행이
             // 안 걸려 상대 카드가 옛 착장으로 굳는다(#85 와 같은 부류).
             _ = companion.outfit
+            _ = companion.battleRepresentative?.id
+            _ = companion.battleRepresentative?.presentationID
+            _ = companion.battleRepresentative?.isShiny
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }

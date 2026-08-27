@@ -538,6 +538,17 @@ final class CompanionStore {
             .prefix(SaveTransfer.maxNameLength))
         save()
     }
+
+    var battleRepresentative: MonState? {
+        guard let id = state.battleRepresentativeID else { return nil }
+        return ownedMons.first { $0.id == id }
+    }
+
+    func setBattleRepresentative(_ id: UUID?) {
+        guard id == nil || ownedMons.contains(where: { $0.id == id }) else { return }
+        state.battleRepresentativeID = id
+        save()
+    }
     var currentSpeciesID: Int? { state.active?.currentID }
     var currentPresentationID: Int? { state.active?.presentationID }
 
