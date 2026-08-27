@@ -13,9 +13,11 @@ enum MemoryHomeRoomTheme {
 
 struct MemoryHomeView: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(MemoryHomeVisitCenter.self) private var visits
     let store: CompanionStore
     @State private var note = ""
     @State private var validationMessage: String?
+    @State private var showingVisits = false
 
     private var l: L { store.l }
 
@@ -31,6 +33,41 @@ struct MemoryHomeView: View {
 
         return AnyView(VStack(alignment: .leading, spacing: 10) {
             roomHeader(mon: mon, entries: entries, milestones: milestones, theme: roomTheme, tint: roomTint)
+
+            HStack {
+                Button { showingVisits = true } label: {
+                    Label(l.t("주변 홈 방문", "Visit nearby homes", "近くのホームを訪問"), systemImage: "house.and.flag")
+                }
+                .accessibilityLabel(l.t("주변 Memory Home 방문", "Visit nearby Memory Homes", "近くのMemory Homeを訪問"))
+                Spacer()
+                Menu {
+                    Button(store.memoryAlbum.memoryHomeAccess.visibility == .open
+                           ? l.t("홈 차단", "Block home", "ホームをブロック")
+                           : l.t("홈 공개", "Open home", "ホームを公開")) {
+                        store.memoryAlbum.setMemoryHomeVisibility(store.memoryAlbum.memoryHomeAccess.visibility == .open ? .blocked : .open)
+                        visits.refreshAccess()
+                    }
+                    if let pinned = album.pinned(for: mon.id) {
+                        Button(album.sharedPinnedMemory(for: mon.id) == nil
+                               ? l.t("고정 기억 공유", "Share pinned memory", "固定した思い出を共有")
+                               : l.t("기억 공유 해제", "Stop sharing memory", "思い出の共有をやめる")) {
+                            if album.sharedPinnedMemory(for: mon.id) == nil { album.setSharedPinnedMemory(pinned, activeCompanionID: mon.id) }
+                            else { album.clearSharedPinnedMemory() }
+                        }
+                    }
+                    if !album.memoryHomeAccess.recentRequesters.isEmpty {
+                        Divider()
+                        ForEach(album.memoryHomeAccess.recentRequesters) { requester in
+                            Button(requester.displayName + " · " + (album.memoryHomeAccess.blockedPeerIDs.contains(requester.peerID)
+                                   ? l.t("차단 해제", "Unblock", "ブロック解除")
+                                   : l.t("차단", "Block", "ブロック"))) {
+                                album.setMemoryHomeBlocked(requester.peerID, blocked: !album.memoryHomeAccess.blockedPeerIDs.contains(requester.peerID))
+                            }
+                        }
+                    }
+                } label: { Image(systemName: "lock.shield") }
+                .accessibilityLabel(l.t("홈 공유 설정", "Home sharing settings", "ホーム共有設定"))
+            }
 
             if let pinned = album.pinned(for: mon.id) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -96,7 +133,11 @@ struct MemoryHomeView: View {
             }
         }
         .padding(10).pokedoroCard(tint: roomTint)
-        .onAppear { settings.recordMemoryHomeExposure() })
+        .onAppear { settings.recordMemoryHomeExposure() }
+        .sheet(isPresented: $showingVisits, onDismiss: { visits.stop() }) {
+            MemoryHomeVisitSheet(visits: visits, language: l)
+                .onAppear { visits.start() }
+        })
     }
 
     private func roomHeader(mon: MonState, entries: [PokemonMemory], milestones: [PokemonMemoryMilestone], theme: PokemonMemoryRoomTheme, tint: Color) -> some View {
@@ -225,5 +266,33 @@ struct MemoryHomeView: View {
         case .conversation: return l.t("대화", "Conversation", "会話")
         case .manual: return l.t("내 기록", "Note", "メモ")
         }
+    }
+}
+
+private struct MemoryHomeVisitSheet: View {
+    let visits: MemoryHomeVisitCenter
+    let language: L
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(language.t("주변 Memory Home", "Nearby Memory Homes", "近くのMemory Home")).font(.headline)
+                Spacer(); Button(language.t("닫기", "Close", "閉じる")) { dismiss() }
+            }
+            if let profile = visits.selectedProfile {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(profile.displayName).font(.title3.weight(.bold))
+                    Text("#(profile.speciesID)" + (profile.isShiny ? " ✨" : ""))
+                    if let memory = profile.sharedMemoryBody { Text(memory).font(.callout) }
+                }.padding().pokedoroCard(tint: PokedoroTheme.mint)
+            }
+            if let error = visits.lastError { Text(error).foregroundStyle(PokedoroTheme.red).font(.caption) }
+            if visits.homes.isEmpty { Text(language.t("홈을 찾는 중이에요…", "Looking for homes…", "ホームを探しています…")).foregroundStyle(.secondary) }
+            ForEach(visits.homes) { home in
+                Button { visits.visit(home) } label: { Label(home.displayName, systemImage: "house") }
+                    .accessibilityLabel(language.t("\(home.displayName) 홈 방문", "Visit \(home.displayName)'s home", "\(home.displayName)のホームを訪問"))
+            }
+            Spacer()
+        }.padding().frame(minWidth: 330, minHeight: 260)
     }
 }

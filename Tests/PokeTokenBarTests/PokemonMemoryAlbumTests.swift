@@ -214,4 +214,31 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         album.prune(validCompanionIDs: [first])
         XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).theme(for: second), .blue)
     }
+
+    func testMemoryHomeAccessDefaultsForLegacySnapshotAndSharedPinClears() throws {
+        let url = temporaryURL(), companionID = UUID()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let legacy = LegacyMemorySnapshot(memories: [companionID: []])
+        try JSONEncoder().encode(legacy).write(to: url)
+        let album = PokemonMemoryAlbum(fileURL: url)
+        XCTAssertEqual(album.memoryHomeAccess.visibility, .open)
+        XCTAssertTrue(album.addManual(companionID: companionID, body: "Only this note may be shared"))
+        let note = album.entries(for: companionID)[0]
+        album.pin(note); album.setSharedPinnedMemory(note, activeCompanionID: companionID)
+        XCTAssertEqual(album.sharedPinnedMemory(for: companionID)?.id, note.id)
+        XCTAssertTrue(album.delete(note))
+        XCTAssertNil(album.memoryHomeAccess.sharedPinnedMemoryID)
+    }
+
+    func testMemoryHomeRecentRequestersDeduplicateCapAndPersist() {
+        let url = temporaryURL(); defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+        let first = UUID()
+        for number in 0..<21 { album.recordMemoryHomeRequester(displayName: "Visitor \(number)", peerID: number == 0 ? first : UUID()) }
+        album.recordMemoryHomeRequester(displayName: "Newest", peerID: first)
+        XCTAssertEqual(album.memoryHomeAccess.recentRequesters.count, 20)
+        XCTAssertEqual(album.memoryHomeAccess.recentRequesters.first?.displayName, "Newest")
+        album.setMemoryHomeBlocked(first, blocked: true)
+        XCTAssertTrue(PokemonMemoryAlbum(fileURL: url).memoryHomeAccess.blockedPeerIDs.contains(first))
+    }
 }

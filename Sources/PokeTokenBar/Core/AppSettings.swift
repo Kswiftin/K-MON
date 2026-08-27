@@ -73,6 +73,9 @@ final class AppSettings {
     /// 리스너가 뜨는 순간 macOS 가 로컬 네트워크 권한을 묻는다 — 배틀을 안 하는 사용자가 그 창을
     /// 영영 안 보게 하는 유일한 스위치다. 기본값은 기존 동작(켜짐)이다.
     var battleInvitesEnabled: Bool { didSet { defaults.set(battleInvitesEnabled, forKey: "battleInvitesEnabled") } }
+    /// Random installation identity for Memory Home LAN access controls.  It is intentionally not
+    /// DeviceID: reinstalling/resetting preferences creates a new identity and clears old blocks.
+    let memoryHomeLANPeerID: UUID
     private var chatExecutablePaths: [String: String]
 
     init(defaults: UserDefaults = .standard, clock: @escaping () -> Date = Date.init) {
@@ -102,6 +105,12 @@ final class AppSettings {
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
         battleInvitesEnabled = defaults.object(forKey: "battleInvitesEnabled") as? Bool ?? true
+        if let value = defaults.string(forKey: "memoryHomeLANPeerID"), let id = UUID(uuidString: value) {
+            memoryHomeLANPeerID = id
+        } else {
+            let id = UUID(); memoryHomeLANPeerID = id
+            defaults.set(id.uuidString, forKey: "memoryHomeLANPeerID")
+        }
         chatExecutablePaths = defaults.dictionary(forKey: "pokemonChatExecutablePaths") as? [String: String] ?? [:]
     }
 

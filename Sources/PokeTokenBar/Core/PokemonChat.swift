@@ -227,6 +227,22 @@ enum PokemonChatReplyGuard {
 
 enum PokemonMemorySource: String, Codable, Sendable { case event, conversation, manual }
 
+enum MemoryHomeVisibility: String, Codable, Sendable { case open, blocked }
+
+struct MemoryHomeRecentRequester: Codable, Sendable, Equatable, Identifiable {
+    var displayName: String
+    var peerID: UUID
+    var id: UUID { peerID }
+}
+
+struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
+    var visibility: MemoryHomeVisibility = .open
+    /// A memory ID is shared only when it is still the active companion's current pin.
+    var sharedPinnedMemoryID: UUID?
+    var recentRequesters: [MemoryHomeRecentRequester] = []
+    var blockedPeerIDs: Set<UUID> = []
+}
+
 struct PokemonMemory: Codable, Sendable, Identifiable, Equatable {
     var id: UUID
     let companionID: UUID
@@ -267,13 +283,14 @@ struct PokemonMemoryAlbumSnapshot: Codable, Sendable, Equatable {
     var pinnedMemoryIDs: [UUID: UUID]
     var milestones: [UUID: PokemonMemoryMilestoneState] = [:]
     var roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]
+    var memoryHomeAccess = MemoryHomeAccessSettings()
 
-    private enum CodingKeys: String, CodingKey { case memories, pinnedMemoryIDs, milestones, roomThemes }
+    private enum CodingKeys: String, CodingKey { case memories, pinnedMemoryIDs, milestones, roomThemes, memoryHomeAccess }
     init(memories: [UUID: [PokemonMemory]], pinnedMemoryIDs: [UUID: UUID],
          milestones: [UUID: PokemonMemoryMilestoneState] = [:],
-         roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]) {
+         roomThemes: [UUID: PokemonMemoryRoomTheme] = [:], memoryHomeAccess: MemoryHomeAccessSettings = .init()) {
         self.memories = memories; self.pinnedMemoryIDs = pinnedMemoryIDs
-        self.milestones = milestones; self.roomThemes = roomThemes
+        self.milestones = milestones; self.roomThemes = roomThemes; self.memoryHomeAccess = memoryHomeAccess
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -281,6 +298,7 @@ struct PokemonMemoryAlbumSnapshot: Codable, Sendable, Equatable {
         pinnedMemoryIDs = try c.decodeIfPresent([UUID: UUID].self, forKey: .pinnedMemoryIDs) ?? [:]
         milestones = try c.decodeIfPresent([UUID: PokemonMemoryMilestoneState].self, forKey: .milestones) ?? [:]
         roomThemes = try c.decodeIfPresent([UUID: PokemonMemoryRoomTheme].self, forKey: .roomThemes) ?? [:]
+        memoryHomeAccess = try c.decodeIfPresent(MemoryHomeAccessSettings.self, forKey: .memoryHomeAccess) ?? .init()
     }
 }
 
@@ -319,18 +337,21 @@ final class PokemonMemoryAlbum {
         var pinnedMemoryIDs: [UUID: UUID]
         var milestones: [UUID: PokemonMemoryMilestoneState]
         var roomThemes: [UUID: PokemonMemoryRoomTheme]
+        var memoryHomeAccess: MemoryHomeAccessSettings
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             memories = try c.decode([UUID: [PokemonMemory]].self, forKey: .memories)
             pinnedMemoryIDs = try c.decodeIfPresent([UUID: UUID].self, forKey: .pinnedMemoryIDs) ?? [:]
             milestones = try c.decodeIfPresent([UUID: PokemonMemoryMilestoneState].self, forKey: .milestones) ?? [:]
             roomThemes = try c.decodeIfPresent([UUID: PokemonMemoryRoomTheme].self, forKey: .roomThemes) ?? [:]
+            memoryHomeAccess = try c.decodeIfPresent(MemoryHomeAccessSettings.self, forKey: .memoryHomeAccess) ?? .init()
         }
     }
     private(set) var memories: [UUID: [PokemonMemory]] = [:]
     private var pinnedMemoryIDs: [UUID: UUID] = [:]
     private var milestoneStates: [UUID: PokemonMemoryMilestoneState] = [:]
     private var roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]
+    private(set) var memoryHomeAccess = MemoryHomeAccessSettings()
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
@@ -342,7 +363,9 @@ final class PokemonMemoryAlbum {
             pinnedMemoryIDs = snapshot.pinnedMemoryIDs
             milestoneStates = snapshot.milestones
             roomThemes = snapshot.roomThemes
+            memoryHomeAccess = snapshot.memoryHomeAccess
             normalizePins()
+            normalizeMemoryHomeAccess()
             if normalizeMilestones() || backfillFirstRecordedDates() { save() }
         } catch {
             let backup = self.fileURL.appendingPathExtension("corrupt")
@@ -438,7 +461,7 @@ final class PokemonMemoryAlbum {
     }
     func pin(_ memory: PokemonMemory) {
         guard entries(for: memory.companionID).contains(where: { $0.id == memory.id }) else { return }
-        pinnedMemoryIDs[memory.companionID] = memory.id; save()
+        pinnedMemoryIDs[memory.companionID] = memory.id; normalizeMemoryHomeAccess(); save()
     }
     @discardableResult
     func setHidden(_ memory: PokemonMemory, isHidden: Bool) -> Bool {
@@ -456,18 +479,19 @@ final class PokemonMemoryAlbum {
         guard entries.count != oldCount else { return false }
         memories[memory.companionID] = entries
         if pinnedMemoryIDs[memory.companionID] == memory.id { pinnedMemoryIDs.removeValue(forKey: memory.companionID) }
+        normalizeMemoryHomeAccess()
         save()
         return true
     }
-    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); pinnedMemoryIDs.removeValue(forKey: id); milestoneStates.removeValue(forKey: id); roomThemes.removeValue(forKey: id); save() }
+    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); pinnedMemoryIDs.removeValue(forKey: id); milestoneStates.removeValue(forKey: id); roomThemes.removeValue(forKey: id); normalizeMemoryHomeAccess(); save() }
     func prune(validCompanionIDs: Set<UUID>) {
         memories = memories.filter { validCompanionIDs.contains($0.key) }
         pinnedMemoryIDs = pinnedMemoryIDs.filter { validCompanionIDs.contains($0.key) }
         milestoneStates = milestoneStates.filter { validCompanionIDs.contains($0.key) }
         roomThemes = roomThemes.filter { validCompanionIDs.contains($0.key) }
-        normalizePins(); _ = normalizeMilestones(); save()
+        normalizePins(); normalizeMemoryHomeAccess(); _ = normalizeMilestones(); save()
     }
-    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates, roomThemes: roomThemes) }
+    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates, roomThemes: roomThemes, memoryHomeAccess: memoryHomeAccess) }
     func replace(with snapshot: PokemonMemoryAlbumSnapshot, validCompanionIDs: Set<UUID>) {
         memories = snapshot.memories.reduce(into: [:]) { result, entry in
             guard validCompanionIDs.contains(entry.key) else { return }
@@ -480,7 +504,8 @@ final class PokemonMemoryAlbum {
         pinnedMemoryIDs = snapshot.pinnedMemoryIDs
         milestoneStates = snapshot.milestones.filter { validCompanionIDs.contains($0.key) }
         roomThemes = snapshot.roomThemes.filter { validCompanionIDs.contains($0.key) }
-        normalizePins(); save()
+        memoryHomeAccess = snapshot.memoryHomeAccess
+        normalizePins(); normalizeMemoryHomeAccess(); save()
         if normalizeMilestones() || backfillFirstRecordedDates() { save() }
     }
     func snapshotData() throws -> Data { try JSONEncoder().encode(snapshot) }
@@ -488,6 +513,36 @@ final class PokemonMemoryAlbum {
         pinnedMemoryIDs = pinnedMemoryIDs.filter { companionID, memoryID in
             memories[companionID]?.contains(where: { $0.id == memoryID }) == true
         }
+    }
+    func setMemoryHomeVisibility(_ visibility: MemoryHomeVisibility) {
+        guard memoryHomeAccess.visibility != visibility else { return }
+        memoryHomeAccess.visibility = visibility; save()
+    }
+    func setSharedPinnedMemory(_ memory: PokemonMemory?, activeCompanionID: UUID) {
+        guard let memory, memory.companionID == activeCompanionID,
+              pinned(for: activeCompanionID)?.id == memory.id else { return }
+        memoryHomeAccess.sharedPinnedMemoryID = memory.id; save()
+    }
+    func clearSharedPinnedMemory() { guard memoryHomeAccess.sharedPinnedMemoryID != nil else { return }; memoryHomeAccess.sharedPinnedMemoryID = nil; save() }
+    func recordMemoryHomeRequester(displayName: String, peerID: UUID) {
+        let name = String(displayName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+        guard !name.isEmpty else { return }
+        memoryHomeAccess.recentRequesters.removeAll { $0.peerID == peerID }
+        memoryHomeAccess.recentRequesters.insert(.init(displayName: name, peerID: peerID), at: 0)
+        memoryHomeAccess.recentRequesters = Array(memoryHomeAccess.recentRequesters.prefix(20)); save()
+    }
+    func setMemoryHomeBlocked(_ peerID: UUID, blocked: Bool) {
+        if blocked { memoryHomeAccess.blockedPeerIDs.insert(peerID) } else { memoryHomeAccess.blockedPeerIDs.remove(peerID) }; save()
+    }
+    func sharedPinnedMemory(for activeCompanionID: UUID) -> PokemonMemory? {
+        guard let id = memoryHomeAccess.sharedPinnedMemoryID, pinned(for: activeCompanionID)?.id == id else { return nil }
+        return entries(for: activeCompanionID).first { $0.id == id }
+    }
+    private func normalizeMemoryHomeAccess() {
+        var seen = Set<UUID>()
+        memoryHomeAccess.recentRequesters = Array(memoryHomeAccess.recentRequesters.filter { seen.insert($0.peerID).inserted }.prefix(20))
+        if let shared = memoryHomeAccess.sharedPinnedMemoryID,
+           !pinnedMemoryIDs.values.contains(shared) { memoryHomeAccess.sharedPinnedMemoryID = nil }
     }
     private func setFirstRecordedAtIfNeeded(_ companionID: UUID, date: Date) {
         var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()

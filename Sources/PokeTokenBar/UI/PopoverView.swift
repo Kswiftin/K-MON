@@ -101,6 +101,7 @@ struct PopoverView: View {
     @Environment(UpdateChecker.self) private var updater
     @Environment(PopoverNavigation.self) private var nav
     @Environment(BattleCenter.self) private var battleCenter
+    @Environment(MemoryHomeVisitCenter.self) private var memoryHomeVisits
     @Environment(FocusTimer.self) private var focusTimer
 
     private var l: L { companion.l }
