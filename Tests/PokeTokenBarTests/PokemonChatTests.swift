@@ -163,6 +163,41 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(profile.ability, identity.ability)
     }
 
+    /// 홈 화면이 능력치 여섯 칸을 항상 띄우는데(`currentStats`) 대화는 그 숫자를 몰랐다.
+    ///
+    /// **도구로 만들지 않는다.** 프로필은 이미 타입·기술·다음 진화를 싣는 자리이고, 도구로 하면
+    /// 왕복 한 번과 프롬프트 광고 줄을 더 쓰면서 같은 값을 준다.
+    func testProfileAndPromptCarryTheIndividualsStats() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        store.debugSetLoadedTypes([.electric], speciesID: 25,
+                                  base: BattleStats(hp: 35, atk: 55, def: 40, spa: 50, spd: 50, spe: 90))
+        let expected = try XCTUnwrap(store.currentStats)
+
+        let profile = store.chatProfile(for: try XCTUnwrap(store.state.active))
+        let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
+
+        XCTAssertEqual(profile.stats, "HP \(expected.hp) / Atk \(expected.atk) / Def \(expected.def)"
+                       + " / SpA \(expected.spa) / SpD \(expected.spd) / Spe \(expected.spe)")
+        XCTAssertTrue(prompt.contains("Spe \(expected.spe)"), prompt)
+    }
+
+    /// 능력치는 **개체의** 값이다(레벨·성격이 먹은 값). 그래서 종이 같아도 다른 개체의 프로필에
+    /// 실으면 안 된다 — `currentStats` 는 활성 개체의 레벨·성격으로 계산하므로, 박스에 있는
+    /// 레벨 3 짜리 프로필에 활성 레벨 20 의 숫자가 그럴듯하게 실린다(타입과 달리 종만 맞춰선 못 막는다).
+    func testStatsAreOmittedForACompanionWhoIsNotTheOneWhoseStatsAreLoaded() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        store.debugSetLoadedTypes([.electric], speciesID: 25,
+                                  base: BattleStats(hp: 35, atk: 55, def: 40, spa: 50, spd: 50, spe: 90))
+        store.debugSetBoxedMons([mon(speciesID: 25, name: "피카츄")])
+        XCTAssertNotNil(store.currentStats, "전제: 활성 개체의 능력치는 로드돼 있다")
+
+        let boxed = store.chatProfile(for: try XCTUnwrap(store.boxedMons.first))
+
+        XCTAssertNil(boxed.stats, "같은 종이라는 이유로 남의 능력치가 실렸다")
+    }
+
     /// 상한은 1_600 → 2_100 → 2_500 → 2_600 으로 올랐다. 마지막 100자는 `adventure.claim` 광고
     /// 줄(82자)이다 — 실측 2_582. **늘어난 만큼만** 올린다 — 넉넉히 잡으면 다음에 무엇이 새어
     /// 들어와도 아무도 모른다. 도구를 더할 때 여기가 깨지는 건 정상이고, 깨진 만큼만 올린다.

@@ -23,6 +23,8 @@ final class PokemonChatToolTests: XCTestCase {
             ("[[tool:companion.switch(0)]]", .companionSwitch(index: 0)),
             ("[[tool:memory.record]]", .memoryRecord(body: "")),
             ("[[tool:adventure.claim]]", .adventureClaim),
+            ("[[tool:dex.progress]]", .dexProgress),
+            ("[[tool:challenge.status]]", .challengeStatus),
         ]
         for (marker, expected) in allowed {
             XCTAssertEqual(PokemonChatToolParser.parse("좋아! " + marker).call, expected, marker)
@@ -66,6 +68,12 @@ final class PokemonChatToolTests: XCTestCase {
             "[[tool:companion.graduate]]",          // 졸업은 되돌릴 수 없다
             "[[tool:settings.doNotDisturb(true)]]", // 화면 설정은 대화가 바꾸지 않는다
             "[[tool:companion.nickname(피카)]]",      // 임의 문자열 인자
+            "[[tool:dex.progress(species)]]",       // 인자를 받지 않는 도구
+            "[[tool:challenge.status(gym)]]",       // 인자를 받지 않는 도구
+            "[[tool:dungeon.enter]]",               // 던전 입장은 맵 이동이다 — 도구가 아니다
+            "[[tool:gym.challenge(1)]]",            // 체육관 도전은 배틀 화면을 띄운다
+            "[[tool:trade.offer(0)]]",              // 교환은 남이 개입한다
+            "[[tool:battle.challenge(0)]]",         // 대전도 마찬가지다
         ]
         for marker in refused {
             let parsed = PokemonChatToolParser.parse("괜찮아 " + marker)
@@ -135,7 +143,7 @@ final class PokemonChatToolTests: XCTestCase {
             XCTAssertTrue(call.needsApproval, "\(call) 는 승인 없이 상태를 바꾼다")
         }
         for call: PokemonChatToolCall in [.pokedoroStatus, .pokedexLookup(speciesID: 25),
-                                          .bagList, .rosterList] {
+                                          .bagList, .rosterList, .dexProgress, .challengeStatus] {
             XCTAssertFalse(call.needsApproval, "\(call) 는 읽기인데 승인을 요구한다")
         }
         // 기억하기만 예외다. 저장되는 건 사용자가 화면에서 이미 읽은 문장뿐이고, 승인을 붙이면
@@ -406,6 +414,13 @@ final class PokemonChatToolTests: XCTestCase {
         let roster = await toolbox.runAsActive(.rosterList)
         XCTAssertTrue(roster.line.contains("index=0"), roster.line)
         XCTAssertTrue(roster.line.contains("active=true"), roster.line)
+        // 도감·로스터 카드에 이로치 표식이 붙었는데 대화만 몰랐다. 개체를 알아보는 값이라 싣는다.
+        var shiny = Self.spareMon()
+        shiny.isShiny = true
+        store.debugSetBoxedMons([shiny])
+        let withShiny = await toolbox.runAsActive(.rosterList)
+        XCTAssertTrue(withShiny.line.contains("shiny=true"), withShiny.line)
+        XCTAssertTrue(withShiny.line.contains("shiny=false"), withShiny.line)
     }
 
     /// 인덱스는 파서가 아니라 **로스터를 아는 실행기**가 자른다. 범위 밖은 실패이고,
@@ -622,7 +637,8 @@ final class PokemonChatToolTests: XCTestCase {
                                          album: makeAlbum(), lookup: Self.emptyLookup)
         let benched = store.chatRosterEntries.first { !$0.isActive }!
 
-        for call: PokemonChatToolCall in [.bagList, .rosterList, .pokedoroStatus] {
+        for call: PokemonChatToolCall in [.bagList, .rosterList, .pokedoroStatus,
+                                          .dexProgress, .challengeStatus] {
             let read = await toolbox.run(call, owner: boxed.id)
             XCTAssertTrue(read.succeeded, "읽기가 남의 대화에서 막혔다: \(call)")
         }
@@ -748,6 +764,51 @@ final class PokemonChatToolTests: XCTestCase {
             XCTAssertTrue(stop.approvalQuestion(language).contains(word),
                           "\(language.rawValue): \(stop.approvalQuestion(language))")
         }
+    }
+
+    // MARK: 도감·도전 진행도
+
+    /// 도감은 원복 이후 가장 크게 자랐는데(전체 종·타입 필터·미포획 실루엣·이로치·정렬) 대화는
+    /// 진행도를 하나도 몰랐다. 세는 자리를 새로 만들지 않는다 — **보상이 읽는 목표 표**를 그대로
+    /// 찍는다(`dexGoalRows`). 따로 세면 대화가 말하는 숫자와 보상이 주는 목표가 갈라진다.
+    func testDexProgressPrintsTheSameLadderTheRewardsRead() async {
+        let store = makeCompanionStore()
+        store.debugSetDex([Self.dexEntry(chain: [1, 2, 3], types: [.grass, .poison], shiny: true)])
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let progress = await toolbox.runAsActive(.dexProgress)
+
+        XCTAssertTrue(progress.succeeded, progress.line)
+        // 종은 라인 전체를 센다(격자와 같은 단위), 타입은 최종체 타입 커버리지, 이로치는 개체 수.
+        XCTAssertTrue(progress.line.contains("species=3/10"), progress.line)
+        XCTAssertTrue(progress.line.contains("types=2/9"), progress.line)
+        // 다음 칸을 함께 찍는다 — shiny1 을 넘었으므로 목표는 shiny3 이다.
+        XCTAssertTrue(progress.line.contains("shiny=1/3"), progress.line)
+    }
+
+    /// 도전 탭(체육관·던전)은 혼자 하는 콘텐츠인데 대화가 못 봤다. 메뉴바 집중 앱에서 가장
+    /// 쓸모 있는 대사가 "오늘 던전 아직 안 갔어" 다. 입장·도전은 넣지 않는다 — 맵 이동과
+    /// 배틀 화면이 필요하고, 하루 한 판이라 승인 카드 한 번이 감당할 무게가 아니다.
+    func testChallengeStatusReportsTodaysDungeonBadgesAndMissions() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let status = await toolbox.runAsActive(.challengeStatus)
+
+        XCTAssertTrue(status.succeeded, status.line)
+        XCTAssertTrue(status.line.contains("dungeon=open"), status.line)
+        // 총량은 카탈로그에서 온다 — 숫자를 여기 적으면 콘텐츠가 늘 때 문구만 옛말이 된다.
+        XCTAssertTrue(status.line.contains("badges=0/\(GymLeague.catalog.count)"), status.line)
+        XCTAssertTrue(status.line.contains("missions=0/\(MissionBoard.catalog.count)"), status.line)
+        XCTAssertTrue(status.line.contains("budget=\(store.dungeonBudgetPreview)"), status.line)
+    }
+
+    private static func dexEntry(chain: [Int], types: [PokemonType]? = nil, shiny: Bool = false) -> DexEntry {
+        DexEntry(baseID: chain[0], finalID: chain[chain.count - 1], chainOrder: chain,
+                 rarity: .common, caughtAt: nil, isShiny: shiny, types: types)
     }
 
     private static func spareMon() -> MonState {
