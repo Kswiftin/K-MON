@@ -198,9 +198,10 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertNil(boxed.stats, "같은 종이라는 이유로 남의 능력치가 실렸다")
     }
 
-    /// 상한은 1_600 → 2_100 → 2_500 → 2_600 으로 올랐다. 마지막 100자는 `adventure.claim` 광고
-    /// 줄(82자)이다 — 실측 2_582. **늘어난 만큼만** 올린다 — 넉넉히 잡으면 다음에 무엇이 새어
-    /// 들어와도 아무도 모른다. 도구를 더할 때 여기가 깨지는 건 정상이고, 깨진 만큼만 올린다.
+    /// 상한은 1_600 → 2_100 → 2_500 → 2_800 으로 올랐다. 마지막 300자는 도구 셋(`adventure.claim`·
+    /// `dex.progress`·`challenge.status`)의 광고 줄과 능력치 절이다 — 실측 2_788.
+    /// **늘어난 만큼만** 올린다 — 넉넉히 잡으면 다음에 무엇이 새어 들어와도 아무도 모른다.
+    /// 도구를 더할 때 여기가 깨지는 건 정상이고, 깨진 만큼만 올리는 게 규칙이다.
     func testSystemPromptStaysWithinTheChatBudgetWithAFullIdentity() {
         var profile = PokemonChatProfile.fixture
         profile.apply(PokemonSpeciesIdentity(
@@ -211,9 +212,11 @@ final class PokemonChatTests: XCTestCase {
             language: .ko
         ))
 
+        // 능력치는 채워진 쪽이 최악이다("not loaded" 로 재면 실제 프롬프트보다 짧게 나온다).
+        profile.stats = "HP 999 / Atk 999 / Def 999 / SpA 999 / SpD 999 / Spe 999"
         let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
 
-        XCTAssertLessThanOrEqual(prompt.count, 2_600)
+        XCTAssertLessThanOrEqual(prompt.count, 2_800)
     }
 
     /// 페르소나 전용 DTO 는 `SpeciesDTO` 와 따로 산다 — `flavor_text_entries` 는 종 응답에서 가장 큰

@@ -75,13 +75,16 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
     var ability: String?
     let language: AppLanguage
     var types: [String] = []
+    /// 이 개체의 실제 능력치 여섯 칸(홈 화면과 같은 값). 도구가 아니라 프로필로 싣는 이유는
+    /// 여기가 이미 타입·기술·다음 진화를 싣는 자리라서다 — 도구로 하면 왕복 한 번을 더 쓴다.
+    var stats: String?
     var moves: [String] = []
     var nextEvolution: String?
 
     init(speciesID: Int, displayName: String, nickname: String?, isShiny: Bool = false,
          nature: String?, level: Int, stage: String, flavorText: String?, language: AppLanguage,
          genus: String? = nil, habitat: String? = nil, ability: String? = nil,
-         types: [String] = [], moves: [String] = [], nextEvolution: String? = nil) {
+         types: [String] = [], stats: String? = nil, moves: [String] = [], nextEvolution: String? = nil) {
         self.speciesID = speciesID
         self.displayName = displayName
         self.nickname = nickname
@@ -95,6 +98,7 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
         self.ability = ability
         self.language = language
         self.types = types
+        self.stats = stats
         self.moves = moves
         self.nextEvolution = nextEvolution
     }
@@ -178,7 +182,7 @@ struct PokemonChatRequest: Sendable {
         Let supplied species details shape how this Pokémon describes itself and its everyday perspective.
         Never claim to be an AI, assistant, model, tool, or software, and never explain code, files, terminals, web research, projects, or your own capabilities.
         Current identity: level \(profile.level), \(profile.stage), nature \(profile.nature ?? "unknown").
-        Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known").
+        Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known"); stats \(profile.stats ?? "not loaded").
         \(identity ?? "")
         \(flavor)
         ONLY discuss Pokédex information, this Pokémon's known species traits, and the companion information supplied above.

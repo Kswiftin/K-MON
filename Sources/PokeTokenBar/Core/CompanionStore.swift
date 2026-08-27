@@ -482,12 +482,18 @@ final class CompanionStore {
         // for a profile while those caches still belong to another species, so assemble individual data
         // from MonState and reuse the tagged type cache only when the requested species owns it.
         let types = mon.currentID == currentSpeciesID ? currentTypes.map { $0.name(language) } : []
+        // 능력치는 **개체의** 값이다 — `currentStats` 가 활성 개체의 레벨·성격으로 계산하므로,
+        // 종만 맞춰 싣는 타입과 달리 활성 개체가 아니면 아예 넣지 않는다. 같은 종의 레벨 3 짜리
+        // 프로필에 레벨 20 의 숫자가 실리면 그럴듯하게 틀린 값이 되고, 그건 안 들킨다.
+        let stats = mon.id == activeMonID ? currentStats.map {
+            "HP \($0.hp) / Atk \($0.atk) / Def \($0.def) / SpA \($0.spa) / SpD \($0.spd) / Spe \($0.spe)"
+        } : nil
         return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
                                   isShiny: mon.isShiny,
                                   nature: mon.nature?.name(language), level: mon.level,
                                   stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
                                   flavorText: nil, language: language,
-                                  types: types,
+                                  types: types, stats: stats,
                                   moves: mon.learnedMoves.map { $0.name(language) },
                                   nextEvolution: nextEvolutionName(for: mon))
     }
@@ -502,6 +508,8 @@ final class CompanionStore {
         let id: UUID
         let name: String
         let level: Int
+        /// 이로치 여부. 도감·로스터 카드에 표식이 붙었는데 대화만 몰랐다 — 개체를 알아보는 값이다.
+        let isShiny: Bool
         let isActive: Bool
     }
 
@@ -509,7 +517,7 @@ final class CompanionStore {
         ownedMons.enumerated().map { index, mon in
             ChatRosterEntry(index: index, id: mon.id,
                             name: chatProfile(for: mon).nickname ?? chatProfile(for: mon).displayName,
-                            level: mon.level, isActive: mon.id == activeMonID)
+                            level: mon.level, isShiny: mon.isShiny, isActive: mon.id == activeMonID)
         }
     }
 

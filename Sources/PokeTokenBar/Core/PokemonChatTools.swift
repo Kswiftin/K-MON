@@ -17,6 +17,8 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
     case adventureClaim = "adventure.claim"
     case bagList = "bag.list"
     case rosterList = "roster.list"
+    case dexProgress = "dex.progress"
+    case challengeStatus = "challenge.status"
     case itemUse = "item.use"
     case evolutionAccept = "evolution.accept"
     case companionSwitch = "companion.switch"
@@ -46,6 +48,10 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
             return "[[tool:\(rawValue)]] — see which items the trainer is carrying"
         case .rosterList:
             return "[[tool:\(rawValue)]] — see the other Pokémon on the team, with their index numbers"
+        case .dexProgress:
+            return "[[tool:\(rawValue)]] — see how far the trainer's Pokédex has come"
+        case .challengeStatus:
+            return "[[tool:\(rawValue)]] — check today's dungeon, gym badges and missions"
         case .itemUse:
             // 이름을 전부 나열하지 않는다(30종 가까이다). 대신 bag.list 가 찍어 주는 이름만
             // 쓰라고 못 박는다 — 모델이 지어낸 이름은 어차피 파싱에서 떨어진다.
@@ -71,6 +77,10 @@ enum PokemonChatToolCall: Equatable, Sendable {
     case adventureClaim
     case bagList
     case rosterList
+    /// 도감 진행도. 세는 자리를 새로 만들지 않고 보상이 읽는 목표 표를 그대로 찍는다.
+    case dexProgress
+    /// 도전 탭(던전·체육관·미션)의 오늘. 입장·도전은 화면이 필요해 도구가 아니다 — 읽기만이다.
+    case challengeStatus
     /// 인자가 닫힌 enum 이다. 임의 문자열을 그대로 받는 인자는 이 목록에 넣지 않는다.
     case itemUse(kind: ItemKind)
     case evolutionAccept
@@ -88,7 +98,8 @@ enum PokemonChatToolCall: Equatable, Sendable {
         case .pokedoroStart, .pokedoroStop, .itemUse, .evolutionAccept, .companionSwitch,
              // 정산은 지갑과 경험치를 움직이고, 경험치가 진화·기술 학습 카드를 띄운다.
              .adventureClaim: return true
-        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList: return false
+        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList,
+             .dexProgress, .challengeStatus: return false
         // 기억하기만 예외다. 남는 건 사용자가 화면에서 방금 읽은 문장뿐이고(모델이 문구를 못 정한다),
         // 앨범에 전체 삭제가 있다. 승인을 붙이면 대화가 매번 카드로 끊긴다.
         case .memoryRecord: return false
@@ -108,7 +119,7 @@ enum PokemonChatToolCall: Equatable, Sendable {
         switch self {
         case .pokedoroStart, .pokedoroStop, .itemUse, .evolutionAccept, .adventureClaim: return true
         case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList,
-             .companionSwitch, .memoryRecord: return false
+             .dexProgress, .challengeStatus, .companionSwitch, .memoryRecord: return false
         }
     }
 
@@ -141,7 +152,8 @@ enum PokemonChatToolCall: Equatable, Sendable {
             return L(language).t("\(index + 1)번째 친구를 데리고 나갈까?",
                                  "Shall we bring out teammate #\(index + 1)?",
                                  "\(index + 1)番目の子を連れて行く？")
-        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList, .memoryRecord:
+        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList, .memoryRecord,
+             .dexProgress, .challengeStatus:
             return L(language).t("확인해 볼까?", "Shall I check?", "確認してみる？")
         }
     }
@@ -175,7 +187,8 @@ enum PokemonChatToolCall: Equatable, Sendable {
             return l.t("친구랑 자리를 바꿨어.", "We swapped places.", "友だちと交代したよ。")
         case .memoryRecord:
             return l.t("방금 이야기를 기억해 둘게.", "I'll remember what we just said.", "いまの話、覚えておくね。")
-        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList:
+        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList,
+             .dexProgress, .challengeStatus:
             return l.t("확인했어.", "Checked.", "確認したよ。")
         }
     }
@@ -220,7 +233,7 @@ enum PokemonChatToolParser {
 
         switch tool {
         case .pokedoroStatus, .pokedoroStop, .bagList, .rosterList, .evolutionAccept, .memoryRecord,
-             .adventureClaim:
+             .adventureClaim, .dexProgress, .challengeStatus:
             // 인자를 받지 않는 도구에 인자가 붙었으면 모델이 다른 것을 의도한 것이다. 추측하지 않는다.
             guard argument == nil else { return nil }
             switch tool {
@@ -230,6 +243,8 @@ enum PokemonChatToolParser {
             case .rosterList: return .rosterList
             case .evolutionAccept: return .evolutionAccept
             case .adventureClaim: return .adventureClaim
+            case .dexProgress: return .dexProgress
+            case .challengeStatus: return .challengeStatus
             // 본문은 여기서 채우지 않는다 — 가드를 통과한 답변으로 스토어가 갈아 끼운다.
             default: return .memoryRecord(body: "")
             }
@@ -316,10 +331,26 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
 
         case .rosterList:
             let lines = companion.chatRosterEntries.map {
-                "index=\($0.index) name=\($0.name) level=\($0.level) active=\($0.isActive)"
+                "index=\($0.index) name=\($0.name) level=\($0.level) shiny=\($0.isShiny) active=\($0.isActive)"
             }
             guard !lines.isEmpty else { return ("roster empty", true) }
             return ("roster " + lines.joined(separator: " | "), true)
+
+        case .dexProgress:
+            // 세는 규칙은 **보상이 읽는 표** 한 곳에만 있다(`dexGoalRows` → `DexGoals.rows`). 여기서
+            // 따로 세면 대화가 말하는 숫자와 실제로 지급되는 목표가 갈라지고, 갈라진 걸 알아챌
+            // 방법은 둘을 손으로 맞대 보는 것뿐이다.
+            let axes = companion.dexGoalRows.map { "\(Self.dexAxisName($0.goal.kind))=\($0.progress)/\($0.goal.target)" }
+            return ("dex " + axes.joined(separator: " "), true)
+
+        case .challengeStatus:
+            // 총량은 카탈로그에서 읽는다 — 숫자를 여기 적으면 콘텐츠가 늘 때 이 줄만 옛말이 된다.
+            let missions = companion.missionRows
+            let done = missions.filter { $0.progress >= $0.mission.target }.count
+            return ("challenge dungeon=\(companion.dungeonCleared ? "cleared" : "open")"
+                    + " budget=\(companion.dungeonBudgetPreview)"
+                    + " badges=\(companion.earnedGymBadges.count)/\(GymLeague.catalog.count)"
+                    + " missions=\(done)/\(missions.count)", true)
 
         case .itemUse(let kind):
             let (line, succeeded) = useItem(kind)
@@ -418,6 +449,16 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
     ///
     /// 알 부화 예정 시각은 넣지 않는다 — 남은 시간을 재려면 실행기가 시계를 들어야 하고, 그러면
     /// 같은 판정이 `StoredEggCountdown` 과 두 벌이 된다. 개수만으로 할 말은 충분하다.
+    /// 도감 축 이름. `DexGoalKind` 는 세이브에 안 들어가려고 rawValue 를 갖지 않는다 — 기계 문자열은
+    /// 다른 도구 줄과 같은 자리(여기)에 두고, 목표 표는 표시를 모르는 채로 남긴다.
+    private static func dexAxisName(_ kind: DexGoalKind) -> String {
+        switch kind {
+        case .species: return "species"
+        case .types: return "types"
+        case .shiny: return "shiny"
+        }
+    }
+
     private func statusLine() -> String {
         var parts = ["pokedoro state=\(timer.phase.rawValue)",
                      "remaining=\(timer.isRunning ? timer.clockText() : "00:00")",

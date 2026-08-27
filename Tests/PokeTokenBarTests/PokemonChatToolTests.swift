@@ -898,7 +898,9 @@ private struct StubToolbox: PokemonChatToolRunning {
         case .pokedexLookup(let id): return ("pokedex #\(id)", true)
         case .pokedoroStart, .pokedoroStop, .adventureClaim: return ("unreachable — approval gated", false)
         case .bagList: return ("bag empty", true)
-        case .rosterList: return ("roster index=0 name=피카츄 active=true", true)
+        case .rosterList: return ("roster index=0 name=피카츄 shiny=false active=true", true)
+        case .dexProgress: return ("dex species=0/10 types=0/9 shiny=0/1", true)
+        case .challengeStatus: return ("challenge dungeon=open budget=100 badges=0/4 missions=0/6", true)
         case .itemUse, .evolutionAccept, .companionSwitch: return ("unreachable — approval gated", false)
         case .memoryRecord(let body): return ("memory recorded len=\(body.count)", true)
         }
