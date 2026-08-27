@@ -43,7 +43,7 @@ struct BattleRank: Codable, Sendable, Equatable {
     var division: Int? { tier < .champion ? 4 - ((max(0, points) % 400) / 100) : nil }
     var lp: Int { max(0, points) % 100 }
     var displayName: String {
-        if let division { return "\(tier.name) Rank \(division) · \(lp) LP" }
+        if let division { return "\(tier.name) R\(division) · \(lp) LP" }
         return "\(tier.name) · \(max(0, points - 1_600)) RP"
     }
 

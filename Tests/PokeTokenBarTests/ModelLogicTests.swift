@@ -9,12 +9,12 @@ final class BattleRankTests: XCTestCase {
     }
 
     func testPokemonChampionsTierOrderAndRanks() {
-        XCTAssertEqual(BattleRank(points: 0).displayName, "Poké Ball Rank 4 · 0 LP")
-        XCTAssertEqual(BattleRank(points: 399).displayName, "Poké Ball Rank 1 · 99 LP")
-        XCTAssertEqual(BattleRank(points: 400).displayName, "Great Ball Rank 4 · 0 LP")
+        XCTAssertEqual(BattleRank(points: 0).displayName, "Poké Ball R4 · 0 LP")
+        XCTAssertEqual(BattleRank(points: 399).displayName, "Poké Ball R1 · 99 LP")
+        XCTAssertEqual(BattleRank(points: 400).displayName, "Great Ball R4 · 0 LP")
         XCTAssertEqual(BattleRank(points: 800).tier, .ultraBall)
         XCTAssertEqual(BattleRank(points: 1_200).tier, .masterBall)
-        XCTAssertEqual(BattleRank(points: 1_599).displayName, "Master Ball Rank 1 · 99 LP")
+        XCTAssertEqual(BattleRank(points: 1_599).displayName, "Master Ball R1 · 99 LP")
         XCTAssertEqual(BattleRank(points: 1_600).displayName, "Champion · 0 RP")
         XCTAssertEqual(BattleRank(points: 3_999).displayName, "Champion · 2399 RP")
     }
