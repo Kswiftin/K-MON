@@ -544,6 +544,112 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertEqual(store.itemCount(.heartScale), 1, "고르기도 전에 소모됐다")
     }
 
+    // MARK: 누구의 대화인가
+    //
+    // 대화 창은 **박스 개체로도 열린다**(`PokemonRosterView`). 실행기는 `companion` 을 통째로
+    // 들고 있어서 아무 방어가 없으면 모든 도구가 "지금 나와 있는 개체" 에 작용한다 — 사용자는
+    // 박스 피카츄 창에서 승인하는데 활성 파이리가 사탕을 먹는다.
+
+    /// 기억은 대화의 주인 앨범에 남아야 한다. 활성 개체 앨범에 적으면 이 창에서는 영영 안 보이고,
+    /// 남의 앨범이 이 대화의 문장으로 오염된다.
+    func testMemoryFromABoxedCompanionsChatLandsInThatCompanionsAlbum() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let active = store.activeMonID!
+        let boxed = Self.spareMon()
+        store.debugSetBoxedMons([boxed])
+        let album = makeAlbum()
+        let chat = PokemonChatStore(fileURL: temporaryURL(), album: album)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: album, lookup: Self.emptyLookup)
+
+        await chat.send("잘 있었어?", for: boxed.id, profile: .toolFixture,
+                        provider: CountingToolProvider(reply: "응, 잘 있었어! [[tool:memory.record]]"),
+                        toolbox: toolbox)
+
+        XCTAssertEqual(album.entries(for: boxed.id).map(\.body), ["응, 잘 있었어!"],
+                       "대화의 주인 앨범에 안 남았다")
+        XCTAssertTrue(album.entries(for: active).isEmpty, "남의 앨범에 적혔다")
+    }
+
+    /// 대상을 인자로 받지 않는 상태 변경 도구는 암시적으로 "지금 나와 있는 나" 에 작용한다.
+    /// 그래서 활성 동행의 대화에서만 돈다 — 승인 카드가 가리키는 개체와 실행 대상이 같아야 한다.
+    func testToolsThatActOnMeRefuseFromABoxedCompanionsChat() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let active = store.activeMonID!
+        let boxed = Self.spareMon()
+        store.debugSetBoxedMons([boxed])
+        store.debugAddItem(.rareCandy, 1)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        for call: PokemonChatToolCall in [.itemUse(kind: .rareCandy), .pokedoroStart(minutes: 25),
+                                          .pokedoroStop, .evolutionAccept] {
+            let refused = await toolbox.run(call, owner: boxed.id)
+            XCTAssertFalse(refused.succeeded, "\(call) 가 남의 대화에서 실행됐다: \(refused.line)")
+        }
+        XCTAssertEqual(store.itemCount(.rareCandy), 1, "남의 대화에서 사탕이 소모됐다")
+        XCTAssertNil(store.activeAdventure, "남의 대화에서 모험이 나갔다")
+
+        // 가드가 기능 자체를 죽이면 안 된다 — 활성 동행의 대화에서는 그대로 돈다.
+        let allowed = await toolbox.run(.itemUse(kind: .rareCandy), owner: active)
+        XCTAssertTrue(allowed.succeeded, allowed.line)
+        XCTAssertEqual(store.itemCount(.rareCandy), 0)
+    }
+
+    /// 예외 둘을 못 박는다. 교체는 **인자로 대상을 지목**하므로 남의 대화에서도 뜻이 분명하고,
+    /// 읽기 도구는 트레이너의 것이다. 가드를 뭉뚱그려 걸면 박스 개체가 "나를 데리고 나가줘" 라고
+    /// 말할 수 없고, 도감 조회조차 창에 따라 막힌다.
+    func testTargetedAndReadOnlyToolsStillWorkFromABoxedCompanionsChat() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let boxed = Self.spareMon()
+        store.debugSetBoxedMons([boxed])
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        let benched = store.chatRosterEntries.first { !$0.isActive }!
+
+        for call: PokemonChatToolCall in [.bagList, .rosterList, .pokedoroStatus] {
+            let read = await toolbox.run(call, owner: boxed.id)
+            XCTAssertTrue(read.succeeded, "읽기가 남의 대화에서 막혔다: \(call)")
+        }
+
+        let switched = await toolbox.run(.companionSwitch(index: benched.index), owner: boxed.id)
+        XCTAssertTrue(switched.succeeded, switched.line)
+        XCTAssertEqual(store.activeMonID, benched.id)
+    }
+
+    /// 박스 개체 대화에서 승인한 호출도 **제안이 지목한 개체**로 실행된다. 스토어가 개체 ID 를
+    /// 넘겨주는 것만으로는 부족하다 — 받는 쪽이 그 값을 실행에 쓰는지까지가 계약이다.
+    func testApprovalPathCarriesTheProposalsCompanionIntoTheExecutor() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let boxed = Self.spareMon()
+        store.debugSetBoxedMons([boxed])
+        store.debugAddItem(.rareCandy, 1)
+        let chat = PokemonChatStore(fileURL: temporaryURL())
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        chat.proposeForTesting(.itemUse(kind: .rareCandy), companionID: boxed.id)
+
+        // 프로덕션 뷰가 쓰는 것과 같은 모양의 실행기 — 개체 ID 를 버리면 이 테스트가 깨진다.
+        await chat.resolvePending(approved: true, profile: .toolFixture) { call, owner in
+            await toolbox.run(call, owner: owner).succeeded
+        }
+
+        XCTAssertEqual(store.itemCount(.rareCandy), 1, "남의 대화의 승인이 활성 개체에 적용됐다")
+        XCTAssertEqual(chat.messages(for: boxed.id).last?.body,
+                       PokemonChatToolCall.itemUse(kind: .rareCandy)
+                           .outcome(approved: true, success: false, language: .ko),
+                       "실패가 성공 문구로 보고됐다")
+    }
+
+    private static func spareMon() -> MonState {
+        MonState(baseID: 25, pathIDs: [25], plannedPathIDs: [25], stageIndex: 0,
+                 usedAtStage: 0, rarity: .common, totalForms: 1)
+    }
+
     private static let levelGatedLine = EvoLine(
         baseID: 40, tree: EvoNode(speciesID: 40, children: [EvoNode(speciesID: 41, children: [], evolutionLevel: 5)]),
         rarity: .common, names: [40: ["ko": "푸린"], 41: ["ko": "푸크린"]])
