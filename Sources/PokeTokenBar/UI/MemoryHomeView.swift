@@ -11,6 +11,76 @@ enum MemoryHomeRoomTheme {
     }
 }
 
+/// 카드 아이콘·제목. `Kind` 에 케이스를 더하면 여기 `switch` 가 컴파일 에러로 알려 주고,
+/// 테스트가 세 언어 문구까지 확인한다 — 뷰 안 `private` 함수였을 때는 둘 다 없었다.
+enum MemoryHomeCardStyle {
+    static func icon(_ milestone: PokemonMemoryMilestone) -> String {
+        switch milestone.kind {
+        case .firstMeeting: "person.2.fill"
+        case .focusSessions: "timer"
+        case .evolution: "arrow.triangle.2.circlepath"
+        case .anniversary: "sparkles"
+        case .togetherDays: "heart.circle.fill"
+        case .homeVisits: "figure.wave"
+        }
+    }
+
+    static func title(_ milestone: PokemonMemoryMilestone, _ l: L) -> String {
+        switch milestone.kind {
+        case .firstMeeting: l.t("첫 만남", "First meeting", "最初の出会い")
+        case .focusSessions(let count): l.t("집중 모험 \(count)회", "\(count) focus adventures", "集中冒険 \(count) 回")
+        case .evolution: l.t("진화의 순간", "Evolution moment", "進化の瞬間")
+        case .anniversary: l.t("첫 만남 1주년", "First-meeting anniversary", "最初の出会い 1周年")
+        case .togetherDays(let days): l.t("함께한 \(days)일", "\(days) days together", "いっしょに \(days) 日")
+        case .homeVisits(let count): l.t("방문 \(count)명 달성", "\(count) home visits", "訪問 \(count) 件達成")
+        }
+    }
+}
+
+/// 뷰 안의 `private` 함수로 두면 세 언어 문구가 무테스트로 남는다 — `MemoryHomeRoomTheme` 와 같은
+/// 이유로 파일 스코프의 순수 헬퍼로 뺀다. 종별 반응은 없다: 1000종 × 5기분은 헤더의 범위가 아니다.
+enum MemoryHomeMoodStyle {
+    static func emoji(_ mood: MemoryHomeMood) -> String {
+        switch mood {
+        case .excited: "😊"
+        case .calm: "😌"
+        case .down: "😢"
+        case .annoyed: "😡"
+        case .fluttering: "💗"
+        }
+    }
+
+    static func name(_ mood: MemoryHomeMood, _ l: L) -> String {
+        switch mood {
+        case .excited: l.t("신남", "Excited", "うきうき")
+        case .calm: l.t("평범", "Calm", "ふつう")
+        case .down: l.t("우울", "Down", "しずんだ")
+        case .annoyed: l.t("짜증", "Annoyed", "いらいら")
+        case .fluttering: l.t("설렘", "Fluttering", "どきどき")
+        }
+    }
+
+    static func reaction(_ mood: MemoryHomeMood, companion: String, _ l: L) -> String {
+        switch mood {
+        case .excited: l.t("\(companion)도 꼬리를 흔들며 같이 신났어요.",
+                           "\(companion) is bouncing around with you.",
+                           "\(companion)も一緒にうきうきしています。")
+        case .calm: l.t("\(companion)이 옆에서 조용히 낮잠을 자요.",
+                        "\(companion) is dozing quietly beside you.",
+                        "\(companion)がそばで静かに眠っています。")
+        case .down: l.t("\(companion)이 말없이 옆에 앉았어요.",
+                        "\(companion) sat down next to you without a word.",
+                        "\(companion)が何も言わずに隣に座りました。")
+        case .annoyed: l.t("\(companion)도 같이 머리를 감싸 쥐었어요.",
+                           "\(companion) is holding its head right along with you.",
+                           "\(companion)も一緒に頭を抱えています。")
+        case .fluttering: l.t("\(companion)이 하트를 띄웠어요.",
+                              "\(companion) let out a little heart.",
+                              "\(companion)がハートを浮かべました。")
+        }
+    }
+}
+
 struct MemoryHomeView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(MemoryHomeVisitCenter.self) private var visits
@@ -21,6 +91,9 @@ struct MemoryHomeView: View {
     @State private var showingPublicNicknameEditor = false
     @State private var publicNicknameDraft = ""
     @State private var publicNicknameError: String?
+    @State private var showingProfileMessageEditor = false
+    @State private var profileMessageDraft = ""
+    @State private var profileMessageError: String?
 
     private var l: L { store.l }
 
@@ -35,7 +108,9 @@ struct MemoryHomeView: View {
         let roomTint = MemoryHomeRoomTheme.tint(for: roomTheme)
 
         return AnyView(VStack(alignment: .leading, spacing: 10) {
+            visitCounterRow(album: album)
             roomHeader(mon: mon, entries: entries, milestones: milestones, theme: roomTheme, tint: roomTint)
+            moodRow(album: album, mon: mon)
 
             HStack {
                 Button { showingVisits = true } label: {
@@ -48,6 +123,21 @@ struct MemoryHomeView: View {
                         publicNicknameDraft = album.memoryHomePublicNickname
                         publicNicknameError = nil
                         showingPublicNicknameEditor = true
+                    }
+                    Button(l.t("대문 문구 편집", "Edit home message", "ホームの一言を編集")) {
+                        profileMessageDraft = album.memoryHomeAccess.profileMessage ?? ""
+                        profileMessageError = nil
+                        showingProfileMessageEditor = true
+                    }
+                    if album.memoryHomeAccess.profileMessage != nil {
+                        Button(album.memoryHomeAccess.sharesProfileMessage
+                               ? l.t("대문 문구 공유 해제", "Stop sharing home message", "一言の共有をやめる")
+                               : l.t("대문 문구 공유", "Share home message", "一言を共有")) {
+                            album.setSharesProfileMessage(!album.memoryHomeAccess.sharesProfileMessage)
+                        }
+                        Button(l.t("대문 문구 삭제", "Delete home message", "一言を削除"), role: .destructive) {
+                            album.clearProfileMessage()
+                        }
                     }
                     Button(store.memoryAlbum.memoryHomeAccess.visibility == .open
                            ? l.t("홈 차단", "Block home", "ホームをブロック")
@@ -161,7 +251,72 @@ struct MemoryHomeView: View {
         } message: {
             Text(publicNicknameError ?? l.t("이 이름만 같은 LAN에 공개됩니다.", "Only this name is shared on your local network.", "この名前だけが同じLANに公開されます。"))
         }
+        .alert(l.t("대문 문구", "Home message", "ホームの一言"), isPresented: $showingProfileMessageEditor) {
+            TextField(l.t("대문 문구", "Home message", "ホームの一言"), text: $profileMessageDraft)
+            Button(l.t("저장", "Save", "保存")) {
+                if store.memoryAlbum.setProfileMessage(profileMessageDraft) {
+                    profileMessageError = nil
+                } else {
+                    profileMessageError = l.t("줄바꿈 없이 1~60자로 입력해 주세요.",
+                                              "Use 1–60 characters with no line breaks.",
+                                              "改行なしで1〜60文字にしてください。")
+                    showingProfileMessageEditor = true
+                }
+            }
+            Button(l.t("취소", "Cancel", "キャンセル"), role: .cancel) {}
+        } message: {
+            // 기본값은 비공개다. 공유는 메뉴에서 따로 켜야 한다 — 저장이 곧 공개가 되면
+            // 사용자가 동의하지 않은 문구가 LAN 으로 나간다.
+            Text(profileMessageError ?? l.t("저장해도 공개되지 않아요. 공유는 따로 켜 주세요.",
+                                            "Saving does not share it. Turn sharing on separately.",
+                                            "保存しても公開されません。共有は別に有効化してください。"))
+        }
         )
+    }
+
+    /// 싸이월드 미니홈피의 그 줄. 경쟁 지표가 아니라 기념일 트리거라서 랭킹·비교는 넣지 않는다.
+    private func visitCounterRow(album: PokemonMemoryAlbum) -> some View {
+        let today = album.memoryHomeAccess.visitToday, total = album.memoryHomeAccess.visitTotal
+        return HStack(spacing: 6) {
+            Text("TODAY").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text("\(today)").font(.caption.weight(.bold).monospacedDigit()).foregroundStyle(PokedoroTheme.red)
+            Text("TOTAL").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(.leading, 6)
+            Text("\(total)").font(.caption.weight(.bold).monospacedDigit())
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(l.t("오늘 방문 \(today)명, 전체 방문 \(total)명",
+                                "\(today) visits today, \(total) total",
+                                "本日の訪問 \(today) 件、累計 \(total) 件"))
+    }
+
+    /// 순수 자기표현이다 — 스탯·보상·포획률에 아무 영향이 없다. 종별 반응은 넣지 않는다:
+    /// 1000종 × 5기분은 헤더 기능의 범위가 아니다.
+    private func moodRow(album: PokemonMemoryAlbum, mon: MonState) -> some View {
+        let current = album.mood()
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 4) {
+                Text(l.t("오늘 기분", "Today's mood", "今日の気分"))
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                ForEach(MemoryHomeMood.allCases, id: \.self) { mood in
+                    Button { album.setMood(mood) } label: {
+                        Text(MemoryHomeMoodStyle.emoji(mood)).font(.body)
+                            .frame(minWidth: 26, minHeight: 26)
+                            .background(current == mood ? PokedoroTheme.yellow.opacity(0.32) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(MemoryHomeMoodStyle.name(mood, l))
+                    .accessibilityAddTraits(current == mood ? [.isSelected] : [])
+                }
+            }
+            if let current {
+                Text(MemoryHomeMoodStyle.reaction(current, companion: store.chatProfile(for: mon).displayName, l))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(8).pokedoroCard(tint: PokedoroTheme.yellow)
     }
 
     private func roomHeader(mon: MonState, entries: [PokemonMemory], milestones: [PokemonMemoryMilestone], theme: PokemonMemoryRoomTheme, tint: Color) -> some View {
@@ -175,6 +330,17 @@ struct MemoryHomeView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(l.t("우리의 미니룸", "Our mini room", "ふたりのミニルーム")).font(.headline)
                 Text(store.chatProfile(for: mon).displayName).font(.subheadline.weight(.semibold))
+                if let message = store.memoryAlbum.memoryHomeAccess.profileMessage {
+                    HStack(spacing: 3) {
+                        Text(message).font(.caption.italic()).foregroundStyle(PokedoroTheme.blue).lineLimit(2)
+                        // 공유 중일 때만 아이콘이 뜬다 — 내 문구가 지금 LAN 에 나가는지 화면에서 바로 보이게.
+                        if store.memoryAlbum.memoryHomeAccess.sharesProfileMessage {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .accessibilityLabel(l.t("LAN에 공유 중", "Shared on your local network", "LANに共有中"))
+                        }
+                    }
+                }
                 Text(firstMeetingText(mon.id)).font(.caption).foregroundStyle(.secondary)
                 Text(l.t("기억 \(entries.count)개 · 카드 \(milestones.count)개",
                          "\(entries.count) memories · \(milestones.count) cards",
@@ -217,34 +383,16 @@ struct MemoryHomeView: View {
 
     private func milestoneCard(_ milestone: PokemonMemoryMilestone, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Image(systemName: milestoneIcon(milestone))
+            Image(systemName: MemoryHomeCardStyle.icon(milestone))
                 .font(.title3.weight(.semibold)).foregroundStyle(tint)
-            Text(milestoneTitle(milestone)).font(.subheadline.weight(.semibold)).lineLimit(2)
+            Text(MemoryHomeCardStyle.title(milestone, l)).font(.subheadline.weight(.semibold)).lineLimit(2)
             Text(formattedDate(milestone.occurredAt)).font(.caption).foregroundStyle(.secondary)
         }
         .frame(width: 132, height: 98, alignment: .leading)
         .padding(10)
         .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(milestoneTitle(milestone) + ", " + formattedDate(milestone.occurredAt))
-    }
-
-    private func milestoneIcon(_ milestone: PokemonMemoryMilestone) -> String {
-        switch milestone.kind {
-        case .firstMeeting: "person.2.fill"
-        case .focusSessions: "timer"
-        case .evolution: "arrow.triangle.2.circlepath"
-        case .anniversary: "sparkles"
-        }
-    }
-
-    private func milestoneTitle(_ milestone: PokemonMemoryMilestone) -> String {
-        switch milestone.kind {
-        case .firstMeeting: l.t("첫 만남", "First meeting", "最初の出会い")
-        case .focusSessions(let count): l.t("집중 모험 \(count)회", "\(count) focus adventures", "集中冒険 \(count) 回")
-        case .evolution: l.t("진화의 순간", "Evolution moment", "進化の瞬間")
-        case .anniversary: l.t("첫 만남 1주년", "First-meeting anniversary", "最初の出会い 1周年")
-        }
+        .accessibilityLabel(MemoryHomeCardStyle.title(milestone, l) + ", " + formattedDate(milestone.occurredAt))
     }
 
     private func themeName(_ theme: PokemonMemoryRoomTheme) -> String {
@@ -306,7 +454,10 @@ private struct MemoryHomeVisitSheet: View {
             if let profile = visits.selectedProfile {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(profile.displayName).font(.title3.weight(.bold))
-                    Text("#(profile.speciesID)" + (profile.isShiny ? " ✨" : ""))
+                    if let message = profile.profileMessage {
+                        Text(message).font(.caption.italic()).foregroundStyle(PokedoroTheme.blue)
+                    }
+                    Text(profile.speciesLabel)
                     if let memory = profile.sharedMemoryBody { Text(memory).font(.callout) }
                 }.padding().pokedoroCard(tint: PokedoroTheme.mint)
             }

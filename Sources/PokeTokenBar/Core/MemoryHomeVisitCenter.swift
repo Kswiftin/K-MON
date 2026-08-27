@@ -9,6 +9,15 @@ struct MemoryHomeProfileCard: Codable, Sendable, Equatable {
     var speciesID: Int
     var isShiny: Bool
     var sharedMemoryBody: String?
+    /// 대문 문구. `Optional` 이라 합성 `Codable` 이 `decodeIfPresent` 를 쓴다 → 이 키가 없는
+    /// R4 이전 피어의 페이로드도 그대로 디코드되므로 `protocolVersion` 은 1 을 유지한다.
+    /// 여기를 "기본값 있는 비옵셔널"로 바꾸면 그 경로는 **throw 한다** — 옵셔널로 남겨야 한다.
+    var profileMessage: String?
+
+    /// Shown in the visit sheet. This was inline in the view with the interpolation backslash
+    /// missing — Swift accepts that as a plain literal, so it shipped printing the expression
+    /// source verbatim. It is a tested pure property now; `test-gate.sh` greps for the typo class.
+    var speciesLabel: String { "#\(speciesID)" + (isShiny ? " ✨" : "") }
 }
 
 enum MemoryHomeVisitRequest: Codable, Sendable, Equatable {
@@ -143,14 +152,25 @@ final class MemoryHomeVisitCenter {
     /// Do not fall back to the trainer name: malformed/legacy payloads still get a safe album
     /// fallback, never an accidental disclosure.
     private var localDisplayName: String { companion.memoryAlbum.memoryHomePublicNickname }
+    /// 대문 문구는 `profileMessageForSharing` 만 읽는다 — 공유를 명시적으로 켠 경우에만 값이
+    /// 나오는 프로퍼티다. `memoryHomeAccess.profileMessage` 를 직접 읽으면 동의 없이 새어 나간다.
     private func profileCard() -> MemoryHomeProfileCard {
-        guard let mon = companion.state.active else { return .init(displayName: localDisplayName, speciesID: 1, isShiny: false, sharedMemoryBody: nil) }
+        let sharedMessage = companion.memoryAlbum.profileMessageForSharing
+        guard let mon = companion.state.active else {
+            return .init(displayName: localDisplayName, speciesID: 1, isShiny: false,
+                         sharedMemoryBody: nil, profileMessage: sharedMessage)
+        }
         return .init(displayName: localDisplayName, speciesID: mon.currentID, isShiny: mon.isShiny,
-                     sharedMemoryBody: companion.memoryAlbum.sharedPinnedMemory(for: mon.id)?.body)
+                     sharedMemoryBody: companion.memoryAlbum.sharedPinnedMemory(for: mon.id)?.body,
+                     profileMessage: sharedMessage)
     }
-    private static func valid(_ card: MemoryHomeProfileCard) -> Bool {
+    /// 신뢰경계 클램프다 — `private` 로 두면 원격 페이로드 검증이 무테스트로 남는다.
+    nonisolated static func valid(_ card: MemoryHomeProfileCard) -> Bool {
         guard clean(card.displayName, limit: 40) != nil, card.speciesID > 0, card.speciesID <= 10_000 else { return false }
-        return card.sharedMemoryBody.map { clean($0, limit: 280) != nil } ?? true
+        guard card.sharedMemoryBody.map({ clean($0, limit: 280) != nil }) ?? true else { return false }
+        // 문구는 내부 공백을 허용하므로 `clean` 이 아니라 앨범과 같은 검증기를 쓴다 — 두 곳이
+        // 규칙을 따로 가지면 내가 저장할 수 있는 문구를 상대가 거부하게 된다.
+        return card.profileMessage.map { PokemonMemoryAlbum.validProfileMessage($0) != nil } ?? true
     }
     nonisolated static func clean(_ value: String, limit: Int) -> String? {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -161,19 +181,34 @@ final class MemoryHomeVisitCenter {
         return value
     }
     private static func parameters() -> NWParameters { NWParameters.tcp }
-    private func send<T: Encodable>(_ value: T, over connection: NWConnection, completion: @escaping () -> Void = {}) {
+    /// 완료 핸들러를 `@MainActor` 함수 타입으로 못 박는다. 이유가 둘 있다:
+    /// 1) 전역 액터 격리 함수 타입은 암묵적으로 `Sendable` 이라, `@Sendable` 인 Network 콜백에
+    ///    캡처될 수 있다 — 그냥 `() -> Void` 로 두면 Swift 6 concurrency warning 이 남는다.
+    /// 2) 호출부(`receiveRequest` 등)는 앨범·상태 같은 MainActor 상태를 직접 만진다. 파라미터를
+    ///    `@Sendable` 로 바꾸면 그 호출부가 전부 깨지므로, 격리를 없애는 게 아니라 **명시**해야 한다.
+    /// 그래서 Network 콜백 안에서는 `Task { @MainActor in }` 로 한 번 홉한다.
+    /// 프레임은 요청→응답 1회 왕복뿐이라 이 홉이 순서를 바꾸지 않는다.
+    private func send<T: Encodable & Sendable>(_ value: T, over connection: NWConnection,
+                                              completion: @escaping @MainActor () -> Void = {}) {
         guard let data = try? JSONEncoder().encode(value), data.count <= Int(Self.maxFrameBytes) else { connection.cancel(); return }
         var length = UInt32(data.count).bigEndian; let header = Data(bytes: &length, count: 4)
-        connection.send(content: header + data, completion: .contentProcessed { _ in completion() })
+        connection.send(content: header + data, completion: .contentProcessed { _ in
+            Task { @MainActor in completion() }
+        })
     }
-    private func receive<T: Decodable>(_ type: T.Type, on connection: NWConnection, completion: @escaping (T) -> Void) {
-        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { [weak self] header, _, _, error in
-            guard let self, error == nil, let header, header.count == 4 else { connection.cancel(); return }
+    /// `T: Sendable` 은 메타타입(`T.Type`)이 격리 클로저로 넘어갈 수 있게 하려고 붙인다.
+    /// 이 전송로의 페이로드 두 종은 이미 `Sendable` 이라 실질 제약이 아니다.
+    private func receive<T: Decodable & Sendable>(_ type: T.Type, on connection: NWConnection,
+                                                 completion: @escaping @MainActor (T) -> Void) {
+        // `self` 를 쓰지 않는다 — 프레임 상한은 `Self` 로 읽으므로 weak 캡처가 필요 없었다.
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, error in
+            guard error == nil, let header, header.count == 4 else { connection.cancel(); return }
             let length = header.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
             guard length > 0, length <= Self.maxFrameBytes else { connection.cancel(); return }
             connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { data, _, _, error in
-                guard error == nil, let data, data.count == Int(length), let value = try? JSONDecoder().decode(T.self, from: data) else { connection.cancel(); return }
-                completion(value)
+                guard error == nil, let data, data.count == Int(length),
+                      let value = try? JSONDecoder().decode(T.self, from: data) else { connection.cancel(); return }
+                Task { @MainActor in completion(value) }
             }
         }
     }

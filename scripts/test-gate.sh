@@ -84,6 +84,21 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/RunProgress.swift"
 )
 
+# 문자열 보간에서 백슬래시가 빠진 오타는 Swift 가 **평범한 리터럴로 받아들인다** — 컴파일러도
+# warning 게이트도 절대 못 잡고, 화면에 표현식 소스가 그대로 찍힌 채 릴리스로 나간다
+# (MemoryHomeView 방문 시트가 종 번호 대신 표현식을 그대로 렌더한 채 fb7e67e 로 배포됐다).
+# 라인 커버리지로는 못 막는 부류다(그 줄은 "실행"되므로) → 기계로 막을 수 있는 유일한 형태가 grep 이다.
+echo "▶ 보간 오타 스윕 (백슬래시 누락)"
+BAD_INTERPOLATION=$(grep -rn '#(' Sources Tests | grep -v '\\#(' || true)
+if [[ -n "$BAD_INTERPOLATION" ]]; then
+  echo "✗ 백슬래시가 빠진 문자열 보간 $(wc -l <<< "$BAD_INTERPOLATION" | tr -d ' ')건 —" \
+       "리터럴로 렌더됩니다. 의도한 raw string 이면 \\#( 를 쓰세요." >&2
+  echo "$BAD_INTERPOLATION" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+echo
 echo "▶ swift test (--enable-code-coverage)"
 TEST_LOG=$(mktemp)
 LOCALE_LOG=$(mktemp)

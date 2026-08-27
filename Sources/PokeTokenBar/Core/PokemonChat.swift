@@ -235,6 +235,12 @@ struct MemoryHomeRecentRequester: Codable, Sendable, Equatable, Identifiable {
     var id: UUID { peerID }
 }
 
+/// 미니홈피 대문의 "오늘 기분". 순수 자기표현이다 — PRD 고정 규칙상 스탯·보상·포획률·진화·랭킹에
+/// 어떤 영향도 주지 않는다. 그래서 `MonState` 가 아니라 홈 설정에 산다.
+enum MemoryHomeMood: String, Codable, Sendable, CaseIterable {
+    case excited, calm, down, annoyed, fluttering
+}
+
 struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     /// The only owner-controlled name that may be advertised on the local network. `nil`
     /// identifies a pre-nickname album and is filled once from the trainer name.
@@ -244,9 +250,30 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     var sharedPinnedMemoryID: UUID?
     var recentRequesters: [MemoryHomeRecentRequester] = []
     var blockedPeerIDs: Set<UUID> = []
+    /// TODAY/TOTAL. TODAY 는 `visitTodayPeerIDs.count` 로 **파생**한다 — 따로 저장하면 두 값이
+    /// 어긋날 수 있다. TOTAL 은 TODAY 가 오를 때만 오르므로 둘이 모순될 수 없다.
+    var visitTotal: Int = 0
+    var visitDayKey: String?
+    var visitTodayPeerIDs: Set<UUID> = []
+    var visitThresholdDates: [Int: Date] = [:]
+    /// 대문 문구. 수동 기억과 **다른 필드**라서 "수동 기억은 LAN 에 안 나간다" 불변식을 건드리지
+    /// 않는다. 대신 자기 몫의 명시적 opt-in 을 가지며 기본값은 비공개다.
+    var profileMessage: String?
+    var sharesProfileMessage: Bool = false
+    /// 하루 한 개. dayKey 는 `%04d-%02d-%02d` 라 문자열 정렬이 곧 시간순 → 최신 60개만 남긴다.
+    var moodByDayKey: [String: MemoryHomeMood] = [:]
+
+    static let visitThresholds = [10, 100, 1000]
+    static let moodHistoryLimit = 60
+    static let visitTodayPeerLimit = 200
+    static let profileMessageLimit = 60
+
+    var visitToday: Int { visitTodayPeerIDs.count }
 
     private enum CodingKeys: String, CodingKey {
-        case publicNickname, visibility, sharedPinnedMemoryID, recentRequesters, blockedPeerIDs
+        case publicNickname, visibility, sharedPinnedMemoryID, recentRequesters, blockedPeerIDs,
+             visitTotal, visitDayKey, visitTodayPeerIDs, visitThresholdDates,
+             profileMessage, sharesProfileMessage, moodByDayKey
     }
     init(publicNickname: String? = nil, visibility: MemoryHomeVisibility = .open,
          sharedPinnedMemoryID: UUID? = nil, recentRequesters: [MemoryHomeRecentRequester] = [],
@@ -264,6 +291,15 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
         sharedPinnedMemoryID = try c.decodeIfPresent(UUID.self, forKey: .sharedPinnedMemoryID)
         recentRequesters = try c.decodeIfPresent([MemoryHomeRecentRequester].self, forKey: .recentRequesters) ?? []
         blockedPeerIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .blockedPeerIDs) ?? []
+        // R4 keys. `decodeIfPresent` 라 R4 이전 세이브가 그대로 열린다 — 여기서 비옵셔널
+        // `decode` 를 쓰면 기존 사용자 전원의 앨범이 `.corrupt` 로 밀려난다.
+        visitTotal = try c.decodeIfPresent(Int.self, forKey: .visitTotal) ?? 0
+        visitDayKey = try c.decodeIfPresent(String.self, forKey: .visitDayKey)
+        visitTodayPeerIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .visitTodayPeerIDs) ?? []
+        visitThresholdDates = try c.decodeIfPresent([Int: Date].self, forKey: .visitThresholdDates) ?? [:]
+        profileMessage = try c.decodeIfPresent(String.self, forKey: .profileMessage)
+        sharesProfileMessage = try c.decodeIfPresent(Bool.self, forKey: .sharesProfileMessage) ?? false
+        moodByDayKey = try c.decodeIfPresent([String: MemoryHomeMood].self, forKey: .moodByDayKey) ?? [:]
     }
 }
 
@@ -347,7 +383,12 @@ struct PokemonMemoryMilestoneState: Codable, Sendable, Equatable {
 }
 
 struct PokemonMemoryMilestone: Identifiable, Sendable, Equatable {
-    enum Kind: Sendable, Equatable { case firstMeeting, focusSessions(Int), evolution(speciesID: Int), anniversary }
+    /// `togetherDays` 는 30·100 일만 쓴다 — 365 는 이미 `anniversary` 카드가 같은 날짜를 덮어
+    /// 사실상 같은 카드가 두 장 뜬다. `homeVisits` 는 동행이 아니라 **홈** 단위 기록이다.
+    enum Kind: Sendable, Equatable {
+        case firstMeeting, focusSessions(Int), evolution(speciesID: Int), anniversary
+        case togetherDays(Int), homeVisits(Int)
+    }
 
     let id: String
     let kind: Kind
@@ -406,23 +447,36 @@ final class PokemonMemoryAlbum {
         guard let pinnedID = pinnedMemoryIDs[id] else { return nil }
         return entries(for: id).first { $0.id == pinnedID }
     }
+    static let togetherDayThresholds = [30, 100]
+
     func milestones(for companionID: UUID, now: Date = Date()) -> [PokemonMemoryMilestone] {
-        guard let state = milestoneStates[companionID] else { return [] }
-        var result: [PokemonMemoryMilestone] = []
-        if let firstMetAt = state.firstMetAt {
-            result.append(PokemonMemoryMilestone(id: "first-meeting", kind: .firstMeeting, occurredAt: firstMetAt))
-            if let anniversary = Calendar.current.date(byAdding: .year, value: 1, to: firstMetAt), anniversary <= now {
-                result.append(PokemonMemoryMilestone(id: "anniversary-1", kind: .anniversary, occurredAt: anniversary))
+        // 방문 카드는 동행이 아니라 홈에 속하므로 `milestoneStates` 유무와 무관하게 먼저 모은다.
+        // guard 안에 두면 아직 마일스톤 기록이 없는 동행의 방에서 홈 기록이 통째로 사라진다.
+        var result = memoryHomeAccess.visitThresholdDates
+            .filter { MemoryHomeAccessSettings.visitThresholds.contains($0.key) }
+            .map { PokemonMemoryMilestone(id: "home-visits-\($0.key)", kind: .homeVisits($0.key), occurredAt: $0.value) }
+        if let state = milestoneStates[companionID] {
+            if let firstMetAt = state.firstMetAt {
+                result.append(PokemonMemoryMilestone(id: "first-meeting", kind: .firstMeeting, occurredAt: firstMetAt))
+                if let anniversary = Calendar.current.date(byAdding: .year, value: 1, to: firstMetAt), anniversary <= now {
+                    result.append(PokemonMemoryMilestone(id: "anniversary-1", kind: .anniversary, occurredAt: anniversary))
+                }
+                // 이미 저장된 `firstMetAt` 산술이라 신규 저장이 전혀 필요 없다.
+                for days in Self.togetherDayThresholds {
+                    guard let reached = Calendar.current.date(byAdding: .day, value: days, to: firstMetAt),
+                          reached <= now else { continue }
+                    result.append(PokemonMemoryMilestone(id: "together-\(days)", kind: .togetherDays(days), occurredAt: reached))
+                }
             }
-        }
-        for threshold in [10, 30, 100] {
-            if let date = state.focusThresholdDates[threshold] {
-                result.append(PokemonMemoryMilestone(id: "focus-\(threshold)", kind: .focusSessions(threshold), occurredAt: date))
+            for threshold in [10, 30, 100] {
+                if let date = state.focusThresholdDates[threshold] {
+                    result.append(PokemonMemoryMilestone(id: "focus-\(threshold)", kind: .focusSessions(threshold), occurredAt: date))
+                }
             }
+            result.append(contentsOf: state.evolutions.map {
+                PokemonMemoryMilestone(id: "evolution:\($0.eventID)", kind: .evolution(speciesID: $0.evolvedSpeciesID), occurredAt: $0.occurredAt)
+            })
         }
-        result.append(contentsOf: state.evolutions.map {
-            PokemonMemoryMilestone(id: "evolution:\($0.eventID)", kind: .evolution(speciesID: $0.evolvedSpeciesID), occurredAt: $0.occurredAt)
-        })
         return result.sorted { $0.occurredAt == $1.occurredAt ? $0.id < $1.id : $0.occurredAt < $1.occurredAt }
     }
     func firstRecordedAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstRecordedAt }
@@ -578,15 +632,93 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.sharedPinnedMemoryID = memory.id; save()
     }
     func clearSharedPinnedMemory() { guard memoryHomeAccess.sharedPinnedMemoryID != nil else { return }; memoryHomeAccess.sharedPinnedMemoryID = nil; save() }
-    func recordMemoryHomeRequester(displayName: String, peerID: UUID) {
+    /// TODAY/TOTAL 도 여기서 오른다. 이 경로는 가시성·차단 검사를 통과한 **수락된** 방문 한 건당
+    /// 정확히 한 번 불린다(`MemoryHomeVisitCenter.receiveRequest`).
+    func recordMemoryHomeRequester(displayName: String, peerID: UUID, now: Date = Date()) {
         let name = String(displayName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
         guard !name.isEmpty else { return }
         memoryHomeAccess.recentRequesters.removeAll { $0.peerID == peerID }
         memoryHomeAccess.recentRequesters.insert(.init(displayName: name, peerID: peerID), at: 0)
-        memoryHomeAccess.recentRequesters = Array(memoryHomeAccess.recentRequesters.prefix(20)); save()
+        memoryHomeAccess.recentRequesters = Array(memoryHomeAccess.recentRequesters.prefix(20))
+        countMemoryHomeVisit(peerID: peerID, now: now)
+        save()
+    }
+    /// 하루 단위로 피어를 중복 제거한다 — 싸이월드 TODAY 의 의미이면서, 한 피어가 재접속으로
+    /// 숫자를 부풀리지 못하게 하는 어뷰징 가드다. 자정 판정은 **dayKey 문자열 비교**로 한다:
+    /// `Date` 산술로 하루를 계산하면 타임존 변경·DST 경계에서 어긋난다.
+    /// 하루 상한을 넘으면 집합도 TOTAL 도 멈춘다 — 집합만 멈추면 상한 이후 재접속이 전부
+    /// TOTAL 을 올려 중복 제거가 무의미해진다.
+    private func countMemoryHomeVisit(peerID: UUID, now: Date) {
+        let today = CompanionStore.dayKey(now)
+        if memoryHomeAccess.visitDayKey != today {
+            memoryHomeAccess.visitDayKey = today
+            memoryHomeAccess.visitTodayPeerIDs = []
+        }
+        guard memoryHomeAccess.visitTodayPeerIDs.count < MemoryHomeAccessSettings.visitTodayPeerLimit,
+              memoryHomeAccess.visitTodayPeerIDs.insert(peerID).inserted else { return }
+        memoryHomeAccess.visitTotal += 1
+        if MemoryHomeAccessSettings.visitThresholds.contains(memoryHomeAccess.visitTotal) {
+            memoryHomeAccess.visitThresholdDates[memoryHomeAccess.visitTotal] = now
+        }
     }
     func setMemoryHomeBlocked(_ peerID: UUID, blocked: Bool) {
         if blocked { memoryHomeAccess.blockedPeerIDs.insert(peerID) } else { memoryHomeAccess.blockedPeerIDs.remove(peerID) }; save()
+    }
+    @discardableResult
+    func setProfileMessage(_ message: String) -> Bool {
+        guard let message = Self.validProfileMessage(message) else { return false }
+        guard memoryHomeAccess.profileMessage != message else { return true }
+        memoryHomeAccess.profileMessage = message; save()
+        return true
+    }
+    func clearProfileMessage() {
+        guard memoryHomeAccess.profileMessage != nil else { return }
+        memoryHomeAccess.profileMessage = nil
+        memoryHomeAccess.sharesProfileMessage = false
+        save()
+    }
+    /// 문구가 없으면 공유도 켜지지 않는다 — 켜진 플래그가 문구 없이 남으면 다음 문구가
+    /// 사용자 동의 없이 즉시 LAN 으로 새어 나간다.
+    func setSharesProfileMessage(_ shares: Bool) {
+        let shares = shares && memoryHomeAccess.profileMessage != nil
+        guard memoryHomeAccess.sharesProfileMessage != shares else { return }
+        memoryHomeAccess.sharesProfileMessage = shares; save()
+    }
+    /// 명시적으로 공유를 켠 경우에만 값이 나온다. LAN 카드는 이 프로퍼티만 읽어야 한다.
+    var profileMessageForSharing: String? {
+        memoryHomeAccess.sharesProfileMessage ? memoryHomeAccess.profileMessage : nil
+    }
+    /// Bonjour 닉네임과 달리 이건 서비스 이름이 아니라 화면에 찍히는 문구다 → 내부 공백은
+    /// 허용하고, 한 줄 레이아웃과 로그 오염을 지키기 위해 줄바꿈·제어문자만 막는다.
+    nonisolated static func validProfileMessage(_ value: String) -> String? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= MemoryHomeAccessSettings.profileMessageLimit,
+              !value.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0)
+              }) else { return nil }
+        return value
+    }
+    func mood(on date: Date = Date()) -> MemoryHomeMood? {
+        memoryHomeAccess.moodByDayKey[CompanionStore.dayKey(date)]
+    }
+    func setMood(_ mood: MemoryHomeMood, now: Date = Date()) {
+        let today = CompanionStore.dayKey(now)
+        guard memoryHomeAccess.moodByDayKey[today] != mood else { return }
+        memoryHomeAccess.moodByDayKey[today] = mood
+        memoryHomeAccess.moodByDayKey = Self.trimmedMoodHistory(memoryHomeAccess.moodByDayKey)
+        save()
+    }
+    /// dayKey 가 `%04d-%02d-%02d` 이므로 문자열 정렬이 곧 시간순이다 — 그 형식이 여기서 값을 한다.
+    private static func trimmedMoodHistory(_ history: [String: MemoryHomeMood]) -> [String: MemoryHomeMood] {
+        guard history.count > MemoryHomeAccessSettings.moodHistoryLimit else { return history }
+        let keep = Set(history.keys.sorted().suffix(MemoryHomeAccessSettings.moodHistoryLimit))
+        return history.filter { keep.contains($0.key) }
+    }
+    nonisolated static func validDayKey(_ value: String) -> String? {
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
+              parts.allSatisfy({ $0.allSatisfy { $0.isASCII && $0.isNumber } }) else { return nil }
+        return value
     }
     func sharedPinnedMemory(for activeCompanionID: UUID) -> PokemonMemory? {
         guard let id = memoryHomeAccess.sharedPinnedMemoryID, pinned(for: activeCompanionID)?.id == id else { return nil }
@@ -600,6 +732,27 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.recentRequesters = Array(memoryHomeAccess.recentRequesters.filter { seen.insert($0.peerID).inserted }.prefix(20))
         if let shared = memoryHomeAccess.sharedPinnedMemoryID,
            !pinnedMemoryIDs.values.contains(shared) { memoryHomeAccess.sharedPinnedMemoryID = nil }
+
+        // R4. 이전·수정된 파일에서 온 불가능한 값을 버린다. 특히 공유 플래그는 문구가 사라진
+        // 뒤에도 켜진 채로 남을 수 있어, 그 상태를 그대로 두면 다음 문구가 동의 없이 새어 나간다.
+        if let message = memoryHomeAccess.profileMessage {
+            memoryHomeAccess.profileMessage = Self.validProfileMessage(message)
+        }
+        if memoryHomeAccess.profileMessage == nil { memoryHomeAccess.sharesProfileMessage = false }
+
+        // 못 믿을 dayKey 는 TODAY 창 전체를 버리게 한다 — 남겨 두면 어느 날의 집합인지 알 수 없다.
+        if memoryHomeAccess.visitDayKey.flatMap(Self.validDayKey) == nil {
+            memoryHomeAccess.visitDayKey = nil
+            memoryHomeAccess.visitTodayPeerIDs = []
+        }
+        memoryHomeAccess.visitTodayPeerIDs = Set(memoryHomeAccess.visitTodayPeerIDs
+            .prefix(MemoryHomeAccessSettings.visitTodayPeerLimit))
+        memoryHomeAccess.visitTotal = max(max(0, memoryHomeAccess.visitTotal), memoryHomeAccess.visitToday)
+        memoryHomeAccess.visitThresholdDates = memoryHomeAccess.visitThresholdDates.filter {
+            MemoryHomeAccessSettings.visitThresholds.contains($0.key) && $0.key <= memoryHomeAccess.visitTotal
+        }
+        memoryHomeAccess.moodByDayKey = Self.trimmedMoodHistory(
+            memoryHomeAccess.moodByDayKey.filter { Self.validDayKey($0.key) != nil })
     }
     /// This is called at the store save boundary, covering every active-companion transition.
     func clearSharedPinnedMemory(unlessPinnedFor activeCompanionID: UUID?) {
