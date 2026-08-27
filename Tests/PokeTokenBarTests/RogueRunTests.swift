@@ -28,11 +28,48 @@ final class RogueRunTests: XCTestCase {
     }
 
     func testOpponentLevelRisesAndBossesAddMore() {
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 6)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 3), 10)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 16)    // 보스 +4
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 8), 24)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 12), 34)   // 최종 +6
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 5)
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 3), 9)
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 14)    // 보스 +3
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 8), 22)
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 12), 32)   // 최종 +5
+    }
+
+    /// 야생은 파티 기준선(스타터 5 + 승리마다 2)과 같은 레벨이어야 한다 — 야생조차 늘 위에 있으면
+    /// 한 마리짜리 파티가 매 웨이브 손해를 쌓고 되돌릴 수단이 없다.
+    func testWildWavesMatchThePartyLevelBaseline() {
+        for wave in 1...RogueRun.finalWave where !RogueRun.isBoss(wave: wave) {
+            XCTAssertEqual(RogueRun.opponentLevel(wave: wave), 3 + 2 * wave, "wave \(wave)")
+        }
+    }
+
+    // MARK: 상대 종 티어
+
+    private func stats(total: Int) -> BattleStats {
+        let each = total / 6
+        return BattleStats(hp: each, atk: each, def: each, spa: each, spd: each,
+                           spe: total - each * 5)
+    }
+
+    /// 웨이브 1 에 슬라킹(670)·전설이 나오던 결함의 회귀 — 상한이 티어 순으로 오르고, 최종 보스
+    /// 상한(640)도 전설 대부분(660~720)을 막는다.
+    func testBaseStatCapRisesWithTheWaveAndKeepsLegendariesOut() {
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 670), wave: 1))
+        XCTAssertTrue(RogueRun.isFairOpponent(baseStats: stats(total: 318), wave: 1))
+        XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 3), RogueRun.baseStatTotalCap(wave: 5))
+        XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 5), RogueRun.baseStatTotalCap(wave: 9))
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 12), 640)
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 680), wave: 12))
+    }
+
+    /// 보스는 같은 웨이브의 야생보다 센 종까지 받는다.
+    func testBossWavesAllowStrongerSpeciesThanTheirTier() {
+        XCTAssertGreaterThan(RogueRun.baseStatTotalCap(wave: 4), RogueRun.baseStatTotalCap(wave: 3))
+    }
+
+    /// 하한이 없으면 최종 보스로 잉어킹(200)이 나온다.
+    func testTooWeakSpeciesAreRejectedForLateWaves() {
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 200), wave: 12))
     }
 
     // MARK: 진행
@@ -98,6 +135,26 @@ final class RogueRunTests: XCTestCase {
         run.useMove(0)
         XCTAssertEqual(run.stage, .cleared)
         XCTAssertTrue(run.offers.isEmpty)
+    }
+
+    /// 보스를 넘으면 살아 있는 파티가 완전 회복한다 — 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면
+    /// 후반 웨이브가 되돌릴 수 없는 소화가 된다. 야생 웨이브에서는 회복하지 않는다(이월이 자원이다).
+    func testBossVictoryRestoresTheParty() {
+        func damagedWin(atWave wave: Int) -> RogueRun {
+            var run = RogueRun(party: [snapshot(1, hp: 900, speed: 1)],
+                               opponents: [snapshot(99, level: 5, hp: 1, speed: 200)],
+                               seed: 7)
+            run.debugJump(toWave: wave)
+            run.useMove(0)   // 상대가 먼저 때린 뒤 내가 쓰러뜨린다
+            return run
+        }
+        let boss = damagedWin(atWave: 4)
+        XCTAssertTrue(RogueRun.isBoss(wave: 4))
+        XCTAssertEqual(boss.party[0].hp, boss.party[0].stats.hp)
+
+        let wild = damagedWin(atWave: 3)
+        XCTAssertLessThan(wild.party[0].hp, wild.party[0].stats.hp,
+                          "야생 웨이브에서 회복하면 HP 이월이 자원이 아니게 된다")
     }
 
     func testPartyWipeFailsTheRun() {
@@ -176,6 +233,14 @@ final class RogueRunTests: XCTestCase {
                       "던전 런도 공용 배틀 렌더러를 쓴다")
         XCTAssertFalse(source.contains("Text(\"PP "),
                        "PP 표시를 직접 그리면 공용 렌더러의 색·배지 규칙에서 벗어난다")
+    }
+
+    /// 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹·전설이 나온다. 뽑기가 코어 밖(뷰)에 있어
+    /// 로직 테스트로 못 잡으므로 소스에서 기계적으로 확인한다.
+    func testWildDrawFiltersBySpeciesTier() throws {
+        let source = try Self.viewSource()
+        XCTAssertTrue(source.contains("RogueRun.isFairOpponent("),
+                      "야생 뽑기는 웨이브 티어(종족값 상한)를 지나야 한다")
     }
 
     /// 재생기를 빼면 기절·피격이 화면에 뜨기 전에 필드가 다음 포켓몬으로 갈아탄다 — 사용자에게는

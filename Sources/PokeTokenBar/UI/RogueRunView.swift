@@ -262,9 +262,25 @@ struct RogueRunView: View {
 
     // MARK: 상대 만들기
 
+    /// 웨이브에 맞는 야생 하나. 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹이 나오므로
+    /// **종족값 합이 웨이브 티어에 드는 종만** 받는다(`RogueRun.isFairOpponent`). 뽑기는 몇 번만
+    /// 돌리고, 다 어긋나면 그중 가장 약한 종으로 간다 — 판을 못 여는 것보다 낫다.
+    private static let wildDrawAttempts = 8
+
     private static func wild(wave: Int, store: CompanionStore) async -> BattleSnapshot? {
-        await snapshot(speciesID: Int.random(in: wildPool),
-                       level: RogueRun.opponentLevel(wave: wave), store: store)
+        let level = RogueRun.opponentLevel(wave: wave)
+        var weakest: BattleSnapshot?
+        for _ in 0..<wildDrawAttempts {
+            guard let candidate = await snapshot(speciesID: Int.random(in: wildPool),
+                                                 level: level, store: store) else { continue }
+            if RogueRun.isFairOpponent(baseStats: candidate.base, wave: wave) { return candidate }
+            if weakest.map({ total($0.base) > total(candidate.base) }) ?? true { weakest = candidate }
+        }
+        return weakest
+    }
+
+    private static func total(_ stats: BattleStats) -> Int {
+        stats.hp + stats.atk + stats.def + stats.spa + stats.spd + stats.spe
     }
 
     private static func snapshot(speciesID: Int, level: Int,

@@ -38,13 +38,40 @@ struct RogueRun: Sendable {
     static let offerCount = 3
     /// 4·8·12 웨이브가 보스다.
     static func isBoss(wave: Int) -> Bool { wave % 4 == 0 }
-    /// 상대 레벨 — 야생 `4 + 2×웨이브`, 보스 `+4`(최종 `+6`).
-    /// 늘 내 파티보다 조금 높게 둔다. 그 차이를 상성과 보상 선택으로 메우는 것이 이 판의 판단이다.
+    /// 상대 레벨 — 야생은 `3 + 2×웨이브`로 **파티 기준선과 같다**(스타터 5 에서 승리마다 +2 이므로
+    /// 웨이브 w 의 파티가 `3 + 2w`). 보스만 `+3`(최종 `+5`) 위에 둔다.
+    ///
+    /// 예전 식(야생 `4 + 2×웨이브`)은 야생조차 늘 파티보다 높았다. 파티가 한 마리이고 HP·PP 가
+    /// 웨이브를 넘어 이월되는 구조라, 매 웨이브 레벨이 밀리면 손해가 누적돼 되돌릴 수단이 없다.
     static func opponentLevel(wave: Int) -> Int {
-        let wild = 4 + 2 * wave
+        let wild = 3 + 2 * wave
         guard isBoss(wave: wave) else { return wild }
-        return wild + (wave == finalWave ? 6 : 4)
+        return wild + (wave == finalWave ? 5 : 3)
     }
+
+    /// 웨이브별 상대 **종족값 합(BST) 상한**. 포켓로그가 웨이브에 따라 종 티어를 올리는 것과 같은
+    /// 규칙이다. 이 상한이 없으면 종을 전 범위(1...649)에서 균등 추첨하는 호출자가 웨이브 1 에
+    /// 슬라킹(670)·전설을 뽑아, 레벨 곡선을 아무리 맞춰도 판이 첫 턴에 끝난다.
+    /// 상한 640 이 전설 대부분(660~720)을 자연히 막으므로 따로 전설 목록을 두지 않는다.
+    static func baseStatTotalCap(wave: Int) -> Int {
+        let tier: Int
+        switch wave {
+        case ..<4:  tier = 320      // 미진화 1단계 대
+        case ..<8:  tier = 420      // 2단계 대
+        case ..<12: tier = 500      // 최종 진화 대
+        default:    tier = 580
+        }
+        return isBoss(wave: wave) ? tier + 60 : tier
+    }
+
+    /// 하한은 상한의 60% — 없으면 최종 보스로 잉어킹(200)이 나온다.
+    static func isFairOpponent(baseStats: BattleStats, wave: Int) -> Bool {
+        let total = baseStats.hp + baseStats.atk + baseStats.def
+            + baseStats.spa + baseStats.spd + baseStats.spe
+        let cap = baseStatTotalCap(wave: wave)
+        return total <= cap && total >= cap * 3 / 5
+    }
+
     /// 승리 시 파티 전원이 오르는 레벨. 전원 같은 폭이라 교체해도 손해가 없다 — 자원은 HP 지 레벨이 아니다.
     static func levelGain(wave: Int) -> Int { isBoss(wave: wave) ? 3 : 2 }
 
@@ -89,6 +116,10 @@ struct RogueRun: Sendable {
         switch result {
         case .win:
             levelUpParty(by: Self.levelGain(wave: wave))
+            // 보스를 넘으면 파티를 완전 회복한다 — 포켓로그가 10 웨이브마다 무료 회복을 주는 자리와
+            // 같은 역할이다. 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면 보상 3장으로는 못 메우고
+            // 후반 웨이브가 "이미 진 판을 마저 두는" 소화가 된다.
+            if Self.isBoss(wave: wave) { restoreParty() }
             if wave == Self.finalWave {
                 stage = .cleared
             } else {
@@ -152,6 +183,18 @@ struct RogueRun: Sendable {
                 party[i].statusCounter = 0
                 party[i].confusionTurns = 0
             }
+        }
+    }
+
+    /// 살아 있는 개체를 완전 회복한다. **쓰러진 개체는 일으키지 않는다** — 부활은 `revive` 보상의
+    /// 몫이고, 여기서 같이 살리면 그 보상이 보스 직후에 늘 꽝이 된다.
+    private mutating func restoreParty() {
+        for i in party.indices where party[i].isAlive {
+            party[i].hp = party[i].stats.hp
+            party[i].pp = party[i].moves.map(\.pp)
+            party[i].status = nil
+            party[i].statusCounter = 0
+            party[i].confusionTurns = 0
         }
     }
 
