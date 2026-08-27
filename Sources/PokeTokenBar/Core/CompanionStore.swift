@@ -880,6 +880,35 @@ final class CompanionStore {
         }
     }
 
+    /// 교환·구버전 저장에서 이름 사전이 없거나 일부 단계만 남은 소유 개체를 영구 복구한다.
+    /// 화면의 임시 문자열만 채우면 첫 네트워크 실패 뒤 `#399`가 계속 남고, 교환/대화처럼 다른 화면은
+    /// 여전히 번호를 읽는다. 개체의 base 라인을 병합해 모든 표시 경로가 같은 저장 데이터를 쓰게 한다.
+    func backfillMissingOwnedNames() async {
+        let targets = ownedMons.filter { mon in
+            mon.names?[mon.currentID].flatMap { state.language.resolveName($0) } == nil
+        }
+        guard !targets.isEmpty else { return }
+        var changed = false
+        for target in targets {
+            if Task.isCancelled { break }
+            guard let line = try? await provider.line(baseSpeciesID: target.baseID) else { continue }
+            func merge(_ mon: inout MonState) {
+                var names = mon.names ?? [:]
+                for id in mon.pathIDs where names[id].flatMap({ state.language.resolveName($0) }) == nil {
+                    if let resolved = line.names[id] { names[id] = resolved }
+                }
+                guard names != mon.names else { return }
+                mon.names = names
+                changed = true
+            }
+            if state.active?.id == target.id { merge(&state.active!) }
+            else if let index = state.boxedMons.firstIndex(where: { $0.id == target.id }) {
+                merge(&state.boxedMons[index])
+            }
+        }
+        if changed { save() }
+    }
+
     /// 타입 미저장(구버전·오프라인 졸업) 항목을 최종체 1회 조회로 채운다. 채워진 뒤엔 아무 요청도
     /// 하지 않는다(이름 백필과 같은 계약). 조회는 주입된 `provider` 를 지난다 — 저장까지 가는 값이라
     /// 스텁으로 검증할 수 있어야 한다.

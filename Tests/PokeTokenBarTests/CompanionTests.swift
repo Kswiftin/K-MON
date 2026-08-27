@@ -450,6 +450,24 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.state.dex.first?.names?[1]?["ko"], "포1", "기존 이름도 병합 후 유지")
     }
 
+    func testOwnedNameBackfillPersistsMissingCurrentSpeciesName() async throws {
+        let activeJSON = #"{"baseID":1,"pathIDs":[1,2],"plannedPathIDs":[1,2,3],"stageIndex":1,"usedAtStage":0,"rarity":"common","totalForms":3,"names":{"1":{"ko":"포1"}}}"#
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"active":\#(activeJSON),"language":"ko"}"#.utf8).write(to: url)
+        let provider = CountingLineProvider(value: linear3)
+        let s = CompanionStore(provider: provider, clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
+
+        XCTAssertNil(s.state.active?.names?[2])
+        await s.backfillMissingOwnedNames()
+
+        XCTAssertEqual(provider.lineCalls, 1)
+        XCTAssertEqual(s.state.active?.names?[1]?["ko"], "포1")
+        XCTAssertEqual(s.state.active?.names?[2]?["ko"], "포2")
+        let reloaded = CompanionStore(provider: LineThrowsProvider(), clock: { fixedNow },
+                                      fileURL: url, rng: SeededRNG(seed: 7))
+        XCTAssertEqual(reloaded.state.active?.names?[2]?["ko"], "포2", "복구 이름은 재실행 후에도 유지")
+    }
+
     /// 오프라인이면 폴백(`#id`)을 **저장하지 않는다** — 저장해 버리면 이름이 영원히 번호로 굳는다.
     /// 다음 진입(온라인)에서 다시 시도해 채워지는 것까지 확인한다.
     func testBackfillRetriesAfterAnOfflineAttempt() async throws {

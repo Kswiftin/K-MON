@@ -56,7 +56,10 @@ struct PokemonRosterView: View {
             footer(current: current, pageCount: pageCount)
         }
         .frame(height: Self.contentHeight, alignment: .top)
-        .task(id: owned.map(\.presentationID).sorted()) { await resolveDisplayValues(for: owned) }
+        .task(id: ownedNameTaskID(owned)) {
+            await store.backfillMissingOwnedNames()
+            await resolveDisplayValues(for: store.ownedMons)
+        }
         .confirmationDialog(releaseQuestion(releaseTarget), isPresented: releaseDialogBinding,
                             titleVisibility: .visible) {
             Button(store.l.t("놓아주기", "Release", "にがす"), role: .destructive) {
@@ -98,6 +101,12 @@ struct PokemonRosterView: View {
             }
         }
         didResolveTypes = true
+    }
+
+    private func ownedNameTaskID(_ owned: [MonState]) -> String {
+        let identities = owned.map { "\($0.id):\($0.presentationID):\($0.names?[$0.currentID]?.count ?? 0)" }
+            .sorted().joined(separator: "|")
+        return "\(store.language.rawValue)|\(identities)"
     }
 
     private func header(shownCount: Int, ownedCount: Int, owned: [MonState]) -> some View {
