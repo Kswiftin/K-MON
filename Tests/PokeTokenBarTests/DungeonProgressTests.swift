@@ -130,10 +130,13 @@ final class DungeonSettlementTests: XCTestCase {
     func testFirstClearPaysOnceAndReplayIsFree() {
         let store = makeStore(TestClock())
         let before = store.state.starPieces
+        // 첫 클리어는 업적 `dungeon` 1단계도 함께 넘기므로 지갑에는 그 단계 보상이 더해진다.
+        // 반환값은 던전 보상만이다(업적 보상은 알림으로 따로 알린다).
+        let firstTier = AchievementLadder.catalog.first { $0.track == .dungeon }!.rewards[0]
         XCTAssertEqual(store.settleDungeonClear(revealed: [0: .empty]), PuzzleDungeon.firstClearReward)
-        XCTAssertEqual(store.state.starPieces, before + PuzzleDungeon.firstClearReward)
+        XCTAssertEqual(store.state.starPieces, before + PuzzleDungeon.firstClearReward + firstTier)
         XCTAssertEqual(store.settleDungeonClear(revealed: [0: .empty]), 0, "재플레이는 무보상 연습이다")
-        XCTAssertEqual(store.state.starPieces, before + PuzzleDungeon.firstClearReward)
+        XCTAssertEqual(store.state.starPieces, before + PuzzleDungeon.firstClearReward + firstTier)
         XCTAssertTrue(store.dungeonCleared)
     }
 
