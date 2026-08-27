@@ -156,6 +156,37 @@ final class RogueRunTests: XCTestCase {
         XCTAssertEqual(run.party[0].pp[0], run.party[0].moves[0].pp)
     }
 
+    // MARK: 화면 계약 (소스 가드)
+
+    /// 런은 `CompanionStore` 가 들어야 한다. 뷰의 `@State` 로 들면 팝오버를 닫는 순간 판이 사라진다
+    /// (실제로 그렇게 유실됐다). 로직 테스트로는 잡을 수 없어 소스에서 기계적으로 확인한다.
+    func testRunStateLivesInTheStore() throws {
+        let source = try Self.viewSource()
+        XCTAssertTrue(source.contains("store.rogueRun"),
+                      "런을 store 에서 읽고 써야 팝오버를 닫아도 이어진다")
+        XCTAssertFalse(source.contains("case running("),
+                       "진행 중인 런을 뷰 상태(enum)로 되들이면 창을 닫을 때 사라진다")
+    }
+
+    /// 기술 버튼·PP 배지·로그는 기존 배틀과 **같은 렌더러**로 그려야 한다. 직접 그리면 같은 기술이
+    /// 화면마다 다른 색으로 보인다.
+    func testRunBattleUsesTheSharedArenaRenderer() throws {
+        let source = try Self.viewSource()
+        XCTAssertTrue(source.contains("BattleArenaView("),
+                      "던전 런도 공용 배틀 렌더러를 쓴다")
+        XCTAssertFalse(source.contains("Text(\"PP "),
+                       "PP 표시를 직접 그리면 공용 렌더러의 색·배지 규칙에서 벗어난다")
+    }
+
+    private static func viewSource() throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // Tests/PokeTokenBarTests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // <repo>
+        return try String(contentsOf: root.appendingPathComponent("Sources/PokeTokenBar/UI/RogueRunView.swift"),
+                          encoding: .utf8)
+    }
+
     func testCleanseClearsStatusAndConfusion() {
         var side = BattleSide(snapshot(1))
         side.status = .burn
