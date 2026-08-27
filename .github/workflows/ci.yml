@@ -119,6 +119,9 @@ jobs:
           KMON_VERSION: 2.7.${{ github.run_number }}
           KMON_SOURCE_COMMIT: ${{ github.sha }}
           KMON_SKIP_INSTALL: "1"
+          # 이 채널의 버전(2.7.x)은 릴리스 채널(2.15.x)보다 낮다 — 업데이터를 켜 두면 테스트 빌드가
+          # 실행 직후 자신을 정식 릴리스로 덮어쓴다(실제로 그렇게 테스트 빌드가 사라졌다).
+          KMON_DISABLE_UPDATER: "1"
           KMON_GITHUB_OAUTH_CLIENT_ID: ${{ vars.KMON_GITHUB_OAUTH_CLIENT_ID }}
           CODESIGN_IDENTITY: K-MON Release
         run: ./scripts/build-app.sh

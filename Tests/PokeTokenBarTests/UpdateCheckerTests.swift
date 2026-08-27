@@ -62,6 +62,30 @@ final class UpdateCheckerTests: XCTestCase {
                        "GitHub 이 비-ASCII 에셋 이름을 정규화하므로 이름에 발음기호를 쓰면 안 된다")
     }
 
+    /// `development` 프리릴리스는 버전이 릴리스 채널보다 낮다(2.7.x vs 2.15.x). 업데이터를 켠 채
+    /// 내보내면 방금 깐 테스트 빌드가 실행 직후 자신을 정식 릴리스로 덮어써 사라지고, 테스터는
+    /// "고친 게 안 들어갔다" 를 디버깅하게 된다(실제로 그렇게 한 판 날렸다). 정식 릴리스는 반대로
+    /// 업데이터가 켜져 있어야 하므로, 스위치가 **테스트 채널에만** 걸려 있는지 함께 본다.
+    func testDevelopmentBuildsShipWithTheUpdaterDisabled() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let script = try String(contentsOf: root.appendingPathComponent("scripts/build-app.sh"),
+                               encoding: .utf8)
+        XCTAssertTrue(script.contains("KMON_DISABLE_UPDATER"),
+                      "빌드 스크립트에 업데이터 차단 스위치가 있어야 한다")
+        XCTAssertTrue(script.contains("<key>SUAllowsAutomaticUpdates</key><$UPDATER_ALLOWED/>"),
+                      "자동 업데이트 키가 스위치를 타야 한다 — 고정 true 면 테스트 빌드도 자기를 덮는다")
+
+        let ci = try String(contentsOf: root.appendingPathComponent(".github/workflows/ci.yml"),
+                            encoding: .utf8)
+        XCTAssertTrue(ci.contains("KMON_DISABLE_UPDATER"),
+                      "development 프리릴리스 빌드는 업데이터를 끈 채 나가야 한다")
+        let release = try String(contentsOf: root.appendingPathComponent(".github/workflows/release.yml"),
+                                 encoding: .utf8)
+        XCTAssertFalse(release.contains("KMON_DISABLE_UPDATER"),
+                       "정식 릴리스는 업데이터가 켜져 있어야 한다")
+    }
+
     func testDevelopmentReleaseIsNeverAnUpdateCandidate() {
         let release = UpdateChecker.ReleaseInfo(tag_name: "development",
             html_url: "https://github.com/Kswiftin/K-MON/releases/tag/development",

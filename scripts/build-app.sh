@@ -10,6 +10,14 @@ VERSION="${KMON_VERSION:-$DEFAULT_VERSION}"
 SOURCE_COMMIT="${KMON_SOURCE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
 # GitHub App OAuth Client ID는 공개 식별자다. 포크/별도 배포는 환경 변수로 자신의 App ID를 덮어쓴다.
 GITHUB_OAUTH_CLIENT_ID="${KMON_GITHUB_OAUTH_CLIENT_ID:-Iv23liq1OgHiJotI0l65}"
+# 테스트 빌드는 자기를 갱신하지 못하게 한다. `development` 프리릴리스는 버전이 릴리스 채널보다
+# 낮아서(2.7.x vs 2.15.x) 업데이터를 켜 두면 실행 직후 정식 릴리스로 자신을 덮어쓴다 — 방금 깐
+# 테스트 빌드가 조용히 사라지고, 그걸 모른 채 "고친 게 안 들어갔다" 를 디버깅하게 된다.
+UPDATER_ALLOWED="true"
+if [[ "${KMON_DISABLE_UPDATER:-0}" == "1" ]]; then
+    UPDATER_ALLOWED="false"
+    echo "==> 업데이터 비활성 빌드(KMON_DISABLE_UPDATER=1) — 이 앱은 스스로 갱신하지 않는다"
+fi
 APP_NAME="Pokédoro"
 EXECUTABLE="PokeTokenBar"
 BUILD_DIR="build"
@@ -51,8 +59,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>SUPublicEDKey</key><string>wF6hVA8cXA/NHj0fWmwxPKU4VWwiqQU1u5iXfOs7YwA=</string>
     <key>SUVerifyUpdateBeforeExtraction</key><true/>
     <key>SUEnableAutomaticChecks</key><false/>
-    <key>SUAllowsAutomaticUpdates</key><true/>
-    <key>SUAutomaticallyUpdate</key><true/>
+    <key>SUAllowsAutomaticUpdates</key><$UPDATER_ALLOWED/>
+    <key>SUAutomaticallyUpdate</key><$UPDATER_ALLOWED/>
     <key>NSLocalNetworkUsageDescription</key><string>Discover Pokédoro rooms for ranked battles and Pokéathlon with up to four friends.</string>
     <key>NSBonjourServices</key>
     <array>
