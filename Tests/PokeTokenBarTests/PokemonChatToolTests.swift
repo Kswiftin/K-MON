@@ -22,6 +22,7 @@ final class PokemonChatToolTests: XCTestCase {
             ("[[tool:evolution.accept]]", .evolutionAccept),
             ("[[tool:companion.switch(0)]]", .companionSwitch(index: 0)),
             ("[[tool:memory.record]]", .memoryRecord(body: "")),
+            ("[[tool:adventure.claim]]", .adventureClaim),
         ]
         for (marker, expected) in allowed {
             XCTAssertEqual(PokemonChatToolParser.parse("좋아! " + marker).call, expected, marker)
@@ -58,6 +59,13 @@ final class PokemonChatToolTests: XCTestCase {
             "[[tool:memory.delete]]",               // 지우는 도구는 존재하지 않는다
             "[[tool:companion.release(0)]]",        // 놓아 주기는 도구가 아니다
             "[[tool:shop.buy(rareCandy)]]",         // 소비는 도구가 아니다
+            "[[tool:adventure.claim(1)]]",          // 인자를 받지 않는 도구
+            "[[tool:adventure.start(25)]]",         // 모험은 집중과 함께만 나간다 — 따로 보내는 도구는 없다
+            "[[tool:adventure.cancel]]",            // 취소는 pokedoro.stop 뿐이다
+            "[[tool:egg.hatch]]",                   // 알 품기는 동행을 밀어낸다 — 도구가 아니다
+            "[[tool:companion.graduate]]",          // 졸업은 되돌릴 수 없다
+            "[[tool:settings.doNotDisturb(true)]]", // 화면 설정은 대화가 바꾸지 않는다
+            "[[tool:companion.nickname(피카)]]",      // 임의 문자열 인자
         ]
         for marker in refused {
             let parsed = PokemonChatToolParser.parse("괜찮아 " + marker)
@@ -121,7 +129,9 @@ final class PokemonChatToolTests: XCTestCase {
     func testEveryToolThatSpendsOrChangesSomethingNeedsApproval() {
         for call: PokemonChatToolCall in [.pokedoroStart(minutes: 25), .pokedoroStop,
                                           .itemUse(kind: .rareCandy), .itemUse(kind: .fireStone),
-                                          .evolutionAccept, .companionSwitch(index: 0)] {
+                                          .evolutionAccept, .companionSwitch(index: 0),
+                                          // 정산은 지갑·경험치를 움직이고, 경험치가 진화·기술 카드를 띄운다.
+                                          .adventureClaim] {
             XCTAssertTrue(call.needsApproval, "\(call) 는 승인 없이 상태를 바꾼다")
         }
         for call: PokemonChatToolCall in [.pokedoroStatus, .pokedexLookup(speciesID: 25),
@@ -587,7 +597,7 @@ final class PokemonChatToolTests: XCTestCase {
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
         for call: PokemonChatToolCall in [.itemUse(kind: .rareCandy), .pokedoroStart(minutes: 25),
-                                          .pokedoroStop, .evolutionAccept] {
+                                          .pokedoroStop, .evolutionAccept, .adventureClaim] {
             let refused = await toolbox.run(call, owner: boxed.id)
             XCTAssertFalse(refused.succeeded, "\(call) 가 남의 대화에서 실행됐다: \(refused.line)")
         }
@@ -647,6 +657,99 @@ final class PokemonChatToolTests: XCTestCase {
                        "실패가 성공 문구로 보고됐다")
     }
 
+    // MARK: 포케도로 — 모험 루프
+    //
+    // Pokedoro 의 상호작용은 타이머가 아니라 **모험**에 있다: 집중과 함께 나가고, 끝나면 사용자가
+    // 정산해야 하고, 정산 전에는 다음 집중이 안 켜진다. 상태 문자열이 타이머만 보던 동안 대화는
+    // 이 루프를 통째로 몰랐다 — 왜 시작이 막혔는지도, 보상이 기다리는지도 말할 수 없었다.
+
+    /// 상태 한 줄이 모험과 알 재고까지 싣는다. 타이머만 보면 모델은 "12분 남았어" 밖에 못 하고,
+    /// 정작 사용자가 눌러야 하는 "보상 받기" 를 영영 알려주지 못한다.
+    func testTheStatusLineCarriesTheAdventureAndTheEggStash() async {
+        let clock = TestClock()
+        let store = makeCompanionStore(clock: clock)
+        await store.hatch(baseID: 25)
+        let timer = FocusTimer()
+        let toolbox = PokemonChatToolbox(timer: timer, companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let idle = await toolbox.runAsActive(.pokedoroStatus)
+        XCTAssertTrue(idle.line.contains("adventure=none"), idle.line)
+        XCTAssertTrue(idle.line.contains("eggs=0"), idle.line)
+
+        XCTAssertTrue(timer.startFocusSession(minutes: 50, companion: store))
+        clock.advance(25 * 60)
+        let running = await toolbox.runAsActive(.pokedoroStatus)
+        XCTAssertTrue(running.line.contains("adventure=running"), running.line)
+        XCTAssertTrue(running.line.contains("zone=cave"), running.line)
+        XCTAssertTrue(running.line.contains("progress=50%"), running.line)
+
+        // 끝났지만 아직 정산 안 된 상태가 사용자가 버튼을 눌러야 하는 바로 그 구간이다.
+        clock.advance(25 * 60)
+        let ready = await toolbox.runAsActive(.pokedoroStatus)
+        XCTAssertTrue(ready.line.contains("adventure=ready"), ready.line)
+    }
+
+    /// 정산은 끝난 모험만 한다. 없는데 성공으로 돌려주면 모델이 "보상 받았어" 라고 말한다.
+    func testAdventureClaimSettlesTheFinishedRunAndSaysSoWhenNothingIsWaiting() async {
+        let clock = TestClock()
+        let store = makeCompanionStore(clock: clock)
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let nothing = await toolbox.runAsActive(.adventureClaim)
+        XCTAssertFalse(nothing.succeeded)
+        XCTAssertEqual(nothing.line, "adventure none ready")
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        // 아직 나가 있는 모험은 정산되지 않는다 — 여기서 성공하면 모험 시간이 의미를 잃는다.
+        let early = await toolbox.runAsActive(.adventureClaim)
+        XCTAssertFalse(early.succeeded, early.line)
+        XCTAssertNotNil(store.activeAdventure)
+
+        clock.advance(25 * 60)
+        let walletBefore = store.state.starPieces
+        let claimed = await toolbox.runAsActive(.adventureClaim)
+
+        XCTAssertTrue(claimed.succeeded, claimed.line)
+        XCTAssertNil(store.activeAdventure, "정산했는데 모험 슬롯이 그대로다")
+        XCTAssertGreaterThan(store.state.starPieces, walletBefore)
+        // 돌려주는 줄이 지갑 증가분을 설명해야 한다 — 숫자가 없으면 모델이 액수를 지어낸다.
+        XCTAssertTrue(claimed.line.contains("stardust=\(store.state.starPieces - walletBefore)"), claimed.line)
+    }
+
+    /// 시작이 막히는 두 사유를 갈라 준다. "refused" 한 줄이면 모델은 이유를 모른 채 같은 호출을
+    /// 반복하고, 사용자에겐 침묵으로 보인다. 정산 대기 중에는 화면도 시작 버튼을 내주지 않는다.
+    func testFocusStartRefusalNamesTheAdventureThatIsInTheWay() async {
+        let clock = TestClock()
+        let store = makeCompanionStore(clock: clock)
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 90))
+        let running = await toolbox.runAsActive(.pokedoroStart(minutes: 25))
+        XCTAssertFalse(running.succeeded)
+        XCTAssertEqual(running.line, "pokedoro start refused: adventure in progress")
+
+        clock.advance(90 * 60)
+        let unclaimed = await toolbox.runAsActive(.pokedoroStart(minutes: 25))
+        XCTAssertFalse(unclaimed.succeeded)
+        XCTAssertEqual(unclaimed.line, "pokedoro start refused: adventure reward unclaimed")
+        XCTAssertNotNil(store.activeAdventure, "시작이 거절됐는데 모험이 조용히 정산됐다")
+    }
+
+    /// 종료 승인 카드는 **잃는 것**을 말해야 한다. 집중을 끝내면 모험이 보상 없이 취소되는데
+    /// (`cancelFocusAdventure`), 카드가 "끝낼까?" 만 물으면 사용자는 무엇을 승인하는지 모른다.
+    func testStoppingFocusWarnsThatTheAdventureIsLost() {
+        let stop = PokemonChatToolCall.pokedoroStop
+        for (language, word) in [(AppLanguage.ko, "모험"), (.en, "adventure"), (.ja, "冒険")] {
+            XCTAssertTrue(stop.approvalQuestion(language).contains(word),
+                          "\(language.rawValue): \(stop.approvalQuestion(language))")
+        }
+    }
+
     private static func spareMon() -> MonState {
         MonState(baseID: 25, pathIDs: [25], plannedPathIDs: [25], stageIndex: 0,
                  usedAtStage: 0, rarity: .common, totalForms: 1)
@@ -675,11 +778,11 @@ final class PokemonChatToolTests: XCTestCase {
             .appendingPathComponent("pokemon-chat-album-\(UUID().uuidString).json"))
     }
 
-    private func makeCompanionStore(line: EvoLine? = nil) -> CompanionStore {
+    private func makeCompanionStore(line: EvoLine? = nil, clock: TestClock? = nil) -> CompanionStore {
         let line = line ?? EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
                                    names: [25: ["ko": "피카츄", "en": "Pikachu"]])
         let store = CompanionStore(provider: ToolLineProvider(line: line),
-                                   clock: { Date(timeIntervalSince1970: 1_000) },
+                                   clock: clock?.closure ?? { Date(timeIntervalSince1970: 1_000) },
                                    fileURL: temporaryURL(), rng: SeededRNG(seed: 1))
         store.setLanguage(.ko)
         return store
