@@ -67,7 +67,9 @@ final class RogueRunTests: XCTestCase {
 
     /// 파티 HP 는 웨이브를 넘어 이월된다 — 이게 이 판의 유일한 자원이다.
     func testPartyDamageCarriesIntoTheNextWave() {
-        var run = RogueRun(party: [snapshot(1, speed: 1)],
+        // 상대 첫 타를 **버티고** 반격으로 끝내야 이월을 볼 수 있다. 종족 HP 100 이면 레벨 5 유효
+        // HP 가 26 인데 상대 일격이 급소까지 겹치면 그걸 넘어 쓰러진다 — 그래서 HP 를 크게 둔다.
+        var run = RogueRun(party: [snapshot(1, hp: 900, speed: 1)],
                            opponents: [snapshot(99, level: 5, hp: 1, speed: 200)],
                            seed: 7)
         run.useMove(0)   // 상대가 먼저 때린 뒤 내가 쓰러뜨린다

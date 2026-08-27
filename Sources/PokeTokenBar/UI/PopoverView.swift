@@ -107,7 +107,7 @@ struct PopoverView: View {
                 GymLeagueView(store: companion, onClose: { nav.showGymLeague = false })
             } else if nav.showDungeon {
                 // 프로토타입 — 던전 탭을 포켓로그식 런으로 갈아 끼웠다. 규칙 검증이 끝나면
-                // 기존 던전 파일(PuzzleDungeon/DungeonRun/DungeonNarration/DungeonView)을 지운다.
+                // 남은 던전 코어(PuzzleDungeon/DungeonRun/DungeonNarration)도 지운다.
                 RogueRunView(store: companion, onClose: { nav.showDungeon = false })
             } else if nav.showOutfit {
                 OutfitView(store: companion, onClose: { nav.showOutfit = false })
