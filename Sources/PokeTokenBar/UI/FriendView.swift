@@ -126,13 +126,41 @@ struct FriendView: View {
                                "Trainer Lv.\(store.trainerLevel.level)",
                                "トレーナー Lv.\(store.trainerLevel.level)"))
                     .font(.caption2).foregroundStyle(.secondary)
+                BattleRankBadge(rank: store.battleRank)
             }
             Spacer()
-            Button(store.l.outfitWardrobe) { nav.showOutfit = true }
-                .buttonStyle(.bordered).controlSize(.small)
+            VStack(spacing: 4) {
+                if let representative = store.battleRepresentative {
+                    SpriteView(speciesID: representative.presentationID, size: 36,
+                               shiny: representative.isShiny)
+                }
+                representativeMenu
+                Button(store.l.outfitWardrobe) { nav.showOutfit = true }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
         }
         .padding(10)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var representativeMenu: some View {
+        Menu {
+            Button(store.l.t("대표 포켓몬 없음", "No representative", "代表ポケモンなし")) {
+                store.setBattleRepresentative(nil)
+            }
+            ForEach(store.ownedMons) { mon in
+                Button {
+                    store.setBattleRepresentative(mon.id)
+                } label: {
+                    let name = RosterOrdering.displayName(mon, language: store.language)
+                    Text("\(name) · Lv.\(mon.level)")
+                }
+            }
+        } label: {
+            Label(store.l.t("대표 포켓몬", "Representative", "代表ポケモン"),
+                  systemImage: "star.circle.fill")
+        }
+        .menuStyle(.borderlessButton).controlSize(.small)
     }
 
     private func trainerRow(_ peer: BattlePeer) -> some View {
@@ -142,17 +170,22 @@ struct FriendView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 TrainerAvatarView(outfit: peer.advertisement.outfit ?? TrainerOutfit())
+                if let speciesID = peer.advertisement.representativeSpeciesID {
+                    SpriteView(speciesID: speciesID, size: 34,
+                               shiny: peer.advertisement.representativeIsShiny)
+                        .help(store.l.t("대표 포켓몬", "Representative Pokémon", "代表ポケモン"))
+                }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(peer.name).font(.headline).lineLimit(1)
                     HStack(spacing: 6) {
-                        Text(peer.advertisement.rank?.displayName
-                             ?? store.l.t("랭크 정보 없음", "Rank unavailable", "ランク情報なし"))
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(peer.advertisement.rank == nil ? Color.secondary : Color.white)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(peer.advertisement.rank == nil ? Color.gray.opacity(0.16) : Color.indigo,
-                                        in: Capsule())
-                            .fixedSize()
+                        if let rank = peer.advertisement.rank {
+                            BattleRankBadge(rank: rank)
+                        } else {
+                            Text(store.l.t("랭크 정보 없음", "Rank unavailable", "ランク情報なし"))
+                                .font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.gray.opacity(0.16), in: Capsule()).fixedSize()
+                        }
                         Text(peer.advertisement.trainerLevel.map {
                             store.l.t("트레이너 Lv.\($0)", "Trainer Lv.\($0)", "トレーナー Lv.\($0)")
                         } ?? store.l.t("레벨 정보 없음", "Level unavailable", "レベル情報なし"))

@@ -31,6 +31,8 @@ final class PeerAdvertisementTests: XCTestCase {
         XCTAssertEqual(PeerAdvertisement.Key.rank, "rankPoints")
         XCTAssertEqual(PeerAdvertisement.Key.level, "trainerLevel")
         XCTAssertEqual(PeerAdvertisement.Key.tiers, "achievementTiers")
+        XCTAssertEqual(PeerAdvertisement.Key.representativeSpecies, "partnerSpecies")
+        XCTAssertEqual(PeerAdvertisement.Key.representativeShiny, "partnerShiny")
     }
 
     /// 구운 레코드에 그 키가 실제로 실려 있는지 본다. 상수만 맞고 굽는 쪽이 다른 키를 쓰면 위
@@ -46,8 +48,26 @@ final class PeerAdvertisementTests: XCTestCase {
 
     func testRoundTripPreservesEveryField() {
         let mine = PeerAdvertisement(rankPoints: 2_150, trainerLevel: 37, achievementTiers: 11,
-                                     outfit: TrainerOutfit(worn: [.hat: .capRed]))
+                                     outfit: TrainerOutfit(worn: [.hat: .capRed]),
+                                     representativeSpeciesID: 399, representativeIsShiny: true)
         XCTAssertEqual(PeerAdvertisement(mine.txtRecord), mine)
+    }
+
+    func testRepresentativeIsOmittedWhenUnsetAndShinyCannotExistWithoutSpecies() {
+        let empty = PeerAdvertisement(representativeIsShiny: true)
+        XCTAssertNil(empty.txtRecord["partnerSpecies"])
+        XCTAssertNil(empty.txtRecord["partnerShiny"])
+        XCTAssertFalse(empty.representativeIsShiny)
+    }
+
+    func testRepresentativePokemonRoundTripsThroughFrozenWireKeys() {
+        let record = PeerAdvertisement(representativeSpeciesID: 399,
+                                       representativeIsShiny: true).txtRecord
+        XCTAssertEqual(record["partnerSpecies"], "399")
+        XCTAssertEqual(record["partnerShiny"], "1")
+        let parsed = PeerAdvertisement(record)
+        XCTAssertEqual(parsed.representativeSpeciesID, 399)
+        XCTAssertTrue(parsed.representativeIsShiny)
     }
 
     // MARK: 착장 (#room-walk-dungeon-design 트레이너 아바타)

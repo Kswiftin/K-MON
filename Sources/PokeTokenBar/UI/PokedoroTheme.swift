@@ -16,6 +16,31 @@ enum PokedoroTheme {
     }
 }
 
+extension BattleRankTier {
+    var tint: Color {
+        switch self {
+        case .pokeBall:   return Color(red: 0.72, green: 0.31, blue: 0.34)
+        case .greatBall:  return Color(red: 0.25, green: 0.50, blue: 0.72)
+        case .ultraBall:  return Color(red: 0.76, green: 0.59, blue: 0.16)
+        case .masterBall: return Color(red: 0.52, green: 0.35, blue: 0.68)
+        case .champion:   return Color(red: 0.73, green: 0.48, blue: 0.12)
+        }
+    }
+}
+
+struct BattleRankBadge: View {
+    let rank: BattleRank
+
+    var body: some View {
+        Text(rank.displayName)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(rank.tier.tint, in: Capsule())
+            .fixedSize()
+    }
+}
+
 private struct PokedoroCardModifier: ViewModifier {
     var tint: Color
     var emphasized: Bool
