@@ -57,7 +57,13 @@ final class MemoryHomeVisitCenter {
     func refreshAccess() {
         guard isActive else { return }
         if companion.memoryAlbum.memoryHomeAccess.visibility == .blocked { stop(); isActive = true }
-        else if listener == nil { startBrowsing(); startHosting() }
+        else {
+            // The advertised Bonjour service name is the public nickname. Recreate the listener
+            // after an edit so discovery reflects it immediately.
+            browser?.cancel(); browser = nil
+            listener?.cancel(); listener = nil
+            startBrowsing(); startHosting()
+        }
     }
     func visit(_ peer: MemoryHomePeer) {
         guard isActive else { return }; selectedProfile = nil; lastError = nil
@@ -99,7 +105,10 @@ final class MemoryHomeVisitCenter {
         } catch { lastError = error.localizedDescription }
     }
     private func accept(_ connection: NWConnection) {
-        guard isActive, companion.memoryAlbum.memoryHomeAccess.visibility == .open else { connection.cancel(); return }
+        // A visibility change can race an already accepted TCP connection. Let its request reach
+        // `receiveRequest`, which responds with the explicit protocol rejection instead of
+        // accidentally serving a profile or silently treating the peer as accepted.
+        guard isActive else { connection.cancel(); return }
         let key = ObjectIdentifier(connection); connections[key] = connection
         connection.start(queue: .main)
         receiveRequest(on: connection, key: key)
@@ -125,12 +134,15 @@ final class MemoryHomeVisitCenter {
             guard let self else { return }
             switch response {
             case let .profileCard(version, card) where version == Self.protocolVersion && Self.valid(card): self.selectedProfile = card
-            case .rejected: self.lastError = "This home is not accepting visits."
+            case let .rejected(version) where version == Self.protocolVersion:
+                self.lastError = "This home is not accepting visits."
             default: self.lastError = "Invalid Memory Home response."
             }
         }
     }
-    private var localDisplayName: String { Self.clean(companion.trainerName, limit: 40) ?? "Memory Home" }
+    /// Do not fall back to the trainer name: malformed/legacy payloads still get a safe album
+    /// fallback, never an accidental disclosure.
+    private var localDisplayName: String { companion.memoryAlbum.memoryHomePublicNickname }
     private func profileCard() -> MemoryHomeProfileCard {
         guard let mon = companion.state.active else { return .init(displayName: localDisplayName, speciesID: 1, isShiny: false, sharedMemoryBody: nil) }
         return .init(displayName: localDisplayName, speciesID: mon.currentID, isShiny: mon.isShiny,
@@ -142,7 +154,10 @@ final class MemoryHomeVisitCenter {
     }
     nonisolated static func clean(_ value: String, limit: Int) -> String? {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, value.count <= limit, !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
+        guard !value.isEmpty, value.count <= limit,
+              !value.unicodeScalars.contains(where: {
+                  CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0)
+              }) else { return nil }
         return value
     }
     private static func parameters() -> NWParameters { NWParameters.tcp }

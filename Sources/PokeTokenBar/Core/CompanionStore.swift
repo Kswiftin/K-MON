@@ -167,6 +167,7 @@ final class CompanionStore {
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
+        self.memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
         backfillFirstMeetingDates()
         reconcileStoredEggDates()
         // 정산 없이 앱이 죽은 랭크전은 여기서 패배로 마감한다(에스크로는 이미 빠져나가 있다).
@@ -3140,6 +3141,7 @@ final class CompanionStore {
         } else {
             memoryAlbum.prune(validCompanionIDs: validIDs)
         }
+        memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
         backfillFirstMeetingDates()
         chatStore.prune(validCompanionIDs: validIDs)
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
@@ -3296,6 +3298,7 @@ final class CompanionStore {
         if changed { save() }
     }
     private func save() {
+        memoryAlbum.clearSharedPinnedMemory(unlessPinnedFor: state.active?.id)
         // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).
         guard let data = try? JSONEncoder().encode(SaveTransfer.signed(state)) else { return }
         try? data.write(to: fileURL, options: .atomic)   // 부분 쓰기 손상 방지(펫 상태)

@@ -241,4 +241,32 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         album.setMemoryHomeBlocked(first, blocked: true)
         XCTAssertTrue(PokemonMemoryAlbum(fileURL: url).memoryHomeAccess.blockedPeerIDs.contains(first))
     }
+
+    func testMemoryHomePublicNicknameMigratesOnceValidatesAndPersists() {
+        let url = temporaryURL(); defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+
+        album.initializeMemoryHomePublicNickname(from: " Ash Ketchum ")
+        XCTAssertEqual(album.memoryHomePublicNickname, "AshKetchum")
+        XCTAssertFalse(album.setMemoryHomePublicNickname("has space"))
+        XCTAssertFalse(album.setMemoryHomePublicNickname("bad\nname"))
+        XCTAssertTrue(album.setMemoryHomePublicNickname("PalletHome"))
+        album.initializeMemoryHomePublicNickname(from: "OtherTrainer")
+
+        XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).memoryHomePublicNickname, "PalletHome")
+    }
+
+    func testSharedPinClearsWhenItsCompanionIsNoLongerActive() {
+        let album = PokemonMemoryAlbum(fileURL: temporaryURL())
+        let first = UUID(), second = UUID()
+        album.record(companionID: first, body: "Pinned", source: .event)
+        let memory = album.entries(for: first)[0]
+        album.pin(memory)
+        album.setSharedPinnedMemory(memory, activeCompanionID: first)
+
+        album.clearSharedPinnedMemory(unlessPinnedFor: second)
+
+        XCTAssertNil(album.memoryHomeAccess.sharedPinnedMemoryID)
+        XCTAssertNil(album.sharedPinnedMemory(for: second))
+    }
 }

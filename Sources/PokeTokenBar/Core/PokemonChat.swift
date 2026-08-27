@@ -236,11 +236,35 @@ struct MemoryHomeRecentRequester: Codable, Sendable, Equatable, Identifiable {
 }
 
 struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
+    /// The only owner-controlled name that may be advertised on the local network. `nil`
+    /// identifies a pre-nickname album and is filled once from the trainer name.
+    var publicNickname: String?
     var visibility: MemoryHomeVisibility = .open
     /// A memory ID is shared only when it is still the active companion's current pin.
     var sharedPinnedMemoryID: UUID?
     var recentRequesters: [MemoryHomeRecentRequester] = []
     var blockedPeerIDs: Set<UUID> = []
+
+    private enum CodingKeys: String, CodingKey {
+        case publicNickname, visibility, sharedPinnedMemoryID, recentRequesters, blockedPeerIDs
+    }
+    init(publicNickname: String? = nil, visibility: MemoryHomeVisibility = .open,
+         sharedPinnedMemoryID: UUID? = nil, recentRequesters: [MemoryHomeRecentRequester] = [],
+         blockedPeerIDs: Set<UUID> = []) {
+        self.publicNickname = publicNickname
+        self.visibility = visibility
+        self.sharedPinnedMemoryID = sharedPinnedMemoryID
+        self.recentRequesters = recentRequesters
+        self.blockedPeerIDs = blockedPeerIDs
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        publicNickname = try c.decodeIfPresent(String.self, forKey: .publicNickname)
+        visibility = try c.decodeIfPresent(MemoryHomeVisibility.self, forKey: .visibility) ?? .open
+        sharedPinnedMemoryID = try c.decodeIfPresent(UUID.self, forKey: .sharedPinnedMemoryID)
+        recentRequesters = try c.decodeIfPresent([MemoryHomeRecentRequester].self, forKey: .recentRequesters) ?? []
+        blockedPeerIDs = try c.decodeIfPresent(Set<UUID>.self, forKey: .blockedPeerIDs) ?? []
+    }
 }
 
 struct PokemonMemory: Codable, Sendable, Identifiable, Equatable {
@@ -518,6 +542,36 @@ final class PokemonMemoryAlbum {
         guard memoryHomeAccess.visibility != visibility else { return }
         memoryHomeAccess.visibility = visibility; save()
     }
+    /// Bonjour names are intentionally compact: whitespace and controls make homes ambiguous.
+    @discardableResult
+    func setMemoryHomePublicNickname(_ nickname: String) -> Bool {
+        guard let nickname = Self.validMemoryHomePublicNickname(nickname) else { return false }
+        guard memoryHomeAccess.publicNickname != nickname else { return true }
+        memoryHomeAccess.publicNickname = nickname; save()
+        return true
+    }
+    /// One-time migration. Later trainer-name changes never overwrite this LAN identity.
+    func initializeMemoryHomePublicNickname(from trainerName: String) {
+        guard memoryHomeAccess.publicNickname == nil else { return }
+        memoryHomeAccess.publicNickname = Self.normalizedMemoryHomePublicNickname(from: trainerName)
+        save()
+    }
+    var memoryHomePublicNickname: String { memoryHomeAccess.publicNickname ?? "MemoryHome" }
+    static func validMemoryHomePublicNickname(_ value: String) -> String? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= 40,
+              !value.unicodeScalars.contains(where: {
+                  CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0)
+              }) else { return nil }
+        return value
+    }
+    private static func normalizedMemoryHomePublicNickname(from trainerName: String) -> String {
+        let compact = trainerName.unicodeScalars.filter {
+            !CharacterSet.whitespacesAndNewlines.contains($0) && !CharacterSet.controlCharacters.contains($0)
+        }
+        let candidate = String(String.UnicodeScalarView(compact).prefix(40))
+        return validMemoryHomePublicNickname(candidate) ?? "MemoryHome"
+    }
     func setSharedPinnedMemory(_ memory: PokemonMemory?, activeCompanionID: UUID) {
         guard let memory, memory.companionID == activeCompanionID,
               pinned(for: activeCompanionID)?.id == memory.id else { return }
@@ -539,10 +593,21 @@ final class PokemonMemoryAlbum {
         return entries(for: activeCompanionID).first { $0.id == id }
     }
     private func normalizeMemoryHomeAccess() {
+        if let nickname = memoryHomeAccess.publicNickname {
+            memoryHomeAccess.publicNickname = Self.validMemoryHomePublicNickname(nickname)
+        }
         var seen = Set<UUID>()
         memoryHomeAccess.recentRequesters = Array(memoryHomeAccess.recentRequesters.filter { seen.insert($0.peerID).inserted }.prefix(20))
         if let shared = memoryHomeAccess.sharedPinnedMemoryID,
            !pinnedMemoryIDs.values.contains(shared) { memoryHomeAccess.sharedPinnedMemoryID = nil }
+    }
+    /// This is called at the store save boundary, covering every active-companion transition.
+    func clearSharedPinnedMemory(unlessPinnedFor activeCompanionID: UUID?) {
+        guard memoryHomeAccess.sharedPinnedMemoryID != nil else { return }
+        guard let activeCompanionID, sharedPinnedMemory(for: activeCompanionID) != nil else {
+            memoryHomeAccess.sharedPinnedMemoryID = nil; save()
+            return
+        }
     }
     private func setFirstRecordedAtIfNeeded(_ companionID: UUID, date: Date) {
         var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()

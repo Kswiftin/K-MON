@@ -18,6 +18,9 @@ struct MemoryHomeView: View {
     @State private var note = ""
     @State private var validationMessage: String?
     @State private var showingVisits = false
+    @State private var showingPublicNicknameEditor = false
+    @State private var publicNicknameDraft = ""
+    @State private var publicNicknameError: String?
 
     private var l: L { store.l }
 
@@ -41,6 +44,11 @@ struct MemoryHomeView: View {
                 .accessibilityLabel(l.t("주변 Memory Home 방문", "Visit nearby Memory Homes", "近くのMemory Homeを訪問"))
                 Spacer()
                 Menu {
+                    Button(l.t("공개 닉네임 편집", "Edit public nickname", "公開ニックネームを編集")) {
+                        publicNicknameDraft = album.memoryHomePublicNickname
+                        publicNicknameError = nil
+                        showingPublicNicknameEditor = true
+                    }
                     Button(store.memoryAlbum.memoryHomeAccess.visibility == .open
                            ? l.t("홈 차단", "Block home", "ホームをブロック")
                            : l.t("홈 공개", "Open home", "ホームを公開")) {
@@ -137,7 +145,23 @@ struct MemoryHomeView: View {
         .sheet(isPresented: $showingVisits, onDismiss: { visits.stop() }) {
             MemoryHomeVisitSheet(visits: visits, language: l)
                 .onAppear { visits.start() }
-        })
+        }
+        .alert(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), isPresented: $showingPublicNicknameEditor) {
+            TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: $publicNicknameDraft)
+            Button(l.t("저장", "Save", "保存")) {
+                if album.setMemoryHomePublicNickname(publicNicknameDraft) {
+                    publicNicknameError = nil
+                    visits.refreshAccess()
+                } else {
+                    publicNicknameError = l.t("공백이나 제어문자 없이 1~40자로 입력해 주세요.", "Use 1–40 characters with no whitespace or control characters.", "空白・制御文字なしで1〜40文字にしてください。")
+                    showingPublicNicknameEditor = true
+                }
+            }
+            Button(l.t("취소", "Cancel", "キャンセル"), role: .cancel) {}
+        } message: {
+            Text(publicNicknameError ?? l.t("이 이름만 같은 LAN에 공개됩니다.", "Only this name is shared on your local network.", "この名前だけが同じLANに公開されます。"))
+        }
+        )
     }
 
     private func roomHeader(mon: MonState, entries: [PokemonMemory], milestones: [PokemonMemoryMilestone], theme: PokemonMemoryRoomTheme, tint: Color) -> some View {
