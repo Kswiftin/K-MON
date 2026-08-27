@@ -73,5 +73,11 @@ final class RotomMetronomeTests: XCTestCase {
             if case .move(_, let moveID) = $0 { return moveID == MoveSpec.struggleID }
             return false
         })
+        let lines = BattleLogSource.netBattle(battle, mine: .a, l: L(.ko))
+        XCTAssertTrue(lines.contains { $0.text.contains("화염방사") })
+        XCTAssertFalse(lines.contains { $0.text.contains("발버둥") },
+                       "호출 기술이 대여 포켓몬의 무브셋에 없더라도 발버둥으로 대체하면 안 된다")
+        XCTAssertTrue(battle.eventBatches[0].b.moves.contains(where: { $0.id == called.id }),
+                      "상대가 호출한 기술도 재생 문맥에 보존돼야 한다")
     }
 }

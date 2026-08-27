@@ -100,6 +100,7 @@ struct BattleView: View {
             turnEndsAt: center.turnEndsAt,
             isWaitingForOpponent: battle.myAction != nil,
             overlay: animator.overlay,
+            calledMoves: battle.eventBatches.flatMap { $0.a.moves + $0.b.moves },
             onChoose: { center.chooseMove($0) },
             onSwitch: { center.switchLAN(to: $0) },
             onForfeit: { center.forfeit() },

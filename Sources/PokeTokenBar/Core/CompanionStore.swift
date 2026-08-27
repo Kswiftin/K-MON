@@ -625,10 +625,12 @@ final class CompanionStore {
     /// 박스 개체를 그것으로 채우면 종 번호(#25)로 그려진다(#28). 활성 개체는 구버전 저장분(names 없음)을
     /// 위해 currentLine 폴백을 남긴다.
     private func livingDexEntry(_ mon: MonState, isActive: Bool) -> DexEntry {
-        let names = mon.names ?? (isActive ? currentLine.map { line in
-            Dictionary(uniqueKeysWithValues:
-                mon.pathIDs.compactMap { id in line.names[id].map { (id, $0) } })
-        } : nil)
+        var names = mon.names ?? [:]
+        if isActive, let line = currentLine {
+            // 구버전 저장에는 names 딕셔너리가 존재해도 일부 진화 단계만 들어 있을 수 있다.
+            // `??` 폴백은 그런 부분 저장을 완성된 데이터로 취급해 비버니 같은 종을 #번호로 남겼다.
+            for id in mon.pathIDs where names[id] == nil { names[id] = line.names[id] }
+        }
         return DexEntry(
             // 활성 항목 id 는 기존 형식을 유지한다(뷰 diffing·테스트가 이 문자열에 의존).
             // 박스는 같은 종이 여럿일 수 있어 개체 UUID 로 구분한다.
@@ -645,7 +647,7 @@ final class CompanionStore {
             isShiny: isActive ? currentIsShiny
                 : (mon.dittoDisguise != nil && !mon.dittoRevealed ? false : mon.isShiny),
             nature: mon.nature,
-            names: names
+            names: names.isEmpty ? nil : names
         )
     }
 
@@ -871,9 +873,43 @@ final class CompanionStore {
     /// 라인 조회는 `PokeAPIClient` 가 base 단위로 캐시하므로 같은 라인이 여러 항목이어도 네트워크는 1회.
     /// 오프라인이면 `dexResolveChainNames` 가 저장 없이 폴백만 돌려주므로 다음 진입에서 다시 시도한다.
     func backfillMissingDexNames() async {
-        for entry in state.dex where entry.names == nil {
+        for entry in state.dex where entry.chainOrder.contains(where: {
+            entry.names?[$0].flatMap { state.language.resolveName($0) } == nil
+        }) {
             _ = await dexResolveChainNames(entry)   // 성공분만 내부에서 state.dex 에 저장
         }
+    }
+
+    /// 교환·구버전 저장에서 이름 사전이 없거나 일부 단계만 남은 소유 개체를 영구 복구한다.
+    /// 화면의 임시 문자열만 채우면 첫 네트워크 실패 뒤 `#399`가 계속 남고, 교환/대화처럼 다른 화면은
+    /// 여전히 번호를 읽는다. 개체의 base 라인을 병합해 모든 표시 경로가 같은 저장 데이터를 쓰게 한다.
+    func backfillMissingOwnedNames() async {
+        // inout으로 state의 개체를 갱신하는 동안 state.language를 다시 읽으면 Swift 독점 접근 충돌이다.
+        // 현재 언어를 값으로 고정해 병합 클로저가 state를 중첩 접근하지 않게 한다.
+        let language = state.language
+        let targets = ownedMons.filter { mon in
+            mon.names?[mon.currentID].flatMap { language.resolveName($0) } == nil
+        }
+        guard !targets.isEmpty else { return }
+        var changed = false
+        for target in targets {
+            if Task.isCancelled { break }
+            guard let line = try? await provider.line(baseSpeciesID: target.baseID) else { continue }
+            func merge(_ mon: inout MonState) {
+                var names = mon.names ?? [:]
+                for id in mon.pathIDs where names[id].flatMap({ language.resolveName($0) }) == nil {
+                    if let resolved = line.names[id] { names[id] = resolved }
+                }
+                guard names != mon.names else { return }
+                mon.names = names
+                changed = true
+            }
+            if state.active?.id == target.id { merge(&state.active!) }
+            else if let index = state.boxedMons.firstIndex(where: { $0.id == target.id }) {
+                merge(&state.boxedMons[index])
+            }
+        }
+        if changed { save() }
     }
 
     /// 타입 미저장(구버전·오프라인 졸업) 항목을 최종체 1회 조회로 채운다. 채워진 뒤엔 아무 요청도
@@ -908,14 +944,18 @@ final class CompanionStore {
     /// (다음부터 네트워크 0). 저장돼 있으면 그대로(fetch 없음). 오프라인이면 종 번호(#id)로 폴백.
     /// 반환은 chainOrder 전 종을 채운 [speciesID: 현재 언어 이름].
     func dexResolveChainNames(_ entry: DexEntry) async -> [Int: String] {
-        if let stored = dexStoredChainNames(entry) { return stored }
+        if let stored = dexStoredChainNames(entry),
+           entry.chainOrder.allSatisfy({ stored[$0]?.isEmpty == false }) { return stored }
         guard let line = try? await provider.line(baseSpeciesID: entry.baseID) else {
-            return Dictionary(uniqueKeysWithValues: entry.chainOrder.map { ($0, "#\($0)") })
+            let stored = dexStoredChainNames(entry) ?? [:]
+            return Dictionary(uniqueKeysWithValues: entry.chainOrder.map { ($0, stored[$0] ?? "#\($0)") })
         }
-        let chainNames = Dictionary(uniqueKeysWithValues:
-            entry.chainOrder.compactMap { id in line.names[id].map { (id, $0) } })
-        if !chainNames.isEmpty, let idx = state.dex.firstIndex(where: { $0.id == entry.id }) {
-            state.dex[idx].names = chainNames   // 백필 저장
+        var chainNames = entry.names ?? [:]
+        for id in entry.chainOrder where chainNames[id].flatMap({ state.language.resolveName($0) }) == nil {
+            if let resolved = line.names[id] { chainNames[id] = resolved }
+        }
+        if let idx = state.dex.firstIndex(where: { $0.id == entry.id }), chainNames != entry.names {
+            state.dex[idx].names = chainNames   // 부분 저장도 병합해 다음 실행부터 네트워크 0
             save()
         }
         return Dictionary(uniqueKeysWithValues: entry.chainOrder.map { id in

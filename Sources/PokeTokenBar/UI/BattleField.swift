@@ -348,11 +348,13 @@ struct BattleFieldView: View {
     /// 화면의 위·아래로 옮기는 데만 쓴다. 결과 화면처럼 재생이 없으면 필요 없다.
     var myActor: BattleActor = .a
     var overlay: ReplayOverlay = .idle
+    /// 손가락흔들기처럼 전투원의 정규 무브셋 밖에서 호출된 기술의 연출 데이터.
+    var calledMoves: [MoveSpec] = []
 
     private var activeMove: MoveSpec? {
         guard let actor = overlay.moveActor, let moveID = overlay.moveID else { return nil }
         let side = actor == myActor ? mine : theirs
-        return side.moves.first { $0.id == moveID }
+        return (side.moves + calledMoves).first { $0.id == moveID }
             ?? (moveID == MoveSpec.struggleID ? .struggle() : nil)
     }
 
@@ -971,6 +973,7 @@ struct BattleArenaView: View {
     let isWaitingForOpponent: Bool
     /// 재생 중인가 · 누가 맞았나 · 무슨 문구가 떠 있나. 재생이 없으면 `.idle` 이라 예전 화면 그대로다.
     var overlay: ReplayOverlay = .idle
+    var calledMoves: [MoveSpec] = []
     let onChoose: (Int) -> Void
     let onSwitch: (Int) -> Void
     let onForfeit: () -> Void
@@ -987,7 +990,7 @@ struct BattleArenaView: View {
             header
             BattleFieldView(mine: mine, theirs: theirs,
                             myTitle: myTitle, theirTitle: theirTitle, l: l,
-                            myActor: myActor, overlay: overlay)
+                            myActor: myActor, overlay: overlay, calledMoves: calledMoves)
                 .frame(height: BattleFieldMetrics.fieldHeight)
             if isWaitingForOpponent {
                 HStack(spacing: 6) {
