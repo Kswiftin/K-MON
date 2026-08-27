@@ -108,9 +108,12 @@ final class CompanionStore {
             // individual.  The post-transition stage and species identify this one durable
             // transition, while the UUID prevents cross-companion collisions.
             guard let mon = state.active else { return }
+            let eventID = "evolution:\(mon.id.uuidString):\(mon.stageIndex):\(mon.currentID)"
+            let now = clock()
             recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。",
-                              companionID: mon.id,
-                              eventID: "evolution:\(mon.id.uuidString):\(mon.stageIndex):\(mon.currentID)")
+                              companionID: mon.id, eventID: eventID, occurredAt: now)
+            memoryAlbum.recordEvolution(companionID: mon.id, eventID: eventID,
+                                        evolvedSpeciesID: mon.currentID, occurredAt: now)
         }
     }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
@@ -1102,8 +1105,9 @@ final class CompanionStore {
     // MARK: 기억·모험
 
     private func recordEventMemory(_ ko: String, _ en: String, _ ja: String,
-                                   companionID: UUID, eventID: String) {
-        memoryAlbum.record(companionID: companionID, body: l.t(ko, en, ja), source: .event, eventID: eventID)
+                                   companionID: UUID, eventID: String, occurredAt: Date? = nil) {
+        memoryAlbum.record(companionID: companionID, body: l.t(ko, en, ja), source: .event,
+                           eventID: eventID, createdAt: occurredAt ?? clock())
     }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
@@ -1197,7 +1201,9 @@ final class CompanionStore {
         // its own memory.
         if let mon = state.active {
             recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。",
-                              companionID: mon.id, eventID: "adventure:\(run.id.uuidString)")
+                              companionID: mon.id, eventID: "adventure:\(run.id.uuidString)", occurredAt: now)
+            memoryAlbum.recordCompletedFocusSession(companionID: mon.id, sessionID: run.id.uuidString,
+                                                     completedAt: now)
         }
         state.adventureHistory.insert(AdventureRecord(id: run.id, zone: run.zone,
                                                        companionSpeciesID: run.companionSpeciesID,

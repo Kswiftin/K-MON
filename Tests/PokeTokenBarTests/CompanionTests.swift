@@ -718,6 +718,14 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertTrue(eventIDs.contains("hatch:\(companionID.uuidString)"))
         XCTAssertTrue(eventIDs.contains("evolution:\(companionID.uuidString):1:2"))
         XCTAssertTrue(eventIDs.contains("evolution:\(companionID.uuidString):2:3"))
+        let evolutionCards = s.memoryAlbum.milestones(for: companionID).filter {
+            if case .evolution = $0.kind { return true }
+            return false
+        }
+        XCTAssertEqual(Set(evolutionCards.map(\.id)), [
+            "evolution:evolution:\(companionID.uuidString):1:2",
+            "evolution:evolution:\(companionID.uuidString):2:3",
+        ])
     }
 
     func testNoEvolutionGraduatesAtSingleThreshold() async {

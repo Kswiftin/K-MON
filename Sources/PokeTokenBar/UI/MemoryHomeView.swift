@@ -1,5 +1,16 @@
 import SwiftUI
 
+enum MemoryHomeRoomTheme {
+    static func tint(forUnlockedCardCount count: Int) -> Color {
+        switch count {
+        case 0: PokedoroTheme.blue
+        case 1...2: PokedoroTheme.mint
+        case 3...4: PokedoroTheme.yellow
+        default: PokedoroTheme.red
+        }
+    }
+}
+
 struct MemoryHomeView: View {
     @Environment(AppSettings.self) private var settings
     let store: CompanionStore
@@ -14,19 +25,11 @@ struct MemoryHomeView: View {
         let entries = album.entries(for: mon.id)
         let timeline = album.timeline(for: mon.id)
         let hidden = entries.filter(\.isHidden).sorted { $0.createdAt > $1.createdAt }
+        let milestones = album.milestones(for: mon.id)
+        let roomTint = MemoryHomeRoomTheme.tint(forUnlockedCardCount: milestones.count)
 
         return AnyView(VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                SpriteView(speciesID: mon.currentID, size: 52, shiny: mon.isShiny)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(l.t("우리의 기록", "Our memories", "ふたりの記録")).font(.headline)
-                    Text(store.chatProfile(for: mon).displayName).font(.subheadline.weight(.semibold))
-                    Text(firstRecordedText(entries)).font(.caption).foregroundStyle(.secondary)
-                    Text(l.t("기억 \(entries.count)개", "\(entries.count) memories", "思い出 \(entries.count) 件"))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
+            roomHeader(mon: mon, entries: entries, milestones: milestones, tint: roomTint)
 
             if let pinned = album.pinned(for: mon.id) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -36,6 +39,15 @@ struct MemoryHomeView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(9)
                 .pokedoroCard(tint: PokedoroTheme.red, emphasized: true)
+            }
+
+            if !milestones.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(l.t("함께 연 카드", "Unlocked cards", "解放したカード")).font(.headline)
+                    ForEach(milestones) { milestone in
+                        milestoneRow(milestone, tint: roomTint)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -77,15 +89,73 @@ struct MemoryHomeView: View {
                 }
             }
         }
-        .padding(10).pokedoroCard(tint: PokedoroTheme.mint)
+        .padding(10).pokedoroCard(tint: roomTint)
         .onAppear { settings.recordMemoryHomeExposure() })
     }
 
-    private func firstRecordedText(_ entries: [PokemonMemory]) -> String {
-        guard let first = entries.min(by: { $0.createdAt < $1.createdAt }) else {
+    private func roomHeader(mon: MonState, entries: [PokemonMemory], milestones: [PokemonMemoryMilestone], tint: Color) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint.opacity(0.18))
+                Rectangle().fill(tint.opacity(0.24)).frame(height: 13).frame(maxHeight: .infinity, alignment: .bottom)
+                SpriteView(speciesID: mon.currentID, size: 54, shiny: mon.isShiny)
+            }
+            .frame(width: 76, height: 68)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(l.t("우리의 미니룸", "Our mini room", "ふたりのミニルーム")).font(.headline)
+                Text(store.chatProfile(for: mon).displayName).font(.subheadline.weight(.semibold))
+                Text(firstRecordedText(mon.id)).font(.caption).foregroundStyle(.secondary)
+                Text(l.t("기억 \(entries.count)개 · 카드 \(milestones.count)개",
+                         "\(entries.count) memories · \(milestones.count) cards",
+                         "思い出 \(entries.count) 件・カード \(milestones.count) 枚"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(l.t("\(store.chatProfile(for: mon).displayName)의 미니룸. \(firstRecordedText(mon.id)). 기억 \(entries.count)개, 카드 \(milestones.count)개",
+                               "\(store.chatProfile(for: mon).displayName)'s mini room. \(firstRecordedText(mon.id)). \(entries.count) memories, \(milestones.count) cards",
+                               "\(store.chatProfile(for: mon).displayName)のミニルーム。\(firstRecordedText(mon.id))。思い出 \(entries.count) 件、カード \(milestones.count) 枚"))
+    }
+
+    private func firstRecordedText(_ companionID: UUID) -> String {
+        guard let first = store.memoryAlbum.firstRecordedAt(for: companionID) else {
             return l.t("아직 기록이 없어요", "No memories yet", "まだ記録はありません")
         }
-        return l.t("첫 기록 ", "First record ", "最初の記録 ") + first.createdAt.formatted(date: .abbreviated, time: .omitted)
+        return l.t("첫 기록 ", "First record ", "最初の記録 ") + first.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private func milestoneRow(_ milestone: PokemonMemoryMilestone, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: milestoneIcon(milestone)).foregroundStyle(tint).frame(width: 16)
+            Text(milestoneTitle(milestone)).font(.subheadline)
+            Spacer(minLength: 0)
+            Text(milestone.occurredAt.formatted(date: .abbreviated, time: .omitted))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(milestoneTitle(milestone) + ", " + milestone.occurredAt.formatted(date: .abbreviated, time: .omitted))
+    }
+
+    private func milestoneIcon(_ milestone: PokemonMemoryMilestone) -> String {
+        switch milestone.kind {
+        case .firstRecord: "book.fill"
+        case .focusSessions: "timer"
+        case .evolution: "arrow.triangle.2.circlepath"
+        case .anniversary: "sparkles"
+        }
+    }
+
+    private func milestoneTitle(_ milestone: PokemonMemoryMilestone) -> String {
+        switch milestone.kind {
+        case .firstRecord: l.t("첫 기록", "First record", "最初の記録")
+        case .focusSessions(let count): l.t("집중 모험 \(count)회", "\(count) focus adventures", "集中冒険 \(count) 回")
+        case .evolution: l.t("진화의 순간", "Evolution moment", "進化の瞬間")
+        case .anniversary: l.t("첫 기록 1주년", "First-record anniversary", "最初の記録 1周年")
+        }
     }
 
     private func memoryRow(_ memory: PokemonMemory, album: PokemonMemoryAlbum) -> some View {

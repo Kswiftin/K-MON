@@ -265,6 +265,31 @@ struct PokemonMemory: Codable, Sendable, Identifiable, Equatable {
 struct PokemonMemoryAlbumSnapshot: Codable, Sendable, Equatable {
     var memories: [UUID: [PokemonMemory]]
     var pinnedMemoryIDs: [UUID: UUID]
+    var milestones: [UUID: PokemonMemoryMilestoneState] = [:]
+}
+
+/// Persistent facts from which Memory Home's cards are derived.  They deliberately hold no
+/// presentation state: cards can be regenerated after a relaunch, import, or localization change.
+struct PokemonMemoryMilestoneState: Codable, Sendable, Equatable {
+    struct Evolution: Codable, Sendable, Equatable {
+        var eventID: String
+        var occurredAt: Date
+        var evolvedSpeciesID: Int
+    }
+
+    var firstRecordedAt: Date?
+    var completedFocusSessionCount: Int = 0
+    var completedFocusSessionIDs: Set<String> = []
+    var focusThresholdDates: [Int: Date] = [:]
+    var evolutions: [Evolution] = []
+}
+
+struct PokemonMemoryMilestone: Identifiable, Sendable, Equatable {
+    enum Kind: Sendable, Equatable { case firstRecord, focusSessions(Int), evolution(speciesID: Int), anniversary }
+
+    let id: String
+    let kind: Kind
+    let occurredAt: Date
 }
 
 @MainActor @Observable
@@ -272,14 +297,17 @@ final class PokemonMemoryAlbum {
     private struct Snapshot: Codable {
         var memories: [UUID: [PokemonMemory]]
         var pinnedMemoryIDs: [UUID: UUID]
+        var milestones: [UUID: PokemonMemoryMilestoneState]
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             memories = try c.decode([UUID: [PokemonMemory]].self, forKey: .memories)
             pinnedMemoryIDs = try c.decodeIfPresent([UUID: UUID].self, forKey: .pinnedMemoryIDs) ?? [:]
+            milestones = try c.decodeIfPresent([UUID: PokemonMemoryMilestoneState].self, forKey: .milestones) ?? [:]
         }
     }
     private(set) var memories: [UUID: [PokemonMemory]] = [:]
     private var pinnedMemoryIDs: [UUID: UUID] = [:]
+    private var milestoneStates: [UUID: PokemonMemoryMilestoneState] = [:]
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
@@ -289,7 +317,9 @@ final class PokemonMemoryAlbum {
             let snapshot = try JSONDecoder().decode(Snapshot.self, from: Data(contentsOf: self.fileURL))
             memories = snapshot.memories.mapValues { Array($0.suffix(200)) }
             pinnedMemoryIDs = snapshot.pinnedMemoryIDs
+            milestoneStates = snapshot.milestones
             normalizePins()
+            if normalizeMilestones() || backfillFirstRecordedDates() { save() }
         } catch {
             let backup = self.fileURL.appendingPathExtension("corrupt")
             try? FileManager.default.removeItem(at: backup)
@@ -305,17 +335,39 @@ final class PokemonMemoryAlbum {
         guard let pinnedID = pinnedMemoryIDs[id] else { return nil }
         return entries(for: id).first { $0.id == pinnedID }
     }
+    func milestones(for companionID: UUID, now: Date = Date()) -> [PokemonMemoryMilestone] {
+        guard let state = milestoneStates[companionID] else { return [] }
+        var result: [PokemonMemoryMilestone] = []
+        if let firstRecordedAt = state.firstRecordedAt {
+            result.append(PokemonMemoryMilestone(id: "first-record", kind: .firstRecord, occurredAt: firstRecordedAt))
+            if let anniversary = Calendar.current.date(byAdding: .year, value: 1, to: firstRecordedAt), anniversary <= now {
+                result.append(PokemonMemoryMilestone(id: "anniversary-1", kind: .anniversary, occurredAt: anniversary))
+            }
+        }
+        for threshold in [10, 30, 100] {
+            if let date = state.focusThresholdDates[threshold] {
+                result.append(PokemonMemoryMilestone(id: "focus-\(threshold)", kind: .focusSessions(threshold), occurredAt: date))
+            }
+        }
+        result.append(contentsOf: state.evolutions.map {
+            PokemonMemoryMilestone(id: "evolution:\($0.eventID)", kind: .evolution(speciesID: $0.evolvedSpeciesID), occurredAt: $0.occurredAt)
+        })
+        return result.sorted { $0.occurredAt == $1.occurredAt ? $0.id < $1.id : $0.occurredAt < $1.occurredAt }
+    }
+    func firstRecordedAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstRecordedAt }
     /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
     /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
     @discardableResult
-    func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil) -> Bool {
+    func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil,
+                createdAt: Date = Date()) -> Bool {
         let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard source != .manual, !body.isEmpty, body.count <= 180 else { return false }
         var entries = memories[companionID] ?? []
         if source == .event, let eventID, !eventID.isEmpty,
            entries.contains(where: { $0.eventID == eventID }) { return false }
-        entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: source, body: body, eventID: eventID))
+        entries.append(PokemonMemory(companionID: companionID, createdAt: createdAt, source: source, body: body, eventID: eventID))
         memories[companionID] = Array(entries.suffix(200)); normalizePins(); save()
+        setFirstRecordedAtIfNeeded(companionID, date: createdAt)
         return true
     }
     @discardableResult
@@ -323,9 +375,30 @@ final class PokemonMemoryAlbum {
         let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, body.count <= 280 else { return false }
         var entries = memories[companionID] ?? []
-        entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: .manual, body: body))
+        let createdAt = Date()
+        entries.append(PokemonMemory(companionID: companionID, createdAt: createdAt, source: .manual, body: body))
         memories[companionID] = Array(entries.suffix(200)); normalizePins(); save()
+        setFirstRecordedAtIfNeeded(companionID, date: createdAt)
         return true
+    }
+    /// `sessionID` is the persisted AdventureRun UUID.  Keeping it makes recovery/retry harmless
+    /// while ensuring only sessions settled after this version began contribute to the counter.
+    func recordCompletedFocusSession(companionID: UUID, sessionID: String, completedAt: Date) {
+        guard !sessionID.isEmpty else { return }
+        var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
+        guard state.completedFocusSessionIDs.insert(sessionID).inserted else { return }
+        state.completedFocusSessionCount += 1
+        if [10, 30, 100].contains(state.completedFocusSessionCount) {
+            state.focusThresholdDates[state.completedFocusSessionCount] = completedAt
+        }
+        milestoneStates[companionID] = state; save()
+    }
+    func recordEvolution(companionID: UUID, eventID: String, evolvedSpeciesID: Int, occurredAt: Date) {
+        guard !eventID.isEmpty else { return }
+        var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
+        guard !state.evolutions.contains(where: { $0.eventID == eventID }) else { return }
+        state.evolutions.append(.init(eventID: eventID, occurredAt: occurredAt, evolvedSpeciesID: evolvedSpeciesID))
+        milestoneStates[companionID] = state; save()
     }
     func pin(_ memory: PokemonMemory) {
         guard entries(for: memory.companionID).contains(where: { $0.id == memory.id }) else { return }
@@ -350,13 +423,14 @@ final class PokemonMemoryAlbum {
         save()
         return true
     }
-    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); pinnedMemoryIDs.removeValue(forKey: id); save() }
+    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); pinnedMemoryIDs.removeValue(forKey: id); milestoneStates.removeValue(forKey: id); save() }
     func prune(validCompanionIDs: Set<UUID>) {
         memories = memories.filter { validCompanionIDs.contains($0.key) }
         pinnedMemoryIDs = pinnedMemoryIDs.filter { validCompanionIDs.contains($0.key) }
-        normalizePins(); save()
+        milestoneStates = milestoneStates.filter { validCompanionIDs.contains($0.key) }
+        normalizePins(); _ = normalizeMilestones(); save()
     }
-    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs) }
+    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates) }
     func replace(with snapshot: PokemonMemoryAlbumSnapshot, validCompanionIDs: Set<UUID>) {
         memories = snapshot.memories.reduce(into: [:]) { result, entry in
             guard validCompanionIDs.contains(entry.key) else { return }
@@ -367,13 +441,55 @@ final class PokemonMemoryAlbum {
             }.suffix(200))
         }
         pinnedMemoryIDs = snapshot.pinnedMemoryIDs
+        milestoneStates = snapshot.milestones.filter { validCompanionIDs.contains($0.key) }
         normalizePins(); save()
+        if normalizeMilestones() || backfillFirstRecordedDates() { save() }
     }
     func snapshotData() throws -> Data { try JSONEncoder().encode(snapshot) }
     private func normalizePins() {
         pinnedMemoryIDs = pinnedMemoryIDs.filter { companionID, memoryID in
             memories[companionID]?.contains(where: { $0.id == memoryID }) == true
         }
+    }
+    private func setFirstRecordedAtIfNeeded(_ companionID: UUID, date: Date) {
+        var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
+        guard state.firstRecordedAt == nil || date < state.firstRecordedAt! else { return }
+        state.firstRecordedAt = date
+        milestoneStates[companionID] = state; save()
+    }
+    @discardableResult
+    private func normalizeMilestones() -> Bool {
+        let original = milestoneStates
+        milestoneStates = milestoneStates.mapValues { raw in
+            var state = raw
+            state.completedFocusSessionIDs = Set(state.completedFocusSessionIDs.filter { !$0.isEmpty })
+            // A counter without its stable settlement IDs cannot be verified after an import;
+            // use only the durable evidence rather than granting cards from a malformed payload.
+            state.completedFocusSessionCount = min(max(0, state.completedFocusSessionCount), state.completedFocusSessionIDs.count)
+            state.focusThresholdDates = state.focusThresholdDates.filter { threshold, _ in
+                [10, 30, 100].contains(threshold) && threshold <= state.completedFocusSessionCount
+            }
+            var seenEvolutionIDs = Set<String>()
+            state.evolutions = state.evolutions.filter {
+                !$0.eventID.isEmpty && $0.evolvedSpeciesID > 0 && seenEvolutionIDs.insert($0.eventID).inserted
+            }
+            return state
+        }
+        return milestoneStates != original
+    }
+    @discardableResult
+    private func backfillFirstRecordedDates() -> Bool {
+        var changed = false
+        for (companionID, entries) in memories {
+            guard let first = entries.map(\.createdAt).min() else { continue }
+            let existing = milestoneStates[companionID]?.firstRecordedAt
+            guard existing == nil || first < existing! else { continue }
+            var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
+            state.firstRecordedAt = first
+            milestoneStates[companionID] = state
+            changed = true
+        }
+        return changed
     }
     private func save() {
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)

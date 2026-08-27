@@ -100,6 +100,10 @@ final class AdventureClaimTests: XCTestCase {
         XCTAssertEqual(adventureMemories.count, 2)
         XCTAssertEqual(Set(adventureMemories.compactMap(\.eventID)).count, 2,
                        "Each persisted run UUID identifies exactly one automatic memory")
+        XCTAssertEqual(store.memoryAlbum.milestones(for: companionID).filter {
+            if case .focusSessions = $0.kind { return true }
+            return false
+        }.count, 0, "Two settled runs do not unlock a focus threshold early")
     }
 
     /// 트리거 재현 — 진행 중 / 완료-미정산 두 브랜치를 각각 확인한다.

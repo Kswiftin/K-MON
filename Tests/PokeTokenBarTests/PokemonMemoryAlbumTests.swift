@@ -137,10 +137,66 @@ final class PokemonMemoryAlbumTests: XCTestCase {
                          body: "Legacy", eventID: nil)
         ]])
         try JSONEncoder().encode(legacy).write(to: url)
-        XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).entries(for: companionID).count, 1)
+        let migrated = PokemonMemoryAlbum(fileURL: url)
+        XCTAssertEqual(migrated.entries(for: companionID).count, 1)
+        XCTAssertEqual(migrated.firstRecordedAt(for: companionID), legacy.memories[companionID]?.first?.createdAt,
+                       "Old albums derive their first-record date from their earliest retained memory")
 
         try Data("not json".utf8).write(to: url)
         XCTAssertTrue(PokemonMemoryAlbum(fileURL: url).entries(for: companionID).isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathExtension("corrupt").path))
+    }
+
+    func testMilestonesCountOnlyNewSettlementsAndPersistAcrossRelaunch() {
+        let url = temporaryURL(), companionID = UUID()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+        let first = Date(timeIntervalSinceReferenceDate: 1_000)
+        album.record(companionID: companionID, body: "First", source: .event, createdAt: first)
+        for number in 0..<10 {
+            album.recordCompletedFocusSession(companionID: companionID, sessionID: "run-\(number)",
+                                              completedAt: first.addingTimeInterval(Double(number + 1)))
+        }
+        album.recordCompletedFocusSession(companionID: companionID, sessionID: "run-9",
+                                          completedAt: first.addingTimeInterval(99))
+
+        let milestones = album.milestones(for: companionID, now: first)
+        XCTAssertEqual(album.firstRecordedAt(for: companionID), first)
+        XCTAssertEqual(milestones.map(\.id), ["first-record", "focus-10"])
+        XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).milestones(for: companionID, now: first).map(\.id),
+                       ["first-record", "focus-10"])
+    }
+
+    func testFocusMilestoneBoundariesAndEvolutionSurviveMemoryEviction() {
+        let album = PokemonMemoryAlbum(fileURL: temporaryURL()), companionID = UUID()
+        let start = Date(timeIntervalSinceReferenceDate: 2_000)
+        for number in 0..<100 {
+            album.recordCompletedFocusSession(companionID: companionID, sessionID: "run-\(number)",
+                                              completedAt: start.addingTimeInterval(Double(number)))
+        }
+        album.recordEvolution(companionID: companionID, eventID: "evolution-stable-id", evolvedSpeciesID: 26,
+                              occurredAt: start)
+        for number in 0...200 {
+            album.record(companionID: companionID, body: "Event \(number)", source: .event,
+                         eventID: "event-\(number)", createdAt: start.addingTimeInterval(Double(number + 200)))
+        }
+
+        let ids = album.milestones(for: companionID, now: start).map(\.id)
+        XCTAssertTrue(ids.contains("focus-10"))
+        XCTAssertTrue(ids.contains("focus-30"))
+        XCTAssertTrue(ids.contains("focus-100"))
+        XCTAssertTrue(ids.contains("evolution:evolution-stable-id"))
+        XCTAssertEqual(album.entries(for: companionID).count, 200)
+    }
+
+    func testFirstRecordAnniversaryUsesThePersistedFirstDate() {
+        let album = PokemonMemoryAlbum(fileURL: temporaryURL()), companionID = UUID()
+        let first = Date(timeIntervalSinceReferenceDate: 10_000)
+        album.record(companionID: companionID, body: "First", source: .event, createdAt: first)
+        let almostYear = Calendar.current.date(byAdding: .day, value: 364, to: first)!
+        let anniversary = Calendar.current.date(byAdding: .year, value: 1, to: first)!
+
+        XCTAssertFalse(album.milestones(for: companionID, now: almostYear).contains { $0.id == "anniversary-1" })
+        XCTAssertTrue(album.milestones(for: companionID, now: anniversary).contains { $0.id == "anniversary-1" })
     }
 }
