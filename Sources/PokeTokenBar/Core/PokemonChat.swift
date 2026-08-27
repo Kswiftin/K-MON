@@ -266,7 +266,25 @@ struct PokemonMemoryAlbumSnapshot: Codable, Sendable, Equatable {
     var memories: [UUID: [PokemonMemory]]
     var pinnedMemoryIDs: [UUID: UUID]
     var milestones: [UUID: PokemonMemoryMilestoneState] = [:]
+    var roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]
+
+    private enum CodingKeys: String, CodingKey { case memories, pinnedMemoryIDs, milestones, roomThemes }
+    init(memories: [UUID: [PokemonMemory]], pinnedMemoryIDs: [UUID: UUID],
+         milestones: [UUID: PokemonMemoryMilestoneState] = [:],
+         roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]) {
+        self.memories = memories; self.pinnedMemoryIDs = pinnedMemoryIDs
+        self.milestones = milestones; self.roomThemes = roomThemes
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        memories = try c.decode([UUID: [PokemonMemory]].self, forKey: .memories)
+        pinnedMemoryIDs = try c.decodeIfPresent([UUID: UUID].self, forKey: .pinnedMemoryIDs) ?? [:]
+        milestones = try c.decodeIfPresent([UUID: PokemonMemoryMilestoneState].self, forKey: .milestones) ?? [:]
+        roomThemes = try c.decodeIfPresent([UUID: PokemonMemoryRoomTheme].self, forKey: .roomThemes) ?? [:]
+    }
 }
+
+enum PokemonMemoryRoomTheme: String, Codable, Sendable, CaseIterable { case blue, mint, yellow, red }
 
 /// Persistent facts from which Memory Home's cards are derived.  They deliberately hold no
 /// presentation state: cards can be regenerated after a relaunch, import, or localization change.
@@ -277,7 +295,9 @@ struct PokemonMemoryMilestoneState: Codable, Sendable, Equatable {
         var evolvedSpeciesID: Int
     }
 
+    /// 첫 기록은 관계 문맥용으로 유지한다. 카드 기준은 `firstMetAt` 이다.
     var firstRecordedAt: Date?
+    var firstMetAt: Date?
     var completedFocusSessionCount: Int = 0
     var completedFocusSessionIDs: Set<String> = []
     var focusThresholdDates: [Int: Date] = [:]
@@ -285,7 +305,7 @@ struct PokemonMemoryMilestoneState: Codable, Sendable, Equatable {
 }
 
 struct PokemonMemoryMilestone: Identifiable, Sendable, Equatable {
-    enum Kind: Sendable, Equatable { case firstRecord, focusSessions(Int), evolution(speciesID: Int), anniversary }
+    enum Kind: Sendable, Equatable { case firstMeeting, focusSessions(Int), evolution(speciesID: Int), anniversary }
 
     let id: String
     let kind: Kind
@@ -298,16 +318,19 @@ final class PokemonMemoryAlbum {
         var memories: [UUID: [PokemonMemory]]
         var pinnedMemoryIDs: [UUID: UUID]
         var milestones: [UUID: PokemonMemoryMilestoneState]
+        var roomThemes: [UUID: PokemonMemoryRoomTheme]
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             memories = try c.decode([UUID: [PokemonMemory]].self, forKey: .memories)
             pinnedMemoryIDs = try c.decodeIfPresent([UUID: UUID].self, forKey: .pinnedMemoryIDs) ?? [:]
             milestones = try c.decodeIfPresent([UUID: PokemonMemoryMilestoneState].self, forKey: .milestones) ?? [:]
+            roomThemes = try c.decodeIfPresent([UUID: PokemonMemoryRoomTheme].self, forKey: .roomThemes) ?? [:]
         }
     }
     private(set) var memories: [UUID: [PokemonMemory]] = [:]
     private var pinnedMemoryIDs: [UUID: UUID] = [:]
     private var milestoneStates: [UUID: PokemonMemoryMilestoneState] = [:]
+    private var roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
@@ -318,6 +341,7 @@ final class PokemonMemoryAlbum {
             memories = snapshot.memories.mapValues { Array($0.suffix(200)) }
             pinnedMemoryIDs = snapshot.pinnedMemoryIDs
             milestoneStates = snapshot.milestones
+            roomThemes = snapshot.roomThemes
             normalizePins()
             if normalizeMilestones() || backfillFirstRecordedDates() { save() }
         } catch {
@@ -338,9 +362,9 @@ final class PokemonMemoryAlbum {
     func milestones(for companionID: UUID, now: Date = Date()) -> [PokemonMemoryMilestone] {
         guard let state = milestoneStates[companionID] else { return [] }
         var result: [PokemonMemoryMilestone] = []
-        if let firstRecordedAt = state.firstRecordedAt {
-            result.append(PokemonMemoryMilestone(id: "first-record", kind: .firstRecord, occurredAt: firstRecordedAt))
-            if let anniversary = Calendar.current.date(byAdding: .year, value: 1, to: firstRecordedAt), anniversary <= now {
+        if let firstMetAt = state.firstMetAt {
+            result.append(PokemonMemoryMilestone(id: "first-meeting", kind: .firstMeeting, occurredAt: firstMetAt))
+            if let anniversary = Calendar.current.date(byAdding: .year, value: 1, to: firstMetAt), anniversary <= now {
                 result.append(PokemonMemoryMilestone(id: "anniversary-1", kind: .anniversary, occurredAt: anniversary))
             }
         }
@@ -355,6 +379,18 @@ final class PokemonMemoryAlbum {
         return result.sorted { $0.occurredAt == $1.occurredAt ? $0.id < $1.id : $0.occurredAt < $1.occurredAt }
     }
     func firstRecordedAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstRecordedAt }
+    func firstMetAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstMetAt }
+    func recordFirstMeeting(companionID: UUID, at date: Date) {
+        var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
+        guard state.firstMetAt == nil || date < state.firstMetAt! else { return }
+        state.firstMetAt = date
+        milestoneStates[companionID] = state; save()
+    }
+    func theme(for companionID: UUID) -> PokemonMemoryRoomTheme { roomThemes[companionID] ?? .blue }
+    func setTheme(_ theme: PokemonMemoryRoomTheme, for companionID: UUID) {
+        guard roomThemes[companionID] != theme else { return }
+        roomThemes[companionID] = theme; save()
+    }
     /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
     /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
     @discardableResult
@@ -423,14 +459,15 @@ final class PokemonMemoryAlbum {
         save()
         return true
     }
-    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); pinnedMemoryIDs.removeValue(forKey: id); milestoneStates.removeValue(forKey: id); save() }
+    func deleteAll(for id: UUID) { memories.removeValue(forKey: id); pinnedMemoryIDs.removeValue(forKey: id); milestoneStates.removeValue(forKey: id); roomThemes.removeValue(forKey: id); save() }
     func prune(validCompanionIDs: Set<UUID>) {
         memories = memories.filter { validCompanionIDs.contains($0.key) }
         pinnedMemoryIDs = pinnedMemoryIDs.filter { validCompanionIDs.contains($0.key) }
         milestoneStates = milestoneStates.filter { validCompanionIDs.contains($0.key) }
+        roomThemes = roomThemes.filter { validCompanionIDs.contains($0.key) }
         normalizePins(); _ = normalizeMilestones(); save()
     }
-    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates) }
+    var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates, roomThemes: roomThemes) }
     func replace(with snapshot: PokemonMemoryAlbumSnapshot, validCompanionIDs: Set<UUID>) {
         memories = snapshot.memories.reduce(into: [:]) { result, entry in
             guard validCompanionIDs.contains(entry.key) else { return }
@@ -442,6 +479,7 @@ final class PokemonMemoryAlbum {
         }
         pinnedMemoryIDs = snapshot.pinnedMemoryIDs
         milestoneStates = snapshot.milestones.filter { validCompanionIDs.contains($0.key) }
+        roomThemes = snapshot.roomThemes.filter { validCompanionIDs.contains($0.key) }
         normalizePins(); save()
         if normalizeMilestones() || backfillFirstRecordedDates() { save() }
     }
@@ -486,6 +524,9 @@ final class PokemonMemoryAlbum {
             guard existing == nil || first < existing! else { continue }
             var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
             state.firstRecordedAt = first
+            // Albums from before first-meeting support have no companion creation timestamp.
+            // Their earliest retained evidence is the only stable, non-invented fallback.
+            if state.firstMetAt == nil { state.firstMetAt = first }
             milestoneStates[companionID] = state
             changed = true
         }

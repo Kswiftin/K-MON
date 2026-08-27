@@ -141,6 +141,8 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         XCTAssertEqual(migrated.entries(for: companionID).count, 1)
         XCTAssertEqual(migrated.firstRecordedAt(for: companionID), legacy.memories[companionID]?.first?.createdAt,
                        "Old albums derive their first-record date from their earliest retained memory")
+        XCTAssertEqual(migrated.firstMetAt(for: companionID), legacy.memories[companionID]?.first?.createdAt,
+                       "Old albums use their earliest retained memory as the stable first-meeting fallback")
 
         try Data("not json".utf8).write(to: url)
         XCTAssertTrue(PokemonMemoryAlbum(fileURL: url).entries(for: companionID).isEmpty)
@@ -162,9 +164,9 @@ final class PokemonMemoryAlbumTests: XCTestCase {
 
         let milestones = album.milestones(for: companionID, now: first)
         XCTAssertEqual(album.firstRecordedAt(for: companionID), first)
-        XCTAssertEqual(milestones.map(\.id), ["first-record", "focus-10"])
+        XCTAssertEqual(milestones.map(\.id), ["focus-10"])
         XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).milestones(for: companionID, now: first).map(\.id),
-                       ["first-record", "focus-10"])
+                       ["focus-10"])
     }
 
     func testFocusMilestoneBoundariesAndEvolutionSurviveMemoryEviction() {
@@ -189,14 +191,27 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         XCTAssertEqual(album.entries(for: companionID).count, 200)
     }
 
-    func testFirstRecordAnniversaryUsesThePersistedFirstDate() {
+    func testFirstMeetingIsImmediateAndItsAnniversaryUsesThePersistedMeetingDate() {
         let album = PokemonMemoryAlbum(fileURL: temporaryURL()), companionID = UUID()
         let first = Date(timeIntervalSinceReferenceDate: 10_000)
-        album.record(companionID: companionID, body: "First", source: .event, createdAt: first)
+        album.recordFirstMeeting(companionID: companionID, at: first)
         let almostYear = Calendar.current.date(byAdding: .day, value: 364, to: first)!
         let anniversary = Calendar.current.date(byAdding: .year, value: 1, to: first)!
 
+        XCTAssertEqual(album.milestones(for: companionID, now: first).map(\.id), ["first-meeting"])
         XCTAssertFalse(album.milestones(for: companionID, now: almostYear).contains { $0.id == "anniversary-1" })
         XCTAssertTrue(album.milestones(for: companionID, now: anniversary).contains { $0.id == "anniversary-1" })
+    }
+
+    func testThemesAreCompanionScopedPersistAndPrune() {
+        let url = temporaryURL(), first = UUID(), second = UUID()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+        album.setTheme(.red, for: first)
+        album.setTheme(.mint, for: second)
+        XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).theme(for: first), .red)
+        XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).theme(for: second), .mint)
+        album.prune(validCompanionIDs: [first])
+        XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).theme(for: second), .blue)
     }
 }

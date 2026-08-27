@@ -1,12 +1,12 @@
 import SwiftUI
 
 enum MemoryHomeRoomTheme {
-    static func tint(forUnlockedCardCount count: Int) -> Color {
-        switch count {
-        case 0: PokedoroTheme.blue
-        case 1...2: PokedoroTheme.mint
-        case 3...4: PokedoroTheme.yellow
-        default: PokedoroTheme.red
+    static func tint(for theme: PokemonMemoryRoomTheme) -> Color {
+        switch theme {
+        case .blue: PokedoroTheme.blue
+        case .mint: PokedoroTheme.mint
+        case .yellow: PokedoroTheme.yellow
+        case .red: PokedoroTheme.red
         }
     }
 }
@@ -26,10 +26,11 @@ struct MemoryHomeView: View {
         let timeline = album.timeline(for: mon.id)
         let hidden = entries.filter(\.isHidden).sorted { $0.createdAt > $1.createdAt }
         let milestones = album.milestones(for: mon.id)
-        let roomTint = MemoryHomeRoomTheme.tint(forUnlockedCardCount: milestones.count)
+        let roomTheme = album.theme(for: mon.id)
+        let roomTint = MemoryHomeRoomTheme.tint(for: roomTheme)
 
         return AnyView(VStack(alignment: .leading, spacing: 10) {
-            roomHeader(mon: mon, entries: entries, milestones: milestones, tint: roomTint)
+            roomHeader(mon: mon, entries: entries, milestones: milestones, theme: roomTheme, tint: roomTint)
 
             if let pinned = album.pinned(for: mon.id) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -44,8 +45,13 @@ struct MemoryHomeView: View {
             if !milestones.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(l.t("함께 연 카드", "Unlocked cards", "解放したカード")).font(.headline)
-                    ForEach(milestones) { milestone in
-                        milestoneRow(milestone, tint: roomTint)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 8) {
+                            ForEach(milestones) { milestone in
+                                milestoneCard(milestone, tint: roomTint)
+                            }
+                        }
+                        .padding(.vertical, 2)
                     }
                 }
             }
@@ -93,7 +99,7 @@ struct MemoryHomeView: View {
         .onAppear { settings.recordMemoryHomeExposure() })
     }
 
-    private func roomHeader(mon: MonState, entries: [PokemonMemory], milestones: [PokemonMemoryMilestone], tint: Color) -> some View {
+    private func roomHeader(mon: MonState, entries: [PokemonMemory], milestones: [PokemonMemoryMilestone], theme: PokemonMemoryRoomTheme, tint: Color) -> some View {
         HStack(alignment: .center, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint.opacity(0.18))
@@ -104,45 +110,63 @@ struct MemoryHomeView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(l.t("우리의 미니룸", "Our mini room", "ふたりのミニルーム")).font(.headline)
                 Text(store.chatProfile(for: mon).displayName).font(.subheadline.weight(.semibold))
-                Text(firstRecordedText(mon.id)).font(.caption).foregroundStyle(.secondary)
+                Text(firstMeetingText(mon.id)).font(.caption).foregroundStyle(.secondary)
                 Text(l.t("기억 \(entries.count)개 · 카드 \(milestones.count)개",
                          "\(entries.count) memories · \(milestones.count) cards",
                          "思い出 \(entries.count) 件・カード \(milestones.count) 枚"))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
+            Menu {
+                ForEach(PokemonMemoryRoomTheme.allCases, id: \.self) { candidate in
+                    Button {
+                        store.memoryAlbum.setTheme(candidate, for: mon.id)
+                    } label: {
+                        Label(themeName(candidate), systemImage: candidate == theme ? "checkmark" : "circle.fill")
+                    }
+                }
+            } label: {
+                Image(systemName: "paintpalette.fill")
+                    .foregroundStyle(tint)
+                    .frame(minWidth: 28, minHeight: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel(l.t("미니룸 테마", "Mini room theme", "ミニルームのテーマ"))
+            .accessibilityValue(themeName(theme))
+            .accessibilityHint(l.t("동행별 테마를 선택합니다.", "Choose a theme for this companion.", "この相棒のテーマを選びます。"))
         }
         .padding(8)
         .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(l.t("\(store.chatProfile(for: mon).displayName)의 미니룸. \(firstRecordedText(mon.id)). 기억 \(entries.count)개, 카드 \(milestones.count)개",
-                               "\(store.chatProfile(for: mon).displayName)'s mini room. \(firstRecordedText(mon.id)). \(entries.count) memories, \(milestones.count) cards",
-                               "\(store.chatProfile(for: mon).displayName)のミニルーム。\(firstRecordedText(mon.id))。思い出 \(entries.count) 件、カード \(milestones.count) 枚"))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(l.t("\(store.chatProfile(for: mon).displayName)의 미니룸. \(firstMeetingText(mon.id)). 기억 \(entries.count)개, 카드 \(milestones.count)개",
+                               "\(store.chatProfile(for: mon).displayName)'s mini room. \(firstMeetingText(mon.id)). \(entries.count) memories, \(milestones.count) cards",
+                               "\(store.chatProfile(for: mon).displayName)のミニルーム。\(firstMeetingText(mon.id))。思い出 \(entries.count) 件、カード \(milestones.count) 枚"))
     }
 
-    private func firstRecordedText(_ companionID: UUID) -> String {
-        guard let first = store.memoryAlbum.firstRecordedAt(for: companionID) else {
-            return l.t("아직 기록이 없어요", "No memories yet", "まだ記録はありません")
+    private func firstMeetingText(_ companionID: UUID) -> String {
+        guard let first = store.memoryAlbum.firstMetAt(for: companionID) else {
+            return l.t("첫 만남을 기다리고 있어요", "Waiting for our first meeting", "最初の出会いを待っています")
         }
-        return l.t("첫 기록 ", "First record ", "最初の記録 ") + first.formatted(date: .abbreviated, time: .omitted)
+        return l.t("첫 만남 ", "First meeting ", "最初の出会い ") + formattedDate(first)
     }
 
-    private func milestoneRow(_ milestone: PokemonMemoryMilestone, tint: Color) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: milestoneIcon(milestone)).foregroundStyle(tint).frame(width: 16)
-            Text(milestoneTitle(milestone)).font(.subheadline)
-            Spacer(minLength: 0)
-            Text(milestone.occurredAt.formatted(date: .abbreviated, time: .omitted))
-                .font(.caption).foregroundStyle(.secondary)
+    private func milestoneCard(_ milestone: PokemonMemoryMilestone, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Image(systemName: milestoneIcon(milestone))
+                .font(.title3.weight(.semibold)).foregroundStyle(tint)
+            Text(milestoneTitle(milestone)).font(.subheadline.weight(.semibold)).lineLimit(2)
+            Text(formattedDate(milestone.occurredAt)).font(.caption).foregroundStyle(.secondary)
         }
-        .padding(.vertical, 3)
+        .frame(width: 132, height: 98, alignment: .leading)
+        .padding(10)
+        .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(milestoneTitle(milestone) + ", " + milestone.occurredAt.formatted(date: .abbreviated, time: .omitted))
+        .accessibilityLabel(milestoneTitle(milestone) + ", " + formattedDate(milestone.occurredAt))
     }
 
     private func milestoneIcon(_ milestone: PokemonMemoryMilestone) -> String {
         switch milestone.kind {
-        case .firstRecord: "book.fill"
+        case .firstMeeting: "person.2.fill"
         case .focusSessions: "timer"
         case .evolution: "arrow.triangle.2.circlepath"
         case .anniversary: "sparkles"
@@ -151,11 +175,24 @@ struct MemoryHomeView: View {
 
     private func milestoneTitle(_ milestone: PokemonMemoryMilestone) -> String {
         switch milestone.kind {
-        case .firstRecord: l.t("첫 기록", "First record", "最初の記録")
+        case .firstMeeting: l.t("첫 만남", "First meeting", "最初の出会い")
         case .focusSessions(let count): l.t("집중 모험 \(count)회", "\(count) focus adventures", "集中冒険 \(count) 回")
         case .evolution: l.t("진화의 순간", "Evolution moment", "進化の瞬間")
-        case .anniversary: l.t("첫 기록 1주년", "First-record anniversary", "最初の記録 1周年")
+        case .anniversary: l.t("첫 만남 1주년", "First-meeting anniversary", "最初の出会い 1周年")
         }
+    }
+
+    private func themeName(_ theme: PokemonMemoryRoomTheme) -> String {
+        switch theme {
+        case .blue: l.t("파랑", "Blue", "ブルー")
+        case .mint: l.t("민트", "Mint", "ミント")
+        case .yellow: l.t("노랑", "Yellow", "イエロー")
+        case .red: l.t("빨강", "Red", "レッド")
+        }
+    }
+
+    private func formattedDate(_ date: Date) -> String {
+        date.formatted(.dateTime.locale(store.language.displayLocale).year().month(.abbreviated).day())
     }
 
     private func memoryRow(_ memory: PokemonMemory, album: PokemonMemoryAlbum) -> some View {

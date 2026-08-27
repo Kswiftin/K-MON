@@ -402,10 +402,16 @@ enum SaveTransfer {
             p.append("bh" + s.battleHistory.map { "\($0.id)|\($0.mode.rawValue)|\($0.participantCount)|\($0.won)|\($0.reward)" }.joined(separator: ","))
         }
         if let a = s.active {
-            p.append("act\(a.id)|\(a.baseID)|\(a.stageIndex)|\(a.usedAtStage)|\(a.rarity.rawValue)|\(a.isShiny)|\(a.totalForms)|\(a.nickname ?? "")|\(a.levelExperience)|\(a.learnedMoves.map(\.id))")
+            var activeSegment = "act\(a.id)|\(a.baseID)|\(a.stageIndex)|\(a.usedAtStage)|\(a.rarity.rawValue)|\(a.isShiny)|\(a.totalForms)|\(a.nickname ?? "")|\(a.levelExperience)|\(a.learnedMoves.map(\.id))"
+            if let firstMetAt = a.firstMetAt { activeSegment += "|fm\(firstMetAt.timeIntervalSinceReferenceDate)" }
+            p.append(activeSegment)
         } else { p.append("act-") }
         if !s.boxedMons.isEmpty {
-            p.append("box" + s.boxedMons.map { "\($0.id):\($0.baseID):\($0.stageIndex):\($0.levelExperience)" }.joined(separator: ","))
+            p.append("box" + s.boxedMons.map {
+                var segment = "\($0.id):\($0.baseID):\($0.stageIndex):\($0.levelExperience)"
+                if let firstMetAt = $0.firstMetAt { segment += ":fm\(firstMetAt.timeIntervalSinceReferenceDate)" }
+                return segment
+            }.joined(separator: ","))
         }
         p.append("dex" + s.dex.map { "\($0.baseID):\($0.finalID):\($0.rarity.rawValue)" }.sorted().joined(separator: ","))
         // 도감 목표는 수령 플래그가 없어 멱등 가드가 **진행도의 단조성**뿐이다(`DexGoals`). 진행도가 읽는

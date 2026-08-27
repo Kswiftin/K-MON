@@ -167,6 +167,7 @@ final class CompanionStore {
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
+        backfillFirstMeetingDates()
         reconcileStoredEggDates()
         // 정산 없이 앱이 죽은 랭크전은 여기서 패배로 마감한다(에스크로는 이미 빠져나가 있다).
         settleAbandonedRankedBattleIfNeeded()
@@ -1420,6 +1421,7 @@ final class CompanionStore {
         let offeredSpecies = state.active?.id == offeredID
             ? state.active?.currentID : state.boxedMons.first(where: { $0.id == offeredID })?.currentID
         var received = incoming
+        if received.firstMetAt == nil { received.firstMetAt = clock() }
         if let offeredSpecies { Self.applyPairedTradeEvolution(to: &received, counterpartSpeciesID: offeredSpecies) }
         if state.active?.id == offeredID {
             guard let sent = state.active else { return false }
@@ -1427,6 +1429,7 @@ final class CompanionStore {
             memoryAlbum.deleteAll(for: sent.id)
             chatStore.deleteSession(for: sent.id)
             state.active = received
+            memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
             activeGeneration += 1
             currentLine = nil
             displayedMoves = []
@@ -1444,6 +1447,7 @@ final class CompanionStore {
         memoryAlbum.deleteAll(for: sent.id)
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
+        memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
         save()
         return true
     }
@@ -1543,10 +1547,12 @@ final class CompanionStore {
         var shedinja = MonState(baseID: 290, pathIDs: [290, 292], plannedPathIDs: [290, 292],
                                 stageIndex: 1, usedAtStage: 0, rarity: source.rarity, totalForms: 2,
                                 isShiny: source.isShiny, nature: source.nature, gender: .genderless,
-                                evolutionStatRelation: source.evolutionStatRelation, names: line.names)
+                                evolutionStatRelation: source.evolutionStatRelation, names: line.names,
+                                firstMetAt: clock())
         shedinja.levelExperience = source.levelExperience
         shedinja.learnedMoves = source.learnedMoves
         state.boxedMons.append(shedinja)
+        memoryAlbum.recordFirstMeeting(companionID: shedinja.id, at: shedinja.firstMetAt!)
     }
 
     func declineMoveLearning() {
@@ -2752,7 +2758,8 @@ final class CompanionStore {
                            stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: plan.count,
                            isShiny: shiny, nature: nature, gender: gender,
                            evolutionStatRelation: statRelation,
-                           names: line.names)   // 박스 개체는 currentLine 이 없어 이름을 여기서 들고 가야 한다
+                           names: line.names, firstMetAt: clock())   // 박스 개체는 currentLine 이 없어 이름을 여기서 들고 가야 한다
+        memoryAlbum.recordFirstMeeting(companionID: mon.id, at: mon.firstMetAt!)
         // 동행이 비어 있으면(졸업 직후 등) 박스가 아니라 바로 동행으로 부화한다 — 그러지 않으면
         // 졸업 후 동행 없는 상태로 남아 사용자가 박스에서 직접 꺼내야 한다.
         if state.active == nil {
@@ -2958,8 +2965,9 @@ final class CompanionStore {
                                 stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: evolutionPlan.count,
                                 isShiny: isShiny, nature: nature, gender: gender,
                                 evolutionStatRelation: statRelation, dittoDisguise: dittoDisguise,
-                                names: line.names)   // 박스로 들어가도 도감이 이름을 그릴 수 있게 개체에 저장
+                                names: line.names, firstMetAt: clock())   // 박스로 들어가도 도감이 이름을 여기서 들고 가야 한다
         let hatchedID = state.active!.id
+        memoryAlbum.recordFirstMeeting(companionID: hatchedID, at: state.active!.firstMetAt!)
         AppLog.write("hatch: base=\(line.baseID) rarity=\(line.rarity) shiny=\(isShiny) forms=\(evolutionPlan.count) ditto=\(dittoDisguise != nil)")
         let name = line.localizedName(line.baseID, state.language)
         recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。",
@@ -3132,6 +3140,7 @@ final class CompanionStore {
         } else {
             memoryAlbum.prune(validCompanionIDs: validIDs)
         }
+        backfillFirstMeetingDates()
         chatStore.prune(validCompanionIDs: validIDs)
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
         // 않으면 먼저 떠 있던 라인 로드가 완료되며 새로 불러온 개체를 덮어쓴다.
@@ -3264,6 +3273,27 @@ final class CompanionStore {
         // (디코드는 *성공*하므로 위의 .corrupt 복구도 발동하지 않는다). 여기서 걸면 자가 복구된다.
         // 출처를 .localDisk 로 넘겨 **개수 절단만** 뺀다 — 값 클램프는 그대로 걸린다(#145).
         state = SaveTransfer.sanitized(s, origin: .localDisk)
+    }
+    /// `firstMetAt` 이전 세이브는 가장 이른 앨범 기록으로 보정한다. 새 동행은 부화 시각을 직접 저장한다.
+    private func backfillFirstMeetingDates() {
+        var changed = false
+        for index in state.boxedMons.indices {
+            guard state.boxedMons[index].firstMetAt == nil,
+                  let date = memoryAlbum.firstRecordedAt(for: state.boxedMons[index].id) else { continue }
+            state.boxedMons[index].firstMetAt = date; changed = true
+            memoryAlbum.recordFirstMeeting(companionID: state.boxedMons[index].id, at: date)
+        }
+        if var active = state.active, active.firstMetAt == nil,
+           let date = memoryAlbum.firstRecordedAt(for: active.id) {
+            active.firstMetAt = date; state.active = active; changed = true
+            memoryAlbum.recordFirstMeeting(companionID: active.id, at: date)
+        } else if let active = state.active, let date = active.firstMetAt {
+            memoryAlbum.recordFirstMeeting(companionID: active.id, at: date)
+        }
+        for mon in state.boxedMons where mon.firstMetAt != nil {
+            memoryAlbum.recordFirstMeeting(companionID: mon.id, at: mon.firstMetAt!)
+        }
+        if changed { save() }
     }
     private func save() {
         // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).

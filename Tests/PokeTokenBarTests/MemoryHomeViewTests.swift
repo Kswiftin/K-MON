@@ -3,13 +3,11 @@ import XCTest
 
 @MainActor
 final class MemoryHomeViewTests: XCTestCase {
-    func testMiniRoomThemeChangesAtUnlockedCardBoundaries() {
-        XCTAssertEqual(MemoryHomeRoomTheme.tint(forUnlockedCardCount: 0), PokedoroTheme.blue)
-        XCTAssertEqual(MemoryHomeRoomTheme.tint(forUnlockedCardCount: 1), PokedoroTheme.mint)
-        XCTAssertEqual(MemoryHomeRoomTheme.tint(forUnlockedCardCount: 2), PokedoroTheme.mint)
-        XCTAssertEqual(MemoryHomeRoomTheme.tint(forUnlockedCardCount: 3), PokedoroTheme.yellow)
-        XCTAssertEqual(MemoryHomeRoomTheme.tint(forUnlockedCardCount: 4), PokedoroTheme.yellow)
-        XCTAssertEqual(MemoryHomeRoomTheme.tint(forUnlockedCardCount: 5), PokedoroTheme.red)
+    func testMiniRoomThemeMapsEachPersistedThemeToItsTint() {
+        XCTAssertEqual(MemoryHomeRoomTheme.tint(for: .blue), PokedoroTheme.blue)
+        XCTAssertEqual(MemoryHomeRoomTheme.tint(for: .mint), PokedoroTheme.mint)
+        XCTAssertEqual(MemoryHomeRoomTheme.tint(for: .yellow), PokedoroTheme.yellow)
+        XCTAssertEqual(MemoryHomeRoomTheme.tint(for: .red), PokedoroTheme.red)
     }
 
     func testMemoryHomeCanBeConstructedForTheActiveCompanion() {
