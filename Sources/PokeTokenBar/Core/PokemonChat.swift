@@ -600,7 +600,7 @@ final class PokemonChatStore {
                 guard let pending = parsed.call, let toolbox, !pending.needsApproval else { break }
                 // 마지막 요청 뒤의 실행은 결과를 전할 턴이 없다 — 부작용만 남기고 끝난다.
                 guard round != rounds.upperBound else { break }
-                toolResults.append(PokemonChatMessage(role: .system, body: await toolbox.run(pending).line))
+                toolResults.append(PokemonChatMessage(role: .system, body: await toolbox.run(pending, owner: companionID).line))
             }
 
             let safeReply = PokemonChatReplyGuard.sanitized(reply, profile: profile)
@@ -615,7 +615,7 @@ final class PokemonChatStore {
             // 임의 문자열 인자이고, 다음 요청의 컨텍스트로 되돌아온다. 그래서 **가드를 통과한**
             // 답변만 기록한다 — 가드가 답변을 갈아치웠다면 기록할 것도 없다.
             if safeReply == reply, case .memoryRecord = call, let toolbox {
-                _ = await toolbox.run(.memoryRecord(body: safeReply))
+                _ = await toolbox.run(.memoryRecord(body: safeReply), owner: companionID)
             }
             if current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""

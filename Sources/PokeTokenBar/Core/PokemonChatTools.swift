@@ -88,6 +88,23 @@ enum PokemonChatToolCall: Equatable, Sendable {
         }
     }
 
+    /// 대상을 인자로 받지 않고 **지금 나와 있는 개체**에 작용하는가.
+    ///
+    /// 대화 창은 박스 개체로도 열린다(`PokemonRosterView`). 그런 창에서 이 부류가 돌면 승인 카드가
+    /// 가리키는 아이("나, 진화해도 될까?")와 실제 대상이 갈라진다 — 사용자는 자기가 무엇을
+    /// 승인했는지 모른 채 다른 개체를 진화시킨다. 그래서 이 부류는 **그 개체의 대화에서만** 돈다.
+    ///
+    /// 예외는 판단이 아니라 성질이다. `companion.switch` 는 인자로 대상을 지목하므로 남의
+    /// 대화에서도 뜻이 분명하고, 읽기 도구와 `memory.record` 는 트레이너·대화 주인의 것이다
+    /// (기억은 활성 개체가 아니라 **대화 주인** 앨범으로 간다).
+    var actsOnTheActiveCompanion: Bool {
+        switch self {
+        case .pokedoroStart, .pokedoroStop, .itemUse, .evolutionAccept: return true
+        case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList,
+             .companionSwitch, .memoryRecord: return false
+        }
+    }
+
     /// 승인 카드에 실을 사람 문장. enum 슬러그를 그대로 보여 주지 않는다.
     func approvalQuestion(_ language: AppLanguage) -> String {
         switch self {
@@ -234,7 +251,11 @@ enum PokemonChatToolParser {
 protocol PokemonChatToolRunning {
     /// `line` 은 모델에게 돌려줄 사실 한 줄(사용자 화면에는 실리지 않으므로 번역하지 않는다).
     /// `succeeded` 는 승인 경로가 거절과 실패를 구분하는 데 쓴다 — 문자열을 뒤져 판정하지 않는다.
-    func run(_ call: PokemonChatToolCall) async -> (line: String, succeeded: Bool)
+    ///
+    /// `owner` 는 **이 대화의 주인**이다. 기본값을 두지 않는 이유는, 두면 부르는 자리가 활성 개체를
+    /// 암묵 대상으로 삼아 박스 개체 대화가 다시 남을 건드리게 되기 때문이다 — 넘기지 않으면
+    /// 컴파일이 안 되는 편이 낫다.
+    func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool)
 }
 
 /// 실물 실행기 — 포케도로 타이머와 도감 조회만 안다.
@@ -254,7 +275,16 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: id, language: language)
     }
 
-    func run(_ call: PokemonChatToolCall) async -> (line: String, succeeded: Bool) {
+    func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
+        // 암시적으로 "지금 나와 있는 나" 에 작용하는 도구는 그 개체의 대화에서만 돈다. 가드가 여기
+        // 한 곳뿐인 이유는 case 마다 두면 다음에 더하는 도구가 조용히 빠지기 때문이다 — 분류는
+        // `actsOnTheActiveCompanion` 한 곳에서만 한다.
+        if call.actsOnTheActiveCompanion {
+            // 사유를 갈라 준다. 뭉개면 모델이 왜 안 되는지 모른 채 같은 호출을 반복하고,
+            // 사용자에게는 침묵으로 보인다(분을 버리지 않고 접는 것과 같은 이유).
+            guard let active = companion.activeMonID else { return ("tool refused: no active companion", false) }
+            guard owner == active else { return ("tool refused: not the active companion", false) }
+        }
         switch call {
         case .bagList:
             let items = companion.ownedItems
@@ -287,12 +317,13 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             return ("companion switched to=\(target.name)", true)
 
         case .memoryRecord(let body):
-            // 빈 본문은 기록하지 않는다. 스토어가 채우기 전에 실행되면 앨범에 빈 줄이 남는다.
-            guard let companionID = companion.activeMonID,
-                  !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // 앨범 키는 활성 개체가 아니라 **이 대화의 주인**이다. 활성 개체로 적으면 박스 개체와
+            // 나눈 이야기가 남의 앨범에 박히고, 정작 그 창의 앨범에는 영영 안 보인다.
+            // 빈 본문은 기록하지 않는다 — 스토어가 채우기 전에 실행되면 앨범에 빈 줄이 남는다.
+            guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return ("memory not recorded", false)
             }
-            album.record(companionID: companionID, body: body, source: .conversation)
+            album.record(companionID: owner, body: body, source: .conversation)
             return ("memory recorded", true)
 
         case .pokedoroStatus:

@@ -212,8 +212,8 @@ struct PokemonChatView: View {
     /// 승인된 호출도 루프와 **같은 실행기**로 간다. 뷰에 스위치를 한 벌 더 두면 두 경로가 갈라진다.
     private func resolve(approved: Bool) {
         Task {
-            await chat.resolvePending(approved: approved, profileForCompanion: profileForOwner) { call, _ in
-                await toolbox.run(call).succeeded
+            await chat.resolvePending(approved: approved, profileForCompanion: profileForOwner) { call, owner in
+                await toolbox.run(call, owner: owner).succeeded
             }
         }
     }

@@ -294,29 +294,31 @@ final class PokemonChatToolTests: XCTestCase {
         let timer = FocusTimer()
         let toolbox = PokemonChatToolbox(timer: timer, companion: store, album: makeAlbum(), lookup: Self.emptyLookup)
 
-        let idle = await toolbox.run(.pokedoroStatus)
+        let idle = await toolbox.runAsActive(.pokedoroStatus)
         XCTAssertTrue(idle.line.contains("state=idle"), idle.line)
 
-        let started = await toolbox.run(.pokedoroStart(minutes: 50))
+        let started = await toolbox.runAsActive(.pokedoroStart(minutes: 50))
         XCTAssertTrue(started.succeeded)
         XCTAssertTrue(started.line.contains("state=focus"), started.line)
         XCTAssertEqual(timer.focusMinutes, 50)
         XCTAssertNotNil(store.activeAdventure)
 
-        let stopped = await toolbox.run(.pokedoroStop)
+        let stopped = await toolbox.runAsActive(.pokedoroStop)
         XCTAssertTrue(stopped.succeeded)
         XCTAssertTrue(stopped.line.contains("state=idle"), stopped.line)
         XCTAssertNil(store.activeAdventure)
     }
 
-    /// 모험을 못 나가면 시작은 거절이고, 거절은 상태 문자열이 아니라 거절로 보여야 한다.
-    func testTheToolboxSaysSoWhenAFocusSessionCannotStart() async {
+    /// 시작 거절은 상태 문자열이 아니라 거절로 보여야 하고, **사유가 실려야** 한다. 뭉개면 모델이
+    /// 왜 안 되는지 모른 채 같은 호출을 반복하고, 사용자에게는 아무 일도 안 난 것으로 보인다.
+    /// 나와 있는 개체가 없는 경우가 그 첫 사유다.
+    func testTheToolboxSaysWhyAFocusSessionCannotStart() async {
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: makeCompanionStore(),
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
-        let refused = await toolbox.run(.pokedoroStart(minutes: 25))
+        let refused = await toolbox.runAsActive(.pokedoroStart(minutes: 25))
         XCTAssertFalse(refused.succeeded, "거절이 성공으로 보고되면 승인 카드가 실패를 침묵으로 만든다")
-        XCTAssertEqual(refused.line, "pokedoro start refused")
+        XCTAssertEqual(refused.line, "tool refused: no active companion")
     }
 
     /// 도감 조회는 받은 사실만 싣는다. 빈 조회를 빈 줄로 돌려주면 모델이 침묵을 사실로 읽는다.
@@ -328,7 +330,7 @@ final class PokemonChatToolTests: XCTestCase {
                                    abilityNames: ["ko": "정전기"], abilityTexts: [:], language: language)
         }
 
-        let found = await full.run(.pokedexLookup(speciesID: 25))
+        let found = await full.runAsActive(.pokedexLookup(speciesID: 25))
         XCTAssertTrue(found.succeeded)
         XCTAssertTrue(found.line.contains("#25"), found.line)
         XCTAssertTrue(found.line.contains("genus=쥐포켓몬"), found.line)
@@ -336,7 +338,7 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(found.line.contains("entry=전기를 볼에 저장한다."), found.line)
 
         let empty = PokemonChatToolbox(timer: FocusTimer(), companion: store, album: makeAlbum(), lookup: Self.emptyLookup)
-        let blank = await empty.run(.pokedexLookup(speciesID: 999))
+        let blank = await empty.runAsActive(.pokedexLookup(speciesID: 999))
         XCTAssertFalse(blank.succeeded)
         XCTAssertEqual(blank.line, "pokedex #999 unavailable")
     }
@@ -352,16 +354,16 @@ final class PokemonChatToolTests: XCTestCase {
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
         // 재고가 없으면 실패다 — 성공으로 뭉개면 모델이 "썼어" 라고 말한다.
-        let broke = await toolbox.run(.itemUse(kind: .rareCandy))
+        let broke = await toolbox.runAsActive(.itemUse(kind: .rareCandy))
         XCTAssertFalse(broke.succeeded, broke.line)
 
         store.debugAddItem(.rareCandy, 1)
-        let candy = await toolbox.run(.itemUse(kind: .rareCandy))
+        let candy = await toolbox.runAsActive(.itemUse(kind: .rareCandy))
         XCTAssertTrue(candy.succeeded, candy.line)
         XCTAssertEqual(store.itemCount(.rareCandy), 0, "진짜 사용 경로를 안 탔다")
 
         store.debugAddItem(.mint, 1)
-        let mint = await toolbox.run(.itemUse(kind: .mint))
+        let mint = await toolbox.runAsActive(.itemUse(kind: .mint))
         XCTAssertTrue(mint.succeeded, mint.line)
         XCTAssertEqual(store.itemCount(.mint), 0)
 
@@ -369,7 +371,7 @@ final class PokemonChatToolTests: XCTestCase {
         store.debugAddItem(.shinyCharm, 1)
         store.debugAddItem(.freshWater, 1)
         for kind in [ItemKind.shinyCharm, .freshWater] {
-            let result = await toolbox.run(.itemUse(kind: kind))
+            let result = await toolbox.runAsActive(.itemUse(kind: kind))
             XCTAssertFalse(result.succeeded, result.line)
             XCTAssertEqual(store.itemCount(kind), 1, "쓸 수 없다고 해 놓고 소모했다")
         }
@@ -384,14 +386,14 @@ final class PokemonChatToolTests: XCTestCase {
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
-        let bag = await toolbox.run(.bagList)
+        let bag = await toolbox.runAsActive(.bagList)
         XCTAssertTrue(bag.line.contains("fireStone=2"), bag.line)
         XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(불꽃의돌)]]").call,
                      "현지화된 이름이 인자로 통과하면 안 된다")
         XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(fireStone)]]").call,
                        .itemUse(kind: .fireStone), "가방이 찍은 이름이 그대로 인자가 돼야 한다")
 
-        let roster = await toolbox.run(.rosterList)
+        let roster = await toolbox.runAsActive(.rosterList)
         XCTAssertTrue(roster.line.contains("index=0"), roster.line)
         XCTAssertTrue(roster.line.contains("active=true"), roster.line)
     }
@@ -405,11 +407,11 @@ final class PokemonChatToolTests: XCTestCase {
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
         for index in [999, 1] {   // 범위 밖 · 비어 있는 자리
-            let result = await toolbox.run(.companionSwitch(index: index))
+            let result = await toolbox.runAsActive(.companionSwitch(index: index))
             XCTAssertFalse(result.succeeded, "index=\(index): \(result.line)")
         }
         // 0번은 지금 나와 있는 개체다. 자기 자신으로의 교체는 아무 일도 아니다.
-        let noop = await toolbox.run(.companionSwitch(index: 0))
+        let noop = await toolbox.runAsActive(.companionSwitch(index: 0))
         XCTAssertFalse(noop.succeeded, noop.line)
     }
 
@@ -420,7 +422,7 @@ final class PokemonChatToolTests: XCTestCase {
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
-        let result = await toolbox.run(.evolutionAccept)
+        let result = await toolbox.runAsActive(.evolutionAccept)
 
         XCTAssertFalse(result.succeeded)
         XCTAssertEqual(result.line, "evolution none pending")
@@ -447,7 +449,7 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertEqual(album.entries(for: id).map(\.body), ["나도 즐거웠어!"],
                        "앨범에 남은 건 화면에 보인 문장 그대로여야 한다")
         // 빈 본문은 앨범에 빈 줄을 남긴다 — 스토어가 채우기 전에 실행되면 안 된다.
-        let blank = await toolbox.run(.memoryRecord(body: "   "))
+        let blank = await toolbox.runAsActive(.memoryRecord(body: "   "))
         XCTAssertFalse(blank.succeeded)
         XCTAssertEqual(album.entries(for: id).count, 1)
     }
@@ -486,7 +488,7 @@ final class PokemonChatToolTests: XCTestCase {
 
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: makeAlbum(), lookup: Self.emptyLookup)
-        let result = await toolbox.run(.evolutionAccept)
+        let result = await toolbox.runAsActive(.evolutionAccept)
 
         XCTAssertTrue(result.succeeded, result.line)
         XCTAssertEqual(store.activeStageIndex, (before ?? 0) + 1, "수락했는데 형태가 그대로다")
@@ -505,7 +507,7 @@ final class PokemonChatToolTests: XCTestCase {
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
-        let result = await toolbox.run(.companionSwitch(index: benched.index))
+        let result = await toolbox.runAsActive(.companionSwitch(index: benched.index))
 
         XCTAssertTrue(result.succeeded, result.line)
         XCTAssertEqual(store.activeMonID, benched.id, "교체했는데 나와 있는 개체가 그대로다")
@@ -522,7 +524,7 @@ final class PokemonChatToolTests: XCTestCase {
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
-        let result = await toolbox.run(.itemUse(kind: .fireStone))
+        let result = await toolbox.runAsActive(.itemUse(kind: .fireStone))
 
         XCTAssertTrue(result.succeeded, result.line)
         XCTAssertEqual(store.itemCount(.fireStone), 0)
@@ -538,7 +540,7 @@ final class PokemonChatToolTests: XCTestCase {
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
-        let result = await toolbox.run(.itemUse(kind: .heartScale))
+        let result = await toolbox.runAsActive(.itemUse(kind: .heartScale))
 
         XCTAssertTrue(result.succeeded, result.line)
         XCTAssertEqual(store.itemCount(.heartScale), 1, "고르기도 전에 소모됐다")
@@ -684,6 +686,15 @@ final class PokemonChatToolTests: XCTestCase {
     }
 }
 
+@MainActor
+private extension PokemonChatToolbox {
+    /// 테스트 편의 — "활성 동행의 대화에서 불렀다" 는 뜻. 프로토콜에 기본값을 두지 않았으므로
+    /// 이 지름길은 테스트 파일 밖으로 새지 않는다(프로덕션은 owner 를 반드시 명시한다).
+    func runAsActive(_ call: PokemonChatToolCall) async -> (line: String, succeeded: Bool) {
+        await run(call, owner: companion.activeMonID ?? UUID())
+    }
+}
+
 private struct ToolLineProvider: PokeProviding {
     let line: EvoLine
     func line(baseSpeciesID: Int) async throws -> EvoLine { line }
@@ -710,14 +721,14 @@ private actor ScriptedToolProvider: PokemonChatProviding {
 @MainActor
 private final class CountingToolbox: PokemonChatToolRunning {
     private(set) var runCount = 0
-    func run(_ call: PokemonChatToolCall) async -> (line: String, succeeded: Bool) {
+    func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         runCount += 1; return ("pokedoro state=idle", true)
     }
 }
 
 private struct StubToolbox: PokemonChatToolRunning {
     var status = "pokedoro state=idle"
-    func run(_ call: PokemonChatToolCall) async -> (line: String, succeeded: Bool) {
+    func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         switch call {
         case .pokedoroStatus: return (status, true)
         case .pokedexLookup(let id): return ("pokedex #\(id)", true)
