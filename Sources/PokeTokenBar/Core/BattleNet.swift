@@ -11,7 +11,13 @@ import UserNotifications
 /// (`MultiplayerRoomCenter` + `PokeathlonRace`)이 담당한다 — 호스트가 판정하는 방식.
 enum NetBattleAction: Codable, Sendable, Equatable {
     case move(index: Int)              // -1 = 발버둥(PP 소진)
+    case metronome(move: MoveSpec)     // 손가락흔들기로 실제 발동할 기술 전체를 피어와 공유
     case switchTo(index: Int)
+}
+
+enum NetBattleKind: String, Codable, Sendable {
+    case regular
+    case metronome
 }
 
 /// 신청 취소 사유는 연결 단절과 구분한다. 특히 시간 초과는 양쪽에 같은 설명을 보여야 한다.
@@ -23,7 +29,7 @@ enum BattleChallengeCancellationReason: String, Codable, Sendable, Equatable {
 enum NetMessage: Codable, Sendable {
     /// 2단계 신청: 이 메시지에는 포켓몬 스냅샷이 없다. 수락 뒤 양쪽이 `teamReady`를 보내야 시작한다.
     case request(trainer: String, teamSize: Int, seed: UInt64, profile: BattleRankProfile,
-                 rulesVersion: Int?, chatSupported: Bool?)
+                 rulesVersion: Int?, chatSupported: Bool?, kind: NetBattleKind?)
     case approve
     case teamReady(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
                    profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
@@ -47,7 +53,7 @@ enum NetMessage: Codable, Sendable {
     private struct EmptyPayload: Codable {}
     private struct RequestPayload: Codable {
         var trainer: String; var teamSize: Int; var seed: UInt64; var profile: BattleRankProfile
-        var rulesVersion: Int?; var chatSupported: Bool?
+        var rulesVersion: Int?; var chatSupported: Bool?; var kind: NetBattleKind?
     }
     private struct ChallengePayload: Codable {
         var snapshot: BattleSnapshot
@@ -74,7 +80,7 @@ enum NetMessage: Codable, Sendable {
         if container.contains(.request) {
             let p = try container.decode(RequestPayload.self, forKey: .request)
             self = .request(trainer: p.trainer, teamSize: p.teamSize, seed: p.seed, profile: p.profile,
-                            rulesVersion: p.rulesVersion, chatSupported: p.chatSupported)
+                            rulesVersion: p.rulesVersion, chatSupported: p.chatSupported, kind: p.kind)
         } else if container.contains(.approve) {
             self = .approve
         } else if container.contains(.teamReady) {
@@ -119,9 +125,9 @@ enum NetMessage: Codable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let chatSupported):
+        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let chatSupported, let kind):
             try container.encode(RequestPayload(trainer: trainer, teamSize: teamSize, seed: seed, profile: profile,
-                                                rulesVersion: rulesVersion, chatSupported: chatSupported), forKey: .request)
+                                                rulesVersion: rulesVersion, chatSupported: chatSupported, kind: kind), forKey: .request)
         case .approve:
             try container.encode(EmptyPayload(), forKey: .approve)
         case .teamReady(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let chatSupported):
@@ -232,6 +238,7 @@ struct NetBattleState {
     var oppAction: NetBattleAction?
     var events: [BattleEvent] = []
     var eventBatches: [NetBattleEventBatch] = []
+    var isMetronome = false
 
     var me: BattleSide {
         get { myTeam[myActive] }
@@ -252,6 +259,9 @@ struct NetBattleState {
         switch action {
         case .move(let index):
             return index == -1 ? team[active].mustStruggle : team[active].canUse(moveAt: index)
+        case .metronome(let move):
+            return isMetronome && team[active].canUse(moveAt: 0)
+                && move.id != 118 && move.id != 165 && MultiplayerValidation.validMoves([move])
         case .switchTo(let index):
             return team.indices.contains(index) && index != active && team[index].isAlive
         }
@@ -265,16 +275,20 @@ struct NetBattleState {
         var teamB = iAmA ? oppTeam : myTeam
         var activeA = iAmA ? myActive : oppActive
         var activeB = iAmA ? oppActive : myActive
-        let actionA = iAmA ? myAction : oppAction
-        let actionB = iAmA ? oppAction : myAction
+        let rawActionA = iAmA ? myAction : oppAction
+        let rawActionB = iAmA ? oppAction : myAction
+        let overrideA: MoveSpec? = { if case .metronome(let move) = rawActionA { return move }; return nil }()
+        let overrideB: MoveSpec? = { if case .metronome(let move) = rawActionB { return move }; return nil }()
+        let actionA: NetBattleAction = overrideA == nil ? rawActionA : .move(index: 0)
+        let actionB: NetBattleAction = overrideB == nil ? rawActionB : .move(index: 0)
         var turnEvents: [BattleEvent] = []
 
         func switchSlot(_ index: Int, team: inout [BattleSide], active: inout Int) {
             BattleEngine.prepareForSwitch(&team[active])
             active = index
         }
-        func spendPP(_ index: Int, team: inout [BattleSide], active: Int) -> MoveSpec {
-            let move = team[active].move(at: index)
+        func spendPP(_ index: Int, override: MoveSpec?, team: inout [BattleSide], active: Int) -> MoveSpec {
+            let move = override ?? team[active].move(at: index)
             if team[active].pp.indices.contains(index) {
                 team[active].pp[index] = max(0, team[active].pp[index] - 1)
             }
@@ -288,15 +302,15 @@ struct NetBattleState {
 
         switch (actionA, actionB) {
         case (.move(let indexA), .move(let indexB)):
-            let moveA = spendPP(indexA, team: &teamA, active: activeA)
-            let moveB = spendPP(indexB, team: &teamB, active: activeB)
+            let moveA = spendPP(indexA, override: overrideA, team: &teamA, active: activeA)
+            let moveB = spendPP(indexB, override: overrideB, team: &teamB, active: activeB)
             var a = teamA[activeA], b = teamB[activeB]
             turnEvents = BattleEngine.resolveTurn(a: &a, b: &b, moveA: moveA, moveB: moveB,
                                                   turn: turn, rng: &rng)
             teamA[activeA] = a; teamB[activeB] = b
         case (.switchTo(let indexA), .move(let indexB)):
             switchSlot(indexA, team: &teamA, active: &activeA)
-            let moveB = spendPP(indexB, team: &teamB, active: activeB)
+            let moveB = spendPP(indexB, override: overrideB, team: &teamB, active: activeB)
             var a = teamA[activeA], b = teamB[activeB]
             BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             // 출전은 상대 공격보다 **앞**이다 — 재생기가 이 순서대로 개체를 갈아타야 새로 나온
@@ -311,7 +325,7 @@ struct NetBattleState {
             teamA[activeA] = a; teamB[activeB] = b
         case (.move(let indexA), .switchTo(let indexB)):
             switchSlot(indexB, team: &teamB, active: &activeB)
-            let moveA = spendPP(indexA, team: &teamA, active: activeA)
+            let moveA = spendPP(indexA, override: overrideA, team: &teamA, active: activeA)
             var a = teamA[activeA], b = teamB[activeB]
             BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             turnEvents = [.turn(turn), .sendOut(.b, teamIndex: indexB)]
@@ -333,6 +347,9 @@ struct NetBattleState {
                           .sendOut(.a, teamIndex: indexA), .sendOut(.b, teamIndex: indexB)]
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b
+        case (.metronome, _), (_, .metronome):
+            // 위에서 실제 기술을 보존한 `.move(0)`으로 정규화하므로 도달하지 않는다.
+            return nil
         }
 
         // 자동 출전으로 active index를 바꾸기 전에 이번 이벤트의 실제 이름·기술 문맥을 고정한다.
@@ -512,6 +529,7 @@ final class BattleCenter {
     private var incomingSeed: UInt64 = 0
     private var pendingPeerName = ""
     private var iAmPendingChallenger = false
+    private var pendingBattleKind: NetBattleKind = .regular
     private var myName: String          // 표시 이름(상대 카드·스냅샷 trainer)
     private var didSettleRankedBrawl = false
     private(set) var isPracticeBattle = false
@@ -919,32 +937,6 @@ final class BattleCenter {
         }
     }
 
-    /// 양쪽 모두 동일한 Lv.50 토게키스를 빌려 손가락흔들기만 사용하는 1:1 모드.
-    /// 대여 포켓몬은 스냅샷으로만 존재하므로 박스·도감·세이브에는 들어가지 않는다.
-    func startMetronomeBattle() {
-        guard case .ready = phase else { return }
-        phase = .preparing
-        Task {
-            guard let profile = await battleProfileLoader(468),
-                  let metronome = await moveDetailLoader("metronome") else {
-                phase = .ready; lastError = l.battleStatsFailed; return
-            }
-            let rental = BattleSnapshot(speciesID: 468,
-                                        name: l.t("대여 토게키스", "Rental Togekiss", "レンタルトゲキッス"),
-                                        trainer: companion.trainerName, level: 50, nature: nil, isShiny: false,
-                                        types: profile.types, base: profile.stats, moves: [metronome],
-                                        ability: profile.abilitySlug, weightHectograms: profile.weightHectograms)
-            var cpu = rental
-            cpu.trainer = "CPU"
-            isPracticeBattle = true
-            isMetronomeBattle = true
-            teamPractice = TeamPracticeBattle(mine: [BattleSide(rental)], opponents: [BattleSide(cpu)],
-                                              rng: SplitMix64(seed: UInt64.random(in: .min ... .max)))
-            opponentRankProfile = BattleRankProfile(rank: companion.battleRank, stardust: 0)
-            phase = .battling; rankedStake = 0; pendingAttention = true
-        }
-    }
-
     /// 체육관 도전 — 모의전과 같은 배틀이지만 상대는 카탈로그가 정한 관장 팀이다.
     ///
     /// 내 팀은 키운 레벨 그대로, 관장은 카탈로그의 고정 레벨이다(#57 과 같은 규칙, 방향만 반대).
@@ -1041,7 +1033,12 @@ final class BattleCenter {
     }
 
     func challenge(_ peer: BattlePeer) {
-        challengeEndpoint(peer.endpoint, displayName: peer.name)
+        challengeEndpoint(peer.endpoint, displayName: peer.name, kind: .regular)
+    }
+
+    /// 친구와 하는 손가락흔들기 전용전. 소유 포켓몬이나 랭크 정산을 사용하지 않는다.
+    func challengeMetronome(_ peer: BattlePeer) {
+        challengeEndpoint(peer.endpoint, displayName: peer.name, kind: .metronome)
     }
 
     /// mDNS 가 막힌 네트워크(사내망 등)용 — "IP:포트" 직접 입력 신청.
@@ -1054,7 +1051,7 @@ final class BattleCenter {
             return
         }
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(String(parts[0])), port: port)
-        challengeEndpoint(endpoint, displayName: trimmed)
+        challengeEndpoint(endpoint, displayName: trimmed, kind: .regular)
     }
 
     /// 내 수동 연결 주소("IP:포트") — 리스너 준비 전/IP 미확인이면 nil.
@@ -1063,11 +1060,11 @@ final class BattleCenter {
         return "\(ip):\(port)"
     }
 
-    private func challengeEndpoint(_ endpoint: NWEndpoint, displayName: String) {
+    private func challengeEndpoint(_ endpoint: NWEndpoint, displayName: String, kind: NetBattleKind) {
         guard case .ready = phase else { return }
-        let teamSize = rankedTeamSize
-        guard Self.supportedTeamSizes.contains(teamSize),
-              companion.ownedMons.count >= teamSize else {
+        let teamSize = kind == .metronome ? 1 : rankedTeamSize
+        guard kind == .metronome || (Self.supportedTeamSizes.contains(teamSize)
+                                     && companion.ownedMons.count >= teamSize) else {
             lastError = l.battleNeedsPokemon(teamSize)
             return
         }
@@ -1077,6 +1074,7 @@ final class BattleCenter {
         pendingMyTeamSize = teamSize
         pendingPeerName = displayName
         iAmPendingChallenger = true
+        pendingBattleKind = kind
             // includePeerToPeer 파라미터로 연결 — 브라우저가 AWDL(피어투피어)로 찾은 상대는
             // 평범한 .tcp 로는 연결이 안 붙는다(수동 IP 는 직접 hostPort 라 됐던 이유). 리스너/브라우저와
             // 같은 파라미터를 써야 mDNS·AWDL 어느 경로로 발견됐든 연결이 성립한다.
@@ -1090,7 +1088,7 @@ final class BattleCenter {
         conn.start(queue: .main)
         send(.request(trainer: trainerDisplayName, teamSize: teamSize, seed: seed,
                       profile: companion.battleRankProfile, rulesVersion: BattleEngine.rulesVersion,
-                      chatSupported: true), over: conn)
+                      chatSupported: true, kind: kind), over: conn)
         receiveLoop(conn)
     }
 
@@ -1145,6 +1143,12 @@ final class BattleCenter {
 
     func acceptIncoming() {
         guard case .incoming(let peer) = phase, let conn = connection else { return }
+        if pendingBattleKind == .metronome {
+            cancelChallengeTimeout()
+            send(.approve, over: conn)
+            prepareMetronomeLineup(peer: peer, connection: conn)
+            return
+        }
         // 새 신청은 포켓몬을 싣지 않는다. 수락 뒤 양쪽을 같은 파티 편성 단계로 보낸다.
         if incomingLineup.isEmpty {
             cancelChallengeTimeout()
@@ -1196,6 +1200,34 @@ final class BattleCenter {
         }
     }
 
+    private func prepareMetronomeLineup(peer: String, connection conn: NWConnection) {
+        phase = .preparing
+        Task { @MainActor in
+            guard let profile = await battleProfileLoader(468),
+                  var metronome = await moveDetailLoader("metronome"), conn === connection else {
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            // 전용전은 PP 고갈로 발버둥에 떨어지는 모드가 아니다.
+            metronome.pp = 99
+            let rental = BattleSnapshot(speciesID: 468,
+                                        name: l.t("대여 토게키스", "Rental Togekiss", "レンタルトゲキッス"),
+                                        trainer: trainerDisplayName, level: 50, nature: nil, isShiny: false,
+                                        types: profile.types, base: profile.stats, moves: [metronome],
+                                        ability: profile.abilitySlug, weightHectograms: profile.weightHectograms)
+            pendingMyLineup = [rental]
+            isMetronomeBattle = true
+            send(.teamReady(snapshot: rental, lineup: [rental], teamSize: 1,
+                            profile: companion.battleRankProfile, rulesVersion: BattleEngine.rulesVersion,
+                            chatSupported: true), over: conn)
+            if !incomingLineup.isEmpty {
+                opponentRankProfile = nil
+                beginBattle(my: [rental], opp: incomingLineup, iAmA: iAmPendingChallenger, seed: incomingSeed)
+            } else {
+                phase = .waitingTeam(peer: peer)
+            }
+        }
+    }
+
     /// 수락 뒤 편성 확정. 내 스냅샷은 이 시점에 처음 상대에게 전송된다.
     func confirmBattleTeam() {
         guard case .teamBuilding(let peer) = phase, let conn = connection else { return }
@@ -1234,6 +1266,22 @@ final class BattleCenter {
         // 이 가드가 없으면 끝난 배틀에 기술을 보낸다.
         guard case .battling = phase, pendingFinish == nil,
               var b = battle, b.myAction == nil else { return }
+        if b.isMetronome {
+            guard !isResolvingMetronome else { return }
+            isResolvingMetronome = true
+            Task { @MainActor in
+                defer { isResolvingMetronome = false }
+                guard let called = await randomMetronomeMove(), case .battling = phase,
+                      var current = battle, current.myAction == nil else { return }
+                let action = NetBattleAction.metronome(move: called)
+                guard current.canChoose(action, mine: true), let conn = connection else { return }
+                current.myAction = action
+                battle = current
+                send(.action(turn: current.turn, action: action), over: conn)
+                resolveIfReady()
+            }
+            return
+        }
         let idx = b.mustStruggle ? -1 : index
         let action = NetBattleAction.move(index: idx)
         guard b.canChoose(action, mine: true) else { return }
@@ -1242,6 +1290,22 @@ final class BattleCenter {
         battle = b
         send(.action(turn: b.turn, action: action), over: conn)
         resolveIfReady()
+    }
+
+    /// 5세대까지 존재하는 기술 ID 전체에서 뽑는다. 호출 불가인 손가락흔들기 자신과 발버둥만 제외하고,
+    /// 현재 엔진/와이어 검증을 통과하는 실제 MoveSpec을 상대에게 그대로 보내 양쪽 결과를 일치시킨다.
+    private func randomMetronomeMove() async -> MoveSpec? {
+        for _ in 0..<20 {
+            let id = Int.random(in: 1...559)
+            guard id != 118, id != 165,
+                  let move = await moveDetailLoader(String(id)),
+                  MultiplayerValidation.validMoves([move]) else { continue }
+            return move
+        }
+        // 일시적으로 일부 ID 조회가 실패해도 턴을 잠그지 않는다. 같은 전체 범위에서 이미 앱이
+        // 지원 목록으로 검증한 5세대 TM 중 하나를 마지막 폴백으로 사용한다.
+        guard let fallback = TechnicalMachine.catalog.randomElement() else { return nil }
+        return await moveDetailLoader(fallback.slug)
     }
 
     func switchLAN(to index: Int) {
@@ -1363,9 +1427,11 @@ final class BattleCenter {
             lastError = l.battleStakeShort
             return
         }
-        battle = NetBattleState(iAmA: iAmA, myTeam: my.map(BattleSide.init),
-                                oppTeam: opp.map(BattleSide.init),
-                                rng: SplitMix64(seed: seed))
+        var nextBattle = NetBattleState(iAmA: iAmA, myTeam: my.map(BattleSide.init),
+                                        oppTeam: opp.map(BattleSide.init),
+                                        rng: SplitMix64(seed: seed))
+        nextBattle.isMetronome = isMetronomeBattle
+        battle = nextBattle
         clearPendingOutgoing()
         phase = .battling
         pendingAttention = true
@@ -1473,7 +1539,7 @@ final class BattleCenter {
     /// 수단이 없다(그래서 채팅 상태 수명주기에 테스트가 0건이었고 이 결함이 나갔다).
     func handle(_ message: NetMessage) {
         switch message {
-        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported):
+        case .request(let trainer, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported, let kind):
             guard case .ready = phase, Self.supportedTeamSizes.contains(teamSize),
                   rulesVersion == BattleEngine.rulesVersion else {
                 send(.decline, over: connection); dropConnection(); phase = .ready; return
@@ -1489,6 +1555,7 @@ final class BattleCenter {
             peerSupportsChat = peerChatSupported == true
             pendingPeerName = trainer
             iAmPendingChallenger = false
+            pendingBattleKind = kind ?? .regular
             phase = .incoming(peer: trainer)
             startChallengeTimeout()
             pendingAttention = true
@@ -1498,6 +1565,10 @@ final class BattleCenter {
             cancelChallengeTimeout()
             incomingTeamSize = pendingMyTeamSize
             incomingLineup = []
+            if pendingBattleKind == .metronome, let connection {
+                prepareMetronomeLineup(peer: peer, connection: connection)
+                return
+            }
             incomingPickedTeam = resolvedTeamIDs(size: incomingTeamSize, selection: pickedTeam)
             phase = .teamBuilding(peer: peer)
         case .teamReady(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let peerChatSupported):
@@ -1508,10 +1579,11 @@ final class BattleCenter {
             }
             incomingSnapshot = snapshot
             incomingLineup = lineup
-            opponentRankProfile = profile
+            opponentRankProfile = pendingBattleKind == .metronome ? nil : profile
             peerSupportsChat = peerChatSupported == true
             chatIsAvailable = peerSupportsChat
             if !pendingMyLineup.isEmpty {
+                if pendingBattleKind == .metronome { isMetronomeBattle = true }
                 beginBattle(my: pendingMyLineup, opp: lineup, iAmA: iAmPendingChallenger, seed: incomingSeed)
             }
         case .challenge(let snapshot, let lineup, let teamSize, let seed, let profile, let rulesVersion, let peerChatSupported):

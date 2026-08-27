@@ -46,4 +46,32 @@ final class RotomMetronomeTests: XCTestCase {
         XCTAssertEqual(battle.opponents[0].pp[0], 9)
         XCTAssertTrue(battle.events.contains { if case .move(_, let moveID) = $0 { return moveID == 53 }; return false })
     }
+
+    func testNetworkMetronomeUsesSharedCalledMoveInsteadOfStruggle() {
+        let metronome = MoveSpec(id: 118, names: ["ko": "손가락흔들기"], type: .normal,
+                                 power: 0, damageClass: .status, accuracy: nil, pp: 99)
+        let called = MoveSpec(id: 53, names: ["ko": "화염방사"], type: .fire,
+                              power: 90, damageClass: .special, accuracy: 100, pp: 15)
+        let stats = BattleStats(hp: 85, atk: 50, def: 95, spa: 120, spd: 115, spe: 80)
+        let rental = BattleSnapshot(speciesID: 468, name: "Rental Togekiss", trainer: nil,
+                                    level: 50, nature: nil, isShiny: false,
+                                    types: [.fairy, .flying], base: stats, moves: [metronome])
+        var battle = NetBattleState(iAmA: true, myTeam: [BattleSide(rental)],
+                                    oppTeam: [BattleSide(rental)], rng: SplitMix64(seed: 19))
+        battle.isMetronome = true
+        battle.myAction = .metronome(move: called)
+        battle.oppAction = .metronome(move: called)
+
+        _ = battle.resolveChosenActions()
+
+        XCTAssertEqual(battle.myTeam[0].pp[0], 98)
+        XCTAssertTrue(battle.events.contains {
+            if case .move(_, let moveID) = $0 { return moveID == called.id }
+            return false
+        })
+        XCTAssertFalse(battle.events.contains {
+            if case .move(_, let moveID) = $0 { return moveID == MoveSpec.struggleID }
+            return false
+        })
+    }
 }
