@@ -107,7 +107,7 @@ final class LobbyRoleTests: XCTestCase {
         // 8 = 드레인·반동·다단·풀린치(스트림에 `.heal`/`.multiHit` case, `Status.flinch`),
         // 9 = 특성(스냅샷에 ability 필드). 새 case 는 없지만 방은 `rulesVersion` 을 안 보므로
         //     규칙 차이를 막을 곳이 이 값뿐이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 9)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 10)
     }
 
     func testBettingMessagesRoundTrip() throws {
