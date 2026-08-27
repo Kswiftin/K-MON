@@ -178,6 +178,31 @@ final class RogueRunTests: XCTestCase {
                        "PP 표시를 직접 그리면 공용 렌더러의 색·배지 규칙에서 벗어난다")
     }
 
+    /// 재생기를 빼면 기절·피격이 화면에 뜨기 전에 필드가 다음 포켓몬으로 갈아탄다 — 사용자에게는
+    /// "맞아서 쓰러진" 순간이 없고 그냥 교체된 것처럼 보인다(실제 리포트).
+    func testRunBattleDrivesTheReplayAnimator() throws {
+        let source = try Self.viewSource()
+        XCTAssertTrue(source.contains("BattleAnimator()"), "런 전투도 기존 배틀과 같은 재생기를 쓴다")
+        XCTAssertTrue(source.contains("animator.playedCount"),
+                      "로그는 재생이 닿은 지점까지만 보여야 한다")
+        XCTAssertTrue(source.contains("overlay: animator.overlay"),
+                      "피격·기절 연출을 렌더러에 넘겨야 한다")
+    }
+
+    /// 화면 문구는 전부 `L.t` 를 지나야 한다 — 프로토타입이라 영어 리터럴로 두었더니 한국어 사용자에게
+    /// 그대로 영어가 나갔다.
+    func testRunScreenHasNoUntranslatedSentences() throws {
+        let source = try Self.viewSource()
+        var offenders: [String] = []
+        for marker in ["Text(\"", "Button(\""] {
+            for segment in source.components(separatedBy: marker).dropFirst() {
+                guard let first = segment.first, first.isLetter, first.isASCII else { continue }
+                offenders.append(marker + segment.prefix(40))
+            }
+        }
+        XCTAssertTrue(offenders.isEmpty, "번역을 지나지 않은 문구: \(offenders)")
+    }
+
     private static func viewSource() throws -> String {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // Tests/PokeTokenBarTests
