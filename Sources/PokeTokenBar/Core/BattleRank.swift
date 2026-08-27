@@ -1,22 +1,18 @@
 import Foundation
 
 enum BattleRankTier: Int, Codable, Sendable, CaseIterable, Comparable {
-    case iron, bronze, silver, gold, platinum, emerald, diamond, master, grandmaster, challenger
+    /// Pokémon Champions의 랭크 순서. 각 볼 티어는 Rank 4 → 1, 이후 Champion 단일 티어다.
+    case pokeBall, greatBall, ultraBall, masterBall, champion
 
     static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 
     var name: String {
         switch self {
-        case .iron: "Iron"
-        case .bronze: "Bronze"
-        case .silver: "Silver"
-        case .gold: "Gold"
-        case .platinum: "Platinum"
-        case .emerald: "Emerald"
-        case .diamond: "Diamond"
-        case .master: "Master"
-        case .grandmaster: "Grandmaster"
-        case .challenger: "Challenger"
+        case .pokeBall: "Poké Ball"
+        case .greatBall: "Great Ball"
+        case .ultraBall: "Ultra Ball"
+        case .masterBall: "Master Ball"
+        case .champion: "Champion"
         }
     }
 }
@@ -42,12 +38,13 @@ struct BattleRank: Codable, Sendable, Equatable {
     }
 
     var tier: BattleRankTier {
-        BattleRankTier(rawValue: min(9, max(0, points) / 400)) ?? .iron
+        BattleRankTier(rawValue: min(BattleRankTier.champion.rawValue, max(0, points) / 400)) ?? .pokeBall
     }
-    var division: Int? { tier < .master ? 4 - ((max(0, points) % 400) / 100) : nil }
+    var division: Int? { tier < .champion ? 4 - ((max(0, points) % 400) / 100) : nil }
     var lp: Int { max(0, points) % 100 }
     var displayName: String {
-        division.map { "\(tier.name) \($0) · \(lp) LP" } ?? "\(tier.name) · \(lp) LP"
+        if let division { return "\(tier.name) Rank \(division) · \(lp) LP" }
+        return "\(tier.name) · \(max(0, points - 1_600)) RP"
     }
 
     mutating func apply(win: Bool, opponent: BattleRank) -> Int {
@@ -62,11 +59,11 @@ struct BattleRank: Codable, Sendable, Equatable {
         return points - before
     }
 
-    /// 판돈 상한 — `stake` 가 낼 수 있는 최대치다(티어 격차 최대 9 × 5,000). 세이브에 실려 오는
+    /// 판돈 상한 — `stake` 가 낼 수 있는 최대치다(티어 격차 최대 4 × 5,000). 세이브에 실려 오는
     /// 에스크로(`PendingRankedBattle`)도 이 값으로 자른다. 승리 정산이 `escrowed * 2` 를 지급하므로
     /// 일반 수치 상한(`SaveTransfer.maxTokenValue`, 10^15)까지 허용하면 손으로 만든 세이브 한 장이
     /// 별의조각을 찍어낸다.
-    static let maximumStake = 45_000
+    static let maximumStake = 20_000
 
     /// 낮은 랭크가 높은 랭크에 도전할 때만 발생하는 고정 판돈.
     static func stake(challenger: BattleRank, defender: BattleRank) -> Int {

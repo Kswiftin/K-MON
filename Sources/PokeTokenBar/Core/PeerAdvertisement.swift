@@ -49,7 +49,7 @@ struct PeerAdvertisement: Equatable, Sendable {
 
     /// 읽는 쪽 진입점. 관대 파싱이고 실패하지 않는다(`init?` 가 아니다). 실패시키면 그 피어가
     /// 목록에서 사라져 신청조차 못 한다. 없는 키·비숫자는 nil 로 둔다. 0 으로 떨어뜨리면 랭크 없는
-    /// 상대가 "Iron 4 · 0 LP" 로 보인다.
+    /// 상대가 "Poké Ball Rank 4 · 0 LP" 로 보인다.
     init(_ record: NWTXTRecord) {
         self.init(rankPoints: record[Key.rank].flatMap(Int.init),
                   trainerLevel: record[Key.level].flatMap(Int.init),
@@ -74,7 +74,7 @@ struct PeerAdvertisement: Equatable, Sendable {
         return (achievementTiers, achievementCeiling ?? AchievementLadder.tierCeiling)
     }
 
-    /// 카드가 쓰는 랭크. 없으면 nil 이어야 한다. 빈 `BattleRank()` 는 Iron 4 로 그려져
+    /// 카드가 쓰는 랭크. 없으면 nil 이어야 한다. 빈 `BattleRank()` 는 Poké Ball Rank 4 로 그려져
     /// 정보 없음과 최하위가 구별되지 않는다.
     var rank: BattleRank? { rankPoints.map { BattleRank(points: $0) } }
 }

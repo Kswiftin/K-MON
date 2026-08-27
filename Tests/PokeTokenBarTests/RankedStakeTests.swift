@@ -28,9 +28,9 @@ final class RankedStakeTests: XCTestCase {
 
     /// 내 티어가 상대보다 높아야 패배가 LP 를 깎는다(`BattleRank.apply` 의 조건).
     /// 판돈 0 짜리 승리를 쌓아 티어만 올린다 — 지갑은 그대로 0 이다.
-    private func storeAtBronze(at url: URL? = nil) -> CompanionStore {
+    private func storeAbovePokeBall(at url: URL? = nil) -> CompanionStore {
         let store = makeStore(at: url)
-        while store.battleRank.tier == .iron {
+        while store.battleRank.tier == .pokeBall {
             store.settleRankedBrawl(won: true, opponent: BattleRank(points: 0))
         }
         XCTAssertEqual(store.availableTokens, 0, "테스트 전제: 지갑은 비어 있다")
@@ -38,7 +38,7 @@ final class RankedStakeTests: XCTestCase {
     }
 
     func testLosingWithoutEnoughStardustStillCostsRankPoints() {
-        let store = storeAtBronze()
+        let store = storeAbovePokeBall()
         let pointsBefore = store.battleRank.points
 
         let delta = store.settleRankedBrawl(won: false, opponent: BattleRank(points: 0))
@@ -51,7 +51,7 @@ final class RankedStakeTests: XCTestCase {
     /// 대조군 — 에스크로를 잡고 지면 판돈과 LP 가 함께 나간다.
     /// 한쪽만 보면 "둘 다 안 나감"도 통과한다.
     func testLosingAfterEscrowPaysTheStakeAndDropsRank() {
-        let store = storeAtBronze()
+        let store = storeAbovePokeBall()
         store.creditStarPieces(9_000)
         XCTAssertTrue(store.escrowRankedBattle(stake: 5_000, opponent: BattleRank(points: 0)))
         let pointsBefore = store.battleRank.points
@@ -92,7 +92,7 @@ final class RankedStakeTests: XCTestCase {
 
     /// 무효(끊김 동률·무승부)면 에스크로만 돌려주고 랭크는 그대로다.
     func testANoContestRefundsTheEscrowAndLeavesRankAlone() {
-        let store = storeAtBronze()
+        let store = storeAbovePokeBall()
         store.creditStarPieces(9_000)
         store.escrowRankedBattle(stake: 5_000, opponent: BattleRank(points: 0))
         let pointsBefore = store.battleRank.points
@@ -108,7 +108,7 @@ final class RankedStakeTests: XCTestCase {
     /// 환급으로 두면 "지고 있으면 종료"가 다시 최적해가 된다.
     func testAbandonedRankedBattleIsSettledAsALossOnNextLaunch() {
         let url = tempSaveURL()
-        let store = storeAtBronze(at: url)
+        let store = storeAbovePokeBall(at: url)
         store.creditStarPieces(9_000)
         store.escrowRankedBattle(stake: 5_000, opponent: BattleRank(points: 0))
         let pointsBefore = store.battleRank.points
@@ -137,7 +137,7 @@ final class RankedStakeTests: XCTestCase {
     /// 판돈 0(같은 티어끼리)이어도 에스크로는 잡힌다 — 종료 이탈의 **LP** 대가가 걸려 있다.
     func testAZeroStakeBattleStillRecordsAnEscrowSoLeavingCostsRank() {
         let url = tempSaveURL()
-        let store = storeAtBronze(at: url)
+        let store = storeAbovePokeBall(at: url)
         let pointsBefore = store.battleRank.points
 
         XCTAssertTrue(store.escrowRankedBattle(stake: 0, opponent: BattleRank(points: 0)))
