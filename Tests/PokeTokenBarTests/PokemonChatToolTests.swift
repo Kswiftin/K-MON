@@ -835,7 +835,7 @@ private struct StubToolbox: PokemonChatToolRunning {
         switch call {
         case .pokedoroStatus: return (status, true)
         case .pokedexLookup(let id): return ("pokedex #\(id)", true)
-        case .pokedoroStart, .pokedoroStop: return ("unreachable — approval gated", false)
+        case .pokedoroStart, .pokedoroStop, .adventureClaim: return ("unreachable — approval gated", false)
         case .bagList: return ("bag empty", true)
         case .rosterList: return ("roster index=0 name=피카츄 active=true", true)
         case .itemUse, .evolutionAccept, .companionSwitch: return ("unreachable — approval gated", false)

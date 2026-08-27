@@ -14,6 +14,7 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
     case pokedoroStatus = "pokedoro.status"
     case pokedoroStart = "pokedoro.start"
     case pokedoroStop = "pokedoro.stop"
+    case adventureClaim = "adventure.claim"
     case bagList = "bag.list"
     case rosterList = "roster.list"
     case itemUse = "item.use"
@@ -39,6 +40,8 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
             return "[[tool:\(rawValue)(<\(lengths)>)]] — ask the trainer to start a focus session"
         case .pokedoroStop:
             return "[[tool:\(rawValue)]] — ask the trainer to stop the focus session"
+        case .adventureClaim:
+            return "[[tool:\(rawValue)]] — ask the trainer to collect a finished adventure's reward"
         case .bagList:
             return "[[tool:\(rawValue)]] — see which items the trainer is carrying"
         case .rosterList:
@@ -64,6 +67,8 @@ enum PokemonChatToolCall: Equatable, Sendable {
     case pokedoroStatus
     case pokedoroStart(minutes: Int)
     case pokedoroStop
+    /// 끝난 모험의 정산. 인자가 없는 이유는 모험이 한 번에 하나뿐이라서다 — 지목할 것이 없다.
+    case adventureClaim
     case bagList
     case rosterList
     /// 인자가 닫힌 enum 이다. 임의 문자열을 그대로 받는 인자는 이 목록에 넣지 않는다.
@@ -80,7 +85,9 @@ enum PokemonChatToolCall: Equatable, Sendable {
     /// 이 한 줄이 "시스템 영향도" 의 전부다 — 나머지는 아예 실행 경로가 없는 것들이다.
     var needsApproval: Bool {
         switch self {
-        case .pokedoroStart, .pokedoroStop, .itemUse, .evolutionAccept, .companionSwitch: return true
+        case .pokedoroStart, .pokedoroStop, .itemUse, .evolutionAccept, .companionSwitch,
+             // 정산은 지갑과 경험치를 움직이고, 경험치가 진화·기술 학습 카드를 띄운다.
+             .adventureClaim: return true
         case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList: return false
         // 기억하기만 예외다. 남는 건 사용자가 화면에서 방금 읽은 문장뿐이고(모델이 문구를 못 정한다),
         // 앨범에 전체 삭제가 있다. 승인을 붙이면 대화가 매번 카드로 끊긴다.
@@ -99,7 +106,7 @@ enum PokemonChatToolCall: Equatable, Sendable {
     /// (기억은 활성 개체가 아니라 **대화 주인** 앨범으로 간다).
     var actsOnTheActiveCompanion: Bool {
         switch self {
-        case .pokedoroStart, .pokedoroStop, .itemUse, .evolutionAccept: return true
+        case .pokedoroStart, .pokedoroStop, .itemUse, .evolutionAccept, .adventureClaim: return true
         case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList,
              .companionSwitch, .memoryRecord: return false
         }
@@ -113,7 +120,16 @@ enum PokemonChatToolCall: Equatable, Sendable {
                                  "Shall we start a \(minutes)-minute focus session?",
                                  "\(minutes)分の集中を始める？")
         case .pokedoroStop:
-            return L(language).t("집중을 여기서 끝낼까?", "Shall we stop the focus session?", "集中をここで終える？")
+            // 잃는 것을 말한다. 집중을 끝내면 모험이 보상 없이 취소되는데(`cancelFocusAdventure`),
+            // "끝낼까?" 만 물으면 사용자는 무엇을 승인하는지 모른다. 휴식 단계에는 나가 있는 모험이
+            // 없으므로 조건절로 읽힌다 — 어느 단계에서도 거짓이 되지 않는 문장이다.
+            return L(language).t("집중을 끝낼까? 진행 중인 모험은 보상 없이 취소돼.",
+                                 "Shall we stop the focus session? An adventure still out is cancelled with no reward.",
+                                 "集中を終える？進行中の冒険は報酬なしで取り消されるよ。")
+        case .adventureClaim:
+            return L(language).t("모험 보상을 받아 올까?",
+                                 "Shall we collect the adventure reward?",
+                                 "冒険の報酬を受け取る？")
         case .itemUse(let kind):
             let name = L(language).itemName(kind)
             return L(language).t("\(name)을(를) 하나 써 볼까?",
@@ -147,6 +163,9 @@ enum PokemonChatToolCall: Equatable, Sendable {
                        "\(minutes)分の集中を始めたよ。いっしょにがんばろう！")
         case .pokedoroStop:
             return l.t("집중을 끝냈어. 수고했어!", "Focus session stopped. Nice work!", "集中を終えたよ。おつかれさま！")
+        case .adventureClaim:
+            return l.t("모험 보상을 받았어. 고마워!", "Collected the adventure reward. Thank you!",
+                       "冒険の報酬を受け取ったよ。ありがとう！")
         case .itemUse(let kind):
             let name = l.itemName(kind)
             return l.t("\(name)을(를) 썼어. 고마워!", "Used one \(name). Thank you!", "\(name)を使ったよ。ありがとう！")
@@ -200,7 +219,8 @@ enum PokemonChatToolParser {
         guard let tool = PokemonChatTool(rawValue: name) else { return nil }
 
         switch tool {
-        case .pokedoroStatus, .pokedoroStop, .bagList, .rosterList, .evolutionAccept, .memoryRecord:
+        case .pokedoroStatus, .pokedoroStop, .bagList, .rosterList, .evolutionAccept, .memoryRecord,
+             .adventureClaim:
             // 인자를 받지 않는 도구에 인자가 붙었으면 모델이 다른 것을 의도한 것이다. 추측하지 않는다.
             guard argument == nil else { return nil }
             switch tool {
@@ -209,6 +229,7 @@ enum PokemonChatToolParser {
             case .bagList: return .bagList
             case .rosterList: return .rosterList
             case .evolutionAccept: return .evolutionAccept
+            case .adventureClaim: return .adventureClaim
             // 본문은 여기서 채우지 않는다 — 가드를 통과한 답변으로 스토어가 갈아 끼운다.
             default: return .memoryRecord(body: "")
             }
@@ -337,7 +358,23 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             // 빈 조회를 빈 줄로 돌려주면 모델이 침묵을 사실로 읽는다.
             guard !facts.isEmpty else { return ("pokedex #\(id) unavailable", false) }
             return ("pokedex #\(id) " + facts.joined(separator: " "), true)
+        case .adventureClaim:
+            // 끝난 모험만 정산된다(`claimAdventure` 가 완료 판정을 들고 있는 유일한 자리다).
+            // 없는데 성공으로 돌려주면 모델이 "보상 받았어" 라고 말한다.
+            guard let reward = companion.claimAdventure() else { return ("adventure none ready", false) }
+            // 지갑 증가분을 **전부** 설명한다 — 트레이너·미션·업적·시즌 보너스까지 합친 값이
+            // 실제 증가분이다(`AdventureReward` 의 완전설명 계약). 숫자를 빼면 모델이 액수를 지어낸다.
+            let stardust = reward.stardust + reward.trainerBonus + reward.missionBonus
+                + reward.achievementBonus + reward.seasonBonus
+            return ("adventure claimed stardust=\(stardust) exp=\(reward.experience) eggs=\(reward.bonusEggs)", true)
+
         case .pokedoroStart(let minutes):
+            // 나가 있는 모험이 있으면 화면도 시작 버튼을 내주지 않는다(`FocusTimerView`). 사유를
+            // 갈라 주면 모델이 다음 수(정산)로 이어 갈 수 있다 — 뭉개면 같은 호출만 반복한다.
+            if companion.activeAdventure != nil {
+                let reason = companion.isAdventureInProgress ? "in progress" : "reward unclaimed"
+                return ("pokedoro start refused: adventure \(reason)", false)
+            }
             guard timer.startFocusSession(minutes: minutes, companion: companion) else {
                 return ("pokedoro start refused", false)
             }
@@ -375,8 +412,28 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         }
     }
 
+    /// 타이머만이 아니라 **모험 루프**를 싣는다. Pokedoro 의 상호작용은 여기에 있다 — 모험은
+    /// 집중과 함께 나가고, 끝나면 사용자가 정산해야 하며, 정산 전에는 다음 집중이 안 켜진다.
+    /// 타이머만 보고하던 동안 모델은 "보상 받기를 눌러 달라" 는 말을 할 수 없었다.
+    ///
+    /// 알 부화 예정 시각은 넣지 않는다 — 남은 시간을 재려면 실행기가 시계를 들어야 하고, 그러면
+    /// 같은 판정이 `StoredEggCountdown` 과 두 벌이 된다. 개수만으로 할 말은 충분하다.
     private func statusLine() -> String {
-        "pokedoro state=\(timer.phase.rawValue) remaining=\(timer.isRunning ? timer.clockText() : "00:00") completed=\(timer.completedSessions)"
+        var parts = ["pokedoro state=\(timer.phase.rawValue)",
+                     "remaining=\(timer.isRunning ? timer.clockText() : "00:00")",
+                     "completed=\(timer.completedSessions)"]
+        if let adventure = companion.activeAdventure {
+            let waiting = !companion.isAdventureInProgress
+            parts.append("adventure=\(waiting ? "ready" : "running")")
+            parts.append("zone=\(adventure.zone.rawValue)")
+            if !waiting { parts.append("progress=\(Int((companion.adventureProgress() * 100).rounded()))%") }
+        } else {
+            parts.append("adventure=none")
+        }
+        parts += ["eggs=\(companion.focusEggCount)",
+                  "fragments=\(companion.eggFragmentCount)",
+                  "weekly=\(companion.weeklyAdventureProgress)"]
+        return parts.joined(separator: " ")
     }
 }
 
