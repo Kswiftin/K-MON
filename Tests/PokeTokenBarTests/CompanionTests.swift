@@ -433,6 +433,23 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.dexSpecies.map(\.name), ["포1", "포2", "포3"])
     }
 
+    func testBackfillCompletesPartiallyStoredNames() async throws {
+        let entry = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common,
+                             caughtAt: fixedNow, names: [1: ["ko": "포1"], 3: ["ko": "포3"]])
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let dexJSON = String(decoding: try JSONEncoder().encode([entry]), as: UTF8.self)
+        try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
+        let provider = CountingLineProvider(value: linear3)
+        let s = CompanionStore(provider: provider, clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
+
+        XCTAssertEqual(s.dexSpecies.map(\.name), ["포1", "#2", "포3"])
+        await s.backfillMissingDexNames()
+
+        XCTAssertEqual(provider.lineCalls, 1)
+        XCTAssertEqual(s.dexSpecies.map(\.name), ["포1", "포2", "포3"])
+        XCTAssertEqual(s.state.dex.first?.names?[1]?["ko"], "포1", "기존 이름도 병합 후 유지")
+    }
+
     /// 오프라인이면 폴백(`#id`)을 **저장하지 않는다** — 저장해 버리면 이름이 영원히 번호로 굳는다.
     /// 다음 진입(온라인)에서 다시 시도해 채워지는 것까지 확인한다.
     func testBackfillRetriesAfterAnOfflineAttempt() async throws {

@@ -207,9 +207,13 @@ struct NetBattleLogCombatant: Sendable, Equatable {
     let name: String
     let moves: [MoveSpec]
 
-    init(_ side: BattleSide) {
+    init(_ side: BattleSide, calledMoves: [MoveSpec] = []) {
         name = side.snapshot.name
-        moves = side.moves
+        // 손가락흔들기로 호출된 기술은 대여 토게키스의 정규 기술 목록에는 없다. 이벤트에는 실제
+        // 기술 ID가 남으므로, 재생/로그가 이를 발버둥으로 오인하지 않도록 턴 문맥에도 함께 보존한다.
+        moves = side.moves + calledMoves.filter { called in
+            !side.moves.contains(where: { $0.id == called.id })
+        }
     }
 }
 
@@ -218,10 +222,11 @@ struct NetBattleEventBatch: Sendable, Equatable {
     let a: NetBattleLogCombatant
     let b: NetBattleLogCombatant
 
-    init(events: [BattleEvent], a: BattleSide, b: BattleSide) {
+    init(events: [BattleEvent], a: BattleSide, b: BattleSide,
+         calledMovesA: [MoveSpec] = [], calledMovesB: [MoveSpec] = []) {
         self.events = events
-        self.a = NetBattleLogCombatant(a)
-        self.b = NetBattleLogCombatant(b)
+        self.a = NetBattleLogCombatant(a, calledMoves: calledMovesA)
+        self.b = NetBattleLogCombatant(b, calledMoves: calledMovesB)
     }
 }
 
@@ -370,7 +375,9 @@ struct NetBattleState {
         }
         // 배치는 **자동 출전 이벤트까지 담은 뒤** 만든다 — 배치 이벤트 수가 평평한 `events` 와
         // 어긋나면 `BattleLogSource.netBattle` 의 진행도 자르기가 그만큼 밀린다.
-        let eventBatch = NetBattleEventBatch(events: turnEvents, a: contextA, b: contextB)
+        let eventBatch = NetBattleEventBatch(events: turnEvents, a: contextA, b: contextB,
+                                              calledMovesA: overrideA.map { [$0] } ?? [],
+                                              calledMovesB: overrideB.map { [$0] } ?? [])
 
         self.myTeam = iAmA ? teamA : teamB
         self.oppTeam = iAmA ? teamB : teamA
