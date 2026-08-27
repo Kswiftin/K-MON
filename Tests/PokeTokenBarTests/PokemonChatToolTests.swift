@@ -334,7 +334,9 @@ final class PokemonChatToolTests: XCTestCase {
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: makeCompanionStore(),
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
-        let refused = await toolbox.runAsActive(.pokedoroStart(minutes: 25))
+        // owner 를 직접 넘긴다 — `runAsActive` 의 `?? UUID()` 폴백에 기대면 "활성으로 실행" 이
+        // 조용히 "남으로 실행" 이 되어, 무엇을 시험하는지가 헬퍼에 숨는다.
+        let refused = await toolbox.run(.pokedoroStart(minutes: 25), owner: UUID())
         XCTAssertFalse(refused.succeeded, "거절이 성공으로 보고되면 승인 카드가 실패를 침묵으로 만든다")
         XCTAssertEqual(refused.line, "tool refused: no active companion")
     }
@@ -803,7 +805,17 @@ final class PokemonChatToolTests: XCTestCase {
         // 총량은 카탈로그에서 온다 — 숫자를 여기 적으면 콘텐츠가 늘 때 문구만 옛말이 된다.
         XCTAssertTrue(status.line.contains("badges=0/\(GymLeague.catalog.count)"), status.line)
         XCTAssertTrue(status.line.contains("missions=0/\(MissionBoard.catalog.count)"), status.line)
-        XCTAssertTrue(status.line.contains("budget=\(store.dungeonBudgetPreview)"), status.line)
+        XCTAssertTrue(status.line.contains("budget=\(store.dungeonBudget(usedItem: false))"), status.line)
+
+        // 먹는샘물이 있으면 화면 미리보기(+3)와 맨몸 예산이 갈라진다. 재고 없는 store 로만 재면
+        // 두 값이 같아서 어느 쪽을 찍는지 구분하지 못한다 — 대화는 마신다고 가정하지 않는다.
+        store.debugAddItem(.freshWater, 1)
+        XCTAssertNotEqual(store.dungeonBudgetPreview, store.dungeonBudget(usedItem: false),
+                          "전제: 재고가 있으면 미리보기와 맨몸 예산이 달라야 이 단언이 뜻을 가진다")
+        let withWater = await toolbox.runAsActive(.challengeStatus)
+        XCTAssertTrue(withWater.line.contains("budget=\(store.dungeonBudget(usedItem: false))"), withWater.line)
+        XCTAssertFalse(withWater.line.contains("budget=\(store.dungeonBudgetPreview)"),
+                       "마신다고 가정한 예산을 사실로 찍었다: \(withWater.line)")
 
         // 클리어 분기를 직접 밟는다. "오늘 던전 갔어?" 에 답하는 값이 이 한 글자인데, `open` 만
         // 시험하면 라인 커버리지는 100% 로 통과하면서 `cleared` 는 한 번도 안 돈다

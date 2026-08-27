@@ -347,8 +347,11 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             // 총량은 카탈로그에서 읽는다 — 숫자를 여기 적으면 콘텐츠가 늘 때 이 줄만 옛말이 된다.
             let missions = companion.missionRows
             let done = missions.filter { $0.progress >= $0.mission.target }.count
+            // 예산은 `dungeonBudgetPreview` 가 아니라 **맨몸 값**이다. 미리보기는 "먹는샘물이 가방에
+            // 있으면 마신다" 를 가정해 +3 이 붙는데(화면은 그 토글 옆이라 뜻이 분명하다), 대화에는
+            // 그 맥락이 없어 모델이 실제보다 높은 숫자를 사실로 말하게 된다.
             return ("challenge dungeon=\(companion.dungeonCleared ? "cleared" : "open")"
-                    + " budget=\(companion.dungeonBudgetPreview)"
+                    + " budget=\(companion.dungeonBudget(usedItem: false))"
                     + " badges=\(companion.earnedGymBadges.count)/\(GymLeague.catalog.count)"
                     + " missions=\(done)/\(missions.count)", true)
 
