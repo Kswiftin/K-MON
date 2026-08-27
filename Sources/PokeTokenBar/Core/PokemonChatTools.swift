@@ -288,6 +288,14 @@ protocol PokemonChatToolRunning {
     /// `line` 은 모델에게 돌려줄 사실 한 줄(사용자 화면에는 실리지 않으므로 번역하지 않는다).
     /// `succeeded` 는 승인 경로가 거절과 실패를 구분하는 데 쓴다 — 문자열을 뒤져 판정하지 않는다.
     ///
+    /// 이 호출이 **지금 이 창에서** 실행될 수 있는가. 승인 카드를 띄우기 전에 묻는다 — 성공할 수
+    /// 없는 질문을 사용자에게 하지 않기 위해서다.
+    ///
+    /// 대상은 구조적 불가능뿐이다(주인 게이트). "가방에 사탕이 없다" 처럼 **상태에 따른** 실패는
+    /// 미리 보지 않는다 — 그러면 실행기 전체가 두 벌이 되고, 그건 사용자가 봐야 하는 정직한
+    /// 실패다. 여기서 막는 건 "이 창에서는 무슨 수를 써도 안 되는 일" 이다.
+    func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool
+
     /// `owner` 는 **이 대화의 주인**이다. 기본값을 두지 않는 이유는, 두면 부르는 자리가 활성 개체를
     /// 암묵 대상으로 삼아 박스 개체 대화가 다시 남을 건드리게 되기 때문이다 — 넘기지 않으면
     /// 컴파일이 안 되는 편이 낫다.
@@ -311,16 +319,26 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: id, language: language)
     }
 
+    /// 암시적으로 "지금 나와 있는 나" 에 작용하는 도구는 그 개체의 대화에서만 돈다. 판정이 여기
+    /// 한 곳뿐인 이유는 두 곳이면 "카드를 안 띄우는 조건"(`canRun`)과 "실행을 막는 조건"(`run`)이
+    /// 갈라져, 한쪽만 고쳐도 아무 테스트가 안 깨지기 때문이다. 분류 자체도 한 곳이다
+    /// (`actsOnTheActiveCompanion`) — case 마다 두면 다음에 더하는 도구가 조용히 빠진다.
+    ///
+    /// 사유를 갈라 준다. 뭉개면 모델이 왜 안 되는지 모른 채 같은 호출을 반복하고, 사용자에게는
+    /// 침묵으로 보인다(분을 버리지 않고 접는 것과 같은 이유).
+    private func ownerRefusal(_ call: PokemonChatToolCall, owner: UUID) -> String? {
+        guard call.actsOnTheActiveCompanion else { return nil }
+        guard let active = companion.activeMonID else { return "tool refused: no active companion" }
+        guard owner == active else { return "tool refused: not the active companion" }
+        return nil
+    }
+
+    func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool {
+        ownerRefusal(call, owner: owner) == nil
+    }
+
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
-        // 암시적으로 "지금 나와 있는 나" 에 작용하는 도구는 그 개체의 대화에서만 돈다. 가드가 여기
-        // 한 곳뿐인 이유는 case 마다 두면 다음에 더하는 도구가 조용히 빠지기 때문이다 — 분류는
-        // `actsOnTheActiveCompanion` 한 곳에서만 한다.
-        if call.actsOnTheActiveCompanion {
-            // 사유를 갈라 준다. 뭉개면 모델이 왜 안 되는지 모른 채 같은 호출을 반복하고,
-            // 사용자에게는 침묵으로 보인다(분을 버리지 않고 접는 것과 같은 이유).
-            guard let active = companion.activeMonID else { return ("tool refused: no active companion", false) }
-            guard owner == active else { return ("tool refused: not the active companion", false) }
-        }
+        if let refusal = ownerRefusal(call, owner: owner) { return (refusal, false) }
         switch call {
         case .bagList:
             let items = companion.ownedItems

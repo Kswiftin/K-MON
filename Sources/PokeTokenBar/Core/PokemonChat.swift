@@ -600,8 +600,15 @@ final class PokemonChatStore {
                 let parsed = PokemonChatToolParser.parse(try await provider.reply(to: request))
                 reply = parsed.body
                 call = parsed.call
-                // 승인이 필요한 도구는 여기서 멈춘다. 사용자가 누르기 전에 다시 물으면 승인이 무의미하다.
-                guard let pending = parsed.call, let toolbox, !pending.needsApproval else { break }
+                guard let pending = parsed.call, let toolbox else { break }
+                if pending.needsApproval {
+                    // 승인이 필요한 도구는 여기서 멈춘다. 사용자가 누르기 전에 다시 물으면 승인이 무의미하다.
+                    if toolbox.canRun(pending, owner: companionID) { break }
+                    // 이 창에서 될 수 없는 일이면 **카드를 띄우지 않는다.** 성공할 수 없는 질문이라,
+                    // 사용자는 탭 한 번을 버리고 실패 문구를 받는다. 대신 아래에서 사유를 모델에
+                    // 돌려줘 사람 말로 설명하게 한다.
+                    call = nil
+                }
                 // 마지막 요청 뒤의 실행은 결과를 전할 턴이 없다 — 부작용만 남기고 끝난다.
                 guard round != rounds.upperBound else { break }
                 toolResults.append(PokemonChatMessage(role: .system, body: await toolbox.run(pending, owner: companionID).line))

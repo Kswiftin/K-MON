@@ -825,6 +825,49 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(after.line.contains("dungeon=cleared"), after.line)
     }
 
+    /// 성공할 수 없는 질문은 **카드로 띄우지 않는다.** 박스 개체 대화에서 집중 시작을 제안하면
+    /// 실행기가 거절할 것이 처음부터 정해져 있다(주인 게이트) — 카드를 띄우면 사용자는 탭 한 번을
+    /// 버리고 "지금은 그렇게 할 수 없어" 를 받는다. 대신 사유를 모델에 돌려줘 사람 말로 설명하게 한다.
+    func testAnUnrunnableApprovalCallBecomesAReasonForTheModelNotACardForTheUser() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let boxed = Self.spareMon()
+        store.debugSetBoxedMons([boxed])
+        let chat = PokemonChatStore(fileURL: temporaryURL())
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        let provider = ScriptedToolProvider(replies: ["같이 집중하자! [[tool:pokedoro.start(25)]]",
+                                                      "아, 난 지금 박스에 있어서 같이 못 가."])
+
+        await chat.send("집중하고 싶어", for: boxed.id, profile: .toolFixture,
+                        provider: provider, toolbox: toolbox)
+
+        XCTAssertNil(chat.pendingProposal, "될 수 없는 일을 카드로 물어봤다")
+        XCTAssertEqual(chat.messages(for: boxed.id).last?.body, "아, 난 지금 박스에 있어서 같이 못 가.")
+        let seen = await provider.lastRequestMessages
+        XCTAssertTrue(seen.contains { $0.role == .system && $0.body.contains("not the active companion") },
+                      "거절 사유가 모델에게 안 갔다 — 모델은 왜 안 되는지 모른 채 같은 호출을 반복한다")
+        XCTAssertEqual(store.activeAdventure, nil, "거절했는데 모험이 나갔다")
+    }
+
+    /// 대조군 — 실행할 수 있는 승인 도구는 그대로 카드가 된다. 위 가드가 넓게 걸리면 승인 게이트
+    /// 자체가 죽는데, 그건 "아무것도 못 하는 대화" 로만 드러나 테스트 없이는 안 보인다.
+    func testARunnableApprovalCallStillBecomesACard() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let active = store.activeMonID!
+        let chat = PokemonChatStore(fileURL: temporaryURL())
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        await chat.send("집중하고 싶어", for: active, profile: .toolFixture,
+                        provider: CountingToolProvider(reply: "같이 집중하자! [[tool:pokedoro.start(25)]]"),
+                        toolbox: toolbox)
+
+        XCTAssertEqual(chat.pendingProposal?.call, .pokedoroStart(minutes: 25))
+        XCTAssertEqual(chat.pendingProposal?.companionID, active)
+    }
+
     private static func dexEntry(chain: [Int], types: [PokemonType]? = nil, shiny: Bool = false) -> DexEntry {
         DexEntry(baseID: chain[0], finalID: chain[chain.count - 1], chainOrder: chain,
                  rarity: .common, caughtAt: nil, isShiny: shiny, types: types)
@@ -904,6 +947,7 @@ private actor ScriptedToolProvider: PokemonChatProviding {
 @MainActor
 private final class CountingToolbox: PokemonChatToolRunning {
     private(set) var runCount = 0
+    func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool { true }
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         runCount += 1; return ("pokedoro state=idle", true)
     }
@@ -911,6 +955,7 @@ private final class CountingToolbox: PokemonChatToolRunning {
 
 private struct StubToolbox: PokemonChatToolRunning {
     var status = "pokedoro state=idle"
+    func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool { true }
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         switch call {
         case .pokedoroStatus: return (status, true)
