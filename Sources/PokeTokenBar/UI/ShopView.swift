@@ -9,7 +9,7 @@ struct ShopView: View {
     @State private var category: ShopCategory = .general
 
     private enum ShopCategory: String, CaseIterable, Identifiable {
-        case general, evolution, eggs, machines
+        case general, evolution, eggs, machines, outfits
         var id: String { rawValue }
     }
 
@@ -27,6 +27,7 @@ struct ShopView: View {
                     Text(l.t("진화", "Evolution", "進化")).tag(ShopCategory.evolution)
                     Text(l.t("알", "Eggs", "タマゴ")).tag(ShopCategory.eggs)
                     Text(l.t("기술머신", "TMs", "わざマシン")).tag(ShopCategory.machines)
+                    Text(l.t("의상", "Outfits", "ふく")).tag(ShopCategory.outfits)
                 }
                 .pickerStyle(.segmented)
 
@@ -42,12 +43,15 @@ struct ShopView: View {
                 case .eggs:
                     ForEach(FreshEgg.shopTiers, id: \.self) { tier in
                         EggCard(store: store, nav: nav, tier: tier)
-                    case .outfit(let item):
-                        ShopOutfitCard(store: store, item: item)
                     }
                 case .machines:
                     ForEach(TechnicalMachine.catalog) { machine in
                         TechnicalMachineShopCard(store: store, machine: machine)
+                    }
+                case .outfits:
+                    // 상점 판매분만(`shopPrice != nil`) — 업적 보상 의상은 옷장에서 잠금으로 보인다.
+                    ForEach(OutfitItem.allCases.filter { $0.shopPrice != nil }, id: \.self) { item in
+                        ShopOutfitCard(store: store, item: item)
                     }
                 }
             }

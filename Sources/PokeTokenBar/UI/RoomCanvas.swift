@@ -210,8 +210,12 @@ struct RoomCanvas: View {
         guard let image = frames.image(facing, step: collapsed ? 0 : walker.animationStep) else { return }
         let position = walker.visualPosition
         // 발이 칸 바닥에 붙게 아래로 정렬한다 — 16×24px 을 24×36pt(1.5배)로 그리므로 칸(24pt)보다 높다.
-        let rect = CGRect(x: position.x * Self.cell, y: position.y * Self.cell + Self.cell - 36,
-                          width: 24, height: 36)
+        // 타입을 전부 CGFloat 로 맞춘다 — Double 좌표와 CGFloat 상수·정수 리터럴이 섞이면 CI 의
+        // Swift 6.0 타입체커가 `-` 를 모호하다고 거부한다(로컬 6.3 은 통과해 놓친 결함).
+        let trainerWidth: CGFloat = 24, trainerHeight: CGFloat = 36
+        let x = CGFloat(position.x) * Self.cell
+        let y = CGFloat(position.y) * Self.cell + Self.cell - trainerHeight
+        let rect = CGRect(x: x, y: y, width: trainerWidth, height: trainerHeight)
         var ctx = ctx
         if collapsed { ctx.opacity = 0.5 }
         ctx.draw(Image(decorative: image, scale: 1).interpolation(.none), in: rect)
