@@ -45,8 +45,45 @@ final class PeerAdvertisementTests: XCTestCase {
     // MARK: 왕복
 
     func testRoundTripPreservesEveryField() {
-        let mine = PeerAdvertisement(rankPoints: 2_150, trainerLevel: 37, achievementTiers: 11)
+        let mine = PeerAdvertisement(rankPoints: 2_150, trainerLevel: 37, achievementTiers: 11,
+                                     outfit: TrainerOutfit(worn: [.hat: .capRed]))
         XCTAssertEqual(PeerAdvertisement(mine.txtRecord), mine)
+    }
+
+    // MARK: 착장 (#room-walk-dungeon-design 트레이너 아바타)
+
+    func testOutfitKeyIsFrozen() { XCTAssertEqual(PeerAdvertisement.Key.outfit, "outfit") }
+
+    /// 착장도 다른 필드처럼 왕복해야 상대 카드가 옳게 그려진다.
+    func testOutfitRoundTripsThroughTheRecord() {
+        let outfit = TrainerOutfit(worn: [.hat: .capRed, .top: .jacketBlue])
+        let mine = PeerAdvertisement(trainerLevel: 3, outfit: outfit)
+        XCTAssertEqual(mine.txtRecord["outfit"], "hat:cap_red,top:jacket_blue")
+        XCTAssertEqual(PeerAdvertisement(mine.txtRecord).outfit, outfit)
+    }
+
+    /// 빈 착장은 키를 안 싣는다 — 다른 필드와 같은 "없음 vs 0" 구분이다.
+    func testEmptyOutfitIsNotAdvertised() {
+        XCTAssertNil(PeerAdvertisement(outfit: TrainerOutfit()).txtRecord["outfit"])
+        XCTAssertNil(PeerAdvertisement(outfit: TrainerOutfit()).outfit)
+    }
+
+    /// 모르는 슬롯·아이템이 섞여도 아는 것만 살고, 완전히 못 읽으면 착장만 nil — 피어 자체는
+    /// 목록에 남는다(관대 파싱).
+    func testUnknownOutfitEntriesAreIgnoredWithoutDroppingThePeer() {
+        var record = NWTXTRecord()
+        record["outfit"] = "hat:cap_red,wings:future_item"
+        let parsed = PeerAdvertisement(record)
+        XCTAssertEqual(parsed.outfit?.worn, [.hat: .capRed])
+        record["outfit"] = "garbage"
+        XCTAssertNil(PeerAdvertisement(record).outfit)
+    }
+
+    /// 전체 슬롯을 다 입어도 TXT 제한(255 바이트)에 한참 못 미쳐야 한다.
+    func testFullOutfitStaysWellUnderTheTxtLimit() {
+        let worn = Dictionary(uniqueKeysWithValues: OutfitSlot.allCases.map { slot in
+            (slot, OutfitItem.allCases.first { $0.slot == slot }!) })
+        XCTAssertLessThan(TrainerOutfit(worn: worn).wireString!.utf8.count, 200)
     }
 
     /// 빈 칸은 키를 싣지 않는다. 읽는 쪽이 "없음"과 "0"을 구별해야 하고, 0 을 실으면 상대

@@ -385,11 +385,12 @@ final class PopoverLayoutTests: XCTestCase {
 
     // MARK: 업적 선반 — 세로 예산
 
-    /// 업적 선반은 컬렉션 탭 세그먼트 하나를 차지한다. 4행이라 예산은 넉넉하지만 행마다 게이지를
-    /// 깔면 미션 카드(211pt)·도감 목표 줄이 겪은 초과를 되풀이한다. 상한을 두는 이유는 선반이 도감
-    /// 격자와 **같은 프레임**을 쓰기 때문이다 — 넘치면 세그먼트를 바꿀 때 스크롤이 생겨 두 화면의
-    /// 높이가 달라 보인다.
-    private static let achievementShelfBudget: CGFloat = 160
+    /// 업적 선반은 컬렉션 탭 세그먼트 하나를 차지한다. 6행이라(던전 트랙 2개 추가) 예산은 넉넉하지만
+    /// 행마다 게이지를 깔면 미션 카드(211pt)·도감 목표 줄이 겪은 초과를 되풀이한다. 상한을 두는
+    /// 이유는 선반이 도감 격자와 **같은 프레임**을 쓰기 때문이다 — 넘치면 세그먼트를 바꿀 때
+    /// 스크롤이 생겨 두 화면의 높이가 달라 보인다.
+    /// 4행 160pt 기준에서 던전 트랙 2행만큼(행당 ~14pt) 얹었다.
+    private static let achievementShelfBudget: CGFloat = 188
 
     private func achievementStore(_ language: AppLanguage = .ko) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
@@ -426,6 +427,16 @@ final class PopoverLayoutTests: XCTestCase {
     func testAchievementShelfFitsItsBudget() {
         XCTAssertLessThanOrEqual(renderedHeight(AchievementShelfView(store: achievementStore())),
                                  Self.achievementShelfBudget)
+    }
+
+    // MARK: 꾸미기(옷장) 오버레이 — 던전과 같은 층, 같은 높이 예산.
+
+    /// 던전 오버레이와 같은 `PopoverMetrics.currentHeight(for: .battle)` 프레임을 쓴다 — 아이템
+    /// 목록을 가로 스크롤로 묶은 이유가 바로 이 예산을 넘기지 않기 위해서다.
+    func testOutfitViewFitsTheOverlayHeight() {
+        let store = achievementStore()
+        XCTAssertLessThanOrEqual(renderedHeight(OutfitView(store: store, onClose: {})),
+                                 PopoverMetrics.currentHeight(for: .battle))
     }
 
     /// 트랙 이름이 세 언어에서 길이가 다르다(집중 시간 / Focus time / 集中時間). 한 언어에서

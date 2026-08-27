@@ -558,6 +558,8 @@ final class SaveTransferTests: XCTestCase {
                                      "starterCandidates", "active", "dex", "collectedFinals", "gymBadges", "shinyEggCharges", "inventory",
                                      // 기술머신도 산 물건이다 — `inventory` 와 같은 부류라 기기를 옮겨도 따라간다.
                                      "technicalMachines",
+                                     // 트레이너 꾸미기 — 산 의상과 착용 상태는 진행이라 그대로 따라간다.
+                                     "outfit", "ownedOutfits",
                                      "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
                                      "battleRank", "trainer", "missions", "achievements", "seasons", "battleHistory",
                                      // 진행 중인 랭크전 에스크로 — 이미 지갑에서 빠져나간 돈이다.

@@ -62,12 +62,15 @@ final class PopoverNavigation {
     var showGymLeague = false
     /// 던전 오버레이(#79). 설정·체육관과 같은 층이다.
     var showDungeon = false
+    /// 꾸미기(트레이너 의상) 오버레이. 위 오버레이들과 같은 층이다.
+    var showOutfit = false
     var tab: PopoverTab = .home
 
     func reset() {
         showSettings = false
         showGymLeague = false
         showDungeon = false
+        showOutfit = false
         tab = .home
     }
 
@@ -77,6 +80,7 @@ final class PopoverNavigation {
         showSettings = false
         showGymLeague = false
         showDungeon = false
+        showOutfit = false
         tab = .battle
     }
 }
@@ -102,7 +106,11 @@ struct PopoverView: View {
             } else if nav.showGymLeague {
                 GymLeagueView(store: companion, onClose: { nav.showGymLeague = false })
             } else if nav.showDungeon {
-                DungeonView(store: companion, onClose: { nav.showDungeon = false })
+                // 프로토타입 — 던전 탭을 포켓로그식 런으로 갈아 끼웠다. 규칙 검증이 끝나면
+                // 남은 던전 코어(PuzzleDungeon/DungeonRun/DungeonNarration)도 지운다.
+                RogueRunView(store: companion, onClose: { nav.showDungeon = false })
+            } else if nav.showOutfit {
+                OutfitView(store: companion, onClose: { nav.showOutfit = false })
             } else {
                 // 고정 높이 + 탭 안 스크롤. 콘텐츠가 늘 때마다 창이 커지면 NSPopover 가 매번 다시
                 // 그려 떨리고, 화면을 넘기면 스크롤 대신 잘라낸다(#9). 창 크기는 고정하고 넘치는
@@ -194,7 +202,7 @@ struct PopoverView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     switch nav.tab {
                     case .challenge: ChallengeView(store: companion)
-                    case .battle: FriendView(store: companion)
+                    case .battle: FriendView(store: companion, nav: nav)
                     case .collection: CollectionView(store: companion)
                     case .pokemon: PokemonRosterView(store: companion)
                     case .bag: BagView(store: companion, nav: nav)

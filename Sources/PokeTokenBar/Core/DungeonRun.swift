@@ -52,6 +52,13 @@ struct DungeonRun: Sendable {
     /// 지금 있는 층(0 시작). 화면은 `층 + 1 / 층 수` 로 그린다.
     var layer: Int { map.layerOf[current] }
 
+    /// 오늘 맵의 보물방을 전부 털었나 — 업적 `dungeonSweep` 의 판정. 보물방이 없는 날은 참이 아니다
+    /// (거저 주지 않는다).
+    var sweptAllCaches: Bool {
+        let caches = Set(map.rooms.filter { $0.kind == .cache }.map(\.id))
+        return !caches.isEmpty && caches.isSubset(of: looted)
+    }
+
     /// 출구 목록 — 정체는 밝혀진 방만 딸려 나간다(안개).
     var exits: [(room: Int, cost: Int, known: RoomKind?)] {
         map.exits(from: current).map { (room: $0.room, cost: $0.cost, known: revealed[$0.room]) }
@@ -127,5 +134,7 @@ extension DungeonRun {
         if map.room(room).kind == .encounter { fought.insert(room) }
     }
     mutating func debugSetHitPoints(_ value: Int) { hp = max(0, min(budget, value)) }
+    /// 테스트 전용 — 보물방을 턴 것으로 친다(`move(to:)` 없이 `sweptAllCaches` 경계를 밟는다).
+    mutating func debugLoot(_ room: Int) { looted.insert(room) }
 }
 #endif

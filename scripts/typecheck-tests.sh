@@ -33,6 +33,13 @@ import Foundation
 
 open class XCTestCase {
     public init() {}
+    // 실제 XCTestCase 가 가진 멤버는 스텁에도 둔다 — 빠지면 같은 이름의 테스트 헬퍼가 로컬에서만
+    // 해석되고 CI 에서 상위 멤버와 겹쳐 터진다(`run()` 헬퍼가 그렇게 CI 를 깨뜨렸다).
+    open func run() {}
+    open func invokeTest() {}
+    open func perform(_ test: AnyObject) {}
+    open var name: String { "" }
+    public var continueAfterFailure: Bool = true
     open func setUp() {}
     open func tearDown() {}
     open func setUpWithError() throws {}

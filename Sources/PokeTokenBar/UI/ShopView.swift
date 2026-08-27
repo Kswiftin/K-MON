@@ -9,7 +9,7 @@ struct ShopView: View {
     @State private var category: ShopCategory = .general
 
     private enum ShopCategory: String, CaseIterable, Identifiable {
-        case general, evolution, eggs, machines
+        case general, evolution, eggs, machines, outfits
         var id: String { rawValue }
     }
 
@@ -27,6 +27,7 @@ struct ShopView: View {
                     Text(l.t("진화", "Evolution", "進化")).tag(ShopCategory.evolution)
                     Text(l.t("알", "Eggs", "タマゴ")).tag(ShopCategory.eggs)
                     Text(l.t("기술머신", "TMs", "わざマシン")).tag(ShopCategory.machines)
+                    Text(l.t("의상", "Outfits", "ふく")).tag(ShopCategory.outfits)
                 }
                 .pickerStyle(.segmented)
 
@@ -46,6 +47,11 @@ struct ShopView: View {
                 case .machines:
                     ForEach(TechnicalMachine.catalog) { machine in
                         TechnicalMachineShopCard(store: store, machine: machine)
+                    }
+                case .outfits:
+                    // 상점 판매분만(`shopPrice != nil`) — 업적 보상 의상은 옷장에서 잠금으로 보인다.
+                    ForEach(OutfitItem.allCases.filter { $0.shopPrice != nil }, id: \.self) { item in
+                        ShopOutfitCard(store: store, item: item)
                     }
                 }
             }
@@ -205,6 +211,74 @@ private struct ShopItemCard: View {
     private func buyNow() {
         confirming = false
         _ = store.buy(kind)
+    }
+}
+
+/// 의상 상점 카드 — `ShopItemCard` 와 같은 골격이지만 아이콘이 아이템 스프라이트가 아니라
+/// 그 슬롯 하나만 입힌 트레이너 미리보기다. 재구매 불가(보유형)라 `owned` 분기만 있고 개수 표시는 없다.
+private struct ShopOutfitCard: View {
+    let store: CompanionStore
+    let item: OutfitItem
+    @State private var confirming = false
+
+    private var price: Int { item.shopPrice ?? 0 }
+
+    var body: some View {
+        let l = store.l
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                TrainerAvatarView(outfit: TrainerOutfit(worn: [item.slot: item]), scale: 1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(l.outfitItemName(item)).font(.callout.weight(.semibold))
+                    Text(l.outfitSlotName(item.slot))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            buyControls(l)
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func buyControls(_ l: L) -> some View {
+        if store.ownsOutfit(item) {
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(.green)
+                Text(l.ownedAlready).font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                Spacer()
+            }
+        } else if confirming {
+            HStack(spacing: 8) {
+                Text(l.buyConfirm(l.outfitItemName(item)))
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                Button(l.buy) { buyNow() }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                Button(l.cancel) { confirming = false }
+                    .buttonStyle(.borderless).controlSize(.small)
+            }
+        } else {
+            HStack {
+                Text("\(l.shopPriceLabel) ⭐\(GameNumberFormatter.compact(price))")
+                    .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+                Spacer()
+                if store.canBuyOutfit(item) {
+                    Button(l.buy) { confirming = true }
+                        .buttonStyle(.bordered).controlSize(.small)
+                } else {
+                    Text(l.notEnoughTokens)
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private func buyNow() {
+        confirming = false
+        _ = store.buyOutfit(item)
     }
 }
 

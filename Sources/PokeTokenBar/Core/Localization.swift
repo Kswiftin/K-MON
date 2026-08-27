@@ -923,6 +923,8 @@ struct L {
         case .evolve: return t("진화", "Evolutions", "進化")
         case .battle: return t("배틀 승리", "Battle wins", "バトル勝利")
         case .race:   return t("레이스 완주", "Races finished", "レース完走")
+        case .dungeon: return t("던전 클리어", "Dungeon clears", "ダンジョンクリア")
+        case .dungeonSweep: return t("보물 싹쓸이", "Treasure sweeps", "宝物コンプリート")
         }
     }
 
@@ -1297,6 +1299,35 @@ struct L {
         case .heartScale: return t("하트비늘", "Heart Scale", "ハートのウロコ")
         }
     }
+    func outfitSlotName(_ slot: OutfitSlot) -> String {
+        switch slot {
+        case .hat: return t("모자", "Hat", "ぼうし")
+        case .hair: return t("머리", "Hair", "かみ")
+        case .top: return t("상의", "Top", "トップス")
+        case .bottom: return t("하의", "Bottom", "ボトムス")
+        case .accessory: return t("소품", "Accessory", "アクセサリー")
+        }
+    }
+    func outfitItemName(_ item: OutfitItem) -> String {
+        switch item {
+        case .capRed: return t("빨간 캡", "Red cap", "赤いキャップ")
+        case .strawHat: return t("밀짚모자", "Straw hat", "むぎわらぼうし")
+        case .hairBob: return t("단발", "Bob cut", "ボブ")
+        case .hairPony: return t("포니테일", "Ponytail", "ポニーテール")
+        case .jacketBlue: return t("파란 재킷", "Blue jacket", "青いジャケット")
+        case .teeWhite: return t("흰 티셔츠", "White tee", "白いTシャツ")
+        case .shortsKhaki: return t("반바지", "Shorts", "ショートパンツ")
+        case .backpack: return t("백팩", "Backpack", "バックパック")
+        case .hairMessy: return t("흐트러진 머리", "Messy hair", "ぼさぼさの髪")
+        case .cloakWorn: return t("낡은 망토", "Worn cloak", "古びたマント")
+        case .bootsLong: return t("탐험 부츠", "Explorer boots", "探検ブーツ")
+        case .helmetExplorer: return t("탐험가 헬멧", "Explorer helmet", "探検家のヘルメット")
+        }
+    }
+    var outfitTitle: String { t("꾸미기", "Wardrobe", "きせかえ") }
+    var outfitWardrobe: String { t("꾸미기", "Wardrobe", "きせかえ") }
+    var outfitTakeOff: String { t("벗기", "Take off", "はずす") }
+    var outfitLocked: String { t("업적으로 해금", "Unlock via achievements", "実績で解放") }
     func itemDescription(_ kind: ItemKind) -> String {
         switch kind {
         case .rareCandy:

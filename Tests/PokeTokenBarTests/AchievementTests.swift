@@ -46,11 +46,36 @@ final class AchievementLadderTests: XCTestCase {
         }
     }
 
-    /// 평생 총액이 알 세 개를 넘으면 상점·판돈 경제가 흔들린다. 조절 손잡이는 카탈로그 표 하나뿐이다.
+    /// 평생 총액이 알 다섯 개를 넘으면 상점·판돈 경제가 흔들린다. 조절 손잡이는 카탈로그 표 하나뿐이다.
     /// (미션은 주당 상한이 기준이었지만 업적은 **평생 1회**라 총액으로 잰다.)
-    func testLifetimeRewardsStayUnderThreeEggs() {
+    /// 6 트랙 × 10,300⭐ = 61,800⭐ ≈ 알 3.1개 — 상한은 여유를 두고 5개로 잡는다.
+    func testLifetimeRewardsStayUnderFiveEggs() {
         let lifetime = AchievementLadder.catalog.reduce(0) { $0 + $1.rewards.reduce(0, +) }
-        XCTAssertLessThan(lifetime, FreshEgg.price(guaranteeing: nil) * 3)
+        XCTAssertLessThan(lifetime, FreshEgg.price(guaranteeing: nil) * 5)
+    }
+
+    /// 던전 두 트랙도 다른 네 트랙과 같은 4단계 문턱이고, 상점 미판매 의상이 걸려 있어야 한다.
+    func testDungeonTracksExistWithFourTiersAndOutfits() {
+        let dungeon = achievement(.dungeon), sweep = achievement(.dungeonSweep)
+        XCTAssertEqual(dungeon.tiers, [1, 5, 20, 50]); XCTAssertEqual(sweep.tiers, [1, 5, 20, 50])
+        XCTAssertEqual(dungeon.outfits, [.hairMessy, .cloakWorn, nil, nil])
+        XCTAssertEqual(sweep.outfits, [.bootsLong, nil, .helmetExplorer, nil])
+    }
+
+    /// 의상 보상은 상점 미판매여야 하고(안 그러면 별의조각으로도 살 수 있어 업적의 의미가 없다),
+    /// 두 단계에 걸리면 안 된다(둘 다 걸리면 뒤쪽 단계가 이미 소유해 지급이 조용히 no-op 이 된다).
+    /// 상점 미판매 아이템이 하나라도 업적에 안 걸려 있으면 영영 못 얻는 아이템이 생긴다.
+    func testOutfitRewardsPairWithTiersAndAreUnsoldAndUnique() {
+        var seen: Set<OutfitItem> = []
+        for entry in AchievementLadder.catalog {
+            XCTAssertEqual(entry.outfits.count, entry.tiers.count, "\(entry.id)")
+            for item in entry.outfits.compactMap({ $0 }) {
+                XCTAssertNil(item.shopPrice, "\(item) 은 상점에도 있다")
+                XCTAssertTrue(seen.insert(item).inserted, "\(item) 이 두 단계에 걸려 있다")
+            }
+        }
+        // 상점 미판매 4개가 전부 업적에 걸려 있어야 한다 — 아니면 영영 못 얻는 아이템이 생긴다.
+        XCTAssertEqual(seen, Set(OutfitItem.allCases.filter { $0.shopPrice == nil }))
     }
 
     /// 업적 이름은 세 언어 모두 채워져야 한다 — 한 언어만 비면 그 사용자에겐 빈 줄이 보인다.

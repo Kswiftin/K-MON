@@ -270,6 +270,10 @@ enum SaveTransfer {
         if s.starterCandidates.contains(where: { StarterRules.isLegendary($0) || !StarterRules.genRange.contains($0) }) {
             s.starterCandidates = []
         }
+        // 미소유·슬롯 불일치 착용은 벗긴다 — `ownedOutfits` 는 서명에 들어가지만 `outfit.worn` 은
+        // 표시 전용이라 손편집으로 미소유 아이템을 입혀도 진행에 영향은 없지만, 그대로 두면 화면에
+        // 산 적 없는 옷이 보인다.
+        s.outfit = s.outfit.normalized(owned: s.ownedOutfits)
         return s
     }
 
@@ -326,6 +330,10 @@ enum SaveTransfer {
         // `|act-` 가 업적 세그먼트로 읽힌다(`shc` 가 `sec` 를 피한 것과 같다). 위조가 되는 건
         // 아니지만 세그먼트 유무를 보는 테스트가 조용히 거짓이 된다.
         if s.achievements != AchievementLadder() { p.append("ach\(s.achievements.canonical)") }
+        // 의상은 재화로 산다 — 소유 집합이 서명 밖이면 적어 넣는 것만으로 공짜다. 착용 상태는 표시
+        // 전용이라 넣지 않는다. 새 필드라 조건부 append, `integrityVersion` 은 올리지 않는다.
+        // 접두 `outf` — `o` 하나는 다른 세그먼트와 겹칠 수 있어 네 글자로 둔다.
+        if !s.ownedOutfits.isEmpty { p.append("outf" + s.ownedOutfits.map(\.rawValue).sorted().joined(separator: ",")) }
         // 시즌 진행도도 서명에 넣는다 — 밖에 두면 목표 직전 값을 적어 넣는 것만으로 보상이 공짜다.
         // 조건부인 이유는 위 세 필드와 같고, 새 필드라 `integrityVersion` 은 올리지 않는다.
         // 접두는 `sn` — `s` 하나면 `sp0`·`scfalse` 와 겹친다(`ach` 가 `ac` 를 피한 것과 같다).

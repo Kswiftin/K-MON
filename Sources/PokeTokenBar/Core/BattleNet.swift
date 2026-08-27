@@ -702,7 +702,8 @@ final class BattleCenter {
                           trainerLevel: companion.trainerLevel.level,
                           achievementTiers: companion.achievementTierTotal,
                           // 내 분모도 싣는다. 카탈로그가 늘어난 뒤 상대가 나를 옳게 그릴 근거다.
-                          achievementCeiling: AchievementLadder.tierCeiling)
+                          achievementCeiling: AchievementLadder.tierCeiling,
+                          outfit: companion.outfit)
     }
 
     /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 구워서 랭크전 뒤에도 옛 점수가
@@ -731,6 +732,9 @@ final class BattleCenter {
             _ = companion.battleRank.points
             _ = companion.trainerLevel.points
             _ = companion.achievementTierTotal
+            // 착장도 같은 부류 — 안 읽으면 옷을 입어도(`wear`/`buyOutfit`/`grantOutfit`) 재발행이
+            // 안 걸려 상대 카드가 옛 착장으로 굳는다(#85 와 같은 부류).
+            _ = companion.outfit
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
