@@ -1,67 +1,45 @@
 import SwiftUI
 
-/// 하루 한 판 퍼즐 던전 화면(#79). **방 하나가 화면 하나**이고 트레이너가 방향키로 걸어 문에
-/// 닿으면 옆 방으로 간다(설계: `docs/reference/room-walk-dungeon-design.md`).
+/// 하루 한 판 퍼즐 던전 화면(#79). **타일 지도를 그리지 않는다** — 360pt 폭에 지도를 넣으면
+/// 아무것도 읽히지 않는다. 헤더·서술·출구 목록·지나온 길만으로 글로 그린다.
 ///
-/// 예전에는 출구 이름 목록을 클릭하는 텍스트 UI 였다 — 규칙은 맞았지만 "어디로 가는지 감이 안
-/// 온다"는 사용성 문제가 남았다. 목록이 주던 정보(통로 비용·밝혀진 정체)는 방 화면에서
-/// 문 옆 숫자와 글리프로 그대로 보인다.
+/// 방마다 **고정 이름**을 보여 주는 것이 이 화면의 뼈대다. 이름 없이 방위만 두면 출구 줄이
+/// "미탐사"로 글자까지 똑같아져(오늘 맵은 "남동쪽" 출구가 세 개) 무엇을 고르는지 알 수 없다.
+/// 이름은 정체를 흘리지 않으므로 안개는 그대로 남는다.
 ///
-/// 걷기 규칙은 `DungeonWalker`, 방 그래프 규칙은 `DungeonRun` 에 있다 — 이 화면은 상태를 잇고
-/// 연출을 띄우고 정산을 부르는 일만 한다. 글 로그(`DungeonNarration.trail`)는 캔버스 아래에
-/// 그대로 살렸다(연출을 놓친 사람의 폴백).
+/// 계산은 전부 `DungeonNarration`(순수·게이트 대상)에 있다. 여기서 계산하면 설계 목업의 줄들이
+/// 무테스트로 남는다.
 struct DungeonView: View {
     @Bindable var store: CompanionStore
     let onClose: () -> Void
 
-    @State private var walker: DungeonWalker?
+    @State private var run: DungeonRun?
     /// 시작 전 체크 — 마시겠다고 켜 두면 `startDungeonRun` 이 한 병을 소모한다.
     @State private var drinkFreshWater = false
-    /// 방 진입 연출. 떠 있는 동안 입력이 잠기고 타임라인이 계속 돈다.
-    @State private var presentation: RoomPresentation?
-    /// 지난 프레임 시각 — 실제 경과 시간으로 걷게 한다(델타 상한은 `DungeonWalker` 가 건다).
-    @State private var lastTick: Date?
-    @State private var frames = TrainerFrameCache(outfit: TrainerOutfit())
-
-    init(store: CompanionStore, onClose: @escaping () -> Void, initialRun: DungeonRun? = nil) {
-        self.store = store
-        self.onClose = onClose
-        // `initialRun` 은 테스트가 탐색 중 화면을 그대로 세우기 위한 입구다(프로덕션은 `start()`).
-        _walker = State(initialValue: initialRun.map { DungeonWalker(run: $0) })
-    }
-
-    /// 방 캔버스 줄만 쓰는 가로 여백 — 팝오버 폭에서 이만큼을 양쪽으로 빼면 `RoomCanvas.width` 다.
-    private static let canvasInset: CGFloat = (PopoverMetrics.width - RoomCanvas.width) / 2
+    /// 시작 방은 출구가 8개까지 나온다 — 기본은 접고 필요할 때만 전부 보여 준다.
+    @State private var showAllFreshExits = false
 
     private var l: L { store.l }
 
     /// 방 번호 → 이름 슬롯. 날짜가 같으면 어느 기기에서나 같은 이름이다.
     private var nameSlots: [Int] { DungeonNarration.nameSlots(dayKey: store.dungeonMap.dayKey) }
 
+    /// 접기 전에 보여 주는 새 길 수. 4개까지는 목록이 화면을 먹지 않는다.
+    private static let collapsedExitLimit = 4
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            if let walker {
-                exploring(walker)
+            if let run {
+                exploring(run)
             } else {
                 lobby
             }
         }
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
-        .onAppear { frames = TrainerFrameCache(outfit: store.outfit) }
-        .onChange(of: store.outfit) { frames = TrainerFrameCache(outfit: store.outfit) }
         // 팝오버가 닫히거나 화면이 바뀌어도 맵 기억은 남긴다 — 실패·이탈은 시도만 버린다.
-        // 클리어 연출이 뜬 채로 팝오버가 닫히면 `release()` 가 못 불려 보상이 안 나간다 — 여기서
-        // 클리어 확정을 한 번 더 부른다. `rewardPaid` 가드가 있어 이미 정산됐어도 중복 지급은 없다.
-        .onDisappear {
-            guard let walker else { return }
-            if walker.run.stage == .cleared {
-                store.settleDungeonClear(revealed: walker.run.revealed, sweptAllCaches: walker.run.sweptAllCaches)
-            } else {
-                store.rememberDungeon(walker.run.revealed)
-            }
-        }
+        .onDisappear { if let run { store.rememberDungeon(run.revealed) } }
     }
 
     private func roomTitle(_ room: Int) -> String { l.dungeonRoomTitle(nameSlots[room]) }
@@ -78,8 +56,8 @@ struct DungeonView: View {
     }
 
     private var headerTitle: String {
-        guard let walker else { return l.dungeonTitle }
-        return l.dungeonTitle + " · " + roomTitle(walker.run.current)
+        guard let run else { return l.dungeonTitle }
+        return l.dungeonTitle + " · " + roomTitle(run.current)
     }
 
     // MARK: 시작 전
@@ -109,26 +87,16 @@ struct DungeonView: View {
 
     // MARK: 탐색 중
 
-    private func exploring(_ current: DungeonWalker) -> some View {
-        let run = current.run
-        return VStack(alignment: .leading, spacing: 8) {
-            vitals(run)
-            RoomCanvas(walker: current, frames: frames, presentation: presentation,
-                       onDoorTap: { door in walker?.walkTo(door: door) },
-                       onTick: { date in tick(at: date) })
-                // 캔버스는 14칸 × 24pt = 336pt 다. 팝오버 패딩을 그대로 두면 332pt 로 눌려
-                // 타일이 정수 픽셀 배율을 잃고 흐려진다 — 이 줄만 여백을 `canvasInset` 으로 되돌린다.
-                .padding(.horizontal, Self.canvasInset - PopoverMetrics.padding)
-            Text(run.current == 0 ? l.dungeonHomeHint : l.dungeonKeyHint)
-                .font(.caption2).foregroundStyle(.secondary)
-            footer(run)
-            Divider()
-            trailList(DungeonNarration.trail(run.events, start: run.map.room(0).kind))
-            Spacer(minLength: 0)
-        }
-        // 걷기 키는 이 화면이 보일 때만 잡는다 — 다른 탭으로 넘어가면 모니터가 함께 내려간다.
-        .captureWalkKeys(onPress: { direction in walker?.press(direction) },
-                         onRelease: { direction in walker?.release(direction) })
+    @ViewBuilder
+    private func exploring(_ run: DungeonRun) -> some View {
+        let trail = DungeonNarration.trail(run.events, start: run.map.room(0).kind)
+        vitals(run)
+        Text(l.dungeonSceneLine(DungeonNarration.scene(for: run)))
+            .font(.caption).fixedSize(horizontal: false, vertical: true)
+        Divider()
+        footer(run)
+        Divider()
+        trailList(trail)
     }
 
     /// 체력 게이지와 진행도. 숫자만 두면 남은 여유가 감으로 안 온다.
@@ -148,7 +116,7 @@ struct DungeonView: View {
     private func footer(_ run: DungeonRun) -> some View {
         switch run.stage {
         case .exploring:
-            EmptyView()
+            exitLists(run)
         case .failed:
             VStack(alignment: .leading, spacing: 4) {
                 Text(l.dungeonFailed).font(.caption)
@@ -161,6 +129,59 @@ struct DungeonView: View {
                 Button(l.dungeonRetry, action: start).controlSize(.small)
             }
         }
+    }
+
+    /// 새 길과 되돌아가기를 나눠 그린다 — 섞어 두면 무엇이 처음 가는 길인지 안 보인다.
+    @ViewBuilder
+    private func exitLists(_ run: DungeonRun) -> some View {
+        let choices = DungeonNarration.choices(for: run)
+        let shown = showAllFreshExits ? choices.fresh : Array(choices.fresh.prefix(Self.collapsedExitLimit))
+        VStack(alignment: .leading, spacing: 4) {
+            if !choices.fresh.isEmpty {
+                Text(l.dungeonExitsFresh).font(.caption2.bold()).foregroundStyle(.secondary)
+                ForEach(shown, id: \.room) { exitRow($0) }
+                if choices.fresh.count > shown.count {
+                    Button(l.dungeonMoreExits(choices.fresh.count - shown.count)) { showAllFreshExits = true }
+                        .buttonStyle(.plain).font(.caption2).foregroundStyle(.link)
+                }
+            }
+            if !choices.back.isEmpty {
+                Text(l.dungeonExitsBack).font(.caption2.bold()).foregroundStyle(.secondary)
+                ForEach(choices.back, id: \.room) { exitRow($0) }
+            }
+        }
+    }
+
+    private func exitRow(_ choice: DungeonExitChoice) -> some View {
+        Button { move(to: choice.room) } label: {
+            HStack(spacing: 4) {
+                Text(choice.direction?.arrow ?? "•").font(.caption2)
+                Text(roomTitle(choice.room)).font(.caption)
+                Text(exitDetail(choice)).font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text(l.dungeonExitCost(choice.cost))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(choice.isLethal ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+            }
+            // 텍스트 폭만 눌리면 어디를 눌러야 하는지 알 수 없다 — 줄 전체를 히트영역으로 둔다.
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(choice.isLethal ? l.dungeonLethalExit : "")
+    }
+
+    /// 출구 줄의 부제 — 밝혀진 정체와 방위, 샘 사용 여부. 안개인 방은 "미탐사"만 붙는다.
+    private func exitDetail(_ choice: DungeonExitChoice) -> String {
+        var parts: [String] = []
+        if let direction = choice.direction { parts.append(l.dungeonDirectionName(direction)) }
+        if choice.isSpur { parts.append(l.dungeonSpurMark) }
+        if let known = choice.known {
+            parts.append(l.dungeonRoomName(known))
+            if known == .spring { parts.append(choice.springSpent ? l.dungeonSpringSpent : l.dungeonSpringUnused) }
+        } else {
+            parts.append(l.dungeonExitUnknown)
+        }
+        return "· " + parts.joined(separator: " · ")
     }
 
     // MARK: 지나온 길
@@ -181,8 +202,6 @@ struct DungeonView: View {
                 .onChange(of: trail.count) { _, count in
                     withAnimation { proxy.scrollTo(count - 1, anchor: .bottom) }
                 }
-                // 로그는 두 줄만 남긴다 — 캔버스가 화면의 주인이고 로그는 폴백이다.
-                .frame(height: 40)
             }
         }
     }
@@ -210,125 +229,37 @@ struct DungeonView: View {
         }
     }
 
-    // MARK: 게임루프
-
-    /// 한 프레임. 캔버스가 시각을 넘겨 주고 상태 변경은 전부 여기서만 한다 — 뷰 본문 평가 중에
-    /// 상태를 바꾸면 SwiftUI 가 같은 프레임에서 무한 갱신에 빠진다.
-    private func tick(at date: Date) {
-        guard var current = walker else { return }
-        let delta = lastTick.map { date.timeIntervalSince($0) } ?? 1.0 / 60
-        lastTick = date
-        current.tick(delta)
-        let arrival = current.consumeArrival()
-        walker = current
-        guard let arrival else { return }
-        settleLoot(arrival)
-        let shown = presentation(for: arrival, run: current.run)
-        presentation = shown
-        if shown == nil {
-            // 보여 줄 것이 없으면 기다릴 이유도 없다 — 문을 지나 걷던 흐름이 끊기지 않게 바로 푼다.
-            release()
-        } else {
-            scheduleRelease(shown)
-        }
-    }
-
-    /// 보물은 밟은 순간 정산한다 — 시도가 실패로 끝나도 턴 보물은 남는다(하루 상한은 방 단위).
-    private func settleLoot(_ events: [DungeonEvent]) {
-        for event in events {
-            guard case .looted(let room, let starPieces) = event else { continue }
-            _ = store.lootDungeonCache(room: room, starPieces: starPieces)
-        }
-    }
-
-    private func scheduleRelease(_ shown: RoomPresentation?) {
-        Task {
-            try? await Task.sleep(for: .seconds(RoomPresentation.duration))
-            // 그새 다음 연출로 바뀌었으면 잠금을 푸는 건 그쪽 타이머의 몫이다.
-            guard presentation == shown else { return }
-            release()
-        }
-    }
-
-    /// 연출을 걷고 입력 잠금을 푼다. 판정이 끝난 시도는 잠근 채로 둔다 — 안 그러면 클리어·실패 뒤에도
-    /// 문에 닿아 `run.move` 가 계속 거절당한다(로그만 쌓인다).
-    private func release() {
-        presentation = nil
-        guard var current = walker else { return }
-        switch current.run.stage {
-        case .cleared:
-            // 정산은 클리어 순간 한 번만 부른다. 스토어가 재지급을 막지만 알림이 겹치지 않게 한다.
-            _ = store.settleDungeonClear(revealed: current.run.revealed,
-                                         sweptAllCaches: current.run.sweptAllCaches)
-        case .failed:
-            store.rememberDungeon(current.run.revealed)
-        case .exploring:
-            current.locked = false
-        }
-        walker = current
-    }
-
-    /// 도착 이벤트 묶음에서 보여 줄 연출 하나를 고른다. 우선순위는 보스 > 쓰러짐 > 교전 >
-    /// 보물 > 샘 — 한 번 들어갈 때 여러 일이 겹치면 판을 가르는 쪽을 보여 준다.
-    private func presentation(for events: [DungeonEvent], run: DungeonRun) -> RoomPresentation? {
-        var enteredKind: RoomKind?
-        var damage = 0
-        var healed: Int?
-        var springDry = false
-        var loot: Int?
-        var cacheEmpty = false
-        var felled = false
-        var collapsed = false
-        for event in events {
-            switch event {
-            case .entered(_, let kind): enteredKind = kind
-            case .damaged(let amount): damage += amount
-            case .healed(let amount): healed = amount
-            case .springAlreadyUsed: springDry = true
-            case .looted(_, let starPieces): loot = starPieces
-            case .cacheAlreadyLooted: cacheEmpty = true
-            case .bossFelled: felled = true
-            case .collapsed: collapsed = true
-            }
-        }
-        let dayKey = store.dungeonMap.dayKey
-        let kind: RoomPresentation.Kind?
-        if enteredKind == .boss {
-            kind = .boss(species: DungeonEncounterSprite.boss(dayKey: dayKey), damage: damage, felled: felled)
-        } else if collapsed {
-            kind = .collapsed
-        } else if enteredKind == .encounter, damage > 0 {
-            let species = DungeonEncounterSprite.species(dayKey: dayKey, room: run.current,
-                                                        affinity: run.map.affinity)
-            kind = .encounter(species: species, damage: damage)
-        } else if let loot {
-            kind = .loot(loot)
-        } else if cacheEmpty {
-            kind = .cacheEmpty
-        } else if let healed {
-            kind = .heal(healed)
-        } else if springDry {
-            kind = .springDry
-        } else {
-            kind = nil
-        }
-        guard let kind else { return nil }
-        return RoomPresentation(kind: kind, startedAt: .now)
-    }
-
     // MARK: 조작
 
     private func start() {
-        if let walker { store.rememberDungeon(walker.run.revealed) }
-        walker = DungeonWalker(run: store.startDungeonRun(drinkFreshWater: drinkFreshWater))
+        if let run { store.rememberDungeon(run.revealed) }
+        run = store.startDungeonRun(drinkFreshWater: drinkFreshWater)
         // 한 병은 한 시도에만 쓰인다 — 켜 둔 채로 재도전하면 재고가 조용히 빠진다.
         drinkFreshWater = false
-        presentation = nil
-        lastTick = nil
+        showAllFreshExits = false
+    }
+
+    private func move(to room: Int) {
+        guard var session = run else { return }
+        let lootedBefore = session.looted
+        session.move(to: room)
+        run = session
+        // 보물은 밟은 순간 정산한다 — 시도가 실패로 끝나도 턴 보물은 남는다(하루 상한은 방 단위).
+        for cache in session.looted.subtracting(lootedBefore) {
+            store.lootDungeonCache(room: cache, starPieces: session.map.room(cache).damage)
+        }
+        // 방이 바뀌면 출구 구성이 달라진다 — 펼친 상태를 물고 가면 새 방에서 8줄이 그대로 뜬다.
+        showAllFreshExits = false
+        // 정산은 클리어 순간 한 번만 부른다. 스토어가 재지급을 막지만 알림이 겹치지 않게 한다.
+        switch session.stage {
+        case .cleared: store.settleDungeonClear(revealed: session.revealed, sweptAllCaches: session.sweptAllCaches)
+        case .failed: store.rememberDungeon(session.revealed)
+        case .exploring: break
+        }
     }
 
     private func close() {
-        if let walker { store.rememberDungeon(walker.run.revealed) }
+        if let run { store.rememberDungeon(run.revealed) }
         onClose()
     }
 }

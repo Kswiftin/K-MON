@@ -74,9 +74,6 @@ LOGIC_CORE=(
   # 도트 격자·합성, 방 격자 레이아웃, 교전 종 선택 — 던전 방걷기 뷰의 순수 코어. 게이트 밖에
   # 두면 새 조건 분기(문 방위·관대 파싱)가 커버리지에서 조용히 빠진다.
   "Sources/PokeTokenBar/Core/PixelSprite.swift"
-  "Sources/PokeTokenBar/Core/DungeonRoomLayout.swift"
-  "Sources/PokeTokenBar/Core/DungeonEncounterSprite.swift"
-  "Sources/PokeTokenBar/Core/DungeonWalker.swift"
   "Sources/PokeTokenBar/Core/TrainerPixelArt.swift"
   "Sources/PokeTokenBar/Core/TrainerSprite.swift"
 )

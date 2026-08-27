@@ -478,11 +478,6 @@ read_when:
   (팝오버 `popoverDidClose` 패턴). 회귀 가드: `FloatingPetEnergyTests`(fps 하한 clamp·`frameFloor>0`·팝오버 불변·
   low-power 정적화 순수 판정 — SwiftUI `.task` 타이밍 자체는 호스트 없이 xctest 불가라 순수 경로만 잠금). occlusion 게이팅은
   all-spaces/`.floating` 펫이 실제로 거의 안 가려져 메뉴바와 동일 수확체감으로 미도입. (#102 리뷰 지적 반영, 2026-07-22.)
-- **던전 방걷기 뷰(`RoomCanvas`)도 같은 idle 규율을 따른다.** `TimelineView` 는 `walker.isIdle &&
-  presentation == nil` 이면 `paused` — 트레이너가 멈춰 있고 교전 표시도 없는 정지 상태에서 60fps 로
-  계속 돌면 상시 애니메이션 규율 위반이다. 던전 오버레이는 닫힐 때 뷰 계층에서 완전히 제거되므로
-  `TimelineView` 루프도 함께 죽는다(팝오버 `contentViewController = nil` 패턴과 동일한 효과).
-
 ## 알림
 
 - **휘발성 필드를 dedup/identity 키에 쓰지 마라.** 매 fetch/refresh 마다 값이 변하는 필드(예: rolling
