@@ -19,10 +19,13 @@ struct TradePokemonSnapshot: Codable, Sendable {
 
 private enum TradeWireMessage: Codable {
     case request(version: Int, trainer: String)
+    case rosterRequest(trainer: String)
+    case roster([TradePokemonSnapshot])
     case accept(trainer: String)
     case decline(reason: String)
     case offer(TradePokemonSnapshot?)
     case confirm(Bool)
+    case wish(UUID?)
     case commit(UUID)
     case committed(UUID)
     case cancel
@@ -34,11 +37,13 @@ private enum TradeWireMessage: Codable {
 @Observable
 final class PokemonTradeCenter {
     nonisolated static let serviceType = "_kmontrade._tcp"
-    private nonisolated static let protocolVersion = 1
+    private nonisolated static let protocolVersion = 2
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
 
     enum Phase: Equatable {
         case ready
+        case browsing(peer: String)
+        case roster(peer: String)
         case requesting(peer: String)
         case incoming(peer: String)
         case negotiating(peer: String)
@@ -52,6 +57,9 @@ final class PokemonTradeCenter {
     private(set) var peers: [TradePeer] = []
     private(set) var localOffer: TradePokemonSnapshot?
     private(set) var remoteOffer: TradePokemonSnapshot?
+    private(set) var remoteRoster: [TradePokemonSnapshot] = []
+    private(set) var requestedRemoteMonID: UUID?
+    private(set) var remoteRequestedLocalMonID: UUID?
     private(set) var localConfirmed = false
     private(set) var remoteConfirmed = false
 
@@ -88,10 +96,21 @@ final class PokemonTradeCenter {
         send(.request(version: Self.protocolVersion, trainer: myName))
     }
 
+    func viewRoster(_ peer: TradePeer) {
+        guard phase == .ready else { return }
+        resetSession()
+        phase = .browsing(peer: peer.name)
+        let connection = NWConnection(to: peer.endpoint, using: Self.parameters())
+        attach(connection)
+        connection.start(queue: .main)
+        send(.rosterRequest(trainer: myName))
+    }
+
     func accept() {
         guard case .incoming(let peer) = phase else { return }
         phase = .negotiating(peer: peer)
         send(.accept(trainer: myName))
+        send(.roster(localRoster))
     }
 
     func decline() {
@@ -111,6 +130,22 @@ final class PokemonTradeCenter {
         remoteConfirmed = false
         send(.offer(localOffer))
         send(.confirm(false))
+    }
+
+    func requestRemotePokemon(_ id: UUID?) {
+        guard case .negotiating = phase else { return }
+        requestedRemoteMonID = id
+        send(.wish(id))
+    }
+
+    func offerRequestedPokemon() {
+        guard let id = remoteRequestedLocalMonID,
+              let mon = companion.ownedMons.first(where: { $0.id == id }) else { return }
+        selectOffer(mon)
+    }
+
+    private var localRoster: [TradePokemonSnapshot] {
+        companion.ownedMons.map { TradePokemonSnapshot(mon: $0, displayName: displayName(for: $0)) }
     }
 
     func confirm() {
@@ -144,6 +179,13 @@ final class PokemonTradeCenter {
 
     private func receive(_ message: TradeWireMessage) {
         switch message {
+        case .rosterRequest(let trainer):
+            guard phase == .ready else { return }
+            send(.roster(localRoster))
+            AppLog.write("trade roster preview sent to \(trainer)")
+        case .roster(let roster):
+            remoteRoster = Array(roster.prefix(100))
+            if case .browsing(let peer) = phase { phase = .roster(peer: peer) }
         case .request(let version, let trainer):
             guard version == Self.protocolVersion, phase == .ready else {
                 send(.decline(reason: "busy-or-incompatible")); return
@@ -154,6 +196,7 @@ final class PokemonTradeCenter {
         case .accept(let trainer):
             guard case .requesting = phase else { return }
             phase = .negotiating(peer: trainer)
+            send(.roster(localRoster))
         case .decline:
             phase = .failed("교환 신청이 거절되었습니다.")
             connection?.cancel(); connection = nil
@@ -165,6 +208,8 @@ final class PokemonTradeCenter {
             remoteConfirmed = confirmed
             if !confirmed { localConfirmed = false }
             beginCommitIfReady()
+        case .wish(let id):
+            remoteRequestedLocalMonID = id
         case .commit(let id):
             guard !isInitiator, localConfirmed, remoteConfirmed,
                   let mine = localOffer, let theirs = remoteOffer else {
@@ -191,6 +236,8 @@ final class PokemonTradeCenter {
 
     private func resetSession() {
         localOffer = nil; remoteOffer = nil
+        remoteRoster = []
+        requestedRemoteMonID = nil; remoteRequestedLocalMonID = nil
         localConfirmed = false; remoteConfirmed = false
         activeTransaction = nil
     }
@@ -267,7 +314,7 @@ final class PokemonTradeCenter {
             guard case .failed = state else { return }
             Task { @MainActor in
                 guard let self, self.connection === connection else { return }
-                self.phase = .failed("상대와 연결이 끊어졌습니다.")
+                if self.phase != .ready { self.phase = .failed("상대와 연결이 끊어졌습니다.") }
                 self.connection = nil
             }
         }

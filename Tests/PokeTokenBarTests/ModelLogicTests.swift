@@ -4,8 +4,19 @@ import XCTest
 final class BattleRankTests: XCTestCase {
     func testFixedStakeUsesTierGapAndCap() {
         XCTAssertEqual(BattleRank.stake(challenger: .init(points: 0), defender: .init(points: 400)), 5_000)
-        XCTAssertEqual(BattleRank.stake(challenger: .init(points: 0), defender: .init(points: 3_999)), 45_000)
+        XCTAssertEqual(BattleRank.stake(challenger: .init(points: 0), defender: .init(points: 3_999)), 20_000)
         XCTAssertEqual(BattleRank.stake(challenger: .init(points: 800), defender: .init(points: 400)), 0)
+    }
+
+    func testPokemonChampionsTierOrderAndRanks() {
+        XCTAssertEqual(BattleRank(points: 0).displayName, "Poké Ball R4 · 0 LP")
+        XCTAssertEqual(BattleRank(points: 399).displayName, "Poké Ball R1 · 99 LP")
+        XCTAssertEqual(BattleRank(points: 400).displayName, "Great Ball R4 · 0 LP")
+        XCTAssertEqual(BattleRank(points: 800).tier, .ultraBall)
+        XCTAssertEqual(BattleRank(points: 1_200).tier, .masterBall)
+        XCTAssertEqual(BattleRank(points: 1_599).displayName, "Master Ball R1 · 99 LP")
+        XCTAssertEqual(BattleRank(points: 1_600).displayName, "Champion · 0 RP")
+        XCTAssertEqual(BattleRank(points: 3_999).displayName, "Champion · 2399 RP")
     }
 
     /// 랭크는 와이어로도 온다(`BattleRankProfile` — 상대가 채우는 값). 그래서 경계에서 자른다.

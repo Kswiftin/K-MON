@@ -73,7 +73,7 @@ final class PeerAdvertisementTests: XCTestCase {
         XCTAssertEqual(PeerAdvertisement(NWTXTRecord()), PeerAdvertisement())
     }
 
-    /// 숫자가 아닌 값은 nil 이다. 0 으로 떨어지면 랭크 없는 상대가 "Iron 4 · 0 LP" 로 보인다.
+    /// 숫자가 아닌 값은 nil 이다. 0 으로 떨어지면 랭크 없는 상대가 "Poké Ball R4"로 보인다.
     func testGarbageValuesBecomeNilRatherThanZero() {
         let parsed = PeerAdvertisement(NWTXTRecord(["rankPoints": "abc",
                                                     "trainerLevel": "",
@@ -229,7 +229,7 @@ final class PeerAdvertisementTests: XCTestCase {
     // MARK: 랭크 어댑터
 
     /// 기존 `peer.rank` 호출부를 살려 두는 자리. 랭크가 없으면 nil 이어야 한다. 빈
-    /// `BattleRank()` 는 정보 없음 대신 Iron 4 로 그려진다.
+    /// `BattleRank()` 는 정보 없음 대신 Poké Ball R4 로 그려진다.
     func testRankAdapterMirrorsBattleRankAndStaysNilWhenAbsent() {
         XCTAssertEqual(PeerAdvertisement(rankPoints: 1_234).rank, BattleRank(points: 1_234))
         XCTAssertNil(PeerAdvertisement().rank)

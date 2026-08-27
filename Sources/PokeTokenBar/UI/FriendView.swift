@@ -149,6 +149,19 @@ struct FriendView: View {
                 .disabled(store.isEgg || battleCenter.phase != .ready)
 
                 Button {
+                    destination = .battle
+                    battleCenter.challengeMetronome(peer)
+                } label: {
+                    Label(store.l.t("손가락흔들기", "Metronome", "ゆびをふる"),
+                          systemImage: "hand.point.up.left.fill")
+                }
+                .buttonStyle(.borderedProminent).tint(.purple)
+                .disabled(battleCenter.phase != .ready)
+                .help(store.l.t("서로 동일한 Lv.50 대여 토게키스로 대결합니다.",
+                                "Battle each other with identical Lv.50 rental Togekiss.",
+                                "同じLv.50レンタルトゲキッスで対戦します。"))
+
+                Button {
                     guard let tradePeer else { return }
                     destination = .trade
                     battleCenter.trading.request(tradePeer)
@@ -161,6 +174,15 @@ struct FriendView: View {
                       ? store.l.t("상대가 교환 기능을 지원하는 최신 버전인지 확인하세요.",
                                   "Ask them to update to a version that supports trading.",
                                   "相手が交換対応の最新版か確認してください。") : "")
+
+                Button {
+                    guard let tradePeer else { return }
+                    destination = .trade
+                    battleCenter.trading.viewRoster(tradePeer)
+                } label: {
+                    Label(store.l.t("포켓몬 보기", "View Pokémon", "ポケモンを見る"), systemImage: "eye.fill")
+                }
+                .buttonStyle(.bordered).disabled(tradePeer == nil)
             }
             .controlSize(.small)
         }
