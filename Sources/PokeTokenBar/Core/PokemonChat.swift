@@ -241,6 +241,17 @@ enum MemoryHomeMood: String, Codable, Sendable, CaseIterable {
     case excited, calm, down, annoyed, fluttering
 }
 
+/// 하루치 일기 한 장. **저장하지 않는다** — 이미 있는 기억과 기분에서 매번 파생한다.
+struct MemoryHomeDiaryDay: Identifiable, Sendable, Equatable {
+    /// dayKey 가 하루를 유일하게 가리키므로 별도 ID 를 만들 이유가 없다.
+    var id: String { dayKey }
+    let dayKey: String
+    /// 그날 **가장 최신** 기억의 시각. 날짜 헤더를 로케일 포맷으로 찍는 데만 쓴다.
+    let date: Date
+    let mood: MemoryHomeMood?
+    let memories: [PokemonMemory]
+}
+
 struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     /// The only owner-controlled name that may be advertised on the local network. `nil`
     /// identifies a pre-nickname album and is filled once from the trainer name.
@@ -446,6 +457,30 @@ final class PokemonMemoryAlbum {
     func pinned(for id: UUID) -> PokemonMemory? {
         guard let pinnedID = pinnedMemoryIDs[id] else { return nil }
         return entries(for: id).first { $0.id == pinnedID }
+    }
+    /// 이미 쌓인 기억을 **날짜로 묶어** 되돌려 준다. 저장 필드를 하나도 더하지 않는다 — 200개 캡·
+    /// 숨김 상태·기분 60일 캡이 전부 기존 계약 그대로다.
+    ///
+    /// 하루 판정은 `Date` 산술이 아니라 **dayKey 문자열**이다. `Date` 로 하루를 계산하면 타임존
+    /// 변경·DST 경계에서 어긋난다(R4 방문 카운터가 같은 이유로 dayKey 를 쓴다). 그 형식이
+    /// `%04d-%02d-%02d` 라서 문자열 내림차순 정렬이 곧 최신순이다.
+    ///
+    /// 기억이 없는 날은 **행을 만들지 않는다.** 기분은 60일이 남고 기억은 200개에서 잘리므로,
+    /// 기분 단독 행을 허용하면 기억이 밀려난 옛날이 "기분만 있는 빈 일기" 로 남는다.
+    func diary(for companionID: UUID) -> [MemoryHomeDiaryDay] {
+        Dictionary(grouping: entries(for: companionID).filter { !$0.isHidden }) {
+            CompanionStore.dayKey($0.createdAt)
+        }
+        .map { dayKey, memories in
+            // `Dictionary(grouping:)` 은 빈 그룹을 만들지 않는다 — 첫 원소는 항상 있다. 이걸
+            // `guard let ... else { return nil }` 로 감싸면 절대 실행되지 않는 가지가 하나 생겨
+            // 커버리지에 `^0` 으로 영원히 남는다(측정으로 확인함).
+            let newestFirst = memories.sorted { $0.createdAt > $1.createdAt }
+            return MemoryHomeDiaryDay(dayKey: dayKey, date: newestFirst[0].createdAt,
+                                      mood: memoryHomeAccess.moodByDayKey[dayKey],
+                                      memories: newestFirst)
+        }
+        .sorted { $0.dayKey > $1.dayKey }
     }
     static let togetherDayThresholds = [30, 100]
 

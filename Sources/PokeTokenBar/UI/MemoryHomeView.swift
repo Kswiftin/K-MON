@@ -81,6 +81,31 @@ enum MemoryHomeMoodStyle {
     }
 }
 
+/// 계절 이름·심볼. `MemoryHomeMoodStyle` 과 같은 이유로 뷰 밖에 둔다 — 뷰 안 `private` 함수면
+/// 세 언어 문구가 무테스트로 남는다.
+///
+/// 색은 일부러 주지 않는다. 방에는 이미 사용자가 고른 테마 4색이 있고, 계절색으로 덮으면 사용자의
+/// 선택을 뭉갠다 — 계절은 대문의 한 줄이지 방의 주인이 아니다.
+enum MemoryHomeSeasonStyle {
+    static func name(_ season: MemoryHomeSeason, _ l: L) -> String {
+        switch season {
+        case .spring: l.t("봄", "Spring", "春")
+        case .summer: l.t("여름", "Summer", "夏")
+        case .autumn: l.t("가을", "Autumn", "秋")
+        case .winter: l.t("겨울", "Winter", "冬")
+        }
+    }
+
+    static func symbol(_ season: MemoryHomeSeason) -> String {
+        switch season {
+        case .spring: "camera.macro"
+        case .summer: "sun.max.fill"
+        case .autumn: "leaf.fill"
+        case .winter: "snowflake"
+        }
+    }
+}
+
 struct MemoryHomeView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(MemoryHomeVisitCenter.self) private var visits
@@ -88,6 +113,7 @@ struct MemoryHomeView: View {
     @State private var note = ""
     @State private var validationMessage: String?
     @State private var showingVisits = false
+    @State private var showingDiary = false
     @State private var showingPublicNicknameEditor = false
     @State private var publicNicknameDraft = ""
     @State private var publicNicknameError: String?
@@ -117,6 +143,10 @@ struct MemoryHomeView: View {
                     Label(l.t("주변 홈 방문", "Visit nearby homes", "近くのホームを訪問"), systemImage: "house.and.flag")
                 }
                 .accessibilityLabel(l.t("주변 Memory Home 방문", "Visit nearby Memory Homes", "近くのMemory Homeを訪問"))
+                Button { showingDiary = true } label: {
+                    Label(l.t("다이어리", "Diary", "ダイアリー"), systemImage: "book.closed")
+                }
+                .accessibilityLabel(l.t("날짜별 다이어리", "Diary by date", "日付ごとのダイアリー"))
                 Spacer()
                 Menu {
                     Button(l.t("공개 닉네임 편집", "Edit public nickname", "公開ニックネームを編集")) {
@@ -236,6 +266,12 @@ struct MemoryHomeView: View {
             MemoryHomeVisitSheet(visits: visits, language: l)
                 .onAppear { visits.start() }
         }
+        // 인라인 섹션이 아니라 시트다. 팝오버 높이는 `PopoverMetrics.tabHeight` 로 고정이고 홈 탭엔
+        // 이미 미션보드·동행 헤더·미니룸이 들어 있어, 인라인이면 스크롤이 아니라 잘림이 된다(#9).
+        .sheet(isPresented: $showingDiary) {
+            MemoryHomeDiarySheet(days: album.diary(for: mon.id), language: l,
+                                 locale: store.language.displayLocale)
+        }
         .alert(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), isPresented: $showingPublicNicknameEditor) {
             TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: $publicNicknameDraft)
             Button(l.t("저장", "Save", "保存")) {
@@ -320,7 +356,8 @@ struct MemoryHomeView: View {
     }
 
     private func roomHeader(mon: MonState, entries: [PokemonMemory], milestones: [PokemonMemoryMilestone], theme: PokemonMemoryRoomTheme, tint: Color) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        let season = MemoryHomeSeason.current()
+        return HStack(alignment: .center, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint.opacity(0.18))
                 Rectangle().fill(tint.opacity(0.24)).frame(height: 13).frame(maxHeight: .infinity, alignment: .bottom)
@@ -328,7 +365,14 @@ struct MemoryHomeView: View {
             }
             .frame(width: 76, height: 68)
             VStack(alignment: .leading, spacing: 2) {
-                Text(l.t("우리의 미니룸", "Our mini room", "ふたりのミニルーム")).font(.headline)
+                HStack(spacing: 4) {
+                    Text(l.t("우리의 미니룸", "Our mini room", "ふたりのミニルーム")).font(.headline)
+                    // 저장 없이 달력 월에서 파생한다 — 방 색은 사용자가 고른 테마 그대로 둔다.
+                    Label(MemoryHomeSeasonStyle.name(season, l),
+                          systemImage: MemoryHomeSeasonStyle.symbol(season))
+                        .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        .labelStyle(.titleAndIcon)
+                }
                 Text(store.chatProfile(for: mon).displayName).font(.subheadline.weight(.semibold))
                 if let message = store.memoryAlbum.memoryHomeAccess.profileMessage {
                     HStack(spacing: 3) {
@@ -441,6 +485,55 @@ struct MemoryHomeView: View {
     }
 }
 
+/// 날짜별 일기. 이미 쌓인 기억을 묶어 보여 줄 뿐이라 여기서 저장하는 것은 아무것도 없다.
+private struct MemoryHomeDiarySheet: View {
+    let days: [MemoryHomeDiaryDay]
+    let language: L
+    let locale: Locale
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(language.t("다이어리", "Diary", "ダイアリー")).font(.headline)
+                Spacer(); Button(language.t("닫기", "Close", "閉じる")) { dismiss() }
+            }
+            if days.isEmpty {
+                Text(language.t("아직 적힌 날이 없어요. 첫 집중을 마치면 오늘이 여기 남아요.",
+                                "No days yet. Finish a focus session and today lands here.",
+                                "まだ記録がありません。集中を終えると今日がここに残ります。"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(days) { day in
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 5) {
+                                Text(day.date.formatted(.dateTime.locale(locale).year().month(.abbreviated).day()))
+                                    .font(.subheadline.weight(.bold))
+                                if let mood = day.mood {
+                                    Text(MemoryHomeMoodStyle.emoji(mood))
+                                        .accessibilityLabel(MemoryHomeMoodStyle.name(mood, language))
+                                }
+                            }
+                            ForEach(day.memories) { memory in
+                                Text("· " + memory.body).font(.caption)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(9).pokedoroCard(tint: PokedoroTheme.blue)
+                    }
+                }
+            }
+            // 캡을 밝히지 않으면 잘려 나간 옛날이 "사라진 일기" 로 읽힌다.
+            Text(language.t("최근 기억 200개 안에서 보여 줘요.",
+                            "Shows what fits in the most recent 200 memories.",
+                            "最新200件の思い出の範囲で表示します。"))
+                .font(.caption2).foregroundStyle(.tertiary)
+        }.padding().frame(minWidth: 330, minHeight: 320)
+    }
+}
+
 private struct MemoryHomeVisitSheet: View {
     let visits: MemoryHomeVisitCenter
     let language: L
@@ -463,6 +556,12 @@ private struct MemoryHomeVisitSheet: View {
             }
             if let error = visits.lastError { Text(error).foregroundStyle(PokedoroTheme.red).font(.caption) }
             if visits.homes.isEmpty { Text(language.t("홈을 찾는 중이에요…", "Looking for homes…", "ホームを探しています…")).foregroundStyle(.secondary) }
+            // 그 시절 그 버튼. 범위는 같은 LAN 까지다 — Bonjour 가 닿는 데까지가 전부이고,
+            // 그 밖으로 나가려면 앱에 없는 인터넷 경로가 필요하다.
+            Button { if let home = visits.homes.randomElement() { visits.visit(home) } } label: {
+                Label(language.t("파도타기", "Surf a random home", "波乗り"), systemImage: "shuffle")
+            }
+            .disabled(visits.homes.isEmpty)
             ForEach(visits.homes) { home in
                 Button { visits.visit(home) } label: { Label(home.displayName, systemImage: "house") }
                     .accessibilityLabel(language.t("\(home.displayName) 홈 방문", "Visit \(home.displayName)'s home", "\(home.displayName)のホームを訪問"))

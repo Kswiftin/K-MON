@@ -82,6 +82,9 @@ LOGIC_CORE=(
   # 판 밖으로 남는 유일한 값(최고 웨이브·클리어 횟수). 세이브 경계 정규화가 여기 있어 게이트 대상 —
   # 배열에 안 넣으면 클램프 분기가 커버리지에서 조용히 빠진다.
   "Sources/PokeTokenBar/Core/RunProgress.swift"
+  # 미니룸 대문의 계절(R5). 달력 월 → 계절 파생이라 순수 함수 = 게이트 대상. 12·1·2 를 받는
+  # `default` 가지가 여기 없으면 커버리지에서 통째로 빠져 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/MemoryHomeSeason.swift"
 )
 
 # 문자열 보간에서 백슬래시가 빠진 오타는 Swift 가 **평범한 리터럴로 받아들인다** — 컴파일러도
