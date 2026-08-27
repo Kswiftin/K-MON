@@ -232,7 +232,9 @@ struct TeamPicker: View {
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 2)
             if let move {
-                Text(move.damageClass == .status ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                MoveCategoryIcon(damageClass: move.damageClass, l: l)
+                Text(move.damageClass == .status ? l.moveCategoryStatus
+                     : "\(l.moveCategory(move.damageClass)) · \(l.movePowerShort(move.power))")
                     .font(.system(size: 8)).foregroundStyle(.secondary)
                     .lineLimit(1).fixedSize()
             }

@@ -44,7 +44,9 @@ private let stoneAfterLocationLine: EvoLine = {
         ChainLink.EvolutionDetail(min_level: nil, min_happiness: nil,
                                   trigger: NamedRef(name: item == nil ? "level-up" : "use-item", url: nil),
                                   item: item.map { NamedRef(name: $0, url: nil) },
-                                  held_item: nil, known_move: nil)
+                                  held_item: nil, gender: nil, known_move: nil,
+                                  time_of_day: nil, relative_physical_stats: nil,
+                                  party_species: nil, trade_species: nil)
     }
     let magnezone = ChainLink(species: NamedRef(name: "magnezone",
                                                 url: "https://pokeapi.co/api/v2/pokemon-species/462/"),
@@ -101,6 +103,8 @@ final class KnownMoveEvolutionTests: XCTestCase {
         await companion.hatch(baseID: 221)
         companion.debugSetActiveLearnedMoves([move(33), move(ancientPowerID)])
         growPastOneStage(companion)
+        XCTAssertEqual(companion.evolutionPrompt?.toSpeciesID, 473)
+        companion.acceptEvolution()
         XCTAssertEqual(companion.currentSpeciesID, 473)
     }
 
@@ -188,7 +192,10 @@ final class EvolutionItemRowTests: XCTestCase {
             trigger: NamedRef(name: trigger, url: nil),
             item: item.map { NamedRef(name: $0, url: nil) },
             held_item: held.map { NamedRef(name: $0, url: nil) },
-            known_move: knownMove.map { NamedRef(name: $0, url: "https://pokeapi.co/api/v2/move/246/") })
+            gender: nil,
+            known_move: knownMove.map { NamedRef(name: $0, url: "https://pokeapi.co/api/v2/move/246/") },
+            time_of_day: nil, relative_physical_stats: nil,
+            party_species: nil, trade_species: nil)
     }
 
     /// 보통은 첫 줄이다.

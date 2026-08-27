@@ -757,10 +757,16 @@ struct FloatingPetView: View {
 
     var body: some View {
         let size = CGFloat(settings.floatingPetSize)
+        // 설정이 "선명하게" 면 GIF 를 아예 안 탄다. 저전력 모드도 여기서 함께 걸린다(`animated`).
+        let playsGIF = animated && settings.floatingPetArtwork == .animated
         VStack(spacing: 8) {
             let subject = companion.floatingPetSubject(pinnedSpeciesID: settings.floatingPetSpeciesID)
-            SpriteView(speciesID: subject.speciesID, size: size, animated: animated,
-                       shiny: subject.isShiny, minFrameDelay: Self.frameFloor)
+            // 정지일 땐 위아래로 살짝 흔든다 — 안 그러면 펫이 얼어붙은 것처럼 보인다.
+            // 고해상도는 정지 경로에서 **항상** 켠다: 저전력으로 GIF 가 꺼졌을 때 96px 원본으로
+            // 떨어지면 지금보다 더 뭉개진다.
+            SpriteView(speciesID: subject.speciesID, size: size, bob: !playsGIF, animated: playsGIF,
+                       shiny: subject.isShiny, minFrameDelay: Self.frameFloor,
+                       highResolution: !playsGIF)
                 .frame(width: size, height: size)
                 .scaleEffect(x: motion.facingLeft ? -1 : 1, y: 1)
                 .zIndex(0)

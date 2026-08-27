@@ -11,7 +11,7 @@ final class CompanionStore {
     static let storedEggHatchDelay: TimeInterval = 5 * 60
     /// 학습 제안의 출처. 하트비늘 유래일 때만 아이템을 소모하므로 구분이 필요하다.
     /// 기본값이 `.levelUp` 이라 기존 생성부(레벨업·이상한 사탕)는 손대지 않는다.
-    enum MoveLearningOrigin: Sendable { case levelUp, heartScale }
+    enum MoveLearningOrigin: Sendable { case levelUp, heartScale, technicalMachine }
 
     struct MoveLearningPrompt: Identifiable {
         let id = UUID()
@@ -66,6 +66,20 @@ final class CompanionStore {
     /// 지금 개체의 타입. 태그가 안 맞으면 빈 배열 — 교체 지점마다 리셋을 심는 대신 읽는 자리 한 곳에서
     /// 막는다(리셋 지점은 계속 늘어나고 하나만 빠뜨리면 같은 결함이 돌아온다).
     var currentTypes: [PokemonType] { loadedTypesSpeciesID == currentSpeciesID ? loadedTypes : [] }
+    /// 종족값 — 타입과 **같은 조회**(`battleProfile`)에서 온다. 따로 받지 않는다.
+    private var loadedBaseStats: BattleStats?
+    /// 지금 개체의 실제 능력치 — 종족값에 **이 개체의 레벨과 성격**을 먹인 값이다.
+    ///
+    /// 종족값을 그대로 띄우지 않는 이유: 이 앱엔 성격과 민트가 있다. 종족값만 보이면 성격을 바꿔도
+    /// 숫자가 안 움직여, 민트를 쓰는 의미가 화면에서 사라진다.
+    ///
+    /// 태그 검사는 `currentTypes` 와 같은 이유다 — 개체가 바뀌었는데 남의 종족값으로 계산하면
+    /// 그럴듯하게 틀린 숫자가 나온다(빈 값은 화면이 자리를 비우지만, 틀린 숫자는 안 들킨다).
+    var currentStats: BattleStats? {
+        guard loadedTypesSpeciesID == currentSpeciesID, let base = loadedBaseStats,
+              let mon = state.active else { return nil }
+        return base.effective(level: mon.level, nature: mon.nature)
+    }
     private(set) var displayedMoves: [MoveSpec] = []
     private(set) var isLoadingDisplayedMoves = false
     private var moveLearningQueue: [MoveLearningPrompt] = []
@@ -169,6 +183,7 @@ final class CompanionStore {
         return a.isShiny
     }
     var currentNature: PokemonNature? { state.active?.nature }
+    var currentGender: PokemonGender? { state.active?.gender }
     var currentLevel: Int { state.active?.level ?? 1 }
     var experienceToNextLevel: Int {
         guard let mon = state.active, !mon.isMaxLevel else { return 0 }
@@ -186,10 +201,19 @@ final class CompanionStore {
     private var nextEvolutionNode: EvoNode? {
         guard let mon = state.active, let node = currentLine?.tree.node(withID: mon.currentID),
               !node.children.isEmpty else { return nil }
+        let intrinsic = node.children.filter {
+            $0.evolutionTrigger != "shed"
+                && ($0.evolutionGender == nil || $0.evolutionGender == mon.gender)
+                && ($0.evolutionRelativePhysicalStats == nil
+                    || $0.evolutionRelativePhysicalStats == mon.evolutionStatRelation)
+        }
+        let timed = intrinsic.filter { Self.routeMatches($0, mon: mon, date: clock()) }
+        let eligible = intrinsic.count > 1 && !timed.isEmpty ? timed : intrinsic
+        guard !eligible.isEmpty else { return nil }
         let nextIndex = mon.stageIndex + 1
         return mon.plannedPathIDs.indices.contains(nextIndex)
-            ? node.children.first(where: { $0.speciesID == mon.plannedPathIDs[nextIndex] })
-            : node.children.first
+            ? eligible.first(where: { $0.speciesID == mon.plannedPathIDs[nextIndex] })
+            : eligible.first
     }
 
     var nextEvolutionLevel: Int? { nextEvolutionNode?.evolutionLevel }
@@ -267,6 +291,65 @@ final class CompanionStore {
         evolutionRequiredMove = move
     }
 
+    /// 홈에서 항상 보여 주는 다음 진화 조건. 레벨/아이템만 따로 그리던 UI는 최종형이나 PokéAPI의
+    /// 비정형 level-up 조건에서 줄 자체가 사라졌다. 판정에 실제로 쓰는 정규화된 노드를 그대로 읽어
+    /// 모든 동행 포켓몬이 '다음 조건' 또는 '최종 진화체' 중 하나를 반드시 표시한다.
+    var evolutionRequirementText: String? {
+        guard state.active != nil else { return nil }
+        guard let next = nextEvolutionNode else {
+            if let level = graduationLevelRequirement {
+                return "\(l.finalForm) · \(l.graduatesAtLevel(level))"
+            }
+            return l.finalForm
+        }
+        var conditions: [String] = []
+        if let gender = next.evolutionGender { conditions.append(gender.name(language)) }
+        if let time = next.evolutionTimeOfDay {
+            conditions.append(time == "day" ? l.t("낮", "Daytime", "昼") : l.t("밤", "Night", "夜"))
+        }
+        if let relation = next.evolutionRelativePhysicalStats {
+            conditions.append(relation > 0 ? l.t("공격 > 방어", "Attack > Defense", "攻撃 > 防御")
+                              : relation < 0 ? l.t("공격 < 방어", "Attack < Defense", "攻撃 < 防御")
+                              : l.t("공격 = 방어", "Attack = Defense", "攻撃 = 防御"))
+        }
+        if let partyID = next.evolutionPartySpeciesID {
+            let partyName = ownedMons.first(where: { $0.currentID == partyID })
+                .map { RosterOrdering.displayName($0, language: language) } ?? specialSpeciesName(partyID)
+            conditions.append(l.t("\(partyName) 보유", "Own \(partyName)", "\(partyName)を所持"))
+        }
+        let genderPrefix = conditions.isEmpty ? "" : conditions.joined(separator: " · ") + " · "
+        if let moveID = next.evolutionKnownMoveID {
+            let moveName = currentLine?.evolutionMoveNames[moveID]
+                .flatMap { language.resolveName($0) } ?? "#\(moveID)"
+            return genderPrefix + l.t("\(moveName) 습득 후 레벨업", "Level up knowing \(moveName)",
+                                      "\(moveName)を覚えてレベルアップ")
+        }
+        if let level = next.evolutionLevel {
+            return genderPrefix + l.t("Lv.\(level)에 진화", "Evolves at Lv.\(level)", "Lv.\(level) で進化")
+        }
+        if let item = nextEvolutionItem { return genderPrefix + l.evolutionNeedsItem(l.itemName(item)) }
+        switch next.evolutionTrigger {
+        case "level-up":
+            return genderPrefix + l.t("레벨업으로 진화", "Evolves by leveling up", "レベルアップで進化")
+        case "trade":
+            if let partnerID = next.evolutionTradeSpeciesID {
+                let partner = specialSpeciesName(partnerID)
+                return genderPrefix + l.t("\(partner)와 교환", "Trade with \(partner)", "\(partner)と交換")
+            }
+            return genderPrefix + l.evolutionNeedsItem(l.itemName(.linkingCord))
+        default:
+            return genderPrefix + l.t("특수 조건으로 진화", "Evolves under a special condition", "特殊な条件で進化")
+        }
+    }
+
+    private func specialSpeciesName(_ id: Int) -> String {
+        switch id {
+        case 223: return l.t("총어", "Remoraid", "テッポウオ")
+        case 588: return l.t("딱정곤", "Karrablast", "カブルモ")
+        case 616: return l.t("쪼마리", "Shelmet", "チョボマキ")
+        default: return "#\(id)"
+        }
+    }
     var boxedMons: [MonState] { state.boxedMons }
     var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }
     var activeMonID: UUID? { state.active?.id }
@@ -891,8 +974,9 @@ final class CompanionStore {
     }
     /// 테스트 전용 — 타입 표시 캐시와 소유자 태그를 함께 세팅한다. 둘을 분리하면 프로덕션에서
     /// 만들 수 없는 태그 없는 캐시 상태가 생겨 회귀 테스트가 실제 결함과 다른 조건을 검증한다.
-    func debugSetLoadedTypes(_ types: [PokemonType], speciesID: Int) {
+    func debugSetLoadedTypes(_ types: [PokemonType], speciesID: Int, base: BattleStats? = nil) {
         loadedTypes = types
+        loadedBaseStats = base
         loadedTypesSpeciesID = speciesID
     }
     /// 테스트 전용 — 비동기 계승 기술 복원과 동행 교체의 경합을 네트워크 없이 재현한다.
@@ -1220,9 +1304,13 @@ final class CompanionStore {
               (1...649).contains(incoming.currentID),
               !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
 
-        let received = incoming
+        let offeredSpecies = state.active?.id == offeredID
+            ? state.active?.currentID : state.boxedMons.first(where: { $0.id == offeredID })?.currentID
+        var received = incoming
+        if let offeredSpecies { Self.applyPairedTradeEvolution(to: &received, counterpartSpeciesID: offeredSpecies) }
         if state.active?.id == offeredID {
             guard let sent = state.active else { return false }
+            preserveDexRecord(for: sent)
             memoryAlbum.deleteAll(for: sent.id)
             chatStore.deleteSession(for: sent.id)
             state.active = received
@@ -1239,11 +1327,41 @@ final class CompanionStore {
         }
         guard let index = state.boxedMons.firstIndex(where: { $0.id == offeredID }) else { return false }
         let sent = state.boxedMons[index]
+        preserveDexRecord(for: sent)
         memoryAlbum.deleteAll(for: sent.id)
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
         save()
         return true
+    }
+
+    private static func applyPairedTradeEvolution(to mon: inout MonState, counterpartSpeciesID: Int) {
+        let target: Int?
+        switch (mon.currentID, counterpartSpeciesID) {
+        case (588, 616): target = 589   // 딱정곤 + 쪼마리 → 슈바르고
+        case (616, 588): target = 617   // 쪼마리 + 딱정곤 → 어지리더
+        default: target = nil
+        }
+        guard let target else { return }
+        mon.pathIDs = Array(mon.pathIDs.prefix(mon.stageIndex + 1)) + [target]
+        mon.plannedPathIDs = mon.pathIDs
+        mon.stageIndex += 1
+        mon.totalForms = mon.pathIDs.count
+        mon.usedAtStage = 0
+    }
+
+    /// 교환으로 소유권이 넘어가도 한 번 만난 종은 도감에서 지우지 않는다. 미졸업 개체는 평소
+    /// `livingDexEntries`로만 합성되므로, 내보내기 직전에 도달한 단계까지 영구 기록으로 승격한다.
+    /// 이미 졸업한 개체는 같은 기록이 state.dex에 있으므로 중복 추가하지 않는다.
+    private func preserveDexRecord(for mon: MonState) {
+        guard !mon.isGraduated else { return }
+        let reached = Array(mon.pathIDs.prefix(mon.stageIndex + 1))
+        guard let finalID = reached.last else { return }
+        state.dex.append(DexEntry(
+            id: "traded-\(mon.id.uuidString)", baseID: mon.baseID, finalID: finalID,
+            chainOrder: reached, rarity: mon.rarity, caughtAt: clock(),
+            isShiny: mon.dittoDisguise != nil && !mon.dittoRevealed ? false : mon.isShiny,
+            nature: mon.nature, names: mon.names))
     }
 
     func switchCompanion(to id: UUID) {
@@ -1279,7 +1397,14 @@ final class CompanionStore {
               active.id == prompt.monID, active.currentID == prompt.fromSpeciesID,
               active.level >= prompt.requiredLevel,
               let node = line.tree.node(withID: active.currentID),
-              node.children.contains(where: { $0.speciesID == prompt.toSpeciesID }) else {
+              let target = node.children.first(where: { $0.speciesID == prompt.toSpeciesID }),
+              Self.routeMatches(target, mon: active, date: clock()),
+              target.evolutionPartySpeciesID.map({ required in
+                  ownedMons.contains(where: { $0.currentID == required })
+              }) ?? true,
+              target.evolutionKnownMoveID.map({ moveID in
+                  active.learnedMoves.contains(where: { $0.id == moveID })
+              }) ?? true else {
             evolutionPrompt = nil; return
         }
         evolutionPrompt = nil
@@ -1289,12 +1414,26 @@ final class CompanionStore {
         let threshold = PokemonBalance.phaseThreshold(
             rarity: active.rarity, totalForms: active.totalForms, stageIndex: active.stageIndex - 1)
         state.active!.usedAtStage = max(0, active.usedAtStage - threshold)
+        spawnShedinjaIfNeeded(from: active, evolvedTo: prompt.toSpeciesID, line: line)
         justEvolvedTo = prompt.toName
         fireCelebration(.evolve)
         eventUntil = clock().addingTimeInterval(4)
         notifyCompanionEvent(l.notifEvolveTitle, l.notifEvolveBody(prompt.toName))
         save()
         applyUsage(0)
+    }
+
+    /// 토중몬은 아이스크로 진화하면서 빈 박스에 껍질몬이 함께 생긴다. 박스는 무제한이라 빈 슬롯
+    /// 조건은 항상 충족하며, 별도 몬스터볼 재화가 없는 앱 규칙상 추가 소모도 없다.
+    private func spawnShedinjaIfNeeded(from source: MonState, evolvedTo targetID: Int, line: EvoLine) {
+        guard source.currentID == 290, targetID == 291 else { return }
+        var shedinja = MonState(baseID: 290, pathIDs: [290, 292], plannedPathIDs: [290, 292],
+                                stageIndex: 1, usedAtStage: 0, rarity: source.rarity, totalForms: 2,
+                                isShiny: source.isShiny, nature: source.nature, gender: .genderless,
+                                evolutionStatRelation: source.evolutionStatRelation, names: line.names)
+        shedinja.levelExperience = source.levelExperience
+        shedinja.learnedMoves = source.learnedMoves
+        state.boxedMons.append(shedinja)
     }
 
     func declineMoveLearning() {
@@ -1304,6 +1443,13 @@ final class CompanionStore {
 
     func acceptMoveLearning(replacing index: Int? = nil) {
         guard let prompt = moveLearningPrompt else { declineMoveLearning(); return }
+        if prompt.origin == .technicalMachine {
+            guard technicalMachineCount(prompt.move.id) > 0 else {
+                pendingMoveLearningPrompt = nil
+                showNextMoveLearningPrompt()
+                return
+            }
+        }
         if state.active!.learnedMoves.count < 4 {
             state.active!.learnedMoves.append(prompt.move)
         } else if let index, state.active!.learnedMoves.indices.contains(index) {
@@ -1313,6 +1459,9 @@ final class CompanionStore {
         // 경우까지 태우면 클릭 한 번에 500 별의조각이 사라지는 함정이 된다.
         if prompt.origin == .heartScale {
             state.inventory[ItemKind.heartScale.rawValue] = max(0, itemCount(.heartScale) - 1)
+        } else if prompt.origin == .technicalMachine {
+            let count = technicalMachineCount(prompt.move.id)
+            state.technicalMachines[prompt.move.id] = count - 1
         }
         // 표시 목록을 여기서 맞춘다. 기술 목록의 `.task(id:)` 는 "개체 id + 레벨" 이라 **레벨이
         // 바뀌지 않는 학습**(하트비늘)에서는 다시 돌지 않는다 — 레벨업 경로는 레벨이 함께 바뀌어
@@ -1320,6 +1469,9 @@ final class CompanionStore {
         displayedMoves = state.active!.learnedMoves
         save()
         pendingMoveLearningPrompt = nil
+        // 같은 레벨에서 막 배운 기술이 진화 조건일 수 있다. **레벨업으로 배운 경우만** 다시 판정한다.
+        // 하트비늘로 가만히 서서 배운 기술은 본가 규칙대로 다음 레벨업까지 기다려야 한다.
+        if prompt.origin == .levelUp { applyUsage(0) }
         showNextMoveLearningPrompt()
     }
 
@@ -1360,6 +1512,7 @@ final class CompanionStore {
               let profile = try? await provider.battleProfile(speciesID: id),
               currentSpeciesID == id else { return }
         loadedTypes = profile.types
+        loadedBaseStats = profile.stats
         loadedTypesSpeciesID = id
     }
 
@@ -1785,10 +1938,13 @@ final class CompanionStore {
             let nextIndex = a.stageIndex + 1
             let next: EvoNode
             if a.plannedPathIDs.indices.contains(nextIndex),
-               let planned = node.children.first(where: { $0.speciesID == a.plannedPathIDs[nextIndex] }) {
+               let planned = node.children.first(where: {
+                   $0.speciesID == a.plannedPathIDs[nextIndex] && Self.routeMatches($0, mon: a, date: clock())
+               }) {
                 next = planned
             } else {
-                next = pickPlannedChild(node, baseID: a.baseID)
+                guard let picked = pickPlannedChild(node, baseID: a.baseID) else { break }
+                next = picked
                 let fallbackRoute = [node.speciesID] + makeEvolutionPlan(from: next, baseID: a.baseID)
                 let repaired = Self.repairedPlan(realizedPath: a.pathIDs, stageIndex: a.stageIndex,
                                                  fallbackRoute: fallbackRoute)
@@ -1796,9 +1952,38 @@ final class CompanionStore {
                 state.active!.totalForms = repaired.count
                 AppLog.write("evolve: repaired invalid planned path for base \(a.baseID)")
             }
+            guard Self.routeMatches(next, mon: a, date: clock()) else { break }
+            guard next.evolutionPartySpeciesID.map({ required in
+                ownedMons.contains(where: { $0.currentID == required })
+            }) ?? true else { break }
             // 본가처럼 레벨만으로 게이팅한다 — acceptEvolution() 도 이미 usedAtStage 를 참조하지
             // 않고 0 으로 리셋할 뿐이다(#19). 여기서 성장치까지 같이 요구하면 acceptEvolution 이
             // 절대 실행 못 하는 조건을 사전에 막는, 실질 의미 없는 이중 게이트가 된다.
+            if let moveID = next.evolutionKnownMoveID {
+                guard a.learnedMoves.contains(where: { $0.id == moveID }) else { break }
+                let requiredLevel = a.level
+                if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
+                   declinedEvolutionTargetID == next.speciesID { break }
+                if evolutionPrompt == nil {
+                    evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
+                        toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
+                        toName: line.localizedName(next.speciesID, state.language))
+                }
+                break
+            }
+            if next.evolutionTrigger == "level-up", next.evolutionLevel == nil,
+               next.evolutionPartySpeciesID != nil || next.evolutionTimeOfDay != nil
+                    || next.evolutionRelativePhysicalStats != nil {
+                let requiredLevel = a.level
+                if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
+                   declinedEvolutionTargetID == next.speciesID { break }
+                if evolutionPrompt == nil {
+                    evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
+                        toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
+                        toName: line.localizedName(next.speciesID, state.language))
+                }
+                break
+            }
             if let requiredLevel = next.evolutionLevel {
                 guard a.level >= requiredLevel else { break }
                 if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
@@ -1837,19 +2022,39 @@ final class CompanionStore {
         save()
     }
 
-    private func pickPlannedChild(_ node: EvoNode, baseID: Int) -> EvoNode {
-        let fresh = node.children.filter { ch in
+    private func pickPlannedChild(_ node: EvoNode, baseID: Int, gender: PokemonGender? = nil) -> EvoNode? {
+        let resolvedGender = gender ?? state.active?.gender
+        // 성별 전용 자식은 일치할 때만 후보가 된다. 조건 없는 자식은 어느 성별이든 가능하다.
+        let candidates = node.children.filter {
+            ($0.evolutionTrigger != "shed")
+                && ($0.evolutionGender == nil || resolvedGender == nil || $0.evolutionGender == resolvedGender)
+                && ($0.evolutionRelativePhysicalStats == nil
+                    || state.active?.evolutionStatRelation == nil
+                    || $0.evolutionRelativePhysicalStats == state.active?.evolutionStatRelation)
+        }
+        guard !candidates.isEmpty else { return nil }
+        let fresh = candidates.filter { ch in
             ch.finalIDs.contains { !state.collectedFinals.contains("\(baseID):\($0)") }
         }
-        let pool = fresh.isEmpty ? node.children : fresh
+        let pool = fresh.isEmpty ? candidates : fresh
         return pool[Int(rng.next() % UInt64(pool.count))]
     }
 
-    private func makeEvolutionPlan(from root: EvoNode, baseID: Int) -> [Int] {
+    private static func routeMatches(_ node: EvoNode, mon: MonState, date: Date) -> Bool {
+        guard node.evolutionTrigger != "shed",
+              node.evolutionGender == nil || node.evolutionGender == mon.gender,
+              node.evolutionRelativePhysicalStats == nil
+                || node.evolutionRelativePhysicalStats == mon.evolutionStatRelation else { return false }
+        guard let time = node.evolutionTimeOfDay else { return true }
+        let hour = Calendar.current.component(.hour, from: date)
+        return time == "day" ? (6..<18).contains(hour) : !(6..<18).contains(hour)
+    }
+
+    private func makeEvolutionPlan(from root: EvoNode, baseID: Int, gender: PokemonGender? = nil) -> [Int] {
         var plan = [root.speciesID]
         var node = root
         while !node.children.isEmpty {
-            let next = pickPlannedChild(node, baseID: baseID)
+            guard let next = pickPlannedChild(node, baseID: baseID, gender: gender) else { break }
             plan.append(next.speciesID)
             node = next
         }
@@ -2136,7 +2341,13 @@ final class CompanionStore {
     func canUseEvolutionItem(_ kind: ItemKind) -> Bool {
         guard itemCount(kind) > 0, let rule = kind.evolutionRule,
               let mon = state.active, let node = currentLine?.tree.node(withID: mon.currentID) else { return false }
-        return node.children.contains(where: rule.opens)
+        return node.children.contains {
+            rule.opens($0) && Self.routeMatches($0, mon: mon, date: clock())
+        }
+    }
+
+    private static func genderAllows(_ node: EvoNode, _ gender: PokemonGender?) -> Bool {
+        node.evolutionGender == nil || node.evolutionGender == gender
     }
 
     @discardableResult
@@ -2144,7 +2355,10 @@ final class CompanionStore {
         guard canUseEvolutionItem(kind), let rule = kind.evolutionRule,
               let line = currentLine, let mon = state.active,
               let node = line.tree.node(withID: mon.currentID),
-              let next = node.children.first(where: rule.opens) else { return false }
+              let next = node.children.first(where: {
+                  rule.opens($0) && Self.routeMatches($0, mon: mon, date: clock())
+              })
+        else { return false }
         state.inventory[kind.rawValue] = itemCount(kind) - 1
         state.active!.pathIDs = Array(mon.pathIDs.prefix(mon.stageIndex + 1)) + [next.speciesID]
         state.active!.plannedPathIDs = state.active!.pathIDs
@@ -2166,6 +2380,43 @@ final class CompanionStore {
     /// 상점에서 쓸 수 있는 별의모래 = 누적 생산량 − 상점 지출 누적. 성장 미터(usedSinceInstall)는
     /// 여기선 읽기만 — 구매는 spentTokens 만 올려 잔액을 깎는다(진화 진행·오늘/주/월 통계 무영향).
     var availableTokens: Int { max(0, state.starPieces) }
+
+    func technicalMachineCount(_ moveID: Int) -> Int { state.technicalMachines[moveID] ?? 0 }
+
+    var ownedTechnicalMachines: [(machine: TechnicalMachine, count: Int)] {
+        TechnicalMachine.catalog.compactMap { machine in
+            let count = technicalMachineCount(machine.moveID)
+            return count > 0 ? (machine, count) : nil
+        }
+    }
+
+    func canBuyTechnicalMachine(_ machine: TechnicalMachine) -> Bool {
+        availableTokens >= machine.price
+    }
+
+    @discardableResult
+    func buyTechnicalMachine(_ machine: TechnicalMachine) -> Bool {
+        guard canBuyTechnicalMachine(machine) else { return false }
+        state.starPieces -= machine.price
+        state.technicalMachines[machine.moveID, default: 0] += 1
+        save()
+        return true
+    }
+
+    /// 기술머신 사용은 구매와 분리한다. 호환되지 않거나 이미 배운 기술이면 재고를 소모하지 않는다.
+    /// 실제 소모는 학습/교체가 확정되는 `acceptMoveLearning`에서만 일어난다.
+    @discardableResult
+    func useTechnicalMachine(_ machine: TechnicalMachine) async -> Bool {
+        guard let mon = state.active, technicalMachineCount(machine.moveID) > 0,
+              pendingMoveLearningPrompt == nil,
+              !mon.learnedMoves.contains(where: { $0.id == machine.moveID }),
+              await provider.canLearnMachine(speciesID: mon.currentID, moveID: machine.moveID),
+              let move = await provider.moveDetail(id: machine.moveID),
+              state.active?.id == mon.id else { return false }
+        pendingMoveLearningPrompt = MoveLearningPrompt(monID: mon.id, level: mon.level,
+                                                       move: move, origin: .technicalMachine)
+        return true
+    }
 
     /// 상점 판매 아이템 — shopPrice 있는 것만. 가격 저렴한 순, 단 구매 완료한 보유형은 맨 아래로.
     var purchasableItems: [ItemKind] {
@@ -2354,10 +2605,13 @@ final class CompanionStore {
         let rolledShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let shiny = consumeShinyCharge() || rolledShiny
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
-        let plan = makeEvolutionPlan(from: line.tree, baseID: line.baseID)
+        let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
+        let statRelation = Int(rng.next() % 3) - 1
+        let plan = makeEvolutionPlan(from: line.tree, baseID: line.baseID, gender: gender)
         let mon = MonState(baseID: line.baseID, pathIDs: [line.baseID], plannedPathIDs: plan,
                            stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: plan.count,
-                           isShiny: shiny, nature: nature,
+                           isShiny: shiny, nature: nature, gender: gender,
+                           evolutionStatRelation: statRelation,
                            names: line.names)   // 박스 개체는 currentLine 이 없어 이름을 여기서 들고 가야 한다
         // 동행이 비어 있으면(졸업 직후 등) 박스가 아니라 바로 동행으로 부화한다 — 그러지 않으면
         // 졸업 후 동행 없는 상태로 남아 사용자가 박스에서 직접 꺼내야 한다.
@@ -2549,13 +2803,18 @@ final class CompanionStore {
            Self.dittoDisguiseHit(rarity: line.rarity, totalForms: line.totalForms, roll: rng.next()) {
             dittoDisguise = line.baseID
         }
-        let evolutionPlan = makeEvolutionPlan(from: line.tree, baseID: line.baseID)
+        // 새 개체 속성은 기존 메타몽 위장 롤 뒤에서 뽑는다. 앞에 끼우면 같은 시드의 위장 확률이
+        // 앱 업데이트만으로 달라져 기존 결정론과 재현 가능한 테스트가 깨진다.
+        let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
+        let statRelation = Int(rng.next() % 3) - 1
+        let evolutionPlan = makeEvolutionPlan(from: line.tree, baseID: line.baseID, gender: gender)
         // 위장 중엔 이로치를 숨긴다 — 부화 알림·연출도 일반체로(정체는 리빌 때 공개).
         let showShiny = isShiny && dittoDisguise == nil
         activeGeneration += 1
         state.active = MonState(baseID: line.baseID, pathIDs: [line.baseID], plannedPathIDs: evolutionPlan,
                                 stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: evolutionPlan.count,
-                                isShiny: isShiny, nature: nature, dittoDisguise: dittoDisguise,
+                                isShiny: isShiny, nature: nature, gender: gender,
+                                evolutionStatRelation: statRelation, dittoDisguise: dittoDisguise,
                                 names: line.names)   // 박스로 들어가도 도감이 이름을 그릴 수 있게 개체에 저장
         AppLog.write("hatch: base=\(line.baseID) rarity=\(line.rarity) shiny=\(isShiny) forms=\(evolutionPlan.count) ditto=\(dittoDisguise != nil)")
         let name = line.localizedName(line.baseID, state.language)
@@ -2622,7 +2881,19 @@ final class CompanionStore {
             // 같은 개체가 아직 활성인 경우에만 최신 상태를 정규화한다.
             guard activeGeneration == generation,
                   let latest = state.active, latest.baseID == a.baseID, currentLine == nil else { return }
-            state.active = normalizedEvolutionState(latest, from: line.tree)
+            var migrated = latest
+            if migrated.gender == nil {
+                // 구버전 세이브 보완은 난수를 소비하지 않는다. 재실행할 때마다 이후 진화 경로·알 결과가
+                // 달라지지 않도록 종 번호에서 안정적으로 성별을 정한다.
+                migrated.gender = PokemonGender.from(genderRate: line.genderRate,
+                                                      roll: UInt64(migrated.baseID))
+                // 이미 저장된 유효 진화 경로는 유지한다. 성별 필드를 보완한다는 이유로 경로를 지우면
+                // 업데이트 직후 사용자가 보던 진화 대상이 바뀌고 불필요한 RNG까지 소비된다.
+            }
+            if migrated.evolutionStatRelation == nil {
+                migrated.evolutionStatRelation = (migrated.baseID % 3) - 1
+            }
+            state.active = normalizedEvolutionState(migrated, from: line.tree)
             currentLine = line
             save()   // 마이그레이션 선택을 사용량 재평가 전에 영속화해 재시작마다 다시 롤리지 않는다.
             applyUsage(0)   // 라인 미로딩 동안 적립된 사용량이 임계를 넘었으면 지금 진화 판정

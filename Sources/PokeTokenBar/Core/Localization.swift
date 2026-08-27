@@ -373,6 +373,28 @@ struct L {
           "ポケモンが画面の上に浮かびます — ドラッグで移動できます")
     }
     var floatingPetSizeLabel: String { t("크기", "Size", "サイズ") }
+    var floatingPetArtworkTitle: String { t("그림", "Artwork", "画像") }
+    /// 라벨에 맞바꿈을 넣는다 — "선명하게" 만 있으면 왜 기본이 아닌지 알 수 없다.
+    func floatingPetArtworkLabel(_ artwork: FloatingPetArtwork) -> String {
+        switch artwork {
+        case .animated: return t("움직이게", "Animated", "アニメ")
+        case .sharp:    return t("선명하게", "Sharp", "高精細")
+        }
+    }
+    /// 고른 쪽이 무엇을 포기하는지 밝힌다. 특히 "선명하게" 를 골라도 **돌아다니기는 그대로**라는
+    /// 걸 말해야 한다 — 안 그러면 펫이 아예 멈추는 줄 알고 안 고른다.
+    func floatingPetArtworkHint(_ artwork: FloatingPetArtwork) -> String {
+        switch artwork {
+        case .animated:
+            return t("5세대 도트 그림이라 크게 띄우면 흐려져요.",
+                     "Gen-5 pixel art — it blurs at larger sizes.",
+                     "第5世代のドット絵なので大きくすると粗くなります。")
+        case .sharp:
+            return t("4배 선명한 정지 그림이에요. 돌아다니기는 그대로예요.",
+                     "A still render, 4× sharper. Roaming still works.",
+                     "4倍精細な静止画です。歩き回りはそのままです。")
+        }
+    }
     var floatingPetRoamingLabel: String { t("화면 돌아다니기", "Roam across screens", "画面を歩き回る") }
     var floatingPetMouseChaseLabel: String { t("마우스 따라가기", "Follow the pointer", "マウスを追いかける") }
     var floatingPetSpeedLabel: String { t("이동 속도", "Movement speed", "移動速度") }
@@ -669,6 +691,14 @@ struct L {
     /// 페이저 접근성 문구 — 도감과 소유 포켓몬이 함께 쓴다(둘 다 페이지식 고정 격자).
     func dexPageLabel(_ page: Int, _ total: Int) -> String {
         t("\(total)페이지 중 \(page)페이지", "Page \(page) of \(total)", "\(total)ページ中 \(page)ページ")
+    }
+    /// 능력치 표의 HP 칸. 나머지 다섯은 `BattleStat.name` 이 든다(랭크가 붙는 스탯이라 그쪽에 있다).
+    /// HP 만 여기 있는 게 어색해 보여도, 이름을 두 벌로 만들면 배틀 로그와 표가 다른 말을 쓴다.
+    var statHP: String { t("HP", "HP", "HP") }
+    /// 능력치가 **이 개체의 레벨·성격 기준**임을 밝힌다. 종족값으로 오해하면 성격을 바꿔도
+    /// 안 변한다고 생각한다.
+    func statsAtLevel(_ level: Int) -> String {
+        t("Lv.\(level) 기준 능력치", "Stats at Lv.\(level)", "Lv.\(level) 時のステータス")
     }
     /// 갈라지는 진화 — 갈래가 몇 개인지부터 알려야 나머지가 막힌 게 아니란 걸 안다.
     func evolutionBranchCount(_ count: Int) -> String {

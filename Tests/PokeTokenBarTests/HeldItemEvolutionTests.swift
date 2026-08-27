@@ -263,6 +263,54 @@ final class HeldItemEvolutionTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(round.node(withID: 199)).evolutionHeldItem, "kings-rock")
     }
 
+    /// 구작 PokéAPI 조건(특정 장소 레벨업)을 앱이 지원하는 현행 본가 조건(천둥의돌)으로 바꾼다.
+    /// 이 보정이 없으면 레어코일은 레벨·아이템 어느 경로에서도 자포코일로 진화할 수 없다.
+    func testMagnetonEvolutionNormalizesToThunderStone() throws {
+        let json = """
+        {"species":{"name":"magneton","url":"https://pokeapi.co/api/v2/pokemon-species/82/"},
+         "evolution_details":[],
+         "evolves_to":[
+           {"species":{"name":"magnezone","url":"https://pokeapi.co/api/v2/pokemon-species/462/"},
+            "evolves_to":[],
+            "evolution_details":[{"min_level":null,"min_happiness":null,
+              "trigger":{"name":"level-up","url":null},"item":null,"held_item":null}]}
+         ]}
+        """
+        let tree = PokeAPIClient.evoNode(from: try JSONDecoder().decode(ChainLink.self, from: Data(json.utf8)))
+        let magnezone = try XCTUnwrap(tree.node(withID: 462))
+        XCTAssertEqual(magnezone.evolutionTrigger, "use-item")
+        XCTAssertEqual(magnezone.evolutionItem, "thunder-stone")
+        XCTAssertTrue(ItemKind.thunderStone.evolutionRule?.opens(magnezone) == true)
+    }
+
+    func testEvolutionGenderSurvivesChainParsing() throws {
+        let json = """
+        {"species":{"name":"combee","url":"https://pokeapi.co/api/v2/pokemon-species/415/"},
+         "evolution_details":[],"evolves_to":[
+          {"species":{"name":"vespiquen","url":"https://pokeapi.co/api/v2/pokemon-species/416/"},
+           "evolves_to":[],"evolution_details":[{"min_level":21,"min_happiness":null,
+            "trigger":{"name":"level-up","url":null},"item":null,"held_item":null,"gender":1}]}
+         ]}
+        """
+        let tree = PokeAPIClient.evoNode(from: try JSONDecoder().decode(ChainLink.self, from: Data(json.utf8)))
+        XCTAssertEqual(try XCTUnwrap(tree.node(withID: 416)).evolutionGender, .female)
+    }
+
+    func testKnownMoveSurvivesChainParsing() throws {
+        let json = """
+        {"species":{"name":"lickitung","url":"https://pokeapi.co/api/v2/pokemon-species/108/"},
+         "evolution_details":[],"evolves_to":[
+          {"species":{"name":"lickilicky","url":"https://pokeapi.co/api/v2/pokemon-species/463/"},
+           "evolves_to":[],"evolution_details":[{"min_level":null,"min_happiness":null,
+            "trigger":{"name":"level-up","url":null},"item":null,"held_item":null,"gender":null,
+            "known_move":{"name":"rollout","url":"https://pokeapi.co/api/v2/move/205/"}}]}
+         ]}
+        """
+        let tree = PokeAPIClient.evoNode(from: try JSONDecoder().decode(ChainLink.self, from: Data(json.utf8)))
+        XCTAssertEqual(try XCTUnwrap(tree.node(withID: 463)).evolutionKnownMoveID, 205)
+        XCTAssertEqual(try XCTUnwrap(tree.keepingAnimatedSprites()?.node(withID: 463)).evolutionKnownMoveID, 205)
+    }
+
     /// 지닌물건 노드는 자동 진화로 넘어가지 않는다 — 아이템을 요구하는 진화가 레벨만으로 열리면
     /// 아이템 17종이 전부 무의미해지고, 졸업 면제 판정도 흔들린다.
     func testHeldItemNodeDoesNotAutoEvolve() async {

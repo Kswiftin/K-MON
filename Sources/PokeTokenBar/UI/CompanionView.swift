@@ -104,6 +104,10 @@ struct SpriteView: View {
     /// idle 배터리를 통제한다 — 항상 떠 있는 플로팅 펫(0.4s≈2.5fps)이 메뉴바 GIF 규율과 동치가 되게.
     /// 팝오버 등 일시적 표시는 0(기본)으로 두어 네이티브 fps 유지.
     var minFrameDelay: TimeInterval = 0
+    /// 정지로 그릴 때 HOME 512×512 렌더를 쓴다. 애니메이션 원본(45~133px)의 4배 가까이 선명하지만
+    /// 움직이지 않는다 — 크게 띄우는 플로팅 펫에서만 값어치가 있어 기본은 꺼져 있다.
+    /// `animated` 가 켜져 있으면 무시된다(GIF 가 이긴다).
+    var highResolution: Bool = false
     @State private var img: NSImage?
     @State private var up = false
     @State private var loadedID: Int?   // img 가 어느 speciesID 것인지(id 변경 시 갱신 판단)
@@ -113,7 +117,8 @@ struct SpriteView: View {
     @State private var frameIndex = 0
 
     init(speciesID: Int?, size: CGFloat = 84, bob: Bool = false, animated: Bool = false,
-         shiny: Bool = false, fallbackLabel: String? = nil, back: Bool = false, minFrameDelay: TimeInterval = 0) {
+         shiny: Bool = false, fallbackLabel: String? = nil, back: Bool = false,
+         minFrameDelay: TimeInterval = 0, highResolution: Bool = false) {
         self.speciesID = speciesID
         self.size = size
         self.bob = bob
@@ -122,9 +127,13 @@ struct SpriteView: View {
         self.fallbackLabel = fallbackLabel
         self.back = back
         self.minFrameDelay = minFrameDelay
+        self.highResolution = highResolution
         // 캐시에 있으면 즉시(동기) 표시 — 재렌더 플래시 방지 + 정적 스냅샷에서도 보임.
         // speciesID==nil(알 상태)이면 알 스프라이트를 시드(없으면 body 가 🥚 폴백).
-        let cached = speciesID.map { SpriteLoader.cachedImage(speciesID: $0, shiny: shiny, back: back) }
+        let cached = speciesID.map {
+            SpriteLoader.cachedImage(speciesID: $0, shiny: shiny, back: back,
+                                     highResolution: highResolution && !animated)
+        }
             ?? SpriteLoader.cachedEggImage()
         _img = State(initialValue: cached)
         _loadedID = State(initialValue: (speciesID != nil && cached != nil) ? speciesID : nil)
@@ -165,9 +174,11 @@ struct SpriteView: View {
                 // GIF 애니메이션 경로 — 현재 프레임만 렌더
                 Image(nsImage: frames[frameIndex % frames.count].image)
                     .resizable().interpolation(antialiasing ? .high : .none)
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: size, height: size)
             } else if let img {
                 Image(nsImage: img).resizable().interpolation(antialiasing ? .high : .none)
+                    .aspectRatio(contentMode: .fit)
                     .frame(width: size, height: size)
             } else if let fallbackLabel {
                 Text(fallbackLabel)
@@ -199,7 +210,9 @@ struct SpriteView: View {
             // 정적 스프라이트 먼저(즉시 표시 + 폴백 보장).
             // 캐시 시드로 이미 같은 종·같은 이로치 여부면 재요청 생략(플래시 방지)
             if Self.needsReload(loadedID: loadedID, loadedShiny: loadedShiny, id: id, shiny: shiny) {
-                let loaded = await SpriteLoader.image(speciesID: id, animated: false, shiny: shiny, back: back)
+                let loaded = await SpriteLoader.image(speciesID: id, animated: false, shiny: shiny,
+                                                      back: back,
+                                                      highResolution: highResolution && !animated)
                 // 취소된 로드는 반영하지 않는다(#138). 이로치 축은 **반영될 때만** 기록해
                 // subject(종)와 loadedShiny 가 어긋나 다음 판정이 틀어지는 것을 막는다.
                 if let next = subject.applyingLoad(loaded, for: id, cancelled: Task.isCancelled) {
@@ -508,8 +521,11 @@ struct CompanionHeader: View {
                 SpriteView(speciesID: store.currentSpeciesID, size: 76, bob: true, animated: true,
                            shiny: store.currentIsShiny)
                     .frame(width: 76, height: 76)
-                    .background(Color.secondary.opacity(0.06))
+                    .background(Color.secondary.opacity(0.055))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                        .allowsHitTesting(false))
                     .rotationEffect(.degrees(eggImminent && eggWiggle ? 5 : (eggImminent ? -5 : 0)))
                     .scaleEffect(celebScale)
                     .overlay(RoundedRectangle(cornerRadius: 12).fill(.white).opacity(flashOpacity))
@@ -560,6 +576,11 @@ struct CompanionHeader: View {
                         } else {
                             Text(store.displayName).font(.callout.weight(.semibold))
                             if store.currentIsShiny { Text("✨").font(.system(size: 11)) }
+                            if let gender = store.currentGender {
+                                Text(gender.symbol)
+                                    .font(.caption.bold())
+                                    .foregroundStyle(gender == .male ? .blue : gender == .female ? .pink : .secondary)
+                            }
                             // 별명 짓기/바꾸기 — 활성 개체 + 라인 로딩 후에만(종 이름 폴백 준비됨).
                             if store.hasActive, store.currentLine != nil {
                                 Button {
@@ -616,28 +637,15 @@ struct CompanionHeader: View {
                                 // 갈래가 여럿이면 한 줄로 못 적는다(이브이는 여덟이다). 아래 안내들은
                                 // **정해진 경로 쪽 갈래 하나만** 말해서, 나머지가 막힌 것처럼 보였다.
                                 EvolutionBranchMenu(store: store)
-                            } else if let evolutionLevel = store.nextEvolutionLevel {
-                                Text(store.l.t("Lv.\(evolutionLevel)에 진화", "Evolves at Lv.\(evolutionLevel)", "Lv.\(evolutionLevel) で進化"))
-                                    .font(.caption2).foregroundStyle(.tertiary)
-                            } else if let evolutionItem = store.nextEvolutionItem {
-                                // 돌·교환 진화는 레벨이 아무리 올라도 저절로 일어나지 않는다 —
-                                // 무엇을 사야 하는지 여기서 말해주지 않으면 알 길이 없다.
-                                Text(store.l.evolutionNeedsItem(store.l.itemName(evolutionItem)))
-                                    .font(.caption2).foregroundStyle(.tertiary)
-                            } else if let requiredMove = store.evolutionRequiredMove,
-                                      let target = store.nextEvolutionName {
-                                // 기술 조건 진화도 레벨로는 안 열린다. 돌과 달리 상점에서 살 수도
-                                // 없어서, 무슨 기술인지 말해주지 않으면 되찾을 단서조차 없다
-                                // (하트비늘로 다시 배우는 게 유일한 길이다).
-                                Text(store.l.evolutionNeedsMove(requiredMove.name(store.language), into: target))
-                                    .font(.caption2).foregroundStyle(.tertiary)
-                                    .lineLimit(1).minimumScaleFactor(0.75)
-                            } else if let graduationLevel = store.graduationLevelRequirement {
-                                // 최종형에 닿으면 위 두 안내가 모두 사라진다. 그대로 두면 졸업 버튼이
-                                // 안 뜨는 이유를 화면 어디서도 알 수 없다.
-                                Text(store.l.graduatesAtLevel(graduationLevel))
-                                    .font(.caption2).foregroundStyle(.tertiary)
+                            } else if let requirement = store.evolutionRequirementText {
+                                Text(requirement).font(.caption2).foregroundStyle(.tertiary)
                             }
+                        }
+                        // 능력치 여섯 칸 — 고정 표시. 타입과 같은 조회에서 오므로 여기 두는 데
+                        // 추가 네트워크가 없다. 아직 못 받았으면 줄 자체를 그리지 않는다.
+                        if let stats = store.currentStats {
+                            StatBlock(stats: stats, level: store.currentLevel, l: store.l,
+                                      language: store.language)
                         }
                     } else {
                         // 알 인큐베이션 — 부화까지 진행 (임박 시 문구·색 전환)
@@ -690,7 +698,7 @@ struct CompanionHeader: View {
                         .font(.caption.weight(.semibold))
                 }
                 .padding(8)
-                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+                .pokedoroCard(tint: PokedoroTheme.yellow)
             }
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
             if store.canGraduate { GraduateCard(store: store) }
@@ -806,7 +814,7 @@ struct CompanionHeader: View {
     }
 }
 
-private struct TypeBadge: View {
+struct TypeBadge: View {
     let type: PokemonType
     let language: AppLanguage
 
@@ -819,6 +827,29 @@ private struct TypeBadge: View {
             .lineLimit(1).fixedSize()
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(type.color, in: Capsule())
+    }
+}
+
+/// 본가의 기술 분류 아이콘처럼 텍스트를 읽기 전에도 물리/특수/변화를 구별하게 한다.
+/// 앱의 기존 SF Symbols 체계 안에서 물리=충격, 특수=반짝임, 변화=상태 효과로 통일한다.
+struct MoveCategoryIcon: View {
+    let damageClass: MoveDamageClass
+    let l: L
+
+    private var symbol: String {
+        switch damageClass { case .physical: return "burst.fill"; case .special: return "sparkles"; case .status: return "circle.hexagongrid.fill" }
+    }
+    private var color: Color {
+        switch damageClass { case .physical: return .orange; case .special: return .blue; case .status: return .gray }
+    }
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 9, weight: .bold)).foregroundStyle(color)
+            .frame(width: 14, height: 14)
+            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+            .help(l.moveCategory(damageClass))
+            .accessibilityLabel(l.moveCategory(damageClass))
     }
 }
 
@@ -923,9 +954,11 @@ struct MoveListView: View {
             Text(move.name(store.language)).font(.caption.weight(.semibold))
                 .lineLimit(1).layoutPriority(1)
             TypeBadge(type: move.type, language: store.language)
+            MoveCategoryIcon(damageClass: move.damageClass, l: l)
             Spacer(minLength: 2)
             Group {
-                Text(move.damageClass == .status ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                Text(move.damageClass == .status ? l.moveCategoryStatus
+                     : "\(l.moveCategory(move.damageClass)) · \(l.movePowerShort(move.power))")
                 Text(move.accuracy.map { l.moveAccuracyShort($0) } ?? l.moveAlwaysHits)
                 Text(l.movePP(move.pp))
             }
@@ -1028,6 +1061,56 @@ private struct EvolutionPromptCard: View {
     }
 }
 
+/// 능력치 여섯 칸 — 3열 × 2행 고정.
+///
+/// **종족값이 아니라 이 개체의 실제 능력치다.** 이 앱엔 성격과 민트가 있어서, 종족값만 띄우면
+/// 성격을 바꿔도 숫자가 안 움직인다 — 민트를 쓰는 의미가 화면에서 사라진다. 그래서 머리글에
+/// 기준 레벨을 함께 적는다(안 적으면 종족값으로 오해한다).
+///
+/// 3열로 자른 이유는 폭이다. 한 줄에 여섯을 세우면 일본어 라벨(`とくこう`)에서 넘친다.
+/// 칸마다 `maxWidth: .infinity` 를 걸어 숫자 자리를 맞춘다 — 안 걸면 라벨 길이에 따라
+/// 열이 어긋나 표로 안 읽힌다.
+private struct StatBlock: View {
+    let stats: BattleStats
+    let level: Int
+    let l: L
+    let language: AppLanguage
+
+    private var cells: [(label: String, value: Int)] {
+        [(l.statHP, stats.hp),
+         (BattleStat.atk.name(language), stats.atk),
+         (BattleStat.def.name(language), stats.def),
+         (BattleStat.spa.name(language), stats.spa),
+         (BattleStat.spd.name(language), stats.spd),
+         (BattleStat.spe.name(language), stats.spe)]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(l.statsAtLevel(level))
+                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+            ForEach(0..<2, id: \.self) { row in
+                HStack(spacing: 4) {
+                    ForEach(0..<3, id: \.self) { column in
+                        let cell = cells[row * 3 + column]
+                        HStack(spacing: 3) {
+                            Text(cell.label)
+                                .font(.system(size: 9)).foregroundStyle(.secondary)
+                                .lineLimit(1).minimumScaleFactor(0.8)
+                            Text("\(cell.value)")
+                                .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(cells.map { "\($0.label) \($0.value)" }.joined(separator: ", "))
+    }
+}
+
 /// 갈라지는 진화의 갈래 목록 — 라벨은 개수만, 펼치면 "무엇을 하면 무엇이 되는가".
 ///
 /// 메뉴로 접는 이유는 자리다. 이 줄은 레벨 게이지 아래 한 줄이고, 이브이는 갈래가 여덟이다.
@@ -1115,10 +1198,12 @@ private struct RelearnCandidateRow: View {
                     Text(move.name(language)).font(.caption.weight(.semibold))
                         .lineLimit(1).layoutPriority(1)
                     TypeBadge(type: move.type, language: language)
+                    MoveCategoryIcon(damageClass: move.damageClass, l: l)
                     Spacer(minLength: 2)
                     Group {
                         Text(move.damageClass == .status
-                             ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                             ? l.moveCategoryStatus
+                             : "\(l.moveCategory(move.damageClass)) · \(l.movePowerShort(move.power))")
                         Text(move.accuracy.map { l.moveAccuracyShort($0) } ?? l.moveAlwaysHits)
                         Text(l.movePP(move.pp))
                     }
@@ -1147,16 +1232,24 @@ private struct RelearnCandidateRow: View {
 private struct MoveLearningCard: View {
     let store: CompanionStore
     let prompt: CompanionStore.MoveLearningPrompt
+    @State private var profile: PokemonBattleProfile?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             // 하트비늘 유래면 "다시 떠올리기" 로 말한다 — 레벨업으로 새로 얻은 기술이 아니다.
-            Label(prompt.origin == .heartScale
-                  ? store.l.relearnHeader
-                  : store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます"),
-                  systemImage: prompt.origin == .heartScale ? "arrow.counterclockwise" : "sparkles")
+            Label(learningTitle, systemImage: learningIcon)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(prompt.origin == .heartScale ? Color.pink : Color.purple)
+            if let s = profile?.stats {
+                HStack(spacing: 5) {
+                    learningStat("HP", s.hp)
+                    learningStat(store.l.t("공격", "Atk", "攻撃"), s.atk)
+                    learningStat(store.l.t("방어", "Def", "防御"), s.def)
+                    learningStat(store.l.t("특공", "SpA", "特攻"), s.spa)
+                    learningStat(store.l.t("특방", "SpD", "特防"), s.spd)
+                    learningStat(store.l.t("속도", "Spe", "素早"), s.spe)
+                }
+            }
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(prompt.move.name(store.language)).font(.callout.bold())
@@ -1166,14 +1259,15 @@ private struct MoveLearningCard: View {
                             Text("Lv.\(prompt.level)").font(.caption2).foregroundStyle(.secondary)
                         }
                         TypeBadge(type: prompt.move.type, language: store.language)
+                        MoveCategoryIcon(damageClass: prompt.move.damageClass, l: store.l)
                         // 행 라벨과 같은 L 어휘를 쓴다 — 예전엔 "변화"/"Power N"이 박혀 있어
                         // 한국어 UI 에 "Power 90", 영어 UI 에 "변화"가 나왔다(#10 부류).
                         //
                         // 명중·PP 까지 세운다. 아래 후보 줄과 **같은 세 칸**이어야 위아래를 눈으로
                         // 맞대 볼 수 있다 — 배울 쪽만 위력을 보여주면 무엇과 바꾸는지는 여전히 모른다.
                         Group {
-                            Text(prompt.move.damageClass == .status
-                                 ? store.l.moveCategoryStatus : store.l.movePowerShort(prompt.move.power))
+                            Text(prompt.move.damageClass == .status ? store.l.moveCategoryStatus
+                                 : "\(store.l.moveCategory(prompt.move.damageClass)) · \(store.l.movePowerShort(prompt.move.power))")
                             Text(prompt.move.accuracy.map { store.l.moveAccuracyShort($0) }
                                  ?? store.l.moveAlwaysHits)
                             Text(store.l.movePP(prompt.move.pp))
@@ -1220,6 +1314,36 @@ private struct MoveLearningCard: View {
         }
         .padding(9)
         .background(Color.purple.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+        .task(id: store.currentSpeciesID) {
+            guard let id = store.currentSpeciesID else { profile = nil; return }
+            profile = try? await PokeAPIClient.shared.battleProfile(speciesID: id)
+        }
+    }
+
+    private var learningTitle: String {
+        switch prompt.origin {
+        case .heartScale: return store.l.relearnHeader
+        case .technicalMachine:
+            return store.l.t("기술머신으로 기술을 배울 수 있어요",
+                             "A Technical Machine can teach this move",
+                             "わざマシンでわざを覚えられます")
+        case .levelUp:
+            return store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます")
+        }
+    }
+
+    private var learningIcon: String {
+        switch prompt.origin {
+        case .heartScale: return "arrow.counterclockwise"
+        case .technicalMachine: return "opticaldisc"
+        case .levelUp: return "sparkles"
+        }
+    }
+
+    private func learningStat(_ label: String, _ value: Int) -> some View {
+        VStack(spacing: 1) { Text(label).foregroundStyle(.secondary); Text("\(value)").bold() }
+            .font(.system(size: 8)).frame(maxWidth: .infinity).padding(.vertical, 3)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 4))
     }
 }
 
@@ -1244,9 +1368,11 @@ private struct MoveReplacementRow: View {
                 Text(move.name(language)).font(.caption.weight(.semibold))
                     .lineLimit(1).layoutPriority(1)
                 TypeBadge(type: move.type, language: language)
+                MoveCategoryIcon(damageClass: move.damageClass, l: l)
                 Spacer(minLength: 2)
                 Group {
-                    Text(move.damageClass == .status ? l.moveCategoryStatus : l.movePowerShort(move.power))
+                    Text(move.damageClass == .status ? l.moveCategoryStatus
+                         : "\(l.moveCategory(move.damageClass)) · \(l.movePowerShort(move.power))")
                     Text(move.accuracy.map { l.moveAccuracyShort($0) } ?? l.moveAlwaysHits)
                     Text(l.movePP(move.pp))
                 }
@@ -1868,13 +1994,12 @@ private struct DexSpeciesCell: View {
                 }
             }
             .padding(3)
-            .background(Color.secondary.opacity(isSelected ? 0.16 : 0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.accentColor, lineWidth: 1.5)
-                }
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSelected ? PokedoroTheme.blue.opacity(0.50) : Color.primary.opacity(0.07),
+                                  lineWidth: 1)
+                    .allowsHitTesting(false)
             }
         }
         .buttonStyle(.plain)

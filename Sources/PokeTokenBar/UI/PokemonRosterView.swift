@@ -23,6 +23,7 @@ struct PokemonRosterView: View {
     @State private var didResolveTypes = false
     /// 방생 확인 대상. 되돌릴 수 없으므로 카드에서 바로 놓아주지 않고 한 번 물어본다.
     @State private var releaseTarget: MonState?
+    @State private var infoTarget: MonState?
     @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
@@ -68,6 +69,7 @@ struct PokemonRosterView: View {
                      "A released Pokémon does not come back. If it had graduated, its Pokédex record stays.",
                      "にがしたポケモンは戻りません。卒業して図鑑に記録された個体なら記録は残ります。"))
         }
+        .popover(item: $infoTarget) { mon in PokemonDetailCard(store: store, mon: mon) }
     }
 
     private var releaseDialogBinding: Binding<Bool> {
@@ -180,6 +182,7 @@ struct PokemonRosterView: View {
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
                                           name: names[mon.currentID] ?? "",
                                           types: types[mon.currentID] ?? [],
+                                          onInfo: { infoTarget = mon },
                                           onRelease: { releaseTarget = mon },
                                           onChat: { chatPresenter.open(companionID: mon.id) })
                                 .frame(maxWidth: .infinity)
@@ -228,12 +231,14 @@ private struct RosterMonCard: View {
     /// 갈라지지 않게 한다(행마다 따로 받아오면 정렬 키를 화면과 맞출 수 없다).
     let name: String
     let types: [PokemonType]
+    let onInfo: () -> Void
     /// 방생 요청 — 확인 대화상자는 부모가 띄운다(카드는 격자 칸이라 대화상자를 붙일 자리가 아니다).
     let onRelease: () -> Void
     let onChat: () -> Void
 
     var body: some View {
         card.contextMenu {
+            Button(action: onInfo) { Label(store.l.t("정보", "Info", "情報"), systemImage: "info.circle") }
             Button(action: onChat) { Label(store.l.t("대화", "Chat", "話す"), systemImage: "bubble.left.and.bubble.right") }
             // 동행 중인 개체는 놓아줄 수 없다 — 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
             if !isActive {
@@ -260,7 +265,14 @@ private struct RosterMonCard: View {
                                 .accessibilityLabel(store.l.dexShinyLabel)
                         }
                     }
-                Text(name.isEmpty ? "#\(mon.currentID)" : name).font(.system(size: 10, weight: .bold)).lineLimit(1)
+                HStack(spacing: 2) {
+                    Text(name.isEmpty ? "#\(mon.currentID)" : name)
+                    if let gender = mon.gender {
+                        Text(gender.symbol)
+                            .foregroundStyle(gender == .male ? .blue : gender == .female ? .pink : .secondary)
+                    }
+                }
+                .font(.system(size: 10, weight: .bold)).lineLimit(1)
                 Text("Lv.\(mon.level)").font(.system(size: 8)).foregroundStyle(.secondary)
                 HStack(spacing: 3) {
                     ForEach(types, id: \.self) { type in
@@ -276,12 +288,101 @@ private struct RosterMonCard: View {
                     .font(.system(size: 7, weight: .bold))
                     .foregroundStyle(isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
-        }.buttonStyle(.bordered).disabled(isActive)
+        }
+        .buttonStyle(.plain).disabled(isActive)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(isActive ? PokedoroTheme.mint.opacity(0.45) : Color.primary.opacity(0.075),
+                          lineWidth: 1)
+            .allowsHitTesting(false))
         .overlay(alignment: .topTrailing) {
             Button(action: onChat) { Image(systemName: "bubble.left") }
                 .buttonStyle(.borderless).controlSize(.mini).padding(3)
                 .accessibilityLabel(store.l.t("대화", "Chat", "話す"))
         }
+        .overlay(alignment: .topLeading) {
+            Button(action: onInfo) { Image(systemName: "info.circle") }
+                .buttonStyle(.borderless).controlSize(.mini).padding(3)
+                .accessibilityLabel(store.l.t("포켓몬 정보", "Pokémon info", "ポケモン情報"))
+        }
+    }
+}
+
+private struct PokemonDetailCard: View {
+    let store: CompanionStore
+    let mon: MonState
+    @State private var profile: PokemonBattleProfile?
+    @State private var line: EvoLine?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SpriteView(speciesID: mon.currentID, size: 54, shiny: mon.isShiny)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(RosterOrdering.displayName(mon, language: store.language)).font(.headline)
+                    Text("#\(String(format: "%03d", mon.currentID)) · Lv.\(mon.level) \(mon.gender?.symbol ?? "")")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(evolutionText).font(.caption2).foregroundStyle(.orange)
+                }
+            }
+            if let stats = profile?.stats { statGrid(stats) }
+            Divider()
+            Text(store.l.movesTitle).font(.caption.bold())
+            if mon.learnedMoves.isEmpty {
+                Text(store.l.movesEmpty).font(.caption2).foregroundStyle(.secondary)
+            } else {
+                ForEach(mon.learnedMoves) { move in
+                    HStack(spacing: 5) {
+                        Text(move.name(store.language)).font(.caption.bold())
+                        MoveCategoryIcon(damageClass: move.damageClass, l: store.l)
+                        Text(store.l.moveCategory(move.damageClass)).font(.caption2)
+                            .foregroundStyle(move.damageClass == .physical ? .orange : move.damageClass == .special ? .blue : .secondary)
+                        Spacer()
+                        Text(move.damageClass == .status ? "—" : store.l.movePowerShort(move.power))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(14).frame(width: 330)
+        .task {
+            profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.currentID)
+            line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID)
+        }
+    }
+
+    private func statGrid(_ s: BattleStats) -> some View {
+        let values = [("HP", s.hp), (store.l.t("공격", "Attack", "攻撃"), s.atk),
+                      (store.l.t("방어", "Defense", "防御"), s.def),
+                      (store.l.t("특공", "Sp. Atk", "特攻"), s.spa),
+                      (store.l.t("특방", "Sp. Def", "特防"), s.spd),
+                      (store.l.t("스피드", "Speed", "素早さ"), s.spe)]
+        return LazyVGrid(columns: [.init(.flexible()), .init(.flexible()), .init(.flexible())], spacing: 5) {
+            ForEach(values, id: \.0) { label, value in
+                HStack { Text(label); Spacer(); Text("\(value)").bold() }
+                    .font(.caption2).padding(5).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
+            }
+        }
+    }
+
+    private var evolutionText: String {
+        guard let node = line?.tree.node(withID: mon.currentID), !node.children.isEmpty else { return store.l.finalForm }
+        let nextIndex = mon.stageIndex + 1
+        let next = mon.plannedPathIDs.indices.contains(nextIndex)
+            ? node.children.first(where: { $0.speciesID == mon.plannedPathIDs[nextIndex] }) ?? node.children[0]
+            : node.children[0]
+        var parts: [String] = []
+        if let g = next.evolutionGender { parts.append(g.name(store.language)) }
+        if let time = next.evolutionTimeOfDay { parts.append(time == "day" ? store.l.t("낮", "Daytime", "昼") : store.l.t("밤", "Night", "夜")) }
+        if let move = next.evolutionKnownMoveID {
+            let name = line?.evolutionMoveNames[move].flatMap { store.language.resolveName($0) } ?? "#\(move)"
+            parts.append(store.l.t("\(name) 습득 후 레벨업", "Level up knowing \(name)", "\(name)を覚えてレベルアップ"))
+        }
+        else if let level = next.evolutionLevel { parts.append(store.l.t("Lv.\(level)에 진화", "Evolves at Lv.\(level)", "Lv.\(level)で進化")) }
+        else if let item = ItemKind.allCases.first(where: { $0.evolutionRule?.opens(next) == true }) { parts.append(store.l.evolutionNeedsItem(store.l.itemName(item))) }
+        else if next.evolutionPartySpeciesID == 223 { parts.append(store.l.t("총어 보유 후 레벨업", "Level up while owning Remoraid", "テッポウオを所持してレベルアップ")) }
+        else { parts.append(store.l.t("특수 조건으로 진화", "Special evolution condition", "特殊な条件で進化")) }
+        return parts.joined(separator: " · ")
     }
 }
 

@@ -186,6 +186,7 @@ enum EvolutionItemRule: Sendable, Equatable {
         case .plainTrade:
             // 지닌물건이 필요한 교환 진화는 제외 — 그 종에는 전용 아이템이 따로 있다.
             return node.evolutionTrigger == "trade" && node.evolutionHeldItem == nil
+                && node.evolutionTradeSpeciesID == nil
         case .useItem(let name):
             return node.evolutionTrigger == "use-item" && node.evolutionItem == name
         case .heldItem(let name):
@@ -317,6 +318,61 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// 상점에서 판매하는 기술머신. 기술 데이터와 습득 가능 여부는 PokéAPI를 사용하고, 카탈로그에는
+/// 판매할 본가 기술 번호와 가격만 둔다. 인벤토리는 moveID를 키로 저장해 이름 번역 변경과 무관하다.
+struct TechnicalMachine: Identifiable, Hashable, Sendable {
+    let number: Int
+    let moveID: Int
+    let slug: String
+    let price: Int
+    var id: Int { moveID }
+    var label: String { String(format: "TM%02d", number) }
+
+    /// 5세대 블랙·화이트 기준 TM01~TM95. HM01~HM06은 기술머신 상점에서 판매하지 않는다.
+    static let catalog: [TechnicalMachine] = [
+        tm(1, 468, "hone-claws"), tm(2, 337, "dragon-claw"), tm(3, 473, "psyshock"),
+        tm(4, 347, "calm-mind"), tm(5, 46, "roar"), tm(6, 92, "toxic"),
+        tm(7, 258, "hail"), tm(8, 339, "bulk-up"), tm(9, 474, "venoshock"),
+        tm(10, 237, "hidden-power"), tm(11, 241, "sunny-day"), tm(12, 269, "taunt"),
+        tm(13, 58, "ice-beam"), tm(14, 59, "blizzard"), tm(15, 63, "hyper-beam"),
+        tm(16, 113, "light-screen"), tm(17, 182, "protect"), tm(18, 240, "rain-dance"),
+        tm(19, 477, "telekinesis"), tm(20, 219, "safeguard"), tm(21, 218, "frustration"),
+        tm(22, 76, "solar-beam"), tm(23, 479, "smack-down"), tm(24, 85, "thunderbolt"),
+        tm(25, 87, "thunder"), tm(26, 89, "earthquake"), tm(27, 216, "return"),
+        tm(28, 91, "dig"), tm(29, 94, "psychic"), tm(30, 247, "shadow-ball"),
+        tm(31, 280, "brick-break"), tm(32, 104, "double-team"), tm(33, 115, "reflect"),
+        tm(34, 482, "sludge-wave"), tm(35, 53, "flamethrower"), tm(36, 188, "sludge-bomb"),
+        tm(37, 201, "sandstorm"), tm(38, 126, "fire-blast"), tm(39, 317, "rock-tomb"),
+        tm(40, 332, "aerial-ace"), tm(41, 259, "torment"), tm(42, 263, "facade"),
+        tm(43, 488, "flame-charge"), tm(44, 156, "rest"), tm(45, 213, "attract"),
+        tm(46, 168, "thief"), tm(47, 490, "low-sweep"), tm(48, 496, "round"),
+        tm(49, 497, "echoed-voice"), tm(50, 315, "overheat"), tm(51, 502, "ally-switch"),
+        tm(52, 411, "focus-blast"), tm(53, 412, "energy-ball"), tm(54, 206, "false-swipe"),
+        tm(55, 503, "scald"), tm(56, 374, "fling"), tm(57, 451, "charge-beam"),
+        tm(58, 507, "sky-drop"), tm(59, 510, "incinerate"), tm(60, 511, "quash"),
+        tm(61, 261, "will-o-wisp"), tm(62, 512, "acrobatics"), tm(63, 373, "embargo"),
+        tm(64, 153, "explosion"), tm(65, 421, "shadow-claw"), tm(66, 371, "payback"),
+        tm(67, 514, "retaliate"), tm(68, 416, "giga-impact"), tm(69, 397, "rock-polish"),
+        tm(70, 148, "flash"), tm(71, 444, "stone-edge"), tm(72, 521, "volt-switch"),
+        tm(73, 86, "thunder-wave"), tm(74, 360, "gyro-ball"), tm(75, 14, "swords-dance"),
+        tm(76, 522, "struggle-bug"), tm(77, 244, "psych-up"), tm(78, 523, "bulldoze"),
+        tm(79, 524, "frost-breath"), tm(80, 157, "rock-slide"), tm(81, 404, "x-scissor"),
+        tm(82, 525, "dragon-tail"), tm(83, 526, "work-up"), tm(84, 398, "poison-jab"),
+        tm(85, 138, "dream-eater"), tm(86, 447, "grass-knot"), tm(87, 207, "swagger"),
+        tm(88, 365, "pluck"), tm(89, 369, "u-turn"), tm(90, 164, "substitute"),
+        tm(91, 430, "flash-cannon"), tm(92, 433, "trick-room"), tm(93, 528, "wild-charge"),
+        tm(94, 249, "rock-smash"), tm(95, 555, "snarl")
+    ]
+
+    private static func tm(_ number: Int, _ moveID: Int, _ slug: String) -> TechnicalMachine {
+        let premiumMoves: Set<Int> = [14, 53, 58, 59, 63, 76, 85, 87, 89, 94, 126, 153,
+                                      182, 188, 247, 315, 337, 347, 404, 411, 412, 416, 421,
+                                      430, 433, 444, 503, 512, 521, 528]
+        return TechnicalMachine(number: number, moveID: moveID, slug: slug,
+                                price: premiumMoves.contains(moveID) ? 2_000 : 1_200)
+    }
+}
+
 /// 이상한 사탕 밸런스 상수.
 enum RareCandy {
     /// 사용 시 현재 포켓몬에 주입하는 XP(별의모래 환산). 최소 진화 임계(커먼 1형태 125M)보다 작아
@@ -425,7 +481,14 @@ struct EvoNode: Codable, Sendable {
     var evolutionHeldItem: String? = nil
     /// 이 기술을 배운 채로 자라야 진화한다(원시의힘·흉내내기·구르기·더블어택). **레벨 조건이 없다** —
     /// 기술이 없으면 아무리 키워도 진화하지 않으므로, 이 값을 안 읽으면 일곱 종이 영영 막힌다.
+    /// 성별 분기 조건(PokéAPI: 1=암컷, 2=수컷). nil이면 성별 무관.
+    var evolutionGender: PokemonGender? = nil
+    /// 이 기술을 알고 레벨업해야 하는 진화 조건. PokéAPI move id로 저장해 실제 무브셋과 비교한다.
     var evolutionKnownMoveID: Int? = nil
+    var evolutionTimeOfDay: String? = nil
+    var evolutionRelativePhysicalStats: Int? = nil
+    var evolutionPartySpeciesID: Int? = nil
+    var evolutionTradeSpeciesID: Int? = nil
 
     /// 최장 경로 길이(형태 수). 분기는 보통 같은 깊이라 대표값으로 사용.
     var depth: Int { 1 + (children.map(\.depth).max() ?? 0) }
@@ -445,7 +508,11 @@ struct EvoNode: Codable, Sendable {
         return EvoNode(speciesID: speciesID, children: children.compactMap { $0.keepingAnimatedSprites() },
                        evolutionLevel: evolutionLevel, evolutionTrigger: evolutionTrigger,
                        evolutionItem: evolutionItem, evolutionHeldItem: evolutionHeldItem,
-                       evolutionKnownMoveID: evolutionKnownMoveID)
+                       evolutionGender: evolutionGender, evolutionKnownMoveID: evolutionKnownMoveID,
+                       evolutionTimeOfDay: evolutionTimeOfDay,
+                       evolutionRelativePhysicalStats: evolutionRelativePhysicalStats,
+                       evolutionPartySpeciesID: evolutionPartySpeciesID,
+                       evolutionTradeSpeciesID: evolutionTradeSpeciesID)
     }
 }
 
@@ -477,17 +544,50 @@ struct EvoLine: Sendable {
     let rarity: Rarity
     /// speciesID → (langCode → name)
     let names: [Int: [String: String]]
+    /// PokéAPI gender_rate: -1=무성, 0=수컷만, 8=암컷만, 그 사이는 1/8 단위 암컷 확률.
+    let genderRate: Int
+    /// 진화 조건 기술 id → 다국어 이름. 홈에서 `#205` 대신 본가 기술명을 안내하기 위한 라인 메타데이터.
+    let evolutionMoveNames: [Int: [String: String]]
     var totalForms: Int { tree.depth }
 
-    init(baseID: Int, tree: EvoNode, rarity: Rarity, names: [Int: [String: String]]) {
+    init(baseID: Int, tree: EvoNode, rarity: Rarity, names: [Int: [String: String]], genderRate: Int = -1,
+         evolutionMoveNames: [Int: [String: String]] = [:]) {
         self.baseID = baseID
         self.tree = tree.keepingAnimatedSprites() ?? EvoNode(speciesID: baseID, children: [])
         self.rarity = rarity
         self.names = names
+        self.genderRate = genderRate
+        self.evolutionMoveNames = evolutionMoveNames
     }
 
     func localizedName(_ id: Int, _ lang: AppLanguage) -> String {
         lang.resolveName(names[id] ?? [:]) ?? "#\(id)"   // 폴백 순서는 AppLanguage.resolveName 단일 소스
+    }
+}
+
+/// 포켓몬 개체 성별. 저장·교환되는 개체 속성이며 진화 후에도 유지된다.
+enum PokemonGender: String, Codable, Sendable {
+    case male, female, genderless
+
+    var symbol: String {
+        switch self { case .male: return "♂"; case .female: return "♀"; case .genderless: return "—" }
+    }
+
+    func name(_ language: AppLanguage) -> String {
+        switch self {
+        case .male: return L(language).t("수컷", "Male", "オス")
+        case .female: return L(language).t("암컷", "Female", "メス")
+        case .genderless: return L(language).t("무성", "Gender unknown", "性別不明")
+        }
+    }
+
+    static func from(genderRate: Int, roll: UInt64) -> PokemonGender {
+        guard genderRate >= 0 else { return .genderless }
+        return Int(roll % 8) < min(8, genderRate) ? .female : .male
+    }
+
+    static func fromEvolutionCode(_ code: Int?) -> PokemonGender? {
+        switch code { case 1: return .female; case 2: return .male; default: return nil }
     }
 }
 
@@ -544,7 +644,7 @@ enum PokemonOdds {
 }
 
 /// 현재 키우는 포켓몬.
-struct MonState: Codable, Sendable {
+struct MonState: Codable, Sendable, Identifiable {
     var id = UUID()
     var baseID: Int
     var pathIDs: [Int]      // 실제 진화 경로(분기 선택 반영)
@@ -555,6 +655,9 @@ struct MonState: Codable, Sendable {
     var totalForms: Int
     var isShiny = false             // 부화 시 확정, 진화해도 유지
     var nature: PokemonNature?      // 부화 시 확정 (구버전 저장은 nil)
+    var gender: PokemonGender?      // 부화 시 종별 성비로 확정 (구버전 저장은 활성화 시 백필)
+    /// 배루키 분기용 개체 공격·방어 관계(-1 공격<방어, 0 동일, 1 공격>방어).
+    var evolutionStatRelation: Int?
     var nickname: String?           // 사용자 지정 별명(없으면 종 이름 표시). 진화해도 유지.
     // 메타몽 위장 — nil=일반. 값=정체 메타몽, 이 종으로 위장 중(위장 구간엔 baseID 와 동일, 리빌 후에도 원 위장체 보존).
     var dittoDisguise: Int?
@@ -585,6 +688,8 @@ struct MonState: Codable, Sendable {
 
     init(baseID: Int, pathIDs: [Int], plannedPathIDs: [Int]? = nil, stageIndex: Int, usedAtStage: Int,
          rarity: Rarity, totalForms: Int, isShiny: Bool = false, nature: PokemonNature? = nil,
+         gender: PokemonGender? = nil,
+         evolutionStatRelation: Int? = nil,
          nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false,
          names: [Int: [String: String]]? = nil, isGraduated: Bool = false) {
         self.baseID = baseID
@@ -600,6 +705,8 @@ struct MonState: Codable, Sendable {
         self.totalForms = totalForms
         self.isShiny = isShiny
         self.nature = nature
+        self.gender = gender
+        self.evolutionStatRelation = evolutionStatRelation
         self.nickname = nickname
         self.names = names
         self.isGraduated = isGraduated
@@ -628,6 +735,8 @@ struct MonState: Codable, Sendable {
         totalForms = try c.decode(Int.self, forKey: .totalForms)
         isShiny = try c.decodeIfPresent(Bool.self, forKey: .isShiny) ?? false
         nature = try c.decodeIfPresent(PokemonNature.self, forKey: .nature)
+        gender = try c.decodeIfPresent(PokemonGender.self, forKey: .gender)
+        evolutionStatRelation = try c.decodeIfPresent(Int.self, forKey: .evolutionStatRelation)
         nickname = try c.decodeIfPresent(String.self, forKey: .nickname)
         dittoDisguise = try c.decodeIfPresent(Int.self, forKey: .dittoDisguise)
         dittoRevealed = try c.decodeIfPresent(Bool.self, forKey: .dittoRevealed) ?? false
@@ -781,6 +890,8 @@ struct CompanionState: Codable, Sendable {
     var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
+    // 기술머신 인벤토리 (본가 move id → 개수). 별도 키라 ItemKind 확장 없이 카탈로그를 늘릴 수 있다.
+    var technicalMachines: [Int: Int] = [:]
     var adventure: AdventureRun?
     var adventureHistory: [AdventureRecord] = []
     var battleHistory: [BattleRecord] = []
@@ -851,6 +962,7 @@ struct CompanionState: Codable, Sendable {
         shinyEggCharges    = c.lenient(Int.self, forKey: .shinyEggCharges, default: 0)
         language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
+        technicalMachines  = c.lenient([Int: Int].self, forKey: .technicalMachines, default: [:])
         adventure          = c.lenientOptional(AdventureRun.self, forKey: .adventure)
         adventureHistory   = c.lenient([Lossy<AdventureRecord>].self, forKey: .adventureHistory, default: []).compactMap(\.value)
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)

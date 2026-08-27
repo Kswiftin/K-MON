@@ -8,6 +8,10 @@ actor SpriteStore {
     /// Higher-quality animated battle sprites. Keep this cache namespace separate from the
     /// former Gen-V assets so an existing install does not keep serving stale GIFs.
     private static let animatedBase = "\(base)/other/showdown"
+    /// Pokémon HOME 렌더 — 512×512. 애니메이션 원본(45~133px)의 4배 가까이 선명하지만 **정지**이고
+    /// **뒷모습이 없다**(`other/home/back/…` 은 404). 그래서 배틀 필드가 아니라 크게 띄우는
+    /// 플로팅 펫에서만 값어치가 있다.
+    private static let highResolutionBase = "\(base)/other/home"
     private let itemBase = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items"
     private var mem: [String: Data] = [:]
     private var memOrder: [String] = []   // LRU 순서(최근 접근이 뒤). 상한 초과 시 앞(오래된 것)부터 evict
@@ -27,30 +31,43 @@ actor SpriteStore {
     ///
     /// `back` 은 배틀 필드가 쓰는 등 스프라이트다. **앞·뒤가 다른 키여야 한다** — 같은 키면 먼저 받은
     /// 쪽이 양쪽에 나온다. 기본값이 `false` 인 건 앞면 키가 바뀌면 기존 디스크 캐시가 전부 무효화되기 때문.
-    static func cacheKey(speciesID: Int, animated: Bool, shiny: Bool, back: Bool = false) -> String {
+    static func cacheKey(speciesID: Int, animated: Bool, shiny: Bool, back: Bool = false,
+                         highResolution: Bool = false) -> String {
         let facing = back ? "back-" : ""
         if animated {
             return "\(speciesID)-showdown-\(facing)\(shiny ? "shiny" : "normal")"
         }
+        // 전용 네임스페이스 — 96px 정적 PNG 와 512px HOME 렌더가 같은 키를 쓰면 먼저 받은 쪽이
+        // 양쪽에 나온다(앞·뒤를 나눈 것과 같은 이유).
+        if highResolution, !back { return "\(speciesID)-home-\(shiny ? "shiny" : "normal")" }
         return "\(speciesID)-\(facing)\(shiny ? "sh" : "")s"
     }
 
     /// 원격 스프라이트 주소. 등 스프라이트는 앞면과 **폴더 하나 차이**다(계획 §6.4 에서 200 확인).
     /// 위치를 틀리면 조용히 404 → 앞면 폴백으로 떨어져 증상이 "정면이 나온다" 가 된다.
-    nonisolated static func spriteURL(speciesID: Int, animated: Bool, shiny: Bool, back: Bool) -> String {
+    nonisolated static func spriteURL(speciesID: Int, animated: Bool, shiny: Bool, back: Bool,
+                                      highResolution: Bool = false) -> String {
+        // HOME 은 뒷모습이 없다 — `back` 이면 요청 자체가 404 라, 고해상도를 조용히 포기하고
+        // 기존 정적 경로로 간다. 여기서 안 걸러내면 배틀 등 스프라이트가 통째로 사라진다.
+        if highResolution, !animated, !back {
+            return "\(highResolutionBase)\(shiny ? "/shiny" : "")/\(speciesID).png"
+        }
         let root = animated ? animatedBase : base
         let folders = (back ? "/back" : "") + (shiny ? "/shiny" : "")
         return "\(root)\(folders)/\(speciesID).\(animated ? "gif" : "png")"
     }
 
-    func data(speciesID: Int, animated: Bool, shiny: Bool = false, back: Bool = false) async -> Data? {
+    func data(speciesID: Int, animated: Bool, shiny: Bool = false, back: Bool = false,
+              highResolution: Bool = false) async -> Data? {
         if animated, !PokemonAssets.hasAnimatedSprite(speciesID: speciesID) { return nil }
-        let key = Self.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
+        let key = Self.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny, back: back,
+                                highResolution: highResolution)
         if let d = mem[key] { touch(key); return d }
         let ext = animated ? "gif" : "png"
         let file = dir.appendingPathComponent("\(key).\(ext)")
         if let d = try? Data(contentsOf: file) { remember(key, d); return d }
-        let urlStr = Self.spriteURL(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
+        let urlStr = Self.spriteURL(speciesID: speciesID, animated: animated, shiny: shiny, back: back,
+                                    highResolution: highResolution)
         guard let url = URL(string: urlStr),
               let (d, resp) = try? await URLSession.shared.data(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }
@@ -116,14 +133,19 @@ enum SpriteLoader {
     /// 디스크 캐시에 이미 있으면 동기 반환(네트워크 없음). 없으면 nil.
     /// shiny 캐시 미스는 일반 캐시로 폴백 — 오프라인에서 live mon 이 알 글리프로 보이는 것 방지.
     static func cachedImage(speciesID: Int, animated: Bool = false, shiny: Bool = false,
-                            back: Bool = false) -> NSImage? {
-        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
+                            back: Bool = false, highResolution: Bool = false) -> NSImage? {
+        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny,
+                                       back: back, highResolution: highResolution)
         if let image = imageCache.object(forKey: key as NSString) { return image }
         let ext = animated ? "gif" : "png"
         let f = cacheDir.appendingPathComponent("\(key).\(ext)")
         if let d = try? Data(contentsOf: f), let img = NSImage(data: d) {
             imageCache.setObject(img, forKey: key as NSString)
             return img
+        }
+        // 고해상도가 아직 안 받아졌으면 기존 정적 스프라이트로 — 빈 화면보다 낫고, 받아지면 갈아탄다.
+        if highResolution {
+            return cachedImage(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
         }
         // 폴백은 **방향을 먼저 포기한다**: (이로치,등) → (이로치,앞) → (일반,앞).
         // 이로치를 먼저 포기하면 등 에셋이 없는 종의 이로치가 일반색으로 나온다.
@@ -136,9 +158,19 @@ enum SpriteLoader {
     /// shiny=true 는 색이 다른 스프라이트 — 미제공 종이면 일반으로 폴백.
     /// back=true 는 배틀 필드의 내 쪽 등 스프라이트 — 커버리지가 앞면과 달라 폴백 사슬이 한 칸 길다.
     static func image(speciesID: Int, animated: Bool = false, shiny: Bool = false,
-                      back: Bool = false) async -> NSImage? {
-        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny, back: back)
+                      back: Bool = false, highResolution: Bool = false) async -> NSImage? {
+        let key = SpriteStore.cacheKey(speciesID: speciesID, animated: animated, shiny: shiny,
+                                       back: back, highResolution: highResolution)
         if let image = imageCache.object(forKey: key as NSString) { return image }
+        // 고해상도(HOME 512×512)는 정지 경로 전용이다. 못 받으면 아래 기존 사슬로 떨어진다 —
+        // 커버리지가 넓어 실패가 드물지만, 실패했을 때 펫이 사라지면 안 된다.
+        if highResolution, !animated, !back,
+           let d = await SpriteStore.shared.data(speciesID: speciesID, animated: false, shiny: shiny,
+                                                 back: false, highResolution: true),
+           let img = NSImage(data: d) {
+            imageCache.setObject(img, forKey: key as NSString)
+            return img
+        }
         if animated,
            let d = await SpriteStore.shared.data(speciesID: speciesID, animated: true, shiny: shiny, back: back),
            let img = NSImage(data: d) {

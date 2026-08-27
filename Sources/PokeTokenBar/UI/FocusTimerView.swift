@@ -11,7 +11,7 @@ struct FocusTimerView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(title, systemImage: timer.phase == .rest ? "cup.and.saucer.fill" : "timer")
-                    .font(.callout.weight(.semibold))
+                    .font(.callout.weight(.bold))
                 Spacer()
                 Toggle(companion.l.t("방해금지", "Do Not Disturb", "おやすみ"), isOn: $settings.doNotDisturb)
                     .toggleStyle(.checkbox).font(.caption2)
@@ -127,8 +127,9 @@ struct FocusTimerView: View {
                 }
             }
         }
-        .padding(9)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .padding(11)
+        .pokedoroCard(tint: timer.phase == .focus ? PokedoroTheme.red : PokedoroTheme.blue,
+                      emphasized: timer.isRunning)
     }
 
     private var title: String {

@@ -233,6 +233,11 @@ enum SaveTransfer {
         s.boxedMons = Array(s.boxedMons.prefix(100)).map(sanitizedMon)
         // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
         s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
+        let soldMachineIDs = Set(TechnicalMachine.catalog.map(\.moveID))
+        s.technicalMachines = s.technicalMachines.reduce(into: [:]) { result, entry in
+            guard soldMachineIDs.contains(entry.key) else { return }
+            result[entry.key] = min(max(0, entry.value), 999)
+        }
         if let adventure = s.adventure,
            adventure.endsAt <= adventure.startedAt ||
            adventure.endsAt.timeIntervalSince(adventure.startedAt) > 24 * 60 * 60 {
@@ -348,6 +353,12 @@ enum SaveTransfer {
         p.append("tier\(s.eggTier?.rawValue ?? "-")"); p.append("sc\(s.starterChosen)")
         p.append("cand" + s.starterCandidates.map(String.init).joined(separator: ","))
         p.append("inv" + s.inventory.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))
+        // 신규 필드라 비어 있으면 세그먼트를 붙이지 않는다. 따라서 2.14.0 이전 정상 세이브의 서명이
+        // 그대로 유효하고, 구매 후에는 수량 손편집을 무결성 검사에서 잡는다.
+        if !s.technicalMachines.isEmpty {
+            p.append("tm" + s.technicalMachines.sorted { $0.key < $1.key }
+                .map { "\($0.key):\($0.value)" }.joined(separator: ","))
+        }
         if let run = s.adventure {
             p.append("adv\(run.id)|\(run.zone.rawValue)|\(run.startedAt.timeIntervalSince1970)|\(run.endsAt.timeIntervalSince1970)|\(run.companionSpeciesID)")
         }
