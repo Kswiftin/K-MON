@@ -884,8 +884,11 @@ final class CompanionStore {
     /// 화면의 임시 문자열만 채우면 첫 네트워크 실패 뒤 `#399`가 계속 남고, 교환/대화처럼 다른 화면은
     /// 여전히 번호를 읽는다. 개체의 base 라인을 병합해 모든 표시 경로가 같은 저장 데이터를 쓰게 한다.
     func backfillMissingOwnedNames() async {
+        // inout으로 state의 개체를 갱신하는 동안 state.language를 다시 읽으면 Swift 독점 접근 충돌이다.
+        // 현재 언어를 값으로 고정해 병합 클로저가 state를 중첩 접근하지 않게 한다.
+        let language = state.language
         let targets = ownedMons.filter { mon in
-            mon.names?[mon.currentID].flatMap { state.language.resolveName($0) } == nil
+            mon.names?[mon.currentID].flatMap { language.resolveName($0) } == nil
         }
         guard !targets.isEmpty else { return }
         var changed = false
@@ -894,7 +897,7 @@ final class CompanionStore {
             guard let line = try? await provider.line(baseSpeciesID: target.baseID) else { continue }
             func merge(_ mon: inout MonState) {
                 var names = mon.names ?? [:]
-                for id in mon.pathIDs where names[id].flatMap({ state.language.resolveName($0) }) == nil {
+                for id in mon.pathIDs where names[id].flatMap({ language.resolveName($0) }) == nil {
                     if let resolved = line.names[id] { names[id] = resolved }
                 }
                 guard names != mon.names else { return }
