@@ -6,14 +6,15 @@ struct RogueRunView: View {
     @Bindable var store: CompanionStore
     let onClose: () -> Void
 
-    private enum Phase {
+    /// 런이 **시작되기 전**의 국면만 뷰가 든다. 진행 중인 런은 `store.rogueRun` 에 있어야
+    /// 팝오버를 닫아도 이어진다 — 뷰 상태로 들면 창을 닫는 순간 판이 사라진다.
+    private enum Setup {
         case loading
         case choosingStarter([BattleSnapshot])
-        case running(RogueRun)
         case failedToLoad
     }
 
-    @State private var phase: Phase = .loading
+    @State private var setup: Setup = .loading
 
     /// 스타터 후보 — 프로토타입은 1세대 기본형에서 고정 풀로 뽑는다(진화 루트 조회를 아직 안 탄다).
     private static let starterPool = [1, 4, 7, 25, 152, 155, 158]
@@ -27,7 +28,7 @@ struct RogueRunView: View {
         }
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
-        .task { await loadStarters() }
+        .task { await resume() }
     }
 
     private var header: some View {
@@ -39,31 +40,33 @@ struct RogueRunView: View {
     }
 
     private var headerTitle: String {
-        guard case .running(let run) = phase else { return "Rogue Run" }
+        guard let run = store.rogueRun else { return "Rogue Run" }
         let boss = RogueRun.isBoss(wave: run.wave) ? " · BOSS" : ""
         return "Wave \(run.wave)/\(RogueRun.finalWave)\(boss)"
     }
 
     @ViewBuilder
     private var content: some View {
-        switch phase {
-        case .loading:
-            ProgressView().frame(maxWidth: .infinity)
-        case .failedToLoad:
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Could not reach PokéAPI. A run needs it to build wild Pokémon.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Retry") { phase = .loading; Task { await loadStarters() } }
-            }
-        case .choosingStarter(let candidates):
-            starterPicker(candidates)
-        case .running(let run):
+        if let run = store.rogueRun {
             switch run.stage {
             case .battling:   battlePanel(run)
             case .picking:    rewardPicker(run)
             case .loadingWave: ProgressView().frame(maxWidth: .infinity)
             case .cleared:    ending("Cleared all 12 waves.")
             case .failed:     ending("Party wiped on wave \(run.wave).")
+            }
+        } else {
+            switch setup {
+            case .loading:
+                ProgressView().frame(maxWidth: .infinity)
+            case .failedToLoad:
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Could not reach PokéAPI. A run needs it to build wild Pokémon.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Retry") { setup = .loading; Task { await loadStarters() } }
+                }
+            case .choosingStarter(let candidates):
+                starterPicker(candidates)
             }
         }
     }
@@ -91,39 +94,27 @@ struct RogueRunView: View {
     // MARK: 전투
 
     private func battlePanel(_ run: RogueRun) -> some View {
-        VStack(spacing: 8) {
-            BattleFieldView(mine: run.battle.mySlot, theirs: run.battle.opponentSlot,
-                            myTitle: run.battle.mySlot.snapshot.name,
-                            theirTitle: run.battle.opponentSlot.snapshot.name,
-                            l: store.l)
-                .frame(height: 150)
-            let moves = run.battle.mySlot.moves
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-                ForEach(moves.indices, id: \.self) { index in
-                    Button {
-                        mutate { $0.useMove(index) }
-                    } label: {
-                        VStack(spacing: 1) {
-                            Text(moves[index].name(store.language)).font(.caption)
-                            Text("PP \(run.battle.mySlot.pp[index])/\(moves[index].pp)")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .disabled(!run.battle.mySlot.canUse(moveAt: index))
-                }
-            }
-            if !run.battle.availableSwitches.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(run.battle.availableSwitches, id: \.self) { index in
-                        Button(run.party[index].snapshot.name) {
-                            mutate { $0.switchParty(to: index) }
-                        }
-                        .font(.caption2)
-                    }
-                }
-            }
-        }
+        // 기존 배틀·팀 연습과 **같은 렌더러**를 쓴다. 직접 그리면 기술 버튼의 타입 색·PP 배지·로그가
+        // 이 화면만 달라져, 같은 기술이 화면마다 다른 색으로 보인다(실제로 그렇게 어긋났다).
+        let me = run.battle.mySlot
+        let opponent = run.battle.opponentSlot
+        return BattleArenaView(
+            mine: me, theirs: opponent,
+            myTitle: store.l.battleMyPokemon,
+            theirTitle: RogueRun.isBoss(wave: run.wave) ? "BOSS" : "Wild",
+            l: store.l, turn: run.battle.turn,
+            logLines: BattleLogSource.twoSided(run.battle.events, mine: .a, l: store.l,
+                                               myName: me.snapshot.name,
+                                               theirName: opponent.snapshot.name,
+                                               myMoves: me.moves, theirMoves: opponent.moves),
+            myActor: .a,
+            switchSlots: SwitchStripModel.slots(run.battle.mine, active: run.battle.myActive),
+            turnEndsAt: nil,
+            isWaitingForOpponent: false,
+            onChoose: { index in mutate { $0.useMove(index) } },
+            onSwitch: { index in mutate { $0.switchParty(to: index) } },
+            // 항복은 런 포기다 — 판을 버리고 나간다(프로토라 기록도 남지 않는다).
+            onForfeit: { store.rogueRun = nil; onClose() })
     }
 
     // MARK: 보상
@@ -169,17 +160,25 @@ struct RogueRunView: View {
     private func ending(_ line: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(line).font(.callout)
-            Button("Close", action: onClose)
+            // 끝난 판은 여기서 비운다 — 남겨 두면 다음에 던전 탭을 열 때 결과 화면이 다시 뜬다.
+            Button("Close") { store.rogueRun = nil; onClose() }
         }
     }
 
     // MARK: 진행
 
-    /// `phase` 안의 런을 꺼내 바꾸고 되넣는다 — 뷰가 값 타입 코어를 다루는 유일한 자리다.
+    /// store 의 런을 꺼내 바꾸고 되넣는다 — 뷰가 값 타입 코어를 다루는 유일한 자리다.
     private func mutate(_ body: (inout RogueRun) -> Void) {
-        guard case .running(var run) = phase else { return }
+        guard var run = store.rogueRun else { return }
         body(&run)
-        phase = .running(run)
+        store.rogueRun = run
+    }
+
+    /// 화면을 열 때마다 불린다. 진행 중인 판이 있으면 이어 붙이고, 상대를 받는 중이던 판은
+    /// 그 상대를 다시 불러온다 — 안 그러면 웨이브 로딩 중 창을 닫은 판이 영원히 로딩에 멈춘다.
+    private func resume() async {
+        guard let run = store.rogueRun else { return await loadStarters() }
+        if run.stage == .loadingWave { await loadNextWave() }
     }
 
     private func loadStarters() async {
@@ -189,23 +188,24 @@ struct RogueRunView: View {
                 built.append(snapshot)
             }
         }
-        phase = built.isEmpty ? .failedToLoad : .choosingStarter(built)
+        setup = built.isEmpty ? .failedToLoad : .choosingStarter(built)
     }
 
     private func start(with starter: BattleSnapshot) async {
-        phase = .loading
+        setup = .loading
         guard let opponent = await Self.wild(wave: 1, store: store) else {
-            phase = .failedToLoad
+            setup = .failedToLoad
             return
         }
-        phase = .running(RogueRun(party: [starter], opponents: [opponent],
-                                  seed: UInt64.random(in: UInt64.min...UInt64.max)))
+        store.rogueRun = RogueRun(party: [starter], opponents: [opponent],
+                                  seed: UInt64.random(in: UInt64.min...UInt64.max))
     }
 
     private func loadNextWave() async {
-        guard case .running(let run) = phase else { return }
+        guard let run = store.rogueRun else { return }
         guard let opponent = await Self.wild(wave: run.wave, store: store) else {
-            phase = .failedToLoad
+            // 판은 그대로 둔다 — 창을 다시 열면 `resume()` 이 이 웨이브를 다시 불러온다.
+            setup = .failedToLoad
             return
         }
         mutate { $0.beginWave(opponents: [opponent]) }
