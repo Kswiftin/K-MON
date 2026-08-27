@@ -15,7 +15,7 @@ final class RogueRunTests: XCTestCase {
     }
 
     /// 내가 반드시 선공하고 한 방에 끝나는 상황 — 승리 경로를 rng 흔들림 없이 밟는다.
-    private func run(partySize: Int = 2, seed: UInt64 = 1) -> RogueRun {
+    private func makeRun(partySize: Int = 2, seed: UInt64 = 1) -> RogueRun {
         RogueRun(party: (0..<partySize).map { snapshot(1 + $0, speed: 200) },
                  opponents: [snapshot(99, level: 5, hp: 1, speed: 1)],
                  seed: seed)
@@ -38,7 +38,7 @@ final class RogueRunTests: XCTestCase {
     // MARK: 진행
 
     func testWinningOffersThreeDistinctModifiers() {
-        var run = self.run()
+        var run = makeRun()
         run.useMove(0)
         XCTAssertEqual(run.stage, .picking)
         XCTAssertEqual(run.offers.count, RogueRun.offerCount)
@@ -46,7 +46,7 @@ final class RogueRunTests: XCTestCase {
     }
 
     func testPickingAdvancesTheWaveAndWaitsForOpponents() {
-        var run = self.run()
+        var run = makeRun()
         run.useMove(0)
         run.pick(run.offers[0])
         XCTAssertEqual(run.wave, 2)
@@ -57,7 +57,7 @@ final class RogueRunTests: XCTestCase {
 
     /// 제시되지 않은 보상은 고를 수 없다 — 화면이 목록 밖의 값을 넣어도 웨이브가 넘어가지 않는다.
     func testPickIgnoresModifiersThatWereNotOffered() {
-        var run = self.run()
+        var run = makeRun()
         run.useMove(0)
         let notOffered = RunModifier.allCases.first { !run.offers.contains($0) }!
         run.pick(notOffered)
@@ -81,7 +81,7 @@ final class RogueRunTests: XCTestCase {
 
     /// 앞 웨이브에서 1번이 쓰러졌으면 다음 웨이브는 **살아 있는 칸**으로 시작한다.
     func testNextWaveLeadsWithALivingMember() {
-        var run = self.run(partySize: 2)
+        var run = makeRun(partySize: 2)
         run.useMove(0)
         run.pick(run.offers[0])
         var fainted = run
@@ -91,7 +91,7 @@ final class RogueRunTests: XCTestCase {
     }
 
     func testFinalWaveVictoryClearsTheRun() {
-        var run = self.run()
+        var run = makeRun()
         run.debugJump(toWave: RogueRun.finalWave)
         run.useMove(0)
         XCTAssertEqual(run.stage, .cleared)
