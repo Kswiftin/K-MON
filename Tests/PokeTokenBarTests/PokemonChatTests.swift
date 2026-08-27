@@ -203,12 +203,21 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertNil(boxed.stats, "같은 종이라는 이유로 남의 능력치가 실렸다")
     }
 
-    /// 상한은 1_600 → 2_100 → 2_500 → 2_800 으로 올랐다. 마지막 300자는 도구 셋(`adventure.claim`·
-    /// `dex.progress`·`challenge.status`)의 광고 줄과 능력치 절이다 — 실측 2_788.
+    /// 상한은 1_600 → 2_100 → 2_500 → 2_800 → 2_860 으로 올랐다. 마지막 60자는 광고 줄이 아니라
+    /// **재는 방식**이 늘어난 것이다 — 별명과 배운 기술이 빠진 프로필로 재고 있었다(실측 2_847).
+    ///
+    /// 예산은 각 절의 **긴 쪽**으로 잰다. 절마다 어느 쪽이 긴지는 다르다:
+    /// - 별명·능력치·기술은 **채워진** 쪽이 길다(별명은 `(종 이름)` 을 덧붙이고, 나머지는
+    ///   `not loaded` 열 글자를 대체한다).
+    /// - 타입·다음 진화는 **비어 있는** 쪽이 길다(`not loaded`·`not known` 이 한국어 이름보다 길다).
+    /// 한쪽만 재면 실제 프롬프트가 상한을 넘는데도 게이트는 초록으로 남는다.
+    ///
     /// **늘어난 만큼만** 올린다 — 넉넉히 잡으면 다음에 무엇이 새어 들어와도 아무도 모른다.
     /// 도구를 더할 때 여기가 깨지는 건 정상이고, 깨진 만큼만 올리는 게 규칙이다.
     func testSystemPromptStaysWithinTheChatBudgetWithAFullIdentity() {
-        var profile = PokemonChatProfile.fixture
+        // 별명은 세이브 경계(`SaveTransfer.maxNameLength`)까지 길 수 있고, 붙는 순간 종 이름이
+        // 괄호로 **함께** 실린다 — 별명 없는 프로필로 재면 그 길이가 통째로 빠진다.
+        var profile = PokemonChatProfile.fixture(nickname: String(repeating: "별", count: SaveTransfer.maxNameLength))
         profile.apply(PokemonSpeciesIdentity(
             genera: ["ko": String(repeating: "분류", count: 20)], habitatSlug: "rough-terrain",
             flavorTexts: ["ko": String(repeating: "도감 설명 ", count: 25)],
@@ -217,11 +226,12 @@ final class PokemonChatTests: XCTestCase {
             language: .ko
         ))
 
-        // 능력치는 채워진 쪽이 최악이다("not loaded" 로 재면 실제 프롬프트보다 짧게 나온다).
+        // 기술은 네 칸이 상한이다(`learnedMoves` 를 자르는 자리와 같은 수).
+        profile.moves = Array(repeating: String(repeating: "기", count: 10), count: 4)
         profile.stats = "HP 999 / Atk 999 / Def 999 / SpA 999 / SpD 999 / Spe 999"
         let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
 
-        XCTAssertLessThanOrEqual(prompt.count, 2_800)
+        XCTAssertLessThanOrEqual(prompt.count, 2_860)
     }
 
     /// 페르소나 전용 DTO 는 `SpeciesDTO` 와 따로 산다 — `flavor_text_entries` 는 종 응답에서 가장 큰
@@ -514,7 +524,10 @@ private actor QueuedReplyProvider: PokemonChatProviding {
 }
 
 private extension PokemonChatProfile {
-    static let fixture = PokemonChatProfile(speciesID: 1, displayName: "이상해씨", nickname: nil,
-                                            nature: "온순", level: 5, stage: "첫 번째 형태",
-                                            flavorText: "태어날 때부터 등에 이상한 씨앗이 자란다.", language: .ko)
+    static var fixture: PokemonChatProfile { fixture(nickname: nil) }
+    static func fixture(nickname: String?) -> PokemonChatProfile {
+        PokemonChatProfile(speciesID: 1, displayName: "이상해씨", nickname: nickname,
+                           nature: "온순", level: 5, stage: "첫 번째 형태",
+                           flavorText: "태어날 때부터 등에 이상한 씨앗이 자란다.", language: .ko)
+    }
 }

@@ -29,7 +29,7 @@ read_when:
 | `challenge.status` | 없음 | 불필요 | 오늘 던전(클리어 여부·체력 예산)·배지·미션 |
 | `memory.record` | **없음**(본문은 앱이 채운다) | 불필요 — 아래 참조 | 방금 한 답변을 기억 앨범에 남긴다 |
 | `pokedoro.start` | `25` \| `50` \| `90` | **필요** | 집중 세션 시작(모험 출발 + 타이머) |
-| `pokedoro.stop` | 없음 | **필요** | 집중 세션 종료 — **나가 있는 모험은 보상 없이 취소된다** |
+| `pokedoro.stop` | 없음 | **필요** | 집중 세션 종료 — **진행 중인** 모험은 보상 없이 취소된다(끝난 모험은 먼저 정산된다) |
 | `adventure.claim` | 없음 | **필요** | 끝난 모험을 정산(별의조각·경험치·알) |
 | `item.use` | `ItemKind` case 이름 | **필요** | 아이템 1개를 그 종류의 진짜 사용 경로로 |
 | `evolution.accept` | 없음 | **필요** | 대기 중인 진화를 수락 |
@@ -99,6 +99,21 @@ read_when:
 - `tool refused: no active companion` / `... not the active companion`
 - `pokedoro start refused: adventure in progress` / `... adventure reward unclaimed`
 - `adventure none ready` · `evolution none pending` · `item <kind> unavailable`
+- `evolution refused: conditions no longer met` · `memory not recorded`
+
+성공도 **위임한 쪽이 받아들였을 때만**이다. 실행기 자신의 가드만 확인하면(빈 본문인가 / 대기 중인
+진화가 있는가) 앨범이 180자 초과로 버린 기억이나 시간대 조건이 무너진 진화가 성공으로 나가고,
+모델은 그걸 사실로 말한다. 거절을 값으로 올리거나(`PokemonMemoryAlbum.record` 는 `Bool` 을
+돌려준다) 관측 가능한 결과로 판정한다(`acceptEvolution` 전후의 `activeStageIndex`).
+
+### 종료는 **진행 중인** 모험만 버린다
+
+`cancelFocusAdventure` 는 완료 여부를 보지 않는다. `FocusTimer` 는 저장되지 않으므로 앱을 닫았다
+열면 타이머는 idle 이고 모험만 남아 있고(정산 대기 구간), 화면은 그 구간에 "보상 받기" 만 그리고
+취소 버튼을 아예 그리지 않는다. 대화의 `pokedoro.stop` 은 그 구간에서도 눌릴 수 있으므로,
+`stopFocusSession` 이 **먼저 정산한 뒤** 취소한다(`startFocusAdventure` 와 같은 순서다 — 정산
+진입점은 `claimAdventure` 한 곳뿐이다). 승인 카드가 "진행 중인 모험은 보상 없이 취소돼" 라고
+말하려면 그 문장이 어느 구간에서도 참이어야 한다.
 
 ### `memory.record` 만 승인이 없다
 
@@ -145,8 +160,12 @@ read_when:
 
 도구 줄은 시스템 프롬프트에 그대로 실린다. `testSystemPromptStaysWithinTheChatBudgetWithAFullIdentity`
 가 상한을 지키고, 도구를 더하면 **깨지는 게 정상**이다. 깨진 만큼만 올린다(1_600 → 2_100 → 2_500 →
-2_800) — 넉넉히 잡으면 다음에 무엇이 새어 들어와도 아무도 모른다. 예산은 **최악의 경우로** 잰다:
-능력치가 `nil`("not loaded")인 프로필로 재면 실제 프롬프트보다 짧게 나온다.
+2_800 → 2_860) — 넉넉히 잡으면 다음에 무엇이 새어 들어와도 아무도 모른다.
+
+예산은 절마다 **긴 쪽으로** 잰다. 어느 쪽이 긴지는 절마다 다르다 — 별명·능력치·기술은 채워진 쪽이
+길고(별명은 종 이름을 괄호로 함께 싣고, 나머지는 `not loaded` 열 글자를 대체한다), 타입·다음 진화는
+비어 있는 쪽이 길다(`not loaded`·`not known` 이 한국어 이름보다 길다). 한쪽만 재면 실제 프롬프트가
+상한을 넘는데도 게이트는 초록으로 남는다.
 
 ## 도구를 더하려면
 

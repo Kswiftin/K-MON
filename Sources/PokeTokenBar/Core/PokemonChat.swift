@@ -247,14 +247,18 @@ final class PokemonMemoryAlbum {
         }
     }
     func entries(for id: UUID) -> [PokemonMemory] { memories[id] ?? [] }
-    func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil) {
+    /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
+    /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
+    @discardableResult
+    func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil) -> Bool {
         let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty, body.count <= 180 else { return }
+        guard !body.isEmpty, body.count <= 180 else { return false }
         var entries = memories[companionID] ?? []
         if source == .event, let eventID, !eventID.isEmpty,
-           entries.contains(where: { $0.eventID == eventID }) { return }
+           entries.contains(where: { $0.eventID == eventID }) { return false }
         entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: source, body: body, eventID: eventID))
         memories[companionID] = Array(entries.suffix(200)); save()
+        return true
     }
     func delete(_ memory: PokemonMemory) { memories[memory.companionID]?.removeAll { $0.id == memory.id }; save() }
     func deleteAll(for id: UUID) { memories.removeValue(forKey: id); save() }
@@ -601,6 +605,11 @@ final class PokemonChatStore {
                 reply = parsed.body
                 call = parsed.call
                 guard let pending = parsed.call, let toolbox else { break }
+                // 기억하기는 **루프에서 돌리지 않는다.** 본문은 아래에서 가드를 통과한 답변으로
+                // 채우므로, 여기서 실행하면 빈 본문으로 실패("memory not recorded")를 모델에
+                // 돌려주고 남은 왕복을 전부 태운다 — 그리고 모델이 다음 턴에 마커를 다시 붙이지
+                // 않으면 `call` 이 비어 기억이 아예 남지 않는다.
+                if case .memoryRecord = pending { break }
                 if pending.needsApproval {
                     // 승인이 필요한 도구는 여기서 멈춘다. 사용자가 누르기 전에 다시 물으면 승인이 무의미하다.
                     if toolbox.canRun(pending, owner: companionID) { break }
@@ -625,10 +634,14 @@ final class PokemonChatStore {
             // `memory.record` 만 인자를 파서가 채우지 않는다. 모델이 기억 문구를 직접 쓰면 그게
             // 임의 문자열 인자이고, 다음 요청의 컨텍스트로 되돌아온다. 그래서 **가드를 통과한**
             // 답변만 기록한다 — 가드가 답변을 갈아치웠다면 기록할 것도 없다.
+            var recordedByTool = false
             if safeReply == reply, case .memoryRecord = call, let toolbox {
-                _ = await toolbox.run(.memoryRecord(body: safeReply), owner: companionID)
+                recordedByTool = await toolbox.run(.memoryRecord(body: safeReply), owner: companionID).succeeded
             }
-            if current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
+            // 주기 기록은 도구가 **같은 문장**을 이미 남겼으면 건너뛴다. `record` 는 대화 기억을
+            // 중복 제거하지 않아(이벤트만 `eventID` 로 막는다) 6번째 메시지에서 마커가 붙으면
+            // 앨범에 같은 줄이 두 번 남는다.
+            if !recordedByTool, current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""
                 if !candidate.isEmpty { album.record(companionID: companionID, body: candidate, source: .conversation) }
             }

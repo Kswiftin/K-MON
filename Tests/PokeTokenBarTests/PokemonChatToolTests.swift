@@ -481,6 +481,105 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertEqual(album.entries(for: id).count, 1)
     }
 
+    /// 기억하기는 왕복을 **하나도 더 쓰지 않는다.** 본문을 스토어가 나중에 채우므로 루프 안의
+    /// 실행은 빈 본문으로 실패하고, 실패 한 줄을 모델에 돌려주며 남은 왕복(3회)을 전부 태운다.
+    /// 그리고 모델이 다음 턴에 마커를 다시 붙이지 않으면 `call` 이 비어 **기억이 아예 안 남는다.**
+    ///
+    /// 위 테스트가 이걸 못 걸렀다: 같은 답변을 무한 반복하는 프로바이더라 마지막 턴에도 마커가
+    /// 남아 있었다. 트리거는 "마커를 한 번만 붙이는 모델" 이라 답변을 갈아 주는 프로바이더가 필요하다.
+    func testMemoryRecordCostsNoExtraRoundAndSurvivesAModelThatSaysItOnce() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let album = makeAlbum()
+        let chat = PokemonChatStore(fileURL: temporaryURL(), album: album)
+        let id = store.activeMonID!
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: album, lookup: Self.emptyLookup)
+
+        await chat.send("오늘 고마웠어", for: id, profile: .toolFixture,
+                        provider: ScriptedToolProvider(replies: ["나도 즐거웠어! [[tool:memory.record]]",
+                                                                 "또 얘기해 줘!"]),
+                        toolbox: toolbox)
+
+        XCTAssertEqual(album.entries(for: id).map(\.body), ["나도 즐거웠어!"],
+                       "왕복을 더 쓰는 동안 기억이 사라졌다")
+        XCTAssertEqual(chat.messages(for: id).last?.body, "나도 즐거웠어!",
+                       "기억하기 하나에 CLI 를 한 번 더 띄웠다")
+    }
+
+    /// 카드가 떠 있는 사이 조건이 무너지면 `acceptEvolution` 은 **카드만 지우고 조용히 돌아간다**
+    /// (레벨·시간대 경로·요구 파티원·요구 기술·로드 안 된 진화 라인). 대기 여부만 보고 성공으로
+    /// 돌려주면 모델이 "나, 진화했어!" 라고 말하고 형태는 그대로다.
+    ///
+    /// 위 진화 테스트가 이걸 못 걸렀다: 조건이 **맞는** 경로만 밟아서, 실행기가 결과를 확인하는지
+    /// 대기 여부만 보는지가 구분되지 않았다.
+    func testEvolutionThatSilentlyFailsIsNotReportedAsAccepted() async {
+        let store = makeCompanionStore(line: Self.knownMoveGatedLine)
+        await store.hatch(baseID: 40)
+        // 기술 조건 진화는 그 기술을 들고 있을 때만 카드가 뜬다.
+        store.debugSetActiveLearnedMoves([MoveSpec(id: 246, names: ["ko": "원시의힘"], type: .rock,
+                                                   power: 60, damageClass: .special, accuracy: 100, pp: 5)])
+        store.debugAccrueLevelExperience(300_000_000)
+        store.applyUsage(0)
+        XCTAssertNotNil(store.evolutionPrompt, "전제: 카드가 떠야 이 경로를 밟는다")
+        // 카드가 떠 있는 사이 조건이 무너진다(기술을 잊었다). `acceptEvolution` 은 여기서
+        // 카드만 지우고 조용히 돌아간다 — 시간대·요구 파티원 진화도 같은 분기다.
+        store.debugSetActiveLearnedMoves([])
+        let stageBefore = store.activeStageIndex
+
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        let result = await toolbox.runAsActive(.evolutionAccept)
+
+        XCTAssertEqual(store.activeStageIndex, stageBefore, "전제: 형태는 그대로여야 한다")
+        XCTAssertFalse(result.succeeded, "진화하지 않았는데 성공으로 보고했다: \(result.line)")
+    }
+
+    /// 앨범이 **안 받은** 기억을 성공으로 돌려주면 모델이 "기억해 둘게" 라고 말하고 앨범엔 아무것도
+    /// 없다. `PokemonMemoryAlbum.record` 는 180자를 넘는 본문을 조용히 버리는데 답변 가드는
+    /// 500자까지 통과시킨다 — 그 사이 길이가 실제로 밟히는 구간이다.
+    ///
+    /// 빈 본문 케이스만 재던 것이 이걸 못 걸렀다: 실행기가 자기 가드(공백)만 확인하고 앨범의
+    /// 가드(길이)는 확인하지 않아, 짧은 문장으로만 재면 두 가드가 같아 보였다.
+    func testAMemoryTheAlbumRefusesIsNotReportedAsRecorded() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let album = makeAlbum()
+        let id = store.activeMonID!
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: album, lookup: Self.emptyLookup)
+        // 가드는 통과하고(500자 이하·세 문장 이하) 앨범은 거절하는(180자 초과) 길이.
+        let long = String(repeating: "오", count: 200)
+        XCTAssertEqual(PokemonChatReplyGuard.sanitized(long, profile: .toolFixture), long,
+                       "전제: 이 길이는 답변 가드를 그대로 통과한다")
+
+        let result = await toolbox.runAsActive(.memoryRecord(body: long))
+
+        XCTAssertFalse(result.succeeded, "앨범이 버린 기억을 성공으로 보고했다")
+        XCTAssertEqual(result.line, "memory not recorded")
+        XCTAssertTrue(album.entries(for: id).isEmpty)
+    }
+
+    /// 여섯 번째 메시지에는 주기 기록이 붙는다. 모델이 같은 턴에 마커까지 달면 **같은 문장**이
+    /// 앨범에 두 번 남는다 — `record` 는 대화 기억을 중복 제거하지 않는다(이벤트만 `eventID` 로 막는다).
+    func testTheSixthMessageDoesNotRecordTheSameMemoryTwice() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let album = makeAlbum()
+        let chat = PokemonChatStore(fileURL: temporaryURL(), album: album)
+        let id = store.activeMonID!
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: album, lookup: Self.emptyLookup)
+        let provider = CountingToolProvider(reply: "나도 즐거웠어! [[tool:memory.record]]")
+
+        // 주기 기록은 `lifetimeUserMessageCount % 6 == 0` 에서만 돈다 — 여섯 번째 턴을 밟아야 한다.
+        for turn in 1...6 {
+            await chat.send("메시지 \(turn)", for: id, profile: .toolFixture, provider: provider, toolbox: toolbox)
+        }
+
+        XCTAssertEqual(album.entries(for: id).count, 6, "같은 문장이 앨범에 두 번 남았다")
+    }
+
     /// 가드가 답변을 갈아치웠다면 그 답변이 딸고 온 기억도 사용자의 대화가 아니다.
     func testARedirectedReplyIsNeverKeptAsAMemory() async {
         let store = makeCompanionStore()
@@ -768,6 +867,40 @@ final class PokemonChatToolTests: XCTestCase {
         }
     }
 
+    /// ...그리고 카드 문장이 **참이어야** 한다. `cancelFocusAdventure` 는 완료 여부를 안 봐서
+    /// 정산 대기 구간(`FocusTimer` 는 저장되지 않으므로 앱을 닫았다 열면 타이머는 idle 이고 모험만
+    /// 남는다)의 종료가 받을 수 있던 보상을 지웠다 — 화면은 그 구간에 취소 버튼을 아예 그리지
+    /// 않는데 대화는 "진행 중인 모험은 취소돼" 라고 물어보고 완료된 모험을 태웠다.
+    ///
+    /// 두 분기를 **둘 다** 밟는다. 완료 쪽만 재면 "종료가 언제나 정산한다" 는 반대 결함(집중을
+    /// 끊어도 보상이 나온다)이 그대로 통과한다.
+    func testStoppingFocusSettlesAFinishedAdventureButStillCancelsARunningOne() async {
+        let clock = TestClock()
+        let store = makeCompanionStore(clock: clock)
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        clock.advance(25 * 60)
+        let beforeFinished = store.state.starPieces
+        let finished = await toolbox.runAsActive(.pokedoroStop)
+
+        XCTAssertTrue(finished.succeeded, finished.line)
+        XCTAssertNil(store.activeAdventure)
+        XCTAssertGreaterThan(store.state.starPieces, beforeFinished,
+                             "정산을 기다리던 보상이 종료로 사라졌다")
+
+        // 진행 중인 모험은 그대로 보상 없이 취소된다 — 그게 카드가 경고하는 바로 그 손실이다.
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        clock.advance(5 * 60)
+        let beforeRunning = store.state.starPieces
+        _ = await toolbox.runAsActive(.pokedoroStop)
+
+        XCTAssertNil(store.activeAdventure)
+        XCTAssertEqual(store.state.starPieces, beforeRunning, "진행 중인 모험이 보상을 주고 취소됐다")
+    }
+
     // MARK: 도감·도전 진행도
 
     /// 도감은 원복 이후 가장 크게 자랐는데(전체 종·타입 필터·미포획 실루엣·이로치·정렬) 대화는
@@ -880,6 +1013,13 @@ final class PokemonChatToolTests: XCTestCase {
 
     private static let levelGatedLine = EvoLine(
         baseID: 40, tree: EvoNode(speciesID: 40, children: [EvoNode(speciesID: 41, children: [], evolutionLevel: 5)]),
+        rarity: .common, names: [40: ["ko": "푸린"], 41: ["ko": "푸크린"]])
+
+    /// 기술을 배운 채로 자라야 하는 진화. 조건이 **개체 상태**에 매달려 있어, 카드가 뜬 뒤에도
+    /// 무너질 수 있는 부류를 대표한다(시간대·요구 파티원도 같다).
+    private static let knownMoveGatedLine = EvoLine(
+        baseID: 40, tree: EvoNode(speciesID: 40, children: [
+            EvoNode(speciesID: 41, children: [], evolutionTrigger: "level-up", evolutionKnownMoveID: 246)]),
         rarity: .common, names: [40: ["ko": "푸린"], 41: ["ko": "푸크린"]])
 
     private static let stoneLine = EvoLine(

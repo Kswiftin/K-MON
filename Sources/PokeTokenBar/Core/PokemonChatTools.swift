@@ -131,9 +131,11 @@ enum PokemonChatToolCall: Equatable, Sendable {
                                  "Shall we start a \(minutes)-minute focus session?",
                                  "\(minutes)分の集中を始める？")
         case .pokedoroStop:
-            // 잃는 것을 말한다. 집중을 끝내면 모험이 보상 없이 취소되는데(`cancelFocusAdventure`),
-            // "끝낼까?" 만 물으면 사용자는 무엇을 승인하는지 모른다. 휴식 단계에는 나가 있는 모험이
-            // 없으므로 조건절로 읽힌다 — 어느 단계에서도 거짓이 되지 않는 문장이다.
+            // 잃는 것을 말한다. 집중을 끝내면 진행 중인 모험이 보상 없이 취소되는데
+            // (`cancelFocusAdventure`), "끝낼까?" 만 물으면 사용자는 무엇을 승인하는지 모른다.
+            // **"진행 중" 이 문장의 전부다** — 끝나서 정산만 기다리는 모험은 `stopFocusSession` 이
+            // 먼저 정산하므로 이 문구가 참이다. 그 정산을 떼면 이 문장이 거짓이 되고, 사용자는
+            // 손실이 없다고 읽은 채 보상을 태운다.
             return L(language).t("집중을 끝낼까? 진행 중인 모험은 보상 없이 취소돼.",
                                  "Shall we stop the focus session? An adventure still out is cancelled with no reward.",
                                  "集中を終える？進行中の冒険は報酬なしで取り消されるよ。")
@@ -285,17 +287,20 @@ enum PokemonChatToolParser {
 /// 위해서다 — 실물 실행기는 타이머와 PokéAPI 를 그대로 쓴다.
 @MainActor
 protocol PokemonChatToolRunning {
-    /// `line` 은 모델에게 돌려줄 사실 한 줄(사용자 화면에는 실리지 않으므로 번역하지 않는다).
-    /// `succeeded` 는 승인 경로가 거절과 실패를 구분하는 데 쓴다 — 문자열을 뒤져 판정하지 않는다.
-    ///
     /// 이 호출이 **지금 이 창에서** 실행될 수 있는가. 승인 카드를 띄우기 전에 묻는다 — 성공할 수
     /// 없는 질문을 사용자에게 하지 않기 위해서다.
     ///
     /// 대상은 구조적 불가능뿐이다(주인 게이트). "가방에 사탕이 없다" 처럼 **상태에 따른** 실패는
     /// 미리 보지 않는다 — 그러면 실행기 전체가 두 벌이 되고, 그건 사용자가 봐야 하는 정직한
     /// 실패다. 여기서 막는 건 "이 창에서는 무슨 수를 써도 안 되는 일" 이다.
+    ///
+    /// `false` 를 돌려준 호출은 `run` 도 반드시 거절해야 한다 — 두 판정이 갈라지면 카드를 안 띄운
+    /// 호출이 조용히 실행된다.
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool
 
+    /// `line` 은 모델에게 돌려줄 사실 한 줄(사용자 화면에는 실리지 않으므로 번역하지 않는다).
+    /// `succeeded` 는 승인 경로가 거절과 실패를 구분하는 데 쓴다 — 문자열을 뒤져 판정하지 않는다.
+    ///
     /// `owner` 는 **이 대화의 주인**이다. 기본값을 두지 않는 이유는, 두면 부르는 자리가 활성 개체를
     /// 암묵 대상으로 삼아 박스 개체 대화가 다시 남을 건드리게 되기 때문이다 — 넘기지 않으면
     /// 컴파일이 안 되는 편이 낫다.
@@ -380,8 +385,16 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         case .evolutionAccept:
             // 대기 중인 진화가 없으면 정직하게 실패다. 성공으로 돌려주면 모델이 진화했다고 말한다.
             guard companion.evolutionPrompt != nil else { return ("evolution none pending", false) }
+            let stageBefore = companion.activeStageIndex
             companion.acceptEvolution()
-            return ("evolution accepted stage=\(companion.activeStageIndex ?? 0)", true)
+            // 대기 여부만으로는 부족하다. `acceptEvolution` 은 조건이 안 맞으면 카드만 지우고
+            // **조용히 돌아간다** — 레벨·시간대 경로(`routeMatches`)·요구 파티원·요구 기술·
+            // 로드 안 된 진화 라인이 전부 그 경로다. 카드를 띄운 뒤 조건이 무너지는 건 실제로
+            // 밟힌다(밤 한정 진화를 새벽에 승인하면 그렇다). 형태가 실제로 올라갔는지로 판정한다.
+            guard let stage = companion.activeStageIndex, stage != stageBefore else {
+                return ("evolution refused: conditions no longer met", false)
+            }
+            return ("evolution accepted stage=\(stage)", true)
 
         case .companionSwitch(let index):
             guard let target = companion.chatRosterEntries.first(where: { $0.index == index }),
@@ -392,11 +405,13 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         case .memoryRecord(let body):
             // 앨범 키는 활성 개체가 아니라 **이 대화의 주인**이다. 활성 개체로 적으면 박스 개체와
             // 나눈 이야기가 남의 앨범에 박히고, 정작 그 창의 앨범에는 영영 안 보인다.
-            // 빈 본문은 기록하지 않는다 — 스토어가 채우기 전에 실행되면 앨범에 빈 줄이 남는다.
-            guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            //
+            // 성공은 **앨범이 받았을 때만**이다. `record` 는 빈 본문(스토어가 채우기 전에 실행된
+            // 경우)뿐 아니라 180자를 넘는 본문도 조용히 버리는데, 답변 가드는 500자까지 통과시킨다 —
+            // 그 사이 길이를 성공으로 뭉개면 모델이 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없다.
+            guard album.record(companionID: owner, body: body, source: .conversation) else {
                 return ("memory not recorded", false)
             }
-            album.record(companionID: owner, body: body, source: .conversation)
             return ("memory recorded", true)
 
         case .pokedoroStatus:
@@ -464,12 +479,6 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         }
     }
 
-    /// 타이머만이 아니라 **모험 루프**를 싣는다. Pokedoro 의 상호작용은 여기에 있다 — 모험은
-    /// 집중과 함께 나가고, 끝나면 사용자가 정산해야 하며, 정산 전에는 다음 집중이 안 켜진다.
-    /// 타이머만 보고하던 동안 모델은 "보상 받기를 눌러 달라" 는 말을 할 수 없었다.
-    ///
-    /// 알 부화 예정 시각은 넣지 않는다 — 남은 시간을 재려면 실행기가 시계를 들어야 하고, 그러면
-    /// 같은 판정이 `StoredEggCountdown` 과 두 벌이 된다. 개수만으로 할 말은 충분하다.
     /// 도감 축 이름. `DexGoalKind` 는 세이브에 안 들어가려고 rawValue 를 갖지 않는다 — 기계 문자열은
     /// 다른 도구 줄과 같은 자리(여기)에 두고, 목표 표는 표시를 모르는 채로 남긴다.
     private static func dexAxisName(_ kind: DexGoalKind) -> String {
@@ -480,6 +489,12 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         }
     }
 
+    /// 타이머만이 아니라 **모험 루프**를 싣는다. Pokedoro 의 상호작용은 여기에 있다 — 모험은
+    /// 집중과 함께 나가고, 끝나면 사용자가 정산해야 하며, 정산 전에는 다음 집중이 안 켜진다.
+    /// 타이머만 보고하던 동안 모델은 "보상 받기를 눌러 달라" 는 말을 할 수 없었다.
+    ///
+    /// 알 부화 예정 시각은 넣지 않는다 — 남은 시간을 재려면 실행기가 시계를 들어야 하고, 그러면
+    /// 같은 판정이 `StoredEggCountdown` 과 두 벌이 된다. 개수만으로 할 말은 충분하다.
     private func statusLine() -> String {
         var parts = ["pokedoro state=\(timer.phase.rawValue)",
                      "remaining=\(timer.isRunning ? timer.clockText() : "00:00")",
@@ -511,6 +526,14 @@ extension FocusTimer {
 
     func stopFocusSession(companion: CompanionStore) {
         stop()
+        // **끝난 모험은 버리지 않는다.** `cancelFocusAdventure` 는 완료 여부를 보지 않아서, 정산
+        // 대기 구간(`FocusTimer` 는 저장되지 않으므로 앱을 닫았다 열면 타이머는 idle 이고 모험만
+        // 남는다)에서 종료가 받을 수 있던 보상을 지웠다. 화면은 그 구간에 "보상 받기" 만 그리고
+        // 취소 버튼을 아예 안 그리는데, 대화의 `pokedoro.stop` 은 같은 구간에서 눌릴 수 있고
+        // 승인 카드는 "진행 중인 모험" 만 취소된다고 말한다 — 카드 문장이 참이 되게 만든다.
+        // `claimAdventure` 는 완료된 run 만 정산하므로 진행 중 취소는 그대로 보상 없이 취소된다
+        // (`startFocusAdventure` 도 같은 순서로 부른다 — 정산 진입점은 여전히 한 곳뿐이다).
+        companion.claimAdventure()
         companion.cancelFocusAdventure()
     }
 }

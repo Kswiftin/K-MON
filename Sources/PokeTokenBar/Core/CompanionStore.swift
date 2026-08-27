@@ -477,7 +477,7 @@ final class CompanionStore {
     var currentNickname: String? { state.active?.nickname }
     /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
     func chatProfile(for mon: MonState) -> PokemonChatProfile {
-        let speciesName = mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
+        let speciesName = chatSpeciesName(for: mon)
         // currentTypes/displayedMoves are presentation caches for the active species. A boxed mon can ask
         // for a profile while those caches still belong to another species, so assemble individual data
         // from MonState and reuse the tagged type cache only when the requested species owns it.
@@ -513,10 +513,16 @@ final class CompanionStore {
         let isActive: Bool
     }
 
+    /// 종 이름 한 곳. 로스터는 이름만 필요하므로 프로필을 만들지 않는다 — 프로필 한 벌은 진화 트리
+    /// 조회와 능력치 문자열 조립까지 딸려 오는데, 로스터는 그 둘을 곧바로 버린다.
+    private func chatSpeciesName(for mon: MonState) -> String {
+        mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
+    }
+
     var chatRosterEntries: [ChatRosterEntry] {
         ownedMons.enumerated().map { index, mon in
             ChatRosterEntry(index: index, id: mon.id,
-                            name: chatProfile(for: mon).nickname ?? chatProfile(for: mon).displayName,
+                            name: mon.nickname ?? chatSpeciesName(for: mon),
                             level: mon.level, isShiny: mon.isShiny, isActive: mon.id == activeMonID)
         }
     }
