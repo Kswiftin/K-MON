@@ -37,6 +37,12 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 - **Online battle chat** — 1:1 LAN ranked battles and 2–4 player room battles include session-only chat independent of combat. The latest 50 messages stay in an internal scroll area; chat is disabled while battling a legacy 1:1 peer.
 - **Pokéathlon: Change Relay** — practice alone or race with up to four players on a local network. Run with `→`, switch lanes with `↑`/`↓`, avoid obstacles, and change Pokémon with `C`.
 
+## Trainer & wave run
+
+- **Trainer wardrobe** — dress the trainer with 12 layered pixel items across five slots (hat, hair, top, bottom, accessory). Eight are sold in the Shop for Star Pieces; the other four come from achievement tiers.
+- **Nearby trainer cards** — the Friends tab shows each peer's dressed avatar, ranked tier color, and partner Pokémon.
+- **Wave run (prototype)** — pick a starter and take on 12 waves, with a boss every fourth wave and one item pick after each wave. A run lives in memory only: closing the window keeps it going, quitting the app drops it.
+
 ## Tour
 
 <table>
@@ -67,6 +73,13 @@ Spend Star Pieces on eggs, Rare Candy, Mints, Link Cords, and evolution stones; 
 Control Do Not Disturb, notifications, launch at login, the floating pet, and update checks from Settings.
 </td>
 <td width="45%" align="center"><img src="assets/settings.png" width="180" alt="Settings"></td>
+</tr>
+<tr>
+<td width="45%" align="center"><img src="assets/screenshot-outfit.png" width="180" alt="Wardrobe"><br><br><img src="assets/screenshot-run.png" width="180" alt="Wave run reward pick"></td>
+<td width="55%" valign="middle">
+<h3>Wardrobe and wave run</h3>
+Change the trainer's outfit, and pick one reward item after every wave you clear.
+</td>
 </tr>
 </table>
 
