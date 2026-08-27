@@ -515,6 +515,8 @@ final class BattleCenter {
     private var myName: String          // 표시 이름(상대 카드·스냅샷 trainer)
     private var didSettleRankedBrawl = false
     private(set) var isPracticeBattle = false
+    private(set) var isMetronomeBattle = false
+    private(set) var isResolvingMetronome = false
     private(set) var teamPractice: TeamPracticeBattle?
     /// 지금 도전 중인 체육관. 모의전과 같은 배틀을 쓰므로 이 값이 둘을 가른다.
     private(set) var activeGym: Gym?
@@ -917,6 +919,32 @@ final class BattleCenter {
         }
     }
 
+    /// 양쪽 모두 동일한 Lv.50 토게키스를 빌려 손가락흔들기만 사용하는 1:1 모드.
+    /// 대여 포켓몬은 스냅샷으로만 존재하므로 박스·도감·세이브에는 들어가지 않는다.
+    func startMetronomeBattle() {
+        guard case .ready = phase else { return }
+        phase = .preparing
+        Task {
+            guard let profile = await battleProfileLoader(468),
+                  let metronome = await moveDetailLoader("metronome") else {
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            let rental = BattleSnapshot(speciesID: 468,
+                                        name: l.t("대여 토게키스", "Rental Togekiss", "レンタルトゲキッス"),
+                                        trainer: companion.trainerName, level: 50, nature: nil, isShiny: false,
+                                        types: profile.types, base: profile.stats, moves: [metronome],
+                                        ability: profile.abilitySlug, weightHectograms: profile.weightHectograms)
+            var cpu = rental
+            cpu.trainer = "CPU"
+            isPracticeBattle = true
+            isMetronomeBattle = true
+            teamPractice = TeamPracticeBattle(mine: [BattleSide(rental)], opponents: [BattleSide(cpu)],
+                                              rng: SplitMix64(seed: UInt64.random(in: .min ... .max)))
+            opponentRankProfile = BattleRankProfile(rank: companion.battleRank, stardust: 0)
+            phase = .battling; rankedStake = 0; pendingAttention = true
+        }
+    }
+
     /// 체육관 도전 — 모의전과 같은 배틀이지만 상대는 카탈로그가 정한 관장 팀이다.
     ///
     /// 내 팀은 키운 레벨 그대로, 관장은 카탈로그의 고정 레벨이다(#57 과 같은 규칙, 방향만 반대).
@@ -967,7 +995,28 @@ final class BattleCenter {
     }
 
     func chooseTeamPracticeMove(_ index: Int) {
+        if isMetronomeBattle {
+            Task { await chooseMetronomeTurn() }
+            return
+        }
         guard var practice = teamPractice, practice.useMove(index) else { return }
+        teamPractice = practice
+        settlePracticeResult(practice)
+    }
+
+    private func chooseMetronomeTurn() async {
+        guard var practice = teamPractice, isMetronomeBattle, !isResolvingMetronome else { return }
+        isResolvingMetronome = true
+        defer { isResolvingMetronome = false }
+        // 5세대 TM 풀은 공격·회복·랭크·상태기를 고르게 포함하고, 현재 엔진이 모두 해석 가능한
+        // 스펙만 들어 있다. 손가락흔들기 자신과 미구현 특수 명령기를 뽑는 일을 피한다.
+        let pool = TechnicalMachine.catalog
+        guard !pool.isEmpty else { return }
+        let mine = pool[Int.random(in: pool.indices)]
+        let cpu = pool[Int.random(in: pool.indices)]
+        guard let myMove = await moveDetailLoader(mine.slug),
+              let cpuMove = await moveDetailLoader(cpu.slug),
+              isMetronomeBattle, practice.useResolvedMoves(myMove, cpuMove: cpuMove) else { return }
         teamPractice = practice
         settlePracticeResult(practice)
     }
@@ -1265,6 +1314,8 @@ final class BattleCenter {
         teamPractice = nil
         if case .finished = phase { phase = .ready }
         isPracticeBattle = false
+        isMetronomeBattle = false
+        isResolvingMetronome = false
         activeGym = nil
         lastGymReward = nil
         // 정산 표시값도 여기서 비운다 — 결과 화면(`finishedView`)이 이 둘을 그대로 그리는데, 다음 배틀이

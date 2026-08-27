@@ -641,6 +641,43 @@ enum PokemonOdds {
     static let dittoSpeciesID = 132
 }
 
+enum RotomForm: String, Codable, CaseIterable, Sendable {
+    case normal, heat, wash, frost, fan, mow
+
+    var pokemonID: Int {
+        switch self {
+        case .normal: 479
+        case .heat: 10_008
+        case .wash: 10_009
+        case .frost: 10_010
+        case .fan: 10_011
+        case .mow: 10_012
+        }
+    }
+    var signatureMoveID: Int? {
+        switch self {
+        case .normal: nil
+        case .heat: 315
+        case .wash: 56
+        case .frost: 59
+        case .fan: 403
+        case .mow: 437
+        }
+    }
+    func name(_ language: AppLanguage) -> String {
+        let value: (String, String, String)
+        switch self {
+        case .normal: value = ("로토무", "Rotom", "ロトム")
+        case .heat: value = ("히트로토무", "Heat Rotom", "ヒートロトム")
+        case .wash: value = ("워시로토무", "Wash Rotom", "ウォッシュロトム")
+        case .frost: value = ("프로스트로토무", "Frost Rotom", "フロストロトム")
+        case .fan: value = ("스핀로토무", "Fan Rotom", "スピンロトム")
+        case .mow: value = ("커트로토무", "Mow Rotom", "カットロトム")
+        }
+        return switch language { case .ko: value.0; case .en: value.1; case .ja: value.2 }
+    }
+}
+
 /// 현재 키우는 포켓몬.
 struct MonState: Codable, Sendable, Identifiable {
     var id = UUID()
@@ -662,6 +699,7 @@ struct MonState: Codable, Sendable, Identifiable {
     var dittoRevealed = false       // 위장 → 리빌(정체 공개) 전환 여부
     var levelExperience = 0
     var learnedMoves: [MoveSpec] = []
+    var rotomForm: RotomForm? = nil
     /// 진화 체인 각 종의 다국어 이름(speciesID → langCode → name). 부화 시 로드된 라인에서 저장한다 —
     /// `DexEntry.names` 와 같은 패턴이다. 박스에 있는 개체는 `currentLine` 이 없어(활성 개체만 로드됨)
     /// 이게 없으면 도감이 이름 대신 종 번호(#25)를 그린다. 구버전 저장분엔 없어(nil) 뷰가 폴백한다.
@@ -683,6 +721,7 @@ struct MonState: Codable, Sendable, Identifiable {
     }
     // pathIDs 가 비면(손상된 상태 파일) baseID 로 폴백 — 렌더마다 읽히므로 out-of-bounds 크래시 방지.
     var currentID: Int { pathIDs.isEmpty ? baseID : pathIDs[min(stageIndex, pathIDs.count - 1)] }
+    var presentationID: Int { currentID == 479 ? (rotomForm ?? .normal).pokemonID : currentID }
 
     init(baseID: Int, pathIDs: [Int], plannedPathIDs: [Int]? = nil, stageIndex: Int, usedAtStage: Int,
          rarity: Rarity, totalForms: Int, isShiny: Bool = false, nature: PokemonNature? = nil,
@@ -741,6 +780,7 @@ struct MonState: Codable, Sendable, Identifiable {
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         levelExperience = try c.decodeIfPresent(Int.self, forKey: .levelExperience) ?? 0
         learnedMoves = try c.decodeIfPresent([MoveSpec].self, forKey: .learnedMoves) ?? []
+        rotomForm = try c.decodeIfPresent(RotomForm.self, forKey: .rotomForm)
         names = try c.decodeIfPresent([Int: [String: String]].self, forKey: .names)
         isGraduated = try c.decodeIfPresent(Bool.self, forKey: .isGraduated) ?? false
     }

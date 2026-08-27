@@ -24,7 +24,7 @@ enum RosterOrdering {
     /// 되면 이 함수도 같이 바꿔야 한다.
     static func displayName(_ mon: MonState, language: AppLanguage,
                             resolved: [Int: String] = [:]) -> String {
-        if let name = resolved[mon.currentID], !name.isEmpty { return name }
+        if let name = resolved[mon.presentationID], !name.isEmpty { return name }
         if let stored = mon.names?[mon.currentID], let name = language.resolveName(stored), !name.isEmpty {
             return name
         }
@@ -39,7 +39,7 @@ enum RosterOrdering {
     static func passesTypeFilter(_ mon: MonState, type: PokemonType?,
                                  types: [Int: [PokemonType]]) -> Bool {
         guard let type else { return true }
-        guard let resolved = types[mon.currentID], !resolved.isEmpty else { return true }
+        guard let resolved = types[mon.presentationID], !resolved.isEmpty else { return true }
         return resolved.contains(type)
     }
 
@@ -81,7 +81,7 @@ enum RosterOrdering {
     /// 필터 메뉴에 올릴 타입 — **박스에 실제로 있는** 타입만. 18종을 다 열어 두면 고르는 순간
     /// 빈 화면이 되는 항목이 대부분이다. 도감 순서(`PokemonType.allCases`)로 낸다.
     static func availableTypes(_ mons: [MonState], types: [Int: [PokemonType]]) -> [PokemonType] {
-        let present = Set(mons.flatMap { types[$0.currentID] ?? [] })
+        let present = Set(mons.flatMap { types[$0.presentationID] ?? [] })
         return PokemonType.allCases.filter { present.contains($0) }
     }
 }

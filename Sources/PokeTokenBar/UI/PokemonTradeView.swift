@@ -31,6 +31,11 @@ struct PokemonTradeView: View {
         switch center.phase {
         case .ready:
             peerList
+        case .browsing(let peer):
+            waiting(title: store.l.t("\(peer)님의 포켓몬을 불러오는 중…",
+                                     "Loading \(peer)'s Pokémon…", "\(peer)のポケモンを読み込み中…"))
+        case .roster(let peer):
+            rosterPreview(peer: peer)
         case .requesting(let peer):
             waiting(title: store.l.t("\(peer)님에게 교환 신청 중", "Requesting a trade with \(peer)", "\(peer)に交換を申請中"))
         case .incoming(let peer):
@@ -66,6 +71,28 @@ struct PokemonTradeView: View {
                 Text(message)
                 Button(store.l.t("닫기", "Close", "閉じる")) { close() }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func rosterPreview(peer: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(store.l.t("\(peer)님의 포켓몬", "\(peer)'s Pokémon", "\(peer)のポケモン"))
+                .font(.headline)
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92))], spacing: 8) {
+                    ForEach(center.remoteRoster, id: \.mon.id) { entry in
+                        VStack(spacing: 4) {
+                            SpriteView(speciesID: entry.mon.presentationID, size: 48,
+                                       shiny: entry.mon.isShiny)
+                            Text(entry.displayName).font(.caption.bold()).lineLimit(1)
+                            Text("Lv.\(entry.mon.level)").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        .padding(8).frame(maxWidth: .infinity)
+                        .pokedoroCard()
+                    }
+                }
+            }
+            Button(store.l.t("돌아가기", "Back", "戻る")) { close() }
         }
     }
 
@@ -115,6 +142,44 @@ struct PokemonTradeView: View {
                 Image(systemName: "arrow.left.arrow.right").font(.title2.bold()).foregroundStyle(.blue)
                 offerCard(title: store.l.t("상대 포켓몬", "Their Pokémon", "相手のポケモン"),
                           offer: center.remoteOffer, confirmed: center.remoteConfirmed, isMine: false)
+            }
+            if !center.remoteRoster.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(store.l.t("상대에게 원하는 포켓몬 요청", "Request a Pokémon",
+                                   "相手に希望ポケモンを伝える"))
+                        .font(.caption.bold())
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 6) {
+                            ForEach(center.remoteRoster, id: \.mon.id) { entry in
+                                Button {
+                                    center.requestRemotePokemon(entry.mon.id)
+                                } label: {
+                                    VStack(spacing: 2) {
+                                        SpriteView(speciesID: entry.mon.presentationID, size: 34,
+                                                   shiny: entry.mon.isShiny)
+                                        Text(entry.displayName).font(.system(size: 8, weight: .semibold)).lineLimit(1)
+                                    }
+                                    .padding(5).frame(width: 70)
+                                    .background(center.requestedRemoteMonID == entry.mon.id
+                                                ? Color.blue.opacity(0.16) : Color.secondary.opacity(0.05),
+                                                in: RoundedRectangle(cornerRadius: 8))
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            if let wanted = center.remoteRequestedLocalMonID,
+               let entry = store.ownedMons.first(where: { $0.id == wanted }) {
+                HStack {
+                    Text(store.l.t("상대가 원하는 포켓몬: \(monLabel(entry))",
+                                   "They requested: \(monLabel(entry))",
+                                   "相手の希望: \(monLabel(entry))"))
+                        .font(.caption.bold())
+                    Spacer()
+                    Button(store.l.t("올려두기", "Offer", "提示する")) { center.offerRequestedPokemon() }
+                        .controlSize(.small).buttonStyle(.bordered)
+                }
             }
             Text(store.l.t("포켓몬을 바꾸면 두 사람의 확인이 모두 해제됩니다.",
                            "Changing an offer clears both confirmations.",

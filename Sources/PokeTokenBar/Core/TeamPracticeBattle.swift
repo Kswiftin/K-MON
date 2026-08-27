@@ -76,6 +76,21 @@ struct TeamPracticeBattle {
         return true
     }
 
+    /// 손가락흔들기처럼 버튼에 표시된 기술과 실제 발동 기술이 다른 모드용 턴 해상.
+    /// PP는 원래 슬롯에서 소비하지만 데미지·상태·연출은 호출된 기술 스펙을 그대로 사용한다.
+    mutating func useResolvedMoves(_ myMove: MoveSpec, cpuMove: MoveSpec, slotIndex: Int = 0) -> Bool {
+        guard result == nil, mine[myActive].isAlive, opponents[opponentActive].isAlive,
+              mine[myActive].canUse(moveAt: slotIndex), opponents[opponentActive].canUse(moveAt: slotIndex)
+        else { return false }
+        mine[myActive].pp[slotIndex] -= 1
+        opponents[opponentActive].pp[slotIndex] -= 1
+        events += BattleEngine.resolveTurn(a: &mine[myActive], b: &opponents[opponentActive],
+                                           moveA: myMove, moveB: cpuMove, turn: turn, rng: &rng)
+        turn += 1
+        advanceFainted()
+        return true
+    }
+
     /// 쓰러진 활성 슬롯을 다음 개체로 넘기고, 넘길 데가 없으면 승부를 적는다.
     ///
     /// **전멸 판정을 양쪽 다 먼저 본다.** 예전엔 상대 전멸을 확인한 자리에서 `result = true; return`

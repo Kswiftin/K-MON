@@ -518,7 +518,7 @@ struct CompanionHeader: View {
     private var companionContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 12) {
-                SpriteView(speciesID: store.currentSpeciesID, size: 76, bob: true, animated: true,
+                SpriteView(speciesID: store.currentPresentationID, size: 76, bob: true, animated: true,
                            shiny: store.currentIsShiny)
                     .frame(width: 76, height: 76)
                     .background(Color.secondary.opacity(0.055))
@@ -620,6 +620,20 @@ struct CompanionHeader: View {
                                 ForEach(store.currentTypes, id: \.self) { TypeBadge(type: $0, language: store.language) }
                             }
                         }
+                        if store.currentSpeciesID == 479 {
+                            Menu {
+                                ForEach(RotomForm.allCases, id: \.self) { form in
+                                    Button(form.name(store.language)) {
+                                        Task { await store.changeRotomForm(form) }
+                                    }
+                                }
+                            } label: {
+                                Label((store.state.active?.rotomForm ?? .normal).name(store.language),
+                                      systemImage: "bolt.horizontal.circle.fill")
+                                    .font(.caption2.weight(.semibold))
+                            }
+                            .menuStyle(.borderlessButton).fixedSize()
+                        }
                         HStack {
                             Text(store.experienceToNextLevel > 0
                                  ? store.l.t("다음 레벨까지 \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP",
@@ -717,7 +731,7 @@ struct CompanionHeader: View {
                     .font(.caption2).foregroundStyle(.orange)
             }
         }
-        .task(id: store.currentSpeciesID) { await store.loadCurrentTypes() }
+        .task(id: store.currentPresentationID) { await store.loadCurrentTypes() }
         // 진화에 필요한 기술 이름. 기술을 배우면 요구가 사라지므로 무브셋이 바뀔 때도 다시 본다.
         .task(id: store.currentMoveSetIdentity) { await store.loadEvolutionRequiredMove() }
         .onAppear {

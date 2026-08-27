@@ -56,7 +56,7 @@ struct PokemonRosterView: View {
             footer(current: current, pageCount: pageCount)
         }
         .frame(height: Self.contentHeight, alignment: .top)
-        .task(id: owned.map(\.currentID).sorted()) { await resolveDisplayValues(for: owned) }
+        .task(id: owned.map(\.presentationID).sorted()) { await resolveDisplayValues(for: owned) }
         .confirmationDialog(releaseQuestion(releaseTarget), isPresented: releaseDialogBinding,
                             titleVisibility: .visible) {
             Button(store.l.t("놓아주기", "Release", "にがす"), role: .destructive) {
@@ -87,7 +87,7 @@ struct PokemonRosterView: View {
     /// (`MonState.names`), 없는 것만 조회한다. 타입은 `battleProfile` 이 캐시하므로 두 번째부터 공짜다.
     private func resolveDisplayValues(for owned: [MonState]) async {
         for mon in owned {
-            let id = mon.currentID
+            let id = mon.presentationID
             if names[id] == nil {
                 let local = RosterOrdering.displayName(mon, language: store.language)
                 names[id] = local.hasPrefix("#") ? await store.resolveSpeciesName(id) : local
@@ -180,8 +180,8 @@ struct PokemonRosterView: View {
                         if index < slice.count {
                             let mon = slice[index]
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
-                                          name: names[mon.currentID] ?? "",
-                                          types: types[mon.currentID] ?? [],
+                                          name: names[mon.presentationID] ?? "",
+                                          types: types[mon.presentationID] ?? [],
                                           onInfo: { infoTarget = mon },
                                           onRelease: { releaseTarget = mon },
                                           onChat: { chatPresenter.open(companionID: mon.id) })
@@ -255,7 +255,7 @@ private struct RosterMonCard: View {
                 // ✨ 는 도감 칸과 **같은 표식**이다(`DexCell`). 이로치 스프라이트는 색만 다를 뿐이라
                 // 원래 색을 모르면 알아볼 수 없다 — 특히 색 차이가 작은 종(잉어킹 등)에서 그렇다.
                 // 좌상단인 이유는 우상단을 대화 버튼이 쓰기 때문이다.
-                SpriteView(speciesID: mon.currentID, size: 28, shiny: mon.isShiny)
+                SpriteView(speciesID: mon.presentationID, size: 28, shiny: mon.isShiny)
                     .overlay(alignment: .topLeading) {
                         if mon.isShiny {
                             Text("✨")
@@ -317,7 +317,7 @@ private struct PokemonDetailCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                SpriteView(speciesID: mon.currentID, size: 54, shiny: mon.isShiny)
+                SpriteView(speciesID: mon.presentationID, size: 54, shiny: mon.isShiny)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(RosterOrdering.displayName(mon, language: store.language)).font(.headline)
                     Text("#\(String(format: "%03d", mon.currentID)) · Lv.\(mon.level) \(mon.gender?.symbol ?? "")")
@@ -346,7 +346,7 @@ private struct PokemonDetailCard: View {
         }
         .padding(14).frame(width: 330)
         .task {
-            profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.currentID)
+            profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.presentationID)
             line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID)
         }
     }

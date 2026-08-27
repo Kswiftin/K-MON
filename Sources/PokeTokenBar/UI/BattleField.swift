@@ -452,6 +452,7 @@ private struct BattleMoveEffect: View {
     let move: MoveSpec
     let attacksFromMine: Bool
     @State private var progress = false
+    @State private var impactBurst = false
     private var style: BattleMoveAnimationStyle { .resolve(move) }
 
     var body: some View {
@@ -464,6 +465,8 @@ private struct BattleMoveEffect: View {
                 : CGPoint(x: proxy.size.width * 0.25, y: proxy.size.height * 0.70)
 
             ZStack {
+                battleBackdrop
+                speedLines(from: start, to: end)
                 switch style {
                 case .hydroPump:
                     hydroPump(from: start, to: end)
@@ -474,12 +477,13 @@ private struct BattleMoveEffect: View {
                 case .slash:
                     slashEffect(at: end)
                 case .punch, .bite, .charge:
+                    projectileTrail(from: start, to: end)
                     projectile
                         .position(progress ? end : start)
                     impact
                         .position(end)
-                        .opacity(progress ? 0.9 : 0)
-                        .scaleEffect(progress ? 1.25 : 0.25)
+                        .opacity(impactBurst ? 0.95 : 0)
+                        .scaleEffect(impactBurst ? 1.35 : 0.25)
                 case .quake, .storm:
                     fieldEffect(at: end, storm: style == .storm)
                 case .drain:
@@ -487,14 +491,71 @@ private struct BattleMoveEffect: View {
                 case .heal, .buff, .ailment:
                     statusAura.position(style == .heal || style == .buff ? start : end)
                 case .projectile:
+                    projectileTrail(from: start, to: end)
                     projectile.position(progress ? end : start)
-                    impact.position(end).opacity(progress ? 0.9 : 0).scaleEffect(progress ? 1.25 : 0.25)
+                    impact.position(end).opacity(impactBurst ? 0.95 : 0)
+                        .scaleEffect(impactBurst ? 1.35 : 0.25)
                 }
+                typeParticles(at: end)
             }
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.28)) { progress = true }
+                withAnimation(.timingCurve(0.18, 0.72, 0.24, 1, duration: 0.42)) { progress = true }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    withAnimation(.spring(response: 0.22, dampingFraction: 0.52)) { impactBurst = true }
+                }
             }
         }
+    }
+
+    private var battleBackdrop: some View {
+        RadialGradient(colors: [move.type.battleColor.opacity(impactBurst ? 0.22 : 0.04), .clear],
+                       center: .center, startRadius: 5, endRadius: impactBurst ? 190 : 70)
+            .animation(.easeOut(duration: 0.32), value: impactBurst)
+            .allowsHitTesting(false)
+    }
+
+    private func speedLines(from start: CGPoint, to end: CGPoint) -> some View {
+        ZStack {
+            ForEach(0..<7, id: \.self) { index in
+                attackPath(from: CGPoint(x: start.x, y: start.y + CGFloat(index - 3) * 8),
+                           to: CGPoint(x: end.x, y: end.y + CGFloat(index - 3) * 13))
+                    .trim(from: progress ? 0.62 : 0, to: progress ? 1 : 0.12)
+                    .stroke(move.type.battleColor.opacity(0.12),
+                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            }
+        }.allowsHitTesting(false)
+    }
+
+    private func projectileTrail(from start: CGPoint, to end: CGPoint) -> some View {
+        ZStack {
+            ForEach(0..<5, id: \.self) { index in
+                let ratio = CGFloat(index + 1) / 7
+                Circle().fill(move.type.battleColor.opacity(0.34 - Double(index) * 0.045))
+                    .frame(width: CGFloat(14 - index * 2), height: CGFloat(14 - index * 2))
+                    .position(x: start.x + (end.x - start.x) * ratio,
+                              y: start.y + (end.y - start.y) * ratio)
+                    .opacity(progress ? 0 : 0.8)
+                    .animation(.easeOut(duration: 0.34).delay(Double(index) * 0.025), value: progress)
+            }
+        }
+    }
+
+    private func typeParticles(at point: CGPoint) -> some View {
+        ZStack {
+            ForEach(0..<10, id: \.self) { index in
+                Image(systemName: projectileSymbol)
+                    .font(.system(size: CGFloat(5 + index % 3)))
+                    .foregroundStyle(index.isMultiple(of: 3) ? Color.white : move.type.battleColor)
+                    .offset(x: impactBurst ? cos(Double(index) * .pi / 5) * CGFloat(28 + index * 2) : 0,
+                            y: impactBurst ? sin(Double(index) * .pi / 5) * CGFloat(22 + index * 2) : 0)
+                    .opacity(impactBurst ? 0 : 0.85)
+                    .scaleEffect(impactBurst ? 1.25 : 0.35)
+            }
+        }
+        .position(point)
+        .animation(.easeOut(duration: 0.48), value: impactBurst)
+        .allowsHitTesting(false)
     }
 
     private func attackPath(from start: CGPoint, to end: CGPoint) -> Path {

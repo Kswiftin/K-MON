@@ -92,6 +92,19 @@ struct FriendView: View {
             }
             .pickerStyle(.segmented).labelsHidden()
 
+            Button {
+                destination = .battle
+                battleCenter.startMetronomeBattle()
+            } label: {
+                Label(store.l.t("손가락흔들기 배틀", "Metronome Battle", "ゆびをふるバトル"),
+                      systemImage: "hand.point.up.left.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(.purple)
+            .help(store.l.t("동일한 Lv.50 대여 토게키스로 무작위 기술 대결",
+                            "Identical Lv.50 rental Togekiss with random moves",
+                            "同じLv.50レンタルトゲキッスでランダム技対決"))
+
             if battleCenter.peers.isEmpty {
                 ContentUnavailableView(
                     store.l.t("근처 트레이너를 찾는 중…", "Looking for nearby trainers…", "近くのトレーナーを検索中…"),
@@ -161,6 +174,15 @@ struct FriendView: View {
                       ? store.l.t("상대가 교환 기능을 지원하는 최신 버전인지 확인하세요.",
                                   "Ask them to update to a version that supports trading.",
                                   "相手が交換対応の最新版か確認してください。") : "")
+
+                Button {
+                    guard let tradePeer else { return }
+                    destination = .trade
+                    battleCenter.trading.viewRoster(tradePeer)
+                } label: {
+                    Label(store.l.t("포켓몬 보기", "View Pokémon", "ポケモンを見る"), systemImage: "eye.fill")
+                }
+                .buttonStyle(.bordered).disabled(tradePeer == nil)
             }
             .controlSize(.small)
         }

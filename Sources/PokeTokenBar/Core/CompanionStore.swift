@@ -65,7 +65,7 @@ final class CompanionStore {
     private var loadedTypesSpeciesID: Int?
     /// 지금 개체의 타입. 태그가 안 맞으면 빈 배열 — 교체 지점마다 리셋을 심는 대신 읽는 자리 한 곳에서
     /// 막는다(리셋 지점은 계속 늘어나고 하나만 빠뜨리면 같은 결함이 돌아온다).
-    var currentTypes: [PokemonType] { loadedTypesSpeciesID == currentSpeciesID ? loadedTypes : [] }
+    var currentTypes: [PokemonType] { loadedTypesSpeciesID == currentPresentationID ? loadedTypes : [] }
     /// 종족값 — 타입과 **같은 조회**(`battleProfile`)에서 온다. 따로 받지 않는다.
     private var loadedBaseStats: BattleStats?
     /// 지금 개체의 실제 능력치 — 종족값에 **이 개체의 레벨과 성격**을 먹인 값이다.
@@ -76,7 +76,7 @@ final class CompanionStore {
     /// 태그 검사는 `currentTypes` 와 같은 이유다 — 개체가 바뀌었는데 남의 종족값으로 계산하면
     /// 그럴듯하게 틀린 숫자가 나온다(빈 값은 화면이 자리를 비우지만, 틀린 숫자는 안 들킨다).
     var currentStats: BattleStats? {
-        guard loadedTypesSpeciesID == currentSpeciesID, let base = loadedBaseStats,
+        guard loadedTypesSpeciesID == currentPresentationID, let base = loadedBaseStats,
               let mon = state.active else { return nil }
         return base.effective(level: mon.level, nature: mon.nature)
     }
@@ -395,14 +395,16 @@ final class CompanionStore {
     }
 
     func battleSnapshot(for mon: MonState, level: Int = 50) async -> BattleSnapshot? {
-        guard let profile = try? await provider.battleProfile(speciesID: mon.currentID) else { return nil }
-        let name = await resolveSpeciesName(mon.currentID)
+        guard let profile = try? await provider.battleProfile(speciesID: mon.presentationID) else { return nil }
+        let name = mon.currentID == 479
+            ? (mon.rotomForm ?? .normal).name(language)
+            : await resolveSpeciesName(mon.currentID)
         // 자동 무브셋은 **스냅샷 레벨** 기준이다. 예전엔 여기만 `mon.level` 이라, Lv.50 으로 나가는
         // 개체가 자기 실제 레벨까지 배우는 기술만 들고 갔다 — 몸은 50 인데 기술은 3 인 상태.
         let moves = mon.learnedMoves.isEmpty
-            ? await PokeAPIClient.shared.moveSet(speciesID: mon.currentID, level: level, types: profile.types)
+            ? await PokeAPIClient.shared.moveSet(speciesID: mon.presentationID, level: level, types: profile.types)
             : await detailedMoves(of: mon)
-        return BattleSnapshot(speciesID: mon.currentID, name: mon.nickname ?? name, trainer: trainerName,
+        return BattleSnapshot(speciesID: mon.presentationID, name: mon.nickname ?? name, trainer: trainerName,
                               level: level, nature: mon.nature, isShiny: mon.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
                               ability: profile.abilitySlug,
@@ -463,11 +465,13 @@ final class CompanionStore {
     var displayName: String {
         guard let a = state.active, let line = currentLine else { return "Token Egg" }
         if let nick = a.nickname, !nick.trimmingCharacters(in: .whitespaces).isEmpty { return nick }
+        if a.currentID == 479, let form = a.rotomForm { return form.name(state.language) }
         return line.localizedName(a.currentID, state.language)
     }
     /// 종 이름(별명 무시) — 별명 입력 플레이스홀더·리셋 기준값.
     var speciesName: String {
         guard let a = state.active, let line = currentLine else { return "" }
+        if a.currentID == 479, let form = a.rotomForm { return form.name(state.language) }
         return line.localizedName(a.currentID, state.language)
     }
     var currentNickname: String? { state.active?.nickname }
@@ -535,6 +539,32 @@ final class CompanionStore {
         save()
     }
     var currentSpeciesID: Int? { state.active?.currentID }
+    var currentPresentationID: Int? { state.active?.presentationID }
+
+    func changeRotomForm(_ form: RotomForm) async {
+        guard state.active?.currentID == 479 else { return }
+        let signatureIDs = Set(RotomForm.allCases.compactMap(\.signatureMoveID))
+        let signatureMove: MoveSpec?
+        if let moveID = form.signatureMoveID {
+            // 전용기를 가져오지 못한 상태에서 폼만 바뀌면 저장 데이터와 배틀 구성이 어긋난다.
+            guard let loaded = await provider.moveDetail(id: moveID) else { return }
+            signatureMove = loaded
+        } else {
+            signatureMove = nil
+        }
+        var moves = state.active!.learnedMoves.filter { !signatureIDs.contains($0.id) }
+        if let signatureMove {
+            if moves.count >= 4 { moves.removeLast() }
+            moves.append(signatureMove)
+        }
+        guard state.active?.currentID == 479 else { return }
+        state.active!.rotomForm = form == .normal ? nil : form
+        state.active!.learnedMoves = moves
+        displayedMoves = moves
+        loadedTypesSpeciesID = nil
+        save()
+        await loadCurrentTypes()
+    }
     var isFinalStage: Bool {
         guard let a = state.active, let line = currentLine else { return false }
         return line.tree.node(withID: a.currentID)?.children.isEmpty ?? true
@@ -830,7 +860,7 @@ final class CompanionStore {
     func floatingPetSubject(pinnedSpeciesID: Int?) -> (speciesID: Int?, isShiny: Bool) {
         guard let pinnedSpeciesID,
               let pinned = dexSpecies.first(where: { $0.id == pinnedSpeciesID })
-        else { return (currentSpeciesID, currentIsShiny) }
+        else { return (currentPresentationID, currentIsShiny) }
         return (pinned.id, pinned.isShiny)
     }
 
@@ -1507,9 +1537,9 @@ final class CompanionStore {
     }
 
     func loadCurrentTypes() async {
-        guard let id = currentSpeciesID,
+        guard let id = currentPresentationID,
               let profile = try? await provider.battleProfile(speciesID: id),
-              currentSpeciesID == id else { return }
+              currentPresentationID == id else { return }
         loadedTypes = profile.types
         loadedBaseStats = profile.stats
         loadedTypesSpeciesID = id
