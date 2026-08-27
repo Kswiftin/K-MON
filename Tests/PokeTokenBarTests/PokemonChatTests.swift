@@ -172,6 +172,10 @@ final class PokemonChatTests: XCTestCase {
         await store.hatch(baseID: 25)
         store.debugSetLoadedTypes([.electric], speciesID: 25,
                                   base: BattleStats(hp: 35, atk: 55, def: 40, spa: 50, spd: 50, spe: 90))
+        // 배운 기술도 함께 채운다. 프롬프트의 `learned moves` 는 **채워진 쪽 분기가 한 번도 안 돌던**
+        // 자리다(`--show-regions` 에서 `^0`) — 아무 테스트도 "기술이 프롬프트에 실린다" 를 증명하지
+        // 않은 채 "not loaded" 만 밟고 있었다.
+        store.debugSetActiveLearnedMoves([move(id: 84, name: "전기쇼크", type: .electric)])
         let expected = try XCTUnwrap(store.currentStats)
 
         let profile = store.chatProfile(for: try XCTUnwrap(store.state.active))
@@ -180,6 +184,7 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(profile.stats, "HP \(expected.hp) / Atk \(expected.atk) / Def \(expected.def)"
                        + " / SpA \(expected.spa) / SpD \(expected.spd) / Spe \(expected.spe)")
         XCTAssertTrue(prompt.contains("Spe \(expected.spe)"), prompt)
+        XCTAssertTrue(prompt.contains("learned moves 전기쇼크"), prompt)
     }
 
     /// 능력치는 **개체의** 값이다(레벨·성격이 먹은 값). 그래서 종이 같아도 다른 개체의 프로필에

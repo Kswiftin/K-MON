@@ -804,6 +804,13 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(status.line.contains("badges=0/\(GymLeague.catalog.count)"), status.line)
         XCTAssertTrue(status.line.contains("missions=0/\(MissionBoard.catalog.count)"), status.line)
         XCTAssertTrue(status.line.contains("budget=\(store.dungeonBudgetPreview)"), status.line)
+
+        // 클리어 분기를 직접 밟는다. "오늘 던전 갔어?" 에 답하는 값이 이 한 글자인데, `open` 만
+        // 시험하면 라인 커버리지는 100% 로 통과하면서 `cleared` 는 한 번도 안 돈다
+        // (`llvm-cov show --show-regions` 에서 `^0` 으로 확인했다).
+        store.settleDungeonClear(revealed: [:])
+        let after = await toolbox.runAsActive(.challengeStatus)
+        XCTAssertTrue(after.line.contains("dungeon=cleared"), after.line)
     }
 
     private static func dexEntry(chain: [Int], types: [PokemonType]? = nil, shiny: Bool = false) -> DexEntry {
