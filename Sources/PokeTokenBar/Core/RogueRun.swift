@@ -155,6 +155,10 @@ struct RogueRun: Sendable {
     mutating func beginWave(opponents: [BattleSnapshot]) {
         guard stage == .loadingWave, !opponents.isEmpty,
               let lead = party.firstIndex(where: { $0.isAlive }) else { return }
+        // 이월하는 것은 **HP·PP·주 상태이상까지**다. 랭크·혼란·풀죽음은 전투 안에서만 사는 값이라
+        // 웨이브가 바뀌면 지운다 — 안 지우면 앞 웨이브에서 울음소리로 깎인 랭크를 판이 끝날 때까지
+        // 지고 가서 "웨이브를 넘길수록 이유 없이 약해진다"가 된다(교체할 때와 같은 규칙).
+        for i in party.indices { BattleEngine.prepareForSwitch(&party[i]) }
         battle = TeamPracticeBattle(mine: party,
                                     opponents: opponents.map(BattleSide.init),
                                     rng: SplitMix64(seed: rng.next()))

@@ -129,6 +129,27 @@ final class RogueRunTests: XCTestCase {
         XCTAssertEqual(fainted.battle.myActive, 1)
     }
 
+    /// 웨이브를 넘어 이월하는 것은 HP·PP·주 상태이상뿐이다. 랭크·혼란은 전투 안의 값이라 넘기면
+    /// 앞 웨이브에서 깎인 랭크를 판이 끝날 때까지 지고 간다.
+    func testWaveTransitionClearsBattleOnlyState() {
+        var side = BattleSide(snapshot(1))
+        side.hp = side.stats.hp / 2
+        side.pp[0] = 3
+        side.changeStage(.atk, by: -2)
+        side.confusionTurns = 3
+        side.status = .poison
+        var run = makeRun()
+        run.useMove(0)
+        run.pick(run.offers.first { $0 != .potion && $0 != .cleanse && $0 != .elixir } ?? run.offers[0])
+        run.debugSetParty([side])
+        run.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
+        XCTAssertEqual(run.battle.mine[0].stage(.atk), 0)
+        XCTAssertEqual(run.battle.mine[0].confusionTurns, 0)
+        XCTAssertEqual(run.battle.mine[0].hp, side.hp, "HP 는 이월한다 — 이게 이 판의 자원이다")
+        XCTAssertEqual(run.battle.mine[0].pp[0], 3)
+        XCTAssertEqual(run.battle.mine[0].status, .poison, "주 상태이상은 이월한다(만병통치제의 몫)")
+    }
+
     func testFinalWaveVictoryClearsTheRun() {
         var run = makeRun()
         run.debugJump(toWave: RogueRun.finalWave)
