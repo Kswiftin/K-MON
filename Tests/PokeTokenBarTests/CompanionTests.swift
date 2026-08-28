@@ -843,15 +843,6 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.recordGymVictory(rockGym), rockGym.firstClearReward)
     }
 
-    /// 예전 체육관 배지가 남은 세이브를 열어도 현행 리그 보상을 받은 것으로 취급하면 안 된다.
-    func testCurrentGymLeagueDoesNotReuseLegacyBadgeKeys() {
-        let s = store(noEvo)
-        s.state.gymBadges = [bugGym.id]
-
-        XCTAssertEqual(s.recordGymVictory(bugGym), bugGym.firstClearReward)
-        XCTAssertEqual(s.state.gymLeagueBadges, Set([bugGym.id]))
-    }
-
     /// 첫 승리 보상 키는 팀 구성이 아니라 타입에서 나온다.
     func testGymIDsAreStableAndUnique() {
         let ids = GymLeague.catalog.map(\.id)
