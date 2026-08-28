@@ -62,6 +62,16 @@ struct PokemonRosterView: View {
             footer(current: current, pageCount: pageCount)
         }
         .frame(height: Self.contentHeight, alignment: .top)
+        // 상세정보 팝오버를 탭 오른쪽에 고정한다. 카드마다 다른 위치(그 카드의 정보 아이콘)에
+        // 붙이는 대신, 오른쪽 가장자리에 박아 둔 이 1pt 짜리 고정 앵커 하나를 모든 카드가 공유한다.
+        // 앵커가 **작고 위치가 바뀌지 않으므로** 첫 프레임 점프 결함(`RosterMonCard`, 2026-08-28
+        // defect-log)이 재발하지 않는다 — 그 결함은 앵커가 탭 전체(520pt)처럼 컸을 때만 생겼다.
+        .overlay(alignment: .trailing) {
+            Color.clear.frame(width: 1, height: 1)
+                .popover(isPresented: infoTargetIsPresented) {
+                    if let infoTarget { PokemonDetailCard(store: store, mon: infoTarget) }
+                }
+        }
         .onChange(of: searchText) { page = 0 }
         .task(id: ownedNameTaskID(owned)) {
             await store.backfillMissingOwnedNames()
@@ -79,10 +89,10 @@ struct PokemonRosterView: View {
                      "A released Pokémon does not come back. If it had graduated, its Pokédex record stays.",
                      "にがしたポケモンは戻りません。卒業して図鑑に記録された個体なら記録は残ります。"))
         }
-        // popover 는 여기(탭 전체를 감싸는 520pt VStack)에 붙지 않는다 — 이전엔 여기 붙어 있어서,
-        // 첫 프레임엔 이 큰 뷰의 경계를 기준으로 위치를 잡았다가(대개 하단) 실제 앵커(정보 버튼)로
-        // 다시 계산되며 튀었다(하단 → 오른쪽). 앵커는 각 카드의 정보 아이콘 자체에 직접 건다
-        // (`RosterMonCard` 의 topLeading 오버레이) — 그래야 첫 프레임부터 올바른 자리에서 뜬다.
+    }
+
+    private var infoTargetIsPresented: Binding<Bool> {
+        Binding(get: { infoTarget != nil }, set: { if !$0 { infoTarget = nil } })
     }
 
     private var releaseDialogBinding: Binding<Bool> {
@@ -250,23 +260,12 @@ private struct RosterMonCard: View {
     /// 갈라지지 않게 한다(행마다 따로 받아오면 정렬 키를 화면과 맞출 수 없다).
     let name: String
     let types: [PokemonType]
-    /// 상세정보 팝오버가 지금 누구를 보여주는지 — 박스 전체에서 하나뿐이라 부모가 들고 있다.
-    /// 이 카드는 자기 개체와 같은지만 비교한다(`showsDetail`).
+    /// 상세정보 팝오버가 지금 누구를 보여주는지 — 팝오버 자체는 탭 오른쪽 고정 앵커에 하나만
+    /// 붙어 있다(`PokemonRosterView.body`). 이 카드는 눌렸을 때 자기 개체로 바꿔 쓰기만 한다.
     @Binding var infoTarget: MonState?
     /// 방생 요청 — 확인 대화상자는 부모가 띄운다(카드는 격자 칸이라 대화상자를 붙일 자리가 아니다).
     let onRelease: () -> Void
     let onChat: () -> Void
-
-    /// **정보 버튼에 직접 앵커를 건다.** 예전엔 팝오버가 탭 전체(520pt VStack)에 붙어 있어서, 첫
-    /// 프레임엔 그 큰 뷰 경계를 기준으로 잡았다가(대개 하단) 실제 앵커로 재계산되며 하단 → 오른쪽으로
-    /// 튀었다. 앵커를 버튼 자체로 좁히면 첫 프레임부터 올바른 자리에서 뜬다.
-    ///
-    /// **같은 바인딩이라 "열어 둔 채 다른 개체 클릭"이 자연히 된다.** 다른 카드가 `infoTarget` 을
-    /// 그 개체로 바꾸면 이 카드의 `showsDetail` 은 false 로, 그 카드의 것은 true 로 동시에 바뀐다 —
-    /// 닫았다 다시 여는 손짓 없이 팝오버가 새 앵커·새 내용으로 옮겨간다.
-    private var showsDetail: Binding<Bool> {
-        Binding(get: { infoTarget?.id == mon.id }, set: { if !$0 { infoTarget = nil } })
-    }
 
     var body: some View {
         card.contextMenu {
@@ -338,9 +337,6 @@ private struct RosterMonCard: View {
             Button { infoTarget = mon } label: { Image(systemName: "info.circle") }
                 .buttonStyle(.borderless).controlSize(.mini).padding(3)
                 .accessibilityLabel(store.l.t("포켓몬 정보", "Pokémon info", "ポケモン情報"))
-                // 앵커는 이 아이콘 자체다 — 카드 전체나 탭 콘텐츠에 걸면 첫 프레임이 그 큰 뷰의
-                // 경계를 기준으로 잡혔다가 실제 버튼 위치로 재계산되며 튄다(하단 → 오른쪽, #원인).
-                .popover(isPresented: showsDetail) { PokemonDetailCard(store: store, mon: mon) }
         }
     }
 }
