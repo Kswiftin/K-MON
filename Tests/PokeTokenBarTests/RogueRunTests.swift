@@ -147,7 +147,20 @@ final class RogueRunTests: XCTestCase {
         XCTAssertEqual(run.battle.mine[0].confusionTurns, 0)
         XCTAssertEqual(run.battle.mine[0].hp, side.hp, "HP 는 이월한다 — 이게 이 판의 자원이다")
         XCTAssertEqual(run.battle.mine[0].pp[0], 3)
-        XCTAssertEqual(run.battle.mine[0].status, .poison, "주 상태이상은 이월한다(만병통치제의 몫)")
+        XCTAssertNil(run.battle.mine[0].status,
+                     "주 상태이상은 웨이브를 넘기지 않는다 — 한 마리 파티가 되돌릴 수단이 없다")
+    }
+
+    /// 독 하나로 판이 끝나던 자리 — 승리 정산에서 주 상태이상을 지운다. HP·PP 는 그대로 이월한다.
+    func testWinningAWaveClearsStatusButKeepsDamage() {
+        var run = RogueRun(party: [snapshot(1, hp: 900, speed: 1)],
+                           opponents: [snapshot(99, level: 5, hp: 1, speed: 200)],
+                           seed: 7)
+        run.debugAfflict(.poison)
+        run.useMove(0)   // 상대가 먼저 때리고, 내가 눕히고, 턴 끝에 독뎀이 들어간다
+        guard run.stage == .picking else { return XCTFail("승리하지 못했다: \(run.stage)") }
+        XCTAssertNil(run.party[0].status)
+        XCTAssertLessThan(run.party[0].hp, run.party[0].stats.hp, "HP 는 회복되지 않는다")
     }
 
     func testFinalWaveVictoryClearsTheRun() {

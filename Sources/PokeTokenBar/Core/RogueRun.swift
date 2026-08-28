@@ -116,6 +116,10 @@ struct RogueRun: Sendable {
         switch result {
         case .win:
             levelUpParty(by: Self.levelGain(wave: wave))
+            // 주 상태이상(독·화상…)은 웨이브를 넘기지 않는다. 파티가 한 마리라 독 하나가 매 턴
+            // 최대 HP 1/8 을 가져가고, 판이 끝날 때까지 되돌릴 수단이 사실상 없다.
+            // 이월하는 자원은 HP·PP 다 — 만병통치제 보상은 전투 **중** 해제로 값이 남는다.
+            clearStatus()
             // 보스를 넘으면 파티를 완전 회복한다 — 포켓로그가 10 웨이브마다 무료 회복을 주는 자리와
             // 같은 역할이다. 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면 보상 3장으로는 못 메우고
             // 후반 웨이브가 "이미 진 판을 마저 두는" 소화가 된다.
@@ -190,6 +194,15 @@ struct RogueRun: Sendable {
         }
     }
 
+    /// 파티의 주 상태이상·혼란을 지운다. **HP·PP 는 건드리지 않는다** — 그게 이월 자원이다.
+    private mutating func clearStatus() {
+        for i in party.indices {
+            party[i].status = nil
+            party[i].statusCounter = 0
+            party[i].confusionTurns = 0
+        }
+    }
+
     /// 살아 있는 개체를 완전 회복한다. **쓰러진 개체는 일으키지 않는다** — 부활은 `revive` 보상의
     /// 몫이고, 여기서 같이 살리면 그 보상이 보스 직후에 늘 꽝이 된다.
     private mutating func restoreParty() {
@@ -230,6 +243,9 @@ extension RogueRun {
     /// 테스트 전용 — 프로덕션 경로는 `useMove`/`switchParty`/`pick`/`beginWave` 뿐이다.
     mutating func debugSetParty(_ sides: [BattleSide]) { party = sides }
     mutating func debugFaint(_ index: Int) { party[index].hp = 0 }
+    /// 테스트 전용 — **전투 중** 개체에 상태이상을 건다. `debugSetParty` 는 `party` 만 바꾸는데
+    /// 승리 정산은 `battle.mine` 을 덮어쓰므로, 이월 규칙을 재려면 전투 쪽에 걸어야 한다.
+    mutating func debugAfflict(_ status: Status) { battle.mine[battle.myActive].status = status }
     mutating func debugApply(_ modifier: RunModifier) { apply(modifier) }
     /// 최종 웨이브 판정처럼 앞 웨이브를 다 밟지 않고 도달해야 하는 자리에 쓴다.
     mutating func debugJump(toWave value: Int) { wave = value }
