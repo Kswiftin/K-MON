@@ -116,80 +116,83 @@ enum GymLeague {
             firstClearReward: GymReward(starPieces: 500)),
         Gym(type: .rock,
             names: ["ko": "바위 체육관", "en": "Rock Gym", "ja": "いわジム"],
-            // 기가이어스 · 램펄드 · 대코파스 · 레지락(전설). 레지락은 방어 200 에 공격 100 이라
-            // 물리 위주 4기로 채운다 — 특공 50 짜리에게 특수기를 쥐어주는 건 낭비다.
-            teamSpeciesIDs: [526, 409, 476, 377],
+            // 릴리요 · 프테라 · 텅비드 · 비리디온(전설 에이스). 물·풀·격투·땅 중 하나로 전원을
+            // 쓸던 구성을 버리고, 릴리요와 비리디온이 그 네 약점을 중화한다.
+            teamSpeciesIDs: [346, 142, 793, 640],
+            aceSpeciesID: 640,
             teamMoveNames: [
-                ["stone-edge", "earthquake", "iron-head", "rock-slide"],
-                ["rock-slide", "earthquake", "zen-headbutt", "crunch"],
-                ["power-gem", "flash-cannon", "thunderbolt", "earth-power"],
-                ["stone-edge", "earthquake", "drain-punch", "ice-punch"],
+                ["power-gem", "giga-drain", "earth-power", "sludge-bomb"],
+                ["stone-edge", "earthquake", "crunch", "iron-head"],
+                ["power-gem", "sludge-bomb", "thunderbolt", "psychic"],
+                ["leaf-blade", "sacred-sword", "stone-edge", "x-scissor"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 500)),
         Gym(type: .electric,
             names: ["ko": "전기 체육관", "en": "Electric Gym", "ja": "でんきジム"],
-            // 에레키블 · 렌트라 · 전룡 · 썬더(전설). 특공 125 로 셋 중 가장 높아 특수 위주로 채우되,
-            // 비행 STAB(드릴부리)은 정확도가 안정적인 쪽을 골랐다 — 허리케인·번개는 명중 70 이라
-            // 어렵게 만드는 건 위력이지 뽑기 운이 아니어야 한다.
-            teamSpeciesIDs: [466, 405, 181, 145],
+            // 에몽가 · 저리더프 · 투구뿌논 · 볼트로스(전설). 땅 하나로 끝나는 전기 단일 팀 대신
+            // 비행 또는 부유 특성을 가진 넷을 세워, 땅 기술은 전원에게 통하지 않는다.
+            teamSpeciesIDs: [587, 604, 738, 642],
             teamMoveNames: [
-                ["wild-charge", "earthquake", "ice-punch", "fire-punch"],
-                ["wild-charge", "crunch", "psychic-fangs", "ice-fang"],
-                ["thunderbolt", "dragon-pulse", "power-gem", "dazzling-gleam"],
-                ["thunderbolt", "drill-peck", "heat-wave", "extrasensory"],
+                ["thunderbolt", "air-slash", "energy-ball", "volt-switch"],
+                ["thunderbolt", "flamethrower", "giga-drain", "dragon-pulse"],
+                ["thunderbolt", "bug-buzz", "energy-ball", "flash-cannon"],
+                ["thunderbolt", "air-slash", "focus-blast", "dark-pulse"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 1_000)),
         Gym(type: .water,
             names: ["ko": "물 체육관", "en": "Water Gym", "ja": "みずジム"],
-            // 밀로틱 · 대짱이 · 아쿠스타 · 수이쿤(전설). 방어·특방 115 로 오래 버티는 개체라
-            // 특수 위주로 채워 높은 특방으로 오래 버티며 꾸준히 압박한다.
-            teamSpeciesIDs: [350, 260, 121, 245],
+            // 로파파 · 랜턴 · 엠페르트 · 펄기아(전설). 풀·전기에 전원이 약하던 구성 대신
+            // 물/풀·물/전기·물/강철·물/드래곤으로 두 공격 타입을 최소 한 마리에게 중립 이하로 받는다.
+            teamSpeciesIDs: [272, 171, 395, 484],
             teamMoveNames: [
-                ["surf", "ice-beam", "dragon-pulse", "psychic"],
-                ["earthquake", "waterfall", "ice-punch", "rock-slide"],
-                ["surf", "psychic", "thunderbolt", "ice-beam"],
-                ["hydro-pump", "ice-beam", "extrasensory", "shadow-ball"],
+                ["surf", "giga-drain", "ice-beam", "scald"],
+                ["surf", "thunderbolt", "ice-beam", "dazzling-gleam"],
+                ["surf", "flash-cannon", "ice-beam", "earth-power"],
+                ["hydro-pump", "dragon-pulse", "thunderbolt", "aura-sphere"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 2_000)),
         Gym(type: .fire,
             names: ["ko": "불꽃 체육관", "en": "Fire Gym", "ja": "ほのおジム"],
-            // 나인테일 · 윈디 · 샹델라 · 히드런(전설). 특수·물리를 섞어 물 한 타입만으로
-            // 쉽게 쓸어버리지 못하게 하고, 히드런은 마지막에 강철 STAB까지 꺼낸다.
-            teamSpeciesIDs: [38, 59, 609, 485],
+            // 볼케니온 · 리자몽 · 번치코 · 케르디오(전설 에이스). 물·땅·바위 약점이 겹치지 않게
+            // 물/불꽃, 불꽃/비행, 불꽃/격투와 물/격투 에이스를 섞는다.
+            teamSpeciesIDs: [721, 6, 257, 647],
+            aceSpeciesID: 647,
             teamMoveNames: [
-                ["flamethrower", "energy-ball", "psyshock", "dark-pulse"],
-                ["heat-wave", "wild-charge", "crunch", "play-rough"],
-                ["shadow-ball", "flamethrower", "energy-ball", "psychic"],
-                ["magma-storm", "earth-power", "flash-cannon", "dark-pulse"],
+                ["steam-eruption", "fire-blast", "earth-power", "flash-cannon"],
+                ["flamethrower", "air-slash", "dragon-pulse", "focus-blast"],
+                ["blaze-kick", "sky-uppercut", "thunder-punch", "shadow-claw"],
+                ["hydro-pump", "sacred-sword", "ice-beam", "air-slash"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 3_000)),
         Gym(type: .grass,
             names: ["ko": "풀 체육관", "en": "Grass Gym", "ja": "くさジム"],
-            // 이상해꽃 · 나시 · 덩쿠림보 · 쉐이미(전설). 풀은 약점이 많아 기술 폭을 넓히고,
-            // 마지막 쉐이미는 600 종족값의 특수 압박으로 단일 불꽃 대응을 버틴다.
-            teamSpeciesIDs: [3, 103, 465, 492],
+            // 로파파 · 이상해꽃 · 너트령 · 파이어(전설 에이스). 불꽃·얼음·벌레·비행·독 약점 중
+            // 어느 하나로도 전원을 정리하지 못하도록 물/풀·풀/독·풀/강철과 불꽃/비행을 섞는다.
+            teamSpeciesIDs: [272, 3, 598, 146],
+            aceSpeciesID: 146,
             teamMoveNames: [
+                ["surf", "giga-drain", "ice-beam", "focus-blast"],
                 ["energy-ball", "sludge-bomb", "earth-power", "psychic"],
-                ["energy-ball", "psychic", "flamethrower", "shadow-ball"],
-                ["power-whip", "earthquake", "rock-slide", "sludge-bomb"],
-                ["energy-ball", "earth-power", "psychic", "air-slash"],
+                ["power-whip", "iron-head", "rock-slide", "bulldoze"],
+                ["flamethrower", "air-slash", "ancient-power", "hyper-voice"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 4_000)),
         Gym(type: .psychic,
             names: ["ko": "에스퍼 체육관", "en": "Psychic Gym", "ja": "エスパージム"],
-            // 후딘 · 메타그로스 · 엘레이드 · 뮤츠(전설). 내구·물리·특수를 나눠 악 타입 하나만
-            // 들고 와도 끝나지 않게 하며, 마지막 뮤츠는 폭넓은 특수 기술로 마무리한다.
-            teamSpeciesIDs: [65, 376, 475, 150],
+            // 가디안 · 동탁군 · 칼라마네로 · 제르네아스(전설 에이스). 악·고스트·벌레 약점이 전원에게
+            // 겹치지 않게 페어리·강철·악 복합과 페어리 에이스를 둔다.
+            teamSpeciesIDs: [282, 437, 687, 716],
+            aceSpeciesID: 716,
             teamMoveNames: [
-                ["psychic", "shadow-ball", "energy-ball", "dazzling-gleam"],
-                ["meteor-mash", "zen-headbutt", "earthquake", "ice-punch"],
-                ["psycho-cut", "leaf-blade", "night-slash", "x-scissor"],
-                ["psychic", "aura-sphere", "ice-beam", "thunderbolt"],
+                ["psychic", "moonblast", "thunderbolt", "shadow-ball"],
+                ["flash-cannon", "psychic", "earth-power", "shadow-ball"],
+                ["psycho-cut", "night-slash", "x-scissor", "superpower"],
+                ["moonblast", "psychic", "thunderbolt", "focus-blast"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 5_000)),

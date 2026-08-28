@@ -868,12 +868,12 @@ final class CompanionStoreTests: XCTestCase {
     func testGymLegendaryIsTheLastOpponent() {
         let legendaryByType: [PokemonType: Int] = [
             .bug: 485,      // 히드런
-            .rock: 377,     // 레지락
-            .electric: 145, // 썬더
-            .water: 245,    // 수이쿤
-            .fire: 485,     // 히드런
-            .grass: 492,    // 쉐이미
-            .psychic: 150,  // 뮤츠
+            .rock: 640,     // 비리디온
+            .electric: 642, // 볼트로스
+            .water: 484,    // 펄기아
+            .fire: 647,     // 케르디오
+            .grass: 146,    // 파이어
+            .psychic: 716,  // 제르네아스
             .dragon: 483,   // 디아루가
         ]
 
@@ -883,7 +883,9 @@ final class CompanionStoreTests: XCTestCase {
             XCTAssertEqual(gym.teamSpeciesIDs.last, legendaryByType[gym.type],
                            "\(gym.id): 전설은 마지막 상대여야 한다")
         }
-        let offTypeAces: [PokemonType: Int] = [.bug: 485]
+        let offTypeAces: [PokemonType: Int] = [
+            .bug: 485, .rock: 640, .fire: 647, .grass: 146, .psychic: 716,
+        ]
         for gym in GymLeague.catalog {
             XCTAssertEqual(gym.aceSpeciesID, offTypeAces[gym.type],
                            "\(gym.id): 타입 밖 에이스는 한 타입 스윕을 막는 마지막 전설만 허용한다")
