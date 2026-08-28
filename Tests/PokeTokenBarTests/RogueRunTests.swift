@@ -450,12 +450,29 @@ final class RogueRunTests: XCTestCase {
                        "PP 표시를 직접 그리면 공용 렌더러의 색·배지 규칙에서 벗어난다")
     }
 
-    /// 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹·전설이 나온다. 뽑기가 코어 밖(뷰)에 있어
-    /// 로직 테스트로 못 잡으므로 소스에서 기계적으로 확인한다.
+    /// 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹·전설이 나온다. 채택 규칙은 코어
+    /// (`RogueRun.chooseOpponent`)가 들고 있고 — 시뮬레이터가 같은 규칙을 봐야 하기 때문이다 —
+    /// 뷰가 그 규칙을 실제로 지나는지는 로직 테스트로 못 잡으므로 소스에서 기계적으로 확인한다.
     func testWildDrawFiltersBySpeciesTier() throws {
         let source = try Self.viewSource()
-        XCTAssertTrue(source.contains("RogueRun.isFairOpponent("),
-                      "야생 뽑기는 웨이브 티어(종족값 상한)를 지나야 한다")
+        XCTAssertTrue(source.contains("RogueRun.chooseOpponent("),
+                      "야생 뽑기는 코어의 채택 규칙(웨이브 티어)을 지나야 한다")
+        XCTAssertFalse(source.contains("wildDrawAttempts"),
+                       "재추첨 횟수까지 뷰가 다시 들면 시뮬레이터와 규칙이 갈린다")
+    }
+
+    /// 코어 쪽 규칙 자체 — 티어를 벗어난 후보는 거르고, 전부 어긋나면 가장 약한 것을 쓴다.
+    func testChooseOpponentTakesTheFairCandidateThenTheWeakest() async {
+        // 종족값 합 = hp + speed + 300 (나머지 축은 헬퍼가 고정한다). 웨이브 1 상한은 320.
+        var offered = [snapshot(1, hp: 200), snapshot(2, hp: 10, speed: 5)]
+        let fair = await RogueRun.chooseOpponent(wave: 1) { offered.isEmpty ? nil : offered.removeFirst() }
+        XCTAssertEqual(fair?.speciesID, 2, "티어 밖(과대) 후보를 지나 공정한 후보를 잡는다")
+
+        var allTooBig = [snapshot(3, hp: 300), snapshot(4, hp: 220)]   // 700 · 620
+        let weakest = await RogueRun.chooseOpponent(wave: 1, attempts: 2) {
+            allTooBig.isEmpty ? nil : allTooBig.removeFirst()
+        }
+        XCTAssertEqual(weakest?.speciesID, 4, "다 어긋나면 그중 가장 약한 종으로 판을 연다")
     }
 
     /// 재생기를 빼면 기절·피격이 화면에 뜨기 전에 필드가 다음 포켓몬으로 갈아탄다 — 사용자에게는

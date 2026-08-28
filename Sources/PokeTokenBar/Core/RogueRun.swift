@@ -289,6 +289,10 @@ struct RogueRun: Sendable {
         // 웨이브가 바뀌면 지운다 — 안 지우면 앞 웨이브에서 울음소리로 깎인 랭크를 판이 끝날 때까지
         // 지고 가서 "웨이브를 넘길수록 이유 없이 약해진다"가 된다(교체할 때와 같은 규칙).
         for i in party.indices { BattleEngine.prepareForSwitch(&party[i]) }
+        // 주 상태이상도 여기서 지운다. 승리 정산(`clearWave`)이 이미 지우지만, 웨이브 경계를
+        // 지나는 자리는 여기 하나뿐이라 불변식("주 상태이상은 웨이브를 넘지 않는다")을 여기서
+        // 잠근다 — 정산 뒤 파티가 바뀌는 경로(포획으로 합류한 개체)가 생겨도 규칙이 유지된다.
+        clearStatus()
         battle = TeamPracticeBattle(mine: party,
                                     opponents: opponents.map(BattleSide.init),
                                     rng: SplitMix64(seed: rng.next()))
