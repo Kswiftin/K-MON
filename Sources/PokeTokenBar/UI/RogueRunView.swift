@@ -272,22 +272,34 @@ struct RogueRunView: View {
 
     private func start(with starter: BattleSnapshot) async {
         setup = .loading
-        guard let opponent = await Self.wild(wave: 1, store: store) else {
+        let opponents = await Self.wilds(wave: 1, store: store)
+        guard !opponents.isEmpty else {
             setup = .failedToLoad
             return
         }
-        store.rogueRun = RogueRun(party: [starter], opponents: [opponent],
+        store.rogueRun = RogueRun(party: [starter], opponents: opponents,
                                   seed: UInt64.random(in: UInt64.min...UInt64.max))
     }
 
     private func loadNextWave() async {
         guard let run = store.rogueRun else { return }
-        guard let opponent = await Self.wild(wave: run.wave, store: store) else {
+        let opponents = await Self.wilds(wave: run.wave, store: store)
+        guard !opponents.isEmpty else {
             // 판은 그대로 둔다 — 창을 다시 열면 `resume()` 이 이 웨이브를 다시 불러온다.
             setup = .failedToLoad
             return
         }
-        mutate { $0.beginWave(opponents: [opponent]) }
+        mutate { $0.beginWave(opponents: opponents) }
+    }
+
+    /// 이 웨이브의 상대 전원. **한 마리라도 만들었으면 그대로 간다** — 둘째를 못 받았다고 판을
+    /// 세우면 네트워크가 흔들릴 때마다 진행 중인 런이 멈춘다.
+    private static func wilds(wave: Int, store: CompanionStore) async -> [BattleSnapshot] {
+        var built: [BattleSnapshot] = []
+        for _ in 0..<RogueRun.opponentCount(wave: wave) {
+            if let one = await wild(wave: wave, store: store) { built.append(one) }
+        }
+        return built
     }
 
     // MARK: 상대 만들기

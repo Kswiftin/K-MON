@@ -194,6 +194,36 @@ final class RogueRunTests: XCTestCase {
         return ballRun(seed: 1)
     }
 
+    /// 후반 웨이브는 둘이 나온다 — 포획으로 파티가 커지는데 상대가 끝까지 하나면 판이 헐거워진다.
+    func testLateWavesSendTwoOpponents() {
+        for wave in 1...8 { XCTAssertEqual(RogueRun.opponentCount(wave: wave), 1, "wave \(wave)") }
+        for wave in 9...12 { XCTAssertEqual(RogueRun.opponentCount(wave: wave), 2, "wave \(wave)") }
+    }
+
+    /// 둘 중 하나를 잡아도 웨이브는 끝나지 않는다. 잡은 개체는 **그 자리에서** 파티에 들어와야
+    /// 한다 — 다음 행동이 `battle.mine` 에서 파티를 다시 읽으므로 안 넣으면 조용히 사라진다.
+    func testCatchingOneOfTwoKeepsTheWaveRunning() {
+        var run = twoOpponentRun()
+        XCTAssertEqual(run.stage, .battling)
+        XCTAssertEqual(run.party.count, 3)
+        XCTAssertEqual(run.battle.mine.count, 3)
+        run.useMove(0)
+        XCTAssertEqual(run.party.count, 3, "잡은 개체가 다음 행동에 사라졌다")
+    }
+
+    private func twoOpponentRun() -> RogueRun {
+        for seed in UInt64(1)...200 {
+            var run = RogueRun(party: (0..<2).map { snapshot(1 + $0, hp: 4000, speed: 200) },
+                               opponents: [snapshot(98, hp: 100, speed: 1),
+                                           snapshot(99, hp: 100, speed: 1)],
+                               seed: seed)
+            run.debugSetOpponentHP(1)
+            if run.throwBall() { return run }
+        }
+        XCTFail("no seed produced a catch")
+        return makeRun()
+    }
+
     // MARK: 진행
 
     func testWinningOffersThreeDistinctModifiers() {

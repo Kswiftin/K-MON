@@ -62,6 +62,10 @@ struct RogueRun: Sendable {
         return wave == finalWave ? baseline + 2 : baseline
     }
 
+    /// 웨이브당 상대 마릿수. 후반은 둘이 나온다 — 포획으로 파티가 최대 6까지 커지는데 상대가 끝까지
+    /// 하나면 판이 뒤로 갈수록 헐거워진다. 보스 4·8 은 종족값 상한을 올린 한 마리로 남긴다(벽 역할).
+    static func opponentCount(wave: Int) -> Int { wave >= 9 ? 2 : 1 }
+
     /// 웨이브별 상대 **종족값 합(BST) 상한**. 포켓로그가 웨이브에 따라 종 티어를 올리는 것과 같은
     /// 규칙이다. 이 상한이 없으면 종을 전 범위(1...649)에서 균등 추첨하는 호출자가 웨이브 1 에
     /// 슬라킹(670)·전설을 뽑아, 레벨 곡선을 아무리 맞춰도 판이 첫 턴에 끝난다.
@@ -198,13 +202,18 @@ struct RogueRun: Sendable {
             return false
         }
         party = battle.mine
+        // 잡힌 상대는 쓰러진 것과 같은 자리를 지난다 — 상대가 더 남았으면 전투는 이어진다.
+        battle.retireOpponent()
         // 정산을 먼저 지난다 — 잡힌 개체는 그 전투의 경험치를 받지 않으므로 레벨업 대상이 아니다.
-        clearWave()
+        if battle.result == .win { clearWave() }
         var caught = target
         BattleEngine.prepareForSwitch(&caught)
         caught.status = nil
         caught.statusCounter = 0
         party.append(caught)
+        // 전투가 이어지는 중이면 잡은 개체도 **그 자리에서 파티에 합류한다.** 런의 파티는
+        // `battle.mine` 에서 다시 읽히므로(`settle`), 여기 안 넣으면 다음 행동에 조용히 사라진다.
+        if battle.result == nil { battle.mine.append(caught) }
         return true
     }
 
