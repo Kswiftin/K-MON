@@ -11,8 +11,11 @@ struct RogueTuning: Sendable, Equatable {
     var finalWave = 12
     /// 보스 주기 — 이 배수 웨이브가 보스다.
     var bossEvery = 4
-    /// 야생이 파티 레벨 기준선보다 몇 아래에 서는가.
-    var wildLevelHandicap = 3
+    /// 야생이 파티 레벨 기준선보다 몇 아래에 서는가 — 첫 웨이브와 마지막 웨이브 값. 사이는 선형이다.
+    /// 판이 뒤로 갈수록 좁히면 난이도가 우상향한다. 폭이 끝까지 같으면 보스만 사납고 야생 웨이브는
+    /// 통째로 공짜가 된다(실측: 웨이브 5–7 의 조건부 사망률이 0.000 이었다).
+    var wildLevelHandicapStart = 3
+    var wildLevelHandicapEnd = 3
     /// 보스가 기준선보다 몇 위에 서는가(최종 웨이브 제외).
     var bossLevelBonus = 0
     /// 최종 보스가 기준선보다 몇 위에 서는가.
@@ -36,6 +39,14 @@ struct RogueTuning: Sendable, Equatable {
     var bossLevelGain = 3
 
     static let standard = RogueTuning()
+
+    /// 이 웨이브의 야생 핸디캡.
+    func wildHandicap(wave: Int) -> Int {
+        guard finalWave > 1 else { return wildLevelHandicapStart }
+        let progress = Double(min(wave, finalWave) - 1) / Double(finalWave - 1)
+        let span = Double(wildLevelHandicapEnd - wildLevelHandicapStart)
+        return Int((Double(wildLevelHandicapStart) + span * progress).rounded())
+    }
 
     /// 이 웨이브가 속한 구간(1부터)과 전체 구간 수.
     func tierIndex(wave: Int) -> (index: Int, count: Int) {

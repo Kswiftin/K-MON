@@ -441,6 +441,28 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(names.first, "flamethrower")
     }
 
+    /// 레벨이 낮아 후보가 4개가 안 될 때 **최종기를 앞당겨 주지 않는다.** 예전엔 완화된 풀도
+    /// 습득레벨 내림차순이라 레벨 2 야생이 그 종의 마지막 기술을 들고 나왔다.
+    func testMoveCandidatesFillShortPoolsWithTheEarliestMoves() throws {
+        let json = """
+        {"moves": [
+          {"move": {"name": "tackle", "url": null},
+           "version_group_details": [{"level_learned_at": 1, "move_learn_method": {"name": "level-up", "url": null}}]},
+          {"move": {"name": "ember", "url": null},
+           "version_group_details": [{"level_learned_at": 7, "move_learn_method": {"name": "level-up", "url": null}}]},
+          {"move": {"name": "flamethrower", "url": null},
+           "version_group_details": [{"level_learned_at": 47, "move_learn_method": {"name": "level-up", "url": null}}]},
+          {"move": {"name": "fire-blast", "url": null},
+           "version_group_details": [{"level_learned_at": 83, "move_learn_method": {"name": "level-up", "url": null}}]}
+        ]}
+        """
+        let dto = try JSONDecoder().decode(PokemonMovesDTO.self, from: Data(json.utf8))
+        let names = PokeAPIClient.moveCandidates(dto, level: 2)
+        XCTAssertEqual(names, ["tackle", "ember", "flamethrower", "fire-blast"])
+        XCTAssertEqual(names.first, "tackle")
+        XCTAssertNotEqual(names[1], "fire-blast", "최종기가 두 번째 칸에 오면 완화가 내림차순이다")
+    }
+
     func testPickFourPrefersStabAndTypeDiversity() {
         func spec(_ id: Int, _ type: PokemonType, _ power: Int) -> MoveSpec {
             MoveSpec(id: id, names: [:], type: type, power: power, damageClass: .physical, accuracy: 100, pp: 10)

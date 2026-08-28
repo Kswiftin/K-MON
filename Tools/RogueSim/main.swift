@@ -177,7 +177,8 @@ func doubleOption(_ name: String, _ fallback: Double) -> Double {
 var tuning = RogueTuning.standard
 tuning.finalWave = intOption("--final-wave", tuning.finalWave)
 tuning.bossEvery = intOption("--boss-every", tuning.bossEvery)
-tuning.wildLevelHandicap = intOption("--handicap", tuning.wildLevelHandicap)
+tuning.wildLevelHandicapStart = intOption("--handicap", tuning.wildLevelHandicapStart)
+tuning.wildLevelHandicapEnd = intOption("--handicap-end", tuning.wildLevelHandicapStart)
 tuning.bossLevelBonus = intOption("--boss-level", tuning.bossLevelBonus)
 tuning.finalLevelBonus = intOption("--final-level", tuning.finalLevelBonus)
 tuning.firstTierCap = intOption("--first-cap", tuning.firstTierCap)
@@ -196,8 +197,9 @@ let cache = SnapshotCache(file: cacheFile)
 
 /// 이 튜닝이 쓰는 (종, 레벨) 조합을 미리 다 받아 둔다. 스윕은 같은 조합을 수백 번 다시 보므로,
 /// 채워 두면 그 뒤 실험은 네트워크를 한 번도 타지 않는다.
-func warm(tuning: RogueTuning, cache: SnapshotCache) async {
+func warm(tuning: RogueTuning, cache: SnapshotCache, range: ClosedRange<Int>?) async {
     var levels = Set([5])
+    if let range { levels.formUnion(range) }
     for wave in 1...tuning.finalWave { levels.insert(RogueRun.opponentLevel(wave: wave, tuning: tuning)) }
     let sorted = levels.sorted()
     FileHandle.standardError.write(Data("레벨 \(sorted) × 종 \(RogueRun.wildSpeciesPool.count)\n".utf8))
@@ -223,7 +225,14 @@ extension Array {
 }
 
 if arguments.contains("--warm") {
-    await warm(tuning: tuning, cache: cache)
+    // "1-31" 처럼 범위를 주면 그 레벨을 통째로 받아 둔다 — 핸디캡을 흔드는 스윕은 레벨 세트가
+    // 매번 달라지므로, 넓게 한 번 채워 두는 편이 실험마다 네트워크를 타는 것보다 싸다.
+    let range = option("--warm-levels").flatMap { text -> ClosedRange<Int>? in
+        let parts = text.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 2, parts[0] <= parts[1] else { return nil }
+        return parts[0]...parts[1]
+    }
+    await warm(tuning: tuning, cache: cache, range: range)
     let total = await cache.count
     print("캐시 \(total)개")
     exit(0)
@@ -254,27 +263,44 @@ func mean(_ values: [Int]) -> Double {
     values.isEmpty ? 0 : Double(values.reduce(0, +)) / Double(values.count)
 }
 
-/// 탈락이 한 웨이브에 몰린 정도 — 가장 많이 죽은 웨이브가 평균의 몇 배인가. 1 에 가까울수록
-/// 곡선이 고르다. 클리어율만 보면 "웨이브 4 에서 10% 가 죽고 나머지는 심심한" 판을 구분하지 못한다.
+/// 웨이브별 **조건부 사망률**(hazard) — 그 웨이브에 도달한 판 중 거기서 끝난 비율.
+/// 절대 탈락 수는 생존자가 줄어드는 만큼 저절로 작아져서, 판이 뒤로 갈수록 어려워지는지를
+/// 그 숫자로는 볼 수 없다.
+let reached = (1...tuning.finalWave).map { wave in
+    results.filter { $0.reachedWave >= wave }.count
+}
 let deathsByWave = (1...tuning.finalWave).map { wave in
     results.filter { $0.reachedWave == wave && !$0.cleared }.count
 }
-let deathTotal = deathsByWave.reduce(0, +)
-let spike = deathTotal > 0
-    ? Double(deathsByWave.max() ?? 0) / (Double(deathTotal) / Double(tuning.finalWave))
-    : 0
+let hazard = (0..<tuning.finalWave).map { index -> Double in
+    reached[index] > 0 ? Double(deathsByWave[index]) / Double(reached[index]) : 0
+}
+
+/// **역전량** — hazard 가 앞 웨이브보다 낮아진 크기의 합. 판은 뒤로 갈수록 어려워야 하므로
+/// 우상향은 벌하지 않고 톱니(웨이브 4 가 5–7 보다 사나운 것 같은)만 벌한다.
+/// 도달 판이 너무 적은 웨이브는 잡음이라 세지 않는다.
+let minimumSample = max(5, results.count / 20)
+var inversion = 0.0
+var previous = 0.0
+for index in 0..<tuning.finalWave where reached[index] >= minimumSample {
+    if hazard[index] < previous { inversion += previous - hazard[index] }
+    previous = max(previous, hazard[index])
+}
+let finalIsHardest = hazard.last == hazard.max()
 
 let clearRate = Double(cleared) / Double(results.count) * 100
-print(String(format: "%@판 %d · seed %d · 클리어 %.1f%% · 평균도달 %.2f · 쏠림 %.2f · 파티 %.2f · 볼 %.2f",
+print(String(format: "%@판 %d · seed %d · 클리어 %.1f%% · 평균도달 %.2f · 역전 %.3f%@ · 파티 %.2f · 볼 %.2f",
              label.isEmpty ? "" : "[\(label)] " as String,
              results.count, Int(baseSeed), clearRate,
-             mean(results.map(\.reachedWave)), spike,
+             mean(results.map(\.reachedWave)), inversion,
+             finalIsHardest ? "" : " (최종이 최고점 아님)",
              mean(results.map(\.partySize)), mean(results.map(\.ballsUsed))))
 if arguments.contains("--detail") {
-    for (offset, count) in deathsByWave.enumerated() where count > 0 {
-        let wave = offset + 1
-        let bar = String(repeating: "█", count: max(1, count * 40 / results.count))
-        print(String(format: "  %2d%@ %3d  %@", wave,
-                     RogueRun.isBoss(wave: wave, tuning: tuning) ? "*" : " ", count, bar))
+    for index in 0..<tuning.finalWave where deathsByWave[index] > 0 || reached[index] > 0 {
+        let wave = index + 1
+        let bar = String(repeating: "█", count: Int(hazard[index] * 40))
+        print(String(format: "  %2d%@ 도달 %3d 탈락 %3d  hazard %.3f %@", wave,
+                     RogueRun.isBoss(wave: wave, tuning: tuning) ? "*" : " ",
+                     reached[index], deathsByWave[index], hazard[index], bar))
     }
 }

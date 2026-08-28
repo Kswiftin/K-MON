@@ -535,10 +535,17 @@ actor PokeAPIClient: PokeProviding {
             best[m.move.name] = min(best[m.move.name] ?? Int.max, l)
         }
         let learns = best.map { Learn(name: $0.key, level: $0.value) }
-        let within = learns.filter { $0.level <= max(1, level) }
-        // 현 레벨 이하가 4개 못 되면 전체로 완화 — 저레벨도 대전은 돼야 한다.
-        let pool = within.count >= 4 ? within : learns
-        return pool.sorted { $0.level == $1.level ? $0.name < $1.name : $0.level > $1.level }.map(\.name)
+        let cutoff = max(1, level)
+        // 현 레벨까지 배우는 기술은 **최근 것부터**. 그 레벨의 주력이 앞에 와야 한다.
+        let recent = learns.filter { $0.level <= cutoff }
+            .sorted { $0.level == $1.level ? $0.name < $1.name : $0.level > $1.level }
+        guard recent.count < 4 else { return recent.map(\.name) }
+        // 4개가 안 되면 아직 못 배운 기술로 칸을 채운다 — 저레벨도 대전은 돼야 한다. 다만
+        // **가장 일찍 배우는 것부터** 채운다. 여기서도 내림차순으로 채우면 레벨 2 야생이 그 종의
+        // 최종기를 들고 나와, 초반 상대의 세기가 종의 학습표 밀도에 따라 널뛴다(웨이브 런 실측).
+        let later = learns.filter { $0.level > cutoff }
+            .sorted { $0.level == $1.level ? $0.name < $1.name : $0.level < $1.level }
+        return (recent + later).map(\.name)
     }
 
     /// 기술 4개 — 공격기는 STAB·고위력 우선하되 타입 중복은 뒤로(견제폭), **변화기는 최대 한 칸**.

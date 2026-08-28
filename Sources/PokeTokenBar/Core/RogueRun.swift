@@ -53,7 +53,7 @@ struct RogueRun: Sendable {
     /// 야생이 파티 기준선보다 얼마나 아래에 서는가. PokeRogue 는 웨이브 1 에 레벨 2 야생을
     /// 레벨 5 스타터에게 붙인다(`baseLevel = 1 + wave/2 + (wave/25)^2`, `src/battle.ts`) —
     /// 플레이어가 처음부터 위에 서고 적은 웨이브당 0.5 씩만 오른다.
-    static let wildLevelHandicap = RogueTuning.standard.wildLevelHandicap
+    static let wildLevelHandicap = RogueTuning.standard.wildLevelHandicapStart
 
     /// 상대 레벨 — 야생은 파티 기준선 아래, 보스는 기준선, 최종만 그 위다.
     ///
@@ -61,7 +61,7 @@ struct RogueRun: Sendable {
     /// 늘 아래에 두는데, 우리는 파티가 **한 마리로 시작**해 그 여유가 더 필요하다.
     static func opponentLevel(wave: Int, tuning: RogueTuning = .standard) -> Int {
         let baseline = partyLevelBaseline(wave: wave, tuning: tuning)
-        guard isBoss(wave: wave, tuning: tuning) else { return baseline - tuning.wildLevelHandicap }
+        guard isBoss(wave: wave, tuning: tuning) else { return baseline - tuning.wildHandicap(wave: wave) }
         return baseline + (wave == tuning.finalWave ? tuning.finalLevelBonus : tuning.bossLevelBonus)
     }
 
