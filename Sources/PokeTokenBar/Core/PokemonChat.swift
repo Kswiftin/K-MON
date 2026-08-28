@@ -482,10 +482,14 @@ enum PokemonChatWorkspace {
     ///
     /// 심볼릭 링크를 푸는 이유는 폴백 때문이다. `/bin/pwd` 는 물리 경로를 찍는데
     /// `temporaryDirectory` 는 `/var`(→ `/private/var`) 아래라, 안 풀면 두 문자열이 갈린다.
-    static let directoryURL: URL = {
+    static let directoryURL: URL =
+        resolved(base: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
+
+    /// 주입 가능한 실체. 폴백 분기는 App Support 가 살아 있는 기계에서 절대 돌지 않아, 상수 안에
+    /// 두면 라인 커버리지에 `^0` 으로 남는다 — 통과만 보면 검증된 것과 구별되지 않는다.
+    static func resolved(base: URL) -> URL {
         let fm = FileManager.default
-        let url = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("PokeTokenBar", isDirectory: true)
+        let url = base.appendingPathComponent("PokeTokenBar", isDirectory: true)
             .appendingPathComponent("chat-cwd", isDirectory: true)
         try? fm.createDirectory(at: url, withIntermediateDirectories: true)
         var isDirectory: ObjCBool = false
@@ -493,7 +497,7 @@ enum PokemonChatWorkspace {
             return fm.temporaryDirectory.resolvingSymlinksInPath()
         }
         return url.resolvingSymlinksInPath()
-    }()
+    }
 }
 
 /// Drains both pipes while the child is alive. Reading only from `terminationHandler` deadlocks
