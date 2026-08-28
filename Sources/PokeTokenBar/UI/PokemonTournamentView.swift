@@ -159,11 +159,28 @@ struct PokemonTournamentView: View {
                 }
             }
             if !match.events.isEmpty {
-                Text(store.l.t("이번 턴이 진행되었습니다.", "The turn was resolved.", "ターンが進行しました。"))
-                    .font(.caption2).foregroundStyle(.secondary)
+                BattleLogBox(lines: tournamentLogLines(match),
+                            myActor: mineIsA ? .a : (mineIsB ? .b : nil))
             }
+            BattleChatPanel(configuration: BattleChatConfiguration(
+                messages: center.chatMessages, mySenderID: center.myID,
+                isEnabled: true, unavailableMessage: nil, l: store.l,
+                onSend: center.sendChat))
             bracket(state)
         }
+    }
+
+    /// 대진 하나(1v1)의 스트림을 로그 줄로 접는다 — `BattleLogSource.twoSided` 와 같은 결이지만,
+    /// 토너먼트는 `TournamentMatchState`에 그 턴의 원본 이벤트만 오므로 여기서 직접 접는다.
+    /// 기술은 팀 전체(교체로 빠진 자리 포함)에서 id 로 찾는다 — 활성 자리만 보면, 그 턴에 쓰러져
+    /// 교체된 포켓몬의 기술이 안 잡힌다.
+    private func tournamentLogLines(_ match: TournamentMatchState) -> [BattleLog.Line] {
+        func moves(for actor: BattleActor) -> [MoveSpec] {
+            (actor == .a ? match.teamA : match.teamB).flatMap { $0.side.moves }
+        }
+        return BattleLog.lines(match.events, l: store.l,
+                               name: { $0 == .a ? match.nameA : match.nameB },
+                               move: { actor, id in moves(for: actor).first { $0.id == id } ?? .struggle() })
     }
 
     private func tournamentSide(_ team: [TournamentPokemonState], active: Int, name: String) -> some View {
