@@ -103,6 +103,7 @@ struct PopoverView: View {
     @Environment(BattleCenter.self) private var battleCenter
     @Environment(MemoryHomeVisitCenter.self) private var memoryHomeVisits
     @Environment(FocusTimer.self) private var focusTimer
+    @Environment(MemoryHomePresenter.self) private var memoryHomePresenter
 
     private var l: L { companion.l }
 
@@ -224,7 +225,9 @@ struct PopoverView: View {
                         // 스타터를 아직 안 고른 첫 화면에는 띄우지 않는다 — 첫 한 시간은 대상이 아니다.
                         if !companion.needsStarterSelection { MissionBoardView(store: companion) }
                         CompanionHeader(store: companion)
-                        if settings.memoryHomeEnabled { MemoryHomeView(store: companion) }
+                        if settings.memoryHomeEnabled {
+                            MemoryHomeQuickCard(store: companion) { memoryHomePresenter.open() }
+                        }
                     }
                     Spacer(minLength: 0)
                 }

@@ -13,6 +13,38 @@ struct MemoryHomeProfileCard: Codable, Sendable, Equatable {
     /// R4 이전 피어의 페이로드도 그대로 디코드되므로 `protocolVersion` 은 1 을 유지한다.
     /// 여기를 "기본값 있는 비옵셔널"로 바꾸면 그 경로는 **throw 한다** — 옵셔널로 남겨야 한다.
     var profileMessage: String?
+    /// A deliberately small, read-only home showcase. It excludes notes, aliases, guestbook and
+    /// exact placements; a LAN visit should reveal a home's personality, not its private data.
+    var roomTheme: PokemonMemoryRoomTheme? = nil
+    var showcaseFurniture: [ItemKind] = []
+    /// v2 is an explicitly published, read-only showroom. No diary, aliases, guestbook or
+    /// local counters are represented here.
+    var roomStyle: MemoryHomeRoomStyle? = nil
+    var placedDecor: [MemoryHomePlacedDecor] = []
+    var featuredPhoto: MemoryHomePhoto? = nil
+
+    private enum CodingKeys: String, CodingKey { case displayName, speciesID, isShiny, sharedMemoryBody, profileMessage, roomTheme, showcaseFurniture, roomStyle, placedDecor, featuredPhoto }
+    init(displayName: String, speciesID: Int, isShiny: Bool, sharedMemoryBody: String?, profileMessage: String?,
+         roomTheme: PokemonMemoryRoomTheme? = nil, showcaseFurniture: [ItemKind] = [], roomStyle: MemoryHomeRoomStyle? = nil,
+         placedDecor: [MemoryHomePlacedDecor] = [], featuredPhoto: MemoryHomePhoto? = nil) {
+        self.displayName = displayName; self.speciesID = speciesID; self.isShiny = isShiny
+        self.sharedMemoryBody = sharedMemoryBody; self.profileMessage = profileMessage
+        self.roomTheme = roomTheme; self.showcaseFurniture = showcaseFurniture
+        self.roomStyle = roomStyle; self.placedDecor = placedDecor; self.featuredPhoto = featuredPhoto
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        displayName = try c.decode(String.self, forKey: .displayName)
+        speciesID = try c.decode(Int.self, forKey: .speciesID)
+        isShiny = try c.decode(Bool.self, forKey: .isShiny)
+        sharedMemoryBody = try c.decodeIfPresent(String.self, forKey: .sharedMemoryBody)
+        profileMessage = try c.decodeIfPresent(String.self, forKey: .profileMessage)
+        roomTheme = try c.decodeIfPresent(PokemonMemoryRoomTheme.self, forKey: .roomTheme)
+        showcaseFurniture = try c.decodeIfPresent([ItemKind].self, forKey: .showcaseFurniture) ?? []
+        roomStyle = try c.decodeIfPresent(MemoryHomeRoomStyle.self, forKey: .roomStyle)
+        placedDecor = try c.decodeIfPresent([MemoryHomePlacedDecor].self, forKey: .placedDecor) ?? []
+        featuredPhoto = try c.decodeIfPresent(MemoryHomePhoto.self, forKey: .featuredPhoto)
+    }
 
     /// Shown in the visit sheet. This was inline in the view with the interpolation backslash
     /// missing — Swift accepts that as a plain literal, so it shipped printing the expression
@@ -38,7 +70,7 @@ struct MemoryHomePeer: Identifiable, Equatable {
 @MainActor @Observable
 final class MemoryHomeVisitCenter {
     nonisolated static let serviceType = "_kmonhome._tcp"
-    nonisolated static let protocolVersion = 1
+    nonisolated static let protocolVersion = 2
     nonisolated static let maxFrameBytes: UInt32 = 16 * 1024
 
     private(set) var homes: [MemoryHomePeer] = []
@@ -50,6 +82,7 @@ final class MemoryHomeVisitCenter {
     private var browser: NWBrowser?
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private var visitHomeIDs: [ObjectIdentifier: String] = [:]
 
     init(companion: CompanionStore, peerID: UUID) { self.companion = companion; self.peerID = peerID }
 
@@ -61,7 +94,7 @@ final class MemoryHomeVisitCenter {
     func stop() {
         isActive = false; homes = []; selectedProfile = nil
         browser?.cancel(); browser = nil; listener?.cancel(); listener = nil
-        connections.values.forEach { $0.cancel() }; connections.removeAll()
+        connections.values.forEach { $0.cancel() }; connections.removeAll(); visitHomeIDs.removeAll()
     }
     func refreshAccess() {
         guard isActive else { return }
@@ -77,7 +110,7 @@ final class MemoryHomeVisitCenter {
     func visit(_ peer: MemoryHomePeer) {
         guard isActive else { return }; selectedProfile = nil; lastError = nil
         let connection = NWConnection(to: peer.endpoint, using: Self.parameters())
-        let key = ObjectIdentifier(connection); connections[key] = connection
+        let key = ObjectIdentifier(connection); connections[key] = connection; visitHomeIDs[key] = peer.id
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard case .ready = state, let self, let connection else { return }
             Task { @MainActor in
@@ -134,24 +167,26 @@ final class MemoryHomeVisitCenter {
         receive(MemoryHomeVisitRequest.self, on: connection) { [weak self, weak connection] request in
             guard let self, let connection else { return }
             guard case let .profileRequest(version, visitorID, name) = request,
-                  version == Self.protocolVersion, Self.clean(name, limit: 40) != nil,
+                  (1...Self.protocolVersion).contains(version), Self.clean(name, limit: 40) != nil,
                   self.companion.memoryAlbum.memoryHomeAccess.visibility == .open,
                   self.companion.state.active != nil,
                   !self.companion.memoryAlbum.memoryHomeAccess.blockedPeerIDs.contains(visitorID) else {
                 self.send(MemoryHomeVisitResponse.rejected(protocolVersion: Self.protocolVersion), over: connection) { connection.cancel() }; return
             }
             self.companion.memoryAlbum.recordMemoryHomeRequester(displayName: name, peerID: visitorID)
-            self.send(MemoryHomeVisitResponse.profileCard(protocolVersion: Self.protocolVersion, card: self.profileCard()), over: connection) { connection.cancel() }
+            self.send(MemoryHomeVisitResponse.profileCard(protocolVersion: version, card: self.profileCard(version: version)), over: connection) { connection.cancel() }
             self.connections.removeValue(forKey: key)
         }
     }
     private func receiveResponse(on connection: NWConnection, key: ObjectIdentifier) {
         receive(MemoryHomeVisitResponse.self, on: connection) { [weak self] response in
-            defer { connection.cancel(); self?.connections.removeValue(forKey: key) }
+            defer { connection.cancel(); self?.connections.removeValue(forKey: key); self?.visitHomeIDs.removeValue(forKey: key) }
             guard let self else { return }
             switch response {
-            case let .profileCard(version, card) where version == Self.protocolVersion && Self.valid(card): self.selectedProfile = card
-            case let .rejected(version) where version == Self.protocolVersion:
+            case let .profileCard(version, card) where (1...Self.protocolVersion).contains(version) && Self.valid(card):
+                self.selectedProfile = card
+                if let homeID = self.visitHomeIDs[key] { self.companion.memoryAlbum.recordMemoryHomeVisitStamp(homeID: homeID) }
+            case let .rejected(version) where (1...Self.protocolVersion).contains(version):
                 self.lastError = "This home is not accepting visits."
             default: self.lastError = "Invalid Memory Home response."
             }
@@ -162,15 +197,23 @@ final class MemoryHomeVisitCenter {
     private var localDisplayName: String { companion.memoryAlbum.memoryHomePublicNickname }
     /// 대문 문구는 `profileMessageForSharing` 만 읽는다 — 공유를 명시적으로 켠 경우에만 값이
     /// 나오는 프로퍼티다. `memoryHomeAccess.profileMessage` 를 직접 읽으면 동의 없이 새어 나간다.
-    private func profileCard() -> MemoryHomeProfileCard {
+    private func profileCard(version: Int = protocolVersion) -> MemoryHomeProfileCard {
         let sharedMessage = companion.memoryAlbum.profileMessageForSharing
         guard let mon = companion.state.active else {
             return .init(displayName: localDisplayName, speciesID: 1, isShiny: false,
                          sharedMemoryBody: nil, profileMessage: sharedMessage)
         }
-        return .init(displayName: localDisplayName, speciesID: mon.currentID, isShiny: mon.isShiny,
+        let access = companion.memoryAlbum.memoryHomeAccess
+        let base = MemoryHomeProfileCard(displayName: localDisplayName, speciesID: mon.currentID, isShiny: mon.isShiny,
                      sharedMemoryBody: companion.memoryAlbum.sharedPinnedMemory(for: mon.id)?.body,
-                     profileMessage: sharedMessage)
+                     profileMessage: sharedMessage, roomTheme: companion.memoryAlbum.theme(for: mon.id),
+                     showcaseFurniture: Array(access.roomLayout.values))
+        guard version >= 2 else { return base }
+        return .init(displayName: base.displayName, speciesID: base.speciesID, isShiny: base.isShiny,
+                     sharedMemoryBody: base.sharedMemoryBody, profileMessage: base.profileMessage,
+                     roomTheme: base.roomTheme, showcaseFurniture: base.showcaseFurniture,
+                     roomStyle: access.roomStyle, placedDecor: access.placedDecor,
+                     featuredPhoto: access.featuredPhotoID.flatMap { id in access.photos.first { $0.id == id } })
     }
     /// 신뢰경계 클램프다 — `private` 로 두면 원격 페이로드 검증이 무테스트로 남는다.
     nonisolated static func valid(_ card: MemoryHomeProfileCard) -> Bool {
@@ -179,6 +222,10 @@ final class MemoryHomeVisitCenter {
         // 문구는 내부 공백을 허용하므로 `clean` 이 아니라 앨범과 같은 검증기를 쓴다 — 두 곳이
         // 규칙을 따로 가지면 내가 저장할 수 있는 문구를 상대가 거부하게 된다.
         return card.profileMessage.map { PokemonMemoryAlbum.validProfileMessage($0) != nil } ?? true
+            && card.showcaseFurniture.allSatisfy { ItemKind.memoryHomeFurniture.contains($0) }
+            && card.placedDecor.count <= 12
+            && card.placedDecor.allSatisfy { ItemKind.memoryHomeFurniture.contains($0.item) && (0...1).contains($0.position.x) && (0...1).contains($0.position.y) }
+            && (card.featuredPhoto.map { $0.speciesID > 0 && $0.speciesID <= 10_000 && $0.caption.count <= 60 } ?? true)
     }
     nonisolated static func clean(_ value: String, limit: Int) -> String? {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)

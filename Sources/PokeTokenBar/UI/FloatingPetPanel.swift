@@ -50,15 +50,18 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     static let maximumTravelDuration: TimeInterval = 8
 
     private var onOpenPopover: (() -> Void)?
+    private var onOpenMemoryHome: (() -> Void)?
     private var onChat: (() -> Void)?
     private var onHide: (() -> Void)?
 
     init(settings: AppSettings, companion: CompanionStore, defaults: UserDefaults = .standard,
-         onOpenPopover: (() -> Void)? = nil, onChat: (() -> Void)? = nil, onHide: (() -> Void)? = nil) {
+         onOpenPopover: (() -> Void)? = nil, onOpenMemoryHome: (() -> Void)? = nil,
+         onChat: (() -> Void)? = nil, onHide: (() -> Void)? = nil) {
         self.settings = settings
         self.companion = companion
         self.defaults = defaults
         self.onOpenPopover = onOpenPopover
+        self.onOpenMemoryHome = onOpenMemoryHome
         self.onChat = onChat
         self.onHide = onHide
         super.init()
@@ -155,6 +158,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
                 FloatingPetView(animated: wantAnimated, motion: motion)
                     .environment(settings).environment(companion)))
             hosting.onOpenPopover = onOpenPopover
+            hosting.onOpenMemoryHome = onOpenMemoryHome
             hosting.onChat = onChat
             hosting.onHide = onHide
             hosting.languageProvider = { [weak self] in self?.companion.language ?? .systemDefault }
@@ -655,6 +659,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
 
 final class PetHostingView: NSHostingView<AnyView> {
     var onOpenPopover: (() -> Void)?
+    var onOpenMemoryHome: (() -> Void)?
     var onChat: (() -> Void)?
     var onHide: (() -> Void)?
     var onHoverChange: ((Bool) -> Void)?
@@ -731,6 +736,10 @@ final class PetHostingView: NSHostingView<AnyView> {
                                 action: #selector(handleOpen(_:)), keyEquivalent: "")
         open.target = self
         open.isEnabled = true
+        let home = menu.addItem(withTitle: l.t("미니홈피 열기", "Open Poké Home", "ポケホームを開く"),
+                                action: #selector(handleOpenMemoryHome(_:)), keyEquivalent: "")
+        home.target = self
+        home.isEnabled = true
         let chat = menu.addItem(withTitle: l.t("대화하기", "Chat", "話す"),
                                 action: #selector(handleChat(_:)), keyEquivalent: "")
         chat.target = self
@@ -743,6 +752,7 @@ final class PetHostingView: NSHostingView<AnyView> {
     }
 
     @objc func handleOpen(_ sender: Any?) { onOpenPopover?() }
+    @objc func handleOpenMemoryHome(_ sender: Any?) { onOpenMemoryHome?() }
     @objc func handleChat(_ sender: Any?) { onChat?() }
     @objc func handleHide(_ sender: Any?) { onHide?() }
 }

@@ -1325,6 +1325,19 @@ final class CompanionStore {
             state.starPieces += reward
             paid += reward
             if let outfit = award.achievement.outfits[award.tier - 1] { grantOutfit(outfit) }
+            // The first milestone on each relevant track is a one-time room-style ticket.
+            // `AchievementLadder.record` only returns crossed tiers, so this cannot duplicate
+            // on recovery or when the counter is already capped.
+            if award.tier == 1 {
+                switch award.achievement.track {
+                case .focus: memoryAlbum.unlockRoomStyle(.lovely)
+                case .evolve: memoryAlbum.unlockRoomStyle(.nature)
+                case .battle: memoryAlbum.unlockRoomStyle(.retro)
+                // 방 스타일이 없는 트랙. `default` 대신 열거하는 이유는, 다음에 트랙이 늘 때
+                // **컴파일 에러로 드러나게** 하기 위해서다 — 조용히 빠지면 아무도 못 잡는다.
+                case .race, .dungeon, .dungeonSweep: break
+                }
+            }
             notifyCompanionEvent(l.notifAchievementTitle,
                                  l.notifAchievementBody(l.achievementName(award.achievement.track),
                                                         award.tier, reward))

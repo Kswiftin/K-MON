@@ -12,6 +12,18 @@ enum MemoryHomeBundledArt {
         .roomBed: CGRect(x: 64, y: 16, width: 24, height: 16),
         .roomTable: CGRect(x: 88, y: 32, width: 16, height: 16),
         .roomLamp: CGRect(x: 112, y: 16, width: 8, height: 16),
+        // The bundled OGA interior sheet is a compact pixel atlas. These deliberately reuse
+        // compatible tiles from it, keeping every style fully offline while the art pipeline
+        // remains a single audited resource.
+        .lovelyVanity: CGRect(x: 88, y: 32, width: 16, height: 16),
+        .lovelySofa: CGRect(x: 64, y: 16, width: 24, height: 16),
+        .lovelyHeartLamp: CGRect(x: 112, y: 16, width: 8, height: 16),
+        .retroArcade: CGRect(x: 88, y: 32, width: 16, height: 16),
+        .retroRadio: CGRect(x: 112, y: 16, width: 8, height: 16),
+        .retroTV: CGRect(x: 64, y: 16, width: 24, height: 16),
+        .naturePlant: CGRect(x: 112, y: 16, width: 8, height: 16),
+        .natureBench: CGRect(x: 64, y: 16, width: 24, height: 16),
+        .natureLantern: CGRect(x: 88, y: 32, width: 16, height: 16),
     ]
 
     static func interiorTileset() -> NSImage? {

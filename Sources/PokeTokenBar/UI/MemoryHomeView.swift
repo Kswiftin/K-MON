@@ -108,7 +108,12 @@ enum MemoryHomeSeasonStyle {
     }
 }
 
-struct MemoryHomeView: View {
+/// Retained only as source-compatible composition for callers compiled against earlier builds.
+/// The mounted UI is now `MemoryHomeWindowView`; keeping this type non-`View` prevents the
+/// previous long popover hierarchy from becoming a second, reachable Memory Home surface.
+@available(*, deprecated, message: "Use MemoryHomeQuickCard and MemoryHomePresenter")
+@MainActor
+struct MemoryHomeView {
     @Environment(AppSettings.self) private var settings
     @Environment(MemoryHomeVisitCenter.self) private var visits
     let store: CompanionStore
@@ -127,6 +132,7 @@ struct MemoryHomeView: View {
     @State private var profileMessageError: String?
     @State private var aliasRequester: MemoryHomeRecentRequester?
     @State private var aliasDraft = ""
+    @State private var selectedDecorID: UUID?
 
     private var l: L { store.l }
 
@@ -236,7 +242,7 @@ struct MemoryHomeView: View {
                                    locale: store.language.displayLocale)
         }
         .sheet(isPresented: $showingStickerPhoto) {
-            MemoryHomeStickerPhotoSheet(speciesID: mon.currentID, shiny: mon.isShiny, language: l)
+            MemoryHomeStickerPhotoSheet(speciesID: mon.currentID, shiny: mon.isShiny, language: l, album: album)
         }
         .sheet(isPresented: $showingSeasonRecap) {
             MemoryHomeSeasonRecapSheet(recap: album.seasonRecap(for: store.ownedMons.map(\.id)), language: l)
@@ -509,7 +515,7 @@ struct MemoryHomeView: View {
     }
 
     private func furnitureRow(album: PokemonMemoryAlbum, tint: Color) -> some View {
-        let furniture: [ItemKind] = [.roomBed, .roomTable, .roomLamp]
+        let furniture = ItemKind.memoryHomeFurniture.sorted { $0.rawValue < $1.rawValue }
         return VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Label(l.t("방꾸미기", "Room decor", "部屋づくり"), systemImage: "chair.lounge.fill")
@@ -528,6 +534,57 @@ struct MemoryHomeView: View {
                 .menuStyle(.borderlessButton)
                 .accessibilityLabel(l.t("룸메이트", "Roommates", "ルームメイト"))
                 .accessibilityValue(l.t("\(album.memoryHomeAccess.roommateIDs.count)명 선택됨", "\(album.memoryHomeAccess.roommateIDs.count) selected", "\(album.memoryHomeAccess.roommateIDs.count) 匹選択"))
+            }
+            Picker(l.t("스타일", "Style", "スタイル"), selection: Binding(get: { album.roomStyle }, set: { album.selectRoomStyle($0) })) {
+                ForEach(MemoryHomeRoomStyle.allCases, id: \.self) { style in
+                    Text(roomStyleName(style)).tag(style).disabled(!album.isRoomStyleUnlocked(style))
+                }
+            }
+            .accessibilityHint(l.t("해금한 방 스타일만 선택할 수 있어요.", "Only unlocked room styles can be selected.", "解放したスタイルだけ選べます。"))
+            GeometryReader { geometry in
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(styleColor(album.roomStyle).opacity(0.20))
+                    ForEach(album.memoryHomeAccess.placedDecor.sorted { $0.layer < $1.layer }) { decor in
+                        Group {
+                            if let art = MemoryHomeBundledArt.furnitureImage(for: decor.item) {
+                                Image(nsImage: art).interpolation(.none).resizable().scaledToFit().frame(width: 34, height: 34)
+                            } else { Text(decor.item.fallbackEmoji).font(.title2) }
+                        }
+                            .position(x: decor.position.x * geometry.size.width, y: decor.position.y * geometry.size.height)
+                            .padding(4)
+                            .background(selectedDecorID == decor.id ? Color.white.opacity(0.8) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                            .onTapGesture { selectedDecorID = decor.id }
+                            .gesture(DragGesture(minimumDistance: 2).onEnded { value in
+                                _ = album.moveDecor(id: decor.id, to: .init(x: value.location.x / geometry.size.width, y: value.location.y / geometry.size.height))
+                            })
+                            .accessibilityLabel(l.itemName(decor.item))
+                            .accessibilityHint(l.t("드래그하여 8×6 격자에서 이동합니다.", "Drag to move on the 8 by 6 grid.", "ドラッグして8×6グリッドで移動します。"))
+                    }
+                }
+            }
+            .frame(height: 120)
+            .accessibilityLabel(l.t("미니룸 쇼룸", "Mini room showroom", "ミニルームショールーム"))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(furniture, id: \.self) { item in
+                        Button {
+                            _ = album.placeDecor(item, at: .init(x: 0.5, y: 0.6), ownedItems: store.state.inventory)
+                        } label: {
+                            VStack(spacing: 1) { Text(item.fallbackEmoji); Text("×\(store.itemCount(item))").font(.caption2) }
+                        }
+                        .disabled(store.itemCount(item) == 0 || album.memoryHomeAccess.placedDecor.count >= 12)
+                        .accessibilityLabel(l.itemName(item))
+                        .accessibilityValue(l.t("보유 \(store.itemCount(item))개", "Owned \(store.itemCount(item))", "所持 \(store.itemCount(item))個"))
+                    }
+                    if let selectedDecorID {
+                        Button(role: .destructive) { _ = album.removeDecor(id: selectedDecorID); self.selectedDecorID = nil } label: { Image(systemName: "trash") }
+                    }
+                    Button { album.undoRoomEdit() } label: { Image(systemName: "arrow.uturn.backward") }
+                        .disabled(!album.canUndoRoomEdit).accessibilityLabel(l.t("실행 취소", "Undo", "取り消す"))
+                    Button { album.redoRoomEdit() } label: { Image(systemName: "arrow.uturn.forward") }
+                        .disabled(!album.canRedoRoomEdit).accessibilityLabel(l.t("다시 실행", "Redo", "やり直す"))
+                    Button(l.t("초기화", "Reset", "リセット"), role: .destructive) { album.resetDecor() }
+                }
             }
             HStack(spacing: 6) {
                 ForEach(["left", "center", "right"], id: \.self) { slot in
@@ -605,6 +662,18 @@ struct MemoryHomeView: View {
         }
     }
 
+    private func roomStyleName(_ style: MemoryHomeRoomStyle) -> String {
+        switch style {
+        case .campus: l.t("캠퍼스", "Campus", "キャンパス")
+        case .lovely: l.t("러블리", "Lovely", "ラブリー")
+        case .retro: l.t("레트로", "Retro", "レトロ")
+        case .nature: l.t("자연", "Nature", "ナチュラル")
+        }
+    }
+    private func styleColor(_ style: MemoryHomeRoomStyle) -> Color {
+        switch style { case .campus: .blue; case .lovely: .pink; case .retro: .orange; case .nature: .green }
+    }
+
     private func formattedDate(_ date: Date) -> String {
         date.formatted(.dateTime.locale(store.language.displayLocale).year().month(.abbreviated).day())
     }
@@ -670,21 +739,37 @@ private struct MemoryHomePokeLogSheet: View {
     }
 }
 
-private struct MemoryHomeStickerPhotoSheet: View {
+struct MemoryHomeStickerPhotoSheet: View {
     let speciesID: Int
     let shiny: Bool
     let language: L
+    let album: PokemonMemoryAlbum
     @State private var caption = ""
+    @State private var frame: StickerPhotoFrame = .heart
+    @State private var background = "sunset"
+    @State private var composition = "together"
+    @State private var trainerStyle = "trainer"
     @State private var sprite: NSImage?
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 12) {
-            StickerPhotoCanvas(sprite: sprite, caption: caption)
+            StickerPhotoCanvas(sprite: sprite, caption: caption, frame: frame, background: background, composition: composition, trainerStyle: trainerStyle)
                 .frame(width: 280, height: 220)
             TextField(language.t("캡션", "Caption", "キャプション"), text: $caption)
+            Picker(language.t("프레임", "Frame", "フレーム"), selection: $frame) {
+                ForEach(StickerPhotoFrame.allCases) { frame in
+                    Label(frame.name(language), systemImage: frame.symbol).tag(frame)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityHint(language.t("스티커 사진의 장식 프레임을 고릅니다.", "Choose a decorative frame for the sticker photo.", "ステッカー写真の飾りフレームを選びます。"))
+            Picker(language.t("배경", "Background", "背景"), selection: $background) { Text(language.t("노을", "Sunset", "夕焼け")).tag("sunset"); Text(language.t("숲", "Forest", "森")).tag("forest"); Text(language.t("스튜디오", "Studio", "スタジオ")).tag("studio") }.pickerStyle(.segmented)
+            Picker(language.t("구도", "Composition", "構図"), selection: $composition) { Text(language.t("함께", "Together", "一緒")).tag("together"); Text(language.t("왼쪽", "Left", "左")).tag("left"); Text(language.t("오른쪽", "Right", "右")).tag("right") }.pickerStyle(.segmented)
+            Picker(language.t("트레이너", "Trainer", "トレーナー"), selection: $trainerStyle) { Text(language.t("캐주얼", "Casual", "カジュアル")).tag("trainer"); Text(language.t("모험가", "Explorer", "冒険家")).tag("explorer") }.pickerStyle(.segmented)
             HStack { Button(language.t("닫기", "Close", "閉じる")) { dismiss() }; Spacer()
+                Button(language.t("전시하기", "Add to gallery", "展示する")) { album.addPhoto(.init(speciesID: speciesID, isShiny: shiny, caption: caption, frame: frame.rawValue, background: background, composition: composition, trainerStyle: trainerStyle)) }.buttonStyle(.bordered)
                 Button(language.t("PNG로 저장", "Save PNG", "PNGで保存")) { export() }.buttonStyle(.borderedProminent) }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }
         }.padding().task { sprite = await SpriteLoader.image(speciesID: speciesID, shiny: shiny) }
@@ -694,7 +779,7 @@ private struct MemoryHomeStickerPhotoSheet: View {
         panel.nameFieldStringValue = "PokeTokenBar-Sticker.png"; panel.allowedContentTypes = [.png]
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let renderer = ImageRenderer(content: StickerPhotoCanvas(sprite: sprite, caption: caption).frame(width: 840, height: 660))
+        let renderer = ImageRenderer(content: StickerPhotoCanvas(sprite: sprite, caption: caption, frame: frame, background: background, composition: composition, trainerStyle: trainerStyle).frame(width: 840, height: 660))
         guard let data = renderer.nsImage?.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data), let png = bitmap.representation(using: .png, properties: [:]) else { error = language.t("이미지를 만들 수 없어요.", "Could not render image.", "画像を作成できません。"); return }
         do { try png.write(to: url, options: .atomic); NSWorkspace.shared.activateFileViewerSelecting([url]) }
         catch { self.error = error.localizedDescription }
@@ -717,15 +802,29 @@ private struct MemoryHomeSeasonRecapSheet: View {
     }
 }
 
+private enum StickerPhotoFrame: String, CaseIterable, Identifiable {
+    case heart, star, ribbon, flower
+    var id: String { rawValue }
+    var symbol: String { switch self { case .heart: "heart.fill"; case .star: "star.fill"; case .ribbon: "ribbon"; case .flower: "camera.macro" } }
+    func name(_ l: L) -> String { switch self { case .heart: l.t("하트", "Heart", "ハート"); case .star: l.t("별", "Star", "星"); case .ribbon: l.t("리본", "Ribbon", "リボン"); case .flower: l.t("꽃", "Flower", "花") } }
+    var marks: [String] { switch self { case .heart: ["♥", "♡", "♥"]; case .star: ["★", "✦", "★"]; case .ribbon: ["🎀", "✧", "🎀"]; case .flower: ["✿", "❀", "✿"] } }
+}
+
 private struct StickerPhotoCanvas: View {
     let sprite: NSImage?
     let caption: String
+    let frame: StickerPhotoFrame
+    let background: String
+    let composition: String
+    let trainerStyle: String
     var body: some View {
-        ZStack { RoundedRectangle(cornerRadius: 22).fill(LinearGradient(colors: [PokedoroTheme.yellow.opacity(0.45), PokedoroTheme.mint.opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing))
-            VStack(spacing: 8) { if let sprite { Image(nsImage: sprite).resizable().interpolation(.none).scaledToFit().frame(height: 140) } else { Image(systemName: "sparkles").font(.system(size: 72)).foregroundStyle(PokedoroTheme.red) }
-                Text(caption.isEmpty ? "POKÉDORO" : caption).font(.headline).lineLimit(2) }
-            Text("✦").font(.title).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16) }
+        ZStack { RoundedRectangle(cornerRadius: 22).fill(background == "forest" ? PokedoroTheme.mint.opacity(0.52) : background == "studio" ? Color.white.opacity(0.78) : PokedoroTheme.yellow.opacity(0.52))
+            HStack(spacing: 12) { if composition != "right" { trainer }; if let sprite { Image(nsImage: sprite).resizable().interpolation(.none).scaledToFit().frame(height: 140) } else { Image(systemName: "sparkles").font(.system(size: 72)).foregroundStyle(PokedoroTheme.red) }; if composition == "right" { trainer } }
+            VStack { Spacer(); Text(caption.isEmpty ? "POKÉDORO" : caption).font(.headline).lineLimit(2).padding(.bottom, 20) }
+            HStack { Text(frame.marks[0]); Spacer(); Text(frame.marks[1]); Spacer(); Text(frame.marks[2]) }
+                .font(.title2).foregroundStyle(PokedoroTheme.red.opacity(0.82)).padding(16) }
     }
+    private var trainer: some View { Image(systemName: trainerStyle == "explorer" ? "figure.hiking" : "person.fill").font(.system(size: 64)).foregroundStyle(PokedoroTheme.blue) }
 }
 
 /// 날짜별 일기. 이미 쌓인 기억을 묶어 보여 줄 뿐이라 여기서 저장하는 것은 아무것도 없다.

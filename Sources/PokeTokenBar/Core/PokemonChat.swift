@@ -241,6 +241,28 @@ enum MemoryHomeMood: String, Codable, Sendable, CaseIterable {
     case excited, calm, down, annoyed, fluttering
 }
 
+/// 저작권 음원·재생 권한과 분리한, 홈에 걸어 두는 추억용 BGM 선택값이다.
+enum MemoryHomeJukeboxTrack: String, Codable, Sendable, CaseIterable {
+    case afterSchool, rainyWalk, lavenderNight, summerRiver
+}
+
+enum MemoryHomeGuestbookAuthor: String, Codable, Sendable { case trainer, companion }
+
+/// 방명록은 이 기기에만 남는다. LAN 방문이 임의의 글 전송이나 추가 정보 공개를 뜻하지 않도록
+/// 방문자·수동 기억·프로필 카드와 분리된, 사용자가 통제하는 홈 기록으로 둔다.
+struct MemoryHomeGuestbookEntry: Codable, Sendable, Equatable, Identifiable {
+    var id: UUID
+    var author: String
+    var body: String
+    var createdAt: Date
+    var authorKind: MemoryHomeGuestbookAuthor
+
+    init(id: UUID = UUID(), author: String, body: String, createdAt: Date = Date(),
+         authorKind: MemoryHomeGuestbookAuthor) {
+        self.id = id; self.author = author; self.body = body; self.createdAt = createdAt; self.authorKind = authorKind
+    }
+}
+
 /// 하루치 일기 한 장. **저장하지 않는다** — 이미 있는 기억과 기분에서 매번 파생한다.
 struct MemoryHomeDiaryDay: Identifiable, Sendable, Equatable {
     /// dayKey 가 하루를 유일하게 가리키므로 별도 ID 를 만들 이유가 없다.
@@ -272,6 +294,58 @@ struct MemoryHomeSeasonRecap: Sendable, Equatable {
     let mostChosenMood: MemoryHomeMood?
 }
 
+/// A normalized room coordinate. Keeping values in 0...1 makes layouts independent of the
+/// window size and allows the scene to be rendered by both the home and a visit preview.
+struct MemoryHomeRoomPosition: Codable, Sendable, Equatable {
+    var x: Double
+    var y: Double
+
+    static func clamped(x: Double, y: Double) -> Self {
+        .init(x: min(0.92, max(0.08, x)), y: min(0.86, max(0.18, y)))
+    }
+}
+
+/// Home-wide visual treatment. Campus is intentionally available from a new save.
+enum MemoryHomeRoomStyle: String, Codable, Sendable, CaseIterable { case campus, lovely, retro, nature }
+
+/// A furniture instance in the 8×6 room grid. Coordinates are normalized so a published room
+/// can be rendered at any size; `layer` is derived from its floor position, never trusted input.
+struct MemoryHomePlacedDecor: Codable, Sendable, Equatable, Identifiable {
+    var id: UUID = UUID()
+    var item: ItemKind
+    var position: MemoryHomeRoomPosition
+    var layer: Int { Int((position.y * 1_000).rounded()) }
+}
+
+extension ItemKind {
+    static let memoryHomeFurniture: Set<ItemKind> = [.roomBed, .roomTable, .roomLamp,
+        .lovelyVanity, .lovelySofa, .lovelyHeartLamp, .retroArcade, .retroRadio, .retroTV,
+        .naturePlant, .natureBench, .natureLantern]
+    var memoryHomeStyle: MemoryHomeRoomStyle {
+        switch self {
+        case .roomBed, .roomTable, .roomLamp: .campus
+        case .lovelyVanity, .lovelySofa, .lovelyHeartLamp: .lovely
+        case .retroArcade, .retroRadio, .retroTV: .retro
+        case .naturePlant, .natureBench, .natureLantern: .nature
+        default: .campus
+        }
+    }
+}
+
+/// Metadata for a photo-booth shot. The source composition is saved, rather than only a PNG,
+/// so the PHOTO tab can remain a real exhibition and a shot can be exported again later.
+struct MemoryHomePhoto: Codable, Sendable, Equatable, Identifiable {
+    var id: UUID = UUID()
+    var createdAt: Date = Date()
+    var speciesID: Int
+    var isShiny: Bool
+    var caption: String
+    var frame: String
+    var background: String
+    var composition: String
+    var trainerStyle: String
+}
+
 struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     /// The only owner-controlled name that may be advertised on the local network. `nil`
     /// identifies a pre-nickname album and is filled once from the trainer name.
@@ -293,23 +367,39 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     var sharesProfileMessage: Bool = false
     /// 하루 한 개. dayKey 는 `%04d-%02d-%02d` 라 문자열 정렬이 곧 시간순 → 최신 60개만 남긴다.
     var moodByDayKey: [String: MemoryHomeMood] = [:]
+    var jukeboxTrack: MemoryHomeJukeboxTrack = .afterSchool
+    var guestbookEntries: [MemoryHomeGuestbookEntry] = []
     /// Local-only names for LAN peers. They are never included in profile cards.
     var peerAliases: [UUID: String] = [:]
     /// One shared room, capped at three owned companions.
     var roommateIDs: [UUID] = []
     var roomLayout: [String: ItemKind] = [:]
+    var furniturePositions: [String: MemoryHomeRoomPosition] = [:]
+    var companionPositions: [UUID: MemoryHomeRoomPosition] = [:]
+    var photos: [MemoryHomePhoto] = []
+    /// R8 room data. Legacy fields above remain decode/migration-only.
+    var unlockedRoomStyles: Set<MemoryHomeRoomStyle> = [.campus]
+    var roomStyle: MemoryHomeRoomStyle = .campus
+    var placedDecor: [MemoryHomePlacedDecor] = []
+    var featuredPhotoID: UUID?
+    /// Local-only passport stamps, keyed by Bonjour display ID. No visitor history is sent back.
+    var visitedHomeStamps: [String: Date] = [:]
 
     static let visitThresholds = [10, 100, 1000]
     static let moodHistoryLimit = 60
     static let visitTodayPeerLimit = 200
     static let profileMessageLimit = 60
+    static let guestbookLimit = 50
+    static let guestbookBodyLimit = 160
 
     var visitToday: Int { visitTodayPeerIDs.count }
 
     private enum CodingKeys: String, CodingKey {
         case publicNickname, visibility, sharedPinnedMemoryID, recentRequesters, blockedPeerIDs,
              visitTotal, visitDayKey, visitTodayPeerIDs, visitThresholdDates,
-             profileMessage, sharesProfileMessage, moodByDayKey, peerAliases, roommateIDs, roomLayout
+             profileMessage, sharesProfileMessage, moodByDayKey, jukeboxTrack, guestbookEntries,
+             peerAliases, roommateIDs, roomLayout, furniturePositions, companionPositions, photos, visitedHomeStamps,
+             unlockedRoomStyles, roomStyle, placedDecor, featuredPhotoID
     }
     init(publicNickname: String? = nil, visibility: MemoryHomeVisibility = .open,
          sharedPinnedMemoryID: UUID? = nil, recentRequesters: [MemoryHomeRecentRequester] = [],
@@ -336,9 +426,19 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
         profileMessage = try c.decodeIfPresent(String.self, forKey: .profileMessage)
         sharesProfileMessage = try c.decodeIfPresent(Bool.self, forKey: .sharesProfileMessage) ?? false
         moodByDayKey = try c.decodeIfPresent([String: MemoryHomeMood].self, forKey: .moodByDayKey) ?? [:]
+        jukeboxTrack = try c.decodeIfPresent(MemoryHomeJukeboxTrack.self, forKey: .jukeboxTrack) ?? .afterSchool
+        guestbookEntries = try c.decodeIfPresent([MemoryHomeGuestbookEntry].self, forKey: .guestbookEntries) ?? []
         peerAliases = try c.decodeIfPresent([UUID: String].self, forKey: .peerAliases) ?? [:]
         roommateIDs = try c.decodeIfPresent([UUID].self, forKey: .roommateIDs) ?? []
         roomLayout = try c.decodeIfPresent([String: ItemKind].self, forKey: .roomLayout) ?? [:]
+        furniturePositions = try c.decodeIfPresent([String: MemoryHomeRoomPosition].self, forKey: .furniturePositions) ?? [:]
+        companionPositions = try c.decodeIfPresent([UUID: MemoryHomeRoomPosition].self, forKey: .companionPositions) ?? [:]
+        photos = try c.decodeIfPresent([MemoryHomePhoto].self, forKey: .photos) ?? []
+        visitedHomeStamps = try c.decodeIfPresent([String: Date].self, forKey: .visitedHomeStamps) ?? [:]
+        unlockedRoomStyles = try c.decodeIfPresent(Set<MemoryHomeRoomStyle>.self, forKey: .unlockedRoomStyles) ?? [.campus]
+        roomStyle = try c.decodeIfPresent(MemoryHomeRoomStyle.self, forKey: .roomStyle) ?? .campus
+        placedDecor = try c.decodeIfPresent([MemoryHomePlacedDecor].self, forKey: .placedDecor) ?? []
+        featuredPhotoID = try c.decodeIfPresent(UUID.self, forKey: .featuredPhotoID)
     }
 }
 
@@ -438,7 +538,7 @@ struct PokemonMemoryMilestone: Identifiable, Sendable, Equatable {
 final class PokemonMemoryAlbum {
     /// The layout is a bounded projection of inventory, never a second item catalogue.
     /// Keep this list beside the normalization path so imported JSON cannot place a consumable.
-    private static let roomFurnitureItems: Set<ItemKind> = [.roomBed, .roomTable, .roomLamp]
+    private static let roomFurnitureItems = ItemKind.memoryHomeFurniture
     private struct Snapshot: Codable {
         var memories: [UUID: [PokemonMemory]]
         var pinnedMemoryIDs: [UUID: UUID]
@@ -459,6 +559,8 @@ final class PokemonMemoryAlbum {
     private var milestoneStates: [UUID: PokemonMemoryMilestoneState] = [:]
     private var roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]
     private(set) var memoryHomeAccess = MemoryHomeAccessSettings()
+    private var roomUndoStack: [MemoryHomeAccessSettings] = []
+    private var roomRedoStack: [MemoryHomeAccessSettings] = []
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
@@ -586,6 +688,65 @@ final class PokemonMemoryAlbum {
         guard roomThemes[companionID] != theme else { return }
         roomThemes[companionID] = theme; save()
     }
+    var roomStyle: MemoryHomeRoomStyle { memoryHomeAccess.roomStyle }
+    func isRoomStyleUnlocked(_ style: MemoryHomeRoomStyle) -> Bool { memoryHomeAccess.unlockedRoomStyles.contains(style) }
+    func unlockRoomStyle(_ style: MemoryHomeRoomStyle) {
+        guard memoryHomeAccess.unlockedRoomStyles.insert(style).inserted else { return }
+        save()
+    }
+    func selectRoomStyle(_ style: MemoryHomeRoomStyle) {
+        guard memoryHomeAccess.unlockedRoomStyles.contains(style), memoryHomeAccess.roomStyle != style else { return }
+        beginRoomEdit(); memoryHomeAccess.roomStyle = style; save()
+    }
+    /// Snaps and validates a proposed location. It is also the sole collision authority for UI,
+    /// import cleanup and LAN cards.
+    func validatedDecorPosition(_ proposed: MemoryHomeRoomPosition, item: ItemKind, excluding: UUID? = nil) -> MemoryHomeRoomPosition? {
+        guard Self.roomFurnitureItems.contains(item) else { return nil }
+        let origin = Self.gridPoint(proposed)
+        let occupied = memoryHomeAccess.placedDecor.filter { $0.id != excluding }
+        let candidates = (0..<48).map { ($0 % 8, $0 / 8) }.sorted {
+            abs($0.0 - origin.0) + abs($0.1 - origin.1) < abs($1.0 - origin.0) + abs($1.1 - origin.1)
+        }
+        guard let point = candidates.first(where: { candidate in
+            !occupied.contains { Self.gridPoint($0.position) == candidate }
+        }) else { return nil }
+        return Self.normalizedGridPoint(point)
+    }
+    @discardableResult func placeDecor(_ item: ItemKind, at position: MemoryHomeRoomPosition,
+                                       ownedItems: [String: Int]) -> MemoryHomePlacedDecor? {
+        guard memoryHomeAccess.placedDecor.count < 12, Self.roomFurnitureItems.contains(item),
+              memoryHomeAccess.placedDecor.filter({ $0.item == item }).count < ownedItems[item.rawValue, default: 0],
+              let position = validatedDecorPosition(position, item: item) else { return nil }
+        let decor = MemoryHomePlacedDecor(item: item, position: position)
+        beginRoomEdit(); memoryHomeAccess.placedDecor.append(decor); save(); return decor
+    }
+    @discardableResult func moveDecor(id: UUID, to position: MemoryHomeRoomPosition) -> Bool {
+        guard let index = memoryHomeAccess.placedDecor.firstIndex(where: { $0.id == id }),
+              let valid = validatedDecorPosition(position, item: memoryHomeAccess.placedDecor[index].item, excluding: id) else { return false }
+        beginRoomEdit(); memoryHomeAccess.placedDecor[index].position = valid; save(); return true
+    }
+    @discardableResult func removeDecor(id: UUID) -> Bool {
+        let count = memoryHomeAccess.placedDecor.count; guard count != memoryHomeAccess.placedDecor.filter({ $0.id != id }).count else { return false }
+        beginRoomEdit(); memoryHomeAccess.placedDecor.removeAll { $0.id == id }; save(); return true
+    }
+    func resetDecor() { guard !memoryHomeAccess.placedDecor.isEmpty else { return }; beginRoomEdit(); memoryHomeAccess.placedDecor = []; save() }
+    var canUndoRoomEdit: Bool { !roomUndoStack.isEmpty }
+    var canRedoRoomEdit: Bool { !roomRedoStack.isEmpty }
+    func undoRoomEdit() { guard let previous = roomUndoStack.popLast() else { return }; roomRedoStack.append(memoryHomeAccess); memoryHomeAccess = previous; save() }
+    func redoRoomEdit() { guard let next = roomRedoStack.popLast() else { return }; roomUndoStack.append(memoryHomeAccess); memoryHomeAccess = next; save() }
+    private func beginRoomEdit() {
+        roomUndoStack.append(memoryHomeAccess); if roomUndoStack.count > 30 { roomUndoStack.removeFirst() }; roomRedoStack.removeAll()
+    }
+    func setFeaturedPhoto(id: UUID?) {
+        guard id == nil || memoryHomeAccess.photos.contains(where: { $0.id == id }) else { return }
+        memoryHomeAccess.featuredPhotoID = id; save()
+    }
+    private static func gridPoint(_ position: MemoryHomeRoomPosition) -> (Int, Int) {
+        (min(7, max(0, Int((position.x * 7).rounded()))), min(5, max(0, Int((position.y * 5).rounded()))))
+    }
+    private static func normalizedGridPoint(_ point: (Int, Int)) -> MemoryHomeRoomPosition {
+        .init(x: Double(point.0) / 7, y: Double(point.1) / 5)
+    }
     /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
     /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
     @discardableResult
@@ -662,10 +823,12 @@ final class PokemonMemoryAlbum {
         milestoneStates = milestoneStates.filter { validCompanionIDs.contains($0.key) }
         roomThemes = roomThemes.filter { validCompanionIDs.contains($0.key) }
         memoryHomeAccess.roommateIDs = memoryHomeAccess.roommateIDs.filter { validCompanionIDs.contains($0) }
+        memoryHomeAccess.companionPositions = memoryHomeAccess.companionPositions.filter { validCompanionIDs.contains($0.key) }
         if let ownedItems {
             memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter { _, item in
                 Self.roomFurnitureItems.contains(item) && ownedItems[item.rawValue, default: 0] > 0
             }
+            trimPlacedDecor(toOwnedItems: ownedItems)
         }
         normalizePins(); normalizeMemoryHomeAccess(); _ = normalizeMilestones(); save()
     }
@@ -689,6 +852,7 @@ final class PokemonMemoryAlbum {
             memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter { _, item in
                 Self.roomFurnitureItems.contains(item) && ownedItems[item.rawValue, default: 0] > 0
             }
+            trimPlacedDecor(toOwnedItems: ownedItems)
         }
         save()
         if normalizeMilestones() || backfillFirstRecordedDates() { save() }
@@ -697,6 +861,14 @@ final class PokemonMemoryAlbum {
     private func normalizePins() {
         pinnedMemoryIDs = pinnedMemoryIDs.filter { companionID, memoryID in
             memories[companionID]?.contains(where: { $0.id == memoryID }) == true
+        }
+    }
+    private func trimPlacedDecor(toOwnedItems ownedItems: [String: Int]) {
+        var installed: [ItemKind: Int] = [:]
+        memoryHomeAccess.placedDecor = memoryHomeAccess.placedDecor.filter { decor in
+            let next = installed[decor.item, default: 0] + 1
+            guard Self.roomFurnitureItems.contains(decor.item), next <= ownedItems[decor.item.rawValue, default: 0] else { return false }
+            installed[decor.item] = next; return true
         }
     }
     func setMemoryHomeVisibility(_ visibility: MemoryHomeVisibility) {
@@ -785,7 +957,47 @@ final class PokemonMemoryAlbum {
     func setFurniture(_ item: ItemKind?, in slot: String, ownedItems: [String: Int]) {
         guard ["left", "center", "right"].contains(slot) else { return }
         if let item, Self.roomFurnitureItems.contains(item), ownedItems[item.rawValue, default: 0] > 0 { memoryHomeAccess.roomLayout[slot] = item }
-        else { memoryHomeAccess.roomLayout.removeValue(forKey: slot) }
+        else { memoryHomeAccess.roomLayout.removeValue(forKey: slot); memoryHomeAccess.furniturePositions.removeValue(forKey: slot) }
+        save()
+    }
+    func furniturePosition(for slot: String) -> MemoryHomeRoomPosition {
+        if let position = memoryHomeAccess.furniturePositions[slot] { return position }
+        switch slot {
+        case "left": return .clamped(x: 0.20, y: 0.70)
+        case "center": return .clamped(x: 0.52, y: 0.70)
+        default: return .clamped(x: 0.82, y: 0.70)
+        }
+    }
+    func setFurniturePosition(_ position: MemoryHomeRoomPosition, in slot: String) {
+        guard memoryHomeAccess.roomLayout[slot] != nil else { return }
+        memoryHomeAccess.furniturePositions[slot] = .clamped(x: position.x, y: position.y); save()
+    }
+    func companionPosition(for companionID: UUID, fallbackIndex: Int = 0) -> MemoryHomeRoomPosition {
+        if let position = memoryHomeAccess.companionPositions[companionID] { return position }
+        return .clamped(x: 0.48 + Double(fallbackIndex) * 0.16, y: 0.70)
+    }
+    func setCompanionPosition(_ position: MemoryHomeRoomPosition, for companionID: UUID,
+                              validCompanionIDs: Set<UUID>) {
+        guard validCompanionIDs.contains(companionID) else { return }
+        memoryHomeAccess.companionPositions[companionID] = .clamped(x: position.x, y: position.y); save()
+    }
+    func addPhoto(_ photo: MemoryHomePhoto) {
+        guard photo.speciesID > 0, photo.speciesID <= 10_000, photo.caption.count <= 60 else { return }
+        memoryHomeAccess.photos.insert(photo, at: 0)
+        memoryHomeAccess.photos = Array(memoryHomeAccess.photos.prefix(60)); save()
+    }
+    func deletePhoto(id: UUID) {
+        let oldCount = memoryHomeAccess.photos.count
+        memoryHomeAccess.photos.removeAll { $0.id == id }
+        guard memoryHomeAccess.photos.count != oldCount else { return }; save()
+    }
+    func recordMemoryHomeVisitStamp(homeID: String, now: Date = Date()) {
+        guard !homeID.isEmpty else { return }
+        memoryHomeAccess.visitedHomeStamps[homeID] = now
+        if memoryHomeAccess.visitedHomeStamps.count > 200 {
+            let keep = Set(memoryHomeAccess.visitedHomeStamps.sorted { $0.value > $1.value }.prefix(200).map(\.key))
+            memoryHomeAccess.visitedHomeStamps = memoryHomeAccess.visitedHomeStamps.filter { keep.contains($0.key) }
+        }
         save()
     }
     @discardableResult
@@ -822,6 +1034,18 @@ final class PokemonMemoryAlbum {
               }) else { return nil }
         return value
     }
+    nonisolated static func validGuestbookAuthor(_ value: String) -> String? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= 40,
+              !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) }) else { return nil }
+        return value
+    }
+    nonisolated static func validGuestbookBody(_ value: String) -> String? {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= MemoryHomeAccessSettings.guestbookBodyLimit,
+              !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) }) else { return nil }
+        return value
+    }
     func mood(on date: Date = Date()) -> MemoryHomeMood? {
         memoryHomeAccess.moodByDayKey[CompanionStore.dayKey(date)]
     }
@@ -830,6 +1054,25 @@ final class PokemonMemoryAlbum {
         guard memoryHomeAccess.moodByDayKey[today] != mood else { return }
         memoryHomeAccess.moodByDayKey[today] = mood
         memoryHomeAccess.moodByDayKey = Self.trimmedMoodHistory(memoryHomeAccess.moodByDayKey)
+        save()
+    }
+    func setJukeboxTrack(_ track: MemoryHomeJukeboxTrack) {
+        guard memoryHomeAccess.jukeboxTrack != track else { return }
+        memoryHomeAccess.jukeboxTrack = track; save()
+    }
+    @discardableResult
+    func addGuestbookEntry(author: String, body: String, authorKind: MemoryHomeGuestbookAuthor,
+                           createdAt: Date = Date()) -> Bool {
+        guard let author = Self.validGuestbookAuthor(author), let body = Self.validGuestbookBody(body) else { return false }
+        memoryHomeAccess.guestbookEntries.insert(.init(author: author, body: body, createdAt: createdAt,
+                                                        authorKind: authorKind), at: 0)
+        memoryHomeAccess.guestbookEntries = Array(memoryHomeAccess.guestbookEntries.prefix(MemoryHomeAccessSettings.guestbookLimit))
+        save(); return true
+    }
+    func deleteGuestbookEntry(id: UUID) {
+        let before = memoryHomeAccess.guestbookEntries.count
+        memoryHomeAccess.guestbookEntries.removeAll { $0.id == id }
+        guard memoryHomeAccess.guestbookEntries.count != before else { return }
         save()
     }
     /// dayKey 가 `%04d-%02d-%02d` 이므로 문자열 정렬이 곧 시간순이다 — 그 형식이 여기서 값을 한다.
@@ -877,6 +1120,10 @@ final class PokemonMemoryAlbum {
         }
         memoryHomeAccess.moodByDayKey = Self.trimmedMoodHistory(
             memoryHomeAccess.moodByDayKey.filter { Self.validDayKey($0.key) != nil })
+        memoryHomeAccess.guestbookEntries = Array(memoryHomeAccess.guestbookEntries.compactMap { entry in
+            guard let author = Self.validGuestbookAuthor(entry.author), let body = Self.validGuestbookBody(entry.body) else { return nil }
+            return .init(id: entry.id, author: author, body: body, createdAt: entry.createdAt, authorKind: entry.authorKind)
+        }.sorted { $0.createdAt > $1.createdAt }.prefix(MemoryHomeAccessSettings.guestbookLimit))
         memoryHomeAccess.peerAliases = memoryHomeAccess.peerAliases.filter { _, value in
             let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
             return !value.isEmpty && value.count <= 20 && !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) })
@@ -884,6 +1131,39 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter {
             ["left", "center", "right"].contains($0.key) && Self.roomFurnitureItems.contains($0.value)
         }
+        memoryHomeAccess.furniturePositions = memoryHomeAccess.furniturePositions.filter {
+            memoryHomeAccess.roomLayout[$0.key] != nil && (0...1).contains($0.value.x) && (0...1).contains($0.value.y)
+        }
+        memoryHomeAccess.companionPositions = memoryHomeAccess.companionPositions.filter {
+            (0...1).contains($0.value.x) && (0...1).contains($0.value.y)
+        }
+        memoryHomeAccess.photos = Array(memoryHomeAccess.photos.filter {
+            $0.speciesID > 0 && $0.speciesID <= 10_000 && $0.caption.count <= 60
+        }.sorted { $0.createdAt > $1.createdAt }.prefix(60))
+        if memoryHomeAccess.placedDecor.isEmpty, !memoryHomeAccess.roomLayout.isEmpty {
+            // One-time R7 → R8 migration. Keep slot order stable and let the normal grid
+            // validator de-conflict malformed legacy positions.
+            for slot in ["left", "center", "right"] {
+                guard let item = memoryHomeAccess.roomLayout[slot], Self.roomFurnitureItems.contains(item) else { continue }
+                let legacy = memoryHomeAccess.furniturePositions[slot] ?? furniturePosition(for: slot)
+                if let point = validatedDecorPosition(legacy, item: item) {
+                    memoryHomeAccess.placedDecor.append(.init(item: item, position: point))
+                }
+            }
+        }
+        memoryHomeAccess.unlockedRoomStyles.insert(.campus)
+        if !memoryHomeAccess.unlockedRoomStyles.contains(memoryHomeAccess.roomStyle) { memoryHomeAccess.roomStyle = .campus }
+        var seenDecor = Set<UUID>(), usedByKind: [ItemKind: Int] = [:]
+        memoryHomeAccess.placedDecor = Array(memoryHomeAccess.placedDecor.compactMap { decor in
+            guard seenDecor.insert(decor.id).inserted, Self.roomFurnitureItems.contains(decor.item),
+                  let position = validatedDecorPosition(decor.position, item: decor.item, excluding: decor.id) else { return nil }
+            usedByKind[decor.item, default: 0] += 1
+            return MemoryHomePlacedDecor(id: decor.id, item: decor.item, position: position)
+        }.prefix(12))
+        if memoryHomeAccess.featuredPhotoID.map({ id in !memoryHomeAccess.photos.contains(where: { $0.id == id }) }) == true {
+            memoryHomeAccess.featuredPhotoID = nil
+        }
+        memoryHomeAccess.visitedHomeStamps = memoryHomeAccess.visitedHomeStamps.filter { !$0.key.isEmpty }
     }
     /// This is called at the store save boundary, covering every active-companion transition.
     func clearSharedPinnedMemory(unlessPinnedFor activeCompanionID: UUID?) {

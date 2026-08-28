@@ -226,7 +226,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// "진화 가능할 때 사용" 이 뜨고 설명이 빈 문자열이 되며 `useEvolutionItem` 으로 흘러간다.
     case heartScale
     /// R7 decor is inventory, not a second currency or store.
+    // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
+    case lovelyVanity, lovelySofa, lovelyHeartLamp
+    case retroArcade, retroRadio, retroTV
+    case naturePlant, natureBench, natureLantern
 
     /// 진화 아이템 공통가 — 돌과 지닌물건을 구분하지 않는다(둘 다 진화 1회분의 값).
     static let evolutionItemPrice = 500
@@ -234,7 +238,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .shinyCharm, .freshWater, .heartScale, .roomBed, .roomTable, .roomLamp: return nil
+        case .rareCandy, .mint, .shinyCharm, .freshWater, .heartScale,
+             .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
+             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
         case .fireStone: return .useItem("fire-stone")
         case .waterStone: return .useItem("water-stone")
@@ -299,6 +305,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .freshWater: return "🥤"
         case .heartScale: return "💗"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
+        case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
+        case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
+        case .naturePlant: return "🪴"; case .natureBench: return "🌿"; case .natureLantern: return "🏮"
         }
     }
     /// 상점 판매가(재화 = 별의조각). nil = 상점 미판매.
@@ -312,6 +321,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
+        case .lovelyVanity, .retroArcade, .natureBench: return 1_400
+        case .lovelySofa, .retroTV, .naturePlant: return 1_100
+        case .lovelyHeartLamp, .retroRadio, .natureLantern: return 850
         default: return isEvolutionItem ? Self.evolutionItemPrice : nil
         }
     }
@@ -328,6 +340,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .roomBed: return "beside"
         case .roomTable: return "onTop"
         case .roomLamp: return "under"
+        case .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
+             .retroArcade, .retroRadio, .retroTV,
+             .naturePlant, .natureBench, .natureLantern: return "beside"
         default: return nil
         }
     }
