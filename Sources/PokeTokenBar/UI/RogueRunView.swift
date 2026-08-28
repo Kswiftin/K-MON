@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 포켓로그식 런 화면 — **프로토타입**이다. 입장권·기록 저장(`RunProgress`)·포획이 아직 없다.
+/// 포켓로그식 런 화면 — **프로토타입**이다. 기록 저장(`RunProgress`)이 아직 없다.
+/// 입장권·하루 판 수 제한은 두지 않기로 했다(설계: `docs/reference/wave-run-design.md`).
 struct RogueRunView: View {
     @Bindable var store: CompanionStore
     @Environment(AppSettings.self) private var settings
@@ -21,9 +22,6 @@ struct RogueRunView: View {
 
     @State private var setup: Setup = .loading
 
-    /// 스타터 후보 — 프로토타입은 1세대 기본형에서 고정 풀로 뽑는다(진화 루트 조회를 아직 안 탄다).
-    private static let starterPool = [1, 4, 7, 25, 152, 155, 158]
-    private static let wildPool = 1...649
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -119,7 +117,37 @@ struct RogueRunView: View {
         let shownTheirs = animator.side(for: .b) ?? engineTheirs
         let me = shownMine.side ?? run.battle.mySlot
         let opponent = shownTheirs.side ?? run.battle.opponentSlot
-        return BattleArenaView(
+        return VStack(spacing: 6) {
+            catchBar(run)
+            arena(run, me: me, opponent: opponent, shownMine: shownMine,
+                  engineMine: engineMine, engineTheirs: engineTheirs)
+        }
+    }
+
+    /// 볼·파티 칸·성공률을 한 줄로 보여주고 던진다. 성공률을 감추면 언제 던질지가 순전히 감이 되고,
+    /// 볼이 5개뿐이라 그 감이 곧 판을 버리는 선택이 된다.
+    private func catchBar(_ run: RogueRun) -> some View {
+        HStack(spacing: 8) {
+            Label("\(run.balls)", systemImage: "circle.circle")
+            Text(l.t("파티 \(run.party.count)/\(RogueRun.partyLimit)",
+                     "Party \(run.party.count)/\(RogueRun.partyLimit)",
+                     "手持ち \(run.party.count)/\(RogueRun.partyLimit)"))
+                .foregroundStyle(.secondary)
+            Spacer()
+            if run.canThrowBall {
+                Text("\(Int(RogueRun.catchChance(target: run.battle.opponentSlot) * 100))%")
+                    .foregroundStyle(.secondary)
+            }
+            Button(l.t("잡기", "Catch", "捕まえる")) { mutate { _ = $0.throwBall() } }
+                .disabled(!run.canThrowBall)
+        }
+        .font(.caption)
+    }
+
+    private func arena(_ run: RogueRun, me: BattleSide, opponent: BattleSide,
+                       shownMine: ReplaySide,
+                       engineMine: ReplaySide, engineTheirs: ReplaySide) -> some View {
+        BattleArenaView(
             mine: me, theirs: opponent,
             myTitle: l.battleMyPokemon,
             theirTitle: RogueRun.isBoss(wave: run.wave) ? l.t("보스", "BOSS", "ボス")
@@ -232,7 +260,7 @@ struct RogueRunView: View {
 
     private func loadStarters() async {
         var built: [BattleSnapshot] = []
-        for speciesID in Self.starterPool.shuffled().prefix(3) {
+        for speciesID in RogueRun.starterPool.shuffled().prefix(3) {
             if let snapshot = await Self.snapshot(speciesID: speciesID, level: 5, store: store) {
                 built.append(snapshot)
             }
@@ -242,29 +270,46 @@ struct RogueRunView: View {
 
     private func start(with starter: BattleSnapshot) async {
         setup = .loading
-        guard let opponent = await Self.wild(wave: 1, store: store) else {
+        let opponents = await Self.wilds(wave: 1, store: store)
+        guard !opponents.isEmpty else {
             setup = .failedToLoad
             return
         }
-        store.rogueRun = RogueRun(party: [starter], opponents: [opponent],
+        store.rogueRun = RogueRun(party: [starter], opponents: opponents,
                                   seed: UInt64.random(in: UInt64.min...UInt64.max))
     }
 
     private func loadNextWave() async {
         guard let run = store.rogueRun else { return }
-        guard let opponent = await Self.wild(wave: run.wave, store: store) else {
+        let opponents = await Self.wilds(wave: run.wave, store: store)
+        guard !opponents.isEmpty else {
             // 판은 그대로 둔다 — 창을 다시 열면 `resume()` 이 이 웨이브를 다시 불러온다.
             setup = .failedToLoad
             return
         }
-        mutate { $0.beginWave(opponents: [opponent]) }
+        mutate { $0.beginWave(opponents: opponents) }
+    }
+
+    /// 이 웨이브의 상대 전원. **한 마리라도 만들었으면 그대로 간다** — 둘째를 못 받았다고 판을
+    /// 세우면 네트워크가 흔들릴 때마다 진행 중인 런이 멈춘다.
+    private static func wilds(wave: Int, store: CompanionStore) async -> [BattleSnapshot] {
+        var built: [BattleSnapshot] = []
+        for _ in 0..<RogueRun.opponentCount(wave: wave) {
+            if let one = await wild(wave: wave, store: store) { built.append(one) }
+        }
+        return built
     }
 
     // MARK: 상대 만들기
 
+    /// 웨이브에 맞는 야생 하나. 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹이 나오므로
+    /// 채택 규칙은 코어(`RogueRun.chooseOpponent`)가 든다 — 시뮬레이터와 같은 규칙을 써야 한다.
     private static func wild(wave: Int, store: CompanionStore) async -> BattleSnapshot? {
-        await snapshot(speciesID: Int.random(in: wildPool),
-                       level: RogueRun.opponentLevel(wave: wave), store: store)
+        let level = RogueRun.opponentLevel(wave: wave)
+        return await RogueRun.chooseOpponent(wave: wave) {
+            await snapshot(speciesID: Int.random(in: RogueRun.wildSpeciesPool),
+                           level: level, store: store)
+        }
     }
 
     private static func snapshot(speciesID: Int, level: Int,

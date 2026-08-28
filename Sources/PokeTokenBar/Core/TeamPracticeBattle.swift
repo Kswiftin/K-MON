@@ -116,6 +116,27 @@ struct TeamPracticeBattle {
         events += BattleEngine.endOfTurnResidual(&opponents[opponentActive], actor: .b)
     }
 
+    /// 내가 공격 대신 다른 행동(볼 던지기)에 턴을 쓴다 — **교체와 같은 대가다.** 상대만 한 번
+    /// 움직이고 잔뎀도 들어간다. 이 대가가 없으면 실패해도 잃는 것이 없어 볼을 마를 때까지
+    /// 던지는 것이 언제나 최선이 된다.
+    mutating func spendTurnWithoutAttacking() -> Bool {
+        guard result == nil, mine[myActive].isAlive, opponents[opponentActive].isAlive else { return false }
+        events.append(.turn(turn))
+        opponentAttacksAlone()
+        turn += 1
+        advanceFainted()
+        return true
+    }
+
+    /// 잡힌 상대를 전투에서 뺀다 — **쓰러진 것과 같은 자리**(`advanceFainted`)를 지나 다음 상대로
+    /// 넘어가거나 승부를 적는다. 배열에서 지우지 않는 이유는 인덱스가 이벤트 스트림(`sendOut`)의
+    /// 좌표이기 때문이다 — 지우면 재생기가 엉뚱한 개체를 그린다.
+    mutating func retireOpponent() {
+        guard result == nil else { return }
+        opponents[opponentActive].hp = 0
+        advanceFainted()
+    }
+
     mutating func useMove(_ index: Int) -> Bool {
         guard result == nil, mine[myActive].isAlive, opponents[opponentActive].isAlive else { return false }
         let myIndex = mine[myActive].mustStruggle ? -1 : index

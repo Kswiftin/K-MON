@@ -28,11 +28,229 @@ final class RogueRunTests: XCTestCase {
     }
 
     func testOpponentLevelRisesAndBossesAddMore() {
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 6)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 3), 10)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 16)    // 보스 +4
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 8), 24)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 12), 34)   // 최종 +6
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 1)       // 기준선 5 − 핸디캡 4
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 3), 6)
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 11)     // 보스는 파티 기준선과 동급
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 8), 19)
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 12), 29)    // 최종만 기준선 +2
+    }
+
+    /// 야생은 파티 기준선보다 **낮아야** 한다. PokeRogue 는 웨이브 1 에 레벨 2 야생을 레벨 5
+    /// 스타터에게 붙인다(`baseLevel = 1 + wave/2 + (wave/25)^2`) — 플레이어가 처음부터 위에 선다.
+    /// 우리는 파티가 한 마리라 그 여유가 더 필요하다.
+    func testWildWavesStayBelowThePartyLevelBaseline() {
+        let tuning = RogueTuning.standard
+        for wave in 1...RogueRun.finalWave where !RogueRun.isBoss(wave: wave) {
+            XCTAssertEqual(RogueRun.opponentLevel(wave: wave),
+                           RogueRun.partyLevelBaseline(wave: wave) - tuning.wildHandicap(wave: wave),
+                           "wave \(wave)")
+        }
+    }
+
+    /// 핸디캡은 판이 갈수록 좁아진다 — 난이도를 우상향으로 만드는 축이다. 좁아지지 않으면
+    /// 야생 웨이브가 통째로 공짜가 되고 보스 네 칸에만 난이도가 몰린다(실측 hazard 0.000).
+    func testWildHandicapNarrowsAcrossTheRun() {
+        let tuning = RogueTuning.standard
+        XCTAssertEqual(tuning.wildHandicap(wave: 1), tuning.wildLevelHandicapStart)
+        XCTAssertEqual(tuning.wildHandicap(wave: tuning.finalWave), tuning.wildLevelHandicapEnd)
+        for wave in 1..<tuning.finalWave {
+            XCTAssertGreaterThanOrEqual(tuning.wildHandicap(wave: wave),
+                                        tuning.wildHandicap(wave: wave + 1), "wave \(wave)")
+        }
+    }
+
+    /// 보스만 기준선에 붙고, 그 이상 올라가는 것은 최종 웨이브뿐이다.
+    func testBossesNeverOutlevelThePartyExceptTheFinalWave() {
+        for wave in [4, 8] {
+            XCTAssertEqual(RogueRun.opponentLevel(wave: wave),
+                           RogueRun.partyLevelBaseline(wave: wave), "wave \(wave)")
+        }
+        XCTAssertEqual(RogueRun.opponentLevel(wave: RogueRun.finalWave),
+                       RogueRun.partyLevelBaseline(wave: RogueRun.finalWave) + 2)
+    }
+
+    /// 기준선은 스타터 5 에서 승리마다 +2 로 센 보수적인 값이다(보스 +3 의 여유는 세지 않는다).
+    func testPartyLevelBaselineTracksTheStarterCurve() {
+        XCTAssertEqual(RogueRun.partyLevelBaseline(wave: 1), 5)
+        XCTAssertEqual(RogueRun.partyLevelBaseline(wave: 12), 27)
+    }
+
+    // MARK: 상대 종 티어
+
+    private func stats(total: Int) -> BattleStats {
+        let each = total / 6
+        return BattleStats(hp: each, atk: each, def: each, spa: each, spd: each,
+                           spe: total - each * 5)
+    }
+
+    /// 웨이브 1 에 슬라킹(670)·전설이 나오던 결함의 회귀 — 상한이 티어 순으로 오르고, 최종 보스
+    /// 상한(640)도 전설 대부분(660~720)을 막는다.
+    func testBaseStatCapRisesWithTheWaveAndKeepsLegendariesOut() {
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 670), wave: 1))
+        XCTAssertTrue(RogueRun.isFairOpponent(baseStats: stats(total: 318), wave: 1))
+        XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 3), RogueRun.baseStatTotalCap(wave: 5))
+        XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 5), RogueRun.baseStatTotalCap(wave: 9))
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 12), 540)
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 680), wave: 12))
+    }
+
+    /// 보스는 **자기 구간** 상한 +60 이다. 구간 경계가 보스 웨이브를 다음 구간으로 밀어버리면
+    /// 보스 4 가 480 이 되어 뒤따르는 웨이브 5–7(420)보다 세지는 톱니가 생긴다 — 단조 증가만
+    /// 재던 예전 테스트가 그걸 통과시켰다.
+    func testBossCapsStayInTheirOwnTier() {
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 4), 360)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 450)
+        XCTAssertGreaterThan(RogueRun.baseStatTotalCap(wave: 4), RogueRun.baseStatTotalCap(wave: 3))
+        for wave in 1..<RogueRun.finalWave {
+            XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave),
+                                     RogueRun.baseStatTotalCap(wave: wave + 1), "wave \(wave)")
+        }
+    }
+
+    /// 웨이브 수를 늘려도 구간이 늘 뿐 상한의 시작·끝은 그대로다 — 오르는 폭만 완만해진다.
+    func testTierCapsStretchWithTheRunLength() {
+        var long = RogueTuning.standard
+        long.finalWave = 20
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 1, tuning: long),
+                       RogueTuning.standard.firstTierCap)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 20, tuning: long),
+                       RogueTuning.standard.lastTierCap + long.bossStatBonus)
+        for wave in 1..<20 {
+            XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave, tuning: long),
+                                     RogueRun.baseStatTotalCap(wave: wave + 1, tuning: long),
+                                     "wave \(wave)")
+        }
+    }
+
+    /// 하한이 없으면 최종 보스로 잉어킹(200)이 나온다.
+    func testTooWeakSpeciesAreRejectedForLateWaves() {
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 200), wave: 12))
+    }
+
+    // MARK: 포획
+
+    /// 확률은 HP 비율로 정해진다 — 만피 33%, 빈사 직전 상한 95%.
+    func testCatchChanceRisesAsTheTargetWeakens() {
+        var target = BattleSide(snapshot(50, level: 20))
+        XCTAssertEqual(RogueRun.catchChance(target: target), 1.0 / 3, accuracy: 0.01)
+        target.hp = 1
+        XCTAssertEqual(RogueRun.catchChance(target: target), 0.95, accuracy: 0.01)
+    }
+
+    /// 상태이상은 확률을 올린다 — 잠듦·얼음이 가장 크다.
+    func testStatusRaisesTheCatchChance() {
+        var target = BattleSide(snapshot(50, level: 20))
+        let plain = RogueRun.catchChance(target: target)
+        target.status = .paralysis
+        let paralysed = RogueRun.catchChance(target: target)
+        target.status = .sleep
+        XCTAssertGreaterThan(paralysed, plain)
+        XCTAssertGreaterThan(RogueRun.catchChance(target: target), paralysed)
+    }
+
+    /// 보스 웨이브는 판의 관문이자 회복 지점이라 잡아서 건너뛸 수 없다.
+    func testBossWavesRejectTheBall() {
+        var run = makeRun()
+        run.debugJump(toWave: 4)
+        XCTAssertFalse(run.canThrowBall)
+        XCTAssertFalse(run.throwBall())
+        XCTAssertEqual(run.balls, RogueRun.ballsPerRun)
+    }
+
+    func testBallsRunOut() {
+        var run = makeRun()
+        run.debugSetBalls(0)
+        XCTAssertFalse(run.canThrowBall)
+        XCTAssertFalse(run.throwBall())
+    }
+
+    func testFullPartyRejectsTheBall() {
+        let run = makeRun(partySize: RogueRun.partyLimit)
+        XCTAssertFalse(run.canThrowBall)
+    }
+
+    /// 성공하면 상대가 파티에 들어오고, 웨이브는 쓰러뜨렸을 때와 **같은 규칙**으로 넘어간다.
+    func testCatchingAddsTheTargetAndClearsTheWave() {
+        let run = caughtRun()
+        XCTAssertEqual(run.party.count, 3)
+        XCTAssertEqual(run.stage, .picking)
+        XCTAssertEqual(run.balls, RogueRun.ballsPerRun - 1)
+        XCTAssertEqual(run.party.last?.snapshot.speciesID, 99)
+        XCTAssertNil(run.party.last?.status)
+    }
+
+    /// 잡힌 개체는 그 전투의 경험치를 받지 않는다 — 원래 파티만 레벨이 오른다.
+    func testCaughtMemberDoesNotGainTheWaveLevel() {
+        let run = caughtRun()
+        XCTAssertEqual(run.party[0].snapshot.level, 5 + RogueRun.levelGain(wave: 1))
+        XCTAssertEqual(run.party.last?.snapshot.level, 5)
+    }
+
+    /// 실패한 볼도 그 턴을 쓴다 — 상대만 움직인다. 대가가 없으면 볼이 마를 때까지 던지는 것이
+    /// 언제나 최선이 된다.
+    func testAFailedBallCostsTheTurn() {
+        let run = failedBallRun()
+        XCTAssertEqual(run.stage, .battling)
+        XCTAssertGreaterThan(run.battle.turn, 1)
+        XCTAssertLessThan(run.party[0].hp, run.party[0].stats.hp)
+    }
+
+    /// 확률이 95% 라 잡히는 seed, 5% 라 실패하는 seed 를 각각 찾아 두 갈래를 다 밟는다.
+    /// 볼 시험용 판 — 파티가 상대 공격 한 번에 죽지 않아야 실패 갈래를 볼 수 있다.
+    private func ballRun(seed: UInt64) -> RogueRun {
+        RogueRun(party: (0..<2).map { snapshot(1 + $0, hp: 4000, speed: 200) },
+                 opponents: [snapshot(99, level: 5, hp: 100, speed: 1)],
+                 seed: seed)
+    }
+
+    private func caughtRun() -> RogueRun {
+        for seed in UInt64(1)...200 {
+            var run = ballRun(seed: seed)
+            run.debugSetOpponentHP(1)   // 확률 95%
+            if run.throwBall() { return run }
+        }
+        XCTFail("no seed produced a catch")
+        return ballRun(seed: 1)
+    }
+
+    private func failedBallRun() -> RogueRun {
+        for seed in UInt64(1)...500 {
+            var run = ballRun(seed: seed)
+            // 만피 상대는 실패 확률이 3분의 2 다.
+            if !run.throwBall() { return run }
+        }
+        XCTFail("no seed produced a failed ball")
+        return ballRun(seed: 1)
+    }
+
+    /// 후반 웨이브는 둘이 나온다 — 포획으로 파티가 커지는데 상대가 끝까지 하나면 판이 헐거워진다.
+    func testLateWavesSendTwoOpponents() {
+        for wave in 1...8 { XCTAssertEqual(RogueRun.opponentCount(wave: wave), 1, "wave \(wave)") }
+        for wave in 9...12 { XCTAssertEqual(RogueRun.opponentCount(wave: wave), 2, "wave \(wave)") }
+    }
+
+    /// 둘 중 하나를 잡아도 웨이브는 끝나지 않는다. 잡은 개체는 **그 자리에서** 파티에 들어와야
+    /// 한다 — 다음 행동이 `battle.mine` 에서 파티를 다시 읽으므로 안 넣으면 조용히 사라진다.
+    func testCatchingOneOfTwoKeepsTheWaveRunning() {
+        var run = twoOpponentRun()
+        XCTAssertEqual(run.stage, .battling)
+        XCTAssertEqual(run.party.count, 3)
+        XCTAssertEqual(run.battle.mine.count, 3)
+        run.useMove(0)
+        XCTAssertEqual(run.party.count, 3, "잡은 개체가 다음 행동에 사라졌다")
+    }
+
+    private func twoOpponentRun() -> RogueRun {
+        for seed in UInt64(1)...200 {
+            var run = RogueRun(party: (0..<2).map { snapshot(1 + $0, hp: 4000, speed: 200) },
+                               opponents: [snapshot(98, hp: 100, speed: 1),
+                                           snapshot(99, hp: 100, speed: 1)],
+                               seed: seed)
+            run.debugSetOpponentHP(1)
+            if run.throwBall() { return run }
+        }
+        XCTFail("no seed produced a catch")
+        return makeRun()
     }
 
     // MARK: 진행
@@ -92,12 +310,66 @@ final class RogueRunTests: XCTestCase {
         XCTAssertEqual(fainted.battle.myActive, 1)
     }
 
+    /// 웨이브를 넘어 이월하는 것은 HP·PP·주 상태이상뿐이다. 랭크·혼란은 전투 안의 값이라 넘기면
+    /// 앞 웨이브에서 깎인 랭크를 판이 끝날 때까지 지고 간다.
+    func testWaveTransitionClearsBattleOnlyState() {
+        var side = BattleSide(snapshot(1))
+        side.hp = side.stats.hp / 2
+        side.pp[0] = 3
+        side.changeStage(.atk, by: -2)
+        side.confusionTurns = 3
+        side.status = .poison
+        var run = makeRun()
+        run.useMove(0)
+        run.pick(run.offers.first { $0 != .potion && $0 != .cleanse && $0 != .elixir } ?? run.offers[0])
+        run.debugSetParty([side])
+        run.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
+        XCTAssertEqual(run.battle.mine[0].stage(.atk), 0)
+        XCTAssertEqual(run.battle.mine[0].confusionTurns, 0)
+        XCTAssertEqual(run.battle.mine[0].hp, side.hp, "HP 는 이월한다 — 이게 이 판의 자원이다")
+        XCTAssertEqual(run.battle.mine[0].pp[0], 3)
+        XCTAssertNil(run.battle.mine[0].status,
+                     "주 상태이상은 웨이브를 넘기지 않는다 — 한 마리 파티가 되돌릴 수단이 없다")
+    }
+
+    /// 독 하나로 판이 끝나던 자리 — 승리 정산에서 주 상태이상을 지운다. HP·PP 는 그대로 이월한다.
+    func testWinningAWaveClearsStatusButKeepsDamage() {
+        var run = RogueRun(party: [snapshot(1, hp: 900, speed: 1)],
+                           opponents: [snapshot(99, level: 5, hp: 1, speed: 200)],
+                           seed: 7)
+        run.debugAfflict(.poison)
+        run.useMove(0)   // 상대가 먼저 때리고, 내가 눕히고, 턴 끝에 독뎀이 들어간다
+        guard run.stage == .picking else { return XCTFail("승리하지 못했다: \(run.stage)") }
+        XCTAssertNil(run.party[0].status)
+        XCTAssertLessThan(run.party[0].hp, run.party[0].stats.hp, "HP 는 회복되지 않는다")
+    }
+
     func testFinalWaveVictoryClearsTheRun() {
         var run = makeRun()
         run.debugJump(toWave: RogueRun.finalWave)
         run.useMove(0)
         XCTAssertEqual(run.stage, .cleared)
         XCTAssertTrue(run.offers.isEmpty)
+    }
+
+    /// 보스를 넘으면 살아 있는 파티가 완전 회복한다 — 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면
+    /// 후반 웨이브가 되돌릴 수 없는 소화가 된다. 야생 웨이브에서는 회복하지 않는다(이월이 자원이다).
+    func testBossVictoryRestoresTheParty() {
+        func damagedWin(atWave wave: Int) -> RogueRun {
+            var run = RogueRun(party: [snapshot(1, hp: 900, speed: 1)],
+                               opponents: [snapshot(99, level: 5, hp: 1, speed: 200)],
+                               seed: 7)
+            run.debugJump(toWave: wave)
+            run.useMove(0)   // 상대가 먼저 때린 뒤 내가 쓰러뜨린다
+            return run
+        }
+        let boss = damagedWin(atWave: 4)
+        XCTAssertTrue(RogueRun.isBoss(wave: 4))
+        XCTAssertEqual(boss.party[0].hp, boss.party[0].stats.hp)
+
+        let wild = damagedWin(atWave: 3)
+        XCTAssertLessThan(wild.party[0].hp, wild.party[0].stats.hp,
+                          "야생 웨이브에서 회복하면 HP 이월이 자원이 아니게 된다")
     }
 
     func testPartyWipeFailsTheRun() {
@@ -176,6 +448,31 @@ final class RogueRunTests: XCTestCase {
                       "던전 런도 공용 배틀 렌더러를 쓴다")
         XCTAssertFalse(source.contains("Text(\"PP "),
                        "PP 표시를 직접 그리면 공용 렌더러의 색·배지 규칙에서 벗어난다")
+    }
+
+    /// 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹·전설이 나온다. 채택 규칙은 코어
+    /// (`RogueRun.chooseOpponent`)가 들고 있고 — 시뮬레이터가 같은 규칙을 봐야 하기 때문이다 —
+    /// 뷰가 그 규칙을 실제로 지나는지는 로직 테스트로 못 잡으므로 소스에서 기계적으로 확인한다.
+    func testWildDrawFiltersBySpeciesTier() throws {
+        let source = try Self.viewSource()
+        XCTAssertTrue(source.contains("RogueRun.chooseOpponent("),
+                      "야생 뽑기는 코어의 채택 규칙(웨이브 티어)을 지나야 한다")
+        XCTAssertFalse(source.contains("wildDrawAttempts"),
+                       "재추첨 횟수까지 뷰가 다시 들면 시뮬레이터와 규칙이 갈린다")
+    }
+
+    /// 코어 쪽 규칙 자체 — 티어를 벗어난 후보는 거르고, 전부 어긋나면 가장 약한 것을 쓴다.
+    func testChooseOpponentTakesTheFairCandidateThenTheWeakest() async {
+        // 종족값 합 = hp + speed + 300 (나머지 축은 헬퍼가 고정한다). 웨이브 1 상한은 320.
+        var offered = [snapshot(1, hp: 200), snapshot(2, hp: 10, speed: 5)]
+        let fair = await RogueRun.chooseOpponent(wave: 1) { offered.isEmpty ? nil : offered.removeFirst() }
+        XCTAssertEqual(fair?.speciesID, 2, "티어 밖(과대) 후보를 지나 공정한 후보를 잡는다")
+
+        var allTooBig = [snapshot(3, hp: 300), snapshot(4, hp: 220)]   // 700 · 620
+        let weakest = await RogueRun.chooseOpponent(wave: 1, attempts: 2) {
+            allTooBig.isEmpty ? nil : allTooBig.removeFirst()
+        }
+        XCTAssertEqual(weakest?.speciesID, 4, "다 어긋나면 그중 가장 약한 종으로 판을 연다")
     }
 
     /// 재생기를 빼면 기절·피격이 화면에 뜨기 전에 필드가 다음 포켓몬으로 갈아탄다 — 사용자에게는
