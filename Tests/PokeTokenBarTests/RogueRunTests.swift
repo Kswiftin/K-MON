@@ -85,11 +85,26 @@ final class RogueRunTests: XCTestCase {
     /// 재던 예전 테스트가 그걸 통과시켰다.
     func testBossCapsStayInTheirOwnTier() {
         XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 4), 380)
-        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 480)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 470)
         XCTAssertGreaterThan(RogueRun.baseStatTotalCap(wave: 4), RogueRun.baseStatTotalCap(wave: 3))
         for wave in 1..<RogueRun.finalWave {
             XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave),
                                      RogueRun.baseStatTotalCap(wave: wave + 1), "wave \(wave)")
+        }
+    }
+
+    /// 웨이브 수를 늘려도 구간이 늘 뿐 상한의 시작·끝은 그대로다 — 오르는 폭만 완만해진다.
+    func testTierCapsStretchWithTheRunLength() {
+        var long = RogueTuning.standard
+        long.finalWave = 20
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 1, tuning: long),
+                       RogueTuning.standard.firstTierCap)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 20, tuning: long),
+                       RogueTuning.standard.lastTierCap + long.bossStatBonus)
+        for wave in 1..<20 {
+            XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave, tuning: long),
+                                     RogueRun.baseStatTotalCap(wave: wave + 1, tuning: long),
+                                     "wave \(wave)")
         }
     }
 

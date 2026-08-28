@@ -34,52 +34,56 @@ struct RogueRun: Sendable {
         case failed
     }
 
-    static let finalWave = 12
     static let offerCount = 3
-    /// 파티 상한 — 본가·PokeRogue 와 같은 6.
-    static let partyLimit = 6
-    /// 한 판에 주는 몬스터볼. 보상으로 더 주지 않는다 — 이 판의 포획 횟수를 여기 하나로 잠근다.
-    static let ballsPerRun = 5
-    /// 4·8·12 웨이브가 보스다.
-    static func isBoss(wave: Int) -> Bool { wave % 4 == 0 }
+    /// 앱이 쓰는 값. 시뮬레이터는 `tuning` 을 갈아 끼워 같은 코어로 다른 밸런스를 잰다.
+    static let finalWave = RogueTuning.standard.finalWave
+    static let partyLimit = RogueTuning.standard.partyLimit
+    static let ballsPerRun = RogueTuning.standard.ballsPerRun
+
+    static func isBoss(wave: Int, tuning: RogueTuning = .standard) -> Bool {
+        wave % tuning.bossEvery == 0
+    }
+
     /// 파티 레벨 기준선 — 스타터 5 에서 승리마다 +2. 보스의 +3 은 **세지 않는다**, 상대 레벨을
     /// 여기에 맞추므로 기준선이 실제보다 낮아야 안전하다(실제 파티는 보스를 넘을 때마다 1 더 위).
-    static func partyLevelBaseline(wave: Int) -> Int { 3 + 2 * wave }
+    static func partyLevelBaseline(wave: Int, tuning: RogueTuning = .standard) -> Int {
+        3 + tuning.levelGain * wave
+    }
 
     /// 야생이 파티 기준선보다 얼마나 아래에 서는가. PokeRogue 는 웨이브 1 에 레벨 2 야생을
     /// 레벨 5 스타터에게 붙인다(`baseLevel = 1 + wave/2 + (wave/25)^2`, `src/battle.ts`) —
     /// 플레이어가 처음부터 위에 서고 적은 웨이브당 0.5 씩만 오른다.
-    static let wildLevelHandicap = 3
+    static let wildLevelHandicap = RogueTuning.standard.wildLevelHandicap
 
-    /// 상대 레벨 — 야생은 파티 기준선 −3, 보스는 기준선과 동급, 최종만 기준선 +2 다.
+    /// 상대 레벨 — 야생은 파티 기준선 아래, 보스는 기준선, 최종만 그 위다.
     ///
     /// 예전 식은 야생을 기준선과 같은 레벨에 두었다. PokeRogue 는 파티가 최대 6마리인데도 적을
-    /// 늘 아래에 두는데, 우리는 파티가 **한 마리**라 그 여유가 더 필요하다. 한 마리로 동레벨을
-    /// 12번 연속 상대하면 이월되는 HP 손해만 쌓이고 되돌릴 수단이 없다.
-    static func opponentLevel(wave: Int) -> Int {
-        let baseline = partyLevelBaseline(wave: wave)
-        guard isBoss(wave: wave) else { return baseline - wildLevelHandicap }
-        return wave == finalWave ? baseline + 2 : baseline
+    /// 늘 아래에 두는데, 우리는 파티가 **한 마리로 시작**해 그 여유가 더 필요하다.
+    static func opponentLevel(wave: Int, tuning: RogueTuning = .standard) -> Int {
+        let baseline = partyLevelBaseline(wave: wave, tuning: tuning)
+        guard isBoss(wave: wave, tuning: tuning) else { return baseline - tuning.wildLevelHandicap }
+        return baseline + (wave == tuning.finalWave ? tuning.finalLevelBonus : tuning.bossLevelBonus)
     }
 
-    /// 웨이브당 상대 마릿수. 후반은 둘이 나온다 — 포획으로 파티가 최대 6까지 커지는데 상대가 끝까지
-    /// 하나면 판이 뒤로 갈수록 헐거워진다. 보스 4·8 은 종족값 상한을 올린 한 마리로 남긴다(벽 역할).
-    static func opponentCount(wave: Int) -> Int { wave >= 9 ? 2 : 1 }
+    /// 웨이브당 상대 마릿수. 후반은 둘이 나온다 — 포획으로 파티가 커지는데 상대가 끝까지 하나면
+    /// 판이 뒤로 갈수록 헐거워진다. 보스는 종족값 상한을 올린 한 마리로 남긴다(벽 역할).
+    static func opponentCount(wave: Int, tuning: RogueTuning = .standard) -> Int {
+        wave >= tuning.doubleOpponentWave ? 2 : 1
+    }
 
     /// 웨이브별 상대 **종족값 합(BST) 상한**. 포켓로그가 웨이브에 따라 종 티어를 올리는 것과 같은
     /// 규칙이다. 이 상한이 없으면 종을 전 범위(1...649)에서 균등 추첨하는 호출자가 웨이브 1 에
     /// 슬라킹(670)·전설을 뽑아, 레벨 곡선을 아무리 맞춰도 판이 첫 턴에 끝난다.
-    /// 최종 상한 560 이 전설 대부분(660~720)을 자연히 막으므로 따로 전설 목록을 두지 않는다.
-    /// 구간은 보스 웨이브를 **포함**한다(`...4`). `..<4` 로 자르면 보스 4 가 다음 구간에 들어가
-    /// 380 이 아닌 480 이 되고, 뒤따르는 웨이브 5–7(420)보다 세지는 톱니가 생긴다.
-    static func baseStatTotalCap(wave: Int) -> Int {
-        let tier: Int
-        switch wave {
-        case ...4:  tier = 320      // 미진화 1단계 대
-        case ...8:  tier = 420      // 2단계 대
-        default:    tier = 500      // 최종 진화 대
-        }
-        return isBoss(wave: wave) ? tier + 60 : tier
+    /// 최종 상한이 560 이라 전설 대부분(660~720)은 자연히 막히고, 따로 전설 목록을 두지 않는다.
+    ///
+    /// 구간은 **보스 웨이브를 포함**한다. 보스를 다음 구간으로 밀면 보스 4 가 뒤따르는 웨이브보다
+    /// 세지는 톱니가 생긴다. 구간 사이는 선형으로 이어 웨이브 수를 늘리면 상승이 저절로 완만해진다.
+    static func baseStatTotalCap(wave: Int, tuning: RogueTuning = .standard) -> Int {
+        let (index, count) = tuning.tierIndex(wave: wave)
+        let span = Double(tuning.lastTierCap - tuning.firstTierCap)
+        let progress = count > 1 ? Double(index - 1) / Double(count - 1) : 1
+        let tier = tuning.firstTierCap + Int((span * progress).rounded())
+        return isBoss(wave: wave, tuning: tuning) ? tier + tuning.bossStatBonus : tier
     }
 
     static func baseStatTotal(_ stats: BattleStats) -> Int {
@@ -87,10 +91,11 @@ struct RogueRun: Sendable {
     }
 
     /// 하한은 상한의 60% — 없으면 최종 보스로 잉어킹(200)이 나온다.
-    static func isFairOpponent(baseStats: BattleStats, wave: Int) -> Bool {
+    static func isFairOpponent(baseStats: BattleStats, wave: Int,
+                               tuning: RogueTuning = .standard) -> Bool {
         let total = baseStatTotal(baseStats)
-        let cap = baseStatTotalCap(wave: wave)
-        return total <= cap && total >= cap * 3 / 5
+        let cap = baseStatTotalCap(wave: wave, tuning: tuning)
+        return total <= cap && total >= Int(Double(cap) * tuning.minStatRatio)
     }
 
     /// 야생 추첨 범위 — 5세대까지.
@@ -106,11 +111,12 @@ struct RogueRun: Sendable {
     /// 규칙이 여기 있는 이유는 **앱과 시뮬레이터가 같은 규칙을 봐야** 하기 때문이다. 화면 쪽에
     /// 두면 밸런스를 재는 판과 실제로 도는 판이 서로 다른 상대를 뽑는다.
     static func chooseOpponent(wave: Int, attempts: Int = wildDrawAttempts,
+                               tuning: RogueTuning = .standard,
                                next: sending () async -> BattleSnapshot?) async -> BattleSnapshot? {
         var weakest: BattleSnapshot?
         for _ in 0..<attempts {
             guard let candidate = await next() else { continue }
-            if isFairOpponent(baseStats: candidate.base, wave: wave) { return candidate }
+            if isFairOpponent(baseStats: candidate.base, wave: wave, tuning: tuning) { return candidate }
             if weakest.map({ baseStatTotal($0.base) > baseStatTotal(candidate.base) }) ?? true {
                 weakest = candidate
             }
@@ -136,7 +142,9 @@ struct RogueRun: Sendable {
     }
 
     /// 승리 시 파티 전원이 오르는 레벨. 전원 같은 폭이라 교체해도 손해가 없다 — 자원은 HP 지 레벨이 아니다.
-    static func levelGain(wave: Int) -> Int { isBoss(wave: wave) ? 3 : 2 }
+    static func levelGain(wave: Int, tuning: RogueTuning = .standard) -> Int {
+        isBoss(wave: wave, tuning: tuning) ? tuning.bossLevelGain : tuning.levelGain
+    }
 
     private(set) var wave = 1
     /// 파티 — HP·PP 가 웨이브를 넘어 유지된다.
@@ -144,12 +152,17 @@ struct RogueRun: Sendable {
     private(set) var stage: Stage = .battling
     private(set) var offers: [RunModifier] = []
     /// 남은 몬스터볼. 판이 끝나면 파티와 함께 사라진다.
-    private(set) var balls = RogueRun.ballsPerRun
+    private(set) var balls: Int
+    /// 이 판이 쓰는 밸런스 값. 앱은 `.standard`, 시뮬레이터는 흔든 값을 넣는다.
+    let tuning: RogueTuning
     private(set) var battle: TeamPracticeBattle
     /// 웨이브 seed·보상 추첨을 잇는 하나의 흐름. 판마다 `dayKey + 판 번호` 로 심는다.
     private var rng: SplitMix64
 
-    init(party: [BattleSnapshot], opponents: [BattleSnapshot], seed: UInt64) {
+    init(party: [BattleSnapshot], opponents: [BattleSnapshot], seed: UInt64,
+         tuning: RogueTuning = .standard) {
+        self.tuning = tuning
+        self.balls = tuning.ballsPerRun
         var rng = SplitMix64(seed: seed)
         let sides = party.map(BattleSide.init)
         self.party = sides
@@ -190,7 +203,7 @@ struct RogueRun: Sendable {
     /// 웨이브를 넘긴 정산. **쓰러뜨려서 넘기든 잡아서 넘기든 같은 자리를 지난다** — 두 경로가
     /// 갈리면 레벨업·회복·보상 규칙이 조용히 어긋난다.
     private mutating func clearWave() {
-        levelUpParty(by: Self.levelGain(wave: wave))
+        levelUpParty(by: Self.levelGain(wave: wave, tuning: tuning))
         // 주 상태이상(독·화상…)은 웨이브를 넘기지 않는다. 파티가 한 마리라 독 하나가 매 턴
         // 최대 HP 1/8 을 가져가고, 판이 끝날 때까지 되돌릴 수단이 사실상 없다.
         // 이월하는 자원은 HP·PP 다 — 만병통치제 보상은 전투 **중** 해제로 값이 남는다.
@@ -198,8 +211,8 @@ struct RogueRun: Sendable {
         // 보스를 넘으면 파티를 완전 회복한다 — 포켓로그가 10 웨이브마다 무료 회복을 주는 자리와
         // 같은 역할이다. 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면 보상 3장으로는 못 메우고
         // 후반 웨이브가 "이미 진 판을 마저 두는" 소화가 된다.
-        if Self.isBoss(wave: wave) { restoreParty() }
-        if wave == Self.finalWave {
+        if Self.isBoss(wave: wave, tuning: tuning) { restoreParty() }
+        if wave == tuning.finalWave {
             stage = .cleared
         } else {
             offers = Self.drawOffers(&rng)
@@ -213,7 +226,7 @@ struct RogueRun: Sendable {
     /// 잡아서 건너뛰면 그 자리가 사라진다.
     var canThrowBall: Bool {
         stage == .battling && battle.result == nil && balls > 0
-            && party.count < Self.partyLimit && !Self.isBoss(wave: wave)
+            && party.count < tuning.partyLimit && !Self.isBoss(wave: wave, tuning: tuning)
     }
 
     /// 볼을 던진다. **성공하든 실패하든 그 턴은 내 공격이 아니다** — 실패하면 상대만 움직인다.
