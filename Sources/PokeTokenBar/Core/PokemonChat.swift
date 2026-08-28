@@ -285,6 +285,10 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     var sharesProfileMessage: Bool = false
     /// 하루 한 개. dayKey 는 `%04d-%02d-%02d` 라 문자열 정렬이 곧 시간순 → 최신 60개만 남긴다.
     var moodByDayKey: [String: MemoryHomeMood] = [:]
+    /// Local-only names for LAN peers. They are never included in profile cards.
+    var peerAliases: [UUID: String] = [:]
+    /// One shared room, capped at three owned companions.
+    var roommateIDs: [UUID] = []
 
     static let visitThresholds = [10, 100, 1000]
     static let moodHistoryLimit = 60
@@ -296,7 +300,7 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case publicNickname, visibility, sharedPinnedMemoryID, recentRequesters, blockedPeerIDs,
              visitTotal, visitDayKey, visitTodayPeerIDs, visitThresholdDates,
-             profileMessage, sharesProfileMessage, moodByDayKey
+             profileMessage, sharesProfileMessage, moodByDayKey, peerAliases, roommateIDs
     }
     init(publicNickname: String? = nil, visibility: MemoryHomeVisibility = .open,
          sharedPinnedMemoryID: UUID? = nil, recentRequesters: [MemoryHomeRecentRequester] = [],
@@ -323,6 +327,8 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
         profileMessage = try c.decodeIfPresent(String.self, forKey: .profileMessage)
         sharesProfileMessage = try c.decodeIfPresent(Bool.self, forKey: .sharesProfileMessage) ?? false
         moodByDayKey = try c.decodeIfPresent([String: MemoryHomeMood].self, forKey: .moodByDayKey) ?? [:]
+        peerAliases = try c.decodeIfPresent([UUID: String].self, forKey: .peerAliases) ?? [:]
+        roommateIDs = try c.decodeIfPresent([UUID].self, forKey: .roommateIDs) ?? []
     }
 }
 
@@ -627,6 +633,7 @@ final class PokemonMemoryAlbum {
         pinnedMemoryIDs = pinnedMemoryIDs.filter { validCompanionIDs.contains($0.key) }
         milestoneStates = milestoneStates.filter { validCompanionIDs.contains($0.key) }
         roomThemes = roomThemes.filter { validCompanionIDs.contains($0.key) }
+        memoryHomeAccess.roommateIDs = memoryHomeAccess.roommateIDs.filter { validCompanionIDs.contains($0) }
         normalizePins(); normalizeMemoryHomeAccess(); _ = normalizeMilestones(); save()
     }
     var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates, roomThemes: roomThemes, memoryHomeAccess: memoryHomeAccess) }
@@ -724,6 +731,17 @@ final class PokemonMemoryAlbum {
     func setMemoryHomeBlocked(_ peerID: UUID, blocked: Bool) {
         if blocked { memoryHomeAccess.blockedPeerIDs.insert(peerID) } else { memoryHomeAccess.blockedPeerIDs.remove(peerID) }; save()
     }
+    @discardableResult func setPeerAlias(_ alias: String, for peerID: UUID) -> Bool {
+        let value = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value.count <= 20, !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) }) else { return false }
+        memoryHomeAccess.peerAliases[peerID] = value
+        if memoryHomeAccess.peerAliases.count > 100 { memoryHomeAccess.peerAliases.remove(at: memoryHomeAccess.peerAliases.startIndex) }
+        save(); return true
+    }
+    func setRoommates(_ ids: [UUID], validCompanionIDs: Set<UUID>) {
+        var seen = Set<UUID>()
+        memoryHomeAccess.roommateIDs = ids.filter { validCompanionIDs.contains($0) && seen.insert($0).inserted }.prefix(3).map { $0 }; save()
+    }
     @discardableResult
     func setProfileMessage(_ message: String) -> Bool {
         guard let message = Self.validProfileMessage(message) else { return false }
@@ -813,6 +831,10 @@ final class PokemonMemoryAlbum {
         }
         memoryHomeAccess.moodByDayKey = Self.trimmedMoodHistory(
             memoryHomeAccess.moodByDayKey.filter { Self.validDayKey($0.key) != nil })
+        memoryHomeAccess.peerAliases = memoryHomeAccess.peerAliases.filter { _, value in
+            let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !value.isEmpty && value.count <= 20 && !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) })
+        }
     }
     /// This is called at the store save boundary, covering every active-companion transition.
     func clearSharedPinnedMemory(unlessPinnedFor activeCompanionID: UUID?) {
