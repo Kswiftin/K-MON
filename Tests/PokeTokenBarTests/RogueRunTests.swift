@@ -28,19 +28,37 @@ final class RogueRunTests: XCTestCase {
     }
 
     func testOpponentLevelRisesAndBossesAddMore() {
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 5)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 3), 9)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 14)    // 보스 +3
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 8), 22)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 12), 32)   // 최종 +5
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 2)      // PokeRogue 웨이브 1 과 같다
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 3), 6)
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 11)     // 보스는 파티 기준선과 동급
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 8), 19)
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 12), 29)    // 최종만 기준선 +2
     }
 
-    /// 야생은 파티 기준선(스타터 5 + 승리마다 2)과 같은 레벨이어야 한다 — 야생조차 늘 위에 있으면
-    /// 한 마리짜리 파티가 매 웨이브 손해를 쌓고 되돌릴 수단이 없다.
-    func testWildWavesMatchThePartyLevelBaseline() {
+    /// 야생은 파티 기준선보다 **낮아야** 한다. PokeRogue 는 웨이브 1 에 레벨 2 야생을 레벨 5
+    /// 스타터에게 붙인다(`baseLevel = 1 + wave/2 + (wave/25)^2`) — 플레이어가 처음부터 위에 선다.
+    /// 우리는 파티가 한 마리라 그 여유가 더 필요하다.
+    func testWildWavesStayBelowThePartyLevelBaseline() {
         for wave in 1...RogueRun.finalWave where !RogueRun.isBoss(wave: wave) {
-            XCTAssertEqual(RogueRun.opponentLevel(wave: wave), 3 + 2 * wave, "wave \(wave)")
+            XCTAssertEqual(RogueRun.opponentLevel(wave: wave),
+                           RogueRun.partyLevelBaseline(wave: wave) - 3, "wave \(wave)")
         }
+    }
+
+    /// 보스만 기준선에 붙고, 그 이상 올라가는 것은 최종 웨이브뿐이다.
+    func testBossesNeverOutlevelThePartyExceptTheFinalWave() {
+        for wave in [4, 8] {
+            XCTAssertEqual(RogueRun.opponentLevel(wave: wave),
+                           RogueRun.partyLevelBaseline(wave: wave), "wave \(wave)")
+        }
+        XCTAssertEqual(RogueRun.opponentLevel(wave: RogueRun.finalWave),
+                       RogueRun.partyLevelBaseline(wave: RogueRun.finalWave) + 2)
+    }
+
+    /// 기준선은 스타터 5 에서 승리마다 +2 로 센 보수적인 값이다(보스 +3 의 여유는 세지 않는다).
+    func testPartyLevelBaselineTracksTheStarterCurve() {
+        XCTAssertEqual(RogueRun.partyLevelBaseline(wave: 1), 5)
+        XCTAssertEqual(RogueRun.partyLevelBaseline(wave: 12), 27)
     }
 
     // MARK: 상대 종 티어
@@ -58,13 +76,21 @@ final class RogueRunTests: XCTestCase {
         XCTAssertTrue(RogueRun.isFairOpponent(baseStats: stats(total: 318), wave: 1))
         XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 3), RogueRun.baseStatTotalCap(wave: 5))
         XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 5), RogueRun.baseStatTotalCap(wave: 9))
-        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 12), 640)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 12), 560)
         XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 680), wave: 12))
     }
 
-    /// 보스는 같은 웨이브의 야생보다 센 종까지 받는다.
-    func testBossWavesAllowStrongerSpeciesThanTheirTier() {
+    /// 보스는 **자기 구간** 상한 +60 이다. 구간 경계가 보스 웨이브를 다음 구간으로 밀어버리면
+    /// 보스 4 가 480 이 되어 뒤따르는 웨이브 5–7(420)보다 세지는 톱니가 생긴다 — 단조 증가만
+    /// 재던 예전 테스트가 그걸 통과시켰다.
+    func testBossCapsStayInTheirOwnTier() {
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 4), 380)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 480)
         XCTAssertGreaterThan(RogueRun.baseStatTotalCap(wave: 4), RogueRun.baseStatTotalCap(wave: 3))
+        for wave in 1..<RogueRun.finalWave {
+            XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave),
+                                     RogueRun.baseStatTotalCap(wave: wave + 1), "wave \(wave)")
+        }
     }
 
     /// 하한이 없으면 최종 보스로 잉어킹(200)이 나온다.

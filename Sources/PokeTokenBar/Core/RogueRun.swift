@@ -38,28 +38,38 @@ struct RogueRun: Sendable {
     static let offerCount = 3
     /// 4·8·12 웨이브가 보스다.
     static func isBoss(wave: Int) -> Bool { wave % 4 == 0 }
-    /// 상대 레벨 — 야생은 `3 + 2×웨이브`로 **파티 기준선과 같다**(스타터 5 에서 승리마다 +2 이므로
-    /// 웨이브 w 의 파티가 `3 + 2w`). 보스만 `+3`(최종 `+5`) 위에 둔다.
+    /// 파티 레벨 기준선 — 스타터 5 에서 승리마다 +2. 보스의 +3 은 **세지 않는다**, 상대 레벨을
+    /// 여기에 맞추므로 기준선이 실제보다 낮아야 안전하다(실제 파티는 보스를 넘을 때마다 1 더 위).
+    static func partyLevelBaseline(wave: Int) -> Int { 3 + 2 * wave }
+
+    /// 야생이 파티 기준선보다 얼마나 아래에 서는가. PokeRogue 는 웨이브 1 에 레벨 2 야생을
+    /// 레벨 5 스타터에게 붙인다(`baseLevel = 1 + wave/2 + (wave/25)^2`, `src/battle.ts`) —
+    /// 플레이어가 처음부터 위에 서고 적은 웨이브당 0.5 씩만 오른다.
+    static let wildLevelHandicap = 3
+
+    /// 상대 레벨 — 야생은 파티 기준선 −3, 보스는 기준선과 동급, 최종만 기준선 +2 다.
     ///
-    /// 예전 식(야생 `4 + 2×웨이브`)은 야생조차 늘 파티보다 높았다. 파티가 한 마리이고 HP·PP 가
-    /// 웨이브를 넘어 이월되는 구조라, 매 웨이브 레벨이 밀리면 손해가 누적돼 되돌릴 수단이 없다.
+    /// 예전 식은 야생을 기준선과 같은 레벨에 두었다. PokeRogue 는 파티가 최대 6마리인데도 적을
+    /// 늘 아래에 두는데, 우리는 파티가 **한 마리**라 그 여유가 더 필요하다. 한 마리로 동레벨을
+    /// 12번 연속 상대하면 이월되는 HP 손해만 쌓이고 되돌릴 수단이 없다.
     static func opponentLevel(wave: Int) -> Int {
-        let wild = 3 + 2 * wave
-        guard isBoss(wave: wave) else { return wild }
-        return wild + (wave == finalWave ? 5 : 3)
+        let baseline = partyLevelBaseline(wave: wave)
+        guard isBoss(wave: wave) else { return baseline - wildLevelHandicap }
+        return wave == finalWave ? baseline + 2 : baseline
     }
 
     /// 웨이브별 상대 **종족값 합(BST) 상한**. 포켓로그가 웨이브에 따라 종 티어를 올리는 것과 같은
     /// 규칙이다. 이 상한이 없으면 종을 전 범위(1...649)에서 균등 추첨하는 호출자가 웨이브 1 에
     /// 슬라킹(670)·전설을 뽑아, 레벨 곡선을 아무리 맞춰도 판이 첫 턴에 끝난다.
-    /// 상한 640 이 전설 대부분(660~720)을 자연히 막으므로 따로 전설 목록을 두지 않는다.
+    /// 최종 상한 560 이 전설 대부분(660~720)을 자연히 막으므로 따로 전설 목록을 두지 않는다.
+    /// 구간은 보스 웨이브를 **포함**한다(`...4`). `..<4` 로 자르면 보스 4 가 다음 구간에 들어가
+    /// 380 이 아닌 480 이 되고, 뒤따르는 웨이브 5–7(420)보다 세지는 톱니가 생긴다.
     static func baseStatTotalCap(wave: Int) -> Int {
         let tier: Int
         switch wave {
-        case ..<4:  tier = 320      // 미진화 1단계 대
-        case ..<8:  tier = 420      // 2단계 대
-        case ..<12: tier = 500      // 최종 진화 대
-        default:    tier = 580
+        case ...4:  tier = 320      // 미진화 1단계 대
+        case ...8:  tier = 420      // 2단계 대
+        default:    tier = 500      // 최종 진화 대
         }
         return isBoss(wave: wave) ? tier + 60 : tier
     }
