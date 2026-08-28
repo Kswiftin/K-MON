@@ -186,6 +186,7 @@ private struct ItemCard: View {
         case .shinyCharm: return false   // 보유형 — 사용 개념 없음(상시 효과)
         case .freshWater: return false   // 던전 입장 화면에서 마신다 — 가방에서 쓰는 물건이 아니다
         case .heartScale: return store.canUseHeartScale
+        case .roomBed, .roomTable, .roomLamp: return false
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
             return store.canUseEvolutionItem(kind)
         }
@@ -198,6 +199,7 @@ private struct ItemCard: View {
         case .shinyCharm: return l.shinyCharmEffectHint
         case .freshWater: return l.freshWaterEffectHint
         case .heartScale: return l.heartScaleEffectHint
+        case .roomBed, .roomTable, .roomLamp: return l.t("미니룸에서 배치", "Place in Mini Room", "ミニルームで配置")
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
             return l.t("진화 가능할 때 사용", "Use when evolution is available", "進化できるときに使う")
         }
@@ -209,6 +211,7 @@ private struct ItemCard: View {
         case .shinyCharm: break   // 보유형 — 사용 동작 없음
         case .freshWater: break   // 소모는 던전 시도 시작에서만 일어난다(입구를 하나로 둔다)
         case .heartScale: store.useHeartScale()
+        case .roomBed, .roomTable, .roomLamp: break
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
             _ = store.useEvolutionItem(kind)
         }

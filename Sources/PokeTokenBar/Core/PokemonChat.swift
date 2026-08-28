@@ -289,6 +289,7 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     var peerAliases: [UUID: String] = [:]
     /// One shared room, capped at three owned companions.
     var roommateIDs: [UUID] = []
+    var roomLayout: [String: ItemKind] = [:]
 
     static let visitThresholds = [10, 100, 1000]
     static let moodHistoryLimit = 60
@@ -300,7 +301,7 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case publicNickname, visibility, sharedPinnedMemoryID, recentRequesters, blockedPeerIDs,
              visitTotal, visitDayKey, visitTodayPeerIDs, visitThresholdDates,
-             profileMessage, sharesProfileMessage, moodByDayKey, peerAliases, roommateIDs
+             profileMessage, sharesProfileMessage, moodByDayKey, peerAliases, roommateIDs, roomLayout
     }
     init(publicNickname: String? = nil, visibility: MemoryHomeVisibility = .open,
          sharedPinnedMemoryID: UUID? = nil, recentRequesters: [MemoryHomeRecentRequester] = [],
@@ -329,6 +330,7 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
         moodByDayKey = try c.decodeIfPresent([String: MemoryHomeMood].self, forKey: .moodByDayKey) ?? [:]
         peerAliases = try c.decodeIfPresent([UUID: String].self, forKey: .peerAliases) ?? [:]
         roommateIDs = try c.decodeIfPresent([UUID].self, forKey: .roommateIDs) ?? []
+        roomLayout = try c.decodeIfPresent([String: ItemKind].self, forKey: .roomLayout) ?? [:]
     }
 }
 
@@ -742,6 +744,12 @@ final class PokemonMemoryAlbum {
         var seen = Set<UUID>()
         memoryHomeAccess.roommateIDs = ids.filter { validCompanionIDs.contains($0) && seen.insert($0).inserted }.prefix(3).map { $0 }; save()
     }
+    func setFurniture(_ item: ItemKind?, in slot: String, ownedItems: [String: Int]) {
+        guard ["left", "center", "right"].contains(slot) else { return }
+        if let item, ownedItems[item.rawValue, default: 0] > 0 { memoryHomeAccess.roomLayout[slot] = item }
+        else { memoryHomeAccess.roomLayout.removeValue(forKey: slot) }
+        save()
+    }
     @discardableResult
     func setProfileMessage(_ message: String) -> Bool {
         guard let message = Self.validProfileMessage(message) else { return false }
@@ -835,6 +843,7 @@ final class PokemonMemoryAlbum {
             let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
             return !value.isEmpty && value.count <= 20 && !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) })
         }
+        memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter { ["left", "center", "right"].contains($0.key) }
     }
     /// This is called at the store save boundary, covering every active-companion transition.
     func clearSharedPinnedMemory(unlessPinnedFor activeCompanionID: UUID?) {

@@ -225,6 +225,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// **가방·문구의 `default:`(= 진화 아이템 전체) 분기에 명시 케이스로 반드시 넣어야 한다** — 빠뜨리면
     /// "진화 가능할 때 사용" 이 뜨고 설명이 빈 문자열이 되며 `useEvolutionItem` 으로 흘러간다.
     case heartScale
+    /// R7 decor is inventory, not a second currency or store.
+    case roomBed, roomTable, roomLamp
 
     /// 진화 아이템 공통가 — 돌과 지닌물건을 구분하지 않는다(둘 다 진화 1회분의 값).
     static let evolutionItemPrice = 500
@@ -232,7 +234,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .shinyCharm, .freshWater, .heartScale: return nil
+        case .rareCandy, .mint, .shinyCharm, .freshWater, .heartScale, .roomBed, .roomTable, .roomLamp: return nil
         case .linkingCord: return .plainTrade
         case .fireStone: return .useItem("fire-stone")
         case .waterStone: return .useItem("water-stone")
@@ -296,6 +298,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .ovalStone: return "🥚"
         case .freshWater: return "🥤"
         case .heartScale: return "💗"
+        case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         }
     }
     /// 상점 판매가(재화 = 별의조각). nil = 상점 미판매.
@@ -306,6 +309,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .shinyCharm: return nil
         case .freshWater: return PuzzleDungeon.freshWaterPrice
         case .heartScale: return MoveRelearn.price
+        case .roomBed: return 1_500
+        case .roomTable: return 1_000
+        case .roomLamp: return 800
         default: return isEvolutionItem ? Self.evolutionItemPrice : nil
         }
     }

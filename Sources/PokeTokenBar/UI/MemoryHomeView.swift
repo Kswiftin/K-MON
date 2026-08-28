@@ -141,6 +141,7 @@ struct MemoryHomeView: View {
             visitCounterRow(album: album)
             roomHeader(mon: mon, entries: entries, milestones: milestones, theme: roomTheme, tint: roomTint)
             moodRow(album: album, mon: mon)
+            furnitureRow(album: album, tint: roomTint)
 
             HStack {
                 Button { showingVisits = true } label: {
@@ -441,6 +442,30 @@ struct MemoryHomeView: View {
             return l.t("첫 만남을 기다리고 있어요", "Waiting for our first meeting", "最初の出会いを待っています")
         }
         return l.t("첫 만남 ", "First meeting ", "最初の出会い ") + formattedDate(first)
+    }
+
+    private func furnitureRow(album: PokemonMemoryAlbum, tint: Color) -> some View {
+        let furniture: [ItemKind] = [.roomBed, .roomTable, .roomLamp]
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack { Text(l.t("방꾸미기", "Room decor", "部屋づくり")).font(.subheadline.weight(.semibold)); Spacer()
+                if let image = MemoryHomeBundledArt.interiorTileset() { Image(nsImage: image).resizable().interpolation(.none).scaledToFit().frame(width: 48, height: 24) } }
+            HStack(spacing: 6) {
+                ForEach(["left", "center", "right"], id: \.self) { slot in
+                    Menu {
+                        Button(l.t("비우기", "Clear", "空にする")) { album.setFurniture(nil, in: slot, ownedItems: store.state.inventory) }
+                        ForEach(furniture, id: \.self) { item in
+                            Button(l.itemName(item)) { album.setFurniture(item, in: slot, ownedItems: store.state.inventory) }
+                                .disabled(store.itemCount(item) == 0)
+                        }
+                    } label: {
+                        let item = album.memoryHomeAccess.roomLayout[slot]
+                        Text(item.map { $0.fallbackEmoji } ?? "＋").frame(maxWidth: .infinity).padding(.vertical, 5)
+                    }.menuStyle(.borderlessButton)
+                }
+            }
+            Text(l.t("가구는 표현 전용이며 능력치·보상·진화에 영향을 주지 않아요.", "Furniture is expressive only; it never changes stats, rewards, or evolution.", "家具は表現のみで、能力・報酬・進化には影響しません。"))
+                .font(.caption2).foregroundStyle(.secondary)
+        }.padding(8).background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func milestoneCard(_ milestone: PokemonMemoryMilestone, tint: Color) -> some View {

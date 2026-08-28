@@ -10,5 +10,9 @@ import XCTest
         XCTAssertEqual(album.memoryHomeAccess.roommateIDs, Array(ids.prefix(3)))
         album.prune(validCompanionIDs: [ids[1]])
         XCTAssertEqual(album.memoryHomeAccess.roommateIDs, [ids[1]])
+        album.setFurniture(.roomBed, in: "left", ownedItems: [ItemKind.roomBed.rawValue: 1])
+        album.setFurniture(.roomLamp, in: "right", ownedItems: [:])
+        XCTAssertEqual(album.memoryHomeAccess.roomLayout["left"], .roomBed)
+        XCTAssertNil(album.memoryHomeAccess.roomLayout["right"])
     }
 }
