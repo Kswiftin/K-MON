@@ -278,6 +278,11 @@ final class CompanionStore {
         // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
         claimAdventure()   // 끝난 run 만 정산한다 — 진행 중이면 그대로 둔다.
         if state.active != nil { displayState = .idle }
+        // 언어를 바꾼 뒤에도 저장된 영문 이름이 선택 목록에 남지 않게 백필한다.
+        // 기존에는 도감/로스터 화면을 열어야만 실행되어 설정 화면에서만 영어가 보였다.
+        if state.language != .en {
+            Task { await backfillMissingOwnedNames() }
+        }
     }
 
     /// R8 added room-style tickets after achievement counters were already persisted. Derive
@@ -988,9 +993,17 @@ final class CompanionStore {
             }
         }
         return acc.sorted { $0.key < $1.key }.map { id, a in
-            DexSpecies(
+            // 활성 파트너는 이미 현재 진화 라인의 다국어 이름을 가지고 있다.
+            // 구버전 세이브의 영어-only names 가 있어도 현재 언어 이름을 우선한다.
+            let activeLocalizedName: String? = {
+                guard let active = state.active,
+                      active.pathIDs.contains(id),
+                      let line = currentLine else { return nil }
+                return line.localizedName(id, state.language)
+            }()
+            return DexSpecies(
                 id: id,
-                name: a.names.flatMap { state.language.resolveName($0) } ?? "#\(id)",
+                name: activeLocalizedName ?? a.names.flatMap { state.language.resolveName($0) } ?? "#\(id)",
                 rarity: a.rarity,
                 isShiny: a.isShiny,
                 isRaising: !a.isGraduated)
@@ -1112,6 +1125,16 @@ final class CompanionStore {
               let pinned = dexSpecies.first(where: { $0.id == pinnedSpeciesID })
         else { return (currentPresentationID, currentIsShiny) }
         return (pinned.id, pinned.isShiny)
+    }
+
+    /// 사용자가 고른 종만 플로팅한다. 목록이 비어 있을 때만 기존처럼 현재 파트너를 하나 띄운다.
+    func floatingPetSubjects(selectedSpeciesIDs: [Int]) -> [(speciesID: Int?, isShiny: Bool)] {
+        var seen = Set<Int>()
+        let uniqueIDs = selectedSpeciesIDs.filter { seen.insert($0).inserted }
+        let subjects = uniqueIDs.compactMap { id in
+            dexSpecies.first(where: { $0.id == id }).map { (speciesID: $0.id, isShiny: $0.isShiny) }
+        }
+        return subjects.isEmpty ? [floatingPetSubject(pinnedSpeciesID: nil)] : subjects
     }
 
     /// 이름이 없는 구버전 졸업 항목의 체인 이름을 채운다(도감 격자 진입 시 1회).
