@@ -924,12 +924,37 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(GymLeague.catalog.first?.level, GymLeague.leaderLevel)
     }
 
-    /// 최소 레벨은 초반 팀을 보호하고, 키운 팀이 Lv.30 관장을 한 방에 정리하지 못하도록 평균보다
-    /// 3 높은 레벨까지 따라온다. 100을 넘으면 안 된다.
+    /// 최소 레벨은 초반 팀을 보호하고, 키운 팀이 Lv.30 관장을 한 방에 정리하지 못하도록 팀에서
+    /// 가장 강한 한 마리보다 3 높은 레벨까지 따라온다. 100을 넘으면 안 된다.
     func testGymOpponentLevelTracksTheSelectedTeamWithinBounds() {
-        XCTAssertEqual(GymLeague.opponentLevel(for: [12, 20, 30, 30]), GymLeague.leaderLevel)
-        XCTAssertEqual(GymLeague.opponentLevel(for: [45, 46, 47, 48]), 49)
+        XCTAssertEqual(GymLeague.opponentLevel(for: [12, 20, 25, 26]), GymLeague.leaderLevel)
+        XCTAssertEqual(GymLeague.opponentLevel(for: [45, 46, 47, 48]), 51)
         XCTAssertEqual(GymLeague.opponentLevel(for: [100, 100, 100, 100]), 100)
+    }
+
+    /// 회귀: 평균 기준이던 시절엔 저레벨 들러리 셋으로 평균을 깎아, 실제로 내보내는 에이스
+    /// 한 마리(Lv.100)가 겨우 Lv.31 관장을 쓸어버릴 수 있었다. 최고 레벨 기준이면 들러리를
+    /// 아무리 섞어도 난이도가 에이스 아래로 떨어지지 않는다.
+    func testGymOpponentLevelIgnoresLowLevelDecoys() {
+        XCTAssertEqual(GymLeague.opponentLevel(for: [100, 5, 5, 5]), 100)
+    }
+
+    /// 최고 레벨 기준만으로는 들러리 셋의 레벨이 관장에게 전혀 반영되지 않아, 여전히 Lv.1로
+    /// 채워도 그만이다 — 그래서 도전 자체를 최소 레벨 미만이면 막고, 화면에 안내를 남긴다.
+    func testGymChallengeBlocksBelowMinimumLevel() async {
+        let (store, mons) = teamPickStore(monCount: GymLeague.teamSize)
+        let center = battleCenter(store: store)
+        center.pickedTeam = mons.map(\.id)
+        XCTAssertNil(center.gymLevelGateMessage)
+
+        center.startGymChallenge(GymLeague.catalog[0])
+
+        let blocked = await waitUntil { center.gymLevelGateMessage != nil }
+        XCTAssertTrue(blocked, "Lv.1 팀은 최소 레벨 게이트에 막혀야 한다")
+        XCTAssertEqual(center.phase, .ready, "게이트에 막히면 배틀로 넘어가지 않는다")
+
+        center.dismissGymLevelGateAlert()
+        XCTAssertNil(center.gymLevelGateMessage)
     }
 
     /// 보상은 목록 순서를 따라 별의조각이 늘고, 알은 드래곤 체육관만 고급 이상을 보증한다.
@@ -2387,6 +2412,14 @@ final class BattleTeamPickTests: XCTestCase {
     /// 체육관도 동일한 공용 배열을 쓰며 첫 선택이 진입 직후 선봉이다.
     func testGymBattleUsesPickedSnapshotOrderAndLead() async {
         let (store, mons) = teamPickStore(monCount: 6)
+        // 체육관은 도전 팀 전원이 `GymLeague.minChallengerLevel` 이상이어야 시작된다 — 기본
+        // 박스 개체는 Lv.1 이라 그대로 두면 이 테스트가 다루는 순서·선봉 로직 전에 레벨 게이트에서
+        // 막힌다.
+        store.debugSetBoxedMons(mons.map { mon in
+            var leveled = mon
+            leveled.levelExperience = (GymLeague.minChallengerLevel - 1) * PokemonBalance.experiencePerLevel
+            return leveled
+        })
         let center = battleCenter(store: store)
         center.rankedTeamSize = 6
         // 고르는 수는 `GymLeague.teamSize` 를 따른다 — 여기에 숫자를 적으면 관장 팀이 늘어난 날

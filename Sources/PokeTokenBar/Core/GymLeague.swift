@@ -220,14 +220,22 @@ enum GymLeague {
     /// 배지 키로 되찾기 — 세이브에 남은 건 키뿐이라, 화면이 이름·타입을 그릴 때 거쳐 간다.
     static func gym(id: String) -> Gym? { catalog.first { $0.id == id } }
 
-    /// 관장은 최소 Lv.30 이고, 그보다 높은 선택 팀에는 평균 레벨보다 3 높게 맞춘다. 평균은
-    /// 특정 한 마리만 과도하게 키워 전체 관장을 끌어올리지 않도록 팀 전체에서 계산한다.
+    /// 관장은 최소 Lv.30 이고, 그보다 높은 선택 팀에는 **가장 강한 한 마리** 기준으로 3 높게
+    /// 맞춘다. 평균으로 계산하던 이전 버전은 저레벨 들러리 셋을 끼워 넣어 평균을 깎으면서 정작
+    /// 실제로 내보내는 에이스 한 마리만으로 낮아진 관장을 그대로 쓸어버릴 수 있었다 — 최고
+    /// 레벨 기준이면 어떤 조합으로 팀을 짜도 난이도가 그 에이스 수준 아래로 떨어지지 않는다.
+    /// (팀 최소 레벨 요건은 `minChallengerLevel` — 이 함수는 관장 레벨만 정한다.)
     static func opponentLevel(for challengerLevels: [Int]) -> Int {
         let levels = challengerLevels.filter { (1...100).contains($0) }
-        guard !levels.isEmpty else { return leaderLevel }
-        let average = levels.reduce(0, +) / levels.count
-        return min(100, max(leaderLevel, average + 3))
+        guard let strongest = levels.max() else { return leaderLevel }
+        return min(100, max(leaderLevel, strongest + 3))
     }
+
+    /// 도전 팀 전원이 갖춰야 하는 최소 레벨. 최고 레벨 기준 스케일링만으로는 "에이스 한 마리 +
+    /// 방치한 들러리 셋"을 막지 못한다 — 나머지 셋의 레벨은 관장 레벨에 전혀 반영되지 않으니
+    /// 여전히 Lv.1로 채워도 그만이다. 넷 모두 이 레벨 이상이어야 도전 자체를 받아 준다
+    /// (`startGymChallenge` 에서 검사).
+    static let minChallengerLevel = 35
 
     /// 관장 팀 크기. 도전자도 같은 수로 맞춰 내보낸다 — 머릿수가 다르면 이겨도 진 것 같다.
     /// 3 → 4 (타입별 전설 포켓몬 추가, 2026-08). 마지막 자리를 전설이 차지하므로 도전자도

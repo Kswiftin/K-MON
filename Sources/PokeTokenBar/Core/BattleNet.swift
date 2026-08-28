@@ -460,6 +460,10 @@ final class BattleCenter {
     private(set) var rankedStake = 0
     private(set) var lastRankDelta = 0
     private(set) var lastError: String?
+    /// 도전 팀이 `GymLeague.minChallengerLevel` 미만이라 막힌 상태 — 캡션 한 줄로는 놓치기
+    /// 쉬워, 도전이 아예 시작되지 않는 이 경우만 팝업으로 알린다.
+    private(set) var gymLevelGateMessage: String?
+    func dismissGymLevelGateAlert() { gymLevelGateMessage = nil }
     private(set) var chatMessages: [BattleChatMessage] = []
     /// 채팅 입력이 열려 있나. 연결이 닫히면 닫힌다.
     private(set) var chatIsAvailable = false
@@ -972,6 +976,9 @@ final class BattleCenter {
         Task {
             guard let myTeam = await battleTeamSnapshots(size: GymLeague.teamSize) else {
                 phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            guard myTeam.allSatisfy({ $0.level >= GymLeague.minChallengerLevel }) else {
+                phase = .ready; gymLevelGateMessage = l.gymNeedsHigherLevel(GymLeague.minChallengerLevel); return
             }
             let leaderLevel = GymLeague.opponentLevel(for: myTeam.map(\.level))
             var leaderTeam: [BattleSnapshot] = []

@@ -1242,6 +1242,12 @@ struct L {
           "Gyms take a team of \(count) — not enough Pokémon.",
           "ジムは\(count)体で挑みます — ポケモンが足りません。")
     }
+    func gymNeedsHigherLevel(_ level: Int) -> String {
+        t("도전 팀 전원이 Lv.\(level) 이상이어야 합니다.",
+          "Every Pokémon in your team must be Lv.\(level) or higher.",
+          "挑戦チーム全員がLv.\(level)以上である必要があります。")
+    }
+    var gymLevelGateTitle: String { t("레벨 부족", "Level too low", "レベル不足") }
     func gymBadgeCount(_ earned: Int, _ total: Int) -> String {
         t("배지 \(earned) / \(total)", "\(earned) / \(total) badges", "バッジ \(earned) / \(total)")
     }

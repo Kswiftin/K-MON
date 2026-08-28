@@ -54,6 +54,12 @@ struct GymLeagueView: View {
         }
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        .alert(l.gymLevelGateTitle,
+               isPresented: Binding(get: { center.gymLevelGateMessage != nil },
+                                    set: { if !$0 { center.dismissGymLevelGateAlert() } })) {
+        } message: {
+            Text(center.gymLevelGateMessage ?? "")
+        }
     }
 }
 
