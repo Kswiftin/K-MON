@@ -10,7 +10,7 @@ struct DexGoal: Identifiable, Sendable {
     let kind: DexGoalKind
     let target: Int
     /// 보상 형태는 체육관과 같다(알·등급 보증·이로치 확정). 목표 하나에 졸업 수십 회가 드니
-    /// 별의조각으로는 크기가 안 맞는다 — `GymLeague.completionReward` 가 먼저 같은 판단을 했다.
+    /// 별의조각으로는 크기가 안 맞는다 — 도감 완주 보상은 체육관 난이도 점검과 별개다.
     let reward: GymReward
 }
 

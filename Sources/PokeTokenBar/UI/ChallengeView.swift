@@ -41,11 +41,6 @@ struct ChallengeView: View {
                 }
                 .controlSize(.small)
                 Spacer(minLength: 4)
-                // 배지 수는 체육관 진행도라 그 버튼 옆에 남긴다. 예전엔 배틀 탭 버튼 줄 끝에 있어
-                // 무엇의 숫자인지 붙어 읽히지 않았다.
-                Text(l.gymBadgeCount(store.earnedGymBadges.count, GymLeague.catalog.count))
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                    .lineLimit(1).fixedSize()
             }
             Divider().opacity(0.5)
         }

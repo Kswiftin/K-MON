@@ -33,12 +33,9 @@ struct Gym: Identifiable, Sendable, Equatable {
     }
 }
 
-/// 체육관 목록. 넷으로 시작한다 — 구조가 자리를 잡으면 이 배열에 항목만 더하면 되고,
+/// 체육관 목록. 여덟 타입으로 시작한다 — 구조가 자리를 잡으면 이 배열에 항목만 더하면 되고,
 /// 배지 키가 타입에서 나오므로 뒤에 끼워 넣어도 기존 배지에 영향이 없다.
-/// 체육관 첫 승리 보상.
-///
-/// 별의조각만 주던 시절엔 최고가 3,000 이었는데 알 한 개가 상점에서 20,000 이다 —
-/// 한 번 깨면 끝인 컨텐츠 보상으로는 약했다. 알을 주되 등급 보증을 얹어 뒤로 갈수록 무겁게 한다.
+/// 체육관 첫 승리 보상. 난이도 점검 릴리즈에서는 알·배지·완주 보상을 빼고 별의조각만 지급한다.
 struct GymReward: Sendable, Equatable {
     var starPieces: Int = 0
     /// 지급할 알 개수. 보관 알로 들어가 5분 뒤 부화한다.
@@ -90,58 +87,119 @@ enum GymLeague {
     static let catalog: [Gym] = [
         Gym(type: .bug,
             names: ["ko": "벌레 체육관", "en": "Bug Gym", "ja": "むしジム"],
-            teamSpeciesIDs: [617, 589, 469],        // 어위르 · 슈바르고 · 메가야느
+            // 어위르 · 슈바르고 · 메가야느 · 게노세크트(전설). 종족값 495~515 셋 뒤에 600 을 세워
+            // 마지막 상대가 확실히 더 세지게 한다 — 순서 자체가 "지금까지완 다르다" 는 신호다.
+            teamSpeciesIDs: [617, 589, 469, 649],
             teamMoveNames: [
-                ["leech-life", "body-slam", "giga-drain", "swift"],
-                ["bug-buzz", "take-down", "headbutt", "fury-cutter"],
-                ["bug-buzz", "air-slash", "uproar", "night-slash"],
+                ["bug-buzz", "energy-ball", "sludge-bomb", "giga-drain"],
+                ["iron-head", "x-scissor", "drill-run", "poison-jab"],
+                ["bug-buzz", "air-slash", "shadow-ball", "giga-drain"],
+                // 벌레/강철 특수 STAB 둘 + 불꽃·전기 코버리지. 게노세크트 특유의 테크노버스터는 부여받는
+                // 드라이브로 타입이 바뀌는데(이 엔진엔 그 축이 없다) 빼고 확실한 4기로 채운다.
+                ["bug-buzz", "flash-cannon", "flamethrower", "thunderbolt"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 500, eggs: 1)),
+            firstClearReward: GymReward(starPieces: 500)),
         Gym(type: .rock,
             names: ["ko": "바위 체육관", "en": "Rock Gym", "ja": "いわジム"],
-            teamSpeciesIDs: [526, 409, 476],        // 기가이어스 · 램펄드 · 대코파스
+            // 기가이어스 · 램펄드 · 대코파스 · 레지락(전설). 레지락은 방어 200 에 공격 100 이라
+            // 물리 위주 4기로 채운다 — 특공 50 짜리에게 특수기를 쥐어주는 건 낭비다.
+            teamSpeciesIDs: [526, 409, 476, 377],
             teamMoveNames: [
-                ["power-gem", "rock-slide", "headbutt", "smack-down"],
-                ["rock-slide", "crunch", "iron-head", "headbutt"],
-                ["power-gem", "rock-slide", "spark", "tri-attack"],
+                ["stone-edge", "earthquake", "iron-head", "rock-slide"],
+                ["rock-slide", "earthquake", "zen-headbutt", "crunch"],
+                ["power-gem", "flash-cannon", "thunderbolt", "earth-power"],
+                ["stone-edge", "earthquake", "drain-punch", "ice-punch"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 500, eggs: 1, eggGuarantee: .uncommon)),
+            firstClearReward: GymReward(starPieces: 500)),
         Gym(type: .electric,
             names: ["ko": "전기 체육관", "en": "Electric Gym", "ja": "でんきジム"],
-            teamSpeciesIDs: [466, 405, 181],        // 에레키블 · 렌트라 · 전룡
+            // 에레키블 · 렌트라 · 전룡 · 썬더(전설). 특공 125 로 셋 중 가장 높아 특수 위주로 채우되,
+            // 비행 STAB(드릴부리)은 정확도가 안정적인 쪽을 골랐다 — 허리케인·번개는 명중 70 이라
+            // 어렵게 만드는 건 위력이지 뽑기 운이 아니어야 한다.
+            teamSpeciesIDs: [466, 405, 181, 145],
             teamMoveNames: [
-                ["wild-charge", "thunder-punch", "fire-punch", "swift"],
-                ["crunch", "spark", "thunder-fang", "quick-attack"],
-                ["zap-cannon", "thunder-punch", "dragon-pulse", "fire-punch"],
+                ["wild-charge", "earthquake", "ice-punch", "fire-punch"],
+                ["wild-charge", "crunch", "psychic-fangs", "ice-fang"],
+                ["thunderbolt", "dragon-pulse", "power-gem", "dazzling-gleam"],
+                ["thunderbolt", "drill-peck", "heat-wave", "extrasensory"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 1_000, eggs: 1, eggGuarantee: .rare)),
+            firstClearReward: GymReward(starPieces: 1_000)),
         Gym(type: .water,
             names: ["ko": "물 체육관", "en": "Water Gym", "ja": "みずジム"],
-            teamSpeciesIDs: [350, 260, 121],        // 밀로틱 · 대짱이 · 아쿠스타
+            // 밀로틱 · 대짱이 · 아쿠스타 · 수이쿤(전설). 방어·특방 115 로 오래 버티는 개체라
+            // 특수 위주로 채워 높은 특방으로 오래 버티며 꾸준히 압박한다.
+            teamSpeciesIDs: [350, 260, 121, 245],
             teamMoveNames: [
-                ["aqua-tail", "water-pulse", "dragon-tail", "disarming-voice"],
-                ["earthquake", "surf", "rock-slide", "water-pulse"],
-                ["hydro-pump", "psychic", "power-gem", "psybeam"],
+                ["surf", "ice-beam", "dragon-pulse", "psychic"],
+                ["earthquake", "waterfall", "ice-punch", "rock-slide"],
+                ["surf", "psychic", "thunderbolt", "ice-beam"],
+                ["hydro-pump", "ice-beam", "extrasensory", "shadow-ball"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 2_000, eggs: 1, eggGuarantee: .rare)),
+            firstClearReward: GymReward(starPieces: 2_000)),
+        Gym(type: .fire,
+            names: ["ko": "불꽃 체육관", "en": "Fire Gym", "ja": "ほのおジム"],
+            // 나인테일 · 윈디 · 샹델라 · 히드런(전설). 특수·물리를 섞어 물 한 타입만으로
+            // 쉽게 쓸어버리지 못하게 하고, 히드런은 마지막에 강철 STAB까지 꺼낸다.
+            teamSpeciesIDs: [38, 59, 609, 485],
+            teamMoveNames: [
+                ["flamethrower", "energy-ball", "psyshock", "dark-pulse"],
+                ["heat-wave", "wild-charge", "crunch", "play-rough"],
+                ["shadow-ball", "flamethrower", "energy-ball", "psychic"],
+                ["magma-storm", "earth-power", "flash-cannon", "dark-pulse"],
+            ],
+            level: leaderLevel,
+            firstClearReward: GymReward(starPieces: 3_000)),
+        Gym(type: .grass,
+            names: ["ko": "풀 체육관", "en": "Grass Gym", "ja": "くさジム"],
+            // 이상해꽃 · 나시 · 덩쿠림보 · 쉐이미(전설). 풀은 약점이 많아 기술 폭을 넓히고,
+            // 마지막 쉐이미는 600 종족값의 특수 압박으로 단일 불꽃 대응을 버틴다.
+            teamSpeciesIDs: [3, 103, 465, 492],
+            teamMoveNames: [
+                ["energy-ball", "sludge-bomb", "earth-power", "psychic"],
+                ["energy-ball", "psychic", "flamethrower", "shadow-ball"],
+                ["power-whip", "earthquake", "rock-slide", "sludge-bomb"],
+                ["energy-ball", "earth-power", "psychic", "air-slash"],
+            ],
+            level: leaderLevel,
+            firstClearReward: GymReward(starPieces: 4_000)),
+        Gym(type: .psychic,
+            names: ["ko": "에스퍼 체육관", "en": "Psychic Gym", "ja": "エスパージム"],
+            // 후딘 · 메타그로스 · 엘레이드 · 뮤츠(전설). 내구·물리·특수를 나눠 악 타입 하나만
+            // 들고 와도 끝나지 않게 하며, 마지막 뮤츠는 폭넓은 특수 기술로 마무리한다.
+            teamSpeciesIDs: [65, 376, 475, 150],
+            teamMoveNames: [
+                ["psychic", "shadow-ball", "energy-ball", "dazzling-gleam"],
+                ["meteor-mash", "zen-headbutt", "earthquake", "ice-punch"],
+                ["psycho-cut", "leaf-blade", "night-slash", "x-scissor"],
+                ["psychic", "aura-sphere", "ice-beam", "thunderbolt"],
+            ],
+            level: leaderLevel,
+            firstClearReward: GymReward(starPieces: 5_000)),
+        Gym(type: .dragon,
+            names: ["ko": "드래곤 체육관", "en": "Dragon Gym", "ja": "ドラゴンジム"],
+            // 망나뇽 · 액스라이즈 · 삼삼드래 · 레쿠쟈(전설). 후반 체육관답게 540~680 종족값과
+            // 광범위한 커버리지를 갖췄지만, 얼음·페어리 상성으로 공략할 길은 남긴다.
+            teamSpeciesIDs: [149, 612, 635, 384],
+            teamMoveNames: [
+                ["dragon-claw", "earthquake", "fire-punch", "ice-punch"],
+                ["dragon-claw", "earthquake", "poison-jab", "night-slash"],
+                ["dragon-pulse", "dark-pulse", "flamethrower", "flash-cannon"],
+                ["dragon-pulse", "air-slash", "flamethrower", "thunderbolt"],
+            ],
+            level: leaderLevel,
+            firstClearReward: GymReward(starPieces: 6_000)),
     ]
 
     /// 배지 키로 되찾기 — 세이브에 남은 건 키뿐이라, 화면이 이름·타입을 그릴 때 거쳐 간다.
     static func gym(id: String) -> Gym? { catalog.first { $0.id == id } }
 
     /// 관장 팀 크기. 도전자도 같은 수로 맞춰 내보낸다 — 머릿수가 다르면 이겨도 진 것 같다.
-    static let teamSize = 3
+    /// 3 → 4 (타입별 전설 포켓몬 추가, 2026-08). 마지막 자리를 전설이 차지하므로 도전자도
+    /// 4마리를 갖춰야 도전할 수 있다(`startGymChallenge` 의 보유 마릿수 확인).
+    static let teamSize = 4
 
-    /// 배지를 다 모은 순간 한 번 주는 완주 보상 — 이로치 확정 부화.
-    ///
-    /// 체육관마다 주면 이로치가 흔해져 뽑는 맛이 사라진다. 마지막에 한 번이라 "다 깨면 확정 하나"
-    /// 라는 목표가 되고, 한 곳만 깨고 마는 컨텐츠에서 벗어난다.
-    ///
-    /// 나중에 체육관을 더하면 배지 수가 다시 모자라지고, 새로 다 모으면 또 나간다 — 새 컨텐츠를
-    /// 완주한 값이니 의도한 대로다.
-    static let completionReward = GymReward(shinyCharges: 1)
 }

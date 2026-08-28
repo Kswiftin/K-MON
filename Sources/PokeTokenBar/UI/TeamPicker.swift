@@ -11,7 +11,8 @@ import SwiftUI
 struct TeamPicker: View {
     let store: CompanionStore
     @Binding var selection: [UUID]
-    /// 이 화면에서 고를 수 있는 최대 인원. 체육관은 관장 팀에 맞춰 3, 모의전은 화면에서 고른 크기다.
+    /// 이 화면에서 고를 수 있는 최대 인원. 체육관은 관장 팀에 맞춰 4(`GymLeague.teamSize`),
+    /// 모의전은 화면에서 고른 크기다.
     let limit: Int
     @State private var page = 0
     /// 고를 타입. nil = 거르지 않음.

@@ -1780,26 +1780,20 @@ final class CompanionStore {
         return true
     }
 
-    // MARK: 체육관 배지
+    // MARK: 체육관 첫 승리 보상
 
-    var earnedGymBadges: Set<String> { state.gymBadges }
-    func hasBadge(_ gym: Gym) -> Bool { state.gymBadges.contains(gym.id) }
-
-    /// 체육관 승리 기록 — **첫 승리에만** 배지와 별의조각이 나간다. 반환값은 이번에 지급된 금액이고,
-    /// 이미 딴 배지면 0 이다(화면은 이 값으로 "보상을 받았는지"를 판단한다).
+    /// 체육관 승리 기록 — **첫 승리에만** 별의조각이 나간다. `gymBadges` 는 이전 저장 데이터와
+    /// 첫 승리 보상의 멱등성을 위한 내부 키로만 남기며, 난이도 점검 릴리즈에는 배지를 표시하거나
+    /// 완주 보상을 지급하지 않는다.
     ///
     /// 멱등성이 이 함수의 전부다. 체육관은 몇 번이고 다시 갈 수 있게 열어 둘 참인데, 그러면
     /// 승리 지점을 반복해서 지나게 된다 — 졸업이 정확히 그 구조로 알을 무한히 뱉었다(#27→#34).
-    /// 여기서는 배지가 그 가드다: 들어 있으면 아무것도 지급하지 않는다.
+    /// 여기서는 내부 첫 승리 키가 가드다: 들어 있으면 아무것도 지급하지 않는다.
     @discardableResult
     func recordGymVictory(_ gym: Gym) -> GymReward? {
         guard !state.gymBadges.contains(gym.id) else { return nil }
         state.gymBadges.insert(gym.id)
-        var reward = gym.firstClearReward
-        // 배지가 다 모이는 순간 완주 보상이 함께 나간다. 배지는 빠지지 않으므로 이 순간은 한 번뿐이다.
-        if state.gymBadges.count == GymLeague.catalog.count {
-            reward = reward.merging(GymLeague.completionReward)
-        }
+        let reward = gym.firstClearReward
         grantReward(reward)
         save()
         return reward
