@@ -119,6 +119,7 @@ struct RogueRunView: View {
         let opponent = shownTheirs.side ?? run.battle.opponentSlot
         return VStack(spacing: 6) {
             catchBar(run)
+            boostBar(run)
             arena(run, me: me, opponent: opponent, shownMine: shownMine,
                   engineMine: engineMine, engineTheirs: engineTheirs)
         }
@@ -142,6 +143,29 @@ struct RogueRunView: View {
                 .disabled(!run.canThrowBall)
         }
         .font(.caption)
+    }
+
+    /// 쌓인 지속 강화 한 줄. 안 보여주면 무엇을 골라 왔는지 판 도중에 확인할 길이 없어, 다음 뽑기의
+    /// 선택(같은 타입에 더 쌓을지 갈아탈지)이 기억에 의존한다.
+    @ViewBuilder
+    private func boostBar(_ run: RogueRun) -> some View {
+        if !run.boosts.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(run.boosts.typeDamage.sorted { $0.key.rawValue < $1.key.rawValue },
+                        id: \.key) { entry in
+                    Label("\(entry.key.name(store.language)) ×\(entry.value)",
+                          systemImage: "bolt.fill")
+                }
+                if run.boosts.critStages > 0 {
+                    Label("+\(run.boosts.critStages)", systemImage: "scope")
+                }
+                if run.boosts.leftovers > 0 {
+                    Label("×\(run.boosts.leftovers)", systemImage: "leaf.fill")
+                }
+                Spacer()
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+        }
     }
 
     private func arena(_ run: RogueRun, me: BattleSide, opponent: BattleSide,
@@ -195,8 +219,18 @@ struct RogueRunView: View {
                     Task { await loadNextWave() }
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(Self.title(offer, l)).font(.callout.bold())
-                        Text(Self.detail(offer, l)).font(.caption2).foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Text(Self.title(offer, l)).font(.callout.bold())
+                            // 지속형은 배지로 갈라 보여준다 — 이 판에 남는 장과 그 자리에서 사라지는
+                            // 장을 구별하지 못하면 빌드를 고를 수 없다.
+                            if offer.isPersistent {
+                                Text(l.t("지속", "Keeps", "永続"))
+                                    .font(.caption2).padding(.horizontal, 4)
+                                    .background(.tint.opacity(0.2), in: Capsule())
+                            }
+                        }
+                        Text(Self.detail(offer, type: run.boostableType, language: store.language, l))
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -211,10 +245,14 @@ struct RogueRunView: View {
         case .candy:   return l.t("이상한사탕", "Rare Candy", "ふしぎなアメ")
         case .elixir:  return l.t("엘릭서", "Elixir", "エリキシル")
         case .cleanse: return l.t("만병통치제", "Full Heal", "なんでもなおし")
+        case .typeBoost: return l.t("타입 강화판", "Type Booster", "タイプ強化板")
+        case .focusLens: return l.t("초점렌즈", "Scope Lens", "ピントレンズ")
+        case .leftovers: return l.t("먹다남은음식", "Leftovers", "たべのこし")
         }
     }
 
-    private static func detail(_ modifier: RunModifier, _ l: L) -> String {
+    private static func detail(_ modifier: RunModifier, type: PokemonType?,
+                               language: AppLanguage, _ l: L) -> String {
         switch modifier {
         case .potion:  return l.t("살아 있는 전원의 최대 HP 40% 를 회복한다.",
                                   "Heal 40% of max HP on every conscious member.",
@@ -231,6 +269,20 @@ struct RogueRunView: View {
         case .cleanse: return l.t("파티의 상태이상과 혼란을 해제한다.",
                                   "Clear status and confusion from the party.",
                                   "パーティの状態異常と混乱を回復する。")
+        // 어떤 타입이 올라가는지 **고르기 전에** 보여준다 — 모르고 고르면 빌드가 아니라 복권이다.
+        case .typeBoost:
+            let name = type?.name(language) ?? l.t("선두", "lead", "先頭")
+            return l.t("\(name) 타입 기술 데미지가 20% 오른다. 판이 끝날 때까지 남고 중첩된다.",
+                       "\(name)-type moves deal 20% more damage. Keeps stacking for the run.",
+                       "\(name)タイプの技のダメージが20%上がる。ラン中ずっと残り、重ねられる。")
+        case .focusLens:
+            return l.t("급소 단계가 1 오른다. 판이 끝날 때까지 남고 중첩된다.",
+                       "Raises the critical-hit stage by 1. Keeps stacking for the run.",
+                       "急所ランクが1上がる。ラン中ずっと残り、重ねられる。")
+        case .leftovers:
+            return l.t("턴이 끝날 때마다 최대 HP 의 1/16 을 회복한다. 판이 끝날 때까지 남고 중첩된다.",
+                       "Restores 1/16 of max HP at the end of every turn. Keeps stacking for the run.",
+                       "ターン終了ごとに最大HPの1/16を回復する。ラン中ずっと残り、重ねられる。")
         }
     }
 

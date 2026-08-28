@@ -76,6 +76,9 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/PixelSprite.swift"
   "Sources/PokeTokenBar/Core/TrainerPixelArt.swift"
   "Sources/PokeTokenBar/Core/TrainerSprite.swift"
+  # 웨이브 런의 누적 강화(데미지·급소·턴 끝 회복). 엔진이 읽는 순수 계산이라 게이트 대상 —
+  # 배열에 안 넣으면 다음 강화를 더할 때 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/RunBoosts.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"

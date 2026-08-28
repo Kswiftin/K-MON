@@ -575,6 +575,12 @@ struct BattleSide: Sendable, Equatable {
     /// 랭크(−6…+6). 0 인 스탯은 **키를 두지 않는다** — 그래야 "랭크가 하나도 없다" 가
     /// `stages.isEmpty` 한 번으로 읽히고, 와이어 JSON 도 붙은 랭크만 나른다.
     var stages: [BattleStat: Int] = [:]
+    /// 웨이브 런에서 쌓인 누적 강화({@link RunBoosts}). 채우는 것은 `RogueRun` 하나뿐이고,
+    /// 네트워크 대전·체육관·모의전은 기본값(빈 값)으로 싸운다.
+    ///
+    /// **`rulesVersion` 을 올리지 않는 근거**: `BattleSide` 는 `Codable` 이 아니라 와이어에
+    /// 실리지 않고, 비어 있으면 데미지도 rng 소비도 이 필드가 없던 때와 한 값도 다르지 않다.
+    var runBoosts = RunBoosts()
 
     init(_ snapshot: BattleSnapshot) {
         self.snapshot = snapshot
@@ -957,7 +963,10 @@ enum BattleEngine {
         // 쪽이 아무것도 못 하게 되고, 그 상태로는 배틀이 끝나지 않는다.
         let effectiveness = ignoresTypeChart ? 1.0 : typeMultiplier(of: move, against: defender)
         let isPhysical = move.damageClass == .physical
-        let isCritical = rng.next() % critDenominator < critThreshold(stage: move.critStage)
+        // 런 강화의 급소 단계는 기술 단계에 더한다 — 표의 상한(3단계 = 100%)은 `critThreshold` 가
+        // 이미 잠그므로 스택 수를 따로 자르지 않는다.
+        let critStage = move.critStage + attacker.runBoosts.critStages
+        let isCritical = rng.next() % critDenominator < critThreshold(stage: critStage)
         // 급소는 **불리한 랭크만** 무시한다(Gen 3+): 공격측의 마이너스와 방어측의 플러스가 빠진다.
         // 전부 무시하는 Gen 1·2 방식이면 랭크를 올린 쪽이 급소에서 손해를 봐 올릴 이유가 없어진다.
         let offense: BattleStat = isPhysical ? .atk : .spa
@@ -996,6 +1005,9 @@ enum BattleEngine {
         if let ability = defender.ability {
             damage = ability.adjustedDamage(damage, moveType: move.type, effectiveness: effectiveness)
         }
+        // 런 강화의 타입 데미지. 상성표를 안 보는 기술(발버둥·변화기)은 여기도 안 탄다 — 플레이트가
+        // 발버둥을 올리면 PP 가 마른 뒤가 오히려 강해진다.
+        if !ignoresTypeChart { damage = attacker.runBoosts.damage(damage, moveType: move.type) }
         damage = damage * random / 255
         // 위력 0(변화기)은 데미지가 없다. `max(1, …)` 만 두면 식의 `+2` 가 살아남아 상태기가 2 데미지를
         // 넣었다 — `learnedMoves` 는 변화기를 걸러내지 않으므로 실제로 밟히는 경로다.
@@ -1096,7 +1108,16 @@ extension BattleEngine {
     /// 턴 끝 잔뎀 — 화상은 1/16, 독은 1/8, 맹독은 n/16 으로 매턴 커진다.
     /// rng 를 쓰지 않으므로 호출 순서만 고정하면 두 피어가 같은 값을 본다.
     static func endOfTurnResidual(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
-        guard side.isAlive, let status = side.status else { return [] }
+        guard side.isAlive else { return [] }
+        var events: [BattleEvent] = []
+        // 런 강화의 턴 끝 회복은 **잔뎀보다 먼저**다(본가와 같다). 뒤로 밀면 화상 데미지로 쓰러진
+        // 개체가 그 턴에 되살아난다. 만피면 회복량이 0 이라 이벤트도 나가지 않는다.
+        let heal = min(side.runBoosts.leftoversHeal(maxHP: side.stats.hp), side.stats.hp - side.hp)
+        if heal > 0 {
+            side.hp += heal
+            events.append(.heal(actor, amount: heal))
+        }
+        guard let status = side.status else { return events }
         let full = side.stats.hp
         let amount: Int
         let cause: DamageCause
@@ -1109,10 +1130,10 @@ extension BattleEngine {
             amount = max(1, full * side.statusCounter / 16); cause = .toxic
             side.statusCounter += 1
         case .paralysis, .sleep, .freeze, .confusion, .flinch:
-            return []
+            return events
         }
         side.hp = max(0, side.hp - amount)
-        var events: [BattleEvent] = [.damage(actor, amount: amount, cause: cause)]
+        events.append(.damage(actor, amount: amount, cause: cause))
         if !side.isAlive { events.append(.faint(actor)) }
         return events
     }

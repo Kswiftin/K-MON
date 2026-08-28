@@ -3,8 +3,9 @@ import Foundation
 /// 런 전용 강화. **세이브에 남지 않는다** — 런이 끝나면 파티와 함께 사라진다.
 /// 그래서 무결성 서명·경제(별의조각)에 전혀 닿지 않고, 밸런스를 고쳐도 세이브 이전이 없다.
 ///
-/// 프로토타입은 **파티 값만 건드리는 효과**로 한정한다. 데미지 배수·급소 단계처럼
-/// `BattleEngine` 내부를 지나야 하는 강화는 엔진에 훅을 내야 해서 여기 없다.
+/// 두 부류다 — **소모형**은 그 자리에서 파티 값을 되돌리고 사라지고, **지속형**(`isPersistent`)은
+/// `RunBoosts` 에 쌓여 판이 끝날 때까지 남는다. 지속형이 없던 프로토타입은 매 웨이브의 선택이
+/// "회복 타이밍" 하나였고, 그래서 12 웨이브가 첫 웨이브와 같은 모양으로 끝났다.
 enum RunModifier: String, CaseIterable, Sendable {
     /// 살아 있는 전원 최대 HP 의 40% 회복.
     case potion
@@ -16,6 +17,20 @@ enum RunModifier: String, CaseIterable, Sendable {
     case elixir
     /// 파티 전원 상태이상·혼란 해제.
     case cleanse
+    /// 지속 — 선두의 첫 타입 기술 데미지 +20%(중첩).
+    case typeBoost
+    /// 지속 — 급소 단계 +1(중첩).
+    case focusLens
+    /// 지속 — 턴 끝에 최대 HP 의 1/16 회복(중첩).
+    case leftovers
+
+    /// 판이 끝날 때까지 쌓이는가. 뽑기가 **매번 최소 한 장**을 이 부류에서 뽑는다.
+    var isPersistent: Bool {
+        switch self {
+        case .potion, .revive, .candy, .elixir, .cleanse: return false
+        case .typeBoost, .focusLens, .leftovers:          return true
+        }
+    }
 }
 
 /// 포켓로그식 한 판. 웨이브를 하나씩 넘으며 **파티 HP·PP 가 이월**되는 것이 유일한 자원이다
@@ -155,6 +170,9 @@ struct RogueRun: Sendable {
     private(set) var offers: [RunModifier] = []
     /// 남은 몬스터볼. 판이 끝나면 파티와 함께 사라진다.
     private(set) var balls: Int
+    /// 지금까지 쌓인 지속 강화. **개체가 아니라 런이 든다** — 파티가 바뀌는 모든 경로(포획·다음
+    /// 웨이브)가 `stampBoosts()` 한 곳에서 다시 도장을 받으므로, 잡은 개체만 강화 없이 싸울 일이 없다.
+    private(set) var boosts = RunBoosts()
     /// 이 판이 쓰는 밸런스 값. 앱은 `.standard`, 시뮬레이터는 흔든 값을 넣는다.
     let tuning: RogueTuning
     private(set) var battle: TeamPracticeBattle
@@ -259,23 +277,32 @@ struct RogueRun: Sendable {
         // 전투가 이어지는 중이면 잡은 개체도 **그 자리에서 파티에 합류한다.** 런의 파티는
         // `battle.mine` 에서 다시 읽히므로(`settle`), 여기 안 넣으면 다음 행동에 조용히 사라진다.
         if battle.result == nil { battle.mine.append(caught) }
+        // 잡힌 개체는 상대였으므로 강화가 없다 — 여기서 파티와 같은 도장을 받는다.
+        stampBoosts()
         return true
     }
 
     // MARK: 보상
 
+    /// 뽑기 3장. **적어도 한 장은 지속형이다** — 소모형만 뜨면 그 웨이브의 선택이 다시 "회복
+    /// 타이밍" 하나로 접히고, 판이 12 웨이브를 지나도 첫 웨이브와 같은 모양으로 남는다.
+    /// 뽑은 뒤 섞는 이유는 순서다 — 안 섞으면 첫 칸이 늘 지속형이라 목록을 읽지 않고 누르게 된다.
     static func drawOffers(_ rng: inout SplitMix64) -> [RunModifier] {
-        var pool = RunModifier.allCases
-        var picked: [RunModifier] = []
+        var pool = RunModifier.allCases.filter { !$0.isPersistent }
+        var persistent = RunModifier.allCases.filter(\.isPersistent)
+        var picked = [persistent.remove(at: Int(rng.next() % UInt64(persistent.count)))]
+        pool += persistent
         while picked.count < offerCount, !pool.isEmpty {
             picked.append(pool.remove(at: Int(rng.next() % UInt64(pool.count))))
         }
+        picked.shuffle(using: &rng)
         return picked
     }
 
     mutating func pick(_ modifier: RunModifier) {
         guard stage == .picking, offers.contains(modifier) else { return }
         apply(modifier)
+        stampBoosts()
         offers = []
         wave += 1
         stage = .loadingWave
@@ -299,6 +326,7 @@ struct RogueRun: Sendable {
         // 앞 웨이브에서 1번이 쓰러졌으면 살아 있는 첫 칸으로 세운다. 기본값 0 그대로 두면
         // 쓰러진 개체가 활성 슬롯이 되어 첫 턴을 통째로 날린다.
         battle.myActive = lead
+        stampBoosts()
         stage = .battling
     }
 
@@ -321,7 +349,31 @@ struct RogueRun: Sendable {
                 party[i].statusCounter = 0
                 party[i].confusionTurns = 0
             }
+        // 지속형은 파티 값을 건드리지 않고 `boosts` 에 쌓인다. 개체에 옮기는 것은 `stampBoosts()` 다.
+        case .typeBoost:
+            guard let type = boostableType else { return }
+            boosts.typeDamage[type, default: 0] += 1
+        case .focusLens:
+            boosts.critStages += 1
+        case .leftovers:
+            boosts.leftovers += 1
         }
+    }
+
+    /// `typeBoost` 가 올릴 타입 — **선두의 첫 타입**이다. 규칙이 코어에 있는 이유는 뽑기 화면이
+    /// 고르기 전에 같은 값을 보여줘야 하기 때문이다(무엇이 올라가는지 모르고 고르면 빌드가 아니라
+    /// 복권이 된다).
+    var boostableType: PokemonType? {
+        let lead = party.first(where: { $0.isAlive }) ?? party.first
+        return lead?.snapshot.types.first
+    }
+
+    /// 파티와 진행 중인 전투 양쪽에 현재 강화를 도장 찍는다. **강화가 개체로 들어가는 자리는 여기
+    /// 하나뿐이다.** 전투 쪽에 안 찍으면 이번 웨이브에는 안 걸려서 방금 고른 보상이 안 듣는 것처럼
+    /// 보이고, 포획 경로가 이 자리를 안 지나면 잡은 개체만 강화 없이 싸운다.
+    private mutating func stampBoosts() {
+        for i in party.indices { party[i].runBoosts = boosts }
+        for i in battle.mine.indices { battle.mine[i].runBoosts = boosts }
     }
 
     /// 파티의 주 상태이상·혼란을 지운다. **HP·PP 는 건드리지 않는다** — 그게 이월 자원이다.
@@ -364,6 +416,9 @@ struct RogueRun: Sendable {
         next.status = side.status
         next.statusCounter = side.statusCounter
         next.confusionTurns = side.confusionTurns
+        // 레벨업은 스냅샷으로 개체를 다시 만든다 — 런 강화를 옮기지 않으면 사탕 한 장이 그때까지
+        // 쌓은 지속 강화를 통째로 지운다(화면에는 그대로 남아 있는 것으로 보인다).
+        next.runBoosts = side.runBoosts
         return next
     }
 }
@@ -382,5 +437,9 @@ extension RogueRun {
     /// 테스트 전용 — 포획 확률을 재려면 상대 HP·볼 개수를 직접 세워야 한다.
     mutating func debugSetOpponentHP(_ value: Int) { battle.opponents[battle.opponentActive].hp = value }
     mutating func debugSetBalls(_ value: Int) { balls = value }
+    /// 테스트 전용 — 강화가 쌓인 상태를 앞 웨이브를 다 밟지 않고 세운다.
+    mutating func debugSetBoosts(_ value: RunBoosts) { boosts = value; stampBoosts() }
+    /// 테스트 전용 — 특정 보상이 제시된 상태로 만든다(뽑기는 rng 라 원하는 장이 안 뜬다).
+    mutating func debugOffer(_ modifier: RunModifier) { offers = [modifier] }
 }
 #endif
