@@ -124,6 +124,8 @@ struct MemoryHomeView: View {
     @State private var showingProfileMessageEditor = false
     @State private var profileMessageDraft = ""
     @State private var profileMessageError: String?
+    @State private var aliasRequester: MemoryHomeRecentRequester?
+    @State private var aliasDraft = ""
 
     private var l: L { store.l }
 
@@ -202,6 +204,9 @@ struct MemoryHomeView: View {
                                    ? l.t("차단 해제", "Unblock", "ブロック解除")
                                    : l.t("차단", "Block", "ブロック"))) {
                                 album.setMemoryHomeBlocked(requester.peerID, blocked: !album.memoryHomeAccess.blockedPeerIDs.contains(requester.peerID))
+                            }
+                            Button(requester.displayName + " · " + l.t("일촌명", "Alias", "一村名")) {
+                                aliasRequester = requester; aliasDraft = album.memoryHomeAccess.peerAliases[requester.peerID] ?? ""
                             }
                         }
                     }
@@ -326,6 +331,11 @@ struct MemoryHomeView: View {
                                             "Saving does not share it. Turn sharing on separately.",
                                             "保存しても公開されません。共有は別に有効化してください。"))
         }
+        .alert(l.t("일촌명", "Peer alias", "一村名"), isPresented: Binding(get: { aliasRequester != nil }, set: { if !$0 { aliasRequester = nil } })) {
+            TextField(l.t("일촌명", "Peer alias", "一村名"), text: $aliasDraft)
+            Button(l.t("저장", "Save", "保存")) { if let requester = aliasRequester { _ = album.setPeerAlias(aliasDraft, for: requester.peerID) }; aliasRequester = nil }
+            Button(l.t("취소", "Cancel", "キャンセル"), role: .cancel) { aliasRequester = nil }
+        } message: { Text(l.t("이 별칭은 내 기기에만 저장되고 네트워크로 전송되지 않습니다.", "This alias stays on this device and is never transmitted.", "この名前はこの端末だけに保存され、送信されません。")) }
         )
     }
 
@@ -448,6 +458,16 @@ struct MemoryHomeView: View {
         let furniture: [ItemKind] = [.roomBed, .roomTable, .roomLamp]
         return VStack(alignment: .leading, spacing: 5) {
             HStack { Text(l.t("방꾸미기", "Room decor", "部屋づくり")).font(.subheadline.weight(.semibold)); Spacer()
+                Menu(l.t("룸메이트", "Roommates", "ルームメイト")) {
+                    ForEach(store.ownedMons) { mon in
+                        let selected = album.memoryHomeAccess.roommateIDs.contains(mon.id)
+                        Button((selected ? "✓ " : "") + store.chatProfile(for: mon).displayName) {
+                            var ids = album.memoryHomeAccess.roommateIDs
+                            if let index = ids.firstIndex(of: mon.id) { ids.remove(at: index) } else { ids.append(mon.id) }
+                            album.setRoommates(ids, validCompanionIDs: Set(store.ownedMons.map(\.id)))
+                        }
+                    }
+                }.menuStyle(.borderlessButton)
                 if let image = MemoryHomeBundledArt.interiorTileset() { Image(nsImage: image).resizable().interpolation(.none).scaledToFit().frame(width: 48, height: 24) } }
             HStack(spacing: 6) {
                 ForEach(["left", "center", "right"], id: \.self) { slot in
