@@ -868,13 +868,13 @@ final class CompanionStoreTests: XCTestCase {
     /// 고른다). 전설은 막판 보스여야 하므로 반드시 팀의 마지막 자리를 차지한다.
     func testGymLegendaryIsTheLastOpponent() {
         let legendaryByType: [PokemonType: Int] = [
-            .bug: 485,      // 히드런
-            .rock: 640,     // 비리디온
+            .bug: 649,      // 게노세크트 (벌레/강철)
+            .rock: 248,     // 마기라스 (바위/악)
             .electric: 642, // 볼트로스
             .water: 484,    // 펄기아
-            .fire: 647,     // 케르디오
-            .grass: 146,    // 파이어
-            .psychic: 716,  // 제르네아스
+            .fire: 643,     // 레시라무 (드래곤/불꽃)
+            .grass: 893,    // 자루드 (풀/악)
+            .psychic: 381,  // 라티오스 (드래곤/에스퍼)
             .dragon: 483,   // 디아루가
         ]
 
@@ -884,12 +884,14 @@ final class CompanionStoreTests: XCTestCase {
             XCTAssertEqual(gym.teamSpeciesIDs.last, legendaryByType[gym.type],
                            "\(gym.id): 전설은 마지막 상대여야 한다")
         }
-        let offTypeAces: [PokemonType: Int] = [
-            .bug: 485, .rock: 640, .fire: 647, .grass: 146, .psychic: 716,
+        // 에이스는 팀 전원이 그 타입을 겸해 단일 약점 스윕 위험이 없는 체육관(전기·물·드래곤)에는
+        // 없다. 있는 체육관은 모두 마지막 전설이 곧 에이스다 — 체육관 타입을 포함한 복합 타입 강자다.
+        let acedTypes: [PokemonType: Int] = [
+            .bug: 649, .rock: 248, .fire: 643, .grass: 893, .psychic: 381,
         ]
         for gym in GymLeague.catalog {
-            XCTAssertEqual(gym.aceSpeciesID, offTypeAces[gym.type],
-                           "\(gym.id): 타입 밖 에이스는 한 타입 스윕을 막는 마지막 전설만 허용한다")
+            XCTAssertEqual(gym.aceSpeciesID, acedTypes[gym.type],
+                           "\(gym.id): 에이스가 있다면 그 마지막 전설과 같아야 한다")
             if let ace = gym.aceSpeciesID {
                 XCTAssertEqual(gym.teamSpeciesIDs.last, ace, "\(gym.id): 에이스는 마지막에 나와야 한다")
             }

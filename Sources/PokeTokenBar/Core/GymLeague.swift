@@ -12,8 +12,9 @@ struct Gym: Identifiable, Sendable, Equatable {
     /// langCode → 관장 이름.
     let names: [String: String]
     let teamSpeciesIDs: [Int]
-    /// 체육관 타입 밖에서 마지막에 나오는 전설 에이스. 단일 약점 타입으로 팀을 쓸어버리는 것을
-    /// 막기 위한 예외이며, 있으면 반드시 `teamSpeciesIDs`의 마지막 종과 같다.
+    /// 마지막에 나오는 강한 에이스 표시. 팀 전원이 이미 그 타입을 겸해 단일 약점 스윕 위험이
+    /// 없는 체육관(전기·물·드래곤)에는 두지 않는다. 있으면 반드시 `teamSpeciesIDs`의 마지막
+    /// 종과 같고, 그 종도 체육관 타입을 포함한 강한 복합 타입이어야 한다.
     let aceSpeciesID: Int?
     /// 관장이 쓸 기술(PokéAPI move 이름), 팀 순서와 같다.
     ///
