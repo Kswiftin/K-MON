@@ -147,7 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             popover.behavior = .applicationDefined
             battlePinned = true
             if !popover.isShown { openPopover() }
-            navigation.goToBattle()   // 배틀 탭으로 전환
+            if battleCenter.activeGym != nil {
+                navigation.goToGymBattle()
+            } else {
+                navigation.goToBattle()   // 친구 대전 탭으로 전환
+            }
         } else if battlePinned {
             popover.behavior = .transient   // 배틀 끝 → 원래대로(클릭 밖이면 닫힘)
             battlePinned = false

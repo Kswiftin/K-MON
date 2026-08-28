@@ -34,4 +34,15 @@ final class PopoverNavigationTests: XCTestCase {
         XCTAssertFalse(nav.showDungeon)
         XCTAssertEqual(nav.tab, .home)
     }
+
+    func testGymBattleKeepsTheChallengeOverlay() {
+        let nav = PopoverNavigation()
+        nav.showDungeon = true
+
+        nav.goToGymBattle()
+
+        XCTAssertTrue(nav.showGymLeague)
+        XCTAssertFalse(nav.showDungeon)
+        XCTAssertEqual(nav.tab, .challenge)
+    }
 }

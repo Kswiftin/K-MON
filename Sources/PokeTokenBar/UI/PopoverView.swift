@@ -83,6 +83,16 @@ final class PopoverNavigation {
         showOutfit = false
         tab = .battle
     }
+
+    /// 체육관은 혼자 도전하는 콘텐츠다. 전투 엔진은 친구 대전과 같아도, 시작한 문맥까지 친구 탭으로
+    /// 보내면 체육관에서 도전했다는 흐름이 끊긴다.
+    func goToGymBattle() {
+        showSettings = false
+        showGymLeague = true
+        showDungeon = false
+        showOutfit = false
+        tab = .challenge
+    }
 }
 
 struct PopoverView: View {
@@ -128,10 +138,9 @@ struct PopoverView: View {
         // 신호를 읽는 **바로 그 자리에서** 끈다. 끄는 일을 아래 화면에 맡기면 그 화면이 조건부로
         // 그려지는 순간(친구 탭 관문이 그랬다) 신호가 영영 안 꺼져 열 때마다 여기로 튄다.
         .onAppear { if battleCenter.consumePendingAttention() { nav.tab = .battle } }
-        // 도전을 누르면 배틀이 시작된다 — 목록에 그대로 있으면 자기가 시작한 배틀을 못 본다.
+        // 던전은 배틀과 화면이 다르므로 접는다. 체육관은 `GymLeagueView` 안에서 전투 화면으로
+        // 갈아 끼워 도전 문맥을 유지한다.
         .onChange(of: battleCenter.phase) { _, phase in
-            if nav.showGymLeague, phase != .ready { nav.showGymLeague = false }
-            // 던전도 같이 접는다 — 배틀이 시작됐는데 던전을 보고 있으면 자기가 시작한 배틀을 못 본다.
             if nav.showDungeon, phase != .ready { nav.showDungeon = false }
         }
         .onChange(of: battleCenter.trading.phase) { _, phase in

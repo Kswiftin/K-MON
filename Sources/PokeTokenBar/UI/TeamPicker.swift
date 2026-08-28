@@ -22,8 +22,8 @@ struct TeamPicker: View {
     @State private var monTypes: [Int: [PokemonType]] = [:]
     /// 종 id → 표시 이름. 스프라이트만으로는 무엇인지 알아보기 어렵다.
     @State private var speciesNames: [Int: String] = [:]
-    /// 칩 줄의 레벨 정렬.
-    @State private var levelOrder: TeamPickerLevelOrder = .caught
+    /// 칩 줄의 레벨 정렬. 전투에는 키운 개체를 먼저 고르는 편이 자연스러워 높은 레벨이 기본이다.
+    @State private var levelOrder: TeamPickerLevelOrder = .defaultOrder
     /// 기술을 펼쳐 볼 개체 — 칩이나 고른 칸을 누르면 그 개체로 바뀐다.
     /// 처음엔 비어 있다. 아무것도 안 눌렀는데 자리를 잡아먹으면 배틀 탭 세로 예산만 축낸다.
     @State private var previewedMonID: UUID?
@@ -77,6 +77,11 @@ struct TeamPicker: View {
         } else if selection.count < limit {
             selection.append(monID)
         }
+    }
+
+    /// 팀 전체 해제 — 한 칸씩 누르며 순서를 되돌릴 필요 없이 새 조합을 바로 고르게 한다.
+    private func clearSelection() {
+        selection.removeAll()
     }
 
     /// 대전에 실제로 나가는 목록을 그대로 받는다 — `CompanionStore.battleSnapshot` 과 같은 규칙이다.
@@ -151,6 +156,11 @@ struct TeamPicker: View {
             Label(l.teamPickerTitle, systemImage: "person.2.badge.gearshape")
                 .font(.caption.weight(.semibold))
             Spacer(minLength: 4)
+            Button(l.t("전체 해제", "Clear all", "すべて解除"), action: clearSelection)
+                .buttonStyle(.plain)
+                .font(.caption2)
+                .foregroundStyle(Color.accentColor)
+                .disabled(selection.isEmpty)
             Text("\(min(selection.count, limit)) / \(limit)")
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .foregroundStyle(selection.count >= limit ? AnyShapeStyle(Color.accentColor)
@@ -305,16 +315,18 @@ struct TeamPicker: View {
 
 /// 팀 고르기 줄의 레벨 정렬 상태.
 ///
-/// `caught` 는 저장 순서 — 이 줄의 기본이자 예전의 유일한 순서다. 레벨 오름·내림만 두지 않고
-/// 기본을 사이클에 남겨, 정렬을 걸었다가 되돌릴 수 있게 한다.
+/// `caught` 는 저장 순서다. 기본은 높은 레벨순이지만, 레벨 오름·내림과 부화순을 모두 순환해
+/// 원하는 기준으로 되돌릴 수 있게 한다.
 enum TeamPickerLevelOrder: CaseIterable, Sendable {
     case caught, ascending, descending
 
+    static let defaultOrder: TeamPickerLevelOrder = .descending
+
     var next: TeamPickerLevelOrder {
         switch self {
-        case .caught:     return .ascending
-        case .ascending:  return .descending
-        case .descending: return .caught
+        case .caught:     return .descending
+        case .descending: return .ascending
+        case .ascending:  return .caught
         }
     }
 

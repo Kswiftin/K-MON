@@ -11,6 +11,18 @@ struct GymLeagueView: View {
     private var l: L { store.l }
 
     var body: some View {
+        if center.activeGym != nil, center.phase != .ready {
+            // 엔진은 친구 대전과 같아도 체육관에서 시작한 전투는 이 오버레이 안에서 끝낸다.
+            // 앱 전역 고정 윈도우도 `goToGymBattle()`으로 이 문맥을 보존한다.
+            BattleView(store: store)
+                .padding(PopoverMetrics.padding)
+                .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        } else {
+            picker
+        }
+    }
+
+    private var picker: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label(l.gymLeagueTitle, systemImage: "building.columns.fill")
