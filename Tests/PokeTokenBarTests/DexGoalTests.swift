@@ -399,6 +399,17 @@ final class OneShotRewardSignatureTests: XCTestCase {
         XCTAssertEqual(SaveTransfer.canonicalString(a), SaveTransfer.canonicalString(b))
     }
 
+    func testCurrentGymLeagueBadgeIsSignedSeparatelyFromLegacyBadges() {
+        var state = CompanionState()
+        state.gymBadges = ["bug"]
+        state.gymLeagueBadges = ["bug"]
+        var signed = SaveTransfer.signed(state)
+        XCTAssertFalse(SaveTransfer.isTampered(signed))
+
+        signed.gymLeagueBadges = []
+        XCTAssertTrue(SaveTransfer.isTampered(signed), "현행 리그 키도 알 보상 멱등성을 위해 서명한다")
+    }
+
     /// 이로치 확정 부화 횟수를 손으로 올리면 잡혀야 한다 — 올리면 확정 이로치가 공짜다.
     func testEditingShinyEggChargesAfterSigningIsDetected() {
         var state = CompanionState()
@@ -415,6 +426,7 @@ final class OneShotRewardSignatureTests: XCTestCase {
     func testDefaultStateGainsNoNewCanonicalSegments() {
         let canonical = SaveTransfer.canonicalString(CompanionState())
         XCTAssertFalse(canonical.contains("|gb"))
+        XCTAssertFalse(canonical.contains("|glb"))
         XCTAssertFalse(canonical.contains("|shc"))
         XCTAssertFalse(canonical.contains("|dg"), "도감이 비면 진행도 세그먼트도 붙지 않는다")
     }

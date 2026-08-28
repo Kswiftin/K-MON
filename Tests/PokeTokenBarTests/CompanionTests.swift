@@ -805,8 +805,8 @@ final class CompanionStoreTests: XCTestCase {
     }
     private var bugGym: Gym { gym(.bug) }
 
-    /// 첫 승리에만 별의조각이 나가며, 난이도 점검 릴리즈의 체육관은 알을 주지 않는다.
-    func testFirstGymVictoryAwardsStarPiecesOnly() {
+    /// 첫 승리에만 별의조각과 알이 나간다.
+    func testFirstGymVictoryAwardsStarPiecesAndEgg() {
         let s = store(noEvo)
         let before = s.availableTokens
         let eggsBefore = s.focusEggCount
@@ -815,7 +815,8 @@ final class CompanionStoreTests: XCTestCase {
 
         XCTAssertEqual(paid, bugGym.firstClearReward)
         XCTAssertEqual(s.availableTokens, before + bugGym.firstClearReward.starPieces)
-        XCTAssertEqual(s.focusEggCount, eggsBefore, "체육관 승리로 알을 주지 않는다")
+        XCTAssertEqual(s.focusEggCount, eggsBefore + bugGym.firstClearReward.eggs,
+                       "체육관 첫 승리로 알을 지급한다")
     }
 
     /// 트리거 재현: 체육관은 몇 번이고 다시 갈 수 있으므로 승리 지점을 반복해서 지난다.
@@ -840,6 +841,15 @@ final class CompanionStoreTests: XCTestCase {
 
         let rockGym = gym(.rock)
         XCTAssertEqual(s.recordGymVictory(rockGym), rockGym.firstClearReward)
+    }
+
+    /// 예전 체육관 배지가 남은 세이브를 열어도 현행 리그 보상을 받은 것으로 취급하면 안 된다.
+    func testCurrentGymLeagueDoesNotReuseLegacyBadgeKeys() {
+        let s = store(noEvo)
+        s.state.gymBadges = [bugGym.id]
+
+        XCTAssertEqual(s.recordGymVictory(bugGym), bugGym.firstClearReward)
+        XCTAssertEqual(s.state.gymLeagueBadges, Set([bugGym.id]))
     }
 
     /// 첫 승리 보상 키는 팀 구성이 아니라 타입에서 나온다.
@@ -929,13 +939,32 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(GymLeague.opponentLevel(for: [100, 100, 100, 100]), 100)
     }
 
-    /// 보상은 목록 순서를 따라 무거워진다 — 뒤로 갈수록 어렵다는 신호가 목록과 어긋나면 안 된다.
+    /// 보상은 목록 순서를 따라 별의조각이 늘고, 알은 드래곤 체육관만 고급 이상을 보증한다.
     func testRewardsRiseWithTheListedOrder() {
         let rewards = GymLeague.catalog.map(\.firstClearReward)
-        XCTAssertTrue(rewards.allSatisfy { $0.eggs == 0 && $0.eggGuarantee == nil && $0.shinyCharges == 0 },
-                      "난이도 점검 릴리즈 체육관에는 알·완주 보상이 없다")
+        XCTAssertTrue(rewards.allSatisfy { $0.eggs == 1 && $0.shinyCharges == 0 },
+                      "체육관 첫 승리는 알 하나를 준다")
+        for gym in GymLeague.catalog {
+            XCTAssertEqual(gym.firstClearReward.eggGuarantee, gym.type == .dragon ? .uncommon : nil,
+                           "드래곤 체육관만 고급 이상 알을 보증한다")
+        }
         let pieces = rewards.map(\.starPieces)
         XCTAssertEqual(pieces, pieces.sorted(), "별의조각도 마찬가지")
+    }
+
+    /// 배지는 화면에 보이지 않아도 첫 승리 키는 남는다. 여덟 곳을 모두 이긴 순간에만 이로치
+    /// 확정 부화가 한 번 더해져야 한다.
+    func testCompletingEveryGymGrantsOneShinyEggCharge() {
+        let s = store(noEvo)
+        for gym in GymLeague.catalog.dropLast() {
+            _ = s.recordGymVictory(gym)
+            XCTAssertEqual(s.state.shinyEggCharges, 0)
+        }
+
+        let final = s.recordGymVictory(try! XCTUnwrap(GymLeague.catalog.last))
+
+        XCTAssertEqual(s.state.shinyEggCharges, 1)
+        XCTAssertEqual(final?.shinyCharges, GymLeague.completionReward.shinyCharges)
     }
 
     /// 체육관 화면에서 고를 땐 정원이 관장 팀 크기다 — 화면에서 고른 1/3/6 과 무관하다.

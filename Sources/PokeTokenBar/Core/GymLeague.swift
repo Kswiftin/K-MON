@@ -49,7 +49,7 @@ struct Gym: Identifiable, Sendable, Equatable {
 
 /// 체육관 목록. 여덟 타입으로 시작한다 — 구조가 자리를 잡으면 이 배열에 항목만 더하면 되고,
 /// 배지 키가 타입에서 나오므로 뒤에 끼워 넣어도 기존 배지에 영향이 없다.
-/// 체육관 첫 승리 보상. 난이도 점검 릴리즈에서는 알·배지·완주 보상을 빼고 별의조각만 지급한다.
+/// 체육관 첫 승리 보상. 모두 일반 알 한 개를 주고, 드래곤 체육관만 고급 이상을 보증한다.
 struct GymReward: Sendable, Equatable {
     var starPieces: Int = 0
     /// 지급할 알 개수. 보관 알로 들어가 5분 뒤 부화한다.
@@ -113,7 +113,7 @@ enum GymLeague {
                 ["magma-storm", "earth-power", "flash-cannon", "dark-pulse"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 500)),
+            firstClearReward: GymReward(starPieces: 500, eggs: 1)),
         Gym(type: .rock,
             names: ["ko": "바위 체육관", "en": "Rock Gym", "ja": "いわジム"],
             // 릴리요 · 프테라 · 텅비드 · 비리디온(전설 에이스). 물·풀·격투·땅 중 하나로 전원을
@@ -127,7 +127,7 @@ enum GymLeague {
                 ["leaf-blade", "sacred-sword", "stone-edge", "x-scissor"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 500)),
+            firstClearReward: GymReward(starPieces: 500, eggs: 1)),
         Gym(type: .electric,
             names: ["ko": "전기 체육관", "en": "Electric Gym", "ja": "でんきジム"],
             // 에몽가 · 저리더프 · 투구뿌논 · 볼트로스(전설). 땅 하나로 끝나는 전기 단일 팀 대신
@@ -140,7 +140,7 @@ enum GymLeague {
                 ["thunderbolt", "air-slash", "focus-blast", "dark-pulse"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 1_000)),
+            firstClearReward: GymReward(starPieces: 1_000, eggs: 1)),
         Gym(type: .water,
             names: ["ko": "물 체육관", "en": "Water Gym", "ja": "みずジム"],
             // 로파파 · 랜턴 · 엠페르트 · 펄기아(전설). 풀·전기에 전원이 약하던 구성 대신
@@ -153,7 +153,7 @@ enum GymLeague {
                 ["hydro-pump", "dragon-pulse", "thunderbolt", "aura-sphere"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 2_000)),
+            firstClearReward: GymReward(starPieces: 2_000, eggs: 1)),
         Gym(type: .fire,
             names: ["ko": "불꽃 체육관", "en": "Fire Gym", "ja": "ほのおジム"],
             // 볼케니온 · 리자몽 · 번치코 · 케르디오(전설 에이스). 물·땅·바위 약점이 겹치지 않게
@@ -167,7 +167,7 @@ enum GymLeague {
                 ["hydro-pump", "sacred-sword", "ice-beam", "air-slash"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 3_000)),
+            firstClearReward: GymReward(starPieces: 3_000, eggs: 1)),
         Gym(type: .grass,
             names: ["ko": "풀 체육관", "en": "Grass Gym", "ja": "くさジム"],
             // 로파파 · 이상해꽃 · 너트령 · 파이어(전설 에이스). 불꽃·얼음·벌레·비행·독 약점 중
@@ -181,7 +181,7 @@ enum GymLeague {
                 ["flamethrower", "air-slash", "ancient-power", "hyper-voice"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 4_000)),
+            firstClearReward: GymReward(starPieces: 4_000, eggs: 1)),
         Gym(type: .psychic,
             names: ["ko": "에스퍼 체육관", "en": "Psychic Gym", "ja": "エスパージム"],
             // 가디안 · 동탁군 · 칼라마네로 · 제르네아스(전설 에이스). 악·고스트·벌레 약점이 전원에게
@@ -195,7 +195,7 @@ enum GymLeague {
                 ["moonblast", "psychic", "thunderbolt", "focus-blast"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 5_000)),
+            firstClearReward: GymReward(starPieces: 5_000, eggs: 1)),
         Gym(type: .dragon,
             names: ["ko": "드래곤 체육관", "en": "Dragon Gym", "ja": "ドラゴンジム"],
             // 킹드라 · 드래캄 · 두랄루돈 · 디아루가(전설). 이전 팀은 얼음·페어리에 전원이 약했다.
@@ -208,7 +208,7 @@ enum GymLeague {
                 ["dragon-pulse", "flash-cannon", "thunderbolt", "earth-power"],
             ],
             level: leaderLevel,
-            firstClearReward: GymReward(starPieces: 6_000)),
+            firstClearReward: GymReward(starPieces: 6_000, eggs: 1, eggGuarantee: .uncommon)),
     ]
 
     /// 배지 키로 되찾기 — 세이브에 남은 건 키뿐이라, 화면이 이름·타입을 그릴 때 거쳐 간다.
@@ -227,5 +227,9 @@ enum GymLeague {
     /// 3 → 4 (타입별 전설 포켓몬 추가, 2026-08). 마지막 자리를 전설이 차지하므로 도전자도
     /// 4마리를 갖춰야 도전할 수 있다(`startGymChallenge` 의 보유 마릿수 확인).
     static let teamSize = 4
+
+    /// 여덟 체육관을 모두 첫 승리하면 다음 부화 한 번을 이로치로 확정한다. 배지는 화면에 보이지
+    /// 않지만, 첫 승리 키가 중복 지급과 이 완주 보상을 함께 막는다.
+    static let completionReward = GymReward(shinyCharges: 1)
 
 }

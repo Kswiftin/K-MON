@@ -187,6 +187,7 @@ enum SaveTransfer {
         s.adventureWeekKey = clampedKey(s.adventureWeekKey)
         s.trainerName = clampText(s.trainerName, maxNameLength)
         s.gymBadges = Set(s.gymBadges.map { clampText($0, maxNameLength) })
+        s.gymLeagueBadges = Set(s.gymLeagueBadges.map { clampText($0, maxNameLength) })
         s.collectedFinals = Set(s.collectedFinals.map { clampText($0, maxNameLength) })
         s.usedSinceInstall = clampToken(s.usedSinceInstall)
         s.spentTokens = clampToken(s.spentTokens)
@@ -343,10 +344,12 @@ enum SaveTransfer {
         // 조건부인 이유는 위 세 필드와 같고, 새 필드라 `integrityVersion` 은 올리지 않는다.
         // 접두는 `sn` — `s` 하나면 `sp0`·`scfalse` 와 겹친다(`ach` 가 `ac` 를 피한 것과 같다).
         if s.seasons != SeasonBoard() { p.append("sn\(s.seasons.canonical)") }
-        // 체육관 배지는 첫 승리 보상의 **유일한** 멱등 가드다(`recordGymVictory`) — 서명 밖에 있으면
-        // 배지 키 한 줄을 지워 같은 체육관에서 알을 다시 받는다. 정렬 필수: `Set` 순회 순서는 실행마다
-        // 달라 정렬하지 않으면 같은 상태가 다른 서명을 낸다. (아래 두 필드가 이미 배포분이라 버전을 올렸다.)
+        // 이전 체육관 배지 기록도 기존 저장과 호환돼야 하므로 그대로 서명한다. 현행 리그의 알 보상
+        // 멱등성은 바로 아래 `gymLeagueBadges`가 맡는다. 정렬은 Set 순회 순서가 실행마다 달라지는 것을 막는다.
         if !s.gymBadges.isEmpty { p.append("gb" + s.gymBadges.sorted().joined(separator: ",")) }
+        // 현행 리그 키는 기존 배지와 분리한다. 새 필드라 비었을 때 세그먼트를 생략해 구세이브의
+        // canonical을 바꾸지 않고, 값이 생긴 뒤에는 알 보상 재수령을 무결성 검사에서 막는다.
+        if !s.gymLeagueBadges.isEmpty { p.append("glb" + s.gymLeagueBadges.sorted().joined(separator: ",")) }
         // 이로치 확정 부화 횟수 — 받은 시점과 쓰는 시점이 떨어져 있어 세이브에 남는다. 손으로 올리면
         // 확정 이로치가 공짜다. 접두 `sec` 는 아래 기기 시드가 이미 쓰고 있어 `shc` 를 쓴다.
         if s.shinyEggCharges != 0 { p.append("shc\(s.shinyEggCharges)") }
