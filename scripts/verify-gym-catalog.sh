@@ -31,7 +31,7 @@ src = pathlib.Path(catalog_path).read_text()
 
 level = int(re.search(r"leaderLevel = (\d+)", src).group(1))
 blocks = re.findall(
-    r"Gym\(type: \.(\w+).*?teamSpeciesIDs: \[([^\]]+)\].*?teamMoveNames: \[(.*?)\n            \]",
+    r"Gym\(type: \.(\w+),(.*?)teamSpeciesIDs: \[([^\]]+)\](.*?)teamMoveNames: \[(.*?)\n            \]",
     src, re.S)
 
 def get(kind, key):
@@ -43,10 +43,15 @@ def get(kind, key):
 
 problems = 0
 print(f"관장 레벨 {level}\n")
-for gym_type, ids_raw, moves_raw in blocks:
+for gym_type, _before_team, ids_raw, between_team_and_moves, moves_raw in blocks:
     ids = [int(x.strip()) for x in ids_raw.split(",") if x.strip()]
     rows = re.findall(r"\[([^\]]*)\]", moves_raw)
     teams = [[m.strip().strip('"') for m in r.split(",") if m.strip()] for r in rows]
+    ace_match = re.search(r"aceSpeciesID:\s*(\d+)", between_team_and_moves)
+    ace_id = int(ace_match.group(1)) if ace_match else None
+    if ace_id is not None and ace_id != ids[-1]:
+        print(f"  ✗ aceSpeciesID #{ace_id}: 팀의 마지막 상대여야 한다")
+        problems += 1
     total = 0
     print(f"=== {gym_type} ===")
     for i, pid in enumerate(ids):
@@ -56,9 +61,10 @@ for gym_type, ids_raw, moves_raw in blocks:
         own = [t["type"]["name"] for t in mon["types"]]
         bst = sum(s["base_stat"] for s in mon["stats"])
         total += bst
-        flag = "" if gym_type in own else "   ← 체육관 타입 아님"
+        flag = "" if gym_type in own else (
+            "   ← 타입 밖 전설 에이스" if pid == ace_id else "   ← 체육관 타입 아님")
         print(f"  {mon['name']:<12} #{pid:<4} {'/'.join(own):<14} 종족값 {bst}{flag}")
-        if gym_type not in own:
+        if gym_type not in own and pid != ace_id:
             problems += 1
         for name in (teams[i] if i < len(teams) else []):
             mv = get("move", name)

@@ -867,14 +867,14 @@ final class CompanionStoreTests: XCTestCase {
     /// 고른다). 전설은 막판 보스여야 하므로 반드시 팀의 마지막 자리를 차지한다.
     func testGymLegendaryIsTheLastOpponent() {
         let legendaryByType: [PokemonType: Int] = [
-            .bug: 649,      // 게노세크트
+            .bug: 485,      // 히드런
             .rock: 377,     // 레지락
             .electric: 145, // 썬더
             .water: 245,    // 수이쿤
             .fire: 485,     // 히드런
             .grass: 492,    // 쉐이미
             .psychic: 150,  // 뮤츠
-            .dragon: 384,   // 레쿠쟈
+            .dragon: 483,   // 디아루가
         ]
 
         XCTAssertEqual(legendaryByType.count, GymLeague.catalog.count,
@@ -882,6 +882,14 @@ final class CompanionStoreTests: XCTestCase {
         for gym in GymLeague.catalog {
             XCTAssertEqual(gym.teamSpeciesIDs.last, legendaryByType[gym.type],
                            "\(gym.id): 전설은 마지막 상대여야 한다")
+        }
+        let offTypeAces: [PokemonType: Int] = [.bug: 485]
+        for gym in GymLeague.catalog {
+            XCTAssertEqual(gym.aceSpeciesID, offTypeAces[gym.type],
+                           "\(gym.id): 타입 밖 에이스는 한 타입 스윕을 막는 마지막 전설만 허용한다")
+            if let ace = gym.aceSpeciesID {
+                XCTAssertEqual(gym.teamSpeciesIDs.last, ace, "\(gym.id): 에이스는 마지막에 나와야 한다")
+            }
         }
     }
 
@@ -909,6 +917,14 @@ final class CompanionStoreTests: XCTestCase {
     func testEveryLeaderStandsAtTheSameLevel() {
         XCTAssertEqual(Set(GymLeague.catalog.map(\.level)).count, 1)
         XCTAssertEqual(GymLeague.catalog.first?.level, GymLeague.leaderLevel)
+    }
+
+    /// 최소 레벨은 초반 팀을 보호하고, 키운 팀이 Lv.30 관장을 한 방에 정리하지 못하도록 평균보다
+    /// 3 높은 레벨까지 따라온다. 100을 넘으면 안 된다.
+    func testGymOpponentLevelTracksTheSelectedTeamWithinBounds() {
+        XCTAssertEqual(GymLeague.opponentLevel(for: [12, 20, 30, 30]), GymLeague.leaderLevel)
+        XCTAssertEqual(GymLeague.opponentLevel(for: [45, 46, 47, 48]), 49)
+        XCTAssertEqual(GymLeague.opponentLevel(for: [100, 100, 100, 100]), 100)
     }
 
     /// 보상은 목록 순서를 따라 무거워진다 — 뒤로 갈수록 어렵다는 신호가 목록과 어긋나면 안 된다.
