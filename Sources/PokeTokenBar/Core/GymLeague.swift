@@ -30,6 +30,18 @@ struct Gym: Identifiable, Sendable, Equatable {
     /// 첫 승리에만 나가는 보상. 재도전은 연습이지 수입이 아니다.
     let firstClearReward: GymReward
 
+    init(type: PokemonType, names: [String: String], teamSpeciesIDs: [Int],
+         aceSpeciesID: Int? = nil, teamMoveNames: [[String]], level: Int,
+         firstClearReward: GymReward) {
+        self.type = type
+        self.names = names
+        self.teamSpeciesIDs = teamSpeciesIDs
+        self.aceSpeciesID = aceSpeciesID
+        self.teamMoveNames = teamMoveNames
+        self.level = level
+        self.firstClearReward = firstClearReward
+    }
+
     func leaderName(_ language: AppLanguage) -> String {
         language.resolveName(names) ?? names["en"] ?? names.values.first ?? "?"
     }
