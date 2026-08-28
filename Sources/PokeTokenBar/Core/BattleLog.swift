@@ -6,22 +6,32 @@ import Foundation
 /// 뷰가 아니라 여기 있어야 문구를 테스트할 수 있고 세 모드가 같은 어휘를 쓴다.
 enum BattleLog {
     struct Line: Equatable {
-        /// 이 줄을 만든 쪽 — 뷰가 내 편/상대 색을 이 값으로 가른다. 턴 구분선처럼 주인이 없으면 nil.
+        /// 이 줄을 만든 쪽 — 뷰가 내 편/상대 색과 좌우 정렬을 이 값으로 가른다. 턴 구분선처럼
+        /// 주인이 없으면 nil.
         var actor: BattleActor?
         var text: String
+        /// 아래 필드는 기술을 쓴 줄에만 채운다 — 뷰가 있으면 아이콘·타입색 칩으로, 없으면
+        /// (턴 구분선·잔뎀·회복 등) `text` 를 그대로 그린다.
+        var actorName: String? = nil
+        var moveType: PokemonType? = nil
+        var moveDamageClass: MoveDamageClass? = nil
+        var moveDisplayName: String? = nil
+        var damage: Int? = nil
+        var badges: [String] = []
     }
 
-    /// 이름·기술명 해석은 호출부(뷰)가 준다 — 같은 스트림을 1v1 은 좌우로, 멀티는 UUID 로 읽는다.
+    /// 이름 해석은 호출부(뷰)가 준다 — 같은 스트림을 1v1 은 좌우로, 멀티는 UUID 로 읽는다.
+    /// 기술은 `MoveSpec` 을 통째로 받는다 — 이름만으로는 로그 줄에 타입색·아이콘을 못 입힌다.
     static func lines(_ events: [BattleEvent], l: L,
                       name: (BattleActor) -> String,
-                      moveName: (BattleActor, Int) -> String) -> [Line] {
+                      move: (BattleActor, Int) -> MoveSpec) -> [Line] {
         var out: [Line] = []
         var pending: Action?
 
         func flush() {
             guard let action = pending else { return }
             pending = nil
-            out.append(Line(actor: action.actor, text: action.text(l: l, name: name, moveName: moveName)))
+            out.append(action.line(l: l, name: name, move: move))
         }
         /// 행동 없이 들어온 이벤트(기술 없는 데미지 등)도 주인은 있어야 한다.
         func begin(_ actor: BattleActor) {
@@ -107,23 +117,39 @@ enum BattleLog {
         var missed = false
         var immune = false
 
-        func text(l: L, name: (BattleActor) -> String, moveName: (BattleActor, Int) -> String) -> String {
+        func line(l: L, name: (BattleActor) -> String, move: (BattleActor, Int) -> MoveSpec) -> BattleLog.Line {
             let who = name(actor)
             guard let moveID else {
                 // 기술 없이 들어온 데미지 — Phase 2 의 화상·독 잔뎀이 이 모양으로 온다.
                 // 여기서 "기술을 썼다" 문구를 쓰면 쓰지 않은 기술 이름이 로그에 뜬다.
-                guard let damage else { return notes.joined(separator: " · ") }
-                return ([l.battleTookDamage(who, damage: damage)] + notes).joined(separator: " · ")
+                guard let damage else { return .init(actor: actor, text: notes.joined(separator: " · ")) }
+                return .init(actor: actor,
+                            text: ([l.battleTookDamage(who, damage: damage)] + notes).joined(separator: " · "))
             }
-            let move = moveName(actor, moveID)
+            let spec = move(actor, moveID)
+            let moveText = spec.name(l.lang)
             // 데미지 숫자는 실제로 깎였을 때만 붙인다 — 빗나감·무효에 "0 데미지" 를 붙이면 맞았는데
             // 0 인 것처럼 읽히고, 위력 없는 변화기(Phase 3)도 같은 이유로 숫자가 없어야 한다.
-            if missed { return l.battleUsedMoveMissed(who, move: move) + " " + l.battleMissed }
-            if immune { return l.battleUsedMoveMissed(who, move: move) + " " + l.battleNoEffect }
-            guard let damage else {
-                return ([l.battleUsedMoveMissed(who, move: move)] + notes).joined(separator: " · ")
+            if missed {
+                return .init(actor: actor, text: l.battleUsedMoveMissed(who, move: moveText) + " " + l.battleMissed,
+                            actorName: who, moveType: spec.type, moveDamageClass: spec.damageClass,
+                            moveDisplayName: moveText, badges: [l.battleMissed])
             }
-            return ([l.battleUsedMoveNamed(who, move: move, damage: damage)] + notes).joined(separator: " · ")
+            if immune {
+                return .init(actor: actor, text: l.battleUsedMoveMissed(who, move: moveText) + " " + l.battleNoEffect,
+                            actorName: who, moveType: spec.type, moveDamageClass: spec.damageClass,
+                            moveDisplayName: moveText, badges: [l.battleNoEffect])
+            }
+            guard let damage else {
+                return .init(actor: actor,
+                            text: ([l.battleUsedMoveMissed(who, move: moveText)] + notes).joined(separator: " · "),
+                            actorName: who, moveType: spec.type, moveDamageClass: spec.damageClass,
+                            moveDisplayName: moveText, badges: notes)
+            }
+            return .init(actor: actor,
+                        text: ([l.battleUsedMoveNamed(who, move: moveText, damage: damage)] + notes).joined(separator: " · "),
+                        actorName: who, moveType: spec.type, moveDamageClass: spec.damageClass,
+                        moveDisplayName: moveText, damage: damage, badges: notes)
         }
     }
 }

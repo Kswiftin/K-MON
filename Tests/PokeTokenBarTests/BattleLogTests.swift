@@ -6,11 +6,17 @@ import XCTest
 /// 문구를 고르는 일이 순수 함수로 빠졌고, 3언어 문구와 접기 규칙을 여기서 잠근다.
 final class BattleLogTests: XCTestCase {
 
-    /// 이름·기술명 해석은 호출부(뷰)의 몫이라 테스트에서는 고정값을 준다.
+    /// 이름은 해석이 호출부(뷰)의 몫이라 고정값을 준다. 기술은 `BattleLog.lines`가 타입·분류까지
+    /// 받으므로 최소한의 `MoveSpec`을 만든다 — 이름만 다르면 나머지 필드는 문구에 안 쓰인다.
+    private func spec(_ id: Int, _ name: String) -> MoveSpec {
+        MoveSpec(id: id, names: ["ko": name], type: .normal, power: 40, damageClass: .physical,
+                 accuracy: 100, pp: 20)
+    }
+
     private func lines(_ events: [BattleEvent], _ lang: AppLanguage = .ko) -> [String] {
         BattleLog.lines(events, l: L(lang),
                         name: { $0 == .a ? "거북왕" : "리자몽" },
-                        moveName: { _, id in id == 57 ? "파도타기" : "화염방사" })
+                        move: { _, id in id == 57 ? spec(57, "파도타기") : spec(53, "화염방사") })
             .map(\.text)
     }
 
@@ -71,7 +77,7 @@ final class BattleLogTests: XCTestCase {
     /// 맞은 쪽을 가리키지만, 그 줄의 주인은 여전히 때린 쪽이어야 한다.
     func testLineOwnerIsTheActingSide() {
         let out = BattleLog.lines([.turn(1), .move(.b, moveID: 53), .crit(.a), .damage(.a, amount: 40, cause: .move)],
-                                  l: L(.ko), name: { _ in "X" }, moveName: { _, _ in "Y" })
+                                  l: L(.ko), name: { _ in "X" }, move: { _, id in spec(id, "Y") })
         XCTAssertEqual(out.count, 2)
         XCTAssertNil(out[0].actor, "턴 구분선은 주인이 없다")
         XCTAssertEqual(out[1].actor, .b, "때린 쪽이 그 줄의 주인이다")
@@ -136,7 +142,7 @@ final class BattleLogTests: XCTestCase {
     /// 줄의 주인은 그 상태를 겪는 쪽이다 — 뷰가 내 편/상대 색을 이 값으로 가른다.
     func testStatusLineOwnerIsTheAfflictedSide() {
         let out = BattleLog.lines([.status(.b, .burn), .cant(.b, .sleep)],
-                                  l: L(.ko), name: { _ in "X" }, moveName: { _, _ in "Y" })
+                                  l: L(.ko), name: { _ in "X" }, move: { _, id in spec(id, "Y") })
         XCTAssertEqual(out.map(\.actor), [.b, .b])
     }
 
@@ -145,7 +151,7 @@ final class BattleLogTests: XCTestCase {
         let id = UUID()
         let out = BattleLog.lines([.move(.fighter(id), moveID: 1), .damage(.b, amount: 5, cause: .move)],
                                   l: L(.ko), name: { $0 == .fighter(id) ? "P1" : "P2" },
-                                  moveName: { _, _ in "몸통박치기" })
+                                  move: { _, id in spec(id, "몸통박치기") })
         XCTAssertEqual(out.map(\.text), ["P1의 몸통박치기! 5 데미지"])
         XCTAssertEqual(out[0].actor, .fighter(id))
     }
