@@ -86,7 +86,11 @@ struct PokedoroTabBar: View {
                         Image(systemName: icon).font(.system(size: 14, weight: .bold))
                         Text(title).font(.system(size: 9, weight: .bold)).lineLimit(1)
                     }
-                    .foregroundStyle(selection == tab ? PokedoroTheme.ink : Color.secondary)
+                    // **고정 색을 쓰면 안 되는 자리다.** 뒤에 깔리는 알약은 모드에 따라 밝기가
+                    // 뒤집히는데 `ink`(고정 다크 네이비)는 안 바뀐다 — 다크 모드에서 대비가
+                    // 1.07:1 이 되어 고른 탭의 글자만 사라졌다. `primary` 는 모드를 따라간다.
+                    // 선택 표시는 알약과 굵기가 이미 하고 있으므로 브랜드 색을 글자에 넣을 이유가 없다.
+                    .foregroundStyle(selection == tab ? Color.primary : Color.secondary)
                     .frame(maxWidth: .infinity, minHeight: 40)
                     .contentShape(Rectangle())
                     .background(selection == tab
