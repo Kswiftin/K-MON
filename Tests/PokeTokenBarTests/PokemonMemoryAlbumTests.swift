@@ -33,6 +33,23 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).entries(for: companionID).first?.source, .manual)
     }
 
+    func testManualMemoryAtGraphemeLimitAndItsPinSurviveRelaunch() {
+        let url = temporaryURL(), companionID = UUID()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+        let body = String(repeating: "👨‍👩‍👧‍👦", count: 280)
+
+        XCTAssertTrue(album.addManual(companionID: companionID, body: body))
+        guard let memory = album.entries(for: companionID).first else {
+            return XCTFail("A successful submission must create one memory")
+        }
+        album.pin(memory)
+
+        let reloaded = PokemonMemoryAlbum(fileURL: url)
+        XCTAssertEqual(reloaded.entries(for: companionID), [memory])
+        XCTAssertEqual(reloaded.pinned(for: companionID)?.id, memory.id)
+    }
+
     func testPinnedMemoryIsScopedToCompanionAndClearsWhenDeleted() {
         let album = PokemonMemoryAlbum(fileURL: temporaryURL())
         let firstID = UUID(), secondID = UUID()
