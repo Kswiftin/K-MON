@@ -798,7 +798,7 @@ final class MultiplayerRoomCenter {
             ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
             : await companion.detailedMoves(of: active)
         return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
-                              level: level, nature: active.nature, isShiny: active.isShiny,
+                              level: level, nature: active.nature, gender: active.gender, isShiny: active.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
                               ability: profile.abilitySlug,
                               weightHectograms: profile.weightHectograms)

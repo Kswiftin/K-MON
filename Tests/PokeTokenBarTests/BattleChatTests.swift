@@ -36,7 +36,7 @@ final class BattleChatTests: XCTestCase {
             return XCTFail("chat wire case")
         }
         XCTAssertEqual(decoded.body, "hi")
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 10)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 11)
     }
 }
 

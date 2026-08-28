@@ -14,7 +14,10 @@ struct TeamPracticeBattle {
 
     var mySlot: BattleSide { mine[myActive] }
     var opponentSlot: BattleSide { opponents[opponentActive] }
-    var availableSwitches: [Int] { mine.indices.filter { $0 != myActive && mine[$0].isAlive } }
+    var availableSwitches: [Int] {
+        guard BattleEngine.canSwitch(mine[myActive], awayFrom: opponents[opponentActive]) else { return [] }
+        return mine.indices.filter { $0 != myActive && mine[$0].isAlive }
+    }
 
     /// 교체 — **그 턴의 행동이다.** 본가와 같이 교체하는 쪽은 공격하지 못하고, 새로 나온 포켓몬이
     /// 상대 공격을 맞으며 시작한다.
@@ -22,7 +25,8 @@ struct TeamPracticeBattle {
     /// 예전엔 활성 슬롯만 바꾸고 끝나서 교체가 공짜였다. 상성이 나쁘면 계속 갈아타며 유리한
     /// 상대만 때릴 수 있었고, 상대는 그동안 한 번도 움직이지 못했다.
     mutating func switchMine(to index: Int) -> Bool {
-        guard mine.indices.contains(index), index != myActive, mine[index].isAlive, result == nil else { return false }
+        guard mine.indices.contains(index), index != myActive, mine[index].isAlive, result == nil,
+              BattleEngine.canSwitch(mine[myActive], awayFrom: opponents[opponentActive]) else { return false }
         BattleEngine.prepareForSwitch(&mine[myActive])
         myActive = index
         // 턴 머리와 출전을 **여기서** 적는다 — 재생기가 개체 전환을 알아야 새로 나온 개체를
