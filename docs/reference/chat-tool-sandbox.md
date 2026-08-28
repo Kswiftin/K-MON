@@ -1,10 +1,11 @@
 ---
-summary: "포켓몬 대화가 실행할 수 있는 일의 전부와, 그 목록이 닫혀 있음을 무엇이 보장하는가 — 5겹 경계와 각 겹을 지키는 테스트."
+summary: "포켓몬 대화가 실행할 수 있는 일의 전부와, 그 목록이 닫혀 있음을 무엇이 보장하는가 — 6겹 경계와 각 겹을 지키는 테스트."
 read_when:
   - 대화에 새 도구를 더하거나 기존 도구를 빼려 할 때
   - `[[tool:...]]` 마커 문법·인자 클램프·승인 구분을 손댈 때
   - "대화가 X 를 할 수 있게 해 달라" 는 요청을 받았을 때 (대개 답은 "그 겹에 넣을 수 없다" 다)
   - 실행기에 새 의존성을 붙이거나, 도구가 어느 개체에 작용하는지를 바꿀 때
+  - 대화 CLI 를 띄우는 자리(작업 디렉터리·환경변수·설정 소스)를 손댈 때
 ---
 
 # 대화 도구 샌드박스
@@ -134,11 +135,12 @@ read_when:
 
 이 예외는 여기까지다. 인자를 받는 기억 도구를 만들거나, 지우는 도구를 더하려면 승인이 필요하다.
 
-## 5겹 경계
+## 6겹 경계
 
 | 겹 | 무엇을 막나 | 어디 | 지키는 테스트 |
 |---|---|---|---|
-| 1. 제공자 인자 | CLI 내장 도구·MCP·사용자 설정 전부 차단 | `PokemonChatProviderSafety.arguments` | `testClaudeProviderDisablesBuiltInToolsAndMCPConfiguration`, `testCodexProviderIgnoresConfigurationAndUsesReadOnlySandbox` |
+| 0. 실행 디렉터리 | 자식의 cwd 는 **앱 소유 빈 디렉터리**다 — CLI 의 프로젝트 루트가 사용자 파일에 닿지 않는다 | `PokemonChatWorkspace` | `testTheChatCLIRunsInTheAppOwnedDirectoryNotWhateverCWDTheAppInherited`, `testAnUnusableStateDirectoryStillYieldsARunnableWorkingDirectory` |
+| 1. 제공자 인자 | CLI 내장 도구·MCP·사용자 설정 파일 전부 차단 | `PokemonChatProviderSafety.arguments` | `testClaudeProviderDisablesBuiltInToolsMCPAndUserSettings`, `testCodexProviderIgnoresConfigurationAndUsesReadOnlySandbox` |
 | 2. 화이트리스트 | 목록 밖 이름은 호출로 파싱되지 않는다 | `PokemonChatToolParser` | `testOnlyTheDeclaredToolsParseAsCalls` |
 | 3. 인자 클램프 | 분은 세 값으로 접히고, 도감 번호·로스터 인덱스는 정수뿐, 아이템은 `ItemKind` case 뿐 | 같은 파일 | `testFocusMinutesAreClampedToTheThreeOfferedLengths`, `testSpeciesLookupRejectsAnythingThatIsNotADexNumberInRange` |
 | 4. 승인 게이트 | 상태를 바꾸는 도구는 사용자 1탭 뒤에만 | `PokemonChatStore.resolvePending` | `testApprovedTimerCallExecutesOnlyForItsOwnCompanion`, `testApprovalGatedToolPausesTheLoopInsteadOfAskingAgain` |
@@ -147,6 +149,30 @@ read_when:
 
 겹 1 은 **차단되지 않은 제공자를 실행하지 않는다**는 원칙까지 포함한다. 도구를 끌 수 없는 CLI 는
 `.blocked(.unverifiedToolContract)` 로 남는다 — 근거는 `opencode-isolation.md`.
+
+### 겹 0 — 목록을 닫아도 **실행 환경**은 안 닫힌다
+
+도구를 전부 끈 계약은 모델이 무엇을 부를 수 있는지만 정한다. 자식 프로세스가 **어디서** 도는지는
+따로 정해야 한다. 정하지 않으면 앱의 cwd 를 물려받고, 메뉴바 앱의 cwd 는 `/` 다 — CLI 의 프로젝트
+루트가 디스크 전체가 되어 시작 스캔이 `~/Desktop`·`~/Documents` 를 밟는다. macOS 는 자식의 파일
+접근을 **책임 프로세스**(= 앱)로 돌리므로 사용자에겐 "Pokédoro 가 데스크탑에 접근하려 합니다" 가
+뜬다. 한 번의 전송이 CLI 를 `maxToolRounds + 1` 번까지 띄우므로 창은 대화 도중 계속 뜬다.
+
+권한 창을 끄는 스위치는 없다. `NSDesktopFolderUsageDescription` 은 문구만 바꾼다 — **안 밟는 것**만이
+답이고, 그래서 이건 문구 문제가 아니라 경계다.
+
+### 겹 1 은 설정 파일까지 닫는다 (`--setting-sources ""`)
+
+`--safe-mode` 만으로는 부족하다. 실측(`--debug-file`)에서 훅·플러그인은 실제로 꺼졌지만
+(`Skipping plugin hooks`, `Found 0 total hooks`) 사용자 설정의 env 는 그대로 실렸고
+(`settingsEnv keys: ECC_DISABLED_HOOKS,CLAUDE_CODE_ENABLE_TELEMETRY,OTEL_…`), 실행마다 사용자의
+`~/.claude/settings.json` 에 permission 규칙을 **쓰기까지** 했다(`Applying permission update …
+destination 'userSettings'`). 대화 한 번이 사용자의 개발 환경 설정을 고치는 건 격리가 아니다.
+
+`--setting-sources ""` 를 더하면 `settingsEnv keys: none` 이 되고 그 쓰기가 사라진다. 인증은
+설정 파일이 아니라 keychain·`~/.claude` 자격증명에서 오므로 그대로 동작한다(실측 확인).
+codex 는 `--ignore-user-config --ignore-rules` 로 처음부터 닫혀 있었다 — **같은 부류를 한쪽
+제공자에만 적용해 둔 상태**였다.
 
 ## 왜 MCP 서버를 쓰지 않았나
 

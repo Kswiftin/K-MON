@@ -342,7 +342,11 @@ enum PokemonChatProviderSafety {
         case .claude:
             // `--tools ""`는 Claude Code 내장 도구 전체를 제거한다. strict MCP 설정과 빈 설정을 함께
             // 주어 사용자·프로젝트 MCP 구성이 섞이지 않게 한다.
-            return ["claude", "--print", "--tools", "", "--safe-mode", "--strict-mcp-config",
+            // `--setting-sources ""`는 사용자·프로젝트·local 설정 파일을 아예 안 읽는다.
+            // `--safe-mode` 는 훅·플러그인만 끄고 설정의 env(`OTEL_*` 등)는 그대로 실었고, 실행마다
+            // 사용자 `~/.claude/settings.json` 에 permission 규칙을 **쓰기까지** 했다(실측).
+            return ["claude", "--print", "--tools", "", "--safe-mode", "--setting-sources", "",
+                    "--strict-mcp-config",
                     "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence",
                     "--disable-slash-commands", "--permission-mode", "dontAsk"]
         case .codex:
@@ -465,6 +469,37 @@ struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
     }
 }
 
+/// 대화 CLI 는 **앱이 소유한 빈 디렉터리**에서 돈다.
+///
+/// 자식의 작업 디렉터리를 정하지 않으면 앱의 cwd 를 그대로 물려받고, 메뉴바 앱의 cwd 는 `/` 다
+/// (launchd·LaunchServices 가 그렇게 띄운다). 그러면 CLI 의 프로젝트 루트가 **디스크 전체**가 되어
+/// 시작 스캔이 `~/Desktop`·`~/Documents` 를 밟고, macOS 는 자식의 접근을 **앱 책임**으로 돌려
+/// 파일 접근 권한 창을 띄운다. 한 번의 전송이 CLI 를 최대 `maxToolRounds + 1` 번 띄우므로 창은
+/// 대화 도중 계속 뜬다 — 도구 목록을 닫아 둔 것만으로는 이 부류가 막히지 않는다.
+enum PokemonChatWorkspace {
+    /// 만들지 못하면 `temporaryDirectory` 로 물러난다. 없는 경로를 넘기면 `Process.run()` 이 던져
+    /// 대화가 통째로 죽는다 — 권한 창을 없애려다 기능을 없애는 쪽이 더 나쁘다.
+    ///
+    /// 심볼릭 링크를 푸는 이유는 폴백 때문이다. `/bin/pwd` 는 물리 경로를 찍는데
+    /// `temporaryDirectory` 는 `/var`(→ `/private/var`) 아래라, 안 풀면 두 문자열이 갈린다.
+    static let directoryURL: URL =
+        resolved(base: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
+
+    /// 주입 가능한 실체. 폴백 분기는 App Support 가 살아 있는 기계에서 절대 돌지 않아, 상수 안에
+    /// 두면 라인 커버리지에 `^0` 으로 남는다 — 통과만 보면 검증된 것과 구별되지 않는다.
+    static func resolved(base: URL) -> URL {
+        let fm = FileManager.default
+        let url = base.appendingPathComponent("PokeTokenBar", isDirectory: true)
+            .appendingPathComponent("chat-cwd", isDirectory: true)
+        try? fm.createDirectory(at: url, withIntermediateDirectories: true)
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return fm.temporaryDirectory.resolvingSymlinksInPath()
+        }
+        return url.resolvingSymlinksInPath()
+    }
+}
+
 /// Drains both pipes while the child is alive. Reading only from `terminationHandler` deadlocks
 /// whenever a provider fills an OS pipe buffer with event output.
 enum PokemonChatCommandRunner {
@@ -508,6 +543,8 @@ enum PokemonChatCommandRunner {
                 output.fileHandleForReading.readabilityHandler = { handle in state.appendOutput(handle.availableData) }
                 error.fileHandleForReading.readabilityHandler = { handle in state.appendError(handle.availableData) }
                 process.executableURL = executableURL; process.arguments = arguments; process.standardInput = inputPipe; process.standardOutput = output; process.standardError = error
+                // 정하지 않으면 앱의 cwd(`/`)를 물려받아 CLI 의 프로젝트 루트가 디스크 전체가 된다.
+                process.currentDirectoryURL = PokemonChatWorkspace.directoryURL
                 process.terminationHandler = { process in
                     output.fileHandleForReading.readabilityHandler = nil; error.fileHandleForReading.readabilityHandler = nil
                     state.appendOutput(output.fileHandleForReading.readDataToEndOfFile())
