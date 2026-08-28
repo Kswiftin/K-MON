@@ -924,9 +924,11 @@ struct CompanionState: Codable, Sendable {
     var dex: [DexEntry] = []
     // 소유한 (base,final) 쌍 — 분기 다양성용
     var collectedFinals: Set<String> = []
-    /// 딴 체육관 배지(`Gym.id`). 기록이므로 한 번 들어가면 빠지지 않는다 —
-    /// 재도전은 연습이고, 보상은 첫 승리에만 나간다.
+    /// 이전 체육관 배지 기록. 현행 여덟 체육관의 첫 승리 보상에는 `gymLeagueBadges`를 쓴다.
     var gymBadges: Set<String> = []
+    /// 기존 체육관 배지와 분리된 현행 리그의 첫 승리 키. 이전 배포의 `gymBadges`가 있어도
+    /// 새 여덟 체육관의 알 보상·이로치 완주 보상이 이미 지급된 것으로 읽히지 않는다.
+    var gymLeagueBadges: Set<String> = []
     /// 남은 이로치 확정 부화 횟수. 부화 한 번에 하나씩 쓴다.
     /// ★영속이어야 한다 — `eggTier` 와 같은 이유로, 받은 시점과 쓰는 시점이 떨어져 있다.
     var shinyEggCharges = 0
@@ -1006,6 +1008,7 @@ struct CompanionState: Codable, Sendable {
         dex                = c.lenient([Lossy<DexEntry>].self, forKey: .dex, default: []).compactMap(\.value)
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])
         gymBadges          = c.lenient(Set<String>.self, forKey: .gymBadges, default: [])
+        gymLeagueBadges    = c.lenient(Set<String>.self, forKey: .gymLeagueBadges, default: [])
         shinyEggCharges    = c.lenient(Int.self, forKey: .shinyEggCharges, default: 0)
         language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])

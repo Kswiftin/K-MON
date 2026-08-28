@@ -244,6 +244,9 @@ struct NetBattleState {
     var events: [BattleEvent] = []
     var eventBatches: [NetBattleEventBatch] = []
     var isMetronome = false
+    /// 일반 대전은 기존 호환성을 위해 자동 출전한다. 토너먼트는 false로 두어 기절 뒤 참가자가
+    /// 남은 포켓몬을 직접 고르게 한다.
+    var automaticallyReplacesFainted = true
 
     var me: BattleSide {
         get { myTeam[myActive] }
@@ -260,12 +263,13 @@ struct NetBattleState {
     func canChoose(_ action: NetBattleAction, mine: Bool) -> Bool {
         let team = mine ? myTeam : oppTeam
         let active = mine ? myActive : oppActive
-        guard team.indices.contains(active), team[active].isAlive else { return false }
+        guard team.indices.contains(active) else { return false }
         switch action {
         case .move(let index):
-            return index == -1 ? team[active].mustStruggle : team[active].canUse(moveAt: index)
+            return team[active].isAlive
+                && (index == -1 ? team[active].mustStruggle : team[active].canUse(moveAt: index))
         case .metronome(let move):
-            return isMetronome && team[active].canUse(moveAt: 0)
+            return team[active].isAlive && isMetronome && team[active].canUse(moveAt: 0)
                 && move.id != 118 && move.id != 165 && MultiplayerValidation.validMoves([move])
         case .switchTo(let index):
             return team.indices.contains(index) && index != active && team[index].isAlive
@@ -363,12 +367,12 @@ struct NetBattleState {
         let bWiped = !teamB.contains(where: \.isAlive)
         // 자동 출전도 스트림에 남는다 — 재생기가 이 이벤트를 보고서야 표시 상태를 새 개체로
         // 갈아탄다. 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그린다.
-        if !aWiped, !teamA[activeA].isAlive,
+        if automaticallyReplacesFainted, !aWiped, !teamA[activeA].isAlive,
            let next = teamA.indices.first(where: { teamA[$0].isAlive }) {
             activeA = next
             turnEvents.append(.sendOut(.a, teamIndex: next))
         }
-        if !bWiped, !teamB[activeB].isAlive,
+        if automaticallyReplacesFainted, !bWiped, !teamB[activeB].isAlive,
            let next = teamB.indices.first(where: { teamB[$0].isAlive }) {
             activeB = next
             turnEvents.append(.sendOut(.b, teamIndex: next))

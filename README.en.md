@@ -32,7 +32,7 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 - **LAN battles** — discover people on the same local network with Bonjour, send a challenge, and have the other player accept it manually. A received challenge can raise a notification; during a battle the window stays pinned open.
 - **Practice and ranked battles** — practice against the CPU in 1v1, 3v3, or 6v6 with a chosen team and order. Ranked LAN battles normalize Pokémon to Lv.50; CPU practice uses the levels you raised.
 - **Battle rules** — type matchups, STAB, physical and special stats, accuracy, critical hits, PP, move priority, six status conditions, and confusion are supported.
-- **Gyms and stat stages** — challenge four type gyms in 3v3, with rewards for each first clear. Attack, Defense, Sp. Atk, Sp. Def, Speed, accuracy, and evasion can change during battle; switching resets those stages.
+- **Gyms and stat stages** — challenge eight type gyms in 3v3. Every first clear pays Star Pieces and one egg, and the Dragon Gym's egg is guaranteed to be uncommon or better. Clearing all eight grants one shiny egg charge. Attack, Defense, Sp. Atk, Sp. Def, Speed, accuracy, and evasion can change during battle; switching resets those stages.
 - **Team battles and turn playback** — LAN battles also use the team and order you choose. Resolved turns play step by step, with playback speed configurable in Settings.
 - **Online battle chat** — 1:1 LAN ranked battles and 2–4 player room battles include session-only chat independent of combat. The latest 50 messages stay in an internal scroll area; chat is disabled while battling a legacy 1:1 peer.
 - **Pokéathlon: Change Relay** — practice alone or race with up to four players on a local network. Run with `→`, switch lanes with `↑`/`↓`, avoid obstacles, and change Pokémon with `C`.
@@ -56,7 +56,7 @@ Choose a focus duration, track the partner's adventure, and claim the completed 
 <tr>
 <td width="55%" valign="middle">
 <h3>Your Pokémon and Pokédex</h3>
-Review your owned Pokémon, select a partner, check moves and experience, and see the species you have discovered.
+Review your owned Pokémon, select a partner, check moves and experience, and see the species you have discovered. Search by name to pull a Pokémon straight out of the box, team picker, or trade list.
 </td>
 <td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="180" alt="Pokédex collection"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="Pokémon collection log"></td>
 </tr>

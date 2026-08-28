@@ -4,6 +4,9 @@ struct PokemonTradeView: View {
     let store: CompanionStore
     let center: PokemonTradeCenter
     let onClose: () -> Void
+    @State private var remoteSearchText = ""
+    @State private var offerSearchText = ""
+    @State private var showsOfferPicker = false
 
     init(store: CompanionStore, center: PokemonTradeCenter, onClose: @escaping () -> Void = {}) {
         self.store = store
@@ -75,12 +78,17 @@ struct PokemonTradeView: View {
     }
 
     private func rosterPreview(peer: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let roster = center.remoteRoster.filter {
+            PokemonNameSearch.matches(remoteSearchText, names: [$0.displayName] +
+                                      PokemonNameSearch.names(for: $0.mon))
+        }
+        return VStack(alignment: .leading, spacing: 10) {
             Text(store.l.t("\(peer)님의 포켓몬", "\(peer)'s Pokémon", "\(peer)のポケモン"))
                 .font(.headline)
+            PokemonSearchField(text: $remoteSearchText, l: store.l)
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 92))], spacing: 8) {
-                    ForEach(center.remoteRoster, id: \.mon.id) { entry in
+                    ForEach(roster, id: \.mon.id) { entry in
                         VStack(spacing: 4) {
                             SpriteView(speciesID: entry.mon.presentationID, size: 48,
                                        shiny: entry.mon.isShiny)
@@ -133,7 +141,11 @@ struct PokemonTradeView: View {
     }
 
     private func negotiation(peer: String) -> some View {
-        VStack(spacing: 12) {
+        let remoteRoster = center.remoteRoster.filter {
+            PokemonNameSearch.matches(remoteSearchText, names: [$0.displayName] +
+                                      PokemonNameSearch.names(for: $0.mon))
+        }
+        return VStack(spacing: 12) {
             Text(store.l.t("\(peer)님과 교환", "Trading with \(peer)", "\(peer)と交換"))
                 .font(.headline)
             HStack(spacing: 14) {
@@ -148,9 +160,10 @@ struct PokemonTradeView: View {
                     Text(store.l.t("상대에게 원하는 포켓몬 요청", "Request a Pokémon",
                                    "相手に希望ポケモンを伝える"))
                         .font(.caption.bold())
+                    PokemonSearchField(text: $remoteSearchText, l: store.l)
                     ScrollView(.horizontal) {
                         HStack(spacing: 6) {
-                            ForEach(center.remoteRoster, id: \.mon.id) { entry in
+                            ForEach(remoteRoster, id: \.mon.id) { entry in
                                 Button {
                                     center.requestRemotePokemon(entry.mon.id)
                                 } label: {
@@ -211,12 +224,12 @@ struct PokemonTradeView: View {
                 Text(store.l.t("선택 전", "Not selected", "未選択")).foregroundStyle(.secondary)
             }
             if isMine {
-                Menu {
-                    ForEach(store.ownedMons, id: \.id) { mon in
-                        Button(monLabel(mon)) { center.selectOffer(mon) }
-                    }
-                } label: { Label(store.l.t("포켓몬 선택", "Choose Pokémon", "ポケモンを選ぶ"), systemImage: "chevron.down") }
-                .menuStyle(.borderlessButton)
+                Button { showsOfferPicker.toggle() } label: {
+                    Label(store.l.t("포켓몬 선택", "Choose Pokémon", "ポケモンを選ぶ"),
+                          systemImage: "chevron.down")
+                }
+                .buttonStyle(.borderless)
+                .popover(isPresented: $showsOfferPicker) { offerPicker }
             }
             Label(confirmed ? store.l.t("확인 완료", "Confirmed", "確認済み")
                             : store.l.t("확인 대기", "Waiting", "確認待ち"),
@@ -225,6 +238,33 @@ struct PokemonTradeView: View {
         }
         .padding(12).frame(maxWidth: .infinity, minHeight: 230)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var offerPicker: some View {
+        let mons = store.ownedMons.filter {
+            PokemonNameSearch.matches(offerSearchText, names: PokemonNameSearch.names(for: $0))
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            PokemonSearchField(text: $offerSearchText, l: store.l)
+            ScrollView {
+                LazyVStack(spacing: 4) {
+                    ForEach(mons, id: \.id) { mon in
+                        Button {
+                            center.selectOffer(mon)
+                            showsOfferPicker = false
+                        } label: {
+                            HStack {
+                                SpriteView(speciesID: mon.presentationID, size: 30, shiny: mon.isShiny)
+                                Text(monLabel(mon)).lineLimit(1)
+                                Spacer()
+                            }.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).padding(4)
+                    }
+                }
+            }
+        }
+        .padding(10).frame(width: 250, height: 300)
     }
 
     private func monLabel(_ mon: MonState) -> String {

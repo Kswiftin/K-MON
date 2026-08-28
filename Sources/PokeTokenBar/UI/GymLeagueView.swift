@@ -83,13 +83,23 @@ private struct GymRow: View {
     }
 }
 
-/// 체육관 줄의 보상 표시 — 난이도 점검 릴리즈에서는 별의조각만 보여 준다.
+/// 체육관 줄의 보상 표시 — 알의 보증 등급과 별의조각을 함께 보여 준다.
 private struct RewardLabel: View {
     let reward: GymReward
     let store: CompanionStore
 
     var body: some View {
         HStack(spacing: 4) {
+            if reward.eggs > 0 {
+                HStack(spacing: 1) {
+                    Text("🥚")
+                    if let tier = reward.eggGuarantee {
+                        Text(store.l.rarityLabel(tier))
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
+            }
             if reward.starPieces > 0 {
                 Text("⭐ \(GameNumberFormatter.compact(reward.starPieces))")
             }

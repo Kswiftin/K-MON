@@ -1796,18 +1796,21 @@ final class CompanionStore {
 
     // MARK: 체육관 첫 승리 보상
 
-    /// 체육관 승리 기록 — **첫 승리에만** 별의조각이 나간다. `gymBadges` 는 이전 저장 데이터와
-    /// 첫 승리 보상의 멱등성을 위한 내부 키로만 남기며, 난이도 점검 릴리즈에는 배지를 표시하거나
-    /// 완주 보상을 지급하지 않는다.
+    /// 체육관 승리 기록 — **첫 승리에만** 별의조각과 알이 나간다. 현행 리그는 기존 `gymBadges`와
+    /// 분리된 `gymLeagueBadges`를 써 이전 배지 기록과 겹치지 않는다. 배지는 표시하지 않지만,
+    /// 여덟 곳을 모두 이기면 이로치 확정 부화 1회가 더해진다.
     ///
     /// 멱등성이 이 함수의 전부다. 체육관은 몇 번이고 다시 갈 수 있게 열어 둘 참인데, 그러면
     /// 승리 지점을 반복해서 지나게 된다 — 졸업이 정확히 그 구조로 알을 무한히 뱉었다(#27→#34).
     /// 여기서는 내부 첫 승리 키가 가드다: 들어 있으면 아무것도 지급하지 않는다.
     @discardableResult
     func recordGymVictory(_ gym: Gym) -> GymReward? {
-        guard !state.gymBadges.contains(gym.id) else { return nil }
-        state.gymBadges.insert(gym.id)
-        let reward = gym.firstClearReward
+        guard !state.gymLeagueBadges.contains(gym.id) else { return nil }
+        state.gymLeagueBadges.insert(gym.id)
+        var reward = gym.firstClearReward
+        if state.gymLeagueBadges.count == GymLeague.catalog.count {
+            reward = reward.merging(GymLeague.completionReward)
+        }
         grantReward(reward)
         save()
         return reward
@@ -1926,6 +1929,18 @@ final class CompanionStore {
             state.eggTier = Self.strongerGuarantee(state.eggTier, reward.eggGuarantee)
         }
         state.shinyEggCharges = min(99, state.shinyEggCharges + reward.shinyCharges)
+    }
+
+    /// 토너먼트 우승 보상. 참가 인원에 따른 보증만 다르고 전설 보증은 만들지 않는다.
+    func grantTournamentEgg(_ reward: TournamentEggReward) {
+        guard state.focusEggs < 999 else { return }
+        state.focusEggs += 1
+        state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        state.eggTier = Self.strongerGuarantee(state.eggTier, reward.guarantee)
+        save()
+        notifyCompanionEvent(l.t("토너먼트 우승!", "Tournament Champion!", "トーナメント優勝！"),
+                             l.t("우승 보상 알이 도착했습니다.", "Your champion Egg has arrived.",
+                                 "優勝報酬のタマゴが届きました。"))
     }
 
     /// 이로치 확정을 **한 번 쓴다.** 남아 있으면 true 를 돌려주고 하나 깎는다.

@@ -1700,6 +1700,7 @@ private struct DexGridView: View {
     @State private var caughtOnly = true
     @State private var selectedType: PokemonType?
     @State private var page = 0
+    @State private var searchText = ""
 
     /// 선택한 칸 — 하단 줄에 희귀도를 띄우고, 이로치를 잡은 종이면 스프라이트를 그 색으로 바꾼다.
     @State private var selectedID: Int?
@@ -1720,12 +1721,16 @@ private struct DexGridView: View {
     var body: some View {
         // 종별 집계는 한 번만 훑고 하위로 넘긴다 — 칸마다 재집계하면 도감이 O(칸×도감) 이 된다.
         let all = store.dexSlots
-        let visible = all.filter { filter.matches($0, typesBySpecies: store.speciesTypes) }
+        let visible = all.filter {
+            filter.matches($0, typesBySpecies: store.speciesTypes) &&
+            PokemonNameSearch.matches(searchText, names: [$0.species?.name ?? "", "#\($0.id)"])
+        }
         let pageCount = max(1, (visible.count + Self.pageSize - 1) / Self.pageSize)
         let current = min(page, pageCount - 1)   // 보유 종이 줄어든 경우(필터 등) 범위 방어
         let slice = Array(visible.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 8) {
             header(all)
+            PokemonSearchField(text: $searchText, l: store.l)
             grid(slice)
             footer(visible, current: current, pageCount: pageCount)
         }
@@ -1737,6 +1742,7 @@ private struct DexGridView: View {
         .task { await store.backfillMissingDexTypes() }
         // 타입 필터가 읽는 종별 타입 표(전 종 1쿼리, 30일 디스크 캐시). 못 받으면 필터만 잠긴다.
         .task { await store.loadSpeciesTypeIndex() }
+        .onChange(of: searchText) { page = 0; selectedID = nil }
     }
 
     /// 희귀도 필터 — 로그와 같은 RarityTally 를 쓰되 개수는 **종 단위**다.
