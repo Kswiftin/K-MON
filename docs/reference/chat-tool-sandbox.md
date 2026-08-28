@@ -35,6 +35,11 @@ read_when:
 | `evolution.accept` | 없음 | **필요** | 대기 중인 진화를 수락 |
 | `companion.switch` | `roster.list` 가 찍은 인덱스 | **필요** | 다른 동료를 활성으로 |
 
+숫자를 말하지 않는 자리가 둘이다. 능력치는 활성 개체의 대화에서만 싣고, `challenge.status` 의
+`budget` 은 주인이 나와 있는 개체이고 타입까지 받았을 때만 숫자다(아니면 `unknown`) — 던전 예산은
+동행 타입으로 상성 보정을 받으므로 남의 타입이나 미로드 상태로 계산하면 **그럴듯하게 틀린 숫자**가
+된다. 빈 값은 모델이 말을 아끼게 하지만, 틀린 숫자는 안 들킨다.
+
 능력치 여섯 칸은 **도구가 아니다.** 프로필(시스템 프롬프트)이 타입·기술·다음 진화를 싣는 자리에
 같이 실린다 — 도구로 만들면 왕복 한 번과 광고 줄 하나를 더 쓰면서 같은 값을 준다. 개체의 값이라
 `chatProfile` 은 **활성 개체의 대화에서만** 채운다(`currentStats` 가 활성 개체의 레벨·성격으로
@@ -97,7 +102,12 @@ read_when:
 난 것으로 보인다(분을 버리지 않고 접는 것과 같은 이유). 지금 갈라 두는 사유:
 
 - `tool refused: no active companion` / `... not the active companion`
+- `pokedoro start refused: already in focus` / `... already in rest` — 화면은 타이머가 도는 동안
+  시작 피커를 **아예 안 그린다**. 휴식 단계도 `isRunning` 이고 그 구간엔 모험이 이미 정산돼 없으므로,
+  모험만 보는 게이트는 휴식을 조용히 덮어썼다 — 화면이 못 하는 일을 대화만 할 수 있었다.
 - `pokedoro start refused: adventure in progress` / `... adventure reward unclaimed`
+- `pokedoro stop refused: nothing running` — 아무것도 안 도는데 "집중을 끝냈어" 는 거짓이다
+  (`FocusTimer` 는 저장되지 않아 앱을 다시 연 직후가 항상 그 상태다).
 - `adventure none ready` · `evolution none pending` · `item <kind> unavailable`
 - `evolution refused: conditions no longer met` · `memory not recorded`
 

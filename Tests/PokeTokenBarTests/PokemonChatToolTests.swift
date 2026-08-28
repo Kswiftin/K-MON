@@ -928,6 +928,8 @@ final class PokemonChatToolTests: XCTestCase {
     func testChallengeStatusReportsTodaysDungeonBadgesAndMissions() async {
         let store = makeCompanionStore()
         await store.hatch(baseID: 25)
+        // 예산은 동행 타입으로 상성 보정을 받는다 — 타입이 없으면 아래 `unknown` 분기로 간다.
+        store.debugSetLoadedTypes([.electric], speciesID: 25)
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: makeAlbum(), lookup: Self.emptyLookup)
 
@@ -999,6 +1001,90 @@ final class PokemonChatToolTests: XCTestCase {
 
         XCTAssertEqual(chat.pendingProposal?.call, .pokedoroStart(minutes: 25))
         XCTAssertEqual(chat.pendingProposal?.companionID, active)
+    }
+
+    /// 예산은 **동행의 타입**으로 상성 보정을 받는다(`PuzzleDungeon.budget`). 그래서 두 경우에
+    /// 숫자를 말하면 안 된다: 타입을 아직 못 받았으면 보정이 빠진 값이고, 박스 개체 대화면 그건
+    /// 애초에 남의 숫자다. 이 PR 이 능력치에서 막은 것과 같은 부류다 — 빈 값은 화면이 자리를
+    /// 비우지만, 그럴듯하게 틀린 숫자는 안 들킨다.
+    func testChallengeBudgetIsUnknownWhenItWouldBeUnloadedOrSomeoneElses() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let active = store.activeMonID!
+        let boxed = Self.spareMon()
+        store.debugSetBoxedMons([boxed])
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        // (a) 타입 미로드 — 앱 기동 직후가 항상 이 상태다.
+        let unloaded = await toolbox.run(.challengeStatus, owner: active)
+        XCTAssertTrue(unloaded.line.contains("budget=unknown"), unloaded.line)
+
+        store.debugSetLoadedTypes([.electric], speciesID: 25)
+
+        // (b) 박스 개체 대화 — 활성 개체의 상성으로 계산된 값을 그 아이 것처럼 말하면 안 된다.
+        let boxedLine = await toolbox.run(.challengeStatus, owner: boxed.id)
+        XCTAssertTrue(boxedLine.line.contains("budget=unknown"), boxedLine.line)
+
+        // (c) 주인이고 타입도 있으면 숫자를 말한다 — 가드가 넓게 걸리면 예산이 영영 unknown 이다.
+        let loaded = await toolbox.run(.challengeStatus, owner: active)
+        XCTAssertTrue(loaded.line.contains("budget=\(store.dungeonBudget(usedItem: false))"), loaded.line)
+    }
+
+    /// 화면은 타이머가 도는 동안 시작 피커를 아예 안 그린다. 휴식 단계도 `isRunning` 이라 그 구간이
+    /// 포함되는데, 모험은 이미 정산돼 `activeAdventure` 가 nil 이다 — 모험만 보던 게이트는 그
+    /// 구간을 통과시켜 **휴식을 조용히 덮어썼다.**
+    func testFocusStartRefusesWhileTheTimerIsAlreadyRunning() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let timer = FocusTimer()
+        let toolbox = PokemonChatToolbox(timer: timer, companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+
+        let duringFocus = await toolbox.runAsActive(.pokedoroStart(minutes: 50))
+        XCTAssertFalse(duringFocus.succeeded)
+        XCTAssertEqual(duringFocus.line, "pokedoro start refused: already in focus")
+        XCTAssertEqual(timer.focusMinutes, 25, "돌고 있는 세션을 덮어썼다")
+
+        // 휴식 단계 — 모험은 없고 타이머만 돈다. 모험만 보는 게이트는 여기를 못 막는다.
+        timer.stopFocusSession(companion: store)
+        timer.startRest()
+        XCTAssertNil(store.activeAdventure, "전제: 휴식 구간엔 나가 있는 모험이 없다")
+
+        let duringRest = await toolbox.runAsActive(.pokedoroStart(minutes: 25))
+        XCTAssertFalse(duringRest.succeeded)
+        XCTAssertEqual(duringRest.line, "pokedoro start refused: already in rest")
+        XCTAssertEqual(timer.phase, .rest, "휴식을 끊고 집중을 시작했다")
+    }
+
+    /// 아무것도 안 돌아가는데 "집중을 끝냈어. 수고했어!" 가 뜨면 그건 거짓이다. `FocusTimer` 는
+    /// 저장되지 않으므로 앱을 다시 연 직후가 항상 이 상태다.
+    func testStoppingRefusesWhenNothingIsRunning() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        let refused = await toolbox.runAsActive(.pokedoroStop)
+
+        XCTAssertFalse(refused.succeeded)
+        XCTAssertEqual(refused.line, "pokedoro stop refused: nothing running")
+    }
+
+    /// 종료는 끝난 모험을 정산한다(`stopFocusSession`). 그러면 카드가 **정산도** 말해야 한다 —
+    /// "취소돼" 만 적힌 카드를 승인했는데 지갑이 늘면, 사용자는 자기가 무엇을 승인했는지 모른다.
+    /// 사후 문구가 아니라 카드에 적는 이유는, 승인 전에 알아야 승인의 뜻이 있기 때문이다.
+    func testStopApprovalCardNamesBothTheSettlementAndTheCancellation() {
+        let stop = PokemonChatToolCall.pokedoroStop
+        // 낱말이 아니라 **뜻**을 단언한다. "보상 없이 취소돼" 에도 '보상'·'취소' 가 들어 있어,
+        // 낱말만 보면 정산을 말하지 않는 옛 문구에서도 통과한다(실제로 그랬다).
+        for (language, reward, loss) in [(AppLanguage.ko, "끝난 모험", "취소"),
+                                         (.en, "finished", "cancel"), (.ja, "終わった", "取り消")] {
+            let question = stop.approvalQuestion(language)
+            XCTAssertTrue(question.contains(reward), "\(language.rawValue): \(question)")
+            XCTAssertTrue(question.contains(loss), "\(language.rawValue): \(question)")
+        }
     }
 
     private static func dexEntry(chain: [Int], types: [PokemonType]? = nil, shiny: Bool = false) -> DexEntry {

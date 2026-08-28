@@ -131,14 +131,14 @@ enum PokemonChatToolCall: Equatable, Sendable {
                                  "Shall we start a \(minutes)-minute focus session?",
                                  "\(minutes)分の集中を始める？")
         case .pokedoroStop:
-            // 잃는 것을 말한다. 집중을 끝내면 진행 중인 모험이 보상 없이 취소되는데
-            // (`cancelFocusAdventure`), "끝낼까?" 만 물으면 사용자는 무엇을 승인하는지 모른다.
-            // **"진행 중" 이 문장의 전부다** — 끝나서 정산만 기다리는 모험은 `stopFocusSession` 이
-            // 먼저 정산하므로 이 문구가 참이다. 그 정산을 떼면 이 문장이 거짓이 되고, 사용자는
-            // 손실이 없다고 읽은 채 보상을 태운다.
-            return L(language).t("집중을 끝낼까? 진행 중인 모험은 보상 없이 취소돼.",
-                                 "Shall we stop the focus session? An adventure still out is cancelled with no reward.",
-                                 "集中を終える？進行中の冒険は報酬なしで取り消されるよ。")
+            // 종료가 하는 일 **둘 다** 적는다. `stopFocusSession` 은 끝난 모험을 정산하고
+            // (`claimAdventure`) 아직 나가 있는 모험만 취소한다(`cancelFocusAdventure`).
+            // 한쪽만 적으면 승인한 것과 실제가 갈라진다 — "취소돼" 만 읽고 눌렀는데 지갑이 늘거나,
+            // 반대로 보상이 조용히 사라진다. 결과 문구가 아니라 **카드**에 적는 이유는, 승인 전에
+            // 알아야 승인의 뜻이 있어서다.
+            return L(language).t("집중을 끝낼까? 끝난 모험 보상은 챙기고, 아직 나가 있는 모험은 취소돼.",
+                                 "Shall we stop the focus session? A finished adventure's reward is collected; one still out is cancelled.",
+                                 "集中を終える？終わった冒険の報酬は受け取って、まだ出ている冒険は取り消されるよ。")
         case .adventureClaim:
             return L(language).t("모험 보상을 받아 올까?",
                                  "Shall we collect the adventure reward?",
@@ -370,11 +370,17 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             // 총량은 카탈로그에서 읽는다 — 숫자를 여기 적으면 콘텐츠가 늘 때 이 줄만 옛말이 된다.
             let missions = companion.missionRows
             let done = missions.filter { $0.progress >= $0.mission.target }.count
+            // 예산은 **동행의 타입**으로 상성 보정을 받는다(`PuzzleDungeon.budget`). 그래서 두 경우엔
+            // 숫자를 말하지 않는다: 타입을 아직 못 받았으면 보정이 빠진 값이고(기동 직후가 그렇다),
+            // 이 대화의 주인이 나와 있는 개체가 아니면 애초에 남의 숫자다. 능력치와 같은 규칙이며,
+            // 빈 값은 모델이 말을 아끼게 하지만 그럴듯하게 틀린 숫자는 안 들킨다.
+            let budget = owner == companion.activeMonID && !companion.currentTypes.isEmpty
+                ? String(companion.dungeonBudget(usedItem: false)) : "unknown"
             // 예산은 `dungeonBudgetPreview` 가 아니라 **맨몸 값**이다. 미리보기는 "먹는샘물이 가방에
             // 있으면 마신다" 를 가정해 +3 이 붙는데(화면은 그 토글 옆이라 뜻이 분명하다), 대화에는
             // 그 맥락이 없어 모델이 실제보다 높은 숫자를 사실로 말하게 된다.
             return ("challenge dungeon=\(companion.dungeonCleared ? "cleared" : "open")"
-                    + " budget=\(companion.dungeonBudget(usedItem: false))"
+                    + " budget=\(budget)"
                     + " badges=\(companion.earnedGymBadges.count)/\(GymLeague.catalog.count)"
                     + " missions=\(done)/\(missions.count)", true)
 
@@ -436,17 +442,33 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             return ("adventure claimed stardust=\(stardust) exp=\(reward.experience) eggs=\(reward.bonusEggs)", true)
 
         case .pokedoroStart(let minutes):
+            // 화면은 타이머가 도는 동안 시작 피커를 **아예 안 그린다**(`FocusTimerView`). 휴식 단계도
+            // `isRunning` 이고 그 구간엔 모험이 이미 정산돼 없으므로, 모험만 보는 게이트는 휴식을
+            // 조용히 덮어썼다 — 화면이 못 하는 일을 대화만 할 수 있었다.
+            guard !timer.isRunning else {
+                return ("pokedoro start refused: already in \(timer.phase.rawValue)", false)
+            }
             // 나가 있는 모험이 있으면 화면도 시작 버튼을 내주지 않는다(`FocusTimerView`). 사유를
             // 갈라 주면 모델이 다음 수(정산)로 이어 갈 수 있다 — 뭉개면 같은 호출만 반복한다.
             if companion.activeAdventure != nil {
                 let reason = companion.isAdventureInProgress ? "in progress" : "reward unclaimed"
                 return ("pokedoro start refused: adventure \(reason)", false)
             }
+            // 지금은 도달할 수 없다 — 주인 게이트가 `state.active != nil`(→ `currentSpeciesID`
+            // 비-nil)을, 위 검사가 `state.adventure == nil` 을 보장해 `startFocusAdventure` 의
+            // guard 두 조건이 모두 참이다. 그래도 남긴다: 조건이 하나 늘면 이 자리가 유일한
+            // 방어이고, 지우면 그때 실패가 **아무 말 없이** 성공으로 보고된다.
             guard timer.startFocusSession(minutes: minutes, companion: companion) else {
                 return ("pokedoro start refused", false)
             }
             return (statusLine(), true)
         case .pokedoroStop:
+            // 아무것도 안 돌아가는데 "집중을 끝냈어. 수고했어!" 가 뜨면 그건 거짓이다. `FocusTimer` 는
+            // 저장되지 않으므로 앱을 다시 연 직후가 항상 이 상태다. 모험만 남은 경우는 끝낼 것이
+            // 있다 — 종료가 그 정산을 맡는다.
+            guard timer.isRunning || companion.activeAdventure != nil else {
+                return ("pokedoro stop refused: nothing running", false)
+            }
             timer.stopFocusSession(companion: companion)
             return (statusLine(), true)
         }
