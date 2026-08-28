@@ -381,7 +381,7 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             // 그 맥락이 없어 모델이 실제보다 높은 숫자를 사실로 말하게 된다.
             return ("challenge dungeon=\(companion.dungeonCleared ? "cleared" : "open")"
                     + " budget=\(budget)"
-                    + " badges=\(companion.earnedGymBadges.count)/\(GymLeague.catalog.count)"
+                    + " gym_types=\(GymLeague.catalog.count)"
                     + " missions=\(done)/\(missions.count)", true)
 
         case .itemUse(let kind):

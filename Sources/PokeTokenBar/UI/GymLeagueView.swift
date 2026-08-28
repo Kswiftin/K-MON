@@ -67,7 +67,7 @@ private struct GymRow: View {
         }
         .padding(7)
         .background(RoundedRectangle(cornerRadius: 8)
-            .fill(Color.primary.opacity(earned ? 0.07 : 0.03)))
+            .fill(Color.primary.opacity(0.03)))
     }
 }
 
