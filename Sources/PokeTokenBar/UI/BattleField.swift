@@ -912,7 +912,6 @@ struct BattleLogRow: View {
         }
         .foregroundStyle(moveType.battleLabelColor)
         .padding(.horizontal, 5)
-        .padding(.vertical, 1)
         .background(moveType.battleColor, in: Capsule())
     }
 }
