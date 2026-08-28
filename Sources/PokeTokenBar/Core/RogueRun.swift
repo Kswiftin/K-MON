@@ -82,12 +82,40 @@ struct RogueRun: Sendable {
         return isBoss(wave: wave) ? tier + 60 : tier
     }
 
+    static func baseStatTotal(_ stats: BattleStats) -> Int {
+        stats.hp + stats.atk + stats.def + stats.spa + stats.spd + stats.spe
+    }
+
     /// 하한은 상한의 60% — 없으면 최종 보스로 잉어킹(200)이 나온다.
     static func isFairOpponent(baseStats: BattleStats, wave: Int) -> Bool {
-        let total = baseStats.hp + baseStats.atk + baseStats.def
-            + baseStats.spa + baseStats.spd + baseStats.spe
+        let total = baseStatTotal(baseStats)
         let cap = baseStatTotalCap(wave: wave)
         return total <= cap && total >= cap * 3 / 5
+    }
+
+    /// 야생 추첨 범위 — 5세대까지.
+    static let wildSpeciesPool = 1...649
+    /// 스타터 후보 — 1·2세대 기본형 고정 풀(진화 루트 조회를 아직 안 탄다).
+    static let starterPool = [1, 4, 7, 25, 152, 155, 158]
+    /// 한 웨이브에서 종을 다시 뽑아 보는 횟수. 늘릴수록 PokeAPI 왕복이 그만큼 늘어난다.
+    static let wildDrawAttempts = 8
+
+    /// 웨이브에 맞는 상대 하나를 고른다. 후보를 하나씩 받아 티어에 들면 즉시 채택하고, 다 어긋나면
+    /// 그중 **가장 약한 것**을 쓴다 — 판을 못 여는 것보다 낫다.
+    ///
+    /// 규칙이 여기 있는 이유는 **앱과 시뮬레이터가 같은 규칙을 봐야** 하기 때문이다. 화면 쪽에
+    /// 두면 밸런스를 재는 판과 실제로 도는 판이 서로 다른 상대를 뽑는다.
+    static func chooseOpponent(wave: Int, attempts: Int = wildDrawAttempts,
+                               next: sending () async -> BattleSnapshot?) async -> BattleSnapshot? {
+        var weakest: BattleSnapshot?
+        for _ in 0..<attempts {
+            guard let candidate = await next() else { continue }
+            if isFairOpponent(baseStats: candidate.base, wave: wave) { return candidate }
+            if weakest.map({ baseStatTotal($0.base) > baseStatTotal(candidate.base) }) ?? true {
+                weakest = candidate
+            }
+        }
+        return weakest
     }
 
     /// 포획 확률 — 본가 1세대의 HP 계수 `(3·최대 − 2·현재) / 3·최대` 에 상태이상 보정을 곱한다.

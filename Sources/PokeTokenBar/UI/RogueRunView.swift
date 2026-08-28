@@ -21,9 +21,6 @@ struct RogueRunView: View {
 
     @State private var setup: Setup = .loading
 
-    /// 스타터 후보 — 프로토타입은 1세대 기본형에서 고정 풀로 뽑는다(진화 루트 조회를 아직 안 탄다).
-    private static let starterPool = [1, 4, 7, 25, 152, 155, 158]
-    private static let wildPool = 1...649
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -262,7 +259,7 @@ struct RogueRunView: View {
 
     private func loadStarters() async {
         var built: [BattleSnapshot] = []
-        for speciesID in Self.starterPool.shuffled().prefix(3) {
+        for speciesID in RogueRun.starterPool.shuffled().prefix(3) {
             if let snapshot = await Self.snapshot(speciesID: speciesID, level: 5, store: store) {
                 built.append(snapshot)
             }
@@ -305,24 +302,13 @@ struct RogueRunView: View {
     // MARK: 상대 만들기
 
     /// 웨이브에 맞는 야생 하나. 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹이 나오므로
-    /// **종족값 합이 웨이브 티어에 드는 종만** 받는다(`RogueRun.isFairOpponent`). 뽑기는 몇 번만
-    /// 돌리고, 다 어긋나면 그중 가장 약한 종으로 간다 — 판을 못 여는 것보다 낫다.
-    private static let wildDrawAttempts = 8
-
+    /// 채택 규칙은 코어(`RogueRun.chooseOpponent`)가 든다 — 시뮬레이터와 같은 규칙을 써야 한다.
     private static func wild(wave: Int, store: CompanionStore) async -> BattleSnapshot? {
         let level = RogueRun.opponentLevel(wave: wave)
-        var weakest: BattleSnapshot?
-        for _ in 0..<wildDrawAttempts {
-            guard let candidate = await snapshot(speciesID: Int.random(in: wildPool),
-                                                 level: level, store: store) else { continue }
-            if RogueRun.isFairOpponent(baseStats: candidate.base, wave: wave) { return candidate }
-            if weakest.map({ total($0.base) > total(candidate.base) }) ?? true { weakest = candidate }
+        return await RogueRun.chooseOpponent(wave: wave) {
+            await snapshot(speciesID: Int.random(in: RogueRun.wildSpeciesPool),
+                           level: level, store: store)
         }
-        return weakest
-    }
-
-    private static func total(_ stats: BattleStats) -> Int {
-        stats.hp + stats.atk + stats.def + stats.spa + stats.spd + stats.spe
     }
 
     private static func snapshot(speciesID: Int, level: Int,
