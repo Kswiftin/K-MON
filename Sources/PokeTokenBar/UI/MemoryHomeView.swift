@@ -114,6 +114,7 @@ struct MemoryHomeView: View {
     @State private var validationMessage: String?
     @State private var showingVisits = false
     @State private var showingDiary = false
+    @State private var showingPokeLog = false
     @State private var showingPublicNicknameEditor = false
     @State private var publicNicknameDraft = ""
     @State private var publicNicknameError: String?
@@ -147,6 +148,10 @@ struct MemoryHomeView: View {
                     Label(l.t("다이어리", "Diary", "ダイアリー"), systemImage: "book.closed")
                 }
                 .accessibilityLabel(l.t("날짜별 다이어리", "Diary by date", "日付ごとのダイアリー"))
+                Button { showingPokeLog = true } label: {
+                    Label("POKÉLOG", systemImage: "heart.text.square")
+                }
+                .accessibilityLabel(l.t("동행 포케로그", "Companion Pokélog", "相棒のポケログ"))
                 Spacer()
                 Menu {
                     Button(l.t("공개 닉네임 편집", "Edit public nickname", "公開ニックネームを編集")) {
@@ -271,6 +276,10 @@ struct MemoryHomeView: View {
         .sheet(isPresented: $showingDiary) {
             MemoryHomeDiarySheet(days: album.diary(for: mon.id), language: l,
                                  locale: store.language.displayLocale)
+        }
+        .sheet(isPresented: $showingPokeLog) {
+            MemoryHomePokeLogSheet(log: album.pokeLog(for: mon.id), language: l,
+                                   locale: store.language.displayLocale)
         }
         .alert(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), isPresented: $showingPublicNicknameEditor) {
             TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: $publicNicknameDraft)
@@ -482,6 +491,34 @@ struct MemoryHomeView: View {
         case .conversation: return l.t("대화", "Conversation", "会話")
         case .manual: return l.t("내 기록", "Note", "メモ")
         }
+    }
+}
+
+private struct MemoryHomePokeLogSheet: View {
+    let log: MemoryHomePokeLog
+    let language: L
+    let locale: Locale
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("POKÉLOG").font(.headline); Spacer(); Button(language.t("닫기", "Close", "閉じる")) { dismiss() } }
+            if let first = log.firstMetAt {
+                Text(language.t("처음 만난 날 ", "First met ", "出会った日 ") + first.formatted(.dateTime.locale(locale).year().month(.abbreviated).day()))
+            }
+            if let event = log.firstMeetingMethod {
+                Text(language.t("처음 만난 방법: ", "How we met: ", "出会ったきっかけ: ") + event.body)
+            }
+            Text(language.t("함께한 \(log.daysTogether)일 · 집중 \(log.completedFocusSessions)회 · 기억 \(log.memoryCount)개",
+                            "\(log.daysTogether) days together · \(log.completedFocusSessions) focus sessions · \(log.memoryCount) memories",
+                            "一緒に \(log.daysTogether) 日・集中 \(log.completedFocusSessions) 回・思い出 \(log.memoryCount) 件"))
+            HStack(spacing: 3) { ForEach(0..<5, id: \.self) { Text($0 < log.closenessHearts ? "♥" : "♡").foregroundStyle(PokedoroTheme.red) } }
+                .accessibilityLabel(language.t("친밀도 \(log.closenessHearts) / 5", "Closeness \(log.closenessHearts) of 5", "なかよし度 \(log.closenessHearts) / 5"))
+            Text(language.t("기록", "Our record", "ふたりの記録")).font(.subheadline.weight(.semibold))
+            ScrollView { VStack(alignment: .leading, spacing: 5) { ForEach(log.milestones) { Text("· " + MemoryHomeCardStyle.title($0, language)) .font(.caption) } } }
+            Text(language.t("친밀도는 함께한 기록을 읽어 보여 주는 표시이며 성장이나 진화에는 영향을 주지 않습니다.", "Closeness is a read-only keepsake and never affects growth or evolution.", "なかよし度は記録を読むための表示で、成長や進化には影響しません。"))
+                .font(.caption).foregroundStyle(.secondary)
+        }.padding().frame(minWidth: 360, minHeight: 320)
     }
 }
 

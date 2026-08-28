@@ -252,6 +252,18 @@ struct MemoryHomeDiaryDay: Identifiable, Sendable, Equatable {
     let memories: [PokemonMemory]
 }
 
+/// POKÉLOG is a read-time view of the existing album.  It deliberately owns no save key:
+/// closeness is a keepsake, never a second friendship stat.
+struct MemoryHomePokeLog: Sendable, Equatable {
+    let firstMetAt: Date?
+    let firstMeetingMethod: PokemonMemory?
+    let daysTogether: Int
+    let memoryCount: Int
+    let completedFocusSessions: Int
+    let closenessHearts: Int
+    let milestones: [PokemonMemoryMilestone]
+}
+
 struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     /// The only owner-controlled name that may be advertised on the local network. `nil`
     /// identifies a pre-nickname album and is filled once from the trainer name.
@@ -516,6 +528,19 @@ final class PokemonMemoryAlbum {
     }
     func firstRecordedAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstRecordedAt }
     func firstMetAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstMetAt }
+    func pokeLog(for companionID: UUID, now: Date = Date()) -> MemoryHomePokeLog {
+        let entries = entries(for: companionID)
+        let firstMet = firstMetAt(for: companionID)
+        let days = firstMet.map { max(0, Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0) } ?? 0
+        let sessions = milestoneStates[companionID]?.completedFocusSessionCount ?? 0
+        // A five-heart display is intentionally a bounded blend of three already-persisted facts.
+        let hearts = min(5, max(0, 1 + days / 30 + sessions / 10 + entries.count / 40))
+        return MemoryHomePokeLog(firstMetAt: firstMet,
+                                 firstMeetingMethod: entries.filter { $0.source == .event }.min { $0.createdAt < $1.createdAt },
+                                 daysTogether: days, memoryCount: entries.count,
+                                 completedFocusSessions: sessions, closenessHearts: hearts,
+                                 milestones: milestones(for: companionID, now: now))
+    }
     func recordFirstMeeting(companionID: UUID, at date: Date) {
         var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
         guard state.firstMetAt == nil || date < state.firstMetAt! else { return }
