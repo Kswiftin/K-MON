@@ -12,6 +12,9 @@ struct Gym: Identifiable, Sendable, Equatable {
     /// langCode → 관장 이름.
     let names: [String: String]
     let teamSpeciesIDs: [Int]
+    /// 체육관 타입 밖에서 마지막에 나오는 전설 에이스. 단일 약점 타입으로 팀을 쓸어버리는 것을
+    /// 막기 위한 예외이며, 있으면 반드시 `teamSpeciesIDs`의 마지막 종과 같다.
+    let aceSpeciesID: Int? = nil
     /// 관장이 쓸 기술(PokéAPI move 이름), 팀 순서와 같다.
     ///
     /// 자동 선발(`moveSet`)에 맡기지 않는 이유: 그쪽은 "레벨 이하 습득 기술 중 최근 8개 → 변화기
@@ -22,8 +25,7 @@ struct Gym: Identifiable, Sendable, Equatable {
     /// 이름이 틀리면 그 종만 자동 선발로 돌아간다 — 배틀이 서지는 않는다.
     /// 이름·위력·상태이상은 `scripts/verify-gym-catalog.sh` 로 확인한다.
     let teamMoveNames: [[String]]
-    /// 관장 팀 레벨 — 도전자에 맞춰 움직이지 않는다. 맞추면 언제 가도 같은 난이도라 키운 보람이
-    /// 드러나지 않는다. 값은 `GymLeague.leaderLevel` 로 **모든 체육관이 같다**(그 상수의 주석 참고).
+    /// 관장 팀의 최소 레벨. 실제 전투에서는 선택 팀 평균보다 3 높은 값과 이 값 중 큰 쪽을 쓴다.
     let level: Int
     /// 첫 승리에만 나가는 보상. 재도전은 연습이지 수입이 아니다.
     let firstClearReward: GymReward
@@ -60,7 +62,7 @@ struct GymReward: Sendable, Equatable {
 }
 
 enum GymLeague {
-    /// 모든 관장이 서는 레벨. **체육관마다 다르게 두지 않는다.**
+    /// 모든 관장이 서는 최소 레벨. **체육관마다 다르게 두지 않는다.**
     ///
     /// 이 엔진에서 레벨은 데미지에 두 번 들어간다 — 레벨 계수 `(2*level/5+2)` 와 유효 스탯
     /// `(2*base+31)*level/100+5`. 둘이 곱해져 차이가 제곱에 가깝게 벌어진다: 종족값 100 기준
@@ -69,7 +71,8 @@ enum GymLeague {
     ///
     /// 그래서 레벨 사다리는 "권장 순서" 가 아니라 **순서 강제**이고, 이 컨텐츠의 공략인
     /// "상성 유리한 타입을 키워서 간다" 를 통째로 덮는다 — 상성은 레벨이 비슷할 때만 변수다.
-    /// 레벨을 맞추고, 난이도는 관장 팀의 종족값·복합타입·기술로 낸다.
+    /// 다만 Lv.50 이상 팀이 Lv.30 관장을 한 방에 정리하는 것도 난이도가 아니다. 선택 팀 평균보다
+    /// 3 높은 선에서 맞춰 키운 보람은 남기되, 타입 상성이 전부를 결정하지 않게 한다.
     ///
     /// 30 인 이유: 개체를 졸업시키고 다음으로 넘어가는 대역이 그쯤이라, 체육관에 데려갈 만한
     /// 개체가 쌓이는 시점과 맞는다(졸업한 개체도 박스에서 출전한다). 3마리를 모을 즈음이면
@@ -87,16 +90,15 @@ enum GymLeague {
     static let catalog: [Gym] = [
         Gym(type: .bug,
             names: ["ko": "벌레 체육관", "en": "Bug Gym", "ja": "むしジム"],
-            // 어위르 · 슈바르고 · 메가야느 · 게노세크트(전설). 종족값 495~515 셋 뒤에 600 을 세워
-            // 마지막 상대가 확실히 더 세지게 한다 — 순서 자체가 "지금까지완 다르다" 는 신호다.
-            teamSpeciesIDs: [617, 589, 469, 649],
+            // 아라콰나이드 · 불카모스 · 갑주무사 · 히드런(전설 에이스). 이전 팀은 넷 모두 불꽃에
+            // 약해 불꽃 포켓몬 하나에게 끝났다. 앞 셋은 불꽃에 중립, 히드런은 불꽃을 흡수한다.
+            teamSpeciesIDs: [752, 637, 768, 485],
+            aceSpeciesID: 485,
             teamMoveNames: [
-                ["bug-buzz", "energy-ball", "sludge-bomb", "giga-drain"],
-                ["iron-head", "x-scissor", "drill-run", "poison-jab"],
-                ["bug-buzz", "air-slash", "shadow-ball", "giga-drain"],
-                // 벌레/강철 특수 STAB 둘 + 불꽃·전기 코버리지. 게노세크트 특유의 테크노버스터는 부여받는
-                // 드라이브로 타입이 바뀌는데(이 엔진엔 그 축이 없다) 빼고 확실한 4기로 채운다.
-                ["bug-buzz", "flash-cannon", "flamethrower", "thunderbolt"],
+                ["liquidation", "leech-life", "crunch", "poison-jab"],
+                ["fiery-dance", "bug-buzz", "psychic", "giga-drain"],
+                ["liquidation", "leech-life", "sucker-punch", "drill-run"],
+                ["magma-storm", "earth-power", "flash-cannon", "dark-pulse"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 500)),
@@ -181,14 +183,14 @@ enum GymLeague {
             firstClearReward: GymReward(starPieces: 5_000)),
         Gym(type: .dragon,
             names: ["ko": "드래곤 체육관", "en": "Dragon Gym", "ja": "ドラゴンジム"],
-            // 망나뇽 · 액스라이즈 · 삼삼드래 · 레쿠쟈(전설). 후반 체육관답게 540~680 종족값과
-            // 광범위한 커버리지를 갖췄지만, 얼음·페어리 상성으로 공략할 길은 남긴다.
-            teamSpeciesIDs: [149, 612, 635, 384],
+            // 킹드라 · 드래캄 · 두랄루돈 · 디아루가(전설). 이전 팀은 얼음·페어리에 전원이 약했다.
+            // 강철 드래곤 둘은 두 타입을 중립으로 받아, 약점 하나로 끝나지 않는 막판전을 만든다.
+            teamSpeciesIDs: [230, 691, 884, 483],
             teamMoveNames: [
-                ["dragon-claw", "earthquake", "fire-punch", "ice-punch"],
-                ["dragon-claw", "earthquake", "poison-jab", "night-slash"],
-                ["dragon-pulse", "dark-pulse", "flamethrower", "flash-cannon"],
-                ["dragon-pulse", "air-slash", "flamethrower", "thunderbolt"],
+                ["hydro-pump", "dragon-pulse", "ice-beam", "flash-cannon"],
+                ["sludge-bomb", "dragon-pulse", "thunderbolt", "hydro-pump"],
+                ["flash-cannon", "dragon-pulse", "thunderbolt", "dark-pulse"],
+                ["dragon-pulse", "flash-cannon", "thunderbolt", "earth-power"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 6_000)),
@@ -196,6 +198,15 @@ enum GymLeague {
 
     /// 배지 키로 되찾기 — 세이브에 남은 건 키뿐이라, 화면이 이름·타입을 그릴 때 거쳐 간다.
     static func gym(id: String) -> Gym? { catalog.first { $0.id == id } }
+
+    /// 관장은 최소 Lv.30 이고, 그보다 높은 선택 팀에는 평균 레벨보다 3 높게 맞춘다. 평균은
+    /// 특정 한 마리만 과도하게 키워 전체 관장을 끌어올리지 않도록 팀 전체에서 계산한다.
+    static func opponentLevel(for challengerLevels: [Int]) -> Int {
+        let levels = challengerLevels.filter { (1...100).contains($0) }
+        guard !levels.isEmpty else { return leaderLevel }
+        let average = levels.reduce(0, +) / levels.count
+        return min(100, max(leaderLevel, average + 3))
+    }
 
     /// 관장 팀 크기. 도전자도 같은 수로 맞춰 내보낸다 — 머릿수가 다르면 이겨도 진 것 같다.
     /// 3 → 4 (타입별 전설 포켓몬 추가, 2026-08). 마지막 자리를 전설이 차지하므로 도전자도

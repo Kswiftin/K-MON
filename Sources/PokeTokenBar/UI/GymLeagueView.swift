@@ -57,7 +57,7 @@ private struct GymRow: View {
                 .background(Capsule().fill(Color.accentColor.opacity(0.55)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(gym.leaderName(store.language)).font(.caption.bold()).lineLimit(1)
-                Text(store.l.gymLeaderLevel(gym.level))
+                Text(store.l.gymLeaderLevel(gym.level) + "+")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)

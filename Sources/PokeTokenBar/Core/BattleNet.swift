@@ -969,6 +969,7 @@ final class BattleCenter {
             guard let myTeam = await battleTeamSnapshots(size: GymLeague.teamSize) else {
                 phase = .ready; lastError = l.battleStatsFailed; return
             }
+            let leaderLevel = GymLeague.opponentLevel(for: myTeam.map(\.level))
             var leaderTeam: [BattleSnapshot] = []
             for (slot, speciesID) in gym.teamSpeciesIDs.enumerated() {
                 guard let profile = await battleProfileLoader(speciesID) else { continue }
@@ -979,12 +980,12 @@ final class BattleCenter {
                     if let spec = await moveDetailLoader(name) { moves.append(spec) }
                 }
                 if moves.isEmpty {
-                    moves = await moveSetLoader(speciesID, gym.level, profile.types)
+                    moves = await moveSetLoader(speciesID, leaderLevel, profile.types)
                 }
                 let name = await companion.resolveSpeciesName(speciesID)
                 leaderTeam.append(BattleSnapshot(speciesID: speciesID, name: name,
                                                  trainer: gym.leaderName(companion.language),
-                                                 level: gym.level, nature: nil, isShiny: false,
+                                                 level: leaderLevel, nature: nil, isShiny: false,
                                                  types: profile.types, base: profile.stats, moves: moves,
                                                  ability: profile.abilitySlug,
                                                  weightHectograms: profile.weightHectograms))
