@@ -97,6 +97,7 @@ struct RogueRunView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(l.t("첫 포켓몬을 고른다", "Pick your starter", "最初のポケモンを選ぶ"))
                 .font(.caption).foregroundStyle(.secondary)
+            recordLine
             HStack(spacing: 10) {
                 ForEach(candidates, id: \.speciesID) { candidate in
                     Button { Task { await start(with: candidate) } } label: {
@@ -373,9 +374,33 @@ struct RogueRunView: View {
     private func ending(_ line: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(line).font(.callout)
+            recordLine
             // 끝난 판은 여기서 비운다 — 남겨 두면 다음에 던전 탭을 열 때 결과 화면이 다시 뜬다.
             Button(l.battleClose) { store.rogueRun = nil; onClose() }
         }
+        .task { recordResult() }
+    }
+
+    /// 판 밖으로 남는 것 — 최고 도달 웨이브와 클리어 횟수. 판마다 사라지는 게임이라 이 줄이 없으면
+    /// 여러 판을 돌린 것이 화면 어디에도 남지 않는다.
+    @ViewBuilder
+    private var recordLine: some View {
+        let progress = store.runProgress
+        if progress.finished > 0 {
+            Text(l.t("최고 웨이브 \(progress.bestWave)/\(RogueRun.finalWave) · 클리어 \(progress.clears)회 · 판 \(progress.finished)회",
+                     "Best wave \(progress.bestWave)/\(RogueRun.finalWave) · \(progress.clears) cleared · \(progress.finished) runs",
+                     "最高ウェーブ \(progress.bestWave)/\(RogueRun.finalWave) · クリア \(progress.clears)回 · \(progress.finished)回"))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    /// 끝난 판을 실적에 적는다. **판 하나는 한 번만 센다** — 결과 화면은 팝오버를 여닫을 때마다
+    /// 다시 그려지므로, 플래그(`resultRecorded`)를 코어에 두고 그 값을 보고 판단한다.
+    private func recordResult() {
+        guard let run = store.rogueRun, !run.resultRecorded,
+              run.stage == .cleared || run.stage == .failed else { return }
+        store.recordRunResult(reachedWave: run.wave, cleared: run.stage == .cleared)
+        mutate { $0.markResultRecorded() }
     }
 
     // MARK: 진행

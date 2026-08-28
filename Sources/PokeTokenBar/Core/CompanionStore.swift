@@ -1820,6 +1820,17 @@ final class CompanionStore {
     /// (영속은 `RunProgress` 를 확정한 뒤에 붙인다).
     var rogueRun: RogueRun?
 
+    /// 웨이브 런 실적. 판 밖으로 남는 것은 이 값 하나다 — 재화도 도감도 주지 않는다.
+    var runProgress: RunProgress { state.waveRun }
+
+    /// 끝난 판 하나를 실적에 적는다. **끝난 판만 센다** — 화면만 열고 닫은 판을 실패로 세면
+    /// 클리어율이 실제보다 낮게 보인다. 도달 웨이브는 코어가 든 값이라 화면이 보낸 값을 클램프한다.
+    func recordRunResult(reachedWave: Int, cleared: Bool) {
+        state.waveRun.record(reachedWave: reachedWave, cleared: cleared)
+        state.waveRun.normalize()
+        save()
+    }
+
     // MARK: 퍼즐 던전 (#79)
 
     /// 오늘의 맵. 날짜 키에서 나오므로 저장하지 않는다 — 매번 같은 값이 다시 계산된다.

@@ -203,6 +203,9 @@ struct RogueRun: Sendable {
     private(set) var route: RunRoute = .safe
     /// 이 승리로 아직 고를 수 있는 보상 장수. 0 이 되면 길 고르기로 넘어간다.
     private(set) var remainingPicks = 0
+    /// 끝난 판의 결과를 실적(`RunProgress`)에 적었나. 결과 화면은 다시 그려질 때마다 이 값을 보는데,
+    /// 플래그가 없으면 팝오버를 여닫는 횟수만큼 같은 판이 실적에 쌓인다.
+    private(set) var resultRecorded = false
     /// 이 판이 쓰는 밸런스 값. 앱은 `.standard`, 시뮬레이터는 흔든 값을 넣는다.
     let tuning: RogueTuning
     private(set) var battle: TeamPracticeBattle
@@ -344,6 +347,13 @@ struct RogueRun: Sendable {
         }
         offers = []
         stage = .routing
+    }
+
+    /// 결과를 실적에 적었다고 표시한다. 무엇을 적을지는 호출자(화면)가 정한다 — 코어는 세이브를
+    /// 모르고, 알면 순수 구조체가 저장 경로를 들게 된다.
+    mutating func markResultRecorded() {
+        guard stage == .cleared || stage == .failed else { return }
+        resultRecorded = true
     }
 
     /// 다음 웨이브로 갈 길을 고른다. **웨이브 번호가 오르는 자리는 여기 하나뿐이다** — 보상을
