@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 포켓로그식 런 화면 — **프로토타입**이다. 입장권·기록 저장(`RunProgress`)이 아직 없다.
+/// 포켓로그식 런 화면 — **프로토타입**이다. 기록 저장(`RunProgress`)이 아직 없다.
+/// 입장권·하루 판 수 제한은 두지 않기로 했다(설계: `docs/reference/wave-run-design.md`).
 struct RogueRunView: View {
     @Bindable var store: CompanionStore
     @Environment(AppSettings.self) private var settings

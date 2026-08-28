@@ -16,8 +16,6 @@ struct GymLeagueView: View {
                 Label(l.gymLeagueTitle, systemImage: "building.columns.fill")
                     .font(.headline)
                 Spacer()
-                Text(l.gymBadgeCount(store.earnedGymBadges.count, GymLeague.catalog.count))
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                 Button(action: onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help(l.battleClose)
             }
@@ -28,7 +26,6 @@ struct GymLeagueView: View {
                 VStack(spacing: 6) {
                     ForEach(GymLeague.catalog) { gym in
                         GymRow(gym: gym, store: store,
-                               earned: store.hasBadge(gym),
                                onChallenge: { center.startGymChallenge(gym) })
                     }
                 }
@@ -45,11 +42,10 @@ struct GymLeagueView: View {
     }
 }
 
-/// 체육관 한 줄 — 타입, 관장 이름, 관장 레벨, 보상, 그리고 배지.
+/// 체육관 한 줄 — 타입, 관장 이름, 관장 레벨, 첫 승리 보상.
 private struct GymRow: View {
     let gym: Gym
     let store: CompanionStore
-    let earned: Bool
     let onChallenge: () -> Void
 
     var body: some View {
@@ -58,46 +54,30 @@ private struct GymRow: View {
                 .font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
                 .frame(width: 42)
                 .padding(.vertical, 3)
-                .background(Capsule().fill(Color.accentColor.opacity(earned ? 0.9 : 0.55)))
+                .background(Capsule().fill(Color.accentColor.opacity(0.55)))
             VStack(alignment: .leading, spacing: 1) {
                 Text(gym.leaderName(store.language)).font(.caption.bold()).lineLimit(1)
                 Text(store.l.gymLeaderLevel(gym.level))
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
-            if earned {
-                // 배지를 딴 뒤에도 도전은 열어 둔다 — 연습 상대로 남는다. 보상만 나가지 않는다.
-                Label(store.l.gymBadgeEarned, systemImage: "checkmark.seal.fill")
-                    .font(.system(size: 9)).foregroundStyle(.green).labelStyle(.iconOnly)
-            } else {
-                RewardLabel(reward: gym.firstClearReward, store: store)
-            }
+            RewardLabel(reward: gym.firstClearReward, store: store)
             Button(store.l.gymChallenge, action: onChallenge)
                 .controlSize(.small)
         }
         .padding(7)
         .background(RoundedRectangle(cornerRadius: 8)
-            .fill(Color.primary.opacity(earned ? 0.07 : 0.03)))
+            .fill(Color.primary.opacity(0.03)))
     }
 }
 
-/// 체육관 줄의 보상 표시 — 알이 무엇을 보증하는지가 별의조각보다 중요하다.
+/// 체육관 줄의 보상 표시 — 난이도 점검 릴리즈에서는 별의조각만 보여 준다.
 private struct RewardLabel: View {
     let reward: GymReward
     let store: CompanionStore
 
     var body: some View {
         HStack(spacing: 4) {
-            if reward.eggs > 0 {
-                HStack(spacing: 1) {
-                    Text("🥚")
-                    if let tier = reward.eggGuarantee {
-                        Text(store.l.rarityLabel(tier))
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Color.accentColor)
-                    }
-                }
-            }
             if reward.starPieces > 0 {
                 Text("⭐ \(GameNumberFormatter.compact(reward.starPieces))")
             }

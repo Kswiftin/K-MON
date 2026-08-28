@@ -158,7 +158,9 @@ struct RogueRun: Sendable {
     /// 이 판이 쓰는 밸런스 값. 앱은 `.standard`, 시뮬레이터는 흔든 값을 넣는다.
     let tuning: RogueTuning
     private(set) var battle: TeamPracticeBattle
-    /// 웨이브 seed·보상 추첨을 잇는 하나의 흐름. 판마다 `dayKey + 판 번호` 로 심는다.
+    /// 웨이브 seed·보상 추첨을 잇는 하나의 흐름. **판마다 완전 무작위로 심는다** — 날짜 결정론은
+    /// 쓰지 않는다(퍼즐 던전과 다른 점이다). 하루 판 수도 제한하지 않는다: 같은 판을 다시 도는
+    /// 콘텐츠가 아니라 매번 새로 뽑는 콘텐츠고, 보상이 세이브에 남지 않아 반복이 경제를 흔들지 않는다.
     private var rng: SplitMix64
 
     init(party: [BattleSnapshot], opponents: [BattleSnapshot], seed: UInt64,

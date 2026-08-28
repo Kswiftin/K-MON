@@ -482,6 +482,8 @@ struct CompanionHeader: View {
     /// 접혀 있으면 팝오버를 열 때마다 한 번 더 눌러야 했다. 접으면 그 팝오버가 열려 있는 동안은
     /// 접힌 채로 있고, 닫았다 열면 다시 펼쳐진다(`@State` 라 팝오버 생명주기를 따른다).
     @State private var showingMoves = true
+    /// 홈에서도 배틀에 적용되는 기본 특성을 바로 확인할 수 있게 한다.
+    @State private var abilityText: String?
 
     private func commitNickname() {
         store.setNickname(nameDraft)
@@ -620,6 +622,13 @@ struct CompanionHeader: View {
                                 ForEach(store.currentTypes, id: \.self) { TypeBadge(type: $0, language: store.language) }
                             }
                         }
+                        if let abilityText, !abilityText.isEmpty {
+                            Label(abilityText, systemImage: "sparkles")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .help(abilityText)
+                        }
                         if store.currentSpeciesID == 479 {
                             Menu {
                                 ForEach(RotomForm.allCases, id: \.self) { form in
@@ -732,6 +741,14 @@ struct CompanionHeader: View {
             }
         }
         .task(id: store.currentPresentationID) { await store.loadCurrentTypes() }
+        .task(id: "\(store.currentPresentationID ?? 0)-\(store.language.rawValue)") {
+            guard let speciesID = store.currentPresentationID else {
+                abilityText = nil
+                return
+            }
+            abilityText = await PokeAPIClient.shared
+                .chatSpeciesIdentity(speciesID: speciesID, language: store.language).ability
+        }
         // 진화에 필요한 기술 이름. 기술을 배우면 요구가 사라지므로 무브셋이 바뀔 때도 다시 본다.
         .task(id: store.currentMoveSetIdentity) { await store.loadEvolutionRequiredMove() }
         .onAppear {

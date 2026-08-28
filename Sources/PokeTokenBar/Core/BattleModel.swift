@@ -748,7 +748,9 @@ enum BattleEngine {
     ///     같은 입력에서 배틀이 갈라진다. rng 소비는 그대로다(회복량·수면 턴이 전부 고정값).
     /// 16 = 현행 상태이상·급소 규칙(마비 1/2·1/8, 잠듦 1~3턴, 해동 25%,
     ///      화상 1/16, 맹독 교체 카운터 초기화, 급소 1.5배·현행 단계표).
-    static let rulesVersion = 17
+    /// 18 = 특성 2단계 — 불가사의부적, 타입/약점 반감, 테크니션, 공격·방어 스탯 특성.
+    ///      전부 표·정수 계산이라 rng 소비 순서는 그대로지만 같은 입력의 데미지가 달라진다.
+    static let rulesVersion = 18
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -836,7 +838,9 @@ enum BattleEngine {
     /// 부유는 지진을 막고 갈라진땅은 못 막았다 — 특성이 붙는 갈림길은 여기 하나여야 한다.
     static func typeMultiplier(of move: MoveSpec, against defender: BattleSide) -> Double {
         if defender.ability?.immuneMoveType == move.type { return 0 }
-        return TypeChart.effectiveness(move.type, against: defender.snapshot.types)
+        let multiplier = TypeChart.effectiveness(move.type, against: defender.snapshot.types)
+        if defender.ability == .wonderGuard, move.damageClass != .status, multiplier <= 1 { return 0 }
+        return multiplier
     }
 
     /// Gen 2 데미지 식의 앞부분 — 배율이 붙기 전의 뼈대. 기술 공격과 혼란 자멸이 같은 값을 쓴다.
@@ -934,6 +938,7 @@ enum BattleEngine {
                                                         effectiveness: 0, isCritical: false)
         case nil:                   break
         }
+        if let ability = attacker.ability { power = ability.adjustedPower(power, move: move) }
         // 발버둥은 무속성(상성·STAB 미적용). 변화기도 상성을 타지 않는다 — 노말↔고스트 면역은
         // **데미지 기술의 규칙**이라, 이상한빛은 노말에게 노래는 고스트에게 통해야 한다.
         // 상성으로 막히는 상태기(전기자석파)만 `typeBlockedStatusMoveIDs` 에 명시한다.
@@ -962,8 +967,15 @@ enum BattleEngine {
         // 화상은 **물리** 공격만 절반이다(Gen 2 는 공격 스탯을 반으로 깎는다). 특수기는 그대로다 —
         // 여기서 분류를 안 보면 화상이 공격 전체를 깎는 다른 게임이 된다.
         var attack = StatStages.apply(attacker.rawStat(offense), stage: offenseStage)
-        if isPhysical, attacker.status == .burn { attack /= 2 }
-        let defense = StatStages.apply(defender.rawStat(guardStat), stage: guardStage)
+        if let ability = attacker.ability {
+            attack = ability.adjustedAttack(attack, isPhysical: isPhysical, status: attacker.status)
+        }
+        // 근성은 화상의 공격 감소를 무시한다. 다른 물리 특성은 기존 화상 반감을 그대로 받는다.
+        if isPhysical, attacker.status == .burn, attacker.ability != .guts { attack /= 2 }
+        var defense = StatStages.apply(defender.rawStat(guardStat), stage: guardStage)
+        if let ability = defender.ability {
+            defense = ability.adjustedDefense(defense, isPhysical: isPhysical, status: defender.status)
+        }
         // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수 나눗셈한다. 예전엔
         // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
         // 구조에서는 정수 연산이 유리하다(부동소수 오차가 끼어들 자리가 없다).
@@ -980,6 +992,9 @@ enum BattleEngine {
         if !ignoresTypeChart {
             if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }   // STAB ×1.5
             damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
+        }
+        if let ability = defender.ability {
+            damage = ability.adjustedDamage(damage, moveType: move.type, effectiveness: effectiveness)
         }
         damage = damage * random / 255
         // 위력 0(변화기)은 데미지가 없다. `max(1, …)` 만 두면 식의 `+2` 가 살아남아 상태기가 2 데미지를

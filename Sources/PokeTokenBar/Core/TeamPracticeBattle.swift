@@ -1,8 +1,16 @@
 import Foundation
 
+/// CPU의 기술 선택 방식. 일반 모의전은 연습 상대여서 무작위성을 남기고, 체육관 관장은
+/// 상성·명중률을 읽어 가장 위협적인 기술을 쓴다.
+enum OpponentMoveStrategy: Sendable {
+    case random
+    case damageFocused
+}
+
 struct TeamPracticeBattle {
     var mine: [BattleSide]
     var opponents: [BattleSide]
+    var opponentMoveStrategy: OpponentMoveStrategy = .random
     var myActive = 0
     var opponentActive = 0
     var turn = 1
@@ -36,14 +44,62 @@ struct TeamPracticeBattle {
     }
 
     /// CPU 가 이번에 쓸 기술 — PP 가 남은 것 중 하나, 전부 떨어졌으면 발버둥(index −1).
-    /// **배틀의 `rng` 에서 뽑는다** — `randomElement()`(시스템 RNG)면 같은 seed 로도 배틀이 재현되지
-    /// 않아, 확률 분기가 늘어나는 기전(상태이상·랭크업)을 회귀 테스트로 잡을 수 없다.
+    ///
+    /// 일반 모의전은 **배틀의 `rng` 에서** 무작위로 뽑는다. `randomElement()`(시스템 RNG)면 같은
+    /// seed 로도 배틀이 재현되지 않아, 확률 분기가 늘어나는 기전(상태이상·랭크업)을 회귀 테스트로
+    /// 잡을 수 없다. 체육관 관장은 그 무작위성을 쓰지 않고 예상 피해가 가장 큰 기술을 고른다.
     private mutating func cpuMoveChoice() -> (move: MoveSpec, index: Int) {
         let slot = opponents[opponentActive]
         let candidates = slot.pp.indices.filter { slot.pp[$0] > 0 }
         guard !candidates.isEmpty else { return (MoveSpec.struggle(), -1) }
+
+        if case .damageFocused = opponentMoveStrategy {
+            let target = mine[myActive]
+            let scores = candidates.map { (index: $0, score: expectedDamage(of: slot.move(at: $0), from: slot, to: target)) }
+            let bestScore = scores.map(\.score).max() ?? 0
+            let best = scores.filter { $0.score == bestScore }.map(\.index)
+            // 같은 기대값이면 배틀 RNG로만 갈라 재현성을 보존한다. 예컨대 동일한 위력의 물리·특수
+            // 기술이 같은 피해를 낼 때도 항상 첫 번째 버튼만 고르면 관장 패턴이 지나치게 굳는다.
+            let index = best[Int(rng.next() % UInt64(best.count))]
+            return (slot.move(at: index), index)
+        }
+
         let index = candidates[Int(rng.next() % UInt64(candidates.count))]
         return (slot.move(at: index), index)
+    }
+
+    /// 관장 AI의 한 턴용 피해 추정. 실제 엔진과 같은 스탯·STAB·상성·명중 공식을 쓰되, 급소와
+    /// 난수는 평균화하지 않는다. 변화기는 현재 관장 무브셋에서 실전 이득을 보장할 수 없으므로
+    /// 공격기보다 낮게 둔다 — 회복·랭크업 전술을 지원할 때 별도 전략으로 승격하면 된다.
+    private func expectedDamage(of move: MoveSpec, from attacker: BattleSide, to defender: BattleSide) -> Int {
+        guard move.damageClass != .status, move.power > 0 else { return 0 }
+        let effectiveness = BattleEngine.typeMultiplier(of: move, against: defender)
+        guard effectiveness > 0 else { return 0 }
+
+        let isPhysical = move.damageClass == .physical
+        let offense: BattleStat = isPhysical ? .atk : .spa
+        let guardStat: BattleStat = isPhysical ? .def : .spd
+        var power = move.power
+        var attack = StatStages.apply(attacker.rawStat(offense), stage: attacker.stage(offense))
+        if let ability = attacker.ability {
+            attack = ability.adjustedAttack(attack, isPhysical: isPhysical, status: attacker.status)
+            power = ability.adjustedPower(power, move: move)
+        }
+        if isPhysical, attacker.status == .burn, attacker.ability != .guts { attack /= 2 }
+        var defense = StatStages.apply(defender.rawStat(guardStat), stage: defender.stage(guardStat))
+        if let ability = defender.ability {
+            defense = ability.adjustedDefense(defense, isPhysical: isPhysical, status: defender.status)
+        }
+
+        var damage = BattleEngine.baseDamage(level: attacker.snapshot.level, power: power,
+                                             attack: attack, defense: defense) + 2
+        if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }
+        damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
+        if let ability = defender.ability {
+            damage = ability.adjustedDamage(damage, moveType: move.type, effectiveness: effectiveness)
+        }
+        let accuracy = min(100, max(0, BattleEngine.hitChance(of: move, attacker: attacker, defender: defender) ?? 100))
+        return max(0, damage) * accuracy
     }
 
     /// 상대 공격 1회만 해상 — 내가 교체에 턴을 썼을 때 상대 몫이다.

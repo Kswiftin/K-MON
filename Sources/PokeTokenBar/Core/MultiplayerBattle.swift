@@ -268,7 +268,7 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 8: 안 읽던 `meta` 필드 넷(드레인·반동·다단 히트·풀린치 — `Status.flinch` case 추가),
     // 9: 특성 1단계(`BattleSnapshot.ability`). 새 이벤트 case 는 없지만 **방은 `rulesVersion` 을
     //    안 본다** — 규칙 차이를 막을 곳이 여기뿐이라 규칙이 바뀌면 이 값도 같이 올린다.
-    static let protocolVersion = 9
+    static let protocolVersion = 10
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

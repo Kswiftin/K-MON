@@ -598,6 +598,25 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(runs.count, 1, "같은 seed 는 같은 배틀이어야 하는데 \(runs.count) 가지가 나왔다")
     }
 
+    /// 관장은 무작위 CPU와 다르다. STAB·상성·명중률을 반영한 기대 피해가 더 큰 기술을 써서,
+    /// 마지막 전설을 포함한 관장전이 낮은 위력 기술을 뽑아 스스로 난이도를 낮추지 않는다.
+    func testGymStrategyChoosesTheHighestExpectedDamageMove() {
+        var cpu = water()
+        cpu.moves = [
+            MoveSpec(id: 901, names: [:], type: .water, power: 90,
+                     damageClass: .special, accuracy: 100, pp: 15),
+            MoveSpec(id: 902, names: [:], type: .normal, power: 100,
+                     damageClass: .special, accuracy: 100, pp: 15),
+        ]
+        var battle = TeamPracticeBattle(mine: [BattleSide(fire())], opponents: [BattleSide(cpu)],
+                                        opponentMoveStrategy: .damageFocused, rng: SplitMix64(seed: 7))
+
+        XCTAssertTrue(battle.useMove(0))
+
+        XCTAssertTrue(battle.events.contains(.move(.b, moveID: 901)),
+                      "물 STAB의 불꽃 약점 공략이 더 높은 무속성 위력보다 우선한다")
+    }
+
     /// 같은 자리로는 교체할 수 없다 — 턴만 버리는 조작이 된다.
     func testSwitchingToTheActiveSlotIsRejected() {
         var battle = practiceBattle(myTeam: [water(), fire()], opponent: fire())

@@ -1,7 +1,7 @@
 import XCTest
 @testable import PokeTokenBar
 
-/// 특성 1단계 — 면역만(#24 Phase 5 / PR 9).
+/// 특성 — 면역과 결정론적인 위력·스탯·데미지 보정.
 ///
 /// 면역은 표 조회뿐이라 rng 를 한 번도 안 쓴다. 그래서 두 피어가 갈라질 수 없는 지점부터 들어간다.
 /// 이 파일이 잠그는 건 **갈림길이 두 곳뿐**이라는 점이다 — 데미지는 상성 배율 한 지점,
@@ -21,9 +21,13 @@ final class BattleAbilityTests: XCTestCase {
 
     /// 같은 조건으로 한 대 때리고 (남은 HP, 최대 HP, 이벤트)를 돌려준다 — 대조군과 나란히 세우기 위한 헬퍼.
     private func hit(defender: BattleSnapshot, with move: MoveSpec,
-                     defenderHP: Int? = nil, seed: UInt64 = 1) -> (hp: Int, maxHP: Int, events: [BattleEvent]) {
-        var attacker = BattleSide(snapshot())
+                     defenderHP: Int? = nil, seed: UInt64 = 1,
+                     attackerAbility: String? = nil, attackerStatus: Status? = nil,
+                     defenderStatus: Status? = nil) -> (hp: Int, maxHP: Int, events: [BattleEvent]) {
+        var attacker = BattleSide(snapshot(ability: attackerAbility))
         var side = BattleSide(defender)
+        attacker.status = attackerStatus
+        side.status = defenderStatus
         if let defenderHP { side.hp = defenderHP }
         var rng = SplitMix64(seed: seed)
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &side,
@@ -145,13 +149,55 @@ final class BattleAbilityTests: XCTestCase {
         }
     }
 
+    // MARK: 데미지 보정 특성
+
+    func testWonderGuardOnlyLetsSuperEffectiveDamagingMovesThrough() {
+        let guardMon = snapshot(types: [.bug, .ghost], ability: "wonder-guard")
+        XCTAssertEqual(hit(defender: guardMon, with: attack(.normal)).hp, hit(defender: guardMon, with: attack(.normal)).maxHP)
+        XCTAssertEqual(hit(defender: guardMon, with: attack(.water)).hp, hit(defender: guardMon, with: attack(.water)).maxHP)
+        XCTAssertLessThan(hit(defender: guardMon, with: attack(.fire)).hp,
+                          hit(defender: guardMon, with: attack(.fire)).maxHP)
+    }
+
+    func testDefensiveDamageAbilitiesReduceOnlyTheirOwnDamageClass() {
+        let plainFire = hit(defender: snapshot(), with: attack(.fire)).maxHP - hit(defender: snapshot(), with: attack(.fire)).hp
+        let thickFire = hit(defender: snapshot(ability: "thick-fat"), with: attack(.fire))
+        XCTAssertLessThan(thickFire.maxHP - thickFire.hp, plainFire)
+        let thickWater = hit(defender: snapshot(ability: "thick-fat"), with: attack(.water))
+        let plainWater = hit(defender: snapshot(), with: attack(.water))
+        XCTAssertEqual(thickWater.hp, plainWater.hp, "두꺼운지방은 물 기술을 줄이면 안 된다")
+
+        let weak = snapshot(types: [.grass], ability: "filter")
+        let filtered = hit(defender: weak, with: attack(.fire))
+        let unfiltered = hit(defender: snapshot(types: [.grass]), with: attack(.fire))
+        XCTAssertGreaterThan(filtered.hp, unfiltered.hp, "필터는 약점 데미지만 줄인다")
+    }
+
+    func testOffensiveAndStatAbilitiesChangeTheSharedDamageFormula() {
+        let weak = attack(.normal, power: 60)
+        let plain = hit(defender: snapshot(), with: weak)
+        let technician = hit(defender: snapshot(), with: weak, attackerAbility: "technician")
+        XCTAssertLessThan(technician.hp, plain.hp)
+
+        let huge = hit(defender: snapshot(), with: attack(.normal), attackerAbility: "huge-power")
+        let ordinary = hit(defender: snapshot(), with: attack(.normal))
+        XCTAssertLessThan(huge.hp, ordinary.hp)
+
+        let burned = hit(defender: snapshot(), with: attack(.normal), attackerStatus: .burn)
+        let guts = hit(defender: snapshot(), with: attack(.normal), attackerAbility: "guts", attackerStatus: .burn)
+        XCTAssertLessThan(guts.hp, burned.hp, "근성은 화상 반감을 무시하고 공격을 올린다")
+
+        let scaled = hit(defender: snapshot(ability: "marvel-scale"), with: attack(.normal), defenderStatus: .poison)
+        XCTAssertGreaterThan(scaled.hp, ordinary.hp, "이상한비늘은 상태이상 중 물리 방어를 올린다")
+    }
+
     // MARK: 미구현 슬러그
 
     /// 모르는 슬러그는 배틀을 **한 눈금도** 바꾸지 않는다. 이벤트 전체를 비교한다 —
     /// HP 만 보면 rng 를 한 번 더 굴리는 구현이 통과한다.
     func testAnUnimplementedAbilitySlugChangesNothing() {
         let plain = hit(defender: snapshot(), with: attack(.ground))
-        let unknown = hit(defender: snapshot(ability: "wonder-guard"), with: attack(.ground))
+        let unknown = hit(defender: snapshot(ability: "future-ability"), with: attack(.ground))
         XCTAssertEqual(unknown.hp, plain.hp)
         XCTAssertEqual(unknown.events, plain.events, "모르는 특성은 소비도 결과도 바꾸지 않는다")
     }
@@ -206,7 +252,7 @@ final class BattleAbilityTests: XCTestCase {
     /// 규칙이 바뀌면 **둘 다** 올린다 — 멀티는 `rulesVersion` 을 안 보고 `protocolVersion` 만 본다.
     /// 하나만 올리면 구버전 호스트와 신버전 게스트가 붙어 특성 유무가 갈린 채로 싸운다.
     func testTheRuleAndProtocolVersionsMovedTogetherForAbilities() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 17)
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 9)
+        XCTAssertEqual(BattleEngine.rulesVersion, 18)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 10)
     }
 }

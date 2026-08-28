@@ -997,6 +997,7 @@ final class BattleCenter {
             lastGymReward = nil
             teamPractice = TeamPracticeBattle(mine: myTeam.map(BattleSide.init),
                                               opponents: leaderTeam.map(BattleSide.init),
+                                              opponentMoveStrategy: .damageFocused,
                                               rng: SplitMix64(seed: UInt64.random(in: .min ... .max)))
             phase = .battling
             pendingAttention = true
@@ -1030,12 +1031,12 @@ final class BattleCenter {
         settlePracticeResult(practice)
     }
 
-    /// 승부가 났으면 마무리한다 — 체육관이었고 이겼으면 배지가 여기서 나간다.
+    /// 승부가 났으면 마무리한다 — 체육관이었고 이겼으면 첫 승리 별의조각이 여기서 나간다.
     /// 기술 사용과 교체 양쪽이 승부를 낼 수 있어 두 경로가 이 한 곳을 지난다.
     private func settlePracticeResult(_ practice: TeamPracticeBattle) {
         guard let result = practice.result else { return }
-        // 배지는 **`.win` 에서만** 나간다 — 무승부는 이긴 판이 아니다.
-        // 재도전이면 `recordGymVictory` 가 0 을 돌려준다 — 배지가 이미 있으면 아무것도 지급하지 않는다.
+        // 보상은 **`.win` 에서만** 나간다 — 무승부는 이긴 판이 아니다.
+        // 재도전이면 `recordGymVictory` 가 0 을 돌려준다 — 첫 승리 보상을 이미 받았으면 아무것도 지급하지 않는다.
         lastGymReward = (result == .win && activeGym != nil) ? companion.recordGymVictory(activeGym!) : nil
         // 무승부는 `iWon: nil` — 결과 화면이 `l.battleDraw` 를 그린다(`BattleView.finishText`).
         // 결정타가 재생되기 전에 결과 화면으로 스냅하지 않게 재생 뒤로 미룬다.
