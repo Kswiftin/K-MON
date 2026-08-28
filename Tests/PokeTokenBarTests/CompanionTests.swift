@@ -939,24 +939,6 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(GymLeague.opponentLevel(for: [100, 5, 5, 5]), 100)
     }
 
-    /// 최고 레벨 기준만으로는 들러리 셋의 레벨이 관장에게 전혀 반영되지 않아, 여전히 Lv.1로
-    /// 채워도 그만이다 — 그래서 도전 자체를 최소 레벨 미만이면 막고, 화면에 안내를 남긴다.
-    func testGymChallengeBlocksBelowMinimumLevel() async {
-        let (store, mons) = teamPickStore(monCount: GymLeague.teamSize)
-        let center = battleCenter(store: store)
-        center.pickedTeam = mons.map(\.id)
-        XCTAssertNil(center.gymLevelGateMessage)
-
-        center.startGymChallenge(GymLeague.catalog[0])
-
-        let blocked = await waitUntil { center.gymLevelGateMessage != nil }
-        XCTAssertTrue(blocked, "Lv.1 팀은 최소 레벨 게이트에 막혀야 한다")
-        XCTAssertEqual(center.phase, .ready, "게이트에 막히면 배틀로 넘어가지 않는다")
-
-        center.dismissGymLevelGateAlert()
-        XCTAssertNil(center.gymLevelGateMessage)
-    }
-
     /// 보상은 목록 순서를 따라 별의조각이 늘고, 알은 드래곤 체육관만 고급 이상을 보증한다.
     func testRewardsRiseWithTheListedOrder() {
         let rewards = GymLeague.catalog.map(\.firstClearReward)
@@ -2434,6 +2416,24 @@ final class BattleTeamPickTests: XCTestCase {
         XCTAssertEqual(center.teamPractice?.mine.map(\.snapshot.speciesID), [25, 22, 24, 20])
         XCTAssertEqual(center.teamPractice?.mySlot.snapshot.speciesID, 25)
         XCTAssertEqual(center.teamPractice?.myActive, 0)
+    }
+
+    /// 최고 레벨 기준 스케일링만으로는 들러리 셋의 레벨이 관장에게 전혀 반영되지 않아, 여전히
+    /// Lv.1로 채워도 그만이다 — 그래서 도전 자체를 최소 레벨 미만이면 막고, 화면에 안내를 남긴다.
+    func testGymChallengeBlocksBelowMinimumLevel() async {
+        let (store, mons) = teamPickStore(monCount: GymLeague.teamSize)
+        let center = battleCenter(store: store)
+        center.pickedTeam = mons.map(\.id)
+        XCTAssertNil(center.gymLevelGateMessage)
+
+        center.startGymChallenge(GymLeague.catalog[0])
+
+        let blocked = await waitUntil { center.gymLevelGateMessage != nil }
+        XCTAssertTrue(blocked, "Lv.1 팀은 최소 레벨 게이트에 막혀야 한다")
+        XCTAssertEqual(center.phase, .ready, "게이트에 막히면 배틀로 넘어가지 않는다")
+
+        center.dismissGymLevelGateAlert()
+        XCTAssertNil(center.gymLevelGateMessage)
     }
 
     /// 근거리 랭크 스냅샷은 현재 파트너가 아니라 선택 1번의 개체 정보를 Lv.50 으로 쓴다.
