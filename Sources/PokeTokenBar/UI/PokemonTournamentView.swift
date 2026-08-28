@@ -136,10 +136,18 @@ struct PokemonTournamentView: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else if myTeam.indices.contains(myActive) {
                 let active = myTeam[myActive].side
-                MoveGridView(moves: active.mustStruggle ? [.struggle()] : active.moves,
-                             pp: active.mustStruggle ? [] : active.pp, language: store.language,
-                             isEnabled: true) { index in
-                    center.submitTournamentAction(.move(index: active.mustStruggle ? -1 : index))
+                if active.isAlive {
+                    MoveGridView(moves: active.mustStruggle ? [.struggle()] : active.moves,
+                                 pp: active.mustStruggle ? [] : active.pp, language: store.language,
+                                 isEnabled: true) { index in
+                        center.submitTournamentAction(.move(index: active.mustStruggle ? -1 : index))
+                    }
+                } else {
+                    Label(store.l.t("다음에 내보낼 포켓몬을 선택하세요.",
+                                    "Choose the next Pokémon to send out.",
+                                    "次に出すポケモンを選んでください。"),
+                          systemImage: "arrow.triangle.swap")
+                        .font(.headline).foregroundStyle(.orange)
                 }
                 HStack {
                     ForEach(myTeam.indices.filter { $0 != myActive && myTeam[$0].hp > 0 }, id: \.self) { index in

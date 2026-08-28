@@ -973,7 +973,7 @@ final class MultiplayerRoomCenter {
     }
 
     private func validTournamentLineup(_ lineup: [BattleSnapshot], participantID: UUID) -> Bool {
-        guard lineup.count == 3,
+        guard lineup.count == 3, lineup.allSatisfy({ $0.level == 50 }),
               let participant = lobby?.participants.first(where: { $0.id == participantID }) else { return false }
         return lineup.allSatisfy { snapshot in
             MultiplayerValidation.valid(

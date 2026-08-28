@@ -62,4 +62,48 @@ final class PokemonTournamentTests: XCTestCase {
         XCTAssertTrue(engine.snapshot().submitted.contains(a.id))
         XCTAssertFalse(engine.snapshot().submitted.contains(spectator))
     }
+
+    func testFaintedPokemonWaitsForThePlayerToChooseItsReplacement() {
+        let a = TournamentEntrant(id: UUID(), trainerName: "A", speciesID: 1)
+        let b = TournamentEntrant(id: UUID(), trainerName: "B", speciesID: 4)
+        let knockout = MoveSpec(id: 33, names: ["en": "Knockout"], type: .normal, power: 10_000,
+                                damageClass: .physical, accuracy: nil, pp: 35)
+        let weak = MoveSpec(id: 45, names: ["en": "Weak"], type: .normal, power: 1,
+                            damageClass: .physical, accuracy: nil, pp: 40)
+        func snapshot(_ id: Int, _ name: String, speed: Int, move: MoveSpec) -> BattleSnapshot {
+            BattleSnapshot(speciesID: id, name: name, level: 50, isShiny: false, types: [.normal],
+                           base: BattleStats(hp: 60, atk: 60, def: 60, spa: 60, spd: 60, spe: speed),
+                           moves: [move])
+        }
+        var engine = TournamentMatchEngine(round: 1, playerA: a, playerB: b,
+                                           teamA: [snapshot(1, "A1", speed: 200, move: knockout)],
+                                           teamB: [snapshot(4, "B1", speed: 1, move: weak),
+                                                   snapshot(5, "B2", speed: 1, move: weak)], seed: 1)
+
+        XCTAssertTrue(engine.submit(.move(index: 0), from: a.id))
+        XCTAssertTrue(engine.submit(.move(index: 0), from: b.id))
+        XCTAssertNil(engine.resolveIfReady())
+        XCTAssertEqual(engine.snapshot().activeB, 0)
+        XCTAssertEqual(engine.snapshot().teamB[0].hp, 0)
+        XCTAssertTrue(engine.submit(.switchTo(index: 1), from: b.id))
+        XCTAssertFalse(engine.submit(.move(index: 0), from: b.id))
+    }
+
+    func testTournamentNormalizesEveryEntrantToLevelFifty() {
+        let a = TournamentEntrant(id: UUID(), trainerName: "A", speciesID: 1)
+        let b = TournamentEntrant(id: UUID(), trainerName: "B", speciesID: 4)
+        let move = MoveSpec(id: 33, names: ["en": "Tackle"], type: .normal, power: 40,
+                            damageClass: .physical, accuracy: nil, pp: 35)
+        func snapshot(_ id: Int, level: Int) -> BattleSnapshot {
+            BattleSnapshot(speciesID: id, name: "Mon", level: level, isShiny: false, types: [.normal],
+                           base: BattleStats(hp: 60, atk: 60, def: 60, spa: 60, spd: 60, spe: 60),
+                           moves: [move])
+        }
+        let engine = TournamentMatchEngine(round: 1, playerA: a, playerB: b,
+                                           teamA: [snapshot(1, level: 5)],
+                                           teamB: [snapshot(4, level: 100)], seed: 1)
+
+        XCTAssertEqual(engine.snapshot().teamA.map(\.snapshot.level), [50])
+        XCTAssertEqual(engine.snapshot().teamB.map(\.snapshot.level), [50])
+    }
 }

@@ -96,8 +96,15 @@ struct TournamentMatchEngine {
     init(id: UUID = UUID(), round: Int, playerA: TournamentEntrant, playerB: TournamentEntrant,
          teamA: [BattleSnapshot], teamB: [BattleSnapshot], seed: UInt64) {
         self.id = id; self.round = round; self.playerA = playerA; self.playerB = playerB
-        battle = NetBattleState(iAmA: true, myTeam: teamA.map(BattleSide.init),
-                                oppTeam: teamB.map(BattleSide.init), rng: SplitMix64(seed: seed))
+        let normalizedA = teamA.map { snapshot -> BattleSnapshot in
+            var snapshot = snapshot; snapshot.level = 50; return snapshot
+        }
+        let normalizedB = teamB.map { snapshot -> BattleSnapshot in
+            var snapshot = snapshot; snapshot.level = 50; return snapshot
+        }
+        battle = NetBattleState(iAmA: true, myTeam: normalizedA.map(BattleSide.init),
+                                oppTeam: normalizedB.map(BattleSide.init), rng: SplitMix64(seed: seed))
+        battle.automaticallyReplacesFainted = false
     }
 
     mutating func submit(_ action: NetBattleAction, from playerID: UUID) -> Bool {
