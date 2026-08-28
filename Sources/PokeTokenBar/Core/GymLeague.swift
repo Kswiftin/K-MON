@@ -102,29 +102,31 @@ enum GymLeague {
     static let catalog: [Gym] = [
         Gym(type: .bug,
             names: ["ko": "벌레 체육관", "en": "Bug Gym", "ja": "むしジム"],
-            // 아라콰나이드 · 불카모스 · 갑주무사 · 히드런(전설 에이스). 이전 팀은 넷 모두 불꽃에
-            // 약해 불꽃 포켓몬 하나에게 끝났다. 앞 셋은 불꽃에 중립, 히드런은 불꽃을 흡수한다.
-            teamSpeciesIDs: [752, 637, 768, 485],
-            aceSpeciesID: 485,
+            // 아라콰나이드 · 불카모스 · 갑주무사 · 게노세크트(벌레 에이스). 앞 셋이 이미 불꽃을
+            // 중립 이하로 받아 단일 불꽃 포켓몬에게 전멸하지 않으므로, 에이스는 벌레 타입을 지키는
+            // 대신 강철을 겸해 화력을 올린다(그만큼 불꽃에는 오히려 더 약해진다).
+            teamSpeciesIDs: [752, 637, 768, 649],
+            aceSpeciesID: 649,
             teamMoveNames: [
                 ["liquidation", "leech-life", "crunch", "poison-jab"],
                 ["fiery-dance", "bug-buzz", "psychic", "giga-drain"],
                 ["liquidation", "leech-life", "sucker-punch", "drill-run"],
-                ["magma-storm", "earth-power", "flash-cannon", "dark-pulse"],
+                ["techno-blast", "u-turn", "flash-cannon", "ice-beam"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 500, eggs: 1)),
         Gym(type: .rock,
             names: ["ko": "바위 체육관", "en": "Rock Gym", "ja": "いわジム"],
-            // 릴리요 · 프테라 · 텅비드 · 비리디온(전설 에이스). 물·풀·격투·땅 중 하나로 전원을
-            // 쓸던 구성을 버리고, 릴리요와 비리디온이 그 네 약점을 중화한다.
-            teamSpeciesIDs: [346, 142, 793, 640],
-            aceSpeciesID: 640,
+            // 릴리요 · 프테라 · 텅비드 · 마기라스(바위 에이스). 물·풀·격투·땅 중 하나로 전원을
+            // 쓸던 구성을 릴리요·프테라가 각자 중화하므로, 에이스는 바위 타입을 지킨 유사전설
+            // 마기라스로 화력을 최대화한다.
+            teamSpeciesIDs: [346, 142, 793, 248],
+            aceSpeciesID: 248,
             teamMoveNames: [
                 ["power-gem", "giga-drain", "earth-power", "sludge-bomb"],
                 ["stone-edge", "earthquake", "crunch", "iron-head"],
                 ["power-gem", "sludge-bomb", "thunderbolt", "psychic"],
-                ["leaf-blade", "sacred-sword", "stone-edge", "x-scissor"],
+                ["stone-edge", "crunch", "earthquake", "ice-punch"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 500, eggs: 1)),
@@ -156,43 +158,46 @@ enum GymLeague {
             firstClearReward: GymReward(starPieces: 2_000, eggs: 1)),
         Gym(type: .fire,
             names: ["ko": "불꽃 체육관", "en": "Fire Gym", "ja": "ほのおジム"],
-            // 볼케니온 · 리자몽 · 번치코 · 케르디오(전설 에이스). 물·땅·바위 약점이 겹치지 않게
-            // 물/불꽃, 불꽃/비행, 불꽃/격투와 물/격투 에이스를 섞는다.
-            teamSpeciesIDs: [721, 6, 257, 647],
-            aceSpeciesID: 647,
+            // 볼케니온 · 리자몽 · 번치코 · 레시라무(전설 에이스). 물·땅·바위 약점을 물/불꽃·
+            // 불꽃/비행·불꽃/격투가 나눠 받고, 드래곤/불꽃 에이스는 불꽃 타입을 지키면서
+            // 물 약점까지 지운다.
+            teamSpeciesIDs: [721, 6, 257, 643],
+            aceSpeciesID: 643,
             teamMoveNames: [
                 ["steam-eruption", "fire-blast", "earth-power", "flash-cannon"],
                 ["flamethrower", "air-slash", "dragon-pulse", "focus-blast"],
                 ["blaze-kick", "sky-uppercut", "thunder-punch", "shadow-claw"],
-                ["hydro-pump", "sacred-sword", "ice-beam", "air-slash"],
+                ["blue-flare", "draco-meteor", "earth-power", "focus-blast"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 3_000, eggs: 1)),
         Gym(type: .grass,
             names: ["ko": "풀 체육관", "en": "Grass Gym", "ja": "くさジム"],
-            // 로파파 · 이상해꽃 · 너트령 · 파이어(전설 에이스). 불꽃·얼음·벌레·비행·독 약점 중
-            // 어느 하나로도 전원을 정리하지 못하도록 물/풀·풀/독·풀/강철과 불꽃/비행을 섞는다.
-            teamSpeciesIDs: [272, 3, 598, 146],
-            aceSpeciesID: 146,
+            // 로파파 · 이상해꽃 · 너트령 · 자루드(신화 에이스). 불꽃·얼음·벌레·비행·독 약점을
+            // 물/풀·풀/독·풀/강철이 나눠 받고, 에이스는 풀 타입을 지키면서 팀에 없던 악 타입을
+            // 더해 저항 폭을 넓힌다.
+            teamSpeciesIDs: [272, 3, 598, 893],
+            aceSpeciesID: 893,
             teamMoveNames: [
                 ["surf", "giga-drain", "ice-beam", "focus-blast"],
                 ["energy-ball", "sludge-bomb", "earth-power", "psychic"],
                 ["power-whip", "iron-head", "rock-slide", "bulldoze"],
-                ["flamethrower", "air-slash", "ancient-power", "hyper-voice"],
+                ["power-whip", "darkest-lariat", "close-combat", "rock-slide"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 4_000, eggs: 1)),
         Gym(type: .psychic,
             names: ["ko": "에스퍼 체육관", "en": "Psychic Gym", "ja": "エスパージム"],
-            // 가디안 · 동탁군 · 칼라마네로 · 제르네아스(전설 에이스). 악·고스트·벌레 약점이 전원에게
-            // 겹치지 않게 페어리·강철·악 복합과 페어리 에이스를 둔다.
-            teamSpeciesIDs: [282, 437, 687, 716],
-            aceSpeciesID: 716,
+            // 가디안 · 동탁군 · 칼라마네로 · 라티오스(전설 에이스). 악·고스트·벌레 약점이 전원에게
+            // 겹치지 않게 페어리·강철·악 복합을 두고, 에이스는 에스퍼 타입을 지킨 채 드래곤을
+            // 겸해 화력을 끌어올린다.
+            teamSpeciesIDs: [282, 437, 687, 381],
+            aceSpeciesID: 381,
             teamMoveNames: [
                 ["psychic", "moonblast", "thunderbolt", "shadow-ball"],
                 ["flash-cannon", "psychic", "earth-power", "shadow-ball"],
                 ["psycho-cut", "night-slash", "x-scissor", "superpower"],
-                ["moonblast", "psychic", "thunderbolt", "focus-blast"],
+                ["draco-meteor", "psychic", "earthquake", "ice-beam"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 5_000, eggs: 1)),

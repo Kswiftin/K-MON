@@ -1249,6 +1249,8 @@ struct L {
         t("관장 Lv.\(level)", "Leader Lv.\(level)", "ジムリーダー Lv.\(level)")
     }
     var gymChallenge: String { t("도전", "Challenge", "挑戦") }
+    var gymRematch: String { t("재도전", "Rematch", "再挑戦") }
+    var gymCleared: String { t("클리어", "Cleared", "クリア") }
 
     /// 최종형인데 아직 졸업 못 하는 개체의 파트너 카드 한 줄 — 남은 관문이 레벨뿐임을 알린다.
     /// "Lv.N 에 진화" 가 사라진 그 자리에 들어간다.
