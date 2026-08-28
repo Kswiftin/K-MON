@@ -319,12 +319,23 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertTrue(request.systemPrompt.contains("Never offer coding, file, terminal, web research"))
     }
 
-    func testClaudeProviderDisablesBuiltInToolsAndMCPConfiguration() {
+    func testClaudeProviderDisablesBuiltInToolsMCPAndUserSettings() {
         let arguments = PokemonChatProviderSafety.arguments(for: .claude)
 
-        XCTAssertEqual(arguments, ["claude", "--print", "--tools", "", "--safe-mode", "--strict-mcp-config",
+        XCTAssertEqual(arguments, ["claude", "--print", "--tools", "", "--safe-mode", "--setting-sources", "",
+                                   "--strict-mcp-config",
                                    "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence",
                                    "--disable-slash-commands", "--permission-mode", "dontAsk"])
+    }
+
+    /// 인자 배열만 비교하는 격리 테스트는 자식의 **실행 환경**을 보지 못한다 — 실제로 띄워서 확인한다.
+    /// `XCTAssertNotEqual(stdout, "/")` 로 쓰면 `swift test` 의 cwd(저장소 루트)에서 언제나 통과해
+    /// 아무것도 안 지킨다. 앱이 물려주는 cwd 가 무엇이든 **양성으로** 고정해야 결함이 걸린다.
+    func testTheChatCLIRunsInTheAppOwnedDirectoryNotWhateverCWDTheAppInherited() async throws {
+        let result = try await PokemonChatCommandRunner.run(executableURL: URL(fileURLWithPath: "/bin/pwd"),
+                                                           arguments: [], input: "", timeout: 10)
+
+        XCTAssertEqual(result.stdout, PokemonChatWorkspace.directoryURL.path)
     }
 
     func testClaudePassesPersonaAsSystemPromptAndKeepsItOutOfConversationInput() {

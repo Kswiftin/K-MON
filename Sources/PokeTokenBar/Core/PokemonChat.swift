@@ -465,6 +465,33 @@ struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
     }
 }
 
+/// 대화 CLI 는 **앱이 소유한 빈 디렉터리**에서 돈다.
+///
+/// 자식의 작업 디렉터리를 정하지 않으면 앱의 cwd 를 그대로 물려받고, 메뉴바 앱의 cwd 는 `/` 다
+/// (launchd·LaunchServices 가 그렇게 띄운다). 그러면 CLI 의 프로젝트 루트가 **디스크 전체**가 되어
+/// 시작 스캔이 `~/Desktop`·`~/Documents` 를 밟고, macOS 는 자식의 접근을 **앱 책임**으로 돌려
+/// 파일 접근 권한 창을 띄운다. 한 번의 전송이 CLI 를 최대 `maxToolRounds + 1` 번 띄우므로 창은
+/// 대화 도중 계속 뜬다 — 도구 목록을 닫아 둔 것만으로는 이 부류가 막히지 않는다.
+enum PokemonChatWorkspace {
+    /// 만들지 못하면 `temporaryDirectory` 로 물러난다. 없는 경로를 넘기면 `Process.run()` 이 던져
+    /// 대화가 통째로 죽는다 — 권한 창을 없애려다 기능을 없애는 쪽이 더 나쁘다.
+    ///
+    /// 심볼릭 링크를 푸는 이유는 폴백 때문이다. `/bin/pwd` 는 물리 경로를 찍는데
+    /// `temporaryDirectory` 는 `/var`(→ `/private/var`) 아래라, 안 풀면 두 문자열이 갈린다.
+    static let directoryURL: URL = {
+        let fm = FileManager.default
+        let url = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PokeTokenBar", isDirectory: true)
+            .appendingPathComponent("chat-cwd", isDirectory: true)
+        try? fm.createDirectory(at: url, withIntermediateDirectories: true)
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return fm.temporaryDirectory.resolvingSymlinksInPath()
+        }
+        return url.resolvingSymlinksInPath()
+    }()
+}
+
 /// Drains both pipes while the child is alive. Reading only from `terminationHandler` deadlocks
 /// whenever a provider fills an OS pipe buffer with event output.
 enum PokemonChatCommandRunner {
