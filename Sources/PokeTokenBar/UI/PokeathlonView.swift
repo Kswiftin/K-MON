@@ -38,6 +38,9 @@ struct PokeathlonView: View {
             case .hosting, .joined, .joining, .creating: lobbyView
             case .battling:
                 Text(store.l.t("배틀 방이 진행 중입니다.", "A battle room is active.", "バトルの部屋が進行中です。"))
+            case .tournament:
+                Text(store.l.t("포켓몬 토너먼트가 진행 중입니다.", "A Pokémon tournament is active.",
+                               "ポケモントーナメントが進行中です。"))
             case .idle: roomBrowser
             }
         }

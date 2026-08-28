@@ -1920,6 +1920,18 @@ final class CompanionStore {
         state.shinyEggCharges = min(99, state.shinyEggCharges + reward.shinyCharges)
     }
 
+    /// 토너먼트 우승 보상. 참가 인원에 따른 보증만 다르고 전설 보증은 만들지 않는다.
+    func grantTournamentEgg(_ reward: TournamentEggReward) {
+        guard state.focusEggs < 999 else { return }
+        state.focusEggs += 1
+        state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        state.eggTier = Self.strongerGuarantee(state.eggTier, reward.guarantee)
+        save()
+        notifyCompanionEvent(l.t("토너먼트 우승!", "Tournament Champion!", "トーナメント優勝！"),
+                             l.t("우승 보상 알이 도착했습니다.", "Your champion Egg has arrived.",
+                                 "優勝報酬のタマゴが届きました。"))
+    }
+
     /// 이로치 확정을 **한 번 쓴다.** 남아 있으면 true 를 돌려주고 하나 깎는다.
     ///
     /// 두 부화 경로가 모두 이걸 지나야 한다. `eggTier` 가 한쪽에서만 소비돼 영구 보증이 됐던 것과

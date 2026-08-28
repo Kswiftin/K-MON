@@ -12,7 +12,7 @@ struct MultiplayerRoomPeer: Identifiable, Equatable {
 @MainActor
 @Observable
 final class MultiplayerRoomCenter {
-    enum Phase: Equatable { case idle, creating, hosting, joining(String), joined, battling, pokeathlon, pokemonQuiz }
+    enum Phase: Equatable { case idle, creating, hosting, joining(String), joined, battling, pokeathlon, pokemonQuiz, tournament }
     nonisolated static let serviceType = "_kmonroom._tcp"
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
 
@@ -52,6 +52,12 @@ final class MultiplayerRoomCenter {
     }
     private(set) var pokeathlonPool = PokeathlonPool()
     private(set) var pokemonQuizGame: PokemonOXGame?
+    var tournamentPickedTeam: [UUID] = []
+    private(set) var tournamentState: PokemonTournamentState?
+    private var tournamentTeams: [UUID: [BattleSnapshot]] = [:]
+    private var tournamentBracket: TournamentBracket?
+    private var tournamentMatch: TournamentMatchEngine?
+    private var tournamentRewarded = false
     private(set) var isPreparingPokemonQuiz = false
     private var pokemonQuizTask: Task<Void, Never>?
     /// 방향키 입력마다 10명 전체 상태를 즉시 보내면 입력 수 × 접속자 수만큼 send 큐가 불어난다.
@@ -113,6 +119,7 @@ final class MultiplayerRoomCenter {
 
     func createPokeathlonRoom() { createRoom(mode: .freeForAll, activity: .pokeathlon) }
     func createPokemonQuizRoom() { createRoom(mode: .freeForAll, activity: .pokemonQuiz) }
+    func createTournamentRoom() { createRoom(mode: .freeForAll, activity: .tournament) }
 
     func startSoloPokemonQuiz() {
         guard phase == .idle else { return }
@@ -152,6 +159,12 @@ final class MultiplayerRoomCenter {
         phase = .creating; lastError = nil
         Task {
             guard let snapshot = await buildSnapshot() else { phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return }
+            if activity == .tournament {
+                guard let lineup = await buildTournamentLineup() else {
+                    phase = .idle; lastError = "토너먼트에 출전할 포켓몬 3마리를 선택해 주세요."; return
+                }
+                tournamentTeams[myID] = lineup
+            }
             mySnapshot = snapshot
             snapshots[myID] = snapshot
             let team: BattleTeam = mode == .teams ? .red : .solo
@@ -159,7 +172,7 @@ final class MultiplayerRoomCenter {
                                         team: team, isReady: false, isHost: true, role: .runner,
                                         reportedStarPieces: companion.availableTokens)
             do {
-                let capacity = activity == .pokemonQuiz ? MultiplayerLobby.quizCapacity : 4
+                let capacity = activity == .pokemonQuiz ? MultiplayerLobby.quizCapacity : (activity == .tournament ? 8 : 4)
                 lobby = try MultiplayerLobby(host: host, capacity: capacity, activity: activity)
                 hostingRole = true
                 try startHosting()
@@ -176,6 +189,13 @@ final class MultiplayerRoomCenter {
         hostingRole = false
         Task {
             guard let snapshot = await buildSnapshot() else { phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return }
+            let isTournament = room.name.hasPrefix("TOUR ·")
+            if isTournament {
+                guard let lineup = await buildTournamentLineup() else {
+                    phase = .idle; lastError = "토너먼트에 출전할 포켓몬 3마리를 선택해 주세요."; return
+                }
+                tournamentTeams[myID] = lineup
+            }
             mySnapshot = snapshot
             snapshots[myID] = snapshot
             let connection = NWConnection(to: room.endpoint, using: Self.parameters())
@@ -192,6 +212,9 @@ final class MultiplayerRoomCenter {
                                                            reportedStarPieces: self.companion.availableTokens)
                         self.send(.join(version: MultiplayerWireMessage.protocolVersion,
                                         participant: participant, snapshot: snapshot), over: connection)
+                        if isTournament, let lineup = self.tournamentTeams[self.myID] {
+                            self.send(.tournamentTeam(participantID: self.myID, lineup: lineup), over: connection)
+                        }
                         self.receiveGuestLoop(connection)
                     case .failed(let error): self.lastError = error.localizedDescription; self.leaveRoom()
                     case .cancelled: if self.phase != .idle { self.leaveRoom() }
@@ -205,7 +228,7 @@ final class MultiplayerRoomCenter {
 
     /// 경기가 시작된 뒤엔 로비 편성을 건드리지 않는다 — `lobby.mode` 는 편성에서 파생되므로
     /// 배틀 중에 바뀌면 승패 판정의 근거가 흔들린다(호스트 자기 자신도 예외가 아니다).
-    var isInPlay: Bool { phase == .battling || phase == .pokeathlon || phase == .pokemonQuiz }
+    var isInPlay: Bool { phase == .battling || phase == .pokeathlon || phase == .pokemonQuiz || phase == .tournament }
 
     func toggleReady() {
         guard let me = myParticipant, !isInPlay else { return }
@@ -258,6 +281,105 @@ final class MultiplayerRoomCenter {
             PokemonOXPlayer(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID)
         }
         Task { await preparePokemonQuiz(players: players) }
+    }
+
+    func startTournament() {
+        guard isHost, let lobby, lobby.canStart, lobby.activity == .tournament else { return }
+        let runners = lobby.runners
+        guard runners.count >= 2, runners.count <= 8,
+              runners.allSatisfy({ tournamentTeams[$0.id]?.count == 3 }) else {
+            lastError = "모든 참가자가 포켓몬 3마리의 출전 파티를 준비해야 합니다."; return
+        }
+        let entrants = runners.map {
+            TournamentEntrant(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID)
+        }
+        let seed = UInt64.random(in: UInt64.min...UInt64.max)
+        tournamentBracket = TournamentBracket(participantIDs: entrants.map(\.id), seed: seed)
+        tournamentState = PokemonTournamentState(entrants: entrants,
+                                                  reward: TournamentEggReward.forParticipants(entrants.count))
+        tournamentRewarded = false; phase = .tournament
+        startNextTournamentMatch()
+    }
+
+    func submitTournamentAction(_ action: NetBattleAction) {
+        guard phase == .tournament, let match = tournamentState?.currentMatch,
+              match.winnerID == nil, match.playerA == myID || match.playerB == myID else { return }
+        if isHost { acceptTournamentAction(action, from: myID, matchID: match.id) }
+        else if let hostConnection {
+            send(.tournamentAction(matchID: match.id, participantID: myID, action: action), over: hostConnection)
+        }
+    }
+
+    private func acceptTournamentAction(_ action: NetBattleAction, from participantID: UUID, matchID: UUID) {
+        guard isHost, var engine = tournamentMatch, engine.id == matchID,
+              engine.submit(action, from: participantID) else { return }
+        tournamentMatch = engine
+        tournamentState?.currentMatch = engine.snapshot()
+        broadcastTournamentState()
+        finishTournamentTurnIfReady()
+    }
+
+    private func finishTournamentTurnIfReady() {
+        guard isHost, var engine = tournamentMatch, engine.isReady else { return }
+        let winner = engine.resolveIfReady()
+        tournamentMatch = engine
+        tournamentState?.currentMatch = engine.snapshot(winnerID: winner)
+        broadcastTournamentState()
+        if let winner {
+            let record = TournamentBracketMatch(id: engine.id, round: engine.round,
+                                                playerA: engine.playerA.id, playerB: engine.playerB.id,
+                                                winnerID: winner)
+            tournamentBracket?.record(match: record)
+            if let index = tournamentState?.matches.firstIndex(where: { $0.id == record.id }) {
+                tournamentState?.matches[index] = record
+            } else { tournamentState?.matches.append(record) }
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                self?.startNextTournamentMatch()
+            }
+        } else { scheduleTurnTimeout() }
+    }
+
+    private func startNextTournamentMatch() {
+        guard isHost, var bracket = tournamentBracket, var state = tournamentState else { return }
+        if let champion = bracket.championID {
+            state.championID = champion; state.currentMatch = nil
+            tournamentBracket = bracket; tournamentState = state; tournamentMatch = nil
+            if champion == myID { grantTournamentRewardIfNeeded(state.reward) }
+            broadcastTournamentState(); return
+        }
+        guard let pair = bracket.nextPair() else {
+            tournamentBracket = bracket
+            if let champion = bracket.championID {
+                state.championID = champion; state.currentMatch = nil; tournamentState = state
+                if champion == myID { grantTournamentRewardIfNeeded(state.reward) }
+                broadcastTournamentState()
+            }
+            return
+        }
+        guard let a = state.entrants.first(where: { $0.id == pair.0 }),
+              let b = state.entrants.first(where: { $0.id == pair.1 }),
+              let teamA = tournamentTeams[a.id], let teamB = tournamentTeams[b.id] else { return }
+        let engine = TournamentMatchEngine(round: bracket.round, playerA: a, playerB: b,
+                                           teamA: teamA, teamB: teamB,
+                                           seed: UInt64.random(in: UInt64.min...UInt64.max))
+        state.currentMatch = engine.snapshot()
+        state.matches.append(TournamentBracketMatch(id: engine.id, round: bracket.round,
+                                                    playerA: a.id, playerB: b.id, winnerID: nil))
+        tournamentBracket = bracket; tournamentState = state; tournamentMatch = engine
+        phase = .tournament; scheduleTurnTimeout(); broadcastTournamentState(start: true)
+    }
+
+    private func grantTournamentRewardIfNeeded(_ reward: TournamentEggReward) {
+        guard !tournamentRewarded else { return }
+        tournamentRewarded = true; companion.grantTournamentEgg(reward)
+    }
+
+    private func broadcastTournamentState(start: Bool = false) {
+        guard let state = tournamentState else { return }
+        let message: MultiplayerWireMessage = start ? .tournamentStart(state: state) : .tournamentState(state)
+        for connection in guestConnections.values { send(message, over: connection) }
     }
 
     private func preparePokemonQuiz(players: [PokemonOXPlayer]) async {
@@ -490,6 +612,8 @@ final class MultiplayerRoomCenter {
         pokemonQuizBroadcastTask?.cancel(); pokemonQuizBroadcastTask = nil
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
         pokemonQuizGame = nil; isPreparingPokemonQuiz = false; lastPokemonQuizInputAt = .distantPast
+        tournamentState = nil; tournamentTeams.removeAll(); tournamentBracket = nil
+        tournamentMatch = nil; tournamentRewarded = false
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
@@ -503,6 +627,7 @@ final class MultiplayerRoomCenter {
         switch lobby?.activity {
         case .pokeathlon: prefix = "RUN"
         case .pokemonQuiz: prefix = "QUIZ"
+        case .tournament: prefix = "TOUR"
         default: prefix = "BATTLE"
         }
         listener.service = NWListener.Service(name: "\(prefix) · \(trainerName)#\(String(myID.uuidString.prefix(6)))",
@@ -517,9 +642,12 @@ final class MultiplayerRoomCenter {
     }
 
     private func acceptGuest(_ connection: NWConnection) {
-        let maxGuests = lobby?.activity == .pokemonQuiz
-            ? MultiplayerLobby.quizCapacity - 1
-            : 3 + MultiplayerLobby.spectatorCapacity   // 러너 3 + 관전 8
+        let maxGuests: Int
+        switch lobby?.activity {
+        case .pokemonQuiz: maxGuests = MultiplayerLobby.quizCapacity - 1
+        case .tournament: maxGuests = 7
+        default: maxGuests = 3 + MultiplayerLobby.spectatorCapacity
+        }
         guard isHost, guestConnections.count + pendingGuestConnections.count < maxGuests else {
             connection.cancel(); return
         }
@@ -581,6 +709,14 @@ final class MultiplayerRoomCenter {
                 self.applyPokeathlonInput(input, participantID: pid)
             case .pokemonQuizInput(let pid, let input) where pid == id:
                 self.applyPokemonQuizInput(input, participantID: pid)
+            case .tournamentTeam(let pid, let lineup) where pid == id:
+                guard self.lobby?.activity == .tournament,
+                      self.validTournamentLineup(lineup, participantID: pid) else {
+                    self.send(.rejected(reason: "잘못된 토너먼트 파티입니다."), over: connection); return
+                }
+                self.tournamentTeams[pid] = lineup
+            case .tournamentAction(let matchID, let pid, let action) where pid == id:
+                self.acceptTournamentAction(action, from: pid, matchID: matchID)
             case .pokeathlonBet(let pid, let runnerID, let amount) where pid == id:
                 self.acceptBet(PokeathlonBet(bettorID: pid, runnerID: runnerID, amount: amount), from: pid)
             default: break
@@ -621,6 +757,16 @@ final class MultiplayerRoomCenter {
                 self.applySettlement(pool: pool, winnerID: winnerID)
             case .pokemonQuizStart(let game): self.pokemonQuizGame = game; self.phase = .pokemonQuiz
             case .pokemonQuizState(let game) where self.phase == .pokemonQuiz: self.pokemonQuizGame = game
+            case .tournamentStart(let state):
+                self.tournamentState = state; self.phase = .tournament
+                self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
+            case .tournamentState(let state) where self.phase == .tournament:
+                let previousTurn = self.tournamentState?.currentMatch?.turn
+                self.tournamentState = state
+                if state.championID == self.myID { self.grantTournamentRewardIfNeeded(state.reward) }
+                if state.currentMatch?.turn != previousTurn {
+                    self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
+                }
             case .rejected(let reason): self.lastError = reason; self.leaveRoom(); return
             default: break
             }
@@ -685,7 +831,7 @@ final class MultiplayerRoomCenter {
 
     private func scheduleTurnTimeout() {
         turnTimeoutTask?.cancel()
-        let round = combatRound
+        let round = phase == .tournament ? (tournamentState?.currentMatch?.turn ?? 0) : combatRound
         turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
         turnTimeoutTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.turnDuration))
@@ -695,6 +841,14 @@ final class MultiplayerRoomCenter {
     }
 
     private func fillTimedOutActions(round: Int) {
+        if phase == .tournament {
+            guard isHost, var engine = tournamentMatch,
+                  tournamentState?.currentMatch?.turn == round else { return }
+            engine.fillMissingActions(); tournamentMatch = engine
+            tournamentState?.currentMatch = engine.snapshot()
+            finishTournamentTurnIfReady()
+            return
+        }
         guard isHost, phase == .battling, combatRound == round, let battle else { return }
         for action in MultiplayerBattle.automaticActions(fighters: battle.fighters, mode: battle.mode,
                                                           excluding: Set(pendingActions.keys)) {
@@ -802,6 +956,32 @@ final class MultiplayerRoomCenter {
                               types: profile.types, base: profile.stats, moves: moves,
                               ability: profile.abilitySlug,
                               weightHectograms: profile.weightHectograms)
+    }
+
+    private func buildTournamentLineup() async -> [BattleSnapshot]? {
+        await companion.ensureInheritedMoves()
+        let owned = companion.ownedMons
+        let ids = tournamentPickedTeam.filter { id in owned.contains(where: { $0.id == id }) }
+        guard ids.count == 3 else { return nil }
+        var lineup: [BattleSnapshot] = []
+        for id in ids {
+            guard let mon = owned.first(where: { $0.id == id }),
+                  let snapshot = await companion.battleSnapshot(for: mon, level: 50) else { return nil }
+            lineup.append(snapshot)
+        }
+        return lineup
+    }
+
+    private func validTournamentLineup(_ lineup: [BattleSnapshot], participantID: UUID) -> Bool {
+        guard lineup.count == 3,
+              let participant = lobby?.participants.first(where: { $0.id == participantID }) else { return false }
+        return lineup.allSatisfy { snapshot in
+            MultiplayerValidation.valid(
+                participant: LobbyParticipant(id: participant.id, trainerName: participant.trainerName,
+                                              speciesID: snapshot.speciesID, team: .solo,
+                                              isReady: true, isHost: false),
+                snapshot: snapshot)
+        }
     }
 
     private func restartBrowser() { browser?.cancel(); browser = nil; startBrowsing() }
