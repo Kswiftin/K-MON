@@ -278,11 +278,6 @@ final class CompanionStore {
         // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
         claimAdventure()   // 끝난 run 만 정산한다 — 진행 중이면 그대로 둔다.
         if state.active != nil { displayState = .idle }
-        // 언어를 바꾼 뒤에도 저장된 영문 이름이 선택 목록에 남지 않게 백필한다.
-        // 기존에는 도감/로스터 화면을 열어야만 실행되어 설정 화면에서만 영어가 보였다.
-        if state.language != .en {
-            Task { await backfillMissingOwnedNames() }
-        }
     }
 
     /// R8 added room-style tickets after achievement counters were already persisted. Derive
