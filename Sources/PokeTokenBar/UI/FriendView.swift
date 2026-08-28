@@ -3,6 +3,8 @@ import SwiftUI
 /// 친구 탭의 관문. 근거리 상호작용을 한곳에 모으고 배틀과 교환 중 무엇을 할지 먼저 고른다.
 struct FriendView: View {
     enum Destination { case battle, trade }
+    @State private var representativeSearchText = ""
+    @State private var showsRepresentativePicker = false
 
     let store: CompanionStore
     let nav: PopoverNavigation
@@ -144,23 +146,43 @@ struct FriendView: View {
     }
 
     private var representativeMenu: some View {
-        Menu {
-            Button(store.l.t("대표 포켓몬 없음", "No representative", "代表ポケモンなし")) {
-                store.setBattleRepresentative(nil)
-            }
-            ForEach(store.ownedMons) { mon in
-                Button {
-                    store.setBattleRepresentative(mon.id)
-                } label: {
-                    let name = RosterOrdering.displayName(mon, language: store.language)
-                    Text("\(name) · Lv.\(mon.level)")
-                }
-            }
-        } label: {
+        Button { showsRepresentativePicker.toggle() } label: {
             Label(store.l.t("대표 포켓몬", "Representative", "代表ポケモン"),
                   systemImage: "star.circle.fill")
         }
-        .menuStyle(.borderlessButton).controlSize(.small)
+        .buttonStyle(.borderless).controlSize(.small)
+        .popover(isPresented: $showsRepresentativePicker) { representativePicker }
+    }
+
+    private var representativePicker: some View {
+        let mons = store.ownedMons.filter {
+            PokemonNameSearch.matches(representativeSearchText, names: PokemonNameSearch.names(for: $0))
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            PokemonSearchField(text: $representativeSearchText, l: store.l)
+            Button(store.l.t("대표 포켓몬 없음", "No representative", "代表ポケモンなし")) {
+                store.setBattleRepresentative(nil)
+                showsRepresentativePicker = false
+            }
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(mons) { mon in
+                        Button {
+                            store.setBattleRepresentative(mon.id)
+                            showsRepresentativePicker = false
+                        } label: {
+                            HStack {
+                                SpriteView(speciesID: mon.presentationID, size: 28, shiny: mon.isShiny)
+                                let name = RosterOrdering.displayName(mon, language: store.language)
+                                Text("\(name) · Lv.\(mon.level)").lineLimit(1)
+                                Spacer()
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain).padding(3)
+                    }
+                }
+            }
+        }.padding(10).frame(width: 250, height: 300)
     }
 
     private func trainerRow(_ peer: BattlePeer) -> some View {

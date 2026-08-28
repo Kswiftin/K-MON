@@ -29,6 +29,7 @@ struct TeamPicker: View {
     @State private var previewedMonID: UUID?
     /// 개체 id → 대전에 나갈 기술. 한 번 받은 개체는 다시 받지 않는다.
     @State private var previewMoves: [UUID: [MoveSpec]] = [:]
+    @State private var searchText = ""
 
     /// 한 줄에 넷. 스프라이트 44 에 이름 한 줄이 들어가려면 칩이 이만큼은 돼야 한다 —
     /// 여섯을 넣던 시절엔 칸이 44pt 라 스프라이트가 30 으로 줄어 무엇인지 알아보기 어려웠다.
@@ -102,9 +103,13 @@ struct TeamPicker: View {
 
     var body: some View {
         let all = store.ownedMons
+        let searched = all.filter {
+            PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(
+                for: $0, resolvedSpeciesName: speciesNames[$0.currentID]))
+        }
         let filtered = typeFilter.map { type in
-            all.filter { (monTypes[$0.currentID] ?? []).contains(type) }
-        } ?? all
+            searched.filter { (monTypes[$0.currentID] ?? []).contains(type) }
+        } ?? searched
         let shown = arranged(filtered)
         if all.count > 1 {
             let pageCount = max(1, (shown.count + Self.pageSize - 1) / Self.pageSize)
@@ -113,6 +118,7 @@ struct TeamPicker: View {
             let slice = Array(shown.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
             VStack(alignment: .leading, spacing: 6) {
                 header
+                PokemonSearchField(text: $searchText, l: l)
                 pickedRow
                 Divider().opacity(0.5)
                 grid(slice)
@@ -125,6 +131,7 @@ struct TeamPicker: View {
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.07)))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accentColor.opacity(0.35), lineWidth: 1))
+            .onChange(of: searchText) { page = 0 }
             // 타입·이름은 화면에 뜬 뒤 채워진다 — 받는 동안에도 목록은 그대로 보인다.
             .task(id: all.map(\.currentID)) {
                 for speciesID in Set(all.map(\.currentID)) {
