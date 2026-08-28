@@ -712,9 +712,9 @@ struct BattleView: View {
         }
         return BattleLog.lines(events, l: l,
                                name: { fighter($0)?.side.snapshot.name ?? "?" },
-                               moveName: { actor, id in
+                               move: { actor, id in
                                    let moves = fighter(actor)?.side.moves ?? []
-                                   return (moves.first { $0.id == id } ?? .struggle()).name(store.language)
+                                   return moves.first { $0.id == id } ?? .struggle()
                                })
     }
 

@@ -845,17 +845,13 @@ struct SwitchStripView: View {
 /// `ScrollView` 를 쓰지 않는 이유는 `BattleFieldMetrics.logLines` 주석에 있다.
 struct BattleLogBox: View {
     let lines: [BattleLog.Line]
-    /// 내 편 줄을 진하게 그리는 기준.
+    /// 내 편 줄을 오른쪽·진하게, 상대 줄을 왼쪽·연하게 가르는 기준.
     let myActor: BattleActor?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(lines.suffix(BattleFieldMetrics.logLines).enumerated()), id: \.offset) { _, line in
-                Text(line.text)
-                    .font(.system(size: 9))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(line.actor == myActor ? .primary : .secondary)
+                BattleLogRow(line: line, isMine: line.actor.map { $0 == myActor })
             }
             Spacer(minLength: 0)
         }
@@ -868,6 +864,56 @@ struct BattleLogBox: View {
         // 그 가드를 넘어선 경우에도 조작을 가리지 않게 하는 두 번째 방어선이다.
         .clipped()
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+    }
+}
+
+/// 로그 한 줄. 기술을 쓴 줄은 `MoveGridView`와 같은 타입색·아이콘 칩으로 그려 "무엇을 썼는지"가
+/// 색으로도 읽히게 한다 — 예전엔 회색 텍스트 한 줄이라 기술 버튼과 다른 줄처럼 보였다. 턴 구분선처럼
+/// 주인이 없는 줄과, 잔뎀·회복·상태처럼 기술이 없는 줄은 문구 그대로 그린다.
+///
+/// 정렬은 채팅처럼 **내 편은 오른쪽, 상대는 왼쪽**이다 — 누가 한 행동인지 색뿐 아니라 위치로도 읽는다.
+struct BattleLogRow: View {
+    let line: BattleLog.Line
+    /// nil = 턴 구분선처럼 주인이 없다(가운데 정렬). true/false 는 각각 오른쪽/왼쪽.
+    let isMine: Bool?
+
+    var body: some View {
+        Group {
+            if let moveType = line.moveType, let damageClass = line.moveDamageClass,
+               let moveDisplayName = line.moveDisplayName {
+                chip(moveType: moveType, damageClass: damageClass, moveDisplayName: moveDisplayName)
+            } else {
+                Text(line.text)
+                    .font(.system(size: 9))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(isMine == true ? .primary : .secondary)
+            }
+        }
+        .frame(maxWidth: .infinity,
+               alignment: isMine == nil ? .center : (isMine == true ? .trailing : .leading))
+    }
+
+    private func chip(moveType: PokemonType, damageClass: MoveDamageClass, moveDisplayName: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: damageClass.symbolName).font(.system(size: 7, weight: .bold))
+            if let actorName = line.actorName {
+                Text(actorName).font(.system(size: 9, weight: .bold)).lineLimit(1)
+            }
+            Text(moveDisplayName).font(.system(size: 9, weight: .semibold)).lineLimit(1)
+            if let damage = line.damage {
+                Text("-\(damage)").font(.system(size: 9, weight: .bold, design: .monospaced))
+            }
+            ForEach(line.badges, id: \.self) { badge in
+                Text(badge).font(.system(size: 7, weight: .bold)).lineLimit(1)
+                    .padding(.horizontal, 3)
+                    .background(Color.black.opacity(0.16), in: Capsule())
+            }
+        }
+        .foregroundStyle(moveType.battleLabelColor)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(moveType.battleColor, in: Capsule())
     }
 }
 
@@ -1050,9 +1096,9 @@ enum BattleLogSource {
                          myMoves: [MoveSpec], theirMoves: [MoveSpec]) -> [BattleLog.Line] {
         BattleLog.lines(events, l: l,
                         name: { $0 == mine ? myName : theirName },
-                        moveName: { actor, id in
+                        move: { actor, id in
                             let moves = actor == mine ? myMoves : theirMoves
-                            return (moves.first { $0.id == id } ?? .struggle()).name(l.lang)
+                            return moves.first { $0.id == id } ?? .struggle()
                         })
     }
 

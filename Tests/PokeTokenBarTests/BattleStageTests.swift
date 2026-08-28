@@ -487,7 +487,10 @@ final class BattleStageTests: XCTestCase {
     func testBoostEventsBecomeTheirOwnLocalizedLine() {
         func lines(_ events: [BattleEvent], _ lang: AppLanguage) -> [String] {
             BattleLog.lines(events, l: L(lang), name: { $0 == .a ? "거북왕" : "리자몽" },
-                            moveName: { _, _ in "칼춤" }).map(\.text)
+                            move: { _, id in
+                                MoveSpec(id: id, names: ["ko": "칼춤"], type: .normal, power: 0,
+                                        damageClass: .status, accuracy: nil, pp: 20)
+                            }).map(\.text)
         }
         let stream: [BattleEvent] = [.move(.a, moveID: 14), .boost(.a, .atk, 2)]
         XCTAssertEqual(lines(stream, .ko), ["거북왕의 칼춤!", "거북왕의 공격이 크게 올라갔다!"])
@@ -821,7 +824,11 @@ final class BattleStageTests: XCTestCase {
     /// 랭크 0 짜리 `.boost` 는 줄이 없다 — 이벤트 스트림도 호스트가 보내오는 값이다.
     func testZeroBoostEventDrawsNoLine() {
         let lines = BattleLog.lines([.boost(.a, .atk, 0)], l: L(.ko),
-                                    name: { _ in "거북왕" }, moveName: { _, _ in "칼춤" })
+                                    name: { _ in "거북왕" },
+                                    move: { _, id in
+                                        MoveSpec(id: id, names: ["ko": "칼춤"], type: .normal, power: 0,
+                                                damageClass: .status, accuracy: nil, pp: 20)
+                                    })
         XCTAssertTrue(lines.isEmpty, "0 만큼 바뀐 랭크에 줄을 내면 로그가 거짓말을 한다")
     }
 

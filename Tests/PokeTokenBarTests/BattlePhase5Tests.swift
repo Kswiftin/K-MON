@@ -271,7 +271,11 @@ final class BattlePhase5Tests: XCTestCase {
     func testDrainHealLineIsLocalized() {
         func line(_ language: AppLanguage) -> String {
             BattleLog.lines([.heal(.a, amount: 12)], l: L(language),
-                            name: { _ in "거북왕" }, moveName: { _, _ in "메가드레인" })
+                            name: { _ in "거북왕" },
+                            move: { _, id in
+                                MoveSpec(id: id, names: ["ko": "메가드레인"], type: .grass, power: 40,
+                                        damageClass: .special, accuracy: 100, pp: 15)
+                            })
                 .map(\.text).joined()
         }
         XCTAssertTrue(line(.ko).contains("12"), "회복량이 안 보이면 줄이 무의미하다")
@@ -285,7 +289,11 @@ final class BattlePhase5Tests: XCTestCase {
         func line(_ language: AppLanguage) -> String {
             BattleLog.lines([.move(.a, moveID: 24), .multiHit(.a, hits: 4),
                              .damage(.b, amount: 60, cause: .move)], l: L(language),
-                            name: { _ in "시드라" }, moveName: { _, _ in "더블어택" })
+                            name: { _ in "시드라" },
+                            move: { _, id in
+                                MoveSpec(id: id, names: ["ko": "더블어택"], type: .normal, power: 15,
+                                        damageClass: .physical, accuracy: 90, pp: 10)
+                            })
                 .map(\.text).joined(separator: " | ")
         }
         XCTAssertTrue(line(.ko).contains("4"), "히트 수가 로그에 없으면 다단은 보이지 않는 기전이다")

@@ -419,7 +419,12 @@ final class BattleFieldTests: XCTestCase {
     /// 높이가 그대로**라, 위의 예산 검증은 줄 수를 늘려도 전부 통과한다(실제로 40줄을 주입했을 때
     /// 아무 테스트도 실패하지 않았다). 넘친 줄은 칸 밖에 그려져 아래 기술 버튼 위에 겹친다.
     func testTheLogBoxIsTallEnoughForTheLinesItDraws() {
-        let oneLine = renderedHeight(Text("탱커의 몸통박치기! 상대는 12 데미지를 받았다").font(.system(size: 9)),
+        // 기술 줄은 타입색 칩(아이콘 + 이름 + 기술명 + 데미지 + 배지)이라 일반 텍스트 한 줄보다
+        // 위아래 패딩이 붙는다 — 이 칩이 실제로 그리는 가장 높은 줄이므로 예산도 이걸로 잰다.
+        let richLine = BattleLog.Line(actor: .a, text: "", actorName: "탱커", moveType: .fighting,
+                                      moveDamageClass: .physical, moveDisplayName: "몸통박치기",
+                                      damage: 12, badges: ["효과가 굉장했다!"])
+        let oneLine = renderedHeight(BattleLogRow(line: richLine, isMine: true),
                                      proposingWidth: PopoverMetrics.contentWidth)
         func needed(lines: Int) -> CGFloat {
             oneLine * CGFloat(lines) + 2 * CGFloat(lines - 1) + 10   // 줄 + 줄간격 + 위아래 패딩
