@@ -5,8 +5,27 @@ import AppKit
 enum MemoryHomeBundledArt {
     static let interiorTilesetResource = "oga-interior-tileset"
 
+    /// Source rectangles are deliberately kept here, next to the resource contract, rather than
+    /// in the SwiftUI screen.  This makes it impossible for the room UI to silently fall back to
+    /// SF Symbols/emoji when the bundled art changes.
+    private static let furnitureRects: [ItemKind: CGRect] = [
+        .roomBed: CGRect(x: 64, y: 16, width: 24, height: 16),
+        .roomTable: CGRect(x: 88, y: 32, width: 16, height: 16),
+        .roomLamp: CGRect(x: 112, y: 16, width: 8, height: 16),
+    ]
+
     static func interiorTileset() -> NSImage? {
         guard let url = Bundle.module.url(forResource: interiorTilesetResource, withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
+    }
+
+    /// A small, nearest-neighbour-ready furniture sprite. The tileset's origin is top-left,
+    /// matching `CGImage.cropping(to:)`; AppKit's view coordinate system is not involved.
+    static func furnitureImage(for item: ItemKind) -> NSImage? {
+        guard let rect = furnitureRects[item],
+              let image = interiorTileset(),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let cropped = cgImage.cropping(to: rect) else { return nil }
+        return NSImage(cgImage: cropped, size: rect.size)
     }
 }

@@ -15,4 +15,17 @@ import XCTest
         XCTAssertEqual(album.memoryHomeAccess.roomLayout["left"], .roomBed)
         XCTAssertNil(album.memoryHomeAccess.roomLayout["right"])
     }
+
+    func testImportedLayoutDropsConsumablesAndFurnitureMissingFromTheBag() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let album = PokemonMemoryAlbum(fileURL: url)
+        var access = MemoryHomeAccessSettings()
+        access.roomLayout = ["left": .roomBed, "center": .rareCandy, "right": .roomLamp]
+        let snapshot = PokemonMemoryAlbumSnapshot(memories: [:], pinnedMemoryIDs: [:], milestones: [:],
+                                                  roomThemes: [:], memoryHomeAccess: access)
+
+        album.replace(with: snapshot, validCompanionIDs: [], ownedItems: [ItemKind.roomBed.rawValue: 1])
+
+        XCTAssertEqual(album.memoryHomeAccess.roomLayout, ["left": .roomBed])
+    }
 }

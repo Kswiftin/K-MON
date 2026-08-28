@@ -436,6 +436,9 @@ struct PokemonMemoryMilestone: Identifiable, Sendable, Equatable {
 
 @MainActor @Observable
 final class PokemonMemoryAlbum {
+    /// The layout is a bounded projection of inventory, never a second item catalogue.
+    /// Keep this list beside the normalization path so imported JSON cannot place a consumable.
+    private static let roomFurnitureItems: Set<ItemKind> = [.roomBed, .roomTable, .roomLamp]
     private struct Snapshot: Codable {
         var memories: [UUID: [PokemonMemory]]
         var pinnedMemoryIDs: [UUID: UUID]
@@ -653,16 +656,22 @@ final class PokemonMemoryAlbum {
         return true
     }
     func deleteAll(for id: UUID) { memories.removeValue(forKey: id); pinnedMemoryIDs.removeValue(forKey: id); milestoneStates.removeValue(forKey: id); roomThemes.removeValue(forKey: id); normalizeMemoryHomeAccess(); save() }
-    func prune(validCompanionIDs: Set<UUID>) {
+    func prune(validCompanionIDs: Set<UUID>, ownedItems: [String: Int]? = nil) {
         memories = memories.filter { validCompanionIDs.contains($0.key) }
         pinnedMemoryIDs = pinnedMemoryIDs.filter { validCompanionIDs.contains($0.key) }
         milestoneStates = milestoneStates.filter { validCompanionIDs.contains($0.key) }
         roomThemes = roomThemes.filter { validCompanionIDs.contains($0.key) }
         memoryHomeAccess.roommateIDs = memoryHomeAccess.roommateIDs.filter { validCompanionIDs.contains($0) }
+        if let ownedItems {
+            memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter { _, item in
+                Self.roomFurnitureItems.contains(item) && ownedItems[item.rawValue, default: 0] > 0
+            }
+        }
         normalizePins(); normalizeMemoryHomeAccess(); _ = normalizeMilestones(); save()
     }
     var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates, roomThemes: roomThemes, memoryHomeAccess: memoryHomeAccess) }
-    func replace(with snapshot: PokemonMemoryAlbumSnapshot, validCompanionIDs: Set<UUID>) {
+    func replace(with snapshot: PokemonMemoryAlbumSnapshot, validCompanionIDs: Set<UUID>,
+                 ownedItems: [String: Int]? = nil) {
         memories = snapshot.memories.reduce(into: [:]) { result, entry in
             guard validCompanionIDs.contains(entry.key) else { return }
             result[entry.key] = Array(entry.value.filter { memory in
@@ -675,7 +684,13 @@ final class PokemonMemoryAlbum {
         milestoneStates = snapshot.milestones.filter { validCompanionIDs.contains($0.key) }
         roomThemes = snapshot.roomThemes.filter { validCompanionIDs.contains($0.key) }
         memoryHomeAccess = snapshot.memoryHomeAccess
-        normalizePins(); normalizeMemoryHomeAccess(); save()
+        normalizePins(); normalizeMemoryHomeAccess()
+        if let ownedItems {
+            memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter { _, item in
+                Self.roomFurnitureItems.contains(item) && ownedItems[item.rawValue, default: 0] > 0
+            }
+        }
+        save()
         if normalizeMilestones() || backfillFirstRecordedDates() { save() }
     }
     func snapshotData() throws -> Data { try JSONEncoder().encode(snapshot) }
@@ -769,7 +784,7 @@ final class PokemonMemoryAlbum {
     }
     func setFurniture(_ item: ItemKind?, in slot: String, ownedItems: [String: Int]) {
         guard ["left", "center", "right"].contains(slot) else { return }
-        if let item, ownedItems[item.rawValue, default: 0] > 0 { memoryHomeAccess.roomLayout[slot] = item }
+        if let item, Self.roomFurnitureItems.contains(item), ownedItems[item.rawValue, default: 0] > 0 { memoryHomeAccess.roomLayout[slot] = item }
         else { memoryHomeAccess.roomLayout.removeValue(forKey: slot) }
         save()
     }
@@ -866,7 +881,9 @@ final class PokemonMemoryAlbum {
             let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
             return !value.isEmpty && value.count <= 20 && !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) })
         }
-        memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter { ["left", "center", "right"].contains($0.key) }
+        memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter {
+            ["left", "center", "right"].contains($0.key) && Self.roomFurnitureItems.contains($0.value)
+        }
     }
     /// This is called at the store save boundary, covering every active-companion transition.
     func clearSharedPinnedMemory(unlessPinnedFor activeCompanionID: UUID?) {

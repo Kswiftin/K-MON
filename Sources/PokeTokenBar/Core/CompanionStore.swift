@@ -167,6 +167,9 @@ final class CompanionStore {
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
+        // Room placement is derived from this save's bag.  Normalize at the state/album join so
+        // a hand-edited or imported album cannot render furniture the player does not own.
+        self.memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
         self.memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
         backfillFirstMeetingDates()
         reconcileStoredEggDates()
@@ -1406,6 +1409,7 @@ final class CompanionStore {
         let released = state.boxedMons.remove(at: index)
         AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
         memoryAlbum.deleteAll(for: released.id)
+        memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
         chatStore.deleteSession(for: released.id)
         save()
         return true
@@ -1431,6 +1435,7 @@ final class CompanionStore {
             chatStore.deleteSession(for: sent.id)
             state.active = received
             memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
+            memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
             activeGeneration += 1
             currentLine = nil
             displayedMoves = []
@@ -1449,6 +1454,7 @@ final class CompanionStore {
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
         memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
+        memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
         save()
         return true
     }
@@ -3137,9 +3143,9 @@ final class CompanionStore {
         state = SaveTransfer.rebasedForThisDevice(envelope.state, current: state)
         let validIDs = Set(([state.active].compactMap { $0 } + state.boxedMons).map(\.id))
         if let importedAlbum = envelope.memoryAlbum {
-            memoryAlbum.replace(with: importedAlbum, validCompanionIDs: validIDs)
+            memoryAlbum.replace(with: importedAlbum, validCompanionIDs: validIDs, ownedItems: state.inventory)
         } else {
-            memoryAlbum.prune(validCompanionIDs: validIDs)
+            memoryAlbum.prune(validCompanionIDs: validIDs, ownedItems: state.inventory)
         }
         memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
         backfillFirstMeetingDates()

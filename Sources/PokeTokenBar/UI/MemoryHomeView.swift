@@ -481,6 +481,20 @@ struct MemoryHomeView: View {
         }
         .padding(8)
         .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        // The four saved themes remain the user's wallpaper/floor colour pair; the bundled
+        // tileset supplies the pixel texture underneath instead of a network image or a symbol.
+        .overlay {
+            if let art = MemoryHomeBundledArt.interiorTileset() {
+                Image(nsImage: art)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFill()
+                    .opacity(0.10)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(l.t("\(store.chatProfile(for: mon).displayName)의 미니룸. \(firstMeetingText(mon.id)). 기억 \(entries.count)개, 카드 \(milestones.count)개",
                                "\(store.chatProfile(for: mon).displayName)'s mini room. \(firstMeetingText(mon.id)). \(entries.count) memories, \(milestones.count) cards",
@@ -526,7 +540,16 @@ struct MemoryHomeView: View {
                     } label: {
                         let item = album.memoryHomeAccess.roomLayout[slot]
                         VStack(spacing: 2) {
-                            Text(item.map { $0.fallbackEmoji } ?? "＋").font(.title3)
+                            if let item, let art = MemoryHomeBundledArt.furnitureImage(for: item) {
+                                Image(nsImage: art)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: 27)
+                                    .accessibilityHidden(true)
+                            } else {
+                                Text("＋").font(.title3)
+                            }
                             Text(slotName(slot)).font(.caption2.weight(.semibold))
                         }
                         .frame(maxWidth: .infinity, minHeight: 50)
