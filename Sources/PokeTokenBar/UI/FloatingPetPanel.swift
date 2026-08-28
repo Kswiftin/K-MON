@@ -7,6 +7,14 @@ final class FloatingPetMotionState {
     var facingLeft = false
 }
 
+@MainActor
+@Observable
+private final class SatellitePetState {
+    var facingLeft = false
+    var direction = CGVector(dx: 1, dy: 0)
+    var directionDeadline: TimeInterval = 0
+}
+
 /// 데스크톱 위에 떠 있는 컴패니언 포켓몬 오버레이(옵트인, 설정 → 플로팅 펫).
 /// - 드래그: 커스텀 `mouseDragged` (클릭과 충돌하지 않음).
 /// - 클릭 → 팝오버, 우클릭 → 메뉴, 호버 → 함께한 시간 콜아웃.
@@ -25,6 +33,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     private let companion: CompanionStore
     private let defaults: UserDefaults
     private var panel: NSPanel?
+    /// 추가 포켓몬도 각각 독립된 투명 패널과 이동 상태를 가진다.
+    private var satellitePanels: [NSPanel] = []
+    private var satelliteStates: [SatellitePetState] = []
+    private var satelliteKey: [String] = []
     private var hoverPanel: NSPanel?
     private var displayAwake = true
     private var builtAnimated: Bool?
@@ -86,9 +98,10 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             _ = settings.floatingPetRoamingEnabled
             _ = settings.floatingPetMouseChaseEnabled
             _ = settings.floatingPetMovementSpeed
-            _ = settings.floatingPetSpeciesID
+            _ = settings.floatingPetSpeciesIDs
             _ = settings.doNotDisturb
             _ = companion.language
+            _ = companion.dexSpecies
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -185,6 +198,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         }
         p.setFrame(frame, display: true)
         p.orderFrontRegardless()
+        syncSatellitePanels(animated: wantAnimated, around: p.frame)
         if hoverPanel?.isVisible == true { showHoverCallout() }
     }
 
@@ -194,7 +208,51 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         guard let p = panel else { return }
         p.orderOut(nil)
         p.contentView = nil
+        hideSatellitePanels()
         builtAnimated = nil
+    }
+
+    private func syncSatellitePanels(animated: Bool, around mainFrame: NSRect) {
+        let subjects = companion.floatingPetSubjects(selectedSpeciesIDs: settings.floatingPetSpeciesIDs)
+        // 첫 번째 패널 외의 포켓몬도 각각 독립적인 투명 패널에서 움직인다.
+        let satellites = Array(subjects.dropFirst())
+        let key = [String(animated)] + satellites.map { "\($0.speciesID ?? -1)-\($0.isShiny)" }
+        let didRebuild = key != satelliteKey
+        if didRebuild {
+            satellitePanels.forEach { $0.orderOut(nil); $0.contentView = nil }
+            satelliteStates = satellites.map { _ in SatellitePetState() }
+            satellitePanels = satellites.enumerated().map { index, subject in
+                let panel = makeSatellitePanel()
+                panel.contentView = NSHostingView(rootView: AnyView(
+                    SatellitePetView(subject: subject, animated: animated, motion: satelliteStates[index])
+                        .environment(settings).environment(companion)))
+                return panel
+            }
+            satelliteKey = key
+        }
+        let size = CGFloat(settings.floatingPetSize)
+        for panel in satellitePanels {
+            panel.setContentSize(NSSize(width: size, height: size))
+        }
+        if didRebuild { positionSatellitePanels(around: mainFrame) }
+        satellitePanels.forEach { $0.orderFrontRegardless() }
+    }
+
+    private func positionSatellitePanels(around mainFrame: NSRect) {
+        let step = CGFloat(settings.floatingPetSize) * 1.12
+        let offsets: [(CGFloat, CGFloat)] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1)]
+        for (index, panel) in satellitePanels.enumerated() where index < offsets.count {
+            let offset = offsets[index]
+            panel.setFrameOrigin(NSPoint(x: mainFrame.origin.x + offset.0 * step,
+                                         y: mainFrame.origin.y + offset.1 * step))
+        }
+    }
+
+    private func hideSatellitePanels() {
+        satellitePanels.forEach { $0.orderOut(nil); $0.contentView = nil }
+        satellitePanels.removeAll()
+        satelliteStates.removeAll()
+        satelliteKey.removeAll()
     }
 
     private func startMovement() {
@@ -234,6 +292,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         guard let previous = lastMovementTick else { return }
         let delta = min(0.1, max(0, now - previous))
         let speed = CGFloat(settings.floatingPetMovementSpeed)
+        advanceSatelliteMovement(speed: speed, delta: delta, now: now)
         if let route = pendingPortal {
             advanceTowardPortal(route, speed: speed, delta: delta, now: now)
             return
@@ -277,6 +336,28 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         if now - lastPositionSave >= 2 {
             persistCurrentOrigin()
             lastPositionSave = now
+        }
+    }
+
+    private func advanceSatelliteMovement(speed: CGFloat, delta: TimeInterval, now: TimeInterval) {
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        let size = CGFloat(settings.floatingPetSize)
+        for (index, panel) in satellitePanels.enumerated() where panel.isVisible && index < satelliteStates.count {
+            let state = satelliteStates[index]
+            if now >= state.directionDeadline {
+                let angle = Double.random(in: 0..<(Double.pi * 2))
+                state.direction = CGVector(dx: cos(angle), dy: sin(angle))
+                state.directionDeadline = now + Double.random(
+                    in: Self.minimumTravelDuration...Self.maximumTravelDuration)
+            }
+            let velocity = CGVector(dx: state.direction.dx * speed, dy: state.direction.dy * speed)
+            let result = Self.resolvedMotion(origin: panel.frame.origin, petSize: size,
+                                             velocity: velocity, delta: delta, screens: screens)
+            if speed > 0 {
+                state.direction = CGVector(dx: result.velocity.dx / speed, dy: result.velocity.dy / speed)
+                if abs(state.direction.dx) > 0.05 { state.facingLeft = state.direction.dx < 0 }
+            }
+            panel.setFrameOrigin(result.origin)
         }
     }
 
@@ -633,6 +714,13 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
         return p
     }
 
+    private func makeSatellitePanel() -> NSPanel {
+        let p = makePanel()
+        p.ignoresMouseEvents = true
+        p.delegate = nil
+        return p
+    }
+
     func windowDidMove(_ notification: Notification) {
         guard let p = panel, p.isVisible else { return }
         if isAutomaticMove {
@@ -760,7 +848,8 @@ struct FloatingPetView: View {
         // 설정이 "선명하게" 면 GIF 를 아예 안 탄다. 저전력 모드도 여기서 함께 걸린다(`animated`).
         let playsGIF = animated && settings.floatingPetArtwork == .animated
         VStack(spacing: 8) {
-            let subject = companion.floatingPetSubject(pinnedSpeciesID: settings.floatingPetSpeciesID)
+            let subject = companion.floatingPetSubjects(selectedSpeciesIDs: settings.floatingPetSpeciesIDs).first
+                ?? (speciesID: nil, isShiny: false)
             // 정지일 땐 위아래로 살짝 흔든다 — 안 그러면 펫이 얼어붙은 것처럼 보인다.
             // 고해상도는 정지 경로에서 **항상** 켠다: 저전력으로 GIF 가 꺼졌을 때 96px 원본으로
             // 떨어지면 지금보다 더 뭉개진다.
@@ -773,5 +862,21 @@ struct FloatingPetView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .environment(\.spriteAntialiasing, settings.imageAntialiasing)
+    }
+}
+
+private struct SatellitePetView: View {
+    let subject: (speciesID: Int?, isShiny: Bool)
+    let animated: Bool
+    var motion: SatellitePetState
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        let size = CGFloat(settings.floatingPetSize)
+        SpriteView(speciesID: subject.speciesID, size: size, animated: animated,
+                   shiny: subject.isShiny, minFrameDelay: FloatingPetView.frameFloor)
+            .frame(width: size, height: size)
+            .scaleEffect(x: motion.facingLeft ? -1 : 1, y: 1)
+            .environment(\.spriteAntialiasing, settings.imageAntialiasing)
     }
 }
