@@ -300,6 +300,15 @@ struct CombatantBar: View {
                 Text(side.snapshot.name).font(.caption.bold()).lineLimit(1)
                 Text(l.battleLv(side.snapshot.level))
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                // 이름이 이미 이 줄에서 가장 먼저 잘리는 요소다(위 주석) — 타입 배지는 그 뒤,
+                // 로그 칩·기술 버튼과 같은 타입색 팔레트(`battleColor`)로 작게 붙인다.
+                ForEach(side.snapshot.types, id: \.self) { type in
+                    Text(type.name(l.lang).uppercased())
+                        .font(.system(size: 7, weight: .heavy))
+                        .foregroundStyle(type.battleLabelColor)
+                        .padding(.horizontal, 3).padding(.vertical, 1)
+                        .background(type.battleColor, in: Capsule())
+                }
                 Spacer(minLength: 2)
                 StatusBadgeRow(side: side)
             }
