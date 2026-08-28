@@ -24,6 +24,7 @@ struct PokemonRosterView: View {
     /// 방생 확인 대상. 되돌릴 수 없으므로 카드에서 바로 놓아주지 않고 한 번 물어본다.
     @State private var releaseTarget: MonState?
     @State private var infoTarget: MonState?
+    @State private var searchText = ""
     @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
@@ -42,7 +43,11 @@ struct PokemonRosterView: View {
 
     var body: some View {
         let owned = store.ownedMons
-        let arranged = RosterOrdering.arrange(owned, sort: settings.rosterSort,
+        let searched = owned.filter {
+            PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(
+                for: $0, resolvedSpeciesName: names[$0.presentationID]))
+        }
+        let arranged = RosterOrdering.arrange(searched, sort: settings.rosterSort,
                                               ascending: settings.rosterSortAscending,
                                               typeFilter: typeFilter, types: types,
                                               language: store.language, names: names)
@@ -52,10 +57,12 @@ struct PokemonRosterView: View {
         let slice = Array(arranged.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 6) {
             header(shownCount: arranged.count, ownedCount: owned.count, owned: owned)
+            PokemonSearchField(text: $searchText, l: store.l)
             grid(slice)
             footer(current: current, pageCount: pageCount)
         }
         .frame(height: Self.contentHeight, alignment: .top)
+        .onChange(of: searchText) { page = 0 }
         .task(id: ownedNameTaskID(owned)) {
             await store.backfillMissingOwnedNames()
             await resolveDisplayValues(for: store.ownedMons)
