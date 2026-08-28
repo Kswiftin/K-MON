@@ -92,6 +92,16 @@ enum SaveTransfer {
     /// 짧으면 정상 이름이 로드 때 잘린다. 배지 id(타입명)·`collectedFinals`("base:final") 도 이 안이다.
     static let maxNameLength = 20
 
+    /// **불러온 세이브**의 박스 상한. 앱 자신이 만든 세이브에는 걸지 않는다 — 졸업·부화는 박스에
+    /// 개체를 계속 쌓는데(상한 없음) 로드에서 자르면 마지막에 들어온 개체가 다음 실행마다 소멸한다(#145).
+    /// 값이 100 이던 시절엔 정상 플레이가 상한에 닿아(실제 박스 100) 불러오기가 진행을 잘랐다. 파싱
+    /// 시간 방어는 `maxFileBytes` 가 이미 하므로(개체 1마리 약 1.7KB → 1000마리 ≈ 1.7MB) 여유를 둔다.
+    static let maxImportedBoxedMons = 1000
+
+    /// 정규화를 거는 세이브의 출처. 절단(데이터 손실)을 동반하는 규칙은 **앱 밖에서 온 파일에만**
+    /// 건다 — 자기 디스크 세이브는 이미 무결성 서명으로 손편집을 걸러낸다.
+    enum SaveOrigin { case localDisk, importedFile }
+
     /// 원장 키를 상한으로 자른다 — 세 원장(일·주·시즌)이 같은 규칙을 쓰게 하는 자리.
     static func clampedKey(_ key: String) -> String { String(key.prefix(maxKeyLength)) }
 
@@ -170,7 +180,7 @@ enum SaveTransfer {
     ///
     /// 다운스트림 산술 지점마다 막으면 새 지점이 생길 때마다 재발하므로, 값이 **들어오는 경계 한 곳**에서
     /// 정규화한다. 대상은 실제로 산술에 쓰이는 필드뿐이다 — 도감·인벤토리 항목은 잘라내지 않는다(데이터 손실).
-    static func sanitized(_ state: CompanionState) -> CompanionState {
+    static func sanitized(_ state: CompanionState, origin: SaveOrigin = .importedFile) -> CompanionState {
         guard state.forcedResetVersion >= forcedResetVersion else {
             AppLog.write("forced save reset: v\(state.forcedResetVersion) → v\(forcedResetVersion)")
             return CompanionState()
@@ -231,7 +241,14 @@ enum SaveTransfer {
         // 활성·박스가 **같은 함수**를 지난다. 한쪽만 자르면 다른 쪽 경로의 산술이 손편집 값에 죽는다
         // (#81 — 박스만 자르고 활성을 빼 뒀더니 사탕 XP 를 더하는 순간 오버플로 트랩).
         s.active = s.active.map(sanitizedMon)
-        s.boxedMons = Array(s.boxedMons.prefix(100)).map(sanitizedMon)
+        s.boxedMons = s.boxedMons.map(sanitizedMon)
+        // 개수 절단은 불러오기 전용이고, 남기는 쪽은 **최신**이다 — 앞에서 자르면 방금 얻은 개체가
+        // 먼저 죽는다(박스는 뒤에 append 된다).
+        if origin == .importedFile, s.boxedMons.count > maxImportedBoxedMons {
+            let dropped = s.boxedMons.count - maxImportedBoxedMons
+            s.boxedMons = Array(s.boxedMons.suffix(maxImportedBoxedMons))
+            AppLog.write("imported save box truncated: dropped \(dropped) oldest mon(s), kept \(maxImportedBoxedMons)")
+        }
         if let representativeID = s.battleRepresentativeID,
            s.active?.id != representativeID,
            !s.boxedMons.contains(where: { $0.id == representativeID }) {
