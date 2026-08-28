@@ -322,6 +322,15 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         default: return false
         }
     }
+    /// R7 reactions are per furniture (not per species), keeping the content budget finite.
+    var roomReaction: String? {
+        switch self {
+        case .roomBed: return "beside"
+        case .roomTable: return "onTop"
+        case .roomLamp: return "under"
+        default: return nil
+        }
+    }
 }
 
 /// 상점에서 판매하는 기술머신. 기술 데이터와 습득 가능 여부는 PokéAPI를 사용하고, 카탈로그에는

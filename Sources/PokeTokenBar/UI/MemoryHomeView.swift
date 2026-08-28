@@ -490,7 +490,18 @@ struct MemoryHomeView: View {
             }
             Text(l.t("가구는 표현 전용이며 능력치·보상·진화에 영향을 주지 않아요.", "Furniture is expressive only; it never changes stats, rewards, or evolution.", "家具は表現のみで、能力・報酬・進化には影響しません。"))
                 .font(.caption2).foregroundStyle(.secondary)
+            if let item = album.memoryHomeAccess.roomLayout["center"], let reaction = item.roomReaction {
+                Text(roomReaction(item, placement: reaction)).font(.caption2).foregroundStyle(.secondary)
+            }
         }.padding(8).background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func roomReaction(_ item: ItemKind, placement: String) -> String {
+        switch placement {
+        case "onTop": return l.t("동행이 \(l.itemName(item)) 위에서 쉬고 있어요.", "Your companion is resting on the \(l.itemName(item)).", "相棒が\(l.itemName(item))の上で休んでいます。")
+        case "under": return l.t("동행이 \(l.itemName(item)) 곁의 빛을 쬐고 있어요.", "Your companion is enjoying the glow beside the \(l.itemName(item)).", "相棒が\(l.itemName(item))の明かりを楽しんでいます。")
+        default: return l.t("동행이 \(l.itemName(item)) 옆에 자리를 잡았어요.", "Your companion settled beside the \(l.itemName(item)).", "相棒が\(l.itemName(item))のそばに座りました。")
+        }
     }
 
     private func milestoneCard(_ milestone: PokemonMemoryMilestone, tint: Color) -> some View {
