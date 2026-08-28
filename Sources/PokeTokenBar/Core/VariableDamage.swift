@@ -144,6 +144,15 @@ enum VariableDamage: Equatable, Sendable {
         }
     }
 
+    private static func effectiveWeight(_ side: BattleSide) -> Int? {
+        guard let weight = side.snapshot.weightHectograms else { return nil }
+        switch side.ability?.rawValue {
+        case "heavy-metal": return weight * 2
+        case "light-metal": return max(1, weight / 2)
+        default: return weight
+        }
+    }
+
     /// 쓰고 나면 자기가 쓰러지는 기술. `applyAttack` 이 데미지를 넣은 **뒤에** 본다.
     static func userFaints(after move: MoveSpec) -> Bool { move.id == MoveID.finalGambit }
 
