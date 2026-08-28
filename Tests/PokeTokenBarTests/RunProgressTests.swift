@@ -114,6 +114,19 @@ final class RunProgressTests: XCTestCase {
         XCTAssertTrue(state.dex.isEmpty)
     }
 
+    /// 기기 이전 경로에서도 실제로 합쳐진다 — 순수 함수만 잠그면 `rebasedForThisDevice` 가 그 함수를
+    /// 부르지 않아도 통과한다(불러온 기기의 기록이 조용히 사라진다).
+    func testImportingAnotherDeviceKeepsTheBetterRecord() {
+        var imported = CompanionState()
+        imported.waveRun.record(reachedWave: 4, cleared: false)
+        var current = CompanionState()
+        current.waveRun.record(reachedWave: 10, cleared: false)
+
+        let rebased = SaveTransfer.rebasedForThisDevice(imported, current: current)
+        XCTAssertEqual(rebased.waveRun.bestWave, 10, "이 기기에서 세운 기록이 이전으로 사라졌다")
+        XCTAssertEqual(rebased.waveRun.finished, 1)
+    }
+
     // MARK: 판 하나는 한 번만 센다
 
     /// 결과 화면은 팝오버를 여닫을 때마다 다시 그려진다 — 플래그가 없으면 같은 판이 그만큼 쌓인다.

@@ -575,7 +575,9 @@ final class SaveTransferTests: XCTestCase {
         let deviceLedger: Set<String> = ["lastTickAt", "integrity"]
         // 계정 원장(로컬 날짜 문자열 — 비교 가능): 더 최근 값 유지.
         // 던전 진행도도 같은 부류다 — 같은 날이면 정산 플래그를 OR 로 합쳐 재지급을 막는다.
-        let accountLedger: Set<String> = ["lastCandyDate", "dungeon"]
+        // 웨이브 런 실적도 병합 대상이다 — 소모되지 않는 누적이라 축별로 큰 값을 남긴다
+        // (한쪽을 고르면 다른 기기에서 세운 최고 기록이 사라진다).
+        let accountLedger: Set<String> = ["lastCandyDate", "dungeon", "waveRun"]
         // 기기 환경설정: 현재 기기 값 유지.
         let devicePreference: Set<String> = ["language"]
 
