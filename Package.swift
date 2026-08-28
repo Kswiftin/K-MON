@@ -14,6 +14,7 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/PokeTokenBar",
+            resources: [.process("Resources")],
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
                 // build-app.sh embeds Sparkle in Contents/Frameworks. SwiftPM's binary
