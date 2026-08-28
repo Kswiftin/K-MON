@@ -36,6 +36,10 @@ struct RogueRun: Sendable {
 
     static let finalWave = 12
     static let offerCount = 3
+    /// 파티 상한 — 본가·PokeRogue 와 같은 6.
+    static let partyLimit = 6
+    /// 한 판에 주는 몬스터볼. 보상으로 더 주지 않는다 — 이 판의 포획 횟수를 여기 하나로 잠근다.
+    static let ballsPerRun = 5
     /// 4·8·12 웨이브가 보스다.
     static func isBoss(wave: Int) -> Bool { wave % 4 == 0 }
     /// 파티 레벨 기준선 — 스타터 5 에서 승리마다 +2. 보스의 +3 은 **세지 않는다**, 상대 레벨을
@@ -82,6 +86,23 @@ struct RogueRun: Sendable {
         return total <= cap && total >= cap * 3 / 5
     }
 
+    /// 포획 확률 — 본가 1세대의 HP 계수 `(3·최대 − 2·현재) / 3·최대` 에 상태이상 보정을 곱한다.
+    /// 종별 `capture_rate` 는 쓰지 않는다: 웨이브별 종족값 상한이 이미 어떤 종이 나올지를 정하므로
+    /// 희귀도 축을 하나 더 두면 같은 일을 두 번 하고, 종마다 `/pokemon-species` 왕복이 붙는다.
+    ///
+    /// 만피에서 33%, 빈사 직전에 상한 95% 다. 하한 5% 는 "절대 안 잡히는 턴"을 없애려는 값이다.
+    static func catchChance(target: BattleSide) -> Double {
+        let maxHP = max(1, target.stats.hp)
+        let hpFactor = Double(3 * maxHP - 2 * max(0, target.hp)) / Double(3 * maxHP)
+        let statusBonus: Double
+        switch target.status {
+        case .sleep, .freeze:                      statusBonus = 2.0
+        case .paralysis, .poison, .toxic, .burn:   statusBonus = 1.5
+        default:                                   statusBonus = 1.0
+        }
+        return min(0.95, max(0.05, hpFactor * statusBonus))
+    }
+
     /// 승리 시 파티 전원이 오르는 레벨. 전원 같은 폭이라 교체해도 손해가 없다 — 자원은 HP 지 레벨이 아니다.
     static func levelGain(wave: Int) -> Int { isBoss(wave: wave) ? 3 : 2 }
 
@@ -90,6 +111,8 @@ struct RogueRun: Sendable {
     private(set) var party: [BattleSide]
     private(set) var stage: Stage = .battling
     private(set) var offers: [RunModifier] = []
+    /// 남은 몬스터볼. 판이 끝나면 파티와 함께 사라진다.
+    private(set) var balls = RogueRun.ballsPerRun
     private(set) var battle: TeamPracticeBattle
     /// 웨이브 seed·보상 추첨을 잇는 하나의 흐름. 판마다 `dayKey + 판 번호` 로 심는다.
     private var rng: SplitMix64
@@ -125,25 +148,64 @@ struct RogueRun: Sendable {
         guard let result = battle.result else { return }
         switch result {
         case .win:
-            levelUpParty(by: Self.levelGain(wave: wave))
-            // 주 상태이상(독·화상…)은 웨이브를 넘기지 않는다. 파티가 한 마리라 독 하나가 매 턴
-            // 최대 HP 1/8 을 가져가고, 판이 끝날 때까지 되돌릴 수단이 사실상 없다.
-            // 이월하는 자원은 HP·PP 다 — 만병통치제 보상은 전투 **중** 해제로 값이 남는다.
-            clearStatus()
-            // 보스를 넘으면 파티를 완전 회복한다 — 포켓로그가 10 웨이브마다 무료 회복을 주는 자리와
-            // 같은 역할이다. 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면 보상 3장으로는 못 메우고
-            // 후반 웨이브가 "이미 진 판을 마저 두는" 소화가 된다.
-            if Self.isBoss(wave: wave) { restoreParty() }
-            if wave == Self.finalWave {
-                stage = .cleared
-            } else {
-                offers = Self.drawOffers(&rng)
-                stage = .picking
-            }
+            clearWave()
         case .loss, .draw:
             // 동시 전멸도 실패다 — 파티가 남지 않았으면 다음 웨이브를 설 수 없다.
             stage = .failed
         }
+    }
+
+    /// 웨이브를 넘긴 정산. **쓰러뜨려서 넘기든 잡아서 넘기든 같은 자리를 지난다** — 두 경로가
+    /// 갈리면 레벨업·회복·보상 규칙이 조용히 어긋난다.
+    private mutating func clearWave() {
+        levelUpParty(by: Self.levelGain(wave: wave))
+        // 주 상태이상(독·화상…)은 웨이브를 넘기지 않는다. 파티가 한 마리라 독 하나가 매 턴
+        // 최대 HP 1/8 을 가져가고, 판이 끝날 때까지 되돌릴 수단이 사실상 없다.
+        // 이월하는 자원은 HP·PP 다 — 만병통치제 보상은 전투 **중** 해제로 값이 남는다.
+        clearStatus()
+        // 보스를 넘으면 파티를 완전 회복한다 — 포켓로그가 10 웨이브마다 무료 회복을 주는 자리와
+        // 같은 역할이다. 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면 보상 3장으로는 못 메우고
+        // 후반 웨이브가 "이미 진 판을 마저 두는" 소화가 된다.
+        if Self.isBoss(wave: wave) { restoreParty() }
+        if wave == Self.finalWave {
+            stage = .cleared
+        } else {
+            offers = Self.drawOffers(&rng)
+            stage = .picking
+        }
+    }
+
+    // MARK: 포획
+
+    /// 지금 볼을 던질 수 있는가. 보스는 제외한다 — 4·8·12 웨이브는 판의 관문이고 회복 지점이라
+    /// 잡아서 건너뛰면 그 자리가 사라진다.
+    var canThrowBall: Bool {
+        stage == .battling && battle.result == nil && balls > 0
+            && party.count < Self.partyLimit && !Self.isBoss(wave: wave)
+    }
+
+    /// 볼을 던진다. **성공하든 실패하든 그 턴은 내 공격이 아니다** — 실패하면 상대만 움직인다.
+    /// 성공하면 그 웨이브는 쓰러뜨린 것과 같은 규칙으로 넘어간다(`clearWave`).
+    @discardableResult
+    mutating func throwBall() -> Bool {
+        guard canThrowBall else { return false }
+        balls -= 1
+        let target = battle.opponentSlot
+        let roll = Double(rng.next() % 10_000) / 10_000
+        guard roll < Self.catchChance(target: target) else {
+            _ = battle.spendTurnWithoutAttacking()
+            settle()
+            return false
+        }
+        party = battle.mine
+        // 정산을 먼저 지난다 — 잡힌 개체는 그 전투의 경험치를 받지 않으므로 레벨업 대상이 아니다.
+        clearWave()
+        var caught = target
+        BattleEngine.prepareForSwitch(&caught)
+        caught.status = nil
+        caught.statusCounter = 0
+        party.append(caught)
+        return true
     }
 
     // MARK: 보상
@@ -259,5 +321,8 @@ extension RogueRun {
     mutating func debugApply(_ modifier: RunModifier) { apply(modifier) }
     /// 최종 웨이브 판정처럼 앞 웨이브를 다 밟지 않고 도달해야 하는 자리에 쓴다.
     mutating func debugJump(toWave value: Int) { wave = value }
+    /// 테스트 전용 — 포획 확률을 재려면 상대 HP·볼 개수를 직접 세워야 한다.
+    mutating func debugSetOpponentHP(_ value: Int) { battle.opponents[battle.opponentActive].hp = value }
+    mutating func debugSetBalls(_ value: Int) { balls = value }
 }
 #endif

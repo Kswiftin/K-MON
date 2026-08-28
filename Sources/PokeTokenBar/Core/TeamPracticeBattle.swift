@@ -60,6 +60,18 @@ struct TeamPracticeBattle {
         events += BattleEngine.endOfTurnResidual(&opponents[opponentActive], actor: .b)
     }
 
+    /// 내가 공격 대신 다른 행동(볼 던지기)에 턴을 쓴다 — **교체와 같은 대가다.** 상대만 한 번
+    /// 움직이고 잔뎀도 들어간다. 이 대가가 없으면 실패해도 잃는 것이 없어 볼을 마를 때까지
+    /// 던지는 것이 언제나 최선이 된다.
+    mutating func spendTurnWithoutAttacking() -> Bool {
+        guard result == nil, mine[myActive].isAlive, opponents[opponentActive].isAlive else { return false }
+        events.append(.turn(turn))
+        opponentAttacksAlone()
+        turn += 1
+        advanceFainted()
+        return true
+    }
+
     mutating func useMove(_ index: Int) -> Bool {
         guard result == nil, mine[myActive].isAlive, opponents[opponentActive].isAlive else { return false }
         let myIndex = mine[myActive].mustStruggle ? -1 : index

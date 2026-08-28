@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 포켓로그식 런 화면 — **프로토타입**이다. 입장권·기록 저장(`RunProgress`)·포획이 아직 없다.
+/// 포켓로그식 런 화면 — **프로토타입**이다. 입장권·기록 저장(`RunProgress`)이 아직 없다.
 struct RogueRunView: View {
     @Bindable var store: CompanionStore
     @Environment(AppSettings.self) private var settings
@@ -119,7 +119,37 @@ struct RogueRunView: View {
         let shownTheirs = animator.side(for: .b) ?? engineTheirs
         let me = shownMine.side ?? run.battle.mySlot
         let opponent = shownTheirs.side ?? run.battle.opponentSlot
-        return BattleArenaView(
+        return VStack(spacing: 6) {
+            catchBar(run)
+            arena(run, me: me, opponent: opponent, shownMine: shownMine,
+                  engineMine: engineMine, engineTheirs: engineTheirs)
+        }
+    }
+
+    /// 볼·파티 칸·성공률을 한 줄로 보여주고 던진다. 성공률을 감추면 언제 던질지가 순전히 감이 되고,
+    /// 볼이 5개뿐이라 그 감이 곧 판을 버리는 선택이 된다.
+    private func catchBar(_ run: RogueRun) -> some View {
+        HStack(spacing: 8) {
+            Label("\(run.balls)", systemImage: "circle.circle")
+            Text(l.t("파티 \(run.party.count)/\(RogueRun.partyLimit)",
+                     "Party \(run.party.count)/\(RogueRun.partyLimit)",
+                     "手持ち \(run.party.count)/\(RogueRun.partyLimit)"))
+                .foregroundStyle(.secondary)
+            Spacer()
+            if run.canThrowBall {
+                Text("\(Int(RogueRun.catchChance(target: run.battle.opponentSlot) * 100))%")
+                    .foregroundStyle(.secondary)
+            }
+            Button(l.t("잡기", "Catch", "捕まえる")) { mutate { _ = $0.throwBall() } }
+                .disabled(!run.canThrowBall)
+        }
+        .font(.caption)
+    }
+
+    private func arena(_ run: RogueRun, me: BattleSide, opponent: BattleSide,
+                       shownMine: ReplaySide,
+                       engineMine: ReplaySide, engineTheirs: ReplaySide) -> some View {
+        BattleArenaView(
             mine: me, theirs: opponent,
             myTitle: l.battleMyPokemon,
             theirTitle: RogueRun.isBoss(wave: run.wave) ? l.t("보스", "BOSS", "ボス")

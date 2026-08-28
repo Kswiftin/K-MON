@@ -98,6 +98,102 @@ final class RogueRunTests: XCTestCase {
         XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 200), wave: 12))
     }
 
+    // MARK: 포획
+
+    /// 확률은 HP 비율로 정해진다 — 만피 33%, 빈사 직전 상한 95%.
+    func testCatchChanceRisesAsTheTargetWeakens() {
+        var target = BattleSide(snapshot(50, level: 20))
+        XCTAssertEqual(RogueRun.catchChance(target: target), 1.0 / 3, accuracy: 0.01)
+        target.hp = 1
+        XCTAssertEqual(RogueRun.catchChance(target: target), 0.95, accuracy: 0.01)
+    }
+
+    /// 상태이상은 확률을 올린다 — 잠듦·얼음이 가장 크다.
+    func testStatusRaisesTheCatchChance() {
+        var target = BattleSide(snapshot(50, level: 20))
+        let plain = RogueRun.catchChance(target: target)
+        target.status = .paralysis
+        let paralysed = RogueRun.catchChance(target: target)
+        target.status = .sleep
+        XCTAssertGreaterThan(paralysed, plain)
+        XCTAssertGreaterThan(RogueRun.catchChance(target: target), paralysed)
+    }
+
+    /// 보스 웨이브는 판의 관문이자 회복 지점이라 잡아서 건너뛸 수 없다.
+    func testBossWavesRejectTheBall() {
+        var run = makeRun()
+        run.debugJump(toWave: 4)
+        XCTAssertFalse(run.canThrowBall)
+        XCTAssertFalse(run.throwBall())
+        XCTAssertEqual(run.balls, RogueRun.ballsPerRun)
+    }
+
+    func testBallsRunOut() {
+        var run = makeRun()
+        run.debugSetBalls(0)
+        XCTAssertFalse(run.canThrowBall)
+        XCTAssertFalse(run.throwBall())
+    }
+
+    func testFullPartyRejectsTheBall() {
+        let run = makeRun(partySize: RogueRun.partyLimit)
+        XCTAssertFalse(run.canThrowBall)
+    }
+
+    /// 성공하면 상대가 파티에 들어오고, 웨이브는 쓰러뜨렸을 때와 **같은 규칙**으로 넘어간다.
+    func testCatchingAddsTheTargetAndClearsTheWave() {
+        let run = caughtRun()
+        XCTAssertEqual(run.party.count, 3)
+        XCTAssertEqual(run.stage, .picking)
+        XCTAssertEqual(run.balls, RogueRun.ballsPerRun - 1)
+        XCTAssertEqual(run.party.last?.snapshot.speciesID, 99)
+        XCTAssertNil(run.party.last?.status)
+    }
+
+    /// 잡힌 개체는 그 전투의 경험치를 받지 않는다 — 원래 파티만 레벨이 오른다.
+    func testCaughtMemberDoesNotGainTheWaveLevel() {
+        let run = caughtRun()
+        XCTAssertEqual(run.party[0].snapshot.level, 5 + RogueRun.levelGain(wave: 1))
+        XCTAssertEqual(run.party.last?.snapshot.level, 5)
+    }
+
+    /// 실패한 볼도 그 턴을 쓴다 — 상대만 움직인다. 대가가 없으면 볼이 마를 때까지 던지는 것이
+    /// 언제나 최선이 된다.
+    func testAFailedBallCostsTheTurn() {
+        let run = failedBallRun()
+        XCTAssertEqual(run.stage, .battling)
+        XCTAssertGreaterThan(run.battle.turn, 1)
+        XCTAssertLessThan(run.party[0].hp, run.party[0].stats.hp)
+    }
+
+    /// 확률이 95% 라 잡히는 seed, 5% 라 실패하는 seed 를 각각 찾아 두 갈래를 다 밟는다.
+    /// 볼 시험용 판 — 파티가 상대 공격 한 번에 죽지 않아야 실패 갈래를 볼 수 있다.
+    private func ballRun(seed: UInt64) -> RogueRun {
+        RogueRun(party: (0..<2).map { snapshot(1 + $0, hp: 4000, speed: 200) },
+                 opponents: [snapshot(99, level: 5, hp: 100, speed: 1)],
+                 seed: seed)
+    }
+
+    private func caughtRun() -> RogueRun {
+        for seed in UInt64(1)...200 {
+            var run = ballRun(seed: seed)
+            run.debugSetOpponentHP(1)   // 확률 95%
+            if run.throwBall() { return run }
+        }
+        XCTFail("no seed produced a catch")
+        return ballRun(seed: 1)
+    }
+
+    private func failedBallRun() -> RogueRun {
+        for seed in UInt64(1)...500 {
+            var run = ballRun(seed: seed)
+            // 만피 상대는 실패 확률이 3분의 2 다.
+            if !run.throwBall() { return run }
+        }
+        XCTFail("no seed produced a failed ball")
+        return ballRun(seed: 1)
+    }
+
     // MARK: 진행
 
     func testWinningOffersThreeDistinctModifiers() {
