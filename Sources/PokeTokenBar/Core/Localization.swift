@@ -1242,6 +1242,12 @@ struct L {
           "Gyms take a team of \(count) — not enough Pokémon.",
           "ジムは\(count)体で挑みます — ポケモンが足りません。")
     }
+    func gymNeedsHigherLevel(_ level: Int) -> String {
+        t("도전 팀 전원이 Lv.\(level) 이상이어야 합니다.",
+          "Every Pokémon in your team must be Lv.\(level) or higher.",
+          "挑戦チーム全員がLv.\(level)以上である必要があります。")
+    }
+    var gymLevelGateTitle: String { t("레벨 부족", "Level too low", "レベル不足") }
     func gymBadgeCount(_ earned: Int, _ total: Int) -> String {
         t("배지 \(earned) / \(total)", "\(earned) / \(total) badges", "バッジ \(earned) / \(total)")
     }
@@ -1249,6 +1255,8 @@ struct L {
         t("관장 Lv.\(level)", "Leader Lv.\(level)", "ジムリーダー Lv.\(level)")
     }
     var gymChallenge: String { t("도전", "Challenge", "挑戦") }
+    var gymRematch: String { t("재도전", "Rematch", "再挑戦") }
+    var gymCleared: String { t("클리어", "Cleared", "クリア") }
 
     /// 최종형인데 아직 졸업 못 하는 개체의 파트너 카드 한 줄 — 남은 관문이 레벨뿐임을 알린다.
     /// "Lv.N 에 진화" 가 사라진 그 자리에 들어간다.

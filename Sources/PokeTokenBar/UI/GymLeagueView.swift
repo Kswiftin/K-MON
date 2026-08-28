@@ -27,6 +27,8 @@ struct GymLeagueView: View {
             HStack {
                 Label(l.gymLeagueTitle, systemImage: "building.columns.fill")
                     .font(.headline)
+                Text(l.gymBadgeCount(store.state.gymLeagueBadges.count, GymLeague.catalog.count))
+                    .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 Button(action: onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help(l.battleClose)
@@ -38,6 +40,7 @@ struct GymLeagueView: View {
                 VStack(spacing: 6) {
                     ForEach(GymLeague.catalog) { gym in
                         GymRow(gym: gym, store: store,
+                               isCleared: store.state.gymLeagueBadges.contains(gym.id),
                                onChallenge: { center.startGymChallenge(gym) })
                     }
                 }
@@ -51,6 +54,12 @@ struct GymLeagueView: View {
         }
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        .alert(l.gymLevelGateTitle,
+               isPresented: Binding(get: { center.gymLevelGateMessage != nil },
+                                    set: { if !$0 { center.dismissGymLevelGateAlert() } })) {
+        } message: {
+            Text(center.gymLevelGateMessage ?? "")
+        }
     }
 }
 
@@ -58,6 +67,7 @@ struct GymLeagueView: View {
 private struct GymRow: View {
     let gym: Gym
     let store: CompanionStore
+    let isCleared: Bool
     let onChallenge: () -> Void
 
     var body: some View {
@@ -73,13 +83,18 @@ private struct GymRow: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
-            RewardLabel(reward: gym.firstClearReward, store: store)
-            Button(store.l.gymChallenge, action: onChallenge)
+            if isCleared {
+                Label(store.l.gymCleared, systemImage: "checkmark.seal.fill")
+                    .font(.caption2).foregroundStyle(.green)
+            } else {
+                RewardLabel(reward: gym.firstClearReward, store: store)
+            }
+            Button(isCleared ? store.l.gymRematch : store.l.gymChallenge, action: onChallenge)
                 .controlSize(.small)
         }
         .padding(7)
         .background(RoundedRectangle(cornerRadius: 8)
-            .fill(Color.primary.opacity(0.03)))
+            .fill(Color.primary.opacity(isCleared ? 0.06 : 0.03)))
     }
 }
 

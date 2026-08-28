@@ -12,8 +12,9 @@ struct Gym: Identifiable, Sendable, Equatable {
     /// langCode → 관장 이름.
     let names: [String: String]
     let teamSpeciesIDs: [Int]
-    /// 체육관 타입 밖에서 마지막에 나오는 전설 에이스. 단일 약점 타입으로 팀을 쓸어버리는 것을
-    /// 막기 위한 예외이며, 있으면 반드시 `teamSpeciesIDs`의 마지막 종과 같다.
+    /// 마지막에 나오는 강한 에이스 표시. 팀 전원이 이미 그 타입을 겸해 단일 약점 스윕 위험이
+    /// 없는 체육관(전기·물·드래곤)에는 두지 않는다. 있으면 반드시 `teamSpeciesIDs`의 마지막
+    /// 종과 같고, 그 종도 체육관 타입을 포함한 강한 복합 타입이어야 한다.
     let aceSpeciesID: Int?
     /// 관장이 쓸 기술(PokéAPI move 이름), 팀 순서와 같다.
     ///
@@ -102,29 +103,31 @@ enum GymLeague {
     static let catalog: [Gym] = [
         Gym(type: .bug,
             names: ["ko": "벌레 체육관", "en": "Bug Gym", "ja": "むしジム"],
-            // 아라콰나이드 · 불카모스 · 갑주무사 · 히드런(전설 에이스). 이전 팀은 넷 모두 불꽃에
-            // 약해 불꽃 포켓몬 하나에게 끝났다. 앞 셋은 불꽃에 중립, 히드런은 불꽃을 흡수한다.
-            teamSpeciesIDs: [752, 637, 768, 485],
-            aceSpeciesID: 485,
+            // 아라콰나이드 · 불카모스 · 갑주무사 · 게노세크트(벌레 에이스). 앞 셋이 이미 불꽃을
+            // 중립 이하로 받아 단일 불꽃 포켓몬에게 전멸하지 않으므로, 에이스는 벌레 타입을 지키는
+            // 대신 강철을 겸해 화력을 올린다(그만큼 불꽃에는 오히려 더 약해진다).
+            teamSpeciesIDs: [752, 637, 768, 649],
+            aceSpeciesID: 649,
             teamMoveNames: [
                 ["liquidation", "leech-life", "crunch", "poison-jab"],
                 ["fiery-dance", "bug-buzz", "psychic", "giga-drain"],
                 ["liquidation", "leech-life", "sucker-punch", "drill-run"],
-                ["magma-storm", "earth-power", "flash-cannon", "dark-pulse"],
+                ["techno-blast", "u-turn", "flash-cannon", "ice-beam"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 500, eggs: 1)),
         Gym(type: .rock,
             names: ["ko": "바위 체육관", "en": "Rock Gym", "ja": "いわジム"],
-            // 릴리요 · 프테라 · 텅비드 · 비리디온(전설 에이스). 물·풀·격투·땅 중 하나로 전원을
-            // 쓸던 구성을 버리고, 릴리요와 비리디온이 그 네 약점을 중화한다.
-            teamSpeciesIDs: [346, 142, 793, 640],
-            aceSpeciesID: 640,
+            // 릴리요 · 프테라 · 텅비드 · 마기라스(바위 에이스). 물·풀·격투·땅 중 하나로 전원을
+            // 쓸던 구성을 릴리요·프테라가 각자 중화하므로, 에이스는 바위 타입을 지킨 유사전설
+            // 마기라스로 화력을 최대화한다.
+            teamSpeciesIDs: [346, 142, 793, 248],
+            aceSpeciesID: 248,
             teamMoveNames: [
                 ["power-gem", "giga-drain", "earth-power", "sludge-bomb"],
                 ["stone-edge", "earthquake", "crunch", "iron-head"],
                 ["power-gem", "sludge-bomb", "thunderbolt", "psychic"],
-                ["leaf-blade", "sacred-sword", "stone-edge", "x-scissor"],
+                ["stone-edge", "crunch", "earthquake", "ice-punch"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 500, eggs: 1)),
@@ -156,43 +159,46 @@ enum GymLeague {
             firstClearReward: GymReward(starPieces: 2_000, eggs: 1)),
         Gym(type: .fire,
             names: ["ko": "불꽃 체육관", "en": "Fire Gym", "ja": "ほのおジム"],
-            // 볼케니온 · 리자몽 · 번치코 · 케르디오(전설 에이스). 물·땅·바위 약점이 겹치지 않게
-            // 물/불꽃, 불꽃/비행, 불꽃/격투와 물/격투 에이스를 섞는다.
-            teamSpeciesIDs: [721, 6, 257, 647],
-            aceSpeciesID: 647,
+            // 볼케니온 · 리자몽 · 번치코 · 레시라무(전설 에이스). 물·땅·바위 약점을 물/불꽃·
+            // 불꽃/비행·불꽃/격투가 나눠 받고, 드래곤/불꽃 에이스는 불꽃 타입을 지키면서
+            // 물 약점까지 지운다.
+            teamSpeciesIDs: [721, 6, 257, 643],
+            aceSpeciesID: 643,
             teamMoveNames: [
                 ["steam-eruption", "fire-blast", "earth-power", "flash-cannon"],
                 ["flamethrower", "air-slash", "dragon-pulse", "focus-blast"],
                 ["blaze-kick", "sky-uppercut", "thunder-punch", "shadow-claw"],
-                ["hydro-pump", "sacred-sword", "ice-beam", "air-slash"],
+                ["blue-flare", "draco-meteor", "earth-power", "focus-blast"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 3_000, eggs: 1)),
         Gym(type: .grass,
             names: ["ko": "풀 체육관", "en": "Grass Gym", "ja": "くさジム"],
-            // 로파파 · 이상해꽃 · 너트령 · 파이어(전설 에이스). 불꽃·얼음·벌레·비행·독 약점 중
-            // 어느 하나로도 전원을 정리하지 못하도록 물/풀·풀/독·풀/강철과 불꽃/비행을 섞는다.
-            teamSpeciesIDs: [272, 3, 598, 146],
-            aceSpeciesID: 146,
+            // 로파파 · 이상해꽃 · 너트령 · 자루드(신화 에이스). 불꽃·얼음·벌레·비행·독 약점을
+            // 물/풀·풀/독·풀/강철이 나눠 받고, 에이스는 풀 타입을 지키면서 팀에 없던 악 타입을
+            // 더해 저항 폭을 넓힌다.
+            teamSpeciesIDs: [272, 3, 598, 893],
+            aceSpeciesID: 893,
             teamMoveNames: [
                 ["surf", "giga-drain", "ice-beam", "focus-blast"],
                 ["energy-ball", "sludge-bomb", "earth-power", "psychic"],
                 ["power-whip", "iron-head", "rock-slide", "bulldoze"],
-                ["flamethrower", "air-slash", "ancient-power", "hyper-voice"],
+                ["power-whip", "darkest-lariat", "close-combat", "rock-slide"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 4_000, eggs: 1)),
         Gym(type: .psychic,
             names: ["ko": "에스퍼 체육관", "en": "Psychic Gym", "ja": "エスパージム"],
-            // 가디안 · 동탁군 · 칼라마네로 · 제르네아스(전설 에이스). 악·고스트·벌레 약점이 전원에게
-            // 겹치지 않게 페어리·강철·악 복합과 페어리 에이스를 둔다.
-            teamSpeciesIDs: [282, 437, 687, 716],
-            aceSpeciesID: 716,
+            // 가디안 · 동탁군 · 칼라마네로 · 라티오스(전설 에이스). 악·고스트·벌레 약점이 전원에게
+            // 겹치지 않게 페어리·강철·악 복합을 두고, 에이스는 에스퍼 타입을 지킨 채 드래곤을
+            // 겸해 화력을 끌어올린다.
+            teamSpeciesIDs: [282, 437, 687, 381],
+            aceSpeciesID: 381,
             teamMoveNames: [
                 ["psychic", "moonblast", "thunderbolt", "shadow-ball"],
                 ["flash-cannon", "psychic", "earth-power", "shadow-ball"],
                 ["psycho-cut", "night-slash", "x-scissor", "superpower"],
-                ["moonblast", "psychic", "thunderbolt", "focus-blast"],
+                ["draco-meteor", "psychic", "earthquake", "ice-beam"],
             ],
             level: leaderLevel,
             firstClearReward: GymReward(starPieces: 5_000, eggs: 1)),
@@ -214,14 +220,22 @@ enum GymLeague {
     /// 배지 키로 되찾기 — 세이브에 남은 건 키뿐이라, 화면이 이름·타입을 그릴 때 거쳐 간다.
     static func gym(id: String) -> Gym? { catalog.first { $0.id == id } }
 
-    /// 관장은 최소 Lv.30 이고, 그보다 높은 선택 팀에는 평균 레벨보다 3 높게 맞춘다. 평균은
-    /// 특정 한 마리만 과도하게 키워 전체 관장을 끌어올리지 않도록 팀 전체에서 계산한다.
+    /// 관장은 최소 Lv.30 이고, 그보다 높은 선택 팀에는 **가장 강한 한 마리** 기준으로 3 높게
+    /// 맞춘다. 평균으로 계산하던 이전 버전은 저레벨 들러리 셋을 끼워 넣어 평균을 깎으면서 정작
+    /// 실제로 내보내는 에이스 한 마리만으로 낮아진 관장을 그대로 쓸어버릴 수 있었다 — 최고
+    /// 레벨 기준이면 어떤 조합으로 팀을 짜도 난이도가 그 에이스 수준 아래로 떨어지지 않는다.
+    /// (팀 최소 레벨 요건은 `minChallengerLevel` — 이 함수는 관장 레벨만 정한다.)
     static func opponentLevel(for challengerLevels: [Int]) -> Int {
         let levels = challengerLevels.filter { (1...100).contains($0) }
-        guard !levels.isEmpty else { return leaderLevel }
-        let average = levels.reduce(0, +) / levels.count
-        return min(100, max(leaderLevel, average + 3))
+        guard let strongest = levels.max() else { return leaderLevel }
+        return min(100, max(leaderLevel, strongest + 3))
     }
+
+    /// 도전 팀 전원이 갖춰야 하는 최소 레벨. 최고 레벨 기준 스케일링만으로는 "에이스 한 마리 +
+    /// 방치한 들러리 셋"을 막지 못한다 — 나머지 셋의 레벨은 관장 레벨에 전혀 반영되지 않으니
+    /// 여전히 Lv.1로 채워도 그만이다. 넷 모두 이 레벨 이상이어야 도전 자체를 받아 준다
+    /// (`startGymChallenge` 에서 검사).
+    static let minChallengerLevel = 35
 
     /// 관장 팀 크기. 도전자도 같은 수로 맞춰 내보낸다 — 머릿수가 다르면 이겨도 진 것 같다.
     /// 3 → 4 (타입별 전설 포켓몬 추가, 2026-08). 마지막 자리를 전설이 차지하므로 도전자도

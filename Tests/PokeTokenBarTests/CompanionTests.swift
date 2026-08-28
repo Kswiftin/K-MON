@@ -868,13 +868,13 @@ final class CompanionStoreTests: XCTestCase {
     /// 고른다). 전설은 막판 보스여야 하므로 반드시 팀의 마지막 자리를 차지한다.
     func testGymLegendaryIsTheLastOpponent() {
         let legendaryByType: [PokemonType: Int] = [
-            .bug: 485,      // 히드런
-            .rock: 640,     // 비리디온
+            .bug: 649,      // 게노세크트 (벌레/강철)
+            .rock: 248,     // 마기라스 (바위/악)
             .electric: 642, // 볼트로스
             .water: 484,    // 펄기아
-            .fire: 647,     // 케르디오
-            .grass: 146,    // 파이어
-            .psychic: 716,  // 제르네아스
+            .fire: 643,     // 레시라무 (드래곤/불꽃)
+            .grass: 893,    // 자루드 (풀/악)
+            .psychic: 381,  // 라티오스 (드래곤/에스퍼)
             .dragon: 483,   // 디아루가
         ]
 
@@ -884,12 +884,14 @@ final class CompanionStoreTests: XCTestCase {
             XCTAssertEqual(gym.teamSpeciesIDs.last, legendaryByType[gym.type],
                            "\(gym.id): 전설은 마지막 상대여야 한다")
         }
-        let offTypeAces: [PokemonType: Int] = [
-            .bug: 485, .rock: 640, .fire: 647, .grass: 146, .psychic: 716,
+        // 에이스는 팀 전원이 그 타입을 겸해 단일 약점 스윕 위험이 없는 체육관(전기·물·드래곤)에는
+        // 없다. 있는 체육관은 모두 마지막 전설이 곧 에이스다 — 체육관 타입을 포함한 복합 타입 강자다.
+        let acedTypes: [PokemonType: Int] = [
+            .bug: 649, .rock: 248, .fire: 643, .grass: 893, .psychic: 381,
         ]
         for gym in GymLeague.catalog {
-            XCTAssertEqual(gym.aceSpeciesID, offTypeAces[gym.type],
-                           "\(gym.id): 타입 밖 에이스는 한 타입 스윕을 막는 마지막 전설만 허용한다")
+            XCTAssertEqual(gym.aceSpeciesID, acedTypes[gym.type],
+                           "\(gym.id): 에이스가 있다면 그 마지막 전설과 같아야 한다")
             if let ace = gym.aceSpeciesID {
                 XCTAssertEqual(gym.teamSpeciesIDs.last, ace, "\(gym.id): 에이스는 마지막에 나와야 한다")
             }
@@ -922,12 +924,19 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(GymLeague.catalog.first?.level, GymLeague.leaderLevel)
     }
 
-    /// 최소 레벨은 초반 팀을 보호하고, 키운 팀이 Lv.30 관장을 한 방에 정리하지 못하도록 평균보다
-    /// 3 높은 레벨까지 따라온다. 100을 넘으면 안 된다.
+    /// 최소 레벨은 초반 팀을 보호하고, 키운 팀이 Lv.30 관장을 한 방에 정리하지 못하도록 팀에서
+    /// 가장 강한 한 마리보다 3 높은 레벨까지 따라온다. 100을 넘으면 안 된다.
     func testGymOpponentLevelTracksTheSelectedTeamWithinBounds() {
-        XCTAssertEqual(GymLeague.opponentLevel(for: [12, 20, 30, 30]), GymLeague.leaderLevel)
-        XCTAssertEqual(GymLeague.opponentLevel(for: [45, 46, 47, 48]), 49)
+        XCTAssertEqual(GymLeague.opponentLevel(for: [12, 20, 25, 26]), GymLeague.leaderLevel)
+        XCTAssertEqual(GymLeague.opponentLevel(for: [45, 46, 47, 48]), 51)
         XCTAssertEqual(GymLeague.opponentLevel(for: [100, 100, 100, 100]), 100)
+    }
+
+    /// 회귀: 평균 기준이던 시절엔 저레벨 들러리 셋으로 평균을 깎아, 실제로 내보내는 에이스
+    /// 한 마리(Lv.100)가 겨우 Lv.31 관장을 쓸어버릴 수 있었다. 최고 레벨 기준이면 들러리를
+    /// 아무리 섞어도 난이도가 에이스 아래로 떨어지지 않는다.
+    func testGymOpponentLevelIgnoresLowLevelDecoys() {
+        XCTAssertEqual(GymLeague.opponentLevel(for: [100, 5, 5, 5]), 100)
     }
 
     /// 보상은 목록 순서를 따라 별의조각이 늘고, 알은 드래곤 체육관만 고급 이상을 보증한다.
@@ -2385,6 +2394,14 @@ final class BattleTeamPickTests: XCTestCase {
     /// 체육관도 동일한 공용 배열을 쓰며 첫 선택이 진입 직후 선봉이다.
     func testGymBattleUsesPickedSnapshotOrderAndLead() async {
         let (store, mons) = teamPickStore(monCount: 6)
+        // 체육관은 도전 팀 전원이 `GymLeague.minChallengerLevel` 이상이어야 시작된다 — 기본
+        // 박스 개체는 Lv.1 이라 그대로 두면 이 테스트가 다루는 순서·선봉 로직 전에 레벨 게이트에서
+        // 막힌다.
+        store.debugSetBoxedMons(mons.map { mon in
+            var leveled = mon
+            leveled.levelExperience = (GymLeague.minChallengerLevel - 1) * PokemonBalance.experiencePerLevel
+            return leveled
+        })
         let center = battleCenter(store: store)
         center.rankedTeamSize = 6
         // 고르는 수는 `GymLeague.teamSize` 를 따른다 — 여기에 숫자를 적으면 관장 팀이 늘어난 날
@@ -2399,6 +2416,24 @@ final class BattleTeamPickTests: XCTestCase {
         XCTAssertEqual(center.teamPractice?.mine.map(\.snapshot.speciesID), [25, 22, 24, 20])
         XCTAssertEqual(center.teamPractice?.mySlot.snapshot.speciesID, 25)
         XCTAssertEqual(center.teamPractice?.myActive, 0)
+    }
+
+    /// 최고 레벨 기준 스케일링만으로는 들러리 셋의 레벨이 관장에게 전혀 반영되지 않아, 여전히
+    /// Lv.1로 채워도 그만이다 — 그래서 도전 자체를 최소 레벨 미만이면 막고, 화면에 안내를 남긴다.
+    func testGymChallengeBlocksBelowMinimumLevel() async {
+        let (store, mons) = teamPickStore(monCount: GymLeague.teamSize)
+        let center = battleCenter(store: store)
+        center.pickedTeam = mons.map(\.id)
+        XCTAssertNil(center.gymLevelGateMessage)
+
+        center.startGymChallenge(GymLeague.catalog[0])
+
+        let blocked = await waitUntil { center.gymLevelGateMessage != nil }
+        XCTAssertTrue(blocked, "Lv.1 팀은 최소 레벨 게이트에 막혀야 한다")
+        XCTAssertEqual(center.phase, .ready, "게이트에 막히면 배틀로 넘어가지 않는다")
+
+        center.dismissGymLevelGateAlert()
+        XCTAssertNil(center.gymLevelGateMessage)
     }
 
     /// 근거리 랭크 스냅샷은 현재 파트너가 아니라 선택 1번의 개체 정보를 Lv.50 으로 쓴다.
