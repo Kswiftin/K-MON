@@ -42,11 +42,11 @@ enum VariableDamage: Equatable, Sendable {
         case MoveID.lowKick, MoveID.grassKnot:
             // 체중을 못 받아왔으면 **실패시킨다.** 0 으로 접으면 "가장 가벼움"이 되어 모든 상대에게
             // 최저 위력이 나가고, 그게 맞는 값인지 화면에서 구별할 수 없다.
-            guard let weight = defender.snapshot.weightHectograms else { return .noEffect }
+            guard let weight = effectiveWeight(defender) else { return .noEffect }
             return .power(targetWeightPower(weight))
         case MoveID.heavySlam, MoveID.heatCrash:
-            guard let mine = attacker.snapshot.weightHectograms,
-                  let theirs = defender.snapshot.weightHectograms, theirs > 0 else { return .noEffect }
+            guard let mine = effectiveWeight(attacker),
+                  let theirs = effectiveWeight(defender), theirs > 0 else { return .noEffect }
             return .power(weightRatioPower(attacker: mine, defender: theirs))
         case MoveID.trumpCard:    return .power(trumpCardPower(attacker, move: move))
         case MoveID.magnitude:    return .power(magnitudePower(rng: &rng))
@@ -78,6 +78,15 @@ enum VariableDamage: Equatable, Sendable {
             return defender.snapshot.level > attacker.snapshot.level ? .noEffect : .oneHitKO
 
         default: return nil
+        }
+    }
+
+    private static func effectiveWeight(_ side: BattleSide) -> Int? {
+        guard let weight = side.snapshot.weightHectograms else { return nil }
+        switch side.ability?.rawValue {
+        case "heavy-metal": return weight * 2
+        case "light-metal": return max(1, weight / 2)
+        default: return weight
         }
     }
 

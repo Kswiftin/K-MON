@@ -268,7 +268,11 @@ struct NetBattleState {
             return isMetronome && team[active].canUse(moveAt: 0)
                 && move.id != 118 && move.id != 165 && MultiplayerValidation.validMoves([move])
         case .switchTo(let index):
+            let opposingTeam = mine ? oppTeam : myTeam
+            let opposingActive = mine ? oppActive : myActive
             return team.indices.contains(index) && index != active && team[index].isAlive
+                && opposingTeam.indices.contains(opposingActive)
+                && BattleEngine.canSwitch(team[active], awayFrom: opposingTeam[opposingActive])
         }
     }
 

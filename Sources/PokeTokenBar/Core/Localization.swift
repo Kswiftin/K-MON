@@ -171,6 +171,7 @@ struct L {
         case .freeze:    return t("\(name)은(는) 얼어붙었다!", "\(name) was frozen solid!", "\(name)は こおりついた！")
         case .confusion: return t("\(name)은(는) 혼란에 빠졌다!", "\(name) became confused!", "\(name)は 混乱した！")
         case .flinch:    return t("\(name)은(는) 풀죽었다!", "\(name) flinched!", "\(name)は ひるんだ！")
+        case .infatuation: return t("\(name)은(는) 사랑에 빠졌다!", "\(name) fell in love!", "\(name)は メロメロになった！")
         }
     }
 
@@ -187,6 +188,7 @@ struct L {
         case .flinch:          return t("\(name)의 풀죽음이 풀렸다!",
                                         "\(name) recovered from flinching!",
                                         "\(name)の ひるみが とけた！")
+        case .infatuation: return t("\(name)은(는) 더 이상 헤롱헤롱하지 않다!", "\(name) is no longer infatuated!", "\(name)の メロメロが とけた！")
         }
     }
 
@@ -204,6 +206,7 @@ struct L {
                                   "\(name) hurt itself in its confusion!",
                                   "\(name)は わけも わからず 自分を 攻撃した！")
         case .flinch:    return t("\(name)은(는) 풀죽어서 움직일 수 없다!", "\(name) flinched and can't move!", "\(name)は ひるんで 動けない！")
+        case .infatuation: return t("\(name)은(는) 헤롱헤롱해서 움직일 수 없다!", "\(name) is immobilized by love!", "\(name)は メロメロで 技が だせない！")
         case .burn, .poison, .toxic:
             return t("\(name)은(는) 움직일 수 없다!", "\(name) can't move!", "\(name)は 動けない！")
         }

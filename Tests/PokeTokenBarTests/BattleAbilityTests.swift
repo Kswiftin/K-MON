@@ -191,7 +191,47 @@ final class BattleAbilityTests: XCTestCase {
         XCTAssertGreaterThan(scaled.hp, ordinary.hp, "이상한비늘은 상태이상 중 물리 방어를 올린다")
     }
 
-    // MARK: 미구현 슬러그
+    // MARK: 전체 5세대 레지스트리와 미지 슬러그
+
+    func testEveryGenerationFiveAbilityIsRecognized() {
+        XCTAssertEqual(BattleAbility.generationFiveSlugs.count, 164)
+        for slug in BattleAbility.generationFiveSlugs {
+            XCTAssertEqual(BattleAbility.resolve(slug)?.rawValue, slug)
+        }
+    }
+
+    func testSturdyLeavesAFullHealthDefenderAtOneHP() {
+        let result = hit(defender: snapshot(ability: "sturdy"), with: attack(.normal, power: 500))
+        XCTAssertEqual(result.hp, 1)
+    }
+
+    func testWeatherAbilitiesDriveSpeedAndResidualRules() {
+        var rain = BattleSide(snapshot(ability: "drizzle"))
+        var swimmer = BattleSide(snapshot(ability: "swift-swim"))
+        let wait = MoveSpec(id: 1, names: ["en": "Wait"], type: .normal, power: 0,
+                            damageClass: .status, accuracy: nil, pp: 10, targetsUser: true)
+        var rng = SplitMix64(seed: 1)
+        _ = BattleEngine.resolveTurn(a: &rain, b: &swimmer, moveA: wait, moveB: wait, turn: 1, rng: &rng)
+        XCTAssertEqual(swimmer.weather, .rain)
+        XCTAssertEqual(swimmer.effectiveSpeed, swimmer.stats.spe * 2)
+    }
+
+    func testTrappingAbilitiesBlockOnlyTheirEligibleTargets() {
+        let trapper = BattleSide(snapshot(ability: "arena-trap"))
+        XCTAssertFalse(BattleEngine.canSwitch(BattleSide(snapshot()), awayFrom: trapper))
+        XCTAssertTrue(BattleEngine.canSwitch(BattleSide(snapshot(types: [.flying])), awayFrom: trapper))
+        XCTAssertTrue(BattleEngine.canSwitch(BattleSide(snapshot(ability: "levitate")), awayFrom: trapper))
+    }
+
+    func testRegeneratorAndNaturalCureApplyWhenSwitchingOut() {
+        var regen = BattleSide(snapshot(ability: "regenerator")); regen.hp = 1
+        BattleEngine.prepareForSwitch(&regen)
+        XCTAssertEqual(regen.hp, 1 + regen.stats.hp / 3)
+
+        var cure = BattleSide(snapshot(ability: "natural-cure")); cure.status = .burn
+        BattleEngine.prepareForSwitch(&cure)
+        XCTAssertNil(cure.status)
+    }
 
     /// 모르는 슬러그는 배틀을 **한 눈금도** 바꾸지 않는다. 이벤트 전체를 비교한다 —
     /// HP 만 보면 rng 를 한 번 더 굴리는 구현이 통과한다.
@@ -252,7 +292,7 @@ final class BattleAbilityTests: XCTestCase {
     /// 규칙이 바뀌면 **둘 다** 올린다 — 멀티는 `rulesVersion` 을 안 보고 `protocolVersion` 만 본다.
     /// 하나만 올리면 구버전 호스트와 신버전 게스트가 붙어 특성 유무가 갈린 채로 싸운다.
     func testTheRuleAndProtocolVersionsMovedTogetherForAbilities() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 18)
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 10)
+        XCTAssertEqual(BattleEngine.rulesVersion, 19)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 11)
     }
 }

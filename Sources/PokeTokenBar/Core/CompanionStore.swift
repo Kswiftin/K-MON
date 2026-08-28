@@ -405,7 +405,7 @@ final class CompanionStore {
             ? await PokeAPIClient.shared.moveSet(speciesID: mon.presentationID, level: level, types: profile.types)
             : await detailedMoves(of: mon)
         return BattleSnapshot(speciesID: mon.presentationID, name: mon.nickname ?? name, trainer: trainerName,
-                              level: level, nature: mon.nature, isShiny: mon.isShiny,
+                              level: level, nature: mon.nature, gender: mon.gender, isShiny: mon.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
                               ability: profile.abilitySlug,
                               weightHectograms: profile.weightHectograms)
