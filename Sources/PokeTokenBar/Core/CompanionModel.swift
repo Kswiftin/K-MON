@@ -952,6 +952,9 @@ struct CompanionState: Codable, Sendable {
     /// 하루 한 판 퍼즐 던전(#79). 리셋은 날짜 키 비교이고, 시도 중 상태(현재 방·남은 체력)는
     /// 여기 없다 — 저장 대상을 늘리면 이상 상태 복구 경로가 그만큼 늘어난다.
     var dungeon = DungeonProgress()
+    /// 웨이브 런 실적 — 최고 도달 웨이브·클리어 횟수·끝난 판 수. 진행 중인 런은 여기 없다
+    /// (메모리 전용이다) — 판 안의 값을 저장하면 이상 상태 복구 경로가 그만큼 늘어난다.
+    var waveRun = RunProgress()
     // 누적 행동 업적(집중·진화·배틀·레이스). 도달 단계는 저장하지 않고 카운터에서 계산한다.
     var achievements = AchievementLadder()
     // 시즌 순환 챌린지 진행도. 세트는 저장하지 않고 시즌 키에서 고른다(SeasonBoard 참고).
@@ -1018,6 +1021,7 @@ struct CompanionState: Codable, Sendable {
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
         missions           = c.lenient(MissionBoard.self, forKey: .missions, default: MissionBoard())
         dungeon            = c.lenient(DungeonProgress.self, forKey: .dungeon, default: DungeonProgress())
+        waveRun            = c.lenient(RunProgress.self, forKey: .waveRun, default: RunProgress())
         seasons            = c.lenient(SeasonBoard.self, forKey: .seasons, default: SeasonBoard())
         achievements       = c.lenient(AchievementLadder.self, forKey: .achievements,
                                        default: AchievementLadder())

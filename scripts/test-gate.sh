@@ -76,6 +76,12 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/PixelSprite.swift"
   "Sources/PokeTokenBar/Core/TrainerPixelArt.swift"
   "Sources/PokeTokenBar/Core/TrainerSprite.swift"
+  # 웨이브 런의 누적 강화(데미지·급소·턴 끝 회복). 엔진이 읽는 순수 계산이라 게이트 대상 —
+  # 배열에 안 넣으면 다음 강화를 더할 때 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/RunBoosts.swift"
+  # 판 밖으로 남는 유일한 값(최고 웨이브·클리어 횟수). 세이브 경계 정규화가 여기 있어 게이트 대상 —
+  # 배열에 안 넣으면 클램프 분기가 커버리지에서 조용히 빠진다.
+  "Sources/PokeTokenBar/Core/RunProgress.swift"
 )
 
 echo "▶ swift test (--enable-code-coverage)"

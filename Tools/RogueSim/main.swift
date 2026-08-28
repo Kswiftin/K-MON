@@ -116,8 +116,11 @@ func playOne(seed: UInt64, cache: SnapshotCache, tuning: RogueTuning) async -> R
             turns += 1
         case .picking:
             run.pick(pickBest(run))
+        case .routing:
+            run.take(routeChoice(run))
         case .loadingWave:
-            guard let next = await wilds(wave: run.wave, cache: cache, rng: &rng, tuning: tuning),
+            guard let next = await wilds(wave: run.wave, route: run.route, cache: cache,
+                                         rng: &rng, tuning: tuning),
                   !next.isEmpty
             else { return nil }
             run.beginWave(opponents: next)
@@ -132,17 +135,33 @@ func playOne(seed: UInt64, cache: SnapshotCache, tuning: RogueTuning) async -> R
                      ballsUsed: tuning.ballsPerRun - run.balls, catches: catches, turns: turns)
 }
 
-/// 보상 선택 — 쓰러진 식구가 있으면 되살리고, 아니면 회복 우선. 사람이 고르는 순서에 가깝게 둔다.
+/// 길 선택 — 파티가 온전하고 **다음이 보스가 아닐 때만** 험한 길을 탄다. 늘 험한 길을 타면
+/// 측정값이 "최대 난이도"가 되고, 늘 평탄한 길을 타면 험한 길의 균형을 한 번도 재지 않는다.
+/// 보스 앞에서 피하는 것은 사람이 두는 방식에 맞춘 것이다(보스는 이미 벽이라 위험이 겹친다).
+func routeChoice(_ run: RogueRun) -> RunRoute {
+    guard !RogueRun.isBoss(wave: run.wave + 1, tuning: run.tuning) else { return .safe }
+    let healthy = run.party.filter(\.isAlive)
+    guard healthy.count == run.party.count else { return .safe }
+    return healthy.allSatisfy { Double($0.hp) / Double(max(1, $0.stats.hp)) > 0.8 } ? .risky : .safe
+}
+
+/// 보상 선택 — 급한 것을 먼저 메우고, 급할 게 없으면 **지속 강화**를 쌓는다. 사람이 고르는 순서에
+/// 가깝게 둔다. 지속형을 뒤로 미루면 자동 플레이어가 12 웨이브를 소모형만 들고 지나서, 판의
+/// 난이도를 강화 없는 옛 규칙으로 재게 된다.
 func pickBest(_ run: RogueRun) -> RunModifier {
-    let priority: [RunModifier] = run.party.contains { !$0.isAlive }
-        ? [.revive, .potion, .cleanse, .elixir, .candy]
-        : [.potion, .candy, .elixir, .cleanse, .revive]
+    let hurt = run.party.contains { $0.isAlive && Double($0.hp) / Double(max(1, $0.stats.hp)) < 0.5 }
+    let dry = run.party.contains { $0.isAlive && $0.pp.reduce(0, +) <= 2 }
+    var priority: [RunModifier] = []
+    if run.party.contains(where: { !$0.isAlive }) { priority.append(.revive) }
+    if hurt { priority.append(.potion) }
+    if dry { priority.append(.elixir) }
+    priority += [.typeBoost, .focusLens, .leftovers, .candy, .potion, .elixir, .cleanse, .revive]
     return priority.first { run.offers.contains($0) } ?? run.offers[0]
 }
 
-func wilds(wave: Int, cache: SnapshotCache, rng: inout SplitMix64,
+func wilds(wave: Int, route: RunRoute = .safe, cache: SnapshotCache, rng: inout SplitMix64,
            tuning: RogueTuning) async -> [BattleSnapshot]? {
-    let level = RogueRun.opponentLevel(wave: wave, tuning: tuning)
+    let level = RogueRun.opponentLevel(wave: wave, route: route, tuning: tuning)
     var built: [BattleSnapshot] = []
     for _ in 0..<RogueRun.opponentCount(wave: wave, tuning: tuning) {
         // 추첨 seed 는 판의 흐름에서 뽑는다 — 같은 seed 로 같은 판이 재현돼야 밸런스 비교가 된다.
@@ -152,7 +171,8 @@ func wilds(wave: Int, cache: SnapshotCache, rng: inout SplitMix64,
                        + Int(rng.next() % UInt64(RogueRun.wildSpeciesPool.count)))
         }
         var cursor = 0
-        let chosen = await RogueRun.chooseOpponent(wave: wave, tuning: tuning) { () -> BattleSnapshot? in
+        let chosen = await RogueRun.chooseOpponent(wave: wave, route: route,
+                                                   tuning: tuning) { () -> BattleSnapshot? in
             guard cursor < ids.count else { return nil }
             defer { cursor += 1 }
             return await cache.snapshot(speciesID: ids[cursor], level: level)

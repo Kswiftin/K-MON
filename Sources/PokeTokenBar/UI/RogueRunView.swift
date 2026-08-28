@@ -21,6 +21,12 @@ struct RogueRunView: View {
     }
 
     @State private var setup: Setup = .loading
+    /// 방금 보상 화면에서 진화한 개체의 이름 — 화면에 한 줄로 알린다. 진화를 조용히 처리하면
+    /// 판의 가장 큰 사건이 스프라이트가 바뀐 것으로만 남는다.
+    @State private var evolved: [String] = []
+    /// 진화 조회를 이미 지난 웨이브. `.task` 는 화면이 다시 그려질 때마다 도는데, 조회는 왕복이
+    /// 여러 번이라 같은 웨이브에서 두 번 돌면 보상 화면이 그만큼 늦게 열린다.
+    @State private var evolutionCheckedWave = 0
 
 
     var body: some View {
@@ -56,6 +62,7 @@ struct RogueRunView: View {
             switch run.stage {
             case .battling:   battlePanel(run)
             case .picking:    rewardPicker(run)
+            case .routing:    routePicker(run)
             case .loadingWave: ProgressView().frame(maxWidth: .infinity)
             case .cleared:    ending(l.t("12 웨이브를 모두 돌파했다.", "Cleared all 12 waves.",
                                           "12ウェーブすべてを突破した。"))
@@ -90,6 +97,7 @@ struct RogueRunView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(l.t("첫 포켓몬을 고른다", "Pick your starter", "最初のポケモンを選ぶ"))
                 .font(.caption).foregroundStyle(.secondary)
+            recordLine
             HStack(spacing: 10) {
                 ForEach(candidates, id: \.speciesID) { candidate in
                     Button { Task { await start(with: candidate) } } label: {
@@ -119,6 +127,7 @@ struct RogueRunView: View {
         let opponent = shownTheirs.side ?? run.battle.opponentSlot
         return VStack(spacing: 6) {
             catchBar(run)
+            boostBar(run)
             arena(run, me: me, opponent: opponent, shownMine: shownMine,
                   engineMine: engineMine, engineTheirs: engineTheirs)
         }
@@ -142,6 +151,29 @@ struct RogueRunView: View {
                 .disabled(!run.canThrowBall)
         }
         .font(.caption)
+    }
+
+    /// 쌓인 지속 강화 한 줄. 안 보여주면 무엇을 골라 왔는지 판 도중에 확인할 길이 없어, 다음 뽑기의
+    /// 선택(같은 타입에 더 쌓을지 갈아탈지)이 기억에 의존한다.
+    @ViewBuilder
+    private func boostBar(_ run: RogueRun) -> some View {
+        if !run.boosts.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(run.boosts.typeDamage.sorted { $0.key.rawValue < $1.key.rawValue },
+                        id: \.key) { entry in
+                    Label("\(entry.key.name(store.language)) ×\(entry.value)",
+                          systemImage: "bolt.fill")
+                }
+                if run.boosts.critStages > 0 {
+                    Label("+\(run.boosts.critStages)", systemImage: "scope")
+                }
+                if run.boosts.leftovers > 0 {
+                    Label("×\(run.boosts.leftovers)", systemImage: "leaf.fill")
+                }
+                Spacer()
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+        }
     }
 
     private func arena(_ run: RogueRun, me: BattleSide, opponent: BattleSide,
@@ -185,9 +217,17 @@ struct RogueRunView: View {
 
     private func rewardPicker(_ run: RogueRun) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(l.t("웨이브 \(run.wave) 돌파 — 하나를 고른다",
-                     "Wave \(run.wave) cleared — pick one",
-                     "ウェーブ \(run.wave) 突破 — 一つ選ぶ"))
+            ForEach(evolved, id: \.self) { name in
+                Text(l.t("\(name) 이(가) 진화했다!", "\(name) evolved!", "\(name) がしんかした！"))
+                    .font(.callout.bold())
+            }
+            Text(run.remainingPicks > 1
+                 ? l.t("웨이브 \(run.wave) 돌파 — \(run.remainingPicks) 장 중 첫 장을 고른다",
+                       "Wave \(run.wave) cleared — pick the first of \(run.remainingPicks)",
+                       "ウェーブ \(run.wave) 突破 — \(run.remainingPicks) 枚のうち一枚目を選ぶ")
+                 : l.t("웨이브 \(run.wave) 돌파 — 하나를 고른다",
+                       "Wave \(run.wave) cleared — pick one",
+                       "ウェーブ \(run.wave) 突破 — 一つ選ぶ"))
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(run.offers, id: \.self) { offer in
                 Button {
@@ -195,12 +235,91 @@ struct RogueRunView: View {
                     Task { await loadNextWave() }
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(Self.title(offer, l)).font(.callout.bold())
-                        Text(Self.detail(offer, l)).font(.caption2).foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Text(Self.title(offer, l)).font(.callout.bold())
+                            // 지속형은 배지로 갈라 보여준다 — 이 판에 남는 장과 그 자리에서 사라지는
+                            // 장을 구별하지 못하면 빌드를 고를 수 없다.
+                            if offer.isPersistent {
+                                Text(l.t("지속", "Keeps", "永続"))
+                                    .font(.caption2).padding(.horizontal, 4)
+                                    .background(.tint.opacity(0.2), in: Capsule())
+                            }
+                        }
+                        Text(Self.detail(offer, type: run.boostableType, language: store.language, l))
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+        }
+        .task(id: run.wave) { await evolveParty() }
+    }
+
+    /// 웨이브를 넘긴 파티에서 **레벨 조건을 채운 개체를 진화시킨다.** 보상 화면에서 도는 이유는
+    /// 두 가지다 — 전투 중에 개체를 갈면 진행 중인 턴의 활성 슬롯이 다른 종으로 바뀌고, 다음 웨이브
+    /// 로딩에 붙이면 판의 가장 큰 사건이 로딩 스피너 뒤로 숨는다.
+    ///
+    /// 조회가 실패하면 **진화하지 않고 그대로 간다** — 판을 세우는 대신 이번 웨이브의 진화를 건너뛴다.
+    private func evolveParty() async {
+        guard let run = store.rogueRun, run.stage == .picking,
+              evolutionCheckedWave != run.wave else { return }
+        evolutionCheckedWave = run.wave
+        evolved = []
+        for (index, member) in run.party.enumerated() {
+            guard let line = try? await PokeAPIClient.shared.line(baseSpeciesID: member.snapshot.speciesID),
+                  let node = line.tree.node(withID: member.snapshot.speciesID),
+                  let target = RogueRun.levelUpEvolution(from: node, level: member.snapshot.level),
+                  // 애니메이션 스프라이트가 없는 종으로 진화시키면 화면에서 개체가 사라진다.
+                  PokemonAssets.hasAnimatedSprite(speciesID: target.speciesID),
+                  let snapshot = await Self.snapshot(speciesID: target.speciesID,
+                                                    level: member.snapshot.level, store: store)
+            else { continue }
+            let before = member.snapshot.name
+            mutate { $0.evolve(memberAt: index, into: snapshot) }
+            evolved.append(before)
+        }
+    }
+
+    /// 다음 웨이브로 갈 길. 두 장이 무엇을 주고 무엇을 요구하는지 **숫자로** 보여준다 —
+    /// "위험한 길"이라고만 쓰면 얼마나 위험한지 모르고 고르게 되고, 그러면 선택이 아니라 도박이 된다.
+    private func routePicker(_ run: RogueRun) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(l.t("웨이브 \(run.wave + 1) 로 가는 길을 고른다",
+                     "Choose the path to wave \(run.wave + 1)",
+                     "ウェーブ \(run.wave + 1) への道を選ぶ"))
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(RunRoute.allCases, id: \.self) { route in
+                Button {
+                    mutate { $0.take(route) }
+                    Task { await loadNextWave() }
+                } label: {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(Self.routeTitle(route, l)).font(.callout.bold())
+                        Text(Self.routeDetail(route, l)).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private static func routeTitle(_ route: RunRoute, _ l: L) -> String {
+        switch route {
+        case .safe:  return l.t("평탄한 길", "Even path", "平らな道")
+        case .risky: return l.t("험한 길", "Rough path", "険しい道")
+        }
+    }
+
+    private static func routeDetail(_ route: RunRoute, _ l: L) -> String {
+        switch route {
+        case .safe:
+            return l.t("상대도 보상도 규칙 그대로다.",
+                       "Opponents and rewards stay as they are.",
+                       "相手も報酬も規則どおりだ。")
+        case .risky:
+            return l.t("상대 레벨 +\(RunRoute.risky.levelBonus), 종족값 상한 +\(RunRoute.risky.statBonus). 넘기면 보상을 \(RunRoute.risky.pickCount) 장 고른다.",
+                       "Opponents get +\(RunRoute.risky.levelBonus) levels and +\(RunRoute.risky.statBonus) base-stat headroom. Clear it and pick \(RunRoute.risky.pickCount) rewards.",
+                       "相手のレベル +\(RunRoute.risky.levelBonus)、種族値上限 +\(RunRoute.risky.statBonus)。突破すると報酬を \(RunRoute.risky.pickCount) 枚選べる。")
         }
     }
 
@@ -211,10 +330,14 @@ struct RogueRunView: View {
         case .candy:   return l.t("이상한사탕", "Rare Candy", "ふしぎなアメ")
         case .elixir:  return l.t("엘릭서", "Elixir", "エリキシル")
         case .cleanse: return l.t("만병통치제", "Full Heal", "なんでもなおし")
+        case .typeBoost: return l.t("타입 강화판", "Type Booster", "タイプ強化板")
+        case .focusLens: return l.t("초점렌즈", "Scope Lens", "ピントレンズ")
+        case .leftovers: return l.t("먹다남은음식", "Leftovers", "たべのこし")
         }
     }
 
-    private static func detail(_ modifier: RunModifier, _ l: L) -> String {
+    private static func detail(_ modifier: RunModifier, type: PokemonType?,
+                               language: AppLanguage, _ l: L) -> String {
         switch modifier {
         case .potion:  return l.t("살아 있는 전원의 최대 HP 40% 를 회복한다.",
                                   "Heal 40% of max HP on every conscious member.",
@@ -231,15 +354,53 @@ struct RogueRunView: View {
         case .cleanse: return l.t("파티의 상태이상과 혼란을 해제한다.",
                                   "Clear status and confusion from the party.",
                                   "パーティの状態異常と混乱を回復する。")
+        // 어떤 타입이 올라가는지 **고르기 전에** 보여준다 — 모르고 고르면 빌드가 아니라 복권이다.
+        case .typeBoost:
+            let name = type?.name(language) ?? l.t("선두", "lead", "先頭")
+            return l.t("\(name) 타입 기술 데미지가 20% 오른다. 판이 끝날 때까지 남고 중첩된다.",
+                       "\(name)-type moves deal 20% more damage. Keeps stacking for the run.",
+                       "\(name)タイプの技のダメージが20%上がる。ラン中ずっと残り、重ねられる。")
+        case .focusLens:
+            return l.t("급소 단계가 1 오른다. 판이 끝날 때까지 남고 중첩된다.",
+                       "Raises the critical-hit stage by 1. Keeps stacking for the run.",
+                       "急所ランクが1上がる。ラン中ずっと残り、重ねられる。")
+        case .leftovers:
+            return l.t("턴이 끝날 때마다 최대 HP 의 1/16 을 회복한다. 판이 끝날 때까지 남고 중첩된다.",
+                       "Restores 1/16 of max HP at the end of every turn. Keeps stacking for the run.",
+                       "ターン終了ごとに最大HPの1/16を回復する。ラン中ずっと残り、重ねられる。")
         }
     }
 
     private func ending(_ line: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(line).font(.callout)
+            recordLine
             // 끝난 판은 여기서 비운다 — 남겨 두면 다음에 던전 탭을 열 때 결과 화면이 다시 뜬다.
             Button(l.battleClose) { store.rogueRun = nil; onClose() }
         }
+        .task { recordResult() }
+    }
+
+    /// 판 밖으로 남는 것 — 최고 도달 웨이브와 클리어 횟수. 판마다 사라지는 게임이라 이 줄이 없으면
+    /// 여러 판을 돌린 것이 화면 어디에도 남지 않는다.
+    @ViewBuilder
+    private var recordLine: some View {
+        let progress = store.runProgress
+        if progress.finished > 0 {
+            Text(l.t("최고 웨이브 \(progress.bestWave)/\(RogueRun.finalWave) · 클리어 \(progress.clears)회 · 판 \(progress.finished)회",
+                     "Best wave \(progress.bestWave)/\(RogueRun.finalWave) · \(progress.clears) cleared · \(progress.finished) runs",
+                     "最高ウェーブ \(progress.bestWave)/\(RogueRun.finalWave) · クリア \(progress.clears)回 · \(progress.finished)回"))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    /// 끝난 판을 실적에 적는다. **판 하나는 한 번만 센다** — 결과 화면은 팝오버를 여닫을 때마다
+    /// 다시 그려지므로, 플래그(`resultRecorded`)를 코어에 두고 그 값을 보고 판단한다.
+    private func recordResult() {
+        guard let run = store.rogueRun, !run.resultRecorded,
+              run.stage == .cleared || run.stage == .failed else { return }
+        store.recordRunResult(reachedWave: run.wave, cleared: run.stage == .cleared)
+        mutate { $0.markResultRecorded() }
     }
 
     // MARK: 진행
@@ -270,7 +431,7 @@ struct RogueRunView: View {
 
     private func start(with starter: BattleSnapshot) async {
         setup = .loading
-        let opponents = await Self.wilds(wave: 1, store: store)
+        let opponents = await Self.wilds(wave: 1, route: .safe, store: store)
         guard !opponents.isEmpty else {
             setup = .failedToLoad
             return
@@ -281,7 +442,7 @@ struct RogueRunView: View {
 
     private func loadNextWave() async {
         guard let run = store.rogueRun else { return }
-        let opponents = await Self.wilds(wave: run.wave, store: store)
+        let opponents = await Self.wilds(wave: run.wave, route: run.route, store: store)
         guard !opponents.isEmpty else {
             // 판은 그대로 둔다 — 창을 다시 열면 `resume()` 이 이 웨이브를 다시 불러온다.
             setup = .failedToLoad
@@ -292,10 +453,11 @@ struct RogueRunView: View {
 
     /// 이 웨이브의 상대 전원. **한 마리라도 만들었으면 그대로 간다** — 둘째를 못 받았다고 판을
     /// 세우면 네트워크가 흔들릴 때마다 진행 중인 런이 멈춘다.
-    private static func wilds(wave: Int, store: CompanionStore) async -> [BattleSnapshot] {
+    private static func wilds(wave: Int, route: RunRoute,
+                              store: CompanionStore) async -> [BattleSnapshot] {
         var built: [BattleSnapshot] = []
         for _ in 0..<RogueRun.opponentCount(wave: wave) {
-            if let one = await wild(wave: wave, store: store) { built.append(one) }
+            if let one = await wild(wave: wave, route: route, store: store) { built.append(one) }
         }
         return built
     }
@@ -304,9 +466,10 @@ struct RogueRunView: View {
 
     /// 웨이브에 맞는 야생 하나. 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹이 나오므로
     /// 채택 규칙은 코어(`RogueRun.chooseOpponent`)가 든다 — 시뮬레이터와 같은 규칙을 써야 한다.
-    private static func wild(wave: Int, store: CompanionStore) async -> BattleSnapshot? {
-        let level = RogueRun.opponentLevel(wave: wave)
-        return await RogueRun.chooseOpponent(wave: wave) {
+    private static func wild(wave: Int, route: RunRoute,
+                             store: CompanionStore) async -> BattleSnapshot? {
+        let level = RogueRun.opponentLevel(wave: wave, route: route)
+        return await RogueRun.chooseOpponent(wave: wave, route: route) {
             await snapshot(speciesID: Int.random(in: RogueRun.wildSpeciesPool),
                            level: level, store: store)
         }
