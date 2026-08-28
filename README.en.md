@@ -41,7 +41,7 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 
 - **Trainer wardrobe** — dress the trainer with 12 layered pixel items across five slots (hat, hair, top, bottom, accessory). Eight are sold in the Shop for Star Pieces; the other four come from achievement tiers.
 - **Nearby trainer cards** — the Friends tab shows each peer's dressed avatar, ranked tier color, and partner Pokémon.
-- **Wave run (prototype)** — pick a starter and take on 12 waves, with a boss every fourth wave and one item pick after each wave. A run lives in memory only: closing the window keeps it going, quitting the app drops it.
+- **Wave run (prototype)** — pick a starter and take on 12 waves, with a boss every fourth wave and one item pick after each wave. On wild waves you can throw one of the run's seven balls to catch your opponent and grow the party to six, and from wave nine on two opponents come at once. Every run is drawn fresh and there is no daily limit. A run lives in memory only: closing the window keeps it going, quitting the app drops it.
 
 ## Tour
 
@@ -75,10 +75,10 @@ Control Do Not Disturb, notifications, launch at login, the floating pet, and up
 <td width="45%" align="center"><img src="assets/settings.png" width="180" alt="Settings"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-outfit.png" width="180" alt="Wardrobe"><br><br><img src="assets/screenshot-run.png" width="180" alt="Wave run reward pick"></td>
+<td width="45%" align="center"><img src="assets/screenshot-outfit.png" width="180" alt="Wardrobe"><br><br><img src="assets/screenshot-run.png" width="180" alt="Wave run reward pick"><br><br><img src="assets/screenshot-run-catch.png" width="180" alt="Catching on a wave run"></td>
 <td width="55%" valign="middle">
 <h3>Wardrobe and wave run</h3>
-Change the trainer's outfit, and pick one reward item after every wave you clear.
+Change the trainer's outfit, and pick one reward item after every wave you clear. On wild waves the catch chance is shown before you spend a ball.
 </td>
 </tr>
 </table>

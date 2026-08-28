@@ -2367,13 +2367,16 @@ final class BattleTeamPickTests: XCTestCase {
         let (store, mons) = teamPickStore(monCount: 6)
         let center = battleCenter(store: store)
         center.rankedTeamSize = 6
-        center.pickedTeam = [mons[5].id, mons[2].id, mons[4].id]
+        // 고르는 수는 `GymLeague.teamSize` 를 따른다 — 여기에 숫자를 적으면 관장 팀이 늘어난 날
+        // (3 → 4, 타입별 전설 추가) 이 테스트만 옛 크기로 남아 채워진 자리를 실패로 읽는다.
+        center.pickedTeam = [mons[5].id, mons[2].id, mons[4].id, mons[0].id]
 
         center.startGymChallenge(GymLeague.catalog[0])
         let started = await waitUntil { center.phase == .battling }
         XCTAssertTrue(started)
 
-        XCTAssertEqual(center.teamPractice?.mine.map(\.snapshot.speciesID), [25, 22, 24])
+        XCTAssertEqual(center.teamPractice?.mine.count, GymLeague.teamSize)
+        XCTAssertEqual(center.teamPractice?.mine.map(\.snapshot.speciesID), [25, 22, 24, 20])
         XCTAssertEqual(center.teamPractice?.mySlot.snapshot.speciesID, 25)
         XCTAssertEqual(center.teamPractice?.myActive, 0)
     }
