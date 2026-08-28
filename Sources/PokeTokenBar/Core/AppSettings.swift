@@ -59,6 +59,10 @@ final class AppSettings {
     var rosterSortAscending: Bool {
         didSet { defaults.set(rosterSortAscending, forKey: "rosterSortAscending") }
     }
+    /// 화면에 띄울 도감 종 목록. 비어 있으면 이전 버전과 호환되도록 현재 파트너 하나를 띄운다.
+    var floatingPetSpeciesIDs: [Int] {
+        didSet { defaults.set(floatingPetSpeciesIDs, forKey: "floatingPetSpeciesIDs") }
+    }
     var companionNotifications: Bool { didSet { defaults.set(companionNotifications, forKey: "companionNotifications") } }
     var updateNotificationsEnabled: Bool { didSet { defaults.set(updateNotificationsEnabled, forKey: "updateNotificationsEnabled") } }
     var automaticUpdateDownloadsEnabled: Bool {
@@ -87,6 +91,14 @@ final class AppSettings {
         floatingPetSpeciesID = defaults.object(forKey: "floatingPetSpeciesID") as? Int
         rosterSort = (defaults.string(forKey: "rosterSort").flatMap(RosterSort.init(rawValue:))) ?? .caught
         rosterSortAscending = defaults.object(forKey: "rosterSortAscending") as? Bool ?? true
+        // 예전의 단일 선택을 최초 한 번만 새 복수 선택 목록으로 옮긴다.
+        if let saved = defaults.array(forKey: "floatingPetSpeciesIDs") as? [Int] {
+            floatingPetSpeciesIDs = saved
+        } else if let legacy = defaults.object(forKey: "floatingPetSpeciesID") as? Int {
+            floatingPetSpeciesIDs = [legacy]
+        } else {
+            floatingPetSpeciesIDs = []
+        }
         companionNotifications = defaults.object(forKey: "companionNotifications") as? Bool ?? true
         updateNotificationsEnabled = defaults.object(forKey: "updateNotificationsEnabled") as? Bool ?? true
         automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true
