@@ -267,6 +267,9 @@ final class RogueRunTests: XCTestCase {
         var run = makeRun()
         run.useMove(0)
         run.pick(run.offers[0])
+        XCTAssertEqual(run.wave, 1, "보상을 골랐다고 웨이브가 넘어가지는 않는다 — 길을 먼저 고른다")
+        XCTAssertEqual(run.stage, .routing)
+        run.take(.safe)
         XCTAssertEqual(run.wave, 2)
         XCTAssertEqual(run.stage, .loadingWave)
         run.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
@@ -295,6 +298,7 @@ final class RogueRunTests: XCTestCase {
         let carried = run.party[0].hp
         XCTAssertLessThan(carried, run.party[0].stats.hp)
         run.pick(run.offers.first { $0 != .potion && $0 != .candy } ?? run.offers[0])
+        run.take(.safe)
         run.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
         XCTAssertEqual(run.battle.mine[0].hp, carried)
     }
@@ -304,6 +308,7 @@ final class RogueRunTests: XCTestCase {
         var run = makeRun(partySize: 2)
         run.useMove(0)
         run.pick(run.offers[0])
+        run.take(.safe)
         var fainted = run
         fainted.debugFaint(0)
         fainted.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
@@ -322,6 +327,7 @@ final class RogueRunTests: XCTestCase {
         var run = makeRun()
         run.useMove(0)
         run.pick(run.offers.first { $0 != .potion && $0 != .cleanse && $0 != .elixir } ?? run.offers[0])
+        run.take(.safe)
         run.debugSetParty([side])
         run.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
         XCTAssertEqual(run.battle.mine[0].stage(.atk), 0)

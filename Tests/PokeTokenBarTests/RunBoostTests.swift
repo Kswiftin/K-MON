@@ -132,6 +132,7 @@ final class RunBoostTests: XCTestCase {
         run.debugOffer(.leftovers)
         run.pick(.leftovers)
         XCTAssertEqual(run.boosts.leftovers, 1)
+        run.take(.safe)
         run.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
         XCTAssertEqual(run.party[0].runBoosts.leftovers, 1)
         XCTAssertEqual(run.battle.mine[0].runBoosts.leftovers, 1)
@@ -285,5 +286,112 @@ final class RunEvolutionTests: XCTestCase {
         XCTAssertEqual(run.stage, .battling)
         run.evolve(memberAt: 0, into: snapshot(2, hp: 300))
         XCTAssertEqual(run.party[0].snapshot.speciesID, 1)
+    }
+}
+
+/// 웨이브 사이의 갈림길(`RunRoute`). 잠그는 것은 **위험과 보상이 같은 선택에 묶여 있는가**다 —
+/// 한쪽만 걸리면 험한 길이 순수한 손해(또는 공짜 보상)가 된다.
+final class RunRouteTests: XCTestCase {
+
+    private func snapshot(_ id: Int, level: Int = 5, hp: Int = 100, speed: Int = 100) -> BattleSnapshot {
+        BattleSnapshot(speciesID: id, name: "M\(id)", trainer: "T", level: level, nature: nil,
+                       isShiny: false, types: [.normal],
+                       base: BattleStats(hp: hp, atk: 100, def: 50, spa: 100, spd: 50, spe: speed),
+                       moves: [MoveSpec(id: 1, names: ["en": "Hit"], type: .normal, power: 200,
+                                        damageClass: .physical, accuracy: nil, pp: 20)])
+    }
+
+    private func winnableRun() -> RogueRun {
+        RogueRun(party: [snapshot(1, hp: 900, speed: 200)],
+                 opponents: [snapshot(99, hp: 1, speed: 1)], seed: 4)
+    }
+
+    private func winWave(_ run: inout RogueRun, limit: Int = 10) {
+        for _ in 0..<limit where run.stage == .battling { run.useMove(0) }
+    }
+
+    /// 첫 웨이브는 고를 기회가 없었으므로 평탄한 길이다 — 기본값이 험한 길이면 판이 시작부터
+    /// 고르지 않은 난이도로 열린다.
+    func testTheRunStartsOnTheSafePath() {
+        XCTAssertEqual(winnableRun().route, .safe)
+    }
+
+    /// 험한 길은 상대 레벨과 종족값 상한을 함께 올린다. 한쪽만 오르면 "험하다"가 이름뿐이 된다.
+    func testTheRoughPathRaisesBothLevelAndStatCap() {
+        for wave in [1, 5, 9] {
+            XCTAssertEqual(RogueRun.opponentLevel(wave: wave, route: .risky),
+                           RogueRun.opponentLevel(wave: wave, route: .safe) + RunRoute.risky.levelBonus,
+                           "wave \(wave)")
+            XCTAssertEqual(RogueRun.baseStatTotalCap(wave: wave, route: .risky),
+                           RogueRun.baseStatTotalCap(wave: wave, route: .safe) + RunRoute.risky.statBonus,
+                           "wave \(wave)")
+        }
+        // 보스 보너스는 길과 별개로 남는다 — 겹쳐야 험한 길의 보스가 실제로 더 세다.
+        XCTAssertGreaterThan(RogueRun.baseStatTotalCap(wave: 4, route: .risky),
+                             RogueRun.baseStatTotalCap(wave: 4, route: .safe))
+    }
+
+    /// 상한이 오르면 그 상한에 맞춰 채택 범위도 넓어진다 — `isFairOpponent` 가 길을 안 보면
+    /// 레벨만 오르고 종은 그대로여서 늘린 난이도가 절반만 걸린다.
+    func testFairnessCheckFollowsTheRoute() {
+        let cap = RogueRun.baseStatTotalCap(wave: 1, route: .safe)
+        let stats = BattleStats(hp: cap / 6 + 20, atk: cap / 6, def: cap / 6,
+                               spa: cap / 6, spd: cap / 6, spe: cap / 6)
+        let total = RogueRun.baseStatTotal(stats)
+        XCTAssertGreaterThan(total, cap, "상한을 넘는 후보로 재야 하는 테스트다")
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats, wave: 1, route: .safe))
+        XCTAssertTrue(RogueRun.isFairOpponent(baseStats: stats, wave: 1, route: .risky))
+    }
+
+    /// 험한 길을 넘기면 보상이 두 장이다. **목록은 장마다 새로 뽑는다** — 같은 3장에서 두 장을
+    /// 고르게 하면 두 번째 선택이 남은 것 중 최선 하나로 정해진다.
+    func testTheRoughPathPaysTwoRewards() {
+        var run = winnableRun()
+        winWave(&run)
+        run.pick(run.offers[0])
+        run.take(.risky)
+        run.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
+        winWave(&run)
+        guard run.stage == .picking else { return XCTFail("승리하지 못했다: \(run.stage)") }
+        XCTAssertEqual(run.remainingPicks, 2)
+        let first = run.offers
+        run.pick(first[0])
+        XCTAssertEqual(run.stage, .picking, "두 장을 주는 웨이브인데 한 장에서 넘어갔다")
+        XCTAssertEqual(run.remainingPicks, 1)
+        XCTAssertEqual(run.offers.count, RogueRun.offerCount)
+        run.pick(run.offers[0])
+        XCTAssertEqual(run.stage, .routing)
+    }
+
+    /// 평탄한 길은 한 장이다.
+    func testTheEvenPathPaysOneReward() {
+        var run = winnableRun()
+        winWave(&run)
+        XCTAssertEqual(run.remainingPicks, 1)
+        run.pick(run.offers[0])
+        XCTAssertEqual(run.stage, .routing)
+    }
+
+    /// 길은 **보상을 다 고른 뒤에만** 고를 수 있고, 고른 길은 다음 웨이브에 그대로 걸린다.
+    func testRouteIsChosenOnlyAfterTheRewardsAndCarriesToTheNextWave() {
+        var run = winnableRun()
+        winWave(&run)
+        run.take(.risky)
+        XCTAssertEqual(run.route, .safe, "보상을 고르기 전에 길이 바뀌었다")
+        XCTAssertEqual(run.stage, .picking)
+        run.pick(run.offers[0])
+        run.take(.risky)
+        XCTAssertEqual(run.route, .risky)
+        XCTAssertEqual(run.wave, 2)
+        XCTAssertEqual(run.stage, .loadingWave)
+    }
+
+    /// 최종 웨이브를 넘기면 길을 고르지 않는다 — 판이 끝났는데 다음 길을 묻는 화면이 뜬다.
+    func testClearingTheFinalWaveSkipsRouting() {
+        var run = winnableRun()
+        run.debugJump(toWave: RogueRun.finalWave)
+        winWave(&run)
+        XCTAssertEqual(run.stage, .cleared)
+        XCTAssertEqual(run.remainingPicks, 0)
     }
 }

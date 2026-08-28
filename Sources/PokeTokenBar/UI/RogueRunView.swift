@@ -62,6 +62,7 @@ struct RogueRunView: View {
             switch run.stage {
             case .battling:   battlePanel(run)
             case .picking:    rewardPicker(run)
+            case .routing:    routePicker(run)
             case .loadingWave: ProgressView().frame(maxWidth: .infinity)
             case .cleared:    ending(l.t("12 웨이브를 모두 돌파했다.", "Cleared all 12 waves.",
                                           "12ウェーブすべてを突破した。"))
@@ -219,9 +220,13 @@ struct RogueRunView: View {
                 Text(l.t("\(name) 이(가) 진화했다!", "\(name) evolved!", "\(name) がしんかした！"))
                     .font(.callout.bold())
             }
-            Text(l.t("웨이브 \(run.wave) 돌파 — 하나를 고른다",
-                     "Wave \(run.wave) cleared — pick one",
-                     "ウェーブ \(run.wave) 突破 — 一つ選ぶ"))
+            Text(run.remainingPicks > 1
+                 ? l.t("웨이브 \(run.wave) 돌파 — \(run.remainingPicks) 장 중 첫 장을 고른다",
+                       "Wave \(run.wave) cleared — pick the first of \(run.remainingPicks)",
+                       "ウェーブ \(run.wave) 突破 — \(run.remainingPicks) 枚のうち一枚目を選ぶ")
+                 : l.t("웨이브 \(run.wave) 돌파 — 하나를 고른다",
+                       "Wave \(run.wave) cleared — pick one",
+                       "ウェーブ \(run.wave) 突破 — 一つ選ぶ"))
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(run.offers, id: \.self) { offer in
                 Button {
@@ -271,6 +276,49 @@ struct RogueRunView: View {
             let before = member.snapshot.name
             mutate { $0.evolve(memberAt: index, into: snapshot) }
             evolved.append(before)
+        }
+    }
+
+    /// 다음 웨이브로 갈 길. 두 장이 무엇을 주고 무엇을 요구하는지 **숫자로** 보여준다 —
+    /// "위험한 길"이라고만 쓰면 얼마나 위험한지 모르고 고르게 되고, 그러면 선택이 아니라 도박이 된다.
+    private func routePicker(_ run: RogueRun) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(l.t("웨이브 \(run.wave + 1) 로 가는 길을 고른다",
+                     "Choose the path to wave \(run.wave + 1)",
+                     "ウェーブ \(run.wave + 1) への道を選ぶ"))
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(RunRoute.allCases, id: \.self) { route in
+                Button {
+                    mutate { $0.take(route) }
+                    Task { await loadNextWave() }
+                } label: {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(Self.routeTitle(route, l)).font(.callout.bold())
+                        Text(Self.routeDetail(route, l)).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private static func routeTitle(_ route: RunRoute, _ l: L) -> String {
+        switch route {
+        case .safe:  return l.t("평탄한 길", "Even path", "平らな道")
+        case .risky: return l.t("험한 길", "Rough path", "険しい道")
+        }
+    }
+
+    private static func routeDetail(_ route: RunRoute, _ l: L) -> String {
+        switch route {
+        case .safe:
+            return l.t("상대도 보상도 규칙 그대로다.",
+                       "Opponents and rewards stay as they are.",
+                       "相手も報酬も規則どおりだ。")
+        case .risky:
+            return l.t("상대 레벨 +\(RunRoute.risky.levelBonus), 종족값 상한 +\(RunRoute.risky.statBonus). 넘기면 보상을 \(RunRoute.risky.pickCount) 장 고른다.",
+                       "Opponents get +\(RunRoute.risky.levelBonus) levels and +\(RunRoute.risky.statBonus) base-stat headroom. Clear it and pick \(RunRoute.risky.pickCount) rewards.",
+                       "相手のレベル +\(RunRoute.risky.levelBonus)、種族値上限 +\(RunRoute.risky.statBonus)。突破すると報酬を \(RunRoute.risky.pickCount) 枚選べる。")
         }
     }
 
@@ -358,7 +406,7 @@ struct RogueRunView: View {
 
     private func start(with starter: BattleSnapshot) async {
         setup = .loading
-        let opponents = await Self.wilds(wave: 1, store: store)
+        let opponents = await Self.wilds(wave: 1, route: .safe, store: store)
         guard !opponents.isEmpty else {
             setup = .failedToLoad
             return
@@ -369,7 +417,7 @@ struct RogueRunView: View {
 
     private func loadNextWave() async {
         guard let run = store.rogueRun else { return }
-        let opponents = await Self.wilds(wave: run.wave, store: store)
+        let opponents = await Self.wilds(wave: run.wave, route: run.route, store: store)
         guard !opponents.isEmpty else {
             // 판은 그대로 둔다 — 창을 다시 열면 `resume()` 이 이 웨이브를 다시 불러온다.
             setup = .failedToLoad
@@ -380,10 +428,11 @@ struct RogueRunView: View {
 
     /// 이 웨이브의 상대 전원. **한 마리라도 만들었으면 그대로 간다** — 둘째를 못 받았다고 판을
     /// 세우면 네트워크가 흔들릴 때마다 진행 중인 런이 멈춘다.
-    private static func wilds(wave: Int, store: CompanionStore) async -> [BattleSnapshot] {
+    private static func wilds(wave: Int, route: RunRoute,
+                              store: CompanionStore) async -> [BattleSnapshot] {
         var built: [BattleSnapshot] = []
         for _ in 0..<RogueRun.opponentCount(wave: wave) {
-            if let one = await wild(wave: wave, store: store) { built.append(one) }
+            if let one = await wild(wave: wave, route: route, store: store) { built.append(one) }
         }
         return built
     }
@@ -392,9 +441,10 @@ struct RogueRunView: View {
 
     /// 웨이브에 맞는 야생 하나. 종을 전 범위에서 균등 추첨하면 웨이브 1 에 슬라킹이 나오므로
     /// 채택 규칙은 코어(`RogueRun.chooseOpponent`)가 든다 — 시뮬레이터와 같은 규칙을 써야 한다.
-    private static func wild(wave: Int, store: CompanionStore) async -> BattleSnapshot? {
-        let level = RogueRun.opponentLevel(wave: wave)
-        return await RogueRun.chooseOpponent(wave: wave) {
+    private static func wild(wave: Int, route: RunRoute,
+                             store: CompanionStore) async -> BattleSnapshot? {
+        let level = RogueRun.opponentLevel(wave: wave, route: route)
+        return await RogueRun.chooseOpponent(wave: wave, route: route) {
             await snapshot(speciesID: Int.random(in: RogueRun.wildSpeciesPool),
                            level: level, store: store)
         }

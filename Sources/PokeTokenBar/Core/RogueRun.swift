@@ -33,6 +33,21 @@ enum RunModifier: String, CaseIterable, Sendable {
     }
 }
 
+/// 다음 웨이브로 가는 길. 포켓로그가 웨이브 사이에 바이옴 갈림길을 두는 자리와 같은 역할이다 —
+/// **판을 내가 골랐다는 감각**이 여기서 나온다. 길이 하나뿐이면 12 웨이브가 정해진 순서를 소화하는
+/// 일이 되고, 강화 뽑기만으로는 그 감각이 생기지 않는다(뽑기는 나온 것 중에서 고르는 것이다).
+enum RunRoute: String, CaseIterable, Sendable {
+    /// 규칙 그대로. 상대도 보상도 기본값이다.
+    case safe
+    /// 상대 종족값 상한과 레벨이 오르고, 그 웨이브를 넘기면 **보상을 두 장** 고른다.
+    case risky
+
+    /// 이 길의 상대가 종족값 상한에 더 받는 값 / 레벨에 더 받는 값 / 승리 시 고르는 보상 장수.
+    var statBonus: Int { self == .risky ? 40 : 0 }
+    var levelBonus: Int { self == .risky ? 2 : 0 }
+    var pickCount: Int { self == .risky ? 2 : 1 }
+}
+
 /// 포켓로그식 한 판. 웨이브를 하나씩 넘으며 **파티 HP·PP 가 이월**되는 것이 유일한 자원이다
 /// (기존 던전의 체력 예산 100 을 대체한다).
 ///
@@ -41,8 +56,10 @@ enum RunModifier: String, CaseIterable, Sendable {
 struct RogueRun: Sendable {
     enum Stage: Sendable, Equatable {
         case battling
-        /// 승리 직후 — 보상 3장 중 하나를 고를 때까지 멈춘다.
+        /// 승리 직후 — 보상 3장 중 하나를 고를 때까지 멈춘다(위험한 길이었으면 두 장).
         case picking
+        /// 보상을 다 고른 뒤 — 다음 웨이브로 갈 길을 고를 때까지 멈춘다.
+        case routing
         /// 다음 웨이브 상대를 받는 중. 호출자가 `beginWave` 로 푼다.
         case loadingWave
         case cleared
@@ -76,10 +93,14 @@ struct RogueRun: Sendable {
     ///
     /// 예전 식은 야생을 기준선과 같은 레벨에 두었다. PokeRogue 는 파티가 최대 6마리인데도 적을
     /// 늘 아래에 두는데, 우리는 파티가 **한 마리로 시작**해 그 여유가 더 필요하다.
-    static func opponentLevel(wave: Int, tuning: RogueTuning = .standard) -> Int {
+    static func opponentLevel(wave: Int, route: RunRoute = .safe,
+                              tuning: RogueTuning = .standard) -> Int {
         let baseline = partyLevelBaseline(wave: wave, tuning: tuning)
-        guard isBoss(wave: wave, tuning: tuning) else { return baseline - tuning.wildHandicap(wave: wave) }
-        return baseline + (wave == tuning.finalWave ? tuning.finalLevelBonus : tuning.bossLevelBonus)
+        guard isBoss(wave: wave, tuning: tuning) else {
+            return baseline - tuning.wildHandicap(wave: wave) + route.levelBonus
+        }
+        return baseline + route.levelBonus
+            + (wave == tuning.finalWave ? tuning.finalLevelBonus : tuning.bossLevelBonus)
     }
 
     /// 웨이브당 상대 마릿수. 후반은 둘이 나온다 — 포획으로 파티가 커지는데 상대가 끝까지 하나면
@@ -95,12 +116,14 @@ struct RogueRun: Sendable {
     ///
     /// 구간은 **보스 웨이브를 포함**한다. 보스를 다음 구간으로 밀면 보스 4 가 뒤따르는 웨이브보다
     /// 세지는 톱니가 생긴다. 구간 사이는 선형으로 이어 웨이브 수를 늘리면 상승이 저절로 완만해진다.
-    static func baseStatTotalCap(wave: Int, tuning: RogueTuning = .standard) -> Int {
+    static func baseStatTotalCap(wave: Int, route: RunRoute = .safe,
+                                 tuning: RogueTuning = .standard) -> Int {
         let (index, count) = tuning.tierIndex(wave: wave)
         let span = Double(tuning.lastTierCap - tuning.firstTierCap)
         let progress = count > 1 ? Double(index - 1) / Double(count - 1) : 1
         let tier = tuning.firstTierCap + Int((span * progress).rounded())
-        return isBoss(wave: wave, tuning: tuning) ? tier + tuning.bossStatBonus : tier
+        let boss = isBoss(wave: wave, tuning: tuning) ? tuning.bossStatBonus : 0
+        return tier + boss + route.statBonus
     }
 
     static func baseStatTotal(_ stats: BattleStats) -> Int {
@@ -108,10 +131,10 @@ struct RogueRun: Sendable {
     }
 
     /// 하한은 상한의 60% — 없으면 최종 보스로 잉어킹(200)이 나온다.
-    static func isFairOpponent(baseStats: BattleStats, wave: Int,
+    static func isFairOpponent(baseStats: BattleStats, wave: Int, route: RunRoute = .safe,
                                tuning: RogueTuning = .standard) -> Bool {
         let total = baseStatTotal(baseStats)
-        let cap = baseStatTotalCap(wave: wave, tuning: tuning)
+        let cap = baseStatTotalCap(wave: wave, route: route, tuning: tuning)
         return total <= cap && total >= Int(Double(cap) * tuning.minStatRatio)
     }
 
@@ -127,13 +150,15 @@ struct RogueRun: Sendable {
     ///
     /// 규칙이 여기 있는 이유는 **앱과 시뮬레이터가 같은 규칙을 봐야** 하기 때문이다. 화면 쪽에
     /// 두면 밸런스를 재는 판과 실제로 도는 판이 서로 다른 상대를 뽑는다.
-    static func chooseOpponent(wave: Int, attempts: Int = wildDrawAttempts,
+    static func chooseOpponent(wave: Int, route: RunRoute = .safe,
+                               attempts: Int = wildDrawAttempts,
                                tuning: RogueTuning = .standard,
                                next: sending () async -> BattleSnapshot?) async -> BattleSnapshot? {
         var weakest: BattleSnapshot?
         for _ in 0..<attempts {
             guard let candidate = await next() else { continue }
-            if isFairOpponent(baseStats: candidate.base, wave: wave, tuning: tuning) { return candidate }
+            if isFairOpponent(baseStats: candidate.base, wave: wave, route: route,
+                              tuning: tuning) { return candidate }
             if weakest.map({ baseStatTotal($0.base) > baseStatTotal(candidate.base) }) ?? true {
                 weakest = candidate
             }
@@ -173,6 +198,11 @@ struct RogueRun: Sendable {
     /// 지금까지 쌓인 지속 강화. **개체가 아니라 런이 든다** — 파티가 바뀌는 모든 경로(포획·다음
     /// 웨이브)가 `stampBoosts()` 한 곳에서 다시 도장을 받으므로, 잡은 개체만 강화 없이 싸울 일이 없다.
     private(set) var boosts = RunBoosts()
+    /// 이번 웨이브를 지나온 길. 상대 생성(레벨·종족값 상한)과 승리 보상 장수를 이 값이 정한다.
+    /// 첫 웨이브는 고를 기회가 없었으므로 안전한 길이다.
+    private(set) var route: RunRoute = .safe
+    /// 이 승리로 아직 고를 수 있는 보상 장수. 0 이 되면 길 고르기로 넘어간다.
+    private(set) var remainingPicks = 0
     /// 이 판이 쓰는 밸런스 값. 앱은 `.standard`, 시뮬레이터는 흔든 값을 넣는다.
     let tuning: RogueTuning
     private(set) var battle: TeamPracticeBattle
@@ -237,6 +267,8 @@ struct RogueRun: Sendable {
         if wave == tuning.finalWave {
             stage = .cleared
         } else {
+            // 위험한 길로 왔으면 이 승리의 보상이 두 장이다 — 늘린 난이도의 값이 여기서 돌아온다.
+            remainingPicks = route.pickCount
             offers = Self.drawOffers(&rng)
             stage = .picking
         }
@@ -299,11 +331,26 @@ struct RogueRun: Sendable {
         return picked
     }
 
+    /// 보상 한 장을 고른다. 두 장을 받는 웨이브면 다음 3장을 다시 뽑아 한 번 더 멈춘다 —
+    /// 같은 목록에서 두 장을 고르게 하면 두 번째 선택이 남은 것 중 최선 하나로 정해진다.
     mutating func pick(_ modifier: RunModifier) {
         guard stage == .picking, offers.contains(modifier) else { return }
         apply(modifier)
         stampBoosts()
+        remainingPicks -= 1
+        guard remainingPicks <= 0 else {
+            offers = Self.drawOffers(&rng)
+            return
+        }
         offers = []
+        stage = .routing
+    }
+
+    /// 다음 웨이브로 갈 길을 고른다. **웨이브 번호가 오르는 자리는 여기 하나뿐이다** — 보상을
+    /// 고르는 자리에서 올리면 길을 고르기 전에 상대가 만들어져, 고른 길이 다음 웨이브에 안 걸린다.
+    mutating func take(_ next: RunRoute) {
+        guard stage == .routing else { return }
+        route = next
         wave += 1
         stage = .loadingWave
     }
