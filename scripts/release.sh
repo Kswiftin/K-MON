@@ -32,7 +32,7 @@ BRANCH=$(git branch --show-current)
 }
 
 echo "▶ origin/main 동기화 확인"
-# development는 main 배포마다 강제로 이동하는 롤링 태그다. 여기서 전체 태그를 fetch하면
+# development는 수동 프리릴리즈에서만 이동하는 롤링 태그다. 여기서 전체 태그를 fetch하면
 # 로컬의 이전 development와 충돌해 안정 릴리스가 시작조차 못 하므로 main만 갱신한다.
 git fetch --no-tags origin main
 [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
