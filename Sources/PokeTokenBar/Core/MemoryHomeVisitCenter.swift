@@ -100,7 +100,11 @@ final class MemoryHomeVisitCenter {
             }
             Task { @MainActor in self?.homes = peers.sorted { $0.displayName < $1.displayName } }
         }
-        browser.stateUpdateHandler = { [weak self] state in if case .failed(let error) = state { Task { @MainActor in self?.lastError = error.localizedDescription } } }
+        browser.stateUpdateHandler = { [weak self] state in
+            if case .failed(let error) = state {
+                Task { @MainActor in self?.lastError = self?.networkFailureMessage(error) }
+            }
+        }
         browser.start(queue: .main); self.browser = browser
     }
     private func startHosting() {
@@ -109,7 +113,11 @@ final class MemoryHomeVisitCenter {
             let listener = try NWListener(using: Self.parameters())
             listener.service = .init(name: localDisplayName, type: Self.serviceType)
             listener.newConnectionHandler = { [weak self] connection in Task { @MainActor in self?.accept(connection) } }
-            listener.stateUpdateHandler = { [weak self] state in if case .failed(let error) = state { Task { @MainActor in self?.lastError = error.localizedDescription } } }
+            listener.stateUpdateHandler = { [weak self] state in
+                if case .failed(let error) = state {
+                    Task { @MainActor in self?.lastError = self?.networkFailureMessage(error) }
+                }
+            }
             listener.start(queue: .main); self.listener = listener
         } catch { lastError = error.localizedDescription }
     }
@@ -181,6 +189,17 @@ final class MemoryHomeVisitCenter {
         return value
     }
     private static func parameters() -> NWParameters { NWParameters.tcp }
+
+    /// Bonjour 권한 거부를 Network 프레임워크의 내부 코드로 노출하지 않는다. 특히 `NoAuth` 는
+    /// 홈 계정 인증이 아니라 macOS의 로컬 네트워크 서비스 권한을 뜻한다.
+    private func networkFailureMessage(_ error: NWError) -> String {
+        guard error.localizedDescription.localizedCaseInsensitiveContains("noauth") else {
+            return error.localizedDescription
+        }
+        return companion.l.t("주변 홈을 찾을 수 없어요. 앱을 다시 열어 로컬 네트워크 접근을 허용해 주세요.",
+                             "Nearby homes are unavailable. Reopen the app and allow local network access.",
+                             "近くのホームを探せません。アプリを開き直してローカルネットワークへのアクセスを許可してください。")
+    }
     /// 완료 핸들러를 `@MainActor` 함수 타입으로 못 박는다. 이유가 둘 있다:
     /// 1) 전역 액터 격리 함수 타입은 암묵적으로 `Sendable` 이라, `@Sendable` 인 Network 콜백에
     ///    캡처될 수 있다 — 그냥 `() -> Void` 로 두면 Swift 6 concurrency warning 이 남는다.
