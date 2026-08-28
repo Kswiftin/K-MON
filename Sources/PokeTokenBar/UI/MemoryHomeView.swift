@@ -143,78 +143,9 @@ struct MemoryHomeView: View {
         return AnyView(VStack(alignment: .leading, spacing: 10) {
             visitCounterRow(album: album)
             roomHeader(mon: mon, entries: entries, milestones: milestones, theme: roomTheme, tint: roomTint)
-            moodRow(album: album, mon: mon)
+            homeActions(album: album, mon: mon)
             furnitureRow(album: album, tint: roomTint)
-
-            HStack {
-                Button { showingVisits = true } label: {
-                    Label(l.t("주변 홈 방문", "Visit nearby homes", "近くのホームを訪問"), systemImage: "house.and.flag")
-                }
-                .accessibilityLabel(l.t("주변 Memory Home 방문", "Visit nearby Memory Homes", "近くのMemory Homeを訪問"))
-                Button { showingDiary = true } label: {
-                    Label(l.t("다이어리", "Diary", "ダイアリー"), systemImage: "book.closed")
-                }
-                .accessibilityLabel(l.t("날짜별 다이어리", "Diary by date", "日付ごとのダイアリー"))
-                Button { showingPokeLog = true } label: {
-                    Label("POKÉLOG", systemImage: "heart.text.square")
-                }
-                .accessibilityLabel(l.t("동행 포케로그", "Companion Pokélog", "相棒のポケログ"))
-                Button { showingStickerPhoto = true } label: {
-                    Label(l.t("스티커 사진", "Sticker photo", "ステッカー写真"), systemImage: "photo")
-                }
-                Button { showingSeasonRecap = true } label: { Label(l.t("계절 결산", "Season recap", "季節のまとめ"), systemImage: "calendar") }
-                Spacer()
-                Menu {
-                    Button(l.t("공개 닉네임 편집", "Edit public nickname", "公開ニックネームを編集")) {
-                        publicNicknameDraft = album.memoryHomePublicNickname
-                        publicNicknameError = nil
-                        showingPublicNicknameEditor = true
-                    }
-                    Button(l.t("대문 문구 편집", "Edit home message", "ホームの一言を編集")) {
-                        profileMessageDraft = album.memoryHomeAccess.profileMessage ?? ""
-                        profileMessageError = nil
-                        showingProfileMessageEditor = true
-                    }
-                    if album.memoryHomeAccess.profileMessage != nil {
-                        Button(album.memoryHomeAccess.sharesProfileMessage
-                               ? l.t("대문 문구 공유 해제", "Stop sharing home message", "一言の共有をやめる")
-                               : l.t("대문 문구 공유", "Share home message", "一言を共有")) {
-                            album.setSharesProfileMessage(!album.memoryHomeAccess.sharesProfileMessage)
-                        }
-                        Button(l.t("대문 문구 삭제", "Delete home message", "一言を削除"), role: .destructive) {
-                            album.clearProfileMessage()
-                        }
-                    }
-                    Button(store.memoryAlbum.memoryHomeAccess.visibility == .open
-                           ? l.t("홈 차단", "Block home", "ホームをブロック")
-                           : l.t("홈 공개", "Open home", "ホームを公開")) {
-                        store.memoryAlbum.setMemoryHomeVisibility(store.memoryAlbum.memoryHomeAccess.visibility == .open ? .blocked : .open)
-                        visits.refreshAccess()
-                    }
-                    if let pinned = album.pinned(for: mon.id) {
-                        Button(album.sharedPinnedMemory(for: mon.id) == nil
-                               ? l.t("고정 기억 공유", "Share pinned memory", "固定した思い出を共有")
-                               : l.t("기억 공유 해제", "Stop sharing memory", "思い出の共有をやめる")) {
-                            if album.sharedPinnedMemory(for: mon.id) == nil { album.setSharedPinnedMemory(pinned, activeCompanionID: mon.id) }
-                            else { album.clearSharedPinnedMemory() }
-                        }
-                    }
-                    if !album.memoryHomeAccess.recentRequesters.isEmpty {
-                        Divider()
-                        ForEach(album.memoryHomeAccess.recentRequesters) { requester in
-                            Button(requester.displayName + " · " + (album.memoryHomeAccess.blockedPeerIDs.contains(requester.peerID)
-                                   ? l.t("차단 해제", "Unblock", "ブロック解除")
-                                   : l.t("차단", "Block", "ブロック"))) {
-                                album.setMemoryHomeBlocked(requester.peerID, blocked: !album.memoryHomeAccess.blockedPeerIDs.contains(requester.peerID))
-                            }
-                            Button(requester.displayName + " · " + l.t("일촌명", "Alias", "一村名")) {
-                                aliasRequester = requester; aliasDraft = album.memoryHomeAccess.peerAliases[requester.peerID] ?? ""
-                            }
-                        }
-                    }
-                } label: { Image(systemName: "lock.shield") }
-                .accessibilityLabel(l.t("홈 공유 설정", "Home sharing settings", "ホーム共有設定"))
-            }
+            moodRow(album: album, mon: mon)
 
             if let pinned = album.pinned(for: mon.id) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -241,13 +172,15 @@ struct MemoryHomeView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                TextEditor(text: $note).frame(minHeight: 54, maxHeight: 74)
-                    .accessibilityLabel(l.t("새 개인 기억", "New private memory", "新しい非公開の思い出"))
-                HStack {
-                    Text(l.t("\(note.count)/280", "\(note.count)/280", "\(note.count)/280"))
-                        .font(.caption).foregroundStyle(note.count > 280 ? PokedoroTheme.red : .secondary)
-                    Spacer()
-                    Button(l.t("기억 남기기", "Save memory", "思い出を残す")) {
+                Label(l.t("오늘의 한 줄", "A line for today", "今日のひとこと"), systemImage: "square.and.pencil")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField(l.t("함께 남기고 싶은 순간을 적어 주세요", "Write a moment to keep together", "残したい瞬間を書いてください"), text: $note, axis: .vertical)
+                        .lineLimit(1...3)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(l.t("새 개인 기억", "New private memory", "新しい非公開の思い出"))
+                        .accessibilityHint(l.t("1자에서 280자까지 입력할 수 있어요.", "Enter between 1 and 280 characters.", "1文字から280文字まで入力できます。"))
+                    Button(l.t("남기기", "Save", "残す")) {
                         if album.addManual(companionID: mon.id, body: note) {
                             settings.recordManualMemoryCreated()
                             note = ""; validationMessage = nil
@@ -256,6 +189,13 @@ struct MemoryHomeView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || note.count > 280)
+                }
+                HStack {
+                    Text(l.t("\(note.count)/280", "\(note.count)/280", "\(note.count)/280"))
+                        .font(.caption).foregroundStyle(note.count > 280 ? PokedoroTheme.red : .secondary)
+                    Spacer()
                 }
                 if let validationMessage { Text(validationMessage).font(.caption).foregroundStyle(PokedoroTheme.red) }
             }
@@ -344,6 +284,97 @@ struct MemoryHomeView: View {
         )
     }
 
+    /// 기록은 모두 시트에서 이어지는 보조 행동이다. 한 줄로 흩어 놓지 않고 이름 있는 메뉴로
+    /// 모아, 미니룸이 첫 화면의 주인공으로 남게 한다.
+    private func homeActions(album: PokemonMemoryAlbum, mon: MonState) -> some View {
+        HStack(spacing: 8) {
+            Button { showingVisits = true } label: {
+                Label(l.t("주변 홈 방문", "Visit nearby homes", "近くのホームを訪問"), systemImage: "house.and.flag")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityLabel(l.t("주변 Memory Home 방문", "Visit nearby Memory Homes", "近くのMemory Homeを訪問"))
+
+            Menu {
+                Button { showingDiary = true } label: {
+                    Label(l.t("다이어리", "Diary", "ダイアリー"), systemImage: "book.closed")
+                }
+                Button { showingPokeLog = true } label: {
+                    Label("POKÉLOG", systemImage: "heart.text.square")
+                }
+                Button { showingStickerPhoto = true } label: {
+                    Label(l.t("스티커 사진", "Sticker photo", "ステッカー写真"), systemImage: "photo")
+                }
+                Button { showingSeasonRecap = true } label: {
+                    Label(l.t("계절 결산", "Season recap", "季節のまとめ"), systemImage: "calendar")
+                }
+            } label: {
+                Label(l.t("기록 보기", "View records", "記録を見る"), systemImage: "book.pages")
+            }
+            .menuStyle(.borderedButton)
+            .controlSize(.small)
+            .accessibilityLabel(l.t("기록 보기", "View records", "記録を見る"))
+            .accessibilityHint(l.t("다이어리, 포케로그, 스티커 사진과 계절 결산을 엽니다.", "Open the diary, Pokélog, sticker photo, or season recap.", "ダイアリー、ポケログ、ステッカー写真、季節のまとめを開きます。"))
+
+            Spacer(minLength: 0)
+
+            Menu {
+                Button(l.t("공개 닉네임 편집", "Edit public nickname", "公開ニックネームを編集")) {
+                    publicNicknameDraft = album.memoryHomePublicNickname
+                    publicNicknameError = nil
+                    showingPublicNicknameEditor = true
+                }
+                Button(l.t("대문 문구 편집", "Edit home message", "ホームの一言を編集")) {
+                    profileMessageDraft = album.memoryHomeAccess.profileMessage ?? ""
+                    profileMessageError = nil
+                    showingProfileMessageEditor = true
+                }
+                if album.memoryHomeAccess.profileMessage != nil {
+                    Button(album.memoryHomeAccess.sharesProfileMessage
+                           ? l.t("대문 문구 공유 해제", "Stop sharing home message", "一言の共有をやめる")
+                           : l.t("대문 문구 공유", "Share home message", "一言を共有")) {
+                        album.setSharesProfileMessage(!album.memoryHomeAccess.sharesProfileMessage)
+                    }
+                    Button(l.t("대문 문구 삭제", "Delete home message", "一言を削除"), role: .destructive) {
+                        album.clearProfileMessage()
+                    }
+                }
+                Button(store.memoryAlbum.memoryHomeAccess.visibility == .open
+                       ? l.t("홈 차단", "Block home", "ホームをブロック")
+                       : l.t("홈 공개", "Open home", "ホームを公開")) {
+                    store.memoryAlbum.setMemoryHomeVisibility(store.memoryAlbum.memoryHomeAccess.visibility == .open ? .blocked : .open)
+                    visits.refreshAccess()
+                }
+                if let pinned = album.pinned(for: mon.id) {
+                    Button(album.sharedPinnedMemory(for: mon.id) == nil
+                           ? l.t("고정 기억 공유", "Share pinned memory", "固定した思い出を共有")
+                           : l.t("기억 공유 해제", "Stop sharing memory", "思い出の共有をやめる")) {
+                        if album.sharedPinnedMemory(for: mon.id) == nil { album.setSharedPinnedMemory(pinned, activeCompanionID: mon.id) }
+                        else { album.clearSharedPinnedMemory() }
+                    }
+                }
+                if !album.memoryHomeAccess.recentRequesters.isEmpty {
+                    Divider()
+                    ForEach(album.memoryHomeAccess.recentRequesters) { requester in
+                        Button(requester.displayName + " · " + (album.memoryHomeAccess.blockedPeerIDs.contains(requester.peerID)
+                               ? l.t("차단 해제", "Unblock", "ブロック解除")
+                               : l.t("차단", "Block", "ブロック"))) {
+                            album.setMemoryHomeBlocked(requester.peerID, blocked: !album.memoryHomeAccess.blockedPeerIDs.contains(requester.peerID))
+                        }
+                        Button(requester.displayName + " · " + l.t("일촌명", "Alias", "一村名")) {
+                            aliasRequester = requester; aliasDraft = album.memoryHomeAccess.peerAliases[requester.peerID] ?? ""
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "lock.shield")
+                    .frame(minWidth: 28, minHeight: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel(l.t("홈 공유 설정", "Home sharing settings", "ホーム共有設定"))
+        }
+    }
+
     /// 싸이월드 미니홈피의 그 줄. 경쟁 지표가 아니라 기념일 트리거라서 랭킹·비교는 넣지 않는다.
     private func visitCounterRow(album: PokemonMemoryAlbum) -> some View {
         let today = album.memoryHomeAccess.visitToday, total = album.memoryHomeAccess.visitTotal
@@ -364,27 +395,31 @@ struct MemoryHomeView: View {
     /// 1000종 × 5기분은 헤더 기능의 범위가 아니다.
     private func moodRow(album: PokemonMemoryAlbum, mon: MonState) -> some View {
         let current = album.mood()
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 4) {
+        return HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(l.t("오늘 기분", "Today's mood", "今日の気分"))
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
+                Text(current.map { MemoryHomeMoodStyle.reaction($0, companion: store.chatProfile(for: mon).displayName, l) }
+                     ?? l.t("지금 기분을 골라 보세요.", "Pick how you feel right now.", "今の気分を選んでください。"))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Menu {
                 ForEach(MemoryHomeMood.allCases, id: \.self) { mood in
                     Button { album.setMood(mood) } label: {
-                        Text(MemoryHomeMoodStyle.emoji(mood)).font(.body)
-                            .frame(minWidth: 26, minHeight: 26)
-                            .background(current == mood ? PokedoroTheme.yellow.opacity(0.32) : .clear,
-                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        Text(MemoryHomeMoodStyle.emoji(mood) + " " + MemoryHomeMoodStyle.name(mood, l))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(MemoryHomeMoodStyle.name(mood, l))
-                    .accessibilityAddTraits(current == mood ? [.isSelected] : [])
                 }
+            } label: {
+                Text(current.map { MemoryHomeMoodStyle.emoji($0) } ?? "＋")
+                    .font(.body)
+                    .frame(minWidth: 34, minHeight: 28)
+                    .background(PokedoroTheme.yellow.opacity(0.24), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            if let current {
-                Text(MemoryHomeMoodStyle.reaction(current, companion: store.chatProfile(for: mon).displayName, l))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel(l.t("오늘 기분", "Today's mood", "今日の気分"))
+            .accessibilityValue(current.map { MemoryHomeMoodStyle.name($0, l) } ?? l.t("선택 안 함", "Not selected", "未選択"))
+            .accessibilityHint(l.t("기분을 선택합니다.", "Choose your mood.", "気分を選びます。"))
         }
         .padding(8).pokedoroCard(tint: PokedoroTheme.yellow)
     }
@@ -462,7 +497,10 @@ struct MemoryHomeView: View {
     private func furnitureRow(album: PokemonMemoryAlbum, tint: Color) -> some View {
         let furniture: [ItemKind] = [.roomBed, .roomTable, .roomLamp]
         return VStack(alignment: .leading, spacing: 5) {
-            HStack { Text(l.t("방꾸미기", "Room decor", "部屋づくり")).font(.subheadline.weight(.semibold)); Spacer()
+            HStack {
+                Label(l.t("방꾸미기", "Room decor", "部屋づくり"), systemImage: "chair.lounge.fill")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
                 Menu(l.t("룸메이트", "Roommates", "ルームメイト")) {
                     ForEach(store.ownedMons) { mon in
                         let selected = album.memoryHomeAccess.roommateIDs.contains(mon.id)
@@ -472,8 +510,11 @@ struct MemoryHomeView: View {
                             album.setRoommates(ids, validCompanionIDs: Set(store.ownedMons.map(\.id)))
                         }
                     }
-                }.menuStyle(.borderlessButton)
-                if let image = MemoryHomeBundledArt.interiorTileset() { Image(nsImage: image).resizable().interpolation(.none).scaledToFit().frame(width: 48, height: 24) } }
+                }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel(l.t("룸메이트", "Roommates", "ルームメイト"))
+                .accessibilityValue(l.t("\(album.memoryHomeAccess.roommateIDs.count)명 선택됨", "\(album.memoryHomeAccess.roommateIDs.count) selected", "\(album.memoryHomeAccess.roommateIDs.count) 匹選択"))
+            }
             HStack(spacing: 6) {
                 ForEach(["left", "center", "right"], id: \.self) { slot in
                     Menu {
@@ -484,12 +525,18 @@ struct MemoryHomeView: View {
                         }
                     } label: {
                         let item = album.memoryHomeAccess.roomLayout[slot]
-                        Text(item.map { $0.fallbackEmoji } ?? "＋").frame(maxWidth: .infinity).padding(.vertical, 5)
-                    }.menuStyle(.borderlessButton)
+                        VStack(spacing: 2) {
+                            Text(item.map { $0.fallbackEmoji } ?? "＋").font(.title3)
+                            Text(slotName(slot)).font(.caption2.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .accessibilityLabel(l.t("\(slotName(slot)) 자리", "\(slotName(slot)) slot", "\(slotName(slot))の場所"))
+                    .accessibilityValue(album.memoryHomeAccess.roomLayout[slot].map { l.itemName($0) } ?? l.t("비어 있음", "Empty", "空"))
                 }
             }
-            Text(l.t("가구는 표현 전용이며 능력치·보상·진화에 영향을 주지 않아요.", "Furniture is expressive only; it never changes stats, rewards, or evolution.", "家具は表現のみで、能力・報酬・進化には影響しません。"))
-                .font(.caption2).foregroundStyle(.secondary)
             if let item = album.memoryHomeAccess.roomLayout["center"], let reaction = item.roomReaction {
                 Text(roomReaction(item, placement: reaction)).font(.caption2).foregroundStyle(.secondary)
             }
@@ -501,6 +548,14 @@ struct MemoryHomeView: View {
         case "onTop": return l.t("동행이 \(l.itemName(item)) 위에서 쉬고 있어요.", "Your companion is resting on the \(l.itemName(item)).", "相棒が\(l.itemName(item))の上で休んでいます。")
         case "under": return l.t("동행이 \(l.itemName(item)) 곁의 빛을 쬐고 있어요.", "Your companion is enjoying the glow beside the \(l.itemName(item)).", "相棒が\(l.itemName(item))の明かりを楽しんでいます。")
         default: return l.t("동행이 \(l.itemName(item)) 옆에 자리를 잡았어요.", "Your companion settled beside the \(l.itemName(item)).", "相棒が\(l.itemName(item))のそばに座りました。")
+        }
+    }
+
+    private func slotName(_ slot: String) -> String {
+        switch slot {
+        case "left": l.t("왼쪽", "Left", "左")
+        case "center": l.t("가운데", "Center", "中央")
+        default: l.t("오른쪽", "Right", "右")
         }
     }
 
