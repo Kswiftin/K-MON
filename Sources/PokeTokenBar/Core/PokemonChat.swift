@@ -342,7 +342,11 @@ enum PokemonChatProviderSafety {
         case .claude:
             // `--tools ""`는 Claude Code 내장 도구 전체를 제거한다. strict MCP 설정과 빈 설정을 함께
             // 주어 사용자·프로젝트 MCP 구성이 섞이지 않게 한다.
-            return ["claude", "--print", "--tools", "", "--safe-mode", "--strict-mcp-config",
+            // `--setting-sources ""`는 사용자·프로젝트·local 설정 파일을 아예 안 읽는다.
+            // `--safe-mode` 는 훅·플러그인만 끄고 설정의 env(`OTEL_*` 등)는 그대로 실었고, 실행마다
+            // 사용자 `~/.claude/settings.json` 에 permission 규칙을 **쓰기까지** 했다(실측).
+            return ["claude", "--print", "--tools", "", "--safe-mode", "--setting-sources", "",
+                    "--strict-mcp-config",
                     "--mcp-config", "{\"mcpServers\":{}}", "--no-session-persistence",
                     "--disable-slash-commands", "--permission-mode", "dontAsk"]
         case .codex:
@@ -535,6 +539,8 @@ enum PokemonChatCommandRunner {
                 output.fileHandleForReading.readabilityHandler = { handle in state.appendOutput(handle.availableData) }
                 error.fileHandleForReading.readabilityHandler = { handle in state.appendError(handle.availableData) }
                 process.executableURL = executableURL; process.arguments = arguments; process.standardInput = inputPipe; process.standardOutput = output; process.standardError = error
+                // 정하지 않으면 앱의 cwd(`/`)를 물려받아 CLI 의 프로젝트 루트가 디스크 전체가 된다.
+                process.currentDirectoryURL = PokemonChatWorkspace.directoryURL
                 process.terminationHandler = { process in
                     output.fileHandleForReading.readabilityHandler = nil; error.fileHandleForReading.readabilityHandler = nil
                     state.appendOutput(output.fileHandleForReading.readDataToEndOfFile())
