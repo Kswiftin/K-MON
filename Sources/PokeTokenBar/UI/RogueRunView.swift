@@ -21,6 +21,12 @@ struct RogueRunView: View {
     }
 
     @State private var setup: Setup = .loading
+    /// 방금 보상 화면에서 진화한 개체의 이름 — 화면에 한 줄로 알린다. 진화를 조용히 처리하면
+    /// 판의 가장 큰 사건이 스프라이트가 바뀐 것으로만 남는다.
+    @State private var evolved: [String] = []
+    /// 진화 조회를 이미 지난 웨이브. `.task` 는 화면이 다시 그려질 때마다 도는데, 조회는 왕복이
+    /// 여러 번이라 같은 웨이브에서 두 번 돌면 보상 화면이 그만큼 늦게 열린다.
+    @State private var evolutionCheckedWave = 0
 
 
     var body: some View {
@@ -209,6 +215,10 @@ struct RogueRunView: View {
 
     private func rewardPicker(_ run: RogueRun) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            ForEach(evolved, id: \.self) { name in
+                Text(l.t("\(name) 이(가) 진화했다!", "\(name) evolved!", "\(name) がしんかした！"))
+                    .font(.callout.bold())
+            }
             Text(l.t("웨이브 \(run.wave) 돌파 — 하나를 고른다",
                      "Wave \(run.wave) cleared — pick one",
                      "ウェーブ \(run.wave) 突破 — 一つ選ぶ"))
@@ -235,6 +245,32 @@ struct RogueRunView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+        }
+        .task(id: run.wave) { await evolveParty() }
+    }
+
+    /// 웨이브를 넘긴 파티에서 **레벨 조건을 채운 개체를 진화시킨다.** 보상 화면에서 도는 이유는
+    /// 두 가지다 — 전투 중에 개체를 갈면 진행 중인 턴의 활성 슬롯이 다른 종으로 바뀌고, 다음 웨이브
+    /// 로딩에 붙이면 판의 가장 큰 사건이 로딩 스피너 뒤로 숨는다.
+    ///
+    /// 조회가 실패하면 **진화하지 않고 그대로 간다** — 판을 세우는 대신 이번 웨이브의 진화를 건너뛴다.
+    private func evolveParty() async {
+        guard let run = store.rogueRun, run.stage == .picking,
+              evolutionCheckedWave != run.wave else { return }
+        evolutionCheckedWave = run.wave
+        evolved = []
+        for (index, member) in run.party.enumerated() {
+            guard let line = try? await PokeAPIClient.shared.line(baseSpeciesID: member.snapshot.speciesID),
+                  let node = line.tree.node(withID: member.snapshot.speciesID),
+                  let target = RogueRun.levelUpEvolution(from: node, level: member.snapshot.level),
+                  // 애니메이션 스프라이트가 없는 종으로 진화시키면 화면에서 개체가 사라진다.
+                  PokemonAssets.hasAnimatedSprite(speciesID: target.speciesID),
+                  let snapshot = await Self.snapshot(speciesID: target.speciesID,
+                                                    level: member.snapshot.level, store: store)
+            else { continue }
+            let before = member.snapshot.name
+            mutate { $0.evolve(memberAt: index, into: snapshot) }
+            evolved.append(before)
         }
     }
 

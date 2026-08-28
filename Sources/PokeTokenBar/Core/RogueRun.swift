@@ -368,6 +368,45 @@ struct RogueRun: Sendable {
         return lead?.snapshot.types.first
     }
 
+    // MARK: 진화
+
+    /// 이번 레벨에서 진화하는 자식 노드. **레벨 조건이 붙은 level-up 진화만** 본다 — 런에는 아이템·
+    /// 교환·친밀도·시간대 축이 없어 그 밖의 조건은 판 안에서 만족시킬 방법이 없고, 무시하고 진화시키면
+    /// 돌 없이 피카츄가 라이츄가 된다.
+    ///
+    /// 후보가 여럿이면 **요구 레벨이 가장 높은 것**을 쓴다. 레벨이 두 단계를 한 번에 넘겼을 때
+    /// (보스 +3) 낮은 쪽을 고르면 한 웨이브에 한 단계씩만 올라 최종 형태에 영영 닿지 않는다.
+    static func levelUpEvolution(from node: EvoNode, level: Int) -> EvoNode? {
+        node.children
+            .filter { ($0.evolutionTrigger ?? "level-up") == "level-up" }
+            .filter { $0.evolutionItem == nil && $0.evolutionHeldItem == nil }
+            .filter { $0.evolutionKnownMoveID == nil && $0.evolutionTimeOfDay == nil }
+            .filter { $0.evolutionTradeSpeciesID == nil && $0.evolutionPartySpeciesID == nil }
+            .filter { level >= ($0.evolutionLevel ?? Int.max) }
+            .max { ($0.evolutionLevel ?? 0) < ($1.evolutionLevel ?? 0) }
+    }
+
+    /// 진화한다. 종 데이터는 네트워크를 지나야 하므로 **새 스냅샷은 호출자가 만들어 넣는다**
+    /// (상대 생성과 같은 규칙이다). 보상 화면(`picking`)에서만 부른다 — 전투 중에 개체를 갈면
+    /// 진행 중인 턴의 활성 슬롯이 다른 종으로 바뀐다.
+    ///
+    /// **HP 는 비율로, PP 는 만피로** 넘어간다. 레벨업과 달리 최대 HP 가 크게 뛰므로 절대값을 그대로
+    /// 두면 진화가 손해처럼 보이고, 진화는 이 판의 보상이라 그렇게 남아선 안 된다. 레벨은 파티의
+    /// 값으로 덮는다 — 호출자가 만든 스냅샷의 레벨이 어긋나면 유효 스탯이 통째로 달라진다.
+    mutating func evolve(memberAt index: Int, into snapshot: BattleSnapshot) {
+        guard stage == .picking, party.indices.contains(index) else { return }
+        let old = party[index]
+        var normalized = snapshot
+        normalized.level = old.snapshot.level
+        var next = BattleSide(normalized)
+        let ratio = Double(old.hp) / Double(max(1, old.stats.hp))
+        next.hp = old.isAlive ? max(1, Int((Double(next.stats.hp) * ratio).rounded())) : 0
+        next.status = old.status
+        next.statusCounter = old.statusCounter
+        party[index] = next
+        stampBoosts()
+    }
+
     /// 파티와 진행 중인 전투 양쪽에 현재 강화를 도장 찍는다. **강화가 개체로 들어가는 자리는 여기
     /// 하나뿐이다.** 전투 쪽에 안 찍으면 이번 웨이브에는 안 걸려서 방금 고른 보상이 안 듣는 것처럼
     /// 보이고, 포획 경로가 이 자리를 안 지나면 잡은 개체만 강화 없이 싸운다.

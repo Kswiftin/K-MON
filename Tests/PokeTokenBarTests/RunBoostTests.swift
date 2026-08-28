@@ -208,3 +208,82 @@ final class RunBoostTests: XCTestCase {
                  seed: 4)
     }
 }
+
+/// 런 중 진화. 종 데이터는 네트워크를 지나므로 코어가 잠그는 것은 두 가지다 —
+/// ① 판 안에서 만족시킬 수 있는 조건만 진화로 인정하는가 ② 진화가 이월 자원을 손해로 바꾸지 않는가.
+final class RunEvolutionTests: XCTestCase {
+
+    private func snapshot(_ id: Int, level: Int = 16, hp: Int = 100) -> BattleSnapshot {
+        BattleSnapshot(speciesID: id, name: "M\(id)", trainer: "T", level: level, nature: nil,
+                       isShiny: false, types: [.normal],
+                       base: BattleStats(hp: hp, atk: 100, def: 50, spa: 100, spd: 50, spe: 100),
+                       moves: [MoveSpec(id: 1, names: ["en": "Hit"], type: .normal, power: 60,
+                                        damageClass: .physical, accuracy: nil, pp: 20)])
+    }
+
+    private func child(_ id: Int, level: Int? = nil, trigger: String? = "level-up",
+                       item: String? = nil, heldItem: String? = nil,
+                       knownMove: Int? = nil, timeOfDay: String? = nil,
+                       children: [EvoNode] = []) -> EvoNode {
+        EvoNode(speciesID: id, children: children, evolutionLevel: level, evolutionTrigger: trigger,
+                evolutionItem: item, evolutionHeldItem: heldItem, evolutionGender: nil,
+                evolutionKnownMoveID: knownMove, evolutionTimeOfDay: timeOfDay)
+    }
+
+    func testLevelUpEvolutionNeedsTheLevel() {
+        let node = EvoNode(speciesID: 1, children: [child(2, level: 16)])
+        XCTAssertNil(RogueRun.levelUpEvolution(from: node, level: 15))
+        XCTAssertEqual(RogueRun.levelUpEvolution(from: node, level: 16)?.speciesID, 2)
+    }
+
+    /// 런에는 아이템·교환·기술·시간대 축이 없다. 무시하고 진화시키면 돌 없이 피카츄가 라이츄가 된다.
+    func testConditionsTheRunCannotSatisfyAreNotEvolutions() {
+        let node = EvoNode(speciesID: 1, children: [
+            child(2, trigger: "use-item", item: "thunder-stone"),
+            child(3, level: 5, heldItem: "kings-rock"),
+            child(4, level: 5, knownMove: 33),
+            child(5, level: 5, timeOfDay: "night"),
+            child(6, trigger: "trade"),
+        ])
+        XCTAssertNil(RogueRun.levelUpEvolution(from: node, level: 99))
+    }
+
+    /// 보스 승리는 레벨을 3 올린다 — 두 단계 조건을 한 번에 넘겼으면 **높은 쪽**으로 간다.
+    /// 낮은 쪽을 고르면 한 웨이브에 한 단계씩만 올라 최종 형태에 영영 닿지 않는다.
+    func testTheHighestSatisfiedStageWins() {
+        let node = EvoNode(speciesID: 1, children: [child(2, level: 16), child(3, level: 18)])
+        XCTAssertEqual(RogueRun.levelUpEvolution(from: node, level: 20)?.speciesID, 3)
+        XCTAssertEqual(RogueRun.levelUpEvolution(from: node, level: 17)?.speciesID, 2)
+    }
+
+    /// 진화는 이 판의 보상이다 — HP 를 **비율로** 옮기지 않으면 최대치가 뛴 만큼 조용히 손해가 되고,
+    /// 강화가 지워지면 그때까지 고른 지속 보상이 사라진다. 레벨은 파티 값을 유지한다.
+    func testEvolvingKeepsTheHPRatioLevelAndBoosts() {
+        var run = RogueRun(party: [snapshot(1, level: 16, hp: 100)],
+                           opponents: [snapshot(99, level: 5, hp: 1)], seed: 4)
+        run.debugSetBoosts(RunBoosts(typeDamage: [.normal: 2], critStages: 1, leftovers: 0))
+        for _ in 0..<10 where run.stage == .battling { run.useMove(0) }
+        guard run.stage == .picking else { return XCTFail("승리하지 못했다: \(run.stage)") }
+        let beforeRatio = Double(run.party[0].hp) / Double(run.party[0].stats.hp)
+        let level = run.party[0].snapshot.level
+
+        // 종족 HP 가 3배인 진화체. 레벨을 어긋나게 넣어도 코어가 파티 레벨로 덮는다.
+        run.evolve(memberAt: 0, into: snapshot(2, level: 99, hp: 300))
+        XCTAssertEqual(run.party[0].snapshot.speciesID, 2)
+        XCTAssertEqual(run.party[0].snapshot.level, level, "진화가 레벨을 갈아버렸다")
+        XCTAssertGreaterThan(run.party[0].stats.hp, 0)
+        let afterRatio = Double(run.party[0].hp) / Double(run.party[0].stats.hp)
+        XCTAssertEqual(afterRatio, beforeRatio, accuracy: 0.02)
+        XCTAssertEqual(run.party[0].runBoosts.typeDamage[.normal], 2)
+        XCTAssertEqual(run.party[0].runBoosts.critStages, 1)
+        XCTAssertEqual(run.party[0].pp, run.party[0].moves.map(\.pp), "진화하면 새 무브셋의 PP 는 만피다")
+    }
+
+    /// 전투 중에는 진화하지 않는다 — 진행 중인 턴의 활성 슬롯이 다른 종으로 바뀐다.
+    func testEvolvingIsIgnoredMidBattle() {
+        var run = RogueRun(party: [snapshot(1)], opponents: [snapshot(99, hp: 1)], seed: 1)
+        XCTAssertEqual(run.stage, .battling)
+        run.evolve(memberAt: 0, into: snapshot(2, hp: 300))
+        XCTAssertEqual(run.party[0].snapshot.speciesID, 1)
+    }
+}
