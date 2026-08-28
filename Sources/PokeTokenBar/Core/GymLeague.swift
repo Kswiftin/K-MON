@@ -14,7 +14,7 @@ struct Gym: Identifiable, Sendable, Equatable {
     let teamSpeciesIDs: [Int]
     /// 체육관 타입 밖에서 마지막에 나오는 전설 에이스. 단일 약점 타입으로 팀을 쓸어버리는 것을
     /// 막기 위한 예외이며, 있으면 반드시 `teamSpeciesIDs`의 마지막 종과 같다.
-    let aceSpeciesID: Int? = nil
+    let aceSpeciesID: Int?
     /// 관장이 쓸 기술(PokéAPI move 이름), 팀 순서와 같다.
     ///
     /// 자동 선발(`moveSet`)에 맡기지 않는 이유: 그쪽은 "레벨 이하 습득 기술 중 최근 8개 → 변화기
