@@ -40,8 +40,10 @@ struct RogueRun: Sendable {
     static let partyLimit = RogueTuning.standard.partyLimit
     static let ballsPerRun = RogueTuning.standard.ballsPerRun
 
+    /// 보스 웨이브. **마지막 웨이브는 주기와 무관하게 항상 보스다** — 주기를 늦추면(첫 보스를
+    /// 파티가 커진 뒤로 미루면) 최종 웨이브가 주기에서 빗나가 판이 야생으로 끝난다.
     static func isBoss(wave: Int, tuning: RogueTuning = .standard) -> Bool {
-        wave % tuning.bossEvery == 0
+        wave % tuning.bossEvery == 0 || wave == tuning.finalWave
     }
 
     /// 파티 레벨 기준선 — 스타터 5 에서 승리마다 +2. 보스의 +3 은 **세지 않는다**, 상대 레벨을

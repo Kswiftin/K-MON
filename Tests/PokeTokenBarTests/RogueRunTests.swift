@@ -28,7 +28,7 @@ final class RogueRunTests: XCTestCase {
     }
 
     func testOpponentLevelRisesAndBossesAddMore() {
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 2)      // PokeRogue 웨이브 1 과 같다
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 1)       // 기준선 5 − 핸디캡 4
         XCTAssertEqual(RogueRun.opponentLevel(wave: 3), 6)
         XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 11)     // 보스는 파티 기준선과 동급
         XCTAssertEqual(RogueRun.opponentLevel(wave: 8), 19)
@@ -39,9 +39,23 @@ final class RogueRunTests: XCTestCase {
     /// 스타터에게 붙인다(`baseLevel = 1 + wave/2 + (wave/25)^2`) — 플레이어가 처음부터 위에 선다.
     /// 우리는 파티가 한 마리라 그 여유가 더 필요하다.
     func testWildWavesStayBelowThePartyLevelBaseline() {
+        let tuning = RogueTuning.standard
         for wave in 1...RogueRun.finalWave where !RogueRun.isBoss(wave: wave) {
             XCTAssertEqual(RogueRun.opponentLevel(wave: wave),
-                           RogueRun.partyLevelBaseline(wave: wave) - 3, "wave \(wave)")
+                           RogueRun.partyLevelBaseline(wave: wave) - tuning.wildHandicap(wave: wave),
+                           "wave \(wave)")
+        }
+    }
+
+    /// 핸디캡은 판이 갈수록 좁아진다 — 난이도를 우상향으로 만드는 축이다. 좁아지지 않으면
+    /// 야생 웨이브가 통째로 공짜가 되고 보스 네 칸에만 난이도가 몰린다(실측 hazard 0.000).
+    func testWildHandicapNarrowsAcrossTheRun() {
+        let tuning = RogueTuning.standard
+        XCTAssertEqual(tuning.wildHandicap(wave: 1), tuning.wildLevelHandicapStart)
+        XCTAssertEqual(tuning.wildHandicap(wave: tuning.finalWave), tuning.wildLevelHandicapEnd)
+        for wave in 1..<tuning.finalWave {
+            XCTAssertGreaterThanOrEqual(tuning.wildHandicap(wave: wave),
+                                        tuning.wildHandicap(wave: wave + 1), "wave \(wave)")
         }
     }
 
@@ -76,7 +90,7 @@ final class RogueRunTests: XCTestCase {
         XCTAssertTrue(RogueRun.isFairOpponent(baseStats: stats(total: 318), wave: 1))
         XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 3), RogueRun.baseStatTotalCap(wave: 5))
         XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 5), RogueRun.baseStatTotalCap(wave: 9))
-        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 12), 560)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 12), 540)
         XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 680), wave: 12))
     }
 
@@ -84,8 +98,8 @@ final class RogueRunTests: XCTestCase {
     /// 보스 4 가 480 이 되어 뒤따르는 웨이브 5–7(420)보다 세지는 톱니가 생긴다 — 단조 증가만
     /// 재던 예전 테스트가 그걸 통과시켰다.
     func testBossCapsStayInTheirOwnTier() {
-        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 4), 380)
-        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 470)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 4), 360)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 450)
         XCTAssertGreaterThan(RogueRun.baseStatTotalCap(wave: 4), RogueRun.baseStatTotalCap(wave: 3))
         for wave in 1..<RogueRun.finalWave {
             XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave),

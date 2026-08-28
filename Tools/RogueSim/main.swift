@@ -178,7 +178,9 @@ var tuning = RogueTuning.standard
 tuning.finalWave = intOption("--final-wave", tuning.finalWave)
 tuning.bossEvery = intOption("--boss-every", tuning.bossEvery)
 tuning.wildLevelHandicapStart = intOption("--handicap", tuning.wildLevelHandicapStart)
-tuning.wildLevelHandicapEnd = intOption("--handicap-end", tuning.wildLevelHandicapStart)
+// 기본값은 **struct 의 값**이다. `--handicap` 을 물려받게 두면 플래그 없이 돌린 판이
+// 끝까지 같은 폭(4/4)으로 돌아, 기본값을 재려던 실행이 다른 밸런스를 잰다(실제로 그렇게 어긋났다).
+tuning.wildLevelHandicapEnd = intOption("--handicap-end", tuning.wildLevelHandicapEnd)
 tuning.bossLevelBonus = intOption("--boss-level", tuning.bossLevelBonus)
 tuning.finalLevelBonus = intOption("--final-level", tuning.finalLevelBonus)
 tuning.firstTierCap = intOption("--first-cap", tuning.firstTierCap)
@@ -189,6 +191,7 @@ tuning.doubleOpponentFrom = doubleOption("--double-from", tuning.doubleOpponentF
 tuning.ballsPerRun = intOption("--balls", tuning.ballsPerRun)
 tuning.partyLimit = intOption("--party-limit", tuning.partyLimit)
 
+if arguments.contains("--dump-tuning") { print(tuning); exit(0) }
 let runCount = intOption("--runs", 100)
 let baseSeed = UInt64(intOption("--seed", 1))
 let label = option("--label") ?? ""
