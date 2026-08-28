@@ -75,13 +75,16 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
     var ability: String?
     let language: AppLanguage
     var types: [String] = []
+    /// 이 개체의 실제 능력치 여섯 칸(홈 화면과 같은 값). 도구가 아니라 프로필로 싣는 이유는
+    /// 여기가 이미 타입·기술·다음 진화를 싣는 자리라서다 — 도구로 하면 왕복 한 번을 더 쓴다.
+    var stats: String?
     var moves: [String] = []
     var nextEvolution: String?
 
     init(speciesID: Int, displayName: String, nickname: String?, isShiny: Bool = false,
          nature: String?, level: Int, stage: String, flavorText: String?, language: AppLanguage,
          genus: String? = nil, habitat: String? = nil, ability: String? = nil,
-         types: [String] = [], moves: [String] = [], nextEvolution: String? = nil) {
+         types: [String] = [], stats: String? = nil, moves: [String] = [], nextEvolution: String? = nil) {
         self.speciesID = speciesID
         self.displayName = displayName
         self.nickname = nickname
@@ -95,6 +98,7 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
         self.ability = ability
         self.language = language
         self.types = types
+        self.stats = stats
         self.moves = moves
         self.nextEvolution = nextEvolution
     }
@@ -178,7 +182,7 @@ struct PokemonChatRequest: Sendable {
         Let supplied species details shape how this Pokémon describes itself and its everyday perspective.
         Never claim to be an AI, assistant, model, tool, or software, and never explain code, files, terminals, web research, projects, or your own capabilities.
         Current identity: level \(profile.level), \(profile.stage), nature \(profile.nature ?? "unknown").
-        Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known").
+        Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known"); stats \(profile.stats ?? "not loaded").
         \(identity ?? "")
         \(flavor)
         ONLY discuss Pokédex information, this Pokémon's known species traits, and the companion information supplied above.
@@ -243,14 +247,18 @@ final class PokemonMemoryAlbum {
         }
     }
     func entries(for id: UUID) -> [PokemonMemory] { memories[id] ?? [] }
-    func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil) {
+    /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
+    /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
+    @discardableResult
+    func record(companionID: UUID, body: String, source: PokemonMemorySource, eventID: String? = nil) -> Bool {
         let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty, body.count <= 180 else { return }
+        guard !body.isEmpty, body.count <= 180 else { return false }
         var entries = memories[companionID] ?? []
         if source == .event, let eventID, !eventID.isEmpty,
-           entries.contains(where: { $0.eventID == eventID }) { return }
+           entries.contains(where: { $0.eventID == eventID }) { return false }
         entries.append(PokemonMemory(companionID: companionID, createdAt: Date(), source: source, body: body, eventID: eventID))
         memories[companionID] = Array(entries.suffix(200)); save()
+        return true
     }
     func delete(_ memory: PokemonMemory) { memories[memory.companionID]?.removeAll { $0.id == memory.id }; save() }
     func deleteAll(for id: UUID) { memories.removeValue(forKey: id); save() }
@@ -596,11 +604,23 @@ final class PokemonChatStore {
                 let parsed = PokemonChatToolParser.parse(try await provider.reply(to: request))
                 reply = parsed.body
                 call = parsed.call
-                // 승인이 필요한 도구는 여기서 멈춘다. 사용자가 누르기 전에 다시 물으면 승인이 무의미하다.
-                guard let pending = parsed.call, let toolbox, !pending.needsApproval else { break }
+                guard let pending = parsed.call, let toolbox else { break }
+                // 기억하기는 **루프에서 돌리지 않는다.** 본문은 아래에서 가드를 통과한 답변으로
+                // 채우므로, 여기서 실행하면 빈 본문으로 실패("memory not recorded")를 모델에
+                // 돌려주고 남은 왕복을 전부 태운다 — 그리고 모델이 다음 턴에 마커를 다시 붙이지
+                // 않으면 `call` 이 비어 기억이 아예 남지 않는다.
+                if case .memoryRecord = pending { break }
+                if pending.needsApproval {
+                    // 승인이 필요한 도구는 여기서 멈춘다. 사용자가 누르기 전에 다시 물으면 승인이 무의미하다.
+                    if toolbox.canRun(pending, owner: companionID) { break }
+                    // 이 창에서 될 수 없는 일이면 **카드를 띄우지 않는다.** 성공할 수 없는 질문이라,
+                    // 사용자는 탭 한 번을 버리고 실패 문구를 받는다. 대신 아래에서 사유를 모델에
+                    // 돌려줘 사람 말로 설명하게 한다.
+                    call = nil
+                }
                 // 마지막 요청 뒤의 실행은 결과를 전할 턴이 없다 — 부작용만 남기고 끝난다.
                 guard round != rounds.upperBound else { break }
-                toolResults.append(PokemonChatMessage(role: .system, body: await toolbox.run(pending).line))
+                toolResults.append(PokemonChatMessage(role: .system, body: await toolbox.run(pending, owner: companionID).line))
             }
 
             let safeReply = PokemonChatReplyGuard.sanitized(reply, profile: profile)
@@ -614,10 +634,14 @@ final class PokemonChatStore {
             // `memory.record` 만 인자를 파서가 채우지 않는다. 모델이 기억 문구를 직접 쓰면 그게
             // 임의 문자열 인자이고, 다음 요청의 컨텍스트로 되돌아온다. 그래서 **가드를 통과한**
             // 답변만 기록한다 — 가드가 답변을 갈아치웠다면 기록할 것도 없다.
+            var recordedByTool = false
             if safeReply == reply, case .memoryRecord = call, let toolbox {
-                _ = await toolbox.run(.memoryRecord(body: safeReply))
+                recordedByTool = await toolbox.run(.memoryRecord(body: safeReply), owner: companionID).succeeded
             }
-            if current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
+            // 주기 기록은 도구가 **같은 문장**을 이미 남겼으면 건너뛴다. `record` 는 대화 기억을
+            // 중복 제거하지 않아(이벤트만 `eventID` 로 막는다) 6번째 메시지에서 마커가 붙으면
+            // 앨범에 같은 줄이 두 번 남는다.
+            if !recordedByTool, current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""
                 if !candidate.isEmpty { album.record(companionID: companionID, body: candidate, source: .conversation) }
             }
