@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 enum MemoryHomeRoomTheme {
     static func tint(for theme: PokemonMemoryRoomTheme) -> Color {
@@ -115,6 +117,7 @@ struct MemoryHomeView: View {
     @State private var showingVisits = false
     @State private var showingDiary = false
     @State private var showingPokeLog = false
+    @State private var showingStickerPhoto = false
     @State private var showingPublicNicknameEditor = false
     @State private var publicNicknameDraft = ""
     @State private var publicNicknameError: String?
@@ -152,6 +155,9 @@ struct MemoryHomeView: View {
                     Label("POKÉLOG", systemImage: "heart.text.square")
                 }
                 .accessibilityLabel(l.t("동행 포케로그", "Companion Pokélog", "相棒のポケログ"))
+                Button { showingStickerPhoto = true } label: {
+                    Label(l.t("스티커 사진", "Sticker photo", "ステッカー写真"), systemImage: "photo")
+                }
                 Spacer()
                 Menu {
                     Button(l.t("공개 닉네임 편집", "Edit public nickname", "公開ニックネームを編集")) {
@@ -280,6 +286,9 @@ struct MemoryHomeView: View {
         .sheet(isPresented: $showingPokeLog) {
             MemoryHomePokeLogSheet(log: album.pokeLog(for: mon.id), language: l,
                                    locale: store.language.displayLocale)
+        }
+        .sheet(isPresented: $showingStickerPhoto) {
+            MemoryHomeStickerPhotoSheet(speciesID: mon.currentID, shiny: mon.isShiny, language: l)
         }
         .alert(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), isPresented: $showingPublicNicknameEditor) {
             TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: $publicNicknameDraft)
@@ -519,6 +528,48 @@ private struct MemoryHomePokeLogSheet: View {
             Text(language.t("친밀도는 함께한 기록을 읽어 보여 주는 표시이며 성장이나 진화에는 영향을 주지 않습니다.", "Closeness is a read-only keepsake and never affects growth or evolution.", "なかよし度は記録を読むための表示で、成長や進化には影響しません。"))
                 .font(.caption).foregroundStyle(.secondary)
         }.padding().frame(minWidth: 360, minHeight: 320)
+    }
+}
+
+private struct MemoryHomeStickerPhotoSheet: View {
+    let speciesID: Int
+    let shiny: Bool
+    let language: L
+    @State private var caption = ""
+    @State private var sprite: NSImage?
+    @State private var error: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 12) {
+            StickerPhotoCanvas(sprite: sprite, caption: caption)
+                .frame(width: 280, height: 220)
+            TextField(language.t("캡션", "Caption", "キャプション"), text: $caption)
+            HStack { Button(language.t("닫기", "Close", "閉じる")) { dismiss() }; Spacer()
+                Button(language.t("PNG로 저장", "Save PNG", "PNGで保存")) { export() }.buttonStyle(.borderedProminent) }
+            if let error { Text(error).font(.caption).foregroundStyle(.red) }
+        }.padding().task { sprite = await SpriteLoader.image(speciesID: speciesID, shiny: shiny) }
+    }
+    private func export() {
+        let panel = NSSavePanel(); panel.title = language.t("스티커 사진 저장", "Save sticker photo", "ステッカー写真を保存")
+        panel.nameFieldStringValue = "PokeTokenBar-Sticker.png"; panel.allowedContentTypes = [.png]
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let renderer = ImageRenderer(content: StickerPhotoCanvas(sprite: sprite, caption: caption).frame(width: 840, height: 660))
+        guard let data = renderer.nsImage?.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data), let png = bitmap.representation(using: .png, properties: [:]) else { error = language.t("이미지를 만들 수 없어요.", "Could not render image.", "画像を作成できません。"); return }
+        do { try png.write(to: url, options: .atomic); NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct StickerPhotoCanvas: View {
+    let sprite: NSImage?
+    let caption: String
+    var body: some View {
+        ZStack { RoundedRectangle(cornerRadius: 22).fill(LinearGradient(colors: [PokedoroTheme.yellow.opacity(0.45), PokedoroTheme.mint.opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            VStack(spacing: 8) { if let sprite { Image(nsImage: sprite).resizable().interpolation(.none).scaledToFit().frame(height: 140) } else { Image(systemName: "sparkles").font(.system(size: 72)).foregroundStyle(PokedoroTheme.red) }
+                Text(caption.isEmpty ? "POKÉDORO" : caption).font(.headline).lineLimit(2) }
+            Text("✦").font(.title).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16) }
     }
 }
 
