@@ -118,6 +118,7 @@ struct MemoryHomeView: View {
     @State private var showingDiary = false
     @State private var showingPokeLog = false
     @State private var showingStickerPhoto = false
+    @State private var showingSeasonRecap = false
     @State private var showingPublicNicknameEditor = false
     @State private var publicNicknameDraft = ""
     @State private var publicNicknameError: String?
@@ -161,6 +162,7 @@ struct MemoryHomeView: View {
                 Button { showingStickerPhoto = true } label: {
                     Label(l.t("스티커 사진", "Sticker photo", "ステッカー写真"), systemImage: "photo")
                 }
+                Button { showingSeasonRecap = true } label: { Label(l.t("계절 결산", "Season recap", "季節のまとめ"), systemImage: "calendar") }
                 Spacer()
                 Menu {
                     Button(l.t("공개 닉네임 편집", "Edit public nickname", "公開ニックネームを編集")) {
@@ -295,6 +297,9 @@ struct MemoryHomeView: View {
         }
         .sheet(isPresented: $showingStickerPhoto) {
             MemoryHomeStickerPhotoSheet(speciesID: mon.currentID, shiny: mon.isShiny, language: l)
+        }
+        .sheet(isPresented: $showingSeasonRecap) {
+            MemoryHomeSeasonRecapSheet(recap: album.seasonRecap(for: store.ownedMons.map(\.id)), language: l)
         }
         .alert(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), isPresented: $showingPublicNicknameEditor) {
             TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: $publicNicknameDraft)
@@ -604,6 +609,22 @@ private struct MemoryHomeStickerPhotoSheet: View {
         guard let data = renderer.nsImage?.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data), let png = bitmap.representation(using: .png, properties: [:]) else { error = language.t("이미지를 만들 수 없어요.", "Could not render image.", "画像を作成できません。"); return }
         do { try png.write(to: url, options: .atomic); NSWorkspace.shared.activateFileViewerSelecting([url]) }
         catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct MemoryHomeSeasonRecapSheet: View {
+    let recap: MemoryHomeSeasonRecap
+    let language: L
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text(language.t("계절 결산", "Season recap", "季節のまとめ")).font(.headline); Spacer(); Button(language.t("닫기", "Close", "閉じる")) { dismiss() } }
+            Text(MemoryHomeSeasonStyle.name(recap.season, language)).font(.title2.weight(.bold))
+            Text(language.t("이번 계절에 만난 동행 \(recap.companionsMet)마리", "\(recap.companionsMet) companions met this season", "今季出会った相棒 \(recap.companionsMet) 匹"))
+            Text(language.t("집중 \(recap.focusSessions)회 · 기억 \(recap.memoryCount)개", "\(recap.focusSessions) focus sessions · \(recap.memoryCount) memories", "集中 \(recap.focusSessions) 回・思い出 \(recap.memoryCount) 件"))
+            if let mood = recap.mostChosenMood { Text(language.t("가장 많이 고른 기분: ", "Most chosen mood: ", "もっとも選んだ気分: ") + MemoryHomeMoodStyle.name(mood, language)) }
+            Text(language.t("기억은 최대 200개까지만 보관됩니다.", "Memories are retained up to 200 entries.", "思い出は最大200件まで保管されます。")) .font(.caption).foregroundStyle(.secondary)
+        }.padding().frame(minWidth: 320)
     }
 }
 

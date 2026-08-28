@@ -264,6 +264,14 @@ struct MemoryHomePokeLog: Sendable, Equatable {
     let milestones: [PokemonMemoryMilestone]
 }
 
+struct MemoryHomeSeasonRecap: Sendable, Equatable {
+    let season: MemoryHomeSeason
+    let companionsMet: Int
+    let memoryCount: Int
+    let focusSessions: Int
+    let mostChosenMood: MemoryHomeMood?
+}
+
 struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     /// The only owner-controlled name that may be advertised on the local network. `nil`
     /// identifies a pre-nickname album and is filled once from the trainer name.
@@ -548,6 +556,21 @@ final class PokemonMemoryAlbum {
                                  daysTogether: days, memoryCount: entries.count,
                                  completedFocusSessions: sessions, closenessHearts: hearts,
                                  milestones: milestones(for: companionID, now: now))
+    }
+    func seasonRecap(for companionIDs: [UUID], now: Date = Date()) -> MemoryHomeSeasonRecap {
+        let season = MemoryHomeSeason.current(now)
+        let calendar = Calendar.current
+        let month = calendar.component(.month, from: now)
+        let year = calendar.component(.year, from: now) - ((season == .winter && month <= 2) ? 1 : 0)
+        let startMonth: Int = switch season { case .spring: 3; case .summer: 6; case .autumn: 9; case .winter: 12 }
+        let start = calendar.date(from: DateComponents(year: year, month: startMonth, day: 1)) ?? now
+        let startKey = CompanionStore.dayKey(start), endKey = CompanionStore.dayKey(now)
+        let seasonEntries = companionIDs.flatMap { self.entries(for: $0) }.filter { let key = CompanionStore.dayKey($0.createdAt); return key >= startKey && key <= endKey }
+        let met = companionIDs.filter { firstMetAt(for: $0).map { CompanionStore.dayKey($0) >= startKey && CompanionStore.dayKey($0) <= endKey } ?? false }.count
+        let moods = memoryHomeAccess.moodByDayKey.filter { $0.key >= startKey && $0.key <= endKey }.map(\.value)
+        let winner = moods.reduce(into: [MemoryHomeMood: Int]()) { $0[$1, default: 0] += 1 }.max { $0.value < $1.value }?.key
+        let focus = companionIDs.reduce(0) { $0 + (milestoneStates[$1]?.completedFocusSessionCount ?? 0) }
+        return .init(season: season, companionsMet: met, memoryCount: seasonEntries.count, focusSessions: focus, mostChosenMood: winner)
     }
     func recordFirstMeeting(companionID: UUID, at date: Date) {
         var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()

@@ -16,4 +16,10 @@ final class MemoryHomePokeLogTests: XCTestCase {
         XCTAssertEqual(log.firstMeetingMethod?.body, "Met on an adventure")
         XCTAssertGreaterThanOrEqual(log.closenessHearts, 2)
     }
+    func testSeasonRecapCountsOnlyCurrentSeasonEntries() {
+        let album = PokemonMemoryAlbum(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let id = UUID(); let now = Date(timeIntervalSince1970: 1_725_000_000)
+        album.record(companionID: id, body: "memory", source: .event, createdAt: now)
+        XCTAssertEqual(album.seasonRecap(for: [id], now: now).memoryCount, 1)
+    }
 }
