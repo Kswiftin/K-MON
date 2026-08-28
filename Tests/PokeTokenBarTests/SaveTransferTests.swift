@@ -369,6 +369,7 @@ final class SaveTransferTests: XCTestCase {
         evil.activeSecondsDate = long
         evil.trainerName = long
         evil.gymBadges = [long]
+        evil.gymLeagueBadges = [long]
         evil.active = MonState(baseID: 1, pathIDs: [1], plannedPathIDs: [1], stageIndex: 0,
                                usedAtStage: 0, rarity: .common, totalForms: 1, nickname: long)
         evil.boxedMons = [MonState(baseID: 2, pathIDs: [2], plannedPathIDs: [2], stageIndex: 0,
@@ -385,6 +386,7 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertEqual(s.boxedMons.first?.nickname?.count, SaveTransfer.maxNameLength,
                        "박스 개체도 같은 경계를 지난다 — 활성만 자르면 부류가 반만 막힌다")
         XCTAssertEqual(s.gymBadges.first?.count, SaveTransfer.maxNameLength)
+        XCTAssertEqual(s.gymLeagueBadges.first?.count, SaveTransfer.maxNameLength)
         XCTAssertLessThan(SaveTransfer.canonicalString(s).count, 1_000,
                           "해시 입력이 세이브 한 장으로 무한히 커지면 매 저장이 그만큼 느려진다")
     }
@@ -451,7 +453,7 @@ final class SaveTransferTests: XCTestCase {
     private static let frozenCanonicalPrefixes: Set<String> = [
         // 세그먼트 접두 — 하나라도 사라지면 이미 배포된 서명을 재현할 수 없다.
         "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "dund", "achfocus", "sn",
-        "gbbrock", "shc", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
+        "gbbrock", "glbbug", "shc", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
         "adv", "ah", "bh", "act", "box", "dex", "dg", "cf", "sec",
         // 값에서 나온 토큰 — fixture 가 고정하므로 결정적이다. 열거형 rawValue 변경도 기존 서명을
         // 깨는 같은 부류라 일부러 얼려 둔다. `""` 는 숫자로만 된 이어붙임 조각.
@@ -470,6 +472,7 @@ final class SaveTransferTests: XCTestCase {
         s.achievements.counts["focus"] = 1
         s.seasons.seasonKey = "1"
         s.gymBadges = ["brock"]
+        s.gymLeagueBadges = ["bug"]
         s.shinyEggCharges = 1
         s.focusEggs = 1
         s.focusEggReadyDates = [Date(timeIntervalSince1970: 0)]
@@ -555,7 +558,7 @@ final class SaveTransferTests: XCTestCase {
         // 진행: 어느 기기에서든 참. eggTier(알 등급 보증)도 산 물건이라 기기를 옮겨도 따라간다.
         let progress: Set<String> = ["economyVersion", "usedSinceInstall", "spentTokens", "eggUsage",
                                      "eggTier", "pendingHatchID", "trainerName", "starterChosen",
-                                     "starterCandidates", "active", "dex", "collectedFinals", "gymBadges", "shinyEggCharges", "inventory",
+                                     "starterCandidates", "active", "dex", "collectedFinals", "gymBadges", "gymLeagueBadges", "shinyEggCharges", "inventory",
                                      // 기술머신도 산 물건이다 — `inventory` 와 같은 부류라 기기를 옮겨도 따라간다.
                                      "technicalMachines",
                                      // 트레이너 꾸미기 — 산 의상과 착용 상태는 진행이라 그대로 따라간다.

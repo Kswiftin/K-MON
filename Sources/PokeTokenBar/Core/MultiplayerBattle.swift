@@ -266,9 +266,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 2: LobbyParticipant.role + 관전자 베팅, 3: 이벤트 스트림, 4: 상태이상(status 필드 + case 추가),
     // 5: 랭크(stages 필드 + `.boost` case), 6: 방 전체 자유 채팅, 7: 포켓몬 OX 퀴즈,
     // 8: 안 읽던 `meta` 필드 넷(드레인·반동·다단 히트·풀린치 — `Status.flinch` case 추가),
-    // 9: 특성 1단계(`BattleSnapshot.ability`). 새 이벤트 case 는 없지만 **방은 `rulesVersion` 을
-    //    안 본다** — 규칙 차이를 막을 곳이 여기뿐이라 규칙이 바뀌면 이 값도 같이 올린다.
-    static let protocolVersion = 10
+    // 9: 특성 1단계(`BattleSnapshot.ability`), 10: 전 특성 규칙, 11: 3대3 토너먼트 상태·행동.
+    // 방은 `rulesVersion` 을 안 본다 — 규칙 차이를 막을 곳이 여기뿐이라 규칙이 바뀌면 이 값도 같이 올린다.
+    static let protocolVersion = 11
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -287,6 +287,10 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     case pokemonQuizStart(game: PokemonOXGame)
     case pokemonQuizInput(participantID: UUID, input: PokemonOXInput)
     case pokemonQuizState(game: PokemonOXGame)
+    case tournamentTeam(participantID: UUID, lineup: [BattleSnapshot])
+    case tournamentStart(state: PokemonTournamentState)
+    case tournamentAction(matchID: UUID, participantID: UUID, action: NetBattleAction)
+    case tournamentState(PokemonTournamentState)
     case chat(BattleChatMessage)
 }
 
