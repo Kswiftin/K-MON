@@ -938,7 +938,9 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(status.succeeded, status.line)
         XCTAssertTrue(status.line.contains("dungeon=open"), status.line)
         // 총량은 카탈로그에서 온다 — 숫자를 여기 적으면 콘텐츠가 늘 때 문구만 옛말이 된다.
-        XCTAssertTrue(status.line.contains("badges=0/\(GymLeague.catalog.count)"), status.line)
+        // 배지 진행도가 아니라 체육관 타입 수를 싣는다: 체육관이 보상 없는 콘텐츠가 되면서
+        // "몇 개 땄나" 가 셀 값이 아니게 됐다.
+        XCTAssertTrue(status.line.contains("gym_types=\(GymLeague.catalog.count)"), status.line)
         XCTAssertTrue(status.line.contains("missions=0/\(MissionBoard.catalog.count)"), status.line)
         XCTAssertTrue(status.line.contains("budget=\(store.dungeonBudget(usedItem: false))"), status.line)
 
