@@ -163,11 +163,61 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(profile.ability, identity.ability)
     }
 
-    /// 상한은 1_600 → 2_100 → 2_500 으로 올랐다. 도구가 4종에서 10종이 되며 광고 줄이 여섯 개
-    /// 늘어 398자를 더 쓴다. **늘어난 만큼만** 올린다 — 넉넉히 잡으면 다음에 무엇이 새어 들어와도
-    /// 아무도 모른다. 도구를 더할 때 여기가 깨지는 건 정상이고, 깨진 만큼만 올리는 게 규칙이다.
+    /// 홈 화면이 능력치 여섯 칸을 항상 띄우는데(`currentStats`) 대화는 그 숫자를 몰랐다.
+    ///
+    /// **도구로 만들지 않는다.** 프로필은 이미 타입·기술·다음 진화를 싣는 자리이고, 도구로 하면
+    /// 왕복 한 번과 프롬프트 광고 줄을 더 쓰면서 같은 값을 준다.
+    func testProfileAndPromptCarryTheIndividualsStats() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        store.debugSetLoadedTypes([.electric], speciesID: 25,
+                                  base: BattleStats(hp: 35, atk: 55, def: 40, spa: 50, spd: 50, spe: 90))
+        // 배운 기술도 함께 채운다. 프롬프트의 `learned moves` 는 **채워진 쪽 분기가 한 번도 안 돌던**
+        // 자리다(`--show-regions` 에서 `^0`) — 아무 테스트도 "기술이 프롬프트에 실린다" 를 증명하지
+        // 않은 채 "not loaded" 만 밟고 있었다.
+        store.debugSetActiveLearnedMoves([move(id: 84, name: "전기쇼크", type: .electric)])
+        let expected = try XCTUnwrap(store.currentStats)
+
+        let profile = store.chatProfile(for: try XCTUnwrap(store.state.active))
+        let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
+
+        XCTAssertEqual(profile.stats, "HP \(expected.hp) / Atk \(expected.atk) / Def \(expected.def)"
+                       + " / SpA \(expected.spa) / SpD \(expected.spd) / Spe \(expected.spe)")
+        XCTAssertTrue(prompt.contains("Spe \(expected.spe)"), prompt)
+        XCTAssertTrue(prompt.contains("learned moves 전기쇼크"), prompt)
+    }
+
+    /// 능력치는 **개체의** 값이다(레벨·성격이 먹은 값). 그래서 종이 같아도 다른 개체의 프로필에
+    /// 실으면 안 된다 — `currentStats` 는 활성 개체의 레벨·성격으로 계산하므로, 박스에 있는
+    /// 레벨 3 짜리 프로필에 활성 레벨 20 의 숫자가 그럴듯하게 실린다(타입과 달리 종만 맞춰선 못 막는다).
+    func testStatsAreOmittedForACompanionWhoIsNotTheOneWhoseStatsAreLoaded() async throws {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        store.debugSetLoadedTypes([.electric], speciesID: 25,
+                                  base: BattleStats(hp: 35, atk: 55, def: 40, spa: 50, spd: 50, spe: 90))
+        store.debugSetBoxedMons([mon(speciesID: 25, name: "피카츄")])
+        XCTAssertNotNil(store.currentStats, "전제: 활성 개체의 능력치는 로드돼 있다")
+
+        let boxed = store.chatProfile(for: try XCTUnwrap(store.boxedMons.first))
+
+        XCTAssertNil(boxed.stats, "같은 종이라는 이유로 남의 능력치가 실렸다")
+    }
+
+    /// 상한은 1_600 → 2_100 → 2_500 → 2_800 → 2_860 으로 올랐다. 마지막 60자는 광고 줄이 아니라
+    /// **재는 방식**이 늘어난 것이다 — 별명과 배운 기술이 빠진 프로필로 재고 있었다(실측 2_847).
+    ///
+    /// 예산은 각 절의 **긴 쪽**으로 잰다. 절마다 어느 쪽이 긴지는 다르다:
+    /// - 별명·능력치·기술은 **채워진** 쪽이 길다(별명은 `(종 이름)` 을 덧붙이고, 나머지는
+    ///   `not loaded` 열 글자를 대체한다).
+    /// - 타입·다음 진화는 **비어 있는** 쪽이 길다(`not loaded`·`not known` 이 한국어 이름보다 길다).
+    /// 한쪽만 재면 실제 프롬프트가 상한을 넘는데도 게이트는 초록으로 남는다.
+    ///
+    /// **늘어난 만큼만** 올린다 — 넉넉히 잡으면 다음에 무엇이 새어 들어와도 아무도 모른다.
+    /// 도구를 더할 때 여기가 깨지는 건 정상이고, 깨진 만큼만 올리는 게 규칙이다.
     func testSystemPromptStaysWithinTheChatBudgetWithAFullIdentity() {
-        var profile = PokemonChatProfile.fixture
+        // 별명은 세이브 경계(`SaveTransfer.maxNameLength`)까지 길 수 있고, 붙는 순간 종 이름이
+        // 괄호로 **함께** 실린다 — 별명 없는 프로필로 재면 그 길이가 통째로 빠진다.
+        var profile = PokemonChatProfile.fixture(nickname: String(repeating: "별", count: SaveTransfer.maxNameLength))
         profile.apply(PokemonSpeciesIdentity(
             genera: ["ko": String(repeating: "분류", count: 20)], habitatSlug: "rough-terrain",
             flavorTexts: ["ko": String(repeating: "도감 설명 ", count: 25)],
@@ -176,9 +226,12 @@ final class PokemonChatTests: XCTestCase {
             language: .ko
         ))
 
+        // 기술은 네 칸이 상한이다(`learnedMoves` 를 자르는 자리와 같은 수).
+        profile.moves = Array(repeating: String(repeating: "기", count: 10), count: 4)
+        profile.stats = "HP 999 / Atk 999 / Def 999 / SpA 999 / SpD 999 / Spe 999"
         let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
 
-        XCTAssertLessThanOrEqual(prompt.count, 2_500)
+        XCTAssertLessThanOrEqual(prompt.count, 2_860)
     }
 
     /// 페르소나 전용 DTO 는 `SpeciesDTO` 와 따로 산다 — `flavor_text_entries` 는 종 응답에서 가장 큰
@@ -471,7 +524,10 @@ private actor QueuedReplyProvider: PokemonChatProviding {
 }
 
 private extension PokemonChatProfile {
-    static let fixture = PokemonChatProfile(speciesID: 1, displayName: "이상해씨", nickname: nil,
-                                            nature: "온순", level: 5, stage: "첫 번째 형태",
-                                            flavorText: "태어날 때부터 등에 이상한 씨앗이 자란다.", language: .ko)
+    static var fixture: PokemonChatProfile { fixture(nickname: nil) }
+    static func fixture(nickname: String?) -> PokemonChatProfile {
+        PokemonChatProfile(speciesID: 1, displayName: "이상해씨", nickname: nickname,
+                           nature: "온순", level: 5, stage: "첫 번째 형태",
+                           flavorText: "태어날 때부터 등에 이상한 씨앗이 자란다.", language: .ko)
+    }
 }

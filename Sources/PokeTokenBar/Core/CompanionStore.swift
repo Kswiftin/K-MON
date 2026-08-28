@@ -477,17 +477,23 @@ final class CompanionStore {
     var currentNickname: String? { state.active?.nickname }
     /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
     func chatProfile(for mon: MonState) -> PokemonChatProfile {
-        let speciesName = mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
+        let speciesName = chatSpeciesName(for: mon)
         // currentTypes/displayedMoves are presentation caches for the active species. A boxed mon can ask
         // for a profile while those caches still belong to another species, so assemble individual data
         // from MonState and reuse the tagged type cache only when the requested species owns it.
         let types = mon.currentID == currentSpeciesID ? currentTypes.map { $0.name(language) } : []
+        // 능력치는 **개체의** 값이다 — `currentStats` 가 활성 개체의 레벨·성격으로 계산하므로,
+        // 종만 맞춰 싣는 타입과 달리 활성 개체가 아니면 아예 넣지 않는다. 같은 종의 레벨 3 짜리
+        // 프로필에 레벨 20 의 숫자가 실리면 그럴듯하게 틀린 값이 되고, 그건 안 들킨다.
+        let stats = mon.id == activeMonID ? currentStats.map {
+            "HP \($0.hp) / Atk \($0.atk) / Def \($0.def) / SpA \($0.spa) / SpD \($0.spd) / Spe \($0.spe)"
+        } : nil
         return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
                                   isShiny: mon.isShiny,
                                   nature: mon.nature?.name(language), level: mon.level,
                                   stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
                                   flavorText: nil, language: language,
-                                  types: types,
+                                  types: types, stats: stats,
                                   moves: mon.learnedMoves.map { $0.name(language) },
                                   nextEvolution: nextEvolutionName(for: mon))
     }
@@ -502,14 +508,22 @@ final class CompanionStore {
         let id: UUID
         let name: String
         let level: Int
+        /// 이로치 여부. 도감·로스터 카드에 표식이 붙었는데 대화만 몰랐다 — 개체를 알아보는 값이다.
+        let isShiny: Bool
         let isActive: Bool
+    }
+
+    /// 종 이름 한 곳. 로스터는 이름만 필요하므로 프로필을 만들지 않는다 — 프로필 한 벌은 진화 트리
+    /// 조회와 능력치 문자열 조립까지 딸려 오는데, 로스터는 그 둘을 곧바로 버린다.
+    private func chatSpeciesName(for mon: MonState) -> String {
+        mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
     }
 
     var chatRosterEntries: [ChatRosterEntry] {
         ownedMons.enumerated().map { index, mon in
             ChatRosterEntry(index: index, id: mon.id,
-                            name: chatProfile(for: mon).nickname ?? chatProfile(for: mon).displayName,
-                            level: mon.level, isActive: mon.id == activeMonID)
+                            name: mon.nickname ?? chatSpeciesName(for: mon),
+                            level: mon.level, isShiny: mon.isShiny, isActive: mon.id == activeMonID)
         }
     }
 
