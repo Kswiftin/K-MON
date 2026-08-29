@@ -76,7 +76,9 @@ final class MemoryHomeVisitCenter {
     private(set) var homes: [MemoryHomePeer] = []
     private(set) var selectedProfile: MemoryHomeProfileCard?
     private(set) var lastError: String?
+    /// `isActive` is the visit-browser state. Hosting has a separate app-lifetime.
     private(set) var isActive = false
+    private(set) var isHosting = false
     private let companion: CompanionStore
     private let peerID: UUID
     private var browser: NWBrowser?
@@ -86,26 +88,35 @@ final class MemoryHomeVisitCenter {
 
     init(companion: CompanionStore, peerID: UUID) { self.companion = companion; self.peerID = peerID }
 
+    /// Starts discovery only: private visitors may still browse public homes.
     func start() {
         guard !isActive else { return }; isActive = true; lastError = nil
-        guard companion.memoryAlbum.memoryHomeAccess.visibility == .open else { return }
-        startBrowsing(); startHosting()
+        startBrowsing()
     }
     func stop() {
         isActive = false; homes = []; selectedProfile = nil
-        browser?.cancel(); browser = nil; listener?.cancel(); listener = nil
-        connections.values.forEach { $0.cancel() }; connections.removeAll(); visitHomeIDs.removeAll()
+        browser?.cancel(); browser = nil
+        cancelVisitConnections()
+    }
+    func startHostingIfEligible() {
+        guard companion.memoryAlbum.memoryHomeAccess.visibility == .open else { return }
+        startHosting()
+    }
+    /// The feature being disabled or the app ending is the only normal host teardown path.
+    func shutdown() {
+        stop()
+        listener?.cancel(); listener = nil; isHosting = false
+        cancelConnections()
     }
     func refreshAccess() {
-        guard isActive else { return }
-        if companion.memoryAlbum.memoryHomeAccess.visibility == .blocked { stop(); isActive = true }
-        else {
-            // The advertised Bonjour service name is the public nickname. Recreate the listener
-            // after an edit so discovery reflects it immediately.
-            browser?.cancel(); browser = nil
-            listener?.cancel(); listener = nil
-            startBrowsing(); startHosting()
+        if companion.memoryAlbum.memoryHomeAccess.visibility == .blocked {
+            listener?.cancel(); listener = nil; isHosting = false
+            cancelConnections()
+            return
         }
+        // Recreate only the advertised service after a nickname edit; browse results stay up.
+        listener?.cancel(); listener = nil; isHosting = false
+        startHosting()
     }
     func visit(_ peer: MemoryHomePeer) {
         guard isActive else { return }; selectedProfile = nil; lastError = nil
@@ -153,14 +164,14 @@ final class MemoryHomeVisitCenter {
                     Task { @MainActor in self?.lastError = self?.networkFailureMessage(error) }
                 }
             }
-            listener.start(queue: .main); self.listener = listener
+            listener.start(queue: .main); self.listener = listener; isHosting = true
         } catch { lastError = error.localizedDescription }
     }
     private func accept(_ connection: NWConnection) {
         // A visibility change can race an already accepted TCP connection. Let its request reach
         // `receiveRequest`, which responds with the explicit protocol rejection instead of
         // accidentally serving a profile or silently treating the peer as accepted.
-        guard isActive else { connection.cancel(); return }
+        guard isHosting else { connection.cancel(); return }
         let key = ObjectIdentifier(connection); connections[key] = connection
         connection.start(queue: .main)
         receiveRequest(on: connection, key: key)
@@ -248,6 +259,14 @@ final class MemoryHomeVisitCenter {
         return companion.l.t("주변 홈을 찾을 수 없어요. 앱을 다시 열어 로컬 네트워크 접근을 허용해 주세요.",
                              "Nearby homes are unavailable. Reopen the app and allow local network access.",
                              "近くのホームを探せません。アプリを開き直してローカルネットワークへのアクセスを許可してください。")
+    }
+    private func cancelConnections() {
+        connections.values.forEach { $0.cancel() }
+        connections.removeAll(); visitHomeIDs.removeAll()
+    }
+    private func cancelVisitConnections() {
+        for key in visitHomeIDs.keys { connections.removeValue(forKey: key)?.cancel() }
+        visitHomeIDs.removeAll()
     }
     /// 완료 핸들러를 `@MainActor` 함수 타입으로 못 박는다. 이유가 둘 있다:
     /// 1) 전역 액터 격리 함수 타입은 암묵적으로 `Sendable` 이라, `@Sendable` 인 Network 콜백에

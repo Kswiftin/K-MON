@@ -177,6 +177,7 @@ final class CompanionStore {
             self.memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
         }
         self.memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
+        migrateAchievementRoomStyleUnlocks()
         backfillFirstMeetingDates()
         reconcileStoredEggDates()
         // 정산 없이 앱이 죽은 랭크전은 여기서 패배로 마감한다(에스크로는 이미 빠져나가 있다).
@@ -186,6 +187,17 @@ final class CompanionStore {
         // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
         claimAdventure()   // 끝난 run 만 정산한다 — 진행 중이면 그대로 둔다.
         if state.active != nil { displayState = .idle }
+    }
+
+    /// R8 added room-style tickets after achievement counters were already persisted. Derive
+    /// the entitlement from tier one, rather than replaying rewards, so this is idempotent.
+    private func migrateAchievementRoomStyleUnlocks() {
+        let tickets: [(AchievementTrack, MemoryHomeRoomStyle)] = [
+            (.focus, .lovely), (.evolve, .nature), (.battle, .retro)
+        ]
+        for (track, style) in tickets where state.achievements.tier(track) >= 1 {
+            memoryAlbum.unlockRoomStyle(style)
+        }
     }
 
     // MARK: 파생값 (UI)

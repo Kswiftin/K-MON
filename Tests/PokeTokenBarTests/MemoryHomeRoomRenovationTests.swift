@@ -81,6 +81,26 @@ final class MemoryHomeRoomRenovationTests: XCTestCase {
         XCTAssertEqual(album.memoryHomeAccess.featuredPhotoID, photo.id)
     }
 
+    func testExistingAchievementTiersMigrateToRoomStyleTicketsIdempotently() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("room-ticket-\(UUID().uuidString)")
+        let stateURL = directory.appendingPathComponent("state.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let original = CompanionStore(fileURL: stateURL)
+        original.debugSetAchievementCount(.focus, 60)
+        original.debugSetAchievementCount(.evolve, 3)
+        original.debugSetAchievementCount(.battle, 1)
+
+        let migrated = CompanionStore(fileURL: stateURL)
+        XCTAssertTrue(migrated.memoryAlbum.isRoomStyleUnlocked(.lovely))
+        XCTAssertTrue(migrated.memoryAlbum.isRoomStyleUnlocked(.nature))
+        XCTAssertTrue(migrated.memoryAlbum.isRoomStyleUnlocked(.retro))
+
+        let relaunched = CompanionStore(fileURL: stateURL)
+        XCTAssertEqual(relaunched.memoryAlbum.memoryHomeAccess.unlockedRoomStyles,
+                       migrated.memoryAlbum.memoryHomeAccess.unlockedRoomStyles)
+    }
+
     func testResetCanBeUndoneAndCompanionMovesJoinRoomHistory() throws {
         let file = url(); defer { try? FileManager.default.removeItem(at: file) }
         let album = PokemonMemoryAlbum(fileURL: file)

@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         battleCenter = BattleCenter(companion: companion)
         memoryHomeVisits = MemoryHomeVisitCenter(companion: companion, peerID: settings.memoryHomeLANPeerID)
         memoryHomePresenter = MemoryHomePresenter(settings: settings, store: companion, visits: memoryHomeVisits)
+        if settings.memoryHomeEnabled { memoryHomeVisits.startHostingIfEligible() }
         // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신. 다만 리스너를 올리는
         // 순간 macOS 가 로컬 네트워크 권한을 묻기 때문에, 배틀을 끈 사용자에게는 시작하지 않는다.
         if settings.shouldStartLANDiscovery { battleCenter.start() }
@@ -101,6 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         startIdleTick()
         startFocusTick()
         applyState()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        memoryHomeVisits?.shutdown()
     }
 
     private func observeAutomaticUpdates() {

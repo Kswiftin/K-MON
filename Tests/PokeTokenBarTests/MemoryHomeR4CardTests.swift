@@ -119,6 +119,42 @@ final class MemoryHomeR4CardTests: XCTestCase {
         XCTAssertFalse(plain.speciesLabel.contains("speciesID"), "표현식 소스가 그대로 렌더됐다")
     }
 
+    func testV2CardRetainsPlacedShowroomAndFeaturedPhoto() throws {
+        let decor = MemoryHomePlacedDecor(item: .retroArcade, position: .init(x: 0.75, y: 0.5))
+        let photo = MemoryHomePhoto(speciesID: 25, isShiny: true, caption: "Arcade night", frame: "star",
+                                    background: "studio", composition: "left", trainerStyle: "explorer")
+        let card = MemoryHomeProfileCard(displayName: "MemoryHome", speciesID: 25, isShiny: false,
+                                         sharedMemoryBody: nil, profileMessage: nil, roomStyle: .retro,
+                                         placedDecor: [decor], featuredPhoto: photo)
+        let decoded = try JSONDecoder().decode(MemoryHomeProfileCard.self,
+                                               from: JSONEncoder().encode(card))
+        XCTAssertEqual(decoded.roomStyle, .retro)
+        XCTAssertEqual(decoded.placedDecor, [decor])
+        XCTAssertEqual(decoded.featuredPhoto, photo)
+    }
+
+    func testVisitBrowsingDoesNotOwnPublicHostingLifetime() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("visit-lifetime-\(UUID().uuidString)")
+        let stateURL = directory.appendingPathComponent("state.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CompanionStore(fileURL: stateURL)
+        let visits = MemoryHomeVisitCenter(companion: store, peerID: UUID())
+        visits.startHostingIfEligible()
+        XCTAssertTrue(visits.isHosting)
+
+        visits.start()
+        visits.stop()
+        XCTAssertFalse(visits.isActive)
+        XCTAssertTrue(visits.isHosting, "leaving Visit must not unpublish the home")
+
+        store.memoryAlbum.setMemoryHomeVisibility(.blocked)
+        visits.refreshAccess()
+        XCTAssertFalse(visits.isHosting)
+        visits.start()
+        XCTAssertTrue(visits.isActive, "private users may still browse other public homes")
+        visits.shutdown()
+    }
+
     func testNewCardKindsHaveIconAndTitleInAllThreeLanguages() {
         let kinds: [PokemonMemoryMilestone.Kind] = [.togetherDays(30), .togetherDays(100), .homeVisits(10)]
         for language in [AppLanguage.ko, .en, .ja] {

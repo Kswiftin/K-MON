@@ -264,7 +264,7 @@ struct MemoryHomeYearRecapSheet: View {
     }
 }
 
-private enum StickerPhotoFrame: String, CaseIterable, Identifiable {
+enum StickerPhotoFrame: String, CaseIterable, Identifiable {
     case heart, star, ribbon, flower
     var id: String { rawValue }
     var symbol: String { switch self { case .heart: "heart.fill"; case .star: "star.fill"; case .ribbon: "ribbon"; case .flower: "camera.macro" } }
@@ -272,7 +272,7 @@ private enum StickerPhotoFrame: String, CaseIterable, Identifiable {
     var marks: [String] { switch self { case .heart: ["♥", "♡", "♥"]; case .star: ["★", "✦", "★"]; case .ribbon: ["🎀", "✧", "🎀"]; case .flower: ["✿", "❀", "✿"] } }
 }
 
-private struct StickerPhotoCanvas: View {
+struct StickerPhotoCanvas: View {
     let sprite: NSImage?
     let caption: String
     let frame: StickerPhotoFrame
