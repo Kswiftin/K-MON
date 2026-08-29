@@ -82,7 +82,9 @@ final class TradeMemoryTests: XCTestCase {
 
         let payload = try XCTUnwrap(store.tradeMemoryPayload(for: mon.id))
         XCTAssertEqual(payload.monID, mon.id)
-        XCTAssertEqual(payload.entries.map(\.body), ["함께 첫 배틀을 이겼다", "이름을 지어 줬다"])
+        // 부화 기록도 그 개체가 겪은 일이라 함께 간다 — 빠지는 건 손글씨와 숨김뿐이다.
+        XCTAssertEqual(payload.entries.map(\.body).suffix(2), ["함께 첫 배틀을 이겼다", "이름을 지어 줬다"])
+        XCTAssertTrue(payload.entries.contains { $0.body.contains("알에서 태어났다") })
         XCTAssertNotNil(payload.summary, "대화가 있었으면 관계 요약이 실린다")
 
         let wire = String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
@@ -151,24 +153,32 @@ final class TradeMemoryTests: XCTestCase {
     }
 
     /// 신뢰경계 클램프. 상대가 부르는 값은 **전부** 다시 잰다.
+    ///
+    /// 적대적인 줄이 **맨 앞**에 온다. 뒤에 두면 건수 캡(`prefix`)이 필드 검사보다 먼저 걸려
+    /// 나머지 클램프를 한 번도 안 밟는다 — 그렇게 쓴 첫 판은 클램프를 전부 지워도 통과했다.
     func testHostilePayloadFieldsAreClampedAtTheBoundary() {
         let monID = UUID()
         let hostile = TradeMemoryPayload(
             monID: monID,
             summary: String(repeating: "요", count: TradeMemoryPayload.summaryLimit + 1),
             entries:
-                (0..<100).map { .init(body: "정상 \($0)", source: .event, createdAt: now) }
-                + [.init(body: String(repeating: "가", count: TradeMemoryPayload.bodyLimit + 1),
-                         source: .event, createdAt: now),
-                   .init(body: "   ", source: .event, createdAt: now),
-                   .init(body: "손글씨는 나가지도 들어오지도 않는다", source: .manual, createdAt: now),
-                   .init(body: "줄바꿈이\n박힌\u{0007}줄", source: .conversation, createdAt: now),
-                   .init(body: "미래에서 온 기억", source: .event,
-                         createdAt: now.addingTimeInterval(60 * 60 * 24 * 365)),
-                   .init(body: "1970년에서 온 기억", source: .event,
-                         createdAt: Date(timeIntervalSince1970: 0))])
+                [.init(body: String(repeating: "가", count: TradeMemoryPayload.bodyLimit + 1),
+                       source: .event, createdAt: now),
+                 .init(body: "   ", source: .event, createdAt: now),
+                 .init(body: "손글씨는 나가지도 들어오지도 않는다", source: .manual, createdAt: now),
+                 .init(body: "줄바꿈이\n박힌\u{0007}줄", source: .conversation, createdAt: now),
+                 .init(body: "미래에서 온 기억", source: .event,
+                       createdAt: now.addingTimeInterval(60 * 60 * 24 * 365)),
+                 .init(body: "1970년에서 온 기억", source: .event,
+                       createdAt: Date(timeIntervalSince1970: 0))]
+                + (0..<100).map { .init(body: "정상 \($0)", source: .event, createdAt: now) })
 
         let clean = TradeMemoryPayload.sanitized(hostile, now: now)
+
+        // 적대적인 줄이 실제로 검사 구간에 들어왔다는 증거. 이 두 줄이 없으면 위 배열 순서가
+        // 뒤집혀도 아무 단언이 안 깨진다.
+        XCTAssertTrue(clean.entries.contains { $0.body.hasPrefix("줄바꿈이") }, "접힌 줄이 남아 있어야 한다")
+        XCTAssertTrue(clean.entries.contains { $0.body == "미래에서 온 기억" })
 
         XCTAssertEqual(clean.monID, monID)
         XCTAssertLessThanOrEqual(clean.entries.count, TradeMemoryPayload.maxEntries,

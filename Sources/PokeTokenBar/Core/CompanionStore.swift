@@ -1446,10 +1446,81 @@ final class CompanionStore {
         return true
     }
 
+    /// 교환으로 함께 보낼 추억. **`performTrade` 가 지우기 전에** 부른다.
+    ///
+    /// 손글씨 메모와 숨긴 기억은 빠진다 — 앞은 트레이너가 직접 쓴 글이고, 뒤는 보이지 않기로 한
+    /// 것이다. 대화 원문은 애초에 담지 않는다: LAN 피어는 인증되지 않아 한 번 나가면 되돌릴 방법이
+    /// 없고, 관계의 연속성은 추억과 요약만으로 이어진다.
+    func tradeMemoryPayload(for monID: UUID) -> TradeMemoryPayload? {
+        let entries = memoryAlbum.entries(for: monID)
+            .filter { !$0.isHidden && $0.source != .manual }
+            .suffix(TradeMemoryPayload.maxEntries)
+            .map { TradeMemoryEntry(body: $0.body, source: $0.source, createdAt: $0.createdAt) }
+        let payload = TradeMemoryPayload(monID: monID, summary: relationshipSummary(for: monID),
+                                         entries: entries)
+        guard !payload.entries.isEmpty || payload.summary != nil else { return nil }
+        return .sanitized(payload, now: clock())
+    }
+
+    /// 관계의 톤. `PokemonChatSession.summary` 를 채우는 경로가 아직 없어서(요약기를 붙이면 그때
+    /// 저장된 값이 우선한다), 비어 있으면 **메시지 원문 없이 사실만으로** 한 줄을 짓는다 —
+    /// 대화 횟수와 함께한 날수는 둘 다 이미 저장돼 있는 값이다.
+    private func relationshipSummary(for monID: UUID) -> String? {
+        let session = chatStore.session(for: monID)
+        if let stored = session?.summary, !stored.isEmpty { return stored }
+        guard let conversations = session?.lifetimeUserMessageCount, conversations > 0 else { return nil }
+        let days = memoryAlbum.pokeLog(for: monID, now: clock()).daysTogether
+        return l.t("이전 트레이너와 \(conversations)번 이야기했고, \(days)일을 함께 보냈다.",
+                   "Talked with a previous trainer \(conversations) time(s) across \(days) day(s).",
+                   "前のトレーナーと\(conversations)回話し、\(days)日を一緒に過ごした。")
+    }
+
+    /// 받은 개체를 앨범에 세운다 — 첫 만남·추억·요약이 **한 자리에서** 끝나야 동행 자리와 박스 칸이
+    /// 서로 다른 규칙을 갖지 않는다(같은 기전을 한 모드에서만 고치는 부류).
+    private func settleReceived(_ received: MonState, incomingMemories: TradeMemoryPayload?) {
+        memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
+        adopt(incomingMemories, for: received)
+        memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
+    }
+
+    /// 상대가 보낸 추억을 받은 개체의 앨범에 심는다. **저장 키는 로컬 값이다** — 페이로드의 `monID`
+    /// 는 바인딩 검사에만 쓰고, 각 줄의 `companionID`·`id`·`eventID` 는 `record` 가 새로 짓는다.
+    /// 그래서 상대가 내 다른 동행의 ID 를 불러도 그 앨범은 열리지 않는다.
+    ///
+    /// 이미 교환 센터가 클램프한 값이 오지만 여기서 한 번 더 잰다 — 검사를 한 경로에만 두면
+    /// 형제 호출부가 무검사로 남는다. `sanitized` 는 멱등이라 두 번 걸어도 결과가 같다.
+    private func adopt(_ payload: TradeMemoryPayload?, for received: MonState) {
+        guard let payload else { return }
+        guard payload.monID == received.id else {
+            AppLog.write("trade memories dropped — payload bound to another mon")
+            return
+        }
+        let clean = TradeMemoryPayload.sanitized(payload, now: clock())
+        guard !clean.entries.isEmpty || clean.summary != nil else { return }
+        for entry in clean.entries {
+            memoryAlbum.record(companionID: received.id, body: entry.body, source: entry.source,
+                               createdAt: entry.createdAt)
+        }
+        // 도착한 추억은 **보낸 쪽 언어**로 쓰여 있다. 내 언어로 된 이 한 줄이 그 맥락을 준다.
+        memoryAlbum.record(companionID: received.id,
+                           body: l.t("이전 트레이너와의 기억을 안고 왔다.",
+                                     "Arrived carrying memories of a previous trainer.",
+                                     "前のトレーナーとの思い出を抱えてやってきた。"),
+                           source: .event, createdAt: clock())
+        if let summary = clean.summary {
+            chatStore.adoptSummary(summary, for: received.id, profile: chatProfile(for: received))
+        }
+        AppLog.write("trade adopted \(clean.entries.count) memories summary=\(clean.summary != nil)")
+    }
+
     /// 통신 교환을 한 번에 반영한다. 동행을 내보내면 받은 포켓몬이 그 자리를 이어받고,
-    /// 박스 개체를 내보내면 같은 박스 칸에 들어간다. 상대의 대화/추억은 개인정보라 전송하지 않는다.
+    /// 박스 개체를 내보내면 같은 박스 칸에 들어간다.
+    ///
+    /// 상대의 추억·요약은 `incomingMemories` 로 함께 온다 — 보낸 개체의 것은 여전히 지운다.
+    /// 대화 원문은 오지도 가지도 않는다(`tradeMemoryPayload` 주석 참고).
     @discardableResult
-    func performTrade(offeredID: UUID, received incoming: MonState) -> Bool {
+    func performTrade(offeredID: UUID, received incoming: MonState,
+                      incomingMemories: TradeMemoryPayload? = nil) -> Bool {
         guard incoming.id != offeredID,
               (1...649).contains(incoming.currentID),
               !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
@@ -1457,7 +1528,9 @@ final class CompanionStore {
         let offeredSpecies = state.active?.id == offeredID
             ? state.active?.currentID : state.boxedMons.first(where: { $0.id == offeredID })?.currentID
         var received = incoming
-        if received.firstMetAt == nil { received.firstMetAt = clock() }
+        // 첫 만남은 **상대가 부르는 값**이다. 아득한 과거를 박아 보내면 `daysTogether` 가 즉시
+        // 수만 일이 되고 친밀도 하트가 만점으로 굳는다 — 추억의 `createdAt` 과 같은 창으로 자른다.
+        received.firstMetAt = TradeMemoryPayload.clampedDate(received.firstMetAt ?? clock(), now: clock())
         if let offeredSpecies { Self.applyPairedTradeEvolution(to: &received, counterpartSpeciesID: offeredSpecies) }
         if state.active?.id == offeredID {
             guard let sent = state.active else { return false }
@@ -1465,8 +1538,7 @@ final class CompanionStore {
             memoryAlbum.deleteAll(for: sent.id)
             chatStore.deleteSession(for: sent.id)
             state.active = received
-            memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
-            memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
+            settleReceived(received, incomingMemories: incomingMemories)
             activeGeneration += 1
             currentLine = nil
             displayedMoves = []
@@ -1484,8 +1556,7 @@ final class CompanionStore {
         memoryAlbum.deleteAll(for: sent.id)
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
-        memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
-        memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
+        settleReceived(received, incomingMemories: incomingMemories)
         save()
         return true
     }

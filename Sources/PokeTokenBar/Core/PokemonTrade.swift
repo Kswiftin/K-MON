@@ -17,10 +17,74 @@ struct TradePokemonSnapshot: Codable, Sendable {
     let displayName: String
 }
 
+/// 교환으로 넘어가는 추억 한 줄. 앨범 레코드가 아니라 **와이어 전용 값**이다 — `id`·`companionID`·
+/// `eventID`·`isHidden` 은 싣지 않는다. 넷 다 받는 쪽이 로컬에서 다시 지어야 하는 값이고,
+/// 상대가 부르는 대로 받으면 남의 앨범을 열거나(`companionID`) 이후 진짜 이벤트를 막는다(`eventID`).
+struct TradeMemoryEntry: Codable, Sendable, Equatable {
+    let body: String
+    let source: PokemonMemorySource
+    let createdAt: Date
+}
+
+/// 한 개체를 따라가는 추억 묶음. `monID` 는 **바인딩 검사용**이다 — 받는 쪽이 지금 받고 있는
+/// 개체와 다르면 통째로 버린다.
+struct TradeMemoryPayload: Codable, Sendable, Equatable {
+    /// 앨범은 개체당 200칸이다. 한 번의 교환이 그 칸을 다 밀어 버리지 못하게 건수를 막는다.
+    static let maxEntries = 30
+    /// `PokemonMemoryAlbum.record` 의 비-손글씨 계약과 **같은 숫자**여야 한다. 여기만 넓히면
+    /// 경계를 통과한 줄이 앨범에서 조용히 버려진다.
+    static let bodyLimit = 180
+    static let summaryLimit = 280
+    /// 교환으로 들어오는 날짜가 놓일 수 있는 창. 앱은 이보다 오래되지 않았고, 아득한 과거는
+    /// `daysTogether`(= 친밀도 하트)를 즉시 만점으로 만든다.
+    static let maxAge: TimeInterval = 3650 * 24 * 60 * 60
+
+    let monID: UUID
+    let summary: String?
+    let entries: [TradeMemoryEntry]
+
+    /// 교환으로 들어오는 **모든** 날짜가 같은 창을 쓴다 — 추억의 `createdAt` 과 개체의
+    /// `firstMetAt` 이 규칙을 따로 가지면 한쪽은 반드시 빠진다.
+    static func clampedDate(_ date: Date, now: Date) -> Date {
+        min(max(date, now.addingTimeInterval(-maxAge)), now)
+    }
+
+    /// 신뢰경계 클램프다 — `private` 로 두면 원격 페이로드 검증이 무테스트로 남는다.
+    /// (`MemoryHomeVisitCenter.valid` 를 열어 둔 이유와 같다.)
+    static func sanitized(_ payload: TradeMemoryPayload, now: Date = Date()) -> TradeMemoryPayload {
+        TradeMemoryPayload(
+            monID: payload.monID,
+            summary: payload.summary.flatMap { cleanBody($0, limit: summaryLimit) },
+            entries: payload.entries.prefix(maxEntries).compactMap { entry in
+                // 손글씨는 트레이너가 직접 쓴 글이라 양방향 모두 오가지 않는다. 앨범의
+                // `record` 도 같은 이유로 `.manual` 을 거부하지만, 경계에서도 명시적으로 막는다.
+                guard entry.source != .manual,
+                      let body = cleanBody(entry.body, limit: bodyLimit) else { return nil }
+                return TradeMemoryEntry(body: body, source: entry.source,
+                                        createdAt: clampedDate(entry.createdAt, now: now))
+            })
+    }
+
+    /// 길이만 재고 끝내면 줄바꿈·제어문자가 그대로 통과한다 — 일기와 방문 시트는 고정 높이 칸이라
+    /// 넘친 내용을 숨기지 않는다. 공백은 살리고(문장이다) 개행류만 한 칸으로 접는다.
+    private static func cleanBody(_ value: String, limit: Int) -> String? {
+        let folded = String(String.UnicodeScalarView(value.unicodeScalars.map {
+            CharacterSet.newlines.contains($0) || CharacterSet.controlCharacters.contains($0) ? " " : $0
+        })).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !folded.isEmpty, folded.count <= limit else { return nil }
+        return folded
+    }
+}
+
 /// 신청·수락에 실린 `chatSupported` 가 채팅 지원 여부를 협상한다. 구버전은 그 키를 아예 보내지
 /// 않으므로 `nil`(= 미지원)이고, 그때는 `.chat` 프레임을 **보내지 않는다** — 알 수 없는 프레임은
 /// 상대의 수신 루프를 세우기 때문이다. 그래서 `protocolVersion` 은 2 그대로다: 채팅이 없다고
 /// 교환까지 막을 이유가 없다.
+///
+/// `.memories` 도 같은 이유로 버전을 올리지 않는다 — **기존 케이스의 모양을 하나도 안 바꾸고**
+/// 프레임만 더했다. 구버전은 모르는 프레임을 건너뛰고 수신 루프를 다시 걸므로(`receiveBody`),
+/// 추억 없이 교환만 성립한다. 기존 케이스에 인자를 더하면 합성 `Codable` 의 키(`_0`)가 바뀌어
+/// 구버전이 커밋 프레임을 못 읽는다 — 그래서 별도 프레임이다.
 enum TradeWireMessage: Codable {
     static let protocolVersion = 2
 
@@ -33,6 +97,7 @@ enum TradeWireMessage: Codable {
     case offer(TradePokemonSnapshot?)
     case confirm(Bool)
     case wish(UUID?)
+    case memories(TradeMemoryPayload)
     case commit(UUID)
     case committed(UUID)
     case cancel
@@ -70,6 +135,10 @@ final class PokemonTradeCenter {
     private(set) var remoteConfirmed = false
     private(set) var chatMessages: [BattleChatMessage] = []
     private(set) var peerSupportsChat = false
+    /// 커밋 직전에 도착한 상대의 추억. TCP 는 순서를 지키므로 `.memories` 는 항상 커밋 프레임보다
+    /// 먼저 온다 — 여기 담아 뒀다가 **교환이 실제로 성사된 뒤에만** 앨범에 넣는다.
+    /// `private(set)` 인 이유는 "협상 밖 프레임은 버퍼에도 안 들어간다" 를 테스트가 봐야 해서다.
+    private(set) var pendingIncomingMemories: TradeMemoryPayload?
 
     /// 화면이 "내 말풍선"을 가리는 키. 상대가 부르는 ID 를 믿지 않으려고 양쪽 모두 **우리가**
     /// 정한다 — `remoteChatSenderID` 는 상대가 ID 를 갈아 끼워도 속도 제한을 못 벗어나게 한다.
@@ -85,7 +154,7 @@ final class PokemonTradeCenter {
     private var browser: NWBrowser?
     private var connection: NWConnection?
     private var isInitiator = false
-    private var activeTransaction: UUID?
+    private(set) var activeTransaction: UUID?
 
     init(companion: CompanionStore) {
         self.companion = companion
@@ -210,11 +279,19 @@ final class PokemonTradeCenter {
 
     private func beginCommitIfReady() {
         guard isInitiator, localConfirmed, remoteConfirmed,
-              localOffer != nil, remoteOffer != nil else { return }
+              let mine = localOffer, remoteOffer != nil else { return }
         let id = UUID()
         activeTransaction = id
         phase = .committing
+        sendMemories(for: mine.mon.id)
         send(.commit(id))
+    }
+
+    /// 추억은 **커밋 직전 한 번만** 나간다. 확인 단계에서 보내면 취소·확인 철회로 끝난 협상에도
+    /// 이미 상대 손에 가 있게 된다 — 되돌릴 방법이 없다.
+    private func sendMemories(for monID: UUID) {
+        guard let payload = companion.tradeMemoryPayload(for: monID) else { return }
+        send(.memories(payload))
     }
 
     func receive(_ message: TradeWireMessage) {
@@ -259,13 +336,24 @@ final class PokemonTradeCenter {
             beginCommitIfReady()
         case .wish(let id):
             remoteRequestedLocalMonID = id
+        // 협상 밖에서 온 추억은 버퍼에도 안 넣는다 — 아무 때나 받아 두면 다음 교환에 실린다.
+        // 담는 순간 클램프한다: 버퍼에 원본이 앉아 있으면 적용 경로마다 검증을 다시 걸어야 한다.
+        case .memories(let payload):
+            switch phase {
+            case .negotiating, .committing: pendingIncomingMemories = .sanitized(payload)
+            default: AppLog.write("trade memories frame dropped — no active negotiation")
+            }
         case .commit(let id):
             guard !isInitiator, localConfirmed, remoteConfirmed,
                   let mine = localOffer, let theirs = remoteOffer else {
                 send(.decline(reason: "trade-changed")); return
             }
             phase = .committing
-            guard companion.performTrade(offeredID: mine.mon.id, received: theirs.mon) else {
+            // 내 추억은 상대가 교환을 반영하기 **전에** 보내야 한다. 성사 뒤에 보내면
+            // `.committed` 를 받은 상대가 이미 앨범을 다 만든 뒤라 넣을 자리가 없다.
+            sendMemories(for: mine.mon.id)
+            guard companion.performTrade(offeredID: mine.mon.id, received: theirs.mon,
+                                         incomingMemories: pendingIncomingMemories) else {
                 send(.decline(reason: "invalid-trade")); phase = .failed("교환 정보를 확인할 수 없습니다."); return
             }
             activeTransaction = id
@@ -274,7 +362,8 @@ final class PokemonTradeCenter {
         case .committed(let id):
             guard isInitiator, activeTransaction == id,
                   let mine = localOffer, let theirs = remoteOffer,
-                  companion.performTrade(offeredID: mine.mon.id, received: theirs.mon) else {
+                  companion.performTrade(offeredID: mine.mon.id, received: theirs.mon,
+                                         incomingMemories: pendingIncomingMemories) else {
                 phase = .failed("교환을 완료하지 못했습니다."); return
             }
             phase = .animating
@@ -291,6 +380,7 @@ final class PokemonTradeCenter {
         activeTransaction = nil
         chatHistory.reset(); chatRateLimiter.reset()
         chatMessages = []; peerSupportsChat = false
+        pendingIncomingMemories = nil
     }
 
     private func postPrivateMessageNotification() {

@@ -1876,6 +1876,19 @@ final class PokemonChatStore {
     func startNewSession(for companionID: UUID, profile: PokemonChatProfile) {
         sessions[companionID] = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName); save()
     }
+    /// 교환으로 들어온 관계 요약을 새 개체의 세션에 심는다. 메시지는 오지 않으므로 **요약만** 세운다.
+    /// 이미 세션이 있으면 손대지 않는다 — 받은 개체는 방금 만들어진 ID 라 세션이 있을 리 없고,
+    /// 있다면 그건 내가 쌓은 대화다(상대가 덮어쓸 자리가 아니다).
+    func adoptSummary(_ summary: String, for companionID: UUID, profile: PokemonChatProfile) {
+        let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty, sessions[companionID] == nil else { return }
+        var session = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID,
+                                         displayName: profile.displayName)
+        session.summary = summary
+        sessions[companionID] = session
+        save()
+    }
+
     func deleteSession(for companionID: UUID) { sessions.removeValue(forKey: companionID); save() }
     func prune(validCompanionIDs: Set<UUID>) { sessions = sessions.filter { validCompanionIDs.contains($0.key) }; save() }
     func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(sessions: sessions)) }
