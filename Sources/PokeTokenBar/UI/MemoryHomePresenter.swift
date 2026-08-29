@@ -311,12 +311,21 @@ private struct MemoryHomeWindowView: View {
         let tint = MemoryHomeRoomTheme.tint(for: album.theme(for: mon.id))
         let style = MemoryHomeRoomStyle.tint(for: album.roomStyle)
         return ZStack {
-            tint.opacity(0.18)
-            if let art = MemoryHomeBundledArt.interiorTileset() {
-                Image(nsImage: art).resizable().interpolation(.none).scaledToFill().opacity(0.32)
+            // 벽지는 8×8 패턴을 **반복**해서 깐다. 예전엔 가구 아틀라스 전체를 `scaledToFill` 로
+            // 늘려 배경에 붙여서, 침대·서랍장 그림이 뭉개진 채 벽에 박혀 있었다.
+            if let wallpaper = MemoryHomePixelArt.wallpaperTile(for: album.roomStyle) {
+                Image(nsImage: wallpaper).resizable(resizingMode: .tile).interpolation(.none)
+            } else {
+                style.opacity(0.34)
             }
-            // 스타일은 바닥 띠에만 얹는다. 방 전체를 덮으면 사용자가 고른 테마 4색을 뭉갠다.
-            Rectangle().fill(style.opacity(0.34)).frame(height: 34).frame(maxHeight: .infinity, alignment: .bottom)
+            // 테마(사용자가 고른 4색)는 벽지 위에 옅게 얹는다 — 스타일이 테마를 지우면 안 된다.
+            tint.opacity(0.18)
+            if let floor = MemoryHomePixelArt.floorTile(for: album.roomStyle) {
+                Image(nsImage: floor).resizable(resizingMode: .tile).interpolation(.none)
+                    .frame(height: 64).frame(maxHeight: .infinity, alignment: .bottom)
+            } else {
+                Rectangle().fill(style.opacity(0.34)).frame(height: 34).frame(maxHeight: .infinity, alignment: .bottom)
+            }
             GeometryReader { geometry in
                 if editingRoom {
                     roomGrid(in: geometry.size, album: album)
@@ -415,15 +424,23 @@ private struct MemoryHomeWindowView: View {
         }
     }
 
-    @ViewBuilder private func decorSprite(_ decor: MemoryHomePlacedDecor) -> some View {
-        Group {
-            if let art = MemoryHomeBundledArt.furnitureImage(for: decor.item) {
-                Image(nsImage: art).resizable().interpolation(.none).scaledToFit().frame(width: 62, height: 62)
-            } else {
-                // 번들 아트가 없는 가구도 방에 보여야 한다 — 안 그리면 놓았는데 사라진 것처럼 보인다.
-                Text(decor.item.fallbackEmoji).font(.system(size: 34))
-            }
+    /// 가구 픽셀 아트 한 칸. **크기는 `MemoryHomePixelArt.displaySize` 가 정한다** — 뷰가 62pt
+    /// 같은 값을 직접 쓰면 16px 스프라이트가 3.875 배로 늘어나 픽셀 폭이 3/4px 로 갈린다.
+    @ViewBuilder private func furnitureIcon(_ item: ItemKind, style: MemoryHomeRoomStyle,
+                                            scale: Int, emojiSize: CGFloat) -> some View {
+        if let art = MemoryHomePixelArt.furnitureImage(for: item, style: style, scale: scale),
+           let size = MemoryHomePixelArt.displaySize(for: item, scale: scale) {
+            Image(nsImage: art).resizable().interpolation(.none)
+                .frame(width: size.width, height: size.height)
+        } else {
+            // 격자가 없는 가구도 방에 보여야 한다 — 안 그리면 놓았는데 사라진 것처럼 보인다.
+            Text(item.fallbackEmoji).font(.system(size: emojiSize))
         }
+    }
+
+    @ViewBuilder private func decorSprite(_ decor: MemoryHomePlacedDecor) -> some View {
+        furnitureIcon(decor.item, style: store.memoryAlbum.roomStyle,
+                      scale: MemoryHomePixelArt.roomScale, emojiSize: 34)
         .padding(3)
         .background(selectedDecorID == decor.id && editingRoom ? Color.white.opacity(0.8) : .clear,
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -504,7 +521,10 @@ private struct MemoryHomeWindowView: View {
             selectedDecorID = nil; selectedCompanionID = nil; roomEditFeedback = nil
         } label: {
             VStack(spacing: 3) {
-                Text(item.fallbackEmoji).font(.title3)
+                // 카탈로그도 방과 같은 픽셀 아트를 보여준다 — 이모지만 띄우면 무엇을 사는지,
+                // 고른 스타일에서 어떤 색으로 놓이는지 사기 전에 알 수 없다.
+                furnitureIcon(item, style: album.roomStyle, scale: MemoryHomePixelArt.thumbnailScale, emojiSize: 20)
+                    .frame(height: 34)
                 Text(l.itemName(item)).font(.caption.weight(.semibold)).lineLimit(1)
                 Text(l.t("보유 \(owned) · 배치 \(placed)", "Owned \(owned) · placed \(placed)", "所持 \(owned)・配置 \(placed)"))
                     .font(.caption2).foregroundStyle(.secondary)
@@ -676,7 +696,7 @@ private struct MemoryHomeWindowView: View {
     /// §13 방명록. 탭을 열 때 동행이 하루 한 번, 약 4일에 1번 흔적을 남긴다 — 판정은
     /// `MemoryHomeCompanionTrace` 의 dayKey 결정론이라 여닫아도 글이 늘지 않는다.
     private func guestbook(mon: MonState) -> some View { let album = store.memoryAlbum; return ScrollView { VStack(alignment: .leading, spacing: 14) { VStack(alignment: .leading, spacing: 8) { Label(l.t("방명록", "Guestbook", "ゲストブック"), systemImage: "text.bubble.fill").font(.title3.weight(.bold)); Text(l.t("내가 남긴 한마디를 모아 둬요. 이 글은 LAN에 공유되지 않습니다.", "Keep your notes here. They stay on this device.", "自分のひとことを残します。LANには共有されません。")) .font(.caption).foregroundStyle(.secondary); TextField(l.t("오늘의 한마디", "Leave a note", "今日のひとこと"), text: $guestbookDraft, axis: .vertical).lineLimit(1...3).textFieldStyle(.roundedBorder); Button(l.t("내 이름으로 남기기", "Sign as me", "自分の名前で残す")) { if album.addGuestbookEntry(author: album.memoryHomePublicNickname, body: guestbookDraft, authorKind: .trainer) { guestbookDraft = "" } }.buttonStyle(.borderedProminent).controlSize(.small).disabled(guestbookDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || guestbookDraft.count > MemoryHomeAccessSettings.guestbookBodyLimit) }.memoryHomePanel(tint: PokedoroTheme.yellow); if album.memoryHomeAccess.guestbookEntries.isEmpty { ContentUnavailableView(l.t("첫 방명록을 남겨 보세요", "Leave the first note", "最初のひとことを残しましょう"), systemImage: "text.bubble") } else { ForEach(album.memoryHomeAccess.guestbookEntries) { entry in VStack(alignment: .leading, spacing: 5) { HStack { Label(entry.author, systemImage: entry.authorKind == .companion ? "pawprint.fill" : "person.fill").font(.subheadline.weight(.semibold)); Spacer(); Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary); Button { album.deleteGuestbookEntry(id: entry.id) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.borderless).accessibilityLabel(l.t("방명록 삭제", "Delete guestbook note", "メモを削除")) }; Text(entry.body).font(.callout).fixedSize(horizontal: false, vertical: true) }.memoryHomePanel(tint: entry.authorKind == .companion ? PokedoroTheme.mint : PokedoroTheme.blue) } } }.padding(18) }.onAppear { _ = store.memoryAlbum.recordCompanionTraceIfNeeded(companionName: store.chatProfile(for: mon).displayName, l: l) } }
-    private var visit: some View { ScrollView { VStack(alignment: .leading, spacing: 12) { VStack(alignment: .leading, spacing: 4) { Text(l.t("같은 LAN의 Memory Home", "Memory Homes on this LAN", "同じLANのMemory Home")).font(.headline); Text(l.t("홈을 고르고, 공개된 대표 동행과 미니룸 쇼케이스를 둘러보세요. 수집한 방문 도장 \(store.memoryAlbum.memoryHomeAccess.visitedHomeStamps.count)개", "Choose a home and explore its public companion and mini-room showcase. \(store.memoryAlbum.memoryHomeAccess.visitedHomeStamps.count) visit stamps collected.", "ホームを選び、公開された相棒とミニルームを見て回りましょう。訪問スタンプ\(store.memoryAlbum.memoryHomeAccess.visitedHomeStamps.count)個を集めました。")) .font(.caption).foregroundStyle(.secondary) }.memoryHomePanel(tint: PokedoroTheme.blue); if let selected = visits.selectedProfile { VStack(alignment: .leading, spacing: 8) { HStack { SpriteView(speciesID: selected.speciesID, size: 72, shiny: selected.isShiny); VStack(alignment: .leading) { Text(selected.displayName).font(.title3.bold()); Text(selected.profileMessage ?? l.t("환영합니다!", "Welcome!", "ようこそ！")).foregroundStyle(.secondary) } }; if let theme = selected.roomTheme { Label(l.t("공개 미니룸 쇼케이스", "Public mini-room showcase", "公開ミニルームショーケース"), systemImage: "house.fill").font(.caption.weight(.bold)); HStack { ForEach(selected.showcaseFurniture, id: \.self) { item in if let art = MemoryHomeBundledArt.furnitureImage(for: item) { Image(nsImage: art).resizable().interpolation(.none).scaledToFit().frame(width: 42, height: 42) } } }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(MemoryHomeRoomTheme.tint(for: theme).opacity(0.18), in: RoundedRectangle(cornerRadius: 10)) }; if let memory = selected.sharedMemoryBody { Text(memory).font(.caption) } }.memoryHomePanel(tint: PokedoroTheme.mint) }; if visits.homes.isEmpty { ContentUnavailableView(l.t("주변 홈을 찾는 중이에요…", "Looking for homes…", "近くのホームを探しています…"), systemImage: "dot.radiowaves.left.and.right") } else { Button { if let home = visits.homes.randomElement() { visits.visit(home) } } label: { Label(l.t("파도타기", "Surf a random home", "波乗り"), systemImage: "shuffle").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).accessibilityHint(l.t("같은 LAN의 홈 하나로 무작위 이동합니다.", "Jumps to a random home on this LAN.", "同じLANのホームへランダムに移動します。")); ForEach(visits.homes) { home in Button { visits.visit(home) } label: { Label(home.displayName, systemImage: "house.fill").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.bordered).controlSize(.regular) } } }.padding(18) }.onAppear { visits.start() }.onDisappear { visits.stop() } }
+    private var visit: some View { ScrollView { VStack(alignment: .leading, spacing: 12) { VStack(alignment: .leading, spacing: 4) { Text(l.t("같은 LAN의 Memory Home", "Memory Homes on this LAN", "同じLANのMemory Home")).font(.headline); Text(l.t("홈을 고르고, 공개된 대표 동행과 미니룸 쇼케이스를 둘러보세요. 수집한 방문 도장 \(store.memoryAlbum.memoryHomeAccess.visitedHomeStamps.count)개", "Choose a home and explore its public companion and mini-room showcase. \(store.memoryAlbum.memoryHomeAccess.visitedHomeStamps.count) visit stamps collected.", "ホームを選び、公開された相棒とミニルームを見て回りましょう。訪問スタンプ\(store.memoryAlbum.memoryHomeAccess.visitedHomeStamps.count)個を集めました。")) .font(.caption).foregroundStyle(.secondary) }.memoryHomePanel(tint: PokedoroTheme.blue); if let selected = visits.selectedProfile { VStack(alignment: .leading, spacing: 8) { HStack { SpriteView(speciesID: selected.speciesID, size: 72, shiny: selected.isShiny); VStack(alignment: .leading) { Text(selected.displayName).font(.title3.bold()); Text(selected.profileMessage ?? l.t("환영합니다!", "Welcome!", "ようこそ！")).foregroundStyle(.secondary) } }; if let theme = selected.roomTheme { Label(l.t("공개 미니룸 쇼케이스", "Public mini-room showcase", "公開ミニルームショーケース"), systemImage: "house.fill").font(.caption.weight(.bold)); HStack { ForEach(selected.showcaseFurniture, id: \.self) { item in furnitureIcon(item, style: selected.roomStyle ?? .campus, scale: MemoryHomePixelArt.thumbnailScale, emojiSize: 22).frame(width: 42, height: 42) } }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(MemoryHomeRoomTheme.tint(for: theme).opacity(0.18), in: RoundedRectangle(cornerRadius: 10)) }; if let memory = selected.sharedMemoryBody { Text(memory).font(.caption) } }.memoryHomePanel(tint: PokedoroTheme.mint) }; if visits.homes.isEmpty { ContentUnavailableView(l.t("주변 홈을 찾는 중이에요…", "Looking for homes…", "近くのホームを探しています…"), systemImage: "dot.radiowaves.left.and.right") } else { Button { if let home = visits.homes.randomElement() { visits.visit(home) } } label: { Label(l.t("파도타기", "Surf a random home", "波乗り"), systemImage: "shuffle").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).accessibilityHint(l.t("같은 LAN의 홈 하나로 무작위 이동합니다.", "Jumps to a random home on this LAN.", "同じLANのホームへランダムに移動します。")); ForEach(visits.homes) { home in Button { visits.visit(home) } label: { Label(home.displayName, systemImage: "house.fill").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.bordered).controlSize(.regular) } } }.padding(18) }.onAppear { visits.start() }.onDisappear { visits.stop() } }
     private var roommates: [MonState] {
         let ids = store.memoryAlbum.memoryHomeAccess.roommateIDs
         return store.ownedMons.filter { ids.contains($0.id) && $0.id != store.state.active?.id }
