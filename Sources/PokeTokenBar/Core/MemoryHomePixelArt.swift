@@ -25,6 +25,24 @@ enum MemoryHomePixelArt {
         let frame: [PixelColor]   // 1 2 3 4 — 목재·프레임
         let fabric: [PixelColor]  // q w e r — 천·쿠션·잎
         let accent: [PixelColor]  // a s d f — 발광·화면·강조
+        /// g h j k — 창유리. **스타일이 아니라 시각에서 온다.** 이 램프를 나머지 셋과 갈라 둔
+        /// 것이 "방 테마는 시간에 안 변하고, 하늘은 테마에 안 변한다" 의 근거다.
+        ///
+        /// 기본값이 낮인 이유: 창 말고는 이 램프를 쓰는 격자가 없다(가구·벽지·바닥에 `g h j k`
+        /// 가 한 글자도 없음을 테스트가 못 박는다). 그래서 기존 호출부는 이 값을 몰라도 된다.
+        var sky: [PixelColor] = MemoryHomePixelArt.skyRamp(for: .day)
+    }
+
+    /// 창밖 하늘. 저장 필드가 0개다 — 시계에서 파생하는 `MemoryHomeTimeOfDay` 만 읽는다.
+    ///
+    /// 밤 램프가 눈에 띄게 어두운 것이 이 기능의 전부다. 세 램프의 밝기 차가 작으면 방을 열어도
+    /// "시간이 흐른다" 가 안 읽히고, 코드에만 있는 기능이 된다.
+    static func skyRamp(for timeOfDay: MemoryHomeTimeOfDay) -> [PixelColor] {
+        switch timeOfDay {
+        case .morning: return [0x3A4A6E, 0x7C6E8E, 0xE8A878, 0xFFE7C8].map(PixelColor.init)
+        case .day:     return [0x2E5C86, 0x4E8CBE, 0x8ABEE2, 0xD8EEFA].map(PixelColor.init)
+        case .night:   return [0x10162E, 0x232C50, 0x3E4A7C, 0x9AA6D2].map(PixelColor.init)
+        }
     }
 
     /// 세 번째 단계를 `MemoryHomeRoomStyle.tint` 와 같은 색조로 맞춘다 — 스타일 카드 색과
@@ -60,6 +78,8 @@ enum MemoryHomePixelArt {
         case "e": return palette.fabric[2]; case "r": return palette.fabric[3]
         case "a": return palette.accent[0]; case "s": return palette.accent[1]
         case "d": return palette.accent[2]; case "f": return palette.accent[3]
+        case "g": return palette.sky[0];    case "h": return palette.sky[1]
+        case "j": return palette.sky[2];    case "k": return palette.sky[3]
         default: return nil
         }
     }
@@ -90,6 +110,12 @@ enum MemoryHomePixelArt {
     static func wallpaperTile(for style: MemoryHomeRoomStyle) -> NSImage? { styledTiles[style]?.wallpaper }
     static func floorTile(for style: MemoryHomeRoomStyle) -> NSImage? { styledTiles[style]?.floor }
 
+    /// 벽에 걸리는 창. 스타일이 틀을, 시각이 유리를 정한다.
+    static func windowImage(for style: MemoryHomeRoomStyle,
+                            timeOfDay: MemoryHomeTimeOfDay) -> NSImage? {
+        styledWindows[style]?[timeOfDay]
+    }
+
     // MARK: - 캐시
 
     /// 48 조합(12 종 × 4 스타일)을 한 번만 그려 들고 있는다. 방을 다시 그릴 때마다 래스터화하면
@@ -115,6 +141,25 @@ enum MemoryHomePixelArt {
             guard let wallpaper = render(MemoryHomePixelArtSprites.wallpaper, palette: palette, scale: roomScale),
                   let floor = render(MemoryHomePixelArtSprites.floor, palette: palette, scale: roomScale) else { continue }
             table[style] = (wallpaper, floor)
+        }
+        return table
+    }()
+
+    /// 12 조합(4 스타일 × 3 시각). 창은 방을 다시 그릴 때마다 필요하고 시각은 한 세션 안에서도
+    /// 넘어갈 수 있으므로, 셋을 미리 다 그려 두는 편이 시각이 바뀔 때 래스터화가 튀는 것보다 낫다.
+    private static let styledWindows: [MemoryHomeRoomStyle: [MemoryHomeTimeOfDay: NSImage]] = {
+        var table: [MemoryHomeRoomStyle: [MemoryHomeTimeOfDay: NSImage]] = [:]
+        for style in MemoryHomeRoomStyle.allCases {
+            let base = palette(for: style)
+            var row: [MemoryHomeTimeOfDay: NSImage] = [:]
+            for timeOfDay in MemoryHomeTimeOfDay.allCases {
+                let palette = Palette(frame: base.frame, fabric: base.fabric, accent: base.accent,
+                                      sky: skyRamp(for: timeOfDay))
+                guard let image = render(MemoryHomePixelArtSprites.window, palette: palette,
+                                         scale: roomScale) else { continue }
+                row[timeOfDay] = image
+            }
+            table[style] = row
         }
         return table
     }()

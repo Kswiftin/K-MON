@@ -50,6 +50,9 @@ enum MemoryHomeCardStyle {
         case .homeVisits: "figure.wave"
         case .firstWinter: "snowflake"
         case .christmas: "gift.fill"
+        case .newYear: "sunrise.fill"
+        case .allFourSeasons: "circle.hexagongrid.fill"
+        case .memoryStreak: "flame.fill"
         }
     }
 
@@ -63,6 +66,9 @@ enum MemoryHomeCardStyle {
         case .homeVisits(let count): l.t("방문 \(count)명 달성", "\(count) home visits", "訪問 \(count) 件達成")
         case .firstWinter: l.t("함께한 첫 겨울", "Our first winter", "はじめての冬")
         case .christmas: l.t("함께한 크리스마스", "Christmas together", "いっしょのクリスマス")
+        case .newYear: l.t("함께 맞은 새해", "New Year together", "いっしょに迎えた新年")
+        case .allFourSeasons: l.t("사계절을 함께 보냈어요", "We spent all four seasons together", "四季をいっしょに過ごしました")
+        case .memoryStreak(let days): l.t("\(days)일 연속 기록", "\(days)-day memory streak", "\(days) 日連続の記録")
         }
     }
 }
@@ -116,6 +122,19 @@ enum MemoryHomeMoodStyle {
 ///
 /// 색은 일부러 주지 않는다. 방에는 이미 사용자가 고른 테마 4색이 있고, 계절색으로 덮으면 사용자의
 /// 선택을 뭉갠다 — 계절은 대문의 한 줄이지 방의 주인이 아니다.
+/// 창밖 시각의 이름. `MemoryHomeSeasonStyle` 의 형제이며 같은 이유로 뷰 밖에 산다 — 뷰 안
+/// `private` 이면 세 언어 문구가 무테스트로 남는다. VoiceOver 가 읽는 유일한 창 설명이라
+/// 비어 있으면 창이 스크린리더에게는 존재하지 않는 것과 같다.
+enum MemoryHomeTimeOfDayStyle {
+    static func name(_ timeOfDay: MemoryHomeTimeOfDay, _ l: L) -> String {
+        switch timeOfDay {
+        case .morning: l.t("아침", "Morning", "朝")
+        case .day: l.t("낮", "Daytime", "昼")
+        case .night: l.t("밤", "Night", "夜")
+        }
+    }
+}
+
 enum MemoryHomeSeasonStyle {
     static func name(_ season: MemoryHomeSeason, _ l: L) -> String {
         switch season {
@@ -203,8 +222,8 @@ struct MemoryHomeSeasonRecapSheet: View {
 
 /// 기획서 §25 — 한 해를 한 장으로 되돌려 주고 "내년에도 같이 놀자." 로 끝난다.
 ///
-/// 문장 순서가 기획서를 따른다(만난 동행 → 가장 오래 함께한 친구 → 함께한 날 → 기억·사진 →
-/// 대표 BGM). 숫자 나열이 목적이 아니라 회고가 목적이라서다.
+/// 문장 순서가 기획서를 따른다(만난 동행 → 가장 오래 함께한 친구 → 함께한 날 → 기억·사진).
+/// 숫자 나열이 목적이 아니라 회고가 목적이라서다.
 ///
 /// 표시 이름은 **화면이** 넣는다 — `MemoryHomeYearRecap` 은 id 만 안다.
 struct MemoryHomeYearRecapSheet: View {
@@ -247,9 +266,6 @@ struct MemoryHomeYearRecapSheet: View {
                 Text(language.t("올해의 기억 \(recap.memoryCount)개 · 사진 \(recap.photoCount)장",
                                 "\(recap.memoryCount) memories · \(recap.photoCount) photos",
                                 "今年の思い出 \(recap.memoryCount) 件・写真 \(recap.photoCount) 枚"))
-                Label(MemoryHomeJukebox.name(recap.jukeboxTrack, language), systemImage: MemoryHomeJukebox.symbol(recap.jukeboxTrack))
-                    .font(.callout)
-                    .accessibilityLabel(language.t("대표 BGM", "Home BGM", "ホームのBGM"))
                 Text(language.t("내년에도 같이 놀자.", "Let's play together again next year.", "来年もいっしょに遊ぼう。"))
                     .font(.headline).foregroundStyle(PokedoroTheme.blue).padding(.top, 4)
             }

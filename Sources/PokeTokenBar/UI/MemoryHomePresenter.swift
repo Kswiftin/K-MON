@@ -322,6 +322,19 @@ private struct MemoryHomeWindowView: View {
             }
             // 테마(사용자가 고른 4색)는 벽지 위에 옅게 얹는다 — 스타일이 테마를 지우면 안 된다.
             tint.opacity(0.18)
+            // §24 창밖. 시각은 여기서 **한 번** 읽는다 — `TimelineView` 로 매초 갱신하면 방이
+            // 상시 애니메이션이 되어 미니룸이 열려 있는 내내 CPU 를 먹는다(`defect-log.md`).
+            // 경계를 넘는 순간이 아니라 방을 다시 열 때 반영되는 것으로 충분하다.
+            let timeOfDay = MemoryHomeTimeOfDay.current()
+            if let window = MemoryHomePixelArt.windowImage(for: album.roomStyle, timeOfDay: timeOfDay) {
+                GeometryReader { geometry in
+                    Image(nsImage: window).interpolation(.none)
+                        .position(x: geometry.size.width * 0.76, y: geometry.size.height * 0.27)
+                }
+                .accessibilityElement()
+                .accessibilityLabel(l.t("창밖", "Outside the window", "窓の外"))
+                .accessibilityValue(MemoryHomeTimeOfDayStyle.name(timeOfDay, l))
+            }
             if let floor = MemoryHomePixelArt.floorTile(for: album.roomStyle) {
                 Image(nsImage: floor).resizable(resizingMode: .tile).interpolation(.none)
                     .frame(height: 64).frame(maxHeight: .infinity, alignment: .bottom)
@@ -453,8 +466,10 @@ private struct MemoryHomeWindowView: View {
     private func roomLifeLine(mon: MonState) -> String {
         MemoryHomeRoomLife.line(speciesID: mon.currentID,
                                 decor: store.memoryAlbum.memoryHomeAccess.placedDecor.map(\.item),
+                                roommates: roommates.map { store.chatProfile(for: $0).displayName },
                                 mood: store.memoryAlbum.mood(),
                                 season: MemoryHomeSeason.current(),
+                                timeOfDay: MemoryHomeTimeOfDay.current(),
                                 companion: store.chatProfile(for: mon).displayName, l)
     }
 
@@ -619,29 +634,6 @@ private struct MemoryHomeWindowView: View {
                 .buttonStyle(.borderedProminent).controlSize(.small)
 
             Divider()
-            // §11 주크박스. `setJukeboxTrack` 은 이 화면이 생기기 전까지 테스트만 부르고 있었다.
-            Text(l.t("대표 BGM", "Home BGM", "ホームのBGM")).font(.caption.weight(.bold))
-            Menu {
-                ForEach(MemoryHomeJukeboxTrack.allCases, id: \.self) { track in
-                    let unlocked = jukeboxUnlocked(track)
-                    Button { album.setJukeboxTrack(track) } label: {
-                        Label(unlocked ? MemoryHomeJukebox.name(track, l)
-                                       : MemoryHomeJukebox.name(track, l) + " · " + MemoryHomeJukebox.requirement(track, l),
-                              systemImage: unlocked ? MemoryHomeJukebox.symbol(track) : "lock.fill")
-                    }
-                    .disabled(!unlocked)
-                }
-            } label: {
-                Label(MemoryHomeJukebox.name(album.memoryHomeAccess.jukeboxTrack, l),
-                      systemImage: MemoryHomeJukebox.symbol(album.memoryHomeAccess.jukeboxTrack))
-            }
-            .menuStyle(.borderedButton).controlSize(.small)
-            .accessibilityLabel(l.t("대표 BGM", "Home BGM", "ホームのBGM"))
-            .accessibilityHint(l.t("함께 쌓은 기억이 곡을 해금합니다. 소리는 재생하지 않아요.",
-                                   "Memories you build together unlock tracks. No audio is played.",
-                                   "いっしょに積んだ思い出が曲を解放します。音は再生しません。"))
-
-            Divider()
             TextField(l.t("빠른 기록", "Quick note", "クイックメモ"), text: $note, axis: .vertical).lineLimit(1...3).textFieldStyle(.roundedBorder)
             Button(l.t("남기기", "Save", "保存")) { if album.addManual(companionID: mon.id, body: note) { settings.recordManualMemoryCreated(); note = "" } }
                 .buttonStyle(.borderedProminent).controlSize(.small).disabled(note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || note.count > 280)
@@ -730,13 +722,6 @@ private struct MemoryHomeWindowView: View {
         var ids = album.memoryHomeAccess.roommateIDs.filter { $0 != store.state.active?.id }
         if included { ids.append(id) } else { ids.removeAll { $0 == id } }
         album.setRoommates(ids, validCompanionIDs: Set(store.ownedMons.map(\.id)))
-    }
-    /// 해금 판정은 홈 전체의 기억을 본다 — 곡은 동행 한 마리가 아니라 이 홈의 기록이 연다.
-    private func jukeboxUnlocked(_ track: MemoryHomeJukeboxTrack) -> Bool {
-        let ids = store.ownedMons.map(\.id)
-        let memories = ids.flatMap { store.memoryAlbum.entries(for: $0) }
-        let focus = ids.reduce(0) { $0 + store.memoryAlbum.pokeLog(for: $1).completedFocusSessions }
-        return MemoryHomeJukebox.isUnlocked(track, memories: memories, focusSessions: focus)
     }
 }
 

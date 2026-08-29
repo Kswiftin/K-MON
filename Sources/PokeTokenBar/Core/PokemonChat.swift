@@ -241,11 +241,6 @@ enum MemoryHomeMood: String, Codable, Sendable, CaseIterable {
     case excited, calm, down, annoyed, fluttering
 }
 
-/// 저작권 음원·재생 권한과 분리한, 홈에 걸어 두는 추억용 BGM 선택값이다.
-enum MemoryHomeJukeboxTrack: String, Codable, Sendable, CaseIterable {
-    case afterSchool, rainyWalk, lavenderNight, summerRiver
-}
-
 enum MemoryHomeGuestbookAuthor: String, Codable, Sendable { case trainer, companion }
 
 /// 방명록은 이 기기에만 남는다. LAN 방문이 임의의 글 전송이나 추가 정보 공개를 뜻하지 않도록
@@ -299,8 +294,8 @@ struct MemoryHomeSeasonRecap: Sendable, Equatable {
 
 /// 기획서 §25 "연말에 홈피가 자동으로 '추억 영상'을 만들어준다" — 한 해를 한 장으로 되돌려 준다.
 ///
-/// 저장 필드가 0개다. 전부 이미 저장된 값(기억의 `createdAt`, `firstMetAt`, 사진의 `createdAt`,
-/// 고른 BGM)에서 파생한다.
+/// 저장 필드가 0개다. 전부 이미 저장된 값(기억의 `createdAt`, `firstMetAt`, 사진의
+/// `createdAt`)에서 파생한다.
 ///
 /// **일부러 담지 않은 셋.** 담을 수 없는 것을 담으면 결산이 거짓말을 하기 때문이다.
 /// (1) 집중 횟수 — `completedFocusSessionIDs` 에 날짜가 없어 연 단위로 좁힐 수 없다.
@@ -316,7 +311,6 @@ struct MemoryHomeYearRecap: Sendable, Equatable {
     /// 가장 많은 **날**을 함께한 동행. 표시 이름은 화면이 붙인다 — 앨범은 이름을 모른다.
     let topCompanionID: UUID?
     let topCompanionDays: Int
-    let jukeboxTrack: MemoryHomeJukeboxTrack
 }
 
 /// A normalized room coordinate. Keeping values in 0...1 makes layouts independent of the
@@ -392,7 +386,6 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     var sharesProfileMessage: Bool = false
     /// 하루 한 개. dayKey 는 `%04d-%02d-%02d` 라 문자열 정렬이 곧 시간순 → 최신 60개만 남긴다.
     var moodByDayKey: [String: MemoryHomeMood] = [:]
-    var jukeboxTrack: MemoryHomeJukeboxTrack = .afterSchool
     var guestbookEntries: [MemoryHomeGuestbookEntry] = []
     /// Local-only names for LAN peers. They are never included in profile cards.
     var peerAliases: [UUID: String] = [:]
@@ -422,7 +415,7 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case publicNickname, visibility, sharedPinnedMemoryID, recentRequesters, blockedPeerIDs,
              visitTotal, visitDayKey, visitTodayPeerIDs, visitThresholdDates,
-             profileMessage, sharesProfileMessage, moodByDayKey, jukeboxTrack, guestbookEntries,
+             profileMessage, sharesProfileMessage, moodByDayKey, guestbookEntries,
              peerAliases, roommateIDs, roomLayout, furniturePositions, companionPositions, photos, visitedHomeStamps,
              unlockedRoomStyles, roomStyle, placedDecor, featuredPhotoID
     }
@@ -451,7 +444,6 @@ struct MemoryHomeAccessSettings: Codable, Sendable, Equatable {
         profileMessage = try c.decodeIfPresent(String.self, forKey: .profileMessage)
         sharesProfileMessage = try c.decodeIfPresent(Bool.self, forKey: .sharesProfileMessage) ?? false
         moodByDayKey = try c.decodeIfPresent([String: MemoryHomeMood].self, forKey: .moodByDayKey) ?? [:]
-        jukeboxTrack = try c.decodeIfPresent(MemoryHomeJukeboxTrack.self, forKey: .jukeboxTrack) ?? .afterSchool
         guestbookEntries = try c.decodeIfPresent([MemoryHomeGuestbookEntry].self, forKey: .guestbookEntries) ?? []
         peerAliases = try c.decodeIfPresent([UUID: String].self, forKey: .peerAliases) ?? [:]
         roommateIDs = try c.decodeIfPresent([UUID].self, forKey: .roommateIDs) ?? []
@@ -558,6 +550,12 @@ struct PokemonMemoryMilestone: Identifiable, Sendable, Equatable {
         /// 기획서의 "첫눈" 을 `firstSnow` 로 적지 않은 이유: 이 앱엔 날씨가 없다. 눈이 왔다고
         /// 말하면 없는 데이터를 지어내는 것이므로, 확인할 수 있는 사실(첫 겨울)만 말한다.
         case firstWinter, christmas
+        /// §18 확장. 위 둘과 같은 원칙이다 — 입력은 기억의 `createdAt` 뿐이고 저장 키가 0개다.
+        ///
+        /// `memoryStreak` 만 "적립" 처럼 보이지만 다르다. 기존 적립 카드(`focusSessions`·
+        /// `togetherDays`)는 **총량**이라 하루도 빠짐없이 세는 반면, 연속은 끊기면 0으로
+        /// 돌아간다 — 같은 숫자라도 다른 사실이다.
+        case newYear, allFourSeasons, memoryStreak(Int)
     }
 
     let id: String
@@ -655,6 +653,9 @@ final class PokemonMemoryAlbum {
         .sorted { $0.dayKey > $1.dayKey }
     }
     static let togetherDayThresholds = [30, 100]
+    /// 연속 기록 문턱. 7 은 한 주, 30 은 한 달이다. `togetherDayThresholds` 와 숫자가 겹치지
+    /// 않게 두었다 — 같은 날 "함께한 30일" 과 "연속 30일" 이 나란히 뜨면 둘이 같은 카드로 읽힌다.
+    nonisolated static let memoryStreakThresholds = [7, 30]
 
     func milestones(for companionID: UUID, now: Date = Date()) -> [PokemonMemoryMilestone] {
         // 방문 카드는 동행이 아니라 홈에 속하므로 `milestoneStates` 유무와 무관하게 먼저 모은다.
@@ -697,14 +698,74 @@ final class PokemonMemoryAlbum {
         if let winter = dated.first(where: { MemoryHomeSeason.current($0.createdAt) == .winter }) {
             result.append(PokemonMemoryMilestone(id: "first-winter", kind: .firstWinter, occurredAt: winter.createdAt))
         }
-        if let christmas = dated.first(where: {
-            let parts = Calendar.current.dateComponents([.month, .day], from: $0.createdAt)
-            return parts.month == 12 && parts.day == 25
-        }) {
+        // 날짜 판정은 `dayKey` 문자열 접미사로 한다. `Calendar.dateComponents` 로 월·일을 뽑으면
+        // 이 파일 안에 달력이 둘(`SeasonBoard.gregorian` 과 `Calendar.current`)이 되어, 사용자가
+        // 비그레고리력 달력을 쓰면 카드가 결산·일기와 하루 어긋난다. 여기서는 자르는 쪽이 옳다.
+        if let christmas = dated.first(where: { CompanionStore.dayKey($0.createdAt).hasSuffix("-12-25") }) {
             result.append(PokemonMemoryMilestone(id: "christmas", kind: .christmas, occurredAt: christmas.createdAt))
+        }
+        if let newYear = dated.first(where: { CompanionStore.dayKey($0.createdAt).hasSuffix("-01-01") }) {
+            result.append(PokemonMemoryMilestone(id: "new-year", kind: .newYear, occurredAt: newYear.createdAt))
+        }
+        if let completed = Self.dateCompletingAllSeasons(dated) {
+            result.append(PokemonMemoryMilestone(id: "all-seasons", kind: .allFourSeasons, occurredAt: completed))
+        }
+        for (days, reached) in Self.memoryStreakDates(dated) {
+            result.append(PokemonMemoryMilestone(id: "streak-\(days)", kind: .memoryStreak(days), occurredAt: reached))
         }
         return result.sorted { $0.occurredAt == $1.occurredAt ? $0.id < $1.id : $0.occurredAt < $1.occurredAt }
     }
+    /// 네 계절을 모두 채운 **그 순간**의 날짜. 마지막 계절을 채운 기억의 시각을 돌려주므로
+    /// 카드가 시간순 정렬에서 제자리에 놓인다 — 오늘 날짜를 쓰면 옛 기억 사이에 미래 카드가
+    /// 끼어든다.
+    ///
+    /// 입력은 **이미 오름차순으로 정렬되고 숨긴 기억이 걸러진** 배열이라고 가정한다. 호출부가
+    /// 하나뿐이라 방어적으로 다시 정렬하지 않는다.
+    nonisolated static func dateCompletingAllSeasons(_ ascending: [PokemonMemory]) -> Date? {
+        var seen: Set<MemoryHomeSeason> = []
+        for memory in ascending {
+            seen.insert(MemoryHomeSeason.current(memory.createdAt))
+            if seen.count == MemoryHomeSeason.allCases.count { return memory.createdAt }
+        }
+        return nil
+    }
+
+    /// 연속으로 기억을 남긴 날. 문턱마다 **처음 도달한** 날짜를 돌려준다.
+    ///
+    /// 하루에 기억이 여러 개여도 하루로 센다 — `dayKey` 로 접어서 중복을 없앤다. 이어짐 판정은
+    /// `startOfDay` 사이의 일수 차로 한다: 초 단위 뺄셈(`86_400`)으로 세면 서머타임이 있는
+    /// 지역에서 23시간·25시간인 날이 연속을 끊는다.
+    nonisolated static func memoryStreakDates(_ ascending: [PokemonMemory]) -> [(days: Int, reached: Date)] {
+        let calendar = SeasonBoard.gregorian
+        var firstMomentByDay: [String: Date] = [:]
+        for memory in ascending {
+            let key = CompanionStore.dayKey(memory.createdAt)
+            if firstMomentByDay[key] == nil { firstMomentByDay[key] = memory.createdAt }
+        }
+        // dayKey 는 `%04d-%02d-%02d` 라 **문자열 정렬이 곧 날짜순**이다(`moodByDayKey` 트리밍이
+        // 같은 성질을 쓴다). 그래서 날짜로 되돌려 정렬할 필요가 없다.
+        let days = firstMomentByDay.keys.sorted()
+        var pending = Set(Self.memoryStreakThresholds)
+        var reached: [(days: Int, reached: Date)] = []
+        var run = 0
+        var previous: Date?
+        for key in days {
+            guard let moment = firstMomentByDay[key] else { continue }
+            let startOfDay = calendar.startOfDay(for: moment)
+            if let previous, calendar.dateComponents([.day], from: previous, to: startOfDay).day == 1 {
+                run += 1
+            } else {
+                run = 1
+            }
+            previous = startOfDay
+            for threshold in pending where run >= threshold {
+                reached.append((days: threshold, reached: moment))
+                pending.remove(threshold)
+            }
+        }
+        return reached
+    }
+
     func firstRecordedAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstRecordedAt }
     func firstMetAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstMetAt }
     func pokeLog(for companionID: UUID, now: Date = Date()) -> MemoryHomePokeLog {
@@ -722,7 +783,9 @@ final class PokemonMemoryAlbum {
     }
     func seasonRecap(for companionIDs: [UUID], now: Date = Date()) -> MemoryHomeSeasonRecap {
         let season = MemoryHomeSeason.current(now)
-        let calendar = Calendar.current
+        // `MemoryHomeSeason.current` 와 **같은 달력**이어야 한다. 여기만 `Calendar.current` 를 쓰면
+        // 비그레고리력 달력에서 계절과 그 계절의 시작 월이 서로 다른 달을 가리킨다.
+        let calendar = SeasonBoard.gregorian
         let month = calendar.component(.month, from: now)
         let year = calendar.component(.year, from: now) - ((season == .winter && month <= 2) ? 1 : 0)
         let startMonth: Int = switch season { case .spring: 3; case .summer: 6; case .autumn: 9; case .winter: 12 }
@@ -776,8 +839,7 @@ final class PokemonMemoryAlbum {
         let met = uniqueIDs.filter { firstMetAt(for: $0).map { CompanionStore.dayKey($0).hasPrefix(yearKey) } ?? false }.count
         let photos = memoryHomeAccess.photos.filter { CompanionStore.dayKey($0.createdAt).hasPrefix(yearKey) }.count
         return .init(year: year, companionsMet: met, memoryCount: memoryCount,
-                     photoCount: photos, topCompanionID: top?.key, topCompanionDays: top?.value ?? 0,
-                     jukeboxTrack: memoryHomeAccess.jukeboxTrack)
+                     photoCount: photos, topCompanionID: top?.key, topCompanionDays: top?.value ?? 0)
     }
     func recordFirstMeeting(companionID: UUID, at date: Date) {
         var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
@@ -1174,10 +1236,6 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.moodByDayKey[today] = mood
         memoryHomeAccess.moodByDayKey = Self.trimmedMoodHistory(memoryHomeAccess.moodByDayKey)
         save()
-    }
-    func setJukeboxTrack(_ track: MemoryHomeJukeboxTrack) {
-        guard memoryHomeAccess.jukeboxTrack != track else { return }
-        memoryHomeAccess.jukeboxTrack = track; save()
     }
     @discardableResult
     func addGuestbookEntry(author: String, body: String, authorKind: MemoryHomeGuestbookAuthor,

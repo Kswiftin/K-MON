@@ -91,13 +91,6 @@ final class MemoryHomeYearRecapTests: XCTestCase {
         XCTAssertNil(recap.topCompanionID)
     }
 
-    /// 대표 BGM 은 저장된 **선택값**이다(재생 이력이 아니다). 결산이 그 값을 그대로 보여준다.
-    func testCarriesTheSelectedJukeboxTrack() {
-        let album = makeAlbum()
-        album.setJukeboxTrack(.summerRiver)
-        XCTAssertEqual(album.yearRecap(for: [], now: date(2026, 12, 31)).jukeboxTrack, .summerRiver)
-    }
-
     // MARK: - `seasonRecap` 회귀 — 연말 결산과 같은 부류의 결함이 계절 결산에 있었다
 
     func testSeasonRecapExcludesHiddenMemories() {

@@ -10,7 +10,8 @@ final class MemoryHomePixelArtTests: XCTestCase {
             .map { ($0.key.rawValue, $0.value) }
             .sorted { $0.0 < $1.0 }
         + [("wallpaper", MemoryHomePixelArtSprites.wallpaper),
-           ("floor", MemoryHomePixelArtSprites.floor)]
+           ("floor", MemoryHomePixelArtSprites.floor),
+           ("window", MemoryHomePixelArtSprites.window)]
     }
 
     /// 판매되는 12 종 전부에 격자가 있어야 한다. 손으로 나열하지 않고 카탈로그를 돈다 —
@@ -54,7 +55,7 @@ final class MemoryHomePixelArtTests: XCTestCase {
     /// 격자에 정의되지 않은 문자가 있으면 그 픽셀은 투명이 된다. 오타가 스프라이트에 구멍을
     /// 내고도 조용하므로, 허용 문자만 쓰였는지 못 박는다.
     func testGridsUseOnlyDefinedPaletteCharacters() throws {
-        let allowed = Set(".1234qweradsf")
+        let allowed = Set(".1234qweradsfghjk")
         for (name, grid) in allGrids {
             for (index, line) in grid.enumerated() {
                 let unknown = Set(line).subtracting(allowed)
@@ -195,6 +196,87 @@ final class MemoryHomePixelArtTests: XCTestCase {
                 XCTAssertGreaterThan(abs(luminance - wallpaper), minimumContrast,
                                      "\(style)/\(item): 벽지와 밝기가 \(abs(luminance - wallpaper)) 밖에 안 나 벽에 묻힙니다.")
             }
+        }
+    }
+
+    // MARK: - 창밖 시각
+
+    /// 이 기능의 존재 이유. 세 시각이 같은 그림이면 창은 그냥 벽에 붙은 정물이다.
+    func testWindowGlassChangesWithTimeOfDay() throws {
+        for style in MemoryHomeRoomStyle.allCases {
+            var seen: [Data: MemoryHomeTimeOfDay] = [:]
+            for timeOfDay in MemoryHomeTimeOfDay.allCases {
+                let image = try XCTUnwrap(MemoryHomePixelArt.windowImage(for: style, timeOfDay: timeOfDay),
+                                          "\(style)/\(timeOfDay)")
+                let pixels = try XCTUnwrap(image.tiffRepresentation)
+                if let clash = seen[pixels] { XCTFail("\(style): \(timeOfDay) 와 \(clash) 가 같은 창입니다.") }
+                seen[pixels] = timeOfDay
+            }
+            XCTAssertEqual(seen.count, MemoryHomeTimeOfDay.allCases.count, "\(style)")
+        }
+    }
+
+    /// 창틀은 여전히 방 스타일을 따른다 — 시각만 보고 스타일을 무시하면 러블리 방에 캠퍼스
+    /// 창틀이 걸린다.
+    func testWindowFrameStillFollowsTheRoomStyle() throws {
+        var seen: [Data: MemoryHomeRoomStyle] = [:]
+        for style in MemoryHomeRoomStyle.allCases {
+            let image = try XCTUnwrap(MemoryHomePixelArt.windowImage(for: style, timeOfDay: .day), "\(style)")
+            let pixels = try XCTUnwrap(image.tiffRepresentation)
+            if let clash = seen[pixels] { XCTFail("\(style) 과 \(clash) 의 창틀이 같습니다.") }
+            seen[pixels] = style
+        }
+        XCTAssertEqual(seen.count, MemoryHomeRoomStyle.allCases.count)
+    }
+
+    /// **테마는 시간에 안 변한다.** 이걸 이미지로 검사하면 "가구 API 가 시각 인자를 안 받으니까
+    /// 당연히 통과" 하는 공허한 테스트가 된다. 그래서 진짜 근거인 격자를 본다 — 시각 램프
+    /// 문자(`g h j k`)를 쓰는 격자가 창 하나뿐이면, 다른 그림이 하늘색을 집어갈 방법이 없다.
+    func testOnlyTheWindowUsesTheSkyRamp() throws {
+        let skyCharacters = Set("ghjk")
+        for (name, grid) in allGrids where name != "window" {
+            for (index, line) in grid.enumerated() {
+                let used = Set(line).intersection(skyCharacters)
+                XCTAssertTrue(used.isEmpty,
+                              "\(name) 행 \(index): 창이 아닌 그림이 시각 램프 \(used.sorted()) 를 씁니다 — 방 테마가 시간에 따라 변하게 됩니다.")
+            }
+        }
+        XCTAssertFalse(Set(MemoryHomePixelArtSprites.window.joined()).intersection(skyCharacters).isEmpty,
+                       "창이 시각 램프를 하나도 안 씁니다 — 시간이 흘러도 그림이 같습니다.")
+    }
+
+    /// 하늘 램프 3 종도 스타일 램프와 같은 계약을 받는다: 4 색, 어두움 → 밝음. 더해서 밤이
+    /// 아침·낮보다 **눈에 띄게** 어두워야 한다 — 세 램프가 비슷하면 위 이미지 테스트는 통과해도
+    /// 사람 눈에는 창이 안 변한다.
+    func testSkyRampsAscendAndNightIsClearlyDarkest() {
+        func meanLuminance(_ ramp: [MemoryHomePixelArt.PixelColor]) -> Double {
+            ramp.reduce(0.0) { $0 + 0.2126 * Double($1.r) + 0.7152 * Double($1.g) + 0.0722 * Double($1.b) }
+                / Double(ramp.count)
+        }
+        var means: [MemoryHomeTimeOfDay: Double] = [:]
+        for timeOfDay in MemoryHomeTimeOfDay.allCases {
+            let ramp = MemoryHomePixelArt.skyRamp(for: timeOfDay)
+            XCTAssertEqual(ramp.count, 4, "\(timeOfDay)")
+            let luminance = ramp.map { 0.2126 * Double($0.r) + 0.7152 * Double($0.g) + 0.0722 * Double($0.b) }
+            for index in 1..<luminance.count {
+                XCTAssertGreaterThan(luminance[index], luminance[index - 1],
+                                     "\(timeOfDay): \(index) 단계가 앞 단계보다 어둡습니다.")
+            }
+            means[timeOfDay] = meanLuminance(ramp)
+        }
+        let night = means[.night] ?? 0
+        for timeOfDay in [MemoryHomeTimeOfDay.morning, .day] {
+            XCTAssertGreaterThan((means[timeOfDay] ?? 0) - night, 40,
+                                 "밤이 \(timeOfDay) 보다 충분히 어둡지 않습니다 — 창이 변한 걸 눈으로 못 봅니다.")
+        }
+    }
+
+    /// 기본 팔레트의 하늘은 낮이다. 이 기본값이 흔들리면 시각을 안 넘긴 렌더가 조용히 다른
+    /// 하늘로 그려진다.
+    func testDefaultPaletteSkyIsDaytime() {
+        for style in MemoryHomeRoomStyle.allCases {
+            XCTAssertEqual(MemoryHomePixelArt.palette(for: style).sky,
+                           MemoryHomePixelArt.skyRamp(for: .day), "\(style)")
         }
     }
 

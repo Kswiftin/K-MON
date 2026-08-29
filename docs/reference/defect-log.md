@@ -2321,3 +2321,43 @@ read_when:
 - **비용**: 격자 데이터 약 300 줄. 로직이 아니라 데이터이고, 실질 리뷰 대상은 렌더 이미지다.
   (`MemoryHomePixelArt.swift`·`MemoryHomePixelArtSprites.swift`·`scripts/build-app.sh`·
   `THIRD_PARTY_NOTICES.md`, 2026-08-29.)
+
+## 세이브 픽스처가 **디코딩에 실패해도** "기본값이 나온다" 단언은 초록이다
+
+- **증상**: BGM(주크박스) 제거 후 "구 세이브가 손실 없이 열리는가" 회귀 테스트를 쓰자마자 빨개졌다.
+  원인은 지운 키가 아니라 **픽스처 자체**였다 — `{"memories":{}}` 로 적었는데 `memories` 는
+  `[UUID: [PokemonMemory]]` 이고, `JSONDecoder` 는 UUID 키 딕셔너리를 객체가 아니라 **배열**(키·값
+  교대)로 읽는다. 그 픽스처는 **처음부터 한 번도 디코딩된 적이 없었다.**
+- **왜 못 걸렀나**: 같은 픽스처를 쓰던 기존 테스트가 `guestbookEntries.isEmpty` 와
+  `jukeboxTrack == .afterSchool` 을 봤다. 둘 다 **디코딩이 통째로 실패해 전부 기본값이 되어도 참**
+  이다. "레거시 세이브가 열린다" 를 검증한다고 믿었지만 실제로는 "기본값은 기본값이다" 를
+  검증하고 있었다.
+- **부류**: **기본값과 구별되지 않는 단언은 아무것도 지키지 않는다.** 로드 경로 테스트는 픽스처에만
+  있고 기본값에는 없는 값을 봐야 한다. 이 저장소의 앨범은 디코딩이 던지면 파일을 `.corrupt` 로
+  밀어내므로, 그 백업 파일의 **부재**가 가장 싼 판별식이다.
+- **처방**: 픽스처에 `publicNickname`·`roomStyle`·`moodByDayKey`·`visitTotal` 처럼 기본값과 다른 값을
+  넣고, `FileManager.fileExists(atPath: url.appendingPathExtension("corrupt").path)` 가 거짓인지
+  함께 단언한다. UUID 키 딕셔너리는 `[]` 로 적는다.
+- **함정**: `roomStyle` 만은 픽스처 값이 그대로 나오지 않는다 — `normalizeMemoryHomeAccess()` 가
+  `unlockedRoomStyles` 에 없는 스타일을 되돌린다(정상 동작). 둘을 같이 적어야 한다.
+  (`MemoryHomeEntertainmentTests.swift`, 2026-08-30.)
+
+## 한 기능 안에 달력이 둘이면, **소수 사용자에게만 하루가 어긋난다**
+
+- **증상**: §18 크리스마스 카드가 `Calendar.current.dateComponents([.month, .day])` 로 12/25 를
+  판정했다. 같은 기능의 다른 날짜 로직(`dayKey`·`seasonKey`·연말 결산)은 전부
+  `SeasonBoard.gregorian` 을 쓴다.
+- **부류**: **달력이 둘이면 사용자 설정 하나가 두 값을 갈라놓는다.** 비그레고리력 달력을 쓰는
+  사용자에게만 카드가 결산·일기와 어긋나고 나머지 화면은 멀쩡하다 — 겪는 사람이 적어 리포트도
+  안 온다. `seasonKey` 가 "포맷터를 하나 더 두지 않고 `dayKey` 를 자른다" 고 적은 것과 같은 이유다.
+- **처방**: 월·일 판정은 `CompanionStore.dayKey($0).hasSuffix("-12-25")` 로 문자열을 자른다.
+  `dayKey` 가 `%04d-%02d-%02d` 라 접미사 비교가 곧 월·일 비교이고, 달력이 하나로 유지된다.
+  새 `newYear` 카드도 같은 원칙으로 `-01-01` 을 쓴다.
+- **스윕이 두 곳을 더 찾았다** — 고치고 끝낼 결함이 아니었다:
+  `MemoryHomeSeason.current` 가 `Calendar.current.component(.month:)` 로 계절을 정하고,
+  `seasonRecap` 이 같은 달력으로 계절 시작 월·연을 계산하고 있었다. 즉 **계절 축 전체**가
+  `dayKey` 와 갈라질 수 있었다. 둘 다 `SeasonBoard.gregorian` 으로 통일했다.
+- **남겨도 되는 것**: `Sources/` 의 나머지 `Calendar.current` 는 **날짜 산술**(`byAdding`)과
+  **시각 성분**(`.hour`) 이다. 달력 종류가 결과를 가르지 않는 용도라 그대로 둔다 — 판별식은
+  "이 값이 `dayKey` 와 같은 날을 가리켜야 하는가" 다.
+  (`PokemonChat.swift`·`MemoryHomeSeason.swift`, 2026-08-30.)
