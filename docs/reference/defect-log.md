@@ -2457,3 +2457,26 @@ read_when:
 - **처방**: `connectionDropped(_:)` 하나로 모은다 — `.failed` 핸들러와 읽기 루프의 모든 실패
   분기가 같은 곳으로 간다. 형제 `BattleNet.connectionDropped` 와 같은 모양이다.
   (`PokemonTrade.swift`, 2026-08-30.)
+
+## 상대가 부르는 **날짜**를 파생 점수의 권위로 쓰는 부류
+
+- **증상**: 교환으로 받은 개체의 `MonState.firstMetAt` 은 상대가 채워 보내는 값인데
+  `performTrade` 가 그대로 앨범에 넣었다(`recordFirstMeeting` 은 **더 이른** 날짜를 채택한다).
+  1970년을 박아 보내면 `pokeLog.daysTogether` 가 2만 일이 되고 친밀도 하트가 즉시 만점으로 굳는다.
+- **부류**: 숫자·문자열은 경계에서 자르면서 **`Date` 는 그냥 통과시키는 부류.** 날짜는 그 자체로는
+  무해해 보이지만 *파생 지표*(함께한 날수·정렬 순서·일기 묶음 dayKey)의 입력이라, 클램프 없이 들어오면
+  점수와 화면 순서를 상대가 정하게 된다.
+- **처방**: 교환으로 들어오는 **모든** 날짜가 한 창을 공유한다 —
+  `TradeMemoryPayload.clampedDate(_:now:)` 를 추억의 `createdAt` 과 개체의 `firstMetAt` 이 함께 쓴다.
+  상한 클램프가 누적 지점마다 흩어지면 한 곳은 반드시 빠진다(이 문서의 같은 이름 항목).
+- **스윕 결과**: `turnEndsAt`·`challengeEndsAt`(`BattleNet`·`MultiplayerRoomCenter`)은 전부 로컬
+  `Date()` 에서 세팅되고 피어 프레임에서 디코드되지 않는다 — 깨끗하다.
+  **남은 인접 인스턴스(오늘은 무해):** `MemoryHomeProfileCard.featuredPhoto` 안의
+  `MemoryHomePhoto.createdAt`·`id` 는 LAN 을 건너오는데 `MemoryHomeVisitCenter.valid` 가 안 본다.
+  방문 시트가 그 날짜를 **그리지 않고** 방문한 사진을 저장하지도 않아 지금은 아무 데도 안 쓰인다.
+  그 사진의 날짜를 화면에 올리거나 저장하는 순간 위와 같은 결함이 된다 — 그때 `valid` 에 함께 넣는다.
+- **테스트가 못 걸를 뻔한 이유**: 첫 클램프 테스트는 적대적인 줄을 정상 100줄 **뒤에** 놓았다.
+  건수 캡(`prefix(maxEntries)`)이 필드 검사보다 먼저 걸려 나머지 클램프를 한 번도 안 밟았고,
+  **클램프를 통째로 지워도 통과했다**. 경계 테스트는 적대적인 입력을 *캡 안쪽*에 놓아야 하고,
+  "그 줄이 검사 구간에 실제로 들어왔다" 는 단언을 함께 둔다.
+  (`PokemonTrade.swift`·`CompanionStore.swift`, 2026-08-30.)
