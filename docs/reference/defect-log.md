@@ -2419,3 +2419,41 @@ read_when:
 - **일반화**: 라인 커버리지 총계는 이걸 못 잡는다. 새 조건 분기를 넣었으면 총계가 아니라
   `xcrun llvm-cov show ... --show-regions` 에서 그 줄의 실행 횟수를 **직접** 본다.
   (`PokemonTrade.swift`, 2026-08-30.)
+
+## 세션 상태를 **복사해 나가면**, 나중에 친 방어는 복사본에 닿지 않는다
+
+- **증상**: 교환(`PokemonTradeCenter`)은 상대가 보낸 채팅의 `senderID`·`senderName`·`id` 를 전부
+  다시 짓는데, 같은 블록(`chatMessages`/`chatHistory`/`chatRateLimiter`/`chatSenderID` + `sendChat`
+  + accept)을 복사해 간 `BattleCenter` 와 `MultiplayerRoomCenter` 게스트 경로는 그대로 믿고 있었다.
+  결과: (a) 상대가 매 프레임 `senderID` 를 갈아 끼우면 토큰 버킷이 새로 생겨 **속도 제한이 없고**,
+  (b) 우리 `chatSenderID` 는 우리가 보내는 **모든 프레임에 실려 나가므로** 되받아 쓰면 화면이 상대
+  말을 **내 말풍선으로** 그리고, (c) 상대 이름·`id` 는 아무도 안 잰다.
+- **부류**: **같은 상태 블록이 세 클래스에 복제된 부류.** 한 곳에서 경계를 고쳐도 나머지는 그대로다.
+  리뷰는 "고친 파일"만 보므로 복사본은 시야 밖에 남는다. 판별식은 "이 필드 묶음이 다른 파일에
+  같은 이름으로 또 있는가" 다 — 있으면 고칠 때마다 셋 다 고쳐야 한다.
+- **`id` 가 특히 위험한 이유**: `BattleChatMessage.id` 는 `Identifiable` 키이고 화면의 `ForEach`
+  가 이 값으로 행을 가른다. 상대가 같은 값을 두 번 보내면 SwiftUI 가 중복 ID 로 목록을 무너뜨린다.
+  상대가 고른 값을 화면 키로 쓰지 않는다 — 받는 쪽에서 새로 짓는다(`id:` 인자를 빼면 된다).
+- **이름은 거부가 아니라 자른다**: 본문(`normalizedBody`)은 규격 밖이면 버리면 되지만, 이름은
+  핸드셰이크가 정하는 값이라 거부하면 교환·대전 자체가 성립하지 않는다. `BattleChatPolicy
+  .displayName` 이 공백을 접고 40자로 자른다. 프레임 상한은 1MB 인데 채팅 행과 협상 헤더 둘 다
+  `lineLimit` 이 없어, 이름 하나로 패널 레이아웃이 무너진다.
+- **영구 캡처**: `BattleChatTests` 의 "신뢰경계 (부류 스윕)" 확장이 **세 경로를 한 파일에서** 잰다.
+  복사본이 넷째로 늘어도 여기서 갈라짐이 드러난다.
+  (`PokemonTrade.swift`·`BattleNet.swift`·`MultiplayerRoomCenter.swift`, 2026-08-30.)
+
+## 소켓을 **정상 종료**하면 `.failed` 는 오지 않는다 — 읽기 루프가 직접 끝내야 한다
+
+- **증상**: 위 "못 읽은 프레임" 항목은 *디코드 실패* 분기만 고쳤다. `receiveLength`/`receiveBody`
+  의 **EOF·짧은 읽기** 분기는 여전히 조용히 `return` 했다. 상대가 앱을 정상 종료하면 TCP 는 FIN 만
+  남기고 상태는 `.ready` 에 머무르므로 `attach` 의 `guard case .failed` 가 영영 안 뜬다. 죽은 소켓
+  위에 "교환 중" 이 그대로 남고 확인도 커밋도 오지 않는다.
+- **부류**: **연결 종료를 `stateUpdateHandler` 하나에 맡기는 부류.** `.failed` 는 *비정상* 종료만
+  가리킨다. 정상 종료를 아는 곳은 `data == nil` 을 받는 읽기 콜백뿐이다.
+- **테스트가 못 걸른 이유 — 형제 경로가 초록을 만들어 준다**: 처음 쓴 소켓 테스트는 `accept()` 로
+  프레임을 보냈다. 이미 닫힌 소켓에 쓰면 RST 가 돌아오고 그건 `.failed` 라, **결함을 되주입해도
+  테스트가 통과했다**. 읽기 루프를 재는 테스트는 **우리 쪽에서 아무것도 보내면 안 된다**.
+  이걸 잡은 건 통과 확인이 아니라 **결함 재주입**이다(CLAUDE.md 결함 대응 프로토콜 3).
+- **처방**: `connectionDropped(_:)` 하나로 모은다 — `.failed` 핸들러와 읽기 루프의 모든 실패
+  분기가 같은 곳으로 간다. 형제 `BattleNet.connectionDropped` 와 같은 모양이다.
+  (`PokemonTrade.swift`, 2026-08-30.)
