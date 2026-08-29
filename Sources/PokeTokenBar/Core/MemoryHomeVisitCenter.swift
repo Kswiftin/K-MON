@@ -72,6 +72,12 @@ final class MemoryHomeVisitCenter {
     nonisolated static let serviceType = "_kmonhome._tcp"
     nonisolated static let protocolVersion = 2
     nonisolated static let maxFrameBytes: UInt32 = 16 * 1024
+    /// 진열장·배치 상한. 가구 종류가 12개(`ItemKind.memoryHomeFurniture`)라 그 이상은 로컬에서
+    /// 만들 수 없는 값이다 — 원격만 보낼 수 있으니 곧 남이 보낸 쓰레기다.
+    nonisolated static let maxShowcaseItems = 12
+    /// 사진 스타일 태그("star"·"studio"·"left"·"explorer" 등)의 길이 상한. 렌더는 알려진 값만
+    /// 비교하고 나머지는 기본값으로 떨어지므로 주입 위험은 없고, 막는 건 길이뿐이다.
+    nonisolated static let styleTagLimit = 24
 
     private(set) var homes: [MemoryHomePeer] = []
     private(set) var selectedProfile: MemoryHomeProfileCard?
@@ -85,6 +91,10 @@ final class MemoryHomeVisitCenter {
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var visitHomeIDs: [ObjectIdentifier: String] = [:]
+    /// 회수를 관찰할 수 있는 유일한 창이다. `connections` 를 통째로 `private` 로 두면 "연결이
+    /// 새는지" 를 검증할 방법이 없어 이 부류가 조용히 돌아온다 — `valid(_:)` 를 `private` 로
+    /// 두지 않은 것과 같은 이유다. 파생값이라 상태가 갈라지지 않는다.
+    var trackedConnectionCount: Int { connections.count }
 
     init(companion: CompanionStore, peerID: UUID) { self.companion = companion; self.peerID = peerID }
 
@@ -121,18 +131,36 @@ final class MemoryHomeVisitCenter {
     func visit(_ peer: MemoryHomePeer) {
         guard isActive else { return }; selectedProfile = nil; lastError = nil
         let connection = NWConnection(to: peer.endpoint, using: Self.parameters())
-        let key = ObjectIdentifier(connection); connections[key] = connection; visitHomeIDs[key] = peer.id
-        connection.stateUpdateHandler = { [weak self, weak connection] state in
-            guard case .ready = state, let self, let connection else { return }
-            Task { @MainActor in
-                self.send(MemoryHomeVisitRequest.profileRequest(protocolVersion: Self.protocolVersion, peerID: self.peerID,
-                          displayName: self.localDisplayName), over: connection) { [weak self, weak connection] in
-                    guard let self, let connection else { return }
-                    Task { @MainActor in self.receiveResponse(on: connection, key: key) }
-                }
+        let key = ObjectIdentifier(connection); visitHomeIDs[key] = peer.id
+        track(connection, key: key) { [weak self, weak connection] in
+            guard let self, let connection else { return }
+            self.send(MemoryHomeVisitRequest.profileRequest(protocolVersion: Self.protocolVersion, peerID: self.peerID,
+                      displayName: self.localDisplayName), over: connection) { [weak self, weak connection] in
+                guard let self, let connection else { return }
+                self.receiveResponse(on: connection, key: key)
             }
         }
         connection.start(queue: .main)
+    }
+    /// 연결이 끝나는 길은 성공 하나가 아니다 — 거절, 프레임 오류, 상대 없음도 모두 끝이다.
+    /// 호출부마다 회수를 적어 넣으면 반드시 한두 갈래를 빠뜨린다: 거절 분기(`receiveRequest`)와
+    /// `receive` 의 실패 분기 넷이 정확히 그렇게 새고 있었고, 공개 호스트는 앱이 사는 내내 듣고
+    /// 있으므로 거절 한 번마다 항목이 하나씩 쌓였다. 그래서 회수는 **여기 한 곳에만** 둔다.
+    private func track(_ connection: NWConnection, key: ObjectIdentifier,
+                       whenReady: (@MainActor () -> Void)? = nil) {
+        connections[key] = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                if let whenReady { Task { @MainActor in whenReady() } }
+            case .cancelled, .failed:
+                Task { @MainActor in
+                    self?.connections.removeValue(forKey: key)
+                    self?.visitHomeIDs.removeValue(forKey: key)
+                }
+            default: break
+            }
+        }
     }
     private func startBrowsing() {
         guard browser == nil else { return }
@@ -172,7 +200,7 @@ final class MemoryHomeVisitCenter {
         // `receiveRequest`, which responds with the explicit protocol rejection instead of
         // accidentally serving a profile or silently treating the peer as accepted.
         guard isHosting else { connection.cancel(); return }
-        let key = ObjectIdentifier(connection); connections[key] = connection
+        let key = ObjectIdentifier(connection); track(connection, key: key)
         connection.start(queue: .main)
         receiveRequest(on: connection, key: key)
     }
@@ -188,12 +216,12 @@ final class MemoryHomeVisitCenter {
             }
             self.companion.memoryAlbum.recordMemoryHomeRequester(displayName: name, peerID: visitorID)
             self.send(MemoryHomeVisitResponse.profileCard(protocolVersion: version, card: self.profileCard(version: version)), over: connection) { connection.cancel() }
-            self.connections.removeValue(forKey: key)
         }
     }
     private func receiveResponse(on connection: NWConnection, key: ObjectIdentifier) {
         receive(MemoryHomeVisitResponse.self, on: connection) { [weak self] response in
-            defer { connection.cancel(); self?.connections.removeValue(forKey: key); self?.visitHomeIDs.removeValue(forKey: key) }
+            // 회수는 `track` 의 종료 핸들러가 맡는다 — 여기서 또 지우면 규칙이 두 곳에 생긴다.
+            defer { connection.cancel() }
             guard let self else { return }
             switch response {
             case let .profileCard(version, card) where (1...Self.protocolVersion).contains(version) && Self.valid(card):
@@ -235,10 +263,18 @@ final class MemoryHomeVisitCenter {
         // 문구는 내부 공백을 허용하므로 `clean` 이 아니라 앨범과 같은 검증기를 쓴다 — 두 곳이
         // 규칙을 따로 가지면 내가 저장할 수 있는 문구를 상대가 거부하게 된다.
         return card.profileMessage.map { PokemonMemoryAlbum.validProfileMessage($0) != nil } ?? true
+            // 원소가 전부 진짜 가구여도 **개수**가 열려 있으면 안 된다 — 방문 시트가 이 배열을
+            // 그대로 `ForEach` 로 늘어놓으므로, 16KB 프레임에 들어가는 ~1000개면 화면이 멎는다.
+            && card.showcaseFurniture.count <= Self.maxShowcaseItems
             && card.showcaseFurniture.allSatisfy { ItemKind.memoryHomeFurniture.contains($0) }
-            && card.placedDecor.count <= 12
+            && card.placedDecor.count <= Self.maxShowcaseItems
             && card.placedDecor.allSatisfy { ItemKind.memoryHomeFurniture.contains($0.item) && (0...1).contains($0.position.x) && (0...1).contains($0.position.y) }
-            && (card.featuredPhoto.map { $0.speciesID > 0 && $0.speciesID <= 10_000 && $0.caption.count <= 60 } ?? true)
+            && (card.featuredPhoto.map { photo in
+                photo.speciesID > 0 && photo.speciesID <= 10_000 && photo.caption.count <= 60
+                    // 네 스타일 태그는 자유 문자열이라 여기서 길이를 막지 않으면 검증기 밖으로 샌다.
+                    && [photo.frame, photo.background, photo.composition, photo.trainerStyle]
+                        .allSatisfy { $0.count <= Self.styleTagLimit }
+            } ?? true)
     }
     nonisolated static func clean(_ value: String, limit: Int) -> String? {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -290,7 +326,10 @@ final class MemoryHomeVisitCenter {
         // `self` 를 쓰지 않는다 — 프레임 상한은 `Self` 로 읽으므로 weak 캡처가 필요 없었다.
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, error in
             guard error == nil, let header, header.count == 4 else { connection.cancel(); return }
-            let length = header.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+            // `load(as:)` 는 정렬을 전제한다 — `NWConnection` 이 주는 `Data` 는 4바이트 정렬을
+            // 보장하지 않으므로 반드시 `loadUnaligned` 다. BattleNet·MultiplayerRoomCenter·
+            // PokemonTrade 의 프레이밍과 같은 형태다. `test-gate.sh` 가 이 부류를 스윕한다.
+            let length = header.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.bigEndian
             guard length > 0, length <= Self.maxFrameBytes else { connection.cancel(); return }
             connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { data, _, _, error in
                 guard error == nil, let data, data.count == Int(length),

@@ -150,6 +150,29 @@ if [[ -n "$BAD_INTERPOLATION" ]]; then
 fi
 echo "✓ 없음"
 
+# LAN 프레임 길이 헤더를 읽는 곳은 반드시 `loadUnaligned` 를 쓴다. `UnsafeRawBufferPointer.load(as:)`
+# 는 포인터 정렬을 **전제**하는데, `NWConnection.receive` 가 주는 `Data` 는 4바이트 정렬을 보장하지
+# 않는다 → 전제 위반이다. 이 부류는 파일마다 남는다: `bee4a84` 가 BattleNet·MultiplayerRoomCenter
+# 두 곳을 고치면서, **같은 커밋에서 다른 이유로 만진** MemoryHomeVisitCenter 는 스윕하지 않아
+# 새 파일 하나가 그대로 남았다.
+#
+# 테스트로는 못 막는다 — 이 줄을 밟으려면 살아 있는 `NWConnection` 두 개가 필요하고, 정렬 검사는
+# `_debugPrecondition` 이라 빌드 구성에 따라 트랩 여부가 갈린다(릴리스 arm64 는 대개 그냥 통과한다).
+# 커버리지로도 못 막는다 — 테스트가 그 줄을 실행하면 `load` 든 `loadUnaligned` 든 똑같이 세어진다.
+# 남는 형태가 grep 이다.
+# 해제 조건: 프레이밍을 공용 헬퍼 하나로 합치면 그때 이 게이트를 그 헬퍼의 단위 테스트로 옮긴다.
+echo "▶ 비정렬 로드 스윕 (프레임 헤더의 load(as:))"
+# `loadUnaligned(as:` 는 `load(as:` 를 포함하지 않으므로 올바른 쪽은 걸리지 않는다.
+# 규칙을 설명하는 주석에 가드가 걸리는 부류(defect-log)를 피하려고 주석 줄은 뺀다.
+ALIGNED_LOAD=$(grep -rn '\.load(as:' Sources | grep -v '^[^:]*:[0-9]*:[[:space:]]*//' || true)
+if [[ -n "$ALIGNED_LOAD" ]]; then
+  echo "✗ 정렬을 전제하는 load(as:) $(wc -l <<< "$ALIGNED_LOAD" | tr -d ' ')건 —" \
+       "네트워크 버퍼는 정렬이 보장되지 않습니다. loadUnaligned(as:) 를 쓰세요." >&2
+  echo "$ALIGNED_LOAD" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
 echo
 echo "▶ swift test (--enable-code-coverage)"
 TEST_LOG=$(mktemp)
