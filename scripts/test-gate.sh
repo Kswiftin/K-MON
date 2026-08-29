@@ -85,7 +85,56 @@ LOGIC_CORE=(
   # 미니룸 대문의 계절(R5). 달력 월 → 계절 파생이라 순수 함수 = 게이트 대상. 12·1·2 를 받는
   # `default` 가지가 여기 없으면 커버리지에서 통째로 빠져 무테스트로 남는다.
   "Sources/PokeTokenBar/Core/MemoryHomeSeason.swift"
+  # 미니룸 한 줄(종×가구 → 가구 → 기분 → 계절). 순수 파생이라 게이트 대상이고, 배열에 안 넣으면
+  # 짝 표에 줄을 더할 때마다 무테스트 분기가 커버리지에서 조용히 빠진다.
+  "Sources/PokeTokenBar/Core/MemoryHomeRoomLife.swift"
+  # 동행 방명록 흔적의 빈도 판정과 기분별 문구. 난수를 쓰지 않는 것이 이 파일의 계약이라
+  # 게이트 안에 둔다 — 빈도가 0 이나 1 로 무너지면 커버리지가 먼저 드러낸다.
+  "Sources/PokeTokenBar/Core/MemoryHomeCompanionTrace.swift"
+  # 대표 BGM 해금 판정. 자정을 가로지르는 밤 구간과 계절 판정이 여기 있고, 게이트 밖에 두면
+  # 곡을 더할 때 해금 조건이 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/MemoryHomeJukebox.swift"
 )
+
+# 기능이 **박제된 두 번째 화면**에 남는 부류를 막는다. `eee5c86` 이 팝오버 홈을 창으로 옮기며
+# 옛 화면을 `@available(*, deprecated)` + 비-`View` 로 남겼고, 그 뒤 `9de278f` 가 방꾸미기
+# 전체(스타일·12칸 격자·되돌리기)를 **그 죽은 화면에** 붙였다. 주크박스·파도타기·기분 반응·
+# 계절 배지·계절 결산까지 다섯 기능이 코드에는 있는데 화면에서 사라진 채 릴리스됐다.
+#
+# 테스트로는 못 막는다 — 스타일 헬퍼의 세 언어 문구와 앨범 메서드의 지속성은 호출자가 화면이
+# 아니어도 통과한다. 커버리지로도 못 막는다(테스트가 그 줄을 실행하므로). 남는 형태가 grep 이다.
+# 해제 조건: 뷰의 도달 가능성을 검증하는 UI 테스트가 생기면 그때 이 게이트를 그쪽으로 옮긴다.
+echo "▶ 박제된 화면 스윕 (UI 의 deprecated 타입)"
+DEPRECATED_UI=$(grep -rn '@available(\*, deprecated' Sources/PokeTokenBar/UI || true)
+if [[ -n "$DEPRECATED_UI" ]]; then
+  echo "✗ UI 에 deprecated 타입이 있습니다 — 기능이 도달 불가 화면에 남을 수 있습니다." \
+       "대체 화면으로 옮기고 옛 타입은 삭제하세요." >&2
+  echo "$DEPRECATED_UI" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# 위 게이트의 형제. `deprecated` 를 안 붙이고도 화면이 죽는 두 번째 형태가 **아무도 띄우지 않는
+# 시트**다 — `MemoryHomeSeasonRecapSheet` 이 정확히 그 상태로 릴리스됐다(타입은 살아 있고,
+# 컴파일도 되고, 스타일 헬퍼 테스트도 통과하는데, `.sheet` 로 여는 곳이 없었다).
+#
+# 컴파일러는 못 잡는다(구조체는 쓰이지 않아도 유효하다). 테스트도 못 잡는다(시트를 직접 만들어
+# 검증하면 통과한다). 커버리지도 못 잡는다. 남는 형태가 grep 이다.
+# 해제 조건: 위 게이트와 같다 — 도달 가능성을 검증하는 UI 테스트가 생기면 그쪽으로 옮긴다.
+echo "▶ 도달 불가 시트 스윕 (선언만 있고 아무도 띄우지 않는 Sheet)"
+ORPHAN_SHEETS=""
+while read -r NAME; do
+  [[ -z "$NAME" ]] && continue
+  # 선언 줄은 `struct Name: View {` 라 `Name(` 를 담지 않는다 → 걸리는 건 생성(=표시)하는 곳뿐이다.
+  grep -rqF "${NAME}(" Sources/PokeTokenBar || ORPHAN_SHEETS+="$NAME"$'\n'
+done < <(grep -rhoE 'struct MemoryHome[A-Za-z]*Sheet' Sources/PokeTokenBar/UI | awk '{print $2}' | sort -u)
+if [[ -n "$ORPHAN_SHEETS" ]]; then
+  echo "✗ 아무도 띄우지 않는 시트가 있습니다 — 코드에는 있는데 화면에서 도달할 수 없습니다." \
+       "표시하는 .sheet 를 붙이거나 타입을 삭제하세요." >&2
+  echo "$ORPHAN_SHEETS" >&2
+  exit 1
+fi
+echo "✓ 없음"
 
 # 문자열 보간에서 백슬래시가 빠진 오타는 Swift 가 **평범한 리터럴로 받아들인다** — 컴파일러도
 # warning 게이트도 절대 못 잡고, 화면에 표현식 소스가 그대로 찍힌 채 릴리스로 나간다

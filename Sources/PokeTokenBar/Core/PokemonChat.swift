@@ -290,8 +290,33 @@ struct MemoryHomeSeasonRecap: Sendable, Equatable {
     let season: MemoryHomeSeason
     let companionsMet: Int
     let memoryCount: Int
+    /// **통산값이다.** 계절로 좁히지 않는다 — `completedFocusSessionIDs` 에 날짜가 없어서
+    /// 좁힐 수가 없다. 그래서 화면도 "통산" 이라고 적는다. 라벨을 계절로 적으면 결산이
+    /// 거짓말을 한다(실제로 그렇게 적혀 있었다 — `defect-log.md` 의 창(window) 항목).
     let focusSessions: Int
     let mostChosenMood: MemoryHomeMood?
+}
+
+/// 기획서 §25 "연말에 홈피가 자동으로 '추억 영상'을 만들어준다" — 한 해를 한 장으로 되돌려 준다.
+///
+/// 저장 필드가 0개다. 전부 이미 저장된 값(기억의 `createdAt`, `firstMetAt`, 사진의 `createdAt`,
+/// 고른 BGM)에서 파생한다.
+///
+/// **일부러 담지 않은 셋.** 담을 수 없는 것을 담으면 결산이 거짓말을 하기 때문이다.
+/// (1) 집중 횟수 — `completedFocusSessionIDs` 에 날짜가 없어 연 단위로 좁힐 수 없다.
+/// (2) 기분 — `moodByDayKey` 는 60일에서 잘리므로 "올해 가장 많이 고른 기분" 을 알 수 없다.
+/// (3) 기획서의 "가장 자주 방문한 장소" — 이 앱에는 장소가 없다.
+struct MemoryHomeYearRecap: Sendable, Equatable {
+    let year: Int
+    let companionsMet: Int
+    let memoryCount: Int
+    /// 사진은 60장에서 잘린다. 그래서 이 값은 "올해 찍은" 이 아니라 "보관 중인 올해" 다 —
+    /// 화면이 캡을 함께 적는다(계절 결산 시트가 기억 200개 캡을 적는 것과 같다).
+    let photoCount: Int
+    /// 가장 많은 **날**을 함께한 동행. 표시 이름은 화면이 붙인다 — 앨범은 이름을 모른다.
+    let topCompanionID: UUID?
+    let topCompanionDays: Int
+    let jukeboxTrack: MemoryHomeJukeboxTrack
 }
 
 /// A normalized room coordinate. Keeping values in 0...1 makes layouts independent of the
@@ -527,6 +552,12 @@ struct PokemonMemoryMilestone: Identifiable, Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         case firstMeeting, focusSessions(Int), evolution(speciesID: Int), anniversary
         case togetherDays(Int), homeVisits(Int)
+        /// §18 달력이 만드는 카드. 기존 6종이 전부 "적립"(N일·N회) 계열이라 특정 **날짜**의
+        /// 순간이 하나도 없었다. 저장 필드 없이 기억의 `createdAt` 에서 파생한다.
+        ///
+        /// 기획서의 "첫눈" 을 `firstSnow` 로 적지 않은 이유: 이 앱엔 날씨가 없다. 눈이 왔다고
+        /// 말하면 없는 데이터를 지어내는 것이므로, 확인할 수 있는 사실(첫 겨울)만 말한다.
+        case firstWinter, christmas
     }
 
     let id: String
@@ -645,6 +676,25 @@ final class PokemonMemoryAlbum {
                 PokemonMemoryMilestone(id: "evolution:\($0.eventID)", kind: .evolution(speciesID: $0.evolvedSpeciesID), occurredAt: $0.occurredAt)
             })
         }
+        // §18 날짜 카드. `milestoneStates` 밖이라 방문 카드처럼 `guard let state` 앞에 둘 수도
+        // 있지만, 순서는 아래 `sorted` 가 정한다 — 붙이는 위치가 화면 순서를 바꾸지 않는다.
+        //
+        // **숨긴 기억은 세지 않는다.** 사용자가 화면에서 내린 날이 카드로 되살아나면 숨김이
+        // 숨김이 아니게 된다(`timeline`·`diary` 가 같은 필터를 쓴다).
+        //
+        // 알려진 한계: 기억은 동행당 200개에서 잘리므로, 첫 겨울 뒤로 200개가 더 쌓이면 이
+        // 카드는 사라진다. 일기가 같은 성질을 갖고 화면에 캡을 밝히는 것과 같은 거래다 —
+        // 카드를 붙잡으려면 새 저장 필드가 필요하고, 그건 이 기능의 대가를 넘는다.
+        let dated = entries(for: companionID).filter { !$0.isHidden }.sorted { $0.createdAt < $1.createdAt }
+        if let winter = dated.first(where: { MemoryHomeSeason.current($0.createdAt) == .winter }) {
+            result.append(PokemonMemoryMilestone(id: "first-winter", kind: .firstWinter, occurredAt: winter.createdAt))
+        }
+        if let christmas = dated.first(where: {
+            let parts = Calendar.current.dateComponents([.month, .day], from: $0.createdAt)
+            return parts.month == 12 && parts.day == 25
+        }) {
+            result.append(PokemonMemoryMilestone(id: "christmas", kind: .christmas, occurredAt: christmas.createdAt))
+        }
         return result.sorted { $0.occurredAt == $1.occurredAt ? $0.id < $1.id : $0.occurredAt < $1.occurredAt }
     }
     func firstRecordedAt(for companionID: UUID) -> Date? { milestoneStates[companionID]?.firstRecordedAt }
@@ -670,12 +720,56 @@ final class PokemonMemoryAlbum {
         let startMonth: Int = switch season { case .spring: 3; case .summer: 6; case .autumn: 9; case .winter: 12 }
         let start = calendar.date(from: DateComponents(year: year, month: startMonth, day: 1)) ?? now
         let startKey = CompanionStore.dayKey(start), endKey = CompanionStore.dayKey(now)
-        let seasonEntries = companionIDs.flatMap { self.entries(for: $0) }.filter { let key = CompanionStore.dayKey($0.createdAt); return key >= startKey && key <= endKey }
-        let met = companionIDs.filter { firstMetAt(for: $0).map { CompanionStore.dayKey($0) >= startKey && CompanionStore.dayKey($0) <= endKey } ?? false }.count
+        // 같은 id 가 두 번 들어오면 기억도 집중도 배로 뛴다 — `yearRecap` 과 같은 이유로 접는다.
+        let uniqueIDs = Set(companionIDs)
+        // 숨긴 기억은 세지 않는다. `timeline`·`diary`·날짜 카드가 전부 같은 필터를 쓰는데
+        // 결산만 세고 있었다 — 사용자가 내린 기억이 숫자로 되살아났다.
+        let seasonEntries = uniqueIDs.flatMap { self.entries(for: $0) }.filter { !$0.isHidden }.filter { let key = CompanionStore.dayKey($0.createdAt); return key >= startKey && key <= endKey }
+        let met = uniqueIDs.filter { firstMetAt(for: $0).map { CompanionStore.dayKey($0) >= startKey && CompanionStore.dayKey($0) <= endKey } ?? false }.count
         let moods = memoryHomeAccess.moodByDayKey.filter { $0.key >= startKey && $0.key <= endKey }.map(\.value)
-        let winner = moods.reduce(into: [MemoryHomeMood: Int]()) { $0[$1, default: 0] += 1 }.max { $0.value < $1.value }?.key
-        let focus = companionIDs.reduce(0) { $0 + (milestoneStates[$1]?.completedFocusSessionCount ?? 0) }
+        // 동률은 **rawValue 사전 순**으로 깬다. 타이브레이크가 없으면 딕셔너리 순회 순서가
+        // 해시 시드를 따라가, 같은 입력에서도 호출마다 다른 기분이 나온다(실측 확인).
+        let winner = moods.reduce(into: [MemoryHomeMood: Int]()) { $0[$1, default: 0] += 1 }
+            .max { $0.value == $1.value ? $0.key.rawValue > $1.key.rawValue : $0.value < $1.value }?.key
+        let focus = uniqueIDs.reduce(0) { $0 + (milestoneStates[$1]?.completedFocusSessionCount ?? 0) }
         return .init(season: season, companionsMet: met, memoryCount: seasonEntries.count, focusSessions: focus, mostChosenMood: winner)
+    }
+    /// 기획서 §25 연말 결산.
+    ///
+    /// 연 단위 창은 `dayKey` 의 **앞 4글자**로 자른다. `Date` 산술로 1월 1일을 만들어 비교하면
+    /// 타임존 변경·DST 경계에서 하루가 어긋난다 — 계절 결산과 방문 카운터가 이미 같은 이유로
+    /// dayKey 를 쓴다. 그 형식이 `%04d-%02d-%02d` 라서 앞 4글자가 곧 연도다.
+    func yearRecap(for companionIDs: [UUID], now: Date = Date()) -> MemoryHomeYearRecap {
+        // 연도와 연도 키를 **한 곳**에서 만든다. `dayKey` 문자열을 잘라 `Int(...)` 로 되돌리면
+        // 절대 실행되지 않는 실패 가지(`?? 0`)가 하나 생겨 커버리지에 `^0` 으로 영원히 남는다
+        // (측정으로 확인함). `dayKey` 가 같은 달력·같은 `%04d` 를 쓰므로 두 값은 항상 일치한다.
+        let year = SeasonBoard.gregorian.component(.year, from: now)
+        let yearKey = String(format: "%04d", year)
+        // 같은 id 가 두 번 들어와도 두 번 세지 않는다. 호출자가 `ownedMons.map(\.id)` 를 넘기므로
+        // 보통은 유일하지만, 중복이 들어오면 "함께한 날" 이 조용히 배로 뛴다.
+        let uniqueIDs = Set(companionIDs)
+        // 숨긴 기억은 세지 않는다 — 사용자가 화면에서 내린 날이 결산으로 되살아나면 숨김이
+        // 숨김이 아니게 된다(`timeline`·`diary`·날짜 카드가 전부 같은 필터를 쓴다).
+        var memoryCount = 0
+        var daysByCompanion: [UUID: Int] = [:]
+        for id in uniqueIDs {
+            let dayKeys = entries(for: id).filter { !$0.isHidden }
+                .map { CompanionStore.dayKey($0.createdAt) }
+                .filter { $0.hasPrefix(yearKey) }
+            guard !dayKeys.isEmpty else { continue }
+            memoryCount += dayKeys.count
+            daysByCompanion[id] = Set(dayKeys).count
+        }
+        // 동률은 **uuidString 사전 순**으로 깬다. 타이브레이크 없이 `max(by:)` 를 딕셔너리에
+        // 걸면 순회 순서가 해시 시드를 따라가, 같은 세이브를 열 때마다 올해의 친구가 바뀐다.
+        let top = daysByCompanion.max {
+            $0.value == $1.value ? $0.key.uuidString > $1.key.uuidString : $0.value < $1.value
+        }
+        let met = uniqueIDs.filter { firstMetAt(for: $0).map { CompanionStore.dayKey($0).hasPrefix(yearKey) } ?? false }.count
+        let photos = memoryHomeAccess.photos.filter { CompanionStore.dayKey($0.createdAt).hasPrefix(yearKey) }.count
+        return .init(year: year, companionsMet: met, memoryCount: memoryCount,
+                     photoCount: photos, topCompanionID: top?.key, topCompanionDays: top?.value ?? 0,
+                     jukeboxTrack: memoryHomeAccess.jukeboxTrack)
     }
     func recordFirstMeeting(companionID: UUID, at date: Date) {
         var state = milestoneStates[companionID] ?? PokemonMemoryMilestoneState()
@@ -825,9 +919,8 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.roommateIDs = memoryHomeAccess.roommateIDs.filter { validCompanionIDs.contains($0) }
         memoryHomeAccess.companionPositions = memoryHomeAccess.companionPositions.filter { validCompanionIDs.contains($0.key) }
         if let ownedItems {
-            memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter { _, item in
-                Self.roomFurnitureItems.contains(item) && ownedItems[item.rawValue, default: 0] > 0
-            }
+            // legacy 슬롯은 `normalizeMemoryHomeAccess` 의 이전에서 이미 비워졌다 — 가방 대조는
+            // 이전된 `placedDecor` 한 곳에서만 한다.
             trimPlacedDecor(toOwnedItems: ownedItems)
         }
         normalizePins(); normalizeMemoryHomeAccess(); _ = normalizeMilestones(); save()
@@ -849,9 +942,8 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess = snapshot.memoryHomeAccess
         normalizePins(); normalizeMemoryHomeAccess()
         if let ownedItems {
-            memoryHomeAccess.roomLayout = memoryHomeAccess.roomLayout.filter { _, item in
-                Self.roomFurnitureItems.contains(item) && ownedItems[item.rawValue, default: 0] > 0
-            }
+            // legacy 슬롯은 `normalizeMemoryHomeAccess` 의 이전에서 이미 비워졌다 — 가방 대조는
+            // 이전된 `placedDecor` 한 곳에서만 한다.
             trimPlacedDecor(toOwnedItems: ownedItems)
         }
         save()
@@ -954,23 +1046,16 @@ final class PokemonMemoryAlbum {
         var seen = Set<UUID>()
         memoryHomeAccess.roommateIDs = ids.filter { validCompanionIDs.contains($0) && seen.insert($0).inserted }.prefix(3).map { $0 }; save()
     }
-    func setFurniture(_ item: ItemKind?, in slot: String, ownedItems: [String: Int]) {
-        guard ["left", "center", "right"].contains(slot) else { return }
-        if let item, Self.roomFurnitureItems.contains(item), ownedItems[item.rawValue, default: 0] > 0 { memoryHomeAccess.roomLayout[slot] = item }
-        else { memoryHomeAccess.roomLayout.removeValue(forKey: slot); memoryHomeAccess.furniturePositions.removeValue(forKey: slot) }
-        save()
-    }
-    func furniturePosition(for slot: String) -> MemoryHomeRoomPosition {
+    /// legacy 3슬롯의 **읽기 전용** 기본 위치. 이전(migration)만 쓰므로 `private` 이다 —
+    /// 쓰기 API(`setFurniture`/`setFurniturePosition`)는 삭제했다. 이전이 legacy 필드를
+    /// 비우기 때문에, 그 필드에 쓰는 API 를 남겨 두면 다음 실행에서 조용히 지워진다.
+    private func legacyFurniturePosition(for slot: String) -> MemoryHomeRoomPosition {
         if let position = memoryHomeAccess.furniturePositions[slot] { return position }
         switch slot {
         case "left": return .clamped(x: 0.20, y: 0.70)
         case "center": return .clamped(x: 0.52, y: 0.70)
         default: return .clamped(x: 0.82, y: 0.70)
         }
-    }
-    func setFurniturePosition(_ position: MemoryHomeRoomPosition, in slot: String) {
-        guard memoryHomeAccess.roomLayout[slot] != nil else { return }
-        memoryHomeAccess.furniturePositions[slot] = .clamped(x: position.x, y: position.y); save()
     }
     func companionPosition(for companionID: UUID, fallbackIndex: Int = 0) -> MemoryHomeRoomPosition {
         if let position = memoryHomeAccess.companionPositions[companionID] { return position }
@@ -1069,6 +1154,22 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.guestbookEntries = Array(memoryHomeAccess.guestbookEntries.prefix(MemoryHomeAccessSettings.guestbookLimit))
         save(); return true
     }
+    /// §13 동행의 흔적. 하루 1개이며 **동행 글만** 센다 — 사용자가 같은 날 남긴 글은 막지
+    /// 않는다. `save()` 가 파일 프라이빗이라 이 메서드는 `MemoryHomeCompanionTrace` 옆이
+    /// 아니라 앨범과 같은 파일에 있어야 한다.
+    ///
+    /// 언어를 인자로 받는다 — 앨범은 표시 언어를 모르고, 알게 되면 저장 파일이 언어에 묶인다.
+    @discardableResult
+    func recordCompanionTraceIfNeeded(companionName: String, l: L, now: Date = Date()) -> Bool {
+        let today = CompanionStore.dayKey(now)
+        guard MemoryHomeCompanionTrace.leavesTrace(dayKey: today) else { return false }
+        guard !memoryHomeAccess.guestbookEntries.contains(where: {
+            $0.authorKind == .companion && CompanionStore.dayKey($0.createdAt) == today
+        }) else { return false }
+        return addGuestbookEntry(author: companionName,
+                                 body: MemoryHomeCompanionTrace.body(mood: mood(on: now), l),
+                                 authorKind: .companion, createdAt: now)
+    }
     func deleteGuestbookEntry(id: UUID) {
         let before = memoryHomeAccess.guestbookEntries.count
         memoryHomeAccess.guestbookEntries.removeAll { $0.id == id }
@@ -1145,11 +1246,16 @@ final class PokemonMemoryAlbum {
             // validator de-conflict malformed legacy positions.
             for slot in ["left", "center", "right"] {
                 guard let item = memoryHomeAccess.roomLayout[slot], Self.roomFurnitureItems.contains(item) else { continue }
-                let legacy = memoryHomeAccess.furniturePositions[slot] ?? furniturePosition(for: slot)
+                let legacy = memoryHomeAccess.furniturePositions[slot] ?? legacyFurniturePosition(for: slot)
                 if let point = validatedDecorPosition(legacy, item: item) {
                     memoryHomeAccess.placedDecor.append(.init(item: item, position: point))
                 }
             }
+            // **이전을 소비한다.** 안 비우면 조건이 `placedDecor.isEmpty` 하나뿐이라 이전이
+            // 한 번이 아니게 된다 — 방을 초기화하고 재시작하면 옛 가구가 되살아났다.
+            // 두 표현이 동시에 살아 있으면 "어느 쪽이 진짜 방인가" 가 매번 애매해진다.
+            memoryHomeAccess.roomLayout = [:]
+            memoryHomeAccess.furniturePositions = [:]
         }
         memoryHomeAccess.unlockedRoomStyles.insert(.campus)
         if !memoryHomeAccess.unlockedRoomStyles.contains(memoryHomeAccess.roomStyle) { memoryHomeAccess.roomStyle = .campus }

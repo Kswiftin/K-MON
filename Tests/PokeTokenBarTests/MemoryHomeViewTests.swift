@@ -10,11 +10,18 @@ final class MemoryHomeViewTests: XCTestCase {
         XCTAssertEqual(MemoryHomeRoomTheme.tint(for: .red), PokedoroTheme.red)
     }
 
-    func testMemoryHomeCanBeConstructedForTheActiveCompanion() {
-        let store = CompanionStore(fileURL: FileManager.default.temporaryDirectory
-            .appendingPathComponent("memory-home-view-\(UUID().uuidString).json"))
-
-        XCTAssertNotNil(MemoryHomeView(store: store))
+    /// 방 스타일 4종의 색과 세 언어 이름. 테마(사용자가 고른 4색)와 **다른 축**이라 색이
+    /// 겹쳐도 컴파일러는 아무 말을 하지 않는다.
+    func testRoomStyleHasADistinctTintAndNamePerStyle() {
+        let tints = MemoryHomeRoomStyle.allCases.map(MemoryHomeRoomStyle.tint(for:))
+        XCTAssertEqual(Set(tints.map(String.init(describing:))).count, MemoryHomeRoomStyle.allCases.count,
+                       "스타일 색이 겹쳤다")
+        for language in [AppLanguage.ko, .en, .ja] {
+            let names = MemoryHomeRoomStyle.allCases.map { $0.name(L(language)) }
+            XCTAssertEqual(Set(names).count, MemoryHomeRoomStyle.allCases.count,
+                           "\(language): 스타일 이름이 겹쳤다")
+            XCTAssertFalse(names.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+        }
     }
 
     func testMemoryHomeIsEnabledAndDiagnosticsRecordOnlyAfterOptIn() throws {

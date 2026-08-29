@@ -179,11 +179,15 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         album.recordCompletedFocusSession(companionID: companionID, sessionID: "run-9",
                                           completedAt: first.addingTimeInterval(99))
 
-        let milestones = album.milestones(for: companionID, now: first)
+        // 이 테스트의 주제는 **집중 정산**이다. 전체 카드 목록을 잠그면 날짜에서 파생하는
+        // 카드(첫 겨울·크리스마스)를 더할 때마다 여기가 깨진다 — `first` 가 1월이라 첫 겨울
+        // 카드도 정당하게 뜬다. 그래서 집중 카드만 본다.
+        let focusIDs = { (album: PokemonMemoryAlbum) in
+            album.milestones(for: companionID, now: first).map(\.id).filter { $0.hasPrefix("focus-") }
+        }
         XCTAssertEqual(album.firstRecordedAt(for: companionID), first)
-        XCTAssertEqual(milestones.map(\.id), ["focus-10"])
-        XCTAssertEqual(PokemonMemoryAlbum(fileURL: url).milestones(for: companionID, now: first).map(\.id),
-                       ["focus-10"])
+        XCTAssertEqual(focusIDs(album), ["focus-10"], "같은 세션 ID를 두 번 세었다")
+        XCTAssertEqual(focusIDs(PokemonMemoryAlbum(fileURL: url)), ["focus-10"])
     }
 
     func testFocusMilestoneBoundariesAndEvolutionSurviveMemoryEviction() {
