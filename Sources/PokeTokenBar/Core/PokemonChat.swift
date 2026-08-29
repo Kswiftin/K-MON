@@ -1044,7 +1044,9 @@ final class PokemonMemoryAlbum {
     }
     func setRoommates(_ ids: [UUID], validCompanionIDs: Set<UUID>) {
         var seen = Set<UUID>()
-        memoryHomeAccess.roommateIDs = ids.filter { validCompanionIDs.contains($0) && seen.insert($0).inserted }.prefix(3).map { $0 }; save()
+        let next = ids.filter { validCompanionIDs.contains($0) && seen.insert($0).inserted }.prefix(3).map { $0 }
+        guard memoryHomeAccess.roommateIDs != next else { return }
+        beginRoomEdit(); memoryHomeAccess.roommateIDs = next; save()
     }
     /// legacy 3슬롯의 **읽기 전용** 기본 위치. 이전(migration)만 쓰므로 `private` 이다 —
     /// 쓰기 API(`setFurniture`/`setFurniturePosition`)는 삭제했다. 이전이 legacy 필드를
@@ -1064,7 +1066,9 @@ final class PokemonMemoryAlbum {
     func setCompanionPosition(_ position: MemoryHomeRoomPosition, for companionID: UUID,
                               validCompanionIDs: Set<UUID>) {
         guard validCompanionIDs.contains(companionID) else { return }
-        memoryHomeAccess.companionPositions[companionID] = .clamped(x: position.x, y: position.y); save()
+        let next = MemoryHomeRoomPosition.clamped(x: position.x, y: position.y)
+        guard memoryHomeAccess.companionPositions[companionID] != next else { return }
+        beginRoomEdit(); memoryHomeAccess.companionPositions[companionID] = next; save()
     }
     func addPhoto(_ photo: MemoryHomePhoto) {
         guard photo.speciesID > 0, photo.speciesID <= 10_000, photo.caption.count <= 60 else { return }

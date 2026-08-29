@@ -116,6 +116,10 @@ private struct MemoryHomeWindowView: View {
     @State private var profileMessageError: String?
     @State private var editingRoom = false
     @State private var selectedDecorID: UUID?
+    @State private var selectedFurniture: ItemKind?
+    @State private var selectedCompanionID: UUID?
+    @State private var showResetDecorConfirmation = false
+    @State private var roomEditFeedback: String?
     /// §25 계절 결산. `eee5c86` 이후 이 시트는 창에서 열 수 없는 상태였다.
     @State private var recap = false
     /// §25 연말 결산. 자동으로 띄우지 않는다 — "올해 한 번만" 을 판정하려면 새 저장 필드가
@@ -154,6 +158,19 @@ private struct MemoryHomeWindowView: View {
                                          .flatMap { id in store.ownedMons.first { $0.id == id } }
                                          .map { store.chatProfile(for: $0).displayName },
                                      language: l)
+        }
+        .alert(l.t("배치를 초기화할까요?", "Reset room layout?", "配置をリセットしますか？"),
+               isPresented: $showResetDecorConfirmation) {
+            Button(l.t("취소", "Cancel", "キャンセル"), role: .cancel) { }
+            Button(l.t("가구 치우기", "Remove furniture", "家具を片づける"), role: .destructive) {
+                store.memoryAlbum.resetDecor()
+                selectedDecorID = nil
+                selectedFurniture = nil
+            }
+        } message: {
+            Text(l.t("현재 배치된 가구 \(store.memoryAlbum.memoryHomeAccess.placedDecor.count)개를 치웁니다. 실행 취소로 되돌릴 수 있어요.",
+                     "This removes \(store.memoryAlbum.memoryHomeAccess.placedDecor.count) placed furniture item(s). You can undo it.",
+                     "配置中の家具 \(store.memoryAlbum.memoryHomeAccess.placedDecor.count) 個を片づけます。取り消しで戻せます。"))
         }
     }
 
@@ -230,11 +247,19 @@ private struct MemoryHomeWindowView: View {
     private func home(mon: MonState, width: CGFloat) -> some View {
         return ScrollView {
             if width <= 920 {
-                VStack(spacing: 12) { profilePanel(mon: mon); roomStage(mon: mon); sidePanel(mon: mon) }
+                VStack(spacing: 12) {
+                    profilePanel(mon: mon)
+                    roomStage(mon: mon)
+                    if editingRoom { roomEditor(mon: mon) }
+                    sidePanel(mon: mon)
+                }
             } else {
                 HStack(alignment: .top, spacing: 12) {
                     profilePanel(mon: mon).frame(width: 164)
-                    roomStage(mon: mon).frame(maxWidth: .infinity)
+                    VStack(spacing: 12) {
+                        roomStage(mon: mon)
+                        if editingRoom { roomEditor(mon: mon) }
+                    }.frame(maxWidth: .infinity)
                     sidePanel(mon: mon).frame(width: 245)
                 }
             }
@@ -273,11 +298,17 @@ private struct MemoryHomeWindowView: View {
             // 스타일은 바닥 띠에만 얹는다. 방 전체를 덮으면 사용자가 고른 테마 4색을 뭉갠다.
             Rectangle().fill(style.opacity(0.34)).frame(height: 34).frame(maxHeight: .infinity, alignment: .bottom)
             GeometryReader { geometry in
+                if editingRoom {
+                    roomGrid(in: geometry.size, album: album)
+                }
                 ForEach(album.memoryHomeAccess.placedDecor.sorted { $0.layer < $1.layer }) { decor in
                     decorSprite(decor)
                         .position(x: decor.position.x * geometry.size.width,
                                   y: decor.position.y * geometry.size.height)
-                        .onTapGesture { if editingRoom { selectedDecorID = decor.id } }
+                        .onTapGesture {
+                            guard editingRoom else { return }
+                            selectedDecorID = decor.id; selectedCompanionID = nil; selectedFurniture = nil
+                        }
                         .gesture(editingRoom ? DragGesture(minimumDistance: 2).onEnded { value in
                             _ = album.moveDecor(id: decor.id,
                                                 to: .init(x: value.location.x / geometry.size.width,
@@ -291,19 +322,82 @@ private struct MemoryHomeWindowView: View {
                     let point = album.companionPosition(for: companion.id, fallbackIndex: index)
                     SpriteView(speciesID: companion.currentID, size: companion.id == mon.id ? 128 : 78, shiny: companion.isShiny)
                         .position(x: point.x * geometry.size.width, y: point.y * geometry.size.height)
+                        .onTapGesture {
+                            guard editingRoom else { return }
+                            selectedCompanionID = companion.id; selectedDecorID = nil; selectedFurniture = nil
+                        }
                         .gesture(editingRoom ? DragGesture().onEnded { value in
                             album.setCompanionPosition(.clamped(x: value.location.x / geometry.size.width, y: value.location.y / geometry.size.height), for: companion.id, validCompanionIDs: Set(store.ownedMons.map(\.id)))
                         } : nil)
+                        .background(selectedCompanionID == companion.id && editingRoom ? Color.white.opacity(0.75) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .accessibilityLabel(store.chatProfile(for: companion).displayName)
+                        .accessibilityHint(l.t("선택하거나 드래그하여 위치를 바꿉니다.", "Select or drag to change position.", "選択またはドラッグして位置を変えます。"))
                 }
             }
             VStack { HStack { Text(l.t("미니룸", "Mini room", "ミニルーム")).font(.caption.weight(.semibold)); Spacer() }; Spacer() }.padding(12)
             VStack { Spacer(); Text(roomLifeLine(mon: mon)).font(.caption.weight(.medium)).padding(.horizontal, 9).padding(.vertical, 5).background(.black.opacity(0.12), in: Capsule()).padding(12) }
-            if editingRoom { VStack { HStack { Spacer(); Text(l.t("가구와 동행을 드래그해 배치하세요", "Drag furniture and companions to arrange", "家具と相棒をドラッグして配置")) .font(.caption.weight(.semibold)).padding(8).background(.ultraThinMaterial, in: Capsule()) }; Spacer() }.padding(12) }
+            if editingRoom {
+                VStack {
+                    HStack { Spacer(); Text(roomCanvasInstruction).font(.caption.weight(.semibold)).padding(8).background(.ultraThinMaterial, in: Capsule()) }
+                    Spacer()
+                    if let roomEditFeedback { Text(roomEditFeedback).font(.caption.weight(.medium)).foregroundStyle(.red).padding(7).background(.ultraThinMaterial, in: Capsule()) }
+                }.padding(12)
+            }
         }
         .frame(minHeight: 365)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .pokedoroCard(tint: tint, emphasized: true)
         .accessibilityLabel(l.t("가구와 동행이 배치된 미니룸", "Mini room with furniture and companions", "家具と相棒を配置したミニルーム"))
+    }
+
+    @ViewBuilder private func roomGrid(in size: CGSize, album: PokemonMemoryAlbum) -> some View {
+        let occupied = Set(album.memoryHomeAccess.placedDecor.map { gridKey(gridPoint($0.position)) })
+        ForEach(0..<8, id: \.self) { column in
+            ForEach(0..<6, id: \.self) { row in
+                let point = (column, row)
+                let unavailable = occupied.contains(gridKey(point)) || (selectedFurniture != nil && album.memoryHomeAccess.placedDecor.count >= 12)
+                Rectangle()
+                    .fill(selectedFurniture == nil ? .clear : (unavailable ? Color.red.opacity(0.12) : PokedoroTheme.mint.opacity(0.20)))
+                    .overlay(Rectangle().stroke(Color.white.opacity(0.42), lineWidth: 0.7))
+                    .frame(width: size.width / 8, height: size.height / 6)
+                    .position(x: (Double(column) + 0.5) * size.width / 8,
+                              y: (Double(row) + 0.5) * size.height / 6)
+                    .contentShape(Rectangle())
+                    .onTapGesture { placeSelectedFurniture(at: point) }
+                    .accessibilityLabel(l.t("격자 \(column + 1), \(row + 1)", "Grid \(column + 1), \(row + 1)", "グリッド \(column + 1)、\(row + 1)"))
+                    .accessibilityHint(unavailable ? l.t("배치할 수 없는 칸", "Unavailable position", "配置できない場所") : l.t("선택한 가구를 배치합니다.", "Places the selected furniture.", "選んだ家具を配置します。"))
+            }
+        }
+    }
+
+    private var roomCanvasInstruction: String {
+        if let item = selectedFurniture { return l.t("\(l.itemName(item))을 빈 격자에 클릭해 놓으세요", "Click an empty grid cell to place \(l.itemName(item))", "空いているマスをクリックして\(l.itemName(item))を置きます") }
+        if selectedDecorID != nil || selectedCompanionID != nil { return l.t("선택됨 · 드래그해 이동하거나 아래에서 편집하세요", "Selected · drag to move or edit below", "選択中・ドラッグで移動するか下で編集します") }
+        return l.t("가구를 고른 뒤 빈 격자를 클릭하세요 · 동행과 가구는 드래그로 이동", "Choose furniture, then click an empty grid · drag furniture or companions to move", "家具を選んで空きマスをクリック・家具と相棒はドラッグで移動")
+    }
+
+    private func gridPoint(_ position: MemoryHomeRoomPosition) -> (Int, Int) {
+        (min(7, max(0, Int((position.x * 7).rounded()))), min(5, max(0, Int((position.y * 5).rounded()))))
+    }
+
+    private func gridKey(_ point: (Int, Int)) -> String { "\(point.0),\(point.1)" }
+
+    private func placeSelectedFurniture(at point: (Int, Int)) {
+        guard editingRoom, let item = selectedFurniture else { return }
+        let album = store.memoryAlbum
+        guard !album.memoryHomeAccess.placedDecor.contains(where: { gridPoint($0.position) == point }) else {
+            roomEditFeedback = l.t("이미 가구가 놓인 격자예요.", "That grid cell is already occupied.", "そのマスにはすでに家具があります。"); return
+        }
+        guard album.memoryHomeAccess.placedDecor.count < 12 else {
+            roomEditFeedback = l.t("가구는 최대 12개까지 놓을 수 있어요.", "You can place up to 12 furniture items.", "家具は12個まで置けます。"); return
+        }
+        let position = MemoryHomeRoomPosition(x: Double(point.0) / 7, y: Double(point.1) / 5)
+        if let decor = album.placeDecor(item, at: position, ownedItems: store.state.inventory) {
+            selectedDecorID = decor.id; selectedCompanionID = nil; roomEditFeedback = nil
+        } else {
+            roomEditFeedback = l.t("보유한 가구 수량이 부족해요.", "You do not own another copy of this furniture.", "この家具の所持数が足りません。")
+        }
     }
 
     @ViewBuilder private func decorSprite(_ decor: MemoryHomePlacedDecor) -> some View {
@@ -328,6 +422,124 @@ private struct MemoryHomeWindowView: View {
                                 mood: store.memoryAlbum.mood(),
                                 season: MemoryHomeSeason.current(),
                                 companion: store.chatProfile(for: mon).displayName, l)
+    }
+
+    private func roomEditor(mon: MonState) -> some View {
+        let album = store.memoryAlbum
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(l.t("미니룸 스튜디오", "Mini room studio", "ミニルームスタジオ"), systemImage: "square.grid.3x3.fill")
+                    .font(.headline)
+                Spacer()
+                Text(l.t("\(album.memoryHomeAccess.placedDecor.count)/12 배치", "\(album.memoryHomeAccess.placedDecor.count)/12 placed", "\(album.memoryHomeAccess.placedDecor.count)/12 配置"))
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Button { album.undoRoomEdit() } label: { Image(systemName: "arrow.uturn.backward") }
+                    .disabled(!album.canUndoRoomEdit).accessibilityLabel(l.t("실행 취소", "Undo", "取り消す"))
+                Button { album.redoRoomEdit() } label: { Image(systemName: "arrow.uturn.forward") }
+                    .disabled(!album.canRedoRoomEdit).accessibilityLabel(l.t("다시 실행", "Redo", "やり直す"))
+                Button(editingRoom ? l.t("완료", "Done", "完了") : "") {
+                    editingRoom = false; selectedFurniture = nil; selectedDecorID = nil; selectedCompanionID = nil; roomEditFeedback = nil
+                }.buttonStyle(.borderedProminent).controlSize(.small)
+            }
+            roomStyleCards(album: album)
+            Text(l.t("가구 카탈로그", "Furniture catalogue", "家具カタログ")).font(.caption.weight(.bold))
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), spacing: 7)], spacing: 7) {
+                ForEach(ItemKind.memoryHomeFurniture.sorted { $0.rawValue < $1.rawValue }, id: \.self) { item in
+                    furnitureCard(item, album: album)
+                }
+            }
+            if let selectedDecorID, let decor = album.memoryHomeAccess.placedDecor.first(where: { $0.id == selectedDecorID }) {
+                HStack {
+                    Label(l.t("선택: ", "Selected: ", "選択: ") + l.itemName(decor.item), systemImage: "cursorarrow.click")
+                    Spacer()
+                    Button(role: .destructive) { _ = album.removeDecor(id: selectedDecorID); self.selectedDecorID = nil } label: {
+                        Label(l.t("삭제", "Remove", "削除"), systemImage: "trash")
+                    }.accessibilityLabel(l.t("선택한 가구 치우기", "Remove selected furniture", "選んだ家具を片づける"))
+                }.font(.caption)
+            } else if let selectedCompanionID, let companion = store.ownedMons.first(where: { $0.id == selectedCompanionID }) {
+                Label(l.t("선택한 동행: ", "Selected companion: ", "選んだ相棒: ") + store.chatProfile(for: companion).displayName,
+                      systemImage: "figure.wave").font(.caption)
+            }
+            HStack {
+                Menu(l.t("룸메이트", "Roommates", "ルームメイト")) {
+                    ForEach(store.ownedMons.filter { $0.id != mon.id }) { candidate in
+                        let included = album.memoryHomeAccess.roommateIDs.contains(candidate.id)
+                        Button {
+                            setRoommate(candidate.id, included: !included)
+                        } label: { Label(store.chatProfile(for: candidate).displayName, systemImage: included ? "checkmark.circle.fill" : "circle") }
+                    }
+                }.menuStyle(.borderedButton).controlSize(.small)
+                Spacer()
+                Button(l.t("초기화", "Reset", "リセット"), role: .destructive) { showResetDecorConfirmation = true }
+                    .disabled(album.memoryHomeAccess.placedDecor.isEmpty).controlSize(.small)
+            }
+        }
+        .padding(12)
+        .memoryHomePanel()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(l.t("미니룸 편집 도구", "Mini room editing tools", "ミニルーム編集ツール"))
+    }
+
+    private func furnitureCard(_ item: ItemKind, album: PokemonMemoryAlbum) -> some View {
+        let owned = store.itemCount(item)
+        let placed = album.memoryHomeAccess.placedDecor.filter { $0.item == item }.count
+        let selectable = owned > placed && album.memoryHomeAccess.placedDecor.count < 12
+        return Button {
+            selectedFurniture = selectedFurniture == item ? nil : item
+            selectedDecorID = nil; selectedCompanionID = nil; roomEditFeedback = nil
+        } label: {
+            VStack(spacing: 3) {
+                Text(item.fallbackEmoji).font(.title3)
+                Text(l.itemName(item)).font(.caption.weight(.semibold)).lineLimit(1)
+                Text(l.t("보유 \(owned) · 배치 \(placed)", "Owned \(owned) · placed \(placed)", "所持 \(owned)・配置 \(placed)"))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, minHeight: 72)
+        }
+        .buttonStyle(.plain)
+        .padding(5)
+        .background(selectedFurniture == item ? PokedoroTheme.blue.opacity(0.23) : Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(selectedFurniture == item ? PokedoroTheme.blue : .clear, lineWidth: 1.5))
+        .opacity(selectable || selectedFurniture == item ? 1 : 0.48)
+        .accessibilityLabel(l.itemName(item))
+        .accessibilityValue(l.t("보유 \(owned), 배치 \(placed)", "Owned \(owned), placed \(placed)", "所持 \(owned)、配置 \(placed)"))
+        .accessibilityHint(selectable ? l.t("선택한 뒤 빈 격자를 클릭해 배치합니다.", "Select, then click an empty grid cell to place it.", "選んでから空きマスをクリックして配置します。") : l.t("더 배치할 수 없어요.", "No more copies can be placed.", "これ以上配置できません。"))
+        .disabled(!selectable && selectedFurniture != item)
+    }
+
+    private func roomStyleCards(album: PokemonMemoryAlbum) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(l.t("방 스타일", "Room style", "部屋のスタイル")).font(.caption.weight(.bold))
+            HStack(spacing: 7) {
+                ForEach(MemoryHomeRoomStyle.allCases, id: \.self) { style in
+                    let unlocked = album.isRoomStyleUnlocked(style)
+                    Button { if unlocked { album.selectRoomStyle(style) } } label: {
+                        VStack(spacing: 3) {
+                            RoundedRectangle(cornerRadius: 5).fill(MemoryHomeRoomStyle.tint(for: style)).frame(height: 18)
+                            Text(style.name(l)).font(.caption2.weight(.semibold)).lineLimit(1)
+                            Text(roomStyleStatus(style, unlocked: unlocked, active: style == album.roomStyle))
+                                .font(.system(size: 9)).lineLimit(1).foregroundStyle(unlocked ? Color.secondary : Color.orange)
+                        }.frame(maxWidth: .infinity).padding(5)
+                    }.buttonStyle(.plain)
+                    .background(style == album.roomStyle ? MemoryHomeRoomStyle.tint(for: style).opacity(0.18) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .accessibilityLabel(style.name(l))
+                    .accessibilityValue(unlocked ? (style == album.roomStyle ? l.t("사용 중", "Active", "使用中") : l.t("해금됨", "Unlocked", "解放済み")) : roomStyleRequirement(style))
+                }
+            }
+        }
+    }
+
+    private func roomStyleRequirement(_ style: MemoryHomeRoomStyle) -> String {
+        switch style {
+        case .campus: return l.t("기본", "Default", "基本")
+        case .lovely: return l.t("집중 첫 업적", "First focus achievement", "集中の初実績")
+        case .nature: return l.t("진화 첫 업적", "First evolution achievement", "進化の初実績")
+        case .retro: return l.t("배틀 첫 업적", "First battle achievement", "バトルの初実績")
+        }
+    }
+
+    private func roomStyleStatus(_ style: MemoryHomeRoomStyle, unlocked: Bool, active: Bool) -> String {
+        if !unlocked { return roomStyleRequirement(style) }
+        return active ? l.t("사용 중", "Active", "使用中") : l.t("선택", "Select", "選択")
     }
 
     private func sidePanel(mon: MonState) -> some View {
@@ -361,67 +573,13 @@ private struct MemoryHomeWindowView: View {
             Divider()
             Text(l.t("미니룸 꾸미기", "Mini room", "ミニルームを飾る"))
                 .font(.caption.weight(.bold))
-            Button(editingRoom ? l.t("꾸미기 완료", "Done decorating", "模様替えを完了") : l.t("배치 편집", "Edit layout", "配置を編集")) { editingRoom.toggle() }
+            Text(l.t("가구, 동행, 스타일은 스튜디오에서 함께 편집합니다.", "Edit furniture, companions, and style together in the studio.", "家具・相棒・スタイルはスタジオでまとめて編集します。"))
+                .font(.caption2).foregroundStyle(.secondary)
+            Button(editingRoom ? l.t("꾸미기 완료", "Done decorating", "模様替えを完了") : l.t("스튜디오 열기", "Open studio", "スタジオを開く")) {
+                editingRoom.toggle()
+                selectedFurniture = nil; selectedDecorID = nil; selectedCompanionID = nil; roomEditFeedback = nil
+            }
                 .buttonStyle(.borderedProminent).controlSize(.small)
-            Menu(l.t("룸메이트", "Roommates", "ルームメイト")) {
-                ForEach(store.ownedMons.filter { $0.id != mon.id }) { candidate in
-                    let included = album.memoryHomeAccess.roommateIDs.contains(candidate.id)
-                    Button {
-                        setRoommate(candidate.id, included: !included)
-                    } label: {
-                        Label(store.chatProfile(for: candidate).displayName,
-                              systemImage: included ? "checkmark.circle.fill" : "circle")
-                    }
-                }
-            }
-            .menuStyle(.borderedButton)
-            .controlSize(.small)
-
-            // R8 스타일. 해금하지 않은 스타일은 고를 수 없다 — `selectRoomStyle` 이 앨범에서
-            // 한 번 더 막지만, 눌리는 버튼이 아무 일도 안 하는 화면을 만들지 않는다.
-            Menu(l.t("방 스타일: ", "Room style: ", "スタイル: ") + album.roomStyle.name(l)) {
-                ForEach(MemoryHomeRoomStyle.allCases, id: \.self) { style in
-                    Button { album.selectRoomStyle(style) } label: {
-                        Label(style.name(l), systemImage: style == album.roomStyle ? "checkmark" : "circle")
-                    }
-                    .disabled(!album.isRoomStyleUnlocked(style))
-                }
-            }
-            .menuStyle(.borderedButton).controlSize(.small)
-            .accessibilityLabel(l.t("방 스타일", "Room style", "部屋のスタイル"))
-            .accessibilityValue(album.roomStyle.name(l))
-
-            Menu(l.t("가구 놓기", "Place furniture", "家具を置く")) {
-                ForEach(ItemKind.memoryHomeFurniture.sorted { $0.rawValue < $1.rawValue }, id: \.self) { item in
-                    Button {
-                        _ = album.placeDecor(item, at: .init(x: 0.5, y: 0.6), ownedItems: store.state.inventory)
-                    } label: {
-                        Text("\(item.fallbackEmoji) \(l.itemName(item)) ×\(store.itemCount(item))")
-                    }
-                    .disabled(store.itemCount(item) == 0 || album.memoryHomeAccess.placedDecor.count >= 12)
-                }
-            }
-            .menuStyle(.borderedButton).controlSize(.small)
-            .accessibilityLabel(l.t("가구 놓기", "Place furniture", "家具を置く"))
-            .accessibilityValue(l.t("\(album.memoryHomeAccess.placedDecor.count)/12 배치", "\(album.memoryHomeAccess.placedDecor.count) of 12 placed", "\(album.memoryHomeAccess.placedDecor.count)/12 配置"))
-
-            HStack(spacing: 6) {
-                Button { album.undoRoomEdit() } label: { Image(systemName: "arrow.uturn.backward") }
-                    .disabled(!album.canUndoRoomEdit)
-                    .accessibilityLabel(l.t("실행 취소", "Undo", "取り消す"))
-                Button { album.redoRoomEdit() } label: { Image(systemName: "arrow.uturn.forward") }
-                    .disabled(!album.canRedoRoomEdit)
-                    .accessibilityLabel(l.t("다시 실행", "Redo", "やり直す"))
-                if let selectedDecorID, editingRoom {
-                    Button(role: .destructive) {
-                        _ = album.removeDecor(id: selectedDecorID); self.selectedDecorID = nil
-                    } label: { Image(systemName: "trash") }
-                        .accessibilityLabel(l.t("선택한 가구 치우기", "Remove selected furniture", "選んだ家具を片づける"))
-                }
-                Button(l.t("초기화", "Reset", "リセット"), role: .destructive) { album.resetDecor() }
-                    .disabled(album.memoryHomeAccess.placedDecor.isEmpty)
-            }
-            .controlSize(.small)
 
             Divider()
             // §11 주크박스. `setJukeboxTrack` 은 이 화면이 생기기 전까지 테스트만 부르고 있었다.

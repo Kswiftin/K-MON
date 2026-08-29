@@ -80,4 +80,23 @@ final class MemoryHomeRoomRenovationTests: XCTestCase {
         album.addPhoto(photo); album.setFeaturedPhoto(id: photo.id)
         XCTAssertEqual(album.memoryHomeAccess.featuredPhotoID, photo.id)
     }
+
+    func testResetCanBeUndoneAndCompanionMovesJoinRoomHistory() throws {
+        let file = url(); defer { try? FileManager.default.removeItem(at: file) }
+        let album = PokemonMemoryAlbum(fileURL: file)
+        let companionID = UUID()
+        let decor = try XCTUnwrap(album.placeDecor(.roomLamp, at: .init(x: 0.2, y: 0.4),
+                                                   ownedItems: [ItemKind.roomLamp.rawValue: 1]))
+
+        album.setCompanionPosition(.init(x: 0.8, y: 0.3), for: companionID,
+                                   validCompanionIDs: [companionID])
+        XCTAssertEqual(album.companionPosition(for: companionID), .clamped(x: 0.8, y: 0.3))
+        album.undoRoomEdit()
+        XCTAssertNotEqual(album.companionPosition(for: companionID), .clamped(x: 0.8, y: 0.3))
+
+        album.resetDecor()
+        XCTAssertTrue(album.memoryHomeAccess.placedDecor.isEmpty)
+        album.undoRoomEdit()
+        XCTAssertEqual(album.memoryHomeAccess.placedDecor.map(\.id), [decor.id])
+    }
 }
