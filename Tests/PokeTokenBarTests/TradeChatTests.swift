@@ -1,3 +1,4 @@
+import Network
 import SwiftUI
 import XCTest
 @testable import PokeTokenBar
@@ -18,6 +19,19 @@ final class TradeChatTests: XCTestCase {
 
     @MainActor
     private func makeCenter() -> PokemonTradeCenter { PokemonTradeCenter(companion: makeStore()) }
+
+    /// 신청을 **거는** 쪽. `request` 는 소켓을 열어야 `.requesting` 으로 가므로, 아무도 듣지 않는
+    /// 루프백 포트로 연다 — Bonjour 이름은 영영 안 풀리는 mDNS 조회를 돌리고, 최근 macOS 에서는
+    /// 테스트 러너에 로컬 네트워크 권한 프롬프트까지 띄운다(게이트가 번들을 두 번 돌린다).
+    @MainActor
+    private func afterAccept(chatSupported: Bool?, trainer: String = "Blue") -> PokemonTradeCenter {
+        let center = makeCenter()
+        center.request(TradePeer(name: "Blue", serviceName: "Blue#000000",
+                                 endpoint: .hostPort(host: "127.0.0.1", port: 9)))
+        XCTAssertEqual(center.phase, .requesting(peer: "Blue"))
+        center.receive(.accept(trainer: trainer, chatSupported: chatSupported))
+        return center
+    }
 
     /// 협상까지 진행된 세션. 신청을 받는 쪽(비-initiator)이라 소켓 없이도 상태가 진행된다.
     @MainActor
@@ -77,29 +91,94 @@ final class TradeChatTests: XCTestCase {
     /// 받는 쪽만 밟아서, 거는 쪽이 `true` 로 굳어 있어도 전부 통과했다).
     @MainActor
     func testInitiatorLearnsChatSupportFromTheAcceptFrame() {
-        func afterAccept(chatSupported: Bool?) -> PokemonTradeCenter {
-            let center = makeCenter()
-            center.request(TradePeer(name: "Blue", serviceName: "Blue#000000",
-                                     endpoint: .service(name: "Blue#000000",
-                                                        type: PokemonTradeCenter.serviceType,
-                                                        domain: "local.", interface: nil)))
-            XCTAssertEqual(center.phase, .requesting(peer: "Blue"))
-            center.receive(.accept(trainer: "Blue", chatSupported: chatSupported))
-            XCTAssertEqual(center.phase, .negotiating(peer: "Blue"))
-            return center
-        }
-
         let legacyPeer = afterAccept(chatSupported: nil)
+        XCTAssertEqual(legacyPeer.phase, .negotiating(peer: "Blue"))
         XCTAssertFalse(legacyPeer.peerSupportsChat)
         legacyPeer.sendChat("보내면 상대 세션이 멈춘다")
         XCTAssertTrue(legacyPeer.chatMessages.isEmpty)
         legacyPeer.cancel()
 
         let modernPeer = afterAccept(chatSupported: true)
+        XCTAssertEqual(modernPeer.phase, .negotiating(peer: "Blue"))
         XCTAssertTrue(modernPeer.peerSupportsChat)
         modernPeer.sendChat("반가워")
         XCTAssertEqual(modernPeer.chatMessages.map(\.body), ["반가워"])
         modernPeer.cancel()
+    }
+
+    // MARK: - 상대가 조용히 나갔을 때
+
+    /// 상대가 앱을 **정상 종료**하면 소켓은 FIN 만 남기고 `.failed` 로 가지 않는다. `attach` 의
+    /// 상태 감시는 `.failed` 만 보므로, 이 경로를 끝내는 건 읽기 루프뿐이다 — 예전엔 그냥 리턴해
+    /// 죽은 소켓 위에 "교환 중" 이 영영 남았다(확정도 커밋도 오지 않는다).
+    @MainActor
+    func testTheSessionEndsWhenThePeerClosesTheSocketWithoutFailing() throws {
+        let listener = try NWListener(using: .tcp, on: .any)
+        listener.newConnectionHandler = { peer in
+            // 연결이 서면 곧바로 정상 종료한다. `cancel()` 은 FIN 이라 우리 쪽 상태는 `.ready` 다.
+            peer.stateUpdateHandler = { if case .ready = $0 { peer.cancel() } }
+            peer.start(queue: .main)
+        }
+        listener.start(queue: .main)
+        addTeardownBlock { listener.cancel() }
+        guard let port = pump(until: { listener.port }) else { return XCTFail("루프백 리스너가 서지 않았다") }
+
+        let center = makeCenter()
+        center.attachForTesting(NWConnection(to: .hostPort(host: "127.0.0.1", port: port), using: .tcp))
+        center.receive(.request(version: TradeWireMessage.protocolVersion, trainer: "Blue", chatSupported: true))
+        center.accept()
+        XCTAssertEqual(center.phase, .negotiating(peer: "Blue"))
+
+        let ended = pump(until: { if case .failed = center.phase { return true } else { return nil } })
+        XCTAssertEqual(ended, true, "상대가 소켓을 닫으면 세션도 끝나야 한다 — 지금 국면: \(center.phase)")
+    }
+
+    /// 메인 큐에 걸린 `NWConnection` 콜백을 돌리며 `probe` 가 값을 낼 때까지 기다린다.
+    @MainActor
+    private func pump<T>(until probe: () -> T?, timeout: TimeInterval = 5) -> T? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let value = probe() { return value }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        return probe()
+    }
+
+    // MARK: - 신뢰경계 (부류 스윕: 상대가 부르는 값이 화면에 닿는 나머지 자리)
+
+    /// `id` 는 `BattleChatMessage` 의 `Identifiable` 키 — 화면의 `ForEach` 가 이 값으로 행을 가른다.
+    /// 상대가 고른 값을 그대로 쓰면 같은 값을 두 번 보내는 것만으로 목록이 무너진다.
+    @MainActor
+    func testPeerChosenMessageIDsCannotCollideOnScreen() {
+        let center = negotiating(peerSupportsChat: true)
+        let reused = UUID()
+        center.receive(.chat(BattleChatMessage(id: reused, senderID: UUID(), senderName: "Blue", body: "하나")))
+        center.receive(.chat(BattleChatMessage(id: reused, senderID: UUID(), senderName: "Blue", body: "둘")))
+        XCTAssertEqual(center.chatMessages.map(\.body), ["하나", "둘"])
+        XCTAssertEqual(Set(center.chatMessages.map(\.id)).count, 2, "화면 키는 상대가 정하지 않는다")
+    }
+
+    /// 핸드셰이크의 트레이너 이름도 상대가 부르는 값이고, 프레임 상한(1MB)까지 채울 수 있다.
+    /// 그 이름은 협상 헤더와 **채팅 행마다** 박히는데 두 곳 다 `lineLimit` 이 없다.
+    @MainActor
+    func testPeerTrainerNameIsClampedOnBothHandshakeBranches() {
+        let huge = String(repeating: "괴", count: 5_000)
+        let clamped = String(repeating: "괴", count: BattleChatPolicy.maximumNameLength)
+
+        // 받는 쪽 — `.request`
+        let incoming = makeCenter()
+        incoming.receive(.request(version: TradeWireMessage.protocolVersion, trainer: huge, chatSupported: true))
+        XCTAssertEqual(incoming.phase, .incoming(peer: clamped))
+
+        // 거는 쪽 — `.accept`. 같은 클램프를 두 군데서 걸므로 형제 분기도 밟는다.
+        let initiator = afterAccept(chatSupported: true, trainer: huge)
+        XCTAssertEqual(initiator.phase, .negotiating(peer: clamped))
+        initiator.cancel()
+
+        // 이름이 통째로 비어 있으면 협상을 열지 않는다(빈 이름은 화면에서 발신자를 지운다).
+        let empty = makeCenter()
+        empty.receive(.request(version: TradeWireMessage.protocolVersion, trainer: "   ", chatSupported: true))
+        XCTAssertEqual(empty.phase, .ready)
     }
 
     /// 협상 밖에서는 어느 방향으로도 대화가 열리지 않는다.

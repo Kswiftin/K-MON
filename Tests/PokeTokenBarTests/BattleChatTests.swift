@@ -187,3 +187,77 @@ extension BattleChatTests {
         XCTAssertFalse(center.peerSupportsChat)
     }
 }
+
+// MARK: - 신뢰경계 (부류 스윕)
+//
+// 상대 프레임의 `senderID`·`senderName`·`id` 는 전부 상대가 부르는 값이다. 교환(`PokemonTrade`)은
+// 세 값을 다시 짓는데, 같은 블록을 복사해 간 배틀·방 게스트는 그대로 믿고 있었다. 세 경로가 같은
+// 경계를 갖는지를 여기서 못 박는다 — 복사본이 늘어도 이 파일이 갈라짐을 잡는다.
+extension BattleChatTests {
+    /// LAN 배틀. `chatSenderID` 는 우리가 보내는 모든 프레임에 실려 나가므로, 상대가 되받아 쓰면
+    /// 화면이 내 말풍선으로 그린다. 속도 제한도 상대 ID 로 세면 매 프레임 새 버킷이라 제한이 없다.
+    @MainActor
+    func testIncomingBattleChatIsAttributedAndLimitedByKeysThePeerCannotChange() {
+        let (center, _) = centerInBattle(peerChatSupported: true)
+        func incoming(_ body: String, sender: UUID = UUID()) {
+            center.handle(.chat(BattleChatMessage(senderID: sender, senderName: "Blue", body: body)))
+        }
+
+        incoming("내가 한 말인 척", sender: center.chatSenderID)
+        XCTAssertEqual(center.chatMessages.count, 1)
+        XCTAssertNotEqual(center.chatMessages[0].senderID, center.chatSenderID,
+                          "상대가 내 ID 를 되받아 써도 내 말풍선이 되지 않는다")
+
+        // 보낸 사람 ID 를 매번 새로 지어내도 상대 몫의 토큰 버킷 하나만 소비한다.
+        incoming("2"); incoming("3"); incoming("4")
+        XCTAssertEqual(center.chatMessages.count, 3, "상대는 연속 3개까지만 받는다")
+
+        // 내 전송 예산은 상대가 다 써도 그대로 남아 있어야 한다.
+        center.sendChat("내 차례")
+        XCTAssertEqual(center.chatMessages.last?.body, "내 차례")
+    }
+
+    /// 이름과 화면 키. 프레임 상한(1MB)까지 채운 이름은 `lineLimit` 없는 채팅 행에서 레이아웃을
+    /// 무너뜨리고, 되풀이된 `id` 는 `ForEach` 를 중복 키로 무너뜨린다.
+    @MainActor
+    func testIncomingBattleChatClampsTheNameAndRemintsTheScreenKey() {
+        let (center, _) = centerInBattle(peerChatSupported: true)
+        let reused = UUID()
+        for body in ["하나", "둘"] {
+            center.handle(.chat(BattleChatMessage(id: reused, senderID: UUID(),
+                                                  senderName: String(repeating: "관", count: 5_000),
+                                                  body: body)))
+        }
+        XCTAssertEqual(center.chatMessages.map(\.body), ["하나", "둘"])
+        XCTAssertEqual(center.chatMessages.first?.senderName.count, BattleChatPolicy.maximumNameLength)
+        XCTAssertEqual(Set(center.chatMessages.map(\.id)).count, 2, "화면 키는 상대가 정하지 않는다")
+    }
+
+    /// 방 게스트. 호스트가 중계한 프레임을 검증 없이 화면에 넣고 있었다 — 호스트도 상대다.
+    /// (호스트 쪽 `acceptChat` 은 제대로 거르는데, 그 결과를 받는 게스트 쪽만 비어 있었다.)
+    @MainActor
+    func testRelayedRoomChatIsRevalidatedOnTheGuestSide() {
+        let store = CompanionStore(
+            provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []),
+                                                  rarity: .common, names: [:])),
+            clock: { Date() },
+            fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            rng: SeededRNG(seed: 1))
+        let center = MultiplayerRoomCenter(companion: store)
+        let host = UUID(), reused = UUID()
+
+        center.acceptRelayedChat(BattleChatMessage(senderID: host, senderName: "Host",
+                                                   body: String(repeating: "a", count: BattleChatPolicy.maximumLength + 1)))
+        center.acceptRelayedChat(BattleChatMessage(senderID: host, senderName: "Host", body: "   "))
+        XCTAssertTrue(center.chatMessages.isEmpty, "본문은 게스트 쪽에서도 다시 잰다")
+
+        for body in ["하나", "둘"] {
+            center.acceptRelayedChat(BattleChatMessage(id: reused, senderID: host,
+                                                       senderName: String(repeating: "관", count: 5_000),
+                                                       body: body))
+        }
+        XCTAssertEqual(center.chatMessages.map(\.body), ["하나", "둘"])
+        XCTAssertEqual(center.chatMessages.first?.senderName.count, BattleChatPolicy.maximumNameLength)
+        XCTAssertEqual(Set(center.chatMessages.map(\.id)).count, 2, "화면 키는 중계된 값을 쓰지 않는다")
+    }
+}

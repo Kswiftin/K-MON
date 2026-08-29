@@ -746,8 +746,7 @@ final class MultiplayerRoomCenter {
                 self.combatRound += 1; self.hasSubmittedAction = false
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.grantRewardIfFinished()
-            case .chat(let message):
-                self.chatHistory.append(message); self.chatMessages = self.chatHistory.messages
+            case .chat(let message): self.acceptRelayedChat(message)
             case .pokeathlonStart(let race): self.pokeathlonRace = race; self.phase = .pokeathlon
             case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
             case .pokeathlonPool(let pool):
@@ -796,6 +795,11 @@ final class MultiplayerRoomCenter {
                                         senderName: participant.trainerName, body: body, sentAt: incoming.sentAt)
         chatHistory.append(message); chatMessages = chatHistory.messages
         for connection in guestConnections.values { send(.chat(message), over: connection) }
+    }
+
+    /// 호스트가 중계한 한 줄. **호스트도 상대다** — 우리는 호스트가 무엇을 걸렀는지 볼 수 없다.
+    func acceptRelayedChat(_ incoming: BattleChatMessage) {
+        chatHistory.append(incoming); chatMessages = chatHistory.messages
     }
 
     func sendChat(_ body: String) {

@@ -353,6 +353,13 @@ final class PokemonTradeCenter {
         self.browser = browser
     }
 
+    /// 테스트가 소켓을 직접 쥐어 주는 자리. 읽기 루프의 종료 처리는 실제 소켓이 닫히는 순간에만
+    /// 밟히는데(FIN 은 `.failed` 로 오지 않는다), 그 경로를 여는 진입점이 달리 없다.
+    func attachForTesting(_ connection: NWConnection) {
+        attach(connection)
+        connection.start(queue: .main)
+    }
+
     private func attach(_ connection: NWConnection) {
         self.connection?.cancel()
         self.connection = connection
