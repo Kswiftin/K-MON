@@ -82,8 +82,98 @@ LOGIC_CORE=(
   # 판 밖으로 남는 유일한 값(최고 웨이브·클리어 횟수). 세이브 경계 정규화가 여기 있어 게이트 대상 —
   # 배열에 안 넣으면 클램프 분기가 커버리지에서 조용히 빠진다.
   "Sources/PokeTokenBar/Core/RunProgress.swift"
+  # 미니룸 대문의 계절(R5). 달력 월 → 계절 파생이라 순수 함수 = 게이트 대상. 12·1·2 를 받는
+  # `default` 가지가 여기 없으면 커버리지에서 통째로 빠져 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/MemoryHomeSeason.swift"
+  # 미니룸 한 줄(종×가구 → 가구 → 기분 → 계절). 순수 파생이라 게이트 대상이고, 배열에 안 넣으면
+  # 짝 표에 줄을 더할 때마다 무테스트 분기가 커버리지에서 조용히 빠진다.
+  "Sources/PokeTokenBar/Core/MemoryHomeRoomLife.swift"
+  # 동행 방명록 흔적의 빈도 판정과 기분별 문구. 난수를 쓰지 않는 것이 이 파일의 계약이라
+  # 게이트 안에 둔다 — 빈도가 0 이나 1 로 무너지면 커버리지가 먼저 드러낸다.
+  "Sources/PokeTokenBar/Core/MemoryHomeCompanionTrace.swift"
+  # 대표 BGM 해금 판정. 자정을 가로지르는 밤 구간과 계절 판정이 여기 있고, 게이트 밖에 두면
+  # 곡을 더할 때 해금 조건이 무테스트로 남는다.
+  "Sources/PokeTokenBar/Core/MemoryHomeJukebox.swift"
 )
 
+# 기능이 **박제된 두 번째 화면**에 남는 부류를 막는다. `eee5c86` 이 팝오버 홈을 창으로 옮기며
+# 옛 화면을 `@available(*, deprecated)` + 비-`View` 로 남겼고, 그 뒤 `9de278f` 가 방꾸미기
+# 전체(스타일·12칸 격자·되돌리기)를 **그 죽은 화면에** 붙였다. 주크박스·파도타기·기분 반응·
+# 계절 배지·계절 결산까지 다섯 기능이 코드에는 있는데 화면에서 사라진 채 릴리스됐다.
+#
+# 테스트로는 못 막는다 — 스타일 헬퍼의 세 언어 문구와 앨범 메서드의 지속성은 호출자가 화면이
+# 아니어도 통과한다. 커버리지로도 못 막는다(테스트가 그 줄을 실행하므로). 남는 형태가 grep 이다.
+# 해제 조건: 뷰의 도달 가능성을 검증하는 UI 테스트가 생기면 그때 이 게이트를 그쪽으로 옮긴다.
+echo "▶ 박제된 화면 스윕 (UI 의 deprecated 타입)"
+DEPRECATED_UI=$(grep -rn '@available(\*, deprecated' Sources/PokeTokenBar/UI || true)
+if [[ -n "$DEPRECATED_UI" ]]; then
+  echo "✗ UI 에 deprecated 타입이 있습니다 — 기능이 도달 불가 화면에 남을 수 있습니다." \
+       "대체 화면으로 옮기고 옛 타입은 삭제하세요." >&2
+  echo "$DEPRECATED_UI" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# 위 게이트의 형제. `deprecated` 를 안 붙이고도 화면이 죽는 두 번째 형태가 **아무도 띄우지 않는
+# 시트**다 — `MemoryHomeSeasonRecapSheet` 이 정확히 그 상태로 릴리스됐다(타입은 살아 있고,
+# 컴파일도 되고, 스타일 헬퍼 테스트도 통과하는데, `.sheet` 로 여는 곳이 없었다).
+#
+# 컴파일러는 못 잡는다(구조체는 쓰이지 않아도 유효하다). 테스트도 못 잡는다(시트를 직접 만들어
+# 검증하면 통과한다). 커버리지도 못 잡는다. 남는 형태가 grep 이다.
+# 해제 조건: 위 게이트와 같다 — 도달 가능성을 검증하는 UI 테스트가 생기면 그쪽으로 옮긴다.
+echo "▶ 도달 불가 시트 스윕 (선언만 있고 아무도 띄우지 않는 Sheet)"
+ORPHAN_SHEETS=""
+while read -r NAME; do
+  [[ -z "$NAME" ]] && continue
+  # 선언 줄은 `struct Name: View {` 라 `Name(` 를 담지 않는다 → 걸리는 건 생성(=표시)하는 곳뿐이다.
+  grep -rqF "${NAME}(" Sources/PokeTokenBar || ORPHAN_SHEETS+="$NAME"$'\n'
+done < <(grep -rhoE 'struct MemoryHome[A-Za-z]*Sheet' Sources/PokeTokenBar/UI | awk '{print $2}' | sort -u)
+if [[ -n "$ORPHAN_SHEETS" ]]; then
+  echo "✗ 아무도 띄우지 않는 시트가 있습니다 — 코드에는 있는데 화면에서 도달할 수 없습니다." \
+       "표시하는 .sheet 를 붙이거나 타입을 삭제하세요." >&2
+  echo "$ORPHAN_SHEETS" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# 문자열 보간에서 백슬래시가 빠진 오타는 Swift 가 **평범한 리터럴로 받아들인다** — 컴파일러도
+# warning 게이트도 절대 못 잡고, 화면에 표현식 소스가 그대로 찍힌 채 릴리스로 나간다
+# (MemoryHomeView 방문 시트가 종 번호 대신 표현식을 그대로 렌더한 채 fb7e67e 로 배포됐다).
+# 라인 커버리지로는 못 막는 부류다(그 줄은 "실행"되므로) → 기계로 막을 수 있는 유일한 형태가 grep 이다.
+echo "▶ 보간 오타 스윕 (백슬래시 누락)"
+BAD_INTERPOLATION=$(grep -rn '#(' Sources Tests | grep -v '\\#(' || true)
+if [[ -n "$BAD_INTERPOLATION" ]]; then
+  echo "✗ 백슬래시가 빠진 문자열 보간 $(wc -l <<< "$BAD_INTERPOLATION" | tr -d ' ')건 —" \
+       "리터럴로 렌더됩니다. 의도한 raw string 이면 \\#( 를 쓰세요." >&2
+  echo "$BAD_INTERPOLATION" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# LAN 프레임 길이 헤더를 읽는 곳은 반드시 `loadUnaligned` 를 쓴다. `UnsafeRawBufferPointer.load(as:)`
+# 는 포인터 정렬을 **전제**하는데, `NWConnection.receive` 가 주는 `Data` 는 4바이트 정렬을 보장하지
+# 않는다 → 전제 위반이다. 이 부류는 파일마다 남는다: `bee4a84` 가 BattleNet·MultiplayerRoomCenter
+# 두 곳을 고치면서, **같은 커밋에서 다른 이유로 만진** MemoryHomeVisitCenter 는 스윕하지 않아
+# 새 파일 하나가 그대로 남았다.
+#
+# 테스트로는 못 막는다 — 이 줄을 밟으려면 살아 있는 `NWConnection` 두 개가 필요하고, 정렬 검사는
+# `_debugPrecondition` 이라 빌드 구성에 따라 트랩 여부가 갈린다(릴리스 arm64 는 대개 그냥 통과한다).
+# 커버리지로도 못 막는다 — 테스트가 그 줄을 실행하면 `load` 든 `loadUnaligned` 든 똑같이 세어진다.
+# 남는 형태가 grep 이다.
+# 해제 조건: 프레이밍을 공용 헬퍼 하나로 합치면 그때 이 게이트를 그 헬퍼의 단위 테스트로 옮긴다.
+echo "▶ 비정렬 로드 스윕 (프레임 헤더의 load(as:))"
+# `loadUnaligned(as:` 는 `load(as:` 를 포함하지 않으므로 올바른 쪽은 걸리지 않는다.
+# 규칙을 설명하는 주석에 가드가 걸리는 부류(defect-log)를 피하려고 주석 줄은 뺀다.
+ALIGNED_LOAD=$(grep -rn '\.load(as:' Sources | grep -v '^[^:]*:[0-9]*:[[:space:]]*//' || true)
+if [[ -n "$ALIGNED_LOAD" ]]; then
+  echo "✗ 정렬을 전제하는 load(as:) $(wc -l <<< "$ALIGNED_LOAD" | tr -d ' ')건 —" \
+       "네트워크 버퍼는 정렬이 보장되지 않습니다. loadUnaligned(as:) 를 쓰세요." >&2
+  echo "$ALIGNED_LOAD" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+echo
 echo "▶ swift test (--enable-code-coverage)"
 TEST_LOG=$(mktemp)
 LOCALE_LOG=$(mktemp)

@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private var chatPresenter: PokemonChatPresenter!
     private var updater: UpdateChecker!
     private var battleCenter: BattleCenter!
+    private var memoryHomeVisits: MemoryHomeVisitCenter!
+    private var memoryHomePresenter: MemoryHomePresenter!
     private let focusTimer = FocusTimer()
     private var floatingPet: FloatingPetController!
     private let navigation = PopoverNavigation()
@@ -57,6 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)
         observeAutomaticUpdates()
         battleCenter = BattleCenter(companion: companion)
+        memoryHomeVisits = MemoryHomeVisitCenter(companion: companion, peerID: settings.memoryHomeLANPeerID)
+        memoryHomePresenter = MemoryHomePresenter(settings: settings, store: companion, visits: memoryHomeVisits)
+        if settings.memoryHomeEnabled { memoryHomeVisits.startHostingIfEligible() }
         // 팝오버가 닫혀 있어도 배틀 신청을 받아 알림을 쏠 수 있게 상시 수신. 다만 리스너를 올리는
         // 순간 macOS 가 로컬 네트워크 권한을 묻기 때문에, 배틀을 끈 사용자에게는 시작하지 않는다.
         if settings.shouldStartLANDiscovery { battleCenter.start() }
@@ -68,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         floatingPet = FloatingPetController(
             settings: settings, companion: companion,
             onOpenPopover: { [weak self] in self?.openPopover() },
+            onOpenMemoryHome: { [weak self] in self?.memoryHomePresenter.open() },
             onChat: { [weak self] in
                 guard let self, let id = self.companion.activeMonID else { return }
                 self.chatPresenter.open(companionID: id)
@@ -96,6 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         startIdleTick()
         startFocusTick()
         applyState()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        memoryHomeVisits?.shutdown()
     }
 
     private func observeAutomaticUpdates() {
@@ -465,7 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         popover.contentViewController = NSHostingController(
             rootView: PopoverView()
                 .environment(settings).environment(companion).environment(updater).environment(navigation)
-                .environment(battleCenter).environment(focusTimer).environment(chatPresenter))
+                .environment(battleCenter).environment(memoryHomeVisits).environment(memoryHomePresenter).environment(focusTimer).environment(chatPresenter))
     }
 
     @objc private func togglePopover() {

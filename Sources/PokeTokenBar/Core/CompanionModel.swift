@@ -225,6 +225,12 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// **가방·문구의 `default:`(= 진화 아이템 전체) 분기에 명시 케이스로 반드시 넣어야 한다** — 빠뜨리면
     /// "진화 가능할 때 사용" 이 뜨고 설명이 빈 문자열이 되며 `useEvolutionItem` 으로 흘러간다.
     case heartScale
+    /// R7 decor is inventory, not a second currency or store.
+    // Mini Home furniture. The original three are the free campus starter set.
+    case roomBed, roomTable, roomLamp
+    case lovelyVanity, lovelySofa, lovelyHeartLamp
+    case retroArcade, retroRadio, retroTV
+    case naturePlant, natureBench, natureLantern
 
     /// 진화 아이템 공통가 — 돌과 지닌물건을 구분하지 않는다(둘 다 진화 1회분의 값).
     static let evolutionItemPrice = 500
@@ -232,7 +238,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .shinyCharm, .freshWater, .heartScale: return nil
+        case .rareCandy, .mint, .shinyCharm, .freshWater, .heartScale,
+             .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
+             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
         case .fireStone: return .useItem("fire-stone")
         case .waterStone: return .useItem("water-stone")
@@ -296,6 +304,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .ovalStone: return "🥚"
         case .freshWater: return "🥤"
         case .heartScale: return "💗"
+        case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
+        case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
+        case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
+        case .naturePlant: return "🪴"; case .natureBench: return "🌿"; case .natureLantern: return "🏮"
         }
     }
     /// 상점 판매가(재화 = 별의조각). nil = 상점 미판매.
@@ -306,6 +318,12 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .shinyCharm: return nil
         case .freshWater: return PuzzleDungeon.freshWaterPrice
         case .heartScale: return MoveRelearn.price
+        case .roomBed: return 1_500
+        case .roomTable: return 1_000
+        case .roomLamp: return 800
+        case .lovelyVanity, .retroArcade, .natureBench: return 1_400
+        case .lovelySofa, .retroTV, .naturePlant: return 1_100
+        case .lovelyHeartLamp, .retroRadio, .natureLantern: return 850
         default: return isEvolutionItem ? Self.evolutionItemPrice : nil
         }
     }
@@ -314,6 +332,18 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .shinyCharm: return true
         default: return false
+        }
+    }
+    /// R7 reactions are per furniture (not per species), keeping the content budget finite.
+    var roomReaction: String? {
+        switch self {
+        case .roomBed: return "beside"
+        case .roomTable: return "onTop"
+        case .roomLamp: return "under"
+        case .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
+             .retroArcade, .retroRadio, .retroTV,
+             .naturePlant, .natureBench, .natureLantern: return "beside"
+        default: return nil
         }
     }
 }
@@ -683,6 +713,8 @@ enum RotomForm: String, Codable, CaseIterable, Sendable {
 /// 현재 키우는 포켓몬.
 struct MonState: Codable, Sendable, Identifiable {
     var id = UUID()
+    /// 함께하기 시작한 시각. 기억을 처음 남긴 시각과 분리해, 기록이 없는 새 동행도 첫 만남을 가진다.
+    var firstMetAt: Date?
     var baseID: Int
     var pathIDs: [Int]      // 실제 진화 경로(분기 선택 반영)
     var plannedPathIDs: [Int] // 사전에 선택한 전체 진화 경로
@@ -730,7 +762,7 @@ struct MonState: Codable, Sendable, Identifiable {
          gender: PokemonGender? = nil,
          evolutionStatRelation: Int? = nil,
          nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false,
-         names: [Int: [String: String]]? = nil, isGraduated: Bool = false) {
+         names: [Int: [String: String]]? = nil, isGraduated: Bool = false, firstMetAt: Date? = nil) {
         self.baseID = baseID
         self.pathIDs = pathIDs
         if let plannedPathIDs, !plannedPathIDs.isEmpty {
@@ -751,6 +783,7 @@ struct MonState: Codable, Sendable, Identifiable {
         self.isGraduated = isGraduated
         self.dittoDisguise = dittoDisguise
         self.dittoRevealed = dittoRevealed
+        self.firstMetAt = firstMetAt
     }
 
     // 하위호환 디코딩: shiny/nature 는 구버전 저장에 없음 → 기본값.
@@ -780,6 +813,7 @@ struct MonState: Codable, Sendable, Identifiable {
         dittoDisguise = try c.decodeIfPresent(Int.self, forKey: .dittoDisguise)
         dittoRevealed = try c.decodeIfPresent(Bool.self, forKey: .dittoRevealed) ?? false
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        firstMetAt = try c.decodeIfPresent(Date.self, forKey: .firstMetAt)
         levelExperience = try c.decodeIfPresent(Int.self, forKey: .levelExperience) ?? 0
         learnedMoves = try c.decodeIfPresent([MoveSpec].self, forKey: .learnedMoves) ?? []
         rotomForm = try c.decodeIfPresent(RotomForm.self, forKey: .rotomForm)

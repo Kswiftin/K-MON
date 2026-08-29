@@ -704,6 +704,30 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.justGraduated, "포3")
     }
 
+    func testHatchAndEveryEvolutionReceiveDistinctAutomaticMemories() async {
+        let s = store(linear3)
+        await s.hatch(baseID: 1)
+        let companionID = try! XCTUnwrap(s.state.active?.id)
+
+        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
+        s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 1))
+
+        let eventIDs = s.memoryAlbum.entries(for: companionID).compactMap(\.eventID)
+        XCTAssertEqual(eventIDs.count, 3)
+        XCTAssertEqual(Set(eventIDs).count, 3)
+        XCTAssertTrue(eventIDs.contains("hatch:\(companionID.uuidString)"))
+        XCTAssertTrue(eventIDs.contains("evolution:\(companionID.uuidString):1:2"))
+        XCTAssertTrue(eventIDs.contains("evolution:\(companionID.uuidString):2:3"))
+        let evolutionCards = s.memoryAlbum.milestones(for: companionID).filter {
+            if case .evolution = $0.kind { return true }
+            return false
+        }
+        XCTAssertEqual(Set(evolutionCards.map(\.id)), [
+            "evolution:evolution:\(companionID.uuidString):1:2",
+            "evolution:evolution:\(companionID.uuidString):2:3",
+        ])
+    }
+
     func testNoEvolutionGraduatesAtSingleThreshold() async {
         let s = store(noEvo)
         await s.hatch(baseID: 20)

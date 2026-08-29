@@ -104,7 +104,16 @@ final class CompanionStore {
         celebration = c; celebrationSeq += 1
         if case .evolve = c {
             recordAchievement(.evolve, 1)
-            recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。", eventID: "evolve")
+            // A species or event-kind key would collapse every later evolution for this
+            // individual.  The post-transition stage and species identify this one durable
+            // transition, while the UUID prevents cross-companion collisions.
+            guard let mon = state.active else { return }
+            let eventID = "evolution:\(mon.id.uuidString):\(mon.stageIndex):\(mon.currentID)"
+            let now = clock()
+            recordEventMemory("\(speciesName)로 진화했다.", "Evolved into \(speciesName).", "\(speciesName)に進化した。",
+                              companionID: mon.id, eventID: eventID, occurredAt: now)
+            memoryAlbum.recordEvolution(companionID: mon.id, eventID: eventID,
+                                        evolvedSpeciesID: mon.currentID, occurredAt: now)
         }
     }
     /// 연출 재생 후 UI 가 호출(1회성 보장).
@@ -131,6 +140,8 @@ final class CompanionStore {
     private let dittoDisguiseRollingEnabled: Bool
     /// 세션 내 활성 개체 교체 감지용. await 뒤 이전 개체의 결과가 새 개체를 덮지 않게 한다.
     private var activeGeneration = 0
+    private enum LoadOutcome { case loaded, newState, resetState }
+    private var loadOutcome: LoadOutcome = .newState
 
     init(provider: any PokeProviding = PokeAPIClient.shared,
          clock: @escaping () -> Date = Date.init,
@@ -158,6 +169,16 @@ final class CompanionStore {
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
+        // Room placement is derived from this save's bag.  Normalize at the state/album join so
+        // a hand-edited or imported album cannot render furniture the player does not own.
+        // A corrupt/forced-reset state has no trustworthy ownership list. Pruning here would
+        // turn state recovery into irreversible album deletion.
+        if case .loaded = loadOutcome {
+            self.memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
+        }
+        self.memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
+        migrateAchievementRoomStyleUnlocks()
+        backfillFirstMeetingDates()
         reconcileStoredEggDates()
         // 정산 없이 앱이 죽은 랭크전은 여기서 패배로 마감한다(에스크로는 이미 빠져나가 있다).
         settleAbandonedRankedBattleIfNeeded()
@@ -166,6 +187,17 @@ final class CompanionStore {
         // 완료된 모험 때문에 비활성으로 보이는 복구 불가능 상태가 된다.
         claimAdventure()   // 끝난 run 만 정산한다 — 진행 중이면 그대로 둔다.
         if state.active != nil { displayState = .idle }
+    }
+
+    /// R8 added room-style tickets after achievement counters were already persisted. Derive
+    /// the entitlement from tier one, rather than replaying rewards, so this is idempotent.
+    private func migrateAchievementRoomStyleUnlocks() {
+        let tickets: [(AchievementTrack, MemoryHomeRoomStyle)] = [
+            (.focus, .lovely), (.evolve, .nature), (.battle, .retro)
+        ]
+        for (track, style) in tickets where state.achievements.tier(track) >= 1 {
+            memoryAlbum.unlockRoomStyle(style)
+        }
     }
 
     // MARK: 파생값 (UI)
@@ -1095,9 +1127,10 @@ final class CompanionStore {
 
     // MARK: 기억·모험
 
-    private func recordEventMemory(_ ko: String, _ en: String, _ ja: String, eventID: String) {
-        guard let mon = state.active else { return }
-        memoryAlbum.record(companionID: mon.id, body: l.t(ko, en, ja), source: .event, eventID: eventID)
+    private func recordEventMemory(_ ko: String, _ en: String, _ ja: String,
+                                   companionID: UUID, eventID: String, occurredAt: Date? = nil) {
+        memoryAlbum.record(companionID: companionID, body: l.t(ko, en, ja), source: .event,
+                           eventID: eventID, createdAt: occurredAt ?? clock())
     }
     var activeAdventure: AdventureRun? { state.adventure }
     var isAdventuring: Bool { state.adventure != nil }
@@ -1186,7 +1219,15 @@ final class CompanionStore {
             repeatElement(now.addingTimeInterval(Self.storedEggHatchDelay), count: acceptedEggs))
         reward.eggFragments = fragments
         reward.bonusEggs = earnedEggs
-        recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。", eventID: "adventure-claim")
+        // `AdventureRun.id` is persisted before a run can be claimed.  Replaying a claim
+        // after a relaunch therefore hits the same idempotency key, but each new run gets
+        // its own memory.
+        if let mon = state.active {
+            recordEventMemory("모험을 무사히 마쳤다.", "Finished the adventure safely.", "冒険を無事に終えた。",
+                              companionID: mon.id, eventID: "adventure:\(run.id.uuidString)", occurredAt: now)
+            memoryAlbum.recordCompletedFocusSession(companionID: mon.id, sessionID: run.id.uuidString,
+                                                     completedAt: now)
+        }
         state.adventureHistory.insert(AdventureRecord(id: run.id, zone: run.zone,
                                                        companionSpeciesID: run.companionSpeciesID,
                                                        completedAt: now, stardust: reward.starPieces,
@@ -1302,6 +1343,19 @@ final class CompanionStore {
             state.starPieces += reward
             paid += reward
             if let outfit = award.achievement.outfits[award.tier - 1] { grantOutfit(outfit) }
+            // The first milestone on each relevant track is a one-time room-style ticket.
+            // `AchievementLadder.record` only returns crossed tiers, so this cannot duplicate
+            // on recovery or when the counter is already capped.
+            if award.tier == 1 {
+                switch award.achievement.track {
+                case .focus: memoryAlbum.unlockRoomStyle(.lovely)
+                case .evolve: memoryAlbum.unlockRoomStyle(.nature)
+                case .battle: memoryAlbum.unlockRoomStyle(.retro)
+                // 방 스타일이 없는 트랙. `default` 대신 열거하는 이유는, 다음에 트랙이 늘 때
+                // **컴파일 에러로 드러나게** 하기 위해서다 — 조용히 빠지면 아무도 못 잡는다.
+                case .race, .dungeon, .dungeonSweep: break
+                }
+            }
             notifyCompanionEvent(l.notifAchievementTitle,
                                  l.notifAchievementBody(l.achievementName(award.achievement.track),
                                                         award.tier, reward))
@@ -1386,6 +1440,7 @@ final class CompanionStore {
         let released = state.boxedMons.remove(at: index)
         AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
         memoryAlbum.deleteAll(for: released.id)
+        memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
         chatStore.deleteSession(for: released.id)
         save()
         return true
@@ -1402,6 +1457,7 @@ final class CompanionStore {
         let offeredSpecies = state.active?.id == offeredID
             ? state.active?.currentID : state.boxedMons.first(where: { $0.id == offeredID })?.currentID
         var received = incoming
+        if received.firstMetAt == nil { received.firstMetAt = clock() }
         if let offeredSpecies { Self.applyPairedTradeEvolution(to: &received, counterpartSpeciesID: offeredSpecies) }
         if state.active?.id == offeredID {
             guard let sent = state.active else { return false }
@@ -1409,6 +1465,8 @@ final class CompanionStore {
             memoryAlbum.deleteAll(for: sent.id)
             chatStore.deleteSession(for: sent.id)
             state.active = received
+            memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
+            memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
             activeGeneration += 1
             currentLine = nil
             displayedMoves = []
@@ -1426,6 +1484,8 @@ final class CompanionStore {
         memoryAlbum.deleteAll(for: sent.id)
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
+        memoryAlbum.recordFirstMeeting(companionID: received.id, at: received.firstMetAt!)
+        memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
         save()
         return true
     }
@@ -1525,10 +1585,12 @@ final class CompanionStore {
         var shedinja = MonState(baseID: 290, pathIDs: [290, 292], plannedPathIDs: [290, 292],
                                 stageIndex: 1, usedAtStage: 0, rarity: source.rarity, totalForms: 2,
                                 isShiny: source.isShiny, nature: source.nature, gender: .genderless,
-                                evolutionStatRelation: source.evolutionStatRelation, names: line.names)
+                                evolutionStatRelation: source.evolutionStatRelation, names: line.names,
+                                firstMetAt: clock())
         shedinja.levelExperience = source.levelExperience
         shedinja.learnedMoves = source.learnedMoves
         state.boxedMons.append(shedinja)
+        memoryAlbum.recordFirstMeeting(companionID: shedinja.id, at: shedinja.firstMetAt!)
     }
 
     func declineMoveLearning() {
@@ -2734,7 +2796,8 @@ final class CompanionStore {
                            stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: plan.count,
                            isShiny: shiny, nature: nature, gender: gender,
                            evolutionStatRelation: statRelation,
-                           names: line.names)   // 박스 개체는 currentLine 이 없어 이름을 여기서 들고 가야 한다
+                           names: line.names, firstMetAt: clock())   // 박스 개체는 currentLine 이 없어 이름을 여기서 들고 가야 한다
+        memoryAlbum.recordFirstMeeting(companionID: mon.id, at: mon.firstMetAt!)
         // 동행이 비어 있으면(졸업 직후 등) 박스가 아니라 바로 동행으로 부화한다 — 그러지 않으면
         // 졸업 후 동행 없는 상태로 남아 사용자가 박스에서 직접 꺼내야 한다.
         if state.active == nil {
@@ -2750,7 +2813,10 @@ final class CompanionStore {
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
         let name = line.localizedName(line.baseID, state.language)
-        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。", eventID: "hatch")
+        // Stored eggs can hatch into the box while another companion is active.  Attribute
+        // the evidence to the newborn rather than whichever companion happens to be active.
+        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。",
+                          companionID: mon.id, eventID: "hatch:\(mon.id.uuidString)")
         notifyCompanionEvent(shiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              shiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         AppLog.write("stored egg hatched: base=\(line.baseID) shiny=\(shiny)")
@@ -2937,9 +3003,13 @@ final class CompanionStore {
                                 stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: evolutionPlan.count,
                                 isShiny: isShiny, nature: nature, gender: gender,
                                 evolutionStatRelation: statRelation, dittoDisguise: dittoDisguise,
-                                names: line.names)   // 박스로 들어가도 도감이 이름을 그릴 수 있게 개체에 저장
+                                names: line.names, firstMetAt: clock())   // 박스로 들어가도 도감이 이름을 여기서 들고 가야 한다
+        let hatchedID = state.active!.id
+        memoryAlbum.recordFirstMeeting(companionID: hatchedID, at: state.active!.firstMetAt!)
         AppLog.write("hatch: base=\(line.baseID) rarity=\(line.rarity) shiny=\(isShiny) forms=\(evolutionPlan.count) ditto=\(dittoDisguise != nil)")
         let name = line.localizedName(line.baseID, state.language)
+        recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。",
+                          companionID: hatchedID, eventID: "hatch:\(hatchedID.uuidString)")
         notifyCompanionEvent(showShiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
                              showShiny ? l.notifShinyHatchBody(name) : l.notifHatchBody(name))
         justEvolvedTo = nil        // 새 부화는 "성장" 문구(진화 아님) — 직전 진화명이 남아 표시되지 않게
@@ -3093,7 +3163,7 @@ final class CompanionStore {
 
     /// 내보내기 페이로드. 파일 쓰기는 호출자(UI)가 사용자가 고른 위치에 수행한다.
     func exportedSaveData(appVersion: String, deviceName: String) throws -> Data {
-        try SaveTransfer.encode(state: state, appVersion: appVersion, deviceName: deviceName, now: clock())
+        try SaveTransfer.encode(state: state, memoryAlbum: memoryAlbum.snapshot, appVersion: appVersion, deviceName: deviceName, now: clock())
     }
 
     /// 검증된 세이브를 이 기기에 적용 — 기존 상태 백업 → 기기 기준 재정렬 → 저장 → 라인 재로딩.
@@ -3103,7 +3173,13 @@ final class CompanionStore {
         try backupStateBeforeImport()
         state = SaveTransfer.rebasedForThisDevice(envelope.state, current: state)
         let validIDs = Set(([state.active].compactMap { $0 } + state.boxedMons).map(\.id))
-        memoryAlbum.prune(validCompanionIDs: validIDs)
+        if let importedAlbum = envelope.memoryAlbum {
+            memoryAlbum.replace(with: importedAlbum, validCompanionIDs: validIDs, ownedItems: state.inventory)
+        } else {
+            memoryAlbum.prune(validCompanionIDs: validIDs, ownedItems: state.inventory)
+        }
+        memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
+        backfillFirstMeetingDates()
         chatStore.prune(validCompanionIDs: validIDs)
         // 이전 개체 기준으로 진행 중이던 비동기·연출을 전부 무효화한다. activeGeneration 을 올리지
         // 않으면 먼저 떠 있던 라인 로드가 완료되며 새로 불러온 개체를 덮어쓴다.
@@ -3193,7 +3269,7 @@ final class CompanionStore {
 
     // MARK: 영속
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }   // 파일 없음 = 신규 설치
+        guard let data = try? Data(contentsOf: fileURL) else { loadOutcome = .newState; return }   // 파일 없음 = 신규 설치
         guard let s = try? JSONDecoder().decode(CompanionState.self, from: data) else {
             // 디코드 실패(전면 손상/미래 스키마) → fresh 로 시작하되, 다음 save() 가 원본을 덮어써 영구
             // 유실되기 전에 .corrupt 로 보존해 수동 복구 여지를 남긴다(도감 per-entry 격리로 못 살린 경우 대비).
@@ -3201,6 +3277,7 @@ final class CompanionStore {
             try? FileManager.default.removeItem(at: backup)
             try? FileManager.default.moveItem(at: fileURL, to: backup)
             AppLog.write("companion state decode failed — original backed up to \(backup.lastPathComponent), starting fresh")
+            loadOutcome = .resetState
             return
         }
         // 배포 강제 초기화는 무결성 검사보다 먼저 처리하고 즉시 디스크에 기록한다. 다음 자동 저장을
@@ -3209,6 +3286,7 @@ final class CompanionStore {
             AppLog.write("forced save reset on load: v\(s.forcedResetVersion) → v\(SaveTransfer.forcedResetVersion)")
             state = CompanionState()
             save()
+            loadOutcome = .resetState
             return
         }
         // 무결성 검사는 **정규화 전** 원본에서 한다 — sanitized 가 값을 바꾸면(클램프·전설 리셋) 서명이
@@ -3229,6 +3307,7 @@ final class CompanionStore {
             }
             state = SaveTransfer.resetForTamper(s)
             save()   // 즉시 새 서명으로 덮어써 조작본을 남기지 않는다
+            loadOutcome = .resetState
             return
         }
         // 불러오기 경계와 같은 정규화를 디스크에서 읽을 때도 건다. 불러오기만 막으면 **이미 저장된**
@@ -3236,8 +3315,31 @@ final class CompanionStore {
         // (디코드는 *성공*하므로 위의 .corrupt 복구도 발동하지 않는다). 여기서 걸면 자가 복구된다.
         // 출처를 .localDisk 로 넘겨 **개수 절단만** 뺀다 — 값 클램프는 그대로 걸린다(#145).
         state = SaveTransfer.sanitized(s, origin: .localDisk)
+        loadOutcome = .loaded
+    }
+    /// `firstMetAt` 이전 세이브는 가장 이른 앨범 기록으로 보정한다. 새 동행은 부화 시각을 직접 저장한다.
+    private func backfillFirstMeetingDates() {
+        var changed = false
+        for index in state.boxedMons.indices {
+            guard state.boxedMons[index].firstMetAt == nil,
+                  let date = memoryAlbum.firstRecordedAt(for: state.boxedMons[index].id) else { continue }
+            state.boxedMons[index].firstMetAt = date; changed = true
+            memoryAlbum.recordFirstMeeting(companionID: state.boxedMons[index].id, at: date)
+        }
+        if var active = state.active, active.firstMetAt == nil,
+           let date = memoryAlbum.firstRecordedAt(for: active.id) {
+            active.firstMetAt = date; state.active = active; changed = true
+            memoryAlbum.recordFirstMeeting(companionID: active.id, at: date)
+        } else if let active = state.active, let date = active.firstMetAt {
+            memoryAlbum.recordFirstMeeting(companionID: active.id, at: date)
+        }
+        for mon in state.boxedMons where mon.firstMetAt != nil {
+            memoryAlbum.recordFirstMeeting(companionID: mon.id, at: mon.firstMetAt!)
+        }
+        if changed { save() }
     }
     private func save() {
+        memoryAlbum.clearSharedPinnedMemory(unlessPinnedFor: state.active?.id)
         // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).
         guard let data = try? JSONEncoder().encode(SaveTransfer.signed(state)) else { return }
         try? data.write(to: fileURL, options: .atomic)   // 부분 쓰기 손상 방지(펫 상태)

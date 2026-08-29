@@ -1305,6 +1305,18 @@ struct L {
         case .freshWater: return t("먹는샘물", "Fresh Water", "おいしいみず")
         case .ovalStone: return t("둥근돌", "Oval Stone", "まるいいし")
         case .heartScale: return t("하트비늘", "Heart Scale", "ハートのウロコ")
+        case .roomBed: return t("별빛 침대", "Starlight Bed", "星あかりベッド")
+        case .roomTable: return t("추억 테이블", "Memory Table", "思い出テーブル")
+        case .roomLamp: return t("달빛 램프", "Moonlight Lamp", "月あかりランプ")
+        case .lovelyVanity: return t("러블리 화장대", "Lovely Vanity", "ラブリードレッサー")
+        case .lovelySofa: return t("러블리 소파", "Lovely Sofa", "ラブリーソファ")
+        case .lovelyHeartLamp: return t("하트 램프", "Heart Lamp", "ハートランプ")
+        case .retroArcade: return t("레트로 오락기", "Retro Arcade", "レトロアーケード")
+        case .retroRadio: return t("레트로 라디오", "Retro Radio", "レトロラジオ")
+        case .retroTV: return t("레트로 TV", "Retro TV", "レトロテレビ")
+        case .naturePlant: return t("숲 화분", "Forest Plant", "森の鉢植え")
+        case .natureBench: return t("나무 벤치", "Wood Bench", "木のベンチ")
+        case .natureLantern: return t("이끼 랜턴", "Moss Lantern", "苔ランタン")
         }
     }
     func outfitSlotName(_ slot: OutfitSlot) -> String {
@@ -1361,6 +1373,11 @@ struct L {
             return t("던전에 들어갈 때 한 병 마셔 체력 예산을 3 올려줘요.",
                      "Drink one on entering the dungeon to raise the hit-point budget by 3.",
                      "ダンジョンに入るとき1本飲んで体力予算を3上げます。")
+        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
+             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
+            return t("미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요.",
+                     "Furniture for your mini room. It never affects growth or rewards.",
+                     "ミニルームに置く家具です。成長や報酬には影響しません。")
         default:
             // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 27개 나열하면 새 아이템을 넣을 때 빠뜨린다.
             switch kind.evolutionRule {

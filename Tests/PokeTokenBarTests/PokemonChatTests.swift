@@ -400,6 +400,17 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertTrue(request.conversationInput.contains("event 9"))
     }
 
+    func testManualMemoriesNeverReachAProviderRequest() {
+        let id = UUID()
+        let request = PokemonChatRequest(profile: .fixture, memories: [
+            PokemonMemory(companionID: id, createdAt: Date(), source: .event, body: "shared event"),
+            PokemonMemory(companionID: id, createdAt: Date(), source: .manual, body: "private note")
+        ], recentMessages: [])
+
+        XCTAssertEqual(request.memories.map(\.body), ["shared event"])
+        XCTAssertFalse(request.conversationInput.contains("private note"))
+    }
+
     func testConcurrentRepliesAndReloadPreserveEveryMessage() async {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }

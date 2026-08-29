@@ -22,6 +22,10 @@ enum FloatingPetArtwork: String, Sendable, CaseIterable {
 @Observable
 final class AppSettings {
     private let defaults: UserDefaults
+    private let clock: () -> Date
+
+    var memoryHomeEnabled: Bool { didSet { defaults.set(memoryHomeEnabled, forKey: "memoryHomeEnabled") } }
+    var memoryHomeDiagnosticsEnabled: Bool { didSet { defaults.set(memoryHomeDiagnosticsEnabled, forKey: "memoryHomeDiagnosticsEnabled") } }
 
     var floatingPetEnabled: Bool { didSet { defaults.set(floatingPetEnabled, forKey: "floatingPetEnabled") } }
     var floatingPetSize: Double { didSet { defaults.set(floatingPetSize, forKey: "floatingPetSize") } }
@@ -69,10 +73,18 @@ final class AppSettings {
     /// 리스너가 뜨는 순간 macOS 가 로컬 네트워크 권한을 묻는다 — 배틀을 안 하는 사용자가 그 창을
     /// 영영 안 보게 하는 유일한 스위치다. 기본값은 기존 동작(켜짐)이다.
     var battleInvitesEnabled: Bool { didSet { defaults.set(battleInvitesEnabled, forKey: "battleInvitesEnabled") } }
+    /// Random installation identity for Memory Home LAN access controls.  It is intentionally not
+    /// DeviceID: reinstalling/resetting preferences creates a new identity and clears old blocks.
+    let memoryHomeLANPeerID: UUID
     private var chatExecutablePaths: [String: String]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, clock: @escaping () -> Date = Date.init) {
         self.defaults = defaults
+        self.clock = clock
+        // Memory Home is part of the default experience.  `object(forKey:)` deliberately
+        // distinguishes an existing user's explicit `false` choice from an unset legacy key.
+        memoryHomeEnabled = defaults.object(forKey: "memoryHomeEnabled") as? Bool ?? true
+        memoryHomeDiagnosticsEnabled = defaults.object(forKey: "memoryHomeDiagnosticsEnabled") as? Bool ?? false
         floatingPetEnabled = defaults.object(forKey: "floatingPetEnabled") as? Bool ?? false
         floatingPetSize = defaults.object(forKey: "floatingPetSize") as? Double ?? 96
         floatingPetRoamingEnabled = defaults.object(forKey: "floatingPetRoamingEnabled") as? Bool ?? false
@@ -93,12 +105,72 @@ final class AppSettings {
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
         battleInvitesEnabled = defaults.object(forKey: "battleInvitesEnabled") as? Bool ?? true
+        if let value = defaults.string(forKey: "memoryHomeLANPeerID"), let id = UUID(uuidString: value) {
+            memoryHomeLANPeerID = id
+        } else {
+            let id = UUID(); memoryHomeLANPeerID = id
+            defaults.set(id.uuidString, forKey: "memoryHomeLANPeerID")
+        }
         chatExecutablePaths = defaults.dictionary(forKey: "pokemonChatExecutablePaths") as? [String: String] ?? [:]
     }
 
     /// LAN 탐색을 시작해도 되는가. 설정값을 읽는 자리와 리스너를 올리는 자리가 각각 판정하면
     /// 한쪽만 바뀌어도 아무 테스트가 안 깨진다 — 판정은 여기 한 곳이다.
     var shouldStartLANDiscovery: Bool { battleInvitesEnabled }
+
+    /// Opt-in only, local-only aggregate. No companion, memory, or chat content is retained here.
+    func recordMemoryHomeEntry() {
+        guard memoryHomeDiagnosticsEnabled else { return }
+        let now = clock()
+        recordMemoryHomeExposure(at: now)
+        incrementDiagnostic("memoryHomeDiagnosticsHomeEntries", weekKey(for: now))
+    }
+
+    /// Visibility and entry are deliberately distinct: revealing the card while Home is already
+    /// selected sets the period start but must not inflate the tab-entry counter.
+    func recordMemoryHomeExposure() {
+        guard memoryHomeDiagnosticsEnabled else { return }
+        recordMemoryHomeExposure(at: clock())
+    }
+
+    func recordManualMemoryCreated() {
+        guard memoryHomeDiagnosticsEnabled else { return }
+        incrementDiagnostic("memoryHomeDiagnosticsManualCreations", weekKey(for: clock()))
+    }
+
+    func memoryHomeDiagnosticsData() throws -> Data {
+        struct Export: Codable {
+            let periodStart: Date?
+            let periodEnd: Date
+            let homeEntriesByWeek: [String: Int]
+            let manualMemoriesByWeek: [String: Int]
+        }
+        let export = Export(periodStart: defaults.object(forKey: "memoryHomeDiagnosticsFirstSeen") as? Date,
+                            periodEnd: clock(),
+                            homeEntriesByWeek: defaults.dictionary(forKey: "memoryHomeDiagnosticsHomeEntries") as? [String: Int] ?? [:],
+                            manualMemoriesByWeek: defaults.dictionary(forKey: "memoryHomeDiagnosticsManualCreations") as? [String: Int] ?? [:])
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(export)
+    }
+
+    private func incrementDiagnostic(_ key: String, _ week: String) {
+        var counts = defaults.dictionary(forKey: key) as? [String: Int] ?? [:]
+        counts[week, default: 0] += 1
+        defaults.set(counts, forKey: key)
+    }
+
+    private func recordMemoryHomeExposure(at date: Date) {
+        if defaults.object(forKey: "memoryHomeDiagnosticsFirstSeen") == nil {
+            defaults.set(date, forKey: "memoryHomeDiagnosticsFirstSeen")
+        }
+    }
+
+    private func weekKey(for date: Date) -> String {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = .current
+        let parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return String(format: "%04d-W%02d", parts.yearForWeekOfYear ?? 0, parts.weekOfYear ?? 0)
+    }
 
     static func chatProviderPathKey(_ kind: PokemonChatProviderKind) -> String { "pokemonChatExecutablePath.\(kind.rawValue)" }
     func chatProviderExecutablePath(for kind: PokemonChatProviderKind) -> String? { chatExecutablePaths[kind.rawValue] }

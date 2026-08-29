@@ -259,13 +259,13 @@ private struct PokemonMemoryAlbumView: View {
     private var l: L { L(language) }
     var body: some View {
         VStack(alignment: .leading) {
-            HStack { Text(l.t("기억 앨범", "Memory album", "思い出アルバム")).font(.headline); Spacer()
-                Button(l.t("전체 삭제", "Delete all", "すべて削除"), role: .destructive) { album.deleteAll(for: companionID) }
-            }
+            Text(l.t("기억 앨범", "Memory album", "思い出アルバム")).font(.headline)
             List {
                 ForEach(album.entries(for: companionID).reversed()) { memory in
                     HStack { VStack(alignment: .leading) { Text(memory.body); Text(memory.createdAt, style: .date).font(.caption2).foregroundStyle(.secondary) }; Spacer()
-                        Button(role: .destructive) { album.delete(memory) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+                        if memory.source == .manual {
+                            Button(role: .destructive) { _ = album.delete(memory) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+                        }
                     }
                 }
             }

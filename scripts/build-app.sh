@@ -30,6 +30,10 @@ echo "==> $APP 조립"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp ".build/release/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
+# 번들 리소스 게이트를 없앴다 — Memory Home 아트가 `MemoryHomePixelArtSprites` 의 문자 격자로
+# 바뀌어 실행 파일 안에 들어간다. 앱이 들고 다녀야 할 이미지 리소스가 하나도 없으므로
+# `Bundle.module` 도, 그 번들을 복사하는 단계도 필요 없다.
+# **리소스를 다시 도입하면 여기에 존재 검사를 되살릴 것** — 없으면 조용히 빠진 채 배포된다.
 # 심볼 strip — 릴리스 바이너리 1.84MB → 0.80MB(-57%). codesign 전에 수행(서명 무효화 방지).
 strip -rSTx "$APP/Contents/MacOS/$EXECUTABLE" 2>/dev/null || strip -rSx "$APP/Contents/MacOS/$EXECUTABLE"
 cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
@@ -61,12 +65,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>SUEnableAutomaticChecks</key><false/>
     <key>SUAllowsAutomaticUpdates</key><$UPDATER_ALLOWED/>
     <key>SUAutomaticallyUpdate</key><$UPDATER_ALLOWED/>
-    <key>NSLocalNetworkUsageDescription</key><string>Discover Pokédoro rooms for ranked battles and Pokéathlon with up to four friends.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>Discover nearby Memory Homes, trainers, trades, and Pokéathlon rooms on your local network.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_ptbbattle._tcp</string>
         <string>_kmonroom._tcp</string>
         <string>_kmontrade._tcp</string>
+        <string>_kmonhome._tcp</string>
     </array>
 </dict>
 </plist>
