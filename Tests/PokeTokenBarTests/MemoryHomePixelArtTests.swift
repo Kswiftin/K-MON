@@ -3,6 +3,9 @@ import XCTest
 
 /// 미니룸 아트 계약. 원본이 문자 격자라 **격자 자체를 검사**할 수 있다 — PNG 였다면
 /// "파일이 있다" 말고는 물어볼 것이 없었다.
+/// `MemoryHomePixelArt` 가 `@MainActor` 라 테스트도 같은 액터에서 돈다 — 아트 캐시가
+/// 메인 액터에 묶여 있는 이유는 그 타입의 주석에 있다.
+@MainActor
 final class MemoryHomePixelArtTests: XCTestCase {
 
     private var allGrids: [(String, [String])] {

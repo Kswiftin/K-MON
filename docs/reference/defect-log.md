@@ -767,6 +767,30 @@ read_when:
   그 테스트의 목록과 `SaveTransfer.rebasedForThisDevice` 를 같이 손대야 한다 — 던전 진행도가 그 예로,
   날짜 키가 로컬 날짜 문자열이라 계정 원장이고 **같은 날이면 정산 플래그를 OR 로 합쳐야** 한다
   (맥 A 에서 클리어해 내보낸 세이브를 아직 안 푼 맥 B 로 불러오면 같은 날 보상이 두 번 나간다).
+
+- **로컬 Swift 가 CI 보다 앞서면 로컬 초록은 CI 초록의 근거가 아니다 — 신형이 *더 적게* 잡는다.**
+  개발 Mac 은 Xcode 26 / Swift 6.3, CI 러너 `macos-15` 는 Swift 6.1.2 다. 6.3 이 통과시키는 두 부류를
+  6.1.2 는 **에러로** 막는다: (1) non-Sendable 타입의 `static let` (`[MemoryHomeRoomStyle: [ItemKind:
+  NSImage]]`) 은 "concurrency-safe 하지 않다"로 거부되고, (2) 튜플 산술을 한 식에 몰아 넣은 클로저
+  (`(0..<48).map { ($0 % 8, $0 / 8) }.sorted { abs(…)+abs(…) < abs(…)+abs(…) }`) 는 타입 체커 시간
+  초과로 죽는다. PR #161 이 이 둘로 `swift build` 에서 에러 4건을 냈는데 **같은 커밋이 로컬에선 18초에
+  초록**이었다. warning 게이트로는 못 본다 — warning 이 아니라 컴파일 에러이고, 로컬 컴파일러는 애초에
+  진단을 만들지 않는다.
+- **그 처방이 반대 방향으로 게이트를 깨는 것까지가 이 부류다.** 컴파일러가 권하는 첫 수는
+  `nonisolated(unsafe)` 인데(6.1.2 통과, 선례 `CrashReporter.logFD`), macOS 26 SDK 에선 `NSImage` 가
+  이미 `Sendable` 이라 6.3 이 "불필요한 표시" warning 3건을 낸다 → **로컬 `test-gate.sh` 가 빨강**이 된다.
+  한 툴체인만 보고 고르면 다른 쪽이 깨진다. 양쪽 다 조용한 선택은 `@MainActor` 다 — 6.1.2 는
+  격리를 인정하고 6.3 은 잉여 표시로 보지 않는다. 방을 그리는 곳은 전부 SwiftUI 뷰라 비용도 없다.
+  딸린 대가 둘: 테스트 클래스에 `@MainActor` 가 필요하고(`MemoryHomePixelArtTests`), 중첩 구조체의
+  암묵적 memberwise `init` 은 메인 액터가 아니라서 **기본값이 부르는 함수는 `nonisolated`** 여야 한다
+  (`Palette.sky` → `skyRamp`, 이걸 빼먹으면 "main actor-isolated default value in a nonisolated context").
+- **이 부류는 CI 가 유일한 심판이다.** 로컬에 Xcode 26 하나뿐이면 6.1.2 를 재현할 수단이 없다. 게다가
+  6.1.2 는 첫 에러 묶음 뒤 emit-module 에서 멈추므로 **한 번 고쳐도 남은 에러는 다음 런에서 처음
+  드러난다** — 한 번에 다 나올 거라 가정하지 않는다. 부류 스윕은 PR 변경 파일의 `static let` 전수
+  확인으로 대신했다(나머지는 전부 값 타입이라 안전). 툴체인 격차 자체를 없애려면 러너를 `macos-26`
+  으로 올리면 되지만, 같은 러너가 `publish-development` 에서 배포 앱을 서명·빌드하므로 배포 표면이
+  같이 바뀐다 — 별도 판단 사항으로 남긴다. (2026-08-30, PR #161.)
+
 ## 호스트 로케일이 테스트 기대값에 새는 부류 (로컬 초록 / CI 빨강)
 
 - **새 세이브의 언어는 `AppLanguage.systemDefault` 라 호스트 로케일을 따라간다.** 개발 Mac 은

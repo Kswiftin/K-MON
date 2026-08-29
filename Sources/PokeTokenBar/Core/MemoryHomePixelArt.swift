@@ -7,6 +7,11 @@ import AppKit
 ///  1. 모든 픽셀이 diff 에 보인다 — PNG 는 리뷰할 수 없다.
 ///  2. 좌표표(rect)가 없다 — 12 종이 3 개 rect 를 돌려쓰던 부류가 구조적으로 불가능해진다.
 ///  3. 제3자 에셋이 없다 — 라이선스 공지·해시 게이트가 필요 없고, 오프라인에서 항상 그려진다.
+/// `@MainActor` 인 이유는 아래 세 캐시다. 방을 그리는 곳은 전부 SwiftUI 뷰(이미 메인 액터)이고,
+/// 이 표시가 없으면 Swift 6.1 이 "non-Sendable 한 `static let`" 으로 컴파일을 거부한다.
+/// `nonisolated(unsafe)` 로 막으면 반대로 Swift 6.3(macOS 26 SDK, `NSImage` 가 이미 `Sendable`)
+/// 이 "불필요한 표시" warning 을 내 `test-gate.sh` 가 죽는다 — 두 툴체인 다 조용한 쪽은 이것뿐이다.
+@MainActor
 enum MemoryHomePixelArt {
 
     // MARK: - 팔레트
@@ -37,7 +42,9 @@ enum MemoryHomePixelArt {
     ///
     /// 밤 램프가 눈에 띄게 어두운 것이 이 기능의 전부다. 세 램프의 밝기 차가 작으면 방을 열어도
     /// "시간이 흐른다" 가 안 읽히고, 코드에만 있는 기능이 된다.
-    static func skyRamp(for timeOfDay: MemoryHomeTimeOfDay) -> [PixelColor] {
+    /// `nonisolated` 인 이유: `Palette.sky` 의 기본값이 이 함수를 부르는데, 구조체의 암묵적
+    /// memberwise `init` 은 메인 액터가 아니다. 순수 함수라 액터에 묶일 이유도 없다.
+    nonisolated static func skyRamp(for timeOfDay: MemoryHomeTimeOfDay) -> [PixelColor] {
         switch timeOfDay {
         case .morning: return [0x3A4A6E, 0x7C6E8E, 0xE8A878, 0xFFE7C8].map(PixelColor.init)
         case .day:     return [0x2E5C86, 0x4E8CBE, 0x8ABEE2, 0xD8EEFA].map(PixelColor.init)

@@ -868,9 +868,11 @@ final class PokemonMemoryAlbum {
         guard Self.roomFurnitureItems.contains(item) else { return nil }
         let origin = Self.gridPoint(proposed)
         let occupied = memoryHomeAccess.placedDecor.filter { $0.id != excluding }
-        let candidates = (0..<48).map { ($0 % 8, $0 / 8) }.sorted {
-            abs($0.0 - origin.0) + abs($0.1 - origin.1) < abs($1.0 - origin.0) + abs($1.1 - origin.1)
-        }
+        // 한 줄로 쓰면 Swift 6.1 타입 체커가 시간 초과로 죽는다(6.3 은 통과). 튜플 산술을 이름 붙인
+        // 함수와 명시 타입으로 갈라 두면 추론할 것이 남지 않는다 — 동작은 같다.
+        func distance(_ point: (Int, Int)) -> Int { abs(point.0 - origin.0) + abs(point.1 - origin.1) }
+        let grid: [(Int, Int)] = (0..<48).map { (index: Int) in (index % 8, index / 8) }
+        let candidates = grid.sorted { distance($0) < distance($1) }
         guard let point = candidates.first(where: { candidate in
             !occupied.contains { Self.gridPoint($0.position) == candidate }
         }) else { return nil }
