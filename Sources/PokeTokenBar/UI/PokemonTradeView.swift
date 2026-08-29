@@ -198,6 +198,13 @@ struct PokemonTradeView: View {
                            "Changing an offer clears both confirmations.",
                            "ポケモンを変更すると双方の確認が解除されます。"))
                 .font(.caption).foregroundStyle(.secondary)
+            BattleChatPanel(configuration: BattleChatConfiguration(
+                messages: center.chatMessages,
+                mySenderID: center.chatSenderID,
+                isEnabled: center.peerSupportsChat,
+                unavailableMessage: center.peerSupportsChat ? nil : store.l.battleChatUnavailable,
+                l: store.l,
+                onSend: { center.sendChat($0) }))
             HStack {
                 Button(store.l.t("교환 취소", "Cancel Trade", "交換をやめる"), role: .cancel) { center.cancel() }
                 Spacer()

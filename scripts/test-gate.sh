@@ -32,6 +32,10 @@ LOGIC_CORE=(
   # 근처 트레이너 카드에 실리는 값을 굽고·읽고·자르는 곳. 게이트 밖에 두면 신뢰경계 클램프가
   # 무테스트로 남는다(새 로직 파일을 배열에 넣지 않으면 커버리지에서 아예 빠진다).
   "Sources/PokeTokenBar/Core/PeerAdvertisement.swift"
+  # 교환 세션의 상태 기계와 **상대가 보낸 채팅의 신뢰경계**(길이·정규형 재검사, 상대가 못 바꾸는
+  # 키로 세는 속도 제한)가 사는 곳. 소켓 부분은 단위 테스트가 안 닿아 파일 수치는 낮지만, 배열에
+  # 넣지 않으면 그 검증기가 커버리지에서 통째로 빠진다 — PeerAdvertisement 를 넣은 이유와 같다.
+  "Sources/PokeTokenBar/Core/PokemonTrade.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
   "Sources/PokeTokenBar/Core/BattleModel.swift"
   # 가변 위력(PokéAPI `power: null`) 계산. 순수 함수라 게이트 대상이고, 배열에 안 넣으면
