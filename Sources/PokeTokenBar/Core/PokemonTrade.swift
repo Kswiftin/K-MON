@@ -187,14 +187,14 @@ final class PokemonTradeCenter {
         send(.chat(message))
     }
 
-    /// 상대 프레임의 세 필드는 전부 상대가 부르는 값이다 — 길이·정규형을 다시 재고, 이름은 우리가
-    /// 아는 상대 이름으로 덮고, 속도 제한은 상대가 못 바꾸는 키로 센다.
+    /// 상대 프레임의 네 필드는 전부 상대가 부르는 값이다 — 길이·정규형을 다시 재고, 이름은 우리가
+    /// 아는 상대 이름으로 덮고, 속도 제한은 상대가 못 바꾸는 키로 세고, `id` 는 새로 짓는다.
+    /// (`id` 는 `Identifiable` 키라 상대가 같은 값을 두 번 보내면 화면의 `ForEach` 가 무너진다.)
     private func acceptChat(_ incoming: BattleChatMessage) {
         guard case .negotiating(let peer) = phase,
               let body = BattleChatPolicy.normalizedBody(incoming.body), body == incoming.body,
               chatRateLimiter.allows(remoteChatSenderID) else { return }
-        appendChat(BattleChatMessage(id: incoming.id, senderID: remoteChatSenderID,
-                                     senderName: peer, body: body))
+        appendChat(BattleChatMessage(senderID: remoteChatSenderID, senderName: peer, body: body))
     }
 
     private func appendChat(_ message: BattleChatMessage) {
@@ -222,22 +222,27 @@ final class PokemonTradeCenter {
         case .rosterRequest(let trainer):
             guard phase == .ready else { return }
             send(.roster(localRoster))
-            AppLog.write("trade roster preview sent to \(trainer)")
+            AppLog.write("trade roster preview sent to \(BattleChatPolicy.displayName(trainer) ?? "?")")
         case .roster(let roster):
             remoteRoster = Array(roster.prefix(100))
             if case .browsing(let peer) = phase { phase = .roster(peer: peer) }
+        // 트레이너 이름은 상대가 부르는 값이고 프레임 상한(1MB)까지 채울 수 있다. 그 이름은 협상
+        // 헤더와 **채팅 행마다** 박히는데 두 곳 다 `lineLimit` 이 없다 — 국면에 넣기 전에 자른다.
+        // 같은 클램프를 두 분기에 건다: 신청을 받는 쪽(`.request`)과 거는 쪽(`.accept`).
         case .request(let version, let trainer, let chatSupported):
-            guard version == TradeWireMessage.protocolVersion, phase == .ready else {
+            guard version == TradeWireMessage.protocolVersion, phase == .ready,
+                  let peer = BattleChatPolicy.displayName(trainer) else {
                 send(.decline(reason: "busy-or-incompatible")); return
             }
             isInitiator = false
             peerSupportsChat = chatSupported == true
-            phase = .incoming(peer: trainer)
+            phase = .incoming(peer: peer)
             postPrivateMessageNotification()
         case .accept(let trainer, let chatSupported):
-            guard case .requesting = phase else { return }
+            // 이름이 비면 브라우저가 이미 보여 준 이름을 그대로 쓴다 — 여기서 세션을 깰 이유는 없다.
+            guard case .requesting(let browsed) = phase else { return }
             peerSupportsChat = chatSupported == true
-            phase = .negotiating(peer: trainer)
+            phase = .negotiating(peer: BattleChatPolicy.displayName(trainer) ?? browsed)
             send(.roster(localRoster))
         case .chat(let message):
             acceptChat(message)
@@ -364,14 +369,21 @@ final class PokemonTradeCenter {
         self.connection?.cancel()
         self.connection = connection
         connection.stateUpdateHandler = { [weak self, weak connection] state in
-            guard case .failed = state else { return }
-            Task { @MainActor in
-                guard let self, self.connection === connection else { return }
-                if self.phase != .ready { self.phase = .failed("상대와 연결이 끊어졌습니다.") }
-                self.connection = nil
-            }
+            guard case .failed = state, let connection else { return }
+            Task { @MainActor in self?.connectionDropped(connection) }
         }
         receiveLength(on: connection)
+    }
+
+    /// 소켓이 끝났다. `.failed` 뿐 아니라 **읽기 루프도 여기로 온다** — 상대가 앱을 정상 종료하면
+    /// TCP 는 FIN 만 남기고 상태는 `.ready` 에 머무르므로 위 상태 감시가 영영 뜨지 않는다.
+    /// 예전에는 읽기 콜백이 그냥 리턴했고, 죽은 소켓 위에 "교환 중" 이 그대로 남았다(확정도
+    /// 커밋도 오지 않는다). 형제 경로인 `BattleCenter.connectionDropped` 와 같은 모양이다.
+    private func connectionDropped(_ connection: NWConnection) {
+        guard self.connection === connection else { return }
+        connection.cancel()
+        self.connection = nil
+        if phase != .ready { phase = .failed("상대와 연결이 끊어졌습니다.") }
     }
 
     private func send(_ message: TradeWireMessage) {
@@ -383,9 +395,13 @@ final class PokemonTradeCenter {
 
     private func receiveLength(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { [weak self, weak connection] data, _, _, _ in
-            guard let self, let connection, let data, data.count == 4 else { return }
-            let length = data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.bigEndian
-            guard length > 0, length <= Self.maxMessageBytes else { connection.cancel(); return }
+            guard let self, let connection else { return }
+            guard let data, data.count == 4, case let length = data.withUnsafeBytes({
+                $0.loadUnaligned(as: UInt32.self)
+            }).bigEndian, length > 0, length <= Self.maxMessageBytes else {
+                Task { @MainActor in self.connectionDropped(connection) }
+                return
+            }
             Task { @MainActor in
                 guard self.connection === connection else { return }
                 self.receiveBody(Int(length), on: connection)
@@ -395,7 +411,11 @@ final class PokemonTradeCenter {
 
     private func receiveBody(_ length: Int, on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: length, maximumLength: length) { [weak self, weak connection] data, _, _, _ in
-            guard let self, let connection, let data, data.count == length else { return }
+            guard let self, let connection else { return }
+            guard let data, data.count == length else {
+                Task { @MainActor in self.connectionDropped(connection) }
+                return
+            }
             // 못 읽는 프레임은 **건너뛰되 루프는 다시 건다**. 길이 프리픽스라 스트림이 어긋나지 않고,
             // 뒤 버전이 더한 선택적 프레임(채팅이 그랬다)에 길을 열어 둔다. 예전에는 여기서 그냥
             // 리턴해 수신을 다시 걸지 않았고, 세션은 살아 보이는 채 영영 귀를 닫았다.

@@ -473,7 +473,10 @@ final class BattleCenter {
     private(set) var peerSupportsChat = false
     private var chatHistory = BattleChatHistory()
     private var chatRateLimiter = BattleChatRateLimiter()
+    /// 화면이 "내 말풍선"을 가리는 키. 양쪽 모두 **우리가** 정한다 — `remoteChatSenderID` 는 상대가
+    /// ID 를 갈아 끼워도 속도 제한을 못 벗어나게 하고, 우리 ID 를 되받아 써도 못 사칭하게 한다.
     let chatSenderID = UUID()
+    private let remoteChatSenderID = UUID()
     /// 팝오버를 열 때 친구 탭으로 데려가라는 신호. **한 번 쓰면 꺼진다**(`consumePendingAttention`).
     ///
     /// 직접 끄지 말 것. 예전엔 `BattleView.onAppear` 가 껐는데, 친구 탭에 관문(`FriendView`)이
@@ -1697,11 +1700,17 @@ final class BattleCenter {
                 phase = .finished(iWon: true, byForfeit: true)
                 settleRankedBrawlIfNeeded(won: true)
             }
+        // 상대 프레임의 네 필드는 전부 상대가 부르는 값이다. `senderID` 를 그대로 믿으면 두 군데가
+        // 뚫린다 — 매 프레임 ID 를 갈아 끼우면 토큰 버킷이 새로 생겨 속도 제한이 없고, 우리
+        // `chatSenderID` 는 우리가 보내는 모든 프레임에 실려 나가므로 되받아 쓰면 화면이 내
+        // 말풍선으로 그린다. 교환(`PokemonTradeCenter.acceptChat`)과 같은 경계를 친다.
         case .chat(let message):
             guard case .battling = phase, chatIsAvailable,
-                  BattleChatPolicy.normalizedBody(message.body) == message.body,
-                  chatRateLimiter.allows(message.senderID) else { return }
-            chatHistory.append(message); chatMessages = chatHistory.messages
+                  let body = BattleChatPolicy.normalizedBody(message.body), body == message.body,
+                  let name = BattleChatPolicy.displayName(message.senderName),
+                  chatRateLimiter.allows(remoteChatSenderID) else { return }
+            chatHistory.append(BattleChatMessage(senderID: remoteChatSenderID, senderName: name, body: body))
+            chatMessages = chatHistory.messages
         }
     }
 

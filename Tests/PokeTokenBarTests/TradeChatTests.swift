@@ -121,13 +121,18 @@ final class TradeChatTests: XCTestCase {
         }
         listener.start(queue: .main)
         addTeardownBlock { listener.cancel() }
-        guard let port = pump(until: { listener.port }) else { return XCTFail("루프백 리스너가 서지 않았다") }
+        // 리스너가 `.ready` 가 되기 전의 `port` 는 아직 `.any`(0) 다 — 실제로 배정된 포트를 기다린다.
+        guard let port = pump(until: { listener.port.flatMap { $0 == .any ? nil : $0 } }) else {
+            return XCTFail("루프백 리스너가 서지 않았다")
+        }
 
         let center = makeCenter()
         center.attachForTesting(NWConnection(to: .hostPort(host: "127.0.0.1", port: port), using: .tcp))
+        // 우리 쪽에서는 **아무것도 보내지 않는다**. 이미 닫힌 소켓에 프레임을 밀면 RST 가 돌아와
+        // 상태가 `.failed` 로 가고, 그러면 세션을 끝낸 게 `attach` 의 상태 감시인지 읽기 루프인지
+        // 구별할 수 없다 — 실제로 `accept()` 를 부르던 판본은 결함을 되주입해도 통과했다.
         center.receive(.request(version: TradeWireMessage.protocolVersion, trainer: "Blue", chatSupported: true))
-        center.accept()
-        XCTAssertEqual(center.phase, .negotiating(peer: "Blue"))
+        XCTAssertEqual(center.phase, .incoming(peer: "Blue"))
 
         let ended = pump(until: { if case .failed = center.phase { return true } else { return nil } })
         XCTAssertEqual(ended, true, "상대가 소켓을 닫으면 세션도 끝나야 한다 — 지금 국면: \(center.phase)")
