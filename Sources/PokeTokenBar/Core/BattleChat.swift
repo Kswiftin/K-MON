@@ -19,10 +19,21 @@ enum BattleChatPolicy {
     static let maximumLength = 200
     static let historyLimit = 50
 
+    static let maximumNameLength = 40
+
     static func normalizedBody(_ value: String) -> String? {
         let body = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         guard !body.isEmpty, body.count <= maximumLength else { return nil }
         return body
+    }
+
+    /// 상대가 부르는 표시 이름. **길이를 재는 게 아니라 자른다** — 이름은 본문과 달리 핸드셰이크가
+    /// 정하는 값이라, 거부하면 교환·대전 자체가 성립하지 않는다. 채팅 행과 협상 헤더는 둘 다
+    /// `lineLimit` 이 없어서, 프레임 상한(1MB)까지 채운 이름 하나가 패널 레이아웃을 무너뜨린다.
+    static func displayName(_ value: String) -> String? {
+        let name = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard !name.isEmpty else { return nil }
+        return String(name.prefix(maximumNameLength))
     }
 }
 

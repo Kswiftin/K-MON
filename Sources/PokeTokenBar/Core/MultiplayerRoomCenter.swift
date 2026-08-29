@@ -746,8 +746,7 @@ final class MultiplayerRoomCenter {
                 self.combatRound += 1; self.hasSubmittedAction = false
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.grantRewardIfFinished()
-            case .chat(let message):
-                self.chatHistory.append(message); self.chatMessages = self.chatHistory.messages
+            case .chat(let message): self.acceptRelayedChat(message)
             case .pokeathlonStart(let race): self.pokeathlonRace = race; self.phase = .pokeathlon
             case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
             case .pokeathlonPool(let pool):
@@ -791,11 +790,25 @@ final class MultiplayerRoomCenter {
         guard phase == .battling, incoming.senderID == participantID,
               let participant = lobby?.participants.first(where: { $0.id == participantID }),
               let body = BattleChatPolicy.normalizedBody(incoming.body),
+              let name = BattleChatPolicy.displayName(participant.trainerName),
               chatRateLimiter.allows(participantID) else { return }
-        let message = BattleChatMessage(id: incoming.id, senderID: participantID,
-                                        senderName: participant.trainerName, body: body, sentAt: incoming.sentAt)
+        // `id` 는 상대가 고른 값이라 새로 짓는다 — 같은 값을 두 번 보내면 `ForEach` 가 무너진다.
+        let message = BattleChatMessage(senderID: participantID, senderName: name,
+                                        body: body, sentAt: incoming.sentAt)
         chatHistory.append(message); chatMessages = chatHistory.messages
         for connection in guestConnections.values { send(.chat(message), over: connection) }
+    }
+
+    /// 호스트가 중계한 한 줄. **호스트도 상대다** — 우리는 호스트가 무엇을 걸렀는지 볼 수 없으므로
+    /// 게스트 쪽에서도 같은 경계를 다시 친다. `senderID` 는 그대로 둔다(호스트가 참가자에 묶어
+    /// 인증한 값이고, 내가 보낸 말도 이 중계로 되돌아온다). `id` 는 새로 짓는다 — 중계된 값이
+    /// 되풀이되면 화면의 `ForEach` 가 중복 키로 무너진다.
+    func acceptRelayedChat(_ incoming: BattleChatMessage) {
+        guard let body = BattleChatPolicy.normalizedBody(incoming.body), body == incoming.body,
+              let name = BattleChatPolicy.displayName(incoming.senderName) else { return }
+        chatHistory.append(BattleChatMessage(senderID: incoming.senderID, senderName: name,
+                                             body: body, sentAt: incoming.sentAt))
+        chatMessages = chatHistory.messages
     }
 
     func sendChat(_ body: String) {
