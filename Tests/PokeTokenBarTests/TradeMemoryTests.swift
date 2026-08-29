@@ -16,9 +16,13 @@ final class TradeMemoryTests: XCTestCase {
             .appendingPathComponent("trade-memory-\(UUID().uuidString)")
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []), rarity: .common,
                            names: [1: ["ko": "포1", "en": "P1", "ja": "ポ1"]])
-        return CompanionStore(provider: StubProvider(value: line), clock: { self.now },
-                              fileURL: directory.appendingPathComponent("state.json"),
-                              rng: SeededRNG(seed: 1))
+        let store = CompanionStore(provider: StubProvider(value: line), clock: { self.now },
+                                   fileURL: directory.appendingPathComponent("state.json"),
+                                   rng: SeededRNG(seed: 1))
+        // 기억 본문은 저장 시점 언어로 굳는다(부화 기록·관계 요약 둘 다). 호스트 로케일을 그대로
+        // 두면 영어 로케일 재실행에서만 깨진다 — 기대값을 언어로 못 박는다.
+        store.setLanguage(.ko)
+        return store
     }
 
     private func incomingMon(baseID: Int = 20, firstMetAt: Date? = nil) -> MonState {
@@ -150,6 +154,41 @@ final class TradeMemoryTests: XCTestCase {
         XCTAssertEqual(store.chatStore.session(for: incoming.id)?.summary, "오래 함께한 사이였다")
         XCTAssertEqual(store.chatStore.messages(for: incoming.id), [],
                        "요약만 심는다 — 메시지는 애초에 오지 않는다")
+    }
+
+    /// 받은 개체를 **다시 교환**하면 심어 둔 요약이 그대로 따라간다 — 그때는 사실 기반 한 줄이
+    /// 아니라 저장된 요약이 이긴다. (`lifetimeUserMessageCount` 가 0 이라 파생 경로였다면 `nil` 이다.)
+    @MainActor
+    func testAReceivedCompanionCarriesItsStoredSummaryOnward() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try XCTUnwrap(store.state.active)
+        let incoming = incomingMon()
+        XCTAssertTrue(store.performTrade(
+            offeredID: mine.id, received: incoming,
+            incomingMemories: payload(for: incoming.id, bodies: ["산을 넘었다"],
+                                      summary: "오래 함께한 사이였다")))
+
+        XCTAssertEqual(store.tradeMemoryPayload(for: incoming.id)?.summary, "오래 함께한 사이였다")
+    }
+
+    /// 통째로 걸러진 페이로드는 **도착 문구조차** 남기지 않는다. 이 가드가 없으면 상대가 쓰레기
+    /// 30줄을 보내도 "이전 트레이너와의 기억을 안고 왔다" 가 앨범에 찍힌다 — 오지 않은 기억의 흔적이다.
+    @MainActor
+    func testAPayloadThatIsEntirelyRejectedLeavesNoTraceNotEvenTheArrivalNote() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try XCTUnwrap(store.state.active)
+        let incoming = incomingMon()
+        let garbage = TradeMemoryPayload(
+            monID: incoming.id, summary: nil,
+            entries: [.init(body: "  ", source: .event, createdAt: now),
+                      .init(body: "손글씨", source: .manual, createdAt: now)])
+
+        XCTAssertTrue(store.performTrade(offeredID: mine.id, received: incoming,
+                                         incomingMemories: garbage))
+        XCTAssertTrue(store.memoryAlbum.entries(for: incoming.id).isEmpty)
+        XCTAssertNil(store.chatStore.session(for: incoming.id))
     }
 
     /// 신뢰경계 클램프. 상대가 부르는 값은 **전부** 다시 잰다.
@@ -287,6 +326,49 @@ final class TradeMemoryTests: XCTestCase {
         XCTAssertTrue(initiatorStore.memoryAlbum.entries(for: toInitiator.id)
             .contains { $0.body == "신청자가 받은 기억" })
         initiator.closeCompleted()
+    }
+
+    /// 보낼 추억이 없어도 **교환은 성립한다.** 프레임을 못 만들면 그냥 안 보낼 뿐이다 —
+    /// 여기서 멎으면 앨범을 비운 개체는 영영 교환할 수 없게 된다.
+    @MainActor
+    func testATradeStillCompletesWhenThereIsNothingToSend() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try XCTUnwrap(store.state.active)
+        store.memoryAlbum.deleteAll(for: mine.id)
+        XCTAssertNil(store.tradeMemoryPayload(for: mine.id))
+
+        let center = PokemonTradeCenter(companion: store)
+        center.receive(.request(version: TradeWireMessage.protocolVersion, trainer: "Blue",
+                                chatSupported: true))
+        center.accept()
+        let incoming = incomingMon()
+        center.selectOffer(mine)
+        center.receive(.offer(TradePokemonSnapshot(mon: incoming, displayName: "P20")))
+        center.confirm()
+        center.receive(.confirm(true))
+        center.receive(.commit(UUID()))
+        XCTAssertEqual(center.phase, .animating)
+    }
+
+    /// 요약은 **내가 쌓은 대화를 덮지 않는다.** 받은 개체 ID 는 새로 생긴 값이라 세션이 있을 리
+    /// 없지만, 그 전제가 무너지는 날 조용히 대화가 사라지면 안 된다.
+    @MainActor
+    func testAdoptingASummaryNeverClobbersAnExistingSession() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mon = try XCTUnwrap(store.state.active)
+        let profile = store.chatProfile(for: mon)
+        store.chatStore.appendLocalMessage("안녕", for: mon.id, profile: profile)
+
+        store.chatStore.adoptSummary("상대가 밀어 넣은 요약", for: mon.id, profile: profile)
+        XCTAssertEqual(store.chatStore.session(for: mon.id)?.summary, "")
+        XCTAssertEqual(store.chatStore.messages(for: mon.id).map(\.body), ["안녕"])
+
+        // 빈 요약은 세션을 만들지도 않는다.
+        let fresh = UUID()
+        store.chatStore.adoptSummary("   ", for: fresh, profile: profile)
+        XCTAssertNil(store.chatStore.session(for: fresh))
     }
 
     // MARK: - 커밋 없이 끝난 세션
