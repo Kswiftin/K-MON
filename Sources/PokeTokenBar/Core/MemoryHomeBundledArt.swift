@@ -26,10 +26,11 @@ enum MemoryHomeBundledArt {
         .natureLantern: CGRect(x: 88, y: 32, width: 16, height: 16),
     ]
 
-    static func interiorTileset() -> NSImage? {
+    private static let cachedInteriorTileset: NSImage? = {
         guard let url = Bundle.module.url(forResource: interiorTilesetResource, withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
-    }
+    }()
+    static func interiorTileset() -> NSImage? { cachedInteriorTileset }
 
     /// A small, nearest-neighbour-ready furniture sprite. The tileset's origin is top-left,
     /// matching `CGImage.cropping(to:)`; AppKit's view coordinate system is not involved.

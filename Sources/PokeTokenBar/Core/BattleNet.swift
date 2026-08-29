@@ -1828,7 +1828,7 @@ final class BattleCenter {
                 Task { @MainActor in self?.connectionDropped() }
                 return
             }
-            let length = data.withUnsafeBytes { $0.load(as: UInt32.self) }.bigEndian
+            let length = data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.bigEndian
             guard length > 0, length <= Self.maxMessageBytes else {
                 Task { @MainActor in self?.connectionDropped() }
                 return

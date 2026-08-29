@@ -126,9 +126,11 @@ final class MemoryHomeVisitCenter {
     private func startBrowsing() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: Self.parameters())
+        let ownServiceName = localDisplayName
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let peers = results.compactMap { result -> MemoryHomePeer? in
                 guard case let .service(name, _, _, _) = result.endpoint else { return nil }
+                guard name != ownServiceName else { return nil }
                 return .init(id: name, displayName: Self.clean(name, limit: 40) ?? "Memory Home", endpoint: result.endpoint)
             }
             Task { @MainActor in self?.homes = peers.sorted { $0.displayName < $1.displayName } }
@@ -207,7 +209,7 @@ final class MemoryHomeVisitCenter {
         let base = MemoryHomeProfileCard(displayName: localDisplayName, speciesID: mon.currentID, isShiny: mon.isShiny,
                      sharedMemoryBody: companion.memoryAlbum.sharedPinnedMemory(for: mon.id)?.body,
                      profileMessage: sharedMessage, roomTheme: companion.memoryAlbum.theme(for: mon.id),
-                     showcaseFurniture: Array(access.roomLayout.values))
+                     showcaseFurniture: access.placedDecor.map(\.item))
         guard version >= 2 else { return base }
         return .init(displayName: base.displayName, speciesID: base.speciesID, isShiny: base.isShiny,
                      sharedMemoryBody: base.sharedMemoryBody, profileMessage: base.profileMessage,

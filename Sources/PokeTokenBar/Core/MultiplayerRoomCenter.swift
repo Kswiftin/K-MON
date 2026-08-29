@@ -920,7 +920,7 @@ final class MultiplayerRoomCenter {
     private func receive(over connection: NWConnection, completion: @escaping @MainActor (MultiplayerWireMessage) -> Void) {
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { data, _, _, _ in
             guard let data, data.count == 4 else { Task { @MainActor in connection.cancel() }; return }
-            let length = data.withUnsafeBytes { $0.load(as: UInt32.self) }.bigEndian
+            let length = data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.bigEndian
             guard length > 0, length <= Self.maxMessageBytes else { connection.cancel(); return }
             connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { data, _, _, _ in
                 guard let data, data.count == Int(length),

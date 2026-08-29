@@ -140,6 +140,8 @@ final class CompanionStore {
     private let dittoDisguiseRollingEnabled: Bool
     /// 세션 내 활성 개체 교체 감지용. await 뒤 이전 개체의 결과가 새 개체를 덮지 않게 한다.
     private var activeGeneration = 0
+    private enum LoadOutcome { case loaded, newState, resetState }
+    private var loadOutcome: LoadOutcome = .newState
 
     init(provider: any PokeProviding = PokeAPIClient.shared,
          clock: @escaping () -> Date = Date.init,
@@ -169,7 +171,11 @@ final class CompanionStore {
         load()
         // Room placement is derived from this save's bag.  Normalize at the state/album join so
         // a hand-edited or imported album cannot render furniture the player does not own.
-        self.memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
+        // A corrupt/forced-reset state has no trustworthy ownership list. Pruning here would
+        // turn state recovery into irreversible album deletion.
+        if case .loaded = loadOutcome {
+            self.memoryAlbum.prune(validCompanionIDs: Set(ownedMons.map(\.id)), ownedItems: state.inventory)
+        }
         self.memoryAlbum.initializeMemoryHomePublicNickname(from: state.trainerName)
         backfillFirstMeetingDates()
         reconcileStoredEggDates()
@@ -3251,7 +3257,7 @@ final class CompanionStore {
 
     // MARK: 영속
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }   // 파일 없음 = 신규 설치
+        guard let data = try? Data(contentsOf: fileURL) else { loadOutcome = .newState; return }   // 파일 없음 = 신규 설치
         guard let s = try? JSONDecoder().decode(CompanionState.self, from: data) else {
             // 디코드 실패(전면 손상/미래 스키마) → fresh 로 시작하되, 다음 save() 가 원본을 덮어써 영구
             // 유실되기 전에 .corrupt 로 보존해 수동 복구 여지를 남긴다(도감 per-entry 격리로 못 살린 경우 대비).
@@ -3259,6 +3265,7 @@ final class CompanionStore {
             try? FileManager.default.removeItem(at: backup)
             try? FileManager.default.moveItem(at: fileURL, to: backup)
             AppLog.write("companion state decode failed — original backed up to \(backup.lastPathComponent), starting fresh")
+            loadOutcome = .resetState
             return
         }
         // 배포 강제 초기화는 무결성 검사보다 먼저 처리하고 즉시 디스크에 기록한다. 다음 자동 저장을
@@ -3267,6 +3274,7 @@ final class CompanionStore {
             AppLog.write("forced save reset on load: v\(s.forcedResetVersion) → v\(SaveTransfer.forcedResetVersion)")
             state = CompanionState()
             save()
+            loadOutcome = .resetState
             return
         }
         // 무결성 검사는 **정규화 전** 원본에서 한다 — sanitized 가 값을 바꾸면(클램프·전설 리셋) 서명이
@@ -3287,6 +3295,7 @@ final class CompanionStore {
             }
             state = SaveTransfer.resetForTamper(s)
             save()   // 즉시 새 서명으로 덮어써 조작본을 남기지 않는다
+            loadOutcome = .resetState
             return
         }
         // 불러오기 경계와 같은 정규화를 디스크에서 읽을 때도 건다. 불러오기만 막으면 **이미 저장된**
@@ -3294,6 +3303,7 @@ final class CompanionStore {
         // (디코드는 *성공*하므로 위의 .corrupt 복구도 발동하지 않는다). 여기서 걸면 자가 복구된다.
         // 출처를 .localDisk 로 넘겨 **개수 절단만** 뺀다 — 값 클램프는 그대로 걸린다(#145).
         state = SaveTransfer.sanitized(s, origin: .localDisk)
+        loadOutcome = .loaded
     }
     /// `firstMetAt` 이전 세이브는 가장 이른 앨범 기록으로 보정한다. 새 동행은 부화 시각을 직접 저장한다.
     private func backfillFirstMeetingDates() {

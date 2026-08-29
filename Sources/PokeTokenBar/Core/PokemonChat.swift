@@ -590,8 +590,16 @@ final class PokemonMemoryAlbum {
     private var milestoneStates: [UUID: PokemonMemoryMilestoneState] = [:]
     private var roomThemes: [UUID: PokemonMemoryRoomTheme] = [:]
     private(set) var memoryHomeAccess = MemoryHomeAccessSettings()
-    private var roomUndoStack: [MemoryHomeAccessSettings] = []
-    private var roomRedoStack: [MemoryHomeAccessSettings] = []
+    /// Undo is deliberately scoped to room fields: network privacy and guestbook changes may
+    /// occur while the editor is open and must never be rolled back.
+    private struct RoomEditSnapshot {
+        let placedDecor: [MemoryHomePlacedDecor]
+        let companionPositions: [UUID: MemoryHomeRoomPosition]
+        let roommateIDs: [UUID]
+        let roomStyle: MemoryHomeRoomStyle
+    }
+    private var roomUndoStack: [RoomEditSnapshot] = []
+    private var roomRedoStack: [RoomEditSnapshot] = []
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
@@ -826,20 +834,34 @@ final class PokemonMemoryAlbum {
     func resetDecor() { guard !memoryHomeAccess.placedDecor.isEmpty else { return }; beginRoomEdit(); memoryHomeAccess.placedDecor = []; save() }
     var canUndoRoomEdit: Bool { !roomUndoStack.isEmpty }
     var canRedoRoomEdit: Bool { !roomRedoStack.isEmpty }
-    func undoRoomEdit() { guard let previous = roomUndoStack.popLast() else { return }; roomRedoStack.append(memoryHomeAccess); memoryHomeAccess = previous; save() }
-    func redoRoomEdit() { guard let next = roomRedoStack.popLast() else { return }; roomUndoStack.append(memoryHomeAccess); memoryHomeAccess = next; save() }
+    func undoRoomEdit() { guard let previous = roomUndoStack.popLast() else { return }; roomRedoStack.append(roomEditSnapshot()); applyRoomEdit(previous); save() }
+    func redoRoomEdit() { guard let next = roomRedoStack.popLast() else { return }; roomUndoStack.append(roomEditSnapshot()); applyRoomEdit(next); save() }
     private func beginRoomEdit() {
-        roomUndoStack.append(memoryHomeAccess); if roomUndoStack.count > 30 { roomUndoStack.removeFirst() }; roomRedoStack.removeAll()
+        roomUndoStack.append(roomEditSnapshot()); if roomUndoStack.count > 30 { roomUndoStack.removeFirst() }; roomRedoStack.removeAll()
+    }
+    private func roomEditSnapshot() -> RoomEditSnapshot { .init(placedDecor: memoryHomeAccess.placedDecor, companionPositions: memoryHomeAccess.companionPositions, roommateIDs: memoryHomeAccess.roommateIDs, roomStyle: memoryHomeAccess.roomStyle) }
+    private func applyRoomEdit(_ snapshot: RoomEditSnapshot) {
+        memoryHomeAccess.placedDecor = snapshot.placedDecor
+        memoryHomeAccess.companionPositions = snapshot.companionPositions
+        memoryHomeAccess.roommateIDs = snapshot.roommateIDs
+        memoryHomeAccess.roomStyle = snapshot.roomStyle
     }
     func setFeaturedPhoto(id: UUID?) {
         guard id == nil || memoryHomeAccess.photos.contains(where: { $0.id == id }) else { return }
         memoryHomeAccess.featuredPhotoID = id; save()
     }
-    private static func gridPoint(_ position: MemoryHomeRoomPosition) -> (Int, Int) {
-        (min(7, max(0, Int((position.x * 7).rounded()))), min(5, max(0, Int((position.y * 5).rounded()))))
+    static func gridPoint(_ position: MemoryHomeRoomPosition) -> (Int, Int) {
+        (min(7, max(0, Int((position.x * 8).rounded(.down)))), min(5, max(0, Int((position.y * 6).rounded(.down)))))
     }
-    private static func normalizedGridPoint(_ point: (Int, Int)) -> MemoryHomeRoomPosition {
-        .init(x: Double(point.0) / 7, y: Double(point.1) / 5)
+    static func gridKey(_ point: (Int, Int)) -> Int { point.0 * 6 + point.1 }
+    static func normalizedGridPoint(_ point: (Int, Int)) -> MemoryHomeRoomPosition {
+        .init(x: (Double(point.0) + 0.5) / 8, y: (Double(point.1) + 0.5) / 6)
+    }
+    func gridPoint(for position: MemoryHomeRoomPosition) -> (Int, Int) { Self.gridPoint(position) }
+    func isDecorCellAvailable(_ point: (Int, Int), item: ItemKind, ownedItems: [String: Int], excluding: UUID? = nil) -> Bool {
+        guard Self.roomFurnitureItems.contains(item), memoryHomeAccess.placedDecor.count < 12,
+              memoryHomeAccess.placedDecor.filter({ $0.item == item && $0.id != excluding }).count < ownedItems[item.rawValue, default: 0] else { return false }
+        return !memoryHomeAccess.placedDecor.contains { $0.id != excluding && Self.gridPoint($0.position) == point }
     }
     /// 반환값은 **앨범이 실제로 받았는가** 다. `Void` 로 두면 부르는 쪽이 거절(빈 본문·180자 초과·
     /// 이벤트 중복)을 알 수 없어 "기억해 둘게" 라고 말하고 앨범엔 아무것도 없는 상태가 된다.
@@ -928,6 +950,8 @@ final class PokemonMemoryAlbum {
     var snapshot: PokemonMemoryAlbumSnapshot { PokemonMemoryAlbumSnapshot(memories: memories, pinnedMemoryIDs: pinnedMemoryIDs, milestones: milestoneStates, roomThemes: roomThemes, memoryHomeAccess: memoryHomeAccess) }
     func replace(with snapshot: PokemonMemoryAlbumSnapshot, validCompanionIDs: Set<UUID>,
                  ownedItems: [String: Int]? = nil) {
+        let localNetworkSettings = (memoryHomeAccess.visibility, memoryHomeAccess.blockedPeerIDs,
+                                    memoryHomeAccess.peerAliases, memoryHomeAccess.publicNickname)
         memories = snapshot.memories.reduce(into: [:]) { result, entry in
             guard validCompanionIDs.contains(entry.key) else { return }
             result[entry.key] = Array(entry.value.filter { memory in
@@ -940,6 +964,12 @@ final class PokemonMemoryAlbum {
         milestoneStates = snapshot.milestones.filter { validCompanionIDs.contains($0.key) }
         roomThemes = snapshot.roomThemes.filter { validCompanionIDs.contains($0.key) }
         memoryHomeAccess = snapshot.memoryHomeAccess
+        // A transferred album is untrusted cross-device content.  LAN visibility, blocks,
+        // aliases and public identity belong to this installation, not to the export.
+        memoryHomeAccess.visibility = localNetworkSettings.0
+        memoryHomeAccess.blockedPeerIDs = localNetworkSettings.1
+        memoryHomeAccess.peerAliases = localNetworkSettings.2
+        memoryHomeAccess.publicNickname = localNetworkSettings.3
         normalizePins(); normalizeMemoryHomeAccess()
         if let ownedItems {
             // legacy 슬롯은 `normalizeMemoryHomeAccess` 의 이전에서 이미 비워졌다 — 가방 대조는

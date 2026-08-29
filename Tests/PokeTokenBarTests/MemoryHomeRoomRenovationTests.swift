@@ -64,10 +64,10 @@ final class MemoryHomeRoomRenovationTests: XCTestCase {
                                                       memoryHomeAccess: access),
                       validCompanionIDs: [], ownedItems: [ItemKind.roomBed.rawValue: 1])
 
-        // 8×6 격자로 스냅되므로 저장 좌표에 가장 가까운 칸 = (6/7, 1/5).
+        // 8×6 격자는 셀 중심을 저장한다. 기존 좌표 (0.90, 0.20)는 (7, 1)로 옮겨진다.
         let moved = try XCTUnwrap(album.memoryHomeAccess.placedDecor.first)
-        XCTAssertEqual(moved.position.x, 6.0 / 7.0, accuracy: 0.001)
-        XCTAssertEqual(moved.position.y, 1.0 / 5.0, accuracy: 0.001)
+        XCTAssertEqual(moved.position.x, 7.5 / 8.0, accuracy: 0.001)
+        XCTAssertEqual(moved.position.y, 1.5 / 6.0, accuracy: 0.001)
     }
 
     func testFeaturedPhotoAndStyleTicketsAreExplicit() {

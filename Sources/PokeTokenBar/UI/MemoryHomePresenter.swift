@@ -16,15 +16,35 @@ final class MemoryHomePresenter: NSObject, NSWindowDelegate {
         self.settings = settings
         self.store = store
         self.visits = visits
+        super.init()
+        observeAvailability()
+    }
+
+    private func observeAvailability() {
+        withObservationTracking { _ = settings.memoryHomeEnabled } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                if !self.settings.memoryHomeEnabled {
+                    self.visits.stop()
+                    self.window?.orderOut(nil)
+                }
+                self.observeAvailability()
+            }
+        }
     }
 
     func open() {
+        guard settings.memoryHomeEnabled else { return }
         let window = window ?? makeWindow()
         self.window = window
         if window.contentView == nil { installContent(in: window) }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         settings.recordMemoryHomeEntry()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        visits.stop()
     }
 
     private func makeWindow() -> NSWindow {
@@ -317,7 +337,7 @@ private struct MemoryHomeWindowView: View {
                         .accessibilityLabel(l.itemName(decor.item))
                         .accessibilityHint(l.t("드래그하여 8×6 격자에서 이동합니다.", "Drag to move on the 8 by 6 grid.", "ドラッグして8×6グリッドで移動します。"))
                 }
-                let companions = [mon] + Array(roommates.prefix(2))
+                let companions = [mon] + roommates
                 ForEach(Array(companions.enumerated()), id: \.element.id) { index, companion in
                     let point = album.companionPosition(for: companion.id, fallbackIndex: index)
                     SpriteView(speciesID: companion.currentID, size: companion.id == mon.id ? 128 : 78, shiny: companion.isShiny)
@@ -352,49 +372,44 @@ private struct MemoryHomeWindowView: View {
     }
 
     @ViewBuilder private func roomGrid(in size: CGSize, album: PokemonMemoryAlbum) -> some View {
-        let occupied = Set(album.memoryHomeAccess.placedDecor.map { gridKey(gridPoint($0.position)) })
         ForEach(0..<8, id: \.self) { column in
             ForEach(0..<6, id: \.self) { row in
                 let point = (column, row)
-                let unavailable = occupied.contains(gridKey(point)) || (selectedFurniture != nil && album.memoryHomeAccess.placedDecor.count >= 12)
+                let unavailable = selectedFurniture.map { !album.isDecorCellAvailable(point, item: $0, ownedItems: store.state.inventory) } ?? false
+                let gridLabel = l.t("격자 \(column + 1), \(row + 1)", "Grid \(column + 1), \(row + 1)", "グリッド \(column + 1)、\(row + 1)")
+                let gridHint = unavailable ? l.t("배치할 수 없는 칸", "Unavailable position", "配置できない場所") : l.t("선택한 가구를 배치합니다.", "Places the selected furniture.", "選んだ家具を配置します。")
+                let gridFill: Color = selectedFurniture == nil ? .clear : (unavailable ? Color.red.opacity(0.12) : PokedoroTheme.mint.opacity(0.20))
                 Rectangle()
-                    .fill(selectedFurniture == nil ? .clear : (unavailable ? Color.red.opacity(0.12) : PokedoroTheme.mint.opacity(0.20)))
+                    .fill(gridFill)
                     .overlay(Rectangle().stroke(Color.white.opacity(0.42), lineWidth: 0.7))
                     .frame(width: size.width / 8, height: size.height / 6)
                     .position(x: (Double(column) + 0.5) * size.width / 8,
                               y: (Double(row) + 0.5) * size.height / 6)
                     .contentShape(Rectangle())
                     .onTapGesture { placeSelectedFurniture(at: point) }
-                    .accessibilityLabel(l.t("격자 \(column + 1), \(row + 1)", "Grid \(column + 1), \(row + 1)", "グリッド \(column + 1)、\(row + 1)"))
-                    .accessibilityHint(unavailable ? l.t("배치할 수 없는 칸", "Unavailable position", "配置できない場所") : l.t("선택한 가구를 배치합니다.", "Places the selected furniture.", "選んだ家具を配置します。"))
+                    .allowsHitTesting(selectedFurniture != nil)
+                    .accessibilityHidden(selectedFurniture == nil)
+                    .accessibilityLabel(gridLabel)
+                    .accessibilityHint(gridHint)
             }
         }
     }
 
     private var roomCanvasInstruction: String {
-        if let item = selectedFurniture { return l.t("\(l.itemName(item))을 빈 격자에 클릭해 놓으세요", "Click an empty grid cell to place \(l.itemName(item))", "空いているマスをクリックして\(l.itemName(item))を置きます") }
+        if let item = selectedFurniture { return l.t("\(l.itemName(item))을(를) 빈 격자에 클릭해 놓으세요", "Click an empty grid cell to place \(l.itemName(item))", "空いているマスをクリックして\(l.itemName(item))を置きます") }
         if selectedDecorID != nil || selectedCompanionID != nil { return l.t("선택됨 · 드래그해 이동하거나 아래에서 편집하세요", "Selected · drag to move or edit below", "選択中・ドラッグで移動するか下で編集します") }
         return l.t("가구를 고른 뒤 빈 격자를 클릭하세요 · 동행과 가구는 드래그로 이동", "Choose furniture, then click an empty grid · drag furniture or companions to move", "家具を選んで空きマスをクリック・家具と相棒はドラッグで移動")
     }
 
-    private func gridPoint(_ position: MemoryHomeRoomPosition) -> (Int, Int) {
-        (min(7, max(0, Int((position.x * 7).rounded()))), min(5, max(0, Int((position.y * 5).rounded()))))
-    }
-
-    private func gridKey(_ point: (Int, Int)) -> String { "\(point.0),\(point.1)" }
-
     private func placeSelectedFurniture(at point: (Int, Int)) {
         guard editingRoom, let item = selectedFurniture else { return }
         let album = store.memoryAlbum
-        guard !album.memoryHomeAccess.placedDecor.contains(where: { gridPoint($0.position) == point }) else {
-            roomEditFeedback = l.t("이미 가구가 놓인 격자예요.", "That grid cell is already occupied.", "そのマスにはすでに家具があります。"); return
+        guard album.isDecorCellAvailable(point, item: item, ownedItems: store.state.inventory) else {
+            roomEditFeedback = l.t("이 칸에는 더 배치할 수 없어요.", "That cell is unavailable.", "このマスにはこれ以上配置できません。"); return
         }
-        guard album.memoryHomeAccess.placedDecor.count < 12 else {
-            roomEditFeedback = l.t("가구는 최대 12개까지 놓을 수 있어요.", "You can place up to 12 furniture items.", "家具は12個まで置けます。"); return
-        }
-        let position = MemoryHomeRoomPosition(x: Double(point.0) / 7, y: Double(point.1) / 5)
+        let position = PokemonMemoryAlbum.normalizedGridPoint(point)
         if let decor = album.placeDecor(item, at: position, ownedItems: store.state.inventory) {
-            selectedDecorID = decor.id; selectedCompanionID = nil; roomEditFeedback = nil
+            selectedDecorID = decor.id; selectedCompanionID = nil; selectedFurniture = nil; roomEditFeedback = nil
         } else {
             roomEditFeedback = l.t("보유한 가구 수량이 부족해요.", "You do not own another copy of this furniture.", "この家具の所持数が足りません。")
         }

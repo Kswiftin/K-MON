@@ -30,6 +30,18 @@ echo "==> $APP 조립"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp ".build/release/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
+# SwiftPM resources live in a sibling bundle when launching from `.build`; an assembled
+# app must carry that bundle as well or `Bundle.module` cannot find the room tileset.
+RESOURCE_BUNDLE="$(find .build -path '*release/PokeTokenBar_*.bundle' -type d -print -quit)"
+if [[ -z "$RESOURCE_BUNDLE" ]]; then
+    echo "✗ SwiftPM resource bundle missing (Memory Home tileset would be unavailable)" >&2
+    exit 1
+fi
+ditto "$RESOURCE_BUNDLE" "$APP/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
+if ! find "$APP/Contents/Resources" -path '*oga-interior-tileset.png' -print -quit | grep -q .; then
+    echo "✗ Memory Home tileset missing from assembled app" >&2
+    exit 1
+fi
 # 심볼 strip — 릴리스 바이너리 1.84MB → 0.80MB(-57%). codesign 전에 수행(서명 무효화 방지).
 strip -rSTx "$APP/Contents/MacOS/$EXECUTABLE" 2>/dev/null || strip -rSx "$APP/Contents/MacOS/$EXECUTABLE"
 cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
