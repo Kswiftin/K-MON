@@ -155,12 +155,14 @@ final class PokemonTradeCenter {
 
     func offerRequestedPokemon() {
         guard let id = remoteRequestedLocalMonID,
-              let mon = companion.ownedMons.first(where: { $0.id == id }) else { return }
+              let mon = companion.deployableMons.first(where: { $0.id == id }) else { return }
         selectOffer(mon)
     }
 
+    /// 체육관에 배치한 넷은 교환 후보가 아니다 — 관장이 지키는 동안 남에게 넘어가면 방어팀에
+    /// 구멍이 난다.
     private var localRoster: [TradePokemonSnapshot] {
-        companion.ownedMons.map { TradePokemonSnapshot(mon: $0, displayName: displayName(for: $0)) }
+        companion.deployableMons.map { TradePokemonSnapshot(mon: $0, displayName: displayName(for: $0)) }
     }
 
     func confirm() {

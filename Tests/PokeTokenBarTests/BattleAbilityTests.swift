@@ -253,6 +253,6 @@ final class BattleAbilityTests: XCTestCase {
     /// 하나만 올리면 구버전 호스트와 신버전 게스트가 붙어 특성 유무가 갈린 채로 싸운다.
     func testTheRuleAndProtocolVersionsMovedTogetherForAbilities() {
         XCTAssertEqual(BattleEngine.rulesVersion, 18)
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 11)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 12)
     }
 }

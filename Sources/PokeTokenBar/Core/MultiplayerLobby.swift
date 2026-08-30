@@ -1,7 +1,7 @@
 import Foundation
 
 enum BattleTeam: String, Codable, Sendable { case solo, red, blue }
-enum RoomActivity: String, Codable, Sendable { case battle, pokeathlon, pokemonQuiz, tournament }
+enum RoomActivity: String, Codable, Sendable { case battle, pokeathlon, pokemonQuiz, tournament, gym }
 
 /// 방에서의 역할. 러너만 경기·전투에 참여하고, 관전자는 베팅만 한다.
 enum LobbyRole: String, Codable, Sendable { case runner, spectator }
@@ -58,6 +58,8 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
         switch activity {
         case .pokemonQuiz: allowed = (2...Self.quizCapacity).contains(capacity)
         case .tournament: allowed = (2...8).contains(capacity)
+        // 체육관은 관장 1 + 도전자 1 이 한 판이다. 남는 자리는 전부 관전자 몫이라 러너 정원은 둘이다.
+        case .gym: allowed = capacity == 2
         default: allowed = (2...4).contains(capacity)
         }
         guard allowed else { throw LobbyError.invalidCapacity }

@@ -258,6 +258,19 @@ enum SaveTransfer {
            !s.boxedMons.contains(where: { $0.id == representativeID }) {
             s.battleRepresentativeID = nil
         }
+        // 체육관 방어팀은 **박스 개체만** 가리킨다. 활성 개체는 성장하므로 배치 대상이 아니고,
+        // 소유하지 않은 id·중복·정원 초과는 손편집이나 개체 소멸(교환·방생)로 생길 수 있다.
+        // 정원 미만이 되어도 자격까지 뺏지는 않는다 — 그러면 정규화 한 번에 관장이 사라진다.
+        // 대신 `PlayerGymLeadership.defenseDeadline` 이 세팅 기한을 재고, 넘기면 그때 자격이 풀린다.
+        if var leadership = s.gymLeadership {
+            let boxedIDs = Set(s.boxedMons.map(\.id))
+            var seen: Set<UUID> = []
+            leadership.defenseMonIDs = leadership.defenseMonIDs
+                .filter { boxedIDs.contains($0) && seen.insert($0).inserted }
+                .prefix(PlayerGym.defenseTeamSize)
+                .map { $0 }
+            s.gymLeadership = leadership
+        }
         // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
         s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
         let soldMachineIDs = Set(TechnicalMachine.catalog.map(\.moveID))
@@ -489,6 +502,10 @@ enum SaveTransfer {
         var state = imported
         state.language = current.language
         state.lastTickAt = nil
+        // 체육관 관장은 **이 기기에서 돌고 있는 살아있는 역할**이지 진행이 아니다. 따라오게 두면
+        // 세이브를 옮긴 기기가 호스팅하지도 않는 체육관의 관장을 자처하고, 방어팀 넷이 그 기기에서
+        // 잠긴 채 남는다. 옮겨온 쪽은 관장이 아닌 상태로 시작한다.
+        state.gymLeadership = nil
         // 일일 사탕 원장은 로컬 날짜 문자열이라 기기 간 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
         state.lastCandyDate = max(imported.lastCandyDate, current.lastCandyDate)
         // 던전 진행도 같은 부류다 — 날짜 키가 로컬 날짜 문자열이라 비교할 수 있다.

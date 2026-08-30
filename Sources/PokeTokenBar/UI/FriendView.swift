@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 친구 탭의 관문. 근거리 상호작용을 한곳에 모으고 배틀과 교환 중 무엇을 할지 먼저 고른다.
 struct FriendView: View {
-    enum Destination { case battle, trade, tournament }
+    enum Destination { case battle, trade, tournament, gym }
     @State private var representativeSearchText = ""
     @State private var showsRepresentativePicker = false
 
@@ -26,6 +26,11 @@ struct FriendView: View {
                     }
                     BattleView(store: store)
                 }
+            // 방이 켜졌다는 것만으로는 어느 화면인지 못 정한다 — 토너먼트와 체육관이 같은 방을
+            // 쓰므로 **활동 종류로** 가른다. 관장은 방을 계속 띄워 두므로 이 갈림길이 없으면
+            // 체육관이 토너먼트 화면에 갇힌다.
+            } else if destination == .gym || battleCenter.multiplayer.isGymRoom || store.isGymLeader {
+                PlayerGymView(store: store, center: battleCenter.multiplayer) { destination = nil }
             } else if destination == .tournament || battleCenter.multiplayer.phase != .idle {
                 PokemonTournamentView(store: store, center: battleCenter.multiplayer) { destination = nil }
             } else if destination == .trade || battleCenter.trading.phase != .ready {
@@ -39,7 +44,11 @@ struct FriendView: View {
         .onAppear {
             if battleCenter.phase != .ready { destination = .battle }
             if battleCenter.trading.phase != .ready { destination = .trade }
-            if battleCenter.multiplayer.phase != .idle { destination = .tournament }
+            if battleCenter.multiplayer.phase != .idle {
+                // 관장인 채로 탭을 떠났다 오면 체육관으로 돌아와야 한다.
+                destination = battleCenter.multiplayer.isGymRoom ? .gym : .tournament
+            }
+            if store.isGymLeader { destination = .gym }
         }
         .onChange(of: battleCenter.trading.phase) { _, phase in
             if phase != .ready { destination = .trade }
@@ -113,6 +122,20 @@ struct FriendView: View {
                     }
                     Spacer(); Image(systemName: "chevron.right")
                 }.padding(10).pokedoroCard(tint: .orange)
+            }.buttonStyle(.plain)
+
+            Button {
+                destination = .gym
+            } label: {
+                HStack {
+                    Image(systemName: "building.columns.fill").foregroundStyle(.purple)
+                    VStack(alignment: .leading) {
+                        Text(store.l.playerGymTitle).font(.headline)
+                        Text(store.l.playerGymSubtitle)
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer(); Image(systemName: "chevron.right")
+                }.padding(10).pokedoroCard(tint: .purple)
             }.buttonStyle(.plain)
 
             if battleCenter.peers.isEmpty {
