@@ -62,9 +62,13 @@ struct PokemonTradeView: View {
                 Image(systemName: "checkmark.seal.fill").font(.system(size: 52)).foregroundStyle(.green)
                 Text(store.l.t("교환 완료!", "Trade complete!", "交換完了！")).font(.title2.bold())
                 if let received = center.remoteOffer {
+                    // 이름은 상대가 부르는 값이고 프레임 상한(1MB)까지 채울 수 있다. 나머지 표시
+                    // 자리는 전부 한 줄로 자르는데 여기만 빠져 있었다 — 팝오버 안이라 한 줄이
+                    // 패널 레이아웃을 통째로 무너뜨린다.
                     Text(store.l.t("\(received.displayName)이(가) 동료가 되었습니다.",
                                    "\(received.displayName) joined you.",
                                    "\(received.displayName)が仲間になりました。"))
+                        .lineLimit(1)
                 }
                 Button(store.l.t("확인", "Done", "完了")) { close() }.buttonStyle(.borderedProminent)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -198,6 +202,7 @@ struct PokemonTradeView: View {
                            "Changing an offer clears both confirmations.",
                            "ポケモンを変更すると双方の確認が解除されます。"))
                 .font(.caption).foregroundStyle(.secondary)
+            outgoingMemoryNotice
             BattleChatPanel(configuration: BattleChatConfiguration(
                 messages: center.chatMessages,
                 mySenderID: center.chatSenderID,
@@ -216,6 +221,22 @@ struct PokemonTradeView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(center.localOffer == nil || center.remoteOffer == nil || center.localConfirmed)
             }
+        }
+    }
+
+    /// 무엇이 기기를 떠나는지 **확인 누르기 전에** 말한다. LAN 피어는 인증되지 않아 한 번 나가면
+    /// 되돌릴 방법이 없고, 화면 어디에도 그 말이 없으면 사용자는 추억이 건너간다는 걸 알 길이 없다.
+    /// 나가는 건 `.event`(그 개체가 겪은 일)뿐이라 무엇이 남는지도 함께 적는다.
+    @ViewBuilder
+    private var outgoingMemoryNotice: some View {
+        if let mine = center.localOffer,
+           let count = store.tradeMemoryPayload(for: mine.mon.id)?.entries.count, count > 0 {
+            Label(store.l.t(
+                "교환하면 이 포켓몬이 겪은 일 \(count)개가 상대에게 함께 갑니다. 대화에서 남은 기억과 손글씨 메모는 가지 않습니다.",
+                "Trading also sends \(count) of this Pokémon's events to your partner. Conversation memories and handwritten notes stay on this Mac.",
+                "交換すると、このポケモンが経験した出来事\(count)件も相手に渡ります。会話から残った記憶と手書きメモは渡りません。"),
+                  systemImage: "arrow.up.forward.square")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 

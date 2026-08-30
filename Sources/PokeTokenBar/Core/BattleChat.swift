@@ -21,9 +21,21 @@ enum BattleChatPolicy {
 
     static let maximumNameLength = 40
 
-    static func normalizedBody(_ value: String) -> String? {
-        let body = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
-        guard !body.isEmpty, body.count <= maximumLength else { return nil }
+    /// 공백류는 한 칸으로 접고 제어문자는 버린다. 고정 높이 칸에 놓이는 본문은 길이만 재서는
+    /// 안 된다 — 개행과 BEL·bidi 재정의는 칸을 넘치게 하거나 글자 순서를 뒤집는다.
+    ///
+    /// **문자(grapheme) 단위로 돈다.** 유니코드 스칼라로 훑으면 ZWJ(U+200D)가 제어문자 범주(Cf)에
+    /// 들어 있어 `👨‍👩‍👧` 가 낱개 셋으로 쪼개진다 — 보이는 것도 망가지고 글자 수가 부풀어 정상
+    /// 본문이 상한 밖으로 밀려난다. 그래서 "스칼라가 **전부** 제어문자인 문자"만 버린다.
+    ///
+    /// `limit` 은 부르는 쪽이 정한다. 교환 추억은 앨범의 계약(180자)을, 채팅은 자기 상한을 쓴다 —
+    /// 같은 소켓의 형제 경계가 서로 다른 정규화를 갖지 않게 하려고 한 자리에 모아 둔다.
+    static func normalizedBody(_ value: String, limit: Int = maximumLength) -> String? {
+        let body = value.split(whereSeparator: \.isWhitespace)
+            .map { $0.filter { !$0.unicodeScalars.allSatisfy(CharacterSet.controlCharacters.contains) } }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !body.isEmpty, body.count <= limit else { return nil }
         return body
     }
 
