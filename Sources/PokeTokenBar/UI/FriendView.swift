@@ -135,7 +135,9 @@ struct FriendView: View {
                         // 규칙 설명보다 지금 상태가 궁금한 자리다.
                         Text(gymStatusLine ?? store.l.playerGymSubtitle)
                             .font(.caption2)
-                            .foregroundStyle(gymStatusLine == nil ? .secondary : .purple)
+                            // 두 가지가 `Color` 로 같아야 한다 — `.secondary` 는 다른 타입이라
+                            // 삼항으로 섞으면 타입이 안 맞는다.
+                            .foregroundStyle(gymStatusLine == nil ? Color.secondary : Color.purple)
                     }
                     Spacer(); Image(systemName: "chevron.right")
                 }.padding(10).pokedoroCard(tint: .purple)
