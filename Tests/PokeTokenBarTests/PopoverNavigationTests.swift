@@ -67,6 +67,26 @@ final class PopoverNavigationTests: XCTestCase {
         XCTAssertNil(nav.chatCompanionID)
         XCTAssertEqual(nav.tab, .home)
     }
+
+    /// 대화를 여는 자리도 **형제 오버레이를 접어야** 한다. 화면 체인이 설정·체육관·던전·꾸미기를
+    /// 먼저 보므로, 접지 않고 `chatCompanionID` 만 세우면 아무 일도 안 일어난 것처럼 보이고
+    /// (플로팅 펫에서 부르면 죽은 클릭) 나중에 그 오버레이를 닫는 순간 대화가 불쑥 되살아난다.
+    func testGoToChatFoldsTheSiblingOverlays() {
+        let nav = PopoverNavigation()
+        let companion = UUID()
+        nav.showSettings = true
+        nav.showGymLeague = true
+        nav.showDungeon = true
+        nav.showOutfit = true
+
+        nav.goToChat(companionID: companion)
+
+        XCTAssertEqual(nav.chatCompanionID, companion)
+        XCTAssertFalse(nav.showSettings)
+        XCTAssertFalse(nav.showGymLeague)
+        XCTAssertFalse(nav.showDungeon)
+        XCTAssertFalse(nav.showOutfit)
+    }
 }
 
 /// 팝오버 고정은 이제 **둘**이 원한다 — 배틀(일하면서 대전)과 대화(전송 중 왕복).
@@ -75,23 +95,36 @@ final class PopoverNavigationTests: XCTestCase {
 @MainActor
 final class PopoverPinPolicyTests: XCTestCase {
     func testEitherReasonAlonePinsThePopover() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: false), .applicationDefined)
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: true), .applicationDefined)
+        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: false, chatVisible: false),
+                       .applicationDefined)
+        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: true, chatVisible: true),
+                       .applicationDefined)
     }
 
     /// 트리거 브랜치: 배틀 중에 대화 전송이 **먼저** 끝나는 순간. 여기가 풀리면 일하면서 하던
     /// 배틀이 바깥 클릭 한 번에 닫힌다.
     func testChatFinishingDoesNotReleaseTheBattlePin() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: true), .applicationDefined)
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: false), .applicationDefined)
+        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: true, chatVisible: true),
+                       .applicationDefined)
+        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: false, chatVisible: false),
+                       .applicationDefined)
     }
 
     /// 반대 방향도 같다 — 배틀이 먼저 끝나도 전송 중인 대화는 고정을 유지한다.
     func testBattleEndingDoesNotReleaseTheChatPin() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: true), .applicationDefined)
+        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: true, chatVisible: true),
+                       .applicationDefined)
+    }
+
+    /// 고정하는 이유는 "답이 오는 걸 보게 하려고" 다. 사용자가 대화를 닫았으면 볼 것이 없으므로
+    /// 붙들 이유도 없다 — 안 풀면 화면에 아무 설명 없이 바깥 클릭이 먹통이 된다.
+    func testClosingTheChatWhileStillSendingReleasesThePin() {
+        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: true, chatVisible: false),
+                       .transient)
     }
 
     func testNoReasonReturnsToTransient() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: false), .transient)
+        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: false, chatVisible: false),
+                       .transient)
     }
 }

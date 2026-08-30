@@ -524,17 +524,68 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(store.draft(for: charmander), "")
     }
 
-    /// 보낸 문장이 입력칸에 남아 있으면 다음 전송에서 두 번 간다.
-    func testSendingClearsThatCompanionsDraftOnly() async {
+    /// 꺼내기와 비우기는 **한 동작**이다. 나눠 두면 꺼낸 뒤 비우기 전에 한 번 더 눌리는 창이
+    /// 생긴다 — 전송은 `Task` 로 넘어가 비동기라 그 창이 실재한다.
+    func testTakingTheDraftEmptiesItInOneStep() {
         let store = PokemonChatStore(fileURL: temporaryChatURL())
         let sender = UUID(), other = UUID()
         store.setDraft("안녕", for: sender)
         store.setDraft("나중에 얘기해", for: other)
 
-        await store.send("안녕", for: sender, profile: .fixture, provider: FixedReplyProvider(reply: "반가워!"))
+        XCTAssertEqual(store.takeDraft(for: sender), "안녕")
 
         XCTAssertEqual(store.draft(for: sender), "")
         XCTAssertEqual(store.draft(for: other), "나중에 얘기해")
+    }
+
+    /// 트리거 브랜치: 공백만 친 뒤 Return. `TextField.onSubmit` 은 전송 버튼의 `disabled` 를
+    /// 지나지 않으므로 전송 경로에 **들어간다**. 스토어의 `send` 는 빈 문장 가드에서 먼저
+    /// 돌아가므로 거기서 비우면 공백이 입력칸에 영영 남는다.
+    func testTakingAWhitespaceOnlyDraftStillEmptiesIt() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let id = UUID()
+        store.setDraft("   ", for: id)
+
+        _ = store.takeDraft(for: id)
+
+        XCTAssertEqual(store.draft(for: id), "")
+    }
+
+    /// "기록 삭제" 는 대화를 지우는 일이다. 입력칸에 쓰다 만 문장이 남으면 지운 대화의 잔해가
+    /// 새 대화에 얹힌다.
+    func testDeletingASessionAlsoDropsItsDraft() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let id = UUID()
+        store.setDraft("쓰다 만 문장", for: id)
+
+        store.deleteSession(for: id)
+
+        XCTAssertEqual(store.draft(for: id), "")
+    }
+
+    /// "새 대화" 도 같다 — 새로 시작했는데 이전 대화에 쓰던 문장이 입력칸에 차 있으면 안 된다.
+    func testStartingANewSessionDropsTheDraft() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let id = UUID()
+        store.setDraft("쓰다 만 문장", for: id)
+
+        store.startNewSession(for: id, profile: .fixture)
+
+        XCTAssertEqual(store.draft(for: id), "")
+    }
+
+    /// 놓아주기·교환·졸업으로 사라진 개체의 draft 가 남으면 죽은 UUID 로 키가 무한히 쌓인다.
+    /// `prune` 이 `sessions` 만 거르면 그 자리는 아무도 안 치운다.
+    func testPruneDropsDraftsOfCompanionsThatAreGone() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let kept = UUID(), gone = UUID()
+        store.setDraft("남는다", for: kept)
+        store.setDraft("사라진다", for: gone)
+
+        store.prune(validCompanionIDs: [kept])
+
+        XCTAssertEqual(store.draft(for: kept), "남는다")
+        XCTAssertEqual(store.draft(for: gone), "")
     }
 
     private func temporaryChatURL() -> URL {
