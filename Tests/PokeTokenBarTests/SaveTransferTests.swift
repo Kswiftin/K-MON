@@ -612,7 +612,9 @@ final class SaveTransferTests: XCTestCase {
                                      "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "focusEggReadyDates", "eggFragments",
                                      "starPieces", "forcedResetVersion", "integrityVersion", "lastAdventureBonusDate"]
         // 로컬 장부: 이 기기의 시계 기준값·서명 → 새 기기 기준 재설정(저장 시 재서명).
-        let deviceLedger: Set<String> = ["lastTickAt", "integrity"]
+        // 체육관 관장 자격도 같은 부류다 — 이 기기가 호스팅 중인 살아있는 역할이라, 따라가면
+        // 옮겨간 기기가 열지도 않은 체육관의 관장을 자처하고 방어팀 넷이 거기서 잠긴다.
+        let deviceLedger: Set<String> = ["lastTickAt", "integrity", "gymLeadership"]
         // 계정 원장(로컬 날짜 문자열 — 비교 가능): 더 최근 값 유지.
         // 던전 진행도도 같은 부류다 — 같은 날이면 정산 플래그를 OR 로 합쳐 재지급을 막는다.
         // 웨이브 런 실적도 병합 대상이다 — 소모되지 않는 누적이라 축별로 큰 값을 남긴다

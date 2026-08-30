@@ -105,9 +105,10 @@ final class LobbyRoleTests: XCTestCase {
         // 4 = 상태이상(파이터에 status 필드, 스트림에 `.status`/`.cant` case),
         // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case), 6 = 방 채팅, 7 = 포켓몬 OX 퀴즈,
         // 8 = 드레인·반동·다단·풀린치(스트림에 `.heal`/`.multiHit` case, `Status.flinch`),
-        // 9 = 특성(스냅샷에 ability 필드), 11 = 토너먼트 팀·대진·관전 상태 동기화.
+        // 9 = 특성(스냅샷에 ability 필드), 11 = 토너먼트 팀·대진·관전 상태 동기화,
+        // 12 = 공유 체육관(도전·거절·상태·행동·승계).
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 11)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 12)
     }
 
     func testBettingMessagesRoundTrip() throws {

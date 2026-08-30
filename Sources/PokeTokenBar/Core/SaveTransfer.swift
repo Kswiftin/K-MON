@@ -502,6 +502,10 @@ enum SaveTransfer {
         var state = imported
         state.language = current.language
         state.lastTickAt = nil
+        // 체육관 관장은 **이 기기에서 돌고 있는 살아있는 역할**이지 진행이 아니다. 따라오게 두면
+        // 세이브를 옮긴 기기가 호스팅하지도 않는 체육관의 관장을 자처하고, 방어팀 넷이 그 기기에서
+        // 잠긴 채 남는다. 옮겨온 쪽은 관장이 아닌 상태로 시작한다.
+        state.gymLeadership = nil
         // 일일 사탕 원장은 로컬 날짜 문자열이라 기기 간 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
         state.lastCandyDate = max(imported.lastCandyDate, current.lastCandyDate)
         // 던전 진행도 같은 부류다 — 날짜 키가 로컬 날짜 문자열이라 비교할 수 있다.

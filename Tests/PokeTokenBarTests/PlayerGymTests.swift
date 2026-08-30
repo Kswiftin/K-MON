@@ -215,6 +215,17 @@ final class PlayerGymTests: XCTestCase {
         XCTAssertEqual(decoded.gymLeadership?.gymID, s.gymLeadership?.gymID)
     }
 
+    /// 관장은 **이 기기에서 돌고 있는 역할**이라 다른 기기로 따라가지 않는다. 따라가면 옮겨간
+    /// 기기가 열지도 않은 체육관의 관장을 자처하고, 방어팀 넷이 거기서 잠긴 채 남는다.
+    func testLeadershipDoesNotTransferToAnotherDevice() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+
+        let rebased = SaveTransfer.rebasedForThisDevice(s.state, current: CompanionState())
+
+        XCTAssertNil(rebased.gymLeadership)
+    }
+
     /// 구버전 세이브에는 키 자체가 없다 — 관장이 아닌 상태로 읽혀야 한다.
     func testASaveWithoutTheFieldDecodesAsNotALeader() throws {
         let json = #"{"trainerName":"T"}"#.data(using: .utf8)!
