@@ -122,6 +122,7 @@ struct PopoverView: View {
     @Environment(MemoryHomeVisitCenter.self) private var memoryHomeVisits
     @Environment(FocusTimer.self) private var focusTimer
     @Environment(MemoryHomePresenter.self) private var memoryHomePresenter
+    @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     private var l: L { companion.l }
 
@@ -141,6 +142,12 @@ struct PopoverView: View {
                 RogueRunView(store: companion, onClose: { nav.showDungeon = false })
             } else if nav.showOutfit {
                 OutfitView(store: companion, onClose: { nav.showOutfit = false })
+            } else if let chatCompanionID = nav.chatCompanionID {
+                // 대화는 전용 창에서 여기로 옮겨 왔다 — 근거는 `PokemonChatPresenter` 주석.
+                // 실행기는 프레젠터가 조립한 한 벌을 받아 쓴다.
+                PokemonChatView(store: companion, companionID: chatCompanionID,
+                                toolbox: chatPresenter.toolbox, settings: settings,
+                                onClose: { nav.chatCompanionID = nil })
             } else {
                 // 고정 높이 + 탭 안 스크롤. 콘텐츠가 늘 때마다 창이 커지면 NSPopover 가 매번 다시
                 // 그려 떨리고, 화면을 넘기면 스크롤 대신 잘라낸다(#9). 창 크기는 고정하고 넘치는

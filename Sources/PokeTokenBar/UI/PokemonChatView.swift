@@ -8,21 +8,30 @@ struct PokemonChatView: View {
     let album: PokemonMemoryAlbum
     let toolbox: any PokemonChatToolRunning
     let settings: AppSettings
+    let onClose: () -> Void
     @State private var identity: PokemonSpeciesIdentity?
-    @State private var draft = ""
     @State private var destination: Destination?
     @AppStorage("pokemonChatProvider") private var providerRaw = ""
+
+    /// 입력 중인 문장은 **스토어**가 든다. 팝오버는 바깥 클릭에 닫히며 콘텐츠 뷰를 통째로
+    /// 해제하므로(`popoverDidClose`), `@State` 로 두면 쓰다 만 문장이 클릭 한 번에 사라진다.
+    private var draft: Binding<String> {
+        Binding(get: { chat.draft(for: companionID) },
+                set: { chat.setDraft($0, for: companionID) })
+    }
 
     private enum Destination: String, Identifiable { case album, dailyDex; var id: String { rawValue } }
 
     init(store: CompanionStore, companionID: UUID, chat: PokemonChatStore? = nil,
-         album: PokemonMemoryAlbum? = nil, toolbox: any PokemonChatToolRunning, settings: AppSettings) {
+         album: PokemonMemoryAlbum? = nil, toolbox: any PokemonChatToolRunning,
+         settings: AppSettings, onClose: @escaping () -> Void) {
         self.store = store
         self.companionID = companionID
         self.chat = chat ?? store.chatStore
         self.album = album ?? store.memoryAlbum
         self.toolbox = toolbox
         self.settings = settings
+        self.onClose = onClose
     }
     private var baseProfile: PokemonChatProfile {
         store.ownedMons.first(where: { $0.id == companionID }).map(store.chatProfile(for:))
@@ -111,14 +120,16 @@ struct PokemonChatView: View {
             if let error = chat.errorMessage { Text(error).font(.caption2).foregroundStyle(.red).padding(.horizontal, 12) }
             Divider()
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(l.t("메시지를 입력하세요", "Type a message", "メッセージを入力"), text: $draft, axis: .vertical)
+                TextField(l.t("메시지를 입력하세요", "Type a message", "メッセージを入力"), text: draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder).lineLimit(1...4)
                     .onSubmit(send)
                 Button(action: send) { Image(systemName: "paperplane.fill") }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
+                    .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
             }.padding(12)
         }
-        .frame(width: 420, height: 520)
+        // 팝오버 폭은 바깥(`PopoverView`)이 정한다. 높이만 다른 오버레이와 같은 예산을 쓴다 —
+        // 전용 창의 520 보다 커져 메시지 영역이 그만큼 늘어난다.
+        .frame(height: PopoverMetrics.currentHeight(for: .battle))
         .sheet(item: $destination) { destination in
             switch destination {
             case .album: PokemonMemoryAlbumView(companionID: companionID, language: profile.language, album: album)
@@ -136,7 +147,19 @@ struct PokemonChatView: View {
                 Text(profile.displayName).font(.headline)
                 Text(profile.flavorText ?? "PokéAPI 설명을 불러오는 중…").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
             }
-            Spacer()
+            Spacer(minLength: 4)
+            Menu { Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
+                Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
+                Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
+            } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
+            Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
+        }.padding(12)
+    }
+
+    private var statusBar: some View {
+        HStack(spacing: 6) {
+            // 제공자 이름은 원래 여기 라벨로, 헤더에 피커로 — 같은 값이 두 자리를 먹었다.
+            // 팝오버 폭(360)에서는 그 중복을 감당할 수 없으므로 **고를 수 있는 쪽만** 남긴다.
             Picker("AI", selection: $providerRaw) {
                 Text(l.t("AI 선택", "Choose AI", "AI を選択")).tag("")
                 // 차단된 제공자도 보여 준다 — 목록에서 지우면 왜 못 쓰는지 알 길이 없다. 대신
@@ -149,18 +172,7 @@ struct PokemonChatView: View {
                             .disabled(true).tag(kind.rawValue)
                     }
                 }
-            }.labelsHidden().frame(width: 140)
-            Menu { Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
-                Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
-                Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
-            } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton)
-        }.padding(12)
-    }
-
-    private var statusBar: some View {
-        HStack(spacing: 6) {
-            let name = selectedKind?.label(profile.language) ?? l.t("AI 미선택", "No AI", "AI 未選択")
-            Label(name, systemImage: "sparkles").font(.caption2)
+            }.labelsHidden().controlSize(.small).fixedSize()
             Text(l.t("외부 전송", "Sent externally", "外部送信")).font(.caption2).foregroundStyle(.secondary)
             // 자물쇠는 실제로 격리된 provider 가 해석됐을 때만 — 상시로 그리면 차단·미선택
             // 상태에서 없는 보증을 광고한다.
@@ -168,6 +180,7 @@ struct PokemonChatView: View {
                 Label(l.t("도구·MCP 격리", "Tools & MCP isolated", "ツール・MCP 隔離"), systemImage: "lock.fill")
                     .font(.caption2).foregroundStyle(.green)
             }
+            Spacer(minLength: 0)
         }.padding(.horizontal, 12).padding(.vertical, 6)
     }
 
@@ -175,7 +188,7 @@ struct PokemonChatView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(chips, id: \.self) { chip in
-                    Button(chip) { if chip == dailyDexQuestion { destination = .dailyDex } else { draft = chip } }.buttonStyle(.bordered).controlSize(.small)
+                    Button(chip) { if chip == dailyDexQuestion { destination = .dailyDex } else { draft.wrappedValue = chip } }.buttonStyle(.bordered).controlSize(.small)
                 }
             }.padding(.horizontal, 12).padding(.bottom, 8)
         }
@@ -220,7 +233,9 @@ struct PokemonChatView: View {
 
     private func send() {
         guard let provider else { return }
-        let message = draft; draft = ""
+        // 입력칸을 비우는 건 스토어가 한다(`PokemonChatStore.send`). 여기서 또 비우면 비우는
+        // 자리가 둘이 되고, 한쪽만 고쳐도 아무 테스트가 안 깨진다.
+        let message = draft.wrappedValue
         Task { await chat.send(message, for: companionID, profile: profile, provider: provider, toolbox: toolbox) }
     }
 
