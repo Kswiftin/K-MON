@@ -316,12 +316,63 @@ final class PokemonChatProviderPathTests: XCTestCase {
     }
 
     /// 사유별 문구가 세 언어를 다 갖췄는가. 한 언어만 비면 그 사용자는 막힌 채 영어를 본다.
+    ///
+    /// **사유마다 그 사유가 실제로 나오는 상태를 줘야 한다.** 옛 판은 전부 `effective: nil` 로
+    /// 물었는데 그 상태에서는 어느 `stored` 든 한 갈래로 수렴한다 — 차단 사유의 번역은 한 번도
+    /// 안 밟히면서 세 갈래가 나와 통과했다(답이 우연히 같아 가드가 안 깨지는 부류).
     func testEveryUnavailableGuidanceIsWrittenInAllThreeLanguages() {
-        for stored in ["opencode", "custom", ""] {
+        let cases: [(stored: String, effective: PokemonChatProviderKind?)] = [
+            ("", nil),                  // 하나도 안 깔림
+            ("opencode", .codex),       // 고른 것이 차단됨
+            ("custom", .codex),
+            ("claude", .codex),         // 고른 것이 사라져 폴백됨
+        ]
+        for (stored, effective) in cases {
             let messages = [AppLanguage.ko, .en, .ja].compactMap {
-                PokemonChatProviderSelection.unavailableMessage(stored: stored, effective: nil, language: $0)
+                PokemonChatProviderSelection.unavailableMessage(stored: stored, effective: effective, language: $0)
             }
             XCTAssertEqual(Set(messages).count, 3, "'\(stored)': 세 갈래가 아니다")
         }
+    }
+
+    /// 우선순위는 **사용자가 할 수 있는 일**이 먼저다. CLI 를 하나도 안 깐 사용자에게 차단 사유를
+    /// 앞세우면 "설치하세요" 대신 "그 CLI 는 도구 격리가 안 됩니다" 를 읽는다 — 손쓸 데가 없는
+    /// 안내이고 버튼은 이유 없이 비활성인 채다.
+    ///
+    /// 옛 `...ThreeLanguages` 가 `effective: nil` 로만 물어 이 역전을 잡기는커녕 고정하고 있었다.
+    func testWithNoCLIInstalledTheGuidanceSaysToInstallOneEvenIfTheOldPickIsBlocked() {
+        for stored in ["opencode", "custom"] {
+            XCTAssertEqual(PokemonChatProviderSelection.unavailableMessage(
+                stored: stored, effective: nil, language: .ko),
+                           PokemonChatProviderSelection.noProviderMessage(.ko),
+                           "'\(stored)': 못 쓰는 CLI 설명이 설치 안내를 가렸다")
+        }
+    }
+
+    /// 폴백을 부르는 것은 차단만이 아니다 — **고른 CLI 를 지워도** 다른 벤더 CLI 로 조용히 나간다.
+    /// 첫 가지가 차단 사유만 보므로 이 경우는 통째로 말이 없었다.
+    ///
+    /// 이름을 말해야 하는 이유: 설정은 검증 CLI 마다 경로 칸이 따로다. "설정에서 경로를 넣으세요"
+    /// 만으로는 두 칸 중 어디를 채울지 모른다.
+    func testDeletingTheChosenCLIIsExplainedInsteadOfSilentlyRedirecting() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            let message = PokemonChatProviderSelection.unavailableMessage(
+                stored: "claude", effective: .codex, language: language)
+            XCTAssertNotNil(message, "\(language.rawValue): 고른 CLI 가 사라졌는데 아무 말도 없다")
+            XCTAssertTrue(message?.contains(PokemonChatProviderKind.claude.label(language)) == true,
+                          "\(language.rawValue): 어느 칸에 경로를 넣을지 모른다 — '\(message ?? "nil")'")
+        }
+    }
+
+    /// 캐시 키는 `override` 로 만드는데 기본 `lookup` 은 그 인자를 **버리고** 다른 기본값 키를 다시
+    /// 읽었다. 두 벌이 어긋나면 키만 바뀌고 해석은 그대로거나, 해석기가 본 적 없는 경로로 만든
+    /// 항목이 남는다. 지금은 `setChatProviderExecutablePath` 가 양쪽에 다 써서 우연히 맞아 있다.
+    @MainActor
+    func testTheCacheResolvesTheOverrideItWasKeyedOn() throws {
+        let planted = try makeExecutable(root.appendingPathComponent("elsewhere/claude"))
+
+        let resolved = PokemonChatProviderCache().executableURL(for: .claude, override: planted.path)
+
+        XCTAssertEqual(resolved?.path, planted.path, "키에 쓴 지정 경로를 해석은 보지 않았다")
     }
 }
