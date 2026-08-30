@@ -116,7 +116,6 @@ struct PokemonChatView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
             }
             Divider()
-            statusBar
             questionChips
             ScrollViewReader { proxy in
                 ScrollView {
@@ -169,7 +168,10 @@ struct PokemonChatView: View {
                 Text(profile.flavorText ?? "PokéAPI 설명을 불러오는 중…").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 4)
-            Menu { Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
+            Menu {
+                providerPicker
+                Divider()
+                Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
                 Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
                 Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
             } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
@@ -177,33 +179,28 @@ struct PokemonChatView: View {
         }.padding(12)
     }
 
-    private var statusBar: some View {
-        HStack(spacing: 6) {
-            // 제공자 이름은 원래 여기 라벨로, 헤더에 피커로 — 같은 값이 두 자리를 먹었다.
-            // 팝오버 폭(360)에서는 그 중복을 감당할 수 없으므로 **고를 수 있는 쪽만** 남긴다.
-            //
-            // 피커는 **사용자의 선택**만 보여 준다. 읽기를 자동 선택 결과로 바꿔 끼우면 쓴 값과 읽는
-            // 값이 달라져, "자동 선택" 은 영영 선택된 적이 없고(늘 폴백 이름이 대신 보인다) 차단된
-            // 저장값은 목록 어디에도 안 뜨면서 배너만 그 이름을 말한다. 어디로 나가는지는 전송
-            // 자리의 동의 줄이 이미 말해 준다 — 이 칸까지 그걸 겸하면 고를 수가 없어진다.
-            Picker("AI", selection: $providerRaw) {
-                // 빈 값은 "안 골랐다" 가 아니라 **자동에 맡긴다** 는 뜻이 됐다. 고른 걸 되돌리는 길.
-                Text(l.t("자동 선택", "Automatic", "自動選択")).tag("")
-                // 차단된 제공자도 보여 준다 — 목록에서 지우면 왜 못 쓰는지 알 길이 없다. 대신
-                // 자물쇠를 달고 고를 수 없게 한다(`(disabled)` 라고 *쓰기만* 하면 골라진다).
-                ForEach(PokemonChatProviderKind.allCases, id: \.self) { kind in
-                    if PokemonChatProviderSafety.availability(for: kind).isVerified {
-                        Text(kind.label(profile.language)).tag(kind.rawValue)
-                    } else {
-                        Label(kind.label(profile.language), systemImage: "lock.fill")
-                            .disabled(true).tag(kind.rawValue)
-                    }
+    /// 제공자 선택은 `⋯` 메뉴 안에 산다. 전용 줄(`statusBar`)이었을 때 **띄워 보니** 우측 230pt 가
+    /// 상시로 비어 있었고, 헤더에 나란히 두는 대안은 이미 2줄로 잘려 있는 설명 텍스트를 더 깎았다.
+    /// 자주 바꾸는 값이 아니고, "지금 어디로 나가는가" 는 전송 자리의 동의 줄이 상시 답한다.
+    ///
+    /// 피커는 **사용자의 선택**만 보여 준다. 읽기를 자동 선택 결과로 바꿔 끼우면 쓴 값과 읽는 값이
+    /// 달라져, "자동 선택" 은 영영 선택된 적이 없고 차단된 저장값은 목록 어디에도 안 뜨면서 배너만
+    /// 그 이름을 말한다.
+    private var providerPicker: some View {
+        Picker(l.t("대화 상대 AI", "Chat AI", "会話 AI"), selection: $providerRaw) {
+            // 빈 값은 "안 골랐다" 가 아니라 **자동에 맡긴다** 는 뜻이 됐다. 고른 걸 되돌리는 길.
+            Text(l.t("자동 선택", "Automatic", "自動選択")).tag("")
+            // 차단된 제공자도 보여 준다 — 목록에서 지우면 왜 못 쓰는지 알 길이 없다. 대신
+            // 자물쇠를 달고 고를 수 없게 한다(`(disabled)` 라고 *쓰기만* 하면 골라진다).
+            ForEach(PokemonChatProviderKind.allCases, id: \.self) { kind in
+                if PokemonChatProviderSafety.availability(for: kind).isVerified {
+                    Text(kind.label(profile.language)).tag(kind.rawValue)
+                } else {
+                    Label(kind.label(profile.language), systemImage: "lock.fill")
+                        .disabled(true).tag(kind.rawValue)
                 }
-            }.labelsHidden().controlSize(.small).fixedSize()
-            // "외부 전송" 과 자물쇠는 여기 있었다. 전송 버튼이 곧 동의이므로 **누르는 자리**로
-            // 내렸다(`PokemonChatConsentLabel`) — 대화가 길어지면 화면 맨 위는 시야 밖이다.
-            Spacer(minLength: 0)
-        }.padding(.horizontal, 12).padding(.vertical, 6)
+            }
+        }
     }
 
     private var questionChips: some View {
