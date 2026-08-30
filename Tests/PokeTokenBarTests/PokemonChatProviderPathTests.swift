@@ -328,6 +328,7 @@ final class PokemonChatProviderPathTests: XCTestCase {
 
     /// 새로 깐 사람은 **반드시** 묻는 쪽에서 시작한다. 기본값이 `true` 로 새면 이 기능은 코드에만
     /// 있고 화면엔 없는 것이 된다.
+    @MainActor
     func testAFreshInstallIsAskedBeforeTheFirstMessageEverLeavesTheMachine() throws {
         let suite = "chat-consent-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -337,6 +338,7 @@ final class PokemonChatProviderPathTests: XCTestCase {
     }
 
     /// 승인은 **다음 실행에도** 남아야 한다. 안 남으면 매번 묻는 셈이라 '한 번만' 이 깨진다.
+    @MainActor
     func testAcknowledgingTheFirstSendSurvivesARelaunch() throws {
         let suite = "chat-consent-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

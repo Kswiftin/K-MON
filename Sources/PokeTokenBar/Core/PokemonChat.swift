@@ -1521,6 +1521,13 @@ enum PokemonChatProviderSafety {
     }
 }
 
+/// 전송을 눌렀을 때 실제로 일어나는 일. 뷰가 `if` 두 개로 갈래를 만들면 그 갈래는 아무도 안 센다.
+enum PokemonChatSendAction: Equatable {
+    /// 아직 한 번도 밖으로 보낸 적이 없다 — 어디로 가는지 말하고 한 번 묻는다.
+    case ask(PokemonChatProviderKind)
+    case send
+}
+
 /// 어느 CLI 로 보낼지 정한다. **고르는 일과 보내는 일은 다르다** — 여기서 자동화하는 것은
 /// "어느 CLI 인가" 뿐이고, 외부로 나가는 행위는 여전히 사용자가 전송을 눌러야 일어난다.
 ///
@@ -1551,7 +1558,28 @@ enum PokemonChatProviderSelection {
     /// 답을 누르는 자리에서 돌려준다 — 이름 없는 "외부 전송" 은 어디로 나가는지 말해 주지 않는다.
     static func externalSendLabel(kind: PokemonChatProviderKind, language: AppLanguage) -> String {
         let name = kind.label(language)
-        return L(language).t("외부 전송 → \(name)", "Sent externally → \(name)", "外部送信 → \(name)")
+        // 영어만 시제를 고를 수 있어 함정이 있다. "Sent" 는 **이미 나갔다**는 보고라, 누르기 전에
+        // 읽는 동의 문구로는 틀린 주장이다. 한국어 "외부 전송"·일본어 "外部送信" 은 시제 없는 명사다.
+        return L(language).t("외부 전송 → \(name)", "Sends externally → \(name)", "外部送信 → \(name)")
+    }
+
+    /// 자동 선택은 "어느 CLI 인가" 만 대신 정했는데, 예전엔 **피커에서 고르는 행위 자체가 첫 전송의
+    /// 문턱**이었다. 그 문턱이 같이 사라졌으므로 여기서 한 번만 돌려준다 — 도구 격리는 관문으로
+    /// 지키면서 송출은 아무 확인 없이 나가면 균형이 안 맞는다.
+    ///
+    /// 매번 묻지 않는 것이 절반이다. 매번 뜨는 창은 읽지 않고 누르는 창이 된다.
+    static func sendAction(kind: PokemonChatProviderKind, acknowledged: Bool) -> PokemonChatSendAction {
+        acknowledged ? .send : .ask(kind)
+    }
+
+    /// 물어보는 문장도 대상 CLI 를 **이름으로** 말한다. "외부로 보냅니다" 만으로는 어디로 가는지
+    /// 모른 채 승인하게 된다 — 동의 줄과 같은 이유다.
+    static func firstSendConsentQuestion(kind: PokemonChatProviderKind, language: AppLanguage) -> String {
+        let name = kind.label(language)
+        return L(language).t(
+            "이 대화를 이 Mac 의 \(name) 에게 보냅니다. 계속할까요? (처음 한 번만 묻습니다)",
+            "This conversation will be sent to \(name) on this Mac. Continue? (asked only once)",
+            "この会話をこの Mac の \(name) に送ります。続けますか？（最初の一度だけ確認します）")
     }
 
     /// 고른 CLI 가 안 깔려 폴백했을 때. **이름을 말해야 한다** — 설정은 검증 CLI 마다 경로 칸이

@@ -12,6 +12,9 @@ struct PokemonChatView: View {
     @State private var identity: PokemonSpeciesIdentity?
     @State private var destination: Destination?
     @State private var providerCache = PokemonChatProviderCache()
+    /// 첫 전송 확인이 떠 있는 동안 어느 CLI 를 묻고 있는지. 팝오버가 닫히면 뷰째로 사라지므로
+    /// 확인 창도 함께 사라진다 — 승인 없이 남는 상태가 없다.
+    @State private var pendingFirstSend: PokemonChatProviderKind?
     @AppStorage("pokemonChatProvider") private var providerRaw = ""
 
     /// 입력 중인 문장은 **스토어**가 든다. 팝오버는 바깥 클릭에 닫히며 콘텐츠 뷰를 통째로
@@ -143,6 +146,7 @@ struct PokemonChatView: View {
             if let error = chat.errorMessage { Text(error).font(.caption2).foregroundStyle(.red).padding(.horizontal, 12) }
             Divider()
             VStack(alignment: .leading, spacing: 6) {
+                firstSendConsentCard
                 // 동의는 이 줄과 아래 버튼이 함께 이룬다 — 어디로 나가는지 읽고 누르는 것.
                 if let effectiveKind {
                     PokemonChatConsentLabel(kind: effectiveKind, language: profile.language)
@@ -154,7 +158,7 @@ struct PokemonChatView: View {
                     Button(action: send) { Image(systemName: "paperplane.fill") }
                         .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
                 }
-            }.padding(12)
+            }.padding(PokemonChatConsentLabel.horizontalPadding)
         }
     }
 
@@ -249,12 +253,48 @@ struct PokemonChatView: View {
         }
     }
 
+    /// **문턱은 여기 하나다.** 전송 버튼과 Return 키가 둘 다 이 함수를 지나므로, 확인을 버튼
+    /// 쪽에만 달면 Return 으로 그냥 나간다 — 같은 부류의 결함을 이미 겪었다.
     private func send() {
-        guard let provider else { return }
+        guard let provider, let kind = effectiveKind else { return }
+        switch PokemonChatProviderSelection.sendAction(
+            kind: kind, acknowledged: settings.hasAcknowledgedExternalChatSend) {
+        case .ask(let kind):
+            // 입력칸은 **비우지 않는다.** 물어만 보고 아직 아무것도 안 보냈으므로, 여기서 비우면
+            // 취소한 사용자가 쓰던 문장을 잃는다.
+            pendingFirstSend = kind
+        case .send:
+            deliverDraft(through: provider)
+        }
+    }
+
+    private func deliverDraft(through provider: any PokemonChatProviding) {
         // 꺼내기와 비우기가 한 동작이라 동기다 — `Task` 가 도는 사이 한 번 더 눌려 같은 문장이
         // 두 번 가는 창이 없고, 공백만 친 뒤 Return 을 눌러도 입력칸이 비워진다.
         let message = chat.takeDraft(for: companionID)
         Task { await chat.send(message, for: companionID, profile: profile, provider: provider, toolbox: toolbox) }
+    }
+
+    /// 처음 한 번만 뜬다. `proposalCard` 와 같은 모양을 쓰는 이유는, 이 화면에서 "승인해야 일어나는
+    /// 일" 의 생김새가 이미 그것이기 때문이다 — 새 모양을 만들면 사용자가 새로 배워야 한다.
+    @ViewBuilder private var firstSendConsentCard: some View {
+        if let pendingFirstSend {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(PokemonChatProviderSelection.firstSendConsentQuestion(
+                    kind: pendingFirstSend, language: profile.language)).font(.callout)
+                HStack {
+                    Button(l.t("보내기", "Send", "送信")) {
+                        settings.hasAcknowledgedExternalChatSend = true
+                        self.pendingFirstSend = nil
+                        if let provider { deliverDraft(through: provider) }
+                    }.buttonStyle(.borderedProminent)
+                    Button(l.t("취소", "Cancel", "キャンセル")) { self.pendingFirstSend = nil }
+                        .buttonStyle(.bordered)
+                }
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+        }
     }
 
     private func profileForOwner(_ id: UUID) -> PokemonChatProfile {
@@ -271,6 +311,15 @@ struct PokemonChatView: View {
 /// 자물쇠는 실제로 격리된 provider 가 해석됐을 때만 그려진다(`kind` 는 검증된 종류만 온다) —
 /// 상시로 그리면 없는 보증을 광고한다.
 struct PokemonChatConsentLabel: View {
+    /// 대화 화면의 좌우 여백. **테스트 앵커가 여기서 나온다** — 폭 검증이 다른 상수
+    /// (`PopoverMetrics.contentWidth`)를 쓰던 동안은 4pt 차이로 우연히 안전했을 뿐이라,
+    /// 그 상수가 느슨해지는 순간 실제로 잘리는 라벨을 통과시켰다.
+    ///
+    /// 팝오버는 `PopoverMetrics.width` 를 통째로 준다. `PopoverMetrics.padding` 은 `mainContent`
+    /// 안에서만 걸리고 대화는 그 **형제 가지**라 해당되지 않는다.
+    static let horizontalPadding: CGFloat = 12
+    static let contentWidth: CGFloat = PopoverMetrics.width - horizontalPadding * 2
+
     let kind: PokemonChatProviderKind
     let language: AppLanguage
 
