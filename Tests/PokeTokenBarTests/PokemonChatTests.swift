@@ -619,15 +619,22 @@ final class PokemonChatTests: XCTestCase {
     /// 자동 선택은 검증 CLI **2종**의 설치 여부를 `body` 안에서 함께 묻는다. 보관 자리가 한 칸이면
     /// 두 질의가 서로를 밀어내 매번 miss 가 나고, 캐시가 막으려던 그 비용(디렉터리 13곳 × 2벌)이
     /// 키 입력마다 그대로 돌아온다 — 캐시가 있는데도 없는 것과 같아진다.
+    /// 답이 **종류마다 다른** 해석기를 준다. 전부 `nil` 을 돌려주면 어느 자리에 담기든 답이 같아
+    /// 호출 횟수만 깨질 수 있다 — 자리를 뒤섞어 엉뚱한 CLI 를 실행하게 되는 쪽은 못 잡는다.
     func testResolutionIsKeptPerKindSoAskingAboutOneCLIDoesNotEvictTheOther() {
         var lookups = 0
-        let cache = PokemonChatProviderCache { _, _ in lookups += 1; return nil }
+        let cache = PokemonChatProviderCache { kind, _ in
+            lookups += 1
+            return URL(fileURLWithPath: "/tmp/\(kind.rawValue)")
+        }
 
         // 자동 선택이 실제로 도는 순서. 종류를 오가며 물어도 각 종류당 한 번이면 충분하다.
-        _ = cache.executableURL(for: .codex, override: nil)
-        _ = cache.executableURL(for: .claude, override: nil)
-        _ = cache.executableURL(for: .codex, override: nil)
-        _ = cache.executableURL(for: .claude, override: nil)
+        XCTAssertEqual(cache.executableURL(for: .codex, override: nil)?.path, "/tmp/codex")
+        XCTAssertEqual(cache.executableURL(for: .claude, override: nil)?.path, "/tmp/claude")
+        XCTAssertEqual(cache.executableURL(for: .codex, override: nil)?.path, "/tmp/codex",
+                       "보관해 둔 답이 다른 종류의 것으로 바뀌었다 — 엉뚱한 CLI 가 실행된다")
+        XCTAssertEqual(cache.executableURL(for: .claude, override: nil)?.path, "/tmp/claude",
+                       "보관해 둔 답이 다른 종류의 것으로 바뀌었다 — 엉뚱한 CLI 가 실행된다")
 
         XCTAssertEqual(lookups, 2, "종류를 오갈 때마다 다시 해석하면 타이핑이 경로 탐색을 끌고 다닌다")
     }
