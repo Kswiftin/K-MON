@@ -64,6 +64,10 @@ final class PopoverNavigation {
     var showDungeon = false
     /// 꾸미기(트레이너 의상) 오버레이. 위 오버레이들과 같은 층이다.
     var showOutfit = false
+    /// 대화 오버레이. 다른 오버레이와 달리 **어느 개체의** 대화인지까지 들어야 한다 —
+    /// 대화는 활성 개체뿐 아니라 박스 개체로도 열린다(`PokemonRosterView`).
+    /// `nil` 이 곧 닫힘이라 플래그를 따로 두지 않는다.
+    var chatCompanionID: UUID?
     var tab: PopoverTab = .home
 
     func reset() {
@@ -71,6 +75,7 @@ final class PopoverNavigation {
         showGymLeague = false
         showDungeon = false
         showOutfit = false
+        chatCompanionID = nil
         tab = .home
     }
 
@@ -81,6 +86,7 @@ final class PopoverNavigation {
         showGymLeague = false
         showDungeon = false
         showOutfit = false
+        chatCompanionID = nil
         tab = .battle
     }
 
@@ -91,7 +97,19 @@ final class PopoverNavigation {
         showGymLeague = true
         showDungeon = false
         showOutfit = false
+        chatCompanionID = nil
         tab = .challenge
+    }
+}
+
+/// 팝오버를 바깥 클릭에 안 닫히게 붙드는 이유가 **둘** 이상이라, 되돌림 판정을 한 곳에 둔다.
+///
+/// 각 이유가 스스로 `.transient` 로 되돌리면 나중에 끝난 쪽이 아직 진행 중인 쪽의 고정을
+/// 풀어 버린다 — 배틀 중에 대화 전송이 먼저 끝나면 일하면서 하던 배틀이 클릭 한 번에 닫힌다.
+/// 부르는 자리는 플래그만 넘기고 판정하지 않는다.
+enum PopoverPinPolicy {
+    static func behavior(battlePinned: Bool, chatSending: Bool) -> NSPopover.Behavior {
+        battlePinned || chatSending ? .applicationDefined : .transient
     }
 }
 

@@ -1740,6 +1740,12 @@ final class PokemonChatStore {
     var isSending: Bool { outstandingSendCount > 0 }
     private(set) var errorMessage: String?
     private(set) var pendingProposal: PokemonChatToolProposal?
+    /// 입력 중인 문장. 뷰의 `@State` 로 두면 팝오버가 닫히며 콘텐츠 뷰가 통째로 해제될 때
+    /// (`popoverDidClose` → `contentViewController = nil`) 쓰다 만 문장이 사라진다.
+    /// 개체별로 나누는 이유는 대화가 박스 개체로도 열리기 때문이다 — 한 칸이면 피카츄에게
+    /// 쓰던 문장이 파이리 대화에 나타난다.
+    /// **영속 대상이 아니다.** `Snapshot` 은 `sessions` 만 담으므로 디스크 포맷은 그대로다.
+    private var drafts: [UUID: String] = [:]
     /// 한 번의 전송이 CLI 를 띄우는 최대 추가 횟수. 상한이 없으면 매 턴 도구를 부르는 모델에
     /// 한 문장이 무한 왕복이 된다.
     /// 읽고-쓰는 2단 체인(`bag.list` → `item.use`)이 생기면서 2 라운드로는 마지막 턴에 실행이
@@ -1758,6 +1764,9 @@ final class PokemonChatStore {
 
     func session(for companionID: UUID) -> PokemonChatSession? { sessions[companionID] }
     func messages(for companionID: UUID) -> [PokemonChatMessage] { sessions[companionID]?.messages ?? [] }
+
+    func draft(for companionID: UUID) -> String { drafts[companionID] ?? "" }
+    func setDraft(_ body: String, for companionID: UUID) { drafts[companionID] = body }
 
     func appendLocalMessage(_ body: String, for companionID: UUID, profile: PokemonChatProfile) {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1779,6 +1788,10 @@ final class PokemonChatStore {
               toolbox: (any PokemonChatToolRunning)? = nil) async {
         guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         appendLocalMessage(body, for: companionID, profile: profile)
+        // 보낸 문장을 비우는 건 **보낸 쪽**의 일이다. 뷰가 비우면 전송 경로가 둘로 갈라져
+        // 한쪽만 비우고 다음 전송에서 같은 문장이 두 번 간다. 빈 문장은 위 가드에서 이미
+        // 걸렸으므로 여기 도달했다는 건 실제로 보냈다는 뜻이다.
+        drafts[companionID] = nil
         guard sessions[companionID] != nil else { return }
         outstandingSendCount += 1; errorMessage = nil
         defer { outstandingSendCount -= 1 }
