@@ -283,6 +283,71 @@ final class PokemonChatProviderPathTests: XCTestCase {
         XCTAssertEqual(Set(translated).count, 3, "세 언어가 서로 다른 문장이어야 한다")
     }
 
+    /// 이 줄은 **누르기 전에** 읽는 문구다. 완료를 보고하는 어투면 사용자는 "이미 나갔다" 로 읽고,
+    /// 정작 지금 누르면 무슨 일이 일어나는지는 아무도 안 말한 셈이 된다 — 동의 문구가 동의를
+    /// 구하지 않는다. 한국어 "외부 전송"·일본어 "外部送信" 은 시제 없는 명사라 영어만 빠지는 함정이다.
+    func testTheConsentLabelDescribesAPendingSendNotACompletedOne() {
+        for kind in PokemonChatProviderSafety.verifiedKinds {
+            let english = PokemonChatProviderSelection.externalSendLabel(kind: kind, language: .en)
+            for completed in ["sent ", "was sent", "has been sent"] {
+                XCTAssertFalse(english.lowercased().contains(completed),
+                               "'\(english)': 완료형이라 이미 나갔다는 뜻으로 읽힌다")
+            }
+        }
+    }
+
+    // MARK: 첫 전송 — 자동 선택이 가져간 문턱을 한 번만 돌려준다
+
+    /// 자동 선택이 "어느 CLI 인가" 를 대신 정하면서 **첫 전송의 문턱까지 같이 사라졌다.** 예전엔
+    /// 피커에서 고르는 행위 자체가 문턱이었다. 격리는 관문으로 지키면서 송출은 아무 확인 없이
+    /// 나가면 균형이 안 맞는다 — 처음 한 번만 묻는다.
+    ///
+    /// 판정을 Core 에 두는 이유는 늘 같다. 뷰가 `if` 두 개로 갈래를 만들면 그 갈래는 아무도 안 센다.
+    func testTheFirstSendAsksBeforeItSendsAndOnlyOnce() {
+        XCTAssertEqual(PokemonChatProviderSelection.sendAction(kind: .codex, acknowledged: false),
+                       .ask(.codex), "확인 없이 첫 메시지가 밖으로 나갔다")
+        XCTAssertEqual(PokemonChatProviderSelection.sendAction(kind: .claude, acknowledged: false),
+                       .ask(.claude), "물어볼 때 어느 CLI 인지도 함께 들려야 한다")
+        // '한 번만' 이 절반이다 — 매번 물으면 사용자가 읽지 않고 누르는 창이 된다.
+        XCTAssertEqual(PokemonChatProviderSelection.sendAction(kind: .codex, acknowledged: true), .send)
+    }
+
+    /// 물어보는 문장도 대상 CLI 를 이름으로 말해야 한다. "외부로 보냅니다" 만으로는 어디로 가는지
+    /// 모른 채 승인하게 된다 — 동의 줄과 같은 이유다.
+    func testTheFirstSendQuestionNamesTheCLIInAllThreeLanguages() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            let question = PokemonChatProviderSelection.firstSendConsentQuestion(kind: .claude, language: language)
+            XCTAssertTrue(question.contains(PokemonChatProviderKind.claude.label(language)),
+                          "\(language.rawValue): 어디로 보내는지 안 적혀 있다 — '\(question)'")
+        }
+        let translated = [AppLanguage.ko, .en, .ja].map {
+            PokemonChatProviderSelection.firstSendConsentQuestion(kind: .claude, language: $0)
+        }
+        XCTAssertEqual(Set(translated).count, 3, "세 언어가 서로 다른 문장이어야 한다")
+    }
+
+    /// 새로 깐 사람은 **반드시** 묻는 쪽에서 시작한다. 기본값이 `true` 로 새면 이 기능은 코드에만
+    /// 있고 화면엔 없는 것이 된다.
+    func testAFreshInstallIsAskedBeforeTheFirstMessageEverLeavesTheMachine() throws {
+        let suite = "chat-consent-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertFalse(AppSettings(defaults: defaults).hasAcknowledgedExternalChatSend)
+    }
+
+    /// 승인은 **다음 실행에도** 남아야 한다. 안 남으면 매번 묻는 셈이라 '한 번만' 이 깨진다.
+    func testAcknowledgingTheFirstSendSurvivesARelaunch() throws {
+        let suite = "chat-consent-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        AppSettings(defaults: defaults).hasAcknowledgedExternalChatSend = true
+
+        XCTAssertTrue(AppSettings(defaults: defaults).hasAcknowledgedExternalChatSend,
+                      "다시 켜니 또 묻는다 — 승인이 저장되지 않았다")
+    }
+
     // MARK: 막혔을 때 — 말없이 비활성인 버튼을 남기지 않는다
 
     /// 배너는 **고른 것**과 **실제로 나갈 곳**을 함께 봐야 한다. 자동 선택이 둘을 갈라놓았기
