@@ -1172,6 +1172,81 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(toolbox.availableActions(owner: store.activeMonID!).contains(.acceptEvolution))
     }
 
+    /// 카드가 뜬 뒤 조건이 무너지면 제안도 함께 사라져야 한다. 실행기는 이미 이 상태를 거절하는데
+    /// (`testEvolutionThatSilentlyFailsIsNotReportedAsAccepted`), 제안이 남으면 앱이 권한 대로
+    /// 누른 사용자가 **진화 카드를 잃는다** — `acceptEvolution` 은 조건이 안 맞으면 카드만 지운다.
+    func testAnEvolutionWhoseConditionsCollapsedIsNoLongerSuggested() async {
+        let store = makeCompanionStore(line: Self.knownMoveGatedLine)
+        await store.hatch(baseID: 40)
+        let move = MoveSpec(id: 246, names: ["ko": "원시의힘"], type: .rock,
+                            power: 60, damageClass: .special, accuracy: 100, pp: 5)
+        store.debugSetActiveLearnedMoves([move])
+        store.debugAccrueLevelExperience(300_000_000)
+        store.applyUsage(0)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        XCTAssertTrue(toolbox.availableActions(owner: store.activeMonID!).contains(.acceptEvolution),
+                      "대조군: 조건이 맞을 때는 제안돼야 아래 단언이 뜻을 가진다")
+
+        store.debugSetActiveLearnedMoves([])
+
+        XCTAssertNotNil(store.evolutionPrompt, "전제: 카드는 아직 떠 있다 — 무너진 건 조건뿐이다")
+        XCTAssertFalse(toolbox.availableActions(owner: store.activeMonID!).contains(.acceptEvolution),
+                       "실행하면 카드를 잃을 진화를 제안했다")
+    }
+
+    /// 휴식 단계는 **끝낼 집중이 아니다.** `isRunning` 은 `phase != .idle` 이라 휴식에서도 참인데,
+    /// 그 값으로 제안하면 쉬는 중에 "집중을 끝내자" 칩이 뜨고 승인 카드는 "끝난 모험 보상은 챙기고,
+    /// 아직 나가 있는 모험은 취소돼" 라고 말한다 — 그 구간엔 모험이 이미 정산돼 없다.
+    ///
+    /// 실행기가 이 상태를 거절하지는 않으므로(`isRunning` 이면 종료는 실행된다) 제안 ⊆ 실행 가능
+    /// 가드로는 안 걸린다. 문구가 상태를 잘못 부르는 부류라 여기서 따로 잰다.
+    func testTheRestPhaseIsNotOfferedAsAFocusToStop() async {
+        let focusing = await probe { store, timer, _ in
+            XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+        }
+        XCTAssertTrue(focusing.toolbox.availableActions(owner: focusing.owner).contains(.stopFocus),
+                      "대조군: 집중 중에는 종료를 제안해야 아래 단언이 뜻을 가진다")
+
+        // 앱에서 휴식은 집중이 끝나며 켜지고, 그 완료가 모험을 함께 정산한다 — 그래서 휴식
+        // 구간엔 나가 있는 모험이 없다. 상태를 그대로 세운다(`suggestionStates` 의 "휴식 중" 과
+        // 같은 조립이다. `tick` 은 `onFocusCompleted` 가 앱 루트에서만 꽂히므로 여기선 정산을 안 한다).
+        let resting = await probe { store, timer, _ in
+            timer.startRest()
+            XCTAssertNil(store.activeAdventure, "전제: 휴식 구간엔 나가 있는 모험이 없다")
+        }
+
+        XCTAssertTrue(resting.timer.isRunning, "전제: 휴식도 isRunning 이다 — 그래서 이 경로가 밟힌다")
+        XCTAssertFalse(resting.toolbox.availableActions(owner: resting.owner).contains(.stopFocus),
+                       "쉬는 중에 '집중을 끝내자' 를 권했다")
+    }
+
+    /// 칩 문구와 그 칩이 노리는 호출은 **같은 값**을 말해야 한다. 문구가 상수 표를 다시 읽으면
+    /// 호출만 바뀌었을 때 칩은 25분이라 쓰고 승인 카드는 50분을 켠다.
+    func testActionPhrasesQuoteTheirOwnCall() {
+        for action in PokemonChatAction.allCases {
+            guard case .pokedoroStart(let minutes) = action.call else { continue }
+            for language in [AppLanguage.ko, .en, .ja] {
+                XCTAssertTrue(action.phrase(language).contains("\(minutes)"),
+                              "\(action)/\(language.rawValue): 문구가 호출의 \(minutes)분을 안 말한다")
+            }
+        }
+    }
+
+    /// 인자를 든 유일한 칩(`item.use`). 사용자가 보내는 문장에는 **현지화된 이름**밖에 없고
+    /// (`이상한사탕`), 모델이 `bag.list` 를 먼저 부르지 않으면 rawValue 를 알 길이 없다 —
+    /// 왕복은 3회뿐이라 그 한 번이 비싸다. 닫힌 목록이므로 이름으로 되짚는다.
+    func testItemUseAcceptsTheLocalizedNameTheChipPutsInTheComposer() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            let name = L(language).itemName(.rareCandy)
+            let (_, call) = PokemonChatToolParser.parse("좋아! [[tool:item.use(\(name))]]")
+            XCTAssertEqual(call, .itemUse(kind: .rareCandy),
+                           "\(language.rawValue): 칩이 부른 이름(\(name))으로는 호출이 안 만들어진다")
+        }
+        let (_, raw) = PokemonChatToolParser.parse("[[tool:item.use(rareCandy)]]")
+        XCTAssertEqual(raw, .itemUse(kind: .rareCandy), "회귀: bag.list 가 찍는 rawValue 는 계속 통해야 한다")
+    }
+
     /// 박스 개체 대화에는 제안이 없다. 다섯 액션이 전부 "지금 나와 있는 나" 에 작용하므로
     /// 주인 게이트가 먼저 자른다 — `canRun` 을 재사용하는 한 이 줄은 저절로 참이다.
     /// (`testToolsThatActOnMeRefuseFromABoxedCompanionsChat` 의 형제다.)
@@ -1198,7 +1273,10 @@ final class PokemonChatToolTests: XCTestCase {
             for language in [AppLanguage.ko, .en, .ja] {
                 let phrase = action.phrase(language)
                 XCTAssertFalse(phrase.isEmpty, "\(action)/\(language.rawValue): 빈 문구")
-                XCTAssertFalse(phrase.contains("[[tool:"), "\(action)/\(language.rawValue): 마커가 새어 나왔다")
+                // `[[tool:` 만 막으면 규칙보다 좁다. 사용자 메시지는 그대로 대화 기록에 실려
+                // 다음 왕복의 문맥으로 CLI 에 되돌아가므로, 대괄호 문법을 보여 주는 것만으로도
+                // 모델에게 마커를 흉내 낼 본을 준다 — 그리고 그 마커는 실제로 파싱된다.
+                XCTAssertFalse(phrase.contains("[["), "\(action)/\(language.rawValue): 마커 문법이 새어 나왔다")
                 seen.insert(phrase)
             }
             XCTAssertEqual(seen.count, 3, "\(action): 세 언어 중 둘이 같은 문구다")
@@ -1248,6 +1326,17 @@ final class PokemonChatToolTests: XCTestCase {
         ("진화 대기", { await $0.probe(line: levelGatedLine, baseID: 40) { store, _, _ in
             store.debugAccrueLevelExperience(300_000_000)
             store.applyUsage(0)
+        } }),
+        // 카드가 뜬 **뒤** 조건이 무너진 진화. 대기 여부만 보는 판정은 여기서도 칩을 띄우는데,
+        // 승인은 카드만 지우고 조용히 돌아간다 — 앱이 권한 대로 누른 사용자가 진화를 잃는다.
+        // `testEvolutionThatSilentlyFailsIsNotReportedAsAccepted` 가 실행기 쪽에서 이미 재던
+        // 상태다. 제안 쪽에서 재지 않아 두 판정이 갈라진 걸 아무도 못 봤다.
+        ("진화 조건 무너짐", { await $0.probe(line: knownMoveGatedLine, baseID: 40) { store, _, _ in
+            store.debugSetActiveLearnedMoves([MoveSpec(id: 246, names: ["ko": "원시의힘"], type: .rock,
+                                                       power: 60, damageClass: .special, accuracy: 100, pp: 5)])
+            store.debugAccrueLevelExperience(300_000_000)
+            store.applyUsage(0)
+            store.debugSetActiveLearnedMoves([])
         } }),
     ]
 

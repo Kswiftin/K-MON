@@ -298,30 +298,54 @@ final class PopoverLayoutTests: XCTestCase {
     /// 칩 줄은 **가로 스크롤 한 줄**이다. 개수가 늘어 세로로 감기면 그만큼 메시지 영역·입력칸·
     /// 승인 카드가 밀린다 — 승인 카드는 안전 경계라 축소 대상이 아니다(PRD 위험표).
     /// 상태 변경 칩이 붙는 순간 그 높이가 변하는지를 여기서 고정한다.
+    ///
+    /// 폭은 `PopoverMetrics.width` 다. 칩 줄은 입력칸 `VStack` 의 **형제**라 대화 좌우 여백
+    /// (`horizontalPadding`)을 받지 않는다 — `contentWidth`(336) 로 재면 실제보다 24pt 좁은 줄을
+    /// 재게 되고, 가로 스크롤은 높이가 폭에 무관해서 그 어긋남이 지금은 우연히 안 보인다.
+    /// 줄이 감기도록 바꾸는 순간(이 테스트가 막겠다는 바로 그 변경) 앵커가 틀린다.
     func testActionChipsDoNotMakeTheChipRowTaller() {
         let questions = ["너의 타입이 뭐야?", "지금 기분은 어때?", "오늘의 도감을 보여 줘",
                          "배운 기술을 알려 줘", "너는 어떤 포켓몬이야?", "다음 진화는 언제야?"]
         let bare = renderedHeight(PokemonChatChipRow(actions: [], questions: questions,
                                                      language: .ko, onTap: { _ in }),
-                                  proposingWidth: PokemonChatConsentLabel.contentWidth)
+                                  proposingWidth: PopoverMetrics.width)
         let withActions = renderedHeight(
             PokemonChatChipRow(actions: [.startFocus, .acceptEvolution, .useRareCandy],
                                questions: questions, language: .ko, onTap: { _ in }),
-            proposingWidth: PokemonChatConsentLabel.contentWidth)
+            proposingWidth: PopoverMetrics.width)
 
         XCTAssertEqual(withActions, bare, accuracy: 1, "액션 칩이 칩 줄을 두 줄로 만들었다")
     }
 
-    /// 대조군이 없으면 위 단언은 "칩이 아예 안 그려져도" 통과한다 — 빈 줄과 찬 줄의 높이가 같다는
-    /// 사실은 칩이 존재할 때만 뜻이 있다.
-    func testTheChipRowActuallyDrawsSomething() {
+    /// 대조군. 위 단언은 "높이가 같다" 만 보므로 **액션 칩을 통째로 지워도** 통과한다 —
+    /// 두 팔이 다 질문만 그리면 당연히 같은 높이다. 그래서 여기서는 액션 축만 흔든다:
+    /// 질문 없이 액션 하나만 준 줄이 빈 줄보다 높아야 한다. 이걸 안 걸면 `ForEach(actions)` 를
+    /// 지운 채로 대화 칩 기능의 유일한 뷰 테스트가 전부 초록으로 남는다.
+    func testTheChipRowActuallyDrawsItsActionChips() {
         let empty = renderedHeight(PokemonChatChipRow(actions: [], questions: [],
                                                       language: .ko, onTap: { _ in }),
-                                   proposingWidth: PokemonChatConsentLabel.contentWidth)
-        let filled = renderedHeight(PokemonChatChipRow(actions: [], questions: ["너의 타입이 뭐야?"],
-                                                       language: .ko, onTap: { _ in }),
-                                    proposingWidth: PokemonChatConsentLabel.contentWidth)
-        XCTAssertGreaterThan(filled, empty, "칩 줄이 아무것도 안 그린다")
+                                   proposingWidth: PopoverMetrics.width)
+        let onlyAction = renderedHeight(PokemonChatChipRow(actions: [.startFocus], questions: [],
+                                                           language: .ko, onTap: { _ in }),
+                                        proposingWidth: PopoverMetrics.width)
+        let onlyQuestion = renderedHeight(PokemonChatChipRow(actions: [], questions: ["너의 타입이 뭐야?"],
+                                                             language: .ko, onTap: { _ in }),
+                                          proposingWidth: PopoverMetrics.width)
+
+        XCTAssertGreaterThan(onlyAction, empty, "액션 칩이 아무것도 안 그린다")
+        XCTAssertGreaterThan(onlyQuestion, empty, "질문 칩이 아무것도 안 그린다")
+    }
+
+    /// 칩 하나 잘못 눌렀다고 쓰던 문장이 사라지면 안 된다. 초안은 `PokemonChatStore` 에 살아서
+    /// (팝오버가 닫혀도 남으라고 그렇게 뒀다) 되돌릴 `@State` 스냅샷이 없고, 액션 칩은 채워진
+    /// 배경으로 줄 **맨 앞**에 앉는다 — 눈이 먼저 닿는 자리라 오타를 부른다.
+    func testTappingAChipKeepsWhatTheTrainerWasTyping() {
+        XCTAssertEqual(PokemonChatChipRow.composed(draft: "", chip: "25분 집중하자"), "25분 집중하자",
+                       "빈 입력칸은 칩 문장 그대로여야 한다")
+        XCTAssertEqual(PokemonChatChipRow.composed(draft: "   \n ", chip: "25분 집중하자"), "25분 집중하자",
+                       "공백뿐인 입력칸도 비어 있는 것으로 친다 — 전송 버튼이 그렇게 센다")
+        XCTAssertEqual(PokemonChatChipRow.composed(draft: "오늘 어땠어?", chip: "25분 집중하자"),
+                       "오늘 어땠어? 25분 집중하자", "쓰던 문장이 칩 하나에 지워졌다")
     }
 
     /// 같은 부류 스윕: 릴레이 방 목록도 LAN 이 길이를 정한다 — 상한도 페이저도 없으면 팝오버가 잘린다.

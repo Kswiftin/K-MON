@@ -313,6 +313,15 @@ struct PokemonChatChipRow: View {
     let language: AppLanguage
     let onTap: (String) -> Void
 
+    /// 칩을 눌렀을 때 입력칸에 남을 값. **쓰던 문장을 덮지 않는다** — 초안은 팝오버가 닫혀도
+    /// 남으라고 `PokemonChatStore` 에 두었고, 그래서 되돌릴 `@State` 스냅샷이 없다. 액션 칩은
+    /// 채워진 배경으로 줄 맨 앞에 앉아 눈이 먼저 닿는 자리라, 덮어쓰기면 오타 한 번에 세 문장이 진다.
+    static func composed(draft: String, chip: String) -> String {
+        let kept = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 공백뿐인 초안은 비어 있는 것으로 친다 — 전송 버튼이 이미 같은 기준으로 센다.
+        return kept.isEmpty ? chip : kept + " " + chip
+    }
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
