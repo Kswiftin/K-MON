@@ -1591,6 +1591,35 @@ enum PokemonChatProviderExecutableResolver {
     }
 }
 
+/// 해석 결과를 입력이 바뀔 때까지 들고 있는다.
+///
+/// `executableURL` 은 디렉터리 13곳(`searchDirectories`)에 `fileExists` + `isExecutableFile` 을
+/// 던진다. 뷰 `body` 는 키 입력마다 다시 평가되고 그 안에서 두 자리가 이 값을 읽으므로, 캐시가
+/// 없으면 한 글자 칠 때마다 메인 스레드에서 경로 탐색이 두 벌 돈다.
+///
+/// 키는 **해석에 실제로 쓰이는 입력 전부**다. 종류만 키로 쓰면 설정에서 경로를 고쳐도 옛 결과가
+/// 계속 나온다 — 캐시의 반대편 결함이라 둘 다 테스트로 고정돼 있다.
+@MainActor
+final class PokemonChatProviderCache {
+    private var key: String?
+    private var resolved: URL?
+    private let lookup: (PokemonChatProviderKind, String?) -> URL?
+
+    init(lookup: @escaping (PokemonChatProviderKind, String?) -> URL? = { kind, _ in
+        PokemonChatProviderExecutableResolver.executableURL(for: kind)
+    }) {
+        self.lookup = lookup
+    }
+
+    func executableURL(for kind: PokemonChatProviderKind, override: String?) -> URL? {
+        let key = "\(kind.rawValue)\u{1F}\(override ?? "")"
+        guard key != self.key else { return resolved }
+        self.key = key
+        resolved = lookup(kind, override)
+        return resolved
+    }
+}
+
 struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
     let executableURL: URL
     let arguments: [String]
@@ -1736,8 +1765,14 @@ enum PokemonChatCommandRunner {
 final class PokemonChatStore {
     private struct Snapshot: Codable { var sessions: [UUID: PokemonChatSession] }
     private(set) var sessions: [UUID: PokemonChatSession] = [:]
-    private(set) var outstandingSendCount = 0
+    /// 개체별로 센다. 전역 합만 들면 "생각 중" 이 **답이 오지 않을 대화**에도 뜬다 — 피카츄에게
+    /// 보내 놓고 파이리 대화를 열면 파이리 기록에 점 세 개가 뜬다. 팝오버 이관으로 개체 사이
+    /// 이동이 두 클릭이 되면서 상시로 밟게 됐다.
+    private var outstandingSends: [UUID: Int] = [:]
+    var outstandingSendCount: Int { outstandingSends.values.reduce(0, +) }
+    /// 팝오버 고정처럼 "아무 대화나 돌고 있나" 를 묻는 자리용.
     var isSending: Bool { outstandingSendCount > 0 }
+    func isSending(for companionID: UUID) -> Bool { (outstandingSends[companionID] ?? 0) > 0 }
     private(set) var errorMessage: String?
     private(set) var pendingProposal: PokemonChatToolProposal?
     /// 입력 중인 문장. 뷰의 `@State` 로 두면 팝오버가 닫히며 콘텐츠 뷰가 통째로 해제될 때
@@ -1800,8 +1835,12 @@ final class PokemonChatStore {
         guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         appendLocalMessage(body, for: companionID, profile: profile)
         guard sessions[companionID] != nil else { return }
-        outstandingSendCount += 1; errorMessage = nil
-        defer { outstandingSendCount -= 1 }
+        outstandingSends[companionID, default: 0] += 1; errorMessage = nil
+        defer {
+            let remaining = (outstandingSends[companionID] ?? 1) - 1
+            // 0 을 남기지 않는다 — 지나간 개체의 키가 계속 쌓이면 draft 와 같은 부류의 누수다.
+            outstandingSends[companionID] = remaining > 0 ? remaining : nil
+        }
         do {
             // 도구 결과는 이 배열에만 실린다 — 대화 기록에 넣으면 사용자가 기계 문자열을 읽는다.
             var toolResults: [PokemonChatMessage] = []

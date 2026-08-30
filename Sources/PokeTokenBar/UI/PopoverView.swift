@@ -108,6 +108,14 @@ final class PopoverNavigation {
         closeOverlays()
         chatCompanionID = companionID
     }
+
+    /// 여는 시점의 소유 검사는 **여는 순간**만 덮는다. 대화가 떠 있는 동안 상대가 놓아주기·교환·
+    /// 졸업으로 사라지면 이름이 `?` 이고 스프라이트가 빈 화면에 전송 버튼만 살아 있고, 보내면
+    /// 죽은 UUID 로 세션이 새로 생겨 다음 `prune` 까지 디스크에 남는다.
+    func dropChatIfCompanionIsGone(ownedIDs: Set<UUID>) {
+        guard let id = chatCompanionID, !ownedIDs.contains(id) else { return }
+        chatCompanionID = nil
+    }
 }
 
 /// 팝오버를 바깥 클릭에 안 닫히게 붙드는 이유가 **둘** 이상이라, 되돌림 판정을 한 곳에 둔다.
@@ -178,6 +186,11 @@ struct PopoverView: View {
         // 탭만 바꾸면 위에 덮인 오버레이가 그대로 남아 신청 화면이 안 보인다 — 탭 전환과 오버레이
         // 접기는 `goToBattle()` 한 곳에 함께 있어야 한다.
         .onAppear { if battleCenter.consumePendingAttention() { nav.goToBattle() } }
+        // 로스터가 바뀌는 모든 경로(놓아주기·교환·졸업·부화)를 하나로 본다. 개수만 보면 교환처럼
+        // 한 마리가 나가고 한 마리가 들어오는 경우를 놓친다.
+        .onChange(of: companion.ownedMons.map(\.id)) { _, ids in
+            nav.dropChatIfCompanionIsGone(ownedIDs: Set(ids))
+        }
         // 던전은 배틀과 화면이 다르므로 접는다. 체육관은 `GymLeagueView` 안에서 전투 화면으로
         // 갈아 끼워 도전 문맥을 유지한다.
         .onChange(of: battleCenter.phase) { _, phase in

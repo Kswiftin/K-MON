@@ -296,8 +296,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testSendingStateChangesFromThinkingToPokemonReply() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = temporaryChatURL()
         let store = PokemonChatStore(fileURL: url)
         let companionID = UUID()
         let provider = DeferredReplyProvider()
@@ -412,8 +411,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testConcurrentRepliesAndReloadPreserveEveryMessage() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = temporaryChatURL()
         let store = PokemonChatStore(fileURL: url), id = UUID(), provider = QueuedReplyProvider()
         let first = Task { await store.send("first", for: id, profile: .fixture, provider: provider) }
         let second = Task { await store.send("second", for: id, profile: .fixture, provider: provider) }
@@ -427,8 +425,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testTranscriptIsCappedAtTwoHundredMessages() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = temporaryChatURL()
         let store = PokemonChatStore(fileURL: url), id = UUID()
         for index in 0..<205 { store.appendLocalMessage("message \(index)", for: id, profile: .fixture) }
         XCTAssertEqual(store.messages(for: id).count, 200)
@@ -486,9 +483,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testDeletingSessionRemovesPersistedConversation() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = temporaryChatURL()
         let id = UUID()
         let store = PokemonChatStore(fileURL: url)
         store.appendLocalMessage("안녕", for: id, profile: .fixture)
@@ -635,9 +630,11 @@ final class PokemonChatTests: XCTestCase {
 
     /// 임시 파일을 만든 테스트가 치우지 않으면 실행마다 tmp 에 고아가 하나씩 쌓인다.
     /// 여섯 자리가 같은 식을 각자 베껴 쓰고 있어 치우는 자리도 각자였다 — 한 벌로 모은다.
-    private func temporaryChatURL() -> URL {
+    private func temporaryChatURL() -> URL { temporaryURL(prefix: "pokemon-chat") }
+
+    private func temporaryURL(prefix: String) -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString).json")
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
     }
@@ -645,8 +642,7 @@ final class PokemonChatTests: XCTestCase {
     private func makeCompanionStore() -> CompanionStore {
         let line = EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
                            names: [25: ["ko": "피카츄", "en": "Pikachu"]])
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokemon-chat-companion-\(UUID().uuidString).json")
+        let url = temporaryURL(prefix: "pokemon-chat-companion")
         let store = CompanionStore(provider: ChatLineProvider(line: line),
                                    clock: { Date(timeIntervalSince1970: 1_000) },
                                    fileURL: url, rng: SeededRNG(seed: 1))

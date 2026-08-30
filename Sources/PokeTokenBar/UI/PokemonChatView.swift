@@ -11,6 +11,7 @@ struct PokemonChatView: View {
     let onClose: () -> Void
     @State private var identity: PokemonSpeciesIdentity?
     @State private var destination: Destination?
+    @State private var providerCache = PokemonChatProviderCache()
     @AppStorage("pokemonChatProvider") private var providerRaw = ""
 
     /// 입력 중인 문장은 **스토어**가 든다. 팝오버는 바깥 클릭에 닫히며 콘텐츠 뷰를 통째로
@@ -42,10 +43,13 @@ struct PokemonChatView: View {
 
     private var selectedKind: PokemonChatProviderKind? { PokemonChatProviderKind(rawValue: providerRaw) }
 
+    /// `body` 안에서 두 자리가 읽고 `body` 는 키 입력마다 평가된다 — 캐시를 지나지 않으면
+    /// 한 글자마다 디렉터리 13곳에 파일시스템 질의가 두 벌 간다.
     private var provider: (any PokemonChatProviding)? {
         guard let kind = selectedKind,
               let arguments = PokemonChatProviderSafety.arguments(for: kind),
-              let executableURL = PokemonChatProviderExecutableResolver.executableURL(for: kind) else { return nil }
+              let executableURL = providerCache.executableURL(
+                  for: kind, override: settings.chatProviderExecutablePath(for: kind)) else { return nil }
         return PokemonChatCLIProvider(executableURL: executableURL, arguments: arguments, kind: kind)
     }
 
@@ -119,7 +123,8 @@ struct PokemonChatView: View {
                                                 isEmphasized: message.id == emphasizedID)
                                 .id(message.id)
                         }
-                        if chat.isSending {
+                        // 이 대화의 상태만 본다 — 전역이면 답이 오지 않을 기록에도 점 세 개가 뜬다.
+                        if chat.isSending(for: companionID) {
                             PokemonThinkingBubble(profile: profile).id("sending")
                         }
                     }.padding(12)
@@ -127,7 +132,7 @@ struct PokemonChatView: View {
                 .onChange(of: chat.messages(for: companionID).count) { _, _ in
                     if let id = chat.messages(for: companionID).last?.id { proxy.scrollTo(id, anchor: .bottom) }
                 }
-                .onChange(of: chat.isSending) { _, sending in
+                .onChange(of: chat.isSending(for: companionID)) { _, sending in
                     if sending { proxy.scrollTo("sending", anchor: .bottom) }
                     else if let id = chat.messages(for: companionID).last?.id { proxy.scrollTo(id, anchor: .bottom) }
                 }
