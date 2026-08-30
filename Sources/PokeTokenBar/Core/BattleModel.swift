@@ -854,6 +854,43 @@ enum BattleEngine {
         (2 * level / 5 + 2) * power * attack / max(1, defense) / 50
     }
 
+    /// AI 가 기술을 고를 때 쓰는 한 턴 피해 추정 **× 명중률**. 실제 엔진과 같은 스탯·특성·STAB·
+    /// 상성 공식을 쓰되 급소와 난수는 평균화하지 않는다. 변화기는 실전 이득을 보장할 수 없어
+    /// 0 점이라 공격기보다 뒤로 밀린다 — 회복·랭크업 전술을 지원할 때 별도 전략으로 승격하면 된다.
+    ///
+    /// 카탈로그 체육관 관장(`TeamPracticeBattle` 의 `.damageFocused`)과 공유 체육관의 AI 방어
+    /// (`GymMatchEngine`)가 **같은 식을 써야** 두 컨텐츠의 체감이 갈리지 않는다.
+    static func expectedDamageScore(of move: MoveSpec, from attacker: BattleSide, to defender: BattleSide) -> Int {
+        guard move.damageClass != .status, move.power > 0 else { return 0 }
+        let effectiveness = typeMultiplier(of: move, against: defender)
+        guard effectiveness > 0 else { return 0 }
+
+        let isPhysical = move.damageClass == .physical
+        let offense: BattleStat = isPhysical ? .atk : .spa
+        let guardStat: BattleStat = isPhysical ? .def : .spd
+        var power = move.power
+        var attack = StatStages.apply(attacker.rawStat(offense), stage: attacker.stage(offense))
+        if let ability = attacker.ability {
+            attack = ability.adjustedAttack(attack, isPhysical: isPhysical, status: attacker.status)
+            power = ability.adjustedPower(power, move: move)
+        }
+        if isPhysical, attacker.status == .burn, attacker.ability != .guts { attack /= 2 }
+        var defense = StatStages.apply(defender.rawStat(guardStat), stage: defender.stage(guardStat))
+        if let ability = defender.ability {
+            defense = ability.adjustedDefense(defense, isPhysical: isPhysical, status: defender.status)
+        }
+
+        var damage = baseDamage(level: attacker.snapshot.level, power: power,
+                                attack: attack, defense: defense) + 2
+        if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }
+        damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
+        if let ability = defender.ability {
+            damage = ability.adjustedDamage(damage, moveType: move.type, effectiveness: effectiveness)
+        }
+        let accuracy = min(100, max(0, hitChance(of: move, attacker: attacker, defender: defender) ?? 100))
+        return max(0, damage) * accuracy
+    }
+
     /// 혼란 자멸 데미지 — 무속성 물리 위력 40. 급소도 난수도 타지 않으므로 **rng 를 소비하지 않는다**
     /// (분기마다 소비량이 달라지면 두 피어가 갈라진다). 물리라서 화상 반감은 그대로 받는다(Gen 2).
     static func confusionDamage(_ side: BattleSide) -> Int {

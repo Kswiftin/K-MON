@@ -258,6 +258,19 @@ enum SaveTransfer {
            !s.boxedMons.contains(where: { $0.id == representativeID }) {
             s.battleRepresentativeID = nil
         }
+        // 체육관 방어팀은 **박스 개체만** 가리킨다. 활성 개체는 성장하므로 배치 대상이 아니고,
+        // 소유하지 않은 id·중복·정원 초과는 손편집이나 개체 소멸(교환·방생)로 생길 수 있다.
+        // 정원 미만이 되어도 자격까지 뺏지는 않는다 — 그러면 정규화 한 번에 관장이 사라진다.
+        // 대신 `PlayerGymLeadership.defenseDeadline` 이 세팅 기한을 재고, 넘기면 그때 자격이 풀린다.
+        if var leadership = s.gymLeadership {
+            let boxedIDs = Set(s.boxedMons.map(\.id))
+            var seen: Set<UUID> = []
+            leadership.defenseMonIDs = leadership.defenseMonIDs
+                .filter { boxedIDs.contains($0) && seen.insert($0).inserted }
+                .prefix(PlayerGym.defenseTeamSize)
+                .map { $0 }
+            s.gymLeadership = leadership
+        }
         // 인벤토리 개수 클램프 — 손편집으로 999999개 같은 값이 들어와도 상한을 둔다(조작 방어 2차).
         s.inventory = s.inventory.reduce(into: [:]) { r, e in r[e.key] = min(max(0, e.value), 999) }
         let soldMachineIDs = Set(TechnicalMachine.catalog.map(\.moveID))

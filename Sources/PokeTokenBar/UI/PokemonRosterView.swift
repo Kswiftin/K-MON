@@ -209,6 +209,7 @@ struct PokemonRosterView: View {
                         if index < slice.count {
                             let mon = slice[index]
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
+                                          isGymDeployed: store.gymDefenseMonIDs.contains(mon.id),
                                           name: names[mon.presentationID] ?? "",
                                           types: types[mon.presentationID] ?? [],
                                           infoTarget: $infoTarget,
@@ -256,6 +257,9 @@ private struct RosterMonCard: View {
     let store: CompanionStore
     let mon: MonState
     let isActive: Bool
+    /// 공유 체육관에 배치돼 지금 쓸 수 없는 개체. 동행 지정·방생·교환이 전부 막히므로 그 사실이
+    /// 카드에도 보여야 한다 — 눌러 보고서야 아는 잠금은 고장으로 읽힌다.
+    let isGymDeployed: Bool
     /// 이름·타입은 부모가 박스 단위로 해석해 넘긴다 — 정렬·필터가 쓰는 값과 카드가 그리는 값이
     /// 갈라지지 않게 한다(행마다 따로 받아오면 정렬 키를 화면과 맞출 수 없다).
     let name: String
@@ -274,7 +278,8 @@ private struct RosterMonCard: View {
             }
             Button(action: onChat) { Label(store.l.t("대화", "Chat", "話す"), systemImage: "bubble.left.and.bubble.right") }
             // 동행 중인 개체는 놓아줄 수 없다 — 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
-            if !isActive {
+            // 체육관 방어팀도 같다 — 자리에서 내리기 전엔 놓아줄 수 없다.
+            if !isActive, !isGymDeployed {
                 Button(role: .destructive, action: onRelease) {
                     Label(store.l.t("놓아주기", "Release", "にがす"), systemImage: "hand.wave")
                 }
@@ -283,7 +288,7 @@ private struct RosterMonCard: View {
     }
 
     private var card: some View {
-        Button { if !isActive { store.switchCompanion(to: mon.id) } } label: {
+        Button { if !isActive, !isGymDeployed { store.switchCompanion(to: mon.id) } } label: {
             VStack(spacing: 2) {
                 // ✨ 는 도감 칸과 **같은 표식**이다(`DexCell`). 이로치 스프라이트는 색만 다를 뿐이라
                 // 원래 색을 모르면 알아볼 수 없다 — 특히 색 차이가 작은 종(잉어킹 등)에서 그렇다.
@@ -315,17 +320,19 @@ private struct RosterMonCard: View {
                             .background(type.rosterColor, in: Capsule())
                     }
                 }
-                Text(isActive
-                     ? store.l.t("동행 중", "Active", "同行中")
-                     : store.l.t("교체", "Switch", "交代"))
+                Text(isGymDeployed
+                     ? store.l.gymDeployedBadge
+                     : isActive ? store.l.t("동행 중", "Active", "同行中")
+                                : store.l.t("교체", "Switch", "交代"))
                     .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(isActive ? .green : .secondary)
+                    .foregroundStyle(isGymDeployed ? .orange : isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
         }
-        .buttonStyle(.plain).disabled(isActive)
+        .buttonStyle(.plain).disabled(isActive || isGymDeployed)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(isActive ? PokedoroTheme.mint.opacity(0.45) : Color.primary.opacity(0.075),
+            .strokeBorder(isGymDeployed ? Color.orange.opacity(0.55)
+                          : isActive ? PokedoroTheme.mint.opacity(0.45) : Color.primary.opacity(0.075),
                           lineWidth: 1)
             .allowsHitTesting(false))
         .overlay(alignment: .topTrailing) {

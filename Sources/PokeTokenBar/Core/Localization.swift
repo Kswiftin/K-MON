@@ -1248,6 +1248,66 @@ struct L {
           "挑戦チーム全員がLv.\(level)以上である必要があります。")
     }
     var gymLevelGateTitle: String { t("레벨 부족", "Level too low", "レベル不足") }
+
+    // MARK: 공유 체육관(쟁탈전) — 카탈로그 체육관과 이름이 겹치지 않게 "쟁탈전"으로 구분한다.
+
+    var playerGymTitle: String { t("체육관 쟁탈전", "Gym Takeover", "ジム争奪戦") }
+    var playerGymSubtitle: String {
+        t("이긴 사람이 관장 · 관장은 방어팀 4마리를 세운다",
+          "Winner takes the gym · leaders field four defenders",
+          "勝者がジムリーダー・防衛は4体")
+    }
+    var gymDeployedBadge: String { t("체육관 방어 중", "Defending", "ジム防衛中") }
+    var playerGymOpen: String { t("체육관 열기", "Open a gym", "ジムを開く") }
+    var playerGymSearching: String { t("체육관 검색 중…", "Looking for a gym…", "ジムを検索中…") }
+    var playerGymAlreadyOpen: String {
+        t("이미 열린 체육관이 있습니다. 그곳에 도전하세요.",
+          "A gym is already open — challenge it instead.",
+          "すでに開いているジムがあります。そちらに挑戦してください。")
+    }
+    var playerGymChallenge: String { t("도전", "Challenge", "挑戦") }
+    var playerGymSpectate: String { t("관전", "Spectate", "観戦") }
+    var playerGymResign: String { t("관장 그만두기", "Step down", "リーダーをやめる") }
+    var playerGymDefenseTeam: String { t("방어팀", "Defense team", "防衛チーム") }
+    var playerGymUsesAI: String { t("AI 에게 맡기기", "Let AI defend", "AIにまかせる") }
+    var playerGymAIHint: String {
+        t("앱이 켜져 있는 동안에만 방어합니다.",
+          "Defends only while this app is running.",
+          "アプリ起動中のみ防衛します。")
+    }
+    var playerGymBusyElsewhere: String {
+        t("체육관 관장인 동안은 참가할 수 없습니다.",
+          "Not available while you host a gym.",
+          "ジムリーダーの間は参加できません。")
+    }
+    var playerGymLeaderLeft: String {
+        t("관장이 이탈했습니다 — 체육관을 이어받으시겠습니까?",
+          "The leader left — take over the gym?",
+          "リーダーが離脱しました — ジムを引き継ぎますか？")
+    }
+    var playerGymTakeOver: String { t("이어받기", "Take over", "引き継ぐ") }
+    var playerGymNotReady: String { t("준비 중", "Setting up", "準備中") }
+    func playerGymSetupCountdown(_ text: String) -> String {
+        t("\(text) 안에 방어팀 4마리를 세우지 않으면 관장 자격을 잃습니다.",
+          "Field four defenders within \(text) or you lose the gym.",
+          "\(text)以内に4体を配置しないとリーダー資格を失います。")
+    }
+    func playerGymCooldownRemaining(_ text: String) -> String {
+        t("다시 도전하기까지 \(text)", "Retry in \(text)", "再挑戦まで \(text)")
+    }
+    func playerGymLeaderLabel(_ name: String) -> String {
+        t("관장 \(name)", "Leader \(name)", "リーダー \(name)")
+    }
+    var playerGymRejectedBusy: String {
+        t("관장이 다른 도전을 받는 중입니다.", "The leader is already in a battle.",
+          "リーダーは別の挑戦を受けています。")
+    }
+    var playerGymRejectedNotReady: String {
+        t("관장이 아직 방어팀을 세우지 않았습니다.", "The leader has not set a defense team yet.",
+          "リーダーはまだ防衛チームを組んでいません。")
+    }
+    var playerGymBecameLeader: String { t("체육관 관장이 되었습니다!", "You are the gym leader!", "ジムリーダーになりました！") }
+    var playerGymLostLeadership: String { t("관장 자리를 내주었습니다.", "You lost the gym.", "ジムを明け渡しました。") }
     func gymBadgeCount(_ earned: Int, _ total: Int) -> String {
         t("배지 \(earned) / \(total)", "\(earned) / \(total) badges", "バッジ \(earned) / \(total)")
     }

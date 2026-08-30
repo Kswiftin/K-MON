@@ -75,7 +75,13 @@ enum MenuBarStatus: Equatable {
     /// 모험 종료까지 남은 시간 — 해안 모험은 최대 2시간이라 FocusTimer.clockText() 의 mm:ss 만 쓰면
     /// 분이 두 자리를 넘어 119:59 처럼 나온다. 1시간 이상이면 1h23m, 미만이면 12:34.
     static func remainingClockText(_ endsAt: Date, at now: Date) -> String {
-        let seconds = max(0, Int(endsAt.timeIntervalSince(now).rounded(.up)))
+        remainingClockText(seconds: Int(endsAt.timeIntervalSince(now).rounded(.up)))
+    }
+
+    /// 초를 그대로 받는 쪽 — 남은 시간을 **시각이 아니라 초로** 들고 있는 자리(호스트가 계산해
+    /// 보내온 쿨다운 등)가 같은 형식을 쓰게 한다. 바닥(0)이 두 곳에서 구현되지 않도록 형식은 여기 하나다.
+    static func remainingClockText(seconds rawSeconds: Int) -> String {
+        let seconds = max(0, rawSeconds)
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
         return hours > 0 ? "\(hours)h\(String(format: "%02d", minutes))m"

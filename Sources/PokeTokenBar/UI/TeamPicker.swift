@@ -44,9 +44,10 @@ struct TeamPicker: View {
 
     private var l: L { store.l }
 
-    /// 소유 포켓몬에 실제로 있는 타입만 — 안 가진 타입까지 늘어놓으면 고를 게 없는 항목이 대부분이다.
+    /// 고를 수 있는 포켓몬에 실제로 있는 타입만 — 안 가진 타입까지 늘어놓으면 고를 게 없는 항목이
+    /// 대부분이다. 체육관 방어팀은 목록에서 빠지므로 타입 필터도 같은 집합을 봐야 한다.
     private var availableTypes: [PokemonType] {
-        let owned = Set(store.ownedMons.map(\.currentID))
+        let owned = Set(store.deployableMons.map(\.currentID))
         return Array(Set(monTypes.filter { owned.contains($0.key) }.values.flatMap { $0 }))
             .sorted { $0.rawValue < $1.rawValue }
     }
@@ -107,7 +108,9 @@ struct TeamPicker: View {
     }
 
     var body: some View {
-        let all = store.ownedMons
+        // 체육관에 배치한 넷은 후보에서 빠진다 — 목록에 두면 고를 수 있는 것처럼 보이는데
+        // 정작 출전 경로가 걸러 내므로, 안 보이게 하는 편이 정직하다.
+        let all = store.deployableMons
         let searched = all.filter {
             PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(
                 for: $0, resolvedSpeciesName: speciesNames[$0.currentID]))

@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private var chatPresenter: PokemonChatPresenter!
     private var updater: UpdateChecker!
     private var battleCenter: BattleCenter!
+    private var playerGym: PlayerGymCoordinator!
     private var memoryHomeVisits: MemoryHomeVisitCenter!
     private var memoryHomePresenter: MemoryHomePresenter!
     private let focusTimer = FocusTimer()
@@ -59,6 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)
         observeAutomaticUpdates()
         battleCenter = BattleCenter(companion: companion)
+        playerGym = PlayerGymCoordinator(companion: companion, rooms: battleCenter.multiplayer)
+        // 관장 자격은 세이브에 남는다. 기한이 지난 채 복원됐으면 여기서 곧바로 풀려야
+        // **재시작으로 세팅 기한을 다시 받는 길**이 막힌다.
+        playerGym.refresh()
         memoryHomeVisits = MemoryHomeVisitCenter(companion: companion, peerID: settings.memoryHomeLANPeerID)
         memoryHomePresenter = MemoryHomePresenter(settings: settings, store: companion, visits: memoryHomeVisits)
         if settings.memoryHomeEnabled { memoryHomeVisits.startHostingIfEligible() }
@@ -475,7 +480,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         popover.contentViewController = NSHostingController(
             rootView: PopoverView()
                 .environment(settings).environment(companion).environment(updater).environment(navigation)
-                .environment(battleCenter).environment(memoryHomeVisits).environment(memoryHomePresenter).environment(focusTimer).environment(chatPresenter))
+                .environment(battleCenter).environment(memoryHomeVisits).environment(memoryHomePresenter).environment(focusTimer).environment(chatPresenter)
+                .environment(playerGym))
     }
 
     @objc private func togglePopover() {

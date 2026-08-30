@@ -70,6 +70,28 @@ final class MultiplayerRoomCenter {
     private var settledPool = false
     let myID = UUID()
 
+    // MARK: 공유 체육관
+
+    /// 도전할 때 데려갈 넷. 토너먼트 선택(3마리)과 정원이 달라 배열을 따로 둔다 — 하나로 묶으면
+    /// 한쪽 화면에서 고른 것이 다른 쪽 정원에 맞지 않아 조용히 잘린다.
+    var gymPickedTeam: [UUID] = []
+    /// 지금 진행 중인 체육관 한 판 — 관장·도전자·관전자가 모두 이 값을 그린다.
+    private(set) var gymMatch: GymMatchState?
+    /// 호스트(관장)만 드는 권위형 엔진. 게스트는 위 스냅샷만 본다.
+    private var gymEngine: GymMatchEngine?
+    /// 도전자가 보내온 출전팀 — 관장이 수락할 때까지 들고 있는다.
+    private var gymChallengerLineup: [BattleSnapshot]?
+    /// 도전이 거절된 사유(게스트 쪽 표시용).
+    private(set) var gymRejection: GymChallengeRejection?
+    /// 배틀 중 관장이 사라졌다 — 도전자에게 "이어받기"를 제안하는 신호.
+    private(set) var gymLeaderAbandonedMatch = false
+    /// 체육관 방을 연 직후 호출된다. 동시 개설 경합 확인을 이 훅으로 건다(화면이 붙인다).
+    var onGymRoomOpened: (() -> Void)?
+    /// 관장 자리를 넘겨받았다 — 화면이 자기 세이브에 자격을 쓰도록 알린다.
+    var onGymLeadershipWon: ((UUID) -> Void)?
+    /// 관장 자리를 잃었다.
+    var onGymLeadershipLost: (() -> Void)?
+
     private let companion: CompanionStore
     private var browser: NWBrowser?
     private var listener: NWListener?
@@ -88,6 +110,11 @@ final class MultiplayerRoomCenter {
     static let turnDuration: TimeInterval = 30
 
     init(companion: CompanionStore) { self.companion = companion }
+
+    /// 지금 방이 무엇을 하고 있나. 화면 갈림길이 이 값을 본다 — `phase` 만 보면 방이 켜졌다는 것만
+    /// 알 뿐 토너먼트인지 체육관인지 알 수 없어 한쪽이 다른 쪽 화면을 가로챈다.
+    var roomActivity: RoomActivity? { lobby?.activity }
+    var isGymRoom: Bool { lobby?.activity == .gym }
 
     var isHost: Bool { hostingRole }
     var myParticipant: LobbyParticipant? { lobby?.participants.first { $0.id == myID } }
@@ -120,6 +147,24 @@ final class MultiplayerRoomCenter {
     func createPokeathlonRoom() { createRoom(mode: .freeForAll, activity: .pokeathlon) }
     func createPokemonQuizRoom() { createRoom(mode: .freeForAll, activity: .pokemonQuiz) }
     func createTournamentRoom() { createRoom(mode: .freeForAll, activity: .tournament) }
+
+    /// 체육관을 연다 — **이미 열린 체육관이 보이면 열지 않는다.** 중앙 권위가 없어 프로토콜로는
+    /// 못 막지만, 개설 경로에서 걸러 내면 정상 사용에서는 하나로 유지된다.
+    ///
+    /// 발견은 즉시가 아니므로 둘이 동시에 눌러 둘 다 열릴 수 있다. 그 경합은 개설 직후
+    /// `resolveGymRoomConflict()` 가 흡수한다.
+    func createGymRoom() {
+        guard visibleGymRoom == nil else { lastError = companion.l.playerGymAlreadyOpen; return }
+        createRoom(mode: .freeForAll, activity: .gym)
+    }
+
+    /// 지금 보이는 남의 체육관 방(내 것은 제외).
+    var visibleGymRoom: MultiplayerRoomPeer? {
+        rooms.first { PlayerGym.isGymRoomName($0.name) && !$0.name.contains(myIDTag) }
+    }
+
+    /// 내 방을 남의 목록에서 가려내는 꼬리표 — 방 이름에 이미 들어 있다(`startHosting`).
+    private var myIDTag: String { "#\(String(myID.uuidString.prefix(6)))" }
 
     func startSoloPokemonQuiz() {
         guard phase == .idle else { return }
@@ -172,11 +217,19 @@ final class MultiplayerRoomCenter {
                                         team: team, isReady: false, isHost: true, role: .runner,
                                         reportedStarPieces: companion.availableTokens)
             do {
-                let capacity = activity == .pokemonQuiz ? MultiplayerLobby.quizCapacity : (activity == .tournament ? 8 : 4)
+                let capacity: Int
+                switch activity {
+                case .pokemonQuiz: capacity = MultiplayerLobby.quizCapacity
+                case .tournament: capacity = 8
+                // 관장과 도전자 둘이 러너다. 나머지는 관전자 정원으로 들어온다.
+                case .gym: capacity = 2
+                default: capacity = 4
+                }
                 lobby = try MultiplayerLobby(host: host, capacity: capacity, activity: activity)
                 hostingRole = true
                 try startHosting()
                 phase = .hosting
+                if activity == .gym { onGymRoomOpened?() }
             } catch {
                 hostingRole = false; phase = .idle; lobby = nil; lastError = error.localizedDescription
             }
@@ -216,8 +269,19 @@ final class MultiplayerRoomCenter {
                             self.send(.tournamentTeam(participantID: self.myID, lineup: lineup), over: connection)
                         }
                         self.receiveGuestLoop(connection)
-                    case .failed(let error): self.lastError = error.localizedDescription; self.leaveRoom()
-                    case .cancelled: if self.phase != .idle { self.leaveRoom() }
+                    // 관장이 배틀 도중 사라지면 그 판은 복구할 수 없다(상태가 관장 메모리에 있었다).
+                    // 무효로 닫되 **이어받기**를 제안한다 — 불리할 때 앱을 꺼서 패배를 피하는 것이
+                    // 이득이 되지 않게 하는 유일한 수단이다.
+                    case .failed(let error):
+                        let abandoned = self.isGymMatchAbandonedByLeader
+                        self.lastError = error.localizedDescription; self.leaveRoom()
+                        if abandoned { self.gymLeaderAbandonedMatch = true }
+                    case .cancelled:
+                        if self.phase != .idle {
+                            let abandoned = self.isGymMatchAbandonedByLeader
+                            self.leaveRoom()
+                            if abandoned { self.gymLeaderAbandonedMatch = true }
+                        }
                     default: break
                     }
                 }
@@ -380,6 +444,181 @@ final class MultiplayerRoomCenter {
         guard let state = tournamentState else { return }
         let message: MultiplayerWireMessage = start ? .tournamentStart(state: state) : .tournamentState(state)
         for connection in guestConnections.values { send(message, over: connection) }
+    }
+
+    // MARK: 공유 체육관 — 관장이 호스트다
+
+    /// 도전 신청. 게스트는 호스트에게 보내고, 판정(쿨다운·배틀 중·방어팀 유무)은 전부 호스트가 한다 —
+    /// 클라이언트 시계를 믿지 않는다.
+    func challengeGym() {
+        guard phase == .joined, gymMatch == nil else { return }
+        gymRejection = nil
+        Task {
+            guard let lineup = await buildGymLineup() else {
+                lastError = companion.l.gymNeedsMorePokemon(PlayerGym.defenseTeamSize); return
+            }
+            guard let hostConnection else { return }
+            send(.gymChallenge(participantID: myID, lineup: lineup), over: hostConnection)
+        }
+    }
+
+    /// 관장이 도전을 받는다. 거절 사유가 있으면 그것만 돌려보내고 판을 열지 않는다.
+    private func acceptGymChallenge(_ lineup: [BattleSnapshot], from challengerID: UUID) {
+        guard isHost, let leadership = companion.gymLeadership else { return }
+        guard let connection = guestConnections[challengerID] else { return }
+
+        // 남이 보낸 팀은 그대로 믿지 않는다. 레벨은 어차피 눕히지만 종족값·기술은 와이어에서 온다.
+        guard validLineup(lineup, participantID: challengerID, size: PlayerGym.defenseTeamSize) else {
+            send(.rejected(reason: "잘못된 도전 파티입니다."), over: connection); return
+        }
+        guard gymMatch == nil else { send(.gymRejected(reason: .busy), over: connection); return }
+        guard leadership.hasFullDefenseTeam else {
+            send(.gymRejected(reason: .notReady), over: connection); return
+        }
+        let now = Date()
+        let last = leadership.challengeCooldowns[challengerID]
+        guard PlayerGym.challengeAllowed(lastFinishedAt: last, now: now) else {
+            let remaining = Int(PlayerGym.remainingCooldown(lastFinishedAt: last, now: now).rounded(.up))
+            send(.gymRejected(reason: .cooldown(remainingSeconds: remaining)), over: connection)
+            return
+        }
+
+        gymChallengerLineup = lineup
+        Task { await startGymMatch(challengerID: challengerID, challengerLineup: lineup) }
+    }
+
+    private func startGymMatch(challengerID: UUID, challengerLineup: [BattleSnapshot]) async {
+        guard isHost, let defense = await buildGymDefenseLineup() else { return }
+        let challengerName = lobby?.participants.first { $0.id == challengerID }?.trainerName ?? "?"
+        var engine = GymMatchEngine(leaderID: myID, challengerID: challengerID,
+                                    leaderName: trainerName, challengerName: challengerName,
+                                    leaderTeam: defense, challengerTeam: challengerLineup,
+                                    seed: UInt64.random(in: UInt64.min...UInt64.max))
+        // AI 모드면 관장 몫은 사람이 아니라 점수식이 채운다. 그래도 판은 사람 도전자를 기다린다.
+        engine.fillMissingActions(leaderUsesAI: false)
+        gymEngine = engine
+        gymMatch = engine.snapshot()
+        broadcastGymState()
+        scheduleTurnTimeout()
+        applyGymLeaderAutoActionIfNeeded()
+    }
+
+    /// 내 행동 제출 — 관장이든 도전자든 같은 입구다.
+    func submitGymAction(_ action: NetBattleAction) {
+        guard let match = gymMatch, match.winnerID == nil,
+              match.leaderID == myID || match.challengerID == myID else { return }
+        if isHost { acceptGymAction(action, from: myID, matchID: match.matchID) }
+        else if let hostConnection {
+            send(.gymAction(matchID: match.matchID, participantID: myID, action: action), over: hostConnection)
+        }
+    }
+
+    private func acceptGymAction(_ action: NetBattleAction, from participantID: UUID, matchID: UUID) {
+        guard isHost, var engine = gymEngine, engine.matchID == matchID,
+              engine.submit(action, from: participantID) else { return }
+        gymEngine = engine
+        gymMatch = engine.snapshot()
+        broadcastGymState()
+        finishGymTurnIfReady()
+    }
+
+    /// 관장이 AI 모드면 도전자를 기다리지 않고 자기 몫을 곧바로 채운다.
+    private func applyGymLeaderAutoActionIfNeeded() {
+        guard isHost, companion.gymLeadership?.usesAI == true,
+              var engine = gymEngine, engine.battle.myAction == nil else { return }
+        engine.fillMissingActions(leaderUsesAI: true)
+        gymEngine = engine
+        gymMatch = engine.snapshot()
+        broadcastGymState()
+        finishGymTurnIfReady()
+    }
+
+    private func finishGymTurnIfReady() {
+        guard isHost, var engine = gymEngine, engine.isReady else { return }
+        let winner = engine.resolveIfReady()
+        gymEngine = engine
+        gymMatch = engine.snapshot(winnerID: winner)
+        broadcastGymState()
+        if let winner {
+            turnTimeoutTask?.cancel(); turnEndsAt = nil
+            concludeGymMatch(winnerID: winner, challengerID: engine.challengerID)
+        } else {
+            scheduleTurnTimeout()
+            applyGymLeaderAutoActionIfNeeded()
+        }
+    }
+
+    /// 판을 닫는다. 관장이 이겼으면 쿨다운만 적고, 졌으면 **자리를 넘긴다.**
+    private func concludeGymMatch(winnerID: UUID, challengerID: UUID) {
+        companion.recordGymChallengeFinished(challengerID: challengerID)
+        guard winnerID == challengerID else { gymChallengerLineup = nil; return }
+        if let gymID = companion.gymLeadership?.gymID,
+           let connection = guestConnections[challengerID] {
+            send(.gymHandoff(gymID: gymID), over: connection)
+        }
+        gymChallengerLineup = nil
+        onGymLeadershipLost?()
+        // 자리를 넘겼으니 이 방은 닫는다. 새 관장이 자기 기기에서 새로 연다.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.leaveRoom()
+        }
+    }
+
+    private func broadcastGymState() {
+        guard let match = gymMatch else { return }
+        for connection in guestConnections.values { send(.gymState(match), over: connection) }
+    }
+
+    /// 판이 안 끝났는데 관장 연결이 끊겼나. **`leaveRoom()` 이 플래그를 지우므로** 호출부는 이 값을
+    /// 먼저 읽어 두고, 방을 정리한 **뒤에** 세운다.
+    private var isGymMatchAbandonedByLeader: Bool {
+        guard !isHost, let match = gymMatch else { return false }
+        return match.winnerID == nil && match.challengerID == myID
+    }
+
+    /// 이어받기 제안을 지운다(수락했거나 무시했을 때).
+    func dismissGymTakeoverOffer() { gymLeaderAbandonedMatch = false }
+
+    /// 도전자가 배틀 도중 사라졌다 — 관장 승리로 닫는다. 이걸 안 이으면 지는 도중 앱을 꺼서
+    /// 결과를 흐릴 수 있다(토너먼트에 빠져 있는 처리다).
+    private func retireGymChallenger(_ participantID: UUID) {
+        guard isHost, let match = gymMatch, match.winnerID == nil,
+              match.challengerID == participantID else { return }
+        turnTimeoutTask?.cancel(); turnEndsAt = nil
+        gymMatch = gymEngine?.snapshot(winnerID: match.leaderID)
+        broadcastGymState()
+        concludeGymMatch(winnerID: match.leaderID, challengerID: participantID)
+    }
+
+    private func buildGymLineup() async -> [BattleSnapshot]? {
+        await companion.ensureInheritedMoves()
+        let owned = companion.deployableMons
+        let ids = gymPickedTeam.filter { id in owned.contains(where: { $0.id == id }) }
+        guard ids.count == PlayerGym.defenseTeamSize else { return nil }
+        var lineup: [BattleSnapshot] = []
+        for id in ids {
+            guard let mon = owned.first(where: { $0.id == id }),
+                  let snapshot = await companion.battleSnapshot(for: mon, level: PlayerGym.battleLevel)
+            else { return nil }
+            lineup.append(snapshot)
+        }
+        return lineup
+    }
+
+    /// 관장의 방어팀 — 잠가 둔 넷을 그대로 세운다.
+    private func buildGymDefenseLineup() async -> [BattleSnapshot]? {
+        guard let leadership = companion.gymLeadership, leadership.hasFullDefenseTeam else { return nil }
+        await companion.ensureInheritedMoves()
+        var lineup: [BattleSnapshot] = []
+        for id in leadership.defenseMonIDs {
+            guard let mon = companion.ownedMons.first(where: { $0.id == id }),
+                  let snapshot = await companion.battleSnapshot(for: mon, level: PlayerGym.battleLevel)
+            else { return nil }
+            lineup.append(snapshot)
+        }
+        return lineup
     }
 
     private func preparePokemonQuiz(players: [PokemonOXPlayer]) async {
@@ -614,6 +853,10 @@ final class MultiplayerRoomCenter {
         pokemonQuizGame = nil; isPreparingPokemonQuiz = false; lastPokemonQuizInputAt = .distantPast
         tournamentState = nil; tournamentTeams.removeAll(); tournamentBracket = nil
         tournamentMatch = nil; tournamentRewarded = false
+        gymMatch = nil; gymEngine = nil; gymChallengerLineup = nil; gymRejection = nil
+        gymLeaderAbandonedMatch = false
+        // `gymPickedTeam` 은 남긴다 — 방을 떠나도 "누구를 데려갈지"는 사용자의 설정이라
+        // 다음 도전 때 다시 고르게 하면 성가시다(`tournamentPickedTeam` 과 같은 취급).
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
@@ -628,6 +871,7 @@ final class MultiplayerRoomCenter {
         case .pokeathlon: prefix = "RUN"
         case .pokemonQuiz: prefix = "QUIZ"
         case .tournament: prefix = "TOUR"
+        case .gym: prefix = PlayerGym.roomNamePrefix
         default: prefix = "BATTLE"
         }
         listener.service = NWListener.Service(name: "\(prefix) · \(trainerName)#\(String(myID.uuidString.prefix(6)))",
@@ -646,6 +890,8 @@ final class MultiplayerRoomCenter {
         switch lobby?.activity {
         case .pokemonQuiz: maxGuests = MultiplayerLobby.quizCapacity - 1
         case .tournament: maxGuests = 7
+        // 도전자 하나 + 관전자들. 관장은 호스트라 게스트로 세지 않는다.
+        case .gym: maxGuests = 1 + MultiplayerLobby.spectatorCapacity
         default: maxGuests = 3 + MultiplayerLobby.spectatorCapacity
         }
         guard isHost, guestConnections.count + pendingGuestConnections.count < maxGuests else {
@@ -685,6 +931,10 @@ final class MultiplayerRoomCenter {
                     self.pendingGuestConnections.removeValue(forKey: key)
                     self.guestConnections[participant.id] = connection
                     self.broadcastLobby()
+                    // 진행 중인 체육관 판이 있으면 **이 연결에만** 현재 상태를 보낸다. 브로드캐스트는
+                    // 다음 행동 때나 오므로, 이게 없으면 방금 들어온 관전자는 판이 끝날 때까지
+                    // 빈 화면을 본다.
+                    if let match = self.gymMatch { self.send(.gymState(match), over: connection) }
                 } catch {
                     self.send(.rejected(reason: "방이 가득 찼습니다."), over: connection); connection.cancel(); return
                 }
@@ -698,6 +948,7 @@ final class MultiplayerRoomCenter {
                 self.lobby?.setTeam(team, participantID: pid); self.broadcastLobby()
             case .leave(let pid) where pid == id:
                 if self.phase == .battling { self.retireFighter(pid) }
+                else if self.lobby?.activity == .gym { self.retireGymChallenger(pid); try? self.lobby?.leave(participantID: pid) }
                 else { try? self.lobby?.leave(participantID: pid) }
                 self.snapshots.removeValue(forKey: pid); self.guestConnections.removeValue(forKey: pid)
                 connection.cancel(); self.broadcastLobby(); return
@@ -717,6 +968,11 @@ final class MultiplayerRoomCenter {
                 self.tournamentTeams[pid] = lineup
             case .tournamentAction(let matchID, let pid, let action) where pid == id:
                 self.acceptTournamentAction(action, from: pid, matchID: matchID)
+            case .gymChallenge(let pid, let lineup) where pid == id:
+                guard self.lobby?.activity == .gym else { break }
+                self.acceptGymChallenge(lineup, from: pid)
+            case .gymAction(let matchID, let pid, let action) where pid == id:
+                self.acceptGymAction(action, from: pid, matchID: matchID)
             case .pokeathlonBet(let pid, let runnerID, let amount) where pid == id:
                 self.acceptBet(PokeathlonBet(bettorID: pid, runnerID: runnerID, amount: amount), from: pid)
             default: break
@@ -766,6 +1022,20 @@ final class MultiplayerRoomCenter {
                 if state.currentMatch?.turn != previousTurn {
                     self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 }
+            // 체육관 상태는 `phase` 로 거르지 않는다 — 진행 중인 판에 관전으로 들어온 게스트도
+            // 곧바로 화면을 그려야 한다(호스트가 입장 직후 현재 상태를 개별 전송한다).
+            case .gymState(let match):
+                let previousTurn = self.gymMatch?.turn
+                self.gymMatch = match
+                self.gymRejection = nil
+                if match.turn != previousTurn {
+                    self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
+                }
+            case .gymRejected(let reason):
+                self.gymRejection = reason
+            case .gymHandoff(let gymID):
+                // 이겼다. 이 방은 곧 닫히고, 내 기기에서 새 체육관을 연다.
+                self.onGymLeadershipWon?(gymID)
             case .rejected(let reason): self.lastError = reason; self.leaveRoom(); return
             default: break
             }
@@ -844,7 +1114,10 @@ final class MultiplayerRoomCenter {
 
     private func scheduleTurnTimeout() {
         turnTimeoutTask?.cancel()
-        let round = phase == .tournament ? (tournamentState?.currentMatch?.turn ?? 0) : combatRound
+        let round: Int
+        if let match = gymMatch { round = match.turn }
+        else if phase == .tournament { round = tournamentState?.currentMatch?.turn ?? 0 }
+        else { round = combatRound }
         turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
         turnTimeoutTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.turnDuration))
@@ -854,6 +1127,16 @@ final class MultiplayerRoomCenter {
     }
 
     private func fillTimedOutActions(round: Int) {
+        // 체육관은 `phase` 가 `.hosting` 인 채로 판이 돈다 — 국면이 아니라 판의 유무로 가른다.
+        if gymMatch != nil {
+            guard isHost, var engine = gymEngine, gymMatch?.turn == round,
+                  gymMatch?.winnerID == nil else { return }
+            engine.fillMissingActions(leaderUsesAI: companion.gymLeadership?.usesAI == true)
+            gymEngine = engine
+            gymMatch = engine.snapshot()
+            finishGymTurnIfReady()
+            return
+        }
         if phase == .tournament {
             guard isHost, var engine = tournamentMatch,
                   tournamentState?.currentMatch?.turn == round else { return }
@@ -877,6 +1160,9 @@ final class MultiplayerRoomCenter {
         if phase == .battling {
             retireFighter(id)
         } else {
+            // 체육관은 `phase` 가 `.hosting` 인 채로 판이 돈다(방 배틀과 국면이 다르다). 그래서
+            // 여기서 따로 몰수를 걸어야 도전자가 지는 도중 앱을 꺼서 결과를 흐리는 걸 막는다.
+            if lobby?.activity == .gym { retireGymChallenger(id) }
             // 관전자가 떠나도 원장은 그대로 둔다 — 판돈은 이미 그 관전자 지갑에서 빠졌고,
             // 정산은 우승자 기준으로 계산되므로 남은 참가자들의 배당이 흔들리지 않는다.
             try? lobby?.leave(participantID: id); broadcastLobby()
@@ -973,7 +1259,7 @@ final class MultiplayerRoomCenter {
 
     private func buildTournamentLineup() async -> [BattleSnapshot]? {
         await companion.ensureInheritedMoves()
-        let owned = companion.ownedMons
+        let owned = companion.deployableMons
         let ids = tournamentPickedTeam.filter { id in owned.contains(where: { $0.id == id }) }
         guard ids.count == 3 else { return nil }
         var lineup: [BattleSnapshot] = []
@@ -986,7 +1272,13 @@ final class MultiplayerRoomCenter {
     }
 
     private func validTournamentLineup(_ lineup: [BattleSnapshot], participantID: UUID) -> Bool {
-        guard lineup.count == 3, lineup.allSatisfy({ $0.level == 50 }),
+        validLineup(lineup, participantID: participantID, size: 3)
+    }
+
+    /// 남이 보낸 출전팀을 그대로 믿지 않는다 — 레벨은 눕히지만 종족값·기술은 와이어에서 온다.
+    /// 토너먼트(3마리)와 체육관(4마리)이 머릿수만 다르고 검사는 같다.
+    private func validLineup(_ lineup: [BattleSnapshot], participantID: UUID, size: Int) -> Bool {
+        guard lineup.count == size, lineup.allSatisfy({ $0.level == 50 }),
               let participant = lobby?.participants.first(where: { $0.id == participantID }) else { return false }
         return lineup.allSatisfy { snapshot in
             MultiplayerValidation.valid(

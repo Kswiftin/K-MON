@@ -588,9 +588,11 @@ final class BattleCenter {
         battleTeamMons(size: size, selection: pickedTeam)
     }
 
+    /// 후보는 `deployableMons` 다 — 체육관 방어팀은 제외된다. `ownedMons` 를 쓰면 아래 자동 보충이
+    /// 정원을 채우려고 방어팀을 끌어다 세운다(선택하지 않았는데도 나간다).
     func battleTeamMons(size: Int, selection: [UUID]) -> [MonState] {
         guard size > 0 else { return [] }
-        let owned = companion.ownedMons
+        let owned = companion.deployableMons
         let byID = Dictionary(owned.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var included = Set<UUID>()
         var team: [MonState] = []
@@ -607,7 +609,7 @@ final class BattleCenter {
     }
 
     func prepareIncomingSelection(teamSize: Int) {
-        let owned = Set(companion.ownedMons.map(\.id))
+        let owned = Set(companion.deployableMons.map(\.id))
         var seen = Set<UUID>()
         incomingPickedTeam = Array(pickedTeam.filter { owned.contains($0) && seen.insert($0).inserted }
             .prefix(teamSize))
@@ -929,7 +931,7 @@ final class BattleCenter {
 
     func startRankedPractice() {
         guard case .ready = phase else { return }
-        guard companion.ownedMons.count >= rankedTeamSize else {
+        guard companion.deployableMons.count >= rankedTeamSize else {
             lastError = "출전할 포켓몬이 부족합니다."
             return
         }
@@ -971,7 +973,7 @@ final class BattleCenter {
     /// 관장이 도전자를 따라오면 언제 가도 같은 난이도라 이 컨텐츠가 성립하지 않는다.
     func startGymChallenge(_ gym: Gym) {
         guard case .ready = phase else { return }
-        guard companion.ownedMons.count >= GymLeague.teamSize else {
+        guard companion.deployableMons.count >= GymLeague.teamSize else {
             lastError = l.gymNeedsMorePokemon(GymLeague.teamSize)
             return
         }
@@ -1097,7 +1099,7 @@ final class BattleCenter {
         guard case .ready = phase else { return }
         let teamSize = kind == .metronome ? 1 : rankedTeamSize
         guard kind == .metronome || (Self.supportedTeamSizes.contains(teamSize)
-                                     && companion.ownedMons.count >= teamSize) else {
+                                     && companion.deployableMons.count >= teamSize) else {
             lastError = l.battleNeedsPokemon(teamSize)
             return
         }
@@ -1192,7 +1194,7 @@ final class BattleCenter {
             phase = .teamBuilding(peer: peer)
             return
         }
-        guard companion.ownedMons.count >= incomingTeamSize else {
+        guard companion.deployableMons.count >= incomingTeamSize else {
             lastError = l.battleNeedsPokemon(incomingTeamSize)
             return
         }

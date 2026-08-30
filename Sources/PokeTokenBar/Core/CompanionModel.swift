@@ -906,6 +906,32 @@ struct PendingRankedBattle: Codable, Sendable, Equatable {
     var opponent: BattleRank
 }
 
+/// 내가 공유 체육관의 관장이라는 사실. 관장은 곧 방 호스트이므로 이 값이 있으면 앱이 켜질 때
+/// 체육관 광고를 재개한다.
+///
+/// 개체는 **UUID 로만** 들고 실체는 소유 목록에서 매번 찾는다(`battleRepresentativeID` 와 같은
+/// 규칙) — `MonState` 에 "체육관에 배치됨" Bool 을 넣으면 교환·방생·트레이드마다 정합성을
+/// 맞춰야 할 지점이 늘어난다.
+struct PlayerGymLeadership: Codable, Sendable, Equatable {
+    /// 체육관의 연속성 식별자. 관장이 바뀌어도 승계로 이어지며, 동시 개설이 겹쳤을 때 어느 쪽이
+    /// 남을지를 **양쪽이 같은 답으로** 정하는 기준이기도 하다(사전순).
+    var gymID: UUID
+    /// 방어팀. `PlayerGym.defenseTeamSize` 마리를 다 채워야 도전을 받는다.
+    var defenseMonIDs: [UUID] = []
+    /// 도전자별 **마지막 배틀이 끝난** 시각. 시작 시각이 아니다 — 긴 배틀 뒤 곧바로 재도전이
+    /// 되면 제한이 무의미하다. 관장이 바뀌면 넘기지 않고 비운다(새 관장 = 새 상대).
+    var challengeCooldowns: [UUID: Date] = [:]
+    /// 관장이 직접 두지 않고 AI 에게 맡기는가. AI 도 관장 기기에서 도므로 앱이 켜져 있어야 한다.
+    var usesAI = false
+    /// 방어팀이 정원 미만인 동안의 세팅 마감. 넘기면 자격을 잃는다 — 이게 없으면 이기고 세팅을
+    /// 안 한 사람이 체육관을 무한 점유한다. 정원을 채우면 nil 로 지운다.
+    ///
+    /// **세이브에 남기는 이유**: 앱을 껐다 켜는 것으로 기한을 다시 받으면 제한이 없는 것과 같다.
+    var defenseDeadline: Date?
+
+    var hasFullDefenseTeam: Bool { defenseMonIDs.count == PlayerGym.defenseTeamSize }
+}
+
 /// 영속 상태(Application Support JSON). 포켓몬 전환 — 이전 커스텀 캐릭터 상태는 폐기(새로 시작).
 struct CompanionState: Codable, Sendable {
     /// 배포 단위 강제 초기화 버전. 기존 세이브에는 키가 없어서 0으로 읽히며, 현재 버전보다 낮으면
@@ -946,6 +972,8 @@ struct CompanionState: Codable, Sendable {
     /// 친구 목록의 배틀 프로필에 공개할 대표 포켓몬. 개체 UUID만 저장하고 실제 종·이로치 정보는
     /// 현재 소유 목록에서 매번 계산한다. 교환/방출로 없어지면 자동으로 광고되지 않는다.
     var battleRepresentativeID: UUID?
+    /// 공유 체육관 관장 자격. nil = 관장이 아니다.
+    var gymLeadership: PlayerGymLeadership?
     // 첫 파트너를 골랐는지 — false면 알이 아니라 스타터 선택 화면으로 시작(맨 처음 1회).
     // 졸업 후 새 알부터는 true 라 기존 알/부화 루프로 돌아간다.
     var starterChosen = false
@@ -1033,6 +1061,7 @@ struct CompanionState: Codable, Sendable {
         pendingHatchID     = c.lenientOptional(Int.self, forKey: .pendingHatchID)
         trainerName        = c.lenient(String.self, forKey: .trainerName, default: "")
         battleRepresentativeID = c.lenientOptional(UUID.self, forKey: .battleRepresentativeID)
+        gymLeadership      = c.lenientOptional(PlayerGymLeadership.self, forKey: .gymLeadership)
         starterChosen      = c.lenient(Bool.self, forKey: .starterChosen, default: false)
         starterCandidates  = c.lenient([Int].self, forKey: .starterCandidates, default: [])
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.

@@ -386,6 +386,20 @@ final class CompanionStore {
     var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }
     var activeMonID: UUID? { state.active?.id }
 
+    /// 공유 체육관에 배치해 **지금 다른 곳에 쓸 수 없는** 개체들.
+    var gymDefenseMonIDs: Set<UUID> { Set(state.gymLeadership?.defenseMonIDs ?? []) }
+
+    /// 배틀·교환에 내보낼 수 있는 개체. 체육관 방어팀은 빠진다 — 관장이 지키는 동안 그 넷은
+    /// 다른 데서 싸우지도, 키워지지도 않는다.
+    ///
+    /// **후보를 만드는 자리는 전부 이 값을 봐야 한다.** `ownedMons` 를 그대로 쓰면 정원이 모자랄 때
+    /// 자동 보충(`BattleCenter.battleTeamMons`)이 방어팀을 끌어다 세운다.
+    var deployableMons: [MonState] {
+        let deployed = gymDefenseMonIDs
+        guard !deployed.isEmpty else { return ownedMons }
+        return ownedMons.filter { !deployed.contains($0.id) }
+    }
+
     // 스타터 선택 — 맨 처음 1회, 알 대신 세 마리 중 택1. 고르면 starterChosen=true 로 이후엔 알 루프.
     // 후보 풀 규칙(범위·전설 제외)은 StarterRules 공유.
 
@@ -1434,8 +1448,10 @@ final class CompanionStore {
     /// 세므로(`DexGoals.completed(in: state.dex)`), 졸업한 개체를 놓아줘도 달성도는 그대로다.
     /// 미졸업 개체는 박스에 있는 동안만 도감에 합성되던 줄이라(`livingDexEntries`) 개체와 함께 사라진다 —
     /// 애초에 영구 기록이 아니었던 것이고, 그래서 방생이 달성도를 지우는 경로가 되지 않는다.
+    /// **체육관 방어팀도 대상이 아니다** — 관장이 지키는 넷은 자리에서 내리기 전엔 놓아줄 수 없다.
     @discardableResult
     func releaseMon(_ id: UUID) -> Bool {
+        guard !gymDefenseMonIDs.contains(id) else { return false }
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return false }
         let released = state.boxedMons.remove(at: index)
         AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
@@ -1519,7 +1535,11 @@ final class CompanionStore {
             nature: mon.nature, names: mon.names))
     }
 
+    /// 체육관 방어팀은 동행으로 올릴 수 없다 — **육성 차단이 이 한 줄로 끝난다.** 박스 개체는
+    /// 원래 경험치를 받지 않으므로(`gainExperience` 는 활성 개체에만 붙는다), 활성이 되는 길만
+    /// 막으면 배치된 넷은 자라지 않는다.
     func switchCompanion(to id: UUID) {
+        guard !gymDefenseMonIDs.contains(id) else { return }
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return }
         let selected = state.boxedMons.remove(at: index)
         if let active = state.active { state.boxedMons.append(active) }
@@ -1876,6 +1896,76 @@ final class CompanionStore {
         grantReward(reward)
         save()
         return reward
+    }
+
+    // MARK: 공유 체육관 관장 자격
+
+    var isGymLeader: Bool { state.gymLeadership != nil }
+    var gymLeadership: PlayerGymLeadership? { state.gymLeadership }
+
+    /// 관장이 된다 — 신규 개설이든 도전 승리든 여기 하나를 지난다. 방어팀은 비어서 시작하므로
+    /// 세팅 기한이 곧바로 걸린다.
+    ///
+    /// 쿨다운 원장은 **승계로 넘어오지 않는다.** 관장이 바뀐 것은 새 상대를 만난 것과 같아서다.
+    func becomeGymLeader(gymID: UUID = UUID()) {
+        state.gymLeadership = PlayerGymLeadership(
+            gymID: gymID,
+            defenseDeadline: PlayerGym.setupDeadline(defenseCount: 0, now: clock()))
+        save()
+    }
+
+    /// 관장 자격을 내려놓는다 — **패배·자진 퇴위·재시작 양보·세팅 기한 초과가 모두 이 함수를
+    /// 지난다.** 잠금 해제를 여러 곳에서 하면 한 분기가 빠져 방어팀이 영영 잠긴 채 남는다.
+    func resignGymLeadership() {
+        guard state.gymLeadership != nil else { return }
+        state.gymLeadership = nil
+        save()
+    }
+
+    /// 방어팀을 세운다. 정원을 채우면 세팅 기한이 사라지고, 모자라면 **그 시점부터** 다시 걸린다 —
+    /// 관장이 된 직후든 개체가 빠져 줄어든 뒤든 같은 규칙이다.
+    ///
+    /// 활성 개체는 받지 않는다(성장하는 자리라 배치 대상이 아니다).
+    func setGymDefenseTeam(_ ids: [UUID]) {
+        guard var leadership = state.gymLeadership else { return }
+        let boxedIDs = Set(state.boxedMons.map(\.id))
+        var seen: Set<UUID> = []
+        leadership.defenseMonIDs = ids
+            .filter { boxedIDs.contains($0) && seen.insert($0).inserted }
+            .prefix(PlayerGym.defenseTeamSize)
+            .map { $0 }
+        leadership.defenseDeadline = PlayerGym.setupDeadline(
+            defenseCount: leadership.defenseMonIDs.count, now: clock())
+        state.gymLeadership = leadership
+        save()
+    }
+
+    func setGymUsesAI(_ usesAI: Bool) {
+        guard var leadership = state.gymLeadership else { return }
+        leadership.usesAI = usesAI
+        state.gymLeadership = leadership
+        save()
+    }
+
+    /// 도전이 **끝난** 시각을 적는다. 시작 시각으로 재면 긴 배틀 뒤 곧바로 재도전이 된다.
+    func recordGymChallengeFinished(challengerID: UUID) {
+        guard var leadership = state.gymLeadership else { return }
+        leadership.challengeCooldowns[challengerID] = clock()
+        state.gymLeadership = leadership
+        save()
+    }
+
+    /// 세팅 기한이 지났으면 자격을 거둔다. 앱이 켜질 때와 화면이 살아 있는 동안 주기적으로 부른다 —
+    /// **재시작으로 기한을 다시 받지 못하게** 마감은 세이브에 남아 있고, 이미 지난 채로 복원되면
+    /// 그 자리에서 풀린다.
+    @discardableResult
+    func expireGymLeadershipIfSetupLapsed() -> Bool {
+        guard let leadership = state.gymLeadership,
+              let deadline = leadership.defenseDeadline,
+              clock() >= deadline else { return false }
+        AppLog.write("player gym leadership expired: defense team not set in time")
+        resignGymLeadership()
+        return true
     }
 
     // MARK: 포켓로그식 런 (프로토타입)
