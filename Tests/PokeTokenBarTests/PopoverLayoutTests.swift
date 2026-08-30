@@ -255,6 +255,29 @@ final class PopoverLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: 대화 — 외부 전송 동의 줄
+
+    /// 대조군: 이름이 긴 CLI 는 줄을 더 넓게 만들어야 한다. 이게 없으면 누가 대상 이름을 지워도
+    /// 아래 폭 검증은 그냥 통과한다 — 총폭 검증은 누가 빠졌는지를 못 잡는다(defect-log).
+    func testTheConsentLineActuallyCarriesTheProviderName() {
+        let short = intrinsicWidth(PokemonChatConsentLabel(kind: .codex, language: .ko))    // "Codex"
+        let long = intrinsicWidth(PokemonChatConsentLabel(kind: .claude, language: .ko))    // "Claude Code"
+        XCTAssertGreaterThan(long, short, "대상 CLI 이름이 안 그려지면 폭 검증이 무의미해진다")
+    }
+
+    /// 전송 버튼이 곧 동의이므로 이 줄은 **안전 경계의 표시**다. 팝오버 폭(360)에서 잘리면
+    /// 사용자는 어디로 나가는지 못 읽은 채 누르게 된다.
+    func testTheConsentLineFitsTheContentWidthInEveryLanguage() {
+        for kind in PokemonChatProviderSafety.verifiedKinds {
+            for language in [AppLanguage.ko, .en, .ja] {
+                XCTAssertLessThanOrEqual(
+                    intrinsicWidth(PokemonChatConsentLabel(kind: kind, language: language)),
+                    PopoverMetrics.contentWidth,
+                    "\(language.rawValue)/\(kind.rawValue): 동의 줄이 팝오버 폭을 넘겼다")
+            }
+        }
+    }
+
     /// 같은 부류 스윕: 릴레이 방 목록도 LAN 이 길이를 정한다 — 상한도 페이저도 없으면 팝오버가 잘린다.
     func testEveryRelayRoomLandsOnSomePage() {
         let pageSize = PokeathlonView.roomPageSize

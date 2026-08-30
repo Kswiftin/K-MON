@@ -247,4 +247,65 @@ final class PokemonChatProviderPathTests: XCTestCase {
         XCTAssertEqual(Set(messages).count, 3, "세 언어가 서로 다른 문장이어야 한다")
         XCTAssertFalse(messages.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
     }
+
+    // MARK: 동의 — 전송 버튼이 곧 동의다
+
+    /// 자동 선택이 "어느 CLI 인가" 를 사용자 손에서 가져갔으므로, **그 답을 전송하는 자리에서
+    /// 돌려줘야** 누르는 행위가 동의가 된다. 이름 없는 "외부 전송" 은 어디로 가는지 안 알려준다.
+    func testTheExternalSendLabelNamesTheCLIThatWillReceiveTheMessage() {
+        for kind in PokemonChatProviderSafety.verifiedKinds {
+            for language in [AppLanguage.ko, .en, .ja] {
+                let label = PokemonChatProviderSelection.externalSendLabel(kind: kind, language: language)
+                XCTAssertTrue(label.contains(kind.label(language)),
+                              "\(language.rawValue)/\(kind.rawValue): 대상 CLI 이름이 없다 — '\(label)'")
+            }
+        }
+        let translated = [AppLanguage.ko, .en, .ja].map {
+            PokemonChatProviderSelection.externalSendLabel(kind: .claude, language: $0)
+        }
+        XCTAssertEqual(Set(translated).count, 3, "세 언어가 서로 다른 문장이어야 한다")
+    }
+
+    // MARK: 막혔을 때 — 말없이 비활성인 버튼을 남기지 않는다
+
+    /// 사유마다 사용자가 할 수 있는 일이 다르다. 뭉개면 어느 쪽도 안내가 되지 않는다.
+    /// **`kind == nil`(하나도 안 잡힘) 가지가 새로 생긴 자리다** — 자동 선택 전에는 "AI 선택" 이
+    /// 그 자리를 대신했지만, 이제는 아무도 없어 이유 없는 비활성 버튼만 남는다.
+    func testEveryReasonAChatCannotSendHasItsOwnGuidance() {
+        // 보낼 수 있으면 배너는 없다.
+        XCTAssertNil(PokemonChatProviderSelection.unavailableMessage(
+            kind: .claude, hasProvider: true, language: .ko))
+
+        // 검증 CLI 가 하나도 안 잡힘.
+        XCTAssertEqual(PokemonChatProviderSelection.unavailableMessage(
+            kind: nil, hasProvider: false, language: .ko),
+                       PokemonChatProviderSelection.noProviderMessage(.ko))
+
+        // 격리를 보장할 수 없어 차단된 종류 — 경로를 넣어도 소용없다는 사실을 말해야 한다.
+        XCTAssertEqual(PokemonChatProviderSelection.unavailableMessage(
+            kind: .opencode, hasProvider: false, language: .ko),
+                       PokemonChatBlockReason.unverifiedToolContract.message(.ko))
+        XCTAssertEqual(PokemonChatProviderSelection.unavailableMessage(
+            kind: .custom, hasProvider: false, language: .ko),
+                       PokemonChatBlockReason.arbitraryExecutable.message(.ko))
+
+        // 검증됐는데 실행 파일만 못 찾음 — 설정에서 경로를 넣으면 되는 유일한 사유다.
+        let notFound = PokemonChatProviderSelection.unavailableMessage(
+            kind: .claude, hasProvider: false, language: .ko)
+        XCTAssertNotNil(notFound)
+        XCTAssertTrue(notFound?.contains(PokemonChatProviderKind.claude.label(.ko)) == true,
+                      "어느 CLI 를 못 찾았는지 말해야 설정에서 무엇을 고칠지 안다")
+        XCTAssertNotEqual(notFound, PokemonChatBlockReason.unverifiedToolContract.message(.ko),
+                          "차단과 미발견은 사용자가 할 수 있는 일이 다르다")
+    }
+
+    /// 사유별 문구가 세 언어를 다 갖췄는가. 한 언어만 비면 그 사용자는 막힌 채 영어를 본다.
+    func testEveryUnavailableGuidanceIsWrittenInAllThreeLanguages() {
+        for kind in PokemonChatProviderKind.allCases + [nil] {
+            let messages = [AppLanguage.ko, .en, .ja].compactMap {
+                PokemonChatProviderSelection.unavailableMessage(kind: kind, hasProvider: false, language: $0)
+            }
+            XCTAssertEqual(Set(messages).count, 3, "\(kind?.rawValue ?? "nil"): 세 갈래가 아니다")
+        }
+    }
 }
