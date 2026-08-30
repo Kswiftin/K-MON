@@ -498,6 +498,50 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertNil(restored.session(for: id))
     }
 
+    // MARK: - draft 는 뷰가 아니라 스토어가 든다 (팝오버 이관)
+
+    /// 팝오버는 바깥을 클릭하면 닫히고(`behavior = .transient`), 닫히면서 콘텐츠 뷰를 통째로
+    /// 해제한다(`popoverDidClose` 가 `contentViewController = nil`). draft 가 뷰의 `@State` 면
+    /// 입력 중이던 문장이 클릭 한 번에 사라진다 — 창에서는 안 겪던 손실이다.
+    func testDraftSurvivesTheViewBecauseTheStoreHoldsIt() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let id = UUID()
+
+        store.setDraft("배고프면 말해 줘", for: id)
+
+        XCTAssertEqual(store.draft(for: id), "배고프면 말해 줘")
+    }
+
+    /// 대화 창은 활성 개체뿐 아니라 박스 개체로도 열린다. draft 를 한 칸에 두면 피카츄에게 쓰다
+    /// 만 문장이 파이리 대화에 나타난다.
+    func testDraftIsKeptPerCompanion() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let pikachu = UUID(), charmander = UUID()
+
+        store.setDraft("같이 나갈래?", for: pikachu)
+
+        XCTAssertEqual(store.draft(for: pikachu), "같이 나갈래?")
+        XCTAssertEqual(store.draft(for: charmander), "")
+    }
+
+    /// 보낸 문장이 입력칸에 남아 있으면 다음 전송에서 두 번 간다.
+    func testSendingClearsThatCompanionsDraftOnly() async {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let sender = UUID(), other = UUID()
+        store.setDraft("안녕", for: sender)
+        store.setDraft("나중에 얘기해", for: other)
+
+        await store.send("안녕", for: sender, profile: .fixture, provider: FixedReplyProvider(reply: "반가워!"))
+
+        XCTAssertEqual(store.draft(for: sender), "")
+        XCTAssertEqual(store.draft(for: other), "나중에 얘기해")
+    }
+
+    private func temporaryChatURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
+    }
+
     private func makeCompanionStore() -> CompanionStore {
         let line = EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
                            names: [25: ["ko": "피카츄", "en": "Pikachu"]])
@@ -545,6 +589,12 @@ private actor DeferredReplyProvider: PokemonChatProviding {
         continuation?.resume(returning: reply)
         continuation = nil
     }
+}
+
+private actor FixedReplyProvider: PokemonChatProviding {
+    private let reply: String
+    init(reply: String) { self.reply = reply }
+    func reply(to request: PokemonChatRequest) async throws -> String { reply }
 }
 
 private actor QueuedReplyProvider: PokemonChatProviding {
