@@ -255,6 +255,44 @@ final class PopoverLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: 대화 — 외부 전송 동의 줄
+
+    /// 대조군: 이름이 긴 CLI 는 줄을 더 넓게 만들어야 한다. 이게 없으면 누가 대상 이름을 지워도
+    /// 아래 폭 검증은 그냥 통과한다 — 총폭 검증은 누가 빠졌는지를 못 잡는다(defect-log).
+    func testTheConsentLineActuallyCarriesTheProviderName() {
+        let short = intrinsicWidth(PokemonChatConsentLabel(kind: .codex, language: .ko))    // "Codex"
+        let long = intrinsicWidth(PokemonChatConsentLabel(kind: .claude, language: .ko))    // "Claude Code"
+        XCTAssertGreaterThan(long, short, "대상 CLI 이름이 안 그려지면 폭 검증이 무의미해진다")
+    }
+
+    /// 전송 버튼이 곧 동의이므로 이 줄은 **안전 경계의 표시**다. 팝오버 폭(360)에서 잘리면
+    /// 사용자는 어디로 나가는지 못 읽은 채 누르게 된다.
+    ///
+    /// 앵커는 **이 줄이 실제로 쓰는 예산**이어야 한다. 예전엔 `PopoverMetrics.contentWidth`(332)를
+    /// 썼는데 그 상수는 `mainContent` 것이고 대화는 그 형제 가지라 360 을 통째로 받는다(실제 336).
+    /// 4pt 더 빡빡해 우연히 안전했을 뿐이라, `PopoverMetrics.padding` 이 10 으로 바뀌면 앵커가
+    /// 340 으로 **느슨해져** 실제로 잘리는 338pt 라벨을 통과시킨다 — 막으려던 실패를 통과시킨다.
+    func testTheConsentLineFitsTheContentWidthInEveryLanguage() {
+        for kind in PokemonChatProviderSafety.verifiedKinds {
+            for language in [AppLanguage.ko, .en, .ja] {
+                XCTAssertLessThanOrEqual(
+                    intrinsicWidth(PokemonChatConsentLabel(kind: kind, language: language)),
+                    PokemonChatConsentLabel.contentWidth,
+                    "\(language.rawValue)/\(kind.rawValue): 동의 줄이 팝오버 폭을 넘겼다")
+            }
+        }
+    }
+
+    /// 앵커가 뷰의 실제 여백에서 나오는가. 상수만 옮기고 뷰가 옛 여백을 그대로 쓰면 두 벌이 되어
+    /// 같은 결함이 되돌아온다 — 뷰가 이 상수를 **쓰는지**는 컴파일러가 지키고, 값이 팝오버 폭에서
+    /// 파생되는지는 여기서 지킨다.
+    func testTheConsentLineBudgetIsDerivedFromThePopoverItActuallyLivesIn() {
+        XCTAssertEqual(PokemonChatConsentLabel.contentWidth,
+                       PopoverMetrics.width - PokemonChatConsentLabel.horizontalPadding * 2,
+                       "동의 줄 예산이 팝오버 폭과 대화 여백에서 파생되지 않는다")
+        XCTAssertEqual(PokemonChatConsentLabel.contentWidth, 336)
+    }
+
     /// 같은 부류 스윕: 릴레이 방 목록도 LAN 이 길이를 정한다 — 상한도 페이저도 없으면 팝오버가 잘린다.
     func testEveryRelayRoomLandsOnSomePage() {
         let pageSize = PokeathlonView.roomPageSize

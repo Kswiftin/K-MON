@@ -449,12 +449,13 @@ final class PokemonChatTests: XCTestCase {
     /// 트리거 분기: 사용자 설정(경로 override)이 안전 관문을 우회하는 경로. 실존 실행 파일을
     /// 넣어도 차단 제공자는 해석되지 않아야 한다.
     func testBlockedProviderStaysBlockedEvenWithAnExplicitExecutableOverride() {
-        let key = "pokemonChatExecutablePath.opencode"
-        UserDefaults.standard.set("/usr/bin/env", forKey: key)
-        defer { UserDefaults.standard.removeObject(forKey: key) }
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: "/usr/bin/env"),
                       "테스트 전제가 깨졌다 — 실존 실행 파일이어야 우회 시도가 성립한다")
-        XCTAssertNil(PokemonChatProviderExecutableResolver.executableURL(for: .opencode))
+        // 지정 경로를 인자로 넘긴다. 예전엔 `UserDefaults` 에 심고 해석기가 그걸 스스로 읽게 했는데,
+        // 그 두 번째 저장소가 화면·캐시가 쓰는 것과 어긋날 수 있어 지웠다.
+        XCTAssertNil(PokemonChatProviderExecutableResolver.executableURL(
+            for: .opencode, override: "/usr/bin/env",
+            searchPaths: PokemonChatProviderExecutableResolver.standardPaths(for: .opencode)))
     }
 
     /// 라인 커버리지 84% 를 통과하는 동안 `label`·`verifiedKinds`·`blockReason` 는 **한 번도
@@ -613,6 +614,29 @@ final class PokemonChatTests: XCTestCase {
         _ = cache.executableURL(for: .claude, override: nil)
 
         XCTAssertEqual(lookups, 1)
+    }
+
+    /// 자동 선택은 검증 CLI **2종**의 설치 여부를 `body` 안에서 함께 묻는다. 보관 자리가 한 칸이면
+    /// 두 질의가 서로를 밀어내 매번 miss 가 나고, 캐시가 막으려던 그 비용(디렉터리 13곳 × 2벌)이
+    /// 키 입력마다 그대로 돌아온다 — 캐시가 있는데도 없는 것과 같아진다.
+    /// 답이 **종류마다 다른** 해석기를 준다. 전부 `nil` 을 돌려주면 어느 자리에 담기든 답이 같아
+    /// 호출 횟수만 깨질 수 있다 — 자리를 뒤섞어 엉뚱한 CLI 를 실행하게 되는 쪽은 못 잡는다.
+    func testResolutionIsKeptPerKindSoAskingAboutOneCLIDoesNotEvictTheOther() {
+        var lookups = 0
+        let cache = PokemonChatProviderCache { kind, _ in
+            lookups += 1
+            return URL(fileURLWithPath: "/tmp/\(kind.rawValue)")
+        }
+
+        // 자동 선택이 실제로 도는 순서. 종류를 오가며 물어도 각 종류당 한 번이면 충분하다.
+        XCTAssertEqual(cache.executableURL(for: .codex, override: nil)?.path, "/tmp/codex")
+        XCTAssertEqual(cache.executableURL(for: .claude, override: nil)?.path, "/tmp/claude")
+        XCTAssertEqual(cache.executableURL(for: .codex, override: nil)?.path, "/tmp/codex",
+                       "보관해 둔 답이 다른 종류의 것으로 바뀌었다 — 엉뚱한 CLI 가 실행된다")
+        XCTAssertEqual(cache.executableURL(for: .claude, override: nil)?.path, "/tmp/claude",
+                       "보관해 둔 답이 다른 종류의 것으로 바뀌었다 — 엉뚱한 CLI 가 실행된다")
+
+        XCTAssertEqual(lookups, 2, "종류를 오갈 때마다 다시 해석하면 타이핑이 경로 탐색을 끌고 다닌다")
     }
 
     /// 캐시가 **안 갱신되면** 설정에서 경로를 고쳐도 대화는 옛 결과를 계속 쓴다 — 캐시의 반대편

@@ -77,6 +77,12 @@ final class AppSettings {
     /// DeviceID: reinstalling/resetting preferences creates a new identity and clears old blocks.
     let memoryHomeLANPeerID: UUID
     private var chatExecutablePaths: [String: String]
+    /// 대화를 외부 CLI 로 보내는 데 한 번이라도 동의했는가. **기본값은 `false` 여야 한다** — 여기서
+    /// 새면 확인 창은 코드에만 있고 화면엔 없는 것이 된다. `?? false` 라 키가 없는 기존 사용자도
+    /// 한 번은 묻는 쪽에서 시작한다.
+    var hasAcknowledgedExternalChatSend: Bool {
+        didSet { defaults.set(hasAcknowledgedExternalChatSend, forKey: "hasAcknowledgedExternalChatSend") }
+    }
 
     init(defaults: UserDefaults = .standard, clock: @escaping () -> Date = Date.init) {
         self.defaults = defaults
@@ -112,6 +118,7 @@ final class AppSettings {
             defaults.set(id.uuidString, forKey: "memoryHomeLANPeerID")
         }
         chatExecutablePaths = defaults.dictionary(forKey: "pokemonChatExecutablePaths") as? [String: String] ?? [:]
+        hasAcknowledgedExternalChatSend = defaults.object(forKey: "hasAcknowledgedExternalChatSend") as? Bool ?? false
     }
 
     /// LAN 탐색을 시작해도 되는가. 설정값을 읽는 자리와 리스너를 올리는 자리가 각각 판정하면

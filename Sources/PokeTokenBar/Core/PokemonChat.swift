@@ -1489,9 +1489,11 @@ enum PokemonChatProviderSafety {
         }
     }
 
-    static var verifiedKinds: [PokemonChatProviderKind] {
+    /// `let` 이다. 자동 선택이 뷰 `body` 안에서 이걸 읽고 `body` 는 키 입력마다 평가되므로,
+    /// 계산 프로퍼티면 한 글자마다 `allCases` 를 몇 벌씩 다시 거른다. static let 은 지연 초기화라
+    /// 의미는 그대로다.
+    static let verifiedKinds: [PokemonChatProviderKind] =
         PokemonChatProviderKind.allCases.filter { availability(for: $0).isVerified }
-    }
 
     static func arguments(for provider: PokemonChatProviderKind) -> [String]? {
         guard availability(for: provider).isVerified else { return nil }
@@ -1516,6 +1518,95 @@ enum PokemonChatProviderSafety {
             // 되지 않도록 판단은 하지 않는다.
             return nil
         }
+    }
+}
+
+/// 전송을 눌렀을 때 실제로 일어나는 일. 뷰가 `if` 두 개로 갈래를 만들면 그 갈래는 아무도 안 센다.
+enum PokemonChatSendAction: Equatable {
+    /// 아직 한 번도 밖으로 보낸 적이 없다 — 어디로 가는지 말하고 한 번 묻는다.
+    case ask(PokemonChatProviderKind)
+    case send
+}
+
+/// 어느 CLI 로 보낼지 정한다. **고르는 일과 보내는 일은 다르다** — 여기서 자동화하는 것은
+/// "어느 CLI 인가" 뿐이고, 외부로 나가는 행위는 여전히 사용자가 전송을 눌러야 일어난다.
+///
+/// 자동 선택은 provider 로 가는 **두 번째 길**이다. 지금까지는 사용자가 Picker 에서 고르는 길
+/// 하나뿐이었고 격리 관문도 그 길에만 있었다. 그래서 후보는 `verifiedKinds` **에서만** 나온다 —
+/// 여기서 `allCases` 를 다시 순회하면 안전 판정이 두 벌이 되고, 차단된 CLI 가 이 길로 샌다.
+enum PokemonChatProviderSelection {
+    /// 사용자가 고른 값이 이긴다. 다만 **쓸 수 없는 선택은 막다른 길이 아니라 폴백**이다 —
+    /// 차단되기 전에 저장된 종류나 지워 버린 CLI 하나로 대화가 영영 안 열리면, 사용자는 이유를
+    /// 알 길이 없다. 실행 파일 해석이 오래된 override 를 다루는 방향과 같다.
+    static func effectiveKind(stored: String,
+                              isInstalled: (PokemonChatProviderKind) -> Bool) -> PokemonChatProviderKind? {
+        if let kind = PokemonChatProviderKind(rawValue: stored),
+           PokemonChatProviderSafety.availability(for: kind).isVerified,
+           isInstalled(kind) { return kind }
+        return PokemonChatProviderSafety.verifiedKinds.first(where: isInstalled)
+    }
+
+    /// 고를 것이 하나도 없을 때의 안내. 차단 사유(`PokemonChatBlockReason`)와 같은 이유로 문구를
+    /// Core 에 둔다 — 뷰가 들면 커버리지 게이트 밖에 남고, 세 언어 중 하나가 조용히 빠진다.
+    static func noProviderMessage(_ language: AppLanguage) -> String {
+        L(language).t("설치된 대화 CLI 를 찾지 못했습니다. 설정에서 경로를 넣으세요.",
+                      "No chat CLI was found on this Mac. Type its path in Settings.",
+                      "会話用 CLI が見つかりません。設定でパスを入力してください。")
+    }
+
+    /// **전송 버튼이 곧 동의다.** 자동 선택이 "어느 CLI 인가" 를 사용자 손에서 가져갔으므로, 그
+    /// 답을 누르는 자리에서 돌려준다 — 이름 없는 "외부 전송" 은 어디로 나가는지 말해 주지 않는다.
+    static func externalSendLabel(kind: PokemonChatProviderKind, language: AppLanguage) -> String {
+        let name = kind.label(language)
+        // 영어만 시제를 고를 수 있어 함정이 있다. "Sent" 는 **이미 나갔다**는 보고라, 누르기 전에
+        // 읽는 동의 문구로는 틀린 주장이다. 한국어 "외부 전송"·일본어 "外部送信" 은 시제 없는 명사다.
+        return L(language).t("외부 전송 → \(name)", "Sends externally → \(name)", "外部送信 → \(name)")
+    }
+
+    /// 자동 선택은 "어느 CLI 인가" 만 대신 정했는데, 예전엔 **피커에서 고르는 행위 자체가 첫 전송의
+    /// 문턱**이었다. 그 문턱이 같이 사라졌으므로 여기서 한 번만 돌려준다 — 도구 격리는 관문으로
+    /// 지키면서 송출은 아무 확인 없이 나가면 균형이 안 맞는다.
+    ///
+    /// 매번 묻지 않는 것이 절반이다. 매번 뜨는 창은 읽지 않고 누르는 창이 된다.
+    static func sendAction(kind: PokemonChatProviderKind, acknowledged: Bool) -> PokemonChatSendAction {
+        acknowledged ? .send : .ask(kind)
+    }
+
+    /// 물어보는 문장도 대상 CLI 를 **이름으로** 말한다. "외부로 보냅니다" 만으로는 어디로 가는지
+    /// 모른 채 승인하게 된다 — 동의 줄과 같은 이유다.
+    static func firstSendConsentQuestion(kind: PokemonChatProviderKind, language: AppLanguage) -> String {
+        let name = kind.label(language)
+        return L(language).t(
+            "이 대화를 이 Mac 의 \(name) 에게 보냅니다. 계속할까요? (처음 한 번만 묻습니다)",
+            "This conversation will be sent to \(name) on this Mac. Continue? (asked only once)",
+            "この会話をこの Mac の \(name) に送ります。続けますか？（最初の一度だけ確認します）")
+    }
+
+    /// 고른 CLI 가 안 깔려 폴백했을 때. **이름을 말해야 한다** — 설정은 검증 CLI 마다 경로 칸이
+    /// 따로라, 이름 없는 "설정에서 경로를 넣으세요" 로는 어느 칸인지 알 수 없다.
+    static func notInstalledMessage(_ kind: PokemonChatProviderKind, _ language: AppLanguage) -> String {
+        let name = kind.label(language)
+        return L(language).t(
+            "\(name) 실행 파일을 찾지 못해 다른 CLI 로 보냅니다. 설정에서 \(name) 경로를 넣으세요.",
+            "Could not find the \(name) executable, so messages go to another CLI. Type the \(name) path in Settings.",
+            "\(name) の実行ファイルが見つからないため別の CLI に送ります。設定で \(name) のパスを入力してください。")
+    }
+
+    /// 보낼 수 없거나 고른 대로 안 나가는 사유를 한 벌로 판정한다. **고른 것(`stored`)과 실제로
+    /// 나갈 곳(`effective`)을 함께 봐야 한다** — 자동 선택이 둘을 갈라놓았기 때문이다.
+    ///
+    /// 순서가 곧 우선순위다. **사용자가 할 수 있는 일이 먼저다** — 차단 사유를 앞에 두면, CLI 를
+    /// 하나도 안 깐 사용자가 "설치하세요" 대신 손쓸 데 없는 격리 설명을 읽는다.
+    ///
+    /// 폴백을 부르는 것은 차단만이 아니다. 고른 CLI 를 **지워도** 조용히 다른 벤더로 나간다 —
+    /// 두 경우 모두 말해야 사용자가 자기 선택이 왜 무시됐는지 안다(피커가 차단 종류를 목록에서
+    /// 지우지 않고 굳이 보여 주는 이유와 같다).
+    static func unavailableMessage(stored: String, effective: PokemonChatProviderKind?,
+                                   language: AppLanguage) -> String? {
+        guard let effective else { return noProviderMessage(language) }
+        guard let chosen = PokemonChatProviderKind(rawValue: stored), chosen != effective else { return nil }
+        return PokemonChatProviderSafety.availability(for: chosen).blockReason?.message(language)
+            ?? notInstalledMessage(chosen, language)
     }
 }
 
@@ -1557,14 +1648,14 @@ enum PokemonChatProviderExecutableResolver {
         return searchDirectories.map { NSString(string: $0).expandingTildeInPath + "/" + name }
     }
 
-    static func executableURL(for kind: PokemonChatProviderKind) -> URL? {
-        executableURL(for: kind,
-                      override: UserDefaults.standard.string(forKey: "pokemonChatExecutablePath.\(kind.rawValue)"),
-                      searchPaths: standardPaths(for: kind))
-    }
-
-    /// 주입 가능한 실체. 탐색 자리를 넓히는 변경이 실제로 그 자리를 밟는지, 실행하는 홈 디렉터리
-    /// 상태에 기대지 않고 시험하기 위해서다.
+    /// 지정 경로는 **인자로만 들어온다.** 여기서 `UserDefaults` 를 직접 읽는 편의 오버로드가 있었는데,
+    /// 그게 읽던 키(`pokemonChatExecutablePath.<종류>`)와 화면·캐시가 쓰는 저장소
+    /// (`AppSettings.chatExecutablePaths`)가 두 벌이라 언제든 어긋날 수 있었다 — 캐시는 한쪽으로
+    /// 키를 만들고 해석은 다른 쪽을 읽는 상태였다. 오버로드를 지워 두 벌이 다시 생기면 컴파일이
+    /// 막히게 한다.
+    ///
+    /// 탐색 자리를 넓히는 변경이 실제로 그 자리를 밟는지, 실행하는 홈 디렉터리 상태에 기대지 않고
+    /// 시험할 수 있는 것도 같은 이유다.
     ///
     /// 쓸 수 없는 override 는 실패가 아니라 폴백이다 — 오래된 지정 하나로 표준 설치분까지 못 쓰게
     /// 되면 사용자는 왜 안 되는지 알 길이 없다.
@@ -1599,24 +1690,34 @@ enum PokemonChatProviderExecutableResolver {
 ///
 /// 키는 **해석에 실제로 쓰이는 입력 전부**다. 종류만 키로 쓰면 설정에서 경로를 고쳐도 옛 결과가
 /// 계속 나온다 — 캐시의 반대편 결함이라 둘 다 테스트로 고정돼 있다.
+///
+/// 보관은 **종류별**이다. 자동 선택(`PokemonChatProviderSelection`)이 검증 CLI 2종의 설치 여부를
+/// 같은 `body` 안에서 함께 물으므로, 자리가 한 칸이면 두 질의가 서로를 밀어내 매번 miss 가 나고
+/// 캐시가 막으려던 비용이 그대로 돌아온다.
 @MainActor
 final class PokemonChatProviderCache {
-    private var key: String?
-    private var resolved: URL?
+    /// ponytail: 항목을 지우지 않는다 — 팝오버가 닫히면 콘텐츠 뷰가 통째로 해제돼 이 캐시도 같이
+    /// 사라지므로 수명이 팝오버 1회다. 대화가 창으로 돌아가 오래 살게 되면 무효화가 필요해진다.
+    private var resolved: [String: URL?] = [:]
     private let lookup: (PokemonChatProviderKind, String?) -> URL?
 
-    init(lookup: @escaping (PokemonChatProviderKind, String?) -> URL? = { kind, _ in
-        PokemonChatProviderExecutableResolver.executableURL(for: kind)
+    /// 기본 해석기는 **키에 쓴 `override` 를 그대로 받아 쓴다.** 인자를 버리고 기본값을 다시 읽으면
+    /// 키를 만든 값과 해석이 본 값이 두 벌이 된다 — 키만 바뀌고 결과는 그대로거나, 해석기가 본 적
+    /// 없는 경로로 만든 항목이 남는다. 지금은 저장 경로가 두 자리에 다 써져 우연히 맞아 있을 뿐이다.
+    init(lookup: @escaping (PokemonChatProviderKind, String?) -> URL? = { kind, override in
+        PokemonChatProviderExecutableResolver.executableURL(
+            for: kind, override: override,
+            searchPaths: PokemonChatProviderExecutableResolver.standardPaths(for: kind))
     }) {
         self.lookup = lookup
     }
 
     func executableURL(for kind: PokemonChatProviderKind, override: String?) -> URL? {
         let key = "\(kind.rawValue)\u{1F}\(override ?? "")"
-        guard key != self.key else { return resolved }
-        self.key = key
-        resolved = lookup(kind, override)
-        return resolved
+        if let cached = resolved[key] { return cached }
+        let url = lookup(kind, override)
+        resolved[key] = url
+        return url
     }
 }
 
