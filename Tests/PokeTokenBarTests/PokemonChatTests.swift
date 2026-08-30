@@ -588,9 +588,58 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(store.draft(for: gone), "")
     }
 
+    /// "생각 중" 은 **그 대화**의 상태다. 전역 카운터를 그대로 읽으면 피카츄에게 보낸 답을
+    /// 기다리는 동안 파이리 대화를 열었을 때, 파이리 기록에 절대 오지 않을 답의 점 세 개가 뜬다.
+    /// 팝오버 이관으로 개체 사이 이동이 두 클릭이 되면서 상시로 밟게 됐다.
+    func testSendingStateIsPerCompanionNotGlobal() async {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let pikachu = UUID(), charmander = UUID()
+        let provider = DeferredReplyProvider()
+        let task = Task { await store.send("안녕", for: pikachu, profile: .fixture, provider: provider) }
+        for _ in 0..<10 where !store.isSending { await Task.yield() }
+
+        XCTAssertTrue(store.isSending(for: pikachu))
+        XCTAssertFalse(store.isSending(for: charmander))
+
+        await provider.resolve(with: "반가워!")
+        _ = await task.value
+        XCTAssertFalse(store.isSending(for: pikachu))
+    }
+
+    /// 실행 파일 해석은 디렉터리 13곳에 파일시스템 질의를 던진다(`searchDirectories`). 뷰 `body` 는
+    /// 키 입력마다 다시 평가되므로 그때마다 해석하면 타이핑이 메인 스레드에서 경로 탐색을 끌고
+    /// 다닌다. 입력(종류·지정 경로)이 그대로면 결과도 그대로다.
+    func testProviderResolutionIsNotRepeatedWhileTheInputsStayTheSame() {
+        var lookups = 0
+        let cache = PokemonChatProviderCache { _, _ in lookups += 1; return nil }
+
+        _ = cache.executableURL(for: .claude, override: nil)
+        _ = cache.executableURL(for: .claude, override: nil)
+        _ = cache.executableURL(for: .claude, override: nil)
+
+        XCTAssertEqual(lookups, 1)
+    }
+
+    /// 캐시가 **안 갱신되면** 설정에서 경로를 고쳐도 대화는 옛 결과를 계속 쓴다 — 캐시의 반대편
+    /// 결함이라 같이 고정한다.
+    func testProviderResolutionRedoesTheLookupWhenTheInputsChange() {
+        var lookups = 0
+        let cache = PokemonChatProviderCache { _, _ in lookups += 1; return nil }
+
+        _ = cache.executableURL(for: .claude, override: nil)
+        _ = cache.executableURL(for: .claude, override: "/usr/local/bin/claude")
+        _ = cache.executableURL(for: .codex, override: "/usr/local/bin/claude")
+
+        XCTAssertEqual(lookups, 3)
+    }
+
+    /// 임시 파일을 만든 테스트가 치우지 않으면 실행마다 tmp 에 고아가 하나씩 쌓인다.
+    /// 여섯 자리가 같은 식을 각자 베껴 쓰고 있어 치우는 자리도 각자였다 — 한 벌로 모은다.
     private func temporaryChatURL() -> URL {
-        FileManager.default.temporaryDirectory
+        let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
     }
 
     private func makeCompanionStore() -> CompanionStore {

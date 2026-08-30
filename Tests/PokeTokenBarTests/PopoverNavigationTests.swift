@@ -87,6 +87,22 @@ final class PopoverNavigationTests: XCTestCase {
         XCTAssertFalse(nav.showDungeon)
         XCTAssertFalse(nav.showOutfit)
     }
+
+    /// 대화 상대가 놓아주기·교환·졸업으로 사라지면 오버레이를 접는다. 안 접으면 이름이 `?` 이고
+    /// 스프라이트가 빈 화면에 전송 버튼만 살아 있고, 보내면 죽은 UUID 로 세션이 새로 생겨
+    /// 다음 `prune` 까지 디스크에 남는다. 여는 시점의 검사만으로는 이 구간을 못 덮는다.
+    func testChatOverlayDropsWhenItsCompanionIsGone() {
+        let nav = PopoverNavigation()
+        let gone = UUID(), stillHere = UUID()
+
+        nav.goToChat(companionID: gone)
+        nav.dropChatIfCompanionIsGone(ownedIDs: [stillHere])
+        XCTAssertNil(nav.chatCompanionID)
+
+        nav.goToChat(companionID: stillHere)
+        nav.dropChatIfCompanionIsGone(ownedIDs: [stillHere])
+        XCTAssertEqual(nav.chatCompanionID, stillHere)
+    }
 }
 
 /// 팝오버 고정은 이제 **둘**이 원한다 — 배틀(일하면서 대전)과 대화(전송 중 왕복).
