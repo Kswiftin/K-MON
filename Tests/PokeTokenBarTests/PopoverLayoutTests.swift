@@ -293,6 +293,37 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertEqual(PokemonChatConsentLabel.contentWidth, 336)
     }
 
+    // MARK: 대화 — 칩 줄
+
+    /// 칩 줄은 **가로 스크롤 한 줄**이다. 개수가 늘어 세로로 감기면 그만큼 메시지 영역·입력칸·
+    /// 승인 카드가 밀린다 — 승인 카드는 안전 경계라 축소 대상이 아니다(PRD 위험표).
+    /// 상태 변경 칩이 붙는 순간 그 높이가 변하는지를 여기서 고정한다.
+    func testActionChipsDoNotMakeTheChipRowTaller() {
+        let questions = ["너의 타입이 뭐야?", "지금 기분은 어때?", "오늘의 도감을 보여 줘",
+                         "배운 기술을 알려 줘", "너는 어떤 포켓몬이야?", "다음 진화는 언제야?"]
+        let bare = renderedHeight(PokemonChatChipRow(actions: [], questions: questions,
+                                                     language: .ko, onTap: { _ in }),
+                                  proposingWidth: PokemonChatConsentLabel.contentWidth)
+        let withActions = renderedHeight(
+            PokemonChatChipRow(actions: [.startFocus, .acceptEvolution, .useRareCandy],
+                               questions: questions, language: .ko, onTap: { _ in }),
+            proposingWidth: PokemonChatConsentLabel.contentWidth)
+
+        XCTAssertEqual(withActions, bare, accuracy: 1, "액션 칩이 칩 줄을 두 줄로 만들었다")
+    }
+
+    /// 대조군이 없으면 위 단언은 "칩이 아예 안 그려져도" 통과한다 — 빈 줄과 찬 줄의 높이가 같다는
+    /// 사실은 칩이 존재할 때만 뜻이 있다.
+    func testTheChipRowActuallyDrawsSomething() {
+        let empty = renderedHeight(PokemonChatChipRow(actions: [], questions: [],
+                                                      language: .ko, onTap: { _ in }),
+                                   proposingWidth: PokemonChatConsentLabel.contentWidth)
+        let filled = renderedHeight(PokemonChatChipRow(actions: [], questions: ["너의 타입이 뭐야?"],
+                                                       language: .ko, onTap: { _ in }),
+                                    proposingWidth: PokemonChatConsentLabel.contentWidth)
+        XCTAssertGreaterThan(filled, empty, "칩 줄이 아무것도 안 그린다")
+    }
+
     /// 같은 부류 스윕: 릴레이 방 목록도 LAN 이 길이를 정한다 — 상한도 페이저도 없으면 팝오버가 잘린다.
     func testEveryRelayRoomLandsOnSomePage() {
         let pageSize = PokeathlonView.roomPageSize

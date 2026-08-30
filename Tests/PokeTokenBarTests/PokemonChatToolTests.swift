@@ -1089,6 +1089,161 @@ final class PokemonChatToolTests: XCTestCase {
         }
     }
 
+    // MARK: 제안 — 지금 성공할 수 있는 일
+    //
+    // 칩은 "무엇을 시킬 수 있는가" 를 화면에서 답한다. 그래서 제안 목록은 **실행 가능성의
+    // 부분집합**이어야 한다 — 조건표가 두 벌이 됐으니, 갈라지는 순간 빨개지는 자리가 필요하다.
+
+    /// **이 절의 핵심 가드.** 제안한 것은 그 상태에서 실행하면 거절당하지 않는다.
+    ///
+    /// 방향은 한쪽만 고정한다: 제안 ⊆ 실행 가능. 반대("실행 가능하면 반드시 제안한다")는 일부러
+    /// 걸지 않는다 — 화면(`FocusTimerView`)이 버튼을 안 그리는 구간까지 대화만 넓게 제안하면
+    /// "화면이 못 하는 일을 대화만 할 수 있다" 부류가 되돌아온다(`already in rest` 결함과 같다).
+    /// 덜 제안하는 건 조용하고, 더 제안하는 건 거짓 약속이다.
+    ///
+    /// 상태마다 실행기를 **새로 만든다** — 실행이 상태를 바꾸므로 한 벌로 돌리면 두 번째 액션이
+    /// 첫 번째가 바꿔 놓은 세계에서 판정된다.
+    func testEverySuggestedActionSurvivesTheExecutorsGuards() async {
+        for (name, build) in Self.suggestionStates {
+            let probe = await build(self)
+            let suggested = probe.toolbox.availableActions(owner: probe.owner)
+            XCTAssertFalse(suggested.isEmpty, "\(name): 제안이 하나도 없어 이 상태는 아무것도 검증하지 않는다")
+
+            for action in suggested {
+                let fresh = await build(self)
+                let result = await fresh.toolbox.run(action.call, owner: fresh.owner)
+                XCTAssertTrue(result.succeeded,
+                              "\(name): \(action) 를 제안해 놓고 실행이 거절했다 — \(result.line)")
+            }
+        }
+    }
+
+    /// 상태마다 무엇이 뜨는지. 위 가드는 "거짓 약속이 없다" 만 지키므로, 칩이 통째로 사라져도
+    /// (`availableActions` 가 늘 빈 배열이어도) 통과한다 — 실제로 제안이 일어나는지는 여기서 본다.
+    func testSuggestionsFollowTheFocusAndAdventureLoop() async {
+        let clock = TestClock()
+        let store = makeCompanionStore(clock: clock)
+        await store.hatch(baseID: 25)
+        let timer = FocusTimer()
+        let toolbox = PokemonChatToolbox(timer: timer, companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        let owner = store.activeMonID!
+
+        XCTAssertEqual(toolbox.availableActions(owner: owner), [.startFocus],
+                       "멈춰 있을 때 제안할 것은 시작뿐이다")
+
+        XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+        XCTAssertEqual(toolbox.availableActions(owner: owner), [.stopFocus],
+                       "집중 중에 시작을 제안하면 실행기가 거절한다")
+
+        clock.advance(25 * 60)
+        timer.stop()
+        XCTAssertEqual(toolbox.availableActions(owner: owner), [.claimAdventure],
+                       "정산을 기다리는 구간에서 보상 받기를 못 가리키면 사용자는 눌러야 할 것을 모른다")
+
+        store.debugAddItem(.rareCandy, 1)
+        XCTAssertEqual(toolbox.availableActions(owner: owner), [.claimAdventure, .useRareCandy],
+                       "가방에 사탕이 있으면 아이템도 제안한다")
+    }
+
+    /// 사탕이 없으면 제안하지 않는다 — "가방에 없다" 는 정직한 실패지만, 화면이 먼저 권해 놓고
+    /// 실패시키는 건 다른 이야기다.
+    func testAnEmptyBagSuggestsNoItem() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertFalse(toolbox.availableActions(owner: store.activeMonID!).contains(.useRareCandy))
+        store.debugAddItem(.rareCandy, 1)
+        XCTAssertTrue(toolbox.availableActions(owner: store.activeMonID!).contains(.useRareCandy))
+    }
+
+    /// 진화 대기는 제안이 된다. 카드가 뜨기를 기다리는 동안 대화가 그 길을 가리킬 수 있어야 한다.
+    func testAPendingEvolutionIsSuggested() async {
+        let store = makeCompanionStore(line: Self.levelGatedLine)
+        await store.hatch(baseID: 40)
+        store.debugAccrueLevelExperience(300_000_000)
+        store.applyUsage(0)
+        XCTAssertNotNil(store.evolutionPrompt, "전제: 프롬프트가 떠야 이 경로를 밟는다")
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertTrue(toolbox.availableActions(owner: store.activeMonID!).contains(.acceptEvolution))
+    }
+
+    /// 박스 개체 대화에는 제안이 없다. 다섯 액션이 전부 "지금 나와 있는 나" 에 작용하므로
+    /// 주인 게이트가 먼저 자른다 — `canRun` 을 재사용하는 한 이 줄은 저절로 참이다.
+    /// (`testToolsThatActOnMeRefuseFromABoxedCompanionsChat` 의 형제다.)
+    func testABoxedCompanionsChatSuggestsNothing() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let boxed = Self.spareMon()
+        store.debugSetBoxedMons([boxed])
+        store.debugAddItem(.rareCandy, 1)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertEqual(toolbox.availableActions(owner: boxed.id), [],
+                       "박스 개체 창이 활성 개체를 움직이는 일을 제안했다")
+        XCTAssertFalse(toolbox.availableActions(owner: store.activeMonID!).isEmpty,
+                       "대조군: 활성 개체 창에서는 제안이 있어야 위 단언이 뜻을 가진다")
+    }
+
+    /// 칩 문구는 사용자가 **읽고 보내는 문장**이다. 마커(`[[tool:...]]`)를 넣으면 사용자가 기계
+    /// 문법을 보내게 되고, 그건 대화를 우회하는 두 번째 실행 경로다.
+    func testActionPhrasesAreHumanSentencesInAllThreeLanguages() {
+        for action in PokemonChatAction.allCases {
+            var seen = Set<String>()
+            for language in [AppLanguage.ko, .en, .ja] {
+                let phrase = action.phrase(language)
+                XCTAssertFalse(phrase.isEmpty, "\(action)/\(language.rawValue): 빈 문구")
+                XCTAssertFalse(phrase.contains("[[tool:"), "\(action)/\(language.rawValue): 마커가 새어 나왔다")
+                seen.insert(phrase)
+            }
+            XCTAssertEqual(seen.count, 3, "\(action): 세 언어 중 둘이 같은 문구다")
+        }
+    }
+
+    /// 제안을 재는 한 판. 상태마다 **다시 만들어야** 하므로(실행이 상태를 바꾼다) 조립을 한 곳에 둔다.
+    private struct ToolProbe {
+        let store: CompanionStore
+        let timer: FocusTimer
+        let toolbox: PokemonChatToolbox
+        let owner: UUID
+    }
+
+    private func probe(line: EvoLine? = nil, baseID: Int = 25,
+                       setUp: @MainActor (CompanionStore, FocusTimer, TestClock) -> Void = { _, _, _ in }
+    ) async -> ToolProbe {
+        let clock = TestClock()
+        let store = makeCompanionStore(line: line, clock: clock)
+        await store.hatch(baseID: baseID)
+        let timer = FocusTimer()
+        setUp(store, timer, clock)
+        return ToolProbe(store: store, timer: timer,
+                         toolbox: PokemonChatToolbox(timer: timer, companion: store,
+                                                     album: makeAlbum(), lookup: Self.emptyLookup),
+                         owner: store.activeMonID!)
+    }
+
+    private static let suggestionStates: [(String, @MainActor (PokemonChatToolTests) async -> ToolProbe)] = [
+        ("멈춰 있음", { await $0.probe() }),
+        ("사탕 보유", { await $0.probe { store, _, _ in store.debugAddItem(.rareCandy, 1) } }),
+        ("집중 중", { await $0.probe { store, timer, _ in
+            XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+        } }),
+        ("모험 정산 대기", { await $0.probe { store, timer, clock in
+            XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+            clock.advance(25 * 60)
+            timer.stop()
+        } }),
+        ("진화 대기", { await $0.probe(line: levelGatedLine, baseID: 40) { store, _, _ in
+            store.debugAccrueLevelExperience(300_000_000)
+            store.applyUsage(0)
+        } }),
+    ]
+
     private static func dexEntry(chain: [Int], types: [PokemonType]? = nil, shiny: Bool = false) -> DexEntry {
         DexEntry(baseID: chain[0], finalID: chain[chain.count - 1], chainOrder: chain,
                  rarity: .common, caughtAt: nil, isShiny: shiny, types: types)
