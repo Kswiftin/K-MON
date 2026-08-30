@@ -113,5 +113,6 @@ Skipping `create-signing-cert.sh` makes `build-app.sh` stop. An ad-hoc signature
 ## Data, privacy & disclaimer
 
 - Progress and cached data are stored in `~/Library/Application Support/PokeTokenBar/`.
-- Battles and Pokéathlon use peer-to-peer connections on the local network. The app fetches Pokémon species, evolution, move, and sprite data from PokéAPI and related static asset hosts; it also checks GitHub for updates.
+- Battles, Pokéathlon, and trades use peer-to-peer connections on the local network. The app fetches Pokémon species, evolution, move, and sprite data from PokéAPI and related static asset hosts; it also checks GitHub for updates.
+- When a trade completes, up to 30 of the outgoing Pokémon's **events** (hatching, battles, evolutions) travel with it. The trade confirmation screen tells you the count first. Conversation memories, handwritten notes, hidden memories, and chat transcripts **stay on your Mac**. Memories are sent only after both sides have committed, so a negotiation that ends in a cancel or a decline sends nothing.
 - The source code is available under the [MIT License](LICENSE). Pokédoro is not affiliated with, endorsed by, sponsored by, or approved by Nintendo, Game Freak, Creatures, or The Pokémon Company. Pokémon names, characters, and imagery belong to their respective rights holders.

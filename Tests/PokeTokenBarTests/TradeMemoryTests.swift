@@ -353,6 +353,14 @@ final class TradeMemoryTests: XCTestCase {
         center.receive(.memories(payload(for: theirs.id, bodies: ["성사 뒤에 도착한 기억"])))
         XCTAssertTrue(store.memoryAlbum.entries(for: theirs.id).contains { $0.body == "성사 뒤에 도착한 기억" },
                       "성사 뒤에 온 추억이 버려지면 수신자는 빈 앨범을 받는다")
+
+        // 애니메이션이 먼저 끝나면 국면은 `.completed` 다. 두 국면을 한 `case` 로 묶어 놓으면
+        // 라인 커버리지는 `.animating` 만 밟고도 초록이라, 늦게 온 프레임이 버려져도 안 보인다.
+        center.finishAnimation()
+        XCTAssertEqual(center.phase, .completed)
+        center.receive(.memories(payload(for: theirs.id, bodies: ["애니메이션 뒤에 도착한 기억"])))
+        XCTAssertTrue(store.memoryAlbum.entries(for: theirs.id).contains { $0.body == "애니메이션 뒤에 도착한 기억" },
+                      "`.completed` 에서 온 프레임도 같은 자리로 들어간다")
     }
 
     /// 성사 뒤 경로도 바인딩 검사를 그대로 거친다 — 여기만 열어 두면 상대가 커밋 뒤에 내 다른
@@ -374,7 +382,11 @@ final class TradeMemoryTests: XCTestCase {
 
         center.receive(.memories(payload(for: bystander.id, bodies: ["남의 앨범에 박히는 줄"])))
         XCTAssertFalse(store.memoryAlbum.entries(for: bystander.id).contains { $0.body == "남의 앨범에 박히는 줄" },
-                       "성사 뒤 경로도 바인딩 검사를 그대로 거쳐야 한다")
+                       "상대가 지목한 ID 로 남의 앨범이 열리면 안 된다")
+        // 방관자 쪽만 보면 안 된다 — 바인딩을 지운 판은 그 줄을 **받은 개체** 앨범에 심고도
+        // 위 단언을 그대로 통과했다. 어긋난 페이로드는 어디에도 안 들어간다.
+        XCTAssertFalse(store.memoryAlbum.entries(for: theirs.id).contains { $0.body == "남의 앨범에 박히는 줄" },
+                       "바인딩이 어긋난 페이로드는 받은 개체에도 적용되지 않는다")
     }
 
     /// 상대가 `.memories` 만 끝없이 밀어도 메인 스레드가 잡히면 안 된다. 형제 프레임은 전부
