@@ -103,7 +103,11 @@ struct SettingsView: View {
     /// "찾지 못함" 을 본 사용자가 다음에 무엇을 눌러야 하는지 알 수 없다.
     @ViewBuilder
     private func chatProviderRow(_ kind: PokemonChatProviderKind, settings: AppSettings) -> some View {
-        let resolved = PokemonChatProviderExecutableResolver.executableURL(for: kind)
+        // 지정 경로는 아래 칸(`chatExecutablePathBinding`)이 읽는 것과 **같은 저장소**에서 온다.
+        // 해석만 다른 곳을 읽으면 이 줄의 초록 체크가 사용자가 방금 지운 경로를 계속 가리킨다.
+        let resolved = PokemonChatProviderExecutableResolver.executableURL(
+            for: kind, override: settings.chatProviderExecutablePath(for: kind),
+            searchPaths: PokemonChatProviderExecutableResolver.standardPaths(for: kind))
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(kind.label(l.lang))

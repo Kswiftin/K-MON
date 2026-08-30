@@ -106,7 +106,10 @@ struct PokemonChatView: View {
                 // 키 윈도우가 되는 순간 팝오버가 닫히고, `popoverDidClose` 가 호스팅 컨트롤러를
                 // 해제해 이 뷰가 통째로 사라진다 — 경로는 저장되는데 사용자는 닫힌 팝오버 앞에
                 // 남는다(같은 함정을 `SettingsView` 가 이미 문서화해 뒀다). 경로 입력은 설정에 있다.
-                Text(unavailableReason).font(.caption2).foregroundStyle(.orange)
+                // 주황은 **막혔다**는 뜻으로만 쓴다. 폴백이 보내 주는 중에도 주황이면, 같은 화면이
+                // "못 씁니다" 와 "Codex 로 나갑니다" 를 동시에 말하게 된다.
+                Text(unavailableReason).font(.caption2)
+                    .foregroundStyle(provider == nil ? Color.orange : Color.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
             }
             Divider()
@@ -175,10 +178,11 @@ struct PokemonChatView: View {
             // 제공자 이름은 원래 여기 라벨로, 헤더에 피커로 — 같은 값이 두 자리를 먹었다.
             // 팝오버 폭(360)에서는 그 중복을 감당할 수 없으므로 **고를 수 있는 쪽만** 남긴다.
             //
-            // 읽기는 **실제로 나갈 곳**, 쓰기는 **사용자의 선택**이다. 자동 선택 결과를 저장하면
-            // 사용자가 고른 적 없는 값이 굳어, 나중에 CLI 를 깔거나 지워도 옛 값이 계속 이긴다.
-            Picker("AI", selection: Binding(get: { effectiveKind?.rawValue ?? "" },
-                                            set: { providerRaw = $0 })) {
+            // 피커는 **사용자의 선택**만 보여 준다. 읽기를 자동 선택 결과로 바꿔 끼우면 쓴 값과 읽는
+            // 값이 달라져, "자동 선택" 은 영영 선택된 적이 없고(늘 폴백 이름이 대신 보인다) 차단된
+            // 저장값은 목록 어디에도 안 뜨면서 배너만 그 이름을 말한다. 어디로 나가는지는 전송
+            // 자리의 동의 줄이 이미 말해 준다 — 이 칸까지 그걸 겸하면 고를 수가 없어진다.
+            Picker("AI", selection: $providerRaw) {
                 // 빈 값은 "안 골랐다" 가 아니라 **자동에 맡긴다** 는 뜻이 됐다. 고른 걸 되돌리는 길.
                 Text(l.t("자동 선택", "Automatic", "自動選択")).tag("")
                 // 차단된 제공자도 보여 준다 — 목록에서 지우면 왜 못 쓰는지 알 길이 없다. 대신

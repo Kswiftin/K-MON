@@ -1489,9 +1489,11 @@ enum PokemonChatProviderSafety {
         }
     }
 
-    static var verifiedKinds: [PokemonChatProviderKind] {
+    /// `let` 이다. 자동 선택이 뷰 `body` 안에서 이걸 읽고 `body` 는 키 입력마다 평가되므로,
+    /// 계산 프로퍼티면 한 글자마다 `allCases` 를 몇 벌씩 다시 거른다. static let 은 지연 초기화라
+    /// 의미는 그대로다.
+    static let verifiedKinds: [PokemonChatProviderKind] =
         PokemonChatProviderKind.allCases.filter { availability(for: $0).isVerified }
-    }
 
     static func arguments(for provider: PokemonChatProviderKind) -> [String]? {
         guard availability(for: provider).isVerified else { return nil }
@@ -1552,19 +1554,31 @@ enum PokemonChatProviderSelection {
         return L(language).t("외부 전송 → \(name)", "Sent externally → \(name)", "外部送信 → \(name)")
     }
 
+    /// 고른 CLI 가 안 깔려 폴백했을 때. **이름을 말해야 한다** — 설정은 검증 CLI 마다 경로 칸이
+    /// 따로라, 이름 없는 "설정에서 경로를 넣으세요" 로는 어느 칸인지 알 수 없다.
+    static func notInstalledMessage(_ kind: PokemonChatProviderKind, _ language: AppLanguage) -> String {
+        let name = kind.label(language)
+        return L(language).t(
+            "\(name) 실행 파일을 찾지 못해 다른 CLI 로 보냅니다. 설정에서 \(name) 경로를 넣으세요.",
+            "Could not find the \(name) executable, so messages go to another CLI. Type the \(name) path in Settings.",
+            "\(name) の実行ファイルが見つからないため別の CLI に送ります。設定で \(name) のパスを入力してください。")
+    }
+
     /// 보낼 수 없거나 고른 대로 안 나가는 사유를 한 벌로 판정한다. **고른 것(`stored`)과 실제로
     /// 나갈 곳(`effective`)을 함께 봐야 한다** — 자동 선택이 둘을 갈라놓았기 때문이다.
     ///
-    /// 차단된 종류를 골라도 폴백이 조용히 다른 CLI 로 보낸다. 이유를 말하지 않으면 사용자는 자기
-    /// 선택이 왜 무시됐는지 모른다(피커가 차단 종류를 목록에서 지우지 않고 굳이 보여 주는 이유).
-    /// `effective == nil` 은 자동 선택이 만든 새 가지다 — 빠뜨리면 이유 없이 비활성인 버튼만 남는다.
+    /// 순서가 곧 우선순위다. **사용자가 할 수 있는 일이 먼저다** — 차단 사유를 앞에 두면, CLI 를
+    /// 하나도 안 깐 사용자가 "설치하세요" 대신 손쓸 데 없는 격리 설명을 읽는다.
+    ///
+    /// 폴백을 부르는 것은 차단만이 아니다. 고른 CLI 를 **지워도** 조용히 다른 벤더로 나간다 —
+    /// 두 경우 모두 말해야 사용자가 자기 선택이 왜 무시됐는지 안다(피커가 차단 종류를 목록에서
+    /// 지우지 않고 굳이 보여 주는 이유와 같다).
     static func unavailableMessage(stored: String, effective: PokemonChatProviderKind?,
                                    language: AppLanguage) -> String? {
-        if let chosen = PokemonChatProviderKind(rawValue: stored),
-           let reason = PokemonChatProviderSafety.availability(for: chosen).blockReason {
-            return reason.message(language)
-        }
-        return effective == nil ? noProviderMessage(language) : nil
+        guard let effective else { return noProviderMessage(language) }
+        guard let chosen = PokemonChatProviderKind(rawValue: stored), chosen != effective else { return nil }
+        return PokemonChatProviderSafety.availability(for: chosen).blockReason?.message(language)
+            ?? notInstalledMessage(chosen, language)
     }
 }
 
@@ -1606,14 +1620,14 @@ enum PokemonChatProviderExecutableResolver {
         return searchDirectories.map { NSString(string: $0).expandingTildeInPath + "/" + name }
     }
 
-    static func executableURL(for kind: PokemonChatProviderKind) -> URL? {
-        executableURL(for: kind,
-                      override: UserDefaults.standard.string(forKey: "pokemonChatExecutablePath.\(kind.rawValue)"),
-                      searchPaths: standardPaths(for: kind))
-    }
-
-    /// 주입 가능한 실체. 탐색 자리를 넓히는 변경이 실제로 그 자리를 밟는지, 실행하는 홈 디렉터리
-    /// 상태에 기대지 않고 시험하기 위해서다.
+    /// 지정 경로는 **인자로만 들어온다.** 여기서 `UserDefaults` 를 직접 읽는 편의 오버로드가 있었는데,
+    /// 그게 읽던 키(`pokemonChatExecutablePath.<종류>`)와 화면·캐시가 쓰는 저장소
+    /// (`AppSettings.chatExecutablePaths`)가 두 벌이라 언제든 어긋날 수 있었다 — 캐시는 한쪽으로
+    /// 키를 만들고 해석은 다른 쪽을 읽는 상태였다. 오버로드를 지워 두 벌이 다시 생기면 컴파일이
+    /// 막히게 한다.
+    ///
+    /// 탐색 자리를 넓히는 변경이 실제로 그 자리를 밟는지, 실행하는 홈 디렉터리 상태에 기대지 않고
+    /// 시험할 수 있는 것도 같은 이유다.
     ///
     /// 쓸 수 없는 override 는 실패가 아니라 폴백이다 — 오래된 지정 하나로 표준 설치분까지 못 쓰게
     /// 되면 사용자는 왜 안 되는지 알 길이 없다.
@@ -1659,8 +1673,13 @@ final class PokemonChatProviderCache {
     private var resolved: [String: URL?] = [:]
     private let lookup: (PokemonChatProviderKind, String?) -> URL?
 
-    init(lookup: @escaping (PokemonChatProviderKind, String?) -> URL? = { kind, _ in
-        PokemonChatProviderExecutableResolver.executableURL(for: kind)
+    /// 기본 해석기는 **키에 쓴 `override` 를 그대로 받아 쓴다.** 인자를 버리고 기본값을 다시 읽으면
+    /// 키를 만든 값과 해석이 본 값이 두 벌이 된다 — 키만 바뀌고 결과는 그대로거나, 해석기가 본 적
+    /// 없는 경로로 만든 항목이 남는다. 지금은 저장 경로가 두 자리에 다 써져 우연히 맞아 있을 뿐이다.
+    init(lookup: @escaping (PokemonChatProviderKind, String?) -> URL? = { kind, override in
+        PokemonChatProviderExecutableResolver.executableURL(
+            for: kind, override: override,
+            searchPaths: PokemonChatProviderExecutableResolver.standardPaths(for: kind))
     }) {
         self.lookup = lookup
     }

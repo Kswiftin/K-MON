@@ -449,12 +449,13 @@ final class PokemonChatTests: XCTestCase {
     /// 트리거 분기: 사용자 설정(경로 override)이 안전 관문을 우회하는 경로. 실존 실행 파일을
     /// 넣어도 차단 제공자는 해석되지 않아야 한다.
     func testBlockedProviderStaysBlockedEvenWithAnExplicitExecutableOverride() {
-        let key = "pokemonChatExecutablePath.opencode"
-        UserDefaults.standard.set("/usr/bin/env", forKey: key)
-        defer { UserDefaults.standard.removeObject(forKey: key) }
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: "/usr/bin/env"),
                       "테스트 전제가 깨졌다 — 실존 실행 파일이어야 우회 시도가 성립한다")
-        XCTAssertNil(PokemonChatProviderExecutableResolver.executableURL(for: .opencode))
+        // 지정 경로를 인자로 넘긴다. 예전엔 `UserDefaults` 에 심고 해석기가 그걸 스스로 읽게 했는데,
+        // 그 두 번째 저장소가 화면·캐시가 쓰는 것과 어긋날 수 있어 지웠다.
+        XCTAssertNil(PokemonChatProviderExecutableResolver.executableURL(
+            for: .opencode, override: "/usr/bin/env",
+            searchPaths: PokemonChatProviderExecutableResolver.standardPaths(for: .opencode)))
     }
 
     /// 라인 커버리지 84% 를 통과하는 동안 `label`·`verifiedKinds`·`blockReason` 는 **한 번도
