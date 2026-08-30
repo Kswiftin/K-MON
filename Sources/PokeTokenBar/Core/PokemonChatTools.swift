@@ -196,6 +196,54 @@ enum PokemonChatToolCall: Equatable, Sendable {
     }
 }
 
+/// 칩으로 **제안**할 수 있는 일. 도구 13개의 부분집합이다 — 전부 나열하면 대화가 메뉴가 되고,
+/// 인자를 골라야 하는 도구(`companion.switch`·`pokedex.lookup`·`item.use` 의 나머지 종류)는
+/// 칩 한 개로 뜻이 정해지지 않는다.
+///
+/// 칩은 **실행하지 않는다.** 누르면 입력칸에 문장이 채워질 뿐이고, 실행 경로는 여전히 하나다 —
+/// 사용자가 전송 → 모델이 마커 → 승인 카드. 칩이 호출을 직접 만들면 승인 게이트의 형제 경로가
+/// 생기고, "대화 세션 중 도구 실행" 이 대화 없이도 올라간다.
+enum PokemonChatAction: CaseIterable, Sendable {
+    case startFocus
+    case stopFocus
+    case claimAdventure
+    case useRareCandy
+    case acceptEvolution
+
+    /// 이 제안이 노리는 호출. 제안 판정과 실행 판정이 **같은 값**을 보게 하는 다리다 —
+    /// `availableActions` 가 주인 게이트를 새로 쓰지 않고 이 호출을 `canRun` 에 넘긴다.
+    var call: PokemonChatToolCall {
+        switch self {
+        // 화면이 제시하는 세 길이 중 첫 번째. 칩을 셋으로 늘리면 칩 줄이 그것만으로 찬다 —
+        // 다른 길이는 사용자가 문장을 고쳐 보내면 파서가 가장 가까운 값으로 접는다.
+        case .startFocus: return .pokedoroStart(minutes: PokemonChatTool.focusMinutes[0])
+        case .stopFocus: return .pokedoroStop
+        case .claimAdventure: return .adventureClaim
+        case .useRareCandy: return .itemUse(kind: .rareCandy)
+        case .acceptEvolution: return .evolutionAccept
+        }
+    }
+
+    /// 입력칸에 채울 **사용자의 문장**. 마커가 아니라 사람 말이다 — 사용자가 무엇을 보내는지 읽고
+    /// 고칠 수 있어야 하고, 마커를 사용자가 보내면 그게 곧 두 번째 실행 경로다.
+    func phrase(_ language: AppLanguage) -> String {
+        let l = L(language)
+        switch self {
+        case .startFocus:
+            let minutes = PokemonChatTool.focusMinutes[0]
+            return l.t("\(minutes)분 집중하자", "Let's focus for \(minutes) minutes", "\(minutes)分集中しよう")
+        case .stopFocus:
+            return l.t("집중을 끝내자", "Let's stop the focus session", "集中を終えよう")
+        case .claimAdventure:
+            return l.t("모험 보상 받아 줘", "Collect the adventure reward", "冒険の報酬を受け取って")
+        case .useRareCandy:
+            return l.t("이상한사탕 하나 써 줘", "Use one Rare Candy", "ふしぎなアメを1つ使って")
+        case .acceptEvolution:
+            return l.t("진화하자", "Let's evolve", "進化しよう")
+        }
+    }
+}
+
 /// 답변 텍스트에서 호출 하나를 꺼낸다. 마커는 **언제나** 본문에서 제거된다 — 인식하지 못한
 /// 마커까지 지우는 이유는, 남겨 두면 사용자가 기계 문법을 읽고 가드가 문장 수를 잘못 세기 때문이다.
 enum PokemonChatToolParser {
@@ -298,6 +346,16 @@ protocol PokemonChatToolRunning {
     /// 호출이 조용히 실행된다.
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool
 
+    /// 지금 이 창에서 **칩으로 제안해도 되는** 일. `canRun`(구조적 불가능)에 상태 준비 여부를 더한다.
+    ///
+    /// `canRun` 에 상태 조건을 넣지 않는 이유는 그쪽 계약이 다르기 때문이다 — 거기에 "가방에
+    /// 사탕이 없다" 를 넣으면 모델이 부탁한 호출이 카드도 없이 조용히 사라진다. 그건 사용자가
+    /// 봐야 하는 정직한 실패다. 반면 **먼저 권해 놓고 실패시키는 건** 거짓 약속이라 여기서 막는다.
+    ///
+    /// 기본 구현을 두지 않는다. 새 실행기가 이걸 빠뜨리면 칩이 조용히 사라지는데, 컴파일이 막는
+    /// 편이 낫다(`run(_:owner:)` 의 owner 와 같은 이유).
+    func availableActions(owner: UUID) -> [PokemonChatAction]
+
     /// `line` 은 모델에게 돌려줄 사실 한 줄(사용자 화면에는 실리지 않으므로 번역하지 않는다).
     /// `succeeded` 는 승인 경로가 거절과 실패를 구분하는 데 쓴다 — 문자열을 뒤져 판정하지 않는다.
     ///
@@ -340,6 +398,28 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
 
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool {
         ownerRefusal(call, owner: owner) == nil
+    }
+
+    func availableActions(owner: UUID) -> [PokemonChatAction] {
+        PokemonChatAction.allCases.filter { canRun($0.call, owner: owner) && isReady($0) }
+    }
+
+    /// 상태가 준비됐는가. `run` 의 가드가 읽는 **바로 그 값**을 읽는다 — 새 조건을 여기서 발명하면
+    /// 조건표가 두 벌이 되고, 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다.
+    ///
+    /// 제안은 실행 가능 조건의 **부분집합**이면 된다. `stopFocus` 가 `run` 의 두 조건
+    /// (`isRunning || activeAdventure != nil`) 중 앞만 보는 게 그 예다 — 뒤쪽만 참인 구간(앱을
+    /// 다시 연 직후, 타이머는 idle 이고 모험만 남은 정산 대기)에서 화면은 취소 버튼을 아예 안
+    /// 그리고 "보상 받기" 만 그린다. 거기서 종료를 권하면 대화만 화면보다 넓어진다.
+    private func isReady(_ action: PokemonChatAction) -> Bool {
+        switch action {
+        case .startFocus: return !timer.isRunning && companion.activeAdventure == nil
+        case .stopFocus: return timer.isRunning
+        case .claimAdventure: return companion.activeAdventure != nil && !companion.isAdventureInProgress
+        // 재고만 보지 않는다 — `useRareCandy` 는 진화 라인이 아직 안 실렸으면 거절한다(기동 직후).
+        case .useRareCandy: return companion.canUseRareCandy
+        case .acceptEvolution: return companion.evolutionPrompt != nil
+        }
     }
 
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {

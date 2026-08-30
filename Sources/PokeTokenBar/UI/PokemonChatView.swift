@@ -203,13 +203,13 @@ struct PokemonChatView: View {
         }
     }
 
+    /// 무엇을 시킬 수 있는지는 **여기서** 답한다. 액션 칩은 실행기가 지금 성공시킬 수 있는 것만
+    /// 오므로 목록이 아니라 상태다 — `FocusTimer`·`CompanionStore` 가 `@Observable` 이라 집중을
+    /// 시작하면 이 줄이 그 자리에서 바뀐다.
     private var questionChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(chips, id: \.self) { chip in
-                    Button(chip) { if chip == dailyDexQuestion { destination = .dailyDex } else { draft.wrappedValue = chip } }.buttonStyle(.bordered).controlSize(.small)
-                }
-            }.padding(.horizontal, 12).padding(.bottom, 8)
+        PokemonChatChipRow(actions: toolbox.availableActions(owner: companionID),
+                           questions: chips, language: profile.language) { phrase in
+            if phrase == dailyDexQuestion { destination = .dailyDex } else { draft.wrappedValue = phrase }
         }
     }
 
@@ -299,6 +299,35 @@ struct PokemonChatView: View {
         var owner = store.chatProfile(for: mon)
         if id == companionID, let identity { owner.apply(identity) }
         return owner
+    }
+}
+
+/// 칩 한 줄. **가로 스크롤이고 절대 감기지 않는다** — 세로로 감기면 그만큼 메시지 영역과 승인
+/// 카드가 밀리고, 승인 카드는 안전 경계라 축소 대상이 아니다.
+///
+/// 뷰로 떼어낸 이유는 레이아웃 테스트가 이 줄만 그려 볼 수 있어야 해서다(`PokemonChatConsentLabel`
+/// 과 같은 이유). 액션 칩은 **누르면 문장이 채워질 뿐** 아무것도 실행하지 않는다.
+struct PokemonChatChipRow: View {
+    let actions: [PokemonChatAction]
+    let questions: [String]
+    let language: AppLanguage
+    let onTap: (String) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                // 상태를 바꾸는 쪽이 앞에 온다. 칠할 때 채워진 배경을 쓰는 건 "이건 무언가를
+                // 일으킨다" 를 질문 칩과 구분하기 위해서다 — 뜻이 다르면 생김새도 달라야 한다.
+                ForEach(actions, id: \.self) { action in
+                    Button(action.phrase(language)) { onTap(action.phrase(language)) }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                }
+                ForEach(questions, id: \.self) { question in
+                    Button(question) { onTap(question) }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+            }.padding(.horizontal, 12).padding(.bottom, 8)
+        }
     }
 }
 

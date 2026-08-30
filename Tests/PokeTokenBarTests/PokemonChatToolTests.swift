@@ -1331,6 +1331,8 @@ private actor ScriptedToolProvider: PokemonChatProviding {
 private final class CountingToolbox: PokemonChatToolRunning {
     private(set) var runCount = 0
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool { true }
+    /// 이 스텁은 루프의 왕복 횟수만 센다 — 제안은 실물 실행기(`PokemonChatToolbox`)에서 검증한다.
+    func availableActions(owner: UUID) -> [PokemonChatAction] { [] }
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         runCount += 1; return ("pokedoro state=idle", true)
     }
@@ -1339,6 +1341,7 @@ private final class CountingToolbox: PokemonChatToolRunning {
 private struct StubToolbox: PokemonChatToolRunning {
     var status = "pokedoro state=idle"
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool { true }
+    func availableActions(owner: UUID) -> [PokemonChatAction] { [] }
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         switch call {
         case .pokedoroStatus: return (status, true)
