@@ -35,6 +35,7 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 - **Gyms and stat stages** — challenge eight type gyms in 3v3. Every first clear pays Star Pieces and one egg, and the Dragon Gym's egg is guaranteed to be uncommon or better. Clearing all eight grants one shiny egg charge. Attack, Defense, Sp. Atk, Sp. Def, Speed, accuracy, and evasion can change during battle; switching resets those stages.
 - **Team battles and turn playback** — LAN battles also use the team and order you choose. Resolved turns play step by step, with playback speed configurable in Settings.
 - **Online battle chat** — 1:1 LAN ranked battles and 2–4 player room battles include session-only chat independent of combat. The latest 50 messages stay in an internal scroll area; chat is disabled while battling a legacy 1:1 peer.
+- **Gym Takeover** — one shared gym on your local network: beat the leader and the gym is yours. The leader fields four defenders, and those four are locked out of training, other battles, and trades. Defend in person or let the AI do it. Each challenger may try once every five minutes, and while a match runs others can only spectate. Both sides are normalized to Lv.50, and a successful defense pays Star Pieces (bonus every third defense, with a daily cap).
 - **Pokéathlon: Change Relay** — practice alone or race with up to four players on a local network. Run with `→`, switch lanes with `↑`/`↓`, avoid obstacles, and change Pokémon with `C`.
 
 ## Trainer & wave run
