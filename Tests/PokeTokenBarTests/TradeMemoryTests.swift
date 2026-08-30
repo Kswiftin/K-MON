@@ -7,25 +7,33 @@ import XCTest
 /// `send()` 는 연결이 없으면 조용히 리턴한다 — 소켓을 안 붙인 테스트에서는 추억이 언제 무엇이
 /// 나가든 아무 단언도 깨지지 않고 커버리지만 초록으로 남는다. 추억 유출은 **전부** 이 경계에서
 /// 일어나므로 순서를 보려면 진짜 소켓이 있어야 한다. (`TradeChatTests` 의 루프백과 같은 모양.)
-@MainActor
-final class TradeWireTap {
-    private(set) var frames: [TradeWireMessage] = []
+/// 콜백은 **전용 큐**에서 돈다. 메인 큐에 걸면 `async` 테스트에서 영영 안 돈다 — 테스트 본문이
+/// `RunLoop.run(until:)` 로 메인 스레드를 잡고 있는 동안 MainActor 작업이 밀리기 때문이다.
+/// 탭이 비어 있으면 "아무것도 안 나갔다" 를 보는 단언이 공허하게 통과하므로, 이 격리가 곧
+/// 그 단언이 무언가를 지킨다는 근거다. 공유 상태는 잠금 하나로 지킨다.
+final class TradeWireTap: @unchecked Sendable {
+    private let lock = NSLock()
+    private let queue = DispatchQueue(label: "trade-wire-tap")
+    private var storedFrames: [TradeWireMessage] = []
+    private var storedPeer: NWConnection?
     private let listener: NWListener
-    private var peer: NWConnection?
 
     init() throws {
         listener = try NWListener(using: .tcp, on: .any)
         listener.newConnectionHandler = { [weak self] connection in
-            connection.start(queue: .main)
-            Task { @MainActor in
-                self?.peer = connection
-                self?.readLength(connection)
-            }
+            guard let self else { return connection.cancel() }
+            connection.start(queue: self.queue)
+            self.lock.withLock { self.storedPeer = connection }
+            self.readLength(connection)
         }
-        listener.start(queue: .main)
+        listener.start(queue: queue)
     }
 
-    /// 리스너가 `.ready` 가 되기 전의 `port` 는 아직 `.any`(0) 다 — 실제로 배정된 값만 돌려준다.
+    var frames: [TradeWireMessage] { lock.withLock { storedFrames } }
+    /// 상대가 붙었다. 이 값을 기다리지 않고 프레임을 밀면 아직 서지 않은 포트로 연결이 나가
+    /// 조용히 사라진다.
+    var peer: NWConnection? { lock.withLock { storedPeer } }
+    /// `.ready` 이전의 `port` 는 아직 `.any`(0) 다 — 실제로 배정된 값만 돌려준다.
     var port: NWEndpoint.Port? { listener.port.flatMap { $0 == .any ? nil : $0 } }
 
     func cancel() { peer?.cancel(); listener.cancel() }
@@ -52,20 +60,19 @@ final class TradeWireTap {
 
     private func readLength(_ connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { [weak self] data, _, _, _ in
-            guard let data, data.count == 4 else { return }
+            guard let self, let data, data.count == 4 else { return }
             let length = Int(data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.bigEndian)
-            Task { @MainActor in self?.readBody(length, on: connection) }
+            self.readBody(length, on: connection)
         }
     }
 
     private func readBody(_ length: Int, on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: length, maximumLength: length) { [weak self] data, _, _, _ in
-            guard let data, data.count == length else { return }
-            let message = try? JSONDecoder().decode(TradeWireMessage.self, from: data)
-            Task { @MainActor in
-                if let message { self?.frames.append(message) }
-                self?.readLength(connection)
+            guard let self, let data, data.count == length else { return }
+            if let message = try? JSONDecoder().decode(TradeWireMessage.self, from: data) {
+                self.lock.withLock { self.storedFrames.append(message) }
             }
+            self.readLength(connection)
         }
     }
 }
@@ -122,7 +129,7 @@ final class TradeMemoryTests: XCTestCase {
     @MainActor
     private func makeTap() throws -> TradeWireTap {
         let tap = try TradeWireTap()
-        addTeardownBlock { Task { @MainActor in tap.cancel() } }
+        addTeardownBlock { tap.cancel() }
         return tap
     }
 
@@ -133,6 +140,9 @@ final class TradeMemoryTests: XCTestCase {
     private func connect(_ center: PokemonTradeCenter, to tap: TradeWireTap) throws {
         let port = try XCTUnwrap(pump(until: { tap.port }), "루프백 리스너가 서지 않았다")
         center.attachForTesting(NWConnection(to: .hostPort(host: "127.0.0.1", port: port), using: .tcp))
+        // 실제로 붙을 때까지 기다린다. 안 기다리면 아직 안 선 소켓에 프레임이 나가 조용히
+        // 사라지고, 전송을 보는 단언이 통째로 무의미해진다(부재 단언은 그대로 통과한다).
+        XCTAssertNotNil(pump(until: { tap.peer }), "루프백 연결이 서지 않았다")
     }
 
     /// 신청자 국면(`.negotiating`, `isInitiator == true`)을 세운다.

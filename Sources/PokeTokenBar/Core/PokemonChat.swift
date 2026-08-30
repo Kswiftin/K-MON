@@ -115,7 +115,6 @@ struct PokemonChatSession: Codable, Sendable, Equatable {
     let companionID: UUID
     private(set) var speciesID: Int
     private(set) var displayName: String
-    var summary: String = ""
     var messages: [PokemonChatMessage] = []
     /// Kept independently from the rolling transcript so relationship milestones survive pruning.
     var lifetimeUserMessageCount: Int = 0
@@ -125,13 +124,15 @@ struct PokemonChatSession: Codable, Sendable, Equatable {
         self.companionID = companionID; self.speciesID = speciesID; self.displayName = displayName
     }
 
-    private enum CodingKeys: String, CodingKey { case companionID, speciesID, displayName, summary, messages, updatedAt, lifetimeUserMessageCount }
+    // `summary` 는 없다. 쓰는 곳이 교환 입양뿐이고 읽는 곳이 앱 어디에도 없었다 — 화면에도
+    // 안 뜨고 `PokemonChatRequest` 로도 안 실려서, 남는 효과는 첫 주인의 통계가 다음 상대에게
+    // 영원히 전파되는 것뿐이었다. 예전 세이브에 남은 키는 아래 명시 키 목록에서 빠져 무시된다.
+    private enum CodingKeys: String, CodingKey { case companionID, speciesID, displayName, messages, updatedAt, lifetimeUserMessageCount }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         companionID = try c.decode(UUID.self, forKey: .companionID)
         speciesID = try c.decode(Int.self, forKey: .speciesID)
         displayName = try c.decode(String.self, forKey: .displayName)
-        summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
         messages = try c.decodeIfPresent([PokemonChatMessage].self, forKey: .messages) ?? []
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
         lifetimeUserMessageCount = try c.decodeIfPresent(Int.self, forKey: .lifetimeUserMessageCount)
@@ -1876,19 +1877,6 @@ final class PokemonChatStore {
     func startNewSession(for companionID: UUID, profile: PokemonChatProfile) {
         sessions[companionID] = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName); save()
     }
-    /// 교환으로 들어온 관계 요약을 새 개체의 세션에 심는다. 메시지는 오지 않으므로 **요약만** 세운다.
-    /// 이미 세션이 있으면 손대지 않는다 — 받은 개체는 방금 만들어진 ID 라 세션이 있을 리 없고,
-    /// 있다면 그건 내가 쌓은 대화다(상대가 덮어쓸 자리가 아니다).
-    func adoptSummary(_ summary: String, for companionID: UUID, profile: PokemonChatProfile) {
-        let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !summary.isEmpty, sessions[companionID] == nil else { return }
-        var session = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID,
-                                         displayName: profile.displayName)
-        session.summary = summary
-        sessions[companionID] = session
-        save()
-    }
-
     func deleteSession(for companionID: UUID) { sessions.removeValue(forKey: companionID); save() }
     func prune(validCompanionIDs: Set<UUID>) { sessions = sessions.filter { validCompanionIDs.contains($0.key) }; save() }
     func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(sessions: sessions)) }
