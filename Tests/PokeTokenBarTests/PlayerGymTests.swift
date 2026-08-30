@@ -135,7 +135,7 @@ final class PlayerGymTests: XCTestCase {
     }
 
     /// 4마리였다가 줄면 **그 시점부터** 다시 기한이 걸린다 — 관장이 된 직후든 나중이든 같은 규칙이다.
-    func testLosingAMemberRestartsTheDeadline() {
+    func testLosingAMemberRestartsTheDeadline() throws {
         let clock = TestClock()
         let s = store(clock)
         let team = leaderWithFullTeam(s)
@@ -143,8 +143,8 @@ final class PlayerGymTests: XCTestCase {
 
         s.setGymDefenseTeam(Array(team.dropLast().map(\.id)))
 
-        let deadline = try? XCTUnwrap(s.gymLeadership?.defenseDeadline)
-        XCTAssertEqual(deadline??.timeIntervalSince(clock.now) ?? 0,
+        let deadline = try XCTUnwrap(s.gymLeadership?.defenseDeadline)
+        XCTAssertEqual(deadline.timeIntervalSince(clock.now),
                        PlayerGym.defenseSetupWindow, accuracy: 1,
                        "줄어든 시점부터 다시 재야 한다")
     }
