@@ -39,7 +39,6 @@ struct PlayerGymView: View {
             // 마감은 화면이 떠 있는 동안에도 지날 수 있다 — 그때 자격이 풀려야 방어팀 잠금도 함께 풀린다.
             if store.isGymLeader, coordinator.setupSecondsRemaining == 0 { coordinator.refresh() }
         }
-        .onChange(of: center.rooms.count) { _, _ in coordinator.markScanned() }
     }
 
     private var header: some View {
@@ -124,8 +123,18 @@ struct PlayerGymView: View {
                            selection: Binding(get: { center.gymPickedTeam },
                                               set: { center.gymPickedTeam = $0 }),
                            limit: PlayerGym.defenseTeamSize)
+            } else if coordinator.isDiscoveryUnavailable {
+                // 탐색이 꺼져 있으면 아무리 기다려도 방이 안 나타난다 — 그걸 "검색 중" 으로
+                // 보여주면 고장으로 읽힌다. 무엇을 켜야 하는지 말해 준다.
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(l.playerGymDiscoveryOff, systemImage: "wifi.slash")
+                        .font(.caption).foregroundStyle(.orange)
+                    Text(l.playerGymDiscoveryOffHint).font(.caption2).foregroundStyle(.secondary)
+                }
             } else if !coordinator.hasScannedOnce {
                 // 빈 목록을 "없음" 으로 읽으면 단일성 정책이 무의미해진다 — 스캔 전에는 열지 못한다.
+                // 이 상태는 `PlayerGymCoordinator.scanWindow` 뒤에 반드시 끝난다(방 개수 변화가
+                // 아니라 시간으로 넘긴다 — 방이 하나도 없으면 개수는 영영 안 바뀐다).
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text(l.playerGymSearching).font(.caption).foregroundStyle(.secondary)

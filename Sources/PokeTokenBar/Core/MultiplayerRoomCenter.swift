@@ -123,6 +123,10 @@ final class MultiplayerRoomCenter {
     var amSpectator: Bool { myParticipant?.role == .spectator }
     var myBet: PokeathlonBet? { pokeathlonPool.bets[myID] }
 
+    /// 방 탐색이 돌고 있나. 꺼져 있으면(설정에서 LAN 배틀을 끈 경우) 아무리 기다려도 방이
+    /// 나타나지 않으므로, 화면이 "검색 중" 대신 그 사실을 말해야 한다.
+    var isBrowsing: Bool { browser != nil }
+
     func startBrowsing() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: Self.parameters())

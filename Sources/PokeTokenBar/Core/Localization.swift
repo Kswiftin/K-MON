@@ -1260,6 +1260,14 @@ struct L {
     var gymDeployedBadge: String { t("체육관 방어 중", "Defending", "ジム防衛中") }
     var playerGymOpen: String { t("체육관 열기", "Open a gym", "ジムを開く") }
     var playerGymSearching: String { t("체육관 검색 중…", "Looking for a gym…", "ジムを検索中…") }
+    var playerGymDiscoveryOff: String {
+        t("근거리 탐색이 꺼져 있습니다.", "Local discovery is off.", "近距離検索がオフです。")
+    }
+    var playerGymDiscoveryOffHint: String {
+        t("설정에서 LAN 배틀 신청 받기를 켜면 체육관을 찾을 수 있습니다.",
+          "Turn on LAN battle invites in Settings to find gyms.",
+          "設定でLANバトルの招待を有効にするとジムを検索できます。")
+    }
     var playerGymAlreadyOpen: String {
         t("이미 열린 체육관이 있습니다. 그곳에 도전하세요.",
           "A gym is already open — challenge it instead.",
