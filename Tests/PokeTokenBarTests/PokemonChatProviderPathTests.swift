@@ -240,6 +240,23 @@ final class PokemonChatProviderPathTests: XCTestCase {
         XCTAssertNil(PokemonChatProviderSelection.effectiveKind(stored: "claude", isInstalled: { _ in false }))
     }
 
+    /// **트리거 재현.** 위의 두 테스트는 후보를 `allCases` 에서 뽑는 구현을 못 잡는다 — 검증 종류가
+    /// 목록 앞자리(`codex, claude, opencode, custom`)에 있어, 검증 CLI 가 하나라도 설치된 상태에서는
+    /// `allCases.first` 와 `verifiedKinds.first` 가 **같은 답**을 내기 때문이다. 결함을 주입해 보고
+    /// 알았다: 관문이 뚫린 채로 그 테스트들이 전부 초록이었다.
+    ///
+    /// 새는 조건은 정확히 하나 — 검증 CLI 는 없고 **차단된 종류만** 잡히는 상태다.
+    func testABlockedCLIIsNeverPickedEvenWhenItIsTheOnlyOneInstalled() {
+        for blocked in [PokemonChatProviderKind.opencode, .custom] {
+            XCTAssertNil(PokemonChatProviderSelection.effectiveKind(
+                stored: "", isInstalled: installed(blocked)),
+                         "검증 CLI 가 없으면 \(blocked.rawValue) 가 있어도 보낼 곳은 없다")
+            XCTAssertNil(PokemonChatProviderSelection.effectiveKind(
+                stored: blocked.rawValue, isInstalled: installed(blocked)),
+                         "고른 것이 그 차단 CLI 여도 마찬가지다")
+        }
+    }
+
     /// 안내 문구는 Core 에 둔다 — 차단 사유(`PokemonChatBlockReason`)와 같은 이유로, 뷰가 문구를
     /// 들면 커버리지 게이트 밖에 남고 세 언어 중 하나가 조용히 빠진다.
     func testTheMissingCLIGuidanceExistsInAllThreeLanguages() {
