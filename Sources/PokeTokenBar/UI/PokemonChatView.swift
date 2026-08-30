@@ -41,29 +41,28 @@ struct PokemonChatView: View {
     private var profile: PokemonChatProfile { var value = baseProfile; if let identity { value.apply(identity) }; return value }
     private var l: L { L(profile.language) }
 
-    private var selectedKind: PokemonChatProviderKind? { PokemonChatProviderKind(rawValue: providerRaw) }
+    /// **고르지 않아도 보낼 수 있다.** 저장된 선택이 없거나 못 쓰게 됐으면 설치된 검증 CLI 중
+    /// 우선순위 첫 번째로 폴백한다. 판정은 Core 한 벌(`PokemonChatProviderSelection`)이다.
+    ///
+    /// `body` 안에서 여러 자리가 읽고 `body` 는 키 입력마다 평가된다 — 캐시를 지나지 않으면
+    /// 한 글자마다 디렉터리 13곳에 파일시스템 질의가 검증 CLI 수만큼 간다.
+    private var effectiveKind: PokemonChatProviderKind? {
+        PokemonChatProviderSelection.effectiveKind(stored: providerRaw) { kind in
+            providerCache.executableURL(for: kind, override: settings.chatProviderExecutablePath(for: kind)) != nil
+        }
+    }
 
-    /// `body` 안에서 두 자리가 읽고 `body` 는 키 입력마다 평가된다 — 캐시를 지나지 않으면
-    /// 한 글자마다 디렉터리 13곳에 파일시스템 질의가 두 벌 간다.
     private var provider: (any PokemonChatProviding)? {
-        guard let kind = selectedKind,
+        guard let kind = effectiveKind,
               let arguments = PokemonChatProviderSafety.arguments(for: kind),
               let executableURL = providerCache.executableURL(
                   for: kind, override: settings.chatProviderExecutablePath(for: kind)) else { return nil }
         return PokemonChatCLIProvider(executableURL: executableURL, arguments: arguments, kind: kind)
     }
 
-    /// 차단(사용자가 할 수 있는 일이 없다)과 실행 파일 미발견(설정에서 경로를 지정하면 된다)은
-    /// 다른 사유다. 한 문장으로 뭉개면 어느 쪽도 안내가 되지 않는다.
     private var unavailableReason: String? {
-        guard let kind = selectedKind, provider == nil else { return nil }
-        if let reason = PokemonChatProviderSafety.availability(for: kind).blockReason {
-            return reason.message(profile.language)
-        }
-        let name = kind.label(profile.language)
-        return l.t("\(name) 실행 파일을 흔한 설치 위치에서 찾지 못했습니다. 설정에서 경로를 넣으세요.",
-                   "Could not find the \(name) executable in the usual install locations. Type its path in Settings.",
-                   "\(name) の実行ファイルが標準の場所で見つかりません。設定でパスを入力してください。")
+        PokemonChatProviderSelection.unavailableMessage(stored: providerRaw, effective: effectiveKind,
+                                                        language: profile.language)
     }
 
     var body: some View {
@@ -140,12 +139,18 @@ struct PokemonChatView: View {
             proposalCard
             if let error = chat.errorMessage { Text(error).font(.caption2).foregroundStyle(.red).padding(.horizontal, 12) }
             Divider()
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField(l.t("메시지를 입력하세요", "Type a message", "メッセージを入力"), text: draft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder).lineLimit(1...4)
-                    .onSubmit(send)
-                Button(action: send) { Image(systemName: "paperplane.fill") }
-                    .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
+            VStack(alignment: .leading, spacing: 6) {
+                // 동의는 이 줄과 아래 버튼이 함께 이룬다 — 어디로 나가는지 읽고 누르는 것.
+                if let effectiveKind {
+                    PokemonChatConsentLabel(kind: effectiveKind, language: profile.language)
+                }
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField(l.t("메시지를 입력하세요", "Type a message", "メッセージを入力"), text: draft, axis: .vertical)
+                        .textFieldStyle(.roundedBorder).lineLimit(1...4)
+                        .onSubmit(send)
+                    Button(action: send) { Image(systemName: "paperplane.fill") }
+                        .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
+                }
             }.padding(12)
         }
     }
@@ -169,8 +174,13 @@ struct PokemonChatView: View {
         HStack(spacing: 6) {
             // 제공자 이름은 원래 여기 라벨로, 헤더에 피커로 — 같은 값이 두 자리를 먹었다.
             // 팝오버 폭(360)에서는 그 중복을 감당할 수 없으므로 **고를 수 있는 쪽만** 남긴다.
-            Picker("AI", selection: $providerRaw) {
-                Text(l.t("AI 선택", "Choose AI", "AI を選択")).tag("")
+            //
+            // 읽기는 **실제로 나갈 곳**, 쓰기는 **사용자의 선택**이다. 자동 선택 결과를 저장하면
+            // 사용자가 고른 적 없는 값이 굳어, 나중에 CLI 를 깔거나 지워도 옛 값이 계속 이긴다.
+            Picker("AI", selection: Binding(get: { effectiveKind?.rawValue ?? "" },
+                                            set: { providerRaw = $0 })) {
+                // 빈 값은 "안 골랐다" 가 아니라 **자동에 맡긴다** 는 뜻이 됐다. 고른 걸 되돌리는 길.
+                Text(l.t("자동 선택", "Automatic", "自動選択")).tag("")
                 // 차단된 제공자도 보여 준다 — 목록에서 지우면 왜 못 쓰는지 알 길이 없다. 대신
                 // 자물쇠를 달고 고를 수 없게 한다(`(disabled)` 라고 *쓰기만* 하면 골라진다).
                 ForEach(PokemonChatProviderKind.allCases, id: \.self) { kind in
@@ -182,13 +192,8 @@ struct PokemonChatView: View {
                     }
                 }
             }.labelsHidden().controlSize(.small).fixedSize()
-            Text(l.t("외부 전송", "Sent externally", "外部送信")).font(.caption2).foregroundStyle(.secondary)
-            // 자물쇠는 실제로 격리된 provider 가 해석됐을 때만 — 상시로 그리면 차단·미선택
-            // 상태에서 없는 보증을 광고한다.
-            if provider != nil {
-                Label(l.t("도구·MCP 격리", "Tools & MCP isolated", "ツール・MCP 隔離"), systemImage: "lock.fill")
-                    .font(.caption2).foregroundStyle(.green)
-            }
+            // "외부 전송" 과 자물쇠는 여기 있었다. 전송 버튼이 곧 동의이므로 **누르는 자리**로
+            // 내렸다(`PokemonChatConsentLabel`) — 대화가 길어지면 화면 맨 위는 시야 밖이다.
             Spacer(minLength: 0)
         }.padding(.horizontal, 12).padding(.vertical, 6)
     }
@@ -253,6 +258,28 @@ struct PokemonChatView: View {
         var owner = store.chatProfile(for: mon)
         if id == companionID, let identity { owner.apply(identity) }
         return owner
+    }
+}
+
+/// 전송 버튼이 곧 동의다 — 그래서 이 줄은 **누르는 자리 바로 위**에 산다. 자동 선택이 "어느
+/// CLI 인가" 를 사용자 손에서 가져갔으므로, 그 답을 여기서 돌려주지 않으면 동의가 사라진다.
+///
+/// 자물쇠는 실제로 격리된 provider 가 해석됐을 때만 그려진다(`kind` 는 검증된 종류만 온다) —
+/// 상시로 그리면 없는 보증을 광고한다.
+struct PokemonChatConsentLabel: View {
+    let kind: PokemonChatProviderKind
+    let language: AppLanguage
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(PokemonChatProviderSelection.externalSendLabel(kind: kind, language: language))
+            Label(L(language).t("도구·MCP 격리", "Tools & MCP isolated", "ツール・MCP 隔離"),
+                  systemImage: "lock.fill")
+                .foregroundStyle(.green)
+            Spacer(minLength: 0)
+        }
+        .font(.caption2).foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -1544,6 +1544,28 @@ enum PokemonChatProviderSelection {
                       "No chat CLI was found on this Mac. Type its path in Settings.",
                       "会話用 CLI が見つかりません。設定でパスを入力してください。")
     }
+
+    /// **전송 버튼이 곧 동의다.** 자동 선택이 "어느 CLI 인가" 를 사용자 손에서 가져갔으므로, 그
+    /// 답을 누르는 자리에서 돌려준다 — 이름 없는 "외부 전송" 은 어디로 나가는지 말해 주지 않는다.
+    static func externalSendLabel(kind: PokemonChatProviderKind, language: AppLanguage) -> String {
+        let name = kind.label(language)
+        return L(language).t("외부 전송 → \(name)", "Sent externally → \(name)", "外部送信 → \(name)")
+    }
+
+    /// 보낼 수 없거나 고른 대로 안 나가는 사유를 한 벌로 판정한다. **고른 것(`stored`)과 실제로
+    /// 나갈 곳(`effective`)을 함께 봐야 한다** — 자동 선택이 둘을 갈라놓았기 때문이다.
+    ///
+    /// 차단된 종류를 골라도 폴백이 조용히 다른 CLI 로 보낸다. 이유를 말하지 않으면 사용자는 자기
+    /// 선택이 왜 무시됐는지 모른다(피커가 차단 종류를 목록에서 지우지 않고 굳이 보여 주는 이유).
+    /// `effective == nil` 은 자동 선택이 만든 새 가지다 — 빠뜨리면 이유 없이 비활성인 버튼만 남는다.
+    static func unavailableMessage(stored: String, effective: PokemonChatProviderKind?,
+                                   language: AppLanguage) -> String? {
+        if let chosen = PokemonChatProviderKind(rawValue: stored),
+           let reason = PokemonChatProviderSafety.availability(for: chosen).blockReason {
+            return reason.message(language)
+        }
+        return effective == nil ? noProviderMessage(language) : nil
+    }
 }
 
 /// Resolves only an explicit, executable file.  GUI applications must not inherit a shell PATH.
