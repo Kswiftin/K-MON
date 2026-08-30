@@ -33,6 +33,45 @@ enum PlayerGym {
     /// (`RUN`/`QUIZ`/`TOUR`/`BATTLE` 과 같은 관례).
     static let roomNamePrefix = "GYM"
 
+    // MARK: 보상 — **방어에만** 준다
+
+    /// 방어 성공 1회.
+    ///
+    /// **점령에는 주지 않는다.** 관장이 바뀌면 쿨다운 원장이 비워지므로, 둘이 번갈아 뺏으면 5분
+    /// 제한이 한 번도 걸리지 않는다(배틀 시간만이 제약이라 시간당 열 번 넘게 왕복한다).
+    /// 점령에 값을 붙이는 순간 그 왕복이 그대로 파밍이 된다 — 0 이면 서로 져 줘도 아무도 방어
+    /// 성공이 없어 무의미해진다. 점령 유인은 따로 필요 없다: 관장이 되어야 방어 보상을 받는다.
+    ///
+    /// 방어 쪽에 싣는 또 다른 이유는 균형이다. 방어팀 넷은 관전으로 다 노출되고, 육성·다른
+    /// 배틀에서 잠기고, AI 모드는 교체를 판단하지 못한다 — 방어가 불리하다.
+    ///
+    /// 1,000 인 근거는 **능동 플레이 대비**다. 해안 모험(2시간, 7,200)은 누르고 방치하면 끝이지만
+    /// 방어 일곱 번은 일곱 판을 연달아 이겨야 하고(한 판 3~5분), 한 번 지면 자리까지 잃는다.
+    static let defenseReward = 1_000
+
+    /// 이만큼 연속으로 지키면 보너스. 자리를 잃으면 0 부터 다시 센다.
+    static let defenseStreakLength = 3
+    static let defenseStreakBonus = 1_000
+
+    /// 하루에 방어로 벌 수 있는 상한. **짜고 지는** 반대 방향 파밍을 막는 마지막 방어선이다 —
+    /// 도전자가 일부러 져 주면 한 판이 1분도 안 걸려, 둘이 번갈아 도전하면 시간당 스무 번을 넘긴다.
+    ///
+    /// 회당 금액과 역할이 다르다는 점이 중요하다: **회당은 정직한 플레이의 체감**을 정하고,
+    /// **파밍을 막는 것은 이 상한**이다. 그래서 회당을 올릴수록 이 값이 더 중요해진다.
+    ///
+    /// 1,000×6 + 1,000×2(3·6연승) = 8,000 이라 **여섯 번 지키면 상한**이다. 해안 모험 한 번보다
+    /// 조금 위인데, 여섯 판을 연달아 이긴 값으로는 타당하다. 관장이 자주 바뀌는 판에서 하루
+    /// 두세 번이 현실적이라 실수령은 2,000~3,000 — 던전(1,000)과 해안 모험(7,200) 사이다.
+    static let dailyDefenseRewardCap = 8_000
+
+    /// 이번 방어로 받을 금액. 상한을 넘는 만큼은 잘라 낸다.
+    static func defensePayout(consecutiveDefenses: Int, earnedToday: Int) -> Int {
+        let streakBonus = consecutiveDefenses > 0 && consecutiveDefenses % defenseStreakLength == 0
+            ? defenseStreakBonus : 0
+        let raw = defenseReward + streakBonus
+        return max(0, min(raw, dailyDefenseRewardCap - earnedToday))
+    }
+
     /// 이 이름이 공유 체육관 방인가.
     static func isGymRoomName(_ name: String) -> Bool { name.hasPrefix("\(roomNamePrefix) ·") }
 

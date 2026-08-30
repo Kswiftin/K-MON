@@ -928,6 +928,9 @@ struct PlayerGymLeadership: Codable, Sendable, Equatable {
     var challengeCooldowns: [UUID: Date] = [:]
     /// 관장이 직접 두지 않고 AI 에게 맡기는가. AI 도 관장 기기에서 도므로 앱이 켜져 있어야 한다.
     var usesAI = false
+    /// 연속 방어 성공 횟수. `PlayerGym.defenseStreakLength` 마다 보너스가 붙는다.
+    /// **자리를 잃으면 0 부터 다시 센다** — 이 값이 자격과 함께 사라지는 것이 그 규칙이다.
+    var consecutiveDefenses = 0
     /// 방어팀이 정원 미만인 동안의 세팅 마감. 넘기면 자격을 잃는다 — 이게 없으면 이기고 세팅을
     /// 안 한 사람이 체육관을 무한 점유한다. 정원을 채우면 nil 로 지운다.
     ///
@@ -979,6 +982,11 @@ struct CompanionState: Codable, Sendable {
     var battleRepresentativeID: UUID?
     /// 공유 체육관 관장 자격. nil = 관장이 아니다.
     var gymLeadership: PlayerGymLeadership?
+    /// 체육관 방어 보상의 **일일 원장**. 관장 자격(`gymLeadership`) 안이 아니라 여기 두는 이유가
+    /// 전부다 — 자격은 퇴위·패배로 사라지므로, 그 안에 넣으면 **퇴위했다 다시 잡는 것만으로
+    /// 하루 상한이 리셋된다.** 자격과 무관하게 이 기기의 오늘 지급액을 센다.
+    var gymDefenseRewardDate = ""
+    var gymDefenseRewardToday = 0
     // 첫 파트너를 골랐는지 — false면 알이 아니라 스타터 선택 화면으로 시작(맨 처음 1회).
     // 졸업 후 새 알부터는 true 라 기존 알/부화 루프로 돌아간다.
     var starterChosen = false
@@ -1067,6 +1075,8 @@ struct CompanionState: Codable, Sendable {
         trainerName        = c.lenient(String.self, forKey: .trainerName, default: "")
         battleRepresentativeID = c.lenientOptional(UUID.self, forKey: .battleRepresentativeID)
         gymLeadership      = c.lenientOptional(PlayerGymLeadership.self, forKey: .gymLeadership)
+        gymDefenseRewardDate = c.lenient(String.self, forKey: .gymDefenseRewardDate, default: "")
+        gymDefenseRewardToday = c.lenient(Int.self, forKey: .gymDefenseRewardToday, default: 0)
         starterChosen      = c.lenient(Bool.self, forKey: .starterChosen, default: false)
         starterCandidates  = c.lenient([Int].self, forKey: .starterCandidates, default: [])
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.

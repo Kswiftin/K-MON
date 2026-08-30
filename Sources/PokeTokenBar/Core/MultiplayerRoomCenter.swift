@@ -85,6 +85,8 @@ final class MultiplayerRoomCenter {
     private(set) var gymRejection: GymChallengeRejection?
     /// 배틀 중 관장이 사라졌다 — 도전자에게 "이어받기"를 제안하는 신호.
     private(set) var gymLeaderAbandonedMatch = false
+    /// 직전 방어로 받은 별의조각. 0 이면 하루 상한에 걸린 것이다(지키지 못한 것이 아니다).
+    private(set) var lastGymDefensePayout: Int?
     /// 체육관 방을 연 직후 호출된다. 동시 개설 경합 확인을 이 훅으로 건다(화면이 붙인다).
     var onGymRoomOpened: (() -> Void)?
     /// 관장 자리를 넘겨받았다 — 화면이 자기 세이브에 자격을 쓰도록 알린다.
@@ -551,7 +553,12 @@ final class MultiplayerRoomCenter {
     /// 판을 닫는다. 관장이 이겼으면 쿨다운만 적고, 졌으면 **자리를 넘긴다.**
     private func concludeGymMatch(winnerID: UUID, challengerID: UUID) {
         companion.recordGymChallengeFinished(challengerID: challengerID)
-        guard winnerID == challengerID else { gymChallengerLineup = nil; return }
+        guard winnerID == challengerID else {
+            // 지켰다. 보상은 **방어에만** 나간다 — 점령에 붙이면 왕복 파밍이 된다.
+            lastGymDefensePayout = companion.recordGymDefenseSuccess()
+            gymChallengerLineup = nil
+            return
+        }
         if let gymID = companion.gymLeadership?.gymID,
            let connection = guestConnections[challengerID] {
             send(.gymHandoff(gymID: gymID), over: connection)
@@ -854,7 +861,7 @@ final class MultiplayerRoomCenter {
         tournamentState = nil; tournamentTeams.removeAll(); tournamentBracket = nil
         tournamentMatch = nil; tournamentRewarded = false
         gymMatch = nil; gymEngine = nil; gymChallengerLineup = nil; gymRejection = nil
-        gymLeaderAbandonedMatch = false
+        gymLeaderAbandonedMatch = false; lastGymDefensePayout = nil
         // `gymPickedTeam` 은 남긴다 — 방을 떠나도 "누구를 데려갈지"는 사용자의 설정이라
         // 다음 도전 때 다시 고르게 하면 성가시다(`tournamentPickedTeam` 과 같은 취급).
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false

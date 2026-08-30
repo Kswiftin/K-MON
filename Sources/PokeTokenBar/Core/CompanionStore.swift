@@ -1948,6 +1948,37 @@ final class CompanionStore {
         save()
     }
 
+    /// 오늘 방어로 이미 받은 금액. 날짜가 바뀌었으면 0 이다(자정 타이머 없이 키 비교로 넘긴다 —
+    /// `DungeonProgress.roll(dayKey:)` 과 같은 방식).
+    var gymDefenseEarnedToday: Int {
+        state.gymDefenseRewardDate == Self.dayKey(clock()) ? state.gymDefenseRewardToday : 0
+    }
+
+    var gymDefenseRewardRemainingToday: Int {
+        max(0, PlayerGym.dailyDefenseRewardCap - gymDefenseEarnedToday)
+    }
+
+    /// 방어에 성공했다 — 연승을 올리고 보상을 지급한다. **점령에는 주지 않는다**(그쪽에 값을
+    /// 붙이면 둘이 번갈아 뺏는 왕복이 그대로 파밍이 된다).
+    ///
+    /// 지급액이 0 이어도 연승은 오른다 — 상한에 걸린 것이지 지키지 못한 것이 아니다.
+    @discardableResult
+    func recordGymDefenseSuccess() -> Int {
+        guard var leadership = state.gymLeadership else { return 0 }
+        leadership.consecutiveDefenses += 1
+        state.gymLeadership = leadership
+
+        let payout = PlayerGym.defensePayout(consecutiveDefenses: leadership.consecutiveDefenses,
+                                             earnedToday: gymDefenseEarnedToday)
+        let today = Self.dayKey(clock())
+        // 날짜가 바뀌었으면 원장을 갈아 끼운다. 같은 날이면 누적.
+        state.gymDefenseRewardToday = (state.gymDefenseRewardDate == today ? state.gymDefenseRewardToday : 0) + payout
+        state.gymDefenseRewardDate = today
+        state.starPieces += payout
+        save()
+        return payout
+    }
+
     /// 도전이 **끝난** 시각을 적는다. 시작 시각으로 재면 긴 배틀 뒤 곧바로 재도전이 된다.
     func recordGymChallengeFinished(challengerID: UUID) {
         guard var leadership = state.gymLeadership else { return }

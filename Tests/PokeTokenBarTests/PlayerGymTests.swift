@@ -200,6 +200,120 @@ final class PlayerGymTests: XCTestCase {
                       "승계로 원장이 넘어오면 관장 교체가 제한 우회 수단이 된다")
     }
 
+    // MARK: 보상 — 방어에만, 하루 상한 안에서
+
+    func testDefendingPaysAndBuildsAStreakBonus() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+        let before = s.state.starPieces
+
+        // 1·2회는 기본만, 3회째에 연승 보너스가 붙는다.
+        XCTAssertEqual(s.recordGymDefenseSuccess(), PlayerGym.defenseReward)
+        XCTAssertEqual(s.recordGymDefenseSuccess(), PlayerGym.defenseReward)
+        XCTAssertEqual(s.recordGymDefenseSuccess(),
+                       PlayerGym.defenseReward + PlayerGym.defenseStreakBonus)
+        XCTAssertEqual(s.state.starPieces - before,
+                       PlayerGym.defenseReward * 3 + PlayerGym.defenseStreakBonus)
+        XCTAssertEqual(s.gymLeadership?.consecutiveDefenses, 3)
+    }
+
+    /// 여섯 번 지키면 하루 상한이다 — 그 뒤로는 이겨도 0 이 나온다(연승은 계속 오른다).
+    func testTheDailyCapStopsPayingAfterSixDefenses() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+        let before = s.state.starPieces
+
+        for _ in 0..<6 { s.recordGymDefenseSuccess() }
+        XCTAssertEqual(s.state.starPieces - before, PlayerGym.dailyDefenseRewardCap)
+
+        XCTAssertEqual(s.recordGymDefenseSuccess(), 0, "상한을 넘겨 지급하면 안 된다")
+        XCTAssertEqual(s.state.starPieces - before, PlayerGym.dailyDefenseRewardCap)
+        XCTAssertEqual(s.gymLeadership?.consecutiveDefenses, 7,
+                       "상한에 걸린 것이지 못 지킨 것이 아니다 — 연승은 이어진다")
+    }
+
+    /// **핵심 구멍**: 일일 원장을 관장 자격 안에 두면 퇴위했다 다시 잡는 것만으로 상한이 리셋된다.
+    /// 그래서 원장은 `CompanionState` 에 직접 있다.
+    func testResigningAndRetakingDoesNotResetTheDailyCap() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+        for _ in 0..<6 { s.recordGymDefenseSuccess() }
+        let afterCap = s.state.starPieces
+
+        s.resignGymLeadership()
+        _ = leaderWithFullTeam(s)
+
+        XCTAssertEqual(s.recordGymDefenseSuccess(), 0, "퇴위·재점령으로 상한이 되살아나면 무한 지급이다")
+        XCTAssertEqual(s.state.starPieces, afterCap)
+        XCTAssertEqual(s.gymLeadership?.consecutiveDefenses, 1, "연승은 자리를 잃으면 0 부터다")
+    }
+
+    func testTheCapResetsOnTheNextDay() {
+        let clock = TestClock()
+        let s = store(clock)
+        _ = leaderWithFullTeam(s)
+        for _ in 0..<6 { s.recordGymDefenseSuccess() }
+        XCTAssertEqual(s.gymDefenseRewardRemainingToday, 0)
+
+        clock.advance(24 * 60 * 60)
+
+        XCTAssertEqual(s.gymDefenseEarnedToday, 0, "날짜가 바뀌면 원장이 새로 시작한다")
+        XCTAssertGreaterThan(s.recordGymDefenseSuccess(), 0)
+    }
+
+    /// 점령에는 보상이 없다 — 관장이 바뀌면 쿨다운이 초기화되므로, 점령에 값을 붙이면 둘이
+    /// 번갈아 뺏는 왕복이 그대로 파밍이 된다.
+    func testTakingTheGymPaysNothing() {
+        let s = store()
+        let before = s.state.starPieces
+        _ = leaderWithFullTeam(s)
+        XCTAssertEqual(s.state.starPieces, before, "점령 자체로는 한 푼도 나가지 않는다")
+    }
+
+    /// 세이브를 주고받아 하루 상한을 되살리는 길을 막는다 — 같은 날이면 **많이 받은 쪽**이 남는다.
+    func testMergingLedgersKeepsTheLargerAmountOnTheSameDay() {
+        let merged = SaveTransfer.mergedGymDefenseLedger(
+            imported: (date: "2026-08-31", amount: 1_000),
+            current: (date: "2026-08-31", amount: 6_000))
+        XCTAssertEqual(merged.0, "2026-08-31")
+        XCTAssertEqual(merged.1, 6_000, "적은 쪽을 쓰면 기기를 옮기는 것만으로 상한이 되살아난다")
+
+        let newer = SaveTransfer.mergedGymDefenseLedger(
+            imported: (date: "2026-09-01", amount: 500),
+            current: (date: "2026-08-31", amount: 8_000))
+        XCTAssertEqual(newer.0, "2026-09-01", "다른 날이면 더 최근 쪽을 쓴다")
+        XCTAssertEqual(newer.1, 500)
+    }
+
+    /// 손편집으로 오늘 지급액을 음수로 만들면 상한이 그만큼 늘어난다.
+    func testSanitizeClampsTheDailyLedger() {
+        var state = CompanionState()
+        state.gymDefenseRewardDate = "2026-08-31"
+        state.gymDefenseRewardToday = -50_000
+        XCTAssertEqual(SaveTransfer.sanitized(state, origin: .importedFile).gymDefenseRewardToday, 0)
+
+        state.gymDefenseRewardToday = 999_999
+        XCTAssertEqual(SaveTransfer.sanitized(state, origin: .importedFile).gymDefenseRewardToday,
+                       PlayerGym.dailyDefenseRewardCap)
+    }
+
+    /// 원장은 재화 멱등 가드라 서명 대상이다. 다만 **값이 없던 세이브의 canonical 은 그대로**여야
+    /// 정상 세이브가 조작으로 잡히지 않는다(조건부 append 규칙).
+    func testTheLedgerIsSignedButAbsentValuesDoNotChangeOldSignatures() {
+        let empty = CompanionState()
+        var earned = CompanionState()
+        earned.gymDefenseRewardDate = "2026-08-31"
+        earned.gymDefenseRewardToday = 3_000
+
+        XCTAssertFalse(SaveTransfer.isTampered(SaveTransfer.signed(empty)))
+        XCTAssertFalse(SaveTransfer.isTampered(SaveTransfer.signed(earned)))
+
+        // 서명 후 원장만 손대면 조작으로 잡혀야 한다.
+        var forged = SaveTransfer.signed(earned)
+        forged.gymDefenseRewardToday = 0
+        XCTAssertTrue(SaveTransfer.isTampered(forged), "상한을 되돌리는 손편집이 통과하면 안 된다")
+    }
+
     // MARK: 세이브
 
     func testLeadershipSurvivesAnEncodeDecodeRoundTrip() throws {
