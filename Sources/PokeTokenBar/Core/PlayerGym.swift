@@ -36,6 +36,11 @@ enum PlayerGym {
     /// 이 이름이 공유 체육관 방인가.
     static func isGymRoomName(_ name: String) -> Bool { name.hasPrefix("\(roomNamePrefix) ·") }
 
+    /// Bonjour 서비스 이름 상한. 프로토콜이 정한 값이라 넘기면 광고가 아예 안 뜬다 —
+    /// 한국어 이름은 글자당 3바이트라 20자면 60바이트다. 넘칠 땐 **이름을 자른다**(재임 시각과
+    /// 식별자는 자르면 뜻을 잃는다).
+    static let maxServiceNameBytes = 63
+
     /// 방어팀이 정원 미만이 된 시점에서 계산한 마감. 정원을 채웠으면 마감이 없다(nil).
     static func setupDeadline(defenseCount: Int, now: Date) -> Date? {
         defenseCount >= defenseTeamSize ? nil : now.addingTimeInterval(defenseSetupWindow)
@@ -53,10 +58,56 @@ enum PlayerGym {
         return max(0, challengeCooldown - now.timeIntervalSince(lastFinishedAt))
     }
 
+    /// 재임 기간을 분으로. 표시 단위가 분이라 여기서 잘라 두면 화면이 매초 다시 그려도 값이 안 튄다.
+    static func tenureMinutes(since: Date, now: Date) -> Int {
+        max(0, Int(now.timeIntervalSince(since) / 60))
+    }
+
     /// 체육관이 둘 보일 때 **어느 쪽이 남는가.** 두 기기가 같은 답을 내야 하므로 발견 시각처럼
     /// 기기마다 다른 값을 쓰지 않는다 — 그러면 둘 다 닫거나 둘 다 남는다.
     static func survivor(_ one: UUID, _ other: UUID) -> UUID {
         one.uuidString < other.uuidString ? one : other
+    }
+}
+
+/// 체육관 방 이름에 실어 나르는 정보 — **관장 이름과 재임 시작 시각**.
+///
+/// 방 광고(`_kmonroom._tcp`)에는 TXT 레코드가 없어서(리스너·브라우저 어느 쪽도 요청하지 않는다)
+/// 이름 문자열이 유일한 통로다. 그래서 목록에서 "누가 몇 분째 지키고 있는지"를 **접속하지 않고**
+/// 보려면 여기 실어야 한다.
+///
+/// 형식: `GYM · <재임시작 base36> · <관장이름>#<식별자앞6>`
+///
+/// 재임 시각을 **이름보다 앞에** 두는 이유는 길이 때문이다. 상한을 넘으면 이름을 자르는데,
+/// 뒤에 있으면 잘려 나가 뜻을 잃는다. 식별자가 맨 끝인 것은 기존 파서(`split("#").last`)와
+/// 내 방 판별(`name.contains(myIDTag)`)이 그 자리를 보기 때문이다.
+struct PlayerGymRoomName: Equatable {
+    let heldSince: Date
+    let leaderName: String
+    let idTag: String
+
+    static func make(leaderName: String, idTag: String, heldSince: Date) -> String {
+        let stamp = String(Int(heldSince.timeIntervalSince1970), radix: 36)
+        let fixed = "\(PlayerGym.roomNamePrefix) · \(stamp) · #\(idTag)"
+        let budget = PlayerGym.maxServiceNameBytes - fixed.utf8.count
+        var name = leaderName
+        while name.utf8.count > max(0, budget), !name.isEmpty { name.removeLast() }
+        return "\(PlayerGym.roomNamePrefix) · \(stamp) · \(name)#\(idTag)"
+    }
+
+    /// 옛 형식(`GYM · 이름#식별자`)도 읽는다 — 재임 시각이 없으면 nil 이라 화면이 시간을 생략한다.
+    static func parse(_ name: String) -> PlayerGymRoomName? {
+        guard PlayerGym.isGymRoomName(name) else { return nil }
+        let body = name.dropFirst("\(PlayerGym.roomNamePrefix) · ".count)
+        guard let hash = body.lastIndex(of: "#") else { return nil }
+        let idTag = String(body[body.index(after: hash)...])
+        let head = body[..<hash]
+        guard let separator = head.range(of: " · ") else { return nil }
+        let stamp = String(head[..<separator.lowerBound])
+        guard let seconds = Int(stamp, radix: 36) else { return nil }
+        return PlayerGymRoomName(heldSince: Date(timeIntervalSince1970: TimeInterval(seconds)),
+                                 leaderName: String(head[separator.upperBound...]),
+                                 idTag: idTag)
     }
 }
 

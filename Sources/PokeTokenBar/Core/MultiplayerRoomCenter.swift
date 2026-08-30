@@ -874,8 +874,18 @@ final class MultiplayerRoomCenter {
         case .gym: prefix = PlayerGym.roomNamePrefix
         default: prefix = "BATTLE"
         }
-        listener.service = NWListener.Service(name: "\(prefix) · \(trainerName)#\(String(myID.uuidString.prefix(6)))",
-                                              type: Self.serviceType)
+        // 체육관만 이름에 재임 시작 시각을 함께 싣는다 — 방 광고에 TXT 가 없어, 목록에서
+        // "누가 몇 분째 지키는지"를 접속 없이 보여줄 통로가 이름뿐이다.
+        let idTag = String(myID.uuidString.prefix(6))
+        let serviceName: String
+        if lobby?.activity == .gym {
+            serviceName = PlayerGymRoomName.make(
+                leaderName: trainerName, idTag: idTag,
+                heldSince: companion.gymLeadership?.heldSince ?? Date())
+        } else {
+            serviceName = "\(prefix) · \(trainerName)#\(idTag)"
+        }
+        listener.service = NWListener.Service(name: serviceName, type: Self.serviceType)
         listener.newConnectionHandler = { [weak self] connection in
             Task { @MainActor in self?.acceptGuest(connection) }
         }

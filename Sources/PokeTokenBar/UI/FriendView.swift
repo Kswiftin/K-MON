@@ -66,6 +66,22 @@ struct FriendView: View {
         return false
     }
 
+    /// "현우 — 25분째 유지중". 내가 관장이면 내 세이브에서, 아니면 **방 이름에 실린 값**에서 읽는다
+    /// (방 광고에 TXT 가 없어 접속하지 않고 알 수 있는 통로가 이름뿐이다).
+    /// 열린 체육관이 없으면 nil — 그땐 카드가 규칙 설명을 그린다.
+    private var gymStatusLine: String? {
+        if let held = store.gymLeadership?.heldSince {
+            return store.l.playerGymTenure(
+                store.state.trainerName,
+                store.l.playerGymDuration(minutes: PlayerGym.tenureMinutes(since: held, now: Date())))
+        }
+        guard let room = battleCenter.multiplayer.visibleGymRoom,
+              let parsed = PlayerGymRoomName.parse(room.name) else { return nil }
+        return store.l.playerGymTenure(
+            parsed.leaderName,
+            store.l.playerGymDuration(minutes: PlayerGym.tenureMinutes(since: parsed.heldSince, now: Date())))
+    }
+
     private var privateMessageCard: some View {
         VStack(spacing: 14) {
             Image(systemName: "envelope.badge.fill").font(.system(size: 42)).foregroundStyle(.blue)
@@ -109,6 +125,23 @@ struct FriendView: View {
             .pickerStyle(.segmented).labelsHidden()
 
             Button {
+                destination = .gym
+            } label: {
+                HStack {
+                    Image(systemName: "building.columns.fill").foregroundStyle(.purple)
+                    VStack(alignment: .leading) {
+                        Text(store.l.playerGymTitle).font(.headline)
+                        // 열린 체육관이 있으면 "누가 몇 분째 지키는지"를 대신 보여준다 —
+                        // 규칙 설명보다 지금 상태가 궁금한 자리다.
+                        Text(gymStatusLine ?? store.l.playerGymSubtitle)
+                            .font(.caption2)
+                            .foregroundStyle(gymStatusLine == nil ? .secondary : .purple)
+                    }
+                    Spacer(); Image(systemName: "chevron.right")
+                }.padding(10).pokedoroCard(tint: .purple)
+            }.buttonStyle(.plain)
+
+            Button {
                 destination = .tournament
             } label: {
                 HStack {
@@ -122,20 +155,6 @@ struct FriendView: View {
                     }
                     Spacer(); Image(systemName: "chevron.right")
                 }.padding(10).pokedoroCard(tint: .orange)
-            }.buttonStyle(.plain)
-
-            Button {
-                destination = .gym
-            } label: {
-                HStack {
-                    Image(systemName: "building.columns.fill").foregroundStyle(.purple)
-                    VStack(alignment: .leading) {
-                        Text(store.l.playerGymTitle).font(.headline)
-                        Text(store.l.playerGymSubtitle)
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                    Spacer(); Image(systemName: "chevron.right")
-                }.padding(10).pokedoroCard(tint: .purple)
             }.buttonStyle(.plain)
 
             if battleCenter.peers.isEmpty {

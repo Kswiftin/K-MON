@@ -94,7 +94,17 @@ struct PlayerGymView: View {
         VStack(alignment: .leading, spacing: 8) {
             if let room = center.visibleGymRoom {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(room.name).font(.caption.bold()).lineLimit(1)
+                    // 방 이름 원문(`GYM · 4k2p · 현우#abc123`)은 사람이 읽을 것이 아니다 —
+                    // 실려 온 값을 풀어 "누가 몇 분째 지키는지"로 그린다.
+                    if let parsed = PlayerGymRoomName.parse(room.name) {
+                        Text(l.playerGymTenure(
+                            parsed.leaderName,
+                            l.playerGymDuration(
+                                minutes: PlayerGym.tenureMinutes(since: parsed.heldSince, now: tick))))
+                            .font(.caption.bold()).lineLimit(1)
+                    } else {
+                        Text(room.name).font(.caption.bold()).lineLimit(1)
+                    }
                     Text(l.t("도전 팀 4마리를 고르고 도전하세요.",
                              "Pick four Pokémon and challenge.",
                              "4体を選んで挑戦してください。"))
@@ -154,6 +164,12 @@ struct PlayerGymView: View {
                 Label(l.t("도전을 기다리는 중입니다.", "Waiting for challengers.", "挑戦を待っています。"),
                       systemImage: "checkmark.seal.fill")
                     .font(.caption).foregroundStyle(.green)
+            }
+            if let held = store.gymLeadership?.heldSince {
+                Text(l.playerGymTenure(
+                    store.state.trainerName,
+                    l.playerGymDuration(minutes: PlayerGym.tenureMinutes(since: held, now: tick))))
+                    .font(.caption.bold()).foregroundStyle(.purple)
             }
 
             Text(l.playerGymDefenseTeam).font(.caption.bold())
