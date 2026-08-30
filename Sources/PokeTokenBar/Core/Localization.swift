@@ -1318,6 +1318,22 @@ struct L {
         t("관장이 아직 방어팀을 세우지 않았습니다.", "The leader has not set a defense team yet.",
           "リーダーはまだ防衛チームを組んでいません。")
     }
+    func playerGymDefenseReward(_ amount: Int) -> String {
+        let value = GameNumberFormatter.compact(amount)
+        return t("방어 성공! ⭐ \(value)", "Defended! ⭐ \(value)", "防衛成功！⭐ \(value)")
+    }
+    var playerGymDefenseCapped: String {
+        t("오늘 방어 보상을 모두 받았습니다.", "Daily defense reward maxed out.",
+          "本日の防衛報酬は上限に達しました。")
+    }
+    func playerGymDefenseLedger(_ earned: Int, _ cap: Int) -> String {
+        t("오늘 방어 보상 \(GameNumberFormatter.compact(earned)) / \(GameNumberFormatter.compact(cap))",
+          "Today's defense reward \(GameNumberFormatter.compact(earned)) / \(GameNumberFormatter.compact(cap))",
+          "本日の防衛報酬 \(GameNumberFormatter.compact(earned)) / \(GameNumberFormatter.compact(cap))")
+    }
+    func playerGymStreak(_ count: Int) -> String {
+        t("\(count)연속 방어 중", "\(count) in a row", "\(count)連続防衛中")
+    }
     var playerGymBecameLeader: String { t("체육관 관장이 되었습니다!", "You are the gym leader!", "ジムリーダーになりました！") }
     var playerGymLostLeadership: String { t("관장 자리를 내주었습니다.", "You lost the gym.", "ジムを明け渡しました。") }
     func gymBadgeCount(_ earned: Int, _ total: Int) -> String {

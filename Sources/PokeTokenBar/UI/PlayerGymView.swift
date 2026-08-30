@@ -171,6 +171,16 @@ struct PlayerGymView: View {
                     l.playerGymDuration(minutes: PlayerGym.tenureMinutes(since: held, now: tick))))
                     .font(.caption.bold()).foregroundStyle(.purple)
             }
+            HStack(spacing: 6) {
+                if let streak = store.gymLeadership?.consecutiveDefenses, streak > 0 {
+                    Text(l.playerGymStreak(streak))
+                        .font(.caption2.bold()).foregroundStyle(.green)
+                }
+                // 하루 상한이 있는 보상이라 남은 몫이 보여야 한다 — 안 보이면 왜 0 이 들어왔는지 모른다.
+                Text(l.playerGymDefenseLedger(store.gymDefenseEarnedToday,
+                                              PlayerGym.dailyDefenseRewardCap))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
 
             Text(l.playerGymDefenseTeam).font(.caption.bold())
             TeamPicker(store: store,
@@ -210,6 +220,13 @@ struct PlayerGymView: View {
                     .font(.headline).frame(maxWidth: .infinity)
                 if winner == center.myID, amChallenger { Text(l.playerGymBecameLeader).font(.caption) }
                 if winner != center.myID, amLeader { Text(l.playerGymLostLeadership).font(.caption) }
+                // 방어 보상은 관장에게만, 그리고 **이긴 경우에만** 나간다. 0 이면 상한에 걸린 것이라
+                // 그 사실을 말해 준다 — 안 그러면 보상이 사라진 줄 안다.
+                if amLeader, winner == center.myID, let payout = center.lastGymDefensePayout {
+                    Text(payout > 0 ? l.playerGymDefenseReward(payout) : l.playerGymDefenseCapped)
+                        .font(.caption.bold())
+                        .foregroundStyle(payout > 0 ? Color.orange : Color.secondary)
+                }
             } else if amPlaying,
                       mine.indices.contains(myActive), theirs.indices.contains(theirActive) {
                 playerArena(match, mine: mine, theirs: theirs,

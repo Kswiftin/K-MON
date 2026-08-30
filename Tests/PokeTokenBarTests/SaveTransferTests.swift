@@ -619,7 +619,10 @@ final class SaveTransferTests: XCTestCase {
         // 던전 진행도도 같은 부류다 — 같은 날이면 정산 플래그를 OR 로 합쳐 재지급을 막는다.
         // 웨이브 런 실적도 병합 대상이다 — 소모되지 않는 누적이라 축별로 큰 값을 남긴다
         // (한쪽을 고르면 다른 기기에서 세운 최고 기록이 사라진다).
-        let accountLedger: Set<String> = ["lastCandyDate", "dungeon", "waveRun"]
+        // 체육관 방어 보상의 일일 원장도 같은 부류다 — 같은 날이면 많이 받은 쪽을 남겨야
+        // 세이브를 주고받는 것만으로 하루 상한이 되살아나지 않는다.
+        let accountLedger: Set<String> = ["lastCandyDate", "dungeon", "waveRun",
+                                          "gymDefenseRewardDate", "gymDefenseRewardToday"]
         // 기기 환경설정: 현재 기기 값 유지.
         let devicePreference: Set<String> = ["language"]
 

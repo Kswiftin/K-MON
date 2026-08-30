@@ -197,6 +197,9 @@ enum SaveTransfer {
         s.activeSecondsDate = clampedKey(s.activeSecondsDate)
         s.lastAdventureBonusDate = clampedKey(s.lastAdventureBonusDate)
         s.adventureWeekKey = clampedKey(s.adventureWeekKey)
+        s.gymDefenseRewardDate = clampedKey(s.gymDefenseRewardDate)
+        // 오늘 지급액을 음수로 만들면 상한이 그만큼 늘어난다 — 0 과 상한 사이로 자른다.
+        s.gymDefenseRewardToday = min(max(0, s.gymDefenseRewardToday), PlayerGym.dailyDefenseRewardCap)
         s.trainerName = clampText(s.trainerName, maxNameLength)
         s.gymBadges = Set(s.gymBadges.map { clampText($0, maxNameLength) })
         s.gymLeagueBadges = Set(s.gymLeagueBadges.map { clampText($0, maxNameLength) })
@@ -391,6 +394,13 @@ enum SaveTransfer {
         // 이로치 확정 부화 횟수 — 받은 시점과 쓰는 시점이 떨어져 있어 세이브에 남는다. 손으로 올리면
         // 확정 이로치가 공짜다. 접두 `sec` 는 아래 기기 시드가 이미 쓰고 있어 `shc` 를 쓴다.
         if s.shinyEggCharges != 0 { p.append("shc\(s.shinyEggCharges)") }
+        // 체육관 방어 보상의 일일 원장. 손으로 오늘 지급액을 0 으로 되돌리면 하루 상한이 사라져
+        // 별의조각을 무한히 찍는다 — 재화 멱등 가드라 서명 대상이다. 비었을 땐 세그먼트를 생략해
+        // 이 필드가 없던 세이브의 canonical 을 바꾸지 않는다(그래야 정상 세이브가 조작으로 안 잡힌다).
+        // 접두 `gd` 는 `gb`(배지)·`glb`(리그 배지)와 겹치지 않는다.
+        if s.gymDefenseRewardToday != 0 || !s.gymDefenseRewardDate.isEmpty {
+            p.append("gd\(s.gymDefenseRewardDate):\(s.gymDefenseRewardToday)")
+        }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
@@ -508,6 +518,11 @@ enum SaveTransfer {
         state.gymLeadership = nil
         // 일일 사탕 원장은 로컬 날짜 문자열이라 기기 간 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
         state.lastCandyDate = max(imported.lastCandyDate, current.lastCandyDate)
+        // 체육관 방어 원장도 같은 부류다. 같은 날이면 **많이 받은 쪽**을 남긴다 — 적은 쪽을 쓰면
+        // 기기를 옮기는 것만으로 하루 상한이 되살아난다.
+        (state.gymDefenseRewardDate, state.gymDefenseRewardToday) = Self.mergedGymDefenseLedger(
+            imported: (imported.gymDefenseRewardDate, imported.gymDefenseRewardToday),
+            current: (current.gymDefenseRewardDate, current.gymDefenseRewardToday))
         // 던전 진행도 같은 부류다 — 날짜 키가 로컬 날짜 문자열이라 비교할 수 있다.
         // 같은 날이면 **합친다**: 한쪽에서 이미 정산했는데 다른 쪽 값을 그대로 쓰면 같은 날 보상을
         // 두 번 받는다(맥 A 에서 클리어하고 내보내 맥 B 로 불러오는 경로). 다른 날이면 더 최근 쪽을
@@ -517,6 +532,17 @@ enum SaveTransfer {
         // 세운 최고 기록이 사라진다(던전 진행도와 달리 날짜로 낡지 않는다).
         state.waveRun = RunProgress.merged(imported.waveRun, current.waveRun)
         return state
+    }
+
+    /// 두 기기의 체육관 방어 원장을 합친다.
+    ///
+    /// 같은 날이면 **많이 받은 쪽**을 남긴다 — 적은 쪽을 쓰면 세이브를 주고받는 것만으로 하루
+    /// 상한이 되살아나 별의조각을 무한히 찍는다. 다른 날이면 더 최근 쪽을 그대로 쓴다(지난 날
+    /// 기록은 어차피 다음 지급에서 갈아 끼워진다).
+    static func mergedGymDefenseLedger(imported: (date: String, amount: Int),
+                                       current: (date: String, amount: Int)) -> (String, Int) {
+        if imported.date == current.date { return (imported.date, max(imported.amount, current.amount)) }
+        return imported.date > current.date ? imported : current
     }
 
     /// 두 기기의 던전 진행도를 합친다 — 같은 날이면 "한쪽이라도 정산했으면 정산된 것" 으로 본다.
