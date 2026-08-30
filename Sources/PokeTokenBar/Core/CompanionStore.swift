@@ -1910,6 +1910,7 @@ final class CompanionStore {
     func becomeGymLeader(gymID: UUID = UUID()) {
         state.gymLeadership = PlayerGymLeadership(
             gymID: gymID,
+            heldSince: clock(),
             defenseDeadline: PlayerGym.setupDeadline(defenseCount: 0, now: clock()))
         save()
     }

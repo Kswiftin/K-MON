@@ -1298,6 +1298,18 @@ struct L {
     func playerGymLeaderLabel(_ name: String) -> String {
         t("관장 \(name)", "Leader \(name)", "リーダー \(name)")
     }
+    /// "현우 - 25분째 유지중" — 목록에서 접속 없이 보이는 한 줄.
+    func playerGymTenure(_ name: String, _ duration: String) -> String {
+        t("\(name) — \(duration)째 유지중", "\(name) — holding for \(duration)", "\(name) — \(duration)防衛中")
+    }
+    /// 재임 기간 표기. 한 시간이 안 되면 분만, 넘으면 시간까지 — 초 단위는 이 화면에서 의미가 없다.
+    func playerGymDuration(minutes: Int) -> String {
+        guard minutes >= 60 else { return t("\(minutes)분", "\(minutes)m", "\(minutes)分") }
+        let hours = minutes / 60
+        let rest = minutes % 60
+        guard rest > 0 else { return t("\(hours)시간", "\(hours)h", "\(hours)時間") }
+        return t("\(hours)시간 \(rest)분", "\(hours)h \(rest)m", "\(hours)時間\(rest)分")
+    }
     var playerGymRejectedBusy: String {
         t("관장이 다른 도전을 받는 중입니다.", "The leader is already in a battle.",
           "リーダーは別の挑戦を受けています。")

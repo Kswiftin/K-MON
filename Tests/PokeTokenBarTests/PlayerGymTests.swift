@@ -284,6 +284,77 @@ final class PlayerGymTests: XCTestCase {
         XCTAssertFalse(PlayerGym.isGymRoomName("BATTLE · 트레이너#abc123"))
     }
 
+    // MARK: 방 이름 — 관장 이름과 재임 시각을 나르는 유일한 통로
+
+    func testRoomNameCarriesLeaderAndTenureRoundTrip() throws {
+        let held = Date(timeIntervalSince1970: 1_756_000_000)
+        let name = PlayerGymRoomName.make(leaderName: "현우", idTag: "abc123", heldSince: held)
+
+        let parsed = try XCTUnwrap(PlayerGymRoomName.parse(name))
+        XCTAssertEqual(parsed.leaderName, "현우")
+        XCTAssertEqual(parsed.idTag, "abc123")
+        XCTAssertEqual(parsed.heldSince.timeIntervalSince1970, held.timeIntervalSince1970, accuracy: 1)
+    }
+
+    /// Bonjour 서비스 이름은 63바이트가 상한이라 넘으면 **광고가 아예 안 뜬다.** 한국어 이름은
+    /// 글자당 3바이트라 20자면 60바이트다 — 넘칠 땐 이름을 자르고, 재임 시각과 식별자는 지킨다.
+    func testRoomNameStaysWithinTheBonjourLimitByTrimmingTheName() throws {
+        let held = Date(timeIntervalSince1970: 1_756_000_000)
+        let longName = String(repeating: "가", count: SaveTransfer.maxNameLength)
+
+        let name = PlayerGymRoomName.make(leaderName: longName, idTag: "abc123", heldSince: held)
+
+        XCTAssertLessThanOrEqual(name.utf8.count, PlayerGym.maxServiceNameBytes,
+                                 "상한을 넘으면 방이 광고되지 않아 아무도 체육관을 못 찾는다")
+        let parsed = try XCTUnwrap(PlayerGymRoomName.parse(name))
+        XCTAssertEqual(parsed.idTag, "abc123", "식별자는 잘리면 안 된다")
+        XCTAssertEqual(parsed.heldSince.timeIntervalSince1970, held.timeIntervalSince1970, accuracy: 1,
+                       "재임 시각도 잘리면 안 된다")
+        XCTAssertFalse(parsed.leaderName.isEmpty)
+    }
+
+    /// 내 방을 남의 목록에서 가려내는 꼬리표(`#앞6자리`)가 새 형식에서도 그대로 잡혀야 한다 —
+    /// 안 잡히면 자기 체육관을 남의 것으로 보고 스스로 자격을 반납한다.
+    func testMyOwnRoomIsStillIdentifiableByTheIdTag() {
+        let name = PlayerGymRoomName.make(leaderName: "현우", idTag: "abc123",
+                                          heldSince: Date(timeIntervalSince1970: 1_756_000_000))
+        XCTAssertTrue(name.contains("#abc123"))
+        XCTAssertTrue(PlayerGym.isGymRoomName(name))
+        XCTAssertNotNil(PlayerGymCoordinator.gymID(fromRoomName: name),
+                        "경합 tie-break 이 식별자를 못 읽으면 둘 다 닫히거나 둘 다 남는다")
+    }
+
+    /// 재임 시각이 없던 옛 형식도 이름만은 읽혀야 한다 — 못 읽으면 목록에서 체육관이 사라진다.
+    func testALegacyRoomNameWithoutATimestampIsNotParsedAsTenure() {
+        XCTAssertNil(PlayerGymRoomName.parse("GYM · 현우#abc123"),
+                     "재임 시각이 없으면 시간을 지어내지 말고 nil 이어야 한다")
+        XCTAssertTrue(PlayerGym.isGymRoomName("GYM · 현우#abc123"), "그래도 체육관 방인 건 맞다")
+    }
+
+    func testTenureMinutesFloorsAndNeverGoesNegative() {
+        let start = Date(timeIntervalSince1970: 1_756_000_000)
+        XCTAssertEqual(PlayerGym.tenureMinutes(since: start, now: start.addingTimeInterval(59)), 0)
+        XCTAssertEqual(PlayerGym.tenureMinutes(since: start, now: start.addingTimeInterval(60)), 1)
+        XCTAssertEqual(PlayerGym.tenureMinutes(since: start, now: start.addingTimeInterval(1_500)), 25)
+        XCTAssertEqual(PlayerGym.tenureMinutes(since: start, now: start.addingTimeInterval(-60)), 0,
+                       "기기 시계가 어긋나도 음수 분이 화면에 뜨면 안 된다")
+    }
+
+    /// 자리가 넘어가면 재임 시간은 **0 부터 다시** 센다 — 체육관이 아니라 관장 개인의 기록이다.
+    func testTenureRestartsWhenLeadershipChanges() {
+        let clock = TestClock()
+        let s = store(clock)
+        _ = leaderWithFullTeam(s)
+        let first = s.gymLeadership?.heldSince
+
+        clock.advance(3_600)
+        s.becomeGymLeader()
+
+        XCTAssertNotEqual(s.gymLeadership?.heldSince, first)
+        XCTAssertEqual(PlayerGym.tenureMinutes(since: s.gymLeadership?.heldSince ?? clock.now,
+                                               now: clock.now), 0)
+    }
+
     // MARK: 매치 엔진
 
     private func snapshot(_ speciesID: Int, level: Int, move: MoveSpec) -> BattleSnapshot {
