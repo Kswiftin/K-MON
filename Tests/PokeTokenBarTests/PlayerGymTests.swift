@@ -469,6 +469,50 @@ final class PlayerGymTests: XCTestCase {
                                                now: clock.now), 0)
     }
 
+    // MARK: 스캔 창 — "체육관 검색 중…" 이 안 끝나던 자리
+
+    /// **회귀**: 스캔 완료를 "방 개수가 바뀌었나" 로 판정했더니, 방이 하나도 없는 것이 정상인
+    /// 상황(첫 사용자·혼자 켠 경우)에서 개수가 0 에서 움직이지 않아 화면이 영영 "체육관
+    /// 검색 중…" 에 갇혔다. 시간으로 넘겨야 한다.
+    func testTheScanWindowEndsWithoutAnyRoomAppearing() async {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        let coordinator = PlayerGymCoordinator(companion: s, rooms: rooms)
+        XCTAssertFalse(coordinator.hasScannedOnce)
+
+        coordinator.beginScanIfNeeded()
+        // 방을 하나도 만들지 않는다 — 개수는 0 그대로다.
+        try? await Task.sleep(for: .seconds(PlayerGymCoordinator.scanWindow + 0.5))
+
+        XCTAssertTrue(coordinator.hasScannedOnce,
+                      "방이 없다고 스캔이 안 끝나면 개설 버튼이 영영 안 나온다")
+    }
+
+    /// 창은 앱 수명 동안 한 번만 연다 — 탭을 드나들 때마다 다시 기다리면 성가시다.
+    func testTheScanWindowIsNotReopenedOnceFinished() async {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        let coordinator = PlayerGymCoordinator(companion: s, rooms: rooms)
+
+        coordinator.beginScanIfNeeded()
+        try? await Task.sleep(for: .seconds(PlayerGymCoordinator.scanWindow + 0.5))
+        XCTAssertTrue(coordinator.hasScannedOnce)
+
+        coordinator.beginScanIfNeeded()
+        XCTAssertTrue(coordinator.hasScannedOnce, "이미 끝난 창을 다시 열면 안 된다")
+    }
+
+    /// 탐색이 꺼져 있으면 기다림이 아니라 **꺼져 있다는 사실**을 알려야 한다 — 아무리 기다려도
+    /// 방이 안 나타나므로 "검색 중" 은 거짓말이 된다.
+    func testDiscoveryOffIsDistinguishedFromStillScanning() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        let coordinator = PlayerGymCoordinator(companion: s, rooms: rooms)
+
+        XCTAssertFalse(rooms.isBrowsing, "startBrowsing 전에는 탐색이 돌지 않는다")
+        XCTAssertTrue(coordinator.isDiscoveryUnavailable)
+    }
+
     // MARK: 매치 엔진
 
     private func snapshot(_ speciesID: Int, level: Int, move: MoveSpec) -> BattleSnapshot {

@@ -11,6 +11,7 @@ final class PlayerGymCoordinator {
     private let companion: CompanionStore
     private let rooms: MultiplayerRoomCenter
     private let clock: () -> Date
+    private var scanTask: Task<Void, Never>?
 
     /// 개설을 눌렀는데 이미 열린 체육관이 있어 막혔다.
     private(set) var blockedByExistingGym = false
@@ -19,7 +20,19 @@ final class PlayerGymCoordinator {
 
     /// 브라우저가 한 바퀴 돌기 전에는 개설 버튼을 잠근다. **빈 목록을 "없음"으로 읽으면**
     /// 단일성 정책 전체가 무의미해진다 — 둘이 동시에 열어도 아무도 못 막는다.
+    ///
+    /// **방 개수 변화로 판정하면 안 된다.** 아무 방도 없는 것이 정상인 상황(첫 사용자, 혼자
+    /// 켠 경우)에서는 개수가 0 에서 움직이지 않아 영영 "검색 중" 에 갇힌다. 실제로 그렇게
+    /// 만들었다가 그 화면만 보이는 증상이 나왔다 — 그래서 **시간으로** 넘긴다.
     private(set) var hasScannedOnce = false
+
+    /// 브라우저가 한 바퀴 돌기까지 주는 시간. Bonjour 응답은 보통 1초 안에 오지만, 늦게 온
+    /// 체육관을 "없음" 으로 읽고 두 번째 체육관을 여는 것보다는 조금 더 기다리는 편이 낫다.
+    static let scanWindow: TimeInterval = 2.5
+
+    /// LAN 탐색 자체가 꺼져 있나. 꺼져 있으면 브라우저가 아예 돌지 않아 **영원히 아무것도 못 찾는다** —
+    /// 그 상태를 "검색 중" 으로 보여주면 사용자는 고장으로 읽는다.
+    var isDiscoveryUnavailable: Bool { !rooms.isBrowsing }
 
     init(companion: CompanionStore, rooms: MultiplayerRoomCenter, clock: @escaping () -> Date = Date.init) {
         self.companion = companion
@@ -35,6 +48,8 @@ final class PlayerGymCoordinator {
     /// 순서가 중요하다: **기한부터 본다.** 마감이 지난 채 복원됐으면 그 자리에서 자격이 풀려야
     /// 재시작으로 기한을 다시 받는 길이 막힌다.
     func refresh() {
+        // 탐색이 꺼져 있지 않다면 창을 연다. 화면이 뜬 순간부터 재야 "검색 중" 이 끝난다.
+        if rooms.isBrowsing { beginScanIfNeeded() }
         companion.expireGymLeadershipIfSetupLapsed()
         guard companion.isGymLeader else { return }
         // 재시작 후 광고를 재개하는 경로. **개설 버튼만 막으면 여기로 새 나가** 체육관이 둘이 된다.
@@ -47,7 +62,17 @@ final class PlayerGymCoordinator {
         if rooms.phase == .idle { rooms.createGymRoom() }
     }
 
-    func markScanned() { hasScannedOnce = true }
+    /// 스캔 창을 연다 — 화면이 뜰 때마다 부르고, 창이 끝나면 목록을 신뢰한다.
+    /// 이미 한 번 돌았으면 다시 기다리지 않는다(코디네이터는 앱 수명이라 값이 남는다).
+    func beginScanIfNeeded() {
+        guard !hasScannedOnce, scanTask == nil else { return }
+        scanTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.scanWindow))
+            guard !Task.isCancelled else { return }
+            self?.hasScannedOnce = true
+            self?.scanTask = nil
+        }
+    }
 
     /// 체육관을 새로 연다. 이미 보이는 체육관이 있으면 열지 않는다.
     func openGym() {
