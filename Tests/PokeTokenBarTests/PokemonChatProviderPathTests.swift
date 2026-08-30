@@ -162,4 +162,89 @@ final class PokemonChatProviderPathTests: XCTestCase {
                          "\(kind.rawValue) 는 실행 대상이 아니다")
         }
     }
+
+    // MARK: 자동 선택 — 고르지 않아도 보낼 수 있다
+
+    /// 설치 여부를 주입한다. 실제 홈 디렉터리에 무엇이 깔려 있느냐로 갈리면, 이 판정은 CI 와
+    /// 개발자 기계에서 서로 다른 것을 시험하게 된다.
+    private func installed(_ kinds: PokemonChatProviderKind...) -> (PokemonChatProviderKind) -> Bool {
+        { kinds.contains($0) }
+    }
+
+    /// 사용자가 고른 값이 여전히 쓸 수 있으면 그게 이긴다. 자동 선택이 사용자의 선택을 덮으면,
+    /// 어느 CLI 로 나가는지가 사용자 손을 떠난다.
+    func testAStoredChoiceThatStillWorksBeatsAutoSelection() {
+        XCTAssertEqual(PokemonChatProviderSelection.effectiveKind(
+            stored: "claude", isInstalled: installed(.codex, .claude)), .claude)
+        XCTAssertEqual(PokemonChatProviderSelection.effectiveKind(
+            stored: "codex", isInstalled: installed(.codex, .claude)), .codex)
+    }
+
+    /// 이 마일스톤의 본체 — 아무것도 고르지 않은 첫 방문에서 전송이 가능해야 한다.
+    ///
+    /// 우선순위를 `verifiedKinds` 순서로 **못 박는다**. 순서가 조용히 뒤집히면 사용자는 어제와
+    /// 다른 CLI 로 외부 전송을 하게 되므로, 그 변경은 테스트를 빨갛게 만들어 눈에 띄어야 한다.
+    func testAnEmptySelectionAutoPicksTheFirstInstalledVerifiedCLI() {
+        XCTAssertEqual(PokemonChatProviderSafety.verifiedKinds, [.codex, .claude],
+                       "우선순위가 바뀌면 아래 기대값도 함께 바뀌어야 한다 — 조용히 지나가면 안 된다")
+
+        XCTAssertEqual(PokemonChatProviderSelection.effectiveKind(
+            stored: "", isInstalled: installed(.codex, .claude)), .codex, "둘 다 있으면 우선순위 첫 번째")
+        XCTAssertEqual(PokemonChatProviderSelection.effectiveKind(
+            stored: "", isInstalled: installed(.claude)), .claude, "하나뿐이면 그것")
+        XCTAssertEqual(PokemonChatProviderSelection.effectiveKind(
+            stored: "", isInstalled: installed(.codex)), .codex)
+    }
+
+    /// 저장된 선택이 못 쓰게 되는 길은 둘이다 — CLI 를 지웠거나, 그 종류가 차단됐거나.
+    /// 어느 쪽이든 **막다른 길이 아니라 폴백**이다. 실행 파일 해석이 이미 같은 방향을 택했다
+    /// (`testAnUnusableOverrideFallsBackToTheStandardPathsInsteadOfFailing`).
+    func testAStoredChoiceThatNoLongerWorksFallsBackInsteadOfBlockingChat() {
+        XCTAssertEqual(PokemonChatProviderSelection.effectiveKind(
+            stored: "codex", isInstalled: installed(.claude)), .claude, "지운 CLI 하나로 대화가 멎으면 안 된다")
+        XCTAssertEqual(PokemonChatProviderSelection.effectiveKind(
+            stored: "없는값", isInstalled: installed(.claude)), .claude, "해석 불가한 저장값")
+    }
+
+    /// **자동 선택은 새로 생긴 형제 경로다.** 지금까지 provider 로 가는 길은 "사용자가 Picker 에서
+    /// 고른다" 하나뿐이었고 그 길에만 격리 관문이 있었다. 설치 여부만 보고 판정하면
+    /// (`PokemonChatProviderKind(rawValue:)` + 설치 확인) 차단된 CLI 가 이 길로 샌다.
+    func testAStoredBlockedProviderNeverSurvivesAutoSelection() {
+        for blocked in [PokemonChatProviderKind.opencode, .custom] {
+            let chosen = PokemonChatProviderSelection.effectiveKind(
+                stored: blocked.rawValue,
+                // 전부 "설치됨" — 설치 여부로만 거르는 구현이면 여기서 차단 CLI 가 통과한다.
+                isInstalled: { _ in true })
+
+            XCTAssertNotEqual(chosen, blocked, "\(blocked.rawValue) 는 격리를 보장할 수 없다")
+            XCTAssertEqual(chosen, .codex, "차단된 저장값은 무시하고 검증된 우선순위로 폴백한다")
+        }
+    }
+
+    /// 후보 집합이 `verifiedKinds` 밖으로 새지 않는가. 위 테스트는 *저장값*이 차단된 경우만 보므로,
+    /// 자동 경로가 `allCases` 를 직접 도는 구현은 저장값이 빈 경우에 그대로 통과한다.
+    func testAutoSelectionOnlyEverYieldsAVerifiedProvider() {
+        let stored = ["", "claude", "codex", "opencode", "custom", "없는값", " "]
+        for value in stored {
+            let chosen = PokemonChatProviderSelection.effectiveKind(stored: value, isInstalled: { _ in true })
+            guard let chosen else { continue }
+            XCTAssertTrue(PokemonChatProviderSafety.availability(for: chosen).isVerified,
+                          "저장값 '\(value)' 이 검증 안 된 \(chosen.rawValue) 로 이어졌다")
+        }
+    }
+
+    /// 검증 CLI 가 하나도 안 잡히면 고를 것이 없다. 이때 화면은 **말없이 비활성인 전송 버튼**을
+    /// 남기면 안 되므로, 그 사실을 판정으로 드러낸다(문구는 아래 테스트).
+    func testNothingIsSelectedWhenNoVerifiedCLIIsInstalled() {
+        XCTAssertNil(PokemonChatProviderSelection.effectiveKind(stored: "", isInstalled: { _ in false }))
+        XCTAssertNil(PokemonChatProviderSelection.effectiveKind(stored: "claude", isInstalled: { _ in false }))
+    }
+
+    /// 안내 문구는 Core 에 둔다 — 차단 사유(`PokemonChatBlockReason`)와 같은 이유로, 뷰가 문구를
+    /// 들면 커버리지 게이트 밖에 남고 세 언어 중 하나가 조용히 빠진다.
+    func testTheMissingCLIGuidanceExistsInAllThreeLanguages() {
+        let messages = [AppLanguage.ko, .en, .ja].map(PokemonChatProviderSelection.noProviderMessage)
+        XCTAssertEqual(Set(messages).count, 3, "세 언어가 서로 다른 문장이어야 한다")
+        XCTAssertFalse(messages.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+    }
 }

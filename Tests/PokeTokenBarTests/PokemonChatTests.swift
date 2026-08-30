@@ -615,6 +615,22 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(lookups, 1)
     }
 
+    /// 자동 선택은 검증 CLI **2종**의 설치 여부를 `body` 안에서 함께 묻는다. 보관 자리가 한 칸이면
+    /// 두 질의가 서로를 밀어내 매번 miss 가 나고, 캐시가 막으려던 그 비용(디렉터리 13곳 × 2벌)이
+    /// 키 입력마다 그대로 돌아온다 — 캐시가 있는데도 없는 것과 같아진다.
+    func testResolutionIsKeptPerKindSoAskingAboutOneCLIDoesNotEvictTheOther() {
+        var lookups = 0
+        let cache = PokemonChatProviderCache { _, _ in lookups += 1; return nil }
+
+        // 자동 선택이 실제로 도는 순서. 종류를 오가며 물어도 각 종류당 한 번이면 충분하다.
+        _ = cache.executableURL(for: .codex, override: nil)
+        _ = cache.executableURL(for: .claude, override: nil)
+        _ = cache.executableURL(for: .codex, override: nil)
+        _ = cache.executableURL(for: .claude, override: nil)
+
+        XCTAssertEqual(lookups, 2, "종류를 오갈 때마다 다시 해석하면 타이핑이 경로 탐색을 끌고 다닌다")
+    }
+
     /// 캐시가 **안 갱신되면** 설정에서 경로를 고쳐도 대화는 옛 결과를 계속 쓴다 — 캐시의 반대편
     /// 결함이라 같이 고정한다.
     func testProviderResolutionRedoesTheLookupWhenTheInputsChange() {
