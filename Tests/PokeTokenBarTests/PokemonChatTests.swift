@@ -296,8 +296,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testSendingStateChangesFromThinkingToPokemonReply() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = temporaryChatURL()
         let store = PokemonChatStore(fileURL: url)
         let companionID = UUID()
         let provider = DeferredReplyProvider()
@@ -412,8 +411,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testConcurrentRepliesAndReloadPreserveEveryMessage() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = temporaryChatURL()
         let store = PokemonChatStore(fileURL: url), id = UUID(), provider = QueuedReplyProvider()
         let first = Task { await store.send("first", for: id, profile: .fixture, provider: provider) }
         let second = Task { await store.send("second", for: id, profile: .fixture, provider: provider) }
@@ -427,8 +425,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testTranscriptIsCappedAtTwoHundredMessages() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = temporaryChatURL()
         let store = PokemonChatStore(fileURL: url), id = UUID()
         for index in 0..<205 { store.appendLocalMessage("message \(index)", for: id, profile: .fixture) }
         XCTAssertEqual(store.messages(for: id).count, 200)
@@ -486,9 +483,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testDeletingSessionRemovesPersistedConversation() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokemon-chat-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = temporaryChatURL()
         let id = UUID()
         let store = PokemonChatStore(fileURL: url)
         store.appendLocalMessage("안녕", for: id, profile: .fixture)
@@ -498,11 +493,156 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertNil(restored.session(for: id))
     }
 
+    // MARK: - draft 는 뷰가 아니라 스토어가 든다 (팝오버 이관)
+
+    /// 팝오버는 바깥을 클릭하면 닫히고(`behavior = .transient`), 닫히면서 콘텐츠 뷰를 통째로
+    /// 해제한다(`popoverDidClose` 가 `contentViewController = nil`). draft 가 뷰의 `@State` 면
+    /// 입력 중이던 문장이 클릭 한 번에 사라진다 — 창에서는 안 겪던 손실이다.
+    func testDraftSurvivesTheViewBecauseTheStoreHoldsIt() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let id = UUID()
+
+        store.setDraft("배고프면 말해 줘", for: id)
+
+        XCTAssertEqual(store.draft(for: id), "배고프면 말해 줘")
+    }
+
+    /// 대화 창은 활성 개체뿐 아니라 박스 개체로도 열린다. draft 를 한 칸에 두면 피카츄에게 쓰다
+    /// 만 문장이 파이리 대화에 나타난다.
+    func testDraftIsKeptPerCompanion() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let pikachu = UUID(), charmander = UUID()
+
+        store.setDraft("같이 나갈래?", for: pikachu)
+
+        XCTAssertEqual(store.draft(for: pikachu), "같이 나갈래?")
+        XCTAssertEqual(store.draft(for: charmander), "")
+    }
+
+    /// 꺼내기와 비우기는 **한 동작**이다. 나눠 두면 꺼낸 뒤 비우기 전에 한 번 더 눌리는 창이
+    /// 생긴다 — 전송은 `Task` 로 넘어가 비동기라 그 창이 실재한다.
+    func testTakingTheDraftEmptiesItInOneStep() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let sender = UUID(), other = UUID()
+        store.setDraft("안녕", for: sender)
+        store.setDraft("나중에 얘기해", for: other)
+
+        XCTAssertEqual(store.takeDraft(for: sender), "안녕")
+
+        XCTAssertEqual(store.draft(for: sender), "")
+        XCTAssertEqual(store.draft(for: other), "나중에 얘기해")
+    }
+
+    /// 트리거 브랜치: 공백만 친 뒤 Return. `TextField.onSubmit` 은 전송 버튼의 `disabled` 를
+    /// 지나지 않으므로 전송 경로에 **들어간다**. 스토어의 `send` 는 빈 문장 가드에서 먼저
+    /// 돌아가므로 거기서 비우면 공백이 입력칸에 영영 남는다.
+    func testTakingAWhitespaceOnlyDraftStillEmptiesIt() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let id = UUID()
+        store.setDraft("   ", for: id)
+
+        _ = store.takeDraft(for: id)
+
+        XCTAssertEqual(store.draft(for: id), "")
+    }
+
+    /// "기록 삭제" 는 대화를 지우는 일이다. 입력칸에 쓰다 만 문장이 남으면 지운 대화의 잔해가
+    /// 새 대화에 얹힌다.
+    func testDeletingASessionAlsoDropsItsDraft() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let id = UUID()
+        store.setDraft("쓰다 만 문장", for: id)
+
+        store.deleteSession(for: id)
+
+        XCTAssertEqual(store.draft(for: id), "")
+    }
+
+    /// "새 대화" 도 같다 — 새로 시작했는데 이전 대화에 쓰던 문장이 입력칸에 차 있으면 안 된다.
+    func testStartingANewSessionDropsTheDraft() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let id = UUID()
+        store.setDraft("쓰다 만 문장", for: id)
+
+        store.startNewSession(for: id, profile: .fixture)
+
+        XCTAssertEqual(store.draft(for: id), "")
+    }
+
+    /// 놓아주기·교환·졸업으로 사라진 개체의 draft 가 남으면 죽은 UUID 로 키가 무한히 쌓인다.
+    /// `prune` 이 `sessions` 만 거르면 그 자리는 아무도 안 치운다.
+    func testPruneDropsDraftsOfCompanionsThatAreGone() {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let kept = UUID(), gone = UUID()
+        store.setDraft("남는다", for: kept)
+        store.setDraft("사라진다", for: gone)
+
+        store.prune(validCompanionIDs: [kept])
+
+        XCTAssertEqual(store.draft(for: kept), "남는다")
+        XCTAssertEqual(store.draft(for: gone), "")
+    }
+
+    /// "생각 중" 은 **그 대화**의 상태다. 전역 카운터를 그대로 읽으면 피카츄에게 보낸 답을
+    /// 기다리는 동안 파이리 대화를 열었을 때, 파이리 기록에 절대 오지 않을 답의 점 세 개가 뜬다.
+    /// 팝오버 이관으로 개체 사이 이동이 두 클릭이 되면서 상시로 밟게 됐다.
+    func testSendingStateIsPerCompanionNotGlobal() async {
+        let store = PokemonChatStore(fileURL: temporaryChatURL())
+        let pikachu = UUID(), charmander = UUID()
+        let provider = DeferredReplyProvider()
+        let task = Task { await store.send("안녕", for: pikachu, profile: .fixture, provider: provider) }
+        for _ in 0..<10 where !store.isSending { await Task.yield() }
+
+        XCTAssertTrue(store.isSending(for: pikachu))
+        XCTAssertFalse(store.isSending(for: charmander))
+
+        await provider.resolve(with: "반가워!")
+        _ = await task.value
+        XCTAssertFalse(store.isSending(for: pikachu))
+    }
+
+    /// 실행 파일 해석은 디렉터리 13곳에 파일시스템 질의를 던진다(`searchDirectories`). 뷰 `body` 는
+    /// 키 입력마다 다시 평가되므로 그때마다 해석하면 타이핑이 메인 스레드에서 경로 탐색을 끌고
+    /// 다닌다. 입력(종류·지정 경로)이 그대로면 결과도 그대로다.
+    func testProviderResolutionIsNotRepeatedWhileTheInputsStayTheSame() {
+        var lookups = 0
+        let cache = PokemonChatProviderCache { _, _ in lookups += 1; return nil }
+
+        _ = cache.executableURL(for: .claude, override: nil)
+        _ = cache.executableURL(for: .claude, override: nil)
+        _ = cache.executableURL(for: .claude, override: nil)
+
+        XCTAssertEqual(lookups, 1)
+    }
+
+    /// 캐시가 **안 갱신되면** 설정에서 경로를 고쳐도 대화는 옛 결과를 계속 쓴다 — 캐시의 반대편
+    /// 결함이라 같이 고정한다.
+    func testProviderResolutionRedoesTheLookupWhenTheInputsChange() {
+        var lookups = 0
+        let cache = PokemonChatProviderCache { _, _ in lookups += 1; return nil }
+
+        _ = cache.executableURL(for: .claude, override: nil)
+        _ = cache.executableURL(for: .claude, override: "/usr/local/bin/claude")
+        _ = cache.executableURL(for: .codex, override: "/usr/local/bin/claude")
+
+        XCTAssertEqual(lookups, 3)
+    }
+
+    /// 임시 파일을 만든 테스트가 치우지 않으면 실행마다 tmp 에 고아가 하나씩 쌓인다.
+    /// 여섯 자리가 같은 식을 각자 베껴 쓰고 있어 치우는 자리도 각자였다 — 한 벌로 모은다.
+    private func temporaryChatURL() -> URL { temporaryURL(prefix: "pokemon-chat") }
+
+    private func temporaryURL(prefix: String) -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString).json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
     private func makeCompanionStore() -> CompanionStore {
         let line = EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
                            names: [25: ["ko": "피카츄", "en": "Pikachu"]])
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokemon-chat-companion-\(UUID().uuidString).json")
+        let url = temporaryURL(prefix: "pokemon-chat-companion")
         let store = CompanionStore(provider: ChatLineProvider(line: line),
                                    clock: { Date(timeIntervalSince1970: 1_000) },
                                    fileURL: url, rng: SeededRNG(seed: 1))
@@ -545,6 +685,12 @@ private actor DeferredReplyProvider: PokemonChatProviding {
         continuation?.resume(returning: reply)
         continuation = nil
     }
+}
+
+private actor FixedReplyProvider: PokemonChatProviding {
+    private let reply: String
+    init(reply: String) { self.reply = reply }
+    func reply(to request: PokemonChatRequest) async throws -> String { reply }
 }
 
 private actor QueuedReplyProvider: PokemonChatProviding {

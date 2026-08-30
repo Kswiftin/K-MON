@@ -8,21 +8,31 @@ struct PokemonChatView: View {
     let album: PokemonMemoryAlbum
     let toolbox: any PokemonChatToolRunning
     let settings: AppSettings
+    let onClose: () -> Void
     @State private var identity: PokemonSpeciesIdentity?
-    @State private var draft = ""
     @State private var destination: Destination?
+    @State private var providerCache = PokemonChatProviderCache()
     @AppStorage("pokemonChatProvider") private var providerRaw = ""
+
+    /// 입력 중인 문장은 **스토어**가 든다. 팝오버는 바깥 클릭에 닫히며 콘텐츠 뷰를 통째로
+    /// 해제하므로(`popoverDidClose`), `@State` 로 두면 쓰다 만 문장이 클릭 한 번에 사라진다.
+    private var draft: Binding<String> {
+        Binding(get: { chat.draft(for: companionID) },
+                set: { chat.setDraft($0, for: companionID) })
+    }
 
     private enum Destination: String, Identifiable { case album, dailyDex; var id: String { rawValue } }
 
     init(store: CompanionStore, companionID: UUID, chat: PokemonChatStore? = nil,
-         album: PokemonMemoryAlbum? = nil, toolbox: any PokemonChatToolRunning, settings: AppSettings) {
+         album: PokemonMemoryAlbum? = nil, toolbox: any PokemonChatToolRunning,
+         settings: AppSettings, onClose: @escaping () -> Void) {
         self.store = store
         self.companionID = companionID
         self.chat = chat ?? store.chatStore
         self.album = album ?? store.memoryAlbum
         self.toolbox = toolbox
         self.settings = settings
+        self.onClose = onClose
     }
     private var baseProfile: PokemonChatProfile {
         store.ownedMons.first(where: { $0.id == companionID }).map(store.chatProfile(for:))
@@ -33,10 +43,13 @@ struct PokemonChatView: View {
 
     private var selectedKind: PokemonChatProviderKind? { PokemonChatProviderKind(rawValue: providerRaw) }
 
+    /// `body` 안에서 두 자리가 읽고 `body` 는 키 입력마다 평가된다 — 캐시를 지나지 않으면
+    /// 한 글자마다 디렉터리 13곳에 파일시스템 질의가 두 벌 간다.
     private var provider: (any PokemonChatProviding)? {
         guard let kind = selectedKind,
               let arguments = PokemonChatProviderSafety.arguments(for: kind),
-              let executableURL = PokemonChatProviderExecutableResolver.executableURL(for: kind) else { return nil }
+              let executableURL = providerCache.executableURL(
+                  for: kind, override: settings.chatProviderExecutablePath(for: kind)) else { return nil }
         return PokemonChatCLIProvider(executableURL: executableURL, arguments: arguments, kind: kind)
     }
 
@@ -48,38 +61,54 @@ struct PokemonChatView: View {
             return reason.message(profile.language)
         }
         let name = kind.label(profile.language)
-        return l.t("\(name) 실행 파일을 흔한 설치 위치에서 찾지 못했습니다. 아래에서 직접 고르거나 설정에서 경로를 넣으세요.",
-                   "Could not find the \(name) executable in the usual install locations. Choose it below, or type its path in Settings.",
-                   "\(name) の実行ファイルが標準の場所で見つかりません。下で選ぶか、設定でパスを入力してください。")
-    }
-
-    /// 실행 파일을 못 찾은 자리에서 **바로** 고를 수 있게 한다. 설정 화면은 팝오버 안에 있고 대화는
-    /// 별도 창이라, "설정으로 가세요" 한 줄은 사용자에게 창을 두 번 옮기라는 뜻이 된다.
-    private func chooseExecutable(_ kind: PokemonChatProviderKind) {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
-        panel.showsHiddenFiles = true
-        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/.local/bin")
-        panel.message = l.t("CLI 실행 파일을 선택하세요.", "Choose the CLI executable.", "CLI 実行ファイルを選んでください。")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        settings.setChatProviderExecutablePath(url.path, for: kind)
+        return l.t("\(name) 실행 파일을 흔한 설치 위치에서 찾지 못했습니다. 설정에서 경로를 넣으세요.",
+                   "Could not find the \(name) executable in the usual install locations. Type its path in Settings.",
+                   "\(name) の実行ファイルが標準の場所で見つかりません。設定でパスを入力してください。")
     }
 
     var body: some View {
+        // 시트가 아니라 **자리 바꿈**이다. 팝오버 안에서 `.sheet` 을 띄우면 발표자가 borderless
+        // `_NSPopoverWindow` 라 붙지 않거나, 붙더라도 키 윈도우가 되며 `.transient` 팝오버를
+        // 닫아 발표자째로 사라진다. 레포의 다른 `.sheet` 은 전부 진짜 창 안에 있다.
+        Group {
+            if let destination { detail(destination) } else { conversation }
+        }
+        // 팝오버 폭은 바깥(`PopoverView`)이 정한다. 높이만 다른 오버레이와 같은 예산을 쓴다 —
+        // 전용 창의 520 보다 커져 메시지 영역이 그만큼 늘어난다.
+        .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        .task(id: profile.speciesID) {
+            identity = await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID, language: profile.language)
+        }
+    }
+
+    /// 하위 화면은 대화 자리를 덮되 **돌아갈 길**을 항상 준다 — 팝오버엔 창 닫기 버튼이 없다.
+    @ViewBuilder private func detail(_ destination: Destination) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { self.destination = nil } label: {
+                    Label(l.t("대화로", "Back to chat", "会話へ"), systemImage: "chevron.left")
+                }.buttonStyle(.borderless)
+                Spacer()
+            }.padding(12)
+            Divider()
+            switch destination {
+            case .album: PokemonMemoryAlbumView(companionID: companionID, language: profile.language, album: album)
+            case .dailyDex: TodayPokedexView(profile: profile)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var conversation: some View {
         VStack(spacing: 0) {
             header
             if let unavailableReason {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(unavailableReason).font(.caption2).foregroundStyle(.orange)
-                    // 차단된 제공자에는 고를 실행 파일이 없다 — 버튼을 그리면 사용자가 할 수 있는
-                    // 일이 있는 것처럼 보인다.
-                    if let kind = selectedKind,
-                       PokemonChatProviderSafety.availability(for: kind).isVerified {
-                        Button(l.t("실행 파일 선택…", "Choose executable…", "実行ファイルを選択…")) {
-                            chooseExecutable(kind)
-                        }.buttonStyle(.link).font(.caption2)
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
+                // 여기 파일 선택 버튼을 두면 안 된다. 팝오버가 `.transient` 라 `NSOpenPanel` 이
+                // 키 윈도우가 되는 순간 팝오버가 닫히고, `popoverDidClose` 가 호스팅 컨트롤러를
+                // 해제해 이 뷰가 통째로 사라진다 — 경로는 저장되는데 사용자는 닫힌 팝오버 앞에
+                // 남는다(같은 함정을 `SettingsView` 가 이미 문서화해 뒀다). 경로 입력은 설정에 있다.
+                Text(unavailableReason).font(.caption2).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
             }
             Divider()
             statusBar
@@ -94,7 +123,8 @@ struct PokemonChatView: View {
                                                 isEmphasized: message.id == emphasizedID)
                                 .id(message.id)
                         }
-                        if chat.isSending {
+                        // 이 대화의 상태만 본다 — 전역이면 답이 오지 않을 기록에도 점 세 개가 뜬다.
+                        if chat.isSending(for: companionID) {
                             PokemonThinkingBubble(profile: profile).id("sending")
                         }
                     }.padding(12)
@@ -102,7 +132,7 @@ struct PokemonChatView: View {
                 .onChange(of: chat.messages(for: companionID).count) { _, _ in
                     if let id = chat.messages(for: companionID).last?.id { proxy.scrollTo(id, anchor: .bottom) }
                 }
-                .onChange(of: chat.isSending) { _, sending in
+                .onChange(of: chat.isSending(for: companionID)) { _, sending in
                     if sending { proxy.scrollTo("sending", anchor: .bottom) }
                     else if let id = chat.messages(for: companionID).last?.id { proxy.scrollTo(id, anchor: .bottom) }
                 }
@@ -111,22 +141,12 @@ struct PokemonChatView: View {
             if let error = chat.errorMessage { Text(error).font(.caption2).foregroundStyle(.red).padding(.horizontal, 12) }
             Divider()
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(l.t("메시지를 입력하세요", "Type a message", "メッセージを入力"), text: $draft, axis: .vertical)
+                TextField(l.t("메시지를 입력하세요", "Type a message", "メッセージを入力"), text: draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder).lineLimit(1...4)
                     .onSubmit(send)
                 Button(action: send) { Image(systemName: "paperplane.fill") }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
+                    .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
             }.padding(12)
-        }
-        .frame(width: 420, height: 520)
-        .sheet(item: $destination) { destination in
-            switch destination {
-            case .album: PokemonMemoryAlbumView(companionID: companionID, language: profile.language, album: album)
-            case .dailyDex: TodayPokedexView(profile: profile)
-            }
-        }
-        .task(id: profile.speciesID) {
-            identity = await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID, language: profile.language)
         }
     }
 
@@ -136,7 +156,19 @@ struct PokemonChatView: View {
                 Text(profile.displayName).font(.headline)
                 Text(profile.flavorText ?? "PokéAPI 설명을 불러오는 중…").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
             }
-            Spacer()
+            Spacer(minLength: 4)
+            Menu { Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
+                Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
+                Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
+            } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
+            Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
+        }.padding(12)
+    }
+
+    private var statusBar: some View {
+        HStack(spacing: 6) {
+            // 제공자 이름은 원래 여기 라벨로, 헤더에 피커로 — 같은 값이 두 자리를 먹었다.
+            // 팝오버 폭(360)에서는 그 중복을 감당할 수 없으므로 **고를 수 있는 쪽만** 남긴다.
             Picker("AI", selection: $providerRaw) {
                 Text(l.t("AI 선택", "Choose AI", "AI を選択")).tag("")
                 // 차단된 제공자도 보여 준다 — 목록에서 지우면 왜 못 쓰는지 알 길이 없다. 대신
@@ -149,18 +181,7 @@ struct PokemonChatView: View {
                             .disabled(true).tag(kind.rawValue)
                     }
                 }
-            }.labelsHidden().frame(width: 140)
-            Menu { Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
-                Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
-                Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
-            } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton)
-        }.padding(12)
-    }
-
-    private var statusBar: some View {
-        HStack(spacing: 6) {
-            let name = selectedKind?.label(profile.language) ?? l.t("AI 미선택", "No AI", "AI 未選択")
-            Label(name, systemImage: "sparkles").font(.caption2)
+            }.labelsHidden().controlSize(.small).fixedSize()
             Text(l.t("외부 전송", "Sent externally", "外部送信")).font(.caption2).foregroundStyle(.secondary)
             // 자물쇠는 실제로 격리된 provider 가 해석됐을 때만 — 상시로 그리면 차단·미선택
             // 상태에서 없는 보증을 광고한다.
@@ -168,6 +189,7 @@ struct PokemonChatView: View {
                 Label(l.t("도구·MCP 격리", "Tools & MCP isolated", "ツール・MCP 隔離"), systemImage: "lock.fill")
                     .font(.caption2).foregroundStyle(.green)
             }
+            Spacer(minLength: 0)
         }.padding(.horizontal, 12).padding(.vertical, 6)
     }
 
@@ -175,7 +197,7 @@ struct PokemonChatView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(chips, id: \.self) { chip in
-                    Button(chip) { if chip == dailyDexQuestion { destination = .dailyDex } else { draft = chip } }.buttonStyle(.bordered).controlSize(.small)
+                    Button(chip) { if chip == dailyDexQuestion { destination = .dailyDex } else { draft.wrappedValue = chip } }.buttonStyle(.bordered).controlSize(.small)
                 }
             }.padding(.horizontal, 12).padding(.bottom, 8)
         }
@@ -220,7 +242,9 @@ struct PokemonChatView: View {
 
     private func send() {
         guard let provider else { return }
-        let message = draft; draft = ""
+        // 꺼내기와 비우기가 한 동작이라 동기다 — `Task` 가 도는 사이 한 번 더 눌려 같은 문장이
+        // 두 번 가는 창이 없고, 공백만 친 뒤 Return 을 눌러도 입력칸이 비워진다.
+        let message = chat.takeDraft(for: companionID)
         Task { await chat.send(message, for: companionID, profile: profile, provider: provider, toolbox: toolbox) }
     }
 

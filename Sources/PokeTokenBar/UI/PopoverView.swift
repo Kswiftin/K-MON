@@ -64,34 +64,71 @@ final class PopoverNavigation {
     var showDungeon = false
     /// 꾸미기(트레이너 의상) 오버레이. 위 오버레이들과 같은 층이다.
     var showOutfit = false
+    /// 대화 오버레이. 다른 오버레이와 달리 **어느 개체의** 대화인지까지 들어야 한다 —
+    /// 대화는 활성 개체뿐 아니라 박스 개체로도 열린다(`PokemonRosterView`).
+    /// `nil` 이 곧 닫힘이라 플래그를 따로 두지 않는다.
+    var chatCompanionID: UUID?
     var tab: PopoverTab = .home
 
-    func reset() {
+    /// 오버레이는 서로 같은 층이라 **한 번에 하나만** 떠야 한다. 접는 목록을 부르는 자리마다
+    /// 손으로 베껴 두면 다음에 오버레이를 더할 때 한 곳을 빠뜨리고, 그건 테스트로만 잡힌다.
+    /// 목록이 한 벌이면 빠뜨릴 자리가 없다.
+    private func closeOverlays() {
         showSettings = false
         showGymLeague = false
         showDungeon = false
         showOutfit = false
+        chatCompanionID = nil
+    }
+
+    func reset() {
+        closeOverlays()
         tab = .home
     }
 
     /// 배틀 신청이 오면 그 화면으로 데려간다 — 덮여 있던 오버레이는 접는다.
     /// 체육관을 여기서 안 닫으면 신청이 온 줄 모른 채 목록만 보게 된다.
     func goToBattle() {
-        showSettings = false
-        showGymLeague = false
-        showDungeon = false
-        showOutfit = false
+        closeOverlays()
         tab = .battle
     }
 
     /// 체육관은 혼자 도전하는 콘텐츠다. 전투 엔진은 친구 대전과 같아도, 시작한 문맥까지 친구 탭으로
     /// 보내면 체육관에서 도전했다는 흐름이 끊긴다.
     func goToGymBattle() {
-        showSettings = false
+        closeOverlays()
         showGymLeague = true
-        showDungeon = false
-        showOutfit = false
         tab = .challenge
+    }
+
+    /// 대화를 여는 **유일한** 자리. 형제 오버레이를 접지 않고 `chatCompanionID` 만 세우면
+    /// 화면 체인이 설정·체육관·던전·꾸미기를 먼저 보므로 아무 일도 안 일어난 것처럼 보이고,
+    /// 나중에 그 오버레이를 닫는 순간 대화가 불쑥 되살아난다.
+    func goToChat(companionID: UUID) {
+        closeOverlays()
+        chatCompanionID = companionID
+    }
+
+    /// 여는 시점의 소유 검사는 **여는 순간**만 덮는다. 대화가 떠 있는 동안 상대가 놓아주기·교환·
+    /// 졸업으로 사라지면 이름이 `?` 이고 스프라이트가 빈 화면에 전송 버튼만 살아 있고, 보내면
+    /// 죽은 UUID 로 세션이 새로 생겨 다음 `prune` 까지 디스크에 남는다.
+    func dropChatIfCompanionIsGone(ownedIDs: Set<UUID>) {
+        guard let id = chatCompanionID, !ownedIDs.contains(id) else { return }
+        chatCompanionID = nil
+    }
+}
+
+/// 팝오버를 바깥 클릭에 안 닫히게 붙드는 이유가 **둘** 이상이라, 되돌림 판정을 한 곳에 둔다.
+///
+/// 각 이유가 스스로 `.transient` 로 되돌리면 나중에 끝난 쪽이 아직 진행 중인 쪽의 고정을
+/// 풀어 버린다 — 배틀 중에 대화 전송이 먼저 끝나면 일하면서 하던 배틀이 클릭 한 번에 닫힌다.
+/// 부르는 자리는 플래그만 넘기고 판정하지 않는다.
+enum PopoverPinPolicy {
+    /// `chatVisible` 이 따로 있는 이유: 붙드는 목적이 "답이 오는 걸 **보게** 하려고" 다.
+    /// 사용자가 대화를 닫았으면 볼 것이 없는데, 전송만 보고 붙들면 화면에 아무 설명도 없이
+    /// 바깥 클릭이 먹통이 된다.
+    static func behavior(battlePinned: Bool, chatSending: Bool, chatVisible: Bool) -> NSPopover.Behavior {
+        battlePinned || (chatSending && chatVisible) ? .applicationDefined : .transient
     }
 }
 
@@ -104,6 +141,7 @@ struct PopoverView: View {
     @Environment(MemoryHomeVisitCenter.self) private var memoryHomeVisits
     @Environment(FocusTimer.self) private var focusTimer
     @Environment(MemoryHomePresenter.self) private var memoryHomePresenter
+    @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     private var l: L { companion.l }
 
@@ -123,6 +161,12 @@ struct PopoverView: View {
                 RogueRunView(store: companion, onClose: { nav.showDungeon = false })
             } else if nav.showOutfit {
                 OutfitView(store: companion, onClose: { nav.showOutfit = false })
+            } else if let chatCompanionID = nav.chatCompanionID {
+                // 대화는 전용 창에서 여기로 옮겨 왔다 — 근거는 `PokemonChatPresenter` 주석.
+                // 실행기는 프레젠터가 조립한 한 벌을 받아 쓴다.
+                PokemonChatView(store: companion, companionID: chatCompanionID,
+                                toolbox: chatPresenter.toolbox, settings: settings,
+                                onClose: { nav.chatCompanionID = nil })
             } else {
                 // 고정 높이 + 탭 안 스크롤. 콘텐츠가 늘 때마다 창이 커지면 NSPopover 가 매번 다시
                 // 그려 떨리고, 화면을 넘기면 스크롤 대신 잘라낸다(#9). 창 크기는 고정하고 넘치는
@@ -139,14 +183,24 @@ struct PopoverView: View {
         .environment(\.locale, companion.language.displayLocale)
         // 신호를 읽는 **바로 그 자리에서** 끈다. 끄는 일을 아래 화면에 맡기면 그 화면이 조건부로
         // 그려지는 순간(친구 탭 관문이 그랬다) 신호가 영영 안 꺼져 열 때마다 여기로 튄다.
-        .onAppear { if battleCenter.consumePendingAttention() { nav.tab = .battle } }
+        // 탭만 바꾸면 위에 덮인 오버레이가 그대로 남아 신청 화면이 안 보인다 — 탭 전환과 오버레이
+        // 접기는 `goToBattle()` 한 곳에 함께 있어야 한다.
+        .onAppear { if battleCenter.consumePendingAttention() { nav.goToBattle() } }
+        // 로스터가 바뀌는 모든 경로(놓아주기·교환·졸업·부화)를 하나로 본다. 개수만 보면 교환처럼
+        // 한 마리가 나가고 한 마리가 들어오는 경우를 놓친다.
+        .onChange(of: companion.ownedMons.map(\.id)) { _, ids in
+            nav.dropChatIfCompanionIsGone(ownedIDs: Set(ids))
+        }
         // 던전은 배틀과 화면이 다르므로 접는다. 체육관은 `GymLeagueView` 안에서 전투 화면으로
         // 갈아 끼워 도전 문맥을 유지한다.
         .onChange(of: battleCenter.phase) { _, phase in
             if nav.showDungeon, phase != .ready { nav.showDungeon = false }
         }
+        // 거래 신청(`.incoming`)은 `wantsPinnedWindow` 가 false 라 AppDelegate 의 배틀 핀 경로를
+        // 타지 않는다(`BattleNet.swift:507`). 즉 오버레이를 접는 일이 **여기서만** 일어난다 —
+        // 탭만 바꾸면 대화가 덮은 채로 남아 신청이 온 줄 모른다.
         .onChange(of: battleCenter.trading.phase) { _, phase in
-            if phase != .ready { nav.tab = .battle }
+            if phase != .ready { nav.goToBattle() }
         }
         .onChange(of: nav.tab) { _, tab in
             if tab == .home { settings.recordMemoryHomeEntry() }

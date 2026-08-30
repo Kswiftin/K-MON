@@ -48,9 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         LoginItem.migrateFromLegacyLoginItemIfNeeded()   // 로그인아이템 → KeepAlive 에이전트(크래시 자동 재실행)
         settings = AppSettings()
         companion = CompanionStore()
-        chatPresenter = PokemonChatPresenter(store: companion, chat: companion.chatStore,
-                                             album: companion.memoryAlbum, timer: focusTimer,
-                                             settings: settings)
+        chatPresenter = PokemonChatPresenter(store: companion, album: companion.memoryAlbum,
+                                             timer: focusTimer, navigation: navigation,
+                                             showPopover: { [weak self] in self?.openPopover() })
         Task { await companion.ensureInheritedMoves() }
         focusTimer.onFocusCompleted = { [weak self] minutes in
             self?.companion.completeFocusSession(minutes: minutes)
@@ -103,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         observeCompanionSprite()
         observeBattlePin()
         observeBattleMenuStatus()
+        observeChatPin()
         observeDisplaySleep()
         startIdleTick()
         startFocusTick()
@@ -159,8 +160,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         if battleCenter.wantsPinnedWindow {
             // .applicationDefined = 명시적으로 닫기 전엔 안 닫힘(앱 전환·바깥 클릭에도 유지) → 일하면서 배틀.
             // 배틀 화면이 이 팝오버 안에서 그려지므로(계획 §6.3 안 B) 고정이 곧 배틀 화면 유지다.
-            popover.behavior = .applicationDefined
             battlePinned = true
+            applyPopoverPin()
             if !popover.isShown { openPopover() }
             if battleCenter.activeGym != nil {
                 navigation.goToGymBattle()
@@ -168,9 +169,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 navigation.goToBattle()   // 친구 대전 탭으로 전환
             }
         } else if battlePinned {
-            popover.behavior = .transient   // 배틀 끝 → 원래대로(클릭 밖이면 닫힘)
             battlePinned = false
+            applyPopoverPin()   // 배틀 끝 → 원래대로. 단, 대화가 전송 중이면 고정이 유지된다.
         }
+    }
+
+    /// 전송 중엔 팝오버를 붙든다. 대화 왕복은 CLI 를 최대 `maxToolRounds + 1` 번 띄우므로 수십 초가
+    /// 걸리고, 그 사이 바깥을 한 번 클릭하면 팝오버가 닫히며 콘텐츠 뷰가 통째로 해제된다
+    /// (`popoverDidClose`). 답은 스토어에 그대로 쌓이지만 사용자는 도착을 못 본다.
+    private func observeChatPin() {
+        withObservationTracking {
+            _ = companion.chatStore.isSending
+            // 대화를 닫는 것도 고정을 푸는 사건이다 — 안 보면 사용자가 닫은 뒤에도 팝오버가
+            // 아무 설명 없이 바깥 클릭을 무시한다.
+            _ = navigation.chatCompanionID
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.applyPopoverPin()
+                self.observeChatPin()
+            }
+        }
+    }
+
+    /// 고정을 원하는 이유가 둘(배틀·대화)이라 **되돌림 판정은 한 곳**에서만 한다.
+    /// 각자 `.transient` 로 되돌리면 나중에 끝난 쪽이 진행 중인 쪽의 고정을 풀어 버린다.
+    private func applyPopoverPin() {
+        popover.behavior = pinnedBehavior
+    }
+
+    private var pinnedBehavior: NSPopover.Behavior {
+        PopoverPinPolicy.behavior(battlePinned: battlePinned,
+                                  chatSending: companion.chatStore.isSending,
+                                  chatVisible: navigation.chatCompanionID != nil)
+    }
+
+    /// 배틀 핀은 `popover.show` **전에** behavior 를 세우지만, 대화 핀은 이미 떠 있는 팝오버 위에서
+    /// 켜진다(전송은 팝오버가 열려 있어야 시작된다). AppKit 이 dismissal 감시자를 show 시점에
+    /// 설치하고 behavior 를 다시 안 읽는다면 그 대입은 아무 일도 안 한다 — 그래서 닫힘 자체를
+    /// 매 이벤트마다 여기서 한 번 더 막는다. 판정은 `PopoverPinPolicy` 한 곳 그대로다.
+    func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        pinnedBehavior != .applicationDefined
     }
 
     /// Companion 스프라이트 정체성(종/shiny) 관찰 — 사탕 진화·졸업(BagView), 세이브 가져오기,

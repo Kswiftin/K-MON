@@ -1591,6 +1591,35 @@ enum PokemonChatProviderExecutableResolver {
     }
 }
 
+/// 해석 결과를 입력이 바뀔 때까지 들고 있는다.
+///
+/// `executableURL` 은 디렉터리 13곳(`searchDirectories`)에 `fileExists` + `isExecutableFile` 을
+/// 던진다. 뷰 `body` 는 키 입력마다 다시 평가되고 그 안에서 두 자리가 이 값을 읽으므로, 캐시가
+/// 없으면 한 글자 칠 때마다 메인 스레드에서 경로 탐색이 두 벌 돈다.
+///
+/// 키는 **해석에 실제로 쓰이는 입력 전부**다. 종류만 키로 쓰면 설정에서 경로를 고쳐도 옛 결과가
+/// 계속 나온다 — 캐시의 반대편 결함이라 둘 다 테스트로 고정돼 있다.
+@MainActor
+final class PokemonChatProviderCache {
+    private var key: String?
+    private var resolved: URL?
+    private let lookup: (PokemonChatProviderKind, String?) -> URL?
+
+    init(lookup: @escaping (PokemonChatProviderKind, String?) -> URL? = { kind, _ in
+        PokemonChatProviderExecutableResolver.executableURL(for: kind)
+    }) {
+        self.lookup = lookup
+    }
+
+    func executableURL(for kind: PokemonChatProviderKind, override: String?) -> URL? {
+        let key = "\(kind.rawValue)\u{1F}\(override ?? "")"
+        guard key != self.key else { return resolved }
+        self.key = key
+        resolved = lookup(kind, override)
+        return resolved
+    }
+}
+
 struct PokemonChatCLIProvider: PokemonChatProviding, Sendable {
     let executableURL: URL
     let arguments: [String]
@@ -1736,10 +1765,22 @@ enum PokemonChatCommandRunner {
 final class PokemonChatStore {
     private struct Snapshot: Codable { var sessions: [UUID: PokemonChatSession] }
     private(set) var sessions: [UUID: PokemonChatSession] = [:]
-    private(set) var outstandingSendCount = 0
+    /// 개체별로 센다. 전역 합만 들면 "생각 중" 이 **답이 오지 않을 대화**에도 뜬다 — 피카츄에게
+    /// 보내 놓고 파이리 대화를 열면 파이리 기록에 점 세 개가 뜬다. 팝오버 이관으로 개체 사이
+    /// 이동이 두 클릭이 되면서 상시로 밟게 됐다.
+    private var outstandingSends: [UUID: Int] = [:]
+    var outstandingSendCount: Int { outstandingSends.values.reduce(0, +) }
+    /// 팝오버 고정처럼 "아무 대화나 돌고 있나" 를 묻는 자리용.
     var isSending: Bool { outstandingSendCount > 0 }
+    func isSending(for companionID: UUID) -> Bool { (outstandingSends[companionID] ?? 0) > 0 }
     private(set) var errorMessage: String?
     private(set) var pendingProposal: PokemonChatToolProposal?
+    /// 입력 중인 문장. 뷰의 `@State` 로 두면 팝오버가 닫히며 콘텐츠 뷰가 통째로 해제될 때
+    /// (`popoverDidClose` → `contentViewController = nil`) 쓰다 만 문장이 사라진다.
+    /// 개체별로 나누는 이유는 대화가 박스 개체로도 열리기 때문이다 — 한 칸이면 피카츄에게
+    /// 쓰던 문장이 파이리 대화에 나타난다.
+    /// **영속 대상이 아니다.** `Snapshot` 은 `sessions` 만 담으므로 디스크 포맷은 그대로다.
+    private var drafts: [UUID: String] = [:]
     /// 한 번의 전송이 CLI 를 띄우는 최대 추가 횟수. 상한이 없으면 매 턴 도구를 부르는 모델에
     /// 한 문장이 무한 왕복이 된다.
     /// 읽고-쓰는 2단 체인(`bag.list` → `item.use`)이 생기면서 2 라운드로는 마지막 턴에 실행이
@@ -1758,6 +1799,20 @@ final class PokemonChatStore {
 
     func session(for companionID: UUID) -> PokemonChatSession? { sessions[companionID] }
     func messages(for companionID: UUID) -> [PokemonChatMessage] { sessions[companionID]?.messages ?? [] }
+
+    func draft(for companionID: UUID) -> String { drafts[companionID] ?? "" }
+    func setDraft(_ body: String, for companionID: UUID) { drafts[companionID] = body }
+
+    /// 문장을 꺼내면서 **같은 동작으로** 입력칸을 비운다.
+    ///
+    /// 둘을 나누면 두 가지가 새어 나간다. (1) 전송은 `Task` 로 넘어가 비동기라, 꺼낸 뒤 비우기
+    /// 전에 한 번 더 눌리면 같은 문장이 두 번 간다. (2) 공백만 친 뒤 Return 을 누르면
+    /// (`onSubmit` 은 전송 버튼의 `disabled` 를 지나지 않는다) `send` 가 빈 문장 가드에서 먼저
+    /// 돌아가므로, 비우는 일을 `send` 안에 두면 공백이 입력칸에 영영 남는다.
+    func takeDraft(for companionID: UUID) -> String {
+        defer { drafts[companionID] = nil }
+        return drafts[companionID] ?? ""
+    }
 
     func appendLocalMessage(_ body: String, for companionID: UUID, profile: PokemonChatProfile) {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1780,8 +1835,12 @@ final class PokemonChatStore {
         guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         appendLocalMessage(body, for: companionID, profile: profile)
         guard sessions[companionID] != nil else { return }
-        outstandingSendCount += 1; errorMessage = nil
-        defer { outstandingSendCount -= 1 }
+        outstandingSends[companionID, default: 0] += 1; errorMessage = nil
+        defer {
+            let remaining = (outstandingSends[companionID] ?? 1) - 1
+            // 0 을 남기지 않는다 — 지나간 개체의 키가 계속 쌓이면 draft 와 같은 부류의 누수다.
+            outstandingSends[companionID] = remaining > 0 ? remaining : nil
+        }
         do {
             // 도구 결과는 이 배열에만 실린다 — 대화 기록에 넣으면 사용자가 기계 문자열을 읽는다.
             var toolResults: [PokemonChatMessage] = []
@@ -1874,11 +1933,19 @@ final class PokemonChatStore {
                             for: proposal.companionID, profile: profile)
     }
 
+    // 세션을 손대는 자리는 draft 도 같이 손댄다. 세션만 갈아 치우면 지운 대화·새 대화·사라진
+    // 개체의 쓰다 만 문장이 입력칸에 남거나(사용자가 본다), 죽은 UUID 로 키가 무한히 쌓인다.
     func startNewSession(for companionID: UUID, profile: PokemonChatProfile) {
-        sessions[companionID] = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName); save()
+        sessions[companionID] = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName)
+        drafts[companionID] = nil
+        save()
     }
-    func deleteSession(for companionID: UUID) { sessions.removeValue(forKey: companionID); save() }
-    func prune(validCompanionIDs: Set<UUID>) { sessions = sessions.filter { validCompanionIDs.contains($0.key) }; save() }
+    func deleteSession(for companionID: UUID) { sessions.removeValue(forKey: companionID); drafts[companionID] = nil; save() }
+    func prune(validCompanionIDs: Set<UUID>) {
+        sessions = sessions.filter { validCompanionIDs.contains($0.key) }
+        drafts = drafts.filter { validCompanionIDs.contains($0.key) }
+        save()
+    }
     func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(sessions: sessions)) }
 
     private func save() {
