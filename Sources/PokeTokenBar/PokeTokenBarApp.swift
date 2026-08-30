@@ -180,6 +180,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private func observeChatPin() {
         withObservationTracking {
             _ = companion.chatStore.isSending
+            // 대화를 닫는 것도 고정을 푸는 사건이다 — 안 보면 사용자가 닫은 뒤에도 팝오버가
+            // 아무 설명 없이 바깥 클릭을 무시한다.
+            _ = navigation.chatCompanionID
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -192,8 +195,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     /// 고정을 원하는 이유가 둘(배틀·대화)이라 **되돌림 판정은 한 곳**에서만 한다.
     /// 각자 `.transient` 로 되돌리면 나중에 끝난 쪽이 진행 중인 쪽의 고정을 풀어 버린다.
     private func applyPopoverPin() {
-        popover.behavior = PopoverPinPolicy.behavior(battlePinned: battlePinned,
-                                                     chatSending: companion.chatStore.isSending)
+        popover.behavior = pinnedBehavior
+    }
+
+    private var pinnedBehavior: NSPopover.Behavior {
+        PopoverPinPolicy.behavior(battlePinned: battlePinned,
+                                  chatSending: companion.chatStore.isSending,
+                                  chatVisible: navigation.chatCompanionID != nil)
+    }
+
+    /// 배틀 핀은 `popover.show` **전에** behavior 를 세우지만, 대화 핀은 이미 떠 있는 팝오버 위에서
+    /// 켜진다(전송은 팝오버가 열려 있어야 시작된다). AppKit 이 dismissal 감시자를 show 시점에
+    /// 설치하고 behavior 를 다시 안 읽는다면 그 대입은 아무 일도 안 한다 — 그래서 닫힘 자체를
+    /// 매 이벤트마다 여기서 한 번 더 막는다. 판정은 `PopoverPinPolicy` 한 곳 그대로다.
+    func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        pinnedBehavior != .applicationDefined
     }
 
     /// Companion 스프라이트 정체성(종/shiny) 관찰 — 사탕 진화·졸업(BagView), 세이브 가져오기,

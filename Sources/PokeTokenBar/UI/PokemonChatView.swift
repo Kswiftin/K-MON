@@ -57,38 +57,54 @@ struct PokemonChatView: View {
             return reason.message(profile.language)
         }
         let name = kind.label(profile.language)
-        return l.t("\(name) 실행 파일을 흔한 설치 위치에서 찾지 못했습니다. 아래에서 직접 고르거나 설정에서 경로를 넣으세요.",
-                   "Could not find the \(name) executable in the usual install locations. Choose it below, or type its path in Settings.",
-                   "\(name) の実行ファイルが標準の場所で見つかりません。下で選ぶか、設定でパスを入力してください。")
-    }
-
-    /// 실행 파일을 못 찾은 자리에서 **바로** 고를 수 있게 한다. 설정 화면은 팝오버 안에 있고 대화는
-    /// 별도 창이라, "설정으로 가세요" 한 줄은 사용자에게 창을 두 번 옮기라는 뜻이 된다.
-    private func chooseExecutable(_ kind: PokemonChatProviderKind) {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false; panel.canChooseFiles = true; panel.allowsMultipleSelection = false
-        panel.showsHiddenFiles = true
-        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/.local/bin")
-        panel.message = l.t("CLI 실행 파일을 선택하세요.", "Choose the CLI executable.", "CLI 実行ファイルを選んでください。")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        settings.setChatProviderExecutablePath(url.path, for: kind)
+        return l.t("\(name) 실행 파일을 흔한 설치 위치에서 찾지 못했습니다. 설정에서 경로를 넣으세요.",
+                   "Could not find the \(name) executable in the usual install locations. Type its path in Settings.",
+                   "\(name) の実行ファイルが標準の場所で見つかりません。設定でパスを入力してください。")
     }
 
     var body: some View {
+        // 시트가 아니라 **자리 바꿈**이다. 팝오버 안에서 `.sheet` 을 띄우면 발표자가 borderless
+        // `_NSPopoverWindow` 라 붙지 않거나, 붙더라도 키 윈도우가 되며 `.transient` 팝오버를
+        // 닫아 발표자째로 사라진다. 레포의 다른 `.sheet` 은 전부 진짜 창 안에 있다.
+        Group {
+            if let destination { detail(destination) } else { conversation }
+        }
+        // 팝오버 폭은 바깥(`PopoverView`)이 정한다. 높이만 다른 오버레이와 같은 예산을 쓴다 —
+        // 전용 창의 520 보다 커져 메시지 영역이 그만큼 늘어난다.
+        .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        .task(id: profile.speciesID) {
+            identity = await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID, language: profile.language)
+        }
+    }
+
+    /// 하위 화면은 대화 자리를 덮되 **돌아갈 길**을 항상 준다 — 팝오버엔 창 닫기 버튼이 없다.
+    @ViewBuilder private func detail(_ destination: Destination) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { self.destination = nil } label: {
+                    Label(l.t("대화로", "Back to chat", "会話へ"), systemImage: "chevron.left")
+                }.buttonStyle(.borderless)
+                Spacer()
+            }.padding(12)
+            Divider()
+            switch destination {
+            case .album: PokemonMemoryAlbumView(companionID: companionID, language: profile.language, album: album)
+            case .dailyDex: TodayPokedexView(profile: profile)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var conversation: some View {
         VStack(spacing: 0) {
             header
             if let unavailableReason {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(unavailableReason).font(.caption2).foregroundStyle(.orange)
-                    // 차단된 제공자에는 고를 실행 파일이 없다 — 버튼을 그리면 사용자가 할 수 있는
-                    // 일이 있는 것처럼 보인다.
-                    if let kind = selectedKind,
-                       PokemonChatProviderSafety.availability(for: kind).isVerified {
-                        Button(l.t("실행 파일 선택…", "Choose executable…", "実行ファイルを選択…")) {
-                            chooseExecutable(kind)
-                        }.buttonStyle(.link).font(.caption2)
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
+                // 여기 파일 선택 버튼을 두면 안 된다. 팝오버가 `.transient` 라 `NSOpenPanel` 이
+                // 키 윈도우가 되는 순간 팝오버가 닫히고, `popoverDidClose` 가 호스팅 컨트롤러를
+                // 해제해 이 뷰가 통째로 사라진다 — 경로는 저장되는데 사용자는 닫힌 팝오버 앞에
+                // 남는다(같은 함정을 `SettingsView` 가 이미 문서화해 뒀다). 경로 입력은 설정에 있다.
+                Text(unavailableReason).font(.caption2).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 8)
             }
             Divider()
             statusBar
@@ -126,18 +142,6 @@ struct PokemonChatView: View {
                 Button(action: send) { Image(systemName: "paperplane.fill") }
                     .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
             }.padding(12)
-        }
-        // 팝오버 폭은 바깥(`PopoverView`)이 정한다. 높이만 다른 오버레이와 같은 예산을 쓴다 —
-        // 전용 창의 520 보다 커져 메시지 영역이 그만큼 늘어난다.
-        .frame(height: PopoverMetrics.currentHeight(for: .battle))
-        .sheet(item: $destination) { destination in
-            switch destination {
-            case .album: PokemonMemoryAlbumView(companionID: companionID, language: profile.language, album: album)
-            case .dailyDex: TodayPokedexView(profile: profile)
-            }
-        }
-        .task(id: profile.speciesID) {
-            identity = await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID, language: profile.language)
         }
     }
 
@@ -233,9 +237,9 @@ struct PokemonChatView: View {
 
     private func send() {
         guard let provider else { return }
-        // 입력칸을 비우는 건 스토어가 한다(`PokemonChatStore.send`). 여기서 또 비우면 비우는
-        // 자리가 둘이 되고, 한쪽만 고쳐도 아무 테스트가 안 깨진다.
-        let message = draft.wrappedValue
+        // 꺼내기와 비우기가 한 동작이라 동기다 — `Task` 가 도는 사이 한 번 더 눌려 같은 문장이
+        // 두 번 가는 창이 없고, 공백만 친 뒤 Return 을 눌러도 입력칸이 비워진다.
+        let message = chat.takeDraft(for: companionID)
         Task { await chat.send(message, for: companionID, profile: profile, provider: provider, toolbox: toolbox) }
     }
 

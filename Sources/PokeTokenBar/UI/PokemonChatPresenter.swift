@@ -34,8 +34,10 @@ final class PokemonChatPresenter {
         guard store.ownedMons.contains(where: { $0.id == companionID }) else { return }
         // 순서가 중요하다 — 팝오버를 여는 경로가 `navigation.reset()` 을 부르므로(닫혔다 열리면
         // 항상 Home), 대화를 먼저 세우면 그 reset 이 방금 연 대화를 접는다.
+        // 팝오버가 **이미 열려 있으면** `showPopover()` 는 아무것도 하지 않는다. 그때 설정·체육관
+        // 같은 오버레이가 떠 있을 수 있으므로 접는 일은 `goToChat` 이 맡는다.
         showPopover()
-        navigation.chatCompanionID = companionID
+        navigation.goToChat(companionID: companionID)
         NSApp.activate(ignoringOtherApps: true)
     }
 }

@@ -1768,6 +1768,17 @@ final class PokemonChatStore {
     func draft(for companionID: UUID) -> String { drafts[companionID] ?? "" }
     func setDraft(_ body: String, for companionID: UUID) { drafts[companionID] = body }
 
+    /// 문장을 꺼내면서 **같은 동작으로** 입력칸을 비운다.
+    ///
+    /// 둘을 나누면 두 가지가 새어 나간다. (1) 전송은 `Task` 로 넘어가 비동기라, 꺼낸 뒤 비우기
+    /// 전에 한 번 더 눌리면 같은 문장이 두 번 간다. (2) 공백만 친 뒤 Return 을 누르면
+    /// (`onSubmit` 은 전송 버튼의 `disabled` 를 지나지 않는다) `send` 가 빈 문장 가드에서 먼저
+    /// 돌아가므로, 비우는 일을 `send` 안에 두면 공백이 입력칸에 영영 남는다.
+    func takeDraft(for companionID: UUID) -> String {
+        defer { drafts[companionID] = nil }
+        return drafts[companionID] ?? ""
+    }
+
     func appendLocalMessage(_ body: String, for companionID: UUID, profile: PokemonChatProfile) {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -1788,10 +1799,6 @@ final class PokemonChatStore {
               toolbox: (any PokemonChatToolRunning)? = nil) async {
         guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         appendLocalMessage(body, for: companionID, profile: profile)
-        // 보낸 문장을 비우는 건 **보낸 쪽**의 일이다. 뷰가 비우면 전송 경로가 둘로 갈라져
-        // 한쪽만 비우고 다음 전송에서 같은 문장이 두 번 간다. 빈 문장은 위 가드에서 이미
-        // 걸렸으므로 여기 도달했다는 건 실제로 보냈다는 뜻이다.
-        drafts[companionID] = nil
         guard sessions[companionID] != nil else { return }
         outstandingSendCount += 1; errorMessage = nil
         defer { outstandingSendCount -= 1 }
@@ -1887,11 +1894,19 @@ final class PokemonChatStore {
                             for: proposal.companionID, profile: profile)
     }
 
+    // 세션을 손대는 자리는 draft 도 같이 손댄다. 세션만 갈아 치우면 지운 대화·새 대화·사라진
+    // 개체의 쓰다 만 문장이 입력칸에 남거나(사용자가 본다), 죽은 UUID 로 키가 무한히 쌓인다.
     func startNewSession(for companionID: UUID, profile: PokemonChatProfile) {
-        sessions[companionID] = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName); save()
+        sessions[companionID] = PokemonChatSession(companionID: companionID, speciesID: profile.speciesID, displayName: profile.displayName)
+        drafts[companionID] = nil
+        save()
     }
-    func deleteSession(for companionID: UUID) { sessions.removeValue(forKey: companionID); save() }
-    func prune(validCompanionIDs: Set<UUID>) { sessions = sessions.filter { validCompanionIDs.contains($0.key) }; save() }
+    func deleteSession(for companionID: UUID) { sessions.removeValue(forKey: companionID); drafts[companionID] = nil; save() }
+    func prune(validCompanionIDs: Set<UUID>) {
+        sessions = sessions.filter { validCompanionIDs.contains($0.key) }
+        drafts = drafts.filter { validCompanionIDs.contains($0.key) }
+        save()
+    }
     func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(sessions: sessions)) }
 
     private func save() {
