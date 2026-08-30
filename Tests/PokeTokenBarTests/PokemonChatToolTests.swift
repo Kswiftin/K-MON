@@ -1233,6 +1233,13 @@ final class PokemonChatToolTests: XCTestCase {
         ("집중 중", { await $0.probe { store, timer, _ in
             XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
         } }),
+        // 타이머만 돌고 **모험은 없는** 구간. 이 상태가 없으면 시작 판정의 두 조건 중 모험 쪽이
+        // 타이머 쪽을 가려서, 타이머 검사를 통째로 지워도 아무 테스트가 안 깨진다(주입에서 확인).
+        // 같은 가림을 실행기에서 이미 겪었다 — `pokedoro start refused: already in rest`.
+        ("휴식 중", { await $0.probe { store, timer, _ in
+            timer.startRest()
+            XCTAssertNil(store.activeAdventure, "전제: 휴식 구간엔 나가 있는 모험이 없다")
+        } }),
         ("모험 정산 대기", { await $0.probe { store, timer, clock in
             XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
             clock.advance(25 * 60)
