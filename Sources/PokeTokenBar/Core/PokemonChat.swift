@@ -1519,6 +1519,33 @@ enum PokemonChatProviderSafety {
     }
 }
 
+/// 어느 CLI 로 보낼지 정한다. **고르는 일과 보내는 일은 다르다** — 여기서 자동화하는 것은
+/// "어느 CLI 인가" 뿐이고, 외부로 나가는 행위는 여전히 사용자가 전송을 눌러야 일어난다.
+///
+/// 자동 선택은 provider 로 가는 **두 번째 길**이다. 지금까지는 사용자가 Picker 에서 고르는 길
+/// 하나뿐이었고 격리 관문도 그 길에만 있었다. 그래서 후보는 `verifiedKinds` **에서만** 나온다 —
+/// 여기서 `allCases` 를 다시 순회하면 안전 판정이 두 벌이 되고, 차단된 CLI 가 이 길로 샌다.
+enum PokemonChatProviderSelection {
+    /// 사용자가 고른 값이 이긴다. 다만 **쓸 수 없는 선택은 막다른 길이 아니라 폴백**이다 —
+    /// 차단되기 전에 저장된 종류나 지워 버린 CLI 하나로 대화가 영영 안 열리면, 사용자는 이유를
+    /// 알 길이 없다. 실행 파일 해석이 오래된 override 를 다루는 방향과 같다.
+    static func effectiveKind(stored: String,
+                              isInstalled: (PokemonChatProviderKind) -> Bool) -> PokemonChatProviderKind? {
+        if let kind = PokemonChatProviderKind(rawValue: stored),
+           PokemonChatProviderSafety.availability(for: kind).isVerified,
+           isInstalled(kind) { return kind }
+        return PokemonChatProviderSafety.verifiedKinds.first(where: isInstalled)
+    }
+
+    /// 고를 것이 하나도 없을 때의 안내. 차단 사유(`PokemonChatBlockReason`)와 같은 이유로 문구를
+    /// Core 에 둔다 — 뷰가 들면 커버리지 게이트 밖에 남고, 세 언어 중 하나가 조용히 빠진다.
+    static func noProviderMessage(_ language: AppLanguage) -> String {
+        L(language).t("설치된 대화 CLI 를 찾지 못했습니다. 설정에서 경로를 넣으세요.",
+                      "No chat CLI was found on this Mac. Type its path in Settings.",
+                      "会話用 CLI が見つかりません。設定でパスを入力してください。")
+    }
+}
+
 /// Resolves only an explicit, executable file.  GUI applications must not inherit a shell PATH.
 enum PokemonChatProviderExecutableResolver {
     /// CLI 가 실제로 설치되는 자리. **종류별로 목록을 따로 두지 않는다** — 두 벌이면 새 설치 자리가
@@ -1599,10 +1626,15 @@ enum PokemonChatProviderExecutableResolver {
 ///
 /// 키는 **해석에 실제로 쓰이는 입력 전부**다. 종류만 키로 쓰면 설정에서 경로를 고쳐도 옛 결과가
 /// 계속 나온다 — 캐시의 반대편 결함이라 둘 다 테스트로 고정돼 있다.
+///
+/// 보관은 **종류별**이다. 자동 선택(`PokemonChatProviderSelection`)이 검증 CLI 2종의 설치 여부를
+/// 같은 `body` 안에서 함께 물으므로, 자리가 한 칸이면 두 질의가 서로를 밀어내 매번 miss 가 나고
+/// 캐시가 막으려던 비용이 그대로 돌아온다.
 @MainActor
 final class PokemonChatProviderCache {
-    private var key: String?
-    private var resolved: URL?
+    /// ponytail: 항목을 지우지 않는다 — 팝오버가 닫히면 콘텐츠 뷰가 통째로 해제돼 이 캐시도 같이
+    /// 사라지므로 수명이 팝오버 1회다. 대화가 창으로 돌아가 오래 살게 되면 무효화가 필요해진다.
+    private var resolved: [String: URL?] = [:]
     private let lookup: (PokemonChatProviderKind, String?) -> URL?
 
     init(lookup: @escaping (PokemonChatProviderKind, String?) -> URL? = { kind, _ in
@@ -1613,10 +1645,10 @@ final class PokemonChatProviderCache {
 
     func executableURL(for kind: PokemonChatProviderKind, override: String?) -> URL? {
         let key = "\(kind.rawValue)\u{1F}\(override ?? "")"
-        guard key != self.key else { return resolved }
-        self.key = key
-        resolved = lookup(kind, override)
-        return resolved
+        if let cached = resolved[key] { return cached }
+        let url = lookup(kind, override)
+        resolved[key] = url
+        return url
     }
 }
 
