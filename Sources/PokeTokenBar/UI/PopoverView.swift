@@ -127,8 +127,15 @@ enum PopoverPinPolicy {
     /// `chatVisible` 이 따로 있는 이유: 붙드는 목적이 "답이 오는 걸 **보게** 하려고" 다.
     /// 사용자가 대화를 닫았으면 볼 것이 없는데, 전송만 보고 붙들면 화면에 아무 설명도 없이
     /// 바깥 클릭이 먹통이 된다.
-    static func behavior(battlePinned: Bool, chatSending: Bool, chatVisible: Bool) -> NSPopover.Behavior {
-        battlePinned || (chatSending && chatVisible) ? .applicationDefined : .transient
+    /// **배틀은 창을 붙들지 않는다.** 예전엔 배틀 중 `.applicationDefined` 로 고정해 바깥 클릭으로
+    /// 닫히지 않게 했는데, 급히 화면을 치워야 할 때 닫히지 않아 불편했다. 배틀은 창을 닫아도
+    /// 살아 있고 다시 열면 이어지므로 붙들 이유가 없다(다만 30초 턴 마감은 계속 돌아 자리를
+    /// 비우면 그 턴은 자동으로 채워진다 — 상대를 무한정 기다리게 하지 않으려는 장치라 그대로 둔다).
+    ///
+    /// 대화 전송 중 고정은 남긴다. 그건 몇 초짜리이고, 붙드는 목적이 "답이 오는 걸 **보게**"
+    /// 하려는 것이라 닫히면 응답을 놓친다.
+    static func behavior(chatSending: Bool, chatVisible: Bool) -> NSPopover.Behavior {
+        chatSending && chatVisible ? .applicationDefined : .transient
     }
 }
 
@@ -196,7 +203,7 @@ struct PopoverView: View {
         .onChange(of: battleCenter.phase) { _, phase in
             if nav.showDungeon, phase != .ready { nav.showDungeon = false }
         }
-        // 거래 신청(`.incoming`)은 `wantsPinnedWindow` 가 false 라 AppDelegate 의 배틀 핀 경로를
+        // 거래 신청(`.incoming`)은 `wantsForegroundWindow` 가 false 라 AppDelegate 의 창 열기 경로를
         // 타지 않는다(`BattleNet.swift:507`). 즉 오버레이를 접는 일이 **여기서만** 일어난다 —
         // 탭만 바꾸면 대화가 덮은 채로 남아 신청이 온 줄 모른다.
         .onChange(of: battleCenter.trading.phase) { _, phase in

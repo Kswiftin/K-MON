@@ -518,13 +518,17 @@ final class BattleCenter {
     /// 파티 편성을 지나므로 이 한 축만 보려면 여기로 들어온다.
     func debugRaisePendingAttention() { pendingAttention = true }
     #endif
-    /// 배틀이 잡히거나 걸릴 때 창을 자동으로 열고 고정하게 하는 신호(AppDelegate 가 관찰).
-    /// 배틀 관련 phase 면 true — 창을 띄우고 닫히지 않게 유지한다.
-    var wantsPinnedWindow: Bool {
+    /// 배틀이 잡히거나 걸릴 때 창을 자동으로 **여는** 신호(AppDelegate 가 관찰).
+    /// **고정하지는 않는다** — 급히 화면을 치워야 할 때 닫히지 않으면 곤란하고, 배틀은 창을
+    /// 닫아도 살아 있어 다시 열면 이어진다(다만 30초 턴 마감은 계속 돈다).
+    var wantsForegroundWindow: Bool {
         // 받은 신청은 화면을 자동으로 열지 않는다. 옆 사람이 모니터를 보고 있어도 신청자와
         // 게임 내용이 노출되지 않고, 사용자가 일반 알림을 눌렀을 때만 상세 화면을 연다.
         if case .incoming = trading.phase { return false }
         if trading.phase != .ready { return true }
+        // 방 컨텐츠(체육관·토너먼트·포켓슬론·퀴즈)도 창을 띄운다. 예전엔 1:1(`phase`)만 봐서
+        // 남이 건 체육관 도전이 화면에 안 떴다.
+        if multiplayer.wantsForegroundWindow { return true }
         switch phase {
         case .ready, .incoming: return false
         default: return true

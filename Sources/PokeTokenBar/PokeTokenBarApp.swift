@@ -101,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         popover.delegate = self   // 닫힐 때(popoverDidClose) 호스팅 컨트롤러 해제 → 숨은 채 재레이아웃 비용 제거
 
         observeCompanionSprite()
-        observeBattlePin()
+        observeBattleWindow()
         observeBattleMenuStatus()
         observeChatPin()
         observeDisplaySleep()
@@ -126,17 +126,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         }
     }
 
-    /// 배틀이 잡히거나 걸리면 팝오버를 열고 **고정**(닫힘 방지)한다 — 일하면서 배틀할 수 있게.
-    /// 배틀이 끝나 .ready 로 돌아가면 다시 transient(클릭 밖=닫힘)로 복원한다.
-    private var battlePinned = false
-    private func observeBattlePin() {
+    /// 배틀이 잡히거나 걸리면 팝오버를 **연다.** 고정(닫힘 방지)은 하지 않는다 — 급히 화면을
+    /// 치워야 할 때 닫히지 않으면 곤란하고, 배틀은 창을 닫아도 살아 있어 다시 열면 이어진다.
+    private func observeBattleWindow() {
         withObservationTracking {
-            _ = battleCenter.wantsPinnedWindow
+            _ = battleCenter.wantsForegroundWindow
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.applyBattlePin()
-                self.observeBattlePin()
+                self.applyBattleWindow()
+                self.observeBattleWindow()
             }
         }
     }
@@ -156,21 +155,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         }
     }
 
-    private func applyBattlePin() {
-        if battleCenter.wantsPinnedWindow {
-            // .applicationDefined = 명시적으로 닫기 전엔 안 닫힘(앱 전환·바깥 클릭에도 유지) → 일하면서 배틀.
-            // 배틀 화면이 이 팝오버 안에서 그려지므로(계획 §6.3 안 B) 고정이 곧 배틀 화면 유지다.
-            battlePinned = true
-            applyPopoverPin()
-            if !popover.isShown { openPopover() }
-            if battleCenter.activeGym != nil {
-                navigation.goToGymBattle()
-            } else {
-                navigation.goToBattle()   // 친구 대전 탭으로 전환
-            }
-        } else if battlePinned {
-            battlePinned = false
-            applyPopoverPin()   // 배틀 끝 → 원래대로. 단, 대화가 전송 중이면 고정이 유지된다.
+    /// 배틀이 잡히면 창을 **열고 그 화면으로 데려간다.** 붙들지는 않는다 — 급히 치워야 할 때
+    /// 닫히지 않으면 곤란하고, 배틀은 창을 닫아도 살아 있어 다시 열면 이어진다.
+    private func applyBattleWindow() {
+        guard battleCenter.wantsForegroundWindow else { return }
+
+        if !popover.isShown { openPopover() }
+        if battleCenter.activeGym != nil {
+            navigation.goToGymBattle()
+        } else if battleCenter.multiplayer.hasLiveGymMatch {
+            // 도전은 남이 걸어 오므로 화면을 데려가야 한다. 친구 탭이 판이 도는 동안
+            // 체육관 화면을 그린다(`FriendView` 의 `isGymMatchLive`).
+            navigation.goToBattle()
+        } else if battleCenter.multiplayer.isInPlay {
+            // 토너먼트·포켓슬론·퀴즈는 사용자가 그 화면에서 직접 시작했다 — 탭을 건드리지 않는다.
+            // 옮기면 방금 연 화면에서 끌려 나온다.
+        } else {
+            navigation.goToBattle()   // 친구 대전 탭으로 전환
         }
     }
 
@@ -199,8 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     }
 
     private var pinnedBehavior: NSPopover.Behavior {
-        PopoverPinPolicy.behavior(battlePinned: battlePinned,
-                                  chatSending: companion.chatStore.isSending,
+        PopoverPinPolicy.behavior(chatSending: companion.chatStore.isSending,
                                   chatVisible: navigation.chatCompanionID != nil)
     }
 

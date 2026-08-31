@@ -548,6 +548,56 @@ final class PlayerGymTests: XCTestCase {
                                                now: clock.now), 0)
     }
 
+    // MARK: 창 띄우기 — 남이 건 도전이 화면에 안 뜨던 자리
+
+    /// 도전은 **남이 걸어 온다.** 창 열기 신호가 1:1 배틀(`BattleCenter.phase`)만 봐서 체육관
+    /// 판이 서도 화면이 안 떴다. 창을 **붙들지는 않는다** — 닫기는 언제나 된다.
+    func testALiveGymMatchBringsTheWindowForward() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        XCTAssertFalse(rooms.wantsForegroundWindow, "판이 없으면 띄우지 않는다")
+
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: rooms.myID, challengerID: UUID(),
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertTrue(rooms.wantsForegroundWindow, "남이 건 도전은 화면에 떠야 안다")
+        XCTAssertTrue(rooms.hasLiveGymMatch)
+    }
+
+    /// 관장이 도전을 **기다리는 동안**까지 띄우면 성가시다 — 띄우는 것은 판이 돌 때뿐이다.
+    func testWaitingForChallengersDoesNotBringTheWindowForward() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        _ = leaderWithFullTeam(s)
+
+        XCTAssertFalse(rooms.wantsForegroundWindow, "도전 대기 중에는 창을 띄우지 않는다")
+    }
+
+    func testAFinishedMatchDoesNotBringTheWindowForward() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: rooms.myID, challengerID: UUID(),
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: rooms.myID))
+
+        XCTAssertFalse(rooms.hasLiveGymMatch)
+        XCTAssertFalse(rooms.wantsForegroundWindow)
+    }
+
+    /// **배틀은 창을 붙들지 않는다.** 급히 화면을 치워야 할 때 닫히지 않으면 곤란하다 —
+    /// 붙드는 이유는 대화 전송 하나뿐이고, 그건 몇 초짜리다.
+    func testBattlesNeverPinTheWindow() {
+        XCTAssertEqual(PopoverPinPolicy.behavior(chatSending: false, chatVisible: false), .transient)
+        XCTAssertEqual(PopoverPinPolicy.behavior(chatSending: true, chatVisible: true), .applicationDefined)
+    }
+
     // MARK: 끝난 판 정리 — 한 번 방어하고 체육관이 잠기던 자리
 
     /// **회귀**: 방어에 성공해도 `gymMatch` 를 안 치우면 끝난 판이 그대로 남는다. 그러면 다음
