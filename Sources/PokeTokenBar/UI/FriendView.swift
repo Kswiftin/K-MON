@@ -16,7 +16,12 @@ struct FriendView: View {
         Group {
             if hasHiddenIncomingMessage && !revealsIncomingMessage {
                 privateMessageCard
-            } else if battleCenter.phase != .ready {
+            // `destination == .battle` 로도 들어온다. 도전 조건(후보 6마리 선택)을 만족시키는
+            // 화면이 `BattleView` 안에 있는데, 예전엔 **배틀이 시작된 뒤에만** 이 갈래로 들어와서
+            // "조건을 통과해야 볼 수 있는 화면에서만 그 조건을 채울 수 있는" 교착이었다 —
+            // 배틀 신청을 눌러도 아무 반응이 없던 이유다(에러 문구도 저 안에 있어 안 보였다).
+            // 안쪽의 `phase == .ready` 뒤로가기 버튼이 원래 이 진입을 전제한 코드였다.
+            } else if destination == .battle || battleCenter.phase != .ready {
                 VStack(alignment: .leading, spacing: 10) {
                     if battleCenter.phase == .ready {
                         Button { destination = nil } label: {
