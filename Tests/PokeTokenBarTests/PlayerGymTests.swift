@@ -686,6 +686,15 @@ final class PlayerGymTests: XCTestCase {
                       "진행 중 판정은 승자 유무로 한다")
     }
 
+    /// **회귀**: 도전 조건(후보 6마리 선택)을 채우는 화면이 `BattleView` 안에 있는데, 그 갈래에
+    /// 배틀이 **시작된 뒤에만** 들어갈 수 있었다 — 조건을 통과해야 볼 수 있는 화면에서만 그
+    /// 조건을 채울 수 있는 교착이라 배틀 신청이 아무 반응도 없었다(에러 문구도 그 안에 있었다).
+    func testTheBattleSetupScreenIsReachableBeforeChallenging() throws {
+        let code = try friendViewSource()
+        XCTAssertTrue(code.contains("destination == .battle || battleCenter.phase != .ready"),
+                      "배틀 화면에 시작 전에도 들어갈 수 있어야 후보 6마리를 고를 수 있다")
+    }
+
     /// 출전 인원(1/3/6)은 **랭크배틀에서만** 쓰는 값이다. 친구 탭 관문에 두면 바로 아래
     /// 체육관(4마리 고정)·토너먼트(3마리 고정) 카드에도 적용되는 것처럼 보이는데, 그 둘은
     /// 이 값을 아예 읽지 않는다.
