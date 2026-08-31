@@ -216,3 +216,70 @@ final class MemoryHomeVisitProtocolTests: XCTestCase {
     }
 
 }
+
+/// Bonjour 광고 이름의 고유성. `BattleNet`·`PokemonTrade`·`MultiplayerRoomCenter` 는 셋 다
+/// 이름 뒤에 고유 접미를 붙이고 그 접미로 자기를 가르는데, Memory Home 만 닉네임 원문을 광고하고
+/// 원문으로 자기를 걸렀다 — 같은 닉네임 두 대가 서로를 자기로 오인해 VISIT 목록이 빈 채로 남았다.
+/// `PeerAdvertisementTests.testTheSameTrainerNameOnAnotherMachineIsStillAPeer` 의 형제다.
+@MainActor
+final class MemoryHomeServiceNameTests: XCTestCase {
+    private let anyEndpoint: NWEndpoint = .hostPort(host: "127.0.0.1", port: 55_555)
+
+    private func home(_ name: String, mine: String = "MemoryHome#000000") -> MemoryHomePeer? {
+        MemoryHomeVisitCenter.peer(fromService: name, excluding: mine, endpoint: anyEndpoint)
+    }
+
+    /// 같은 설치는 언제 물어도 같은 이름을 준다 — 매번 새 UUID 를 굽던 `BattleNet` 과 달리
+    /// Memory Home 은 `AppSettings.memoryHomeLANPeerID` 라는 영구 ID 를 이미 갖고 있다.
+    func testServiceNameIsStableForTheSameInstall() {
+        let id = UUID(uuidString: "44D58000-0000-0000-0000-000000000000")!
+        XCTAssertEqual(MemoryHomeVisitCenter.serviceName(nickname: "MemoryHome", peerID: id),
+                       MemoryHomeVisitCenter.serviceName(nickname: "MemoryHome", peerID: id))
+    }
+
+    /// 이 결함의 핵심이다. 닉네임이 같아도 설치가 다르면 광고 이름이 달라야 한다.
+    func testTheSameNicknameOnTwoInstallsAdvertisesDifferentNames() {
+        // 랜덤 UUID 로 쓰면 1600만분의 1로 접미가 겹쳐 이 테스트가 스스로 흔들린다 — 고정값을 쓴다.
+        let a = MemoryHomeVisitCenter.serviceName(nickname: "MemoryHome",
+                                                  peerID: UUID(uuidString: "44D58000-0000-0000-0000-000000000000")!)
+        let b = MemoryHomeVisitCenter.serviceName(nickname: "MemoryHome",
+                                                  peerID: UUID(uuidString: "FFFFFF00-0000-0000-0000-000000000000")!)
+        XCTAssertNotEqual(a, b, "같은 닉네임 두 설치가 같은 이름을 광고하면 mDNS 가 한쪽을 개명한다")
+    }
+
+    /// 광고 이름은 Bonjour 이름이라 공백·제어문자가 없어야 한다 — `clean` 이 거르는 것과 같은 규칙.
+    func testServiceNameIsBonjourSafe() {
+        let name = MemoryHomeVisitCenter.serviceName(nickname: "Memory Home\n", peerID: UUID())
+        XCTAssertNotNil(MemoryHomeVisitCenter.clean(name, limit: 64), "광고 이름에 공백·제어문자가 남았다")
+    }
+
+    func testMyOwnHomeIsFilteredOut() {
+        XCTAssertNil(home("MemoryHome#000000"))
+    }
+
+    /// 닉네임이 같은 다른 기기는 남이다. 원문으로 걸렀다면 여기서 `nil` 이 나온다.
+    func testTheSameNicknameOnAnotherMachineIsStillAHome() {
+        let other = home("MemoryHome#FFFFFF")
+        XCTAssertEqual(other?.displayName, "MemoryHome")
+        XCTAssertEqual(other?.id, "MemoryHome#FFFFFF", "id 는 광고 원문이어야 방문 도장이 기기별로 남는다")
+    }
+
+    /// mDNS 가 충돌로 개명한 이름(` (2)`)에도 공백이 든다. `clean` 으로 라벨을 만들면 전부
+    /// "Memory Home" 으로 뭉개져 어느 집인지 구분할 수 없었다.
+    func testRenamedLegacyHomeKeepsAReadableLabel() {
+        XCTAssertEqual(home("MemoryHome (2)")?.displayName, "MemoryHome (2)")
+    }
+
+    /// 접미가 없는 구버전(2.20.x) 피어도 목록에 남아야 한다.
+    func testLegacyHomeWithoutSuffixIsStillAHome() {
+        XCTAssertEqual(home("OldHome")?.displayName, "OldHome")
+    }
+
+    /// 원격 이름은 남이 지은 문자열이다. 줄바꿈·제어문자는 라벨에 실리면 안 되고, 남는 게 없으면
+    /// 목록에서 뺀다 — 빈 버튼은 눌러도 어디로 가는지 알 수 없다.
+    func testHostileRemoteNameIsRejected() {
+        XCTAssertNil(home("줄바꿈\n주입#ABCDEF"))
+        XCTAssertNil(home("#ABCDEF"))
+        XCTAssertNil(home(String(repeating: "가", count: 41) + "#ABCDEF"))
+    }
+}
