@@ -89,10 +89,26 @@ final class RogueRunSaveTests: XCTestCase {
 
     // MARK: 못 믿을 파일
 
-    /// 활성 칸이 범위 밖이면 `mySlot` 을 읽는 순간 크래시다. 판은 소모품이라 버린다.
-    func testAnOutOfRangeActiveSlotIsRejected() {
+    /// 필드 칸이 범위 밖이면 그 칸의 개체를 읽는 순간 크래시다. 판은 소모품이라 버린다.
+    func testAnOutOfRangeFieldSlotIsRejected() {
         var save = makeRun().saveForm
-        save.battle.myActive = 9
+        save.battle.myField = [9]
+        XCTAssertNil(RogueRun(save: save))
+    }
+
+    /// 같은 개체가 두 칸에 선 파일도 버린다 — 되살리면 그 개체가 한 턴에 두 번 움직이고
+    /// 데미지도 두 몫으로 들어간다.
+    func testTheSameMemberOnTwoSlotsIsRejected() {
+        var save = makeRun().saveForm
+        save.battle.myField = [0, 0]
+        XCTAssertNil(RogueRun(save: save))
+    }
+
+    /// 칸이 셋인 파일(손편집·미래 형식)도 버린다 — 필드 상한은 둘이다.
+    func testMoreFieldSlotsThanTheFormatAllowsIsRejected() {
+        var save = RogueRun(party: [snapshot(1), snapshot(2), snapshot(3)],
+                            opponents: [snapshot(99)], seed: 5).saveForm
+        save.battle.myField = [0, 1, 2]
         XCTAssertNil(RogueRun(save: save))
     }
 

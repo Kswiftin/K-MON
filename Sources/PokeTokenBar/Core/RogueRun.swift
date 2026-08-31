@@ -270,7 +270,7 @@ struct RogueRun: Sendable {
     private(set) var tookOnlyRiskyRoutes = true
     /// 이 판이 쓰는 밸런스 값. 앱은 `.standard`, 시뮬레이터는 흔든 값을 넣는다.
     let tuning: RogueTuning
-    private(set) var battle: TeamPracticeBattle
+    private(set) var battle: WaveBattle
     /// 웨이브 seed·보상 추첨을 잇는 하나의 흐름. **판마다 완전 무작위로 심는다** — 날짜 결정론은
     /// 쓰지 않는다(퍼즐 던전과 다른 점이다). 하루 판 수도 제한하지 않는다: 같은 판을 다시 도는
     /// 콘텐츠가 아니라 매번 새로 뽑는 콘텐츠고, 보상이 세이브에 남지 않아 반복이 경제를 흔들지 않는다.
@@ -287,23 +287,33 @@ struct RogueRun: Sendable {
         var rng = SplitMix64(seed: seed)
         let sides = party.map(BattleSide.init)
         self.party = sides
-        self.battle = TeamPracticeBattle(mine: sides,
-                                         opponents: opponents.map(BattleSide.init),
-                                         rng: SplitMix64(seed: rng.next()))
+        self.battle = WaveBattle(mine: sides,
+                                 opponents: opponents.map(BattleSide.init),
+                                 rng: SplitMix64(seed: rng.next()))
         self.rng = rng
     }
 
     // MARK: 전투 중
 
-    mutating func useMove(_ index: Int) {
+    /// 기술을 쓴다. `slot` 은 내 필드 칸, `target` 은 상대 필드 칸이다 — 단일전은 둘 다 0 이라
+    /// 호출부가 2대2 를 몰라도 된다. 살아 있는 칸이 모두 정해지는 순간 턴이 돈다(`WaveBattle`).
+    mutating func useMove(_ index: Int, fromSlot slot: Int = 0, target: Int = 0) {
         guard stage == .battling else { return }
-        _ = battle.useMove(index)
+        _ = battle.choose(.move(index: index, target: target), forSlot: slot)
         settle()
     }
 
-    mutating func switchParty(to index: Int) {
+    /// 살아 있는 개체를 바꾼다 — **그 칸의 행동이다**(때리지 못한다).
+    mutating func switchParty(to index: Int, fromSlot slot: Int = 0) {
         guard stage == .battling else { return }
-        _ = battle.switchMine(to: index)
+        _ = battle.choose(.switchTo(teamIndex: index), forSlot: slot)
+        settle()
+    }
+
+    /// 쓰러진 칸을 벤치에서 채운다 — 턴을 쓰지 않는다(근거는 `WaveBattle.sendOut`).
+    mutating func sendOut(_ index: Int, toSlot slot: Int) {
+        guard stage == .battling else { return }
+        _ = battle.sendOut(teamIndex: index, toSlot: slot)
         settle()
     }
 
@@ -348,17 +358,21 @@ struct RogueRun: Sendable {
     /// 지금 볼을 던질 수 있는가. 보스는 제외한다 — 4·8·12 웨이브는 판의 관문이고 회복 지점이라
     /// 잡아서 건너뛰면 그 자리가 사라진다.
     var canThrowBall: Bool {
+        // 채워야 할 빈 칸이 있으면 던질 수 없다. 이 조건이 빠져 있던 동안은 실패한 던지기가
+        // **볼만 먹고 턴을 쓰지 않았다** — 그 상태에서는 `spendTurnWithoutAttacking` 이 거부되므로
+        // (기절 보충 전에는 턴이 돌지 않는다) 대가 없이 던질 수 있었다.
         stage == .battling && battle.result == nil && balls > 0
             && party.count < tuning.partyLimit && !Self.isBoss(wave: wave, tuning: tuning)
+            && battle.slotsNeedingSendOut.isEmpty
     }
 
     /// 볼을 던진다. **성공하든 실패하든 그 턴은 내 공격이 아니다** — 실패하면 상대만 움직인다.
     /// 성공하면 그 웨이브는 쓰러뜨린 것과 같은 규칙으로 넘어간다(`clearWave`).
     @discardableResult
-    mutating func throwBall() -> Bool {
-        guard canThrowBall else { return false }
+    mutating func throwBall(atSlot slot: Int = 0) -> Bool {
+        guard canThrowBall, let target = battle.opponentSide(at: slot), target.isAlive
+        else { return false }
         balls -= 1
-        let target = battle.opponentSlot
         let roll = Double(rng.next() % 10_000) / 10_000
         guard roll < Self.catchChance(target: target) else {
             _ = battle.spendTurnWithoutAttacking()
@@ -367,7 +381,7 @@ struct RogueRun: Sendable {
         }
         party = battle.mine
         // 잡힌 상대는 쓰러진 것과 같은 자리를 지난다 — 상대가 더 남았으면 전투는 이어진다.
-        battle.retireOpponent()
+        battle.retireOpponent(atSlot: slot)
         // 정산을 먼저 지난다 — 잡힌 개체는 그 전투의 경험치를 받지 않으므로 레벨업 대상이 아니다.
         if battle.result == .win { clearWave() }
         var caught = target
@@ -453,8 +467,9 @@ struct RogueRun: Sendable {
 
     /// 다음 웨이브 개시 — 상대는 호출자가 만들어 넣는다(네트워크는 코어 밖).
     mutating func beginWave(opponents: [BattleSnapshot]) {
+        // 살아 있는 개체가 하나도 없는 파티로는 웨이브를 열지 않는다 — 그 판은 이미 실패다.
         guard stage == .loadingWave, !opponents.isEmpty,
-              let lead = party.firstIndex(where: { $0.isAlive }) else { return }
+              party.contains(where: \.isAlive) else { return }
         // 이월하는 것은 **HP·PP·주 상태이상까지**다. 랭크·혼란·풀죽음은 전투 안에서만 사는 값이라
         // 웨이브가 바뀌면 지운다 — 안 지우면 앞 웨이브에서 울음소리로 깎인 랭크를 판이 끝날 때까지
         // 지고 가서 "웨이브를 넘길수록 이유 없이 약해진다"가 된다(교체할 때와 같은 규칙).
@@ -463,12 +478,11 @@ struct RogueRun: Sendable {
         // 지나는 자리는 여기 하나뿐이라 불변식("주 상태이상은 웨이브를 넘지 않는다")을 여기서
         // 잠근다 — 정산 뒤 파티가 바뀌는 경로(포획으로 합류한 개체)가 생겨도 규칙이 유지된다.
         clearStatus()
-        battle = TeamPracticeBattle(mine: party,
-                                    opponents: opponents.map(BattleSide.init),
-                                    rng: SplitMix64(seed: rng.next()))
-        // 앞 웨이브에서 1번이 쓰러졌으면 살아 있는 첫 칸으로 세운다. 기본값 0 그대로 두면
-        // 쓰러진 개체가 활성 슬롯이 되어 첫 턴을 통째로 날린다.
-        battle.myActive = lead
+        // 살아 있는 개체로 필드를 세우는 것은 `WaveBattle` 의 초기화가 맡는다 — 앞 웨이브에서
+        // 1번이 쓰러졌어도 쓰러진 개체가 필드에 서지 않는다.
+        battle = WaveBattle(mine: party,
+                            opponents: opponents.map(BattleSide.init),
+                            rng: SplitMix64(seed: rng.next()))
         stampBoosts()
         stage = .battling
     }
@@ -625,12 +639,19 @@ extension RogueRun {
     mutating func debugFaint(_ index: Int) { party[index].hp = 0 }
     /// 테스트 전용 — **전투 중** 개체에 상태이상을 건다. `debugSetParty` 는 `party` 만 바꾸는데
     /// 승리 정산은 `battle.mine` 을 덮어쓰므로, 이월 규칙을 재려면 전투 쪽에 걸어야 한다.
-    mutating func debugAfflict(_ status: Status) { battle.mine[battle.myActive].status = status }
+    mutating func debugAfflict(_ status: Status) {
+        battle.mine[battle.myField[0].teamIndex].status = status
+    }
     mutating func debugApply(_ modifier: RunModifier) { apply(modifier) }
+    /// 테스트 전용 — **전투 중** 개체를 눕힌다. `debugFaint` 는 `party` 만 바꾸는데, 필드 칸은
+    /// `battle.mine` 을 보므로 기절 보충 경로를 재려면 전투 쪽을 눕혀야 한다.
+    mutating func debugFaintInBattle(_ index: Int) { battle.mine[index].hp = 0 }
     /// 최종 웨이브 판정처럼 앞 웨이브를 다 밟지 않고 도달해야 하는 자리에 쓴다.
     mutating func debugJump(toWave value: Int) { wave = value }
     /// 테스트 전용 — 포획 확률을 재려면 상대 HP·볼 개수를 직접 세워야 한다.
-    mutating func debugSetOpponentHP(_ value: Int) { battle.opponents[battle.opponentActive].hp = value }
+    mutating func debugSetOpponentHP(_ value: Int, atSlot slot: Int = 0) {
+        battle.opponents[battle.opponentField[slot].teamIndex].hp = value
+    }
     mutating func debugSetBalls(_ value: Int) { balls = value }
     /// 테스트 전용 — 길 고르기 국면으로 바로 세운다(`take` 의 분기만 재려면 전투를 이길 필요가 없다).
     mutating func debugSetStageRouting() { stage = .routing }

@@ -12,7 +12,9 @@ import Foundation
 struct RogueRunSave: Codable, Sendable {
     /// 형식 판. 모르는 판은 **런을 버린다** — 진행 중인 판은 소모품이고, 반쯤 읽어 되살린 판이
     /// 세이브 복구보다 나쁘다(잘못 복원한 전투는 크래시로 끝난다).
-    static let currentVersion = 1
+    /// 2 판에서 전투가 **필드 칸 배열**로 넓어졌다(2대2). 1 판 파일은 활성 칸이 각각 하나라
+    /// 되살릴 자리가 없어 버린다 — 진행 중인 판은 소모품이라는 결정을 그대로 따른다.
+    static let currentVersion = 2
 
     var version = currentVersion
     var wave: Int
@@ -121,38 +123,46 @@ struct RogueRunSave: Codable, Sendable {
     struct BattleSave: Codable, Sendable {
         var mine: [SideSave]
         var opponents: [SideSave]
-        var myActive: Int
-        var opponentActive: Int
+        /// 필드 칸이 든 팀 인덱스 — **배열 길이가 곧 이 웨이브의 형식**이다(하나면 단일전,
+        /// 둘이면 2대2). 칸의 이벤트 주인(`FieldSlot.id`)은 싣지 않는다: 이벤트 스트림을
+        /// 저장하지 않으므로 옛 id 를 가리키는 값이 파일 안에 없다.
+        var myField: [Int]
+        var opponentField: [Int]
         var turn: Int
         var rngState: UInt64
-    /// 판을 심은 값. `rngState` 와 달리 소비되지 않는다 — 상대 마릿수 판정이 판 어디서든 같은
-    /// 답을 내야 해서다. 옛 파일엔 없으므로 기본값 0 이고, 그 판은 마릿수만 다시 뽑힌다.
-    var seed: UInt64 = 0
-    /// 갈림길을 전부 위험한 길로 왔나. 옛 파일엔 없으므로 기본값은 **false** 다 — 없는 기록을
-    /// 참으로 두면 이어 연 판이 안 한 일로 업적을 받는다.
-    var tookOnlyRiskyRoutes = false
 
-        init(_ battle: TeamPracticeBattle) {
+        init(_ battle: WaveBattle) {
             mine = battle.mine.map(SideSave.init)
             opponents = battle.opponents.map(SideSave.init)
-            myActive = battle.myActive
-            opponentActive = battle.opponentActive
+            myField = battle.myField.map(\.teamIndex)
+            opponentField = battle.opponentField.map(\.teamIndex)
             turn = battle.turn
             rngState = battle.rng.state
         }
 
-        /// 되살린 전투. 활성 칸이 범위 밖이면 `nil` 이다 — 그 값으로 `mySlot` 을 읽으면 크래시다.
-        var restored: TeamPracticeBattle? {
+        /// 되살린 전투. **칸이 하나라도 어긋나면 `nil` 이다** — 범위 밖 인덱스로 필드를 세우면
+        /// 첫 접근에서 크래시하고, 같은 개체가 두 칸에 서면 그 개체가 한 턴에 두 번 움직인다.
+        var restored: WaveBattle? {
             guard !mine.isEmpty, !opponents.isEmpty,
-                  mine.indices.contains(myActive), opponents.indices.contains(opponentActive)
+                  !myField.isEmpty, !opponentField.isEmpty,
+                  myField.count <= WaveBattle.maxFieldSlots,
+                  opponentField.count <= WaveBattle.maxFieldSlots,
+                  Set(myField).count == myField.count,
+                  Set(opponentField).count == opponentField.count,
+                  myField.allSatisfy({ mine.indices.contains($0) }),
+                  opponentField.allSatisfy({ opponents.indices.contains($0) })
             else { return nil }
-            var battle = TeamPracticeBattle(mine: mine.map(\.restored),
-                                            opponents: opponents.map(\.restored),
-                                            rng: SplitMix64(seed: 0))
+            var battle = WaveBattle(mine: mine.map(\.restored),
+                                    opponents: opponents.map(\.restored),
+                                    rng: SplitMix64(seed: 0))
             battle.rng.state = rngState
-            battle.myActive = myActive
-            battle.opponentActive = opponentActive
             battle.turn = max(1, turn)
+            // 필드는 저장값으로 덮는다 — 초기화가 세운 칸은 "살아 있는 앞쪽 개체" 라서, 판 도중에
+            // 교체·기절 보충으로 옮겨 앉은 자리를 되살리지 못한다.
+            battle.myField = myField.map { WaveBattle.FieldSlot(id: UUID(), teamIndex: $0) }
+            battle.opponentField = opponentField.map {
+                WaveBattle.FieldSlot(id: UUID(), teamIndex: $0)
+            }
             return battle
         }
     }

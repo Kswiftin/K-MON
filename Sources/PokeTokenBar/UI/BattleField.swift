@@ -187,6 +187,14 @@ enum SwitchStripModel {
         sides.indices.map { SwitchSlot(index: $0, side: sides[$0], isActive: $0 == active) }
     }
 
+    /// 필드 칸이 둘인 배틀(웨이브 런의 2대2)용 — **필드에 서 있는 모든 개체**를 활성으로 본다.
+    /// 활성 칸이 하나라는 전제로 그리면 나머지 칸에 선 개체가 교체 후보로 남아, 한 개체가 두 자리에
+    /// 서게 된다(코어가 막지만 화면은 누를 수 있는 버튼을 보여 준다).
+    static func slots(_ sides: [BattleSide], activeIndices: Set<Int>) -> [SwitchSlot] {
+        sides.indices.map { SwitchSlot(index: $0, side: sides[$0],
+                                       isActive: activeIndices.contains($0)) }
+    }
+
     /// LAN 단일전에는 교체 대상이 없으므로 줄 자체를 숨긴다. 팀전은 인덱스 보존을 위해 전체 슬롯을 둔다.
     static func battleSlots(_ sides: [BattleSide], active: Int) -> [SwitchSlot] {
         sides.count > 1 ? slots(sides, active: active) : []
@@ -459,7 +467,9 @@ private enum BattleMoveAnimationStyle {
     }
 }
 
-private struct BattleMoveEffect: View {
+/// 기술 연출 오버레이. `internal` 인 이유는 웨이브 런의 2대2 경기장(`WaveRunArenaView`)이 같은
+/// 연출을 써야 하기 때문이다 — 화면마다 따로 그리면 같은 기술이 화면에 따라 달라 보인다.
+struct BattleMoveEffect: View {
     let move: MoveSpec
     let attacksFromMine: Bool
     @State private var progress = false
@@ -854,13 +864,25 @@ struct SwitchStripView: View {
 /// `ScrollView` 를 쓰지 않는 이유는 `BattleFieldMetrics.logLines` 주석에 있다.
 struct BattleLogBox: View {
     let lines: [BattleLog.Line]
-    /// 내 편 줄을 오른쪽·진하게, 상대 줄을 왼쪽·연하게 가르는 기준.
-    let myActor: BattleActor?
+    /// 내 편 줄을 오른쪽·진하게, 상대 줄을 왼쪽·연하게 가르는 기준. **집합**인 이유는 2대2 다 —
+    /// 내 편 두 칸이 각자 다른 주인(`.fighter`)이라 하나로는 한 칸만 내 편으로 읽힌다.
+    /// 비어 있으면 어느 줄도 내 편이 아니다(관전 화면).
+    let myActors: Set<BattleActor>
+
+    init(lines: [BattleLog.Line], myActor: BattleActor?) {
+        self.lines = lines
+        self.myActors = myActor.map { [$0] } ?? []
+    }
+
+    init(lines: [BattleLog.Line], myActors: Set<BattleActor>) {
+        self.lines = lines
+        self.myActors = myActors
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(lines.suffix(BattleFieldMetrics.logLines).enumerated()), id: \.offset) { _, line in
-                BattleLogRow(line: line, isMine: line.actor.map { $0 == myActor })
+                BattleLogRow(line: line, isMine: line.actor.map { myActors.contains($0) })
             }
             Spacer(minLength: 0)
         }

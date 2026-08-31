@@ -69,6 +69,9 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/RogueRun.swift"
   "Sources/PokeTokenBar/Core/RogueRunSave.swift"
   "Sources/PokeTokenBar/Core/RunBoosts.swift"
+  # 런의 2대2 전투 — 타겟팅·네 명 턴 순서·기절 슬롯 보충이 여기 있다. 승패 판정이 사는 파일은
+  # 게이트 대상이라는 규칙(`TeamPracticeBattle`)을 그대로 따른다.
+  "Sources/PokeTokenBar/Core/WaveBattle.swift"
   # 포켓몬 페르소나 조립과 응답 안전 가드가 사는 순수 로직. 게이트 밖에 있으면 프로필 조립을
   # 직접 밟지 않는 fixture 테스트만 있어도 무테스트 분기가 커버리지에 드러나지 않는다.
   "Sources/PokeTokenBar/Core/PokemonChat.swift"

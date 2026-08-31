@@ -53,19 +53,33 @@ actor SnapshotCache {
 /// 판을 대신 두는 규칙. **여기 규칙이 곧 측정 대상의 절반이다** — 사람이 더 잘 두면 실제 클리어율은
 /// 이 숫자보다 높다. 그래서 규칙을 단순하고 설명 가능하게 둔다.
 ///
-/// 1. 잡을 수 있고 성공률이 절반을 넘으면 던진다(파티가 빌 때까지).
-/// 2. 아니면 기대 위력이 가장 큰 기술을 쓴다 — 위력 × 자속 × 상성.
-/// 3. 활성 개체가 쓰러지면 코어가 알아서 다음 개체를 세운다(교체는 쓰지 않는다).
+/// 1. 쓰러진 칸이 있으면 벤치 앞쪽으로 채운다(턴을 쓰지 않는다).
+/// 2. 잡을 수 있고 성공률이 절반을 넘으면 던진다(파티가 빌 때까지).
+/// 3. 아니면 **HP 가 가장 적은 상대**에게 기대 위력이 가장 큰 기술을 쓴다 — 위력 × 자속 × 상성.
+///    2대2 는 화력을 한쪽에 모으는 편이 낫다(한 마리를 먼저 눕히면 그만큼 맞는 횟수가 줄어든다).
 enum AutoPlayer {
     static let catchThreshold = 0.5
 
+    /// 한 번 부르면 **한 칸의 결정 하나**를 낸다. 2대2 는 살아 있는 칸이 다 정해질 때까지 턴이
+    /// 돌지 않으므로, 호출자의 루프가 그만큼 더 돈다.
     static func act(_ run: inout RogueRun) {
-        if run.canThrowBall,
-           RogueRun.catchChance(target: run.battle.opponentSlot) >= catchThreshold {
-            run.throwBall()
+        if let slot = run.battle.slotsNeedingSendOut.first,
+           let next = run.battle.benchCandidates.first {
+            run.sendOut(next, toSlot: slot)
             return
         }
-        run.useMove(bestMoveIndex(run.battle.mySlot, against: run.battle.opponentSlot))
+        let targets = run.battle.livingOpponentSlots
+        // HP 가 가장 적은 상대. 볼도 같은 상대에게 던진다 — 성공률이 HP 로 정해지므로 그쪽이 가장 높다.
+        guard let target = targets.min(by: {
+            (run.battle.opponentSide(at: $0)?.hp ?? 0) < (run.battle.opponentSide(at: $1)?.hp ?? 0)
+        }), let opponent = run.battle.opponentSide(at: target) else { return }
+        if run.canThrowBall, RogueRun.catchChance(target: opponent) >= catchThreshold {
+            run.throwBall(atSlot: target)
+            return
+        }
+        guard let slot = run.battle.slotsAwaitingAction.first,
+              let me = run.battle.mySide(at: slot) else { return }
+        run.useMove(bestMoveIndex(me, against: opponent), fromSlot: slot, target: target)
     }
 
     static func bestMoveIndex(_ me: BattleSide, against target: BattleSide) -> Int {
@@ -90,6 +104,8 @@ struct RunResult {
     var partySize: Int
     var ballsUsed: Int
     var catches: Int
+    /// 자동 플레이어가 낸 **결정 수**다(턴 수가 아니다) — 2대2 웨이브는 한 턴에 칸마다 하나씩,
+    /// 기절 보충도 하나로 센다. 판이 안 끝나는 조합을 자르는 상한(`turnLimit`)의 기준이기도 하다.
     var turns: Int
 }
 

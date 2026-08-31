@@ -172,27 +172,56 @@ struct RogueRunView: View {
     }
 
     private func battlePanel(_ run: RogueRun) -> some View {
-        // 기존 배틀·팀 연습과 **같은 렌더러와 같은 재생기**를 쓴다. 직접 그리면 기술 버튼의 타입 색·
-        // PP 배지·로그가 이 화면만 달라지고, 재생기를 빼면 기절이 화면에 뜨기 전에 필드가 다음
-        // 포켓몬으로 갈아타 "맞고 쓰러졌다" 가 사라진다(둘 다 실제로 그렇게 어긋났다).
-        let engineMine = ReplaySide(team: run.battle.mine, active: run.battle.myActive)
-        let engineTheirs = ReplaySide(team: run.battle.opponents, active: run.battle.opponentActive)
-        let shownMine = animator.side(for: .a) ?? engineMine
-        let shownTheirs = animator.side(for: .b) ?? engineTheirs
-        let me = shownMine.side ?? run.battle.mySlot
-        let opponent = shownTheirs.side ?? run.battle.opponentSlot
+        // 기존 배틀·팀 연습과 **같은 조각과 같은 재생기**를 쓴다(경기장 자체는 2대2 라 따로 있다 —
+        // `WaveRunArenaView`). 재생기를 빼면 기절이 화면에 뜨기 전에 필드가 다음 포켓몬으로 갈아타
+        // "맞고 쓰러졌다" 가 사라진다(실제로 그렇게 어긋났다).
+        let engine = Self.replaySides(run.battle)
+        let myCells = cells(run.battle.myField, team: run.battle.mine, engine: engine)
+        let theirCells = cells(run.battle.opponentField, team: run.battle.opponents, engine: engine)
         return VStack(spacing: 6) {
-            catchBar(run)
+            catchBar(run, theirs: theirCells)
             if let throwNotice { noticeBar(throwNotice) }
             boostBar(run)
-            arena(run, me: me, opponent: opponent, shownMine: shownMine,
-                  engineMine: engineMine, engineTheirs: engineTheirs)
+            arena(run, myCells: myCells, theirCells: theirCells, engine: engine)
         }
+    }
+
+    /// 재생기에 넘기는 **칸별** 표시 상태 — 키가 그 칸의 이벤트 주인이다. 편(`.a`/`.b`)으로 묶으면
+    /// 2대2 의 같은 편 두 칸이 한 상태를 공유해, 한 칸이 맞은 데미지가 다른 칸의 바에서도 깎인다.
+    private static func replaySides(_ battle: WaveBattle) -> [BattleActor: ReplaySide] {
+        var sides: [BattleActor: ReplaySide] = [:]
+        for slot in battle.myField {
+            sides[.fighter(slot.id)] = ReplaySide(team: battle.mine, active: slot.teamIndex)
+        }
+        for slot in battle.opponentField {
+            sides[.fighter(slot.id)] = ReplaySide(team: battle.opponents, active: slot.teamIndex)
+        }
+        return sides
+    }
+
+    /// 화면에 그릴 칸. **재생이 도달한 상태를 우선한다** — 엔진의 최종 상태로 그리면 결과가
+    /// 재생보다 먼저 보인다.
+    private func cells(_ slots: [WaveBattle.FieldSlot], team: [BattleSide],
+                       engine: [BattleActor: ReplaySide]) -> [WaveRunArenaView.Cell] {
+        slots.enumerated().compactMap { ordinal, slot in
+            let actor = BattleActor.fighter(slot.id)
+            let shown = animator.side(for: actor) ?? engine[actor]
+            guard let side = shown?.side
+                    ?? (team.indices.contains(slot.teamIndex) ? team[slot.teamIndex] : nil)
+            else { return nil }
+            return WaveRunArenaView.Cell(ordinal: ordinal, actor: actor, side: side)
+        }
+    }
+
+    /// 지금 사용자 입력을 받아도 되는가 — 재생이 스트림 끝에 닿았고 볼 결과 알림도 없을 때다.
+    private func acceptsInput(_ run: RogueRun) -> Bool {
+        !animator.overlay.isPlaying && animator.playedCount >= run.battle.events.count
+            && throwNotice == nil
     }
 
     /// 볼·파티 칸·성공률을 한 줄로 보여주고 던진다. 성공률을 감추면 언제 던질지가 순전히 감이 되고,
     /// 볼이 5개뿐이라 그 감이 곧 판을 버리는 선택이 된다.
-    private func catchBar(_ run: RogueRun) -> some View {
+    private func catchBar(_ run: RogueRun, theirs: [WaveRunArenaView.Cell]) -> some View {
         HStack(spacing: 8) {
             Label("\(run.balls)", systemImage: "circle.circle")
             Text(l.t("파티 \(run.party.count)/\(RogueRun.partyLimit)",
@@ -200,17 +229,21 @@ struct RogueRunView: View {
                      "手持ち \(run.party.count)/\(RogueRun.partyLimit)"))
                 .foregroundStyle(.secondary)
             Spacer()
-            if run.canThrowBall {
-                Text("\(Int(RogueRun.catchChance(target: run.battle.opponentSlot) * 100))%")
-                    .foregroundStyle(.secondary)
+            // 상대가 둘이면 **어느 쪽에 던질지**가 선택이다 — 성공률이 HP 에 따라 달라서, 버튼이
+            // 하나면 그 판단이 화면에서 사라진다.
+            ForEach(theirs.filter { $0.side.isAlive }) { target in
+                Button {
+                    let name = target.side.snapshot.name
+                    var caught = false
+                    mutate { caught = $0.throwBall(atSlot: target.ordinal) }
+                    throwNotice = BallThrowNotice(target: name, caught: caught)
+                } label: {
+                    Text(theirs.count > 1
+                         ? "\(l.t("잡기", "Catch", "捕まえる")) \(target.side.snapshot.name) \(Int(RogueRun.catchChance(target: target.side) * 100))%"
+                         : "\(l.t("잡기", "Catch", "捕まえる")) \(Int(RogueRun.catchChance(target: target.side) * 100))%")
+                }
+                .disabled(!run.canThrowBall || !acceptsInput(run))
             }
-            Button(l.t("잡기", "Catch", "捕まえる")) {
-                let target = run.battle.opponentSlot.snapshot.name
-                var caught = false
-                mutate { caught = $0.throwBall() }
-                throwNotice = BallThrowNotice(target: target, caught: caught)
-            }
-            .disabled(!run.canThrowBall)
         }
         .font(.caption)
     }
@@ -257,32 +290,42 @@ struct RogueRunView: View {
         }
     }
 
-    private func arena(_ run: RogueRun, me: BattleSide, opponent: BattleSide,
-                       shownMine: ReplaySide,
-                       engineMine: ReplaySide, engineTheirs: ReplaySide) -> some View {
-        BattleArenaView(
-            mine: me, theirs: opponent,
-            myTitle: l.battleMyPokemon,
+    private func arena(_ run: RogueRun, myCells: [WaveRunArenaView.Cell],
+                       theirCells: [WaveRunArenaView.Cell],
+                       engine: [BattleActor: ReplaySide]) -> some View {
+        let ready = acceptsInput(run)
+        let sendOutSlot = run.battle.slotsNeedingSendOut.first
+        let actingSlot = sendOutSlot == nil && ready ? run.battle.slotsAwaitingAction.first : nil
+        let onField = Set(run.battle.myField.map(\.teamIndex))
+        return WaveRunArenaView(
+            mine: myCells, theirs: theirCells, l: l, turn: run.battle.turn,
             theirTitle: RogueRun.isBoss(wave: run.wave) ? l.t("보스", "BOSS", "ボス")
                                                         : l.t("야생", "Wild", "野生"),
-            l: l, turn: run.battle.turn,
-            logLines: BattleLogSource.twoSided(Array(run.battle.events.prefix(animator.playedCount)),
-                                               mine: .a, l: l,
-                                               myName: me.snapshot.name,
-                                               theirName: opponent.snapshot.name,
-                                               myMoves: me.moves, theirMoves: opponent.moves),
-            myActor: .a,
-            switchSlots: SwitchStripModel.slots(shownMine.team, active: shownMine.active),
-            turnEndsAt: nil,
-            isWaitingForOpponent: false,
+            logLines: BattleLogSource.waveRun(Array(run.battle.events.prefix(animator.playedCount)),
+                                              cells: myCells + theirCells, l: l),
             overlay: animator.overlay,
-            onChoose: { index in mutate { $0.useMove(index) } },
-            onSwitch: { index in mutate { $0.switchParty(to: index) } },
+            actingSlot: actingSlot,
+            sendOutSlot: sendOutSlot,
+            switchSlots: SwitchStripModel.slots(run.battle.mine, activeIndices: onField),
+            isEnabled: ready,
+            onMove: { index, target in
+                guard let slot = actingSlot else { return }
+                mutate { $0.useMove(index, fromSlot: slot, target: target) }
+            },
+            onSwitch: { index in
+                // 같은 줄이 두 일을 한다 — 빈 칸을 채우는 무료 출전이거나, 그 칸의 행동을 쓰는
+                // 교체다. 채워야 할 칸이 있으면 그쪽이 먼저다(그 전에는 행동을 받지 않는다).
+                if let sendOutSlot {
+                    mutate { $0.sendOut(index, toSlot: sendOutSlot) }
+                } else if let slot = actingSlot {
+                    mutate { $0.switchParty(to: index, fromSlot: slot) }
+                }
+            },
             // 항복은 런 포기다 — 판을 버리고 나간다(프로토라 기록도 남지 않는다).
             onForfeit: { store.rogueRun = nil; onClose() })
-        .onAppear { replay(run.battle.events, sides: [.a: engineMine, .b: engineTheirs]) }
+        .onAppear { replay(run.battle.events, sides: engine) }
         .onChange(of: run.battle.events.count) {
-            replay(run.battle.events, sides: [.a: engineMine, .b: engineTheirs])
+            replay(run.battle.events, sides: engine)
         }
     }
 

@@ -152,6 +152,20 @@ final class RogueRunTests: XCTestCase {
                                                wave: RogueRun.finalWave))
     }
 
+    /// 채워야 할 빈 칸이 있으면 볼을 던질 수 없다. 이 게이트가 없던 동안은 실패한 던지기가
+    /// **볼만 먹고 턴을 쓰지 않았다** — 기절 보충 전에는 턴이 돌지 않으므로 대가가 사라졌다.
+    func testABallCannotBeThrownWhileASlotWaitsForAReplacement() {
+        var run = makeRun(partySize: 2)
+        run.debugFaintInBattle(0)
+        XCTAssertEqual(run.battle.slotsNeedingSendOut, [0], "테스트 전제: 채울 칸이 있어야 한다")
+        XCTAssertFalse(run.canThrowBall)
+        let balls = run.balls
+        XCTAssertFalse(run.throwBall())
+        XCTAssertEqual(run.balls, balls, "거부된 던지기는 볼을 먹지 않는다")
+        run.sendOut(1, toSlot: 0)
+        XCTAssertTrue(run.canThrowBall)
+    }
+
     // MARK: 포획
 
     /// 확률은 HP 비율로 정해진다 — 만피 33%, 빈사 직전 상한 95%.
@@ -409,7 +423,7 @@ final class RogueRunTests: XCTestCase {
         var fainted = run
         fainted.debugFaint(0)
         fainted.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
-        XCTAssertEqual(fainted.battle.myActive, 1)
+        XCTAssertEqual(fainted.battle.myField.map(\.teamIndex), [1])
     }
 
     /// 웨이브를 넘어 이월하는 것은 HP·PP·주 상태이상뿐이다. 랭크·혼란은 전투 안의 값이라 넘기면
