@@ -438,6 +438,25 @@ final class PlayerGymTests: XCTestCase {
                         "경합 tie-break 이 식별자를 못 읽으면 둘 다 닫히거나 둘 다 남는다")
     }
 
+    /// **회귀**: 방 목록의 `name` 은 `#` 앞에서 잘린 표시용 이름이다(`displayName`). 거기서
+    /// 식별자를 읽으려 했더니 비교가 늘 실패해 **내 방이 남의 방으로 보였다** — 자기 체육관을
+    /// 열어 두고 "이미 열린 체육관이 있습니다" 를 보게 된다. 판정은 원문(`serviceName`)으로 한다.
+    func testTheDisplayNameLosesTheIdentifierSoJudgementsMustUseTheServiceName() throws {
+        let service = PlayerGymRoomName.make(leaderName: "현우", idTag: "tklxl3",
+                                             heldSince: Date(timeIntervalSince1970: 1_756_000_000))
+        // 화면용 이름은 `#` 앞에서 잘린다 — 실제 목록이 그렇게 담는다.
+        let displayed = String(service.split(separator: "#", maxSplits: 1).first ?? "")
+
+        XCTAssertFalse(displayed.contains("#tklxl3"), "표시용 이름에는 식별자가 없다")
+        XCTAssertNil(PlayerGymRoomName.parse(displayed),
+                     "잘린 이름으로는 재임 시각도 못 읽는다 — 그래서 원문이 그대로 화면에 떴다")
+
+        let parsed = try XCTUnwrap(PlayerGymRoomName.parse(service))
+        XCTAssertEqual(parsed.leaderName, "현우")
+        XCTAssertEqual(parsed.idTag, "tklxl3")
+        XCTAssertTrue(service.contains("#tklxl3"), "내 방 판별은 원문에서만 된다")
+    }
+
     /// 재임 시각이 없던 옛 형식도 이름만은 읽혀야 한다 — 못 읽으면 목록에서 체육관이 사라진다.
     func testALegacyRoomNameWithoutATimestampIsNotParsedAsTenure() {
         XCTAssertNil(PlayerGymRoomName.parse("GYM · 현우#abc123"),
@@ -500,6 +519,37 @@ final class PlayerGymTests: XCTestCase {
 
         coordinator.beginScanIfNeeded()
         XCTAssertTrue(coordinator.hasScannedOnce, "이미 끝난 창을 다시 열면 안 된다")
+    }
+
+    /// **회귀**: 세팅 기한이 지나 자격이 풀릴 때 **방을 안 닫으면** 방은 계속 광고되는데 화면은
+    /// 관장이 아닌 것으로 떨어진다. 그러면 자기 방이 목록에 남고, `join` 은 `phase == .hosting`
+    /// 이라 조용히 거절되어 **도전·관전 버튼이 눌러도 아무 반응이 없다.**
+    func testExpiringLeadershipAlsoClosesTheRoom() {
+        let clock = TestClock()
+        let s = store(clock)
+        let rooms = MultiplayerRoomCenter(companion: s)
+        let coordinator = PlayerGymCoordinator(companion: s, rooms: rooms, clock: clock.closure)
+        s.debugSetBoxedMons([boxed(11)])
+        s.becomeGymLeader()
+
+        clock.advance(PlayerGym.defenseSetupWindow + 1)
+        coordinator.refresh()
+
+        XCTAssertFalse(s.isGymLeader, "기한이 지나면 자격이 풀린다")
+        XCTAssertEqual(rooms.phase, .idle,
+                       "자격만 풀고 방을 열어 두면 도전·관전이 조용히 막힌다")
+    }
+
+    /// 자격이 없는데 체육관 방만 떠 있는 어긋남도 정리한다.
+    func testAGymRoomWithoutLeadershipIsClosed() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        let coordinator = PlayerGymCoordinator(companion: s, rooms: rooms)
+        XCTAssertFalse(s.isGymLeader)
+
+        coordinator.refresh()
+
+        XCTAssertEqual(rooms.phase, .idle)
     }
 
     /// 탐색이 꺼져 있으면 기다림이 아니라 **꺼져 있다는 사실**을 알려야 한다 — 아무리 기다려도

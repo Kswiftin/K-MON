@@ -50,8 +50,18 @@ final class PlayerGymCoordinator {
     func refresh() {
         // 탐색이 꺼져 있지 않다면 창을 연다. 화면이 뜬 순간부터 재야 "검색 중" 이 끝난다.
         if rooms.isBrowsing { beginScanIfNeeded() }
-        companion.expireGymLeadershipIfSetupLapsed()
-        guard companion.isGymLeader else { return }
+        // 막혔던 사유가 사라졌으면 안내도 지운다 — 안 지우면 체육관이 닫힌 뒤에도
+        // "이미 열린 체육관이 있습니다" 가 계속 남는다.
+        if rooms.visibleGymRoom == nil { blockedByExistingGym = false }
+        // 자격이 풀렸으면 **방도 닫는다.** 상태만 지우면 방은 계속 광고되는데 화면은 관장이
+        // 아닌 것으로 떨어져, 자기 방이 목록에 남고 `join` 은 `phase == .hosting` 이라 조용히
+        // 거절된다 — 도전·관전 버튼이 눌러도 아무 반응이 없는 상태가 그것이다.
+        if companion.expireGymLeadershipIfSetupLapsed() { rooms.leaveRoom() }
+        guard companion.isGymLeader else {
+            // 자격은 없는데 체육관 방만 떠 있는 어긋남을 정리한다(크래시·예외 경로 대비).
+            if rooms.isGymRoom { rooms.leaveRoom() }
+            return
+        }
         // 재시작 후 광고를 재개하는 경로. **개설 버튼만 막으면 여기로 새 나가** 체육관이 둘이 된다.
         if let existing = rooms.visibleGymRoom {
             AppLog.write("player gym: yielding leadership, another gym is already open (\(existing.name))")
@@ -128,7 +138,7 @@ final class PlayerGymCoordinator {
     private func resolveGymRoomConflict() {
         guard let mine = companion.gymLeadership?.gymID,
               let other = rooms.visibleGymRoom,
-              let theirs = PlayerGymCoordinator.gymID(fromRoomName: other.name) else { return }
+              let theirs = PlayerGymCoordinator.gymID(fromRoomName: other.serviceName) else { return }
         guard PlayerGym.survivor(mine, theirs) != mine else { return }
         AppLog.write("player gym: closing my gym, \(other.name) wins the tie-break")
         companion.resignGymLeadership()

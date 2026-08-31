@@ -76,7 +76,7 @@ struct FriendView: View {
                 store.l.playerGymDuration(minutes: PlayerGym.tenureMinutes(since: held, now: Date())))
         }
         guard let room = battleCenter.multiplayer.visibleGymRoom,
-              let parsed = PlayerGymRoomName.parse(room.name) else { return nil }
+              let parsed = PlayerGymRoomName.parse(room.serviceName) else { return nil }
         return store.l.playerGymTenure(
             parsed.leaderName,
             store.l.playerGymDuration(minutes: PlayerGym.tenureMinutes(since: parsed.heldSince, now: Date())))
