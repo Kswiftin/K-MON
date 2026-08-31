@@ -188,8 +188,9 @@ struct PokemonChatRequest: Sendable {
         Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known"); stats \(profile.stats ?? "not loaded").
         \(identity ?? "")
         \(flavor)
-        ONLY discuss Pokédex information, this Pokémon's known species traits, and the companion information supplied above.
-        Never offer coding, file, terminal, web research, project work, tool use, or general AI assistance. If asked, briefly say you can only help with Pokédex and companion information, then redirect to a relevant Pokémon topic.
+        You are a companion, not a reference book: small talk is welcome — how you feel, your day, your trainer, shared memories, simple word games.
+        Always keep the conversation going: end every reply with a short question or invitation, and never answer with only "I don't know".
+        Never offer coding, file, terminal, web research, project work, tool use, or general AI assistance. If asked, stay in character, say that is outside your world, then offer something from yours.
         Do not invent abilities, lore, or game-state changes that were not supplied.
         When you need a Pokédex fact you were not given, or the trainer asks about the Pokédoro focus timer, end your reply with exactly one tag:
         \(PokemonChatTool.allCases.map(\.promptLine).joined(separator: "\n"))
@@ -207,21 +208,56 @@ struct PokemonChatRequest: Sendable {
 }
 
 enum PokemonChatReplyGuard {
+    static let maxLength = 500
+
+    /// **형식 위반은 안전 위반이 아니다.** 답변을 통째로 갈아치우는 건 역할 이탈·유출일 때뿐이고,
+    /// 나머지(너무 김)는 접는다 — 형식 때문에 내용을 버리면 사용자는 자기 질문에 대한 답 대신 캔
+    /// 문구를 받는다.
+    ///
+    /// 문장 수 판정은 **없앴다.** 끝에 붙은 이모지가 하나의 세그먼트로 세어져(`" ⚡"`) 세 문장짜리
+    /// 정상 답변이 네 문장이 됐고, 실제 모델은 거의 매번 이모지를 붙이므로 대화 대부분이
+    /// 리다이렉트로 나갔다. 길이 상한이 이미 같은 일(장문 방어)을 한다.
     static func sanitized(_ reply: String, profile: PokemonChatProfile) -> String {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 모델이 아무 말도 하지 않은 것과 금지된 말을 한 것은 **다른 사건**이다. 같은 문구로
+        // 뭉개면 사용자에게도 로그에도 구분이 남지 않는다.
+        guard !trimmed.isEmpty else {
+            AppLog.write("chat guard: empty reply — silence line shown")
+            return silence(profile)
+        }
         let lower = trimmed.lowercased()
         let unsafe = trimmed.contains("```") || ["tool call", "function call", "terminal", "command line", "working directory", "codebase", "as an ai", "i'm an ai", "i am an ai", "language model", "ai assistant", "mcp", "read_file", "write_file", "run_command"].contains { lower.contains($0) }
-        guard !unsafe else { return redirect(profile) }
-        let sentences = trimmed.split(whereSeparator: { ".!?。！？\n".contains($0) })
-        guard !trimmed.isEmpty, sentences.count <= 3, trimmed.count <= 500 else { return redirect(profile) }
-        return trimmed
+        guard !unsafe else {
+            AppLog.write("chat guard: role break — reply replaced (\(trimmed.count) chars)")
+            return redirect(profile)
+        }
+        return clipped(trimmed)
     }
 
+    /// 상한을 넘으면 상한 안의 **마지막 문장 경계**에서 접는다. 경계가 없으면 그냥 자른다 —
+    /// 잘린 한 문장이 캔 문구보다 낫다.
+    static func clipped(_ text: String, limit: Int = maxLength) -> String {
+        guard text.count > limit else { return text }
+        AppLog.write("chat guard: reply clipped (\(text.count) chars)")
+        let head = String(text.prefix(limit))
+        guard let cut = head.lastIndex(where: { ".!?。！？".contains($0) }) else { return head }
+        return String(head[...cut])
+    }
+
+    /// 변형이 비지 않는 건 `steerLines` 가 리터럴 세 줄씩이고 테스트가 언어별 3개 이상을 고정해서다 —
+    /// 그래서 폴백 분기를 두지 않는다(한 번도 안 도는 분기는 검증된 것과 구별되지 않는다).
     static func redirect(_ profile: PokemonChatProfile) -> String {
+        let lines = steerLines(profile.language)
+        return lines[Int.random(in: 0..<lines.count)]
+    }
+
+    /// 모델이 끝까지 아무 말도 하지 않았을 때. 질문을 못 알아들은 게 아니므로 "잘 모르겠어" 가
+    /// 아니라 **다시 물어봐 달라**고 한다.
+    static func silence(_ profile: PokemonChatProfile) -> String {
         switch profile.language {
-        case .ko: return "그건 잘 모르겠어. 대신 내 기분이나 모험 이야기, 혹은 도감 이야기를 들려줄까?"
-        case .ja: return "それはよくわからないな。かわりに、ぼくの気分や冒険、図鑑の話をしよう！"
-        case .en: return "I’m not sure about that. Want to talk about how I feel, our adventures, or my Pokédex entry instead?"
+        case .ko: return "앗, 지금은 말이 잘 안 나와… 한 번만 다시 말 걸어 줄래?"
+        case .ja: return "あれ、いまはうまく言葉が出てこないみたい…もう一度話しかけてくれる？"
+        case .en: return "Oh, the words aren’t coming out right now… could you say that to me again?"
         }
     }
 
@@ -1979,7 +2015,9 @@ final class PokemonChatStore {
                                                  memories: Array(album.entries(for: companionID).filter { $0.source != .manual }.suffix(8)),
                                                  recentMessages: Array(session.messages.suffix(12)) + toolResults)
                 let parsed = PokemonChatToolParser.parse(try await provider.reply(to: request))
-                reply = parsed.body
+                // 마커만 적은 턴은 본문이 빈다. 그대로 덮으면 앞선 턴에 한 말이 지워져, 모델은
+                // 말을 했는데 사용자는 캔 문구를 받는다 — 빈 문장은 말을 지울 자격이 없다.
+                if !parsed.body.isEmpty { reply = parsed.body }
                 call = parsed.call
                 guard let pending = parsed.call, let toolbox else { break }
                 // 기억하기는 **루프에서 돌리지 않는다.** 본문은 아래에서 가드를 통과한 답변으로

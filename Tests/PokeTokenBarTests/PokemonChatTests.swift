@@ -231,7 +231,7 @@ final class PokemonChatTests: XCTestCase {
         profile.stats = "HP 999 / Atk 999 / Def 999 / SpA 999 / SpD 999 / Spe 999"
         let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
 
-        XCTAssertLessThanOrEqual(prompt.count, 2_860)
+        XCTAssertLessThanOrEqual(prompt.count, 2_990)
     }
 
     /// 페르소나 전용 DTO 는 `SpeciesDTO` 와 따로 산다 — `flavor_text_entries` 는 종 응답에서 가장 큰
@@ -311,11 +311,15 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertEqual(store.messages(for: companionID).last?.role, .pokemon)
     }
 
-    func testPromptRestrictsThePokemonToPokedexAndCompanionTopics() {
+    /// 프롬프트가 막는 건 **할 수 있는 일**이지 **말할 수 있는 주제**가 아니다. 주제까지 도감으로
+    /// 좁혀 두면(`ONLY discuss Pokédex information`) 잡담·놀이가 전부 거절 구간이 되어 대화가
+    /// 매번 끊긴다 — 그 줄은 흐름 규칙으로 교체됐고, 능력 금지는 여기 그대로 남는다.
+    func testPromptRestrictsWhatThePokemonCanDoNotWhatItMayChatAbout() {
         let request = PokemonChatRequest(profile: .fixture, summary: "", recentMessages: [])
 
-        XCTAssertTrue(request.systemPrompt.contains("ONLY discuss Pokédex information"))
         XCTAssertTrue(request.systemPrompt.contains("Never offer coding, file, terminal, web research"))
+        XCTAssertTrue(request.systemPrompt.contains("Never claim to be an AI"))
+        XCTAssertFalse(request.systemPrompt.contains("ONLY discuss Pokédex information"))
     }
 
     func testClaudeProviderDisablesBuiltInToolsMCPAndUserSettings() {
@@ -361,7 +365,8 @@ final class PokemonChatTests: XCTestCase {
         let safe = PokemonChatReplyGuard.sanitized("```swift\nread_file(\"secret\")\n```", profile: .fixture)
         XCTAssertFalse(safe.contains("```"))
         XCTAssertFalse(safe.lowercased().contains("read_file"))
-        XCTAssertTrue(safe.contains("도감"))
+        // 문구는 변형 중 하나다 — 한 문장으로 고정하면 같은 답이 연달아 뜨는 화면으로 되돌아간다.
+        XCTAssertTrue(PokemonChatReplyGuard.steerLines(.ko).contains(safe), safe)
     }
 
     /// **형식 위반은 안전 위반이 아니다.** 문장 수 판정이 끝에 붙은 이모지를 네 번째 문장으로 세어
@@ -394,6 +399,13 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertTrue(long.hasPrefix(safe), "원문의 앞부분이 아니다 — 답변이 갈아치워졌다: \(safe.prefix(40))")
         XCTAssertTrue(safe.hasSuffix("."), "문장 경계에서 접지 않았다")
         XCTAssertLessThanOrEqual(safe.count, 500)
+
+        // 문장 부호가 하나도 없는 장문(모델이 줄글로 쏟아낸 경우)도 버리지 않는다 — 경계가 없으면
+        // 그냥 자른다. 잘린 한 문장이 캔 문구보다 낫다.
+        let unpunctuated = String(repeating: "이야기", count: 300)
+        let hardCut = PokemonChatReplyGuard.sanitized(unpunctuated, profile: .fixture)
+        XCTAssertEqual(hardCut.count, 500)
+        XCTAssertTrue(unpunctuated.hasPrefix(hardCut), "경계가 없다고 답변을 통째로 버렸다")
     }
 
     /// 역할 이탈·유출은 여전히 갈아치운다(그건 진짜 경계다). 다만 그 문구가 **질문을 모른다고
@@ -406,8 +418,14 @@ final class PokemonChatTests: XCTestCase {
             XCTAssertFalse(safe.contains("잘 모르겠"), "질문을 모른다고 거짓말한다: \(safe)")
         }
         for language in AppLanguage.allCases {
-            XCTAssertGreaterThanOrEqual(Set(PokemonChatReplyGuard.steerLines(language)).count, 3,
+            let lines = PokemonChatReplyGuard.steerLines(language)
+            XCTAssertGreaterThanOrEqual(Set(lines).count, 3,
                                         "\(language.rawValue): 변형이 없어 같은 문장이 반복된다")
+            // 침묵(모델이 아무 말도 안 함)과 금지(모델이 넘어선 말을 함)는 **다른 사건**이다.
+            // 같은 문장으로 뭉개면 사용자는 둘을 구분할 수 없다.
+            let silence = PokemonChatReplyGuard.silence(.fixture(language: language))
+            XCTAssertFalse(silence.isEmpty, language.rawValue)
+            XCTAssertFalse(lines.contains(silence), "\(language.rawValue): 침묵과 금지가 같은 문장이다")
         }
     }
 
@@ -787,9 +805,9 @@ private actor QueuedReplyProvider: PokemonChatProviding {
 
 private extension PokemonChatProfile {
     static var fixture: PokemonChatProfile { fixture(nickname: nil) }
-    static func fixture(nickname: String?) -> PokemonChatProfile {
+    static func fixture(nickname: String? = nil, language: AppLanguage = .ko) -> PokemonChatProfile {
         PokemonChatProfile(speciesID: 1, displayName: "이상해씨", nickname: nickname,
                            nature: "온순", level: 5, stage: "첫 번째 형태",
-                           flavorText: "태어날 때부터 등에 이상한 씨앗이 자란다.", language: .ko)
+                           flavorText: "태어날 때부터 등에 이상한 씨앗이 자란다.", language: language)
     }
 }
