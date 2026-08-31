@@ -165,27 +165,48 @@ final class MemoryHomeVisitCenter {
     private func startBrowsing() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: Self.parameters())
-        let ownServiceName = localDisplayName
+        // 자기 이름은 결과가 올 때 **그 시점의 값**을 읽는다. 브라우저를 만들 때 캡처하면 닉네임을
+        // 바꾼 뒤(리스너만 다시 굽는 `refreshAccess`) 옛 이름으로 자기를 걸러, 내 새 광고가 내
+        // 목록에 뜨고 옛 이름을 쓰는 남의 집이 사라진다.
         browser.browseResultsChangedHandler = { [weak self] results, _ in
-            let peers = results.compactMap { result -> MemoryHomePeer? in
-                guard case let .service(name, _, _, _) = result.endpoint else { return nil }
-                guard name != ownServiceName else { return nil }
-                return .init(id: name, displayName: Self.clean(name, limit: 40) ?? "Memory Home", endpoint: result.endpoint)
-            }
-            Task { @MainActor in self?.homes = peers.sorted { $0.displayName < $1.displayName } }
+            Task { @MainActor in self?.updateHomes(results) }
         }
         browser.stateUpdateHandler = { [weak self] state in
-            if case .failed(let error) = state {
+            switch state {
+            // 권한 거부·차단은 `.failed` 가 아니라 `.waiting` 으로 **조용히 머문다**. 여기를 비워
+            // 두면 화면은 영영 "주변 홈을 찾는 중" 이고 사용자는 이유를 알 길이 없다.
+            case .waiting(let error):
                 Task { @MainActor in self?.lastError = self?.networkFailureMessage(error) }
+            case .failed(let error):
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.lastError = self.networkFailureMessage(error)
+                    self.browser = nil
+                    try? await Task.sleep(for: .seconds(5))
+                    guard self.isActive else { return }
+                    self.startBrowsing()
+                }
+            default: break
             }
         }
         browser.start(queue: .main); self.browser = browser
+    }
+
+    /// 광고 목록 하나를 집 목록으로 옮긴다. 클로저 안에 두면 `NWBrowser.Result` 를 만들 수 없어
+    /// 테스트가 닿지 못한다 — `BattleCenter.updatePeers` 와 같은 이유로 밖에 둔다.
+    private func updateHomes(_ results: Set<NWBrowser.Result>) {
+        let mine = myServiceName
+        homes = results.compactMap { result -> MemoryHomePeer? in
+            guard case let .service(name, _, _, _) = result.endpoint else { return nil }
+            return Self.peer(fromService: name, excluding: mine, endpoint: result.endpoint)
+        }.sorted { $0.displayName < $1.displayName }
+        if !homes.isEmpty { lastError = nil }
     }
     private func startHosting() {
         guard listener == nil else { return }
         do {
             let listener = try NWListener(using: Self.parameters())
-            listener.service = .init(name: localDisplayName, type: Self.serviceType)
+            listener.service = .init(name: myServiceName, type: Self.serviceType)
             listener.newConnectionHandler = { [weak self] connection in Task { @MainActor in self?.accept(connection) } }
             listener.stateUpdateHandler = { [weak self] state in
                 if case .failed(let error) = state {
@@ -236,6 +257,38 @@ final class MemoryHomeVisitCenter {
     /// Do not fall back to the trainer name: malformed/legacy payloads still get a safe album
     /// fallback, never an accidental disclosure.
     private var localDisplayName: String { companion.memoryAlbum.memoryHomePublicNickname }
+    /// 내가 광고 중인 Bonjour 이름. 닉네임이 바뀌면 따라 바뀌므로 **저장하지 않고** 매번 읽는다.
+    private var myServiceName: String { Self.serviceName(nickname: localDisplayName, peerID: peerID) }
+
+    /// Bonjour 광고 이름 = 닉네임 + 설치별 고유 접미. `BattleNet`·`PokemonTrade`·
+    /// `MultiplayerRoomCenter` 가 모두 쓰는 형태이며, 같은 닉네임을 쓰는 두 기기가 서로를 자기로
+    /// 오인하지 않게 하는 유일한 근거다. 접미가 없으면 mDNS 가 충돌한 쪽을 `이름 (2)` 로 개명하고,
+    /// 개명당한 쪽은 저장된 원문으로 자기를 거르므로 상대를 자기로 착각해 목록에서 지운다.
+    /// 접미는 `AppSettings.memoryHomeLANPeerID` 에서 나온다 — 설치마다 고정이라 재실행해도 같다.
+    nonisolated static func serviceName(nickname: String, peerID: UUID) -> String {
+        "\(clean(nickname, limit: 40) ?? "MemoryHome")#\(peerID.uuidString.prefix(6))"
+    }
+
+    /// 목록에 적을 이름. 고유 접미를 떼고 남이 지은 문자열을 거른다.
+    /// `clean` 을 쓰지 않는 이유: 개명된 구버전 이름(`MemoryHome (2)`)에는 공백이 들어 있어
+    /// `clean` 이 통째로 버리고, 그러면 모든 집이 같은 기본 라벨로 뭉개져 구분할 수 없다.
+    /// 줄바꿈·제어문자는 라벨을 망가뜨리므로 그대로 거른다.
+    nonisolated static func displayName(fromService service: String) -> String? {
+        let base = service.lastIndex(of: "#").map { String(service[service.startIndex..<$0]) } ?? service
+        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 40,
+              !trimmed.unicodeScalars.contains(where: {
+                  CharacterSet.newlines.contains($0) || CharacterSet.controlCharacters.contains($0)
+              }) else { return nil }
+        return trimmed
+    }
+
+    /// 광고 하나를 집 한 채로 옮긴다. `id` 는 광고 원문이라 방문 도장이 기기별로 남는다.
+    nonisolated static func peer(fromService name: String, excluding myServiceName: String,
+                                 endpoint: NWEndpoint) -> MemoryHomePeer? {
+        guard name != myServiceName, let displayName = displayName(fromService: name) else { return nil }
+        return MemoryHomePeer(id: name, displayName: displayName, endpoint: endpoint)
+    }
     /// 대문 문구는 `profileMessageForSharing` 만 읽는다 — 공유를 명시적으로 켠 경우에만 값이
     /// 나오는 프로퍼티다. `memoryHomeAccess.profileMessage` 를 직접 읽으면 동의 없이 새어 나간다.
     private func profileCard(version: Int = protocolVersion) -> MemoryHomeProfileCard {
@@ -284,7 +337,13 @@ final class MemoryHomeVisitCenter {
               }) else { return nil }
         return value
     }
-    private static func parameters() -> NWParameters { NWParameters.tcp }
+    /// `includePeerToPeer` 는 AWDL(피어투피어)까지 켠다. `BattleNet`·`PokemonTrade`·
+    /// `MultiplayerRoomCenter` 셋 다 켜는데 여기만 빠져 있어 같은 Wi-Fi 가 아닌 이웃을 못 봤다.
+    private static func parameters() -> NWParameters {
+        let params = NWParameters.tcp
+        params.includePeerToPeer = true
+        return params
+    }
 
     /// Bonjour 권한 거부를 Network 프레임워크의 내부 코드로 노출하지 않는다. 특히 `NoAuth` 는
     /// 홈 계정 인증이 아니라 macOS의 로컬 네트워크 서비스 권한을 뜻한다.
