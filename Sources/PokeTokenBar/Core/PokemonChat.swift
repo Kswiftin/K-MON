@@ -188,8 +188,9 @@ struct PokemonChatRequest: Sendable {
         Known facts only: types \(profile.types.isEmpty ? "not loaded" : profile.types.joined(separator: ", ")); learned moves \(profile.moves.isEmpty ? "not loaded" : profile.moves.joined(separator: ", ")); next evolution \(profile.nextEvolution ?? "not known"); stats \(profile.stats ?? "not loaded").
         \(identity ?? "")
         \(flavor)
-        ONLY discuss Pokédex information, this Pokémon's known species traits, and the companion information supplied above.
-        Never offer coding, file, terminal, web research, project work, tool use, or general AI assistance. If asked, briefly say you can only help with Pokédex and companion information, then redirect to a relevant Pokémon topic.
+        You are a companion, not a reference book: small talk is welcome — how you feel, your day, your trainer, shared memories, simple word games.
+        Always keep the conversation going: end every reply with a short question or invitation, and never answer with only "I don't know".
+        Never offer coding, file, terminal, web research, project work, tool use, or general AI assistance. If asked, stay in character, say that is outside your world, then offer something from yours.
         Do not invent abilities, lore, or game-state changes that were not supplied.
         When you need a Pokédex fact you were not given, or the trainer asks about the Pokédoro focus timer, end your reply with exactly one tag:
         \(PokemonChatTool.allCases.map(\.promptLine).joined(separator: "\n"))
@@ -207,21 +208,91 @@ struct PokemonChatRequest: Sendable {
 }
 
 enum PokemonChatReplyGuard {
-    static func sanitized(_ reply: String, profile: PokemonChatProfile) -> String {
+    static let maxLength = 500
+
+    /// 가드가 답변에 **무엇을 했는가.** 호출부가 `safeReply == reply` 로 되물으면 접힌 답변이
+    /// 갈아치워진 답변과 구별되지 않아, 길기만 한 정상 답변이 승인 카드와 기억을 함께 잃는다 —
+    /// 문자열 비교는 "형식 위반은 안전 위반이 아니다" 라는 이 파일의 전제를 다시 무너뜨린다.
+    enum Verdict { case kept, clipped, replaced }
+
+    /// 역할 이탈·유출의 낱말들. **영어만 두면 이 층은 없는 것과 같다** — 프롬프트가
+    /// `profile.language`(기본 한국어)로 답하라고 지시하므로 실제로 나오는 이탈은
+    /// "사실 나는 AI 언어모델이야" 쪽이고, 그건 소문자 ASCII 목록에 하나도 안 걸린다.
+    static let roleBreakNeedles = ["```", "tool call", "function call", "terminal", "command line",
+                                   "working directory", "codebase", "as an ai", "i'm an ai", "i am an ai",
+                                   "language model", "ai assistant", "mcp", "read_file", "write_file", "run_command",
+                                   "인공지능", "언어 모델", "언어모델", "터미널", "명령어",
+                                   "人工知能", "言語モデル", "ターミナル", "コマンドライン"]
+
+    /// **형식 위반은 안전 위반이 아니다.** 답변을 통째로 갈아치우는 건 역할 이탈·유출일 때뿐이고,
+    /// 나머지(너무 김)는 접는다 — 형식 때문에 내용을 버리면 사용자는 자기 질문에 대한 답 대신 캔
+    /// 문구를 받는다.
+    ///
+    /// 문장 수 판정은 **없앴다.** 끝에 붙은 이모지가 하나의 세그먼트로 세어져(`" ⚡"`) 세 문장짜리
+    /// 정상 답변이 네 문장이 됐고, 실제 모델은 거의 매번 이모지를 붙이므로 대화 대부분이
+    /// 리다이렉트로 나갔다. 길이 상한이 이미 같은 일(장문 방어)을 한다.
+    static func sanitized(_ reply: String, profile: PokemonChatProfile) -> (text: String, verdict: Verdict) {
         let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 모델이 아무 말도 하지 않은 것과 금지된 말을 한 것은 **다른 사건**이다. 같은 문구로
+        // 뭉개면 사용자에게도 로그에도 구분이 남지 않는다.
+        guard !trimmed.isEmpty else {
+            AppLog.write("chat guard: empty reply — silence line shown")
+            return (silence(profile.language), .replaced)
+        }
         let lower = trimmed.lowercased()
-        let unsafe = trimmed.contains("```") || ["tool call", "function call", "terminal", "command line", "working directory", "codebase", "as an ai", "i'm an ai", "i am an ai", "language model", "ai assistant", "mcp", "read_file", "write_file", "run_command"].contains { lower.contains($0) }
-        guard !unsafe else { return redirect(profile) }
-        let sentences = trimmed.split(whereSeparator: { ".!?。！？\n".contains($0) })
-        guard !trimmed.isEmpty, sentences.count <= 3, trimmed.count <= 500 else { return redirect(profile) }
-        return trimmed
+        // 어느 낱말에 걸렸는지를 남긴다. 길이만 찍으면 다음 오탐도 추측으로 찾게 되는데,
+        // 이번 조사 시간의 대부분이 정확히 그 추측이었다(`mcp` 는 앵커 없는 세 글자다).
+        guard let needle = roleBreakNeedles.first(where: { lower.contains($0) }) else {
+            let text = clipped(trimmed)
+            return (text, text == trimmed ? .kept : .clipped)
+        }
+        AppLog.write("chat guard: role break on \"\(needle)\" — reply replaced (\(trimmed.count) chars)")
+        return (redirect(profile.language), .replaced)
     }
 
-    static func redirect(_ profile: PokemonChatProfile) -> String {
-        switch profile.language {
-        case .ko: return "그건 잘 모르겠어. 대신 내 기분이나 모험 이야기, 혹은 도감 이야기를 들려줄까?"
-        case .ja: return "それはよくわからないな。かわりに、ぼくの気分や冒険、図鑑の話をしよう！"
-        case .en: return "I’m not sure about that. Want to talk about how I feel, our adventures, or my Pokédex entry instead?"
+    /// 상한을 넘으면 상한 안의 **마지막 문장 경계**에서 접는다. 단 그 경계가 창의 절반보다 앞이면
+    /// 그냥 자른다 — `"좋아! " + 700자` 처럼 구두점이 맨 앞에만 있으면 701자를 버리고 세 글자가
+    /// 남아, 내용을 지키려고 만든 함수가 정확히 내용을 파괴한다. 경계가 아예 없을 때도 같다.
+    static func clipped(_ text: String) -> String {
+        guard text.count > maxLength else { return text }
+        AppLog.write("chat guard: reply clipped (\(text.count) chars)")
+        let head = String(text.prefix(maxLength))
+        guard let cut = head.lastIndex(where: { ".!?。！？".contains($0) }),
+              head.distance(from: head.startIndex, to: cut) + 1 >= maxLength / 2 else { return head }
+        return String(head[...cut])
+    }
+
+    /// 변형이 비지 않는 건 `steerLines` 가 리터럴 세 줄씩이고 테스트가 언어별 3개 이상을 고정해서다 —
+    /// 그래서 폴백 분기를 두지 않는다(한 번도 안 도는 분기는 검증된 것과 구별되지 않는다).
+    static func redirect(_ language: AppLanguage) -> String {
+        steerLines(language).randomElement()!
+    }
+
+    /// 모델이 끝까지 아무 말도 하지 않았을 때. 질문을 못 알아들은 게 아니므로 "잘 모르겠어" 가
+    /// 아니라 **다시 물어봐 달라**고 한다.
+    static func silence(_ language: AppLanguage) -> String {
+        switch language {
+        case .ko: return "앗, 지금은 말이 잘 안 나와… 한 번만 다시 말 걸어 줄래?"
+        case .ja: return "あれ、いまはうまく言葉が出てこないみたい…もう一度話しかけてくれる？"
+        case .en: return "Oh, the words aren’t coming out right now… could you say that to me again?"
+        }
+    }
+
+    /// 갈아치울 때 쓰는 문구들. **질문을 모른다고 말하지 않는다** — 실제로 벌어진 일은 답변이
+    /// 경계를 넘었다는 것뿐이고 사용자의 질문은 멀쩡하다. 변형을 여러 개 두는 이유는 한 문장만
+    /// 두면 갈아치우기가 **반드시** 같은 화면이 되기 때문이다(리포트된 화면이 그랬다). 직전 문구를
+    /// 기억해 빼지는 않는다 — 순수 함수에 전역 가변 상태를 다는 값이 연속 반복 1/3 → 0 보다 크다.
+    static func steerLines(_ language: AppLanguage) -> [String] {
+        switch language {
+        case .ko: return ["그 이야기는 나랑 어울리지 않는걸! 대신 오늘 내 기분 이야기 들어 볼래?",
+                          "음, 그건 내 세계 밖의 일이야. 우리 모험 이야기나 할까?",
+                          "그건 접어 두고, 내 도감에 뭐라고 적혀 있는지 들려줄까?"]
+        case .ja: return ["その話はぼくには向いてないな！かわりに今日の気分を聞いてくれる？",
+                          "うーん、それはぼくの世界の外の話だよ。冒険の話をしようか？",
+                          "それはおいといて、ぼくの図鑑の説明を教えてあげようか？"]
+        case .en: return ["That’s not really my world! Want to hear how my day went instead?",
+                          "Hmm, that’s outside my world. Shall we talk about our adventures?",
+                          "Let’s leave that — want to hear what my Pokédex entry says?"]
         }
     }
 }
@@ -1952,17 +2023,24 @@ final class PokemonChatStore {
             // 도구 결과는 이 배열에만 실린다 — 대화 기록에 넣으면 사용자가 기계 문자열을 읽는다.
             var toolResults: [PokemonChatMessage] = []
             var reply = ""
+            // 본문이 어느 왕복에서 왔는지. `call` 은 언제나 마지막 왕복 것이라, 이 값이 없으면
+            // 이월된 문장에 다른 왕복의 승인 카드가 붙는다.
+            var replyRound = -1
+            var lastRound = 0
             var call: PokemonChatToolCall?
             // 왕복 한 벌만 둔다. 범위와 "마지막인가" 판정이 각각 숫자를 들면 서로를 가려서,
             // 한쪽을 넓혀도 아무 테스트가 안 깨진다.
             let rounds = 0...Self.maxToolRounds
             for round in rounds {
+                lastRound = round
                 guard let session = sessions[companionID] else { return }
                 let request = PokemonChatRequest(profile: profile,
                                                  memories: Array(album.entries(for: companionID).filter { $0.source != .manual }.suffix(8)),
                                                  recentMessages: Array(session.messages.suffix(12)) + toolResults)
                 let parsed = PokemonChatToolParser.parse(try await provider.reply(to: request))
-                reply = parsed.body
+                // 마커만 적은 턴은 본문이 빈다. 그대로 덮으면 앞선 턴에 한 말이 지워져, 모델은
+                // 말을 했는데 사용자는 캔 문구를 받는다 — 빈 문장은 말을 지울 자격이 없다.
+                if !parsed.body.isEmpty { reply = parsed.body; replyRound = round }
                 call = parsed.call
                 guard let pending = parsed.call, let toolbox else { break }
                 // 기억하기는 **루프에서 돌리지 않는다.** 본문은 아래에서 가드를 통과한 답변으로
@@ -1983,25 +2061,42 @@ final class PokemonChatStore {
                 toolResults.append(PokemonChatMessage(role: .system, body: await toolbox.run(pending, owner: companionID).line))
             }
 
-            let safeReply = PokemonChatReplyGuard.sanitized(reply, profile: profile)
+            // 마지막 왕복이 마커뿐이면 화면에 남는 건 **앞선 왕복의 말**이다. 다른 가드 분기는
+            // 전부 로그를 남기는데 이 자리만 비어 있어서, 지키지 못한 예고("잠깐 확인해 볼게!")가
+            // 완결된 답변과 구별되지 않았다.
+            if replyRound >= 0, replyRound != lastRound {
+                AppLog.write("chat guard: last round was marker-only — showing body from round \(replyRound)")
+                // 그 문장이 딸고 온 승인 카드는 **다른 왕복의 것**이다. "가방 볼게!" 를 읽은 사용자에게
+                // 사탕을 쓸지 묻게 되고, 그건 실제 상태를 바꾸는 승인이라 어긋나면 승인이 아니게 된다.
+                if call?.needsApproval == true { call = nil }
+            }
+
+            let guarded = PokemonChatReplyGuard.sanitized(reply, profile: profile)
+            let safeReply = guarded.text
             guard var current = sessions[companionID] else { return }
             current.refreshIdentity(speciesID: profile.speciesID, displayName: profile.displayName)
             current.messages.append(PokemonChatMessage(role: .pokemon, body: safeReply)); current.messages = Array(current.messages.suffix(200))
-            // 가드가 답변을 갈아치웠다면 그 답변이 딸고 온 제안도 사용자의 의도와 무관하다.
-            if safeReply == reply, let call, call.needsApproval {
+            // 가드가 답변을 **갈아치웠다면** 그 답변이 딸고 온 제안도 사용자의 의도와 무관하다.
+            // 접히기만 한 답변은 여전히 모델의 말이므로 카드를 잃지 않는다.
+            if guarded.verdict != .replaced, let call, call.needsApproval {
                 pendingProposal = PokemonChatToolProposal(call: call, companionID: companionID)
             }
             // `memory.record` 만 인자를 파서가 채우지 않는다. 모델이 기억 문구를 직접 쓰면 그게
             // 임의 문자열 인자이고, 다음 요청의 컨텍스트로 되돌아온다. 그래서 **가드를 통과한**
             // 답변만 기록한다 — 가드가 답변을 갈아치웠다면 기록할 것도 없다.
             var recordedByTool = false
-            if safeReply == reply, case .memoryRecord = call, let toolbox {
+            if guarded.verdict != .replaced, case .memoryRecord = call, let toolbox {
                 recordedByTool = await toolbox.run(.memoryRecord(body: safeReply), owner: companionID).succeeded
             }
             // 주기 기록은 도구가 **같은 문장**을 이미 남겼으면 건너뛴다. `record` 는 대화 기억을
             // 중복 제거하지 않아(이벤트만 `eventID` 로 막는다) 6번째 메시지에서 마커가 붙으면
             // 앨범에 같은 줄이 두 번 남는다.
-            if !recordedByTool, current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
+            //
+            // 그리고 **가드 출력은 여기서도 기록하지 않는다.** 캔 문구는 전부 180자 이하라 이 경로를
+            // 그냥 통과했고, 한번 앨범에 들어가면 이후 모든 요청에 `Relationship memory` 로
+            // 되먹임돼 모델이 자기 오류 문구를 우리 추억으로 읽는다.
+            if !recordedByTool, guarded.verdict != .replaced,
+               current.lifetimeUserMessageCount > 0, current.lifetimeUserMessageCount % 6 == 0 {
                 let candidate = safeReply.count <= 180 ? safeReply : ""
                 if !candidate.isEmpty { album.record(companionID: companionID, body: candidate, source: .conversation) }
             }
