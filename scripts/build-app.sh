@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 # 로컬 수동 빌드용 폴백. 릴리스는 태그에서 KMON_VERSION 을 주입하므로(release.yml) 배포 산출물은
 # 이 값을 쓰지 않는다 — 최신 릴리스와 맞춰 두지 않으면 손으로 빌드한 앱만 옛 버전으로 뜬다.
-DEFAULT_VERSION="2.20.2"
+DEFAULT_VERSION="2.20.3"
 VERSION="${KMON_VERSION:-$DEFAULT_VERSION}"
 SOURCE_COMMIT="${KMON_SOURCE_COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
 # GitHub App OAuth Client ID는 공개 식별자다. 포크/별도 배포는 환경 변수로 자신의 App ID를 덮어쓴다.
