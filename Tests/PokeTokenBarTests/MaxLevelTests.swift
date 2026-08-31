@@ -23,6 +23,21 @@ final class MaxLevelTests: XCTestCase {
                        fileURL: url ?? tempURL(), rng: SeededRNG(seed: 7))
     }
 
+    private func store(_ clock: TestClock) -> CompanionStore {
+        CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
+                       fileURL: tempURL(), rng: SeededRNG(seed: 7))
+    }
+
+    /// 만렙 파트너를 세운다 — 상한에 **정확히** 닿게 시드하므로 시드 자체로는 초과분이 없다.
+    /// 환산 테스트가 시드 부작용이 아니라 정산분을 보고 있음을 이 전제가 보장한다.
+    private func maxedStore(_ clock: TestClock) async -> CompanionStore {
+        let s = store(clock)
+        await s.hatch(baseID: 20)
+        s.debugAccrueLevelExperience(PokemonBalance.maxLevelExperience)
+        XCTAssertEqual(s.currentLevel, PokemonBalance.maxLevel, "테스트 전제: 만렙에 닿았다")
+        return s
+    }
+
     // MARK: 클램프 (MonState.gainExperience)
 
     func testExperienceStopsAtTheCap() {
@@ -109,5 +124,109 @@ final class MaxLevelTests: XCTestCase {
 
         XCTAssertEqual(clean.active?.levelExperience, PokemonBalance.maxLevelExperience)
         XCTAssertEqual(clean.boxedMons.first?.levelExperience, PokemonBalance.maxLevelExperience)
+    }
+
+    // MARK: 상한 초과분 환산 (#82)
+    //
+    // 상한에 걸린 경험치는 **말없이 사라졌다.** 해안 모험 10회면 상한에 닿으므로 정상 플레이로
+    // 도달하고, 그 뒤로 모험은 파트너에게 아무 의미가 없다. 초과분을 별의조각으로 되돌린다.
+    // 환율은 모험 보상이 이미 쓰는 비(분당 120,000 XP : 8 ⭐ = 15,000 : 1)의 절반이다.
+
+    /// 이 테스트들이 기대하는 환율. 구현 상수를 그대로 읽지 않고 여기 한 번 더 적는다 —
+    /// 상수를 읽으면 상수를 바꾸는 순간 테스트도 같이 따라가 아무것도 지키지 않는다.
+    private let expectedExperiencePerStarPiece = 30_000
+
+    /// 만렙 파트너의 모험 경험치는 통째로 버려졌다. 이제 별의조각으로 돌아와야 한다.
+    func testMaxLevelAdventureConvertsDiscardedExperienceIntoStardust() async throws {
+        let clock = TestClock()
+        let s = await maxedStore(clock)
+        let before = s.state.starPieces
+
+        XCTAssertTrue(s.startFocusAdventure(minutes: 120))
+        clock.advance(120 * 60)
+        let reward = try XCTUnwrap(s.claimAdventure())
+
+        XCTAssertEqual(s.state.active?.levelExperience, PokemonBalance.maxLevelExperience,
+                       "전제: 경험치는 상한에 묶여 한 톨도 오르지 않는다")
+        let converted = reward.experience / expectedExperiencePerStarPiece
+        XCTAssertGreaterThan(converted, 0, "전제: 이 정산은 환산할 초과분을 만든다")
+        XCTAssertEqual(s.state.starPieces - before,
+                       reward.stardust + reward.trainerBonus + reward.missionBonus
+                           + reward.achievementBonus + reward.seasonBonus + converted,
+                       "버려진 경험치가 별의조각으로 돌아와야 한다")
+    }
+
+    /// 대조군 — 상한 아래에서는 환산이 일어나지 않는다. 만렙 케이스만 두면 "항상 환산한다" 는
+    /// 구현도 통과한다.
+    func testAdventureBelowTheCapConvertsNothing() async throws {
+        let clock = TestClock()
+        let s = store(clock)
+        await s.hatch(baseID: 20)
+        let before = s.state.starPieces
+
+        XCTAssertTrue(s.startFocusAdventure(minutes: 120))
+        clock.advance(120 * 60)
+        let reward = try XCTUnwrap(s.claimAdventure())
+
+        XCTAssertEqual(s.state.active?.levelExperience, reward.experience, "전제: 전량 적립됐다")
+        XCTAssertEqual(s.state.starPieces - before,
+                       reward.stardust + reward.trainerBonus + reward.missionBonus
+                           + reward.achievementBonus + reward.seasonBonus,
+                       "상한 아래에서는 환산분이 붙지 않는다")
+    }
+
+    /// 만렙에서 이상한 사탕은 소모만 되고 **아무 일도 일어나지 않았다.** 상점에서 5,000 별의조각에
+    /// 파는 아이템이라 함정 구매가 된다(defect-log: 쓸 수 없는 대상에만 쓰이는 아이템 부류).
+    ///
+    /// 막지 않고 환산하는 이유: 사탕은 `usedAtStage` 도 밀어서, 레벨 메타데이터가 없는 진화
+    /// (`applyUsage` 의 `usedAtStage >= threshold` 분기)의 유일한 공급원이다. 만렙에서 막으면
+    /// 그 개체의 진화 경로가 영영 닫힌다.
+    func testRareCandyAtMaxLevelPaysStardustInsteadOfNothing() async {
+        let clock = TestClock()
+        let s = await maxedStore(clock)
+        s.debugAddCandy(1)
+        let before = s.state.starPieces
+
+        XCTAssertEqual(s.useRareCandy(), .progressed)
+
+        XCTAssertEqual(s.rareCandyCount, 0, "전제: 사탕은 소모됐다")
+        XCTAssertEqual(s.state.starPieces - before, RareCandy.xp / expectedExperiencePerStarPiece,
+                       "만렙 사탕은 사라지지 않고 별의조각으로 돌아와야 한다")
+    }
+
+    /// 대조군 — 상한 아래의 사탕은 경험치로 들어가고 별의조각을 주지 않는다.
+    func testRareCandyBelowTheCapPaysNoStardust() async {
+        let clock = TestClock()
+        let s = store(clock)
+        await s.hatch(baseID: 20)
+        s.debugAddCandy(1)
+        let before = s.state.starPieces
+
+        XCTAssertEqual(s.useRareCandy(), .progressed)
+
+        XCTAssertEqual(s.state.active?.levelExperience, RareCandy.xp, "전제: 전량 적립됐다")
+        XCTAssertEqual(s.state.starPieces, before, "상한 아래에서는 환산분이 없다")
+    }
+
+    /// **범위 밖 결정 고정** — 트레이너 레벨(99) 초과 포인트는 환산하지 않는다(#82, 2026-09-01).
+    /// 포인트는 분 단위고 보상은 `500 × 레벨` 이라 경험치처럼 코드에서 유도되는 환율이 없고,
+    /// 만렙 상태는 화면에 이미 드러난다(`progress == 1`, `pointsToNextLevel == nil`).
+    /// 이 테스트가 빨개지면 그건 회귀가 아니라 **결정이 바뀐 것**이다.
+    func testTrainerPointsAtMaxLevelAreNotConverted() async throws {
+        let clock = TestClock()
+        let url = tempURL()
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"trainer":{"points":\#(TrainerLevel.maximumPoints)}}"#
+        try Data(json.utf8).write(to: url)
+        let s = CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
+                               fileURL: url, rng: SeededRNG(seed: 7))
+        await s.hatch(baseID: 20)
+        XCTAssertEqual(s.trainerLevel.points, TrainerLevel.maximumPoints, "테스트 전제: 트레이너가 만렙이다")
+
+        XCTAssertTrue(s.startFocusAdventure(minutes: 120))
+        clock.advance(120 * 60)
+        let reward = try XCTUnwrap(s.claimAdventure())
+
+        XCTAssertEqual(s.trainerLevel.points, TrainerLevel.maximumPoints, "포인트는 상한에 머문다")
+        XCTAssertEqual(reward.trainerBonus, 0, "환산하지 않으므로 보너스도 없다")
     }
 }
