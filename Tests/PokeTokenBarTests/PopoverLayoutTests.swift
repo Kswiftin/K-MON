@@ -307,11 +307,11 @@ final class PopoverLayoutTests: XCTestCase {
         let questions = ["너의 타입이 뭐야?", "지금 기분은 어때?", "오늘의 도감을 보여 줘",
                          "배운 기술을 알려 줘", "너는 어떤 포켓몬이야?", "다음 진화는 언제야?"]
         let bare = renderedHeight(PokemonChatChipRow(actions: [], questions: questions,
-                                                     language: .ko, onTap: { _ in }),
+                                                     language: .ko, onAction: { _ in }, onQuestion: { _ in }),
                                   proposingWidth: PopoverMetrics.width)
         let withActions = renderedHeight(
             PokemonChatChipRow(actions: [.startFocus, .acceptEvolution, .useRareCandy],
-                               questions: questions, language: .ko, onTap: { _ in }),
+                               questions: questions, language: .ko, onAction: { _ in }, onQuestion: { _ in }),
             proposingWidth: PopoverMetrics.width)
 
         XCTAssertEqual(withActions, bare, accuracy: 1, "액션 칩이 칩 줄을 두 줄로 만들었다")
@@ -323,13 +323,13 @@ final class PopoverLayoutTests: XCTestCase {
     /// 지운 채로 대화 칩 기능의 유일한 뷰 테스트가 전부 초록으로 남는다.
     func testTheChipRowActuallyDrawsItsActionChips() {
         let empty = renderedHeight(PokemonChatChipRow(actions: [], questions: [],
-                                                      language: .ko, onTap: { _ in }),
+                                                      language: .ko, onAction: { _ in }, onQuestion: { _ in }),
                                    proposingWidth: PopoverMetrics.width)
         let onlyAction = renderedHeight(PokemonChatChipRow(actions: [.startFocus], questions: [],
-                                                           language: .ko, onTap: { _ in }),
+                                                           language: .ko, onAction: { _ in }, onQuestion: { _ in }),
                                         proposingWidth: PopoverMetrics.width)
         let onlyQuestion = renderedHeight(PokemonChatChipRow(actions: [], questions: ["너의 타입이 뭐야?"],
-                                                             language: .ko, onTap: { _ in }),
+                                                             language: .ko, onAction: { _ in }, onQuestion: { _ in }),
                                           proposingWidth: PopoverMetrics.width)
 
         XCTAssertGreaterThan(onlyAction, empty, "액션 칩이 아무것도 안 그린다")

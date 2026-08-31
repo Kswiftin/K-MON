@@ -53,9 +53,10 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
         case .challengeStatus:
             return "[[tool:\(rawValue)]] — check today's dungeon, gym badges and missions"
         case .itemUse:
-            // 이름을 전부 나열하지 않는다(30종 가까이다). 대신 bag.list 가 찍어 주는 이름만
-            // 쓰라고 못 박는다 — 모델이 지어낸 이름은 어차피 파싱에서 떨어진다.
-            return "[[tool:\(rawValue)(<item name exactly as bag.list printed it>)]] — ask the trainer to use one item"
+            // 이름을 전부 나열하지 않는다(30종 가까이다). 대신 bag.list 가 찍어 주는 이름을
+            // 쓰라고 못 박되, 사용자가 부른 이름 그대로도 된다고 알린다 — 액션 칩이 채우는 문장엔
+            // 현지화된 이름밖에 없어서, rawValue 만 받으면 그 칩은 영영 아무 일도 못 한다.
+            return "[[tool:\(rawValue)(<item name — as bag.list printed it, or as the trainer just called it>)]] — ask the trainer to use one item"
         case .evolutionAccept:
             return "[[tool:\(rawValue)]] — ask the trainer to let you evolve (only when evolution is waiting)"
         case .companionSwitch:
@@ -230,7 +231,9 @@ enum PokemonChatAction: CaseIterable, Sendable {
         let l = L(language)
         switch self {
         case .startFocus:
-            let minutes = PokemonChatTool.focusMinutes[0]
+            // 상수표를 다시 읽지 않는다 — 자기 `call` 이 켤 값을 그대로 말한다. 두 벌이면
+            // 위 `case .startFocus` 의 길이만 바꿨을 때 칩은 25분이라 쓰고 카드는 50분을 켠다.
+            guard case .pokedoroStart(let minutes) = call else { return "" }
             return l.t("\(minutes)분 집중하자", "Let's focus for \(minutes) minutes", "\(minutes)分集中しよう")
         case .stopFocus:
             return l.t("집중을 끝내자", "Let's stop the focus session", "集中を終えよう")
@@ -300,7 +303,7 @@ enum PokemonChatToolParser {
             }
         case .itemUse:
             // 닫힌 enum 만 인자가 된다. 목록 밖 이름은 거부되는 게 아니라 호출이 되지 않는다.
-            guard let raw = argument, let kind = ItemKind(rawValue: raw) else { return nil }
+            guard let raw = argument, let kind = itemKind(named: raw) else { return nil }
             return .itemUse(kind: kind)
         case .companionSwitch:
             // 인덱스는 `roster.list` 가 찍은 값이다. 범위 상한은 로스터를 아는 실행기가 본다 —
@@ -313,6 +316,22 @@ enum PokemonChatToolParser {
         case .pokedexLookup:
             guard let id = wholeNumber(argument), (1...PokemonChatTool.highestDexNumber).contains(id) else { return nil }
             return .pokedexLookup(speciesID: id)
+        }
+    }
+
+    /// 아이템 이름을 종류로. rawValue 가 정답이지만(`bag.list` 가 그 값을 찍는다) **현지화된
+    /// 이름도 받는다** — 액션 칩은 사람 문장("이상한 사탕 하나 써 줘")을 입력칸에 채우고, 모델은
+    /// 그 문장에서 rawValue 를 알 길이 없다. `bag.list` 를 먼저 부르면 알 수 있지만 왕복은 셋뿐이라
+    /// 그 한 번이 비싸고, 인자를 든 칩은 이것 하나뿐인데 그게 하필 못 맞추는 칩이었다.
+    ///
+    /// 추측이 아니라 **닫힌 목록 대조**다 — 세 언어의 표시 이름을 그대로 맞춰 보고, 목록 밖
+    /// 이름은 여전히 호출이 되지 않는다.
+    private static func itemKind(named raw: String) -> ItemKind? {
+        if let exact = ItemKind(rawValue: raw) { return exact }
+        let needle = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return nil }
+        return ItemKind.allCases.first { kind in
+            [AppLanguage.ko, .en, .ja].contains { L($0).itemName(kind).lowercased() == needle }
         }
     }
 
@@ -414,11 +433,19 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
     private func isReady(_ action: PokemonChatAction) -> Bool {
         switch action {
         case .startFocus: return !timer.isRunning && companion.activeAdventure == nil
-        case .stopFocus: return timer.isRunning
+        // 휴식은 **끝낼 집중이 아니다.** `isRunning` 은 `phase != .idle` 이라 휴식에서도 참인데,
+        // 그 값으로 권하면 쉬는 중에 "집중을 끝내자" 칩이 뜨고, 승인 카드는 "끝난 모험 보상은
+        // 챙기고, 아직 나가 있는 모험은 취소돼" 라고 말한다 — 그 구간엔 모험이 이미 정산돼 없다.
+        // 실행기는 이 상태를 거절하지 않으므로(제안 ⊆ 실행 가능은 지켜진다) 문구가 상태를
+        // 잘못 부르는 부류다. 화면의 종료 버튼은 단계 중립("종료")이라 이 칩만 명사를 흘렸다.
+        case .stopFocus: return timer.phase == .focus
         case .claimAdventure: return companion.activeAdventure != nil && !companion.isAdventureInProgress
         // 재고만 보지 않는다 — `useRareCandy` 는 진화 라인이 아직 안 실렸으면 거절한다(기동 직후).
         case .useRareCandy: return companion.canUseRareCandy
-        case .acceptEvolution: return companion.evolutionPrompt != nil
+        // 대기 여부가 아니라 **승인이 실제로 진화시키는가**를 묻는다. 카드가 뜬 뒤에도 조건은
+        // 무너지고(기술을 잊음·시간대·요구 파티원), 그때 `acceptEvolution` 은 카드만 지운다 —
+        // 대기만 보고 권하면 앱이 시킨 대로 누른 사용자가 진화 카드를 잃는다.
+        case .acceptEvolution: return companion.canAcceptEvolutionNow
         }
     }
 

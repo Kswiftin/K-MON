@@ -206,11 +206,24 @@ struct PokemonChatView: View {
     /// 무엇을 시킬 수 있는지는 **여기서** 답한다. 액션 칩은 실행기가 지금 성공시킬 수 있는 것만
     /// 오므로 목록이 아니라 상태다 — `FocusTimer`·`CompanionStore` 가 `@Observable` 이라 집중을
     /// 시작하면 이 줄이 그 자리에서 바뀐다.
+    /// 시계로 깨운다. `@Observable` 이 깨우는 건 상태가 **바뀔 때**뿐인데, "보상 받기" 의 조건
+    /// (`isAdventureInProgress`)은 `clock()` 을 읽는 벽시계 술어라 모험이 끝나도 아무것도
+    /// 무효화되지 않는다 — 팝오버를 열어 둔 채 그 순간을 넘기면 칩이 영영 안 뜬다.
+    /// `FocusTimerView` 가 같은 술어를 같은 방식으로 깨우고 있다.
     private var questionChips: some View {
-        PokemonChatChipRow(actions: toolbox.availableActions(owner: companionID),
-                           questions: chips, language: profile.language) { phrase in
-            if phrase == dailyDexQuestion { destination = .dailyDex } else { draft.wrappedValue = phrase }
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            PokemonChatChipRow(actions: toolbox.availableActions(owner: companionID),
+                               questions: chips, language: profile.language,
+                               onAction: { fill(with: $0.phrase(profile.language)) },
+                               onQuestion: { question in
+                                   if question == dailyDexQuestion { destination = .dailyDex }
+                                   else { fill(with: question) }
+                               })
         }
+    }
+
+    private func fill(with chip: String) {
+        draft.wrappedValue = PokemonChatChipRow.composed(draft: draft.wrappedValue, chip: chip)
     }
 
     private var chips: [String] {
@@ -311,7 +324,11 @@ struct PokemonChatChipRow: View {
     let actions: [PokemonChatAction]
     let questions: [String]
     let language: AppLanguage
-    let onTap: (String) -> Void
+    /// 누른 것이 **무엇이었는지** 그대로 넘긴다. 문구 하나로 합치면 호출부가 현지화된 표시
+    /// 문자열을 되비교해 정체를 알아내야 하고(`phrase == dailyDexQuestion`), 그 비교는 액션
+    /// 문구 하나가 우연히 같아지는 날 입력칸 대신 다른 화면으로 나간다 — 줄은 이미 답을 안다.
+    let onAction: (PokemonChatAction) -> Void
+    let onQuestion: (String) -> Void
 
     /// 칩을 눌렀을 때 입력칸에 남을 값. **쓰던 문장을 덮지 않는다** — 초안은 팝오버가 닫혀도
     /// 남으라고 `PokemonChatStore` 에 두었고, 그래서 되돌릴 `@State` 스냅샷이 없다. 액션 칩은
@@ -328,11 +345,11 @@ struct PokemonChatChipRow: View {
                 // 상태를 바꾸는 쪽이 앞에 온다. 칠할 때 채워진 배경을 쓰는 건 "이건 무언가를
                 // 일으킨다" 를 질문 칩과 구분하기 위해서다 — 뜻이 다르면 생김새도 달라야 한다.
                 ForEach(actions, id: \.self) { action in
-                    Button(action.phrase(language)) { onTap(action.phrase(language)) }
+                    Button(action.phrase(language)) { onAction(action) }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                 }
                 ForEach(questions, id: \.self) { question in
-                    Button(question) { onTap(question) }
+                    Button(question) { onQuestion(question) }
                         .buttonStyle(.bordered).controlSize(.small)
                 }
             }.padding(.horizontal, 12).padding(.bottom, 8)

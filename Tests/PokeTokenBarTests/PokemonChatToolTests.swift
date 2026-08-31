@@ -397,8 +397,12 @@ final class PokemonChatToolTests: XCTestCase {
         }
     }
 
-    /// 가방·로스터는 모델이 **되돌려 줄 수 있는 값**으로 찍힌다. 현지화된 이름을 주면 모델이
-    /// 그걸 인자로 써서 파싱에서 떨어지고, 사용자에겐 "아무 일도 안 일어남" 으로 보인다.
+    /// 가방·로스터는 모델이 **되돌려 줄 수 있는 값**으로 찍힌다. 되돌려 줄 수 없는 값을 찍으면
+    /// 모델이 그걸 인자로 써서 파싱에서 떨어지고, 사용자에겐 "아무 일도 안 일어남" 으로 보인다.
+    ///
+    /// 예전엔 여기서 현지화된 이름이 **떨어지는 것**을 단언했다. 그게 같은 증상의 다른 얼굴이었다 —
+    /// 액션 칩은 사람 문장("이상한 사탕 하나 써 줘")을 보내는데 모델은 그 문장에서 rawValue 를
+    /// 알 길이 없어, 인자를 든 유일한 칩이 아무 일도 못 했다. 이제 둘 다 통한다.
     func testReadToolsPrintNamesTheModelCanHandBackAsArguments() async {
         let store = makeCompanionStore()
         await store.hatch(baseID: 25)
@@ -408,10 +412,12 @@ final class PokemonChatToolTests: XCTestCase {
 
         let bag = await toolbox.runAsActive(.bagList)
         XCTAssertTrue(bag.line.contains("fireStone=2"), bag.line)
-        XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(불꽃의돌)]]").call,
-                     "현지화된 이름이 인자로 통과하면 안 된다")
         XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(fireStone)]]").call,
                        .itemUse(kind: .fireStone), "가방이 찍은 이름이 그대로 인자가 돼야 한다")
+        XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(불꽃의돌)]]").call,
+                       .itemUse(kind: .fireStone), "사용자가 부른 이름으로도 같은 아이템에 닿아야 한다")
+        XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(전설의 돌)]]").call,
+                     "목록 밖 이름은 여전히 호출이 되지 않는다 — 닫힌 목록 대조지 추측이 아니다")
 
         let roster = await toolbox.runAsActive(.rosterList)
         XCTAssertTrue(roster.line.contains("index=0"), roster.line)
@@ -1247,6 +1253,23 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertEqual(raw, .itemUse(kind: .rareCandy), "회귀: bag.list 가 찍는 rawValue 는 계속 통해야 한다")
     }
 
+    /// 이름으로 되짚는 순간 **이름이 겹치면 엉뚱한 아이템을 쓴다** — 그리고 아이템 사용은
+    /// 소모라 되돌릴 수 없다. 세 언어를 한 자루에 넣고 대조하므로 언어를 가로질러도 겹치면 안 된다.
+    /// (rawValue 와 현지화 이름이 겹치는 경우도 같은 함정이라 함께 센다.)
+    func testNoTwoItemsAnswerToTheSameName() {
+        var owner: [String: ItemKind] = [:]
+        for kind in ItemKind.allCases {
+            var names = [kind.rawValue]
+            for language in [AppLanguage.ko, .en, .ja] { names.append(L(language).itemName(kind)) }
+            for name in Set(names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }) {
+                if let existing = owner[name], existing != kind {
+                    XCTFail("'\(name)' 를 \(existing) 와 \(kind) 가 함께 쓴다 — 이름으로는 못 가른다")
+                }
+                owner[name] = kind
+            }
+        }
+    }
+
     /// 박스 개체 대화에는 제안이 없다. 다섯 액션이 전부 "지금 나와 있는 나" 에 작용하므로
     /// 주인 게이트가 먼저 자른다 — `canRun` 을 재사용하는 한 이 줄은 저절로 참이다.
     /// (`testToolsThatActOnMeRefuseFromABoxedCompanionsChat` 의 형제다.)
@@ -1314,8 +1337,12 @@ final class PokemonChatToolTests: XCTestCase {
         // 타이머만 돌고 **모험은 없는** 구간. 이 상태가 없으면 시작 판정의 두 조건 중 모험 쪽이
         // 타이머 쪽을 가려서, 타이머 검사를 통째로 지워도 아무 테스트가 안 깨진다(주입에서 확인).
         // 같은 가림을 실행기에서 이미 겪었다 — `pokedoro start refused: already in rest`.
+        // 사탕을 쥐여 주는 이유는 이 상태가 **공허해지지 않게** 하려는 것뿐이다. 휴식 중엔 제안할
+        // 타이머 동작이 없고(시작은 돌고 있어서, 종료는 끝낼 집중이 아니라서), 제안이 0개면 이
+        // 상태는 아무 주입도 못 잡는다 — 위 가드가 "제안이 하나도 없다" 로 먼저 걸린다.
         ("휴식 중", { await $0.probe { store, timer, _ in
             timer.startRest()
+            store.debugAddItem(.rareCandy, 1)
             XCTAssertNil(store.activeAdventure, "전제: 휴식 구간엔 나가 있는 모험이 없다")
         } }),
         ("모험 정산 대기", { await $0.probe { store, timer, clock in

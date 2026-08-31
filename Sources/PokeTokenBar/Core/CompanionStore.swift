@@ -1644,7 +1644,18 @@ final class CompanionStore {
         evolutionPrompt = nil
     }
 
-    func acceptEvolution() {
+    /// 지금 승인하면 **실제로 진화하는가.** 카드가 떠 있다는 것만으로는 답이 아니다 — 카드가
+    /// 뜬 뒤에도 조건은 무너질 수 있고(기술을 잊음·시간대가 바뀜·요구 파티원이 박스로 감),
+    /// 그때 `acceptEvolution` 은 카드만 지우고 조용히 돌아간다.
+    ///
+    /// 그래서 이 술어가 있다. 대화의 액션 칩 판정이 대기 여부만 따로 보다가, 실행하면 카드를
+    /// 잃을 진화를 권했다 — 조건표가 두 벌이면 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다.
+    /// 화면의 진화 카드는 사용자가 이미 그 카드를 보고 누르는 자리라 이 술어를 쓰지 않는다.
+    var canAcceptEvolutionNow: Bool { resolvedEvolution() != nil }
+
+    /// `acceptEvolution` 의 가드 한 벌. 통과하면 실행에 필요한 값까지 함께 돌려준다 —
+    /// 판정과 실행이 **같은 계산**을 보게 하는 자리다.
+    private func resolvedEvolution() -> (prompt: EvolutionPrompt, line: EvoLine, active: MonState)? {
         guard let prompt = evolutionPrompt, let line = currentLine, let active = state.active,
               active.id == prompt.monID, active.currentID == prompt.fromSpeciesID,
               active.level >= prompt.requiredLevel,
@@ -1656,7 +1667,12 @@ final class CompanionStore {
               }) ?? true,
               target.evolutionKnownMoveID.map({ moveID in
                   active.learnedMoves.contains(where: { $0.id == moveID })
-              }) ?? true else {
+              }) ?? true else { return nil }
+        return (prompt, line, active)
+    }
+
+    func acceptEvolution() {
+        guard let (prompt, line, active) = resolvedEvolution() else {
             evolutionPrompt = nil; return
         }
         evolutionPrompt = nil
