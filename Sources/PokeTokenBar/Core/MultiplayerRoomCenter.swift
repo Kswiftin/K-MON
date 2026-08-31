@@ -544,12 +544,12 @@ final class MultiplayerRoomCenter {
     private func startGymMatch(challengerID: UUID, challengerLineup: [BattleSnapshot]) async {
         guard isHost, let defense = await buildGymDefenseLineup() else { return }
         let challengerName = lobby?.participants.first { $0.id == challengerID }?.trainerName ?? "?"
-        var engine = GymMatchEngine(leaderID: myID, challengerID: challengerID,
+        // 판을 시작할 때 **아무 행동도 미리 채우지 않는다.** 예전엔 여기서 양쪽을 채워 두는 바람에
+        // 도전자가 무엇을 눌러도 `submit` 이 "이미 냈다" 로 거절됐다 — 그래서 `let` 이다.
+        let engine = GymMatchEngine(leaderID: myID, challengerID: challengerID,
                                     leaderName: trainerName, challengerName: challengerName,
                                     leaderTeam: defense, challengerTeam: challengerLineup,
                                     seed: UInt64.random(in: UInt64.min...UInt64.max))
-        // 판을 시작할 때 **아무 행동도 미리 채우지 않는다.** 예전엔 여기서 양쪽을 채워 두는 바람에
-        // 도전자가 무엇을 눌러도 `submit` 이 "이미 냈다" 로 거절됐다.
         gymEngine = engine
         gymMatch = engine.snapshot()
         broadcastGymState()
