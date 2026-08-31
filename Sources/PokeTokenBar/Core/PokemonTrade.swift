@@ -164,7 +164,10 @@ final class PokemonTradeCenter {
         let trainer = companion.trainerName.trimmingCharacters(in: .whitespaces)
         let fallback = NSFullUserName().isEmpty ? (Host.current().localizedName ?? "Trainer") : NSFullUserName()
         myName = trainer.isEmpty ? fallback : trainer
-        myServiceName = "\(trainer.isEmpty ? fallback : trainer)#\(String(UUID().uuidString.prefix(6)))"
+        // 길이는 `LANServiceName` 이 바이트로 자른다 — 한글 이름은 21자에 Bonjour 상한(63바이트)을
+        // 넘고, 잘리는 건 꼬리라 고유 접미가 먼저 사라진다.
+        myServiceName = LANServiceName.make(base: trainer.isEmpty ? fallback : trainer,
+                                            suffix: "#\(String(UUID().uuidString.prefix(6)))")
     }
 
     func start() {

@@ -642,6 +642,21 @@ private struct MemoryHomeWindowView: View {
         }.memoryHomePanel()
     }
 
+    /// 닉네임 확정 = 저장 + **재광고**. Return 과 버튼 두 경로가 같은 규칙을 쓰도록 한 곳에 둔다.
+    /// 재광고(`refreshAccess`)를 빠뜨리면 광고 중인 이름과 자기 필터가 갈라진다 — 이 화면이
+    /// 그걸 기억해야 하는 구조 자체는 `MemoryHomeVisitCenter.advertisedServiceName` 이 막는다.
+    private func commitNickname(_ album: PokemonMemoryAlbum) {
+        guard album.setMemoryHomePublicNickname(nicknameDraft) else {
+            nicknameError = l.t("공백 없이 1~40자로 입력해 주세요.",
+                                "Use 1-40 characters without spaces.",
+                                "空白なしで1〜40文字にしてください。")
+            return
+        }
+        nicknameDraft = album.memoryHomePublicNickname
+        nicknameError = nil
+        visits.refreshAccess()
+    }
+
     private func profile(mon: MonState) -> some View {
         let album = store.memoryAlbum
         return ScrollView { VStack(alignment: .leading, spacing: 14) {
@@ -660,18 +675,18 @@ private struct MemoryHomeWindowView: View {
                 // 확정할 때만 저장·재광고한다. 키 입력마다 `refreshAccess()` 를 부르면 글자 하나에
                 // `NWListener` 를 한 번씩 취소·재등록해 mDNS 가 이름 충돌로 개명을 쌓는다.
                 // 거부(공백·길이)도 조용히 삼키지 않고 이유를 적는다 — 안 적으면 필드가 고장 난 것처럼 보인다.
-                TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: $nicknameDraft)
-                    .onSubmit {
-                        if album.setMemoryHomePublicNickname(nicknameDraft) {
-                            nicknameDraft = album.memoryHomePublicNickname
-                            nicknameError = nil
-                            visits.refreshAccess()
-                        } else {
-                            nicknameError = l.t("공백 없이 1~40자로 입력해 주세요.",
-                                                "Use 1-40 characters without spaces.",
-                                                "空白なしで1〜40文字にしてください。")
-                        }
-                    }
+                HStack {
+                    TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: $nicknameDraft)
+                        .onSubmit { commitNickname(album) }
+                        // 고친 값 위에 옛 빨간 줄이 남으면 멀쩡한 필드가 고장 난 것처럼 보인다.
+                        .onChange(of: nicknameDraft) { nicknameError = nil }
+                    // 확정 버튼이 있어야 한다. `onSubmit` 만 두면 Return 을 누르지 않은 입력이
+                    // 조용히 사라진다 — 탭을 옮기거나 팝오버를 닫으면 `onAppear` 가 draft 를
+                    // 저장값으로 되돌리기 때문이다. 형제 필드(문구·방명록)는 모두 버튼을 갖고 있다.
+                    Button(l.t("닉네임 저장", "Save nickname", "ニックネームを保存")) { commitNickname(album) }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .disabled(nicknameDraft == album.memoryHomePublicNickname)
+                }
                 if let nicknameError { Text(nicknameError).font(.caption).foregroundStyle(PokedoroTheme.red) }
                 TextField(l.t("대문 문구", "Home message", "ホームの一言"), text: $profileMessageDraft)
                 HStack {

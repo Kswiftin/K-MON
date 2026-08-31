@@ -731,7 +731,9 @@ final class BattleCenter {
         self.myName = name
         // 고유 접미(#xxxxxx) — 같은 사람 이름의 두 Mac이 서로를 "자기"로 오인 필터링하지 않게 한다.
         // 표시할 땐 접미를 떼고, self·id 판정은 이 전체 문자열로 한다.
-        self.myServiceName = "\(name)#\(String(UUID().uuidString.prefix(6)))"
+        // 길이는 `LANServiceName` 이 바이트로 자른다: 계정 풀네임이 한글이면 21자에 63바이트를
+        // 넘고, mDNS 는 꼬리부터 자르므로 방금 붙인 접미가 제일 먼저 사라진다.
+        self.myServiceName = LANServiceName.make(base: name, suffix: "#\(String(UUID().uuidString.prefix(6)))")
         trackAdvertisedValues()
     }
 
@@ -913,6 +915,9 @@ final class BattleCenter {
                 }
             case .failed:
                 Task { @MainActor in
+                    // 참조만 버리면 실패한 브라우저가 큐·핸들러를 붙든 채 남아 슬립 복귀마다
+                    // 쌓인다 — `startListener` 가 리스너에 대해 적어 둔 규칙과 같은 부류다.
+                    self?.browser?.cancel()
                     self?.browser = nil
                     try? await Task.sleep(for: .seconds(5))
                     self?.startBrowser()
