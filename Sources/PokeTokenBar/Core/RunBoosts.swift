@@ -16,21 +16,38 @@ struct RunBoosts: Sendable, Equatable {
     var critStages = 0
     /// 턴 끝 회복 스택. 스택당 최대 HP 의 1/16 이다.
     var leftovers = 0
+    /// 공격·방어·스피드 스택. 스택당 `statPercentPerStack` 만큼 곱해진다. 랭크(`StatStages`)와
+    /// 자리를 나눈 이유는 상한이다 — 랭크는 ±6 에서 잠기지만 런 강화는 판이 끝날 때까지 쌓인다.
+    var attack = 0
+    var defense = 0
+    var speed = 0
 
     /// 스택당 데미지 가산(%).
     static let typeDamagePercentPerStack = 20
     /// 회복 1스택이 돌려주는 최대 HP 의 분모.
     static let leftoversDenominator = 16
+    /// 능력치 1스택이 더하는 비율(%).
+    static let statPercentPerStack = 10
 
     /// 강화가 하나도 없는가. 네트워크 대전·체육관은 이 상태로만 싸운다 — 비어 있으면 데미지도
     /// rng 소비도 강화가 없던 시절과 한 값도 다르지 않다.
-    var isEmpty: Bool { typeDamage.isEmpty && critStages == 0 && leftovers == 0 }
+    var isEmpty: Bool {
+        typeDamage.isEmpty && critStages == 0 && leftovers == 0
+            && attack == 0 && defense == 0 && speed == 0
+    }
 
     /// 이 기술 타입에 강화를 곱한 데미지. 정수 연산으로 두는 이유는 엔진의 다른 배율과 같다 —
     /// 부동소수 오차가 끼면 같은 판을 두 번 굴려도 값이 갈릴 자리가 생긴다.
     func damage(_ amount: Int, moveType: PokemonType) -> Int {
         guard let stacks = typeDamage[moveType], stacks > 0 else { return amount }
         return amount * (100 + Self.typeDamagePercentPerStack * stacks) / 100
+    }
+
+    /// 능력치 스택을 곱한 값. 스택이 0 이면 **입력을 그대로 돌려준다** — 강화가 없는 대전·체육관이
+    /// 곱셈 반올림 한 번을 더 타면 같은 판을 두 번 굴려도 값이 갈린다.
+    func scaled(_ value: Int, stacks: Int) -> Int {
+        guard stacks > 0 else { return value }
+        return value * (100 + Self.statPercentPerStack * stacks) / 100
     }
 
     /// 턴 끝 회복량. 스택이 없으면 0 이고, 호출부는 그 0 을 보고 이벤트를 내지 않는다 —

@@ -116,7 +116,7 @@ final class RunBoostTests: XCTestCase {
     func testOffersAlwaysIncludeAPersistentModifier() {
         for seed in UInt64(1)...200 {
             var rng = SplitMix64(seed: seed)
-            let offers = RogueRun.drawOffers(&rng)
+            let offers = RogueRun.drawOffers(&rng, party: [], balls: 0)
             XCTAssertEqual(offers.count, RogueRun.offerCount, "seed \(seed)")
             XCTAssertEqual(Set(offers).count, RogueRun.offerCount, "seed \(seed)")
             XCTAssertTrue(offers.contains(where: \.isPersistent), "seed \(seed): 소모형만 나왔다")
@@ -393,5 +393,92 @@ final class RunRouteTests: XCTestCase {
         winWave(&run)
         XCTAssertEqual(run.stage, .cleared)
         XCTAssertEqual(run.remainingPicks, 0)
+    }
+
+    // MARK: 보상 목록이 판 상태를 보는가
+
+    private func offerSide(hp: Int = 100, maxHP: Int = 100, status: Status? = nil,
+                           ppLeft: Int = 20) -> BattleSide {
+        let snapshot = BattleSnapshot(speciesID: 1, name: "M", trainer: "T", level: 5, nature: nil,
+                                      isShiny: false, types: [.normal],
+                                      base: BattleStats(hp: maxHP, atk: 100, def: 50,
+                                                        spa: 100, spd: 50, spe: 100),
+                                      moves: [MoveSpec(id: 1, names: ["en": "Hit"], type: .normal,
+                                                       power: 40, damageClass: .physical,
+                                                       accuracy: nil, pp: 20)])
+        var side = BattleSide(snapshot)
+        side.hp = hp
+        side.status = status
+        side.pp = [ppLeft]
+        return side
+    }
+
+    /// 목록에 오를 수 있는 장 전체 — 200 seed 를 돌려 실제로 뜬 것을 모은다. 한 seed 만 보면
+    /// 가중치 0 인 장이 그 판에서 우연히 안 뜬 것과 구별되지 않는다.
+    private func drawnModifiers(party: [BattleSide], balls: Int) -> Set<RunModifier> {
+        var seen: Set<RunModifier> = []
+        for seed in UInt64(1)...200 {
+            var rng = SplitMix64(seed: seed)
+            seen.formUnion(RogueRun.drawOffers(&rng, party: party, balls: balls))
+        }
+        return seen
+    }
+
+    /// 쓰러진 개체가 없으면 기력의조각이, 만피면 상처약이, 상태이상이 없으면 만병통치제가
+    /// 목록에 오르지 않는다. 균등 추첨이던 시절엔 3장 중 한두 장이 죽은 칸이라 고르는 일이
+    /// 선택이 아니라 소거법이었다(PokeRogue 도 같은 자리를 가중치 0 으로 막는다).
+    func testUselessRewardsNeverAppear() {
+        let healthy = [offerSide(), offerSide()]
+        let drawn = drawnModifiers(party: healthy, balls: RogueTuning.standard.ballCap)
+        XCTAssertFalse(drawn.contains(.revive), "쓰러진 개체가 없는데 부활이 떴다")
+        XCTAssertFalse(drawn.contains(.potion), "만피인데 회복이 떴다")
+        XCTAssertFalse(drawn.contains(.cleanse), "상태이상이 없는데 해제가 떴다")
+        XCTAssertFalse(drawn.contains(.elixir), "PP 가 그대로인데 엘릭서가 떴다")
+        XCTAssertFalse(drawn.contains(.ballPouch), "볼이 상한인데 보충이 떴다")
+        XCTAssertTrue(drawn.contains(.candy))
+    }
+
+    /// 반대 방향 — 조건을 하나씩 켜면 그 장이 실제로 목록에 오른다. 켜지는 쪽을 안 재면
+    /// "전부 0 을 돌려주는" 가중치 함수도 위 테스트를 통과한다.
+    func testNeededRewardsAppear() {
+        XCTAssertTrue(drawnModifiers(party: [offerSide(hp: 10)], balls: 9).contains(.potion))
+        XCTAssertTrue(drawnModifiers(party: [offerSide(hp: 0)], balls: 9).contains(.revive))
+        XCTAssertTrue(drawnModifiers(party: [offerSide(status: .burn)], balls: 9).contains(.cleanse))
+        XCTAssertTrue(drawnModifiers(party: [offerSide(ppLeft: 4)], balls: 9).contains(.elixir))
+        XCTAssertTrue(drawnModifiers(party: [offerSide()], balls: 0).contains(.ballPouch))
+    }
+
+    /// 볼 보충은 상한에서 멈춘다. 상한이 없으면 후반에 볼이 남아돌아 포획이 자원 판단이 아니게 된다.
+    func testBallPouchStopsAtCap() {
+        var run = winnableRun()
+        winWave(&run)
+        run.debugSetBalls(RogueTuning.standard.ballCap - 1)
+        run.debugOffer(.ballPouch)
+        run.pick(.ballPouch)
+        XCTAssertEqual(run.balls, RogueTuning.standard.ballCap)
+    }
+
+    /// 능력치 강화는 **데미지 계산에 실제로 걸린다**. 스택을 세는 것만으로는 엔진에 안 물린
+    /// 강화를 구별할 수 없다.
+    func testStatBoostsChangeDamage() {
+        let attacker = offerSide()
+        var boosted = attacker
+        boosted.runBoosts.attack = 5
+        let defender = offerSide(hp: 500, maxHP: 500)
+        var plainRNG = SplitMix64(seed: 7)
+        var boostedRNG = SplitMix64(seed: 7)
+        let plain = BattleEngine.resolveAttack(attacker: attacker, defender: defender,
+                                               move: attacker.snapshot.moves![0], rng: &plainRNG)
+        let big = BattleEngine.resolveAttack(attacker: boosted, defender: defender,
+                                             move: boosted.snapshot.moves![0], rng: &boostedRNG)
+        XCTAssertGreaterThan(big.damage, plain.damage)
+    }
+
+    /// 스피드 강화는 턴 순서에 걸린다.
+    func testSpeedBoostChangesOrder() {
+        var side = offerSide()
+        XCTAssertEqual(side.effectiveSpeed, side.stats.spe)
+        side.runBoosts.speed = 3
+        XCTAssertGreaterThan(side.effectiveSpeed, side.stats.spe)
     }
 }

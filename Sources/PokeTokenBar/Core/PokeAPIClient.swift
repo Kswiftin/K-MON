@@ -901,6 +901,8 @@ extension MoveSpec {
                         ailment: ailment, ailmentChance: dto.meta?.ailment_chance,
                         statChanges: statChanges, statChance: dto.meta?.stat_chance,
                         targetsUser: dto.target.map { MoveDTO.userTargets.contains($0.name) },
+                        // 원문 슬러그를 그대로 싣는다 — 광역 범위(`MoveSpec.reach`)가 이 값을 읽는다.
+                        target: dto.target?.name,
                         // **`?? 0` 이 세이브 수렴의 앵커다.** `drain` 이 nil 로 남으면
                         // `needsDetailRefresh` 가 "안 받아봤다"로 읽어 헛도는 조회가 로드마다
                         // 영구히 남는다(defect-log: "받을 수 없는 값을 참으로 만들면 안 된다").

@@ -73,50 +73,6 @@ enum MemoryHomeCardStyle {
     }
 }
 
-/// 뷰 안의 `private` 함수로 두면 세 언어 문구가 무테스트로 남는다 — `MemoryHomeRoomTheme` 와 같은
-/// 이유로 파일 스코프의 순수 헬퍼로 뺀다. 종별 반응은 없다: 1000종 × 5기분은 헤더의 범위가 아니다.
-enum MemoryHomeMoodStyle {
-    static func emoji(_ mood: MemoryHomeMood) -> String {
-        switch mood {
-        case .excited: "😊"
-        case .calm: "😌"
-        case .down: "😢"
-        case .annoyed: "😡"
-        case .fluttering: "💗"
-        }
-    }
-
-    static func name(_ mood: MemoryHomeMood, _ l: L) -> String {
-        switch mood {
-        case .excited: l.t("신남", "Excited", "うきうき")
-        case .calm: l.t("평범", "Calm", "ふつう")
-        case .down: l.t("우울", "Down", "しずんだ")
-        case .annoyed: l.t("짜증", "Annoyed", "いらいら")
-        case .fluttering: l.t("설렘", "Fluttering", "どきどき")
-        }
-    }
-
-    static func reaction(_ mood: MemoryHomeMood, companion: String, _ l: L) -> String {
-        switch mood {
-        case .excited: l.t("\(companion)도 꼬리를 흔들며 같이 신났어요.",
-                           "\(companion) is bouncing around with you.",
-                           "\(companion)も一緒にうきうきしています。")
-        case .calm: l.t("\(companion)이 옆에서 조용히 낮잠을 자요.",
-                        "\(companion) is dozing quietly beside you.",
-                        "\(companion)がそばで静かに眠っています。")
-        case .down: l.t("\(companion)이 말없이 옆에 앉았어요.",
-                        "\(companion) sat down next to you without a word.",
-                        "\(companion)が何も言わずに隣に座りました。")
-        case .annoyed: l.t("\(companion)도 같이 머리를 감싸 쥐었어요.",
-                           "\(companion) is holding its head right along with you.",
-                           "\(companion)も一緒に頭を抱えています。")
-        case .fluttering: l.t("\(companion)이 하트를 띄웠어요.",
-                              "\(companion) let out a little heart.",
-                              "\(companion)がハートを浮かべました。")
-        }
-    }
-}
-
 /// 계절 이름·심볼. `MemoryHomeMoodStyle` 과 같은 이유로 뷰 밖에 둔다 — 뷰 안 `private` 함수면
 /// 세 언어 문구가 무테스트로 남는다.
 ///

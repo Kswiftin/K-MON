@@ -109,7 +109,6 @@ final class OutfitStoreTests: XCTestCase {
 }
 
 /// 스토어를 세우기 위한 최소 진화 라인 — 의상은 종·진화와 무관하므로 내용은 아무래도 좋다.
-/// `DungeonProgressTests.dungeonTestLine` 은 파일 스코프 private 라 여기서 못 쓴다 — 그대로 복제.
 private let outfitTestLine: EvoLine = {
     var names: [Int: [String: String]] = [:]
     for id in [1, 2, 3] { names[id] = ["en": "P\(id)", "ko": "포\(id)", "ja": "ポ\(id)"] }

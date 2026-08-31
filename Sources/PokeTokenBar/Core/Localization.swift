@@ -929,7 +929,7 @@ struct L {
         case .battle: return t("배틀 승리", "Battle wins", "バトル勝利")
         case .race:   return t("레이스 완주", "Races finished", "レース完走")
         case .dungeon: return t("던전 클리어", "Dungeon clears", "ダンジョンクリア")
-        case .dungeonSweep: return t("보물 싹쓸이", "Treasure sweeps", "宝物コンプリート")
+        case .dungeonSweep: return t("위험한 길 완주", "Risky-route clears", "危険な道の完走")
         }
     }
 
@@ -1067,180 +1067,6 @@ struct L {
 
     // MARK: 퍼즐 던전 (#79)
     var dungeonTitle: String { t("오늘의 던전", "Today's Dungeon", "きょうのダンジョン") }
-    var dungeonEnter: String { t("들어가기", "Enter", "はいる") }
-    var dungeonRetry: String { t("다시 도전", "Try again", "もういちど") }
-    var dungeonLeave: String { t("나가기", "Leave", "でる") }
-    var dungeonFailed: String {
-        t("쓰러졌다… 밟은 방은 기억에 남았어요.",
-          "You collapsed… the rooms you walked stay remembered.",
-          "たおれた… 歩いたへやは記憶に残りました。")
-    }
-    var dungeonClearedTitle: String { t("던전 클리어!", "Dungeon cleared!", "ダンジョンクリア！") }
-    var dungeonAlreadyCleared: String {
-        t("오늘 보상은 이미 받았어요 — 지금부터는 연습이에요.",
-          "Today's reward is already paid — this is practice now.",
-          "きょうの報酬は受け取りました — ここからは練習です。")
-    }
-    func dungeonRewardBody(_ amount: Int) -> String {
-        t("별의조각 \(GameNumberFormatter.compact(amount))개를 받았어요.",
-          "You received \(GameNumberFormatter.compact(amount)) Star Pieces.",
-          "ほしのかけらを\(GameNumberFormatter.compact(amount))こ受け取りました。")
-    }
-    func dungeonRewardPreview(_ amount: Int) -> String {
-        t("첫 클리어 보상 ⭐\(GameNumberFormatter.compact(amount))",
-          "First clear pays ⭐\(GameNumberFormatter.compact(amount))",
-          "初クリア報酬 ⭐\(GameNumberFormatter.compact(amount))")
-    }
-    func dungeonRoomCounter(_ visited: Int, _ total: Int) -> String {
-        t("방 \(visited)/\(total)", "Room \(visited)/\(total)", "へや \(visited)/\(total)")
-    }
-    func dungeonHitPoints(_ hp: Int, _ budget: Int) -> String { "HP \(hp)/\(budget)" }
-    /// 오늘의 상성 축과 예산을 한 줄로 — 왜 내 예산이 105 인지 화면에서 읽혀야 한다.
-    func dungeonBudgetLine(_ type: PokemonType, _ budget: Int) -> String {
-        t("\(type.name(lang))에 강한 파트너면 유리 · 예산 \(budget)",
-          "A partner strong against \(type.name(lang)) helps · budget \(budget)",
-          "\(type.name(lang))に強いパートナーが有利 · 予算\(budget)")
-    }
-    /// 먹는샘물 체크박스 — 재고가 없으면 개수 0 으로 그려 왜 못 쓰는지 보이게 한다.
-    func dungeonDrinkFreshWater(_ count: Int) -> String {
-        t("먹는샘물 마시고 시작 (+3, 보유 \(count))",
-          "Drink Fresh Water first (+3, \(count) left)",
-          "おいしいみずを飲んで開始（+3・残り\(count)）")
-    }
-    var freshWaterEffectHint: String {
-        t("던전 입장 시 +3", "+3 on dungeon entry", "ダンジョン入場時 +3")
-    }
-    var dungeonExitUnknown: String { t("미탐사", "Unexplored", "未探索") }
-    func dungeonRoomName(_ kind: RoomKind) -> String {
-        switch kind {
-        case .empty: return t("빈 방", "Empty room", "空きへや")
-        case .encounter: return t("교전", "Encounter", "せんとう")
-        case .spring: return t("회복의 샘", "Healing spring", "かいふくのいずみ")
-        case .boss: return t("가장 깊은 방", "Deepest room", "いちばん深いへや")
-        case .cache: return t("보물방", "Treasure room", "たからのへや")
-        }
-    }
-    func dungeonExitCost(_ cost: Int) -> String {
-        t("통로 \(cost)", "corridor \(cost)", "通路 \(cost)")
-    }
-    var dungeonSpringSpent: String { t("(사용됨)", "(spent)", "（使用済み）") }
-    var dungeonSpringUnused: String { t("(아직)", "(unused)", "（未使用）") }
-
-    /// 방 이름 — **정체를 암시하지 않는 중립 명사만** 쓴다. 이름은 안개와 무관하게 항상 보여
-    /// 미탐사 방도 서로 구분되게 하는 값이라, 이름이 종류를 흘리면 퍼즐이 앉은 자리에서 풀린다.
-    /// 슬롯 수(`DungeonNarration.roomNameSlots`)는 방 수보다 커서 한 맵에 같은 이름이 없다.
-    func dungeonRoomTitle(_ slot: Int) -> String {
-        switch slot % DungeonNarration.roomNameSlots {
-        case 0: return t("이끼 낀 방", "Mossy Room", "こけのへや")
-        case 1: return t("무너진 회랑", "Collapsed Hall", "くずれた回廊")
-        case 2: return t("마른 우물방", "Dry Well Room", "かれ井戸のへや")
-        case 3: return t("돌기둥 방", "Pillared Room", "石柱のへや")
-        case 4: return t("좁은 굴", "Narrow Burrow", "せまいあな")
-        case 5: return t("낮은 천장방", "Low Ceiling Room", "低い天井のへや")
-        case 6: return t("높은 천장방", "High Ceiling Room", "高い天井のへや")
-        case 7: return t("재가 쌓인 방", "Ash-Filled Room", "灰のへや")
-        case 8: return t("금 간 벽방", "Cracked Wall Room", "ひび割れた壁のへや")
-        case 9: return t("모래 방", "Sand Room", "すなのへや")
-        case 10: return t("쇠창살 방", "Iron Grate Room", "鉄格子のへや")
-        case 11: return t("부러진 다리방", "Broken Bridge Room", "こわれた橋のへや")
-        case 12: return t("그림자 방", "Shadowed Room", "かげのへや")
-        case 13: return t("뿌리 방", "Root Room", "ねっこのへや")
-        case 14: return t("자갈 방", "Gravel Room", "じゃりのへや")
-        case 15: return t("기울어진 방", "Tilted Room", "かたむいたへや")
-        case 16: return t("물웅덩이 방", "Puddle Room", "水たまりのへや")
-        case 17: return t("거미줄 방", "Cobweb Room", "くものすのへや")
-        case 18: return t("둥근 천장방", "Domed Room", "丸天井のへや")
-        case 19: return t("긴 회랑", "Long Gallery", "長い回廊")
-        case 20: return t("석회 기둥방", "Limestone Room", "石灰柱のへや")
-        case 21: return t("바람 드는 방", "Drafty Room", "風のとおるへや")
-        case 22: return t("메아리 방", "Echoing Room", "こだまのへや")
-        case 23: return t("검은 돌방", "Black Stone Room", "黒石のへや")
-        case 24: return t("흰 돌방", "White Stone Room", "白石のへや")
-        case 25: return t("얕은 계단방", "Shallow Stair Room", "浅い階段のへや")
-        case 26: return t("깊은 계단방", "Steep Stair Room", "急な階段のへや")
-        case 27: return t("녹슨 문방", "Rusted Door Room", "さびた扉のへや")
-        case 28: return t("무너진 계단방", "Fallen Stair Room", "くずれた階段のへや")
-        case 29: return t("젖은 바닥방", "Wet Floor Room", "ぬれた床のへや")
-        case 30: return t("갈라진 바닥방", "Split Floor Room", "割れた床のへや")
-        case 31: return t("둥근 돌방", "Boulder Room", "丸石のへや")
-        case 32: return t("좁은 회랑", "Narrow Gallery", "せまい回廊")
-        case 33: return t("넓은 방", "Wide Room", "広いへや")
-        case 34: return t("낡은 제단방", "Old Altar Room", "古い祭壇のへや")
-        case 35: return t("부서진 항아리방", "Broken Jar Room", "こわれた壺のへや")
-        case 36: return t("이끼 회랑", "Mossy Gallery", "こけの回廊")
-        case 37: return t("먼지 방", "Dusty Room", "ほこりのへや")
-        case 38: return t("잔돌 방", "Pebble Room", "小石のへや")
-        default: return t("서늘한 방", "Cool Room", "ひんやりしたへや")
-        }
-    }
-
-    func dungeonDirectionName(_ direction: DungeonDirection) -> String {
-        switch direction {
-        case .north: return t("북", "N", "北")
-        case .northEast: return t("북동", "NE", "北東")
-        case .east: return t("동", "E", "東")
-        case .southEast: return t("남동", "SE", "南東")
-        case .south: return t("남", "S", "南")
-        case .southWest: return t("남서", "SW", "南西")
-        case .west: return t("서", "W", "西")
-        case .northWest: return t("북서", "NW", "北西")
-        }
-    }
-
-    /// 헤더 오른쪽 — 층이 곧 진행도다(왼쪽에서 오른쪽으로만 가는 구조라 층 번호가 남은 거리를 말한다).
-    /// `layer` 는 1 부터.
-    func dungeonFloorLine(layer: Int, total: Int) -> String {
-        t("\(layer)층 / \(total)층", "Floor \(layer) / \(total)", "\(layer)階 / \(total)階")
-    }
-    /// 곁방 출구 표기 — 들어가면 같은 통로로 되나와야 한다는 사실. 없으면 전진 통로와 같은 값으로 읽힌다.
-    var dungeonSpurMark: String { t("곁방 · 왕복", "side room · round trip", "わき道・往復") }
-
-    /// 서술 줄 — 밝혀진 사실만 말한다. 물소리는 **아직 마시지 않은** 샘이 인접해 밝혀졌을 때만.
-    func dungeonSceneLine(_ note: DungeonSceneNote) -> String {
-        var parts = [t("\(dungeonRoomName(note.kind))이다.",
-                       "\(dungeonRoomName(note.kind)).",
-                       "\(dungeonRoomName(note.kind))だ。")]
-        if let spring = note.springDirection {
-            let name = dungeonDirectionName(spring)
-            parts.append(t("\(name)쪽에서 물소리가 난다.",
-                           "Water murmurs to the \(name).",
-                           "\(name)のほうから水音がする。"))
-        }
-        if note.darkExitCount > 0 {
-            parts.append(t("아직 어두운 길이 \(note.darkExitCount)개.",
-                           "\(note.darkExitCount) paths still dark.",
-                           "まだ暗い道が\(note.darkExitCount)つ。"))
-        }
-        return parts.joined(separator: " ")
-    }
-
-    var dungeonExitsFresh: String { t("새 길", "New paths", "あたらしい道") }
-    var dungeonExitsBack: String { t("되돌아가기", "Back the way you came", "もどる") }
-    /// 시작 방은 출구가 8개까지 나온다 — 다 펼치면 목록이 화면 절반을 먹는다.
-    func dungeonMoreExits(_ count: Int) -> String {
-        t("\(count)개 더 보기", "\(count) more", "あと\(count)つ")
-    }
-    /// 통로 비용만으로 쓰러지는 길. 방 내용은 들어가야 알 수 있으니 통로만 두고 경고한다.
-    var dungeonLethalExit: String { t("이 통로에서 쓰러진다", "This corridor would fell you", "この通路でたおれる") }
-    var dungeonTrailTitle: String { t("지나온 길", "Where you walked", "歩いた道") }
-    /// 지나온 길의 체력 변화 묶음 — 음수는 소모, 양수는 회복.
-    func dungeonDeltaList(_ deltas: [Int]) -> String {
-        deltas.map { $0 < 0 ? "−\(-$0)" : "+\($0)" }.joined(separator: " ")
-    }
-    /// 로그 한 줄 — 코어는 값(`DungeonEvent`)만 남기고 문구는 여기서 만든다.
-    func dungeonEventLine(_ event: DungeonEvent) -> String {
-        switch event {
-        case .entered(_, let kind): return dungeonRoomName(kind)
-        case .damaged(let amount): return t("−\(amount) HP", "−\(amount) HP", "−\(amount) HP")
-        case .healed(let amount): return t("+\(amount) HP", "+\(amount) HP", "+\(amount) HP")
-        case .springAlreadyUsed: return t("샘이 말랐다", "The spring is dry", "いずみは枯れている")
-        case .looted(_, let starPieces):
-            return t("별의조각 +\(starPieces)", "+\(starPieces) star pieces", "ほしのかけら +\(starPieces)")
-        case .cacheAlreadyLooted: return t("이미 턴 방이다", "Already looted", "もう空っぽだ")
-        case .bossFelled: return t("가장 깊은 방을 넘었다!", "You cleared the deepest room!", "いちばん深いへやを越えた！")
-        case .collapsed: return t("쓰러졌다", "You collapsed", "たおれた")
-        }
-    }
     var gymBadgeEarned: String { t("배지 획득", "Badge earned", "バッジ獲得") }
     func gymNeedsMorePokemon(_ count: Int) -> String {
         t("체육관은 \(count)마리로 도전해요 — 포켓몬이 부족합니다.",
@@ -1415,7 +1241,6 @@ struct L {
         case .razorClaw: return t("예리한손톱", "Razor Claw", "するどいツメ")
         case .razorFang: return t("예리한이빨", "Razor Fang", "するどいキバ")
         case .prismScale: return t("아름다운비늘", "Prism Scale", "きれいなウロコ")
-        case .freshWater: return t("먹는샘물", "Fresh Water", "おいしいみず")
         case .ovalStone: return t("둥근돌", "Oval Stone", "まるいいし")
         case .heartScale: return t("하트비늘", "Heart Scale", "ハートのウロコ")
         case .roomBed: return t("별빛 침대", "Starlight Bed", "星あかりベッド")
@@ -1482,10 +1307,6 @@ struct L {
             return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
                      "While owned, raises the chance of hatching a shiny.",
                      "持っていると色違いが生まれる確率が上がります。")
-        case .freshWater:
-            return t("던전에 들어갈 때 한 병 마셔 체력 예산을 3 올려줘요.",
-                     "Drink one on entering the dungeon to raise the hit-point budget by 3.",
-                     "ダンジョンに入るとき1本飲んで体力予算を3上げます。")
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
             return t("미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요.",

@@ -134,6 +134,8 @@ final class CompanionStore {
     private let provider: any PokeProviding
     private let clock: () -> Date
     private let fileURL: URL
+    /// 진행 중인 웨이브 런 파일 — 상태 파일 옆이다(`CompanionStorageLocations`).
+    private let waveRunURL: URL
     let memoryAlbum: PokemonMemoryAlbum
     let chatStore: PokemonChatStore
     private var rng: any RandomNumberGenerator
@@ -163,12 +165,15 @@ final class CompanionStore {
         // 그 디렉토리를 따라가야 한다 — 기본 위치로 새면 테스트가 실제 사용자 파일을 건드린다.
         self.memoryAlbum = memoryAlbum
             ?? PokemonMemoryAlbum(fileURL: directory.appendingPathComponent(CompanionStorageLocations.memoryFileName))
+        // 진행 중인 런도 상태 파일 옆에 산다 — 주입된 URL(테스트·임베딩)의 디렉토리를 따라간다.
+        self.waveRunURL = directory.appendingPathComponent(CompanionStorageLocations.waveRunFileName)
         self.chatStore = chatStore
             ?? PokemonChatStore(fileURL: directory.appendingPathComponent(CompanionStorageLocations.chatFileName),
                                 album: self.memoryAlbum)
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
+        loadRogueRun()
         // Room placement is derived from this save's bag.  Normalize at the state/album join so
         // a hand-edited or imported album cannot render furniture the player does not own.
         // A corrupt/forced-reset state has no trustworthy ownership list. Pruning here would
@@ -1828,6 +1833,10 @@ final class CompanionStore {
         // **축을 더할 때 이 판정도 같이 늘린다.** `statChanges` 만 보면, 그 축으로 한 번 갱신된
         // 세이브는 이후 어떤 새 축이 비어 있어도 다시 받지 않고 옛 데이터로 싸운다.
         if move.targetsUser == nil { return true }
+        // 대상 슬러그(광역 범위)는 `targetsUser` 보다 나중에 추가된 축이라, 그 사이에 받은 세이브는
+        // 불리언만 차 있고 원문이 비어 있다. 그 상태로 두면 지진·암석봉인이 조용히 단일 타겟이 된다
+        // (상태기가 죽어 있던 것과 같은 부류 — `healing` 이 `drain` 에 딸려오지 않은 자리와 같다).
+        if move.target == nil { return true }
         // 드레인·반동·다단·풀린치(Phase 5)도 같은 부류다. 넷이 같은 `meta` 블록에서 한 번에
         // 오므로 `drain` 하나가 넷을 대표한다. `minHits`/`maxHits` 로는 못 본다 — 단발기는
         // 받아봐도 nil 이라 영원히 수렴하지 않는다.
@@ -2069,7 +2078,7 @@ final class CompanionStore {
     }
 
     /// 오늘 방어로 이미 받은 금액. 날짜가 바뀌었으면 0 이다(자정 타이머 없이 키 비교로 넘긴다 —
-    /// `DungeonProgress.roll(dayKey:)` 과 같은 방식).
+    /// `MissionBoard` 와 같은 방식).
     var gymDefenseEarnedToday: Int {
         state.gymDefenseRewardDate == Self.dayKey(clock()) ? state.gymDefenseRewardToday : 0
     }
@@ -2142,103 +2151,55 @@ final class CompanionStore {
 
     // MARK: 포켓로그식 런 (프로토타입)
 
-    /// 진행 중인 런. **메모리 전용이다** — 팝오버를 닫거나 다른 탭을 들렀다 와도 이어지지만 앱을
-    /// 끄면 사라진다. 세이브·무결성 서명에 넣지 않으므로 밸런스를 고쳐도 이전이 필요 없다
-    /// (영속은 `RunProgress` 를 확정한 뒤에 붙인다).
-    var rogueRun: RogueRun?
+    /// 진행 중인 런. 판 하나가 30 웨이브라 앱을 끄면 사라지는 것이 실제 손실이 돼서, 세이브 본체가
+    /// 아니라 **옆 파일**(`wave-run.json`)에 남긴다 — 런이 무결성 서명·세이브 이전에 닿지 않는다는
+    /// 결정은 그대로다. 무엇을 남기고 무엇을 버리는지는 `RogueRunSave` 에 있다.
+    ///
+    /// 쓰기가 여기 한 곳인 이유는 화면이 판을 **꺼내 바꾸고 되넣는** 값 타입으로 다루기 때문이다
+    /// (`RogueRunView.mutate`). 저장을 호출자에게 맡기면 한 경로만 빠져도 그 행동이 통째로 유실된다.
+    var rogueRun: RogueRun? { didSet { persistRogueRun() } }
+
+    /// 판을 옆 파일에 적는다. 판이 없으면 파일을 지운다 — 남겨 두면 다음 기동이 끝난 판을 되살려
+    /// 결과 화면이 다시 뜬다.
+    private func persistRogueRun() {
+        guard let rogueRun else {
+            try? FileManager.default.removeItem(at: waveRunURL)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(rogueRun.saveForm) else { return }
+        try? data.write(to: waveRunURL, options: .atomic)
+    }
+
+    /// 기동 시 되살린다. 되살릴 수 없는 파일은 **지운다** — 그대로 두면 켤 때마다 같은 실패를
+    /// 반복하고, 사용자는 새 판을 시작할 수 있다는 것을 화면에서 알 수 없다.
+    private func loadRogueRun() {
+        guard let data = try? Data(contentsOf: waveRunURL) else { return }
+        guard let save = try? JSONDecoder().decode(RogueRunSave.self, from: data),
+              let restored = RogueRun(save: save) else {
+            AppLog.write("wave run save could not be restored — discarding")
+            try? FileManager.default.removeItem(at: waveRunURL)
+            return
+        }
+        rogueRun = restored
+    }
 
     /// 웨이브 런 실적. 판 밖으로 남는 것은 이 값 하나다 — 재화도 도감도 주지 않는다.
     var runProgress: RunProgress { state.waveRun }
 
     /// 끝난 판 하나를 실적에 적는다. **끝난 판만 센다** — 화면만 열고 닫은 판을 실패로 세면
     /// 클리어율이 실제보다 낮게 보인다. 도달 웨이브는 코어가 든 값이라 화면이 보낸 값을 클램프한다.
-    func recordRunResult(reachedWave: Int, cleared: Bool) {
+    ///
+    /// 업적(`dungeon`·`dungeonSweep`)도 여기서 올린다. 퍼즐 던전이 웨이브 런으로 갈릴 때 이
+    /// 배선이 안 따라와, 두 트랙 여덟 칸이 도달 불가인 채로 나갔다 — 화면에 보이는데 영영 안
+    /// 차는 칸이다. `dungeonSweep` 은 난이도 축을 잇는다: 갈림길을 **전부 위험한 길로** 왔나.
+    func recordRunResult(reachedWave: Int, cleared: Bool, tookOnlyRiskyRoutes: Bool = false) {
         state.waveRun.record(reachedWave: reachedWave, cleared: cleared)
         state.waveRun.normalize()
-        save()
-    }
-
-    // MARK: 퍼즐 던전 (#79)
-
-    /// 오늘의 맵. 날짜 키에서 나오므로 저장하지 않는다 — 매번 같은 값이 다시 계산된다.
-    var dungeonMap: DungeonMap { PuzzleDungeon.map(dayKey: Self.dayKey(clock())) }
-
-    /// 오늘 쓸 체력 예산. 기준선 100 에 보정만 더한다. `usedItem` 은 시도 시작에서 실제로
-    /// 먹는샘물을 마셨는지이고, 화면에 예산을 미리 보여줄 때는 보유 여부로 가늠한다.
-    func dungeonBudget(usedItem: Bool) -> Int {
-        PuzzleDungeon.budget(partnerTypes: currentTypes,
-                             against: dungeonMap.affinity,
-                             usedItem: usedItem,
-                             trainerLevel: state.trainer.level)
-    }
-
-    /// 먹는샘물을 마시면 얼마가 되는지 — 카드에 "지금 들어가면 103" 을 그리는 값.
-    var dungeonBudgetPreview: Int { dungeonBudget(usedItem: itemCount(.freshWater) > 0) }
-
-    var dungeonCleared: Bool {
-        var progress = state.dungeon
-        progress.roll(dayKey: Self.dayKey(clock()))
-        return progress.cleared
-    }
-
-    /// 새 시도 — 오늘 기억한 방을 들려 보낸다. 시도 중 상태는 저장되지 않는다.
-    ///
-    /// `drinkFreshWater` 가 참이고 재고가 있으면 **여기서 한 병을 소모한다.** 소모와 예산 계산이
-    /// 갈라지면 마셨는데 예산이 안 오르거나(재고만 줄고) 그 반대가 된다 — 한 지점에서 같이 한다.
-    func startDungeonRun(drinkFreshWater: Bool = false) -> DungeonRun {
-        state.dungeon.roll(dayKey: Self.dayKey(clock()))
-        var drank = false
-        if drinkFreshWater, itemCount(.freshWater) > 0 {
-            state.inventory[ItemKind.freshWater.rawValue] = itemCount(.freshWater) - 1
-            drank = true
-            save()
+        if cleared {
+            recordAchievement(.dungeon, 1)
+            if tookOnlyRiskyRoutes { recordAchievement(.dungeonSweep, 1) }
         }
-        return DungeonRun(map: dungeonMap, budget: dungeonBudget(usedItem: drank),
-                          remembered: state.dungeon.remembered, looted: state.dungeon.looted)
-    }
-
-    /// 곁방 보물 정산 — **하루 한 번만.** 이미 턴 방이면 0 을 돌려주고 아무것도 바꾸지 않는다.
-    /// 시도가 실패로 끝나도 턴 보물은 남는다(하루 상한이 방 단위라 시도 결과와 무관하다).
-    @discardableResult
-    func lootDungeonCache(room: Int, starPieces: Int) -> Int {
-        state.dungeon.roll(dayKey: Self.dayKey(clock()))
-        guard dungeonMap.rooms.indices.contains(room), dungeonMap.room(room).kind == .cache,
-              !state.dungeon.looted.contains(room) else { return 0 }
-        // 액수는 맵이 정한다 — 화면이 보낸 값을 믿지 않는다.
-        let amount = dungeonMap.room(room).damage
-        state.dungeon.looted.insert(room)
-        state.dungeon.remembered[room] = .cache
-        state.starPieces += amount
         save()
-        return amount
-    }
-
-    /// 시도가 끝나거나 화면을 닫을 때 맵 기억만 남긴다(실패·이탈은 시도만 버린다).
-    func rememberDungeon(_ revealed: [Int: RoomKind]) {
-        state.dungeon.roll(dayKey: Self.dayKey(clock()))
-        state.dungeon.remembered.merge(revealed) { _, new in new }
-        state.dungeon.normalize()
-        save()
-    }
-
-    /// 클리어 정산 — **여기 한 곳에서만** 보상이 나간다. 이미 정산했으면 0 을 돌려주고
-    /// 그 뒤 재플레이는 보상 없는 연습으로 열려 있다.
-    @discardableResult
-    func settleDungeonClear(revealed: [Int: RoomKind], sweptAllCaches: Bool = false) -> Int {
-        state.dungeon.roll(dayKey: Self.dayKey(clock()))
-        state.dungeon.remembered.merge(revealed) { _, new in new }
-        state.dungeon.cleared = true
-        state.dungeon.normalize()
-        guard !state.dungeon.rewardPaid else { save(); return 0 }
-        state.dungeon.rewardPaid = true
-        state.starPieces += PuzzleDungeon.firstClearReward
-        // 재정산은 위 guard 가 막는다 — 업적 기록도 그 안쪽이라야 재플레이가 카운터를 올리지 않는다.
-        recordAchievement(.dungeon, 1)
-        if sweptAllCaches { recordAchievement(.dungeonSweep, 1) }
-        save()
-        notifyCompanionEvent(l.dungeonClearedTitle,
-                             l.dungeonRewardBody(PuzzleDungeon.firstClearReward))
-        return PuzzleDungeon.firstClearReward
     }
 
     /// 보상 지급 — 알은 보관 알로 들어가고(5분 뒤 부화), 보증과 이로치 확정은 상태에 쌓인다.

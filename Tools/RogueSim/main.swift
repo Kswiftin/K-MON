@@ -53,29 +53,50 @@ actor SnapshotCache {
 /// 판을 대신 두는 규칙. **여기 규칙이 곧 측정 대상의 절반이다** — 사람이 더 잘 두면 실제 클리어율은
 /// 이 숫자보다 높다. 그래서 규칙을 단순하고 설명 가능하게 둔다.
 ///
-/// 1. 잡을 수 있고 성공률이 절반을 넘으면 던진다(파티가 빌 때까지).
-/// 2. 아니면 기대 위력이 가장 큰 기술을 쓴다 — 위력 × 자속 × 상성.
-/// 3. 활성 개체가 쓰러지면 코어가 알아서 다음 개체를 세운다(교체는 쓰지 않는다).
+/// 1. 쓰러진 칸이 있으면 벤치 앞쪽으로 채운다(턴을 쓰지 않는다).
+/// 2. 잡을 수 있고 성공률이 절반을 넘으면 던진다(파티가 빌 때까지).
+/// 3. 아니면 **HP 가 가장 적은 상대**에게 기대 위력이 가장 큰 기술을 쓴다 — 위력 × 자속 × 상성,
+///    광역기는 상대 수 × 감쇠(0.75)를 곱해 비교한다.
+///    2대2 는 화력을 한쪽에 모으는 편이 낫다(한 마리를 먼저 눕히면 그만큼 맞는 횟수가 줄어든다).
 enum AutoPlayer {
     static let catchThreshold = 0.5
 
+    /// 한 번 부르면 **한 칸의 결정 하나**를 낸다. 2대2 는 살아 있는 칸이 다 정해질 때까지 턴이
+    /// 돌지 않으므로, 호출자의 루프가 그만큼 더 돈다.
     static func act(_ run: inout RogueRun) {
-        if run.canThrowBall,
-           RogueRun.catchChance(target: run.battle.opponentSlot) >= catchThreshold {
-            run.throwBall()
+        if let slot = run.battle.slotsNeedingSendOut.first,
+           let next = run.battle.benchCandidates.first {
+            run.sendOut(next, toSlot: slot)
             return
         }
-        run.useMove(bestMoveIndex(run.battle.mySlot, against: run.battle.opponentSlot))
+        let targets = run.battle.livingOpponentSlots
+        // HP 가 가장 적은 상대. 볼도 같은 상대에게 던진다 — 성공률이 HP 로 정해지므로 그쪽이 가장 높다.
+        guard let target = targets.min(by: {
+            (run.battle.opponentSide(at: $0)?.hp ?? 0) < (run.battle.opponentSide(at: $1)?.hp ?? 0)
+        }), let opponent = run.battle.opponentSide(at: target) else { return }
+        if run.canThrowBall, RogueRun.catchChance(target: opponent) >= catchThreshold {
+            run.throwBall(atSlot: target)
+            return
+        }
+        guard let slot = run.battle.slotsAwaitingAction.first,
+              let me = run.battle.mySide(at: slot) else { return }
+        run.useMove(bestMoveIndex(me, against: opponent, foeCount: targets.count),
+                    fromSlot: slot, target: target)
     }
 
-    static func bestMoveIndex(_ me: BattleSide, against target: BattleSide) -> Int {
+    static func bestMoveIndex(_ me: BattleSide, against target: BattleSide,
+                              foeCount: Int = 1) -> Int {
         var best = 0
         var bestScore = -1.0
         for index in me.moves.indices where me.canUse(moveAt: index) {
             let move = me.move(at: index)
             let stab = me.snapshot.types.contains(move.type) ? 1.5 : 1.0
             let chart = TypeChart.effectiveness(move.type, against: target.snapshot.types)
-            let score = Double(move.power ?? 0) * stab * chart
+            // 광역기는 상대 수만큼 닿고 대신 감쇠가 걸린다 — 상성은 고른 상대 기준으로만 본다
+            // (둘의 상성을 각각 재면 자동 플레이어가 사람보다 잘 두게 되어 측정이 낙관적으로 샌다).
+            let spread = move.hitsSpread && foeCount > 1
+                ? Double(foeCount) * WaveBattle.spreadDamageScale : 1
+            let score = Double(move.power ?? 0) * stab * chart * spread
             if score > bestScore { bestScore = score; best = index }
         }
         return best
@@ -90,6 +111,8 @@ struct RunResult {
     var partySize: Int
     var ballsUsed: Int
     var catches: Int
+    /// 자동 플레이어가 낸 **결정 수**다(턴 수가 아니다) — 2대2 웨이브는 한 턴에 칸마다 하나씩,
+    /// 기절 보충도 하나로 센다. 판이 안 끝나는 조합을 자르는 상한(`turnLimit`)의 기준이기도 하다.
     var turns: Int
 }
 
@@ -98,10 +121,12 @@ func playOne(seed: UInt64, cache: SnapshotCache, tuning: RogueTuning) async -> R
     var rng = SplitMix64(seed: seed)
     let starterID = RogueRun.starterPool[Int(rng.next() % UInt64(RogueRun.starterPool.count))]
     guard let starter = await cache.snapshot(speciesID: starterID, level: 5) else { return nil }
-    guard let first = await wilds(wave: 1, cache: cache, rng: &rng, tuning: tuning),
+    // 판 seed 를 먼저 뽑는다 — 첫 웨이브의 마릿수 판정(`opponentCount`)이 이 값을 본다.
+    let runSeed = rng.next()
+    guard let first = await wilds(wave: 1, cache: cache, rng: &rng, seed: runSeed, tuning: tuning),
           !first.isEmpty else { return nil }
 
-    var run = RogueRun(party: [starter], opponents: first, seed: rng.next(), tuning: tuning)
+    var run = RogueRun(party: [starter], opponents: first, seed: runSeed, tuning: tuning)
     var catches = 0
     var turns = 0
     // 한 웨이브가 끝나지 않는 판(둘 다 결정타가 없는 조합)에 걸려도 시뮬레이터는 멈추지 않는다.
@@ -120,7 +145,7 @@ func playOne(seed: UInt64, cache: SnapshotCache, tuning: RogueTuning) async -> R
             run.take(routeChoice(run))
         case .loadingWave:
             guard let next = await wilds(wave: run.wave, route: run.route, cache: cache,
-                                         rng: &rng, tuning: tuning),
+                                         rng: &rng, seed: run.seed, tuning: tuning),
                   !next.isEmpty
             else { return nil }
             run.beginWave(opponents: next)
@@ -160,10 +185,10 @@ func pickBest(_ run: RogueRun) -> RunModifier {
 }
 
 func wilds(wave: Int, route: RunRoute = .safe, cache: SnapshotCache, rng: inout SplitMix64,
-           tuning: RogueTuning) async -> [BattleSnapshot]? {
+           seed: UInt64, tuning: RogueTuning) async -> [BattleSnapshot]? {
     let level = RogueRun.opponentLevel(wave: wave, route: route, tuning: tuning)
     var built: [BattleSnapshot] = []
-    for _ in 0..<RogueRun.opponentCount(wave: wave, tuning: tuning) {
+    for _ in 0..<RogueRun.opponentCount(wave: wave, seed: seed, tuning: tuning) {
         // 추첨 seed 는 판의 흐름에서 뽑는다 — 같은 seed 로 같은 판이 재현돼야 밸런스 비교가 된다.
         var ids: [Int] = []
         for _ in 0..<RogueRun.wildDrawAttempts {
@@ -207,8 +232,10 @@ tuning.firstTierCap = intOption("--first-cap", tuning.firstTierCap)
 tuning.lastTierCap = intOption("--last-cap", tuning.lastTierCap)
 tuning.bossStatBonus = intOption("--boss-stat", tuning.bossStatBonus)
 tuning.minStatRatio = doubleOption("--min-ratio", tuning.minStatRatio)
-tuning.doubleOpponentFrom = doubleOption("--double-from", tuning.doubleOpponentFrom)
+tuning.doubleDenominator = intOption("--double-denom", tuning.doubleDenominator)
+tuning.bossDoubleDenominator = intOption("--boss-double-denom", tuning.bossDoubleDenominator)
 tuning.ballsPerRun = intOption("--balls", tuning.ballsPerRun)
+tuning.bossHealRatio = doubleOption("--boss-heal", tuning.bossHealRatio)
 tuning.partyLimit = intOption("--party-limit", tuning.partyLimit)
 
 if arguments.contains("--dump-tuning") { print(tuning); exit(0) }

@@ -9,10 +9,8 @@
 | 문서 | 언제 읽나 |
 |---|---|
 | `docs/reference/release-workflow.md` | 버전을 배포할 때, `release.sh` 게이트에 막혔을 때, UI 변경으로 스크린샷·랜딩을 갱신할 때 |
-| `docs/reference/puzzle-dungeon-design.md` | 하루 한 판 퍼즐 던전(#79)을 구현·수정할 때, 날짜 seed 결정론 생성이나 dayKey 리셋을 새 기능에 쓸 때 |
-| `docs/reference/layered-dungeon-design.md` | 던전 맵 생성기를 손볼 때, 판 길이·난이도·보상 균형을 바꿀 때 (기존 `puzzle-dungeon-design.md` 의 맵 생성 부분을 대체) |
 | `docs/reference/wave-run-design.md` | 웨이브 런(오늘의 던전) 난이도·보상 균형을 바꿀 때, 상대 종 추첨·종족값 티어를 손볼 때, 웨이브를 넘어 무엇이 이월되는지 판단할 때 |
-| `docs/reference/room-walk-dungeon-design.md` | 트레이너 꾸미기 아이템을 더할 때, 친구 광고의 `outfit` 키를 바꿀 때, 던전 재설계(포켓로그식) 를 시작할 때 이전 설계의 결론을 볼 때 |
+| `docs/reference/room-walk-dungeon-design.md` | 트레이너 꾸미기 아이템을 더할 때, 친구 광고의 `outfit` 키를 바꿀 때 (던전 부분은 웨이브 런으로 대체됐다 — 지난 설계의 기록으로만 본다) |
 | `docs/reference/memory-home-plan.md` | Memory Home 에 기획서(《PokéWorld : My Mini Home》) 기능을 붙일 때, 미니룸 반응 문구·추억 카드·주크박스 해금을 손댈 때, 홈 기능이 "코드엔 있는데 화면엔 없다" 를 의심할 때 |
 | `docs/reference/defect-log.md` | 결함·회귀를 고치는 중(부류 스윕 근거), 동시성·캐시·외부 로그 포맷·상시 애니메이션·세이브 이전을 건드릴 때 |
 | `docs/reference/chat-tool-sandbox.md` | 포켓몬 대화가 실행할 수 있는 일을 늘리거나 줄일 때, `[[tool:...]]` 마커·인자 클램프·승인 구분을 손댈 때, 액션 칩(`PokemonChatAction`·`availableActions`·`isReady`)을 더하거나 뺄 때 |

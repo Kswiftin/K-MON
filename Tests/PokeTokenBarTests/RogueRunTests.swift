@@ -24,15 +24,38 @@ final class RogueRunTests: XCTestCase {
     // MARK: 난이도 곡선
 
     func testBossWavesAreEveryFourth() {
-        XCTAssertEqual((1...12).filter { RogueRun.isBoss(wave: $0) }, [4, 8, 12])
+        XCTAssertEqual((1...RogueRun.finalWave).filter { RogueRun.isBoss(wave: $0) },
+                       [4, 8, 12, 16, 20, 24, 28, 30])
+    }
+
+    /// 판 길이는 30 웨이브다. 12 는 강화가 쌓이기 전에 판이 닫혀 "너무 쉽다"의 직접 원인이었다.
+    func testRunLengthIsThirtyWaves() {
+        XCTAssertEqual(RogueRun.finalWave, 30)
+        XCTAssertTrue(RogueRun.isBoss(wave: RogueRun.finalWave), "최종 웨이브는 언제나 보스다")
     }
 
     func testOpponentLevelRisesAndBossesAddMore() {
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 1)       // 기준선 5 − 핸디캡 4
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 3), 6)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 11)     // 보스는 파티 기준선과 동급
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 8), 19)
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 12), 29)    // 최종만 기준선 +2
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 2)       // 기준선 5 − 핸디캡 3
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 13)      // 보스는 기준선 11 +2
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 28), 61)     // 기준선 59 +2
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 30), 65)     // 최종 기준선 63 +2
+    }
+
+    /// 보스는 기준선 위에 선다. 예전엔 기준선과 동급이라 파티가 보스마다 1 씩 앞서 나갔고,
+    /// 그 여유가 판 전체를 "너무 쉽다"로 만든 축 중 하나였다.
+    func testBossesOutlevelThePartyBaseline() {
+        for wave in [4, 8, 12, 16, 20, 24, 28] {
+            XCTAssertGreaterThan(RogueRun.opponentLevel(wave: wave),
+                                 RogueRun.partyLevelBaseline(wave: wave), "wave \(wave)")
+        }
+    }
+
+    /// 마지막 웨이브의 야생은 파티 기준선과 **동급**이다 — 핸디캡이 0 까지 좁아진다.
+    func testWildHandicapReachesZeroAtTheEnd() {
+        XCTAssertEqual(RogueTuning.standard.wildLevelHandicapEnd, 0)
+        let lastWild = RogueRun.finalWave - 1     // 30 은 보스다
+        XCTAssertEqual(RogueRun.opponentLevel(wave: lastWild),
+                       RogueRun.partyLevelBaseline(wave: lastWild))
     }
 
     /// 야생은 파티 기준선보다 **낮아야** 한다. PokeRogue 는 웨이브 1 에 레벨 2 야생을 레벨 5
@@ -60,19 +83,18 @@ final class RogueRunTests: XCTestCase {
     }
 
     /// 보스만 기준선에 붙고, 그 이상 올라가는 것은 최종 웨이브뿐이다.
-    func testBossesNeverOutlevelThePartyExceptTheFinalWave() {
-        for wave in [4, 8] {
-            XCTAssertEqual(RogueRun.opponentLevel(wave: wave),
-                           RogueRun.partyLevelBaseline(wave: wave), "wave \(wave)")
-        }
-        XCTAssertEqual(RogueRun.opponentLevel(wave: RogueRun.finalWave),
-                       RogueRun.partyLevelBaseline(wave: RogueRun.finalWave) + 2)
+    /// 최종 보스만 다른 보스보다 더 올라간다(보스 보너스 + 최종 보너스).
+    func testTheFinalBossStandsHighestAboveTheBaseline() {
+        let final = RogueRun.opponentLevel(wave: RogueRun.finalWave)
+            - RogueRun.partyLevelBaseline(wave: RogueRun.finalWave)
+        let ordinary = RogueRun.opponentLevel(wave: 8) - RogueRun.partyLevelBaseline(wave: 8)
+        XCTAssertGreaterThan(final, ordinary)
     }
 
     /// 기준선은 스타터 5 에서 승리마다 +2 로 센 보수적인 값이다(보스 +3 의 여유는 세지 않는다).
     func testPartyLevelBaselineTracksTheStarterCurve() {
         XCTAssertEqual(RogueRun.partyLevelBaseline(wave: 1), 5)
-        XCTAssertEqual(RogueRun.partyLevelBaseline(wave: 12), 27)
+        XCTAssertEqual(RogueRun.partyLevelBaseline(wave: 30), 63)
     }
 
     // MARK: 상대 종 티어
@@ -90,16 +112,18 @@ final class RogueRunTests: XCTestCase {
         XCTAssertTrue(RogueRun.isFairOpponent(baseStats: stats(total: 318), wave: 1))
         XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 3), RogueRun.baseStatTotalCap(wave: 5))
         XCTAssertLessThan(RogueRun.baseStatTotalCap(wave: 5), RogueRun.baseStatTotalCap(wave: 9))
-        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 12), 540)
-        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 680), wave: 12))
+        // 마지막 구간 500 + 보스 60. 전설 대부분(660~720)은 여기서 막힌다.
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: RogueRun.finalWave), 560)
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 680),
+                                               wave: RogueRun.finalWave))
     }
 
     /// 보스는 **자기 구간** 상한 +60 이다. 구간 경계가 보스 웨이브를 다음 구간으로 밀어버리면
     /// 보스 4 가 480 이 되어 뒤따르는 웨이브 5–7(420)보다 세지는 톱니가 생긴다 — 단조 증가만
     /// 재던 예전 테스트가 그걸 통과시켰다.
     func testBossCapsStayInTheirOwnTier() {
-        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 4), 360)
-        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 450)
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 4), 380)     // 1구간 320 + 보스 60
+        XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 406)     // 2구간 346 + 보스 60
         XCTAssertGreaterThan(RogueRun.baseStatTotalCap(wave: 4), RogueRun.baseStatTotalCap(wave: 3))
         for wave in 1..<RogueRun.finalWave {
             XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave),
@@ -124,7 +148,22 @@ final class RogueRunTests: XCTestCase {
 
     /// 하한이 없으면 최종 보스로 잉어킹(200)이 나온다.
     func testTooWeakSpeciesAreRejectedForLateWaves() {
-        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 200), wave: 12))
+        XCTAssertFalse(RogueRun.isFairOpponent(baseStats: stats(total: 200),
+                                               wave: RogueRun.finalWave))
+    }
+
+    /// 채워야 할 빈 칸이 있으면 볼을 던질 수 없다. 이 게이트가 없던 동안은 실패한 던지기가
+    /// **볼만 먹고 턴을 쓰지 않았다** — 기절 보충 전에는 턴이 돌지 않으므로 대가가 사라졌다.
+    func testABallCannotBeThrownWhileASlotWaitsForAReplacement() {
+        var run = makeRun(partySize: 2)
+        run.debugFaintInBattle(0)
+        XCTAssertEqual(run.battle.slotsNeedingSendOut, [0], "테스트 전제: 채울 칸이 있어야 한다")
+        XCTAssertFalse(run.canThrowBall)
+        let balls = run.balls
+        XCTAssertFalse(run.throwBall())
+        XCTAssertEqual(run.balls, balls, "거부된 던지기는 볼을 먹지 않는다")
+        run.sendOut(1, toSlot: 0)
+        XCTAssertTrue(run.canThrowBall)
     }
 
     // MARK: 포획
@@ -223,10 +262,46 @@ final class RogueRunTests: XCTestCase {
         return ballRun(seed: 1)
     }
 
-    /// 후반 웨이브는 둘이 나온다 — 포획으로 파티가 커지는데 상대가 끝까지 하나면 판이 헐거워진다.
-    func testLateWavesSendTwoOpponents() {
-        for wave in 1...8 { XCTAssertEqual(RogueRun.opponentCount(wave: wave), 1, "wave \(wave)") }
-        for wave in 9...12 { XCTAssertEqual(RogueRun.opponentCount(wave: wave), 2, "wave \(wave)") }
+    /// 상대가 둘이 되는 판정은 **확률**이다(PokeRogue 의 1/8 과 같은 자리). 임계값이던 시절엔
+    /// 특정 웨이브부터 늘 둘이라 판 후반이 통째로 같은 모양이었다.
+    ///
+    /// 판정은 판 seed 와 웨이브만 본다 — 같은 판을 다시 열어도(런 rng 는 그사이 소비된다)
+    /// 같은 웨이브가 같은 마릿수여야 한다.
+    func testDoubleOpponentIsRolledPerWave() {
+        var doubles = 0
+        var singles = 0
+        for seed in UInt64(1)...400 {
+            for wave in 1...RogueRun.finalWave {
+                let count = RogueRun.opponentCount(wave: wave, seed: seed)
+                XCTAssertEqual(count, RogueRun.opponentCount(wave: wave, seed: seed),
+                               "seed \(seed) wave \(wave): 같은 입력이 다른 답을 냈다")
+                if wave == RogueRun.finalWave {
+                    XCTAssertEqual(count, 1, "최종 웨이브는 늘 한 마리다")
+                } else if RogueRun.isBoss(wave: wave) {
+                    XCTAssertLessThanOrEqual(count, 2)
+                } else if count == 2 { doubles += 1 } else { singles += 1 }
+            }
+        }
+        // 1/8 근처여야 한다. 폭을 넓게 잡는 이유는 seed 400 개 표본이라서다 — 여기서 걸러야 할
+        // 것은 비율의 소수점이 아니라 "늘 하나" 나 "늘 둘" 로 굳어 버린 판정이다.
+        let ratio = Double(doubles) / Double(doubles + singles)
+        XCTAssertGreaterThan(ratio, 0.05, "야생 더블이 사실상 안 나온다")
+        XCTAssertLessThan(ratio, 0.25, "야생 더블이 너무 잦다")
+    }
+
+    /// 보스 웨이브는 야생보다 **덜** 둘이 된다 — 보스는 종족값 상한을 올린 한 마리로 서는 벽이라
+    /// 둘이 되면 관문이 아니라 사고가 된다(PokeRogue 도 보스 분모가 32 로 더 크다).
+    func testBossWavesRollDoublesLessOften() {
+        var bossDoubles = 0
+        var bossTotal = 0
+        for seed in UInt64(1)...2000 {
+            for wave in 1..<RogueRun.finalWave where RogueRun.isBoss(wave: wave) {
+                bossTotal += 1
+                if RogueRun.opponentCount(wave: wave, seed: seed) == 2 { bossDoubles += 1 }
+            }
+        }
+        XCTAssertLessThan(Double(bossDoubles) / Double(bossTotal), 0.08,
+                          "보스 더블 비율이 야생과 다르지 않다")
     }
 
     /// 둘 중 하나를 잡아도 웨이브는 끝나지 않는다. 잡은 개체는 **그 자리에서** 파티에 들어와야
@@ -251,6 +326,42 @@ final class RogueRunTests: XCTestCase {
         }
         XCTFail("no seed produced a catch")
         return makeRun()
+    }
+
+    // MARK: 화면 국면 (재생과 코어 국면의 어긋남)
+
+    /// 승리 정산은 마지막 턴이 재생되기 **전에** 국면을 넘긴다. 화면이 국면만 보고 그리면
+    /// 결정타·기절·로그가 뜨기 전에 보상 목록이 전투를 덮는다 — 실제로 그렇게 어긋나 있었다.
+    func testRewardScreenWaitsForTheLastTurnToFinishPlaying() {
+        XCTAssertEqual(RogueRunPhase.of(stage: .picking, hasUnplayedEvents: true, hasNotice: false),
+                       .battle)
+        XCTAssertEqual(RogueRunPhase.of(stage: .picking, hasUnplayedEvents: false, hasNotice: false),
+                       .picking)
+    }
+
+    /// 패배·클리어도 같은 규칙이다 — 결과 화면이 마지막 턴을 잡아먹으면 판이 끝난 이유를 못 본다.
+    func testEndingWaitsForTheLastTurnToo() {
+        for stage in [RogueRun.Stage.cleared, .failed] {
+            XCTAssertEqual(RogueRunPhase.of(stage: stage, hasUnplayedEvents: true, hasNotice: false),
+                           .battle, "\(stage)")
+            XCTAssertEqual(RogueRunPhase.of(stage: stage, hasUnplayedEvents: false, hasNotice: false),
+                           .ending, "\(stage)")
+        }
+    }
+
+    /// 포획 성공은 이벤트를 하나도 만들지 않는다(잡힌 상대는 조용히 빠진다). 알림이 떠 있는
+    /// 동안 전투를 붙잡지 않으면 "잡았다"가 화면에 존재하지 않는다.
+    func testCatchNoticeHoldsTheBattleScreen() {
+        XCTAssertEqual(RogueRunPhase.of(stage: .picking, hasUnplayedEvents: false, hasNotice: true),
+                       .battle)
+        XCTAssertEqual(RogueRunPhase.of(stage: .routing, hasUnplayedEvents: false, hasNotice: true),
+                       .battle)
+    }
+
+    /// 로딩만은 예외다 — 전투가 이미 다음 웨이브 것으로 교체된 뒤라, 붙잡으면 지나간 판이 남는다.
+    func testLoadingNeverHoldsTheOldBattle() {
+        XCTAssertEqual(RogueRunPhase.of(stage: .loadingWave, hasUnplayedEvents: true,
+                                        hasNotice: true), .loading)
     }
 
     // MARK: 진행
@@ -312,7 +423,7 @@ final class RogueRunTests: XCTestCase {
         var fainted = run
         fainted.debugFaint(0)
         fainted.beginWave(opponents: [snapshot(98, hp: 1, speed: 1)])
-        XCTAssertEqual(fainted.battle.myActive, 1)
+        XCTAssertEqual(fainted.battle.myField.map(\.teamIndex), [1])
     }
 
     /// 웨이브를 넘어 이월하는 것은 HP·PP·주 상태이상뿐이다. 랭크·혼란은 전투 안의 값이라 넘기면
@@ -358,7 +469,7 @@ final class RogueRunTests: XCTestCase {
         XCTAssertTrue(run.offers.isEmpty)
     }
 
-    /// 보스를 넘으면 살아 있는 파티가 완전 회복한다 — 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면
+    /// 보스를 넘으면 살아 있는 파티가 최대 HP 의 70% 까지 차오른다 — 이월 자원이 HP·PP 뿐이라 회복 지점이 없으면
     /// 후반 웨이브가 되돌릴 수 없는 소화가 된다. 야생 웨이브에서는 회복하지 않는다(이월이 자원이다).
     func testBossVictoryRestoresTheParty() {
         func damagedWin(atWave wave: Int) -> RogueRun {
@@ -371,7 +482,11 @@ final class RogueRunTests: XCTestCase {
         }
         let boss = damagedWin(atWave: 4)
         XCTAssertTrue(RogueRun.isBoss(wave: 4))
-        XCTAssertEqual(boss.party[0].hp, boss.party[0].stats.hp)
+        let floor = Int((Double(boss.party[0].stats.hp) * RogueTuning.standard.bossHealRatio).rounded())
+        XCTAssertGreaterThanOrEqual(boss.party[0].hp, floor)
+        XCTAssertLessThan(boss.party[0].hp, boss.party[0].stats.hp,
+                          "보스 회복은 완전 회복이 아니다 — 만피로 채우면 HP 이월이 무의미해진다")
+        XCTAssertEqual(boss.party[0].pp, boss.party[0].moves.map(\.pp), "PP 는 전부 되돌린다")
 
         let wild = damagedWin(atWave: 3)
         XCTAssertLessThan(wild.party[0].hp, wild.party[0].stats.hp,

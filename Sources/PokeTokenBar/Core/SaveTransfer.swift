@@ -231,7 +231,6 @@ enum SaveTransfer {
         // 손편집으로 목표를 넘겨도 보상이 다시 나오지 않는다.
         s.missions.normalize()
         // 던전 기억에서 오늘 맵에 없는 방 번호를 버리고, 정산된 세이브의 클리어 플래그를 맞춘다.
-        s.dungeon.normalize()
         // 런 실적도 경계에서 자른다 — 최고 웨이브 상한은 최종 웨이브다(넘으면 화면에 "13/12" 로 나온다).
         s.waveRun.normalize()
         // 업적도 경계에서 한 번만 자른다 — 사라진 트랙의 잔재를 버리고 마지막 문턱으로 클램프한다.
@@ -371,10 +370,6 @@ enum SaveTransfer {
         // 구버전 서명 호환: 기본값이면 아무것도 붙이지 않는다. 무조건 붙이면 미션 필드가 없던
         // 시절의 정상 세이브가 전부 조작으로 판정돼 진행이 초기화된다.
         if s.missions != MissionBoard() { p.append("ms\(s.missions.canonical)") }
-        // 던전 첫 클리어 보상의 멱등 가드는 `rewardPaid` 하나뿐이다 — 서명 밖에 두면 그 한 줄을
-        // 고쳐 매일 1,000 을 다시 받는다. 이번에 처음 나가는 필드라 **조건부**로 붙인다:
-        // 기본값이면 세그먼트가 없어 구서명이 그대로 유효하고 `integrityVersion` 을 올릴 필요가 없다.
-        if s.dungeon != DungeonProgress() { p.append("dun\(s.dungeon.canonical)") }
         // 런 실적은 재화를 주지 않지만 자랑 기록이라 고쳐 적을 이유가 있다. 조건부로 붙이므로
         // 기본값 세이브의 구서명은 그대로 유효하고 `integrityVersion` 을 올릴 필요가 없다.
         // 접두 `wrun` — 짧은 접두는 다른 세그먼트와 겹칠 수 있다(`outf` 와 같은 이유).
@@ -537,7 +532,6 @@ enum SaveTransfer {
         // 같은 날이면 **합친다**: 한쪽에서 이미 정산했는데 다른 쪽 값을 그대로 쓰면 같은 날 보상을
         // 두 번 받는다(맥 A 에서 클리어하고 내보내 맥 B 로 불러오는 경로). 다른 날이면 더 최근 쪽을
         // 남긴다 — 지난 날 기록은 어차피 다음 기록에서 비워진다.
-        state.dungeon = Self.mergedDungeon(imported.dungeon, current.dungeon)
         // 런 실적은 소모되지 않는 누적이라 각 축의 큰 값을 쓴다 — 한쪽을 고르면 다른 기기에서
         // 세운 최고 기록이 사라진다(던전 진행도와 달리 날짜로 낡지 않는다).
         state.waveRun = RunProgress.merged(imported.waveRun, current.waveRun)
@@ -555,16 +549,4 @@ enum SaveTransfer {
         return imported.date > current.date ? imported : current
     }
 
-    /// 두 기기의 던전 진행도를 합친다 — 같은 날이면 "한쪽이라도 정산했으면 정산된 것" 으로 본다.
-    static func mergedDungeon(_ imported: DungeonProgress, _ current: DungeonProgress) -> DungeonProgress {
-        guard imported.dayKey == current.dayKey else {
-            return imported.dayKey > current.dayKey ? imported : current
-        }
-        var merged = imported
-        merged.cleared = imported.cleared || current.cleared
-        merged.rewardPaid = imported.rewardPaid || current.rewardPaid
-        merged.remembered.merge(current.remembered) { existing, _ in existing }
-        merged.normalize()
-        return merged
-    }
 }

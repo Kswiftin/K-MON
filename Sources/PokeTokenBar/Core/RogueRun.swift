@@ -6,7 +6,7 @@ import Foundation
 /// 두 부류다 — **소모형**은 그 자리에서 파티 값을 되돌리고 사라지고, **지속형**(`isPersistent`)은
 /// `RunBoosts` 에 쌓여 판이 끝날 때까지 남는다. 지속형이 없던 프로토타입은 매 웨이브의 선택이
 /// "회복 타이밍" 하나였고, 그래서 12 웨이브가 첫 웨이브와 같은 모양으로 끝났다.
-enum RunModifier: String, CaseIterable, Sendable {
+enum RunModifier: String, CaseIterable, Codable, Sendable {
     /// 살아 있는 전원 최대 HP 의 40% 회복.
     case potion
     /// 쓰러진 하나를 최대 HP 의 50% 로 되살린다.
@@ -23,12 +23,56 @@ enum RunModifier: String, CaseIterable, Sendable {
     case focusLens
     /// 지속 — 턴 끝에 최대 HP 의 1/16 회복(중첩).
     case leftovers
+    /// 몬스터볼 보충.
+    case ballPouch
+    /// 지속 — 파티 공격/방어/스피드 +10%(중첩).
+    case xAttack
+    case xDefense
+    case xSpeed
 
     /// 판이 끝날 때까지 쌓이는가. 뽑기가 **매번 최소 한 장**을 이 부류에서 뽑는다.
     var isPersistent: Bool {
         switch self {
-        case .potion, .revive, .candy, .elixir, .cleanse: return false
-        case .typeBoost, .focusLens, .leftovers:          return true
+        case .potion, .revive, .candy, .elixir, .cleanse, .ballPouch: return false
+        case .typeBoost, .focusLens, .leftovers,
+             .xAttack, .xDefense, .xSpeed:                            return true
+        }
+    }
+
+    /// 이 판 상태에서 뽑힐 **가중치**. 0 이면 목록에 오르지 않는다.
+    ///
+    /// 균등 추첨이던 시절엔 쓰러진 개체가 없는데 기력의조각이, 만피에 상처약이 떴다. 3장 중 한두
+    /// 장이 죽은 칸이면 고르는 일이 선택이 아니라 소거법이 된다. PokeRogue 도 같은 자리를 가중치
+    /// 함수로 막는다 — 부활은 기절 수, 회복은 다친 수, 볼은 소지 상한에 걸어 필요 없으면 0 이다
+    /// (`src/modifier/init-modifier-pools.ts`).
+    ///
+    /// 상한을 3마리에서 자르는 이유는 파티 크기다. 자르지 않으면 6마리를 채운 후반에 회복류가
+    /// 목록을 통째로 덮어 빌드를 고를 자리가 없어진다.
+    func weight(party: [BattleSide], balls: Int, ballCap: Int) -> Int {
+        func capped(_ count: Int, each: Int) -> Int { min(count, 3) * each }
+        switch self {
+        case .potion:
+            return capped(party.filter { $0.isAlive && $0.hp * 8 <= $0.stats.hp * 7 }.count, each: 3)
+        case .revive:
+            return capped(party.filter { !$0.isAlive }.count, each: 6)
+        case .elixir:
+            return capped(party.filter { side in
+                guard let moves = side.snapshot.moves else { return false }
+                return side.pp.indices.contains { index in
+                    guard moves.indices.contains(index) else { return false }
+                    let full = moves[index].pp
+                    return full > 0 && side.pp[index] * 2 <= full
+                }
+            }.count, each: 3)
+        case .cleanse:
+            return capped(party.filter { $0.status != nil || $0.confusionTurns > 0 }.count, each: 3)
+        case .candy:
+            return 4
+        case .ballPouch:
+            return balls >= ballCap ? 0 : 4
+        // 지속형은 판 상태와 무관하게 늘 후보다 — 빌드를 쌓는 장이라 "지금 필요한가" 로 거를 수 없다.
+        case .typeBoost, .focusLens, .leftovers, .xAttack, .xDefense, .xSpeed:
+            return 3
         }
     }
 }
@@ -36,7 +80,7 @@ enum RunModifier: String, CaseIterable, Sendable {
 /// 다음 웨이브로 가는 길. 포켓로그가 웨이브 사이에 바이옴 갈림길을 두는 자리와 같은 역할이다 —
 /// **판을 내가 골랐다는 감각**이 여기서 나온다. 길이 하나뿐이면 12 웨이브가 정해진 순서를 소화하는
 /// 일이 되고, 강화 뽑기만으로는 그 감각이 생기지 않는다(뽑기는 나온 것 중에서 고르는 것이다).
-enum RunRoute: String, CaseIterable, Sendable {
+enum RunRoute: String, CaseIterable, Codable, Sendable {
     /// 규칙 그대로. 상대도 보상도 기본값이다.
     case safe
     /// 상대 종족값 상한과 레벨이 오르고, 그 웨이브를 넘기면 **보상을 두 장** 고른다.
@@ -54,7 +98,9 @@ enum RunRoute: String, CaseIterable, Sendable {
 /// 순수 구조체다 — 시각도 네트워크도 쓰지 않는다. 상대 스냅샷은 호출자가 만들어 넣는다
 /// (`beginWave(opponents:)`). 그래야 웨이브 진행 규칙을 네트워크 없이 테스트할 수 있다.
 struct RogueRun: Sendable {
-    enum Stage: Sendable, Equatable {
+    /// 문자열 raw 를 두는 이유는 저장이다(`RogueRunSave`) — 정수 순서로 적으면 case 를
+    /// 하나 끼워 넣는 순간 옛 파일의 국면이 다른 국면으로 바뀐다.
+    enum Stage: String, Codable, Sendable, Equatable {
         case battling
         /// 승리 직후 — 보상 3장 중 하나를 고를 때까지 멈춘다(위험한 길이었으면 두 장).
         case picking
@@ -71,6 +117,7 @@ struct RogueRun: Sendable {
     static let finalWave = RogueTuning.standard.finalWave
     static let partyLimit = RogueTuning.standard.partyLimit
     static let ballsPerRun = RogueTuning.standard.ballsPerRun
+    static let ballCap = RogueTuning.standard.ballCap
 
     /// 보스 웨이브. **마지막 웨이브는 주기와 무관하게 항상 보스다** — 주기를 늦추면(첫 보스를
     /// 파티가 커진 뒤로 미루면) 최종 웨이브가 주기에서 빗나가 판이 야생으로 끝난다.
@@ -103,10 +150,22 @@ struct RogueRun: Sendable {
             + (wave == tuning.finalWave ? tuning.finalLevelBonus : tuning.bossLevelBonus)
     }
 
-    /// 웨이브당 상대 마릿수. 후반은 둘이 나온다 — 포획으로 파티가 커지는데 상대가 끝까지 하나면
-    /// 판이 뒤로 갈수록 헐거워진다. 보스는 종족값 상한을 올린 한 마리로 남긴다(벽 역할).
-    static func opponentCount(wave: Int, tuning: RogueTuning = .standard) -> Int {
-        wave >= tuning.doubleOpponentWave ? 2 : 1
+    /// 웨이브당 상대 마릿수. **진행률 임계값이 아니라 확률**이다 — 임계값은 "23 웨이브부터 늘 둘"
+    /// 이라 그 지점 앞뒤가 통째로 같은 모양이 되고, 어느 웨이브가 험할지 미리 알아 판단할 것이 없다.
+    /// PokeRogue 는 야생 조우마다 1/8, 보스 웨이브는 1/32 로 굴린다
+    /// (`getDoubleBattleChance`, `src/battle-scene.ts:1232`) — 보스 쪽 확률이 **더 낮은** 이유는
+    /// 보스가 벽 역할을 하는 한 마리여야 하기 때문이다. 최종 웨이브는 그쪽도 항상 한 마리다.
+    ///
+    /// 런 rng 를 쓰지 않고 seed 와 웨이브로 따로 뽑는다. 런 rng 는 보상 추첨과 한 흐름이라,
+    /// 여기서 한 번 더 당기면 상대를 못 받아 다시 부르는 경로(`loadNextWave` 재시도)마다
+    /// 보상 목록이 달라진다.
+    static func opponentCount(wave: Int, seed: UInt64, tuning: RogueTuning = .standard) -> Int {
+        guard wave != tuning.finalWave else { return 1 }
+        let denominator = isBoss(wave: wave, tuning: tuning)
+            ? tuning.bossDoubleDenominator : tuning.doubleDenominator
+        guard denominator > 0 else { return 2 }
+        var rng = SplitMix64(seed: seed &+ 0x9E37_79B9_7F4A_7C15 &* UInt64(wave))
+        return rng.next() % UInt64(denominator) == 0 ? 2 : 1
     }
 
     /// 웨이브별 상대 **종족값 합(BST) 상한**. 포켓로그가 웨이브에 따라 종 티어를 올리는 것과 같은
@@ -206,38 +265,55 @@ struct RogueRun: Sendable {
     /// 끝난 판의 결과를 실적(`RunProgress`)에 적었나. 결과 화면은 다시 그려질 때마다 이 값을 보는데,
     /// 플래그가 없으면 팝오버를 여닫는 횟수만큼 같은 판이 실적에 쌓인다.
     private(set) var resultRecorded = false
+    /// 갈림길에서 **한 번도 안전한 길을 고르지 않았나**. 업적(`dungeonSweep`)의 난이도 축이다.
+    /// 첫 웨이브는 고를 기회가 없으므로 세지 않는다 — `take` 가 부른 선택만 본다.
+    private(set) var tookOnlyRiskyRoutes = true
     /// 이 판이 쓰는 밸런스 값. 앱은 `.standard`, 시뮬레이터는 흔든 값을 넣는다.
     let tuning: RogueTuning
-    private(set) var battle: TeamPracticeBattle
+    private(set) var battle: WaveBattle
     /// 웨이브 seed·보상 추첨을 잇는 하나의 흐름. **판마다 완전 무작위로 심는다** — 날짜 결정론은
     /// 쓰지 않는다(퍼즐 던전과 다른 점이다). 하루 판 수도 제한하지 않는다: 같은 판을 다시 도는
     /// 콘텐츠가 아니라 매번 새로 뽑는 콘텐츠고, 보상이 세이브에 남지 않아 반복이 경제를 흔들지 않는다.
     private var rng: SplitMix64
+    /// 판을 심은 값. rng 상태와 따로 두는 이유는 `opponentCount` 다 — 그 판정은 판이 어디까지
+    /// 왔든 같은 답을 내야 하므로 소비되는 rng 상태를 볼 수 없다.
+    let seed: UInt64
 
     init(party: [BattleSnapshot], opponents: [BattleSnapshot], seed: UInt64,
          tuning: RogueTuning = .standard) {
         self.tuning = tuning
+        self.seed = seed
         self.balls = tuning.ballsPerRun
         var rng = SplitMix64(seed: seed)
         let sides = party.map(BattleSide.init)
         self.party = sides
-        self.battle = TeamPracticeBattle(mine: sides,
-                                         opponents: opponents.map(BattleSide.init),
-                                         rng: SplitMix64(seed: rng.next()))
+        self.battle = WaveBattle(mine: sides,
+                                 opponents: opponents.map(BattleSide.init),
+                                 rng: SplitMix64(seed: rng.next()))
         self.rng = rng
     }
 
     // MARK: 전투 중
 
-    mutating func useMove(_ index: Int) {
+    /// 기술을 쓴다. `slot` 은 내 필드 칸, `target` 은 상대 필드 칸이다 — 단일전은 둘 다 0 이라
+    /// 호출부가 2대2 를 몰라도 된다. 살아 있는 칸이 모두 정해지는 순간 턴이 돈다(`WaveBattle`).
+    mutating func useMove(_ index: Int, fromSlot slot: Int = 0, target: Int = 0) {
         guard stage == .battling else { return }
-        _ = battle.useMove(index)
+        _ = battle.choose(.move(index: index, target: target), forSlot: slot)
         settle()
     }
 
-    mutating func switchParty(to index: Int) {
+    /// 살아 있는 개체를 바꾼다 — **그 칸의 행동이다**(때리지 못한다).
+    mutating func switchParty(to index: Int, fromSlot slot: Int = 0) {
         guard stage == .battling else { return }
-        _ = battle.switchMine(to: index)
+        _ = battle.choose(.switchTo(teamIndex: index), forSlot: slot)
+        settle()
+    }
+
+    /// 쓰러진 칸을 벤치에서 채운다 — 턴을 쓰지 않는다(근거는 `WaveBattle.sendOut`).
+    mutating func sendOut(_ index: Int, toSlot slot: Int) {
+        guard stage == .battling else { return }
+        _ = battle.sendOut(teamIndex: index, toSlot: slot)
         settle()
     }
 
@@ -272,7 +348,7 @@ struct RogueRun: Sendable {
         } else {
             // 위험한 길로 왔으면 이 승리의 보상이 두 장이다 — 늘린 난이도의 값이 여기서 돌아온다.
             remainingPicks = route.pickCount
-            offers = Self.drawOffers(&rng)
+            offers = Self.drawOffers(&rng, party: party, balls: balls, tuning: tuning)
             stage = .picking
         }
     }
@@ -282,17 +358,21 @@ struct RogueRun: Sendable {
     /// 지금 볼을 던질 수 있는가. 보스는 제외한다 — 4·8·12 웨이브는 판의 관문이고 회복 지점이라
     /// 잡아서 건너뛰면 그 자리가 사라진다.
     var canThrowBall: Bool {
+        // 채워야 할 빈 칸이 있으면 던질 수 없다. 이 조건이 빠져 있던 동안은 실패한 던지기가
+        // **볼만 먹고 턴을 쓰지 않았다** — 그 상태에서는 `spendTurnWithoutAttacking` 이 거부되므로
+        // (기절 보충 전에는 턴이 돌지 않는다) 대가 없이 던질 수 있었다.
         stage == .battling && battle.result == nil && balls > 0
             && party.count < tuning.partyLimit && !Self.isBoss(wave: wave, tuning: tuning)
+            && battle.slotsNeedingSendOut.isEmpty
     }
 
     /// 볼을 던진다. **성공하든 실패하든 그 턴은 내 공격이 아니다** — 실패하면 상대만 움직인다.
     /// 성공하면 그 웨이브는 쓰러뜨린 것과 같은 규칙으로 넘어간다(`clearWave`).
     @discardableResult
-    mutating func throwBall() -> Bool {
-        guard canThrowBall else { return false }
+    mutating func throwBall(atSlot slot: Int = 0) -> Bool {
+        guard canThrowBall, let target = battle.opponentSide(at: slot), target.isAlive
+        else { return false }
         balls -= 1
-        let target = battle.opponentSlot
         let roll = Double(rng.next() % 10_000) / 10_000
         guard roll < Self.catchChance(target: target) else {
             _ = battle.spendTurnWithoutAttacking()
@@ -301,7 +381,7 @@ struct RogueRun: Sendable {
         }
         party = battle.mine
         // 잡힌 상대는 쓰러진 것과 같은 자리를 지난다 — 상대가 더 남았으면 전투는 이어진다.
-        battle.retireOpponent()
+        battle.retireOpponent(atSlot: slot)
         // 정산을 먼저 지난다 — 잡힌 개체는 그 전투의 경험치를 받지 않으므로 레벨업 대상이 아니다.
         if battle.result == .win { clearWave() }
         var caught = target
@@ -322,16 +402,35 @@ struct RogueRun: Sendable {
     /// 뽑기 3장. **적어도 한 장은 지속형이다** — 소모형만 뜨면 그 웨이브의 선택이 다시 "회복
     /// 타이밍" 하나로 접히고, 판이 12 웨이브를 지나도 첫 웨이브와 같은 모양으로 남는다.
     /// 뽑은 뒤 섞는 이유는 순서다 — 안 섞으면 첫 칸이 늘 지속형이라 목록을 읽지 않고 누르게 된다.
-    static func drawOffers(_ rng: inout SplitMix64) -> [RunModifier] {
-        var pool = RunModifier.allCases.filter { !$0.isPersistent }
-        var persistent = RunModifier.allCases.filter(\.isPersistent)
-        var picked = [persistent.remove(at: Int(rng.next() % UInt64(persistent.count)))]
+    static func drawOffers(_ rng: inout SplitMix64, party: [BattleSide], balls: Int,
+                           tuning: RogueTuning = .standard) -> [RunModifier] {
+        var pool = RunModifier.allCases.compactMap { modifier -> (RunModifier, Int)? in
+            let weight = modifier.weight(party: party, balls: balls, ballCap: tuning.ballCap)
+            return weight > 0 ? (modifier, weight) : nil
+        }
+        var persistent = pool.filter { $0.0.isPersistent }
+        pool.removeAll { $0.0.isPersistent }
+        var picked: [RunModifier] = []
+        if let first = takeWeighted(&persistent, &rng) { picked.append(first) }
         pool += persistent
-        while picked.count < offerCount, !pool.isEmpty {
-            picked.append(pool.remove(at: Int(rng.next() % UInt64(pool.count))))
+        while picked.count < offerCount, let next = takeWeighted(&pool, &rng) {
+            picked.append(next)
         }
         picked.shuffle(using: &rng)
         return picked
+    }
+
+    /// 가중치에 비례해 하나를 뽑아 **풀에서 뺀다**(같은 장이 두 칸을 먹지 않게). 풀이 비면 nil 이다.
+    private static func takeWeighted(_ pool: inout [(RunModifier, Int)],
+                                     _ rng: inout SplitMix64) -> RunModifier? {
+        let total = pool.reduce(0) { $0 + $1.1 }
+        guard total > 0 else { return nil }
+        var roll = Int(rng.next() % UInt64(total))
+        for (index, entry) in pool.enumerated() {
+            roll -= entry.1
+            if roll < 0 { return pool.remove(at: index).0 }
+        }
+        return pool.removeLast().0
     }
 
     /// 보상 한 장을 고른다. 두 장을 받는 웨이브면 다음 3장을 다시 뽑아 한 번 더 멈춘다 —
@@ -342,7 +441,7 @@ struct RogueRun: Sendable {
         stampBoosts()
         remainingPicks -= 1
         guard remainingPicks <= 0 else {
-            offers = Self.drawOffers(&rng)
+            offers = Self.drawOffers(&rng, party: party, balls: balls, tuning: tuning)
             return
         }
         offers = []
@@ -360,6 +459,7 @@ struct RogueRun: Sendable {
     /// 고르는 자리에서 올리면 길을 고르기 전에 상대가 만들어져, 고른 길이 다음 웨이브에 안 걸린다.
     mutating func take(_ next: RunRoute) {
         guard stage == .routing else { return }
+        if next != .risky { tookOnlyRiskyRoutes = false }
         route = next
         wave += 1
         stage = .loadingWave
@@ -367,8 +467,9 @@ struct RogueRun: Sendable {
 
     /// 다음 웨이브 개시 — 상대는 호출자가 만들어 넣는다(네트워크는 코어 밖).
     mutating func beginWave(opponents: [BattleSnapshot]) {
+        // 살아 있는 개체가 하나도 없는 파티로는 웨이브를 열지 않는다 — 그 판은 이미 실패다.
         guard stage == .loadingWave, !opponents.isEmpty,
-              let lead = party.firstIndex(where: { $0.isAlive }) else { return }
+              party.contains(where: \.isAlive) else { return }
         // 이월하는 것은 **HP·PP·주 상태이상까지**다. 랭크·혼란·풀죽음은 전투 안에서만 사는 값이라
         // 웨이브가 바뀌면 지운다 — 안 지우면 앞 웨이브에서 울음소리로 깎인 랭크를 판이 끝날 때까지
         // 지고 가서 "웨이브를 넘길수록 이유 없이 약해진다"가 된다(교체할 때와 같은 규칙).
@@ -377,12 +478,11 @@ struct RogueRun: Sendable {
         // 지나는 자리는 여기 하나뿐이라 불변식("주 상태이상은 웨이브를 넘지 않는다")을 여기서
         // 잠근다 — 정산 뒤 파티가 바뀌는 경로(포획으로 합류한 개체)가 생겨도 규칙이 유지된다.
         clearStatus()
-        battle = TeamPracticeBattle(mine: party,
-                                    opponents: opponents.map(BattleSide.init),
-                                    rng: SplitMix64(seed: rng.next()))
-        // 앞 웨이브에서 1번이 쓰러졌으면 살아 있는 첫 칸으로 세운다. 기본값 0 그대로 두면
-        // 쓰러진 개체가 활성 슬롯이 되어 첫 턴을 통째로 날린다.
-        battle.myActive = lead
+        // 살아 있는 개체로 필드를 세우는 것은 `WaveBattle` 의 초기화가 맡는다 — 앞 웨이브에서
+        // 1번이 쓰러졌어도 쓰러진 개체가 필드에 서지 않는다.
+        battle = WaveBattle(mine: party,
+                            opponents: opponents.map(BattleSide.init),
+                            rng: SplitMix64(seed: rng.next()))
         stampBoosts()
         stage = .battling
     }
@@ -414,6 +514,14 @@ struct RogueRun: Sendable {
             boosts.critStages += 1
         case .leftovers:
             boosts.leftovers += 1
+        case .xAttack:
+            boosts.attack += 1
+        case .xDefense:
+            boosts.defense += 1
+        case .xSpeed:
+            boosts.speed += 1
+        case .ballPouch:
+            balls = min(tuning.ballCap, balls + tuning.ballsPerPouch)
         }
     }
 
@@ -481,11 +589,16 @@ struct RogueRun: Sendable {
         }
     }
 
-    /// 살아 있는 개체를 완전 회복한다. **쓰러진 개체는 일으키지 않는다** — 부활은 `revive` 보상의
+    /// 살아 있는 개체를 회복한다. **쓰러진 개체는 일으키지 않는다** — 부활은 `revive` 보상의
     /// 몫이고, 여기서 같이 살리면 그 보상이 보스 직후에 늘 꽝이 된다.
+    ///
+    /// HP 는 **최대치의 `bossHealRatio` 까지만** 채운다(그보다 높으면 그대로 둔다). 완전 회복이면
+    /// 보스 직후마다 판이 만피에서 다시 서서, 이월 자원을 아낀 판과 다 쓴 판이 구별되지 않는다.
+    /// PP·상태이상은 전부 되돌린다 — 조여야 하는 자원은 HP 하나다.
     private mutating func restoreParty() {
         for i in party.indices where party[i].isAlive {
-            party[i].hp = party[i].stats.hp
+            let floor = Int((Double(party[i].stats.hp) * tuning.bossHealRatio).rounded())
+            party[i].hp = max(party[i].hp, min(party[i].stats.hp, floor))
             party[i].pp = party[i].moves.map(\.pp)
             party[i].status = nil
             party[i].statusCounter = 0
@@ -526,16 +639,77 @@ extension RogueRun {
     mutating func debugFaint(_ index: Int) { party[index].hp = 0 }
     /// 테스트 전용 — **전투 중** 개체에 상태이상을 건다. `debugSetParty` 는 `party` 만 바꾸는데
     /// 승리 정산은 `battle.mine` 을 덮어쓰므로, 이월 규칙을 재려면 전투 쪽에 걸어야 한다.
-    mutating func debugAfflict(_ status: Status) { battle.mine[battle.myActive].status = status }
+    mutating func debugAfflict(_ status: Status) {
+        battle.mine[battle.myField[0].teamIndex].status = status
+    }
     mutating func debugApply(_ modifier: RunModifier) { apply(modifier) }
+    /// 테스트 전용 — **전투 중** 개체를 눕힌다. `debugFaint` 는 `party` 만 바꾸는데, 필드 칸은
+    /// `battle.mine` 을 보므로 기절 보충 경로를 재려면 전투 쪽을 눕혀야 한다.
+    mutating func debugFaintInBattle(_ index: Int) { battle.mine[index].hp = 0 }
     /// 최종 웨이브 판정처럼 앞 웨이브를 다 밟지 않고 도달해야 하는 자리에 쓴다.
     mutating func debugJump(toWave value: Int) { wave = value }
     /// 테스트 전용 — 포획 확률을 재려면 상대 HP·볼 개수를 직접 세워야 한다.
-    mutating func debugSetOpponentHP(_ value: Int) { battle.opponents[battle.opponentActive].hp = value }
+    mutating func debugSetOpponentHP(_ value: Int, atSlot slot: Int = 0) {
+        battle.opponents[battle.opponentField[slot].teamIndex].hp = value
+    }
     mutating func debugSetBalls(_ value: Int) { balls = value }
+    /// 테스트 전용 — 길 고르기 국면으로 바로 세운다(`take` 의 분기만 재려면 전투를 이길 필요가 없다).
+    mutating func debugSetStageRouting() { stage = .routing }
     /// 테스트 전용 — 강화가 쌓인 상태를 앞 웨이브를 다 밟지 않고 세운다.
     mutating func debugSetBoosts(_ value: RunBoosts) { boosts = value; stampBoosts() }
     /// 테스트 전용 — 특정 보상이 제시된 상태로 만든다(뽑기는 rng 라 원하는 장이 안 뜬다).
     mutating func debugOffer(_ modifier: RunModifier) { offers = [modifier] }
 }
 #endif
+
+// MARK: - 디스크로 옮기기
+
+extension RogueRun {
+    /// 지금 판을 저장 형식으로. 무엇을 남기고 무엇을 버리는지는 `RogueRunSave` 에 적어 뒀다.
+    var saveForm: RogueRunSave {
+        RogueRunSave(wave: wave, stage: stage, route: route, offers: offers,
+                     remainingPicks: remainingPicks, balls: balls,
+                     boosts: RogueRunSave.BoostsSave(boosts), resultRecorded: resultRecorded,
+                     rngState: rng.state, seed: seed, tookOnlyRiskyRoutes: tookOnlyRiskyRoutes, party: party.map(RogueRunSave.SideSave.init),
+                     battle: RogueRunSave.BattleSave(battle))
+    }
+
+    /// 저장된 판을 되살린다. **되살릴 수 없으면 `nil` 이다** — 판은 소모품이라 버리는 쪽이
+    /// 반쯤 복원된 전투(범위 밖 활성 칸, 웨이브 밖 진행)보다 낫다. 여기서 막는 것:
+    ///
+    /// - 형식 판이 다르거나 파티·전투가 비었거나 활성 칸이 범위 밖인 파일
+    /// - 판 길이(`finalWave`)가 줄어든 뒤의 옛 판 — 밸런스 손잡이라 언제든 바뀐다
+    /// - 고를 것이 없는 보상 화면 — 버튼 없는 화면에 갇힌다
+    ///
+    /// **밸런스 값은 저장하지 않는다**(`tuning` 은 언제나 `.standard`). 판 도중에 앱을 업데이트하면
+    /// 남은 웨이브가 새 규칙으로 진행된다 — 옛 값을 파일에 실어 되살리면 그 판만 조용히 옛
+    /// 밸런스로 도는데, 런은 기록만 남기므로 새 규칙을 따르는 편이 설명하기 쉽다.
+    init?(save: RogueRunSave) {
+        guard save.version == RogueRunSave.currentVersion,
+              !save.party.isEmpty, save.party.count <= RogueRun.partyLimit,
+              (1...RogueRun.finalWave).contains(save.wave),
+              let battle = save.battle.restored
+        else { return nil }
+        let stage = save.stage
+        if stage == .picking && save.offers.isEmpty { return nil }
+        tuning = .standard
+        self.wave = save.wave
+        self.stage = stage
+        self.route = save.route
+        self.offers = save.offers
+        self.remainingPicks = max(0, save.remainingPicks)
+        self.balls = min(RogueRun.ballCap, max(0, save.balls))
+        self.boosts = save.boosts.restored
+        self.resultRecorded = save.resultRecorded
+        self.party = save.party.map(\.restored)
+        self.battle = battle
+        self.rng = SplitMix64(seed: 0)
+        self.rng.state = save.rngState
+        self.seed = save.seed
+        self.tookOnlyRiskyRoutes = save.tookOnlyRiskyRoutes
+        // 강화는 개체에 도장으로 들어간다 — 되살린 개체는 그 도장이 없다(저장 형식이 개체별
+        // 강화를 싣지 않고 런의 값 하나만 싣는다). 여기서 찍지 않으면 판을 이어 여는 순간
+        // 화면에는 강화가 그대로인데 데미지에는 안 걸린다.
+        stampBoosts()
+    }
+}
