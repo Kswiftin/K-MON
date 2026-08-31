@@ -2184,9 +2184,17 @@ final class CompanionStore {
 
     /// 끝난 판 하나를 실적에 적는다. **끝난 판만 센다** — 화면만 열고 닫은 판을 실패로 세면
     /// 클리어율이 실제보다 낮게 보인다. 도달 웨이브는 코어가 든 값이라 화면이 보낸 값을 클램프한다.
-    func recordRunResult(reachedWave: Int, cleared: Bool) {
+    ///
+    /// 업적(`dungeon`·`dungeonSweep`)도 여기서 올린다. 퍼즐 던전이 웨이브 런으로 갈릴 때 이
+    /// 배선이 안 따라와, 두 트랙 여덟 칸이 도달 불가인 채로 나갔다 — 화면에 보이는데 영영 안
+    /// 차는 칸이다. `dungeonSweep` 은 난이도 축을 잇는다: 갈림길을 **전부 위험한 길로** 왔나.
+    func recordRunResult(reachedWave: Int, cleared: Bool, tookOnlyRiskyRoutes: Bool = false) {
         state.waveRun.record(reachedWave: reachedWave, cleared: cleared)
         state.waveRun.normalize()
+        if cleared {
+            recordAchievement(.dungeon, 1)
+            if tookOnlyRiskyRoutes { recordAchievement(.dungeonSweep, 1) }
+        }
         save()
     }
 

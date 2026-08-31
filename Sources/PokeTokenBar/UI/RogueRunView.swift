@@ -414,6 +414,10 @@ struct RogueRunView: View {
         case .typeBoost: return l.t("타입 강화판", "Type Booster", "タイプ強化板")
         case .focusLens: return l.t("초점렌즈", "Scope Lens", "ピントレンズ")
         case .leftovers: return l.t("먹다남은음식", "Leftovers", "たべのこし")
+        case .ballPouch: return l.t("몬스터볼 보충", "Ball Pouch", "モンスターボール補充")
+        case .xAttack:   return l.t("플러스파워", "X Attack", "プラスパワー")
+        case .xDefense:  return l.t("디펜드업", "X Defense", "ディフェンダー")
+        case .xSpeed:    return l.t("스피드업", "X Speed", "スピーダー")
         }
     }
 
@@ -449,6 +453,22 @@ struct RogueRunView: View {
             return l.t("턴이 끝날 때마다 최대 HP 의 1/16 을 회복한다. 판이 끝날 때까지 남고 중첩된다.",
                        "Restores 1/16 of max HP at the end of every turn. Keeps stacking for the run.",
                        "ターン終了ごとに最大HPの1/16を回復する。ラン中ずっと残り、重ねられる。")
+        case .ballPouch:
+            return l.t("몬스터볼 \(RogueTuning.standard.ballsPerPouch) 개를 채운다(최대 \(RogueTuning.standard.ballCap) 개).",
+                       "Adds \(RogueTuning.standard.ballsPerPouch) Poké Balls (up to \(RogueTuning.standard.ballCap)).",
+                       "モンスターボールを \(RogueTuning.standard.ballsPerPouch) 個補充する(最大 \(RogueTuning.standard.ballCap) 個)。")
+        case .xAttack:
+            return l.t("파티의 공격이 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다.",
+                       "The party's Attack rises \(RunBoosts.statPercentPerStack)%. Keeps stacking for the run.",
+                       "パーティの攻撃が \(RunBoosts.statPercentPerStack)% 上がる。ラン中ずっと残り、重ねられる。")
+        case .xDefense:
+            return l.t("파티의 방어가 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다.",
+                       "The party's Defense rises \(RunBoosts.statPercentPerStack)%. Keeps stacking for the run.",
+                       "パーティの防御が \(RunBoosts.statPercentPerStack)% 上がる。ラン中ずっと残り、重ねられる。")
+        case .xSpeed:
+            return l.t("파티의 스피드가 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다.",
+                       "The party's Speed rises \(RunBoosts.statPercentPerStack)%. Keeps stacking for the run.",
+                       "パーティのすばやさが \(RunBoosts.statPercentPerStack)% 上がる。ラン中ずっと残り、重ねられる。")
         }
     }
 
@@ -480,7 +500,8 @@ struct RogueRunView: View {
     private func recordResult() {
         guard let run = store.rogueRun, !run.resultRecorded,
               run.stage == .cleared || run.stage == .failed else { return }
-        store.recordRunResult(reachedWave: run.wave, cleared: run.stage == .cleared)
+        store.recordRunResult(reachedWave: run.wave, cleared: run.stage == .cleared,
+                              tookOnlyRiskyRoutes: run.tookOnlyRiskyRoutes)
         mutate { $0.markResultRecorded() }
     }
 
@@ -512,18 +533,19 @@ struct RogueRunView: View {
 
     private func start(with starter: BattleSnapshot) async {
         setup = .loading
-        let opponents = await Self.wilds(wave: 1, route: .safe, store: store)
+        // 판 seed 를 먼저 정한다 — 첫 웨이브의 마릿수 판정이 이 값을 본다.
+        let seed = UInt64.random(in: UInt64.min...UInt64.max)
+        let opponents = await Self.wilds(wave: 1, route: .safe, seed: seed, store: store)
         guard !opponents.isEmpty else {
             setup = .failedToLoad
             return
         }
-        store.rogueRun = RogueRun(party: [starter], opponents: opponents,
-                                  seed: UInt64.random(in: UInt64.min...UInt64.max))
+        store.rogueRun = RogueRun(party: [starter], opponents: opponents, seed: seed)
     }
 
     private func loadNextWave() async {
         guard let run = store.rogueRun else { return }
-        let opponents = await Self.wilds(wave: run.wave, route: run.route, store: store)
+        let opponents = await Self.wilds(wave: run.wave, route: run.route, seed: run.seed, store: store)
         guard !opponents.isEmpty else {
             // 판은 그대로 둔다 — 창을 다시 열면 `resume()` 이 이 웨이브를 다시 불러온다.
             setup = .failedToLoad
@@ -534,10 +556,10 @@ struct RogueRunView: View {
 
     /// 이 웨이브의 상대 전원. **한 마리라도 만들었으면 그대로 간다** — 둘째를 못 받았다고 판을
     /// 세우면 네트워크가 흔들릴 때마다 진행 중인 런이 멈춘다.
-    private static func wilds(wave: Int, route: RunRoute,
+    private static func wilds(wave: Int, route: RunRoute, seed: UInt64,
                               store: CompanionStore) async -> [BattleSnapshot] {
         var built: [BattleSnapshot] = []
-        for _ in 0..<RogueRun.opponentCount(wave: wave) {
+        for _ in 0..<RogueRun.opponentCount(wave: wave, seed: seed) {
             if let one = await wild(wave: wave, route: route, store: store) { built.append(one) }
         }
         return built

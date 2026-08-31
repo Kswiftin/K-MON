@@ -26,6 +26,12 @@ struct RogueRunSave: Codable, Sendable {
     /// 런 rng 의 현재 상태. 씨앗이 아니라 **소비한 뒤의 상태**를 적는다 — 씨앗을 적으면 앱을
     /// 껐다 켤 때마다 같은 보상 목록이 다시 나온다.
     var rngState: UInt64
+    /// 판을 심은 값. `rngState` 와 달리 소비되지 않는다 — 상대 마릿수 판정이 판 어디서든 같은
+    /// 답을 내야 해서다. 옛 파일엔 없으므로 기본값 0 이고, 그 판은 마릿수만 다시 뽑힌다.
+    var seed: UInt64 = 0
+    /// 갈림길을 전부 위험한 길로 왔나. 옛 파일엔 없으므로 기본값은 **false** 다 — 없는 기록을
+    /// 참으로 두면 이어 연 판이 안 한 일로 업적을 받는다.
+    var tookOnlyRiskyRoutes = false
     var party: [SideSave]
     var battle: BattleSave
 
@@ -35,12 +41,19 @@ struct RogueRunSave: Codable, Sendable {
         var typeDamage: [String: Int] = [:]
         var critStages = 0
         var leftovers = 0
+        /// 기본값을 두는 이유는 옛 파일이다 — 이 세 칸이 없던 판이 복원되면 강화 없이 이어진다.
+        var attack = 0
+        var defense = 0
+        var speed = 0
 
         init(_ boosts: RunBoosts) {
             typeDamage = Dictionary(uniqueKeysWithValues:
                 boosts.typeDamage.map { ($0.key.rawValue, $0.value) })
             critStages = boosts.critStages
             leftovers = boosts.leftovers
+            attack = boosts.attack
+            defense = boosts.defense
+            speed = boosts.speed
         }
 
         /// 모르는 타입 이름은 버린다(손편집·구버전). 강화 하나가 빠지는 것이 판을 못 여는 것보다 낫다.
@@ -52,6 +65,9 @@ struct RogueRunSave: Codable, Sendable {
             }
             boosts.critStages = max(0, critStages)
             boosts.leftovers = max(0, leftovers)
+            boosts.attack = max(0, attack)
+            boosts.defense = max(0, defense)
+            boosts.speed = max(0, speed)
             return boosts
         }
     }
@@ -109,6 +125,12 @@ struct RogueRunSave: Codable, Sendable {
         var opponentActive: Int
         var turn: Int
         var rngState: UInt64
+    /// 판을 심은 값. `rngState` 와 달리 소비되지 않는다 — 상대 마릿수 판정이 판 어디서든 같은
+    /// 답을 내야 해서다. 옛 파일엔 없으므로 기본값 0 이고, 그 판은 마릿수만 다시 뽑힌다.
+    var seed: UInt64 = 0
+    /// 갈림길을 전부 위험한 길로 왔나. 옛 파일엔 없으므로 기본값은 **false** 다 — 없는 기록을
+    /// 참으로 두면 이어 연 판이 안 한 일로 업적을 받는다.
+    var tookOnlyRiskyRoutes = false
 
         init(_ battle: TeamPracticeBattle) {
             mine = battle.mine.map(SideSave.init)

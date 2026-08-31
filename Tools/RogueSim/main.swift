@@ -98,10 +98,12 @@ func playOne(seed: UInt64, cache: SnapshotCache, tuning: RogueTuning) async -> R
     var rng = SplitMix64(seed: seed)
     let starterID = RogueRun.starterPool[Int(rng.next() % UInt64(RogueRun.starterPool.count))]
     guard let starter = await cache.snapshot(speciesID: starterID, level: 5) else { return nil }
-    guard let first = await wilds(wave: 1, cache: cache, rng: &rng, tuning: tuning),
+    // 판 seed 를 먼저 뽑는다 — 첫 웨이브의 마릿수 판정(`opponentCount`)이 이 값을 본다.
+    let runSeed = rng.next()
+    guard let first = await wilds(wave: 1, cache: cache, rng: &rng, seed: runSeed, tuning: tuning),
           !first.isEmpty else { return nil }
 
-    var run = RogueRun(party: [starter], opponents: first, seed: rng.next(), tuning: tuning)
+    var run = RogueRun(party: [starter], opponents: first, seed: runSeed, tuning: tuning)
     var catches = 0
     var turns = 0
     // 한 웨이브가 끝나지 않는 판(둘 다 결정타가 없는 조합)에 걸려도 시뮬레이터는 멈추지 않는다.
@@ -120,7 +122,7 @@ func playOne(seed: UInt64, cache: SnapshotCache, tuning: RogueTuning) async -> R
             run.take(routeChoice(run))
         case .loadingWave:
             guard let next = await wilds(wave: run.wave, route: run.route, cache: cache,
-                                         rng: &rng, tuning: tuning),
+                                         rng: &rng, seed: run.seed, tuning: tuning),
                   !next.isEmpty
             else { return nil }
             run.beginWave(opponents: next)
@@ -160,10 +162,10 @@ func pickBest(_ run: RogueRun) -> RunModifier {
 }
 
 func wilds(wave: Int, route: RunRoute = .safe, cache: SnapshotCache, rng: inout SplitMix64,
-           tuning: RogueTuning) async -> [BattleSnapshot]? {
+           seed: UInt64, tuning: RogueTuning) async -> [BattleSnapshot]? {
     let level = RogueRun.opponentLevel(wave: wave, route: route, tuning: tuning)
     var built: [BattleSnapshot] = []
-    for _ in 0..<RogueRun.opponentCount(wave: wave, tuning: tuning) {
+    for _ in 0..<RogueRun.opponentCount(wave: wave, seed: seed, tuning: tuning) {
         // 추첨 seed 는 판의 흐름에서 뽑는다 — 같은 seed 로 같은 판이 재현돼야 밸런스 비교가 된다.
         var ids: [Int] = []
         for _ in 0..<RogueRun.wildDrawAttempts {
@@ -207,7 +209,8 @@ tuning.firstTierCap = intOption("--first-cap", tuning.firstTierCap)
 tuning.lastTierCap = intOption("--last-cap", tuning.lastTierCap)
 tuning.bossStatBonus = intOption("--boss-stat", tuning.bossStatBonus)
 tuning.minStatRatio = doubleOption("--min-ratio", tuning.minStatRatio)
-tuning.doubleOpponentFrom = doubleOption("--double-from", tuning.doubleOpponentFrom)
+tuning.doubleDenominator = intOption("--double-denom", tuning.doubleDenominator)
+tuning.bossDoubleDenominator = intOption("--boss-double-denom", tuning.bossDoubleDenominator)
 tuning.ballsPerRun = intOption("--balls", tuning.ballsPerRun)
 tuning.bossHealRatio = doubleOption("--boss-heal", tuning.bossHealRatio)
 tuning.partyLimit = intOption("--party-limit", tuning.partyLimit)

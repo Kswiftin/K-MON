@@ -233,6 +233,40 @@ final class DungeonSettlementTests: XCTestCase {
         XCTAssertEqual(second.achievementRows.first { $0.achievement.track == .dungeonSweep }?.count, 1)
         XCTAssertTrue(second.ownsOutfit(.bootsLong))
     }
+
+    // MARK: 웨이브 런이 업적을 올리는가
+
+    /// 웨이브 런 클리어가 `dungeon` 업적을 올린다. 퍼즐 던전이 웨이브 런으로 갈릴 때 이 배선이
+    /// 안 따라와, 두 트랙 여덟 칸이 도달 불가인 채로 나갔다 — 화면에 보이는데 영영 안 차는 칸이다.
+    /// 퍼즐 던전 쪽 테스트(`settleDungeonClear`)는 그때도 통과했다. 플레이어가 못 가는 경로를
+    /// 재고 있었기 때문이다.
+    func testClearingAWaveRunRecordsTheDungeonAchievement() {
+        let store = makeStore(TestClock())
+        let before = store.state.starPieces
+        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        XCTAssertGreaterThan(store.state.starPieces, before, "클리어가 업적 보상을 안 냈다")
+    }
+
+    /// 실패한 판은 업적을 올리지 않는다. 이 반대편을 안 재면 "무조건 올리는" 배선도 위 테스트를
+    /// 통과한다.
+    func testFailedRunRecordsNoAchievement() {
+        let store = makeStore(TestClock())
+        let before = store.state.starPieces
+        store.recordRunResult(reachedWave: 4, cleared: false)
+        XCTAssertEqual(store.state.starPieces, before)
+    }
+
+    /// 위험한 길만 타고 온 클리어는 `dungeonSweep` 까지 올린다 — 두 트랙이 함께 지급되므로
+    /// 안전한 길을 한 번이라도 고른 클리어보다 받는 값이 크다.
+    func testRiskyOnlyClearAlsoRecordsTheSweepAchievement() {
+        let plain = makeStore(TestClock())
+        plain.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        let risky = makeStore(TestClock())
+        risky.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true,
+                              tookOnlyRiskyRoutes: true)
+        XCTAssertGreaterThan(risky.state.starPieces, plain.state.starPieces)
+    }
+
 }
 
 /// 스토어를 세우기 위한 최소 진화 라인 — 던전은 종·진화와 무관하므로 내용은 아무래도 좋다.

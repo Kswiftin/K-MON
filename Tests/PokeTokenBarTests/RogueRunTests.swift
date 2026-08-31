@@ -248,13 +248,46 @@ final class RogueRunTests: XCTestCase {
         return ballRun(seed: 1)
     }
 
-    /// 후반 웨이브는 둘이 나온다 — 포획으로 파티가 커지는데 상대가 끝까지 하나면 판이 헐거워진다.
-    func testLateWavesSendTwoOpponents() {
-        let first = RogueTuning.standard.doubleOpponentWave
-        for wave in 1..<first { XCTAssertEqual(RogueRun.opponentCount(wave: wave), 1, "wave \(wave)") }
-        for wave in first...RogueRun.finalWave {
-            XCTAssertEqual(RogueRun.opponentCount(wave: wave), 2, "wave \(wave)")
+    /// 상대가 둘이 되는 판정은 **확률**이다(PokeRogue 의 1/8 과 같은 자리). 임계값이던 시절엔
+    /// 특정 웨이브부터 늘 둘이라 판 후반이 통째로 같은 모양이었다.
+    ///
+    /// 판정은 판 seed 와 웨이브만 본다 — 같은 판을 다시 열어도(런 rng 는 그사이 소비된다)
+    /// 같은 웨이브가 같은 마릿수여야 한다.
+    func testDoubleOpponentIsRolledPerWave() {
+        var doubles = 0
+        var singles = 0
+        for seed in UInt64(1)...400 {
+            for wave in 1...RogueRun.finalWave {
+                let count = RogueRun.opponentCount(wave: wave, seed: seed)
+                XCTAssertEqual(count, RogueRun.opponentCount(wave: wave, seed: seed),
+                               "seed \(seed) wave \(wave): 같은 입력이 다른 답을 냈다")
+                if wave == RogueRun.finalWave {
+                    XCTAssertEqual(count, 1, "최종 웨이브는 늘 한 마리다")
+                } else if RogueRun.isBoss(wave: wave) {
+                    XCTAssertLessThanOrEqual(count, 2)
+                } else if count == 2 { doubles += 1 } else { singles += 1 }
+            }
         }
+        // 1/8 근처여야 한다. 폭을 넓게 잡는 이유는 seed 400 개 표본이라서다 — 여기서 걸러야 할
+        // 것은 비율의 소수점이 아니라 "늘 하나" 나 "늘 둘" 로 굳어 버린 판정이다.
+        let ratio = Double(doubles) / Double(doubles + singles)
+        XCTAssertGreaterThan(ratio, 0.05, "야생 더블이 사실상 안 나온다")
+        XCTAssertLessThan(ratio, 0.25, "야생 더블이 너무 잦다")
+    }
+
+    /// 보스 웨이브는 야생보다 **덜** 둘이 된다 — 보스는 종족값 상한을 올린 한 마리로 서는 벽이라
+    /// 둘이 되면 관문이 아니라 사고가 된다(PokeRogue 도 보스 분모가 32 로 더 크다).
+    func testBossWavesRollDoublesLessOften() {
+        var bossDoubles = 0
+        var bossTotal = 0
+        for seed in UInt64(1)...2000 {
+            for wave in 1..<RogueRun.finalWave where RogueRun.isBoss(wave: wave) {
+                bossTotal += 1
+                if RogueRun.opponentCount(wave: wave, seed: seed) == 2 { bossDoubles += 1 }
+            }
+        }
+        XCTAssertLessThan(Double(bossDoubles) / Double(bossTotal), 0.08,
+                          "보스 더블 비율이 야생과 다르지 않다")
     }
 
     /// 둘 중 하나를 잡아도 웨이브는 끝나지 않는다. 잡은 개체는 **그 자리에서** 파티에 들어와야

@@ -628,7 +628,8 @@ struct BattleSide: Sendable, Equatable {
     /// 턴 순서에 쓰는 스피드 — 랭크를 먼저 곱하고, 마비면 그 뒤에 50%.
     /// 순서 계산이 `stats.spe` 를 직접 읽으면 마비·랭크가 스탯 화면에만 보이고 실제 선공은 그대로다.
     var effectiveSpeed: Int {
-        let boosted = StatStages.apply(rawStat(.spe), stage: stage(.spe))
+        let boosted = runBoosts.scaled(StatStages.apply(rawStat(.spe), stage: stage(.spe)),
+                                       stacks: runBoosts.speed)
         return status == .paralysis ? max(1, boosted / 2) : boosted
     }
 
@@ -1018,10 +1019,14 @@ enum BattleEngine {
         }
         // 근성은 화상의 공격 감소를 무시한다. 다른 물리 특성은 기존 화상 반감을 그대로 받는다.
         if isPhysical, attacker.status == .burn, attacker.ability != .guts { attack /= 2 }
+        // 런 강화의 공격 스택. 화상 반감 **뒤**에 곱한다 — 앞에 두면 정수 나눗셈이 강화분을 먼저
+        // 깎아, 같은 스택이 화상 여부에 따라 다른 값을 낸다.
+        attack = attacker.runBoosts.scaled(attack, stacks: attacker.runBoosts.attack)
         var defense = StatStages.apply(defender.rawStat(guardStat), stage: guardStage)
         if let ability = defender.ability {
             defense = ability.adjustedDefense(defense, isPhysical: isPhysical, status: defender.status)
         }
+        defense = defender.runBoosts.scaled(defense, stacks: defender.runBoosts.defense)
         // Gen 2 난수는 217~255 균등 **정수**를 뽑아 255 로 정수 나눗셈한다. 예전엔
         // `0.85 + (rng % 16)/100` 이라 0.01 간격 Double 이었다 — 두 피어가 각자 계산하는
         // 구조에서는 정수 연산이 유리하다(부동소수 오차가 끼어들 자리가 없다).

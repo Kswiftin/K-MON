@@ -30,10 +30,19 @@ struct RogueTuning: Sendable, Equatable {
     var bossStatBonus = 60
     /// 상대 종족값 하한 = 상한 × 이 비율. 없으면 최종 보스로 잉어킹(200)이 나온다.
     var minStatRatio = 0.6
-    /// 상대가 둘이 되는 지점 — 판 진행률. 1.0 을 넘기면 끝까지 한 마리다.
-    var doubleOpponentFrom = 0.75
+    /// 상대가 둘이 될 확률의 **분모**. 8 이면 야생 웨이브의 1/8 이 둘이다(PokeRogue 와 같은 값).
+    /// 0 이면 항상 둘이다.
+    var doubleDenominator = 8
+    /// 보스 웨이브의 분모. 야생보다 크게(확률을 낮게) 두는 이유는 보스가 종족값 상한을 올린
+    /// 한 마리로 서는 벽이기 때문이다 — 둘이 되면 관문이 아니라 사고가 된다.
+    var bossDoubleDenominator = 32
     /// 한 판에 주는 몬스터볼.
     var ballsPerRun = 5
+    /// 볼 소지 상한. 보상(`ballPouch`)으로 채워도 이 위로는 안 간다 — 상한이 없으면 후반에 볼이
+    /// 남아돌아 포획이 자원 판단이 아니라 클릭이 된다. 상한에 닿으면 보상 목록에서도 빠진다.
+    var ballCap = 9
+    /// 볼 보상 한 장이 채워 주는 개수.
+    var ballsPerPouch = 2
     /// 파티 상한.
     var partyLimit = 6
     /// 보스를 넘을 때 채워 주는 HP — **최대치의 비율**이다. 1.0(완전 회복)이면 보스 직후의 판이
@@ -61,9 +70,4 @@ struct RogueTuning: Sendable, Equatable {
         return (index, count)
     }
 
-    /// 상대가 둘이 되는 첫 웨이브. 진행률로 두는 이유는 웨이브 수를 늘려도 "후반부터 둘"이라는
-    /// 뜻이 유지되게 하기 위해서다.
-    var doubleOpponentWave: Int {
-        max(1, Int(ceil(Double(finalWave) * doubleOpponentFrom)))
-    }
 }
