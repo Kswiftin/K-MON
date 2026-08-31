@@ -319,6 +319,21 @@ final class MultiplayerRoomCenter {
     /// 배틀 중에 바뀌면 승패 판정의 근거가 흔들린다(호스트 자기 자신도 예외가 아니다).
     var isInPlay: Bool { phase == .battling || phase == .pokeathlon || phase == .pokemonQuiz || phase == .tournament }
 
+    /// 지금 **화면을 띄워야 하는** 방 컨텐츠가 도는가 — 창을 열지 정하는 신호다.
+    /// 붙들지는 않는다(닫기는 언제나 된다).
+    ///
+    /// 체육관은 `phase` 가 `.hosting` 인 채로 판이 돌아 `isInPlay` 에 안 잡힌다. 그래서 이 값이
+    /// 따로 있다. 진행 중인 판만 본다 — 관장이 도전을 기다리는 동안까지 창을 띄우면 성가시다.
+    var wantsForegroundWindow: Bool { hasLiveGymMatch || isInPlay }
+
+    /// 체육관 판이 지금 돌고 있나. 도전이 들어오면 **화면을 그쪽으로 데려가야** 하는 유일한
+    /// 방 컨텐츠라 따로 둔다 — 나머지(토너먼트·포켓슬론·퀴즈)는 사용자가 그 화면에서 직접
+    /// 시작하므로 탭을 옮기면 오히려 엉뚱한 곳으로 간다.
+    var hasLiveGymMatch: Bool {
+        guard let match = gymMatch else { return false }
+        return match.winnerID == nil
+    }
+
     func toggleReady() {
         guard let me = myParticipant, !isInPlay else { return }
         if lobby?.activity == .tournament, tournamentTeams[myID]?.count != 3 {

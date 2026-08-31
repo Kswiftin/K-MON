@@ -110,37 +110,22 @@ final class PopoverNavigationTests: XCTestCase {
 /// 그래서 되돌림 판정을 여기 한 곳에만 두고, 부르는 자리는 플래그를 넘기기만 한다.
 @MainActor
 final class PopoverPinPolicyTests: XCTestCase {
-    func testEitherReasonAlonePinsThePopover() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: false, chatVisible: false),
-                       .applicationDefined)
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: true, chatVisible: true),
-                       .applicationDefined)
-    }
-
-    /// 트리거 브랜치: 배틀 중에 대화 전송이 **먼저** 끝나는 순간. 여기가 풀리면 일하면서 하던
-    /// 배틀이 바깥 클릭 한 번에 닫힌다.
-    func testChatFinishingDoesNotReleaseTheBattlePin() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: true, chatVisible: true),
-                       .applicationDefined)
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: true, chatSending: false, chatVisible: false),
-                       .applicationDefined)
-    }
-
-    /// 반대 방향도 같다 — 배틀이 먼저 끝나도 전송 중인 대화는 고정을 유지한다.
-    func testBattleEndingDoesNotReleaseTheChatPin() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: true, chatVisible: true),
+    /// 붙드는 이유는 **대화 전송 하나뿐**이다. 배틀은 붙들지 않는다 — 급히 화면을 치워야 할 때
+    /// 닫히지 않으면 곤란하고, 배틀은 창을 닫아도 살아 있어 다시 열면 이어진다.
+    func testOnlyChatSendingPinsThePopover() {
+        XCTAssertEqual(PopoverPinPolicy.behavior(chatSending: true, chatVisible: true),
                        .applicationDefined)
     }
 
     /// 고정하는 이유는 "답이 오는 걸 보게 하려고" 다. 사용자가 대화를 닫았으면 볼 것이 없으므로
     /// 붙들 이유도 없다 — 안 풀면 화면에 아무 설명 없이 바깥 클릭이 먹통이 된다.
     func testClosingTheChatWhileStillSendingReleasesThePin() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: true, chatVisible: false),
+        XCTAssertEqual(PopoverPinPolicy.behavior(chatSending: true, chatVisible: false),
                        .transient)
     }
 
     func testNoReasonReturnsToTransient() {
-        XCTAssertEqual(PopoverPinPolicy.behavior(battlePinned: false, chatSending: false, chatVisible: false),
+        XCTAssertEqual(PopoverPinPolicy.behavior(chatSending: false, chatVisible: false),
                        .transient)
     }
 }
