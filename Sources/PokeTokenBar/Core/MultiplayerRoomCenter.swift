@@ -98,6 +98,8 @@ final class MultiplayerRoomCenter {
     private(set) var lastGymDefensePayout: Int?
     /// 끝난 판을 치우는 예약. 결과 화면을 잠깐 보여 준 뒤 다음 도전을 받을 수 있게 한다.
     private var gymMatchClearTask: Task<Void, Never>?
+    /// 입장하자마자 도전을 보낼 것인가 — 입장은 비동기라 로비를 받은 뒤에 보내야 한다.
+    private var pendingGymChallenge = false
     /// 체육관 방을 연 직후 호출된다. 동시 개설 경합 확인을 이 훅으로 건다(화면이 붙인다).
     var onGymRoomOpened: (() -> Void)?
     /// 관장 자리를 넘겨받았다 — 화면이 자기 세이브에 자격을 쓰도록 알린다.
@@ -495,6 +497,13 @@ final class MultiplayerRoomCenter {
 
     /// 도전 신청. 게스트는 호스트에게 보내고, 판정(쿨다운·배틀 중·방어팀 유무)은 전부 호스트가 한다 —
     /// 클라이언트 시계를 믿지 않는다.
+    /// 체육관에 들어가 **곧바로 도전한다.** 입장과 도전을 나누면 "도전" 버튼이 두 번 뜨고,
+    /// 첫 번째를 누른 사람은 두 번째가 왜 또 필요한지 알 수 없다.
+    func joinAndChallengeGym(_ room: MultiplayerRoomPeer) {
+        pendingGymChallenge = true
+        join(room, as: .runner)
+    }
+
     func challengeGym() {
         guard phase == .joined, gymMatch == nil else { return }
         gymRejection = nil
@@ -539,8 +548,8 @@ final class MultiplayerRoomCenter {
                                     leaderName: trainerName, challengerName: challengerName,
                                     leaderTeam: defense, challengerTeam: challengerLineup,
                                     seed: UInt64.random(in: UInt64.min...UInt64.max))
-        // AI 모드면 관장 몫은 사람이 아니라 점수식이 채운다. 그래도 판은 사람 도전자를 기다린다.
-        engine.fillMissingActions(leaderUsesAI: false)
+        // 판을 시작할 때 **아무 행동도 미리 채우지 않는다.** 예전엔 여기서 양쪽을 채워 두는 바람에
+        // 도전자가 무엇을 눌러도 `submit` 이 "이미 냈다" 로 거절됐다.
         gymEngine = engine
         gymMatch = engine.snapshot()
         broadcastGymState()
@@ -571,7 +580,8 @@ final class MultiplayerRoomCenter {
     private func applyGymLeaderAutoActionIfNeeded() {
         guard isHost, companion.gymLeadership?.usesAI == true,
               var engine = gymEngine, engine.battle.myAction == nil else { return }
-        engine.fillMissingActions(leaderUsesAI: true)
+        // **관장 몫만** 채운다 — 도전자까지 채우면 사람이 고르기도 전에 해상되어 AI 끼리 끝난다.
+        engine.fillLeaderAction(usingAI: true)
         gymEngine = engine
         gymMatch = engine.snapshot()
         broadcastGymState()
@@ -936,7 +946,7 @@ final class MultiplayerRoomCenter {
         tournamentMatch = nil; tournamentRewarded = false
         gymMatchClearTask?.cancel(); gymMatchClearTask = nil
         gymMatch = nil; gymEngine = nil; gymChallengerLineup = nil; gymRejection = nil
-        gymLeaderAbandonedMatch = false; lastGymDefensePayout = nil
+        gymLeaderAbandonedMatch = false; lastGymDefensePayout = nil; pendingGymChallenge = false
         // `gymPickedTeam` 은 남긴다 — 방을 떠나도 "누구를 데려갈지"는 사용자의 설정이라
         // 다음 도전 때 다시 고르게 하면 성가시다(`tournamentPickedTeam` 과 같은 취급).
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
@@ -1091,7 +1101,14 @@ final class MultiplayerRoomCenter {
         receive(over: connection) { [weak self, weak connection] message in
             guard let self, let connection, connection === self.hostConnection else { return }
             switch message {
-            case .lobby(let lobby): self.lobby = lobby; self.phase = .joined
+            case .lobby(let lobby):
+                self.lobby = lobby; self.phase = .joined
+                // 입장하자마자 도전하기로 하고 들어왔으면 여기서 보낸다 — 입장이 비동기라
+                // 로비를 받은 이 시점이 도전을 보낼 수 있는 첫 자리다.
+                if self.pendingGymChallenge {
+                    self.pendingGymChallenge = false
+                    self.challengeGym()
+                }
             case .start(let seed, let fighters, let mode):
                 guard MultiplayerValidation.validStart(fighters: fighters, mode: mode),
                       let started = try? MultiplayerBattle(fighters: fighters, mode: mode, seed: seed) else {
@@ -1243,7 +1260,8 @@ final class MultiplayerRoomCenter {
         if gymMatch != nil {
             guard isHost, var engine = gymEngine, gymMatch?.turn == round,
                   gymMatch?.winnerID == nil else { return }
-            engine.fillMissingActions(leaderUsesAI: companion.gymLeadership?.usesAI == true)
+            // 마감에서는 양쪽을 채우는 것이 맞다 — 시간 안에 안 고른 것을 대신하는 자리다.
+            engine.fillTimedOutActions(leaderUsesAI: companion.gymLeadership?.usesAI == true)
             gymEngine = engine
             gymMatch = engine.snapshot()
             finishGymTurnIfReady()

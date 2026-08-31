@@ -278,12 +278,22 @@ struct GymMatchEngine {
     ///
     /// 관장 쪽은 `usesAI` 면 상성·랭크·명중률까지 보는 점수식으로 고르고(체육관 카탈로그 관장이
     /// 쓰는 그 식이다), 도전자 쪽과 AI 가 아닌 관장은 마감 대타라 첫 사용가능 기술로 채운다.
-    mutating func fillMissingActions(leaderUsesAI: Bool) {
-        if battle.myAction == nil {
-            battle.myAction = leaderUsesAI
-                ? bestAction(team: battle.myTeam, active: battle.myActive, against: battle.opp)
-                : firstAvailableAction(team: battle.myTeam, active: battle.myActive)
-        }
+    /// **관장 몫만** 채운다. AI 모드에서 매 턴 부르는 자리다.
+    ///
+    /// 도전자 몫까지 채우면 사람이 고르기도 전에 판이 해상되어 **AI 끼리 알아서 끝난다.**
+    /// 실제로 그렇게 만들었다가 도전자가 아무것도 못 누르는 배틀이 됐다 — 그래서 "둘 다 채우는"
+    /// 함수와 자리를 갈라 둔다.
+    mutating func fillLeaderAction(usingAI: Bool) {
+        guard battle.myAction == nil else { return }
+        battle.myAction = usingAI
+            ? bestAction(team: battle.myTeam, active: battle.myActive, against: battle.opp)
+            : firstAvailableAction(team: battle.myTeam, active: battle.myActive)
+    }
+
+    /// 양쪽을 다 채운다 — **턴 마감(30초)에서만** 쓴다. 사람이 시간 안에 안 고른 것을 대신하는
+    /// 자리라 도전자 몫도 채우는 것이 맞다.
+    mutating func fillTimedOutActions(leaderUsesAI: Bool) {
+        fillLeaderAction(usingAI: leaderUsesAI)
         if battle.oppAction == nil {
             battle.oppAction = firstAvailableAction(team: battle.oppTeam, active: battle.oppActive)
         }
