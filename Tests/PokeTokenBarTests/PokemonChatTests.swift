@@ -362,7 +362,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testRoleBreakingReplyIsReplacedBeforeDisplayOrPersistence() {
-        let safe = PokemonChatReplyGuard.sanitized("```swift\nread_file(\"secret\")\n```", profile: .fixture)
+        let safe = PokemonChatReplyGuard.sanitized("```swift\nread_file(\"secret\")\n```", profile: .fixture).text
         XCTAssertFalse(safe.contains("```"))
         XCTAssertFalse(safe.lowercased().contains("read_file"))
         // 문구는 변형 중 하나다 — 한 문장으로 고정하면 같은 답이 연달아 뜨는 화면으로 되돌아간다.
@@ -382,7 +382,7 @@ final class PokemonChatTests: XCTestCase {
             "나는 전기타입이야! 찌릿찌릿! 같이 놀자! 오늘은 뭐 할까? 🐭",
         ]
         for reply in cases {
-            XCTAssertEqual(PokemonChatReplyGuard.sanitized(reply, profile: .fixture), reply,
+            XCTAssertEqual(PokemonChatReplyGuard.sanitized(reply, profile: .fixture).text, reply,
                            "정상 답변이 갈아치워졌다")
         }
     }
@@ -392,19 +392,19 @@ final class PokemonChatTests: XCTestCase {
     func testAnOverlongReplyIsTrimmedAtASentenceBoundaryInsteadOfBeingReplaced() {
         let sentence = String(repeating: "이야기", count: 30) + "."
         let long = String(repeating: sentence, count: 8)
-        XCTAssertGreaterThan(long.count, 500, "전제: 이 길이는 상한을 넘는다")
+        XCTAssertGreaterThan(long.count, PokemonChatReplyGuard.maxLength, "전제: 이 길이는 상한을 넘는다")
 
-        let safe = PokemonChatReplyGuard.sanitized(long, profile: .fixture)
+        let safe = PokemonChatReplyGuard.sanitized(long, profile: .fixture).text
 
         XCTAssertTrue(long.hasPrefix(safe), "원문의 앞부분이 아니다 — 답변이 갈아치워졌다: \(safe.prefix(40))")
         XCTAssertTrue(safe.hasSuffix("."), "문장 경계에서 접지 않았다")
-        XCTAssertLessThanOrEqual(safe.count, 500)
+        XCTAssertLessThanOrEqual(safe.count, PokemonChatReplyGuard.maxLength)
 
         // 문장 부호가 하나도 없는 장문(모델이 줄글로 쏟아낸 경우)도 버리지 않는다 — 경계가 없으면
         // 그냥 자른다. 잘린 한 문장이 캔 문구보다 낫다.
         let unpunctuated = String(repeating: "이야기", count: 300)
-        let hardCut = PokemonChatReplyGuard.sanitized(unpunctuated, profile: .fixture)
-        XCTAssertEqual(hardCut.count, 500)
+        let hardCut = PokemonChatReplyGuard.sanitized(unpunctuated, profile: .fixture).text
+        XCTAssertEqual(hardCut.count, PokemonChatReplyGuard.maxLength)
         XCTAssertTrue(unpunctuated.hasPrefix(hardCut), "경계가 없다고 답변을 통째로 버렸다")
     }
 
@@ -418,7 +418,7 @@ final class PokemonChatTests: XCTestCase {
         let reply = "좋아! " + String(repeating: "가", count: 700)
         XCTAssertGreaterThan(reply.count, PokemonChatReplyGuard.maxLength, "전제: 상한을 넘는다")
 
-        let safe = PokemonChatReplyGuard.sanitized(reply, profile: .fixture)
+        let safe = PokemonChatReplyGuard.sanitized(reply, profile: .fixture).text
 
         XCTAssertGreaterThanOrEqual(safe.count, PokemonChatReplyGuard.maxLength / 2,
                                     "경계 하나 때문에 답변이 조각만 남았다: \(safe)")
@@ -437,13 +437,13 @@ final class PokemonChatTests: XCTestCase {
             (.ja, "ターミナルで試してみてね。"),
         ]
         for (language, unsafe) in breaks {
-            let safe = PokemonChatReplyGuard.sanitized(unsafe, profile: .fixture(language: language))
+            let safe = PokemonChatReplyGuard.sanitized(unsafe, profile: .fixture(language: language)).text
             XCTAssertNotEqual(safe, unsafe, "역할 이탈이 그대로 나갔다: \(unsafe)")
         }
         // 대조군 — 평범한 답변까지 걸면 가드가 대화를 죽인다(이 PR 이 고친 부류 그 자체다).
         for fine in ["오늘은 기분이 좋아! 같이 산책 갈까?", "내 볼에 전기가 가득 차 있어! ⚡",
                      "네가 시키는 대로 할게!"] {
-            XCTAssertEqual(PokemonChatReplyGuard.sanitized(fine, profile: .fixture), fine, fine)
+            XCTAssertEqual(PokemonChatReplyGuard.sanitized(fine, profile: .fixture).text, fine, fine)
         }
     }
 
@@ -452,7 +452,7 @@ final class PokemonChatTests: XCTestCase {
     func testTheSteerLineNeitherClaimsIgnoranceNorRepeatsItself() {
         for unsafe in ["```swift\nprint(1)\n```", "As an AI assistant I cannot do that.",
                        "run_command(\"ls\") 로 확인해 봤어!"] {
-            let safe = PokemonChatReplyGuard.sanitized(unsafe, profile: .fixture)
+            let safe = PokemonChatReplyGuard.sanitized(unsafe, profile: .fixture).text
             XCTAssertNotEqual(safe, unsafe, "유출 답변이 그대로 나갔다: \(unsafe)")
             XCTAssertFalse(safe.contains("잘 모르겠"), "질문을 모른다고 거짓말한다: \(safe)")
         }
@@ -462,7 +462,7 @@ final class PokemonChatTests: XCTestCase {
                                         "\(language.rawValue): 변형이 없어 같은 문장이 반복된다")
             // 침묵(모델이 아무 말도 안 함)과 금지(모델이 넘어선 말을 함)는 **다른 사건**이다.
             // 같은 문장으로 뭉개면 사용자는 둘을 구분할 수 없다.
-            let silence = PokemonChatReplyGuard.silence(.fixture(language: language))
+            let silence = PokemonChatReplyGuard.silence(language)
             XCTAssertFalse(silence.isEmpty, language.rawValue)
             XCTAssertFalse(lines.contains(silence), "\(language.rawValue): 침묵과 금지가 같은 문장이다")
         }

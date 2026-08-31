@@ -96,13 +96,14 @@ final class PokemonChatToolTests: XCTestCase {
         }
     }
 
-    /// 태그는 문장 수 판정 **전에** 없어진다. 남으면 세 문장짜리 정상 답변이 가드에 걸려 리다이렉트된다.
-    func testToolTagIsStrippedBeforeTheGuardCountsSentences() {
+    /// 태그는 가드가 본문을 보기 **전에** 없어진다. 남으면 마커의 백틱·`tool` 이 역할 이탈로
+    /// 세어져 정상 답변이 캔 문구로 갈아치워진다.
+    func testToolTagIsStrippedBeforeTheGuardSeesTheBody() {
         let parsed = PokemonChatToolParser.parse("첫 문장. 둘째 문장! 셋째 문장.\n[[tool:pokedoro.status]]")
 
         XCTAssertEqual(parsed.call, .pokedoroStatus)
         XCTAssertEqual(parsed.body, "첫 문장. 둘째 문장! 셋째 문장.")
-        XCTAssertEqual(PokemonChatReplyGuard.sanitized(parsed.body, profile: .toolFixture), parsed.body)
+        XCTAssertEqual(PokemonChatReplyGuard.sanitized(parsed.body, profile: .toolFixture).text, parsed.body)
     }
 
     // MARK: 인자 클램프
@@ -591,9 +592,9 @@ final class PokemonChatToolTests: XCTestCase {
         let id = store.activeMonID!
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: album, lookup: Self.emptyLookup)
-        // 가드는 통과하고(500자 이하·세 문장 이하) 앨범은 거절하는(180자 초과) 길이.
+        // 가드는 통과하고(상한 이하) 앨범은 거절하는(180자 초과) 길이.
         let long = String(repeating: "오", count: 200)
-        XCTAssertEqual(PokemonChatReplyGuard.sanitized(long, profile: .toolFixture), long,
+        XCTAssertEqual(PokemonChatReplyGuard.sanitized(long, profile: .toolFixture).text, long,
                        "전제: 이 길이는 답변 가드를 그대로 통과한다")
 
         let result = await toolbox.runAsActive(.memoryRecord(body: long))

@@ -253,7 +253,8 @@ enum PokemonChatAction: CaseIterable, Sendable {
 }
 
 /// 답변 텍스트에서 호출 하나를 꺼낸다. 마커는 **언제나** 본문에서 제거된다 — 인식하지 못한
-/// 마커까지 지우는 이유는, 남겨 두면 사용자가 기계 문법을 읽고 가드가 문장 수를 잘못 세기 때문이다.
+/// 마커까지 지우는 이유는, 남겨 두면 사용자가 기계 문법을 읽고 마커 안의 `tool`·백틱이
+/// `PokemonChatReplyGuard.roleBreakNeedles` 에 걸려 정상 답변이 캔 문구로 갈아치워지기 때문이다.
 enum PokemonChatToolParser {
     static func parse(_ reply: String) -> (body: String, call: PokemonChatToolCall?) {
         var body = reply
