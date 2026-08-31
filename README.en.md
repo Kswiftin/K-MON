@@ -42,7 +42,7 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 
 - **Trainer wardrobe** — dress the trainer with 12 layered pixel items across five slots (hat, hair, top, bottom, accessory). Eight are sold in the Shop for Star Pieces; the other four come from achievement tiers.
 - **Nearby trainer cards** — the Friends tab shows each peer's dressed avatar, ranked tier color, and partner Pokémon.
-- **Wave run (prototype)** — pick a starter and take on 12 waves, with a boss every fourth wave and one item pick after each wave. On wild waves you can throw one of the run's seven balls to catch your opponent and grow the party to six, and from wave nine on two opponents come at once. Every run is drawn fresh and there is no daily limit. A run lives in memory only: closing the window keeps it going, quitting the app drops it.
+- **Wave run** — pick a starter and take on 30 waves, with a boss every fourth wave (clearing one heals the party back to 70% HP) and one item pick after each wave. On wild waves you can throw one of the run's five balls (nine at most) to catch your opponent and grow the party to six. Roughly one wild wave in eight sends two opponents at once, and those are fought two-on-two with both of your Pokémon on the field — you choose an action per slot, and wide-reaching moves such as Earthquake hit several Pokémon in one go. Every run is drawn fresh, there is no daily limit, and a run in progress survives quitting and reopening the app.
 
 ## Tour
 
@@ -76,10 +76,10 @@ Control Do Not Disturb, notifications, launch at login, the floating pet, and up
 <td width="45%" align="center"><img src="assets/settings.png" width="180" alt="Settings"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-outfit.png" width="180" alt="Wardrobe"><br><br><img src="assets/screenshot-run.png" width="180" alt="Wave run reward pick"><br><br><img src="assets/screenshot-run-catch.png" width="180" alt="Catching on a wave run"></td>
+<td width="45%" align="center"><img src="assets/screenshot-outfit.png" width="180" alt="Wardrobe"><br><br><img src="assets/screenshot-run-double.png" width="180" alt="Two-on-two wave run battle"><br><br><img src="assets/screenshot-run.png" width="180" alt="Wave run reward pick"><br><br><img src="assets/screenshot-run-catch.png" width="180" alt="Catching on a wave run"></td>
 <td width="55%" valign="middle">
 <h3>Wardrobe and wave run</h3>
-Change the trainer's outfit, and pick one reward item after every wave you clear. On wild waves the catch chance is shown before you spend a ball.
+Change the trainer's outfit, and pick one reward item after every wave you clear. Waves that send two opponents are fought two-on-two: you choose an action per slot, and wide-reaching moves hit several Pokémon at once. On wild waves the catch chance is shown before you spend a ball.
 </td>
 </tr>
 </table>
