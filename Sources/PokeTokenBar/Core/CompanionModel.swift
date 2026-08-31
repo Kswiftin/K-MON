@@ -131,6 +131,22 @@ enum PokemonBalance {
     static let experiencePerLevel = 10_000_000
     static var maxLevelExperience: Int { (maxLevel - 1) * experiencePerLevel }
 
+    /// 상한을 넘어 적립되지 못한 경험치를 별의조각으로 되돌리는 환율(#82). 예전엔 그냥 사라졌고,
+    /// 해안 모험 10회면 상한에 닿으니 정상 플레이로 도달하는 지점이었다 — 그 뒤로 모험은
+    /// 파트너에게 아무 의미가 없었다.
+    ///
+    /// 값의 근거: 모험 보상이 **이미 쓰는 비율**이 분당 120,000 XP : 8 ⭐ = 15,000 : 1 이다
+    /// (`AdventureRules.amounts`. 존 배율은 양쪽에 똑같이 곱해져 약분되므로 이 비는 모든 존·
+    /// 모든 길이에서 같다). 그 절반으로 둔다 — 동등 환율이면 만렙 파트너의 모험 수입이 그대로
+    /// 두 배가 되어(해안 2시간 7,200 → 14,400) 상한이 곧 증산 장치가 된다. 절반이면 1.5배다.
+    static let experiencePerOverflowStarPiece = 30_000
+
+    /// 버려질 경험치의 별의조각 환산. 나머지(30,000 XP 미만, 1 ⭐ 어치도 안 되는 몫)는 버린다 —
+    /// 이월하려면 영속 필드가 하나 더 필요한데 손실이 항상 1 ⭐ 미만이라 값을 못 한다.
+    static func starPieces(forOverflowExperience amount: Int) -> Int {
+        max(0, amount) / experiencePerOverflowStarPiece
+    }
+
     /// 친밀도 진화의 레벨 환산 — 앱엔 친밀도 축이 없다. PokéAPI 의 `min_happiness` 는 실제로
     /// 160/220 두 값뿐이라 그 두 단계를
     /// 레벨 두 단계로 옮긴다. 하한 25 는 직전 진화 레벨(예: 주뱃→골뱃 22)보다 뒤에 오게 하는 값이고,
@@ -746,10 +762,16 @@ struct MonState: Codable, Sendable, Identifiable {
 
     /// 경험치 적립 — **상한 클램프가 붙은 유일한 입구**. 누적 지점이 직접 `+=` 하면 클램프를 빠뜨리게
     /// 되고(#81 의 이상한 사탕 경로), 외부에서 들어온 큰 값에 더하면 오버플로 트랩까지 난다.
-    mutating func gainExperience(_ amount: Int) {
-        guard amount > 0 else { return }
+    ///
+    /// 반환값은 상한에 걸려 **적립되지 못한 양**이다. 예전엔 이 값을 말없이 버려서 만렙 파트너의
+    /// 모험이 아무 의미가 없었다(#82). 호출부는 `CompanionStore.awardExperience` 를 통해 이 값을
+    /// 별의조각으로 되돌린다 — 여기서 환산까지 하지 않는 이유는 지갑이 스토어에만 있어서다.
+    mutating func gainExperience(_ amount: Int) -> Int {
+        guard amount > 0 else { return 0 }
         let current = min(max(0, levelExperience), PokemonBalance.maxLevelExperience)
-        levelExperience = min(PokemonBalance.maxLevelExperience, current + amount)
+        let applied = min(amount, PokemonBalance.maxLevelExperience - current)
+        levelExperience = current + applied
+        return amount - applied
     }
     // pathIDs 가 비면(손상된 상태 파일) baseID 로 폴백 — 렌더마다 읽히므로 out-of-bounds 크래시 방지.
     var currentID: Int { pathIDs.isEmpty ? baseID : pathIDs[min(stageIndex, pathIDs.count - 1)] }

@@ -469,6 +469,7 @@ struct CompanionHeader: View {
     @State private var seenCandySeq = -1
     @State private var candyXPShown = false
     @State private var candyXPAmount = 0     // 표시 순간 캡처(consume 후에도 텍스트 유지)
+    @State private var candyXPIsStardust = false   // 위 값의 단위 — 만렙 환산분이면 ⭐ 다
     // 민트 사용 시 "반짝" 스파클 (성격 변경 피드백 — 텍스트 없이 짧은 이펙트)
     @State private var seenMintSeq = -1
     @State private var mintSparkle = false
@@ -547,8 +548,11 @@ struct CompanionHeader: View {
                     }
                     .overlay(alignment: .top) {
                         if candyXPShown {
-                            Text("+\(GameNumberFormatter.compact(candyXPAmount)) XP")
-                                .font(.caption.weight(.bold)).foregroundStyle(.orange)
+                            // 만렙이면 사탕 몫이 별의조각으로 환산돼 들어간다(#82) — 단위를
+                            // 그대로 "XP" 로 두면 오르지도 않은 경험치를 올랐다고 보여 준다.
+                            Text("+\(GameNumberFormatter.compact(candyXPAmount)) \(candyXPIsStardust ? "⭐" : "XP")")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(candyXPIsStardust ? .yellow : .orange)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(.regularMaterial, in: Capsule())
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -805,6 +809,7 @@ struct CompanionHeader: View {
         guard store.candyFeedbackAmount > 0, store.candyFeedbackSeq != seenCandySeq else { return }
         seenCandySeq = store.candyFeedbackSeq
         candyXPAmount = store.candyFeedbackAmount
+        candyXPIsStardust = store.candyFeedbackIsStardust
         store.consumeCandyFeedback()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) { candyXPShown = true }
         Task { @MainActor in

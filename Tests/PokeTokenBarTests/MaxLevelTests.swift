@@ -43,10 +43,13 @@ final class MaxLevelTests: XCTestCase {
     func testExperienceStopsAtTheCap() {
         var mon = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
                            rarity: .common, totalForms: 1)
-        mon.gainExperience(PokemonBalance.maxLevelExperience - 1)
+        XCTAssertEqual(mon.gainExperience(PokemonBalance.maxLevelExperience - 1), 0,
+                       "상한 아래에서는 넘치는 몫이 없다")
         XCTAssertEqual(mon.level, 99, "전제: 상한 직전은 Lv.99 다")
 
-        mon.gainExperience(RareCandy.xp)
+        // 1 만 들어가고 나머지는 넘친다 — 반환값이 그 나머지를 정확히 알려줘야 환산이 성립한다.
+        XCTAssertEqual(mon.gainExperience(RareCandy.xp), RareCandy.xp - 1,
+                       "적립되지 못한 몫을 반환한다")
         XCTAssertEqual(mon.levelExperience, PokemonBalance.maxLevelExperience,
                        "상한을 넘겨 저장하지 않는다")
         XCTAssertEqual(mon.level, PokemonBalance.maxLevel)
@@ -57,15 +60,17 @@ final class MaxLevelTests: XCTestCase {
         var mon = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
                            rarity: .common, totalForms: 1)
         mon.levelExperience = Int.max
-        mon.gainExperience(RareCandy.xp)
+        // 넘친 몫은 **손상된 저장값이 아니라 이번에 넣은 양** 기준이다. 저장값 기준으로 세면
+        // Int.max 어치를 환산해 지갑이 폭발한다.
+        XCTAssertEqual(mon.gainExperience(RareCandy.xp), RareCandy.xp)
         XCTAssertEqual(mon.levelExperience, PokemonBalance.maxLevelExperience)
     }
 
     func testNonPositiveGainIsIgnored() {
         var mon = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
                            rarity: .common, totalForms: 1)
-        mon.gainExperience(5_000_000)
-        mon.gainExperience(-1_000_000)
+        XCTAssertEqual(mon.gainExperience(5_000_000), 0)
+        XCTAssertEqual(mon.gainExperience(-1_000_000), 0, "음수는 넘친 몫으로도 세지 않는다")
         XCTAssertEqual(mon.levelExperience, 5_000_000, "음수 적립으로 레벨이 되감기지 않는다")
     }
 

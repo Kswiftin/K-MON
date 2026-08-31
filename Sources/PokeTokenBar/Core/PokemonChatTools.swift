@@ -576,11 +576,14 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             // 끝난 모험만 정산된다(`claimAdventure` 가 완료 판정을 들고 있는 유일한 자리다).
             // 없는데 성공으로 돌려주면 모델이 "보상 받았어" 라고 말한다.
             guard let reward = companion.claimAdventure() else { return ("adventure none ready", false) }
-            // 지갑 증가분을 **전부** 설명한다 — 트레이너·미션·업적·시즌 보너스까지 합친 값이
-            // 실제 증가분이다(`AdventureReward` 의 완전설명 계약). 숫자를 빼면 모델이 액수를 지어낸다.
-            let stardust = reward.stardust + reward.trainerBonus + reward.missionBonus
-                + reward.achievementBonus + reward.seasonBonus
-            return ("adventure claimed stardust=\(stardust) exp=\(reward.experience) eggs=\(reward.bonusEggs)", true)
+            // 지갑 증가분을 **전부** 설명한다(`AdventureReward` 의 완전설명 계약). 숫자를 빼면
+            // 모델이 액수를 지어낸다. 합산은 `totalStardust` 한 곳에 있다 — 여기서 손으로 더하면
+            // 지급 경로가 늘 때 이 줄만 뒤처진다(실제로 미션 몫이 그렇게 빠졌었다).
+            //
+            // `exp` 는 굴린 값이 아니라 **실제로 들어간 값**이다. 만렙이면 그 몫이 별의조각으로
+            // 바뀌므로(#82), 굴린 값을 실으면 모델이 오르지도 않은 레벨을 올랐다고 말한다.
+            return ("adventure claimed stardust=\(reward.totalStardust) exp=\(reward.appliedExperience)"
+                    + " eggs=\(reward.bonusEggs)", true)
 
         case .pokedoroStart(let minutes):
             // 화면은 타이머가 도는 동안 시작 피커를 **아예 안 그린다**(`FocusTimerView`). 휴식 단계도

@@ -122,6 +122,9 @@ final class CompanionStore {
     /// 사탕 사용 시 "+XP" 순간 표시 — 진화 없이 부분 진행일 때도 피드백. seq 증가로 CompanionHeader 감지.
     private(set) var candyFeedbackSeq = 0
     private(set) var candyFeedbackAmount = 0
+    /// 위 값의 **단위**. 만렙에서는 경험치가 별의조각으로 환산돼 들어가므로(#82) 같은 숫자를
+    /// "+XP" 로 그리면 거짓 피드백이 된다 — 금액과 단위를 함께 넘긴다.
+    private(set) var candyFeedbackIsStardust = false
     /// "+XP" 표시 1회성 보장 — CompanionHeader 가 재생 후 호출한다. 소비하지 않으면 다른 탭에 갔다
     /// 홈으로 재진입할 때(CompanionHeader 재마운트) @State 가 초기화돼 같은 값이 다시 떠오른다(회귀).
     func consumeCandyFeedback() { candyFeedbackAmount = 0 }
@@ -1137,7 +1140,9 @@ final class CompanionStore {
     /// claimAdventure() 가 레벨만 올릴 때 쓰는 것과 같은 형태). 프로덕션 호출 경로 없음.
     func debugAccrueLevelExperience(_ amount: Int) {
         guard state.active != nil else { return }
-        state.active!.gainExperience(amount)
+        // 프로덕션과 같은 경로를 탄다 — 상한 초과분 환산까지 포함이라, 상한 위로 시드하면
+        // 실제와 똑같이 별의조각이 들어온다.
+        _ = awardExperience(amount)
         applyUsage(0)
     }
     /// 테스트 전용 — 기술 목록 표시 상태를 직접 세팅(네트워크 로드 없이 행 레이아웃을 재기 위함).
@@ -1224,7 +1229,9 @@ final class CompanionStore {
         state.starPieces += reward.starPieces
         if state.active != nil {
             let oldLevel = state.active!.level
-            state.active!.gainExperience(reward.experience)
+            // 만렙에 걸린 몫은 버리지 않고 별의조각으로 되돌린다(#82). 그 값은 아래에서
+            // 보상 객체에 실려 지갑 증가분을 설명한다.
+            reward.overflowExperience = awardExperience(reward.experience)
             let newLevel = state.active!.level
             applyUsage(0)
             if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
@@ -1281,6 +1288,22 @@ final class CompanionStore {
         if state.adventureHistory.count > 30 { state.adventureHistory.removeLast(state.adventureHistory.count - 30) }
         save()
         return reward
+    }
+
+    /// 경험치 지급의 **유일한** 경로 — 상한을 넘어 버려질 몫을 별의조각으로 되돌리고 알림까지
+    /// 여기서 끝낸다. `accrueTrainerPoints` 와 같은 계약이다: 반환값(적립되지 못한 경험치)을
+    /// 호출부가 보상 객체에 실어야 지갑 증가분이 전부 설명된다.
+    ///
+    /// **`@discardableResult` 를 붙이지 않는다** — 붙이면 새 호출부가 초과분을 다시 조용히
+    /// 버릴 수 있고, 그게 정확히 #82 였다. 지금은 컴파일러 경고가 그 자리를 막는다.
+    private func awardExperience(_ amount: Int) -> Int {
+        guard state.active != nil else { return 0 }
+        let overflow = state.active!.gainExperience(amount)
+        let stardust = PokemonBalance.starPieces(forOverflowExperience: overflow)
+        guard stardust > 0 else { return overflow }
+        state.starPieces += stardust
+        notifyCompanionEvent(l.notifMaxLevelOverflowTitle, l.notifMaxLevelOverflowBody(stardust))
+        return overflow
     }
 
     var trainerLevel: TrainerLevel { state.trainer }
@@ -1453,7 +1476,8 @@ final class CompanionStore {
                                   foundEgg: reward.bonusEggs > 0, trainerBonus: reward.trainerBonus,
                                   missionBonus: reward.missionBonus,
                                   achievementBonus: reward.achievementBonus,
-                                  seasonBonus: reward.seasonBonus)
+                                  seasonBonus: reward.seasonBonus,
+                                  overflowExperience: reward.overflowExperience)
     }
 
     func beginIncubatingFocusEgg() -> Bool {
@@ -2652,12 +2676,18 @@ final class CompanionStore {
         guard canUseRareCandy else { return .unavailable }
         state.inventory[ItemKind.rareCandy.rawValue] = rareCandyCount - 1
         let beforeStage = state.active?.stageIndex ?? 0
-        // 진화 안 될 때(부분 진행)도 즉시 "+XP" 피드백 — CompanionHeader 가 연출과 별개로 표시.
-        candyFeedbackAmount = RareCandy.xp
-        candyFeedbackSeq += 1
         let oldLevel = state.active!.level
         state.active!.usedAtStage += RareCandy.xp
-        state.active!.gainExperience(RareCandy.xp)
+        // 만렙이면 경험치 몫이 통째로 초과분이 된다 — 예전엔 그게 사라져서, 5,000 별의조각짜리
+        // 아이템을 쓰고도 아무 일이 없었다(#82). 막지 않고 환산하는 이유는 사탕이 `usedAtStage`
+        // 도 미는 유일한 경로라서다(레벨 메타데이터가 없는 진화의 관문).
+        let overflow = awardExperience(RareCandy.xp)
+        let converted = PokemonBalance.starPieces(forOverflowExperience: overflow)
+        // 진화 안 될 때(부분 진행)도 즉시 피드백 — CompanionHeader 가 연출과 별개로 표시한다.
+        // 환산된 몫은 "+XP" 로 보이면 거짓말이 되므로 단위를 함께 알린다.
+        candyFeedbackIsStardust = converted > 0
+        candyFeedbackAmount = converted > 0 ? converted : RareCandy.xp
+        candyFeedbackSeq += 1
         let newLevel = state.active!.level
         if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
         applyUsage(0, maxTransitions: 1)   // 사탕 1개는 최대 1단계만 진행한다.
