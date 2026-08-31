@@ -248,9 +248,38 @@ final class MemoryHomeServiceNameTests: XCTestCase {
     }
 
     /// 광고 이름은 Bonjour 이름이라 공백·제어문자가 없어야 한다 — `clean` 이 거르는 것과 같은 규칙.
+    /// 입력을 한글로 두는 이유: `"Memory Home\n"` 은 `clean` 이 통째로 거부해서 10바이트 ASCII
+    /// 기본값(`MemoryHome`)만 재게 된다 — 실제 광고 이름은 한 번도 안 밟는 테스트였다.
     func testServiceNameIsBonjourSafe() {
-        let name = MemoryHomeVisitCenter.serviceName(nickname: "Memory Home\n", peerID: UUID())
+        let name = MemoryHomeVisitCenter.serviceName(nickname: "메모리 홈\n", peerID: UUID())
         XCTAssertNotNil(MemoryHomeVisitCenter.clean(name, limit: 64), "광고 이름에 공백·제어문자가 남았다")
+    }
+
+    /// 결함: 닉네임을 40 **글자**로 자르는데 Bonjour 인스턴스 이름 상한은 63 **UTF-8 바이트**다.
+    /// 한글은 글자당 3바이트라 20자만 넘어도 상한을 넘고, mDNSResponder 가 꼬리를 잘라 광고한다
+    /// → 고유 접미(`#ABCDEF`)가 통째로 먹히고, 같은 닉네임 두 기기가 같은 이름을 광고한다.
+    /// 이 PR 이 막은 결함이 한글 사용자에게만 그대로 재발하는 경로다.
+    func testLongNonASCIINicknameStillFitsBonjourAndKeepsItsSuffix() {
+        let id = UUID(uuidString: "44D58000-0000-0000-0000-000000000000")!
+        // `clean(limit: 40)` 을 통과하는 최대 길이 — 공백 없는 한글 40자 = 120바이트.
+        let nickname = String(repeating: "가", count: 40)
+        let name = MemoryHomeVisitCenter.serviceName(nickname: nickname, peerID: id)
+
+        XCTAssertLessThanOrEqual(name.utf8.count, LANServiceName.maxBytes,
+                                 "63바이트를 넘으면 mDNS 가 꼬리를 잘라 고유 접미가 사라진다")
+        XCTAssertTrue(name.hasSuffix("#44D580"), "잘림이 고유 접미를 먹었다 — 자기 필터가 무너진다")
+        XCTAssertTrue(name.hasPrefix("가"), "닉네임이 통째로 사라졌다")
+    }
+
+    /// 같은 닉네임 두 설치는 **잘린 뒤에도** 서로 달라야 한다. 위 테스트의 짝 — 길이만 맞고
+    /// 접미가 사라지면 이 단언이 깨진다.
+    func testTwoInstallsWithTheSameLongNonASCIINicknameStillDiffer() {
+        let nickname = String(repeating: "가", count: 40)
+        let a = MemoryHomeVisitCenter.serviceName(nickname: nickname,
+                                                  peerID: UUID(uuidString: "44D58000-0000-0000-0000-000000000000")!)
+        let b = MemoryHomeVisitCenter.serviceName(nickname: nickname,
+                                                  peerID: UUID(uuidString: "FFFFFF00-0000-0000-0000-000000000000")!)
+        XCTAssertNotEqual(a, b)
     }
 
     func testMyOwnHomeIsFilteredOut() {
@@ -281,5 +310,125 @@ final class MemoryHomeServiceNameTests: XCTestCase {
         XCTAssertNil(home("줄바꿈\n주입#ABCDEF"))
         XCTAssertNil(home("#ABCDEF"))
         XCTAssertNil(home(String(repeating: "가", count: 41) + "#ABCDEF"))
+    }
+}
+
+/// Bonjour 인스턴스 이름의 **바이트 예산**. 네 LAN 센터가 각자 `"\(이름)#\(접미)"` 를 굽고
+/// 있었고 그중 셋은 예산을 아예 안 봤다 — `PlayerGymRoomName` 만 63바이트 루프를 갖고 있었다.
+/// 여기가 그 루프를 옮겨 온 공용 자리다.
+final class LANServiceNameTests: XCTestCase {
+    /// 접미는 절대 잘리면 안 된다 — 고유성이 거기에만 있다. 잘리는 건 언제나 앞의 이름이다.
+    func testSuffixSurvivesEvenWhenTheBaseMustBeCut() {
+        let name = LANServiceName.make(base: String(repeating: "가", count: 100), suffix: "#ABCDEF")
+        XCTAssertLessThanOrEqual(name.utf8.count, LANServiceName.maxBytes)
+        XCTAssertTrue(name.hasSuffix("#ABCDEF"))
+    }
+
+    /// 예산 안이면 한 글자도 건드리지 않는다.
+    func testShortNameIsUntouched() {
+        XCTAssertEqual(LANServiceName.make(base: "MemoryHome", suffix: "#ABCDEF"), "MemoryHome#ABCDEF")
+    }
+
+    /// 바이트로 자르되 **글자 경계**를 지킨다. 스칼라 중간에서 자르면 깨진 UTF-8 이 나가고
+    /// mDNSResponder 가 광고를 통째로 거부한다.
+    func testCutsOnCharacterBoundariesNotBytes() {
+        for count in 1...40 {
+            let name = LANServiceName.make(base: String(repeating: "가", count: count), suffix: "#ABCDEF")
+            XCTAssertLessThanOrEqual(name.utf8.count, LANServiceName.maxBytes, "\(count)자에서 예산을 넘었다")
+            XCTAssertEqual(String(data: Data(name.utf8), encoding: .utf8), name, "글자 중간에서 잘렸다")
+        }
+    }
+
+    /// 접미만으로 예산을 다 쓰는 병적인 입력에서도 크래시하지 않는다(`budget < 0`).
+    func testOversizedSuffixDoesNotTrap() {
+        let suffix = "#" + String(repeating: "x", count: 100)
+        XCTAssertEqual(LANServiceName.make(base: "이름", suffix: suffix), suffix)
+    }
+}
+
+/// 광고 목록 → 집 목록 사상. `updateHomes` 클로저 안에 있으면 `NWBrowser.Result` 를 만들 수 없어
+/// 테스트가 닿지 못한다 — 순수 함수로 꺼내서 정렬·중복 라벨·자기 필터를 여기서 검증한다.
+@MainActor
+final class MemoryHomeListingTests: XCTestCase {
+    private func endpoint(_ port: UInt16) -> NWEndpoint { .hostPort(host: "127.0.0.1", port: .init(rawValue: port)!) }
+
+    private func homes(_ names: [String], mine: String = "나#000000") -> [MemoryHomePeer] {
+        MemoryHomeVisitCenter.homes(fromServices: names.enumerated().map { (name: $1, endpoint: endpoint(UInt16(5_000 + $0))) },
+                                    excluding: mine)
+    }
+
+    /// `displayName` 만으로 정렬하면 동명이 있을 때 순서가 `Set` 순회 순서를 따라 흔들린다 —
+    /// 사용자가 겨눈 줄을 눌러도 다른 기기로 방문한다. 키는 유일해야 한다.
+    func testEqualDisplayNamesGetAStableOrder() {
+        let forward = homes(["MemoryHome#AAAAAA", "MemoryHome#BBBBBB"]).map(\.id)
+        let reversed = homes(["MemoryHome#BBBBBB", "MemoryHome#AAAAAA"]).map(\.id)
+        XCTAssertEqual(forward, reversed, "입력 순서가 결과 순서를 바꾸면 목록이 갱신마다 자리를 바꾼다")
+        XCTAssertEqual(forward, ["MemoryHome#AAAAAA", "MemoryHome#BBBBBB"])
+    }
+
+    /// 이 PR 이 푸는 시나리오 자체(같은 기본 닉네임 두 대)가 라벨을 못 읽게 만든다 —
+    /// `displayName(fromService:)` 가 접미를 떼므로 버튼 두 개가 똑같이 "MemoryHome" 이 된다.
+    func testDuplicateLabelsAreDisambiguatedBySuffix() {
+        let labels = homes(["MemoryHome#AAAAAA", "MemoryHome#BBBBBB"]).map(\.displayName)
+        XCTAssertEqual(Set(labels).count, 2, "구분할 수 없는 버튼 두 개가 나왔다")
+        XCTAssertTrue(labels.allSatisfy { $0.contains("MemoryHome") })
+    }
+
+    /// 유일한 이름은 접미로 더럽히지 않는다.
+    func testUniqueLabelKeepsThePlainNickname() {
+        XCTAssertEqual(homes(["피카홈#AAAAAA", "라이홈#BBBBBB"]).map(\.displayName), ["라이홈", "피카홈"])
+    }
+
+    func testMyOwnAdvertisementIsExcluded() {
+        XCTAssertEqual(homes(["나#000000", "남#111111"]).map(\.id), ["남#111111"])
+    }
+}
+
+/// 브라우저 상태 → 화면에 뜨는 오류의 수명. 상태 핸들러 클로저 안에 있으면 테스트가 닿지 못해
+/// "에러가 지워지지 않는다/너무 빨리 지워진다" 부류가 통째로 무테스트로 남는다.
+@MainActor
+final class MemoryHomeDiscoveryStateTests: XCTestCase {
+    private func center() -> MemoryHomeVisitCenter {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("visit-state-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = CompanionStore(fileURL: directory.appendingPathComponent("state.json"))
+        return MemoryHomeVisitCenter(companion: store, peerID: UUID())
+    }
+
+    /// 결함: `.waiting` 이 세운 오류를 지우는 길이 "집이 한 채라도 보일 때" 뿐이었다. 주변에 홈이
+    /// 없는(=흔한) 사용자는 Wi-Fi 가 돌아와 `.ready` 가 돼도 "권한을 허용해 주세요" 를 영원히 본다.
+    func testReadyClearsAStaleDiscoveryError() {
+        let visits = center()
+        visits.handleBrowserState(.waiting(.posix(.ENETDOWN)))
+        XCTAssertNotNil(visits.lastError, "조용한 대기 상태가 화면에 아무 이유도 남기지 않았다")
+
+        visits.handleBrowserState(.ready)
+        XCTAssertNil(visits.lastError, "복구된 뒤에도 옛 오류가 남아 이미 켠 권한을 다시 켜라고 안내한다")
+    }
+
+    /// 결함: 프레임워크 원문(`Network is down`)이 ko/ja UI 에 그대로 실렸다 — `networkFailureMessage`
+    /// 의 주석은 "내부 코드를 노출하지 않는다" 고 적혀 있는데 NoAuth 가 아닌 경로만 그러지 않았다.
+    func testNonAuthFailureIsNotShownAsRawFrameworkText() {
+        let visits = center()
+        visits.handleBrowserState(.waiting(.posix(.ENETDOWN)))
+        let message = try? XCTUnwrap(visits.lastError)
+        XCTAssertEqual(message?.localizedCaseInsensitiveContains("network is down"), false,
+                       "번역되지 않은 프레임워크 문구가 화면에 실렸다")
+        XCTAssertEqual(message?.localizedCaseInsensitiveContains("posix"), false)
+    }
+
+    /// 결함: 광고 목록이 갱신될 때마다 `lastError` 를 지웠다. mDNS 는 TTL 갱신·피어 변동마다
+    /// 이 콜백을 부르므로, "이 홈은 방문을 받지 않아요" 같은 **방문 결과** 문구가 사용자가 읽는
+    /// 도중 몇 초 만에 사라졌다 — 그 문구를 띄우려고 붙인 화면 줄이 무의미해진다.
+    func testBrowseResultsDoNotEraseAVisitError() {
+        let visits = center()
+        visits.handleBrowserState(.waiting(.posix(.ENETDOWN)))
+        let shown = visits.lastError
+        XCTAssertNotNil(shown)
+
+        visits.applyDiscovered([(name: "남#111111", endpoint: .hostPort(host: "127.0.0.1", port: 5_001))])
+
+        XCTAssertEqual(visits.homes.count, 1, "목록 갱신 자체가 안 됐다 — 테스트가 경로를 안 밟았다")
+        XCTAssertEqual(visits.lastError, shown, "광고 갱신이 화면의 오류 문구를 지웠다")
     }
 }
