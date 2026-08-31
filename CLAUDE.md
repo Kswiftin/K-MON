@@ -15,7 +15,7 @@
 | `docs/reference/room-walk-dungeon-design.md` | 트레이너 꾸미기 아이템을 더할 때, 친구 광고의 `outfit` 키를 바꿀 때, 던전 재설계(포켓로그식) 를 시작할 때 이전 설계의 결론을 볼 때 |
 | `docs/reference/memory-home-plan.md` | Memory Home 에 기획서(《PokéWorld : My Mini Home》) 기능을 붙일 때, 미니룸 반응 문구·추억 카드·주크박스 해금을 손댈 때, 홈 기능이 "코드엔 있는데 화면엔 없다" 를 의심할 때 |
 | `docs/reference/defect-log.md` | 결함·회귀를 고치는 중(부류 스윕 근거), 동시성·캐시·외부 로그 포맷·상시 애니메이션·세이브 이전을 건드릴 때 |
-| `docs/reference/chat-tool-sandbox.md` | 포켓몬 대화가 실행할 수 있는 일을 늘리거나 줄일 때, `[[tool:...]]` 마커·인자 클램프·승인 구분을 손댈 때 |
+| `docs/reference/chat-tool-sandbox.md` | 포켓몬 대화가 실행할 수 있는 일을 늘리거나 줄일 때, `[[tool:...]]` 마커·인자 클램프·승인 구분을 손댈 때, 액션 칩(`PokemonChatAction`·`availableActions`·`isReady`)을 더하거나 뺄 때 |
 | `docs/reference/opencode-isolation.md` | 대화 CLI 제공자를 추가·해제할 때, OpenCode 차단 사유나 `PokemonChatProviderSafety.availability` 를 손댈 때 |
 
 각 문서의 frontmatter(`summary`/`read_when`)가 그 문서의 적용 범위를 다시 명시한다.

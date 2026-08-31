@@ -56,7 +56,7 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
             // 이름을 전부 나열하지 않는다(30종 가까이다). 대신 bag.list 가 찍어 주는 이름을
             // 쓰라고 못 박되, 사용자가 부른 이름 그대로도 된다고 알린다 — 액션 칩이 채우는 문장엔
             // 현지화된 이름밖에 없어서, rawValue 만 받으면 그 칩은 영영 아무 일도 못 한다.
-            return "[[tool:\(rawValue)(<item name — as bag.list printed it, or as the trainer just called it>)]] — ask the trainer to use one item"
+            return "[[tool:\(rawValue)(<item name as printed, or as the trainer said it>)]] — ask the trainer to use one item"
         case .evolutionAccept:
             return "[[tool:\(rawValue)]] — ask the trainer to let you evolve (only when evolution is waiting)"
         case .companionSwitch:
