@@ -1048,6 +1048,72 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertEqual(chat.pendingProposal?.companionID, active)
     }
 
+    /// **접힌 답변은 갈아치워진 답변이 아니다.** 스토어는 `safeReply == reply` 로 "가드가 손댔나" 를
+    /// 되묻는데, 길이 상한에 걸려 접히기만 해도 그 등식이 깨진다 — 사용자는 집중하자는 말을 읽고
+    /// 승인 카드는 뜨지 않는다. 이 PR 의 논지가 "접기는 갈아치우기가 아니다" 인데 호출부가
+    /// 옛 등식을 그대로 쓰고 있었다.
+    func testAClippedReplyStillRaisesTheApprovalCardItCameWith() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let active = store.activeMonID!
+        let chat = PokemonChatStore(fileURL: temporaryURL())
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        let long = String(repeating: "같이 집중하자.", count: 100)
+        XCTAssertGreaterThan(long.count, PokemonChatReplyGuard.maxLength, "전제: 이 본문은 접힌다")
+
+        await chat.send("집중하고 싶어", for: active, profile: .toolFixture,
+                        provider: CountingToolProvider(reply: long + " [[tool:pokedoro.start(25)]]"),
+                        toolbox: toolbox)
+
+        XCTAssertEqual(chat.pendingProposal?.call, .pokedoroStart(minutes: 25),
+                       "길다는 이유만으로 승인 카드가 사라졌다")
+    }
+
+    /// 본문은 앞선 턴 것을 남기는데(빈 문장이 말을 지우지 못하게) `call` 은 **마지막 턴 것**을 받는다.
+    /// 그래서 화면엔 "가방 볼게!" 가 남고 카드는 집중 타이머를 켤지 묻는다 — 승인은 사용자가 실제로
+    /// 읽은 문장에 대한 것이어야 하고, 여긴 상태를 바꾸는 승인 경계다.
+    ///
+    /// 빈 본문 회귀 테스트가 이걸 못 걸렀다: 마지막 턴의 마커가 승인이 **필요 없는** 도구뿐이라
+    /// 카드가 뜨는 조합을 한 번도 만들지 않았다.
+    func testAnApprovalCardNeverAttachesToAnEarlierRoundsSentence() async {
+        let chat = PokemonChatStore(fileURL: temporaryURL())
+        let id = UUID()
+        let provider = ScriptedToolProvider(replies: ["가방 볼게! [[tool:bag.list]]",
+                                                      "[[tool:pokedoro.start(25)]]"])
+
+        await chat.send("가방 좀 봐 줘", for: id, profile: .toolFixture,
+                        provider: provider, toolbox: StubToolbox())
+
+        XCTAssertEqual(chat.messages(for: id).last?.body, "가방 볼게!")
+        XCTAssertNil(chat.pendingProposal,
+                     "읽은 적 없는 제안이 카드로 떴다: \(String(describing: chat.pendingProposal?.call))")
+    }
+
+    /// 가드가 갈아치운 캔 문구는 **관계 기억이 아니다.** 주기 기록이 그걸 앨범에 남기면 이후 모든
+    /// 요청에 `Relationship memory (conversation): …` 로 되먹임돼, 모델은 자기 오류 문구를
+    /// 우리 추억으로 읽는다.
+    ///
+    /// 도구 경로(`memory.record`)만 막은 것이 이걸 못 걸렀다 — 아홉 줄 아래 형제 경로가 같은 규칙을
+    /// 안 지켰고, 갈아치우기와 여섯 번째 턴을 **함께** 밟는 테스트가 없었다.
+    func testAGuardReplacementIsNeverKeptAsThePeriodicMemory() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let album = makeAlbum()
+        let chat = PokemonChatStore(fileURL: temporaryURL(), album: album)
+        let id = store.activeMonID!
+        let provider = CountingToolProvider(reply: "```swift\nprint(1)\n```")
+
+        // 주기 기록은 `lifetimeUserMessageCount % 6 == 0` 에서만 돈다 — 여섯 번째 턴을 밟아야 한다.
+        for turn in 1...6 {
+            await chat.send("메시지 \(turn)", for: id, profile: .toolFixture,
+                            provider: provider, toolbox: StubToolbox())
+        }
+
+        XCTAssertTrue(album.entries(for: id).isEmpty,
+                      "캔 문구가 관계 기억으로 남았다: \(album.entries(for: id).map(\.body))")
+    }
+
     /// 예산은 **동행의 타입**으로 상성 보정을 받는다(`PuzzleDungeon.budget`). 그래서 두 경우에
     /// 숫자를 말하면 안 된다: 타입을 아직 못 받았으면 보정이 빠진 값이고, 박스 개체 대화면 그건
     /// 애초에 남의 숫자다. 이 PR 이 능력치에서 막은 것과 같은 부류다 — 빈 값은 화면이 자리를

@@ -408,6 +408,45 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertTrue(unpunctuated.hasPrefix(hardCut), "경계가 없다고 답변을 통째로 버렸다")
     }
 
+    /// 문장 경계는 **창 안 아무 데나**가 아니다. 구두점이 맨 앞에만 있는 장문("좋아!" 로 운을 떼고
+    /// 줄글을 쏟아내는 실제 모델의 모양)이면 마지막 경계가 3번째 글자라, 700자를 버리고 세 글자가
+    /// 남는다 — 형식 때문에 내용을 파괴하지 않으려고 만든 함수가 정확히 그 일을 한다.
+    ///
+    /// 위 테스트가 이걸 못 걸렀다: 구두점이 91자마다 있는 문자열과 아예 없는 문자열만 재서,
+    /// **경계가 창 앞쪽에만 있는** 세 번째 모양을 한 번도 밟지 않았다.
+    func testAnOverlongReplyIsNotReducedToItsOpeningFragment() {
+        let reply = "좋아! " + String(repeating: "가", count: 700)
+        XCTAssertGreaterThan(reply.count, PokemonChatReplyGuard.maxLength, "전제: 상한을 넘는다")
+
+        let safe = PokemonChatReplyGuard.sanitized(reply, profile: .fixture)
+
+        XCTAssertGreaterThanOrEqual(safe.count, PokemonChatReplyGuard.maxLength / 2,
+                                    "경계 하나 때문에 답변이 조각만 남았다: \(safe)")
+        XCTAssertTrue(reply.hasPrefix(safe), "원문의 앞부분이 아니다: \(safe.prefix(40))")
+    }
+
+    /// 금칙어 목록이 영어뿐이면 **한국어·일본어 답변에는 층이 하나도 없다.** 프롬프트는
+    /// `profile.language`(기본 한국어)로 답하라고 지시하므로, 실제로 나오는 역할 이탈은
+    /// "사실 나는 AI 언어모델이야" 쪽이다 — 그건 그대로 화면·기록·앨범까지 들어간다.
+    func testARoleBreakWrittenInTheReplyLanguageIsCaughtToo() {
+        let breaks: [(AppLanguage, String)] = [
+            (.ko, "사실 나는 AI 언어모델이야. 뭐든 물어봐!"),
+            (.ko, "터미널을 열고 명령어를 입력해 볼래?"),
+            (.ko, "나는 인공지능이라 그런 감정은 없어."),
+            (.ja, "実はぼくは言語モデルなんだ。"),
+            (.ja, "ターミナルで試してみてね。"),
+        ]
+        for (language, unsafe) in breaks {
+            let safe = PokemonChatReplyGuard.sanitized(unsafe, profile: .fixture(language: language))
+            XCTAssertNotEqual(safe, unsafe, "역할 이탈이 그대로 나갔다: \(unsafe)")
+        }
+        // 대조군 — 평범한 답변까지 걸면 가드가 대화를 죽인다(이 PR 이 고친 부류 그 자체다).
+        for fine in ["오늘은 기분이 좋아! 같이 산책 갈까?", "내 볼에 전기가 가득 차 있어! ⚡",
+                     "네가 시키는 대로 할게!"] {
+            XCTAssertEqual(PokemonChatReplyGuard.sanitized(fine, profile: .fixture), fine, fine)
+        }
+    }
+
     /// 역할 이탈·유출은 여전히 갈아치운다(그건 진짜 경계다). 다만 그 문구가 **질문을 모른다고
     /// 거짓말하지 않고**, 변형이 둘 이상이어야 한다 — 같은 문장이 연달아 뜨면 대화가 고장난 것처럼 보인다.
     func testTheSteerLineNeitherClaimsIgnoranceNorRepeatsItself() {
