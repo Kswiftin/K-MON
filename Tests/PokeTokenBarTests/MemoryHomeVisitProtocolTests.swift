@@ -417,6 +417,28 @@ final class MemoryHomeDiscoveryStateTests: XCTestCase {
         XCTAssertEqual(message?.localizedCaseInsensitiveContains("posix"), false)
     }
 
+    /// `.failed` 분기는 커버리지에서 `^0` 이었다 — 오류 노출·브라우저 회수·재시도 상한이 전부
+    /// 무테스트였다는 뜻이다. 탐색 중이 아닐 때(`isActive == false`)는 재시도하지 않고 원인만 남긴다.
+    func testFailureShowsACauseAndDoesNotRetryWhileIdle() {
+        let visits = center()
+        visits.handleBrowserState(.failed(.posix(.ENETDOWN)))
+        XCTAssertNotNil(visits.lastError, "실패가 화면에 아무 이유도 남기지 않았다")
+        XCTAssertFalse(visits.isActive)
+    }
+
+    /// 탐색 중이면 재시도를 건다. 여기서 검증하는 건 재시도 자체가 아니라 **오류가 남는다**는 것 —
+    /// 무한 재시도는 오류를 계속 덮어쓰기만 하므로 상한(`maxBrowserRestarts`)이 있어야 마지막
+    /// 원인이 화면에 남는다.
+    func testFailureWhileBrowsingKeepsTheCauseOnScreen() {
+        let visits = center()
+        visits.start()
+        defer { visits.shutdown() }
+        visits.handleBrowserState(.failed(.posix(.ENETDOWN)))
+        XCTAssertNotNil(visits.lastError)
+        XCTAssertLessThanOrEqual(MemoryHomeVisitCenter.maxBrowserRestarts, 10,
+                                 "재시도 상한이 사실상 무한이면 오류가 계속 덮어써진다")
+    }
+
     /// 결함: 광고 목록이 갱신될 때마다 `lastError` 를 지웠다. mDNS 는 TTL 갱신·피어 변동마다
     /// 이 콜백을 부르므로, "이 홈은 방문을 받지 않아요" 같은 **방문 결과** 문구가 사용자가 읽는
     /// 도중 몇 초 만에 사라졌다 — 그 문구를 띄우려고 붙인 화면 줄이 무의미해진다.

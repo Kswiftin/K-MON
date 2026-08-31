@@ -879,6 +879,9 @@ final class BattleCenter {
                 case .failed(let e):
                     Task { @MainActor in
                         AppLog.write("battle listener failed: \(e) — restarting")
+                        // 이 파일의 `startListener` 주석이 적어 둔 규칙이 정작 여기서 깨져 있었다:
+                        // 참조만 버리면 실패한 리스너가 큐·포트를 붙든 채 남아 슬립 복귀마다 쌓인다.
+                        self?.listener?.cancel()
                         self?.listener = nil
                         self?.listeningPort = nil
                         // 슬립 복귀 등 일시 실패 재시도(1회성 지연).
