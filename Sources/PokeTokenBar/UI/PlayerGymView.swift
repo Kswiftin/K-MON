@@ -109,13 +109,15 @@ struct PlayerGymView: View {
                              "4体を選んで挑戦してください。"))
                         .font(.caption2).foregroundStyle(.secondary)
                     HStack {
-                        Button(l.playerGymChallenge) {
-                            center.join(room, as: .runner)
-                        }
-                        .buttonStyle(.borderedProminent).controlSize(.small)
-                        .disabled(center.gymPickedTeam.count != PlayerGym.defenseTeamSize)
+                        // 입장과 도전을 한 번에 한다 — 나누면 "도전" 버튼이 두 번 뜨고,
+                        // 첫 번째를 누른 사람은 두 번째가 왜 또 필요한지 알 수 없다.
+                        Button(l.playerGymChallenge) { center.joinAndChallengeGym(room) }
+                            .buttonStyle(.borderedProminent).controlSize(.small)
+                            .disabled(center.gymPickedTeam.count != PlayerGym.defenseTeamSize
+                                      || center.phase != .idle)
                         Button(l.playerGymSpectate) { center.join(room, as: .spectator) }
                             .controlSize(.small)
+                            .disabled(center.phase != .idle)
                     }
                 }.padding(9).pokedoroCard(tint: .purple)
 
@@ -147,9 +149,14 @@ struct PlayerGymView: View {
                 Button(l.playerGymOpen) { coordinator.openGym() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
             }
-            if center.phase == .joined {
-                Button(l.playerGymChallenge) { center.challengeGym() }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
+            // 입장했는데 아직 판이 안 섰으면 기다리는 중이다 — 여기에 "도전" 버튼을 또 두면
+            // 같은 이름의 버튼이 두 번 뜬다.
+            if center.phase == .joined, center.gymMatch == nil, center.gymRejection == nil {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(l.t("도전을 보내는 중…", "Sending your challenge…", "挑戦を送信中…"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             // 자리를 내준 뒤에도 누가 꺾었는지는 봐야 한다 — 기록은 자격과 무관하게 남는다.
             if !store.gymDefenseLog.isEmpty { defenseLog }

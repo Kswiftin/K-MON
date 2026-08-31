@@ -748,6 +748,53 @@ final class PlayerGymTests: XCTestCase {
         XCTAssertFalse(engine.submit(.move(index: 0), from: leaderID), "한 턴에 두 번 낼 수 없다")
     }
 
+    /// **회귀**: AI 관장이 매 턴 채울 때 도전자 몫까지 채워 버려, 사람이 무엇을 눌러도
+    /// `submit` 이 "이미 냈다" 로 거절되고 **AI 끼리 알아서 끝났다.** 관장 몫만 채워야 한다.
+    func testFillingTheLeaderActionLeavesTheChallengerFree() {
+        let leaderID = UUID(), challengerID = UUID()
+        var engine = GymMatchEngine(
+            leaderID: leaderID, challengerID: challengerID, leaderName: "L", challengerName: "C",
+            leaderTeam: [snapshot(1, level: 50, move: tackle)],
+            challengerTeam: [snapshot(2, level: 50, move: tackle)],
+            seed: 3)
+
+        engine.fillLeaderAction(usingAI: true)
+
+        XCTAssertNotNil(engine.battle.myAction, "관장 몫은 채워진다")
+        XCTAssertNil(engine.battle.oppAction, "도전자 몫은 비어 있어야 사람이 고를 수 있다")
+        XCTAssertTrue(engine.submit(.move(index: 0), from: challengerID),
+                      "도전자가 여전히 자기 행동을 낼 수 있어야 한다")
+    }
+
+    /// 마감에서는 양쪽을 채우는 것이 맞다 — 시간 안에 안 고른 것을 대신하는 자리다.
+    func testTheTimeoutFillCoversBothSides() {
+        var engine = GymMatchEngine(
+            leaderID: UUID(), challengerID: UUID(), leaderName: "L", challengerName: "C",
+            leaderTeam: [snapshot(1, level: 50, move: tackle)],
+            challengerTeam: [snapshot(2, level: 50, move: tackle)],
+            seed: 3)
+
+        engine.fillTimedOutActions(leaderUsesAI: false)
+
+        XCTAssertNotNil(engine.battle.myAction)
+        XCTAssertNotNil(engine.battle.oppAction)
+        XCTAssertTrue(engine.isReady)
+    }
+
+    /// 판이 막 섰을 때는 **아무 행동도 차 있지 않아야** 한다 — 미리 채우면 첫 턴부터 도전자
+    /// 입력이 거절된다.
+    func testANewMatchStartsWithNoActionsFilled() {
+        let engine = GymMatchEngine(
+            leaderID: UUID(), challengerID: UUID(), leaderName: "L", challengerName: "C",
+            leaderTeam: [snapshot(1, level: 50, move: tackle)],
+            challengerTeam: [snapshot(2, level: 50, move: tackle)],
+            seed: 3)
+
+        XCTAssertNil(engine.battle.myAction)
+        XCTAssertNil(engine.battle.oppAction)
+        XCTAssertFalse(engine.isReady, "시작하자마자 해상 가능하면 사람이 낄 틈이 없다")
+    }
+
     /// AI 방어는 카탈로그 체육관 관장과 **같은 점수식**을 쓴다. 두 컨텐츠의 체감이 갈리지 않게
     /// `BattleEngine.expectedDamageScore` 하나만 둔 것을 잠근다.
     func testTheAIPicksTheHigherScoringMove() {
@@ -765,7 +812,7 @@ final class PlayerGymTests: XCTestCase {
             challengerTeam: [snapshot(2, level: 50, move: tackle)],
             seed: 7)
 
-        engine.fillMissingActions(leaderUsesAI: true)
+        engine.fillLeaderAction(usingAI: true)
 
         XCTAssertEqual(engine.battle.myAction, .move(index: 1), "기대 피해가 큰 쪽을 골라야 한다")
     }
