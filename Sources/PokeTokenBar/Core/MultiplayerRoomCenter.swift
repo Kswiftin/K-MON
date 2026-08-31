@@ -1324,19 +1324,29 @@ final class MultiplayerRoomCenter {
         return Array(ids.prefix(3))
     }
 
+    /// 방에 들고 들어갈 내 대표 스냅샷.
+    ///
+    /// **동행이 알이어도 막지 않는다.** 예전엔 `state.active` 를 요구해서, 알을 품는 동안에는
+    /// 박스에 키워 둔 개체가 아무리 많아도 방 계열(토너먼트·포켓슬론·퀴즈·체육관)에 못 들어갔다.
+    /// 내보낼 개체가 하나라도 있으면 그걸로 만든다.
     private func buildSnapshot() async -> BattleSnapshot? {
         await companion.ensureInheritedMoves()
-        guard let active = companion.state.active, let speciesID = companion.currentSpeciesID,
-              let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) else { return nil }
-        let level = active.level
-        let moves = active.learnedMoves.isEmpty
-            ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
-            : await companion.detailedMoves(of: active)
-        return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
-                              level: level, nature: active.nature, isShiny: active.isShiny,
-                              types: profile.types, base: profile.stats, moves: moves,
-                              ability: profile.abilitySlug,
-                              weightHectograms: profile.weightHectograms)
+        guard let mon = companion.battleFacadeMon else { return nil }
+        // 동행이면 지금 화면에 뜬 이름·레벨을 그대로 쓰고, 박스 개체면 그 개체 기준으로 만든다.
+        if let active = companion.state.active, active.id == mon.id,
+           let speciesID = companion.currentSpeciesID,
+           let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) {
+            let level = active.level
+            let moves = active.learnedMoves.isEmpty
+                ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
+                : await companion.detailedMoves(of: active)
+            return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
+                                  level: level, nature: active.nature, isShiny: active.isShiny,
+                                  types: profile.types, base: profile.stats, moves: moves,
+                                  ability: profile.abilitySlug,
+                                  weightHectograms: profile.weightHectograms)
+        }
+        return await companion.battleSnapshot(for: mon, level: mon.level)
     }
 
     private func buildTournamentLineup(ids requestedIDs: [UUID], count: Int) async -> [BattleSnapshot]? {

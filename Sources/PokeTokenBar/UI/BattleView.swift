@@ -32,7 +32,9 @@ struct BattleView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if store.isEgg {
+            // 알을 품는 중인 것 자체는 막을 이유가 아니다 — 박스에 키워 둔 개체가 있으면 그걸로
+            // 싸운다. 정말 못 싸우는 건 내보낼 개체가 하나도 없을 때다.
+            if !store.hasBattleReadyMon {
                 Text(l.battleNeedHatch)
                     .font(.callout)
                     .foregroundStyle(.secondary)
