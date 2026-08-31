@@ -550,7 +550,7 @@ final class PlayerGymTests: XCTestCase {
     /// 새 case 를 더하면 구버전 게스트는 디코딩에 실패해 멈춘다 — 입장 단계에서 막아야 하므로
     /// 이 값이 올라간 사실을 잠근다.
     func testProtocolVersionIsBumpedForTheGymContract() {
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 12)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 13)
     }
 
     func testGymWireMessagesSurviveAJSONRoundTrip() throws {

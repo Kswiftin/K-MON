@@ -20,6 +20,26 @@ final class RosterOrderingTests: XCTestCase {
                        [2, 1, 3], "내림차순은 저장 순서를 뒤집는다")
     }
 
+    func testCaughtSortUsesHatchTimeEvenWhenTheActivePokemonWasMovedToTheFront() {
+        var newest = mon(3); newest.firstMetAt = Date(timeIntervalSince1970: 300)
+        var oldest = mon(1); oldest.firstMetAt = Date(timeIntervalSince1970: 100)
+        var middle = mon(2); middle.firstMetAt = Date(timeIntervalSince1970: 200)
+        let ownedWithActiveFirst = [newest, oldest, middle]
+
+        XCTAssertEqual(RosterOrdering.arrange(ownedWithActiveFirst, sort: .caught).map(\.currentID), [1, 2, 3])
+        XCTAssertEqual(RosterOrdering.arrange(ownedWithActiveFirst, sort: .caught, ascending: false).map(\.currentID),
+                       [3, 2, 1])
+    }
+
+    func testOldSaveDoesNotMarkExistingPokemonAsNew() throws {
+        let original = mon(25)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        object.removeValue(forKey: "isNewlyHatched")
+        let decoded = try JSONDecoder().decode(MonState.self,
+                                               from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertFalse(decoded.isNewlyHatched)
+    }
+
     /// 도감 번호순 — 도감 격자와 같은 순서다. 두 화면이 같은 순서라야 "도감의 그 칸" 을 박스에서
     /// 같은 자리로 찾는다.
     func testDexNumberSortOrdersByTheNumberOnTheCard() {

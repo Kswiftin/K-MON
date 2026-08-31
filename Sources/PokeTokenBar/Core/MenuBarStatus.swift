@@ -22,7 +22,8 @@ enum MenuBarStatus: Equatable {
         switch battlePhase {
         case .challenging(let peer): return .battleChallengeSent(peer: peer)
         case .incoming: return .privateMessage
-        case .teamBuilding(let peer), .waitingTeam(let peer): return .battleChallengeSent(peer: peer)
+        case .poolBuilding(let peer), .teamBuilding(let peer), .waitingTeam(let peer):
+            return .battleChallengeSent(peer: peer)
         case .battling:
             let peer = battle?.opp.snapshot.trainer ?? "?"
             return .battling(peer: peer, isMyTurn: battle?.myAction == nil)

@@ -52,7 +52,16 @@ enum RosterOrdering {
         let sorted: [(offset: Int, element: MonState)]
         switch sort {
         case .caught:
-            sorted = indexed   // 저장 순서 그대로
+            // 활성 개체는 `ownedMons` 조립 시 항상 0번으로 이동하므로 배열 순서는 실제 부화순이 아니다.
+            // 첫 만남 시각으로 정렬하고, 구버전처럼 시각이 없는 개체끼리만 저장 순서를 유지한다.
+            sorted = indexed.sorted { a, b in
+                switch (a.element.firstMetAt, b.element.firstMetAt) {
+                case let (left?, right?) where left != right: return left < right
+                case (nil, .some): return true
+                case (.some, nil): return false
+                default: return a.offset < b.offset
+                }
+            }
         case .dexNumber:
             // **현재 형태의 번호**다. 카드가 그리는 스프라이트·이름과 같은 종이라야 순서가 납득된다
             // (기본형 번호로 묶으면 이상해꽃이 3번이 아니라 1번 자리에 선다).

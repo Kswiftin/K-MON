@@ -715,6 +715,8 @@ struct MonState: Codable, Sendable, Identifiable {
     var id = UUID()
     /// 함께하기 시작한 시각. 기억을 처음 남긴 시각과 분리해, 기록이 없는 새 동행도 첫 만남을 가진다.
     var firstMetAt: Date?
+    /// 알에서 태어난 뒤 포켓몬 탭에서 아직 확인하지 않은 개체. 구버전 개체는 false로 디코딩한다.
+    var isNewlyHatched = false
     var baseID: Int
     var pathIDs: [Int]      // 실제 진화 경로(분기 선택 반영)
     var plannedPathIDs: [Int] // 사전에 선택한 전체 진화 경로
@@ -762,7 +764,8 @@ struct MonState: Codable, Sendable, Identifiable {
          gender: PokemonGender? = nil,
          evolutionStatRelation: Int? = nil,
          nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false,
-         names: [Int: [String: String]]? = nil, isGraduated: Bool = false, firstMetAt: Date? = nil) {
+         names: [Int: [String: String]]? = nil, isGraduated: Bool = false, firstMetAt: Date? = nil,
+         isNewlyHatched: Bool = false) {
         self.baseID = baseID
         self.pathIDs = pathIDs
         if let plannedPathIDs, !plannedPathIDs.isEmpty {
@@ -784,6 +787,7 @@ struct MonState: Codable, Sendable, Identifiable {
         self.dittoDisguise = dittoDisguise
         self.dittoRevealed = dittoRevealed
         self.firstMetAt = firstMetAt
+        self.isNewlyHatched = isNewlyHatched
     }
 
     // 하위호환 디코딩: shiny/nature 는 구버전 저장에 없음 → 기본값.
@@ -814,6 +818,7 @@ struct MonState: Codable, Sendable, Identifiable {
         dittoRevealed = try c.decodeIfPresent(Bool.self, forKey: .dittoRevealed) ?? false
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         firstMetAt = try c.decodeIfPresent(Date.self, forKey: .firstMetAt)
+        isNewlyHatched = try c.decodeIfPresent(Bool.self, forKey: .isNewlyHatched) ?? false
         levelExperience = try c.decodeIfPresent(Int.self, forKey: .levelExperience) ?? 0
         learnedMoves = try c.decodeIfPresent([MoveSpec].self, forKey: .learnedMoves) ?? []
         rotomForm = try c.decodeIfPresent(RotomForm.self, forKey: .rotomForm)

@@ -292,14 +292,14 @@ actor PokeAPIClient: PokeProviding {
         let detail = try await species(speciesID)
         let profile = try await battleProfile(speciesID: speciesID)
         let names = localizedNames(detail.names)
-        var parentNames: [String: String]?
-        if let url = detail.evolves_from_species?.url {
-            let parentID = Self.id(from: url)
-            if parentID > 0 { parentNames = localizedNames(try await species(parentID).names) }
+        guard let abilitySlug = profile.abilitySlug else { throw URLError(.cannotParseResponse) }
+        let ability: AbilityDTO = try await get(base.appendingPathComponent("ability/\(abilitySlug)"))
+        let abilityNames = localizedNames(ability.names)
+        guard !names.isEmpty, !profile.types.isEmpty, !abilityNames.isEmpty else {
+            throw URLError(.cannotParseResponse)
         }
-        guard !names.isEmpty, !profile.types.isEmpty else { throw URLError(.cannotParseResponse) }
         return PokemonQuizFact(speciesID: speciesID, names: names, types: profile.types,
-                               evolvesFromNames: parentNames)
+                               abilityNames: abilityNames)
     }
 
     private func localizedNames(_ entries: [NameDTO]) -> [String: String] {
