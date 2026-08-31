@@ -812,7 +812,7 @@ final class PlayerGymTests: XCTestCase {
             challengerTeam: [snapshot(2, level: 50, move: tackle)],
             seed: 7)
 
-        engine.fillMissingActions(leaderUsesAI: true)
+        engine.fillLeaderAction(usingAI: true)
 
         XCTAssertEqual(engine.battle.myAction, .move(index: 1), "기대 피해가 큰 쪽을 골라야 한다")
     }
