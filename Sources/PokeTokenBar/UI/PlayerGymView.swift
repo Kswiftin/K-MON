@@ -95,7 +95,7 @@ struct PlayerGymView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     // 방 이름 원문(`GYM · 4k2p · 현우#abc123`)은 사람이 읽을 것이 아니다 —
                     // 실려 온 값을 풀어 "누가 몇 분째 지키는지"로 그린다.
-                    if let parsed = PlayerGymRoomName.parse(room.name) {
+                    if let parsed = PlayerGymRoomName.parse(room.serviceName) {
                         Text(l.playerGymTenure(
                             parsed.leaderName,
                             l.playerGymDuration(

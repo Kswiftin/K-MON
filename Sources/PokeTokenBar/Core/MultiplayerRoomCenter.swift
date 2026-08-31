@@ -4,7 +4,14 @@ import Observation
 
 struct MultiplayerRoomPeer: Identifiable, Equatable {
     let id: String
+    /// 사람에게 보여줄 이름 — `#식별자` 를 떼어 낸 값이다.
     let name: String
+    /// Bonjour 서비스 이름 **원문**. 식별자(`#앞6자리`)와 체육관이 실어 보낸 재임 시각이 여기 있다.
+    ///
+    /// `name` 은 `#` 앞에서 잘려 있으므로 **판정에 쓰면 안 된다.** 실제로 그렇게 썼다가 내 방을
+    /// 남의 방으로 읽어(식별자가 잘려 비교가 늘 실패) 자기 체육관에 "이미 열린 체육관이 있습니다"
+    /// 를 띄웠다.
+    let serviceName: String
     let endpoint: NWEndpoint
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
 }
@@ -133,7 +140,8 @@ final class MultiplayerRoomCenter {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let peers = results.compactMap { result -> MultiplayerRoomPeer? in
                 guard case .service(let name, _, _, _) = result.endpoint else { return nil }
-                return MultiplayerRoomPeer(id: name, name: Self.displayName(name), endpoint: result.endpoint)
+                return MultiplayerRoomPeer(id: name, name: Self.displayName(name),
+                                           serviceName: name, endpoint: result.endpoint)
             }
             Task { @MainActor in self?.rooms = peers.sorted { $0.name < $1.name } }
         }
@@ -166,7 +174,8 @@ final class MultiplayerRoomCenter {
 
     /// 지금 보이는 남의 체육관 방(내 것은 제외).
     var visibleGymRoom: MultiplayerRoomPeer? {
-        rooms.first { PlayerGym.isGymRoomName($0.name) && !$0.name.contains(myIDTag) }
+        // **원문**(`serviceName`)으로 본다. `name` 은 `#` 앞에서 잘려 있어 내 방을 걸러낼 수 없다.
+        rooms.first { PlayerGym.isGymRoomName($0.serviceName) && !$0.serviceName.contains(myIDTag) }
     }
 
     /// 내 방을 남의 목록에서 가려내는 꼬리표 — 방 이름에 이미 들어 있다(`startHosting`).
