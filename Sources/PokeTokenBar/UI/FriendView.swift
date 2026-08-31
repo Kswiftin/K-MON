@@ -26,12 +26,15 @@ struct FriendView: View {
                     }
                     BattleView(store: store)
                 }
-            // 방이 켜졌다는 것만으로는 어느 화면인지 못 정한다 — 토너먼트와 체육관이 같은 방을
-            // 쓰므로 **활동 종류로** 가른다. 관장은 방을 계속 띄워 두므로 이 갈림길이 없으면
-            // 체육관이 토너먼트 화면에 갇힌다.
-            } else if destination == .gym || battleCenter.multiplayer.isGymRoom || store.isGymLeader {
+            // **관장인 것만으로는 화면을 붙잡지 않는다.** 관장은 도전을 기다리는 배경 상태지
+            // 배틀 중이 아니다 — 그 내내 친구 탭을 잠그면 교환도 1:1 배틀도 못 한다(닫기를 눌러도
+            // 조건이 계속 참이라 안 나가진다). 붙잡는 것은 **판이 실제로 돌 때**뿐이다.
+            } else if destination == .gym || battleCenter.multiplayer.gymMatch != nil {
                 PlayerGymView(store: store, center: battleCenter.multiplayer) { destination = nil }
-            } else if destination == .tournament || battleCenter.multiplayer.phase != .idle {
+            // 방이 켜졌다는 것만으로는 어느 화면인지 못 정한다 — 토너먼트와 체육관이 같은 방을
+            // 쓰므로 **활동 종류로** 가른다. 체육관 방을 빼지 않으면 관장이 토너먼트 화면에 갇힌다.
+            } else if destination == .tournament
+                        || (battleCenter.multiplayer.phase != .idle && !battleCenter.multiplayer.isGymRoom) {
                 PokemonTournamentView(store: store, center: battleCenter.multiplayer) { destination = nil }
             } else if destination == .trade || battleCenter.trading.phase != .ready {
                 PokemonTradeView(store: store, center: battleCenter.trading) {
@@ -44,11 +47,16 @@ struct FriendView: View {
         .onAppear {
             if battleCenter.phase != .ready { destination = .battle }
             if battleCenter.trading.phase != .ready { destination = .trade }
-            if battleCenter.multiplayer.phase != .idle {
-                // 관장인 채로 탭을 떠났다 오면 체육관으로 돌아와야 한다.
-                destination = battleCenter.multiplayer.isGymRoom ? .gym : .tournament
+            // 토너먼트는 방이 켜져 있으면 그 화면으로 돌아간다. 체육관은 **판이 돌 때만** 그렇게
+            // 한다 — 관장이라는 이유로 되돌리면 다른 걸 하러 나올 수가 없다.
+            if battleCenter.multiplayer.phase != .idle, !battleCenter.multiplayer.isGymRoom {
+                destination = .tournament
             }
-            if store.isGymLeader { destination = .gym }
+            if battleCenter.multiplayer.gymMatch != nil { destination = .gym }
+        }
+        // 도전이 들어와 판이 서면 체육관으로 데려간다 — 다른 화면을 보고 있으면 도전이 온 줄 모른다.
+        .onChange(of: battleCenter.multiplayer.gymMatch == nil) { _, isIdle in
+            if !isIdle { destination = .gym }
         }
         .onChange(of: battleCenter.trading.phase) { _, phase in
             if phase != .ready { destination = .trade }

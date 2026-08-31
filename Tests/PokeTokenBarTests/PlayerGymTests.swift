@@ -563,6 +563,41 @@ final class PlayerGymTests: XCTestCase {
         XCTAssertTrue(coordinator.isDiscoveryUnavailable)
     }
 
+    // MARK: 친구 탭 라우팅 — 관장이라는 이유로 화면을 붙잡지 않는다
+
+    /// 주석을 뺀 `FriendView` 소스. 가드가 자기 설명 문구에 걸리지 않게 한다.
+    private func friendViewSource() throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PokeTokenBar/UI/FriendView.swift")
+        return try String(contentsOf: url, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                guard let comment = line.range(of: "//") else { return String(line) }
+                return String(line[..<comment.lowerBound])
+            }
+            .joined(separator: "\n")
+    }
+
+    /// **회귀**: 갈림길에 `store.isGymLeader` 를 걸었더니 관장인 내내 체육관 화면이 강제됐다.
+    /// 닫기를 눌러 `destination` 을 비워도 조건이 계속 참이라 안 나가지고, 그동안 교환도
+    /// 1:1 배틀도 못 했다. 붙잡는 것은 **판이 돌 때**뿐이어야 한다.
+    func testLeadershipAloneDoesNotPinTheFriendTab() throws {
+        let code = try friendViewSource()
+        XCTAssertFalse(code.contains("store.isGymLeader"),
+                       "관장이라는 상태만으로 화면을 붙잡으면 친구 탭에서 다른 걸 못 한다")
+        XCTAssertTrue(code.contains("battleCenter.multiplayer.gymMatch != nil"),
+                      "붙잡는 기준은 진행 중인 판이다")
+    }
+
+    /// 체육관 방도 `phase != .idle` 이라, 토너먼트 갈림길에서 빼지 않으면 관장이 토너먼트
+    /// 화면에 갇힌다.
+    func testTheTournamentBranchExcludesGymRooms() throws {
+        let code = try friendViewSource()
+        XCTAssertTrue(code.contains("!battleCenter.multiplayer.isGymRoom"),
+                      "체육관 방을 빼지 않으면 관장이 토너먼트 화면으로 끌려간다")
+    }
+
     // MARK: 매치 엔진
 
     private func snapshot(_ speciesID: Int, level: Int, move: MoveSpec) -> BattleSnapshot {
