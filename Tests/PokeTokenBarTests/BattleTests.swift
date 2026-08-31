@@ -512,9 +512,9 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(battle.mine[1].pp, ppBefore)
     }
 
-    /// 교체하며 내보낸 포켓몬이 그 공격에 쓰러지면 다음 포켓몬으로 넘어간다 —
-    /// 남은 게 없으면 그 자리에서 패배가 확정된다(호출부가 이 값으로 화면을 닫는다).
-    func testSwitchingIntoAFatalHitEndsTheBattle() {
+    /// 교체하며 내보낸 포켓몬이 그 공격에 쓰러져도 자동으로 다음 슬롯을 고르지 않는다.
+    /// 사용자가 살아 있는 포켓몬을 직접 골라야 배틀이 이어진다.
+    func testSwitchingIntoAFatalHitWaitsForManualReplacement() {
         var frail = fire()
         frail.base = BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1)
         var battle = practiceBattle(myTeam: [water(), frail], opponent: fire())
@@ -522,8 +522,10 @@ final class BattleTests: XCTestCase {
         XCTAssertTrue(battle.switchMine(to: 1))
 
         XCTAssertFalse(battle.mine[1].isAlive, "맞고 쓰러진다")
-        XCTAssertEqual(battle.myActive, 0, "살아 있는 포켓몬으로 넘어간다")
+        XCTAssertEqual(battle.myActive, 1, "쓰러진 슬롯에서 사용자의 교체 선택을 기다린다")
         XCTAssertNil(battle.result, "아직 한 마리 남았으므로 배틀은 계속된다")
+        XCTAssertTrue(battle.switchMine(to: 0), "살아 있는 포켓몬을 직접 선택할 수 있다")
+        XCTAssertEqual(battle.myActive, 0)
     }
 
     /// 6턴을 버티는 내 포켓몬 — 어느 쪽도 그 안에 쓰러지지 않아야 CPU 선택 분기를 6번 밟는다.
