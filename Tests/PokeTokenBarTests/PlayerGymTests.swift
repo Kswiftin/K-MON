@@ -672,8 +672,8 @@ final class PlayerGymTests: XCTestCase {
         let code = try friendViewSource()
         XCTAssertFalse(code.contains("store.isGymLeader"),
                        "관장이라는 상태만으로 화면을 붙잡으면 친구 탭에서 다른 걸 못 한다")
-        XCTAssertTrue(code.contains("battleCenter.multiplayer.gymMatch != nil"),
-                      "붙잡는 기준은 진행 중인 판이다")
+        XCTAssertTrue(code.contains("isGymMatchLive"),
+                      "붙잡는 기준은 **진행 중인** 판이다(끝난 판까지 붙잡으면 닫기가 안 먹는다)")
     }
 
     /// **회귀**: 끝난 판까지 붙잡으면 결과 화면에서 닫기가 먹히지 않는다 — 조건이 계속 참이라
