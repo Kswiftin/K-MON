@@ -16,7 +16,7 @@ struct FriendView: View {
         Group {
             if hasHiddenIncomingMessage && !revealsIncomingMessage {
                 privateMessageCard
-            } else if battleCenter.phase != .ready {
+            } else if destination == .battle || battleCenter.phase != .ready {
                 VStack(alignment: .leading, spacing: 10) {
                     if battleCenter.phase == .ready {
                         Button { destination = nil } label: {
@@ -294,7 +294,6 @@ struct FriendView: View {
             HStack {
                 Button {
                     destination = .battle
-                    battleCenter.challenge(peer)
                 } label: {
                     Label(store.l.t("배틀 신청", "Battle", "バトル"), systemImage: "bolt.fill")
                 }

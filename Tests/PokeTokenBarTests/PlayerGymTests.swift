@@ -695,6 +695,17 @@ final class PlayerGymTests: XCTestCase {
                        "관문에 두면 체육관·토너먼트에도 적용되는 것처럼 읽힌다")
     }
 
+    /// **회귀**: 후보 6마리 선택기를 랭크배틀 화면으로 옮긴 뒤에도 친구 행이 곧바로
+    /// `challenge(peer)` 를 호출했다. 후보가 아직 없으므로 신청은 거절됐고, 라우팅 조건은
+    /// `phase != .ready` 만 보아 편성 화면조차 열리지 않았다 — 버튼이 완전히 죽은 것처럼 보였다.
+    func testBattleButtonOpensTeamSelectionBeforeSendingAChallenge() throws {
+        let code = try friendViewSource()
+        XCTAssertTrue(code.contains("destination == .battle || battleCenter.phase != .ready"),
+                      "ready 상태에서도 사용자가 고른 배틀 화면을 열어야 후보 6마리를 편성할 수 있다")
+        XCTAssertFalse(code.contains("battleCenter.challenge(peer)"),
+                       "친구 관문의 버튼은 후보 편성 전에 신청을 보내면 안 된다")
+    }
+
     /// 체육관 방도 `phase != .idle` 이라, 토너먼트 갈림길에서 빼지 않으면 관장이 토너먼트
     /// 화면에 갇힌다.
     func testTheTournamentBranchExcludesGymRooms() throws {
