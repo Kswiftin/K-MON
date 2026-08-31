@@ -594,12 +594,17 @@ final class MultiplayerRoomCenter {
     /// 판을 닫는다. 관장이 이겼으면 쿨다운만 적고, 졌으면 **자리를 넘긴다.**
     private func concludeGymMatch(winnerID: UUID, challengerID: UUID) {
         companion.recordGymChallengeFinished(challengerID: challengerID)
+        // 기록에 남길 이름은 판이 지워지기 전에 집어 둔다.
+        let challengerName = gymMatch?.challengerName
+            ?? lobby?.participants.first { $0.id == challengerID }?.trainerName ?? "?"
         guard winnerID == challengerID else {
             // 지켰다. 보상은 **방어에만** 나간다 — 점령에 붙이면 왕복 파밍이 된다.
-            lastGymDefensePayout = companion.recordGymDefenseSuccess()
+            lastGymDefensePayout = companion.recordGymDefenseSuccess(challengerName: challengerName)
             gymChallengerLineup = nil
             return
         }
+        // 자리를 내줬다. 이 줄이 기록에서 가장 궁금한 줄이라 반드시 남긴다.
+        companion.recordGymDefenseLoss(challengerName: challengerName)
         if let gymID = companion.gymLeadership?.gymID,
            let connection = guestConnections[challengerID] {
             send(.gymHandoff(gymID: gymID), over: connection)

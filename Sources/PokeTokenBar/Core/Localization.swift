@@ -1342,6 +1342,18 @@ struct L {
     func playerGymStreak(_ count: Int) -> String {
         t("\(count)연속 방어 중", "\(count) in a row", "\(count)連続防衛中")
     }
+    var playerGymDefenseLogTitle: String {
+        t("도전 기록", "Challenge log", "挑戦の記録")
+    }
+    var playerGymDefenseLogEmpty: String {
+        t("아직 아무도 도전하지 않았습니다.", "No one has challenged yet.", "まだ誰も挑戦していません。")
+    }
+    var playerGymDefended: String { t("방어", "Held", "防衛") }
+    var playerGymYielded: String { t("자리 내줌", "Lost", "明け渡し") }
+    /// "25분 전" — 기록 한 줄의 시각 표기.
+    func playerGymTimeAgo(_ duration: String) -> String {
+        t("\(duration) 전", "\(duration) ago", "\(duration)前")
+    }
     var playerGymBecameLeader: String { t("체육관 관장이 되었습니다!", "You are the gym leader!", "ジムリーダーになりました！") }
     var playerGymLostLeadership: String { t("관장 자리를 내주었습니다.", "You lost the gym.", "ジムを明け渡しました。") }
     func gymBadgeCount(_ earned: Int, _ total: Int) -> String {

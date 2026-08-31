@@ -608,6 +608,9 @@ final class SaveTransferTests: XCTestCase {
                                      // 진행 중인 랭크전 에스크로 — 이미 지갑에서 빠져나간 돈이다.
                                      // 기기를 옮길 때 안 따라가면 배틀 중에 이전해서 판돈을 챙길 수 있다.
                                      "pendingRanked",
+                                     // 체육관 도전 기록은 전적(`battleHistory`)과 같은 부류다 —
+                                     // 내 기록이라 기기를 옮겨도 따라간다.
+                                     "gymDefenseLog",
                                      "adventure", "adventureHistory",
                                      "adventureWeekKey", "weeklyAdventureCount", "focusEggs", "focusEggReadyDates", "eggFragments",
                                      "starPieces", "forcedResetVersion", "integrityVersion", "lastAdventureBonusDate"]

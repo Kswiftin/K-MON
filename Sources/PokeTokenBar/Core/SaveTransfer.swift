@@ -200,6 +200,16 @@ enum SaveTransfer {
         s.gymDefenseRewardDate = clampedKey(s.gymDefenseRewardDate)
         // 오늘 지급액을 음수로 만들면 상한이 그만큼 늘어난다 — 0 과 상한 사이로 자른다.
         s.gymDefenseRewardToday = min(max(0, s.gymDefenseRewardToday), PlayerGym.dailyDefenseRewardCap)
+        // 도전 기록 — 남이 보낸 이름이 그대로 실리므로 길이를 자르고, 개수도 상한을 둔다.
+        s.gymDefenseLog = Array(s.gymDefenseLog
+            .sorted { $0.at > $1.at }
+            .prefix(PlayerGym.defenseLogLimit))
+            .map { record in
+                var record = record
+                record.challengerName = clampText(record.challengerName, maxNameLength)
+                record.payout = min(max(0, record.payout), maxTokenValue)
+                return record
+            }
         s.trainerName = clampText(s.trainerName, maxNameLength)
         s.gymBadges = Set(s.gymBadges.map { clampText($0, maxNameLength) })
         s.gymLeagueBadges = Set(s.gymLeagueBadges.map { clampText($0, maxNameLength) })

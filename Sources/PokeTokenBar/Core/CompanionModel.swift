@@ -992,6 +992,9 @@ struct CompanionState: Codable, Sendable {
     /// 하루 상한이 리셋된다.** 자격과 무관하게 이 기기의 오늘 지급액을 센다.
     var gymDefenseRewardDate = ""
     var gymDefenseRewardToday = 0
+    /// 내 체육관에 들어온 도전 기록(최신 우선). 관장 자리를 잃어도 남는다 — 체육관이 아니라
+    /// **내 기록**이라 자리를 되찾았을 때 지난 도전을 그대로 이어 본다.
+    var gymDefenseLog: [GymDefenseRecord] = []
     // 첫 파트너를 골랐는지 — false면 알이 아니라 스타터 선택 화면으로 시작(맨 처음 1회).
     // 졸업 후 새 알부터는 true 라 기존 알/부화 루프로 돌아간다.
     var starterChosen = false
@@ -1082,6 +1085,9 @@ struct CompanionState: Codable, Sendable {
         gymLeadership      = c.lenientOptional(PlayerGymLeadership.self, forKey: .gymLeadership)
         gymDefenseRewardDate = c.lenient(String.self, forKey: .gymDefenseRewardDate, default: "")
         gymDefenseRewardToday = c.lenient(Int.self, forKey: .gymDefenseRewardToday, default: 0)
+        // 항목별 격리 — 기록 하나가 손상돼도 나머지 기록이 통째로 날아가지 않는다(`battleHistory` 관례).
+        gymDefenseLog      = c.lenient([Lossy<GymDefenseRecord>].self, forKey: .gymDefenseLog,
+                                       default: []).compactMap(\.value)
         starterChosen      = c.lenient(Bool.self, forKey: .starterChosen, default: false)
         starterCandidates  = c.lenient([Int].self, forKey: .starterCandidates, default: [])
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.

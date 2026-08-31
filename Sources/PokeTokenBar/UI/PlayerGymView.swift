@@ -151,6 +151,8 @@ struct PlayerGymView: View {
                 Button(l.playerGymChallenge) { center.challengeGym() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
             }
+            // 자리를 내준 뒤에도 누가 꺾었는지는 봐야 한다 — 기록은 자격과 무관하게 남는다.
+            if !store.gymDefenseLog.isEmpty { defenseLog }
         }
     }
 
@@ -205,6 +207,41 @@ struct PlayerGymView: View {
 
             Button(l.playerGymResign, role: .destructive) { coordinator.resign() }
                 .controlSize(.small)
+
+            defenseLog
+        }
+    }
+
+    /// 누가 언제 도전했고 어떻게 됐나. **자리를 내준 판도 남는다** — 누가 나를 꺾었는지가
+    /// 기록에서 가장 궁금한 줄이라, 관장이 아닌 동안에도 볼 수 있게 목록 화면에서도 그린다.
+    @ViewBuilder private var defenseLog: some View {
+        Divider().opacity(0.5)
+        Text(l.playerGymDefenseLogTitle).font(.caption.bold())
+        if store.gymDefenseLog.isEmpty {
+            Text(l.playerGymDefenseLogEmpty).font(.caption2).foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(store.gymDefenseLog.prefix(8)) { record in
+                    HStack(spacing: 6) {
+                        Image(systemName: record.defended ? "shield.fill" : "flag.slash.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(record.defended ? Color.green : Color.orange)
+                        Text(record.challengerName).font(.caption2.bold()).lineLimit(1)
+                        Text(record.defended ? l.playerGymDefended : l.playerGymYielded)
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(record.defended ? Color.green : Color.orange)
+                        if record.payout > 0 {
+                            Text("⭐ \(GameNumberFormatter.compact(record.payout))")
+                                .font(.system(size: 8, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 2)
+                        Text(l.playerGymTimeAgo(l.playerGymDuration(
+                            minutes: PlayerGym.tenureMinutes(since: record.at, now: tick))))
+                            .font(.system(size: 8)).foregroundStyle(.tertiary)
+                    }
+                }
+            }
         }
     }
 
