@@ -60,7 +60,9 @@ final class MultiplayerRoomCenter {
     private(set) var pokeathlonPool = PokeathlonPool()
     private(set) var pokemonQuizGame: PokemonOXGame?
     var tournamentPickedTeam: [UUID] = []
+    var tournamentFinalTeam: [UUID] = []
     private(set) var tournamentState: PokemonTournamentState?
+    private(set) var tournamentPools: [UUID: [BattleSnapshot]] = [:]
     private var tournamentTeams: [UUID: [BattleSnapshot]] = [:]
     private var tournamentBracket: TournamentBracket?
     private var tournamentMatch: TournamentMatchEngine?
@@ -220,10 +222,12 @@ final class MultiplayerRoomCenter {
         Task {
             guard let snapshot = await buildSnapshot() else { phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return }
             if activity == .tournament {
-                guard let lineup = await buildTournamentLineup() else {
-                    phase = .idle; lastError = "토너먼트에 출전할 포켓몬 3마리를 선택해 주세요."; return
+                guard let pool = await buildTournamentLineup(ids: tournamentPickedTeam, count: 6) else {
+                    phase = .idle; lastError = "토너먼트 후보 포켓몬 6마리를 선택해 주세요."; return
                 }
-                tournamentTeams[myID] = lineup
+                tournamentPools[myID] = pool
+                tournamentTeams.removeValue(forKey: myID)
+                tournamentFinalTeam = []
             }
             mySnapshot = snapshot
             snapshots[myID] = snapshot
@@ -259,10 +263,12 @@ final class MultiplayerRoomCenter {
             guard let snapshot = await buildSnapshot() else { phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return }
             let isTournament = room.name.hasPrefix("TOUR ·")
             if isTournament {
-                guard let lineup = await buildTournamentLineup() else {
-                    phase = .idle; lastError = "토너먼트에 출전할 포켓몬 3마리를 선택해 주세요."; return
+                guard let pool = await buildTournamentLineup(ids: tournamentPickedTeam, count: 6) else {
+                    phase = .idle; lastError = "토너먼트 후보 포켓몬 6마리를 선택해 주세요."; return
                 }
-                tournamentTeams[myID] = lineup
+                tournamentPools[myID] = pool
+                tournamentTeams.removeValue(forKey: myID)
+                tournamentFinalTeam = []
             }
             mySnapshot = snapshot
             snapshots[myID] = snapshot
@@ -280,8 +286,8 @@ final class MultiplayerRoomCenter {
                                                            reportedStarPieces: self.companion.availableTokens)
                         self.send(.join(version: MultiplayerWireMessage.protocolVersion,
                                         participant: participant, snapshot: snapshot), over: connection)
-                        if isTournament, let lineup = self.tournamentTeams[self.myID] {
-                            self.send(.tournamentTeam(participantID: self.myID, lineup: lineup), over: connection)
+                        if isTournament, let pool = self.tournamentPools[self.myID] {
+                            self.send(.tournamentPool(participantID: self.myID, lineup: pool), over: connection)
                         }
                         self.receiveGuestLoop(connection)
                     // 관장이 배틀 도중 사라지면 그 판은 복구할 수 없다(상태가 관장 메모리에 있었다).
@@ -311,9 +317,31 @@ final class MultiplayerRoomCenter {
 
     func toggleReady() {
         guard let me = myParticipant, !isInPlay else { return }
+        if lobby?.activity == .tournament, tournamentTeams[myID]?.count != 3 {
+            lastError = "공개된 6마리 중 실제 출전 포켓몬 3마리를 먼저 확정해 주세요."
+            return
+        }
         if isHost {
             lobby?.setReady(!me.isReady, participantID: myID); broadcastLobby()
         } else if let hostConnection { send(.ready(participantID: myID, ready: !me.isReady), over: hostConnection) }
+    }
+
+    func confirmTournamentTeam() {
+        let allowed = Set(tournamentPickedTeam)
+        let ids = tournamentFinalTeam.filter { allowed.contains($0) }
+        guard phase == .hosting || phase == .joined, lobby?.activity == .tournament,
+              ids.count == 3 else {
+            lastError = "공개된 후보 중 출전 포켓몬 3마리를 선택해 주세요."; return
+        }
+        Task {
+            guard let lineup = await buildTournamentLineup(ids: ids, count: 3) else {
+                lastError = "토너먼트 출전 파티를 준비하지 못했습니다."; return
+            }
+            tournamentTeams[myID] = lineup
+            if !isHost, let hostConnection {
+                send(.tournamentTeam(participantID: myID, lineup: lineup), over: hostConnection)
+            }
+        }
     }
 
     func selectTeam(_ team: BattleTeam) {
@@ -871,7 +899,8 @@ final class MultiplayerRoomCenter {
         pokemonQuizBroadcastTask?.cancel(); pokemonQuizBroadcastTask = nil
         lobby = nil; mySnapshot = nil; snapshots.removeAll(); battle = nil; pokeathlonRace = nil
         pokemonQuizGame = nil; isPreparingPokemonQuiz = false; lastPokemonQuizInputAt = .distantPast
-        tournamentState = nil; tournamentTeams.removeAll(); tournamentBracket = nil
+        tournamentState = nil; tournamentTeams.removeAll(); tournamentPools.removeAll(); tournamentBracket = nil
+        tournamentFinalTeam = []
         tournamentMatch = nil; tournamentRewarded = false
         gymMatch = nil; gymEngine = nil; gymChallengerLineup = nil; gymRejection = nil
         gymLeaderAbandonedMatch = false; lastGymDefensePayout = nil
@@ -961,6 +990,9 @@ final class MultiplayerRoomCenter {
                     self.pendingGuestConnections.removeValue(forKey: key)
                     self.guestConnections[participant.id] = connection
                     self.broadcastLobby()
+                    if self.lobby?.activity == .tournament {
+                        self.send(.tournamentPools(self.tournamentPools), over: connection)
+                    }
                     // 진행 중인 체육관 판이 있으면 **이 연결에만** 현재 상태를 보낸다. 브로드캐스트는
                     // 다음 행동 때나 오므로, 이게 없으면 방금 들어온 관전자는 판이 끝날 때까지
                     // 빈 화면을 본다.
@@ -981,6 +1013,8 @@ final class MultiplayerRoomCenter {
                 else if self.lobby?.activity == .gym { self.retireGymChallenger(pid); try? self.lobby?.leave(participantID: pid) }
                 else { try? self.lobby?.leave(participantID: pid) }
                 self.snapshots.removeValue(forKey: pid); self.guestConnections.removeValue(forKey: pid)
+                self.tournamentPools.removeValue(forKey: pid)
+                self.tournamentTeams.removeValue(forKey: pid)
                 connection.cancel(); self.broadcastLobby(); return
             case .action(let round, let action) where action.attackerID == id && round == self.combatRound:
                 if let id { self.acceptAction(action, from: id) }
@@ -996,6 +1030,15 @@ final class MultiplayerRoomCenter {
                     self.send(.rejected(reason: "잘못된 토너먼트 파티입니다."), over: connection); return
                 }
                 self.tournamentTeams[pid] = lineup
+            case .tournamentPool(let pid, let lineup) where pid == id:
+                guard self.lobby?.activity == .tournament,
+                      self.validLineup(lineup, participantID: pid, size: 6) else {
+                    self.send(.rejected(reason: "잘못된 토너먼트 후보입니다."), over: connection); return
+                }
+                self.tournamentPools[pid] = lineup
+                for guest in self.guestConnections.values {
+                    self.send(.tournamentPools(self.tournamentPools), over: guest)
+                }
             case .tournamentAction(let matchID, let pid, let action) where pid == id:
                 self.acceptTournamentAction(action, from: pid, matchID: matchID)
             case .gymChallenge(let pid, let lineup) where pid == id:
@@ -1042,6 +1085,8 @@ final class MultiplayerRoomCenter {
                 self.applySettlement(pool: pool, winnerID: winnerID)
             case .pokemonQuizStart(let game): self.pokemonQuizGame = game; self.phase = .pokemonQuiz
             case .pokemonQuizState(let game) where self.phase == .pokemonQuiz: self.pokemonQuizGame = game
+            case .tournamentPools(let pools):
+                self.tournamentPools = pools
             case .tournamentStart(let state):
                 self.tournamentState = state; self.phase = .tournament
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
@@ -1087,7 +1132,7 @@ final class MultiplayerRoomCenter {
 
     /// 호스트가 연결에 묶인 참가자 ID를 기준으로 발신자를 인증하고, 전투 중인 방에만 전달한다.
     private func acceptChat(_ incoming: BattleChatMessage, from participantID: UUID) {
-        guard phase == .battling, incoming.senderID == participantID,
+        guard (phase == .battling || phase == .tournament), incoming.senderID == participantID,
               let participant = lobby?.participants.first(where: { $0.id == participantID }),
               let body = BattleChatPolicy.normalizedBody(incoming.body),
               let name = BattleChatPolicy.displayName(participant.trainerName),
@@ -1112,7 +1157,8 @@ final class MultiplayerRoomCenter {
     }
 
     func sendChat(_ body: String) {
-        guard phase == .battling, let normalized = BattleChatPolicy.normalizedBody(body) else { return }
+        guard (phase == .battling || phase == .tournament),
+              let normalized = BattleChatPolicy.normalizedBody(body) else { return }
         let message = BattleChatMessage(senderID: myID, senderName: trainerName, body: normalized)
         if isHost { acceptChat(message, from: myID) }
         else if let hostConnection { send(.chat(message), over: hostConnection) }
@@ -1187,6 +1233,7 @@ final class MultiplayerRoomCenter {
         pendingGuestConnections.removeValue(forKey: pendingKey)
         guard let id = guestConnections.first(where: { $0.value === connection })?.key else { return }
         guestConnections.removeValue(forKey: id); snapshots.removeValue(forKey: id)
+        tournamentPools.removeValue(forKey: id); tournamentTeams.removeValue(forKey: id)
         if phase == .battling {
             retireFighter(id)
         } else {
@@ -1287,11 +1334,11 @@ final class MultiplayerRoomCenter {
                               weightHectograms: profile.weightHectograms)
     }
 
-    private func buildTournamentLineup() async -> [BattleSnapshot]? {
+    private func buildTournamentLineup(ids requestedIDs: [UUID], count: Int) async -> [BattleSnapshot]? {
         await companion.ensureInheritedMoves()
         let owned = companion.deployableMons
-        let ids = tournamentPickedTeam.filter { id in owned.contains(where: { $0.id == id }) }
-        guard ids.count == 3 else { return nil }
+        let ids = requestedIDs.filter { id in owned.contains(where: { $0.id == id }) }
+        guard ids.count == count, Set(ids).count == count else { return nil }
         var lineup: [BattleSnapshot] = []
         for id in ids {
             guard let mon = owned.first(where: { $0.id == id }),

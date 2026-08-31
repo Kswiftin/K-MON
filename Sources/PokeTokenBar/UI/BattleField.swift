@@ -1028,6 +1028,9 @@ struct BattleArenaView: View {
     /// 재생 중인가 · 누가 맞았나 · 무슨 문구가 떠 있나. 재생이 없으면 `.idle` 이라 예전 화면 그대로다.
     var overlay: ReplayOverlay = .idle
     var calledMoves: [MoveSpec] = []
+    /// 관전 화면은 같은 경기장을 그리되 행동 버튼만 잠근다.
+    var allowsActions = true
+    var showsForfeit = true
     let onChoose: (Int) -> Void
     let onSwitch: (Int) -> Void
     let onForfeit: () -> Void
@@ -1035,8 +1038,8 @@ struct BattleArenaView: View {
 
     /// 재생이 끝나기 전에 다음 기술을 고르면 무엇이 일어났는지 보지 못한 채 턴이 넘어간다.
     private var acceptsInput: Bool {
-        BattleReplay.acceptsInput(isWaitingForOpponent: isWaitingForOpponent,
-                                  isReplaying: overlay.isPlaying)
+        allowsActions && BattleReplay.acceptsInput(isWaitingForOpponent: isWaitingForOpponent,
+                                                    isReplaying: overlay.isPlaying)
     }
 
     var body: some View {
@@ -1046,7 +1049,11 @@ struct BattleArenaView: View {
                             myTitle: myTitle, theirTitle: theirTitle, l: l,
                             myActor: myActor, overlay: overlay, calledMoves: calledMoves)
                 .frame(height: BattleFieldMetrics.fieldHeight)
-            if isWaitingForOpponent {
+            if !allowsActions {
+                Label(l.t("현재 경기를 관전 중입니다.", "You are spectating this match.", "この試合を観戦中です。"),
+                      systemImage: "eye.fill")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if isWaitingForOpponent {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text(l.battleWaitingOpponent).font(.caption).foregroundStyle(.secondary)
@@ -1055,11 +1062,19 @@ struct BattleArenaView: View {
                 Text(l.battleYourTurn)
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
             }
-            MoveGridView(moves: mine.mustStruggle ? [.struggle()] : mine.moves,
-                         pp: mine.mustStruggle ? [] : mine.pp,
-                         language: l.lang,
-                         isEnabled: acceptsInput,
-                         onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
+            if mine.isAlive {
+                MoveGridView(moves: mine.mustStruggle ? [.struggle()] : mine.moves,
+                             pp: mine.mustStruggle ? [] : mine.pp,
+                             language: l.lang,
+                             isEnabled: acceptsInput,
+                             onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
+            } else if allowsActions {
+                Label(l.t("다음에 내보낼 포켓몬을 선택하세요.",
+                          "Choose the next Pokémon to send out.",
+                          "次に出すポケモンを選んでください。"),
+                      systemImage: "arrow.triangle.swap")
+                    .font(.headline).foregroundStyle(.orange)
+            }
             if !switchSlots.isEmpty {
                 // 교체도 그 턴의 행동이다 — 기술만 잠그면 재생 중에 교체로 턴을 넘길 수 있다.
                 // 흐리게 그리는 건 `SwitchStripView` 가 자기 잠금 상태로 한다.
@@ -1086,9 +1101,11 @@ struct BattleArenaView: View {
                 }
             }
             Spacer()
-            Button(l.battleForfeit, action: onForfeit)
-                .controlSize(.mini)
-                .foregroundStyle(.secondary)
+            if showsForfeit {
+                Button(l.battleForfeit, action: onForfeit)
+                    .controlSize(.mini)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

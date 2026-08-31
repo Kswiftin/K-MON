@@ -384,6 +384,18 @@ final class CompanionStore {
     }
     var boxedMons: [MonState] { state.boxedMons }
     var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }
+
+    /// NEW 표시는 사용자가 그 개체를 눌러 확인할 때까지 유지한다.
+    func markPokemonSeen(_ id: UUID) {
+        if state.active?.id == id {
+            guard state.active?.isNewlyHatched == true else { return }
+            state.active?.isNewlyHatched = false
+        } else if let index = state.boxedMons.firstIndex(where: { $0.id == id }) {
+            guard state.boxedMons[index].isNewlyHatched else { return }
+            state.boxedMons[index].isNewlyHatched = false
+        } else { return }
+        save()
+    }
     var activeMonID: UUID? { state.active?.id }
 
     /// 공유 체육관에 배치해 **지금 다른 곳에 쓸 수 없는** 개체들.
@@ -2995,7 +3007,7 @@ final class CompanionStore {
                            stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: plan.count,
                            isShiny: shiny, nature: nature, gender: gender,
                            evolutionStatRelation: statRelation,
-                           names: line.names, firstMetAt: clock())   // 박스 개체는 currentLine 이 없어 이름을 여기서 들고 가야 한다
+                           names: line.names, firstMetAt: clock(), isNewlyHatched: true)   // 박스 개체는 currentLine 이 없어 이름을 여기서 들고 가야 한다
         memoryAlbum.recordFirstMeeting(companionID: mon.id, at: mon.firstMetAt!)
         // 동행이 비어 있으면(졸업 직후 등) 박스가 아니라 바로 동행으로 부화한다 — 그러지 않으면
         // 졸업 후 동행 없는 상태로 남아 사용자가 박스에서 직접 꺼내야 한다.
@@ -3202,7 +3214,7 @@ final class CompanionStore {
                                 stageIndex: 0, usedAtStage: 0, rarity: line.rarity, totalForms: evolutionPlan.count,
                                 isShiny: isShiny, nature: nature, gender: gender,
                                 evolutionStatRelation: statRelation, dittoDisguise: dittoDisguise,
-                                names: line.names, firstMetAt: clock())   // 박스로 들어가도 도감이 이름을 여기서 들고 가야 한다
+                                names: line.names, firstMetAt: clock(), isNewlyHatched: true)   // 박스로 들어가도 도감이 이름을 여기서 들고 가야 한다
         let hatchedID = state.active!.id
         memoryAlbum.recordFirstMeeting(companionID: hatchedID, at: state.active!.firstMetAt!)
         AppLog.write("hatch: base=\(line.baseID) rarity=\(line.rarity) shiny=\(isShiny) forms=\(evolutionPlan.count) ditto=\(dittoDisguise != nil)")

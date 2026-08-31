@@ -27,14 +27,14 @@ struct PokemonTournamentView: View {
 
     private var browser: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(store.l.t("출전 파티 · 전원 Lv.50", "Tournament team · all Lv.50", "出場パーティ・全員 Lv.50"))
+            Text(store.l.t("후보 6마리 · 전원 Lv.50", "Six candidates · all Lv.50", "候補6匹・全員 Lv.50"))
                 .font(.caption.bold())
             TeamPicker(store: store,
                        selection: Binding(get: { center.tournamentPickedTeam },
-                                          set: { center.tournamentPickedTeam = $0 }), limit: 3)
+                                          set: { center.tournamentPickedTeam = $0 }), limit: 6)
             Button(store.l.t("8인 토너먼트 방 만들기", "Create tournament room", "トーナメント部屋を作る")) {
                 center.createTournamentRoom()
-            }.buttonStyle(.borderedProminent).disabled(center.tournamentPickedTeam.count != 3)
+            }.buttonStyle(.borderedProminent).disabled(center.tournamentPickedTeam.count != 6)
             Divider()
             Text(store.l.t("참가 가능한 방", "Available rooms", "参加できる部屋")).font(.caption.bold())
             let rooms = center.rooms.filter { $0.name.hasPrefix("TOUR ·") }
@@ -47,7 +47,7 @@ struct PokemonTournamentView: View {
                         Text(room.name).font(.caption).lineLimit(1)
                         Spacer()
                         Button(store.l.t("참가", "Join", "参加")) { center.join(room) }
-                            .controlSize(.small).disabled(center.tournamentPickedTeam.count != 3)
+                            .controlSize(.small).disabled(center.tournamentPickedTeam.count != 6)
                     }
                 }
             }
@@ -69,6 +69,27 @@ struct PokemonTournamentView: View {
                         Image(systemName: player.isReady ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(player.isReady ? .green : .secondary)
                     }.padding(5).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                    if let pool = center.tournamentPools[player.id] {
+                        HStack(spacing: 4) {
+                            ForEach(Array(pool.enumerated()), id: \.offset) { _, snapshot in
+                                SpriteView(speciesID: snapshot.speciesID, size: 25, shiny: snapshot.isShiny)
+                            }
+                        }
+                    }
+                }
+                if center.tournamentPools[center.myID]?.count == 6 {
+                    Text(store.l.t("공개된 후보 중 실제 출전할 3마리", "Choose three from your revealed pool",
+                                   "公開した候補から出場する3匹"))
+                        .font(.caption.bold())
+                    TeamPicker(store: store,
+                               selection: Binding(get: { center.tournamentFinalTeam },
+                                                  set: { center.tournamentFinalTeam = $0 }),
+                               limit: 3, allowedIDs: Set(center.tournamentPickedTeam))
+                    Button(store.l.t("출전 3마리 확정", "Confirm three", "出場3匹を確定")) {
+                        center.confirmTournamentTeam()
+                    }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .disabled(center.tournamentFinalTeam.count != 3)
                 }
                 Text(store.l.t("참가자가 많을수록 우승 알의 등급이 올라갑니다.",
                                "More entrants improve the champion Egg.",
@@ -109,8 +130,15 @@ struct PokemonTournamentView: View {
         let mineIsA = match.playerA == center.myID
         let mineIsB = match.playerB == center.myID
         let amPlaying = mineIsA || mineIsB
-        let myTeam = mineIsA ? match.teamA : match.teamB
-        let myActive = mineIsA ? match.activeA : match.activeB
+        // 관전자는 대진표의 A를 왼쪽(내 편 자리)에 둔다. 참가자는 언제나 자기 팀이 내 편 자리에 온다.
+        let viewingB = mineIsB
+        let myTeam = viewingB ? match.teamB : match.teamA
+        let theirTeam = viewingB ? match.teamA : match.teamB
+        let myActive = viewingB ? match.activeB : match.activeA
+        let theirActive = viewingB ? match.activeA : match.activeB
+        let myActor: BattleActor = viewingB ? .b : .a
+        let myName = viewingB ? match.nameB : match.nameA
+        let theirName = viewingB ? match.nameA : match.nameB
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(store.l.t("\(match.round)라운드", "Round \(match.round)", "第\(match.round)ラウンド"))
@@ -118,54 +146,32 @@ struct PokemonTournamentView: View {
                 Spacer()
                 Text("\(match.nameA)  VS  \(match.nameB)").font(.caption.bold())
             }
-            HStack(spacing: 12) {
-                tournamentSide(match.teamA, active: match.activeA, name: match.nameA)
-                Text("VS").font(.title3.weight(.black)).foregroundStyle(.red)
-                tournamentSide(match.teamB, active: match.activeB, name: match.nameB)
-            }
             if let winner = match.winnerID {
                 let name = winner == match.playerA ? match.nameA : match.nameB
                 Text(store.l.t("\(name) 승리! 다음 대진을 준비합니다.", "\(name) wins! Preparing the next match.",
                                "\(name)の勝利！次の対戦を準備します。"))
                     .font(.headline).frame(maxWidth: .infinity)
-            } else if !amPlaying {
-                Label(store.l.t("현재 경기를 관전 중입니다.", "You are spectating this match.", "この試合を観戦中です。"),
-                      systemImage: "eye.fill").font(.caption).foregroundStyle(.secondary)
-            } else if match.submitted.contains(center.myID) {
-                HStack { ProgressView().controlSize(.small); Text(store.l.t("상대의 선택을 기다리는 중…", "Waiting for opponent…", "相手を待っています…")) }
-                    .font(.caption).foregroundStyle(.secondary)
-            } else if myTeam.indices.contains(myActive) {
-                let active = myTeam[myActive].side
-                if active.isAlive {
-                    MoveGridView(moves: active.mustStruggle ? [.struggle()] : active.moves,
-                                 pp: active.mustStruggle ? [] : active.pp, language: store.language,
-                                 isEnabled: true) { index in
-                        center.submitTournamentAction(.move(index: active.mustStruggle ? -1 : index))
-                    }
-                } else {
-                    Label(store.l.t("다음에 내보낼 포켓몬을 선택하세요.",
-                                    "Choose the next Pokémon to send out.",
-                                    "次に出すポケモンを選んでください。"),
-                          systemImage: "arrow.triangle.swap")
-                        .font(.headline).foregroundStyle(.orange)
-                }
-                HStack {
-                    ForEach(myTeam.indices.filter { $0 != myActive && myTeam[$0].hp > 0 }, id: \.self) { index in
-                        Button(store.l.t("교체: \(myTeam[index].snapshot.name)", "Switch: \(myTeam[index].snapshot.name)",
-                                         "交代：\(myTeam[index].snapshot.name)")) {
-                            center.submitTournamentAction(.switchTo(index: index))
-                        }.controlSize(.mini)
-                    }
-                }
             }
-            if !match.events.isEmpty {
-                BattleLogBox(lines: tournamentLogLines(match),
-                            myActor: mineIsA ? .a : (mineIsB ? .b : nil))
+            if myTeam.indices.contains(myActive), theirTeam.indices.contains(theirActive) {
+                BattleArenaView(
+                    mine: myTeam[myActive].side,
+                    theirs: theirTeam[theirActive].side,
+                    myTitle: myName, theirTitle: theirName,
+                    l: store.l, turn: match.turn,
+                    logLines: tournamentLogLines(match), myActor: myActor,
+                    switchSlots: SwitchStripModel.battleSlots(myTeam.map(\.side), active: myActive),
+                    turnEndsAt: center.turnEndsAt,
+                    isWaitingForOpponent: amPlaying && match.submitted.contains(center.myID),
+                    calledMoves: (match.teamA + match.teamB).flatMap { $0.side.moves },
+                    allowsActions: amPlaying && match.winnerID == nil,
+                    showsForfeit: false,
+                    onChoose: { center.submitTournamentAction(.move(index: $0)) },
+                    onSwitch: { center.submitTournamentAction(.switchTo(index: $0)) },
+                    onForfeit: {},
+                    chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.myID,
+                                                  isEnabled: true, unavailableMessage: nil, l: store.l,
+                                                  onSend: center.sendChat))
             }
-            BattleChatPanel(configuration: BattleChatConfiguration(
-                messages: center.chatMessages, mySenderID: center.myID,
-                isEnabled: true, unavailableMessage: nil, l: store.l,
-                onSend: center.sendChat))
             bracket(state)
         }
     }
@@ -181,24 +187,6 @@ struct PokemonTournamentView: View {
         return BattleLog.lines(match.events, l: store.l,
                                name: { $0 == .a ? match.nameA : match.nameB },
                                move: { actor, id in moves(for: actor).first { $0.id == id } ?? .struggle() })
-    }
-
-    private func tournamentSide(_ team: [TournamentPokemonState], active: Int, name: String) -> some View {
-        VStack(spacing: 4) {
-            Text(name).font(.caption.bold()).lineLimit(1)
-            if team.indices.contains(active) {
-                let mon = team[active]
-                SpriteView(speciesID: mon.snapshot.speciesID, size: 62, shiny: mon.snapshot.isShiny)
-                ProgressView(value: Double(mon.hp), total: Double(max(1, mon.side.stats.hp)))
-                    .tint(HPTier.of(hp: mon.hp, max: mon.side.stats.hp).color)
-            }
-            HStack(spacing: 3) {
-                ForEach(team.indices, id: \.self) { i in
-                    Circle().fill(team[i].hp > 0 ? Color.green : Color.gray)
-                        .frame(width: 7, height: 7).overlay(i == active ? Circle().stroke(.white) : nil)
-                }
-            }
-        }.frame(maxWidth: .infinity).padding(7).pokedoroCard()
     }
 
     private func bracket(_ state: PokemonTournamentState) -> some View {

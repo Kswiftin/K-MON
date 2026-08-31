@@ -67,6 +67,21 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertEqual(decodedAction, .switchTo(index: 2))
     }
 
+    func testSixPokemonPoolRoundTripsBeforeTheFinalTeam() throws {
+        let pool = (1...6).map { snapshot($0) }
+        let message = NetMessage.poolReady(lineup: pool, profile: profile,
+                                           rulesVersion: BattleEngine.rulesVersion,
+                                           chatSupported: true)
+        guard case .poolReady(let decoded, let decodedProfile, let version, let chat)
+                = try JSONDecoder().decode(NetMessage.self, from: JSONEncoder().encode(message)) else {
+            return XCTFail("poolReady case")
+        }
+        XCTAssertEqual(decoded, pool)
+        XCTAssertEqual(decodedProfile, profile)
+        XCTAssertEqual(version, BattleEngine.rulesVersion)
+        XCTAssertEqual(chat, true)
+    }
+
     func testLegacyChallengeAndMoveStillDecode() throws {
         let lead = snapshot(1)
         let modern = NetMessage.challenge(snapshot: lead, lineup: [lead], teamSize: 1,
@@ -250,6 +265,22 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertNil(state.resolveChosenActions())
         XCTAssertEqual(state.oppActive, 1)
         XCTAssertTrue(state.oppTeam[1].isAlive)
+    }
+
+    func testManualReplacementLeavesTheFaintedSlotActiveUntilChosen() {
+        let attacker = BattleSide(snapshot(1, speed: 200, power: 500))
+        var lead = BattleSide(snapshot(2, speed: 10, power: 1)); lead.hp = 1
+        var state = NetBattleState(iAmA: true, myTeam: [attacker],
+                                   oppTeam: [lead, BattleSide(snapshot(3))],
+                                   rng: SplitMix64(seed: 1))
+        state.automaticallyReplacesFainted = false
+        state.myAction = .move(index: 0); state.oppAction = .move(index: 0)
+
+        XCTAssertNil(state.resolveChosenActions())
+        XCTAssertEqual(state.oppActive, 0)
+        XCTAssertFalse(state.oppTeam[0].isAlive)
+        XCTAssertTrue(state.canChoose(.switchTo(index: 1), mine: false))
+        XCTAssertFalse(state.canChoose(.move(index: 0), mine: false))
     }
 
     /// 자동 출전이 **스트림에 남는다**. 재생기는 이 이벤트를 보고서야 표시 상태를 새 개체로

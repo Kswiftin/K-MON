@@ -57,6 +57,14 @@ struct BattleView: View {
             incomingView(peer: peer)
         case .teamBuilding(let peer):
             teamBuildingView(peer: peer, waiting: false)
+        case .poolBuilding(let peer):
+            VStack(spacing: 8) {
+                ProgressView()
+                Text(l.t("\(peer)님과 후보 6마리를 공개하는 중…",
+                         "Revealing six candidates with \(peer)…",
+                         "\(peer)と候補6匹を公開中…"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         case .waitingTeam(let peer):
             teamBuildingView(peer: peer, waiting: true)
         case .battling:
@@ -255,9 +263,13 @@ struct BattleView: View {
                 Text("6 vs 6").tag(6)
             }.pickerStyle(.segmented).labelsHidden()
 
+            Text(l.t("먼저 후보 6마리를 공개한 뒤 실제 출전 포켓몬을 고릅니다.",
+                     "Reveal six candidates first, then choose the battle team.",
+                     "先に候補6匹を公開してから実際の出場ポケモンを選びます。"))
+                .font(.caption2).foregroundStyle(.secondary)
             TeamPicker(store: store,
                        selection: Binding(get: { center.pickedTeam }, set: { center.pickedTeam = $0 }),
-                       limit: center.rankedTeamSize)
+                       limit: 6)
 
             HStack {
                 Label(store.battleRank.displayName, systemImage: "shield.lefthalf.filled")
@@ -599,7 +611,7 @@ struct BattleView: View {
     }
 
     private var isChallengeEnabled: Bool {
-        if case .ready = center.phase { return true }
+        if case .ready = center.phase { return center.pickedTeam.count == 6 }
         return false
     }
 
@@ -635,8 +647,10 @@ struct BattleView: View {
                 }
                 .font(.caption2)
             }
-            if store.ownedMons.count < center.incomingTeamSize {
-                Text(l.battleNeedsPokemon(center.incomingTeamSize))
+            if store.deployableMons.count < 6 || center.pickedTeam.count != 6 {
+                Text(l.t("수락하려면 먼저 후보 포켓몬 6마리를 선택하세요.",
+                         "Choose six candidate Pokémon before accepting.",
+                         "承認する前に候補のポケモンを6匹選んでください。"))
                     .font(.caption2).foregroundStyle(.orange)
             } else if let error = center.lastError {
                 Text(error).font(.caption2).foregroundStyle(.orange)
@@ -646,7 +660,7 @@ struct BattleView: View {
                 Button(l.battleAccept) { center.acceptIncoming() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .disabled(store.ownedMons.count < center.incomingTeamSize)
+                    .disabled(store.deployableMons.count < 6 || center.pickedTeam.count != 6)
                 Button(l.battleDecline) { center.declineIncoming() }
                     .controlSize(.small)
             }
@@ -666,10 +680,25 @@ struct BattleView: View {
             Picker("", selection: Binding(get: { center.incomingTeamSize }, set: { _ in })) {
                 Text("\(center.incomingTeamSize) vs \(center.incomingTeamSize)").tag(center.incomingTeamSize)
             }.pickerStyle(.segmented).labelsHidden().disabled(true)
+            if !center.incomingBattlePool.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(l.t("상대 후보 6마리", "Opponent's six candidates", "相手の候補6匹"))
+                        .font(.caption.bold())
+                    HStack(spacing: 5) {
+                        ForEach(Array(center.incomingBattlePool.enumerated()), id: \.offset) { _, snapshot in
+                            VStack(spacing: 1) {
+                                SpriteView(speciesID: snapshot.speciesID, size: 30, shiny: snapshot.isShiny)
+                                Text(snapshot.name).font(.system(size: 7)).lineLimit(1)
+                            }.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
             TeamPicker(store: store,
                        selection: Binding(get: { center.incomingPickedTeam },
                                           set: { center.incomingPickedTeam = $0 }),
-                       limit: center.incomingTeamSize)
+                       limit: center.incomingTeamSize,
+                       allowedIDs: Set(center.battlePoolIDs))
                 .disabled(waiting)
             HStack {
                 Button(l.battleCancel) { center.cancelChallenge() }.disabled(waiting)

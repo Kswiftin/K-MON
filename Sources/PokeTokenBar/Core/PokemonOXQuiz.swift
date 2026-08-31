@@ -15,7 +15,7 @@ struct PokemonQuizFact: Sendable, Equatable {
     let speciesID: Int
     let names: [String: String]
     let types: [PokemonType]
-    let evolvesFromNames: [String: String]?
+    let abilityNames: [String: String]
 
     func name(_ language: String) -> String { names[language] ?? names["en"] ?? "#\(speciesID)" }
 }
@@ -25,42 +25,31 @@ enum PokemonOXQuestionFactory {
         var questions: [PokemonOXQuestion] = []
         var nextID = 1
         for (index, fact) in facts.enumerated() {
-            // 오답 타입을 18종 전체에서 뽑으면 불꽃 포켓몬에 페어리처럼 너무 티 나는 선택이 자주
-            // 나온다. 같은 문제 세트의 다른 포켓몬이 실제로 가진 타입을 우선 써 그럴듯한 오답으로 만든다.
-            let plausibleWrongTypes = facts.flatMap(\.types).filter { !fact.types.contains($0) }
+            // 단순히 "이 포켓몬은 무슨 타입"만 반복하지 않고, 실제 상성표를 이용해 공격 타입과
+            // 복합 방어 타입 사이의 배율을 묻는다. 절반은 참, 절반은 거짓이 되도록 후보를 고른다.
             let typeAnswer = index.isMultiple(of: 2)
-            let shownType = typeAnswer ? (fact.types.randomElement() ?? .normal)
-                : (plausibleWrongTypes.randomElement()
-                    ?? PokemonType.allCases.filter { !fact.types.contains($0) }.randomElement() ?? .normal)
+            let matchingTypes = PokemonType.allCases.filter {
+                (TypeChart.effectiveness($0, against: fact.types) > 1) == typeAnswer
+            }
+            let shownType = matchingTypes.randomElement() ?? .normal
             questions.append(.init(id: nextID, speciesID: fact.speciesID,
-                ko: "\(fact.name("ko"))은(는) \(shownType.name(.ko))타입이다.",
-                en: "\(fact.name("en")) is a \(shownType.name(.en))-type Pokémon.",
-                ja: "\(fact.name("ja-Hrkt"))は\(shownType.name(.ja))タイプだ。", answer: typeAnswer))
+                ko: "\(shownType.name(.ko))타입 기술은 \(fact.name("ko"))에게 효과가 굉장하다.",
+                en: "\(shownType.name(.en))-type moves are super effective against \(fact.name("en")).",
+                ja: "\(shownType.name(.ja))タイプのわざは\(fact.name("ja-Hrkt"))に効果抜群だ。",
+                answer: typeAnswer))
             nextID += 1
 
-            // 진화 문제도 항상 실제 부모를 보여주던 구조에서 벗어난다. 절반은 다른 포켓몬을 부모처럼
-            // 제시하되, 실제 부모와 자기 자신은 제외해 정답 데이터가 모순되지 않게 한다.
-            let decoy = facts.first {
-                $0.speciesID != fact.speciesID
-                    && $0.names != fact.evolvesFromNames
-            }?.names
-            let asksTrueEvolution = !index.isMultiple(of: 2) && fact.evolvesFromNames != nil
-            if asksTrueEvolution, let parent = fact.evolvesFromNames {
-                questions.append(.init(id: nextID, speciesID: fact.speciesID,
-                    ko: "\(fact.name("ko"))은(는) \(localized(parent, "ko"))에서 진화한다.",
-                    en: "\(fact.name("en")) evolves from \(localized(parent, "en")).",
-                    ja: "\(fact.name("ja-Hrkt"))は\(localized(parent, "ja-Hrkt"))から進化する。", answer: true))
-            } else if let decoy {
-                questions.append(.init(id: nextID, speciesID: fact.speciesID,
-                    ko: "\(fact.name("ko"))은(는) \(localized(decoy, "ko"))에서 진화한다.",
-                    en: "\(fact.name("en")) evolves from \(localized(decoy, "en")).",
-                    ja: "\(fact.name("ja-Hrkt"))は\(localized(decoy, "ja-Hrkt"))から進化する。", answer: false))
-            } else {
-                questions.append(.init(id: nextID, speciesID: fact.speciesID,
-                    ko: "\(fact.name("ko"))에게는 진화 전 포켓몬이 있다.",
-                    en: "\(fact.name("en")) has a pre-evolution.",
-                    ja: "\(fact.name("ja-Hrkt"))には進化前のポケモンがいる。", answer: false))
-            }
+            let decoyAbility = facts.first {
+                $0.speciesID != fact.speciesID && $0.abilityNames != fact.abilityNames
+            }?.abilityNames
+            // 다른 특성을 구하지 못한 경우에는 거짓 문제를 만들지 않는다.
+            let abilityAnswer = !index.isMultiple(of: 2) || decoyAbility == nil
+            let shownAbility = abilityAnswer ? fact.abilityNames : decoyAbility!
+            questions.append(.init(id: nextID, speciesID: fact.speciesID,
+                ko: "\(fact.name("ko"))의 특성은 \(localized(shownAbility, "ko"))이다.",
+                en: "\(fact.name("en")) can have the ability \(localized(shownAbility, "en")).",
+                ja: "\(fact.name("ja-Hrkt"))の特性は\(localized(shownAbility, "ja-Hrkt"))だ。",
+                answer: abilityAnswer))
             nextID += 1
         }
         return Array(questions.shuffled().prefix(PokemonOXGame.questionCount))

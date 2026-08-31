@@ -157,10 +157,7 @@ struct TeamPracticeBattle {
             opponentActive = next
             events.append(.sendOut(.b, teamIndex: next))
         }
-        if !mine[myActive].isAlive,
-           let next = mine.indices.first(where: { mine[$0].isAlive }) {
-            myActive = next
-            events.append(.sendOut(.a, teamIndex: next))
-        }
+        // 내 다음 포켓몬은 자동으로 고르지 않는다. 화면의 교체 줄에서 사용자가 직접 선택한다.
+        // CPU 쪽은 선택할 사람이 없으므로 위에서 계속 자동 출전한다.
     }
 }

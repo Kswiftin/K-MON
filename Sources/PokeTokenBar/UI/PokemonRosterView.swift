@@ -273,7 +273,10 @@ private struct RosterMonCard: View {
 
     var body: some View {
         card.contextMenu {
-            Button { infoTarget = mon } label: {
+            Button {
+                store.markPokemonSeen(mon.id)
+                infoTarget = mon
+            } label: {
                 Label(store.l.t("정보", "Info", "情報"), systemImage: "info.circle")
             }
             Button(action: onChat) { Label(store.l.t("대화", "Chat", "話す"), systemImage: "bubble.left.and.bubble.right") }
@@ -288,7 +291,10 @@ private struct RosterMonCard: View {
     }
 
     private var card: some View {
-        Button { if !isActive, !isGymDeployed { store.switchCompanion(to: mon.id) } } label: {
+        Button {
+            store.markPokemonSeen(mon.id)
+            if !isActive, !isGymDeployed { store.switchCompanion(to: mon.id) }
+        } label: {
             VStack(spacing: 2) {
                 // ✨ 는 도감 칸과 **같은 표식**이다(`DexCell`). 이로치 스프라이트는 색만 다를 뿐이라
                 // 원래 색을 모르면 알아볼 수 없다 — 특히 색 차이가 작은 종(잉어킹 등)에서 그렇다.
@@ -336,14 +342,28 @@ private struct RosterMonCard: View {
                           lineWidth: 1)
             .allowsHitTesting(false))
         .overlay(alignment: .topTrailing) {
-            Button(action: onChat) { Image(systemName: "bubble.left") }
-                .buttonStyle(.borderless).controlSize(.mini).padding(3)
-                .accessibilityLabel(store.l.t("대화", "Chat", "話す"))
+            HStack(spacing: 0) {
+                Button {
+                    store.markPokemonSeen(mon.id)
+                    infoTarget = mon
+                } label: { Image(systemName: "info.circle") }
+                    .buttonStyle(.borderless).controlSize(.mini)
+                    .accessibilityLabel(store.l.t("포켓몬 정보", "Pokémon info", "ポケモン情報"))
+                Button(action: onChat) { Image(systemName: "bubble.left") }
+                    .buttonStyle(.borderless).controlSize(.mini)
+                    .accessibilityLabel(store.l.t("대화", "Chat", "話す"))
+            }.padding(3)
         }
         .overlay(alignment: .topLeading) {
-            Button { infoTarget = mon } label: { Image(systemName: "info.circle") }
-                .buttonStyle(.borderless).controlSize(.mini).padding(3)
-                .accessibilityLabel(store.l.t("포켓몬 정보", "Pokémon info", "ポケモン情報"))
+            if mon.isNewlyHatched {
+                Text("NEW")
+                    .font(.system(size: 7, weight: .black))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4).padding(.vertical, 2)
+                    .background(Color.red, in: Capsule())
+                    .padding(3)
+                    .accessibilityLabel(store.l.t("새 포켓몬", "New Pokémon", "新しいポケモン"))
+            }
         }
     }
 }

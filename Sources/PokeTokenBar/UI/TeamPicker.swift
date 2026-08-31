@@ -14,6 +14,8 @@ struct TeamPicker: View {
     /// 이 화면에서 고를 수 있는 최대 인원. 체육관은 관장 팀에 맞춰 4(`GymLeague.teamSize`),
     /// 모의전은 화면에서 고른 크기다.
     let limit: Int
+    /// nil이면 전체 후보, 값이 있으면 미리 공개한 6마리 풀 안에서만 최종 엔트리를 고른다.
+    var allowedIDs: Set<UUID>? = nil
     @State private var page = 0
     /// 고를 타입. nil = 거르지 않음.
     @State private var typeFilter: PokemonType?
@@ -110,7 +112,7 @@ struct TeamPicker: View {
     var body: some View {
         // 체육관에 배치한 넷은 후보에서 빠진다 — 목록에 두면 고를 수 있는 것처럼 보이는데
         // 정작 출전 경로가 걸러 내므로, 안 보이게 하는 편이 정직하다.
-        let all = store.deployableMons
+        let all = store.deployableMons.filter { allowedIDs?.contains($0.id) ?? true }
         let searched = all.filter {
             PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(
                 for: $0, resolvedSpeciesName: speciesNames[$0.currentID]))

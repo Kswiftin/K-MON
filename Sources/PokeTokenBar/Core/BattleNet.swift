@@ -31,6 +31,9 @@ enum NetMessage: Codable, Sendable {
     case request(trainer: String, teamSize: Int, seed: UInt64, profile: BattleRankProfile,
                  rulesVersion: Int?, chatSupported: Bool?, kind: NetBattleKind?)
     case approve
+    /// 양쪽이 먼저 공개하는 6마리 후보. 이 메시지를 모두 받은 뒤 실제 1/3/6마리를 고른다.
+    case poolReady(lineup: [BattleSnapshot], profile: BattleRankProfile,
+                   rulesVersion: Int?, chatSupported: Bool?)
     case teamReady(snapshot: BattleSnapshot, lineup: [BattleSnapshot], teamSize: Int,
                    profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
     /// `rulesVersion` 은 대전 규칙(턴 순서·데미지 계산)의 버전이다. 이 대전은 결과를 주고받지 않고
@@ -49,7 +52,7 @@ enum NetMessage: Codable, Sendable {
     case forfeit
     case chat(BattleChatMessage)
 
-    private enum CodingKeys: String, CodingKey { case request, approve, teamReady, challenge, accept, decline, challengeCancelled, action, move, forfeit, chat }
+    private enum CodingKeys: String, CodingKey { case request, approve, poolReady, teamReady, challenge, accept, decline, challengeCancelled, action, move, forfeit, chat }
     private struct EmptyPayload: Codable {}
     private struct RequestPayload: Codable {
         var trainer: String; var teamSize: Int; var seed: UInt64; var profile: BattleRankProfile
@@ -72,6 +75,12 @@ enum NetMessage: Codable, Sendable {
         var rulesVersion: Int?
         var chatSupported: Bool?
     }
+    private struct PoolPayload: Codable {
+        var lineup: [BattleSnapshot]
+        var profile: BattleRankProfile
+        var rulesVersion: Int?
+        var chatSupported: Bool?
+    }
     private struct ActionPayload: Codable { var turn: Int; var action: NetBattleAction }
     private struct MovePayload: Codable { var turn: Int; var moveIndex: Int }
 
@@ -83,6 +92,10 @@ enum NetMessage: Codable, Sendable {
                             rulesVersion: p.rulesVersion, chatSupported: p.chatSupported, kind: p.kind)
         } else if container.contains(.approve) {
             self = .approve
+        } else if container.contains(.poolReady) {
+            let p = try container.decode(PoolPayload.self, forKey: .poolReady)
+            self = .poolReady(lineup: p.lineup, profile: p.profile,
+                              rulesVersion: p.rulesVersion, chatSupported: p.chatSupported)
         } else if container.contains(.teamReady) {
             let p = try container.decode(AcceptPayload.self, forKey: .teamReady)
             self = .teamReady(snapshot: p.snapshot, lineup: p.lineup ?? [p.snapshot], teamSize: p.teamSize ?? 1,
@@ -130,6 +143,10 @@ enum NetMessage: Codable, Sendable {
                                                 rulesVersion: rulesVersion, chatSupported: chatSupported, kind: kind), forKey: .request)
         case .approve:
             try container.encode(EmptyPayload(), forKey: .approve)
+        case .poolReady(let lineup, let profile, let rulesVersion, let chatSupported):
+            try container.encode(PoolPayload(lineup: lineup, profile: profile,
+                                             rulesVersion: rulesVersion,
+                                             chatSupported: chatSupported), forKey: .poolReady)
         case .teamReady(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let chatSupported):
             try container.encode(AcceptPayload(snapshot: snapshot, lineup: lineup, teamSize: teamSize,
                                                profile: profile, rulesVersion: rulesVersion, chatSupported: chatSupported),
@@ -421,7 +438,8 @@ final class BattleCenter {
         case preparing                      // 내 스냅샷·무브셋 로딩
         case challenging(peer: String)      // 신청 보냄
         case incoming(peer: String)         // 신청 받음
-        case teamBuilding(peer: String)     // 수락 후 양쪽 파티 편성
+        case poolBuilding(peer: String)     // 수락 후 6마리 후보 준비·공개
+        case teamBuilding(peer: String)     // 상대 6마리를 본 뒤 실제 출전 파티 편성
         case waitingTeam(peer: String)      // 내 확인 완료, 상대 확인 대기
         case battling
         case finished(iWon: Bool?, byForfeit: Bool)
@@ -453,6 +471,7 @@ final class BattleCenter {
     private(set) var battle: NetBattleState?
     private(set) var incomingSnapshot: BattleSnapshot?   // 수락 화면에서 상대 미리보기
     private(set) var incomingLineup: [BattleSnapshot] = []
+    private(set) var incomingBattlePool: [BattleSnapshot] = []
     private(set) var incomingTeamSize = 1
     /// 수락 화면 전용 초안. 수락 전에는 공용 `pickedTeam` 을 건드리지 않는다.
     var incomingPickedTeam: [UUID] = []
@@ -564,6 +583,7 @@ final class BattleCenter {
     /// 모의전에 데려갈 개체 — **고른 순서가 곧 출전 순서**다(첫 번째가 선봉).
     /// 비워 두면 예전처럼 소유 목록 앞에서 자동으로 채운다.
     var pickedTeam: [UUID] = []
+    private(set) var battlePoolIDs: [UUID] = []
 
     /// 칩을 눌렀을 때 — 이미 고른 것이면 빼고, 아니면 뒤에 붙인다. 정원이 차면 더 받지 않는다
     /// (앞을 밀어내면 애써 정한 순서가 조용히 바뀐다).
@@ -791,7 +811,7 @@ final class BattleCenter {
 
     private var isChallengePending: Bool {
         switch phase {
-        case .challenging, .incoming, .teamBuilding, .waitingTeam: true
+        case .challenging, .incoming, .poolBuilding, .teamBuilding, .waitingTeam: true
         default: false
         }
     }
@@ -1099,8 +1119,11 @@ final class BattleCenter {
         guard case .ready = phase else { return }
         let teamSize = kind == .metronome ? 1 : rankedTeamSize
         guard kind == .metronome || (Self.supportedTeamSizes.contains(teamSize)
-                                     && companion.deployableMons.count >= teamSize) else {
-            lastError = l.battleNeedsPokemon(teamSize)
+                                     && companion.deployableMons.count >= 6
+                                     && pickedTeam.count == 6) else {
+            lastError = l.t("먼저 후보 포켓몬 6마리를 선택하세요.",
+                            "Choose six candidate Pokémon first.",
+                            "先に候補のポケモンを6匹選んでください。")
             return
         }
         lastError = nil
@@ -1187,11 +1210,10 @@ final class BattleCenter {
         // 새 신청은 포켓몬을 싣지 않는다. 수락 뒤 양쪽을 같은 파티 편성 단계로 보낸다.
         if incomingLineup.isEmpty {
             cancelChallengeTimeout()
-            prepareIncomingSelection(teamSize: incomingTeamSize)
             pendingPeerName = peer
             iAmPendingChallenger = false
             send(.approve, over: conn)
-            phase = .teamBuilding(peer: peer)
+            prepareBattlePool(peer: peer, connection: conn)
             return
         }
         guard companion.deployableMons.count >= incomingTeamSize else {
@@ -1263,17 +1285,47 @@ final class BattleCenter {
         }
     }
 
+    /// 보유 목록에서 사용자가 먼저 고른 여섯 마리를 Lv.50 후보 풀로 만들어 상대에게 공개한다.
+    private func prepareBattlePool(peer: String, connection conn: NWConnection) {
+        let ids = Array(pickedTeam.filter { id in companion.deployableMons.contains(where: { $0.id == id }) }.prefix(6))
+        guard ids.count == 6 else {
+            lastError = l.t("후보 포켓몬 6마리가 필요합니다.", "Six candidate Pokémon are required.", "候補のポケモンが6匹必要です。")
+            return
+        }
+        phase = .poolBuilding(peer: peer)
+        Task { @MainActor in
+            guard let pool = await battleTeamSnapshots(size: 6, selection: ids, levelOverride: 50),
+                  conn === connection else {
+                phase = .ready; lastError = l.battleStatsFailed; return
+            }
+            battlePoolIDs = ids
+            pendingMyPool = pool
+            send(.poolReady(lineup: pool, profile: companion.battleRankProfile,
+                            rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
+            enterFinalTeamSelectionIfReady(peer: peer)
+        }
+    }
+
+    private func enterFinalTeamSelectionIfReady(peer: String) {
+        guard pendingMyPool.count == 6, incomingBattlePool.count == 6 else { return }
+        incomingPickedTeam = Array(battlePoolIDs.prefix(incomingTeamSize))
+        phase = .teamBuilding(peer: peer)
+    }
+
     /// 수락 뒤 편성 확정. 내 스냅샷은 이 시점에 처음 상대에게 전송된다.
     func confirmBattleTeam() {
         guard case .teamBuilding(let peer) = phase, let conn = connection else { return }
-        let ids = confirmedBattleTeamIDs(size: incomingTeamSize)
+        let allowed = Set(battlePoolIDs)
+        let ids = incomingPickedTeam.filter { allowed.contains($0) }
         guard ids.count == incomingTeamSize else { lastError = l.battleNeedsPokemon(incomingTeamSize); return }
+        let byID = Dictionary(uniqueKeysWithValues: zip(battlePoolIDs, pendingMyPool))
+        let mine = ids.compactMap { byID[$0] }
+        guard mine.count == incomingTeamSize, let lead = mine.first else {
+            lastError = l.battleStatsFailed; return
+        }
         phase = .preparing
         Task { @MainActor in
-            guard let mine = await buildMyLineup(size: incomingTeamSize, selection: ids, levelOverride: 50),
-                  let lead = mine.first, conn === connection else {
-                phase = .ready; lastError = l.battleStatsFailed; return
-            }
+            guard conn === connection else { return }
             pendingMyLineup = mine
             commitIncomingSelection(ids)
             send(.teamReady(snapshot: lead, lineup: mine, teamSize: incomingTeamSize,
@@ -1427,10 +1479,14 @@ final class BattleCenter {
     }
 
     private var pendingMyLineup: [BattleSnapshot] = []
+    private var pendingMyPool: [BattleSnapshot] = []
     private var pendingMyTeamSize = 1
 
     private func clearPendingOutgoing() {
         pendingMyLineup = []
+        pendingMyPool = []
+        battlePoolIDs = []
+        incomingBattlePool = []
         pendingMyTeamSize = 1
     }
 
@@ -1466,6 +1522,7 @@ final class BattleCenter {
                                         oppTeam: opp.map(BattleSide.init),
                                         rng: SplitMix64(seed: seed))
         nextBattle.isMetronome = isMetronomeBattle
+        nextBattle.automaticallyReplacesFainted = false
         battle = nextBattle
         clearPendingOutgoing()
         phase = .battling
@@ -1583,6 +1640,9 @@ final class BattleCenter {
                 send(.decline, over: connection); dropConnection(); phase = .ready; return
             }
             incomingLineup = []
+            incomingBattlePool = []
+            pendingMyPool = []
+            battlePoolIDs = []
             incomingSnapshot = nil
             incomingTeamSize = teamSize
             incomingSeed = seed
@@ -1600,12 +1660,21 @@ final class BattleCenter {
             cancelChallengeTimeout()
             incomingTeamSize = pendingMyTeamSize
             incomingLineup = []
+            incomingBattlePool = []
             if pendingBattleKind == .metronome, let connection {
                 prepareMetronomeLineup(peer: peer, connection: connection)
                 return
             }
-            incomingPickedTeam = resolvedTeamIDs(size: incomingTeamSize, selection: pickedTeam)
-            phase = .teamBuilding(peer: peer)
+            if let connection { prepareBattlePool(peer: peer, connection: connection) }
+        case .poolReady(let lineup, let profile, let rulesVersion, let peerChatSupported):
+            guard rulesVersion == BattleEngine.rulesVersion, let lead = lineup.first,
+                  Self.validLineup(snapshot: lead, lineup: lineup, teamSize: 6) else {
+                send(.decline, over: connection); dropConnection(); phase = .ready; return
+            }
+            incomingBattlePool = lineup
+            opponentRankProfile = profile
+            peerSupportsChat = peerChatSupported == true
+            enterFinalTeamSelectionIfReady(peer: pendingPeerName)
         case .teamReady(let snapshot, let lineup, let teamSize, let profile, let rulesVersion, let peerChatSupported):
             guard rulesVersion == BattleEngine.rulesVersion,
                   teamSize == incomingTeamSize,
@@ -1754,7 +1823,7 @@ final class BattleCenter {
             phase = .finished(iWon: iWon, byForfeit: false)
             lastError = l.battleConnectionLost
             if let iWon { settleRankedBrawlIfNeeded(won: iWon) } else { refundRankedBrawlIfNeeded() }
-        case .challenging, .incoming, .teamBuilding, .waitingTeam, .preparing:
+        case .challenging, .incoming, .poolBuilding, .teamBuilding, .waitingTeam, .preparing:
             phase = .ready
             lastError = l.battleConnectionLost
         default:
