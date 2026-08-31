@@ -1,4 +1,5 @@
 ---
+superseded_by: wave-run-design.md
 summary: "오늘의 던전을 층 그래프(왼→오른 진행 + 1뎊스 곁방)로 다시 만드는 확정 설계 — 판 길이를 구조로 잠그고, 체력을 보상과 바꾸는 판단을 만든다."
 read_when:
   - 던전 맵 생성기(`PuzzleDungeon`)를 손볼 때
@@ -6,6 +7,10 @@ read_when:
   - 던전 화면(`DungeonView`)의 진행 표시·출구 목록을 손볼 때
   - 세이브의 던전 진행(`DungeonProgress`)을 건드릴 때
 ---
+
+> **대체됨 (2026-08-31).** 이 설계의 코어(`PuzzleDungeon`·`DungeonRun`·`DungeonNarration`)는
+> 삭제됐다. 던전 탭은 웨이브 런이고 현행 규칙은 `wave-run-design.md` 에 있다. 이 문서는
+> **지난 설계의 기록**으로만 남긴다 — 여기 적힌 규칙은 이제 코드에 없다.
 
 # 층 던전 — 판 길이를 구조로 잠그는 재설계
 

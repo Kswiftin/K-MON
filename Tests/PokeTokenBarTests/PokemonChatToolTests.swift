@@ -425,14 +425,11 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(mint.succeeded, mint.line)
         XCTAssertEqual(store.itemCount(.mint), 0)
 
-        // 보유형·던전 소모품은 대화에서 "지금 쓴다" 는 개념이 없다. 재고가 있어도 실패다.
+        // 보유형(부적)은 대화에서 "지금 쓴다" 는 개념이 없다. 재고가 있어도 실패다.
         store.debugAddItem(.shinyCharm, 1)
-        store.debugAddItem(.freshWater, 1)
-        for kind in [ItemKind.shinyCharm, .freshWater] {
-            let result = await toolbox.runAsActive(.itemUse(kind: kind))
-            XCTAssertFalse(result.succeeded, result.line)
-            XCTAssertEqual(store.itemCount(kind), 1, "쓸 수 없다고 해 놓고 소모했다")
-        }
+        let charm = await toolbox.runAsActive(.itemUse(kind: .shinyCharm))
+        XCTAssertFalse(charm.succeeded, charm.line)
+        XCTAssertEqual(store.itemCount(.shinyCharm), 1, "쓸 수 없다고 해 놓고 소모했다")
     }
 
     /// 가방·로스터는 모델이 **되돌려 줄 수 있는 값**으로 찍힌다. 되돌려 줄 수 없는 값을 찍으면
@@ -986,24 +983,16 @@ final class PokemonChatToolTests: XCTestCase {
         // "몇 개 땄나" 가 셀 값이 아니게 됐다.
         XCTAssertTrue(status.line.contains("gym_types=\(GymLeague.catalog.count)"), status.line)
         XCTAssertTrue(status.line.contains("missions=0/\(MissionBoard.catalog.count)"), status.line)
-        XCTAssertTrue(status.line.contains("budget=\(store.dungeonBudget(usedItem: false))"), status.line)
+        XCTAssertTrue(status.line.contains("dungeon_best=0/\(RogueRun.finalWave)"), status.line)
+        XCTAssertTrue(status.line.contains("dungeon_clears=0"), status.line)
 
-        // 먹는샘물이 있으면 화면 미리보기(+3)와 맨몸 예산이 갈라진다. 재고 없는 store 로만 재면
-        // 두 값이 같아서 어느 쪽을 찍는지 구분하지 못한다 — 대화는 마신다고 가정하지 않는다.
-        store.debugAddItem(.freshWater, 1)
-        XCTAssertNotEqual(store.dungeonBudgetPreview, store.dungeonBudget(usedItem: false),
-                          "전제: 재고가 있으면 미리보기와 맨몸 예산이 달라야 이 단언이 뜻을 가진다")
-        let withWater = await toolbox.runAsActive(.challengeStatus)
-        XCTAssertTrue(withWater.line.contains("budget=\(store.dungeonBudget(usedItem: false))"), withWater.line)
-        XCTAssertFalse(withWater.line.contains("budget=\(store.dungeonBudgetPreview)"),
-                       "마신다고 가정한 예산을 사실로 찍었다: \(withWater.line)")
-
-        // 클리어 분기를 직접 밟는다. "오늘 던전 갔어?" 에 답하는 값이 이 한 글자인데, `open` 만
-        // 시험하면 라인 커버리지는 100% 로 통과하면서 `cleared` 는 한 번도 안 돈다
-        // (`llvm-cov show --show-regions` 에서 `^0` 으로 확인했다).
-        store.settleDungeonClear(revealed: [:])
+        // 실적이 쌓인 분기를 직접 밟는다. 0 만 시험하면 라인 커버리지는 100% 로 통과하면서
+        // 값이 실제로 실리는지는 한 번도 안 재게 된다.
+        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
         let after = await toolbox.runAsActive(.challengeStatus)
-        XCTAssertTrue(after.line.contains("dungeon=cleared"), after.line)
+        XCTAssertTrue(after.line.contains("dungeon_clears=1"), after.line)
+        XCTAssertTrue(after.line.contains("dungeon_best=\(RogueRun.finalWave)/\(RogueRun.finalWave)"),
+                      after.line)
     }
 
     /// 성공할 수 없는 질문은 **카드로 띄우지 않는다.** 박스 개체 대화에서 집중 시작을 제안하면
@@ -1113,34 +1102,6 @@ final class PokemonChatToolTests: XCTestCase {
 
         XCTAssertTrue(album.entries(for: id).isEmpty,
                       "캔 문구가 관계 기억으로 남았다: \(album.entries(for: id).map(\.body))")
-    }
-
-    /// 예산은 **동행의 타입**으로 상성 보정을 받는다(`PuzzleDungeon.budget`). 그래서 두 경우에
-    /// 숫자를 말하면 안 된다: 타입을 아직 못 받았으면 보정이 빠진 값이고, 박스 개체 대화면 그건
-    /// 애초에 남의 숫자다. 이 PR 이 능력치에서 막은 것과 같은 부류다 — 빈 값은 화면이 자리를
-    /// 비우지만, 그럴듯하게 틀린 숫자는 안 들킨다.
-    func testChallengeBudgetIsUnknownWhenItWouldBeUnloadedOrSomeoneElses() async {
-        let store = makeCompanionStore()
-        await store.hatch(baseID: 25)
-        let active = store.activeMonID!
-        let boxed = Self.spareMon()
-        store.debugSetBoxedMons([boxed])
-        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
-                                         album: makeAlbum(), lookup: Self.emptyLookup)
-
-        // (a) 타입 미로드 — 앱 기동 직후가 항상 이 상태다.
-        let unloaded = await toolbox.run(.challengeStatus, owner: active)
-        XCTAssertTrue(unloaded.line.contains("budget=unknown"), unloaded.line)
-
-        store.debugSetLoadedTypes([.electric], speciesID: 25)
-
-        // (b) 박스 개체 대화 — 활성 개체의 상성으로 계산된 값을 그 아이 것처럼 말하면 안 된다.
-        let boxedLine = await toolbox.run(.challengeStatus, owner: boxed.id)
-        XCTAssertTrue(boxedLine.line.contains("budget=unknown"), boxedLine.line)
-
-        // (c) 주인이고 타입도 있으면 숫자를 말한다 — 가드가 넓게 걸리면 예산이 영영 unknown 이다.
-        let loaded = await toolbox.run(.challengeStatus, owner: active)
-        XCTAssertTrue(loaded.line.contains("budget=\(store.dungeonBudget(usedItem: false))"), loaded.line)
     }
 
     /// 화면은 타이머가 도는 동안 시작 피커를 아예 안 그린다. 휴식 단계도 `isRunning` 이라 그 구간이

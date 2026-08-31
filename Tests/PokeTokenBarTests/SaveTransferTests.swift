@@ -508,7 +508,6 @@ final class SaveTransferTests: XCTestCase {
         s.pendingRanked = PendingRankedBattle(stake: 5, opponent: BattleRank(points: 1))
         s.trainer.points = 7
         s.missions.dayKey = "1"
-        s.dungeon.dayKey = "1"
         s.achievements.counts["focus"] = 1
         s.seasons.seasonKey = "1"
         s.gymBadges = ["brock"]
@@ -657,34 +656,6 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertEqual(s.state.dex.count, imported.dex.count, "진행은 그대로 들어와야 한다")
     }
 
-    /// 던전 진행도는 같은 날이면 **합쳐야** 한다 — 맥 A 에서 클리어하고 내보낸 세이브를 아직 안 푼
-    /// 맥 B 로 불러올 때 B 의 빈 값을 쓰면 같은 날 보상을 두 번 받는다.
-    func testImportedDungeonProgressMergesOnTheSameDay() {
-        var imported = DungeonProgress()
-        imported.roll(dayKey: "2026-08-21")
-        imported.cleared = true
-        imported.rewardPaid = true
-        imported.remembered = [1: .encounter]
-
-        var current = DungeonProgress()
-        current.roll(dayKey: "2026-08-21")
-        current.remembered = [2: .empty]
-
-        let merged = SaveTransfer.mergedDungeon(imported, current)
-        XCTAssertTrue(merged.rewardPaid, "한쪽이 정산했으면 정산된 것이다 — 아니면 보상이 두 번 나간다")
-        XCTAssertTrue(merged.cleared)
-        XCTAssertEqual(Set(merged.remembered.keys), [1, 2], "두 기기가 밝힌 방을 합친다")
-    }
-
-    /// 날짜가 다르면 더 최근 쪽만 남는다 — 지난 날 기록은 다음 기록에서 어차피 비워진다.
-    func testImportedDungeonProgressKeepsTheNewerDay() {
-        var older = DungeonProgress(); older.roll(dayKey: "2026-08-20"); older.rewardPaid = true
-        var newer = DungeonProgress(); newer.roll(dayKey: "2026-08-21")
-        XCTAssertEqual(SaveTransfer.mergedDungeon(older, newer).dayKey, "2026-08-21")
-        XCTAssertFalse(SaveTransfer.mergedDungeon(older, newer).rewardPaid,
-                       "어제 정산 플래그가 오늘로 넘어오면 오늘 보상이 막힌다")
-        XCTAssertEqual(SaveTransfer.mergedDungeon(newer, older).dayKey, "2026-08-21")
-    }
 
     /// 일일 사탕 원장은 로컬 날짜라 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
     func testRebaseKeepsNewerCandyDateAndResetsTick() {

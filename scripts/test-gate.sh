@@ -64,13 +64,11 @@ LOGIC_CORE=(
   # 남은시간 표시가 0 에서 멈추는지를 결정하는 순수 함수. 뷰 안에 있던 동안 예정 시각을 지난
   # 구간이 무테스트로 남아 카운트다운이 되올라갔다(#86).
   "Sources/PokeTokenBar/Core/StoredEggCountdown.swift"
-  # 하루 한 판 퍼즐 던전(#79)의 순수 코어. 맵 생성과 이동 판정이 둘 다 여기 있고, 게이트 밖에
-  # 두면 커버리지 집계에서 조용히 빠져 무테스트로 나갈 수 있다.
-  "Sources/PokeTokenBar/Core/PuzzleDungeon.swift"
-  "Sources/PokeTokenBar/Core/DungeonRun.swift"
-  # 던전 화면이 쓰는 순수 계산(방위·방 이름·게이지·출구 분류·서술). 뷰 안에 있던 동안 설계 목업
-  # 6줄 중 온전히 구현된 줄이 0개였는데, 순수 코어만 게이트에 있어 아무도 못 잡았다.
-  "Sources/PokeTokenBar/Core/DungeonNarration.swift"
+  # 웨이브 런(오늘의 던전)의 순수 코어. 웨이브 진행·보상 추첨·상대 마릿수 판정이 여기 있고,
+  # 게이트 밖에 두면 커버리지 집계에서 조용히 빠져 무테스트로 나갈 수 있다.
+  "Sources/PokeTokenBar/Core/RogueRun.swift"
+  "Sources/PokeTokenBar/Core/RogueRunSave.swift"
+  "Sources/PokeTokenBar/Core/RunBoosts.swift"
   # 포켓몬 페르소나 조립과 응답 안전 가드가 사는 순수 로직. 게이트 밖에 있으면 프로필 조립을
   # 직접 밟지 않는 fixture 테스트만 있어도 무테스트 분기가 커버리지에 드러나지 않는다.
   "Sources/PokeTokenBar/Core/PokemonChat.swift"

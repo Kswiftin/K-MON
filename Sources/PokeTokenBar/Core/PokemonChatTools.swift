@@ -356,7 +356,7 @@ enum PokemonChatToolParser {
     /// 재고에 따라 호출이 되거나 안 되고, 재고는 실행기가 이미 본다(`item ... unavailable`).
     private static let usableFromChat: [ItemKind] = ItemKind.allCases.filter {
         // `useItem` 의 명시 케이스와 같은 목록이다. 한쪽만 늘면 그 아이템은 이름으로 못 불린다.
-        $0.evolutionRule != nil || [.rareCandy, .mint, .heartScale, .shinyCharm, .freshWater].contains($0)
+        $0.evolutionRule != nil || [.rareCandy, .mint, .heartScale, .shinyCharm].contains($0)
     }
 
     /// 숫자만 있는 문자열만 숫자다. `Int("25분")` 은 이미 nil 이지만 `" 25 "`·`"+25"` 는 통과하므로
@@ -517,17 +517,11 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             // 총량은 카탈로그에서 읽는다 — 숫자를 여기 적으면 콘텐츠가 늘 때 이 줄만 옛말이 된다.
             let missions = companion.missionRows
             let done = missions.filter { $0.progress >= $0.mission.target }.count
-            // 예산은 **동행의 타입**으로 상성 보정을 받는다(`PuzzleDungeon.budget`). 그래서 두 경우엔
-            // 숫자를 말하지 않는다: 타입을 아직 못 받았으면 보정이 빠진 값이고(기동 직후가 그렇다),
-            // 이 대화의 주인이 나와 있는 개체가 아니면 애초에 남의 숫자다. 능력치와 같은 규칙이며,
-            // 빈 값은 모델이 말을 아끼게 하지만 그럴듯하게 틀린 숫자는 안 들킨다.
-            let budget = owner == companion.activeMonID && !companion.currentTypes.isEmpty
-                ? String(companion.dungeonBudget(usedItem: false)) : "unknown"
-            // 예산은 `dungeonBudgetPreview` 가 아니라 **맨몸 값**이다. 미리보기는 "먹는샘물이 가방에
-            // 있으면 마신다" 를 가정해 +3 이 붙는데(화면은 그 토글 옆이라 뜻이 분명하다), 대화에는
-            // 그 맥락이 없어 모델이 실제보다 높은 숫자를 사실로 말하게 된다.
-            return ("challenge dungeon=\(companion.dungeonCleared ? "cleared" : "open")"
-                    + " budget=\(budget)"
+            // 던전은 웨이브 런이다 — 하루 한 판이 아니라 매번 새로 뽑는 판이라 "오늘 깼나" 가
+            // 없다. 대신 판 밖으로 남는 실적(최고 웨이브·클리어 횟수)을 준다.
+            let run = companion.runProgress
+            return ("challenge dungeon_best=\(run.bestWave)/\(RogueRun.finalWave)"
+                    + " dungeon_clears=\(run.clears)"
                     + " gym_types=\(GymLeague.catalog.count)"
                     + " missions=\(done)/\(missions.count)", true)
 
@@ -638,8 +632,8 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             // 후보 목록 카드가 뜰 뿐 아직 아무것도 바뀌지 않았다. 성공으로 뭉개면 모델이
             // "기술을 바꿨어" 라고 말한다.
             return ("item heartScale opened relearn choices", true)
-        case .shinyCharm, .freshWater:
-            // 보유형(부적)과 던전 입장 소모품은 대화에서 "지금 쓴다" 는 개념이 없다.
+        case .shinyCharm:
+            // 보유형(부적)은 대화에서 "지금 쓴다" 는 개념이 없다.
             return ("item \(kind.rawValue) is not used from chat", false)
         default:
             guard companion.canUseEvolutionItem(kind) else { return ("item \(kind.rawValue) unavailable", false) }

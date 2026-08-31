@@ -17,7 +17,7 @@ struct RunProgress: Codable, Sendable, Equatable {
     init() {}
 
     /// 필드가 늘어난 뒤의 옛 세이브를 기본값으로 읽는다 — 디코드 실패로 실적 전체를 버리면
-    /// 업데이트 당일에 기록이 사라진다(`DungeonProgress` 와 같은 이유).
+    /// 업데이트 당일에 기록이 사라진다(밸런스 값은 버전마다 달라진다).
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         bestWave = try c.decodeIfPresent(Int.self, forKey: .bestWave) ?? 0

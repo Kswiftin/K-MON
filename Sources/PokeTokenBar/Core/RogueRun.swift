@@ -632,6 +632,8 @@ extension RogueRun {
     /// 테스트 전용 — 포획 확률을 재려면 상대 HP·볼 개수를 직접 세워야 한다.
     mutating func debugSetOpponentHP(_ value: Int) { battle.opponents[battle.opponentActive].hp = value }
     mutating func debugSetBalls(_ value: Int) { balls = value }
+    /// 테스트 전용 — 길 고르기 국면으로 바로 세운다(`take` 의 분기만 재려면 전투를 이길 필요가 없다).
+    mutating func debugSetStageRouting() { stage = .routing }
     /// 테스트 전용 — 강화가 쌓인 상태를 앞 웨이브를 다 밟지 않고 세운다.
     mutating func debugSetBoosts(_ value: RunBoosts) { boosts = value; stampBoosts() }
     /// 테스트 전용 — 특정 보상이 제시된 상태로 만든다(뽑기는 rng 라 원하는 장이 안 뜬다).
