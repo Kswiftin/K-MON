@@ -134,6 +134,8 @@ final class CompanionStore {
     private let provider: any PokeProviding
     private let clock: () -> Date
     private let fileURL: URL
+    /// 진행 중인 웨이브 런 파일 — 상태 파일 옆이다(`CompanionStorageLocations`).
+    private let waveRunURL: URL
     let memoryAlbum: PokemonMemoryAlbum
     let chatStore: PokemonChatStore
     private var rng: any RandomNumberGenerator
@@ -163,12 +165,15 @@ final class CompanionStore {
         // 그 디렉토리를 따라가야 한다 — 기본 위치로 새면 테스트가 실제 사용자 파일을 건드린다.
         self.memoryAlbum = memoryAlbum
             ?? PokemonMemoryAlbum(fileURL: directory.appendingPathComponent(CompanionStorageLocations.memoryFileName))
+        // 진행 중인 런도 상태 파일 옆에 산다 — 주입된 URL(테스트·임베딩)의 디렉토리를 따라간다.
+        self.waveRunURL = directory.appendingPathComponent(CompanionStorageLocations.waveRunFileName)
         self.chatStore = chatStore
             ?? PokemonChatStore(fileURL: directory.appendingPathComponent(CompanionStorageLocations.chatFileName),
                                 album: self.memoryAlbum)
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
+        loadRogueRun()
         // Room placement is derived from this save's bag.  Normalize at the state/album join so
         // a hand-edited or imported album cannot render furniture the player does not own.
         // A corrupt/forced-reset state has no trustworthy ownership list. Pruning here would
@@ -2142,10 +2147,37 @@ final class CompanionStore {
 
     // MARK: 포켓로그식 런 (프로토타입)
 
-    /// 진행 중인 런. **메모리 전용이다** — 팝오버를 닫거나 다른 탭을 들렀다 와도 이어지지만 앱을
-    /// 끄면 사라진다. 세이브·무결성 서명에 넣지 않으므로 밸런스를 고쳐도 이전이 필요 없다
-    /// (영속은 `RunProgress` 를 확정한 뒤에 붙인다).
-    var rogueRun: RogueRun?
+    /// 진행 중인 런. 판 하나가 30 웨이브라 앱을 끄면 사라지는 것이 실제 손실이 돼서, 세이브 본체가
+    /// 아니라 **옆 파일**(`wave-run.json`)에 남긴다 — 런이 무결성 서명·세이브 이전에 닿지 않는다는
+    /// 결정은 그대로다. 무엇을 남기고 무엇을 버리는지는 `RogueRunSave` 에 있다.
+    ///
+    /// 쓰기가 여기 한 곳인 이유는 화면이 판을 **꺼내 바꾸고 되넣는** 값 타입으로 다루기 때문이다
+    /// (`RogueRunView.mutate`). 저장을 호출자에게 맡기면 한 경로만 빠져도 그 행동이 통째로 유실된다.
+    var rogueRun: RogueRun? { didSet { persistRogueRun() } }
+
+    /// 판을 옆 파일에 적는다. 판이 없으면 파일을 지운다 — 남겨 두면 다음 기동이 끝난 판을 되살려
+    /// 결과 화면이 다시 뜬다.
+    private func persistRogueRun() {
+        guard let rogueRun else {
+            try? FileManager.default.removeItem(at: waveRunURL)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(rogueRun.saveForm) else { return }
+        try? data.write(to: waveRunURL, options: .atomic)
+    }
+
+    /// 기동 시 되살린다. 되살릴 수 없는 파일은 **지운다** — 그대로 두면 켤 때마다 같은 실패를
+    /// 반복하고, 사용자는 새 판을 시작할 수 있다는 것을 화면에서 알 수 없다.
+    private func loadRogueRun() {
+        guard let data = try? Data(contentsOf: waveRunURL) else { return }
+        guard let save = try? JSONDecoder().decode(RogueRunSave.self, from: data),
+              let restored = RogueRun(save: save) else {
+            AppLog.write("wave run save could not be restored — discarding")
+            try? FileManager.default.removeItem(at: waveRunURL)
+            return
+        }
+        rogueRun = restored
+    }
 
     /// 웨이브 런 실적. 판 밖으로 남는 것은 이 값 하나다 — 재화도 도감도 주지 않는다.
     var runProgress: RunProgress { state.waveRun }

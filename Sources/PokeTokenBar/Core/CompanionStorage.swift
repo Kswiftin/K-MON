@@ -6,11 +6,15 @@ struct CompanionStorageLocations: Sendable {
     static let stateFileName = "companion-state.json"
     static let memoryFileName = "pokemon-memories.json"
     static let chatFileName = "pokemon-chat.json"
+    /// 진행 중인 웨이브 런. **세이브 본체와 다른 파일이다** — 런은 재화도 도감도 주지 않으므로
+    /// 무결성 서명·세이브 이전(migration) 경로에 닿지 않는다는 결정을 그대로 지킨다.
+    static let waveRunFileName = "wave-run.json"
 
     let directory: URL
     var stateURL: URL { directory.appendingPathComponent(Self.stateFileName) }
     var memoryURL: URL { directory.appendingPathComponent(Self.memoryFileName) }
     var chatURL: URL { directory.appendingPathComponent(Self.chatFileName) }
+    var waveRunURL: URL { directory.appendingPathComponent(Self.waveRunFileName) }
 
     /// 기본은 Application Support/PokeTokenBar. `PTB_STATE_DIR` 가 있으면 그 디렉토리를 쓴다 —
     /// 개발/QA 격리용(실제 companion 상태를 건드리지 않고 데모 상태로 실행). 프로덕션은 무영향.

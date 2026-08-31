@@ -6,7 +6,7 @@ import Foundation
 /// 두 부류다 — **소모형**은 그 자리에서 파티 값을 되돌리고 사라지고, **지속형**(`isPersistent`)은
 /// `RunBoosts` 에 쌓여 판이 끝날 때까지 남는다. 지속형이 없던 프로토타입은 매 웨이브의 선택이
 /// "회복 타이밍" 하나였고, 그래서 12 웨이브가 첫 웨이브와 같은 모양으로 끝났다.
-enum RunModifier: String, CaseIterable, Sendable {
+enum RunModifier: String, CaseIterable, Codable, Sendable {
     /// 살아 있는 전원 최대 HP 의 40% 회복.
     case potion
     /// 쓰러진 하나를 최대 HP 의 50% 로 되살린다.
@@ -36,7 +36,7 @@ enum RunModifier: String, CaseIterable, Sendable {
 /// 다음 웨이브로 가는 길. 포켓로그가 웨이브 사이에 바이옴 갈림길을 두는 자리와 같은 역할이다 —
 /// **판을 내가 골랐다는 감각**이 여기서 나온다. 길이 하나뿐이면 12 웨이브가 정해진 순서를 소화하는
 /// 일이 되고, 강화 뽑기만으로는 그 감각이 생기지 않는다(뽑기는 나온 것 중에서 고르는 것이다).
-enum RunRoute: String, CaseIterable, Sendable {
+enum RunRoute: String, CaseIterable, Codable, Sendable {
     /// 규칙 그대로. 상대도 보상도 기본값이다.
     case safe
     /// 상대 종족값 상한과 레벨이 오르고, 그 웨이브를 넘기면 **보상을 두 장** 고른다.
@@ -54,7 +54,9 @@ enum RunRoute: String, CaseIterable, Sendable {
 /// 순수 구조체다 — 시각도 네트워크도 쓰지 않는다. 상대 스냅샷은 호출자가 만들어 넣는다
 /// (`beginWave(opponents:)`). 그래야 웨이브 진행 규칙을 네트워크 없이 테스트할 수 있다.
 struct RogueRun: Sendable {
-    enum Stage: Sendable, Equatable {
+    /// 문자열 raw 를 두는 이유는 저장이다(`RogueRunSave`) — 정수 순서로 적으면 case 를
+    /// 하나 끼워 넣는 순간 옛 파일의 국면이 다른 국면으로 바뀐다.
+    enum Stage: String, Codable, Sendable, Equatable {
         case battling
         /// 승리 직후 — 보상 3장 중 하나를 고를 때까지 멈춘다(위험한 길이었으면 두 장).
         case picking
@@ -544,3 +546,53 @@ extension RogueRun {
     mutating func debugOffer(_ modifier: RunModifier) { offers = [modifier] }
 }
 #endif
+
+// MARK: - 디스크로 옮기기
+
+extension RogueRun {
+    /// 지금 판을 저장 형식으로. 무엇을 남기고 무엇을 버리는지는 `RogueRunSave` 에 적어 뒀다.
+    var saveForm: RogueRunSave {
+        RogueRunSave(wave: wave, stage: stage, route: route, offers: offers,
+                     remainingPicks: remainingPicks, balls: balls,
+                     boosts: RogueRunSave.BoostsSave(boosts), resultRecorded: resultRecorded,
+                     rngState: rng.state, party: party.map(RogueRunSave.SideSave.init),
+                     battle: RogueRunSave.BattleSave(battle))
+    }
+
+    /// 저장된 판을 되살린다. **되살릴 수 없으면 `nil` 이다** — 판은 소모품이라 버리는 쪽이
+    /// 반쯤 복원된 전투(범위 밖 활성 칸, 웨이브 밖 진행)보다 낫다. 여기서 막는 것:
+    ///
+    /// - 형식 판이 다르거나 파티·전투가 비었거나 활성 칸이 범위 밖인 파일
+    /// - 판 길이(`finalWave`)가 줄어든 뒤의 옛 판 — 밸런스 손잡이라 언제든 바뀐다
+    /// - 고를 것이 없는 보상 화면 — 버튼 없는 화면에 갇힌다
+    ///
+    /// **밸런스 값은 저장하지 않는다**(`tuning` 은 언제나 `.standard`). 판 도중에 앱을 업데이트하면
+    /// 남은 웨이브가 새 규칙으로 진행된다 — 옛 값을 파일에 실어 되살리면 그 판만 조용히 옛
+    /// 밸런스로 도는데, 런은 기록만 남기므로 새 규칙을 따르는 편이 설명하기 쉽다.
+    init?(save: RogueRunSave) {
+        guard save.version == RogueRunSave.currentVersion,
+              !save.party.isEmpty, save.party.count <= RogueRun.partyLimit,
+              (1...RogueRun.finalWave).contains(save.wave),
+              let battle = save.battle.restored
+        else { return nil }
+        let stage = save.stage
+        if stage == .picking && save.offers.isEmpty { return nil }
+        tuning = .standard
+        self.wave = save.wave
+        self.stage = stage
+        self.route = save.route
+        self.offers = save.offers
+        self.remainingPicks = max(0, save.remainingPicks)
+        self.balls = min(RogueRun.ballsPerRun, max(0, save.balls))
+        self.boosts = save.boosts.restored
+        self.resultRecorded = save.resultRecorded
+        self.party = save.party.map(\.restored)
+        self.battle = battle
+        self.rng = SplitMix64(seed: 0)
+        self.rng.state = save.rngState
+        // 강화는 개체에 도장으로 들어간다 — 되살린 개체는 그 도장이 없다(저장 형식이 개체별
+        // 강화를 싣지 않고 런의 값 하나만 싣는다). 여기서 찍지 않으면 판을 이어 여는 순간
+        // 화면에는 강화가 그대로인데 데미지에는 안 걸린다.
+        stampBoosts()
+    }
+}
