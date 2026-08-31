@@ -310,7 +310,9 @@ final class PopoverLayoutTests: XCTestCase {
                                                      language: .ko, onAction: { _ in }, onQuestion: { _ in }),
                                   proposingWidth: PopoverMetrics.width)
         let withActions = renderedHeight(
-            PokemonChatChipRow(actions: [.startFocus, .acceptEvolution, .useRareCandy],
+            // 오늘의 최대치(3개)는 액션끼리 서로 배타적이라 우연히 그런 것뿐이다 — 공존 가능한
+            // 케이스가 하나 붙는 순간 화면은 네 개를 그리는데 이 테스트만 셋을 재고 초록으로 남는다.
+            PokemonChatChipRow(actions: PokemonChatAction.allCases,
                                questions: questions, language: .ko, onAction: { _ in }, onQuestion: { _ in }),
             proposingWidth: PopoverMetrics.width)
 
@@ -346,6 +348,22 @@ final class PopoverLayoutTests: XCTestCase {
                        "공백뿐인 입력칸도 비어 있는 것으로 친다 — 전송 버튼이 그렇게 센다")
         XCTAssertEqual(PokemonChatChipRow.composed(draft: "오늘 어땠어?", chip: "25분 집중하자"),
                        "오늘 어땠어? 25분 집중하자", "쓰던 문장이 칩 하나에 지워졌다")
+    }
+
+    /// 칩은 눌러도 **아무 표시가 없다** — 채워졌는지 보려면 입력칸을 봐야 하고, 액션 칩은 줄
+    /// 맨 앞이라 두 번 눌리기 쉽다. 그때 문장이 두 벌이 되면 모델은 그걸 두 번의 요청으로 읽는다
+    /// ("25분 집중하자 25분 집중하자" → 마커 두 개 또는 50분). 덮어쓰기로 되돌리면 쓰던 문장이
+    /// 날아가므로, 되돌릴 곳은 **이어붙이기 쪽**이다.
+    func testTappingTheSameChipTwiceDoesNotDoubleTheRequest() {
+        let once = PokemonChatChipRow.composed(draft: "", chip: "25분 집중하자")
+        XCTAssertEqual(PokemonChatChipRow.composed(draft: once, chip: "25분 집중하자"), once,
+                       "같은 칩을 두 번 눌러 요청이 두 벌이 됐다")
+        let afterDraft = PokemonChatChipRow.composed(draft: "오늘 어땠어?", chip: "25분 집중하자")
+        XCTAssertEqual(PokemonChatChipRow.composed(draft: afterDraft, chip: "25분 집중하자"), afterDraft,
+                       "쓰던 문장 뒤에서도 같은 칩은 한 벌이어야 한다")
+        // 대조군. 위 두 단언만 두면 `composed` 가 무조건 초안을 돌려줘도 통과한다.
+        XCTAssertEqual(PokemonChatChipRow.composed(draft: once, chip: "진화하자"),
+                       "25분 집중하자 진화하자", "다른 칩까지 삼켰다")
     }
 
     /// 같은 부류 스윕: 릴레이 방 목록도 LAN 이 길이를 정한다 — 상한도 페이저도 없으면 팝오버가 잘린다.

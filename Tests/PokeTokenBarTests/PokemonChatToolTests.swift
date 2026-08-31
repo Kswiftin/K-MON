@@ -1229,28 +1229,75 @@ final class PokemonChatToolTests: XCTestCase {
 
     /// 칩 문구와 그 칩이 노리는 호출은 **같은 값**을 말해야 한다. 문구가 상수 표를 다시 읽으면
     /// 호출만 바뀌었을 때 칩은 25분이라 쓰고 승인 카드는 50분을 켠다.
+    ///
+    /// **인자를 든 칩은 전부 여기를 지난다.** `.pokedoroStart` 만 보고 나머지를 `continue` 로
+    /// 흘리던 동안, 인자를 든 다른 칩(`.useRareCandy`)은 규칙 밖이었다 — 그래서 한국어 문구가
+    /// 아이템 이름을 붙여 쓴 채(`이상한사탕`) 파서가 받는 이름(`이상한 사탕`)과 갈라져도
+    /// 이 파일 전체가 초록이었다. 인자의 종류마다 갈래를 두고, 새 종류는 `default` 가 아니라
+    /// 여기에 갈래를 더해야 한다.
     func testActionPhrasesQuoteTheirOwnCall() {
         for action in PokemonChatAction.allCases {
-            guard case .pokedoroStart(let minutes) = action.call else { continue }
-            for language in [AppLanguage.ko, .en, .ja] {
-                XCTAssertTrue(action.phrase(language).contains("\(minutes)"),
-                              "\(action)/\(language.rawValue): 문구가 호출의 \(minutes)분을 안 말한다")
+            for language in AppLanguage.allCases {
+                let phrase = action.phrase(language)
+                switch action.call {
+                case .pokedoroStart(let minutes):
+                    XCTAssertTrue(phrase.contains("\(minutes)"),
+                                  "\(action)/\(language.rawValue): 문구가 호출의 \(minutes)분을 안 말한다")
+                case .itemUse(let kind):
+                    let name = L(language).itemName(kind)
+                    XCTAssertTrue(phrase.contains(name),
+                                  "\(action)/\(language.rawValue): 문구('\(phrase)')가 호출이 쓸 이름('\(name)')을 안 말한다")
+                default:
+                    continue
+                }
             }
         }
     }
 
-    /// 인자를 든 유일한 칩(`item.use`). 사용자가 보내는 문장에는 **현지화된 이름**밖에 없고
-    /// (`이상한사탕`), 모델이 `bag.list` 를 먼저 부르지 않으면 rawValue 를 알 길이 없다 —
-    /// 왕복은 3회뿐이라 그 한 번이 비싸다. 닫힌 목록이므로 이름으로 되짚는다.
-    func testItemUseAcceptsTheLocalizedNameTheChipPutsInTheComposer() {
-        for language in [AppLanguage.ko, .en, .ja] {
+    /// 인자를 든 유일한 칩(`item.use`). 사용자가 보내는 문장에는 **현지화된 이름**밖에 없고,
+    /// 모델이 `bag.list` 를 먼저 부르지 않으면 rawValue 를 알 길이 없다 — 왕복은 3회뿐이라
+    /// 그 한 번이 비싸다. 닫힌 목록이므로 이름으로 되짚는다.
+    ///
+    /// 이 테스트는 **표의 이름이 파싱되는지**만 본다. 칩 문구가 그 이름을 그대로 말하는지는
+    /// `testActionPhrasesQuoteTheirOwnCall` 이 건다 — 여기서 둘을 겸하면 입력을 표에서 뽑는
+    /// 순간 항등식이 되어(표 → 표) 칩 문구가 어떻게 틀리든 초록이 된다.
+    func testItemUseAcceptsTheLocalizedNameThatBagListPrints() {
+        for language in AppLanguage.allCases {
             let name = L(language).itemName(.rareCandy)
             let (_, call) = PokemonChatToolParser.parse("좋아! [[tool:item.use(\(name))]]")
             XCTAssertEqual(call, .itemUse(kind: .rareCandy),
-                           "\(language.rawValue): 칩이 부른 이름(\(name))으로는 호출이 안 만들어진다")
+                           "\(language.rawValue): 표시 이름(\(name))으로는 호출이 안 만들어진다")
         }
         let (_, raw) = PokemonChatToolParser.parse("[[tool:item.use(rareCandy)]]")
         XCTAssertEqual(raw, .itemUse(kind: .rareCandy), "회귀: bag.list 가 찍는 rawValue 는 계속 통해야 한다")
+    }
+
+    /// rawValue 와 표시 이름이 **같은 관대함**을 받아야 한다. 정규화를 현지화 갈래에만 걸면
+    /// `rare candy`(표시 이름)는 통하는데 `rarecandy`·` rareCandy `(정답 값)는 떨어진다 —
+    /// 가방이 찍어 준 값이 사람 말보다 까다로운, 계약과 정반대의 상태다.
+    func testItemNamesSurviveTheSpacingAndCaseTheModelAdds() {
+        for raw in [" rareCandy ", "rarecandy", "RAREcandy", " 이상한 사탕 "] {
+            XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(\(raw))]]").call,
+                           .itemUse(kind: .rareCandy),
+                           "'\(raw)' 가 거부됐다 — 같은 아이템의 다른 표기가 갈린다")
+        }
+    }
+
+    /// 이름 되짚기는 **대화가 실제로 쓸 수 있는 종류**까지만 연다. 가구는 `useItem` 의 어느
+    /// 갈래로도 성공하지 못하는데(진화 규칙이 없어 `default:` 에서 떨어진다) 이름은 갖고 있다 —
+    /// 48종을 통째로 열어 두면 프롬프트가 "트레이너가 말한 대로" 를 허용하는 지금, 가구 이름
+    /// 한 번에 승인 카드가 떴다가 그제서야 실패한다. 사용자에겐 승인한 일이 안 된 것으로 보인다.
+    func testNamesOnlyReachItemsChatCanActuallyUse() {
+        for language in AppLanguage.allCases {
+            let bed = L(language).itemName(.roomBed)
+            XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(\(bed))]]").call,
+                         "\(language.rawValue): 가구('\(bed)')가 호출이 됐다 — 승인 카드까지 간다")
+        }
+        XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(roomBed)]]").call,
+                     "회귀: rawValue 로도 가구는 쓸 수 없어야 한다")
+        // 대조군. 위 단언만 두면 표를 통째로 비워도 통과한다.
+        XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(moonStone)]]").call,
+                       .itemUse(kind: .moonStone), "진화 아이템까지 같이 닫혔다")
     }
 
     /// 이름으로 되짚는 순간 **이름이 겹치면 엉뚱한 아이템을 쓴다** — 그리고 아이템 사용은
@@ -1260,7 +1307,8 @@ final class PokemonChatToolTests: XCTestCase {
         var owner: [String: ItemKind] = [:]
         for kind in ItemKind.allCases {
             var names = [kind.rawValue]
-            for language in [AppLanguage.ko, .en, .ja] { names.append(L(language).itemName(kind)) }
+            // 언어를 손으로 세지 않는다 — 네 번째 언어가 붙는 날 새 충돌을 못 보고 지나친다.
+            for language in AppLanguage.allCases { names.append(L(language).itemName(kind)) }
             for name in Set(names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }) {
                 if let existing = owner[name], existing != kind {
                     XCTFail("'\(name)' 를 \(existing) 와 \(kind) 가 함께 쓴다 — 이름으로는 못 가른다")
