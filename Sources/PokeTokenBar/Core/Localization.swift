@@ -31,7 +31,12 @@ struct L {
 
     // MARK: 배틀
     var battleMyPokemon: String { t("내 포켓몬", "My Pokémon", "自分のポケモン") }
-    var battleNeedHatch: String { t("알은 배틀할 수 없어요 — 먼저 부화시키세요.", "Eggs can't battle — hatch first.", "タマゴはバトルできません — まず孵化させましょう。") }
+    /// 알을 품는 중이어도 박스에 개체가 있으면 배틀할 수 있다 — 이 문구는 **한 마리도 없을 때**만 뜬다.
+    var battleNeedHatch: String {
+        t("배틀에 내보낼 포켓몬이 없어요 — 알을 먼저 부화시키세요.",
+          "No Pokémon to send out — hatch your egg first.",
+          "バトルに出せるポケモンがいません — まずタマゴを孵化させましょう。")
+    }
     var battleStatsFailed: String { t("스탯을 불러오지 못했어요 — 네트워크 확인 후 다시 시도하세요.", "Couldn't load stats — check your network and retry.", "ステータスを取得できません — 通信を確認して再試行してください。") }
     var battleDraw: String { t("무승부!", "It's a draw!", "引き分け！") }
     var battleSpectatorFinished: String { t("관전한 배틀이 끝났어요.", "The battle you watched is over.", "観戦したバトルが終わりました。") }

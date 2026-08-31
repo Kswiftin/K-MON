@@ -516,6 +516,21 @@ final class CompanionStore {
 
     // 알 인큐베이션 (active 없을 때)
     var isEgg: Bool { state.active == nil }
+
+    /// 배틀·교환에 내보낼 개체가 하나라도 있나.
+    ///
+    /// **"동행이 알인가"(`isEgg`)로 막으면 안 된다.** 알을 품는 동안 `state.active` 는 nil 이지만
+    /// 박스에 키워 둔 개체가 얼마든지 있을 수 있다 — 그걸로 싸우면 된다. 알 하나뿐일 때만 막는다.
+    var hasBattleReadyMon: Bool { !deployableMons.isEmpty }
+
+    /// 나를 대표해 내보낼 개체 — 동행이 있으면 그 개체, 알을 품는 중이면 박스에서 고른다.
+    /// 대표 포켓몬을 지정해 뒀으면 그것을 우선한다.
+    var battleFacadeMon: MonState? {
+        if let active = state.active, !gymDefenseMonIDs.contains(active.id) { return active }
+        if let representativeID = state.battleRepresentativeID,
+           let picked = deployableMons.first(where: { $0.id == representativeID }) { return picked }
+        return deployableMons.first
+    }
     var eggStarted: Bool { state.eggUsage > 0 }
     var eggProgress: Double { min(1, max(0, Double(state.eggUsage) / Double(PokemonBalance.eggHatchThreshold))) }
     var eggTokensToHatch: Int { max(0, PokemonBalance.eggHatchThreshold - state.eggUsage) }

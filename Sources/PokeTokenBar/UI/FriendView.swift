@@ -295,7 +295,9 @@ struct FriendView: View {
                     Label(store.l.t("배틀 신청", "Battle", "バトル"), systemImage: "bolt.fill")
                 }
                 .buttonStyle(.borderedProminent).tint(.red)
-                .disabled(store.isEgg || battleCenter.phase != .ready)
+                // 알을 품는 중이라도 박스에 키워 둔 개체가 있으면 그걸로 싸운다 —
+                // 막아야 하는 것은 "동행이 알"이 아니라 "내보낼 개체가 없다"이다.
+                .disabled(!store.hasBattleReadyMon || battleCenter.phase != .ready)
 
                 Button {
                     destination = .battle
