@@ -397,8 +397,12 @@ final class PokemonChatToolTests: XCTestCase {
         }
     }
 
-    /// 가방·로스터는 모델이 **되돌려 줄 수 있는 값**으로 찍힌다. 현지화된 이름을 주면 모델이
-    /// 그걸 인자로 써서 파싱에서 떨어지고, 사용자에겐 "아무 일도 안 일어남" 으로 보인다.
+    /// 가방·로스터는 모델이 **되돌려 줄 수 있는 값**으로 찍힌다. 되돌려 줄 수 없는 값을 찍으면
+    /// 모델이 그걸 인자로 써서 파싱에서 떨어지고, 사용자에겐 "아무 일도 안 일어남" 으로 보인다.
+    ///
+    /// 예전엔 여기서 현지화된 이름이 **떨어지는 것**을 단언했다. 그게 같은 증상의 다른 얼굴이었다 —
+    /// 액션 칩은 사람 문장("이상한 사탕 하나 써 줘")을 보내는데 모델은 그 문장에서 rawValue 를
+    /// 알 길이 없어, 인자를 든 유일한 칩이 아무 일도 못 했다. 이제 둘 다 통한다.
     func testReadToolsPrintNamesTheModelCanHandBackAsArguments() async {
         let store = makeCompanionStore()
         await store.hatch(baseID: 25)
@@ -408,10 +412,12 @@ final class PokemonChatToolTests: XCTestCase {
 
         let bag = await toolbox.runAsActive(.bagList)
         XCTAssertTrue(bag.line.contains("fireStone=2"), bag.line)
-        XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(불꽃의돌)]]").call,
-                     "현지화된 이름이 인자로 통과하면 안 된다")
         XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(fireStone)]]").call,
                        .itemUse(kind: .fireStone), "가방이 찍은 이름이 그대로 인자가 돼야 한다")
+        XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(불꽃의돌)]]").call,
+                       .itemUse(kind: .fireStone), "사용자가 부른 이름으로도 같은 아이템에 닿아야 한다")
+        XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(전설의 돌)]]").call,
+                     "목록 밖 이름은 여전히 호출이 되지 않는다 — 닫힌 목록 대조지 추측이 아니다")
 
         let roster = await toolbox.runAsActive(.rosterList)
         XCTAssertTrue(roster.line.contains("index=0"), roster.line)
@@ -1089,6 +1095,353 @@ final class PokemonChatToolTests: XCTestCase {
         }
     }
 
+    // MARK: 제안 — 지금 성공할 수 있는 일
+    //
+    // 칩은 "무엇을 시킬 수 있는가" 를 화면에서 답한다. 그래서 제안 목록은 **실행 가능성의
+    // 부분집합**이어야 한다 — 조건표가 두 벌이 됐으니, 갈라지는 순간 빨개지는 자리가 필요하다.
+
+    /// **이 절의 핵심 가드.** 제안한 것은 그 상태에서 실행하면 거절당하지 않는다.
+    ///
+    /// 방향은 한쪽만 고정한다: 제안 ⊆ 실행 가능. 반대("실행 가능하면 반드시 제안한다")는 일부러
+    /// 걸지 않는다 — 화면(`FocusTimerView`)이 버튼을 안 그리는 구간까지 대화만 넓게 제안하면
+    /// "화면이 못 하는 일을 대화만 할 수 있다" 부류가 되돌아온다(`already in rest` 결함과 같다).
+    /// 덜 제안하는 건 조용하고, 더 제안하는 건 거짓 약속이다.
+    ///
+    /// 상태마다 실행기를 **새로 만든다** — 실행이 상태를 바꾸므로 한 벌로 돌리면 두 번째 액션이
+    /// 첫 번째가 바꿔 놓은 세계에서 판정된다.
+    func testEverySuggestedActionSurvivesTheExecutorsGuards() async {
+        for (name, build) in Self.suggestionStates {
+            let probe = await build(self)
+            let suggested = probe.toolbox.availableActions(owner: probe.owner)
+            XCTAssertFalse(suggested.isEmpty, "\(name): 제안이 하나도 없어 이 상태는 아무것도 검증하지 않는다")
+
+            for action in suggested {
+                let fresh = await build(self)
+                let result = await fresh.toolbox.run(action.call, owner: fresh.owner)
+                XCTAssertTrue(result.succeeded,
+                              "\(name): \(action) 를 제안해 놓고 실행이 거절했다 — \(result.line)")
+            }
+        }
+    }
+
+    /// 상태마다 무엇이 뜨는지. 위 가드는 "거짓 약속이 없다" 만 지키므로, 칩이 통째로 사라져도
+    /// (`availableActions` 가 늘 빈 배열이어도) 통과한다 — 실제로 제안이 일어나는지는 여기서 본다.
+    func testSuggestionsFollowTheFocusAndAdventureLoop() async {
+        let clock = TestClock()
+        let store = makeCompanionStore(clock: clock)
+        await store.hatch(baseID: 25)
+        let timer = FocusTimer()
+        let toolbox = PokemonChatToolbox(timer: timer, companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        let owner = store.activeMonID!
+
+        XCTAssertEqual(toolbox.availableActions(owner: owner), [.startFocus],
+                       "멈춰 있을 때 제안할 것은 시작뿐이다")
+
+        XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+        XCTAssertEqual(toolbox.availableActions(owner: owner), [.stopFocus],
+                       "집중 중에 시작을 제안하면 실행기가 거절한다")
+
+        clock.advance(25 * 60)
+        timer.stop()
+        XCTAssertEqual(toolbox.availableActions(owner: owner), [.claimAdventure],
+                       "정산을 기다리는 구간에서 보상 받기를 못 가리키면 사용자는 눌러야 할 것을 모른다")
+
+        store.debugAddItem(.rareCandy, 1)
+        XCTAssertEqual(toolbox.availableActions(owner: owner), [.claimAdventure, .useRareCandy],
+                       "가방에 사탕이 있으면 아이템도 제안한다")
+    }
+
+    /// 칩 줄의 1Hz 시계는 **깨울 것이 있을 때만** 돈다. `@Observable` 이 깨우는 건 상태가 바뀔
+    /// 때뿐이고, 제안 술어 중 시계를 읽는 건 `isAdventureInProgress` 하나다(`clock()`) — 나머지는
+    /// 전부 상태 변화로 깨어난다. 상시로 돌리면 팝오버를 열어 둔 내내 초당 한 번씩 칩 목록과
+    /// 프로필이 다시 만들어지고, 프로필 한 번이 박스 전체 배열 한 벌이다.
+    ///
+    /// 반대 방향도 같이 건다 — 필요할 때 껐으면 모험이 끝나는 순간을 넘긴 채 "보상 받기" 칩이
+    /// 영영 안 뜬다(`FocusTimerView` 가 같은 술어를 같은 이유로 깨운다).
+    func testTheChipRowOnlyNeedsAClockWhileAnAdventureCanFinish() async {
+        let clock = TestClock()
+        let store = makeCompanionStore(clock: clock)
+        await store.hatch(baseID: 25)
+        let timer = FocusTimer()
+        let toolbox = PokemonChatToolbox(timer: timer, companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertFalse(toolbox.needsWallClockTicker,
+                       "모험이 없는데 초당 한 번씩 칩 줄을 다시 그린다")
+
+        XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+        XCTAssertTrue(toolbox.needsWallClockTicker,
+                      "모험 중에 시계를 끄면 끝나는 순간을 넘겨 '보상 받기' 가 영영 안 뜬다")
+
+        clock.advance(25 * 60)
+        timer.stop()
+        XCTAssertTrue(toolbox.needsWallClockTicker, "정산을 기다리는 구간에서도 시계는 살아 있어야 한다")
+    }
+
+    /// 사탕이 없으면 제안하지 않는다 — "가방에 없다" 는 정직한 실패지만, 화면이 먼저 권해 놓고
+    /// 실패시키는 건 다른 이야기다.
+    func testAnEmptyBagSuggestsNoItem() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertFalse(toolbox.availableActions(owner: store.activeMonID!).contains(.useRareCandy))
+        store.debugAddItem(.rareCandy, 1)
+        XCTAssertTrue(toolbox.availableActions(owner: store.activeMonID!).contains(.useRareCandy))
+    }
+
+    /// 진화 대기는 제안이 된다. 카드가 뜨기를 기다리는 동안 대화가 그 길을 가리킬 수 있어야 한다.
+    func testAPendingEvolutionIsSuggested() async {
+        let store = makeCompanionStore(line: Self.levelGatedLine)
+        await store.hatch(baseID: 40)
+        store.debugAccrueLevelExperience(300_000_000)
+        store.applyUsage(0)
+        XCTAssertNotNil(store.evolutionPrompt, "전제: 프롬프트가 떠야 이 경로를 밟는다")
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertTrue(toolbox.availableActions(owner: store.activeMonID!).contains(.acceptEvolution))
+    }
+
+    /// 카드가 뜬 뒤 조건이 무너지면 제안도 함께 사라져야 한다. 실행기는 이미 이 상태를 거절하는데
+    /// (`testEvolutionThatSilentlyFailsIsNotReportedAsAccepted`), 제안이 남으면 앱이 권한 대로
+    /// 누른 사용자가 **진화 카드를 잃는다** — `acceptEvolution` 은 조건이 안 맞으면 카드만 지운다.
+    func testAnEvolutionWhoseConditionsCollapsedIsNoLongerSuggested() async {
+        let store = makeCompanionStore(line: Self.knownMoveGatedLine)
+        await store.hatch(baseID: 40)
+        let move = MoveSpec(id: 246, names: ["ko": "원시의힘"], type: .rock,
+                            power: 60, damageClass: .special, accuracy: 100, pp: 5)
+        store.debugSetActiveLearnedMoves([move])
+        store.debugAccrueLevelExperience(300_000_000)
+        store.applyUsage(0)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+        XCTAssertTrue(toolbox.availableActions(owner: store.activeMonID!).contains(.acceptEvolution),
+                      "대조군: 조건이 맞을 때는 제안돼야 아래 단언이 뜻을 가진다")
+
+        store.debugSetActiveLearnedMoves([])
+
+        XCTAssertNotNil(store.evolutionPrompt, "전제: 카드는 아직 떠 있다 — 무너진 건 조건뿐이다")
+        XCTAssertFalse(toolbox.availableActions(owner: store.activeMonID!).contains(.acceptEvolution),
+                       "실행하면 카드를 잃을 진화를 제안했다")
+    }
+
+    /// 휴식 단계는 **끝낼 집중이 아니다.** `isRunning` 은 `phase != .idle` 이라 휴식에서도 참인데,
+    /// 그 값으로 제안하면 쉬는 중에 "집중을 끝내자" 칩이 뜨고 승인 카드는 "끝난 모험 보상은 챙기고,
+    /// 아직 나가 있는 모험은 취소돼" 라고 말한다 — 그 구간엔 모험이 이미 정산돼 없다.
+    ///
+    /// 실행기가 이 상태를 거절하지는 않으므로(`isRunning` 이면 종료는 실행된다) 제안 ⊆ 실행 가능
+    /// 가드로는 안 걸린다. 문구가 상태를 잘못 부르는 부류라 여기서 따로 잰다.
+    func testTheRestPhaseIsNotOfferedAsAFocusToStop() async {
+        let focusing = await probe { store, timer, _ in
+            XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+        }
+        XCTAssertTrue(focusing.toolbox.availableActions(owner: focusing.owner).contains(.stopFocus),
+                      "대조군: 집중 중에는 종료를 제안해야 아래 단언이 뜻을 가진다")
+
+        // 앱에서 휴식은 집중이 끝나며 켜지고, 그 완료가 모험을 함께 정산한다 — 그래서 휴식
+        // 구간엔 나가 있는 모험이 없다. 상태를 그대로 세운다(`suggestionStates` 의 "휴식 중" 과
+        // 같은 조립이다. `tick` 은 `onFocusCompleted` 가 앱 루트에서만 꽂히므로 여기선 정산을 안 한다).
+        let resting = await probe { store, timer, _ in
+            timer.startRest()
+            XCTAssertNil(store.activeAdventure, "전제: 휴식 구간엔 나가 있는 모험이 없다")
+        }
+
+        XCTAssertTrue(resting.timer.isRunning, "전제: 휴식도 isRunning 이다 — 그래서 이 경로가 밟힌다")
+        XCTAssertFalse(resting.toolbox.availableActions(owner: resting.owner).contains(.stopFocus),
+                       "쉬는 중에 '집중을 끝내자' 를 권했다")
+    }
+
+    /// 칩 문구와 그 칩이 노리는 호출은 **같은 값**을 말해야 한다. 문구가 상수 표를 다시 읽으면
+    /// 호출만 바뀌었을 때 칩은 25분이라 쓰고 승인 카드는 50분을 켠다.
+    ///
+    /// **인자를 든 칩은 전부 여기를 지난다.** `.pokedoroStart` 만 보고 나머지를 `continue` 로
+    /// 흘리던 동안, 인자를 든 다른 칩(`.useRareCandy`)은 규칙 밖이었다 — 그래서 한국어 문구가
+    /// 아이템 이름을 붙여 쓴 채(`이상한사탕`) 파서가 받는 이름(`이상한 사탕`)과 갈라져도
+    /// 이 파일 전체가 초록이었다. 인자의 종류마다 갈래를 두고, 새 종류는 `default` 가 아니라
+    /// 여기에 갈래를 더해야 한다.
+    func testActionPhrasesQuoteTheirOwnCall() {
+        for action in PokemonChatAction.allCases {
+            for language in AppLanguage.allCases {
+                let phrase = action.phrase(language)
+                switch action.call {
+                case .pokedoroStart(let minutes):
+                    XCTAssertTrue(phrase.contains("\(minutes)"),
+                                  "\(action)/\(language.rawValue): 문구가 호출의 \(minutes)분을 안 말한다")
+                case .itemUse(let kind):
+                    let name = L(language).itemName(kind)
+                    XCTAssertTrue(phrase.contains(name),
+                                  "\(action)/\(language.rawValue): 문구('\(phrase)')가 호출이 쓸 이름('\(name)')을 안 말한다")
+                default:
+                    continue
+                }
+            }
+        }
+    }
+
+    /// 인자를 든 유일한 칩(`item.use`). 사용자가 보내는 문장에는 **현지화된 이름**밖에 없고,
+    /// 모델이 `bag.list` 를 먼저 부르지 않으면 rawValue 를 알 길이 없다 — 왕복은 3회뿐이라
+    /// 그 한 번이 비싸다. 닫힌 목록이므로 이름으로 되짚는다.
+    ///
+    /// 이 테스트는 **표의 이름이 파싱되는지**만 본다. 칩 문구가 그 이름을 그대로 말하는지는
+    /// `testActionPhrasesQuoteTheirOwnCall` 이 건다 — 여기서 둘을 겸하면 입력을 표에서 뽑는
+    /// 순간 항등식이 되어(표 → 표) 칩 문구가 어떻게 틀리든 초록이 된다.
+    func testItemUseAcceptsTheLocalizedNameThatBagListPrints() {
+        for language in AppLanguage.allCases {
+            let name = L(language).itemName(.rareCandy)
+            let (_, call) = PokemonChatToolParser.parse("좋아! [[tool:item.use(\(name))]]")
+            XCTAssertEqual(call, .itemUse(kind: .rareCandy),
+                           "\(language.rawValue): 표시 이름(\(name))으로는 호출이 안 만들어진다")
+        }
+        let (_, raw) = PokemonChatToolParser.parse("[[tool:item.use(rareCandy)]]")
+        XCTAssertEqual(raw, .itemUse(kind: .rareCandy), "회귀: bag.list 가 찍는 rawValue 는 계속 통해야 한다")
+    }
+
+    /// rawValue 와 표시 이름이 **같은 관대함**을 받아야 한다. 정규화를 현지화 갈래에만 걸면
+    /// `rare candy`(표시 이름)는 통하는데 `rarecandy`·` rareCandy `(정답 값)는 떨어진다 —
+    /// 가방이 찍어 준 값이 사람 말보다 까다로운, 계약과 정반대의 상태다.
+    func testItemNamesSurviveTheSpacingAndCaseTheModelAdds() {
+        for raw in [" rareCandy ", "rarecandy", "RAREcandy", " 이상한 사탕 "] {
+            XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(\(raw))]]").call,
+                           .itemUse(kind: .rareCandy),
+                           "'\(raw)' 가 거부됐다 — 같은 아이템의 다른 표기가 갈린다")
+        }
+    }
+
+    /// 이름 되짚기는 **대화가 실제로 쓸 수 있는 종류**까지만 연다. 가구는 `useItem` 의 어느
+    /// 갈래로도 성공하지 못하는데(진화 규칙이 없어 `default:` 에서 떨어진다) 이름은 갖고 있다 —
+    /// 48종을 통째로 열어 두면 프롬프트가 "트레이너가 말한 대로" 를 허용하는 지금, 가구 이름
+    /// 한 번에 승인 카드가 떴다가 그제서야 실패한다. 사용자에겐 승인한 일이 안 된 것으로 보인다.
+    func testNamesOnlyReachItemsChatCanActuallyUse() {
+        for language in AppLanguage.allCases {
+            let bed = L(language).itemName(.roomBed)
+            XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(\(bed))]]").call,
+                         "\(language.rawValue): 가구('\(bed)')가 호출이 됐다 — 승인 카드까지 간다")
+        }
+        XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(roomBed)]]").call,
+                     "회귀: rawValue 로도 가구는 쓸 수 없어야 한다")
+        // 대조군. 위 단언만 두면 표를 통째로 비워도 통과한다.
+        XCTAssertEqual(PokemonChatToolParser.parse("[[tool:item.use(moonStone)]]").call,
+                       .itemUse(kind: .moonStone), "진화 아이템까지 같이 닫혔다")
+    }
+
+    /// 이름으로 되짚는 순간 **이름이 겹치면 엉뚱한 아이템을 쓴다** — 그리고 아이템 사용은
+    /// 소모라 되돌릴 수 없다. 세 언어를 한 자루에 넣고 대조하므로 언어를 가로질러도 겹치면 안 된다.
+    /// (rawValue 와 현지화 이름이 겹치는 경우도 같은 함정이라 함께 센다.)
+    func testNoTwoItemsAnswerToTheSameName() {
+        var owner: [String: ItemKind] = [:]
+        for kind in ItemKind.allCases {
+            var names = [kind.rawValue]
+            // 언어를 손으로 세지 않는다 — 네 번째 언어가 붙는 날 새 충돌을 못 보고 지나친다.
+            for language in AppLanguage.allCases { names.append(L(language).itemName(kind)) }
+            for name in Set(names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }) {
+                if let existing = owner[name], existing != kind {
+                    XCTFail("'\(name)' 를 \(existing) 와 \(kind) 가 함께 쓴다 — 이름으로는 못 가른다")
+                }
+                owner[name] = kind
+            }
+        }
+    }
+
+    /// 박스 개체 대화에는 제안이 없다. 다섯 액션이 전부 "지금 나와 있는 나" 에 작용하므로
+    /// 주인 게이트가 먼저 자른다 — `canRun` 을 재사용하는 한 이 줄은 저절로 참이다.
+    /// (`testToolsThatActOnMeRefuseFromABoxedCompanionsChat` 의 형제다.)
+    func testABoxedCompanionsChatSuggestsNothing() async {
+        let store = makeCompanionStore()
+        await store.hatch(baseID: 25)
+        let boxed = Self.spareMon()
+        store.debugSetBoxedMons([boxed])
+        store.debugAddItem(.rareCandy, 1)
+        let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertEqual(toolbox.availableActions(owner: boxed.id), [],
+                       "박스 개체 창이 활성 개체를 움직이는 일을 제안했다")
+        XCTAssertFalse(toolbox.availableActions(owner: store.activeMonID!).isEmpty,
+                       "대조군: 활성 개체 창에서는 제안이 있어야 위 단언이 뜻을 가진다")
+    }
+
+    /// 칩 문구는 사용자가 **읽고 보내는 문장**이다. 마커(`[[tool:...]]`)를 넣으면 사용자가 기계
+    /// 문법을 보내게 되고, 그건 대화를 우회하는 두 번째 실행 경로다.
+    func testActionPhrasesAreHumanSentencesInAllThreeLanguages() {
+        for action in PokemonChatAction.allCases {
+            var seen = Set<String>()
+            for language in [AppLanguage.ko, .en, .ja] {
+                let phrase = action.phrase(language)
+                XCTAssertFalse(phrase.isEmpty, "\(action)/\(language.rawValue): 빈 문구")
+                // `[[tool:` 만 막으면 규칙보다 좁다. 사용자 메시지는 그대로 대화 기록에 실려
+                // 다음 왕복의 문맥으로 CLI 에 되돌아가므로, 대괄호 문법을 보여 주는 것만으로도
+                // 모델에게 마커를 흉내 낼 본을 준다 — 그리고 그 마커는 실제로 파싱된다.
+                XCTAssertFalse(phrase.contains("[["), "\(action)/\(language.rawValue): 마커 문법이 새어 나왔다")
+                seen.insert(phrase)
+            }
+            XCTAssertEqual(seen.count, 3, "\(action): 세 언어 중 둘이 같은 문구다")
+        }
+    }
+
+    /// 제안을 재는 한 판. 상태마다 **다시 만들어야** 하므로(실행이 상태를 바꾼다) 조립을 한 곳에 둔다.
+    private struct ToolProbe {
+        let store: CompanionStore
+        let timer: FocusTimer
+        let toolbox: PokemonChatToolbox
+        let owner: UUID
+    }
+
+    private func probe(line: EvoLine? = nil, baseID: Int = 25,
+                       setUp: @MainActor (CompanionStore, FocusTimer, TestClock) -> Void = { _, _, _ in }
+    ) async -> ToolProbe {
+        let clock = TestClock()
+        let store = makeCompanionStore(line: line, clock: clock)
+        await store.hatch(baseID: baseID)
+        let timer = FocusTimer()
+        setUp(store, timer, clock)
+        return ToolProbe(store: store, timer: timer,
+                         toolbox: PokemonChatToolbox(timer: timer, companion: store,
+                                                     album: makeAlbum(), lookup: Self.emptyLookup),
+                         owner: store.activeMonID!)
+    }
+
+    private static let suggestionStates: [(String, @MainActor (PokemonChatToolTests) async -> ToolProbe)] = [
+        ("멈춰 있음", { await $0.probe() }),
+        ("사탕 보유", { await $0.probe { store, _, _ in store.debugAddItem(.rareCandy, 1) } }),
+        ("집중 중", { await $0.probe { store, timer, _ in
+            XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+        } }),
+        // 타이머만 돌고 **모험은 없는** 구간. 이 상태가 없으면 시작 판정의 두 조건 중 모험 쪽이
+        // 타이머 쪽을 가려서, 타이머 검사를 통째로 지워도 아무 테스트가 안 깨진다(주입에서 확인).
+        // 같은 가림을 실행기에서 이미 겪었다 — `pokedoro start refused: already in rest`.
+        // 사탕을 쥐여 주는 이유는 이 상태가 **공허해지지 않게** 하려는 것뿐이다. 휴식 중엔 제안할
+        // 타이머 동작이 없고(시작은 돌고 있어서, 종료는 끝낼 집중이 아니라서), 제안이 0개면 이
+        // 상태는 아무 주입도 못 잡는다 — 위 가드가 "제안이 하나도 없다" 로 먼저 걸린다.
+        ("휴식 중", { await $0.probe { store, timer, _ in
+            timer.startRest()
+            store.debugAddItem(.rareCandy, 1)
+            XCTAssertNil(store.activeAdventure, "전제: 휴식 구간엔 나가 있는 모험이 없다")
+        } }),
+        ("모험 정산 대기", { await $0.probe { store, timer, clock in
+            XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+            clock.advance(25 * 60)
+            timer.stop()
+        } }),
+        ("진화 대기", { await $0.probe(line: levelGatedLine, baseID: 40) { store, _, _ in
+            store.debugAccrueLevelExperience(300_000_000)
+            store.applyUsage(0)
+        } }),
+        // 카드가 뜬 **뒤** 조건이 무너진 진화. 대기 여부만 보는 판정은 여기서도 칩을 띄우는데,
+        // 승인은 카드만 지우고 조용히 돌아간다 — 앱이 권한 대로 누른 사용자가 진화를 잃는다.
+        // `testEvolutionThatSilentlyFailsIsNotReportedAsAccepted` 가 실행기 쪽에서 이미 재던
+        // 상태다. 제안 쪽에서 재지 않아 두 판정이 갈라진 걸 아무도 못 봤다.
+        ("진화 조건 무너짐", { await $0.probe(line: knownMoveGatedLine, baseID: 40) { store, _, _ in
+            store.debugSetActiveLearnedMoves([MoveSpec(id: 246, names: ["ko": "원시의힘"], type: .rock,
+                                                       power: 60, damageClass: .special, accuracy: 100, pp: 5)])
+            store.debugAccrueLevelExperience(300_000_000)
+            store.applyUsage(0)
+            store.debugSetActiveLearnedMoves([])
+        } }),
+    ]
+
     private static func dexEntry(chain: [Int], types: [PokemonType]? = nil, shiny: Bool = false) -> DexEntry {
         DexEntry(baseID: chain[0], finalID: chain[chain.count - 1], chainOrder: chain,
                  rarity: .common, caughtAt: nil, isShiny: shiny, types: types)
@@ -1176,6 +1529,9 @@ private actor ScriptedToolProvider: PokemonChatProviding {
 private final class CountingToolbox: PokemonChatToolRunning {
     private(set) var runCount = 0
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool { true }
+    /// 이 스텁은 루프의 왕복 횟수만 센다 — 제안은 실물 실행기(`PokemonChatToolbox`)에서 검증한다.
+    func availableActions(owner: UUID) -> [PokemonChatAction] { [] }
+    var needsWallClockTicker: Bool { false }
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         runCount += 1; return ("pokedoro state=idle", true)
     }
@@ -1184,6 +1540,8 @@ private final class CountingToolbox: PokemonChatToolRunning {
 private struct StubToolbox: PokemonChatToolRunning {
     var status = "pokedoro state=idle"
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool { true }
+    func availableActions(owner: UUID) -> [PokemonChatAction] { [] }
+    var needsWallClockTicker: Bool { false }
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         switch call {
         case .pokedoroStatus: return (status, true)

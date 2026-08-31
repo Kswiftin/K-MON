@@ -203,14 +203,37 @@ struct PokemonChatView: View {
         }
     }
 
-    private var questionChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(chips, id: \.self) { chip in
-                    Button(chip) { if chip == dailyDexQuestion { destination = .dailyDex } else { draft.wrappedValue = chip } }.buttonStyle(.bordered).controlSize(.small)
-                }
-            }.padding(.horizontal, 12).padding(.bottom, 8)
+    /// 무엇을 시킬 수 있는지는 **여기서** 답한다. 액션 칩은 실행기가 지금 성공시킬 수 있는 것만
+    /// 오므로 목록이 아니라 상태다 — `FocusTimer`·`CompanionStore` 가 `@Observable` 이라 집중을
+    /// 시작하면 이 줄이 그 자리에서 바뀐다.
+    /// 시계로 깨운다. `@Observable` 이 깨우는 건 상태가 **바뀔 때**뿐인데, "보상 받기" 의 조건
+    /// (`isAdventureInProgress`)은 `clock()` 을 읽는 벽시계 술어라 모험이 끝나도 아무것도
+    /// 무효화되지 않는다 — 팝오버를 열어 둔 채 그 순간을 넘기면 칩이 영영 안 뜬다.
+    ///
+    /// **깨울 것이 있을 때만** 돈다(`needsWallClockTicker`). `FocusTimerView` 가 자기 시계를
+    /// 같은 방식으로 게이트하는 것과 같은 이유다 — 상시로 돌리면 아무 술어도 안 변하는 대화에서
+    /// 초당 한 번씩 `chips` 와 `profile` 이 다시 만들어지고, `profile` 한 번이 박스 전체 배열
+    /// 한 벌(`ownedMons`)에 진화 트리 조회까지 딸린다.
+    @ViewBuilder private var questionChips: some View {
+        if toolbox.needsWallClockTicker {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in chipRow }
+        } else {
+            chipRow
         }
+    }
+
+    private var chipRow: some View {
+        PokemonChatChipRow(actions: toolbox.availableActions(owner: companionID),
+                           questions: chips, language: profile.language,
+                           onAction: { fill(with: $0.phrase(profile.language)) },
+                           onQuestion: { question in
+                               if question == dailyDexQuestion { destination = .dailyDex }
+                               else { fill(with: question) }
+                           })
+    }
+
+    private func fill(with chip: String) {
+        draft.wrappedValue = PokemonChatChipRow.composed(draft: draft.wrappedValue, chip: chip)
     }
 
     private var chips: [String] {
@@ -299,6 +322,61 @@ struct PokemonChatView: View {
         var owner = store.chatProfile(for: mon)
         if id == companionID, let identity { owner.apply(identity) }
         return owner
+    }
+}
+
+/// 칩 한 줄. **가로 스크롤이고 절대 감기지 않는다** — 세로로 감기면 그만큼 메시지 영역과 승인
+/// 카드가 밀리고, 승인 카드는 안전 경계라 축소 대상이 아니다.
+///
+/// 뷰로 떼어낸 이유는 레이아웃 테스트가 이 줄만 그려 볼 수 있어야 해서다(`PokemonChatConsentLabel`
+/// 과 같은 이유). 액션 칩은 **누르면 문장이 채워질 뿐** 아무것도 실행하지 않는다.
+struct PokemonChatChipRow: View {
+    let actions: [PokemonChatAction]
+    let questions: [String]
+    let language: AppLanguage
+    /// 누른 것이 **무엇이었는지** 그대로 넘긴다. 문구 하나로 합치면 호출부가 현지화된 표시
+    /// 문자열을 되비교해 정체를 알아내야 하고(`phrase == dailyDexQuestion`), 그 비교는 액션
+    /// 문구 하나가 우연히 같아지는 날 입력칸 대신 다른 화면으로 나간다 — 줄은 이미 답을 안다.
+    let onAction: (PokemonChatAction) -> Void
+    let onQuestion: (String) -> Void
+
+    /// 칩을 눌렀을 때 입력칸에 남을 값. **쓰던 문장을 덮지 않는다** — 초안은 팝오버가 닫혀도
+    /// 남으라고 `PokemonChatStore` 에 두었고, 그래서 되돌릴 `@State` 스냅샷이 없다. 액션 칩은
+    /// 채워진 배경으로 줄 맨 앞에 앉아 눈이 먼저 닿는 자리라, 덮어쓰기면 오타 한 번에 세 문장이 진다.
+    ///
+    /// 이어붙이기는 **같은 칩에 한 번만** 걸린다. 누른 표시가 따로 없어 액션 칩은 두 번 눌리기
+    /// 쉽고, 그때 문장이 두 벌이 되면 모델은 그걸 두 번의 요청으로 읽는다("25분 집중하자 25분
+    /// 집중하자" → 마커 두 개나 50분). 덮어쓰기로 되돌릴 수는 없으니(위 문단) 멱등은 여기서 낸다.
+    static func composed(draft: String, chip: String) -> String {
+        let kept = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 공백뿐인 초안은 비어 있는 것으로 친다 — 전송 버튼이 이미 같은 기준으로 센다.
+        guard !kept.isEmpty else { return chip }
+        guard !kept.hasSuffix(chip) else { return kept }
+        return kept + " " + chip
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                // 상태를 바꾸는 쪽이 앞에 온다. 칠할 때 채워진 배경을 쓰는 건 "이건 무언가를
+                // 일으킨다" 를 질문 칩과 구분하기 위해서다 — 뜻이 다르면 생김새도 달라야 한다.
+                ForEach(actions, id: \.self) { action in
+                    Button(action.phrase(language)) { onAction(action) }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        // 채워진 배경만으로는 부족하다. macOS 의 "색상 없이 구분"·고대비에서
+                        // 그 한 가지 단서가 평평해지고, VoiceOver 에는 애초에 색이 없다 —
+                        // 그러면 "집중을 끝내자"(승인 카드가 뜨는 요청)와 "지금 기분은 어때?"
+                        // (잡담)가 똑같은 버튼 두 개로 들린다.
+                        .accessibilityHint(L(language).t("입력칸에 부탁을 채워요. 보내면 승인을 물어봐요.",
+                                                        "Fills the composer with a request. Sending it asks for your approval.",
+                                                        "入力欄にお願いを入れます。送ると承認をたずねます。"))
+                }
+                ForEach(questions, id: \.self) { question in
+                    Button(question) { onQuestion(question) }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+            }.padding(.horizontal, 12).padding(.bottom, 8)
+        }
     }
 }
 

@@ -53,9 +53,10 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
         case .challengeStatus:
             return "[[tool:\(rawValue)]] — check today's dungeon, gym badges and missions"
         case .itemUse:
-            // 이름을 전부 나열하지 않는다(30종 가까이다). 대신 bag.list 가 찍어 주는 이름만
-            // 쓰라고 못 박는다 — 모델이 지어낸 이름은 어차피 파싱에서 떨어진다.
-            return "[[tool:\(rawValue)(<item name exactly as bag.list printed it>)]] — ask the trainer to use one item"
+            // 이름을 전부 나열하지 않는다(30종 가까이다). 대신 bag.list 가 찍어 주는 이름을
+            // 쓰라고 못 박되, 사용자가 부른 이름 그대로도 된다고 알린다 — 액션 칩이 채우는 문장엔
+            // 현지화된 이름밖에 없어서, rawValue 만 받으면 그 칩은 영영 아무 일도 못 한다.
+            return "[[tool:\(rawValue)(<item name as printed, or as the trainer said it>)]] — ask the trainer to use one item"
         case .evolutionAccept:
             return "[[tool:\(rawValue)]] — ask the trainer to let you evolve (only when evolution is waiting)"
         case .companionSwitch:
@@ -196,6 +197,61 @@ enum PokemonChatToolCall: Equatable, Sendable {
     }
 }
 
+/// 칩으로 **제안**할 수 있는 일. 도구 13개의 부분집합이다 — 전부 나열하면 대화가 메뉴가 되고,
+/// 인자를 골라야 하는 도구(`companion.switch`·`pokedex.lookup`·`item.use` 의 나머지 종류)는
+/// 칩 한 개로 뜻이 정해지지 않는다.
+///
+/// 칩은 **실행하지 않는다.** 누르면 입력칸에 문장이 채워질 뿐이고, 실행 경로는 여전히 하나다 —
+/// 사용자가 전송 → 모델이 마커 → 승인 카드. 칩이 호출을 직접 만들면 승인 게이트의 형제 경로가
+/// 생기고, "대화 세션 중 도구 실행" 이 대화 없이도 올라간다.
+enum PokemonChatAction: CaseIterable, Sendable {
+    case startFocus
+    case stopFocus
+    case claimAdventure
+    case useRareCandy
+    case acceptEvolution
+
+    /// 이 제안이 노리는 호출. 제안 판정과 실행 판정이 **같은 값**을 보게 하는 다리다 —
+    /// `availableActions` 가 주인 게이트를 새로 쓰지 않고 이 호출을 `canRun` 에 넘긴다.
+    var call: PokemonChatToolCall {
+        switch self {
+        // 화면이 제시하는 세 길이 중 첫 번째. 칩을 셋으로 늘리면 칩 줄이 그것만으로 찬다 —
+        // 다른 길이는 사용자가 문장을 고쳐 보내면 파서가 가장 가까운 값으로 접는다.
+        case .startFocus: return .pokedoroStart(minutes: PokemonChatTool.focusMinutes[0])
+        case .stopFocus: return .pokedoroStop
+        case .claimAdventure: return .adventureClaim
+        case .useRareCandy: return .itemUse(kind: .rareCandy)
+        case .acceptEvolution: return .evolutionAccept
+        }
+    }
+
+    /// 입력칸에 채울 **사용자의 문장**. 마커가 아니라 사람 말이다 — 사용자가 무엇을 보내는지 읽고
+    /// 고칠 수 있어야 하고, 마커를 사용자가 보내면 그게 곧 두 번째 실행 경로다.
+    func phrase(_ language: AppLanguage) -> String {
+        let l = L(language)
+        switch self {
+        case .startFocus:
+            // 상수표를 다시 읽지 않는다 — 자기 `call` 이 켤 값을 그대로 말한다. 두 벌이면
+            // 위 `case .startFocus` 의 길이만 바꿨을 때 칩은 25분이라 쓰고 카드는 50분을 켠다.
+            guard case .pokedoroStart(let minutes) = call else { return "" }
+            return l.t("\(minutes)분 집중하자", "Let's focus for \(minutes) minutes", "\(minutes)分集中しよう")
+        case .stopFocus:
+            return l.t("집중을 끝내자", "Let's stop the focus session", "集中を終えよう")
+        case .claimAdventure:
+            return l.t("모험 보상 받아 줘", "Collect the adventure reward", "冒険の報酬を受け取って")
+        case .useRareCandy:
+            // 이름도 상수표를 다시 읽지 않는다 — 자기 `call` 이 쓸 아이템의 **표시 이름 그대로**
+            // 말한다. 두 벌이던 동안 한국어 문구만 붙여 써(`이상한사탕`) 파서가 받는 이름
+            // (`이상한 사탕`)과 갈라졌고, 인자를 든 유일한 칩이 한국어에서 아무 일도 못 했다.
+            guard case .itemUse(let kind) = call else { return "" }
+            let name = l.itemName(kind)
+            return l.t("\(name) 하나 써 줘", "Use one \(name)", "\(name)を1つ使って")
+        case .acceptEvolution:
+            return l.t("진화하자", "Let's evolve", "進化しよう")
+        }
+    }
+}
+
 /// 답변 텍스트에서 호출 하나를 꺼낸다. 마커는 **언제나** 본문에서 제거된다 — 인식하지 못한
 /// 마커까지 지우는 이유는, 남겨 두면 사용자가 기계 문법을 읽고 가드가 문장 수를 잘못 세기 때문이다.
 enum PokemonChatToolParser {
@@ -252,7 +308,7 @@ enum PokemonChatToolParser {
             }
         case .itemUse:
             // 닫힌 enum 만 인자가 된다. 목록 밖 이름은 거부되는 게 아니라 호출이 되지 않는다.
-            guard let raw = argument, let kind = ItemKind(rawValue: raw) else { return nil }
+            guard let raw = argument, let kind = itemKind(named: raw) else { return nil }
             return .itemUse(kind: kind)
         case .companionSwitch:
             // 인덱스는 `roster.list` 가 찍은 값이다. 범위 상한은 로스터를 아는 실행기가 본다 —
@@ -266,6 +322,40 @@ enum PokemonChatToolParser {
             guard let id = wholeNumber(argument), (1...PokemonChatTool.highestDexNumber).contains(id) else { return nil }
             return .pokedexLookup(speciesID: id)
         }
+    }
+
+    /// 아이템 이름을 종류로. rawValue 가 정답이지만(`bag.list` 가 그 값을 찍는다) **현지화된
+    /// 이름도 받는다** — 액션 칩은 사람 문장("이상한 사탕 하나 써 줘")을 입력칸에 채우고, 모델은
+    /// 그 문장에서 rawValue 를 알 길이 없다. `bag.list` 를 먼저 부르면 알 수 있지만 왕복은 셋뿐이라
+    /// 그 한 번이 비싸고, 인자를 든 칩은 이것 하나뿐인데 그게 하필 못 맞추는 칩이었다.
+    ///
+    /// 추측이 아니라 **닫힌 목록 대조**다 — 모든 언어의 표시 이름을 그대로 맞춰 보고, 목록 밖
+    /// 이름은 여전히 호출이 되지 않는다.
+    ///
+    /// 정규화는 **한 번만** 걸린다. rawValue 만 원문 그대로 비교하던 동안 `rare candy`(표시
+    /// 이름)는 통하는데 `rarecandy`·` rareCandy `(가방이 찍어 준 정답 값)는 떨어져, 기계가 준
+    /// 값이 사람 말보다 까다로운 상태였다.
+    private static func itemKind(named raw: String) -> ItemKind? {
+        let needle = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return nil }
+        return usableFromChat.first { kind in
+            kind.rawValue.lowercased() == needle
+                || AppLanguage.allCases.contains { L($0).itemName(kind).lowercased() == needle }
+        }
+    }
+
+    /// 이름으로 되짚을 수 있는 종류 — `useItem` 이 갈래를 가진 것들과 진화 아이템 전체다.
+    ///
+    /// 가구는 뺀다. `useItem` 의 어느 갈래로도 성공하지 못하는데(진화 규칙이 없어 `default:` 에서
+    /// `canUseEvolutionItem` 에 걸린다) 이름은 갖고 있어서, 표에 두면 **승인 카드가 먼저 뜨고**
+    /// 그제서야 실패한다 — 사용자에겐 자기가 승인한 일이 안 된 것으로 보인다. 프롬프트가
+    /// "트레이너가 말한 대로" 를 허용한 뒤로는 48종이 전부 그 오답의 사정거리다.
+    ///
+    /// 앱 상태(가방 재고)로 좁히지 않는다. 파싱이 그때그때의 인벤토리에 의존하면 같은 답변이
+    /// 재고에 따라 호출이 되거나 안 되고, 재고는 실행기가 이미 본다(`item ... unavailable`).
+    private static let usableFromChat: [ItemKind] = ItemKind.allCases.filter {
+        // `useItem` 의 명시 케이스와 같은 목록이다. 한쪽만 늘면 그 아이템은 이름으로 못 불린다.
+        $0.evolutionRule != nil || [.rareCandy, .mint, .heartScale, .shinyCharm, .freshWater].contains($0)
     }
 
     /// 숫자만 있는 문자열만 숫자다. `Int("25분")` 은 이미 nil 이지만 `" 25 "`·`"+25"` 는 통과하므로
@@ -297,6 +387,24 @@ protocol PokemonChatToolRunning {
     /// `false` 를 돌려준 호출은 `run` 도 반드시 거절해야 한다 — 두 판정이 갈라지면 카드를 안 띄운
     /// 호출이 조용히 실행된다.
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool
+
+    /// 지금 이 창에서 **칩으로 제안해도 되는** 일. `canRun`(구조적 불가능)에 상태 준비 여부를 더한다.
+    ///
+    /// `canRun` 에 상태 조건을 넣지 않는 이유는 그쪽 계약이 다르기 때문이다 — 거기에 "가방에
+    /// 사탕이 없다" 를 넣으면 모델이 부탁한 호출이 카드도 없이 조용히 사라진다. 그건 사용자가
+    /// 봐야 하는 정직한 실패다. 반면 **먼저 권해 놓고 실패시키는 건** 거짓 약속이라 여기서 막는다.
+    ///
+    /// 기본 구현을 두지 않는다. 새 실행기가 이걸 빠뜨리면 칩이 조용히 사라지는데, 컴파일이 막는
+    /// 편이 낫다(`run(_:owner:)` 의 owner 와 같은 이유).
+    func availableActions(owner: UUID) -> [PokemonChatAction]
+
+    /// `availableActions` 의 답이 **아무 상태 변화 없이도 바뀔 수 있는가.** 칩 줄은 이 값이 참일
+    /// 때만 벽시계로 다시 그린다 — `@Observable` 은 상태가 바뀔 때만 깨우므로, 시계를 읽는 술어
+    /// (`isAdventureInProgress`)가 걸려 있으면 그 순간을 놓치고 칩이 영영 안 뜬다.
+    ///
+    /// 실행기가 답하는 이유는 어떤 술어가 시계를 읽는지 아는 곳이 여기뿐이라서다. 뷰가 직접
+    /// 판정하면 새 벽시계 술어가 붙는 날 한쪽만 늘어난다.
+    var needsWallClockTicker: Bool { get }
 
     /// `line` 은 모델에게 돌려줄 사실 한 줄(사용자 화면에는 실리지 않으므로 번역하지 않는다).
     /// `succeeded` 는 승인 경로가 거절과 실패를 구분하는 데 쓴다 — 문자열을 뒤져 판정하지 않는다.
@@ -340,6 +448,44 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
 
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool {
         ownerRefusal(call, owner: owner) == nil
+    }
+
+    func availableActions(owner: UUID) -> [PokemonChatAction] {
+        PokemonChatAction.allCases.filter { canRun($0.call, owner: owner) && isReady($0) }
+    }
+
+    /// 칩 줄이 **벽시계로 깨어나야 하는가.** `@Observable` 이 깨우는 건 상태가 바뀔 때뿐인데
+    /// `isReady` 의 술어 중 하나(`isAdventureInProgress`)는 `clock()` 을 읽어, 모험이 끝나도
+    /// 아무것도 무효화되지 않는다 — 팝오버를 열어 둔 채 그 순간을 넘기면 "보상 받기" 가 안 뜬다.
+    ///
+    /// 그래서 시계는 **모험이 걸려 있을 때만** 돈다. 상시로 돌리면 아무 술어도 안 변하는 대화에서
+    /// 초당 한 번씩 칩 목록과 프로필이 다시 만들어지고, 프로필 한 번이 박스 전체 배열 한 벌이다.
+    var needsWallClockTicker: Bool { companion.activeAdventure != nil }
+
+    /// 상태가 준비됐는가. `run` 의 가드가 읽는 **바로 그 값**을 읽는다 — 새 조건을 여기서 발명하면
+    /// 조건표가 두 벌이 되고, 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다.
+    ///
+    /// 제안은 실행 가능 조건의 **부분집합**이면 된다. `stopFocus` 가 `run` 의 두 조건
+    /// (`isRunning || activeAdventure != nil`) 중 앞만 보는 게 그 예다 — 뒤쪽만 참인 구간(앱을
+    /// 다시 연 직후, 타이머는 idle 이고 모험만 남은 정산 대기)에서 화면은 취소 버튼을 아예 안
+    /// 그리고 "보상 받기" 만 그린다. 거기서 종료를 권하면 대화만 화면보다 넓어진다.
+    private func isReady(_ action: PokemonChatAction) -> Bool {
+        switch action {
+        case .startFocus: return !timer.isRunning && companion.activeAdventure == nil
+        // 휴식은 **끝낼 집중이 아니다.** `isRunning` 은 `phase != .idle` 이라 휴식에서도 참인데,
+        // 그 값으로 권하면 쉬는 중에 "집중을 끝내자" 칩이 뜨고, 승인 카드는 "끝난 모험 보상은
+        // 챙기고, 아직 나가 있는 모험은 취소돼" 라고 말한다 — 그 구간엔 모험이 이미 정산돼 없다.
+        // 실행기는 이 상태를 거절하지 않으므로(제안 ⊆ 실행 가능은 지켜진다) 문구가 상태를
+        // 잘못 부르는 부류다. 화면의 종료 버튼은 단계 중립("종료")이라 이 칩만 명사를 흘렸다.
+        case .stopFocus: return timer.phase == .focus
+        case .claimAdventure: return companion.activeAdventure != nil && !companion.isAdventureInProgress
+        // 재고만 보지 않는다 — `useRareCandy` 는 진화 라인이 아직 안 실렸으면 거절한다(기동 직후).
+        case .useRareCandy: return companion.canUseRareCandy
+        // 대기 여부가 아니라 **승인이 실제로 진화시키는가**를 묻는다. 카드가 뜬 뒤에도 조건은
+        // 무너지고(기술을 잊음·시간대·요구 파티원), 그때 `acceptEvolution` 은 카드만 지운다 —
+        // 대기만 보고 권하면 앱이 시킨 대로 누른 사용자가 진화 카드를 잃는다.
+        case .acceptEvolution: return companion.canAcceptEvolutionNow
+        }
     }
 
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
