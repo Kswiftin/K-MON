@@ -136,6 +136,8 @@ private struct MemoryHomeWindowView: View {
     @State private var guestbookDraft = ""
     @State private var profileMessageDraft = ""
     @State private var profileMessageError: String?
+    @State private var nicknameDraft = ""
+    @State private var nicknameError: String?
     @State private var editingRoom = false
     @State private var selectedDecorID: UUID?
     @State private var selectedFurniture: ItemKind?
@@ -655,7 +657,22 @@ private struct MemoryHomeWindowView: View {
             }.memoryHomePanel(tint: PokedoroTheme.yellow)
             VStack(alignment: .leading, spacing: 10) {
                 Text(l.t("공개 프로필", "Public profile", "公開プロフィール")).font(.headline)
-                TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: Binding(get: { album.memoryHomePublicNickname }, set: { _ = album.setMemoryHomePublicNickname($0); visits.refreshAccess() }))
+                // 확정할 때만 저장·재광고한다. 키 입력마다 `refreshAccess()` 를 부르면 글자 하나에
+                // `NWListener` 를 한 번씩 취소·재등록해 mDNS 가 이름 충돌로 개명을 쌓는다.
+                // 거부(공백·길이)도 조용히 삼키지 않고 이유를 적는다 — 안 적으면 필드가 고장 난 것처럼 보인다.
+                TextField(l.t("공개 닉네임", "Public nickname", "公開ニックネーム"), text: $nicknameDraft)
+                    .onSubmit {
+                        if album.setMemoryHomePublicNickname(nicknameDraft) {
+                            nicknameDraft = album.memoryHomePublicNickname
+                            nicknameError = nil
+                            visits.refreshAccess()
+                        } else {
+                            nicknameError = l.t("공백 없이 1~40자로 입력해 주세요.",
+                                                "Use 1-40 characters without spaces.",
+                                                "空白なしで1〜40文字にしてください。")
+                        }
+                    }
+                if let nicknameError { Text(nicknameError).font(.caption).foregroundStyle(PokedoroTheme.red) }
                 TextField(l.t("대문 문구", "Home message", "ホームの一言"), text: $profileMessageDraft)
                 HStack {
                     Button(l.t("문구 저장", "Save message", "一言を保存")) {
@@ -671,7 +688,10 @@ private struct MemoryHomeWindowView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Toggle(l.t("홈 LAN 공개", "Open home on LAN", "ホームをLAN公開"), isOn: Binding(get: { album.memoryHomeAccess.visibility == .open }, set: { album.setMemoryHomeVisibility($0 ? .open : .blocked); visits.refreshAccess() }))
-            }.memoryHomePanel(tint: PokedoroTheme.mint).onAppear { profileMessageDraft = album.memoryHomeAccess.profileMessage ?? "" }
+            }.memoryHomePanel(tint: PokedoroTheme.mint).onAppear {
+                profileMessageDraft = album.memoryHomeAccess.profileMessage ?? ""
+                nicknameDraft = album.memoryHomePublicNickname
+            }
             VStack(alignment: .leading, spacing: 8) {
                 Text(l.t("함께한 발자국", "Our journey", "ふたりのあしあと")).font(.headline)
                 MemoryHomeRule(label: l.t("첫 만남", "First met", "出会い"), value: log.firstMetAt?.formatted(date: .abbreviated, time: .omitted) ?? "—")
@@ -692,6 +712,12 @@ private struct MemoryHomeWindowView: View {
     private func guestbook(mon: MonState) -> some View { let album = store.memoryAlbum; return ScrollView { VStack(alignment: .leading, spacing: 14) { VStack(alignment: .leading, spacing: 8) { Label(l.t("방명록", "Guestbook", "ゲストブック"), systemImage: "text.bubble.fill").font(.title3.weight(.bold)); Text(l.t("내가 남긴 한마디를 모아 둬요. 이 글은 LAN에 공유되지 않습니다.", "Keep your notes here. They stay on this device.", "自分のひとことを残します。LANには共有されません。")) .font(.caption).foregroundStyle(.secondary); TextField(l.t("오늘의 한마디", "Leave a note", "今日のひとこと"), text: $guestbookDraft, axis: .vertical).lineLimit(1...3).textFieldStyle(.roundedBorder); Button(l.t("내 이름으로 남기기", "Sign as me", "自分の名前で残す")) { if album.addGuestbookEntry(author: album.memoryHomePublicNickname, body: guestbookDraft, authorKind: .trainer) { guestbookDraft = "" } }.buttonStyle(.borderedProminent).controlSize(.small).disabled(guestbookDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || guestbookDraft.count > MemoryHomeAccessSettings.guestbookBodyLimit) }.memoryHomePanel(tint: PokedoroTheme.yellow); if album.memoryHomeAccess.guestbookEntries.isEmpty { ContentUnavailableView(l.t("첫 방명록을 남겨 보세요", "Leave the first note", "最初のひとことを残しましょう"), systemImage: "text.bubble") } else { ForEach(album.memoryHomeAccess.guestbookEntries) { entry in VStack(alignment: .leading, spacing: 5) { HStack { Label(entry.author, systemImage: entry.authorKind == .companion ? "pawprint.fill" : "person.fill").font(.subheadline.weight(.semibold)); Spacer(); Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary); Button { album.deleteGuestbookEntry(id: entry.id) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.borderless).accessibilityLabel(l.t("방명록 삭제", "Delete guestbook note", "メモを削除")) }; Text(entry.body).font(.callout).fixedSize(horizontal: false, vertical: true) }.memoryHomePanel(tint: entry.authorKind == .companion ? PokedoroTheme.mint : PokedoroTheme.blue) } } }.padding(18) }.onAppear { _ = store.memoryAlbum.recordCompanionTraceIfNeeded(companionName: store.chatProfile(for: mon).displayName, l: l) } }
     private var visit: some View { ScrollView { VStack(alignment: .leading, spacing: 12) {
         VStack(alignment: .leading, spacing: 4) { Text(l.t("같은 LAN의 Memory Home", "Memory Homes on this LAN", "同じLANのMemory Home")).font(.headline); Text(l.t("홈을 고르고 공개된 쇼룸을 둘러보세요.", "Choose a home and explore its public showroom.", "ホームを選び公開ショールームを見て回りましょう。")).font(.caption).foregroundStyle(.secondary) }.memoryHomePanel(tint: PokedoroTheme.blue)
+        // 실패를 화면에 올린다. 이게 없으면 권한 거부(`NoAuth`)·거절·잘못된 페이로드가 전부
+        // "주변 홈을 찾는 중이에요…" 한 줄로 뭉개져, 사용자에게는 원인 없는 무동작으로만 보인다.
+        // `PlayerGymView`·`BattleView`·`GymLeagueView` 는 모두 이 줄을 갖고 있다.
+        if let error = visits.lastError {
+            Label(error, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+        }
         if let selected = visits.selectedProfile { remoteProfile(selected) }
         if visits.homes.isEmpty { ContentUnavailableView(l.t("주변 홈을 찾는 중이에요…", "Looking for homes…", "近くのホームを探しています…"), systemImage: "dot.radiowaves.left.and.right") } else { ForEach(visits.homes) { home in Button { visits.visit(home) } label: { Label(home.displayName, systemImage: "house.fill").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.bordered) } }
     }.padding(18) }.onAppear { visits.start() }.onDisappear { visits.stop() } }

@@ -154,6 +154,70 @@ if [[ -n "$BAD_INTERPOLATION" ]]; then
 fi
 echo "✓ 없음"
 
+# Bonjour 광고 이름은 **닉네임 + 설치별 고유 접미**여야 한다. 접미가 없으면 같은 이름을 쓰는 두
+# 기기가 충돌하고, mDNS 가 한쪽을 `이름 (2)` 로 개명한다 → 개명당한 쪽은 저장된 원문으로 자기를
+# 거르므로 상대를 자기로 착각해 목록에서 지운다. `BattleNet`·`PokemonTrade`·`MultiplayerRoomCenter`
+# 는 처음부터 접미를 붙였는데 `MemoryHomeVisitCenter` 만 원문을 광고해 VISIT 이 조용히 죽어 있었다.
+#
+# 테스트로는 못 막는다 — 광고 이름을 만드는 자리와 자기를 거르는 자리가 각각 단위 테스트를
+# 통과해도, 새 센터가 접미 없이 광고하면 아무 테스트도 깨지지 않는다. 커버리지도 못 막는다
+# (그 줄은 실행된다). 남는 형태가 grep 이다.
+# 해제 조건: 광고 이름을 만드는 공용 헬퍼 하나로 네 센터를 합치면 그 헬퍼의 단위 테스트로 옮긴다.
+echo "▶ Bonjour 광고 이름 스윕 (설치별 고유 접미)"
+# 파일 어딘가에 `#\(` 가 있는지로는 못 막는다 — `MemoryHomeVisitCenter` 는 결함이 있는 채로도
+# `speciesLabel` 의 `"#\(speciesID)"` 때문에 그 검사를 통과했다. 광고 이름을 **넘기는 그 줄**을 본다:
+# 접미를 굽는 전용 이름(`...serviceName`)이 아니라 닉네임 원문을 바로 넘기면 여기서 걸린다.
+BARE_SERVICE_NAME=$(grep -rn 'listener\.service *=' Sources/PokeTokenBar \
+                    | grep -vE 'name: *[A-Za-z]*[sS]erviceName' || true)
+if [[ -n "$BARE_SERVICE_NAME" ]]; then
+  echo "✗ 고유 접미를 굽지 않고 Bonjour 서비스를 광고하는 줄이 있습니다 —" \
+       "같은 이름의 두 기기가 서로를 자기로 오인합니다. \"이름#고유값\" 형태로 광고하세요." >&2
+  echo "$BARE_SERVICE_NAME" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# 같은 파일들의 형제 규칙. LAN 탐색 파라미터는 `includePeerToPeer` 를 켠다 — 안 켜면 AWDL
+# (피어투피어) 경로로 붙은 이웃이 통째로 안 보인다. 네 센터 중 `MemoryHomeVisitCenter` 만
+# 빠져 있었고, 컴파일도 테스트도 통과했다.
+echo "▶ LAN 파라미터 스윕 (includePeerToPeer)"
+NO_P2P=""
+while read -r FILE; do
+  [[ -z "$FILE" ]] && continue
+  grep -qF 'includePeerToPeer' "$FILE" || NO_P2P+="$FILE"$'\n'
+done < <(grep -rl 'listener.service' Sources/PokeTokenBar | sort -u)
+if [[ -n "$NO_P2P" ]]; then
+  echo "✗ includePeerToPeer 를 켜지 않는 LAN 센터가 있습니다 —" \
+       "AWDL 로 붙은 이웃이 목록에서 사라집니다." >&2
+  echo "$NO_P2P" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# `lastError` 는 화면에 닿아야 존재한다. `MemoryHomeVisitCenter` 는 권한 거부(`NoAuth`)를 위한
+# 3개국어 안내 문구까지 만들어 두고도 그 값을 어느 화면도 읽지 않아, 모든 실패가 "주변 홈을 찾는
+# 중이에요…" 한 줄로 뭉개진 채 릴리스됐다 — 사용자에게는 원인 없는 무동작이다.
+#
+# 테스트로는 못 막는다(센터의 `lastError` 를 직접 읽어 검증하면 통과한다). 남는 형태가 grep 이다.
+# 해제 조건: 뷰의 도달 가능성을 검증하는 UI 테스트가 생기면 그때 그쪽으로 옮긴다.
+# 대상은 `...Center` 로 끝나는 클래스다 — LAN/세션 센터의 이름 규약이며, 같은 파일에 사는
+# 타이머·스케줄러 같은 형제 타입을 오탐하지 않는 유일하게 싼 경계다.
+echo "▶ 침묵하는 실패 스윕 (화면이 읽지 않는 lastError)"
+UNSHOWN_ERROR=""
+while read -r CENTER; do
+  [[ -z "$CENTER" ]] && continue
+  grep -rlF "$CENTER" Sources/PokeTokenBar/UI | xargs -r grep -lF 'lastError' | grep -q . \
+    || UNSHOWN_ERROR+="$CENTER"$'\n'
+done < <(grep -rlF 'var lastError' Sources/PokeTokenBar/Core \
+         | xargs -r grep -hoE 'final class [A-Za-z]+Center' | awk '{print $3}' | sort -u)
+if [[ -n "$UNSHOWN_ERROR" ]]; then
+  echo "✗ 화면이 읽지 않는 lastError 를 가진 센터가 있습니다 —" \
+       "실패가 원인 없는 무동작으로 보입니다. 해당 화면에 오류 줄을 붙이세요." >&2
+  echo "$UNSHOWN_ERROR" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
 # LAN 프레임 길이 헤더를 읽는 곳은 반드시 `loadUnaligned` 를 쓴다. `UnsafeRawBufferPointer.load(as:)`
 # 는 포인터 정렬을 **전제**하는데, `NWConnection.receive` 가 주는 `Data` 는 4바이트 정렬을 보장하지
 # 않는다 → 전제 위반이다. 이 부류는 파일마다 남는다: `bee4a84` 가 BattleNet·MultiplayerRoomCenter

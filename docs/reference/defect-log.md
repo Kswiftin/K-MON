@@ -2810,3 +2810,38 @@ read_when:
 - **처방**: 누적 함수는 **같은 입력의 반복**을 단언한다(`f(f(x, c), c) == f(x, c)`). 되돌릴 곳은
   누적 쪽이다 — 덮어쓰기로 되돌리면 원래 고치려던 결함이 돌아온다. (`PokemonChatChipRow.composed`,
   2026-08-31.)
+## LAN 광고 이름에 **고유 접미가 없으면**, 같은 이름의 두 기기가 서로를 자기로 지운다
+
+- **증상**: Poké Home 의 VISIT 탭이 아무 집도 못 찾았다("주변 홈을 찾는 중이에요…" 고정).
+  `MemoryHomeVisitCenter` 만 Bonjour 이름으로 닉네임 **원문**을 광고하고, 자기 필터도 원문으로 했다.
+  닉네임이 같은 두 기기(기본값 `MemoryHome` 포함)가 만나면 mDNS 가 한쪽을 `MemoryHome (2)` 로
+  개명하는데, 개명당한 쪽의 저장값은 여전히 `MemoryHome` 이라 **상대의 광고를 자기 것으로 오인해
+  목록에서 지웠다**. 반대쪽은 개명된 이름이 보이지만 공백 때문에 `clean` 이 라벨을 버려 모든 집이
+  같은 기본 라벨로 뭉개졌다.
+- **부류**: `NWListener.Service(name:)` 에 **사용자가 고른 이름을 그대로** 넘기는 자리.
+  `BattleNet`·`PokemonTrade`·`MultiplayerRoomCenter` 는 셋 다 `이름#고유값` 을 광고하고 그 고유
+  이름으로 자기를 가른다(`PeerAdvertisementTests.testTheSameTrainerNameOnAnotherMachineIsStillAPeer`
+  가 같은 규칙을 이미 지키고 있었다). 새로 생긴 네 번째 센터만 그 규칙 밖에 있었다.
+- **왜 안 터졌나**: 방문 프로토콜 테스트는 `valid()` 순수 검증과 연결 수명만 봤다. 호스트 1개 +
+  방문자 1개를 실제로 붙여 보는 종단 테스트가 0개라, 이름 충돌·자기 필터는 테스트가 밟는 경로
+  **밖**이었다. 커버리지는 `valid()` 로 채워져 통과한다.
+- **처방**: 광고 이름을 만드는 자리와 자기를 거르는 자리를 `nonisolated static` 순수 함수로 빼고
+  (`serviceName(nickname:peerID:)` / `peer(fromService:excluding:endpoint:)`), 접미는
+  `AppSettings.memoryHomeLANPeerID` — 설치마다 고정인 값 — 에서 굽는다. 표시 라벨은 접미만 떼고
+  공백은 허용한다(`clean` 을 쓰면 개명된 이름이 통째로 버려진다).
+  게이트는 **파일 어딘가의 `#\(` 로 세면 안 된다** — 결함이 있는 채로도 `speciesLabel` 의
+  `"#\(speciesID)"` 때문에 통과했다. 광고 이름을 **넘기는 그 줄**이 `name: ...serviceName` 인지 본다
+  (`test-gate.sh` ▶ Bonjour 광고 이름 스윕). (`MemoryHomeVisitCenter`, 2026-08-31.)
+
+## `lastError` 를 **화면이 읽지 않으면**, 모든 실패가 원인 없는 무동작이 된다
+
+- **증상**: 위 결함의 절반. `MemoryHomeVisitCenter` 는 로컬 네트워크 권한 거부(`NoAuth`)를 위한
+  3개국어 안내 문구까지 만들어 두고도 그 값을 어느 화면도 읽지 않았다. 권한 거부·상대의 거절·잘못된
+  페이로드가 전부 "주변 홈을 찾는 중이에요…" 한 줄로 뭉개져, 사용자에게는 원인 없는 무동작이었다.
+- **부류**: `private(set) var lastError` 를 가진 센터 중 UI 에 그 값을 읽는 줄이 없는 것.
+  `PlayerGymView`·`BattleView`·`GymLeagueView`·`PokemonTournamentView` 는 모두 갖고 있었다.
+- **덧붙여**: `NWBrowser` 의 권한 차단은 `.failed` 가 아니라 **`.waiting` 으로 조용히 머문다**.
+  `.failed` 만 처리하면 가장 흔한 실패가 한 번도 기록되지 않는다(`BattleNet.startBrowser` 는 둘 다
+  처리한다). 재시작도 같이 붙인다 — `.failed` 뒤 그대로 두면 권한을 켜도 복구되지 않는다.
+- **처방**: `test-gate.sh` ▶ 침묵하는 실패 스윕 — `Core` 의 `...Center` 중 `var lastError` 를
+  선언한 타입은 `UI` 어딘가에서 그 값을 읽어야 한다. (`MemoryHomePresenter`, 2026-08-31.)
