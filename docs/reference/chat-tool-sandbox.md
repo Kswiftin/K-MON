@@ -162,7 +162,16 @@ read_when:
 | 3. 인자 클램프 | 분은 세 값으로 접히고, 도감 번호·로스터 인덱스는 정수뿐, 아이템은 `ItemKind` case 뿐 | 같은 파일 | `testFocusMinutesAreClampedToTheThreeOfferedLengths`, `testSpeciesLookupRejectsAnythingThatIsNotADexNumberInRange` |
 | 4. 승인 게이트 | 상태를 바꾸는 도구는 사용자 1탭 뒤에만 | `PokemonChatStore.resolvePending` | `testApprovedTimerCallExecutesOnlyForItsOwnCompanion`, `testApprovalGatedToolPausesTheLoopInsteadOfAskingAgain` |
 | 4b. 주인 게이트 | 승인 카드가 가리킨 개체와 실행 대상이 갈라지지 않는다 | `PokemonChatToolbox.run(_:owner:)` | `testToolsThatActOnMeRefuseFromABoxedCompanionsChat`, `testTargetedAndReadOnlyToolsStillWorkFromABoxedCompanionsChat`, `testApprovalPathCarriesTheProposalsCompanionIntoTheExecutor` |
-| 5. 응답 가드 | 코드펜스·"as an AI"·terminal 유출 시 리다이렉트 | `PokemonChatReplyGuard` | `testRoleBreakingReplyIsReplacedBeforeDisplayOrPersistence` |
+| 5. 응답 가드 | 코드펜스·"as an AI"·terminal 유출 시 리다이렉트 (**형식 위반은 접을 뿐 버리지 않는다**) | `PokemonChatReplyGuard` | `testRoleBreakingReplyIsReplacedBeforeDisplayOrPersistence`, `testAWarmReplyWithATrailingEmojiIsNotThrownAway` |
+
+### 겹 5 는 **버리는 겹이 아니다**
+
+가드가 답변을 갈아치우는 건 역할 이탈·유출일 때뿐이다. 너무 길면 문장 경계에서 접고, 모델이 아무
+말도 안 했으면 침묵 전용 문구("다시 말 걸어 줄래?")를 쓴다 — "그건 잘 모르겠어" 는 *질문을 못
+알아들었다* 는 뜻이라, 서식이 어긋났거나 모델이 침묵한 경우엔 거짓말이다.
+
+문장 **수**로는 판정하지 않는다. 끝에 붙은 이모지가 한 세그먼트로 세어져 정상 답변 대부분이
+버려졌다(2026-09-01 결함, `defect-log.md`). 길이 상한이 이미 장문을 막는다.
 
 겹 1 은 **차단되지 않은 제공자를 실행하지 않는다**는 원칙까지 포함한다. 도구를 끌 수 없는 CLI 는
 `.blocked(.unverifiedToolContract)` 로 남는다 — 근거는 `opencode-isolation.md`.
