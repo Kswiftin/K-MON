@@ -36,6 +36,13 @@ LOGIC_CORE=(
   # 키로 세는 속도 제한)가 사는 곳. 소켓 부분은 단위 테스트가 안 닿아 파일 수치는 낮지만, 배열에
   # 넣지 않으면 그 검증기가 커버리지에서 통째로 빠진다 — PeerAdvertisement 를 넣은 이유와 같다.
   "Sources/PokeTokenBar/Core/PokemonTrade.swift"
+  # 광고 이름의 바이트 예산. 네 LAN 센터가 전부 이 한 함수를 지나므로 여기가 무테스트면 부류가
+  # 통째로 무테스트다 — 이전엔 `PlayerGymRoomName` 안에 숨어 있어 커버리지에서 보이지 않았다.
+  "Sources/PokeTokenBar/Core/LANServiceName.swift"
+  # 원격 카드 검증기(`valid`)·광고 이름·집 목록 사상이 사는 곳. 소켓 부분은 단위 테스트가 안 닿아
+  # 파일 수치는 낮지만, 배열 밖에 두면 그 순수 함수들이 커버리지에서 통째로 빠진다 —
+  # `if !homes.isEmpty { lastError = nil }` 같은 새 분기를 아무도 못 본 이유가 이것이었다.
+  "Sources/PokeTokenBar/Core/MemoryHomeVisitCenter.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
   "Sources/PokeTokenBar/Core/BattleModel.swift"
   # 가변 위력(PokéAPI `power: null`) 계산. 순수 함수라 게이트 대상이고, 배열에 안 넣으면
@@ -150,6 +157,129 @@ if [[ -n "$BAD_INTERPOLATION" ]]; then
   echo "✗ 백슬래시가 빠진 문자열 보간 $(wc -l <<< "$BAD_INTERPOLATION" | tr -d ' ')건 —" \
        "리터럴로 렌더됩니다. 의도한 raw string 이면 \\#( 를 쓰세요." >&2
   echo "$BAD_INTERPOLATION" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# Bonjour 광고 이름은 **닉네임 + 설치별 고유 접미**여야 한다. 접미가 없으면 같은 이름을 쓰는 두
+# 기기가 충돌하고, mDNS 가 한쪽을 `이름 (2)` 로 개명한다 → 개명당한 쪽은 저장된 원문으로 자기를
+# 거르므로 상대를 자기로 착각해 목록에서 지운다. `BattleNet`·`PokemonTrade`·`MultiplayerRoomCenter`
+# 는 처음부터 접미를 붙였는데 `MemoryHomeVisitCenter` 만 원문을 광고해 VISIT 이 조용히 죽어 있었다.
+#
+# 길이도 같은 결함의 일부다. Bonjour 인스턴스 이름 상한은 63 **UTF-8 바이트**라 글자 수로 자르면
+# 한글 닉네임이 20자에 넘치고, mDNS 는 **꼬리부터** 자르므로 방금 붙인 고유 접미가 제일 먼저
+# 사라진다 — 접미를 붙인 의미가 통째로 없어진다.
+#
+# 이전 판 게이트는 **식별자 이름**(`...serviceName`)만 봤다. `let serviceName = <맨 닉네임>` 이면
+# 원래 결함을 그대로 넣고도 통과한다. 그래서 규칙을 "이름을 굽는 공용 헬퍼를 지나는가" 로 바꿨다 —
+# 이전 판 주석이 적어 둔 해제 조건(`공용 헬퍼 하나로 네 센터를 합치면`)이 바로 이것이다.
+# 예산 계산 자체는 `LANServiceNameTests` 가 검증한다. 여기서 막는 건 "헬퍼를 안 지나는 새 센터".
+echo "▶ Bonjour 광고 이름 스윕 (공용 헬퍼 · 63바이트 예산)"
+ADVERTISERS=$(grep -rlE 'NWListener\.Service|listener\.service *=' Sources/PokeTokenBar | sort -u)
+BARE_SERVICE_NAME=""
+while read -r FILE; do
+  [[ -z "$FILE" ]] && continue
+  grep -qF 'LANServiceName.make' "$FILE" || BARE_SERVICE_NAME+="$FILE (LANServiceName.make 미사용)"$'\n'
+done <<< "$ADVERTISERS"
+# 광고 줄이 문자열 리터럴을 그대로 이름으로 넘기면 헬퍼를 우회한 것이다.
+LITERAL_NAME=$(grep -rnE '(NWListener\.Service|listener\.service *=).*name: *"' Sources/PokeTokenBar || true)
+[[ -n "$LITERAL_NAME" ]] && BARE_SERVICE_NAME+="$LITERAL_NAME"$'\n'
+# 광고 이름 변수에 리터럴·보간을 직접 담는 것도 같은 우회다(`let serviceName = "\(name)#\(tag)"`).
+LITERAL_ASSIGN=$(grep -rnE '[sS]erviceName *= *"' Sources/PokeTokenBar || true)
+[[ -n "$LITERAL_ASSIGN" ]] && BARE_SERVICE_NAME+="$LITERAL_ASSIGN"$'\n'
+if [[ -n "$BARE_SERVICE_NAME" ]]; then
+  echo "✗ 공용 헬퍼를 지나지 않고 Bonjour 이름을 굽는 곳이 있습니다 —" \
+       "고유 접미가 없거나 63바이트에서 잘려 같은 이름의 두 기기가 서로를 자기로 오인합니다." \
+       "\`LANServiceName.make(base:suffix:)\` 를 쓰세요." >&2
+  echo "$BARE_SERVICE_NAME" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# 같은 파일들의 형제 규칙. LAN 탐색 파라미터는 `includePeerToPeer` 를 켠다 — 안 켜면 AWDL
+# (피어투피어) 경로로 붙은 이웃이 통째로 안 보인다. 네 센터 중 `MemoryHomeVisitCenter` 만
+# 빠져 있었고, 컴파일도 테스트도 통과했다.
+#
+# 대상을 `listener.service`(=호스트)에서 뽑으면 **탐색 전용** 화면은 한 번도 안 본다 — 플래그가
+# 빠졌을 때 실제로 이웃이 사라지는 쪽이 바로 그쪽이다. 그래서 `NWBrowser` 를 만드는 자리로 뽑는다.
+echo "▶ LAN 파라미터 스윕 (includePeerToPeer)"
+NO_P2P=""
+while read -r FILE; do
+  [[ -z "$FILE" ]] && continue
+  # **대입**을 본다. 단어만 찾으면 그 규칙을 설명하는 주석이 게이트를 만족시킨다 —
+  # `MemoryHomeVisitCenter` 는 실제로 그 주석을 갖고 있어, 코드 줄을 지워도 통과했다.
+  grep -qE 'includePeerToPeer *= *true' "$FILE" || NO_P2P+="$FILE"$'\n'
+done < <(grep -rlE 'NWBrowser\(|NWListener\.Service' Sources/PokeTokenBar | sort -u)
+if [[ -n "$NO_P2P" ]]; then
+  echo "✗ includePeerToPeer 를 켜지 않는 LAN 센터가 있습니다 —" \
+       "AWDL 로 붙은 이웃이 목록에서 사라집니다." >&2
+  echo "$NO_P2P" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# 실패한 `NWBrowser`/`NWListener` 는 **참조를 버리기 전에 `cancel()`** 해야 한다. 참조만 버리면
+# 객체가 큐·포트·핸들러를 붙든 채 살아남아 슬립 복귀·인터페이스 변경마다 하나씩 쌓이고, 죽은
+# 브라우저가 계속 콜백을 쏜다. `BattleNet.startListener` 가 이 규칙을 주석으로 적어 두고도 정작
+# 자기 `.failed` 분기에서 어겼고(같은 파일!), `MemoryHomeVisitCenter` 가 그대로 따라 했다.
+# 테스트로는 못 막는다 — 누수는 관측 가능한 상태를 남기지 않는다.
+echo "▶ 취소 없이 버려지는 LAN 객체 스윕"
+ORPHANED=""
+while IFS=: read -r FILE LINE _; do
+  [[ -z "$FILE" ]] && continue
+  BODY=$(sed -n "${LINE}p" "$FILE")
+  # 주석 줄은 규칙을 설명하는 문장이다.
+  [[ "$(echo "$BODY" | sed 's/^[[:space:]]*//')" == //* ]] && continue
+  PREV=$(sed -n "$((LINE - 1))p" "$FILE")
+  [[ "$BODY" == *"cancel()"* || "$PREV" == *"cancel()"* ]] || ORPHANED+="$FILE:$LINE:$BODY"$'\n'
+done < <(grep -rnE '\b(browser|listener) = nil' Sources/PokeTokenBar || true)
+if [[ -n "$ORPHANED" ]]; then
+  echo "✗ cancel() 없이 참조만 버리는 LAN 객체가 있습니다 —" \
+       "실패한 객체가 큐·포트를 붙든 채 남아 슬립 복귀마다 누적됩니다." >&2
+  echo "$ORPHANED" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# `lastError` 는 화면에 닿아야 존재한다. `MemoryHomeVisitCenter` 는 권한 거부(`NoAuth`)를 위한
+# 3개국어 안내 문구까지 만들어 두고도 그 값을 어느 화면도 읽지 않아, 모든 실패가 "주변 홈을 찾는
+# 중이에요…" 한 줄로 뭉개진 채 릴리스됐다 — 사용자에게는 원인 없는 무동작이다.
+#
+# 테스트로는 못 막는다(센터의 `lastError` 를 직접 읽어 검증하면 통과한다). 남는 형태가 grep 이다.
+# 해제 조건: 뷰의 도달 가능성을 검증하는 UI 테스트가 생기면 그때 그쪽으로 옮긴다.
+# 대상은 `...Center` 로 끝나는 클래스다 — LAN/세션 센터의 이름 규약이며, 같은 파일에 사는
+# 타이머·스케줄러 같은 형제 타입을 오탐하지 않는 유일하게 싼 경계다.
+#
+# "그 파일이 센터 이름을 언급하고 어딘가에 lastError 라는 글자가 있다" 로는 못 막는다 —
+# `PopoverView` 는 이미 `MemoryHomeVisitCenter` 를 언급하므로, 누가 거기에 **다른** 센터의
+# 오류 줄을 붙이는 순간 이 게이트는 Memory Home 오류 UI 가 0줄이어도 통과한다. 그래서 그 파일에서
+# **해당 타입으로 선언된 식별자**를 뽑아 `<그 변수>.lastError` 를 찾는다.
+echo "▶ 침묵하는 실패 스윕 (화면이 읽지 않는 lastError)"
+UNSHOWN_ERROR=""
+while read -r CENTER; do
+  [[ -z "$CENTER" ]] && continue
+  SHOWN=""
+  while read -r FILE; do
+    [[ -z "$FILE" ]] && continue
+    while read -r VAR; do
+      [[ -z "$VAR" ]] && continue
+      if grep -qE "\b${VAR}\.lastError\b" "$FILE"; then SHOWN=1; break; fi
+    # `|| true` 가 없으면 안 된다 — `set -e` 아래서 첫 grep 이 빈손이면(=@Environment 로만 받는
+    # 파일) 그룹이 거기서 끊겨 두 번째 형태를 영영 못 본다. 실제로 `BattleCenter` 를 오탐했다.
+    done < <({ # `let visits: MemoryHomeVisitCenter` 형태
+               grep -oE "(let|var) [A-Za-z_][A-Za-z0-9_]*: *${CENTER}\b" "$FILE" | awk '{print $2}' | tr -d ':' || true
+               # `@Environment(BattleCenter.self) private var center` 형태 — 이쪽이 다수다.
+               grep -oE "@Environment\(${CENTER}\.self\).*var [A-Za-z_][A-Za-z0-9_]*" "$FILE" | awk '{print $NF}' || true
+             } | sort -u)
+    [[ -n "$SHOWN" ]] && break
+  done < <(grep -rlF "$CENTER" Sources/PokeTokenBar/UI | sort -u || true)
+  [[ -n "$SHOWN" ]] || UNSHOWN_ERROR+="$CENTER"$'\n'
+done < <(grep -rlF 'var lastError' Sources/PokeTokenBar/Core \
+         | xargs -r grep -hoE 'final class [A-Za-z]+Center' | awk '{print $3}' | sort -u)
+if [[ -n "$UNSHOWN_ERROR" ]]; then
+  echo "✗ 화면이 읽지 않는 lastError 를 가진 센터가 있습니다 —" \
+       "실패가 원인 없는 무동작으로 보입니다. 해당 화면에 오류 줄을 붙이세요." >&2
+  echo "$UNSHOWN_ERROR" >&2
   exit 1
 fi
 echo "✓ 없음"

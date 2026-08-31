@@ -990,7 +990,8 @@ final class MultiplayerRoomCenter {
                 leaderName: trainerName, idTag: idTag,
                 heldSince: companion.gymLeadership?.heldSince ?? Date())
         } else {
-            serviceName = "\(prefix) · \(trainerName)#\(idTag)"
+            // 자를 수 있는 건 트레이너 이름뿐이다 — 접두는 목록 분류에, 접미는 자기 판정에 쓰인다.
+            serviceName = LANServiceName.make(base: "\(prefix) · \(trainerName)", suffix: "#\(idTag)")
         }
         listener.service = NWListener.Service(name: serviceName, type: Self.serviceType)
         listener.newConnectionHandler = { [weak self] connection in

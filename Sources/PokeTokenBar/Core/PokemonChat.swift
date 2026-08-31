@@ -1175,6 +1175,12 @@ final class PokemonMemoryAlbum {
         memoryHomeAccess.photos.removeAll { $0.id == id }
         guard memoryHomeAccess.photos.count != oldCount else { return }; save()
     }
+    /// 키는 **광고 원문**(`MemoryHomePeer.id`)이다. 2.21 에서 광고 이름이 `이름` → `이름#ABCDEF`
+    /// 로 바뀌었지만 여기에 이전(migration)은 없고, 없는 게 맞다: 접미 없는 구버전 피어는 여전히
+    /// 접미 없이 광고하므로 옛 키가 계속 맞고(맞는 도장을 지우면 손실이다), 업그레이드한 같은
+    /// 기기는 광고 신원 자체가 달라진 것이라 새 키가 맞다. 옛 키를 새 키로 옮길 방법도 없다 —
+    /// `MemoryHome` 이라는 이름만으로는 어느 설치였는지 알 수 없다. 그래서 두 키가 공존하고,
+    /// 오래된 쪽은 200개 상한의 최신순 정리로 자연히 빠진다.
     func recordMemoryHomeVisitStamp(homeID: String, now: Date = Date()) {
         guard !homeID.isEmpty else { return }
         memoryHomeAccess.visitedHomeStamps[homeID] = now

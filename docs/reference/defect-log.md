@@ -2810,3 +2810,103 @@ read_when:
 - **처방**: 누적 함수는 **같은 입력의 반복**을 단언한다(`f(f(x, c), c) == f(x, c)`). 되돌릴 곳은
   누적 쪽이다 — 덮어쓰기로 되돌리면 원래 고치려던 결함이 돌아온다. (`PokemonChatChipRow.composed`,
   2026-08-31.)
+## LAN 광고 이름에 **고유 접미가 없으면**, 같은 이름의 두 기기가 서로를 자기로 지운다
+
+- **증상**: Poké Home 의 VISIT 탭이 아무 집도 못 찾았다("주변 홈을 찾는 중이에요…" 고정).
+  `MemoryHomeVisitCenter` 만 Bonjour 이름으로 닉네임 **원문**을 광고하고, 자기 필터도 원문으로 했다.
+  닉네임이 같은 두 기기(기본값 `MemoryHome` 포함)가 만나면 mDNS 가 한쪽을 `MemoryHome (2)` 로
+  개명하는데, 개명당한 쪽의 저장값은 여전히 `MemoryHome` 이라 **상대의 광고를 자기 것으로 오인해
+  목록에서 지웠다**. 반대쪽은 개명된 이름이 보이지만 공백 때문에 `clean` 이 라벨을 버려 모든 집이
+  같은 기본 라벨로 뭉개졌다.
+- **부류**: `NWListener.Service(name:)` 에 **사용자가 고른 이름을 그대로** 넘기는 자리.
+  `BattleNet`·`PokemonTrade`·`MultiplayerRoomCenter` 는 셋 다 `이름#고유값` 을 광고하고 그 고유
+  이름으로 자기를 가른다(`PeerAdvertisementTests.testTheSameTrainerNameOnAnotherMachineIsStillAPeer`
+  가 같은 규칙을 이미 지키고 있었다). 새로 생긴 네 번째 센터만 그 규칙 밖에 있었다.
+- **왜 안 터졌나**: 방문 프로토콜 테스트는 `valid()` 순수 검증과 연결 수명만 봤다. 호스트 1개 +
+  방문자 1개를 실제로 붙여 보는 종단 테스트가 0개라, 이름 충돌·자기 필터는 테스트가 밟는 경로
+  **밖**이었다. 커버리지는 `valid()` 로 채워져 통과한다.
+- **처방**: 광고 이름을 만드는 자리와 자기를 거르는 자리를 `nonisolated static` 순수 함수로 빼고
+  (`serviceName(nickname:peerID:)` / `peer(fromService:excluding:endpoint:)`), 접미는
+  `AppSettings.memoryHomeLANPeerID` — 설치마다 고정인 값 — 에서 굽는다. 표시 라벨은 접미만 떼고
+  공백은 허용한다(`clean` 을 쓰면 개명된 이름이 통째로 버려진다).
+  게이트는 **파일 어딘가의 `#\(` 로 세면 안 된다** — 결함이 있는 채로도 `speciesLabel` 의
+  `"#\(speciesID)"` 때문에 통과했다. 광고 이름을 **넘기는 그 줄**이 `name: ...serviceName` 인지 본다
+  (`test-gate.sh` ▶ Bonjour 광고 이름 스윕). (`MemoryHomeVisitCenter`, 2026-08-31.)
+
+## `lastError` 를 **화면이 읽지 않으면**, 모든 실패가 원인 없는 무동작이 된다
+
+- **증상**: 위 결함의 절반. `MemoryHomeVisitCenter` 는 로컬 네트워크 권한 거부(`NoAuth`)를 위한
+  3개국어 안내 문구까지 만들어 두고도 그 값을 어느 화면도 읽지 않았다. 권한 거부·상대의 거절·잘못된
+  페이로드가 전부 "주변 홈을 찾는 중이에요…" 한 줄로 뭉개져, 사용자에게는 원인 없는 무동작이었다.
+- **부류**: `private(set) var lastError` 를 가진 센터 중 UI 에 그 값을 읽는 줄이 없는 것.
+  `PlayerGymView`·`BattleView`·`GymLeagueView`·`PokemonTournamentView` 는 모두 갖고 있었다.
+- **덧붙여**: `NWBrowser` 의 권한 차단은 `.failed` 가 아니라 **`.waiting` 으로 조용히 머문다**.
+  `.failed` 만 처리하면 가장 흔한 실패가 한 번도 기록되지 않는다(`BattleNet.startBrowser` 는 둘 다
+  처리한다). 재시작도 같이 붙인다 — `.failed` 뒤 그대로 두면 권한을 켜도 복구되지 않는다.
+- **처방**: `test-gate.sh` ▶ 침묵하는 실패 스윕 — `Core` 의 `...Center` 중 `var lastError` 를
+  선언한 타입은 `UI` 어딘가에서 그 값을 읽어야 한다. (`MemoryHomePresenter`, 2026-08-31.)
+
+## 길이 상한을 **글자 수로 세면**, 한글 사용자에게만 결함이 남는다
+
+- **증상**: 바로 위 결함(고유 접미)을 고친 커밋이 한글 닉네임에서 그대로 재발했다. 접미를 붙이긴
+  하는데 닉네임을 40 **글자**로 잘랐고, Bonjour 인스턴스 이름 상한은 63 **UTF-8 바이트**다. 한글은
+  글자당 3바이트라 21자면 이미 넘고, mDNSResponder 는 **꼬리부터** 자른다 → 방금 붙인 `#ABCDEF` 가
+  제일 먼저 먹힌다 → 같은 닉네임 두 기기가 같은 이름을 광고 → 접미를 붙인 의미가 통째로 사라진다.
+- **부류**: 외부 프로토콜의 **바이트** 상한을 `String.count`/`prefix(n)` 로 지키는 자리. 네 LAN
+  센터 중 `PlayerGymRoomName.make` 만 바이트 예산 루프를 갖고 있었고, 나머지 셋(`BattleNet`·
+  `PokemonTrade`·`MultiplayerRoomCenter`)과 Memory Home 은 예산을 아예 보지 않았다. **한 곳에만
+  사는 규칙은 부류로 남는다** — 그 한 곳이 정답을 갖고 있어도 나머지는 모른다.
+- **왜 안 터졌나**: 회귀 테스트(`testServiceNameIsBonjourSafe`)의 입력이 `"Memory Home\n"` 이었다.
+  `clean` 이 공백 때문에 통째로 거부해서 10바이트 ASCII **기본값**(`MemoryHome`)만 쟀다 — 실제 광고
+  이름은 한 번도 안 밟는 테스트였다. 통과하는 입력을 고르면 가드가 있는 척만 한다.
+- **처방**: 예산을 `LANServiceName.make(base:suffix:)` 한 곳으로 모으고 네 센터가 전부 지나게 했다.
+  `suffix` 는 절대 자르지 않는다(고유성이 거기에만 있다), 자르기는 `removeLast()` = **글자 단위**다
+  (스칼라를 반 자르면 깨진 UTF-8 이 광고에 실린다). 게이트는 **식별자 이름을 보면 안 된다** —
+  이전 판은 `name: ...serviceName` 인지만 봐서 `let serviceName = <맨 닉네임>` 이면 통과했다.
+  지금은 "광고하는 파일이 공용 헬퍼를 지나는가" 를 본다(`test-gate.sh` ▶ Bonjour 광고 이름 스윕).
+  (`LANServiceName`, 2026-09-01.)
+
+## 오류를 **결과 콜백에서 지우면**, 사용자가 읽는 도중 사라진다
+
+- **증상**: 방문 거절 문구("이 홈은 방문을 받지 않아요")가 몇 초 만에 사라졌다. `updateHomes` 가
+  `if !homes.isEmpty { lastError = nil }` 로 지웠는데, mDNS 는 TTL 갱신·피어 변동마다 그 콜백을
+  부른다. 반대 방향도 있었다: 주변에 홈이 없는(=흔한) 사용자는 `homes` 가 영영 비어 있어 Wi-Fi 가
+  돌아와도 "권한을 허용해 주세요" 가 **영구히** 남았다 — 이미 켠 권한을 다시 켜라는 안내다.
+- **부류**: 오류를 지우는 근거를 **상태 전이**가 아니라 **부수적 신호**(결과 도착·목록 비었음)에서
+  찾는 자리. 지우는 조건과 세우는 조건이 다른 축이면 반드시 한쪽이 어긋난다.
+- **처방**: 지우는 근거는 `.ready` 하나뿐 — 브라우저가 정상으로 돌아왔다는 그 전이. 목록 반영
+  (`applyDiscovered`)은 `lastError` 를 **건드리지 않는다**. 상태 핸들러를 클로저에서
+  `handleBrowserState(_:)` 로 꺼내 두 방향 모두 테스트했다(`NWBrowser.State` 는 테스트에서 만들 수
+  있다 — `.waiting(.posix(.ENETDOWN))`). (`MemoryHomeVisitCenter`, 2026-09-01.)
+
+## 실패한 LAN 객체는 **참조만 버리면 안 죽는다**
+
+- **증상**: `.failed` 재시작이 `browser = nil` / `listener = nil` 로 참조만 버렸다. 실패한 객체는
+  큐·포트·핸들러를 붙든 채 살아남아 슬립 복귀마다 하나씩 쌓이고, 죽은 브라우저가 계속 콜백을 쏜다.
+  `guard browser == nil` 로도 회수할 수 없다 — 참조를 이미 버렸기 때문이다.
+- **부류**: 이 규칙은 `BattleNet.startListener` 주석에 이미 적혀 있었다("참조만 버리면 실패한 객체가
+  큐·포트를 붙든 채 남아 슬립 복귀마다 누적된다"). 그런데 **같은 파일의** `.failed` 두 분기가 둘 다
+  그 규칙을 어겼고, Memory Home 이 그대로 따라 했다. 주석은 강제하지 않는다.
+- **덧붙여**: 재시도에 상한이 없으면 영구 불가 상태(권한 차단)에서 5초마다 새 브라우저를 만들며
+  하루 종일 돈다. 상한 + 지수 백오프를 두면 마지막 오류가 화면에 남아 원인이 보인다.
+- **처방**: `test-gate.sh` ▶ 취소 없이 버려지는 LAN 객체 스윕 — `browser|listener = nil` 줄은
+  같은 줄이나 바로 앞 줄에 `cancel()` 이 있어야 한다. (`BattleNet`·`MemoryHomeVisitCenter`,
+  2026-09-01.)
+
+## grep 게이트가 **이름**을 보면, 값이 무엇이든 통과한다
+
+- **증상**: 위 결함들을 막으려고 넣은 게이트 세 개가 전부 우회 가능했다. ① Bonjour 이름 게이트는
+  식별자가 `...serviceName` 인지만 봐서 그 변수에 맨 닉네임을 담으면 통과. ② `includePeerToPeer`
+  게이트는 그 **단어**를 찾아서, 규칙을 설명하는 주석이 게이트를 만족시켰다(코드 줄을 지워도 통과).
+  ③ 침묵하는 실패 게이트는 "UI 파일이 센터 이름을 언급 + 파일 어딘가에 `lastError` 라는 글자" 라,
+  누가 `PopoverView` 에 **다른** 센터의 오류 줄을 붙이는 순간 Memory Home 오류 UI 가 0줄이어도 통과.
+- **부류**: grep 게이트가 **표기**(식별자 이름·단어의 존재)를 보는 것과 **관계**(그 값이 어디서 왔나·
+  그 변수가 무슨 타입인가)를 보는 것의 차이. 앞의 것은 규칙을 아는 사람만 통과시키고, 규칙을 모르는
+  다음 사람은 이름만 맞춰서 결함을 그대로 넣는다.
+- **처방**: 표기 대신 관계를 본다 — ① "광고하는 파일이 공용 헬퍼를 지나는가", ② `includePeerToPeer
+  = true` **대입**, ③ 그 UI 파일에서 **그 센터 타입으로 선언된 식별자**를 뽑아 `<변수>.lastError`.
+  그리고 게이트도 **결함을 주입해 실패하는지 확인한다** — 네 게이트 모두 그렇게 검증했고, ②는 그
+  과정에서 주석 우회가 드러났다. 검증하지 않은 게이트는 게이트가 아니다.
+- **함정**: `set -euo pipefail` 아래서 `{ grep A; grep B; } | sort` 는 A 가 빈손이면 B 를 영영 안
+  돈다. 게이트를 넓힐 때 `|| true` 를 빠뜨리면 **조용히 좁아진다**(그 자리에서 `BattleCenter` 를
+  오탐했다). (`scripts/test-gate.sh`, 2026-09-01.)

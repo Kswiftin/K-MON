@@ -78,6 +78,9 @@ final class MemoryHomeVisitCenter {
     /// 사진 스타일 태그("star"·"studio"·"left"·"explorer" 등)의 길이 상한. 렌더는 알려진 값만
     /// 비교하고 나머지는 기본값으로 떨어지므로 주입 위험은 없고, 막는 건 길이뿐이다.
     nonisolated static let styleTagLimit = 24
+    /// `.failed` 재시작 상한. 여기서 멈추면 마지막 오류 문구가 화면에 남아 원인이 보인다 —
+    /// 무한 재시도는 오류를 계속 덮어쓰기만 하고 아무것도 복구하지 못한다.
+    nonisolated static let maxBrowserRestarts = 5
 
     private(set) var homes: [MemoryHomePeer] = []
     private(set) var selectedProfile: MemoryHomeProfileCard?
@@ -89,6 +92,15 @@ final class MemoryHomeVisitCenter {
     private let peerID: UUID
     private var browser: NWBrowser?
     private var listener: NWListener?
+    /// `NWListener.Service` 에 **실제로 건넨** 이름. 자기 필터의 근거는 "지금 닉네임으로 이름을 다시
+    /// 구우면 이럴 것" 이 아니라 "내가 지금 광고 중인 문자열" 이어야 한다. 계산값으로 거르면 닉네임을
+    /// 쓰는 새 경로(설정 동기화·세이브 이전·채팅 툴)가 `refreshAccess()` 를 한 번 잊는 순간 광고는
+    /// 옛 이름, 필터는 새 이름으로 갈라져 **내 집이 내 목록에 뜨고 방문하면 나에게 전화한다.**
+    /// 여기에 담아 두면 재광고와 필터가 같은 대입 한 번으로 함께 움직여 갈라질 수가 없다.
+    private var advertisedServiceName: String?
+    /// `.failed` 재시작 횟수. 상한이 없으면 영구 불가 상태(권한 차단·서비스 타입 차단)에서 5초마다
+    /// 브라우저를 새로 만들며 하루 종일 돈다.
+    private var browserRestartAttempts = 0
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var visitHomeIDs: [ObjectIdentifier: String] = [:]
     /// 회수를 관찰할 수 있는 유일한 창이다. `connections` 를 통째로 `private` 로 두면 "연결이
@@ -105,7 +117,7 @@ final class MemoryHomeVisitCenter {
     }
     func stop() {
         isActive = false; homes = []; selectedProfile = nil
-        browser?.cancel(); browser = nil
+        browser?.cancel(); browser = nil; browserRestartAttempts = 0
         cancelVisitConnections()
     }
     func startHostingIfEligible() {
@@ -115,18 +127,23 @@ final class MemoryHomeVisitCenter {
     /// The feature being disabled or the app ending is the only normal host teardown path.
     func shutdown() {
         stop()
-        listener?.cancel(); listener = nil; isHosting = false
+        stopHosting()
         cancelConnections()
     }
     func refreshAccess() {
         if companion.memoryAlbum.memoryHomeAccess.visibility == .blocked {
-            listener?.cancel(); listener = nil; isHosting = false
+            stopHosting()
             cancelConnections()
             return
         }
         // Recreate only the advertised service after a nickname edit; browse results stay up.
-        listener?.cancel(); listener = nil; isHosting = false
+        stopHosting()
         startHosting()
+    }
+    /// 광고를 내리는 **유일한** 자리. 세 호출부가 각자 `listener?.cancel(); listener = nil` 을 적고
+    /// 있었기에 `advertisedServiceName` 같은 형제 상태를 더하면 반드시 한 곳을 빠뜨린다.
+    private func stopHosting() {
+        listener?.cancel(); listener = nil; isHosting = false; advertisedServiceName = nil
     }
     func visit(_ peer: MemoryHomePeer) {
         guard isActive else { return }; selectedProfile = nil; lastError = nil
@@ -165,27 +182,90 @@ final class MemoryHomeVisitCenter {
     private func startBrowsing() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: Self.parameters())
-        let ownServiceName = localDisplayName
+        // 자기 이름은 결과가 올 때 **그 시점의 값**을 읽는다. 브라우저를 만들 때 캡처하면 닉네임을
+        // 바꾼 뒤(리스너만 다시 굽는 `refreshAccess`) 옛 이름으로 자기를 걸러, 내 새 광고가 내
+        // 목록에 뜨고 옛 이름을 쓰는 남의 집이 사라진다.
         browser.browseResultsChangedHandler = { [weak self] results, _ in
-            let peers = results.compactMap { result -> MemoryHomePeer? in
-                guard case let .service(name, _, _, _) = result.endpoint else { return nil }
-                guard name != ownServiceName else { return nil }
-                return .init(id: name, displayName: Self.clean(name, limit: 40) ?? "Memory Home", endpoint: result.endpoint)
-            }
-            Task { @MainActor in self?.homes = peers.sorted { $0.displayName < $1.displayName } }
+            Task { @MainActor in self?.updateHomes(results) }
         }
         browser.stateUpdateHandler = { [weak self] state in
-            if case .failed(let error) = state {
-                Task { @MainActor in self?.lastError = self?.networkFailureMessage(error) }
-            }
+            Task { @MainActor in self?.handleBrowserState(state) }
         }
         browser.start(queue: .main); self.browser = browser
+    }
+
+    /// 브라우저 상태 → 화면에 뜨는 오류의 수명. 클로저 안에 두면 테스트가 닿지 못해 "지워지지
+    /// 않는 오류" / "너무 빨리 지워지는 오류" 부류가 통째로 무테스트로 남는다 — 실제로 둘 다 있었다.
+    /// `internal` 인 것은 그래서다(`trackedConnectionCount` 를 열어 둔 것과 같은 이유).
+    func handleBrowserState(_ state: NWBrowser.State) {
+        switch state {
+        // 오류를 지우는 근거는 **브라우저가 정상으로 돌아왔다** 하나뿐이다. 결과 콜백에서 지우면
+        // mDNS TTL 갱신 한 번이 "이 홈은 방문을 받지 않아요" 를 사용자가 읽는 도중 지운다.
+        case .ready:
+            lastError = nil; browserRestartAttempts = 0
+        // 권한 거부·차단은 `.failed` 가 아니라 `.waiting` 으로 **조용히 머문다**. 여기를 비워
+        // 두면 화면은 영영 "주변 홈을 찾는 중" 이고 사용자는 이유를 알 길이 없다.
+        case .waiting(let error):
+            lastError = networkFailureMessage(error)
+        case .failed(let error):
+            lastError = networkFailureMessage(error)
+            // 참조만 버리면 실패한 브라우저가 큐·핸들러를 붙든 채 살아남아 슬립 복귀마다 쌓인다
+            // (`BattleNet.startListener` 가 같은 규칙을 적어 둔 부류다). `guard browser == nil`
+            // 로도 회수할 수 없다 — 참조를 이미 버렸기 때문이다.
+            browser?.cancel(); browser = nil
+            guard isActive, browserRestartAttempts < Self.maxBrowserRestarts else { return }
+            browserRestartAttempts += 1
+            // 지수 백오프. 영구 불가 상태에서 5초 고정으로 돌면 하루에 수천 번 재생성한다.
+            let delay = min(5 << (browserRestartAttempts - 1), 60)
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, self.isActive else { return }
+                self.startBrowsing()
+            }
+        default: break
+        }
+    }
+
+    /// 광고 목록 하나를 집 목록으로 옮긴다. `NWBrowser.Result` 는 테스트에서 만들 수 없으므로
+    /// **여기서 이름·엔드포인트만 뽑아** 순수 함수(`homes(fromServices:excluding:)`)에 넘긴다 —
+    /// `private` 인 이 메서드를 "테스트가 닿는다" 고 적어 두면 닿지 않는 코드가 무테스트로 남는다.
+    private func updateHomes(_ results: Set<NWBrowser.Result>) {
+        applyDiscovered(results.compactMap { result in
+            guard case let .service(name, _, _, _) = result.endpoint else { return nil }
+            return (name: name, endpoint: result.endpoint)
+        })
+    }
+
+    /// 광고 목록을 화면 목록으로 반영한다. **`lastError` 를 건드리지 않는다** — 방문 결과 문구를
+    /// mDNS 갱신이 지우던 결함이 여기서 났다.
+    func applyDiscovered(_ services: [(name: String, endpoint: NWEndpoint)]) {
+        homes = Self.homes(fromServices: services, excluding: advertisedServiceName ?? myServiceName)
+    }
+
+    /// 정렬 키가 `displayName` 하나면 동명이 있을 때 순서가 `Set` 순회 순서를 따라 흔들린다 —
+    /// 목록이 갱신마다 자리를 바꿔 사용자가 겨눈 줄을 눌러도 다른 기기로 방문한다. 키는 유일해야
+    /// 하므로 광고 원문(`id`)까지 본다. 그리고 라벨이 겹치면(이 PR 이 푸는 시나리오 그 자체 —
+    /// 같은 기본 닉네임 두 대) 접미를 되붙여 구분할 수 있게 한다.
+    nonisolated static func homes(fromServices services: [(name: String, endpoint: NWEndpoint)],
+                                  excluding myServiceName: String) -> [MemoryHomePeer] {
+        let peers = services
+            .compactMap { peer(fromService: $0.name, excluding: myServiceName, endpoint: $0.endpoint) }
+            .sorted { ($0.displayName, $0.id) < ($1.displayName, $1.id) }
+        let labelCounts = peers.reduce(into: [String: Int]()) { $0[$1.displayName, default: 0] += 1 }
+        return peers.map { peer in
+            guard labelCounts[peer.displayName, default: 0] > 1,
+                  let hash = peer.id.lastIndex(of: "#") else { return peer }
+            return MemoryHomePeer(id: peer.id, displayName: "\(peer.displayName) \(peer.id[hash...])",
+                                  endpoint: peer.endpoint)
+        }
     }
     private func startHosting() {
         guard listener == nil else { return }
         do {
             let listener = try NWListener(using: Self.parameters())
-            listener.service = .init(name: localDisplayName, type: Self.serviceType)
+            let serviceName = myServiceName
+            listener.service = .init(name: serviceName, type: Self.serviceType)
+            advertisedServiceName = serviceName
             listener.newConnectionHandler = { [weak self] connection in Task { @MainActor in self?.accept(connection) } }
             listener.stateUpdateHandler = { [weak self] state in
                 if case .failed(let error) = state {
@@ -236,6 +316,42 @@ final class MemoryHomeVisitCenter {
     /// Do not fall back to the trainer name: malformed/legacy payloads still get a safe album
     /// fallback, never an accidental disclosure.
     private var localDisplayName: String { companion.memoryAlbum.memoryHomePublicNickname }
+    /// 지금 닉네임으로 광고한다면 나올 이름. 자기 필터는 이 계산값이 아니라 실제로 광고한
+    /// `advertisedServiceName` 을 먼저 본다 — 호스팅 중이 아닐 때만 여기로 떨어진다.
+    private var myServiceName: String { Self.serviceName(nickname: localDisplayName, peerID: peerID) }
+
+    /// Bonjour 광고 이름 = 닉네임 + 설치별 고유 접미. `BattleNet`·`PokemonTrade`·
+    /// `MultiplayerRoomCenter` 가 모두 쓰는 형태이며, 같은 닉네임을 쓰는 두 기기가 서로를 자기로
+    /// 오인하지 않게 하는 유일한 근거다. 접미가 없으면 mDNS 가 충돌한 쪽을 `이름 (2)` 로 개명하고,
+    /// 개명당한 쪽은 저장된 원문으로 자기를 거르므로 상대를 자기로 착각해 목록에서 지운다.
+    /// 접미는 `AppSettings.memoryHomeLANPeerID` 에서 나온다 — 설치마다 고정이라 재실행해도 같다.
+    /// 길이는 `LANServiceName` 이 **바이트로** 자른다: 글자 수(40)로 자르면 한글 닉네임이 63바이트
+    /// 상한을 넘고, mDNS 가 꼬리부터 자르므로 방금 붙인 접미가 제일 먼저 사라진다.
+    nonisolated static func serviceName(nickname: String, peerID: UUID) -> String {
+        LANServiceName.make(base: clean(nickname, limit: 40) ?? "MemoryHome",
+                            suffix: "#\(peerID.uuidString.prefix(6))")
+    }
+
+    /// 목록에 적을 이름. 고유 접미를 떼고 남이 지은 문자열을 거른다.
+    /// `clean` 을 쓰지 않는 이유: 개명된 구버전 이름(`MemoryHome (2)`)에는 공백이 들어 있어
+    /// `clean` 이 통째로 버리고, 그러면 모든 집이 같은 기본 라벨로 뭉개져 구분할 수 없다.
+    /// 줄바꿈·제어문자는 라벨을 망가뜨리므로 그대로 거른다.
+    nonisolated static func displayName(fromService service: String) -> String? {
+        let base = service.lastIndex(of: "#").map { String(service[service.startIndex..<$0]) } ?? service
+        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 40,
+              !trimmed.unicodeScalars.contains(where: {
+                  CharacterSet.newlines.contains($0) || CharacterSet.controlCharacters.contains($0)
+              }) else { return nil }
+        return trimmed
+    }
+
+    /// 광고 하나를 집 한 채로 옮긴다. `id` 는 광고 원문이라 방문 도장이 기기별로 남는다.
+    nonisolated static func peer(fromService name: String, excluding myServiceName: String,
+                                 endpoint: NWEndpoint) -> MemoryHomePeer? {
+        guard name != myServiceName, let displayName = displayName(fromService: name) else { return nil }
+        return MemoryHomePeer(id: name, displayName: displayName, endpoint: endpoint)
+    }
     /// 대문 문구는 `profileMessageForSharing` 만 읽는다 — 공유를 명시적으로 켠 경우에만 값이
     /// 나오는 프로퍼티다. `memoryHomeAccess.profileMessage` 를 직접 읽으면 동의 없이 새어 나간다.
     private func profileCard(version: Int = protocolVersion) -> MemoryHomeProfileCard {
@@ -284,13 +400,26 @@ final class MemoryHomeVisitCenter {
               }) else { return nil }
         return value
     }
-    private static func parameters() -> NWParameters { NWParameters.tcp }
+    /// `includePeerToPeer` 는 AWDL(피어투피어)까지 켠다. `BattleNet`·`PokemonTrade`·
+    /// `MultiplayerRoomCenter` 셋 다 켜는데 여기만 빠져 있어 같은 Wi-Fi 가 아닌 이웃을 못 봤다.
+    private static func parameters() -> NWParameters {
+        let params = NWParameters.tcp
+        params.includePeerToPeer = true
+        return params
+    }
 
     /// Bonjour 권한 거부를 Network 프레임워크의 내부 코드로 노출하지 않는다. 특히 `NoAuth` 는
     /// 홈 계정 인증이 아니라 macOS의 로컬 네트워크 서비스 권한을 뜻한다.
+    ///
+    /// 나머지 오류도 원문을 그대로 올리지 않는다 — `localizedDescription` 은 영어 프레임워크
+    /// 문자열이라 ko/ja 화면에 "Network is down" 이 그대로 실린다. 원인은 `AppLog` 로 보낸다
+    /// (`BattleNet` 이 로그와 화면 문구를 나눠 갖는 것과 같은 형태다).
     private func networkFailureMessage(_ error: NWError) -> String {
         guard error.localizedDescription.localizedCaseInsensitiveContains("noauth") else {
-            return error.localizedDescription
+            AppLog.write("memory home discovery failed: \(error)")
+            return companion.l.t("주변 홈을 찾을 수 없어요. 네트워크 상태를 확인해 주세요.",
+                                 "Nearby homes are unavailable. Check your network connection.",
+                                 "近くのホームを探せません。ネットワークの状態を確認してください。")
         }
         return companion.l.t("주변 홈을 찾을 수 없어요. 앱을 다시 열어 로컬 네트워크 접근을 허용해 주세요.",
                              "Nearby homes are unavailable. Reopen the app and allow local network access.",

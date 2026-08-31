@@ -84,10 +84,9 @@ enum PlayerGym {
     /// 이 이름이 공유 체육관 방인가.
     static func isGymRoomName(_ name: String) -> Bool { name.hasPrefix("\(roomNamePrefix) ·") }
 
-    /// Bonjour 서비스 이름 상한. 프로토콜이 정한 값이라 넘기면 광고가 아예 안 뜬다 —
-    /// 한국어 이름은 글자당 3바이트라 20자면 60바이트다. 넘칠 땐 **이름을 자른다**(재임 시각과
-    /// 식별자는 자르면 뜻을 잃는다).
-    static let maxServiceNameBytes = 63
+    /// Bonjour 서비스 이름 상한. 네 LAN 센터가 공유하는 값이라 `LANServiceName` 이 원본이고
+    /// 여기는 별칭이다 — 두 벌로 두면 한쪽만 고쳐진다.
+    static let maxServiceNameBytes = LANServiceName.maxBytes
 
     /// 방어팀이 정원 미만이 된 시점에서 계산한 마감. 정원을 채웠으면 마감이 없다(nil).
     static func setupDeadline(defenseCount: Int, now: Date) -> Date? {
@@ -136,11 +135,10 @@ struct PlayerGymRoomName: Equatable {
 
     static func make(leaderName: String, idTag: String, heldSince: Date) -> String {
         let stamp = String(Int(heldSince.timeIntervalSince1970), radix: 36)
-        let fixed = "\(PlayerGym.roomNamePrefix) · \(stamp) · #\(idTag)"
-        let budget = PlayerGym.maxServiceNameBytes - fixed.utf8.count
-        var name = leaderName
-        while name.utf8.count > max(0, budget), !name.isEmpty { name.removeLast() }
-        return "\(PlayerGym.roomNamePrefix) · \(stamp) · \(name)#\(idTag)"
+        // 자를 수 있는 건 관장 이름뿐이다 — 접두(GYM)·재임 시각·식별자는 파싱에 필요하다.
+        // `base` 꼬리가 곧 이름이라 `LANServiceName` 의 꼬리 절단이 그대로 맞는다.
+        return LANServiceName.make(base: "\(PlayerGym.roomNamePrefix) · \(stamp) · \(leaderName)",
+                                   suffix: "#\(idTag)")
     }
 
     /// 옛 형식(`GYM · 이름#식별자`)도 읽는다 — 재임 시각이 없으면 nil 이라 화면이 시간을 생략한다.
