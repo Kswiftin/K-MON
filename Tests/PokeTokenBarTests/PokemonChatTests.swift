@@ -364,6 +364,66 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertTrue(safe.contains("도감"))
     }
 
+    /// **형식 위반은 안전 위반이 아니다.** 문장 수 판정이 끝에 붙은 이모지를 네 번째 문장으로 세어
+    /// (`" ⚡"` 가 하나의 세그먼트다) 정상 답변을 통째로 캔 문구로 갈아치웠다 — 실제 모델은 거의
+    /// 매번 이모지를 붙이므로, 사용자에겐 "그건 잘 모르겠어" 만 연달아 보였다.
+    ///
+    /// 리포트된 화면에서 **살아남은 유일한 답변**이 이모지까지 세어 정확히 3세그먼트였던 게 증거다.
+    func testAWarmReplyWithATrailingEmojiIsNotThrownAway() {
+        let cases = [
+            // 세 문장 + 이모지 = 세그먼트 4 (결함 트리거 그 자체)
+            "안녕, 트레이너! 오늘도 만나서 반가워! 빰에 전기가 가득 차 있어! ⚡",
+            // 네 문장 — 길이 상한 안에서는 문장 수로 버리지 않는다
+            "나는 전기타입이야! 찌릿찌릿! 같이 놀자! 오늘은 뭐 할까? 🐭",
+        ]
+        for reply in cases {
+            XCTAssertEqual(PokemonChatReplyGuard.sanitized(reply, profile: .fixture), reply,
+                           "정상 답변이 갈아치워졌다")
+        }
+    }
+
+    /// 길이 초과는 **버리지 않고 문장 경계에서 접는다.** 형식 때문에 내용을 파괴하면 사용자는
+    /// 자기 질문에 대한 답 대신 캔 문구를 받는다.
+    func testAnOverlongReplyIsTrimmedAtASentenceBoundaryInsteadOfBeingReplaced() {
+        let sentence = String(repeating: "이야기", count: 30) + "."
+        let long = String(repeating: sentence, count: 8)
+        XCTAssertGreaterThan(long.count, 500, "전제: 이 길이는 상한을 넘는다")
+
+        let safe = PokemonChatReplyGuard.sanitized(long, profile: .fixture)
+
+        XCTAssertTrue(long.hasPrefix(safe), "원문의 앞부분이 아니다 — 답변이 갈아치워졌다: \(safe.prefix(40))")
+        XCTAssertTrue(safe.hasSuffix("."), "문장 경계에서 접지 않았다")
+        XCTAssertLessThanOrEqual(safe.count, 500)
+    }
+
+    /// 역할 이탈·유출은 여전히 갈아치운다(그건 진짜 경계다). 다만 그 문구가 **질문을 모른다고
+    /// 거짓말하지 않고**, 변형이 둘 이상이어야 한다 — 같은 문장이 연달아 뜨면 대화가 고장난 것처럼 보인다.
+    func testTheSteerLineNeitherClaimsIgnoranceNorRepeatsItself() {
+        for unsafe in ["```swift\nprint(1)\n```", "As an AI assistant I cannot do that.",
+                       "run_command(\"ls\") 로 확인해 봤어!"] {
+            let safe = PokemonChatReplyGuard.sanitized(unsafe, profile: .fixture)
+            XCTAssertNotEqual(safe, unsafe, "유출 답변이 그대로 나갔다: \(unsafe)")
+            XCTAssertFalse(safe.contains("잘 모르겠"), "질문을 모른다고 거짓말한다: \(safe)")
+        }
+        for language in AppLanguage.allCases {
+            XCTAssertGreaterThanOrEqual(Set(PokemonChatReplyGuard.steerLines(language)).count, 3,
+                                        "\(language.rawValue): 변형이 없어 같은 문장이 반복된다")
+        }
+    }
+
+    /// 잡담·놀이 허용과 "되물음으로 끝낸다" 는 흐름 규칙이 프롬프트에서 조용히 사라지면 대화는
+    /// 다시 도감 낭독기로 돌아간다. 하드 금지는 같은 자리에 남아 있어야 한다.
+    func testThePersonaPromptAllowsSmallTalkAndKeepsTheHardBans() {
+        let prompt = PokemonChatRequest(profile: .fixture, summary: "", recentMessages: []).systemPrompt
+
+        for invitation in ["word games", "keep the conversation going", "how you feel"] {
+            XCTAssertTrue(prompt.contains(invitation), "흐름 규칙이 없다: \(invitation)")
+        }
+        for ban in ["Never claim to be an AI", "coding"] {
+            XCTAssertTrue(prompt.contains(ban), "하드 금지가 사라졌다: \(ban)")
+        }
+    }
+
     func testAlbumRetainsRepeatedEventsCapsAndDeletes() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-memory-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }

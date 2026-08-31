@@ -224,6 +224,23 @@ enum PokemonChatReplyGuard {
         case .en: return "I’m not sure about that. Want to talk about how I feel, our adventures, or my Pokédex entry instead?"
         }
     }
+
+    /// 갈아치울 때 쓰는 문구들. **질문을 모른다고 말하지 않는다** — 실제로 벌어진 일은 답변이
+    /// 경계를 넘었다는 것뿐이고 사용자의 질문은 멀쩡하다. 변형을 여러 개 두는 이유는 같은 문장이
+    /// 연달아 뜨면 대화 자체가 고장난 것처럼 보이기 때문이다(리포트된 화면이 그랬다).
+    static func steerLines(_ language: AppLanguage) -> [String] {
+        switch language {
+        case .ko: return ["그 이야기는 나랑 어울리지 않는걸! 대신 오늘 내 기분 이야기 들어 볼래?",
+                          "음, 그건 내 세계 밖의 일이야. 우리 모험 이야기나 할까?",
+                          "그건 접어 두고, 내 도감에 뭐라고 적혀 있는지 들려줄까?"]
+        case .ja: return ["その話はぼくには向いてないな！かわりに今日の気分を聞いてくれる？",
+                          "うーん、それはぼくの世界の外の話だよ。冒険の話をしようか？",
+                          "それはおいといて、ぼくの図鑑の説明を教えてあげようか？"]
+        case .en: return ["That’s not really my world! Want to hear how my day went instead?",
+                          "Hmm, that’s outside my world. Shall we talk about our adventures?",
+                          "Let’s leave that — want to hear what my Pokédex entry says?"]
+        }
+    }
 }
 
 enum PokemonMemorySource: String, Codable, Sendable { case event, conversation, manual }

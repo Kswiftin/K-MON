@@ -236,6 +236,43 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertEqual(toolbox.runCount, PokemonChatStore.maxToolRounds)
     }
 
+    /// 마지막 왕복에서 모델이 **마커만** 적으면 본문이 빈다. 그 빈 문장이 앞선 턴에 한 말을 지워서
+    /// 사용자는 자기 질문에 대한 답 대신 캔 문구를 받았다 — 모델은 말을 했는데 화면엔 안 남는다.
+    ///
+    /// 상한 테스트들이 이걸 못 걸렀다: 둘 다 **본문이 있는** 응답만 반복해서, 빈 본문 경로를
+    /// 한 번도 밟지 않았다.
+    func testTheModelsWordsSurviveALastRoundThatIsMarkerOnly() async {
+        let chat = PokemonChatStore(fileURL: temporaryURL())
+        let id = UUID()
+        let provider = ScriptedToolProvider(replies:
+            ["잠깐 확인해 볼게! [[tool:pokedoro.status]]"]
+            + Array(repeating: "[[tool:pokedoro.status]]", count: PokemonChatStore.maxToolRounds))
+
+        await chat.send("지금 기분은 어때?", for: id, profile: .toolFixture,
+                        provider: provider, toolbox: StubToolbox())
+
+        let last = chat.messages(for: id).last { $0.role == .pokemon }
+        XCTAssertEqual(last?.body, "잠깐 확인해 볼게!", "모델이 한 말이 빈 턴에 지워졌다")
+    }
+
+    /// 끝까지 아무 말도 안 왔을 때의 문구는 **질문을 모른다고 하지 않는다.** "그건 잘 모르겠어" 는
+    /// 사용자의 질문을 못 알아들었다는 뜻이 되는데, 실제로 벌어진 일은 모델의 침묵이다.
+    func testTotalSilenceGetsARetryInvitationNotAnIDontKnow() async {
+        let chat = PokemonChatStore(fileURL: temporaryURL())
+        let id = UUID()
+        let provider = ScriptedToolProvider(replies:
+            Array(repeating: "[[tool:pokedoro.status]]", count: PokemonChatStore.maxToolRounds + 1))
+
+        await chat.send("나랑 끝말잇기 하자", for: id, profile: .toolFixture,
+                        provider: provider, toolbox: StubToolbox())
+
+        let last = chat.messages(for: id).last { $0.role == .pokemon }
+        XCTAssertNotNil(last)
+        XCTAssertFalse(last?.body.isEmpty ?? true, "빈 답변이 그대로 남았다")
+        XCTAssertFalse(last?.body.contains("잘 모르겠") ?? true,
+                       "침묵을 '질문을 모르겠다' 로 바꿔 말한다: \(last?.body ?? "")")
+    }
+
     /// 도구 결과는 모델에게만 간다. 대화 기록에 넣으면 사용자가 기계 문자열을 읽게 된다.
     func testToolResultReachesTheModelWithoutEnteringTheTranscript() async {
         let chat = PokemonChatStore(fileURL: temporaryURL())
