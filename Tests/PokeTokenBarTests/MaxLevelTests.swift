@@ -141,6 +141,28 @@ final class MaxLevelTests: XCTestCase {
     /// 상수를 읽으면 상수를 바꾸는 순간 테스트도 같이 따라가 아무것도 지키지 않는다.
     private let expectedExperiencePerStarPiece = 30_000
 
+    /// 환율의 **근거**를 고정한다. 30,000 은 임의의 숫자가 아니라 모험 보상이 이미 쓰는 비율의
+    /// 절반이다. 존 배율은 경험치·별의조각 양쪽에 똑같이 곱해져 약분되므로 이 비는 모든 존·모든
+    /// 길이에서 15,000 : 1 로 같다 — 모험 계수를 재조정하면서 이 상수를 안 따라가면 여기서 걸린다.
+    func testOverflowRateIsHalfTheRateAdventuresAlreadyPay() {
+        for minutes in [25, 50, 90, 120] {
+            let amounts = AdventureRules.amounts(minutes: minutes)
+            XCTAssertEqual(amounts.experience / amounts.starPieces, 15_000,
+                           "\(minutes)분 모험은 15,000 XP 마다 별의조각 1을 준다")
+        }
+        XCTAssertEqual(PokemonBalance.experiencePerOverflowStarPiece, 15_000 * 2,
+                       "초과분 환율은 모험 환율의 절반이다 — 동등 환율이면 만렙 수입이 두 배가 된다")
+        XCTAssertEqual(PokemonBalance.experiencePerOverflowStarPiece, expectedExperiencePerStarPiece)
+    }
+
+    /// 환산 함수의 경계 — 1 별의조각에 못 미치는 몫과 음수는 0 이다(음수가 지갑을 깎으면 안 된다).
+    func testOverflowConversionFloorsAndRefusesNegatives() {
+        XCTAssertEqual(PokemonBalance.starPieces(forOverflowExperience: 0), 0)
+        XCTAssertEqual(PokemonBalance.starPieces(forOverflowExperience: 29_999), 0, "1 ⭐ 에 못 미치면 0")
+        XCTAssertEqual(PokemonBalance.starPieces(forOverflowExperience: 30_000), 1)
+        XCTAssertEqual(PokemonBalance.starPieces(forOverflowExperience: -90_000), 0, "음수는 지갑을 깎지 않는다")
+    }
+
     /// 만렙 파트너의 모험 경험치는 통째로 버려졌다. 이제 별의조각으로 돌아와야 한다.
     func testMaxLevelAdventureConvertsDiscardedExperienceIntoStardust() async throws {
         let clock = TestClock()
@@ -159,6 +181,33 @@ final class MaxLevelTests: XCTestCase {
                        reward.stardust + reward.trainerBonus + reward.missionBonus
                            + reward.achievementBonus + reward.seasonBonus + converted,
                        "버려진 경험치가 별의조각으로 돌아와야 한다")
+        // 보상 객체가 그 몫을 실제로 **들고 있어야** 한다. 지갑만 맞고 객체가 모르면 화면과
+        // 대화가 설명하지 못하는 증가분이 된다(완전설명 계약).
+        XCTAssertEqual(reward.overflowExperience, reward.experience, "전량이 초과분이다")
+        XCTAssertEqual(reward.overflowBonus, converted)
+        XCTAssertEqual(reward.appliedExperience, 0, "만렙에 들어간 경험치는 0 이다")
+        XCTAssertEqual(reward.totalStardust, s.state.starPieces - before,
+                       "totalStardust 하나로 지갑 증가분이 전부 설명돼야 한다")
+    }
+
+    /// 상한을 **걸치는** 정산 — 일부는 경험치로 들어가고 나머지만 환산된다. 만렙 시드와 상한 아래
+    /// 시드만 두면 "전부 아니면 전무" 구현도 통과한다.
+    func testAdventureStraddlingTheCapSplitsBetweenExperienceAndStardust() async throws {
+        let clock = TestClock()
+        let s = store(clock)
+        await s.hatch(baseID: 20)
+        let room = 5_000_000
+        s.debugAccrueLevelExperience(PokemonBalance.maxLevelExperience - room)
+        let before = s.state.starPieces
+
+        XCTAssertTrue(s.startFocusAdventure(minutes: 120))
+        clock.advance(120 * 60)
+        let reward = try XCTUnwrap(s.claimAdventure())
+
+        XCTAssertEqual(reward.appliedExperience, room, "빈 자리만큼만 경험치로 들어간다")
+        XCTAssertEqual(reward.overflowExperience, reward.experience - room, "나머지가 초과분이다")
+        XCTAssertEqual(s.state.active?.levelExperience, PokemonBalance.maxLevelExperience)
+        XCTAssertEqual(reward.totalStardust, s.state.starPieces - before)
     }
 
     /// 대조군 — 상한 아래에서는 환산이 일어나지 않는다. 만렙 케이스만 두면 "항상 환산한다" 는
@@ -197,6 +246,11 @@ final class MaxLevelTests: XCTestCase {
         XCTAssertEqual(s.rareCandyCount, 0, "전제: 사탕은 소모됐다")
         XCTAssertEqual(s.state.starPieces - before, RareCandy.xp / expectedExperiencePerStarPiece,
                        "만렙 사탕은 사라지지 않고 별의조각으로 돌아와야 한다")
+        // 피드백 배너가 단위를 알아야 한다 — 같은 숫자를 "+XP" 로 그리면 오르지도 않은 경험치를
+        // 올랐다고 보여 준다.
+        XCTAssertTrue(s.candyFeedbackIsStardust, "환산분은 별의조각 단위로 알려야 한다")
+        XCTAssertEqual(s.candyFeedbackAmount, RareCandy.xp / expectedExperiencePerStarPiece,
+                       "배너 금액도 XP 가 아니라 환산된 별의조각이다")
     }
 
     /// 대조군 — 상한 아래의 사탕은 경험치로 들어가고 별의조각을 주지 않는다.
@@ -211,6 +265,8 @@ final class MaxLevelTests: XCTestCase {
 
         XCTAssertEqual(s.state.active?.levelExperience, RareCandy.xp, "전제: 전량 적립됐다")
         XCTAssertEqual(s.state.starPieces, before, "상한 아래에서는 환산분이 없다")
+        XCTAssertFalse(s.candyFeedbackIsStardust, "여전히 경험치 단위로 알린다")
+        XCTAssertEqual(s.candyFeedbackAmount, RareCandy.xp)
     }
 
     /// **범위 밖 결정 고정** — 트레이너 레벨(99) 초과 포인트는 환산하지 않는다(#82, 2026-09-01).

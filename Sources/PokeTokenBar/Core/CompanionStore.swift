@@ -1297,6 +1297,10 @@ final class CompanionStore {
     /// **`@discardableResult` 를 붙이지 않는다** — 붙이면 새 호출부가 초과분을 다시 조용히
     /// 버릴 수 있고, 그게 정확히 #82 였다. 지금은 컴파일러 경고가 그 자리를 막는다.
     private func awardExperience(_ amount: Int) -> Int {
+        // 지금은 도달할 수 없다 — 세 호출부가 모두 활성 개체를 이미 보장한다(`claimAdventure` 의
+        // `if state.active != nil`, `useRareCandy` 의 `canUseRareCandy`, 디버그 훅의 자체 가드).
+        // 커버리지에 `^0` 으로 남는 이유가 이것이다. 그래도 남긴다: 호출부가 하나 늘면 이 자리가
+        // 유일한 방어이고, 지우면 활성 개체 없는 호출이 크래시가 된다.
         guard state.active != nil else { return 0 }
         let overflow = state.active!.gainExperience(amount)
         let stardust = PokemonBalance.starPieces(forOverflowExperience: overflow)
