@@ -240,7 +240,12 @@ enum PokemonChatAction: CaseIterable, Sendable {
         case .claimAdventure:
             return l.t("모험 보상 받아 줘", "Collect the adventure reward", "冒険の報酬を受け取って")
         case .useRareCandy:
-            return l.t("이상한사탕 하나 써 줘", "Use one Rare Candy", "ふしぎなアメを1つ使って")
+            // 이름도 상수표를 다시 읽지 않는다 — 자기 `call` 이 쓸 아이템의 **표시 이름 그대로**
+            // 말한다. 두 벌이던 동안 한국어 문구만 붙여 써(`이상한사탕`) 파서가 받는 이름
+            // (`이상한 사탕`)과 갈라졌고, 인자를 든 유일한 칩이 한국어에서 아무 일도 못 했다.
+            guard case .itemUse(let kind) = call else { return "" }
+            let name = l.itemName(kind)
+            return l.t("\(name) 하나 써 줘", "Use one \(name)", "\(name)を1つ使って")
         case .acceptEvolution:
             return l.t("진화하자", "Let's evolve", "進化しよう")
         }
@@ -324,15 +329,33 @@ enum PokemonChatToolParser {
     /// 그 문장에서 rawValue 를 알 길이 없다. `bag.list` 를 먼저 부르면 알 수 있지만 왕복은 셋뿐이라
     /// 그 한 번이 비싸고, 인자를 든 칩은 이것 하나뿐인데 그게 하필 못 맞추는 칩이었다.
     ///
-    /// 추측이 아니라 **닫힌 목록 대조**다 — 세 언어의 표시 이름을 그대로 맞춰 보고, 목록 밖
+    /// 추측이 아니라 **닫힌 목록 대조**다 — 모든 언어의 표시 이름을 그대로 맞춰 보고, 목록 밖
     /// 이름은 여전히 호출이 되지 않는다.
+    ///
+    /// 정규화는 **한 번만** 걸린다. rawValue 만 원문 그대로 비교하던 동안 `rare candy`(표시
+    /// 이름)는 통하는데 `rarecandy`·` rareCandy `(가방이 찍어 준 정답 값)는 떨어져, 기계가 준
+    /// 값이 사람 말보다 까다로운 상태였다.
     private static func itemKind(named raw: String) -> ItemKind? {
-        if let exact = ItemKind(rawValue: raw) { return exact }
         let needle = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return nil }
-        return ItemKind.allCases.first { kind in
-            [AppLanguage.ko, .en, .ja].contains { L($0).itemName(kind).lowercased() == needle }
+        return usableFromChat.first { kind in
+            kind.rawValue.lowercased() == needle
+                || AppLanguage.allCases.contains { L($0).itemName(kind).lowercased() == needle }
         }
+    }
+
+    /// 이름으로 되짚을 수 있는 종류 — `useItem` 이 갈래를 가진 것들과 진화 아이템 전체다.
+    ///
+    /// 가구는 뺀다. `useItem` 의 어느 갈래로도 성공하지 못하는데(진화 규칙이 없어 `default:` 에서
+    /// `canUseEvolutionItem` 에 걸린다) 이름은 갖고 있어서, 표에 두면 **승인 카드가 먼저 뜨고**
+    /// 그제서야 실패한다 — 사용자에겐 자기가 승인한 일이 안 된 것으로 보인다. 프롬프트가
+    /// "트레이너가 말한 대로" 를 허용한 뒤로는 48종이 전부 그 오답의 사정거리다.
+    ///
+    /// 앱 상태(가방 재고)로 좁히지 않는다. 파싱이 그때그때의 인벤토리에 의존하면 같은 답변이
+    /// 재고에 따라 호출이 되거나 안 되고, 재고는 실행기가 이미 본다(`item ... unavailable`).
+    private static let usableFromChat: [ItemKind] = ItemKind.allCases.filter {
+        // `useItem` 의 명시 케이스와 같은 목록이다. 한쪽만 늘면 그 아이템은 이름으로 못 불린다.
+        $0.evolutionRule != nil || [.rareCandy, .mint, .heartScale, .shinyCharm, .freshWater].contains($0)
     }
 
     /// 숫자만 있는 문자열만 숫자다. `Int("25분")` 은 이미 nil 이지만 `" 25 "`·`"+25"` 는 통과하므로
