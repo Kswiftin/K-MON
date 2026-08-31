@@ -29,7 +29,7 @@ struct FriendView: View {
             // **관장인 것만으로는 화면을 붙잡지 않는다.** 관장은 도전을 기다리는 배경 상태지
             // 배틀 중이 아니다 — 그 내내 친구 탭을 잠그면 교환도 1:1 배틀도 못 한다(닫기를 눌러도
             // 조건이 계속 참이라 안 나가진다). 붙잡는 것은 **판이 실제로 돌 때**뿐이다.
-            } else if destination == .gym || battleCenter.multiplayer.gymMatch != nil {
+            } else if destination == .gym || isGymMatchLive {
                 PlayerGymView(store: store, center: battleCenter.multiplayer) { destination = nil }
             // 방이 켜졌다는 것만으로는 어느 화면인지 못 정한다 — 토너먼트와 체육관이 같은 방을
             // 쓰므로 **활동 종류로** 가른다. 체육관 방을 빼지 않으면 관장이 토너먼트 화면에 갇힌다.
@@ -52,7 +52,7 @@ struct FriendView: View {
             if battleCenter.multiplayer.phase != .idle, !battleCenter.multiplayer.isGymRoom {
                 destination = .tournament
             }
-            if battleCenter.multiplayer.gymMatch != nil { destination = .gym }
+            if isGymMatchLive { destination = .gym }
         }
         // 도전이 들어와 판이 서면 체육관으로 데려간다 — 다른 화면을 보고 있으면 도전이 온 줄 모른다.
         .onChange(of: battleCenter.multiplayer.gymMatch == nil) { _, isIdle in
@@ -66,6 +66,15 @@ struct FriendView: View {
             if case .incoming = phase { revealsIncomingMessage = false }
             if phase == .ready, destination == .battle { destination = nil }
         }
+    }
+
+    /// 체육관 판이 **아직 진행 중**인가. 화면을 붙잡는 기준이다.
+    ///
+    /// 승패가 난 판까지 붙잡으면 결과 화면에서 닫기가 먹히지 않는다 — 조건이 계속 참이라
+    /// `destination = nil` 이 소용없다. 끝난 판은 잠시 뒤 `MultiplayerRoomCenter` 가 치운다.
+    private var isGymMatchLive: Bool {
+        guard let match = battleCenter.multiplayer.gymMatch else { return false }
+        return match.winnerID == nil
     }
 
     private var hasHiddenIncomingMessage: Bool {

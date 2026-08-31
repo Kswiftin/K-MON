@@ -548,6 +548,32 @@ final class PlayerGymTests: XCTestCase {
                                                now: clock.now), 0)
     }
 
+    // MARK: 끝난 판 정리 — 한 번 방어하고 체육관이 잠기던 자리
+
+    /// **회귀**: 방어에 성공해도 `gymMatch` 를 안 치우면 끝난 판이 그대로 남는다. 그러면 다음
+    /// 도전이 `acceptGymChallenge` 의 "이미 배틀 중" 가드에 걸려 **체육관이 영구히 잠긴다.**
+    /// 결과를 잠깐 보여 준 뒤 반드시 치워야 한다.
+    func testAFinishedMatchIsClearedSoTheGymCanTakeTheNextChallenge() async {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        _ = leaderWithFullTeam(s)
+
+        // 승패가 난 판을 흉내 낸다 — 게스트 경로(`.gymState` 수신)와 같은 자리를 지난다.
+        let finished = GymMatchState(
+            matchID: UUID(), leaderID: rooms.myID, challengerID: UUID(),
+            leaderName: "현우", challengerName: "둘기덕",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 3, events: [],
+            submitted: [], winnerID: rooms.myID)
+        rooms.debugApplyGymState(finished)
+        XCTAssertNotNil(rooms.gymMatch, "결과는 잠깐 보인다")
+
+        try? await Task.sleep(for: .seconds(PlayerGym.resultDisplaySeconds + 1))
+
+        XCTAssertNil(rooms.gymMatch,
+                     "끝난 판이 남으면 다음 도전이 '이미 배틀 중' 으로 거절되어 체육관이 잠긴다")
+    }
+
     // MARK: 스캔 창 — "체육관 검색 중…" 이 안 끝나던 자리
 
     /// **회귀**: 스캔 완료를 "방 개수가 바뀌었나" 로 판정했더니, 방이 하나도 없는 것이 정상인
@@ -646,8 +672,18 @@ final class PlayerGymTests: XCTestCase {
         let code = try friendViewSource()
         XCTAssertFalse(code.contains("store.isGymLeader"),
                        "관장이라는 상태만으로 화면을 붙잡으면 친구 탭에서 다른 걸 못 한다")
-        XCTAssertTrue(code.contains("battleCenter.multiplayer.gymMatch != nil"),
-                      "붙잡는 기준은 진행 중인 판이다")
+        XCTAssertTrue(code.contains("isGymMatchLive"),
+                      "붙잡는 기준은 **진행 중인** 판이다(끝난 판까지 붙잡으면 닫기가 안 먹는다)")
+    }
+
+    /// **회귀**: 끝난 판까지 붙잡으면 결과 화면에서 닫기가 먹히지 않는다 — 조건이 계속 참이라
+    /// `destination = nil` 이 소용없다. 붙잡는 기준은 **승패가 나기 전**이어야 한다.
+    func testAFinishedMatchDoesNotPinTheScreen() throws {
+        let code = try friendViewSource()
+        XCTAssertTrue(code.contains("isGymMatchLive"),
+                      "끝난 판까지 붙잡으면 결과 화면에서 못 나온다")
+        XCTAssertTrue(code.contains("match.winnerID == nil"),
+                      "진행 중 판정은 승자 유무로 한다")
     }
 
     /// 체육관 방도 `phase != .idle` 이라, 토너먼트 갈림길에서 빼지 않으면 관장이 토너먼트

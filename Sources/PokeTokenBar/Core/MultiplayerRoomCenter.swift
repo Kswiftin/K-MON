@@ -96,6 +96,8 @@ final class MultiplayerRoomCenter {
     private(set) var gymLeaderAbandonedMatch = false
     /// 직전 방어로 받은 별의조각. 0 이면 하루 상한에 걸린 것이다(지키지 못한 것이 아니다).
     private(set) var lastGymDefensePayout: Int?
+    /// 끝난 판을 치우는 예약. 결과 화면을 잠깐 보여 준 뒤 다음 도전을 받을 수 있게 한다.
+    private var gymMatchClearTask: Task<Void, Never>?
     /// 체육관 방을 연 직후 호출된다. 동시 개설 경합 확인을 이 훅으로 건다(화면이 붙인다).
     var onGymRoomOpened: (() -> Void)?
     /// 관장 자리를 넘겨받았다 — 화면이 자기 세이브에 자격을 쓰도록 알린다.
@@ -601,6 +603,9 @@ final class MultiplayerRoomCenter {
             // 지켰다. 보상은 **방어에만** 나간다 — 점령에 붙이면 왕복 파밍이 된다.
             lastGymDefensePayout = companion.recordGymDefenseSuccess(challengerName: challengerName)
             gymChallengerLineup = nil
+            // 결과를 잠깐 보여 준 뒤 판을 지운다. **안 지우면 다음 도전이 "이미 배틀 중" 으로
+            // 거절되어 체육관이 한 번 방어하고 영구히 잠긴다.**
+            scheduleGymMatchClear()
             return
         }
         // 자리를 내줬다. 이 줄이 기록에서 가장 궁금한 줄이라 반드시 남긴다.
@@ -622,6 +627,28 @@ final class MultiplayerRoomCenter {
     private func broadcastGymState() {
         guard let match = gymMatch else { return }
         for connection in guestConnections.values { send(.gymState(match), over: connection) }
+    }
+
+    /// 테스트 전용 — 게스트가 `.gymState` 를 받은 것과 같은 자리를 지난다.
+    /// 프로덕션 호출 경로는 없다(수신 루프가 같은 일을 한다).
+    func debugApplyGymState(_ match: GymMatchState) {
+        gymMatch = match
+        if match.winnerID != nil { scheduleGymMatchClear() }
+    }
+
+    /// 끝난 판을 잠시 뒤 치운다 — 관장은 다음 도전을 받을 수 있게, 도전자·관전자는 결과 화면에서
+    /// 빠져나올 수 있게. 승계로 방이 닫히는 경우는 `leaveRoom()` 이 대신 정리한다.
+    private func scheduleGymMatchClear() {
+        gymMatchClearTask?.cancel()
+        gymMatchClearTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(PlayerGym.resultDisplaySeconds))
+            guard !Task.isCancelled else { return }
+            guard let self, self.gymMatch?.winnerID != nil else { return }
+            self.gymMatch = nil
+            self.gymEngine = nil
+            self.lastGymDefensePayout = nil
+            self.gymMatchClearTask = nil
+        }
     }
 
     /// 판이 안 끝났는데 관장 연결이 끊겼나. **`leaveRoom()` 이 플래그를 지우므로** 호출부는 이 값을
@@ -907,6 +934,7 @@ final class MultiplayerRoomCenter {
         tournamentState = nil; tournamentTeams.removeAll(); tournamentPools.removeAll(); tournamentBracket = nil
         tournamentFinalTeam = []
         tournamentMatch = nil; tournamentRewarded = false
+        gymMatchClearTask?.cancel(); gymMatchClearTask = nil
         gymMatch = nil; gymEngine = nil; gymChallengerLineup = nil; gymRejection = nil
         gymLeaderAbandonedMatch = false; lastGymDefensePayout = nil
         // `gymPickedTeam` 은 남긴다 — 방을 떠나도 "누구를 데려갈지"는 사용자의 설정이라
@@ -1111,6 +1139,9 @@ final class MultiplayerRoomCenter {
                 if match.turn != previousTurn {
                     self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 }
+                // 승패가 났으면 게스트도 결과를 잠깐 보고 빠져나온다 — 안 치우면 관전자·도전자가
+                // 끝난 판 화면에 갇힌다(관장 쪽은 호스트 경로가 따로 치운다).
+                if match.winnerID != nil { self.scheduleGymMatchClear() }
             case .gymRejected(let reason):
                 self.gymRejection = reason
             case .gymHandoff(let gymID):

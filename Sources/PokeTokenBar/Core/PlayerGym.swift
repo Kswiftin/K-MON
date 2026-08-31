@@ -67,6 +67,12 @@ enum PlayerGym {
     /// 도전 기록 보관 수. 전적(`battleHistory`)과 같은 30 이다 — 세이브가 무한히 늘지 않게.
     static let defenseLogLimit = 30
 
+    /// 승패가 난 뒤 결과 화면을 보여 주는 시간. 이 뒤에 판을 지워 **다음 도전을 받을 수 있게** 한다.
+    ///
+    /// 안 지우면 끝난 판이 그대로 남아 `acceptGymChallenge` 의 "이미 배틀 중" 가드에 걸린다 —
+    /// 한 번 방어한 체육관이 영구히 잠긴다.
+    static let resultDisplaySeconds: TimeInterval = 4
+
     /// 이번 방어로 받을 금액. 상한을 넘는 만큼은 잘라 낸다.
     static func defensePayout(consecutiveDefenses: Int, earnedToday: Int) -> Int {
         let streakBonus = consecutiveDefenses > 0 && consecutiveDefenses % defenseStreakLength == 0
