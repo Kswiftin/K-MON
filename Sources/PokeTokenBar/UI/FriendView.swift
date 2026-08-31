@@ -133,14 +133,9 @@ struct FriendView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Picker("", selection: Binding(get: { battleCenter.rankedTeamSize },
-                                           set: { battleCenter.rankedTeamSize = $0 })) {
-                Text("1 vs 1").tag(1)
-                Text("3 vs 3").tag(3)
-                Text("6 vs 6").tag(6)
-            }
-            .pickerStyle(.segmented).labelsHidden()
-
+            // 출전 인원(1/3/6)은 **랭크배틀에서만** 쓰는 값이라 그 섹션(`BattleView`)에만 둔다.
+            // 관문에 두면 바로 아래 체육관(4마리 고정)·토너먼트(3마리 고정) 카드에도 적용되는
+            // 것처럼 보이는데, 그 둘은 이 값을 아예 읽지 않는다.
             Button {
                 destination = .gym
             } label: {
