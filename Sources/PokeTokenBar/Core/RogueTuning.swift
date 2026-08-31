@@ -7,17 +7,19 @@ import Foundation
 /// 나가는 판이 같은 규칙이라는 보장이 사라진다.** 값만 바꿔 끼우는 구조라야 실험 결과를 그대로
 /// `.standard` 에 옮길 수 있다.
 struct RogueTuning: Sendable, Equatable {
-    /// 판의 마지막 웨이브.
-    var finalWave = 12
+    /// 판의 마지막 웨이브. 12 는 한 판이 너무 빨리 끝나 강화가 쌓이기 전에 판이 닫혔다 —
+    /// 보스가 7번(4·8·…·28) 오고 최종 30 이 여덟 번째 관문이라, 회복 지점과 종족값 구간이
+    /// 함께 늘어난다.
+    var finalWave = 30
     /// 보스 주기 — 이 배수 웨이브가 보스다.
     var bossEvery = 4
     /// 야생이 파티 레벨 기준선보다 몇 아래에 서는가 — 첫 웨이브와 마지막 웨이브 값. 사이는 선형이다.
     /// 판이 뒤로 갈수록 좁히면 난이도가 우상향한다. 폭이 끝까지 같으면 보스만 사납고 야생 웨이브는
     /// 통째로 공짜가 된다(실측: 웨이브 5–7 의 조건부 사망률이 0.000 이었다).
-    var wildLevelHandicapStart = 4
-    var wildLevelHandicapEnd = 1
+    var wildLevelHandicapStart = 3
+    var wildLevelHandicapEnd = 0
     /// 보스가 기준선보다 몇 위에 서는가(최종 웨이브 제외).
-    var bossLevelBonus = 0
+    var bossLevelBonus = 2
     /// 최종 보스가 기준선보다 몇 위에 서는가.
     var finalLevelBonus = 2
     /// 첫 구간·마지막 구간의 종족값 합 상한. 사이 구간은 선형으로 잇는다 — 웨이브 수가 바뀌어도
@@ -25,15 +27,19 @@ struct RogueTuning: Sendable, Equatable {
     var firstTierCap = 320
     var lastTierCap = 500
     /// 보스 웨이브가 자기 구간 상한에 더 받는 값.
-    var bossStatBonus = 40
+    var bossStatBonus = 60
     /// 상대 종족값 하한 = 상한 × 이 비율. 없으면 최종 보스로 잉어킹(200)이 나온다.
     var minStatRatio = 0.6
     /// 상대가 둘이 되는 지점 — 판 진행률. 1.0 을 넘기면 끝까지 한 마리다.
     var doubleOpponentFrom = 0.75
     /// 한 판에 주는 몬스터볼.
-    var ballsPerRun = 7
+    var ballsPerRun = 5
     /// 파티 상한.
     var partyLimit = 6
+    /// 보스를 넘을 때 채워 주는 HP — **최대치의 비율**이다. 1.0(완전 회복)이면 보스 직후의 판이
+    /// 늘 만피에서 다시 시작해, 이월 자원(HP)을 아낀 판과 다 쓴 판이 같은 자리에 선다.
+    /// 이미 이 비율보다 높으면 깎지 않는다(회복이지 정규화가 아니다).
+    var bossHealRatio = 0.7
     /// 일반 승리·보스 승리로 오르는 레벨.
     var levelGain = 2
     var bossLevelGain = 3

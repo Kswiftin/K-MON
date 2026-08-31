@@ -752,7 +752,12 @@ final class BattleCenter {
                           achievementCeiling: AchievementLadder.tierCeiling,
                           outfit: companion.outfit,
                           representativeSpeciesID: representative?.presentationID,
-                          representativeIsShiny: representative?.isShiny ?? false)
+                          representativeIsShiny: representative?.isShiny ?? false,
+                          // 던전 실적도 자랑 값이다. 판 길이를 같이 싣는 이유는 `PeerAdvertisement`
+                          // 에 적어 뒀다(밸런스로 바뀌는 분모라 상대 것을 써야 한다).
+                          runBestWave: companion.runProgress.bestWave,
+                          runFinalWave: RogueRun.finalWave,
+                          runClears: companion.runProgress.clears)
     }
 
     /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 구워서 랭크전 뒤에도 옛 점수가
@@ -787,6 +792,9 @@ final class BattleCenter {
             _ = companion.battleRepresentative?.id
             _ = companion.battleRepresentative?.presentationID
             _ = companion.battleRepresentative?.isShiny
+            // 던전 실적도 광고 값이라 같이 읽는다 — 안 읽으면 판을 돌려도 재발행이 안 걸려
+            // 상대 카드의 기록이 굳는다(#85 와 같은 부류).
+            _ = companion.runProgress
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }

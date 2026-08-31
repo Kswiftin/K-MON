@@ -481,11 +481,16 @@ struct RogueRun: Sendable {
         }
     }
 
-    /// 살아 있는 개체를 완전 회복한다. **쓰러진 개체는 일으키지 않는다** — 부활은 `revive` 보상의
+    /// 살아 있는 개체를 회복한다. **쓰러진 개체는 일으키지 않는다** — 부활은 `revive` 보상의
     /// 몫이고, 여기서 같이 살리면 그 보상이 보스 직후에 늘 꽝이 된다.
+    ///
+    /// HP 는 **최대치의 `bossHealRatio` 까지만** 채운다(그보다 높으면 그대로 둔다). 완전 회복이면
+    /// 보스 직후마다 판이 만피에서 다시 서서, 이월 자원을 아낀 판과 다 쓴 판이 구별되지 않는다.
+    /// PP·상태이상은 전부 되돌린다 — 조여야 하는 자원은 HP 하나다.
     private mutating func restoreParty() {
         for i in party.indices where party[i].isAlive {
-            party[i].hp = party[i].stats.hp
+            let floor = Int((Double(party[i].stats.hp) * tuning.bossHealRatio).rounded())
+            party[i].hp = max(party[i].hp, min(party[i].stats.hp, floor))
             party[i].pp = party[i].moves.map(\.pp)
             party[i].status = nil
             party[i].statusCounter = 0

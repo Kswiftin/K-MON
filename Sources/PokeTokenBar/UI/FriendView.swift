@@ -293,6 +293,14 @@ struct FriendView: View {
                         } ?? store.l.t("레벨 정보 없음", "Level unavailable", "レベル情報なし"))
                         .font(.caption2).foregroundStyle(.secondary).fixedSize()
                     }
+                    // 던전 기록은 있을 때만 그린다 — 한 판도 안 돌린 상대에게 `0/30` 을 붙이면
+                    // 기록 없음과 첫 판 전멸이 같은 줄이 된다.
+                    if let record = peer.advertisement.runRecord {
+                        Text(store.l.t("던전 최고 \(record.wave)/\(record.finalWave) · 클리어 \(record.clears)회",
+                                       "Dungeon best \(record.wave)/\(record.finalWave) · \(record.clears) cleared",
+                                       "ダンジョン最高 \(record.wave)/\(record.finalWave) · クリア \(record.clears)回"))
+                            .font(.caption2).foregroundStyle(.secondary).fixedSize()
+                    }
                 }
                 Spacer()
             }

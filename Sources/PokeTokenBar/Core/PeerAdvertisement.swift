@@ -18,6 +18,9 @@ struct PeerAdvertisement: Equatable, Sendable {
         static let outfit = "outfit"
         static let representativeSpecies = "partnerSpecies"
         static let representativeShiny = "partnerShiny"
+        static let runBestWave = "runWave"
+        static let runFinalWave = "runFinal"
+        static let runClears = "runClears"
     }
 
     /// 광고된 분모의 표시 상한. 세 자리가 되면 카드가 밀려 배지 칸이 잘린다.
@@ -38,12 +41,21 @@ struct PeerAdvertisement: Equatable, Sendable {
     /// 배틀 프로필 대표 포켓몬. 표시 전용이며 실제 출전 파티나 보유 검증에는 쓰지 않는다.
     let representativeSpeciesID: Int?
     let representativeIsShiny: Bool
+    /// 웨이브 런(오늘의 던전)에서 가장 멀리 간 웨이브. 표시값이다.
+    let runBestWave: Int?
+    /// 상대가 도달한 판의 **최종 웨이브** — 업적 분모(`achievementCeiling`)와 같은 이유로 싣는다.
+    /// 밸런스 손잡이(`RogueTuning.finalWave`)라 판 길이가 바뀌는데, 안 실으면 30 웨이브를 도는
+    /// 상대의 기록을 12 웨이브 자로 그려 "18/12" 가 나온다.
+    let runFinalWave: Int?
+    /// 최종 웨이브까지 넘긴 판 수.
+    let runClears: Int?
 
     /// 굽는 쪽 진입점. 클램프는 여기 한 곳이고 파싱도 이 자리를 지난다.
     init(rankPoints: Int? = nil, trainerLevel: Int? = nil,
          achievementTiers: Int? = nil, achievementCeiling: Int? = nil,
          outfit: TrainerOutfit? = nil, representativeSpeciesID: Int? = nil,
-         representativeIsShiny: Bool = false) {
+         representativeIsShiny: Bool = false,
+         runBestWave: Int? = nil, runFinalWave: Int? = nil, runClears: Int? = nil) {
         self.rankPoints = rankPoints.map { BattleRank.clamped($0) }
         // 레벨 하한은 1. `TrainerLevel.level` 이 1 부터라 Lv.0 은 없는 값이다.
         self.trainerLevel = trainerLevel.map { min(TrainerLevel.maximumLevel, max(1, $0)) }
@@ -59,6 +71,15 @@ struct PeerAdvertisement: Equatable, Sendable {
         self.outfit = outfit.flatMap { $0.worn.isEmpty ? nil : $0 }
         self.representativeSpeciesID = representativeSpeciesID.flatMap { (1...20_000).contains($0) ? $0 : nil }
         self.representativeIsShiny = self.representativeSpeciesID == nil ? false : representativeIsShiny
+        // 판 길이도 하한 1 — 0 을 분모로 그리면 나눗셈이 아니다(업적 분모와 같은 규칙).
+        let finalWave = runFinalWave.map { max(1, $0) }
+        self.runFinalWave = finalWave
+        // 웨이브는 상대가 신고한 판 길이 안으로 자른다. 내 길이로 자르면 더 긴 판을 도는 상대의
+        // 기록이 깎여 "완주"로 보인다. 길이를 안 보낸 구버전만 내 값을 쓴다.
+        self.runBestWave = runBestWave.map {
+            min(finalWave ?? RogueRun.finalWave, max(0, $0))
+        }
+        self.runClears = runClears.map { max(0, $0) }
     }
 
     /// 읽는 쪽 진입점. 관대 파싱이고 실패하지 않는다(`init?` 가 아니다). 실패시키면 그 피어가
@@ -71,7 +92,10 @@ struct PeerAdvertisement: Equatable, Sendable {
                   achievementCeiling: record[Key.ceiling].flatMap(Int.init),
                   outfit: record[Key.outfit].map(TrainerOutfit.init(wireString:)),
                   representativeSpeciesID: record[Key.representativeSpecies].flatMap(Int.init),
-                  representativeIsShiny: record[Key.representativeShiny] == "1")
+                  representativeIsShiny: record[Key.representativeShiny] == "1",
+                  runBestWave: record[Key.runBestWave].flatMap(Int.init),
+                  runFinalWave: record[Key.runFinalWave].flatMap(Int.init),
+                  runClears: record[Key.runClears].flatMap(Int.init))
     }
 
     /// 빈 칸은 키를 싣지 않는다. 읽는 쪽이 "없음"과 "0"을 구별해야 한다.
@@ -86,6 +110,13 @@ struct PeerAdvertisement: Equatable, Sendable {
             entries[Key.representativeSpecies] = String(representativeSpeciesID)
             if representativeIsShiny { entries[Key.representativeShiny] = "1" }
         }
+        // 한 판도 안 돌린 상대는 키를 싣지 않는다 — `0/30` 을 그리면 "기록 없음"과 "첫 판에서
+        // 전멸"이 같은 줄이 된다.
+        if let runBestWave, runBestWave > 0 {
+            entries[Key.runBestWave] = String(runBestWave)
+            if let runFinalWave { entries[Key.runFinalWave] = String(runFinalWave) }
+            if let runClears, runClears > 0 { entries[Key.runClears] = String(runClears) }
+        }
         return NWTXTRecord(entries)
     }
 
@@ -99,4 +130,11 @@ struct PeerAdvertisement: Equatable, Sendable {
     /// 카드가 쓰는 랭크. 없으면 nil 이어야 한다. 빈 `BattleRank()` 는 Poké Ball R4 로 그려져
     /// 정보 없음과 최하위가 구별되지 않는다.
     var rank: BattleRank? { rankPoints.map { BattleRank(points: $0) } }
+
+    /// 카드가 그릴 런 기록. 분모는 상대 것을 쓰고, 안 보낸 구버전은 내 판 길이로 그린다.
+    /// 웨이브가 없으면 줄 자체가 없다 — 클리어 횟수만 온 광고로 "0 웨이브"를 만들지 않는다.
+    var runRecord: (wave: Int, finalWave: Int, clears: Int)? {
+        guard let runBestWave, runBestWave > 0 else { return nil }
+        return (runBestWave, runFinalWave ?? RogueRun.finalWave, runClears ?? 0)
+    }
 }

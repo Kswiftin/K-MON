@@ -209,6 +209,7 @@ tuning.bossStatBonus = intOption("--boss-stat", tuning.bossStatBonus)
 tuning.minStatRatio = doubleOption("--min-ratio", tuning.minStatRatio)
 tuning.doubleOpponentFrom = doubleOption("--double-from", tuning.doubleOpponentFrom)
 tuning.ballsPerRun = intOption("--balls", tuning.ballsPerRun)
+tuning.bossHealRatio = doubleOption("--boss-heal", tuning.bossHealRatio)
 tuning.partyLimit = intOption("--party-limit", tuning.partyLimit)
 
 if arguments.contains("--dump-tuning") { print(tuning); exit(0) }

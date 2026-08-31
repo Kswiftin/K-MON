@@ -39,9 +39,11 @@ struct RunProgress: Codable, Sendable, Equatable {
         bestWave = min(max(0, bestWave), RogueRun.finalWave)
         clears = max(0, clears)
         finished = max(0, finished)
-        // 클리어한 판은 끝난 판의 부분집합이고, 클리어했으면 최고 기록은 최종 웨이브다.
+        // 클리어한 판은 끝난 판의 부분집합이다.
         clears = min(clears, finished)
-        if clears > 0 { bestWave = RogueRun.finalWave }
+        // **클리어 횟수로 최고 웨이브를 끌어올리지 않는다.** 판 길이(`RogueTuning.finalWave`)는
+        // 밸런스 손잡이라 늘어난다 — 끌어올리면 12 웨이브짜리 판을 클리어한 옛 기록이 업데이트
+        // 당일에 "30/30 완주"로 둔갑한다. 기록은 실제로 밟은 웨이브여야 한다.
     }
 
     /// 무결성 서명에 들어가는 문자열. 재화가 나가지 않아도 서명에 넣는다 — 자랑 기록은 고쳐 적을

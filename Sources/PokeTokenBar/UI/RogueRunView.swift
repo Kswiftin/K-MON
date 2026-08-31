@@ -1,5 +1,45 @@
 import SwiftUI
 
+/// 화면이 지금 그릴 국면. **코어의 `RogueRun.Stage` 와 다를 수 있다는 것이 이 타입의 존재
+/// 이유다.** 승리 정산(`settle`)은 마지막 턴의 이벤트가 재생되기 전에 국면을 `.picking` 으로
+/// 넘기므로, 국면만 보고 그리면 결정타·기절·로그가 화면에 뜨기 전에 보상 목록이 전투를 덮는다
+/// (실제 결함: 던전이 "턴 종료 연출 없이 선택지로 점프" 했다).
+///
+/// 볼을 던진 결과도 같은 부류다 — 성공하면 이벤트가 하나도 안 붙은 채 웨이브가 넘어가서,
+/// 잡았다는 사실이 어디에도 뜨지 않는다. 그래서 알림(`hasNotice`)이 남아 있는 동안도 전투를 든다.
+enum RogueRunPhase: Equatable {
+    case battle
+    case picking
+    case routing
+    case loading
+    case ending
+
+    /// `hasUnplayedEvents` 는 **재생이 스트림 끝에 닿지 않았다**는 뜻이다(재생 중도 포함).
+    /// 재생 중 여부만 보면 안 되는 이유는 순서다 — 코어가 국면을 넘긴 프레임에는 재생기가 아직
+    /// 새 이벤트를 받지 못해 `isPlaying` 이 false 이고, 그 한 프레임에 전투가 화면에서 사라지면
+    /// 재생기는 영영 스트림을 받지 못한다.
+    static func of(stage: RogueRun.Stage, hasUnplayedEvents: Bool,
+                   hasNotice: Bool) -> RogueRunPhase {
+        let holdsBattle = hasUnplayedEvents || hasNotice
+        switch stage {
+        case .battling:    return .battle
+        // 로딩은 전투가 이미 교체된 뒤다 — 여기서 전투를 들면 다음 웨이브 상대를 기다리는 동안
+        // 지나간 판이 화면에 남는다.
+        case .loadingWave: return .loading
+        case .picking:     return holdsBattle ? .battle : .picking
+        case .routing:     return holdsBattle ? .battle : .routing
+        case .cleared, .failed: return holdsBattle ? .battle : .ending
+        }
+    }
+}
+
+/// 볼을 던진 결과 — 화면에 한 줄로 남는다. 성공은 이벤트를 만들지 않으므로(잡힌 상대는
+/// `retireOpponent` 로 조용히 빠진다) 이 값이 없으면 포획이 화면에 존재하지 않는다.
+struct BallThrowNotice: Equatable {
+    let target: String
+    let caught: Bool
+}
+
 /// 포켓로그식 런 화면 — **프로토타입**이다. 기록 저장(`RunProgress`)이 아직 없다.
 /// 입장권·하루 판 수 제한은 두지 않기로 했다(설계: `docs/reference/wave-run-design.md`).
 struct RogueRunView: View {
@@ -27,6 +67,8 @@ struct RogueRunView: View {
     /// 진화 조회를 이미 지난 웨이브. `.task` 는 화면이 다시 그려질 때마다 도는데, 조회는 왕복이
     /// 여러 번이라 같은 웨이브에서 두 번 돌면 보상 화면이 그만큼 늦게 열린다.
     @State private var evolutionCheckedWave = 0
+    /// 방금 던진 볼의 결과. 사용자가 확인할 때까지 전투 화면을 붙잡는다.
+    @State private var throwNotice: BallThrowNotice?
 
 
     var body: some View {
@@ -38,6 +80,9 @@ struct RogueRunView: View {
         .padding(PopoverMetrics.padding)
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
         .task { await resume() }
+        // 웨이브가 넘어가면 앞 웨이브의 볼 결과는 끝난 이야기다 — 남겨 두면 다음 전투 화면이
+        // 지나간 포켓몬 이름을 들고 열린다.
+        .onChange(of: store.rogueRun?.wave) { throwNotice = nil }
     }
 
     private var header: some View {
@@ -59,14 +104,16 @@ struct RogueRunView: View {
     @ViewBuilder
     private var content: some View {
         if let run = store.rogueRun {
-            switch run.stage {
-            case .battling:   battlePanel(run)
+            switch phase(of: run) {
+            case .battle:     battlePanel(run)
             case .picking:    rewardPicker(run)
             case .routing:    routePicker(run)
-            case .loadingWave: ProgressView().frame(maxWidth: .infinity)
-            case .cleared:    ending(l.t("12 웨이브를 모두 돌파했다.", "Cleared all 12 waves.",
-                                          "12ウェーブすべてを突破した。"))
-            case .failed:     ending(l.t("웨이브 \(run.wave) 에서 파티가 전멸했다.",
+            case .loading:    ProgressView().frame(maxWidth: .infinity)
+            case .ending where run.stage == .cleared:
+                ending(l.t("\(RogueRun.finalWave) 웨이브를 모두 돌파했다.",
+                           "Cleared all \(RogueRun.finalWave) waves.",
+                           "\(RogueRun.finalWave) ウェーブすべてを突破した。"))
+            case .ending:     ending(l.t("웨이브 \(run.wave) 에서 파티가 전멸했다.",
                                           "Party wiped on wave \(run.wave).",
                                           "ウェーブ \(run.wave) でパーティが全滅した。"))
             }
@@ -115,6 +162,15 @@ struct RogueRunView: View {
 
     // MARK: 전투
 
+    /// 코어의 국면을 화면 국면으로 옮긴다. 재생이 스트림 끝에 닿았는지를 `playedCount` 로 보는
+    /// 이유는 `RogueRunPhase.of` 에 적어 뒀다.
+    private func phase(of run: RogueRun) -> RogueRunPhase {
+        RogueRunPhase.of(stage: run.stage,
+                         hasUnplayedEvents: animator.playedCount < run.battle.events.count
+                            || animator.overlay.isPlaying,
+                         hasNotice: throwNotice != nil)
+    }
+
     private func battlePanel(_ run: RogueRun) -> some View {
         // 기존 배틀·팀 연습과 **같은 렌더러와 같은 재생기**를 쓴다. 직접 그리면 기술 버튼의 타입 색·
         // PP 배지·로그가 이 화면만 달라지고, 재생기를 빼면 기절이 화면에 뜨기 전에 필드가 다음
@@ -127,6 +183,7 @@ struct RogueRunView: View {
         let opponent = shownTheirs.side ?? run.battle.opponentSlot
         return VStack(spacing: 6) {
             catchBar(run)
+            if let throwNotice { noticeBar(throwNotice) }
             boostBar(run)
             arena(run, me: me, opponent: opponent, shownMine: shownMine,
                   engineMine: engineMine, engineTheirs: engineTheirs)
@@ -147,10 +204,34 @@ struct RogueRunView: View {
                 Text("\(Int(RogueRun.catchChance(target: run.battle.opponentSlot) * 100))%")
                     .foregroundStyle(.secondary)
             }
-            Button(l.t("잡기", "Catch", "捕まえる")) { mutate { _ = $0.throwBall() } }
-                .disabled(!run.canThrowBall)
+            Button(l.t("잡기", "Catch", "捕まえる")) {
+                let target = run.battle.opponentSlot.snapshot.name
+                var caught = false
+                mutate { caught = $0.throwBall() }
+                throwNotice = BallThrowNotice(target: target, caught: caught)
+            }
+            .disabled(!run.canThrowBall)
         }
         .font(.caption)
+    }
+
+    /// 볼을 던진 결과 한 줄. **성공은 이벤트를 만들지 않는다** — 잡힌 상대는 `retireOpponent` 로
+    /// 조용히 빠지고 웨이브가 그 자리에서 넘어가므로, 이 줄이 없으면 포획이 화면에 존재하지 않고
+    /// 보상 목록만 갑자기 뜬다. 사용자가 "계속"을 누를 때까지 전투 화면을 붙잡는다.
+    private func noticeBar(_ notice: BallThrowNotice) -> some View {
+        HStack(spacing: 8) {
+            Label(notice.caught
+                  ? l.t("\(notice.target) 을(를) 잡았다!", "Caught \(notice.target)!",
+                        "\(notice.target) を捕まえた！")
+                  : l.t("\(notice.target) 이(가) 볼에서 튀어나왔다!",
+                        "\(notice.target) broke free!",
+                        "\(notice.target) がボールから出てきた！"),
+                  systemImage: notice.caught ? "checkmark.circle.fill" : "xmark.circle")
+                .font(.caption.bold())
+            Spacer()
+            Button(l.t("계속", "Continue", "つづける")) { throwNotice = nil }
+                .controlSize(.small)
+        }
     }
 
     /// 쌓인 지속 강화 한 줄. 안 보여주면 무엇을 골라 왔는지 판 도중에 확인할 길이 없어, 다음 뽑기의

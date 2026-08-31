@@ -33,6 +33,43 @@ final class PeerAdvertisementTests: XCTestCase {
         XCTAssertEqual(PeerAdvertisement.Key.tiers, "achievementTiers")
         XCTAssertEqual(PeerAdvertisement.Key.representativeSpecies, "partnerSpecies")
         XCTAssertEqual(PeerAdvertisement.Key.representativeShiny, "partnerShiny")
+        XCTAssertEqual(PeerAdvertisement.Key.runBestWave, "runWave")
+        XCTAssertEqual(PeerAdvertisement.Key.runFinalWave, "runFinal")
+        XCTAssertEqual(PeerAdvertisement.Key.runClears, "runClears")
+    }
+
+    // MARK: 던전 실적
+
+    /// 굽고 다시 읽어 같은 값이 나오는지 — 광고에 실은 값만 상대 카드에 그려진다.
+    func testRunRecordSurvivesTheWireRoundTrip() {
+        let baked = PeerAdvertisement(runBestWave: 18, runFinalWave: 30, runClears: 3).txtRecord
+        let parsed = PeerAdvertisement(baked)
+        XCTAssertEqual(parsed.runRecord?.wave, 18)
+        XCTAssertEqual(parsed.runRecord?.finalWave, 30)
+        XCTAssertEqual(parsed.runRecord?.clears, 3)
+    }
+
+    /// 한 판도 안 돌린 상대는 키를 싣지 않는다 — `0/30` 을 그리면 "기록 없음"과 "첫 판 전멸"이
+    /// 같은 줄이 된다.
+    func testAnUnplayedRunCarriesNoKeys() {
+        let baked = PeerAdvertisement(runBestWave: 0, runFinalWave: 30, runClears: 0).txtRecord
+        XCTAssertNil(baked[PeerAdvertisement.Key.runBestWave])
+        XCTAssertNil(PeerAdvertisement(baked).runRecord)
+    }
+
+    /// 분모는 **상대 것**을 쓴다. 내 판 길이로 자르면 더 긴 판을 도는 상대의 기록이 깎여
+    /// 완주한 것처럼 보인다(업적 분모와 같은 결함 부류).
+    func testTheirRunLengthIsTheDenominatorAndTheClamp() {
+        let longer = PeerAdvertisement(runBestWave: 44, runFinalWave: 50, runClears: 0)
+        XCTAssertEqual(longer.runRecord?.wave, 44)
+        XCTAssertEqual(longer.runRecord?.finalWave, 50)
+        // 자기 판 길이를 넘는 값은 그 길이로 자른다. 안 자르면 카드에 "31/30" 이 나온다.
+        let impossible = PeerAdvertisement(runBestWave: 99, runFinalWave: 30, runClears: 0)
+        XCTAssertEqual(impossible.runRecord?.wave, 30)
+        // 길이를 안 보낸 구버전만 내 값으로 그린다.
+        let old = PeerAdvertisement(runBestWave: 99, runFinalWave: nil, runClears: 0)
+        XCTAssertEqual(old.runRecord?.finalWave, RogueRun.finalWave)
+        XCTAssertEqual(old.runRecord?.wave, RogueRun.finalWave)
     }
 
     /// 구운 레코드에 그 키가 실제로 실려 있는지 본다. 상수만 맞고 굽는 쪽이 다른 키를 쓰면 위

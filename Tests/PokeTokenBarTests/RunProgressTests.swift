@@ -35,8 +35,7 @@ final class RunProgressTests: XCTestCase {
         XCTAssertEqual(progress.finished, 0)
     }
 
-    /// 클리어 횟수는 끝난 판 수를 넘을 수 없고, 클리어한 판이 있으면 최고 기록은 최종 웨이브다 —
-    /// 두 값이 어긋난 세이브는 손편집이거나 옛 버그다.
+    /// 클리어 횟수는 끝난 판 수를 넘을 수 없다.
     func testNormalizeMakesTheTwoCountersAgree() {
         var progress = RunProgress()
         progress.clears = 5
@@ -44,7 +43,17 @@ final class RunProgressTests: XCTestCase {
         progress.bestWave = 3
         progress.normalize()
         XCTAssertEqual(progress.clears, 2)
-        XCTAssertEqual(progress.bestWave, RogueRun.finalWave)
+    }
+
+    /// 판 길이가 늘어난 뒤에도 **옛 기록은 그대로**다. 클리어 횟수로 최고 웨이브를 끌어올리면
+    /// 12 웨이브짜리 판을 클리어한 사람이 업데이트 당일에 "30/30 완주"로 바뀐다.
+    func testNormalizeNeverPromotesTheBestWaveToTheNewRunLength() {
+        var progress = RunProgress()
+        progress.clears = 1
+        progress.finished = 1
+        progress.bestWave = 12
+        progress.normalize()
+        XCTAssertEqual(progress.bestWave, 12)
     }
 
     /// 두 기기의 실적은 **각 축의 큰 값**으로 합친다. 한쪽을 고르면 다른 기기에서 세운 기록이 사라진다.
