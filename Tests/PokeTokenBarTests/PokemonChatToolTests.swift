@@ -1152,6 +1152,33 @@ final class PokemonChatToolTests: XCTestCase {
                        "가방에 사탕이 있으면 아이템도 제안한다")
     }
 
+    /// 칩 줄의 1Hz 시계는 **깨울 것이 있을 때만** 돈다. `@Observable` 이 깨우는 건 상태가 바뀔
+    /// 때뿐이고, 제안 술어 중 시계를 읽는 건 `isAdventureInProgress` 하나다(`clock()`) — 나머지는
+    /// 전부 상태 변화로 깨어난다. 상시로 돌리면 팝오버를 열어 둔 내내 초당 한 번씩 칩 목록과
+    /// 프로필이 다시 만들어지고, 프로필 한 번이 박스 전체 배열 한 벌이다.
+    ///
+    /// 반대 방향도 같이 건다 — 필요할 때 껐으면 모험이 끝나는 순간을 넘긴 채 "보상 받기" 칩이
+    /// 영영 안 뜬다(`FocusTimerView` 가 같은 술어를 같은 이유로 깨운다).
+    func testTheChipRowOnlyNeedsAClockWhileAnAdventureCanFinish() async {
+        let clock = TestClock()
+        let store = makeCompanionStore(clock: clock)
+        await store.hatch(baseID: 25)
+        let timer = FocusTimer()
+        let toolbox = PokemonChatToolbox(timer: timer, companion: store,
+                                         album: makeAlbum(), lookup: Self.emptyLookup)
+
+        XCTAssertFalse(toolbox.needsWallClockTicker,
+                       "모험이 없는데 초당 한 번씩 칩 줄을 다시 그린다")
+
+        XCTAssertTrue(timer.startFocusSession(minutes: 25, companion: store))
+        XCTAssertTrue(toolbox.needsWallClockTicker,
+                      "모험 중에 시계를 끄면 끝나는 순간을 넘겨 '보상 받기' 가 영영 안 뜬다")
+
+        clock.advance(25 * 60)
+        timer.stop()
+        XCTAssertTrue(toolbox.needsWallClockTicker, "정산을 기다리는 구간에서도 시계는 살아 있어야 한다")
+    }
+
     /// 사탕이 없으면 제안하지 않는다 — "가방에 없다" 는 정직한 실패지만, 화면이 먼저 권해 놓고
     /// 실패시키는 건 다른 이야기다.
     func testAnEmptyBagSuggestsNoItem() async {
@@ -1504,6 +1531,7 @@ private final class CountingToolbox: PokemonChatToolRunning {
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool { true }
     /// 이 스텁은 루프의 왕복 횟수만 센다 — 제안은 실물 실행기(`PokemonChatToolbox`)에서 검증한다.
     func availableActions(owner: UUID) -> [PokemonChatAction] { [] }
+    var needsWallClockTicker: Bool { false }
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         runCount += 1; return ("pokedoro state=idle", true)
     }
@@ -1513,6 +1541,7 @@ private struct StubToolbox: PokemonChatToolRunning {
     var status = "pokedoro state=idle"
     func canRun(_ call: PokemonChatToolCall, owner: UUID) -> Bool { true }
     func availableActions(owner: UUID) -> [PokemonChatAction] { [] }
+    var needsWallClockTicker: Bool { false }
     func run(_ call: PokemonChatToolCall, owner: UUID) async -> (line: String, succeeded: Bool) {
         switch call {
         case .pokedoroStatus: return (status, true)

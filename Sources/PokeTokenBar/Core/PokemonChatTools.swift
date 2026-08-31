@@ -398,6 +398,14 @@ protocol PokemonChatToolRunning {
     /// 편이 낫다(`run(_:owner:)` 의 owner 와 같은 이유).
     func availableActions(owner: UUID) -> [PokemonChatAction]
 
+    /// `availableActions` 의 답이 **아무 상태 변화 없이도 바뀔 수 있는가.** 칩 줄은 이 값이 참일
+    /// 때만 벽시계로 다시 그린다 — `@Observable` 은 상태가 바뀔 때만 깨우므로, 시계를 읽는 술어
+    /// (`isAdventureInProgress`)가 걸려 있으면 그 순간을 놓치고 칩이 영영 안 뜬다.
+    ///
+    /// 실행기가 답하는 이유는 어떤 술어가 시계를 읽는지 아는 곳이 여기뿐이라서다. 뷰가 직접
+    /// 판정하면 새 벽시계 술어가 붙는 날 한쪽만 늘어난다.
+    var needsWallClockTicker: Bool { get }
+
     /// `line` 은 모델에게 돌려줄 사실 한 줄(사용자 화면에는 실리지 않으므로 번역하지 않는다).
     /// `succeeded` 는 승인 경로가 거절과 실패를 구분하는 데 쓴다 — 문자열을 뒤져 판정하지 않는다.
     ///
@@ -445,6 +453,14 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
     func availableActions(owner: UUID) -> [PokemonChatAction] {
         PokemonChatAction.allCases.filter { canRun($0.call, owner: owner) && isReady($0) }
     }
+
+    /// 칩 줄이 **벽시계로 깨어나야 하는가.** `@Observable` 이 깨우는 건 상태가 바뀔 때뿐인데
+    /// `isReady` 의 술어 중 하나(`isAdventureInProgress`)는 `clock()` 을 읽어, 모험이 끝나도
+    /// 아무것도 무효화되지 않는다 — 팝오버를 열어 둔 채 그 순간을 넘기면 "보상 받기" 가 안 뜬다.
+    ///
+    /// 그래서 시계는 **모험이 걸려 있을 때만** 돈다. 상시로 돌리면 아무 술어도 안 변하는 대화에서
+    /// 초당 한 번씩 칩 목록과 프로필이 다시 만들어지고, 프로필 한 번이 박스 전체 배열 한 벌이다.
+    var needsWallClockTicker: Bool { companion.activeAdventure != nil }
 
     /// 상태가 준비됐는가. `run` 의 가드가 읽는 **바로 그 값**을 읽는다 — 새 조건을 여기서 발명하면
     /// 조건표가 두 벌이 되고, 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다.

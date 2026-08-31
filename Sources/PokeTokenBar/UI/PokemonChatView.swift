@@ -209,17 +209,27 @@ struct PokemonChatView: View {
     /// 시계로 깨운다. `@Observable` 이 깨우는 건 상태가 **바뀔 때**뿐인데, "보상 받기" 의 조건
     /// (`isAdventureInProgress`)은 `clock()` 을 읽는 벽시계 술어라 모험이 끝나도 아무것도
     /// 무효화되지 않는다 — 팝오버를 열어 둔 채 그 순간을 넘기면 칩이 영영 안 뜬다.
-    /// `FocusTimerView` 가 같은 술어를 같은 방식으로 깨우고 있다.
-    private var questionChips: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
-            PokemonChatChipRow(actions: toolbox.availableActions(owner: companionID),
-                               questions: chips, language: profile.language,
-                               onAction: { fill(with: $0.phrase(profile.language)) },
-                               onQuestion: { question in
-                                   if question == dailyDexQuestion { destination = .dailyDex }
-                                   else { fill(with: question) }
-                               })
+    ///
+    /// **깨울 것이 있을 때만** 돈다(`needsWallClockTicker`). `FocusTimerView` 가 자기 시계를
+    /// 같은 방식으로 게이트하는 것과 같은 이유다 — 상시로 돌리면 아무 술어도 안 변하는 대화에서
+    /// 초당 한 번씩 `chips` 와 `profile` 이 다시 만들어지고, `profile` 한 번이 박스 전체 배열
+    /// 한 벌(`ownedMons`)에 진화 트리 조회까지 딸린다.
+    @ViewBuilder private var questionChips: some View {
+        if toolbox.needsWallClockTicker {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in chipRow }
+        } else {
+            chipRow
         }
+    }
+
+    private var chipRow: some View {
+        PokemonChatChipRow(actions: toolbox.availableActions(owner: companionID),
+                           questions: chips, language: profile.language,
+                           onAction: { fill(with: $0.phrase(profile.language)) },
+                           onQuestion: { question in
+                               if question == dailyDexQuestion { destination = .dailyDex }
+                               else { fill(with: question) }
+                           })
     }
 
     private func fill(with chip: String) {
@@ -353,6 +363,13 @@ struct PokemonChatChipRow: View {
                 ForEach(actions, id: \.self) { action in
                     Button(action.phrase(language)) { onAction(action) }
                         .buttonStyle(.borderedProminent).controlSize(.small)
+                        // 채워진 배경만으로는 부족하다. macOS 의 "색상 없이 구분"·고대비에서
+                        // 그 한 가지 단서가 평평해지고, VoiceOver 에는 애초에 색이 없다 —
+                        // 그러면 "집중을 끝내자"(승인 카드가 뜨는 요청)와 "지금 기분은 어때?"
+                        // (잡담)가 똑같은 버튼 두 개로 들린다.
+                        .accessibilityHint(L(language).t("입력칸에 부탁을 채워요. 보내면 승인을 물어봐요.",
+                                                        "Fills the composer with a request. Sending it asks for your approval.",
+                                                        "入力欄にお願いを入れます。送ると承認をたずねます。"))
                 }
                 ForEach(questions, id: \.self) { question in
                     Button(question) { onQuestion(question) }
