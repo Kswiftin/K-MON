@@ -286,6 +286,12 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// `ailmentChancePercent` 가 100 을 주고, `applySecondaryEffect` 는 상태를 늘 **상대**에게 건다.
     /// 대상을 안 보면 회복 없는 필중 100% 수면기가 되어 CPU 가 무작위로 그걸 쓴다.
     var targetsUser: Bool? = nil
+    /// PokéAPI `target` 슬러그 그대로(`selected-pokemon`·`all-opponents`·`all-other-pokemon` …).
+    /// `targetsUser` 가 이 값에서 파생된 불리언인데도 원문을 함께 싣는 이유는 **범위**다 — 자기
+    /// 대상 여부만으로는 광역기(양쪽 두 칸을 한 번에 때리는 기술)를 가릴 수 없다.
+    /// `statChanges` 와 같은 이유로 옵셔널이다: 이 키가 없던 시절의 세이브와 구버전 피어에는
+    /// 값이 아예 없고, 없으면 **단일 타겟**으로 읽는다(모르는 기술을 광역으로 만들지 않는다).
+    var target: String? = nil
     var drain: Int? = nil
     /// 자기 회복량(PokéAPI `meta.healing`) — **최대 HP 대비 %**. 회복·아침햇살 계열이 50 이다.
     /// `drain` 과 다르다: 저쪽은 넣은 데미지의 비율이라 때려야 회복하고, 이쪽은 데미지와 무관하다.
@@ -296,6 +302,35 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
 
     /// 턴 순서 비교용 우선도 — 값이 없으면 0.
     var turnPriority: Int { priority ?? 0 }
+
+    /// 기술이 한 번에 닿는 범위. 데이터가 없으면(옛 세이브·구버전 피어·합성 무브셋) `single` 이다.
+    ///
+    /// 여기 없는 슬러그는 **전부 단일 취급**이다 — `entire-field`(날씨)·`opponents-field`(압정
+    /// 뿌리기)처럼 필드에 거는 기술은 구현이 없고, 모르는 슬러그를 광역으로 승격하면 위력이 있는
+    /// 기술 하나가 조용히 두 배로 닿는다.
+    enum Reach: Sendable, Equatable {
+        /// 고른 한 마리만.
+        case single
+        /// 상대 필드 전원(암석봉인·독가스 부류).
+        case allOpponents
+        /// 자기를 뺀 필드 전원 — **아군도 맞는다**(지진 부류).
+        case allOthers
+    }
+
+    var reach: Reach {
+        switch target {
+        case "all-opponents":                    return .allOpponents
+        // `all-pokemon` 도 여기로 접는다. 본가에서 이 부류(지진·폭발)는 시전자를 때리지 않으므로
+        // 자기 제외 규칙이 같고, 자기 피해를 따로 두면 구현 없는 축이 하나 더 생긴다.
+        case "all-other-pokemon", "all-pokemon": return .allOthers
+        default:                                 return .single
+        }
+    }
+
+    /// 이 기술이 여러 대상에게 한 번에 닿는가. **자기 대상 기술은 제외한다** — 회복·자기 랭크업은
+    /// `target` 이 `user` 계열이라 애초에 `single` 이지만, 그 판정을 여기서 한 번 더 잠근다:
+    /// 대상 루프를 타면 회복기가 상대 수만큼 회복하게 된다.
+    var hitsSpread: Bool { reach != .single && targetsUser != true }
 
     /// 급소 단계 — PokéAPI `meta.crit_rate` 를 현행 본가 단계표에 그대로 연결한다.
     var critStage: Int { max(0, critRate ?? 0) }
@@ -1297,14 +1332,54 @@ extension BattleEngine {
                             attackerActor: BattleActor, defenderActor: BattleActor,
                             move: MoveSpec, rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
-        // 못 움직이면 `.move` 자체가 나가지 않는다 — Showdown 도 `|move|` 대신 `|cant|` 를 보낸다.
-        guard canAct(&attacker, actor: attackerActor, rng: &rng, into: &events) else { return events }
-        events.append(.move(attackerActor, moveID: move.id))
+        guard beginAttack(attacker: &attacker, actor: attackerActor, move: move,
+                          rng: &rng, into: &events) else { return events }
         // 자기 회복기는 상대를 보지 않는다 — 명중·상성·데미지 계산을 통째로 건너뛴다.
         // `resolveAttack` 에 태우면 위력 0 이라 rng 만 태우고 아무것도 안 하는 기술이 된다.
         if let restored = selfHealing(of: move, user: &attacker, actor: attackerActor, rng: &rng) {
             return events + restored
         }
+        events += applyHit(attacker: &attacker, defender: &defender,
+                           attackerActor: attackerActor, defenderActor: defenderActor,
+                           move: move, rng: &rng)
+        events += faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)
+        return events
+    }
+
+    /// 공격의 **머리** — 행동 가능 판정과 `.move` 줄. 대상이 몇이든 여기는 **한 번만** 지난다.
+    ///
+    /// 광역기(`MoveSpec.hitsSpread`)를 위해 따로 뺐다. 대상마다 `applyAttack` 을 부르면 마비·잠듦·
+    /// 혼란 판정이 대상 수만큼 굴러서 rng 소비가 달라지고(같은 seed 로 판이 재현되지 않는다),
+    /// 한 대상에게는 움직이고 다른 대상에게는 못 움직이는 턴이 생기며, 로그에 기술명이 두 줄 남는다.
+    ///
+    /// `false` 면 못 움직였다 — 사유(`.cant`·혼란 자멸)는 `events` 에 들어간다.
+    static func beginAttack(attacker: inout BattleSide, actor: BattleActor, move: MoveSpec,
+                            rng: inout SplitMix64, into events: inout [BattleEvent]) -> Bool {
+        // 못 움직이면 `.move` 자체가 나가지 않는다 — Showdown 도 `|move|` 대신 `|cant|` 를 보낸다.
+        guard canAct(&attacker, actor: actor, rng: &rng, into: &events) else { return false }
+        events.append(.move(actor, moveID: move.id))
+        return true
+    }
+
+    /// 자폭기(命がけの突撃)는 데미지를 넣은 **뒤에** 자기가 쓰러진다. 광역기면 대상 전원을 때린
+    /// 다음이라, 이 판정이 대상 루프 **밖**에 있어야 기절 줄이 대상 수만큼 나가지 않는다.
+    static func faintFromSelfDestruct(_ move: MoveSpec, attacker: inout BattleSide,
+                                      actor: BattleActor) -> [BattleEvent] {
+        guard VariableDamage.userFaints(after: move), attacker.isAlive else { return [] }
+        attacker.hp = 0
+        return [.faint(actor)]
+    }
+
+    /// 대상 **하나**에 실제로 적용한다 — 명중·상성·데미지·2차효과·랭크·기절. `.move` 줄은 이
+    /// 함수가 내지 않는다(`beginAttack` 의 몫이다).
+    ///
+    /// `damageScale` 은 광역기가 둘 이상을 때릴 때의 감쇠(본가 4세대 이후 0.75)다. 1 이면 단일
+    /// 타겟과 한 값도 다르지 않다 — 세 모드(1v1·연습·LAN)가 지나는 길은 늘 1 이다.
+    static func applyHit(attacker: inout BattleSide, defender: inout BattleSide,
+                         attackerActor: BattleActor, defenderActor: BattleActor,
+                         move: MoveSpec, damageScale: Double = 1,
+                         rng: inout SplitMix64) -> [BattleEvent] {
+        var events: [BattleEvent] = []
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
         if outcome.missed { return events + [.miss(attackerActor)] }
         if outcome.effectiveness == 0 {
@@ -1331,25 +1406,29 @@ extension BattleEngine {
             if outcome.effectiveness > 1 { events.append(.superEffective(defenderActor)) }
             else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }
         }
+        // 감쇠는 **0 을 만들지 않는다** — 1 이라도 들어가야 "맞았는데 안 깎였다"가 안 된다.
+        let damage = scaled(outcome.damage, by: damageScale)
         // 데미지 0(변화기)은 `.damage` 를 내보내지 않는다 — "0 데미지" 줄은 맞았는데 안 깎인 것처럼 읽힌다.
-        if outcome.damage > 0 {
-            defender.hp = max(0, defender.hp - outcome.damage)
+        if damage > 0 {
+            defender.hp = max(0, defender.hp - damage)
             // 되돌려주는 기술(카운터 계열)이 이번 턴에 읽는다. 잔뎀·혼란 자멸은 여기를 지나지 않으므로
             // 기록되지 않는다 — 본가도 기술 데미지만 되돌려준다.
             //
             // **다단기는 마지막 히트만 기록한다**(본가와 같다). 합계를 넣으면 카운터가 5회 히트의
             // 총합을 2배로 되돌려줘 되돌리기가 히트 수만큼 세진다.
-            defender.lastHitThisTurn = IncomingHit(amount: outcome.lastHitDamage ?? outcome.damage,
-                                                   damageClass: move.damageClass)
-            events.append(.damage(defenderActor, amount: outcome.damage, cause: .move))
+            defender.lastHitThisTurn = IncomingHit(
+                amount: outcome.lastHitDamage.map { scaled($0, by: damageScale) } ?? damage,
+                damageClass: move.damageClass)
+            events.append(.damage(defenderActor, amount: damage, cause: .move))
             // 드레인·반동은 **넣은 데미지의 비율**이다. PokéAPI `meta.drain` 하나가 양쪽을 겸한다 —
             // 양수는 흡수, 음수는 반동. rng 를 안 쓰므로 소비 순서가 흔들리지 않는다.
             // 다단기는 합계로 한 번만 계산한다. 히트마다 회복하면 로그가 다섯 줄이 된다.
+            // 광역기는 **대상마다** 계산한다(감쇠된 데미지 기준이라 합계 비율은 그대로다).
             let percent = move.drainPercent
             if percent > 0 {
-                events += heal(&attacker, actor: attackerActor, upTo: outcome.damage * percent / 100)
+                events += heal(&attacker, actor: attackerActor, upTo: damage * percent / 100)
             } else if percent < 0 {
-                let amount = max(1, outcome.damage * -percent / 100)
+                let amount = max(1, damage * -percent / 100)
                 attacker.hp = max(0, attacker.hp - amount)
                 events.append(.damage(attackerActor, amount: amount, cause: .recoil))
                 // 기절 줄은 여기서 내지 않는다. `.faint` 는 2차효과·랭크 뒤(맨 뒤)가 이 파일의
@@ -1373,17 +1452,19 @@ extension BattleEngine {
         // **변화기가 아무것도 못 했으면 그 사실을 말한다.** 데미지가 없는 기술이라 이벤트를 안 내면
         // 로그에 기술명 한 줄만 남아 무반응이 된다 — 독가루를 강철에게 쓰면(`canBeAfflicted` 가
         // 막는다) 정확히 그 모양이었다. 이 파일에서 세 번째로 밟는 부류라 여기서 한 번에 막는다.
-        // `.move` 하나뿐이면 부여도 랭크 변화도 없었다는 뜻이다.
-        if move.damageClass == .status, events.count == 1 {
+        // 이 배열에 `.move` 는 없으므로(머리는 `beginAttack` 이 냈다) **비어 있으면** 아무 일도
+        // 없었다는 뜻이다.
+        if move.damageClass == .status, events.isEmpty {
             events.append(.immune(defenderActor))
         }
-        // 자폭기(命がけの突撃)는 데미지를 넣은 **뒤에** 자기가 쓰러진다. 상대보다 먼저 쓰러뜨리면
-        // 데미지 계산이 이미 끝난 뒤라 순서가 결과를 바꾸지 않지만, 로그는 때린 다음에 쓰러져야 읽힌다.
-        if VariableDamage.userFaints(after: move), attacker.isAlive {
-            attacker.hp = 0
-            events.append(.faint(attackerActor))
-        }
         return events
+    }
+
+    /// 광역 감쇠를 곱한 데미지. **0 으로 접지 않는다** — 원래 데미지가 1 이상이었으면 최소 1 은
+    /// 들어가야 "맞았는데 안 깎였다"(변화기와 구별되지 않는 줄)가 되지 않는다.
+    private static func scaled(_ damage: Int, by factor: Double) -> Int {
+        guard factor != 1, damage > 0 else { return damage }
+        return max(1, Int((Double(damage) * factor).rounded(.down)))
     }
 
     /// 기술의 랭크 변화. **부호가 대상을 정한다** — 올리면 자기, 내리면 상대다. `stat_changes` 에는

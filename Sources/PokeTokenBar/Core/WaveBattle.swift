@@ -6,7 +6,10 @@ import Foundation
 /// 대전이 함께 쓰고 활성 칸이 각각 하나로 굳어 있다. 거기에 슬롯 배열을 끼우면 세 모드의 턴
 /// 규칙이 한 번에 흔들린다. 반대로 `BattleEngine` 은 **손대지 않고 그대로 재사용한다** —
 /// `applyAttack`·`endOfTurnResidual` 은 이미 "공격자 하나 · 방어자 하나" 단위라 칸이 늘어도
-/// 규칙이 같고, 엔진을 고치면 `rulesVersion`·와이어 계약이 함께 움직인다.
+/// 규칙이 같다. 광역기를 넣으며 엔진에서 나눈 것은 **호출 단위뿐이다** — 공격의 머리
+/// (`beginAttack`: 행동 가능 판정과 `.move` 줄)와 대상별 적용(`applyHit`)으로 갈랐고, 단일 타겟이
+/// 지나는 길(`applyAttack`)은 이벤트도 rng 소비도 한 값도 달라지지 않는다(그래서 `rulesVersion`
+/// 은 그대로다).
 ///
 /// **이벤트 주인은 `.fighter(UUID)` 다.** `.a`/`.b` 는 한쪽에 한 칸일 때만 쓸 수 있어서
 /// 2대2 에서는 같은 편 두 칸이 한 주인으로 접힌다(로그·HP바·흔들림이 엉뚱한 칸에 붙는다).
@@ -33,6 +36,9 @@ struct WaveBattle: Sendable {
     /// 한쪽 필드의 칸 수 상한. 3대3(트리플)은 이 값만 올려서는 안 된다 — 광역기 사거리 규칙이
     /// 먼저 필요하다.
     static let maxFieldSlots = 2
+    /// 광역기가 둘 이상을 때릴 때 데미지에 곱하는 값 — 본가 4세대 이후와 같은 0.75 다. 없으면
+    /// 광역기가 "같은 위력으로 두 배로 닿는" 기술이 되어 단일기를 고를 이유가 사라진다.
+    static let spreadDamageScale = 0.75
 
     var mine: [BattleSide]
     var opponents: [BattleSide]
@@ -265,41 +271,109 @@ struct WaveBattle: Sendable {
             : opponents[opponentField[attack.slot].teamIndex]
     }
 
-    /// 공격 하나를 해상한다. **타겟이 이미 쓰러졌으면 남은 상대로 돌려 때린다** — 본가 3세대
-    /// 이후와 같은 규칙이고, 돌리지 않으면 두 칸이 같은 상대를 고른 턴의 뒤 칸이 통째로 헛돈다.
-    /// 공격자가 앞순서에 쓰러졌으면 아무 일도 없다(PP 도 줄지 않는다).
-    private mutating func execute(_ attack: Attack) {
-        let attackerIndex = attack.isMine
-            ? myField[attack.slot].teamIndex : opponentField[attack.slot].teamIndex
-        let attackerAlive = attack.isMine
-            ? mine[attackerIndex].isAlive : opponents[attackerIndex].isAlive
-        guard attackerAlive else { return }
-        // 타겟 자리 → 살아 있는 자리로 보정. 남은 상대가 없으면 이 턴은 여기서 끝난다.
-        let targetSlots = attack.isMine ? livingOpponentSlots : livingMySlots
-        guard let targetSlot = targetSlots.contains(attack.target) ? attack.target : targetSlots.first
-        else { return }
-        let attackerActor = attack.isMine ? actor(mine: attack.slot) : actor(opponent: attack.slot)
-        let defenderActor = attack.isMine ? actor(opponent: targetSlot) : actor(mine: targetSlot)
-
-        if attack.isMine {
-            let defenderIndex = opponentField[targetSlot].teamIndex
-            let move = mine[attackerIndex].move(at: attack.moveIndex)
-            if attack.moveIndex >= 0 { mine[attackerIndex].pp[attack.moveIndex] -= 1 }
-            events += BattleEngine.applyAttack(attacker: &mine[attackerIndex],
-                                               defender: &opponents[defenderIndex],
-                                               attackerActor: attackerActor,
-                                               defenderActor: defenderActor,
-                                               move: move, rng: &rng)
-        } else {
-            let defenderIndex = myField[targetSlot].teamIndex
-            let move = opponents[attackerIndex].move(at: attack.moveIndex)
-            if attack.moveIndex >= 0 { opponents[attackerIndex].pp[attack.moveIndex] -= 1 }
-            events += BattleEngine.applyAttack(attacker: &opponents[attackerIndex],
-                                               defender: &mine[defenderIndex],
-                                               attackerActor: attackerActor,
-                                               defenderActor: defenderActor,
-                                               move: move, rng: &rng)
+    /// 이 공격이 실제로 닿는 자리들. **광역기가 아니면 한 자리다** — 고른 타겟이 이미 쓰러졌으면
+    /// 남은 상대로 돌려 때린다(본가 3세대 이후와 같다).
+    ///
+    /// `allOthers`(지진 부류)는 **아군도 맞는다.** 그게 이 부류의 값이고, 아군을 빼면 2대2 에서
+    /// 지진이 대가 없는 최강 기술이 된다.
+    private func targets(of attack: Attack, move: MoveSpec) -> [(isMine: Bool, slot: Int)] {
+        let foeSlots = attack.isMine ? livingOpponentSlots : livingMySlots
+        let foesAreMine = !attack.isMine
+        guard move.hitsSpread else {
+            guard let slot = foeSlots.contains(attack.target) ? attack.target : foeSlots.first
+            else { return [] }
+            return [(foesAreMine, slot)]
         }
+        var hit = foeSlots.map { (isMine: foesAreMine, slot: $0) }
+        if move.reach == .allOthers {
+            let allySlots = (attack.isMine ? livingMySlots : livingOpponentSlots)
+                .filter { $0 != attack.slot }
+            hit += allySlots.map { (isMine: attack.isMine, slot: $0) }
+        }
+        return hit
+    }
+
+    private func teamIndex(isMine: Bool, slot: Int) -> Int {
+        isMine ? myField[slot].teamIndex : opponentField[slot].teamIndex
+    }
+
+    private func actor(isMine: Bool, slot: Int) -> BattleActor {
+        isMine ? actor(mine: slot) : actor(opponent: slot)
+    }
+
+    /// 공격 하나를 해상한다. 공격자가 앞순서에 쓰러졌으면 아무 일도 없다(PP 도 줄지 않는다).
+    ///
+    /// 단일 타겟은 `BattleEngine.applyAttack` 을 그대로 지난다 — 세 모드(1v1·체육관·LAN)와 **같은
+    /// 함수**여야 규칙이 갈라지지 않는다. 광역기만 머리(`beginAttack`)와 대상별 적용(`applyHit`)을
+    /// 나눠 부른다: 대상마다 `applyAttack` 을 부르면 마비·잠듦 판정이 대상 수만큼 굴러 rng 소비가
+    /// 달라지고, 로그에 기술명이 두 줄 남는다.
+    private mutating func execute(_ attack: Attack) {
+        let attackerIndex = teamIndex(isMine: attack.isMine, slot: attack.slot)
+        guard (attack.isMine ? mine[attackerIndex] : opponents[attackerIndex]).isAlive else { return }
+        let move = (attack.isMine ? mine[attackerIndex] : opponents[attackerIndex])
+            .move(at: attack.moveIndex)
+        let hits = targets(of: attack, move: move)
+        guard !hits.isEmpty else { return }
+        let attackerActor = actor(isMine: attack.isMine, slot: attack.slot)
+
+        guard move.hitsSpread else {
+            let target = hits[0]
+            let defenderIndex = teamIndex(isMine: target.isMine, slot: target.slot)
+            let defenderActor = actor(isMine: target.isMine, slot: target.slot)
+            if attack.moveIndex >= 0 {
+                if attack.isMine { mine[attackerIndex].pp[attack.moveIndex] -= 1 }
+                else { opponents[attackerIndex].pp[attack.moveIndex] -= 1 }
+            }
+            // 공격자와 방어자가 반드시 다른 배열에 있으므로(단일 타겟은 늘 상대편이다) 배열 원소를
+            // 그대로 inout 으로 넘길 수 있다.
+            if attack.isMine {
+                events += BattleEngine.applyAttack(attacker: &mine[attackerIndex],
+                                                   defender: &opponents[defenderIndex],
+                                                   attackerActor: attackerActor,
+                                                   defenderActor: defenderActor,
+                                                   move: move, rng: &rng)
+            } else {
+                events += BattleEngine.applyAttack(attacker: &opponents[attackerIndex],
+                                                   defender: &mine[defenderIndex],
+                                                   attackerActor: attackerActor,
+                                                   defenderActor: defenderActor,
+                                                   move: move, rng: &rng)
+            }
+            return
+        }
+
+        // 광역기. 공격자를 **지역 사본으로 꺼내** 돌린다 — 아군도 맞는 부류(`allOthers`)는 공격자와
+        // 방어자가 같은 배열에 있어서, 두 원소를 동시에 inout 으로 잡으면 배타적 접근 위반이다.
+        var attacker = attack.isMine ? mine[attackerIndex] : opponents[attackerIndex]
+        if attack.moveIndex >= 0 { attacker.pp[attack.moveIndex] -= 1 }
+        var head: [BattleEvent] = []
+        let acted = BattleEngine.beginAttack(attacker: &attacker, actor: attackerActor,
+                                             move: move, rng: &rng, into: &head)
+        events += head
+        guard acted else {
+            writeBack(attacker, isMine: attack.isMine, index: attackerIndex)
+            return
+        }
+        // 감쇠는 **실제로 둘 이상을 때릴 때만** 걸린다(본가 4세대 이후 0.75). 한 마리만 남은 필드에서
+        // 광역기가 단일기보다 약하면 "둘을 때리는 대가" 가 대상이 없는 턴에도 물리는 것이 된다.
+        let scale = hits.count > 1 ? Self.spreadDamageScale : 1
+        for target in hits {
+            let defenderIndex = teamIndex(isMine: target.isMine, slot: target.slot)
+            var defender = target.isMine ? mine[defenderIndex] : opponents[defenderIndex]
+            guard defender.isAlive else { continue }
+            events += BattleEngine.applyHit(attacker: &attacker, defender: &defender,
+                                            attackerActor: attackerActor,
+                                            defenderActor: actor(isMine: target.isMine,
+                                                                 slot: target.slot),
+                                            move: move, damageScale: scale, rng: &rng)
+            writeBack(defender, isMine: target.isMine, index: defenderIndex)
+        }
+        events += BattleEngine.faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)
+        writeBack(attacker, isMine: attack.isMine, index: attackerIndex)
+    }
+
+    private mutating func writeBack(_ side: BattleSide, isMine: Bool, index: Int) {
+        if isMine { mine[index] = side } else { opponents[index] = side }
     }
 
     /// 전멸 판정과 상대 쪽 자동 보충.

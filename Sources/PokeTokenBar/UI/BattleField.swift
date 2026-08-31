@@ -772,6 +772,9 @@ struct MoveGridView: View {
     let pp: [Int]
     let language: AppLanguage
     let isEnabled: Bool
+    /// 광역기(`MoveSpec.hitsSpread`)에 범위 표시를 붙일까. **필드에 둘 이상이 설 때만 켠다** —
+    /// 1대1 에서는 가리킬 대상이 하나뿐이라 표시가 정보가 아니고 버튼만 복잡해진다.
+    var showsSpreadMark = false
     let onChoose: (Int) -> Void
 
     var body: some View {
@@ -791,6 +794,12 @@ struct MoveGridView: View {
                 HStack(spacing: 3) {
                     Image(systemName: move.damageClass.symbolName).font(.system(size: 8, weight: .bold))
                     Text(move.name(language)).font(.caption2.bold()).lineLimit(1)
+                    // 무엇이 전원을 때리는지 버튼에서 읽혀야 한다 — 설명 툴팁만으로는 고르는
+                    // 순간에 보이지 않는다(2대2 에서 지진과 단일기의 차이가 곧 판단이다).
+                    if showsSpreadMark && move.hitsSpread {
+                        Image(systemName: "circle.hexagongrid.fill")
+                            .font(.system(size: 7, weight: .bold))
+                    }
                 }
                 HStack(spacing: 5) {
                     // 변화기는 위력이, 필중기는 명중이 "없다" — 0 이나 ∞ 로 쓰면 있는 값처럼 읽힌다.

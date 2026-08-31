@@ -55,7 +55,8 @@ actor SnapshotCache {
 ///
 /// 1. 쓰러진 칸이 있으면 벤치 앞쪽으로 채운다(턴을 쓰지 않는다).
 /// 2. 잡을 수 있고 성공률이 절반을 넘으면 던진다(파티가 빌 때까지).
-/// 3. 아니면 **HP 가 가장 적은 상대**에게 기대 위력이 가장 큰 기술을 쓴다 — 위력 × 자속 × 상성.
+/// 3. 아니면 **HP 가 가장 적은 상대**에게 기대 위력이 가장 큰 기술을 쓴다 — 위력 × 자속 × 상성,
+///    광역기는 상대 수 × 감쇠(0.75)를 곱해 비교한다.
 ///    2대2 는 화력을 한쪽에 모으는 편이 낫다(한 마리를 먼저 눕히면 그만큼 맞는 횟수가 줄어든다).
 enum AutoPlayer {
     static let catchThreshold = 0.5
@@ -79,17 +80,23 @@ enum AutoPlayer {
         }
         guard let slot = run.battle.slotsAwaitingAction.first,
               let me = run.battle.mySide(at: slot) else { return }
-        run.useMove(bestMoveIndex(me, against: opponent), fromSlot: slot, target: target)
+        run.useMove(bestMoveIndex(me, against: opponent, foeCount: targets.count),
+                    fromSlot: slot, target: target)
     }
 
-    static func bestMoveIndex(_ me: BattleSide, against target: BattleSide) -> Int {
+    static func bestMoveIndex(_ me: BattleSide, against target: BattleSide,
+                              foeCount: Int = 1) -> Int {
         var best = 0
         var bestScore = -1.0
         for index in me.moves.indices where me.canUse(moveAt: index) {
             let move = me.move(at: index)
             let stab = me.snapshot.types.contains(move.type) ? 1.5 : 1.0
             let chart = TypeChart.effectiveness(move.type, against: target.snapshot.types)
-            let score = Double(move.power ?? 0) * stab * chart
+            // 광역기는 상대 수만큼 닿고 대신 감쇠가 걸린다 — 상성은 고른 상대 기준으로만 본다
+            // (둘의 상성을 각각 재면 자동 플레이어가 사람보다 잘 두게 되어 측정이 낙관적으로 샌다).
+            let spread = move.hitsSpread && foeCount > 1
+                ? Double(foeCount) * WaveBattle.spreadDamageScale : 1
+            let score = Double(move.power ?? 0) * stab * chart * spread
             if score > bestScore { bestScore = score; best = index }
         }
         return best

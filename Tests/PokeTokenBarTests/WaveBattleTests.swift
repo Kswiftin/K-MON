@@ -16,6 +16,17 @@ final class WaveBattleTests: XCTestCase {
                                         damageClass: .physical, accuracy: nil, pp: 20)])
     }
 
+    /// 광역기 하나만 든 개체. `target` 슬러그가 범위의 유일한 신호다(`MoveSpec.reach`).
+    private func spreadSnapshot(_ id: Int, target: String, power: Int = 60,
+                                speed: Int = 100, hp: Int = 400) -> BattleSnapshot {
+        BattleSnapshot(speciesID: id, name: "S\(id)", trainer: "T", level: 50, nature: nil,
+                       isShiny: false, types: [.normal],
+                       base: BattleStats(hp: hp, atk: 80, def: 80, spa: 80, spd: 80, spe: speed),
+                       moves: [MoveSpec(id: 89, names: ["en": "Quake"], type: .normal, power: power,
+                                        damageClass: .physical, accuracy: nil, pp: 20,
+                                        target: target)])
+    }
+
     private func battle(mine: [BattleSnapshot], opponents: [BattleSnapshot],
                         seed: UInt64 = 7) -> WaveBattle {
         WaveBattle(mine: mine.map(BattleSide.init), opponents: opponents.map(BattleSide.init),
@@ -106,6 +117,82 @@ final class WaveBattleTests: XCTestCase {
         XCTAssertFalse(subject.choose(.move(index: 0, target: 2), forSlot: 0))
         XCTAssertFalse(subject.choose(.move(index: 0, target: -1), forSlot: 0))
         XCTAssertEqual(subject.turn, 1)
+    }
+
+    // MARK: 광역기
+
+    /// `all-opponents`(암석봉인 부류)는 상대 두 칸을 **한 방에** 때린다. 범위 데이터가 없던 동안은
+    /// 모든 기술이 단일 타겟이라 2대2 에서 상대 하나가 늘 온전했다.
+    func testAllOpponentsHitsBothFoes() {
+        var subject = battle(mine: [spreadSnapshot(1, target: "all-opponents", speed: 300)],
+                             opponents: [snapshot(90, speed: 1), snapshot(91, speed: 1)])
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertLessThan(subject.opponents[0].hp, subject.opponents[0].stats.hp)
+        XCTAssertLessThan(subject.opponents[1].hp, subject.opponents[1].stats.hp)
+    }
+
+    /// 기술명 줄(`.move`)은 대상 수와 무관하게 **한 번**이다. 대상마다 `applyAttack` 을 부르면
+    /// 로그에 같은 기술이 두 줄 남고, 행동 가능 판정(마비·잠듦)도 두 번 굴러 rng 가 흔들린다.
+    func testASpreadMoveLogsOneMoveLine() {
+        var subject = battle(mine: [spreadSnapshot(1, target: "all-opponents", speed: 300)],
+                             opponents: [snapshot(90, speed: 1), snapshot(91, speed: 1)])
+        let myActor = BattleActor.fighter(subject.myField[0].id)
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 0))
+        let myMoveLines = subject.events.filter {
+            if case .move(myActor, _) = $0 { return true } else { return false }
+        }
+        XCTAssertEqual(myMoveLines.count, 1)
+    }
+
+    /// 둘을 때리면 데미지가 **0.75 배**다(본가 4세대 이후). 감쇠가 없으면 광역기가 같은 위력으로
+    /// 두 배로 닿아 단일기를 고를 이유가 사라진다.
+    func testSpreadDamageIsReducedWhenItHitsMoreThanOne() {
+        var double = battle(mine: [spreadSnapshot(1, target: "all-opponents", speed: 300)],
+                            opponents: [snapshot(90, speed: 1), snapshot(91, speed: 1)])
+        XCTAssertTrue(double.choose(.move(index: 0, target: 0), forSlot: 0))
+        let spreadDamage = double.opponents[0].stats.hp - double.opponents[0].hp
+
+        // 같은 seed·같은 개체로 단일 타겟만 남긴 판. 상대가 하나면 감쇠가 걸리지 않는다.
+        var single = battle(mine: [spreadSnapshot(1, target: "all-opponents", speed: 300)],
+                            opponents: [snapshot(90, speed: 1)])
+        XCTAssertTrue(single.choose(.move(index: 0, target: 0), forSlot: 0))
+        let fullDamage = single.opponents[0].stats.hp - single.opponents[0].hp
+
+        XCTAssertGreaterThan(fullDamage, 0)
+        XCTAssertLessThan(spreadDamage, fullDamage, "둘을 때린 쪽이 약해야 한다")
+    }
+
+    /// `all-other-pokemon`(지진 부류)은 **아군도 맞는다.** 아군을 빼면 2대2 에서 지진이 대가 없는
+    /// 최강 기술이 된다.
+    func testAllOtherPokemonAlsoHitsMyPartner() {
+        // 상대 위력을 0 으로 둔다 — 상대가 때리면 시전자가 **자기** 지진에 맞았는지 구별할 수 없다.
+        var subject = battle(mine: [spreadSnapshot(1, target: "all-other-pokemon", speed: 300),
+                                    snapshot(2, hp: 400, speed: 1)],
+                             opponents: [snapshot(90, power: 0, speed: 1),
+                                         snapshot(91, power: 0, speed: 1)])
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 1))
+        XCTAssertLessThan(subject.mine[1].hp, subject.mine[1].stats.hp, "아군이 맞는다")
+        XCTAssertEqual(subject.mine[0].hp, subject.mine[0].stats.hp, "시전자는 안 맞는다")
+    }
+
+    /// 상대가 하나뿐이면 광역기도 감쇠 없이 그 하나만 때린다 — 대상이 없는 턴에 "둘을 때리는 대가"
+    /// 를 물리면 안 된다.
+    func testASpreadMoveHitsOneFoeAtFullPower() {
+        var subject = battle(mine: [spreadSnapshot(1, target: "all-opponents", speed: 300)],
+                             opponents: [snapshot(90, speed: 1)])
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertLessThan(subject.opponents[0].hp, subject.opponents[0].stats.hp)
+    }
+
+    /// 범위 데이터가 없는 기술(옛 세이브·구버전 피어·합성 무브셋)은 **단일 타겟**이다 —
+    /// 모르는 기술을 광역으로 승격하면 위력 있는 기술 하나가 조용히 두 배로 닿는다.
+    func testAMoveWithoutTargetDataStaysSingleTarget() {
+        var subject = battle(mine: [snapshot(1, power: 60, speed: 300)],
+                             opponents: [snapshot(90, speed: 1), snapshot(91, speed: 1)])
+        XCTAssertNil(subject.mine[0].moves[0].target, "테스트 전제: 대상 데이터가 없어야 한다")
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertEqual(subject.opponents[1].hp, subject.opponents[1].stats.hp)
     }
 
     // MARK: 턴 순서

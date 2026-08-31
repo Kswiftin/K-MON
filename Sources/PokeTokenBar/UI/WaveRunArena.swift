@@ -236,6 +236,9 @@ struct WaveRunArenaView: View {
                          pp: side.mustStruggle ? [] : side.pp,
                          language: l.lang,
                          isEnabled: acceptsInput,
+                         // 필드에 둘 이상이 서 있을 때만 광역 표시를 켠다 — 단일전에서는 "전체" 가
+                         // 가리킬 대상이 하나뿐이라 정보가 아니고 버튼만 복잡해진다.
+                         showsSpreadMark: theirs.count + mine.count > 2,
                          onChoose: { index in choose(moveIndex: side.mustStruggle ? -1 : index) })
         } else if sendOutSlot == nil {
             // 행동을 다 정했거나 재생 중이다 — 빈 자리를 두면 아래 줄이 위로 밀려 올라온다.
@@ -246,10 +249,11 @@ struct WaveRunArenaView: View {
     }
 
     /// 상대가 하나면 타겟 단계를 지나지 않는다 — 고를 것이 없는 단계를 두면 매 턴 클릭이 하나 늘고,
-    /// 단일전(웨이브의 대부분)이 통째로 느려진다.
+    /// 단일전(웨이브의 대부분)이 통째로 느려진다. **광역기도 지나지 않는다**: 이미 전원을 때린다.
     private func choose(moveIndex: Int) {
         let targets = livingTargets
-        if targets.count <= 1 {
+        let spread = actingCell.map { $0.side.move(at: moveIndex).hitsSpread } ?? false
+        if spread || targets.count <= 1 {
             onMove(moveIndex, targets.first?.ordinal ?? 0)
         } else {
             pendingMove = moveIndex

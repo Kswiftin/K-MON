@@ -1833,6 +1833,10 @@ final class CompanionStore {
         // **축을 더할 때 이 판정도 같이 늘린다.** `statChanges` 만 보면, 그 축으로 한 번 갱신된
         // 세이브는 이후 어떤 새 축이 비어 있어도 다시 받지 않고 옛 데이터로 싸운다.
         if move.targetsUser == nil { return true }
+        // 대상 슬러그(광역 범위)는 `targetsUser` 보다 나중에 추가된 축이라, 그 사이에 받은 세이브는
+        // 불리언만 차 있고 원문이 비어 있다. 그 상태로 두면 지진·암석봉인이 조용히 단일 타겟이 된다
+        // (상태기가 죽어 있던 것과 같은 부류 — `healing` 이 `drain` 에 딸려오지 않은 자리와 같다).
+        if move.target == nil { return true }
         // 드레인·반동·다단·풀린치(Phase 5)도 같은 부류다. 넷이 같은 `meta` 블록에서 한 번에
         // 오므로 `drain` 하나가 넷을 대표한다. `minHits`/`maxHits` 로는 못 본다 — 단발기는
         // 받아봐도 nil 이라 영원히 수렴하지 않는다.
