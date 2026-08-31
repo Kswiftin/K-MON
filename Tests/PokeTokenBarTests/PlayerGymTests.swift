@@ -686,6 +686,15 @@ final class PlayerGymTests: XCTestCase {
                       "진행 중 판정은 승자 유무로 한다")
     }
 
+    /// 출전 인원(1/3/6)은 **랭크배틀에서만** 쓰는 값이다. 친구 탭 관문에 두면 바로 아래
+    /// 체육관(4마리 고정)·토너먼트(3마리 고정) 카드에도 적용되는 것처럼 보이는데, 그 둘은
+    /// 이 값을 아예 읽지 않는다.
+    func testTheTeamSizePickerIsNotOnTheFriendTabEntry() throws {
+        let code = try friendViewSource()
+        XCTAssertFalse(code.contains("rankedTeamSize"),
+                       "관문에 두면 체육관·토너먼트에도 적용되는 것처럼 읽힌다")
+    }
+
     /// 체육관 방도 `phase != .idle` 이라, 토너먼트 갈림길에서 빼지 않으면 관장이 토너먼트
     /// 화면에 갇힌다.
     func testTheTournamentBranchExcludesGymRooms() throws {
