@@ -64,6 +64,9 @@ enum PlayerGym {
     /// 두세 번이 현실적이라 실수령은 2,000~3,000 — 던전(1,000)과 해안 모험(7,200) 사이다.
     static let dailyDefenseRewardCap = 8_000
 
+    /// 도전 기록 보관 수. 전적(`battleHistory`)과 같은 30 이다 — 세이브가 무한히 늘지 않게.
+    static let defenseLogLimit = 30
+
     /// 이번 방어로 받을 금액. 상한을 넘는 만큼은 잘라 낸다.
     static func defensePayout(consecutiveDefenses: Int, earnedToday: Int) -> Int {
         let streakBonus = consecutiveDefenses > 0 && consecutiveDefenses % defenseStreakLength == 0
@@ -148,6 +151,20 @@ struct PlayerGymRoomName: Equatable {
                                  leaderName: String(head[separator.upperBound...]),
                                  idTag: idTag)
     }
+}
+
+/// 내 체육관에 들어온 도전 한 건의 기록 — **누가 언제 왔고 어떻게 됐나.**
+///
+/// 관장 자리를 잃어도 남는다. 체육관의 기록이 아니라 **내 기록**이라, 자리를 되찾았을 때
+/// 지난 도전을 그대로 이어 본다.
+struct GymDefenseRecord: Codable, Sendable, Equatable, Identifiable {
+    var id = UUID()
+    var challengerName: String
+    var at: Date
+    /// 내가 지켰나. false 면 이 판에서 자리를 내줬다.
+    var defended: Bool
+    /// 그 방어로 받은 별의조각. 0 이면 하루 상한에 걸렸거나 진 판이다.
+    var payout: Int
 }
 
 /// 도전이 거절된 이유. 화면이 문구를 고르고, 쿨다운은 남은 초를 함께 싣는다.

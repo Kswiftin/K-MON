@@ -314,6 +314,66 @@ final class PlayerGymTests: XCTestCase {
         XCTAssertTrue(SaveTransfer.isTampered(forged), "상한을 되돌리는 손편집이 통과하면 안 된다")
     }
 
+    // MARK: 도전 기록
+
+    func testDefendingRecordsWhoChallengedAndWhatItPaid() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+
+        let payout = s.recordGymDefenseSuccess(challengerName: "지수")
+
+        let record = s.gymDefenseLog.first
+        XCTAssertEqual(record?.challengerName, "지수")
+        XCTAssertEqual(record?.defended, true)
+        XCTAssertEqual(record?.payout, payout)
+    }
+
+    /// **자리를 내준 판이 기록에서 가장 궁금한 줄**이다. 자격이 풀린 뒤에도 남아야 한다.
+    func testLosingTheGymIsRecordedAndSurvivesLosingLeadership() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+
+        s.recordGymDefenseLoss(challengerName: "민준")
+        s.resignGymLeadership()
+
+        XCTAssertEqual(s.gymDefenseLog.first?.challengerName, "민준")
+        XCTAssertEqual(s.gymDefenseLog.first?.defended, false)
+        XCTAssertFalse(s.isGymLeader, "자격은 풀렸는데")
+        XCTAssertEqual(s.gymDefenseLog.count, 1, "기록은 남는다")
+    }
+
+    /// 최신이 위로 온다 — 화면이 그대로 그린다.
+    func testTheLogIsNewestFirstAndCapped() {
+        let clock = TestClock()
+        let s = store(clock)
+        _ = leaderWithFullTeam(s)
+
+        for index in 0..<(PlayerGym.defenseLogLimit + 5) {
+            clock.advance(60)
+            s.recordGymDefenseLoss(challengerName: "도전자\(index)")
+        }
+
+        XCTAssertEqual(s.gymDefenseLog.count, PlayerGym.defenseLogLimit, "세이브가 무한히 늘면 안 된다")
+        XCTAssertEqual(s.gymDefenseLog.first?.challengerName,
+                       "도전자\(PlayerGym.defenseLogLimit + 4)", "최신이 맨 위")
+    }
+
+    /// 도전자 이름은 남이 보낸 값이라 그대로 싣지 않는다.
+    func testSanitizeClampsTheChallengeLog() {
+        var state = CompanionState()
+        state.gymDefenseLog = (0..<(PlayerGym.defenseLogLimit + 10)).map { index in
+            GymDefenseRecord(challengerName: String(repeating: "가", count: 200),
+                             at: Date(timeIntervalSince1970: TimeInterval(1_000 + index)),
+                             defended: true, payout: -5)
+        }
+
+        let cleaned = SaveTransfer.sanitized(state, origin: .importedFile)
+
+        XCTAssertEqual(cleaned.gymDefenseLog.count, PlayerGym.defenseLogLimit)
+        XCTAssertTrue(cleaned.gymDefenseLog.allSatisfy { $0.challengerName.count <= SaveTransfer.maxNameLength })
+        XCTAssertTrue(cleaned.gymDefenseLog.allSatisfy { $0.payout >= 0 }, "음수 지급액은 없다")
+    }
+
     // MARK: 세이브
 
     func testLeadershipSurvivesAnEncodeDecodeRoundTrip() throws {

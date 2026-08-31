@@ -2035,12 +2035,15 @@ final class CompanionStore {
         max(0, PlayerGym.dailyDefenseRewardCap - gymDefenseEarnedToday)
     }
 
+    /// 최근 도전 기록(최신 우선). 화면이 이 목록을 그린다.
+    var gymDefenseLog: [GymDefenseRecord] { state.gymDefenseLog }
+
     /// 방어에 성공했다 — 연승을 올리고 보상을 지급한다. **점령에는 주지 않는다**(그쪽에 값을
     /// 붙이면 둘이 번갈아 뺏는 왕복이 그대로 파밍이 된다).
     ///
     /// 지급액이 0 이어도 연승은 오른다 — 상한에 걸린 것이지 지키지 못한 것이 아니다.
     @discardableResult
-    func recordGymDefenseSuccess() -> Int {
+    func recordGymDefenseSuccess(challengerName: String = "") -> Int {
         guard var leadership = state.gymLeadership else { return 0 }
         leadership.consecutiveDefenses += 1
         state.gymLeadership = leadership
@@ -2052,8 +2055,25 @@ final class CompanionStore {
         state.gymDefenseRewardToday = (state.gymDefenseRewardDate == today ? state.gymDefenseRewardToday : 0) + payout
         state.gymDefenseRewardDate = today
         state.starPieces += payout
+        appendGymDefenseRecord(challengerName: challengerName, defended: true, payout: payout)
         save()
         return payout
+    }
+
+    /// 자리를 내준 판도 남긴다 — **누가 나를 꺾었는지가 기록에서 가장 궁금한 줄**이다.
+    /// 자격은 이 뒤에 풀리므로, 기록은 자격과 무관한 `state.gymDefenseLog` 에 쌓는다.
+    func recordGymDefenseLoss(challengerName: String) {
+        appendGymDefenseRecord(challengerName: challengerName, defended: false, payout: 0)
+        save()
+    }
+
+    private func appendGymDefenseRecord(challengerName: String, defended: Bool, payout: Int) {
+        state.gymDefenseLog.insert(
+            GymDefenseRecord(challengerName: challengerName, at: clock(),
+                             defended: defended, payout: payout), at: 0)
+        if state.gymDefenseLog.count > PlayerGym.defenseLogLimit {
+            state.gymDefenseLog.removeLast(state.gymDefenseLog.count - PlayerGym.defenseLogLimit)
+        }
     }
 
     /// 도전이 **끝난** 시각을 적는다. 시작 시각으로 재면 긴 배틀 뒤 곧바로 재도전이 된다.
