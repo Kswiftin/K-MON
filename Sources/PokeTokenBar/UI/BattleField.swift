@@ -873,15 +873,15 @@ struct BeginnerBadgeView: View {
     var owner: String? = nil
 
     var body: some View {
-        let badge = l.t("초보자", "BEGINNER", "ビギナー")
-        Label(owner.map { "\($0) · \(badge)" } ?? badge, systemImage: "sparkles")
-            .font(.system(size: 8, weight: .black, design: .rounded))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(LinearGradient(colors: [.pink, .purple, .blue],
-                                       startPoint: .leading, endPoint: .trailing), in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.8), lineWidth: 1))
-            .shadow(color: .purple.opacity(0.55), radius: 4)
+        let badge = l.t("🐣 초보임", "🐣 newbie", "🐣 しょしんしゃ")
+        Text(owner.map { "\($0) · \(badge)" } ?? badge)
+            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .foregroundStyle(Color.brown.opacity(0.88))
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Color.yellow.opacity(0.28), in: RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4)
+                .stroke(Color.brown.opacity(0.28), style: StrokeStyle(lineWidth: 1, dash: [2, 2])))
+            .rotationEffect(.degrees(-1.5))
             .fixedSize()
     }
 }
