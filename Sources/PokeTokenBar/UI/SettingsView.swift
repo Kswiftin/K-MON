@@ -437,6 +437,8 @@ struct SettingsView: View {
             Divider()
             toggleRow(l.automaticUpdateDownloadsLabel, $settings.automaticUpdateDownloadsEnabled)
             Divider()
+            toggleRow(l.releaseNotesOnUpdateLabel, $settings.releaseNotesOnUpdateEnabled)
+            Divider()
             groupRow {
                 Text(l.checkForUpdatesLabel)
                 Spacer()

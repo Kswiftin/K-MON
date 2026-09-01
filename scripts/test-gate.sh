@@ -44,6 +44,9 @@ LOGIC_CORE=(
   # `if !homes.isEmpty { lastError = nil }` 같은 새 분기를 아무도 못 본 이유가 이것이었다.
   "Sources/PokeTokenBar/Core/MemoryHomeVisitCenter.swift"
   "Sources/PokeTokenBar/Core/DexGoals.swift"
+  # 업데이트 뒤 릴리스 노트를 띄울지 정하는 판정. 배열 밖에 두면 "신규 설치엔 안 띄운다"·
+  # "버전당 한 번" 분기가 커버리지에서 통째로 빠진다.
+  "Sources/PokeTokenBar/Core/ReleaseNotesGate.swift"
   "Sources/PokeTokenBar/Core/BattleModel.swift"
   # 가변 위력(PokéAPI `power: null`) 계산. 순수 함수라 게이트 대상이고, 배열에 안 넣으면
   # 커버리지에서 아예 빠져 다음 기술을 추가할 때 무테스트로 남는다.

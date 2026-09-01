@@ -68,6 +68,11 @@ final class AppSettings {
     var automaticUpdateDownloadsEnabled: Bool {
         didSet { defaults.set(automaticUpdateDownloadsEnabled, forKey: "automaticUpdateDownloadsEnabled") }
     }
+    /// 업데이트로 버전이 올라간 뒤 첫 실행에 릴리스 노트 창을 띄운다. 꺼도 버전 도장은 찍혀서
+    /// (`ReleaseNotesGate`) 다시 켰을 때 묵은 노트가 튀어나오지 않는다.
+    var releaseNotesOnUpdateEnabled: Bool {
+        didSet { defaults.set(releaseNotesOnUpdateEnabled, forKey: "releaseNotesOnUpdateEnabled") }
+    }
     var doNotDisturb: Bool { didSet { defaults.set(doNotDisturb, forKey: "doNotDisturb") } }
     /// 팝오버를 열지 않아도 LAN 배틀 신청을 받는다. **켜져 있는 동안에만** Bonjour 리스너가 뜨고,
     /// 리스너가 뜨는 순간 macOS 가 로컬 네트워크 권한을 묻는다 — 배틀을 안 하는 사용자가 그 창을
@@ -108,6 +113,7 @@ final class AppSettings {
         companionNotifications = defaults.object(forKey: "companionNotifications") as? Bool ?? true
         updateNotificationsEnabled = defaults.object(forKey: "updateNotificationsEnabled") as? Bool ?? true
         automaticUpdateDownloadsEnabled = defaults.object(forKey: "automaticUpdateDownloadsEnabled") as? Bool ?? true
+        releaseNotesOnUpdateEnabled = defaults.object(forKey: "releaseNotesOnUpdateEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
         battleInvitesEnabled = defaults.object(forKey: "battleInvitesEnabled") as? Bool ?? true
