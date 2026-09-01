@@ -963,13 +963,14 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertTrue(progress.line.contains("shiny=1/3"), progress.line)
     }
 
-    /// 도전 탭(체육관·던전)은 혼자 하는 콘텐츠인데 대화가 못 봤다. 메뉴바 집중 앱에서 가장
-    /// 쓸모 있는 대사가 "오늘 던전 아직 안 갔어" 다. 입장·도전은 넣지 않는다 — 맵 이동과
-    /// 배틀 화면이 필요하고, 하루 한 판이라 승인 카드 한 번이 감당할 무게가 아니다.
+    /// 도전 탭(체육관·웨이브 런)은 혼자 하는 콘텐츠인데 대화가 못 봤다. 입장·도전은 넣지 않는다 —
+    /// 맵 이동과 배틀 화면이 필요해 승인 카드 한 번이 감당할 무게가 아니다.
+    ///
+    /// 런은 판마다 새로 뽑혀 "오늘 갔나" 라는 셀 값이 없다. 그래서 오늘의 열림 상태 대신
+    /// **누적 실적**(최고 웨이브·클리어 수)을 싣는다.
     func testChallengeStatusReportsTodaysDungeonBadgesAndMissions() async {
         let store = makeCompanionStore()
         await store.hatch(baseID: 25)
-        // 예산은 동행 타입으로 상성 보정을 받는다 — 타입이 없으면 아래 `unknown` 분기로 간다.
         store.debugSetLoadedTypes([.electric], speciesID: 25)
         let toolbox = PokemonChatToolbox(timer: FocusTimer(), companion: store,
                                          album: makeAlbum(), lookup: Self.emptyLookup)
@@ -977,7 +978,6 @@ final class PokemonChatToolTests: XCTestCase {
         let status = await toolbox.runAsActive(.challengeStatus)
 
         XCTAssertTrue(status.succeeded, status.line)
-        XCTAssertTrue(status.line.contains("dungeon=open"), status.line)
         // 총량은 카탈로그에서 온다 — 숫자를 여기 적으면 콘텐츠가 늘 때 문구만 옛말이 된다.
         // 배지 진행도가 아니라 체육관 타입 수를 싣는다: 체육관이 보상 없는 콘텐츠가 되면서
         // "몇 개 땄나" 가 셀 값이 아니게 됐다.

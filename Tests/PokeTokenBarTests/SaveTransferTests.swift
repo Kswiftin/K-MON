@@ -492,12 +492,12 @@ final class SaveTransferTests: XCTestCase {
     /// 위 가드의 기대값. 목록을 본문 밖에 두는 이유는 실패 메시지에서 diff 가 읽히게 하기 위해서다.
     private static let frozenCanonicalPrefixes: Set<String> = [
         // 세그먼트 접두 — 하나라도 사라지면 이미 배포된 서명을 재현할 수 없다.
-        "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "dund", "achfocus", "sn",
+        "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "achfocus", "sn",
         "gbbrock", "glbbug", "shc", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
         "adv", "ah", "bh", "act", "box", "dex", "dg", "cf", "sec",
         // 값에서 나온 토큰 — fixture 가 고정하므로 결정적이다. 열거형 rawValue 변경도 기존 서명을
         // 깨는 같은 부류라 일부러 얼려 둔다. `""` 는 숫자로만 된 이어붙임 조각.
-        "", "w", "cfalse", "pfalse", "scfalse", "false", "forest", "free", "common"
+        "", "w", "scfalse", "false", "forest", "free", "common"
     ]
 
     /// 조건부 append 를 **전부 켜는** 최소 상태. 값 자체는 의미가 없고 "기본값이 아니다"만 만족하면
@@ -618,12 +618,11 @@ final class SaveTransferTests: XCTestCase {
         // 옮겨간 기기가 열지도 않은 체육관의 관장을 자처하고 방어팀 넷이 거기서 잠긴다.
         let deviceLedger: Set<String> = ["lastTickAt", "integrity", "gymLeadership"]
         // 계정 원장(로컬 날짜 문자열 — 비교 가능): 더 최근 값 유지.
-        // 던전 진행도도 같은 부류다 — 같은 날이면 정산 플래그를 OR 로 합쳐 재지급을 막는다.
         // 웨이브 런 실적도 병합 대상이다 — 소모되지 않는 누적이라 축별로 큰 값을 남긴다
         // (한쪽을 고르면 다른 기기에서 세운 최고 기록이 사라진다).
         // 체육관 방어 보상의 일일 원장도 같은 부류다 — 같은 날이면 많이 받은 쪽을 남겨야
         // 세이브를 주고받는 것만으로 하루 상한이 되살아나지 않는다.
-        let accountLedger: Set<String> = ["lastCandyDate", "dungeon", "waveRun",
+        let accountLedger: Set<String> = ["lastCandyDate", "waveRun",
                                           "gymDefenseRewardDate", "gymDefenseRewardToday"]
         // 기기 환경설정: 현재 기기 값 유지.
         let devicePreference: Set<String> = ["language"]

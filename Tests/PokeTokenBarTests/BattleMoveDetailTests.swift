@@ -37,6 +37,8 @@ private func freshSleepPowder() -> MoveSpec {
     // 수렴 판정이 보는 축은 `drain` 이다(`CompanionStore.needsDetailRefresh`).
     move.drain = 0
     move.healing = 0
+    // 대상 슬러그도 수렴 판정이 보는 축이다 — 없으면 이 스펙은 "아직 덜 받았다" 로 읽힌다.
+    move.target = "selected-pokemon"
     move.flinchChance = 0
     return move
 }

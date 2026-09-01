@@ -151,6 +151,7 @@ final class BattlePhase5Tests: XCTestCase {
         XCTAssertTrue(CompanionStore.needsDetailRefresh(older),
                       "`healing` 은 `drain` 보다 늦게 생긴 축이라 따로 봐야 한다")
         older.healing = 0
+        older.target = "selected-pokemon"    // 대상 축도 "받아봤음" 으로 고정한다
         XCTAssertFalse(CompanionStore.needsDetailRefresh(older),
                        "다 받은 스펙을 또 받으면 로드마다 네트워크가 돈다")
     }

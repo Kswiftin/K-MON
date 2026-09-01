@@ -23,6 +23,7 @@ final class SelfHealingTests: XCTestCase {
         move.ailment = "none"; move.ailmentChance = 0
         move.statChanges = []; move.statChance = 0
         move.targetsUser = true; move.drain = 0; move.healing = healing
+        move.target = "user"        // 대상 슬러그도 수렴 판정이 보는 축이다
         return move
     }
 

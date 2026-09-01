@@ -229,6 +229,7 @@ final class MoveHoverTests: XCTestCase {
         good.targetsUser = false
         good.drain = 0
         good.healing = 0
+        good.target = "selected-pokemon"
         XCTAssertTrue(CompanionStore.needsDetailRefresh(bad))
         XCTAssertFalse(CompanionStore.needsDetailRefresh(good))
         XCTAssertTrue(CompanionStore.needsDetailRefresh(good.withoutDescriptions()))
@@ -244,6 +245,7 @@ final class MoveHoverTests: XCTestCase {
         fetchedEmpty.targetsUser = false
         fetchedEmpty.drain = 0          // Phase 5 축도 같은 이유로 고정한다
         fetchedEmpty.healing = 0
+        fetchedEmpty.target = "selected-pokemon"
         XCTAssertFalse(CompanionStore.needsDetailRefresh(fetchedEmpty),
                        "조회 결과가 빈 것뿐인데 매번 다시 받는다")
     }
