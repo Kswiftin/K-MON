@@ -78,6 +78,7 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
     var canStart: Bool {
         let runners = self.runners
         guard runners.count >= 2, runners.allSatisfy(\.isReady) else { return false }
+        if activity == .tournament { return runners.count >= 3 }
         if activity == .pokeathlon || activity == .pokemonQuiz { return true }
         if mode == .freeForAll { return true }
         return runners.count == 4 && runners.filter { $0.team == .red }.count == 2

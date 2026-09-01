@@ -4,8 +4,8 @@ enum TournamentEggReward: String, Codable, Sendable, Equatable {
     case standard, uncommon, rare
 
     static func forParticipants(_ count: Int) -> Self {
-        if count >= 6 { return .rare }
-        if count >= 4 { return .uncommon }
+        if count >= 7 { return .rare }
+        if count >= 5 { return .uncommon }
         return .standard
     }
 

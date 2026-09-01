@@ -19,11 +19,21 @@ final class PokemonTournamentTests: XCTestCase {
     func testRewardTierRisesWithEntrantsAndStopsBeforeLegendary() {
         XCTAssertEqual(TournamentEggReward.forParticipants(2), .standard)
         XCTAssertEqual(TournamentEggReward.forParticipants(3), .standard)
-        XCTAssertEqual(TournamentEggReward.forParticipants(4), .uncommon)
+        XCTAssertEqual(TournamentEggReward.forParticipants(4), .standard)
         XCTAssertEqual(TournamentEggReward.forParticipants(5), .uncommon)
-        XCTAssertEqual(TournamentEggReward.forParticipants(6), .rare)
+        XCTAssertEqual(TournamentEggReward.forParticipants(6), .uncommon)
+        XCTAssertEqual(TournamentEggReward.forParticipants(7), .rare)
         XCTAssertEqual(TournamentEggReward.forParticipants(8), .rare)
         XCTAssertEqual(TournamentEggReward.rare.guarantee, .rare)
+    }
+
+    func testTournamentNeedsAtLeastThreeReadyEntrants() throws {
+        var host = participant(); host.isReady = true
+        var lobby = try MultiplayerLobby(host: host, capacity: 8, activity: .tournament)
+        try lobby.join(participant())
+        XCTAssertFalse(lobby.canStart)
+        try lobby.join(participant())
+        XCTAssertTrue(lobby.canStart)
     }
 
     func testBracketProducesOneChampionForEverySupportedSize() throws {
