@@ -279,8 +279,8 @@ final class MaxLevelTests: XCTestCase {
                        "만렙 사탕은 사라지지 않고 별의조각으로 돌아와야 한다")
         // 피드백 배너가 단위를 알아야 한다 — 같은 숫자를 "+XP" 로 그리면 오르지도 않은 경험치를
         // 올랐다고 보여 준다.
-        XCTAssertTrue(s.candyFeedbackIsStardust, "환산분은 별의조각 단위로 알려야 한다")
-        XCTAssertEqual(s.candyFeedbackAmount, RareCandy.xp / expectedExperiencePerStarPiece,
+        XCTAssertEqual(s.candyFeedbackXP, 0, "만렙에서는 경험치로 들어간 몫이 없다")
+        XCTAssertEqual(s.candyFeedbackStardust, RareCandy.xp / expectedExperiencePerStarPiece,
                        "배너 금액도 XP 가 아니라 환산된 별의조각이다")
     }
 
@@ -296,8 +296,30 @@ final class MaxLevelTests: XCTestCase {
 
         XCTAssertEqual(s.state.active?.levelExperience, RareCandy.xp, "전제: 전량 적립됐다")
         XCTAssertEqual(s.state.starPieces, before, "상한 아래에서는 환산분이 없다")
-        XCTAssertFalse(s.candyFeedbackIsStardust, "여전히 경험치 단위로 알린다")
-        XCTAssertEqual(s.candyFeedbackAmount, RareCandy.xp)
+        XCTAssertEqual(s.candyFeedbackXP, RareCandy.xp, "여전히 경험치 단위로 알린다")
+        XCTAssertEqual(s.candyFeedbackStardust, 0)
+    }
+
+    /// **트리거 브랜치 — 사탕 하나가 상한을 걸친다.** 일부는 경험치로 들어가고 나머지만 환산되는데,
+    /// 배너는 `converted > 0 ? converted : RareCandy.xp` 로 **둘 중 하나만 골랐다**(#192). 그래서
+    /// 이 케이스에서 실제로 들어간 경험치가 통째로 화면에서 사라졌다.
+    ///
+    /// 만렙 시드와 상한 아래 시드만 두면 그 배타 선택도 계속 통과한다 — 위 두 대조군이 못 걸른
+    /// 자리가 정확히 여기다.
+    func testRareCandyStraddlingTheCapReportsBothUnits() async {
+        let clock = TestClock()
+        let s = store(clock)
+        await s.hatch(baseID: 20)
+        let room = 30_000_000                          // 사탕 100M 중 30M 만 들어갈 자리를 남긴다
+        s.debugAccrueLevelExperience(PokemonBalance.maxLevelExperience - room)
+        s.debugAddCandy(1)
+
+        XCTAssertEqual(s.useRareCandy(), .progressed)
+
+        XCTAssertEqual(s.candyFeedbackXP, room, "빈 자리만큼은 경험치로 들어갔다 — 숨기면 안 된다")
+        XCTAssertEqual(s.candyFeedbackStardust, (RareCandy.xp - room) / expectedExperiencePerStarPiece,
+                       "나머지는 환산분이다")
+        XCTAssertGreaterThan(s.candyFeedbackStardust, 0, "전제: 이 사용은 환산할 초과분을 만든다")
     }
 
     /// **범위 밖 결정 고정** — 트레이너 레벨(99) 초과 포인트는 환산하지 않는다(#82, 2026-09-01).
