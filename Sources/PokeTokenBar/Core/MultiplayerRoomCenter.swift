@@ -1051,6 +1051,11 @@ final class MultiplayerRoomCenter {
                     self.broadcastLobby()
                     if self.lobby?.activity == .tournament {
                         self.send(.tournamentPools(self.tournamentPools), over: connection)
+                        // 진행 중 들어온 관전자는 다음 턴 브로드캐스트까지 빈 로비에 머물면 채팅도
+                        // 경기 화면도 열 수 없다. 현재 대진을 이 연결에 즉시 동기화한다.
+                        if let state = self.tournamentState {
+                            self.send(.tournamentStart(state: state), over: connection)
+                        }
                     }
                     // 진행 중인 체육관 판이 있으면 **이 연결에만** 현재 상태를 보낸다. 브로드캐스트는
                     // 다음 행동 때나 오므로, 이게 없으면 방금 들어온 관전자는 판이 끝날 때까지

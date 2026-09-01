@@ -4,6 +4,8 @@ struct PokemonTournamentView: View {
     let store: CompanionStore
     let center: MultiplayerRoomCenter
     let onClose: () -> Void
+    @Environment(AppSettings.self) private var settings
+    @State private var animator = BattleAnimator()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -132,11 +134,16 @@ struct PokemonTournamentView: View {
         let amPlaying = mineIsA || mineIsB
         // 관전자는 대진표의 A를 왼쪽(내 편 자리)에 둔다. 참가자는 언제나 자기 팀이 내 편 자리에 온다.
         let viewingB = mineIsB
-        let myTeam = viewingB ? match.teamB : match.teamA
-        let theirTeam = viewingB ? match.teamA : match.teamB
+        let engineMyTeam = viewingB ? match.teamB : match.teamA
+        let engineTheirTeam = viewingB ? match.teamA : match.teamB
         let myActive = viewingB ? match.activeB : match.activeA
         let theirActive = viewingB ? match.activeA : match.activeB
         let myActor: BattleActor = viewingB ? .b : .a
+        let theirActor: BattleActor = viewingB ? .a : .b
+        let engineMine = ReplaySide(team: engineMyTeam.map(\.side), active: myActive)
+        let engineTheirs = ReplaySide(team: engineTheirTeam.map(\.side), active: theirActive)
+        let shownMine = animator.side(for: myActor) ?? engineMine
+        let shownTheirs = animator.side(for: theirActor) ?? engineTheirs
         let myName = viewingB ? match.nameB : match.nameA
         let theirName = viewingB ? match.nameA : match.nameB
         return VStack(alignment: .leading, spacing: 8) {
@@ -152,16 +159,17 @@ struct PokemonTournamentView: View {
                                "\(name)の勝利！次の対戦を準備します。"))
                     .font(.headline).frame(maxWidth: .infinity)
             }
-            if myTeam.indices.contains(myActive), theirTeam.indices.contains(theirActive) {
+            if let shownMySide = shownMine.side, let shownTheirSide = shownTheirs.side {
                 BattleArenaView(
-                    mine: myTeam[myActive].side,
-                    theirs: theirTeam[theirActive].side,
+                    mine: shownMySide,
+                    theirs: shownTheirSide,
                     myTitle: myName, theirTitle: theirName,
                     l: store.l, turn: match.turn,
-                    logLines: tournamentLogLines(match), myActor: myActor,
-                    switchSlots: SwitchStripModel.battleSlots(myTeam.map(\.side), active: myActive),
+                    logLines: tournamentLogLines(match, playedCount: animator.playedCount), myActor: myActor,
+                    switchSlots: SwitchStripModel.battleSlots(shownMine.team, active: shownMine.active),
                     turnEndsAt: center.turnEndsAt,
                     isWaitingForOpponent: amPlaying && match.submitted.contains(center.myID),
+                    overlay: animator.overlay,
                     calledMoves: (match.teamA + match.teamB).flatMap { $0.side.moves },
                     allowsActions: amPlaying && match.winnerID == nil,
                     showsForfeit: false,
@@ -171,22 +179,39 @@ struct PokemonTournamentView: View {
                     chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.myID,
                                                   isEnabled: true, unavailableMessage: nil, l: store.l,
                                                   onSend: center.sendChat))
+                .onAppear { replayTournament(match, mine: engineMine, theirs: engineTheirs,
+                                             myActor: myActor, theirActor: theirActor) }
+                .onChange(of: match.events.count) {
+                    replayTournament(match, mine: engineMine, theirs: engineTheirs,
+                                     myActor: myActor, theirActor: theirActor)
+                }
+                .onChange(of: match.id) {
+                    replayTournament(match, mine: engineMine, theirs: engineTheirs,
+                                     myActor: myActor, theirActor: theirActor)
+                }
             }
             bracket(state)
         }
     }
 
     /// 대진 하나(1v1)의 스트림을 로그 줄로 접는다 — `BattleLogSource.twoSided` 와 같은 결이지만,
-    /// 토너먼트는 `TournamentMatchState`에 그 턴의 원본 이벤트만 오므로 여기서 직접 접는다.
+    /// 토너먼트는 `TournamentMatchState`에 누적된 원본 이벤트가 오므로 재생기가 소비한 데까지만 접는다.
     /// 기술은 팀 전체(교체로 빠진 자리 포함)에서 id 로 찾는다 — 활성 자리만 보면, 그 턴에 쓰러져
     /// 교체된 포켓몬의 기술이 안 잡힌다.
-    private func tournamentLogLines(_ match: TournamentMatchState) -> [BattleLog.Line] {
+    private func tournamentLogLines(_ match: TournamentMatchState, playedCount: Int) -> [BattleLog.Line] {
         func moves(for actor: BattleActor) -> [MoveSpec] {
             (actor == .a ? match.teamA : match.teamB).flatMap { $0.side.moves }
         }
-        return BattleLog.lines(match.events, l: store.l,
+        return BattleLog.lines(Array(match.events.prefix(playedCount)), l: store.l,
                                name: { $0 == .a ? match.nameA : match.nameB },
                                move: { actor, id in moves(for: actor).first { $0.id == id } ?? .struggle() })
+    }
+
+    private func replayTournament(_ match: TournamentMatchState, mine: ReplaySide, theirs: ReplaySide,
+                                  myActor: BattleActor, theirActor: BattleActor) {
+        animator.sync(events: match.events, sides: [myActor: mine, theirActor: theirs],
+                      speed: BattleReplay.effectiveSpeed(settings.battleReplaySpeed,
+                        lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled))
     }
 
     private func bracket(_ state: PokemonTournamentState) -> some View {

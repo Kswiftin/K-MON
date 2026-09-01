@@ -120,4 +120,30 @@ final class PokemonTournamentTests: XCTestCase {
         XCTAssertEqual(engine.snapshot().teamA.map(\.snapshot.level), [50])
         XCTAssertEqual(engine.snapshot().teamB.map(\.snapshot.level), [50])
     }
+
+    func testTournamentSnapshotKeepsTheWholeEventStreamForSpectatorEffects() {
+        let a = TournamentEntrant(id: UUID(), trainerName: "A", speciesID: 1)
+        let b = TournamentEntrant(id: UUID(), trainerName: "B", speciesID: 4)
+        let move = MoveSpec(id: 33, names: ["en": "Tackle"], type: .normal, power: 1,
+                            damageClass: .physical, accuracy: nil, pp: 35)
+        func snapshot(_ id: Int) -> BattleSnapshot {
+            BattleSnapshot(speciesID: id, name: "Mon", level: 50, isShiny: false, types: [.normal],
+                           base: BattleStats(hp: 500, atk: 10, def: 500, spa: 10, spd: 500, spe: id),
+                           moves: [move])
+        }
+        var engine = TournamentMatchEngine(round: 1, playerA: a, playerB: b,
+                                           teamA: [snapshot(1)], teamB: [snapshot(4)], seed: 7)
+
+        XCTAssertTrue(engine.submit(.move(index: 0), from: a.id))
+        XCTAssertTrue(engine.submit(.move(index: 0), from: b.id))
+        XCTAssertNil(engine.resolveIfReady())
+        let firstTurnCount = engine.snapshot().events.count
+        XCTAssertGreaterThan(firstTurnCount, 0)
+
+        XCTAssertTrue(engine.submit(.move(index: 0), from: a.id))
+        XCTAssertTrue(engine.submit(.move(index: 0), from: b.id))
+        XCTAssertNil(engine.resolveIfReady())
+        XCTAssertGreaterThan(engine.snapshot().events.count, firstTurnCount,
+                             "관전자 재생기는 이전 턴 뒤에 추가된 이벤트를 받아야 한다")
+    }
 }

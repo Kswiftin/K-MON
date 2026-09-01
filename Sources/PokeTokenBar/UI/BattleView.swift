@@ -57,6 +57,8 @@ struct BattleView: View {
             waitingView(peer: peer)
         case .incoming(let peer):
             incomingView(peer: peer)
+        case .poolSelecting(let peer):
+            poolSelectingView(peer: peer)
         case .teamBuilding(let peer):
             teamBuildingView(peer: peer, waiting: false)
         case .poolBuilding(let peer):
@@ -649,10 +651,10 @@ struct BattleView: View {
                 }
                 .font(.caption2)
             }
-            if store.deployableMons.count < 6 || center.pickedTeam.count != 6 {
-                Text(l.t("수락하려면 먼저 후보 포켓몬 6마리를 선택하세요.",
-                         "Choose six candidate Pokémon before accepting.",
-                         "承認する前に候補のポケモンを6匹選んでください。"))
+            if store.deployableMons.count < 6 {
+                Text(l.t("배틀을 수락하려면 포켓몬이 6마리 필요합니다.",
+                         "You need six Pokémon to accept this battle.",
+                         "バトルを承認するにはポケモンが6匹必要です。"))
                     .font(.caption2).foregroundStyle(.orange)
             } else if let error = center.lastError {
                 Text(error).font(.caption2).foregroundStyle(.orange)
@@ -662,13 +664,39 @@ struct BattleView: View {
                 Button(l.battleAccept) { center.acceptIncoming() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .disabled(store.deployableMons.count < 6 || center.pickedTeam.count != 6)
+                    .disabled(store.deployableMons.count < 6)
                 Button(l.battleDecline) { center.declineIncoming() }
                     .controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
+    }
+
+    private func poolSelectingView(peer: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(l.t("공개할 후보 6마리", "Choose Six Candidates", "公開する候補6匹"),
+                  systemImage: "square.grid.3x2.fill")
+                .font(.headline)
+            Text(l.t("\(peer)님에게 공개할 포켓몬 6마리를 선택하세요. 서로의 후보가 준비되면 실제 출전 파티를 고릅니다.",
+                     "Choose six Pokémon to reveal to \(peer). After both pools are ready, choose the actual battle team.",
+                     "\(peer)に公開する6匹を選んでください。両方の候補が揃ったら実際の出場パーティを選びます。"))
+                .font(.caption).foregroundStyle(.secondary)
+            TeamPicker(store: store,
+                       selection: Binding(get: { center.incomingPickedTeam },
+                                          set: { center.incomingPickedTeam = $0 }),
+                       limit: 6)
+            if let error = center.lastError { Text(error).font(.caption2).foregroundStyle(.orange) }
+            HStack {
+                Button(l.battleCancel) { center.cancelChallenge() }
+                Spacer()
+                Text("\(center.incomingPickedTeam.count) / 6")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Button(l.t("후보 공개", "Reveal Candidates", "候補を公開")) { center.confirmBattlePool() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(center.incomingPickedTeam.count != 6)
+            }
+        }.padding(.vertical, 4)
     }
 
     private func teamBuildingView(peer: String, waiting: Bool) -> some View {
