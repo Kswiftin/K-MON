@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import UserNotifications
 
 struct MultiplayerRoomPeer: Identifiable, Equatable {
     let id: String
@@ -122,7 +123,7 @@ final class MultiplayerRoomCenter {
     private var rewardedBattle = false
     /// 한 턴에 주는 시간. 1v1 LAN 도 같은 값을 쓴다(`BattleCenter.turnDuration`) — 두 모드의
     /// 체감이 갈리면 같은 앱에서 다른 게임을 하는 것처럼 느껴진다.
-    static let turnDuration: TimeInterval = 30
+    static let turnDuration: TimeInterval = 10
 
     init(companion: CompanionStore) { self.companion = companion }
 
@@ -174,18 +175,53 @@ final class MultiplayerRoomCenter {
     /// 발견은 즉시가 아니므로 둘이 동시에 눌러 둘 다 열릴 수 있다. 그 경합은 개설 직후
     /// `resolveGymRoomConflict()` 가 흡수한다.
     func createGymRoom() {
-        guard visibleGymRoom == nil else { lastError = companion.l.playerGymAlreadyOpen; return }
+        guard gymRoomHoldingTheSlot == nil else { lastError = companion.l.playerGymAlreadyOpen; return }
         createRoom(mode: .freeForAll, activity: .gym)
     }
 
-    /// 지금 보이는 남의 체육관 방(내 것은 제외).
+    /// 지금 보이는 남의 체육관 방(내 것은 제외). **붙을 수 있는 방을 먼저** 고른다 — 구버전 방이
+    /// 목록 앞에 있다고 그것만 보여 주면, 바로 옆에 있는 멀쩡한 체육관을 못 찾는다.
     var visibleGymRoom: MultiplayerRoomPeer? {
         // **원문**(`serviceName`)으로 본다. `name` 은 `#` 앞에서 잘려 있어 내 방을 걸러낼 수 없다.
-        rooms.first { PlayerGym.isGymRoomName($0.serviceName) && !$0.serviceName.contains(myIDTag) }
+        let gyms = rooms.filter { PlayerGym.isGymRoomName($0.serviceName) && !$0.serviceName.contains(myIDTag) }
+        return gyms.first { compatibility(of: $0).allowsChallenge } ?? gyms.first
+    }
+
+    /// **체육관 한 자리를 이미 차지하고 있는 방.** 개설 차단·자격 양보·경합 판정이 모두 이걸 본다.
+    ///
+    /// 상대 앱이 낮은 방은 자리를 차지하지 못한다 — 그렇게 세면 구버전 한 대가 최신 사용자
+    /// 전원의 체육관을 잠근다(붙지도 못하는 방 때문에 아무도 못 연다).
+    var gymRoomHoldingTheSlot: MultiplayerRoomPeer? {
+        rooms.first {
+            PlayerGym.isGymRoomName($0.serviceName) && !$0.serviceName.contains(myIDTag)
+                && compatibility(of: $0).blocksOpeningMyGym
+        }
+    }
+
+    /// 화면에 보여 줄 방과 내 앱의 관계. 도전 버튼과 안내 문구가 이 값을 고른다.
+    var visibleGymCompatibility: GymRoomCompatibility? {
+        visibleGymRoom.map(compatibility(of:))
+    }
+
+    /// **내 앱이 체육관을 쓰기엔 낮은가.** 보이는 체육관 중 하나라도 나보다 높은 프로토콜을
+    /// 광고하면 참이다 — 그 상태에서는 도전도 개설도 막고 업데이트를 안내한다.
+    var isOutdatedForGym: Bool {
+        rooms.contains {
+            PlayerGym.isGymRoomName($0.serviceName) && !$0.serviceName.contains(myIDTag)
+                && compatibility(of: $0) == .myAppIsOutdated
+        }
+    }
+
+    private func compatibility(of room: MultiplayerRoomPeer) -> GymRoomCompatibility {
+        PlayerGym.compatibility(roomVersion: PlayerGymRoomName.parse(room.serviceName)?.protocolVersion)
     }
 
     /// 내 방을 남의 목록에서 가려내는 꼬리표 — 방 이름에 이미 들어 있다(`startHosting`).
-    private var myIDTag: String { "#\(String(myID.uuidString.prefix(6)))" }
+    private var myIDTag: String { "#\(myRoomTag)" }
+
+    /// 방 이름 끝에 실리는 내 식별자(`#` 없이). 경합 판정이 남의 꼬리표(`PlayerGymRoomName.idTag`)와
+    /// **같은 형식으로** 비교해야 해서 밖으로 낸다.
+    var myRoomTag: String { String(myID.uuidString.prefix(6)) }
 
     func startSoloPokemonQuiz() {
         guard phase == .idle else { return }
@@ -324,7 +360,33 @@ final class MultiplayerRoomCenter {
     ///
     /// 체육관은 `phase` 가 `.hosting` 인 채로 판이 돌아 `isInPlay` 에 안 잡힌다. 그래서 이 값이
     /// 따로 있다. 진행 중인 판만 본다 — 관장이 도전을 기다리는 동안까지 창을 띄우면 성가시다.
-    var wantsForegroundWindow: Bool { hasLiveGymMatch || isInPlay }
+    var wantsForegroundWindow: Bool { (hasLiveGymMatch && !isGymDefenseFoughtByAI) || isInPlay }
+
+    /// AI 가 대신 싸우는 내 방어전인가. 관장이 고를 것이 없는데도 도전 시작·교체·기술 선택마다
+    /// `gymMatch` 스냅샷이 갱신되고, 그때마다 창이 강제로 열려 하던 일이 끊겼다. 이 경우엔
+    /// 창 대신 알림 하나만 띄운다(`postGymBattleNotification`).
+    var isGymDefenseFoughtByAI: Bool {
+        guard let match = gymMatch, match.winnerID == nil, match.leaderID == myID else { return false }
+        return companion.gymLeadership?.usesAI == true
+    }
+
+    /// 턴 행동을 기다리는 방 컨텐츠가 도는가 — 체육관 판이거나 방 배틀·토너먼트다.
+    /// 포켓슬론·퀴즈는 턴제가 아니지만 `isInPlay` 에 함께 묶여 있고, 그쪽은 아래
+    /// `awaitsMyBattleAction` 이 `hasSubmittedAction` 으로 갈라 준다.
+    var isAwaitingBattleTurn: Bool { hasLiveGymMatch || isInPlay }
+
+    /// 지금 **내가 골라야 하는** 턴인가. 창이 닫혀 있으면 이 값이 참인 동안 다시 열어 준다 —
+    /// 안 그러면 턴 마감이 대신 제출해 사람이 고를 기회를 잃는다.
+    var awaitsMyBattleAction: Bool {
+        if let match = gymMatch {
+            guard match.winnerID == nil, match.leaderID == myID || match.challengerID == myID else { return false }
+            // AI 가 대신 싸우는 판은 내 차례가 아니다. `submitted` 로만 가르면 턴이 해상된 직후
+            // AI 가 채우기 **전에** 뿌려지는 스냅샷 한 장에 걸려 창이 매 턴 다시 열린다.
+            guard !isGymDefenseFoughtByAI else { return false }
+            return !match.submitted.contains(myID)
+        }
+        return isInPlay && !hasSubmittedAction
+    }
 
     /// 체육관 판이 지금 돌고 있나. 도전이 들어오면 **화면을 그쪽으로 데려가야** 하는 유일한
     /// 방 컨텐츠라 따로 둔다 — 나머지(토너먼트·포켓슬론·퀴즈)는 사용자가 그 화면에서 직접
@@ -515,12 +577,21 @@ final class MultiplayerRoomCenter {
     /// 체육관에 들어가 **곧바로 도전한다.** 입장과 도전을 나누면 "도전" 버튼이 두 번 뜨고,
     /// 첫 번째를 누른 사람은 두 번째가 왜 또 필요한지 알 수 없다.
     func joinAndChallengeGym(_ room: MultiplayerRoomPeer) {
+        // 프로토콜이 다르면 붙어 봐야 입장에서 거절된다 — 그 왕복을 돌기 전에 여기서 끊고
+        // 이유를 말한다. 화면도 같은 판정으로 버튼을 잠그지만, 규칙은 여기 한 곳에 둔다.
+        guard compatibility(of: room).allowsChallenge else {
+            lastError = companion.l.gymVersionMismatch; return
+        }
         pendingGymChallenge = true
         join(room, as: .runner)
     }
 
     func challengeGym() {
-        guard phase == .joined, gymMatch == nil else { return }
+        guard phase == .joined else { return }
+        // 이미 남의 판이 돌고 있으면 도전을 **보내지 않는다.** 예전엔 여기서 조용히 돌아서
+        // 버튼을 눌러도 아무 일도 안 일어난 것처럼 보였다 — 관장에게 물어볼 것도 없이
+        // 아는 사실이므로 그 자리에서 사유를 세운다.
+        guard gymMatch == nil else { gymRejection = .busy; return }
         gymRejection = nil
         Task {
             guard let lineup = await buildGymLineup() else {
@@ -569,7 +640,24 @@ final class MultiplayerRoomCenter {
         gymMatch = engine.snapshot()
         broadcastGymState()
         scheduleTurnTimeout()
+        if companion.gymLeadership?.usesAI == true { postGymBattleNotification(challengerName: challengerName) }
         applyGymLeaderAutoActionIfNeeded()
+    }
+
+    /// AI 방어는 창을 띄우지 않으므로(`isGymDefenseFoughtByAI`) 도전이 들어온 사실을 알릴 곳이
+    /// 여기뿐이다. 판당 한 번만 띄운다 — 턴마다 띄우면 창이 열리던 때와 똑같이 성가시다.
+    private func postGymBattleNotification(challengerName: String) {
+        guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false), AppEnv.isBundledApp else { return }
+        guard let matchID = gymMatch?.matchID else { return }
+        let content = UNMutableNotificationContent()
+        content.title = companion.l.t("체육관 배틀 중입니다", "Gym battle in progress", "ジム戦が進行中です")
+        content.body = companion.l.t("\(challengerName) 님의 도전을 AI 가 방어하고 있습니다.",
+                                     "\(challengerName) is challenging — your AI is defending.",
+                                     "\(challengerName) さんの挑戦を AI が防衛中です。")
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "gym-battle-\(matchID.uuidString)",
+                                  content: content, trigger: nil))
     }
 
     /// 내 행동 제출 — 관장이든 도전자든 같은 입구다.
@@ -658,8 +746,12 @@ final class MultiplayerRoomCenter {
     /// 프로덕션 호출 경로는 없다(수신 루프가 같은 일을 한다).
     func debugApplyGymState(_ match: GymMatchState) {
         gymMatch = match
+        if match.challengerID == myID { gymRejection = nil }
         if match.winnerID != nil { scheduleGymMatchClear() }
     }
+
+    /// 테스트 전용 — 게스트가 `.gymRejected` 를 받은 것과 같은 자리를 지난다.
+    func debugApplyGymRejection(_ reason: GymChallengeRejection) { gymRejection = reason }
 
     /// 끝난 판을 잠시 뒤 치운다 — 관장은 다음 도전을 받을 수 있게, 도전자·관전자는 결과 화면에서
     /// 빠져나올 수 있게. 승계로 방이 닫히는 경우는 `leaveRoom()` 이 대신 정리한다.
@@ -983,7 +1075,7 @@ final class MultiplayerRoomCenter {
         }
         // 체육관만 이름에 재임 시작 시각을 함께 싣는다 — 방 광고에 TXT 가 없어, 목록에서
         // "누가 몇 분째 지키는지"를 접속 없이 보여줄 통로가 이름뿐이다.
-        let idTag = String(myID.uuidString.prefix(6))
+        let idTag = myRoomTag
         let serviceName: String
         if lobby?.activity == .gym {
             serviceName = PlayerGymRoomName.make(
@@ -1037,7 +1129,10 @@ final class MultiplayerRoomCenter {
             switch message {
             case .join(let version, let participant, let snapshot):
                 guard id == nil, version == MultiplayerWireMessage.protocolVersion else {
-                    self.send(.rejected(reason: "호환되지 않는 방입니다."), over: connection); connection.cancel(); return
+                    // 버전이 갈렸다는 사실만 말하면 무엇을 해야 할지 알 수 없다 — 이 문구가
+                    // 구버전 상대의 화면에 그대로 뜨는 유일한 통로다.
+                    self.send(.rejected(reason: self.companion.l.gymVersionMismatch), over: connection)
+                    connection.cancel(); return
                 }
                 guard MultiplayerValidation.valid(participant: participant, snapshot: snapshot) else {
                     self.send(.rejected(reason: "잘못된 참가자 정보입니다."), over: connection); connection.cancel(); return
@@ -1173,7 +1268,10 @@ final class MultiplayerRoomCenter {
             case .gymState(let match):
                 let previousTurn = self.gymMatch?.turn
                 self.gymMatch = match
-                self.gymRejection = nil
+                // **내 도전이 받아들여졌을 때만** 사유를 지운다. 관장은 남의 판이 도는 내내
+                // 상태를 뿌리므로, 무조건 지우면 방금 받은 "이미 도전 중입니다" 가 다음 턴
+                // 방송에 곧바로 덮여 화면에서 사라졌다.
+                if match.challengerID == self.myID { self.gymRejection = nil }
                 if match.turn != previousTurn {
                     self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 }

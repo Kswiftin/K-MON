@@ -52,11 +52,18 @@ struct PlayerGymView: View {
     }
 
     @ViewBuilder private var notices: some View {
-        if coordinator.blockedByExistingGym {
-            noticeRow(l.playerGymAlreadyOpen, tint: .orange)
-        }
-        if coordinator.yieldedToExistingGym {
-            noticeRow(l.playerGymAlreadyOpen, tint: .secondary)
+        // 내 앱이 낮다는 것이 그 순간의 **지배적인 사실**이다 — "이미 열린 체육관이 있습니다" 로
+        // 대신 말하면 업데이트하면 된다는 걸 알 수 없다. 그래서 그때는 이 문구만 남긴다.
+        if coordinator.needsAppUpdateForGym {
+            noticeRow(store.isGymLeader ? l.playerGymUpdateRequiredAsLeader : l.playerGymUpdateRequired,
+                      tint: .orange)
+        } else {
+            if coordinator.blockedByExistingGym {
+                noticeRow(l.playerGymAlreadyOpen, tint: .orange)
+            }
+            if coordinator.yieldedToExistingGym {
+                noticeRow(l.playerGymAlreadyOpen, tint: .secondary)
+            }
         }
         if center.gymLeaderAbandonedMatch {
             VStack(alignment: .leading, spacing: 6) {
@@ -108,13 +115,18 @@ struct PlayerGymView: View {
                              "Pick four Pokémon and challenge.",
                              "4体を選んで挑戦してください。"))
                         .font(.caption2).foregroundStyle(.secondary)
+                    // 프로토콜이 갈리면 붙어도 입장에서 거절된다 — 누르기 전에 이유를 말한다.
+                    if center.visibleGymCompatibility == .theirAppIsOutdated {
+                        noticeRow(l.playerGymPeerNeedsUpdate, tint: .orange)
+                    }
                     HStack {
                         // 입장과 도전을 한 번에 한다 — 나누면 "도전" 버튼이 두 번 뜨고,
                         // 첫 번째를 누른 사람은 두 번째가 왜 또 필요한지 알 수 없다.
                         Button(l.playerGymChallenge) { center.joinAndChallengeGym(room) }
                             .buttonStyle(.borderedProminent).controlSize(.small)
                             .disabled(center.gymPickedTeam.count != PlayerGym.defenseTeamSize
-                                      || center.phase != .idle)
+                                      || center.phase != .idle
+                                      || center.visibleGymCompatibility?.allowsChallenge == false)
                         Button(l.playerGymSpectate) { center.join(room, as: .spectator) }
                             .controlSize(.small)
                             .disabled(center.phase != .idle)
@@ -148,14 +160,22 @@ struct PlayerGymView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Button(l.playerGymOpen) { coordinator.openGym() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
+                    .disabled(coordinator.needsAppUpdateForGym)
             }
             // 입장했는데 아직 판이 안 섰으면 기다리는 중이다 — 여기에 "도전" 버튼을 또 두면
             // 같은 이름의 버튼이 두 번 뜬다.
-            if center.phase == .joined, center.gymMatch == nil, center.gymRejection == nil {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text(l.t("도전을 보내는 중…", "Sending your challenge…", "挑戦を送信中…"))
-                        .font(.caption).foregroundStyle(.secondary)
+            if center.phase == .joined, center.gymMatch == nil {
+                if center.gymRejection == nil {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text(l.t("도전을 보내는 중…", "Sending your challenge…", "挑戦を送信中…"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    // 거절당한 채 방에 남아 있으면 목록의 도전 버튼이 계속 잠긴다
+                    // (`phase != .idle`). 나가야 다시 누를 수 있으므로 그 문을 여기 둔다.
+                    Button(l.playerGymLeaveAndRetry) { center.leaveRoom() }
+                        .controlSize(.small)
                 }
             }
             // 자리를 내준 뒤에도 누가 꺾었는지는 봐야 한다 — 기록은 자격과 무관하게 남는다.
@@ -267,6 +287,8 @@ struct PlayerGymView: View {
             Text("\(match.leaderName)  VS  \(match.challengerName)")
                 .font(.caption.bold()).frame(maxWidth: .infinity)
 
+            if amLeader, match.winnerID == nil { aiHandoffControl }
+
             if let winner = match.winnerID {
                 let name = winner == match.leaderID ? match.leaderName : match.challengerName
                 Text(l.t("\(name) 승리!", "\(name) wins!", "\(name)の勝利！"))
@@ -286,6 +308,25 @@ struct PlayerGymView: View {
                             myActive: myActive, theirActive: theirActive, amLeader: amLeader)
             } else if mine.indices.contains(myActive) || !theirs.isEmpty {
                 spectatorArena(match)
+            }
+        }
+    }
+
+    /// 판이 도는 동안 AI 를 끄고 직접 싸우거나, 다시 맡기는 자리. 설정 화면(`leaderSetup`)은 판이
+    /// 서면 통째로 가려지므로 여기 두지 않으면 배틀이 끝날 때까지 바꿀 방법이 없다.
+    ///
+    /// **바뀌는 것은 다음 턴부터다** — 이번 턴 관장 몫은 AI 가 판이 열리는 즉시 채워 두었고,
+    /// `GymMatchEngine.submit` 이 `myAction == nil` 을 요구해 되돌릴 수 없다. 도전자가 이미 낸
+    /// 행동을 상대 사정으로 무르는 것도 옳지 않다.
+    @ViewBuilder private var aiHandoffControl: some View {
+        let usesAI = store.gymLeadership?.usesAI ?? false
+        VStack(alignment: .leading, spacing: 2) {
+            Button(usesAI ? l.playerGymTakeOverFromAI : l.playerGymHandBackToAI) {
+                store.setGymUsesAI(!usesAI)
+            }
+            .controlSize(.small)
+            if usesAI {
+                Text(l.playerGymTakeOverNextTurn).font(.caption2).foregroundStyle(.secondary)
             }
         }
     }

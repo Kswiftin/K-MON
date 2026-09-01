@@ -67,7 +67,8 @@ struct ReplayOverlay: Equatable, Sendable {
 /// 애니메이션 자체는 뷰가 그리지만, 큐(무엇을 · 얼마나 · 그때 HP 는 얼마인가)는 여기 순수 함수로
 /// 두어야 테스트가 붙는다 — UI 결함은 컴파일과 단위 테스트를 통과한다(defect-log).
 enum BattleReplay {
-    /// 한 배치(대개 한 턴)의 재생 상한(초). 턴 타이머가 30초라 재생이 그 시간을 잡아먹으면 안 된다.
+    /// 한 배치(대개 한 턴)의 재생 상한(초). 턴 타이머(`MultiplayerRoomCenter.turnDuration`)가
+    /// 10초라 재생이 그 시간을 잡아먹으면 안 된다 — 이 값을 늘릴 땐 그 상한도 같이 본다.
     /// 이벤트가 많은 턴(혼란 자멸 + 양쪽 잔뎀 + 기절)은 이 상한에 맞춰 비율대로 줄어든다.
     static let budget: TimeInterval = 2.4
 

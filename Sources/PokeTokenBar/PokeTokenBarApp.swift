@@ -131,6 +131,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private func observeBattleWindow() {
         withObservationTracking {
             _ = battleCenter.wantsForegroundWindow
+            // 턴이 넘어간 것도 창을 여는 사건이다. 이걸 안 보면 1:1 LAN 은 `wantsForegroundWindow`
+            // 가 읽는 값이 턴마다 안 바뀌어 관찰이 다시 울리지 않았고, 한 번 닫힌 창이 배틀이
+            // 끝날 때까지 닫힌 채 남아 자동 제출로 판을 잃었다.
+            _ = battleCenter.wantsWindowReopened
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -160,7 +164,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private func applyBattleWindow() {
         guard battleCenter.wantsForegroundWindow else { return }
 
-        if !popover.isShown { openPopover() }
+        // 닫힌 창을 되살리는 것은 **내가 골라야 할 때**뿐이다 — 이미 낸 뒤에도 열면 닫아도 곧바로
+        // 되살아난다. 열려 있으면 이 판정과 무관하게 아래 화면 이동은 그대로 한다.
+        if !popover.isShown {
+            guard battleCenter.wantsWindowReopened else { return }
+            openPopover()
+        }
         if battleCenter.activeGym != nil {
             navigation.goToGymBattle()
         } else if battleCenter.multiplayer.hasLiveGymMatch {

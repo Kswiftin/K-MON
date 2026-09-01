@@ -251,9 +251,35 @@ final class CompanionStore {
         let eligible = intrinsic.count > 1 && !timed.isEmpty ? timed : intrinsic
         guard !eligible.isEmpty else { return nil }
         let nextIndex = mon.stageIndex + 1
-        return mon.plannedPathIDs.indices.contains(nextIndex)
+        let planned = mon.plannedPathIDs.indices.contains(nextIndex)
             ? eligible.first(where: { $0.speciesID == mon.plannedPathIDs[nextIndex] })
             : eligible.first
+        guard let planned else { return nil }
+        return levelOpenedSibling(insteadOf: planned, among: eligible, mon: mon) ?? planned
+    }
+
+    /// 계획된 갈래가 **키워서는 절대 안 열리는데**(돌·교환) 이미 레벨 조건을 채운 형제 갈래가
+    /// 있으면 그 형제를 돌려준다.
+    ///
+    /// 계획(`plannedPathIDs`)은 도감을 채우기 좋은 쪽을 고르는 **선호**지 잠금이 아니다. 실제로
+    /// 아이템 진화는 이미 계획을 무시하고 그 아이템이 여는 갈래로 간다(`useEvolutionItem`).
+    /// 레벨 갈래만 계획에 묶여 있던 탓에, 야돈처럼 한쪽이 레벨(야도란 Lv.37)이고 다른 쪽이
+    /// 교환(야도킹·왕의징표석)인 종은 계획이 교환 쪽을 고른 순간 **레벨을 아무리 올려도 아무 일도
+    /// 일어나지 않았다.** 아이템을 구하기 전까지 막다른 길이고, 화면은 그 이유를 말하지 않았다.
+    private func levelOpenedSibling(insteadOf planned: EvoNode, among candidates: [EvoNode],
+                                    mon: MonState) -> EvoNode? {
+        guard !Self.opensByLevelingUp(planned) else { return nil }
+        return candidates.first { sibling in
+            sibling.speciesID != planned.speciesID
+                && Self.routeMatches(sibling, mon: mon, date: clock())
+                && (sibling.evolutionLevel.map { mon.level >= $0 } ?? false)
+        }
+    }
+
+    /// 키우기만 해서 넘어갈 수 있는 갈래인가. 돌·교환처럼 물건이 있어야 하는 갈래는 거짓이다.
+    private static func opensByLevelingUp(_ node: EvoNode) -> Bool {
+        node.evolutionKnownMoveID != nil || node.evolutionLevel != nil
+            || node.evolutionTrigger == "level-up"
     }
 
     var nextEvolutionLevel: Int? { nextEvolutionNode?.evolutionLevel }
@@ -2373,7 +2399,9 @@ final class CompanionStore {
                let planned = node.children.first(where: {
                    $0.speciesID == a.plannedPathIDs[nextIndex] && Self.routeMatches($0, mon: a, date: clock())
                }) {
-                next = planned
+                // 계획이 돌·교환 갈래를 골랐어도, 이미 레벨 조건을 채운 형제 갈래가 있으면 그쪽이
+                // 열린다 — 안 그러면 물건을 구할 때까지 막다른 길이다(`levelOpenedSibling`).
+                next = levelOpenedSibling(insteadOf: planned, among: node.children, mon: a) ?? planned
             } else {
                 guard let picked = pickPlannedChild(node, baseID: a.baseID) else { break }
                 next = picked

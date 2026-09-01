@@ -441,15 +441,135 @@ final class PlayerGymTests: XCTestCase {
 
     // MARK: 단일성 판정
 
-    /// 경합 판정은 **양쪽이 같은 답을 내야** 한다. 발견 시각처럼 기기마다 다른 값을 쓰면
-    /// 둘 다 닫거나 둘 다 남는다.
-    func testTheSurvivorTieBreakIsSymmetric() {
-        let one = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-        let other = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+    /// 경합 판정은 **양쪽이 같은 답을 내야** 한다. 한쪽만 물러나고 다른 쪽은 남아야 한다 —
+    /// 둘 다 물러나면 체육관이 사라지고, 둘 다 남으면 둘이 된다.
+    func testOnlyTheLaterGymYields() {
+        let early = Date(timeIntervalSince1970: 1_756_000_000)
+        let late = early.addingTimeInterval(30)
 
-        XCTAssertEqual(PlayerGym.survivor(one, other), PlayerGym.survivor(other, one),
-                       "인자 순서가 답을 바꾸면 두 기기가 다른 결론을 낸다")
-        XCTAssertEqual(PlayerGym.survivor(one, other), one)
+        XCTAssertTrue(PlayerGym.yieldsToOtherGym(myHeldSince: late, myRoomTag: "aaaaaa",
+                                                 otherHeldSince: early, otherRoomTag: "zzzzzz"),
+                      "늦게 연 쪽이 물러난다 — 식별자가 앞서도 마찬가지다")
+        XCTAssertFalse(PlayerGym.yieldsToOtherGym(myHeldSince: early, myRoomTag: "zzzzzz",
+                                                  otherHeldSince: late, otherRoomTag: "aaaaaa"),
+                       "먼저 연 쪽은 남는다")
+    }
+
+    /// **회귀**: 배틀로 딴 체육관이 방어팀을 세우는 사이 남이 새로 연 체육관에 밀렸다.
+    /// 자리를 딴 시각이 더 이르므로 새 체육관 쪽이 물러나야 한다.
+    func testAGymOpenedLaterDoesNotDisplaceOneWonEarlier() {
+        let wonAt = Date(timeIntervalSince1970: 1_756_000_000)
+        let openedLater = wonAt.addingTimeInterval(5)
+
+        XCTAssertFalse(PlayerGym.yieldsToOtherGym(myHeldSince: wonAt, myRoomTag: "aaaaaa",
+                                                  otherHeldSince: openedLater, otherRoomTag: "000000"),
+                       "세팅 중이어도 먼저 딴 체육관이 남는다")
+        XCTAssertTrue(PlayerGym.yieldsToOtherGym(myHeldSince: openedLater, myRoomTag: "000000",
+                                                 otherHeldSince: wonAt, otherRoomTag: "aaaaaa"),
+                      "나중에 연 쪽이 물러난다")
+    }
+
+    /// 같은 초에 열렸으면 식별자로 가른다 — 그 값도 양쪽이 방 이름의 같은 자리에서 읽는다.
+    func testGymsOpenedInTheSameSecondBreakTheTieByRoomTag() {
+        let at = Date(timeIntervalSince1970: 1_756_000_000)
+
+        XCTAssertTrue(PlayerGym.yieldsToOtherGym(myHeldSince: at, myRoomTag: "bbbbbb",
+                                                 otherHeldSince: at, otherRoomTag: "aaaaaa"))
+        XCTAssertFalse(PlayerGym.yieldsToOtherGym(myHeldSince: at, myRoomTag: "aaaaaa",
+                                                  otherHeldSince: at, otherRoomTag: "bbbbbb"))
+    }
+
+    /// 옛 형식 방 이름(`GYM · 이름#식별자`)에는 재임 시각이 없다. 그래도 정확히 한쪽만 물러나야
+    /// 한다 — 판정을 포기하면 체육관이 둘로 남는다.
+    func testOldFormatRoomsStillResolveByRoomTag() {
+        let at = Date(timeIntervalSince1970: 1_756_000_000)
+        let oldName = "\(PlayerGym.roomNamePrefix) · 현우#abc123"
+
+        XCTAssertNil(PlayerGymRoomName.parse(oldName), "옛 형식은 재임 시각이 없다")
+        XCTAssertEqual(PlayerGymRoomName.idTag(fromRoomName: oldName), "abc123",
+                       "식별자는 옛 형식에서도 읽혀야 한다")
+        XCTAssertTrue(PlayerGym.yieldsToOtherGym(myHeldSince: at, myRoomTag: "zzzzzz",
+                                                 otherHeldSince: nil, otherRoomTag: "abc123"))
+        XCTAssertFalse(PlayerGym.yieldsToOtherGym(myHeldSince: at, myRoomTag: "aaaaaa",
+                                                  otherHeldSince: nil, otherRoomTag: "abc123"))
+    }
+
+    /// 방 이름에 실리는 재임 시각은 **초로 잘려** 온다(`PlayerGymRoomName.make`). 내 것만 소수점까지
+    /// 비교하면 양쪽이 서로 자기가 늦었다고 읽어 **둘 다 물러난다.**
+    func testSubSecondDifferencesDoNotMakeBothGymsYield() {
+        let base = Date(timeIntervalSince1970: 1_756_000_000)
+        let mine = base.addingTimeInterval(0.7)
+        let theirs = base.addingTimeInterval(0.2)
+        // 상대가 실어 보내는 값은 초로 잘린 것이다 — 양쪽 다 그렇다.
+        let truncated = Date(timeIntervalSince1970: base.timeIntervalSince1970)
+
+        let iYield = PlayerGym.yieldsToOtherGym(myHeldSince: mine, myRoomTag: "aaaaaa",
+                                                otherHeldSince: truncated, otherRoomTag: "bbbbbb")
+        let theyYield = PlayerGym.yieldsToOtherGym(myHeldSince: theirs, myRoomTag: "bbbbbb",
+                                                   otherHeldSince: truncated, otherRoomTag: "aaaaaa")
+        XCTAssertNotEqual(iYield, theyYield, "정확히 한쪽만 물러나야 한다")
+    }
+
+    // MARK: 프로토콜 버전 — 접속 전에 갈라야 하는 판정
+
+    /// 방 광고에는 TXT 가 없어 이름이 유일한 통로다. 버전이 안 실리면 붙어 봐야 알 수 있고,
+    /// 그동안 구버전 체육관 하나가 최신 사용자 전원의 체육관을 잠근다.
+    func testRoomNameCarriesTheProtocolVersion() throws {
+        let held = Date(timeIntervalSince1970: 1_756_000_000)
+        let name = PlayerGymRoomName.make(leaderName: "현우", idTag: "abc123", heldSince: held)
+
+        let parsed = try XCTUnwrap(PlayerGymRoomName.parse(name))
+        XCTAssertEqual(parsed.protocolVersion, MultiplayerWireMessage.protocolVersion)
+        XCTAssertEqual(parsed.leaderName, "현우", "버전 조각이 관장 이름을 먹으면 안 된다")
+        XCTAssertEqual(parsed.idTag, "abc123")
+        XCTAssertEqual(parsed.heldSince.timeIntervalSince1970, held.timeIntervalSince1970, accuracy: 1)
+        XCTAssertLessThanOrEqual(name.utf8.count, PlayerGym.maxServiceNameBytes)
+    }
+
+    /// `v` 로 시작하는 관장 이름을 버전으로 오해하면 이름이 통째로 사라진다.
+    func testALeaderNameStartingWithVIsNotReadAsAVersion() throws {
+        let name = PlayerGymRoomName.make(leaderName: "victor", idTag: "abc123",
+                                          heldSince: Date(timeIntervalSince1970: 1_756_000_000))
+        let parsed = try XCTUnwrap(PlayerGymRoomName.parse(name))
+        XCTAssertEqual(parsed.leaderName, "victor")
+        XCTAssertEqual(parsed.protocolVersion, MultiplayerWireMessage.protocolVersion)
+    }
+
+    /// 버전을 안 싣던 앱이 연 방은 **모름**이지 낮음이 아니다. 낮다고 읽으면 프로토콜이 같은
+    /// 직전 릴리즈의 멀쩡한 체육관에 도전을 막는다.
+    func testAnUnversionedRoomIsUnknownNotOutdated() {
+        XCTAssertEqual(PlayerGym.compatibility(roomVersion: nil), .unknown)
+        XCTAssertTrue(PlayerGym.compatibility(roomVersion: nil).allowsChallenge,
+                      "모르면 붙어 보고 관장이 판정하게 둔다")
+        XCTAssertTrue(PlayerGym.compatibility(roomVersion: nil).blocksOpeningMyGym,
+                      "같은 프로토콜일 수 있으므로 자리는 차지한 것으로 센다")
+    }
+
+    /// **회귀**: 구버전 체육관 한 대가 최신 사용자 전원의 체육관을 잠갔다. 도전은 막되
+    /// 개설은 막지 않아야 최신 앱끼리 체육관을 쓸 수 있다.
+    func testAnOutdatedPeersGymBlocksChallengesButNotMyOwnGym() {
+        let outdated = PlayerGym.compatibility(roomVersion: MultiplayerWireMessage.protocolVersion - 1)
+
+        XCTAssertEqual(outdated, .theirAppIsOutdated)
+        XCTAssertFalse(outdated.allowsChallenge, "붙어도 입장에서 거절된다")
+        XCTAssertFalse(outdated.blocksOpeningMyGym, "구버전 방이 내 개설을 잠그면 안 된다")
+    }
+
+    /// 내 앱이 낮으면 **도전도 개설도** 막는다 — 최신이 아닌 앱이 자리를 차지하면 최신끼리도
+    /// 못 쓰게 된다.
+    func testMyOutdatedAppIsBlockedFromBothChallengingAndOpening() {
+        let behind = PlayerGym.compatibility(roomVersion: MultiplayerWireMessage.protocolVersion + 1)
+
+        XCTAssertEqual(behind, .myAppIsOutdated)
+        XCTAssertFalse(behind.allowsChallenge)
+        XCTAssertTrue(behind.blocksOpeningMyGym)
+    }
+
+    func testTheSameProtocolIsCompatible() {
+        let same = PlayerGym.compatibility(roomVersion: MultiplayerWireMessage.protocolVersion)
+        XCTAssertEqual(same, .compatible)
+        XCTAssertTrue(same.allowsChallenge)
+        XCTAssertTrue(same.blocksOpeningMyGym)
     }
 
     func testGymRoomNamesAreRecognized() {
@@ -494,8 +614,8 @@ final class PlayerGymTests: XCTestCase {
                                           heldSince: Date(timeIntervalSince1970: 1_756_000_000))
         XCTAssertTrue(name.contains("#abc123"))
         XCTAssertTrue(PlayerGym.isGymRoomName(name))
-        XCTAssertNotNil(PlayerGymCoordinator.gymID(fromRoomName: name),
-                        "경합 tie-break 이 식별자를 못 읽으면 둘 다 닫히거나 둘 다 남는다")
+        XCTAssertEqual(PlayerGymRoomName.parse(name)?.idTag, "abc123",
+                       "경합 tie-break 이 식별자를 못 읽으면 둘 다 닫히거나 둘 다 남는다")
     }
 
     /// **회귀**: 방 목록의 `name` 은 `#` 앞에서 잘린 표시용 이름이다(`displayName`). 거기서
@@ -548,6 +668,106 @@ final class PlayerGymTests: XCTestCase {
                                                now: clock.now), 0)
     }
 
+    // MARK: 도전 거절 사유가 화면에 남는가
+
+    /// **회귀**: 남의 판이 도는 동안 도전을 걸면 아무 반응도 없었다. 관장은 판이 도는 내내
+    /// 상태를 뿌리는데, 그 방송이 방금 받은 거절 사유를 매번 지웠기 때문이다.
+    func testAnotherPlayersMatchDoesNotEraseMyRejection() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        rooms.debugApplyGymRejection(.busy)
+
+        // 남의 판(도전자가 내가 아니다)이 한 턴 진행된다.
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: UUID(), challengerID: UUID(),
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 2, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertEqual(rooms.gymRejection, .busy, "남의 판 방송이 내 거절 사유를 지우면 안 된다")
+    }
+
+    /// 반대로 **내 도전이 받아들여졌으면** 사유는 지워져야 한다 — 안 지우면 배틀 내내
+    /// "이미 도전 중입니다" 가 화면에 남는다.
+    func testMyAcceptedChallengeClearsTheRejection() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        rooms.debugApplyGymRejection(.busy)
+
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: UUID(), challengerID: rooms.myID,
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertNil(rooms.gymRejection)
+    }
+
+    // MARK: 닫힌 창 되살리기 — 자리를 비운 사이 판을 잃던 자리
+
+    /// **회귀**: 배틀 중 팝오버는 붙들지 않으므로 바깥을 클릭하면 닫힌다. 그런데 턴 마감은 닫힌
+    /// 동안에도 돌아 자동 제출로 판이 끝났다 — 내가 골라야 하는 동안에는 창을 다시 열어야 한다.
+    func testAnUnsubmittedTurnReopensTheWindow() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: UUID(), challengerID: rooms.myID,
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertTrue(rooms.isAwaitingBattleTurn)
+        XCTAssertTrue(rooms.awaitsMyBattleAction, "안 냈으면 창을 다시 열어 준다")
+    }
+
+    /// 이미 낸 뒤에도 열면 닫아도 곧바로 되살아난다 — 아무것도 못 하는 화면을 계속 들이민다.
+    func testASubmittedTurnDoesNotReopenTheWindow() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: UUID(), challengerID: rooms.myID,
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [rooms.myID], winnerID: nil))
+
+        XCTAssertFalse(rooms.awaitsMyBattleAction)
+    }
+
+    /// AI 방어 관장은 고를 것이 없다. `submitted` 로만 가르면 턴이 해상된 직후 AI 가 채우기
+    /// **전에** 뿌려지는 스냅샷 한 장에 걸려 창이 매 턴 다시 열린다.
+    func testAnAIDefendingLeaderNeverReopensTheWindow() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+        s.setGymUsesAI(true)
+        let rooms = MultiplayerRoomCenter(companion: s)
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: rooms.myID, challengerID: UUID(),
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertFalse(rooms.awaitsMyBattleAction, "AI 가 채우기 전 스냅샷에도 열리면 안 된다")
+    }
+
+    /// 관전자는 어느 턴에도 고를 것이 없다.
+    func testASpectatorNeverReopensTheWindow() {
+        let s = store()
+        let rooms = MultiplayerRoomCenter(companion: s)
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: UUID(), challengerID: UUID(),
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertFalse(rooms.awaitsMyBattleAction)
+    }
+
     // MARK: 창 띄우기 — 남이 건 도전이 화면에 안 뜨던 자리
 
     /// 도전은 **남이 걸어 온다.** 창 열기 신호가 1:1 배틀(`BattleCenter.phase`)만 봐서 체육관
@@ -575,6 +795,83 @@ final class PlayerGymTests: XCTestCase {
         _ = leaderWithFullTeam(s)
 
         XCTAssertFalse(rooms.wantsForegroundWindow, "도전 대기 중에는 창을 띄우지 않는다")
+    }
+
+    /// AI 방어는 관장이 고를 것이 없다. 그런데 도전 시작·교체·기술 선택마다 스냅샷이 갱신되며
+    /// 창이 매번 강제로 열려 하던 일이 끊겼다 — AI 가 싸우는 동안엔 알림만 띄우고 창은 안 연다.
+    func testAnAIDefendedGymMatchDoesNotBringTheWindowForward() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+        s.setGymUsesAI(true)
+        let rooms = MultiplayerRoomCenter(companion: s)
+
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: rooms.myID, challengerID: UUID(),
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertTrue(rooms.hasLiveGymMatch, "판 자체는 돌고 있다")
+        XCTAssertTrue(rooms.isGymDefenseFoughtByAI)
+        XCTAssertFalse(rooms.wantsForegroundWindow, "AI 가 싸우는 동안에는 창을 열지 않는다")
+    }
+
+    /// 판이 도는 도중 AI 를 끄면(배틀 화면의 "직접 싸우기") 그 순간부터 창이 다시 뜬다 —
+    /// 이제 관장이 직접 골라야 하므로 화면이 없으면 매 턴 마감으로 넘어간다.
+    func testTurningAIOffMidMatchBringsTheWindowBack() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+        s.setGymUsesAI(true)
+        let rooms = MultiplayerRoomCenter(companion: s)
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: rooms.myID, challengerID: UUID(),
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+        XCTAssertFalse(rooms.wantsForegroundWindow)
+
+        s.setGymUsesAI(false)
+
+        XCTAssertFalse(rooms.isGymDefenseFoughtByAI, "넘겨받았으니 AI 방어가 아니다")
+        XCTAssertTrue(rooms.wantsForegroundWindow, "직접 고르려면 화면이 떠야 한다")
+    }
+
+    /// 직접 싸우는 관장은 기술을 골라야 하므로 창이 떠야 한다.
+    func testAManuallyDefendedGymMatchStillBringsTheWindowForward() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+        s.setGymUsesAI(false)
+        let rooms = MultiplayerRoomCenter(companion: s)
+
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: rooms.myID, challengerID: UUID(),
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertFalse(rooms.isGymDefenseFoughtByAI)
+        XCTAssertTrue(rooms.wantsForegroundWindow)
+    }
+
+    /// AI 를 켠 사람이 **도전자로** 들어간 판은 자기가 기술을 고른다 — 창이 떠야 한다.
+    func testAIDefenseSettingDoesNotSilenceTheWindowWhenIAmTheChallenger() {
+        let s = store()
+        _ = leaderWithFullTeam(s)
+        s.setGymUsesAI(true)
+        let rooms = MultiplayerRoomCenter(companion: s)
+
+        rooms.debugApplyGymState(GymMatchState(
+            matchID: UUID(), leaderID: UUID(), challengerID: rooms.myID,
+            leaderName: "L", challengerName: "C",
+            leaderTeam: [], challengerTeam: [],
+            leaderActive: 0, challengerActive: 0, turn: 1, events: [],
+            submitted: [], winnerID: nil))
+
+        XCTAssertFalse(rooms.isGymDefenseFoughtByAI)
+        XCTAssertTrue(rooms.wantsForegroundWindow)
     }
 
     func testAFinishedMatchDoesNotBringTheWindowForward() {

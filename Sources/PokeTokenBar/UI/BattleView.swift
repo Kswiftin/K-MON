@@ -542,7 +542,7 @@ struct BattleView: View {
                     .font(.caption).bold()
                 if let me {
                     // 1v1 과 같은 버튼·같은 발버둥 처리를 쓴다. 발버둥이 없던 동안은 PP 가 전부
-                    // 마르면 네 칸이 모두 비활성이라 마감(30초)까지 아무것도 할 수 없었다.
+                    // 마르면 네 칸이 모두 비활성이라 턴 마감까지 아무것도 할 수 없었다.
                     let struggling = me.side.mustStruggle
                     MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,
                                  pp: struggling ? [] : me.side.pp, language: store.language,

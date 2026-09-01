@@ -1157,18 +1157,32 @@ private struct StatBlock: View {
 private struct EvolutionBranchMenu: View {
     let store: CompanionStore
 
+    /// 접지 않고 그대로 펼치는 갈래 수. 야돈(레벨 갈래 + 교환 갈래)처럼 둘뿐인 종은 접어 두면
+    /// 한쪽 조건이 안 보여, 레벨을 넘겼는데 왜 아무 일도 없는지 알 수 없다. 이브이(여덟)까지
+    /// 펼치면 홈 탭 높이가 종에 따라 들쭉날쭉해지므로 그때는 메뉴로 돌아간다.
+    private static let inlineBranchLimit = 3
+
     var body: some View {
         let branches = store.evolutionBranches
-        Menu {
-            ForEach(branches) { branch in
-                Text(store.l.evolutionBranchRow(condition: condition(branch), target: branch.targetName))
+        if branches.count <= Self.inlineBranchLimit {
+            VStack(alignment: .trailing, spacing: 1) {
+                ForEach(branches) { branch in
+                    Text(store.l.evolutionBranchRow(condition: condition(branch), target: branch.targetName))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
             }
-        } label: {
-            Text(store.l.evolutionBranchCount(branches.count))
-                .font(.caption2).foregroundStyle(.tertiary)
+        } else {
+            Menu {
+                ForEach(branches) { branch in
+                    Text(store.l.evolutionBranchRow(condition: condition(branch), target: branch.targetName))
+                }
+            } label: {
+                Text(store.l.evolutionBranchCount(branches.count))
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
     }
 
     /// 갈래를 여는 조건. 아이템이 있으면 그 이름, 없으면 레벨 — 둘 다 없으면 지어내지 않는다.
