@@ -2,6 +2,16 @@ import XCTest
 @testable import PokeTokenBar
 
 final class BattleRankTests: XCTestCase {
+    func testLegacyRankProfileDefaultsBeginnerBadgeToOff() throws {
+        let data = Data(#"{"rank":{"points":100},"stardust":5000}"#.utf8)
+        let decoded = try JSONDecoder().decode(BattleRankProfile.self, from: data)
+        XCTAssertFalse(decoded.beginnerMode)
+        let modern = BattleRankProfile(rank: BattleRank(points: 100), stardust: 5_000,
+                                       beginnerMode: true)
+        XCTAssertTrue(try JSONDecoder().decode(BattleRankProfile.self,
+                                                from: JSONEncoder().encode(modern)).beginnerMode)
+    }
+
     func testFixedStakeUsesTierGapAndCap() {
         XCTAssertEqual(BattleRank.stake(challenger: .init(points: 0), defender: .init(points: 400)), 5_000)
         XCTAssertEqual(BattleRank.stake(challenger: .init(points: 0), defender: .init(points: 3_999)), 20_000)

@@ -280,13 +280,17 @@ struct NetBattleState {
     func canChoose(_ action: NetBattleAction, mine: Bool) -> Bool {
         let team = mine ? myTeam : oppTeam
         let active = mine ? myActive : oppActive
+        let opposingTeam = mine ? oppTeam : myTeam
+        let opposingActive = mine ? oppActive : myActive
         guard team.indices.contains(active) else { return false }
         switch action {
         case .move(let index):
-            return team[active].isAlive
+            return opposingTeam.indices.contains(opposingActive) && opposingTeam[opposingActive].isAlive
+                && team[active].isAlive
                 && (index == -1 ? team[active].mustStruggle : team[active].canUse(moveAt: index))
         case .metronome(let move):
-            return team[active].isAlive && isMetronome && team[active].canUse(moveAt: 0)
+            return opposingTeam.indices.contains(opposingActive) && opposingTeam[opposingActive].isAlive
+                && team[active].isAlive && isMetronome && team[active].canUse(moveAt: 0)
                 && move.id != 118 && move.id != 165 && MultiplayerValidation.validMoves([move])
         case .switchTo(let index):
             return team.indices.contains(index) && index != active && team[index].isAlive
@@ -609,6 +613,7 @@ final class BattleCenter {
         side.pp.indices.first { side.canUse(moveAt: $0) } ?? -1
     }
     private let companion: CompanionStore
+    private let settings: AppSettings?
     private let monSnapshotBuilder: MonSnapshotBuilder
     private let battleProfileLoader: BattleProfileLoader
     private let moveSetLoader: MoveSetLoader
@@ -751,6 +756,7 @@ final class BattleCenter {
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
 
     init(companion: CompanionStore,
+         settings: AppSettings? = nil,
          monSnapshotBuilder: MonSnapshotBuilder? = nil,
          battleProfileLoader: BattleProfileLoader? = nil,
          moveSetLoader: MoveSetLoader? = nil,
@@ -759,6 +765,7 @@ final class BattleCenter {
          advertisementPublisher: ((NWTXTRecord) -> Void)? = nil,
          challengeTimeoutScheduler: BattleChallengeTimeoutScheduling? = nil) {
         self.companion = companion
+        self.settings = settings
         self.advertisementPublisher = advertisementPublisher
         self.challengeTimeoutScheduler = challengeTimeoutScheduler ?? SystemBattleChallengeTimeoutScheduler()
         self.monSnapshotBuilder = monSnapshotBuilder ?? { mon, level in
@@ -811,7 +818,8 @@ final class BattleCenter {
                           // 에 적어 뒀다(밸런스로 바뀌는 분모라 상대 것을 써야 한다).
                           runBestWave: companion.runProgress.bestWave,
                           runFinalWave: RogueRun.finalWave,
-                          runClears: companion.runProgress.clears)
+                          runClears: companion.runProgress.clears,
+                          beginnerMode: settings?.beginnerModeEnabled ?? false)
     }
 
     /// 광고 값이 바뀌면 다시 굽는다. 리스너를 만들 때 한 번만 구워서 랭크전 뒤에도 옛 점수가
@@ -849,6 +857,7 @@ final class BattleCenter {
             // 던전 실적도 광고 값이라 같이 읽는다 — 안 읽으면 판을 돌려도 재발행이 안 걸려
             // 상대 카드의 기록이 굳는다(#85 와 같은 부류).
             _ = companion.runProgress
+            _ = settings?.beginnerModeEnabled
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -862,6 +871,11 @@ final class BattleCenter {
     private var trainerDisplayName: String {
         let trainer = companion.trainerName.trimmingCharacters(in: .whitespaces)
         return !trainer.isEmpty ? trainer : myName
+    }
+
+    private var myRankProfile: BattleRankProfile {
+        BattleRankProfile(rank: companion.battleRank, stardust: companion.availableTokens,
+                          beginnerMode: settings?.beginnerModeEnabled ?? false)
     }
 
     /// Bonjour 광고 이름에서 표시 이름 복원 — 마지막 "#고유접미"를 뗀다.
@@ -1219,7 +1233,7 @@ final class BattleCenter {
         }
         conn.start(queue: .main)
         send(.request(trainer: trainerDisplayName, teamSize: teamSize, seed: seed,
-                      profile: companion.battleRankProfile, rulesVersion: BattleEngine.rulesVersion,
+                      profile: myRankProfile, rulesVersion: BattleEngine.rulesVersion,
                       chatSupported: true, kind: kind), over: conn)
         receiveLoop(conn)
     }
@@ -1319,7 +1333,7 @@ final class BattleCenter {
                 lastError = l.battleStatsFailed
                 return
             }
-            let mineProfile = companion.battleRankProfile
+            let mineProfile = myRankProfile
             let stake = BattleRank.stake(challenger: opponentRankProfile?.rank ?? BattleRank(),
                                          defender: mineProfile.rank)
             guard stake == 0 || (mineProfile.stardust >= stake && (opponentRankProfile?.stardust ?? 0) >= stake) else {
@@ -1352,7 +1366,7 @@ final class BattleCenter {
             pendingMyLineup = [rental]
             isMetronomeBattle = true
             send(.teamReady(snapshot: rental, lineup: [rental], teamSize: 1,
-                            profile: companion.battleRankProfile, rulesVersion: BattleEngine.rulesVersion,
+                            profile: myRankProfile, rulesVersion: BattleEngine.rulesVersion,
                             chatSupported: true), over: conn)
             if !incomingLineup.isEmpty {
                 opponentRankProfile = nil
@@ -1391,7 +1405,7 @@ final class BattleCenter {
             // 다음 신청의 기본 초안과 가방/배틀 선택 일관성을 위해 확인된 후보 순서를 보존한다.
             pickedTeam = ids
             pendingMyPool = pool
-            send(.poolReady(lineup: pool, profile: companion.battleRankProfile,
+            send(.poolReady(lineup: pool, profile: myRankProfile,
                             rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
             enterFinalTeamSelectionIfReady(peer: peer)
         }
@@ -1420,7 +1434,7 @@ final class BattleCenter {
             pendingMyLineup = mine
             commitIncomingSelection(ids)
             send(.teamReady(snapshot: lead, lineup: mine, teamSize: incomingTeamSize,
-                            profile: companion.battleRankProfile, rulesVersion: BattleEngine.rulesVersion,
+                            profile: myRankProfile, rulesVersion: BattleEngine.rulesVersion,
                             chatSupported: true), over: conn)
             if !incomingLineup.isEmpty {
                 beginBattle(my: mine, opp: incomingLineup, iAmA: iAmPendingChallenger, seed: incomingSeed)
@@ -1443,7 +1457,7 @@ final class BattleCenter {
         // `pendingFinish` 는 승부가 이미 난 상태다 — 재생이 도는 동안 국면은 아직 `.battling` 이라
         // 이 가드가 없으면 끝난 배틀에 기술을 보낸다.
         guard case .battling = phase, pendingFinish == nil,
-              var b = battle, b.myAction == nil else { return }
+              var b = battle, b.myAction == nil, b.me.isAlive, b.opp.isAlive else { return }
         if b.isMetronome {
             guard !isResolvingMetronome else { return }
             isResolvingMetronome = true
@@ -1494,8 +1508,12 @@ final class BattleCenter {
         if b.replaceFainted(to: index, mine: true) {
             battle = b
             send(.action(turn: b.turn, action: action), over: conn)
+            // 기절을 메운 교체는 턴 행동이 아니다. 새 포켓몬이 나온 시점부터 양쪽에 온전한
+            // 30초 선택 시간을 다시 줘야 이전 턴의 남은 몇 초 뒤 자동 기술이 튀어나가지 않는다.
+            scheduleTurnTimeout()
             return
         }
+        guard b.opp.isAlive else { return }
         b.myAction = action
         battle = b
         send(.action(turn: b.turn, action: action), over: conn)
@@ -1670,10 +1688,11 @@ final class BattleCenter {
         if !state.me.isAlive,
            let next = state.myTeam.indices.first(where: { state.myTeam[$0].isAlive }) {
             switchLAN(to: next)
-            guard let replaced = battle, replaced.turn == turn, replaced.myAction == nil else { return }
-            chooseMove(Self.automaticMoveIndex(for: replaced.me))
             return
         }
+        // 상대가 아직 다음 포켓몬을 내지 않았다면 내 기술도 고르지 않는다. 교체 프레임을 받는
+        // 순간 새 타이머가 시작된다. 여기서 선입력하면 등장 직후 곧바로 맞는 현상이 생긴다.
+        guard state.opp.isAlive else { return }
         chooseMove(Self.automaticMoveIndex(for: state.me))
     }
 
@@ -1864,8 +1883,10 @@ final class BattleCenter {
                   b.canChoose(action, mine: false) else { return }
             if case .switchTo(let index) = action, b.replaceFainted(to: index, mine: false) {
                 battle = b
+                scheduleTurnTimeout()
                 return
             }
+            guard b.me.isAlive, b.opp.isAlive else { return }
             b.oppAction = action
             battle = b
             resolveIfReady()

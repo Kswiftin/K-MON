@@ -123,7 +123,7 @@ final class MultiplayerRoomCenter {
     private var rewardedBattle = false
     /// 한 턴에 주는 시간. 1v1 LAN 도 같은 값을 쓴다(`BattleCenter.turnDuration`) — 두 모드의
     /// 체감이 갈리면 같은 앱에서 다른 게임을 하는 것처럼 느껴진다.
-    static let turnDuration: TimeInterval = 10
+    static let turnDuration: TimeInterval = 30
 
     init(companion: CompanionStore) { self.companion = companion }
 
@@ -502,8 +502,10 @@ final class MultiplayerRoomCenter {
         guard isHost, var engine = tournamentMatch, engine.id == matchID,
               engine.submit(action, from: participantID) else { return }
         tournamentMatch = engine
-        tournamentState?.currentMatch = engine.snapshot()
+        let snapshot = engine.snapshot()
+        tournamentState?.currentMatch = snapshot
         broadcastTournamentState()
+        if case .switchTo = action, !snapshot.submitted.contains(participantID) { scheduleTurnTimeout() }
         finishTournamentTurnIfReady()
     }
 
@@ -674,8 +676,10 @@ final class MultiplayerRoomCenter {
         guard isHost, var engine = gymEngine, engine.matchID == matchID,
               engine.submit(action, from: participantID) else { return }
         gymEngine = engine
-        gymMatch = engine.snapshot()
+        let snapshot = engine.snapshot()
+        gymMatch = snapshot
         broadcastGymState()
+        if case .switchTo = action, !snapshot.submitted.contains(participantID) { scheduleTurnTimeout() }
         finishGymTurnIfReady()
     }
 
@@ -1381,17 +1385,22 @@ final class MultiplayerRoomCenter {
                   gymMatch?.winnerID == nil else { return }
             // 마감에서는 양쪽을 채우는 것이 맞다 — 시간 안에 안 고른 것을 대신하는 자리다.
             engine.fillTimedOutActions(leaderUsesAI: companion.gymLeadership?.usesAI == true)
+            let needsFreshTurn = !engine.isReady
             gymEngine = engine
             gymMatch = engine.snapshot()
             finishGymTurnIfReady()
+            if needsFreshTurn { scheduleTurnTimeout() }
             return
         }
         if phase == .tournament {
             guard isHost, var engine = tournamentMatch,
                   tournamentState?.currentMatch?.turn == round else { return }
-            engine.fillMissingActions(); tournamentMatch = engine
+            engine.fillMissingActions()
+            let needsFreshTurn = !engine.isReady
+            tournamentMatch = engine
             tournamentState?.currentMatch = engine.snapshot()
             finishTournamentTurnIfReady()
+            if needsFreshTurn { scheduleTurnTimeout() }
             return
         }
         guard isHost, phase == .battling, combatRound == round, let battle else { return }

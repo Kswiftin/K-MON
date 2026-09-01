@@ -323,10 +323,12 @@ struct GymMatchEngine {
         if playerID == leaderID {
             guard battle.myAction == nil, battle.canChoose(action, mine: true) else { return false }
             if case .switchTo(let index) = action, battle.replaceFainted(to: index, mine: true) { return true }
+            guard battle.me.isAlive, battle.opp.isAlive else { return false }
             battle.myAction = action
         } else if playerID == challengerID {
             guard battle.oppAction == nil, battle.canChoose(action, mine: false) else { return false }
             if case .switchTo(let index) = action, battle.replaceFainted(to: index, mine: false) { return true }
+            guard battle.me.isAlive, battle.opp.isAlive else { return false }
             battle.oppAction = action
         } else { return false }
         return true
@@ -364,7 +366,9 @@ struct GymMatchEngine {
         if !battle.me.isAlive,
            let next = battle.myTeam.indices.first(where: { battle.myTeam[$0].isAlive }) {
             _ = battle.replaceFainted(to: next, mine: true)
+            return
         }
+        guard battle.opp.isAlive else { return }
         battle.myAction = usingAI
             ? bestAction(team: battle.myTeam, active: battle.myActive, against: battle.opp)
             : firstAvailableAction(team: battle.myTeam, active: battle.myActive)
@@ -373,12 +377,15 @@ struct GymMatchEngine {
     /// 양쪽을 다 채운다 — **턴 마감(`MultiplayerRoomCenter.turnDuration`)에서만** 쓴다. 사람이 시간 안에 안 고른 것을 대신하는
     /// 자리라 도전자 몫도 채우는 것이 맞다.
     mutating func fillTimedOutActions(leaderUsesAI: Bool) {
+        let leaderWasFainted = !battle.me.isAlive
+        let challengerWasFainted = !battle.opp.isAlive
         fillLeaderAction(usingAI: leaderUsesAI)
         if battle.oppAction == nil {
             if !battle.opp.isAlive,
                let next = battle.oppTeam.indices.first(where: { battle.oppTeam[$0].isAlive }) {
                 _ = battle.replaceFainted(to: next, mine: false)
             }
+            if leaderWasFainted || challengerWasFainted { return }
             battle.oppAction = firstAvailableAction(team: battle.oppTeam, active: battle.oppActive)
         }
     }

@@ -21,6 +21,7 @@ struct PeerAdvertisement: Equatable, Sendable {
         static let runBestWave = "runWave"
         static let runFinalWave = "runFinal"
         static let runClears = "runClears"
+        static let beginner = "beginner"
     }
 
     /// 광고된 분모의 표시 상한. 세 자리가 되면 카드가 밀려 배지 칸이 잘린다.
@@ -49,13 +50,16 @@ struct PeerAdvertisement: Equatable, Sendable {
     let runFinalWave: Int?
     /// 최종 웨이브까지 넘긴 판 수.
     let runClears: Int?
+    /// 기술 상성 안내를 쓰는 트레이너. 혜택을 숨기지 않도록 친구 목록에 공개한다.
+    let beginnerMode: Bool
 
     /// 굽는 쪽 진입점. 클램프는 여기 한 곳이고 파싱도 이 자리를 지난다.
     init(rankPoints: Int? = nil, trainerLevel: Int? = nil,
          achievementTiers: Int? = nil, achievementCeiling: Int? = nil,
          outfit: TrainerOutfit? = nil, representativeSpeciesID: Int? = nil,
          representativeIsShiny: Bool = false,
-         runBestWave: Int? = nil, runFinalWave: Int? = nil, runClears: Int? = nil) {
+         runBestWave: Int? = nil, runFinalWave: Int? = nil, runClears: Int? = nil,
+         beginnerMode: Bool = false) {
         self.rankPoints = rankPoints.map { BattleRank.clamped($0) }
         // 레벨 하한은 1. `TrainerLevel.level` 이 1 부터라 Lv.0 은 없는 값이다.
         self.trainerLevel = trainerLevel.map { min(TrainerLevel.maximumLevel, max(1, $0)) }
@@ -80,6 +84,7 @@ struct PeerAdvertisement: Equatable, Sendable {
             min(finalWave ?? RogueRun.finalWave, max(0, $0))
         }
         self.runClears = runClears.map { max(0, $0) }
+        self.beginnerMode = beginnerMode
     }
 
     /// 읽는 쪽 진입점. 관대 파싱이고 실패하지 않는다(`init?` 가 아니다). 실패시키면 그 피어가
@@ -95,7 +100,8 @@ struct PeerAdvertisement: Equatable, Sendable {
                   representativeIsShiny: record[Key.representativeShiny] == "1",
                   runBestWave: record[Key.runBestWave].flatMap(Int.init),
                   runFinalWave: record[Key.runFinalWave].flatMap(Int.init),
-                  runClears: record[Key.runClears].flatMap(Int.init))
+                  runClears: record[Key.runClears].flatMap(Int.init),
+                  beginnerMode: record[Key.beginner] == "1")
     }
 
     /// 빈 칸은 키를 싣지 않는다. 읽는 쪽이 "없음"과 "0"을 구별해야 한다.
@@ -117,6 +123,7 @@ struct PeerAdvertisement: Equatable, Sendable {
             if let runFinalWave { entries[Key.runFinalWave] = String(runFinalWave) }
             if let runClears, runClears > 0 { entries[Key.runClears] = String(runClears) }
         }
+        if beginnerMode { entries[Key.beginner] = "1" }
         return NWTXTRecord(entries)
     }
 

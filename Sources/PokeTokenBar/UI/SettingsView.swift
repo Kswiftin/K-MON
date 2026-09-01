@@ -281,6 +281,19 @@ struct SettingsView: View {
                 }
                 .labelsHidden().pickerStyle(.menu).fixedSize()
             }
+            Divider()
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(l.t("초보자 모드", "Beginner mode", "初心者モード"))
+                    Text(l.t("배틀 기술 버튼에 상대 타입 상성을 표시하며, 친구들에게 초보자 배지가 공개됩니다.",
+                             "Shows type matchups on move buttons and displays a public beginner badge.",
+                             "技ボタンに相性を表示し、公開の初心者バッジが付きます。"))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Toggle("", isOn: $settings.beginnerModeEnabled)
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+            }
         }
     }
 

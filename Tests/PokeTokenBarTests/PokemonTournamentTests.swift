@@ -95,6 +95,8 @@ final class PokemonTournamentTests: XCTestCase {
         XCTAssertNil(engine.resolveIfReady())
         XCTAssertEqual(engine.snapshot().activeB, 0)
         XCTAssertEqual(engine.snapshot().teamB[0].hp, 0)
+        XCTAssertFalse(engine.submit(.move(index: 0), from: a.id),
+                       "상대의 교체 포켓몬이 나오기 전에는 기술을 미리 고를 수 없다")
         XCTAssertTrue(engine.submit(.switchTo(index: 1), from: b.id))
         XCTAssertEqual(engine.snapshot().activeB, 1)
         XCTAssertFalse(engine.snapshot().submitted.contains(b.id),

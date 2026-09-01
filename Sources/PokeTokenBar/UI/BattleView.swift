@@ -113,6 +113,8 @@ struct BattleView: View {
             isWaitingForOpponent: battle.myAction != nil,
             overlay: animator.overlay,
             calledMoves: battle.eventBatches.flatMap { $0.a.moves + $0.b.moves },
+            myBeginnerMode: settings.beginnerModeEnabled,
+            theirBeginnerMode: center.opponentRankProfile?.beginnerMode == true,
             onChoose: { center.chooseMove($0) },
             onSwitch: { center.switchLAN(to: $0) },
             onForfeit: { center.forfeit() },
@@ -644,6 +646,7 @@ struct BattleView: View {
             if let profile = center.opponentRankProfile {
                 VStack(spacing: 2) {
                     Text("\(profile.rank.displayName)  VS  \(store.battleRank.displayName)")
+                    if profile.beginnerMode { BeginnerBadgeView(l: l) }
                     if center.incomingRankedStake > 0 {
                         Text(l.battleFixedStake(GameNumberFormatter.compact(center.incomingRankedStake)))
                             .foregroundStyle(.orange)

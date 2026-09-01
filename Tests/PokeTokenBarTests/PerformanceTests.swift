@@ -263,16 +263,19 @@ final class FloatingPetEnergyTests: XCTestCase {
         XCTAssertFalse(initial.floatingPetMouseChaseEnabled)
         XCTAssertEqual(initial.floatingPetMovementSpeed, 80)
         XCTAssertTrue(initial.automaticUpdateDownloadsEnabled)
+        XCTAssertFalse(initial.beginnerModeEnabled)
         initial.floatingPetRoamingEnabled = true
         initial.floatingPetMouseChaseEnabled = true
         initial.floatingPetMovementSpeed = 140
         initial.automaticUpdateDownloadsEnabled = false
+        initial.beginnerModeEnabled = true
 
         let restored = AppSettings(defaults: defaults)
         XCTAssertTrue(restored.floatingPetRoamingEnabled)
         XCTAssertTrue(restored.floatingPetMouseChaseEnabled)
         XCTAssertEqual(restored.floatingPetMovementSpeed, 140)
         XCTAssertFalse(restored.automaticUpdateDownloadsEnabled)
+        XCTAssertTrue(restored.beginnerModeEnabled)
     }
 
     func testMouseChaseUsesDirectShortestVectorAndStopsNearPointer() {
