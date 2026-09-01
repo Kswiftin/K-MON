@@ -10,6 +10,9 @@ final class ReleaseNotesPresenter: NSObject, NSWindowDelegate {
     private let updater: UpdateChecker
     private let defaults: UserDefaults
     private var window: NSWindow?
+    /// 릴리스 본문은 `* … by @user in https://github.com/.../pull/186` 줄이 대부분이다.
+    /// 그 줄이 두 줄로 접히지 않는 폭을 기본값으로 잡는다.
+    private static let defaultContentSize = NSSize(width: 640, height: 660)
 
     init(settings: AppSettings, store: CompanionStore, updater: UpdateChecker,
          defaults: UserDefaults = .standard) {
@@ -45,6 +48,10 @@ final class ReleaseNotesPresenter: NSObject, NSWindowDelegate {
                 .environment(store)
                 .environment(\.locale, store.language.displayLocale))
         window.title = store.l.releaseNotesWindowTitle
+        // contentViewController 를 붙이면 AppKit 이 SwiftUI 의 fitting size 로 창을 다시 잰다.
+        // 그 값은 minSize 까지 쪼그라들어 본문이 서너 줄로 접힌다 — 붙인 **뒤에** 크기를 잡는다.
+        window.setContentSize(Self.defaultContentSize)
+        window.center()
         // 메뉴바 전용(accessory) 앱이라 활성화하지 않으면 창이 다른 앱 뒤에 조용히 뜬다.
         // 버전당 한 번뿐이므로 앞으로 가져온다.
         NSApp.activate(ignoringOtherApps: true)
@@ -52,14 +59,12 @@ final class ReleaseNotesPresenter: NSObject, NSWindowDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 520),
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.defaultContentSize),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
-        window.minSize = NSSize(width: 420, height: 360)
-        window.setFrameAutosaveName("ReleaseNotesWindow")
+        window.minSize = NSSize(width: 480, height: 400)
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.center()
         return window
     }
 }
@@ -87,6 +92,9 @@ struct ReleaseNotesView: View {
                     }
                 }
                 .font(.callout)
+                // 링크처럼 끊을 데 없는 긴 토큰이 있으면 SwiftUI 는 줄바꿈 대신 잘라 낸다.
+                // 세로로만 늘어나게 고정해 폭에 맞춰 접히도록 한다.
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
             }
