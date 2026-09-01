@@ -156,7 +156,9 @@ struct TournamentMatchEngine {
                              teamA: battle.myTeam.map(TournamentPokemonState.init),
                              teamB: battle.oppTeam.map(TournamentPokemonState.init),
                              activeA: battle.myActive, activeB: battle.oppActive, turn: battle.turn,
-                             events: battle.eventBatches.last?.events ?? [],
+                             // 마지막 턴만 보내면 화면의 재생기가 매 턴 같은 길이의 새 배열을 받아
+                             // 증가를 감지하지 못한다. 누적 스트림을 보내 일반 1:1과 같은 방식으로 재생한다.
+                             events: battle.events,
                              submitted: Set([battle.myAction == nil ? nil : playerA.id,
                                              battle.oppAction == nil ? nil : playerB.id].compactMap { $0 }),
                              winnerID: winnerID)

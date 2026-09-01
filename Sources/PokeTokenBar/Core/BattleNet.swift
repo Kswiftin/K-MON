@@ -463,6 +463,7 @@ final class BattleCenter {
         case preparing                      // 내 스냅샷·무브셋 로딩
         case challenging(peer: String)      // 신청 보냄
         case incoming(peer: String)         // 신청 받음
+        case poolSelecting(peer: String)    // 수락 뒤 수락자가 공개할 후보 6마리 선택
         case poolBuilding(peer: String)     // 수락 후 6마리 후보 준비·공개
         case teamBuilding(peer: String)     // 상대 6마리를 본 뒤 실제 출전 파티 편성
         case waitingTeam(peer: String)      // 내 확인 완료, 상대 확인 대기
@@ -850,7 +851,7 @@ final class BattleCenter {
 
     private var isChallengePending: Bool {
         switch phase {
-        case .challenging, .incoming, .poolBuilding, .teamBuilding, .waitingTeam: true
+        case .challenging, .incoming, .poolSelecting, .poolBuilding, .teamBuilding, .waitingTeam: true
         default: false
         }
     }
@@ -1258,7 +1259,11 @@ final class BattleCenter {
             pendingPeerName = peer
             iAmPendingChallenger = false
             send(.approve, over: conn)
-            prepareBattlePool(peer: peer, connection: conn)
+            // 수락자는 신청 전에 파티를 고를 이유가 없다. 수락한 다음 자기 후보 여섯을 편성하고
+            // 확인해야 상대에게 공개된다. 기존 선택은 초안으로만 가져와 수정할 수 있게 한다.
+            let owned = Set(companion.deployableMons.map(\.id))
+            incomingPickedTeam = Array(pickedTeam.filter { owned.contains($0) }.prefix(6))
+            phase = .poolSelecting(peer: peer)
             return
         }
         guard companion.deployableMons.count >= incomingTeamSize else {
@@ -1332,7 +1337,18 @@ final class BattleCenter {
 
     /// 보유 목록에서 사용자가 먼저 고른 여섯 마리를 Lv.50 후보 풀로 만들어 상대에게 공개한다.
     private func prepareBattlePool(peer: String, connection conn: NWConnection) {
-        let ids = Array(pickedTeam.filter { id in companion.deployableMons.contains(where: { $0.id == id }) }.prefix(6))
+        prepareBattlePool(peer: peer, connection: conn, selection: pickedTeam)
+    }
+
+    /// 수락자가 후보 여섯을 확정한다. 신청자는 신청 버튼을 누르기 전에 이미 `pickedTeam`을 확정했으므로
+    /// `.approve` 수신 경로가 바로 위의 래퍼를 쓰고, 수락자만 이 명시적 확인 단계를 지난다.
+    func confirmBattlePool() {
+        guard case .poolSelecting(let peer) = phase, let conn = connection else { return }
+        prepareBattlePool(peer: peer, connection: conn, selection: incomingPickedTeam)
+    }
+
+    private func prepareBattlePool(peer: String, connection conn: NWConnection, selection: [UUID]) {
+        let ids = Array(selection.filter { id in companion.deployableMons.contains(where: { $0.id == id }) }.prefix(6))
         guard ids.count == 6 else {
             lastError = l.t("후보 포켓몬 6마리가 필요합니다.", "Six candidate Pokémon are required.", "候補のポケモンが6匹必要です。")
             return
@@ -1344,6 +1360,8 @@ final class BattleCenter {
                 phase = .ready; lastError = l.battleStatsFailed; return
             }
             battlePoolIDs = ids
+            // 다음 신청의 기본 초안과 가방/배틀 선택 일관성을 위해 확인된 후보 순서를 보존한다.
+            pickedTeam = ids
             pendingMyPool = pool
             send(.poolReady(lineup: pool, profile: companion.battleRankProfile,
                             rulesVersion: BattleEngine.rulesVersion, chatSupported: true), over: conn)
@@ -1884,7 +1902,7 @@ final class BattleCenter {
             phase = .finished(iWon: iWon, byForfeit: false)
             lastError = l.battleConnectionLost
             if let iWon { settleRankedBrawlIfNeeded(won: iWon) } else { refundRankedBrawlIfNeeded() }
-        case .challenging, .incoming, .poolBuilding, .teamBuilding, .waitingTeam, .preparing:
+        case .challenging, .incoming, .poolSelecting, .poolBuilding, .teamBuilding, .waitingTeam, .preparing:
             phase = .ready
             lastError = l.battleConnectionLost
         default:

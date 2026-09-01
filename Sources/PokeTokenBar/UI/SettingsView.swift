@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var reportError: String?
     @State private var isCheckingUpdate = false
     @State private var didCheckUpdate = false
+    @State private var trainerNameDraft = ""
+    @State private var trainerNameFeedback: String?
     private var l: L { companion.l }
 
     private var isBundledApp: Bool { AppEnv.isBundledApp }
@@ -65,6 +67,9 @@ struct SettingsView: View {
             footer
         }
         .frame(height: 460)
+        .onAppear {
+            if trainerNameDraft.isEmpty { trainerNameDraft = companion.trainerName }
+        }
     }
 
     @ViewBuilder
@@ -209,6 +214,25 @@ struct SettingsView: View {
     private var generalGroup: some View {
         @Bindable var settings = settings
         settingsSection(l.generalSectionTitle) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(l.trainerNamePrompt)
+                HStack(spacing: 7) {
+                    TextField(l.trainerNamePlaceholder, text: $trainerNameDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { commitTrainerName() }
+                        .onChange(of: trainerNameDraft) { trainerNameFeedback = nil }
+                    Button(l.t("저장", "Save", "保存")) { commitTrainerName() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(normalizedTrainerName.isEmpty || normalizedTrainerName == companion.trainerName)
+                }
+                Text(trainerNameFeedback
+                     ?? l.t("배틀·교환·멀티플레이에서 다른 트레이너에게 표시됩니다.",
+                            "Shown to other trainers in battles, trades, and multiplayer.",
+                            "バトル・交換・マルチプレイでほかのトレーナーに表示されます。"))
+                    .font(.caption2)
+                    .foregroundStyle(trainerNameFeedback == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.green))
+            }
+            Divider()
             groupRow {
                 Text(l.language)
                 Spacer()
@@ -258,6 +282,18 @@ struct SettingsView: View {
                 .labelsHidden().pickerStyle(.menu).fixedSize()
             }
         }
+    }
+
+    private var normalizedTrainerName: String {
+        String(trainerNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(SaveTransfer.maxNameLength))
+    }
+
+    private func commitTrainerName() {
+        guard !normalizedTrainerName.isEmpty else { return }
+        companion.setTrainerName(normalizedTrainerName)
+        trainerNameDraft = companion.trainerName
+        trainerNameFeedback = l.t("닉네임을 저장했습니다.", "Nickname saved.", "ニックネームを保存しました。")
     }
 
     @ViewBuilder
