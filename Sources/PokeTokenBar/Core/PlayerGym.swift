@@ -246,9 +246,11 @@ struct GymMatchEngine {
     mutating func submit(_ action: NetBattleAction, from playerID: UUID) -> Bool {
         if playerID == leaderID {
             guard battle.myAction == nil, battle.canChoose(action, mine: true) else { return false }
+            if case .switchTo(let index) = action, battle.replaceFainted(to: index, mine: true) { return true }
             battle.myAction = action
         } else if playerID == challengerID {
             guard battle.oppAction == nil, battle.canChoose(action, mine: false) else { return false }
+            if case .switchTo(let index) = action, battle.replaceFainted(to: index, mine: false) { return true }
             battle.oppAction = action
         } else { return false }
         return true
@@ -283,6 +285,10 @@ struct GymMatchEngine {
     /// 함수와 자리를 갈라 둔다.
     mutating func fillLeaderAction(usingAI: Bool) {
         guard battle.myAction == nil else { return }
+        if !battle.me.isAlive,
+           let next = battle.myTeam.indices.first(where: { battle.myTeam[$0].isAlive }) {
+            _ = battle.replaceFainted(to: next, mine: true)
+        }
         battle.myAction = usingAI
             ? bestAction(team: battle.myTeam, active: battle.myActive, against: battle.opp)
             : firstAvailableAction(team: battle.myTeam, active: battle.myActive)
@@ -293,6 +299,10 @@ struct GymMatchEngine {
     mutating func fillTimedOutActions(leaderUsesAI: Bool) {
         fillLeaderAction(usingAI: leaderUsesAI)
         if battle.oppAction == nil {
+            if !battle.opp.isAlive,
+               let next = battle.oppTeam.indices.first(where: { battle.oppTeam[$0].isAlive }) {
+                _ = battle.replaceFainted(to: next, mine: false)
+            }
             battle.oppAction = firstAvailableAction(team: battle.oppTeam, active: battle.oppActive)
         }
     }

@@ -524,8 +524,13 @@ final class BattleTests: XCTestCase {
         XCTAssertFalse(battle.mine[1].isAlive, "맞고 쓰러진다")
         XCTAssertEqual(battle.myActive, 1, "쓰러진 슬롯에서 사용자의 교체 선택을 기다린다")
         XCTAssertNil(battle.result, "아직 한 마리 남았으므로 배틀은 계속된다")
+        let turnBeforeReplacement = battle.turn
+        let ppBeforeMove = battle.mine[0].pp[0]
         XCTAssertTrue(battle.switchMine(to: 0), "살아 있는 포켓몬을 직접 선택할 수 있다")
         XCTAssertEqual(battle.myActive, 0)
+        XCTAssertEqual(battle.turn, turnBeforeReplacement, "기절 뒤 강제 교체는 턴을 소비하지 않는다")
+        XCTAssertTrue(battle.useMove(0), "새로 나온 포켓몬은 즉시 기술을 쓸 수 있다")
+        XCTAssertEqual(battle.mine[0].pp[0], ppBeforeMove - 1)
     }
 
     /// 6턴을 버티는 내 포켓몬 — 어느 쪽도 그 안에 쓰러지지 않아야 CPU 선택 분기를 6번 밟는다.

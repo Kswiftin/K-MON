@@ -816,6 +816,27 @@ final class PlayerGymTests: XCTestCase {
         XCTAssertFalse(engine.submit(.move(index: 0), from: leaderID), "한 턴에 두 번 낼 수 없다")
     }
 
+    func testFaintedGymPokemonCanMoveAfterItsForcedReplacement() {
+        let leaderID = UUID(), challengerID = UUID()
+        let knockout = MoveSpec(id: 999, names: ["ko": "일격"], type: .normal, power: 10_000,
+                                damageClass: .physical, accuracy: 100, pp: 5)
+        var engine = GymMatchEngine(
+            leaderID: leaderID, challengerID: challengerID, leaderName: "L", challengerName: "C",
+            leaderTeam: [snapshot(1, level: 50, move: tackle), snapshot(3, level: 50, move: tackle)],
+            challengerTeam: [snapshot(2, level: 50, move: knockout)], seed: 1)
+
+        XCTAssertTrue(engine.submit(.move(index: 0), from: leaderID))
+        XCTAssertTrue(engine.submit(.move(index: 0), from: challengerID))
+        XCTAssertNil(engine.resolveIfReady())
+        XCTAssertFalse(engine.battle.myTeam[0].isAlive)
+
+        XCTAssertTrue(engine.submit(.switchTo(index: 1), from: leaderID))
+        XCTAssertEqual(engine.battle.myActive, 1)
+        XCTAssertNil(engine.battle.myAction, "강제 교체는 관장의 행동을 차지하지 않는다")
+        XCTAssertTrue(engine.submit(.move(index: 0), from: leaderID),
+                      "새로 나온 관장 포켓몬은 곧바로 기술을 선택할 수 있다")
+    }
+
     /// **회귀**: AI 관장이 매 턴 채울 때 도전자 몫까지 채워 버려, 사람이 무엇을 눌러도
     /// `submit` 이 "이미 냈다" 로 거절되고 **AI 끼리 알아서 끝났다.** 관장 몫만 채워야 한다.
     func testFillingTheLeaderActionLeavesTheChallengerFree() {
@@ -890,7 +911,7 @@ final class PlayerGymTests: XCTestCase {
     /// 새 case 를 더하면 구버전 게스트는 디코딩에 실패해 멈춘다 — 입장 단계에서 막아야 하므로
     /// 이 값이 올라간 사실을 잠근다.
     func testProtocolVersionIsBumpedForTheGymContract() {
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 13)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 14)
     }
 
     func testGymWireMessagesSurviveAJSONRoundTrip() throws {

@@ -7,6 +7,8 @@ struct ShopView: View {
     let store: CompanionStore
     let nav: PopoverNavigation
     @State private var category: ShopCategory = .general
+    @State private var machineQuery = ""
+    @State private var machineNames: [Int: String] = [:]
 
     private enum ShopCategory: String, CaseIterable, Identifiable {
         case general, evolution, eggs, machines, outfits
@@ -45,8 +47,16 @@ struct ShopView: View {
                         EggCard(store: store, nav: nav, tier: tier)
                     }
                 case .machines:
-                    ForEach(TechnicalMachine.catalog) { machine in
-                        TechnicalMachineShopCard(store: store, machine: machine)
+                    TextField(l.t("기술명 또는 TM 번호 검색", "Search move or TM number", "わざ名・TM番号を検索"),
+                              text: $machineQuery)
+                        .textFieldStyle(.roundedBorder)
+                    if filteredMachines.isEmpty {
+                        ContentUnavailableView.search(text: machineQuery)
+                    }
+                    ForEach(filteredMachines) { machine in
+                        TechnicalMachineShopCard(store: store, machine: machine) { name in
+                            machineNames[machine.moveID] = name
+                        }
                     }
                 case .outfits:
                     // 상점 판매분만(`shopPrice != nil`) — 업적 보상 의상은 옷장에서 잠금으로 보인다.
@@ -57,6 +67,18 @@ struct ShopView: View {
             }
         }
         .frame(height: 520)
+    }
+
+    private var filteredMachines: [TechnicalMachine] {
+        let query = machineQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        guard !query.isEmpty else { return TechnicalMachine.catalog }
+        return TechnicalMachine.catalog.filter { machine in
+            let fields = [machine.label, machine.slug.replacingOccurrences(of: "-", with: " "),
+                          machineNames[machine.moveID] ?? "", String(machine.number)]
+            return fields.contains { $0.folding(options: [.caseInsensitive, .diacriticInsensitive],
+                                                 locale: .current).contains(query) }
+        }
     }
 
     private func walletHeader(_ l: L) -> some View {
@@ -77,7 +99,9 @@ struct ShopView: View {
 private struct TechnicalMachineShopCard: View {
     let store: CompanionStore
     let machine: TechnicalMachine
+    let onResolveName: (String) -> Void
     @State private var move: MoveSpec?
+    @State private var canActiveLearn: Bool?
     @State private var confirming = false
 
     var body: some View {
@@ -107,6 +131,20 @@ private struct TechnicalMachineShopCard: View {
                                       "A single-use machine that teaches a move.",
                                       "ポケモンにわざを教える使い切りのマシンです。"))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    if let move {
+                        HStack(spacing: 10) {
+                            Label(store.l.t("위력 \(move.power > 0 ? String(move.power) : "—")",
+                                            "Power \(move.power > 0 ? String(move.power) : "—")",
+                                            "威力 \(move.power > 0 ? String(move.power) : "—")"),
+                                  systemImage: "burst.fill")
+                            Label(store.l.t("명중률 \(move.accuracy.map { "\($0)%" } ?? "—")",
+                                            "Accuracy \(move.accuracy.map { "\($0)%" } ?? "—")",
+                                            "命中 \(move.accuracy.map { "\($0)%" } ?? "—")"),
+                                  systemImage: "scope")
+                        }
+                        .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                    compatibilityLabel
                 }
                 Spacer()
             }
@@ -134,7 +172,35 @@ private struct TechnicalMachineShopCard: View {
         }
         .padding(10)
         .pokedoroCard(tint: .purple)
-        .task(id: machine.moveID) { move = await PokeAPIClient.shared.moveDetail(id: machine.moveID) }
+        .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") {
+            move = await PokeAPIClient.shared.moveDetail(id: machine.moveID)
+            if let move { onResolveName(move.name(store.language)) }
+            if let speciesID = store.currentSpeciesID {
+                canActiveLearn = await PokeAPIClient.shared.canLearnMachine(speciesID: speciesID,
+                                                                            moveID: machine.moveID)
+            } else {
+                canActiveLearn = nil
+            }
+        }
+    }
+
+    @ViewBuilder private var compatibilityLabel: some View {
+        if store.currentSpeciesID == nil {
+            Label(store.l.t("홈 포켓몬이 없습니다.", "No home Pokémon.", "ホームポケモンがいません。"),
+                  systemImage: "minus.circle")
+                .font(.caption2).foregroundStyle(.secondary)
+        } else if let canActiveLearn {
+            Label(canActiveLearn
+                  ? store.l.t("현재 홈 포켓몬이 배울 수 있음", "Home Pokémon can learn it", "ホームのポケモンが覚えられます")
+                  : store.l.t("현재 홈 포켓몬은 배울 수 없음", "Home Pokémon cannot learn it", "ホームのポケモンは覚えられません"),
+                  systemImage: canActiveLearn ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(canActiveLearn ? .green : .secondary)
+        } else {
+            Label(store.l.t("습득 가능 여부 확인 중", "Checking compatibility", "覚えられるか確認中"),
+                  systemImage: "ellipsis.circle")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
     }
 }
 

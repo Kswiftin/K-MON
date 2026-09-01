@@ -203,9 +203,9 @@ struct PokemonTournamentView: View {
     }
 
     private var rewardGuide: some View {
-        Text(store.l.t("우승 보상: 2~3명 일반 알 · 4~5명 고급 알 · 6~8명 희귀 알 (전설 알 제외)",
-                       "Champion reward: 2–3 standard · 4–5 uncommon · 6–8 rare Egg (no legendary Egg)",
-                       "優勝報酬：2〜3人 通常・4〜5人 上級・6〜8人 レア（伝説タマゴなし）"))
+        Text(store.l.t("최소 3명 · 우승 보상: 3~4명 일반 알 · 5~6명 고급 알 · 7~8명 희귀 알 (전설 알 제외)",
+                       "Minimum 3 · Champion reward: 3–4 standard · 5–6 uncommon · 7–8 rare Egg (no legendary Egg)",
+                       "最低3人・優勝報酬：3〜4人 通常・5〜6人 上級・7〜8人 レア（伝説タマゴなし）"))
             .font(.caption2).foregroundStyle(.secondary)
     }
 

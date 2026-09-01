@@ -283,6 +283,27 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertFalse(state.canChoose(.move(index: 0), mine: false))
     }
 
+    func testForcedReplacementDoesNotConsumeTheNewPokemonsMove() {
+        var fainted = BattleSide(snapshot(1)); fainted.hp = 0
+        let reserve = BattleSide(snapshot(2))
+        var state = NetBattleState(iAmA: true, myTeam: [BattleSide(snapshot(3))],
+                                   oppTeam: [fainted, reserve], rng: SplitMix64(seed: 7))
+        state.automaticallyReplacesFainted = false
+
+        XCTAssertTrue(state.replaceFainted(to: 1, mine: false))
+        XCTAssertEqual(state.oppActive, 1)
+        XCTAssertNil(state.oppAction, "강제 교체는 그 턴의 행동을 차지하지 않는다")
+        XCTAssertEqual(state.turn, 1, "강제 교체만으로 턴이 넘어가지 않는다")
+        XCTAssertTrue(state.canChoose(.move(index: 0), mine: false),
+                      "새로 나온 포켓몬은 곧바로 기술을 선택할 수 있다")
+        XCTAssertEqual(state.events.last, .sendOut(.b, teamIndex: 1))
+
+        state.myAction = .move(index: 0)
+        state.oppAction = .move(index: 0)
+        XCTAssertNil(state.resolveChosenActions())
+        XCTAssertEqual(state.turn, 2, "새 포켓몬의 기술까지 해상한 뒤에만 턴이 넘어간다")
+    }
+
     /// 자동 출전이 **스트림에 남는다**. 재생기는 이 이벤트를 보고서야 표시 상태를 새 개체로
     /// 갈아탄다 — 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그리고, `isAlive`
     /// 가 false 라 흐린 '쓰러진' 스프라이트로 보여 준다(리뷰 #1).

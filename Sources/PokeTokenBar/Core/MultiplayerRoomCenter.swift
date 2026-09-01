@@ -412,9 +412,9 @@ final class MultiplayerRoomCenter {
     func startTournament() {
         guard isHost, let lobby, lobby.canStart, lobby.activity == .tournament else { return }
         let runners = lobby.runners
-        guard runners.count >= 2, runners.count <= 8,
+        guard runners.count >= 3, runners.count <= 8,
               runners.allSatisfy({ tournamentTeams[$0.id]?.count == 3 }) else {
-            lastError = "모든 참가자가 포켓몬 3마리의 출전 파티를 준비해야 합니다."; return
+            lastError = "최소 3명이 참가하고 모두 포켓몬 3마리의 출전 파티를 준비해야 합니다."; return
         }
         let entrants = runners.map {
             TournamentEntrant(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID)

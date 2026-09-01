@@ -32,7 +32,13 @@ struct TeamPracticeBattle {
     mutating func switchMine(to index: Int) -> Bool {
         guard mine.indices.contains(index), index != myActive, mine[index].isAlive, result == nil else { return false }
         BattleEngine.prepareForSwitch(&mine[myActive])
+        let isForcedReplacement = !mine[myActive].isAlive
         myActive = index
+        if isForcedReplacement {
+            // 기절 뒤 출전은 행동을 소비하지 않는다. 출전 연출만 남기고 새 포켓몬의 기술 선택을 받는다.
+            events.append(.sendOut(.a, teamIndex: index))
+            return true
+        }
         // 턴 머리와 출전을 **여기서** 적는다 — 재생기가 개체 전환을 알아야 새로 나온 개체를
         // 이전 개체 HP 로 그리지 않고, 출전이 상대 공격보다 먼저여야 순서가 실제와 맞는다.
         events.append(.turn(turn))
