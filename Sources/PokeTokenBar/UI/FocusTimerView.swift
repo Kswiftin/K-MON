@@ -5,6 +5,10 @@ struct FocusTimerView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(CompanionStore.self) private var companion
     @State private var selectedMinutes = 25
+    /// 마지막 정산 — 스토어에서 한 번 건네받아 들고 있는다(사탕 "+XP" 와 같은 1회성 계약).
+    /// 소비하지 않고 스토어를 직접 그리면, 팝오버를 닫았다 열 때마다 같은 정산이 다시 떠오른다.
+    @State private var claimBanner: AdventureReward?
+    @State private var seenClaimSeq = 0
 
     var body: some View {
         @Bindable var settings = settings
@@ -46,8 +50,11 @@ struct FocusTimerView: View {
                                 .font(.caption.weight(.semibold))
                             Spacer()
                             if adventure.isComplete(at: context.date) {
+                                // 결과는 버리지만 사라지지 않는다 — `claimAdventure()` 가 스토어에
+                                // 배너를 남기고, 위 `adoptClaimIfNeeded` 가 그걸 건네받는다. 예전엔
+                                // 여기서 `_ =` 로 버린 게 곧 "지급을 아무도 설명하지 않음" 이었다.
                                 Button(companion.l.t("보상 받기", "Claim", "受け取る")) {
-                                    _ = companion.claimAdventure()
+                                    companion.claimAdventure()
                                 }
                                 .buttonStyle(.borderedProminent).controlSize(.small)
                             } else {
@@ -99,11 +106,25 @@ struct FocusTimerView: View {
                                                 weekly: companion.weeklyAdventureProgress))
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
-                if let reward = timer.lastReward {
-                    Text(reward.foundEgg
-                         ? companion.l.t("🎉 신비한 알 발견!", "🎉 Mystery Egg found!", "🎉 ふしぎなタマゴ発見！")
-                         : companion.l.t("집중 세션 완료", "Focus session complete", "集中セッション完了"))
-                        .font(.caption.weight(.semibold)).foregroundStyle(reward.foundEgg ? .purple : .green)
+            }
+            // 정산 배너는 세 분기 **밖**에 둔다. 예전엔 idle 분기 안에 있어서, 집중이 끝나는 순간
+            // 타이머가 곧바로 휴식으로 넘어가(`FocusTimer.tick` → `startRest`) `isRunning` 이 참이
+            // 되면 방금 정산한 결과가 화면에 뜨지도 못했다.
+            if let claim = claimBanner {
+                VStack(alignment: .leading, spacing: 2) {
+                    if claim.bonusEggs > 0 {
+                        Text(companion.l.t("🎉 신비한 알 발견!", "🎉 Mystery Egg found!", "🎉 ふしぎなタマゴ発見！"))
+                            .font(.caption.weight(.semibold)).foregroundStyle(.purple)
+                    }
+                    Text(companion.l.claimSettled(claim.totalStardust))
+                        .font(claim.bonusEggs > 0 ? .caption2 : .caption.weight(.semibold))
+                        .foregroundStyle(claim.bonusEggs > 0 ? Color.secondary : Color.green)
+                    // 만렙에 걸린 경험치가 되돌아온 몫(#82). 알림을 끈 사용자에게는 이 줄이 지갑
+                    // 증가분을 설명하는 유일한 자리다(#192).
+                    if claim.overflowBonus > 0 {
+                        Text(companion.l.claimOverflowConverted(claim.overflowBonus))
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
                 }
             }
             if companion.focusEggCount > 0, let readyAt = companion.nextStoredEggHatchAt {
@@ -130,6 +151,18 @@ struct FocusTimerView: View {
         .padding(11)
         .pokedoroCard(tint: timer.phase == .focus ? PokedoroTheme.red : PokedoroTheme.blue,
                       emphasized: timer.isRunning)
+        // 기동 직후 자동 정산된 모험(`CompanionStore.init` 의 복구 경로)도 여기서 잡힌다 —
+        // 그 정산은 버튼도 세션 완료도 거치지 않아 onChange 만으로는 못 본다.
+        .onAppear { adoptClaimIfNeeded() }
+        .onChange(of: companion.claimFeedbackSeq) { adoptClaimIfNeeded() }
+    }
+
+    /// 스토어가 들고 있는 마지막 정산을 한 번만 건네받는다. 사탕 피드백과 같은 seq + consume 형태다.
+    private func adoptClaimIfNeeded() {
+        guard let claim = companion.lastClaim, companion.claimFeedbackSeq != seenClaimSeq else { return }
+        seenClaimSeq = companion.claimFeedbackSeq
+        claimBanner = claim
+        companion.consumeClaimFeedback()
     }
 
     private var title: String {

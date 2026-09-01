@@ -121,13 +121,29 @@ final class CompanionStore {
 
     /// 사탕 사용 시 "+XP" 순간 표시 — 진화 없이 부분 진행일 때도 피드백. seq 증가로 CompanionHeader 감지.
     private(set) var candyFeedbackSeq = 0
-    private(set) var candyFeedbackAmount = 0
-    /// 위 값의 **단위**. 만렙에서는 경험치가 별의조각으로 환산돼 들어가므로(#82) 같은 숫자를
-    /// "+XP" 로 그리면 거짓 피드백이 된다 — 금액과 단위를 함께 넘긴다.
-    private(set) var candyFeedbackIsStardust = false
+    /// 실제로 **개체에 들어간** 경험치. 만렙이면 0 이다.
+    private(set) var candyFeedbackXP = 0
+    /// 상한에 걸려 별의조각으로 환산된 몫(#82). 상한 아래면 0 이다.
+    ///
+    /// **둘을 각각 센다 — 하나를 골라 담지 않는다.** 예전엔 `converted > 0 ? converted : RareCandy.xp`
+    /// 로 금액 하나와 단위 플래그만 넘겼는데, 사탕 한 개가 상한을 *걸치면* 두 몫이 동시에 생긴다.
+    /// 그때 배타 선택은 실제로 들어간 경험치를 통째로 숨겼다(#192).
+    private(set) var candyFeedbackStardust = 0
     /// "+XP" 표시 1회성 보장 — CompanionHeader 가 재생 후 호출한다. 소비하지 않으면 다른 탭에 갔다
     /// 홈으로 재진입할 때(CompanionHeader 재마운트) @State 가 초기화돼 같은 값이 다시 떠오른다(회귀).
-    func consumeCandyFeedback() { candyFeedbackAmount = 0; candyFeedbackIsStardust = false }
+    func consumeCandyFeedback() { candyFeedbackXP = 0; candyFeedbackStardust = 0 }
+
+    /// 화면이 읽는 **마지막 정산**. 정산은 네 경로(기동 복구 · 다음 모험 시작 · "보상 받기" 버튼 ·
+    /// 집중 세션 완료)에서 일어나는데 모두 `claimAdventure()` 를 지나므로 여기 한 곳에서 채운다.
+    ///
+    /// 뷰의 `@State` 가 아니라 스토어에 두는 이유: 앞의 두 경로는 사용자가 버튼을 누르지 않아
+    /// 뷰가 반환값을 받을 기회 자체가 없다. 지급을 설명하는 다른 수단은 알림뿐인데 그건 번들앱 ·
+    /// 방해금지 · 토글 3중 게이트라(`notifyCompanionEvent`), 끈 사용자에겐 설명이 아예 없었다(#192).
+    private(set) var lastClaim: AdventureReward?
+    /// 위 값의 갱신 감지용 — 사탕 · 민트 · 연출 피드백과 같은 1회성 패턴이다.
+    private(set) var claimFeedbackSeq = 0
+    /// 배너 표시 후 UI 가 호출(1회성 보장).
+    func consumeClaimFeedback() { lastClaim = nil }
 
     /// 민트 사용 시 "성격이 X로" 순간 표시 — 사탕 피드백과 동일 1회성 패턴(seq + consume).
     private(set) var mintFeedbackSeq = 0
@@ -1307,11 +1323,16 @@ final class CompanionStore {
             memoryAlbum.recordCompletedFocusSession(companionID: mon.id, sessionID: run.id.uuidString,
                                                      completedAt: now)
         }
+        // 기록엔 **지갑에 들어간 전부**를 적는다(`totalStardust`). `starPieces` 만 적으면 환산분·
+        // 트레이너·미션·업적·시즌 몫이 빠져, 기록을 합산한 값이 실제 지급보다 늘 적게 나온다(#192).
         state.adventureHistory.insert(AdventureRecord(id: run.id, zone: run.zone,
                                                        companionSpeciesID: run.companionSpeciesID,
-                                                       completedAt: now, stardust: reward.starPieces,
+                                                       completedAt: now, stardust: reward.totalStardust,
                                                        foundRareCandy: reward.foundRareCandy), at: 0)
         if state.adventureHistory.count > 30 { state.adventureHistory.removeLast(state.adventureHistory.count - 30) }
+        // 정산 네 경로가 모두 여기를 지난다 — 화면은 이 값 하나만 보면 된다.
+        lastClaim = reward
+        claimFeedbackSeq += 1
         save()
         return reward
     }
@@ -2710,11 +2731,11 @@ final class CompanionStore {
         // 아이템을 쓰고도 아무 일이 없었다(#82). 막지 않고 환산하는 이유는 사탕이 `usedAtStage`
         // 도 미는 유일한 경로라서다(레벨 메타데이터가 없는 진화의 관문).
         let overflow = awardExperience(RareCandy.xp)
-        let converted = PokemonBalance.starPieces(forOverflowExperience: overflow)
         // 진화 안 될 때(부분 진행)도 즉시 피드백 — CompanionHeader 가 연출과 별개로 표시한다.
-        // 환산된 몫은 "+XP" 로 보이면 거짓말이 되므로 단위를 함께 알린다.
-        candyFeedbackIsStardust = converted > 0
-        candyFeedbackAmount = converted > 0 ? converted : RareCandy.xp
+        // 두 몫을 **각각** 넘긴다. 상한을 걸치는 사용은 경험치와 환산분을 동시에 만들므로 하나만
+        // 고르면 나머지가 화면에서 사라진다(#192). 환산된 몫을 "+XP" 로 그리면 거짓말인 것과 같은 이유다.
+        candyFeedbackXP = RareCandy.xp - overflow
+        candyFeedbackStardust = PokemonBalance.starPieces(forOverflowExperience: overflow)
         candyFeedbackSeq += 1
         let newLevel = state.active!.level
         if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
@@ -3491,11 +3512,12 @@ final class CompanionStore {
         justGraduated = nil
         eventUntil = nil
         celebration = nil
-        // 이전 개체 기준의 1회성 피드백(사탕 +XP·민트 성격)도 비운다 — 안 비우면 불러온 직후 남의
-        // 개체에 대한 "+XP" 가 새 개체 위에 떠오른다.
-        candyFeedbackAmount = 0
-        candyFeedbackIsStardust = false
+        // 이전 개체 기준의 1회성 피드백(사탕 +XP·민트 성격·정산 배너)도 비운다 — 안 비우면 불러온
+        // 직후 남의 개체에 대한 "+XP" 나 남의 세이브 정산액이 새 개체 위에 떠오른다.
+        candyFeedbackXP = 0
+        candyFeedbackStardust = 0
         mintFeedbackNature = nil
+        lastClaim = nil
         displayState = state.active != nil ? .idle : .egg
         save()
         if state.active != nil { Task { await loadCurrentLine() } }

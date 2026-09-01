@@ -469,7 +469,7 @@ struct CompanionHeader: View {
     @State private var seenCandySeq = -1
     @State private var candyXPShown = false
     @State private var candyXPAmount = 0     // 표시 순간 캡처(consume 후에도 텍스트 유지)
-    @State private var candyXPIsStardust = false   // 위 값의 단위 — 만렙 환산분이면 ⭐ 다
+    @State private var candyStardustAmount = 0   // 만렙에 걸려 환산된 몫 — XP 와 **동시에** 생길 수 있다
     // 민트 사용 시 "반짝" 스파클 (성격 변경 피드백 — 텍스트 없이 짧은 이펙트)
     @State private var seenMintSeq = -1
     @State private var mintSparkle = false
@@ -550,9 +550,18 @@ struct CompanionHeader: View {
                         if candyXPShown {
                             // 만렙이면 사탕 몫이 별의조각으로 환산돼 들어간다(#82) — 단위를
                             // 그대로 "XP" 로 두면 오르지도 않은 경험치를 올랐다고 보여 준다.
-                            Text("+\(GameNumberFormatter.compact(candyXPAmount)) \(candyXPIsStardust ? "⭐" : "XP")")
+                            // 상한을 **걸치는** 사용은 둘이 동시에 생기므로 둘 다 그린다(#192).
+                            HStack(spacing: 4) {
+                                if candyXPAmount > 0 {
+                                    Text("+\(GameNumberFormatter.compact(candyXPAmount)) XP")
+                                        .foregroundStyle(.orange)
+                                }
+                                if candyStardustAmount > 0 {
+                                    Text("+\(GameNumberFormatter.compact(candyStardustAmount)) ⭐")
+                                        .foregroundStyle(.yellow)
+                                }
+                            }
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(candyXPIsStardust ? .yellow : .orange)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(.regularMaterial, in: Capsule())
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -806,10 +815,11 @@ struct CompanionHeader: View {
     /// 사탕 사용 "+XP" 1회 표시. store 를 consume 해 1회성 보장 — 다른 탭 갔다 홈 재진입해
     /// CompanionHeader 가 재마운트(@State 초기화)돼도 다시 뜨지 않는다(회귀 수정).
     private func showCandyXPIfNeeded() {
-        guard store.candyFeedbackAmount > 0, store.candyFeedbackSeq != seenCandySeq else { return }
+        guard store.candyFeedbackXP > 0 || store.candyFeedbackStardust > 0,
+              store.candyFeedbackSeq != seenCandySeq else { return }
         seenCandySeq = store.candyFeedbackSeq
-        candyXPAmount = store.candyFeedbackAmount
-        candyXPIsStardust = store.candyFeedbackIsStardust
+        candyXPAmount = store.candyFeedbackXP
+        candyStardustAmount = store.candyFeedbackStardust
         store.consumeCandyFeedback()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) { candyXPShown = true }
         Task { @MainActor in
