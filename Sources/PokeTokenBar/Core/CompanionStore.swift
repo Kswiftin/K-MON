@@ -127,7 +127,7 @@ final class CompanionStore {
     private(set) var candyFeedbackIsStardust = false
     /// "+XP" 표시 1회성 보장 — CompanionHeader 가 재생 후 호출한다. 소비하지 않으면 다른 탭에 갔다
     /// 홈으로 재진입할 때(CompanionHeader 재마운트) @State 가 초기화돼 같은 값이 다시 떠오른다(회귀).
-    func consumeCandyFeedback() { candyFeedbackAmount = 0 }
+    func consumeCandyFeedback() { candyFeedbackAmount = 0; candyFeedbackIsStardust = false }
 
     /// 민트 사용 시 "성격이 X로" 순간 표시 — 사탕 피드백과 동일 1회성 패턴(seq + consume).
     private(set) var mintFeedbackSeq = 0
@@ -1227,15 +1227,18 @@ final class CompanionStore {
         var reward = AdventureRules.reward(for: run)
         state.adventure = nil
         state.starPieces += reward.starPieces
-        if state.active != nil {
-            let oldLevel = state.active!.level
-            // 만렙에 걸린 몫은 버리지 않고 별의조각으로 되돌린다(#82). 그 값은 아래에서
-            // 보상 객체에 실려 지갑 증가분을 설명한다.
-            reward.overflowExperience = awardExperience(reward.experience)
-            let newLevel = state.active!.level
-            applyUsage(0)
-            if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
-        }
+        // 만렙에 걸린 몫은 버리지 않고 별의조각으로 되돌린다(#82). 그 값은 아래에서 보상 객체에
+        // 실려 지갑 증가분을 설명한다.
+        //
+        // **활성 개체가 없어도 지나간다.** 모험 중에 알을 부화기에 넣으면 파트너가 비는데
+        // (`beginIncubatingFocusEgg` 는 모험을 막지 않는다) 모험은 그대로 정산된다 — 예전엔 이
+        // 블록을 통째로 건너뛰어 전량이 조용히 사라지면서 `appliedExperience` 는 전량 적립됐다고
+        // 보고했다. 상한 초과분과 정확히 같은 부류다.
+        let oldLevel = state.active?.level ?? 0
+        reward.overflowExperience = awardExperience(reward.experience)
+        let newLevel = state.active?.level ?? 0
+        applyUsage(0)   // 활성 개체가 없으면 그대로 되돌아온다.
+        if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
         if reward.foundRareCandy { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += 1 }
         let minutes = Int((run.endsAt.timeIntervalSince(run.startedAt) / 60).rounded())
         // 트레이너 포인트는 **정산된** 분만 인정한다 — 시작만으로 적립하면 타이머를 켜 두는 것이
@@ -1266,10 +1269,7 @@ final class CompanionStore {
         let weeklyEgg = state.weeklyAdventureCount == 10 ? 1 : 0
         let rareEgg = reward.foundEgg ? 1 : 0
         let earnedEggs = fragmentEggs + weeklyEgg + rareEgg
-        let acceptedEggs = min(earnedEggs, 999 - state.focusEggs)
-        state.focusEggs += acceptedEggs
-        state.focusEggReadyDates.append(contentsOf:
-            repeatElement(now.addingTimeInterval(Self.storedEggHatchDelay), count: acceptedEggs))
+        _ = addStoredEggs(earnedEggs, at: now)
         reward.eggFragments = fragments
         reward.bonusEggs = earnedEggs
         // `AdventureRun.id` is persisted before a run can be claimed.  Replaying a claim
@@ -1297,16 +1297,18 @@ final class CompanionStore {
     /// **`@discardableResult` 를 붙이지 않는다** — 붙이면 새 호출부가 초과분을 다시 조용히
     /// 버릴 수 있고, 그게 정확히 #82 였다. 지금은 컴파일러 경고가 그 자리를 막는다.
     private func awardExperience(_ amount: Int) -> Int {
-        // 지금은 도달할 수 없다 — 세 호출부가 모두 활성 개체를 이미 보장한다(`claimAdventure` 의
-        // `if state.active != nil`, `useRareCandy` 의 `canUseRareCandy`, 디버그 훅의 자체 가드).
-        // 커버리지에 `^0` 으로 남는 이유가 이것이다. 그래도 남긴다: 호출부가 하나 늘면 이 자리가
-        // 유일한 방어이고, 지우면 활성 개체 없는 호출이 크래시가 된다.
-        guard state.active != nil else { return 0 }
-        let overflow = state.active!.gainExperience(amount)
+        // 활성 개체가 없으면 **전량**이 갈 곳을 잃는다 — 상한이 잘라낸 몫과 처분이 같다.
+        // 0 을 돌려주면 지갑도 안 늘고 보상 객체는 전량 적립됐다고 보고한다(고치기 전의 결함).
+        let hadPartner = state.active != nil
+        let overflow = hadPartner ? state.active!.gainExperience(amount) : max(0, amount)
         let stardust = PokemonBalance.starPieces(forOverflowExperience: overflow)
         guard stardust > 0 else { return overflow }
         state.starPieces += stardust
-        notifyCompanionEvent(l.notifMaxLevelOverflowTitle, l.notifMaxLevelOverflowBody(stardust))
+        // 파트너가 없을 땐 "이미 다 자란 파트너" 문구가 거짓이 되므로 알리지 않는다 — 모험이 주는
+        // 별의조각도 알림 없이 들어간다.
+        if hadPartner {
+            notifyCompanionEvent(l.notifMaxLevelOverflowTitle, l.notifMaxLevelOverflowBody(stardust))
+        }
         return overflow
     }
 
@@ -2235,10 +2237,7 @@ final class CompanionStore {
     private func grantReward(_ reward: GymReward) {
         state.starPieces += reward.starPieces
         if reward.eggs > 0 {
-            state.focusEggs = min(999, state.focusEggs + reward.eggs)
-            for _ in 0..<reward.eggs {
-                state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
-            }
+            _ = addStoredEggs(reward.eggs)
             state.eggTier = Self.strongerGuarantee(state.eggTier, reward.eggGuarantee)
         }
         state.shinyEggCharges = min(99, state.shinyEggCharges + reward.shinyCharges)
@@ -2246,9 +2245,7 @@ final class CompanionStore {
 
     /// 토너먼트 우승 보상. 참가 인원에 따른 보증만 다르고 전설 보증은 만들지 않는다.
     func grantTournamentEgg(_ reward: TournamentEggReward) {
-        guard state.focusEggs < 999 else { return }
-        state.focusEggs += 1
-        state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        guard addStoredEggs(1) > 0 else { return }
         state.eggTier = Self.strongerGuarantee(state.eggTier, reward.guarantee)
         save()
         notifyCompanionEvent(l.t("토너먼트 우승!", "Tournament Champion!", "トーナメント優勝！"),
@@ -2644,8 +2641,7 @@ final class CompanionStore {
         // 그 값을 채우는 생산 경로가 Pokédoro 개편으로 사라져(accrue 는 호출자가 없다) 영원히
         // 부화하지 않았다 — 졸업이 곧 진행 정지였다. 타이머 경로는 hatchStoredEggIfNeeded 가
         // 이미 돌리고 있고, 활성이 비어 있으면 박스가 아니라 활성으로 부화한다.
-        state.focusEggs = min(999, state.focusEggs + 1)
-        state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        _ = addStoredEggs(1)
         // 도감 기록·졸업 알·목표 보상이 모두 이 함수에서만 생긴다 — 다음 틱(60초)을 기다리면
         // 그 사이 종료가 알림만 남기고 지급을 날린다.
         save()
@@ -2989,6 +2985,10 @@ final class CompanionStore {
         // 새 알 구매는 `hasActive` 에 막혀 되돌릴 수단이 없다. 가격만 계산되면 값이 빠져나가므로
         // 판매 목록을 여기서 강제한다(호출부 하나가 실수하면 토큰이 통째로 사라진다).
         guard FreshEgg.shopTiers.contains(tier) else { return false }
+        // 저장고가 꽉 찼으면 팔지 않는다. `addStoredEggs` 가 잘라내는 자리와 값을 치르는 자리가
+        // 달라서, 이 검사가 없으면 별의조각만 빠져나가고 알은 0개 늘어난다(#82 와 같은 부류인데
+        // 여기선 사라지는 게 실 재화다).
+        guard state.focusEggs < 999 else { return false }
         return availableTokens >= FreshEgg.price(guaranteeing: tier)
     }
 
@@ -3005,8 +3005,7 @@ final class CompanionStore {
         // 값을 매길 때 쓴 보증을 상태에도 적는다. 이 줄이 없어서 등급 보증 알은 값만 비싸고
         // 아무것도 보장하지 않았다 — 상점이 보증 알을 팔지 않아 드러나지 않았을 뿐이다.
         state.eggTier = Self.strongerGuarantee(state.eggTier, tier)
-        state.focusEggs = min(999, state.focusEggs + 1)
-        state.focusEggReadyDates.append(clock().addingTimeInterval(Self.storedEggHatchDelay))
+        _ = addStoredEggs(1)
         AppLog.write("egg purchased: added to egg inventory")
         save()
         return true
@@ -3085,6 +3084,23 @@ final class CompanionStore {
     /// **바꿀 게 없으면 저장하지 않는다.** init 이 load() 직후 무조건 호출하므로, 무조건 save() 하면
     /// 손상 세이브를 `.corrupt` 로 옮겨 둔 자리에 파일을 곧바로 되만들어 그 복구 장치를 무력화한다
     /// (load 의 백업 분기는 "다음 save 가 원본을 덮어쓰기 전에" 옮겨두는 것이 전제다).
+    /// 보관 알을 넣는 **유일한** 경로. 상한(999)에 맞춰 자르고 **들어간 개수만큼만** 부화 시각을
+    /// 쌓는다. 예전엔 호출부마다 `focusEggs` 는 클램프하면서 날짜는 무조건 append 해 두 값이 세션
+    /// 내내 어긋났다 — `nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고
+    /// `beginIncubatingFocusEgg` 의 `removeFirst()` 짝이 밀린다(다음 기동의
+    /// `reconcileStoredEggDates()` 전까지 안 낫는다).
+    ///
+    /// `@discardableResult` 를 붙이지 않는다 — 붙이면 새 호출부가 잘려나간 몫을 다시 조용히
+    /// 버릴 수 있고, 안 붙이면 그 자리가 `_ =` 로 눈에 보인다(#82 의 `gainExperience` 와 같은 계약).
+    private func addStoredEggs(_ count: Int, at now: Date? = nil) -> Int {
+        let accepted = min(count, 999 - state.focusEggs)
+        guard accepted > 0 else { return 0 }
+        state.focusEggs += accepted
+        let readyAt = (now ?? clock()).addingTimeInterval(Self.storedEggHatchDelay)
+        state.focusEggReadyDates.append(contentsOf: repeatElement(readyAt, count: accepted))
+        return accepted
+    }
+
     private func reconcileStoredEggDates() {
         let trimmed = Array(state.focusEggReadyDates.sorted().prefix(state.focusEggs))
         var dates = trimmed
@@ -3450,6 +3466,7 @@ final class CompanionStore {
         // 이전 개체 기준의 1회성 피드백(사탕 +XP·민트 성격)도 비운다 — 안 비우면 불러온 직후 남의
         // 개체에 대한 "+XP" 가 새 개체 위에 떠오른다.
         candyFeedbackAmount = 0
+        candyFeedbackIsStardust = false
         mintFeedbackNature = nil
         displayState = state.active != nil ? .idle : .egg
         save()

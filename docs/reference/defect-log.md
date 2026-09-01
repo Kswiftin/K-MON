@@ -3158,15 +3158,41 @@ read_when:
   만렙 해안 1회를 7,200 → 10,800 으로 둔다(동등 환율은 정확히 2배가 되어 상한이 증산 장치가 된다).
   `testOverflowRateIsHalfTheRateAdventuresAlreadyPay` 가 그 유도 과정을 네 길이에서 다시 계산해,
   모험 계수를 재조정하면서 이 상수를 안 따라가면 걸리게 한다.
+- **유도에 빠져 있던 두 번째 경로 — 사탕(리뷰에서 발견, 의도된 설계로 확정).** 위 유도는 모험만
+  계산했는데, 환산은 `useRareCandy` 도 지난다. `RareCandy.dailyGrant = 1` · `RareCandy.xp =
+  100,000,000` 이라 **만렙 파트너는 로그인만 해도 하루 3,333 ⭐** 를 번다. 이건 결함이 아니라 의도다 —
+  만렙 이후 매일 들어오는 사탕이 아무 값도 못 하는 상태(#82 이전)를 되돌리는 게 환산의 목적이고,
+  순환 루프도 없다(새 알 5,000 ⭐ > 하루 환급 3,333 ⭐ 라 사탕으로 알을 계속 뽑을 수 없다).
+  **환율을 바꿀 때는 모험 경로만 보지 말고 이 일일 수입도 같이 본다** — 환율을 2배로 올리면
+  만렙 계정의 기본 수입이 6,666 ⭐/일이 되어 알 가격을 넘긴다.
 - **막는 것보다 환산이 안전했다.** 이슈는 "만렙이면 `canUseRareCandy` 에서 막자" 를 대안으로
   제시했는데, 사탕은 `usedAtStage` 도 미는 유일한 경로다 — 레벨 메타데이터가 없는 진화
   (`applyUsage` 의 `usedAtStage >= threshold` 분기)의 관문이 그것뿐이라, 막으면 그 개체의 진화
   경로가 영영 닫힌다. **"아무것도 안 하니 막자" 판단 전에 그 경로가 미는 축이 하나뿐인지 확인한다.**
-- **부류 스윕 — 같은 모양이 알 저장고에 남아 있다.** `claimAdventure` 는 `acceptedEggs =
-  min(earnedEggs, 999 - state.focusEggs)` 로 잘라 넣고는 `reward.bonusEggs = earnedEggs`(**얻은** 값)를
-  보고한다. 저장고가 999 면 "알 2개 받았다" 고 말하면서 0 개가 들어간다. 같은 상한이
-  `CompanionStore` 2273 · 2682 · 3043 에 3곳 더 있고 그쪽은 반환 보고조차 없다. 경험치와 달리 처분이
-  자명하지 않아(버림 · 조각 환산 · 정직한 보고) #82 범위 밖으로 남겼다 — **별도 판단이 필요하다.**
+- **첫 스윕이 놓친 자리 — 클램프만 보고 `if` 를 안 봤다(리뷰에서 발견).** 처분을 결정하지 않고
+  값을 버리는 자리는 `min(...)` 만이 아니다. **호출 자체를 건너뛰는 `if` 도 같은 일을 한다** —
+  `claimAdventure` 의 `if state.active != nil` 이 그것이었다. 모험 중에 알을 부화기에 넣으면
+  파트너가 비는데(`beginIncubatingFocusEgg` 는 모험을 막지 않는다) 모험은 그대로 정산되므로,
+  108,000,000 XP 가 통째로 사라지면서 `appliedExperience` 는 **전량 적립됐다고** 보고했다(대화
+  도구가 그 값을 그대로 싣는다). 만렙 초과분을 고치면서 이 분기를 빠뜨린 이유는 스윕 대상을
+  "클램프 표현식" 으로 좁혔기 때문이다 — **처분 결정을 건너뛰는 가드도 같은 부류로 센다.**
+  처방은 `awardExperience` 를 무조건 지나게 하고(활성 개체가 없으면 전량을 초과분으로 처분),
+  알림 문구("이미 다 자란 파트너")가 거짓이 되는 경우만 알림을 건너뛰는 것.
+  회귀: `testAdventureWithoutAPartnerConvertsInsteadOfDroppingExperience`.
+- **부류 스윕 — 같은 모양이 알 저장고에 있었다(리뷰에서 발견, 처분 확정).** 상한 999 를 쓰는 자리가
+  5곳인데 넷은 `focusEggs` 만 클램프하고 `focusEggReadyDates` 는 **무조건** append 했다. 두 배열이
+  어긋나면 `nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고 `beginIncubatingFocusEgg` 의
+  `removeFirst()` 짝이 밀린다 — 다음 기동의 `reconcileStoredEggDates()` 가 잘라 주므로 **세션 안에서만**
+  틀리고, 그래서 재기동을 끼우는 테스트로는 안 잡혔다. 더 나쁜 건 `buyEgg` 로, `canBuyEgg` 에 상한
+  검사가 없어 저장고가 꽉 차면 **별의조각만 차감되고 알은 0개** 늘었다(#82 는 지어낸 값이 사라졌지만
+  여기선 실 재화다).
+  처방은 **넣는 경로를 하나로 모으는 것** — `addStoredEggs(_:at:)` 가 클램프와 날짜 append 를 한 자리에서
+  짝지어 하고, 실제로 들어간 개수를 돌려준다. `@discardableResult` 를 안 붙여 새 호출부가 잘린 몫을
+  다시 버리면 `_ =` 로 눈에 띈다(`gainExperience` 와 같은 계약). `canBuyEgg` 에는 999 검사를 넣었다.
+  회귀: `testBuyingAnEggWithFullStorageChargesNothing` · `testGymRewardAtFullEggStorageAddsNoHatchDate`
+  (상한 검사 제거 + 날짜 무조건 append 주입으로 4개 단언이 빨개지는 것을 확인).
+  **남은 판단** — `reward.bonusEggs` 는 여전히 *얻은* 값이라 저장고가 꽉 차면 대화·배너가 안 들어간
+  알을 보고한다. 넘친 알의 처분(버림 · 조각 환산 · 정직 보고)은 미결이다.
 - **범위 밖 결정도 테스트로 고정한다.** 트레이너 레벨(99) 초과 포인트는 환산하지 않는다 — 포인트가
   분 단위고 보상이 `500 × 레벨` 이라 경험치처럼 코드에서 유도되는 환율이 없고, 만렙 상태는 화면에
   이미 드러난다. `testTrainerPointsAtMaxLevelAreNotConverted` 가 그 결정을 붙잡는다. 이게 빨개지면
