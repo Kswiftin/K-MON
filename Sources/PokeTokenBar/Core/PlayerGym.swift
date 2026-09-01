@@ -110,10 +110,26 @@ enum PlayerGym {
         max(0, Int(now.timeIntervalSince(since) / 60))
     }
 
-    /// 체육관이 둘 보일 때 **어느 쪽이 남는가.** 두 기기가 같은 답을 내야 하므로 발견 시각처럼
-    /// 기기마다 다른 값을 쓰지 않는다 — 그러면 둘 다 닫거나 둘 다 남는다.
-    static func survivor(_ one: UUID, _ other: UUID) -> UUID {
-        one.uuidString < other.uuidString ? one : other
+    /// 체육관이 둘 보일 때 **내가 물러나야 하나.** 먼저 연 쪽이 남는다 — 배틀로 딴 체육관이
+    /// 방어팀을 세우는 사이 남이 새로 연 체육관에 밀리면 안 된다.
+    ///
+    /// 판정을 `gymID` 로 하지 않는 이유: 방 이름 꼬리표는 **기기 식별자**고 `gymID` 는 별개 값이라,
+    /// 두 기기가 서로 다른 쌍을 비교했다(내 gymID 대 남의 기기 식별자). 그러면 둘 다 닫거나 둘 다
+    /// 남는다. 재임 시각은 양쪽이 **같은 두 값**을 방 이름에서 읽으므로 답이 갈리지 않는다.
+    ///
+    /// 초 단위로 자르는 것이 핵심이다. 방 이름에 실리는 값은 이미 초로 잘려 있는데
+    /// (`PlayerGymRoomName.make`) 내 것만 소수점까지 비교하면 **양쪽이 서로 자기가 늦었다고 읽어
+    /// 둘 다 물러난다.** 같은 초에 열렸으면 기기 식별자 사전순으로 가른다 — 그 값도 양쪽이 같은
+    /// 자리에서 읽는다.
+    /// `otherHeldSince` 가 nil = 옛 형식 방 이름(`GYM · 이름#식별자`)이라 재임 시각이 안 실려 온다.
+    /// 그때는 식별자 사전순으로 가른다 — 그 값도 양쪽이 방 이름의 같은 자리에서 읽는다.
+    static func yieldsToOtherGym(myHeldSince: Date, myRoomTag: String,
+                                 otherHeldSince: Date?, otherRoomTag: String) -> Bool {
+        guard let otherHeldSince else { return myRoomTag > otherRoomTag }
+        let mine = Int(myHeldSince.timeIntervalSince1970)
+        let theirs = Int(otherHeldSince.timeIntervalSince1970)
+        if mine != theirs { return mine > theirs }
+        return myRoomTag > otherRoomTag
     }
 }
 
@@ -123,25 +139,42 @@ enum PlayerGym {
 /// 이름 문자열이 유일한 통로다. 그래서 목록에서 "누가 몇 분째 지키고 있는지"를 **접속하지 않고**
 /// 보려면 여기 실어야 한다.
 ///
-/// 형식: `GYM · <재임시작 base36> · <관장이름>#<식별자앞6>`
+/// 형식: `GYM · <재임시작 base36> · v<프로토콜> · <관장이름>#<식별자앞6>`
 ///
 /// 재임 시각을 **이름보다 앞에** 두는 이유는 길이 때문이다. 상한을 넘으면 이름을 자르는데,
 /// 뒤에 있으면 잘려 나가 뜻을 잃는다. 식별자가 맨 끝인 것은 기존 파서(`split("#").last`)와
 /// 내 방 판별(`name.contains(myIDTag)`)이 그 자리를 보기 때문이다.
+///
+/// 프로토콜을 **재임 시각 뒤에** 끼우는 것도 같은 이유다. 앞에 넣으면 이 필드를 모르는 구버전이
+/// 첫 조각을 재임 시각으로 읽어 "3만년째 지키는 중" 같은 값을 그린다. 뒤에 두면 구버전은 재임
+/// 시각을 제대로 읽고 관장 이름만 `v14 · 현우` 로 지저분해진다.
 struct PlayerGymRoomName: Equatable {
     let heldSince: Date
     let leaderName: String
     let idTag: String
+    /// 방을 연 앱의 와이어 프로토콜. **nil = 버전을 안 싣던 구버전이 연 방**이라 알 수 없다 —
+    /// "낮다" 가 아니다. 모르는 것을 낮다고 읽으면 호환되는 방에 도전을 막게 된다.
+    let protocolVersion: Int?
 
-    static func make(leaderName: String, idTag: String, heldSince: Date) -> String {
+    static func make(leaderName: String, idTag: String, heldSince: Date,
+                     protocolVersion: Int = MultiplayerWireMessage.protocolVersion) -> String {
         let stamp = String(Int(heldSince.timeIntervalSince1970), radix: 36)
-        // 자를 수 있는 건 관장 이름뿐이다 — 접두(GYM)·재임 시각·식별자는 파싱에 필요하다.
+        // 자를 수 있는 건 관장 이름뿐이다 — 접두(GYM)·재임 시각·프로토콜·식별자는 파싱에 필요하다.
         // `base` 꼬리가 곧 이름이라 `LANServiceName` 의 꼬리 절단이 그대로 맞는다.
-        return LANServiceName.make(base: "\(PlayerGym.roomNamePrefix) · \(stamp) · \(leaderName)",
-                                   suffix: "#\(idTag)")
+        return LANServiceName.make(
+            base: "\(PlayerGym.roomNamePrefix) · \(stamp) · v\(protocolVersion) · \(leaderName)",
+            suffix: "#\(idTag)")
     }
 
-    /// 옛 형식(`GYM · 이름#식별자`)도 읽는다 — 재임 시각이 없으면 nil 이라 화면이 시간을 생략한다.
+    /// 방 이름 끝의 식별자만 읽는다. **옛 형식(`GYM · 이름#식별자`)에서도 잡힌다** — 재임 시각이
+    /// 없어 `parse` 가 통째로 nil 을 내는 방과도 경합 판정을 해야 하기 때문이다.
+    static func idTag(fromRoomName name: String) -> String? {
+        guard PlayerGym.isGymRoomName(name), let tag = name.split(separator: "#").last else { return nil }
+        return String(tag)
+    }
+
+    /// 재임 시각이 없는 옛 형식(`GYM · 이름#식별자`)은 **통째로 nil 이다** — 시각 자리가 없으면
+    /// 어느 조각이 이름인지 가를 수 없다. 식별자만 필요하면 `idTag(fromRoomName:)` 를 쓴다.
     static func parse(_ name: String) -> PlayerGymRoomName? {
         guard PlayerGym.isGymRoomName(name) else { return nil }
         let body = name.dropFirst("\(PlayerGym.roomNamePrefix) · ".count)
@@ -151,9 +184,52 @@ struct PlayerGymRoomName: Equatable {
         guard let separator = head.range(of: " · ") else { return nil }
         let stamp = String(head[..<separator.lowerBound])
         guard let seconds = Int(stamp, radix: 36) else { return nil }
+
+        // 재임 시각 다음 조각이 `v<숫자>` 면 프로토콜이다. 아니면 버전을 안 싣던 방이고, 그
+        // 조각부터가 관장 이름이다 — 이름이 `v` 로 시작해도 뒤가 숫자가 아니면 이름으로 남는다.
+        var rest = String(head[separator.upperBound...])
+        var protocolVersion: Int?
+        if rest.hasPrefix("v"), let next = rest.range(of: " · "),
+           let version = Int(rest[rest.index(after: rest.startIndex)..<next.lowerBound]) {
+            protocolVersion = version
+            rest = String(rest[next.upperBound...])
+        }
         return PlayerGymRoomName(heldSince: Date(timeIntervalSince1970: TimeInterval(seconds)),
-                                 leaderName: String(head[separator.upperBound...]),
-                                 idTag: idTag)
+                                 leaderName: rest, idTag: idTag, protocolVersion: protocolVersion)
+    }
+}
+
+/// 남의 체육관 방과 내 앱을 견준 결과. **접속하기 전에** 정해야 하므로 근거는 방 이름에 실려 온
+/// 프로토콜뿐이다(`PlayerGymRoomName.protocolVersion`).
+enum GymRoomCompatibility: Equatable {
+    /// 프로토콜이 같다. 도전할 수 있다.
+    case compatible
+    /// 방 이름에 프로토콜이 없다 — 버전을 안 싣던 앱이 연 방이라 **알 수 없다.**
+    /// 붙어 봐야 안다(입장 단계에서 관장이 판정한다). 막지 않는다.
+    case unknown
+    /// 상대 앱이 낮다. 붙어도 입장에서 거절되므로 도전을 막고 그 이유를 말한다.
+    case theirAppIsOutdated
+    /// **내 앱이 낮다.** 도전도 개설도 막는다 — 최신이 아닌 앱이 체육관 자리를 차지하면
+    /// 최신 앱끼리도 못 쓰게 된다.
+    case myAppIsOutdated
+
+    /// 이 방에 도전을 걸어 볼 수 있나.
+    var allowsChallenge: Bool { self == .compatible || self == .unknown }
+
+    /// 이 방이 **내 개설을 막나.** 상대가 낮은 방은 막지 않는다 — 그러면 구버전 한 대가 최신
+    /// 사용자 전원의 체육관을 잠근다. 내가 낮으면 개설 자체를 못 하므로 그것도 막는 쪽이다.
+    var blocksOpeningMyGym: Bool { self != .theirAppIsOutdated }
+}
+
+extension PlayerGym {
+    /// 방 이름에서 읽은 프로토콜과 내 것을 견준다. `roomVersion == nil` 은 **모름**이지 낮음이
+    /// 아니다 — 같은 프로토콜인데 이름에만 안 실린 방(직전 릴리즈)을 낮다고 읽으면 멀쩡한
+    /// 체육관에 도전을 막는다.
+    static func compatibility(roomVersion: Int?,
+                              myVersion: Int = MultiplayerWireMessage.protocolVersion) -> GymRoomCompatibility {
+        guard let roomVersion else { return .unknown }
+        if roomVersion == myVersion { return .compatible }
+        return roomVersion < myVersion ? .theirAppIsOutdated : .myAppIsOutdated
     }
 }
 
@@ -294,7 +370,7 @@ struct GymMatchEngine {
             : firstAvailableAction(team: battle.myTeam, active: battle.myActive)
     }
 
-    /// 양쪽을 다 채운다 — **턴 마감(30초)에서만** 쓴다. 사람이 시간 안에 안 고른 것을 대신하는
+    /// 양쪽을 다 채운다 — **턴 마감(`MultiplayerRoomCenter.turnDuration`)에서만** 쓴다. 사람이 시간 안에 안 고른 것을 대신하는
     /// 자리라 도전자 몫도 채우는 것이 맞다.
     mutating func fillTimedOutActions(leaderUsesAI: Bool) {
         fillLeaderAction(usingAI: leaderUsesAI)

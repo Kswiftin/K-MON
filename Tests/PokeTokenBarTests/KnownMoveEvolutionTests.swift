@@ -35,6 +35,13 @@ private let knownMoveLine = line(base: 221, tree: EvoNode(speciesID: 221, childr
             evolutionKnownMoveID: ancientPowerID),
 ]))
 
+/// 야돈 → 야도란(Lv.37 레벨업) / 야도킹(교환 + 왕의징표석).
+/// 한 노드에서 **레벨 갈래와 물건 갈래가 갈리는** 유일한 형태다.
+private let slowpokeLine = line(base: 79, tree: EvoNode(speciesID: 79, children: [
+    EvoNode(speciesID: 80, children: [], evolutionLevel: 37, evolutionTrigger: "level-up"),
+    EvoNode(speciesID: 199, children: [], evolutionTrigger: "trade", evolutionHeldItem: "kings-rock"),
+]))
+
 /// 레어코일 → 자포코일: 첫 줄은 장소, 우리가 읽는 건 뒤쪽의 천둥의돌 줄.
 ///
 /// **노드를 손으로 적지 않고 파서에 통과시킨다.** 손으로 적으면 파서가 무엇을 내놓든 이 테스트는
@@ -74,11 +81,13 @@ private let fixedNow = Date(timeIntervalSince1970: 1_700_000_000)
 @MainActor
 final class KnownMoveEvolutionTests: XCTestCase {
 
-    private func store(_ evoLine: EvoLine) -> CompanionStore {
+    /// 갈라지는 진화는 부화 때 씨앗으로 경로가 정해진다 — 어느 갈래가 뽑혀도 같은 규칙이어야
+    /// 하므로 씨앗을 바꿔 가며 두 갈래를 다 밟는다.
+    private func store(_ evoLine: EvoLine, seed: UInt64 = 7) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("known-move-\(UUID().uuidString).json")
         return CompanionStore(provider: StubProvider(value: evoLine), clock: { fixedNow },
-                              fileURL: url, rng: SeededRNG(seed: 7))
+                              fileURL: url, rng: SeededRNG(seed: seed))
     }
 
     /// 한 단계 넘기고도 남을 성장치. 조건이 맞으면 진화가 일어나고, 아니면 그대로다.
@@ -246,5 +255,60 @@ final class EvolutionItemRowTests: XCTestCase {
                                               url: "https://pokeapi.co/api/v2/pokemon-species/2/"),
                              evolves_to: [], evolution_details: [detail(level: 16)])
         XCTAssertNil(PokeAPIClient.evoNode(from: link).evolutionKnownMoveID)
+    }
+
+    // MARK: 계획이 교환 갈래를 고른 종 — 레벨 진화가 막혀 있던 자리
+
+    /// **회귀**: 야돈은 한쪽이 레벨(야도란 Lv.37), 다른 쪽이 교환(야도킹·왕의징표석)이다.
+    /// 부화 때 정해지는 계획(`plannedPathIDs`)이 교환 쪽을 고르면 레벨을 아무리 올려도 진화가
+    /// 열리지 않았다 — Lv.39 가 되어도 아무 일이 없고, 화면은 그 이유를 말하지 않았다.
+    ///
+    /// 계획은 **선호**지 잠금이 아니다. 아이템 진화는 이미 계획을 무시하므로(`useEvolutionItem`)
+    /// 레벨 갈래만 묶여 있던 것이 어긋남이었다. 그래서 **계획이 어느 쪽이든** 확인한다.
+    func testALevelBranchOpensEvenWhenThePlanChoseTheTradeBranch() async {
+        var routesSeen = Set<Int>()
+        for seed in UInt64(1)...12 {
+            let companion = store(slowpokeLine, seed: seed)
+            await companion.hatch(baseID: 79)
+            guard let planned = companion.state.active?.plannedPathIDs, planned.count >= 2 else { continue }
+            routesSeen.insert(planned[1])
+
+            companion.debugAccrueLevelExperience(38 * PokemonBalance.experiencePerLevel)
+            companion.applyUsage(0)
+
+            XCTAssertEqual(companion.state.active?.level, 39)
+            XCTAssertEqual(companion.evolutionPrompt?.toSpeciesID, 80,
+                           "계획=\(planned[1]): Lv.37 을 넘겼으면 야도란 진화가 열려야 한다")
+        }
+        XCTAssertEqual(routesSeen, [80, 199],
+                       "두 갈래가 다 나와야 이 테스트가 막힌 경우를 실제로 밟는다")
+    }
+
+    /// 레벨이 모자라면 열리지 않는다 — 조건을 없앤 오구현도 초록이 되지 않게.
+    func testTheLevelBranchStaysShutBeforeItsLevel() async {
+        for seed in UInt64(1)...6 {
+            let companion = store(slowpokeLine, seed: seed)
+            await companion.hatch(baseID: 79)
+            companion.debugAccrueLevelExperience(29 * PokemonBalance.experiencePerLevel)
+            companion.applyUsage(0)
+
+            XCTAssertEqual(companion.state.active?.level, 30)
+            XCTAssertNil(companion.evolutionPrompt, "Lv.37 전에는 열리면 안 된다")
+        }
+    }
+
+    /// 계획이 **레벨 갈래**를 골랐으면 형제(교환 갈래)로 새지 않는다 — 대체는 막힌 경우에만이다.
+    func testAPlannedLevelBranchIsNeverSwappedForASibling() async {
+        for seed in UInt64(1)...12 {
+            let companion = store(slowpokeLine, seed: seed)
+            await companion.hatch(baseID: 79)
+            guard companion.state.active?.plannedPathIDs.dropFirst().first == 80 else { continue }
+
+            companion.debugAccrueLevelExperience(38 * PokemonBalance.experiencePerLevel)
+            companion.applyUsage(0)
+
+            XCTAssertNotEqual(companion.evolutionPrompt?.toSpeciesID, 199,
+                              "교환 갈래는 레벨로 열리지 않는다")
+        }
     }
 }

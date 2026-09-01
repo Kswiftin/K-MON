@@ -1122,6 +1122,40 @@ struct L {
           "Defends only while this app is running.",
           "アプリ起動中のみ防衛します。")
     }
+    /// 방 참가가 프로토콜 차이로 거절될 때. **구버전 상대의 화면에 그대로 뜨는 문구**라
+    /// "안 맞는다" 로 끝내지 않고 무엇을 해야 하는지까지 적는다.
+    var gymVersionMismatch: String {
+        t("앱 버전이 달라 참가할 수 없습니다. 최신 버전으로 업데이트해 주세요.",
+          "Versions differ, so you can't join. Please update to the latest version.",
+          "アプリのバージョンが違うため参加できません。最新版に更新してください。")
+    }
+    var playerGymUpdateRequired: String {
+        t("앱을 업데이트해 주세요 — 더 새로운 체육관이 열려 있어 도전도 개설도 할 수 없습니다.",
+          "Please update the app — a newer gym is open, so you can't challenge or open one.",
+          "アプリを更新してください — より新しいジムが開いており、挑戦も開設もできません。")
+    }
+    /// 이미 관장인 사람에게는 "개설도 못 한다" 가 틀린 말이다 — 체육관은 돌고 있다. 대신 지금
+    /// 무엇이 막혔고(새 버전 도전자) 무엇이 곧 일어나는지(재시작 시 자리 양보)를 말한다.
+    var playerGymUpdateRequiredAsLeader: String {
+        t("앱이 오래됐습니다. 새 버전 트레이너는 도전할 수 없고, 앱을 다시 켜면 관장 자리를 넘기게 됩니다 — 업데이트해 주세요.",
+          "Your app is outdated. Trainers on the newer version can't challenge you, and you'll hand over the gym when you restart — please update.",
+          "アプリが古いです。新しいバージョンのトレーナーは挑戦できず、再起動するとリーダーの座を譲ります — 更新してください。")
+    }
+    var playerGymPeerNeedsUpdate: String {
+        t("상대 트레이너의 앱이 오래됐습니다 — 업데이트해야 도전할 수 있습니다.",
+          "That trainer's app is outdated — they need to update before you can challenge.",
+          "相手のアプリが古いです — 更新しないと挑戦できません。")
+    }
+    var playerGymLeaveAndRetry: String {
+        t("나가서 다시 시도", "Leave and try again", "退出してもう一度")
+    }
+    var playerGymTakeOverFromAI: String { t("직접 싸우기", "Fight it myself", "自分で戦う") }
+    var playerGymHandBackToAI: String { t("다시 AI 에게", "Back to AI", "AIに戻す") }
+    var playerGymTakeOverNextTurn: String {
+        t("다음 턴부터 내가 고릅니다. 이번 턴 행동은 AI 가 이미 냈습니다.",
+          "You choose from the next turn — the AI already submitted this one.",
+          "次のターンから自分で選びます。今のターンの行動は AI が提出済みです。")
+    }
     var playerGymBusyElsewhere: String {
         t("체육관 관장인 동안은 참가할 수 없습니다.",
           "Not available while you host a gym.",

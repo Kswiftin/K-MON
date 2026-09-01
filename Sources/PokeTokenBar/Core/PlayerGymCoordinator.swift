@@ -15,8 +15,19 @@ final class PlayerGymCoordinator {
 
     /// 개설을 눌렀는데 이미 열린 체육관이 있어 막혔다.
     private(set) var blockedByExistingGym = false
+
+    /// 내 앱이 낮아 체육관을 아예 못 쓴다 — 더 새로운 프로토콜의 체육관이 보인다.
+    /// 개설도 도전도 막고 업데이트를 안내한다.
+    var needsAppUpdateForGym: Bool { rooms.isOutdatedForGym }
     /// 재시작 후 자격을 반납했다 — 그 사이 남이 체육관을 열었다는 뜻이라 한 번 알린다.
     private(set) var yieldedToExistingGym = false
+
+    /// 다음에 열리는 체육관 방에 경합 판정을 걸까. **직접 연 체육관에만** 건다.
+    ///
+    /// 배틀로 넘겨받은 자리는 경합이 아니다. 승계 직후 몇 초 동안은 내가 방금 이긴 옛 관장의 방이
+    /// 아직 광고되는데(`concludeGymMatch` 가 결과를 보여 주고 3초 뒤에 닫는다), 그 방의 재임 시각은
+    /// 나보다 이르다 — 경합으로 다루면 **딴 체육관을 그 자리에서 반납한다.**
+    private var checksConflictWhenRoomOpens = false
 
     /// 브라우저가 한 바퀴 돌기 전에는 개설 버튼을 잠근다. **빈 목록을 "없음"으로 읽으면**
     /// 단일성 정책 전체가 무의미해진다 — 둘이 동시에 열어도 아무도 못 막는다.
@@ -38,7 +49,11 @@ final class PlayerGymCoordinator {
         self.companion = companion
         self.rooms = rooms
         self.clock = clock
-        rooms.onGymRoomOpened = { [weak self] in self?.scheduleConflictCheck() }
+        rooms.onGymRoomOpened = { [weak self] in
+            guard let self, self.checksConflictWhenRoomOpens else { return }
+            self.checksConflictWhenRoomOpens = false
+            self.scheduleConflictCheck()
+        }
         rooms.onGymLeadershipWon = { [weak self] gymID in self?.takeLeadership(gymID: gymID) }
         rooms.onGymLeadershipLost = { [weak self] in self?.companion.resignGymLeadership() }
     }
@@ -52,7 +67,7 @@ final class PlayerGymCoordinator {
         if rooms.isBrowsing { beginScanIfNeeded() }
         // 막혔던 사유가 사라졌으면 안내도 지운다 — 안 지우면 체육관이 닫힌 뒤에도
         // "이미 열린 체육관이 있습니다" 가 계속 남는다.
-        if rooms.visibleGymRoom == nil { blockedByExistingGym = false }
+        if rooms.gymRoomHoldingTheSlot == nil { blockedByExistingGym = false }
         // 자격이 풀렸으면 **방도 닫는다.** 상태만 지우면 방은 계속 광고되는데 화면은 관장이
         // 아닌 것으로 떨어져, 자기 방이 목록에 남고 `join` 은 `phase == .hosting` 이라 조용히
         // 거절된다 — 도전·관전 버튼이 눌러도 아무 반응이 없는 상태가 그것이다.
@@ -62,14 +77,20 @@ final class PlayerGymCoordinator {
             if rooms.isGymRoom { rooms.leaveRoom() }
             return
         }
-        // 재시작 후 광고를 재개하는 경로. **개설 버튼만 막으면 여기로 새 나가** 체육관이 둘이 된다.
-        if let existing = rooms.visibleGymRoom {
+        // 여기서부터는 **광고를 재개하는 경로**다(재시작·자격 복원). 내 방이 이미 떠 있거나 뜨는
+        // 중이면 이 경로가 아니다 — 그때 남이 뒤늦게 연 체육관을 보고 자리를 내주면, 배틀로 딴
+        // 체육관이 방어팀을 세우는 도중에 날아간다. 그 판정은 `resolveGymRoomConflict` 가 한다.
+        guard rooms.phase == .idle else { return }
+        // **개설 버튼만 막으면 여기로 새 나가** 체육관이 둘이 된다.
+        if let existing = rooms.gymRoomHoldingTheSlot {
             AppLog.write("player gym: yielding leadership, another gym is already open (\(existing.name))")
             companion.resignGymLeadership()
             yieldedToExistingGym = true
             return
         }
-        if rooms.phase == .idle { rooms.createGymRoom() }
+        // 여기도 "빈 목록을 보고 연다" 는 같은 경합에 노출된다 — 연 뒤에 한 번 더 본다.
+        checksConflictWhenRoomOpens = true
+        rooms.createGymRoom()
     }
 
     /// 스캔 창을 연다 — 화면이 뜰 때마다 부르고, 창이 끝나면 목록을 신뢰한다.
@@ -85,9 +106,14 @@ final class PlayerGymCoordinator {
     }
 
     /// 체육관을 새로 연다. 이미 보이는 체육관이 있으면 열지 않는다.
+    ///
+    /// 발견이 즉시가 아니라 둘이 동시에 빈 목록을 보고 열 수 있다 — 연 뒤에 한 번 더 본다.
     func openGym() {
-        guard rooms.visibleGymRoom == nil else { blockedByExistingGym = true; return }
+        // 내 앱이 낮으면 열지 못한다. 열어 봐야 최신 앱들은 붙지 못하고, 그 방이 자리만 차지한다.
+        guard !needsAppUpdateForGym else { return }
+        guard rooms.gymRoomHoldingTheSlot == nil else { blockedByExistingGym = true; return }
         blockedByExistingGym = false
+        checksConflictWhenRoomOpens = true
         companion.becomeGymLeader()
         rooms.createGymRoom()
     }
@@ -125,8 +151,8 @@ final class PlayerGymCoordinator {
     /// 동시 개설 경합 흡수. 발견이 즉시가 아니라 둘 다 빈 목록을 보고 열 수 있으므로, 연 **뒤에**
     /// 한 번 더 본다.
     ///
-    /// 선후는 발견 시각이 아니라 `gymID` 사전순으로 정한다 — 발견 시각은 기기마다 달라
-    /// 둘 다 닫거나 둘 다 남는다.
+    /// 선후는 발견 시각이 아니라 **재임 시작 시각**으로 정한다(`PlayerGym.yieldsToOtherGym`) —
+    /// 발견 시각은 기기마다 달라 둘 다 닫거나 둘 다 남는다.
     private func scheduleConflictCheck() {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
@@ -136,29 +162,18 @@ final class PlayerGymCoordinator {
     }
 
     private func resolveGymRoomConflict() {
-        guard let mine = companion.gymLeadership?.gymID,
-              let other = rooms.visibleGymRoom,
-              let theirs = PlayerGymCoordinator.gymID(fromRoomName: other.serviceName) else { return }
-        guard PlayerGym.survivor(mine, theirs) != mine else { return }
-        AppLog.write("player gym: closing my gym, \(other.name) wins the tie-break")
+        // 경합 상대는 **자리를 다투는 방**뿐이다 — 붙지도 못하는 구버전 방에 자리를 내주면 안 된다.
+        guard let mine = companion.gymLeadership?.heldSince,
+              let other = rooms.gymRoomHoldingTheSlot,
+              let theirTag = PlayerGymRoomName.idTag(fromRoomName: other.serviceName) else { return }
+        // 옛 형식 방은 재임 시각이 안 실려 온다 — 그때는 식별자로 가른다.
+        guard PlayerGym.yieldsToOtherGym(
+            myHeldSince: mine, myRoomTag: rooms.myRoomTag,
+            otherHeldSince: PlayerGymRoomName.parse(other.serviceName)?.heldSince,
+            otherRoomTag: theirTag) else { return }
+        AppLog.write("player gym: closing my gym, \(other.name) has held it longer")
         companion.resignGymLeadership()
         rooms.leaveRoom()
         yieldedToExistingGym = true
-    }
-
-    /// 방 이름 꼬리표에서 상대 체육관 식별자를 읽는다. 방 광고에는 TXT 가 없어 이름이 유일한
-    /// 단서라(`MultiplayerRoomCenter.startHosting`), 꼬리표 앞부분만으로 비교한다.
-    ///
-    /// 완전한 UUID 가 아니므로 정확한 값이 아니라 **양쪽이 같은 답을 내는 순서**만 필요하다.
-    static func gymID(fromRoomName name: String) -> UUID? {
-        guard let tag = name.split(separator: "#").last else { return nil }
-        return UUID(uuidString: String(tag)) ?? UUID(uuidString: paddedUUIDString(String(tag)))
-    }
-
-    /// 꼬리표는 UUID 앞 6글자다. 비교만 하면 되므로 나머지를 0 으로 채워 형식을 맞춘다.
-    private static func paddedUUIDString(_ prefix: String) -> String {
-        let template = "00000000-0000-0000-0000-000000000000"
-        let head = String(prefix.prefix(8))
-        return head + String(template.dropFirst(head.count))
     }
 }

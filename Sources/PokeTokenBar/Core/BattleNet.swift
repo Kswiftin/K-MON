@@ -546,7 +546,7 @@ final class BattleCenter {
     #endif
     /// 배틀이 잡히거나 걸릴 때 창을 자동으로 **여는** 신호(AppDelegate 가 관찰).
     /// **고정하지는 않는다** — 급히 화면을 치워야 할 때 닫히지 않으면 곤란하고, 배틀은 창을
-    /// 닫아도 살아 있어 다시 열면 이어진다(다만 30초 턴 마감은 계속 돈다).
+    /// 닫아도 살아 있어 다시 열면 이어진다(다만 턴 마감은 계속 돈다).
     var wantsForegroundWindow: Bool {
         // 받은 신청은 화면을 자동으로 열지 않는다. 옆 사람이 모니터를 보고 있어도 신청자와
         // 게임 내용이 노출되지 않고, 사용자가 일반 알림을 눌렀을 때만 상세 화면을 연다.
@@ -559,6 +559,34 @@ final class BattleCenter {
         case .ready, .incoming: return false
         default: return true
         }
+    }
+
+    /// 창이 닫혀 있을 때 **다시 열어야 하나.**
+    ///
+    /// 배틀 중 팝오버는 붙들지 않으므로(`PopoverPinPolicy`) 바깥을 한 번 클릭하면 닫힌다. 그런데
+    /// **턴 마감은 닫힌 동안에도 계속 돌아**(`turnDuration`) 자리를 비운 턴은 첫 사용가능 기술로
+    /// 자동 제출된다. 그래서 다시 열어 주지 않으면 사람은 고를 기회 없이 판을 잃는다 — 1:1 LAN 이
+    /// 특히 그랬다. 그쪽은 턴이 넘어가도 `wantsForegroundWindow` 가 읽는 값이 안 바뀌어 관찰이
+    /// 다시 울리지 않았고, 한 번 닫히면 배틀이 끝날 때까지 닫힌 채였다.
+    ///
+    /// **내가 골라야 할 때만** 연다. 이미 낸 뒤에도 열면 닫아도 곧바로 되살아나고, 아무것도 못 하는
+    /// 화면을 계속 들이민다(AI 방어 관장이 겪던 그 증상이다).
+    var wantsWindowReopened: Bool {
+        guard isAwaitingBattleTurn else { return true }
+        return awaitsMyBattleAction
+    }
+
+    /// 턴 행동을 기다리는 배틀이 지금 도는가. 거짓이면 거래·결과 화면처럼 턴과 무관한 상황이라
+    /// 예전대로 `wantsForegroundWindow` 만 따른다.
+    private var isAwaitingBattleTurn: Bool {
+        if case .battling = phase { return true }
+        return multiplayer.isAwaitingBattleTurn
+    }
+
+    /// 그중 **내 차례**인가.
+    private var awaitsMyBattleAction: Bool {
+        if case .battling = phase, battle?.myAction == nil { return true }
+        return multiplayer.awaitsMyBattleAction
     }
 
     /// 한 턴에 주는 시간 — 멀티와 같은 값이다.
