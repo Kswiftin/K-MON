@@ -3205,3 +3205,29 @@ read_when:
   새 분기는 `llvm-cov show --show-regions` 에서 `^0` 이 없다(유일한 `^0` 인 `awardExperience` 의 nil
   가드는 세 호출부가 이미 보장하는 도달 불가 방어라 사유를 주석으로 남겼다).
   (`CompanionModel.swift` · `CompanionStore.swift` · `AdventureModel.swift`, 2026-09-01.)
+
+## 창 크기를 `contentRect` 로만 잡는 부류 (호스팅 컨트롤러가 그 값을 지운다)
+
+- **증상.** 릴리스 노트 창이 본문을 서너 줄로 접은 채 떴다. 사용자 리포트로 발견했다.
+- **직접원인.** `NSWindow(contentRect:)` 로 잡은 640×660 이 `contentViewController =
+  NSHostingController(...)` 를 붙이는 순간 무효가 된다. AppKit 이 SwiftUI 호스팅 뷰의 fitting size 로
+  창을 다시 재고, 그 값은 대개 `minSize` 까지 쪼그라든다(실측 480×400 = 선언한 minSize 그대로).
+- **테스트·검증이 왜 못 걸렀나.** 실행 확인을 **"창이 떴는가"** 로만 했다. 버전 도장이 `present()`
+  뒤에만 찍히는 걸 이용해 도장 변화로 창 생성을 확인했는데, 그 신호는 *존재*만 말하고 *치수*를
+  말하지 않는다. 창이 뜨고 내용도 보이니 "동작한다" 로 읽혔다.
+- **부류 스윕 — 같은 결함이 이미 배포돼 있었다.** `MemoryHomePresenter` 도 1040×720 을 선언하고
+  `installContent(in:)` 로 호스팅 컨트롤러를 붙인다. 이 Mac 의 `NSWindow Frame MemoryHomeWindow`
+  저장값이 `900 640` — 선언값이 아니라 minSize 다. 즉 Memory Home 은 줄곧 최소 크기로 열려 있었다.
+  `FloatingPetPanel` 은 `contentView`(뷰) 를 넣고 프레임을 직접 잡아서 이 부류가 아니고,
+  `NSPopover` 는 자체 `contentSize` 를 쓴다.
+- **처방.** 크기는 컨트롤러를 붙인 **뒤에** `setContentSize(...)` 로 잡는다. `contentRect` 는 초기값일
+  뿐이라 의도를 표현하지 못한다.
+- **영구 캡처.** `WindowContentSizeGuardTests` — `NSWindow(contentRect:` 와
+  `contentViewController = NSHostingController` 를 함께 쓰는 소스 파일은 `setContentSize(` 를 반드시
+  호출해야 한다(주석 줄 제외 — 규칙을 설명하는 주석이 패턴을 담는다). 새 창을 세 번째로 추가할 때
+  같은 함정을 다시 밟지 않게 한다. 측정 방법도 남긴다: `CGWindowListCopyWindowInfo` 로 실제 창
+  치수를 읽거나, `defaults read <bundle-id> "NSWindow Frame <autosaveName>"` 를 본다.
+- **곁가지.** 두 창 모두 `setFrameAutosaveName` 을 쓰지만 아무 데서도 `setFrameUsingName` 을 부르지
+  않아 저장만 하고 복원하지 않는다. 릴리스 노트 창은 버전당 한 번뿐이라 이름을 지웠고, Memory Home 은
+  기존 동작을 유지했다(저장값이 복원되지 않는 상태 그대로).
+  (`ReleaseNotesPresenter.swift` · `MemoryHomePresenter.swift`, 2026-09-01.)
