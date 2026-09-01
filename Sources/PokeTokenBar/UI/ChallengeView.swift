@@ -19,10 +19,30 @@ struct ChallengeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // 방이 돌아가는 중에는 감춘다. 그 화면은 자기 콘텐츠로 꽉 차 있고, 여기서 다른 데로
-            // 빠져나가는 문을 열어 두면 진행 중인 방을 두고 나가게 된다.
-            if battleCenter.multiplayer.phase == .idle { soloChallenges }
-            PokeathlonView(store: store)
+            // 친구 탭의 토너먼트·배틀·공유 체육관도 같은 LAN 센터를 쓴다. 활동 종류를 보지 않고
+            // `PokeathlonView` 를 그리면 도전 탭까지 "토너먼트 진행 중" 화면과 나가기 버튼을 공유해
+            // 두 탭이 하나처럼 움직인다. 도전 탭 소유 활동(OX·포켓슬론)만 여기서 이어 그린다.
+            if battleCenter.multiplayer.phase == .idle || !presentsPokeathlonContent {
+                soloChallenges
+            }
+            if presentsPokeathlonContent { PokeathlonView(store: store) }
+        }
+    }
+
+    private var presentsPokeathlonContent: Bool {
+        Self.presentsPokeathlon(phase: battleCenter.multiplayer.phase,
+                                activity: battleCenter.multiplayer.roomActivity)
+    }
+
+    nonisolated static func presentsPokeathlon(phase: MultiplayerRoomCenter.Phase,
+                                               activity: RoomActivity?) -> Bool {
+        switch phase {
+        case .idle, .pokeathlon, .pokemonQuiz:
+            return true
+        case .creating, .hosting, .joining, .joined:
+            return activity == .pokeathlon || activity == .pokemonQuiz
+        case .battling, .tournament:
+            return false
         }
     }
 
