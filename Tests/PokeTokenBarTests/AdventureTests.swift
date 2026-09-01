@@ -315,8 +315,9 @@ final class AdventureTests: XCTestCase {
         // 아니라 핸드셰이크에서 거절된다 — 값을 바꿀 땐 그 거절 동작도 같이 확인한다.
         // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case), 6 = 방 채팅, 7 = 포켓몬 OX 퀴즈,
         // 8 = 드레인·반동·다단·풀린치, 9 = 특성(스냅샷에 ability 필드),
-        // 11 = 토너먼트 팀·대진·관전 상태 동기화, 12 = 공유 체육관(도전·거절·상태·행동·승계).
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 13)
+        // 11 = 토너먼트 팀·대진·관전 상태 동기화, 12 = 공유 체육관(도전·거절·상태·행동·승계),
+        // 14 = 기절 교체는 상대 공격을 받지 않는다(양쪽이 같은 규칙이라야 상태가 갈리지 않는다).
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 14)
     }
 
     /// 라운드 결과는 호스트가 게스트에게 **브로드캐스트**하는 유일한 배틀 페이로드다. 이벤트가

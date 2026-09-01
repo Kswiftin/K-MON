@@ -29,10 +29,24 @@ struct TeamPracticeBattle {
     ///
     /// 예전엔 활성 슬롯만 바꾸고 끝나서 교체가 공짜였다. 상성이 나쁘면 계속 갈아타며 유리한
     /// 상대만 때릴 수 있었고, 상대는 그동안 한 번도 움직이지 못했다.
+    /// 교체 — **자발적 교체만 턴을 쓴다.**
+    ///
+    /// 쓰러진 자리를 메우는 교체는 공짜다. 상대는 이미 그 턴에 내 개체를 쓰러뜨리는 데 행동을
+    /// 썼으므로, 새로 나온 개체가 나오자마자 또 맞으면 한 턴에 두 번 맞는 셈이다(본가 규칙도 같다).
+    ///
+    /// 예전엔 기절 교체도 이 함수를 그대로 타서 나오자마자 얻어맞았다 — 자동 출전을 없애고
+    /// 사람이 고르게 바꾸면서, 그 선택이 **자발적 교체와 같은 경로**가 된 탓이다.
     mutating func switchMine(to index: Int) -> Bool {
         guard mine.indices.contains(index), index != myActive, mine[index].isAlive, result == nil else { return false }
+        let replacingFainted = !mine[myActive].isAlive
         BattleEngine.prepareForSwitch(&mine[myActive])
         myActive = index
+        // 쓰러진 자리를 메우는 것은 그 턴의 마무리다 — 턴 머리를 또 적으면 로그에 "턴 N" 이
+        // 두 번 뜬다. 출전만 남기고 상대 공격 없이 끝낸다.
+        guard !replacingFainted else {
+            events.append(.sendOut(.a, teamIndex: index))
+            return true
+        }
         // 턴 머리와 출전을 **여기서** 적는다 — 재생기가 개체 전환을 알아야 새로 나온 개체를
         // 이전 개체 HP 로 그리지 않고, 출전이 상대 공격보다 먼저여야 순서가 실제와 맞는다.
         events.append(.turn(turn))

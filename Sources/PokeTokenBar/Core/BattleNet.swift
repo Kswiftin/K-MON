@@ -308,6 +308,10 @@ struct NetBattleState {
         let actionA: NetBattleAction = overrideA == nil ? rawActionA : .move(index: 0)
         let actionB: NetBattleAction = overrideB == nil ? rawActionB : .move(index: 0)
         var turnEvents: [BattleEvent] = []
+        // 로그에 "손가락흔들기 → X" 로 적히는 값. 기절 교체 턴에는 상대 기술이 **나가지 않으므로**
+        // 여기서도 지워야 한다 — 안 그러면 아무 일도 없던 턴에 부른 기술만 적힌다.
+        var calledMoveA = overrideA
+        var calledMoveB = overrideB
 
         func switchSlot(_ index: Int, team: inout [BattleSide], active: inout Int) {
             BattleEngine.prepareForSwitch(&team[active])
@@ -335,14 +339,21 @@ struct NetBattleState {
                                                   turn: turn, rng: &rng)
             teamA[activeA] = a; teamB[activeB] = b
         case (.switchTo(let indexA), .move(let indexB)):
+            // **쓰러진 자리를 메우는 교체는 공짜다.** 상대는 이미 지난 턴에 내 개체를 쓰러뜨리는
+            // 데 행동을 썼으므로, 새로 나온 개체가 나오자마자 또 맞으면 한 턴에 두 번 맞는 셈이다
+            // (본가 규칙도 같다). 자발적 교체만 그 턴을 내준다.
+            let aWasFainted = !teamA[activeA].isAlive
             switchSlot(indexA, team: &teamA, active: &activeA)
-            let moveB = spendPP(indexB, override: overrideB, team: &teamB, active: activeB)
+            // 기절 교체 턴에는 상대 기술을 **소모하지도 않는다.** PP 만 깎고 효과가 없으면
+            // 상대는 공격이 허공에 날아간 셈이 된다 — 그 턴은 양쪽 다 건너뛴 것으로 둔다.
+            let moveB = aWasFainted ? nil : spendPP(indexB, override: overrideB, team: &teamB, active: activeB)
+            if aWasFainted { calledMoveB = nil }
             var a = teamA[activeA], b = teamB[activeB]
             BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             // 출전은 상대 공격보다 **앞**이다 — 재생기가 이 순서대로 개체를 갈아타야 새로 나온
             // 개체가 맞는 그림이 된다(뒤에 두면 이전 개체가 남의 데미지를 맞는다).
             turnEvents = [.turn(turn), .sendOut(.a, teamIndex: indexA)]
-            if a.isAlive && b.isAlive {
+            if let moveB, a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &b, defender: &a,
                                                        attackerActor: .b, defenderActor: .a,
                                                        move: moveB, rng: &rng)
@@ -350,12 +361,14 @@ struct NetBattleState {
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b
         case (.move(let indexA), .switchTo(let indexB)):
+            let bWasFainted = !teamB[activeB].isAlive
             switchSlot(indexB, team: &teamB, active: &activeB)
-            let moveA = spendPP(indexA, override: overrideA, team: &teamA, active: activeA)
+            let moveA = bWasFainted ? nil : spendPP(indexA, override: overrideA, team: &teamA, active: activeA)
+            if bWasFainted { calledMoveA = nil }
             var a = teamA[activeA], b = teamB[activeB]
             BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             turnEvents = [.turn(turn), .sendOut(.b, teamIndex: indexB)]
-            if a.isAlive && b.isAlive {
+            if let moveA, a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &a, defender: &b,
                                                        attackerActor: .a, defenderActor: .b,
                                                        move: moveA, rng: &rng)
@@ -397,8 +410,8 @@ struct NetBattleState {
         // 배치는 **자동 출전 이벤트까지 담은 뒤** 만든다 — 배치 이벤트 수가 평평한 `events` 와
         // 어긋나면 `BattleLogSource.netBattle` 의 진행도 자르기가 그만큼 밀린다.
         let eventBatch = NetBattleEventBatch(events: turnEvents, a: contextA, b: contextB,
-                                              calledMovesA: overrideA.map { [$0] } ?? [],
-                                              calledMovesB: overrideB.map { [$0] } ?? [])
+                                              calledMovesA: calledMoveA.map { [$0] } ?? [],
+                                              calledMovesB: calledMoveB.map { [$0] } ?? [])
 
         self.myTeam = iAmA ? teamA : teamB
         self.oppTeam = iAmA ? teamB : teamA

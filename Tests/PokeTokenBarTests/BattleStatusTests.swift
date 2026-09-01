@@ -371,12 +371,12 @@ final class BattleStatusTests: XCTestCase {
 
     /// 규칙이 바뀌면 버전을 올린다 — 구버전 피어는 같은 배틀을 다르게 보므로 핸드셰이크에서 막아야 한다.
     func testRulesVersionMovesWithTheStatusConditions() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 19,
+        XCTAssertEqual(BattleEngine.rulesVersion, 20,
                        """
                        상태이상 = 3, 변화기 = 4, 끊김/에스크로 = 5, LAN 팀전 = 6, 출전 이벤트 = 7, \
                        랭크 = 8, 가변 위력 = 9, 체중 = 10, 되돌려주기 = 11, 변화기 상성 = 12, \
                        드레인·반동·다단·풀린치 = 13, 특성 면역·흡수 = 14, 자기 회복 = 15, 현행 상태·급소 = 16, \
-                       손가락흔들기 입력 = 17
+                       손가락흔들기 입력 = 17, 기절 교체는 공짜 = 20
                        """)
     }
 

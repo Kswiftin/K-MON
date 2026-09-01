@@ -528,6 +528,33 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(battle.myActive, 0)
     }
 
+    /// 회귀: 쓰러진 자리를 메우는 교체까지 "턴을 쓴" 것으로 처리해, 새로 나온 포켓몬이 나오자마자
+    /// 얻어맞았다. 턴을 내주는 것은 **살아 있는데도 바꾼** 대가여야 한다.
+    func testReplacingAFaintedSlotIsFree() {
+        var frail = fire()
+        frail.base = BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1)
+        var battle = practiceBattle(myTeam: [water(), frail], opponent: fire())
+
+        XCTAssertTrue(battle.switchMine(to: 1), "살아 있는 상태의 교체 — 이 턴은 내준다")
+        XCTAssertFalse(battle.mine[1].isAlive, "내보낸 포켓몬이 그 공격에 쓰러진다")
+
+        let turnAfterVoluntary = battle.turn
+        let survivorHP = battle.mine[0].hp
+        let eventsBefore = battle.events.count
+
+        XCTAssertTrue(battle.switchMine(to: 0), "쓰러진 자리를 메운다")
+
+        XCTAssertEqual(battle.myActive, 0)
+        XCTAssertEqual(battle.mine[0].hp, survivorHP, "나오자마자 맞지 않는다")
+        XCTAssertEqual(battle.turn, turnAfterVoluntary, "기절 교체는 턴을 넘기지 않는다")
+        XCTAssertEqual(battle.events.count, eventsBefore + 1, "출전 이벤트 하나만 남는다")
+        if case .sendOut(.a, let teamIndex)? = battle.events.last {
+            XCTAssertEqual(teamIndex, 0)
+        } else {
+            XCTFail("마지막 이벤트는 출전이어야 한다: \(String(describing: battle.events.last))")
+        }
+    }
+
     /// 6턴을 버티는 내 포켓몬 — 어느 쪽도 그 안에 쓰러지지 않아야 CPU 선택 분기를 6번 밟는다.
     private func tank() -> BattleSnapshot {
         BattleSnapshot(speciesID: 143, name: "탱커", trainer: nil, level: 50, nature: nil, isShiny: false,

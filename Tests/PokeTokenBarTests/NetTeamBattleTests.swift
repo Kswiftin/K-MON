@@ -283,6 +283,55 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertFalse(state.canChoose(.move(index: 0), mine: false))
     }
 
+    /// 회귀: 수동 교체(`automaticallyReplacesFainted == false`, 체육관·토너먼트)에서 쓰러진 자리를
+    /// 메우는 교체를 살아 있는 교체와 똑같이 처리해, 새로 나온 포켓몬이 나오자마자 얻어맞았다.
+    /// 턴을 내주는 것은 **살아 있는데도 바꾼** 대가여야 한다. 상대 기술은 나가지도, PP 를 쓰지도 않는다.
+    func testReplacingAFaintedSlotTakesNoHitAndSpendsNoOpponentPP() {
+        let attacker = BattleSide(snapshot(1, speed: 200, power: 500))
+        var lead = BattleSide(snapshot(2, speed: 10, power: 1)); lead.hp = 1
+        var state = NetBattleState(iAmA: true, myTeam: [attacker],
+                                   oppTeam: [lead, BattleSide(snapshot(3))],
+                                   rng: SplitMix64(seed: 1))
+        state.automaticallyReplacesFainted = false
+        state.myAction = .move(index: 0); state.oppAction = .move(index: 0)
+        XCTAssertNil(state.resolveChosenActions())
+
+        let attackerPP = state.myTeam[0].pp
+        let turnBefore = state.turn
+        state.myAction = .move(index: 0)
+        state.oppAction = .switchTo(index: 1)
+
+        XCTAssertNil(state.resolveChosenActions())
+
+        XCTAssertEqual(state.oppActive, 1)
+        XCTAssertEqual(state.oppTeam[1].hp, state.oppTeam[1].stats.hp, "나오자마자 맞지 않는다")
+        XCTAssertEqual(state.myTeam[0].pp, attackerPP, "상대 기술은 나가지 않았으므로 PP 도 안 준다")
+        XCTAssertEqual(state.turn, turnBefore + 1)
+    }
+
+    /// 같은 규칙이 **A 쪽 교체**(`(.switchTo, .move)` 갈래)에도 걸려야 한다. 한쪽만 고치면 두 피어가
+    /// 같은 턴을 다르게 해상해 팀 상태가 갈린다.
+    func testReplacingMyFaintedSlotTakesNoHitWhenIAmTheChallenger() {
+        var lead = BattleSide(snapshot(1, speed: 10, power: 1)); lead.hp = 1
+        var state = NetBattleState(iAmA: true, myTeam: [lead, BattleSide(snapshot(2))],
+                                   oppTeam: [BattleSide(snapshot(3, speed: 200, power: 500))],
+                                   rng: SplitMix64(seed: 1))
+        state.automaticallyReplacesFainted = false
+        state.myAction = .move(index: 0); state.oppAction = .move(index: 0)
+        XCTAssertNil(state.resolveChosenActions())
+        XCTAssertFalse(state.myTeam[0].isAlive, "선봉이 먼저 쓰러진다")
+
+        let opponentPP = state.oppTeam[0].pp
+        state.myAction = .switchTo(index: 1)
+        state.oppAction = .move(index: 0)
+
+        XCTAssertNil(state.resolveChosenActions())
+
+        XCTAssertEqual(state.myActive, 1)
+        XCTAssertEqual(state.myTeam[1].hp, state.myTeam[1].stats.hp, "나오자마자 맞지 않는다")
+        XCTAssertEqual(state.oppTeam[0].pp, opponentPP, "상대 기술은 나가지 않았으므로 PP 도 안 준다")
+    }
+
     /// 자동 출전이 **스트림에 남는다**. 재생기는 이 이벤트를 보고서야 표시 상태를 새 개체로
     /// 갈아탄다 — 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그리고, `isAlive`
     /// 가 false 라 흐린 '쓰러진' 스프라이트로 보여 준다(리뷰 #1).

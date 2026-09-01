@@ -108,7 +108,7 @@ final class LobbyRoleTests: XCTestCase {
         // 9 = 특성(스냅샷에 ability 필드), 11 = 토너먼트 팀·대진·관전 상태 동기화,
         // 12 = 공유 체육관(도전·거절·상태·행동·승계).
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 13)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 14)
     }
 
     func testBettingMessagesRoundTrip() throws {
