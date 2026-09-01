@@ -422,16 +422,35 @@ struct BattleFieldView: View {
     private func combatant(_ side: BattleSide, size: CGFloat, back: Bool,
                            isStruck: Bool) -> some View {
         VStack(spacing: -3) {
-            SpriteView(speciesID: side.snapshot.speciesID, size: size, animated: true,
-                       shiny: side.snapshot.isShiny, back: back)
-                .opacity(side.isAlive ? (isStruck ? 0.45 : 1) : 0.3)
-                .offset(x: isStruck ? 4 : 0)
-                .animation(.easeInOut(duration: 0.08).repeatCount(4, autoreverses: true),
-                           value: isStruck)
+            ZStack {
+                SpriteView(speciesID: side.snapshot.speciesID, size: size, animated: true,
+                           shiny: side.snapshot.isShiny, back: back)
+                    .opacity(side.isAlive ? (isStruck ? 0.45 : 1) : 0.12)
+                    .scaleEffect(side.isAlive ? 1 : 0.72, anchor: .bottom)
+                    .rotationEffect(.degrees(side.isAlive ? 0 : (back ? -9 : 9)))
+                    .offset(x: isStruck ? 4 : 0, y: side.isAlive ? 0 : size * 0.18)
+                    .animation(.easeInOut(duration: 0.08).repeatCount(4, autoreverses: true),
+                               value: isStruck)
+                    .animation(.easeIn(duration: 0.58), value: side.isAlive)
+
+                if !side.isAlive {
+                    Text(l.t("기절", "FAINTED", "ひんし"))
+                        .font(.system(size: max(10, size * 0.12), weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.red.opacity(0.9)))
+                        .overlay(Capsule().stroke(Color.white.opacity(0.85), lineWidth: 1.5))
+                        .shadow(color: .black.opacity(0.3), radius: 3, y: 2)
+                        .transition(.scale(scale: 1.45).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.42, dampingFraction: 0.68), value: side.isAlive)
             Ellipse()
-                .fill(Color.primary.opacity(0.14))
+                .fill(Color.primary.opacity(side.isAlive ? 0.14 : 0.05))
                 .frame(width: size * 0.62, height: size * 0.12)
                 .blur(radius: 1.5)
+                .animation(.easeOut(duration: 0.45), value: side.isAlive)
         }
     }
 }
@@ -1073,6 +1092,12 @@ struct BattleArenaView: View {
                                                     isReplaying: overlay.isPlaying)
     }
 
+    /// 전멸했거나 관전 중인 화면에 교체 지시를 띄우지 않는다. 실제 선택 가능한 후보가 있는
+    /// 당사자에게만 다음 포켓몬을 고르라고 안내해야 한다.
+    private var needsForcedReplacement: Bool {
+        allowsActions && !mine.isAlive && switchSlots.contains(where: \.isSelectable)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: BattleFieldMetrics.spacing) {
             header
@@ -1099,12 +1124,27 @@ struct BattleArenaView: View {
                              language: l.lang,
                              isEnabled: acceptsInput,
                              onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
-            } else if allowsActions {
-                Label(l.t("다음에 내보낼 포켓몬을 선택하세요.",
-                          "Choose the next Pokémon to send out.",
-                          "次に出すポケモンを選んでください。"),
-                      systemImage: "arrow.triangle.swap")
-                    .font(.headline).foregroundStyle(.orange)
+            } else if needsForcedReplacement {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label(l.t("\(mine.snapshot.name)이(가) 쓰러졌습니다!",
+                              "\(mine.snapshot.name) fainted!",
+                              "\(mine.snapshot.name)は たおれた！"),
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline)
+                    Text(l.t("아래에서 다음 포켓몬을 선택하세요.",
+                             "Choose your next Pokémon below.",
+                             "下から次のポケモンを選んでください。"))
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 11).fill(Color.red.opacity(0.88)))
+                .overlay(RoundedRectangle(cornerRadius: 11)
+                    .stroke(Color.orange.opacity(0.9), lineWidth: 2))
+                .shadow(color: .red.opacity(0.22), radius: 6, y: 2)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
             if !switchSlots.isEmpty {
                 // 교체도 그 턴의 행동이다 — 기술만 잠그면 재생 중에 교체로 턴을 넘길 수 있다.
@@ -1118,6 +1158,7 @@ struct BattleArenaView: View {
         // 팝오버가 주는 폭을 넘겨 요구하지 않는다 — 넘기면 매번 압축돼 그려진다. 바깥 여백은
         // 팝오버(`PopoverMetrics.padding`)가 이미 준다.
         .frame(maxWidth: BattleFieldMetrics.width, alignment: .leading)
+        .animation(.spring(response: 0.4, dampingFraction: 0.75), value: needsForcedReplacement)
     }
 
     private var header: some View {

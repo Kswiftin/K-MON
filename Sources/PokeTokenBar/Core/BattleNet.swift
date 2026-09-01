@@ -293,6 +293,31 @@ struct NetBattleState {
         }
     }
 
+    /// 기절한 자리를 메우는 교체는 턴 행동이 아니다. 새 포켓몬을 내보낸 뒤 같은 턴 번호에서
+    /// 기술을 다시 고른다. 일반 교체와 이 경로를 섞으면 교체가 `myAction` 을 차지해 새 포켓몬이
+    /// 아무 기술도 못 쓰고 상대에게 한 번 더 맞는다.
+    mutating func replaceFainted(to index: Int, mine: Bool) -> Bool {
+        let active = mine ? myActive : oppActive
+        let team = mine ? myTeam : oppTeam
+        guard team.indices.contains(active), !team[active].isAlive,
+              team.indices.contains(index), index != active, team[index].isAlive else { return false }
+
+        if mine {
+            BattleEngine.prepareForSwitch(&myTeam[myActive])
+            myActive = index
+        } else {
+            BattleEngine.prepareForSwitch(&oppTeam[oppActive])
+            oppActive = index
+        }
+        let actor: BattleActor = mine ? (iAmA ? .a : .b) : (iAmA ? .b : .a)
+        let sendOut = BattleEvent.sendOut(actor, teamIndex: index)
+        let sideA = iAmA ? me : opp
+        let sideB = iAmA ? opp : me
+        events.append(sendOut)
+        eventBatches.append(NetBattleEventBatch(events: [sendOut], a: sideA, b: sideB))
+        return true
+    }
+
     /// 양쪽 행동을 challenger=A 기준으로 해상한다. 반환값은 내 관점의 승/패/무다.
     @discardableResult
     mutating func resolveChosenActions() -> BattleOutcome? {
@@ -1420,6 +1445,11 @@ final class BattleCenter {
               var b = battle, b.myAction == nil else { return }
         let action = NetBattleAction.switchTo(index: index)
         guard b.canChoose(action, mine: true), let conn = connection else { return }
+        if b.replaceFainted(to: index, mine: true) {
+            battle = b
+            send(.action(turn: b.turn, action: action), over: conn)
+            return
+        }
         b.myAction = action
         battle = b
         send(.action(turn: b.turn, action: action), over: conn)
@@ -1591,6 +1621,13 @@ final class BattleCenter {
     private func fillTimedOutChoice(turn: Int) {
         guard case .battling = phase, let state = battle, state.turn == turn, state.myAction == nil else { return }
         AppLog.write("battle turn \(turn) timed out — choosing a move automatically")
+        if !state.me.isAlive,
+           let next = state.myTeam.indices.first(where: { state.myTeam[$0].isAlive }) {
+            switchLAN(to: next)
+            guard let replaced = battle, replaced.turn == turn, replaced.myAction == nil else { return }
+            chooseMove(Self.automaticMoveIndex(for: replaced.me))
+            return
+        }
         chooseMove(Self.automaticMoveIndex(for: state.me))
     }
 
@@ -1779,6 +1816,10 @@ final class BattleCenter {
         case .action(let turn, let action):
             guard case .battling = phase, var b = battle, b.oppAction == nil, turn == b.turn,
                   b.canChoose(action, mine: false) else { return }
+            if case .switchTo(let index) = action, b.replaceFainted(to: index, mine: false) {
+                battle = b
+                return
+            }
             b.oppAction = action
             battle = b
             resolveIfReady()

@@ -110,9 +110,11 @@ struct TournamentMatchEngine {
     mutating func submit(_ action: NetBattleAction, from playerID: UUID) -> Bool {
         if playerID == playerA.id {
             guard battle.myAction == nil, battle.canChoose(action, mine: true) else { return false }
+            if case .switchTo(let index) = action, battle.replaceFainted(to: index, mine: true) { return true }
             battle.myAction = action
         } else if playerID == playerB.id {
             guard battle.oppAction == nil, battle.canChoose(action, mine: false) else { return false }
+            if case .switchTo(let index) = action, battle.replaceFainted(to: index, mine: false) { return true }
             battle.oppAction = action
         } else { return false }
         return true
@@ -136,6 +138,14 @@ struct TournamentMatchEngine {
     }
 
     mutating func fillMissingActions() {
+        if battle.myAction == nil, !battle.me.isAlive,
+           let next = battle.myTeam.indices.first(where: { battle.myTeam[$0].isAlive }) {
+            _ = battle.replaceFainted(to: next, mine: true)
+        }
+        if battle.oppAction == nil, !battle.opp.isAlive,
+           let next = battle.oppTeam.indices.first(where: { battle.oppTeam[$0].isAlive }) {
+            _ = battle.replaceFainted(to: next, mine: false)
+        }
         if battle.myAction == nil { battle.myAction = automatic(team: battle.myTeam, active: battle.myActive) }
         if battle.oppAction == nil { battle.oppAction = automatic(team: battle.oppTeam, active: battle.oppActive) }
     }

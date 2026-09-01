@@ -86,7 +86,11 @@ final class PokemonTournamentTests: XCTestCase {
         XCTAssertEqual(engine.snapshot().activeB, 0)
         XCTAssertEqual(engine.snapshot().teamB[0].hp, 0)
         XCTAssertTrue(engine.submit(.switchTo(index: 1), from: b.id))
-        XCTAssertFalse(engine.submit(.move(index: 0), from: b.id))
+        XCTAssertEqual(engine.snapshot().activeB, 1)
+        XCTAssertFalse(engine.snapshot().submitted.contains(b.id),
+                       "기절 뒤 강제 교체는 행동 제출로 세지 않는다")
+        XCTAssertTrue(engine.submit(.move(index: 0), from: b.id),
+                      "교체해 나온 포켓몬은 같은 턴에 기술을 선택할 수 있다")
     }
 
     func testTournamentNormalizesEveryEntrantToLevelFifty() {
