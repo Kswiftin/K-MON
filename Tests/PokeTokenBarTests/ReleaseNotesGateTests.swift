@@ -69,4 +69,14 @@ final class ReleaseNotesGateTests: XCTestCase {
         let info = try JSONDecoder().decode(UpdateChecker.ReleaseInfo.self, from: Data(json.utf8))
         XCTAssertNil(info.body)
     }
+
+    /// 버전 문자열은 그대로 URL 에 박히므로 semver 가 아니면 만들지 않는다.
+    /// (`CFBundleShortVersionString` 은 손으로 빌드한 앱에서 무엇이든 될 수 있다.)
+    func testReleaseTagURLOnlyForSemver() {
+        XCTAssertEqual(UpdateChecker.releaseTagURL(version: "2.9.0")?.absoluteString,
+                       "https://github.com/Kswiftin/K-MON/releases/tag/v2.9.0")
+        XCTAssertNil(UpdateChecker.releaseTagURL(version: "2.9"))
+        XCTAssertNil(UpdateChecker.releaseTagURL(version: "2.9.0 or die"))
+        XCTAssertNil(UpdateChecker.releaseTagURL(version: "../../../etc"))
+    }
 }
