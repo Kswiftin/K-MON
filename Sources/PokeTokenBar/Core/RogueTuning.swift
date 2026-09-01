@@ -20,8 +20,9 @@ struct RogueTuning: Sendable, Equatable {
     var wildLevelHandicapEnd = 0
     /// 보스가 기준선보다 몇 위에 서는가(최종 웨이브 제외).
     var bossLevelBonus = 2
-    /// 최종 보스가 기준선보다 몇 위에 서는가.
-    var finalLevelBonus = 2
+    /// 최종 보스가 기준선보다 몇 위에 서는가. 보통 보스보다 **높게** 둔다 — 같은 값이면 30 웨이브
+    /// 관문이 8 웨이브 관문과 같은 높이라, 판의 마지막이 그냥 여덟 번째 보스가 된다.
+    var finalLevelBonus = 4
     /// 첫 구간·마지막 구간의 종족값 합 상한. 사이 구간은 선형으로 잇는다 — 웨이브 수가 바뀌어도
     /// 구간 수만 늘고 오르는 폭이 저절로 완만해진다.
     var firstTierCap = 320

@@ -38,7 +38,7 @@ final class RogueRunTests: XCTestCase {
         XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 2)       // 기준선 5 − 핸디캡 3
         XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 13)      // 보스는 기준선 11 +2
         XCTAssertEqual(RogueRun.opponentLevel(wave: 28), 61)     // 기준선 59 +2
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 30), 65)     // 최종 기준선 63 +2
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 30), 67)     // 최종 기준선 63 +4 (최종만 더 높다)
     }
 
     /// 보스는 기준선 위에 선다. 예전엔 기준선과 동급이라 파티가 보스마다 1 씩 앞서 나갔고,
@@ -125,9 +125,19 @@ final class RogueRunTests: XCTestCase {
         XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 4), 380)     // 1구간 320 + 보스 60
         XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 8), 406)     // 2구간 346 + 보스 60
         XCTAssertGreaterThan(RogueRun.baseStatTotalCap(wave: 4), RogueRun.baseStatTotalCap(wave: 3))
-        for wave in 1..<RogueRun.finalWave {
-            XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave),
-                                     RogueRun.baseStatTotalCap(wave: wave + 1), "wave \(wave)")
+        // 단조 증가는 **야생 웨이브끼리** 잰다. 보스 상한이 뒤 구간의 야생보다 높은 것은 결함이
+        // 아니라 설계다(보스는 구간의 벽이다) — 모든 웨이브를 한 줄로 세우면 보스 보너스보다 구간
+        // 폭이 커야만 통과하는, 웨이브 수에 매인 단정이 된다(30 웨이브에서 구간 폭은 26 이다).
+        let wildCaps = (1...RogueRun.finalWave)
+            .filter { !RogueRun.isBoss(wave: $0) }
+            .map { RogueRun.baseStatTotalCap(wave: $0) }
+        XCTAssertEqual(wildCaps, wildCaps.sorted(), "야생 상한이 뒤로 갈수록 낮아지는 구간이 있다")
+        // 보스는 **자기 구간** 상한 + 보너스다. 다음 구간 값을 빌려 오면 여기서 깨진다.
+        for wave in stride(from: RogueTuning.standard.bossEvery, through: RogueRun.finalWave,
+                           by: RogueTuning.standard.bossEvery) {
+            XCTAssertEqual(RogueRun.baseStatTotalCap(wave: wave),
+                           RogueRun.baseStatTotalCap(wave: wave - 1)
+                               + RogueTuning.standard.bossStatBonus, "wave \(wave)")
         }
     }
 
@@ -139,11 +149,10 @@ final class RogueRunTests: XCTestCase {
                        RogueTuning.standard.firstTierCap)
         XCTAssertEqual(RogueRun.baseStatTotalCap(wave: 20, tuning: long),
                        RogueTuning.standard.lastTierCap + long.bossStatBonus)
-        for wave in 1..<20 {
-            XCTAssertLessThanOrEqual(RogueRun.baseStatTotalCap(wave: wave, tuning: long),
-                                     RogueRun.baseStatTotalCap(wave: wave + 1, tuning: long),
-                                     "wave \(wave)")
-        }
+        let wildCaps = (1...20)
+            .filter { !RogueRun.isBoss(wave: $0, tuning: long) }
+            .map { RogueRun.baseStatTotalCap(wave: $0, tuning: long) }
+        XCTAssertEqual(wildCaps, wildCaps.sorted(), "야생 상한이 뒤로 갈수록 낮아지는 구간이 있다")
     }
 
     /// 하한이 없으면 최종 보스로 잉어킹(200)이 나온다.
@@ -561,12 +570,13 @@ final class RogueRunTests: XCTestCase {
                        "진행 중인 런을 뷰 상태(enum)로 되들이면 창을 닫을 때 사라진다")
     }
 
-    /// 기술 버튼·PP 배지·로그는 기존 배틀과 **같은 렌더러**로 그려야 한다. 직접 그리면 같은 기술이
-    /// 화면마다 다른 색으로 보인다.
+    /// 런은 자기 경기장(`WaveRunArenaView` — 한쪽에 최대 두 칸)을 쓰지만, 기술 버튼·PP 배지·로그는
+    /// 그 안에서도 **배틀 화면과 같은 조각**이어야 한다. 직접 그리면 같은 기술이 화면마다 다른
+    /// 색으로 보인다.
     func testRunBattleUsesTheSharedArenaRenderer() throws {
         let source = try Self.viewSource()
-        XCTAssertTrue(source.contains("BattleArenaView("),
-                      "던전 런도 공용 배틀 렌더러를 쓴다")
+        XCTAssertTrue(source.contains("WaveRunArenaView("),
+                      "던전 런은 2대2 를 그리는 자기 경기장을 쓴다")
         XCTAssertFalse(source.contains("Text(\"PP "),
                        "PP 표시를 직접 그리면 공용 렌더러의 색·배지 규칙에서 벗어난다")
     }

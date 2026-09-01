@@ -987,6 +987,7 @@ final class BattleStageTests: XCTestCase {
         // 다른 축을 nil 로 두면 그것 때문에 다시 받게 되어 대상 축 판정이 죽어도 초록이 된다.
         halfFetched.drain = 0
         halfFetched.healing = 0
+        halfFetched.target = "selected-pokemon"
         XCTAssertNil(halfFetched.targetsUser)
         XCTAssertTrue(CompanionStore.needsDetailRefresh(halfFetched),
                       "축을 더했는데 판정을 안 늘리면 옛 데이터로 계속 싸운다")

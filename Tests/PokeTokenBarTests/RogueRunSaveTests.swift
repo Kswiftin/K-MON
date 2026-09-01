@@ -23,6 +23,14 @@ final class RogueRunSaveTests: XCTestCase {
                  opponents: [snapshot(99, hp: 900, speed: 1)], seed: seed)
     }
 
+    /// 한 방에 눕는 상대. `makeRun` 의 상대는 900 기준 HP 라 한 턴으로는 안 죽는다 — 보상 화면까지
+    /// 가야 하는 테스트가 `useMove` 한 번으로 이겼다고 전제하면, 전제가 데미지 계산(난수 계수·급소)에
+    /// 매인 채로 조용히 깨진다.
+    private func makeWinnableRun(seed: UInt64 = 5) -> RogueRun {
+        RogueRun(party: [snapshot(1, hp: 900, speed: 200), snapshot(2, hp: 900, speed: 200)],
+                 opponents: [snapshot(99, hp: 1, speed: 1)], seed: seed)
+    }
+
     private func roundTrip(_ run: RogueRun) throws -> RogueRun {
         let data = try JSONEncoder().encode(run.saveForm)
         let save = try JSONDecoder().decode(RogueRunSave.self, from: data)
@@ -74,8 +82,9 @@ final class RogueRunSaveTests: XCTestCase {
     /// rng 는 **소비한 뒤의 상태**를 싣는다. 씨앗을 실으면 앱을 껐다 켤 때마다 같은 보상 목록이
     /// 다시 나와, 마음에 드는 뽑기가 나올 때까지 재시작하는 것이 최적 전략이 된다.
     func testTheRandomStreamContinuesInsteadOfRestarting() throws {
-        var original = makeRun()
+        var original = makeWinnableRun()
         original.useMove(0)                    // 보상 화면 — 여기까지 rng 를 소비했다
+        XCTAssertEqual(original.stage, .picking, "테스트 전제: 이겨서 보상 화면이어야 한다")
         var restored = try roundTrip(original)
         XCTAssertEqual(restored.offers, original.offers, "저장 시점의 제시 목록이 바뀌면 안 된다")
         restored.pick(restored.offers[0])
@@ -128,7 +137,7 @@ final class RogueRunSaveTests: XCTestCase {
 
     /// 고를 것이 없는 보상 화면은 버튼 없는 화면이다 — 그 판에 갇힌다.
     func testARewardScreenWithNothingToPickIsRejected() {
-        var original = makeRun()
+        var original = makeWinnableRun()
         original.useMove(0)
         var save = original.saveForm
         XCTAssertEqual(save.stage, .picking, "테스트 전제: 이겨서 보상 화면이어야 한다")
