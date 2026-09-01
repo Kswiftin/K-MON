@@ -75,4 +75,20 @@ struct BattleRank: Codable, Sendable, Equatable {
 struct BattleRankProfile: Codable, Sendable, Equatable {
     var rank: BattleRank
     var stardust: Int
+    var beginnerMode: Bool
+
+    init(rank: BattleRank, stardust: Int, beginnerMode: Bool = false) {
+        self.rank = rank
+        self.stardust = stardust
+        self.beginnerMode = beginnerMode
+    }
+
+    private enum CodingKeys: String, CodingKey { case rank, stardust, beginnerMode }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        rank = try c.decode(BattleRank.self, forKey: .rank)
+        stardust = try c.decode(Int.self, forKey: .stardust)
+        beginnerMode = try c.decodeIfPresent(Bool.self, forKey: .beginnerMode) ?? false
+    }
 }

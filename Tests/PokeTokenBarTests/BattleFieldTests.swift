@@ -230,6 +230,7 @@ final class BattleFieldTests: XCTestCase {
     /// 1v1 제한이 멀티와 같아야 두 모드의 체감이 갈리지 않는다.
     func testTheOneOnOneTurnLimitMatchesTheMultiplayerOne() {
         XCTAssertEqual(BattleCenter.turnDuration, MultiplayerRoomCenter.turnDuration)
+        XCTAssertEqual(BattleCenter.turnDuration, 30)
     }
 
     // MARK: 팝오버 예산 (계획 §6.3 안 B — 기존 팝오버 안에 압축)

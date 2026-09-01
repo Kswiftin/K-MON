@@ -86,8 +86,15 @@ final class PeerAdvertisementTests: XCTestCase {
     func testRoundTripPreservesEveryField() {
         let mine = PeerAdvertisement(rankPoints: 2_150, trainerLevel: 37, achievementTiers: 11,
                                      outfit: TrainerOutfit(worn: [.hat: .capRed]),
-                                     representativeSpeciesID: 399, representativeIsShiny: true)
+                                     representativeSpeciesID: 399, representativeIsShiny: true,
+                                     beginnerMode: true)
         XCTAssertEqual(PeerAdvertisement(mine.txtRecord), mine)
+        XCTAssertEqual(mine.txtRecord[PeerAdvertisement.Key.beginner], "1")
+    }
+
+    func testBeginnerBadgeIsOptInAndLegacyAdvertisementsRemainOff() {
+        XCTAssertNil(PeerAdvertisement().txtRecord[PeerAdvertisement.Key.beginner])
+        XCTAssertFalse(PeerAdvertisement(NWTXTRecord()).beginnerMode)
     }
 
     func testRepresentativeIsOmittedWhenUnsetAndShinyCannotExistWithoutSpecies() {

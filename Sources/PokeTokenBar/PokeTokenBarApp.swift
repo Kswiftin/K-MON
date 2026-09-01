@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         updater = UpdateChecker()
         updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)
         observeAutomaticUpdates()
-        battleCenter = BattleCenter(companion: companion)
+        battleCenter = BattleCenter(companion: companion, settings: settings)
         playerGym = PlayerGymCoordinator(companion: companion, rooms: battleCenter.multiplayer)
         // 관장 자격은 세이브에 남는다. 기한이 지난 채 복원됐으면 여기서 곧바로 풀려야
         // **재시작으로 세팅 기한을 다시 받는 길**이 막힌다.

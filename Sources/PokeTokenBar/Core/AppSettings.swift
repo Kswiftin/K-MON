@@ -49,6 +49,10 @@ final class AppSettings {
     var battleReplaySpeed: ReplaySpeed {
         didSet { defaults.set(battleReplaySpeed.rawValue, forKey: "battleReplaySpeed") }
     }
+    /// 기술 상성 안내를 배틀 버튼에 표시한다. 도움을 받는 대신 LAN 프로필에 초보자 배지가 공개된다.
+    var beginnerModeEnabled: Bool {
+        didSet { defaults.set(beginnerModeEnabled, forKey: "beginnerModeEnabled") }
+    }
     /// 플로팅에 고정해 둘 도감 종. nil = 지금 키우는 파트너를 따라간다(기본).
     /// 키를 지우는 쪽으로 nil 을 표현한다 — 0 같은 센티넬을 쓰면 종 번호와 구분되지 않는다.
     var floatingPetSpeciesID: Int? {
@@ -107,6 +111,7 @@ final class AppSettings {
         imageAntialiasing = defaults.object(forKey: "imageAntialiasing") as? Bool ?? true
         battleReplaySpeed = (defaults.string(forKey: "battleReplaySpeed")
             .flatMap(ReplaySpeed.init(rawValue:))) ?? .normal
+        beginnerModeEnabled = defaults.object(forKey: "beginnerModeEnabled") as? Bool ?? false
         floatingPetSpeciesID = defaults.object(forKey: "floatingPetSpeciesID") as? Int
         rosterSort = (defaults.string(forKey: "rosterSort").flatMap(RosterSort.init(rawValue:))) ?? .caught
         rosterSortAscending = defaults.object(forKey: "rosterSortAscending") as? Bool ?? true

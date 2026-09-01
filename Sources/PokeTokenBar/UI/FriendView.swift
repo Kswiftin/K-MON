@@ -9,6 +9,7 @@ struct FriendView: View {
     let store: CompanionStore
     let nav: PopoverNavigation
     @Environment(BattleCenter.self) private var battleCenter
+    @Environment(AppSettings.self) private var settings
     @State private var destination: Destination?
     @State private var revealsIncomingMessage = false
 
@@ -209,6 +210,7 @@ struct FriendView: View {
                                "トレーナー Lv.\(store.trainerLevel.level)"))
                     .font(.caption2).foregroundStyle(.secondary)
                 BattleRankBadge(rank: store.battleRank)
+                if settings.beginnerModeEnabled { BeginnerBadgeView(l: store.l) }
             }
             Spacer()
             VStack(spacing: 4) {
@@ -293,6 +295,7 @@ struct FriendView: View {
                         } ?? store.l.t("레벨 정보 없음", "Level unavailable", "レベル情報なし"))
                         .font(.caption2).foregroundStyle(.secondary).fixedSize()
                     }
+                    if peer.advertisement.beginnerMode { BeginnerBadgeView(l: store.l) }
                     // 던전 기록은 있을 때만 그린다 — 한 판도 안 돌린 상대에게 `0/30` 을 붙이면
                     // 기록 없음과 첫 판 전멸이 같은 줄이 된다.
                     if let record = peer.advertisement.runRecord {

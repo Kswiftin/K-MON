@@ -30,6 +30,22 @@ final class NetTeamBattleTests: XCTestCase {
         BattleRankProfile(rank: BattleRank(points: 100), stardust: 10_000)
     }
 
+    func testMovesStayLockedUntilBothActivePokemonAreOnTheField() {
+        var faintedOpponent = BattleSide(snapshot(2))
+        faintedOpponent.hp = 0
+        var state = NetBattleState(iAmA: true,
+                                   myTeam: [BattleSide(snapshot(1))],
+                                   oppTeam: [faintedOpponent, BattleSide(snapshot(3))],
+                                   rng: SplitMix64(seed: 1))
+        state.automaticallyReplacesFainted = false
+
+        XCTAssertFalse(state.canChoose(.move(index: 0), mine: true),
+                       "상대가 나오기 전에 생존한 쪽이 기술을 선입력하면 안 된다")
+        XCTAssertTrue(state.replaceFainted(to: 1, mine: false))
+        XCTAssertTrue(state.canChoose(.move(index: 0), mine: true))
+        XCTAssertTrue(state.canChoose(.move(index: 0), mine: false))
+    }
+
     func testChallengeAcceptAndActionMessagesRoundTrip() throws {
         let lineup = [snapshot(1), snapshot(2), snapshot(3)]
         let challenge = NetMessage.challenge(snapshot: lineup[0], lineup: lineup, teamSize: 3,

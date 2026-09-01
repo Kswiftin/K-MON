@@ -791,6 +791,8 @@ struct MoveGridView: View {
     let pp: [Int]
     let language: AppLanguage
     let isEnabled: Bool
+    /// 초보자 모드일 때만 상대 타입을 넘긴다. nil 이면 상성 정보가 버튼에 전혀 나타나지 않는다.
+    var effectivenessAgainst: [PokemonType]? = nil
     /// 광역기(`MoveSpec.hitsSpread`)에 범위 표시를 붙일까. **필드에 둘 이상이 설 때만 켠다** —
     /// 1대1 에서는 가리킬 대상이 하나뿐이라 표시가 정보가 아니고 버튼만 복잡해진다.
     var showsSpreadMark = false
@@ -832,6 +834,13 @@ struct MoveGridView: View {
                     }
                 }
                 .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                if let hint = effectivenessHint(move) {
+                    Text(hint.text)
+                        .font(.system(size: 7, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(hint.color, in: Capsule())
+                }
             }
             .foregroundStyle(move.type.battleLabelColor)
             .padding(.horizontal, 6)
@@ -845,6 +854,35 @@ struct MoveGridView: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled || !tier.isSelectable)
         .help(move.description(language) ?? move.name(language))
+    }
+
+    private func effectivenessHint(_ move: MoveSpec) -> (text: String, color: Color)? {
+        guard move.damageClass != .status, let types = effectivenessAgainst else { return nil }
+        let multiplier = TypeChart.effectiveness(move.type, against: types)
+        let l = L(language)
+        if multiplier == 0 { return (l.battleNoEffect, .gray) }
+        if multiplier > 1 { return (l.battleSuperEffective, .green) }
+        if multiplier < 1 { return (l.battleNotVeryEffective, .orange) }
+        return nil
+    }
+}
+
+/// 초보자 모드 혜택을 쓰는 사실을 친구 목록과 대전 화면에 동일하게 공개하는 배지.
+struct BeginnerBadgeView: View {
+    let l: L
+    var owner: String? = nil
+
+    var body: some View {
+        let badge = l.t("🐣 저는 개초보입니다", "🐣 total newbie here", "🐣 ド初心者です")
+        Text(owner.map { "\($0) · \(badge)" } ?? badge)
+            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .foregroundStyle(Color.brown.opacity(0.88))
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Color.yellow.opacity(0.28), in: RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4)
+                .stroke(Color.brown.opacity(0.28), style: StrokeStyle(lineWidth: 1, dash: [2, 2])))
+            .rotationEffect(.degrees(-1.5))
+            .fixedSize()
     }
 }
 
@@ -1080,6 +1118,8 @@ struct BattleArenaView: View {
     var calledMoves: [MoveSpec] = []
     /// 관전 화면은 같은 경기장을 그리되 행동 버튼만 잠근다.
     var allowsActions = true
+    var myBeginnerMode = false
+    var theirBeginnerMode = false
     var showsForfeit = true
     let onChoose: (Int) -> Void
     let onSwitch: (Int) -> Void
@@ -1088,7 +1128,8 @@ struct BattleArenaView: View {
 
     /// 재생이 끝나기 전에 다음 기술을 고르면 무엇이 일어났는지 보지 못한 채 턴이 넘어간다.
     private var acceptsInput: Bool {
-        allowsActions && BattleReplay.acceptsInput(isWaitingForOpponent: isWaitingForOpponent,
+        allowsActions && mine.isAlive && theirs.isAlive
+            && BattleReplay.acceptsInput(isWaitingForOpponent: isWaitingForOpponent,
                                                     isReplaying: overlay.isPlaying)
     }
 
@@ -1114,6 +1155,11 @@ struct BattleArenaView: View {
                     ProgressView().controlSize(.small)
                     Text(l.battleWaitingOpponent).font(.caption).foregroundStyle(.secondary)
                 }
+            } else if !theirs.isAlive {
+                Text(l.t("상대가 다음 포켓몬을 선택하고 있습니다…",
+                         "Opponent is choosing their next Pokémon…",
+                         "相手が次のポケモンを選んでいます…"))
+                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text(l.battleYourTurn)
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
@@ -1123,6 +1169,7 @@ struct BattleArenaView: View {
                              pp: mine.mustStruggle ? [] : mine.pp,
                              language: l.lang,
                              isEnabled: acceptsInput,
+                             effectivenessAgainst: myBeginnerMode ? theirs.snapshot.types : nil,
                              onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
             } else if needsForcedReplacement {
                 VStack(alignment: .leading, spacing: 5) {
@@ -1164,6 +1211,12 @@ struct BattleArenaView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(l.battleTurnLabel(turn)).font(.caption.bold()).monospacedDigit()
+            if myBeginnerMode {
+                BeginnerBadgeView(l: l, owner: l.t("나", "YOU", "自分"))
+            }
+            if theirBeginnerMode {
+                BeginnerBadgeView(l: l, owner: l.t("상대", "FOE", "相手"))
+            }
             if let turnEndsAt, !isWaitingForOpponent {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let left = max(0, Int(turnEndsAt.timeIntervalSince(context.date)))

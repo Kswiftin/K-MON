@@ -111,10 +111,12 @@ struct TournamentMatchEngine {
         if playerID == playerA.id {
             guard battle.myAction == nil, battle.canChoose(action, mine: true) else { return false }
             if case .switchTo(let index) = action, battle.replaceFainted(to: index, mine: true) { return true }
+            guard battle.me.isAlive, battle.opp.isAlive else { return false }
             battle.myAction = action
         } else if playerID == playerB.id {
             guard battle.oppAction == nil, battle.canChoose(action, mine: false) else { return false }
             if case .switchTo(let index) = action, battle.replaceFainted(to: index, mine: false) { return true }
+            guard battle.me.isAlive, battle.opp.isAlive else { return false }
             battle.oppAction = action
         } else { return false }
         return true
@@ -138,14 +140,19 @@ struct TournamentMatchEngine {
     }
 
     mutating func fillMissingActions() {
+        var replacedFainted = false
         if battle.myAction == nil, !battle.me.isAlive,
            let next = battle.myTeam.indices.first(where: { battle.myTeam[$0].isAlive }) {
             _ = battle.replaceFainted(to: next, mine: true)
+            replacedFainted = true
         }
         if battle.oppAction == nil, !battle.opp.isAlive,
            let next = battle.oppTeam.indices.first(where: { battle.oppTeam[$0].isAlive }) {
             _ = battle.replaceFainted(to: next, mine: false)
+            replacedFainted = true
         }
+        // 교체가 일어난 마감에서는 출전까지만 처리한다. 새 포켓몬의 기술 선택에는 다음 30초를 준다.
+        if replacedFainted { return }
         if battle.myAction == nil { battle.myAction = automatic(team: battle.myTeam, active: battle.myActive) }
         if battle.oppAction == nil { battle.oppAction = automatic(team: battle.oppTeam, active: battle.oppActive) }
     }
