@@ -71,7 +71,7 @@ Spend Star Pieces on eggs, Rare Candy, Mints, Link Cords, and evolution stones; 
 <tr>
 <td width="55%" valign="middle">
 <h3>Settings for work and updates</h3>
-Control Do Not Disturb, notifications, launch at login, the floating pet, and update checks from Settings.
+Control Do Not Disturb, notifications, launch at login, the floating pet, and update checks from Settings. After an update, the next launch shows what's new once — you can turn that window off in Settings.
 </td>
 <td width="45%" align="center"><img src="assets/settings.png" width="180" alt="Settings"></td>
 </tr>

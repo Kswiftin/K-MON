@@ -1020,6 +1020,21 @@ struct L {
         t("업데이트 자동 다운로드", "Download updates automatically", "アップデートを自動ダウンロード")
     }
     var checkForUpdatesLabel: String { t("업데이트 확인", "Check for updates", "アップデートを確認") }
+    var releaseNotesOnUpdateLabel: String {
+        t("업데이트 후 새로워진 점 보기", "Show what's new after updating", "更新後に新着情報を表示")
+    }
+    var releaseNotesWindowTitle: String { t("새로워진 점", "What's New", "新着情報") }
+    func releaseNotesUpdatedTo(_ version: String) -> String {
+        t("v\(version) 으로 업데이트됐어요", "Updated to v\(version)", "v\(version) に更新しました")
+    }
+    var releaseNotesUnavailable: String {
+        t("릴리스 노트를 불러오지 못했어요 — GitHub 로그인과 네트워크를 확인해 주세요.",
+          "Couldn't load the release notes — check your GitHub sign-in and network.",
+          "リリースノートを取得できませんでした — GitHubログインと通信を確認してください。")
+    }
+    var releaseNotesOpenPage: String {
+        t("릴리스 페이지 열기", "Open release page", "リリースページを開く")
+    }
     var checkNowButton: String { t("지금 확인", "Check now", "今すぐ確認") }
     func updateFound(_ version: String) -> String { t("새 버전 v\(version) 있어요", "Version \(version) is available", "バージョン \(version) が利用可能です") }
     func upToDate(_ version: String) -> String { t("최신 버전이에요 (v\(version))", "You're on the latest (v\(version))", "最新です (v\(version))") }

@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private var companion: CompanionStore!
     private var chatPresenter: PokemonChatPresenter!
     private var updater: UpdateChecker!
+    private var releaseNotes: ReleaseNotesPresenter!
     private var battleCenter: BattleCenter!
     private var playerGym: PlayerGymCoordinator!
     private var memoryHomeVisits: MemoryHomeVisitCenter!
@@ -86,6 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             onHide: { [weak self] in self?.settings.floatingPetEnabled = false }
         )   // 데스크톱 플로팅 펫(옵트인)
         Task { await updater.check() }                    // 기동 시 1회 업데이트 확인
+        releaseNotes = ReleaseNotesPresenter(settings: settings, store: companion, updater: updater)
+        // 업데이트로 버전이 올라간 뒤 첫 실행이면 릴리스 노트를 한 번 띄운다. 판정·도장은
+        // ReleaseNotesGate 가 맡고, 신규 설치는 창 없이 도장만 찍는다.
+        Task { await releaseNotes.showIfUpdated() }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {

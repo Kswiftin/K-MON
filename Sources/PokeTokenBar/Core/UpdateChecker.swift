@@ -24,6 +24,9 @@ final class UpdateChecker {
         let target_commitish: String
         let draft: Bool
         let prerelease: Bool
+        /// `gh release create --generate-notes` 가 만든 릴리스 본문. 옛 응답·노트 없는 릴리스도
+        /// 있으므로 optional 이다 — 필수로 두면 여기서 throw 해 업데이트 확인 전체가 죽는다.
+        var body: String?
         let assets: [Asset]
     }
     struct Available: Equatable {
@@ -41,7 +44,8 @@ final class UpdateChecker {
 
     let currentVersion: String
     let currentCommit: String
-    private let repo = "Kswiftin/K-MON"
+    nonisolated static let repoPath = "Kswiftin/K-MON"
+    private let repo = repoPath
     private let clock: () -> Date
     private var lastChecked: Date?
     private let sparkleController: SPUStandardUpdaterController
@@ -188,6 +192,41 @@ final class UpdateChecker {
         }
         guard let url = URL(string: update.url), url.scheme == "https", url.host == "github.com" else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: 릴리스 노트
+
+    /// 지정한 버전의 릴리스 본문. 비공개 저장소라 OAuth 헤더가 필요하고, 못 받으면 `nil` 이다 —
+    /// 창은 본문 대신 링크만 걸고 뜬다. **재시도하지 않는다**: 기동 때 한 번 시도하고 끝낸다.
+    func releaseNotes(forVersion version: String) async -> String? {
+        guard let url = Self.releaseAPIURL(version: version) else { return nil }
+        guard case .valid = await githubAuth.refreshAccessTokenIfNeeded(),
+              let headers = githubAuth.authorizationHeaders else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        headers.forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let info = try? JSONDecoder().decode(ReleaseInfo.self, from: data) else { return nil }
+        let body = info.body?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (body?.isEmpty ?? true) ? nil : body
+    }
+
+    /// 사람이 보는 릴리스 페이지. 노트를 못 받았을 때 창이 여는 곳이다.
+    nonisolated static func releaseTagURL(version: String) -> URL? {
+        guard isSemver(version) else { return nil }
+        return URL(string: "https://github.com/\(repoPath)/releases/tag/v\(version)")
+    }
+
+    nonisolated private static func releaseAPIURL(version: String) -> URL? {
+        guard isSemver(version) else { return nil }
+        return URL(string: "https://api.github.com/repos/\(repoPath)/releases/tags/v\(version)")
+    }
+
+    /// 버전 문자열은 그대로 URL 에 박힌다. 배포 산출물은 태그에서 주입받지만 손으로 빌드한 앱의
+    /// `CFBundleShortVersionString` 은 무엇이든 될 수 있으므로 여기서 형태를 막는다.
+    nonisolated private static func isSemver(_ value: String) -> Bool {
+        value.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil
     }
 
     // MARK: 버전 비교

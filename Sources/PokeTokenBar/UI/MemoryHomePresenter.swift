@@ -11,6 +11,7 @@ final class MemoryHomePresenter: NSObject, NSWindowDelegate {
     private let store: CompanionStore
     private let visits: MemoryHomeVisitCenter
     private var window: NSWindow?
+    private static let defaultContentSize = NSSize(width: 1_040, height: 720)
 
     init(settings: AppSettings, store: CompanionStore, visits: MemoryHomeVisitCenter) {
         self.settings = settings
@@ -50,7 +51,7 @@ final class MemoryHomePresenter: NSObject, NSWindowDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1_040, height: 720),
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: Self.defaultContentSize),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Poké Home"
@@ -59,6 +60,10 @@ final class MemoryHomePresenter: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         installContent(in: window)
+        // contentViewController 를 붙이면 AppKit 이 SwiftUI 의 fitting size 로 창을 다시 잰다.
+        // 그대로 두면 위 contentRect 가 무효가 되고 minSize(900×640)까지 쪼그라든다 —
+        // 이 Mac 의 저장된 프레임이 실제로 900×640 이었다. 크기는 붙인 **뒤에** 잡는다.
+        window.setContentSize(Self.defaultContentSize)
         window.center()
         return window
     }
