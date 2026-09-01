@@ -873,7 +873,7 @@ struct BeginnerBadgeView: View {
     var owner: String? = nil
 
     var body: some View {
-        let badge = l.t("🐣 초보임", "🐣 newbie", "🐣 しょしんしゃ")
+        let badge = l.t("🐣 저는 개초보입니다", "🐣 total newbie here", "🐣 ド初心者です")
         Text(owner.map { "\($0) · \(badge)" } ?? badge)
             .font(.system(size: 8, weight: .bold, design: .rounded))
             .foregroundStyle(Color.brown.opacity(0.88))
