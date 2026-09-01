@@ -3131,3 +3131,77 @@ read_when:
   기록한다. 행동 슬롯과 턴 번호는 그대로 두어 새 포켓몬의 기술 입력을 다시 받는다. 자발적 교체는
   기존처럼 턴을 소비한다. LAN·연습·토너먼트·공유 체육관과 시간초과 대타 경로를 모두 같은
   회귀 조건(교체 후 action=nil, move 가능)으로 검증한다. (`NetBattleState.replaceFainted`, 2026-09-01.)
+
+## 클램프가 잘라낸 몫을 반환하지 않으면 호출부는 그게 사라진 줄도 모른다
+
+- **증상**: 만렙(Lv.100) 파트너의 모험 경험치가 통째로 사라졌다. 해안 모험(2시간) 1회가 108,000,000
+  XP 라 10회면 상한 990,000,000 에 닿는다 — **정상 플레이로 도달하는 지점**이고, 그 뒤로 모험은
+  파트너에게 아무 의미가 없다. 이상한 사탕은 더 나빴다: 상점에서 5,000 별의조각에 파는 아이템이
+  소모만 되고 아무 일도 일어나지 않았다(#82).
+- **부류**: `min(cap, current + amount)` 는 **잘라낸 몫을 아무에게도 알리지 않는다.** 값을 넘긴
+  호출부는 전액이 반영됐다고 믿고, 화면·대화·보상 객체가 전부 그 믿음 위에 세워진다. 클램프가
+  "안전"해 보이는 게 함정이다 — 상한 위 저장을 막는 목적은 달성하면서, **초과분의 처분을 결정하지
+  않은 채 조용히 버리는** 두 번째 동작이 딸려 온다. 상한을 두는 자리에서 물어야 하는 질문은 "얼마나
+  잘라야 하나" 가 아니라 **"잘라낸 건 누구 것인가"** 다.
+- **왜 테스트가 못 걸렀나**: #81 이 이 클램프에 붙인 테스트들은 전부 **저장값**만 봤다
+  (`levelExperience == maxLevelExperience`). 클램프의 목적이 "상한 위 값을 저장하지 않는 것" 이었고
+  테스트도 딱 그것만 검증했다 — 사라진 몫은 애초에 관찰 대상이 아니었다. 완전설명 불변식을 지키던
+  `AdventureClaimTests` 의 두 테스트도 **만렙이 아니라서** 초과분이 항상 0 이었다(위 "부가 지급이
+  실제로 일어나는 경로에서 검사해야" 와 같은 함정의 재발). 세 테스트 모두 결함 위에서 초록이었다.
+- **처방 — 잘라낸 몫을 반환값으로 승격한다.** `gainExperience` 가 적립되지 못한 양을 반환하고,
+  환산·지급·알림은 `CompanionStore.awardExperience` 한 곳에 모은다(`accrueTrainerPoints` 와 같은
+  계약). **`@discardableResult` 를 붙이지 않는 것이 이 처방의 핵심이다** — 붙이면 새 호출부가 다시
+  조용히 버릴 수 있고, 안 붙이면 그 자리가 컴파일러 경고가 되어 warning 0 게이트에 걸린다. 실제로
+  구현 직후 기존 테스트 5곳이 경고로 떠서 전부 반환값을 검증하도록 강화됐다.
+- **환율은 발명하지 말고 유도한다.** `AdventureRules.amounts` 가 이미 분당 120,000 XP 와 8 ⭐ 를
+  주므로 존 배율이 약분돼 **모든 존·모든 길이에서 15,000 XP : 1 ⭐** 다. 그 절반(30,000)으로 환산해
+  만렙 해안 1회를 7,200 → 10,800 으로 둔다(동등 환율은 정확히 2배가 되어 상한이 증산 장치가 된다).
+  `testOverflowRateIsHalfTheRateAdventuresAlreadyPay` 가 그 유도 과정을 네 길이에서 다시 계산해,
+  모험 계수를 재조정하면서 이 상수를 안 따라가면 걸리게 한다.
+- **유도에 빠져 있던 두 번째 경로 — 사탕(리뷰에서 발견, 의도된 설계로 확정).** 위 유도는 모험만
+  계산했는데, 환산은 `useRareCandy` 도 지난다. `RareCandy.dailyGrant = 1` · `RareCandy.xp =
+  100,000,000` 이라 **만렙 파트너는 로그인만 해도 하루 3,333 ⭐** 를 번다. 이건 결함이 아니라 의도다 —
+  만렙 이후 매일 들어오는 사탕이 아무 값도 못 하는 상태(#82 이전)를 되돌리는 게 환산의 목적이고,
+  순환 루프도 없다(새 알 5,000 ⭐ > 하루 환급 3,333 ⭐ 라 사탕으로 알을 계속 뽑을 수 없다).
+  **환율을 바꿀 때는 모험 경로만 보지 말고 이 일일 수입도 같이 본다** — 환율을 2배로 올리면
+  만렙 계정의 기본 수입이 6,666 ⭐/일이 되어 알 가격을 넘긴다.
+- **막는 것보다 환산이 안전했다.** 이슈는 "만렙이면 `canUseRareCandy` 에서 막자" 를 대안으로
+  제시했는데, 사탕은 `usedAtStage` 도 미는 유일한 경로다 — 레벨 메타데이터가 없는 진화
+  (`applyUsage` 의 `usedAtStage >= threshold` 분기)의 관문이 그것뿐이라, 막으면 그 개체의 진화
+  경로가 영영 닫힌다. **"아무것도 안 하니 막자" 판단 전에 그 경로가 미는 축이 하나뿐인지 확인한다.**
+- **첫 스윕이 놓친 자리 — 클램프만 보고 `if` 를 안 봤다(리뷰에서 발견).** 처분을 결정하지 않고
+  값을 버리는 자리는 `min(...)` 만이 아니다. **호출 자체를 건너뛰는 `if` 도 같은 일을 한다** —
+  `claimAdventure` 의 `if state.active != nil` 이 그것이었다. 모험 중에 알을 부화기에 넣으면
+  파트너가 비는데(`beginIncubatingFocusEgg` 는 모험을 막지 않는다) 모험은 그대로 정산되므로,
+  108,000,000 XP 가 통째로 사라지면서 `appliedExperience` 는 **전량 적립됐다고** 보고했다(대화
+  도구가 그 값을 그대로 싣는다). 만렙 초과분을 고치면서 이 분기를 빠뜨린 이유는 스윕 대상을
+  "클램프 표현식" 으로 좁혔기 때문이다 — **처분 결정을 건너뛰는 가드도 같은 부류로 센다.**
+  처방은 `awardExperience` 를 무조건 지나게 하고(활성 개체가 없으면 전량을 초과분으로 처분),
+  알림 문구("이미 다 자란 파트너")가 거짓이 되는 경우만 알림을 건너뛰는 것.
+  회귀: `testAdventureWithoutAPartnerConvertsInsteadOfDroppingExperience`.
+- **부류 스윕 — 같은 모양이 알 저장고에 있었다(리뷰에서 발견, 처분 확정).** 상한 999 를 쓰는 자리가
+  5곳인데 넷은 `focusEggs` 만 클램프하고 `focusEggReadyDates` 는 **무조건** append 했다. 두 배열이
+  어긋나면 `nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고 `beginIncubatingFocusEgg` 의
+  `removeFirst()` 짝이 밀린다 — 다음 기동의 `reconcileStoredEggDates()` 가 잘라 주므로 **세션 안에서만**
+  틀리고, 그래서 재기동을 끼우는 테스트로는 안 잡혔다. 더 나쁜 건 `buyEgg` 로, `canBuyEgg` 에 상한
+  검사가 없어 저장고가 꽉 차면 **별의조각만 차감되고 알은 0개** 늘었다(#82 는 지어낸 값이 사라졌지만
+  여기선 실 재화다).
+  처방은 **넣는 경로를 하나로 모으는 것** — `addStoredEggs(_:at:)` 가 클램프와 날짜 append 를 한 자리에서
+  짝지어 하고, 실제로 들어간 개수를 돌려준다. `@discardableResult` 를 안 붙여 새 호출부가 잘린 몫을
+  다시 버리면 `_ =` 로 눈에 띈다(`gainExperience` 와 같은 계약). `canBuyEgg` 에는 999 검사를 넣었다.
+  회귀: `testBuyingAnEggWithFullStorageChargesNothing` · `testGymRewardAtFullEggStorageAddsNoHatchDate`
+  (상한 검사 제거 + 날짜 무조건 append 주입으로 4개 단언이 빨개지는 것을 확인).
+  **남은 판단** — `reward.bonusEggs` 는 여전히 *얻은* 값이라 저장고가 꽉 차면 대화·배너가 안 들어간
+  알을 보고한다. 넘친 알의 처분(버림 · 조각 환산 · 정직 보고)은 미결이다.
+- **범위 밖 결정도 테스트로 고정한다.** 트레이너 레벨(99) 초과 포인트는 환산하지 않는다 — 포인트가
+  분 단위고 보상이 `500 × 레벨` 이라 경험치처럼 코드에서 유도되는 환율이 없고, 만렙 상태는 화면에
+  이미 드러난다. `testTrainerPointsAtMaxLevelAreNotConverted` 가 그 결정을 붙잡는다. 이게 빨개지면
+  회귀가 아니라 결정이 바뀐 것이다.
+- 회귀: `testMaxLevelAdventureConvertsDiscardedExperienceIntoStardust` ·
+  `testAdventureStraddlingTheCapSplitsBetweenExperienceAndStardust`(상한을 **걸치는** 정산 — 전부
+  아니면 전무 구현을 거른다) · `testRareCandyAtMaxLevelPaysStardustInsteadOfNothing` ·
+  `testOverflowRateIsHalfTheRateAdventuresAlreadyPay` · 대조군 3개(상한 아래 모험 · 상한 아래 사탕 ·
+  트레이너). 환산을 죽이는 주입과 환율을 바꾸는 주입 두 가지로 각각 4개·6개가 빨개지는 것을 확인했고,
+  새 분기는 `llvm-cov show --show-regions` 에서 `^0` 이 없다(유일한 `^0` 인 `awardExperience` 의 nil
+  가드는 세 호출부가 이미 보장하는 도달 불가 방어라 사유를 주석으로 남겼다).
+  (`CompanionModel.swift` · `CompanionStore.swift` · `AdventureModel.swift`, 2026-09-01.)

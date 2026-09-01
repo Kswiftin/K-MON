@@ -44,7 +44,21 @@ struct AdventureReward: Sendable, Equatable {
     var achievementBonus = 0
     /// 이번 정산으로 완료된 시즌 챌린지가 지급한 별의조각. 위 셋과 같은 계약이다.
     var seasonBonus = 0
+    /// 만렙에 걸려 개체에 적립되지 못한 경험치(원 단위). 위 넷과 같은 계약으로 이 몫도 지갑에
+    /// 들어가 있다 — 다만 지급 단위가 경험치가 아니라 그 환산분(`overflowBonus`)이다.
+    var overflowExperience = 0
+    /// 위 초과분을 되돌린 별의조각. 저장하지 않고 계산한다 — 원 단위와 환산분을 각각 저장하면
+    /// 둘이 어긋난 상태가 표현 가능해진다.
+    var overflowBonus: Int { PokemonBalance.starPieces(forOverflowExperience: overflowExperience) }
+    /// 실제로 개체에 들어간 경험치. 만렙이면 `experience` 보다 작다 — 굴린 값을 그대로 "얻은
+    /// 경험치" 로 보고하면 오르지도 않은 레벨을 올랐다고 말하게 된다.
+    var appliedExperience: Int { experience - overflowExperience }
     var stardust: Int { starPieces }
+    /// 이 정산이 지갑에 더한 별의조각 **전부**. 지급 경로가 하나 늘 때 합산 지점(대화 도구·
+    /// 테스트)이 따라오지 않는 부류를 이 한 곳으로 막는다 — 실제로 미션 몫이 그렇게 빠졌었다.
+    var totalStardust: Int {
+        starPieces + overflowBonus + trainerBonus + missionBonus + achievementBonus + seasonBonus
+    }
 }
 
 struct FocusSessionReward: Sendable, Equatable {
@@ -55,6 +69,13 @@ struct FocusSessionReward: Sendable, Equatable {
     var missionBonus = 0
     var achievementBonus = 0
     var seasonBonus = 0
+    /// `AdventureReward.overflowExperience` 를 그대로 옮겨 싣는다 — 집중 세션도 같은 정산을
+    /// 지나므로 완전설명 계약이 여기서 끊기면 안 된다.
+    var overflowExperience = 0
+    var overflowBonus: Int { PokemonBalance.starPieces(forOverflowExperience: overflowExperience) }
+    var totalStardust: Int {
+        stardust + overflowBonus + trainerBonus + missionBonus + achievementBonus + seasonBonus
+    }
 }
 
 enum FocusRewardRules {

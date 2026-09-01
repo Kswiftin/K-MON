@@ -824,6 +824,14 @@ struct L {
                  "Reached Lv.\(level) — you earned \(amount) Star Pieces!",
                  "Lv.\(level) 到達 — ほしのかけら \(amount) を獲得！")
     }
+    var notifMaxLevelOverflowTitle: String { t("💫 경험치가 별의조각으로!", "💫 Experience became Star Pieces!", "💫 経験値がほしのかけらに！") }
+    /// 만렙 파트너가 더 받을 수 없는 경험치를 되돌려 받았다는 알림(#82). 예전엔 그냥 사라졌다.
+    func notifMaxLevelOverflowBody(_ stardust: Int) -> String {
+        let amount = GameNumberFormatter.compact(stardust)
+        return t("이미 다 자란 파트너의 경험치를 별의조각 \(amount) 로 바꿨어요!",
+                 "Your fully grown partner turned the extra experience into \(amount) Star Pieces!",
+                 "育ちきったパートナーの経験値を ほしのかけら \(amount) に変えました！")
+    }
     /// 상단 트레이너 바 라벨. `Lv.N` 만 쓰면 포켓몬 레벨(파트너·로스터·배틀에서 이미 쓰는 표기)로
     /// 잘못 읽힌다 — 이 단어가 계정 단위 값임을 알려주는 유일한 장치다.
     var trainerLevelLabel: String { t("트레이너", "Trainer", "トレーナー") }
