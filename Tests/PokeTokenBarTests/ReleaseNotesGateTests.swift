@@ -15,12 +15,12 @@ final class ReleaseNotesGateTests: XCTestCase {
 
     /// 같은 버전으로 재실행 — 앱을 열 때마다 창이 뜨면 안 된다.
     func testSameVersionDoesNothing() {
-        XCTAssertEqual(ReleaseNotesGate.decide(current: "2.9.0", lastSeen: "2.9.0", enabled: true), .none)
+        XCTAssertEqual(ReleaseNotesGate.decide(current: "2.9.0", lastSeen: "2.9.0", enabled: true), .skip)
     }
 
     /// 옛 빌드를 도로 실행한 경우. 도장을 낮춰 찍으면 다시 올라올 때 이미 본 노트가 또 뜬다.
     func testDowngradeDoesNothing() {
-        XCTAssertEqual(ReleaseNotesGate.decide(current: "2.8.0", lastSeen: "2.9.0", enabled: true), .none)
+        XCTAssertEqual(ReleaseNotesGate.decide(current: "2.8.0", lastSeen: "2.9.0", enabled: true), .skip)
     }
 
     /// 꺼 둔 동안에도 도장은 찍힌다. 안 찍으면 나중에 다시 켰을 때 묵은 버전 노트가 튀어나온다.
@@ -35,7 +35,7 @@ final class ReleaseNotesGateTests: XCTestCase {
     /// 두 자리 패치는 문자열 비교로 뒤집힌다("2.0.9" > "2.0.10"). 판정은 semver 비교를 써야 한다.
     func testNumericVersionOrdering() {
         XCTAssertEqual(ReleaseNotesGate.decide(current: "2.0.10", lastSeen: "2.0.9", enabled: true), .show)
-        XCTAssertEqual(ReleaseNotesGate.decide(current: "2.0.9", lastSeen: "2.0.10", enabled: true), .none)
+        XCTAssertEqual(ReleaseNotesGate.decide(current: "2.0.9", lastSeen: "2.0.10", enabled: true), .skip)
     }
 
     /// 키 이름이 한 곳에만 있어야 읽는 쪽과 쓰는 쪽이 어긋나지 않는다.
