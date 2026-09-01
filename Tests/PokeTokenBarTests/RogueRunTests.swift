@@ -38,7 +38,7 @@ final class RogueRunTests: XCTestCase {
         XCTAssertEqual(RogueRun.opponentLevel(wave: 1), 2)       // 기준선 5 − 핸디캡 3
         XCTAssertEqual(RogueRun.opponentLevel(wave: 4), 13)      // 보스는 기준선 11 +2
         XCTAssertEqual(RogueRun.opponentLevel(wave: 28), 61)     // 기준선 59 +2
-        XCTAssertEqual(RogueRun.opponentLevel(wave: 30), 65)     // 최종 기준선 63 +2
+        XCTAssertEqual(RogueRun.opponentLevel(wave: 30), 67)     // 최종 기준선 63 +4 (최종만 더 높다)
     }
 
     /// 보스는 기준선 위에 선다. 예전엔 기준선과 동급이라 파티가 보스마다 1 씩 앞서 나갔고,
