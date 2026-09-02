@@ -91,21 +91,29 @@ struct RaidArenaView: View {
 
     /// 기술 연출과 팝업은 **필드 한 겹**에만 얹는다 — 칸마다 얹으면 광역 연출이 칸 수만큼 겹친다
     /// (`WaveRunArenaView.field` 와 같은 구성).
+    ///
+    /// 배경 그라데이션은 `ZStack` 층이 아니라 `.background` 다. 층으로 두면 그라데이션이
+    /// **제안된 높이를 통째로 가져가** 필드가 무한히 커진다(웨이브 런은 `.frame(height:)` 로
+    /// 막았지만, 레이드는 파티 수에 따라 한 줄·두 줄이라 높이를 고정할 수 없다).
+    /// 같은 이유로 연출·팝업도 `.overlay` 다 — 크기를 정하는 건 내용뿐이어야 한다.
     private var field: some View {
-        ZStack {
-            LinearGradient(colors: [Color.purple.opacity(0.12), Color.primary.opacity(0.03)],
-                           startPoint: .top, endPoint: .bottom)
-            VStack(spacing: 5) {
-                bossZone
-                Divider().opacity(0.4)
-                partyGrid
-            }
-            .padding(7)
+        VStack(spacing: 5) {
+            bossZone
+            Divider().opacity(0.4)
+            partyGrid
+        }
+        .padding(7)
+        .background(LinearGradient(colors: [Color.purple.opacity(0.12), Color.primary.opacity(0.03)],
+                                   startPoint: .top, endPoint: .bottom),
+                    in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
             if let move = activeMove, let actor = overlay.moveActor {
                 BattleMoveEffect(move: move, attacksFromMine: party.contains { $0.actor == actor })
                     .id("\(actor)-\(move.id)-\(overlay.isPlaying)")
                     .allowsHitTesting(false)
             }
+        }
+        .overlay {
             if let phrase = overlay.popped.flatMap({ BattleReplay.popup(for: $0, l: l) }) {
                 Text(phrase)
                     .font(.caption.bold()).foregroundStyle(.white)
@@ -113,7 +121,6 @@ struct RaidArenaView: View {
                     .background(Capsule().fill(Color.black.opacity(0.55)))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     /// 보스는 한 마리뿐이라 폭이 남는다 — 1v1·체육관과 **같은 `CombatantBar`** 를 쓴다.
