@@ -33,6 +33,54 @@ struct PokeathlonRacer: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// 러너와 경기는 **호스트가 보내오는 값이다.** 게스트는 그대로 그리고 그대로 인덱싱하므로
+/// 경계에서 자르지 않으면 조작된(또는 버전이 다른) 호스트가 게스트를 인덱스 범위 밖 접근으로
+/// 죽인다. 화면은 `teamSpeciesIDs` 의 인덱스로 `stamina` 를 읽고(`PokeathlonView`),
+/// `activeSpeciesID` 는 `activeTeamIndex` 로 팀을 읽는다 — 둘 다 음수·길이 불일치에 무방비다.
+///
+/// 형제 타입 `PokeathlonPool` 은 같은 이유로 이미 디코딩 클램프를 갖고 있다.
+extension PokeathlonRacer {
+    /// 한 러너가 데려가는 팀 상한. 방 정원이 아니라 화면 한 줄에 그려지는 수다.
+    static let maximumTeamSize = 6
+    static let maximumStamina = 100
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        trainerName = BattleChatPolicy.displayName(
+            try c.decodeIfPresent(String.self, forKey: .trainerName) ?? "") ?? "?"
+        speciesID = PokemonAssets.clampedID(try c.decode(Int.self, forKey: .speciesID))
+        let team = (try c.decodeIfPresent([Int].self, forKey: .teamSpeciesIDs) ?? [])
+            .prefix(Self.maximumTeamSize).map(PokemonAssets.clampedID)
+        teamSpeciesIDs = Array(team)
+        let slots = max(1, team.count)
+        activeTeamIndex = min(max(0, try c.decodeIfPresent(Int.self, forKey: .activeTeamIndex) ?? 0), slots - 1)
+        // 스태미나는 팀 자리 수와 **같은 길이여야 한다** — 화면이 팀 인덱스로 이 배열을 읽는다.
+        let reported = (try c.decodeIfPresent([Int].self, forKey: .stamina) ?? [])
+            .prefix(slots).map { min(Self.maximumStamina, max(0, $0)) }
+        stamina = reported + Array(repeating: Self.maximumStamina, count: slots - reported.count)
+        distance = min(PokeathlonRace.finishLine, max(0, try c.decodeIfPresent(Int.self, forKey: .distance) ?? 0))
+        crashes = max(0, try c.decodeIfPresent(Int.self, forKey: .crashes) ?? 0)
+        lane = min(2, max(0, try c.decodeIfPresent(Int.self, forKey: .lane) ?? 1))
+        finished = try c.decodeIfPresent(Bool.self, forKey: .finished) ?? false
+        lastActionAt = try c.decodeIfPresent(Date.self, forKey: .lastActionAt)
+    }
+}
+
+extension PokeathlonRace {
+    /// 트랙에 설 수 있는 러너 수. 방 정원(러너 최대 8)과 같은 값이다.
+    static let maximumRacers = 8
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        racers = Array((try c.decode([PokeathlonRacer].self, forKey: .racers)).prefix(Self.maximumRacers))
+        // 트랙에 없는 우승자는 정산이 아무에게도 안 닿는 값이다 — 없던 것으로 만든다.
+        let winner = try c.decodeIfPresent(UUID.self, forKey: .winnerID)
+        winnerID = racers.contains { $0.id == winner } ? winner : nil
+        startsAt = try c.decodeIfPresent(Date.self, forKey: .startsAt) ?? Date()
+    }
+}
+
 struct PokeathlonRace: Codable, Sendable, Equatable {
     static let finishLine = 300
     static let obstacles = [35, 70, 125, 160, 220, 260]

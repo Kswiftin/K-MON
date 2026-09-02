@@ -509,6 +509,12 @@ enum PokemonAssets {
     static func hasAnimatedSprite(speciesID: Int) -> Bool {
         animatedSpeciesIDs.contains(speciesID)
     }
+
+    /// 와이어에서 온 종 번호를 이 범위로 자른다. 범위 밖 번호는 스프라이트가 없어 화면이 비고,
+    /// 그대로 배열 첨자로 쓰는 자리에서는 죽는다.
+    static func clampedID(_ speciesID: Int) -> Int {
+        min(animatedSpeciesIDs.upperBound, max(animatedSpeciesIDs.lowerBound, speciesID))
+    }
 }
 
 /// PokéAPI evolution-chain 을 파싱한 트리. 분기(evolves_to 다수)를 children 으로.

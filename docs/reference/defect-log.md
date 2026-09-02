@@ -3391,3 +3391,24 @@ read_when:
   확인했다.
 - **곁가지.** 진입점을 새로 만들 때 `await` 앞뒤로 국면을 바꾼다면 수명 번호를 함께 잡는다.
   (`MultiplayerRoomCenter.swift`, 2026-09-02.)
+
+## 형제 타입 하나만 디코딩 클램프를 가지면, 나머지는 **같은 프레임으로 들어와** 죽는다
+
+- **증상.** 잠재 결함으로 발견했다(2026-09-02 감사). 호스트가 보낸 경기 상태(`PokeathlonRace`)에
+  `teamSpeciesIDs` 보다 짧은 `stamina` 가 실려 오면, 게스트 화면이 팀 인덱스로 그 배열을 읽는
+  순간 인덱스 범위 밖 접근으로 죽는다(`PokeathlonView` 의 스태미나 막대). 음수 `activeTeamIndex`
+  는 `activeSpeciesID` 의 첨자로 그대로 들어간다.
+- **직접원인.** 같은 방에서 오가는 값인데 `PokeathlonPool`·`PokeathlonBet` 만 디코딩 경계 클램프를
+  갖고 있었다. 베팅 원장은 오버플로 사고를 겪어 클램프가 붙었고, **그때 형제 타입을 함께 보지
+  않았다.**
+- **테스트·검증이 왜 못 걸렀나.** 경기 테스트는 전부 `PokeathlonRace(racers:)` 로 값을 **코드에서**
+  만든다. 그 생성자는 항상 정합한 값을 만들므로 와이어에서 오는 조합(길이 불일치·음수)이
+  존재하지 않는다. JSON 을 통과시키는 테스트가 하나도 없었다.
+- **부류 스윕.** 방에서 오가는 Codable 중 클램프가 있는 것은 `PokeathlonPool`·`PokeathlonBet`
+  (이번에 `PokeathlonRacer`·`PokeathlonRace` 추가), 없는 것은 `BattleSnapshot` 이다 —
+  **미완 스윕**: 스냅샷의 수치가 첨자로 쓰이는 자리가 있는지 아직 확인하지 않았다. 종 번호
+  자르기는 `PokemonAssets.clampedID` 를 정본으로 쓴다.
+- **영구 캡처.** `PokeathlonDecodingTests` — 길이 불일치·음수 인덱스·범위 밖 값·트랙에 없는
+  우승자를 **JSON 으로** 넣어 자르는지 보고, 정상 경기는 왕복해도 그대로인지 함께 본다.
+- **곁가지.** 신뢰경계 클램프를 하나 붙일 때는 "같은 프레임에 실려 오는 형제 타입"을 함께 본다.
+  공격자는 클램프가 붙은 필드를 피해 옆 필드를 보낸다. (`MultiplayerBattle.swift`, 2026-09-02.)
