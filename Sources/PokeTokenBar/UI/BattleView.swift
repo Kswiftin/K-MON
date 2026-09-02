@@ -17,6 +17,10 @@ struct BattleView: View {
     @State private var multiplayerTargetID: UUID?
     @State private var peerPage = 0
     @State private var pendingChallengePeer: BattlePeer?
+    /// 수동 IP 로 신청하려는 주소. 탐색으로 찾은 상대와 **같은 후보 선택 화면**을 지나야 한다 —
+    /// 신청은 후보 6마리를 요구하는데 이 화면에는 고를 자리가 없었다(mDNS 가 막힌 환경의 폴백이
+    /// 항상 "먼저 후보를 선택하세요" 로 끝났다).
+    @State private var pendingManualAddress: String?
 
     private var l: L { store.l }
 
@@ -255,24 +259,26 @@ struct BattleView: View {
     /// 최대 팀 크기와 같은 수라, 한 페이지가 곧 한 팀 분량이다.
     @ViewBuilder private var peerList: some View {
         if let peer = pendingChallengePeer {
-            candidateSelection(for: peer)
+            candidateSelection(named: peer.name) { center.challenge(peer) }
+        } else if let address = pendingManualAddress {
+            candidateSelection(named: address) { center.challengeManual(address) }
         } else {
             peerBrowser
         }
     }
 
-    private func candidateSelection(for peer: BattlePeer) -> some View {
+    private func candidateSelection(named opponent: String, challenge: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button { pendingChallengePeer = nil } label: {
+            Button { pendingChallengePeer = nil; pendingManualAddress = nil } label: {
                 Label(l.t("다른 트레이너 선택", "Choose another trainer", "別のトレーナーを選ぶ"),
                       systemImage: "chevron.left")
             }.buttonStyle(.borderless)
             Label(l.t("배틀 후보 6마리", "Six Battle Candidates", "バトル候補6匹"),
                   systemImage: "square.grid.3x2.fill")
                 .font(.caption.bold())
-            Text(l.t("\(peer.name)님과 배틀할 후보를 고르세요. 이후에 상대를 다시 고르지 않습니다.",
-                     "Choose the pool for your battle with \(peer.name). You won't choose the trainer again.",
-                     "\(peer.name)と戦う候補を選んでください。相手の再選択はありません。"))
+            Text(l.t("\(opponent)님과 배틀할 후보를 고르세요. 이후에 상대를 다시 고르지 않습니다.",
+                     "Choose the pool for your battle with \(opponent). You won't choose the trainer again.",
+                     "\(opponent)と戦う候補を選んでください。相手の再選択はありません。"))
                 .font(.caption).foregroundStyle(.secondary)
             TeamPicker(store: store,
                        selection: Binding(get: { center.pickedTeam }, set: { center.pickedTeam = $0 }),
@@ -283,7 +289,8 @@ struct BattleView: View {
                 Spacer()
                 Button(l.battleChallengeButton) {
                     pendingChallengePeer = nil
-                    center.challenge(peer)
+                    pendingManualAddress = nil
+                    challenge()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(center.pickedTeam.count != 6)
@@ -648,7 +655,12 @@ struct BattleView: View {
 
     private func challengeManual() {
         guard isChallengeEnabled else { return }
-        center.challengeManual(manualAddress)
+        let address = manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard BattleCenter.manualEndpoint(address) != nil else {
+            center.reportBadManualAddress()
+            return
+        }
+        pendingManualAddress = address
     }
 
     private var isChallengeEnabled: Bool {

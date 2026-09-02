@@ -1522,7 +1522,11 @@ final class MultiplayerRoomCenter {
         guard let payload = try? JSONEncoder().encode(message), payload.count <= Self.maxMessageBytes else { return }
         var frame = withUnsafeBytes(of: UInt32(payload.count).bigEndian) { Data($0) }; frame.append(payload)
         connection.send(content: frame, completion: .contentProcessed { error in
-            if let error { AppLog.write("multiplayer send failed: \(error)") }
+            guard let error else { return }
+            AppLog.write("multiplayer send failed: \(error)")
+            // 접어야 상태 핸들러(`.failed`/`.cancelled`)가 방을 정리한다. 로그만 남기면 상대가
+            // 사라진 방이 계속 차례를 기다린다.
+            connection.cancel()
         })
     }
 

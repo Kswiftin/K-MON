@@ -532,7 +532,12 @@ final class PokemonTradeCenter {
         guard let connection, let payload = try? JSONEncoder().encode(message) else { return }
         var frame = withUnsafeBytes(of: UInt32(payload.count).bigEndian) { Data($0) }
         frame.append(payload)
-        connection.send(content: frame, completion: .contentProcessed { _ in })
+        // 전송 실패는 연결이 끊긴 것으로 다룬다 — 그러지 않으면 상대가 사라진 뒤에도 화면이
+        // 협상 중인 채로 멈춰 있고, 교환은 어느 쪽에서도 끝나지 않는다.
+        connection.send(content: frame, completion: .contentProcessed { [weak self, weak connection] error in
+            guard error != nil, let connection else { return }
+            Task { @MainActor in self?.connectionDropped(connection) }
+        })
     }
 
     private func receiveLength(on connection: NWConnection) {

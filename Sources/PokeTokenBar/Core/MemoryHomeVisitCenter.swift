@@ -444,7 +444,9 @@ final class MemoryHomeVisitCenter {
                                               completion: @escaping @MainActor () -> Void = {}) {
         guard let data = try? JSONEncoder().encode(value), data.count <= Int(Self.maxFrameBytes) else { connection.cancel(); return }
         var length = UInt32(data.count).bigEndian; let header = Data(bytes: &length, count: 4)
-        connection.send(content: header + data, completion: .contentProcessed { _ in
+        connection.send(content: header + data, completion: .contentProcessed { error in
+            // 실패한 전송에는 응답이 오지 않는다 — 연결을 접어 대기 중인 쪽이 풀리게 한다.
+            guard error == nil else { connection.cancel(); return }
             Task { @MainActor in completion() }
         })
     }
