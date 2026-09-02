@@ -706,8 +706,18 @@ read_when:
 - **정확한 현재 값의 동결은 한 곳에만 둔다.** 지금은
   `LobbyRoleTests.testProtocolVersionIsBumpedWhenTheWireContractChanges` 하나이고, 그 자리가
   버전별 변경 이력도 함께 들고 있다. 값을 올리는 사람이 고칠 곳이 하나면 빠뜨릴 자리도 없다.
-- **찾는 방법**: `grep -rn "XCTAssertEqual(.*\(protocolVersion\|integrityVersion\|rulesVersion\)" Tests/`
-  — 동결 한 곳을 넘으면 부류가 다시 자란 것이다.
+- **부류는 처음 본 것보다 넓었다.** 스윕을 실제로 돌리니 `MultiplayerWireMessage.protocolVersion`
+  말고도 `BattleEngine.rulesVersion`(`BattleAbilityTests`·`BattleStatusTests`)과
+  `TradeWireMessage.protocolVersion`(`TradeChatTests`·`TradeMemoryTests`)이 각각 두 곳에 박혀
+  있었다 — 고친 상수 하나만 보고 "정리됐다" 고 믿었으면 그대로 남았을 자리다.
+- **"버전을 안 올렸다" 를 주장하는 동결도 같은 규칙을 받는다.** 교환 와이어의 두 테스트는 둘 다
+  "이 기능은 버전이 아니라 프레임 추가·협상으로 들어갔다" 를 말하는데, 그 목록은 한 자리에 모으는
+  것이 맞다. 지금은 `TradeChatTests` 의 동결이 그 목록을 주석으로 들고 있다.
+- **영구 캡처**: `test-gate.sh` 의 **버전 상수 리터럴 동결 스윕**. 한 상수를 두 곳 이상에서
+  리터럴과 `XCTAssertEqual` 하면 실패하고, 위반한 줄을 전부 찍는다. 대상은 대문자 수신자
+  (=타입 프로퍼티)뿐이라 `state.economyVersion` 같은 인스턴스 fixture 검증은 걸리지 않는다.
+  **한계**: 리터럴이 다음 줄로 넘어가는 여러 줄 호출은 못 본다.
+  가드 자체는 위반을 주입해 확인했다 — 중복 하나를 추가하니 두 줄을 짚어 실패했다.
   (LAN 협동 레이드 #80, 2026-09-02.)
 
 ## 조건부 canonical 세그먼트를 fixture 가 안 켜면 접두 동결이 그 세그먼트를 통째로 못 본다
