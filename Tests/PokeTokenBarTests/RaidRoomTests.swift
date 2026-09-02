@@ -123,6 +123,8 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(parsed.trainerName, "지우")
 
         XCTAssertFalse(RaidRoomName.isRaidRoomName("GYM · 지우#ABC123"))
+        XCTAssertNil(RaidRoomName.parse("GYM · 1 · v15 · 지우#ABC123"), "남의 방 이름은 파싱하지 않는다")
+        XCTAssertNil(RaidRoomName.parse("RAID · 5 · 지우"), "식별자가 없는 이름은 통째로 nil")
         XCTAssertNil(RaidRoomName.parse("RAID · 지우#ABC123"), "티어 자리가 없는 이름은 통째로 nil")
         XCTAssertNil(RaidRoomName.parse("RAID · 9 · 지우#ABC123"), "모르는 티어는 받아들이지 않는다")
     }
@@ -201,6 +203,12 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertGreaterThan(next, lateNight)
         XCTAssertTrue(calendar.isDate(next, inSameDayAs: lateNight.addingTimeInterval(24 * 60 * 60)),
                       "오늘 게 다 지났으면 내일 첫 부화다")
+
+        // **대조군**: 오늘 것이 남아 있으면 내일로 넘어가지 않는다. 이 갈래를 안 밟으면
+        // "항상 내일 첫 부화" 라는 오구현도 위 단언만으로는 초록이다.
+        let dawn = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 1)))
+        let today = try XCTUnwrap(RaidSchedule.nextHatch(after: dawn))
+        XCTAssertEqual(today, RaidSchedule.hatches(on: dawn).first)
     }
 
     /// 주말은 창이 뒤로 밀린다 — 2026-09-05 는 토요일이다.

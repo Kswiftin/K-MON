@@ -691,6 +691,41 @@ read_when:
   손실 위험만 늘어** 그대로 뒀다 — 근거는 `testImportIsNotSubjectToTheIntegrityCheck`. 무결성 검사가
   막는 건 "로컬 파일 손편집" 이고 "작정한 치팅" 이 아니다. (2026-08-22.)
 
+## 같은 상수를 여러 테스트가 리터럴로 박으면 정당한 상향이 무관한 테스트를 깨는 부류
+
+- **증상**: 레이드(#80)가 `MultiplayerWireMessage.protocolVersion` 을 14 → 15 로 올리자 테스트
+  **다섯 개**가 빨개졌다. 그중 넷(`AdventureTests`·`BattleAbilityTests`·`BattleChatTests`·
+  `PlayerGymTests`)은 레이드와 아무 관계가 없다. 이 항목의 선행 기록(업적 작업의
+  `XCTAssertEqual(SaveTransfer.integrityVersion, 7)`)이 같은 부류를 이미 적어 뒀는데, 그때는
+  한 건이라 "고치고 끝" 이었고 부류로 처리하지 않아 다섯 곳으로 번졌다.
+- **왜 나쁜가**: 빨간 테스트가 다섯인데 그중 넷이 무해하면, **진짜 회귀와 구별이 안 된다.**
+  다음 사람은 다섯 개를 기계적으로 sed 로 고치게 되고, 그 안에 섞인 진짜 실패를 같이 덮는다.
+- **각 테스트가 주장하려던 사실은 절대값이 아니다.** "체육관 계약이 들어간 뒤로 프로토콜이
+  되돌아가지 않았다"·"특성이 들어간 뒤로 되돌아가지 않았다" 가 실제 명제다. 그건 등호가 아니라
+  **하한**(`XCTAssertGreaterThanOrEqual`)으로 쓴다 — 남의 상향에 안 깨지고, 되돌림은 여전히 잡는다.
+- **정확한 현재 값의 동결은 한 곳에만 둔다.** 지금은
+  `LobbyRoleTests.testProtocolVersionIsBumpedWhenTheWireContractChanges` 하나이고, 그 자리가
+  버전별 변경 이력도 함께 들고 있다. 값을 올리는 사람이 고칠 곳이 하나면 빠뜨릴 자리도 없다.
+- **찾는 방법**: `grep -rn "XCTAssertEqual(.*\(protocolVersion\|integrityVersion\|rulesVersion\)" Tests/`
+  — 동결 한 곳을 넘으면 부류가 다시 자란 것이다.
+  (LAN 협동 레이드 #80, 2026-09-02.)
+
+## 조건부 canonical 세그먼트를 fixture 가 안 켜면 접두 동결이 그 세그먼트를 통째로 못 본다
+
+- **증상**: `testEveryConditionalCanonicalSegmentPrefixIsFrozen` 은 "조건부 append 를 **전부 켜는**
+  최소 상태"를 fixture 로 쓰는데, 체육관 방어 일일 원장(`gd`)을 켜지 않고 있었다. 그래서 그
+  세그먼트를 지우거나 접두를 바꿔도 이 가드는 초록이었다 — **가드가 지키기로 한 필드 하나가
+  가드 밖에 있었다.**
+- **왜 테스트가 못 걸렀나**: 이 가드 자체가 그 테스트다. 자기 fixture 의 구멍은 자기가 못 본다.
+  기본값 canonical 동결(`testDefaultStateCanonicalFormIsFrozen`)도 못 잡는다 — 조건부 세그먼트는
+  기본값 canonical 에 애초에 없다.
+- **부류 규칙**: `canonicalString` 에 조건부 `if` 를 하나 더할 때마다 **같은 커밋에서**
+  `fullyPopulatedState()` 에 그 조건을 참으로 만드는 값과 `frozenCanonicalPrefixes` 에 접두를
+  같이 넣는다. 셋이 한 묶음이다.
+- **찾는 방법**: `canonicalString` 의 `if s.<field>` 목록과 `fullyPopulatedState()` 가 대입하는
+  필드 목록을 대조한다. 지금은 `gd`·`rd` 를 메워 일치한다.
+  (LAN 협동 레이드 #80 의 `raidRewardDate` 를 넣다가 발견, 2026-09-02.)
+
 ## 파생 진행도를 화면용 목록으로 계산하면 되감기는 부류
 
 - **누적 진행도는 영구 기록(`state.dex`)에서만 센다.** 화면용 `dexEntries`·`dexSpecies` 는 활성·박스

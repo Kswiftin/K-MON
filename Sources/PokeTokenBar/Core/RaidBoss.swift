@@ -264,7 +264,11 @@ enum RaidSchedule {
     /// "다음 5★ 없음" 을 그린다.
     static func nextHatch(after now: Date, calendar: Calendar = RaidSchedule.calendar) -> Date? {
         if let today = hatches(on: now, calendar: calendar).first(where: { $0 > now }) { return today }
-        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) else { return nil }
+        // 그레고리력에 하루를 더하는 계산은 실패할 입력이 없다 — 그래도 API 가 옵셔널이라
+        // 폴백을 둔다(24시간 가산은 DST 를 가로지르는 날에만 한 시간 어긋나고, 그 어긋남은
+        // 다음 날 첫 부화 시각 표시에서 흡수된다).
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)
+            ?? now.addingTimeInterval(24 * 60 * 60)
         return hatches(on: tomorrow, calendar: calendar).first
     }
 
