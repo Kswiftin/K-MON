@@ -310,6 +310,38 @@ echo "✓ 없음"
 # 커버리지로도 못 막는다 — 테스트가 그 줄을 실행하면 `load` 든 `loadUnaligned` 든 똑같이 세어진다.
 # 남는 형태가 grep 이다.
 # 해제 조건: 프레이밍을 공용 헬퍼 하나로 합치면 그때 이 게이트를 그 헬퍼의 단위 테스트로 옮긴다.
+# 공유 버전 상수를 **여러 테스트가 리터럴로 박으면** 정당한 상향이 무관한 테스트를 무더기로
+# 깨뜨린다. 레이드(#80)가 `protocolVersion` 을 14 → 15 로 올렸을 때 다섯 개가 빨개졌고 그중 넷은
+# 레이드와 아무 관계가 없었다 — 빨간 게 다섯인데 넷이 무해하면 **진짜 회귀와 구별이 안 된다.**
+# 그러면 다음 사람은 다섯을 기계적으로 sed 하고, 그 안에 섞인 진짜 실패를 같이 덮는다.
+#
+# 각 테스트가 주장하려던 사실은 대개 절대값이 아니라 "내 기능이 들어간 뒤로 되돌아가지 않았다"
+# 이므로 `XCTAssertGreaterThanOrEqual` 로 쓴다. 정확한 현재 값의 동결은 **상수당 한 곳**에만 두고,
+# 그 자리가 버전별 변경 이력도 함께 든다 — 올리는 사람이 고칠 곳이 하나면 빠뜨릴 자리도 없다.
+#
+# 테스트로는 못 막는다: 이 규칙의 위반은 "테스트가 여럿이다" 라는 소스의 성질이지 런타임 동작이
+# 아니다. 커버리지로도 안 보인다(중복된 단언도 똑같이 실행된다). 남는 형태가 grep 이다.
+#
+# 대상은 **타입 프로퍼티**(대문자로 시작하는 수신자)뿐이다 — `state.economyVersion` 처럼 인스턴스
+# 필드를 리터럴과 대조하는 건 그 테스트의 정당한 fixture 검증이라 여기 걸리면 안 된다.
+# 한계: 리터럴이 다음 줄로 넘어가는 여러 줄 호출은 못 본다. 그 형태가 나오면 그때 넓힌다.
+echo "▶ 버전 상수 리터럴 동결 스윕 (상수당 한 곳)"
+VERSION_PINS=$(grep -rnE 'XCTAssertEqual\([A-Z][A-Za-z0-9_]*\.[A-Za-z0-9_]*Version, *[0-9]' Tests \
+               | grep -vE '^[^:]*:[0-9]+:[[:space:]]*//' || true)
+DUPLICATE_PINS=$(echo "$VERSION_PINS" | grep -oE '[A-Z][A-Za-z0-9_]*\.[A-Za-z0-9_]*Version' | sort | uniq -d || true)
+if [[ -n "$DUPLICATE_PINS" ]]; then
+  echo "✗ 같은 버전 상수를 여러 테스트가 리터럴로 박고 있습니다 —" \
+       "정당한 상향이 무관한 테스트를 깨뜨려 진짜 회귀와 구별되지 않습니다." \
+       "동결은 한 곳만 남기고 나머지는 XCTAssertGreaterThanOrEqual 로 자기 기능의 하한만 보세요." >&2
+  while read -r SYMBOL; do
+    [[ -z "$SYMBOL" ]] && continue
+    echo "  $SYMBOL:" >&2
+    echo "$VERSION_PINS" | grep -F "$SYMBOL" | sed 's/^/    /' >&2
+  done <<< "$DUPLICATE_PINS"
+  exit 1
+fi
+echo "✓ 없음"
+
 echo "▶ 비정렬 로드 스윕 (프레임 헤더의 load(as:))"
 # `loadUnaligned(as:` 는 `load(as:` 를 포함하지 않으므로 올바른 쪽은 걸리지 않는다.
 # 규칙을 설명하는 주석에 가드가 걸리는 부류(defect-log)를 피하려고 주석 줄은 뺀다.
