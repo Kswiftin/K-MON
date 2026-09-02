@@ -37,6 +37,7 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 - **Online battle chat** — 1:1 LAN ranked battles and 2–4 player room battles include session-only chat independent of combat. The latest 50 messages stay in an internal scroll area; chat is disabled while battling a legacy 1:1 peer.
 - **Gym Takeover** — one shared gym on your local network: beat the leader and the gym is yours. The leader fields four defenders, and those four are locked out of training, other battles, and trades. Defend in person or let the AI do it, and switch between the two from the battle screen — the change takes effect from the next turn. Each challenger may try once every five minutes, and while a match runs others can only spectate. Both sides are normalized to Lv.50, and a successful defense pays Star Pieces (bonus every third defense, with a daily cap).
 - **Pokéathlon: Change Relay** — practice alone or race with up to four players on a local network. Run with `→`, switch lanes with `↑`/`↓`, avoid obstacles, and change Pokémon with `C`.
+- **Co-op raid** — team up with trainers on your network to take down today's boss. 1★ and 3★ open anytime; 5★ only hatches three set times a day (with a 15-minute-before alert). Payout is based on contribution, turns left, and survivors, and only pays out once per day.
 
 ## Trainer & wave run
 
@@ -80,6 +81,13 @@ Control Do Not Disturb, notifications, launch at login, the floating pet, and up
 <td width="55%" valign="middle">
 <h3>Wardrobe and wave run</h3>
 Change the trainer's outfit, and pick one reward item after every wave you clear. Waves that send two opponents are fought two-on-two: you choose an action per slot, and wide-reaching moves hit several Pokémon at once. On wild waves the catch chance is shown before you spend a ball.
+</td>
+</tr>
+<tr>
+<td width="45%" align="center"><img src="assets/screenshot-raid.png" width="180" alt="Co-op Raid"></td>
+<td width="55%" valign="middle">
+<h3>Co-op raid</h3>
+Team up with trainers on your network to take down today's boss. 1★ and 3★ open anytime; 5★ hatches three set times a day. Join an open room straight from the nearby list.
 </td>
 </tr>
 </table>
