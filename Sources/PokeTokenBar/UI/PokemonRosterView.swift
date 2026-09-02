@@ -490,6 +490,9 @@ private struct PokemonDetailCard: View {
         else if let level = next.evolutionLevel { parts.append(store.l.t("Lv.\(level)에 진화", "Evolves at Lv.\(level)", "Lv.\(level)で進化")) }
         else if let item = ItemKind.allCases.first(where: { $0.evolutionRule?.opens(next) == true }) { parts.append(store.l.evolutionNeedsItem(store.l.itemName(item))) }
         else if next.evolutionPartySpeciesID == 223 { parts.append(store.l.t("총어 보유 후 레벨업", "Level up while owning Remoraid", "テッポウオを所持してレベルアップ")) }
+        // 레벨 조건 없는 레벨업 진화(친밀도·장소 등)는 키우면 진화한다 — 홈의
+        // `evolutionRequirementText` 와 같은 말을 해야 두 화면이 어긋나지 않는다.
+        else if next.evolutionTrigger == "level-up" { parts.append(store.l.t("레벨업으로 진화", "Evolves by leveling up", "レベルアップで進化")) }
         else { parts.append(store.l.t("특수 조건으로 진화", "Special evolution condition", "特殊な条件で進化")) }
         return parts.joined(separator: " · ")
     }
