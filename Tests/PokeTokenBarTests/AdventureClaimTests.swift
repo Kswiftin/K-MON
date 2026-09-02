@@ -205,6 +205,41 @@ final class AdventureClaimTests: XCTestCase {
                       "마운트되지 않은 View: \(unmounted) — 선언만 있고 화면에 안 붙으면 그 안의 기능(보상 정산 등)은 도달 불가다")
     }
 
+    /// 위 가드의 형제. `struct X: View` 가 아니라 **화면 안의 조각**(`private var x: some View`)이
+    /// 아무 데서도 안 불리는 형태다 — 컴파일러는 안 쓰는 computed property 에 warning 을 내지
+    /// 않으므로 빌드도 테스트도 초록인 채로 화면만 죽는다.
+    ///
+    /// #209 가 그 상태였다: 2~4인 방 배틀의 `multiplayerRooms` / `multiplayerLobby` 가 세 주 동안
+    /// 아무 데도 안 붙어 있었고, 그 사이 `RecentBattleLabel` 의 단위 테스트는 계속 통과했다.
+    /// 순수 로직 테스트가 도달 불가 화면에 false confidence 를 주는 부류다.
+    ///
+    /// **천장**: 한 단계만 본다. 죽은 하위 트리는 **뿌리만** 잡힌다(`multiplayerLobby` 가 걸리고
+    /// 그것만 참조하는 `multiplayerArena` 는 안 걸린다). 뿌리를 지우면 나머지가 다음 실행에서
+    /// 걸리므로 결국 전부 드러난다. 서로만 참조하는 죽은 순환은 못 잡는다 — 그때는 사람이 본다.
+    func testEveryDeclaredViewMemberHasACallSite() throws {
+        let uiDirectory = Self.repositoryRoot.appendingPathComponent("Sources/PokeTokenBar/UI")
+        let files = try Self.swiftFiles(in: uiDirectory)
+        // 경로가 깨지면 빈 목록을 훑고 조용히 통과한다 — 그걸 막는 단언.
+        XCTAssertGreaterThan(files.count, 10, "UI 소스를 못 찾았다 — 경로가 깨지면 가드가 무력해진다")
+
+        var orphans: [String] = []
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let lines = text.components(separatedBy: "\n")
+            for member in Self.declaredViewMembers(in: lines) {
+                // 선언 줄을 뺀 나머지 어디에도 이름이 없으면 아무도 이 조각을 그리지 않는다.
+                let mentioned = lines.contains { line in
+                    !Self.declares(member, in: line) && Self.mentions(member, in: line)
+                }
+                if !mentioned { orphans.append("\(file.lastPathComponent):\(member)") }
+            }
+        }
+        XCTAssertEqual(orphans, [], """
+            아무 데서도 안 불리는 View 조각: \(orphans) — 선언만 있고 화면에 안 붙으면 \
+            그 안의 기능은 도달 불가다. 그리는 자리를 붙이거나 삭제하라.
+            """)
+    }
+
     /// 정산 진입점은 `claimAdventure()` 하나다 — 완료 판정을 감싸는 래퍼가 다시 생기면 같은 가드가
     /// 두 곳에 놓여 한쪽만 바뀌는 사고가 난다. 소스로 고정한다.
     func testAdventureIsClaimedThroughASingleStoreEntryPoint() throws {
@@ -227,6 +262,55 @@ final class AdventureClaimTests: XCTestCase {
         guard let enumerator = FileManager.default.enumerator(at: directory,
                                                               includingPropertiesForKeys: nil) else { return [] }
         return enumerator.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+    }
+
+    /// `private var x: some View` / `private func x(...) -> some View` 의 이름을 뽑는다.
+    /// `body` 는 SwiftUI 가 부르므로 제외한다.
+    private static func declaredViewMembers(in lines: [String]) -> [String] {
+        var names: [String] = []
+        for line in lines {
+            guard let name = declaredMemberName(in: line), name != "body" else { continue }
+            names.append(name)
+        }
+        return Array(Set(names)).sorted()
+    }
+
+    /// 한 줄이 View 조각을 선언하는가 — 그렇다면 그 이름.
+    private static func declaredMemberName(in line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        // `extension View` 의 modifier(`.memoryHomePanel()`)는 호출 형태가 달라 여기서 다루지 않는다.
+        if let range = trimmed.range(of: "var "), trimmed.contains(": some View") {
+            let rest = trimmed[range.upperBound...]
+            let name = String(rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" })
+            return name.isEmpty ? nil : name
+        }
+        if let range = trimmed.range(of: "func "), trimmed.contains("-> some View") {
+            let rest = trimmed[range.upperBound...]
+            let name = String(rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" })
+            return name.isEmpty ? nil : name
+        }
+        return nil
+    }
+
+    private static func declares(_ member: String, in line: String) -> Bool {
+        declaredMemberName(in: line) == member
+    }
+
+    /// 이름이 **식별자 하나로** 나오는가. 부분 문자열(`header` 가 `headerRow` 에)과 주석·문자열
+    /// 안의 언급은 세지 않는다 — 주석만으로 살아 있다고 치면 가드가 헐거워진다.
+    private static func mentions(_ member: String, in line: String) -> Bool {
+        let code = line.range(of: "//").map { String(line[line.startIndex..<$0.lowerBound]) } ?? line
+        var index = code.startIndex
+        while let found = code.range(of: member, range: index..<code.endIndex) {
+            let before = found.lowerBound == code.startIndex
+                ? nil : code[code.index(before: found.lowerBound)]
+            let after = found.upperBound == code.endIndex ? nil : code[found.upperBound]
+            let boundedBefore = before.map { !($0.isLetter || $0.isNumber || $0 == "_") } ?? true
+            let boundedAfter = after.map { !($0.isLetter || $0.isNumber || $0 == "_") } ?? true
+            if boundedBefore && boundedAfter { return true }
+            index = found.upperBound
+        }
+        return false
     }
 
     /// `struct Foo: View {` / `struct Foo: View, Sendable` 형태의 선언 이름을 뽑는다.
