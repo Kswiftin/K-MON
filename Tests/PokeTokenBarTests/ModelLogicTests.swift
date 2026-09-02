@@ -396,6 +396,26 @@ final class EvolutionItemCoverageTests: XCTestCase {
         XCTAssertEqual(PokemonAssets.clampedID(500), 500, "정상 번호는 그대로 통과한다")
     }
 
+    /// 구멍 14종은 **전부 기본형**이라 `evolves_from IS NULL` 부화 후보 조회에 그대로 딸려 온다.
+    /// 거르지 않으면 가중 추첨이 그걸 뽑고, `EvoLine.init` 은 가지치기 결과가 nil 일 때 같은
+    /// baseID 로 노드를 다시 만들어 **스프라이트 없는 개체가 그대로 부화**한다(빈 그림으로 남는다).
+    func testHatchCandidatesDropSpeciesWithoutSprites() {
+        let gap = PokemonAssets.spriteGaps.min() ?? 0
+        let entries = [BaseSpecies(id: 1, captureRate: 45),
+                       BaseSpecies(id: gap, captureRate: 45),
+                       BaseSpecies(id: 1021, captureRate: 45)]
+        XCTAssertEqual(BaseSpecies.hatchable(entries).map(\.id), [1, 1021])
+    }
+
+    /// 부화가 구멍을 뽑았을 때의 실제 결과 — 라인이 그 종 하나짜리로 남는다. 위 필터가 왜 필요한지를
+    /// 고정한다(가지치기가 알아서 막아 줄 것이라고 읽기 쉬운 자리다).
+    func testPruningDoesNotRescueALineWhoseRootHasNoSprite() {
+        let gap = PokemonAssets.spriteGaps.min() ?? 0
+        let line = EvoLine(baseID: gap, tree: evoNode(gap), rarity: .common, names: [:])
+        XCTAssertEqual(line.tree.speciesID, gap, "뿌리가 구멍이면 가지치기가 대신 고쳐 주지 않는다")
+        XCTAssertFalse(PokemonAssets.hasAnimatedSprite(speciesID: line.tree.speciesID))
+    }
+
     /// 야생 추첨이 구멍을 뽑으면 스프라이트 없는 상대가 필드에 선다. 풀 자체가 구멍을 안 갖는지 본다.
     func testWildPoolNeverContainsAGap() {
         XCTAssertTrue(PokemonAssets.spriteGaps.isDisjoint(with: Set(RogueRun.wildSpeciesPool)))
