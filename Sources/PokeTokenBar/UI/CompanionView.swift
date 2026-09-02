@@ -520,6 +520,17 @@ struct CompanionHeader: View {
 
     private var companionContent: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // 저장이 막히면(디스크 가득·권한) 진행이 조용히 사라진다. 홈은 어느 화면에서 돌아와도
+            // 지나는 자리라 여기에 띄운다.
+            if store.saveFailed {
+                Label(store.l.t("진행 상황을 저장하지 못했습니다. 디스크 공간과 권한을 확인해 주세요.",
+                                "Could not save your progress. Check disk space and permissions.",
+                                "進行状況を保存できませんでした。ディスク容量と権限を確認してください。"),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.red)
+                    .padding(6)
+                    .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+            }
             HStack(alignment: .center, spacing: 12) {
                 SpriteView(speciesID: store.currentPresentationID, size: 76, bob: true, animated: true,
                            shiny: store.currentIsShiny)

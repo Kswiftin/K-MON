@@ -158,6 +158,19 @@ struct PokemonTournamentView: View {
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.09)))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.28)))
                 }
+                // 홀수 인원의 부전승자. 짝이 없어 경기 줄에는 못 들어가지만 표에서 사라지면
+                // 본인은 올라간 줄 모르고 다른 참가자는 왜 안 뛰는지 모른다.
+                ForEach(state.byeEntrants) { entrant in
+                    HStack(spacing: 8) {
+                        entrantCard(state, id: entrant.id)
+                        Text(store.l.t("부전승", "Bye", "不戦勝"))
+                            .font(.caption.bold()).foregroundStyle(.orange)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.05)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.18)))
+                }
             }
         }
         .padding(12)

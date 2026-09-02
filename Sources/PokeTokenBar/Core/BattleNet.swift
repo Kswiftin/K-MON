@@ -1187,16 +1187,26 @@ final class BattleCenter {
         challengeEndpoint(peer.endpoint, displayName: peer.name, kind: .metronome)
     }
 
+    /// "IP:포트" 를 끝점으로 읽는다. 화면이 후보 선택으로 넘어가기 **전에** 같은 판정을 물어야
+    /// 해서 밖으로 낸다 — 그러지 않으면 오타를 낸 사용자가 포켓몬 여섯을 고른 뒤에야 주소가
+    /// 틀렸다는 말을 듣는다.
+    nonisolated static func manualEndpoint(_ address: String) -> NWEndpoint? {
+        let parts = address.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":")
+        guard parts.count == 2, !parts[0].isEmpty,
+              let rawPort = UInt16(parts[1]), let port = NWEndpoint.Port(rawValue: rawPort) else { return nil }
+        return .hostPort(host: NWEndpoint.Host(String(parts[0])), port: port)
+    }
+
+    /// 화면이 후보 선택으로 넘어가기 전에 주소가 틀렸다고 말하는 자리.
+    func reportBadManualAddress() { lastError = l.battleBadAddress }
+
     /// mDNS 가 막힌 네트워크(사내망 등)용 — "IP:포트" 직접 입력 신청.
     func challengeManual(_ address: String) {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = trimmed.split(separator: ":")
-        guard parts.count == 2, !parts[0].isEmpty,
-              let rawPort = UInt16(parts[1]), let port = NWEndpoint.Port(rawValue: rawPort) else {
+        guard let endpoint = Self.manualEndpoint(trimmed) else {
             lastError = l.battleBadAddress
             return
         }
-        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(String(parts[0])), port: port)
         challengeEndpoint(endpoint, displayName: trimmed, kind: .regular)
     }
 
@@ -2030,7 +2040,12 @@ final class BattleCenter {
         guard let payload = try? JSONEncoder().encode(message) else { return }
         var frame = withUnsafeBytes(of: UInt32(payload.count).bigEndian) { Data($0) }
         frame.append(payload)
-        conn.send(content: frame, completion: .contentProcessed { _ in })
+        // 전송 실패는 **연결이 끊긴 것으로 다룬다.** 버리면 상대는 이미 사라졌는데 이쪽 화면만
+        // 원인 없이 상대의 다음 프레임을 기다린다(수신 실패는 이미 같은 자리를 지난다).
+        conn.send(content: frame, completion: .contentProcessed { [weak self] error in
+            guard error != nil else { return }
+            Task { @MainActor in self?.connectionDropped() }
+        })
     }
 
     private func receiveLoop(_ conn: NWConnection) {

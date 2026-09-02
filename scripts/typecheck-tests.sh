@@ -11,6 +11,10 @@
 # `@testable import PokeTokenBar` 를 걷어낸 테스트 소스를 앱 소스와 **한 모듈로** 타입체크한다.
 # 테스트는 실행되지 않는다 — 단정이 참인지는 CI(macos-15)가 진짜 XCTest 로 확인한다.
 #
+# 먼저 볼 것: swift-testing 으로 쓴 테스트는 Xcode 없이 **실제로 실행된다**
+# (`scripts/test-local.sh`). 이 스크립트는 그쪽으로 옮기지 않은 XCTest 소스가
+# 컴파일되는지만 본다 — 단정이 참인지는 여전히 확인하지 못한다.
+#
 # 사용:  ./scripts/typecheck-tests.sh
 # 종료코드: 0 = 타입체크 통과(에러·warning 없음), 1 = 진단 있음
 set -euo pipefail

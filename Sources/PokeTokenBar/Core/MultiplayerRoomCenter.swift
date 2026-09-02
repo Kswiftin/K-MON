@@ -25,6 +25,14 @@ final class MultiplayerRoomCenter {
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
 
     private(set) var phase: Phase = .idle
+    /// 방 하나의 수명 번호. `leaveRoom()` 이 올린다.
+    ///
+    /// 개설·참가는 `await` 를 지나 끝나는데, 그 사이 사용자는 나가기를 누를 수 있고 체육관 타이머도
+    /// `leaveRoom()` 을 부른다. 깨어난 작업이 국면만 보면 정리가 끝난 뒤에 새 listener 를 세워
+    /// **닫았다고 믿는 방이 LAN 에 그대로 남는다**(이후 개설·참가는 `guard phase == .idle` 에서 전부
+    /// 조용히 거절된다). 국면 대신 이 번호를 비교하는 이유는, 나갔다가 곧바로 다시 개설하면 국면이
+    /// 같은 값으로 돌아와 옛 작업이 새 작업을 덮어쓰기 때문이다.
+    private var sessionEpoch = 0
     private(set) var rooms: [MultiplayerRoomPeer] = []
     private(set) var lobby: MultiplayerLobby?
     private(set) var combatFighters: [MultiplayerFighter] = []
@@ -226,10 +234,13 @@ final class MultiplayerRoomCenter {
     func startSoloPokemonQuiz() {
         guard phase == .idle else { return }
         phase = .creating; lastError = nil
+        let epoch = sessionEpoch
         Task {
             guard let snapshot = await buildSnapshot() else {
+                guard sessionEpoch == epoch else { return }
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
+            guard sessionEpoch == epoch else { return }
             hostingRole = true; lobby = nil
             await preparePokemonQuiz(players: [PokemonOXPlayer(id: myID, trainerName: trainerName,
                                                                speciesID: snapshot.speciesID)])
@@ -240,12 +251,15 @@ final class MultiplayerRoomCenter {
         guard phase == .idle else { return }
         lastError = nil
         phase = .creating
+        let epoch = sessionEpoch
         Task {
             guard let snapshot = await buildSnapshot() else {
+                guard sessionEpoch == epoch else { return }
                 phase = .idle
                 lastError = "포켓몬 정보를 불러오지 못했습니다."
                 return
             }
+            guard sessionEpoch == epoch else { return }
             hostingRole = true
             lobby = nil
             pokeathlonRace = PokeathlonRace(racers: [
@@ -259,12 +273,19 @@ final class MultiplayerRoomCenter {
     private func createRoom(mode: MultiplayerBattleMode, activity: RoomActivity) {
         guard phase == .idle else { return }
         phase = .creating; lastError = nil
+        let epoch = sessionEpoch
         Task {
-            guard let snapshot = await buildSnapshot() else { phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return }
+            guard let snapshot = await buildSnapshot() else {
+                guard sessionEpoch == epoch else { return }
+                phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
+            }
+            guard sessionEpoch == epoch else { return }
             if activity == .tournament {
                 guard let pool = await buildTournamentLineup(ids: tournamentPickedTeam, count: 6) else {
+                    guard sessionEpoch == epoch else { return }
                     phase = .idle; lastError = "토너먼트 후보 포켓몬 6마리를 선택해 주세요."; return
                 }
+                guard sessionEpoch == epoch else { return }
                 tournamentPools[myID] = pool
                 tournamentTeams.removeValue(forKey: myID)
                 tournamentFinalTeam = []
@@ -299,13 +320,20 @@ final class MultiplayerRoomCenter {
         guard phase == .idle else { return }
         phase = .joining(room.name); lastError = nil
         hostingRole = false
+        let epoch = sessionEpoch
         Task {
-            guard let snapshot = await buildSnapshot() else { phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return }
+            guard let snapshot = await buildSnapshot() else {
+                guard sessionEpoch == epoch else { return }
+                phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
+            }
+            guard sessionEpoch == epoch else { return }
             let isTournament = room.name.hasPrefix("TOUR ·")
             if isTournament {
                 guard let pool = await buildTournamentLineup(ids: tournamentPickedTeam, count: 6) else {
+                    guard sessionEpoch == epoch else { return }
                     phase = .idle; lastError = "토너먼트 후보 포켓몬 6마리를 선택해 주세요."; return
                 }
+                guard sessionEpoch == epoch else { return }
                 tournamentPools[myID] = pool
                 tournamentTeams.removeValue(forKey: myID)
                 tournamentFinalTeam = []
@@ -414,10 +442,13 @@ final class MultiplayerRoomCenter {
               ids.count == 3 else {
             lastError = "공개된 후보 중 출전 포켓몬 3마리를 선택해 주세요."; return
         }
+        let epoch = sessionEpoch
         Task {
             guard let lineup = await buildTournamentLineup(ids: ids, count: 3) else {
+                guard sessionEpoch == epoch else { return }
                 lastError = "토너먼트 출전 파티를 준비하지 못했습니다."; return
             }
+            guard sessionEpoch == epoch else { return }
             tournamentTeams[myID] = lineup
             if !isHost, let hostConnection {
                 send(.tournamentTeam(participantID: myID, lineup: lineup), over: hostConnection)
@@ -606,11 +637,13 @@ final class MultiplayerRoomCenter {
         // 아는 사실이므로 그 자리에서 사유를 세운다.
         guard gymMatch == nil else { gymRejection = .busy; return }
         gymRejection = nil
+        let epoch = sessionEpoch
         Task {
             guard let lineup = await buildGymLineup() else {
+                guard sessionEpoch == epoch else { return }
                 lastError = companion.l.gymNeedsMorePokemon(PlayerGym.defenseTeamSize); return
             }
-            guard let hostConnection else { return }
+            guard sessionEpoch == epoch, let hostConnection else { return }
             send(.gymChallenge(participantID: myID, lineup: lineup), over: hostConnection)
         }
     }
@@ -641,7 +674,8 @@ final class MultiplayerRoomCenter {
     }
 
     private func startGymMatch(challengerID: UUID, challengerLineup: [BattleSnapshot]) async {
-        guard isHost, let defense = await buildGymDefenseLineup() else { return }
+        let epoch = sessionEpoch
+        guard isHost, let defense = await buildGymDefenseLineup(), sessionEpoch == epoch else { return }
         let challengerName = lobby?.participants.first { $0.id == challengerID }?.trainerName ?? "?"
         // 판을 시작할 때 **아무 행동도 미리 채우지 않는다.** 예전엔 여기서 양쪽을 채워 두는 바람에
         // 도전자가 무엇을 눌러도 `submit` 이 "이미 냈다" 로 거절됐다 — 그래서 `let` 이다.
@@ -836,12 +870,17 @@ final class MultiplayerRoomCenter {
     private func preparePokemonQuiz(players: [PokemonOXPlayer]) async {
         guard !players.isEmpty else { return }
         isPreparingPokemonQuiz = true; lastError = nil
+        // 문제를 받아 오는 동안 방을 떠날 수 있다 — 그 뒤에 국면을 퀴즈로 올리면 이미 정리된
+        // 방이 화면에 되살아난다.
+        let epoch = sessionEpoch
         defer { isPreparingPokemonQuiz = false }
         guard let facts = try? await PokeAPIClient.shared.pokemonQuizFacts() else {
+            guard sessionEpoch == epoch else { return }
             lastError = "PokéAPI에서 퀴즈 데이터를 불러오지 못했습니다. 네트워크를 확인해 주세요."
             if lobby == nil { hostingRole = false; phase = .idle }
             return
         }
+        guard sessionEpoch == epoch else { return }
         let questions = PokemonOXQuestionFactory.make(from: facts)
         guard questions.count == PokemonOXGame.questionCount else {
             lastError = "퀴즈 문제를 충분히 만들지 못했습니다. 다시 시도해 주세요."
@@ -939,16 +978,36 @@ final class MultiplayerRoomCenter {
     }
 
     /// 호스트 권위 검사 — 통과한 베팅만 원장에 들어가고, 원장 전체를 다시 브로드캐스트한다.
+    ///
+    /// 금액 0 은 **철회**다. 판돈을 실제로 내지 못한 관전자(로비에서 별조각을 쓴 뒤 베팅한 경우
+    /// 호스트가 보는 신고 잔액은 아직 충분하다)가 자기 항목을 원장에서 빼는 유일한 경로다 —
+    /// 남겨 두면 아무도 내지 않은 판돈이 배당에 섞여 별조각이 생성된다("이동만" 불변식 위반).
     private func acceptBet(_ bet: PokeathlonBet, from senderID: UUID) {
         guard isHost, let lobby, let race = pokeathlonRace else { return }
+        guard bet.bettorID == senderID else { return }
+        guard bet.amount != 0 else { withdrawBet(of: senderID); return }
         if let rejection = PokeathlonPool.rejection(for: bet, senderID: senderID, lobby: lobby,
                                                     race: race, pool: pokeathlonPool, now: Date()) {
             if senderID == myID { lastError = Self.betRejectionText(rejection) }
             return
         }
         pokeathlonPool.bets[bet.bettorID] = bet    // 같은 관전자의 이전 베팅을 대체
+        // 내 판돈은 **원장에 남기기 전에** 실제로 빠져나가야 한다. 에스크로가 실패했는데 항목만
+        // 남으면 배당이 없는 돈을 나눈다.
+        if senderID == myID, !syncEscrow() {
+            pokeathlonPool = pokeathlonPool.withoutUnfundedBet(of: bet.bettorID)
+            lastError = "별조각이 부족합니다."
+        }
         broadcastPool()
-        syncEscrow()
+    }
+
+    /// 잠기지 않은 원장에서 한 관전자의 베팅을 뺀다. 잠긴 뒤(출발 후)에는 뺄 수 없다 —
+    /// 그때는 이미 배당 계산이 그 판돈을 세고 있다.
+    private func withdrawBet(of bettorID: UUID) {
+        guard isHost, !pokeathlonPool.isClosed, pokeathlonPool.bets[bettorID] != nil else { return }
+        pokeathlonPool = pokeathlonPool.withoutUnfundedBet(of: bettorID)
+        if bettorID == myID { _ = syncEscrow() }
+        broadcastPool()
     }
 
     private func broadcastPool() {
@@ -969,12 +1028,17 @@ final class MultiplayerRoomCenter {
 
     /// 원장에서 내 베팅을 본 시점에 내 지갑에서 판돈을 뺀다(에스크로). 베팅을 바꿨으면
     /// 이전 판돈을 되돌리고 새 판돈을 뺀다 — 지갑이 부족해 실패하면 에스크로 기록을 남기지 않는다.
-    private func syncEscrow() {
+    /// 원장의 내 항목과 지갑을 맞춘다. 돌려주는 값은 **맞았는가** 다 — 원장에 내 베팅이 있는데
+    /// 판돈을 못 냈으면 거짓이고, 그 항목은 원장에서 빠져야 한다.
+    @discardableResult
+    private func syncEscrow() -> Bool {
         let mine = pokeathlonPool.bets[myID]
-        guard mine != escrowedBet else { return }
+        guard mine != escrowedBet else { return true }
         if let previous = escrowedBet { companion.creditStarPieces(previous.amount) }
-        if let mine, companion.escrowStarPieces(mine.amount) { escrowedBet = mine }
-        else { escrowedBet = nil }
+        guard let mine else { escrowedBet = nil; return true }
+        if companion.escrowStarPieces(mine.amount) { escrowedBet = mine; return true }
+        escrowedBet = nil
+        return false
     }
 
     /// 출발 시각이 지나면 원장을 잠근다. 검사기도 시각을 보지만, 잠금 사실을 관전자 화면에
@@ -1075,6 +1139,7 @@ final class MultiplayerRoomCenter {
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
         hasSubmittedAction = false; hostingRole = false; phase = .idle
+        sessionEpoch &+= 1
         chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
     }
 
@@ -1261,7 +1326,14 @@ final class MultiplayerRoomCenter {
             case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
             case .pokeathlonPool(let pool):
                 self.pokeathlonPool = pool
-                self.syncEscrow()
+                // 판돈을 못 냈으면 호스트 원장에서 내 항목을 빼 달라고 알린다(금액 0 = 철회).
+                // 그러지 않으면 내지 않은 판돈이 남의 배당에 섞인다.
+                if !self.syncEscrow(), let hostConnection = self.hostConnection,
+                   let mine = pool.bets[self.myID] {
+                    self.lastError = "별조각이 부족해 베팅이 취소됐습니다."
+                    self.send(.pokeathlonBet(participantID: self.myID, runnerID: mine.runnerID, amount: 0),
+                              over: hostConnection)
+                }
             case .pokeathlonSettlement(let pool, let winnerID):
                 self.applySettlement(pool: pool, winnerID: winnerID)
             case .pokemonQuizStart(let game): self.pokemonQuizGame = game; self.phase = .pokemonQuiz
@@ -1482,7 +1554,11 @@ final class MultiplayerRoomCenter {
         guard let payload = try? JSONEncoder().encode(message), payload.count <= Self.maxMessageBytes else { return }
         var frame = withUnsafeBytes(of: UInt32(payload.count).bigEndian) { Data($0) }; frame.append(payload)
         connection.send(content: frame, completion: .contentProcessed { error in
-            if let error { AppLog.write("multiplayer send failed: \(error)") }
+            guard let error else { return }
+            AppLog.write("multiplayer send failed: \(error)")
+            // 접어야 상태 핸들러(`.failed`/`.cancelled`)가 방을 정리한다. 로그만 남기면 상대가
+            // 사라진 방이 계속 차례를 기다린다.
+            connection.cancel()
         })
     }
 

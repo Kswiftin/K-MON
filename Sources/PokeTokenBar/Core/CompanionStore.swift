@@ -209,7 +209,9 @@ final class CompanionStore {
          memoryAlbum: PokemonMemoryAlbum? = nil,
          chatStore: PokemonChatStore? = nil,
          rng: any RandomNumberGenerator = SystemRandomNumberGenerator(),
-         dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp) {
+         dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp,
+         isReadOnly: Bool = false) {
+        self.isReadOnly = isReadOnly
         self.provider = provider
         self.clock = clock
         // An injected URL is an explicit test/embedding contract; only default construction uses
@@ -232,6 +234,11 @@ final class CompanionStore {
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
         loadRogueRun()
+        // 읽기 전용은 **디스크를 읽는 데서 끝난다.** 아래 정리·정산은 전부 "앱이 죽은 사이에
+        // 밀린 일" 이라는 전제 위에 있는데, 그 전제는 이 세이브를 여는 프로세스가 하나일 때만
+        // 참이다. 메뉴바 앱이 켜져 있는 동안 터미널이 같은 파일을 열면 진행 중인 랭크전이 패배로
+        // 정산되고 끝난 모험이 화면 없이 정산된다.
+        guard !isReadOnly else { return }
         // Room placement is derived from this save's bag.  Normalize at the state/album join so
         // a hand-edited or imported album cannot render furniture the player does not own.
         // A corrupt/forced-reset state has no trustworthy ownership list. Pruning here would
@@ -750,7 +757,7 @@ final class CompanionStore {
     var currentPresentationID: Int? { state.active?.presentationID }
 
     func changeRotomForm(_ form: RotomForm) async {
-        guard state.active?.currentID == 479 else { return }
+        guard let monID = state.active?.id, state.active?.currentID == 479 else { return }
         let signatureIDs = Set(RotomForm.allCases.compactMap(\.signatureMoveID))
         let signatureMove: MoveSpec?
         if let moveID = form.signatureMoveID {
@@ -760,14 +767,18 @@ final class CompanionStore {
         } else {
             signatureMove = nil
         }
-        var moves = state.active!.learnedMoves.filter { !signatureIDs.contains($0.id) }
+        // 전용기를 받아 오는 동안 동행이 바뀔 수 있다(교환·방생·박스 교체). **개체 ID 까지** 다시
+        // 본다 — 종만 보면 같은 로토무로 갈아 끼운 다른 개체에 폼과 기술이 얹힌다. 형제 경로
+        // (`learnMove`·`detailedMoves`)가 쓰는 것과 같은 재확인이다.
+        guard var active = state.active, active.id == monID, active.currentID == 479 else { return }
+        var moves = active.learnedMoves.filter { !signatureIDs.contains($0.id) }
         if let signatureMove {
             if moves.count >= 4 { moves.removeLast() }
             moves.append(signatureMove)
         }
-        guard state.active?.currentID == 479 else { return }
-        state.active!.rotomForm = form == .normal ? nil : form
-        state.active!.learnedMoves = moves
+        active.rotomForm = form == .normal ? nil : form
+        active.learnedMoves = moves
+        state.active = active
         displayedMoves = moves
         loadedTypesSpeciesID = nil
         save()
@@ -1704,12 +1715,21 @@ final class CompanionStore {
     ///
     /// 신청자 쪽에서는 상대가 `.committed` 앞에 보낸 값이 여기로 들어오고, 수신자 쪽에서는
     /// 성사 뒤에 도착해 `adoptTradedMemories` 로 따로 들어온다 — 어느 쪽이든 검사는 `adopt` 하나다.
+    /// `performTrade` 가 받아들일 수 있는 조합인지만 본다 — 상태는 바꾸지 않는다.
+    ///
+    /// 커밋을 두 단계로 나눈 경로(경매)가 **개체가 움직이기 전에** 같은 판정을 미리 물어야 한다.
+    /// 마지막 커밋이 여기서 걸릴 값이면 상대는 이미 자기 개체를 넘긴 뒤라 한쪽만 성사된 교환이
+    /// 된다. 조건을 두 벌로 두면 한쪽만 넓어져 그 구멍이 조용히 돌아오므로 정본은 이 함수다.
+    func canPerformTrade(offeredID: UUID, received incoming: MonState) -> Bool {
+        incoming.id != offeredID
+            && (1...649).contains(incoming.currentID)
+            && !ownedMons.contains(where: { $0.id == incoming.id })
+    }
+
     @discardableResult
     func performTrade(offeredID: UUID, received incoming: MonState,
                       incomingMemories: TradeMemoryPayload? = nil) -> Bool {
-        guard incoming.id != offeredID,
-              (1...649).contains(incoming.currentID),
-              !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
+        guard canPerformTrade(offeredID: offeredID, received: incoming) else { return false }
 
         let offeredSpecies = state.active?.id == offeredID
             ? state.active?.currentID : state.boxedMons.first(where: { $0.id == offeredID })?.currentID
@@ -2008,12 +2028,18 @@ final class CompanionStore {
             }
         }
         guard filled else { return mon.learnedMoves }
-        if state.active?.id == mon.id {
-            state.active!.learnedMoves = enriched
+        // 보강한 상세를 **지금 저장돼 있는 기술 목록에 얹는다.** 스냅샷을 통째로 덮어쓰면 조회를
+        // 기다리는 동안 배운 기술이 사라진다(기술 학습 카드는 이 조회와 나란히 돌 수 있다).
+        let details = Dictionary(enriched.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        if var active = state.active, active.id == mon.id {
+            active.learnedMoves = active.learnedMoves.map { details[$0.id] ?? $0 }
+            state.active = active
             save()
+            return active.learnedMoves
         } else if let index = state.boxedMons.firstIndex(where: { $0.id == mon.id }) {
-            state.boxedMons[index].learnedMoves = enriched
+            state.boxedMons[index].learnedMoves = state.boxedMons[index].learnedMoves.map { details[$0.id] ?? $0 }
             save()
+            return state.boxedMons[index].learnedMoves
         }
         return enriched
     }
@@ -2300,12 +2326,25 @@ final class CompanionStore {
     /// 판을 옆 파일에 적는다. 판이 없으면 파일을 지운다 — 남겨 두면 다음 기동이 끝난 판을 되살려
     /// 결과 화면이 다시 뜬다.
     private func persistRogueRun() {
+        guard !isReadOnly else { return }
         guard let rogueRun else {
-            try? FileManager.default.removeItem(at: waveRunURL)
+            // 파일이 없는 것은 실패가 아니다 — 판 없이 저장이 여러 번 불린다.
+            do { try FileManager.default.removeItem(at: waveRunURL) } catch CocoaError.fileNoSuchFile {
+            } catch {
+                // 못 지우면 다음 기동이 끝난 판을 되살려 결과 화면을 다시 띄운다.
+                AppLog.write("wave run save could not be removed: \(error)")
+                saveFailed = true
+            }
             return
         }
-        guard let data = try? JSONEncoder().encode(rogueRun.saveForm) else { return }
-        try? data.write(to: waveRunURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(rogueRun.saveForm)
+            try data.write(to: waveRunURL, options: .atomic)
+        } catch {
+            // 형제 경로(`loadRogueRun`)는 실패를 적는다. 여기만 덮어두면 판이 사라진 이유가 남지 않는다.
+            AppLog.write("wave run save failed: \(error)")
+            saveFailed = true
+        }
     }
 
     /// 기동 시 되살린다. 되살릴 수 없는 파일은 **지운다** — 그대로 두면 켤 때마다 같은 실패를
@@ -2952,8 +2991,8 @@ final class CompanionStore {
 
     // MARK: 상점 (재화 = 별의모래)
 
-    /// 상점에서 쓸 수 있는 별의모래 = 누적 생산량 − 상점 지출 누적. 성장 미터(usedSinceInstall)는
-    /// 여기선 읽기만 — 구매는 spentTokens 만 올려 잔액을 깎는다(진화 진행·오늘/주/월 통계 무영향).
+    /// 쓸 수 있는 별의모래 = 지갑 잔액. 성장 미터(`usedSinceInstall`)는 여기에 들어오지 않는다 —
+    /// 구매도 판돈도 `starPieces` 만 깎아서 진화 진행·오늘/주/월 통계는 그대로다.
     var availableTokens: Int { max(0, state.starPieces) }
 
     func technicalMachineCount(_ moveID: Int) -> Int { state.technicalMachines[moveID] ?? 0 }
@@ -3773,10 +3812,29 @@ final class CompanionStore {
         }
         if changed { save() }
     }
+    /// 이 저장소는 디스크를 읽기만 한다. 터미널 프런트엔드가 메뉴바 앱과 같은 세이브를 열 때
+    /// 쓴다 — 두 프로세스가 같은 파일에 쓰면 나중 쓰기가 앞 쓰기를 통째로 덮는다(잠금이 없다).
+    /// 기동 시 정리·정산을 건너뛰는 것만으로는 부족해서 쓰기 경로 자체를 막는다: 화면을 그리다
+    /// 부수효과가 있는 계산을 밟아도 세이브가 나가지 않아야 한다.
+    private let isReadOnly: Bool
+
+    /// 마지막 저장이 실패한 채로 남아 있다. 화면이 읽는다 — 저장이 안 되는 것을 알리지 않으면
+    /// 사용자는 앱을 그대로 쓰다가 다음 기동에서 진행을 통째로 잃는다.
+    private(set) var saveFailed = false
+
     private func save() {
+        guard !isReadOnly else { return }
         memoryAlbum.clearSharedPinnedMemory(unlessPinnedFor: state.active?.id)
-        // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).
-        guard let data = try? JSONEncoder().encode(SaveTransfer.signed(state)) else { return }
-        try? data.write(to: fileURL, options: .atomic)   // 부분 쓰기 손상 방지(펫 상태)
+        do {
+            // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).
+            let data = try JSONEncoder().encode(SaveTransfer.signed(state))
+            try data.write(to: fileURL, options: .atomic)   // 부분 쓰기 손상 방지(펫 상태)
+            if saveFailed { AppLog.write("companion state save recovered"); saveFailed = false }
+        } catch {
+            // 상태가 바뀔 때마다 불리는 경로라 **전이할 때만** 적는다 — 매번 적으면 실패가
+            // 이어지는 동안 로그가 밀려 원인 줄이 밀려난다.
+            if !saveFailed { AppLog.write("companion state save failed: \(error)") }
+            saveFailed = true
+        }
     }
 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 상점 — 별의모래(재화 = usedSinceInstall − spentTokens)로 아이템 구매(이상한 사탕·민트).
+/// 상점 — 별의모래(`CompanionStore.availableTokens`)로 아이템 구매(이상한 사탕·민트).
 /// 인라인 확인(버튼 morph) — .sheet/.alert 금지(BagView 주석과 동일: transient 팝오버가 닫힐 때
 /// 고아 시트가 이후 클릭을 먹통내는 결함 회피).
 struct ShopView: View {
@@ -17,56 +17,53 @@ struct ShopView: View {
 
     var body: some View {
         let l = store.l
-        // 고정 높이 — 컬렉션/가방과 동일(팝오버 재오픈 시 fitting size 축소 방지).
-        ScrollView {
-            // 판매 목록이 30줄 가까이 된다(진화 아이템 28종, #89) — VStack 은 열자마자 전부 그려서
-            // 아이템 스프라이트 27장을 한꺼번에 받아온다. Lazy 로 화면에 들어온 카드만 그린다.
-            // 고정 높이(520)는 ScrollView 쪽에 그대로 있어 팝오버 fitting size 규약은 그대로다.
-            LazyVStack(alignment: .leading, spacing: 10) {
-                walletHeader(l)
-                Picker("", selection: $category) {
-                    Text(l.t("도구", "Items", "どうぐ")).tag(ShopCategory.general)
-                    Text(l.t("진화", "Evolution", "進化")).tag(ShopCategory.evolution)
-                    Text(l.t("알", "Eggs", "タマゴ")).tag(ShopCategory.eggs)
-                    Text(l.t("기술머신", "TMs", "わざマシン")).tag(ShopCategory.machines)
-                    Text(l.t("의상", "Outfits", "ふく")).tag(ShopCategory.outfits)
-                }
-                .pickerStyle(.segmented)
+        // 스크롤은 팝오버 본체가 한다 — 여기에 또 하나를 두면 중첩이라 안쪽이 잘린 자리부터
+        // 볼 방법이 없다(`PokemonRosterView` 주석의 그 결함이다). 목록이 길어지는 탭이라
+        // Lazy 는 유지한다: 판매 목록이 30줄 가까이 되고(진화 아이템 28종, #89) VStack 은
+        // 열자마자 아이템 스프라이트를 전부 받아온다.
+        LazyVStack(alignment: .leading, spacing: 10) {
+            walletHeader(l)
+            Picker("", selection: $category) {
+                Text(l.t("도구", "Items", "どうぐ")).tag(ShopCategory.general)
+                Text(l.t("진화", "Evolution", "進化")).tag(ShopCategory.evolution)
+                Text(l.t("알", "Eggs", "タマゴ")).tag(ShopCategory.eggs)
+                Text(l.t("기술머신", "TMs", "わざマシン")).tag(ShopCategory.machines)
+                Text(l.t("의상", "Outfits", "ふく")).tag(ShopCategory.outfits)
+            }
+            .pickerStyle(.segmented)
 
-                switch category {
-                case .general:
-                    ForEach(store.purchasableItems.filter { !$0.isEvolutionItem }, id: \.self) { kind in
-                        ShopItemCard(store: store, kind: kind)
+            switch category {
+            case .general:
+                ForEach(store.purchasableItems.filter { !$0.isEvolutionItem }, id: \.self) { kind in
+                    ShopItemCard(store: store, kind: kind)
+                }
+            case .evolution:
+                ForEach(store.purchasableItems.filter(\.isEvolutionItem), id: \.self) { kind in
+                    ShopItemCard(store: store, kind: kind)
+                }
+            case .eggs:
+                ForEach(FreshEgg.shopTiers, id: \.self) { tier in
+                    EggCard(store: store, nav: nav, tier: tier)
+                }
+            case .machines:
+                TextField(l.t("기술명 또는 TM 번호 검색", "Search move or TM number", "わざ名・TM番号を検索"),
+                          text: $machineQuery)
+                    .textFieldStyle(.roundedBorder)
+                if filteredMachines.isEmpty {
+                    ContentUnavailableView.search(text: machineQuery)
+                }
+                ForEach(filteredMachines) { machine in
+                    TechnicalMachineShopCard(store: store, machine: machine) { name in
+                        machineNames[machine.moveID] = name
                     }
-                case .evolution:
-                    ForEach(store.purchasableItems.filter(\.isEvolutionItem), id: \.self) { kind in
-                        ShopItemCard(store: store, kind: kind)
-                    }
-                case .eggs:
-                    ForEach(FreshEgg.shopTiers, id: \.self) { tier in
-                        EggCard(store: store, nav: nav, tier: tier)
-                    }
-                case .machines:
-                    TextField(l.t("기술명 또는 TM 번호 검색", "Search move or TM number", "わざ名・TM番号を検索"),
-                              text: $machineQuery)
-                        .textFieldStyle(.roundedBorder)
-                    if filteredMachines.isEmpty {
-                        ContentUnavailableView.search(text: machineQuery)
-                    }
-                    ForEach(filteredMachines) { machine in
-                        TechnicalMachineShopCard(store: store, machine: machine) { name in
-                            machineNames[machine.moveID] = name
-                        }
-                    }
-                case .outfits:
-                    // 상점 판매분만(`shopPrice != nil`) — 업적 보상 의상은 옷장에서 잠금으로 보인다.
-                    ForEach(OutfitItem.allCases.filter { $0.shopPrice != nil }, id: \.self) { item in
-                        ShopOutfitCard(store: store, item: item)
-                    }
+                }
+            case .outfits:
+                // 상점 판매분만(`shopPrice != nil`) — 업적 보상 의상은 옷장에서 잠금으로 보인다.
+                ForEach(OutfitItem.allCases.filter { $0.shopPrice != nil }, id: \.self) { item in
+                    ShopOutfitCard(store: store, item: item)
                 }
             }
         }
-        .frame(height: 520)
     }
 
     private var filteredMachines: [TechnicalMachine] {

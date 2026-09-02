@@ -509,6 +509,12 @@ enum PokemonAssets {
     static func hasAnimatedSprite(speciesID: Int) -> Bool {
         animatedSpeciesIDs.contains(speciesID)
     }
+
+    /// 와이어에서 온 종 번호를 이 범위로 자른다. 범위 밖 번호는 스프라이트가 없어 화면이 비고,
+    /// 그대로 배열 첨자로 쓰는 자리에서는 죽는다.
+    static func clampedID(_ speciesID: Int) -> Int {
+        min(animatedSpeciesIDs.upperBound, max(animatedSpeciesIDs.lowerBound, speciesID))
+    }
 }
 
 /// PokéAPI evolution-chain 을 파싱한 트리. 분기(evolves_to 다수)를 children 으로.
@@ -986,8 +992,10 @@ struct CompanionState: Codable, Sendable {
     var lastCandyDate = ""
     // 별의모래: 설치 이후 생산 누적(성장 미터, 불변)
     var usedSinceInstall = 0
-    // 상점에서 쓴 별의모래 누적(재화 지출 원장). 쓸 수 있는 재화 = usedSinceInstall − spentTokens.
-    // 성장 미터(usedSinceInstall)는 불변 — 구매는 이 값만 올려 잔액을 깎는다(성장 되감김 없음).
+    // **더는 쓰지 않는 지출 원장.** 지갑은 `starPieces` 하나이고, 이 값을 올리는 코드는 없다.
+    // 남겨 두는 이유는 두 가지뿐이다: `starPieces` 가 없던 세이브가 잔액을 여기서 도출하고
+    // (`usedSinceInstall − spentTokens`), 서명(`SaveTransfer.canonicalString`)의 `sp` 세그먼트가
+    // 그 옛 세이브의 값을 그대로 본다. 지우면 옛 세이브의 잔액과 서명이 함께 깨진다.
     var spentTokens = 0
     var starPieces = 0
     // 현재 알이 생긴 뒤 쌓인 별의모래(부화 인큐베이션). 누적(usedSinceInstall)과 별개 — 졸업 후 새 알마다 0.

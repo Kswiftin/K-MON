@@ -87,6 +87,17 @@ struct PokemonTournamentState: Codable, Sendable, Equatable {
     var bracketRevealUntil: Date?
 
     var champion: TournamentEntrant? { entrants.first { $0.id == championID } }
+
+    /// 첫 라운드에 상대가 없는 참가자. 홀수 인원의 마지막 한 명은 부전승으로 다음 라운드에
+    /// 오르는데, 대진표는 짝이 지어진 경기만 그리므로 그대로 두면 **표에서 사라진다** —
+    /// 그 사람은 자기가 올라간 줄도 모르고 남들은 왜 안 뛰는지 모른다.
+    ///
+    /// 대진 프레임에 필드를 더하지 않고 여기서 도출한다: 짝이 지어지지 않은 참가자가 곧 부전승자다.
+    var byeEntrants: [TournamentEntrant] {
+        guard let opening = openingMatches, !opening.isEmpty else { return [] }
+        let paired = Set(opening.flatMap { [$0.playerA, $0.playerB] })
+        return entrants.filter { !paired.contains($0.id) }
+    }
 }
 
 /// 한 대진의 권위형 3대3 엔진. 기존 `NetBattleState`를 사용해 기술·교체·특성을 1:1과 공유한다.

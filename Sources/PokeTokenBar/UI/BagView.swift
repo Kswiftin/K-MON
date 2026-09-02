@@ -10,44 +10,42 @@ struct BagView: View {
             && store.focusEggCount == 0 && store.eggFragmentCount == 0 {
             emptyState
         } else {
-            // 고정 높이 — 컬렉션과 동일(팝오버 재오픈 시 fitting size 축소 방지).
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    if store.eggFragmentCount > 0 {
-                        HStack {
-                            Text("🧩").font(.title2)
-                            Text(store.l.t("알 조각 \(store.eggFragmentCount)/10 · 주간 모험 \(store.weeklyAdventureProgress)/10",
-                                     "Egg Fragments \(store.eggFragmentCount)/10 · Weekly \(store.weeklyAdventureProgress)/10",
-                                     "タマゴのかけら \(store.eggFragmentCount)/10 · 週間 \(store.weeklyAdventureProgress)/10"))
-                                .font(.caption.bold())
-                        }
-                    }
-                    if store.focusEggCount > 0 {
-                        HStack(spacing: 10) {
-                            Text("🥚").font(.system(size: 30))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(store.l.t("신비한 알 ×\(store.focusEggCount)", "Mystery Egg ×\(store.focusEggCount)", "ふしぎなタマゴ ×\(store.focusEggCount)"))
-                                    .font(.callout.weight(.semibold))
-                                Text(store.l.t("집중 모험에서 발견한 알입니다. 안전하게 보관 중이에요.",
-                                         "Found during focus adventures and stored safely.",
-                                         "集中の冒険で見つけたタマゴです。安全に保管中です。"))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .padding(10)
-                        .pokedoroCard(tint: .purple)
-                    }
-                    ForEach(store.ownedItems, id: \.kind) { item in
-                        ItemCard(store: store, nav: nav, kind: item.kind, count: item.count)
-                    }
-                    ForEach(store.ownedTechnicalMachines, id: \.machine.id) { entry in
-                        TechnicalMachineBagCard(store: store, nav: nav,
-                                                machine: entry.machine, count: entry.count)
+            // 스크롤은 팝오버 본체가 한다 — 여기에 또 하나를 두면 중첩이라 안쪽이 잘린 자리부터
+            // 볼 방법이 없다(`PokemonRosterView` 주석의 그 결함이다).
+            VStack(alignment: .leading, spacing: 8) {
+                if store.eggFragmentCount > 0 {
+                    HStack {
+                        Text("🧩").font(.title2)
+                        Text(store.l.t("알 조각 \(store.eggFragmentCount)/10 · 주간 모험 \(store.weeklyAdventureProgress)/10",
+                                 "Egg Fragments \(store.eggFragmentCount)/10 · Weekly \(store.weeklyAdventureProgress)/10",
+                                 "タマゴのかけら \(store.eggFragmentCount)/10 · 週間 \(store.weeklyAdventureProgress)/10"))
+                            .font(.caption.bold())
                     }
                 }
+                if store.focusEggCount > 0 {
+                    HStack(spacing: 10) {
+                        Text("🥚").font(.system(size: 30))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(store.l.t("신비한 알 ×\(store.focusEggCount)", "Mystery Egg ×\(store.focusEggCount)", "ふしぎなタマゴ ×\(store.focusEggCount)"))
+                                .font(.callout.weight(.semibold))
+                            Text(store.l.t("집중 모험에서 발견한 알입니다. 안전하게 보관 중이에요.",
+                                     "Found during focus adventures and stored safely.",
+                                     "集中の冒険で見つけたタマゴです。安全に保管中です。"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(10)
+                    .pokedoroCard(tint: .purple)
+                }
+                ForEach(store.ownedItems, id: \.kind) { item in
+                    ItemCard(store: store, nav: nav, kind: item.kind, count: item.count)
+                }
+                ForEach(store.ownedTechnicalMachines, id: \.machine.id) { entry in
+                    TechnicalMachineBagCard(store: store, nav: nav,
+                                            machine: entry.machine, count: entry.count)
+                }
             }
-            .frame(height: 520)
         }
     }
 
