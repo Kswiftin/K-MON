@@ -277,22 +277,40 @@ struct PokemonTradeView: View {
             ScrollView {
                 LazyVStack(spacing: 4) {
                     ForEach(mons, id: \.id) { mon in
-                        Button {
-                            center.selectOffer(mon)
-                            showsOfferPicker = false
-                        } label: {
-                            HStack {
-                                SpriteView(speciesID: mon.presentationID, size: 30, shiny: mon.isShiny)
-                                Text(monLabel(mon)).lineLimit(1)
-                                Spacer()
-                            }.contentShape(Rectangle())
+                        // 별 버튼은 행 버튼 **안에** 두지 않는다 — 중첩 버튼은 바깥 버튼이 탭을
+                        // 먹어 별이 안 눌린다. 나란히 두고 행 쪽만 선택 영역을 갖게 한다.
+                        HStack(spacing: 4) {
+                            Button {
+                                center.selectOffer(mon)
+                                showsOfferPicker = false
+                            } label: {
+                                HStack {
+                                    SpriteView(speciesID: mon.presentationID, size: 30, shiny: mon.isShiny)
+                                    Text(monLabel(mon)).lineLimit(1)
+                                    Spacer()
+                                }.contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            favoriteToggle(mon)
                         }
-                        .buttonStyle(.plain).padding(4)
+                        .padding(4)
                     }
                 }
             }
         }
         .padding(10).frame(width: 250, height: 300)
+    }
+
+    /// 포켓몬 탭과 같은 별 — 이 목록에서 바로 켜고 끈다. 내보낼 개체를 고르는 자리가 곧
+    /// "이건 안 보낸다"를 표시할 자리라, 별을 만지러 다른 탭으로 갔다 올 필요가 없다.
+    private func favoriteToggle(_ mon: MonState) -> some View {
+        let favorited = store.isFavorite(mon.id)
+        return Button { store.toggleFavorite(mon.id) } label: {
+            Image(systemName: favorited ? "star.fill" : "star")
+                .foregroundStyle(favorited ? Color.yellow : .secondary)
+        }
+        .buttonStyle(.borderless).controlSize(.mini)
+        .accessibilityLabel(favorited ? store.l.unfavorite : store.l.favorite)
     }
 
     private func monLabel(_ mon: MonState) -> String {
