@@ -42,6 +42,11 @@ struct RaidView: View {
             }
         }
         .padding(10)
+        // **오버레이는 자기 높이를 정한다.** 팝오버 본체의 `.frame(height:)` 밖에 놓이므로
+        // 안 정하면 창이 콘텐츠 자연 높이로 줄고, 안쪽 `ScrollView` 가 남은 공간만 받아
+        // 로그와 채팅이 잘린 채로 뜬다. 형제 오버레이(체육관·던전·꾸미기·대화)와 같은 값을 쓴다 —
+        // 오버레이마다 창 높이가 뛰면 화면을 옮길 때마다 창이 요동친다.
+        .frame(height: PopoverMetrics.currentHeight(for: .battle))
     }
 
     private var header: some View {

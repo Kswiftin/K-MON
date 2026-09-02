@@ -142,9 +142,14 @@ struct RaidArenaView: View {
 
     /// 파티는 최대 넷이라 두 칸씩 접는다 — 한 줄에 넷을 세우면 팝오버 폭에서 이름과 HP 표기가
     /// 먼저 잘린다(웨이브 런이 `CombatantBar` 를 안 쓴 것과 같은 이유).
+    ///
+    /// **혼자면 한 칸이다.** 1★ 솔로가 흔한 경로인데 2열로 두면 오른쪽 절반이 빈 채로 남아
+    /// "누가 빠졌나" 로 읽힌다.
     private var partyGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)],
-                  spacing: 5) {
+        let columns = party.count <= 1 ? 1 : 2
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5),
+                                        count: columns),
+                         spacing: 5) {
             ForEach(party) { cell in partyCard(cell) }
         }
     }
