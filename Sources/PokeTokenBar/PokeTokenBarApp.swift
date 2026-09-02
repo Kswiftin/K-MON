@@ -3,7 +3,23 @@ import QuartzCore
 import SwiftUI
 import UserNotifications
 
+/// 프로세스 진입점. 같은 실행 파일이 **두 프런트엔드**를 태운다 — 기본은 메뉴바 앱, 인자가 붙으면
+/// 터미널이다. 별도 실행 타깃으로 나누지 않은 이유는 SwiftPM 이 소스 디렉터리를 두 타깃이 나눠 쓰는
+/// 것을 허용하지 않아, Core 를 라이브러리로 떼면 25,000 줄에 `public` 을 칠해야 하기 때문이다.
+///
+/// 어느 쪽으로 보낼지는 `PokedoroCommandParser.isTerminalInvocation` 이 정한다 — 그 규칙이
+/// AppKit 밖에 있어야 테스트가 닿는다.
 @main
+enum PokedoroEntryPoint {
+    static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if PokedoroCommandParser.isTerminalInvocation(arguments) {
+            exit(MainActor.assumeIsolated { PokedoroCLI.run(arguments: arguments) })
+        }
+        PokeTokenBarApp.main()
+    }
+}
+
 struct PokeTokenBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 

@@ -1,0 +1,166 @@
+import Darwin
+import Foundation
+
+/// `pokedoro watch` — 전체 화면 실시간 보기. 한 프로세스가 오래 사는 유일한 터미널 경로다.
+///
+/// **오래 사는 만큼 메모리의 상태가 낡는다.** 그동안 메뉴바 앱이 세이브를 바꾸므로 주기적으로
+/// 디스크를 다시 읽는다. 다시 읽는 저장소도 읽기 전용이라, 이 화면이 도는 동안 세이브에 나가는
+/// 쓰기는 없다 — 앱이 올린 진행을 덮을 방법 자체가 없다.
+@MainActor
+final class TUIWatch {
+    private var store: CompanionStore
+    private let terminal = TUITerminal()
+    private var screen: TUIScreen = .home
+    private var selection = 0
+    private var status: String?
+    /// 디스크 재읽기 주기(프레임 수). 0.5초 프레임 기준 5초마다.
+    private static let reloadEveryFrames = 10
+    private var frame = 0
+
+    init(store: CompanionStore) {
+        self.store = store
+    }
+
+    func run() {
+        // 터미널이 아니면(파이프·리다이렉트) raw mode 도 화면 제어도 의미가 없다. 조용히 도는 대신
+        // 한 번 찍고 끝내 사용자가 무엇을 얻었는지 알게 한다.
+        guard isatty(STDIN_FILENO) == 1, isatty(STDOUT_FILENO) == 1 else {
+            TUIRender.home(PokedoroCLI.homeModel(store), width: PokedoroCLI.terminalWidth()).forEach { print($0) }
+            return
+        }
+        terminal.start()
+        startReadingInput()
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            MainActor.assumeIsolated { self.tick() }
+        }
+        render()
+        RunLoop.main.run()
+    }
+
+    // MARK: 입력
+
+    /// stdin 읽기는 블로킹이라 별도 스레드에 둔다. 해석 결과만 메인으로 넘긴다 —
+    /// `CompanionStore` 가 `@MainActor` 라 상태는 메인에서만 만진다.
+    ///
+    /// 입력이 멎으면 남은 바이트를 `flush` 로 확정한다. ESC 한 바이트는 그것만으로는 화살표
+    /// 시퀀스의 첫 바이트와 구분되지 않아 `decode` 가 판단을 미루는데, 뒤 바이트가 영영 안 오는
+    /// 것이 정상(사용자가 ESC 를 눌렀다)이라 그대로 두면 ESC 키가 죽는다.
+    private func startReadingInput() {
+        Thread.detachNewThread {
+            var pending: [UInt8] = []
+            var chunk = [UInt8](repeating: 0, count: 32)
+            while true {
+                let count = read(STDIN_FILENO, &chunk, chunk.count)
+                guard count > 0 else { break }
+                pending.append(contentsOf: chunk[0..<count])
+                while let key = TUIKeyDecoder.decode(&pending) {
+                    DispatchQueue.main.async { MainActor.assumeIsolated { self.handle(key) } }
+                }
+                // 덜 온 시퀀스는 다음 read 를 조금 기다려 본다. 그 사이에 아무것도 안 오면 확정한다.
+                if !pending.isEmpty, !Self.inputIsWaiting(timeoutSeconds: 0.05),
+                   let key = TUIKeyDecoder.flush(&pending) {
+                    DispatchQueue.main.async { MainActor.assumeIsolated { self.handle(key) } }
+                }
+            }
+        }
+    }
+
+    /// stdin 에 읽을 것이 있나. `select(2)` 는 시그널 핸들러에서 쓰는 함수가 아니라 여기서 그대로 쓴다.
+    private nonisolated static func inputIsWaiting(timeoutSeconds: Double) -> Bool {
+        var readSet = fd_set()
+        fdZero(&readSet)
+        fdSet(STDIN_FILENO, &readSet)
+        var timeout = timeval(tv_sec: 0, tv_usec: __darwin_suseconds_t(timeoutSeconds * 1_000_000))
+        return select(STDIN_FILENO + 1, &readSet, nil, nil, &timeout) > 0
+    }
+
+    private func handle(_ key: TUIKey) {
+        // 터미널은 세이브를 읽기만 한다. 쓰기 키(1·2·3·c·x)는 `.rejected(.readOnly)` 로 돌아와
+        // 이유를 화면에 남긴다 — 침묵으로 접으면 "키가 안 먹는다" 와 구분되지 않는다.
+        switch TUIKeymap.action(for: key, screen: screen, canWrite: false) {
+        case .quit:
+            terminal.stop()
+            exit(0)
+        case .reload:
+            reload()
+            status = "다시 읽었다."
+        case .show(let next):
+            screen = next
+            selection = 0
+            status = nil
+        case .scroll(let delta):
+            selection = TUIKeymap.clamp(selection: selection, delta: delta, count: rows().count)
+        case .startAdventure, .claimAdventure, .cancelAdventure:
+            // 쓰기 권한이 없으면 위 `action(for:screen:canWrite:)` 가 이 셋을 만들지 않는다.
+            return
+        case .rejected(.readOnly):
+            status = "터미널은 읽기 전용이다 — 모험은 앱에서 시작한다."
+        case .ignored:
+            return
+        }
+        render()
+    }
+
+    private func reload() {
+        store = CompanionStore(isReadOnly: true)
+        selection = min(selection, max(0, rows().count - 1))
+    }
+
+    // MARK: 그리기
+
+    private func tick() {
+        frame += 1
+        // 주기적 재읽기 — 메뉴바 앱이 바꾼 진행을 끌어온다. 사용자가 r 을 누르지 않아도 낡지 않게.
+        if frame % Self.reloadEveryFrames == 0 { reload() }
+        render()
+    }
+
+    private func rows() -> [String] {
+        switch screen {
+        case .home: []
+        case .party: PokedoroCLI.partyRows(store)
+        case .dex: PokedoroCLI.dexRows(store)
+        }
+    }
+
+    private func render() {
+        let size = terminal.size
+        var model = PokedoroCLI.homeModel(store)
+        model.status = status
+        var lines: [String]
+        switch screen {
+        case .home:
+            lines = TUIRender.home(model, width: size.width, keyHints: true)
+        case .party, .dex:
+            let title = screen == .party ? "포켓몬" : "도감"
+            // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
+            let listHeight = max(1, size.height - 5)
+            lines = [TUIRender.row(left: title, right: "★ \(TUIRender.number(store.availableTokens))",
+                                   width: size.width),
+                     TUIRender.rule(width: size.width)]
+            lines += TUIRender.list(rows: rows(), selection: selection,
+                                    height: listHeight, width: size.width)
+            lines.append(TUIRender.rule(width: size.width))
+            lines.append(TUIText.truncate("↑↓/jk 이동   h 홈  p 포켓몬  d 도감  r 새로고침  q 종료",
+                                          to: size.width))
+        }
+        terminal.draw(lines, height: size.height)
+    }
+}
+
+/// `FD_ZERO`·`FD_SET` 은 C 매크로라 Swift 로 넘어오지 않는다. `fd_set` 의 비트 배열을 직접 만진다.
+private func fdZero(_ set: inout fd_set) {
+    withUnsafeMutableBytes(of: &set.fds_bits) { bytes in
+        _ = bytes.initializeMemory(as: UInt8.self, repeating: 0)
+    }
+}
+
+private func fdSet(_ descriptor: Int32, _ set: inout fd_set) {
+    let index = Int(descriptor) / 32
+    let bit = Int32(1) << (Int32(descriptor) % 32)
+    withUnsafeMutableBytes(of: &set.fds_bits) { bytes in
+        let words = bytes.bindMemory(to: Int32.self)
+        guard index < words.count else { return }
+        words[index] |= bit
+    }
+}

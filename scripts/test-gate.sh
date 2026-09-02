@@ -109,6 +109,13 @@ LOGIC_CORE=(
   # 대표 BGM 해금 판정. 자정을 가로지르는 밤 구간과 계절 판정이 여기 있고, 게이트 밖에 두면
   # 곡을 더할 때 해금 조건이 무테스트로 남는다.
   "Sources/PokeTokenBar/Core/MemoryHomeJukebox.swift"
+  # 터미널 프런트엔드의 순수 코어 — 칸 폭 계산·화면 조립·키 배정·명령 파싱. 부수효과가 없어
+  # 전부 테스트가 닿는 자리이고, 게이트 밖에 두면 새 명령·새 키가 무테스트로 나간다.
+  # 터미널 제어(TUITerminal)와 실행 루프(TUIWatch)는 판단을 두지 않으므로 대상이 아니다.
+  "Sources/PokeTokenBar/TUI/TUIText.swift"
+  "Sources/PokeTokenBar/TUI/TUIRender.swift"
+  "Sources/PokeTokenBar/TUI/TUIKeymap.swift"
+  "Sources/PokeTokenBar/TUI/PokedoroCommand.swift"
 )
 
 # 기능이 **박제된 두 번째 화면**에 남는 부류를 막는다. `eee5c86` 이 팝오버 홈을 창으로 옮기며
