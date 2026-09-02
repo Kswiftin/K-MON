@@ -230,3 +230,52 @@ struct RaidRoomName: Equatable {
         return RaidRoomName(tier: tier, trainerName: String(head[separator.upperBound...]), idTag: idTag)
     }
 }
+
+/// 예약 부화의 달력 층 — `RaidBoss.hatchMinutes` 가 낸 **분**을 그날의 `Date` 로 굽는다.
+///
+/// 코어와 나눠 둔 이유는 시간대다. `TimeZone.current` 는 프로세스 첫 값에 캐시되므로(defect-log)
+/// 달력을 순수 추첨 안에 들이면 시간대가 바뀐 뒤에도 옛 값으로 계산한다. `Calendar(identifier:)`
+/// 를 매번 새로 만드는 이 자리 하나에만 달력을 둔다.
+enum RaidSchedule {
+    /// 부화 15분 전에 알린다. **선택이 아니라 필수다** — 시각이 무작위라 습관이 대신해 주지 못한다.
+    static let reminderLeadMinutes = 15
+
+    /// `SeasonBoard.gregorian` 과 같은 접근자 규약 — 캐시된 시간대를 물려받지 않는다.
+    static var calendar: Calendar { Calendar(identifier: .gregorian) }
+
+    /// 그날의 5★ 부화 시각 셋(오름차순). 같은 날의 어느 시각으로 물어도 같은 답이다 —
+    /// 아침에 공개한 표가 오후에 바뀌면 "공개된 무작위" 가 아니다.
+    static func hatches(on date: Date, calendar: Calendar = RaidSchedule.calendar) -> [Date] {
+        let midnight = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: date)
+        let minutes = RaidBoss.hatchMinutes(dayKey: CompanionStore.dayKey(date),
+                                            isWeekend: weekday == 1 || weekday == 7)
+        return minutes.compactMap { calendar.date(byAdding: .minute, value: $0, to: midnight) }
+    }
+
+    /// 지금 살아 있는 부화. 없으면 5★ 방을 열 수 없다.
+    static func activeHatch(at now: Date, calendar: Calendar = RaidSchedule.calendar) -> Date? {
+        hatches(on: now, calendar: calendar).last {
+            $0 <= now && now < $0.addingTimeInterval(TimeInterval(RaidBoss.activeMinutes * 60))
+        }
+    }
+
+    /// 다음 부화. **오늘 게 다 지났으면 내일 첫 부화를 본다** — nil 을 내면 화면이 저녁 내내
+    /// "다음 5★ 없음" 을 그린다.
+    static func nextHatch(after now: Date, calendar: Calendar = RaidSchedule.calendar) -> Date? {
+        if let today = hatches(on: now, calendar: calendar).first(where: { $0 > now }) { return today }
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) else { return nil }
+        return hatches(on: tomorrow, calendar: calendar).first
+    }
+
+    /// 오늘 남은 부화의 **알림 예약 시각**. 지나간 것과 이미 부화한 것은 빼고 돌려준다 —
+    /// 과거 시각으로 예약하면 알림이 즉시 터지거나 조용히 버려진다.
+    ///
+    /// 내일 몫을 여기서 같이 내지 않는 이유는 재예약이다: 날짜가 바뀌면 앱이 다시 걸므로
+    /// 하루치만 들고 있으면 된다(자정에 깨어날 이유를 만들지 않는다).
+    static func upcomingReminders(after now: Date, calendar: Calendar = RaidSchedule.calendar) -> [Date] {
+        hatches(on: now, calendar: calendar)
+            .map { $0.addingTimeInterval(TimeInterval(-reminderLeadMinutes * 60)) }
+            .filter { $0 > now }
+    }
+}

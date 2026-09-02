@@ -131,6 +131,8 @@ final class MultiplayerRoomCenter {
     private var settledRaid = false
     /// 이미 알림을 낸 레이드 방 이름 — 브라우저가 같은 목록을 반복해서 주므로 필요하다.
     private var announcedRaidRooms: [String] = []
+    /// 부화 알림을 이미 건 조합(날짜 키 + 토글 상태). 60초 틱이 부르는 자리라 재작업을 막는다.
+    private var scheduledHatchKey = ""
 
     private let companion: CompanionStore
     private var browser: NWBrowser?
@@ -489,6 +491,39 @@ final class MultiplayerRoomCenter {
         announcedRaidRooms = serviceNames.filter { RaidRoomName.isRaidRoomName($0) }
         guard !fresh.isEmpty, phase == .idle else { return }
         for name in fresh.prefix(1) { postRaidRoomNotification(RaidRoomName.parse(name)) }
+    }
+
+    /// 오늘 남은 5★ 부화의 **15분 전 알림**을 건다.
+    ///
+    /// 이 알림은 선택이 아니다 — 시각이 무작위라 습관이 대신해 주지 못하고, 알림이 없으면
+    /// 마침 화면을 보고 있던 사람만 참여한다. 하루 셋을 두는 이유도 같다(하나를 놓쳐도 둘 남는다).
+    ///
+    /// 60초 방치 틱이 부른다. 날짜 키와 토글 상태가 그대로면 즉시 빠지므로 실제 작업은 하루 한 번이다
+    /// (토글을 키에 넣는 이유: 안 넣으면 오늘 켠 알림이 내일에야 걸린다).
+    func refreshRaidHatchReminders(now: Date = Date()) {
+        let enabled = AppEnv.isBundledApp
+            && !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false)
+            && UserDefaults.standard.object(forKey: "raidNotifications") as? Bool ?? true
+        let key = "\(CompanionStore.dayKey(now))|\(enabled)"
+        guard scheduledHatchKey != key else { return }
+        scheduledHatchKey = key
+
+        let center = UNUserNotificationCenter.current()
+        let identifiers = (0..<RaidBoss.weekdayBlocks.count).map { "raid-hatch-\($0)" }
+        // 먼저 지운다 — 안 지우면 토글을 껐다 켤 때마다 같은 시각에 알림이 겹쳐 쌓인다.
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        guard enabled else { return }
+
+        for (index, reminder) in RaidSchedule.upcomingReminders(after: now).enumerated() {
+            let content = UNMutableNotificationContent()
+            content.title = companion.l.raidHatchSoonTitle(minutes: RaidSchedule.reminderLeadMinutes)
+            content.body = companion.l.raidHatchSoonBody
+            content.sound = .default
+            let trigger = UNTimeIntervalNotificationTrigger(
+                timeInterval: max(1, reminder.timeIntervalSince(now)), repeats: false)
+            center.add(UNNotificationRequest(identifier: "raid-hatch-\(index)",
+                                             content: content, trigger: trigger))
+        }
     }
 
     private func postRaidRoomNotification(_ room: RaidRoomName?) {

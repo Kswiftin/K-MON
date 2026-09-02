@@ -1232,6 +1232,22 @@ struct L {
           "ホストが退出したためレイドが終了しました。もう一度開いてください。")
     }
     var raidNextHatch: String { t("다음 5★ 부화", "Next 5★ hatch", "次の5★出現") }
+    func raidHatchSoonTitle(minutes: Int) -> String {
+        t("⏰ \(minutes)분 뒤 5★ 레이드", "⏰ 5★ raid in \(minutes) min", "⏰ \(minutes)分後に5★レイド")
+    }
+    var raidHatchSoonBody: String {
+        t("같은 네트워크의 트레이너와 모일 시간이에요.",
+          "Time to gather with the trainers on your network.",
+          "同じネットワークのトレーナーと集まる時間です。")
+    }
+    var raidNotificationsLabel: String {
+        t("레이드 알림", "Raid notifications", "レイド通知")
+    }
+    var raidNotificationsHint: String {
+        t("5★ 부화 15분 전과 근처에서 레이드 방이 열릴 때 알려요.",
+          "Warns 15 minutes before a 5★ hatch and when a raid room opens nearby.",
+          "5★出現の15分前と、近くでレイド部屋が開いたときに知らせます。")
+    }
 
     var playerGymUpdateRequired: String {
         t("앱을 업데이트해 주세요 — 더 새로운 체육관이 열려 있어 도전도 개설도 할 수 없습니다.",
