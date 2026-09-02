@@ -407,6 +407,11 @@ enum SaveTransfer {
         if s.gymDefenseRewardToday != 0 || !s.gymDefenseRewardDate.isEmpty {
             p.append("gd\(s.gymDefenseRewardDate):\(s.gymDefenseRewardToday)")
         }
+        // 일일 사탕의 멱등 키. 밖에 두면 어제 날짜로 고쳐 적는 것만으로 사탕을 매일 여러 번
+        // 받는다(형제 원장인 `gd`·`ab` 는 이미 서명 안에 있다). 비었을 때 세그먼트를 생략해
+        // 이 필드가 없던 세이브의 canonical 을 바꾸지 않는다. 접두 `dcd` — `cand`(스타터 후보)·
+        // `dex`·`dg` 와 겹치지 않는다.
+        if !s.lastCandyDate.isEmpty { p.append("dcd\(s.lastCandyDate)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))

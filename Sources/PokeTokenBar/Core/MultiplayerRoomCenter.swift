@@ -978,16 +978,36 @@ final class MultiplayerRoomCenter {
     }
 
     /// 호스트 권위 검사 — 통과한 베팅만 원장에 들어가고, 원장 전체를 다시 브로드캐스트한다.
+    ///
+    /// 금액 0 은 **철회**다. 판돈을 실제로 내지 못한 관전자(로비에서 별조각을 쓴 뒤 베팅한 경우
+    /// 호스트가 보는 신고 잔액은 아직 충분하다)가 자기 항목을 원장에서 빼는 유일한 경로다 —
+    /// 남겨 두면 아무도 내지 않은 판돈이 배당에 섞여 별조각이 생성된다("이동만" 불변식 위반).
     private func acceptBet(_ bet: PokeathlonBet, from senderID: UUID) {
         guard isHost, let lobby, let race = pokeathlonRace else { return }
+        guard bet.bettorID == senderID else { return }
+        guard bet.amount != 0 else { withdrawBet(of: senderID); return }
         if let rejection = PokeathlonPool.rejection(for: bet, senderID: senderID, lobby: lobby,
                                                     race: race, pool: pokeathlonPool, now: Date()) {
             if senderID == myID { lastError = Self.betRejectionText(rejection) }
             return
         }
         pokeathlonPool.bets[bet.bettorID] = bet    // 같은 관전자의 이전 베팅을 대체
+        // 내 판돈은 **원장에 남기기 전에** 실제로 빠져나가야 한다. 에스크로가 실패했는데 항목만
+        // 남으면 배당이 없는 돈을 나눈다.
+        if senderID == myID, !syncEscrow() {
+            pokeathlonPool = pokeathlonPool.withoutUnfundedBet(of: bet.bettorID)
+            lastError = "별조각이 부족합니다."
+        }
         broadcastPool()
-        syncEscrow()
+    }
+
+    /// 잠기지 않은 원장에서 한 관전자의 베팅을 뺀다. 잠긴 뒤(출발 후)에는 뺄 수 없다 —
+    /// 그때는 이미 배당 계산이 그 판돈을 세고 있다.
+    private func withdrawBet(of bettorID: UUID) {
+        guard isHost, !pokeathlonPool.isClosed, pokeathlonPool.bets[bettorID] != nil else { return }
+        pokeathlonPool = pokeathlonPool.withoutUnfundedBet(of: bettorID)
+        if bettorID == myID { _ = syncEscrow() }
+        broadcastPool()
     }
 
     private func broadcastPool() {
@@ -1008,12 +1028,17 @@ final class MultiplayerRoomCenter {
 
     /// 원장에서 내 베팅을 본 시점에 내 지갑에서 판돈을 뺀다(에스크로). 베팅을 바꿨으면
     /// 이전 판돈을 되돌리고 새 판돈을 뺀다 — 지갑이 부족해 실패하면 에스크로 기록을 남기지 않는다.
-    private func syncEscrow() {
+    /// 원장의 내 항목과 지갑을 맞춘다. 돌려주는 값은 **맞았는가** 다 — 원장에 내 베팅이 있는데
+    /// 판돈을 못 냈으면 거짓이고, 그 항목은 원장에서 빠져야 한다.
+    @discardableResult
+    private func syncEscrow() -> Bool {
         let mine = pokeathlonPool.bets[myID]
-        guard mine != escrowedBet else { return }
+        guard mine != escrowedBet else { return true }
         if let previous = escrowedBet { companion.creditStarPieces(previous.amount) }
-        if let mine, companion.escrowStarPieces(mine.amount) { escrowedBet = mine }
-        else { escrowedBet = nil }
+        guard let mine else { escrowedBet = nil; return true }
+        if companion.escrowStarPieces(mine.amount) { escrowedBet = mine; return true }
+        escrowedBet = nil
+        return false
     }
 
     /// 출발 시각이 지나면 원장을 잠근다. 검사기도 시각을 보지만, 잠금 사실을 관전자 화면에
@@ -1301,7 +1326,14 @@ final class MultiplayerRoomCenter {
             case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
             case .pokeathlonPool(let pool):
                 self.pokeathlonPool = pool
-                self.syncEscrow()
+                // 판돈을 못 냈으면 호스트 원장에서 내 항목을 빼 달라고 알린다(금액 0 = 철회).
+                // 그러지 않으면 내지 않은 판돈이 남의 배당에 섞인다.
+                if !self.syncEscrow(), let hostConnection = self.hostConnection,
+                   let mine = pool.bets[self.myID] {
+                    self.lastError = "별조각이 부족해 베팅이 취소됐습니다."
+                    self.send(.pokeathlonBet(participantID: self.myID, runnerID: mine.runnerID, amount: 0),
+                              over: hostConnection)
+                }
             case .pokeathlonSettlement(let pool, let winnerID):
                 self.applySettlement(pool: pool, winnerID: winnerID)
             case .pokemonQuizStart(let game): self.pokemonQuizGame = game; self.phase = .pokemonQuiz

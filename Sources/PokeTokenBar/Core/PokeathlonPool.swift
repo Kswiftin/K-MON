@@ -85,6 +85,21 @@ struct PokeathlonPool: Codable, Sendable, Equatable {
     }
 }
 
+extension PokeathlonPool {
+    /// 판돈을 실제로 내지 못한 관전자의 항목을 뺀 원장.
+    ///
+    /// 원장에 남은 항목은 전부 **누군가 실제로 낸 별조각**이어야 한다 — 아니면 `payouts` 가
+    /// 없는 돈을 나눠 별조각이 생성된다(관전자 사이 이동만 허용하는 불변식이 깨진다).
+    /// 잠긴 원장(출발 후)에서는 빼지 않는다: 그때는 배당 계산이 이미 그 판돈을 세고 있고,
+    /// 여기서 빼면 남은 사람들의 배당이 소리 없이 늘어난다.
+    func withoutUnfundedBet(of bettorID: UUID) -> PokeathlonPool {
+        guard !isClosed else { return self }
+        var updated = self
+        updated.bets.removeValue(forKey: bettorID)
+        return updated
+    }
+}
+
 /// 호스트가 베팅을 거절하는 이유. UI 문구와 테스트가 같은 값을 본다.
 enum PokeathlonBetRejection: Error, Equatable {
     case identityMismatch, notSpectator, poolClosed, invalidAmount, unknownRunner, insufficientBalance

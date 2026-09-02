@@ -750,7 +750,7 @@ final class CompanionStore {
     var currentPresentationID: Int? { state.active?.presentationID }
 
     func changeRotomForm(_ form: RotomForm) async {
-        guard state.active?.currentID == 479 else { return }
+        guard let monID = state.active?.id, state.active?.currentID == 479 else { return }
         let signatureIDs = Set(RotomForm.allCases.compactMap(\.signatureMoveID))
         let signatureMove: MoveSpec?
         if let moveID = form.signatureMoveID {
@@ -760,14 +760,18 @@ final class CompanionStore {
         } else {
             signatureMove = nil
         }
-        var moves = state.active!.learnedMoves.filter { !signatureIDs.contains($0.id) }
+        // 전용기를 받아 오는 동안 동행이 바뀔 수 있다(교환·방생·박스 교체). **개체 ID 까지** 다시
+        // 본다 — 종만 보면 같은 로토무로 갈아 끼운 다른 개체에 폼과 기술이 얹힌다. 형제 경로
+        // (`learnMove`·`detailedMoves`)가 쓰는 것과 같은 재확인이다.
+        guard var active = state.active, active.id == monID, active.currentID == 479 else { return }
+        var moves = active.learnedMoves.filter { !signatureIDs.contains($0.id) }
         if let signatureMove {
             if moves.count >= 4 { moves.removeLast() }
             moves.append(signatureMove)
         }
-        guard state.active?.currentID == 479 else { return }
-        state.active!.rotomForm = form == .normal ? nil : form
-        state.active!.learnedMoves = moves
+        active.rotomForm = form == .normal ? nil : form
+        active.learnedMoves = moves
+        state.active = active
         displayedMoves = moves
         loadedTypesSpeciesID = nil
         save()
@@ -2017,12 +2021,18 @@ final class CompanionStore {
             }
         }
         guard filled else { return mon.learnedMoves }
-        if state.active?.id == mon.id {
-            state.active!.learnedMoves = enriched
+        // 보강한 상세를 **지금 저장돼 있는 기술 목록에 얹는다.** 스냅샷을 통째로 덮어쓰면 조회를
+        // 기다리는 동안 배운 기술이 사라진다(기술 학습 카드는 이 조회와 나란히 돌 수 있다).
+        let details = Dictionary(enriched.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        if var active = state.active, active.id == mon.id {
+            active.learnedMoves = active.learnedMoves.map { details[$0.id] ?? $0 }
+            state.active = active
             save()
+            return active.learnedMoves
         } else if let index = state.boxedMons.firstIndex(where: { $0.id == mon.id }) {
-            state.boxedMons[index].learnedMoves = enriched
+            state.boxedMons[index].learnedMoves = state.boxedMons[index].learnedMoves.map { details[$0.id] ?? $0 }
             save()
+            return state.boxedMons[index].learnedMoves
         }
         return enriched
     }
@@ -2973,8 +2983,8 @@ final class CompanionStore {
 
     // MARK: 상점 (재화 = 별의모래)
 
-    /// 상점에서 쓸 수 있는 별의모래 = 누적 생산량 − 상점 지출 누적. 성장 미터(usedSinceInstall)는
-    /// 여기선 읽기만 — 구매는 spentTokens 만 올려 잔액을 깎는다(진화 진행·오늘/주/월 통계 무영향).
+    /// 쓸 수 있는 별의모래 = 지갑 잔액. 성장 미터(`usedSinceInstall`)는 여기에 들어오지 않는다 —
+    /// 구매도 판돈도 `starPieces` 만 깎아서 진화 진행·오늘/주/월 통계는 그대로다.
     var availableTokens: Int { max(0, state.starPieces) }
 
     func technicalMachineCount(_ moveID: Int) -> Int { state.technicalMachines[moveID] ?? 0 }
