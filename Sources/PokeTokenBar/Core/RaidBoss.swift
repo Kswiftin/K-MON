@@ -170,10 +170,12 @@ enum RaidBoss {
 
     /// 게스트가 `.raidStart` 를 받아들일지 — **한 곳에서** 편성 모양과 오늘자 일치를 함께 본다.
     /// 두 검사를 호출부마다 따로 부르게 두면 한쪽만 부르는 경로가 반드시 생긴다.
+    /// 보스를 `first(where:)` 로 꺼내 옵셔널을 가드하지 않는다 — `validStart` 가 `.blue` 정확히
+    /// 한 명을 이미 보증하므로 그 가드는 **어떤 입력으로도 못 밟는 분기**가 된다(defect-log:
+    /// 가드가 중복이라 하나를 지워도 아무 테스트가 안 깨지는 부류). `contains` 로 총함수로 둔다.
     static func validRaidStart(fighters: [MultiplayerFighter], tier: RaidTier, dayKey: String) -> Bool {
-        guard MultiplayerValidation.validStart(fighters: fighters, mode: .coopBoss),
-              let boss = fighters.first(where: { $0.team == .blue }) else { return false }
-        return validBoss(boss, tier: tier, dayKey: dayKey)
+        MultiplayerValidation.validStart(fighters: fighters, mode: .coopBoss)
+            && fighters.contains { validBoss($0, tier: tier, dayKey: dayKey) }
     }
 
     // MARK: 정산
