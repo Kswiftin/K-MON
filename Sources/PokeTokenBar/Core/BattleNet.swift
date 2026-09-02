@@ -623,6 +623,7 @@ final class BattleCenter {
     private let advertisementPublisher: ((NWTXTRecord) -> Void)?
     let multiplayer: MultiplayerRoomCenter
     let trading: PokemonTradeCenter
+    let auction: PokemonAuctionCenter
     private var listener: NWListener?
     private var browser: NWBrowser?
     private var connection: NWConnection?
@@ -785,6 +786,7 @@ final class BattleCenter {
         }
         self.multiplayer = MultiplayerRoomCenter(companion: companion)
         self.trading = PokemonTradeCenter(companion: companion)
+        self.auction = PokemonAuctionCenter(companion: companion)
         // 표시 이름 우선순위: 사용자가 정한 트레이너 이름 → 계정 풀네임 → 호스트명 → "Trainer".
         let trainer = companion.trainerName.trimmingCharacters(in: .whitespaces)
         let name = !trainer.isEmpty ? trainer
@@ -905,6 +907,7 @@ final class BattleCenter {
         startBrowser()
         multiplayer.startBrowsing()
         trading.start()
+        auction.start()
     }
 
     /// Bonjour 광고/탐색 파라미터 — `includePeerToPeer` 로 AWDL(피어투피어)까지 켠다.

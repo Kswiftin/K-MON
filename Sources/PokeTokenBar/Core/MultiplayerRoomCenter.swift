@@ -482,11 +482,22 @@ final class MultiplayerRoomCenter {
             TournamentEntrant(id: $0.id, trainerName: $0.trainerName, speciesID: $0.speciesID)
         }
         let seed = UInt64.random(in: UInt64.min...UInt64.max)
-        tournamentBracket = TournamentBracket(participantIDs: entrants.map(\.id), seed: seed)
+        let bracket = TournamentBracket(participantIDs: entrants.map(\.id), seed: seed)
+        tournamentBracket = bracket
         tournamentState = PokemonTournamentState(entrants: entrants,
-                                                  reward: TournamentEggReward.forParticipants(entrants.count))
+                                                  reward: TournamentEggReward.forParticipants(entrants.count),
+                                                  openingMatches: bracket.previewMatches(),
+                                                  bracketRevealUntil: Date().addingTimeInterval(10))
         tournamentRewarded = false; phase = .tournament
-        startNextTournamentMatch()
+        // 호스트만 시계를 운영하고 같은 상태를 전원에게 먼저 보낸다. 바로 경기를 넣으면
+        // SwiftUI가 초기 대진표를 한 프레임도 그리지 못한다.
+        broadcastTournamentState(start: true)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, let self, self.phase == .tournament,
+                  self.tournamentState?.currentMatch == nil else { return }
+            self.startNextTournamentMatch()
+        }
     }
 
     func submitTournamentAction(_ action: NetBattleAction) {

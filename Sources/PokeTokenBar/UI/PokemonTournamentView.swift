@@ -124,8 +124,52 @@ struct PokemonTournamentView: View {
                     Text(rewardName(state.reward)).font(.headline).foregroundStyle(.orange)
                     Button(store.l.t("나가기", "Leave", "退出")) { close() }.buttonStyle(.borderedProminent)
                 }.frame(maxWidth: .infinity).padding(.vertical, 30)
-            } else if let match = state.currentMatch { matchView(match, state: state) }
+            } else if let match = state.currentMatch {
+                matchView(match, state: state)
+            } else if let revealUntil = state.bracketRevealUntil {
+                openingBracket(state, until: revealUntil)
+            }
         }
+    }
+
+    private func openingBracket(_ state: PokemonTournamentState, until: Date) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(store.l.t("대진 추첨 완료!", "Bracket Draw Complete!", "対戦カード決定！"),
+                      systemImage: "trophy.fill").font(.title3.bold()).foregroundStyle(.orange)
+                Spacer()
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text("\(max(0, Int(until.timeIntervalSince(context.date).rounded(.up))))s")
+                        .font(.headline.monospacedDigit()).foregroundStyle(.orange)
+                }
+            }
+            Text(store.l.t("첫 라운드 대진입니다. 10초 후 첫 경기가 시작됩니다.",
+                           "First-round pairings. The opening match begins in 10 seconds.",
+                           "1回戦の組み合わせです。10秒後に開始します。"))
+                .font(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 10) {
+                ForEach(state.openingMatches ?? []) { match in
+                    HStack(spacing: 8) {
+                        entrantCard(state, id: match.playerA)
+                        Text("VS").font(.headline.weight(.black)).foregroundStyle(.orange)
+                        entrantCard(state, id: match.playerB)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.09)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.28)))
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.04)))
+    }
+
+    private func entrantCard(_ state: PokemonTournamentState, id: UUID) -> some View {
+        let entrant = state.entrants.first { $0.id == id }
+        return VStack(spacing: 3) {
+            SpriteView(speciesID: entrant?.speciesID ?? 0, size: 38)
+            Text(entrant?.trainerName ?? "?").font(.caption.bold()).lineLimit(1)
+        }.frame(maxWidth: .infinity)
     }
 
     private func matchView(_ match: TournamentMatchState, state: PokemonTournamentState) -> some View {

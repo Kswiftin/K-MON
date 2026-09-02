@@ -53,6 +53,19 @@ final class PokemonTournamentTests: XCTestCase {
         }
     }
 
+    func testOpeningPreviewShowsEveryFirstRoundPairWithoutConsumingBracket() {
+        for count in 3...8 {
+            let ids = (0..<count).map { _ in UUID() }
+            var bracket = TournamentBracket(participantIDs: ids, seed: UInt64(count))
+            let preview = bracket.previewMatches()
+            XCTAssertEqual(preview.count, count / 2)
+            XCTAssertTrue(preview.allSatisfy { $0.round == 1 && $0.winnerID == nil })
+            let firstRealPair = bracket.nextPair()
+            XCTAssertEqual(firstRealPair?.0, preview.first?.playerA)
+            XCTAssertEqual(firstRealPair?.1, preview.first?.playerB)
+        }
+    }
+
     func testOnlyCurrentPlayersCanSubmitWhileOthersSpectate() {
         let a = TournamentEntrant(id: UUID(), trainerName: "A", speciesID: 1)
         let b = TournamentEntrant(id: UUID(), trainerName: "B", speciesID: 4)
