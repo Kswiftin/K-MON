@@ -171,7 +171,7 @@ final class PopoverLayoutTests: XCTestCase {
             bossMaxHP: RaidTier.five.bossHP, party: party,
             myID: party.first?.id ?? RaidBoss.bossID, l: L(language),
             round: 7, turnsLeft: 14, overlay: .idle, logLines: [],
-            acceptsInput: true, onMove: { _ in })
+            acceptsInput: true, isFinished: false, onMove: { _ in })
     }
 
     /// 파티 넷이 두 칸씩 접혀 팝오버 폭 안에 들어와야 한다. 넘치면 이름과 HP 표기가 먼저 잘리고,

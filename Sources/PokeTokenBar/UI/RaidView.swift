@@ -195,7 +195,8 @@ struct RaidView: View {
         let visible = RaidArena.visibleEvents(center.combatEvents, playedCount: animator.playedCount)
         let showsResult = RaidArena.showsResult(isFinished: center.isBattleFinished,
                                                 playedCount: animator.playedCount,
-                                                streamCount: center.combatEvents.count)
+                                                streamCount: center.combatEvents.count,
+                                                isReplaying: animator.overlay.isPlaying)
         return VStack(alignment: .leading, spacing: 8) {
             if let bossFighter {
                 RaidArenaView(
@@ -211,7 +212,8 @@ struct RaidView: View {
                         hasSubmitted: center.hasSubmittedAction,
                         isAlive: fighters.first { $0.id == center.myID }?.isAlive ?? false,
                         isFinished: center.isBattleFinished,
-                        isReplaying: animator.overlay.isPlaying)
+                        isReplaying: animator.overlay.isPlaying),
+                    isFinished: center.isBattleFinished
                 ) { index in
                     center.submitAction(targetID: RaidBoss.bossID, moveIndex: index)
                 }
@@ -226,6 +228,10 @@ struct RaidView: View {
         .onAppear { syncReplay() }
         .onChange(of: center.combatEvents.count) { syncReplay() }
         .onChange(of: center.combatRound) { syncReplay() }
+        // **이벤트 없이 끝나는 경로가 있다.** 이탈 몰수와 턴 상한은 `broadcastCombatState()` 로
+        // 빈 이벤트를 보내므로 위 둘이 안 바뀐다 — 전투원만 바뀐다. 여기서 안 부르면 재생기의
+        // 엔진 값이 낡은 채로 남아 `reconcile()` 도 `onCaughtUp` 도 지나지 않는다.
+        .onChange(of: center.combatFighters.map(\.side.hp)) { syncReplay() }
     }
 
     /// 재생기에 스트림을 넘긴다. 속도 규칙은 기존 배틀과 같다(저전력이면 설정과 무관하게 끈다) —

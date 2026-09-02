@@ -16,14 +16,35 @@ enum RaidArena {
 
     /// 결과·정산을 열어도 되나. **재생이 따라잡은 뒤여야 한다** — 승부가 난 라운드가 즉시 결과로
     /// 넘어가면 재생기를 붙인 이유(결정타를 보여 주는 것)가 가장 중요한 턴에 그대로 사라진다.
-    static func showsResult(isFinished: Bool, playedCount: Int, streamCount: Int) -> Bool {
-        isFinished && playedCount >= streamCount
+    ///
+    /// **미루는 근거는 "재생이 돌고 있다" 이지 "숫자가 아직 다르다" 가 아니다.** 숫자만 보면
+    /// 재생기가 멈춘 상태에서 결과가 **영원히** 안 뜬다 — 실제로 그렇게 얼어붙었다. 이벤트 없이
+    /// 끝나는 경로(이탈 몰수·턴 상한은 빈 이벤트를 브로드캐스트한다)에서는 `combatEvents` 도
+    /// `combatRound` 도 안 바뀌어 뷰의 `.onChange` 가 재생기를 다시 부르지 않고, 그러면
+    /// `playedCount` 가 스트림에 못 미친 채 굳는다. 돌고 있지 않으면 더 기다릴 이유가 없다.
+    static func showsResult(isFinished: Bool, playedCount: Int, streamCount: Int,
+                            isReplaying: Bool) -> Bool {
+        isFinished && (playedCount >= streamCount || !isReplaying)
     }
 
     /// 기술 버튼을 받아도 되나. 재생 중에 받으면 지난 턴을 보는 도중에 다음 턴이 나간다.
     static func acceptsInput(hasSubmitted: Bool, isAlive: Bool,
                              isFinished: Bool, isReplaying: Bool) -> Bool {
         !hasSubmitted && isAlive && !isFinished && !isReplaying
+    }
+
+    /// 지금 화면이 할 말. **입력 가능 여부와 다른 축이다** — 둘을 한 값으로 묶었더니 끝난 판이
+    /// "다른 참가자의 행동을 기다리는 중" 을 띄웠다(아무도 안 온다).
+    enum Prompt: Equatable {
+        case replaying, knockedOut, finished, waitingForOthers, chooseMove
+    }
+
+    static func prompt(isReplaying: Bool, isAlive: Bool,
+                       isFinished: Bool, hasSubmitted: Bool) -> Prompt {
+        if isReplaying { return .replaying }
+        if isFinished { return .finished }
+        if !isAlive { return .knockedOut }
+        return hasSubmitted ? .waitingForOthers : .chooseMove
     }
 
     /// 화면에 그릴 이벤트 — **재생이 소비한 만큼만**이다. 스트림 전체를 그리면 재생이 그 줄에
@@ -63,6 +84,8 @@ struct RaidArenaView: View {
     let logLines: [BattleLog.Line]
     /// 내 칸이 지금 기술을 고를 수 있나(`RaidArena.acceptsInput`).
     let acceptsInput: Bool
+    /// 판이 끝났나 — 화면이 할 말이 입력 가능 여부와 다른 축이라 따로 받는다.
+    let isFinished: Bool
     let onMove: (Int) -> Void
 
     /// 파티 칸 스프라이트. 두 칸이 나란히 서므로 웨이브 런의 좁은 카드와 같은 치수를 쓴다.
@@ -204,19 +227,24 @@ struct RaidArenaView: View {
     @ViewBuilder
     private var prompt: some View {
         if let me {
-            if overlay.isPlaying {
+            switch RaidArena.prompt(isReplaying: overlay.isPlaying, isAlive: me.side.isAlive,
+                                    isFinished: isFinished, hasSubmitted: !acceptsInput) {
+            case .replaying:
                 Text(l.t("턴을 재생하는 중…", "Playing the turn…", "ターンを再生中…"))
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            } else if !me.side.isAlive {
+            case .finished:
+                // 끝난 판은 아무도 안 기다린다 — 결과 줄이 바로 아래에 있다.
+                EmptyView()
+            case .knockedOut:
                 Text(l.t("탈락 — 파티를 응원하고 있습니다.", "Knocked out - cheering the party on.",
                          "戦闘不能 — パーティを応援中です。"))
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            } else if !acceptsInput {
+            case .waitingForOthers:
                 HStack { ProgressView().controlSize(.small)
                     Text(l.t("다른 참가자의 행동을 기다리는 중…", "Waiting for other players…",
                              "ほかの参加者の行動を待っています…")) }
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            } else {
+            case .chooseMove:
                 // 대상 고르기가 없다 — 때릴 것은 보스 하나다. 상성 힌트는 1v1 과 같은 자리에 붙는다.
                 let struggling = me.side.mustStruggle
                 MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,

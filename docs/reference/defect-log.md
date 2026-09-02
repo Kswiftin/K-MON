@@ -736,6 +736,31 @@ read_when:
   필드 목록을 대조한다. 지금은 `gd`·`rd` 를 메워 일치한다.
   (LAN 협동 레이드 #80 의 `raidRewardDate` 를 넣다가 발견, 2026-09-02.)
 
+## 진행 조건을 "숫자가 같아지면" 으로 쓰면 그 숫자를 미는 쪽이 멈출 때 화면이 영영 안 넘어간다
+
+- **증상**: 협동 레이드에서 보스가 죽었는데 결과·정산이 안 뜨고 "다른 참가자의 행동을 기다리는 중"
+  에서 멈췄다. 사용자 보고 — "멈춰 있었어".
+- **직접원인**: 결과 게이트가 `playedCount >= streamCount` **였다**. 재생기를 미는 것은 뷰의
+  `.onChange(of: combatEvents.count)`·`.onChange(of: combatRound)` 인데, **이벤트 없이 끝나는
+  경로가 있다** — 이탈 몰수(`retireFighter`)와 턴 상한(`endRaidIfTurnCapReached`)은
+  `broadcastCombatState()` 로 **빈 이벤트**를 보낸다. 그러면 둘 다 안 바뀌어 `sync` 가 안 불리고,
+  `playedCount` 가 스트림에 못 미친 채 굳는다. 굳은 숫자를 기다리는 게이트는 영원히 안 열린다.
+- **왜 테스트가 못 걸렀나**: 재현 테스트를 **이벤트가 실린 라운드로** 썼고 그건 통과했다
+  (`testTheResultAppearsOnceTheKillingRoundHasReplayed`). 결함 트리거는 *이벤트가 없는* 라운드였다 —
+  CLAUDE.md 의 "트리거 브랜치를 검증하라" 가 정확히 이 자리다. `A || B` 게이트에서 B 단독을 안 밟은 것과 같다.
+- **부류 규칙**: **미루는 근거를 상태로 쓰지 말고 원인으로 써라.** 결과를 미루는 이유는
+  "재생이 돌고 있다" 이지 "숫자가 아직 다르다" 가 아니다. 지금은
+  `isFinished && (playedCount >= streamCount || !isReplaying)` — 돌고 있지 않으면 더 기다리지 않는다.
+  숫자 비교만 남기면 그 숫자를 미는 경로가 하나라도 빠질 때마다 같은 정지가 되돌아온다.
+- **형제 결함**: 같은 화면에서 프롬프트가 입력 가능 여부(`!acceptsInput`) 하나로 갈려 있어,
+  **끝난 판이 "다른 참가자를 기다리는 중" 을 띄웠다**(아무도 안 온다). 화면이 할 말은 입력 가능
+  여부와 **다른 축**이라 `RaidArena.prompt` 로 따로 뺐다.
+- **영구 캡처**: `RaidArenaTests.testAStalledReplayDoesNotHideTheResultForever` (정지 조건을 직접
+  단언) · `testAFinishedRaidStopsClaimingItIsWaitingForPlayers`. 그리고 빠져 있던 sync 자리를 메웠다 —
+  `.onChange(of: combatFighters.map(\.side.hp))` 로 전투원만 바뀌는 경로도 재생기를 부른다.
+  두 가드 모두 결함을 주입해 빨개지는 것을 확인했다.
+  (레이드 화면 정지 #80, 2026-09-02.)
+
 ## 오버레이가 자기 높이를 안 정하면 창이 콘텐츠 높이로 줄어 잘린다
 
 - **증상**: 협동 레이드 화면만 팝오버가 작게 떴고, 안쪽 `ScrollView` 가 남은 공간만 받아 로그와
