@@ -161,6 +161,77 @@ final class RaidRoomTests: XCTestCase {
             previous: [theirs], current: [theirs, second], myIDTag: "MYTAG1"), [second])
     }
 
+    // MARK: 예약 부화 시각표
+
+    /// 시각표는 **아침에 공개된다** — 무작위인데 공개하지 않으면 마침 접속해 있던 사람만 참여한다.
+    /// 그래서 하루치를 미리 계산할 수 있어야 하고, 모든 클라이언트가 같은 답을 내야 한다.
+    func testHatchesAreThreeAscendingTimesOnTheGivenDay() throws {
+        let calendar = RaidSchedule.calendar
+        let noon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 12)))
+        let hatches = RaidSchedule.hatches(on: noon)
+
+        XCTAssertEqual(hatches.count, 3)
+        XCTAssertEqual(hatches, hatches.sorted())
+        for hatch in hatches {
+            XCTAssertTrue(calendar.isDate(hatch, inSameDayAs: noon), "그날 안에 있어야 한다")
+        }
+        // 같은 날의 어느 시각으로 물어도 같은 시각표다 — 아침에 공개한 표가 오후에 바뀌면 안 된다.
+        let evening = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 20)))
+        XCTAssertEqual(RaidSchedule.hatches(on: evening), hatches)
+    }
+
+    /// 부화한 보스는 45분간 산다. 그 창 안이면 5★ 방을 열 수 있고, 밖이면 못 연다.
+    func testAHatchIsActiveForItsWindowAndNotBefore() throws {
+        let calendar = RaidSchedule.calendar
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 0)))
+        let first = try XCTUnwrap(RaidSchedule.hatches(on: day).first)
+
+        XCTAssertNil(RaidSchedule.activeHatch(at: first.addingTimeInterval(-60)), "부화 1분 전엔 없다")
+        XCTAssertEqual(RaidSchedule.activeHatch(at: first), first)
+        XCTAssertEqual(RaidSchedule.activeHatch(at: first.addingTimeInterval(44 * 60)), first)
+        XCTAssertNil(RaidSchedule.activeHatch(at: first.addingTimeInterval(46 * 60)), "45분이 지나면 닫힌다")
+    }
+
+    /// 다음 부화는 **내일까지 넘어가서** 찾는다 — 오늘 셋이 다 지난 저녁에 nil 을 내면 화면이
+    /// "다음 5★ 없음" 을 그린다.
+    func testNextHatchRollsOverIntoTomorrow() throws {
+        let calendar = RaidSchedule.calendar
+        let lateNight = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 23, minute: 30)))
+        let next = try XCTUnwrap(RaidSchedule.nextHatch(after: lateNight))
+        XCTAssertGreaterThan(next, lateNight)
+        XCTAssertTrue(calendar.isDate(next, inSameDayAs: lateNight.addingTimeInterval(24 * 60 * 60)),
+                      "오늘 게 다 지났으면 내일 첫 부화다")
+    }
+
+    /// 주말은 창이 뒤로 밀린다 — 2026-09-05 는 토요일이다.
+    func testWeekendUsesTheLaterWindows() throws {
+        let calendar = RaidSchedule.calendar
+        let saturday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 5, hour: 0)))
+        XCTAssertEqual(calendar.component(.weekday, from: saturday), 7, "토요일이어야 한다")
+        let first = try XCTUnwrap(RaidSchedule.hatches(on: saturday).first)
+        let minute = calendar.component(.hour, from: first) * 60 + calendar.component(.minute, from: first)
+        XCTAssertTrue(RaidBoss.weekendBlocks[0].contains(minute), "주말 첫 창은 11시 이후다")
+    }
+
+    /// 15분 전 알림은 **필수다** — 시각이 무작위라 습관이 대신해 주지 못한다. 예약할 시각은
+    /// 지금보다 미래인 것만이어야 한다(과거로 예약하면 알림이 즉시 터지거나 조용히 버려진다).
+    func testReminderTimesAreFifteenMinutesAheadAndInTheFuture() throws {
+        let calendar = RaidSchedule.calendar
+        let morning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 7)))
+        let reminders = RaidSchedule.upcomingReminders(after: morning)
+        let hatches = RaidSchedule.hatches(on: morning)
+
+        XCTAssertEqual(reminders.count, 3, "아침엔 셋 다 남아 있다")
+        for (reminder, hatch) in zip(reminders, hatches) {
+            XCTAssertEqual(hatch.timeIntervalSince(reminder), TimeInterval(RaidSchedule.reminderLeadMinutes * 60))
+            XCTAssertGreaterThan(reminder, morning)
+        }
+
+        // 마지막 부화 뒤에는 오늘 몫이 없다 — 내일 것은 내일 아침에 다시 건다.
+        let lastHatch = try XCTUnwrap(hatches.last)
+        XCTAssertTrue(RaidSchedule.upcomingReminders(after: lastHatch).isEmpty)
+    }
+
     // MARK: 와이어 계약
 
     /// 새 case 는 왕복해야 한다. 특히 `[UUID: Int]` 는 키가 String 도 Int 도 아니라 JSON 에서
