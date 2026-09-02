@@ -14,6 +14,9 @@ struct PokemonRosterView: View {
     /// 뷰가 아니라 설정에 둔다.
     @Environment(AppSettings.self) private var settings
     @State private var typeFilter: PokemonType?
+    /// 즐겨찾기만 보기. 타입 필터와 같이 화면을 떠나면 풀린다 — 정렬과 달리 "지금 이 박스를 좁혀
+    /// 보는 중"이라는 일시적 상태고, 남겨 두면 다음에 열었을 때 박스가 비어 보인다.
+    @State private var favoritesOnly = false
     /// 종별로 한 번만 해석해 두는 표시값. 카드마다 따로 받아오면 정렬 키(이름·타입)를 화면과
     /// 맞출 수 없다 — 정렬·필터는 박스 전체를 봐야 하는데 행은 자기 것만 알기 때문이다.
     @State private var names: [Int: String] = [:]
@@ -46,6 +49,7 @@ struct PokemonRosterView: View {
         let searched = owned.filter {
             PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(
                 for: $0, resolvedSpeciesName: names[$0.presentationID]))
+            && (!favoritesOnly || store.isFavorite($0.id))
         }
         let arranged = RosterOrdering.arrange(searched, sort: settings.rosterSort,
                                               ascending: settings.rosterSortAscending,
@@ -135,6 +139,7 @@ struct PokemonRosterView: View {
                 .font(.headline)
             Spacer(minLength: 2)
             sortMenu
+            favoriteFilterButton
             typeMenu(owned: owned)
             // 필터가 걸렸을 땐 "보이는 수 / 전체 수" — 숫자 하나만 두면 필터가 켜진 걸 놓친다.
             Text(shownCount == ownedCount ? "\(ownedCount)" : "\(shownCount)/\(ownedCount)")
@@ -170,6 +175,21 @@ struct PokemonRosterView: View {
         .accessibilityLabel(settings.rosterSortAscending
                             ? store.l.t("정렬 — 오름차순", "Sort — ascending", "並べ替え — 昇順")
                             : store.l.t("정렬 — 내림차순", "Sort — descending", "並べ替え — 降順"))
+    }
+
+    /// 켜짐/꺼짐이 아이콘 자체로 읽혀야 한다 — 채워진 노란 별이 카드의 즐겨찾기 표시와 같은 그림이라,
+    /// 눌러 보지 않아도 지금 무엇으로 좁혀 보는 중인지 알 수 있다.
+    private var favoriteFilterButton: some View {
+        Button {
+            favoritesOnly.toggle(); page = 0
+        } label: {
+            Image(systemName: favoritesOnly ? "star.fill" : "star")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(favoritesOnly ? .yellow : .secondary)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(store.l.favoritesOnly)
+        .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
     }
 
     private func typeMenu(owned: [MonState]) -> some View {
@@ -210,6 +230,7 @@ struct PokemonRosterView: View {
                             let mon = slice[index]
                             RosterMonCard(store: store, mon: mon, isActive: mon.id == store.activeMonID,
                                           isGymDeployed: store.gymDefenseMonIDs.contains(mon.id),
+                                          isFavorite: store.isFavorite(mon.id),
                                           name: names[mon.presentationID] ?? "",
                                           types: types[mon.presentationID] ?? [],
                                           infoTarget: $infoTarget,
@@ -260,6 +281,9 @@ private struct RosterMonCard: View {
     /// 공유 체육관에 배치돼 지금 쓸 수 없는 개체. 동행 지정·방생·교환이 전부 막히므로 그 사실이
     /// 카드에도 보여야 한다 — 눌러 보고서야 아는 잠금은 고장으로 읽힌다.
     let isGymDeployed: Bool
+    /// 즐겨찾기는 표시가 아니라 자물쇠다 — 켜져 있으면 놓아주기·경매 출품이 막힌다. 카드가 잠금
+    /// 사유를 직접 그려야 "놓아주기가 왜 없지" 가 고장으로 읽히지 않는다.
+    let isFavorite: Bool
     /// 이름·타입은 부모가 박스 단위로 해석해 넘긴다 — 정렬·필터가 쓰는 값과 카드가 그리는 값이
     /// 갈라지지 않게 한다(행마다 따로 받아오면 정렬 키를 화면과 맞출 수 없다).
     let name: String
@@ -280,9 +304,14 @@ private struct RosterMonCard: View {
                 Label(store.l.t("정보", "Info", "情報"), systemImage: "info.circle")
             }
             Button(action: onChat) { Label(store.l.t("대화", "Chat", "話す"), systemImage: "bubble.left.and.bubble.right") }
+            Button { store.toggleFavorite(mon.id) } label: {
+                Label(isFavorite ? store.l.unfavorite : store.l.favorite,
+                      systemImage: isFavorite ? "star.slash" : "star")
+            }
             // 동행 중인 개체는 놓아줄 수 없다 — 성장 tick 이 붙을 곳이 없어진다. 먼저 교체한다.
             // 체육관 방어팀도 같다 — 자리에서 내리기 전엔 놓아줄 수 없다.
-            if !isActive, !isGymDeployed {
+            // 즐겨찾기도 같은 부류의 잠금이고, 여기선 별을 끄는 것이 곧 해제다.
+            if !isActive, !isGymDeployed, !isFavorite {
                 Button(role: .destructive, action: onRelease) {
                     Label(store.l.t("놓아주기", "Release", "にがす"), systemImage: "hand.wave")
                 }
@@ -352,6 +381,14 @@ private struct RosterMonCard: View {
                 Button(action: onChat) { Image(systemName: "bubble.left") }
                     .buttonStyle(.borderless).controlSize(.mini)
                     .accessibilityLabel(store.l.t("대화", "Chat", "話す"))
+                // 채워진 노란 별이 잠금 표시를 겸한다 — 별도 배지 없이 상태와 토글이 한 자리다.
+                Button { store.toggleFavorite(mon.id) } label: {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(isFavorite ? Color.yellow : .secondary)
+                }
+                .buttonStyle(.borderless).controlSize(.mini)
+                .accessibilityLabel(isFavorite ? store.l.unfavorite : store.l.favorite)
+                .help(isFavorite ? store.l.favoriteLockedHint : store.l.favorite)
             }.padding(3)
         }
         .overlay(alignment: .topLeading) {

@@ -474,6 +474,27 @@ final class CompanionStore {
     var boxedMons: [MonState] { state.boxedMons }
     var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }
 
+    // MARK: 즐겨찾기 (놓아주기·경매 출품 잠금)
+
+    func isFavorite(_ id: UUID) -> Bool { state.favoriteMonIDs.contains(id) }
+
+    /// 즐겨찾기 토글 — 소유한 개체만. 잠금과 해제가 같은 버튼이라, 놓아주려면 먼저 별을 끄면 된다.
+    @discardableResult
+    func toggleFavorite(_ id: UUID) -> Bool {
+        guard ownedMons.contains(where: { $0.id == id }) else { return false }
+        if !state.favoriteMonIDs.insert(id).inserted { state.favoriteMonIDs.remove(id) }
+        save()
+        return true
+    }
+
+    /// 박스를 떠난 개체의 즐겨찾기 자국을 지운다. 남아도 오답을 내지는 않지만(없는 UUID 를 묻는
+    /// 곳이 없다) 세이브에 계속 쌓인다 — 소유가 바뀌는 자리에서 함께 정리한다.
+    private func pruneFavorites() {
+        let owned = Set(ownedMons.map(\.id))
+        guard !state.favoriteMonIDs.isSubset(of: owned) else { return }
+        state.favoriteMonIDs.formIntersection(owned)
+    }
+
     /// NEW 표시는 사용자가 그 개체를 눌러 확인할 때까지 유지한다.
     func markPokemonSeen(_ id: UUID) {
         if state.active?.id == id {
@@ -1597,6 +1618,8 @@ final class CompanionStore {
     @discardableResult
     func releaseMon(_ id: UUID) -> Bool {
         guard !gymDefenseMonIDs.contains(id) else { return false }
+        // 즐겨찾기는 잃는 동작을 막는 자물쇠다 — 별을 끄기 전엔 놓아줄 수 없다.
+        guard !isFavorite(id) else { return false }
         guard let index = state.boxedMons.firstIndex(where: { $0.id == id }) else { return false }
         let released = state.boxedMons.remove(at: index)
         AppLog.write("released boxed mon species=\(released.currentID) lv\(released.level) graduated=\(released.isGraduated)")
@@ -1706,6 +1729,7 @@ final class CompanionStore {
             chatStore.deleteSession(for: sent.id)
             state.active = received
             settleReceived(received, incomingMemories: incomingMemories)
+            pruneFavorites()
             activeGeneration += 1
             currentLine = nil
             displayedMoves = []
@@ -1724,6 +1748,7 @@ final class CompanionStore {
         chatStore.deleteSession(for: sent.id)
         state.boxedMons[index] = received
         settleReceived(received, incomingMemories: incomingMemories)
+        pruneFavorites()
         save()
         return true
     }

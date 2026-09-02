@@ -61,8 +61,14 @@ struct PokemonAuctionView: View {
                 }
             } else {
                 PokemonSearchField(text: $searchText, l: store.l)
-                let mons = store.deployableMons.filter {
+                // 즐겨찾기는 내놓을 수 없으므로 고를 수 있는 목록에도 넣지 않는다 — 고른 뒤
+                // 조용히 거절되면 버튼이 죽은 것처럼 보인다.
+                let mons = offerableMons.filter {
                     PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(for: $0))
+                }
+                if mons.isEmpty && !store.deployableMons.isEmpty && searchText.isEmpty {
+                    Text(store.l.favoriteLockedHint).font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Picker(store.l.t("게시할 포켓몬", "Pokémon to list", "出品するポケモン"), selection: $selectedListingMonID) {
                     Text(store.l.t("선택하세요", "Choose", "選択")).tag(UUID?.none)
@@ -71,7 +77,7 @@ struct PokemonAuctionView: View {
                     }
                 }
                 Button(store.l.t("경매 시장에 올리기", "List on Market", "市場に出品")) {
-                    center.publish(store.deployableMons.first { $0.id == selectedListingMonID })
+                    center.publish(offerableMons.first { $0.id == selectedListingMonID })
                     selectedListingMonID = nil
                 }.buttonStyle(.bordered).disabled(selectedListingMonID == nil)
             }
@@ -106,13 +112,13 @@ struct PokemonAuctionView: View {
                                selection: Binding(get: { offerSelections[listing.id] },
                                                   set: { offerSelections[listing.id] = $0 })) {
                             Text(store.l.t("선택하세요", "Choose", "選択")).tag(UUID?.none)
-                            ForEach(store.deployableMons) { mon in
+                            ForEach(offerableMons) { mon in
                                 Text(nameWithLevel(mon)).tag(Optional(mon.id))
                             }
                         }
                         Button(store.l.t("교환 제안", "Send Offer", "交換を提案")) {
                             guard let id = offerSelections[listing.id],
-                                  let mon = store.deployableMons.first(where: { $0.id == id }) else { return }
+                                  let mon = offerableMons.first(where: { $0.id == id }) else { return }
                             center.apply(to: listing, offering: mon)
                         }
                         .buttonStyle(.borderedProminent).controlSize(.small)
@@ -129,6 +135,12 @@ struct PokemonAuctionView: View {
             Text(name).font(.callout.bold())
             Spacer(); Text("Lv.\(mon.level)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
         }
+    }
+
+    /// 경매에 내놓을 수 있는 개체 — 체육관 배치분(`deployableMons`)에 더해 즐겨찾기도 뺀다.
+    /// 게시와 제안 둘 다 성사되면 그 개체를 잃으므로 같은 목록을 쓴다.
+    private var offerableMons: [MonState] {
+        store.deployableMons.filter { !store.isFavorite($0.id) }
     }
 
     /// 피커는 스프라이트도 부제도 없는 한 줄이라 이름만으로는 같은 종의 다른 개체를 못 고른다 —
