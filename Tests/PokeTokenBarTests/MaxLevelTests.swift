@@ -10,32 +10,19 @@ import XCTest
 @MainActor
 final class MaxLevelTests: XCTestCase {
 
-    private let line = EvoLine(baseID: 20, tree: EvoNode(speciesID: 20, children: []),
-                               rarity: .common, names: [20: ["en": "P20", "ko": "포20"]])
+    private func tempURL() -> URL { stubStoreURL("maxlevel") }
 
-    private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-maxlevel-\(UUID().uuidString).json")
-    }
-
+    /// 저장 파일을 직접 지정하는 경로(세이브 왕복 검증). 시계는 실제 시각으로 둔다 — 이 테스트들은
+    /// 시간을 전진시키지 않는다.
     private func store(at url: URL? = nil) -> CompanionStore {
-        CompanionStore(provider: StubProvider(value: line), clock: { Date() },
+        CompanionStore(provider: StubProvider(value: stubMaxLevelLine), clock: { Date() },
                        fileURL: url ?? tempURL(), rng: SeededRNG(seed: 7))
     }
 
-    private func store(_ clock: TestClock) -> CompanionStore {
-        CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
-                       fileURL: tempURL(), rng: SeededRNG(seed: 7))
-    }
+    private func store(_ clock: TestClock) -> CompanionStore { stubStore(clock, tag: "maxlevel") }
 
-    /// 만렙 파트너를 세운다 — 상한에 **정확히** 닿게 시드하므로 시드 자체로는 초과분이 없다.
-    /// 환산 테스트가 시드 부작용이 아니라 정산분을 보고 있음을 이 전제가 보장한다.
     private func maxedStore(_ clock: TestClock) async -> CompanionStore {
-        let s = store(clock)
-        await s.hatch(baseID: 20)
-        s.debugAccrueLevelExperience(PokemonBalance.maxLevelExperience)
-        XCTAssertEqual(s.currentLevel, PokemonBalance.maxLevel, "테스트 전제: 만렙에 닿았다")
-        return s
+        await maxLevelStore(clock, tag: "maxlevel")
     }
 
     // MARK: 클램프 (MonState.gainExperience)
@@ -331,7 +318,7 @@ final class MaxLevelTests: XCTestCase {
         let url = tempURL()
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"trainer":{"points":\#(TrainerLevel.maximumPoints)}}"#
         try Data(json.utf8).write(to: url)
-        let s = CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
+        let s = CompanionStore(provider: StubProvider(value: stubMaxLevelLine), clock: clock.closure,
                                fileURL: url, rng: SeededRNG(seed: 7))
         await s.hatch(baseID: 20)
         XCTAssertEqual(s.trainerLevel.points, TrainerLevel.maximumPoints, "테스트 전제: 트레이너가 만렙이다")

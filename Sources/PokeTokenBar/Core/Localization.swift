@@ -843,9 +843,13 @@ struct L {
     }
     /// 정산 배너 둘째 줄 — 위 금액 **중** 만렙에 걸린 경험치를 되돌린 몫. 환산이 없으면 그리지 않는다.
     /// "그중" 이 핵심이다. 따로 더 받은 것처럼 읽히면 배너 합이 지갑과 안 맞아 보인다.
+    ///
+    /// 조사는 숫자 뒤에 바로 붙이지 않는다 — `compact` 는 10,000 미만을 그대로 숫자로 내보내서
+    /// (흔한 구간이다) "3600 는" 처럼 받침을 잘못 고른 문장이 나간다. 단위 명사 "개" 를 끼우면
+    /// 어떤 값이 와도 조사가 고정된다.
     func claimOverflowConverted(_ stardust: Int) -> String {
         let amount = GameNumberFormatter.compact(stardust)
-        return t("그중 \(amount) 는 다 자란 파트너의 남은 경험치를 바꾼 몫이에요",
+        return t("그중 \(amount)개는 다 자란 파트너의 남은 경험치를 바꾼 몫이에요",
                  "\(amount) of that came from your fully grown partner's leftover experience",
                  "うち \(amount) は育ちきったパートナーの余った経験値の分です")
     }

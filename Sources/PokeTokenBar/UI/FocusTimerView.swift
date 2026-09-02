@@ -9,6 +9,15 @@ struct FocusTimerView: View {
     /// 소비하지 않고 스토어를 직접 그리면, 팝오버를 닫았다 열 때마다 같은 정산이 다시 떠오른다.
     @State private var claimBanner: AdventureReward?
     @State private var seenClaimSeq = 0
+    /// 정산이 비어 있던 세션 완료를 한 줄로 알린다. 배너와 **배타**다 — 정산이 들어오면 그쪽이 이긴다.
+    @State private var sessionDone = false
+    /// 위 두 안내가 **어느 세션의 것인지**. `timer.sessionStartSeq` 와 어긋나면 다음 집중이 이미
+    /// 시작된 것이라 내린다 — 새 세션 시작이 유일한 소멸 계기다(자동 소멸도 닫기 버튼도 없다).
+    ///
+    /// `onChange` 로 지우지 않고 **값을 비교**하는 이유: 모험 시작 정산은 시작과 *같은 갱신*에서
+    /// 들어온다(`startFocusSession` → `startFocusAdventure` 가 이전 모험을 정산한 뒤 `startFocus`).
+    /// 지우는 쪽을 onChange 에 두면 두 핸들러의 순서에 따라 그 정산이 뜨지도 못하고 지워진다.
+    @State private var noticeSessionSeq = 0
 
     var body: some View {
         @Bindable var settings = settings
@@ -110,22 +119,20 @@ struct FocusTimerView: View {
             // 정산 배너는 세 분기 **밖**에 둔다. 예전엔 idle 분기 안에 있어서, 집중이 끝나는 순간
             // 타이머가 곧바로 휴식으로 넘어가(`FocusTimer.tick` → `startRest`) `isRunning` 이 참이
             // 되면 방금 정산한 결과가 화면에 뜨지도 못했다.
-            if let claim = claimBanner {
+            if let claim = claimBanner, noticeIsCurrent {
+                // 줄 조립은 `AdventureReward.bannerLines` 가 한다 — 여기서 `if` 로 다시 세면
+                // 지급 경로가 늘 때 이 화면만 빠지고, 그걸 걸러 줄 테스트가 생길 자리가 없다.
+                let lines = claim.bannerLines
                 VStack(alignment: .leading, spacing: 2) {
-                    if claim.bonusEggs > 0 {
-                        Text(companion.l.t("🎉 신비한 알 발견!", "🎉 Mystery Egg found!", "🎉 ふしぎなタマゴ発見！"))
-                            .font(.caption.weight(.semibold)).foregroundStyle(.purple)
-                    }
-                    Text(companion.l.claimSettled(claim.totalStardust))
-                        .font(claim.bonusEggs > 0 ? .caption2 : .caption.weight(.semibold))
-                        .foregroundStyle(claim.bonusEggs > 0 ? Color.secondary : Color.green)
-                    // 만렙에 걸린 경험치가 되돌아온 몫(#82). 알림을 끈 사용자에게는 이 줄이 지갑
-                    // 증가분을 설명하는 유일한 자리다(#192).
-                    if claim.overflowBonus > 0 {
-                        Text(companion.l.claimOverflowConverted(claim.overflowBonus))
-                            .font(.caption2).foregroundStyle(.orange)
+                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                        claimLine(line, isFirst: index == 0)
                     }
                 }
+            } else if sessionDone, noticeIsCurrent {
+                // 정산할 게 없는 세션 완료(대화 칩으로 먼저 받은 뒤 tick 이 오는 경우)도 끝났다는
+                // 말은 남긴다 — 예전 `timer.lastReward` 가 하던 최소한의 일이다.
+                Text(companion.l.t("집중 세션 완료!", "Focus session complete!", "集中セッション完了！"))
+                    .font(.caption.weight(.semibold)).foregroundStyle(.green)
             }
             if companion.focusEggCount > 0, let readyAt = companion.nextStoredEggHatchAt {
                 // `Text(readyAt, style: .timer)` 를 쓰면 예정 시각을 지난 뒤 SwiftUI 가 경과
@@ -155,14 +162,60 @@ struct FocusTimerView: View {
         // 그 정산은 버튼도 세션 완료도 거치지 않아 onChange 만으로는 못 본다.
         .onAppear { adoptClaimIfNeeded() }
         .onChange(of: companion.claimFeedbackSeq) { adoptClaimIfNeeded() }
+        .onChange(of: timer.completedSessions) { noteSessionCompleted() }
     }
 
     /// 스토어가 들고 있는 마지막 정산을 한 번만 건네받는다. 사탕 피드백과 같은 seq + consume 형태다.
+    ///
+    /// **비어 있는 정산도 건네받는다.** 세이브를 불러오면 스토어가 `lastClaim` 을 비우고 seq 를
+    /// 올리는데, 그때 nil 을 안 받으면 이미 화면에 떠 있는 **남의 세이브 정산액**이 그대로 남는다 —
+    /// 스토어만 비우는 것으로는 뷰가 건네받아 들고 있는 사본에 닿지 못한다.
     private func adoptClaimIfNeeded() {
-        guard let claim = companion.lastClaim, companion.claimFeedbackSeq != seenClaimSeq else { return }
+        guard companion.claimFeedbackSeq != seenClaimSeq else { return }
         seenClaimSeq = companion.claimFeedbackSeq
-        claimBanner = claim
+        claimBanner = companion.lastClaim
+        guard claimBanner != nil else { return }
         companion.consumeClaimFeedback()
+        noticeSessionSeq = timer.sessionStartSeq
+        sessionDone = false   // 정산이 이긴다 — 두 줄을 함께 띄우면 같은 사건을 두 번 말한다.
+    }
+
+    /// 정산할 게 없는 세션 완료(대화 칩으로 먼저 받은 뒤 tick 이 오는 경우)도 끝났다는 말은 남긴다.
+    /// **순서에 기대지 않는다** — 정산이 먼저 들어왔으면 여기서 빠지고, 이쪽이 먼저면 뒤이은
+    /// `adoptClaimIfNeeded` 가 `sessionDone` 을 내린다.
+    private func noteSessionCompleted() {
+        guard claimBanner == nil else { return }
+        sessionDone = true
+        noticeSessionSeq = timer.sessionStartSeq
+    }
+
+    /// 지금 떠 있는 안내가 **이번 세션의 것**인가. 다음 집중이 시작되면 어긋나 안내가 내려간다.
+    private var noticeIsCurrent: Bool { noticeSessionSeq == timer.sessionStartSeq }
+
+    @ViewBuilder
+    private func claimLine(_ line: ClaimBannerLine, isFirst: Bool) -> some View {
+        switch line {
+        case .eggs(let count):
+            Text(count > 1
+                 ? companion.l.t("🎉 신비한 알 \(count)개 발견!",
+                                 "🎉 \(count) Mystery Eggs found!",
+                                 "🎉 ふしぎなタマゴ\(count)個発見！")
+                 : companion.l.t("🎉 신비한 알 발견!", "🎉 Mystery Egg found!", "🎉 ふしぎなタマゴ発見！"))
+                .font(.caption.weight(.semibold)).foregroundStyle(.purple)
+        case .settled(let stardust):
+            // 첫 줄일 때만 강조한다 — 알 줄이 위에 오면 그쪽이 머리글이라 둘 다 굵으면 서로 밀린다.
+            Text(companion.l.claimSettled(stardust))
+                .font(isFirst ? .caption.weight(.semibold) : .caption2)
+                .foregroundStyle(isFirst ? Color.green : Color.secondary)
+        case .overflowConverted(let stardust):
+            Text(companion.l.claimOverflowConverted(stardust))
+                .font(.caption2).foregroundStyle(.orange)
+        case .rareCandy:
+            Text(companion.l.t("🍬 \(companion.l.itemName(.rareCandy)) 1개 발견!",
+                               "🍬 Found a \(companion.l.itemName(.rareCandy))!",
+                               "🍬 \(companion.l.itemName(.rareCandy))を1個発見！"))
+                .font(.caption2).foregroundStyle(.pink)
+        }
     }
 
     private var title: String {

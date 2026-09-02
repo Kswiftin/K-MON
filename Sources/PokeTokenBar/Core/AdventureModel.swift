@@ -61,6 +61,34 @@ struct AdventureReward: Sendable, Equatable {
     }
 }
 
+/// 정산 배너에 실리는 줄. **조립을 뷰 밖으로 뺀다** — 뷰 안 `if` 로만 존재하면 어떤 지급이 화면에서
+/// 빠져도 테스트는 전부 초록이다. #192 의 사탕 · 알 누락이 정확히 그 자리였고, 커버리지도 못 걸렀다
+/// (line coverage 는 `if x { y }` 를 조건 평가만으로 실행으로 센다).
+enum ClaimBannerLine: Equatable {
+    /// 이번 정산으로 들어온 알. **개수를 싣는다** — 조각 완성 · 주간 10회 · 희귀 알이 겹치면 둘
+    /// 이상이 함께 들어오는데, "한 개 찾았다" 로 뭉치면 나머지가 화면에서 사라진다.
+    case eggs(Int)
+    /// 지갑에 더해진 별의조각 **전부**(`totalStardust`).
+    case settled(Int)
+    /// 위 금액 중 만렙에 걸린 경험치를 되돌린 몫(#82). 따로 더 받은 게 아니다.
+    case overflowConverted(Int)
+    /// 지갑이 아니라 **가방**이 느는 지급이라 합계에 안 잡힌다. 해안은 3회 중 1회꼴로 준다.
+    case rareCandy
+}
+
+extension AdventureReward {
+    /// 이 정산이 화면에 남겨야 하는 줄 **전부**. 지급 경로가 늘면 여기 한 곳만 늘린다 —
+    /// 뷰가 각자 조립하면 새 경로가 어느 화면에서 빠졌는지 아무도 모른다.
+    var bannerLines: [ClaimBannerLine] {
+        var lines: [ClaimBannerLine] = []
+        if bonusEggs > 0 { lines.append(.eggs(bonusEggs)) }
+        lines.append(.settled(totalStardust))
+        if overflowBonus > 0 { lines.append(.overflowConverted(overflowBonus)) }
+        if foundRareCandy { lines.append(.rareCandy) }
+        return lines
+    }
+}
+
 struct FocusSessionReward: Sendable, Equatable {
     let minutes: Int
     let stardust: Int
@@ -104,6 +132,13 @@ struct AdventureRecord: Codable, Sendable, Equatable, Identifiable {
     var zone: AdventureZone
     var companionSpeciesID: Int
     var completedAt: Date
+    /// 그 모험이 **기본으로** 준 별의조각(`AdventureReward.starPieces`). 환산분 · 트레이너 · 미션 ·
+    /// 업적 · 시즌 몫은 들어 있지 않으므로 **지갑 증가분과 같지 않다.**
+    ///
+    /// 전부 담는 쪽(`totalStardust`)이 더 옳아 보이지만, 이 배열은 이미 저장된 값이고 마이그레이션이
+    /// 없다 — 의미만 바꾸면 옛 행과 새 행이 다른 것을 뜻한 채 한 배열에 섞인다. 읽는 화면은 아직
+    /// 하나도 없으니(`CompanionStore.recentAdventures` 는 소비처가 없다) 지금 바꿀 이유도 없다.
+    /// **히스토리 화면을 붙일 때** 그때 마이그레이션과 함께 정한다.
     var stardust: Int
     var foundRareCandy: Bool
 }
