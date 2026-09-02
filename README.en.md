@@ -57,15 +57,15 @@ Choose a focus duration, track the partner's adventure, and claim the completed 
 <tr>
 <td width="55%" valign="middle">
 <h3>Your Pokémon and Pokédex</h3>
-Review your owned Pokémon, select a partner, check moves and experience, and see the species you have discovered. Search by name to pull a Pokémon straight out of the box, team picker, or trade list.
+Review your owned Pokémon, select a partner, check moves and experience, and see the species you have discovered. Search by name to pull a Pokémon straight out of the box, team picker, or trade list. Star the ones you want to keep — a favorite cannot be released, traded, or listed on the market, and the header star narrows the box to favorites only.
 </td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="180" alt="Pokédex collection"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="Pokémon collection log"></td>
+<td width="45%" align="center"><img src="assets/screenshot-pokemon-favorites.png" width="180" alt="Favorites"><br><br><img src="assets/screenshot-collection-pokedex.png" width="180" alt="Pokédex collection"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="Pokémon collection log"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="180" alt="Shop"></td>
+<td width="45%" align="center"><img src="assets/screenshot-shop.png" width="180" alt="Shop"><br><br><img src="assets/screenshot-bag.png" width="180" alt="Bag"></td>
 <td width="55%" valign="middle">
 <h3>Shop and Bag</h3>
-Spend Star Pieces on eggs, Rare Candy, Mints, Link Cords, and evolution stones; use held items from the Bag.
+Spend Star Pieces on eggs, Rare Candy, Mints, Link Cords, evolution stones, TMs, and outfits. Anything that stacks can be bought several at a time, up to whatever your balance affords, and the Bag lets you use an item or discard what you no longer need.
 </td>
 </tr>
 <tr>
