@@ -225,15 +225,25 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     // 지닌물건 진화용(#89) — 야도킹·킹크로스·강철톤·밀로틱 등도 같은 이유로 진화 경로가 아예 없었다.
     // 도구 시스템을 만들지 않고 돌과 똑같이 "쓰면 소모되는 진화 아이템" 으로 취급한다.
     //
-    // **대상 종이 `PokemonAssets.animatedSpeciesIDs`(1~649) 안에 있는 아이템만 넣는다.** 범위 밖 종은
+    // **대상 종이 `PokemonAssets` 의 획득 가능 목록 안에 있는 아이템만 넣는다.** 범위 밖 종은
     // `EvoNode.keepingAnimatedSprites()` 가 트리에서 지우므로 그 아이템은 어떤 진화도 열지 못한다 —
-    // 상점에 올리면 사는 순간 500 별의조각을 버리는 함정 구매가 된다(향기주머니·휘핑팝이 그래서
-    // 빠졌다: 마이앵·나룸퍼프 682~685). 범위가 6세대로 넓어지면 그때 함께 넣는다.
+    // 상점에 올리면 사는 순간 500 별의조각을 버리는 함정 구매가 된다.
     case kingsRock, metalCoat, dragonScale, upgrade, dubiousDisc
     case deepSeaTooth, deepSeaScale, protector, electirizer, magmarizer
     case reaperCloth, razorClaw, razorFang, prismScale
     // 해피너스는 '둥근돌을 지닌 채 낮에 레벨업' 이라 돌 이름이지만 use-item 이 아니다.
     case ovalStone
+    // 아래는 1~9세대를 열면서 함께 들어온 6~9세대 진화 아이템이다. 대상 종 번호를 적어 두는 이유는
+    // 위 규칙("대상이 획득 가능 목록 안에 있어야 한다") 을 다음 사람이 직접 확인할 수 있게 하려는
+    // 것이다 — 번호만 있으면 `PokemonAssets.spriteGaps` 와 대조하면 끝난다.
+    case sachet, whippedDream                                   // 683 · 685
+    case tartApple, sweetApple                                  // 841 · 842
+    case crackedPot, chippedPot                                 // 둘 다 855(다른 폼으로 갈린다)
+    case scrollOfDarkness, scrollOfWaters                       // 둘 다 892(유파가 갈린다)
+    case blackAugurite, peatBlock                               // 900 · 901
+    case auspiciousArmor, maliciousArmor                        // 936 · 937
+    case syrupyApple, metalAlloy                                // 1011 · 1018
+    case unremarkableTeacup, masterpieceTeacup                  // 둘 다 1013
     /// 던전 입장 전에 마시는 소모품(#79) — 체력 예산 +3. 값을 싸게 두는 이유는 크게 주면
     /// "아이템 갈아넣기" 가 최적 전략이 되어 퍼즐이 사라지기 때문이다(+3 은 100 대비 3%).
     /// 하트비늘(#97) — 진화가 아니라 "기술 다시 배우기". 진화 아이템이 아니라 `evolutionRule` 이 nil 이므로
@@ -282,6 +292,22 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .razorFang: return .heldItem("razor-fang")
         case .prismScale: return .heldItem("prism-scale")
         case .ovalStone: return .heldItem("oval-stone")
+        case .sachet: return .heldItem("sachet")
+        case .whippedDream: return .heldItem("whipped-dream")
+        case .tartApple: return .useItem("tart-apple")
+        case .sweetApple: return .useItem("sweet-apple")
+        case .crackedPot: return .useItem("cracked-pot")
+        case .chippedPot: return .useItem("chipped-pot")
+        case .scrollOfDarkness: return .useItem("scroll-of-darkness")
+        case .scrollOfWaters: return .useItem("scroll-of-waters")
+        case .blackAugurite: return .useItem("black-augurite")
+        case .peatBlock: return .useItem("peat-block")
+        case .auspiciousArmor: return .useItem("auspicious-armor")
+        case .maliciousArmor: return .useItem("malicious-armor")
+        case .syrupyApple: return .useItem("syrupy-apple")
+        case .metalAlloy: return .useItem("metal-alloy")
+        case .unremarkableTeacup: return .useItem("unremarkable-teacup")
+        case .masterpieceTeacup: return .useItem("masterpiece-teacup")
         }
     }
     /// 진화에 쓰는 아이템인가 — 가방·상점의 "쓰면 진화" 분기가 이걸로 묶인다(케이스 30여 개를
@@ -316,6 +342,14 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .reaperCloth: return "🧵"; case .razorClaw: return "✂️"; case .razorFang: return "🗡️"
         case .prismScale: return "🌈"
         case .ovalStone: return "🥚"
+        case .sachet: return "👝"; case .whippedDream: return "🍰"
+        case .tartApple: return "🍏"; case .sweetApple: return "🍎"; case .syrupyApple: return "🍯"
+        case .crackedPot: return "🫖"; case .chippedPot: return "🍵"
+        case .unremarkableTeacup: return "🥣"; case .masterpieceTeacup: return "🍶"
+        case .scrollOfDarkness: return "📜"; case .scrollOfWaters: return "📃"
+        case .blackAugurite: return "⬛"; case .peatBlock: return "🧱"
+        case .auspiciousArmor: return "🛡️"; case .maliciousArmor: return "🗡️"
+        case .metalAlloy: return "⚙️"
         case .heartScale: return "💗"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
@@ -500,20 +534,38 @@ enum StarterRules {
     static func isLegendary(_ id: Int) -> Bool { legendaryExclusions.contains(id) }
 }
 
-/// 현재 서비스가 제공하는 움직이는 포켓몬 스프라이트 범위.
-/// K-MON currently limits animated companions to the Gen 1–5 species range (#1...649).
-/// Showdown provides normal and shiny GIFs for every ID in this range.
+/// 획득 가능한 종 — 움직이는 스프라이트가 있는 종만 받는다(1~9세대, #1...1025).
+///
+/// Showdown 애니메이션은 이 범위를 **연속으로 덮지 않는다.** 9세대 후반 14종은 앞·뒤·이로치 GIF 가
+/// 셋 다 없다(2026-09-02 PokeAPI/sprites 실측). 정적 PNG 로 대신 그리면 그 종만 멈춰 있어 어디서 온
+/// 줄 모를 결함으로 보이므로 아예 뺀다. 그래서 이 값은 `ClosedRange` 가 아니다 — 상한만 필요한 곳은
+/// `speciesRange.upperBound`, 목록이 필요한 곳은 `obtainableSpeciesIDs` 를 쓴다.
 enum PokemonAssets {
-    static let animatedSpeciesIDs = 1...649
+    /// PokéAPI 조회 상한용 종 번호 범위. 지역폼·메가는 10000번대라 여기 들어오지 않는다.
+    static let speciesRange = 1...1025
+    /// 애니메이션 GIF 가 없어 뺀 종. 세 폴더(앞·뒤·이로치)에 파일이 다 생기면 지운다.
+    static let spriteGaps: Set<Int> = [990, 991, 992, 993, 994, 995,
+                                       1006, 1008, 1010, 1017, 1022, 1023, 1024, 1025]
+
+    /// 도감 격자·부화 풀·야생 풀이 함께 쓰는 획득 가능 종(번호 오름차순).
+    static let obtainableSpeciesIDs: [Int] = speciesRange.filter { !spriteGaps.contains($0) }
 
     static func hasAnimatedSprite(speciesID: Int) -> Bool {
-        animatedSpeciesIDs.contains(speciesID)
+        speciesRange.contains(speciesID) && !spriteGaps.contains(speciesID)
     }
 
-    /// 와이어에서 온 종 번호를 이 범위로 자른다. 범위 밖 번호는 스프라이트가 없어 화면이 비고,
-    /// 그대로 배열 첨자로 쓰는 자리에서는 죽는다.
+    /// 와이어에서 온 종 번호를 **그릴 수 있는 범위**로 자른다. 범위 밖 번호는 스프라이트가 없어
+    /// 화면이 비고, 그대로 배열 첨자로 쓰는 자리에서는 죽는다.
+    ///
+    /// 이 함수의 계약은 범위가 아니라 **"그릴 수 있는 번호를 낸다"** 이다. 그래서 구멍도 메운다 —
+    /// 종 번호 상한(#1025)이 하필 구멍이라 범위로만 자르면 잘라 놓고도 스프라이트가 없는 값이 나오고,
+    /// 그걸 부르는 자리(와이어 디코딩)는 값이 정상인 줄 알고 그대로 그린다.
+    ///
+    /// 구멍이 오는 경우는 이 앱이 아닌 상대뿐이다 — 여기서 만든 개체는 애초에 구멍을 갖지 않는다.
     static func clampedID(_ speciesID: Int) -> Int {
-        min(animatedSpeciesIDs.upperBound, max(animatedSpeciesIDs.lowerBound, speciesID))
+        var bounded = min(speciesRange.upperBound, max(speciesRange.lowerBound, speciesID))
+        while bounded > speciesRange.lowerBound && spriteGaps.contains(bounded) { bounded -= 1 }
+        return bounded
     }
 }
 

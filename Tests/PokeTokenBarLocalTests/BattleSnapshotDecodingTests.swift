@@ -67,7 +67,7 @@ import Testing
              "base":{"hp":35,"atk":55,"def":40,"spa":50,"spd":50,"spe":90},
              "weightHectograms":-40}
             """)
-        #expect(PokemonAssets.animatedSpeciesIDs.contains(snapshot.speciesID))
+        #expect(PokemonAssets.hasAnimatedSprite(speciesID: snapshot.speciesID))
         // 체중은 위력 표를 타므로 음수는 "가장 가벼움" 칸으로 들어간다.
         #expect((snapshot.weightHectograms ?? 0) >= 0)
     }

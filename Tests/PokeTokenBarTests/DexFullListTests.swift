@@ -42,17 +42,17 @@ final class DexFullListTests: XCTestCase {
     /// 격자가 획득 가능한 종 전체를 연다. 여기가 보유 종 수로 줄어 있으면 화면은 예전 그대로다.
     func testEveryObtainableSpeciesGetsACell() throws {
         let slots = try store([entry(1)]).dexSlots
-        XCTAssertEqual(slots.count, PokemonAssets.animatedSpeciesIDs.count)
+        XCTAssertEqual(slots.count, PokemonAssets.obtainableSpeciesIDs.count)
         XCTAssertEqual(slots.map(\.id), slots.map(\.id).sorted(), "도감 번호순")
         XCTAssertEqual(slots.filter(\.isCaught).map(\.id), [1])
     }
 
     /// **범위 밖 보유 종을 합집합으로 얹는다.** 이브이(#133) 라인은 님피아(#700)까지 뻗어 획득
-    /// 가능 범위(1~649)를 넘어간다. 범위만 쓰면 실제로 가진 종이 자기 도감에서 빠진다.
+    /// 가능 범위를 넘어간다. 범위만 쓰면 실제로 가진 종이 자기 도감에서 빠진다.
     func testASpeciesCaughtOutsideTheRangeStillHasACell() throws {
-        let outside = PokemonAssets.animatedSpeciesIDs.upperBound + 51
+        let outside = PokemonAssets.speciesRange.upperBound + 51
         let slots = try store([entry(outside)]).dexSlots
-        XCTAssertEqual(slots.count, PokemonAssets.animatedSpeciesIDs.count + 1)
+        XCTAssertEqual(slots.count, PokemonAssets.obtainableSpeciesIDs.count + 1)
         XCTAssertEqual(slots.last?.id, outside)
         XCTAssertTrue(slots.last?.isCaught == true)
     }
@@ -67,7 +67,7 @@ final class DexFullListTests: XCTestCase {
 
     // MARK: 필터가 걸리는 범위
 
-    /// 기본은 잡은 것만이다. 처음 여는 사람에게 649칸 실루엣부터 보이면 자기 수집물이 묻힌다.
+    /// 기본은 잡은 것만이다. 처음 여는 사람에게 1000칸 넘는 실루엣부터 보이면 자기 수집물이 묻힌다.
     func testTheDefaultIsCaughtOnly() {
         let filter = CompanionStore.DexFilter()
         XCTAssertTrue(filter.caughtOnly)

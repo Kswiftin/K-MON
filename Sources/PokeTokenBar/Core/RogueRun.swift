@@ -169,7 +169,7 @@ struct RogueRun: Sendable {
     }
 
     /// 웨이브별 상대 **종족값 합(BST) 상한**. 포켓로그가 웨이브에 따라 종 티어를 올리는 것과 같은
-    /// 규칙이다. 이 상한이 없으면 종을 전 범위(1...649)에서 균등 추첨하는 호출자가 웨이브 1 에
+    /// 규칙이다. 이 상한이 없으면 종을 전 범위에서 균등 추첨하는 호출자가 웨이브 1 에
     /// 슬라킹(670)·전설을 뽑아, 레벨 곡선을 아무리 맞춰도 판이 첫 턴에 끝난다.
     /// 최종 상한이 560 이라 전설 대부분(660~720)은 자연히 막히고, 따로 전설 목록을 두지 않는다.
     ///
@@ -197,8 +197,8 @@ struct RogueRun: Sendable {
         return total <= cap && total >= Int(Double(cap) * tuning.minStatRatio)
     }
 
-    /// 야생 추첨 범위 — 5세대까지.
-    static let wildSpeciesPool = 1...649
+    /// 야생 추첨 풀 — 획득 가능한 종 전체(1~9세대). 스프라이트 구멍은 이 목록에 없다.
+    static let wildSpeciesPool = PokemonAssets.obtainableSpeciesIDs
     /// 스타터 후보 — 1·2세대 기본형 고정 풀(진화 루트 조회를 아직 안 탄다).
     static let starterPool = [1, 4, 7, 25, 152, 155, 158]
     /// 한 웨이브에서 종을 다시 뽑아 보는 횟수. 늘릴수록 PokeAPI 왕복이 그만큼 늘어난다.

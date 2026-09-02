@@ -57,7 +57,7 @@ Pokédoro は集中している間にパートナーのポケモンを冒険へ�
 <tr>
 <td width="55%" valign="middle">
 <h3>ポケモンと図鑑</h3>
-手持ちの確認、パートナー交代、わざ・経験値の確認、発見した種の閲覧ができます。名前で検索すれば、ボックス・チーム選択・交換リストから目的のポケモンをすぐに呼び出せます。大切なポケモンに星を付けると、にがす・交換・出品ができなくなり、見出しの星でおきにいりだけを表示できます。
+手持ちの確認、パートナー交代、わざ・経験値の確認、発見した種の閲覧ができます。名前で検索すれば、ボックス・チーム選択・交換リストから目的のポケモンをすぐに呼び出せます。第1〜9世代の全種に対応しています（アニメーションのない第9世代後半の14種を除く）。大切なポケモンに星を付けると、にがす・交換・出品ができなくなり、見出しの星でおきにいりだけを表示できます。
 </td>
 <td width="45%" align="center"><img src="assets/screenshot-pokemon-favorites-ja.png" width="180" alt="おきにいり"><br><br><img src="assets/screenshot-collection-pokedex.png" width="180" alt="図鑑"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="ポケモンのコレクションログ"></td>
 </tr>

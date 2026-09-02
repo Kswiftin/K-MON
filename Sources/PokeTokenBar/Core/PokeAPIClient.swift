@@ -23,7 +23,7 @@ protocol PokeProviding: Sendable {
     /// 해당 종이 본가 기술머신(machine 방식)으로 기술을 배울 수 있는지 확인한다.
     func canLearnMachine(speciesID: Int, moveID: Int) async -> Bool
     /// 획득 가능 범위 전 종의 타입 (GraphQL 1쿼리, 디스크 캐시). 도감 타입 필터가 읽는다 —
-    /// **아직 안 잡은 종에도 걸려야** 해서 `battleProfile` 종별 조회로는 대체할 수 없다(649회).
+    /// **아직 안 잡은 종에도 걸려야** 해서 `battleProfile` 종별 조회로는 대체할 수 없다(1천 회 넘는다).
     func speciesTypeIndex() async throws -> [Int: [PokemonType]]
 }
 
@@ -166,7 +166,7 @@ actor PokeAPIClient: PokeProviding {
         var bases: [BaseSpecies] = []
         let batchSize = 6
         var start = 1
-        let maxID = PokemonAssets.animatedSpeciesIDs.upperBound
+        let maxID = PokemonAssets.speciesRange.upperBound
         while start <= maxID {
             let end = min(start + batchSize - 1, maxID)
             let found = await withTaskGroup(of: BaseSpecies?.self) { group -> [BaseSpecies] in
@@ -195,14 +195,14 @@ actor PokeAPIClient: PokeProviding {
     private static let graphQLEndpoint = "https://graphql.pokeapi.co/v1beta2"
 
     private func fetchBaseIndex() async throws -> [BaseSpecies] {
-        // evolves_from IS NULL(=base) + id ≤ 649(Gen-V 애니메이션 스프라이트 상한)
+        // evolves_from IS NULL(=base) + id ≤ 종 번호 상한(`PokemonAssets.speciesRange`)
         guard let url = URL(string: Self.graphQLEndpoint) else { throw URLError(.badURL) }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.timeoutInterval = 15
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // 메타몽(#132)은 위장 리빌 전용 → 일반 부화 풀에서 제외(_neq).
-        let maxID = PokemonAssets.animatedSpeciesIDs.upperBound
+        let maxID = PokemonAssets.speciesRange.upperBound
         let query = "{ pokemonspecies(where: {evolves_from_species_id: {_is_null: true}, id: {_lte: \(maxID), _neq: \(PokemonOdds.dittoSpeciesID)}}, order_by: {id: asc}) { id capture_rate } }"
         req.httpBody = try JSONSerialization.data(withJSONObject: ["query": query])
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -215,10 +215,10 @@ actor PokeAPIClient: PokeProviding {
 
     // MARK: 종별 타입 인덱스
 
-    /// 획득 가능 범위(1~649) 전 종의 타입 — GraphQL 1쿼리(약 44KB), 30일 디스크 캐시.
+    /// 획득 가능 범위 전 종의 타입 — GraphQL 1쿼리, 30일 디스크 캐시.
     ///
     /// **base 인덱스와 달리 REST 폴백을 두지 않는다.** 부화는 인덱스가 없으면 게임이 멈추지만,
-    /// 이건 없어도 도감 타입 필터 하나가 잠길 뿐이다 — 649회 REST 조회를 걸 값어치가 없다.
+    /// 이건 없어도 도감 타입 필터 하나가 잠길 뿐이다 — 종 수만큼 REST 조회를 걸 값어치가 없다.
     func speciesTypeIndex() async throws -> [Int: [PokemonType]] {
         if let cached = speciesTypeCache { return cached }
         let disk = (try? Data(contentsOf: Self.speciesTypeFile))
@@ -250,7 +250,7 @@ actor PokeAPIClient: PokeProviding {
         req.timeoutInterval = 15
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // slot 순으로 정렬 — 1번이 주 타입이다. 안 걸면 이중타입 표기 순서가 응답마다 흔들린다.
-        let maxID = PokemonAssets.animatedSpeciesIDs.upperBound
+        let maxID = PokemonAssets.speciesRange.upperBound
         let query = "{ pokemon(where: {id: {_lte: \(maxID)}}, order_by: {id: asc})"
             + " { id pokemontypes(order_by: {slot: asc}) { type { name } } } }"
         req.httpBody = try JSONSerialization.data(withJSONObject: ["query": query])
@@ -276,7 +276,7 @@ actor PokeAPIClient: PokeProviding {
 
     /// OX 퀴즈용 사실 데이터. 문제 문장은 이 응답에서만 조립하며 레포에 정답 목록을 두지 않는다.
     func pokemonQuizFacts(count: Int = 8) async throws -> [PokemonQuizFact] {
-        let maximum = PokemonAssets.animatedSpeciesIDs.upperBound
+        let maximum = PokemonAssets.speciesRange.upperBound
         let ids = Array(1...maximum).shuffled().prefix(max(count * 2, 12))
         let facts = await withTaskGroup(of: PokemonQuizFact?.self) { group in
             for id in ids { group.addTask { try? await self.pokemonQuizFact(speciesID: id) } }
@@ -371,7 +371,8 @@ actor PokeAPIClient: PokeProviding {
 
     private var battleProfileCache: [Int: PokemonBattleProfile] = [:]
 
-    /// `/pokemon/{id}` 에서 배틀에 필요한 종족값·타입만 파싱. id ≤ 649(Gen-V) 기본 폼은 species id 와 동일.
+    /// `/pokemon/{id}` 에서 배틀에 필요한 종족값·타입만 파싱. 기본 폼은 pokemon id 가 species id 와 같다
+    /// (지역폼·메가는 10000번대라 이 범위에 없다).
     /// PokéAPI 가 모르는 타입을 주면 건너뛴다(모두 무효면 throw — 스냅샷에 빈 types 를 내보내지 않게).
     func battleProfile(speciesID: Int) async throws -> PokemonBattleProfile {
         if let c = battleProfileCache[speciesID] { return c }
