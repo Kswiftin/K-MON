@@ -1736,6 +1736,47 @@ final class CompanionIdentityTests: XCTestCase {
         XCTAssertEqual(s.currentSpeciesID, 463)
     }
 
+    /// 레벨 조건이 없는 레벨업 진화는 **조건 종류를 가리지 않고** 키우면 진화한다.
+    ///
+    /// 예전엔 동료·시간대·능력치비교 셋만 이 완화를 받아, 친밀도(피츄→피카츄, 골뱃→크로뱀,
+    /// 먹고자→잠만보 등 12종)와 특정 장소(자포코일·리피아·글레이시아·대코파스 4종)는 갈래가
+    /// 하나뿐이어도 영영 진화하지 못했다. `levelOpenedSibling` 의 구제도 `opensByLevelingUp` 이
+    /// "level-up 이니 키우면 된다" 로 읽는 바람에 손을 떼서 막다른 길이 그대로 남았다.
+    ///
+    /// 여기서 쓰는 트리가 그 모양이다 — `level-up` 인데 레벨도, 앱이 아는 다른 조건도 없다.
+    func testLevelUpEvolutionWithoutLevelPromptsRegardlessOfCondition() async throws {
+        // 피츄(172) → 피카츄(25): PokéAPI 에선 min_happiness 조건이고, 앱이 읽는 필드는 하나도 없다.
+        let tree = EvoNode(speciesID: 172, children: [
+            EvoNode(speciesID: 25, children: [], evolutionTrigger: "level-up"),
+        ])
+        let line = EvoLine(baseID: 172, tree: tree, rarity: .common,
+                           names: [172: ["ko": "피츄"], 25: ["ko": "피카츄"]])
+        let s = store(line, seed: 7)
+        await s.hatch(baseID: 172)
+        s.setLanguage(.ko)
+        XCTAssertEqual(s.evolutionRequirementText, "레벨업으로 진화",
+                       "오지 않을 '특수 조건' 이 아니라 키우면 된다고 말해야 한다")
+
+        s.debugAccrueLevelExperience(PokemonBalance.experiencePerLevel)
+        XCTAssertNotNil(s.evolutionPrompt, "레벨업이 진화 확인을 띄운다")
+        s.acceptEvolution()
+        XCTAssertEqual(s.currentSpeciesID, 25)
+    }
+
+    /// 껍질몬(`shed`)은 이 완화의 대상이 아니다 — 본가에서도 빈 자리가 있어야 생기는 특수 경로라
+    /// `routeMatches` 가 계속 걸러야 한다. 완화를 넓히면서 함께 열리지 않았는지 본다.
+    func testShedEvolutionStaysExcludedFromTheRelaxation() async throws {
+        let tree = EvoNode(speciesID: 290, children: [
+            EvoNode(speciesID: 292, children: [], evolutionTrigger: "shed"),
+        ])
+        let line = EvoLine(baseID: 290, tree: tree, rarity: .common,
+                           names: [290: ["ko": "토중몬"], 292: ["ko": "껍질몬"]])
+        let s = store(line, seed: 7)
+        await s.hatch(baseID: 290)
+        s.debugAccrueLevelExperience(PokemonBalance.experiencePerLevel * 3)
+        XCTAssertNil(s.evolutionPrompt, "shed 는 키운다고 열리지 않는다")
+    }
+
     /// 임의 시드에서 부화 롤이 결정적이고 성격이 항상 부여되는지.
     func testHatchAssignsDeterministicShinyAndNature() async {
         for seed: UInt64 in [1, 7, 42, 12345] {

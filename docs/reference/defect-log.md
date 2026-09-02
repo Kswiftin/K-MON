@@ -3461,3 +3461,26 @@ read_when:
   usedSinceInstall − spentTokens" 를 계속 설명했다. 필드 자체는 지울 수 없다(옛 세이브의 잔액
   도출과 서명 `sp` 세그먼트가 그 값을 본다) — 그래서 **왜 남아 있는지**를 적었다.
   (2026-09-02.)
+
+## 조건을 **열거해서** 완화하면, 열거에 없는 조건은 영영 막힌 채로 남는다
+
+- **증상.** 피츄가 피카츄가 되지 않는다. 골뱃→크로뱀, 먹고자→잠만보도 같다. 갈래가 하나뿐인 종이라
+  다른 길도 없어 그 자리에서 막다른 길이었다. 6~9세대 확장 가능성을 검토하다 드러났다.
+- **직접원인.** 레벨 조건이 없는 레벨업 진화를 "지금 레벨에서 물어본다"로 접는 분기가
+  `evolutionPartySpeciesID != nil || evolutionTimeOfDay != nil || evolutionRelativePhysicalStats != nil`
+  **세 조건을 열거**했다. PokéAPI 가 쓰는 나머지 조건(`min_happiness`·`min_beauty`·`location_id`)은
+  어디에도 안 걸려 아래 `if let requiredLevel = next.evolutionLevel` 까지 흘러가 nil 로 끝났다.
+- **구제 경로까지 같이 막혀 있었다.** `levelOpenedSibling` 은 "계획이 고른 갈래가 키워서 안 열리면
+  형제 갈래를 찾아준다". 그런데 `opensByLevelingUp` 이 `trigger == "level-up"` 만 보고 참을 냈다 —
+  트리거는 level-up 이 맞으니 "키우면 된다"고 읽고 손을 뗀 것이다. 판정에 쓴 값이 내가 생각한 뜻이
+  아니었던 부류다(`state-predicate-precision.md`).
+- **테스트가 왜 못 걸렀나.** 진화 테스트가 전부 **열거된 세 조건 중 하나를 가진 트리**로 짜여 있었다.
+  통과하는 경로만 반복해 검증했고, "조건이 하나도 없는 level-up" 트리를 만든 테스트가 없었다.
+- **범위.** 1~649 에서 16종(친밀도 12 · 장소 4). 밀로틱은 아름다운비늘 경로가 따로 있어 도달 가능했다.
+- **처방.** 열거를 지우고 `trigger == "level-up" && evolutionLevel == nil` 하나로 판정한다.
+  **`level-up` 인데 레벨이 없다는 것 자체가 "우리가 모형화하지 않은 조건"이라는 뜻**이므로, 조건을
+  세지 않아야 다음 조건이 생겨도 같은 구멍이 다시 나지 않는다. `routeMatches` 의 `shed` 제외는 그대로다.
+- **곁가지.** 화면 문구가 두 곳에 있었다 — 홈(`evolutionRequirementText`)은 `case "level-up"` 이
+  있어 "레벨업으로 진화"가 나오는데, 포켓몬 탭 상세 카드는 그 케이스가 없어 "특수 조건으로 진화"로
+  떨어졌다. 진화가 실제로 일어나게 되면서 두 화면이 서로 다른 말을 하게 되므로 함께 맞췄다.
+  (`CompanionStore.swift` · `PokemonRosterView.swift`, 2026-09-02.)

@@ -2552,9 +2552,19 @@ final class CompanionStore {
                 }
                 break
             }
-            if next.evolutionTrigger == "level-up", next.evolutionLevel == nil,
-               next.evolutionPartySpeciesID != nil || next.evolutionTimeOfDay != nil
-                    || next.evolutionRelativePhysicalStats != nil {
+            // 레벨 조건이 없는 레벨업 진화는 **전부** 지금 레벨에서 물어본다.
+            //
+            // 예전엔 동료·시간대·능력치비교 셋만 이 완화를 받았다. 그 밖의 조건(친밀도·아름다움·
+            // 특정 장소)은 어디에도 안 걸려 아래 `evolutionLevel` 분기까지 흘러가 nil 로 끝났고,
+            // `levelOpenedSibling` 의 구제도 `opensByLevelingUp` 이 "level-up 이니 키우면 된다" 로
+            // 읽어 손을 떼는 바람에 **영영 진화하지 않는 종**이 됐다 — 피츄→피카츄, 골뱃→크로뱀,
+            // 먹고자→잠만보처럼 갈래가 하나뿐인 종은 그 자리에서 막다른 길이었다.
+            //
+            // 이 앱에는 친밀도·장소 축이 없다. 조건을 흉내 내는 대신, 이미 시간대·동료에 쓰던 것과
+            // 같은 방식으로 "키우면 진화한다"로 접는다. `level-up` 인데 레벨이 없다는 것 자체가
+            // "우리가 모형화하지 않은 조건"이라는 뜻이라, 따로 열거하지 않아야 다음 조건이 생겨도
+            // 같은 구멍이 다시 나지 않는다.
+            if next.evolutionTrigger == "level-up", next.evolutionLevel == nil {
                 let requiredLevel = a.level
                 if declinedEvolutionMonID == a.id, declinedEvolutionLevel == a.level,
                    declinedEvolutionTargetID == next.speciesID { break }
