@@ -3305,3 +3305,21 @@ read_when:
 - **곁가지.** 이 부류는 "기능은 다 만들었는데 그 기능만 아무 일도 안 일어난다"로 나타나므로
   디버깅이 오래 걸린다. LAN 기능을 추가할 때는 코드보다 **plist 를 먼저** 고치는 편이 낫다.
   (`PokemonAuction.swift` · `scripts/build-app.sh`, 2026-09-02.)
+
+## `CompanionState` 에 필드를 더하고 **손글씨 디코더에 줄을 안 넣으면**, 저장은 되는데 로드에서 사라진다
+
+- **증상.** 즐겨찾기를 켜고 앱을 껐다 켜면 풀려 있었다. CI 가 잡았다(`testFavoritePersistsAcrossRestart`).
+- **직접원인.** `CompanionState` 는 **디코더만 손으로 쓰고 인코더는 합성**이다
+  (`init(from:)` 이 `c.lenient(..., forKey: .필드)` 로 한 줄씩 읽는다 — 필드 하나가 깨져도 상태
+  전체를 날리지 않으려는 부분 복원 설계). 새 필드 `favoriteMonIDs` 를 선언만 하면 합성 인코더가
+  파일에 **쓰기는 쓰고**, 손글씨 디코더는 그 키를 **읽지 않아** 매 로드마다 기본값(빈 집합)이 된다.
+- **테스트·검증이 왜 못 걸렀나.** 컴파일이 통과한다(기본값이 있으니 `init(from:)` 이 불완전해도
+  에러가 아니다). 인코딩 왕복 테스트도 통과한다 — 기본값끼리 비교하면 같다. 즉 **비어 있을 때만
+  맞는 검사**뿐이라, 값이 든 상태로 재시작하는 경로를 밟는 테스트가 없으면 드러나지 않는다.
+- **부류 스윕.** 손글씨 디코더를 가진 타입은 `CompanionState` 하나다(나머지는 합성 Codable).
+  같은 커밋에서 `testEveryCompanionStateFieldIsClassifiedForTransfer` 도 함께 빨개졌다 —
+  그 가드는 "이 필드가 이전에서 무엇인가"를 묻지 "읽히기는 하는가"를 묻지 않는다. 둘은 다른 축이다.
+- **영구 캡처.** `testEveryCompanionStateFieldIsReadByTheHandWrittenDecoder` — `Mirror` 로 뽑은
+  저장 프로퍼티 이름이 전부 `CompanionModel.swift` 에 `forKey: .이름` 으로 등장하는지 대조한다
+  (`forKey:` 는 그 파일에서 디코더만 쓴다). 새 필드를 더하는 다음 사람이 같은 함정을 밟지 않는다.
+  (`CompanionModel.swift`, 2026-09-02.)

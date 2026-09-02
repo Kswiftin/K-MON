@@ -1100,6 +1100,16 @@ struct L {
     var useAfterHatch: String { t("부화 후 사용할 수 있어요", "Usable after hatching", "孵化後に使えます") }
     var useNeedsPokemon: String { t("사용할 포켓몬이 없어요", "No Pokémon to use it on", "使えるポケモンがいません") }
 
+    // 즐겨찾기 — 표시가 아니라 자물쇠다. 켜져 있으면 그 개체를 잃는 동작이 막힌다.
+    var favorite: String { t("즐겨찾기", "Favorite", "おきにいり") }
+    var unfavorite: String { t("즐겨찾기 해제", "Remove favorite", "おきにいり解除") }
+    var favoritesOnly: String { t("즐겨찾기만 보기", "Favorites only", "おきにいりのみ") }
+    var favoriteLockedHint: String {
+        t("즐겨찾기한 포켓몬은 놓아주거나 경매에 내놓을 수 없어요. 별을 끄면 풀립니다.",
+          "Favorited Pokémon cannot be released or offered on the market. Turn the star off to unlock.",
+          "おきにいりのポケモンはにがしたり出品したりできません。星を外すと解除されます。")
+    }
+
     // 가방 버리기 — 환불이 없고 되돌릴 수 없어, 확인 문구에 그 사실을 함께 적는다.
     var discard: String { t("버리기", "Discard", "すてる") }
     func discardConfirm(_ name: String) -> String {

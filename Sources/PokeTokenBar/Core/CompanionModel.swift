@@ -1021,6 +1021,12 @@ struct CompanionState: Codable, Sendable {
     // 현재 포켓몬(없으면 알)
     var active: MonState?
     var boxedMons: [MonState] = []
+    /// 즐겨찾기한 개체 ID — 놓아주기·경매 출품을 막는 자물쇠.
+    ///
+    /// `MonState` 에 두지 않는 이유: 개체는 교환으로 그대로 상대에게 건너간다(`performTrade` 가
+    /// 받은 `MonState` 를 통째로 심는다). 개체에 달면 받은 포켓몬이 **상대가 걸어둔 즐겨찾기를
+    /// 그대로 달고** 도착한다. 이건 내 박스에 대한 내 표시라 세이브 쪽에 둔다.
+    var favoriteMonIDs: Set<UUID> = []
     // 도감
     var dex: [DexEntry] = []
     // 소유한 (base,final) 쌍 — 분기 다양성용
@@ -1108,6 +1114,7 @@ struct CompanionState: Codable, Sendable {
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.
         active             = c.lenientOptional(MonState.self, forKey: .active)
         boxedMons          = c.lenient([Lossy<MonState>].self, forKey: .boxedMons, default: []).compactMap(\.value)
+        favoriteMonIDs     = c.lenient(Set<UUID>.self, forKey: .favoriteMonIDs, default: [])
         // 도감은 항목별 격리 — 손상 항목 하나가 도감 전체를 날리지 않게.
         dex                = c.lenient([Lossy<DexEntry>].self, forKey: .dex, default: []).compactMap(\.value)
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])

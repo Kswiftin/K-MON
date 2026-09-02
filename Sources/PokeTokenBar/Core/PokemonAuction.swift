@@ -73,7 +73,9 @@ final class PokemonAuctionCenter {
 
     func publish(_ mon: MonState?) {
         guard let mon else { cancelListing(); return }
-        guard companion.deployableMons.contains(where: { $0.id == mon.id }) else { return }
+        // 즐겨찾기는 잃는 동작을 막는 자물쇠다 — 화면이 목록에서 걸러 주지만 여기서도 막는다.
+        guard companion.deployableMons.contains(where: { $0.id == mon.id }),
+              !companion.isFavorite(mon.id) else { return }
         let snapshot = TradePokemonSnapshot(mon: mon, displayName: displayName(mon))
         localListing = snapshot
         localListingID = UUID()
@@ -89,8 +91,10 @@ final class PokemonAuctionCenter {
     }
 
     func apply(to listing: AuctionListing, offering mon: MonState) {
+        // 제안도 성사되면 그 개체를 내주는 자리다 — 게시와 같은 자물쇠가 걸린다.
         guard outgoingConnectionID == nil,
-              companion.deployableMons.contains(where: { $0.id == mon.id }) else { return }
+              companion.deployableMons.contains(where: { $0.id == mon.id }),
+              !companion.isFavorite(mon.id) else { return }
         let connectionID = UUID(), offerID = UUID()
         let connection = NWConnection(to: listing.endpoint, using: Self.parameters())
         connections[connectionID] = connection
