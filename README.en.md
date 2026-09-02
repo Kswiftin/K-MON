@@ -57,7 +57,7 @@ Choose a focus duration, track the partner's adventure, and claim the completed 
 <tr>
 <td width="55%" valign="middle">
 <h3>Your Pokémon and Pokédex</h3>
-Review your owned Pokémon, select a partner, check moves and experience, and see the species you have discovered. Search by name to pull a Pokémon straight out of the box, team picker, or trade list. Star the ones you want to keep — a favorite cannot be released, traded, or listed on the market, and the header star narrows the box to favorites only.
+Review your owned Pokémon, select a partner, check moves and experience, and see the species you have discovered. Search by name to pull a Pokémon straight out of the box, team picker, or trade list. Every species from Generations 1–9 is here, minus fourteen late Gen 9 ones that have no animated sprite. Star the ones you want to keep — a favorite cannot be released, traded, or listed on the market, and the header star narrows the box to favorites only.
 </td>
 <td width="45%" align="center"><img src="assets/screenshot-pokemon-favorites.png" width="180" alt="Favorites"><br><br><img src="assets/screenshot-collection-pokedex.png" width="180" alt="Pokédex collection"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="Pokémon collection log"></td>
 </tr>

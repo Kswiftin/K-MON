@@ -235,7 +235,7 @@ final class StatePersistenceLogicTests: XCTestCase {
 
 /// PokéAPI 는 친밀도 진화를 min_level 없이(trigger=level-up + min_happiness) 준다. 앱엔 친밀도 축이
 /// 없어 그대로 두면 레벨 게이트를 못 타고 트리거 게이트에도 막혀 **영영 진화하지 않는다** —
-/// 앱 지원 범위(1~649)에서 크로뱃·에브이·블래키·루카리오·치렁 등 17건이 여기 걸렸다.
+/// 앱 지원 범위에서 크로뱃·에브이·블래키·루카리오·치렁 등 17건이 여기 걸렸다.
 final class FriendshipEvolutionTests: XCTestCase {
     /// 원본에 실재하는 두 단계(160·220)가 서로 다른 레벨로 갈려야 한다 — 한 값으로 뭉치면
     /// 본가에서 더 어려운 축(피츄→피카츄, 꼬몽울→치렁)이 같은 난이도로 내려앉는다.
@@ -266,19 +266,29 @@ final class FriendshipEvolutionTests: XCTestCase {
 /// 앱이 파는 진화 아이템이 PokéAPI 의 `use-item` 진화를 덮지 못하면 그 종은 **진화할 방법이 없다**.
 /// 빛의돌·어둠의돌·각성의돌이 빠져 있어 로즈레이드 등 8종이 그 상태였다(레벨을 올려도 아무 안내 없음).
 final class EvolutionItemCoverageTests: XCTestCase {
-    /// 앱 지원 범위(1~649)의 use-item 진화가 요구하는 아이템 키 전체.
-    /// 지역폼 전용(가라르 등, 앱 범위 밖)은 제외한 실측값이다.
+    /// 획득 가능 종(1~1025 − `spriteGaps`)의 use-item 진화가 요구하는 아이템 키 전체.
+    /// PokéAPI GraphQL 실측값이다(2026-09-02).
+    ///
+    /// 가라두구팔찌·가라두구머리장식은 뺐다 — 대상이 야도란(80)·야도킹(199)의 **가라르 폼**이라
+    /// 종 번호는 이미 레벨·교환으로 도달하는 것과 같고, 이 앱은 지역폼을 구분하지 않는다.
+    /// 넣으면 이미 열려 있는 진화에 값만 받는 두 번째 문이 생긴다.
     private let requiredKeys: Set<String> = [
-        "fire-stone", "water-stone", "thunder-stone", "leaf-stone",
+        "fire-stone", "water-stone", "thunder-stone", "leaf-stone", "ice-stone",
         "moon-stone", "sun-stone", "shiny-stone", "dusk-stone", "dawn-stone",
+        "tart-apple", "sweet-apple", "syrupy-apple",
+        "cracked-pot", "chipped-pot", "unremarkable-teacup", "masterpiece-teacup",
+        "scroll-of-darkness", "scroll-of-waters",
+        "black-augurite", "peat-block",
+        "auspicious-armor", "malicious-armor", "metal-alloy",
     ]
 
-    /// 지닌물건 진화(#89)가 요구하는 아이템 — 앱 지원 범위(1~649)에서 실제로 쓰이는 것만.
+    /// 지닌물건 진화(#89)가 요구하는 아이템 — 획득 가능 종에서 실제로 쓰이는 것 전부.
     /// 이게 없으면 야도킹·킹크로스·강철톤·밀로틱 등이 진화할 방법이 아예 없다.
     private let requiredHeldItemKeys: Set<String> = [
         "kings-rock", "metal-coat", "dragon-scale", "up-grade", "dubious-disc",
         "deep-sea-tooth", "deep-sea-scale", "protector", "electirizer", "magmarizer",
         "reaper-cloth", "razor-claw", "razor-fang", "prism-scale", "oval-stone",
+        "sachet", "whipped-dream",
     ]
 
     private var soldKeys: Set<String> {
@@ -324,15 +334,17 @@ final class EvolutionItemCoverageTests: XCTestCase {
         "electirizer": [466],            // 에레키블
         "magmarizer": [467],             // 마그마번
         "reaper-cloth": [477],           // 야느와르몬
-        "razor-claw": [461],             // 포푸니라
+        "razor-claw": [461, 903],        // 포푸니라 · 8세대 히스이 계열
         "razor-fang": [472],             // 글라이온
         "prism-scale": [350],            // 밀로틱
         "oval-stone": [113],             // 럭키
+        "sachet": [683],
+        "whipped-dream": [685],
     ]
 
     /// 상점에 올린 아이템이 **쓸 수 있는 아이템인지** 재는 게이트.
     ///
-    /// 앱은 애니메이션 스프라이트가 있는 종(1~649)만 다루고, 범위 밖 종은
+    /// 앱은 애니메이션 스프라이트가 있는 종만 다루고, 그 밖의 종은
     /// `EvoNode.keepingAnimatedSprites()` 가 진화 트리에서 지운다. 그래서 대상 종이 범위 밖인 아이템은
     /// **어떤 진화도 열지 못하는데 상점에는 그대로 뜬다** — 사는 순간 500 별의조각을 버리는 함정이다.
     /// 향기주머니·휘핑팝(마이앵·나룸퍼프 682~685)이 그래서 빠졌다.
@@ -350,6 +362,30 @@ final class EvolutionItemCoverageTests: XCTestCase {
             }
             XCTAssertFalse(targets?.isEmpty ?? true, "\(kind) 는 열 수 있는 진화가 없다")
         }
+    }
+
+    /// 획득 가능 종은 **연속 범위가 아니다.** 9세대 후반 14종은 애니메이션 GIF 가 없어 빠진다.
+    /// 범위로 되돌리면(`1...1025`) 그 14종이 다시 뽑혀 멈춘 스프라이트로 나타난다.
+    func testObtainableSpeciesSkipTheAnimationGaps() {
+        XCTAssertEqual(PokemonAssets.speciesRange, 1...1025)
+        XCTAssertEqual(PokemonAssets.obtainableSpeciesIDs.count,
+                       1025 - PokemonAssets.spriteGaps.count)
+        for gap in PokemonAssets.spriteGaps {
+            XCTAssertFalse(PokemonAssets.hasAnimatedSprite(speciesID: gap), "#\(gap) 은 GIF 가 없다")
+            XCTAssertFalse(PokemonAssets.obtainableSpeciesIDs.contains(gap))
+        }
+        // 세대별 대표 한 마리씩 — 상한만 올리고 구멍을 안 판 상태를 잡는다.
+        for id in [1, 251, 386, 493, 649, 721, 809, 905, 1021] {
+            XCTAssertTrue(PokemonAssets.hasAnimatedSprite(speciesID: id), "#\(id) 은 획득 가능해야 한다")
+        }
+        XCTAssertFalse(PokemonAssets.hasAnimatedSprite(speciesID: 1026), "종 번호 상한 밖")
+        XCTAssertFalse(PokemonAssets.hasAnimatedSprite(speciesID: 0))
+    }
+
+    /// 야생 추첨이 구멍을 뽑으면 스프라이트 없는 상대가 필드에 선다. 풀 자체가 구멍을 안 갖는지 본다.
+    func testWildPoolNeverContainsAGap() {
+        XCTAssertTrue(PokemonAssets.spriteGaps.isDisjoint(with: Set(RogueRun.wildSpeciesPool)))
+        XCTAssertFalse(RogueRun.wildSpeciesPool.isEmpty)
     }
 
     /// 새 아이템도 상점에 값이 있어야 산다 — nil 이면 목록에 안 뜬다.

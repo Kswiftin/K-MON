@@ -57,7 +57,7 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 <tr>
 <td width="55%" valign="middle">
 <h3>포켓몬과 도감</h3>
-보유 포켓몬을 확인하고 파트너를 교체하며, 기술·경험치와 발견한 종을 볼 수 있습니다. 이름으로 검색해 보관함·팀 선택·교환 목록에서 원하는 포켓몬을 바로 찾습니다. 아끼는 포켓몬에 별을 달면 놓아주기·교환·경매 출품이 막히고, 머리말의 별로 즐겨찾기만 모아 볼 수 있습니다.
+보유 포켓몬을 확인하고 파트너를 교체하며, 기술·경험치와 발견한 종을 볼 수 있습니다. 이름으로 검색해 보관함·팀 선택·교환 목록에서 원하는 포켓몬을 바로 찾습니다. 1~9세대 전 종을 다룹니다(움직이는 스프라이트가 없는 9세대 후반 14종은 제외). 아끼는 포켓몬에 별을 달면 놓아주기·교환·경매 출품이 막히고, 머리말의 별로 즐겨찾기만 모아 볼 수 있습니다.
 </td>
 <td width="45%" align="center"><img src="assets/screenshot-pokemon-favorites-ko.png" width="180" alt="즐겨찾기"><br><br><img src="assets/screenshot-collection-pokedex.png" width="180" alt="도감"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="포켓몬 수집 기록"></td>
 </tr>

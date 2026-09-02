@@ -616,7 +616,7 @@ struct RogueRunView: View {
                              store: CompanionStore) async -> BattleSnapshot? {
         let level = RogueRun.opponentLevel(wave: wave, route: route)
         return await RogueRun.chooseOpponent(wave: wave, route: route) {
-            await snapshot(speciesID: Int.random(in: RogueRun.wildSpeciesPool),
+            await snapshot(speciesID: RogueRun.wildSpeciesPool.randomElement() ?? 1,
                            level: level, store: store)
         }
     }

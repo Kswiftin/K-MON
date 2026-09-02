@@ -1002,13 +1002,13 @@ final class CompanionStore {
         }
     }
 
-    /// 전체 도감 — 획득 가능 범위(`PokemonAssets.animatedSpeciesIDs`) ∪ 보유 종, 번호 오름차순.
+    /// 전체 도감 — 획득 가능 종(`PokemonAssets.obtainableSpeciesIDs`) ∪ 보유 종, 번호 오름차순.
     ///
     /// 보유 종을 합집합으로 얹는 이유: 진화 체인이 범위 밖으로 나가는 라인이 있다(이브이 → 님피아 #700).
     /// 범위만 쓰면 실제로 가진 종이 자기 도감에서 빠진다.
     var dexSlots: [DexSlot] {
         let caught = Dictionary(dexSpecies.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let ids = Set(PokemonAssets.animatedSpeciesIDs).union(caught.keys)
+        let ids = Set(PokemonAssets.obtainableSpeciesIDs).union(caught.keys)
         return ids.sorted().map { DexSlot(id: $0, species: caught[$0]) }
     }
 
@@ -1722,7 +1722,7 @@ final class CompanionStore {
     /// 된다. 조건을 두 벌로 두면 한쪽만 넓어져 그 구멍이 조용히 돌아오므로 정본은 이 함수다.
     func canPerformTrade(offeredID: UUID, received incoming: MonState) -> Bool {
         incoming.id != offeredID
-            && (1...649).contains(incoming.currentID)
+            && PokemonAssets.hasAnimatedSprite(speciesID: incoming.currentID)
             && !ownedMons.contains(where: { $0.id == incoming.id })
     }
 
@@ -3617,8 +3617,10 @@ final class CompanionStore {
     private func chooseBaseViaREST() async -> Int? {
         let tier = state.eggTier
         for attempt in 1...16 {
-            let ids = PokemonAssets.animatedSpeciesIDs
-            let id = Int(rng.next() % UInt64(ids.count)) + ids.lowerBound
+            // 범위가 연속이 아니다(9세대 후반 14종 구멍) — 하한에 offset 을 더하는 방식이면
+            // 구멍을 그대로 뽑아 스프라이트 없는 종이 나온다. 획득 가능 목록에서 직접 고른다.
+            let ids = PokemonAssets.obtainableSpeciesIDs
+            let id = ids[Int(rng.next() % UInt64(ids.count))]
             do {
                 if let bs = try await provider.baseSpecies(id: id) {
                     // 등급 보증은 가중 경로와 **같은 기준**으로 여기서도 걸러야 한다 — 이 폴백만 빠지면

@@ -1766,7 +1766,7 @@ private struct DexGridView: View {
     /// 이로치만 보기. 희귀도 필터와 **겹쳐 걸린다** — "레어 중에 이로치" 를 볼 수 있어야 한다.
     /// 둘을 배타로 두면 희귀도를 고른 사람이 이로치를 보려고 필터를 먼저 풀어야 한다.
     @State private var shinyOnly = false
-    /// 잡은 것만 보기 — 기본 켜짐. 649칸을 처음부터 펼치면 자기 수집물이 실루엣 바다에 묻힌다.
+    /// 잡은 것만 보기 — 기본 켜짐. 1천 칸을 처음부터 펼치면 자기 수집물이 실루엣 바다에 묻힌다.
     @State private var caughtOnly = true
     @State private var selectedType: PokemonType?
     @State private var page = 0
@@ -1819,7 +1819,7 @@ private struct DexGridView: View {
     /// (DexSummaryHeader 는 개체 수 dexCount 를 내부에서 직접 부르므로 재사용하려면 시그니처를 바꿔
     ///  로그 경로까지 건드려야 한다. 캡슐 4개짜리 헤더라 여기서는 인라인으로 둔다.)
     private func header(_ all: [CompanionStore.DexSlot]) -> some View {
-        // 캡슐 개수는 **잡은 종** 기준이다 — 649칸 전체를 세면 "일반 300" 같은 숫자가 나와
+        // 캡슐 개수는 **잡은 종** 기준이다 — 도감 전체를 세면 "일반 300" 같은 숫자가 나와
         // 수집 진행도를 읽는 줄이 아니게 된다.
         let caught = all.compactMap(\.species)
         return VStack(alignment: .leading, spacing: 5) {
@@ -2068,7 +2068,7 @@ private struct DexSpeciesCell: View {
                            shiny: slot.species?.isShiny == true && isSelected)
                     // 아직 안 잡은 종은 실루엣이다. `colorMultiply` 는 알파를 남기고 색만 0 으로
                     // 깎으므로 픽셀아트 윤곽이 그대로 남는다 — 물음표 칸보다 "무엇이 빠졌는지" 가 보인다.
-                    // 정적 PNG 는 종당 1KB 미만이라(SpriteStore) 649칸을 다 봐도 내려받는 양이 문제되지 않는다.
+                    // 정적 PNG 는 종당 1KB 미만이라(SpriteStore) 도감을 다 펼쳐도 내려받는 양이 문제되지 않는다.
                     .colorMultiply(slot.isCaught ? .white : .black)
                     .opacity(slot.isCaught ? 1 : 0.45)
                     .frame(width: Self.thumb, height: Self.thumb)

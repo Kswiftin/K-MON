@@ -214,7 +214,7 @@ const bossMultiplier = 1.2;
 
 ## 종족값 티어 — 웨이브 1 에 슬라킹이 나오지 않게
 
-상대 종은 `RogueRunView` 가 1...649 에서 균등 추첨한다. 종 자체에 티어가 없으므로 레벨 곡선을
+상대 종은 `RogueRunView` 가 `RogueRun.wildSpeciesPool`(획득 가능 종 전체) 에서 균등 추첨한다. 종 자체에 티어가 없으므로 레벨 곡선을
 아무리 맞춰도 웨이브 1 에 슬라킹(종족값 합 670)이나 전설이 나오면 판이 첫 턴에 끝난다.
 그래서 **종족값 합(BST)에 웨이브별 상한**을 둔다(`RogueRun.baseStatTotalCap`).
 
