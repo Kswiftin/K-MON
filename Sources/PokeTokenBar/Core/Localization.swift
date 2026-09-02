@@ -1215,7 +1215,6 @@ struct L {
     var raidTurnsLeft: String { t("남은 턴", "Turns left", "残りターン") }
     var raidContribution: String { t("기여도", "Contribution", "貢献度") }
     var raidRewardBase: String { t("기본", "Base", "基本") }
-    var raidRewardTurns: String { t("남은 턴", "Turns left", "残りターン") }
     var raidRewardSurvivors: String { t("생존", "Survivors", "生存") }
     var raidAlreadyPaidToday: String {
         t("오늘의 레이드 보상은 이미 받았습니다 — 계속 돌 수는 있어요.",
@@ -1225,6 +1224,19 @@ struct L {
     var raidTurnCapReached: String {
         t("턴이 다 됐습니다 — 보스가 버텼어요.", "Out of turns - the boss held on.",
           "ターン切れ — ボスが耐えきりました。")
+    }
+    /// 턴이 남았는데 진 판 — 진 이유가 화력이 아니라 생존이다. 두 패배를 같은 문구로 덮으면
+    /// 사용자가 "더 빨리 때리자"로 배우는데 필요한 건 티어를 낮추거나 사람을 모으는 것이다.
+    var raidPartyWiped: String {
+        t("파티가 전멸했습니다 — 티어를 낮추거나 사람을 모아 보세요.",
+          "Your party was wiped out - try a lower tier or bring more trainers.",
+          "パーティが全滅しました — ティアを下げるか、人を集めましょう。")
+    }
+    /// 5★ 는 부화 창 안에서만 열린다.
+    var raidHatchClosed: String {
+        t("지금은 5★ 부화 시간이 아닙니다. 다음 부화 시각을 기다려 주세요.",
+          "It isn't 5★ hatch time right now. Wait for the next hatch.",
+          "今は5★の出現時間ではありません。次の出現時刻をお待ちください。")
     }
     var raidHostLeft: String {
         t("방장이 나가 레이드가 끝났습니다. 다시 열어 주세요.",

@@ -12,7 +12,6 @@ struct RaidView: View {
     @Environment(BattleCenter.self) private var battleCenter
     let onClose: () -> Void
 
-    @State private var pickedTier: RaidTier = .one
     /// 턴 재생기 — 1v1·웨이브 런·토너먼트와 **같은 구동자**를 쓴다. 없으면 턴이 해상되는 순간
     /// HP 가 최종값으로 튀고 로그가 한꺼번에 나타나, 무엇이 일어났는지 볼 시간이 없다.
     @State private var animator = BattleAnimator()
@@ -103,7 +102,6 @@ struct RaidView: View {
             HStack(spacing: 6) {
                 ForEach(tiers, id: \.rawValue) { tier in
                     Button {
-                        pickedTier = tier
                         center.createRaidRoom(tier: tier)
                     } label: {
                         VStack(spacing: 1) {
@@ -253,7 +251,7 @@ struct RaidView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     settlementRow(l.raidRewardBase, settlement.base)
                     settlementRow(l.raidContribution, settlement.contribution)
-                    settlementRow(l.raidRewardTurns, settlement.turnBonus)
+                    settlementRow(l.raidTurnsLeft, settlement.turnBonus)
                     settlementRow(l.raidRewardSurvivors, settlement.survivorBonus)
                     Divider().opacity(0.5)
                     if let payout = center.raidPayout, payout > 0 {
@@ -282,10 +280,12 @@ struct RaidView: View {
         }
     }
 
+    /// 패배 문구는 **두 가지**다. 턴 상한과 파티 전멸은 다음에 할 일이 다르다 —
+    /// 전부 "턴이 다 됐습니다" 로 덮으면 17턴 남기고 전멸한 판도 화력 부족으로 읽힌다.
     private var resultText: String {
         switch center.myOutcome {
         case .win: l.t("보스를 쓰러뜨렸다!", "The boss is down!", "ボスを倒した！")
-        case .loss: l.raidTurnCapReached
+        case .loss: RaidBoss.endedByTurnCap(round: center.combatRound) ? l.raidTurnCapReached : l.raidPartyWiped
         default: l.t("레이드 종료", "Raid over", "レイド終了")
         }
     }

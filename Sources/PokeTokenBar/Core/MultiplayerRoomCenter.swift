@@ -127,10 +127,15 @@ final class MultiplayerRoomCenter {
     /// 이번 판이 실제로 지급한 금액. 하루 한 번 게이트에 걸리면 0 이고, 화면은 그 사실을 말한다.
     private(set) var raidPayout: Int?
     /// 보스가 죽은(혹은 파티가 전멸한) 라운드. 남은 턴 보너스가 이 값을 읽는다.
-    private var raidFinishedRound: Int?
+    /// 옵셔널이 아닌 이유는 `settledRaid` 가 이미 한 번만 쓰게 막고, 읽는 자리가 전부 그 뒤라서다 —
+    /// 옵셔널로 두면 `?? turnCap` 이 **어떤 입력으로도 못 밟는 분기**로 남는다.
+    private var raidFinishedRound = 0
     private var settledRaid = false
+    /// 기여도가 확정됐나 — 호스트는 판이 끝나는 자리에서, 게스트는 `.raidSettlement` 를 받아서 참이다.
+    /// **지급의 전제다.** 이게 없으면 게스트가 빈 기여도로 먼저 지급해 하루치 원장을 태운다.
+    private var contributionsSettled = false
     /// 이미 알림을 낸 레이드 방 이름 — 브라우저가 같은 목록을 반복해서 주므로 필요하다.
-    private var announcedRaidRooms: [String] = []
+    private(set) var announcedRaidRooms: [String] = []
     /// 부화 알림을 이미 건 조합(날짜 키 + 토글 상태). 60초 틱이 부르는 자리라 재작업을 막는다.
     private var scheduledHatchKey = ""
 
@@ -359,7 +364,12 @@ final class MultiplayerRoomCenter {
     // MARK: 레이드 — 방 열기부터 정산까지
 
     /// 오늘의 보스를 상대로 방을 연다. 티어는 사용자가 고른다(보스 자체는 못 고른다).
-    func createRaidRoom(tier: RaidTier) {
+    func createRaidRoom(tier: RaidTier, now: Date = Date()) {
+        // **창 검사를 누르는 순간에 한다.** 티어 피커의 렌더 시점 계산만으로는 화면을 열어 둔 채
+        // 45분 창이 지나면 5★ 버튼이 그대로 남아 창 밖에서 5★ 방이 열린다.
+        guard tier != RaidBoss.hatchTier || RaidSchedule.activeHatch(at: now) != nil else {
+            lastError = companion.l.raidHatchClosed; return
+        }
         raidTier = tier
         createRoom(mode: .coopBoss, activity: .raid)
     }
@@ -378,16 +388,27 @@ final class MultiplayerRoomCenter {
         guard isHost, let lobby, lobby.activity == .raid, lobby.canStart,
               let tier = raidTier else { return }
         let dayKey = CompanionStore.dayKey(Date())
+        let epoch = sessionEpoch
         Task {
             guard let bossSnapshot = await raidBossSnapshot(tier: tier, dayKey: dayKey) else {
+                guard sessionEpoch == epoch else { return }
                 lastError = companion.l.raidBossLoadFailed; return
             }
+            // 보스를 부르는 동안 방을 떠났거나(에포크) 이미 개시했으면(국면) 여기서 멈춘다.
+            // 이 가드가 없는 동안 "나가기" 뒤에 깨어난 이 Task 가 떠난 방의 편성으로 교전을
+            // 세워 유령 방을 만들었고, "시작"을 두 번 누르면 seed 가 다른 판이 두 번 나갔다.
+            guard sessionEpoch == epoch, phase == .hosting else { return }
             let runners = lobby.runners.compactMap { participant -> MultiplayerFighter? in
                 guard var snapshot = snapshots[participant.id] else { return nil }
                 snapshot.level = RaidBoss.partyLevel
                 var raider = participant
                 raider.team = .red
                 return MultiplayerFighter(participant: raider, snapshot: snapshot)
+            }
+            // 스냅샷이 없는 참가자를 조용히 떨어뜨리지 않는다 — 떨어진 사람도 `raidStart` 를 받아
+            // 자기 기술 버튼 없이 20턴을 구경만 하게 된다(`startBattle` 이 같은 가드를 둔 이유다).
+            guard runners.count == lobby.runners.count else {
+                lastError = "참가자 정보를 준비하지 못했습니다."; return
             }
             let fighters = runners + [RaidBoss.bossFighter(tier: tier, snapshot: bossSnapshot)]
             let seed = UInt64.random(in: UInt64.min...UInt64.max)
@@ -409,9 +430,12 @@ final class MultiplayerRoomCenter {
     /// 개시 상태를 세운다 — 호스트와 게스트가 **같은 자리**를 지나야 한 쪽만 초기화를 빠뜨리지 않는다.
     private func beginRaidCombat(fighters: [MultiplayerFighter]) {
         combatFighters = fighters; combatRound = 1; combatEvents = []
+        // **행동 버퍼도 비운다.** 형제 경로(`startBattle`)가 같은 자리에서 비우는 것과 같은 이유다 —
+        // 남겨 두면 옛 편성의 targetID 를 실은 보스 행동이 새 판 첫 턴에 그대로 해상된다.
+        pendingActions.removeAll()
         hasSubmittedAction = false; rewardedBattle = false
         raidContributions = [:]; raidSettlement = nil; raidPayout = nil
-        raidFinishedRound = nil; settledRaid = false
+        raidFinishedRound = 0; settledRaid = false; contributionsSettled = false
         chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
         turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
         phase = .battling
@@ -458,19 +482,27 @@ final class MultiplayerRoomCenter {
         guard combatMode == .coopBoss, !settledRaid,
               MultiplayerBattle.isFinished(fighters: combatFighters, mode: .coopBoss) else { return }
         settledRaid = true
-        if raidFinishedRound == nil { raidFinishedRound = combatRound }
+        // **직전에 해상된 라운드**다. 네 진입로(호스트 마감·게스트 수신·턴 상한·이탈)가 모두
+        // `combatRound` 는 다음 라운드를 가리키는 상태로 여기 온다. 호스트만 해상 라운드를 따로
+        // 박아 두던 동안 게스트는 한 라운드 늦게 세어, 같은 판인데 남은 턴 보너스가 갈렸다.
+        raidFinishedRound = max(0, combatRound - 1)
         if isHost {
             raidContributions = battle?.damageDealt ?? [:]
+            contributionsSettled = true
             let message = MultiplayerWireMessage.raidSettlement(contributions: raidContributions)
             for connection in guestConnections.values { send(message, over: connection) }
         }
+        // 게스트는 기여도가 아직 없어 여기서 아무 일도 일어나지 않는다 — `.raidSettlement` 가
+        // 도착할 때 같은 자리를 다시 지난다. 호스트가 끝내 안 보내면 지급이 없고, 그러면
+        // `creditRaidReward` 도 안 불려 **오늘 다시 돌 수 있다**(원장을 태우지 않는다).
         applyRaidSettlement()
     }
 
     /// 내 몫을 계산하고 지급한다. 진 판은 정산 자체를 만들지 않는다 — 그래야 그날의 지급 기회가
     /// 살아 있다(`creditRaidReward(0)` 이 원장을 안 쓰는 것과 같은 이유를 양쪽에서 지킨다).
     private func applyRaidSettlement() {
-        guard let tier = raidTier,
+        // `raidSettlement == nil` 이 멱등 가드다 — 정산과 지급은 한 판에 한 번만 지난다.
+        guard raidSettlement == nil, contributionsSettled, let tier = raidTier,
               MultiplayerBattle.outcome(for: myID, fighters: combatFighters, mode: .coopBoss) == .win
         else { return }
         let survivors = combatFighters.filter { $0.team == .red && $0.isAlive }.count
@@ -478,18 +510,62 @@ final class MultiplayerRoomCenter {
             tier: tier,
             myDamage: raidContributions[myID] ?? 0,
             totalDamage: raidContributions.values.reduce(0, +),
-            turnsRemaining: max(0, RaidBoss.turnCap - (raidFinishedRound ?? RaidBoss.turnCap)),
+            turnsRemaining: max(0, RaidBoss.turnCap - raidFinishedRound),
             survivingRunners: survivors)
         raidSettlement = settlement
         raidPayout = companion.creditRaidReward(settlement.total)
     }
 
-    private func announceNewRaidRooms(_ serviceNames: [String]) {
+    // MARK: 게스트가 받는 레이드 메시지 — 소켓 switch 밖에 둔다
+    //
+    // 뗀 이유는 테스트다. 이 세 자리를 밟는 테스트가 없는 동안 게스트만 기여도 0 으로 정산하고
+    // 하루치 지급 기회를 태웠다 — 호스트 시점 테스트로는 어떤 입력으로도 못 밟는 경로였다.
+
+    /// 호스트가 연 판을 받아들일지. 거절하면 false 이고, 호출부는 수신 루프를 잇지 않는다.
+    @discardableResult
+    func applyGuestRaidStart(seed: UInt64, fighters: [MultiplayerFighter], tier: RaidTier) -> Bool {
+        // **오늘의 보스가 맞는지 내가 직접 확인한다.** 보상은 내 지갑에 내가 넣으므로,
+        // 호스트를 믿으면 조작된 방이 약한 보스에 5★ 딱지를 붙여 방 전원에게 5★ 를 뿌린다.
+        let dayKey = CompanionStore.dayKey(Date())
+        guard RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: dayKey),
+              let started = try? MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: seed) else {
+            lastError = companion.l.raidBossMismatch; leaveRoom(); return false
+        }
+        battle = started
+        raidTier = tier
+        beginRaidCombat(fighters: fighters)
+        return true
+    }
+
+    /// 호스트가 확정한 기여도. **게스트의 지급은 이 메시지가 도착해야 일어난다.**
+    func applyGuestRaidSettlement(_ contributions: [UUID: Int]) {
+        guard combatMode == .coopBoss else { return }
+        raidContributions = contributions
+        contributionsSettled = true
+        applyRaidSettlement()
+    }
+
+    /// 게스트가 해상된 라운드 하나를 받는다.
+    func applyGuestResolvedRound(round: Int, fighters: [MultiplayerFighter], events: [BattleEvent]) {
+        guard phase == .battling, round == combatRound else { return }
+        applyResolvedRound(fighters: fighters, events: events)
+        turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
+        // 정산이 보상보다 **먼저** 와야 한다 — `grantRewardIfFinished` 는 전적만 남기고,
+        // 지갑을 늘리는 건 정산 쪽이다. 순서가 바뀌면 결과 화면이 한 프레임 빈 채로 뜬다.
+        settleRaidIfFinished()
+        grantRewardIfFinished()
+    }
+
+    func announceNewRaidRooms(_ serviceNames: [String]) {
         let fresh = Self.newlyVisibleRaidRooms(previous: announcedRaidRooms,
                                                current: serviceNames, myIDTag: myRoomTag)
         // 사라진 방은 목록에서 뺀다 — 안 빼면 껐다 켠 같은 방을 영영 다시 못 알린다.
-        announcedRaidRooms = serviceNames.filter { RaidRoomName.isRaidRoomName($0) }
+        let visible = Set(serviceNames)
+        announcedRaidRooms = announcedRaidRooms.filter { visible.contains($0) }
+        // **알린 것만 알린 것으로 적는다.** 교전 중에 뜬 방까지 여기서 적어 두면, 내 판이 끝나
+        // `.idle` 로 돌아왔을 때 그 방은 이미 "알린 방" 이라 45분짜리 창을 통째로 놓쳤다.
         guard !fresh.isEmpty, phase == .idle else { return }
+        announcedRaidRooms += fresh
         for name in fresh.prefix(1) { postRaidRoomNotification(RaidRoomName.parse(name)) }
     }
 
@@ -509,7 +585,7 @@ final class MultiplayerRoomCenter {
         scheduledHatchKey = key
 
         let center = UNUserNotificationCenter.current()
-        let identifiers = (0..<RaidBoss.weekdayBlocks.count).map { "raid-hatch-\($0)" }
+        let identifiers = (0..<RaidBoss.hatchBlocksPerDay).map { "raid-hatch-\($0)" }
         // 먼저 지운다 — 안 지우면 토글을 껐다 켤 때마다 같은 시각에 알림이 겹쳐 쌓인다.
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
         guard enabled else { return }
@@ -1373,7 +1449,7 @@ final class MultiplayerRoomCenter {
         // 다음 도전 때 다시 고르게 하면 성가시다(`tournamentPickedTeam` 과 같은 취급).
         pokeathlonPool = PokeathlonPool(); escrowedBet = nil; settlementPayout = nil; settledPool = false
         raidTier = nil; raidContributions = [:]; raidSettlement = nil; raidPayout = nil
-        raidFinishedRound = nil; settledRaid = false
+        raidFinishedRound = 0; settledRaid = false; contributionsSettled = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
         hasSubmittedAction = false; hostingRole = false; phase = .idle
@@ -1560,28 +1636,11 @@ final class MultiplayerRoomCenter {
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.phase = .battling
             case .raidStart(let seed, let fighters, let tier):
-                // **오늘의 보스가 맞는지 내가 직접 확인한다.** 보상은 내 지갑에 내가 넣으므로,
-                // 호스트를 믿으면 조작된 방이 약한 보스에 5★ 딱지를 붙여 방 전원에게 5★ 를 뿌린다.
-                let dayKey = CompanionStore.dayKey(Date())
-                guard RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: dayKey),
-                      let started = try? MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: seed) else {
-                    self.lastError = self.companion.l.raidBossMismatch; self.leaveRoom(); return
-                }
-                self.battle = started
-                self.raidTier = tier
-                self.beginRaidCombat(fighters: fighters)
+                guard self.applyGuestRaidStart(seed: seed, fighters: fighters, tier: tier) else { return }
             case .raidSettlement(let contributions):
-                guard self.combatMode == .coopBoss else { return }
-                self.raidContributions = contributions
-                self.applyRaidSettlement()
+                self.applyGuestRaidSettlement(contributions)
             case .roundResolved(let round, let fighters, let events):
-                guard self.phase == .battling, round == self.combatRound else { return }
-                self.applyResolvedRound(fighters: fighters, events: events)
-                self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
-                // 정산이 보상보다 **먼저** 와야 한다 — `grantRewardIfFinished` 는 전적만 남기고,
-                // 지갑을 늘리는 건 정산 쪽이다. 순서가 바뀌면 결과 화면이 한 프레임 빈 채로 뜬다.
-                self.settleRaidIfFinished()
-                self.grantRewardIfFinished()
+                self.applyGuestResolvedRound(round: round, fighters: fighters, events: events)
             case .chat(let message): self.acceptRelayedChat(message)
             case .pokeathlonStart(let race): self.pokeathlonRace = race; self.phase = .pokeathlon
             case .pokeathlonState(let race) where self.phase == .pokeathlon: self.pokeathlonRace = race
@@ -1703,12 +1762,13 @@ final class MultiplayerRoomCenter {
             for connection in guestConnections.values { send(message, over: connection) }
             if battle.isFinished {
                 turnTimeoutTask?.cancel(); turnEndsAt = nil
-                raidFinishedRound = resolvedRound
                 settleRaidIfFinished(); grantRewardIfFinished()
             } else {
                 // 상한을 넘겼으면 여기서 닫는다 — 넘긴 판에 다음 턴을 열면 상한이 뜻을 잃는다.
                 endRaidIfTurnCapReached()
-                if battle.isFinished { return }
+                // **`self.battle` 을 본다.** 지역 `battle` 은 함수 진입 때 뜬 값 복사본이라 상한
+                // 처리를 못 봐 항상 false 였고, 방금 끈 마감 타이머가 30초 뒤로 되살아났다.
+                if self.battle?.isFinished == true { return }
                 injectBossActionIfNeeded()
                 scheduleTurnTimeout()
             }

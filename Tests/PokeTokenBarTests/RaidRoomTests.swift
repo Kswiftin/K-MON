@@ -323,6 +323,249 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.creditRaidReward(300), 300)
     }
 
+    // MARK: 게스트 시점 — 호스트와 갈라지는 축
+
+    /// 오늘의 보스 한 마리. 게스트 검증(`validRaidStart`)을 통과하려면 종이 오늘의 종이어야 한다.
+    private func todaysBoss(tier: RaidTier = .one) -> MultiplayerFighter {
+        var todays = snapshot(level: tier.bossLevel, moves: [move(id: 33, power: 40)])
+        todays.speciesID = RaidBoss.speciesID(dayKey: CompanionStore.dayKey(Date()))
+        return RaidBoss.bossFighter(tier: tier, snapshot: todays)
+    }
+
+    /// **회귀(#1)**: 게스트가 `.roundResolved` 에서 먼저 정산해 기여도 항이 항상 0 이었다.
+    ///
+    /// 호스트는 `roundResolved` 를 먼저 보내고 그 뒤에 `raidSettlement` 를 보낸다. 같은 연결이라
+    /// 게스트는 항상 이 순서로 받는데, 예전엔 첫 메시지에서 빈 기여도로 지급을 끝내고 하루 한 번
+    /// 원장을 태워 버려 뒤늦게 온 정확한 정산은 0 을 돌려받았다 — 캐리한 게스트가 기여도 항
+    /// 전부를 못 받고, 화면은 항목별 합계를 보여 주면서 "이미 받았습니다" 를 띄웠다.
+    ///
+    /// 호스트 시점 테스트로는 어떤 입력으로도 못 밟는 경로다(호스트는 두 값을 동시에 안다).
+    @MainActor
+    func testAGuestWaitsForTheSettlementBeforePayingItself() {
+        let store = stubStore(TestClock(), tag: "raid-guest-payout")
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let boss = todaysBoss()
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, boss], tier: .one))
+
+        // 아직 안 끝난 라운드는 정산을 열지 않는다.
+        var hurtBoss = boss
+        hurtBoss.side.hp = RaidTier.one.bossHP / 2
+        center.applyGuestResolvedRound(round: 1, fighters: [me, hurtBoss], events: [])
+        XCTAssertNil(center.raidSettlement, "판이 안 끝났는데 정산이 열리면 안 된다")
+
+        // 같은 라운드가 한 번 더 와도 무시한다 — 안 거르면 라운드가 두 칸 뛰어 남은 턴이 갈린다.
+        center.applyGuestResolvedRound(round: 1, fighters: [me, hurtBoss], events: [])
+
+        // 호스트가 마지막 라운드를 먼저 보낸다 — 보스가 쓰러졌지만 기여도는 아직 안 왔다.
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 2, fighters: [me, downedBoss], events: [])
+        XCTAssertNil(center.raidSettlement, "기여도가 오기 전에 정산하면 안 된다")
+        XCTAssertNil(center.raidPayout)
+        XCTAssertFalse(store.raidRewardClaimedToday, "빈 정산으로 하루치 원장을 태우면 안 된다")
+
+        // 이제 정산이 온다 — 혼자 다 넣었으니 기여도 항은 기본급 전액이다.
+        center.applyGuestRaidSettlement([me.id: 400])
+        let settlement = center.raidSettlement
+        XCTAssertEqual(settlement?.contribution, RaidTier.one.baseReward,
+                       "100% 기여인데 0 이면 빈 기여도로 계산한 것이다")
+        XCTAssertEqual(center.raidPayout, settlement?.total, "정산표와 실제 지급액이 같아야 한다")
+        XCTAssertEqual(store.state.starPieces, settlement?.total)
+    }
+
+    /// **트리거 브랜치(#1)**: 순서가 뒤집혀 도착해도 지급은 한 번, 그리고 반드시 일어나야 한다.
+    /// 게스트 지급을 `.raidSettlement` 로만 옮기면 "정산이 라운드보다 먼저 오면 영영 안 준다" 가
+    /// 새 실패 모양이 된다 — 기여도 도착과 판 종료를 **둘 다** 조건으로 두어야 양쪽이 닫힌다.
+    @MainActor
+    func testTheSettlementPaysOnceRegardlessOfArrivalOrder() {
+        let store = stubStore(TestClock(), tag: "raid-guest-order")
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let boss = todaysBoss()
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, boss], tier: .one))
+
+        center.applyGuestRaidSettlement([me.id: 400])
+        XCTAssertNil(center.raidPayout, "판이 아직 안 끝났다 — 기여도만으로 지급하면 안 된다")
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, downedBoss], events: [])
+        let paid = center.raidPayout
+        XCTAssertEqual(paid, center.raidSettlement?.total)
+
+        // 같은 정산이 한 번 더 와도 두 번 지급하지 않는다.
+        center.applyGuestRaidSettlement([me.id: 400])
+        XCTAssertEqual(center.raidPayout, paid)
+        XCTAssertEqual(store.state.starPieces, paid)
+    }
+
+    /// 무임승차 — 한 대도 못 때린 러너도 기본급·남은 턴·생존 항은 받는다. 기여도 항만 0 이다.
+    /// **기여도 항이 이 식의 존재 이유**라, 캐리와 무임승차가 같은 값을 받으면 협동이 뜻을 잃는다.
+    @MainActor
+    func testAFreeriderGetsTheBaseButNoContributionShare() {
+        let store = stubStore(TestClock(), tag: "raid-freerider")
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let carry = runner("캐리")
+        let boss = todaysBoss(tier: .three)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, carry, boss], tier: .three))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, carry, downedBoss], events: [])
+        // 내 이름이 기여도에 아예 없다 — 한 대도 못 때렸다.
+        center.applyGuestRaidSettlement([carry.id: 1_600])
+
+        let settlement = center.raidSettlement
+        XCTAssertEqual(settlement?.contribution, 0, "기여가 0 이면 기여도 항도 0 이다")
+        XCTAssertEqual(settlement?.base, RaidTier.three.baseReward, "그래도 기본급은 받는다")
+        XCTAssertEqual(center.raidPayout, settlement?.total)
+    }
+
+    /// 협동전이 아닌 방에 정산 메시지가 오면 무시한다 — 호스트가 보내는 값이라 받는 쪽이 본다.
+    @MainActor
+    func testARaidSettlementIsIgnoredOutsideACoopRaid() {
+        let store = stubStore(TestClock(), tag: "raid-settlement-stray")
+        let center = MultiplayerRoomCenter(companion: store)
+        center.applyGuestRaidSettlement([center.myID: 9_999])
+        XCTAssertNil(center.raidSettlement)
+        XCTAssertNil(center.raidPayout)
+        XCTAssertTrue(center.raidContributions.isEmpty, "레이드가 아닌 방의 기여도를 받아 두지 않는다")
+    }
+
+    /// **회귀(#7)**: 남은 턴 보너스가 호스트와 게스트에서 한 턴 갈렸다. 게스트는 라운드를 올린
+    /// **뒤에** `combatRound` 로 종료 라운드를 채워, 같은 판인데 정산표 숫자가 서로 달랐다.
+    @MainActor
+    func testTurnBonusCountsTheResolvedRoundNotTheNextOne() {
+        let store = stubStore(TestClock(), tag: "raid-guest-turns")
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let boss = todaysBoss()
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, boss], tier: .one))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 400])
+
+        // 1라운드에 끝냈으면 남은 턴은 19 다. 18 이면 게스트가 한 라운드 늦게 센 것이다.
+        XCTAssertEqual(center.raidSettlement?.turnBonus,
+                       RaidBoss.turnBonusPerTurn * (RaidBoss.turnCap - 1))
+    }
+
+    /// **회귀(#11)**: 교전 중에 뜬 방을 "알린 방" 으로 적어 두어, 판이 끝나 `.idle` 로 돌아온
+    /// 뒤에도 영영 다시 못 알렸다 — 45분짜리 5★ 창을 통째로 놓치는 자리다.
+    @MainActor
+    func testARoomSeenDuringCombatIsStillAnnouncedAfterwards() {
+        let store = stubStore(TestClock(), tag: "raid-announce")
+        let center = MultiplayerRoomCenter(companion: store)
+        let theirs = RaidRoomName.make(trainerName: "이웃", idTag: "OTHER1", tier: .five)
+
+        // 내 판이 도는 중에 이웃이 방을 연다.
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [runner("나", id: center.myID),
+                                                                     todaysBoss()], tier: .one))
+        center.announceNewRaidRooms([theirs])
+        XCTAssertTrue(center.announcedRaidRooms.isEmpty, "알리지 못한 방을 알린 것으로 적으면 안 된다")
+
+        // 판이 끝나 목록으로 돌아오면 그 방은 여전히 **처음 보는 방**이다.
+        center.leaveRoom()
+        center.announceNewRaidRooms([theirs])
+        XCTAssertEqual(center.announcedRaidRooms, [theirs])
+
+        // 그리고 두 번 알리지는 않는다 — 브라우저는 같은 목록을 반복해서 준다.
+        center.announceNewRaidRooms([theirs])
+        XCTAssertEqual(center.announcedRaidRooms, [theirs])
+    }
+
+    /// 사라진 방은 목록에서 빠져야 한다 — 안 빼면 껐다 켠 같은 방을 영영 다시 못 알린다.
+    @MainActor
+    func testAVanishedRoomLeavesTheAnnouncedList() {
+        let store = stubStore(TestClock(), tag: "raid-announce-gone")
+        let center = MultiplayerRoomCenter(companion: store)
+        let theirs = RaidRoomName.make(trainerName: "이웃", idTag: "OTHER1", tier: .one)
+        center.announceNewRaidRooms([theirs])
+        XCTAssertEqual(center.announcedRaidRooms, [theirs])
+
+        center.announceNewRaidRooms([])
+        XCTAssertTrue(center.announcedRaidRooms.isEmpty)
+        center.announceNewRaidRooms([theirs])
+        XCTAssertEqual(center.announcedRaidRooms, [theirs], "다시 뜬 방은 다시 알린다")
+    }
+
+    /// **회귀(#10)**: 5★ 를 부화 창 안으로 가두는 검사가 티어 피커의 **렌더 시점** 계산 한 곳뿐이라,
+    /// 화면을 열어 둔 채 45분 창이 지나면 버튼이 그대로 남아 창 밖에서 5★ 방이 열렸다.
+    @MainActor
+    func testFiveStarRoomsOnlyOpenInsideAHatchWindow() throws {
+        let store = stubStore(TestClock(), tag: "raid-hatch-gate")
+        let center = MultiplayerRoomCenter(companion: store)
+        let calendar = RaidSchedule.calendar
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 0)))
+        let hatch = try XCTUnwrap(RaidSchedule.hatches(on: day).first)
+
+        center.createRaidRoom(tier: .five, now: hatch.addingTimeInterval(TimeInterval(
+            (RaidBoss.activeMinutes + 1) * 60)))
+        XCTAssertNil(center.raidTier, "창 밖에서는 티어조차 잡히지 않는다")
+        XCTAssertEqual(center.lastError, store.l.raidHatchClosed)
+
+        // **대조군**: 창 안이면 열린다. 이걸 안 밟으면 "5★ 를 언제나 막는다" 도 초록이다.
+        center.createRaidRoom(tier: .five, now: hatch)
+        XCTAssertEqual(center.raidTier, .five)
+
+        // 1★·3★ 는 창과 무관하다 — 아무 때나 여는 방이 존재하는 이유다.
+        center.leaveRoom()
+        center.createRaidRoom(tier: .one, now: hatch.addingTimeInterval(TimeInterval(
+            (RaidBoss.activeMinutes + 1) * 60)))
+        XCTAssertEqual(center.raidTier, .one)
+    }
+
+    /// **회귀(#12)**: 예약 알림 제거 개수를 평일 블록 수 하나에서만 뽑아, 주말 블록이 하나라도
+    /// 많아지면 지워지지 않는 알림이 남는다(껐는데도 어제 예약이 살아 터진다).
+    func testHatchReminderIdentifiersCoverBothWeekdayAndWeekend() {
+        XCTAssertGreaterThanOrEqual(RaidBoss.hatchBlocksPerDay, RaidBoss.weekdayBlocks.count)
+        XCTAssertGreaterThanOrEqual(RaidBoss.hatchBlocksPerDay, RaidBoss.weekendBlocks.count)
+    }
+
+    /// **회귀(#8)**: 패배 문구가 무조건 "턴이 다 됐습니다" 라, 3턴 만에 전멸한 판도 턴 초과라고
+    /// 말했다 — 필요한 건 화력이 아니라 티어를 낮추거나 사람을 모으는 것인데 반대로 배우게 된다.
+    func testATurnCapLossIsToldApartFromAWipe() {
+        XCTAssertFalse(RaidBoss.endedByTurnCap(round: 4), "17턴 남기고 전멸한 판은 턴 초과가 아니다")
+        XCTAssertFalse(RaidBoss.endedByTurnCap(round: RaidBoss.turnCap), "상한 라운드 자체는 아직 싸운다")
+        XCTAssertTrue(RaidBoss.endedByTurnCap(round: RaidBoss.turnCap + 1))
+    }
+
+    /// **회귀(#6)**: 1인 레이드 승리가 배틀 업적을 올려, 바로 그 줄이 지키려던 "혼자 무한 반복
+    /// 금지" 불변식이 깨졌다. 1★ 는 러너 한 명으로 시작되고 상대는 NPC 보스이며 시도·승리가
+    /// 무제한이라, 세면 이웃 없이 사다리를 끝까지 올릴 수 있다.
+    @MainActor
+    func testASoloRaidWinDoesNotCountTowardTheBattleAchievement() async {
+        // 업적 카운터는 사다리 안에 있다 — 넘은 단계의 보상이 지갑으로 나오므로 지갑으로 잰다
+        // (`WaveRunAchievementTests` 와 같은 방식). 첫 칸이 1승이라 한 판이면 바로 드러난다.
+        // 파트너가 있어야 전적이 남는다(`grantBattleReward` 의 첫 가드).
+        func hatched(_ tag: String) async -> CompanionStore {
+            let store = stubStore(TestClock(), tag: tag)
+            await store.hatch(baseID: 20)
+            return store
+        }
+
+        let solo = await hatched("raid-achievement-solo")
+        let before = solo.state.starPieces
+        solo.grantBattleReward(won: true, participantCount: 1, mode: .coopBoss, opponentNames: ["보스"])
+        XCTAssertEqual(solo.state.starPieces, before, "혼자 잡은 레이드는 세지 않는다")
+        XCTAssertEqual(solo.state.battleHistory.count, 1, "전적은 남는다 — 업적만 안 센다")
+
+        // **대조군**: 사람이 둘 이상인 협동전은 그대로 센다 — 안 밟으면 "레이드는 전부 안 센다"
+        // 도, "배틀 업적이 통째로 죽었다" 도 초록이다.
+        let party = await hatched("raid-achievement-party")
+        party.grantBattleReward(won: true, participantCount: 2, mode: .coopBoss, opponentNames: ["보스"])
+        XCTAssertGreaterThan(party.state.starPieces, before)
+
+        // 1인 **일반 배틀**도 그대로다 — 이 예외는 협동전 한 곳에만 걸려 있어야 한다.
+        let duel = await hatched("raid-achievement-duel")
+        duel.grantBattleReward(won: true, participantCount: 1, mode: .freeForAll, opponentNames: ["상대"])
+        XCTAssertGreaterThan(duel.state.starPieces, before)
+    }
+
     // MARK: 전적 표기
 
     /// 협동전이 `3P` 로 나오면 4인 개인전과 구별되지 않는다 — 전적 목록에서 두 줄이 같아 보인다.
