@@ -599,6 +599,39 @@ read_when:
   두 대조군은 이 식으로도 통과하지만, 사탕 하나가 상한을 **걸치면** 두 몫이 같이 생겨 들어간 경험치가
   화면에서 사라진다. 결함을 주입해 보니 걸침 테스트 **하나만** 빨개졌다 — 양 극단 테스트 두 개는
   경계를 지키지 않는다. 두 값은 각각 세고(`candyFeedbackXP` · `candyFeedbackStardust`) 표시도 각각 한다.
+- **뷰가 *건네받아* 들고 있는 값은 스토어를 비우는 것만으로 안 내려간다 — 비움(consume)과 무효화
+  (invalidate)를 가른다.** 1회성 피드백은 뷰가 값을 자기 `@State` 로 옮기고 스토어를 소비하는 계약이라,
+  세이브 가져오기가 `lastClaim = nil` 만 해서는 **이미 화면에 떠 있는 남의 세이브 정산액**에 닿지
+  못했다. 뷰가 다시 건네받게 하려면 seq 도 올려야 한다. 규칙이 네 벌(연출 · 사탕 · 민트 · 정산)로
+  흩어져 있어서 한 벌만 고치고 나머지를 빠뜨렸다 — `OneShotFeedback<Value>` 한 자리로 모으고
+  `consume()`(뷰가 재생을 끝냈다: 값만 비움) 과 `invalidate()`(값이 무효가 됐다: seq 도 올림) 을
+  타입에서 갈랐다. `applySave` 는 이제 `invalidateTransientFeedback()` 하나만 부른다.
+  회귀: `testImportingASaveTellsTheViewToDropTheBanner`.
+- **뷰 안 `if` 로만 존재하는 조립은 테스트가 걸 자리가 없다.** 정산 배너의 네 줄(알 · 정산액 · 환산분 ·
+  사탕)이 `FocusTimerView` 의 `if` 네 개였다. 지급 하나를 통째로 빼도 1,960개 테스트가 전부 초록이었고
+  **line coverage 도 못 걸렀다** — `if x { y }` 는 조건만 평가되면 실행으로 세니 블록이 한 번도 안 돌아도
+  통과한다. 조립을 `AdventureReward.bannerLines` 라는 **순수 함수**로 빼면 "어떤 지급이 줄을 얻는가" 가
+  값이 되어 단언할 수 있다. 뷰에는 그 값을 그리는 일만 남긴다.
+  회귀: `testEveryPayoutOnOneClaimGetsItsOwnBannerLine` + 대조군 2개.
+- **"띄우기" 와 "내리기" 를 서로 다른 `onChange` 에 두면 실행 순서에 진다.** 배너를 새 세션 시작 때
+  내리려고 `onChange(of: timer.phase)` 에서 지우면, 모험 시작 정산(`startFocusSession` →
+  `startFocusAdventure` 가 이전 모험을 정산한 **뒤** `startFocus`)이 같은 갱신에서 들어오기 때문에
+  핸들러 순서에 따라 그 정산이 뜨지도 못하고 지워진다. SwiftUI 는 `onChange` 사이의 순서를 보장하지
+  않는다 — **지우는 쪽을 이벤트가 아니라 값 비교로 바꾼다**: 안내를 채울 때 `timer.sessionStartSeq` 를
+  함께 적어 두고, 그 값이 현재와 어긋나면 그리지 않는다. 순서와 무관하게 같은 답이 나온다.
+  회귀: `testStartingAFocusSessionAdvancesTheSequenceThatDropsTheBanner`(완료는 계기가 **아님**도 함께 고정).
+- **저장된 필드의 뜻은 마이그레이션 없이 바꾸지 않는다 — 읽는 화면이 없으면 바꿀 이유도 없다.**
+  `AdventureRecord.stardust` 를 "기본 지급액" 에서 "지갑 증가분 전부" 로 바꿨다가 되돌렸다. 배열은 이미
+  디스크에 있고 마이그레이션이 없어서, 옛 행과 새 행이 **다른 것을 뜻한 채** 한 배열에 섞인다.
+  게다가 `recentAdventures` 는 소비처가 0개라 그 "수정" 은 화면에 보이지도 않았다. 의미 변경은
+  **읽는 쪽이 생기는 시점에** 마이그레이션과 함께 한다.
+  회귀: `testHistoryStoresTheBaseStardustOnlyUntilAMigrationSaysOtherwise` — 결정을 못 박는 테스트라,
+  빨개지면 회귀가 아니라 결정이 바뀐 것이다.
+- **부류 스윕 미완 (의도적, #200).** 같은 지갑에 지급하면서 반환값을 버리는 자리가 여덟 곳 더 있다
+  (진화 · 레이스 · 배틀 · 던전 · 던전 스윕 · 졸업 3건). 근본 처방은 `accrueTrainerPoints` ·
+  `recordMission` · `recordSeason` · `recordAchievement` 에서 `@discardableResult` 를 떼어 **컴파일러가
+  호출부를 열거하게** 하는 것이다 — `awardExperience` 가 이미 그 계약이고, 형제 넷만 경고 없이 버릴 수
+  있는 상태가 이 부류를 남겼다. 다섯 기능에 걸쳐 각자 표면을 정해야 해서 #200 으로 뺐다.
 
 ## 1회성 보상의 멱등 가드가 서명 밖에 있는 부류
 
