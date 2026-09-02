@@ -196,3 +196,37 @@ enum RaidBoss {
             survivorBonus: survivorBonusPerRunner * max(0, survivingRunners))
     }
 }
+
+/// 레이드 방의 Bonjour 광고 이름 — `RAID · <티어> · <트레이너>#<식별자>`.
+///
+/// **티어를 이름에 싣는 이유는 체육관이 재임 시각을 싣는 이유와 같다**: 방 광고에 TXT 가 없어
+/// 붙기 전에 무언가를 보여 줄 통로가 이름뿐이다. 티어를 모르면 1★ 인 줄 알고 5★ 에 혼자 들어가
+/// 20턴을 버리게 된다.
+struct RaidRoomName: Equatable {
+    let tier: RaidTier
+    let trainerName: String
+    let idTag: String
+
+    static let prefix = "RAID"
+
+    static func isRaidRoomName(_ name: String) -> Bool { name.hasPrefix("\(prefix) · ") }
+
+    /// 자를 수 있는 건 트레이너 이름뿐이다 — 접두·티어는 파싱에, 접미는 자기 판정에 쓰인다.
+    static func make(trainerName: String, idTag: String, tier: RaidTier) -> String {
+        LANServiceName.make(base: "\(prefix) · \(tier.rawValue) · \(trainerName)", suffix: "#\(idTag)")
+    }
+
+    /// 티어 자리가 없거나 모르는 티어면 **통째로 nil** 이다. 모르는 값을 기본 티어로 접으면
+    /// 신버전이 연 티어를 구버전이 1★ 로 그려 "쉬운 줄 알고 들어갔다" 가 된다.
+    static func parse(_ name: String) -> RaidRoomName? {
+        guard isRaidRoomName(name) else { return nil }
+        let body = name.dropFirst("\(prefix) · ".count)
+        guard let hash = body.lastIndex(of: "#") else { return nil }
+        let idTag = String(body[body.index(after: hash)...])
+        let head = body[..<hash]
+        guard let separator = head.range(of: " · "),
+              let raw = Int(head[..<separator.lowerBound]),
+              let tier = RaidTier(rawValue: raw) else { return nil }
+        return RaidRoomName(tier: tier, trainerName: String(head[separator.upperBound...]), idTag: idTag)
+    }
+}

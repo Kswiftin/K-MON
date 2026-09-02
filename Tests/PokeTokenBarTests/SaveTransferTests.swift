@@ -493,7 +493,7 @@ final class SaveTransferTests: XCTestCase {
     private static let frozenCanonicalPrefixes: Set<String> = [
         // 세그먼트 접두 — 하나라도 사라지면 이미 배포된 서명을 재현할 수 없다.
         "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "achfocus", "sn",
-        "gbbrock", "glbbug", "shc", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
+        "gbbrock", "glbbug", "shc", "gd", "rd", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
         "adv", "ah", "bh", "act", "box", "dex", "dg", "cf", "sec",
         // 값에서 나온 토큰 — fixture 가 고정하므로 결정적이다. 열거형 rawValue 변경도 기존 서명을
         // 깨는 같은 부류라 일부러 얼려 둔다. `""` 는 숫자로만 된 이어붙임 조각.
@@ -513,6 +513,11 @@ final class SaveTransferTests: XCTestCase {
         s.gymBadges = ["brock"]
         s.gymLeagueBadges = ["bug"]
         s.shinyEggCharges = 1
+        // `gd`·`rd` 는 일일 원장 세그먼트다. fixture 가 안 켜면 접두 동결이 이 둘을 통째로 못 본다 —
+        // 지우거나 접두를 바꿔도 이 가드가 초록인 구멍이었다.
+        s.gymDefenseRewardDate = "2026-09-02"
+        s.gymDefenseRewardToday = 1
+        s.raidRewardDate = "2026-09-02"
         s.focusEggs = 1
         s.focusEggReadyDates = [Date(timeIntervalSince1970: 0)]
         s.adventure = AdventureRun(zone: .forest, startedAt: Date(timeIntervalSince1970: 0),
@@ -625,8 +630,11 @@ final class SaveTransferTests: XCTestCase {
         // (한쪽을 고르면 다른 기기에서 세운 최고 기록이 사라진다).
         // 체육관 방어 보상의 일일 원장도 같은 부류다 — 같은 날이면 많이 받은 쪽을 남겨야
         // 세이브를 주고받는 것만으로 하루 상한이 되살아나지 않는다.
+        // 레이드 일일 지급 날짜도 같은 부류다 — 로컬 날짜 문자열이라 비교 가능하고, 더 최근 값을
+        // 남기지 않으면 세이브를 주고받는 것만으로 하루 한 번이 무한이 된다.
         let accountLedger: Set<String> = ["lastCandyDate", "waveRun",
-                                          "gymDefenseRewardDate", "gymDefenseRewardToday"]
+                                          "gymDefenseRewardDate", "gymDefenseRewardToday",
+                                          "raidRewardDate"]
         // 기기 환경설정: 현재 기기 값 유지.
         let devicePreference: Set<String> = ["language"]
 

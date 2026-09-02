@@ -57,24 +57,25 @@ final class RaidRoomTests: XCTestCase {
     }
 
     /// **트리거 브랜치**: 상한 판정이 모드를 안 보면 일반 4인 방도 20라운드에 강제 종료된다.
+    ///
+    /// 판정을 `static` 으로 두는 이유는 `isFinished`·`winners` 와 같다 — 게스트는 자기 `battle` 을
+    /// 갱신하지 않으므로 인스턴스 프로퍼티로만 두면 게스트 쪽 판정이 개시 시점에 굳는다.
     func testTurnCapAppliesOnlyToRaids() throws {
-        var raid = try MultiplayerBattle(fighters: [runner("A"), boss()], mode: .coopBoss, seed: 1)
-        XCTAssertFalse(raid.reachedTurnCap, "1라운드에 상한일 수는 없다")
+        XCTAssertFalse(MultiplayerBattle.reachedTurnCap(round: 1, mode: .coopBoss),
+                       "1라운드에 상한일 수는 없다")
+        XCTAssertFalse(MultiplayerBattle.reachedTurnCap(round: RaidBoss.turnCap, mode: .coopBoss),
+                       "상한 라운드 자체는 아직 싸울 수 있다")
+        XCTAssertTrue(MultiplayerBattle.reachedTurnCap(round: RaidBoss.turnCap + 1, mode: .coopBoss))
 
-        let solo = { (name: String) -> MultiplayerFighter in
-            let p = LobbyParticipant(id: UUID(), trainerName: name, speciesID: 143,
-                                     team: .solo, isReady: true, isHost: false)
-            return MultiplayerFighter(participant: p, snapshot: self.snapshot(moves: [self.move(id: 33, power: 80)]))
-        }
-        let plain = try MultiplayerBattle(fighters: [solo("A"), solo("B")], mode: .freeForAll, seed: 1)
-        XCTAssertFalse(plain.reachedTurnCap)
+        XCTAssertFalse(MultiplayerBattle.reachedTurnCap(round: RaidBoss.turnCap + 1, mode: .freeForAll),
+                       "개인전은 턴 상한이 없다")
+        XCTAssertFalse(MultiplayerBattle.reachedTurnCap(round: RaidBoss.turnCap + 1, mode: .teams),
+                       "팀전도 턴 상한이 없다")
 
-        // 상한을 넘겨 본다 — 레이드만 참이어야 한다.
-        raid.debugAdvanceRound(to: RaidBoss.turnCap + 1)
-        XCTAssertTrue(raid.reachedTurnCap)
-        var plainPast = plain
-        plainPast.debugAdvanceRound(to: RaidBoss.turnCap + 1)
-        XCTAssertFalse(plainPast.reachedTurnCap, "개인전은 턴 상한이 없다")
+        // 인스턴스 편의 접근자도 같은 답을 내야 한다 — 갈라지면 호스트와 게스트가 다른 판을 본다.
+        let raid = try MultiplayerBattle(fighters: [runner("A"), boss()], mode: .coopBoss, seed: 1)
+        XCTAssertEqual(raid.reachedTurnCap,
+                       MultiplayerBattle.reachedTurnCap(round: raid.round, mode: raid.mode))
     }
 
     // MARK: 보스 AI
@@ -210,5 +211,35 @@ final class RaidRoomTests: XCTestCase {
     /// 조건부 append 여야 한다 — 무조건 붙이면 이 필드가 없던 정상 세이브가 전부 조작 판정된다.
     func testDefaultStateGainsNoRaidCanonicalSegment() {
         XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|rd"))
+    }
+
+    /// 세이브 이전에서 이 필드는 **계정 원장**이다(일일 사탕 원장과 같은 부류). 더 최근 날짜를
+    /// 남기지 않으면 맥 A 에서 받고 내보내 맥 B 로 불러오는 것만으로 같은 날 두 번 받는다.
+    ///
+    /// 분류 목록(`testEveryCompanionStateFieldIsClassifiedForTransfer`)에 적는 것만으로는 부족하다 —
+    /// 그 목록은 산문이고, 실제 병합이 없어도 초록이다.
+    func testRebaseKeepsTheNewerRaidRewardDate() {
+        var imported = CompanionState()
+        imported.raidRewardDate = "2026-08-01"
+        var current = CompanionState()
+        current.raidRewardDate = "2026-09-02"
+        XCTAssertEqual(SaveTransfer.rebasedForThisDevice(imported, current: current).raidRewardDate,
+                       "2026-09-02", "이 기기가 오늘 이미 받았으면 받은 것이다")
+
+        // 반대 방향도 같은 규칙이다 — 옮겨온 쪽이 더 최근이면 그쪽을 남긴다.
+        imported.raidRewardDate = "2026-09-02"
+        current.raidRewardDate = "2026-08-01"
+        XCTAssertEqual(SaveTransfer.rebasedForThisDevice(imported, current: current).raidRewardDate,
+                       "2026-09-02")
+    }
+
+    /// 1인 레이드 전적이 불러오기에서 사라지면 안 된다 — 정규화 하한이 2 였을 때 그랬다
+    /// (보스는 사람이 아니라 참가자 수에 들지 않는다).
+    func testASoloRaidRecordSurvivesNormalization() {
+        var state = CompanionState()
+        state.battleHistory = [BattleRecord(playedAt: Date(timeIntervalSince1970: 0), mode: .coopBoss,
+                                            participantCount: 1, won: true, reward: 0,
+                                            opponentNames: [])]
+        XCTAssertEqual(SaveTransfer.sanitized(state).battleHistory.count, 1)
     }
 }

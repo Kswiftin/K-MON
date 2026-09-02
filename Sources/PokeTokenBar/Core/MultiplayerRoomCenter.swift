@@ -149,6 +149,24 @@ final class MultiplayerRoomCenter {
     /// 나타나지 않으므로, 화면이 "검색 중" 대신 그 사실을 말해야 한다.
     var isBrowsing: Bool { browser != nil }
 
+    /// LAN 에 **새로 뜬 남의 레이드 방**. 알림을 낼지 정하는 자리다.
+    ///
+    /// 이슈가 "discovery is the real gate" 라고 부른 지점 — 알림이 없으면 기본 경험은 방을 열고
+    /// 혼자 시간이 초과되는 것이다. 세 가지를 걸러야 한다: 레이드가 아닌 방, **내 방**,
+    /// 그리고 **이미 알린 방**(브라우저는 인터페이스가 흔들릴 때마다 같은 목록을 다시 준다).
+    ///
+    /// `nonisolated static` 인 이유는 `creditsRaceFinish` 와 같다 — 네트워크 없이 전 분기를
+    /// 검증하려고 순수 함수로 떼어 둔다.
+    nonisolated static func newlyVisibleRaidRooms(previous: [String], current: [String],
+                                                  myIDTag: String) -> [String] {
+        let seen = Set(previous)
+        return current.filter { name in
+            guard RaidRoomName.isRaidRoomName(name), !seen.contains(name) else { return false }
+            // **원문으로 본다.** `name`(표시용)은 `#` 앞에서 잘려 있어 내 방을 걸러낼 수 없다.
+            return RaidRoomName.parse(name)?.idTag != myIDTag
+        }
+    }
+
     func startBrowsing() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: Self.parameters())

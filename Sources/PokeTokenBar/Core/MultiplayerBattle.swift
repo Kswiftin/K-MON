@@ -459,6 +459,56 @@ struct MultiplayerBattle: Sendable {
         return winners.contains(id) ? .win : .loss
     }
 
+    /// 턴 상한에 닿았나. **`static` 인 이유는 `isFinished`·`winners` 와 같다** — 게스트는 자기
+    /// `battle` 을 갱신하지 않으므로(라운드마다 오는 건 `fighters` 배열이다) 인스턴스에만 두면
+    /// 게스트 쪽 판정이 개시 시점에 굳는다.
+    ///
+    /// 상한 라운드 **자체는 아직 싸운다** — `round` 는 해상 뒤에 오르므로 `> turnCap` 이 곧
+    /// "상한만큼 싸웠다" 다.
+    static func reachedTurnCap(round: Int, mode: MultiplayerBattleMode) -> Bool {
+        mode == .coopBoss && round > RaidBoss.turnCap
+    }
+
+    var reachedTurnCap: Bool { Self.reachedTurnCap(round: round, mode: mode) }
+
+    /// 상한이 지났다 — 파티를 전멸 처리해 판을 닫는다.
+    ///
+    /// **새 종료 상태를 만들지 않는 것이 요점이다.** 여기서 러너를 눕히면 기존
+    /// `isFinished`·`winners`·`grantRewardIfFinished`·`broadcastCombatState` 가 그대로 패배를
+    /// 닫고, 게스트도 늘 받던 라운드 메시지로 같은 결말을 본다 — 판정이 두 벌이 되지 않는다.
+    mutating func endByTurnCap() {
+        for index in fighters.indices where fighters[index].team == .red {
+            fighters[index].side.hp = 0
+        }
+    }
+
+    /// 보스가 이번 턴에 할 일 — **보스에겐 클라이언트가 없어 호스트가 대신 낸다.**
+    ///
+    /// 점수식은 카탈로그 관장·공유 체육관 AI 와 같은 `BattleEngine.expectedDamageScore` 다.
+    /// 난수를 쓰지 않는다: 이 함수는 호스트만 부르지만, 흔들리면 같은 판이 재현되지 않아
+    /// 결함 재현이 불가능해진다. 동점은 대상 UUID 문자열 순으로 가른다(`automaticActions` 와 같다).
+    static func bossAction(fighters: [MultiplayerFighter]) -> MultiplayerAction? {
+        guard let boss = fighters.first(where: { $0.id == RaidBoss.bossID }), boss.isAlive else { return nil }
+        let targets = fighters
+            .filter { $0.id != boss.id && $0.isAlive && $0.team != boss.team }
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+        guard let fallbackTarget = targets.first else { return nil }
+
+        var best: (score: Int, moveIndex: Int, targetID: UUID)?
+        for target in targets {
+            for index in boss.side.moves.indices where boss.side.canUse(moveAt: index) {
+                let score = BattleEngine.expectedDamageScore(of: boss.side.moves[index],
+                                                             from: boss.side, to: target.side)
+                if score > (best?.score ?? -1) { best = (score, index, target.id) }
+            }
+        }
+        // 점수가 전부 0 이거나 PP 가 말랐어도 **행동은 낸다** — 안 내면 라운드가 마감까지 멈춘다.
+        // `-1` 은 발버둥이다(1v1·개인전과 같은 규약).
+        let chosen = best ?? (0, boss.side.pp.firstIndex(where: { $0 > 0 }) ?? -1, fallbackTarget.id)
+        return MultiplayerAction(attackerID: boss.id, targetID: chosen.targetID,
+                                 moveIndex: chosen.moveIndex)
+    }
+
     mutating func forfeit(participantID: UUID) {
         guard let index = fighters.firstIndex(where: { $0.id == participantID }) else { return }
         fighters[index].side.hp = 0

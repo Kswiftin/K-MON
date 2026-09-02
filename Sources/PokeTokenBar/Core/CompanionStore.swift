@@ -2411,6 +2411,26 @@ final class CompanionStore {
     }
 
     /// 베팅 정산 지급. 환불도 "판돈과 같은 금액 지급" 이라 같은 경로를 쓴다.
+    /// 오늘 레이드 보상을 이미 받았나 — 화면이 "오늘 지급 완료"를 그리는 근거다.
+    /// 자정 타이머가 아니라 **날짜 키 비교**로 넘긴다(`MissionBoard`·체육관 방어 원장과 같은 방식).
+    var raidRewardClaimedToday: Bool { state.raidRewardDate == Self.dayKey(clock()) }
+
+    /// 레이드 정산 지급 — **하루 한 번만** 준다(#79 와 같은 규칙: 시도 무제한, 지급 1회).
+    ///
+    /// 실제 지급액을 반환한다. 이미 받았으면 0 이고, 호출부는 그 값을 그대로 화면에 쓴다 —
+    /// 지갑을 바꾸는 값은 창 안에 보이는 표면을 하나 가져야 한다(defect-log: 한 지갑에 지급하는
+    /// 경로가 여럿일 때).
+    ///
+    /// **0 이하는 원장을 소모하지 않는다.** 소모하면 진 판이 그날의 지급 기회를 태운다.
+    @discardableResult
+    func creditRaidReward(_ amount: Int) -> Int {
+        guard amount > 0, !raidRewardClaimedToday else { return 0 }
+        state.raidRewardDate = Self.dayKey(clock())
+        state.starPieces += amount
+        save()
+        return amount
+    }
+
     func creditStarPieces(_ amount: Int) {
         guard amount > 0 else { return }
         state.starPieces += amount
