@@ -6,7 +6,10 @@ struct PokemonAuctionView: View {
     let onClose: () -> Void
     @State private var selectedListingMonID: UUID?
     @State private var offerSelections: [UUID: UUID] = [:]
-    @State private var searchText = ""
+    @State private var showsListingPicker = false
+    /// 제안 목록을 열어 둔 출품의 ID. 카드마다 상태를 두면 `ForEach` 안에서 팝오버가 여러 개
+    /// 살아 있게 되므로, 열려 있는 하나만 기억한다.
+    @State private var offerPickerListingID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -60,26 +63,26 @@ struct PokemonAuctionView: View {
                     }.padding(7).background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
                 }
             } else {
-                PokemonSearchField(text: $searchText, l: store.l)
-                // 즐겨찾기는 내놓을 수 없으므로 고를 수 있는 목록에도 넣지 않는다 — 고른 뒤
-                // 조용히 거절되면 버튼이 죽은 것처럼 보인다.
-                let mons = offerableMons.filter {
-                    PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(for: $0))
+                // 즐겨찾기를 목록에서 빼지 않고 잠긴 줄로 보여 주려면 행마다 별 버튼이 필요하다 —
+                // `Picker` 는 줄에 버튼을 못 달고 줄별 비활성도 안 돼서 팝오버 목록으로 바꿨다.
+                Button {
+                    showsListingPicker = true
+                } label: {
+                    Label(selectedListingMon.map(nameWithLevel)
+                          ?? store.l.t("게시할 포켓몬 선택", "Choose a Pokémon to list", "出品するポケモンを選ぶ"),
+                          systemImage: "chevron.down")
                 }
-                if mons.isEmpty && !store.deployableMons.isEmpty && searchText.isEmpty {
-                    Text(store.l.favoriteLockedHint).font(.caption2).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Picker(store.l.t("게시할 포켓몬", "Pokémon to list", "出品するポケモン"), selection: $selectedListingMonID) {
-                    Text(store.l.t("선택하세요", "Choose", "選択")).tag(UUID?.none)
-                    ForEach(mons) { mon in
-                        Text(nameWithLevel(mon)).tag(Optional(mon.id))
+                .buttonStyle(.borderless)
+                .popover(isPresented: $showsListingPicker) {
+                    MonOfferPicker(store: store, mons: store.deployableMons) { mon in
+                        selectedListingMonID = mon.id
+                        showsListingPicker = false
                     }
                 }
                 Button(store.l.t("경매 시장에 올리기", "List on Market", "市場に出品")) {
-                    center.publish(offerableMons.first { $0.id == selectedListingMonID })
+                    center.publish(selectedListingMon)
                     selectedListingMonID = nil
-                }.buttonStyle(.bordered).disabled(selectedListingMonID == nil)
+                }.buttonStyle(.bordered).disabled(selectedListingMon == nil)
             }
         }.padding(9).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 11))
     }
@@ -108,21 +111,26 @@ struct PokemonAuctionView: View {
                                 Text("\(listing.trainerName) · Lv.\(listing.level)").font(.caption2).foregroundStyle(.secondary)
                             }
                         }
-                        Picker(store.l.t("제안할 내 포켓몬", "Your offer", "自分の提案"),
-                               selection: Binding(get: { offerSelections[listing.id] },
-                                                  set: { offerSelections[listing.id] = $0 })) {
-                            Text(store.l.t("선택하세요", "Choose", "選択")).tag(UUID?.none)
-                            ForEach(offerableMons) { mon in
-                                Text(nameWithLevel(mon)).tag(Optional(mon.id))
+                        let offered = offerSelections[listing.id].flatMap(mon(withID:))
+                        Button {
+                            offerPickerListingID = listing.id
+                        } label: {
+                            Label(offered.map(nameWithLevel)
+                                  ?? store.l.t("제안할 내 포켓몬 선택", "Choose your offer", "提案するポケモンを選ぶ"),
+                                  systemImage: "chevron.down")
+                        }
+                        .buttonStyle(.borderless)
+                        .popover(isPresented: offerPickerBinding(for: listing.id)) {
+                            MonOfferPicker(store: store, mons: store.deployableMons) { mon in
+                                offerSelections[listing.id] = mon.id
+                                offerPickerListingID = nil
                             }
                         }
                         Button(store.l.t("교환 제안", "Send Offer", "交換を提案")) {
-                            guard let id = offerSelections[listing.id],
-                                  let mon = offerableMons.first(where: { $0.id == id }) else { return }
-                            center.apply(to: listing, offering: mon)
+                            if let offered { center.apply(to: listing, offering: offered) }
                         }
                         .buttonStyle(.borderedProminent).controlSize(.small)
-                        .disabled(offerSelections[listing.id] == nil || center.outgoingStatus == .pending)
+                        .disabled(offered == nil || center.outgoingStatus == .pending)
                     }.padding(8).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
@@ -137,10 +145,18 @@ struct PokemonAuctionView: View {
         }
     }
 
-    /// 경매에 내놓을 수 있는 개체 — 체육관 배치분(`deployableMons`)에 더해 즐겨찾기도 뺀다.
-    /// 게시와 제안 둘 다 성사되면 그 개체를 잃으므로 같은 목록을 쓴다.
-    private var offerableMons: [MonState] {
-        store.deployableMons.filter { !store.isFavorite($0.id) }
+    private var selectedListingMon: MonState? { selectedListingMonID.flatMap(mon(withID:)) }
+
+    /// 고른 뒤 그 개체가 사라졌을 수도 있다(교환·체육관 배치) — ID 를 매번 현재 목록에서 되찾는다.
+    private func mon(withID id: UUID) -> MonState? {
+        store.deployableMons.first { $0.id == id }
+    }
+
+    /// 출품 카드마다 팝오버를 하나씩 두면 `ForEach` 안에서 여러 개가 동시에 살아 있게 된다 —
+    /// 열려 있는 하나만 기억하고, 그 카드에서만 참으로 읽히는 바인딩을 만든다.
+    private func offerPickerBinding(for listingID: UUID) -> Binding<Bool> {
+        Binding(get: { offerPickerListingID == listingID },
+                set: { if !$0 { offerPickerListingID = nil } })
     }
 
     /// 피커는 스프라이트도 부제도 없는 한 줄이라 이름만으로는 같은 종의 다른 개체를 못 고른다 —
