@@ -1121,6 +1121,16 @@ final class PokemonMemoryAlbum {
             memories[companionID]?.contains(where: { $0.id == memoryID }) == true
         }
     }
+    /// 가방에서 가구를 버린 직후 초과 배치분을 걷어낸다. `prune` 은 기동 로드 때만 도므로, 런타임에
+    /// 보유 수가 줄어드는 경로(버리기)는 여기를 따로 지나야 한다 — 안 그러면 소유하지 않은 가구가
+    /// 방에 그려진 채 다음 실행까지 남는다.
+    func removeUnownedPlacedDecor(ownedItems: [String: Int]) {
+        let before = memoryHomeAccess.placedDecor.count
+        trimPlacedDecor(toOwnedItems: ownedItems)
+        guard memoryHomeAccess.placedDecor.count != before else { return }
+        save()
+    }
+
     private func trimPlacedDecor(toOwnedItems ownedItems: [String: Int]) {
         var installed: [ItemKind: Int] = [:]
         memoryHomeAccess.placedDecor = memoryHomeAccess.placedDecor.filter { decor in

@@ -72,6 +72,7 @@ private struct TechnicalMachineBagCard: View {
     @State private var canLearn = false
     @State private var checking = true
     @State private var applying = false
+    @State private var discarding = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -97,17 +98,49 @@ private struct TechnicalMachineBagCard: View {
                 }
                 Spacer()
             }
-            HStack {
-                Text(statusText).font(.caption2).foregroundStyle(.tertiary)
-                Spacer()
-                Button(store.l.useItem) { teach() }
-                    .buttonStyle(.bordered).controlSize(.small)
-                    .disabled(checking || applying || !canLearn || move == nil)
+            if discarding {
+                discardControls(store.l)
+            } else {
+                HStack {
+                    Text(statusText).font(.caption2).foregroundStyle(.tertiary)
+                    Spacer()
+                    Button(store.l.discard, role: .destructive) { discarding = true }
+                        .buttonStyle(.borderless).controlSize(.small)
+                        .disabled(applying)
+                    Button(store.l.useItem) { teach() }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .disabled(checking || applying || !canLearn || move == nil)
+                }
             }
         }
         .padding(10)
         .pokedoroCard(tint: .purple)
         .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") { await refresh() }
+    }
+
+    /// 아이템 카드와 같은 규약 — 되돌릴 수 없다는 문구를 버튼 위 한 줄에 둔다.
+    private func discardControls(_ l: L) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(l.discardConfirm(move?.name(store.language) ?? machine.label))
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Spacer()
+                if count > 1 {
+                    Button(l.discardOne) { discardNow(1) }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+                Button(count > 1 ? l.discardAll(count) : l.discard, role: .destructive) { discardNow(count) }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                Button(l.cancel) { discarding = false }
+                    .buttonStyle(.borderless).controlSize(.small)
+            }
+        }
+    }
+
+    private func discardNow(_ quantity: Int) {
+        discarding = false
+        store.discardTechnicalMachine(machine, quantity: quantity)
     }
 
     private var statusText: String {
@@ -152,6 +185,7 @@ private struct ItemCard: View {
     let kind: ItemKind
     let count: Int
     @State private var confirming = false
+    @State private var discarding = false
 
     var body: some View {
         let l = store.l
@@ -226,6 +260,8 @@ private struct ItemCard: View {
                 Text(l.shinyCharmEffectHint).font(.caption2.weight(.semibold)).foregroundStyle(.green)
                 Spacer()
             }
+        } else if discarding {
+            discardControls(l)
         } else if canUse {
             if confirming {
                 HStack(spacing: 8) {
@@ -242,15 +278,51 @@ private struct ItemCard: View {
                     Text(effectHint(l))
                         .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                     Spacer()
+                    discardButton(l)
                     Button(l.useItem) { confirming = true }
                         .buttonStyle(.bordered).controlSize(.small)
                 }
             }
         } else {
-            // 알(부화 전)/활성 없음/(사탕만)라인 미로딩 — 비활성 + 사유
-            Text(store.isEgg ? l.useAfterHatch : l.useNeedsPokemon)
-                .font(.caption2).foregroundStyle(.tertiary)
+            // 알(부화 전)/활성 없음/(사탕만)라인 미로딩 — 비활성 + 사유. 쓸 수 없어도 버릴 수는 있다.
+            HStack {
+                Text(store.isEgg ? l.useAfterHatch : l.useNeedsPokemon)
+                    .font(.caption2).foregroundStyle(.tertiary)
+                Spacer()
+                discardButton(l)
+            }
         }
+    }
+
+    /// 버리기는 되돌릴 수 없어 문구를 한 줄 위에 따로 둔다 — 버튼과 같은 줄에 넣으면 잘린다.
+    private func discardControls(_ l: L) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(l.discardConfirm(l.itemName(kind)))
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Spacer()
+                if count > 1 {
+                    Button(l.discardOne) { discardNow(1) }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+                Button(count > 1 ? l.discardAll(count) : l.discard, role: .destructive) { discardNow(count) }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                Button(l.cancel) { discarding = false }
+                    .buttonStyle(.borderless).controlSize(.small)
+            }
+        }
+    }
+
+    private func discardButton(_ l: L) -> some View {
+        Button(l.discard, role: .destructive) { discarding = true }
+            .buttonStyle(.borderless).controlSize(.small)
+    }
+
+    /// 전부 버리면 카드가 목록에서 사라진다(ownedItems 는 개수>0 만 싣는다).
+    private func discardNow(_ quantity: Int) {
+        discarding = false
+        store.discardItem(kind, quantity: quantity)
     }
 
     /// 사용 → 항상 Home 탭으로 전환(진화/졸업 연출·"+XP"·성격 변경 토스트는 Home 의 CompanionHeader 에서 재생).

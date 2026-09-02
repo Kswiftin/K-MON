@@ -123,6 +123,49 @@ final class ShopTests: XCTestCase {
         XCTAssertEqual(s2.availableTokens, 1_000_000_000 - RareCandy.price)
     }
 
+    // MARK: 수량 구매 (한 번에 여러 개)
+
+    /// 상한 = 잔액 / 단가 (내림). 잔여 잔액으로는 한 개도 더 못 산다.
+    func testMaxPurchasableIsBalanceDividedByPrice() {
+        let leftover = RareCandy.price / 2
+        let s = store(used: RareCandy.price * 4 + leftover)
+        XCTAssertEqual(s.maxPurchasable(.rareCandy), 4)
+    }
+
+    /// 수량 구매는 총액을 한 번에 차감하고 재고를 그만큼 올린다.
+    func testBuyQuantityDebitsTotalAndCreditsAll() {
+        let s = store(used: RareCandy.price * 10)
+        XCTAssertTrue(s.buy(.rareCandy, quantity: 5))
+        XCTAssertEqual(s.rareCandyCount, 5)
+        XCTAssertEqual(s.availableTokens, RareCandy.price * 5)
+    }
+
+    /// 전량 구매 — 잔액이 모자라면 살 수 있는 만큼만 사는 부분 구매를 하지 않고 통째로 no-op.
+    func testBuyQuantityIsAllOrNothing() {
+        let s = store(used: RareCandy.price * 3)
+        XCTAssertFalse(s.buy(.rareCandy, quantity: 4))
+        XCTAssertEqual(s.rareCandyCount, 0)
+        XCTAssertEqual(s.availableTokens, RareCandy.price * 3)
+    }
+
+    func testBuyQuantityZeroOrNegativeIsNoOp() {
+        let s = store(used: RareCandy.price * 3)
+        XCTAssertFalse(s.buy(.rareCandy, quantity: 0))
+        XCTAssertFalse(s.buy(.rareCandy, quantity: -2))
+        XCTAssertEqual(s.availableTokens, RareCandy.price * 3)
+    }
+
+    /// 보유형(이로치 부적)은 1회 구매 — 상한이 1이고, 2개 이상 요청은 거절된다.
+    func testPassiveItemHasNoQuantity() {
+        let price = ItemKind.shinyCharm.shopPrice ?? 0
+        let s = store(used: price * 5)
+        XCTAssertEqual(s.maxPurchasable(.shinyCharm), 1)
+        XCTAssertFalse(s.buy(.shinyCharm, quantity: 2))
+        XCTAssertEqual(s.itemCount(.shinyCharm), 0)
+        XCTAssertTrue(s.buy(.shinyCharm, quantity: 1))
+        XCTAssertEqual(s.maxPurchasable(.shinyCharm), 0, "구매 후 재구매 불가")
+    }
+
     // MARK: 정렬 (가격 저렴한 순 + 구매 완료 보유형 맨 아래)
 
     /// 상점 목록은 가격 오름차순(민트 100M < 사탕 500M < 이로치 부적 3B).

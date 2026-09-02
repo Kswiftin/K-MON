@@ -1100,6 +1100,16 @@ struct L {
     var useAfterHatch: String { t("부화 후 사용할 수 있어요", "Usable after hatching", "孵化後に使えます") }
     var useNeedsPokemon: String { t("사용할 포켓몬이 없어요", "No Pokémon to use it on", "使えるポケモンがいません") }
 
+    // 가방 버리기 — 환불이 없고 되돌릴 수 없어, 확인 문구에 그 사실을 함께 적는다.
+    var discard: String { t("버리기", "Discard", "すてる") }
+    func discardConfirm(_ name: String) -> String {
+        t("\(name) 버릴까요? 되돌릴 수 없고 별의조각도 돌려받지 못해요.",
+          "Discard \(name)? This cannot be undone and refunds nothing.",
+          "\(name) をすてますか？ 元に戻せず、ほしのかけらも戻りません。")
+    }
+    var discardOne: String { t("1개만", "Just one", "1個だけ") }
+    func discardAll(_ count: Int) -> String { t("전부 ×\(count)", "All ×\(count)", "すべて ×\(count)") }
+
     /// 팀 선택 영역 제목 — 이게 "내가 가진 것 중에서 고르는 자리" 임을 말해 준다.
     var teamPickerTitle: String { t("내 포켓몬에서 고르기", "Pick from your Pokémon", "手持ちから選ぶ") }
 
@@ -1423,6 +1433,14 @@ struct L {
     var shopHint: String { t("모험에서 얻은 별의조각으로 아이템을 살 수 있어요.", "Buy items with Star Pieces earned from adventures.", "冒険で手に入れたほしのかけらで購入できます。") }
     var buy: String { t("구매", "Buy", "購入") }
     func buyConfirm(_ name: String) -> String { t("\(name) 구매할까요?", "Buy \(name)?", "\(name) を購入しますか？") }
+    /// 여러 개를 한 번에 살 때의 확인 문구 — 수량과 합계를 함께 보여 준다. 1개면 기존 문구 그대로.
+    func buyConfirm(_ name: String, quantity: Int, total: String) -> String {
+        guard quantity > 1 else { return buyConfirm(name) }
+        return t("\(name) \(quantity)개를 ⭐\(total)에 구매할까요?",
+                 "Buy \(quantity)× \(name) for ⭐\(total)?",
+                 "\(name) \(quantity)個を ⭐\(total) で購入しますか？")
+    }
+    var buyMax: String { t("최대", "Max", "最大") }
     var notEnoughTokens: String { t("별의조각이 부족해요", "Not enough Star Pieces", "ほしのかけらが足りません") }
     func ownedCount(_ n: Int) -> String { t("보유 ×\(n)", "Owned ×\(n)", "所持 ×\(n)") }
     var shopPriceLabel: String { t("가격", "Price", "価格") }

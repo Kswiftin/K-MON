@@ -67,7 +67,7 @@ struct PokemonAuctionView: View {
                 Picker(store.l.t("게시할 포켓몬", "Pokémon to list", "出品するポケモン"), selection: $selectedListingMonID) {
                     Text(store.l.t("선택하세요", "Choose", "選択")).tag(UUID?.none)
                     ForEach(mons) { mon in
-                        Text(displayName(mon)).tag(Optional(mon.id))
+                        Text(nameWithLevel(mon)).tag(Optional(mon.id))
                     }
                 }
                 Button(store.l.t("경매 시장에 올리기", "List on Market", "市場に出品")) {
@@ -107,7 +107,7 @@ struct PokemonAuctionView: View {
                                                   set: { offerSelections[listing.id] = $0 })) {
                             Text(store.l.t("선택하세요", "Choose", "選択")).tag(UUID?.none)
                             ForEach(store.deployableMons) { mon in
-                                Text(displayName(mon)).tag(Optional(mon.id))
+                                Text(nameWithLevel(mon)).tag(Optional(mon.id))
                             }
                         }
                         Button(store.l.t("교환 제안", "Send Offer", "交換を提案")) {
@@ -129,6 +129,12 @@ struct PokemonAuctionView: View {
             Text(name).font(.callout.bold())
             Spacer(); Text("Lv.\(mon.level)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
         }
+    }
+
+    /// 피커는 스프라이트도 부제도 없는 한 줄이라 이름만으로는 같은 종의 다른 개체를 못 고른다 —
+    /// 목록 밖(카드·제안 줄)에서 쓰는 표기와 같은 형식으로 레벨을 뒤에 붙인다.
+    private func nameWithLevel(_ mon: MonState) -> String {
+        "\(displayName(mon)) · Lv.\(mon.level)"
     }
 
     private func displayName(_ mon: MonState) -> String {

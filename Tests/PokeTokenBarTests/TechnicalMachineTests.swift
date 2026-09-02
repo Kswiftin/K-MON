@@ -62,6 +62,24 @@ final class TechnicalMachineTests: XCTestCase {
         XCTAssertEqual(s.availableTokens, 10_000 - machine.price)
     }
 
+    /// 한 번에 여러 장 — 총액을 한 번에 차감하고 재고를 그만큼 올린다.
+    func testBuyingMultipleMachinesDebitsTotalAtOnce() {
+        let s = store()
+        XCTAssertEqual(s.maxPurchasableTechnicalMachines(machine), 10_000 / machine.price)
+        XCTAssertTrue(s.buyTechnicalMachine(machine, quantity: 3))
+        XCTAssertEqual(s.technicalMachineCount(machine.moveID), 3)
+        XCTAssertEqual(s.availableTokens, 10_000 - machine.price * 3)
+    }
+
+    /// 전량 구매 — 상한을 넘기면 부분 구매 없이 통째로 no-op.
+    func testBuyingMoreMachinesThanAffordableIsNoOp() {
+        let s = store()
+        let overBudget = 10_000 / machine.price + 1
+        XCTAssertFalse(s.buyTechnicalMachine(machine, quantity: overBudget))
+        XCTAssertEqual(s.technicalMachineCount(machine.moveID), 0)
+        XCTAssertEqual(s.availableTokens, 10_000)
+    }
+
     func testCompatibleMachineOpensLearningAndConsumesOnlyAfterAccept() async {
         let s = store()
         XCTAssertTrue(s.buyTechnicalMachine(machine))
