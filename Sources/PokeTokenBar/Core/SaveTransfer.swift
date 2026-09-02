@@ -299,8 +299,11 @@ enum SaveTransfer {
         s.adventureHistory = Array(s.adventureHistory
             .filter { (1...10_000).contains($0.companionSpeciesID) && (0...maxTokenValue).contains($0.stardust) }
             .sorted { $0.completedAt > $1.completedAt }.prefix(30))
+        s.raidRewardDate = clampedKey(s.raidRewardDate)
+        // 하한이 1 인 이유는 **1인 레이드**다 — `2...4` 였을 때는 혼자 돈 레이드 전적이 불러오기에서
+        // 통째로 사라진다(보스는 사람이 아니라 이 수에 들지 않는다).
         s.battleHistory = Array(s.battleHistory
-            .filter { (2...4).contains($0.participantCount) && (0...maxTokenValue).contains($0.reward) }
+            .filter { (1...4).contains($0.participantCount) && (0...maxTokenValue).contains($0.reward) }
             .sorted { $0.playedAt > $1.playedAt }.prefix(30))
         s.battleHistory = s.battleHistory.map { record in
             var record = record
@@ -412,6 +415,11 @@ enum SaveTransfer {
         // 이 필드가 없던 세이브의 canonical 을 바꾸지 않는다. 접두 `dcd` — `cand`(스타터 후보)·
         // `dex`·`dg` 와 겹치지 않는다.
         if !s.lastCandyDate.isEmpty { p.append("dcd\(s.lastCandyDate)") }
+        // 레이드 보상은 하루 한 번이고, 이 날짜가 그 **유일한** 멱등 가드다 — 서명 밖에 두면
+        // 지우는 것만으로 같은 날 몇 번이든 다시 받는다(체육관 방어 원장 `gd` 와 같은 부류).
+        // 새 필드라 조건부 append 이고 `integrityVersion` 은 올리지 않는다: 값이 든 기존 세이브가
+        // 없으니 구서명은 그대로 유효하다.
+        if !s.raidRewardDate.isEmpty { p.append("rd\(s.raidRewardDate)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
@@ -529,6 +537,10 @@ enum SaveTransfer {
         state.gymLeadership = nil
         // 일일 사탕 원장은 로컬 날짜 문자열이라 기기 간 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
         state.lastCandyDate = max(imported.lastCandyDate, current.lastCandyDate)
+        // 레이드 일일 지급도 같은 부류이자 같은 이유다. 옮겨온 쪽이 오늘 안 받았더라도 이 기기가
+        // 받았으면 받은 것이다 — 더 최근 날짜를 남기지 않으면 세이브를 주고받는 것만으로 하루
+        // 한 번이 무한이 된다.
+        state.raidRewardDate = max(imported.raidRewardDate, current.raidRewardDate)
         // 체육관 방어 원장도 같은 부류다. 같은 날이면 **많이 받은 쪽**을 남긴다 — 적은 쪽을 쓰면
         // 기기를 옮기는 것만으로 하루 상한이 되살아난다.
         (state.gymDefenseRewardDate, state.gymDefenseRewardToday) = Self.mergedGymDefenseLedger(

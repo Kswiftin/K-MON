@@ -298,8 +298,21 @@ struct CombatantBar: View {
     /// 끄기가 있는 이유가 저전력과 접근성이라, 여기에 상시 애니메이션을 걸면 "안 움직이는 화면"
     /// 이라는 그 설정의 약속이 깨진다(값은 한 번에 오는데 바만 0.4초 흐른다).
     var animatesHP = false
+    /// 최대 HP 를 종족값이 아닌 값으로 재는 경우. 레이드 보스가 그렇다 — HP 가 티어가 정하는
+    /// **절대값**이라(`RaidTier.bossHP`) 종족값으로 나누면 막대가 100% 를 넘어 칸 밖으로 나간다.
+    var maxHPOverride: Int? = nil
 
-    private var tier: HPTier { HPTier.of(hp: side.hp, max: side.stats.hp) }
+    /// 이 칸이 쓰는 최대 HP. **네 자리(티어색·채움비율·내 표기·상대 표기)가 전부 이걸 지난다** —
+    /// 하나만 종족값을 보면 색과 길이가 서로 다른 척도를 그린다(defect-log: 상한이 누적 지점마다
+    /// 흩어지면 한 곳은 반드시 빠진다).
+    /// `nonisolated` 가 없으면 `View` 의 `@MainActor` 를 물려받아 동기 테스트에서 못 부른다
+    /// (`MultiplayerRoomCenter.creditsRaceFinish` 와 같은 이유).
+    nonisolated static func maxHP(of side: BattleSide, override: Int?) -> Int {
+        override ?? side.stats.hp
+    }
+
+    private var maxHP: Int { Self.maxHP(of: side, override: maxHPOverride) }
+    private var tier: HPTier { HPTier.of(hp: side.hp, max: maxHP) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -337,8 +350,8 @@ struct CombatantBar: View {
                 Spacer(minLength: 2)
                 StageArrows(side: side)
                 Text(revealsExactHP
-                     ? HPReadout.mine(hp: side.hp, max: side.stats.hp)
-                     : HPReadout.theirs(hp: side.hp, max: side.stats.hp))
+                     ? HPReadout.mine(hp: side.hp, max: maxHP)
+                     : HPReadout.theirs(hp: side.hp, max: maxHP))
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -348,7 +361,7 @@ struct CombatantBar: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
     }
 
-    private var fillRatio: Double { HPReadout.ratio(hp: side.hp, max: side.stats.hp) }
+    private var fillRatio: Double { HPReadout.ratio(hp: side.hp, max: maxHP) }
 }
 
 // MARK: - 필드 (Showdown 배치)

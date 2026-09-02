@@ -2095,7 +2095,10 @@ final class CompanionStore {
         if state.battleHistory.count > 30 { state.battleHistory.removeLast(state.battleHistory.count - 30) }
         // LAN 배틀 **승리만**. 연습 배틀은 혼자 무한 반복이라 업적이 클릭 노동이 된다 — 호출부가
         // 하나(`MultiplayerRoomCenter.grantRewardIfFinished`)라 그 경계가 지켜진다.
-        if won { recordAchievement(.battle, 1) }
+        // **1인 레이드도 같은 이유로 뺀다.** 1★ 는 러너 한 명으로 시작되고 상대는 NPC 보스라,
+        // 세면 이웃 없이 배틀 업적 사다리를 끝까지 올릴 수 있다(별의조각만 하루 한 번이고
+        // 시도·승리는 무제한이다). 협동 레이드는 사람이 둘 이상일 때만 센다.
+        if won, !(mode == .coopBoss && participantCount < 2) { recordAchievement(.battle, 1) }
         save()
     }
 
@@ -2408,6 +2411,26 @@ final class CompanionStore {
         guard state.shinyEggCharges > 0 else { return false }
         state.shinyEggCharges -= 1
         return true
+    }
+
+    /// 오늘 레이드 보상을 이미 받았나 — 화면이 "오늘 지급 완료"를 그리는 근거다.
+    /// 자정 타이머가 아니라 **날짜 키 비교**로 넘긴다(`MissionBoard`·체육관 방어 원장과 같은 방식).
+    var raidRewardClaimedToday: Bool { state.raidRewardDate == Self.dayKey(clock()) }
+
+    /// 레이드 정산 지급 — **하루 한 번만** 준다(#79 와 같은 규칙: 시도 무제한, 지급 1회).
+    ///
+    /// 실제 지급액을 반환한다. 이미 받았으면 0 이고, 호출부는 그 값을 그대로 화면에 쓴다 —
+    /// 지갑을 바꾸는 값은 창 안에 보이는 표면을 하나 가져야 한다(defect-log: 한 지갑에 지급하는
+    /// 경로가 여럿일 때).
+    ///
+    /// **0 이하는 원장을 소모하지 않는다.** 소모하면 진 판이 그날의 지급 기회를 태운다.
+    @discardableResult
+    func creditRaidReward(_ amount: Int) -> Int {
+        guard amount > 0, !raidRewardClaimedToday else { return 0 }
+        state.raidRewardDate = Self.dayKey(clock())
+        state.starPieces += amount
+        save()
+        return amount
     }
 
     /// 베팅 정산 지급. 환불도 "판돈과 같은 금액 지급" 이라 같은 경로를 쓴다.

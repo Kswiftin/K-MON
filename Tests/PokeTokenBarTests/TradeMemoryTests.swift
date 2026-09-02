@@ -188,7 +188,9 @@ final class TradeMemoryTests: XCTestCase {
         // 구버전은 커밋 프레임을 디코드하지 못한다 — 추억을 실으려고 기존 케이스를 건드리면 이게 깨진다.
         let commit = String(decoding: try JSONEncoder().encode(TradeWireMessage.commit(UUID())), as: UTF8.self)
         XCTAssertTrue(commit.contains("\"_0\""), commit)
-        XCTAssertEqual(TradeWireMessage.protocolVersion, 2, "추억은 버전이 아니라 프레임 추가로 간다")
+        // 추억이 버전을 안 올렸다는 사실은 위 `_0` 키 단언이 이미 증명한다 — 기존 케이스의
+        // 와이어 모양이 그대로라는 것이 곧 구버전이 계속 읽을 수 있다는 뜻이다. 버전 리터럴은
+        // 동결 자리(`TradeChatTests`)에만 두고 여기서 되풀이하지 않는다.
     }
 
     // MARK: - 보내는 쪽이 빼는 것

@@ -1,7 +1,7 @@
 import Foundation
 
 enum BattleTeam: String, Codable, Sendable { case solo, red, blue }
-enum RoomActivity: String, Codable, Sendable { case battle, pokeathlon, pokemonQuiz, tournament, gym }
+enum RoomActivity: String, Codable, Sendable { case battle, pokeathlon, pokemonQuiz, tournament, gym, raid }
 
 /// 방에서의 역할. 러너만 경기·전투에 참여하고, 관전자는 베팅만 한다.
 enum LobbyRole: String, Codable, Sendable { case runner, spectator }
@@ -60,6 +60,8 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
         case .tournament: allowed = (2...8).contains(capacity)
         // 체육관은 관장 1 + 도전자 1 이 한 판이다. 남는 자리는 전부 관전자 몫이라 러너 정원은 둘이다.
         case .gym: allowed = capacity == 2
+        // 레이드 파티는 넷이 상한이다. 보스는 참가자가 아니라 로비 정원에 들지 않는다.
+        case .raid: allowed = capacity == 4
         default: allowed = (2...4).contains(capacity)
         }
         guard allowed else { throw LobbyError.invalidCapacity }
@@ -73,10 +75,17 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
     var spectators: [LobbyParticipant] { participants.filter { $0.role == .spectator } }
 
     var mode: MultiplayerBattleMode {
-        runners.allSatisfy { $0.team == .solo } ? .freeForAll : .teams
+        // 레이드는 활동이 곧 규칙이다 — 편성에서 파생시키면 러너가 전부 `.red` 인 방이
+        // 일반 팀전으로 읽혀 승패 판정과 화면이 갈라진다.
+        if activity == .raid { return .coopBoss }
+        return runners.allSatisfy { $0.team == .solo } ? .freeForAll : .teams
     }
     var canStart: Bool {
         let runners = self.runners
+        // **레이드만 러너 한 명으로 연다.** LAN 은 이웃이 없을 수 있고, 1★ 를 혼자 못 돌면
+        // 이웃 없는 사용자에게 이 기능은 콘텐츠가 0 이다. 다른 활동의 하한(2명)은 그대로 둔다 —
+        // 이 예외를 공용 가드에 녹이면 4인 방도 혼자 시작된다.
+        if activity == .raid { return !runners.isEmpty && runners.allSatisfy(\.isReady) }
         guard runners.count >= 2, runners.allSatisfy(\.isReady) else { return false }
         if activity == .tournament { return runners.count >= 3 }
         if activity == .pokeathlon || activity == .pokemonQuiz { return true }

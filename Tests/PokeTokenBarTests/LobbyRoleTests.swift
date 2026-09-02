@@ -106,9 +106,15 @@ final class LobbyRoleTests: XCTestCase {
         // 5 = 랭크(파이터에 stages 필드, 스트림에 `.boost` case), 6 = 방 채팅, 7 = 포켓몬 OX 퀴즈,
         // 8 = 드레인·반동·다단·풀린치(스트림에 `.heal`/`.multiHit` case, `Status.flinch`),
         // 9 = 특성(스냅샷에 ability 필드), 11 = 토너먼트 팀·대진·관전 상태 동기화,
-        // 12 = 공유 체육관(도전·거절·상태·행동·승계).
+        // 12 = 공유 체육관(도전·거절·상태·행동·승계),
+        // 15 = LAN 협동 레이드(`.raidStart`·`.raidSettlement`, `MultiplayerBattleMode.coopBoss`).
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 14)
+        //
+        // **이 값을 리터럴로 박는 테스트는 여기 하나뿐이다.** 다섯 군데에 박혀 있던 동안은 누가
+        // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
+        // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
+        // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 15)
     }
 
     func testBettingMessagesRoundTrip() throws {

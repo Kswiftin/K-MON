@@ -36,7 +36,8 @@ final class BattleChatTests: XCTestCase {
             return XCTFail("chat wire case")
         }
         XCTAssertEqual(decoded.body, "hi")
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 14)
+        // 방 채팅은 6 에서 들어갔다 — 되돌아가지 않았는지만 본다.
+        XCTAssertGreaterThanOrEqual(MultiplayerWireMessage.protocolVersion, 6)
     }
 }
 

@@ -45,6 +45,8 @@ struct ChallengeView: View {
         case .idle, .pokeathlon, .pokemonQuiz:
             return true
         case .creating, .hosting, .joining, .joined:
+            // 레이드 방은 `RaidView` 소유다 — 여기서 참으로 두면 도전 탭이 레이드 로비 위에
+            // 포켓슬론 화면을 덮는다(`.gym`·`.tournament` 를 뺀 이유와 같다).
             return activity == .pokeathlon || activity == .pokemonQuiz
         case .battling, .tournament:
             return false
@@ -63,6 +65,12 @@ struct ChallengeView: View {
                 .controlSize(.small)
                 Button { nav.showDungeon = true } label: {
                     Label(l.dungeonTitle, systemImage: "map.fill")
+                }
+                .controlSize(.small)
+                // 레이드는 이웃이 있으면 협동이고 없으면 1★ 솔로다 — 어느 쪽이든 "겨루는 콘텐츠"라
+                // 체육관·던전과 같은 줄에 둔다.
+                Button { nav.showRaid = true } label: {
+                    Label(l.raidTitle, systemImage: "person.3.sequence.fill")
                 }
                 .controlSize(.small)
                 Spacer(minLength: 4)

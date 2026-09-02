@@ -378,6 +378,18 @@ struct BattleView: View {
         }
     }
 
+    /// 전적 한 줄의 모드 표기. 뷰 밖에 두는 이유는 순수 판정이라 테스트가 닿아야 해서다 —
+    /// 협동전이 `3P` 로 나오면 4인 개인전과 구별되지 않는다.
+    enum RecentBattleLabel {
+        static func text(mode: MultiplayerBattleMode, participantCount: Int) -> String {
+            switch mode {
+            case .teams: "2 vs 2"
+            case .coopBoss: "RAID \(participantCount)P"
+            case .freeForAll: "\(participantCount)P"
+            }
+        }
+    }
+
     private var multiplayerRooms: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
@@ -416,7 +428,8 @@ struct BattleView: View {
                     HStack(spacing: 5) {
                         Image(systemName: record.won ? "trophy.fill" : "shield.fill")
                             .foregroundStyle(record.won ? .orange : .secondary)
-                        Text(record.mode == .teams ? "2 vs 2" : "\(record.participantCount)P")
+                        Text(RecentBattleLabel.text(mode: record.mode,
+                                                    participantCount: record.participantCount))
                             .font(.caption2).bold()
                         Text(record.opponentNames.joined(separator: ", "))
                             .font(.caption2).foregroundStyle(.secondary).lineLimit(1)

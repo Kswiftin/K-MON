@@ -12,6 +12,7 @@
 | `docs/reference/wave-run-design.md` | 웨이브 런(오늘의 던전) 난이도·보상 균형을 바꿀 때, 상대 종 추첨·종족값 티어를 손볼 때, 웨이브를 넘어 무엇이 이월되는지 판단할 때 |
 | `docs/reference/room-walk-dungeon-design.md` | 트레이너 꾸미기 아이템을 더할 때, 친구 광고의 `outfit` 키를 바꿀 때 (던전 부분은 웨이브 런으로 대체됐다 — 지난 설계의 기록으로만 본다) |
 | `docs/reference/memory-home-plan.md` | Memory Home 에 기획서(《PokéWorld : My Mini Home》) 기능을 붙일 때, 미니룸 반응 문구·추억 카드·주크박스 해금을 손댈 때, 홈 기능이 "코드엔 있는데 화면엔 없다" 를 의심할 때 |
+| `docs/reference/lan-raid-design.md` | LAN 협동 레이드(#80)의 티어 HP·보스 추첨·예약 부화 창·정산식을 조정할 때, 게스트의 오늘자 보스 검증을 손볼 때, 호스트 마이그레이션을 실제로 붙일 때 |
 | `docs/reference/defect-log.md` | 결함·회귀를 고치는 중(부류 스윕 근거), 동시성·캐시·외부 로그 포맷·상시 애니메이션·세이브 이전을 건드릴 때 |
 | `docs/reference/chat-tool-sandbox.md` | 포켓몬 대화가 실행할 수 있는 일을 늘리거나 줄일 때, `[[tool:...]]` 마커·인자 클램프·승인 구분을 손댈 때, 액션 칩(`PokemonChatAction`·`availableActions`·`isReady`)을 더하거나 뺄 때 |
 | `docs/reference/terminal-frontend.md` | `pokedoro` 터미널 명령을 더하거나 바꿀 때, 터미널에서 세이브를 바꾸는 기능을 붙이려 할 때(지금은 읽기 전용이고 이유가 있다), 터미널 출력의 폭·키 입력이 한글에서 어긋날 때 |

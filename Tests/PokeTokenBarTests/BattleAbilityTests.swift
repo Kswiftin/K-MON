@@ -251,8 +251,17 @@ final class BattleAbilityTests: XCTestCase {
 
     /// 규칙이 바뀌면 **둘 다** 올린다 — 멀티는 `rulesVersion` 을 안 보고 `protocolVersion` 만 본다.
     /// 하나만 올리면 구버전 호스트와 신버전 게스트가 붙어 특성 유무가 갈린 채로 싸운다.
+    ///
+    /// 두 값 모두 **하한**으로 본다. 정확한 현재 값의 동결은 상수당 한 곳이고
+    /// (`BattleStatusTests.testRulesVersionMovesWithTheStatusConditions` ·
+    /// `LobbyRoleTests.testProtocolVersionIsBumpedWhenTheWireContractChanges`),
+    /// 여기서 절대값을 또 박으면 남의 정당한 상향마다 특성과 무관한 이 테스트가 빨개진다.
     func testTheRuleAndProtocolVersionsMovedTogetherForAbilities() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 20)
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 14)
+        // 특성 면역·흡수는 rulesVersion 14 에서 들어갔다.
+        XCTAssertGreaterThanOrEqual(BattleEngine.rulesVersion, 14)
+        // 특성은 9 에서 들어갔다. **이상**으로 보는 이유는 이 테스트가 주장하려는 사실이
+        // "특성이 들어간 뒤로 프로토콜이 되돌아가지 않았다" 이지 "지금 값이 정확히 얼마다" 가
+        // 아니어서다 — 절대값을 박으면 남의 정당한 상향마다 이 테스트가 빨개진다.
+        XCTAssertGreaterThanOrEqual(MultiplayerWireMessage.protocolVersion, 9)
     }
 }

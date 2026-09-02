@@ -62,6 +62,8 @@ final class PopoverNavigation {
     var showGymLeague = false
     /// 던전 오버레이(#79). 설정·체육관과 같은 층이다.
     var showDungeon = false
+    /// 협동 레이드 오버레이(#80). 위 오버레이들과 같은 층이다.
+    var showRaid = false
     /// 꾸미기(트레이너 의상) 오버레이. 위 오버레이들과 같은 층이다.
     var showOutfit = false
     /// 대화 오버레이. 다른 오버레이와 달리 **어느 개체의** 대화인지까지 들어야 한다 —
@@ -77,6 +79,7 @@ final class PopoverNavigation {
         showSettings = false
         showGymLeague = false
         showDungeon = false
+        showRaid = false
         showOutfit = false
         chatCompanionID = nil
     }
@@ -98,6 +101,14 @@ final class PopoverNavigation {
     func goToGymBattle() {
         closeOverlays()
         showGymLeague = true
+        tab = .challenge
+    }
+
+    /// 레이드를 여는 **유일한** 자리. 형제 오버레이를 접지 않고 `showRaid` 만 세우면 화면 체인이
+    /// 설정·체육관·던전을 먼저 보므로 아무 일도 안 일어난 것처럼 보인다(`goToChat` 과 같은 이유).
+    func goToRaid() {
+        closeOverlays()
+        showRaid = true
         tab = .challenge
     }
 
@@ -164,6 +175,8 @@ struct PopoverView: View {
                 GymLeagueView(store: companion, onClose: { nav.showGymLeague = false })
             } else if nav.showDungeon {
                 RogueRunView(store: companion, onClose: { nav.showDungeon = false })
+            } else if nav.showRaid {
+                RaidView(store: companion, onClose: { nav.showRaid = false })
             } else if nav.showOutfit {
                 OutfitView(store: companion, onClose: { nav.showOutfit = false })
             } else if let chatCompanionID = nav.chatCompanionID {
@@ -200,6 +213,13 @@ struct PopoverView: View {
         // 갈아 끼워 도전 문맥을 유지한다.
         .onChange(of: battleCenter.phase) { _, phase in
             if nav.showDungeon, phase != .ready { nav.showDungeon = false }
+        }
+        // 레이드가 시작되면 레이드 화면으로 데려간다 — 게스트는 자기가 누른 적 없는 `.raidStart`
+        // 로 교전에 들어가므로, 여기서 안 열면 4인 방 화면이 레이드를 그린다(보스 HP 막대가
+        // 종족값 분모라 100% 를 넘어 화면 밖으로 나간다).
+        .onChange(of: battleCenter.multiplayer.phase) { _, phase in
+            guard phase == .battling, battleCenter.multiplayer.combatMode == .coopBoss else { return }
+            nav.goToRaid()
         }
         // 거래 신청(`.incoming`)은 `wantsForegroundWindow` 가 false 라 AppDelegate 의 창 열기 경로를
         // 타지 않는다(`BattleNet.swift:507`). 즉 오버레이를 접는 일이 **여기서만** 일어난다 —

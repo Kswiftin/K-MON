@@ -354,6 +354,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             Task { @MainActor in
                 guard let self else { return }
                 self.companion.tick()
+                // 레이드 부화 알림 재예약. 날짜가 바뀐 첫 틱에서만 실제로 일한다 — 자정에
+                // 깨어날 타이머를 따로 두지 않으려고 이미 도는 틱에 얹는다.
+                self.battleCenter.multiplayer.refreshRaidHatchReminders()
                 self.applyState()   // 메뉴바 "오늘 함께한 시간" 갱신(틱만으론 menuTitle 관찰이 안 걸린다)
             }
         }

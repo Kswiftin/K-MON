@@ -105,6 +105,106 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertTrue(popover.contains("case .challenge: ChallengeView"), "도전 탭이 이 화면을 연다")
     }
 
+    // MARK: 오버레이 높이 — 안 고정하면 쪼그라든다
+
+    /// **부류 가드.** 오버레이는 팝오버 본체(`mainContent`)의 `.frame(height:)` 밖에 놓이므로
+    /// 자기 높이를 스스로 고정해야 한다. 안 하면 창이 콘텐츠 자연 높이로 줄고, 그 안의
+    /// `ScrollView` 가 남은 공간만 받아 내용이 잘린 채로 뜬다 — `RaidView` 가 실제로 그랬다
+    /// (형제 다섯은 전부 고정하고 있었고 새로 들어온 하나만 빠졌다).
+    ///
+    /// 값까지 강제하지는 않는다. `SettingsView` 는 460, 나머지는 `currentHeight(for: .battle)` 로
+    /// 서로 다르고 그건 각 화면의 판단이다. 여기서 막는 건 **아예 안 정하는 것**이다.
+    func testEveryPopoverOverlayPinsItsOwnHeight() throws {
+        func source(_ file: String) throws -> String {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/PokeTokenBar/UI/\(file).swift")
+            return try String(contentsOf: url, encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line -> String in
+                    guard let comment = line.range(of: "//") else { return String(line) }
+                    return String(line[..<comment.lowerBound])
+                }
+                .joined(separator: "\n")
+        }
+        // 오버레이 체인은 `PopoverView.body` 가 갈아 끼우는 화면들이다. 새 오버레이를 더하면
+        // 여기도 늘린다 — 목록이 한 벌이라 빠뜨릴 자리가 없다.
+        let overlays = ["SettingsView", "GymLeagueView", "RogueRunView", "RaidView",
+                        "OutfitView", "PokemonChatView"]
+
+        // 대조군: 목록의 화면들이 실제로 `PopoverView` 의 체인에 있는지 먼저 본다. 없는 이름을
+        // 검사하면 이 가드는 아무것도 안 지키면서 초록이다.
+        let popover = try source("PopoverView")
+        for overlay in overlays {
+            XCTAssertTrue(popover.contains("\(overlay)("), "\(overlay) 가 오버레이 체인에 없다")
+        }
+
+        for overlay in overlays {
+            XCTAssertTrue(try source(overlay).contains(".frame(height:"),
+                          "\(overlay) 가 높이를 안 정한다 — 창이 콘텐츠 높이로 줄어 내용이 잘린다")
+        }
+    }
+
+    // MARK: 레이드 아레나 — 4인 파티가 폭에 들어가나
+
+    private func raidArena(names: [String], language: AppLanguage = .ko) -> some View {
+        func snapshot(_ name: String, level: Int) -> BattleSnapshot {
+            var made = BattleSnapshot(speciesID: 143, name: name, trainer: nil, level: level,
+                                      nature: nil, isShiny: false, types: [.normal, .flying],
+                                      base: BattleStats(hp: 100, atk: 100, def: 100,
+                                                        spa: 100, spd: 100, spe: 100))
+            made.moves = (0..<4).map {
+                MoveSpec(id: $0, names: ["en": "Move", "ko": "기술", "ja": "わざ"], type: .normal,
+                         power: 80, damageClass: .physical, accuracy: 100, pp: 20)
+            }
+            return made
+        }
+        var bossSide = BattleSide(snapshot("보스", level: RaidTier.five.bossLevel))
+        bossSide.hp = RaidTier.five.bossHP
+        let party = names.enumerated().map { index, name in
+            RaidArenaView.Cell(id: UUID(uuid: (UInt8(index), 0, 0, 0, 0, 0, 0x40, 0, 0xA0,
+                                               0, 0, 0, 0, 0, 0, 0)),
+                               title: name, side: BattleSide(snapshot(name, level: RaidBoss.partyLevel)))
+        }
+        return RaidArenaView(
+            boss: RaidArenaView.Cell(id: RaidBoss.bossID, title: "보스", side: bossSide),
+            bossMaxHP: RaidTier.five.bossHP, party: party,
+            myID: party.first?.id ?? RaidBoss.bossID, l: L(language),
+            round: 7, turnsLeft: 14, overlay: .idle, logLines: [],
+            acceptsInput: true, isFinished: false, onMove: { _ in })
+    }
+
+    /// 파티 넷이 두 칸씩 접혀 팝오버 폭 안에 들어와야 한다. 넘치면 이름과 HP 표기가 먼저 잘리고,
+    /// 그건 "누가 얼마나 남았나" 를 못 보는 것과 같다.
+    func testTheRaidArenaFitsTheContentWidthWithAFullParty() {
+        for language in [AppLanguage.ko, .en, .ja] {
+            let width = renderedWidth(raidArena(names: ["가", "나", "다", "라"], language: language),
+                                      proposing: PopoverMetrics.contentWidth)
+            XCTAssertLessThanOrEqual(width, PopoverMetrics.contentWidth,
+                                     "\(language.rawValue): 4인 파티가 폭을 넘겼다")
+        }
+    }
+
+    /// **대조군**: 넷이 하나보다 높아야 한다. 파티 격자가 실제로 안 그려지고 있으면 위 폭 검증은
+    /// 그냥 통과한다(defect-log: 총폭 검증은 누가 잘렸는지를 못 잡는다).
+    func testTheRaidArenaActuallyDrawsEveryPartyMember() {
+        let solo = renderedHeight(raidArena(names: ["가"]), proposingWidth: PopoverMetrics.contentWidth)
+        let full = renderedHeight(raidArena(names: ["가", "나", "다", "라"]),
+                                  proposingWidth: PopoverMetrics.contentWidth)
+        XCTAssertGreaterThan(full, solo, "파티 넷이 한 줄에 접히면 격자가 안 그려진 것이다")
+    }
+
+    /// 트레이너 이름은 Bonjour 에서 와 길이를 우리가 정하지 못한다. 길면 줄바꿈이 아니라 잘려야
+    /// 한다 — 줄바꿈되면 칸이 커져 아래 기술 버튼이 밀린다(`PeerRow` 와 같은 부류).
+    func testALongTrainerNameTruncatesInsteadOfGrowingTheRaidArena() {
+        let short = renderedHeight(raidArena(names: ["가", "나", "다", "라"]),
+                                   proposingWidth: PopoverMetrics.contentWidth)
+        let long = renderedHeight(
+            raidArena(names: [String(repeating: "트레이너", count: 8), "나", "다", "라"]),
+            proposingWidth: PopoverMetrics.contentWidth)
+        XCTAssertEqual(long, short, accuracy: 1, "긴 이름이 아레나 높이를 키웠다")
+    }
+
     // MARK: 소유 포켓몬 — 페이지 도달성
 
     /// 트리거 재현: 한 페이지를 넘긴 마릿수. 페이지가 하나로 머물면 초과분은 다시 도달 불가가 되고,
