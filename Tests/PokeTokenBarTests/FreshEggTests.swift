@@ -30,8 +30,10 @@ final class FreshEggTests: XCTestCase {
 
     func testPriceMatchesStarPieceEconomy() { XCTAssertEqual(FreshEgg.price, 20_000) }
 
-    /// [핵심] 리롤 = 폐기: active 사라지고 새 알(eggUsage 0). **도감·확률(collectedFinals) 불변** = "뽑은 적 없던 것처럼".
-    func testBuyFreshEggDiscardsWithoutDexOrProbabilityImpact() {
+    /// [핵심] 알 구매는 **키우던 개체를 건드리지 않는다** — 보관 알만 하나 는다. 도감·확률
+    /// (collectedFinals)도 그대로다. 예전엔 활성 개체를 폐기하는 리롤이었고 그 시절 문구가 코드
+    /// 주석에 오래 남아 실제 동작을 잘못 설명했다(2026-09-02) — 이름과 문구를 동작에 맞춘다.
+    func testBuyFreshEggKeepsTheActiveMonAndAddsAStoredEgg() {
         let s = store(used: 5_000_000_000, spent: 0)
         let persistedDexBefore = s.state.dex
         let collectedBefore = s.state.collectedFinals
@@ -43,19 +45,20 @@ final class FreshEggTests: XCTestCase {
         XCTAssertFalse(s.isEgg)
         XCTAssertEqual(s.focusEggCount, 1)
         XCTAssertEqual(s.state.dex.map(\.id), persistedDexBefore.map(\.id),
-                       "영구 도감 불변 — 졸업이 아니라 폐기")
+                       "영구 도감 불변 — 알을 산 것뿐이라 졸업 기록이 생기지 않는다")
         XCTAssertEqual(s.dexEntries.count, persistedDexBefore.count + 1)
         XCTAssertEqual(s.state.collectedFinals, collectedBefore, "확률 가중(collectedFinals) 불변")
         XCTAssertEqual(s.focusEggCount, 1, "구매한 알은 인벤토리에 보관")
         XCTAssertEqual(s.state.starPieces, 5_000_000_000 - FreshEgg.price)
     }
 
-    /// 폐기한 개체(baseID 10)의 종은 collectedFinals 에 들어가지 않는다(이후 부화 확률에 영향 없음).
-    func testDiscardedSpeciesNotCollected() {
+    /// 알을 샀다고 키우던 개체(baseID 10)의 종이 수집 기록에 들어가지는 않는다 — 수집은 졸업으로만
+    /// 쌓이고, 이후 부화 확률 가중도 그대로다.
+    func testBuyingAnEggDoesNotCollectTheActiveSpecies() {
         let s = store()
         XCTAssertTrue(s.buyFreshEgg())
         XCTAssertFalse(s.state.collectedFinals.contains { $0.hasPrefix("10:") },
-                       "폐기 개체 종은 수집 기록에 없어야 함")
+                       "졸업하지 않은 종은 수집 기록에 없어야 함")
     }
 
     /// 알 상태(활성 없음)에선 리롤할 게 없어 불가.
