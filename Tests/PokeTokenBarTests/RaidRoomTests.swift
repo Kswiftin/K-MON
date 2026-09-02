@@ -161,6 +161,39 @@ final class RaidRoomTests: XCTestCase {
             previous: [theirs], current: [theirs, second], myIDTag: "MYTAG1"), [second])
     }
 
+    // MARK: 와이어 계약
+
+    /// 새 case 는 왕복해야 한다. 특히 `[UUID: Int]` 는 키가 String 도 Int 도 아니라 JSON 에서
+    /// **배열**(k,v,k,v)로 인코딩된다 — 모양이 조용히 깨지면 정산이 통째로 0 이 된다.
+    func testRaidWireMessagesRoundTrip() throws {
+        let fighters = [runner("A"), boss(tier: .five)]
+        let start = MultiplayerWireMessage.raidStart(seed: 42, fighters: fighters, tier: .five)
+        XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self,
+                                                from: JSONEncoder().encode(start)), start)
+
+        let settlement = MultiplayerWireMessage.raidSettlement(contributions: [fighters[0].id: 1_234])
+        let decoded = try JSONDecoder().decode(MultiplayerWireMessage.self,
+                                               from: JSONEncoder().encode(settlement))
+        guard case .raidSettlement(let contributions) = decoded else { return XCTFail("raidSettlement") }
+        XCTAssertEqual(contributions[fighters[0].id], 1_234)
+    }
+
+    /// 보스는 최대 HP 규칙에서 빠지므로 **HP 가 와이어를 그대로 건너야** 한다 — 깎여서 도착하면
+    /// 게스트의 오늘자 검증이 정직한 호스트를 거절한다.
+    func testTheBossKeepsItsTierHPAcrossTheWire() throws {
+        let dayKey = "2026-09-02"
+        var todays = snapshot(level: RaidTier.five.bossLevel, moves: [move(id: 33, power: 40)])
+        todays.speciesID = RaidBoss.speciesID(dayKey: dayKey)
+        let sent = RaidBoss.bossFighter(tier: .five, snapshot: todays)
+        XCTAssertTrue(RaidBoss.validBoss(sent, tier: .five, dayKey: dayKey), "보내는 쪽부터 유효해야 한다")
+
+        let received = try JSONDecoder().decode(MultiplayerFighter.self,
+                                                from: JSONEncoder().encode(sent))
+        XCTAssertEqual(received.side.hp, RaidTier.five.bossHP)
+        XCTAssertTrue(RaidBoss.validBoss(received, tier: .five, dayKey: dayKey),
+                      "와이어를 건넌 보스도 그대로 오늘의 보스여야 한다")
+    }
+
     // MARK: 하루 한 번 지급
 
     /// #79 와 같은 규칙 — 시도는 무제한, 지급은 하루 한 번. 규칙이 하나여야 배울 게 하나다.

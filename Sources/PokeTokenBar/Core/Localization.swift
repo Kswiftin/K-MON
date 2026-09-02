@@ -1185,6 +1185,54 @@ struct L {
           "Versions differ, so you can't join. Please update to the latest version.",
           "アプリのバージョンが違うため参加できません。最新版に更新してください。")
     }
+    // MARK: LAN 협동 레이드 (#80)
+
+    var raidTitle: String { t("협동 레이드", "Co-op Raid", "共闘レイド") }
+    var raidTodaysBoss: String { t("오늘의 보스", "Today's boss", "今日のボス") }
+    var raidBossLoadFailed: String {
+        t("오늘의 보스를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+          "Couldn't load today's boss. Please try again in a moment.",
+          "今日のボスを読み込めませんでした。しばらくしてからもう一度お試しください。")
+    }
+    /// 게스트가 오늘의 보스와 다른 편성을 받았을 때. **정직한 버전 차이로도 뜬다** — 상대가
+    /// 자정을 갓 넘겼거나 시간대가 다르면 날짜 키가 갈린다. 그래서 "조작"이라고 쓰지 않는다.
+    var raidBossMismatch: String {
+        t("이 방의 보스가 오늘의 보스와 다릅니다. 날짜가 갈렸거나 앱 버전이 다를 수 있어요.",
+          "This room's boss isn't today's boss. The date may have rolled over, or app versions differ.",
+          "この部屋のボスが今日のボスと違います。日付が変わったか、アプリのバージョンが異なる可能性があります。")
+    }
+    func raidRoomOpenedTitle(tier: Int) -> String {
+        t("⚔️ \(tier)★ 레이드가 열렸어요", "⚔️ A \(tier)★ raid is open", "⚔️ \(tier)★レイドが始まりました")
+    }
+    func raidRoomOpenedBody(trainer: String) -> String {
+        t("\(trainer) 님이 같은 네트워크에서 모집 중입니다.",
+          "\(trainer) is recruiting on your network.",
+          "\(trainer)さんが同じネットワークで募集中です。")
+    }
+    func raidTierLabel(_ tier: Int, runners: Int) -> String {
+        t("\(tier)★ · \(runners)인 권장", "\(tier)★ · \(runners) recommended", "\(tier)★ · \(runners)人推奨")
+    }
+    var raidTurnsLeft: String { t("남은 턴", "Turns left", "残りターン") }
+    var raidContribution: String { t("기여도", "Contribution", "貢献度") }
+    var raidRewardBase: String { t("기본", "Base", "基本") }
+    var raidRewardTurns: String { t("남은 턴", "Turns left", "残りターン") }
+    var raidRewardSurvivors: String { t("생존", "Survivors", "生存") }
+    var raidAlreadyPaidToday: String {
+        t("오늘의 레이드 보상은 이미 받았습니다 — 계속 돌 수는 있어요.",
+          "You already claimed today's raid reward - you can still keep running raids.",
+          "今日のレイド報酬は受け取り済みです — 挑戦は続けられます。")
+    }
+    var raidTurnCapReached: String {
+        t("턴이 다 됐습니다 — 보스가 버텼어요.", "Out of turns - the boss held on.",
+          "ターン切れ — ボスが耐えきりました。")
+    }
+    var raidHostLeft: String {
+        t("방장이 나가 레이드가 끝났습니다. 다시 열어 주세요.",
+          "The host left, so the raid ended. Open a new one.",
+          "ホストが退出したためレイドが終了しました。もう一度開いてください。")
+    }
+    var raidNextHatch: String { t("다음 5★ 부화", "Next 5★ hatch", "次の5★出現") }
+
     var playerGymUpdateRequired: String {
         t("앱을 업데이트해 주세요 — 더 새로운 체육관이 열려 있어 도전도 개설도 할 수 없습니다.",
           "Please update the app — a newer gym is open, so you can't challenge or open one.",
