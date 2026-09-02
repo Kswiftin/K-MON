@@ -1504,10 +1504,20 @@ final class PokemonMemoryAlbum {
         }
         return changed
     }
+    /// 앨범도 세이브와 같은 규칙을 따른다 — 실패를 덮으면 추억이 사라진 이유가 아무 데도 남지 않는다.
+    /// 전이할 때만 적는다(기록 한 줄마다 불리는 경로다).
+    private var saveFailed = false
+
     private func save() {
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(snapshot)
+            try data.write(to: fileURL, options: .atomic)
+            saveFailed = false
+        } catch {
+            if !saveFailed { AppLog.write("memory album save failed: \(error)") }
+            saveFailed = true
+        }
     }
 }
 
@@ -2160,10 +2170,19 @@ final class PokemonChatStore {
     }
     func snapshotData() throws -> Data { try JSONEncoder().encode(Snapshot(sessions: sessions)) }
 
+    /// 대화 기록도 사용자 데이터다 — 앨범·세이브와 같은 규칙으로 실패를 적는다(전이할 때만).
+    private var saveFailed = false
+
     private func save() {
         let dir = fileURL.deletingLastPathComponent(); try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard let data = try? JSONEncoder().encode(Snapshot(sessions: sessions)) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(Snapshot(sessions: sessions))
+            try data.write(to: fileURL, options: .atomic)
+            saveFailed = false
+        } catch {
+            if !saveFailed { AppLog.write("chat history save failed: \(error)") }
+            saveFailed = true
+        }
     }
     private static func defaultURL() -> URL { CompanionStorageLocations().chatURL }
     private static func siblingMemoryURL(for fileURL: URL) -> URL {

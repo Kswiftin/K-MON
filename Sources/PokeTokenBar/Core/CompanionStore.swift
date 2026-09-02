@@ -2310,11 +2310,23 @@ final class CompanionStore {
     /// 결과 화면이 다시 뜬다.
     private func persistRogueRun() {
         guard let rogueRun else {
-            try? FileManager.default.removeItem(at: waveRunURL)
+            // 파일이 없는 것은 실패가 아니다 — 판 없이 저장이 여러 번 불린다.
+            do { try FileManager.default.removeItem(at: waveRunURL) } catch CocoaError.fileNoSuchFile {
+            } catch {
+                // 못 지우면 다음 기동이 끝난 판을 되살려 결과 화면을 다시 띄운다.
+                AppLog.write("wave run save could not be removed: \(error)")
+                saveFailed = true
+            }
             return
         }
-        guard let data = try? JSONEncoder().encode(rogueRun.saveForm) else { return }
-        try? data.write(to: waveRunURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(rogueRun.saveForm)
+            try data.write(to: waveRunURL, options: .atomic)
+        } catch {
+            // 형제 경로(`loadRogueRun`)는 실패를 적는다. 여기만 덮어두면 판이 사라진 이유가 남지 않는다.
+            AppLog.write("wave run save failed: \(error)")
+            saveFailed = true
+        }
     }
 
     /// 기동 시 되살린다. 되살릴 수 없는 파일은 **지운다** — 그대로 두면 켤 때마다 같은 실패를
@@ -3782,10 +3794,22 @@ final class CompanionStore {
         }
         if changed { save() }
     }
+    /// 마지막 저장이 실패한 채로 남아 있다. 화면이 읽는다 — 저장이 안 되는 것을 알리지 않으면
+    /// 사용자는 앱을 그대로 쓰다가 다음 기동에서 진행을 통째로 잃는다.
+    private(set) var saveFailed = false
+
     private func save() {
         memoryAlbum.clearSharedPinnedMemory(unlessPinnedFor: state.active?.id)
-        // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).
-        guard let data = try? JSONEncoder().encode(SaveTransfer.signed(state)) else { return }
-        try? data.write(to: fileURL, options: .atomic)   // 부분 쓰기 손상 방지(펫 상태)
+        do {
+            // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).
+            let data = try JSONEncoder().encode(SaveTransfer.signed(state))
+            try data.write(to: fileURL, options: .atomic)   // 부분 쓰기 손상 방지(펫 상태)
+            if saveFailed { AppLog.write("companion state save recovered"); saveFailed = false }
+        } catch {
+            // 상태가 바뀔 때마다 불리는 경로라 **전이할 때만** 적는다 — 매번 적으면 실패가
+            // 이어지는 동안 로그가 밀려 원인 줄이 밀려난다.
+            if !saveFailed { AppLog.write("companion state save failed: \(error)") }
+            saveFailed = true
+        }
     }
 }
