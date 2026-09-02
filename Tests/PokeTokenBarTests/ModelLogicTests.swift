@@ -87,19 +87,23 @@ final class EvoLineNameTests: XCTestCase {
 
 // MARK: EvoLine 에셋 지원 범위
 
+/// 애니메이션 GIF 가 없어 `EvoLine` 초기화가 트리에서 지우는 종. 번호를 손으로 박으면
+/// 그 종에 GIF 가 생기는 날 테스트가 조용히 뜻을 잃는다 — 구멍 목록에서 직접 뽑는다.
+private let spriteless = PokemonAssets.spriteGaps.min() ?? 0
+
 final class EvoLineAssetTests: XCTestCase {
-    /// PokéAPI 원본 체인에 Gen-V 이후 진화형이 이어져도, 서비스가 제공하는 GIF가 있는 형태만
-    /// 실제 진화 라인과 단계 수에 남아야 한다. 예: 망키(#56) → 성원숭(#57) → 저승갓숭(#979).
+    /// PokéAPI 원본 체인에 GIF 없는 진화형이 이어져도, 스프라이트가 있는 형태만 실제 진화 라인과
+    /// 단계 수에 남아야 한다. 망키(#56) → 성원숭(#57) 뒤에 그런 형태 하나를 붙여 본다.
     func testKeepsOnlyFormsWithAnimatedAssets() {
         let line = EvoLine(
             baseID: 56,
-            tree: evoNode(56, [evoNode(57, [evoNode(979)])]),
+            tree: evoNode(56, [evoNode(57, [evoNode(spriteless)])]),
             rarity: .common,
             names: [:])
 
         XCTAssertEqual(line.totalForms, 2)
         XCTAssertEqual(line.tree.finalIDs, [57])
-        XCTAssertNil(line.tree.node(withID: 979))
+        XCTAssertNil(line.tree.node(withID: spriteless))
     }
 }
 
