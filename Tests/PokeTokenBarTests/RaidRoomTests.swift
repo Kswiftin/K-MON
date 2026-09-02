@@ -298,6 +298,15 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.creditRaidReward(300), 300)
     }
 
+    // MARK: 전적 표기
+
+    /// 협동전이 `3P` 로 나오면 4인 개인전과 구별되지 않는다 — 전적 목록에서 두 줄이 같아 보인다.
+    func testRecentBattleLabelDistinguishesRaids() {
+        XCTAssertEqual(BattleView.RecentBattleLabel.text(mode: .coopBoss, participantCount: 3), "RAID 3P")
+        XCTAssertEqual(BattleView.RecentBattleLabel.text(mode: .freeForAll, participantCount: 3), "3P")
+        XCTAssertEqual(BattleView.RecentBattleLabel.text(mode: .teams, participantCount: 4), "2 vs 2")
+    }
+
     // MARK: 서명 — 지우면 다시 받는 필드다
 
     /// 이 날짜가 하루 한 번의 **유일한** 멱등 가드라 서명 밖에 두면 지우는 것만으로 무한 재수령이다

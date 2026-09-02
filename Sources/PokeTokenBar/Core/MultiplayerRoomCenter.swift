@@ -1798,7 +1798,12 @@ final class MultiplayerRoomCenter {
         rewardedBattle = true
         // 별의조각은 지급하지 않는다 — 전적만 남긴다. 예전엔 여기서 표시용 보상액을 계산해
         // 화면이 "+20 ✨"을 띄웠는데 `grantBattleReward` 는 아무것도 지급하지 않았다.
-        let won = outcome == .win, count = combatFighters.count
+        // 참가자 수는 **사람 수**다. 협동전에서 보스까지 세면 4인 파티가 `5P` 로 남고,
+        // 불러오기 정규화(`SaveTransfer.sanitized` 의 1...4)에 걸려 그 기록이 통째로 사라진다.
+        let won = outcome == .win
+        let count = combatMode == .coopBoss
+            ? combatFighters.filter { $0.team == .red }.count
+            : combatFighters.count
         // 기록에 남는 모드도 판정과 **같은 근거**를 쓴다 — `lobby?.mode` 를 여기만 남겨 두면 판정은
         // 팀전인데 전적은 개인전으로 적히는 자리가 다시 생긴다.
         let mode = combatMode
