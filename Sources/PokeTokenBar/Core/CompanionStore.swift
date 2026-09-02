@@ -3037,8 +3037,11 @@ final class CompanionStore {
         return availableTokens >= price
     }
 
-    /// 잔액으로 한 번에 살 수 있는 최대 수량 — 상점의 수량 선택 상한. 보유형(이로치 부적 등)은
-    /// 재구매가 없으므로 0 또는 1 이다.
+    /// 잔액으로 한 번에 살 수 있는 최대 수량 — 상점의 수량 선택 상한.
+    ///
+    /// 보유형 분기는 지금 도달하지 않는다(유일한 보유형인 이로치 부적은 `shopPrice` 가 nil 이라
+    /// 위 guard 에서 걸린다). 보유형이 판매 목록에 들어오는 날 스텝퍼가 항상 실패하는 수량을
+    /// 고르게 두지 않으려고 남긴다 — `buy(_:quantity:)` 는 보유형의 2개 이상을 거절한다.
     func maxPurchasable(_ kind: ItemKind) -> Int {
         guard let price = kind.shopPrice, price > 0 else { return 0 }
         if kind.isPassive { return canBuy(kind) ? 1 : 0 }

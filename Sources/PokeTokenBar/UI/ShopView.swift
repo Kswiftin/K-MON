@@ -322,7 +322,7 @@ private struct ShopItemCard: View {
                     .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                 Spacer()
                 if store.canBuy(kind) {
-                    // 보유형(이로치 부적 등)은 1회 구매라 수량 선택이 없다.
+                    // 한 개밖에 못 사면 스텝퍼를 띄우지 않는다(기존 화면 그대로).
                     if affordableCount > 1 {
                         PurchaseQuantityPicker(quantity: $quantity, upperBound: affordableCount, l: l)
                     }

@@ -155,15 +155,15 @@ final class ShopTests: XCTestCase {
         XCTAssertEqual(s.availableTokens, RareCandy.price * 3)
     }
 
-    /// 보유형(이로치 부적)은 1회 구매 — 상한이 1이고, 2개 이상 요청은 거절된다.
+    /// 보유형(이로치 부적)은 상점에서 팔지 않는다 — 잔액이 아무리 많아도 수량 선택도 구매도 없다.
+    /// `shopPrice` 단언은 경보다: 보유형이 판매 목록에 들어오는 날 수량 규칙을 다시 봐야 한다
+    /// (개수 개념이 없는 아이템에 스텝퍼가 붙으면 항상 실패하는 수량을 고르게 된다).
     func testPassiveItemHasNoQuantity() {
-        let price = ItemKind.shinyCharm.shopPrice ?? 0
-        let s = store(used: price * 5)
-        XCTAssertEqual(s.maxPurchasable(.shinyCharm), 1)
+        XCTAssertNil(ItemKind.shinyCharm.shopPrice, "보유형이 판매 목록에 들어왔다 — 수량 규칙 재검토 필요")
+        let s = store(used: 10_000_000_000)
+        XCTAssertEqual(s.maxPurchasable(.shinyCharm), 0)
         XCTAssertFalse(s.buy(.shinyCharm, quantity: 2))
         XCTAssertEqual(s.itemCount(.shinyCharm), 0)
-        XCTAssertTrue(s.buy(.shinyCharm, quantity: 1))
-        XCTAssertEqual(s.maxPurchasable(.shinyCharm), 0, "구매 후 재구매 불가")
     }
 
     // MARK: 정렬 (가격 저렴한 순 + 구매 완료 보유형 맨 아래)
