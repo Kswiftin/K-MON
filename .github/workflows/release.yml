@@ -130,18 +130,36 @@ jobs:
 
       # Release is created only after every build, signature and feed check succeeds,
       # so clients never observe a published semantic version with missing assets.
+      #
+      # Retries a transient failure (e.g. the runner briefly can't reach
+      # api.github.com) in place instead of failing the whole job — a job rerun
+      # would redo the ~6 minute test-gate + build + sign steps above just to
+      # retry this ~30 second API call.
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            build/release-feed/Pokedoro.zip \
-            build/release-feed/Pokedoro.zip.sha256 \
-            build/release-feed/appcast.xml \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "K-MON $GITHUB_REF_NAME" \
-            --generate-notes
+          for attempt in 1 2 3; do
+            if gh release create "$GITHUB_REF_NAME" \
+                build/release-feed/Pokedoro.zip \
+                build/release-feed/Pokedoro.zip.sha256 \
+                build/release-feed/appcast.xml \
+                --repo "$GITHUB_REPOSITORY" \
+                --verify-tag \
+                --title "K-MON $GITHUB_REF_NAME" \
+                --generate-notes; then
+              exit 0
+            fi
+            echo "gh release create failed (attempt $attempt/3)" >&2
+            # A failed attempt may still have created the release before the
+            # asset upload or API call broke — clean it up so the next attempt
+            # doesn't collide, and so a final failure never leaves a partial
+            # release (missing assets) visible to clients.
+            gh release delete "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+            sleep 15
+          done
+          echo "gh release create failed after 3 attempts" >&2
+          exit 1
 
       - name: Remove signing keychain
         if: always()
