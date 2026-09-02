@@ -542,8 +542,12 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 extension BattleSnapshot {
     /// 대전 레벨 범위 — `MultiplayerValidation.valid` 가 보는 범위와 같다.
     static let levelRange = 1...100
-    /// 종족값 범위 — 도감 최대치가 255 다(`MultiplayerValidation.valid` 와 같은 범위).
-    static let baseStatRange = 1...255
+    /// 종족값의 **안전 범위** — 도감 최대치는 255 이고 와이어에서 그 위를 거절하는 곳은
+    /// `MultiplayerValidation.valid` 다. 여기 상한이 255 가 아닌 이유: 이 생성자는 세이브
+    /// (`RogueRunSave`)도 통과하고, 판 조율·테스트가 도감 밖 종족값으로 판을 만든다 —
+    /// 255 로 자르면 저장한 판이 되살아날 때 최대 HP 가 달라진다(저장이 하향이 된다).
+    /// 이 범위가 막는 것은 오버플로 하나이며, 공정성은 위 검증이 계속 본다.
+    static let baseStatRange = 1...100_000
     /// 한 개체의 타입 수 — 본가와 같이 최대 2 다.
     static let maximumTypes = 2
     /// 무브셋 상한 — 기술 칸이 넷이다.
