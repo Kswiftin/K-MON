@@ -1704,12 +1704,21 @@ final class CompanionStore {
     ///
     /// 신청자 쪽에서는 상대가 `.committed` 앞에 보낸 값이 여기로 들어오고, 수신자 쪽에서는
     /// 성사 뒤에 도착해 `adoptTradedMemories` 로 따로 들어온다 — 어느 쪽이든 검사는 `adopt` 하나다.
+    /// `performTrade` 가 받아들일 수 있는 조합인지만 본다 — 상태는 바꾸지 않는다.
+    ///
+    /// 커밋을 두 단계로 나눈 경로(경매)가 **개체가 움직이기 전에** 같은 판정을 미리 물어야 한다.
+    /// 마지막 커밋이 여기서 걸릴 값이면 상대는 이미 자기 개체를 넘긴 뒤라 한쪽만 성사된 교환이
+    /// 된다. 조건을 두 벌로 두면 한쪽만 넓어져 그 구멍이 조용히 돌아오므로 정본은 이 함수다.
+    func canPerformTrade(offeredID: UUID, received incoming: MonState) -> Bool {
+        incoming.id != offeredID
+            && (1...649).contains(incoming.currentID)
+            && !ownedMons.contains(where: { $0.id == incoming.id })
+    }
+
     @discardableResult
     func performTrade(offeredID: UUID, received incoming: MonState,
                       incomingMemories: TradeMemoryPayload? = nil) -> Bool {
-        guard incoming.id != offeredID,
-              (1...649).contains(incoming.currentID),
-              !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
+        guard canPerformTrade(offeredID: offeredID, received: incoming) else { return false }
 
         let offeredSpecies = state.active?.id == offeredID
             ? state.active?.currentID : state.boxedMons.first(where: { $0.id == offeredID })?.currentID

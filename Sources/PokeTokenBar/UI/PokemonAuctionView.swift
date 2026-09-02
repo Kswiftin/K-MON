@@ -95,7 +95,13 @@ struct PokemonAuctionView: View {
                     ProgressView().controlSize(.small).opacity(status == .pending ? 1 : 0)
                     Text(outgoingText(status)).font(.caption.bold())
                     Spacer()
-                    if status != .pending { Button(store.l.t("확인", "Done", "確認")) { center.clearOutgoingResult() } }
+                    // 대기 중인 제안은 거둬들일 수 있어야 한다 — 상대가 답하지 않으면 제한 시간까지
+                    // 새 제안을 걸지 못한다(동시에 하나만 걸 수 있다).
+                    if status == .pending {
+                        Button(store.l.t("취소", "Cancel", "取消")) { center.cancelOutgoingOffer() }
+                    } else {
+                        Button(store.l.t("확인", "Done", "確認")) { center.clearOutgoingResult() }
+                    }
                 }.padding(8).background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
             }
             if center.listings.isEmpty {
