@@ -1114,6 +1114,7 @@ struct CompanionState: Codable, Sendable {
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.
         active             = c.lenientOptional(MonState.self, forKey: .active)
         boxedMons          = c.lenient([Lossy<MonState>].self, forKey: .boxedMons, default: []).compactMap(\.value)
+        favoriteMonIDs     = c.lenient(Set<UUID>.self, forKey: .favoriteMonIDs, default: [])
         // 도감은 항목별 격리 — 손상 항목 하나가 도감 전체를 날리지 않게.
         dex                = c.lenient([Lossy<DexEntry>].self, forKey: .dex, default: []).compactMap(\.value)
         collectedFinals    = c.lenient(Set<String>.self, forKey: .collectedFinals, default: [])

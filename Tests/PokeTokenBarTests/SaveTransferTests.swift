@@ -603,6 +603,9 @@ final class SaveTransferTests: XCTestCase {
                                      // 트레이너 꾸미기 — 산 의상과 착용 상태는 진행이라 그대로 따라간다.
                                      "outfit", "ownedOutfits", "battleRepresentativeID",
                                      "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
+                                     // 즐겨찾기는 그 개체에 건 잠금이다 — 개체가 따라가는데 잠금만
+                                     // 두고 오면 옮긴 기기에서 아끼던 포켓몬이 그냥 놓아줄 수 있게 된다.
+                                     "favoriteMonIDs",
                                      "battleRank", "trainer", "missions", "achievements", "seasons", "battleHistory",
                                      // 진행 중인 랭크전 에스크로 — 이미 지갑에서 빠져나간 돈이다.
                                      // 기기를 옮길 때 안 따라가면 배틀 중에 이전해서 판돈을 챙길 수 있다.
@@ -632,6 +635,28 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertEqual(actual, classified, """
             CompanionState 필드가 바뀌었다. 세이브 이전에서 이 필드가 무엇인지 정하고 목록을 갱신하라 —
             진행(그대로) / 로컬 장부(새 기기 기준 재설정) / 계정 원장(병합) / 기기 환경설정(현재 값 유지).
+            """)
+    }
+
+    /// `CompanionState` 는 디코더만 손으로 쓰고 인코더는 합성이다. 새 필드를 더하면서 그 손글씨
+    /// 디코더에 줄을 안 넣으면 **쓰이기는 하고 읽히지는 않는** 필드가 된다 — 컴파일도 되고 인코딩
+    /// 왕복 테스트도 통과하며(둘 다 기본값), 앱에서만 "설정했는데 재시작하면 사라진다"로 나타난다.
+    /// 실제로 즐겨찾기를 그렇게 한 번 놓쳤다. 필드 이름이 디코더에 `forKey: .이름` 으로 등장하는지
+    /// 소스에서 직접 확인한다 — `forKey:` 는 이 파일에서 디코더만 쓴다.
+    func testEveryCompanionStateFieldIsReadByTheHandWrittenDecoder() throws {
+        let model = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PokeTokenBar/Core/CompanionModel.swift")
+        let source = try String(contentsOf: model, encoding: .utf8)
+        // 경로가 깨지면 빈 문자열을 훑고 조용히 통과한다 — 그걸 막는 단언.
+        XCTAssertTrue(source.contains("struct CompanionState"), "CompanionModel.swift 를 못 찾았다")
+
+        let fields = Mirror(reflecting: CompanionState()).children.compactMap(\.label)
+        XCTAssertGreaterThan(fields.count, 20, "필드 목록이 비었다 — 가드가 무력해진다")
+        let unread = fields.filter { !source.contains("forKey: .\($0)") }.sorted()
+        XCTAssertEqual(unread, [], """
+            CompanionState 의 손글씨 init(from:) 이 이 필드를 읽지 않는다 — 저장은 되는데 로드에서
+            기본값으로 돌아간다. 디코더에 `c.lenient(...)` 줄을 추가해라.
             """)
     }
 
