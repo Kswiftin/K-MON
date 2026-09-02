@@ -116,6 +116,10 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/TUI/TUIRender.swift"
   "Sources/PokeTokenBar/TUI/TUIKeymap.swift"
   "Sources/PokeTokenBar/TUI/PokedoroCommand.swift"
+  # LAN 협동 레이드(#80)의 순수 코어 — 오늘의 보스 추첨·해치 시각·정산, 그리고 **오늘자 보스
+  # 검증**(`validBoss`)이 여기 있다. 그 검증이 곧 조작 호스트가 보상을 부풀리는 길을 막는 경계라
+  # 게이트 밖에 두면 신뢰경계가 통째로 커버리지에서 빠진다.
+  "Sources/PokeTokenBar/Core/RaidBoss.swift"
 )
 
 # 기능이 **박제된 두 번째 화면**에 남는 부류를 막는다. `eee5c86` 이 팝오버 홈을 창으로 옮기며

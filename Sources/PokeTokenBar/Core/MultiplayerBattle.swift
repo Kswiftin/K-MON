@@ -1,6 +1,12 @@
 import Foundation
 
-enum MultiplayerBattleMode: String, Codable, Sendable { case freeForAll, teams }
+/// 방이 무슨 규칙으로 싸우는가.
+///
+/// `coopBoss` 는 러너 전원이 한 팀(`.red`)이고 NPC 보스가 반대 팀(`.blue`) 하나인 협동전이다.
+/// **승패 규칙은 `teams` 와 글자 그대로 같다** — 보스가 죽으면 살아 있는 팀이 하나(러너)라 승리,
+/// 파티가 전멸하면 살아 있는 팀이 보스뿐이라 패배다. 그래서 판정에 새 분기를 만들지 않는다.
+/// 갈리는 것은 정원(보스 한 자리가 더 든다)과 개시 편성뿐이다.
+enum MultiplayerBattleMode: String, Codable, Sendable { case freeForAll, teams, coopBoss }
 
 struct BattleRecord: Codable, Sendable, Equatable, Identifiable {
     var id = UUID()
@@ -292,22 +298,45 @@ enum MultiplayerValidation {
     }
 
     static func validStart(fighters: [MultiplayerFighter], mode: MultiplayerBattleMode) -> Bool {
-        guard (2...4).contains(fighters.count), Set(fighters.map(\.id)).count == fighters.count else { return false }
+        guard MultiplayerBattle.validCount(fighters.count, mode: mode),
+              Set(fighters.map(\.id)).count == fighters.count else { return false }
         guard fighters.allSatisfy({ fighter in
             valid(participant: LobbyParticipant(id: fighter.id, trainerName: fighter.trainerName,
                                                 speciesID: fighter.side.snapshot.speciesID, team: fighter.team,
                                                 isReady: true, isHost: false),
                   snapshot: fighter.side.snapshot)
-                && fighter.side.hp == fighter.side.stats.hp
+                // 협동 보스전의 보스만 "최대 HP 로 시작" 에서 빠진다 — 보스 HP 는 종족값이 아니라
+                // 티어가 정하는 절대값이다(`RaidTier.bossHP`). 그 값이 오늘의 티어와 정확히 맞는지는
+                // `RaidBoss.validBoss` 가 본다. 여기서는 "살아는 있는가" 까지만 본다.
+                && (fighter.side.hp == fighter.side.stats.hp || (isRaidBoss(fighter, mode: mode) && fighter.side.hp > 0))
                 // 상태이상도 호스트가 보내오는 값이다. 최대 HP 로 시작하는 배틀이면 상태도 없어야 한다 —
                 // 안 보면 `status: sleep, statusCounter: 9999` 로 시작해 게스트가 영구히 못 움직인다.
                 && fighter.side.status == nil && fighter.side.confusionTurns == 0
                 // 랭크도 같은 이유로 0 이어야 한다 — `stages: [atk: 6]` 로 시작하는 방을 막는다.
                 && fighter.side.stages.isEmpty
         }) else { return false }
-        if mode == .freeForAll { return fighters.allSatisfy { $0.team == .solo } }
-        return fighters.count == 4 && fighters.filter { $0.team == .red }.count == 2
-            && fighters.filter { $0.team == .blue }.count == 2
+        switch mode {
+        case .freeForAll:
+            return fighters.allSatisfy { $0.team == .solo }
+        case .teams:
+            return fighters.count == 4 && fighters.filter { $0.team == .red }.count == 2
+                && fighters.filter { $0.team == .blue }.count == 2
+        case .coopBoss:
+            // 보스 하나 + 러너 1~4. **러너 1명을 허용하는 것이 요점이다** — LAN 은 이웃이 없을 수
+            // 있고, 1★ 를 혼자 못 돌면 이 기능은 이웃 없는 사람에게 콘텐츠가 0 이다.
+            return fighters.filter { $0.team == .blue }.count == 1
+                && (1...4).contains(fighters.filter { $0.team == .red }.count)
+                && fighters.allSatisfy { $0.team != .solo }
+                // 러너는 전부 파티 레벨로 눕는다(체육관·토너먼트와 같은 규칙). **레벨은 따로 봐야
+                // 한다** — `hp == stats.hp` 는 개시 시점에 계산된 스탯과 비교하므로, 스냅샷의 레벨만
+                // 100 으로 적어 보낸 편성도 그 검사만으로는 통과한다.
+                && fighters.filter { $0.team == .red }
+                    .allSatisfy { $0.side.snapshot.level == RaidBoss.partyLevel }
+        }
+    }
+
+    private static func isRaidBoss(_ fighter: MultiplayerFighter, mode: MultiplayerBattleMode) -> Bool {
+        mode == .coopBoss && fighter.team == .blue
     }
 }
 
@@ -364,10 +393,21 @@ struct MultiplayerBattle: Sendable {
     let mode: MultiplayerBattleMode
     private(set) var round = 1
     private(set) var events: [BattleEvent] = []
+    /// 참가자별 **보스에게** 넣은 누적 피해 — 협동 보스전 정산의 기여도 항이 읽는 값이다.
+    ///
+    /// 이벤트 스트림으로는 못 만든다: `BattleEvent.damage` 의 주인은 **맞은 쪽**이라 누가 때렸는지가
+    /// 실려 있지 않다. 공격자를 아는 유일한 자리가 아래 해상 루프다.
+    private(set) var damageDealt: [UUID: Int] = [:]
     private var rng: SplitMix64
 
+    /// 모드별 정원. 협동 보스전만 한 자리를 더 쓴다 — 러너 1~4 **더하기 보스 하나**라 최대 5다.
+    /// 다른 모드의 상한은 그대로 4다(협동전 때문에 개인전이 5명이 되면 안 된다).
+    static func validCount(_ count: Int, mode: MultiplayerBattleMode) -> Bool {
+        mode == .coopBoss ? (2...5).contains(count) : (2...4).contains(count)
+    }
+
     init(fighters: [MultiplayerFighter], mode: MultiplayerBattleMode, seed: UInt64) throws {
-        guard (2...4).contains(fighters.count) else { throw MultiplayerBattleError.invalidFighterCount }
+        guard Self.validCount(fighters.count, mode: mode) else { throw MultiplayerBattleError.invalidFighterCount }
         guard Set(fighters.map(\.id)).count == fighters.count else { throw MultiplayerBattleError.duplicateFighter }
         self.fighters = fighters
         self.mode = mode
@@ -390,7 +430,9 @@ struct MultiplayerBattle: Sendable {
         let living = fighters.filter(\.isAlive)
         switch mode {
         case .freeForAll: return living.count <= 1
-        case .teams: return Set(living.map(\.team)).count <= 1
+        // 협동 보스전이 같은 줄을 타는 것이 설계다 — 보스가 죽으면 남은 팀은 러너뿐이고,
+        // 파티가 전멸하면 남은 팀은 보스뿐이다. 별도 규칙을 쓰면 두 규칙이 갈라질 자리만 는다.
+        case .teams, .coopBoss: return Set(living.map(\.team)).count <= 1
         }
     }
 
@@ -402,7 +444,7 @@ struct MultiplayerBattle: Sendable {
         guard let winningTeam = living.first?.team else { return [] }   // 동시 전멸
         switch mode {
         case .freeForAll: return living.map(\.id)
-        case .teams: return fighters.filter { $0.team == winningTeam }.map(\.id)
+        case .teams, .coopBoss: return fighters.filter { $0.team == winningTeam }.map(\.id)
         }
     }
 
@@ -493,12 +535,18 @@ struct MultiplayerBattle: Sendable {
             // 바꾸기 때문이다. 데미지·상태·이벤트는 전부 `applyAttack` 한 곳에서 만든다.
             var attacker = fighters[ai].side
             var target = fighters[ti].side
+            let targetHPBefore = target.hp
             roundEvents += BattleEngine.applyAttack(attacker: &attacker, defender: &target,
                                                     attackerActor: .fighter(fighters[ai].id),
                                                     defenderActor: .fighter(fighters[ti].id),
                                                     move: move, rng: &rng)
             fighters[ai].side = attacker
             fighters[ti].side = target
+            // 보스에게 들어간 몫만 센다 — 러너끼리 때릴 수는 없지만, 보스가 러너를 때린 것을
+            // 기여도로 세면 정산이 보스에게 보상을 배정한다.
+            if mode == .coopBoss, fighters[ti].team == .blue {
+                damageDealt[fighters[ai].id, default: 0] += max(0, targetHPBefore - fighters[ti].side.hp)
+            }
         }
         // 턴 끝 잔뎀 — 1v1 과 같은 규칙이다. 참가자 배열 순서로 고정해야 모든 피어가 같은 순서로 본다.
         for index in fighters.indices {
