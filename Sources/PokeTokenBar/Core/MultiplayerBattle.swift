@@ -175,15 +175,20 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         trainerName = try container.decode(String.self, forKey: .trainerName)
         team = try container.decode(BattleTeam.self, forKey: .team)
         var decoded = BattleSide(try container.decode(BattleSnapshot.self, forKey: .snapshot))
-        decoded.hp = try container.decode(Int.self, forKey: .hp)
-        decoded.pp = try container.decode([Int].self, forKey: .pp)
+        // HP·PP 는 **최대치 안에서만** 뜻이 있다. `validStart` 는 개시 시점만 보고 라운드마다 오는
+        // 값은 호스트 소유다 — `hp: Int.max` 를 들이면 회복 이벤트를 재생하는 자리에서
+        // `hp + amount` 가 오버플로로 트랩된다(`BattleReplay.apply`). 형제 표현
+        // `TournamentPokemonState.side` 가 같은 자리에서 같은 규칙으로 자른다.
+        decoded.hp = min(decoded.stats.hp, max(0, try container.decode(Int.self, forKey: .hp)))
+        decoded.pp = zip(decoded.pp, try container.decode([Int].self, forKey: .pp))
+            .map { min($0.0, max(0, $0.1)) }
         // 풀죽음은 **volatile** 이라 주 상태 슬롯으로 오면 안 된다. 받아들이면 `canBeAfflicted` 가
         // "이미 주 상태가 있다"로 읽어 그 개체가 **모든 상태이상에 영구 면역**이 되고 턴 끝 잔뎀도
         // 안 받는다 — 호스트가 자기에게 붙이면 그대로 이득이다. 랭크 클램프와 같은 자리에서 버린다.
         let wireStatus = try container.decodeIfPresent(Status.self, forKey: .status)
         decoded.status = wireStatus == .flinch ? nil : wireStatus
-        decoded.statusCounter = try container.decodeIfPresent(Int.self, forKey: .statusCounter) ?? 0
-        decoded.confusionTurns = try container.decodeIfPresent(Int.self, forKey: .confusionTurns) ?? 0
+        decoded.statusCounter = max(0, try container.decodeIfPresent(Int.self, forKey: .statusCounter) ?? 0)
+        decoded.confusionTurns = max(0, try container.decodeIfPresent(Int.self, forKey: .confusionTurns) ?? 0)
         // 랭크가 없던 시절의 피어는 이 키를 보내지 않는다 — 없으면 랭크 없음이다.
         // **경계에서 클램프한다** — `validStart` 는 개시 시점만 보고, 라운드마다 오는 값은
         // 호스트 소유다(`atk: 99` 를 들이면 다음 `changeStage` 가 −93 을 로그에 쓴다).

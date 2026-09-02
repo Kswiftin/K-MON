@@ -524,6 +524,67 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
 
 }
 
+// MARK: 스냅샷의 디코딩 경계
+
+/// 스냅샷은 **피어가 보내오는 값이다** — 1v1 도전·수락, 방 입장, 라운드 브로드캐스트,
+/// 토너먼트·체육관 라인업이 전부 이 타입을 나른다. 경계에서 자르지 않으면 검증이 돌기 **전에**
+/// 죽는다: `MultiplayerFighter.init(from:)` 은 디코딩 직후 `BattleSide(_:)` 를 만들고, 그
+/// 생성자가 `(2 * hp + 31) * level` 을 계산하므로 `Int` 상한 근처 값이 오버플로로 트랩된다
+/// (Swift 의 산술 오버플로는 던지는 오류가 아니라 프로세스 종료다).
+///
+/// 형제 타입 `PokeathlonRacer`·`PokeathlonRace`·`PokeathlonPool`·`PokeathlonBet` 이 같은 이유로
+/// 이미 클램프를 갖고 있다 — 같은 프레임으로 들어오는 타입은 함께 막는다.
+///
+/// **기술의 수치(위력·확률·히트 수)는 여기서 자르지 않는다.**
+/// `MultiplayerValidation.validMoves` 가 입장·개시·1v1 라인업에서 그 값을 보고 **거절**하는데,
+/// 여기서 잘라 버리면 거절이 조용한 하향으로 바뀌어 조작한 피어가 대전에 들어온다.
+/// 배열 **길이**만 자른다(라운드마다 참가자 수만큼 다시 나가는 프레임의 증폭 상한).
+extension BattleSnapshot {
+    /// 대전 레벨 범위 — `MultiplayerValidation.valid` 가 보는 범위와 같다.
+    static let levelRange = 1...100
+    /// 종족값의 **안전 범위** — 도감 최대치는 255 이고 와이어에서 그 위를 거절하는 곳은
+    /// `MultiplayerValidation.valid` 다. 여기 상한이 255 가 아닌 이유: 이 생성자는 세이브
+    /// (`RogueRunSave`)도 통과하고, 판 조율·테스트가 도감 밖 종족값으로 판을 만든다 —
+    /// 255 로 자르면 저장한 판이 되살아날 때 최대 HP 가 달라진다(저장이 하향이 된다).
+    /// 이 범위가 막는 것은 오버플로 하나이며, 공정성은 위 검증이 계속 본다.
+    static let baseStatRange = 1...100_000
+    /// 한 개체의 타입 수 — 본가와 같이 최대 2 다.
+    static let maximumTypes = 2
+    /// 무브셋 상한 — 기술 칸이 넷이다.
+    static let maximumMoves = 4
+    /// 체중(헥토그램) 상한 — 도감 최대치가 9999(코스모움)다.
+    static let maximumWeightHectograms = 9_999
+
+    private static func clampedStat(_ value: Int) -> Int {
+        min(baseStatRange.upperBound, max(baseStatRange.lowerBound, value))
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        v = try c.decodeIfPresent(Int.self, forKey: .v) ?? 1
+        speciesID = PokemonAssets.clampedID(try c.decode(Int.self, forKey: .speciesID))
+        // 이름은 길이를 재는 게 아니라 자른다 — 거부하면 대전 자체가 성립하지 않는다
+        // (`BattleChatPolicy.displayName` 이 그 규칙의 정본이다).
+        name = BattleChatPolicy.displayName(try c.decode(String.self, forKey: .name)) ?? "?"
+        trainer = (try c.decodeIfPresent(String.self, forKey: .trainer))
+            .flatMap(BattleChatPolicy.displayName)
+        level = min(Self.levelRange.upperBound,
+                    max(Self.levelRange.lowerBound, try c.decode(Int.self, forKey: .level)))
+        nature = try c.decodeIfPresent(PokemonNature.self, forKey: .nature)
+        isShiny = try c.decode(Bool.self, forKey: .isShiny)
+        types = Array((try c.decode([PokemonType].self, forKey: .types)).prefix(Self.maximumTypes))
+        let base = try c.decode(BattleStats.self, forKey: .base)
+        self.base = BattleStats(hp: Self.clampedStat(base.hp), atk: Self.clampedStat(base.atk),
+                                def: Self.clampedStat(base.def), spa: Self.clampedStat(base.spa),
+                                spd: Self.clampedStat(base.spd), spe: Self.clampedStat(base.spe))
+        moves = (try c.decodeIfPresent([MoveSpec].self, forKey: .moves))
+            .map { Array($0.prefix(Self.maximumMoves)) }
+        ability = try c.decodeIfPresent(String.self, forKey: .ability)
+        weightHectograms = (try c.decodeIfPresent(Int.self, forKey: .weightHectograms))
+            .map { min(Self.maximumWeightHectograms, max(0, $0)) }
+    }
+}
+
 // MARK: - 상태이상
 
 /// 상태이상 — Gen 2 의 6종 + 혼란. PokéAPI `/move-ailment` 20종 중 6종만 쓰고 나머지는 무시한다

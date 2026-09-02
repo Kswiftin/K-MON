@@ -3405,9 +3405,19 @@ read_when:
   만든다. 그 생성자는 항상 정합한 값을 만들므로 와이어에서 오는 조합(길이 불일치·음수)이
   존재하지 않는다. JSON 을 통과시키는 테스트가 하나도 없었다.
 - **부류 스윕.** 방에서 오가는 Codable 중 클램프가 있는 것은 `PokeathlonPool`·`PokeathlonBet`
-  (이번에 `PokeathlonRacer`·`PokeathlonRace` 추가), 없는 것은 `BattleSnapshot` 이다 —
-  **미완 스윕**: 스냅샷의 수치가 첨자로 쓰이는 자리가 있는지 아직 확인하지 않았다. 종 번호
-  자르기는 `PokemonAssets.clampedID` 를 정본으로 쓴다.
+  (이번에 `PokeathlonRacer`·`PokeathlonRace` 추가)이었고, `BattleSnapshot` 은 없었다 —
+  **2026-09-02 에 붙였다.** 스냅샷의 수치가 첨자로 쓰이는 자리는 전부 `indices.contains` 로
+  막혀 있었지만(`BattleSide.canUse`·`move(at:)`·`BattleReplay.apply`·`ReplaySide.side`),
+  **첨자가 아니라 산술이 문제였다**: `MultiplayerFighter.init(from:)` 이 디코딩 직후
+  `BattleSide(_:)` 를 만들고 그 생성자가 `(2 * hp + 31) * level` 을 계산하므로, `Int` 상한 근처
+  종족값·레벨이 검증이 돌기 **전에** 오버플로로 트랩된다(Swift 의 산술 오버플로는 던지는 오류가
+  아니라 프로세스 종료다 — 클램프를 지우면 테스트가 signal 5 로 죽는 것을 확인했다).
+  같은 자리에서 HP·PP 도 잘랐다: 형제 표현 `TournamentPokemonState.side` 는 최대치로 자르는데
+  `MultiplayerFighter` 는 와이어 값을 그대로 받아, `hp: Int.max` 를 실은 라운드 브로드캐스트가
+  회복 이벤트를 재생하는 자리(`BattleReplay.apply` 의 `hp + amount`)에서 트랩됐다.
+  기술 내부 수치(위력·확률·히트 수)는 **일부러 안 자른다** — `MultiplayerValidation.validMoves`
+  가 그 값을 보고 입장을 거절하는데, 자르면 거절이 조용한 하향으로 바뀐다.
+  종 번호 자르기는 `PokemonAssets.clampedID` 를 정본으로 쓴다.
 - **영구 캡처.** `PokeathlonDecodingTests` — 길이 불일치·음수 인덱스·범위 밖 값·트랙에 없는
   우승자를 **JSON 으로** 넣어 자르는지 보고, 정상 경기는 왕복해도 그대로인지 함께 본다.
 - **곁가지.** 신뢰경계 클램프를 하나 붙일 때는 "같은 프레임에 실려 오는 형제 타입"을 함께 본다.
@@ -3436,8 +3446,14 @@ read_when:
   들고 있었다. 소유 포켓몬 화면이 같은 모양으로 21마리째부터 도달 불가였고 그때 격자 높이만
   바꿔 잘리는 지점을 옮겼던 부류다. 캡처: `NestedScrollGuardTests` 가 탭 화면 소스를 읽어 막는다
   (렌더링 테스트로는 "안쪽이 스크롤되지 않는다" 를 볼 수 없다).
-  **미완 스윕**: `CompanionView` 의 기술 재습득 후보 목록도 같은 모양이다(높이를 묶은 세로
-  스크롤). 후보가 상자를 넘칠 때 실제로 도달 가능한지 아직 확인하지 않았다.
+  **2026-09-02 에 스윕을 마쳤다**: `CompanionView` 의 기술 재습득 후보 목록(`MoveRelearnCard`)도
+  같은 모양이었다 — 팝오버 본체 스크롤 안에서 높이 220pt 로 묶인 세로 스크롤이라, 하트비늘
+  후보가 다섯을 넘으면 나머지는 고를 방법이 없었다. 도감·로스터와 같은 **페이지식**(한 페이지 5)
+  으로 바꾸고 `CompanionView.swift` 를 가드 목록에 넣었다. 가드는 그때 두 군데를 고쳤다:
+  줄 끝 주석을 잘라내고(`.id(i)   // ScrollViewProxy 대상` 같은 설명이 위반으로 세지지 않게),
+  `ScrollViewReader`·`ScrollViewProxy` 는 스크롤을 만들지 않으므로 컨테이너 생성만 센다.
+  같은 부류로 보이는 `FriendView` 의 대표 포켓몬 목록은 대상이 아니다 — 자기 `.popover` 안의
+  고정 크기(250×300) 화면이라 본체 스크롤에 중첩되지 않는다.
 - **홀수 인원의 부전승자가 대진표에서 사라졌다.** 짝이 지어진 경기만 그리니 본인은 올라간 줄
   모르고 다른 참가자는 왜 안 뛰는지 몰랐다. 와이어에 필드를 더하지 않고 화면이 도출한다
   (`PokemonTournamentState.byeEntrants` = 짝이 없는 참가자).
