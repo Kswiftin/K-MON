@@ -89,6 +89,20 @@ extension AdventureReward {
     }
 }
 
+/// 정산 **밖**에서 지갑을 늘린 지급 한 건(#200). 진화 · 레이스 · 배틀 · 웨이브 런 · 졸업이
+/// 각자 자기 화면에 배너를 만들면 여섯 번째 경로가 생길 때 또 조용히 빠진다 — `ClaimBannerLine`
+/// 과 같은 이유로 조립을 뷰 밖 한 곳에 둔다.
+///
+/// **경로마다 한 통이다.** 웨이브 런은 두 트랙(`dungeon`·`dungeonSweep`), 졸업은 넷(트레이너 ·
+/// 미션 · 시즌 · 도감 목표)이 같은 사건에서 함께 터지는데, 지급마다 띄우면 같은 판을 여러 번
+/// 말하게 된다(`mergedCompletion` 이 미션에서 막은 그 문제다).
+struct StardustPayout: Equatable {
+    /// 지급을 낳은 사건. 금액만으로는 "왜 늘었나" 에 답하지 못한다 — 그게 #200 의 증상이었다.
+    enum Source: Equatable { case evolve, race, battle, dungeon, graduation }
+    let source: Source
+    let stardust: Int
+}
+
 struct FocusSessionReward: Sendable, Equatable {
     let minutes: Int
     let stardust: Int
