@@ -57,15 +57,15 @@ Pokédoro は集中している間にパートナーのポケモンを冒険へ�
 <tr>
 <td width="55%" valign="middle">
 <h3>ポケモンと図鑑</h3>
-手持ちの確認、パートナー交代、わざ・経験値の確認、発見した種の閲覧ができます。名前で検索すれば、ボックス・チーム選択・交換リストから目的のポケモンをすぐに呼び出せます。
+手持ちの確認、パートナー交代、わざ・経験値の確認、発見した種の閲覧ができます。名前で検索すれば、ボックス・チーム選択・交換リストから目的のポケモンをすぐに呼び出せます。大切なポケモンに星を付けると、にがす・交換・出品ができなくなり、見出しの星でおきにいりだけを表示できます。
 </td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="180" alt="図鑑"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="ポケモンのコレクションログ"></td>
+<td width="45%" align="center"><img src="assets/screenshot-pokemon-favorites-ja.png" width="180" alt="おきにいり"><br><br><img src="assets/screenshot-collection-pokedex.png" width="180" alt="図鑑"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="ポケモンのコレクションログ"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop-ja.png" width="180" alt="ショップ"></td>
+<td width="45%" align="center"><img src="assets/screenshot-shop-ja.png" width="180" alt="ショップ"><br><br><img src="assets/screenshot-bag-ja.png" width="180" alt="バッグ"></td>
 <td width="55%" valign="middle">
 <h3>ショップとバッグ</h3>
-ほしのかけらでタマゴ、ふしぎなアメ、ミント、つながりのヒモ、進化のいしを購入し、バッグのアイテムを使えます。
+ほしのかけらでタマゴ、ふしぎなアメ、ミント、つながりのヒモ、進化のいし、わざマシン、ふくを購入します。まとめて持てる品は所持金で買える範囲までまとめ買いでき、バッグではアイテムを使ったり不要なものをすてたりできます。
 </td>
 </tr>
 <tr>

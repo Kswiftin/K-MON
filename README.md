@@ -57,15 +57,15 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 <tr>
 <td width="55%" valign="middle">
 <h3>포켓몬과 도감</h3>
-보유 포켓몬을 확인하고 파트너를 교체하며, 기술·경험치와 발견한 종을 볼 수 있습니다. 이름으로 검색해 보관함·팀 선택·교환 목록에서 원하는 포켓몬을 바로 찾습니다.
+보유 포켓몬을 확인하고 파트너를 교체하며, 기술·경험치와 발견한 종을 볼 수 있습니다. 이름으로 검색해 보관함·팀 선택·교환 목록에서 원하는 포켓몬을 바로 찾습니다. 아끼는 포켓몬에 별을 달면 놓아주기·교환·경매 출품이 막히고, 머리말의 별로 즐겨찾기만 모아 볼 수 있습니다.
 </td>
-<td width="45%" align="center"><img src="assets/screenshot-collection-pokedex.png" width="180" alt="도감"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="포켓몬 수집 기록"></td>
+<td width="45%" align="center"><img src="assets/screenshot-pokemon-favorites-ko.png" width="180" alt="즐겨찾기"><br><br><img src="assets/screenshot-collection-pokedex.png" width="180" alt="도감"><br><br><img src="assets/screenshot-collection-catchlog.png" width="180" alt="포켓몬 수집 기록"></td>
 </tr>
 <tr>
-<td width="45%" align="center"><img src="assets/screenshot-shop-ko.png" width="180" alt="상점"></td>
+<td width="45%" align="center"><img src="assets/screenshot-shop-ko.png" width="180" alt="상점"><br><br><img src="assets/screenshot-bag-ko.png" width="180" alt="가방"></td>
 <td width="55%" valign="middle">
 <h3>상점과 가방</h3>
-별의조각으로 알, 이상한 사탕, 민트, 연결의끈, 진화의 돌을 구매하고 가방의 아이템을 사용합니다.
+별의조각으로 알, 이상한 사탕, 민트, 연결의끈, 진화의 돌, 기술머신, 의상을 구매합니다. 재고로 쌓이는 물건은 수량을 정해 한 번에 사고(잔액으로 살 수 있는 최대까지), 가방에서는 아이템을 사용하거나 필요 없는 것을 버립니다.
 </td>
 </tr>
 <tr>
