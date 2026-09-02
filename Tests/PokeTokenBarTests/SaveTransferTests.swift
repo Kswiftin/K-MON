@@ -484,8 +484,11 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertEqual(prefixes, Self.frozenCanonicalPrefixes, """
                        canonical 의 세그먼트 어휘가 바뀌었다. 세그먼트를 지웠거나 접두를 바꿨다면
                        **integrityVersion 을 올려라** — 안 올리면 그 세그먼트가 들어 있던 기존 세이브가
-                       전부 조작 판정을 받는다. 세그먼트를 새로 추가한 것이라면(조건부 append) 이 집합에
-                       더하면 된다.
+                       전부 조작 판정을 받는다. 세그먼트를 **새로 추가**했다면 집합에 더하기 전에 먼저
+                       물어라: **그 필드가 이전 배포에 이미 있었나?** 있었다면 값이 든 정상 세이브에
+                       세그먼트가 붙어 구서명과 어긋난다 — 이때도 integrityVersion 상향이 필수다
+                       (일일 사탕 `dcd` 가 이 질문을 건너뛰어 사용자 진행을 통째로 날렸다, 2026-09-03).
+                       정말 새 필드일 때만 집합에 더하면 된다.
                        """)
     }
 
@@ -493,7 +496,7 @@ final class SaveTransferTests: XCTestCase {
     private static let frozenCanonicalPrefixes: Set<String> = [
         // 세그먼트 접두 — 하나라도 사라지면 이미 배포된 서명을 재현할 수 없다.
         "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "achfocus", "sn",
-        "gbbrock", "glbbug", "shc", "gd", "rd", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
+        "gbbrock", "glbbug", "shc", "gd", "dcd", "rd", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
         "adv", "ah", "bh", "act", "box", "dex", "dg", "cf", "sec",
         // 값에서 나온 토큰 — fixture 가 고정하므로 결정적이다. 열거형 rawValue 변경도 기존 서명을
         // 깨는 같은 부류라 일부러 얼려 둔다. `""` 는 숫자로만 된 이어붙임 조각.
@@ -518,6 +521,9 @@ final class SaveTransferTests: XCTestCase {
         s.gymDefenseRewardDate = "2026-09-02"
         s.gymDefenseRewardToday = 1
         s.raidRewardDate = "2026-09-02"
+        // `dcd` 도 같은 부류다 — fixture 가 안 켜면 이 접두가 동결 집합에 아예 안 잡힌다.
+        // #206 이 이 세그먼트를 추가했을 때 두 동결 가드가 모두 초록이었던 이유가 그거다.
+        s.lastCandyDate = "2026-09-02"
         s.focusEggs = 1
         s.focusEggReadyDates = [Date(timeIntervalSince1970: 0)]
         s.adventure = AdventureRun(zone: .forest, startedAt: Date(timeIntervalSince1970: 0),

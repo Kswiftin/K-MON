@@ -75,7 +75,10 @@ enum SaveTransfer {
     /// 필드를 **빼는** 것도 같은 부류다: 돌봄을 지우며 `care`·`care2`·`health`·`disc`·`sleep`
     /// 세그먼트가 사라져, 값이 든 기존 세이브의 서명을 이 빌드가 재현할 수 없다 → 7 → 8.
     /// 퍼즐 던전을 지우며 `dun` 세그먼트가 같은 이유로 사라졌다 → 8 → 9.
-    static let integrityVersion = 9
+    /// 일일 사탕 원장(`dcd`)이 이미 배포된 `lastCandyDate` 를 서명에 넣었다 → 9 → 10. 이 필드는
+    /// 2026-08-13 부터 있었고 하루라도 사탕을 받은 세이브엔 값이 차 있어, 조건부 append 로도
+    /// 구서명이 재현되지 않았다(정상 세이브가 통째로 조작 판정돼 초기화됐다).
+    static let integrityVersion = 10
     /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
     static let forcedResetVersion = 1
     /// 세이브 파일 크기 상한. 정상 세이브는 수 KB 이고 도감이 가득 차도 수백 KB 를 넘지 않는다.
@@ -417,9 +420,12 @@ enum SaveTransfer {
             p.append("gd\(s.gymDefenseRewardDate):\(s.gymDefenseRewardToday)")
         }
         // 일일 사탕의 멱등 키. 밖에 두면 어제 날짜로 고쳐 적는 것만으로 사탕을 매일 여러 번
-        // 받는다(형제 원장인 `gd`·`ab` 는 이미 서명 안에 있다). 비었을 때 세그먼트를 생략해
-        // 이 필드가 없던 세이브의 canonical 을 바꾸지 않는다. 접두 `dcd` — `cand`(스타터 후보)·
+        // 받는다(형제 원장인 `gd`·`ab` 는 이미 서명 안에 있다). 접두 `dcd` — `cand`(스타터 후보)·
         // `dex`·`dg` 와 겹치지 않는다.
+        //
+        // **조건부 append 가 구세이브를 지켜주지 못하는 자리다** — `lastCandyDate` 는 이 세그먼트보다
+        // 3 주 앞서 배포된 필드라, 사탕을 한 번이라도 받은 세이브엔 값이 차 있다. 그래서 이 세그먼트를
+        // 넣은 배포는 `integrityVersion` 을 9 → 10 으로 올려 구서명을 검사에서 면제해야 한다.
         if !s.lastCandyDate.isEmpty { p.append("dcd\(s.lastCandyDate)") }
         // 레이드 보상은 하루 한 번이고, 이 날짜가 그 **유일한** 멱등 가드다 — 서명 밖에 두면
         // 지우는 것만으로 같은 날 몇 번이든 다시 받는다(체육관 방어 원장 `gd` 와 같은 부류).
