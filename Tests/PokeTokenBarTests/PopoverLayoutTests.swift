@@ -105,6 +105,46 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertTrue(popover.contains("case .challenge: ChallengeView"), "도전 탭이 이 화면을 연다")
     }
 
+    // MARK: 오버레이 높이 — 안 고정하면 쪼그라든다
+
+    /// **부류 가드.** 오버레이는 팝오버 본체(`mainContent`)의 `.frame(height:)` 밖에 놓이므로
+    /// 자기 높이를 스스로 고정해야 한다. 안 하면 창이 콘텐츠 자연 높이로 줄고, 그 안의
+    /// `ScrollView` 가 남은 공간만 받아 내용이 잘린 채로 뜬다 — `RaidView` 가 실제로 그랬다
+    /// (형제 다섯은 전부 고정하고 있었고 새로 들어온 하나만 빠졌다).
+    ///
+    /// 값까지 강제하지는 않는다. `SettingsView` 는 460, 나머지는 `currentHeight(for: .battle)` 로
+    /// 서로 다르고 그건 각 화면의 판단이다. 여기서 막는 건 **아예 안 정하는 것**이다.
+    func testEveryPopoverOverlayPinsItsOwnHeight() throws {
+        func source(_ file: String) throws -> String {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/PokeTokenBar/UI/\(file).swift")
+            return try String(contentsOf: url, encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line -> String in
+                    guard let comment = line.range(of: "//") else { return String(line) }
+                    return String(line[..<comment.lowerBound])
+                }
+                .joined(separator: "\n")
+        }
+        // 오버레이 체인은 `PopoverView.body` 가 갈아 끼우는 화면들이다. 새 오버레이를 더하면
+        // 여기도 늘린다 — 목록이 한 벌이라 빠뜨릴 자리가 없다.
+        let overlays = ["SettingsView", "GymLeagueView", "RogueRunView", "RaidView",
+                        "OutfitView", "PokemonChatView"]
+
+        // 대조군: 목록의 화면들이 실제로 `PopoverView` 의 체인에 있는지 먼저 본다. 없는 이름을
+        // 검사하면 이 가드는 아무것도 안 지키면서 초록이다.
+        let popover = try source("PopoverView")
+        for overlay in overlays {
+            XCTAssertTrue(popover.contains("\(overlay)("), "\(overlay) 가 오버레이 체인에 없다")
+        }
+
+        for overlay in overlays {
+            XCTAssertTrue(try source(overlay).contains(".frame(height:"),
+                          "\(overlay) 가 높이를 안 정한다 — 창이 콘텐츠 높이로 줄어 내용이 잘린다")
+        }
+    }
+
     // MARK: 레이드 아레나 — 4인 파티가 폭에 들어가나
 
     private func raidArena(names: [String], language: AppLanguage = .ko) -> some View {
