@@ -209,7 +209,9 @@ final class CompanionStore {
          memoryAlbum: PokemonMemoryAlbum? = nil,
          chatStore: PokemonChatStore? = nil,
          rng: any RandomNumberGenerator = SystemRandomNumberGenerator(),
-         dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp) {
+         dittoDisguiseRollingEnabled: Bool = AppEnv.isBundledApp,
+         isReadOnly: Bool = false) {
+        self.isReadOnly = isReadOnly
         self.provider = provider
         self.clock = clock
         // An injected URL is an explicit test/embedding contract; only default construction uses
@@ -232,6 +234,11 @@ final class CompanionStore {
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
         loadRogueRun()
+        // 읽기 전용은 **디스크를 읽는 데서 끝난다.** 아래 정리·정산은 전부 "앱이 죽은 사이에
+        // 밀린 일" 이라는 전제 위에 있는데, 그 전제는 이 세이브를 여는 프로세스가 하나일 때만
+        // 참이다. 메뉴바 앱이 켜져 있는 동안 터미널이 같은 파일을 열면 진행 중인 랭크전이 패배로
+        // 정산되고 끝난 모험이 화면 없이 정산된다.
+        guard !isReadOnly else { return }
         // Room placement is derived from this save's bag.  Normalize at the state/album join so
         // a hand-edited or imported album cannot render furniture the player does not own.
         // A corrupt/forced-reset state has no trustworthy ownership list. Pruning here would
@@ -2319,6 +2326,7 @@ final class CompanionStore {
     /// 판을 옆 파일에 적는다. 판이 없으면 파일을 지운다 — 남겨 두면 다음 기동이 끝난 판을 되살려
     /// 결과 화면이 다시 뜬다.
     private func persistRogueRun() {
+        guard !isReadOnly else { return }
         guard let rogueRun else {
             // 파일이 없는 것은 실패가 아니다 — 판 없이 저장이 여러 번 불린다.
             do { try FileManager.default.removeItem(at: waveRunURL) } catch CocoaError.fileNoSuchFile {
@@ -3804,11 +3812,18 @@ final class CompanionStore {
         }
         if changed { save() }
     }
+    /// 이 저장소는 디스크를 읽기만 한다. 터미널 프런트엔드가 메뉴바 앱과 같은 세이브를 열 때
+    /// 쓴다 — 두 프로세스가 같은 파일에 쓰면 나중 쓰기가 앞 쓰기를 통째로 덮는다(잠금이 없다).
+    /// 기동 시 정리·정산을 건너뛰는 것만으로는 부족해서 쓰기 경로 자체를 막는다: 화면을 그리다
+    /// 부수효과가 있는 계산을 밟아도 세이브가 나가지 않아야 한다.
+    private let isReadOnly: Bool
+
     /// 마지막 저장이 실패한 채로 남아 있다. 화면이 읽는다 — 저장이 안 되는 것을 알리지 않으면
     /// 사용자는 앱을 그대로 쓰다가 다음 기동에서 진행을 통째로 잃는다.
     private(set) var saveFailed = false
 
     private func save() {
+        guard !isReadOnly else { return }
         memoryAlbum.clearSharedPinnedMemory(unlessPinnedFor: state.active?.id)
         do {
             // 저장 직전 서명 — 다음 로드에서 손편집을 잡는다(integrity 는 해시 입력에서 제외).
