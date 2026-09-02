@@ -185,7 +185,16 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         // 값은 호스트 소유다 — `hp: Int.max` 를 들이면 회복 이벤트를 재생하는 자리에서
         // `hp + amount` 가 오버플로로 트랩된다(`BattleReplay.apply`). 형제 표현
         // `TournamentPokemonState.side` 가 같은 자리에서 같은 규칙으로 자른다.
-        decoded.hp = min(decoded.stats.hp, max(0, try container.decode(Int.self, forKey: .hp)))
+        //
+        // **레이드 보스만 천장이 다르다.** 보스 HP 는 종족값이 아니라 티어가 정하는 절대값이라
+        // (`RaidTier.bossHP`) 종족값으로 자르면 도착하자마자 만피의 5% 로 접힌다. 고정 id 에만
+        // 열어 주고 **천장은 그대로 둔다** — 이 클램프의 목적은 오버플로 방지이고 그 목적은 상한이
+        // 무엇이든 지켜진다. "이게 정말 오늘의 그 보스인가" 는 `RaidBoss.validBoss` 가 정확한
+        // 등호로 따로 본다. 다른 전투원의 상한은 손대지 않는다.
+        let hpCeiling = id == RaidBoss.bossID
+            ? max(decoded.stats.hp, RaidTier.maxBossHP)
+            : decoded.stats.hp
+        decoded.hp = min(hpCeiling, max(0, try container.decode(Int.self, forKey: .hp)))
         decoded.pp = zip(decoded.pp, try container.decode([Int].self, forKey: .pp))
             .map { min($0.0, max(0, $0.1)) }
         // 풀죽음은 **volatile** 이라 주 상태 슬롯으로 오면 안 된다. 받아들이면 `canBeAfflicted` 가

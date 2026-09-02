@@ -40,6 +40,10 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
         }
     }
 
+    /// 어느 티어에서도 넘지 못하는 보스 HP 천장. 와이어 디코딩이 이 값을 상한으로 쓴다 —
+    /// 티어를 모르는 자리라 개별 티어 값을 쓸 수 없다.
+    static var maxBossHP: Int { allCases.map(\.bossHP).max() ?? 0 }
+
     /// 방 목록이 그리는 권장 인원. **표에서 파생한다** — 따로 적어 두면 HP 를 조정할 때 한쪽만
     /// 바뀌어 화면이 거짓말을 한다.
     var recommendedRunners: Int {

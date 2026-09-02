@@ -273,6 +273,23 @@ final class RaidRoomTests: XCTestCase {
                       "와이어를 건넌 보스도 그대로 오늘의 보스여야 한다")
     }
 
+    /// **대조군**: 보스 예외가 다른 전투원까지 열어 주면 안 된다. 상류가 이 클램프를 넣은 이유는
+    /// 재생 중 `hp + amount` 오버플로이고(#208), 레이드는 그 재생을 쓰는 쪽이다.
+    func testTheHPCeilingStillClampsEveryoneElse() throws {
+        var inflated = runner("A")
+        inflated.side.hp = 99_999
+        let received = try JSONDecoder().decode(MultiplayerFighter.self,
+                                                from: JSONEncoder().encode(inflated))
+        XCTAssertEqual(received.side.hp, received.side.stats.hp, "보스가 아니면 종족값에서 잘린다")
+
+        // 보스도 무한은 아니다 — 천장이 티어 최대치로 바뀔 뿐이다.
+        var greedyBoss = boss(tier: .five)
+        greedyBoss.side.hp = 99_999
+        let cappedBoss = try JSONDecoder().decode(MultiplayerFighter.self,
+                                                  from: JSONEncoder().encode(greedyBoss))
+        XCTAssertEqual(cappedBoss.side.hp, RaidTier.maxBossHP)
+    }
+
     // MARK: 하루 한 번 지급
 
     /// #79 와 같은 규칙 — 시도는 무제한, 지급은 하루 한 번. 규칙이 하나여야 배울 게 하나다.
