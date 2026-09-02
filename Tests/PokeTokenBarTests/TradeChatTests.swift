@@ -66,7 +66,12 @@ final class TradeChatTests: XCTestCase {
         XCTAssertEqual(trainer, "Blue")
         XCTAssertNil(chatSupported)
 
-        // 프로토콜 버전은 그대로 2 다 — 채팅은 버전이 아니라 협상으로 가른다.
+        // 교환 와이어 버전의 **유일한 동결 자리**다. 값이 2 에 머물러 있다는 것이 곧
+        // "아래 기능들은 전부 버전이 아니라 프레임 추가·협상으로 들어갔다" 는 기록이다:
+        //   · 채팅 — 상대 지원 여부를 협상으로 가른다(이 테스트)
+        //   · 추억 전송 — 기존 케이스를 건드리지 않고 프레임을 더했다(`TradeMemoryTests`)
+        // 올릴 일이 생기면 고칠 곳은 여기 하나다. 여러 테스트에 같은 리터럴을 박으면 정당한
+        // 상향이 무관한 테스트를 무더기로 깨뜨려 진짜 회귀와 구별되지 않는다.
         XCTAssertEqual(TradeWireMessage.protocolVersion, 2)
     }
 
