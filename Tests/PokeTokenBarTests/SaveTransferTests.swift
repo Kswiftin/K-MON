@@ -596,6 +596,43 @@ final class SaveTransferTests: XCTestCase {
         XCTAssertTrue(SaveTransfer.isTampered(current))
     }
 
+    // MARK: 기기 시드 — 조회 실패가 진행도를 지우면 안 된다
+
+    /// 회귀: 서명의 `sec` 세그먼트는 파일 밖에서 오는 **유일한** 입력이라, 기기 UUID 조회가 한 번만
+    /// 실패해도 정상 세이브 전체가 조작 판정을 받아 진행이 전멸한다(2026-09-02 실측 — IOKit 조회
+    /// 실패로 폴백 호스트명이 시드로 들어갔다).
+    ///
+    /// 기존 무결성 테스트가 이 부류를 영영 못 잡는 이유가 여기 있다 — 전부 **한 프로세스 안에서**
+    /// 서명하고 곧바로 검증한다. 양쪽이 같은 시드를 쓰니 시드가 무엇이든 통과한다. 트리거는
+    /// "서명한 실행과 검증하는 실행의 시드가 다르다" 이므로, 시드를 **인자로 갈라서** 재현한다.
+    func testASaveIsNotBlamedAsTamperedWhenTheDeviceSeedCannotBeRead() {
+        var state = CompanionState()
+        state.starPieces = 61_560
+        let signed = SaveTransfer.signed(state, deviceSeed: "HW-UUID")
+
+        XCTAssertFalse(SaveTransfer.isTampered(signed, deviceSeed: nil),
+                       "시드 조회 실패는 '검증 불가'다 — 조작으로 보면 IOKit 한 번 실패가 진행도 전멸이 된다")
+    }
+
+    /// 검사만 건너뛰어서는 절반만 막힌다. 시드 없는 실행이 폴백 값으로 **서명까지 해 버리면**,
+    /// 조회가 정상으로 돌아온 다음 실행이 그 서명을 못 맞춰 결국 같은 초기화가 난다.
+    func testASaveWrittenWithoutADeviceSeedStaysValidOnceTheSeedComesBack() {
+        var state = CompanionState()
+        state.starPieces = 61_560
+        let written = SaveTransfer.signed(state, deviceSeed: nil)
+
+        XCTAssertTrue(written.integrity.isEmpty, "시드가 없으면 아예 서명하지 않는다")
+        XCTAssertFalse(SaveTransfer.isTampered(written, deviceSeed: "HW-UUID"))
+    }
+
+    /// 거짓양성 가드 — 위 두 개가 검사 자체를 무력화한 게 아닌지 본다. 시드가 **있는데** 다르면
+    /// (남의 기기 세이브를 파일로 복사) 그대로 조작이다. 이 단언이 통과하지 않으면 위 완화가
+    /// 무결성 검사를 통째로 꺼 버린 것이다.
+    func testADifferentDeviceSeedIsStillTampered() {
+        let signed = SaveTransfer.signed(CompanionState(), deviceSeed: "HW-A")
+        XCTAssertTrue(SaveTransfer.isTampered(signed, deviceSeed: "HW-B"))
+    }
+
     /// [딥리뷰 M-g] 이전 시 필드 분류가 산문 규약뿐이라, 새 필드가 추가되면 아무 판단 없이 "진행"으로
     /// 딸려 들어간다(`language` 가 실제로 그랬다). 필드 목록을 테스트로 고정해 **분류를 강제**한다.
     func testEveryCompanionStateFieldIsClassifiedForTransfer() {

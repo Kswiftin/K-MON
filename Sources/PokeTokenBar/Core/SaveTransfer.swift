@@ -351,14 +351,20 @@ enum SaveTransfer {
     /// 조작에 민감한 필드의 canonical 문자열 → 기기 시드 FNV 해시. `integrity` 자신은 입력에서 제외.
     /// 손으로 JSON 을 고치면(재화·인벤토리·개체·도감) 이 해시가 안 맞아 로드 때 조작으로 판정된다.
     /// 기기 시드가 들어가 다른 기기·해시 알고리즘을 모르면 유효 서명을 못 만든다(캐주얼 편집 차단).
-    static func integrityHash(_ s: CompanionState) -> String {
-        String(fnv1a(canonicalString(s)), radix: 16)
+    static func integrityHash(_ s: CompanionState,
+                              deviceSeed: String = DeviceID.stableIdentifier()) -> String {
+        String(fnv1a(canonicalString(s, deviceSeed: deviceSeed)), radix: 16)
     }
 
     /// 해시의 입력 원문. 해시가 아니라 이 문자열을 테스트에 노출하는 이유는 **조건부 append 규칙을
     /// 검사할 방법이 이것뿐**이기 때문이다 — 기본값 상태의 해시를 자기 자신과 비교하면 무조건 append
     /// 로 바뀌어도 양쪽이 똑같이 바뀌어 그대로 통과한다(그 형태의 테스트 3개가 실제로 아무것도 못 걸렀다).
-    static func canonicalString(_ s: CompanionState) -> String {
+    ///
+    /// `deviceSeed` 는 파일 밖에서 오는 **유일한** 입력이다. 인자로 받는 이유는 두 가지다 — 서명한
+    /// 실행과 검증하는 실행의 시드가 다른 상황(=이 함수를 감싼 두 함수가 막는 사고)을 테스트가
+    /// 재현할 수 있어야 하고, 폴백 시드가 서명에 새어 들어가는 경로를 호출부에서 끊어야 한다.
+    static func canonicalString(_ s: CompanionState,
+                                deviceSeed: String = DeviceID.stableIdentifier()) -> String {
         var p: [String] = []
         p.append("v\(s.economyVersion)")
         p.append("u\(s.usedSinceInstall)"); p.append("sp\(s.spentTokens)"); p.append("pc\(s.starPieces)"); p.append("eg\(s.eggUsage)")
@@ -465,7 +471,7 @@ enum SaveTransfer {
             p.append("dg" + dexProgress.joined(separator: "|"))
         }
         p.append("cf" + s.collectedFinals.sorted().joined(separator: ","))
-        p.append("sec\(DeviceID.stableIdentifier())")
+        p.append("sec\(deviceSeed)")
         return p.joined(separator: "|")
     }
 
@@ -476,10 +482,15 @@ enum SaveTransfer {
     }
 
     /// 저장 직전 서명 — integrity 를 현재 상태 해시로 채운 사본을 반환(원본 불변).
-    static func signed(_ state: CompanionState) -> CompanionState {
+    ///
+    /// 시드를 못 읽은 실행에서는 **서명하지 않는다**(빈 서명 = 미서명). 폴백 값으로 서명해 두면
+    /// 조회가 정상으로 돌아온 다음 실행이 그 서명을 재현하지 못해, 검사를 완화해도 결국 같은
+    /// 초기화가 난다 — `isTampered` 의 가드만으로는 절반만 막힌다.
+    static func signed(_ state: CompanionState,
+                       deviceSeed: String? = DeviceID.hardwareIdentifier()) -> CompanionState {
         var s = state
         s.integrityVersion = integrityVersion
-        s.integrity = integrityHash(s)
+        s.integrity = deviceSeed.map { integrityHash(s, deviceSeed: $0) } ?? ""
         return s
     }
 
@@ -490,9 +501,15 @@ enum SaveTransfer {
     /// 수 없어 불러오기는 애초에 검사하지 않는다(`testImportIsNotSubjectToTheIntegrityCheck`).
     /// 버전 하한을 세이브 밖(UserDefaults)에 두면 앱을 다운그레이드한 사용자의 정상 세이브를
     /// 초기화하는 오탐만 새로 생긴다.
-    static func isTampered(_ state: CompanionState) -> Bool {
+    ///
+    /// 기기 시드를 못 읽은 실행은 **검증 불가**이지 조작이 아니다. 조작으로 보면 IOKit 조회 한 번
+    /// 실패가 진행도 전멸이 된다(2026-09-02 실측). 오탐 비용과 미탐 비용이 비교가 안 된다.
+    static func isTampered(_ state: CompanionState,
+                           deviceSeed: String? = DeviceID.hardwareIdentifier()) -> Bool {
+        guard let deviceSeed else { return false }
         guard state.integrityVersion >= integrityVersion else { return false }
-        return !state.integrity.isEmpty && state.integrity != integrityHash(state)
+        return !state.integrity.isEmpty
+            && state.integrity != integrityHash(state, deviceSeed: deviceSeed)
     }
 
     /// 조작 감지 시 초기화 — 언어·트레이너 이름(코스메틱)만 남기고 진행·도감·인벤토리를 전부 리셋.
