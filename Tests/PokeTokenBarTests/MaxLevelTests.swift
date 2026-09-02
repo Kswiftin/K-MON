@@ -10,32 +10,19 @@ import XCTest
 @MainActor
 final class MaxLevelTests: XCTestCase {
 
-    private let line = EvoLine(baseID: 20, tree: EvoNode(speciesID: 20, children: []),
-                               rarity: .common, names: [20: ["en": "P20", "ko": "포20"]])
+    private func tempURL() -> URL { stubStoreURL("maxlevel") }
 
-    private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-maxlevel-\(UUID().uuidString).json")
-    }
-
+    /// 저장 파일을 직접 지정하는 경로(세이브 왕복 검증). 시계는 실제 시각으로 둔다 — 이 테스트들은
+    /// 시간을 전진시키지 않는다.
     private func store(at url: URL? = nil) -> CompanionStore {
-        CompanionStore(provider: StubProvider(value: line), clock: { Date() },
+        CompanionStore(provider: StubProvider(value: stubMaxLevelLine), clock: { Date() },
                        fileURL: url ?? tempURL(), rng: SeededRNG(seed: 7))
     }
 
-    private func store(_ clock: TestClock) -> CompanionStore {
-        CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
-                       fileURL: tempURL(), rng: SeededRNG(seed: 7))
-    }
+    private func store(_ clock: TestClock) -> CompanionStore { stubStore(clock, tag: "maxlevel") }
 
-    /// 만렙 파트너를 세운다 — 상한에 **정확히** 닿게 시드하므로 시드 자체로는 초과분이 없다.
-    /// 환산 테스트가 시드 부작용이 아니라 정산분을 보고 있음을 이 전제가 보장한다.
     private func maxedStore(_ clock: TestClock) async -> CompanionStore {
-        let s = store(clock)
-        await s.hatch(baseID: 20)
-        s.debugAccrueLevelExperience(PokemonBalance.maxLevelExperience)
-        XCTAssertEqual(s.currentLevel, PokemonBalance.maxLevel, "테스트 전제: 만렙에 닿았다")
-        return s
+        await maxLevelStore(clock, tag: "maxlevel")
     }
 
     // MARK: 클램프 (MonState.gainExperience)
@@ -279,8 +266,8 @@ final class MaxLevelTests: XCTestCase {
                        "만렙 사탕은 사라지지 않고 별의조각으로 돌아와야 한다")
         // 피드백 배너가 단위를 알아야 한다 — 같은 숫자를 "+XP" 로 그리면 오르지도 않은 경험치를
         // 올랐다고 보여 준다.
-        XCTAssertTrue(s.candyFeedbackIsStardust, "환산분은 별의조각 단위로 알려야 한다")
-        XCTAssertEqual(s.candyFeedbackAmount, RareCandy.xp / expectedExperiencePerStarPiece,
+        XCTAssertEqual(s.candyFeedbackXP, 0, "만렙에서는 경험치로 들어간 몫이 없다")
+        XCTAssertEqual(s.candyFeedbackStardust, RareCandy.xp / expectedExperiencePerStarPiece,
                        "배너 금액도 XP 가 아니라 환산된 별의조각이다")
     }
 
@@ -296,8 +283,30 @@ final class MaxLevelTests: XCTestCase {
 
         XCTAssertEqual(s.state.active?.levelExperience, RareCandy.xp, "전제: 전량 적립됐다")
         XCTAssertEqual(s.state.starPieces, before, "상한 아래에서는 환산분이 없다")
-        XCTAssertFalse(s.candyFeedbackIsStardust, "여전히 경험치 단위로 알린다")
-        XCTAssertEqual(s.candyFeedbackAmount, RareCandy.xp)
+        XCTAssertEqual(s.candyFeedbackXP, RareCandy.xp, "여전히 경험치 단위로 알린다")
+        XCTAssertEqual(s.candyFeedbackStardust, 0)
+    }
+
+    /// **트리거 브랜치 — 사탕 하나가 상한을 걸친다.** 일부는 경험치로 들어가고 나머지만 환산되는데,
+    /// 배너는 `converted > 0 ? converted : RareCandy.xp` 로 **둘 중 하나만 골랐다**(#192). 그래서
+    /// 이 케이스에서 실제로 들어간 경험치가 통째로 화면에서 사라졌다.
+    ///
+    /// 만렙 시드와 상한 아래 시드만 두면 그 배타 선택도 계속 통과한다 — 위 두 대조군이 못 걸른
+    /// 자리가 정확히 여기다.
+    func testRareCandyStraddlingTheCapReportsBothUnits() async {
+        let clock = TestClock()
+        let s = store(clock)
+        await s.hatch(baseID: 20)
+        let room = 30_000_000                          // 사탕 100M 중 30M 만 들어갈 자리를 남긴다
+        s.debugAccrueLevelExperience(PokemonBalance.maxLevelExperience - room)
+        s.debugAddCandy(1)
+
+        XCTAssertEqual(s.useRareCandy(), .progressed)
+
+        XCTAssertEqual(s.candyFeedbackXP, room, "빈 자리만큼은 경험치로 들어갔다 — 숨기면 안 된다")
+        XCTAssertEqual(s.candyFeedbackStardust, (RareCandy.xp - room) / expectedExperiencePerStarPiece,
+                       "나머지는 환산분이다")
+        XCTAssertGreaterThan(s.candyFeedbackStardust, 0, "전제: 이 사용은 환산할 초과분을 만든다")
     }
 
     /// **범위 밖 결정 고정** — 트레이너 레벨(99) 초과 포인트는 환산하지 않는다(#82, 2026-09-01).
@@ -309,7 +318,7 @@ final class MaxLevelTests: XCTestCase {
         let url = tempURL()
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"trainer":{"points":\#(TrainerLevel.maximumPoints)}}"#
         try Data(json.utf8).write(to: url)
-        let s = CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
+        let s = CompanionStore(provider: StubProvider(value: stubMaxLevelLine), clock: clock.closure,
                                fileURL: url, rng: SeededRNG(seed: 7))
         await s.hatch(baseID: 20)
         XCTAssertEqual(s.trainerLevel.points, TrainerLevel.maximumPoints, "테스트 전제: 트레이너가 만렙이다")

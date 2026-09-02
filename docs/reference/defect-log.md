@@ -579,6 +579,59 @@ read_when:
   더해서 맞추지 말고, 각자 자기 몫을 어떻게 떼어 볼지 정한다 — 보상 객체가 상대 몫을 알려주면 그걸 빼고
   (`reward.missionBonus`), 알려줄 객체가 없는 경로(졸업)는 상대를 무력화해 시드한다(트레이너 포인트를
   상한으로 두면 더 오를 곳이 없어 0 을 지급한다). (트레이너 레벨 × 미션 리베이스, 2026-08-19.)
+- **보상 객체가 설명해도 화면이 안 그리면 사용자에겐 설명이 없다 — 그리고 알림은 화면이 아니다.**
+  `AdventureReward` 는 만렙 환산분(`overflowBonus`)까지 정확히 들고 있었는데, 그 값을 사람에게
+  전하는 코드는 `notifyCompanionEvent` 하나뿐이었다. 그 함수는 `AppEnv.isBundledApp` **그리고**
+  방해금지 해제 **그리고** `companionNotifications` 토글, **셋 다** 참일 때만 나간다 — 셋 중 하나만
+  꺼도 지급이 통째로 무설명이 된다(만렙 모험이 7,200 대신 10,800 ⭐ 를 주는데 이유가 어디에도 없었다).
+  완전설명 계약은 보상 객체에서 끝나지 않는다: **지갑을 바꾸는 값은 창 안에 항상 보이는 표면을 하나
+  가져야 하고, 알림은 그 표면의 대체가 아니라 덤이다.** (#82 → #192, 2026-09-02.)
+- **정산 결과를 뷰의 `@State` 로 받으면 사용자가 버튼을 누른 경로만 설명된다.** `claimAdventure()` 를
+  부르는 곳은 넷인데(기동 복구 · 다음 모험 시작 시 자동 정산 · "보상 받기" 버튼 · 집중 세션 완료) 앞의
+  둘은 반환값을 받을 뷰 자체가 없다. 표시용 마지막-정산은 **정산 함수 안**(`CompanionStore.lastClaim`)
+  에서 채운다 — 지급 계산을 `claimAdventure()` 한 곳에만 두는 것과 같은 이유다.
+- **배너를 조건 분기 *안*에 두면 그 분기를 벗어나는 순간 안 보인다.** 집중 세션 완료 배너는
+  `FocusTimerView` 의 idle 분기 안에 있었는데, 세션이 끝나면 `FocusTimer.tick` 이 곧바로
+  `startRest()` 를 불러 `isRunning` 이 참이 된다 — 정산을 알리는 바로 그 순간에 배너가 그려지지 않는
+  분기로 넘어갔다. "정산했으면 보인다" 는 분기와 무관해야 하므로 if/else **밖**에 둔다.
+- **배타 선택(`A > 0 ? A : B`)은 A 와 B 가 동시에 생기는 입력에서 한쪽을 조용히 지운다.** 이상한 사탕
+  피드백이 `converted > 0 ? converted : RareCandy.xp` 였다. 만렙(전량 환산)과 상한 아래(전량 적립)
+  두 대조군은 이 식으로도 통과하지만, 사탕 하나가 상한을 **걸치면** 두 몫이 같이 생겨 들어간 경험치가
+  화면에서 사라진다. 결함을 주입해 보니 걸침 테스트 **하나만** 빨개졌다 — 양 극단 테스트 두 개는
+  경계를 지키지 않는다. 두 값은 각각 세고(`candyFeedbackXP` · `candyFeedbackStardust`) 표시도 각각 한다.
+- **뷰가 *건네받아* 들고 있는 값은 스토어를 비우는 것만으로 안 내려간다 — 비움(consume)과 무효화
+  (invalidate)를 가른다.** 1회성 피드백은 뷰가 값을 자기 `@State` 로 옮기고 스토어를 소비하는 계약이라,
+  세이브 가져오기가 `lastClaim = nil` 만 해서는 **이미 화면에 떠 있는 남의 세이브 정산액**에 닿지
+  못했다. 뷰가 다시 건네받게 하려면 seq 도 올려야 한다. 규칙이 네 벌(연출 · 사탕 · 민트 · 정산)로
+  흩어져 있어서 한 벌만 고치고 나머지를 빠뜨렸다 — `OneShotFeedback<Value>` 한 자리로 모으고
+  `consume()`(뷰가 재생을 끝냈다: 값만 비움) 과 `invalidate()`(값이 무효가 됐다: seq 도 올림) 을
+  타입에서 갈랐다. `applySave` 는 이제 `invalidateTransientFeedback()` 하나만 부른다.
+  회귀: `testImportingASaveTellsTheViewToDropTheBanner`.
+- **뷰 안 `if` 로만 존재하는 조립은 테스트가 걸 자리가 없다.** 정산 배너의 네 줄(알 · 정산액 · 환산분 ·
+  사탕)이 `FocusTimerView` 의 `if` 네 개였다. 지급 하나를 통째로 빼도 1,960개 테스트가 전부 초록이었고
+  **line coverage 도 못 걸렀다** — `if x { y }` 는 조건만 평가되면 실행으로 세니 블록이 한 번도 안 돌아도
+  통과한다. 조립을 `AdventureReward.bannerLines` 라는 **순수 함수**로 빼면 "어떤 지급이 줄을 얻는가" 가
+  값이 되어 단언할 수 있다. 뷰에는 그 값을 그리는 일만 남긴다.
+  회귀: `testEveryPayoutOnOneClaimGetsItsOwnBannerLine` + 대조군 2개.
+- **"띄우기" 와 "내리기" 를 서로 다른 `onChange` 에 두면 실행 순서에 진다.** 배너를 새 세션 시작 때
+  내리려고 `onChange(of: timer.phase)` 에서 지우면, 모험 시작 정산(`startFocusSession` →
+  `startFocusAdventure` 가 이전 모험을 정산한 **뒤** `startFocus`)이 같은 갱신에서 들어오기 때문에
+  핸들러 순서에 따라 그 정산이 뜨지도 못하고 지워진다. SwiftUI 는 `onChange` 사이의 순서를 보장하지
+  않는다 — **지우는 쪽을 이벤트가 아니라 값 비교로 바꾼다**: 안내를 채울 때 `timer.sessionStartSeq` 를
+  함께 적어 두고, 그 값이 현재와 어긋나면 그리지 않는다. 순서와 무관하게 같은 답이 나온다.
+  회귀: `testStartingAFocusSessionAdvancesTheSequenceThatDropsTheBanner`(완료는 계기가 **아님**도 함께 고정).
+- **저장된 필드의 뜻은 마이그레이션 없이 바꾸지 않는다 — 읽는 화면이 없으면 바꿀 이유도 없다.**
+  `AdventureRecord.stardust` 를 "기본 지급액" 에서 "지갑 증가분 전부" 로 바꿨다가 되돌렸다. 배열은 이미
+  디스크에 있고 마이그레이션이 없어서, 옛 행과 새 행이 **다른 것을 뜻한 채** 한 배열에 섞인다.
+  게다가 `recentAdventures` 는 소비처가 0개라 그 "수정" 은 화면에 보이지도 않았다. 의미 변경은
+  **읽는 쪽이 생기는 시점에** 마이그레이션과 함께 한다.
+  회귀: `testHistoryStoresTheBaseStardustOnlyUntilAMigrationSaysOtherwise` — 결정을 못 박는 테스트라,
+  빨개지면 회귀가 아니라 결정이 바뀐 것이다.
+- **부류 스윕 미완 (의도적, #200).** 같은 지갑에 지급하면서 반환값을 버리는 자리가 여덟 곳 더 있다
+  (진화 · 레이스 · 배틀 · 던전 · 던전 스윕 · 졸업 3건). 근본 처방은 `accrueTrainerPoints` ·
+  `recordMission` · `recordSeason` · `recordAchievement` 에서 `@discardableResult` 를 떼어 **컴파일러가
+  호출부를 열거하게** 하는 것이다 — `awardExperience` 가 이미 그 계약이고, 형제 넷만 경고 없이 버릴 수
+  있는 상태가 이 부류를 남겼다. 다섯 기능에 걸쳐 각자 표면을 정해야 해서 #200 으로 뺐다.
 
 ## 1회성 보상의 멱등 가드가 서명 밖에 있는 부류
 

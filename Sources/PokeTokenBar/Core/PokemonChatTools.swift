@@ -582,8 +582,10 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             //
             // `exp` 는 굴린 값이 아니라 **실제로 들어간 값**이다. 만렙이면 그 몫이 별의조각으로
             // 바뀌므로(#82), 굴린 값을 실으면 모델이 오르지도 않은 레벨을 올랐다고 말한다.
+            // 사탕은 지갑이 아니라 가방을 늘리지만 설명이 필요하기는 같다 — 해안은 3회 중 1회꼴로
+            // 주는데(`AdventureRules.reward`) 이 줄에 없으면 모델이 "빈손" 이라고 말한다.
             return ("adventure claimed stardust=\(reward.totalStardust) exp=\(reward.appliedExperience)"
-                    + " eggs=\(reward.bonusEggs)", true)
+                    + " eggs=\(reward.bonusEggs) candy=\(reward.foundRareCandy ? 1 : 0)", true)
 
         case .pokedoroStart(let minutes):
             // 화면은 타이머가 도는 동안 시작 피커를 **아예 안 그린다**(`FocusTimerView`). 휴식 단계도

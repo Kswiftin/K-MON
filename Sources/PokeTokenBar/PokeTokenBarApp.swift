@@ -55,7 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         Task { await companion.ensureInheritedMoves() }
         focusTimer.onFocusCompleted = { [weak self] minutes in
             self?.companion.completeFocusSession(minutes: minutes)
-                ?? FocusRewardRules.reward(minutes: minutes, roll: 9_999)
         }
         updater = UpdateChecker()
         updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)

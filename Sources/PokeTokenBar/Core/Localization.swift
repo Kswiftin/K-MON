@@ -832,6 +832,27 @@ struct L {
                  "Your fully grown partner turned the extra experience into \(amount) Star Pieces!",
                  "育ちきったパートナーの経験値を ほしのかけら \(amount) に変えました！")
     }
+    /// 정산 배너 첫 줄 — 이번 정산이 지갑에 더한 별의조각 **전부**(`AdventureReward.totalStardust`).
+    /// 알림은 번들앱·방해금지·토글 3중 게이트라 끈 사용자에겐 안 나간다. 이 줄이 그 사용자가 지급을
+    /// 보는 유일한 자리다(#192).
+    func claimSettled(_ stardust: Int) -> String {
+        let amount = GameNumberFormatter.compact(stardust)
+        return t("모험 정산 · 별의조각 \(amount)",
+                 "Adventure settled · \(amount) Star Pieces",
+                 "冒険を精算 · ほしのかけら \(amount)")
+    }
+    /// 정산 배너 둘째 줄 — 위 금액 **중** 만렙에 걸린 경험치를 되돌린 몫. 환산이 없으면 그리지 않는다.
+    /// "그중" 이 핵심이다. 따로 더 받은 것처럼 읽히면 배너 합이 지갑과 안 맞아 보인다.
+    ///
+    /// 조사는 숫자 뒤에 바로 붙이지 않는다 — `compact` 는 10,000 미만을 그대로 숫자로 내보내서
+    /// (흔한 구간이다) "3600 는" 처럼 받침을 잘못 고른 문장이 나간다. 단위 명사 "개" 를 끼우면
+    /// 어떤 값이 와도 조사가 고정된다.
+    func claimOverflowConverted(_ stardust: Int) -> String {
+        let amount = GameNumberFormatter.compact(stardust)
+        return t("그중 \(amount)개는 다 자란 파트너의 남은 경험치를 바꾼 몫이에요",
+                 "\(amount) of that came from your fully grown partner's leftover experience",
+                 "うち \(amount) は育ちきったパートナーの余った経験値の分です")
+    }
     /// 상단 트레이너 바 라벨. `Lv.N` 만 쓰면 포켓몬 레벨(파트너·로스터·배틀에서 이미 쓰는 표기)로
     /// 잘못 읽힌다 — 이 단어가 계정 단위 값임을 알려주는 유일한 장치다.
     var trainerLevelLabel: String { t("트레이너", "Trainer", "トレーナー") }

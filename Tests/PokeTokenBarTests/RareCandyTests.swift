@@ -230,7 +230,7 @@ final class RareCandyStoreTests: XCTestCase {
         let before = s.candyFeedbackSeq
         _ = s.useRareCandy()
         XCTAssertEqual(s.candyFeedbackSeq, before + 1)
-        XCTAssertEqual(s.candyFeedbackAmount, RareCandy.xp)
+        XCTAssertEqual(s.candyFeedbackXP, RareCandy.xp)
     }
 
     /// ownedItems 는 개수>0 아이템만 노출.
@@ -263,9 +263,10 @@ final class RareCandyStoreTests: XCTestCase {
         await s.hatch(baseID: 1)
         giveCandies(s, 1)
         _ = s.useRareCandy()
-        XCTAssertEqual(s.candyFeedbackAmount, RareCandy.xp)
+        XCTAssertEqual(s.candyFeedbackXP, RareCandy.xp)
         s.consumeCandyFeedback()
-        XCTAssertEqual(s.candyFeedbackAmount, 0, "consume 후 0 — CompanionHeader 재마운트 시 재생 안 됨")
+        XCTAssertEqual(s.candyFeedbackXP, 0, "consume 후 0 — CompanionHeader 재마운트 시 재생 안 됨")
+        XCTAssertEqual(s.candyFeedbackStardust, 0, "환산분도 함께 비운다 — 한쪽만 비우면 다시 떠오른다")
     }
 }
 
