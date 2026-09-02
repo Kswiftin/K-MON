@@ -39,7 +39,7 @@ import Testing
              "teamSpeciesIDs":[1,2,3,4,5,6,7,8,9],"activeTeamIndex":0,
              "stamina":[9999,-40,0,0,0,0],"distance":99999,"crashes":-3,"lane":9,"finished":false}
             """)
-        #expect(racer.speciesID <= 649)
+        #expect(PokemonAssets.hasAnimatedSprite(speciesID: racer.speciesID))
         #expect(racer.teamSpeciesIDs.count == PokeathlonRacer.maximumTeamSize)
         #expect(racer.stamina.allSatisfy { (0...PokeathlonRacer.maximumStamina).contains($0) })
         #expect(racer.distance <= PokeathlonRace.finishLine)

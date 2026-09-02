@@ -386,6 +386,16 @@ final class EvolutionItemCoverageTests: XCTestCase {
         XCTAssertFalse(PokemonAssets.hasAnimatedSprite(speciesID: 0))
     }
 
+    /// 자르기는 **그릴 수 있는 값**을 보장해야 한다. 종 번호 상한(#1025)이 하필 구멍이라,
+    /// `speciesRange.upperBound` 로 자르면 잘라 놓고도 스프라이트가 없는 값이 나온다.
+    func testClampingAlwaysLandsOnASpeciesThatCanBeDrawn() {
+        for raw in [99_999, 1026, 1025, 990, 0, -7, Int.min, Int.max] {
+            XCTAssertTrue(PokemonAssets.hasAnimatedSprite(speciesID: PokemonAssets.clampedID(raw)),
+                          "\(raw) 을 잘랐더니 그릴 수 없는 종이 됐다")
+        }
+        XCTAssertEqual(PokemonAssets.clampedID(500), 500, "정상 번호는 그대로 통과한다")
+    }
+
     /// 야생 추첨이 구멍을 뽑으면 스프라이트 없는 상대가 필드에 선다. 풀 자체가 구멍을 안 갖는지 본다.
     func testWildPoolNeverContainsAGap() {
         XCTAssertTrue(PokemonAssets.spriteGaps.isDisjoint(with: Set(RogueRun.wildSpeciesPool)))

@@ -554,13 +554,18 @@ enum PokemonAssets {
         speciesRange.contains(speciesID) && !spriteGaps.contains(speciesID)
     }
 
-    /// 와이어에서 온 종 번호를 이 범위로 자른다. 범위 밖 번호는 스프라이트가 없어 화면이 비고,
-    /// 그대로 배열 첨자로 쓰는 자리에서는 죽는다.
+    /// 와이어에서 온 종 번호를 **그릴 수 있는 범위**로 자른다. 범위 밖 번호는 스프라이트가 없어
+    /// 화면이 비고, 그대로 배열 첨자로 쓰는 자리에서는 죽는다.
     ///
-    /// 구멍(`spriteGaps`)까지 메우지는 않는다 — 자르기는 "말도 안 되는 번호"를 막는 신뢰경계고,
-    /// 구멍은 그 안의 정상 번호다. 여기서 옆 번호로 밀면 상대가 보낸 종이 조용히 다른 종이 된다.
+    /// 이 함수의 계약은 범위가 아니라 **"그릴 수 있는 번호를 낸다"** 이다. 그래서 구멍도 메운다 —
+    /// 종 번호 상한(#1025)이 하필 구멍이라 범위로만 자르면 잘라 놓고도 스프라이트가 없는 값이 나오고,
+    /// 그걸 부르는 자리(와이어 디코딩)는 값이 정상인 줄 알고 그대로 그린다.
+    ///
+    /// 구멍이 오는 경우는 이 앱이 아닌 상대뿐이다 — 여기서 만든 개체는 애초에 구멍을 갖지 않는다.
     static func clampedID(_ speciesID: Int) -> Int {
-        min(speciesRange.upperBound, max(speciesRange.lowerBound, speciesID))
+        var bounded = min(speciesRange.upperBound, max(speciesRange.lowerBound, speciesID))
+        while bounded > speciesRange.lowerBound && spriteGaps.contains(bounded) { bounded -= 1 }
+        return bounded
     }
 }
 
