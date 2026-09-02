@@ -83,28 +83,31 @@ final class RaidArenaTests: XCTestCase {
     /// 반드시 빠진다).
     func testEveryReadoutInTheBarSharesThatMaximum() {
         var side = BattleSide(snapshot())
-        side.hp = RaidTier.five.bossHP          // 보스는 종족값 최대치를 훌쩍 넘는다
+        // **두 분모가 서로 다른 답을 내는 값**을 고른다. 만피로 재면 어느 분모로도 `.healthy` 라
+        // 오버라이드를 안 써도 통과한다 — 대조군이 없는 단언이다.
+        side.hp = RaidTier.five.bossHP / 10                 // 티어 기준 10% = 빈사
         let max = CombatantBar.maxHP(of: side, override: RaidTier.five.bossHP)
 
-        XCTAssertEqual(HPReadout.ratio(hp: side.hp, max: max), 1, "만피면 막대가 꽉 찬다")
-        XCTAssertEqual(HPTier.of(hp: side.hp, max: max), .high)
-        XCTAssertEqual(HPReadout.theirs(hp: side.hp, max: max), "100%")
+        XCTAssertEqual(HPTier.of(hp: side.hp, max: max), .critical, "티어 기준 10% 면 빈사색이다")
+        XCTAssertEqual(HPReadout.theirs(hp: side.hp, max: max), "10%")
+        XCTAssertEqual(HPReadout.ratio(hp: side.hp, max: max), 0.1, accuracy: 0.001)
 
-        // 대조군 — 오버라이드를 안 쓰면 비율이 1 을 넘는다(막대가 칸을 넘친다).
+        // 대조군 — 종족값으로 재면 같은 HP 가 **만피 초과**로 읽혀 색도 길이도 거짓말을 한다.
+        XCTAssertEqual(HPTier.of(hp: side.hp, max: side.stats.hp), .healthy)
         XCTAssertGreaterThan(Double(side.hp) / Double(side.stats.hp), 1)
     }
 
     // MARK: Phase 3·4 — 재생 배선
 
     /// 재생기는 주인별 표시 상태를 받는다. 레이드는 1인 1마리라 팀이 한 칸씩이다.
-    func testEveryFighterBecomesItsOwnReplaySide() {
+    func testEveryFighterBecomesItsOwnReplaySide() throws {
         let a = runner("A"), b = runner("B"), theBoss = boss()
         let sides = RaidArena.replaySides([a, b, theBoss])
 
         XCTAssertEqual(sides.count, 3)
-        let mine = try? XCTUnwrap(sides[.fighter(a.id)])
-        XCTAssertEqual(mine??.team.count, 1, "레이드는 교체가 없어 팀이 한 마리다")
-        XCTAssertEqual(mine??.active, 0)
+        let mine = try XCTUnwrap(sides[.fighter(a.id)])
+        XCTAssertEqual(mine.team.count, 1, "레이드는 교체가 없어 팀이 한 마리다")
+        XCTAssertEqual(mine.active, 0)
         XCTAssertNotNil(sides[.fighter(RaidBoss.bossID)], "보스도 주인이다 — 없으면 보스 바가 안 움직인다")
     }
 

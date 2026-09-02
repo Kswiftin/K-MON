@@ -13,6 +13,10 @@ struct RaidView: View {
     let onClose: () -> Void
 
     @State private var pickedTier: RaidTier = .one
+    /// 턴 재생기 — 1v1·웨이브 런·토너먼트와 **같은 구동자**를 쓴다. 없으면 턴이 해상되는 순간
+    /// HP 가 최종값으로 튀고 로그가 한꺼번에 나타나, 무엇이 일어났는지 볼 시간이 없다.
+    @State private var animator = BattleAnimator()
+    @Environment(AppSettings.self) private var settings
 
     private var center: MultiplayerRoomCenter { battleCenter.multiplayer }
     private var l: L { store.l }
@@ -174,86 +178,59 @@ struct RaidView: View {
 
     private var arena: some View {
         let fighters = center.combatFighters
-        let boss = fighters.first { $0.id == RaidBoss.bossID }
-        let party = fighters.filter { $0.team == .red }
-        let me = fighters.first { $0.id == center.myID }
+        // **표시용 개체는 재생기가 준다** — 엔진의 최종 상태를 그대로 그리면 재생할 것이 없다.
+        // 모르는 주인은 엔진 값으로 접는다(첫 프레임·관전 입장 직후).
+        func display(_ fighter: MultiplayerFighter) -> BattleSide {
+            animator.side(for: .fighter(fighter.id))?.side ?? fighter.side
+        }
+        let bossFighter = fighters.first { $0.id == RaidBoss.bossID }
+        let party = fighters.filter { $0.team == .red }.map {
+            RaidArenaView.Cell(id: $0.id, title: $0.trainerName, side: display($0))
+        }
+        let visible = RaidArena.visibleEvents(center.combatEvents, playedCount: animator.playedCount)
+        let showsResult = RaidArena.showsResult(isFinished: center.isBattleFinished,
+                                                playedCount: animator.playedCount,
+                                                streamCount: center.combatEvents.count)
         return VStack(alignment: .leading, spacing: 8) {
-            if let boss { bossCard(boss) }
-            partyRow(party)
-            if center.isBattleFinished { finishedFooter }
-            else if me?.isAlive == false {
-                Text(l.t("탈락 — 파티를 응원하고 있습니다.", "Knocked out - cheering the party on.",
-                         "戦闘不能 — パーティを応援中です。"))
-                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            } else if center.hasSubmittedAction {
-                HStack { ProgressView().controlSize(.small)
-                    Text(l.t("다른 참가자의 행동을 기다리는 중…", "Waiting for other players…",
-                             "ほかの参加者の行動を待っています…")) }
-                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            } else if let me {
-                // 대상 고르기가 없다 — 때릴 것은 보스 하나다.
-                let struggling = me.side.mustStruggle
-                MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,
-                             pp: struggling ? [] : me.side.pp, language: store.language,
-                             isEnabled: true) { index in
-                    center.submitAction(targetID: RaidBoss.bossID, moveIndex: struggling ? -1 : index)
+            if let bossFighter {
+                RaidArenaView(
+                    boss: RaidArenaView.Cell(id: bossFighter.id, title: bossFighter.trainerName,
+                                             side: display(bossFighter)),
+                    bossMaxHP: center.raidTier?.bossHP ?? max(1, bossFighter.side.stats.hp),
+                    party: party, myID: center.myID, l: l,
+                    round: center.combatRound,
+                    turnsLeft: max(0, RaidBoss.turnCap - center.combatRound + 1),
+                    overlay: animator.overlay,
+                    logLines: logLines(visible, fighters: fighters),
+                    acceptsInput: RaidArena.acceptsInput(
+                        hasSubmitted: center.hasSubmittedAction,
+                        isAlive: fighters.first { $0.id == center.myID }?.isAlive ?? false,
+                        isFinished: center.isBattleFinished,
+                        isReplaying: animator.overlay.isPlaying)
+                ) { index in
+                    center.submitAction(targetID: RaidBoss.bossID, moveIndex: index)
                 }
             }
-            if !center.combatEvents.isEmpty {
-                BattleLogBox(lines: logLines(center.combatEvents, fighters: fighters),
-                             myActor: .fighter(center.myID))
-            }
+            if showsResult { finishedFooter }
             BattleChatPanel(configuration: BattleChatConfiguration(
                 messages: center.chatMessages, mySenderID: center.myID,
                 isEnabled: true, unavailableMessage: nil, l: l, onSend: center.sendChat))
         }
+        // 재생이 따라잡을 때마다 화면을 다시 그린다. 스트림이 길어지는 자리와 개시가 모두
+        // 여기를 지나야 한다 — `onAppear` 만 두면 방에 들어와 있는 동안 온 라운드를 못 받는다.
+        .onAppear { syncReplay() }
+        .onChange(of: center.combatEvents.count) { syncReplay() }
+        .onChange(of: center.combatRound) { syncReplay() }
     }
 
-    private func bossCard(_ boss: MultiplayerFighter) -> some View {
-        // 보스 HP 는 종족값이 아니라 **티어가 정하는 절대값**이라 막대의 분모도 거기서 온다.
-        // `side.stats.hp` 로 나누면 막대가 100% 를 넘어 화면 밖으로 나간다.
-        let maxHP = center.raidTier?.bossHP ?? max(1, boss.side.stats.hp)
-        return VStack(spacing: 3) {
-            HStack {
-                Text(boss.trainerName).font(.caption.bold())
-                Spacer()
-                Text("R\(center.combatRound) · \(l.raidTurnsLeft) \(max(0, RaidBoss.turnCap - center.combatRound + 1))")
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-            }
-            SpriteView(speciesID: boss.side.snapshot.speciesID, size: 64)
-                .opacity(boss.isAlive ? 1 : 0.25)
-            ProgressView(value: Double(max(0, boss.side.hp)), total: Double(maxHP))
-                .tint(HPTier.of(hp: boss.side.hp, max: maxHP).color)
-            Text("\(max(0, boss.side.hp)) / \(maxHP)")
-                .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
-            StatusBadgeRow(side: boss.side)
-        }
-        .padding(8)
-        .pokedoroCard(tint: .purple)
-    }
-
-    private func partyRow(_ party: [MultiplayerFighter]) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-            ForEach(party) { fighter in
-                VStack(spacing: 2) {
-                    Text(fighter.trainerName).font(.caption2).bold().lineLimit(1)
-                    SpriteView(speciesID: fighter.side.snapshot.speciesID, size: 34,
-                               shiny: fighter.side.snapshot.isShiny)
-                        .opacity(fighter.isAlive ? 1 : 0.25)
-                    ProgressView(value: Double(max(0, fighter.side.hp)),
-                                 total: Double(max(1, fighter.side.stats.hp)))
-                        .tint(HPTier.of(hp: fighter.side.hp, max: fighter.side.stats.hp).color)
-                        .controlSize(.mini)
-                    Text(fighter.id == center.myID
-                         ? HPReadout.mine(hp: fighter.side.hp, max: fighter.side.stats.hp)
-                         : HPReadout.theirs(hp: fighter.side.hp, max: fighter.side.stats.hp))
-                        .font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
-                    StatusBadgeRow(side: fighter.side)
-                }
-                .padding(5)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
-            }
-        }
+    /// 재생기에 스트림을 넘긴다. 속도 규칙은 기존 배틀과 같다(저전력이면 설정과 무관하게 끈다) —
+    /// `RogueRunView.replay` 와 같은 자리다.
+    private func syncReplay() {
+        animator.sync(events: center.combatEvents,
+                      sides: RaidArena.replaySides(center.combatFighters),
+                      speed: BattleReplay.effectiveSpeed(
+                        settings.battleReplaySpeed,
+                        lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled))
     }
 
     /// 정산은 **항목별로** 그린다. 지갑을 바꾼 값은 그 자리에서 설명돼야 한다 —

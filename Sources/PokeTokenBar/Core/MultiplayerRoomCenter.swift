@@ -1015,6 +1015,20 @@ final class MultiplayerRoomCenter {
 
     /// 테스트 전용 — 게스트가 `.gymState` 를 받은 것과 같은 자리를 지난다.
     /// 프로덕션 호출 경로는 없다(수신 루프가 같은 일을 한다).
+    /// 테스트용 — 게스트가 `.raidStart` 를 받은 것과 같은 자리를 지난다. 소켓 없이 재생 배선의
+    /// 전제(스트림이 자라는가·새 판이 비우는가)를 밟기 위한 통로다(`debugApplyGymState` 와 같은 관례).
+    func debugBeginRaidCombat(fighters: [MultiplayerFighter], tier: RaidTier) {
+        raidTier = tier
+        beginRaidCombat(fighters: fighters)
+    }
+
+    /// 테스트용 — 라운드 하나가 해상돼 도착한 자리. **자기 사본을 두지 않고 실제 경로를 부른다** —
+    /// 사본을 두었더니 게스트 경로를 `combatEvents = events` 로 되돌리는 결함을 주입해도 테스트가
+    /// 초록이었다(defect-log: 테스트가 결함 트리거와 다른 경로로 통과해 false confidence 를 준다).
+    func debugApplyResolvedRound(fighters: [MultiplayerFighter], events: [BattleEvent]) {
+        applyResolvedRound(fighters: fighters, events: events)
+    }
+
     func debugApplyGymState(_ match: GymMatchState) {
         gymMatch = match
         if match.challengerID == myID { gymRejection = nil }
@@ -1562,8 +1576,7 @@ final class MultiplayerRoomCenter {
                 self.applyRaidSettlement()
             case .roundResolved(let round, let fighters, let events):
                 guard self.phase == .battling, round == self.combatRound else { return }
-                self.combatFighters = fighters; self.combatEvents = events
-                self.combatRound += 1; self.hasSubmittedAction = false
+                self.applyResolvedRound(fighters: fighters, events: events)
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 // 정산이 보상보다 **먼저** 와야 한다 — `grantRewardIfFinished` 는 전적만 남기고,
                 // 지갑을 늘리는 건 정산 쪽이다. 순서가 바뀌면 결과 화면이 한 프레임 빈 채로 뜬다.
@@ -1682,8 +1695,9 @@ final class MultiplayerRoomCenter {
         do {
             let resolvedRound = combatRound
             let events = try battle.resolveRound(Array(pendingActions.values))
-            self.battle = battle; combatFighters = battle.fighters; combatEvents = events
-            pendingActions.removeAll(); combatRound += 1; hasSubmittedAction = false
+            self.battle = battle
+            applyResolvedRound(fighters: battle.fighters, events: events)
+            pendingActions.removeAll()
             let message = MultiplayerWireMessage.roundResolved(round: resolvedRound,
                                                                fighters: battle.fighters, events: events)
             for connection in guestConnections.values { send(message, over: connection) }
@@ -1704,6 +1718,22 @@ final class MultiplayerRoomCenter {
             // 방이 영구히 멈춘다(마감 경로에서 throw 가 나면 다시 걸릴 타이머가 없다).
             scheduleTurnTimeout()
         }
+    }
+
+    /// 해상된 라운드 하나를 화면 상태에 반영한다. **호스트와 게스트가 같은 자리를 지난다.**
+    ///
+    /// 갈라 두면 한쪽만 고치는 부류가 그대로 생긴다(defect-log: 같은 기전을 한 모드에서만
+    /// 고치는 부류). 실제로 이 함수를 만들기 전에는 테스트가 자기 사본을 밟아, 게스트 경로를
+    /// 덮어쓰기로 되돌리는 결함을 주입해도 초록이었다.
+    ///
+    /// **이벤트는 덮어쓰지 않고 이어 붙인다.** 재생기(`BattleAnimator`)는 자라는 스트림을 전제한다
+    /// (`stream.count >= playedCount`) — 매 라운드 갈아 끼우면 전부 "새 배틀"로 읽혀 재생 없이
+    /// seed 만 되고 화면이 결과로 스냅한다.
+    private func applyResolvedRound(fighters: [MultiplayerFighter], events: [BattleEvent]) {
+        combatFighters = fighters
+        combatEvents += events
+        combatRound += 1
+        hasSubmittedAction = false
     }
 
     private func scheduleTurnTimeout() {
