@@ -16,6 +16,7 @@ struct BattleView: View {
     @State private var roomMode: MultiplayerBattleMode = .freeForAll
     @State private var multiplayerTargetID: UUID?
     @State private var peerPage = 0
+    @State private var pendingChallengePeer: BattlePeer?
 
     private var l: L { store.l }
 
@@ -252,7 +253,45 @@ struct BattleView: View {
 
     /// 한 페이지에 그리는 칩 수. 팝오버 콘텐츠 폭(332) 안에 칩 6개(44)와 간격이 들어간다.
     /// 최대 팀 크기와 같은 수라, 한 페이지가 곧 한 팀 분량이다.
-    private var peerList: some View {
+    @ViewBuilder private var peerList: some View {
+        if let peer = pendingChallengePeer {
+            candidateSelection(for: peer)
+        } else {
+            peerBrowser
+        }
+    }
+
+    private func candidateSelection(for peer: BattlePeer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { pendingChallengePeer = nil } label: {
+                Label(l.t("다른 트레이너 선택", "Choose another trainer", "別のトレーナーを選ぶ"),
+                      systemImage: "chevron.left")
+            }.buttonStyle(.borderless)
+            Label(l.t("배틀 후보 6마리", "Six Battle Candidates", "バトル候補6匹"),
+                  systemImage: "square.grid.3x2.fill")
+                .font(.caption.bold())
+            Text(l.t("\(peer.name)님과 배틀할 후보를 고르세요. 이후에 상대를 다시 고르지 않습니다.",
+                     "Choose the pool for your battle with \(peer.name). You won't choose the trainer again.",
+                     "\(peer.name)と戦う候補を選んでください。相手の再選択はありません。"))
+                .font(.caption).foregroundStyle(.secondary)
+            TeamPicker(store: store,
+                       selection: Binding(get: { center.pickedTeam }, set: { center.pickedTeam = $0 }),
+                       limit: 6)
+            HStack {
+                Text("\(center.pickedTeam.count) / 6")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Spacer()
+                Button(l.battleChallengeButton) {
+                    pendingChallengePeer = nil
+                    center.challenge(peer)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(center.pickedTeam.count != 6)
+            }
+        }
+    }
+
+    private var peerBrowser: some View {
         // 상대는 Bonjour 탐색을 따라 수시로 들어오고 나간다 — 보던 페이지가 사라지면 마지막 페이지로 당긴다.
         let pageCount = Self.peerPageCount(center.peers.count)
         let page = min(peerPage, pageCount - 1)
@@ -273,10 +312,6 @@ struct BattleView: View {
                      "Reveal six candidates first, then choose the battle team.",
                      "先に候補6匹を公開してから実際の出場ポケモンを選びます。"))
                 .font(.caption2).foregroundStyle(.secondary)
-            TeamPicker(store: store,
-                       selection: Binding(get: { center.pickedTeam }, set: { center.pickedTeam = $0 }),
-                       limit: 6)
-
             HStack {
                 Label(store.battleRank.displayName, systemImage: "shield.lefthalf.filled")
                     .foregroundStyle(store.battleRank.tier.tint)
@@ -312,8 +347,8 @@ struct BattleView: View {
                 // 간다 — 한 페이지에 다섯 명씩, 나머지는 페이저로 넘겨서 신청한다.
                 VStack(spacing: 4) {
                     ForEach(slice) { peer in
-                        PeerRow(store: store, peer: peer, isEnabled: isChallengeEnabled) {
-                            center.challenge(peer)
+                        PeerRow(store: store, peer: peer, isEnabled: center.phase == .ready) {
+                            pendingChallengePeer = peer
                         }
                     }
                     if pageCount > 1 {
@@ -617,7 +652,7 @@ struct BattleView: View {
     }
 
     private var isChallengeEnabled: Bool {
-        if case .ready = center.phase { return center.pickedTeam.count == 6 }
+        if case .ready = center.phase { return true }
         return false
     }
 

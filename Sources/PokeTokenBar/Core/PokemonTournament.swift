@@ -81,6 +81,10 @@ struct PokemonTournamentState: Codable, Sendable, Equatable {
     var matches: [TournamentBracketMatch] = []
     var currentMatch: TournamentMatchState?
     var championID: UUID?
+    /// 토너먼트 시작 직후 전원에게 보여 주는 첫 라운드 대진. optional 필드라 구버전
+    /// 클라이언트가 보낸 상태도 깨지지 않고 디코딩된다.
+    var openingMatches: [TournamentBracketMatch]?
+    var bracketRevealUntil: Date?
 
     var champion: TournamentEntrant? { entrants.first { $0.id == championID } }
 }
@@ -213,6 +217,15 @@ struct TournamentBracket {
     }
 
     var championID: UUID? { waiting.isEmpty && winners.count == 1 ? winners[0] : nil }
+
+    /// 현재 대기열을 손대지 않고 보여 줄 대진만 만든다. 홀수의 마지막 참가자는 부전승이므로
+    /// 선으로 연결할 상대가 없어 표에서는 뺀다.
+    func previewMatches() -> [TournamentBracketMatch] {
+        stride(from: 0, to: waiting.count - 1, by: 2).map { index in
+            TournamentBracketMatch(id: UUID(), round: round,
+                                   playerA: waiting[index], playerB: waiting[index + 1], winnerID: nil)
+        }
+    }
 
     private mutating func advanceRoundIfNeeded() {
         guard waiting.isEmpty, winners.count > 1 else { return }

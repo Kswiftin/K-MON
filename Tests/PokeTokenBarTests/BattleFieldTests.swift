@@ -2,6 +2,26 @@ import XCTest
 import SwiftUI
 @testable import PokeTokenBar
 
+final class BattleSwitchInputPolicyTests: XCTestCase {
+    func testFaintedReplacementUnlocksAfterReplayEvenWhenMovesAreUnavailable() {
+        XCTAssertFalse(BattleSwitchInputPolicy.isEnabled(needsForcedReplacement: true,
+                                                         replayIsPlaying: true,
+                                                         acceptsRegularInput: false))
+        XCTAssertTrue(BattleSwitchInputPolicy.isEnabled(needsForcedReplacement: true,
+                                                        replayIsPlaying: false,
+                                                        acceptsRegularInput: false))
+    }
+
+    func testOrdinarySwitchUsesRegularTurnLock() {
+        XCTAssertFalse(BattleSwitchInputPolicy.isEnabled(needsForcedReplacement: false,
+                                                         replayIsPlaying: false,
+                                                         acceptsRegularInput: false))
+        XCTAssertTrue(BattleSwitchInputPolicy.isEnabled(needsForcedReplacement: false,
+                                                        replayIsPlaying: false,
+                                                        acceptsRegularInput: true))
+    }
+}
+
 /// 배틀 필드 + 선택 패널 (계획 §6 Phase 6·8, §9 PR 4). 기전은 건드리지 않는다 — 화면만이다.
 ///
 /// UI 는 컴파일과 단위 테스트를 통과하면서 화면에서 깨진다(defect-log). 그래서 여기 있는 테스트는

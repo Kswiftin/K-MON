@@ -923,6 +923,13 @@ struct SwitchStripView: View {
     }
 }
 
+enum BattleSwitchInputPolicy {
+    static func isEnabled(needsForcedReplacement: Bool, replayIsPlaying: Bool,
+                          acceptsRegularInput: Bool) -> Bool {
+        needsForcedReplacement ? !replayIsPlaying : acceptsRegularInput
+    }
+}
+
 // MARK: - 로그 칸
 
 /// 최근 `BattleFieldMetrics.logLines` 줄만, **고정 높이**로. 세 모드가 같은 칸을 쓴다 — 멀티만
@@ -1139,6 +1146,14 @@ struct BattleArenaView: View {
         allowsActions && !mine.isAlive && switchSlots.contains(where: \.isSelectable)
     }
 
+    /// 기절 교체는 현재 포켓몬이 살아 있어야 하는 기술 선택과 다른 단계다.
+    /// `acceptsInput`을 그대로 공유하면 교체 안내를 띄우고도 모든 후보가 잠긴다.
+    private var acceptsSwitchInput: Bool {
+        BattleSwitchInputPolicy.isEnabled(needsForcedReplacement: needsForcedReplacement,
+                                          replayIsPlaying: overlay.isPlaying,
+                                          acceptsRegularInput: acceptsInput)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: BattleFieldMetrics.spacing) {
             header
@@ -1197,7 +1212,7 @@ struct BattleArenaView: View {
                 // 교체도 그 턴의 행동이다 — 기술만 잠그면 재생 중에 교체로 턴을 넘길 수 있다.
                 // 흐리게 그리는 건 `SwitchStripView` 가 자기 잠금 상태로 한다.
                 SwitchStripView(slots: switchSlots, label: l.battleSwitch,
-                                isEnabled: acceptsInput, onSwitch: onSwitch)
+                                isEnabled: acceptsSwitchInput, onSwitch: onSwitch)
             }
             BattleLogBox(lines: logLines, myActor: myActor)
             if let chat { BattleChatPanel(configuration: chat) }
