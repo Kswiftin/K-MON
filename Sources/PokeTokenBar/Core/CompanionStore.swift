@@ -2747,6 +2747,36 @@ final class CompanionStore {
         }
     }
 
+    /// 가방에서 아이템을 버린다 — 되돌릴 수 없고 환불도 없다. 보유 수보다 많이 버릴 수 없다.
+    ///
+    /// 보유형(이로치 부적)은 대상이 아니다: 개수 개념이 없고, 버려도 정리되는 것 없이 상시 효과만
+    /// 사라진다.
+    @discardableResult
+    func discardItem(_ kind: ItemKind, quantity: Int = 1) -> Bool {
+        guard quantity > 0, !kind.isPassive else { return false }
+        let owned = itemCount(kind)
+        guard owned >= quantity else { return false }
+        let left = owned - quantity
+        state.inventory[kind.rawValue] = left > 0 ? left : nil
+        // 미니룸 가구를 버렸다면 배치도 같이 걷어낸다 — 보유 수보다 많이 놓인 채로 두면 방이
+        // 가지고 있지도 않은 가구를 그린다(기동 시 prune 은 로드 때만 돈다).
+        memoryAlbum.removeUnownedPlacedDecor(ownedItems: state.inventory)
+        save()
+        return true
+    }
+
+    /// 기술머신을 버린다 — `discardItem` 과 같은 규칙(환불 없음, 보유 수 이내).
+    @discardableResult
+    func discardTechnicalMachine(_ machine: TechnicalMachine, quantity: Int = 1) -> Bool {
+        guard quantity > 0 else { return false }
+        let owned = technicalMachineCount(machine.moveID)
+        guard owned >= quantity else { return false }
+        let left = owned - quantity
+        state.technicalMachines[machine.moveID] = left > 0 ? left : nil
+        save()
+        return true
+    }
+
     /// 이상한 사탕 사용 가능 — 활성 포켓몬 + 라인 로딩 완료 + 재고>0.
     /// 라인 미로딩(재시작 직후·오프라인)이면 비활성 — 사탕이 진화 없이 적립만 되는 것 방지.
     var canUseRareCandy: Bool { hasActive && currentLine != nil && rareCandyCount > 0 }
@@ -2914,11 +2944,19 @@ final class CompanionStore {
         availableTokens >= machine.price
     }
 
+    /// 잔액으로 한 번에 살 수 있는 최대 장수 — 상점의 수량 선택 상한.
+    func maxPurchasableTechnicalMachines(_ machine: TechnicalMachine) -> Int {
+        machine.price > 0 ? availableTokens / machine.price : 0
+    }
+
+    /// 기술머신 구매 — `buy(_:quantity:)` 와 같은 전량 구매 규칙(부분 구매 없음).
     @discardableResult
-    func buyTechnicalMachine(_ machine: TechnicalMachine) -> Bool {
-        guard canBuyTechnicalMachine(machine) else { return false }
-        state.starPieces -= machine.price
-        state.technicalMachines[machine.moveID, default: 0] += 1
+    func buyTechnicalMachine(_ machine: TechnicalMachine, quantity: Int = 1) -> Bool {
+        guard quantity > 0 else { return false }
+        let total = machine.price * quantity
+        guard availableTokens >= total else { return false }
+        state.starPieces -= total
+        state.technicalMachines[machine.moveID, default: 0] += quantity
         save()
         return true
     }
@@ -2999,14 +3037,31 @@ final class CompanionStore {
         return availableTokens >= price
     }
 
-    /// 아이템 1개 구매 — 지갑에서 price 차감, 인벤토리 +1. usedSinceInstall(성장·통계)·진화 진행엔
-    /// 무영향(지출 원장만 증가). 잔액 부족/미판매면 no-op(false).
+    /// 잔액으로 한 번에 살 수 있는 최대 수량 — 상점의 수량 선택 상한.
+    ///
+    /// 보유형 분기는 지금 도달하지 않는다(유일한 보유형인 이로치 부적은 `shopPrice` 가 nil 이라
+    /// 위 guard 에서 걸린다). 보유형이 판매 목록에 들어오는 날 스텝퍼가 항상 실패하는 수량을
+    /// 고르게 두지 않으려고 남긴다 — `buy(_:quantity:)` 는 보유형의 2개 이상을 거절한다.
+    func maxPurchasable(_ kind: ItemKind) -> Int {
+        guard let price = kind.shopPrice, price > 0 else { return 0 }
+        if kind.isPassive { return canBuy(kind) ? 1 : 0 }
+        return availableTokens / price
+    }
+
+    /// 아이템 구매 — 지갑에서 price×quantity 차감, 인벤토리 +quantity. usedSinceInstall(성장·통계)·
+    /// 진화 진행엔 무영향(지출 원장만 증가). 잔액 부족/미판매면 no-op(false).
+    ///
+    /// 전량 구매 가능할 때만 처리한다 — 잔액이 모자라면 살 수 있는 만큼만 사는 부분 구매를 하지 않는다
+    /// (누른 수량과 실제 구매량이 달라지면 확인 문구가 거짓말이 된다).
     @discardableResult
-    func buy(_ kind: ItemKind) -> Bool {
-        guard let price = kind.shopPrice, availableTokens >= price else { return false }
-        if kind.isPassive && itemCount(kind) > 0 { return false }   // 보유형 중복 구매 방지(방어)
-        state.starPieces -= price
-        state.inventory[kind.rawValue, default: 0] += 1
+    func buy(_ kind: ItemKind, quantity: Int = 1) -> Bool {
+        guard quantity > 0, let price = kind.shopPrice else { return false }
+        // 보유형은 1회만 — 수량 구매 대상이 아니다(재구매 방어 포함).
+        if kind.isPassive && (quantity > 1 || itemCount(kind) > 0) { return false }
+        let total = price * quantity
+        guard availableTokens >= total else { return false }
+        state.starPieces -= total
+        state.inventory[kind.rawValue, default: 0] += quantity
         save()
         return true
     }

@@ -3284,3 +3284,24 @@ read_when:
   않아 저장만 하고 복원하지 않는다. 릴리스 노트 창은 버전당 한 번뿐이라 이름을 지웠고, Memory Home 은
   기존 동작을 유지했다(저장값이 복원되지 않는 상태 그대로).
   (`ReleaseNotesPresenter.swift` · `MemoryHomePresenter.swift`, 2026-09-01.)
+
+## 새 LAN 센터를 만들면서 `NSBonjourServices` 를 안 늘리면, 그 기능만 조용히 0건이 된다
+
+- **증상.** 포켓몬 경매장에서 다른 트레이너의 출품이 하나도 안 보였다. 에러도 빈 상태 안내도 없이
+  목록만 계속 비어 있었다. 사용자 리포트로 발견했다.
+- **직접원인.** `PokemonAuctionCenter.serviceType` 은 `_kmonauct._tcp` 인데 `scripts/build-app.sh` 가
+  굽는 Info.plist 의 `NSBonjourServices` 에는 앞선 네 개(`_ptbbattle`·`_kmonroom`·`_kmontrade`·
+  `_kmonhome`)만 있었다. macOS 는 목록에 없는 서비스 타입의 브라우징·광고를 막는데, **거부가
+  아니라 무결과**다 — 콜백이 빈 집합으로 정상 호출되므로 코드 어디에도 실패 신호가 남지 않는다.
+- **테스트·검증이 왜 못 걸렀나.** 경매의 단위 테스트는 전부 프로세스 안의 상태 기계(제안 수락·거절·
+  중복 결제 차단)를 봤다. 그 경로는 plist 를 한 번도 지나지 않으므로 통과해도 "탐색이 된다"는 말을
+  전혀 하지 않는다. plist 는 소스가 아니라 **빌드 스크립트 안의 히어독**이라, 새 서비스 타입을
+  선언해도 아무것도 깨지지 않는다.
+- **부류 스윕.** 코드에 선언된 `serviceType` 은 다섯 개(배틀·방·교환·메모리홈·경매)이고 그중
+  경매만 빠져 있었다. 나머지 넷은 모두 선언돼 있다.
+- **영구 캡처.** `BonjourServiceDeclarationTests` — `Sources/` 를 훑어 `serviceType` 줄의
+  `_*._tcp` 문자열을 모으고, 각각이 `build-app.sh` 의 `<string>…</string>` 로 있는지 대조한다.
+  여섯 번째 LAN 센터를 만들 때 같은 함정을 다시 밟지 않게 한다.
+- **곁가지.** 이 부류는 "기능은 다 만들었는데 그 기능만 아무 일도 안 일어난다"로 나타나므로
+  디버깅이 오래 걸린다. LAN 기능을 추가할 때는 코드보다 **plist 를 먼저** 고치는 편이 낫다.
+  (`PokemonAuction.swift` · `scripts/build-app.sh`, 2026-09-02.)

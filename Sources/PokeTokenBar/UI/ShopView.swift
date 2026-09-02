@@ -96,6 +96,35 @@ struct ShopView: View {
     }
 }
 
+/// 수량 선택 — 재고로 쌓이는 상품(도구·진화 아이템·기술머신)에만 붙는다. 알·의상·보유형은 대상이 아니다.
+/// 상한은 "지금 잔액으로 살 수 있는 최대"라, 사는 즉시 상한이 줄고 선택 수량도 따라 줄어든다.
+/// 네이티브 Stepper 를 쓰는 이유: 길게 누르면 자동 반복이라 수십 개도 클릭 한 번으로 올릴 수 있다.
+private struct PurchaseQuantityPicker: View {
+    @Binding var quantity: Int
+    let upperBound: Int
+    let l: L
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Stepper(value: $quantity, in: 1...max(1, upperBound)) {
+                Text("×\(quantity)").font(.caption.weight(.bold)).monospacedDigit()
+            }
+            .controlSize(.small)
+            .fixedSize()
+            Button(l.buyMax) { quantity = upperBound }
+                .buttonStyle(.borderless).controlSize(.small)
+                .disabled(quantity >= upperBound)
+        }
+    }
+}
+
+/// 단가와 (수량이 2 이상일 때) 합계를 한 줄로 — "가격 ⭐100 → ⭐300".
+private func priceLabel(_ l: L, unitPrice: Int, quantity: Int) -> String {
+    let unit = "\(l.shopPriceLabel) ⭐\(GameNumberFormatter.compact(unitPrice))"
+    guard quantity > 1 else { return unit }
+    return unit + " → ⭐" + GameNumberFormatter.compact(unitPrice * quantity)
+}
+
 private struct TechnicalMachineShopCard: View {
     let store: CompanionStore
     let machine: TechnicalMachine
@@ -103,6 +132,7 @@ private struct TechnicalMachineShopCard: View {
     @State private var move: MoveSpec?
     @State private var canActiveLearn: Bool?
     @State private var confirming = false
+    @State private var quantity = 1
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -150,19 +180,24 @@ private struct TechnicalMachineShopCard: View {
             }
             if confirming {
                 HStack {
-                    Text(store.l.buyConfirm(move?.name(store.language) ?? machine.slug))
+                    Text(store.l.buyConfirm(move?.name(store.language) ?? machine.slug,
+                                            quantity: quantity,
+                                            total: GameNumberFormatter.compact(machine.price * quantity)))
                         .font(.caption2).foregroundStyle(.secondary)
                     Spacer()
-                    Button(store.l.buy) { _ = store.buyTechnicalMachine(machine); confirming = false }
+                    Button(store.l.buy) { buyNow() }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                     Button(store.l.cancel) { confirming = false }.buttonStyle(.borderless).controlSize(.small)
                 }
             } else {
                 HStack {
-                    Text("\(store.l.shopPriceLabel) ⭐\(GameNumberFormatter.compact(machine.price))")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                    Text(priceLabel(store.l, unitPrice: machine.price, quantity: quantity))
+                        .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                     Spacer()
                     if store.canBuyTechnicalMachine(machine) {
+                        if affordableCount > 1 {
+                            PurchaseQuantityPicker(quantity: $quantity, upperBound: affordableCount, l: store.l)
+                        }
                         Button(store.l.buy) { confirming = true }.buttonStyle(.bordered).controlSize(.small)
                     } else {
                         Text(store.l.notEnoughTokens).font(.caption2).foregroundStyle(.tertiary)
@@ -172,6 +207,11 @@ private struct TechnicalMachineShopCard: View {
         }
         .padding(10)
         .pokedoroCard(tint: .purple)
+        // 잔액이 줄면(여기서 샀든 다른 카드에서 샀든) 선택 수량을 상한까지 끌어내린다 — 안 그러면
+        // 살 수 없는 수량이 남아 확인 문구는 "5장"인데 구매는 조용히 실패한다.
+        .onChange(of: affordableCount) { _, newCount in
+            quantity = min(quantity, max(1, newCount))
+        }
         .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") {
             move = await PokeAPIClient.shared.moveDetail(id: machine.moveID)
             if let move { onResolveName(move.name(store.language)) }
@@ -182,6 +222,14 @@ private struct TechnicalMachineShopCard: View {
                 canActiveLearn = nil
             }
         }
+    }
+
+    private var affordableCount: Int { store.maxPurchasableTechnicalMachines(machine) }
+
+    private func buyNow() {
+        confirming = false
+        store.buyTechnicalMachine(machine, quantity: quantity)
+        quantity = 1
     }
 
     @ViewBuilder private var compatibilityLabel: some View {
@@ -210,8 +258,10 @@ private struct ShopItemCard: View {
     let store: CompanionStore
     let kind: ItemKind
     @State private var confirming = false
+    @State private var quantity = 1
 
     private var price: Int { kind.shopPrice ?? 0 }
+    private var affordableCount: Int { store.maxPurchasable(kind) }
 
     var body: some View {
         let l = store.l
@@ -237,6 +287,11 @@ private struct ShopItemCard: View {
         }
         .padding(10)
         .pokedoroCard(tint: PokedoroTheme.blue)
+        // 잔액이 줄면(여기서 샀든 다른 카드에서 샀든) 선택 수량을 상한까지 끌어내린다 — 안 그러면
+        // 살 수 없는 수량이 남아 확인 문구는 "5개"인데 구매는 조용히 실패한다.
+        .onChange(of: affordableCount) { _, newCount in
+            quantity = min(quantity, max(1, newCount))
+        }
     }
 
     @ViewBuilder
@@ -250,8 +305,11 @@ private struct ShopItemCard: View {
             }
         } else if confirming {
             HStack(spacing: 8) {
-                Text(l.buyConfirm(l.itemName(kind)))
-                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                // 수량·합계가 붙으면 한 줄에 안 들어간다 — 2줄까지 허용.
+                Text(l.buyConfirm(l.itemName(kind), quantity: quantity,
+                                  total: GameNumberFormatter.compact(price * quantity)))
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button(l.buy) { buyNow() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
@@ -260,10 +318,14 @@ private struct ShopItemCard: View {
             }
         } else {
             HStack {
-                Text("\(l.shopPriceLabel) ⭐\(GameNumberFormatter.compact(price))")
+                Text(priceLabel(l, unitPrice: price, quantity: quantity))
                     .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                 Spacer()
                 if store.canBuy(kind) {
+                    // 한 개밖에 못 사면 스텝퍼를 띄우지 않는다(기존 화면 그대로).
+                    if affordableCount > 1 {
+                        PurchaseQuantityPicker(quantity: $quantity, upperBound: affordableCount, l: l)
+                    }
                     Button(l.buy) { confirming = true }
                         .buttonStyle(.bordered).controlSize(.small)
                 } else {
@@ -276,7 +338,8 @@ private struct ShopItemCard: View {
 
     private func buyNow() {
         confirming = false
-        _ = store.buy(kind)
+        store.buy(kind, quantity: quantity)
+        quantity = 1
     }
 }
 

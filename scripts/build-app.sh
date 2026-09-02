@@ -72,6 +72,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
         <string>_kmonroom._tcp</string>
         <string>_kmontrade._tcp</string>
         <string>_kmonhome._tcp</string>
+        <string>_kmonauct._tcp</string>
     </array>
 </dict>
 </plist>

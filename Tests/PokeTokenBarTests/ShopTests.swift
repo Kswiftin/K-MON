@@ -123,6 +123,49 @@ final class ShopTests: XCTestCase {
         XCTAssertEqual(s2.availableTokens, 1_000_000_000 - RareCandy.price)
     }
 
+    // MARK: 수량 구매 (한 번에 여러 개)
+
+    /// 상한 = 잔액 / 단가 (내림). 잔여 잔액으로는 한 개도 더 못 산다.
+    func testMaxPurchasableIsBalanceDividedByPrice() {
+        let leftover = RareCandy.price / 2
+        let s = store(used: RareCandy.price * 4 + leftover)
+        XCTAssertEqual(s.maxPurchasable(.rareCandy), 4)
+    }
+
+    /// 수량 구매는 총액을 한 번에 차감하고 재고를 그만큼 올린다.
+    func testBuyQuantityDebitsTotalAndCreditsAll() {
+        let s = store(used: RareCandy.price * 10)
+        XCTAssertTrue(s.buy(.rareCandy, quantity: 5))
+        XCTAssertEqual(s.rareCandyCount, 5)
+        XCTAssertEqual(s.availableTokens, RareCandy.price * 5)
+    }
+
+    /// 전량 구매 — 잔액이 모자라면 살 수 있는 만큼만 사는 부분 구매를 하지 않고 통째로 no-op.
+    func testBuyQuantityIsAllOrNothing() {
+        let s = store(used: RareCandy.price * 3)
+        XCTAssertFalse(s.buy(.rareCandy, quantity: 4))
+        XCTAssertEqual(s.rareCandyCount, 0)
+        XCTAssertEqual(s.availableTokens, RareCandy.price * 3)
+    }
+
+    func testBuyQuantityZeroOrNegativeIsNoOp() {
+        let s = store(used: RareCandy.price * 3)
+        XCTAssertFalse(s.buy(.rareCandy, quantity: 0))
+        XCTAssertFalse(s.buy(.rareCandy, quantity: -2))
+        XCTAssertEqual(s.availableTokens, RareCandy.price * 3)
+    }
+
+    /// 보유형(이로치 부적)은 상점에서 팔지 않는다 — 잔액이 아무리 많아도 수량 선택도 구매도 없다.
+    /// `shopPrice` 단언은 경보다: 보유형이 판매 목록에 들어오는 날 수량 규칙을 다시 봐야 한다
+    /// (개수 개념이 없는 아이템에 스텝퍼가 붙으면 항상 실패하는 수량을 고르게 된다).
+    func testPassiveItemHasNoQuantity() {
+        XCTAssertNil(ItemKind.shinyCharm.shopPrice, "보유형이 판매 목록에 들어왔다 — 수량 규칙 재검토 필요")
+        let s = store(used: 10_000_000_000)
+        XCTAssertEqual(s.maxPurchasable(.shinyCharm), 0)
+        XCTAssertFalse(s.buy(.shinyCharm, quantity: 2))
+        XCTAssertEqual(s.itemCount(.shinyCharm), 0)
+    }
+
     // MARK: 정렬 (가격 저렴한 순 + 구매 완료 보유형 맨 아래)
 
     /// 상점 목록은 가격 오름차순(민트 100M < 사탕 500M < 이로치 부적 3B).
