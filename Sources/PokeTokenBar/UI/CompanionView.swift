@@ -1215,12 +1215,26 @@ private struct EvolutionBranchMenu: View {
 }
 
 /// 하트비늘 후보 목록(#97) — 고르면 기존 MoveLearningCard 로 넘어간다(교체 UI 는 그쪽 한 곳만).
+///
+/// **페이지식이라 `ScrollView` 를 쓰지 않는다.** 이 카드는 팝오버 본체 스크롤(`PopoverView`) 안에
+/// 놓이므로 자기 스크롤을 두면 중첩이 되어 안쪽이 스크롤되지 않는다 — 높이를 묶은 상한(220pt)을
+/// 넘는 후보는 고를 방법이 없었다. 소유 포켓몬 화면·도감이 같은 이유로 페이지식이고
+/// (`NestedScrollGuardTests` 가 그 규칙을 소스에서 막는다), 높이를 늘리는 것은 잘리는 지점만
+/// 옮기는 우회다.
 private struct MoveRelearnCard: View {
     let store: CompanionStore
     let prompt: CompanionStore.RelearnPrompt
+    @State private var page = 0
+
+    /// 한 페이지 후보 수. 행이 설명 줄까지 두 줄이라 다섯이 옛 상한(220pt)과 같은 높이다.
+    private static let pageSize = 5
 
     var body: some View {
         let l = store.l
+        let pageCount = max(1, (prompt.candidates.count + Self.pageSize - 1) / Self.pageSize)
+        // 후보가 줄어든 경우(개체 전환·재조회) 범위 방어 — 도감·로스터와 같은 규칙이다.
+        let current = min(page, pageCount - 1)
+        let slice = Array(prompt.candidates.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 7) {
             Label(l.relearnHeader, systemImage: "arrow.counterclockwise")
                 .font(.caption.weight(.semibold)).foregroundStyle(.pink)
@@ -1228,23 +1242,39 @@ private struct MoveRelearnCard: View {
                 Text(l.relearnEmpty).font(.caption2).foregroundStyle(.secondary)
             } else {
                 Text(l.relearnPickTitle).font(.caption2).foregroundStyle(.secondary)
-                // 후보가 수십 개까지 늘 수 있다 — 높이를 묶어 카드가 팝오버를 밀어내지 않게 한다.
-                // 행이 설명 줄까지 두 줄이 되면서 같은 높이에 담기는 개수가 절반으로 줄어 상한을 올렸다.
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(prompt.candidates) { move in
-                            RelearnCandidateRow(move: move, language: store.language, l: l) {
-                                store.pickRelearnCandidate(move)
-                            }
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(slice) { move in
+                        RelearnCandidateRow(move: move, language: store.language, l: l) {
+                            store.pickRelearnCandidate(move)
                         }
                     }
                 }
-                .frame(maxHeight: 220)
+                if pageCount > 1 { pager(current: current, pageCount: pageCount) }
             }
             Button(l.relearnClose) { store.cancelRelearn() }.controlSize(.small)
         }
         .padding(9)
         .background(Color.pink.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
+        // 개체가 바뀌면 목록이 통째로 갈리므로 첫 페이지로 돌아간다.
+        .onChange(of: prompt.id) { page = 0 }
+    }
+
+    private func pager(current: Int, pageCount: Int) -> some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 4)
+            Button { page = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
+                .buttonStyle(.plain).disabled(current == 0)
+                .accessibilityLabel(store.l.dexPagePrev)
+            Text("\(current + 1) / \(pageCount)")
+                .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(store.l.dexPageLabel(current + 1, pageCount))
+            Button { page = min(pageCount - 1, current + 1) } label: { Image(systemName: "chevron.right") }
+                .buttonStyle(.plain).disabled(current == pageCount - 1)
+                .accessibilityLabel(store.l.dexPageNext)
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .frame(height: 18)
     }
 }
 
