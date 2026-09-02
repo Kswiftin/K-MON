@@ -163,6 +163,28 @@ final class StardustPayoutSurfaceTests: XCTestCase {
                           "seq 가 그대로면 뷰는 남의 세이브 지급액을 계속 그린다")
     }
 
+    // MARK: 문구 — 조립을 뷰 밖에 둔다
+
+    /// 다섯 경로가 **각각 다른** 문구를 받는가. 금액만으로는 "왜 늘었나" 에 답하지 못한다 —
+    /// 그게 #200 의 증상이었다.
+    ///
+    /// 조립을 `L` 에 두는 이유는 `ClaimBannerLine` 과 같다: 뷰 안 `switch` 로만 있으면 한 경로가
+    /// 빠져도 테스트가 전부 초록이다. exhaustive switch 는 경로가 **느는** 것만 막고, 복붙으로
+    /// 같은 문구를 두 경로에 넣는 것은 못 막는다.
+    func testEveryPayoutSourceGetsItsOwnWordingInEveryLanguage() {
+        let sources: [StardustPayout.Source] = [.evolve, .race, .battle, .dungeon, .graduation]
+        for lang in [AppLanguage.ko, .en, .ja] {
+            let l = L(lang)
+            let texts = sources.map { l.payoutSettled(StardustPayout(source: $0, stardust: 300)) }
+            XCTAssertEqual(Set(texts).count, sources.count, "\(lang): 두 경로가 같은 문구를 쓴다")
+            for text in texts {
+                XCTAssertTrue(text.contains(GameNumberFormatter.compact(300)),
+                              "\(lang): 금액이 빠진 배너는 지급을 설명하지 못한다 — \(text)")
+                XCTAssertFalse(text.isEmpty, "\(lang): 빈 문구")
+            }
+        }
+    }
+
     // MARK: 도구
 
     /// 이 파일의 유일한 단정 형태 — **지갑 증가분 전부**가 배너 하나로 설명되는가.

@@ -163,6 +163,12 @@ struct PopoverView: View {
 
     private var l: L { companion.l }
 
+    /// 뷰가 건네받아 들고 있는 지급 배너(#200). 스토어의 `lastPayout` 을 그대로 그리지 않는
+    /// 이유는 소비 계약 때문이다 — 건네받는 즉시 스토어를 비워야 탭을 옮겼다 돌아올 때 같은
+    /// 배너가 다시 떠오르지 않는다(`FocusTimerView` 의 정산 배너와 같은 형태).
+    @State private var payoutBanner: StardustPayout?
+    @State private var seenPayoutSeq = 0
+
     var body: some View {
         @Bindable var nav = nav
         Group {
@@ -281,11 +287,46 @@ struct PopoverView: View {
         .pokedoroCard(tint: PokedoroTheme.yellow)
     }
 
+    /// 정산 **밖**의 지급을 알리는 줄(#200). 지갑을 바꾼 값은 창 안에 보이는 표면을 하나 가져야
+    /// 하고, 알림은 그 표면의 대체가 아니라 덤이다 — `notifyCompanionEvent` 는 번들앱 · 방해금지 ·
+    /// 토글 3중 게이트라 하나만 꺼도 지급이 통째로 무설명이 된다.
+    ///
+    /// **탭 스위치 밖, 잔액 바로 아래**에 둔다. 탭 안에 두면 그 탭을 벗어나는 순간 안 보이고,
+    /// 진화 · 배틀 · 웨이브 런은 애초에 다른 화면에서 일어난다. 바로 위가 트레이너 바의 잔액이라
+    /// 바뀐 숫자와 그 이유가 한눈에 붙는다.
+    @ViewBuilder private var payoutNotice: some View {
+        if let payout = payoutBanner {
+            HStack(spacing: 6) {
+                Text("✦").font(.caption.weight(.bold)).foregroundStyle(.orange)
+                Text(l.payoutSettled(payout))
+                    .font(.caption.weight(.semibold)).foregroundStyle(.green)
+                Spacer()
+            }
+            .padding(.horizontal, 11).padding(.vertical, 6)
+            .pokedoroCard(tint: PokedoroTheme.yellow)
+            .transition(.opacity)
+        }
+    }
+
+    /// 스토어가 들고 있는 마지막 지급을 한 번만 건네받고, 잠시 뒤 스스로 내린다.
+    ///
+    /// 만료를 스토어에 두지 않는다 — 화면에 얼마나 떠 있을지는 뷰의 사정이고, 상태를 스토어에
+    /// 만들면 세이브 교체 · 소비와 만료가 서로를 덮어쓴다. 취소 확인이 핵심이다: 새 지급이
+    /// 들어오면 이 task 가 취소되는데, 그때 그냥 내리면 **방금 뜬** 배너를 지운다.
+    private func adoptPayoutIfNeeded() {
+        guard companion.payoutFeedbackSeq != seenPayoutSeq else { return }
+        seenPayoutSeq = companion.payoutFeedbackSeq
+        payoutBanner = companion.lastPayout
+        guard payoutBanner != nil else { return }
+        companion.consumePayoutFeedback()
+    }
+
     private var mainContent: some View {
         @Bindable var nav = nav
         return VStack(alignment: .leading, spacing: 12) {
             updateBanner
             trainerBar
+            payoutNotice
             FocusTimerView()
             PokedoroTabBar(selection: $nav.tab, l: l)
 
@@ -319,6 +360,16 @@ struct PopoverView: View {
         }
         .padding(PopoverMetrics.padding)
         .animation(.snappy(duration: 0.22), value: nav.tab)
+        // 지급이 팝오버가 닫힌 사이나 하위 화면(웨이브 런 · 레이드) 안에서 일어나도, 돌아오면
+        // 여기서 건네받는다 — 1회성 피드백이라 소비 전까지 스토어에 남아 있다.
+        .task(id: companion.payoutFeedbackSeq) {
+            adoptPayoutIfNeeded()
+            guard payoutBanner != nil else { return }
+            try? await Task.sleep(for: .seconds(8))
+            // 새 지급이 들어와 이 task 가 취소된 경우다. 그냥 내리면 방금 뜬 배너를 지운다.
+            guard !Task.isCancelled else { return }
+            payoutBanner = nil
+        }
     }
 
     private var footer: some View {
