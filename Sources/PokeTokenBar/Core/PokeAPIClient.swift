@@ -4,6 +4,15 @@ import Foundation
 struct BaseSpecies: Sendable, Codable {
     let id: Int
     let captureRate: Int    // 3(뮤츠급)~255(캐터피급), 공식 희귀도 신호
+
+    /// 부화 후보에서 **스프라이트 없는 종을 걷어낸다.**
+    ///
+    /// 구멍 14종은 전부 기본형(진화 전)이라 `evolves_from IS NULL` 조회에 그대로 딸려 온다.
+    /// 거르지 않으면 가중 추첨이 그걸 뽑고, `EvoLine.init` 은 가지치기 결과가 nil 일 때 **같은
+    /// baseID 로 노드를 다시 만들어** 스프라이트 없는 단일형태 개체가 그대로 부화한다.
+    static func hatchable(_ entries: [BaseSpecies]) -> [BaseSpecies] {
+        entries.filter { PokemonAssets.hasAnimatedSprite(speciesID: $0.id) }
+    }
 }
 
 /// 포켓몬 라인 데이터 제공(주입 가능 — 테스트는 스텁 사용).
@@ -127,9 +136,11 @@ actor PokeAPIClient: PokeProviding {
         if let c = baseIndexCache { return c }
         let disk = (try? Data(contentsOf: Self.baseIndexFile))
             .flatMap { try? JSONDecoder().decode(BaseIndexSnapshot.self, from: $0) }
+        // 디스크 캐시는 이 필터가 없던 빌드가 남겼을 수 있다 — 읽을 때도 한 번 더 거른다.
         if let disk, Date().timeIntervalSince(disk.fetchedAt) < 30 * 86400, !disk.entries.isEmpty {
-            baseIndexCache = disk.entries
-            return disk.entries
+            let usable = BaseSpecies.hatchable(disk.entries)
+            baseIndexCache = usable
+            return usable
         }
         do {
             let entries = try await fetchBaseIndex()
@@ -140,8 +151,9 @@ actor PokeAPIClient: PokeProviding {
             return entries
         } catch {
             if let disk, !disk.entries.isEmpty {   // 오프라인 — 오래된 인덱스라도 사용
-                baseIndexCache = disk.entries
-                return disk.entries
+                let usable = BaseSpecies.hatchable(disk.entries)
+                baseIndexCache = usable
+                return usable
             }
             // GraphQL 다운 + 캐시 없음 → REST 로 인덱스를 백그라운드 구축(세션 1회).
             // 이번 부화는 per-hatch REST 폴백(chooseBaseViaREST)이 즉시 처리하고,
@@ -203,7 +215,10 @@ actor PokeAPIClient: PokeProviding {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // 메타몽(#132)은 위장 리빌 전용 → 일반 부화 풀에서 제외(_neq).
         let maxID = PokemonAssets.speciesRange.upperBound
-        let query = "{ pokemonspecies(where: {evolves_from_species_id: {_is_null: true}, id: {_lte: \(maxID), _neq: \(PokemonOdds.dittoSpeciesID)}}, order_by: {id: asc}) { id capture_rate } }"
+        // 스프라이트 없는 종은 서버에서부터 빼 온다 — 받아서 거르면 디스크 캐시에 남는다.
+        let excluded = ([PokemonOdds.dittoSpeciesID] + PokemonAssets.spriteGaps.sorted())
+            .map(String.init).joined(separator: ",")
+        let query = "{ pokemonspecies(where: {evolves_from_species_id: {_is_null: true}, id: {_lte: \(maxID), _nin: [\(excluded)]}}, order_by: {id: asc}) { id capture_rate } }"
         req.httpBody = try JSONSerialization.data(withJSONObject: ["query": query])
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
