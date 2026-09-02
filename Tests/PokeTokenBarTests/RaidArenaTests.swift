@@ -111,14 +111,48 @@ final class RaidArenaTests: XCTestCase {
         XCTAssertNotNil(sides[.fighter(RaidBoss.bossID)], "보스도 주인이다 — 없으면 보스 바가 안 움직인다")
     }
 
+    /// **트리거 브랜치 — 보고된 정지.** 이벤트 없이 끝나는 경로가 있다: 이탈 몰수와 턴 상한은
+    /// `broadcastCombatState()` 로 **빈 이벤트**를 보내므로 `combatEvents` 도 `combatRound` 도
+    /// 안 바뀌고, 그러면 뷰의 `.onChange` 가 안 걸려 재생기가 영영 안 불린다.
+    ///
+    /// 그 상태에서 `playedCount < streamCount` 로 남아 있으면 결과가 **영원히** 안 뜬다.
+    /// 결과를 미루는 근거는 "재생이 돌고 있다" 이지 "숫자가 아직 다르다" 가 아니다 —
+    /// 돌고 있지 않으면 더 기다릴 이유가 없다.
+    func testAStalledReplayDoesNotHideTheResultForever() {
+        XCTAssertTrue(RaidArena.showsResult(isFinished: true, playedCount: 3, streamCount: 9,
+                                            isReplaying: false),
+                      "재생이 멈춰 있으면 더 기다리지 않는다 — 이게 화면이 얼어붙던 조건이다")
+        XCTAssertFalse(RaidArena.showsResult(isFinished: true, playedCount: 3, streamCount: 9,
+                                             isReplaying: true),
+                       "돌고 있는 재생은 끝까지 기다린다")
+    }
+
     /// **결과 화면은 재생 뒤로 미룬다.** 승부가 난 라운드가 즉시 결과로 넘어가면, 재생기를 붙인
     /// 이유(결정타를 보여 주는 것)가 가장 중요한 턴에 그대로 사라진다.
     func testTheResultWaitsForTheReplayToCatchUp() {
-        XCTAssertFalse(RaidArena.showsResult(isFinished: true, playedCount: 3, streamCount: 9),
+        XCTAssertFalse(RaidArena.showsResult(isFinished: true, playedCount: 3, streamCount: 9,
+                                             isReplaying: true),
                        "아직 재생 중이면 결과를 열지 않는다")
-        XCTAssertTrue(RaidArena.showsResult(isFinished: true, playedCount: 9, streamCount: 9))
-        XCTAssertFalse(RaidArena.showsResult(isFinished: false, playedCount: 9, streamCount: 9),
+        XCTAssertTrue(RaidArena.showsResult(isFinished: true, playedCount: 9, streamCount: 9,
+                                            isReplaying: false))
+        XCTAssertFalse(RaidArena.showsResult(isFinished: false, playedCount: 9, streamCount: 9,
+                                             isReplaying: false),
                        "안 끝났으면 따라잡았어도 결과가 아니다")
+    }
+
+    /// 끝난 판이 "다른 참가자의 행동을 기다리는 중" 을 띄우면 안 된다 — 아무도 안 온다.
+    /// 화면이 무엇을 말할지는 입력 가능 여부와 **다른 축**이다.
+    func testAFinishedRaidStopsClaimingItIsWaitingForPlayers() {
+        XCTAssertEqual(RaidArena.prompt(isReplaying: false, isAlive: true,
+                                        isFinished: true, hasSubmitted: true), .finished)
+        XCTAssertEqual(RaidArena.prompt(isReplaying: false, isAlive: true,
+                                        isFinished: false, hasSubmitted: true), .waitingForOthers)
+        XCTAssertEqual(RaidArena.prompt(isReplaying: true, isAlive: true,
+                                        isFinished: false, hasSubmitted: true), .replaying)
+        XCTAssertEqual(RaidArena.prompt(isReplaying: false, isAlive: false,
+                                        isFinished: false, hasSubmitted: false), .knockedOut)
+        XCTAssertEqual(RaidArena.prompt(isReplaying: false, isAlive: true,
+                                        isFinished: false, hasSubmitted: false), .chooseMove)
     }
 
     /// 재생 중에는 기술 버튼을 받지 않는다 — 받으면 지난 턴을 보는 중에 다음 턴이 나간다.
@@ -133,6 +167,47 @@ final class RaidArenaTests: XCTestCase {
         XCTAssertFalse(accepts(submitted: true), "이미 냈으면 잠긴다")
         XCTAssertFalse(accepts(alive: false), "쓰러졌으면 잠긴다")
         XCTAssertFalse(accepts(finished: true), "끝난 판은 잠긴다")
+    }
+
+    /// **보고된 정지 재현**: 보스가 죽었는데 결과가 안 뜨고 "다른 참가자를 기다리는 중" 에서
+    /// 멈춘다. 뷰가 하는 sync 호출을 그대로 흉내 내 재생기가 실제로 따라잡는지 본다.
+    @MainActor
+    func testTheResultAppearsOnceTheKillingRoundHasReplayed() async throws {
+        let center = MultiplayerRoomCenter(companion: stubStore(TestClock(), tag: "raid-freeze"))
+        let me = runner("나")
+        var deadBoss = boss()
+        deadBoss.side.hp = 0
+        let animator = BattleAnimator()
+
+        // 뷰의 `syncReplay()` 와 같은 호출. 속도는 사용자가 쓰던 기본값이다.
+        func sync() {
+            animator.sync(events: center.combatEvents,
+                          sides: RaidArena.replaySides(center.combatFighters),
+                          speed: .normal)
+        }
+
+        center.debugBeginRaidCombat(fighters: [me, boss()], tier: .five)
+        sync()                                            // `.onAppear`
+
+        // 보스를 눕히는 라운드가 도착한다.
+        center.debugApplyResolvedRound(
+            fighters: [me, deadBoss],
+            events: [.turn(1), .damage(.fighter(RaidBoss.bossID), amount: RaidTier.five.bossHP,
+                                       cause: .move), .faint(.fighter(RaidBoss.bossID))])
+        sync()                                            // `.onChange`
+
+        XCTAssertTrue(center.isBattleFinished, "보스가 죽었으면 판은 끝났다")
+
+        // 재생이 끝날 때까지 기다린다 — 예산은 2.4초라 넉넉히 준다.
+        for _ in 0..<200 where animator.playedCount < center.combatEvents.count {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(animator.playedCount, center.combatEvents.count,
+                       "재생이 스트림을 못 따라잡으면 결과 화면이 영영 안 뜬다")
+        XCTAssertTrue(RaidArena.showsResult(isFinished: center.isBattleFinished,
+                                            playedCount: animator.playedCount,
+                                            streamCount: center.combatEvents.count,
+                                            isReplaying: animator.overlay.isPlaying))
     }
 
     /// 로그는 **재생이 소비한 만큼만** 보여 준다. 스트림 전체를 그리면 재생이 그 줄에 닿기 전에
