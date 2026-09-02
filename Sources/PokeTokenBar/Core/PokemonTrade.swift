@@ -215,6 +215,8 @@ final class PokemonTradeCenter {
 
     func selectOffer(_ mon: MonState?) {
         guard case .negotiating = phase else { return }
+        // 즐겨찾기는 잃는 동작을 막는 자물쇠다 — 목록이 잠긴 줄로 보여 주지만 여기서도 막는다.
+        if let mon, companion.isFavorite(mon.id) { return }
         localOffer = mon.map { TradePokemonSnapshot(mon: $0, displayName: displayName(for: $0)) }
         localConfirmed = false
         remoteConfirmed = false
@@ -240,8 +242,11 @@ final class PokemonTradeCenter {
         companion.deployableMons.map { TradePokemonSnapshot(mon: $0, displayName: displayName(for: $0)) }
     }
 
+    /// 고른 **뒤에** 별을 켰을 수도 있다 — 선택 시점만 보면 그 개체가 그대로 나간다.
+    /// 확정이 내 쪽 마지막 되돌릴 수 있는 지점이라 여기서 한 번 더 본다.
     func confirm() {
-        guard case .negotiating = phase, localOffer != nil, remoteOffer != nil else { return }
+        guard case .negotiating = phase, let offeredID = localOffer?.mon.id, remoteOffer != nil,
+              !companion.isFavorite(offeredID) else { return }
         localConfirmed = true
         send(.confirm(true))
         beginCommitIfReady()

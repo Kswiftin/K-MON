@@ -101,6 +101,50 @@ final class FavoriteMonTests: XCTestCase {
         XCTAssertNotNil(auction.localListing, "별을 끄면 게시된다")
     }
 
+    // MARK: 교환 잠금
+
+    /// 신청을 **받는** 쪽은 소켓 없이도 협상까지 간다(`TradeChatTests` 와 같은 방식).
+    private func negotiatingTrade(_ companion: CompanionStore) -> PokemonTradeCenter {
+        let center = PokemonTradeCenter(companion: companion)
+        center.receive(.request(version: TradeWireMessage.protocolVersion, trainer: "Blue",
+                                chatSupported: true))
+        center.accept()
+        return center
+    }
+
+    func testFavoritedMonCannotBeOfferedInATrade() throws {
+        let companion = store()
+        let boxed = try XCTUnwrap(companion.state.boxedMons.first)
+        XCTAssertTrue(companion.toggleFavorite(boxed.id))
+        let center = negotiatingTrade(companion)
+        center.selectOffer(boxed)
+        XCTAssertNil(center.localOffer, "즐겨찾기한 개체는 교환에 올릴 수 없다")
+
+        XCTAssertTrue(companion.toggleFavorite(boxed.id))
+        center.selectOffer(boxed)
+        XCTAssertEqual(center.localOffer?.mon.id, boxed.id, "별을 끄면 올릴 수 있다")
+    }
+
+    /// 고른 **뒤에** 별을 켠 경우 — 선택 시점만 보면 그 개체가 그대로 나간다. 확정에서 막힌다.
+    func testFavoritingAfterSelectingBlocksConfirmation() throws {
+        let companion = store()
+        let boxed = try XCTUnwrap(companion.state.boxedMons.first)
+        let center = negotiatingTrade(companion)
+        center.selectOffer(boxed)
+        let theirs = MonState(baseID: 25, pathIDs: [25], stageIndex: 0, usedAtStage: 0,
+                              rarity: .common, totalForms: 2)
+        center.receive(.offer(TradePokemonSnapshot(mon: theirs, displayName: "Pikachu")))
+        XCTAssertNotNil(center.remoteOffer)
+
+        XCTAssertTrue(companion.toggleFavorite(boxed.id))
+        center.confirm()
+        XCTAssertFalse(center.localConfirmed, "확정 직전에 별이 켜졌으면 확정되지 않는다")
+
+        XCTAssertTrue(companion.toggleFavorite(boxed.id))
+        center.confirm()
+        XCTAssertTrue(center.localConfirmed, "별을 끄면 확정된다")
+    }
+
     // MARK: 소유가 바뀌면 자국을 지운다
 
     /// 교환으로 나간 개체의 즐겨찾기 ID 는 남지 않는다. 남아도 오답을 내지는 않지만 세이브에 계속

@@ -124,8 +124,10 @@ final class PokemonAuctionCenter {
     }
 
     func accept(_ offerID: UUID) {
+        // 게시한 **뒤에** 별을 켰을 수도 있다 — 수락이 소유권을 넘기는 지점이라 여기서 한 번 더 본다.
         guard let listingID = localListingID, let listing = localListing,
               companion.deployableMons.contains(where: { $0.id == listing.mon.id }),
+              !companion.isFavorite(listing.mon.id),
               let connectionID = connectionOfferIDs.first(where: { $0.value == offerID })?.key,
               let connection = connections[connectionID],
               let index = offers.firstIndex(where: { $0.id == offerID && $0.status == .pending }) else {
