@@ -28,7 +28,7 @@ struct PokedoroRequestBusTests {
     /// 실행하면, 사용자가 세 시간 전에 포기한 90분 집중이 앱을 켜는 순간 시작된다 — 그 시각엔
     /// 사용자가 무엇 때문에 타이머가 켜졌는지 알 방법이 없다.
     @Test func testAStaleRequestLeftBehindWhileTheAppWasClosedNeverRuns() {
-        let threeHoursAgo = request(minutes: 90, at: -3 * 3600)
+        let threeHoursAgo = request(.start(minutes: 90), at: -3 * 3600)
         #expect(!PokedoroRequestBus.shouldExecute(threeHoursAgo, now: Self.now, lastExecutedID: nil))
     }
 

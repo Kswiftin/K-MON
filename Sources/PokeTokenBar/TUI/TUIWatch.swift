@@ -94,11 +94,11 @@ final class TUIWatch {
         case .scroll(let delta):
             selection = TUIKeymap.clamp(selection: selection, delta: delta, count: rows().count)
         case .startAdventure(let minutes):
-            request(.start, minutes: minutes)
+            request(.start(minutes: minutes))
         case .claimAdventure:
-            request(.claim, minutes: nil)
+            request(.claim)
         case .cancelAdventure:
-            request(.stop, minutes: nil)
+            request(.stop)
         case .rejected(.readOnly):
             status = "이 실행에는 쓰기 권한이 없다 — 집중 세션은 앱이 실행한다."
         case .ignored:
@@ -117,8 +117,8 @@ final class TUIWatch {
     ///
     /// 답을 못 받은 채 시간이 지나면 "앱이 응답하지 않는다" 로 바뀐다 — 침묵으로 두면 사용자는
     /// 키가 안 먹은 것과 앱이 꺼진 것을 구분할 수 없다.
-    private func request(_ verb: PokedoroRequest.Verb, minutes: Int?) {
-        let request = PokedoroRequest(id: UUID(), verb: verb, minutes: minutes, requestedAt: Date())
+    private func request(_ action: PokedoroRequest.Action) {
+        let request = PokedoroRequest(id: UUID(), action: action, requestedAt: Date())
         do {
             try mailbox.send(request)
         } catch {

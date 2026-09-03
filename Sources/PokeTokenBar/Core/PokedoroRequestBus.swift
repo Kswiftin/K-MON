@@ -7,13 +7,86 @@ import Foundation
 /// 실행한다(`ReadOnlyStoreTests`). 잠금을 들이면 메뉴바 앱이 항상 떠 있으므로 터미널이 잠금을
 /// 잡을 일이 사실상 없다 — 기능이 죽은 채로 태어난다. 그래서 **터미널은 부탁하고 앱이 한다**.
 struct PokedoroRequest: Codable, Equatable, Sendable {
-    enum Verb: String, Codable, Sendable { case start, claim, stop }
+    /// 터미널이 부탁하는 일 하나. **이름과 인자가 한 값이다** — 예전엔 `verb` 와 `minutes` 가 따로
+    /// 실려 "stop 인데 90분" 같은 요청을 타입이 허락했고, 파일은 손으로 고칠 수 있으니 그 조합은
+    /// 실제로 들어온다. 표현할 수 없는 상태는 걸러 낼 필요도 없다.
+    ///
+    /// 인자는 **닫힌 타입만** 받는다(지금은 분 하나). 임의 문자열을 인자로 받는 동작은 이 목록에
+    /// 넣지 않는다 — 요청 파일이 신뢰경계라 그 문자열이 곧 앱으로 들어오는 입력이 된다.
+    enum Action: Equatable, Sendable {
+        /// 분을 안 적으면 `nil` 이다 — 기본 길이는 실행기가 고른다. 여기서 25 를 채우면 기본값이
+        /// 두 곳이 되고, 한쪽만 바뀌면 화면과 터미널이 다른 길이를 켠다.
+        case start(minutes: Int?)
+        case claim
+        case stop
+
+        /// 파일에 적히는 이름.
+        var name: String {
+            switch self {
+            case .start: "start"
+            case .claim: "claim"
+            case .stop: "stop"
+            }
+        }
+
+        /// 파일에 적히는 인자. 시작만 값을 갖는다.
+        var minutes: Int? {
+            switch self {
+            case .start(let minutes): minutes
+            case .claim, .stop: nil
+            }
+        }
+
+        /// 파일에 적힌 이름·인자 → 동작. 모르면 `nil` 이다.
+        ///
+        /// **인자를 받지 않는 동작에 인자가 붙었으면 추측하지 않는다**(대화 도구 파서와 같은 규칙).
+        /// 인자를 버리고 실행하면 사용자는 자기가 적은 값이 무시된 걸 모른 채 다른 일이 벌어진
+        /// 것을 본다. 목록 밖 이름도 거절이 아니라 **요청으로 읽히지 않는 것**이다.
+        init?(name: String, minutes: Int?) {
+            switch name {
+            case "start": self = .start(minutes: minutes)
+            case "claim" where minutes == nil: self = .claim
+            case "stop" where minutes == nil: self = .stop
+            default: return nil
+            }
+        }
+    }
 
     var id: UUID
-    var verb: Verb
-    /// `start` 만 쓴다. 다른 동작에서는 `nil` 이라 "0분 집중" 같은 값이 생기지 않는다.
-    var minutes: Int?
+    var action: Action
     var requestedAt: Date
+}
+
+/// 요청 파일의 모양. **평평한 JSON 을 손으로 유지한다** — 인자를 든 enum 을 Swift 에 그냥 맡기면
+/// `{"action":{"start":{"minutes":25}}}` 같은 중첩이 나오는데, 그 파일은 사람이 고치기 어렵고
+/// 문서가 약속한 모양도 아니다(고친 파일이 조용히 무시된다).
+extension PokedoroRequest {
+    private enum CodingKeys: String, CodingKey { case id, action, minutes, requestedAt }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        requestedAt = try container.decode(Date.self, forKey: .requestedAt)
+        let name = try container.decode(String.self, forKey: .action)
+        let minutes = try container.decodeIfPresent(Int.self, forKey: .minutes)
+        // 이름과 인자가 어긋난 파일은 **요청이 아니다**. 던지면 `pendingRequest()` 가 nil 을
+        // 돌려주므로 깨진 파일과 같은 취급이 된다 — 그 경로는 이미 앱을 죽이지 않는다.
+        guard let action = Action(name: name, minutes: minutes) else {
+            throw DecodingError.dataCorruptedError(forKey: .action, in: container,
+                                                   debugDescription: "unknown action \(name)")
+        }
+        self.action = action
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(action.name, forKey: .action)
+        // 인자 칸을 **아예 안 쓴다**. 남겨 두면 `{"action":"stop","minutes":null}` 이 정상으로
+        // 보이고, 손으로 고치는 사용자가 그 칸이 뭔가 한다고 믿는다.
+        try container.encodeIfPresent(action.minutes, forKey: .minutes)
+        try container.encode(requestedAt, forKey: .requestedAt)
+    }
 }
 
 /// 앱이 되돌려 주는 답. `message` 는 **사람이 읽는 한국어 한 줄**이다 — 대화 도구의 영문

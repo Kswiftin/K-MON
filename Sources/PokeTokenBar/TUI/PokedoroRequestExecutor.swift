@@ -17,8 +17,8 @@ struct PokedoroRequestExecutor {
     let companion: CompanionStore
 
     func execute(_ request: PokedoroRequest) -> PokedoroReply {
-        switch request.verb {
-        case .start: start(request)
+        switch request.action {
+        case .start(let minutes): start(request, minutes: minutes)
         case .claim: claim(request)
         case .stop: stop(request)
         }
@@ -26,10 +26,10 @@ struct PokedoroRequestExecutor {
 
     // MARK: 동작
 
-    private func start(_ request: PokedoroRequest) -> PokedoroReply {
+    private func start(_ request: PokedoroRequest, minutes requested: Int?) -> PokedoroReply {
         // 요청 파일은 손으로 고칠 수 있는 **신뢰경계**다. 적힌 분을 그대로 믿으면 화면이 제시하지
         // 않는 길이를 터미널만 켤 수 있다 — 접는 표는 대화와 공유한다.
-        let minutes = PokemonChatTool.nearestFocusLength(to: request.minutes ?? PokemonChatTool.focusMinutes[0])
+        let minutes = PokemonChatTool.nearestFocusLength(to: requested ?? PokemonChatTool.focusMinutes[0])
         if let refusal = PokedoroSessionGate.startRefusal(sessionState) {
             return reply(request, refused: refusal)
         }
