@@ -853,6 +853,25 @@ struct L {
                  "\(amount) of that came from your fully grown partner's leftover experience",
                  "うち \(amount) は育ちきったパートナーの余った経験値の分です")
     }
+    /// 정산 **밖** 지급 배너(#200). `claimSettled` 와 같은 형태다 — 사건 이름 · 금액.
+    ///
+    /// 사건 이름을 빼면 안 된다. 금액만 띄우면 "왜 늘었는지" 는 여전히 화면에 없고, 그게 이
+    /// 배너를 만든 이유 자체다. 조립을 뷰가 아니라 여기 두는 것도 `ClaimBannerLine` 과 같은
+    /// 이유다 — 뷰 안 `switch` 로만 있으면 한 경로가 빠져도 테스트가 전부 초록이다.
+    func payoutSettled(_ payout: StardustPayout) -> String {
+        let amount = GameNumberFormatter.compact(payout.stardust)
+        let event: String
+        switch payout.source {
+        case .evolve:     event = t("진화 보상", "Evolution reward", "進化のごほうび")
+        case .race:       event = t("포켓슬론 완주", "Pokéathlon finished", "ポケスロン完走")
+        case .battle:     event = t("배틀 승리", "Battle won", "バトル勝利")
+        case .dungeon:    event = t("웨이브 런 클리어", "Wave run cleared", "ウェーブラン クリア")
+        case .graduation: event = t("졸업 보상", "Graduation reward", "卒業のごほうび")
+        }
+        return t("\(event) · 별의조각 \(amount)",
+                 "\(event) · \(amount) Star Pieces",
+                 "\(event) · ほしのかけら \(amount)")
+    }
     /// 상단 트레이너 바 라벨. `Lv.N` 만 쓰면 포켓몬 레벨(파트너·로스터·배틀에서 이미 쓰는 표기)로
     /// 잘못 읽힌다 — 이 단어가 계정 단위 값임을 알려주는 유일한 장치다.
     var trainerLevelLabel: String { t("트레이너", "Trainer", "トレーナー") }

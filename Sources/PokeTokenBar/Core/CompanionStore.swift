@@ -131,7 +131,7 @@ final class CompanionStore {
     private func fireCelebration(_ c: Celebration) {
         celebrationFeedback.fire(c)
         if case .evolve = c {
-            recordAchievement(.evolve, 1)
+            announcePayout(recordAchievement(.evolve, 1), .evolve)
             // A species or event-kind key would collapse every later evolution for this
             // individual.  The post-transition stage and species identify this one durable
             // transition, while the UUID prevents cross-companion collisions.
@@ -174,6 +174,26 @@ final class CompanionStore {
     func consumeClaimFeedback() { claimFeedback.consume() }
 
     /// 민트 사용 시 "성격이 X로" 순간 표시 — 사탕 피드백과 동일 1회성 패턴(seq + consume).
+    /// 정산 **밖**의 지급이 읽히는 자리(#200). 정산은 `claimFeedback` 이 맡고 이쪽은 건드리지
+    /// 않는다 — 둘 다 띄우면 같은 별의조각을 두 번 말한다.
+    ///
+    /// 뷰의 `@State` 가 아니라 스토어에 두는 이유는 `lastClaim` 과 같다: 레이스 · 배틀은 호출부가
+    /// 스토어 밖(`MultiplayerRoomCenter`)이고, 진화는 팝오버가 닫힌 채로도 일어난다 — 반환값을
+    /// 받을 뷰가 애초에 없는 경로들이다.
+    private var payoutFeedback = OneShotFeedback<StardustPayout>()
+    var lastPayout: StardustPayout? { payoutFeedback.value }
+    var payoutFeedbackSeq: Int { payoutFeedback.seq }
+    func consumePayoutFeedback() { payoutFeedback.consume() }
+
+    /// 정산 밖 지급을 화면에 남기는 **유일한** 경로. 새 지급 경로는 여기만 부르면 된다.
+    ///
+    /// **0 은 띄우지 않는다** — 업적 문턱을 안 넘은 판까지 "0 ⭐" 라고 말하면 이긴 판마다 빈
+    /// 배너가 뜬다. 설명할 게 없을 때 침묵하는 것과 지급을 숨기는 것은 다르다.
+    private func announcePayout(_ stardust: Int, _ source: StardustPayout.Source) {
+        guard stardust > 0 else { return }
+        payoutFeedback.fire(StardustPayout(source: source, stardust: stardust))
+    }
+
     private var mintFeedback = OneShotFeedback<PokemonNature>()
     var mintFeedbackSeq: Int { mintFeedback.seq }
     var mintFeedbackNature: PokemonNature? { mintFeedback.value }
@@ -187,6 +207,7 @@ final class CompanionStore {
         candyFeedback.invalidate()
         mintFeedback.invalidate()
         claimFeedback.invalidate()
+        payoutFeedback.invalidate()
     }
 
     private let provider: any PokeProviding
@@ -1433,7 +1454,10 @@ final class CompanionStore {
     /// 적립 지점(모험 정산·졸업)마다 보상 계산을 흩뿌리면 한쪽만 바뀌는 사고가 난다.
     /// 반환값은 이번에 지급한 별의조각 — 호출부가 보상 객체에 실어 사용자에게 알린 값과
     /// 실제 지갑 증가가 어긋나지 않게 한다.
-    @discardableResult
+    ///
+    /// **`@discardableResult` 를 붙이지 않는다** — `awardExperience` 와 같은 이유다. 붙어 있던
+    /// 동안 졸업 경로가 반환값을 그냥 버렸고, 경고 한 줄 안 났다(#200). 지금은 컴파일러가
+    /// 새 호출부마다 "보상 객체에 싣든지 `announcePayout` 하든지" 를 고르게 만든다.
     private func accrueTrainerPoints(_ amount: Int) -> Int {
         let gained = state.trainer.add(amount)
         guard gained > 0 else { return 0 }
@@ -1450,7 +1474,7 @@ final class CompanionStore {
     /// 완료된 미션만 돌아오므로 "이미 줬나"를 따로 기억하지 않는다.
     /// 반환값은 이번에 지급한 별의조각 — `accrueTrainerPoints` 와 같은 계약이다. 정산 경로는 이 값을
     /// 보상 객체에 실어야 한다. 지갑만 늘리고 보고하지 않으면 알려준 값과 실제 잔액이 어긋난다.
-    @discardableResult
+    /// `@discardableResult` 를 붙이지 않는 이유는 `accrueTrainerPoints` 와 같다(#200).
     private func recordMission(_ event: MissionEvent, _ amount: Int) -> Int {
         let now = clock()
         let done = state.missions.record(event, amount,
@@ -1473,8 +1497,7 @@ final class CompanionStore {
 
     /// 시즌 기록의 **유일한** 경로 — 완료 보상(별의조각)과 알림까지 여기서 끝낸다.
     /// 계약은 `recordMission` 과 같다: 반환값은 이번에 지급한 별의조각이고, 정산 경로가 그 값을
-    /// 보상 객체에 실어 보고한다.
-    @discardableResult
+    /// 보상 객체에 실어 보고한다. `@discardableResult` 를 붙이지 않는 이유도 같다(#200).
     private func recordSeason(_ event: MissionEvent, _ amount: Int) -> Int {
         let done = state.seasons.record(event, amount, seasonKey: Self.seasonKey(clock()))
             .map { (name: l.goalName($0.event, $0.target), reward: $0.reward) }
@@ -1510,14 +1533,20 @@ final class CompanionStore {
     ///
     /// `before` 를 **호출부가** 잡는 게 핵심이다. 여기서 잡으면 이미 바뀐 뒤라 차집합이 항상 비어
     /// 아무것도 지급되지 않는다. 저장은 호출부(`graduate()`)가 이어서 한다.
-    private func grantNewlyCompletedDexGoals(before: Set<String>) {
+    ///
+    /// 반환값은 이번에 지급한 **별의조각**(알·이로치 확정은 지갑이 아니라서 뺀다) — 형제들과 같은
+    /// 계약이다(#200). 졸업이 이 값을 합산해 화면에 보고한다.
+    private func grantNewlyCompletedDexGoals(before: Set<String>) -> Int {
+        var paid = 0
         // 정렬 — Set 순회 순서는 실행마다 다르다. 두 목표를 한 번에 넘길 때 알림 순서가 흔들리면
         // 테스트가 간헐 실패한다.
         for id in DexGoals.completed(in: state.dex).subtracting(before).sorted() {
             guard let goal = DexGoals.goal(id: id) else { continue }
             grantReward(goal.reward)
+            paid += goal.reward.starPieces
             notifyCompanionEvent(l.notifDexGoalTitle, l.notifDexGoalBody(l.dexGoalName(goal)))
         }
+        return paid
     }
 
     /// 업적 기록의 **유일한** 경로 — 보상(별의조각)과 알림까지 여기서 끝낸다. 적립 지점마다
@@ -1525,7 +1554,8 @@ final class CompanionStore {
     /// 반환값은 이번에 지급한 별의조각(`recordMission` 과 같은 계약). 정산 경로는 이 값을 보상
     /// 객체에 실어야 한다 — 지갑만 늘리면 보고액과 잔액이 어긋난다.
     /// `save()` 는 호출부 몫이다(레이스만 예외 — `recordRaceFinish`).
-    @discardableResult
+    /// `@discardableResult` 를 붙이지 않는 이유는 `accrueTrainerPoints` 와 같다(#200) — 붙어 있던
+    /// 동안 진화 · 레이스 · 배틀 · 웨이브 런 네 경로가 반환값을 조용히 버렸다.
     private func recordAchievement(_ track: AchievementTrack, _ amount: Int) -> Int {
         var paid = 0
         for award in state.achievements.record(track, amount) {
@@ -1556,7 +1586,7 @@ final class CompanionStore {
     /// 포켓슬론 완주 적립. 호출부가 스토어 밖(`MultiplayerRoomCenter`)이라 저장도 여기서 한다.
     /// 세는 건 우승이 아니라 **완주**다 — 우승만 세면 4인 방에서 ¾은 영원히 못 넘는다.
     func recordRaceFinish() {
-        recordAchievement(.race, 1)
+        announcePayout(recordAchievement(.race, 1), .race)
         save()
     }
 
@@ -2098,7 +2128,9 @@ final class CompanionStore {
         // **1인 레이드도 같은 이유로 뺀다.** 1★ 는 러너 한 명으로 시작되고 상대는 NPC 보스라,
         // 세면 이웃 없이 배틀 업적 사다리를 끝까지 올릴 수 있다(별의조각만 하루 한 번이고
         // 시도·승리는 무제한이다). 협동 레이드는 사람이 둘 이상일 때만 센다.
-        if won, !(mode == .coopBoss && participantCount < 2) { recordAchievement(.battle, 1) }
+        if won, !(mode == .coopBoss && participantCount < 2) {
+            announcePayout(recordAchievement(.battle, 1), .battle)
+        }
         save()
     }
 
@@ -2376,8 +2408,11 @@ final class CompanionStore {
         state.waveRun.record(reachedWave: reachedWave, cleared: cleared)
         state.waveRun.normalize()
         if cleared {
-            recordAchievement(.dungeon, 1)
-            if tookOnlyRiskyRoutes { recordAchievement(.dungeonSweep, 1) }
+            // 두 트랙이 같은 판에서 함께 넘어간다 — 배너는 **한 통**이다. 지급마다 띄우면
+            // 같은 클리어를 두 번 말한다(`mergedCompletion` 이 미션에서 막은 그 문제).
+            let paid = recordAchievement(.dungeon, 1)
+                + (tookOnlyRiskyRoutes ? recordAchievement(.dungeonSweep, 1) : 0)
+            announcePayout(paid, .dungeon)
         }
         save()
     }
@@ -2786,11 +2821,11 @@ final class CompanionStore {
         state.collectedFinals.insert("\(a.baseID):\(finalID)")
         // 졸업은 파트너를 초기화하지만 트레이너 성장은 여기서 이어진다 — 모험을 한 번도 하지 않고
         // 졸업만 해도 적립된다(집중 경로와 독립).
-        accrueTrainerPoints(TrainerLevel.graduationPoints)
+        var paid = accrueTrainerPoints(TrainerLevel.graduationPoints)
         // 졸업은 파트너를 초기화하지만 미션 진행은 여기서 이어진다 — 모험을 한 번도 하지 않고
         // 졸업만 해도 기록된다(집중 경로와 독립).
-        recordMission(.graduations, 1)
-        recordSeason(.graduations, 1)
+        paid += recordMission(.graduations, 1)
+        paid += recordSeason(.graduations, 1)
         // 도감 목표는 이 항목이 들어가기 **전**의 완료 집합과 비교해 지급한다 — 스냅샷을 먼저 잡는다.
         let goalsBefore = DexGoals.completed(in: state.dex)
         state.dex.append(DexEntry(baseID: a.baseID, finalID: finalID,
@@ -2803,7 +2838,9 @@ final class CompanionStore {
                                   // 타입을 모르면(오프라인) 빈 배열이 아니라 nil 로 남긴다 —
                                   // 빈 배열은 "타입 없음"이라 백필이 영영 재시도하지 않는다.
                                   types: currentTypes.isEmpty ? nil : currentTypes))
-        grantNewlyCompletedDexGoals(before: goalsBefore)
+        paid += grantNewlyCompletedDexGoals(before: goalsBefore)
+        // 졸업 한 번이 지갑을 넷에서 늘린다 — 넷을 합쳐 한 통으로 보고한다.
+        announcePayout(paid, .graduation)
         let name = currentLine?.localizedName(finalID, state.language) ?? ""
         justGraduated = name
         notifyCompanionEvent(l.notifGraduateTitle, l.notifGraduateBody(name))
