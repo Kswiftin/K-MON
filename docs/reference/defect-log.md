@@ -2459,6 +2459,10 @@ read_when:
   (`MemoryHomeDiscoveryStateTests` 가 이미 쓰던 형태다). `AdventureClaimTests` 등 상태 파일만
   유일하게 하는 기존 픽스처는 같은 부류이며 아직 남아 있다 — 곁방 파일을 쓰지 않아 지금은
   드러나지 않을 뿐이다.
+- **미완 스윕 → #232**: 그 기존 픽스처가 **144곳 / 71파일**이다(`grep -rn 'temporaryDirectory'
+  Tests`). #225 가 mutator 게이트를 넓히며 함께 훑으려다 뺐다 — 게이트 변경과 한 PR 에 묶기엔
+  리뷰가 불가능한 크기다. 헬퍼를 `IdleTestSupport.swift` 로 올리고 옮긴 뒤, 되돌아오지 못하게
+  `test-gate.sh` 에 가드를 세우는 것이 처방이다.
   (`MemoryHomeShowcaseTests`·`CompanionStore.init`, 2026-09-03.)
 
 ## 화면을 옮기면서 **일부만 이식하면**, 남은 기능은 테스트가 초록불인 채로 사라진다
@@ -4071,12 +4075,25 @@ read_when:
   `sharedPinnedMemory(for:)` 자신의 "고정된 것과 같은 ID 인가" 가드가 결함을 가려, 정규화를
   통째로 지워도 통과한다. 위험한 것은 **남은 ID** 이므로 *되돌아가 재고정하는* 분기로 밟는다
   (그때 동의 없이 공유가 되살아난다). 세 가드 모두 결함 주입으로 빨강을 확인했다.
-- **미완 스윕 → #225**: 이 mutator 스윕은 아직 `Core/PokemonChat.swift` **한 파일**만 훑는다.
-  같은 awk 를 `Core/CompanionStore.swift` 에 돌리면 호출부 0곳인 `save()` mutator 가 8개
-  나오고, 그중 `ensureStarterCandidates`·`chooseStarter` 는 **종 선택 경로 전체가 죽은 것**이다
-  (화면은 `chooseStarterType` 만 쓴다). `CompanionView.swift:1498` 주석은 안 도는 코드를
-  설명하고 있다 — 산문은 호출부가 아니므로 가드가 그 거짓말을 볼 수 없다.
-- (#-pokohome-visit-and-surfing 리뷰 후속, 2026-09-03.)
+- **스윕 범위 확대 (#225, 2026-09-03 해소)**: 이 스윕은 `Core/PokemonChat.swift` **한 파일**만
+  훑고 있었다 — 결함이 *발견된* 파일이지 부류가 사는 범위가 아니다. 범위를 `Sources/` 전부로
+  넓히자 `CompanionStore.swift` 에서 8건이 나왔고, 그중 셋이 죽은 제품 경로였다:
+  `ensureStarterCandidates`·`chooseStarter`(+`starterCandidateIDs`·`StarterCard`·
+  `DeviceID.starterSeed`)는 `2179921` 이 화면을 타입 선택으로 갈아끼우며 호출부만 지우고 남긴
+  것이고, `beginIncubatingFocusEgg` 는 `hatchStoredEggIfNeeded`(5분 자동 부화)가 대체한 뒤
+  화면이 한 번도 부르지 않은 것이다. 셋 다 지웠다. 나머지 다섯(`debugSet*`)은 이름을 박는 대신
+  **`debug` 접두 규칙**으로 건너뛴다 — 이름을 열거하면 훅이 늘 때마다 allowlist 가 같이 자란다.
+- **여기서 배운 것 — allowlist 는 시체 보관소가 아니다.** 이 부류를 3주간 살려 둔 것은 가드의
+  부재가 아니라 **가드가 잡은 것을 목록에 넣은 행위**였다. `de57111` 이 뷰 도달성 가드가 잡은
+  `StarterCard` 를 `knownUnmounted` 에 넣었고, 그 밑에서 스토어 API 3개가 같이 죽어 있었다.
+  가드가 무언가를 잡으면 **지우거나 붙이는 것이 기본이고 allowlist 는 예외**다. 예외로 넣을
+  때는 이유와 **해제 조건**을 함께 적는다(`CORE_ONLY_MUTATORS` 의 두 항목이 그 형식이다).
+- **결함 주입으로 확인했다**(통과만 보면 게이트가 무엇을 지키는지 알 수 없다):
+  ① 평범한 mutator 주입 → 빨강 ② `debug` 접두 주입 → 초록(규칙이 실제로 거른다)
+  ③ `Core/` **밖**(`UI/`)에 mutator 주입 → 빨강(범위 확대의 실효 — 예전 게이트는 못 봤다).
+  awk 의 `FNR == 1` 상태 리셋도 합성 입력으로 확인했다: 리셋이 없으면 앞 파일 마지막 함수 이름이
+  다음 파일까지 살아남아 `save()` 를 안 부르는 함수를 오탐으로 올린다.
+- (#-pokohome-visit-and-surfing 리뷰 후속, 2026-09-03. 범위 확대는 #225, 같은 날.)
 
 
 ## 국면을 스칼라 하나로 들고 있으면 "동시에 여러 건" 이 못 오고, 열자마자 **같은 것을 두 번 내주는** 구멍이 열린다
