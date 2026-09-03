@@ -537,8 +537,17 @@ final class MultiplayerRoomCenter {
     /// 언제나 자기 자신이라 협동이라 부를 수 없다(`minimumCoopRunners`). 둘 다 여기 한 곳에
     /// 두어야 호스트·게스트가 같은 규칙을 본다.
     private func drawRaidCatcher(runners: [MultiplayerFighter], tier: RaidTier) {
+        // **추첨은 살아 있는 러너만 대상이다.** `forfeit` 은 hp 만 0 으로 만들고 편성에는 남기므로
+        // (`retireFighter` — 방을 떠난 사람도 같은 자리를 지난다), 안 걸러내면 이미 `leaveRoom` 을
+        // 지난 사람이 당첨된다. 그 클라이언트는 정산도 포획도 부르지 않아 보스가 아무에게도 안 가고,
+        // 남은 사람 화면에는 "동료가 데려갔다" 만 남는다. `survivorBonus` 가 같은 배열을 이미
+        // `isAlive` 로 거른다 — 추첨만 안 거르던 것이 비대칭이었다.
+        //
+        // 머릿수 게이트는 **참가자 전체**로 센다. 살아남은 수로 세면 동료가 쓰러진 협동 판이
+        // 포획 없는 판이 되는데, 그 동료는 실제로 같이 싸웠다.
+        let eligible = runners.filter(\.isAlive)
         guard tier.grantsCatch, runners.count >= RaidBoss.minimumCoopRunners,
-              let winner = RaidBoss.catcher(runnerIDs: runners.map(\.id), seed: raidSeed) else { return }
+              let winner = RaidBoss.catcher(runnerIDs: eligible.map(\.id), seed: raidSeed) else { return }
         raidCatcherID = winner
         // 남이 뽑혔으면 화면에 이름만 그린다 — 지갑과 같은 규칙으로 **자기 것만 자기가 넣는다**.
         guard winner == myID,

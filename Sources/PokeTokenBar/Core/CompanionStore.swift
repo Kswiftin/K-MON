@@ -2491,8 +2491,10 @@ final class CompanionStore {
 
     /// 레이드에서 뽑힌 한 명이 보스를 데려간다. 성공하면 true 이고 오늘의 포획 원장을 쓴다.
     ///
-    /// **단일 형태로 세운다.** 추첨 풀(`RaidBoss.speciesPool`)은 32종 전부 최종 진화체라 앞으로
-    /// 진화할 곳이 없다 — 체인 뿌리부터 세우면 잡은 그 모습이 아니라 1단계가 박스에 들어간다.
+    /// **잡은 자리에서 시작하는 경로로 세운다.** 추첨 풀(`RaidBoss.speciesPool`)은 32종 전부 최종
+    /// 진화체라 그 경로는 한 칸이고, 체인 뿌리부터 세우면 잡은 그 모습이 아니라 1단계가 들어간다.
+    /// 뿌리에서 시작하지 않는 경로를 다음 라인 로드가 되돌리지 않는 것은 `longestValidPath` 의
+    /// 계약이다 — 그게 없던 동안 잡은 가디안이 동행 자리에 앉는 순간 랄토스가 됐다.
     ///
     /// 개체 롤은 부화와 **같은 규칙**이다(성격 25종·종별 성비·이로치 분모). 이로치 확정권은
     /// 알을 위해 산 물건이라 여기서 소모하지 않는다.
@@ -2784,11 +2786,19 @@ final class CompanionStore {
         return prefix + fallbackRoute.dropFirst()
     }
 
-    /// 루트부터 실제로 이어지는 가장 긴 ID 경로와 마지막 유효 노드. 첫 ID가 루트와 다르면 루트로 복구한다.
+    /// 저장된 시작점에서 실제로 이어지는 가장 긴 ID 경로와 마지막 유효 노드.
+    ///
+    /// **시작점이 루트가 아닐 수 있다.** 체인 중간·끝에서 세우는 개체가 있다 — 레이드 포획은 그날의
+    /// 보스를 잡은 그 모습으로 넣는데, 그 종의 라인은 `line(baseSpeciesID:)` 가 체인 **뿌리부터**
+    /// 싣고 온다. 루트로 되돌리면 잡은 가디안이 동행 자리에 앉는 순간 레벨 1 랄토스가 됐다.
+    ///
+    /// 시작 종이 이 트리에 아예 없을 때만(에셋 정리로 빠진 종 등) 루트로 복구한다.
     private func longestValidPath(_ ids: [Int], from root: EvoNode) -> (path: [Int], lastNode: EvoNode) {
-        var path = [root.speciesID]
-        var node = root
-        guard ids.first == root.speciesID else { return (path, node) }
+        guard let first = ids.first, let start = root.node(withID: first) else {
+            return ([root.speciesID], root)
+        }
+        var path = [start.speciesID]
+        var node = start
         for id in ids.dropFirst() {
             guard let child = node.children.first(where: { $0.speciesID == id }) else { break }
             path.append(id)
