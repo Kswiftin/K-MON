@@ -205,18 +205,17 @@ final class MaxLevelTests: XCTestCase {
     ///
     /// 파트너를 비우는 데 **출시된 경로**를 쓴다. 예전엔 `beginIncubatingFocusEgg` 로 비웠는데 그건
     /// 화면이 한 번도 안 부르는 API 였다(#225 에서 삭제) — 도달 불가능한 경로로 세운 전제는 전제가
-    /// 아니다. 경매 판매는 사용자가 실제로 밟는 길이고 `state.active = nil` 을 같은 방식으로 만든다.
+    /// 아니다. 그 뒤로 경매 판매를 썼는데, 경매가 동행을 팔 수 있다는 것 자체가 결함이었다
+    /// (정산 직전에 파트너를 팔면 총수입이 1.5배가 된다 — `completeAuctionSale` 주석).
+    /// 지금 남은 길은 **졸업**이다: 만렙 최종체를 졸업시키면 개체는 박스로 가고 동행이 빈다.
     func testAdventureWithoutAPartnerConvertsInsteadOfDroppingExperience() async throws {
         let clock = TestClock()
-        let s = store(clock)
-        await s.hatch(baseID: 20)
-        let partnerID = try XCTUnwrap(s.state.active?.id, "테스트 전제: 동행이 있다")
+        let s = await maxedStore(clock)
 
         XCTAssertTrue(s.startFocusAdventure(minutes: 120))
-        XCTAssertTrue(s.completeAuctionSale(offeredID: partnerID, stardust: 100),
-                      "테스트 전제: 모험 중에도 동행을 경매로 내보낼 수 있다")
+        XCTAssertTrue(s.graduateCompanion(), "테스트 전제: 모험 중에도 졸업할 수 있다")
         XCTAssertNil(s.state.active, "테스트 전제: 정산 시점에 파트너가 없다")
-        // 판매 대금이 들어온 **뒤에** 기준선을 잡는다 — 아래 단언은 모험 보상만 설명해야 한다.
+        // 졸업 보상이 들어온 **뒤에** 기준선을 잡는다 — 아래 단언은 모험 보상만 설명해야 한다.
         let before = s.state.starPieces
 
         clock.advance(120 * 60)
@@ -226,6 +225,36 @@ final class MaxLevelTests: XCTestCase {
         XCTAssertEqual(reward.overflowExperience, reward.experience, "전량이 초과분이다")
         XCTAssertEqual(reward.totalStardust, s.state.starPieces - before,
                        "파트너가 없어도 지갑 증가분이 전부 설명돼야 한다")
+    }
+
+    /// 위 정산이 **이득이 되는 조합을 경매로 만들 수 없다.** 동행을 팔면 경험치 전량이
+    /// 별의조각으로 환산되고 그 환율이 자연 수입의 절반이라 총수입이 1.5배가 된다 — 파트너를
+    /// 키우는 쪽이 손해가 되는 지배 전략이었다. 화면·센터·판매 함수가 같은 판정을 보는지 본다:
+    /// 목록에서만 빼면 센터가 조용히 거절하고, 판매 함수에서만 막으면 수락된 거래가 마지막에
+    /// 깨진다. 박스 개체 판매는 대조군이다 — 없으면 "전부 거절" 하는 구현도 통과한다.
+    func testAuctionCannotSellTheActiveCompanion() async throws {
+        let clock = TestClock()
+        let s = await maxedStore(clock)
+        XCTAssertTrue(s.graduateCompanion(), "전제: 박스에 팔 수 있는 개체를 하나 만든다")
+        let boxedID = try XCTUnwrap(s.state.boxedMons.first?.id)
+        await s.hatch(baseID: 20)
+        let partnerID = try XCTUnwrap(s.state.active?.id, "전제: 동행이 다시 있다")
+
+        let center = PokemonAuctionCenter(companion: s)
+        XCTAssertFalse(center.sellableMons.contains { $0.id == partnerID },
+                       "출품 후보에 동행이 있으면 안 된다")
+        XCTAssertTrue(center.sellableMons.contains { $0.id == boxedID },
+                      "박스 개체는 후보에 남아야 한다")
+
+        let before = s.state.starPieces
+        XCTAssertFalse(s.completeAuctionSale(offeredID: partnerID, stardust: 100),
+                       "동행 판매는 거절돼야 한다")
+        XCTAssertEqual(s.state.active?.id, partnerID, "거절된 판매가 동행을 비우지 않는다")
+        XCTAssertEqual(s.state.starPieces, before, "거절된 판매는 지갑도 늘리지 않는다")
+
+        XCTAssertTrue(s.completeAuctionSale(offeredID: boxedID, stardust: 100),
+                      "대조군: 박스 개체는 팔린다")
+        XCTAssertEqual(s.state.starPieces, before + 100)
     }
 
     /// 대조군 — 상한 아래에서는 환산이 일어나지 않는다. 만렙 케이스만 두면 "항상 환산한다" 는

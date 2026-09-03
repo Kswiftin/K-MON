@@ -1500,6 +1500,7 @@ private struct MoveReplacementRow: View {
 struct StarterPickerView: View {
     let store: CompanionStore
     @State private var picking = false   // 선택 후 중복 탭 방지
+    @State private var failed = false    // 실패를 **말한다** — 아래 주석 참고
     @State private var trainer = ""
 
     private var l: L { store.l }
@@ -1534,9 +1535,17 @@ struct StarterPickerView: View {
                     ForEach(store.starterSelectableTypes, id: \.self) { type in
                         Button {
                             picking = true
+                            failed = false
                             store.setTrainerName(trainer)
                             Task {
-                                if !(await store.chooseStarterType(type)) { picking = false }
+                                // **실패를 조용히 되돌리지 않는다.** `chooseStarterType` 은 종 인덱스
+                                // 조회 실패(오프라인)로도 false 를 준다. 예전엔 `picking` 만 내려서
+                                // 화면이 격자로 되돌아왔고, 첫 실행 사용자는 눌러도 아무 일이 없는
+                                // 버튼을 이유 없이 다시 보게 됐다 — 게임에 들어가는 유일한 문이다.
+                                if !(await store.chooseStarterType(type)) {
+                                    picking = false
+                                    failed = true
+                                }
                             }
                         } label: {
                             TypeBadge(type: type, language: store.language)
@@ -1545,12 +1554,17 @@ struct StarterPickerView: View {
                         .buttonStyle(.bordered).disabled(!nameReady)
                     }
                 }
-                Text(nameReady
+                Text(failed
+                     ? store.l.t("포켓몬 정보를 받지 못했어요. 인터넷 연결을 확인하고 다시 골라 주세요.",
+                             "Couldn't load Pokémon data. Check your internet connection and pick again.",
+                             "ポケモンの情報を取得できませんでした。インターネット接続を確認してもう一度選んでください。")
+                     : nameReady
                      ? store.l.t("선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다.",
                              "A random unevolved Gen I Pokémon of that type will hatch. Legendary and Mythical Pokémon are excluded.",
                              "選んだタイプの第1世代・未進化ポケモンがランダムでふ化します。伝説・幻は除きます。")
                      : l.starterNeedName)
-                    .font(.caption2).foregroundStyle(nameReady ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.orange))
+                    .font(.caption2)
+                    .foregroundStyle(failed || !nameReady ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

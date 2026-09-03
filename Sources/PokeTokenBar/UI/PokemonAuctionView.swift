@@ -44,8 +44,8 @@ struct PokemonAuctionView: View {
                 }
             }
             // 내 제안이 받치고 있는 개체도 후보에서 뺀다 — 게시와 제안이 둘 다 수락되면
-            // 같은 개체가 두 번 커밋된다.
-            let candidates = store.deployableMons.filter { !center.isCommitted($0.id) }
+            // 같은 개체가 두 번 커밋된다. 동행은 `sellableMons` 가 이미 뺐다.
+            let candidates = center.sellableMons.filter { !center.isCommitted($0.id) }
             Button {
                 showsListingPicker = true
             } label: {
@@ -141,7 +141,7 @@ struct PokemonAuctionView: View {
                             .popover(isPresented: offerPickerBinding(for: listing.id)) {
                                 // 이미 게시·제안에 걸린 개체는 후보에서 뺀다 — 센터가 막지만
                                 // 고를 수 있게 두면 버튼이 조용히 아무 일도 안 한 것처럼 보인다.
-                                MonOfferPicker(store: store, mons: store.deployableMons.filter {
+                                MonOfferPicker(store: store, mons: center.sellableMons.filter {
                                     !center.isCommitted($0.id)
                                 }) { mon in
                                     offerSelections[listing.id] = mon.id
@@ -205,7 +205,7 @@ struct PokemonAuctionView: View {
 
     /// 고른 뒤 그 개체가 사라졌을 수도 있다(교환·체육관 배치) — ID 를 매번 현재 목록에서 되찾는다.
     private func mon(withID id: UUID) -> MonState? {
-        store.deployableMons.first { $0.id == id }
+        center.sellableMons.first { $0.id == id }
     }
 
     /// 출품 카드마다 팝오버를 하나씩 두면 `ForEach` 안에서 여러 개가 동시에 살아 있게 된다 —
