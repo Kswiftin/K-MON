@@ -1278,6 +1278,11 @@ struct L {
           "\(trainer) was drawn and took \(name) home.",
           "\(trainer) さんが抽選で選ばれて\(name)を連れ帰りました。")
     }
+    var raidCatchFailed: String {
+        t("보스 정보를 불러오지 못해 데려오지 못했어요 — 오늘 다시 도전할 수 있어요.",
+          "Could not load the boss, so it did not come home - you can try again today.",
+          "ボスの情報を読み込めず連れ帰れませんでした — 今日中にもう一度挑戦できます。")
+    }
     var raidNextHatch: String { t("다음 5★ 부화", "Next 5★ hatch", "次の5★出現") }
     func raidHatchSoonTitle(minutes: Int) -> String {
         t("⏰ \(minutes)분 뒤 5★ 레이드", "⏰ 5★ raid in \(minutes) min", "⏰ \(minutes)分後に5★レイド")
