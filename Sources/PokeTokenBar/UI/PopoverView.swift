@@ -84,9 +84,18 @@ final class PopoverNavigation {
         chatCompanionID = nil
     }
 
-    func reset() {
-        closeOverlays()
-        tab = .home
+    /// 팝오버가 닫혔다 열릴 때 부른다. 접는 것은 **설정뿐**이다.
+    ///
+    /// 탭을 홈으로 되돌리지 않는다 — 창을 내리는 것은 화면을 떠난 것이 아니라 잠시 치운 것이고,
+    /// 도감을 보다 닫으면 홈으로 떨어지는 게 그래서 결함이었다. 진행 중 오버레이(체육관·던전·
+    /// 레이드·꾸미기·대화)도 남긴다: 세션과 전투는 창이 아니라 center 가 들고 있어(`BattleNet.swift`
+    /// 의 `multiplayer`·`trading`·`auction`) 창을 닫아도 계속 돌아간다. 여기서 접으면 이어서 볼
+    /// 길이 없다.
+    ///
+    /// 설정만 갈라지는 이유는 그것이 진행 중 콘텐츠가 아니라 모달이라서다 — 남겨 두면 앱이
+    /// 설정 화면으로 열린다.
+    func prepareForReopen() {
+        showSettings = false
     }
 
     /// 배틀 신청이 오면 그 화면으로 데려간다 — 덮여 있던 오버레이는 접는다.
