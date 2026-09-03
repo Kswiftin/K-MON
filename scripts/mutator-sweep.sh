@@ -21,7 +21,7 @@ cd "$(dirname "$0")/.."
 #
 # 테스트로는 못 막는다 — 앨범 메서드를 직접 호출해 지속성을 보면 전부 통과한다(호출자가 화면이
 # 아니어도 통과하기 때문이다). 커버리지로도 못 막는다(테스트가 그 줄을 실행하므로 100% 로 찍힌다).
-# 남는 형태가 grep 이다. 대상은 **`save()` 를 부르는 비-private 함수** 다 — 세이브를 바꾸는
+# 남는 형태가 정적 분석이다. 대상은 **`save()` 를 부르는 비-private 함수** 다 — 세이브를 바꾸는
 # API 라는 것이 이 부류의 경계이고, `set` 접두만 보면 `pin` 같은 이름을 놓친다.
 #
 # **이 게이트가 잡는 것은 "호출부가 0곳" 하나다.** 실제로 여섯 번 일어난 형태가 그것이다.
@@ -43,13 +43,42 @@ CORE_ONLY_MUTATORS=(
   "setTheme"
 )
 UNCALLED_MUTATORS=""
-# **주석 줄은 빼고 센다.** 이 저장소의 문서 주석은 API 이름을 끊임없이 인용하므로, 원문 그대로
-# 세면 `/// setPeerAlias(...) 는 …` 한 줄이 그 mutator 를 영원히 "호출됨" 으로 만든다 —
-# 게이트가 잡으려는 바로 그 부류를 산문 한 줄로 통과시키는 셈이다. 줄 끝 주석은 코드를 함께
-# 지울 위험이 있어 건드리지 않는다(줄 전체가 주석인 경우만 지운다).
-SWIFT_CODE=$(find Sources/PokeTokenBar -name '*.swift' -exec cat {} + | sed '/^[[:space:]]*\/\//d')
-while read -r NAME; do
-  [[ -z "$NAME" ]] && continue
+
+# **판정은 이름이 아니라 선언 위치로 한다**(#233). 이전 판은 `등장 횟수 == 선언 줄 수` 라는
+# 이름 단위 산술이었다 — 스윕 범위가 `Sources/` 전부로 넓어지자 같은 이름이 여러 타입에 사는
+# 일이 흔해져(`send` 9선언/120등장, `record` 6, `delete`·`tick`·`clamped` 3) **살아 있는 동명
+# 함수의 호출부가 죽은 선언의 0곳을 메웠다.** grep 으로는 못 고친다: `store.send(...)` 가 9개
+# `send` 중 어느 선언으로 해석되는지는 타입 추론이 필요하다.
+#
+# 그래서 SwiftPM 이 매 빌드마다 쓰는 인덱스 스토어를 읽는다(선언마다 USR, 참조마다 그 USR).
+# 판정 본체는 `Tools/MutatorGate` 이고, 이 스크립트는 **정책**만 쥔다 — 예외 목록과 `debug`
+# 접두 규칙. 도구가 못 보는 것 목록은 `Tools/MutatorGate/Sources/main.swift` 머리주석에 있다.
+echo "  · 빌드 + 인덱스 스토어 준비"
+# **먼저 빌드한다.** 낡은 인덱스를 읽으면 판정이 조용히 거짓이 된다(지운 선언이 유령으로
+# 남거나, 새로 죽은 mutator 가 아직 인덱스에 없어 통과한다). CI 는 앞 단계에서 이미 빌드해
+# 두므로 여기서는 대개 no-op 이고, 로컬에서도 게이트가 곧 쓸 빌드를 앞당기는 것뿐이다.
+swift build >/dev/null
+INDEX_STORE="$(swift build --show-bin-path)/index/store"
+# 스토어가 없으면 **판정하지 않고 실패한다.** SwiftPM 이 인덱스 방출을 멈추거나 경로를 바꾸면
+# "결함 0건" 과 "볼 것이 없었다" 가 구별되지 않는다 — 이 게이트가 존재하는 이유가 그 구별이다.
+if [[ ! -d "$INDEX_STORE" ]]; then
+  echo "✗ 인덱스 스토어가 없습니다($INDEX_STORE) — 판정할 수 없습니다." \
+       "SwiftPM 이 인덱스를 방출하지 않으면 이 스윕은 아무것도 못 봅니다." >&2
+  exit 1
+fi
+swift build --package-path Tools/MutatorGate >/dev/null
+DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+export DEVELOPER_DIR
+
+# 도구는 사실만 낸다: `<파일>:<줄><TAB><심볼 이름>`. 정책 필터는 아래에서 건다.
+FINDINGS=$(./Tools/MutatorGate/.build/debug/MutatorGate "$INDEX_STORE" Sources/PokeTokenBar)
+
+while IFS=$'\t' read -r LOCATION SYMBOL; do
+  [[ -z "$LOCATION" ]] && continue
+  # 인덱스의 심볼 이름은 인자 라벨까지 갖는다(`setTheme(_:for:)`). 예외 목록과 `debug` 규칙은
+  # 맨이름으로 쓰므로 라벨을 떼고 대조한다 — 목록에 시그니처를 적게 하면 인자가 하나 바뀔
+  # 때마다 목록이 조용히 무효가 된다.
+  NAME="${SYMBOL%%(*}"
   # `debug` 접두는 **이름 하나하나가 아니라 규칙으로** 건너뛴다. 이 저장소의 `debug…` 는 전부
   # `/// 테스트 전용` 이 붙은 시딩 훅이라(화면에서 부르지 않는 것이 정상이다), 이름을 박아 두면
   # `debugSetFoo` 가 하나 늘 때마다 allowlist 가 같이 자란다 — 그때마다 손대는 목록은 결국
@@ -59,56 +88,23 @@ while read -r NAME; do
   # 규칙 자체가 우회로가 된다(죽은 mutator 에 `debug` 를 붙이면 사라진다). 그리고 아무도 안 쓰는
   # 시딩 훅도 죽은 코드이므로 걸러야 한다 — 접두 규칙의 근거가 "테스트가 쓴다" 이니, 그것을 검사한다.
   # 해제 조건: 없다. 이 조건이 규칙의 본문이다.
+  #
+  # 이 검사는 **인덱스가 아니라 `Tests/` 원문**을 본다. 로컬에서 `PTB_NO_XCTEST=1` 이면 XCTest
+  # 타깃이 아예 컴파일되지 않아 인덱스에 없다 — 의미 기반으로 바꾸면 CI 는 초록인데 로컬만
+  # 빨강이 된다(게이트가 환경에 따라 다른 답을 내면 아무도 안 믿는다).
   [[ "$NAME" == debug* ]] && grep -rqE "\b${NAME}\(" Tests && continue
   SKIP=""
   for ALLOWED in "${CORE_ONLY_MUTATORS[@]}"; do [[ "$NAME" == "$ALLOWED" ]] && SKIP=1 && break; done
   [[ -n "$SKIP" ]] && continue
-  # 호출부는 파일을 가리지 않는다 — 같은 파일 안에서만 불리는 것(`appendLocalMessage`)도
-  # 도달 가능하다. 선언 줄 수와 등장 횟수가 같으면 아무도 부르지 않는 것이다.
-  CALLS=$(printf '%s\n' "$SWIFT_CODE" | grep -oE "\b${NAME}\(" | wc -l | tr -d ' ')
-  DECLS=$(printf '%s\n' "$SWIFT_CODE" | grep -oE "func ${NAME}\(" | wc -l | tr -d ' ')
-  [[ "$CALLS" == "$DECLS" ]] && UNCALLED_MUTATORS+="$NAME"$'\n'
-done < <(awk '
-  # **파일이 바뀌면 상태를 버린다.** 여러 파일을 한 번에 넘기므로, 안 지우면 앞 파일 마지막 함수의
-  # `name`·`priv` 가 다음 파일 첫 줄까지 살아남아 엉뚱한 이름에 `save()` 가 붙는다 — 아래 한 줄과
-  # 똑같은 부류의 사고를 파일 경계에서 한 번 더 내는 셈이다.
-  FNR == 1 { name = ""; priv = 0 }
-  # **여기도 주석 줄을 뺀다.** 아래 `SWIFT_CODE` 의 sed 와 같은 규칙이어야 한다 — 세는 쪽만 주석을
-  # 빼고 **찾는 쪽이 원문을 읽으면** 산문에 적힌 `save()` 가 앞 함수를 mutator 로 만든다. 실측으로
-  # `gainExperience`·`hatchIfNeeded`·`nextAchievementTier`·`stableIdentifier` 네 개가 그렇게 올라왔고
-  # (`DeviceID.swift` 의 "`save()` 가 자주 불리는데…" 한 줄이 `stableIdentifier` 를 올렸다),
-  # 넷 다 호출부가 있어서 우연히 통과했다. 호출부 0곳인 첫 유령이 나오면 게이트가 세이브를
-  # 건드리지도 않는 함수를 지우라고 CI 를 세운다.
-  /^[[:space:]]*\/\// { next }
-  # `static`·`nonisolated`·`override` 가 앞에 붙은 선언도 잡아야 한다. 놓치면 `name`·`priv` 가
-  # **앞 함수의 값으로 남아**, 그 안의 `save()` 가 엉뚱한 이름에 붙는다(잡아야 할 것을 가리거나,
-  # mutator 도 아닌 이름으로 빌드를 깨뜨린다).
-  #
-  # 같은 이유로 `[(<]` 다 받는다 — 제네릭 선언(`func send<T: Encodable>(`)을 놓치면 그 함수의
-  # `save()` 가 앞 함수 이름에 붙는다(범위 확대로 제네릭 7개가 사정권에 들어왔다).
-  # `priv` 판정도 접미 수식어를 넘어서 본다: `private func` 인접만 보면 `private static func` 105개가
-  # 전부 **비-private 로 오인**돼, 그중 하나가 `save()` 를 부르는 순간 없는 결함으로 CI 가 선다.
-  # 이름에 숫자도 받는다 — `[A-Za-z_]+` 만 보면 `fnv1a`·`localIPv4` 가 `fnv`·`localIPv` 로 잘려
-  # 존재하지 않는 이름을 세게 된다(자른 이름은 호출부도 선언부도 못 찾아 오탐이 된다).
-  /func [A-Za-z_][A-Za-z0-9_]*[(<]/ {
-    priv = ($0 ~ /(private|fileprivate) [a-z ]*func/)
-    match($0, /func [A-Za-z_][A-Za-z0-9_]*/); name = substr($0, RSTART + 5, RLENGTH - 5)
-  }
-  /save\(\)/ && name != "" && !priv && !seen[name] { print name; seen[name] = 1 }
-' $(find Sources/PokeTokenBar -name '*.swift') | sort -u)
+  UNCALLED_MUTATORS+="$LOCATION $SYMBOL"$'\n'
+done <<< "$FINDINGS"
 # **범위는 `Sources/` 전부다**(#225). 예전엔 `Core/PokemonChat.swift` 한 파일만 훑었는데, 그건
-# 결함이 *발견된* 파일이지 부류가 사는 범위가 아니었다 — 같은 awk 를 넓히자 `CompanionStore.swift`
+# 결함이 *발견된* 파일이지 부류가 사는 범위가 아니었다 — 범위를 넓히자 `CompanionStore.swift`
 # 에서 8건이 나왔고 그중 셋(`ensureStarterCandidates`·`chooseStarter`·`beginIncubatingFocusEgg`)은
 # 이미 죽은 제품 경로였다. 경로를 `Core/` 로 한정하지도 않는다: 실측상 결과가 같은데 예외만 하나
 # 늘고, 스토어가 아닌 곳에 새로 생기는 mutator 를 놓칠 자리를 남긴다.
 # 이 가드가 **구조적으로 못 보는** 반대쪽도 있다: 짝이 아예 없는 mutator(켜기만 있고 끄기가
 # 없는 것)는 "호출부 0곳" 이 될 수 없다. `docs/reference/defect-log.md` 의 같은 항목을 본다.
-# **범위 확대로 커진 눈먼 곳이 하나 더 있다 — 이름이 겹치는 mutator.** 판정이 이름 단위 산술
-# (`CALLS == DECLS`)이라 같은 이름이 여러 타입에 있으면 서로를 가린다: 실측으로 `send` 8선언
-# (그중 7개가 private) / 118등장, `record` 6, `delete`·`tick`·`clamped` 3, `prune`·
-# `clearSharedPinnedMemory` 2다. 살아 있는 동명 함수의 호출부가 죽은 쪽의 0곳을 메워 통과한다.
-# 한 파일만 볼 때는 거의 없던 형태이고, 제대로 막으려면 타입 단위 파싱이 필요하다(grep 의 천장).
-# 해제 조건: 이름이 아니라 선언 위치로 세는 도구(SourceKit·swift-syntax)를 붙일 때 옮긴다(#233).
 if [[ -n "$UNCALLED_MUTATORS" ]]; then
   echo "✗ 아무도 부르지 않는 mutator 가 있습니다 — 세이브에 쓰기만 하고 화면이 부르지 않으면" \
        "그 값은 영원히 기본값입니다(앨범이면 방문자 카드에 빈 필드로 나갑니다)." \
