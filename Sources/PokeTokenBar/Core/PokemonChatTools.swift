@@ -24,8 +24,19 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
     case companionSwitch = "companion.switch"
     case memoryRecord = "memory.record"
 
-    /// 화면이 제시하는 집중 길이. 모델이 말한 값은 이 셋 중 가장 가까운 것으로 접힌다.
+    /// 화면이 제시하는 집중 길이. 모델이 말한 값도, 터미널 요청 파일에 적힌 값도 이 셋 중 가장
+    /// 가까운 것으로 접힌다.
     static let focusMinutes = [25, 50, 90]
+
+    /// 가장 가까운 길이로 접는다(동률이면 짧은 쪽). **값을 버리는 대신 접는다** — 버리면 부른
+    /// 쪽이 왜 아무 일도 안 일어났는지 모른 채 같은 실수를 반복한다. 승인 카드도 터미널 답도
+    /// 실제 분을 그대로 보여 주므로 사용자는 무엇을 켜는지 정확히 안다.
+    ///
+    /// 여기 있는 이유는 접는 쪽이 둘이라서다(대화 파서·터미널 요청). 표가 두 벌이 되면 한쪽만
+    /// 넓어져 화면이 제시하지 않는 길이를 그 경로만 켤 수 있게 된다.
+    static func nearestFocusLength(to minutes: Int) -> Int {
+        focusMinutes.min { abs($0 - minutes) < abs($1 - minutes) } ?? focusMinutes[0]
+    }
     /// 도감 번호 상한. 범위를 두는 이유는 주입이 아니라(인자는 이미 `Int` 다) 404 를 부르는
     /// 무의미한 왕복을 막기 위해서다.
     static let highestDexNumber = 1_025
@@ -366,11 +377,9 @@ enum PokemonChatToolParser {
         return Int(raw)
     }
 
-    /// 가장 가까운 길이로 접는다(동률이면 짧은 쪽). 값을 버리는 대신 접는 이유는, 버리면 모델이
-    /// 왜 아무 일도 안 일어났는지 모른 채 같은 실수를 반복하기 때문이다. 승인 카드가 실제 분을
-    /// 그대로 보여 주므로 사용자는 무엇을 켜는지 정확히 안다.
+    /// 접는 규칙은 `PokemonChatTool.nearestFocusLength` 한 곳이다 — 터미널 요청도 같은 표를 쓴다.
     private static func nearestFocusLength(to minutes: Int) -> Int {
-        PokemonChatTool.focusMinutes.min { abs($0 - minutes) < abs($1 - minutes) } ?? PokemonChatTool.focusMinutes[0]
+        PokemonChatTool.nearestFocusLength(to: minutes)
     }
 }
 
