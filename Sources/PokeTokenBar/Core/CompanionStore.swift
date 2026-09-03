@@ -2468,6 +2468,21 @@ final class CompanionStore {
         return amount
     }
 
+    /// 오늘 레이드 보스를 이미 잡았나 — 화면이 "오늘 포획 완료" 를 그리는 근거다.
+    var raidCatchClaimedToday: Bool { state.raidCatchDate == Self.dayKey(clock()) }
+
+    /// 오늘의 포획 기회를 쓴다. 남아 있었으면 true 를 돌려주고 원장을 찍는다.
+    ///
+    /// **지급(`creditRaidReward`)과 원장을 나눠 둔다.** 같은 "하루 한 번" 이지만 태우는 사건이
+    /// 다르다 — 혼자 돈 1★ 의 소액 지급이 그날의 포획까지 없애면, 잃은 줄도 모르고 잃는다.
+    @discardableResult
+    func claimRaidCatch() -> Bool {
+        guard !raidCatchClaimedToday else { return false }
+        state.raidCatchDate = Self.dayKey(clock())
+        save()
+        return true
+    }
+
     /// 베팅 정산 지급. 환불도 "판돈과 같은 금액 지급" 이라 같은 경로를 쓴다.
     func creditStarPieces(_ amount: Int) {
         guard amount > 0 else { return }
