@@ -60,6 +60,25 @@ struct PokedoroCommandTests {
                 "쓸 수 있는 길이를 알려 줘야 사용자가 다음에 무엇을 칠지 안다")
     }
 
+    // MARK: 세이브를 여는가, 요청을 보내는가
+
+    /// **이 표가 뒤집히면 피하려던 일이 그대로 일어난다.** 요청으로 가야 할 명령이 세이브를 열면
+    /// 여는 것만으로 정산이 돌고(`ReadOnlyStoreTests`), 조회 명령이 요청을 보내면 앱이 꺼져
+    /// 있을 때 `status` 가 3초 멈췄다 실패한다.
+    @Test func testOnlySessionCommandsBecomeRequests() {
+        #expect(PokedoroCommand.start(minutes: 25).request == .start)
+        #expect(PokedoroCommand.claim.request == .claim)
+        #expect(PokedoroCommand.stop.request == .stop)
+    }
+
+    @Test func testReadOnlyCommandsNeverBecomeRequests() {
+        let readOnly: [PokedoroCommand] = [.status(oneline: false), .status(oneline: true),
+                                           .party, .dex, .watch, .help]
+        for command in readOnly {
+            #expect(command.request == nil, "\(command) 가 앱에 요청을 보낸다")
+        }
+    }
+
     // MARK: 앱에만 있는 명령
 
     /// 터미널이 다루는 것은 집중 세션뿐이다. 배틀·교환처럼 앱 화면에만 있는 것은 이름을

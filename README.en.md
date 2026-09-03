@@ -129,6 +129,32 @@ Skipping `create-signing-cert.sh` makes `build-app.sh` stop. An ad-hoc signature
 
 `build-app.sh` creates and installs `/Applications/Pokédoro.app` (or leaves it at `build/Pokédoro.app` when installation is skipped).
 
+## From the terminal
+
+The same executable runs in a terminal. Link it once to call it by a short name.
+
+```bash
+ln -s "/Applications/Pokédoro.app/Contents/MacOS/PokeTokenBar" /usr/local/bin/pokedoro
+```
+
+```
+pokedoro status [--oneline]   Partner, adventure, balance (--oneline for a status bar)
+pokedoro party                Your Pokémon
+pokedoro dex                  Pokédex
+pokedoro watch                Full-screen live view
+pokedoro start [25|50|90]     Start a focus session
+pokedoro claim                Collect a finished adventure's reward
+pokedoro stop                 End the focus session
+```
+
+For a tmux status bar:
+
+```
+set -g status-right '#(pokedoro status --oneline)'
+```
+
+Read commands only read the save. The three focus-session commands **send a request to the menu bar app, which performs them** — this keeps exactly one process writing the save. With the app closed those three do nothing, say so, and exit with code `3`.
+
 ## Data, privacy & disclaimer
 
 - Progress and cached data are stored in `~/Library/Application Support/PokeTokenBar/`.
