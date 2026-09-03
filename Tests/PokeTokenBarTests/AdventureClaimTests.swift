@@ -205,6 +205,52 @@ final class AdventureClaimTests: XCTestCase {
                       "마운트되지 않은 View: \(unmounted) — 선언만 있고 화면에 안 붙으면 그 안의 기능(보상 정산 등)은 도달 불가다")
     }
 
+    /// 위 가드의 형제. `struct X: View` 가 아니라 **화면 안의 조각**(`private var x: some View`)이
+    /// 아무 데서도 안 불리는 형태다 — 컴파일러는 안 쓰는 computed property 에 warning 을 내지
+    /// 않으므로 빌드도 테스트도 초록인 채로 화면만 죽는다.
+    ///
+    /// #209 가 그 상태였다: 2~4인 방 배틀의 `multiplayerRooms` / `multiplayerLobby` 가 세 주 동안
+    /// 아무 데도 안 붙어 있었고, 그 사이 `RecentBattleLabel` 의 단위 테스트는 계속 통과했다.
+    /// 순수 로직 테스트가 도달 불가 화면에 false confidence 를 주는 부류다.
+    ///
+    /// `@State private var` 도 같이 본다. 화면을 떼어낼 때 **상태만 남는** 부류가 있는데
+    /// (`BattleView` 가 방 배틀을 넘긴 뒤 `roomMode`·`multiplayerTargetID` 가 그랬다) 컴파일러는
+    /// 안 쓰는 저장 프로퍼티에 warning 을 내지 않아 `test-gate.sh` 의 warning 게이트도 못 잡는다.
+    ///
+    /// **천장**: 한 단계만 본다. 죽은 하위 트리는 **뿌리만** 잡힌다(`multiplayerLobby` 가 걸리고
+    /// 그것만 참조하는 `multiplayerArena` 는 안 걸린다). 뿌리를 지우면 나머지가 다음 실행에서
+    /// 걸리므로 결국 전부 드러난다. 서로만 참조하는 죽은 순환은 못 잡는다 — 그때는 사람이 본다.
+    /// `private` 만 본다: 파일 밖에서 쓰이는 멤버는 한 파일만 읽어서 결론이 안 난다.
+    func testEveryDeclaredViewMemberHasACallSite() throws {
+        let uiDirectory = Self.repositoryRoot.appendingPathComponent("Sources/PokeTokenBar/UI")
+        let files = try Self.swiftFiles(in: uiDirectory)
+        // 경로가 깨지면 빈 목록을 훑고 조용히 통과한다 — 그걸 막는 단언.
+        XCTAssertGreaterThan(files.count, 10, "UI 소스를 못 찾았다 — 경로가 깨지면 가드가 무력해진다")
+
+        var orphans: [String] = []
+        var scanned = 0
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            let lines = Self.logicalLines(of: text)
+            for member in Self.declaredViewMembers(in: lines) {
+                scanned += 1
+                // 선언 줄을 뺀 나머지 어디에도 이름이 없으면 아무도 이 조각을 그리지 않는다.
+                let mentioned = lines.contains { line in
+                    !Self.declares(member, in: line) && Self.mentions(member, in: line)
+                }
+                if !mentioned { orphans.append("\(file.lastPathComponent):\(member)") }
+            }
+        }
+        // 파일과 **따로** 센다. 선언 인식이 깨지면 훑을 멤버가 0개가 되어 `orphans` 가 빈 채로
+        // 초록이 된다 — 파일 수 단언만으로는 그 헛통과를 구별할 수 없다.
+        XCTAssertGreaterThan(scanned, 200,
+                             "검사한 멤버가 \(scanned) 개뿐이다 — 선언 인식이 깨지면 가드가 헛통과한다")
+        XCTAssertEqual(orphans, [], """
+            아무 데서도 안 불리는 View 조각: \(orphans) — 선언만 있고 화면에 안 붙으면 \
+            그 안의 기능은 도달 불가다. 그리는 자리를 붙이거나 삭제하라.
+            """)
+    }
+
     /// 정산 진입점은 `claimAdventure()` 하나다 — 완료 판정을 감싸는 래퍼가 다시 생기면 같은 가드가
     /// 두 곳에 놓여 한쪽만 바뀌는 사고가 난다. 소스로 고정한다.
     func testAdventureIsClaimedThroughASingleStoreEntryPoint() throws {
@@ -227,6 +273,144 @@ final class AdventureClaimTests: XCTestCase {
         guard let enumerator = FileManager.default.enumerator(at: directory,
                                                               includingPropertiesForKeys: nil) else { return [] }
         return enumerator.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+    }
+
+    /// `private var x: some View` / `private func x(...) -> some View` 의 이름을 뽑는다.
+    /// `body` 는 SwiftUI 가 부르므로 제외한다.
+    ///
+    /// **private 만 본다.** 파일 밖에서 쓰이는 멤버(`PokedoroTheme.pageBackground`,
+    /// `View.pokedoroCard`)는 한 파일만 읽어서는 도달성을 판단할 수 없다 — 그 부류를 넣으면
+    /// 허용 목록으로 덮어야 하고, 허용 목록은 곧 진짜 고아도 덮는다. private 는 정의상
+    /// 자기 파일 안에서만 불리므로 이 검사만으로 결론이 난다.
+    /// 여러 줄에 걸친 시그니처를 한 줄로 붙인다.
+    ///
+    /// `declaredMemberName` 은 한 줄만 본다. 그런데 인자가 많은 조각은 `-> some View` 가
+    /// **다음 줄**에 있어(`BattleField.combatant`, `CompanionView.footer` 등 여섯 개가 그렇다)
+    /// 선언 자체가 안 보였다 — 그것들이 고아가 돼도 가드는 초록이었다.
+    ///
+    /// 붙인 줄은 선언 인식과 언급 인식이 **같은 배열**을 읽는다. 따로 두면 붙기 전의 첫 줄이
+    /// 자기 이름을 "언급" 으로 세어 그 멤버가 영원히 살아 있는 것으로 읽힌다.
+    private static func logicalLines(of text: String) -> [String] {
+        var result: [String] = []
+        var pending: String?
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if var buffer = pending {
+                buffer += " " + trimmed
+                // 괄호가 닫히면 시그니처가 끝난 것이다. 400자는 안전장치 — 여기 걸리는 줄은
+                // 시그니처가 아니므로 `declaredMemberName` 이 어차피 nil 을 낸다.
+                if isBalanced(buffer) || buffer.count > 400 {
+                    result.append(buffer); pending = nil
+                } else {
+                    pending = buffer
+                }
+                continue
+            }
+            // **괄호가 안 닫힌 선언만** 붙인다. "`{` 도 `some View` 도 없으면 붙인다" 로 하면
+            // `@State private var x = 0` 같은 **완결된 한 줄**까지 다음 선언에 삼켜져,
+            // 그 이름이 아예 안 보이게 된다.
+            if trimmed.contains("private "), trimmed.contains("var ") || trimmed.contains("func "),
+               !isBalanced(trimmed) {
+                pending = trimmed
+                continue
+            }
+            result.append(line)
+        }
+        if let buffer = pending { result.append(buffer) }
+        return result
+    }
+
+    private static func isBalanced(_ line: String) -> Bool {
+        line.filter { $0 == "(" }.count <= line.filter { $0 == ")" }.count
+    }
+
+    private static func declaredViewMembers(in lines: [String]) -> [String] {
+        var names: [String] = []
+        for line in lines {
+            guard let name = declaredMemberName(in: line), name != "body" else { continue }
+            names.append(name)
+        }
+        return Array(Set(names)).sorted()
+    }
+
+    /// 한 줄이 View 조각을 선언하는가 — 그렇다면 그 이름.
+    private static func declaredMemberName(in line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        // `@ViewBuilder private var x` 처럼 속성이 같은 줄에 붙는 형태도 받는다.
+        guard trimmed.contains("private ") else { return nil }
+        // `@State private var x` — 화면 조각을 떼어낼 때 남는 죽은 상태. 컴파일러가 warning 을
+        // 내지 않는 부류라 여기서만 잡힌다. `@Binding`·`@Environment` 는 밖에서 넣어 주므로
+        // 한 파일만 읽어서는 판단할 수 없다 — 뺀다.
+        // **`some View` 판정보다 먼저 본다**: 붙인 줄에 뒤 선언이 섞여도 이름을 뺏기지 않는다.
+        if trimmed.hasPrefix("@State "), let range = trimmed.range(of: "var ") {
+            let rest = trimmed[range.upperBound...]
+            let name = String(rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" })
+            return name.isEmpty ? nil : name
+        }
+        if let range = trimmed.range(of: "var "), trimmed.contains(": some View") {
+            let rest = trimmed[range.upperBound...]
+            let name = String(rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" })
+            return name.isEmpty ? nil : name
+        }
+        if let range = trimmed.range(of: "func "), trimmed.contains("-> some View") {
+            let rest = trimmed[range.upperBound...]
+            let name = String(rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" })
+            return name.isEmpty ? nil : name
+        }
+        return nil
+    }
+
+    private static func declares(_ member: String, in line: String) -> Bool {
+        declaredMemberName(in: line) == member
+    }
+
+    /// 이름이 **식별자 하나로** 나오는가. 부분 문자열(`header` 가 `headerRow` 에)과 주석·문자열
+    /// 안의 언급은 세지 않는다 — 주석만으로 살아 있다고 치면 가드가 헐거워진다.
+    private static func mentions(_ member: String, in line: String) -> Bool {
+        let code = codeOnly(line)
+        var index = code.startIndex
+        while let found = code.range(of: member, range: index..<code.endIndex) {
+            let before = found.lowerBound == code.startIndex
+                ? nil : code[code.index(before: found.lowerBound)]
+            let after = found.upperBound == code.endIndex ? nil : code[found.upperBound]
+            let boundedBefore = before.map { !($0.isLetter || $0.isNumber || $0 == "_") } ?? true
+            let boundedAfter = after.map { !($0.isLetter || $0.isNumber || $0 == "_") } ?? true
+            if boundedBefore && boundedAfter { return true }
+            index = found.upperBound
+        }
+        return false
+    }
+
+    /// 주석과 문자열 리터럴을 뺀 코드만 남긴다.
+    ///
+    /// 첫 `//` 에서 무조건 자르면 **문자열 안의 `//` 에도 잘려** 진짜 호출을 지운다:
+    /// `Link(destination: URL(string: "https://x")!) { footerBar }` 는 `footerBar` 를 잃고
+    /// 멀쩡한 조각이 고아로 신고된다. 그래서 따옴표 상태를 따라가며 자른다.
+    ///
+    /// 문자열 안은 통째로 버린다 — 문자열에 이름이 적혀 있다고 그 조각이 그려지는 것은 아니다.
+    /// (`some View` 멤버가 문자열 보간에 들어갈 일은 없다.) 여러 줄 문자열(`\"\"\"`)은 줄 단위로
+    /// 보므로 완벽하지 않다 — 그 안의 언급은 코드로 세어 **살아 있는 쪽으로** 기운다.
+    private static func codeOnly(_ line: String) -> String {
+        var code = ""
+        var inString = false
+        var escaped = false
+        var index = line.startIndex
+        while index < line.endIndex {
+            let character = line[index]
+            if inString {
+                if escaped { escaped = false }
+                else if character == "\\" { escaped = true }
+                else if character == "\"" { inString = false }
+                index = line.index(after: index)
+                continue
+            }
+            if character == "\"" { inString = true; index = line.index(after: index); continue }
+            if character == "/", line.index(after: index) < line.endIndex,
+               line[line.index(after: index)] == "/" { break }
+            code.append(character)
+            index = line.index(after: index)
+        }
+        return code
     }
 
     /// `struct Foo: View {` / `struct Foo: View, Sendable` 형태의 선언 이름을 뽑는다.

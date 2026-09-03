@@ -80,8 +80,12 @@ struct PokeathlonView: View {
                 }
                 .pickerStyle(.segmented).controlSize(.small)
             }
-            let prefix = selectedEvent == .quiz ? "QUIZ" : "RUN"
-            let eventRooms = center.rooms.filter { $0.name.hasPrefix(prefix) }
+            // 접두와 **내 방 제외**를 한 곳에서 받는다. 예전엔 접두만 봐서 내가 연 방이
+            // 내 목록에 떴고, 누르면 개설 국면이라 조용히 거절돼 먹통 버튼처럼 보였다.
+            let activity: RoomActivity = selectedEvent == .quiz ? .pokemonQuiz : .pokeathlon
+            let eventRooms = center.rooms.filter {
+                LANRoomList.isVisible($0.serviceName, activity: activity, myTag: center.myRoomTag)
+            }
             let roomPageCount = Self.roomPageCount(eventRooms.count)
             // 방은 수시로 열리고 닫힌다 — 보던 페이지가 사라지면 마지막 페이지로 당긴다.
             let currentRoomPage = min(roomPage, roomPageCount - 1)

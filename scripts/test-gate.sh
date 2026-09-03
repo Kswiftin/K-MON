@@ -39,6 +39,10 @@ LOGIC_CORE=(
   # 광고 이름의 바이트 예산. 네 LAN 센터가 전부 이 한 함수를 지나므로 여기가 무테스트면 부류가
   # 통째로 무테스트다 — 이전엔 `PlayerGymRoomName` 안에 숨어 있어 커버리지에서 보이지 않았다.
   "Sources/PokeTokenBar/Core/LANServiceName.swift"
+  # 어떤 방을 목록에 보여 줄지 정하는 판정. 접두가 개설과 갈리면 만든 방이 어느 목록에도 안 뜨고
+  # (#209 가 그 상태였다), 내 방을 안 거르면 눌러도 아무 일이 없는 버튼이 남는다. 여섯 활동의
+  # 표가 여기 한 곳뿐이라 배열 밖에 두면 그 표 전체가 커버리지에서 빠진다.
+  "Sources/PokeTokenBar/Core/LANRoomList.swift"
   # 원격 카드 검증기(`valid`)·광고 이름·집 목록 사상이 사는 곳. 소켓 부분은 단위 테스트가 안 닿아
   # 파일 수치는 낮지만, 배열 밖에 두면 그 순수 함수들이 커버리지에서 통째로 빠진다 —
   # `if !homes.isEmpty { lastError = nil }` 같은 새 분기를 아무도 못 본 이유가 이것이었다.

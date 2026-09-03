@@ -81,8 +81,9 @@ enum PlayerGym {
         return max(0, min(raw, dailyDefenseRewardCap - earnedToday))
     }
 
-    /// 이 이름이 공유 체육관 방인가.
-    static func isGymRoomName(_ name: String) -> Bool { name.hasPrefix("\(roomNamePrefix) ·") }
+    /// 이 이름이 공유 체육관 방인가. **접두 판정은 `LANRoomList` 한 곳에서만 한다** —
+    /// 여기에 다시 적으면 표가 갈라져 개설한 방이 목록에 안 뜬다(#209).
+    static func isGymRoomName(_ name: String) -> Bool { LANRoomList.matches(name, activity: .gym) }
 
     /// Bonjour 서비스 이름 상한. 네 LAN 센터가 공유하는 값이라 `LANServiceName` 이 원본이고
     /// 여기는 별칭이다 — 두 벌로 두면 한쪽만 고쳐진다.

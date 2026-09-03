@@ -89,18 +89,18 @@ struct PokemonTradeView: View {
             Text(store.l.t("\(peer)님의 포켓몬", "\(peer)'s Pokémon", "\(peer)のポケモン"))
                 .font(.headline)
             PokemonSearchField(text: $remoteSearchText, l: store.l)
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92))], spacing: 8) {
-                    ForEach(roster, id: \.mon.id) { entry in
-                        VStack(spacing: 4) {
-                            SpriteView(speciesID: entry.mon.presentationID, size: 48,
-                                       shiny: entry.mon.isShiny)
-                            Text(entry.displayName).font(.caption.bold()).lineLimit(1)
-                            Text("Lv.\(entry.mon.level)").font(.caption2).foregroundStyle(.secondary)
-                        }
-                        .padding(8).frame(maxWidth: .infinity)
-                        .pokedoroCard()
+            // 팝오버 본체가 이미 `ScrollView` 다 — 여기 하나 더 두면 안쪽이 스크롤되지 않아
+            // 한 화면에 들어가는 만큼만 보인다(소유 포켓몬 화면이 같은 결함이었다).
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92))], spacing: 8) {
+                ForEach(roster, id: \.mon.id) { entry in
+                    VStack(spacing: 4) {
+                        SpriteView(speciesID: entry.mon.presentationID, size: 48,
+                                   shiny: entry.mon.isShiny)
+                        Text(entry.displayName).font(.caption.bold()).lineLimit(1)
+                        Text("Lv.\(entry.mon.level)").font(.caption2).foregroundStyle(.secondary)
                     }
+                    .padding(8).frame(maxWidth: .infinity)
+                    .pokedoroCard()
                 }
             }
             Button(store.l.t("돌아가기", "Back", "戻る")) { close() }
@@ -118,17 +118,17 @@ struct PokemonTradeView: View {
                 ContentUnavailableView(store.l.t("트레이너를 찾는 중…", "Looking for trainers…", "トレーナーを検索中…"),
                                        systemImage: "dot.radiowaves.left.and.right")
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(center.peers) { peer in
-                            HStack {
-                                Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.blue)
-                                Text(peer.name).font(.headline)
-                                Spacer()
-                                Button(store.l.t("교환 신청", "Request", "申請")) { center.request(peer) }
-                                    .buttonStyle(.borderedProminent).controlSize(.small)
-                            }.padding(10).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-                        }
+                // 여기도 팝오버 `ScrollView` 안이다 — 자기 스크롤을 두면 넷째 트레이너부터
+                // 화면 밖으로 밀려 신청 버튼에 손이 닿지 않는다.
+                LazyVStack(spacing: 8) {
+                    ForEach(center.peers) { peer in
+                        HStack {
+                            Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.blue)
+                            Text(peer.name).font(.headline)
+                            Spacer()
+                            Button(store.l.t("교환 신청", "Request", "申請")) { center.request(peer) }
+                                .buttonStyle(.borderedProminent).controlSize(.small)
+                        }.padding(10).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
             }

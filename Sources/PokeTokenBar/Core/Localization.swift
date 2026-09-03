@@ -126,6 +126,13 @@ struct L {
           "If auto-discovery is blocked (office Wi-Fi etc.), connect by address.",
           "自動検出できない場合（社内ネットワーク等）はアドレスで直接接続。")
     }
+    /// 방 배틀 화면에는 주소 입력칸이 없다 — `battleManualHint` 를 쓰면 여기서 할 수 없는
+    /// 일을 시키게 되므로, 주소 연결이 있는 화면을 가리킨다.
+    var roomBattleDiscoveryBlocked: String {
+        t("자동 탐색이 안 되면(사내망 등) 1:1 배틀 화면에서 주소로 연결하세요.",
+          "If auto-discovery is blocked (office Wi-Fi etc.), connect by address from the 1:1 battle screen.",
+          "自動検出できない場合（社内ネットワーク等）は1:1バトル画面でアドレス接続してください。")
+    }
     var battleMyAddress: String { t("내 주소", "My address", "自分のアドレス") }
     var battleManualPlaceholder: String { t("상대 주소 (예: 10.1.2.3:50628)", "Opponent address (e.g. 10.1.2.3:50628)", "相手のアドレス（例: 10.1.2.3:50628）") }
     var battleBadAddress: String { t("주소 형식이 잘못됐어요 — IP:포트", "Bad address — use IP:port", "アドレス形式が不正です — IP:ポート") }

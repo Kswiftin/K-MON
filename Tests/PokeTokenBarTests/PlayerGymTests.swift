@@ -1053,10 +1053,17 @@ final class PlayerGymTests: XCTestCase {
 
     /// 체육관 방도 `phase != .idle` 이라, 토너먼트 갈림길에서 빼지 않으면 관장이 토너먼트
     /// 화면에 갇힌다.
-    func testTheTournamentBranchExcludesGymRooms() throws {
-        let code = try friendViewSource()
-        XCTAssertTrue(code.contains("!battleCenter.multiplayer.isGymRoom"),
-                      "체육관 방을 빼지 않으면 관장이 토너먼트 화면으로 끌려간다")
+    ///
+    /// 예전엔 "체육관 방이 아니면 토너먼트" 라는 **부정 조건**을 소스에서 문자열로 찾아 지켰다.
+    /// 방을 쓰는 활동이 여섯이 된 지금은 그 조건이 레이드·방 배틀까지 토너먼트로 보내므로,
+    /// 판정 자체를 활동별 표(`destination(forRoom:)`)로 바꾸고 가드도 그 표를 직접 본다.
+    func testTheTournamentBranchExcludesGymRooms() {
+        XCTAssertEqual(FriendView.destination(forRoom: .gym), .gym,
+                       "체육관 방을 빼지 않으면 관장이 토너먼트 화면으로 끌려간다")
+        XCTAssertEqual(FriendView.destination(forRoom: .tournament), .tournament)
+        // 형제 활동도 토너먼트로 새면 안 된다 — 같은 부정 조건이 낳던 결함이다.
+        XCTAssertNotEqual(FriendView.destination(forRoom: .raid), .tournament)
+        XCTAssertEqual(FriendView.destination(forRoom: .battle), .roomBattle)
     }
 
     // MARK: 매치 엔진

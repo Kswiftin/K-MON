@@ -236,7 +236,7 @@ final class MultiplayerRoomCenter {
     /// 목록 앞에 있다고 그것만 보여 주면, 바로 옆에 있는 멀쩡한 체육관을 못 찾는다.
     var visibleGymRoom: MultiplayerRoomPeer? {
         // **원문**(`serviceName`)으로 본다. `name` 은 `#` 앞에서 잘려 있어 내 방을 걸러낼 수 없다.
-        let gyms = rooms.filter { PlayerGym.isGymRoomName($0.serviceName) && !$0.serviceName.contains(myIDTag) }
+        let gyms = rooms.filter { LANRoomList.isVisible($0.serviceName, activity: .gym, myTag: myRoomTag) }
         return gyms.first { compatibility(of: $0).allowsChallenge } ?? gyms.first
     }
 
@@ -246,7 +246,7 @@ final class MultiplayerRoomCenter {
     /// 전원의 체육관을 잠근다(붙지도 못하는 방 때문에 아무도 못 연다).
     var gymRoomHoldingTheSlot: MultiplayerRoomPeer? {
         rooms.first {
-            PlayerGym.isGymRoomName($0.serviceName) && !$0.serviceName.contains(myIDTag)
+            LANRoomList.isVisible($0.serviceName, activity: .gym, myTag: myRoomTag)
                 && compatibility(of: $0).blocksOpeningMyGym
         }
     }
@@ -260,7 +260,7 @@ final class MultiplayerRoomCenter {
     /// 광고하면 참이다 — 그 상태에서는 도전도 개설도 막고 업데이트를 안내한다.
     var isOutdatedForGym: Bool {
         rooms.contains {
-            PlayerGym.isGymRoomName($0.serviceName) && !$0.serviceName.contains(myIDTag)
+            LANRoomList.isVisible($0.serviceName, activity: .gym, myTag: myRoomTag)
                 && compatibility(of: $0) == .myAppIsOutdated
         }
     }
@@ -268,9 +268,6 @@ final class MultiplayerRoomCenter {
     private func compatibility(of room: MultiplayerRoomPeer) -> GymRoomCompatibility {
         PlayerGym.compatibility(roomVersion: PlayerGymRoomName.parse(room.serviceName)?.protocolVersion)
     }
-
-    /// 내 방을 남의 목록에서 가려내는 꼬리표 — 방 이름에 이미 들어 있다(`startHosting`).
-    private var myIDTag: String { "#\(myRoomTag)" }
 
     /// 방 이름 끝에 실리는 내 식별자(`#` 없이). 경합 판정이 남의 꼬리표(`PlayerGymRoomName.idTag`)와
     /// **같은 형식으로** 비교해야 해서 밖으로 낸다.
@@ -625,7 +622,10 @@ final class MultiplayerRoomCenter {
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
             guard sessionEpoch == epoch else { return }
-            let isTournament = room.name.hasPrefix("TOUR ·")
+            // **`serviceName`(원문)으로, `LANRoomList` 의 표로 본다.** `name` 은 `#` 앞에서
+            // 잘려 있고, 접두를 여기에 다시 적으면 개설 쪽만 바뀐 순간 게스트가 후보 없이
+            // 토너먼트에 붙는다 — 목록이 통째로 비던 #209 의 한 겹 아래 형태다.
+            let isTournament = LANRoomList.matches(room.serviceName, activity: .tournament)
             if isTournament {
                 guard let pool = await buildTournamentLineup(ids: tournamentPickedTeam, count: 6) else {
                     guard sessionEpoch == epoch else { return }
@@ -1465,16 +1465,10 @@ final class MultiplayerRoomCenter {
 
     private func startHosting() throws {
         let listener = try NWListener(using: Self.parameters())
-        let prefix: String
-        switch lobby?.activity {
-        case .pokeathlon: prefix = "RUN"
-        case .pokemonQuiz: prefix = "QUIZ"
-        case .tournament: prefix = "TOUR"
-        case .gym: prefix = PlayerGym.roomNamePrefix
-        // 접두는 `RaidRoomName.make` 가 붙인다 — 여기 값은 위 분기에서 쓰이지 않는다.
-        case .raid: prefix = RaidRoomName.prefix
-        default: prefix = "BATTLE"
-        }
+        // 목록 필터가 읽는 것과 **같은 표**를 쓴다 — 두 곳에 적으면 한쪽만 바뀌어 만든 방이
+        // 어느 목록에도 안 뜬다(#209). 체육관·레이드는 아래에서 자기 이름 생성기를 타므로
+        // 여기 값이 쓰이지 않지만, 표를 갈라 두지 않으려고 같은 자리에서 받는다.
+        let prefix = LANRoomList.prefix(for: lobby?.activity ?? .battle)
         // 체육관만 이름에 재임 시작 시각을 함께 싣는다 — 방 광고에 TXT 가 없어, 목록에서
         // "누가 몇 분째 지키는지"를 접속 없이 보여줄 통로가 이름뿐이다.
         let idTag = myRoomTag
