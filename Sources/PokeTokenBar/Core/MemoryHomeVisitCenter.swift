@@ -101,6 +101,11 @@ final class MemoryHomeVisitCenter {
     /// `.failed` 재시작 횟수. 상한이 없으면 영구 불가 상태(권한 차단·서비스 타입 차단)에서 5초마다
     /// 브라우저를 새로 만들며 하루 종일 돈다.
     private var browserRestartAttempts = 0
+    /// 파도타기 커서 = **마지막으로 방문한 홈**. 목록을 눌러 간 방문도 커서를 옮긴다 —
+    /// 파도타기가 옮길 때만 옮기면, 손으로 마지막 집에 다녀온 뒤의 파도타기가 뒤로 돌아간다.
+    /// **저장하지 않는다** — 창을 닫으면 처음부터 돈다. 통산 기록은 방문 도장이 맡으므로
+    /// 여기에 새 저장 필드를 만들 이유가 없다(이 홈의 "새 필드 0개" 원칙).
+    private var surfCursor: String?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var visitHomeIDs: [ObjectIdentifier: String] = [:]
     /// 회수를 관찰할 수 있는 유일한 창이다. `connections` 를 통째로 `private` 로 두면 "연결이
@@ -145,8 +150,24 @@ final class MemoryHomeVisitCenter {
     private func stopHosting() {
         listener?.cancel(); listener = nil; isHosting = false; advertisedServiceName = nil
     }
+    /// 기획서 §14 파도타기 — 다음 홈으로 건너뛴다. 목표를 고르는 판단은 전부 `MemoryHomeSurf`
+    /// 가 하고 여기서는 방문만 한다(`homes(fromServices:)` 를 순수 함수로 뺀 것과 같은 이유).
+    func surf() {
+        guard isActive else { return }
+        let visited = MemoryHomeSurf.visitedIDs(in: companion.memoryAlbum.memoryHomeAccess.visitedHomeStamps,
+                                                on: CompanionStore.dayKey(Date()))
+        guard let target = MemoryHomeSurf.target(in: homes, visited: visited, after: surfCursor) else {
+            // 목록이 비었을 때 아무것도 하지 않으면 죽은 버튼이 된다 — 이 화면의 다른 실패와
+            // 같은 자리(`lastError`)에 이유를 적는다.
+            lastError = companion.l.t("파도타기 할 홈이 아직 안 보여요. 같은 LAN의 다른 Mac에서 홈을 공개해 주세요.",
+                                      "No homes to surf yet. Open a home on another Mac on this LAN.",
+                                      "波乗りできるホームがまだありません。同じLANの別のMacでホームを公開してください。")
+            return
+        }
+        visit(target)
+    }
     func visit(_ peer: MemoryHomePeer) {
-        guard isActive else { return }; selectedProfile = nil; lastError = nil
+        guard isActive else { return }; selectedProfile = nil; lastError = nil; surfCursor = peer.id
         let connection = NWConnection(to: peer.endpoint, using: Self.parameters())
         let key = ObjectIdentifier(connection); visitHomeIDs[key] = peer.id
         track(connection, key: key) { [weak self, weak connection] in
@@ -354,7 +375,10 @@ final class MemoryHomeVisitCenter {
     }
     /// 대문 문구는 `profileMessageForSharing` 만 읽는다 — 공유를 명시적으로 켠 경우에만 값이
     /// 나오는 프로퍼티다. `memoryHomeAccess.profileMessage` 를 직접 읽으면 동의 없이 새어 나간다.
-    private func profileCard(version: Int = protocolVersion) -> MemoryHomeProfileCard {
+    /// `internal` 인 것은 `valid(_:)`·`trackedConnectionCount` 와 같은 이유다 — 방문자가 실제로
+    /// 받는 페이로드를 `private` 로 두면 "무엇을 내보내는가" 가 통째로 무테스트로 남는다.
+    /// 대표 기억·대표 사진이 셋 다 빈 채로 릴리스된 동안 앨범 테스트는 전부 초록불이었다.
+    func profileCard(version: Int = protocolVersion) -> MemoryHomeProfileCard {
         let sharedMessage = companion.memoryAlbum.profileMessageForSharing
         guard let mon = companion.state.active else {
             return .init(displayName: localDisplayName, speciesID: 1, isShiny: false,

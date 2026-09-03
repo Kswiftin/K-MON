@@ -110,9 +110,9 @@ LOGIC_CORE=(
   # 동행 방명록 흔적의 빈도 판정과 기분별 문구. 난수를 쓰지 않는 것이 이 파일의 계약이라
   # 게이트 안에 둔다 — 빈도가 0 이나 1 로 무너지면 커버리지가 먼저 드러낸다.
   "Sources/PokeTokenBar/Core/MemoryHomeCompanionTrace.swift"
-  # 대표 BGM 해금 판정. 자정을 가로지르는 밤 구간과 계절 판정이 여기 있고, 게이트 밖에 두면
-  # 곡을 더할 때 해금 조건이 무테스트로 남는다.
-  "Sources/PokeTokenBar/Core/MemoryHomeJukebox.swift"
+  # §14 파도타기의 다음 홈 선택과 발자국 파생. 순수 함수라 게이트 대상이고, 배열에 안 넣으면
+  # "오늘 다 돌았을 때" 처럼 **한쪽만 참인 분기**가 커버리지에서 조용히 빠진다.
+  "Sources/PokeTokenBar/Core/MemoryHomeSurf.swift"
   # 터미널 프런트엔드의 순수 코어 — 칸 폭 계산·화면 조립·키 배정·명령 파싱. 부수효과가 없어
   # 전부 테스트가 닿는 자리이고, 게이트 밖에 두면 새 명령·새 키가 무테스트로 나간다.
   # 터미널 제어(TUITerminal)와 실행 루프(TUIWatch)는 판단을 두지 않으므로 대상이 아니다.
@@ -162,6 +162,77 @@ if [[ -n "$ORPHAN_SHEETS" ]]; then
   echo "✗ 아무도 띄우지 않는 시트가 있습니다 — 코드에는 있는데 화면에서 도달할 수 없습니다." \
        "표시하는 .sheet 를 붙이거나 타입을 삭제하세요." >&2
   echo "$ORPHAN_SHEETS" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
+# 위 두 게이트의 셋째 형제. 타입도 시트도 살아 있는데 기능이 죽는 세 번째 형태가 **세이브에
+# 쓰기만 하는 API** 다 — 앨범 mutator 를 아무 화면도 부르지 않으면 그 값은 영원히 기본값이다.
+# Memory Home 방문이 정확히 그 상태로 릴리스됐다: `pin`·`setSharedPinnedMemory`·
+# `setFeaturedPhoto`·`setPeerAlias`·`setMemoryHomeBlocked`·`clearProfileMessage` 여섯 개가
+# 호출부 0곳이어서, 방문자가 받는 카드의 대표 기억·대표 사진이 **모든 릴리스에서 빈 값**이었고
+# 누가 다녀갔는지 볼 화면도, 차단할 길도 없었다(TODAY/TOTAL 숫자만 올랐다).
+#
+# 테스트로는 못 막는다 — 앨범 메서드를 직접 호출해 지속성을 보면 전부 통과한다(호출자가 화면이
+# 아니어도 통과하기 때문이다). 커버리지로도 못 막는다(테스트가 그 줄을 실행하므로 100% 로 찍힌다).
+# 남는 형태가 grep 이다. 대상은 **`save()` 를 부르는 비-private 함수** 다 — 세이브를 바꾸는
+# API 라는 것이 이 부류의 경계이고, `set` 접두만 보면 `pin` 같은 이름을 놓친다.
+#
+# **이 게이트가 잡는 것은 "호출부가 0곳" 하나다.** 실제로 여섯 번 일어난 형태가 그것이다.
+# 잡지 못하는 것: 호출부가 **마운트되지 않은 뷰 멤버 안**에 있는 경우(아무도 그리지 않는
+# `private var panel: some View` 안에서 mutator 를 부르면 여기서는 도달 가능해 보인다).
+# 그 형태를 grep 으로 근사해 보았으나 뷰 멤버 200여 개에 오탐이 쏟아져 버렸다 — 시트에 한해
+# 서는 위의 "도달 불가 시트 스윕" 이 그 몫을 하고, 일반 뷰 멤버는 UI 테스트의 몫으로 남는다.
+# 해제 조건: 뷰의 도달 가능성을 검증하는 UI 테스트가 생기면 그때 이 게이트를 그쪽으로 옮긴다.
+echo "▶ 호출부 없는 앨범 mutator 스윕 (세이브에 쓰기만 하는 API)"
+# 화면에서 부르지 않는 것이 **맞는** 것들. 새로 넣을 때는 왜 그런지 여기 적는다.
+CORE_ONLY_MUTATORS=(
+  # 기억 숨기기. `isHidden` 은 결산·연속 카드가 이미 읽지만(`!isHidden` 필터) 켜는 화면이
+  # 없어 값이 늘 false 다 = 그 필터들이 전부 무동작이다. 기억 관리 화면의 공백이라 방문
+  # 기능과 분리해 남긴다 — 화면을 붙이거나 필터와 함께 지우는 것이 해소다.
+  "setHidden"
+  # legacy 방 테마. R8 `roomStyle` 이 대체했고 카드의 `roomTheme` 은 구버전 피어 호환으로만
+  # 남아 있다. 로컬에서 고를 값이 아니므로 호출부가 없는 것이 맞다 — 은퇴시킬 때 와이어
+  # 필드까지 함께 정리한다.
+  "setTheme"
+)
+UNCALLED_MUTATORS=""
+# **주석 줄은 빼고 센다.** 이 저장소의 문서 주석은 API 이름을 끊임없이 인용하므로, 원문 그대로
+# 세면 `/// setPeerAlias(...) 는 …` 한 줄이 그 mutator 를 영원히 "호출됨" 으로 만든다 —
+# 게이트가 잡으려는 바로 그 부류를 산문 한 줄로 통과시키는 셈이다. 줄 끝 주석은 코드를 함께
+# 지울 위험이 있어 건드리지 않는다(줄 전체가 주석인 경우만 지운다).
+SWIFT_CODE=$(find Sources/PokeTokenBar -name '*.swift' -exec cat {} + | sed '/^[[:space:]]*\/\//d')
+while read -r NAME; do
+  [[ -z "$NAME" ]] && continue
+  SKIP=""
+  for ALLOWED in "${CORE_ONLY_MUTATORS[@]}"; do [[ "$NAME" == "$ALLOWED" ]] && SKIP=1 && break; done
+  [[ -n "$SKIP" ]] && continue
+  # 호출부는 파일을 가리지 않는다 — 같은 파일 안에서만 불리는 것(`appendLocalMessage`)도
+  # 도달 가능하다. 선언 줄 수와 등장 횟수가 같으면 아무도 부르지 않는 것이다.
+  CALLS=$(printf '%s\n' "$SWIFT_CODE" | grep -oE "\b${NAME}\(" | wc -l | tr -d ' ')
+  DECLS=$(printf '%s\n' "$SWIFT_CODE" | grep -oE "func ${NAME}\(" | wc -l | tr -d ' ')
+  [[ "$CALLS" == "$DECLS" ]] && UNCALLED_MUTATORS+="$NAME"$'\n'
+done < <(awk '
+  # `static`·`nonisolated`·`override` 가 앞에 붙은 선언도 잡아야 한다. 놓치면 `name`·`priv` 가
+  # **앞 함수의 값으로 남아**, 그 안의 `save()` 가 엉뚱한 이름에 붙는다(잡아야 할 것을 가리거나,
+  # mutator 도 아닌 이름으로 빌드를 깨뜨린다).
+  /func [A-Za-z_]+\(/ {
+    priv = ($0 ~ /(private|fileprivate) func/)
+    match($0, /func [A-Za-z_]+/); name = substr($0, RSTART + 5, RLENGTH - 5)
+  }
+  /save\(\)/ && name != "" && !priv && !seen[name] { print name; seen[name] = 1 }
+' Sources/PokeTokenBar/Core/PokemonChat.swift | sort -u)
+# 범위 한계(의도적, #225): 아직 이 한 파일만 훑는다. 같은 awk 를 `Core/CompanionStore.swift` 에
+# 돌리면 호출부 0곳인 mutator 가 8개 나오고, 그중 둘(`ensureStarterCandidates`·`chooseStarter`)은
+# 죽은 종 선택 경로라 allowlist 가 아니라 삭제 판단이 필요하다. 그 판단이 끝나면 범위를
+# `Core/` 전체로 넓힌다.
+# 이 가드가 **구조적으로 못 보는** 반대쪽도 있다: 짝이 아예 없는 mutator(켜기만 있고 끄기가
+# 없는 것)는 "호출부 0곳" 이 될 수 없다. `docs/reference/defect-log.md` 의 같은 항목을 본다.
+if [[ -n "$UNCALLED_MUTATORS" ]]; then
+  echo "✗ 아무도 부르지 않는 앨범 mutator 가 있습니다 — 그 값은 영원히 기본값이고," \
+       "방문자가 받는 카드에는 빈 필드로 나갑니다. 화면을 붙이거나 API 를 삭제하세요" \
+       "(화면에서 부르지 않는 것이 맞다면 CORE_ONLY_MUTATORS 에 이유와 함께 넣으세요)." >&2
+  echo "$UNCALLED_MUTATORS" >&2
   exit 1
 fi
 echo "✓ 없음"

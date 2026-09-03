@@ -1044,9 +1044,18 @@ final class PokemonMemoryAlbum {
         state.evolutions.append(.init(eventID: eventID, occurredAt: occurredAt, evolvedSpeciesID: evolvedSpeciesID))
         milestoneStates[companionID] = state; save()
     }
+    /// 같은 기억을 다시 누르면 **풀린다**. 편도였을 때는 한 번 고정하면 "대표 기억 없음" 으로
+    /// 돌아갈 길이 없어, 빈 상태 안내 문구가 첫 고정 이후 영원히 도달 불가였다.
+    /// 풀 때 `normalizeMemoryHomeAccess()` 가 LAN 공유도 함께 내린다 — 고정이 풀린 기억이
+    /// 계속 나가면 동의를 넘어선다.
     func pin(_ memory: PokemonMemory) {
         guard entries(for: memory.companionID).contains(where: { $0.id == memory.id }) else { return }
-        pinnedMemoryIDs[memory.companionID] = memory.id; normalizeMemoryHomeAccess(); save()
+        if pinnedMemoryIDs[memory.companionID] == memory.id {
+            pinnedMemoryIDs.removeValue(forKey: memory.companionID)
+        } else {
+            pinnedMemoryIDs[memory.companionID] = memory.id
+        }
+        normalizeMemoryHomeAccess(); save()
     }
     @discardableResult
     func setHidden(_ memory: PokemonMemory, isHidden: Bool) -> Bool {
@@ -1215,7 +1224,21 @@ final class PokemonMemoryAlbum {
         let value = alias.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, value.count <= 20, !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) }) else { return false }
         memoryHomeAccess.peerAliases[peerID] = value
-        if memoryHomeAccess.peerAliases.count > 100 { memoryHomeAccess.peerAliases.remove(at: memoryHomeAccess.peerAliases.startIndex) }
+        // 상한을 넘으면 하나를 버리되 **방금 쓴 것은 아니어야** 한다. `startIndex` 는 해시 순서라
+        // 방금 넣은 항목이 걸릴 수 있고, 그러면 `true` 를 돌려주고도 값이 사라진다.
+        // 누구를 버릴지도 해시 순서면 실행마다 달라 테스트가 동전던지기가 된다 — 나이를 적어 두는
+        // 필드가 없으므로(이 홈의 "새 필드 0개") 결정적인 키 순서로 고른다.
+        if memoryHomeAccess.peerAliases.count > 100,
+           let victim = memoryHomeAccess.peerAliases.keys
+               .filter({ $0 != peerID }).min(by: { $0.uuidString < $1.uuidString }) {
+            memoryHomeAccess.peerAliases.removeValue(forKey: victim)
+        }
+        save(); return true
+    }
+    /// 별명을 **내리는** 짝. `setPeerAlias` 는 빈 값을 거부하므로 이 경로가 없으면 잘못 붙인
+    /// 일촌명은 덮어쓸 수만 있고 없앨 수 없다(대문 문구의 `clearProfileMessage` 와 같은 규칙).
+    @discardableResult func clearPeerAlias(for peerID: UUID) -> Bool {
+        guard memoryHomeAccess.peerAliases.removeValue(forKey: peerID) != nil else { return false }
         save(); return true
     }
     func setRoommates(_ ids: [UUID], validCompanionIDs: Set<UUID>) {
