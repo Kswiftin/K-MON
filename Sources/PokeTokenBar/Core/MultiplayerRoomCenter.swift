@@ -505,13 +505,16 @@ final class MultiplayerRoomCenter {
         guard raidSettlement == nil, contributionsSettled, let tier = raidTier,
               MultiplayerBattle.outcome(for: myID, fighters: combatFighters, mode: .coopBoss) == .win
         else { return }
-        let survivors = combatFighters.filter { $0.team == .red && $0.isAlive }.count
+        // 러너 수는 **양쪽이 같은 배열에서 센다** — `.raidStart` 가 나른 편성이라 호스트와 게스트가
+        // 같은 답을 낸다. 로비(`lobby.runners`)로 세면 게스트는 그 값이 없어 갈라진다.
+        let runners = combatFighters.filter { $0.team == .red }
         let settlement = RaidBoss.settlement(
             tier: tier,
             myDamage: raidContributions[myID] ?? 0,
             totalDamage: raidContributions.values.reduce(0, +),
             turnsRemaining: max(0, RaidBoss.turnCap - raidFinishedRound),
-            survivingRunners: survivors)
+            survivingRunners: runners.filter(\.isAlive).count,
+            runnerCount: runners.count)
         raidSettlement = settlement
         raidPayout = companion.creditRaidReward(settlement.total)
     }

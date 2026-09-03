@@ -345,22 +345,25 @@ final class RaidRoomTests: XCTestCase {
         let store = stubStore(TestClock(), tag: "raid-guest-payout")
         let center = MultiplayerRoomCenter(companion: store)
         let me = runner("나", id: center.myID)
+        // **둘이어야 한다.** 기여도 항은 협동 항이라 1인 판에서는 접힌다(`minimumCoopRunners`) —
+        // 혼자 두면 이 테스트가 재려는 "기여도가 도착해야 지급한다" 대신 1인 규칙만 재게 된다.
+        let mate = runner("동료")
         let boss = todaysBoss()
-        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, boss], tier: .one))
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, mate, boss], tier: .one))
 
         // 아직 안 끝난 라운드는 정산을 열지 않는다.
         var hurtBoss = boss
         hurtBoss.side.hp = RaidTier.one.bossHP / 2
-        center.applyGuestResolvedRound(round: 1, fighters: [me, hurtBoss], events: [])
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, hurtBoss], events: [])
         XCTAssertNil(center.raidSettlement, "판이 안 끝났는데 정산이 열리면 안 된다")
 
         // 같은 라운드가 한 번 더 와도 무시한다 — 안 거르면 라운드가 두 칸 뛰어 남은 턴이 갈린다.
-        center.applyGuestResolvedRound(round: 1, fighters: [me, hurtBoss], events: [])
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, hurtBoss], events: [])
 
         // 호스트가 마지막 라운드를 먼저 보낸다 — 보스가 쓰러졌지만 기여도는 아직 안 왔다.
         var downedBoss = boss
         downedBoss.side.hp = 0
-        center.applyGuestResolvedRound(round: 2, fighters: [me, downedBoss], events: [])
+        center.applyGuestResolvedRound(round: 2, fighters: [me, mate, downedBoss], events: [])
         XCTAssertNil(center.raidSettlement, "기여도가 오기 전에 정산하면 안 된다")
         XCTAssertNil(center.raidPayout)
         XCTAssertFalse(store.raidRewardClaimedToday, "빈 정산으로 하루치 원장을 태우면 안 된다")
@@ -423,6 +426,31 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(center.raidPayout, settlement?.total)
     }
 
+    /// **1인 판은 기본급만 나간다.** 순수 정산에서 한 번 재지만(`RaidTests`) 방 층이 러너 수를
+    /// 실제로 세어 넘기는지는 여기서만 드러난다 — 로비 값으로 세면 게스트에겐 그 값이 없어
+    /// 조용히 0 이 되고, 그러면 협동 판까지 기본급만 받는다.
+    @MainActor
+    func testASoloRaidPaysTheBaseOnly() {
+        let store = stubStore(TestClock(), tag: "raid-solo-base")
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let boss = todaysBoss()
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, boss], tier: .one))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 400])
+
+        let settlement = center.raidSettlement
+        XCTAssertEqual(settlement?.base, RaidTier.one.baseReward, "혼자여도 기본급은 받는다")
+        XCTAssertEqual(settlement?.contribution, 0)
+        XCTAssertEqual(settlement?.turnBonus, 0, "혼자 19턴 남기고 끝내도 협동 항은 안 붙는다")
+        XCTAssertEqual(settlement?.survivorBonus, 0)
+        XCTAssertEqual(center.raidPayout, RaidTier.one.baseReward)
+        XCTAssertEqual(store.state.starPieces, RaidTier.one.baseReward)
+    }
+
     /// 협동전이 아닌 방에 정산 메시지가 오면 무시한다 — 호스트가 보내는 값이라 받는 쪽이 본다.
     @MainActor
     func testARaidSettlementIsIgnoredOutsideACoopRaid() {
@@ -441,12 +469,13 @@ final class RaidRoomTests: XCTestCase {
         let store = stubStore(TestClock(), tag: "raid-guest-turns")
         let center = MultiplayerRoomCenter(companion: store)
         let me = runner("나", id: center.myID)
+        let mate = runner("동료")   // 남은 턴도 협동 항이라 1인 판에서는 0 이다
         let boss = todaysBoss()
-        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, boss], tier: .one))
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, mate, boss], tier: .one))
 
         var downedBoss = boss
         downedBoss.side.hp = 0
-        center.applyGuestResolvedRound(round: 1, fighters: [me, downedBoss], events: [])
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
         center.applyGuestRaidSettlement([me.id: 400])
 
         // 1라운드에 끝냈으면 남은 턴은 19 다. 18 이면 게스트가 한 라운드 늦게 센 것이다.
