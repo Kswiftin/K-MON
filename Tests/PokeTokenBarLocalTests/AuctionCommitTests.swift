@@ -212,8 +212,10 @@ private struct AuctionStubProvider: PokeProviding {
         #expect(center.outgoingOffers.first?.status == .accepted, "게시 취소가 내 제안의 연결을 끊었다")
     }
 
-    /// 답 없는 제안은 시간이 지나면 실패로 끝난다 — 커밋이 시작된 뒤에는 끊지 않는다.
-    @Test func aPendingOfferExpiresButACommittingOneDoesNot() async throws {
+    /// 대기 중인 제안은 신청자가 **직접** 거둬들인다 — 커밋이 시작된 뒤에는 거둬들이지 않는다.
+    /// 자동 시간 제한은 없다(#227): 상대가 앱을 닫으면 연결 실패가 이미 정리하고(`drop`), 둘 다
+    /// 켜져 있는데 게시자가 늦게 답하는 정상적인 경우까지 시간으로 끊으면 안 된다.
+    @Test func aPendingOfferCanBeCancelledButACommittingOneCannot() async throws {
         let store = makeStore()
         await store.hatch(baseID: 1)
         let mine = try #require(store.state.active)
@@ -223,15 +225,16 @@ private struct AuctionStubProvider: PokeProviding {
         let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
-        center.expireOutgoingOffer(offerID)
+        center.cancelOutgoingOffer(offerID)
         #expect(center.outgoingOffers.first?.status == .accepted,
-                "커밋 중인 제안을 시간으로 끊으면 안 된다")
+                "커밋 중인 제안을 취소로 끊으면 안 된다")
 
         let other = PokemonAuctionCenter(companion: store)
         _ = other.apply(to: listing(for: theirs), offering: mine)
-        let pending = try #require(other.outgoingOffers.first?.id)
-        other.expireOutgoingOffer(pending)
-        #expect(other.outgoingOffers.first?.status == .failed)
+        let pending = try #require(other.outgoingOffers.first)
+        #expect(pending.status == .pending)
+        other.cancelOutgoingOffer(pending.id)
+        #expect(other.outgoingOffers.isEmpty, "거둬들인 제안은 실패가 아니라 목록에서 사라진다")
     }
 
     /// 추억은 교환과 함께 건너간다. 경매만 `incomingMemories` 없이 `performTrade` 를 불러

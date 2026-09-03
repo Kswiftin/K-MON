@@ -21,6 +21,16 @@ VERSION="${1:?사용: release.sh <version>  (예: 2.7.0)}"
   exit 1
 }
 
+# 손빌드 기본값(`build-app.sh` 의 DEFAULT_VERSION)은 배포 산출물에 쓰이지 않지만, 안 올리면
+# 손으로 빌드한 앱만 옛 버전으로 뜬다. RELEASE.md 체크리스트에만 있던 탓에 2.24.0 에서 그대로
+# 새어나갔다(태그는 v2.24.0, 파일은 2.23.5) — 사람 기억 대신 여기서 막는다.
+BUILD_DEFAULT=$(sed -n 's/^DEFAULT_VERSION="\(.*\)"$/\1/p' scripts/build-app.sh)
+[[ "$BUILD_DEFAULT" == "$VERSION" ]] || {
+  echo "✗ scripts/build-app.sh 의 DEFAULT_VERSION($BUILD_DEFAULT)이 릴리스 버전($VERSION)과 다릅니다." >&2
+  echo "  DEFAULT_VERSION=\"$VERSION\" 으로 올린 뒤 커밋하세요." >&2
+  exit 1
+}
+
 BRANCH=$(git branch --show-current)
 [[ "$BRANCH" == "main" ]] || {
   echo "✗ main 브랜치에서 실행하세요 (현재: $BRANCH)" >&2

@@ -92,10 +92,6 @@ enum AuctionWireMessage: Codable {
 final class PokemonAuctionCenter {
     nonisolated static let serviceType = "_kmonauct._tcp"
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
-    /// 게시자가 응답하지 않는 제안을 언제까지 붙들고 있을지. 이 시간이 지나면 신청자 쪽에서
-    /// 실패로 끝낸다 — 그러지 않으면 상대가 앱을 닫아도 화면이 영영 "대기 중" 이고, 그 제안이
-    /// 받치고 있는 개체는 다른 제안에 쓸 수 없다.
-    static let offerTimeout: TimeInterval = 90
     /// 동시에 걸 수 있는 제안 수. 포켓몬 제안은 "한 개체는 한 제안" 이라 보유 수가 자연 상한이지만
     /// 별의모래 제안은 그렇지 않다 — 지갑이 크면 작은 제안을 무한히 걸어 연결을 그만큼 연다.
     static let maxOutgoingOffers = 8
@@ -114,8 +110,6 @@ final class PokemonAuctionCenter {
     private var browser: NWBrowser?
     private var connections: [UUID: NWConnection] = [:]
     private var connectionOfferIDs: [UUID: UUID] = [:]
-    /// 제안별 만료 타이머. 하나였을 때는 새 제안이 앞 제안의 타이머를 취소해 버렸다.
-    private var outgoingTimeouts: [UUID: Task<Void, Never>] = [:]
 
     init(companion: CompanionStore) {
         self.companion = companion
@@ -205,7 +199,6 @@ final class PokemonAuctionCenter {
         connections[connectionID] = connection
         outgoingOffers.append(OutgoingAuctionOffer(id: offerID, connectionID: connectionID,
                                                    listing: listing, monID: monID, stardust: stardust))
-        startOutgoingTimeout(offerID)
         attach(connection, id: connectionID)
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, let connection else { return }
@@ -227,6 +220,12 @@ final class PokemonAuctionCenter {
     }
 
     /// 아직 답을 못 받은 제안을 신청자가 거둬들인다. 게시자에게도 알려 잠긴 자리를 풀어 준다.
+    ///
+    /// **자동 시간 제한은 없다**(#227). 90초가 지나면 자동으로 실패시키던 때는, 게시자가 그 안에
+    /// 못 보고 늦게 수락하면 이미 제안이 끝난 뒤라 커밋이 무조건 실패했다. 상대가 진짜로 앱을
+    /// 닫으면 `.failed`/`.cancelled` 연결 상태가 `drop` 을 불러 이미 정리하므로, 시간 제한은
+    /// "둘 다 켜져 있는데 게시자가 느린" 정상적인 경우만 억울하게 끊었다. 제안이 여러 건 서게
+    /// 되면서 "대기 중인 제안 하나가 다음 기회를 막는다" 는 나머지 근거도 사라졌다.
     func cancelOutgoingOffer(_ offerID: UUID) {
         guard let offer = outgoingOffers.first(where: { $0.id == offerID && $0.status == .pending }),
               let connection = connections[offer.connectionID] else { return }
@@ -235,14 +234,13 @@ final class PokemonAuctionCenter {
         clearOutgoingResult(offerID)
     }
 
-    /// 끝난 제안을 화면에서 치운다. 에스크로 환불·연결·타이머까지 이 자리에서 함께 끝낸다.
+    /// 끝난 제안을 화면에서 치운다. 에스크로 환불과 연결까지 이 자리에서 함께 끝낸다.
     func clearOutgoingResult(_ offerID: UUID) {
         // 커밋이 시작된 제안(`.accepted`)은 치우지 않는다. 여기서 에스크로를 돌려주면 게시자는
         // 이미 넘긴 뒤라 별의모래가 복제되고 개체는 아무에게도 가지 않는다.
         guard let index = outgoingOffers.firstIndex(where: { $0.id == offerID }),
               outgoingOffers[index].status != .accepted else { return }
         refundStardustIfNeeded(at: index)
-        outgoingTimeouts.removeValue(forKey: offerID)?.cancel()
         let connectionID = outgoingOffers[index].connectionID
         connections[connectionID]?.cancel(); connections[connectionID] = nil
         outgoingOffers.remove(at: index)
@@ -334,7 +332,6 @@ final class PokemonAuctionCenter {
                                                    "出品と異なるポケモンが届きました。"))
                 return
             }
-            outgoingTimeouts.removeValue(forKey: offerID)?.cancel()
             outgoingOffers[index].received = pokemon
             outgoingOffers[index].status = .accepted
             if outgoingOffers[index].stardust > 0 {
@@ -410,7 +407,6 @@ final class PokemonAuctionCenter {
         case .declined(let offerID):
             if let index = outgoingIndex(offerID, connectionID), outgoingOffers[index].status == .pending {
                 outgoingOffers[index].status = .declined
-                outgoingTimeouts.removeValue(forKey: offerID)?.cancel()
             }
         case .failed(let offerID):
             if let index = offers.firstIndex(where: { $0.id == offerID }), offers[index].status != .completed {
@@ -419,7 +415,6 @@ final class PokemonAuctionCenter {
             if let index = outgoingIndex(offerID, connectionID), outgoingOffers[index].status != .completed {
                 outgoingOffers[index].status = .failed
                 refundStardustIfNeeded(at: index)
-                outgoingTimeouts.removeValue(forKey: offerID)?.cancel()
             }
         }
     }
@@ -465,36 +460,12 @@ final class PokemonAuctionCenter {
     /// 실패 이유는 **제안 자리에** 적는다. 전역 한 줄로 두면 제안이 여럿일 때 어느 제안의
     /// 실패인지 알 수 없고, 잘못 붙은 이유는 없는 것보다 나쁘다.
     private func failOutgoing(_ offerID: UUID, on connection: NWConnection, id: UUID, reason: String) {
-        outgoingTimeouts.removeValue(forKey: offerID)?.cancel()
         if let index = outgoingIndex(offerID, id) {
             outgoingOffers[index].status = .failed
             outgoingOffers[index].error = reason
             refundStardustIfNeeded(at: index)
         }
         send(.failed(offerID: offerID), on: connection, id: id)
-    }
-
-    private func startOutgoingTimeout(_ offerID: UUID) {
-        outgoingTimeouts[offerID]?.cancel()
-        outgoingTimeouts[offerID] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.offerTimeout * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await MainActor.run { self?.expireOutgoingOffer(offerID) }
-        }
-    }
-
-    /// 답 없는 제안을 실패로 끝낸다. `.pending` 일 때만 — 커밋이 시작된 뒤에는 시간이 지나도
-    /// 개체가 이미 움직이는 중이라 여기서 끊으면 안 된다.
-    func expireOutgoingOffer(_ offerID: UUID) {
-        guard let index = outgoingOffers.firstIndex(where: { $0.id == offerID && $0.status == .pending })
-        else { return }
-        outgoingOffers[index].status = .failed
-        outgoingOffers[index].error = companion.l.t("상대가 응답하지 않았습니다.",
-                                                    "The other trainer did not respond.",
-                                                    "相手から応答がありませんでした。")
-        outgoingTimeouts.removeValue(forKey: offerID)?.cancel()
-        let connectionID = outgoingOffers[index].connectionID
-        connections[connectionID]?.cancel(); connections[connectionID] = nil
     }
 
     private func displayName(_ mon: MonState) -> String {
@@ -625,7 +596,6 @@ final class PokemonAuctionCenter {
            outgoingOffers[index].status.isLive {
             outgoingOffers[index].status = .failed
             refundStardustIfNeeded(at: index)
-            outgoingTimeouts.removeValue(forKey: outgoingOffers[index].id)?.cancel()
         }
     }
 }
