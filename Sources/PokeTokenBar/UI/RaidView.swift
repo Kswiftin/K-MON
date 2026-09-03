@@ -62,9 +62,9 @@ struct RaidView: View {
     private var recruiting: some View {
         VStack(alignment: .leading, spacing: 10) {
             todaysBossCard
-            monPicker
             tierPicker
             nearbyRooms
+            monPicker
             if store.raidRewardClaimedToday {
                 Text(l.raidAlreadyPaidToday).font(.caption2).foregroundStyle(.secondary)
             }
@@ -96,17 +96,40 @@ struct RaidView: View {
     /// 스냅샷을 다시 뿌려야 해서 와이어 메시지가 늘어난다(토너먼트가 후보를 방 밖에서 정하는 것과
     /// 같은 자리다).
     ///
+    /// **티어·방 목록 아래에 둔다.** 위에 두면 피커 높이(칩 줄에 기술 미리보기까지)만큼 이웃의 방
+    /// 목록이 화면 밖으로 밀려, 30초짜리 모집 창을 내 피커를 지나쳐 가며 찾게 된다 —
+    /// `GymLeagueView` 가 팀 고르기를 맨 아래 고정한 이유와 같다.
+    ///
     /// 고르는 것은 **선택 사항이라 티어·참가 버튼을 잠그지 않는다**(6마리를 요구하는 토너먼트와
-    /// 다른 점이다). 안 고르면 예전처럼 `battleFacadeMon` 이 나가고, 그 사실은 아래 문구가 말한다.
+    /// 다른 점이다). 안 고르면 예전처럼 `battleFacadeMon` 이 나가고, 그게 누구인지는 아래 문구가
+    /// 이름으로 말한다.
+    ///
+    /// 후보가 하나뿐이면 **통째로 감춘다.** `TeamPicker` 가 그때 아무것도 안 그려서, 남는 것이
+    /// 제목과 문구뿐인 빈 칸이 된다 — 고를 게 없는 화면이 아니라 불러오기에 실패한 화면으로 읽힌다.
+    @ViewBuilder
     private var monPicker: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(l.raidPickMon).font(.caption).bold()
-            TeamPicker(store: store,
-                       selection: Binding(get: { center.raidPickedMonID.map { [$0] } ?? [] },
-                                          set: { center.raidPickedMonID = $0.last }),
-                       limit: 1)
-            Text(l.raidPickMonHint).font(.caption2).foregroundStyle(.secondary)
+        if store.deployableMons.count > 1 {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(l.raidPickMon).font(.caption).bold()
+                TeamPicker(store: store,
+                           selection: Binding(get: { center.raidPickedMonID.map { [$0] } ?? [] },
+                                              set: { center.raidPickedMonID = $0.last }),
+                           limit: 1)
+                    // 방을 여는·들어가는 동안에는 잠근다 — 티어·참가 버튼과 같은 조건이다.
+                    // 그 사이에 바꾸면 컨트롤은 따라 바뀌는데 스냅샷은 이미 떠난 뒤라,
+                    // "방에 들어간 뒤에는 못 바꾼다" 는 약속이 한 발 일찍 깨진다.
+                    .disabled(center.phase != .idle)
+                Text(l.raidPickMonHint(defaultRunnerName)).font(.caption2).foregroundStyle(.secondary)
+            }
         }
+    }
+
+    /// 안 골랐을 때 **실제로** 나가는 개체의 이름 — `buildSnapshot` 이 쓰는 것과 같은 규칙
+    /// (`battleFacadeMon`)이다. "동행" 이라고 못 박으면 동행이 알이거나 체육관을 지키는 동안엔
+    /// 화면이 거짓말을 한다. 하필 그 두 경우가 이 피커를 만든 이유다.
+    private var defaultRunnerName: String {
+        guard let mon = store.battleFacadeMon else { return "" }
+        return RosterOrdering.displayName(mon, language: store.language)
     }
 
     /// 티어는 고를 수 있고 **보스는 못 고른다** — 고르게 두면 모두가 가장 이득인 하나만 판다.

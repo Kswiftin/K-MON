@@ -1239,12 +1239,15 @@ struct L {
         t("\(tier)★ · \(runners)인 권장", "\(tier)★ · \(runners) recommended", "\(tier)★ · \(runners)人推奨")
     }
     var raidPickMon: String { t("들고 갈 포켓몬", "Pokémon you bring", "連れていくポケモン") }
-    /// 안 고른 사용자에게 기본값을 말한다 — 피커가 선택 사항이라 티어 버튼이 잠기지 않고,
-    /// 그러면 아무것도 안 고른 채 방이 열린다. 무엇이 나갔는지는 그때 알면 늦다.
-    var raidPickMonHint: String {
-        t("고르지 않으면 지금 동행이 나갑니다. 방에 들어간 뒤에는 바꿀 수 없어요.",
-          "Without a pick your current companion goes. You can't change it after entering a room.",
-          "選ばないと今の相棒が出ます。部屋に入ったあとは変更できません。")
+    /// 안 고른 사용자에게 **실제로 나가는 개체를 이름으로** 말한다 — 피커가 선택 사항이라 티어
+    /// 버튼이 잠기지 않고, 그러면 아무것도 안 고른 채 방이 열린다. 무엇이 나갔는지는 그때 알면 늦다.
+    ///
+    /// "동행" 으로 못 박으면 안 된다. 동행이 알이거나 체육관을 지키는 중이면 `battleFacadeMon` 은
+    /// 박스 개체를 돌려주는데, 하필 그 두 경우가 이 피커를 만든 이유다.
+    func raidPickMonHint(_ runner: String) -> String {
+        t("고르지 않으면 나가는 개체는 \(runner)입니다. 방에 들어간 뒤에는 바꿀 수 없어요.",
+          "Without a pick, \(runner) goes. You can't change it after entering a room.",
+          "選ばないと\(runner)が出ます。部屋に入ったあとは変更できません。")
     }
     var raidTurnsLeft: String { t("남은 턴", "Turns left", "残りターン") }
     var raidContribution: String { t("기여도", "Contribution", "貢献度") }

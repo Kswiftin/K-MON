@@ -145,7 +145,7 @@ struct TeamPicker: View {
             VStack(alignment: .leading, spacing: 6) {
                 header
                 PokemonSearchField(text: $searchText, l: l)
-                pickedRow
+                pickedRow(all)
                 Divider().opacity(0.5)
                 grid(slice)
                 if let previewed = previewedMonID,
@@ -202,11 +202,16 @@ struct TeamPicker: View {
     /// 그 상태로는 빼려고 원래 타입으로 되돌아가야 했다. 이 줄에서 바로 뺀다.
     ///
     /// 정원만큼 칸을 그린다 — 빈 칸이 남은 자리를 보여주고, 줄 높이도 고정된다.
-    private var pickedRow: some View {
+    ///
+    /// **찾는 곳은 후보 목록이지 `ownedMons` 가 아니다.** 고른 뒤 그 개체가 체육관 방어팀에
+    /// 들어가면 후보에서 빠지고 출전 경로도 다른 개체로 갈아타는데, 소유 목록에는 그대로 있다.
+    /// 거기서 찾으면 이 줄만 사라진 개체를 계속 고른 것처럼 그려, 화면이 가리키는 개체와 실제로
+    /// 나가는 개체가 갈린다(빈 칸으로 두면 "고른 게 없어졌다" 가 그대로 보인다).
+    private func pickedRow(_ candidates: [MonState]) -> some View {
         HStack(spacing: 5) {
             ForEach(0..<limit, id: \.self) { slot in
                 if slot < selection.count,
-                   let mon = store.ownedMons.first(where: { $0.id == selection[slot] }) {
+                   let mon = candidates.first(where: { $0.id == selection[slot] }) {
                     PickedSlot(mon: mon, order: slot + 1,
                                onRemove: { toggle(mon.id) })
                 } else {
