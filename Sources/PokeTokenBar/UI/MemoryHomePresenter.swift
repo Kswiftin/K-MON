@@ -143,6 +143,8 @@ private struct MemoryHomeWindowView: View {
     @State private var profileMessageError: String?
     @State private var nicknameDraft = ""
     @State private var nicknameError: String?
+    /// 방문자 일촌명 초안. 확정(`onSubmit`)할 때만 앨범에 쓴다.
+    @State private var aliasDrafts: [UUID: String] = [:]
     @State private var editingRoom = false
     @State private var selectedDecorID: UUID?
     @State private var selectedFurniture: ItemKind?
@@ -718,6 +720,7 @@ private struct MemoryHomeWindowView: View {
                 MemoryHomeRule(label: l.t("집중", "Focus", "集中"), value: "\(log.completedFocusSessions)")
                 MemoryHomeRule(label: l.t("방문", "Visits", "訪問"), value: "\(album.memoryHomeAccess.visitTotal)")
             }.memoryHomePanel(tint: PokedoroTheme.yellow)
+            visitors(album)
             VStack(alignment: .leading, spacing: 5) {
                 Text(l.t("개인정보", "Privacy", "プライバシー")).font(.headline)
                 Text(l.t("수동 기억과 일촌명은 LAN에 공유되지 않습니다.", "Manual memories and peer aliases are never shared on LAN.", "手動の思い出と一村名はLAN共有されません。")).font(.callout).foregroundStyle(.secondary)
@@ -725,8 +728,73 @@ private struct MemoryHomeWindowView: View {
         }.padding(18) }
     }
 
-    private func records(mon: MonState) -> some View { let album = store.memoryAlbum; let log = album.pokeLog(for: mon.id); return ScrollView { LazyVStack(alignment: .leading, spacing: 12) { VStack(alignment: .leading, spacing: 8) { Text(l.t("기록", "Records", "記録")).font(.title2.bold()); Text(l.t("매일의 기억과 함께한 발자국을 한곳에서 돌아봐요.", "Revisit daily memories and milestones in one place.", "毎日の思い出とふたりのあしあとを一緒に振り返ります。")) .font(.caption).foregroundStyle(.secondary); HStack { Button { recap = true } label: { Label(l.t("계절 결산 보기", "View season recap", "季節のまとめを見る"), systemImage: "calendar") }.buttonStyle(.bordered).controlSize(.small); Button { yearRecap = true } label: { Label(l.t("연말 결산 보기", "View year in review", "一年のまとめを見る"), systemImage: "sparkles.rectangle.stack") }.buttonStyle(.bordered).controlSize(.small).accessibilityHint(l.t("올해 함께한 기록을 한 장으로 봅니다.", "Shows this year's record on a single card.", "今年の記録を一枚にまとめて見ます。")) }; Text(l.t("함께한 \(log.daysTogether)일 · 집중 \(log.completedFocusSessions)회 · 기억 \(log.memoryCount)개", "\(log.daysTogether) days · \(log.completedFocusSessions) focus sessions · \(log.memoryCount) memories", "いっしょに\(log.daysTogether)日・集中\(log.completedFocusSessions)回・記憶\(log.memoryCount)件")) }.memoryHomePanel(tint: PokedoroTheme.red); if !log.milestones.isEmpty { VStack(alignment: .leading, spacing: 6) { Text(l.t("함께한 발자국", "Milestones", "あしあと")).font(.headline); ForEach(log.milestones) { Label(MemoryHomeCardStyle.title($0, l), systemImage: MemoryHomeCardStyle.icon($0)) } }.memoryHomePanel(tint: PokedoroTheme.yellow) }; ForEach(album.diary(for: mon.id)) { day in VStack(alignment: .leading, spacing: 5) { HStack { Text(day.date.formatted(date: .abbreviated, time: .omitted)).font(.headline); if let mood = day.mood { Text(MemoryHomeMoodStyle.emoji(mood)) } }; ForEach(day.memories) { Text("· \($0.body)").font(.caption) } }.memoryHomePanel() } } }.padding(14) }
-    private func photoTab(mon: MonState) -> some View { let album = store.memoryAlbum; return ScrollView { VStack(alignment: .leading, spacing: 16) { HStack { VStack(alignment: .leading, spacing: 4) { Text(l.t("포토부스", "Photo booth", "フォトブース")).font(.title2.bold()); Text(l.t("트레이너와 동행의 구도·배경·프레임을 골라 전시해 보세요.", "Choose a trainer, companion, composition and background, then exhibit the shot.", "トレーナーと相棒の構図・背景・フレームを選んで展示しましょう。")) .font(.caption).foregroundStyle(.secondary) }; Spacer(); Button(l.t("사진 만들기", "Make photo", "写真を作る")) { photo = true }.buttonStyle(.borderedProminent) }.memoryHomePanel(tint: PokedoroTheme.yellow); if album.memoryHomeAccess.photos.isEmpty { ContentUnavailableView(l.t("첫 사진을 전시해 보세요", "Exhibit your first photo", "最初の写真を展示しましょう"), systemImage: "photo.on.rectangle") } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) { ForEach(album.memoryHomeAccess.photos) { shot in VStack(alignment: .leading, spacing: 6) { SpriteView(speciesID: shot.speciesID, size: 76, shiny: shot.isShiny).frame(maxWidth: .infinity); Label(shot.caption.isEmpty ? "POKÉDORO" : shot.caption, systemImage: "person.2.fill").font(.caption).lineLimit(2); Text(shot.createdAt.formatted(date: .abbreviated, time: .omitted)).font(.caption2).foregroundStyle(.secondary); Button(role: .destructive) { album.deletePhoto(id: shot.id) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).accessibilityLabel(l.t("사진 삭제", "Delete photo", "写真を削除")) }.memoryHomePanel(tint: PokedoroTheme.mint) } } } }.padding(18) } }
+    /// 내 홈에 다녀간 사람들. `recentRequesters` 도 `blockedPeerIDs` 도 `peerAliases` 도 릴리스
+    /// 내내 저장돼 왔지만 이 패널이 생기기 전까지 **어느 화면도 읽지 않았다** — TODAY/TOTAL 숫자만
+    /// 오르고 누가 왔는지 알 수도, 차단할 수도 없었다.
+    ///
+    /// 별명은 이 Mac 에만 남는다(방명록과 같은 취급). 표시 이름은 남이 지은 문자열이지만 저장
+    /// 시점에 `clean(_:limit: 40)` 을 통과한 값이라, 여기서는 줄 수만 제한한다.
+    @ViewBuilder private func visitors(_ album: PokemonMemoryAlbum) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(l.t("다녀간 방문자", "Recent visitors", "訪ねてきた人"), systemImage: "person.2.badge.key.fill").font(.headline)
+            if album.memoryHomeAccess.recentRequesters.isEmpty {
+                Text(l.t("아직 방문자가 없어요. 홈을 LAN에 공개하면 이웃이 찾아올 수 있어요.",
+                         "No visitors yet. Open your home on the LAN so neighbours can drop by.",
+                         "まだ訪問者がいません。ホームをLAN公開すると近くの人が来られます。"))
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(album.memoryHomeAccess.recentRequesters) { visitor in
+                    let blocked = album.memoryHomeAccess.blockedPeerIDs.contains(visitor.peerID)
+                    HStack(spacing: 8) {
+                        Text(album.memoryHomeAccess.peerAliases[visitor.peerID] ?? visitor.displayName)
+                            .font(.callout.weight(.semibold)).lineLimit(1)
+                        // 확정할 때만 저장한다 — 키 입력마다 `setPeerAlias` 를 부르면 글자 하나에
+                        // 세이브가 한 번씩 나간다(대문 문구·닉네임이 같은 규칙을 쓴다).
+                        TextField(l.t("일촌명", "Alias", "一村名"), text: Binding(
+                            get: { aliasDrafts[visitor.peerID] ?? album.memoryHomeAccess.peerAliases[visitor.peerID] ?? "" },
+                            set: { aliasDrafts[visitor.peerID] = $0 }))
+                            .textFieldStyle(.roundedBorder).frame(width: 120)
+                            .onSubmit { _ = album.setPeerAlias(aliasDrafts[visitor.peerID] ?? "", for: visitor.peerID) }
+                        Spacer()
+                        Button(blocked ? l.t("차단 해제", "Unblock", "解除") : l.t("차단", "Block", "ブロック")) {
+                            album.setMemoryHomeBlocked(visitor.peerID, blocked: !blocked)
+                        }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .accessibilityHint(l.t("차단하면 이 방문자에게 카드를 보내지 않습니다.",
+                                               "A blocked visitor no longer receives your card.",
+                                               "ブロックすると相手にカードを送りません。"))
+                    }
+                    .foregroundStyle(blocked ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                }
+            }
+        }.memoryHomePanel(tint: PokedoroTheme.red)
+    }
+
+    private func records(mon: MonState) -> some View { let album = store.memoryAlbum; let log = album.pokeLog(for: mon.id); return ScrollView { LazyVStack(alignment: .leading, spacing: 12) { VStack(alignment: .leading, spacing: 8) { Text(l.t("기록", "Records", "記録")).font(.title2.bold()); Text(l.t("매일의 기억과 함께한 발자국을 한곳에서 돌아봐요.", "Revisit daily memories and milestones in one place.", "毎日の思い出とふたりのあしあとを一緒に振り返ります。")) .font(.caption).foregroundStyle(.secondary); HStack { Button { recap = true } label: { Label(l.t("계절 결산 보기", "View season recap", "季節のまとめを見る"), systemImage: "calendar") }.buttonStyle(.bordered).controlSize(.small); Button { yearRecap = true } label: { Label(l.t("연말 결산 보기", "View year in review", "一年のまとめを見る"), systemImage: "sparkles.rectangle.stack") }.buttonStyle(.bordered).controlSize(.small).accessibilityHint(l.t("올해 함께한 기록을 한 장으로 봅니다.", "Shows this year's record on a single card.", "今年の記録を一枚にまとめて見ます。")) }; Text(l.t("함께한 \(log.daysTogether)일 · 집중 \(log.completedFocusSessions)회 · 기억 \(log.memoryCount)개", "\(log.daysTogether) days · \(log.completedFocusSessions) focus sessions · \(log.memoryCount) memories", "いっしょに\(log.daysTogether)日・集中\(log.completedFocusSessions)回・記憶\(log.memoryCount)件")) }.memoryHomePanel(tint: PokedoroTheme.red); if !log.milestones.isEmpty { VStack(alignment: .leading, spacing: 6) { Text(l.t("함께한 발자국", "Milestones", "あしあと")).font(.headline); ForEach(log.milestones) { Label(MemoryHomeCardStyle.title($0, l), systemImage: MemoryHomeCardStyle.icon($0)) } }.memoryHomePanel(tint: PokedoroTheme.yellow) }; featuredMemory(mon: mon, album: album); ForEach(album.diary(for: mon.id)) { day in VStack(alignment: .leading, spacing: 5) { HStack { Text(day.date.formatted(date: .abbreviated, time: .omitted)).font(.headline); if let mood = day.mood { Text(MemoryHomeMoodStyle.emoji(mood)) } }; ForEach(day.memories) { memory in HStack(alignment: .top, spacing: 6) { Text("· \(memory.body)").font(.caption); Spacer(); Button { album.pin(memory) } label: { Image(systemName: album.pinned(for: mon.id)?.id == memory.id ? "pin.fill" : "pin") }.buttonStyle(.borderless).accessibilityLabel(l.t("대표 기억으로 고정", "Pin as featured memory", "代表の思い出に固定")) } } }.memoryHomePanel() } } }.padding(14) }
+
+    /// 대표 기억과 그 LAN 공유. `pin`·`setSharedPinnedMemory`·`clearSharedPinnedMemory` 셋 다
+    /// 호출부가 없어서, 카드의 `sharedMemoryBody` 는 릴리스 내내 **영구 nil** 이었다.
+    ///
+    /// 공유는 고정과 **별개의 동의**다 — 고정은 내 대문 장식이고, 공유는 남에게 보내는 일이다
+    /// (대문 문구가 `sharesProfileMessage` 를 따로 두는 것과 같은 규칙).
+    @ViewBuilder private func featuredMemory(mon: MonState, album: PokemonMemoryAlbum) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(l.t("대표 기억", "Featured memory", "代表の思い出"), systemImage: "pin.fill").font(.headline)
+            if let pin = album.pinned(for: mon.id) {
+                Text(pin.body).font(.callout).fixedSize(horizontal: false, vertical: true)
+                Toggle(l.t("방문자에게 보이기", "Show to visitors", "訪問者に見せる"), isOn: Binding(
+                    get: { album.sharedPinnedMemory(for: mon.id) != nil },
+                    set: { $0 ? album.setSharedPinnedMemory(pin, activeCompanionID: mon.id) : album.clearSharedPinnedMemory() }))
+                    .accessibilityHint(l.t("켜면 같은 LAN의 방문자가 이 기억을 봅니다.",
+                                           "When on, visitors on this LAN can read this memory.",
+                                           "オンにすると同じLANの訪問者がこの思い出を読めます。"))
+            } else {
+                Text(l.t("아래 기억의 핀을 눌러 대표로 고정해 보세요.", "Pin a memory below to feature it.", "下の思い出のピンを押して代表に固定しましょう。"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }.memoryHomePanel(tint: PokedoroTheme.blue)
+    }
+    private func photoTab(mon: MonState) -> some View { let album = store.memoryAlbum; return ScrollView { VStack(alignment: .leading, spacing: 16) { HStack { VStack(alignment: .leading, spacing: 4) { Text(l.t("포토부스", "Photo booth", "フォトブース")).font(.title2.bold()); Text(l.t("트레이너와 동행의 구도·배경·프레임을 골라 전시해 보세요.", "Choose a trainer, companion, composition and background, then exhibit the shot.", "トレーナーと相棒の構図・背景・フレームを選んで展示しましょう。")) .font(.caption).foregroundStyle(.secondary) }; Spacer(); Button(l.t("사진 만들기", "Make photo", "写真を作る")) { photo = true }.buttonStyle(.borderedProminent) }.memoryHomePanel(tint: PokedoroTheme.yellow); if album.memoryHomeAccess.photos.isEmpty { ContentUnavailableView(l.t("첫 사진을 전시해 보세요", "Exhibit your first photo", "最初の写真を展示しましょう"), systemImage: "photo.on.rectangle") } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) { ForEach(album.memoryHomeAccess.photos) { shot in VStack(alignment: .leading, spacing: 6) { SpriteView(speciesID: shot.speciesID, size: 76, shiny: shot.isShiny).frame(maxWidth: .infinity); Label(shot.caption.isEmpty ? "POKÉDORO" : shot.caption, systemImage: "person.2.fill").font(.caption).lineLimit(2); Text(shot.createdAt.formatted(date: .abbreviated, time: .omitted)).font(.caption2).foregroundStyle(.secondary); HStack { let featured = album.memoryHomeAccess.featuredPhotoID == shot.id; Button { album.setFeaturedPhoto(id: featured ? nil : shot.id) } label: { Label(featured ? l.t("대표 사진", "Featured", "代表") : l.t("대표로", "Feature", "代表に"), systemImage: featured ? "star.fill" : "star") }.buttonStyle(.borderless).controlSize(.small).accessibilityHint(l.t("대표 사진은 방문자의 쇼룸에 걸립니다.", "The featured photo hangs in the showroom visitors see.", "代表写真は訪問者のショールームに飾られます。")); Spacer(); Button(role: .destructive) { album.deletePhoto(id: shot.id) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).accessibilityLabel(l.t("사진 삭제", "Delete photo", "写真を削除")) } }.memoryHomePanel(tint: PokedoroTheme.mint) } } } }.padding(18) } }
     /// §13 방명록. 탭을 열 때 동행이 하루 한 번, 약 4일에 1번 흔적을 남긴다 — 판정은
     /// `MemoryHomeCompanionTrace` 의 dayKey 결정론이라 여닫아도 글이 늘지 않는다.
     private func guestbook(mon: MonState) -> some View { let album = store.memoryAlbum; return ScrollView { VStack(alignment: .leading, spacing: 14) { VStack(alignment: .leading, spacing: 8) { Label(l.t("방명록", "Guestbook", "ゲストブック"), systemImage: "text.bubble.fill").font(.title3.weight(.bold)); Text(l.t("내가 남긴 한마디를 모아 둬요. 이 글은 LAN에 공유되지 않습니다.", "Keep your notes here. They stay on this device.", "自分のひとことを残します。LANには共有されません。")) .font(.caption).foregroundStyle(.secondary); TextField(l.t("오늘의 한마디", "Leave a note", "今日のひとこと"), text: $guestbookDraft, axis: .vertical).lineLimit(1...3).textFieldStyle(.roundedBorder); Button(l.t("내 이름으로 남기기", "Sign as me", "自分の名前で残す")) { if album.addGuestbookEntry(author: album.memoryHomePublicNickname, body: guestbookDraft, authorKind: .trainer) { guestbookDraft = "" } }.buttonStyle(.borderedProminent).controlSize(.small).disabled(guestbookDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || guestbookDraft.count > MemoryHomeAccessSettings.guestbookBodyLimit) }.memoryHomePanel(tint: PokedoroTheme.yellow); if album.memoryHomeAccess.guestbookEntries.isEmpty { ContentUnavailableView(l.t("첫 방명록을 남겨 보세요", "Leave the first note", "最初のひとことを残しましょう"), systemImage: "text.bubble") } else { ForEach(album.memoryHomeAccess.guestbookEntries) { entry in VStack(alignment: .leading, spacing: 5) { HStack { Label(entry.author, systemImage: entry.authorKind == .companion ? "pawprint.fill" : "person.fill").font(.subheadline.weight(.semibold)); Spacer(); Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary); Button { album.deleteGuestbookEntry(id: entry.id) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.borderless).accessibilityLabel(l.t("방명록 삭제", "Delete guestbook note", "メモを削除")) }; Text(entry.body).font(.callout).fixedSize(horizontal: false, vertical: true) }.memoryHomePanel(tint: entry.authorKind == .companion ? PokedoroTheme.mint : PokedoroTheme.blue) } } }.padding(18) }.onAppear { _ = store.memoryAlbum.recordCompanionTraceIfNeeded(companionName: store.chatProfile(for: mon).displayName, l: l) } }
