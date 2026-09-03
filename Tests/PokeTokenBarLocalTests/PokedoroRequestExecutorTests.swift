@@ -195,6 +195,37 @@ struct PokedoroRequestExecutorTests {
         #expect(store.activeAdventure == nil)
     }
 
+    // MARK: 왕복
+
+    /// 세 조각(우편함·실행 판정·실행기)을 **앱이 배선하는 그 순서 그대로** 밟는다. 조각별
+    /// 테스트는 각자 통과하면서도 배선이 어긋날 수 있다 — 앱 루트에는 테스트가 안 닿으므로
+    /// 그 순서를 지키는 자리는 여기뿐이다.
+    @Test func testTheAppSideRoundTripFromRequestFileToReplyFile() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+        let mailbox = PokedoroMailbox(directory: directory)
+        let timer = FocusTimer()
+
+        // 터미널이 하는 일.
+        let sent = request(.start, minutes: 50, at: clock.now)
+        try mailbox.send(sent)
+
+        // 앱이 1초 틱에서 하는 일.
+        let pending = try #require(mailbox.pendingRequest())
+        #expect(PokedoroRequestBus.shouldExecute(pending, now: clock.now, lastExecutedID: nil))
+        try mailbox.post(PokedoroRequestExecutor(timer: timer, companion: store).execute(pending))
+
+        // 터미널이 받는 것.
+        let reply = try #require(mailbox.reply(to: sent.id))
+        #expect(reply.succeeded)
+        #expect(store.activeAdventure != nil)
+
+        // 같은 요청이 다음 틱에서 다시 실행되면 안 된다 — 파일은 그대로 남아 있다.
+        #expect(!PokedoroRequestBus.shouldExecute(pending, now: clock.now, lastExecutedID: pending.id))
+    }
+
     @Test func testStopIsRefusedWhenNothingIsRunning() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

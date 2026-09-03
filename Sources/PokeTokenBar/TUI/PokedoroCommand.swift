@@ -120,17 +120,25 @@ enum PokedoroCommandParser {
 
     private static let lengths = PokemonChatTool.focusMinutes.map(String.init).joined(separator: "|")
 
+    /// 왼쪽 칸을 **손으로 맞추지 않는다** — `start [25|50|90]` 은 길이 목록에서 나오므로 목록이
+    /// 바뀌면 손으로 맞춘 공백은 그 자리에서 어긋난다(실제로 2칸 어긋난 채로 나갔다).
+    private static let commandColumn = 21
+
+    private static let rows: [(String, String)] = [
+        ("status [--oneline]", "파트너·모험·잔액. --oneline 은 상태줄용 한 줄"),
+        ("party", "보유 포켓몬 목록"),
+        ("dex", "도감"),
+        ("watch", "전체 화면 실시간 보기"),
+        ("start [\(lengths)]", "집중 세션 시작 (생략하면 \(PokemonChatTool.focusMinutes[0])분)"),
+        ("claim", "끝난 모험의 보상 받기"),
+        ("stop", "집중 세션 끝내기"),
+        ("help", "이 도움말"),
+    ]
+
     static let usage = """
     pokedoro — Pokédoro 를 터미널에서 본다.
 
-      status [--oneline]   파트너·모험·잔액. --oneline 은 상태줄용 한 줄
-      party                보유 포켓몬 목록
-      dex                  도감
-      watch                전체 화면 실시간 보기
-      start [\(lengths)]   집중 세션 시작 (생략하면 \(PokemonChatTool.focusMinutes[0])분)
-      claim                끝난 모험의 보상 받기
-      stop                 집중 세션 끝내기
-      help                 이 도움말
+    \(rows.map { "  " + TUIText.pad($0.0, to: commandColumn) + $0.1 }.joined(separator: "\n"))
 
     조회는 세이브를 읽기만 한다. 집중 세션 세 동작은 **메뉴바 앱에 요청을 보내고** 앱이 실행한다
     — 세이브에 쓰는 프로세스를 하나로 두기 위해서다. 앱이 꺼져 있으면 요청은 실행되지 않는다.
