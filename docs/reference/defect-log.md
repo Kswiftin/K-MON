@@ -3753,3 +3753,49 @@ read_when:
 - **일반화.** 서명·해시·멱등 키에 **파일(또는 메시지) 밖에서 조회하는 값**을 넣을 때는, 그 조회가
   실패했을 때 폴백으로 메우지 말고 **판정을 포기**한다. 폴백은 "다른 값"이지 "같은 값"이 아니다.
   (`SaveTransfer.swift` · `DeviceID.swift`, 2026-09-02.)
+
+## 순수 로직 테스트가 **도달 불가 화면**에 false confidence 를 준다
+
+- **증상**: 2~4인 LAN 방 배틀이 세 주 동안 진입 불가였다(#209). 방을 만드는 버튼(`multiplayerRooms`),
+  로비(`multiplayerLobby`), 교전 격자(`multiplayerArena`)가 전부 선언만 되고 `body` 어디에도 안
+  붙어 있었다. 그동안 `RaidRoomTests` 의 `RecentBattleLabel.text(mode: .freeForAll/.teams)` 는
+  계속 초록이었다 — **그 라벨을 그리는 화면을 아무도 열 수 없는데** 라벨 판정만 검증했기 때문이다.
+- **왜 아무도 못 걸렀나**: 컴파일러는 안 쓰는 computed property 에 warning 을 내지 않는다.
+  라인 커버리지도 못 본다(뷰 코드가 애초에 로직 코어 밖이고, 순수 함수는 테스트가 직접 부른다).
+  `test-gate.sh` 의 도달성 스윕은 `MemoryHome*Sheet` 만, `AdventureClaimTests` 의 것은
+  `struct X: View` 만 봤다 — **화면 안의 조각**(`private var x: some View`)은 어느 쪽도 안 봤다.
+- **처방(기계)**: `AdventureClaimTests.testEveryDeclaredViewMemberHasACallSite` 가 UI 파일의
+  **private** `some View` 멤버가 선언 줄 밖에서 한 번이라도 불리는지 본다. private 로 좁힌 것이
+  핵심이다 — 파일 밖에서 쓰이는 멤버(`PokedoroTheme.pageBackground`, `View.pokedoroCard`)까지 넣으면
+  허용 목록이 필요해지고, 허용 목록은 곧 진짜 고아도 덮는다.
+  **천장**: 한 단계만 본다. 죽은 하위 트리는 뿌리만 잡히고(뿌리를 치우면 나머지가 다음 실행에
+  드러난다), 서로만 참조하는 죽은 순환은 못 잡는다.
+- **처방(사람)**: 순수 판정을 뷰 밖으로 빼서 테스트를 붙일 때, **그 판정을 부르는 화면이 실제로
+  열리는지**를 같은 PR 에서 한 번 확인한다. 판정 테스트의 초록은 도달성의 증거가 아니다.
+- (#209, 2026-09-03. 같이 드러난 두 번째 고아: `BattleView.snapshotCard` → `typeChip`.)
+
+## 방 목록을 **접두만** 보고 거르면, 내 방이 내 목록에 뜬다
+
+- **증상**: 포켓애슬론·퀴즈·토너먼트 브라우저가 `name.hasPrefix("RUN")` 처럼 접두만 봤다. 내가 연
+  방도 그 접두를 달고 광고되므로 **내 목록에 내 방이 뜬다.** 누르면 `join` 이 `guard phase == .idle`
+  에서 조용히 거절돼, 사용자에게는 눌러도 아무 일이 없는 버튼으로 보인다. 체육관·레이드만
+  `#식별자` 로 자기를 걸렀다.
+- **되살린 방 배틀은 더 나빴다**: 목록에 필터가 아예 없어 `ForEach(center.multiplayer.rooms)` 가
+  GYM·TOUR·RAID·RUN·QUIZ 방을 전부 배틀 방으로 그렸다 — 눌렀으면 고른 적 없는 판에 붙었다.
+- **처방**: 접두 표와 자기 방 판정을 `LANRoomList` 한 곳에 둔다. `MultiplayerRoomCenter.startHosting`
+  이 광고에 붙이는 접두와 목록이 거르는 접두가 **같은 함수에서 나온다** — 두 곳에 적으면 한쪽만
+  바뀌어 만든 방이 어느 목록에도 안 뜬다. 판정은 `name`(잘린 값)이 아니라 `serviceName`(원문)으로
+  한다. 구분자(`· `)까지 비교한다: 접두만 보면 `BATTLE` 이 `BATTLEROYALE` 에 걸린다.
+- (#209, 2026-09-03.)
+
+## 화면 갈림길을 **부정 조건**으로 쓰면, 나중에 생긴 형제가 전부 그리로 샌다
+
+- **증상**: 친구 탭이 `phase != .idle && !isGymRoom` 이면 토너먼트 화면을 그렸다. 방을 쓰는 활동이
+  둘일 때는 맞았지만 여섯이 된 뒤로는 **레이드·방 배틀 방까지 토너먼트가 삼켰다** — 화면은 토너먼트
+  브라우저인데 뒤에서는 다른 판이 돈다.
+- **왜 테스트가 못 걸렀나**: 가드가 소스에서 `"!battleCenter.multiplayer.isGymRoom"` 문자열을 찾는
+  형태였다. 그 문자열이 있으면 통과하므로, **새 활동이 추가돼도 가드는 계속 초록**이다.
+- **처방**: 갈림길을 `RoomActivity` 전 케이스를 나열하는 순수 함수(`FriendView.destination(forRoom:)`)로
+  바꾸고, 가드도 문자열 대신 그 함수를 직접 본다. 활동이 늘면 `switch` 가 컴파일 에러로 알려 준다 —
+  부정 조건은 아무 말도 안 해 준다.
+- (#209, 2026-09-03.)
