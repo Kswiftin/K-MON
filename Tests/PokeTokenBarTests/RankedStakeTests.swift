@@ -13,8 +13,7 @@ final class RankedStakeTests: XCTestCase {
     private func makeStore(at url: URL? = nil) -> CompanionStore {
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []),
                            rarity: .common, names: [:])
-        let fileURL = url ?? FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-rank-\(UUID().uuidString).json")
+        let fileURL = url ?? storeStateURL("rank")
         return CompanionStore(provider: StubProvider(value: line), clock: { Date() },
                               fileURL: fileURL, rng: SeededRNG(seed: 7))
     }
@@ -22,8 +21,7 @@ final class RankedStakeTests: XCTestCase {
     /// 세이브 파일 경로 — "앱을 껐다 켠" 상황은 같은 경로로 스토어를 다시 여는 것이다.
     /// 경로는 테스트가 들고 있다(프로덕션에 테스트용 접근자를 만들지 않는다).
     private func tempSaveURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-rank-\(UUID().uuidString).json")
+        storeStateURL("rank")
     }
 
     /// 내 티어가 상대보다 높아야 패배가 LP 를 깎는다(`BattleRank.apply` 의 조건).

@@ -8,8 +8,7 @@ import XCTest
 @MainActor
 final class MemoryHomeDiaryTests: XCTestCase {
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("memory-home-diary-\(UUID().uuidString).json")
+        storeStateURL("memory-home-diary")
     }
 
     /// 고정 타임스탬프가 아니라 **로컬 달력의 자정**에서 출발한다. `dayKey` 가 로컬 달력 기준이라

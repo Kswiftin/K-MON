@@ -9,9 +9,6 @@ private func pline(base: Int, rarity: Rarity) -> EvoLine {
     EvoLine(baseID: base, tree: pnode(base, [pnode(base + 1, [pnode(base + 2)])]), rarity: rarity, names: [:])
 }
 private let pNow = Date(timeIntervalSince1970: 1_700_000_000)
-private func tmpURL() -> URL {
-    FileManager.default.temporaryDirectory.appendingPathComponent("poke-perf-\(UUID().uuidString).json")
-}
 
 // MARK: 순수 계산 핫패스
 
@@ -40,7 +37,7 @@ final class StorePerformanceTests: XCTestCase {
                             caughtAt: pNow.addingTimeInterval(Double(i)))
         }
         let dexJSON = String(data: try JSONEncoder().encode(entries), encoding: .utf8)!
-        let url = tmpURL()
+        let url = storeStateURL("perf")
         try Data("{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"dex\":\(dexJSON),\"language\":\"ko\"}".utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: pline(base: 1, rarity: .common)),
                               clock: { pNow }, fileURL: url, rng: SeededRNG(seed: 1))
@@ -72,7 +69,7 @@ final class StoreTerminationTests: XCTestCase {
     func testHugeDeltaGraduatesOnceAndTerminates() async {
         // 거대한 단일 델타가 무한 루프 없이 라인을 통과해 정확히 1회 졸업하는지 (guardCount 캡 보호).
         let s = CompanionStore(provider: StubProvider(value: pline(base: 1, rarity: .common)),
-                               clock: { pNow }, fileURL: tmpURL(), rng: SeededRNG(seed: 1))
+                               clock: { pNow }, fileURL: storeStateURL("perf"), rng: SeededRNG(seed: 1))
         await s.hatch(baseID: 1)
         s.applyUsage(Int(PokemonBalance.graduationTotal(.common)) * 10)   // 졸업 총량의 10배
         XCTAssertTrue(s.graduateCompanion())    // 졸업은 사용자 액션(#19)
@@ -85,7 +82,7 @@ final class StoreTerminationTests: XCTestCase {
     func testRepeatedGraduationGrowsDexLinearly() async {
         // 무진화 라인을 반복 졸업 — dex 가 선형으로 증가하고 상태가 매번 정합한지.
         let provider = StubProvider(value: pline(base: 1, rarity: .common))
-        let s = CompanionStore(provider: provider, clock: { pNow }, fileURL: tmpURL(), rng: SeededRNG(seed: 9))
+        let s = CompanionStore(provider: provider, clock: { pNow }, fileURL: storeStateURL("perf"), rng: SeededRNG(seed: 9))
         for n in 1...20 {
             await s.hatch(baseID: 1)
             s.applyUsage(Int(PokemonBalance.graduationTotal(.common)) * 10)

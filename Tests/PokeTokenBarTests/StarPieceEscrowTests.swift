@@ -18,8 +18,7 @@ final class StarPieceEscrowTests: XCTestCase {
     /// 초기화돼(`CompanionStore.load` 의 배포 강제 초기화) 잔액이 0 이 되고, 테스트는 아무것도
     /// 검증하지 않은 채 통과할 수 있다.
     private func seed(starPieces: Int) -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("escrow-\(UUID().uuidString).json")
+        let url = storeStateURL("escrow")
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":\(SaveTransfer.forcedResetVersion),"
             + "\"installBaselineSet\":true,\"starPieces\":\(starPieces),"
             + "\"lastDate\":\"d\",\"dex\":[],\"collectedFinals\":[]}"

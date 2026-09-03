@@ -47,8 +47,7 @@ private func freshSleepPowder() -> MoveSpec {
 final class BattleMoveDetailTests: XCTestCase {
 
     private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-move-detail-\(UUID().uuidString).json")
+        storeStateURL("move-detail")
     }
 
     private func makeStore(_ provider: MoveDetailProvider) -> CompanionStore {

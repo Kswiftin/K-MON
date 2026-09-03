@@ -11,8 +11,7 @@ final class WaveRunAchievementTests: XCTestCase {
     private func makeStore() -> CompanionStore {
         let line = EvoLine(baseID: 25, tree: EvoNode(speciesID: 25, children: []), rarity: .common,
                            names: [25: ["ko": "피카츄", "en": "Pikachu"]])
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-wave-run-\(UUID().uuidString).json")
+        let url = storeStateURL("wave-run")
         return CompanionStore(provider: StubProvider(value: line),
                               clock: { Date(timeIntervalSince1970: 1_000) },
                               fileURL: url, rng: SeededRNG(seed: 7))

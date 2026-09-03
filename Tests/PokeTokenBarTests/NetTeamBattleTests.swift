@@ -148,7 +148,7 @@ final class NetTeamBattleTests: XCTestCase {
         let scheduler = ManualChallengeTimeoutScheduler()
         let store = CompanionStore(provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []), rarity: .common, names: [:])),
                                    clock: { Date() },
-                                   fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                   fileURL: storeStateURL("net-team"),
                                    rng: SeededRNG(seed: 1))
         let center = BattleCenter(companion: store, challengeTimeoutScheduler: scheduler)
         center.phase = .incoming(peer: "Misty")
@@ -169,7 +169,7 @@ final class NetTeamBattleTests: XCTestCase {
         let scheduler = ManualChallengeTimeoutScheduler()
         let store = CompanionStore(provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []), rarity: .common, names: [:])),
                                    clock: { Date() },
-                                   fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                   fileURL: storeStateURL("net-team"),
                                    rng: SeededRNG(seed: 1))
         let center = BattleCenter(companion: store, challengeTimeoutScheduler: scheduler)
         center.phase = .challenging(peer: "Brock")

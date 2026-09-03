@@ -14,8 +14,7 @@ final class EggBattleGateTests: XCTestCase {
 
     private func store() -> CompanionStore {
         CompanionStore(provider: StubProvider(value: line), clock: { Date() },
-                       fileURL: FileManager.default.temporaryDirectory
-                           .appendingPathComponent("poke-egg-\(UUID().uuidString).json"),
+                       fileURL: storeStateURL("egg"),
                        rng: SeededRNG(seed: 7))
     }
 

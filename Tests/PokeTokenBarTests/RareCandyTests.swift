@@ -45,7 +45,7 @@ final class InventoryDecodeTests: XCTestCase {
 @MainActor
 final class RareCandyStoreTests: XCTestCase {
     private func store(_ line: EvoLine, seed: UInt64 = 7) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rc-\(UUID().uuidString).json")
+        let url = storeStateURL("rc")
         return CompanionStore(provider: StubProvider(value: line), clock: { rcNow }, fileURL: url, rng: SeededRNG(seed: seed))
     }
 
@@ -209,7 +209,7 @@ final class RareCandyStoreTests: XCTestCase {
     /// [회귀 가드] 활성 포켓몬이 있어도 라인 미로딩(재시작 직후·오프라인)이면 사용 불가 —
     /// 진화 없이 XP만 적립되는 것 방지. 재고가 있어도 소모되지 않는다.
     func testCannotUseWhileLineUnloaded() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rc-unloaded-\(UUID().uuidString).json")
+        let url = storeStateURL("rc-unloaded")
         // 활성 포켓몬 + 사탕 1 을 저장 → RCLineThrows 로 로드하면 currentLine 이 nil.
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":3},"inventory":{"rareCandy":1},"dex":[],"collectedFinals":[]}"#
         try? json.data(using: .utf8)!.write(to: url)
@@ -275,7 +275,7 @@ final class RareCandyStoreTests: XCTestCase {
 @MainActor
 final class DailyCandyTests: XCTestCase {
     private func store(_ clock: TestClock) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("daily-\(UUID().uuidString).json")
+        let url = storeStateURL("daily")
         return CompanionStore(provider: StubProvider(value: rcLinear3), clock: clock.closure, fileURL: url, rng: SeededRNG(seed: 7))
     }
 
@@ -306,7 +306,7 @@ final class DailyCandyTests: XCTestCase {
     /// [회귀] 지급 날짜는 영속 — 재시작(같은 파일 재로드) 후 같은 날 재지급 없음.
     func testGrantDatePersistsAcrossRestart() {
         let clock = TestClock()
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("daily-persist-\(UUID().uuidString).json")
+        let url = storeStateURL("daily-persist")
         let s1 = CompanionStore(provider: StubProvider(value: rcLinear3), clock: clock.closure, fileURL: url, rng: SeededRNG(seed: 1))
         s1.tick()
         XCTAssertEqual(s1.rareCandyCount, RareCandy.dailyGrant)

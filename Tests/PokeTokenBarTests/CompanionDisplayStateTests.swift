@@ -27,7 +27,7 @@ private final class ClockBox: @unchecked Sendable {
 final class CompanionDisplayStateTests: XCTestCase {
     private func hatchedStore(rarity: Rarity = .common) async -> (CompanionStore, ClockBox) {
         let clock = ClockBox(dNow)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-disp-\(UUID().uuidString).json")
+        let url = storeStateURL("disp")
         let s = CompanionStore(provider: StubProvider(value: dline(base: 1, rarity: rarity)),
                                clock: { clock.now }, fileURL: url, rng: SeededRNG(seed: 5))
         await s.hatch(baseID: 1)
@@ -36,7 +36,7 @@ final class CompanionDisplayStateTests: XCTestCase {
 
     /// 활성 개체가 하나도 없으면(알 상태) 항상 .egg — 에너지·이벤트 창과 무관.
     func testEggWhenNoActiveCompanion() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-disp-\(UUID().uuidString).json")
+        let url = storeStateURL("disp")
         let s = CompanionStore(provider: StubProvider(value: dline(base: 1)),
                                clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 1))
         s.tick()
@@ -69,7 +69,7 @@ final class CompanionDisplayStateTests: XCTestCase {
     // MARK: 알(egg) 인큐베이션 파생값
 
     func testEggProgressAndTokensToHatch() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-disp-\(UUID().uuidString).json")
+        let url = storeStateURL("disp")
         let s = CompanionStore(provider: StubProvider(value: dline(base: 1)),
                                clock: { dNow }, fileURL: url, rng: SeededRNG(seed: 1))
         XCTAssertTrue(s.isEgg)

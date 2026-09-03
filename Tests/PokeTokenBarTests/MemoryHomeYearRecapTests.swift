@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class MemoryHomeYearRecapTests: XCTestCase {
     private func makeAlbum() -> PokemonMemoryAlbum {
-        PokemonMemoryAlbum(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        PokemonMemoryAlbum(fileURL: memoryAlbumURL("year-recap"))
     }
 
     /// `dayKey` 와 같은 달력을 쓴다 — 테스트가 다른 달력으로 날짜를 만들면 경계 하루가 어긋난다.

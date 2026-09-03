@@ -14,8 +14,7 @@ final class FavoriteMonTests: XCTestCase {
 
     /// 활성 1마리 + 박스 1마리. 놓아주기는 박스 개체만 대상이라 둘 다 필요하다.
     private func store(file: URL? = nil) -> CompanionStore {
-        let url = file ?? FileManager.default.temporaryDirectory
-            .appendingPathComponent("favorite-\(UUID().uuidString).json")
+        let url = file ?? storeStateURL("favorite")
         let mon = "{\"baseID\":4,\"pathIDs\":[4],\"stageIndex\":0,\"usedAtStage\":0,"
             + "\"rarity\":\"common\",\"totalForms\":3,\"learnedMoves\":[]}"
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,"
@@ -50,8 +49,7 @@ final class FavoriteMonTests: XCTestCase {
     }
 
     func testFavoritePersistsAcrossRestart() throws {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("favorite-persist-\(UUID().uuidString).json")
+        let url = storeStateURL("favorite-persist")
         let first = store(file: url)
         let id = try boxedID(first)
         XCTAssertTrue(first.toggleFavorite(id))

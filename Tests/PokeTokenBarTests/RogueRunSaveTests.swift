@@ -158,11 +158,7 @@ final class RogueRunSaveTests: XCTestCase {
 
     // MARK: 저장소 왕복
 
-    private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-run-\(UUID().uuidString)")
-            .appendingPathComponent("companion-state.json")
-    }
+    private func tempURL() -> URL { storeStateURL("run") }
 
     private func store(at url: URL) -> CompanionStore {
         CompanionStore(provider: StubProvider(value: line), clock: { Date() },

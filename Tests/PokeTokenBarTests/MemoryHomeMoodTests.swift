@@ -4,8 +4,7 @@ import XCTest
 @MainActor
 final class MemoryHomeMoodTests: XCTestCase {
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("memory-home-mood-\(UUID().uuidString).json")
+        storeStateURL("memory-home-mood")
     }
     private let noon = Date(timeIntervalSince1970: 1_787_000_400)
 

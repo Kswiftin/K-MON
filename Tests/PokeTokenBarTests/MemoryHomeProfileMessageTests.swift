@@ -6,8 +6,7 @@ import XCTest
 @MainActor
 final class MemoryHomeProfileMessageTests: XCTestCase {
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("memory-home-message-\(UUID().uuidString).json")
+        storeStateURL("memory-home-message")
     }
 
     func testValidatorAcceptsInnerSpacesAndRejectsLineBreaksAndOverlongText() {

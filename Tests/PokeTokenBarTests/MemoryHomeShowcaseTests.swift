@@ -13,9 +13,7 @@ final class MemoryHomeShowcaseTests: XCTestCase {
     /// 테스트가 앨범 파일 하나를 공유한다 — 앞 테스트의 대표 사진이 다음 테스트에 남고,
     /// 심지어 `swift test` 실행 사이에도 남는다(이 테스트를 쓰다가 실제로 밟았다).
     private func hatchedStore() async -> CompanionStore {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("poke-showcase-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let store = CompanionStore(fileURL: directory.appendingPathComponent("state.json"))
+        let store = CompanionStore(fileURL: storeStateURL("showcase"))
         await store.hatch(baseID: 1)
         return store
     }

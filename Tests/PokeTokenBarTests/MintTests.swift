@@ -19,7 +19,7 @@ final class MintTests: XCTestCase {
     private func store(nature: String? = "adamant", mint: Int = 1, used: Int = 1_000_000_000,
                        spent: Int = 0, usedAtStage: Int = 50_000_000, shiny: Bool = false,
                        seed: UInt64 = 7) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("mint-\(UUID().uuidString).json")
+        let url = storeStateURL("mint")
         let natureField = nature.map { ",\"nature\":\"\($0)\"" } ?? ""
         let active = "{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":\(usedAtStage),"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":\(shiny)\(natureField)}"
@@ -79,7 +79,7 @@ final class MintTests: XCTestCase {
     // MARK: 게이트
 
     func testCannotUseMintOnEgg() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("mint-egg-\(UUID().uuidString).json")
+        let url = storeStateURL("mint-egg")
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":1,\"starPieces\":1,\"lastDate\":\"d\","
             + "\"dex\":[],\"collectedFinals\":[],\"inventory\":{\"mint\":2}}"
         try? json.data(using: .utf8)!.write(to: url)
@@ -111,7 +111,7 @@ final class MintTests: XCTestCase {
     // MARK: 영속
 
     func testUseMintPersistsAcrossRestart() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("mint-persist-\(UUID().uuidString).json")
+        let url = storeStateURL("mint-persist")
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":1,\"starPieces\":1,\"lastDate\":\"d\","
             + "\"active\":{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":0,\"rarity\":\"common\",\"totalForms\":3,\"nature\":\"adamant\"},"
             + "\"inventory\":{\"mint\":2},\"dex\":[],\"collectedFinals\":[]}"

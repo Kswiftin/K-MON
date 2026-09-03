@@ -17,7 +17,7 @@ final class FreshEggTests: XCTestCase {
     /// active=false 면 알(활성 없음) 상태.
     private func store(active: Bool = true, shiny: Bool = false, used: Int = 5_000_000_000,
                        spent: Int = 0, eggs: Int = 0) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("egg-\(UUID().uuidString).json")
+        let url = storeStateURL("egg")
         let mon = "{\"baseID\":10,\"pathIDs\":[10],\"stageIndex\":0,\"usedAtStage\":200000000,"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":\(shiny)}"
         let dex = "{\"baseID\":1,\"finalID\":3,\"chainOrder\":[1,2,3],\"rarity\":\"common\"}"

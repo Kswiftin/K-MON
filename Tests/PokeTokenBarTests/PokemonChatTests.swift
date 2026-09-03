@@ -338,7 +338,7 @@ final class PokemonChatTests: XCTestCase {
         let unusable = URL(fileURLWithPath: "/dev/null").appendingPathComponent("nope", isDirectory: true)
 
         XCTAssertEqual(PokemonChatWorkspace.resolved(base: unusable),
-                       FileManager.default.temporaryDirectory.resolvingSymlinksInPath())
+                       FileManager.default.temporaryDirectory.resolvingSymlinksInPath())   // shared-temp-ok
     }
 
     /// 인자 배열만 비교하는 격리 테스트는 자식의 **실행 환경**을 보지 못한다 — 실제로 띄워서 확인한다.
@@ -482,7 +482,7 @@ final class PokemonChatTests: XCTestCase {
     }
 
     func testAlbumRetainsRepeatedEventsCapsAndDeletes() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-memory-\(UUID().uuidString).json")
+        let url = storeStateURL("mon-memory")
         defer { try? FileManager.default.removeItem(at: url) }
         let album = PokemonMemoryAlbum(fileURL: url), id = UUID()
         album.record(companionID: id, body: "함께 산책했다.", source: .event)
@@ -774,10 +774,7 @@ final class PokemonChatTests: XCTestCase {
     private func temporaryChatURL() -> URL { temporaryURL(prefix: "pokemon-chat") }
 
     private func temporaryURL(prefix: String) -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(prefix)-\(UUID().uuidString).json")
-        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        return url
+        storeDirectory(prefix).appendingPathComponent("\(prefix).json")
     }
 
     private func makeCompanionStore() -> CompanionStore {

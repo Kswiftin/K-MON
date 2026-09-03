@@ -61,6 +61,13 @@ extension XCTestCase {
         storeDirectory(tag).appendingPathComponent(CompanionStorageLocations.stateFileName)
     }
 
+    /// 기억 앨범만 쓰는 픽스처(`PokemonMemoryAlbum(fileURL:)` 직접 생성). 앨범은 곁방을 만들지
+    /// 않으니 파일만 유일해도 격리는 되지만, temp **루트**에 파일을 놓는 형태를 하나라도 남기면
+    /// 게이트가 그 형태 자체를 막을 수 없다 — 스토어와 같은 규칙을 따른다.
+    func memoryAlbumURL(_ tag: String = "album") -> URL {
+        storeDirectory(tag).appendingPathComponent(CompanionStorageLocations.memoryFileName)
+    }
+
     @MainActor
     func stubStore(_ clock: TestClock, tag: String = "store") -> CompanionStore {
         CompanionStore(provider: StubProvider(value: stubMaxLevelLine), clock: clock.closure,

@@ -13,8 +13,7 @@ final class BagDiscardTests: XCTestCase {
 
     private func store(inventory: [ItemKind: Int] = [:], starPieces: Int = 0,
                        album: PokemonMemoryAlbum? = nil) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("discard-\(UUID().uuidString).json")
+        let url = storeStateURL("discard")
         let inventoryJSON = inventory.map { "\"\($0.key.rawValue)\":\($0.value)" }.joined(separator: ",")
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,"
             + "\"installBaselineSet\":true,\"starPieces\":\(starPieces),\"lastDate\":\"d\",\"dex\":[],"
@@ -76,8 +75,7 @@ final class BagDiscardTests: XCTestCase {
     }
 
     func testDiscardPersistsAcrossRestart() {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("discard-persist-\(UUID().uuidString).json")
+        let url = storeStateURL("discard-persist")
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,"
             + "\"installBaselineSet\":true,\"starPieces\":0,\"lastDate\":\"d\",\"dex\":[],"
             + "\"collectedFinals\":[],\"inventory\":{\"rareCandy\":4}}"
@@ -117,8 +115,7 @@ final class BagDiscardTests: XCTestCase {
     /// 방에 놓은 가구를 버리면 배치도 함께 걷힌다. 여기를 지나지 않으면 소유하지 않은 가구가
     /// 다음 기동(로드 시 prune)까지 방에 그려진 채 남는다.
     func testDiscardingPlacedFurnitureAlsoRemovesItFromTheRoom() {
-        let albumURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("discard-room-\(UUID().uuidString).json")
+        let albumURL = storeStateURL("discard-room")
         let album = PokemonMemoryAlbum(fileURL: albumURL)
         let owned = [ItemKind.roomBed.rawValue: 2]
         XCTAssertNotNil(album.placeDecor(.roomBed, at: .init(x: 0.3, y: 0.6), ownedItems: owned))

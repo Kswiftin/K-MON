@@ -338,8 +338,7 @@ final class SeasonAccrualTests: XCTestCase {
     /// `seeding` 은 진행도를 목표 근처에 앉히는 손잡이다. 시즌 목표는 한 달치(집중 900~1,200분)라
     /// 테스트에서 정직하게 채울 수 없어 마지막 한 걸음만 실제로 밟는다.
     private func makeStore(seeding progress: [String: Int] = [:], trainerPoints: Int = 0) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-season-\(UUID().uuidString).json")
+        let url = storeStateURL("season")
         if !progress.isEmpty || trainerPoints > 0 {
             let counts = progress.map { "\"\($0.key)\":\($0.value)" }.sorted().joined(separator: ",")
             let json = #"{"economyVersion":2,"forcedResetVersion":1,"#

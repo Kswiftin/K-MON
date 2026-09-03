@@ -68,8 +68,7 @@ final class HomeStatSourceTests: XCTestCase {
     private let base = BattleStats(hp: 45, atk: 49, def: 49, spa: 65, spd: 65, spe: 45)
 
     private func store() -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("stat-\(UUID().uuidString).json")
+        let url = storeStateURL("stat")
         return CompanionStore(provider: StubProvider(value: line), clock: { Date() },
                               fileURL: url, rng: SeededRNG(seed: 7))
     }

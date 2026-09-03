@@ -372,8 +372,7 @@ final class AchievementAccrualTests: XCTestCase {
     }
 
     private func makeStore(_ line: EvoLine, _ clock: TestClock) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-achievement-\(UUID().uuidString).json")
+        let url = storeStateURL("achievement")
         return CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
                               fileURL: url, rng: SeededRNG(seed: 11))
     }

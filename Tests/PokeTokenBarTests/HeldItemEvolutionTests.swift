@@ -51,7 +51,7 @@ private let fixedNow = Date(timeIntervalSince1970: 1_700_000_000)
 @MainActor
 final class HeldItemEvolutionTests: XCTestCase {
     private func store(_ line: EvoLine) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("held-\(UUID().uuidString).json")
+        let url = storeStateURL("held")
         return CompanionStore(provider: StubProvider(value: line), clock: { fixedNow },
                               fileURL: url, rng: SeededRNG(seed: 7))
     }
@@ -201,7 +201,7 @@ final class HeldItemEvolutionTests: XCTestCase {
     // MARK: (e) 상점 노출
 
     func testHeldItemsAreOnSaleAtStonePrice() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("held-shop-\(UUID().uuidString).json")
+        let url = storeStateURL("held-shop")
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,"
             + "\"usedSinceInstall\":100000,\"spentTokens\":0,\"starPieces\":100000,\"lastDate\":\"d\",\"dex\":[],\"collectedFinals\":[]}"
         try? json.data(using: .utf8)!.write(to: url)

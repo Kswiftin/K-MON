@@ -149,8 +149,7 @@ final class MoveHoverTests: XCTestCase {
     }
 
     private func hoverTestStore(_ moves: [MoveSpec]) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-hover-\(UUID().uuidString).json")
+        let url = storeStateURL("hover")
         let store = CompanionStore(provider: StubProvider(value: hoverTestLine),
                                    clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: url, rng: SeededRNG(seed: 3))

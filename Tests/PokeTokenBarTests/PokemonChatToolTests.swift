@@ -1539,12 +1539,11 @@ final class PokemonChatToolTests: XCTestCase {
     }
 
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("pokemon-chat-tool-\(UUID().uuidString).json")
+        storeStateURL("mon-chat-tool")
     }
 
     private func makeAlbum() -> PokemonMemoryAlbum {
-        PokemonMemoryAlbum(fileURL: FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokemon-chat-album-\(UUID().uuidString).json"))
+        PokemonMemoryAlbum(fileURL: storeStateURL("mon-chat-album"))
     }
 
     private func makeCompanionStore(line: EvoLine? = nil, clock: TestClock? = nil) -> CompanionStore {

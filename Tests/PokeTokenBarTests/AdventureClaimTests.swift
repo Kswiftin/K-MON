@@ -12,8 +12,7 @@ import XCTest
 final class AdventureClaimTests: XCTestCase {
 
     private func makeStore(_ clock: TestClock) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-adv-\(UUID().uuidString).json")
+        let url = storeStateURL("adv")
         return CompanionStore(provider: StubProvider(value: claimTestLine), clock: clock.closure,
                               fileURL: url, rng: SeededRNG(seed: 11))
     }

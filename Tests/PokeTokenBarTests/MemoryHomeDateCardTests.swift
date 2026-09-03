@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class MemoryHomeDateCardTests: XCTestCase {
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("datecard-\(UUID()).json")
+        storeStateURL("datecard")
     }
 
     private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {

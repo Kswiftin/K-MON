@@ -19,7 +19,7 @@ final class ShinyCharmTests: XCTestCase {
 
     /// 지갑/부적 보유를 지정한 알(active=null) 상태 스토어.
     private func store(used: Int = 5_000_000_000, spent: Int = 0, charm: Bool = false, seed: UInt64 = 7) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("charm-\(UUID().uuidString).json")
+        let url = storeStateURL("charm")
         let inv = charm ? ",\"inventory\":{\"shinyCharm\":1}" : ""
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":\(spent),\"starPieces\":\(max(0, used - spent)),"
             + "\"lastDate\":\"d\",\"active\":null,\"dex\":[],\"collectedFinals\":[]\(inv)}"
