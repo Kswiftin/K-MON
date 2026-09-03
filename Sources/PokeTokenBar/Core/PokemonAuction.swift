@@ -65,10 +65,6 @@ enum AuctionWireMessage: Codable {
 final class PokemonAuctionCenter {
     nonisolated static let serviceType = "_kmonauct._tcp"
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
-    /// 게시자가 응답하지 않는 제안을 언제까지 붙들고 있을지. 이 시간이 지나면 신청자 쪽에서
-    /// 실패로 끝낸다 — 그러지 않으면 상대가 앱을 닫아도 화면이 영영 "대기 중" 이고, 신청자는
-    /// 새 제안도 못 건다(동시에 하나만 걸 수 있다).
-    static let offerTimeout: TimeInterval = 90
 
     private(set) var listings: [AuctionListing] = []
     private(set) var offers: [AuctionOffer] = []
@@ -94,7 +90,6 @@ final class PokemonAuctionCenter {
     private var outgoingListing: AuctionListing?
     /// 게시자가 잠근 개체. 게시자 커밋이 끝났다는 프레임을 받고서야 이 값으로 교환한다.
     private var outgoingReceived: TradePokemonSnapshot?
-    private var outgoingTimeout: Task<Void, Never>?
 
     init(companion: CompanionStore) {
         self.companion = companion
@@ -146,7 +141,6 @@ final class PokemonAuctionCenter {
         outgoingListingName = listing.displayName
         outgoingStatus = .pending
         lastError = nil
-        startOutgoingTimeout(offerID)
         attach(connection, id: connectionID)
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, let connection else { return }
@@ -185,7 +179,6 @@ final class PokemonAuctionCenter {
         outgoingListingName = listing.displayName
         outgoingStatus = .pending
         lastError = nil
-        startOutgoingTimeout(offerID)
         attach(connection, id: connectionID)
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, let connection else { return }
@@ -205,6 +198,12 @@ final class PokemonAuctionCenter {
     }
 
     /// 아직 답을 못 받은 제안을 신청자가 거둬들인다. 게시자에게도 알려 잠긴 자리를 풀어 준다.
+    ///
+    /// **자동 시간 제한은 없다** — 예전엔 90초가 지나면 여기로 자동으로 왔는데, 게시자가 그 안에
+    /// 못 보고 늦게 수락하면 이미 이 함수가 지나간 뒤라 커밋이 실패했다. 상대가 진짜로 앱을 닫으면
+    /// `.failed`/`.cancelled` 연결 상태가 `drop(_:failed:)` 를 불러 이미 정리되므로, 자동 시간
+    /// 제한은 "둘 다 켜져 있는데 게시자가 그냥 느린" 정상적인 경우만 억울하게 끊었다. 남은 시나리오
+    /// (상대 기기가 잠들어 좀비 연결로 남는 경우)는 신청자가 이 버튼으로 직접 거둬들이면 된다.
     func cancelOutgoingOffer() {
         guard outgoingStatus == .pending, let offerID = outgoingOfferID,
               let connectionID = outgoingConnectionID, let connection = connections[connectionID] else { return }
@@ -215,7 +214,6 @@ final class PokemonAuctionCenter {
 
     func clearOutgoingResult() {
         refundOutgoingStardustIfNeeded()
-        outgoingTimeout?.cancel(); outgoingTimeout = nil
         if let id = outgoingConnectionID { connections[id]?.cancel(); connections[id] = nil }
         outgoingConnectionID = nil; outgoingPokemonID = nil; outgoingStardust = 0
         outgoingStardustEscrowed = false; outgoingOfferID = nil
@@ -298,7 +296,6 @@ final class PokemonAuctionCenter {
                                                    "出品と異なるポケモンが届きました。"))
                 return
             }
-            outgoingTimeout?.cancel(); outgoingTimeout = nil
             outgoingReceived = pokemon
             outgoingStatus = .accepted
             if outgoingStardust > 0 {
@@ -413,29 +410,9 @@ final class PokemonAuctionCenter {
     }
 
     private func failOutgoing(_ offerID: UUID, on connection: NWConnection, id: UUID, reason: String) {
-        outgoingTimeout?.cancel(); outgoingTimeout = nil
         outgoingStatus = .failed
         lastError = reason
         send(.failed(offerID: offerID), on: connection, id: id)
-    }
-
-    private func startOutgoingTimeout(_ offerID: UUID) {
-        outgoingTimeout?.cancel()
-        outgoingTimeout = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.offerTimeout * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await MainActor.run { self?.expireOutgoingOffer(offerID) }
-        }
-    }
-
-    /// 답 없는 제안을 실패로 끝낸다. `.pending` 일 때만 — 커밋이 시작된 뒤에는 시간이 지나도
-    /// 개체가 이미 움직이는 중이라 여기서 끊으면 안 된다.
-    func expireOutgoingOffer(_ offerID: UUID) {
-        guard outgoingStatus == .pending, offerID == outgoingOfferID else { return }
-        outgoingStatus = .failed
-        lastError = companion.l.t("상대가 응답하지 않았습니다.", "The other trainer did not respond.",
-                                  "相手から応答がありませんでした。")
-        if let id = outgoingConnectionID { connections[id]?.cancel(); connections[id] = nil }
     }
 
     private func displayName(_ mon: MonState) -> String {
@@ -564,7 +541,6 @@ final class PokemonAuctionCenter {
             if failed, outgoingStatus == .pending || outgoingStatus == .accepted {
                 outgoingStatus = .failed
                 refundOutgoingStardustIfNeeded()
-                outgoingTimeout?.cancel(); outgoingTimeout = nil
             }
             if outgoingStatus == nil {
                 outgoingConnectionID = nil; outgoingPokemonID = nil; outgoingStardust = 0
