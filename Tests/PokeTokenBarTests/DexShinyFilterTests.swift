@@ -13,8 +13,7 @@ final class DexShinyFilterTests: XCTestCase {
 
     /// 저장된 도감으로 스토어를 연다 — 졸업 경로를 타지 않고 집계만 본다.
     private func store(_ entries: [DexEntry]) throws -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("dex-shiny-\(UUID().uuidString).json")
+        let url = storeStateURL("dex-shiny")
         let dexJSON = String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8)
             .write(to: url)

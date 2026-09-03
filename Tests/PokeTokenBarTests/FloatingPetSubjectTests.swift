@@ -6,8 +6,7 @@ import XCTest
 final class FloatingPetSubjectTests: XCTestCase {
 
     private func makeStore() -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("floating-\(UUID().uuidString).json")
+        let url = storeStateURL("floating")
         return CompanionStore(provider: NoLineProvider(), clock: { Date(timeIntervalSince1970: 1_000) },
                               fileURL: url, rng: SeededRNG(seed: 1))
     }

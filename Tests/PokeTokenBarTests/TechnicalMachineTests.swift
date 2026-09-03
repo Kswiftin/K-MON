@@ -26,8 +26,7 @@ final class TechnicalMachineTests: XCTestCase {
     }
 
     private func store(compatible: Bool = true, learned: [Int] = []) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tm-\(UUID().uuidString).json")
+        let url = storeStateURL("tm")
         let moves = learned.map {
             "{\"id\":\($0),\"names\":{\"en\":\"m\($0)\"},\"type\":\"normal\",\"power\":40,"
             + "\"damageClass\":\"physical\",\"accuracy\":100,\"pp\":35}"

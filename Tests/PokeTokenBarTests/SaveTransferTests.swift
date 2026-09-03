@@ -67,12 +67,7 @@ final class SaveTransferTests: XCTestCase {
 
     /// 테스트마다 **전용 디렉토리**를 준다. 불러오기 백업은 상태 파일 이름이 아니라 시각으로 이름이
     /// 정해지므로, 공유 임시 디렉토리를 쓰면 고정 시계를 쓰는 테스트들끼리 같은 백업 파일명을 놓고 충돌한다.
-    private func tempURL(_ tag: String) -> URL {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ptb-\(tag)-\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("companion-state.json")
-    }
+    private func tempURL(_ tag: String) -> URL { storeStateURL(tag) }
 
     private func store(at url: URL) -> CompanionStore {
         CompanionStore(provider: OfflineProvider(), clock: { transferNow }, fileURL: url)

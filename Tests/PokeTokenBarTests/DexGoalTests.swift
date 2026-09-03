@@ -139,8 +139,7 @@ final class DexGoalGrantTests: XCTestCase {
                           species: Int = 0,
                           types: [PokemonType] = [],
                           shinyCharges: Int = 0) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-dexgoal-\(UUID().uuidString).json")
+        let url = storeStateURL("dexgoal")
         // 종 id 는 스텁 라인(1~3)과 겹치지 않게 100번대부터 — 겹치면 졸업이 종 수를 못 늘린다.
         var entries = (0..<species).map { i in
             #"{"baseID":\#(100 + i),"finalID":\#(100 + i),"chainOrder":[\#(100 + i)],"rarity":"common"}"#
@@ -476,8 +475,7 @@ private struct TypedProvider: PokeProviding {
 final class DexEntryTypeSourceTests: XCTestCase {
 
     private func store(_ types: [Int: [PokemonType]], dex: [String] = []) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-dextype-\(UUID().uuidString).json")
+        let url = storeStateURL("dextype")
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"dex":[\#(dex.joined(separator: ","))]}"#
         try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: TypedProvider(evoLine: dexGoalTestLine, types: types),

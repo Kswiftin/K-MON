@@ -18,7 +18,7 @@ final class ShopTests: XCTestCase {
     /// 세팅(update() 의 delta 적립 경로를 우회). testCannotUseWhileLineUnloaded 와 동일한 JSON 시드 패턴.
     private func store(used: Int, spent: Int = 0, rareCandy: Int = 0,
                        file: String = #filePath) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("shop-\(UUID().uuidString).json")
+        let url = storeStateURL("shop")
         let inv = rareCandy > 0 ? ",\"inventory\":{\"rareCandy\":\(rareCandy)}" : ""
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":\(used),\"spentTokens\":\(spent),\"starPieces\":\(max(0, used - spent)),"
             + "\"lastDate\":\"d\",\"dex\":[],\"collectedFinals\":[]\(inv)}"
@@ -110,7 +110,7 @@ final class ShopTests: XCTestCase {
 
     /// [영속] 재시작(같은 파일 재로드) 후 지출·재고가 유지된다.
     func testBuyPersistsAcrossRestart() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("shop-persist-\(UUID().uuidString).json")
+        let url = storeStateURL("shop-persist")
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":1000000000,\"spentTokens\":0,\"starPieces\":1000000000,"
             + "\"lastDate\":\"d\",\"dex\":[],\"collectedFinals\":[]}"
         try? json.data(using: .utf8)!.write(to: url)
@@ -178,7 +178,7 @@ final class ShopTests: XCTestCase {
     /// 구매 완료한 보유형(이로치 부적)은 맨 아래로. 재구매 불가라 상단에 둘 이유 없음.
     /// (현재 부적이 최고가라 가격순 결과와 일치하지만, 향후 저가 보유형이 생겨도 규칙이 유지되도록 게이트.)
     func testOwnedPassiveSinksToBottom() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("shop-sort-\(UUID().uuidString).json")
+        let url = storeStateURL("shop-sort")
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":0,\"spentTokens\":0,\"starPieces\":0,"
             + "\"lastDate\":\"d\",\"dex\":[],\"collectedFinals\":[],\"inventory\":{\"shinyCharm\":1}}"
         try? json.data(using: .utf8)!.write(to: url)
@@ -194,7 +194,7 @@ final class ShopTests: XCTestCase {
     /// 등급 알을 인접 그룹으로 묶지 **않는** 것이 의도다 — 그러면 4B 희귀 알이 3B 부적 위로 올라가
     /// 위 회귀를 부분적으로 되살린다. 티어 관계는 카드의 등급 배지로 읽힌다.
     func testShopEntriesInterleavesFreshEggByPrice() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("shop-entries-\(UUID().uuidString).json")
+        let url = storeStateURL("shop-entries")
         let mon = "{\"baseID\":10,\"pathIDs\":[10],\"stageIndex\":0,\"usedAtStage\":200000000,"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":false}"
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"starterChosen\":true,\"installBaselineSet\":true,\"usedSinceInstall\":5000000000,\"spentTokens\":0,\"starPieces\":5000000000,"

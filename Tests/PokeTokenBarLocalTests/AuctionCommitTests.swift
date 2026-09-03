@@ -37,8 +37,7 @@ enum AuctionFixtures {
     static let now = Date(timeIntervalSince1970: 1_700_000_000)
 
     @MainActor static func makeStore(_ label: String) -> CompanionStore {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(label)-\(UUID().uuidString)")
+        let directory = storeFixtureDirectory(label)
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []), rarity: .common,
                            names: [1: ["ko": "포1", "en": "P1", "ja": "ポ1"]])
         let store = CompanionStore(provider: AuctionStubProvider(value: line),

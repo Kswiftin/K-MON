@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class MaxLevelTests: XCTestCase {
 
-    private func tempURL() -> URL { stubStoreURL("maxlevel") }
+    private func tempURL() -> URL { storeStateURL("maxlevel") }
 
     /// 저장 파일을 직접 지정하는 경로(세이브 왕복 검증). 시계는 실제 시각으로 둔다 — 이 테스트들은
     /// 시간을 전진시키지 않는다.

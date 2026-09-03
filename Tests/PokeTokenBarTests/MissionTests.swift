@@ -227,8 +227,7 @@ final class MissionAccrualTests: XCTestCase {
     /// 레벨 **양쪽**에 지급하므로, 지갑 증가분만 보면 어느 쪽 몫인지 구분되지 않는다. 상한값으로
     /// 시드하면 트레이너는 더 오를 곳이 없어 0을 지급하고, 남는 증가분이 곧 미션 보상이다.
     private func makeStore(_ clock: TestClock, trainerPoints: Int = 0) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-mission-\(UUID().uuidString).json")
+        let url = storeStateURL("mission")
         if trainerPoints > 0 {
             let json = #"{"economyVersion":2,"forcedResetVersion":1,"trainer":{"points":\#(trainerPoints)}}"#
             try? Data(json.utf8).write(to: url)

@@ -89,17 +89,15 @@ final class TradeMemoryTests: XCTestCase {
     /// (`MemoryHomeVisitProtocolTests`) 이 이미 같은 규약을 쓴다.
     @MainActor
     private func makeStore() -> CompanionStore {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("trade-memory-\(UUID().uuidString)")
+        let stateURL = storeStateURL("trade-memory")
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []), rarity: .common,
                            names: [1: ["ko": "포1", "en": "P1", "ja": "ポ1"]])
         let store = CompanionStore(provider: StubProvider(value: line), clock: { self.now },
-                                   fileURL: directory.appendingPathComponent("state.json"),
+                                   fileURL: stateURL,
                                    rng: SeededRNG(seed: 1))
         // 기억 본문은 저장 시점 언어로 굳는다(부화 기록 등). 호스트 로케일을 그대로 두면 영어
         // 로케일 재실행에서만 깨진다 — 기대값을 언어로 못 박는다.
         store.setLanguage(.ko)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return store
     }
 

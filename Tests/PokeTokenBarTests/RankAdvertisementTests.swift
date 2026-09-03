@@ -22,8 +22,7 @@ final class RankAdvertisementTests: XCTestCase {
     private func makeStore(_ clock: TestClock) -> CompanionStore {
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []),
                            rarity: .common, names: [:])
-        let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-rank-ad-\(UUID().uuidString).json")
+        let fileURL = storeStateURL("rank-ad")
         return CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
                               fileURL: fileURL, rng: SeededRNG(seed: 7))
     }

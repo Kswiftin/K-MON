@@ -92,7 +92,7 @@ final class DittoDisguiseRollTests: XCTestCase {
 final class DittoRevealTests: XCTestCase {
     /// 활성 = 커먼 3형태 위장 메타몽(정체). currentLine 은 nil(재시작류) → update 로 로드해 리빌 트리거.
     private func seedDisguise(usedAtStage: Int = 0, shiny: Bool = false, revealed: Bool = false) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ditto-\(UUID().uuidString).json")
+        let url = storeStateURL("ditto")
         let active = "{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":\(usedAtStage),"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":\(shiny),"
             + "\"dittoDisguise\":1,\"dittoRevealed\":\(revealed)}"
@@ -139,7 +139,7 @@ final class DittoRevealTests: XCTestCase {
 
     /// [회귀] 에셋 정규화로 위장체가 leaf가 되어도, 위장체로 졸업하지 않고 현재 단일형태 임계에서 리빌한다.
     func testPrunedLeafDisguiseRevealsBeforeGraduation() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ditto-pruned-\(UUID().uuidString).json")
+        let url = storeStateURL("ditto-pruned")
         let threshold = PokemonBalance.phaseThreshold(rarity: .common, totalForms: 1, stageIndex: 0)
         XCTAssertEqual(threshold, 750_000_000)
         XCTAssertTrue(prunedDisguiseLine.tree.children.isEmpty, "GIF 없는 종 제거 후 #206은 leaf여야 한다")
@@ -168,7 +168,7 @@ final class DittoRevealTests: XCTestCase {
     }
 
     func testDelayedRevealDoesNotConvertSameBaseReplacementDisguise() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ditto-race-\(UUID().uuidString).json")
+        let url = storeStateURL("ditto-race")
         let active = #"{"baseID":1,"pathIDs":[1],"plannedPathIDs":[1,2,3],"stageIndex":0,"usedAtStage":125000000,"rarity":"common","totalForms":3,"dittoDisguise":1}"#
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"installBaselineSet\":true,\"usedSinceInstall\":2000000000,\"lastDate\":\"d1\",\"active\":\(active),\"dex\":[],\"collectedFinals\":[]}"
         try Data(json.utf8).write(to: url)
@@ -229,7 +229,7 @@ final class DittoRevealTests: XCTestCase {
 
     /// 구버전 저장(ditto 필드 없음) → nil/false, 일반 포켓몬으로 동작(이로치는 그대로 표시).
     func testBackwardCompatDecodeNoDittoFields() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ditto-bc-\(UUID().uuidString).json")
+        let url = storeStateURL("ditto-bc")
         let active = "{\"baseID\":1,\"pathIDs\":[1],\"stageIndex\":0,\"usedAtStage\":0,"
             + "\"rarity\":\"common\",\"totalForms\":3,\"isShiny\":true}"   // ditto 필드 없음
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"installBaselineSet\":true,\"usedSinceInstall\":0,\"spentTokens\":0,"

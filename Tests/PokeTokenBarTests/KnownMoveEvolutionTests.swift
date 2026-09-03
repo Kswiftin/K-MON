@@ -84,8 +84,7 @@ final class KnownMoveEvolutionTests: XCTestCase {
     /// 갈라지는 진화는 부화 때 씨앗으로 경로가 정해진다 — 어느 갈래가 뽑혀도 같은 규칙이어야
     /// 하므로 씨앗을 바꿔 가며 두 갈래를 다 밟는다.
     private func store(_ evoLine: EvoLine, seed: UInt64 = 7) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("known-move-\(UUID().uuidString).json")
+        let url = storeStateURL("known-move")
         return CompanionStore(provider: StubProvider(value: evoLine), clock: { fixedNow },
                               fileURL: url, rng: SeededRNG(seed: seed))
     }

@@ -17,8 +17,7 @@ import XCTest
 final class PendingAttentionTests: XCTestCase {
 
     private func center() -> BattleCenter {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("attention-\(UUID().uuidString).json")
+        let url = storeStateURL("attention")
         let store = CompanionStore(provider: StubProvider(value: line), clock: { Date() },
                                    fileURL: url, rng: SeededRNG(seed: 7))
         return BattleCenter(companion: store)

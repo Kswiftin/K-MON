@@ -67,7 +67,7 @@ final class PremiumEggTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func url() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("premium-egg-\(UUID().uuidString).json")
+        storeStateURL("premium-egg")
     }
 
     /// 활성 포켓몬이 있는 상태(리롤 가능) + 지갑.

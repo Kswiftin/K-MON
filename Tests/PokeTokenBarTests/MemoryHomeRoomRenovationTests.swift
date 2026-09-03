@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class MemoryHomeRoomRenovationTests: XCTestCase {
-    private func url() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("room-r8-\(UUID().uuidString).json") }
+    private func url() -> URL { storeStateURL("room-r8") }
 
     func testPlacementSnapsAvoidsCollisionsAndRespectsInventory() {
         let file = url(); defer { try? FileManager.default.removeItem(at: file) }
@@ -82,9 +82,7 @@ final class MemoryHomeRoomRenovationTests: XCTestCase {
     }
 
     func testExistingAchievementTiersMigrateToRoomStyleTicketsIdempotently() {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("room-ticket-\(UUID().uuidString)")
-        let stateURL = directory.appendingPathComponent("state.json")
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let stateURL = storeStateURL("room-ticket")
 
         let original = CompanionStore(fileURL: stateURL)
         original.debugSetAchievementCount(.focus, 60)

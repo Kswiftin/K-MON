@@ -10,8 +10,7 @@ final class BoxCapacityTests: XCTestCase {
                                rarity: .common, names: [1: ["en": "One", "ko": "하나"]])
 
     private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-box-\(UUID().uuidString).json")
+        storeStateURL("box")
     }
 
     private func store(at url: URL) -> CompanionStore {

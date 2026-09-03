@@ -7,8 +7,7 @@ import XCTest
 final class IdleEconomyTests: XCTestCase {
 
     private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("idle-\(UUID().uuidString).json")
+        storeStateURL("idle")
     }
 
     private func makeStore(_ clock: TestClock) -> CompanionStore {

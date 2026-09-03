@@ -6,8 +6,7 @@ import XCTest
 @MainActor
 final class MemoryHomeVisitCounterTests: XCTestCase {
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("memory-home-visits-\(UUID().uuidString).json")
+        storeStateURL("memory-home-visits")
     }
     /// 고정 시각. `dayKey` 는 호스트 캘린더를 쓰므로 테스트는 "같은 날/다른 날"만 주장하고
     /// 특정 날짜 문자열을 못 박지 않는다 — CI 로케일 패리티 재실행에서도 그대로 통과해야 한다.

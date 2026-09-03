@@ -74,7 +74,7 @@ extension BattleChatTests {
             provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []),
                                                   rarity: .common, names: [:])),
             clock: { Date() },
-            fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            fileURL: storeStateURL("battle-chat"),
             rng: SeededRNG(seed: 1))
         let center = BattleCenter(companion: store, challengeTimeoutScheduler: SilentTimeoutScheduler())
         let lead = chatSnapshot()
@@ -242,7 +242,7 @@ extension BattleChatTests {
             provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []),
                                                   rarity: .common, names: [:])),
             clock: { Date() },
-            fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            fileURL: storeStateURL("battle-chat"),
             rng: SeededRNG(seed: 1))
         let center = MultiplayerRoomCenter(companion: store)
         let host = UUID(), reused = UUID()

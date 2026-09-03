@@ -13,7 +13,7 @@ final class TradeChatTests: XCTestCase {
             provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []),
                                                   rarity: .common, names: [:])),
             clock: { Date() },
-            fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            fileURL: storeStateURL("trade-chat"),
             rng: SeededRNG(seed: 1))
     }
 

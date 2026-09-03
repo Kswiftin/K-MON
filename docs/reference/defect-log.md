@@ -2455,15 +2455,23 @@ read_when:
 - **부류**: **유일하게 만든 것 옆에 이름이 고정된 형제가 산다.** 같은 부류로 대화 세이브
   (`siblingMemoryURL`)와 진행 중인 런(`waveRunURL`)이 전부 해당한다 — 파일 하나만 유일하게 해도
   격리되지 않는다. 격리는 **디렉토리** 단위여야 한다.
-- **처방**: 새 테스트는 스토어마다 디렉토리를 파고 `addTeardownBlock` 으로 지운다
-  (`MemoryHomeDiscoveryStateTests` 가 이미 쓰던 형태다). `AdventureClaimTests` 등 상태 파일만
-  유일하게 하는 기존 픽스처는 같은 부류이며 아직 남아 있다 — 곁방 파일을 쓰지 않아 지금은
-  드러나지 않을 뿐이다.
-- **미완 스윕 → #232**: 그 기존 픽스처가 **144곳 / 71파일**이다(`grep -rn 'temporaryDirectory'
-  Tests`). #225 가 mutator 게이트를 넓히며 함께 훑으려다 뺐다 — 게이트 변경과 한 PR 에 묶기엔
-  리뷰가 불가능한 크기다. 헬퍼를 `IdleTestSupport.swift` 로 올리고 옮긴 뒤, 되돌아오지 못하게
-  `test-gate.sh` 에 가드를 세우는 것이 처방이다.
-  (`MemoryHomeShowcaseTests`·`CompanionStore.init`, 2026-09-03.)
+- **처방**: 픽스처는 스토어마다 **디렉토리**를 판다 — `storeStateURL()`·`storeDirectory()`·
+  `memoryAlbumURL()`(XCTest, `IdleTestSupport.swift`)와 `storeFixtureStateURL()`·
+  `storeFixtureDirectory()`(swift-testing, `LocalStoreFixtures.swift`). 타깃마다 헬퍼가 따로인
+  이유는 치우는 방식뿐이다 — swift-testing 에는 `addTeardownBlock` 이 없어 호출부가 `defer` 로 지운다.
+- **스윕 완료(#232, 2026-09-04)**: 145곳 / 71파일을 전부 헬퍼로 옮겼다. **인벤토리 grep 이 두
+  부류를 놓치고 있었다**: ① 상태 파일 이름이 확장자 없는 UUID 인 것(`BattleChat`·`NetTeamBattle`·
+  `TradeChat`) — `.json` 을 찾는 grep 에 안 걸리는데 temp **루트**의 파일이라 곁방을 그대로
+  공유했다. ② 대화 세이브 픽스처 — `PokemonChatStore` 도 자기 앨범을 곁방으로 만든다
+  (`siblingMemoryURL`). 부류를 세던 grep 이 부류의 정의보다 좁았던 셈이다.
+- **영구 캡처 — 게이트와 테스트가 한 쌍이다**: `test-gate.sh` 의 "테스트 픽스처 격리 스윕" 이
+  `temporaryDirectory` 를 **헬퍼 두 파일 밖에서 부르는 것을 전면 금지**한다(예외는 줄 끝
+  `// shared-temp-ok`). **개수 래칫을 쓰지 않았다** — 이슈에 144곳으로 적힌 사이에 이미 145곳이
+  돼 있었고, 세는 가드는 그 드리프트를 정상으로 만든다. 게이트가 막는 것은 "헬퍼를 안 쓰는
+  픽스처" 이고, "헬퍼가 격리를 **실제로** 하는가" 는 `StoreFixtureIsolationTests` 가 잡는다
+  (앨범·웨이브 런·디렉토리 유일성 세 축). 둘 다 결함을 되주입해 실패를 확인했다 — 헬퍼를 옛
+  파일-단독 형태로 되돌리면 세 테스트가 각자 다른 이유로 깨지고, 위반 한 줄을 넣으면 게이트가 잡는다.
+  (`MemoryHomeShowcaseTests`·`CompanionStore.init`, 2026-09-03 → 2026-09-04.)
 
 ## 화면을 옮기면서 **일부만 이식하면**, 남은 기능은 테스트가 초록불인 채로 사라진다
 

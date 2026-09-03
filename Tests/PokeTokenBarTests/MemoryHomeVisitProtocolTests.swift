@@ -150,9 +150,7 @@ final class MemoryHomeVisitProtocolTests: XCTestCase {
     }
 
     func testVisitBrowsingDoesNotOwnPublicHostingLifetime() {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("visit-lifetime-\(UUID().uuidString)")
-        let stateURL = directory.appendingPathComponent("state.json")
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let stateURL = storeStateURL("visit-lifetime")
         let store = CompanionStore(fileURL: stateURL)
         let visits = MemoryHomeVisitCenter(companion: store, peerID: UUID())
         visits.startHostingIfEligible()
@@ -194,9 +192,7 @@ final class MemoryHomeVisitProtocolTests: XCTestCase {
         let port = try XCTUnwrap(listener.port, "루프백 리스너가 포트를 받지 못했다")
         XCTAssertNotEqual(port.rawValue, 0, "리스너가 아직 준비되지 않았다")
 
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("visit-release-\(UUID().uuidString)")
-        let stateURL = directory.appendingPathComponent("state.json")
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let stateURL = storeStateURL("visit-release")
         let store = CompanionStore(fileURL: stateURL)
         let visits = MemoryHomeVisitCenter(companion: store, peerID: UUID())
         visits.start()
@@ -389,9 +385,7 @@ final class MemoryHomeListingTests: XCTestCase {
 @MainActor
 final class MemoryHomeDiscoveryStateTests: XCTestCase {
     private func center() -> MemoryHomeVisitCenter {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("visit-state-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let store = CompanionStore(fileURL: directory.appendingPathComponent("state.json"))
+        let store = CompanionStore(fileURL: storeStateURL("visit-state"))
         return MemoryHomeVisitCenter(companion: store, peerID: UUID())
     }
 

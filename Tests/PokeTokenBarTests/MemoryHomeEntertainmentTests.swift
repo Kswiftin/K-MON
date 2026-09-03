@@ -4,8 +4,7 @@ import XCTest
 @MainActor
 final class MemoryHomeEntertainmentTests: XCTestCase {
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("memory-home-entertainment-\(UUID().uuidString).json")
+        storeStateURL("memory-home-entertainment")
     }
 
     /// BGM(주크박스)을 지운 뒤의 트리거 브랜치는 **키 삭제가 아니라 남은 키를 만나는 쪽**이다 —

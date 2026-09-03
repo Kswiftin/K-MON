@@ -17,8 +17,7 @@ private struct LegacyMemory: Codable {
 @MainActor
 final class PokemonMemoryAlbumTests: XCTestCase {
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokemon-memory-home-\(UUID().uuidString).json")
+        storeStateURL("mon-memory-home")
     }
 
     func testManualMemoryValidatesGraphemesAndPersists() {

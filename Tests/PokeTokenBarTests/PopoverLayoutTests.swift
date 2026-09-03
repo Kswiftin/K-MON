@@ -258,8 +258,7 @@ final class PopoverLayoutTests: XCTestCase {
     // MARK: 근처 트레이너 카드 (진행도가 잘리지 않는가)
 
     private func peerStore(_ language: AppLanguage = .ko) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-peer-layout-\(UUID().uuidString).json")
+        let url = storeStateURL("peer-layout")
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)"}"#
         try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: moveTestLine),
@@ -486,8 +485,7 @@ final class PopoverLayoutTests: XCTestCase {
     private static let missionCardBudget: CGFloat = 100
 
     private func missionStore(_ language: AppLanguage = .ko) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-mission-layout-\(UUID().uuidString).json")
+        let url = storeStateURL("mission-layout")
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)"}"#
         try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: moveTestLine),
@@ -548,8 +546,7 @@ final class PopoverLayoutTests: XCTestCase {
     private static let dexGoalStripBudget: CGFloat = 24 - dexHeaderSpacing
 
     private func dexGoalStore(_ language: AppLanguage = .ko) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-dexgoal-layout-\(UUID().uuidString).json")
+        let url = storeStateURL("dexgoal-layout")
         // 세 축이 **모두 분수로 보이는** 상태 — 종 12/25, 타입 8/9, 이로치 2/3.
         // 한 축이라도 사다리 끝까지 넘으면 그 칸이 "✓" 한 글자가 되어 최악의 폭에서 빠진다.
         let types = ["normal", "fire", "water", "electric", "grass", "ice", "fighting", "poison"]
@@ -604,8 +601,7 @@ final class PopoverLayoutTests: XCTestCase {
     private static let achievementShelfBudget: CGFloat = 188
 
     private func achievementStore(_ language: AppLanguage = .ko) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-achievement-layout-\(UUID().uuidString).json")
+        let url = storeStateURL("achievement-layout")
         // 네 트랙이 **모두 분수로 보이는** 상태 — 한 트랙이라도 사다리 끝을 넘으면 그 행이 "✓" 한
         // 글자가 되어 최악의 폭에서 빠진다.
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
@@ -680,8 +676,7 @@ final class PopoverLayoutTests: XCTestCase {
     /// 되고, 예산 검증이 가장 짧은 화면을 재면서 조용히 통과한다.
     private func seasonStore(_ language: AppLanguage = .ko, progressRatio: Double = 0.5,
                              at date: Date = seasonDates[0]) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-season-layout-\(UUID().uuidString).json")
+        let url = storeStateURL("season-layout")
         let key = CompanionStore.seasonKey(date)
         let counts = SeasonBoard.challenges(forSeasonKey: key)
             .map { "\"\($0.id)\":\(Int(Double($0.target) * progressRatio))" }.joined(separator: ",")
@@ -751,8 +746,7 @@ final class PopoverLayoutTests: XCTestCase {
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
 
     private func moveStore(_ moves: [MoveSpec]) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-moves-\(UUID().uuidString).json")
+        let url = storeStateURL("moves")
         let store = CompanionStore(provider: StubProvider(value: moveTestLine),
                                    clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: url, rng: SeededRNG(seed: 3))

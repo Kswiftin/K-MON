@@ -6,8 +6,7 @@ import XCTest
 @MainActor
 final class MemoryHomeMilestoneCardTests: XCTestCase {
     private func temporaryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("memory-home-milestone-cards-\(UUID().uuidString).json")
+        storeStateURL("memory-home-milestone-cards")
     }
     private let met = Date(timeIntervalSince1970: 1_780_000_000)
     private func days(_ count: Int, after date: Date) -> Date {

@@ -48,8 +48,7 @@ private let fixedNow = Date(timeIntervalSince1970: 1_700_000_000)
 final class EvolutionBranchTests: XCTestCase {
 
     private func store(_ evoLine: EvoLine) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("branch-\(UUID().uuidString).json")
+        let url = storeStateURL("branch")
         return CompanionStore(provider: StubProvider(value: evoLine), clock: { fixedNow },
                               fileURL: url, rng: SeededRNG(seed: 7))
     }

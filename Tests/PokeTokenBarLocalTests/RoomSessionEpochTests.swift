@@ -8,13 +8,11 @@ import Testing
 @MainActor
 @Suite struct RoomSessionEpochTests {
     private func makeStore() -> CompanionStore {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("room-epoch-\(UUID().uuidString)")
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []), rarity: .common,
                            names: [1: ["ko": "포1", "en": "P1", "ja": "ポ1"]])
         return CompanionStore(provider: RoomEpochStubProvider(value: line),
                               clock: { Date(timeIntervalSince1970: 1_700_000_000) },
-                              fileURL: directory.appendingPathComponent("state.json"),
+                              fileURL: storeFixtureStateURL("room-epoch"),
                               rng: RoomEpochRNG(seed: 1))
     }
 

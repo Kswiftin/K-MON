@@ -23,8 +23,7 @@ final class PeerDiscoveryEndToEndTests: XCTestCase {
     private func makeStore(_ clock: TestClock, trainerName: String) -> CompanionStore {
         let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []),
                            rarity: .common, names: [:])
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-lan-e2e-\(UUID().uuidString).json")
+        let url = storeStateURL("lan-e2e")
         let store = CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
                                    fileURL: url, rng: SeededRNG(seed: 5))
         // 서비스 이름은 `BattleCenter.init` 이 트레이너 이름으로 굽는다. 센터보다 먼저 정해야 한다.

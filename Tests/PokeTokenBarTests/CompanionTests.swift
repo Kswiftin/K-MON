@@ -187,7 +187,7 @@ private let fixedNow = Date(timeIntervalSince1970: 1_700_000_000)
 @MainActor
 final class CompanionStoreTests: XCTestCase {
     private func store(_ line: EvoLine, seed: UInt64 = 7) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         return CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: seed))
     }
 
@@ -248,7 +248,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 대조군으로 **인덱스에 없는 타입**을 함께 본다 — 그것이 없으면 인덱스를 아예 읽지 않고
     /// 아무 타입이나 통과시키는 구현도 초록이다.
     func testStarterTypePicksFromTheTypeIndex() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let s = CompanionStore(provider: StubProvider(value: noEvo, types: [noEvo.baseID: [.fire]]),
                                clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
 
@@ -267,7 +267,7 @@ final class CompanionStoreTests: XCTestCase {
     /// [회귀] 도감 항목 하나가 손상돼도(구버전/필드 누락) 나머지 도감·companion·인벤토리를 지킨다 —
     /// 예전엔 `[DexEntry]` 배열 전체 decode 가 throw 돼 상태가 전면 초기화됐다(항목별 격리로 수정).
     func testCorruptDexEntryDroppedWhileRestSurvives() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-dex-\(UUID().uuidString).json")
+        let url = storeStateURL("dex")
         // 유효 2개 + 손상 1개(finalID/chainOrder 누락).
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"dex":[{"baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"},"#
             + #"{"baseID":99,"rarity":"rare"},"#
@@ -285,7 +285,7 @@ final class CompanionStoreTests: XCTestCase {
     /// [회귀] 전면 손상 상태 파일은 fresh 로 시작하되, 다음 save() 가 덮어써 영구 유실되기 전에
     /// 원본을 `.corrupt` 로 백업해 수동 복구 여지를 남긴다.
     func testCorruptStateFileBackedUpBeforeReset() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-corrupt-\(UUID().uuidString).json")
+        let url = storeStateURL("corrupt")
         let garbage = "this is not valid json {{{ 손상"
         try Data(garbage.utf8).write(to: url)
 
@@ -309,7 +309,7 @@ final class CompanionStoreTests: XCTestCase {
     /// [회귀] active(현재 포켓몬)가 손상돼도(pathIDs 누락 등) 알로 폴백하되 도감·인벤토리·누적은 보존한다 —
     /// 예전엔 active decode 실패가 CompanionState 전체를 throw 시켜 전면 초기화됐다(필드별 관대화로 수정).
     func testCorruptActiveFallsBackToEggWhileRestSurvives() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-corrupt-\(UUID().uuidString).json")
+        let url = storeStateURL("active-corrupt")
         // active 는 pathIDs 누락 → MonState decode 실패. dex/inventory/usedSinceInstall 은 유효.
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1},"#
             + #""dex":[{"baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"}],"#
@@ -368,7 +368,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 백필(트리거 브랜치): 이름 미저장(구버전) 항목을 조회하면 line 에서 체인 이름을 얻어 **항목에 저장**
     /// 한다. 구버전 저장 JSON(“names” 키 없음)을 로드해 실제 마이그레이션 경로를 재현한다.
     func testDexResolveChainNamesBackfillsLegacyEntry() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"dex":[{"id":"e1","baseID":1,"finalID":3,"chainOrder":[1,2,3],"rarity":"common"}]}"#
         try? json.data(using: .utf8)!.write(to: url)
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
@@ -393,7 +393,7 @@ final class CompanionStoreTests: XCTestCase {
             DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: fixedNow,
                      nature: .lax),
         ]
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let dexJSON = String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
 
@@ -413,7 +413,7 @@ final class CompanionStoreTests: XCTestCase {
     func testDexSpeciesCountsOnlyReachedStagesOfActive() throws {
         let active = MonState(baseID: 1, pathIDs: [1, 2], plannedPathIDs: [1, 2, 3], stageIndex: 0,
                               usedAtStage: 0, rarity: .common, totalForms: 3, nature: .brave)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let json = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
 
@@ -434,7 +434,7 @@ final class CompanionStoreTests: XCTestCase {
             DexEntry(baseID: 1, finalID: 2, chainOrder: [1, 2], rarity: .common, caughtAt: fixedNow,
                      isShiny: true),
         ]
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let dexJSON = String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
@@ -452,8 +452,7 @@ final class CompanionStoreTests: XCTestCase {
             let active = MonState(baseID: 1, pathIDs: [1], stageIndex: 0, usedAtStage: 0,
                                   rarity: .common, totalForms: 3, isShiny: true,
                                   dittoDisguise: 1, dittoRevealed: revealed)
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("poke-\(UUID().uuidString).json")
+            let url = storeStateURL()
             let json = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
             try Data(#"{"economyVersion":2,"forcedResetVersion":1,"active":\#(json),"language":"ko"}"#.utf8).write(to: url)
             return CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
@@ -497,7 +496,7 @@ final class CompanionStoreTests: XCTestCase {
     func testBackfillDoesNotFetchWhenNamesAreAlreadyStored() async throws {
         let entry = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: fixedNow,
                              names: [1: ["ko": "포1"], 2: ["ko": "포2"], 3: ["ko": "포3"]])
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let dexJSON = String(decoding: try JSONEncoder().encode([entry]), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
         let provider = CountingLineProvider(value: linear3)
@@ -512,7 +511,7 @@ final class CompanionStoreTests: XCTestCase {
     func testBackfillCompletesPartiallyStoredNames() async throws {
         let entry = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common,
                              caughtAt: fixedNow, names: [1: ["ko": "포1"], 3: ["ko": "포3"]])
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let dexJSON = String(decoding: try JSONEncoder().encode([entry]), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
         let provider = CountingLineProvider(value: linear3)
@@ -528,7 +527,7 @@ final class CompanionStoreTests: XCTestCase {
 
     func testOwnedNameBackfillPersistsMissingCurrentSpeciesName() async throws {
         let activeJSON = #"{"baseID":1,"pathIDs":[1,2],"plannedPathIDs":[1,2,3],"stageIndex":1,"usedAtStage":0,"rarity":"common","totalForms":3,"names":{"1":{"ko":"포1"}}}"#
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"active":\#(activeJSON),"language":"ko"}"#.utf8).write(to: url)
         let provider = CountingLineProvider(value: linear3)
         let s = CompanionStore(provider: provider, clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
@@ -547,7 +546,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 오프라인이면 폴백(`#id`)을 **저장하지 않는다** — 저장해 버리면 이름이 영원히 번호로 굳는다.
     /// 다음 진입(온라인)에서 다시 시도해 채워지는 것까지 확인한다.
     func testBackfillRetriesAfterAnOfflineAttempt() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let bare = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: fixedNow)
         let dexJSON = String(decoding: try JSONEncoder().encode([bare]), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
@@ -588,7 +587,7 @@ final class CompanionStoreTests: XCTestCase {
                                  names: [1: ["ko": "포1"], 2: ["ko": "포2"], 3: ["ko": "포3"]])
         let active = MonState(baseID: 1, pathIDs: [1, 2, 3], stageIndex: 1,
                               usedAtStage: 0, rarity: .common, totalForms: 3, nature: .brave)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let dexJSON = String(decoding: try JSONEncoder().encode([graduated]), as: UTF8.self)
         let activeJSON = String(decoding: try JSONEncoder().encode(active), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"active":\#(activeJSON),"language":"ko"}"#.utf8).write(to: url)
@@ -609,7 +608,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 이름 없는 구버전 졸업분 1건(체인 1→2→3)만 담긴 store — 백필/표식 테스트 공용.
     private func storeWithNamelessEntry() throws -> CompanionStore {
         let bare = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: fixedNow)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let dexJSON = String(decoding: try JSONEncoder().encode([bare]), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
@@ -618,7 +617,7 @@ final class CompanionStoreTests: XCTestCase {
 
     /// 오프라인(line fetch 실패) + 저장 없음 → chainOrder 전 종을 종 번호(#id)로 폴백.
     func testDexResolveChainNamesOfflineFallback() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let s = CompanionStore(provider: LineThrowsProvider(), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 7))
         let bare = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: nil)
@@ -680,7 +679,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 사용자 리포트와 같은 재시작 상태: active 는 저장돼 있지만 dex=[] 인 기존 상태 파일도
     /// 도감 빈 화면으로 떨어지지 않는다.
     func testLoadedActiveCompanionPreventsEmptyDexState() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-\(UUID().uuidString).json")
+        let url = storeStateURL("active")
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":529,"pathIDs":[529],"stageIndex":0,"usedAtStage":148344233,"rarity":"uncommon","totalForms":2,"isShiny":false,"nature":"timid"},"dex":[]}"#
         try json.data(using: .utf8)!.write(to: url)
 
@@ -695,7 +694,7 @@ final class CompanionStoreTests: XCTestCase {
     /// [회귀] 현재 키우는 common 포켓몬은 더 희귀한 졸업 항목보다도 위에 고정된다.
     /// caughtAt 이 없는 구버전 졸업 항목은 active 로 오인하지 않는다.
     func testActiveCompanionPinnedBeforeGraduatedEntries() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-active-sort-\(UUID().uuidString).json")
+        let url = storeStateURL("active-sort")
         let json = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":5,"rarity":"common","totalForms":3},"dex":[{"id":"legacy-graduated","baseID":150,"finalID":150,"chainOrder":[150],"rarity":"legendary"}]}"#
         try json.data(using: .utf8)!.write(to: url)
 
@@ -730,7 +729,7 @@ final class CompanionStoreTests: XCTestCase {
 
     /// GraphQL base 인덱스 엔드포인트가 죽어도 REST 폴백으로 부화한다 (2026-07 실장애 회귀 방지).
     func testEggHatchesViaRESTFallbackWhenIndexDown() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let s = CompanionStore(provider: FallbackOnlyProvider(),
                                clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
         base(s)
@@ -1105,8 +1104,7 @@ final class CompanionStoreTests: XCTestCase {
     }
 
     private func teamPickCenterForGym(monCount: Int) -> (center: BattleCenter, mons: [MonState]) {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let store = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
                                    fileURL: url, rng: SeededRNG(seed: 7))
         store.debugSetBoxedMons((0..<monCount).map { index in
@@ -1225,7 +1223,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 무조건 save() 하던 동안엔 손상 세이브를 .corrupt 로 옮긴 자리에 파일이 즉시 되살아나
     /// testCorruptStateFileBackedUpBeforeReset 이 지키는 복구 장치가 무력화됐다.
     func testStartupDoesNotRewriteAnUnchangedSave() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-nowrite-\(UUID().uuidString).json")
+        let url = storeStateURL("nowrite")
         let s1 = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                 fileURL: url, rng: SeededRNG(seed: 7))
         s1.debugMarkStarterChosen()   // 파일 생성
@@ -1424,7 +1422,7 @@ final class CompanionStoreTests: XCTestCase {
     }
 
     func testHatchPreselectsWurmpleRouteAndEvolutionDoesNotConsumeRNG() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let rng = CountingRNG(seed: 7)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: rng)
 
@@ -1447,7 +1445,7 @@ final class CompanionStoreTests: XCTestCase {
     }
 
     func testPersistenceRoundTrip() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-persist-\(UUID().uuidString).json")
+        let url = storeStateURL("persist")
         let s1 = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 1))
         await s1.hatch(baseID: 1)
         s1.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
@@ -1460,7 +1458,7 @@ final class CompanionStoreTests: XCTestCase {
 
     func testReloadPreservesCompleteShortPlannedRouteLength() async {
         let line = makeLine(base: 1, tree: node(1, [node(2), node(3, [node(4)])]))
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-reload-plan-\(UUID().uuidString).json")
+        let url = storeStateURL("reload-plan")
         let s1 = CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
         await s1.hatch(baseID: 1)
         XCTAssertEqual(s1.state.active?.plannedPathIDs, [1, 2], "seed selects the short complete route")
@@ -1484,7 +1482,7 @@ final class CompanionStoreTests: XCTestCase {
 
     func testReloadLegacyIncompletePlanMigratesToPersistedCompleteRoute() async throws {
         let line = wurmpleLine
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-reload-legacy-\(UUID().uuidString).json")
+        let url = storeStateURL("reload-legacy")
         let legacy = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":265,"pathIDs":[265],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1}}"#
         try Data(legacy.utf8).write(to: url)
         let rng = CountingRNG(seed: 7)
@@ -1510,7 +1508,7 @@ final class CompanionStoreTests: XCTestCase {
     }
 
     func testReloadRepairsInvalidPlanSuffixWithoutRewindingRealizedPath() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-invalid-plan-\(UUID().uuidString).json")
+        let url = storeStateURL("invalid-plan")
         let saved = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":265,"pathIDs":[265,266],"plannedPathIDs":[265,266,269],"stageIndex":1,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
         try Data(saved.utf8).write(to: url)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 9))
@@ -1527,7 +1525,7 @@ final class CompanionStoreTests: XCTestCase {
     }
 
     func testReloadWrongRootNormalizesPathWithoutChangingIdentityOrDisguise() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-wrong-root-\(UUID().uuidString).json")
+        let url = storeStateURL("wrong-root")
         let saved = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":265,"pathIDs":[999],"plannedPathIDs":[999],"stageIndex":0,"usedAtStage":42,"rarity":"common","totalForms":1,"isShiny":true,"nature":"timid","dittoDisguise":265}}"#
         try Data(saved.utf8).write(to: url)
         let s = CompanionStore(provider: StubProvider(value: wurmpleLine), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 9))
@@ -1546,7 +1544,7 @@ final class CompanionStoreTests: XCTestCase {
     }
 
     func testReloadLeafCurrentPlanDoesNotConsumeRNG() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-leaf-plan-\(UUID().uuidString).json")
+        let url = storeStateURL("leaf-plan")
         let saved = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":265,"pathIDs":[265,266,267],"plannedPathIDs":[265,266,267],"stageIndex":2,"usedAtStage":42,"rarity":"common","totalForms":3}}"#
         try Data(saved.utf8).write(to: url)
         let rng = CountingRNG(seed: 9)
@@ -1562,7 +1560,7 @@ final class CompanionStoreTests: XCTestCase {
     }
 
     func testLineLoadPreservesUpdatesMadeWhileProviderIsSuspended() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-load-race-\(UUID().uuidString).json")
+        let url = storeStateURL("load-race")
         let saved = #"{"economyVersion":2,"forcedResetVersion":1,"active":{"baseID":1,"pathIDs":[1],"stageIndex":0,"usedAtStage":0,"rarity":"common","totalForms":1,"nature":"adamant"},"inventory":{"mint":1}}"#
         try Data(saved.utf8).write(to: url)
         let provider = SuspendedLineProvider(value: linear3)
@@ -1604,7 +1602,7 @@ final class CompanionStoreTests: XCTestCase {
     /// 크래시·무한루프 없이 최종체에서 졸업하고 실제 경로가 보존됨을 잠근다.
     func testAsymmetricBranchGraduatesSafely() async {
         let line = makeLine(base: 1, tree: node(1, [node(2), node(3, [node(4)])]))   // depth=3, 분기 {2, 3→4}
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-asym-\(UUID().uuidString).json")
+        let url = storeStateURL("asym")
         let s = CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
         await s.hatch(baseID: 1)
         XCTAssertEqual(s.state.active?.totalForms, s.state.active?.plannedPathIDs.count,
@@ -1695,7 +1693,7 @@ final class DexSortingTests: XCTestCase {
         // legendary 1개 + common 라인 2개(시각 다름)를 같은 store 에 졸업시킨다.
         // StubProvider 는 라인 1개만 주므로, 라인별로 store 를 분리하지 않고
         // 직접 졸업 흐름을 재현: 무진화(단일 임계) 라인을 hatch→applyUsage 로 졸업.
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         var tick = 0
         // 라인을 바꿔가며 졸업시키기 위해 가변 provider 사용.
         let provider = MutableProvider()
@@ -1746,7 +1744,7 @@ private final class MutableProvider: PokeProviding, @unchecked Sendable {
 @MainActor
 final class CompanionIdentityTests: XCTestCase {
     private func store(_ line: EvoLine, seed: UInt64) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         return CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: seed))
     }
 
@@ -1954,7 +1952,7 @@ final class CompanionIdentityTests: XCTestCase {
 
     /// [회귀] 라인 미로딩(재시작 직후/오프라인) 중 델타가 유실되지 않고 적립, 라인 로드 후 진화 판정.
     func testUsageAccruesWhileLineUnloadedThenEvolvesOnLoad() async {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         // 1차 스토어: 부화 후 저장
         let s1 = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                 fileURL: url, rng: SeededRNG(seed: 5))
@@ -1982,7 +1980,7 @@ final class CompanionIdentityTests: XCTestCase {
     /// [회귀] 구버전 상태가 GIF 없는 후대 진화형까지 진행했어도, 라인 재로딩 시 마지막 지원 형태로
     /// 복구하고 단계 수를 현재 에셋 개수에 맞춘다. 그렇지 않으면 트리에서 현재 종을 못 찾아 성장이 멈춘다.
     func testLineLoadMigratesPersistedUnsupportedEvolution() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-assets-\(UUID().uuidString).json")
+        let url = storeStateURL("assets")
         // 번호를 손으로 박으면 그 종에 GIF 가 생기는 날 테스트가 조용히 뜻을 잃는다 — 구멍에서 뽑는다.
         let unsupported = PokemonAssets.spriteGaps.min() ?? 0
         let json = "{\"economyVersion\":2,\"forcedResetVersion\":1,\"active\":{\"baseID\":56,"
@@ -2054,7 +2052,7 @@ final class CompanionIdentityTests: XCTestCase {
 
     private func samplerStore(_ provider: any PokeProviding, seed: UInt64,
                               preloadState: CompanionState? = nil) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         if let st = preloadState, let data = try? JSONEncoder().encode(st) { try? data.write(to: url) }
         return CompanionStore(provider: provider, clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: seed))
     }
@@ -2233,8 +2231,7 @@ final class BattleTeamPickTests: XCTestCase {
     }
 
     private func teamPickStore(monCount: Int) -> (store: CompanionStore, mons: [MonState]) {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-\(UUID().uuidString).json")
+        let url = storeStateURL()
         let store = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
                                    fileURL: url, rng: SeededRNG(seed: 7))
         store.debugSetBoxedMons((0..<monCount).map { index in
@@ -2334,7 +2331,7 @@ final class BattleTeamPickTests: XCTestCase {
 
     /// 중복 방지는 종 번호가 아니라 개체 UUID 기준이다. 같은 종 두 마리는 둘 다 팀에 들 수 있다.
     func testDistinctMonsOfTheSameSpeciesCanBothBattle() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID()).json")
+        let url = storeStateURL()
         let store = CompanionStore(provider: StubProvider(value: noEvo), clock: { fixedNow },
                                    fileURL: url, rng: SeededRNG(seed: 7))
         let first = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,

@@ -11,10 +11,7 @@ import Testing
     private static let now = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func makeDirectory() -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("read-only-store-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
+        storeFixtureDirectory("read-only-store")
     }
 
     private func store(at directory: URL, readOnly: Bool) -> CompanionStore {

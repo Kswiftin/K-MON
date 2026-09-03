@@ -13,8 +13,7 @@ final class DexFullListTests: XCTestCase {
                                rarity: .common, names: [1: ["ko": "포1", "en": "P1"]])
 
     private func store(_ entries: [DexEntry]) throws -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("dex-full-\(UUID().uuidString).json")
+        let url = storeStateURL("dex-full")
         let dexJSON = String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"dex":\#(dexJSON),"language":"ko"}"#.utf8)
             .write(to: url)
@@ -188,8 +187,7 @@ final class DexFullListTests: XCTestCase {
 
     func testTheTypeIndexIsLoadedOnceAndKept() async throws {
         let provider = CountingTypeIndexProvider(value: line, types: [1: [.grass, .poison]])
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("dex-types-\(UUID().uuidString).json")
+        let url = storeStateURL("dex-types")
         try Data(#"{"economyVersion":2,"forcedResetVersion":1,"language":"ko"}"#.utf8).write(to: url)
         let store = CompanionStore(provider: provider, clock: { Date() },
                                    fileURL: url, rng: SeededRNG(seed: 7))

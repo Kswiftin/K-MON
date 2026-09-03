@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class MemoryHomeCompanionTraceTests: XCTestCase {
     private func makeAlbum() -> (PokemonMemoryAlbum, URL) {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("trace-\(UUID()).json")
+        let url = storeStateURL("trace")
         return (PokemonMemoryAlbum(fileURL: url), url)
     }
 

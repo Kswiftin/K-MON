@@ -14,8 +14,7 @@ final class PlayerGymTests: XCTestCase {
                                rarity: .common, names: [1: ["en": "One", "ko": "하나"]])
 
     private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-gym-\(UUID().uuidString).json")
+        storeStateURL("gym")
     }
 
     private func store(_ clock: TestClock = TestClock()) -> CompanionStore {

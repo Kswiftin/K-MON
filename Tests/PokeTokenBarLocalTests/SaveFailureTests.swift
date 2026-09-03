@@ -18,8 +18,7 @@ import Testing
     /// 쓸 수 없는 경로. 세이브 자리에 **디렉터리**가 앉아 있어 `write(to:options:.atomic)` 가
     /// 실패한다(상위 디렉터리는 저장소가 스스로 만들므로 없는 경로로는 실패시킬 수 없다).
     @Test func aFailedWriteRaisesTheFlagTheHomeScreenReads() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("save-failure-\(UUID().uuidString)")
+        let directory = storeFixtureDirectory("save-failure")
         let unwritable = directory.appendingPathComponent("state.json")
         try FileManager.default.createDirectory(at: unwritable, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -33,9 +32,7 @@ import Testing
 
     /// 쓸 수 있는 경로에서는 깃발이 서지 않는다 — 서면 경고가 상시 표시가 돼 아무 의미가 없다.
     @Test func aSuccessfulWriteLeavesTheFlagDown() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("save-ok-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = storeFixtureDirectory("save-ok")
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = store(at: directory.appendingPathComponent("state.json"))

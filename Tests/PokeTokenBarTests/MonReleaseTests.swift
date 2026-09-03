@@ -9,8 +9,7 @@ final class MonReleaseTests: XCTestCase {
                                rarity: .common, names: [1: ["en": "One", "ko": "하나"]])
 
     private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-release-\(UUID().uuidString).json")
+        storeStateURL("release")
     }
 
     private func store(at url: URL) -> CompanionStore {

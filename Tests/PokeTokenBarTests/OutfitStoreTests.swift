@@ -11,8 +11,7 @@ final class OutfitStoreTests: XCTestCase {
     /// 지갑을 미리 채운 세이브 파일로 스토어를 띄운다 — `state` 는 `private(set)` 라 생성 뒤 직접
     /// 대입할 수 없다(`DungeonSettlementTests.makeStore` 와 같은 우회).
     private func makeStoreWithWallet(_ starPieces: Int) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("poke-outfit-\(UUID().uuidString).json")
+        let url = storeStateURL("outfit")
         let json = """
         {"economyVersion":\(IdleEconomy.currentVersion),"forcedResetVersion":\(SaveTransfer.forcedResetVersion),\
         "starPieces":\(starPieces)}

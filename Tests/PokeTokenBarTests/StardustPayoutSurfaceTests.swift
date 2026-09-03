@@ -244,7 +244,7 @@ final class StardustPayoutSurfaceTests: XCTestCase {
     private func makeStore(_ line: EvoLine, clock: TestClock = TestClock(),
                           seed: UInt64 = 11) -> CompanionStore {
         CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
-                       fileURL: stubStoreURL("payout"), rng: SeededRNG(seed: seed))
+                       fileURL: storeStateURL("payout"), rng: SeededRNG(seed: seed))
     }
 }
 

@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor final class MemoryHomeRoommateTests: XCTestCase {
     func testAliasPersistsAndRoommatesAreOwnedUniqueAndCapped() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = memoryAlbumURL("roommate")
         let album = PokemonMemoryAlbum(fileURL: url); let ids = (0..<4).map { _ in UUID() }
         XCTAssertTrue(album.setPeerAlias("우리집", for: UUID()))
         album.setRoommates([ids[0], ids[0], ids[1], ids[2], ids[3]], validCompanionIDs: Set(ids))
@@ -18,7 +18,7 @@ import XCTest
     }
 
     func testImportedLayoutDropsConsumablesAndFurnitureMissingFromTheBag() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = memoryAlbumURL("roommate")
         let album = PokemonMemoryAlbum(fileURL: url)
         var access = MemoryHomeAccessSettings()
         access.roomLayout = ["left": .roomBed, "center": .rareCandy, "right": .roomLamp]
@@ -35,7 +35,7 @@ import XCTest
     }
 
     func testRoomPositionsPhotosAndVisitStampsPersist() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = memoryAlbumURL("roommate")
         let album = PokemonMemoryAlbum(fileURL: url)
         let companionID = UUID()
         let bed = album.placeDecor(.roomBed, at: .init(x: 0.32, y: 0.64),

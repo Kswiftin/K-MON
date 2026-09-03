@@ -21,8 +21,7 @@ final class HeartScaleTests: XCTestCase {
 
     /// 활성 포켓몬 + 학습 기술 + 하트비늘 재고를 지정한 세이브.
     private func store(scales: Int = 1, learned: [Int] = [11, 22]) -> CompanionStore {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("heart-\(UUID().uuidString).json")
+        let url = storeStateURL("heart")
         let moves = learned.map {
             "{\"id\":\($0),\"names\":{\"en\":\"m\($0)\"},\"type\":\"normal\",\"power\":40,"
             + "\"damageClass\":\"physical\",\"accuracy\":100,\"pp\":35}"
