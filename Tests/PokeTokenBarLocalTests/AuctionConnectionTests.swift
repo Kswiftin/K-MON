@@ -6,9 +6,9 @@ import Testing
 /// 센터가 소켓에 **실제로 밀어 넣은** 프레임을 읽고, 필요하면 상대 역할로 연결을 접는다.
 ///
 /// 왜 진짜 소켓이어야 하나: 검증할 두 가지가 둘 다 소켓 안에서만 일어난다. ① 종료 프레임이
-/// 정말 나갔는가 — `send` 직후 `cancel()` 은 그 프레임을 **버린다**(측정: 8바이트 중 0바이트
-/// 도착). 소켓을 안 붙이면 무엇이 나가든 아무 단언도 깨지지 않는다. ② 상대가 앱을 정상 종료하면
-/// TCP 는 FIN 만 남기므로 `data == nil` 을 받는 읽기 콜백만 그것을 안다.
+/// 정말 나갔는가 — `send` 는 연결이 없으면 조용히 리턴하므로, 소켓을 안 붙이면 무엇이 나가든
+/// 아무 단언도 깨지지 않는다. ② 상대가 앱을 정상 종료하면 TCP 는 FIN 만 남기므로
+/// `data == nil` 을 받는 읽기 콜백만 그것을 안다.
 ///
 /// 콜백은 **전용 큐**에서 돈다. 메인 큐에 걸면 센터의 `NWConnection` 콜백(`.main`)과 같은 줄에
 /// 서서 테스트가 폴링하는 동안 밀린다. 탭이 비어 있으면 "무엇이 나갔다" 를 보는 단언이 공허하게
@@ -239,12 +239,14 @@ final class AuctionWireTap: @unchecked Sendable {
 
     // MARK: - 소켓 (기전 자체)
 
-    /// **접기 전에 종료 프레임이 정말 나가야 한다.**
+    /// 거둬들인 제안은 **종료 프레임을 상대에게 남기고** 연결을 놓는다. 그 프레임이 안 가면
+    /// 게시자 카드는 `.pending` 에 남고, `#227` 이 자동 시간 제한을 없앴으므로 영구히 남는다.
     ///
-    /// `send` 직후 `cancel()` 하면 그 프레임은 버려진다(측정: 8바이트 중 0바이트 도착).
-    /// `cancelOutgoingOffer` 가 정확히 그 모양이었다 — `#227` 이 90초 자동 타임아웃을 없앴으므로
-    /// 게시자 화면의 카드는 90초가 아니라 **영구히** `.pending` 에 남는다. 회수가 누수 수정이
-    /// 아니라 오늘 보이는 결함 수정인 지점이다.
+    /// **이 테스트가 지키지 못하는 것**: 접기가 큐를 흘리는지 여부는 여기서 갈리지 않는다.
+    /// `closeWhenFlushed` 를 즉시 `cancel()` 로 되돌려도 두 프레임이 다 도착해 초록으로 남았다
+    /// (재주입 3회 확인). 루프백은 어느 쪽으로도 전달하므로, 순서 보장은 리뷰와
+    /// `NWConnection` 계약이 근거이고 이 단언의 근거는 아니다. 단언하는 것은 그 위의 동작
+    /// 하나뿐이다 — 종료 프레임이 상대에게 닿고, 연결이 회수된다.
     @Test func cancellingAnOfferDeliversTheFailedFrameBeforeClosing() async throws {
         let tap = try AuctionWireTap()
         defer { tap.cancel() }
@@ -255,7 +257,10 @@ final class AuctionWireTap: @unchecked Sendable {
         let center = PokemonAuctionCenter(companion: store)
         _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
         let offerID = try #require(center.outgoingOffers.first?.id)
-        // 소켓이 실제로 섰다는 근거. 안 기다리면 아래 단언이 "아직 안 붙어서" 통과한다.
+        // 동기점은 `.apply` **도착**이다. `tap.peer`(TCP 수락)로 당기면 우리 쪽 `.ready` 보다
+        // 앞설 수 있고, 그러면 `.apply` 는 아직 보내지지도 않은 채 연결이 접혀 테스트가
+        // 간헐적으로 빨간불이 된다(실제로 그랬다). 소켓이 실제로 섰다는 근거이기도 하다 —
+        // 안 기다리면 아래 단언이 "아직 안 붙어서" 통과한다.
         #expect(await poll { tap.contains(AuctionWireTap.isApply) }, "제안 프레임이 나가지 않았다")
 
         center.cancelOutgoingOffer(offerID)

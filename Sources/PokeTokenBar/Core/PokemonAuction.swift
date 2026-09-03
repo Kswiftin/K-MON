@@ -247,8 +247,10 @@ final class PokemonAuctionCenter {
               outgoingOffers[index].status != .accepted else { return }
         refundStardustIfNeeded(at: index)
         let connectionID = outgoingOffers[index].connectionID
-        connections[connectionID]?.cancel(); connections[connectionID] = nil
+        // 제안을 먼저 지우고 접는다. `cancelOutgoingOffer` 는 방금 `.failed` 를 보냈고, 즉시
+        // `cancel()` 하면 그 프레임이 버려져 게시자 카드가 영구히 `.pending` 에 남는다.
         outgoingOffers.remove(at: index)
+        closeWhenFlushed(connectionID)
     }
 
     /// 제안을 잠근다. **개체는 아직 움직이지 않는다** — 신청자가 자기 개체를 그대로 들고 있다고
@@ -281,6 +283,9 @@ final class PokemonAuctionCenter {
         if let connectionID = connectionOfferIDs.first(where: { $0.value == offerID })?.key,
            let connection = connections[connectionID] {
             send(.declined(offerID: offerID), on: connection, id: connectionID)
+            // `receive` 의 `defer` 가 아니라 여기서 본다 — 이 함수는 화면·`cancelListing`·
+            // 커밋 연쇄 셋에서 오고, 뒤 둘은 다른 연결의 프레임을 처리하는 중이다.
+            reclaimIfIdle(connectionID)
         }
     }
 
@@ -292,6 +297,10 @@ final class PokemonAuctionCenter {
     /// 마지막 단계에서 거절될 값이 두 번째 단계 앞에서 걸린다.
     func receive(_ message: AuctionWireMessage, connectionID: UUID) {
         guard let connection = connections[connectionID] else { return }
+        // 프레임을 처리한 뒤 회수를 **한 번** 본다. `defer` 인 것은 조기 반환이 여럿이기
+        // 때문이다(가드 실패·재전송·커밋 실패·반려된 `.apply`) — 꼬리에만 적으면 그 갈래들이
+        // 통째로 빠지고, 그중 `.apply` 반려는 정원조차 없는 무제한 누수다.
+        defer { reclaimIfIdle(connectionID) }
         switch message {
         case .apply(let version, let offerID, let listingID, let trainer, let value):
             guard version == AuctionWireMessage.protocolVersion,
@@ -565,9 +574,16 @@ final class PokemonAuctionCenter {
         })
     }
 
+    /// 실패 분기는 **소리 내어 끝낸다.** 조용히 리턴하면 상대가 앱을 정상 종료했을 때 아무도
+    /// 그것을 모른다 — TCP 는 FIN 만 남기고 상태는 `.ready` 에 머무르므로 `stateUpdateHandler`
+    /// 의 `.failed`/`.cancelled` 가 영영 안 뜬다. 죽은 소켓이 그대로 남고 그 개체는 다른 제안에도
+    /// 못 쓴다. 형제 넷(`PokemonTrade`·`BattleNet`·`MultiplayerRoomCenter`·`MemoryHomeVisitCenter`)
+    /// 이 전부 이 모양이고, 경매만 남아 있었다(defect-log: 소켓을 정상 종료하면 `.failed` 는 오지
+    /// 않는다).
     private func receiveLength(on connection: NWConnection, id: UUID) {
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { [weak self, weak connection] data, _, _, _ in
-            guard let self, let connection, let data, data.count == 4 else { return }
+            guard let self, let connection else { return }
+            guard let data, data.count == 4 else { Task { @MainActor in self.drop(id) }; return }
             let length = data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.bigEndian
             guard length > 0, length <= Self.maxMessageBytes else { Task { @MainActor in self.drop(id) }; return }
             Task { @MainActor in self.receiveBody(Int(length), on: connection, id: id) }
@@ -576,7 +592,8 @@ final class PokemonAuctionCenter {
 
     private func receiveBody(_ length: Int, on connection: NWConnection, id: UUID) {
         connection.receive(minimumIncompleteLength: length, maximumLength: length) { [weak self, weak connection] data, _, _, _ in
-            guard let self, let connection, let data, data.count == length else { return }
+            guard let self, let connection else { return }
+            guard let data, data.count == length else { Task { @MainActor in self.drop(id) }; return }
             let message = try? JSONDecoder().decode(AuctionWireMessage.self, from: data)
             Task { @MainActor in
                 if let message { self.receive(message, connectionID: id) }
@@ -585,8 +602,49 @@ final class PokemonAuctionCenter {
         }
     }
 
-    private func drop(_ id: UUID) {
-        connections[id]?.cancel(); connections[id] = nil
+    /// 이 연결에 아직 나를 것이 남았는가를 보고, 없으면 접는다. **회수 규칙은 여기 하나다** —
+    /// 호출부마다 두면 나중에 생긴 종료 경로가 무회수로 남는다(형제 `MemoryHomeVisitCenter` 가
+    /// 정확히 그 부류로 물렸다: 끝나는 길이 다섯인데 하나에만 적어 둬서 넷이 샜다).
+    ///
+    /// 연결은 제안 하나를 나르므로 판정도 하나다 — 그 제안이 끝났으면 연결도 끝났다. 제안이
+    /// 아예 안 선 연결(반려된 `.apply`)도 끝난 것이다: 어느 정원에도 세어지지 않아 회수하지
+    /// 않으면 무제한으로 쌓인다.
+    private func reclaimIfIdle(_ id: UUID) {
+        guard connections[id] != nil else { return }
+        if let offerID = connectionOfferIDs[id],
+           let offer = offers.first(where: { $0.id == offerID }), offer.status.isLive { return }
+        if let offer = outgoingOffers.first(where: { $0.connectionID == id }), offer.status.isLive { return }
+        closeWhenFlushed(id)
+    }
+
+    /// **큐에 남은 프레임을 흘린 뒤에** 접는다. 빈 `.finalMessage` 를 큐 뒤에 붙이면 전송이
+    /// 순서를 지키므로 그 완료가 곧 "앞의 것이 다 나갔다" 다 — 보낸 게 있는지 없는지를 호출부가
+    /// 알 필요가 없어 부기 상태가 생기지 않는다.
+    ///
+    /// **왜 즉시 `cancel()` 이 아닌가 — 정직하게 적는다.** 이 경로에서 즉시 `cancel()` 이 프레임을
+    /// 버리는 것은 **재현하지 못했다**(루프백에서 3회 모두 두 프레임이 다 도착). 별도 측정에서는
+    /// 같은 모양이 20/20 유실됐지만 그 실험은 `NWParameters` 가 달라 이 경로를 충실히 모델링하지
+    /// 못했다. 그래서 이 두 줄은 재현된 결함의 수정이 아니라 **순서 보장**이다.
+    ///
+    /// 그럼에도 남기는 이유: `send` 는 비동기이고 API 에 `forceCancel()` 이 따로 있다는 것은
+    /// `cancel()` 의 flush 여부가 계약으로 못 박힌 값이 아니라는 뜻이다. 여기서 종료 프레임 하나를
+    /// 잃으면 상대 카드는 `#227` 이후 자동 시간 제한이 없어 **영구히** `.pending` 이고, 그 자리는
+    /// 개체 소유권이 오가는 두 단계 커밋이다. 두 줄로 사는 보장이면 싸다.
+    /// **테스트는 이 순서를 지키지 않는다** — 루프백이 어느 쪽으로도 전달하기 때문이다.
+    private func closeWhenFlushed(_ id: UUID) {
+        // 딕셔너리에서 먼저 뺀다 — 같은 연결에 회수가 두 번 걸려도 한 번만 접힌다.
+        guard let connection = forget(id) else { return }
+        connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
+                        completion: .contentProcessed { _ in connection.cancel() })
+    }
+
+    private func drop(_ id: UUID) { forget(id)?.cancel() }
+
+    /// 장부에서 빼는 것과 소켓을 접는 것은 다른 일이다. 즉시 접는 `drop` 과 흘린 뒤 접는
+    /// `closeWhenFlushed` 가 앞쪽 절반을 공유한다.
+    @discardableResult
+    private func forget(_ id: UUID) -> NWConnection? {
+        let connection = connections.removeValue(forKey: id)
         // 커밋을 기다리던 제안이면 실패로 남긴다. 그냥 지우면 게시자 화면에 "교환 처리 중" 이
         // 영영 남고, 잠긴 자리 때문에 다른 제안도 수락할 수 없다.
         if let offerID = connectionOfferIDs[id],
@@ -602,5 +660,6 @@ final class PokemonAuctionCenter {
             outgoingOffers[index].status = .failed
             refundStardustIfNeeded(at: index)
         }
+        return connection
     }
 }
