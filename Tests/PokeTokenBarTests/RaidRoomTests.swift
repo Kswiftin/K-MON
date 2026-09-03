@@ -570,9 +570,9 @@ final class RaidRoomTests: XCTestCase {
 
     /// 협동전이 `3P` 로 나오면 4인 개인전과 구별되지 않는다 — 전적 목록에서 두 줄이 같아 보인다.
     func testRecentBattleLabelDistinguishesRaids() {
-        XCTAssertEqual(BattleView.RecentBattleLabel.text(mode: .coopBoss, participantCount: 3), "RAID 3P")
-        XCTAssertEqual(BattleView.RecentBattleLabel.text(mode: .freeForAll, participantCount: 3), "3P")
-        XCTAssertEqual(BattleView.RecentBattleLabel.text(mode: .teams, participantCount: 4), "2 vs 2")
+        XCTAssertEqual(RoomBattleView.RecentBattleLabel.text(mode: .coopBoss, participantCount: 3), "RAID 3P")
+        XCTAssertEqual(RoomBattleView.RecentBattleLabel.text(mode: .freeForAll, participantCount: 3), "3P")
+        XCTAssertEqual(RoomBattleView.RecentBattleLabel.text(mode: .teams, participantCount: 4), "2 vs 2")
     }
 
     // MARK: 서명 — 지우면 다시 받는 필드다

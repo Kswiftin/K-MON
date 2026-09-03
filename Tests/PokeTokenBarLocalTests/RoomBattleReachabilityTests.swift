@@ -55,6 +55,33 @@ import Testing
         #expect(LANRoomList.isVisible("BATTLE · 현우 #abc124", activity: .battle, myTag: mine))
     }
 
+    // MARK: 로비 전환
+
+    /// 방 배틀 화면은 **자기 활동의 방만** 로비로 그린다. 레이드·체육관 방이 켜져 있는데
+    /// 여기가 로비를 그리면 화면은 방 배틀인데 뒤에서는 다른 판이 돈다.
+    @Test func lobbyIsDrawnOnlyForBattleRooms() {
+        #expect(RoomBattleView.showsLobby(phase: .hosting, activity: .battle))
+        #expect(RoomBattleView.showsLobby(phase: .battling, activity: .battle))
+        #expect(!RoomBattleView.showsLobby(phase: .hosting, activity: .raid))
+        #expect(!RoomBattleView.showsLobby(phase: .battling, activity: .raid))
+        #expect(!RoomBattleView.showsLobby(phase: .hosting, activity: .gym))
+        #expect(!RoomBattleView.showsLobby(phase: .tournament, activity: .tournament))
+    }
+
+    /// 방이 없으면 모집 화면이다.
+    @Test func idleShowsTheRecruitingScreen() {
+        #expect(!RoomBattleView.showsLobby(phase: .idle, activity: nil))
+        // 활동이 남아 있어도 국면이 idle 이면 방이 없는 것이다(`leaveRoom` 직후).
+        #expect(!RoomBattleView.showsLobby(phase: .idle, activity: .battle))
+    }
+
+    /// **개설·참가 중에는 활동을 아직 모른다** — 로비가 `await` 뒤에 온다. 그 사이 모집
+    /// 화면으로 되돌리면 방금 누른 "방 만들기" 가 아무 일도 안 한 것처럼 보인다.
+    @Test func creatingAndJoiningHoldTheLobbyBeforeTheActivityArrives() {
+        #expect(RoomBattleView.showsLobby(phase: .creating, activity: nil))
+        #expect(RoomBattleView.showsLobby(phase: .joining("현우"), activity: nil))
+    }
+
     // MARK: 친구 탭 라우팅
 
     /// 국면만 보면 **토너먼트가 아닌 방까지 토너먼트 화면이 삼킨다.** 활동 종류로 가른다.

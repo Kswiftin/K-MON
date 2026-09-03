@@ -39,7 +39,10 @@ struct PokemonTournamentView: View {
             }.buttonStyle(.borderedProminent).disabled(center.tournamentPickedTeam.count != 6)
             Divider()
             Text(store.l.t("참가 가능한 방", "Available rooms", "参加できる部屋")).font(.caption.bold())
-            let rooms = center.rooms.filter { $0.name.hasPrefix("TOUR ·") }
+            // 포켓애슬론과 같은 자리를 지난다 — 접두만 보면 내가 연 방이 내 목록에 뜬다.
+            let rooms = center.rooms.filter {
+                LANRoomList.isVisible($0.serviceName, activity: .tournament, myTag: center.myRoomTag)
+            }
             if rooms.isEmpty {
                 Text(store.l.t("토너먼트 방을 찾는 중…", "Looking for tournaments…", "大会を検索中…"))
                     .font(.caption).foregroundStyle(.secondary)

@@ -2,7 +2,24 @@ import SwiftUI
 
 /// 친구 탭의 관문. 근거리 상호작용을 한곳에 모으고 배틀과 교환 중 무엇을 할지 먼저 고른다.
 struct FriendView: View {
-    enum Destination { case battle, trade, tournament, gym }
+    enum Destination { case battle, roomBattle, trade, tournament, gym }
+
+    /// 방이 켜져 있을 때 친구 탭이 데려갈 화면. **활동 종류 하나로 가른다.**
+    ///
+    /// 예전엔 "체육관 방이 아닌 방" 이면 전부 토너먼트로 보냈다. 방을 쓰는 활동이 둘일 때는
+    /// 맞았지만 여섯이 된 지금은 레이드·2~4인 방 배틀까지 토너먼트 화면이 삼킨다 —
+    /// 화면은 토너먼트 브라우저인데 뒤에서는 다른 판이 돌고 있는 상태가 된다.
+    ///
+    /// `nil` 은 **친구 탭이 관여하지 않는** 활동이다: 레이드는 팝오버 오버레이(`nav.showRaid`),
+    /// 포켓애슬론·퀴즈는 챌린지 탭이 그린다. 여기서 잡으면 그 화면들이 친구 탭에 갇힌다.
+    static func destination(forRoom activity: RoomActivity?) -> Destination? {
+        switch activity {
+        case .battle: .roomBattle
+        case .tournament: .tournament
+        case .gym: .gym
+        case .raid, .pokeathlon, .pokemonQuiz, nil: nil
+        }
+    }
     @State private var representativeSearchText = ""
     @State private var showsRepresentativePicker = false
 
@@ -35,12 +52,11 @@ struct FriendView: View {
             // **관장인 것만으로는 화면을 붙잡지 않는다.** 관장은 도전을 기다리는 배경 상태지
             // 배틀 중이 아니다 — 그 내내 친구 탭을 잠그면 교환도 1:1 배틀도 못 한다(닫기를 눌러도
             // 조건이 계속 참이라 안 나가진다). 붙잡는 것은 **판이 실제로 돌 때**뿐이다.
-            } else if destination == .gym || isGymMatchLive {
+            } else if destination == .gym || isGymMatchLive || roomDestination == .gym {
                 PlayerGymView(store: store, center: battleCenter.multiplayer) { destination = nil }
-            // 방이 켜졌다는 것만으로는 어느 화면인지 못 정한다 — 토너먼트와 체육관이 같은 방을
-            // 쓰므로 **활동 종류로** 가른다. 체육관 방을 빼지 않으면 관장이 토너먼트 화면에 갇힌다.
-            } else if destination == .tournament
-                        || (battleCenter.multiplayer.phase != .idle && !battleCenter.multiplayer.isGymRoom) {
+            } else if destination == .roomBattle || roomDestination == .roomBattle {
+                RoomBattleView(store: store) { destination = nil }
+            } else if destination == .tournament || roomDestination == .tournament {
                 PokemonTournamentView(store: store, center: battleCenter.multiplayer) { destination = nil }
             } else if destination == .trade || battleCenter.trading.phase != .ready {
                 PokemonTradeView(store: store, center: battleCenter.trading) {
@@ -53,11 +69,9 @@ struct FriendView: View {
         .onAppear {
             if battleCenter.phase != .ready { destination = .battle }
             if battleCenter.trading.phase != .ready { destination = .trade }
-            // 토너먼트는 방이 켜져 있으면 그 화면으로 돌아간다. 체육관은 **판이 돌 때만** 그렇게
-            // 한다 — 관장이라는 이유로 되돌리면 다른 걸 하러 나올 수가 없다.
-            if battleCenter.multiplayer.phase != .idle, !battleCenter.multiplayer.isGymRoom {
-                destination = .tournament
-            }
+            // 방이 켜져 있으면 **그 방의 활동이 사는 화면**으로 돌아간다. 체육관은 예외로
+            // **판이 돌 때만** 그렇게 한다 — 관장이라는 이유로 되돌리면 다른 걸 하러 나올 수가 없다.
+            if let room = roomDestination, room != .gym { destination = room }
             if isGymMatchLive { destination = .gym }
         }
         // 도전이 들어와 판이 서면 체육관으로 데려간다 — 다른 화면을 보고 있으면 도전이 온 줄 모른다.
@@ -72,6 +86,15 @@ struct FriendView: View {
             if case .incoming = phase { revealsIncomingMessage = false }
             if phase == .ready, destination == .battle { destination = nil }
         }
+    }
+
+    /// 지금 켜져 있는 방이 이 탭에서 차지하는 화면. 방이 없으면 nil.
+    ///
+    /// 개설·참가 중에는 로비가 아직 안 와서 활동이 nil 이다 — 그 사이에는 사용자가 이미 고른
+    /// `destination` 이 화면을 잡고 있으므로 여기서 nil 을 돌려줘도 화면이 튀지 않는다.
+    private var roomDestination: Destination? {
+        guard battleCenter.multiplayer.phase != .idle else { return nil }
+        return Self.destination(forRoom: battleCenter.multiplayer.roomActivity)
     }
 
     /// 체육관 판이 **아직 진행 중**인가. 화면을 붙잡는 기준이다.
@@ -159,6 +182,23 @@ struct FriendView: View {
                     }
                     Spacer(); Image(systemName: "chevron.right")
                 }.padding(10).pokedoroCard(tint: .purple)
+            }.buttonStyle(.plain)
+
+            Button {
+                destination = .roomBattle
+            } label: {
+                HStack {
+                    Image(systemName: "person.3.fill").foregroundStyle(PokedoroTheme.blue)
+                    VStack(alignment: .leading) {
+                        Text(store.l.t("2~4인 방 배틀", "2-4 Player Room Battle", "2〜4人ルームバトル"))
+                            .font(.headline)
+                        Text(store.l.t("개인전 또는 2 vs 2 · 방을 열고 이웃을 기다립니다",
+                                       "Free-for-all or 2 vs 2 · open a room and wait for neighbors",
+                                       "個人戦または2対2・部屋を開いて待ちます"))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer(); Image(systemName: "chevron.right")
+                }.padding(10).pokedoroCard(tint: PokedoroTheme.blue)
             }.buttonStyle(.plain)
 
             Button {

@@ -1459,16 +1459,10 @@ final class MultiplayerRoomCenter {
 
     private func startHosting() throws {
         let listener = try NWListener(using: Self.parameters())
-        let prefix: String
-        switch lobby?.activity {
-        case .pokeathlon: prefix = "RUN"
-        case .pokemonQuiz: prefix = "QUIZ"
-        case .tournament: prefix = "TOUR"
-        case .gym: prefix = PlayerGym.roomNamePrefix
-        // 접두는 `RaidRoomName.make` 가 붙인다 — 여기 값은 위 분기에서 쓰이지 않는다.
-        case .raid: prefix = RaidRoomName.prefix
-        default: prefix = "BATTLE"
-        }
+        // 목록 필터가 읽는 것과 **같은 표**를 쓴다 — 두 곳에 적으면 한쪽만 바뀌어 만든 방이
+        // 어느 목록에도 안 뜬다(#209). 체육관·레이드는 아래에서 자기 이름 생성기를 타므로
+        // 여기 값이 쓰이지 않지만, 표를 갈라 두지 않으려고 같은 자리에서 받는다.
+        let prefix = LANRoomList.prefix(for: lobby?.activity ?? .battle)
         // 체육관만 이름에 재임 시작 시각을 함께 싣는다 — 방 광고에 TXT 가 없어, 목록에서
         // "누가 몇 분째 지키는지"를 접속 없이 보여줄 통로가 이름뿐이다.
         let idTag = myRoomTag

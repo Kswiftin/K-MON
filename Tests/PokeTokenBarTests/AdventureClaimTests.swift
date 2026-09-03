@@ -266,6 +266,11 @@ final class AdventureClaimTests: XCTestCase {
 
     /// `private var x: some View` / `private func x(...) -> some View` 의 이름을 뽑는다.
     /// `body` 는 SwiftUI 가 부르므로 제외한다.
+    ///
+    /// **private 만 본다.** 파일 밖에서 쓰이는 멤버(`PokedoroTheme.pageBackground`,
+    /// `View.pokedoroCard`)는 한 파일만 읽어서는 도달성을 판단할 수 없다 — 그 부류를 넣으면
+    /// 허용 목록으로 덮어야 하고, 허용 목록은 곧 진짜 고아도 덮는다. private 는 정의상
+    /// 자기 파일 안에서만 불리므로 이 검사만으로 결론이 난다.
     private static func declaredViewMembers(in lines: [String]) -> [String] {
         var names: [String] = []
         for line in lines {
@@ -278,7 +283,8 @@ final class AdventureClaimTests: XCTestCase {
     /// 한 줄이 View 조각을 선언하는가 — 그렇다면 그 이름.
     private static func declaredMemberName(in line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        // `extension View` 의 modifier(`.memoryHomePanel()`)는 호출 형태가 달라 여기서 다루지 않는다.
+        // `@ViewBuilder private var x` 처럼 속성이 같은 줄에 붙는 형태도 받는다.
+        guard trimmed.contains("private ") else { return nil }
         if let range = trimmed.range(of: "var "), trimmed.contains(": some View") {
             let rest = trimmed[range.upperBound...]
             let name = String(rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" })

@@ -262,8 +262,9 @@ final class BattleOutcomeTests: XCTestCase {
         }
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        // 방 배틀 화면은 `RoomBattleView` 로 떼어냈다(#209) — 스캔 대상도 함께 옮긴다.
         let view = try String(contentsOf: root.appendingPathComponent(
-            "Sources/PokeTokenBar/UI/BattleView.swift"), encoding: .utf8)
+            "Sources/PokeTokenBar/UI/RoomBattleView.swift"), encoding: .utf8)
 
         XCTAssertTrue(view.contains("center.multiplayer.myOutcome"),
                       "방 결과는 네 갈래 `myOutcome` 을 쓴다")
