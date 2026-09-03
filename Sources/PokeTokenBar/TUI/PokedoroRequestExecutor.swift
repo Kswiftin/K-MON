@@ -21,6 +21,10 @@ struct PokedoroRequestExecutor {
         case .start(let minutes): start(request, minutes: minutes)
         case .claim: claim(request)
         case .stop: stop(request)
+        case .use(let item): use(request, item: item)
+        case .evolve: evolve(request)
+        case .switchCompanion(let number): switchCompanion(request, number: number)
+        case .rename(let nickname): rename(request, nickname: nickname)
         }
     }
 
@@ -63,6 +67,72 @@ struct PokedoroRequestExecutor {
         return PokedoroReply(id: request.id, succeeded: true, message: "집중을 끝냈다.")
     }
 
+    /// 아이템 하나 사용. **갈래를 고르는 표는 `CompanionAction` 하나이고 여기 남는 것은 문구뿐이다** —
+    /// 대화가 같은 표를 읽으므로, 여기서 갈래를 다시 쓰면 한쪽만 고쳐진다.
+    private func use(_ request: PokedoroRequest, item: ItemKind) -> PokedoroReply {
+        let name = L(companion.language).itemName(item)
+        switch CompanionAction.useItem(item, companion: companion) {
+        case .candy(let result):
+            return ok(request, "\(name)을 썼다 — \(Self.candyLine(result))")
+        case .mint(let nature):
+            return ok(request, "\(name)을 썼다. 성격이 \(nature.name(companion.language))가 됐다.")
+        // 후보 카드가 떴을 뿐 아직 아무것도 안 바뀌었다 — 고르는 화면은 앱에만 있다. "바꿨다" 로
+        // 답하면 사용자는 끝난 줄 알고 앱을 안 열어 본다.
+        case .relearnOpened:
+            return ok(request, "\(name)을 썼다. 배울 기술은 앱의 포켓몬 화면에서 고른다.")
+        case .evolutionItemUsed:
+            return ok(request, "\(name)을 썼다.")
+        // 재고 부족과 **갈라 말한다**: 사러 가야 하는지, 애초에 쓰는 물건이 아닌지 다르다.
+        case .notUsedThisWay:
+            return no(request, "\(name)은 지니고만 있는 물건이라 쓰는 것이 아니다.")
+        case .unavailable:
+            return no(request, "가방에 쓸 수 있는 \(name)이 없다.")
+        case .refused:
+            return no(request, "지금은 \(name)을 쓸 수 없다.")
+        }
+    }
+
+    private func evolve(_ request: PokedoroRequest) -> PokedoroReply {
+        switch CompanionAction.acceptEvolution(companion: companion) {
+        case .nonePending:
+            return no(request, "진화를 기다리는 포켓몬이 없다.")
+        // 카드가 뜬 뒤에 조건이 무너지는 건 실제로 밟힌다(밤 한정 진화를 새벽에 승인).
+        case .conditionsNoLongerMet:
+            return no(request, "지금은 진화 조건이 맞지 않는다.")
+        case .evolved(let stage):
+            let name = PokedoroCLI.partnerName(companion) ?? "파트너"
+            return ok(request, "진화했다 — \(name) (\(stage + 1)번째 형태)")
+        }
+    }
+
+    /// 파트너 교체. 번호는 `party` 가 찍는 값이고, **인덱스로 접는 것은 로스터를 아는 여기서** 한다.
+    private func switchCompanion(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        let index = TUIRender.rosterIndex(printed: number)
+        guard let target = companion.chatRosterEntries.first(where: { $0.index == index }) else {
+            return no(request, "\(number)번 포켓몬이 없다 — party 로 번호를 확인한다.")
+        }
+        // 이미 나와 있는 개체로 바꾸는 것은 아무 일도 아니다. 성공으로 답하면 사용자는 교체가
+        // 일어났다고 믿는다.
+        guard !target.isActive else {
+            return no(request, "\(target.name)은 이미 함께 다니고 있다.")
+        }
+        companion.switchCompanion(to: target.id)
+        return ok(request, "\(target.name)와 함께 나섰다.")
+    }
+
+    /// 별명 바꾸기. 인자가 자유 문자열인 유일한 동작이라 **클램프가 여기 있다** — 요청 파일은
+    /// 손으로 고칠 수 있으므로 명령 파서만 검사하면 그 경로가 통째로 빈다.
+    private func rename(_ request: PokedoroRequest, nickname: String) -> PokedoroReply {
+        guard companion.hasActive else {
+            return no(request, "이름을 붙일 포켓몬이 없다.")
+        }
+        companion.setNickname(Self.oneLine(nickname))
+        // 붙은 이름을 **되읽어서** 말한다. 내 클램프 결과를 그대로 echo 하면 세이브 경계가
+        // 달라진 날 답과 실제가 갈라진다 — 사용자는 자기가 지은 이름이 왜 다른지 모른다.
+        let applied = companion.chatRosterEntries.first { $0.isActive }?.name ?? Self.oneLine(nickname)
+        return ok(request, "별명을 '\(applied)'로 바꿨다.")
+    }
+
     // MARK: 값
 
     /// 판정에 쓸 값 한 벌. `isRunning` 의 두 조건을 경계에서 한 값으로 접는다(대화 실행기와 같다).
@@ -82,6 +152,33 @@ struct PokedoroRequestExecutor {
 
     private func reply(_ request: PokedoroRequest, refused: PokedoroSessionGate.Refusal) -> PokedoroReply {
         PokedoroReply(id: request.id, succeeded: false, message: Self.humanLine(refused))
+    }
+
+    private func ok(_ request: PokedoroRequest, _ message: String) -> PokedoroReply {
+        PokedoroReply(id: request.id, succeeded: true, message: message)
+    }
+
+    private func no(_ request: PokedoroRequest, _ message: String) -> PokedoroReply {
+        PokedoroReply(id: request.id, succeeded: false, message: message)
+    }
+
+    /// 사탕 결과 → 사람 문장. `.unavailable` 은 여기 없다 — 그건 결과가 아니라 재고 없음이고,
+    /// `CompanionAction` 이 경계에서 이미 갈라 놨다.
+    private static func candyLine(_ result: CompanionStore.CandyUseResult) -> String {
+        switch result {
+        case .evolved: "진화했다!"
+        case .graduated: "졸업했다!"
+        case .progressed: "경험이 쌓였다."
+        case .unavailable: "아무 일도 없었다."
+        }
+    }
+
+    /// 한 줄로 접는다. 별명이 줄바꿈·탭을 물고 들어오면 상태줄·목록이 그 줄부터 어긋난다 —
+    /// `setNickname` 은 **양끝만** 다듬으므로 가운데 개행은 그대로 통과한다.
+    private static func oneLine(_ text: String) -> String {
+        text.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     /// 거절 사유 → 사람이 읽는 한 줄. **다음에 할 일을 같이 말한다** — 사유만 주면 사용자는

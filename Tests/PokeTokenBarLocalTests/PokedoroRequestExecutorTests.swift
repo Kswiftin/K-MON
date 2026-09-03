@@ -273,14 +273,14 @@ struct PokedoroRequestExecutorTests {
 
     /// 이미 나와 있는 개체로 바꾸는 것은 **아무 일도 아니다.** 성공으로 답하면 사용자는 교체가
     /// 일어났다고 믿는다.
-    @Test func testSwitchingToTheCompanionAlreadyOutIsRefused() async {
+    @Test func testSwitchingToTheCompanionAlreadyOutIsRefused() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
-        let active = try? #require(store.chatRosterEntries.first { $0.isActive })
+        let active = try #require(store.chatRosterEntries.first { $0.isActive })
 
-        let number = TUIRender.printedRosterNumber(index: active?.index ?? 0)
+        let number = TUIRender.printedRosterNumber(index: active.index)
         let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.switchCompanion(number: number), at: clock.now))
 

@@ -38,7 +38,7 @@ enum PokedoroCLI {
 
         let store = CompanionStore(isReadOnly: true)
         switch command {
-        case .help, .start, .claim, .stop:
+        case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename:
             // 위에서 이미 끝났다. `default` 로 접지 않는 이유는 명령이 늘 때 이 자리가 조용히
             // 아무것도 안 하는 길이 되지 않게 하기 위해서다.
             return Status.ok.rawValue

@@ -24,6 +24,14 @@ enum PokedoroCommand: Equatable, Sendable {
     case start(minutes: Int?)
     case claim
     case stop
+    /// 아이템 하나 사용. 파서가 **닫힌 목록**(`ItemKind.named`)을 이미 지났으므로 여기 담긴
+    /// 종류는 늘 실행할 수 있는 값이다 — 문자열을 담으면 실행 못 하는 명령이 통과하고, 그 명령의
+    /// 요청은 `nil` 이 되어 조용한 무동작이 된다.
+    case use(item: ItemKind)
+    case evolve
+    /// `party` 가 찍는 번호(1부터).
+    case switchCompanion(number: Int)
+    case rename(nickname: String)
 
     /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
     ///
@@ -34,6 +42,10 @@ enum PokedoroCommand: Equatable, Sendable {
         case .start(let minutes): .start(minutes: minutes)
         case .claim: .claim
         case .stop: .stop
+        case .use(let item): .use(item: item)
+        case .evolve: .evolve
+        case .switchCompanion(let number): .switchCompanion(number: number)
+        case .rename(let nickname): .rename(nickname: nickname)
         case .status, .party, .dex, .bag, .challenge, .goals, .mon, .watch, .help: nil
         }
     }
@@ -51,6 +63,13 @@ enum PokedoroCommandError: Equatable, Error {
     /// 숫자가 아닌 개체 번호. 같은 부류지만 오류를 나눠 두는 이유는 **다음에 할 일이 다르기**
     /// 때문이다 — 길이는 정해진 셋 중 하나를 골라야 하고, 번호는 `party` 가 찍어 준 값을 봐야 한다.
     case invalidMonNumber(String)
+    /// 인자가 필요한 명령을 인자 없이 쳤다. 조용히 아무것도 안 하면 사용자는 명령이 먹었는지조차
+    /// 모른다.
+    case missingArgument(String)
+    /// 인자를 받지 않는 명령에 인자가 붙었다. 버리고 실행하면 사용자는 그 값이 뭔가 했다고 믿는다.
+    case unexpectedArgument(String)
+    /// 목록 밖 아이템 이름. **어디서 이름을 얻는지** 같이 말한다.
+    case unknownItem(String)
 
     var message: String {
         switch self {
@@ -63,6 +82,12 @@ enum PokedoroCommandError: Equatable, Error {
                 + " 중 하나를 쓴다."
         case .invalidMonNumber(let raw):
             "개체 번호가 숫자가 아니다: \(raw) — `party` 가 찍는 번호를 쓴다."
+        case .missingArgument(let name):
+            "`\(name)` 은 인자가 필요하다. `pokedoro help` 로 쓰는 법을 본다."
+        case .unexpectedArgument(let name):
+            "`\(name)` 은 인자를 받지 않는다."
+        case .unknownItem(let raw):
+            "그런 아이템이 없다: \(raw) — `pokedoro bag` 이 찍는 이름을 쓴다."
         }
     }
 }
@@ -119,10 +144,46 @@ enum PokedoroCommandParser {
             return .start(minutes: try number(in: tail, orThrow: PokedoroCommandError.invalidMinutes))
         case "claim": return .claim
         case "stop", "cancel": return .stop
+        case "use":
+            let raw = try text(in: tail, command: name)
+            guard let item = ItemKind.named(raw) else { throw PokedoroCommandError.unknownItem(raw) }
+            return .use(item: item)
+        case "evolve":
+            try rejectArgument(in: tail, command: name)
+            return .evolve
+        case "switch":
+            return .switchCompanion(number: try requiredNumber(in: tail, command: name))
+        case "name", "nickname":
+            return .rename(nickname: try text(in: tail, command: name))
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
         }
+    }
+
+    /// 명령 뒤의 글자 인자. 조각을 **다시 이어 붙인다** — 셸은 `use 이상한 사탕` 을 인자 두 개로
+    /// 주므로, 첫 조각만 읽으면 아이템 이름의 절반으로 목록을 뒤지고 늘 실패한다(따옴표를 쳐야만
+    /// 되는 명령은 안내 없이는 아무도 모른다).
+    private static func text(in arguments: [String], command: String) throws -> String {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard !words.isEmpty else { throw PokedoroCommandError.missingArgument(command) }
+        return words.joined(separator: " ")
+    }
+
+    /// 인자를 받지 않는 명령의 인자 검사.
+    private static func rejectArgument(in arguments: [String], command: String) throws {
+        guard arguments.allSatisfy({ $0.hasPrefix("--") }) else {
+            throw PokedoroCommandError.unexpectedArgument(command)
+        }
+    }
+
+    /// 반드시 있어야 하는 번호. 없으면 "빠졌다", 숫자가 아니면 "숫자가 아니다" 로 갈라 말한다 —
+    /// 사용자가 고쳐야 하는 것이 다르다.
+    private static func requiredNumber(in arguments: [String], command: String) throws -> Int {
+        guard let value = try number(in: arguments, orThrow: PokedoroCommandError.invalidMonNumber) else {
+            throw PokedoroCommandError.missingArgument(command)
+        }
+        return value
     }
 
     /// 명령 뒤의 숫자 인자. **없으면 `nil`, 숫자가 아니면 오류다.** 조용히 기본값으로 접으면
@@ -161,6 +222,10 @@ enum PokedoroCommandParser {
         ("start [\(lengths)]", "집중 세션 시작 (생략하면 \(PokemonChatTool.focusMinutes[0])분)"),
         ("claim", "끝난 모험의 보상 받기"),
         ("stop", "집중 세션 끝내기"),
+        ("use <아이템>", "아이템 하나 쓰기 (bag 이 찍는 이름)"),
+        ("evolve", "대기 중인 진화 승인"),
+        ("switch <번호>", "함께 다닐 포켓몬 바꾸기"),
+        ("name <별명>", "파트너 별명 바꾸기"),
         ("help", "이 도움말"),
     ]
 
