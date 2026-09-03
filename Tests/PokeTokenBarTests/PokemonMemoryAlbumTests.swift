@@ -263,6 +263,27 @@ final class PokemonMemoryAlbumTests: XCTestCase {
         XCTAssertTrue(PokemonMemoryAlbum(fileURL: url).memoryHomeAccess.blockedPeerIDs.contains(first))
     }
 
+    /// 100개 상한을 넘길 때 버리는 항목이 **방금 쓴 것**이면, `setPeerAlias` 는 `true` 를 돌려주고도
+    /// 값을 잃는다. `remove(at: startIndex)` 는 해시 순서라 방금 넣은 키가 걸릴 수 있었다.
+    func testPeerAliasEvictionNeverDropsTheAliasJustWritten() {
+        let url = temporaryURL(); defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+        let existing = (0..<100).map { _ in UUID() }
+        for peerID in existing { XCTAssertTrue(album.setPeerAlias("이웃", for: peerID)) }
+        let newest = UUID()
+
+        XCTAssertTrue(album.setPeerAlias("막내", for: newest))
+
+        let stored = PokemonMemoryAlbum(fileURL: url).memoryHomeAccess.peerAliases
+        XCTAssertEqual(stored.count, 100)
+        XCTAssertEqual(stored[newest], "막내",
+                       "상한을 넘겼다고 방금 저장한 일촌명을 버리면 저장에 성공한 척하고 값이 사라진다")
+        // 버리는 항목도 결정적이어야 한다 — 해시 순서로 고르면 실행마다 다른 사람이 지워진다.
+        let evicted = existing.min(by: { $0.uuidString < $1.uuidString })!
+        XCTAssertNil(stored[evicted])
+        XCTAssertEqual(existing.filter { stored[$0] != nil }.count, 99)
+    }
+
     func testMemoryHomePublicNicknameMigratesOnceValidatesAndPersists() {
         let url = temporaryURL(); defer { try? FileManager.default.removeItem(at: url) }
         let album = PokemonMemoryAlbum(fileURL: url)
@@ -289,5 +310,67 @@ final class PokemonMemoryAlbumTests: XCTestCase {
 
         XCTAssertNil(album.memoryHomeAccess.sharedPinnedMemoryID)
         XCTAssertNil(album.sharedPinnedMemory(for: second))
+    }
+
+    /// 고정이 편도면 대표 기억을 **내릴** 수 없다 — 핀을 다시 눌러도 같은 기억을 재고정할 뿐이라
+    /// "아래 기억의 핀을 눌러…" 빈 상태는 첫 고정 이후 영원히 도달 불가가 된다.
+    /// 내릴 때는 LAN 공유도 함께 꺼져야 한다 — 고정이 풀린 기억이 계속 나가면 동의를 넘어선다.
+    func testPinningTheSameMemoryAgainUnpinsItAndStopsSharing() {
+        let url = temporaryURL(); defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+        let companionID = UUID()
+        album.record(companionID: companionID, body: "첫 집중", source: .event)
+        let memory = album.entries(for: companionID)[0]
+        album.pin(memory)
+        album.setSharedPinnedMemory(memory, activeCompanionID: companionID)
+
+        album.pin(memory)
+
+        XCTAssertNil(album.pinned(for: companionID), "같은 핀을 다시 눌렀는데 고정이 풀리지 않으면 내릴 길이 없다")
+        XCTAssertNil(album.memoryHomeAccess.sharedPinnedMemoryID, "고정이 풀린 기억이 계속 공유되면 동의를 넘어선다")
+        XCTAssertNil(PokemonMemoryAlbum(fileURL: url).pinned(for: companionID))
+    }
+
+    /// 대표 기억을 **바꾸면** LAN 공유가 꺼진다(의도된 동작 — 새 기억은 아직 동의받지 않았다).
+    /// 화면은 이 사실을 미리 알려야 하므로, 규칙이 조용히 뒤집히지 않게 여기에 고정해 둔다.
+    ///
+    /// 검증은 **되돌아가 재고정하는** 분기로 한다. 바꾼 직후만 보면 `sharedPinnedMemory(for:)`
+    /// 자신의 "고정된 것과 같은 ID 인가" 가드가 결함을 가려, 정규화를 통째로 지워도 통과한다.
+    /// 위험한 것은 남은 ID 다 — A 로 돌아오면 동의를 다시 받지 않고 공유가 되살아난다.
+    func testPinningADifferentMemoryTurnsOffLANSharingForGood() {
+        let album = PokemonMemoryAlbum(fileURL: temporaryURL())
+        let companionID = UUID()
+        album.record(companionID: companionID, body: "첫 집중", source: .event)
+        album.record(companionID: companionID, body: "비 오는 날", source: .event)
+        let first = album.entries(for: companionID)[0], second = album.entries(for: companionID)[1]
+        album.pin(first)
+        album.setSharedPinnedMemory(first, activeCompanionID: companionID)
+
+        album.pin(second)
+
+        XCTAssertEqual(album.pinned(for: companionID)?.id, second.id)
+        XCTAssertNil(album.memoryHomeAccess.sharedPinnedMemoryID, "대표를 바꿨는데 공유 동의가 남아 있다")
+
+        album.pin(first)
+
+        XCTAssertEqual(album.pinned(for: companionID)?.id, first.id)
+        XCTAssertNil(album.sharedPinnedMemory(for: companionID),
+                     "대표를 되돌렸다고 공유가 동의 없이 되살아나면 안 된다")
+    }
+
+    /// 일촌명을 **내리는** 길. `setPeerAlias` 는 빈 값을 거부하므로, 지우는 경로가 따로 없으면
+    /// 잘못 붙인 별명은 덮어쓸 수만 있고 없앨 수 없다(대문 문구의 `clearProfileMessage` 와 같은 짝).
+    func testClearPeerAliasRemovesTheAliasAndPersists() {
+        let url = temporaryURL(); defer { try? FileManager.default.removeItem(at: url) }
+        let album = PokemonMemoryAlbum(fileURL: url)
+        let peerID = UUID()
+        XCTAssertTrue(album.setPeerAlias("옆집", for: peerID))
+        XCTAssertFalse(album.setPeerAlias("", for: peerID), "빈 값으로는 지울 수 없다 — 그래서 전용 경로가 필요하다")
+
+        XCTAssertTrue(album.clearPeerAlias(for: peerID))
+
+        XCTAssertNil(album.memoryHomeAccess.peerAliases[peerID])
+        XCTAssertNil(PokemonMemoryAlbum(fileURL: url).memoryHomeAccess.peerAliases[peerID], "지운 별명이 다시 살아났다")
+        XCTAssertFalse(album.clearPeerAlias(for: peerID), "지울 것이 없으면 세이브도 나가지 않아야 한다")
     }
 }
