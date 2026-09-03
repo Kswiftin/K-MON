@@ -55,6 +55,20 @@ enum AuctionFixtures {
         center.attachForTesting(NWConnection(to: .hostPort(host: "127.0.0.1", port: 9), using: .tcp))
     }
 
+    /// 경매에 내놓을 개체를 **박스에** 세운다.
+    ///
+    /// **동행은 팔 수 없다** — 정산 직전에 파트너를 팔면 모험 경험치 전량이 별의조각으로 환산돼
+    /// 총수입이 1.5배가 되는 지배 전략이었다(`CompanionStore.completeAuctionSale`).
+    /// 그래서 동행 자리를 먼저 채운다: 소유 개체가 하나뿐이면 `receiveAuctionPokemon` 이 그것을
+    /// 동행으로 앉혀 버려 "박스 개체를 판다" 는 전제가 조용히 뒤집힌다.
+    @MainActor static func sellableMon(_ store: CompanionStore, baseID: Int = 30)
+        async throws -> MonState {
+        await store.hatch(baseID: 1)
+        let boxed = remoteMon(baseID: baseID)
+        #expect(store.receiveAuctionPokemon(boxed))
+        return try #require(store.state.boxedMons.first { $0.id == boxed.id })
+    }
+
     static func remoteMon(baseID: Int = 20, level: Int = 5) -> MonState {
         var mon = MonState(baseID: baseID, pathIDs: [baseID], plannedPathIDs: [baseID], stageIndex: 0,
                            usedAtStage: 0, rarity: .common, totalForms: 1,
@@ -85,6 +99,10 @@ enum AuctionFixtures {
     private func remoteMon(baseID: Int = 20, level: Int = 5) -> MonState {
         AuctionFixtures.remoteMon(baseID: baseID, level: level)
     }
+
+    private func sellableMon(_ store: CompanionStore, baseID: Int = 30) async throws -> MonState {
+        try await AuctionFixtures.sellableMon(store, baseID: baseID)
+    }
     private func snapshot(_ mon: MonState) -> TradePokemonSnapshot { AuctionFixtures.snapshot(mon) }
 
     private func listing(for mon: MonState, id: UUID = UUID()) -> AuctionListing {
@@ -95,9 +113,8 @@ enum AuctionFixtures {
 
     /// 게시자 국면을 세운다: 한 마리를 올리고 제안 하나를 받는다.
     private func listingCenter(_ store: CompanionStore, offering offered: MonState)
-        async -> (center: PokemonAuctionCenter, listed: MonState, connection: UUID, offerID: UUID) {
-        await store.hatch(baseID: 1)
-        let listed = store.state.active!
+        async throws -> (center: PokemonAuctionCenter, listed: MonState, connection: UUID, offerID: UUID) {
+        let listed = try await sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         center.publish(listed)
         let listingID = center.localListings.keys.first!
@@ -115,8 +132,7 @@ enum AuctionFixtures {
     /// 사라졌다. 되돌리는 경로가 없어서 복구도 불가능했다.
     @Test func applicantKeepsItsPokemonUntilTheListerHasCommitted() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
@@ -138,8 +154,7 @@ enum AuctionFixtures {
     /// 게시자가 커밋을 마쳤다는 프레임이 와야 교환이 끝난다.
     @Test func applicantCommitsOnceTheListerReportsCompletion() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
@@ -158,7 +173,7 @@ enum AuctionFixtures {
     @Test func aSecondOfferCannotBeAcceptedWhileOneIsLocked() async throws {
         let store = makeStore()
         let first = remoteMon(baseID: 20), second = remoteMon(baseID: 21)
-        let setup = await listingCenter(store, offering: first)
+        let setup = try await listingCenter(store, offering: first)
         let center = setup.center
         let secondConnection = attachedConnection(center)
         let secondOffer = UUID()
@@ -179,7 +194,7 @@ enum AuctionFixtures {
     /// 한 연결은 제안 하나만 나른다. 덮어쓰게 두면 앞 제안의 거절·수락 프레임이 상대에게 못 간다.
     @Test func oneConnectionCarriesOnlyOneOffer() async throws {
         let store = makeStore()
-        let setup = await listingCenter(store, offering: remoteMon(baseID: 20))
+        let setup = try await listingCenter(store, offering: remoteMon(baseID: 20))
         let center = setup.center
 
         center.receive(.apply(version: AuctionWireMessage.protocolVersion, offerID: UUID(),
@@ -194,8 +209,7 @@ enum AuctionFixtures {
     /// 포켓몬이 앉는다.
     @Test func aPokemonThatDoesNotMatchTheListingAbortsTheTrade() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let advertised = remoteMon(baseID: 20, level: 5)
         let swapped = remoteMon(baseID: 21, level: 60)
         let center = PokemonAuctionCenter(companion: store)
@@ -217,8 +231,7 @@ enum AuctionFixtures {
     /// 두 번 커밋되므로 이제 센터가 막는다(`aListedPokemonCannotAlsoBackAnOffer`).
     @Test func cancellingMyListingLeavesMyOwnOfferAlone() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let listed = try #require(store.state.active)
+        let listed = try await sellableMon(store)
         let offered = remoteMon(baseID: 30)
         #expect(store.receiveAuctionPokemon(offered))
         let theirs = remoteMon()
@@ -240,8 +253,7 @@ enum AuctionFixtures {
     /// 켜져 있는데 게시자가 늦게 답하는 정상적인 경우까지 시간으로 끊으면 안 된다.
     @Test func aPendingOfferCanBeCancelledButACommittingOneCannot() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
@@ -265,7 +277,7 @@ enum AuctionFixtures {
     @Test func memoriesTravelWithTheAuctionTrade() async throws {
         let store = makeStore()
         let offered = remoteMon(baseID: 20)
-        let setup = await listingCenter(store, offering: offered)
+        let setup = try await listingCenter(store, offering: offered)
         let center = setup.center
         center.accept(setup.offerID)
 
@@ -283,8 +295,7 @@ enum AuctionFixtures {
 
     @Test func multiplePokemonCanBeListedAtTheSameTime() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let first = try #require(store.state.active)
+        let first = try await sellableMon(store)
         let second = remoteMon(baseID: 20)
         #expect(store.receiveAuctionPokemon(second))
         let center = PokemonAuctionCenter(companion: store)
@@ -298,8 +309,7 @@ enum AuctionFixtures {
 
     @Test func acceptedStardustOfferPaysSellerAndTransfersListedPokemon() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let listed = try #require(store.state.active)
+        let listed = try await sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         center.publish(listed)
         let listingID = try #require(center.localListings.keys.first)
@@ -330,8 +340,7 @@ enum AuctionFixtures {
     /// 서지 않아, 답 없는 제안 하나가 제한 시간(90초) 동안 다른 기회를 전부 막았다.
     @Test func severalOffersCanBePendingAtTheSameTime() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let alsoMine = remoteMon(baseID: 30)
         #expect(store.receiveAuctionPokemon(alsoMine))
         let center = PokemonAuctionCenter(companion: store)
@@ -350,8 +359,7 @@ enum AuctionFixtures {
     /// 하나는 실패로 끝나지만 그 실패가 어느 쪽인지는 순서 나름이다.
     @Test func theSamePokemonCannotBackTwoOffers() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
 
         #expect(center.apply(to: listing(for: remoteMon(baseID: 20)), offering: mine) != nil)
@@ -365,8 +373,7 @@ enum AuctionFixtures {
     /// 커밋된다 — 제안이 하나뿐이던 때부터 있던 구멍인데, 제안이 여러 건 서면 훨씬 쉽게 밟힌다.
     @Test func aListedPokemonCannotAlsoBackAnOffer() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         center.publish(mine)
 
@@ -378,8 +385,7 @@ enum AuctionFixtures {
     /// 제안의 상태·타임아웃·에스크로를 통째로 덮었다.
     @Test func oneOfferFailingLeavesTheOthersPending() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let alsoMine = remoteMon(baseID: 30)
         #expect(store.receiveAuctionPokemon(alsoMine))
         let center = PokemonAuctionCenter(companion: store)
@@ -509,8 +515,7 @@ enum AuctionFixtures {
     /// 프로덕션 경로의 사본이 되어, 정작 실사용 경로는 무검증으로 남는다.
     @Test func anOfferRemovedMidCommitDoesNotMoveTheEscrowToItsNeighbour() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let alsoMine = remoteMon(baseID: 30)
         #expect(store.receiveAuctionPokemon(alsoMine))
         store.creditStarPieces(100)
@@ -554,8 +559,7 @@ enum AuctionFixtures {
     /// 신청자 쪽에서 환불이 한 번 더 나간다 — **화폐 복제**다.
     @Test func anOfferRemovedAfterTheCommitDoesNotMoveTheCompletionToItsNeighbour() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         // 개체는 하나뿐이라 뒤에 설 제안은 별의모래 1 짜리로 세운다.
         store.creditStarPieces(101)
         let center = PokemonAuctionCenter(companion: store)
@@ -672,7 +676,7 @@ enum AuctionFixtures {
     /// 게시자는 다음 제안을 수락할 수 없고, 화면에는 답을 기다리는 카드가 영영 남는다.
     @Test func anApplicantsFailureFrameReleasesTheListersSlot() async throws {
         let store = makeStore()
-        let (center, _, connection, offerID) = await listingCenter(store, offering: remoteMon(baseID: 40))
+        let (center, _, connection, offerID) = try await listingCenter(store, offering: remoteMon(baseID: 40))
         #expect(center.offers.first?.status == .pending)
 
         center.receive(.failed(offerID: offerID), connectionID: connection)

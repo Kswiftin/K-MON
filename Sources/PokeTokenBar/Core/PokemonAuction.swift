@@ -136,7 +136,7 @@ final class PokemonAuctionCenter {
     func publish(_ mon: MonState?) {
         guard let mon else { return }
         // 즐겨찾기는 잃는 동작을 막는 자물쇠다 — 화면이 목록에서 걸러 주지만 여기서도 막는다.
-        guard companion.deployableMons.contains(where: { $0.id == mon.id }),
+        guard sellableMons.contains(where: { $0.id == mon.id }),
               !companion.isFavorite(mon.id), !isCommitted(mon.id) else { return }
         let id = UUID()
         localListings[id] = TradePokemonSnapshot(mon: mon, displayName: displayName(mon))
@@ -184,11 +184,22 @@ final class PokemonAuctionCenter {
             || outgoingOffers.contains { $0.monID == monID && $0.status.isLive }
     }
 
+    /// 경매로 내보낼 수 있는 개체 — **동행(active)은 빠진다.**
+    ///
+    /// 동행을 팔면 모험 정산이 경험치 전량을 별의조각으로 환산해(받을 개체가 없다) 총수입이
+    /// 1.5배가 된다 — 사유는 `CompanionStore.completeAuctionSale` 주석에 있다. 그래서
+    /// **게시·제안·수락·커밋이 전부 이 값을 본다**: 게시한 뒤에 그 개체를 동행으로 들이는 길이
+    /// 있어(박스에서 파트너 교체) 출품 시점만 보면 뒷문이 남는다. 즐겨찾기를 게시 뒤에 켤 수
+    /// 있어 수락에서 한 번 더 보는 것과 같은 부류다.
+    var sellableMons: [MonState] {
+        companion.deployableMons.filter { $0.id != companion.activeMonID }
+    }
+
     /// 돌려주는 값은 이 제안이 쓰는 연결 ID 다 — 프레임은 그 ID 로만 받아들인다.
     @discardableResult
     func apply(to listing: AuctionListing, offering mon: MonState) -> UUID? {
         // 제안도 성사되면 그 개체를 내주는 자리다 — 게시와 같은 자물쇠가 걸린다.
-        guard companion.deployableMons.contains(where: { $0.id == mon.id }),
+        guard sellableMons.contains(where: { $0.id == mon.id }),
               !companion.isFavorite(mon.id), !isCommitted(mon.id) else { return nil }
         return register(on: listing, monID: mon.id, stardust: 0,
                         value: .pokemon(TradePokemonSnapshot(mon: mon, displayName: displayName(mon))))
@@ -272,7 +283,7 @@ final class PokemonAuctionCenter {
         // 게시한 **뒤에** 별을 켰을 수도 있다 — 수락이 소유권을 넘기는 지점이라 여기서 한 번 더 본다.
         guard let offer = offers.first(where: { $0.id == offerID && $0.status == .pending }),
               let listing = localListings[offer.listingID],
-              companion.deployableMons.contains(where: { $0.id == listing.mon.id }),
+              sellableMons.contains(where: { $0.id == listing.mon.id }),
               !companion.isFavorite(listing.mon.id),
               // 이미 잠긴 제안이 있으면 두 번째 수락을 받지 않는다. 없으면 같은 개체가 두
               // 트레이너에게 커밋된다(하나는 실패로 끝나지만 그 실패가 어느 쪽인지는 순서 나름이다).
@@ -318,7 +329,7 @@ final class PokemonAuctionCenter {
         case .apply(let version, let offerID, let listingID, let trainer, let value):
             guard version == AuctionWireMessage.protocolVersion,
                   let listing = localListings[listingID],
-                  companion.deployableMons.contains(where: { $0.id == listing.mon.id }),
+                  sellableMons.contains(where: { $0.id == listing.mon.id }),
                   isValid(value, for: listing),
                   let safeName = BattleChatPolicy.displayName(trainer),
                   // 한 연결은 제안 하나만 나른다. 덮어쓰게 두면 앞 제안의 거절·수락 프레임이
@@ -507,7 +518,7 @@ final class PokemonAuctionCenter {
         if let mineID = offer.monID {
             // 내놓은 개체가 아직 내 것인지 매번 다시 본다 — 다른 제안이 먼저 성사됐거나
             // 체육관에 배치됐으면 여기서 멈춰야 한다.
-            return companion.deployableMons.contains(where: { $0.id == mineID })
+            return sellableMons.contains(where: { $0.id == mineID })
                 && companion.canPerformTrade(offeredID: mineID, received: received.mon)
         }
         return offer.stardust > 0 && companion.availableTokens >= offer.stardust

@@ -326,7 +326,15 @@ enum SaveTransfer {
             s.eggTier = nil
             s.pendingHatchID = nil
         }
-        // 후보에 전설·범위 밖이 섞였으면(구버전·조작) 비워 재추첨하게 한다.
+        // 후보에 전설·범위 밖이 섞였으면(구버전·조작) 비운다.
+        //
+        // **재추첨은 이제 없다.** 후보 3종을 뽑던 `ensureStarterCandidates` 는 #225 가 지웠고
+        // (화면이 타입 선택으로 바뀐 뒤 3주간 죽어 있었다) 이 필드를 읽는 코드도 없다. 그래도
+        // 지우지 못하는 이유는 `canonicalString` 의 `cand` 세그먼트가 **무조건** append 되기
+        // 때문이다 — 필드를 빼면 기존 세이브의 서명이 전부 무효가 되어 정상 진행이 조작 판정을
+        // 받는다. 그래서 남는 것은 값이 아니라 서명 호환이고, 이 정규화는 손편집된 값이 서명에
+        // 실려 다니지 않게 하는 몫만 한다.
+        // 해제 조건: `integrityVersion` 을 올려 구서명을 버릴 때 필드와 함께 지운다.
         if s.starterCandidates.contains(where: { StarterRules.isLegendary($0) || !StarterRules.genRange.contains($0) }) {
             s.starterCandidates = []
         }

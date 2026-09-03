@@ -1,9 +1,14 @@
 import Foundation
 import IOKit
 
-/// 재설치·상태 초기화에도 바뀌지 않는 기기 고유값. 첫 스타터 후보를 이 값으로 결정해
-/// "앱을 지웠다 깔아 리세마라"를 막는다(같은 Mac이면 항상 같은 3종). IP는 DHCP로 바뀌므로 쓰지 않고
-/// 하드웨어 UUID(IOPlatformUUID)를 쓴다 — 훨씬 안정적이고 기기당 유일.
+/// 재설치·상태 초기화에도 바뀌지 않는 기기 고유값. **세이브 무결성 서명이 유일한 용도다.**
+/// IP는 DHCP로 바뀌므로 쓰지 않고 하드웨어 UUID(IOPlatformUUID)를 쓴다 — 훨씬 안정적이고 기기당 유일.
+///
+/// 예전엔 첫 스타터 후보 3종을 이 값으로 뽑아 "앱을 지웠다 깔아 리세마라" 를 막았다. 그 경로는
+/// `2179921` 이 화면을 타입 선택으로 갈아끼우면서 죽었고 `starterSeed()` 는 #225 가 지웠다.
+/// **리세마라 방지는 지금 없다** — `chooseStarterType` 은 `SystemRandomNumberGenerator` 로
+/// 종과 이로치를 굴리므로, 세이브를 지우고 다시 고르면 얼마든지 다시 뽑을 수 있다.
+/// 되살릴지는 게임 설계 판단이고, 되살린다면 시드는 여기가 아니라 그 함수 쪽에 둔다.
 enum DeviceID {
     /// 하드웨어 UUID. 조회 실패(권한·샌드박스 등)면 호스트명 폴백 → 그마저 없으면 고정 상수.
     /// **폴백 값을 세이브 무결성 서명에 넣으면 안 된다** — 그 용도는 `hardwareIdentifier()` 를 쓴다.
@@ -32,16 +37,6 @@ enum DeviceID {
         }
         return uuid
     }()
-
-    /// SplitMix64 시드용 — 안정 식별자의 FNV-1a 64.
-    static func starterSeed() -> UInt64 {
-        var h: UInt64 = 0xcbf29ce484222325
-        for b in stableIdentifier().utf8 {
-            h ^= UInt64(b)
-            h = h &* 0x100000001b3
-        }
-        return h
-    }
 
     private static func hardwareUUID() -> String? {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))

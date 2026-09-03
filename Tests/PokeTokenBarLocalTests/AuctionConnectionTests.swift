@@ -144,8 +144,7 @@ final class AuctionWireTap: @unchecked Sendable {
     /// 쌓인다 — `maxOutgoingOffers` 가 8로 묶어 주지만 그건 상한이지 회수가 아니다.
     @Test func aDeclinedOfferReleasesItsConnection() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: remoteMon()), offering: mine))
         let offerID = try #require(center.outgoingOffers.first?.id)
@@ -163,8 +162,7 @@ final class AuctionWireTap: @unchecked Sendable {
     /// 셋만 적어 두면 나머지 하나가 그대로 샌다.
     @Test func aFailedOfferReleasesItsConnection() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: remoteMon()), offering: mine))
         let offerID = try #require(center.outgoingOffers.first?.id)
@@ -178,8 +176,7 @@ final class AuctionWireTap: @unchecked Sendable {
     /// 성사된 제안도 연결을 놓는다. 교환이 끝난 소켓은 더 나를 것이 없다.
     @Test func aCompletedOfferReleasesItsConnection() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
@@ -199,8 +196,7 @@ final class AuctionWireTap: @unchecked Sendable {
     /// 아무 도움이 안 된다.
     @Test func aRejectedOfferReleasesTheListersConnection() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let listed = try #require(store.state.active)
+        let listed = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         center.publish(listed)
         let listingID = try #require(center.localListings.keys.first)
@@ -221,8 +217,7 @@ final class AuctionWireTap: @unchecked Sendable {
     /// 않으면 **무제한으로** 쌓인다. 구버전 앱 하나가 재시도하면 그대로 소켓이 늘어난다.
     @Test func aRejectedApplyReleasesTheListersConnection() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let listed = try #require(store.state.active)
+        let listed = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         center.publish(listed)
         let listingID = try #require(center.localListings.keys.first)
@@ -253,8 +248,7 @@ final class AuctionWireTap: @unchecked Sendable {
         defer { tap.cancel() }
         let port = try #require(await pollValue { tap.port })
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
         let offerID = try #require(center.outgoingOffers.first?.id)
@@ -288,8 +282,7 @@ final class AuctionWireTap: @unchecked Sendable {
         defer { tap.cancel() }
         let port = try #require(await pollValue { tap.port })
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
         #expect(await poll { tap.contains(AuctionWireTap.isApply) }, "제안 프레임이 나가지 않았다")
@@ -311,8 +304,7 @@ final class AuctionWireTap: @unchecked Sendable {
         defer { tap.cancel() }
         let port = try #require(await pollValue { tap.port })
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
         let offerID = try #require(center.outgoingOffers.first?.id)
@@ -336,8 +328,7 @@ final class AuctionWireTap: @unchecked Sendable {
         defer { tap.cancel() }
         let port = try #require(await pollValue { tap.port })
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
         #expect(await poll { tap.contains(AuctionWireTap.isApply) }, "제안 프레임이 나가지 않았다")
@@ -356,8 +347,7 @@ final class AuctionWireTap: @unchecked Sendable {
         defer { tap.cancel() }
         let port = try #require(await pollValue { tap.port })
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
         #expect(await poll { tap.contains(AuctionWireTap.isApply) }, "제안 프레임이 나가지 않았다")
@@ -377,8 +367,7 @@ final class AuctionWireTap: @unchecked Sendable {
         defer { tap.cancel() }
         let port = try #require(await pollValue { tap.port })
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
         let offerID = try #require(center.outgoingOffers.first?.id)
@@ -397,8 +386,7 @@ final class AuctionWireTap: @unchecked Sendable {
     /// 별의모래도 안 돌아온다. 접으면 상대 읽기 루프가 EOF 로 그것을 안다.
     @Test func removingAListingReleasesTheConnectionOfALockedOffer() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let listed = try #require(store.state.active)
+        let listed = try await AuctionFixtures.sellableMon(store)
         let center = PokemonAuctionCenter(companion: store)
         center.publish(listed)
         let listingID = try #require(center.localListings.keys.first)

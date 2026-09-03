@@ -106,7 +106,7 @@ final class FreshEggTests: XCTestCase {
 
     /// [회귀] 지급 경로도 마찬가지 — `focusEggs` 만 클램프하고 날짜는 무조건 append 하면 두 배열이
     /// 세션 내내 어긋난다(`nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고
-    /// `beginIncubatingFocusEgg` 의 `removeFirst()` 짝이 밀린다). 다음 기동의
+    /// `hatchStoredEggIfNeeded` 의 `removeFirst()` 짝이 밀린다). 다음 기동의
     /// `reconcileStoredEggDates()` 가 잘라 주지만 **세션 안에서는 안 낫는다.**
     func testGymRewardAtFullEggStorageAddsNoHatchDate() {
         let s = store(eggs: 999)

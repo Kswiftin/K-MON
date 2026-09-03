@@ -399,7 +399,8 @@ read_when:
   가드는 소스 스캔이다 — `AdventureClaimTests.testEveryDeclaredViewHasACallSite` 가 UI 파일의 모든
   `struct X: View` 선언에 호출부가 있는지 본다. 기존 미마운트분(포획 로그 잔재 3개)은 명시 목록으로
   고정해 **신규 발생만** 막는다. 부류 스윕에서 나온 그 3개(`StarterCard`·`DexSummaryHeader`·
-  `DexEntryRow`)는 화면 자체가 없어진 잔재라 별건이다.
+  `DexEntryRow`)는 화면 자체가 없어진 잔재라 별건이다. (`StarterCard` 는 그 뒤 #225 가 딸린 스토어
+  API 와 함께 지웠다 — 목록에 넣어 둔 3주 동안 그 밑에서 mutator 3개가 같이 죽어 있었다.)
 - **"상태가 남아 있음"과 "지금 진행 중"을 같은 플래그로 쓰지 마라.** 위 #8 의 게이트가
   `isAdventuring`(= `adventure != nil`)이었는데, 이 값은 *끝났지만 아직 정산 안 된* 모험에서도 참이라
   정산 경로가 막히는 순간 영구 잠금이 됐다. 판정은 의미 단위로 나눈다(`isAdventureInProgress` =
@@ -2458,6 +2459,10 @@ read_when:
   (`MemoryHomeDiscoveryStateTests` 가 이미 쓰던 형태다). `AdventureClaimTests` 등 상태 파일만
   유일하게 하는 기존 픽스처는 같은 부류이며 아직 남아 있다 — 곁방 파일을 쓰지 않아 지금은
   드러나지 않을 뿐이다.
+- **미완 스윕 → #232**: 그 기존 픽스처가 **144곳 / 71파일**이다(`grep -rn 'temporaryDirectory'
+  Tests`). #225 가 mutator 게이트를 넓히며 함께 훑으려다 뺐다 — 게이트 변경과 한 PR 에 묶기엔
+  리뷰가 불가능한 크기다. 헬퍼를 `IdleTestSupport.swift` 로 올리고 옮긴 뒤, 되돌아오지 못하게
+  `test-gate.sh` 에 가드를 세우는 것이 처방이다.
   (`MemoryHomeShowcaseTests`·`CompanionStore.init`, 2026-09-03.)
 
 ## 화면을 옮기면서 **일부만 이식하면**, 남은 기능은 테스트가 초록불인 채로 사라진다
@@ -3554,7 +3559,7 @@ read_when:
   회귀: `testAdventureWithoutAPartnerConvertsInsteadOfDroppingExperience`.
 - **부류 스윕 — 같은 모양이 알 저장고에 있었다(리뷰에서 발견, 처분 확정).** 상한 999 를 쓰는 자리가
   5곳인데 넷은 `focusEggs` 만 클램프하고 `focusEggReadyDates` 는 **무조건** append 했다. 두 배열이
-  어긋나면 `nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고 `beginIncubatingFocusEgg` 의
+  어긋나면 `nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고 `hatchStoredEggIfNeeded` 의
   `removeFirst()` 짝이 밀린다 — 다음 기동의 `reconcileStoredEggDates()` 가 잘라 주므로 **세션 안에서만**
   틀리고, 그래서 재기동을 끼우는 테스트로는 안 잡혔다. 더 나쁜 건 `buyEgg` 로, `canBuyEgg` 에 상한
   검사가 없어 저장고가 꽉 차면 **별의조각만 차감되고 알은 0개** 늘었다(#82 는 지어낸 값이 사라졌지만
@@ -4172,12 +4177,82 @@ read_when:
   `sharedPinnedMemory(for:)` 자신의 "고정된 것과 같은 ID 인가" 가드가 결함을 가려, 정규화를
   통째로 지워도 통과한다. 위험한 것은 **남은 ID** 이므로 *되돌아가 재고정하는* 분기로 밟는다
   (그때 동의 없이 공유가 되살아난다). 세 가드 모두 결함 주입으로 빨강을 확인했다.
-- **미완 스윕 → #225**: 이 mutator 스윕은 아직 `Core/PokemonChat.swift` **한 파일**만 훑는다.
-  같은 awk 를 `Core/CompanionStore.swift` 에 돌리면 호출부 0곳인 `save()` mutator 가 8개
-  나오고, 그중 `ensureStarterCandidates`·`chooseStarter` 는 **종 선택 경로 전체가 죽은 것**이다
-  (화면은 `chooseStarterType` 만 쓴다). `CompanionView.swift:1498` 주석은 안 도는 코드를
-  설명하고 있다 — 산문은 호출부가 아니므로 가드가 그 거짓말을 볼 수 없다.
-- (#-pokohome-visit-and-surfing 리뷰 후속, 2026-09-03.)
+- **스윕 범위 확대 (#225, 2026-09-03 해소)**: 이 스윕은 `Core/PokemonChat.swift` **한 파일**만
+  훑고 있었다 — 결함이 *발견된* 파일이지 부류가 사는 범위가 아니다. 범위를 `Sources/` 전부로
+  넓히자 `CompanionStore.swift` 에서 8건이 나왔고, 그중 셋이 죽은 제품 경로였다:
+  `ensureStarterCandidates`·`chooseStarter`(+`starterCandidateIDs`·`StarterCard`·
+  `DeviceID.starterSeed`)는 `2179921` 이 화면을 타입 선택으로 갈아끼우며 호출부만 지우고 남긴
+  것이고, `beginIncubatingFocusEgg` 는 `hatchStoredEggIfNeeded`(5분 자동 부화)가 대체한 뒤
+  화면이 한 번도 부르지 않은 것이다. 셋 다 지웠다. 나머지 다섯(`debugSet*`)은 이름을 박는 대신
+  **`debug` 접두 규칙**으로 건너뛴다 — 이름을 열거하면 훅이 늘 때마다 allowlist 가 같이 자란다.
+- **여기서 배운 것 — allowlist 는 시체 보관소가 아니다.** 이 부류를 3주간 살려 둔 것은 가드의
+  부재가 아니라 **가드가 잡은 것을 목록에 넣은 행위**였다. `de57111` 이 뷰 도달성 가드가 잡은
+  `StarterCard` 를 `knownUnmounted` 에 넣었고, 그 밑에서 스토어 API 3개가 같이 죽어 있었다.
+  가드가 무언가를 잡으면 **지우거나 붙이는 것이 기본이고 allowlist 는 예외**다. 예외로 넣을
+  때는 이유와 **해제 조건**을 함께 적는다(`CORE_ONLY_MUTATORS` 의 두 항목이 그 형식이다).
+- **결함 주입으로 확인했다**(통과만 보면 게이트가 무엇을 지키는지 알 수 없다):
+  ① 평범한 mutator 주입 → 빨강 ② `debug` 접두 주입 → 초록(규칙이 실제로 거른다)
+  ③ `Core/` **밖**(`UI/`)에 mutator 주입 → 빨강(범위 확대의 실효 — 예전 게이트는 못 봤다).
+  awk 의 `FNR == 1` 상태 리셋도 합성 입력으로 확인했다: 리셋이 없으면 앞 파일 마지막 함수 이름이
+  다음 파일까지 살아남아 `save()` 를 안 부르는 함수를 오탐으로 올린다.
+- **범위를 넓히면 추출기의 근사가 드러난다(리뷰에서 발견, 같은 날 수정).** 한 파일에서는 안
+  보이던 네 가지가 60여 파일에서 전부 실물로 나왔다. 부류는 하나다 — **찾는 쪽과 세는 쪽이 같은
+  규칙을 쓰지 않으면 게이트가 자기 자신에게 거짓말을 한다.**
+  - **주석 비대칭**: 세는 쪽(`SWIFT_CODE`)은 주석 줄을 지우는데 찾는 쪽(awk)은 원문을 읽었다.
+    산문에 적힌 `save()` 가 앞 함수를 mutator 로 만들어 유령 4개(`gainExperience`·`hatchIfNeeded`·
+    `nextAchievementTier`·`stableIdentifier`)가 올라왔고, **넷 다 호출부가 있어 우연히 통과했다.**
+    호출부 0곳인 첫 유령이 나오면 세이브를 건드리지도 않는 함수를 지우라고 CI 가 선다.
+    처방: awk 에도 `/^[[:space:]]*\/\// { next }`.
+  - **`private` 인접 판정**: `/(private|fileprivate) func/` 는 `private static func` 105개를
+    전부 비-private 로 오인한다. 처방: `(private|fileprivate) [a-z ]*func`.
+  - **제네릭·숫자 이름**: `/func [A-Za-z_]+\(/` 는 `func send<T>(` 를 선언으로 못 보고(→ `priv`·
+    `name` 이 앞 함수 값으로 남는다, 바로 위 항목과 같은 사고), `fnv1a`·`localIPv4` 를 `fnv`·
+    `localIPv` 로 자른다. 처방: `[(<]` 를 받고 이름 문자류에 `0-9` 를 넣는다.
+  - **동명 mutator 상호 은폐(천장, 미해소)**: 판정이 이름 단위 산술이라 같은 이름이 여러 타입에
+    있으면 서로를 가린다(`send` 8선언/118등장, `record` 6, `delete`·`tick`·`clamped` 3). 살아
+    있는 쪽의 호출부가 죽은 쪽의 0곳을 메운다. grep 의 천장이라 스크립트에 한계로 적어 뒀다 —
+    해제 조건은 선언 위치로 세는 도구(swift-syntax)를 붙일 때다.
+- **접두 규칙도 검사해야 규칙이다.** `debug` 접두를 이름만 보고 면제하면 그 규칙 자체가
+  우회로가 된다(죽은 mutator 에 `debug` 를 붙이면 사라지고, 아무 테스트도 안 쓰는 시딩 훅도
+  통과한다). 근거가 "테스트가 쓴다" 이므로 그것을 검사한다 —
+  `[[ "$NAME" == debug* ]] && grep -rqE "\b${NAME}\(" Tests && continue`.
+  결함 주입: `debug` 접두 + 테스트 호출부 있음 → 초록 / 없음 → 빨강.
+- **파생된 상수로 그 상수를 검사하면 항등식이다(이 리뷰에서 실제로 한 번 썼다).**
+  `starterSelectableTypes` 는 `starterUnavailableTypes` 에서 파생되는데, 새 테스트가 둘을
+  `isDisjoint` 로 대조했다 — 집합에서 `.fairy` 를 **빼도 초록**이었다. 잠글 사실은 관계가 아니라
+  값이다: 타입 이름을 직접 박아야 한다. 앞의 "커버리지 게이트 숫자는 증거가 아니다" 와 같은
+  부류이고, 결함 주입 없이는 구별이 안 된다.
+- (#-pokohome-visit-and-surfing 리뷰 후속, 2026-09-03. 범위 확대는 #225, 같은 날.)
+
+## 화면에 뜨는 선택지가 데이터에 없으면, **눌러도 아무 일이 없는 버튼**이 게임의 첫 화면에 남는다
+
+- **증상**: 스타터 선택에서 페어리를 고르면 스피너가 잠깐 돌고 격자로 되돌아온다. 안내도 없다.
+  다시 눌러도 같다 — 신규 사용자에게는 게임에 들어갈 방법이 없는 상태다.
+- **원인**: `chooseStarterType` 은 1세대 **기본형**(`evolves_from` 없음) 중 그 타입을 고른다.
+  1세대 페어리는 삐삐·푸린·마임맨뿐인데 셋 다 2세대 이후 진화 전 단계(피이·푸푸린·마임)가
+  생겨 기본형이 아니다 → `baseSpeciesIndex()` 에서 빠지고 후보가 0개다. `starterSelectableTypes`
+  는 `.dark` 만 뺐다 — **같은 이유로 비어 있는 타입이 둘인데 하나만 봤다.**
+- **왜 테스트가 못 걸렀나**: `chooseStarterType`·`starterSelectableTypes` 를 밟는 테스트가
+  **0개**였다. 종 3종 경로(`chooseStarter`)를 지우면서 살아남은 유일한 경로에 회귀 테스트를
+  달지 않았다. 커버리지도 못 본다 — 이 함수는 네트워크를 타서 단위 테스트 대상이 아니었다.
+- **부류**: **정적 목록이 원격 데이터의 부분집합이라고 가정한 자리.** 목록을 손으로 들고 있으면
+  데이터가 그 항목을 안 줄 때 조용히 무동작이 된다. 예외를 하나 넣었다면 **같은 규칙으로 비는
+  것이 더 있는지**를 세어야 한다(`.dark` 를 뺀 커밋이 `.fairy` 를 안 센 것이 이 결함이다).
+- **처방**: ① 비는 타입을 이름 붙인 상수(`starterUnavailableTypes`)로 모아 **왜** 비는지와 해제
+  조건을 적었다 ② 실패를 화면이 **말하게** 했다 — `chooseStarterType` 이 false 를 주면
+  `picking` 만 내리는 게 아니라 오프라인 안내를 띄운다(조용한 되돌리기가 결함을 3주 숨긴다)
+  ③ 회귀: `CompanionStoreTests.testStarterTypeGridDoesNotOfferTypesWithNoGenOneBaseSpecies`
+  (`.fairy` 를 되돌려 빨강 확인) · `testStarterTypeIsRejectedOnceChosen`(가드 제거로 빨강 확인).
+- **같이 나온 산문 부패 — 부류 스윕이 한 파일 앞에서 멈췄다.** #225 는 `CompanionView` 의 거짓
+  주석을 고치면서 같은 거짓말 두 개를 지나쳤다: `DeviceID.swift` 머리주석은 삭제된
+  `starterSeed()` 로 "리세마라를 막는다(같은 Mac 이면 항상 같은 3종)" 고 여전히 말하고 있었고
+  (실제로 `chooseStarterType` 은 `SystemRandomNumberGenerator` 라 **리세마라 방지는 지금 없다** —
+  되살릴지는 설계 판단으로 남겼다), `SaveTransfer` 의 `starterCandidates` 정규화는 "비워
+  재추첨하게 한다" 고 하는데 재추첨하는 코드가 없다(남는 이유는 `canonicalString` 의 `cand`
+  세그먼트가 무조건 append 되는 서명 호환뿐이다). **함수를 지울 때 그 함수를 설명하는 산문을
+  grep 하는 것이 삭제 절차의 일부다** — 가드는 산문을 호출부로 세지 않는다.
+- (`CompanionStore.chooseStarterType`·`CompanionView.StarterPickerView`·`DeviceID`·`SaveTransfer`,
+  2026-09-03. #225 리뷰에서 발견.)
 
 
 ## 국면을 스칼라 하나로 들고 있으면 "동시에 여러 건" 이 못 오고, 열자마자 **같은 것을 두 번 내주는** 구멍이 열린다
@@ -4329,3 +4404,55 @@ read_when:
   (재진입 가드가 필요하다). **별 PR 로 뺀다** (사용자 판단, 2026-09-03) — 경매 PR 에 설계 판단을
   끌고 들어오지 않되, 고칠 자리는 위에 줄 번호까지 박아 뒀다.
 - (경매 환불 재진입, 2026-09-03. #229 리뷰에서 발견.)
+## 받을 개체가 없을 때의 "버리지 않는 처분" 은, 그 개체를 없애는 경로와 만나면 **지배 전략**이 된다
+
+- **증상**: 모험 정산 직전에 동행을 경매로 팔면 그 모험의 경험치 **전량**이 별의조각으로
+  환산된다. 파트너를 그냥 키우는 것보다 총수입이 많다 — 게임이 권하는 플레이가 손해가 된다.
+- **원인**: 두 의도가 각각은 맞는데 **곱해지면 안 되는 조합**이었다. ① `awardExperience` 는 받을
+  개체가 없으면 전량을 초과분과 같이 처분한다(#82 — 조용히 사라지던 결함을 고친 자리다).
+  ② `completeAuctionSale` 은 동행도 팔 수 있었고 그러면서 `state.active` 를 비웠다.
+  환율은 자연 수입의 **절반**으로 잡혀 있어(`experiencePerOverflowStarPiece` 주석) 만렙 파트너의
+  총수입이 1.5배가 되는데, 그 1.5배가 **만렙이 아닌 파트너에게도** 열린 것이다.
+- **왜 테스트가 못 걸렀나**: 테스트가 그 조합을 **전제로** 세우고 있었다.
+  `testAdventureWithoutAPartnerConvertsInsteadOfDroppingExperience` 는 파트너를 비우는 데
+  경매 판매를 쓰면서 `"테스트 전제: 모험 중에도 동행을 경매로 내보낼 수 있다"` 를 단언했다 —
+  결함을 고정한 초록이다. 앞선 리뷰가 도달 불가 API(`beginIncubatingFocusEgg`)를 쓰던 그 테스트를
+  "출시된 경로" 로 옮기면서, **그 경로가 밟혀도 되는 길인지는 묻지 않았다.**
+- **부류**: **"상태 X 가 없을 때의 보정" 과 "X 를 없앨 수 있는 사용자 행동" 은 같이 검토한다.**
+  보정 하나만 보면 관대함이고, 행동 하나만 보면 자유인데, 둘이 만나면 경제가 새는 자리가 된다.
+  보정을 넣을 때 **X 를 없애는 경로를 전수로 세는 것**이 그 검토다(여기서는 졸업·경매·방생·교환
+  넷을 셌다 — 방생은 박스만, 교환은 대체가 오고, 졸업은 만렙이라 어차피 전량이 넘친다.
+  경매만 열려 있었다).
+- **처방**: `completeAuctionSale` 이 `state.boxedMons` 만 뒤진다(동행은 `[active] + boxedMons` 라
+  박스에 없다). 화면·센터도 같은 판정을 본다 — `PokemonAuctionCenter.sellableMons` 를
+  게시·제안·수락·커밋 **네 자리 모두**가 읽는다. 출품 시점만 보면 게시한 뒤 그 개체를 동행으로
+  들이는 뒷문이 남는다(즐겨찾기를 게시 뒤에 켜는 것과 같은 부류).
+- **덧붙여 — 지워도 초록인 가드는 없는 가드다.** 처음엔 `state.active?.id != offeredID` 를
+  guard 에 세웠는데, 결함 주입에서 **그 줄만 지워도 테스트가 통과**했다: 아래 `boxedMons` 조회가
+  이미 동행을 배제하므로 중복이었다. 중복 조건은 다음 사람에게 "여기가 문이다" 라고 잘못
+  가리킨다 — 지우고, 진짜 기전(박스만 뒤진다)을 주석에 적었다. **새 가드는 그것만 지워서
+  빨강이 되는지 본다**(앞의 "파생 상수 항등식" 과 같은 부류: 초록만 보면 구별이 안 된다).
+- **검증**: `MaxLevelTests.testAuctionCannotSellTheActiveCompanion` — 주입 ① 목록 필터 해제 →
+  빨강 ② 조회를 `ownedMons` 로 되돌림 → 빨강. 박스 개체 판매를 대조군으로 둔다(없으면 "전부
+  거절" 하는 구현도 초록이다).
+- (`CompanionStore.completeAuctionSale`·`PokemonAuctionCenter`·`MaxLevelTests`, 2026-09-03.
+  #231 리뷰에서 발견.)
+
+## 프로토콜에 **배치 조회**가 있는데 `shared` 로 종당 조회를 걸면, 요청이 폭발하고 그 경로가 테스트 불가가 된다
+
+- **증상**: 스타터 타입을 한 번 누르면 HTTP 요청 ~75개가 동시에 나갔다. 첫 실행 첫 화면이다.
+- **원인**: `chooseStarterType` 이 후보 종마다 `PokeAPIClient.shared.battleProfile` 을 무제한
+  `withTaskGroup` 으로 걸었다. 같은 값을 주는 `speciesTypeIndex()`(GraphQL 1쿼리·30일 디스크
+  캐시·오프라인이면 만료 스냅샷 재사용)가 **이미 프로토콜에 있고** 도감 필터가 쓰고 있었다.
+- **왜 테스트가 못 걸렀나**: `provider` 가 아니라 `shared` 를 직접 불러 **스텁이 안 걸린다** —
+  이 함수는 단위 테스트 대상이 될 수 없었고, 그래서 페어리 무동작 결함(위 항목)이 3주 살아남았다.
+  주입 가능한 자리를 우회하는 호출은 **성능 문제이기 전에 테스트 구멍**이다.
+- **부류**: 같이 나온 반대 방향 하나 — **프로토콜 기본 구현이 `shared` 로 내려가면, 그 메서드를
+  생략한 스텁은 테스트에서 조용히 네트워크에 닿는다.** `StubProvider` 가 `speciesTypeIndex()` 를
+  안 갖고 있었다. 기본 구현("타입을 안 쓰는 스텁은 그대로 두면 된다")은 프로덕션 편의인데
+  테스트에서는 **네트워크 유출 경로**가 된다. 처방: 스텁에 빈 값을 돌려주는 구현을 둔다.
+- **처방**: 후보 필터를 `types[$0]?.contains(type) == true` 한 줄로 바꿔 `withTaskGroup` 을 통째로
+  지웠다(요청 75 → 1, 그리고 함수가 스텁으로 테스트 가능해졌다).
+- **검증**: `CompanionStoreTests.testStarterTypePicksFromTheTypeIndex` — 인덱스를 읽는 절을 지워
+  빨강 확인. 인덱스에 **없는** 타입을 대조군으로 둔다(없으면 인덱스를 아예 안 읽는 구현도 초록).
+- (`CompanionStore.chooseStarterType`·`StubProvider`, 2026-09-03. #231 리뷰에서 발견.)

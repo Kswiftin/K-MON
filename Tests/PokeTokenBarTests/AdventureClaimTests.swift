@@ -188,7 +188,9 @@ final class AdventureClaimTests: XCTestCase {
         // "더 늘어나지 않는다" 만 잠근다. 해결하면 이 목록에서 지운다.
         // AdventureCard 는 폐기된 돌보기 UI를 소스 호환 목적으로만 남긴 상태다. 모험 정산은
         // FocusTimerView와 CompanionStore의 자동 정산 경로가 담당하므로 다시 마운트하면 안 된다.
-        let knownUnmounted: Set<String> = ["StarterCard", "DexSummaryHeader", "DexEntryRow", "AdventureCard"]
+        // `StarterCard` 는 여기 있었다 — 이 가드가 잡았는데도 지우는 대신 목록에 넣어 3주를 벌었고,
+        // 그 사이 딸린 스토어 API 3개가 같이 죽어 있었다(#225). **allowlist 는 시체 보관소가 아니다.**
+        let knownUnmounted: Set<String> = ["DexSummaryHeader", "DexEntryRow", "AdventureCard"]
 
         var unmounted: [String] = []
         for file in try Self.swiftFiles(in: uiDirectory) {
