@@ -96,6 +96,13 @@ final class PokemonAuctionCenter {
     /// 별의모래 제안은 그렇지 않다 — 지갑이 크면 작은 제안을 무한히 걸어 연결을 그만큼 연다.
     static let maxOutgoingOffers = 8
 
+    /// 장부에 동시에 올릴 수 있는 연결의 수. **유휴 수신 연결은 회수 판정이 아예 안 돈다** —
+    /// `reclaimIfIdle` 은 프레임을 읽은 뒤에만 걸리므로 붙어서 아무것도 보내지 않는 피어는
+    /// 판정에 걸리지 않고, `#227` 이 자동 시간 제한을 걷어내 시간이 끊어 줄 것도 없다. 남은
+    /// 방어는 수를 막는 것 하나다. 나가는 제안 정원(8)과 한 집의 피어 수를 넉넉히 덮는 값이라
+    /// 정상 사용은 이 문에 닿지 않는다.
+    static let maxConnections = 64
+
     private(set) var listings: [AuctionListing] = []
     private(set) var offers: [AuctionOffer] = []
     /// 내가 건 제안들. 등록 순서를 유지한다 — 화면이 그 순서로 카드를 쌓는다.
@@ -143,6 +150,11 @@ final class PokemonAuctionCenter {
         listeners[listingID]?.cancel(); listeners[listingID] = nil
         for offer in offers where offer.listingID == listingID && offer.status == .pending { reject(offer.id) }
         offers.removeAll { $0.listingID == listingID }
+        // 제안이 사라진 연결은 더 나를 것이 없다. **`.accepted` 였던 제안**이 여기서 안 접히면
+        // 신청자는 자동 시간 제한이 없어(#227) 영구히 "교환 처리 중" 이고 에스크로도 안 돌아온다 —
+        // 접으면 상대 읽기 루프가 EOF 로 그것을 안다. 판정은 `reclaimIfIdle` 하나뿐이라 여기서도
+        // 그것을 부른다(살아 있는 제안이 붙은 다른 게시물의 연결은 그 판정이 지킨다).
+        for id in Array(connectionOfferIDs.keys) { reclaimIfIdle(id) }
     }
 
     /// 아직 어느 제안에도 약속하지 않은 별의모래. 에스크로는 **수락 시점**에 걷히므로 잔액만
@@ -496,15 +508,7 @@ final class PokemonAuctionCenter {
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in
                     guard let self else { connection.cancel(); return }
-                    let id = UUID(); self.connections[id] = connection
-                    self.attach(connection, id: id)
-                    connection.stateUpdateHandler = { [weak self] state in
-                        switch state {
-                        case .failed, .cancelled: Task { @MainActor in self?.drop(id) }
-                        default: break
-                        }
-                    }
-                    connection.start(queue: .main)
+                    self.acceptConnection(connection)
                 }
             }
             listener.stateUpdateHandler = { [weak self] state in
@@ -555,6 +559,22 @@ final class PokemonAuctionCenter {
 
     private func attach(_ connection: NWConnection, id: UUID) { receiveLength(on: connection, id: id) }
 
+    /// 들어온 연결을 장부에 올리고 읽기를 시작한다. **정원 가드는 이 문 안쪽에 있다** —
+    /// 호출부에 두면 나중에 생긴 수락 경로가 무제한으로 남는다(회수 규칙을 `reclaimIfIdle`
+    /// 하나로 모아 둔 것과 같은 이유다).
+    func acceptConnection(_ connection: NWConnection) {
+        guard connections.count < Self.maxConnections else { connection.cancel(); return }
+        let id = UUID(); connections[id] = connection
+        attach(connection, id: id)
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .failed, .cancelled: Task { @MainActor in self?.drop(id) }
+            default: break
+            }
+        }
+        connection.start(queue: .main)
+    }
+
     /// 테스트가 소켓 없이 국면을 세우는 자리. 붙인 연결의 ID 를 돌려준다 — `receive` 가 그 ID 로
     /// 온 프레임만 받기 때문이다.
     @discardableResult
@@ -596,7 +616,12 @@ final class PokemonAuctionCenter {
             guard let data, data.count == length else { Task { @MainActor in self.drop(id) }; return }
             let message = try? JSONDecoder().decode(AuctionWireMessage.self, from: data)
             Task { @MainActor in
-                if let message { self.receive(message, connectionID: id) }
+                // 못 읽는 프레임은 **건너뛰되 루프는 다시 건다**(형제 `PokemonTrade` 와 같다) —
+                // 길이 프리픽스라 스트림이 어긋나지 않고 뒤 버전의 선택적 프레임에 길을 열어 둔다.
+                // 다만 회수는 여기서 한 번 봐야 한다: `receive` 를 안 거치므로 `defer` 가 안 돌고,
+                // 제안이 안 선 연결(디코드가 안 되는 구버전 `.apply`)은 어느 정원에도 안 세어져
+                // 무제한으로 쌓인다. 살아 있는 제안이 붙은 연결은 `reclaimIfIdle` 이 지킨다.
+                if let message { self.receive(message, connectionID: id) } else { self.reclaimIfIdle(id) }
                 if self.connections[id] === connection { self.receiveLength(on: connection, id: id) }
             }
         }
@@ -634,6 +659,12 @@ final class PokemonAuctionCenter {
     private func closeWhenFlushed(_ id: UUID) {
         // 딕셔너리에서 먼저 뺀다 — 같은 연결에 회수가 두 번 걸려도 한 번만 접힌다.
         guard let connection = forget(id) else { return }
+        // `.ready` 가 아니면 **흘릴 것도 없고 완료 콜백도 오지 않는다.** `.waiting` 은 실패로
+        // 승격되지 않고 무한 재시도라(상대가 사라진 게시물에 제안하고 바로 거둬들이면 그 상태다),
+        // 큐에 넣고 기다리면 이 연결은 장부에서 빠진 채 영구히 살아 회수 자체가 없어진다 —
+        // 이 파일이 고치려는 부류 그대로다. 아직 안 나간 프레임은 상대도 못 받았으므로 버려도
+        // 상대 카드가 `.pending` 에 남지 않는다.
+        guard case .ready = connection.state else { connection.cancel(); return }
         connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
                         completion: .contentProcessed { _ in connection.cancel() })
     }
@@ -642,7 +673,6 @@ final class PokemonAuctionCenter {
 
     /// 장부에서 빼는 것과 소켓을 접는 것은 다른 일이다. 즉시 접는 `drop` 과 흘린 뒤 접는
     /// `closeWhenFlushed` 가 앞쪽 절반을 공유한다.
-    @discardableResult
     private func forget(_ id: UUID) -> NWConnection? {
         let connection = connections.removeValue(forKey: id)
         // 커밋을 기다리던 제안이면 실패로 남긴다. 그냥 지우면 게시자 화면에 "교환 처리 중" 이

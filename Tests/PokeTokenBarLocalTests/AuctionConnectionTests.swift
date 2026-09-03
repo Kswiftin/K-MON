@@ -54,6 +54,16 @@ final class AuctionWireTap: @unchecked Sendable {
         peer.send(content: frame, completion: .contentProcessed { _ in })
     }
 
+    /// 길이는 온전하지만 **본문이 우리 프로토콜이 아닌** 프레임. 구버전 앱의 `.apply` 가 이 모양이다 —
+    /// 디코드가 안 되면 `receive` 를 안 거치므로 회수 판정도 그 갈래에서만 따로 돌아야 한다.
+    func sendUndecodableFrame() {
+        guard let peer else { return }
+        let payload = Data("{\"nope\":1}".utf8)
+        var frame = withUnsafeBytes(of: UInt32(payload.count).bigEndian) { Data($0) }
+        frame.append(payload)
+        peer.send(content: frame, completion: .contentProcessed { _ in })
+    }
+
     /// 길이 헤더만 보내고 본문 없이 죽는다 — 프레임 **중간에** 끊긴 상대. `length` 를 0 이나
     /// 상한 밖으로 주면 길이 값 자체가 반려되는 갈래를 밟는다.
     func sendLengthThenClose(_ length: UInt32) {
@@ -109,31 +119,11 @@ final class AuctionWireTap: @unchecked Sendable {
 /// 앱을 정상 종료했을 때 내 쪽이 그것을 아는가(FIN 은 `.failed` 로 오지 않는다).
 @MainActor
 @Suite struct AuctionConnectionTests {
-    private static let now = Date(timeIntervalSince1970: 1_700_000_000)
-
-    private func makeStore() -> CompanionStore {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("auction-connection-\(UUID().uuidString)")
-        let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []), rarity: .common,
-                           names: [1: ["ko": "포1", "en": "P1", "ja": "ポ1"]])
-        let store = CompanionStore(provider: AuctionStubProvider(value: line), clock: { Self.now },
-                                   fileURL: directory.appendingPathComponent("state.json"),
-                                   rng: AuctionSeededRNG(seed: 1))
-        store.setLanguage(AppLanguage.ko)
-        return store
-    }
-
+    private func makeStore() -> CompanionStore { AuctionFixtures.makeStore("auction-connection") }
     private func remoteMon(baseID: Int = 20, level: Int = 5) -> MonState {
-        var mon = MonState(baseID: baseID, pathIDs: [baseID], plannedPathIDs: [baseID], stageIndex: 0,
-                           usedAtStage: 0, rarity: .common, totalForms: 1,
-                           names: [baseID: ["ko": "포\(baseID)", "en": "P\(baseID)"]], firstMetAt: nil)
-        mon.levelExperience = (level - 1) * PokemonBalance.experiencePerLevel
-        return mon
+        AuctionFixtures.remoteMon(baseID: baseID, level: level)
     }
-
-    private func snapshot(_ mon: MonState) -> TradePokemonSnapshot {
-        TradePokemonSnapshot(mon: mon, displayName: "P\(mon.currentID)")
-    }
+    private func snapshot(_ mon: MonState) -> TradePokemonSnapshot { AuctionFixtures.snapshot(mon) }
 
     /// 게시물 하나. `port` 를 주면 그 포트로 **실제 연결이 나간다**(`apply` 가 소켓을 연다).
     private func listing(for mon: MonState, port: NWEndpoint.Port = 9) -> AuctionListing {
@@ -145,12 +135,7 @@ final class AuctionWireTap: @unchecked Sendable {
     /// `probe` 가 참이 될 때까지 기다린다. 센터의 `NWConnection` 콜백은 `.main` 에서 도는데
     /// `Task.sleep` 은 메인을 놓아 주므로 그 사이에 실행된다.
     private func poll(timeout: Duration = .seconds(5), _ probe: () -> Bool) async -> Bool {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while ContinuousClock.now < deadline {
-            if probe() { return true }
-            try? await Task.sleep(for: .milliseconds(20))
-        }
-        return probe()
+        (await pollValue(timeout: timeout) { probe() ? true : nil }) ?? false
     }
 
     // MARK: - 신청자 쪽 (내가 건 제안)
@@ -219,8 +204,7 @@ final class AuctionWireTap: @unchecked Sendable {
         let center = PokemonAuctionCenter(companion: store)
         center.publish(listed)
         let listingID = try #require(center.localListings.keys.first)
-        let connection = center.attachForTesting(NWConnection(to: .hostPort(host: "127.0.0.1", port: 9),
-                                                              using: .tcp))
+        let connection = AuctionFixtures.attachedConnection(center)
         let offerID = UUID()
         center.receive(.apply(version: AuctionWireMessage.protocolVersion, offerID: offerID,
                               listingID: listingID, trainer: "Red",
@@ -242,8 +226,7 @@ final class AuctionWireTap: @unchecked Sendable {
         let center = PokemonAuctionCenter(companion: store)
         center.publish(listed)
         let listingID = try #require(center.localListings.keys.first)
-        let connection = center.attachForTesting(NWConnection(to: .hostPort(host: "127.0.0.1", port: 9),
-                                                              using: .tcp))
+        let connection = AuctionFixtures.attachedConnection(center)
 
         // 버전이 갈린 상대. 센터는 `.declined` 로 답하고 제안을 세우지 않는다.
         center.receive(.apply(version: AuctionWireMessage.protocolVersion - 1, offerID: UUID(),
@@ -286,6 +269,9 @@ final class AuctionWireTap: @unchecked Sendable {
         #expect(await poll { tap.contains(AuctionWireTap.isFailed) },
                 "접기가 종료 프레임을 버렸다 — 게시자 카드가 영구히 pending 에 남는다")
         #expect(await poll { center.trackedConnectionCount == 0 })
+        // 장부가 비는 것만 재면 **소켓이 안 닫혀도 초록이다** — 회수가 아니라 누수 은폐다.
+        // 상대가 EOF 를 받았다는 것이 `cancel()` 이 실제로 걸렸다는 유일한 증거다.
+        #expect(await poll { tap.sawEOF }, "장부에서만 빠지고 소켓은 살아 있다")
         #expect(center.outgoingOffers.isEmpty, "거둬들인 제안은 결과 카드를 남기지 않는다")
     }
 
@@ -380,6 +366,82 @@ final class AuctionWireTap: @unchecked Sendable {
 
         #expect(await poll { center.trackedConnectionCount == 0 })
         #expect(center.outgoingOffers.first?.status == .failed)
+    }
+
+    /// 못 읽는 프레임은 **건너뛰되 살아 있는 제안의 연결은 놓지 않는다.** 뒤 버전이 더한 선택적
+    /// 프레임이 이 모양이라(형제 `PokemonTrade` 가 같은 이유로 루프를 다시 건다), 여기서 접으면
+    /// 진행 중인 교환이 모르는 프레임 하나에 끊긴다. 뒤이은 `.declined` 가 닿는 것이 곧 연결이
+    /// 살아 있고 루프가 다시 걸렸다는 증거다.
+    @Test func anUndecodableFrameKeepsALiveOffersConnection() async throws {
+        let tap = try AuctionWireTap()
+        defer { tap.cancel() }
+        let port = try #require(await pollValue { tap.port })
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let center = PokemonAuctionCenter(companion: store)
+        _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
+        let offerID = try #require(center.outgoingOffers.first?.id)
+        #expect(await poll { tap.contains(AuctionWireTap.isApply) }, "제안 프레임이 나가지 않았다")
+
+        tap.sendUndecodableFrame()
+        tap.sendFrame(.declined(offerID: offerID))
+
+        #expect(await poll { center.outgoingOffers.first?.status == .declined },
+                "못 읽는 프레임이 살아 있는 제안의 연결을 끊었다")
+    }
+
+    /// 게시를 내리면 **잠긴(`.accepted`) 제안의 연결까지** 놓는다. `cancelListing` 은 그 제안을
+    /// `offers` 에서 지우기만 하므로, 회수를 여기서 한 번 더 보지 않으면 그 연결은 어느 판정에도
+    /// 걸리지 않는다 — 신청자는 자동 시간 제한이 없어(#227) 영구히 "교환 처리 중" 이고 에스크로한
+    /// 별의모래도 안 돌아온다. 접으면 상대 읽기 루프가 EOF 로 그것을 안다.
+    @Test func removingAListingReleasesTheConnectionOfALockedOffer() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let listed = try #require(store.state.active)
+        let center = PokemonAuctionCenter(companion: store)
+        center.publish(listed)
+        let listingID = try #require(center.localListings.keys.first)
+        let connection = AuctionFixtures.attachedConnection(center)
+        let offerID = UUID()
+        center.receive(.apply(version: AuctionWireMessage.protocolVersion, offerID: offerID,
+                              listingID: listingID, trainer: "Red",
+                              value: .pokemon(snapshot(remoteMon()))), connectionID: connection)
+        center.accept(offerID)
+        #expect(center.offers.first?.status == .accepted)
+        #expect(center.trackedConnectionCount == 1, "커밋 중인 연결은 살아 있어야 한다")
+
+        center.cancelListing(listingID)
+
+        #expect(center.offers.isEmpty)
+        #expect(await poll { center.trackedConnectionCount == 0 },
+                "제안이 사라진 연결을 아무도 회수하지 않는다")
+    }
+
+    /// 프레임을 한 번도 안 보내는 수신 연결은 **회수 판정이 아예 안 돈다** — `reclaimIfIdle` 은
+    /// 프레임을 읽은 뒤에만 걸리고, `#227` 이 자동 시간 제한을 걷어내 시간이 끊어 줄 것도 없다.
+    /// 남은 방어는 정원 하나뿐이라, 그 문이 없으면 같은 LAN 의 피어 하나가(포트 스캐너로도 된다)
+    /// 무제한으로 소켓을 쌓는다.
+    ///
+    /// **폴링 없이 세는 것이 근거다.** `acceptConnection` 의 등록은 `@MainActor` 동기 구간이고
+    /// `drop` 은 `Task { @MainActor }` 로 들어오므로 이 루프 중간에 끼어들 수 없다 — 붙는 포트가
+    /// 닫혀 있어도(9) 세는 값이 흔들리지 않는다.
+    @Test func acceptingStopsPastTheConnectionBudget() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let center = PokemonAuctionCenter(companion: store)
+        let budget = PokemonAuctionCenter.maxConnections
+        var opened: [NWConnection] = []
+        defer { opened.forEach { $0.cancel() } }
+
+        for _ in 0..<(budget + 4) {
+            let connection = NWConnection(to: .hostPort(host: "127.0.0.1", port: 9), using: .tcp)
+            opened.append(connection)
+            center.acceptConnection(connection)
+        }
+
+        #expect(center.trackedConnectionCount == budget,
+                "정원을 넘겨 붙은 연결이 장부에 올라간다 — 아무것도 안 보내면 회수 판정도 안 돈다")
     }
 
     private func pollValue<T>(timeout: Duration = .seconds(5), _ probe: () -> T?) async -> T? {
