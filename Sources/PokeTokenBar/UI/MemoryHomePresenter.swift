@@ -731,7 +731,7 @@ private struct MemoryHomeWindowView: View {
     /// `MemoryHomeCompanionTrace` 의 dayKey 결정론이라 여닫아도 글이 늘지 않는다.
     private func guestbook(mon: MonState) -> some View { let album = store.memoryAlbum; return ScrollView { VStack(alignment: .leading, spacing: 14) { VStack(alignment: .leading, spacing: 8) { Label(l.t("방명록", "Guestbook", "ゲストブック"), systemImage: "text.bubble.fill").font(.title3.weight(.bold)); Text(l.t("내가 남긴 한마디를 모아 둬요. 이 글은 LAN에 공유되지 않습니다.", "Keep your notes here. They stay on this device.", "自分のひとことを残します。LANには共有されません。")) .font(.caption).foregroundStyle(.secondary); TextField(l.t("오늘의 한마디", "Leave a note", "今日のひとこと"), text: $guestbookDraft, axis: .vertical).lineLimit(1...3).textFieldStyle(.roundedBorder); Button(l.t("내 이름으로 남기기", "Sign as me", "自分の名前で残す")) { if album.addGuestbookEntry(author: album.memoryHomePublicNickname, body: guestbookDraft, authorKind: .trainer) { guestbookDraft = "" } }.buttonStyle(.borderedProminent).controlSize(.small).disabled(guestbookDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || guestbookDraft.count > MemoryHomeAccessSettings.guestbookBodyLimit) }.memoryHomePanel(tint: PokedoroTheme.yellow); if album.memoryHomeAccess.guestbookEntries.isEmpty { ContentUnavailableView(l.t("첫 방명록을 남겨 보세요", "Leave the first note", "最初のひとことを残しましょう"), systemImage: "text.bubble") } else { ForEach(album.memoryHomeAccess.guestbookEntries) { entry in VStack(alignment: .leading, spacing: 5) { HStack { Label(entry.author, systemImage: entry.authorKind == .companion ? "pawprint.fill" : "person.fill").font(.subheadline.weight(.semibold)); Spacer(); Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary); Button { album.deleteGuestbookEntry(id: entry.id) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.borderless).accessibilityLabel(l.t("방명록 삭제", "Delete guestbook note", "メモを削除")) }; Text(entry.body).font(.callout).fixedSize(horizontal: false, vertical: true) }.memoryHomePanel(tint: entry.authorKind == .companion ? PokedoroTheme.mint : PokedoroTheme.blue) } } }.padding(18) }.onAppear { _ = store.memoryAlbum.recordCompanionTraceIfNeeded(companionName: store.chatProfile(for: mon).displayName, l: l) } }
     private var visit: some View { ScrollView { VStack(alignment: .leading, spacing: 12) {
-        VStack(alignment: .leading, spacing: 4) { Text(l.t("같은 LAN의 Memory Home", "Memory Homes on this LAN", "同じLANのMemory Home")).font(.headline); Text(l.t("홈을 고르고 공개된 쇼룸을 둘러보세요.", "Choose a home and explore its public showroom.", "ホームを選び公開ショールームを見て回りましょう。")).font(.caption).foregroundStyle(.secondary) }.memoryHomePanel(tint: PokedoroTheme.blue)
+        VStack(alignment: .leading, spacing: 4) { Text(l.t("같은 LAN의 Memory Home", "Memory Homes on this LAN", "同じLANのMemory Home")).font(.headline); Text(l.t("홈을 고르고 공개된 쇼룸을 둘러보세요.", "Choose a home and explore its public showroom.", "ホームを選び公開ショールームを見て回りましょう。")).font(.caption).foregroundStyle(.secondary); surfRow }.memoryHomePanel(tint: PokedoroTheme.blue)
         // 실패를 화면에 올린다. 이게 없으면 권한 거부(`NoAuth`)·거절·잘못된 페이로드가 전부
         // "주변 홈을 찾는 중이에요…" 한 줄로 뭉개져, 사용자에게는 원인 없는 무동작으로만 보인다.
         // `PlayerGymView`·`BattleView`·`GymLeagueView` 는 모두 이 줄을 갖고 있다.
@@ -740,7 +740,41 @@ private struct MemoryHomeWindowView: View {
         }
         if let selected = visits.selectedProfile { remoteProfile(selected) }
         if visits.homes.isEmpty { ContentUnavailableView(l.t("주변 홈을 찾는 중이에요…", "Looking for homes…", "近くのホームを探しています…"), systemImage: "dot.radiowaves.left.and.right") } else { ForEach(visits.homes) { home in Button { visits.visit(home) } label: { Label(home.displayName, systemImage: "house.fill").frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.bordered) } }
+        footprints
     }.padding(18) }.onAppear { visits.start() }.onDisappear { visits.stop() } }
+
+    /// §14 파도타기. 목록에서 한 채를 골라 누르는 것과 나란히 두는 이유는 둘이 다른 동작이기
+    /// 때문이다 — 이쪽은 "누구든 다음 집" 이고, 오늘 아직 안 간 집을 먼저 고른다.
+    private var surfRow: some View {
+        HStack {
+            Button { visits.surf() } label: { Label(l.t("파도타기", "Surf", "波乗り"), systemImage: "water.waves") }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+                .accessibilityHint(l.t("오늘 아직 방문하지 않은 다음 홈으로 건너뜁니다.",
+                                       "Hops to the next home you have not visited today.",
+                                       "今日まだ訪問していない次のホームへ移動します。"))
+            Text(l.t("주변 \(visits.homes.count)채", "\(visits.homes.count) nearby", "近くに\(visits.homes.count)軒"))
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    /// 다녀온 집. 방문 도장(`visitedHomeStamps`)은 릴리스 내내 저장돼 왔지만 이 패널이 생기기
+    /// 전까지 **어느 화면도 읽지 않았다** — 파도타기에 발자국이 없던 실제 이유다.
+    @ViewBuilder private var footprints: some View {
+        let prints = MemoryHomeSurf.footprints(from: store.memoryAlbum.memoryHomeAccess.visitedHomeStamps)
+        if !prints.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(l.t("다녀온 홈", "Homes you visited", "訪ねたホーム"), systemImage: "shoeprints.fill").font(.caption.weight(.bold))
+                Text(l.t("이 발자국은 이 Mac에만 남고 LAN에 공유되지 않습니다.",
+                         "These footprints stay on this Mac and are never shared on the LAN.",
+                         "このあしあとはこのMacだけに残り、LANには共有されません。"))
+                    .font(.caption2).foregroundStyle(.secondary)
+                ForEach(prints) { print in
+                    HStack { Text(print.label).font(.caption).lineLimit(1); Spacer(); Text(print.at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
+                }
+            }.memoryHomePanel(tint: PokedoroTheme.mint)
+        }
+    }
 
     private func remoteProfile(_ card: MemoryHomeProfileCard) -> some View { VStack(alignment: .leading, spacing: 8) {
         HStack { SpriteView(speciesID: card.speciesID, size: 72, shiny: card.isShiny); VStack(alignment: .leading) { Text(card.displayName).font(.title3.bold()); Text(card.profileMessage ?? l.t("환영합니다!", "Welcome!", "ようこそ！")).foregroundStyle(.secondary) } }

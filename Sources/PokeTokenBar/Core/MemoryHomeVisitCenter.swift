@@ -101,6 +101,9 @@ final class MemoryHomeVisitCenter {
     /// `.failed` 재시작 횟수. 상한이 없으면 영구 불가 상태(권한 차단·서비스 타입 차단)에서 5초마다
     /// 브라우저를 새로 만들며 하루 종일 돈다.
     private var browserRestartAttempts = 0
+    /// 파도타기 커서. **저장하지 않는다** — 창을 닫으면 처음부터 돈다. 통산 기록은 방문 도장이
+    /// 맡으므로 여기에 새 저장 필드를 만들 이유가 없다(이 홈의 "새 필드 0개" 원칙).
+    private var surfCursor: String?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var visitHomeIDs: [ObjectIdentifier: String] = [:]
     /// 회수를 관찰할 수 있는 유일한 창이다. `connections` 를 통째로 `private` 로 두면 "연결이
@@ -144,6 +147,23 @@ final class MemoryHomeVisitCenter {
     /// 있었기에 `advertisedServiceName` 같은 형제 상태를 더하면 반드시 한 곳을 빠뜨린다.
     private func stopHosting() {
         listener?.cancel(); listener = nil; isHosting = false; advertisedServiceName = nil
+    }
+    /// 기획서 §14 파도타기 — 다음 홈으로 건너뛴다. 목표를 고르는 판단은 전부 `MemoryHomeSurf`
+    /// 가 하고 여기서는 방문만 한다(`homes(fromServices:)` 를 순수 함수로 뺀 것과 같은 이유).
+    func surf() {
+        guard isActive else { return }
+        let visited = MemoryHomeSurf.visitedIDs(in: companion.memoryAlbum.memoryHomeAccess.visitedHomeStamps,
+                                                on: CompanionStore.dayKey(Date()))
+        guard let target = MemoryHomeSurf.target(in: homes, visited: visited, after: surfCursor) else {
+            // 목록이 비었을 때 아무것도 하지 않으면 죽은 버튼이 된다 — 이 화면의 다른 실패와
+            // 같은 자리(`lastError`)에 이유를 적는다.
+            lastError = companion.l.t("파도타기 할 홈이 아직 안 보여요. 같은 LAN의 다른 Mac에서 홈을 공개해 주세요.",
+                                      "No homes to surf yet. Open a home on another Mac on this LAN.",
+                                      "波乗りできるホームがまだありません。同じLANの別のMacでホームを公開してください。")
+            return
+        }
+        surfCursor = target.id
+        visit(target)
     }
     func visit(_ peer: MemoryHomePeer) {
         guard isActive else { return }; selectedProfile = nil; lastError = nil
