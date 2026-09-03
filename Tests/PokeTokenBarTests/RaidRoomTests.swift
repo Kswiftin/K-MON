@@ -366,9 +366,10 @@ final class RaidRoomTests: XCTestCase {
 
     /// 뽑고 싶은 사람이 뽑히는 시드를 찾는다. 추첨이 시드 함수라 테스트가 결과를 고를 수 있다 —
     /// 못 고르면 "누군가는 뽑힌다" 만 재게 되고, 뽑힌 쪽·안 뽑힌 쪽을 갈라서 못 본다.
-    private func seedDrawing(_ target: UUID, from ids: [UUID],
+    private func seedDrawing(_ target: UUID, from ids: [UUID], finishedRound: Int,
                              file: StaticString = #filePath, line: UInt = #line) -> UInt64 {
-        for seed in UInt64(0)..<10_000 where RaidBoss.catcher(runnerIDs: ids, seed: seed) == target {
+        for seed in UInt64(0)..<10_000
+        where RaidBoss.catcher(runnerIDs: ids, seed: seed, finishedRound: finishedRound) == target {
             return seed
         }
         XCTFail("10,000 개 시드 안에 이 사람이 뽑히는 판이 없다", file: file, line: line)
@@ -385,7 +386,7 @@ final class RaidRoomTests: XCTestCase {
         let me = runner("나", id: center.myID)
         let mate = runner("동료")
         let boss = todaysBoss(tier: .three)
-        let seed = seedDrawing(me.id, from: [me.id, mate.id])
+        let seed = seedDrawing(me.id, from: [me.id, mate.id], finishedRound: 1)
         XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
 
         var downedBoss = boss
@@ -410,7 +411,7 @@ final class RaidRoomTests: XCTestCase {
         let me = runner("나", id: center.myID)
         let mate = runner("동료")
         let boss = todaysBoss(tier: .three)
-        let seed = seedDrawing(mate.id, from: [me.id, mate.id])
+        let seed = seedDrawing(mate.id, from: [me.id, mate.id], finishedRound: 1)
         XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
 
         var downedBoss = boss
@@ -435,7 +436,7 @@ final class RaidRoomTests: XCTestCase {
         let me = runner("나", id: center.myID)
         let mate = runner("동료")
         let boss = todaysBoss()
-        let seed = seedDrawing(me.id, from: [me.id, mate.id])
+        let seed = seedDrawing(me.id, from: [me.id, mate.id], finishedRound: 1)
         XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .one))
 
         var downedBoss = boss
@@ -485,7 +486,7 @@ final class RaidRoomTests: XCTestCase {
         var mate = runner("동료")
         let boss = todaysBoss(tier: .three)
         // 쓰러진 쪽이 뽑히는 시드를 고른다 — 이 시드가 곧 결함의 트리거다.
-        let seed = seedDrawing(mate.id, from: [me.id, mate.id])
+        let seed = seedDrawing(mate.id, from: [me.id, mate.id], finishedRound: 1)
         XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
 
         mate.side.hp = 0   // 방을 떠났거나 쓰러졌다 — 편성에는 남는다
@@ -500,6 +501,99 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertTrue(store.raidCatchClaimedToday)
     }
 
+    /// 내가 뽑히는 이긴 3★ 판을 한 판 돈다 — 포획 **결과만** 다른 테스트들이 같은 여섯 줄을 쓴다.
+    @MainActor
+    private func raidWhereIAmDrawn(_ store: CompanionStore) async -> MultiplayerRoomCenter {
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        let boss = todaysBoss(tier: .three)
+        let seed = seedDrawing(me.id, from: [me.id, mate.id], finishedRound: 1)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 800, mate.id: 800])
+        await center.debugAwaitRaidCatch()
+        XCTAssertEqual(center.raidCatcherID, center.myID, "테스트 전제: 내가 뽑혔다")
+        return center
+    }
+
+    /// **회귀**: 오늘 이미 한 마리를 데려왔으면 화면이 그 사실을 말해야 한다.
+    ///
+    /// 예전에는 어떤 실패든 "보스 정보를 불러오지 못해 … 오늘 다시 도전할 수 있어요" 였다 —
+    /// 이 판에서는 두 문장 다 거짓이다. 원장 가드가 네트워크를 건드리기 전에 돌려보내므로 불러올
+    /// 시도조차 없었고, 오늘 다시 도전해도 결과는 같다.
+    @MainActor
+    func testASecondCatchInTheSameDayTellsTheUserWhy() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-claimed-msg")
+        await store.hatch(baseID: 20)
+        store.claimRaidCatch()   // 오전에 이미 한 마리 데려왔다
+
+        let center = await raidWhereIAmDrawn(store)
+
+        XCTAssertEqual(center.raidCatchResult, .claimedToday)
+        XCTAssertEqual(center.lastError, store.l.raidCatchAlreadyToday,
+                       "로드 실패가 아니라 '하루 한 마리' 라고 말해야 한다")
+        XCTAssertTrue(store.state.boxedMons.isEmpty)
+    }
+
+    /// **회귀**: 포획이 실패한 판은 성공 문구의 근거를 남기지 않는다.
+    ///
+    /// `raidCatcherID` 는 비동기 포획이 시작되기 **전에** 정해진다. 화면이 그 값만 보고 "상자에
+    /// 있어요" 를 그리던 동안, 라인 조회가 실패하면 같은 화면에 오류 문구와 성공 문구가 나란히
+    /// 남았다 — 그리고 상자는 비어 있었다.
+    @MainActor
+    func testAFailedCatchSaysSoAndKeepsTodaysChance() async {
+        let store = CompanionStore(provider: RaidLineFailingProvider(), clock: TestClock().closure,
+                                   fileURL: stubStoreURL("raid-catch-failed"), rng: SeededRNG(seed: 7))
+
+        let center = await raidWhereIAmDrawn(store)
+
+        XCTAssertEqual(center.raidCatchResult, .unavailable,
+                       "실패가 성공과 같은 값이면 화면이 '상자에 있어요' 를 그린다")
+        XCTAssertEqual(center.lastError, store.l.raidCatchFailed)
+        XCTAssertNil(store.state.active)
+        XCTAssertTrue(store.state.boxedMons.isEmpty)
+        XCTAssertFalse(store.raidCatchClaimedToday, "못 잡은 판이 오늘의 기회를 태우면 안 된다")
+    }
+
+    /// **회귀(관례)**: 방을 떠난 뒤 도착한 포획 결과가 화면에 남으면 안 된다.
+    ///
+    /// `sessionEpoch` 가 있는 이유다 — await 뒤의 쓰기는 사용자가 이미 떠난 방의 것일 수 있다.
+    /// 가드가 없던 동안 나가기를 누른 뒤 모집 화면(혹은 **다음 레이드 방**)에 "보스 정보를 불러오지
+    /// 못했어요" 가 떴다.
+    ///
+    /// 잡던 개체는 그대로 잡는다 — 그건 내 세이브에 들어가는 값이라 방을 떠나는 것과 무관하다.
+    @MainActor
+    func testALeftRoomNeverShowsTheCatchResult() async {
+        let species = RaidBoss.speciesID(dayKey: CompanionStore.dayKey(Date()))
+        let provider = RaidSuspendedLineProvider(species: species)
+        let store = CompanionStore(provider: provider, clock: TestClock().closure,
+                                   fileURL: stubStoreURL("raid-catch-stale"), rng: SeededRNG(seed: 7))
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        let boss = todaysBoss(tier: .three)
+        let seed = seedDrawing(me.id, from: [me.id, mate.id], finishedRound: 1)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 800, mate.id: 800])
+        XCTAssertEqual(center.raidCatcherID, center.myID, "테스트 전제: 내가 뽑혔고 포획이 도는 중이다")
+
+        center.leaveRoom()          // 라인 조회가 아직 안 끝난 창에서 나간다
+        await provider.resume()
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertNil(center.lastError, "떠난 방의 결과가 다음 화면에 남았다")
+        XCTAssertNil(center.raidCatchResult)
+        XCTAssertEqual(store.state.active?.currentID, species, "잡던 개체는 그대로 잡는다")
+    }
+
     /// 진 판은 아무도 못 잡는다 — 정산이 안 열리는 것과 같은 이유다.
     @MainActor
     func testALostRaidCatchesNothing() async {
@@ -509,7 +603,7 @@ final class RaidRoomTests: XCTestCase {
         var me = runner("나", id: center.myID)
         var mate = runner("동료")
         let boss = todaysBoss(tier: .three)
-        XCTAssertTrue(center.applyGuestRaidStart(seed: seedDrawing(me.id, from: [me.id, mate.id]),
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seedDrawing(me.id, from: [me.id, mate.id], finishedRound: 1),
                                                  fighters: [me, mate, boss], tier: .three))
 
         me.side.hp = 0; mate.side.hp = 0   // 파티 전멸
@@ -537,8 +631,8 @@ final class RaidRoomTests: XCTestCase {
         let partner = store.state.active?.id
         XCTAssertNotNil(partner, "테스트 전제: 동행이 있다")
 
-        let didCatch = await store.catchRaidBoss(speciesID: 20)
-        XCTAssertTrue(didCatch)
+        let result = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertEqual(result, .box)
 
         XCTAssertEqual(store.state.active?.id, partner, "동행은 그대로다")
         XCTAssertEqual(store.state.boxedMons.count, 1)
@@ -558,8 +652,8 @@ final class RaidRoomTests: XCTestCase {
         await store.hatch(baseID: 20)
         let first = await store.catchRaidBoss(speciesID: 20)
         let second = await store.catchRaidBoss(speciesID: 20)
-        XCTAssertTrue(first)
-        XCTAssertFalse(second)
+        XCTAssertEqual(first, .box)
+        XCTAssertEqual(second, .claimedToday, "실패와 하루 한 마리는 화면이 다르게 말해야 한다")
         XCTAssertEqual(store.state.boxedMons.count, 1, "박스에 두 마리가 들어오면 안 된다")
     }
 
@@ -571,8 +665,8 @@ final class RaidRoomTests: XCTestCase {
         let store = stubStore(TestClock(), tag: "raid-catch-gap")
         await store.hatch(baseID: 20)
         let gap = PokemonAssets.spriteGaps.first ?? 990
-        let didCatch = await store.catchRaidBoss(speciesID: gap)
-        XCTAssertFalse(didCatch)
+        let result = await store.catchRaidBoss(speciesID: gap)
+        XCTAssertEqual(result, .unavailable)
         XCTAssertTrue(store.state.boxedMons.isEmpty)
         XCTAssertFalse(store.raidCatchClaimedToday, "못 잡은 판이 오늘의 기회를 태우면 안 된다")
     }
@@ -584,8 +678,8 @@ final class RaidRoomTests: XCTestCase {
         let store = stubStore(TestClock(), tag: "raid-catch-empty")
         XCTAssertNil(store.state.active, "테스트 전제: 동행이 없다")
 
-        let didCatch = await store.catchRaidBoss(speciesID: 20)
-        XCTAssertTrue(didCatch)
+        let result = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertEqual(result, .companion, "빈 동행 자리를 채웠으면 '상자' 라고 말할 수 없다")
         XCTAssertEqual(store.state.active?.currentID, 20)
         XCTAssertTrue(store.state.boxedMons.isEmpty)
     }
@@ -602,8 +696,8 @@ final class RaidRoomTests: XCTestCase {
         let store = threeStageStore(TestClock(), tag: "raid-catch-form")
         XCTAssertNil(store.state.active, "테스트 전제: 동행이 없어 잡은 보스가 동행 자리로 간다")
 
-        let didCatch = await store.catchRaidBoss(speciesID: 445)
-        XCTAssertTrue(didCatch)
+        let result = await store.catchRaidBoss(speciesID: 445)
+        XCTAssertEqual(result, .companion)
         await store.debugReloadCurrentLine()
 
         XCTAssertEqual(store.state.active?.currentID, 445, "라인 로드가 잡은 보스를 1단계로 되돌렸다")
@@ -617,8 +711,8 @@ final class RaidRoomTests: XCTestCase {
     func testCatchingAMidChainSpeciesKeepsTheRemainingEvolutions() async {
         let store = threeStageStore(TestClock(), tag: "raid-catch-midchain")
 
-        let didCatch = await store.catchRaidBoss(speciesID: 444)
-        XCTAssertTrue(didCatch)
+        let result = await store.catchRaidBoss(speciesID: 444)
+        XCTAssertEqual(result, .companion)
         await store.debugReloadCurrentLine()
 
         XCTAssertEqual(store.state.active?.currentID, 444)
@@ -989,3 +1083,38 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(SaveTransfer.sanitized(state).battleHistory.count, 1)
     }
 }
+
+/// 라인 조회가 항상 실패하는 제공자 — 오프라인·PokéAPI 5xx 로 포획이 못 끝나는 판을 만든다.
+private struct RaidLineFailingProvider: PokeProviding {
+    func line(baseSpeciesID: Int) async throws -> EvoLine { throw RaidProviderError.offline }
+    func baseSpeciesIndex() async throws -> [BaseSpecies] { [] }
+}
+
+/// 라인 조회를 붙잡아 두는 제공자 — "포획이 도는 중" 이라는 창을 테스트가 직접 만든다.
+private actor RaidSuspendedLineProvider: PokeProviding {
+    private let species: Int
+    private var continuation: CheckedContinuation<EvoLine, Never>?
+
+    init(species: Int) { self.species = species }
+
+    func line(baseSpeciesID: Int) async throws -> EvoLine {
+        await withCheckedContinuation { continuation in
+            precondition(self.continuation == nil, "한 번에 하나만 붙잡는다")
+            self.continuation = continuation
+        }
+    }
+
+    func baseSpeciesIndex() async throws -> [BaseSpecies] { [] }
+
+    func resume() {
+        let pending = continuation
+        continuation = nil
+        pending?.resume(returning: EvoLine(baseID: species,
+                                           tree: EvoNode(speciesID: species, children: []),
+                                           rarity: .legendary,
+                                           names: [species: ["en": "Boss", "ko": "보스", "ja": "ボス"]]))
+    }
+}
+
+private enum RaidProviderError: Error { case offline }
+

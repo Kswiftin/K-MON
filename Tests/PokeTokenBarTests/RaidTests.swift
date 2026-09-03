@@ -206,10 +206,10 @@ final class RaidTests: XCTestCase {
     /// 달라 같은 판에서 서로 다른 사람을 당첨자로 계산하고, 아무도 못 잡거나 둘이 잡는다.
     func testCatcherIsTheSameForEveryPeerOrdering() {
         let ids = (0..<4).map { _ in UUID() }
-        let mine = RaidBoss.catcher(runnerIDs: ids, seed: 0xDEAD_BEEF)
+        let mine = RaidBoss.catcher(runnerIDs: ids, seed: 0xDEAD_BEEF, finishedRound: 3)
         XCTAssertNotNil(mine)
         for _ in 0..<20 {
-            XCTAssertEqual(RaidBoss.catcher(runnerIDs: ids.shuffled(), seed: 0xDEAD_BEEF), mine,
+            XCTAssertEqual(RaidBoss.catcher(runnerIDs: ids.shuffled(), seed: 0xDEAD_BEEF, finishedRound: 3), mine,
                            "배열 순서가 답을 바꾸면 피어끼리 다른 당첨자를 본다")
         }
     }
@@ -218,7 +218,7 @@ final class RaidTests: XCTestCase {
     func testCatcherIsAlwaysOneOfTheRunners() {
         let ids = (0..<3).map { _ in UUID() }
         for seed in [UInt64](arrayLiteral: 0, 1, 2, 3, .max, 12_345) {
-            let picked = RaidBoss.catcher(runnerIDs: ids, seed: seed)
+            let picked = RaidBoss.catcher(runnerIDs: ids, seed: seed, finishedRound: 3)
             XCTAssertTrue(ids.contains { $0 == picked }, "시드 \(seed) 가 참가자 밖을 짚었다")
         }
     }
@@ -226,12 +226,33 @@ final class RaidTests: XCTestCase {
     /// 시드가 도는 동안 한 사람만 계속 뽑히면 "랜덤 1명" 이 아니다.
     func testCatcherRotatesAcrossSeeds() {
         let ids = (0..<3).map { _ in UUID() }
-        let picked = Set((0..<64).compactMap { RaidBoss.catcher(runnerIDs: ids, seed: UInt64($0)) })
+        let picked = Set((0..<64).compactMap { RaidBoss.catcher(runnerIDs: ids, seed: UInt64($0), finishedRound: 3) })
         XCTAssertEqual(picked.count, 3, "시드를 64번 굴려도 세 명이 다 안 나오면 추첨이 아니다")
     }
 
     func testCatcherIsNilWithoutRunners() {
-        XCTAssertNil(RaidBoss.catcher(runnerIDs: [], seed: 7))
+        XCTAssertNil(RaidBoss.catcher(runnerIDs: [], seed: 7, finishedRound: 3))
+    }
+
+    /// **당첨자는 판이 끝나기 전에 알 수 없어야 한다.** `.raidStart` 가 시드와 편성을 함께 나르므로,
+    /// 추첨이 그 둘만 읽으면 아무 피어(혹은 와이어를 읽는 사람)나 1라운드에 결과를 계산할 수 있다.
+    /// 못 이기는 걸 아는 세 명에게 20턴의 누적 피해는 정산 말고는 아무것도 주지 않는데, 기여도 항이
+    /// 지키려던 유인이 바로 그것이다.
+    func testTheDrawIsNotDecidedBeforeTheFightEnds() {
+        let ids = (0..<3).map { _ in UUID() }
+        let byRound = Set((1...RaidBoss.turnCap).compactMap {
+            RaidBoss.catcher(runnerIDs: ids, seed: 0xC0FF_EE, finishedRound: $0)
+        })
+        XCTAssertGreaterThan(byRound.count, 1,
+                             "끝난 라운드가 답을 못 바꾸면 시드만으로 당첨자를 미리 계산할 수 있다")
+    }
+
+    /// 그래도 **한 판 안에서는** 답이 하나다 — 같은 판을 두 번 물으면 같은 사람이어야 한다.
+    /// (같은 시드·같은 라운드는 모든 피어가 스스로 계산할 수 있는 값이라 와이어가 늘지 않는다.)
+    func testTheDrawIsStableWithinOneRaid() {
+        let ids = (0..<4).map { _ in UUID() }
+        let first = RaidBoss.catcher(runnerIDs: ids, seed: 99, finishedRound: 7)
+        XCTAssertEqual(RaidBoss.catcher(runnerIDs: ids, seed: 99, finishedRound: 7), first)
     }
 
     /// 1★ 는 포획을 안 연다. 400 HP 는 둘이 몇 턴에 깨는데 풀이 전부 전설·유사전설이라,
