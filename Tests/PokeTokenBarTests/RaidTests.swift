@@ -139,9 +139,9 @@ final class RaidTests: XCTestCase {
     /// 기여도 항이 없으면 캐리와 무임승차의 보상이 같다. 그 항이 실제로 갈라놓는지 본다.
     func testContributionSeparatesTheCarrierFromTheFreeloader() {
         let carry = RaidBoss.settlement(tier: .five, myDamage: 2_400, totalDamage: 2_800,
-                                        turnsRemaining: 5, survivingRunners: 3)
+                                        turnsRemaining: 5, survivingRunners: 3, runnerCount: 3)
         let coast = RaidBoss.settlement(tier: .five, myDamage: 400, totalDamage: 2_800,
-                                        turnsRemaining: 5, survivingRunners: 3)
+                                        turnsRemaining: 5, survivingRunners: 3, runnerCount: 3)
         XCTAssertGreaterThan(carry.contribution, coast.contribution)
         XCTAssertGreaterThan(carry.total, coast.total)
         XCTAssertEqual(carry.base, coast.base, "기본급은 잡은 사실에 대한 것이라 같다")
@@ -150,7 +150,7 @@ final class RaidTests: XCTestCase {
     /// 정산은 자기가 늘린 지갑을 **전부 설명해야 한다**(defect-log: 한 지갑에 여러 경로).
     func testSettlementTotalExplainsEveryTerm() {
         let s = RaidBoss.settlement(tier: .three, myDamage: 800, totalDamage: 1_600,
-                                    turnsRemaining: 4, survivingRunners: 2)
+                                    turnsRemaining: 4, survivingRunners: 2, runnerCount: 2)
         XCTAssertEqual(s.total, s.base + s.contribution + s.turnBonus + s.survivorBonus)
         XCTAssertEqual(s.contribution, RaidTier.three.baseReward / 2, "절반을 넣었으면 기여 항도 절반")
     }
@@ -158,7 +158,7 @@ final class RaidTests: XCTestCase {
     /// 경계 — 아무도 피해를 안 넣은 판(턴 상한 패배 뒤 잘못 불린 경우)에서 0 나눗셈이 나면 안 된다.
     func testSettlementSurvivesZeroTotalDamage() {
         let s = RaidBoss.settlement(tier: .one, myDamage: 0, totalDamage: 0,
-                                    turnsRemaining: 0, survivingRunners: 0)
+                                    turnsRemaining: 0, survivingRunners: 0, runnerCount: 2)
         XCTAssertEqual(s.contribution, 0)
         XCTAssertEqual(s.total, RaidTier.one.baseReward)
     }
@@ -166,10 +166,80 @@ final class RaidTests: XCTestCase {
     /// 음수·초과분은 경계에서 자른다 — 호스트가 보내오는 값이 정산에 그대로 들어가는 자리다.
     func testSettlementClampsHostSuppliedNumbers() {
         let s = RaidBoss.settlement(tier: .one, myDamage: 9_999, totalDamage: 100,
-                                    turnsRemaining: -5, survivingRunners: -3)
+                                    turnsRemaining: -5, survivingRunners: -3, runnerCount: 2)
         XCTAssertEqual(s.contribution, RaidTier.one.baseReward, "기여 비율은 1 을 못 넘는다")
         XCTAssertEqual(s.turnBonus, 0)
         XCTAssertEqual(s.survivorBonus, 0)
+    }
+
+    // MARK: 혼자 도는 판 — 협동 항만 접힌다
+
+    /// **혼자면 기본급만이다.** 기여도·남은 턴·생존은 협동 항이라 사람이 둘 이상일 때만 붙는다.
+    ///
+    /// 지급을 통째로 0 으로 두지 않는 이유가 설계다 — 1★ 는 혼자 잡히도록 HP 를 고른 티어라,
+    /// 0 을 주면 이웃 없는 사용자에게 이 기능이 콘텐츠가 0 이 된다(`RaidTier` 주석). 줄이되 없애지
+    /// 않는 것이 "뭉칠 이유"와 "혼자서도 돌 만함"을 동시에 지키는 자리다.
+    func testASoloRunnerGetsTheBaseAndNothingElse() {
+        let solo = RaidBoss.settlement(tier: .one, myDamage: 400, totalDamage: 400,
+                                       turnsRemaining: 19, survivingRunners: 1, runnerCount: 1)
+        XCTAssertEqual(solo.base, RaidTier.one.baseReward, "기본급은 잡은 사실에 대한 것이라 남는다")
+        XCTAssertEqual(solo.contribution, 0, "혼자면 기여 비율이 언제나 100% 라 항이 뜻을 잃는다")
+        XCTAssertEqual(solo.turnBonus, 0)
+        XCTAssertEqual(solo.survivorBonus, 0)
+        XCTAssertEqual(solo.total, RaidTier.one.baseReward)
+    }
+
+    /// **대조군.** 같은 입력에 사람만 하나 더 있으면 네 항이 전부 산다 — 이걸 안 재면
+    /// "협동 항이 통째로 죽었다" 도 초록이다.
+    func testTwoRunnersKeepEveryCoopTerm() {
+        let party = RaidBoss.settlement(tier: .one, myDamage: 400, totalDamage: 400,
+                                        turnsRemaining: 19, survivingRunners: 1, runnerCount: 2)
+        XCTAssertEqual(party.contribution, RaidTier.one.baseReward, "100% 기여는 기본급 전액이다")
+        XCTAssertEqual(party.turnBonus, RaidBoss.turnBonusPerTurn * 19)
+        XCTAssertEqual(party.survivorBonus, RaidBoss.survivorBonusPerRunner)
+        XCTAssertGreaterThan(party.total, RaidTier.one.baseReward)
+    }
+
+    // MARK: 포획 추첨 — 서버 없이 모두가 같은 한 명에 닿는다
+
+    /// 당첨자는 **정렬된 UUID + 시드**로 정해진다. 정렬이 없으면 피어마다 `fighters` 배열 순서가
+    /// 달라 같은 판에서 서로 다른 사람을 당첨자로 계산하고, 아무도 못 잡거나 둘이 잡는다.
+    func testCatcherIsTheSameForEveryPeerOrdering() {
+        let ids = (0..<4).map { _ in UUID() }
+        let mine = RaidBoss.catcher(runnerIDs: ids, seed: 0xDEAD_BEEF)
+        XCTAssertNotNil(mine)
+        for _ in 0..<20 {
+            XCTAssertEqual(RaidBoss.catcher(runnerIDs: ids.shuffled(), seed: 0xDEAD_BEEF), mine,
+                           "배열 순서가 답을 바꾸면 피어끼리 다른 당첨자를 본다")
+        }
+    }
+
+    /// 뽑힌 사람은 반드시 참가자다 — 인덱스가 범위를 벗어나면 아무도 못 받는다.
+    func testCatcherIsAlwaysOneOfTheRunners() {
+        let ids = (0..<3).map { _ in UUID() }
+        for seed in [UInt64](arrayLiteral: 0, 1, 2, 3, .max, 12_345) {
+            let picked = RaidBoss.catcher(runnerIDs: ids, seed: seed)
+            XCTAssertTrue(ids.contains { $0 == picked }, "시드 \(seed) 가 참가자 밖을 짚었다")
+        }
+    }
+
+    /// 시드가 도는 동안 한 사람만 계속 뽑히면 "랜덤 1명" 이 아니다.
+    func testCatcherRotatesAcrossSeeds() {
+        let ids = (0..<3).map { _ in UUID() }
+        let picked = Set((0..<64).compactMap { RaidBoss.catcher(runnerIDs: ids, seed: UInt64($0)) })
+        XCTAssertEqual(picked.count, 3, "시드를 64번 굴려도 세 명이 다 안 나오면 추첨이 아니다")
+    }
+
+    func testCatcherIsNilWithoutRunners() {
+        XCTAssertNil(RaidBoss.catcher(runnerIDs: [], seed: 7))
+    }
+
+    /// 1★ 는 포획을 안 연다. 400 HP 는 둘이 몇 턴에 깨는데 풀이 전부 전설·유사전설이라,
+    /// 열면 알 부화(20,000 별의조각)가 뜻을 잃는다. 3★ 부터가 "뭉쳐야 잡힌다" 의 시작이다.
+    func testOnlyThreeAndFiveStarGrantACatch() {
+        XCTAssertFalse(RaidTier.one.grantsCatch)
+        XCTAssertTrue(RaidTier.three.grantsCatch)
+        XCTAssertTrue(RaidTier.five.grantsCatch)
     }
 
     // MARK: 협동 보스전 판정
