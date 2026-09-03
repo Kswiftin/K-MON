@@ -68,6 +68,6 @@
    증거가 아니다** — `test-gate.sh` 는 line coverage 라 한 줄 `if x { y }` 는 조건만 평가되면 실행으로
    세고, 블록이 한 번도 안 돌아도 통과한다(도감 이로치 집계가 `^0` 인 채 87% 를 통과해 무테스트로 나갈
    뻔했다). 새 조건 분기를 넣었으면 `xcrun llvm-cov show <bin> -instr-profile=<profdata> <file>
-   --show-regions` 로 `^0` 을 직접 본다.
+   --show-line-counts-or-regions` 로 `^0` 을 직접 본다 — `--show-regions` 만 주면 열이 안 나온다.
 4. **영구 캡처 (기억이 아니라 메커니즘).** 재발 방지는 테스트·게이트·`docs/reference/defect-log.md`·
    스크립트 중 *기계로 막을 수 있는* 형태로 남긴다. 릴리스 관련이면 `release.sh` 게이트, 절차면 문서.
