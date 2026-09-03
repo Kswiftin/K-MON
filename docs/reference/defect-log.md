@@ -3799,3 +3799,23 @@ read_when:
   바꾸고, 가드도 문자열 대신 그 함수를 직접 본다. 활동이 늘면 `switch` 가 컴파일 에러로 알려 준다 —
   부정 조건은 아무 말도 안 해 준다.
 - (#209, 2026-09-03.)
+
+## 뷰 타입의 `static` 순수 판정은 `nonisolated` 를 **명시**한다 — 로컬만 초록인 부류
+
+- **증상**: 로컬에서 `swift test` 가 2082건 전부 통과했는데 CI 의 `build-test` 가 컴파일에서 죽었다.
+  `error: call to main actor-isolated static method 'destination(forRoom:)' in a synchronous
+  nonisolated context` (#209 의 PR, 2026-09-03).
+- **직접원인**: `FriendView`·`RoomBattleView` 는 `View` 라 `@MainActor` 를 물려받고, 그 안의
+  `static func` 도 같이 물려받는다. swift-testing 의 동기 `@Test` 함수는 nonisolated 라 못 부른다.
+  `MultiplayerRoomCenter.creditsRaceFinish` 가 이미 같은 이유로 `nonisolated` 를 달고 있었다 —
+  **부류는 알려져 있었는데 새 코드가 그 자리를 다시 밟았다.**
+- **왜 로컬이 못 걸렀나**: 로컬 Swift 6.2.4, CI(`macos-15`) Swift 6.1.2. 6.2 가 이 호출을
+  통과시킨다. 즉 **로컬 통과는 이 부류의 증거가 아니다** — 로컬 툴체인이 CI 보다 새로우면
+  격리 규칙이 완화된 쪽에서만 검증한 셈이 된다. CI 가 권위다.
+- **처방**: 테스트가 부르는 순수 판정을 `View`(또는 `@MainActor` 타입) 안에 둘 때는 `nonisolated`
+  를 **쓸 때부터** 붙인다. 안 붙여도 로컬에서 도니 "필요 없다" 는 판단이 서지 않는다. 판정이
+  화면 상태를 전혀 안 읽으면 애초에 `View` 밖(`LANRoomList` 처럼 별도 `enum`)이 더 낫다 —
+  그쪽은 격리 추론 자체가 없다.
+- **일반화**: 로컬 툴체인이 CI 보다 앞서면 **컴파일 단계의 실패는 로컬에서 재현되지 않을 수 있다.**
+  격리·엄격 동시성·추론이 걸린 변경은 로컬 초록을 최종 증거로 쓰지 않는다.
+- (`FriendView.swift` · `RoomBattleView.swift`, 2026-09-03.)

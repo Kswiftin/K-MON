@@ -24,7 +24,10 @@ struct RoomBattleView: View {
     ///
     /// 개설·참가 중에는 아직 활동을 모른다(로비는 `await` 뒤에 온다). 그 사이 모집 화면으로
     /// 되돌리면 방금 누른 "방 만들기" 가 아무 일도 안 한 것처럼 보이므로 국면으로 판단한다.
-    static func showsLobby(phase: MultiplayerRoomCenter.Phase, activity: RoomActivity?) -> Bool {
+    /// `nonisolated` 가 없으면 `View` 의 `@MainActor` 를 물려받아 **동기 테스트에서 못 부른다**
+    /// (`MultiplayerRoomCenter.creditsRaceFinish` 와 같은 이유). 로컬 Swift 6.2 는 이 호출을
+    /// 통과시키고 CI 의 6.1 만 거절하므로, 명시하지 않으면 로컬 초록 · CI 빨강으로 갈린다.
+    nonisolated static func showsLobby(phase: MultiplayerRoomCenter.Phase, activity: RoomActivity?) -> Bool {
         switch phase {
         case .idle: false
         case .creating, .joining: true

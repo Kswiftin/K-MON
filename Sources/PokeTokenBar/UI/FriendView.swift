@@ -12,7 +12,10 @@ struct FriendView: View {
     ///
     /// `nil` 은 **친구 탭이 관여하지 않는** 활동이다: 레이드는 팝오버 오버레이(`nav.showRaid`),
     /// 포켓애슬론·퀴즈는 챌린지 탭이 그린다. 여기서 잡으면 그 화면들이 친구 탭에 갇힌다.
-    static func destination(forRoom activity: RoomActivity?) -> Destination? {
+    /// `nonisolated` 가 없으면 `View` 의 `@MainActor` 를 물려받아 **동기 테스트에서 못 부른다**
+    /// (`MultiplayerRoomCenter.creditsRaceFinish` 와 같은 이유). 로컬 Swift 6.2 는 이 호출을
+    /// 통과시키고 CI 의 6.1 만 거절하므로, 명시하지 않으면 로컬 초록 · CI 빨강으로 갈린다.
+    nonisolated static func destination(forRoom activity: RoomActivity?) -> Destination? {
         switch activity {
         case .battle: .roomBattle
         case .tournament: .tournament
