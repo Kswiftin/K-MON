@@ -36,6 +36,10 @@ LOGIC_CORE=(
   # 키로 세는 속도 제한)가 사는 곳. 소켓 부분은 단위 테스트가 안 닿아 파일 수치는 낮지만, 배열에
   # 넣지 않으면 그 검증기가 커버리지에서 통째로 빠진다 — PeerAdvertisement 를 넣은 이유와 같다.
   "Sources/PokeTokenBar/Core/PokemonTrade.swift"
+  # 경매의 제안 국면과 **연결 회수**가 사는 곳. 교환을 넣은 이유와 같다 — 소켓 부분은 단위
+  # 테스트가 안 닿아 파일 수치는 낮지만, 배열 밖에 두면 그 판정들이 커버리지에서 통째로 빠진다.
+  # `#228`(끝난 제안이 연결을 놓지 않는 부류)이 이 파일이 배열 밖이라 아무 신호도 없이 살았다.
+  "Sources/PokeTokenBar/Core/PokemonAuction.swift"
   # 광고 이름의 바이트 예산. 네 LAN 센터가 전부 이 한 함수를 지나므로 여기가 무테스트면 부류가
   # 통째로 무테스트다 — 이전엔 `PlayerGymRoomName` 안에 숨어 있어 커버리지에서 보이지 않았다.
   "Sources/PokeTokenBar/Core/LANServiceName.swift"

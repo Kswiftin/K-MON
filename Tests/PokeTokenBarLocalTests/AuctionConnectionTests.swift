@@ -45,6 +45,24 @@ final class AuctionWireTap: @unchecked Sendable {
     /// 상대가 앱을 **정상 종료**한다. `.failed` 가 아니라 FIN 만 건너간다.
     func closePeer() { peer?.cancel() }
 
+    /// 온전한 프레임 하나를 보낸다 — 센터의 읽기 루프가 실제로 디코드해 `receive` 로 넘기는지
+    /// 보는 유일한 경로다. 기존 테스트는 `receive` 를 직접 불러 이 루프를 건너뛴다.
+    func sendFrame(_ message: AuctionWireMessage) {
+        guard let peer, let payload = try? JSONEncoder().encode(message) else { return }
+        var frame = withUnsafeBytes(of: UInt32(payload.count).bigEndian) { Data($0) }
+        frame.append(payload)
+        peer.send(content: frame, completion: .contentProcessed { _ in })
+    }
+
+    /// 길이 헤더만 보내고 본문 없이 죽는다 — 프레임 **중간에** 끊긴 상대. `length` 를 0 이나
+    /// 상한 밖으로 주면 길이 값 자체가 반려되는 갈래를 밟는다.
+    func sendLengthThenClose(_ length: UInt32) {
+        guard let peer else { return }
+        let header = withUnsafeBytes(of: length.bigEndian) { Data($0) }
+        peer.send(content: header, contentContext: .finalMessage, isComplete: true,
+                  completion: .contentProcessed { _ in peer.cancel() })
+    }
+
     func contains(_ predicate: (AuctionWireMessage) -> Bool) -> Bool {
         frames.contains(where: predicate)
     }
@@ -297,6 +315,71 @@ final class AuctionWireTap: @unchecked Sendable {
                 "정상 종료한 상대의 소켓이 죽은 채로 남는다")
         #expect(center.outgoingOffers.first?.status == .failed,
                 "연결이 끊겼으면 그 제안은 실패다 — 안 그러면 개체가 계속 묶인다")
+    }
+
+    /// **읽기 루프 전체를 소켓으로 밟는 유일한 테스트.** 다른 스무 개는 `receive` 를 직접 불러
+    /// 길이 프리픽스 읽기·디코드·전달을 통째로 건너뛰므로, 그 루프의 가드를 고쳐도(이 변경이
+    /// 그랬다) 아무도 해피 패스가 깨진 것을 모른다 — `--show-regions` 에 실행 `0` 으로 남는다.
+    @Test func aFrameArrivingOverTheSocketReachesTheOffer() async throws {
+        let tap = try AuctionWireTap()
+        defer { tap.cancel() }
+        let port = try #require(await pollValue { tap.port })
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let center = PokemonAuctionCenter(companion: store)
+        _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
+        let offerID = try #require(center.outgoingOffers.first?.id)
+        #expect(await poll { tap.contains(AuctionWireTap.isApply) }, "제안 프레임이 나가지 않았다")
+
+        tap.sendFrame(.declined(offerID: offerID))
+
+        #expect(await poll { center.outgoingOffers.first?.status == .declined },
+                "소켓으로 온 프레임이 제안에 닿지 않았다")
+        #expect(await poll { center.trackedConnectionCount == 0 })
+    }
+
+    /// 프레임 **중간에** 끊긴 상대. `receiveLength` 는 성공하고 `receiveBody` 가 짧은 읽기를
+    /// 받는다 — 여기서 조용히 리턴하면 죽은 소켓 위에서 제안이 영영 `.pending` 이다.
+    ///
+    /// 이 테스트가 있는 이유는 커버리지다. 앞의 EOF 테스트는 `receiveLength` 만 밟고
+    /// `receiveBody` 의 실패 분기는 `--show-regions` 에서 실행 `0` 으로 남았다 — 총계
+    /// 89%는 그것을 가린다.
+    @Test func aFrameCutInHalfReleasesMyConnection() async throws {
+        let tap = try AuctionWireTap()
+        defer { tap.cancel() }
+        let port = try #require(await pollValue { tap.port })
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let center = PokemonAuctionCenter(companion: store)
+        _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
+        #expect(await poll { tap.contains(AuctionWireTap.isApply) }, "제안 프레임이 나가지 않았다")
+
+        // 본문 8바이트가 온다고 알리고 아무것도 안 보낸 채 끊는다.
+        tap.sendLengthThenClose(8)
+
+        #expect(await poll { center.trackedConnectionCount == 0 },
+                "본문을 기다리다 끊긴 소켓이 죽은 채로 남는다")
+        #expect(center.outgoingOffers.first?.status == .failed)
+    }
+
+    /// 길이 값 자체가 규격 밖인 상대(0 바이트 프레임). 신뢰경계라 값을 믿지 않고 끊는다.
+    @Test func aFrameWithAnImpossibleLengthReleasesMyConnection() async throws {
+        let tap = try AuctionWireTap()
+        defer { tap.cancel() }
+        let port = try #require(await pollValue { tap.port })
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let center = PokemonAuctionCenter(companion: store)
+        _ = try #require(center.apply(to: listing(for: remoteMon(), port: port), offering: mine))
+        #expect(await poll { tap.contains(AuctionWireTap.isApply) }, "제안 프레임이 나가지 않았다")
+
+        tap.sendLengthThenClose(0)
+
+        #expect(await poll { center.trackedConnectionCount == 0 })
+        #expect(center.outgoingOffers.first?.status == .failed)
     }
 
     private func pollValue<T>(timeout: Duration = .seconds(5), _ probe: () -> T?) async -> T? {
