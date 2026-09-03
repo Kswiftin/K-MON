@@ -110,6 +110,11 @@ final class PokemonAuctionCenter {
     private var browser: NWBrowser?
     private var connections: [UUID: NWConnection] = [:]
     private var connectionOfferIDs: [UUID: UUID] = [:]
+    /// 회수를 관찰할 수 있는 유일한 창이다. `connections` 를 통째로 `private` 로 두면 "끝난 제안의
+    /// 연결이 새는지" 를 검증할 방법이 없어 이 부류가 조용히 돌아온다(#228 이 그렇게 살아남았다).
+    /// 파생값이라 상태가 갈라지지 않는다 — 형제 `MemoryHomeVisitCenter.trackedConnectionCount`
+    /// 와 같은 이유로 `internal` 이다.
+    var trackedConnectionCount: Int { connections.count }
 
     init(companion: CompanionStore) {
         self.companion = companion

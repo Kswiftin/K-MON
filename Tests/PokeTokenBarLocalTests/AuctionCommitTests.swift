@@ -3,7 +3,7 @@ import Network
 import Testing
 @testable import PokeTokenBar
 
-private struct AuctionSeededRNG: RandomNumberGenerator {
+struct AuctionSeededRNG: RandomNumberGenerator {
     var state: UInt64
     init(seed: UInt64) { state = seed }
     mutating func next() -> UInt64 {
@@ -15,7 +15,7 @@ private struct AuctionSeededRNG: RandomNumberGenerator {
     }
 }
 
-private struct AuctionStubProvider: PokeProviding {
+struct AuctionStubProvider: PokeProviding {
     let value: EvoLine
     func line(baseSpeciesID: Int) async throws -> EvoLine { value }
     func baseSpeciesIndex() async throws -> [BaseSpecies] { [BaseSpecies(id: value.baseID, captureRate: 255)] }
