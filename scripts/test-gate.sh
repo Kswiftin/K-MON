@@ -38,9 +38,10 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/PokemonTrade.swift"
   # 경매도 같은 커밋 프로토콜을 태우는데 배열 밖에 있었다 — `isValid`·`matches`·
   # `canCommitOutgoing`·`unpledgedTokens`·`isCommitted` 가 전부 여기 있고 그중 셋은 상대가
-  # 보낸 값을 보는 신뢰경계다. #229 의 첨자 결함이 무테스트로 나갈 뻔한 이유가 이것이다:
-  # 커버리지에 아예 안 잡히는 파일은 "몇 %인가" 를 물을 기회조차 없다. `PokemonTrade` 와 같은
-  # 이유로 소켓 부분 때문에 파일 수치는 낮게 나온다.
+  # 보낸 값을 보는 신뢰경계이며, 제안 국면과 **연결 회수** 판정도 여기 있다. 배열 밖이라
+  # 무테스트로 나갈 뻔한 것이 #229(첨자 결함)이고, 아무 신호도 없이 살아 있던 것이
+  # #228(끝난 제안이 연결을 놓지 않는 부류)이다: 커버리지에 아예 안 잡히는 파일은 "몇 %인가"
+  # 를 물을 기회조차 없다. `PokemonTrade` 와 같은 이유로 소켓 부분 때문에 파일 수치는 낮다.
   "Sources/PokeTokenBar/Core/PokemonAuction.swift"
   # 광고 이름의 바이트 예산. 네 LAN 센터가 전부 이 한 함수를 지나므로 여기가 무테스트면 부류가
   # 통째로 무테스트다 — 이전엔 `PlayerGymRoomName` 안에 숨어 있어 커버리지에서 보이지 않았다.
@@ -455,6 +456,39 @@ if [[ -n "$DUPLICATE_PINS" ]]; then
     echo "  $SYMBOL:" >&2
     echo "$VERSION_PINS" | grep -F "$SYMBOL" | sed 's/^/    /' >&2
   done <<< "$DUPLICATE_PINS"
+  exit 1
+fi
+echo "✓ 없음"
+
+# LAN 프레임을 읽는 콜백의 **실패 분기는 연결을 끝내야 한다.** 조용히 리턴하면 상대가 앱을 정상
+# 종료했을 때 아무도 그것을 모른다 — TCP 는 FIN 만 남기고 `NWConnection` 상태는 `.ready` 에
+# 머무르므로 `stateUpdateHandler` 의 `.failed`/`.cancelled` 가 영영 안 뜬다. 죽은 소켓 위에 세션이
+# 살아 있는 것처럼 남는다.
+#
+# 이 부류는 **두 번 물렸다**: `PokemonTrade`(2026-08-30)를 고칠 때 형제 전수를 세지 않아
+# `PokemonAuction` 이 남았고, 그게 `#228` 이 됐다. 부류를 문서에 적는 것으로는 스윕이 완료되지
+# 않는다 — 그래서 게이트로 내린다.
+#
+# 테스트로는 못 막는다 — 이 줄을 밟으려면 살아 있는 소켓 두 개와 **정상 종료**가 필요하고, 닫힌
+# 소켓에 한 바이트라도 쓰면 RST 가 `.failed` 로 돌아와 상태 핸들러가 회수해 버린다(결함을
+# 되주입해도 통과한다). 커버리지로도 못 막는다 — `return` 이든 `drop` 이든 그 줄은 똑같이 세어진다.
+#
+# 한계 둘. ① 잡는 것은 **한 줄짜리** `else { return }` 이다(`#228` 이 가졌던 그 모양). 여러 줄로
+# 벌어진 나쁜 분기는 못 본다 — 그 형태가 나오면 그때 넓힌다. ② `count` 비교를 요구하므로 길이
+# 없는 `guard let data else { return }` 도 못 본다 — 그쪽까지 넓히면 소켓과 무관한 옵셔널 가드가
+# 통째로 걸려 오진이 잡는 것보다 많아진다. 그래서 **오진은 표기로 뺀다**(아래 `not-a-socket`).
+# 비정렬 로드 스윕과 같은 한계이고, 해제 조건도 같다: 프레이밍 다섯 벌을 공용 헬퍼로 합치면
+# 이 게이트를 그 헬퍼의 단위 테스트로 옮긴다.
+echo "▶ 조용히 끝나는 프레임 읽기 스윕 (실패 분기가 연결을 안 끊는다)"
+SILENT_READ=$(grep -rnE 'guard .*\b(data|header)\.count *[=<>!]+.*else \{ *return *\}' Sources/PokeTokenBar \
+              | grep -v '^[^:]*:[0-9]*:[[:space:]]*//' \
+              | grep -v 'not-a-socket' || true)
+if [[ -n "$SILENT_READ" ]]; then
+  echo "✗ 프레임 읽기의 실패 분기가 조용히 리턴하는 곳 $(wc -l <<< "$SILENT_READ" | tr -d ' ')건 —" \
+       "상대가 정상 종료하면 FIN 만 오고 상태는 .ready 에 머물러 죽은 소켓이 남습니다." \
+       "drop()/connectionDropped()/cancel() 로 끝내세요." \
+       "소켓 읽기가 아닌 바이트 파싱(세이브·블롭 파서 등)이면 그 줄 끝에 // not-a-socket 을 적어 빼세요." >&2
+  echo "$SILENT_READ" >&2
   exit 1
 fi
 echo "✓ 없음"

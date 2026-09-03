@@ -31,6 +31,58 @@ private struct AuctionStubProvider: PokeProviding {
     }
 }
 
+/// 두 경매 스위트가 **같은 세이브·같은 상대 개체**를 세운다. 사본으로 두면 한쪽만 고친 스텁으로
+/// 다른 쪽이 통과한다 — `AuctionSeededRNG`·`AuctionStubProvider` 를 공유하는 이유와 같다.
+enum AuctionFixtures {
+    static let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    @MainActor static func makeStore(_ label: String) -> CompanionStore {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(label)-\(UUID().uuidString)")
+        let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []), rarity: .common,
+                           names: [1: ["ko": "포1", "en": "P1", "ja": "ポ1"]])
+        let store = CompanionStore(provider: AuctionStubProvider(value: line),
+                                   clock: { AuctionFixtures.now },
+                                   fileURL: directory.appendingPathComponent("state.json"),
+                                   rng: AuctionSeededRNG(seed: 1))
+        store.setLanguage(AppLanguage.ko)
+        return store
+    }
+
+    /// 소켓을 붙이지 않은 연결. 프레임은 아무 데도 가지 않지만 `receive` 가 요구하는 연결 등록은
+    /// 실제와 같은 경로로 이뤄진다 — 국면 가드를 보는 테스트에는 그것으로 충분하다.
+    @MainActor static func attachedConnection(_ center: PokemonAuctionCenter) -> UUID {
+        center.attachForTesting(NWConnection(to: .hostPort(host: "127.0.0.1", port: 9), using: .tcp))
+    }
+
+    /// 경매에 내놓을 개체를 **박스에** 세운다.
+    ///
+    /// **동행은 팔 수 없다** — 정산 직전에 파트너를 팔면 모험 경험치 전량이 별의조각으로 환산돼
+    /// 총수입이 1.5배가 되는 지배 전략이었다(`CompanionStore.completeAuctionSale`).
+    /// 그래서 동행 자리를 먼저 채운다: 소유 개체가 하나뿐이면 `receiveAuctionPokemon` 이 그것을
+    /// 동행으로 앉혀 버려 "박스 개체를 판다" 는 전제가 조용히 뒤집힌다.
+    @MainActor static func sellableMon(_ store: CompanionStore, baseID: Int = 30)
+        async throws -> MonState {
+        await store.hatch(baseID: 1)
+        let boxed = remoteMon(baseID: baseID)
+        #expect(store.receiveAuctionPokemon(boxed))
+        return try #require(store.state.boxedMons.first { $0.id == boxed.id })
+    }
+
+    static func remoteMon(baseID: Int = 20, level: Int = 5) -> MonState {
+        var mon = MonState(baseID: baseID, pathIDs: [baseID], plannedPathIDs: [baseID], stageIndex: 0,
+                           usedAtStage: 0, rarity: .common, totalForms: 1,
+                           names: [baseID: ["ko": "포\(baseID)", "en": "P\(baseID)"]], firstMetAt: nil)
+        // 레벨은 경험치에서 파생된다 — 광고값 대조 테스트가 종뿐 아니라 레벨도 봐야 해서 채운다.
+        mon.levelExperience = (level - 1) * PokemonBalance.experiencePerLevel
+        return mon
+    }
+
+    static func snapshot(_ mon: MonState) -> TradePokemonSnapshot {
+        TradePokemonSnapshot(mon: mon, displayName: "P\(mon.currentID)")
+    }
+}
+
 /// 경매의 소유권 이전. 검증하는 것은 네 가지다 — 커밋이 **어느 순서로** 일어나는가(신청자가 먼저
 /// 넘기면 게시자 쪽 실패가 곧 개체 유실이다), 같은 게시물이 **두 번 잠기지 않는가**, 목록에서 본
 /// 개체와 **다른 개체**가 오면 멈추는가, 그리고 추억이 함께 건너가는가.
@@ -40,49 +92,18 @@ private struct AuctionStubProvider: PokeProviding {
 @Suite struct AuctionCommitTests {
     private static let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-    private func makeStore() -> CompanionStore {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("auction-commit-\(UUID().uuidString)")
-        let line = EvoLine(baseID: 1, tree: EvoNode(speciesID: 1, children: []), rarity: .common,
-                           names: [1: ["ko": "포1", "en": "P1", "ja": "ポ1"]])
-        let store = CompanionStore(provider: AuctionStubProvider(value: line), clock: { Self.now },
-                                   fileURL: directory.appendingPathComponent("state.json"),
-                                   rng: AuctionSeededRNG(seed: 1))
-        store.setLanguage(AppLanguage.ko)
-        return store
-    }
-
-    /// 소켓을 붙이지 않은 연결. 프레임은 아무 데도 가지 않지만 `receive` 가 요구하는 연결 등록은
-    /// 실제와 같은 경로로 이뤄진다 — 국면 가드를 보는 테스트에는 그것으로 충분하다.
+    private func makeStore() -> CompanionStore { AuctionFixtures.makeStore("auction-commit") }
     private func attachedConnection(_ center: PokemonAuctionCenter) -> UUID {
-        center.attachForTesting(NWConnection(to: .hostPort(host: "127.0.0.1", port: 9), using: .tcp))
+        AuctionFixtures.attachedConnection(center)
     }
-
     private func remoteMon(baseID: Int = 20, level: Int = 5) -> MonState {
-        var mon = MonState(baseID: baseID, pathIDs: [baseID], plannedPathIDs: [baseID], stageIndex: 0,
-                           usedAtStage: 0, rarity: .common, totalForms: 1,
-                           names: [baseID: ["ko": "포\(baseID)", "en": "P\(baseID)"]], firstMetAt: nil)
-        // 레벨은 경험치에서 파생된다 — 광고값 대조 테스트가 종뿐 아니라 레벨도 봐야 해서 채운다.
-        mon.levelExperience = (level - 1) * PokemonBalance.experiencePerLevel
-        return mon
+        AuctionFixtures.remoteMon(baseID: baseID, level: level)
     }
 
-    /// 경매에 내놓을 개체를 **박스에** 세운다.
-    ///
-    /// **동행은 팔 수 없다** — 정산 직전에 파트너를 팔면 모험 경험치 전량이 별의조각으로 환산돼
-    /// 총수입이 1.5배가 되는 지배 전략이었다(`CompanionStore.completeAuctionSale`).
-    /// 그래서 동행 자리를 먼저 채운다: 소유 개체가 하나뿐이면 `receiveAuctionPokemon` 이 그것을
-    /// 동행으로 앉혀 버려 "박스 개체를 판다" 는 전제가 조용히 뒤집힌다.
     private func sellableMon(_ store: CompanionStore, baseID: Int = 30) async throws -> MonState {
-        await store.hatch(baseID: 1)
-        let boxed = remoteMon(baseID: baseID)
-        #expect(store.receiveAuctionPokemon(boxed))
-        return try #require(store.state.boxedMons.first { $0.id == boxed.id })
+        try await AuctionFixtures.sellableMon(store, baseID: baseID)
     }
-
-    private func snapshot(_ mon: MonState) -> TradePokemonSnapshot {
-        TradePokemonSnapshot(mon: mon, displayName: "P\(mon.currentID)")
-    }
+    private func snapshot(_ mon: MonState) -> TradePokemonSnapshot { AuctionFixtures.snapshot(mon) }
 
     private func listing(for mon: MonState, id: UUID = UUID()) -> AuctionListing {
         AuctionListing(id: id, trainerName: "Blue", serviceName: "Blue#000000",
