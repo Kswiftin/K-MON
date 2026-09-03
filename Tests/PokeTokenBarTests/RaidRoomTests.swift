@@ -547,7 +547,7 @@ final class RaidRoomTests: XCTestCase {
     @MainActor
     func testAFailedCatchSaysSoAndKeepsTodaysChance() async {
         let store = CompanionStore(provider: RaidLineFailingProvider(), clock: TestClock().closure,
-                                   fileURL: stubStoreURL("raid-catch-failed"), rng: SeededRNG(seed: 7))
+                                   fileURL: storeStateURL("raid-catch-failed"), rng: SeededRNG(seed: 7))
 
         let center = await raidWhereIAmDrawn(store)
 
@@ -571,7 +571,7 @@ final class RaidRoomTests: XCTestCase {
         let species = RaidBoss.speciesID(dayKey: CompanionStore.dayKey(Date()))
         let provider = RaidSuspendedLineProvider(species: species)
         let store = CompanionStore(provider: provider, clock: TestClock().closure,
-                                   fileURL: stubStoreURL("raid-catch-stale"), rng: SeededRNG(seed: 7))
+                                   fileURL: storeStateURL("raid-catch-stale"), rng: SeededRNG(seed: 7))
         let center = MultiplayerRoomCenter(companion: store)
         let me = runner("나", id: center.myID)
         let mate = runner("동료")
