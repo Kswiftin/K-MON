@@ -127,6 +127,9 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/TUI/TUIRender.swift"
   "Sources/PokeTokenBar/TUI/TUIKeymap.swift"
   "Sources/PokeTokenBar/TUI/PokedoroCommand.swift"
+  # 집중 세션 세 동작의 거절 판정표. 화면·대화·터미널이 **같은 표**를 읽는 자리라 게이트 밖에
+  # 두면 한 프런트엔드만 통과하는 분기(휴식 단독·정산 대기 단독)가 무테스트로 나간다.
+  "Sources/PokeTokenBar/Core/PokedoroSessionGate.swift"
   # LAN 협동 레이드(#80)의 순수 코어 — 오늘의 보스 추첨·해치 시각·정산, 그리고 **오늘자 보스
   # 검증**(`validBoss`)이 여기 있다. 그 검증이 곧 조작 호스트가 보상을 부풀리는 길을 막는 경계라
   # 게이트 밖에 두면 신뢰경계가 통째로 커버리지에서 빠진다.
