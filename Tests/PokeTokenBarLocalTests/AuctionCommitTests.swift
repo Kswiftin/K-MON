@@ -97,17 +97,17 @@ private struct AuctionStubProvider: PokeProviding {
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
-        #expect(center.outgoingStatus == .accepted)
+        #expect(center.outgoingOffers.first?.status == .accepted)
         #expect(store.ownedMons.contains { $0.id == mine.id },
                 "수락 프레임만으로 개체를 넘기면 게시자 쪽 실패가 곧 유실이다")
         #expect(!store.ownedMons.contains { $0.id == theirs.id }, "아직 받은 것도 없어야 한다")
 
         // 게시자 쪽 커밋이 실패했다. 아무것도 움직이지 않았어야 한다.
         center.receive(.failed(offerID: offerID), connectionID: connection)
-        #expect(center.outgoingStatus == .failed)
+        #expect(center.outgoingOffers.first?.status == .failed)
         #expect(store.ownedMons.contains { $0.id == mine.id })
         #expect(!store.ownedMons.contains { $0.id == theirs.id })
     }
@@ -120,12 +120,12 @@ private struct AuctionStubProvider: PokeProviding {
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
         center.receive(.completed(offerID: offerID, memories: nil), connectionID: connection)
 
-        #expect(center.outgoingStatus == .completed)
+        #expect(center.outgoingOffers.first?.status == .completed)
         #expect(!store.ownedMons.contains { $0.id == mine.id })
         #expect(store.ownedMons.contains { $0.id == theirs.id })
     }
@@ -177,34 +177,39 @@ private struct AuctionStubProvider: PokeProviding {
         let swapped = remoteMon(baseID: 21, level: 60)
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: advertised), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(swapped)), connectionID: connection)
 
-        #expect(center.outgoingStatus == .failed)
-        #expect(center.lastError != nil)
+        #expect(center.outgoingOffers.first?.status == .failed)
+        #expect(center.outgoingOffers.first?.error != nil)
         #expect(store.ownedMons.contains { $0.id == mine.id })
         #expect(!store.ownedMons.contains { $0.id == swapped.id })
     }
 
     /// 게시를 내리는 것은 **내 게시물**을 내리는 것이다. 남에게 건 제안의 연결까지 끊으면
     /// 진행 중인 내 교환이 이유 없이 멎는다.
+    ///
+    /// 게시와 제안은 **서로 다른 개체**로 세운다 — 같은 개체를 둘 다에 걸면 양쪽이 수락됐을 때
+    /// 두 번 커밋되므로 이제 센터가 막는다(`aListedPokemonCannotAlsoBackAnOffer`).
     @Test func cancellingMyListingLeavesMyOwnOfferAlone() async throws {
         let store = makeStore()
         await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let listed = try #require(store.state.active)
+        let offered = remoteMon(baseID: 30)
+        #expect(store.receiveAuctionPokemon(offered))
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
-        center.publish(mine)
-        let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        center.publish(listed)
+        let connection = try #require(center.apply(to: listing(for: theirs), offering: offered))
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.cancelListing(center.localListings.keys.first!)
         #expect(center.localListings.isEmpty)
-        #expect(center.outgoingStatus == .pending)
+        #expect(center.outgoingOffers.first?.status == .pending)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
-        #expect(center.outgoingStatus == .accepted, "게시 취소가 내 제안의 연결을 끊었다")
+        #expect(center.outgoingOffers.first?.status == .accepted, "게시 취소가 내 제안의 연결을 끊었다")
     }
 
     /// 답 없는 제안은 시간이 지나면 실패로 끝난다 — 커밋이 시작된 뒤에는 끊지 않는다.
@@ -215,17 +220,18 @@ private struct AuctionStubProvider: PokeProviding {
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
         center.expireOutgoingOffer(offerID)
-        #expect(center.outgoingStatus == .accepted, "커밋 중인 제안을 시간으로 끊으면 안 된다")
+        #expect(center.outgoingOffers.first?.status == .accepted,
+                "커밋 중인 제안을 시간으로 끊으면 안 된다")
 
         let other = PokemonAuctionCenter(companion: store)
         _ = other.apply(to: listing(for: theirs), offering: mine)
-        let pending = try #require(other.outgoingOfferID)
+        let pending = try #require(other.outgoingOffers.first?.id)
         other.expireOutgoingOffer(pending)
-        #expect(other.outgoingStatus == .failed)
+        #expect(other.outgoingOffers.first?.status == .failed)
     }
 
     /// 추억은 교환과 함께 건너간다. 경매만 `incomingMemories` 없이 `performTrade` 를 불러
