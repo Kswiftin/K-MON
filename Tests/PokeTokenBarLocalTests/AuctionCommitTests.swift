@@ -97,17 +97,17 @@ private struct AuctionStubProvider: PokeProviding {
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
-        #expect(center.outgoingStatus == .accepted)
+        #expect(center.outgoingOffers.first?.status == .accepted)
         #expect(store.ownedMons.contains { $0.id == mine.id },
                 "수락 프레임만으로 개체를 넘기면 게시자 쪽 실패가 곧 유실이다")
         #expect(!store.ownedMons.contains { $0.id == theirs.id }, "아직 받은 것도 없어야 한다")
 
         // 게시자 쪽 커밋이 실패했다. 아무것도 움직이지 않았어야 한다.
         center.receive(.failed(offerID: offerID), connectionID: connection)
-        #expect(center.outgoingStatus == .failed)
+        #expect(center.outgoingOffers.first?.status == .failed)
         #expect(store.ownedMons.contains { $0.id == mine.id })
         #expect(!store.ownedMons.contains { $0.id == theirs.id })
     }
@@ -120,12 +120,12 @@ private struct AuctionStubProvider: PokeProviding {
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
         center.receive(.completed(offerID: offerID, memories: nil), connectionID: connection)
 
-        #expect(center.outgoingStatus == .completed)
+        #expect(center.outgoingOffers.first?.status == .completed)
         #expect(!store.ownedMons.contains { $0.id == mine.id })
         #expect(store.ownedMons.contains { $0.id == theirs.id })
     }
@@ -177,40 +177,44 @@ private struct AuctionStubProvider: PokeProviding {
         let swapped = remoteMon(baseID: 21, level: 60)
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: advertised), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(swapped)), connectionID: connection)
 
-        #expect(center.outgoingStatus == .failed)
-        #expect(center.lastError != nil)
+        #expect(center.outgoingOffers.first?.status == .failed)
+        #expect(center.outgoingOffers.first?.error != nil)
         #expect(store.ownedMons.contains { $0.id == mine.id })
         #expect(!store.ownedMons.contains { $0.id == swapped.id })
     }
 
     /// 게시를 내리는 것은 **내 게시물**을 내리는 것이다. 남에게 건 제안의 연결까지 끊으면
     /// 진행 중인 내 교환이 이유 없이 멎는다.
+    ///
+    /// 게시와 제안은 **서로 다른 개체**로 세운다 — 같은 개체를 둘 다에 걸면 양쪽이 수락됐을 때
+    /// 두 번 커밋되므로 이제 센터가 막는다(`aListedPokemonCannotAlsoBackAnOffer`).
     @Test func cancellingMyListingLeavesMyOwnOfferAlone() async throws {
         let store = makeStore()
         await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let listed = try #require(store.state.active)
+        let offered = remoteMon(baseID: 30)
+        #expect(store.receiveAuctionPokemon(offered))
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
-        center.publish(mine)
-        let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        center.publish(listed)
+        let connection = try #require(center.apply(to: listing(for: theirs), offering: offered))
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.cancelListing(center.localListings.keys.first!)
         #expect(center.localListings.isEmpty)
-        #expect(center.outgoingStatus == .pending)
+        #expect(center.outgoingOffers.first?.status == .pending)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
-        #expect(center.outgoingStatus == .accepted, "게시 취소가 내 제안의 연결을 끊었다")
+        #expect(center.outgoingOffers.first?.status == .accepted, "게시 취소가 내 제안의 연결을 끊었다")
     }
 
-    /// 대기 중인 제안은 신청자가 직접 거둬들일 수 있다 — 커밋이 시작된 뒤에는 거둬들이지 않는다.
-    /// 자동 시간 제한은 없다(#223 계열 논의): 상대가 앱을 닫으면 연결 실패로 이미 정리되고
-    /// (`drop`), 둘 다 켜져 있는데 게시자가 그냥 늦게 답하는 정상적인 경우까지 시간으로 끊으면
-    /// 안 된다.
+    /// 대기 중인 제안은 신청자가 **직접** 거둬들인다 — 커밋이 시작된 뒤에는 거둬들이지 않는다.
+    /// 자동 시간 제한은 없다(#227): 상대가 앱을 닫으면 연결 실패가 이미 정리하고(`drop`), 둘 다
+    /// 켜져 있는데 게시자가 늦게 답하는 정상적인 경우까지 시간으로 끊으면 안 된다.
     @Test func aPendingOfferCanBeCancelledButACommittingOneCannot() async throws {
         let store = makeStore()
         await store.hatch(baseID: 1)
@@ -218,17 +222,19 @@ private struct AuctionStubProvider: PokeProviding {
         let theirs = remoteMon()
         let center = PokemonAuctionCenter(companion: store)
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
-        let offerID = try #require(center.outgoingOfferID)
+        let offerID = try #require(center.outgoingOffers.first?.id)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
-        center.cancelOutgoingOffer()
-        #expect(center.outgoingStatus == .accepted, "커밋 중인 제안을 취소로 끊으면 안 된다")
+        center.cancelOutgoingOffer(offerID)
+        #expect(center.outgoingOffers.first?.status == .accepted,
+                "커밋 중인 제안을 취소로 끊으면 안 된다")
 
         let other = PokemonAuctionCenter(companion: store)
         _ = other.apply(to: listing(for: theirs), offering: mine)
-        #expect(other.outgoingStatus == .pending)
-        other.cancelOutgoingOffer()
-        #expect(other.outgoingStatus == nil, "거둬들인 제안은 실패가 아니라 빈 상태로 돌아간다")
+        let pending = try #require(other.outgoingOffers.first)
+        #expect(pending.status == .pending)
+        other.cancelOutgoingOffer(pending.id)
+        #expect(other.outgoingOffers.isEmpty, "거둬들인 제안은 실패가 아니라 목록에서 사라진다")
     }
 
     /// 추억은 교환과 함께 건너간다. 경매만 `incomingMemories` 없이 `performTrade` 를 불러
@@ -287,5 +293,183 @@ private struct AuctionStubProvider: PokeProviding {
         #expect(!store.ownedMons.contains { $0.id == listed.id })
         #expect(center.localListings[listingID] == nil)
         #expect(center.offers.first?.status == .completed)
+    }
+
+    // MARK: 제안 여러 건 동시 등록
+
+    /// 제안 하나의 국면. 예전 스칼라 `outgoingStatus` 를 대신한다 — 국면이 제안별로 서므로
+    /// 어느 게시물의 제안인지로 찾는다.
+    private func offer(_ center: PokemonAuctionCenter, on listingID: UUID) -> OutgoingAuctionOffer? {
+        center.outgoingOffers.first { $0.listing.id == listingID }
+    }
+
+    /// 제안은 **여러 건 동시에** 걸 수 있다. 국면이 스칼라 하나였을 때는 두 번째 제안이 아예
+    /// 서지 않아, 답 없는 제안 하나가 제한 시간(90초) 동안 다른 기회를 전부 막았다.
+    @Test func severalOffersCanBePendingAtTheSameTime() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let alsoMine = remoteMon(baseID: 30)
+        #expect(store.receiveAuctionPokemon(alsoMine))
+        let center = PokemonAuctionCenter(companion: store)
+        let first = listing(for: remoteMon(baseID: 20))
+        let second = listing(for: remoteMon(baseID: 21))
+
+        let firstConnection = try #require(center.apply(to: first, offering: mine))
+        let secondConnection = try #require(center.apply(to: second, offering: alsoMine))
+
+        #expect(firstConnection != secondConnection, "제안마다 연결이 따로여야 프레임이 섞이지 않는다")
+        #expect(center.outgoingOffers.count == 2)
+        #expect(center.outgoingOffers.allSatisfy { $0.status == .pending })
+    }
+
+    /// 같은 개체가 두 제안을 받치면 **둘 다 수락됐을 때 같은 포켓몬이 두 번 커밋된다** —
+    /// 하나는 실패로 끝나지만 그 실패가 어느 쪽인지는 순서 나름이다.
+    @Test func theSamePokemonCannotBackTwoOffers() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let center = PokemonAuctionCenter(companion: store)
+
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 20)), offering: mine) != nil)
+
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 21)), offering: mine) == nil,
+                "같은 개체가 두 제안을 받치면 한쪽은 유실이다")
+        #expect(center.outgoingOffers.count == 1)
+    }
+
+    /// 게시 중인 개체는 제안에도 걸 수 없다. 게시와 제안이 둘 다 수락되면 같은 개체가 두 번
+    /// 커밋된다 — 제안이 하나뿐이던 때부터 있던 구멍인데, 제안이 여러 건 서면 훨씬 쉽게 밟힌다.
+    @Test func aListedPokemonCannotAlsoBackAnOffer() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let center = PokemonAuctionCenter(companion: store)
+        center.publish(mine)
+
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 20)), offering: mine) == nil)
+        #expect(center.outgoingOffers.isEmpty)
+    }
+
+    /// 한 제안의 실패가 다른 제안을 건드리지 않는다. 국면이 스칼라였을 때는 나중 제안이 앞
+    /// 제안의 상태·타임아웃·에스크로를 통째로 덮었다.
+    @Test func oneOfferFailingLeavesTheOthersPending() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let alsoMine = remoteMon(baseID: 30)
+        #expect(store.receiveAuctionPokemon(alsoMine))
+        let center = PokemonAuctionCenter(companion: store)
+        let first = listing(for: remoteMon(baseID: 20))
+        let second = listing(for: remoteMon(baseID: 21))
+        let firstConnection = try #require(center.apply(to: first, offering: mine))
+        _ = try #require(center.apply(to: second, offering: alsoMine))
+        let failing = try #require(offer(center, on: first.id))
+
+        center.receive(.failed(offerID: failing.id), connectionID: firstConnection)
+
+        #expect(offer(center, on: first.id)?.status == .failed)
+        #expect(offer(center, on: second.id)?.status == .pending,
+                "스칼라 국면일 때는 한 제안의 실패가 다른 제안을 통째로 덮었다")
+    }
+
+    /// 미결 제안의 **합**이 지갑을 넘으면 다음 제안이 서지 않는다. 에스크로는 수락 시점에
+    /// 걷히므로 등록만 보면 지킬 수 없는 제안을 여러 건 걸 수 있다.
+    @Test func pendingStardustOffersCannotExceedTheWallet() async throws {
+        let store = makeStore()
+        store.creditStarPieces(100)
+        let center = PokemonAuctionCenter(companion: store)
+
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 20)), offeringStardust: 70) != nil)
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 21)), offeringStardust: 70) == nil,
+                "미결 제안의 합이 지갑을 넘으면 지킬 수 없는 제안이다")
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 22)), offeringStardust: 30) != nil)
+        #expect(center.outgoingOffers.count == 2)
+    }
+
+    /// **커밋이 시작된 제안은 치울 수 없다.** 에스크로는 수락 시점에 걷히고 게시자는 그 다음
+    /// 프레임에서 자기 개체를 넘긴다 — 그 사이에 "확인" 이 눌리면 별의모래만 돌아오고 개체는
+    /// 아무에게도 가지 않는다(화폐 복제).
+    @Test func clearingAnOfferMidCommitCannotRefundTheEscrow() throws {
+        let store = makeStore()
+        store.creditStarPieces(100)
+        let theirs = remoteMon()
+        let center = PokemonAuctionCenter(companion: store)
+        let connection = try #require(center.apply(to: listing(for: theirs), offeringStardust: 100))
+        let offerID = try #require(center.outgoingOffers.first?.id)
+
+        center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
+        #expect(center.outgoingOffers.first?.status == .accepted)
+        #expect(store.availableTokens == 0, "에스크로는 수락 시점에 걷힌다")
+
+        center.clearOutgoingResult(offerID)
+
+        #expect(store.availableTokens == 0, "커밋 중에 치우면 별의모래가 복제된다")
+        #expect(center.outgoingOffers.first?.status == .accepted)
+    }
+
+    /// 같은 `.accepted` 가 두 번 오는 것은 **되돌릴 이유가 아니다.** 실패로 끌어내리면 게시자는
+    /// 이미 넘긴 뒤라 에스크로만 돌아오고 개체는 사라진다.
+    @Test func aRepeatedAcceptedFrameLeavesTheCommitAlone() throws {
+        let store = makeStore()
+        store.creditStarPieces(100)
+        let theirs = remoteMon()
+        let center = PokemonAuctionCenter(companion: store)
+        let connection = try #require(center.apply(to: listing(for: theirs), offeringStardust: 100))
+        let offerID = try #require(center.outgoingOffers.first?.id)
+
+        center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
+        center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
+
+        #expect(center.outgoingOffers.first?.status == .accepted, "같은 프레임이 커밋을 되돌렸다")
+        #expect(store.availableTokens == 0, "되돌리면 에스크로만 돌아온다")
+    }
+
+    /// 정원은 **살아 있는 제안만** 센다. 끝난 제안까지 세면 치우지 않은 결과 카드 여덟 장이
+    /// 시장을 통째로 잠근다 — 버튼은 회색인데 이유는 어디에도 안 적힌다.
+    @Test func theOfferCapCountsOnlyLiveOffers() throws {
+        let store = makeStore()
+        // 지갑은 정원보다 한 칸 넉넉하게 — 막히는 이유가 잔액이 아니라 정원이어야 한다.
+        store.creditStarPieces(PokemonAuctionCenter.maxOutgoingOffers + 1)
+        let center = PokemonAuctionCenter(companion: store)
+        for index in 0..<PokemonAuctionCenter.maxOutgoingOffers {
+            #expect(center.apply(to: listing(for: remoteMon(baseID: 20 + index)),
+                                 offeringStardust: 1) != nil)
+        }
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 19)), offeringStardust: 1) == nil,
+                "정원이 찼다")
+
+        let declined = try #require(center.outgoingOffers.first)
+        center.receive(.declined(offerID: declined.id), connectionID: declined.connectionID)
+
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 19)), offeringStardust: 1) != nil,
+                "거절당해 끝난 제안이 자리를 계속 먹었다")
+    }
+
+    /// 전역 실패 한 줄(`lastError`)은 지워지는 자리가 있어야 한다. 없으면 한 번의 수락 실패가
+    /// 세션 내내 화면 아래 빨간 줄로 남는다.
+    @Test func aNewOfferClearsTheStaleBanner() throws {
+        let store = makeStore()
+        store.creditStarPieces(10)
+        let center = PokemonAuctionCenter(companion: store)
+        center.accept(UUID())
+        #expect(center.lastError != nil)
+
+        #expect(center.apply(to: listing(for: remoteMon()), offeringStardust: 1) != nil)
+        #expect(center.lastError == nil, "새 제안이 앞선 실패의 자국을 지우지 않았다")
+    }
+
+    /// 상한을 넘는 별의모래 제안은 게시자의 `isValid` 가 **무조건** 거절한다. 보내는 쪽에서 자르지
+    /// 않으면 왕복 한 번이 통째로 거절로 버려진다 — `creditStarPieces` 는 상한을 걸지 않으므로
+    /// 지갑이 상한을 넘은 세이브에서 실제로 밟힌다.
+    @Test func anOverCapStardustOfferIsClampedBeforeItLeaves() throws {
+        let store = makeStore()
+        store.creditStarPieces(SaveTransfer.maxTokenValue + 5)
+        let center = PokemonAuctionCenter(companion: store)
+
+        #expect(center.apply(to: listing(for: remoteMon()),
+                             offeringStardust: SaveTransfer.maxTokenValue + 5) != nil)
+        #expect(center.outgoingOffers.first?.stardust == SaveTransfer.maxTokenValue,
+                "상한을 넘겨 보내면 게시자가 받자마자 거절한다")
     }
 }
