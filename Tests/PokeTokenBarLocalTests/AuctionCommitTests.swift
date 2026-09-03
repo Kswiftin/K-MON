@@ -525,4 +525,48 @@ private struct AuctionStubProvider: PokeProviding {
                 "별의모래를 낸 제안이 환불 대상에서 빠졌다 — 실패하면 100 이 사라진다")
         #expect(store.availableTokens == 0)
     }
+    /// **커밋을 마친 뒤에도 완료 표시는 그 제안에 남아야 한다.**
+    ///
+    /// `.completed` 는 `.accepted` 보다 나쁘다 — 첨자를 `performTrade`·`receiveAuctionPokemon`
+    /// 너머로 들고 있었고, 그 둘은 세이브·앨범·대화 기록을 통째로 흔든다. 표시가 옆 제안에
+    /// 찍히면 별의모래를 낸 제안이 `.accepted` + 에스크로인 채로 남아, 게시자는 이미 지급받았는데
+    /// 신청자 쪽에서 환불이 한 번 더 나간다 — **화폐 복제**다.
+    @Test func anOfferRemovedAfterTheCommitDoesNotMoveTheCompletionToItsNeighbour() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        // 개체는 하나뿐이라 뒤에 설 제안은 별의모래 1 짜리로 세운다.
+        store.creditStarPieces(101)
+        let center = PokemonAuctionCenter(companion: store)
+
+        let ahead = listing(for: remoteMon(baseID: 20))
+        let paying = remoteMon(baseID: 21)
+        let behind = listing(for: remoteMon(baseID: 22))
+        #expect(center.apply(to: ahead, offering: mine) != nil)
+        let payingConnection = try #require(center.apply(to: listing(for: paying),
+                                                         offeringStardust: 100))
+        #expect(center.apply(to: behind, offeringStardust: 1) != nil)
+        let aheadID = try #require(offer(center, on: ahead.id)?.id)
+        let payingID = try #require(center.outgoingOffers[1].id)
+
+        center.receive(.accepted(offerID: payingID, pokemon: snapshot(paying)),
+                       connectionID: payingConnection)
+        #expect(offer(center, on: behind.id)?.status == .pending)
+
+        // 관측자는 **커밋 뒤에** 깨어난다 — `receiveAuctionPokemon` 의 저장이 그 자리다.
+        nonisolated(unsafe) let observed = center
+        withObservationTracking {
+            _ = store.state.starPieces
+        } onChange: {
+            MainActor.assumeIsolated { observed.clearOutgoingResult(aheadID) }
+        }
+
+        center.receive(.completed(offerID: payingID, memories: nil), connectionID: payingConnection)
+
+        let payer = try #require(center.outgoingOffers.first { $0.id == payingID })
+        #expect(payer.status == .completed, "완료 표시가 옆 제안에 찍혔다 — 첨자가 낡았다")
+        #expect(payer.stardustEscrowed == false,
+                "별의모래는 상대에게 건너갔다 — 환불 대상으로 남으면 화폐가 복제된다")
+        #expect(offer(center, on: behind.id)?.status == .pending, "남의 제안이 완료로 바뀌었다")
+    }
 }
