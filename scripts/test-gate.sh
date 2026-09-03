@@ -505,6 +505,39 @@ if [[ -n "$ALIGNED_LOAD" ]]; then
 fi
 echo "✓ 없음"
 
+# 픽스처가 스토어를 공용 temp 디렉토리에 만들면 **격리가 되지 않는다.** `CompanionStore` 는 기억
+# 앨범·대화 세이브·진행 중인 웨이브 런을 상태 파일 옆에 **이름이 고정된** 채로 만들므로
+# (`CompanionStorageLocations`), 상태 파일만 유일하게 해도 곁방 셋은 모든 픽스처가 공유한다.
+# temp 는 실행 사이에 지워지지 않아 `swift test` 를 다시 돌려도 남는다 — 앞선 실행의 대표 사진이
+# 다음 실행의 방문 카드에 실려 실제로 터졌다(#232).
+#
+# **개수 래칫이 아니라 전면 금지다.** #225 가 부류를 문서에 적고 스윕을 미뤘더니 목록(144곳)이
+# 이슈를 쓰는 사이에 이미 145곳으로 늘어 있었다 — 세는 가드는 그 드리프트를 정상으로 만든다.
+# 스윕이 끝났으므로 `temporaryDirectory` 를 부르는 자리는 **픽스처 헬퍼 두 벌뿐**이고, 목록은
+# 파일 두 개로 고정된다(타깃이 둘인 것은 XCTest 와 swift-testing 의 teardown 방식이 달라서다).
+#
+# 테스트로는 못 막는다: 위반은 "픽스처가 어디에 파일을 놓는가" 라는 소스의 성질이고, 위반한
+# 픽스처도 자기 테스트는 통과시킨다(곁방을 안 건드리면 드러나지 않는다 — 그게 144곳이 쌓인 경로다).
+# 헬퍼가 격리를 **실제로** 하는지는 `StoreFixtureIsolationTests` 가 잡는다. 둘이 한 쌍이다.
+#
+# 픽스처가 아닌 정당한 사용(폴백 경로의 기대값 등)은 줄 끝에 `// shared-temp-ok` 를 적어 뺀다.
+echo "▶ 테스트 픽스처 격리 스윕 (스토어는 디렉토리 단위로 격리한다)"
+SHARED_TEMP=$(grep -rn 'temporaryDirectory' Tests \
+              | grep -vE '/(IdleTestSupport|LocalStoreFixtures)\.swift:' \
+              | grep -v '^[^:]*:[0-9]*:[[:space:]]*//' \
+              | grep -v 'shared-temp-ok' || true)
+if [[ -n "$SHARED_TEMP" ]]; then
+  echo "✗ 공용 temp 디렉토리를 직접 부르는 픽스처 $(wc -l <<< "$SHARED_TEMP" | tr -d ' ')건 —" \
+       "곁방 세이브(pokemon-memories.json·pokemon-chat.json·wave-run.json)는 이름이 고정이라" \
+       "파일만 유일하게 해도 격리되지 않고, 실행 사이에도 남습니다." \
+       "storeStateURL()/storeDirectory()/memoryAlbumURL() (swift-testing 타깃은" \
+       "storeFixtureStateURL()/storeFixtureDirectory()) 를 쓰세요." \
+       "픽스처가 아니면 그 줄 끝에 // shared-temp-ok 를 적어 빼세요." >&2
+  echo "$SHARED_TEMP" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
 echo
 echo "▶ swift test (--enable-code-coverage)"
 TEST_LOG=$(mktemp)
