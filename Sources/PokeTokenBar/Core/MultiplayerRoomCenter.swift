@@ -120,6 +120,33 @@ final class MultiplayerRoomCenter {
 
     /// 이 방의 티어. 호스트는 방을 열 때, 게스트는 `.raidStart` 를 받을 때 채운다.
     private(set) var raidTier: RaidTier?
+    /// 이 방의 스냅샷 레벨 — 레이드면 파티 레벨, 아니면 nil(개체 레벨 그대로).
+    ///
+    /// **판단이 호출부에 있으면 안 된다.** 방을 여는 자리와 남의 방에 들어가는 자리는 살아 있는
+    /// 소켓이 있어야 밟혀서 테스트가 못 간다. 거기에 `activity == .raid ? ... : nil` 을 두면
+    /// 뒤집혀도 깨지는 테스트가 없다 — 실제로 뒤집어 보니 2085개가 전부 초록이었고, 소스를
+    /// grep 하던 가드도 글자만 봐서 못 걸렀다. 호출부는 자료만 넘기고 판단은 여기서 한다.
+    ///
+    /// `startRaid` 는 러너의 `snapshot.level` 만 `partyLevel` 로 눕힌다. 스냅샷을 개체 레벨로
+    /// 만들어 두면 몸만 50 이 되고 자동 무브셋은 개체 레벨에 머문다 —
+    /// `CompanionStore.battleSnapshot` 이 "몸은 50 인데 기술은 3" 으로 한 번 고쳐 둔 결함이다.
+    /// 1v1 은 실제 레벨로 싸우므로 여기서 활동을 갈라야 한다.
+    ///
+    /// `nonisolated static` 인 이유는 `creditsRaceFinish` 와 같다 — 네트워크 없이 전 분기를
+    /// 검증하려고 순수 함수로 떼어 둔다.
+    nonisolated static func raidLevel(activity: RoomActivity) -> Int? {
+        raidLevel(isRaid: activity == .raid)
+    }
+
+    /// 남의 방에 들어갈 때 쓰는 입구 — 붙기 전이라 활동을 모르고 방 이름만 안다.
+    nonisolated static func raidLevel(serviceName: String) -> Int? {
+        raidLevel(isRaid: RaidRoomName.isRaidRoomName(serviceName))
+    }
+
+    nonisolated private static func raidLevel(isRaid: Bool) -> Int? {
+        isRaid ? RaidBoss.partyLevel : nil
+    }
+
     /// 참가자별 보스에게 넣은 피해. 호스트는 매 라운드 갱신하고, 게스트는 정산 메시지로 한 번 받는다.
     private(set) var raidContributions: [UUID: Int] = [:]
     /// 내 정산 내역 — 화면이 항목별로 그린다(지갑을 바꾼 값은 그 자리에서 설명돼야 한다).
@@ -316,8 +343,9 @@ final class MultiplayerRoomCenter {
         guard phase == .idle else { return }
         phase = .creating; lastError = nil
         let epoch = sessionEpoch
+        let level = Self.raidLevel(activity: activity)
         Task {
-            guard let snapshot = await buildSnapshot() else {
+            guard let snapshot = await buildSnapshot(level: level) else {
                 guard sessionEpoch == epoch else { return }
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
@@ -616,8 +644,9 @@ final class MultiplayerRoomCenter {
         phase = .joining(room.name); lastError = nil
         hostingRole = false
         let epoch = sessionEpoch
+        let level = Self.raidLevel(serviceName: room.serviceName)
         Task {
-            guard let snapshot = await buildSnapshot() else {
+            guard let snapshot = await buildSnapshot(level: level) else {
                 guard sessionEpoch == epoch else { return }
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
@@ -1951,14 +1980,19 @@ final class MultiplayerRoomCenter {
     /// **동행이 알이어도 막지 않는다.** 예전엔 `state.active` 를 요구해서, 알을 품는 동안에는
     /// 박스에 키워 둔 개체가 아무리 많아도 방 계열(토너먼트·포켓슬론·퀴즈·체육관)에 못 들어갔다.
     /// 내보낼 개체가 하나라도 있으면 그걸로 만든다.
-    private func buildSnapshot() async -> BattleSnapshot? {
+    ///
+    /// 누가 나가는지는 **여기서 정하지 않는다** — `battleFacadeMon` 하나가 정한다(지정해 둔 대표,
+    /// 없으면 동행). 레이드 화면의 피커도 그 대표를 바꿀 뿐이라, 모든 활동이 같은 답을 본다.
+    ///
+    /// `level` 은 `raidLevel` 이 낸 값이다. nil 이면 개체 레벨 그대로다.
+    private func buildSnapshot(level: Int? = nil) async -> BattleSnapshot? {
         await companion.ensureInheritedMoves()
         guard let mon = companion.battleFacadeMon else { return nil }
         // 동행이면 지금 화면에 뜬 이름·레벨을 그대로 쓰고, 박스 개체면 그 개체 기준으로 만든다.
         if let active = companion.state.active, active.id == mon.id,
            let speciesID = companion.currentSpeciesID,
            let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) {
-            let level = active.level
+            let level = level ?? active.level
             let moves = active.learnedMoves.isEmpty
                 ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
                 : await companion.detailedMoves(of: active)
@@ -1968,7 +2002,7 @@ final class MultiplayerRoomCenter {
                                   ability: profile.abilitySlug,
                                   weightHectograms: profile.weightHectograms)
         }
-        return await companion.battleSnapshot(for: mon, level: mon.level)
+        return await companion.battleSnapshot(for: mon, level: level ?? mon.level)
     }
 
     private func buildTournamentLineup(ids requestedIDs: [UUID], count: Int) async -> [BattleSnapshot]? {
