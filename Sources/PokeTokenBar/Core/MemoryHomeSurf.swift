@@ -49,13 +49,14 @@ enum MemoryHomeSurf {
     /// 경계(`MemoryHomeVisitCenter.displayName(fromService:)`)를 그대로 재사용해, 버튼에는 못
     /// 뜨는 이름이 발자국으로는 뜨는 갈라짐을 없앤다.
     static func footprints(from stamps: [String: Date], limit: Int = footprintLimit) -> [MemoryHomeFootprint] {
-        stamps
+        let ordered = stamps
             .compactMap { id, at in
                 MemoryHomeVisitCenter.displayName(fromService: id).map { MemoryHomeFootprint(id: id, label: $0, at: at) }
             }
             // 같은 시각 두 발자국의 순서가 딕셔너리 순회를 따라가면 목록이 열 때마다 자리를 바꾼다.
-            .sorted { ($0.at, $1.id) > ($1.at, $0.id) }
-            .prefix(max(0, limit))
-            .map { $0 }
+            // 두 항을 짝 맞춰 비교한다 — 한쪽만 뒤집으면 순서는 어쩌다 결정적일 뿐이고,
+            // 다음에 키를 하나 더할 때 조용히 무너진다.
+            .sorted { ($0.at, $0.id) > ($1.at, $1.id) }
+        return Array(ordered.prefix(max(0, limit)))
     }
 }

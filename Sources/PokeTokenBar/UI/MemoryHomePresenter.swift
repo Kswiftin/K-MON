@@ -760,7 +760,21 @@ private struct MemoryHomeWindowView: View {
                             get: { aliasDrafts[visitor.peerID] ?? album.memoryHomeAccess.peerAliases[visitor.peerID] ?? "" },
                             set: { aliasDrafts[visitor.peerID] = $0 }))
                             .textFieldStyle(.roundedBorder).frame(width: 120)
-                            .onSubmit { _ = album.setPeerAlias(aliasDrafts[visitor.peerID] ?? "", for: visitor.peerID) }
+                            .onSubmit { commitAlias(album, for: visitor.peerID) }
+                        // 확정 버튼이 있어야 한다. `onSubmit` 만 두면 Return 을 누르지 않은 입력이
+                        // 조용히 사라진다 — 닉네임·대문 문구가 같은 규칙을 쓴다.
+                        Button(l.t("저장", "Save", "保存")) { commitAlias(album, for: visitor.peerID) }
+                            .buttonStyle(.borderless).controlSize(.small)
+                            .disabled(aliasDrafts[visitor.peerID] == nil)
+                        // 내리는 길도 있어야 한다 — `setPeerAlias` 는 빈 값을 거부하므로 지우기
+                        // 버튼이 없으면 잘못 붙인 별명은 덮어쓸 수만 있다. 초안도 같이 버려야
+                        // 필드가 방금 지운 값을 계속 보여 주지 않는다.
+                        Button(l.t("지우기", "Clear", "削除")) {
+                            aliasDrafts[visitor.peerID] = nil
+                            album.clearPeerAlias(for: visitor.peerID)
+                        }
+                            .buttonStyle(.borderless).controlSize(.small)
+                            .disabled(album.memoryHomeAccess.peerAliases[visitor.peerID] == nil)
                         Spacer()
                         Button(blocked ? l.t("차단 해제", "Unblock", "解除") : l.t("차단", "Block", "ブロック")) {
                             album.setMemoryHomeBlocked(visitor.peerID, blocked: !blocked)
@@ -776,7 +790,17 @@ private struct MemoryHomeWindowView: View {
         }.memoryHomePanel(tint: PokedoroTheme.red)
     }
 
-    private func records(mon: MonState) -> some View { let album = store.memoryAlbum; let log = album.pokeLog(for: mon.id); return ScrollView { LazyVStack(alignment: .leading, spacing: 12) { VStack(alignment: .leading, spacing: 8) { Text(l.t("기록", "Records", "記録")).font(.title2.bold()); Text(l.t("매일의 기억과 함께한 발자국을 한곳에서 돌아봐요.", "Revisit daily memories and milestones in one place.", "毎日の思い出とふたりのあしあとを一緒に振り返ります。")) .font(.caption).foregroundStyle(.secondary); HStack { Button { recap = true } label: { Label(l.t("계절 결산 보기", "View season recap", "季節のまとめを見る"), systemImage: "calendar") }.buttonStyle(.bordered).controlSize(.small); Button { yearRecap = true } label: { Label(l.t("연말 결산 보기", "View year in review", "一年のまとめを見る"), systemImage: "sparkles.rectangle.stack") }.buttonStyle(.bordered).controlSize(.small).accessibilityHint(l.t("올해 함께한 기록을 한 장으로 봅니다.", "Shows this year's record on a single card.", "今年の記録を一枚にまとめて見ます。")) }; Text(l.t("함께한 \(log.daysTogether)일 · 집중 \(log.completedFocusSessions)회 · 기억 \(log.memoryCount)개", "\(log.daysTogether) days · \(log.completedFocusSessions) focus sessions · \(log.memoryCount) memories", "いっしょに\(log.daysTogether)日・集中\(log.completedFocusSessions)回・記憶\(log.memoryCount)件")) }.memoryHomePanel(tint: PokedoroTheme.red); if !log.milestones.isEmpty { VStack(alignment: .leading, spacing: 6) { Text(l.t("함께한 발자국", "Milestones", "あしあと")).font(.headline); ForEach(log.milestones) { Label(MemoryHomeCardStyle.title($0, l), systemImage: MemoryHomeCardStyle.icon($0)) } }.memoryHomePanel(tint: PokedoroTheme.yellow) }; featuredMemory(mon: mon, album: album); ForEach(album.diary(for: mon.id)) { day in VStack(alignment: .leading, spacing: 5) { HStack { Text(day.date.formatted(date: .abbreviated, time: .omitted)).font(.headline); if let mood = day.mood { Text(MemoryHomeMoodStyle.emoji(mood)) } }; ForEach(day.memories) { memory in HStack(alignment: .top, spacing: 6) { Text("· \(memory.body)").font(.caption); Spacer(); Button { album.pin(memory) } label: { Image(systemName: album.pinned(for: mon.id)?.id == memory.id ? "pin.fill" : "pin") }.buttonStyle(.borderless).accessibilityLabel(l.t("대표 기억으로 고정", "Pin as featured memory", "代表の思い出に固定")) } } }.memoryHomePanel() } } }.padding(14) }
+    /// 초안을 버리는 것이 **성공·실패 양쪽의 마무리**다. 버리면 필드가 저장값으로 되돌아가므로,
+    /// 거부된 값(빈 값·21자 이상·제어문자)이 저장된 것처럼 계속 남아 있지 않는다. 남겨 두면
+    /// 이 창이 사는 내내 저장값을 가리므로 초안 사전도 함께 샌다.
+    private func commitAlias(_ album: PokemonMemoryAlbum, for peerID: UUID) {
+        guard let draft = aliasDrafts[peerID] else { return }
+        _ = album.setPeerAlias(draft, for: peerID)
+        aliasDrafts[peerID] = nil
+    }
+
+    // `pinned(for:)` 는 기억 배열(최대 200개)을 훑는다 — 일기 줄마다 부르면 줄 수 × 200 이다.
+    private func records(mon: MonState) -> some View { let album = store.memoryAlbum; let log = album.pokeLog(for: mon.id); let pinnedID = album.pinned(for: mon.id)?.id; return ScrollView { LazyVStack(alignment: .leading, spacing: 12) { VStack(alignment: .leading, spacing: 8) { Text(l.t("기록", "Records", "記録")).font(.title2.bold()); Text(l.t("매일의 기억과 함께한 발자국을 한곳에서 돌아봐요.", "Revisit daily memories and milestones in one place.", "毎日の思い出とふたりのあしあとを一緒に振り返ります。")) .font(.caption).foregroundStyle(.secondary); HStack { Button { recap = true } label: { Label(l.t("계절 결산 보기", "View season recap", "季節のまとめを見る"), systemImage: "calendar") }.buttonStyle(.bordered).controlSize(.small); Button { yearRecap = true } label: { Label(l.t("연말 결산 보기", "View year in review", "一年のまとめを見る"), systemImage: "sparkles.rectangle.stack") }.buttonStyle(.bordered).controlSize(.small).accessibilityHint(l.t("올해 함께한 기록을 한 장으로 봅니다.", "Shows this year's record on a single card.", "今年の記録を一枚にまとめて見ます。")) }; Text(l.t("함께한 \(log.daysTogether)일 · 집중 \(log.completedFocusSessions)회 · 기억 \(log.memoryCount)개", "\(log.daysTogether) days · \(log.completedFocusSessions) focus sessions · \(log.memoryCount) memories", "いっしょに\(log.daysTogether)日・集中\(log.completedFocusSessions)回・記憶\(log.memoryCount)件")) }.memoryHomePanel(tint: PokedoroTheme.red); if !log.milestones.isEmpty { VStack(alignment: .leading, spacing: 6) { Text(l.t("함께한 발자국", "Milestones", "あしあと")).font(.headline); ForEach(log.milestones) { Label(MemoryHomeCardStyle.title($0, l), systemImage: MemoryHomeCardStyle.icon($0)) } }.memoryHomePanel(tint: PokedoroTheme.yellow) }; featuredMemory(mon: mon, album: album); ForEach(album.diary(for: mon.id)) { day in VStack(alignment: .leading, spacing: 5) { HStack { Text(day.date.formatted(date: .abbreviated, time: .omitted)).font(.headline); if let mood = day.mood { Text(MemoryHomeMoodStyle.emoji(mood)) } }; ForEach(day.memories) { memory in HStack(alignment: .top, spacing: 6) { Text("· \(memory.body)").font(.caption); Spacer(); Button { album.pin(memory) } label: { Image(systemName: pinnedID == memory.id ? "pin.fill" : "pin") }.buttonStyle(.borderless).accessibilityLabel(pinnedID == memory.id ? l.t("대표 기억 고정 해제", "Unpin featured memory", "代表の思い出の固定を解除") : l.t("대표 기억으로 고정", "Pin as featured memory", "代表の思い出に固定")) } } }.memoryHomePanel() } } }.padding(14) }
 
     /// 대표 기억과 그 LAN 공유. `pin`·`setSharedPinnedMemory`·`clearSharedPinnedMemory` 셋 다
     /// 호출부가 없어서, 카드의 `sharedMemoryBody` 는 릴리스 내내 **영구 nil** 이었다.
@@ -794,6 +818,13 @@ private struct MemoryHomeWindowView: View {
                     .accessibilityHint(l.t("켜면 같은 LAN의 방문자가 이 기억을 봅니다.",
                                            "When on, visitors on this LAN can read this memory.",
                                            "オンにすると同じLANの訪問者がこの思い出を読めます。"))
+                // 공유 동의는 **이 기억 하나**에만 붙는다. 대표를 바꾸면 새 기억은 아직 동의를
+                // 받지 않았으므로 공유가 꺼진다 — 미리 적어 두지 않으면 사용자는 여전히 공유
+                // 중이라고 믿는다.
+                Text(l.t("대표 기억을 바꾸거나 내리면 이 공유는 꺼집니다.",
+                         "Changing or removing the featured memory turns this sharing off.",
+                         "代表の思い出を変えたり外すと、この共有はオフになります。"))
+                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text(l.t("아래 기억의 핀을 눌러 대표로 고정해 보세요.", "Pin a memory below to feature it.", "下の思い出のピンを押して代表に固定しましょう。"))
                     .font(.caption).foregroundStyle(.secondary)
@@ -843,8 +874,8 @@ private struct MemoryHomeWindowView: View {
                          "These footprints stay on this Mac and are never shared on the LAN.",
                          "このあしあとはこのMacだけに残り、LANには共有されません。"))
                     .font(.caption2).foregroundStyle(.secondary)
-                ForEach(prints) { print in
-                    HStack { Text(print.label).font(.caption).lineLimit(1); Spacer(); Text(print.at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
+                ForEach(prints) { footprint in
+                    HStack { Text(footprint.label).font(.caption).lineLimit(1); Spacer(); Text(footprint.at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
                 }
             }.memoryHomePanel(tint: PokedoroTheme.mint)
         }

@@ -4050,3 +4050,29 @@ read_when:
   문장으로 남기지 말고 `release.sh` 에서 태그 버전과 대조한다. 지금 그 부류는
   `DEFAULT_VERSION` 하나다(`grep -rn '2\.2[0-9]\.[0-9]' --include='*.sh' --include='*.swift'
   --include='*.plist' --include='*.yml'` 로 확인 — 다른 하드코딩 지점은 없다).
+## "쓸 수만 있고 내릴 수 없는" 짝 없는 mutator — 가드가 못 보는 반대쪽
+
+- **증상**: 대표 기억을 한 번 고정하면 "대표 기억 없음" 으로 돌아갈 길이 없었고(`pin` 만 있고
+  해제가 없다), 잘못 붙인 일촌명은 덮어쓸 수만 있었다(`setPeerAlias` 는 빈 값을 거부하고
+  `clearPeerAlias` 는 아예 없었다). 빈 상태 안내 문구("아래 기억의 핀을 눌러…")는 첫 고정
+  이후 **영원히 도달 불가**가 된다.
+- **왜 못 걸렀나**: `test-gate.sh` 의 호출부 없는 mutator 스윕은 *존재하는* API 가 화면에서
+  안 불리는 것을 잡는다. **없는 API 는 "호출부 0곳" 이 될 수 없다** — 짝이 아예 없는 쪽은
+  구조적으로 그 가드 밖이다. 같은 PR 이 `clearProfileMessage` 로 고치고 있던 부류가 두 자리
+  더 남아 있었던 이유다.
+- **처방**: 상태를 켜는 mutator 를 새로 만들 때 **끄는 경로를 같은 커밋에서** 만든다.
+  토글로 합칠 수 있으면 합친다(`pin` 을 재호출 시 해제로 바꿨다 — 새 API 0개). 값이 있는
+  필드는 전용 `clear...` 를 둔다(`clearPeerAlias`, `clearProfileMessage` 와 같은 짝).
+- **곁가지 — 동의는 그 값 하나에만 붙는다**: 대표 기억을 바꾸면 `normalizeMemoryHomeAccess()`
+  가 LAN 공유를 내린다(새 기억은 아직 동의받지 않았다). 이건 의도지만 **말없이** 일어나면
+  사용자는 여전히 공유 중이라고 믿는다 → 토글 아래에 미리 적는다.
+- **검증의 함정**: "바꾼 직후 공유가 꺼졌나" 로 테스트하면 무가드다 —
+  `sharedPinnedMemory(for:)` 자신의 "고정된 것과 같은 ID 인가" 가드가 결함을 가려, 정규화를
+  통째로 지워도 통과한다. 위험한 것은 **남은 ID** 이므로 *되돌아가 재고정하는* 분기로 밟는다
+  (그때 동의 없이 공유가 되살아난다). 세 가드 모두 결함 주입으로 빨강을 확인했다.
+- **미완 스윕 → #225**: 이 mutator 스윕은 아직 `Core/PokemonChat.swift` **한 파일**만 훑는다.
+  같은 awk 를 `Core/CompanionStore.swift` 에 돌리면 호출부 0곳인 `save()` mutator 가 8개
+  나오고, 그중 `ensureStarterCandidates`·`chooseStarter` 는 **종 선택 경로 전체가 죽은 것**이다
+  (화면은 `chooseStarterType` 만 쓴다). `CompanionView.swift:1498` 주석은 안 도는 코드를
+  설명하고 있다 — 산문은 호출부가 아니므로 가드가 그 거짓말을 볼 수 없다.
+- (#-pokohome-visit-and-surfing 리뷰 후속, 2026-09-03.)

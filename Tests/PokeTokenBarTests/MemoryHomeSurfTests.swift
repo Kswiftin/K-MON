@@ -85,6 +85,16 @@ final class MemoryHomeSurfTests: XCTestCase {
         XCTAssertEqual(prints.map(\.label), ["정상"])
     }
 
+    /// 같은 시각 두 발자국. 정렬이 딕셔너리 순회를 따라가면 목록이 열 때마다 자리를 바꾼다.
+    /// **순서를 못 박는다** — "흔들리지만 않으면 된다" 로 두면 비교 두 항이 짝이 어긋난
+    /// (`($0.at, $1.id) > ($1.at, $0.id)`) 형태도 통과한다. 그 형태는 지금은 우연히 결정적이고,
+    /// 정렬 키를 하나 더하는 순간 조용히 무너진다.
+    func testFootprintsWithTheSameTimestampFallBackToADescendingID() {
+        let now = Date()
+        XCTAssertEqual(MemoryHomeSurf.footprints(from: ["가#AAAAAA": now, "다#CCCCCC": now, "나#BBBBBB": now]).map(\.id),
+                       ["다#CCCCCC", "나#BBBBBB", "가#AAAAAA"])
+    }
+
     /// 도장은 200개까지 쌓인다(`recordMemoryHomeVisitStamp`). 화면은 최근 것만 본다.
     func testFootprintsAreCappedAtTheRequestedLimit() {
         let now = Date()

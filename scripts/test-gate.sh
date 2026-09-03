@@ -197,6 +197,11 @@ CORE_ONLY_MUTATORS=(
   "setTheme"
 )
 UNCALLED_MUTATORS=""
+# **주석 줄은 빼고 센다.** 이 저장소의 문서 주석은 API 이름을 끊임없이 인용하므로, 원문 그대로
+# 세면 `/// setPeerAlias(...) 는 …` 한 줄이 그 mutator 를 영원히 "호출됨" 으로 만든다 —
+# 게이트가 잡으려는 바로 그 부류를 산문 한 줄로 통과시키는 셈이다. 줄 끝 주석은 코드를 함께
+# 지울 위험이 있어 건드리지 않는다(줄 전체가 주석인 경우만 지운다).
+SWIFT_CODE=$(find Sources/PokeTokenBar -name '*.swift' -exec cat {} + | sed '/^[[:space:]]*\/\//d')
 while read -r NAME; do
   [[ -z "$NAME" ]] && continue
   SKIP=""
@@ -204,16 +209,25 @@ while read -r NAME; do
   [[ -n "$SKIP" ]] && continue
   # 호출부는 파일을 가리지 않는다 — 같은 파일 안에서만 불리는 것(`appendLocalMessage`)도
   # 도달 가능하다. 선언 줄 수와 등장 횟수가 같으면 아무도 부르지 않는 것이다.
-  CALLS=$(grep -rhoE "\b${NAME}\(" Sources/PokeTokenBar --include="*.swift" | wc -l | tr -d ' ')
-  DECLS=$(grep -rhoE "func ${NAME}\(" Sources/PokeTokenBar --include="*.swift" | wc -l | tr -d ' ')
+  CALLS=$(printf '%s\n' "$SWIFT_CODE" | grep -oE "\b${NAME}\(" | wc -l | tr -d ' ')
+  DECLS=$(printf '%s\n' "$SWIFT_CODE" | grep -oE "func ${NAME}\(" | wc -l | tr -d ' ')
   [[ "$CALLS" == "$DECLS" ]] && UNCALLED_MUTATORS+="$NAME"$'\n'
 done < <(awk '
-  /^[[:space:]]*(@discardableResult[[:space:]]*)?(private |fileprivate |public )?func [A-Za-z_]+/ {
+  # `static`·`nonisolated`·`override` 가 앞에 붙은 선언도 잡아야 한다. 놓치면 `name`·`priv` 가
+  # **앞 함수의 값으로 남아**, 그 안의 `save()` 가 엉뚱한 이름에 붙는다(잡아야 할 것을 가리거나,
+  # mutator 도 아닌 이름으로 빌드를 깨뜨린다).
+  /func [A-Za-z_]+\(/ {
     priv = ($0 ~ /(private|fileprivate) func/)
     match($0, /func [A-Za-z_]+/); name = substr($0, RSTART + 5, RLENGTH - 5)
   }
   /save\(\)/ && name != "" && !priv && !seen[name] { print name; seen[name] = 1 }
 ' Sources/PokeTokenBar/Core/PokemonChat.swift | sort -u)
+# 범위 한계(의도적, #225): 아직 이 한 파일만 훑는다. 같은 awk 를 `Core/CompanionStore.swift` 에
+# 돌리면 호출부 0곳인 mutator 가 8개 나오고, 그중 둘(`ensureStarterCandidates`·`chooseStarter`)은
+# 죽은 종 선택 경로라 allowlist 가 아니라 삭제 판단이 필요하다. 그 판단이 끝나면 범위를
+# `Core/` 전체로 넓힌다.
+# 이 가드가 **구조적으로 못 보는** 반대쪽도 있다: 짝이 아예 없는 mutator(켜기만 있고 끄기가
+# 없는 것)는 "호출부 0곳" 이 될 수 없다. `docs/reference/defect-log.md` 의 같은 항목을 본다.
 if [[ -n "$UNCALLED_MUTATORS" ]]; then
   echo "✗ 아무도 부르지 않는 앨범 mutator 가 있습니다 — 그 값은 영원히 기본값이고," \
        "방문자가 받는 카드에는 빈 필드로 나갑니다. 화면을 붙이거나 API 를 삭제하세요" \
