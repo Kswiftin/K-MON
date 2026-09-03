@@ -545,10 +545,11 @@ final class MultiplayerRoomCenter {
               let species = combatFighters.first(where: { $0.id == RaidBoss.bossID })?.side.snapshot.speciesID
         else { return }
         raidCatchTask = Task { [companion] in
-            guard await companion.catchRaidBoss(speciesID: species) == false else { return }
             // 라인 조회가 실패하면 별의조각만 받고 포획이 없다. 덮어두지 않는다 — 원장도 안 쓰므로
             // 오늘 다시 잡을 수 있고, 그 사실을 화면이 말해야 사용자가 다시 돌 이유를 안다.
-            lastError = companion.l.raidCatchFailed
+            if await companion.catchRaidBoss(speciesID: species) == false {
+                lastError = companion.l.raidCatchFailed
+            }
         }
     }
 

@@ -265,9 +265,25 @@ struct RaidView: View {
                 .padding(8)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
+            if let caught = catchLine {
+                Text(caught).font(.caption2).foregroundStyle(.purple)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Button(l.t("나가기", "Leave", "退出")) { center.leaveRoom() }
                 .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
         }
+    }
+
+    /// 누가 보스를 데려갔나. **남이 뽑힌 판도 말해 준다** — 아무 말이 없으면 "나만 못 받았다" 가
+    /// 아니라 "이 기능이 안 돌았다" 로 읽힌다. 추첨이 없는 판(1★·1인·패배)은 줄 자체가 없다.
+    private var catchLine: String? {
+        guard let winner = center.raidCatcherID,
+              let boss = center.combatFighters.first(where: { $0.id == RaidBoss.bossID })
+        else { return nil }
+        let name = boss.trainerName
+        guard winner != center.myID else { return l.raidCaughtByMe(name) }
+        let trainer = center.combatFighters.first { $0.id == winner }?.trainerName ?? "?"
+        return l.raidCaughtByOther(trainer: trainer, name: name)
     }
 
     private func settlementRow(_ label: String, _ value: Int, emphasized: Bool = false) -> some View {
