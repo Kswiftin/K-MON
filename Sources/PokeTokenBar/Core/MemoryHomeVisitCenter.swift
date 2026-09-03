@@ -374,7 +374,10 @@ final class MemoryHomeVisitCenter {
     }
     /// 대문 문구는 `profileMessageForSharing` 만 읽는다 — 공유를 명시적으로 켠 경우에만 값이
     /// 나오는 프로퍼티다. `memoryHomeAccess.profileMessage` 를 직접 읽으면 동의 없이 새어 나간다.
-    private func profileCard(version: Int = protocolVersion) -> MemoryHomeProfileCard {
+    /// `internal` 인 것은 `valid(_:)`·`trackedConnectionCount` 와 같은 이유다 — 방문자가 실제로
+    /// 받는 페이로드를 `private` 로 두면 "무엇을 내보내는가" 가 통째로 무테스트로 남는다.
+    /// 대표 기억·대표 사진이 셋 다 빈 채로 릴리스된 동안 앨범 테스트는 전부 초록불이었다.
+    func profileCard(version: Int = protocolVersion) -> MemoryHomeProfileCard {
         let sharedMessage = companion.memoryAlbum.profileMessageForSharing
         guard let mon = companion.state.active else {
             return .init(displayName: localDisplayName, speciesID: 1, isShiny: false,
