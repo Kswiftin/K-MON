@@ -37,8 +37,14 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
+      # Coverage flags, not a plain build: the next step compiles the same module
+      # with --enable-code-coverage, and mismatched flags make SwiftPM recompile it
+      # from scratch. Measured on this runner: 100s here, then 79s again inside the
+      # gate. Aligning them costs nothing -- a coverage build compiles the same code
+      # with instrumentation added, so this step still fails on any compile error,
+      # and the release configuration is covered by build-app.sh in release.yml.
       - name: Build
-        run: swift build
+        run: swift build --enable-code-coverage
 
       # test-gate.sh runs `swift test --enable-code-coverage` and then enforces a
       # line-coverage floor on the logic-core files. It replaces a bare `swift test`:
