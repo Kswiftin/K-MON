@@ -33,16 +33,6 @@ enum DeviceID {
         return uuid
     }()
 
-    /// SplitMix64 시드용 — 안정 식별자의 FNV-1a 64.
-    static func starterSeed() -> UInt64 {
-        var h: UInt64 = 0xcbf29ce484222325
-        for b in stableIdentifier().utf8 {
-            h ^= UInt64(b)
-            h = h &* 0x100000001b3
-        }
-        return h
-    }
-
     private static func hardwareUUID() -> String? {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
         guard service != 0 else { return nil }

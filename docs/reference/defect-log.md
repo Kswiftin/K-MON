@@ -399,7 +399,8 @@ read_when:
   가드는 소스 스캔이다 — `AdventureClaimTests.testEveryDeclaredViewHasACallSite` 가 UI 파일의 모든
   `struct X: View` 선언에 호출부가 있는지 본다. 기존 미마운트분(포획 로그 잔재 3개)은 명시 목록으로
   고정해 **신규 발생만** 막는다. 부류 스윕에서 나온 그 3개(`StarterCard`·`DexSummaryHeader`·
-  `DexEntryRow`)는 화면 자체가 없어진 잔재라 별건이다.
+  `DexEntryRow`)는 화면 자체가 없어진 잔재라 별건이다. (`StarterCard` 는 그 뒤 #225 가 딸린 스토어
+  API 와 함께 지웠다 — 목록에 넣어 둔 3주 동안 그 밑에서 mutator 3개가 같이 죽어 있었다.)
 - **"상태가 남아 있음"과 "지금 진행 중"을 같은 플래그로 쓰지 마라.** 위 #8 의 게이트가
   `isAdventuring`(= `adventure != nil`)이었는데, 이 값은 *끝났지만 아직 정산 안 된* 모험에서도 참이라
   정산 경로가 막히는 순간 영구 잠금이 됐다. 판정은 의미 단위로 나눈다(`isAdventureInProgress` =
@@ -3452,7 +3453,7 @@ read_when:
   회귀: `testAdventureWithoutAPartnerConvertsInsteadOfDroppingExperience`.
 - **부류 스윕 — 같은 모양이 알 저장고에 있었다(리뷰에서 발견, 처분 확정).** 상한 999 를 쓰는 자리가
   5곳인데 넷은 `focusEggs` 만 클램프하고 `focusEggReadyDates` 는 **무조건** append 했다. 두 배열이
-  어긋나면 `nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고 `beginIncubatingFocusEgg` 의
+  어긋나면 `nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고 `hatchStoredEggIfNeeded` 의
   `removeFirst()` 짝이 밀린다 — 다음 기동의 `reconcileStoredEggDates()` 가 잘라 주므로 **세션 안에서만**
   틀리고, 그래서 재기동을 끼우는 테스트로는 안 잡혔다. 더 나쁜 건 `buyEgg` 로, `canBuyEgg` 에 상한
   검사가 없어 저장고가 꽉 차면 **별의조각만 차감되고 알은 0개** 늘었다(#82 는 지어낸 값이 사라졌지만

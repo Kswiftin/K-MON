@@ -197,26 +197,26 @@ final class MaxLevelTests: XCTestCase {
         XCTAssertEqual(reward.totalStardust, s.state.starPieces - before)
     }
 
-    /// **받을 개체가 아예 없는 정산.** 모험 중에 알을 부화기에 넣으면 파트너가 비는데
-    /// (`beginIncubatingFocusEgg` 는 모험을 막지 않는다) 모험은 그대로 정산된다. 예전엔
-    /// `claimAdventure` 가 `if state.active != nil` 로 경험치 블록을 통째로 건너뛰어 전량이 조용히
-    /// 사라졌고, 그러면서 `appliedExperience` 는 전량 적립됐다고 보고했다 — 대화 도구가 그 값을
-    /// 그대로 싣는다. 상한 초과분과 **같은 부류**라 처분도 같아야 한다.
+    /// **받을 개체가 아예 없는 정산.** 모험 중에 동행이 비어도(경매로 내보내기, 졸업 — 어느 쪽도
+    /// 모험을 막지 않는다) 모험은 그대로 정산된다. 예전엔 `claimAdventure` 가
+    /// `if state.active != nil` 로 경험치 블록을 통째로 건너뛰어 전량이 조용히 사라졌고, 그러면서
+    /// `appliedExperience` 는 전량 적립됐다고 보고했다 — 대화 도구가 그 값을 그대로 싣는다.
+    /// 상한 초과분과 **같은 부류**라 처분도 같아야 한다.
+    ///
+    /// 파트너를 비우는 데 **출시된 경로**를 쓴다. 예전엔 `beginIncubatingFocusEgg` 로 비웠는데 그건
+    /// 화면이 한 번도 안 부르는 API 였다(#225 에서 삭제) — 도달 불가능한 경로로 세운 전제는 전제가
+    /// 아니다. 경매 판매는 사용자가 실제로 밟는 길이고 `state.active = nil` 을 같은 방식으로 만든다.
     func testAdventureWithoutAPartnerConvertsInsteadOfDroppingExperience() async throws {
         let clock = TestClock()
         let s = store(clock)
         await s.hatch(baseID: 20)
-        // 알 하나를 모은다 — 120분 모험 2회면 조각(6+1, 6)이 10을 넘어 알 1개가 된다.
-        for _ in 0..<2 {
-            XCTAssertTrue(s.startFocusAdventure(minutes: 120))
-            clock.advance(120 * 60)
-            _ = s.claimAdventure()
-        }
-        XCTAssertGreaterThan(s.focusEggCount, 0, "테스트 전제: 알이 생겼다")
+        let partnerID = try XCTUnwrap(s.state.active?.id, "테스트 전제: 동행이 있다")
 
         XCTAssertTrue(s.startFocusAdventure(minutes: 120))
-        XCTAssertTrue(s.beginIncubatingFocusEgg(), "테스트 전제: 모험 중에도 부화기에 넣을 수 있다")
+        XCTAssertTrue(s.completeAuctionSale(offeredID: partnerID, stardust: 100),
+                      "테스트 전제: 모험 중에도 동행을 경매로 내보낼 수 있다")
         XCTAssertNil(s.state.active, "테스트 전제: 정산 시점에 파트너가 없다")
+        // 판매 대금이 들어온 **뒤에** 기준선을 잡는다 — 아래 단언은 모험 보상만 설명해야 한다.
         let before = s.state.starPieces
 
         clock.advance(120 * 60)

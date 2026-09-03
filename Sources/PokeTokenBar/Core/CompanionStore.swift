@@ -550,37 +550,18 @@ final class CompanionStore {
         return ownedMons.filter { !deployed.contains($0.id) }
     }
 
-    // 스타터 선택 — 맨 처음 1회, 알 대신 세 마리 중 택1. 고르면 starterChosen=true 로 이후엔 알 루프.
+    // 스타터 선택 — 맨 처음 1회, 알 대신 **타입**을 고른다(`chooseStarterType`). 고른 타입의
+    // 1세대 미진화체 하나가 무작위로 부화하고, starterChosen=true 로 이후엔 알 루프다.
     // 후보 풀 규칙(범위·전설 제외)은 StarterRules 공유.
+    //
+    // 종 3종을 뽑아 고정하던 예전 경로(`ensureStarterCandidates`·`chooseStarter`·`starterCandidateIDs`)
+    // 는 없다 — 2179921 이 화면을 타입 선택으로 갈아끼우며 호출부만 지우고 API 를 남겨, 3주간
+    // 아무도 부르지 않는 채로 있었다(#225 에서 삭제). 세이브 필드 `state.starterCandidates` 는
+    // 남는다: 구버전 세이브를 import 할 때 `SaveTransfer` 가 여전히 검증하고 비운다.
 
     /// 스타터 선택 화면을 보여야 하는가 — 아직 안 골랐고 활성 개체도 없을 때(맨 처음).
     var needsStarterSelection: Bool { !state.starterChosen && state.active == nil }
     var starterSelectableTypes: [PokemonType] { PokemonType.allCases.filter { $0 != .dark } }
-    /// 뽑아둔 후보 3종(선택 화면이 그린다). 아직 못 뽑았으면 빈 배열.
-    var starterCandidateIDs: [Int] { state.starterCandidates }
-
-    /// 후보 3종을 아직 안 뽑았으면 뽑아 고정한다 — 1세대 기본형(baseSpeciesIndex 는 진화 루트만 담는다)
-    /// 에서 메타몽 제외. **기기 고유 시드로 결정적**이라 재설치·상태 초기화에도 같은 Mac이면 같은 3종
-    /// (리세마라 방지). 풀을 id 순으로 정렬해 시드가 같으면 결과도 같게 고정한다.
-    /// 인덱스 조회 실패(오프라인)면 다음 호출에 재시도(빈 채로 둔다).
-    func ensureStarterCandidates() async {
-        guard needsStarterSelection, state.starterCandidates.isEmpty, !isHatching else { return }
-        guard let index = try? await provider.baseSpeciesIndex(), !index.isEmpty else { return }
-        var pool = index.map(\.id)
-            .filter { StarterRules.genRange.contains($0)
-                && $0 != PokemonOdds.dittoSpeciesID
-                && !StarterRules.isLegendary($0) }   // 전설 제외
-            .sorted()   // 안정 순서 — 같은 시드 + 같은 풀이면 항상 같은 결과
-        guard pool.count >= 3 else { return }
-        var seeded = SplitMix64(seed: DeviceID.starterSeed())
-        var picked: [Int] = []
-        for _ in 0..<3 {
-            let i = Int(seeded.next() % UInt64(pool.count))
-            picked.append(pool.remove(at: i))
-        }
-        state.starterCandidates = picked
-        save()
-    }
 
     /// 종의 표시 이름(현재 언어) — 스타터 카드 라벨용. 라인 조회 후 캐시, 실패 시 #번호 폴백.
     func resolveSpeciesName(_ speciesID: Int) async -> String {
@@ -607,19 +588,8 @@ final class CompanionStore {
                               weightHectograms: profile.weightHectograms)
     }
 
-    /// 스타터 확정 — 고른 종으로 즉시 부화(알 단계 건너뜀). 이후 졸업하면 기존 알/부화 루프로 돌아간다.
-    func chooseStarter(_ speciesID: Int) async {
-        guard needsStarterSelection, !isHatching else { return }
-        guard state.starterCandidates.contains(speciesID) else { return }   // 화면에 뜬 후보만 허용(방어)
-        state.starterChosen = true
-        state.starterCandidates = []
-        state.eggUsage = 0
-        state.eggTier = nil
-        state.pendingHatchID = nil
-        save()
-        await hatch(baseID: speciesID)   // hatchCore 재사용 — shiny/성격 롤·연출·저장 포함
-    }
-
+    /// 스타터 확정 — 고른 **타입**의 1세대 미진화체 하나를 무작위로 뽑아 즉시 부화한다(알 단계
+    /// 건너뜀). 이후 졸업하면 기존 알/부화 루프로 돌아간다.
     @discardableResult
     func chooseStarterType(_ type: PokemonType) async -> Bool {
         guard needsStarterSelection, !isHatching, starterSelectableTypes.contains(type),
@@ -1378,9 +1348,9 @@ final class CompanionStore {
         // 만렙에 걸린 몫은 버리지 않고 별의조각으로 되돌린다(#82). 그 값은 아래에서 보상 객체에
         // 실려 지갑 증가분을 설명한다.
         //
-        // **활성 개체가 없어도 지나간다.** 모험 중에 알을 부화기에 넣으면 파트너가 비는데
-        // (`beginIncubatingFocusEgg` 는 모험을 막지 않는다) 모험은 그대로 정산된다 — 예전엔 이
-        // 블록을 통째로 건너뛰어 전량이 조용히 사라지면서 `appliedExperience` 는 전량 적립됐다고
+        // **활성 개체가 없어도 지나간다.** 모험 중에 동행이 비는 길은 여럿이고(졸업, 경매로
+        // 내보내기) 어느 쪽도 모험을 막지 않는다 — 모험은 그대로 정산된다. 예전엔 이 블록을
+        // 통째로 건너뛰어 전량이 조용히 사라지면서 `appliedExperience` 는 전량 적립됐다고
         // 보고했다. 상한 초과분과 정확히 같은 부류다.
         let oldLevel = state.active?.level ?? 0
         reward.overflowExperience = awardExperience(reward.experience)
@@ -1645,20 +1615,10 @@ final class CompanionStore {
                                   overflowExperience: reward.overflowExperience)
     }
 
-    func beginIncubatingFocusEgg() -> Bool {
-        guard state.focusEggs > 0, let active = state.active else { return false }
-        state.boxedMons.append(active)
-        state.active = nil
-        state.focusEggs -= 1
-        if !state.focusEggReadyDates.isEmpty { state.focusEggReadyDates.removeFirst() }
-        state.eggUsage = 0
-        state.eggTier = nil
-        state.pendingHatchID = nil
-        activeGeneration += 1
-        currentLine = nil
-        save()
-        return true
-    }
+    // 보관 알을 **수동으로** 부화기에 넣던 `beginIncubatingFocusEgg` 는 없다(#225). 동행을 박스로
+    // 내리고 알 루프를 다시 시작하는 경로였는데, `hatchStoredEggIfNeeded` 가 5분 타이머로 알을
+    // 저절로 부화시키게 되면서(동행이 비어 있으면 동행으로, 아니면 박스로) 할 일이 없어졌다.
+    // 화면이 한 번도 부르지 않은 채 남아 있었다 — 지우는 것이 맞다.
 
     /// 방생 — 박스의 개체를 놓아준다. 박스는 지금까지 늘기만 했고(부화는 영구), 줄어드는 길은
     /// 동행으로 올리는 것과 디버그 훅뿐이었다(#88).
@@ -3514,7 +3474,7 @@ final class CompanionStore {
     /// 보관 알을 넣는 **유일한** 경로. 상한(999)에 맞춰 자르고 **들어간 개수만큼만** 부화 시각을
     /// 쌓는다. 예전엔 호출부마다 `focusEggs` 는 클램프하면서 날짜는 무조건 append 해 두 값이 세션
     /// 내내 어긋났다 — `nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고
-    /// `beginIncubatingFocusEgg` 의 `removeFirst()` 짝이 밀린다(다음 기동의
+    /// `hatchStoredEggIfNeeded` 의 `removeFirst()` 짝이 밀린다(다음 기동의
     /// `reconcileStoredEggDates()` 전까지 안 낫는다).
     ///
     /// `@discardableResult` 를 붙이지 않는다 — 붙이면 새 호출부가 잘려나간 몫을 다시 조용히
