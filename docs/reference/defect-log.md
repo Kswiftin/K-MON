@@ -4180,7 +4180,9 @@ read_when:
   `.accepted` 는 원래 코드 그대로(2건 실패), `.completed` 는 첨자 방식을 되돌려 넣어(3건 실패:
   낸 제안이 `.accepted` + 에스크로 유지, 옆 제안이 `.completed`). 주입 때 **해당 테스트만** 빨강이
   됐다.
-- **부류 스윕**: `Sources` 전체 `firstIndex(where:)` 33곳. 조회와 쓰기 사이에 그 배열을 바꿀 수
+- **헬퍼가 `nil` 을 돌려주는 자리도 결함이다 — 표시를 못 적으면 지갑만 빈다.** `withOutgoing` 은 제안이 사라졌으면 `nil` 을 돌려준다. `escrowStarPieces` 직후의 `stardustEscrowed = true` 가 그 `nil` 을 버리면 별의모래는 이미 빠졌는데 표시는 어디에도 없어 환불 경로가 통째로 건너뛴다. 지금은 `.accepted` 를 **먼저** 적어 유일한 제거 경로(`clearOutgoingResult`)가 막혀 도달하지 않는다 — 그러나 "도달 경로가 없다" 는 판단이 정확히 #229 를 놓친 근거다. 그래서 `nil` 이면 지갑을 직접 되돌리고 `.failed` 를 보낸다. **테스트는 없다**: 이 분기는 프로덕션 경로만으로는 밟을 수 없고, 밟히게 하려면 테스트 전용 제거 훅을 심어야 하는데 그건 이 문서의 "자기 디버그 훅의 사본을 밟는" 부류가 된다. 검증은 도달 조건 자체(제거 경로가 하나뿐이고 `.accepted` 를 거부한다)를 눈으로 확인한 것뿐이다.
+- **부류 스윕**: `Sources` 전체 `firstIndex` 30곳(`firstIndex(where:)` 28 + 트레일링 클로저 2 — 스윕을
+  끝낸 현재 트리 기준이라 그대로 다시 세어 볼 수 있다). 조회와 쓰기 사이에 그 배열을 바꿀 수
   있는 호출이 끼는 자리는 `PokemonAuction.swift` 뿐이었다. `MultiplayerLobby`·`MultiplayerBattle`
   ·`MultiplayerRoomCenter`·`AchievementLadder`·`RogueRun` 은 조회 직후에 쓴다. `PokemonChat:962`
   는 사이에 낀 `beginRoomEdit()` 이 `placedDecor` 를 **읽기만** 한다. `CompanionStore:1808`
@@ -4188,3 +4190,40 @@ read_when:
   ·`chatStore`·`save()` 가 끼지만 그 넷 다 `state.boxedMons` 를 건드리지 않는다 — **지금은**
   안전하다는 뜻이고, 그 넷 중 하나가 박스를 만지게 되는 날 같은 결함이 난다.
 - (경매 제안 ID 키, 2026-09-03. #229)
+
+## 돈을 먼저 움직이고 장부 표시를 나중에 지우면, 재진입 한 번이 같은 돈을 두 번 낸다
+
+- **증상**: `PokemonAuctionCenter.refundStardustIfNeeded` 가 `creditStarPieces` **뒤에**
+  `stardustEscrowed = false` 를 적었다. 지급이 `state.starPieces` 를 건드리고, 그 변화를 본
+  관측자가 같은 제안을 다시 정리로 끌면(`clearOutgoingResult`·`drop` → 같은 환불) 표시가 아직
+  서 있어 **같은 에스크로가 두 번 나간다.** 100 을 걸고 실패한 제안이 200 을 돌려받았다.
+- **부류**: **장부 표시는 돈이 움직이기 전에 지운다.** "표시 → 지급" 은 재진입이 표시를 보고
+  스스로 멈추고("이미 냈다"), "지급 → 표시" 는 재진입이 표시를 못 보고 한 번 더 낸다. 첨자
+  부류(위 항목)와 같은 재진입인데 잃는 것이 **좌표가 아니라 돈**이다.
+- **왜 테스트가 못 걸렀나.** 커버리지가 답을 준다: 이 저장소 전체 테스트에서
+  `refundStardustIfNeeded` 의 **몸통이 실행된 횟수가 1회**였고(그 1회가 이 항목의 새 테스트다),
+  기존 경매 테스트들은 전부 `guard` 에서 되돌아 나갔다 — 환불이 실제로 나가는 경로가 무테스트였다.
+  `clearingAnOfferMidCommitCannotRefundTheEscrow` 는 환불이 **막히는** 것만 봤다.
+- **형제 결함(같은 커밋에서 고쳤다) — 국면은 연결로 걸러 놓고 돈은 ID 로 움직였다.**
+  `failOutgoing` 이 `withOutgoing(offerID, on: id)`(연결+ID) 로 국면을 적고 환불은
+  `refundStardustIfNeeded(offerID)`(ID 만) 로 했다. 같은 상대에게 두 건을 걸어 두면 상대는 두
+  제안 ID 를 다 알고 있으므로, **다른 연결로 내 다른 제안의 ID 를 실은 프레임 한 장**이 아직
+  `.accepted` 로 살아 있는 그 제안의 에스크로를 풀어 준다 — 지갑은 돌려받고 제안은 그대로 성사돼
+  별의모래가 복제된다. **돈을 움직이는 조회는 국면을 적는 조회와 같은 범위여야 한다.**
+  `aFrameForAnUnknownOfferTouchesNothing` 은 이걸 못 잡았다 — 처음 보는 `UUID()` 를 써서
+  "못 찾음" 경로만 밟았고, 결함은 **찾히는데 남의 연결인** 경로에 있었다(결함 트리거와 다른
+  분기를 밟아 통과한 전형).
+- **검증**: 둘 다 결함을 되돌려 넣어 빨강을 봤다 — 환불은 `availableTokens → 200 != 100`,
+  연결 범위는 `200 != 100` + `stardustEscrowed → false`. 재진입 테스트의 관측자는 **한 번만**
+  태운다(`ObserverOnce`) — `withObservationTracking` 의 `onChange` 는 그 안에서 스토어를 다시
+  건드리면 자기를 또 부르므로, 안 묶으면 무한 재귀로 죽어 실패 이유를 못 읽는다.
+- **부류 스윕 — 남아 있다(미수정, 판단 필요).** 지갑을 움직이는 자리는 경매 밖에 셋 더 있고
+  전부 "지급 → 표시" 순서다: `MultiplayerRoomCenter.syncEscrow:1448`(이전 판돈을 돌려주는데
+  `escrowedBet` 이 아직 `previous` 다 → 재진입이 같은 판돈을 또 돌려주고 새 판돈을 두 번 뺀다),
+  `applySettlement:1483`(`creditStarPieces(payout)` 뒤에 `escrowedBet = nil` → 게스트 정산
+  경로는 `settledPool` 가드가 없어 재진입이 배당을 두 번 지급한다. `escrowedBet = nil` 을 지급
+  앞으로 옮기면 `agreesWithSeenBet(nil,…)` 이 두 번째를 거절해 닫힌다), `leaveRoom:1529`.
+  경매와 같은 재정렬이면 닫히지만 `syncEscrow` 의 **이중 에스크로**는 재정렬로 안 닫힌다
+  (재진입 가드가 필요하다). **별 PR 로 뺀다** (사용자 판단, 2026-09-03) — 경매 PR 에 설계 판단을
+  끌고 들어오지 않되, 고칠 자리는 위에 줄 번호까지 박아 뒀다.
+- (경매 환불 재진입, 2026-09-03. #229 리뷰에서 발견.)
