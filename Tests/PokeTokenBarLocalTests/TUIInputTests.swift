@@ -58,6 +58,15 @@ struct TUIInputTests {
         }
     }
 
+    /// 모르는 시퀀스(Home·PageUp·잘려 온 UTF-8)는 **아무 동작도 아니다.** 어떤 화면에서도
+    /// 동작으로 새면 안 된다 — 디코더가 `.unknown` 으로 돌려주는 이유가 바로 그것이고, 그 값을
+    /// 여기서 문자처럼 다루면 진짜 입력과 구분되지 않는다.
+    @Test func testUnknownKeysDoNothingOnEveryScreen() {
+        for screen in TUIScreen.allCases {
+            #expect(action(.unknown, screen: screen) == .ignored)
+        }
+    }
+
     // MARK: 모험
 
     @Test func testDigitKeysStartTheMatchingSessionLength() {

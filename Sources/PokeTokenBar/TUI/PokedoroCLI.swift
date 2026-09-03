@@ -253,7 +253,6 @@ enum PokedoroCLI {
         guard let entry = wanted, let mon = store.ownedMons.first(where: { $0.id == entry.id }) else {
             return ["\(number.map(String.init) ?? "")번 포켓몬이 없다 — party 로 번호를 확인한다."]
         }
-        let l = L(store.language)
         var rows: [(label: String, value: String)] = [
             ("이름", entry.name + (entry.isShiny ? " ✨" : "")),
             ("번호", "\(TUIRender.printedRosterNumber(index: entry.index))"),
