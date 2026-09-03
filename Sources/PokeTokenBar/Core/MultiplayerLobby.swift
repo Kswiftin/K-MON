@@ -1,7 +1,7 @@
 import Foundation
 
 enum BattleTeam: String, Codable, Sendable { case solo, red, blue }
-enum RoomActivity: String, Codable, Sendable { case battle, pokeathlon, pokemonQuiz, tournament, gym, raid }
+enum RoomActivity: String, Codable, Sendable, CaseIterable { case battle, pokeathlon, pokemonQuiz, tournament, gym, raid }
 
 /// 방에서의 역할. 러너만 경기·전투에 참여하고, 관전자는 베팅만 한다.
 enum LobbyRole: String, Codable, Sendable { case runner, spectator }

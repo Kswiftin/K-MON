@@ -17,6 +17,15 @@ struct MultiplayerRoomPeer: Identifiable, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
 }
 
+/// 방에 들고 들어갈 것 — 고른 개체와 스냅샷 레벨. 기본값은 "아무것도 안 정함" 이라
+/// 레이드가 아닌 활동은 예전 동작 그대로다.
+struct RaidEntry: Equatable, Sendable {
+    var pick: UUID? = nil
+    /// nil 이면 개체 레벨 그대로. 레이드만 `RaidBoss.partyLevel` 로 굳힌다 — 거기만
+    /// `startRaid` 가 몸을 눕히기 때문이다.
+    var level: Int? = nil
+}
+
 @MainActor
 @Observable
 final class MultiplayerRoomCenter {
@@ -139,6 +148,30 @@ final class MultiplayerRoomCenter {
                                       fallback: MonState?) -> MonState? {
         guard let pick, let picked = deployable.first(where: { $0.id == pick }) else { return fallback }
         return picked
+    }
+
+    /// 이 방에 들고 들어갈 것 — 고른 개체와 **스냅샷 레벨**. 레이드가 아니면 둘 다 nil 이다.
+    ///
+    /// **판단이 호출부에 있으면 안 된다.** 방을 여는 자리와 남의 방에 들어가는 자리는 살아 있는
+    /// 소켓이 있어야 밟혀서 테스트가 못 간다. 거기에 `activity == .raid ? pick : nil` 을 두면
+    /// 뒤집혀도 깨지는 테스트가 없다 — 실제로 뒤집어 보니 2085개가 전부 초록이었고, 소스를
+    /// grep 하던 가드도 글자만 봐서 못 걸렀다. 호출부는 자료만 넘기고 판단은 여기서 한다.
+    ///
+    /// 레벨을 같이 정하는 이유: `startRaid` 는 러너의 `snapshot.level` 만 `partyLevel` 로 눕힌다.
+    /// 스냅샷을 개체 레벨로 만들어 두면 몸만 50 이 되고 자동 무브셋은 개체 레벨에 머문다 —
+    /// `CompanionStore.battleSnapshot` 이 "몸은 50 인데 기술은 3" 으로 한 번 고쳐 둔 결함이다.
+    /// 피커가 생겨 Lv.7 박스 개체를 일부러 고를 수 있게 된 지금은 예외가 아니라 기본 경로다.
+    nonisolated static func raidEntry(pick: UUID?, activity: RoomActivity) -> RaidEntry {
+        raidEntry(pick: pick, isRaid: activity == .raid)
+    }
+
+    /// 남의 방에 들어갈 때 쓰는 입구 — 붙기 전이라 활동을 모르고 방 이름만 안다.
+    nonisolated static func raidEntry(pick: UUID?, serviceName: String) -> RaidEntry {
+        raidEntry(pick: pick, isRaid: RaidRoomName.isRaidRoomName(serviceName))
+    }
+
+    nonisolated private static func raidEntry(pick: UUID?, isRaid: Bool) -> RaidEntry {
+        isRaid ? RaidEntry(pick: pick, level: RaidBoss.partyLevel) : RaidEntry()
     }
     /// 참가자별 보스에게 넣은 피해. 호스트는 매 라운드 갱신하고, 게스트는 정산 메시지로 한 번 받는다.
     private(set) var raidContributions: [UUID: Int] = [:]
@@ -336,11 +369,9 @@ final class MultiplayerRoomCenter {
         guard phase == .idle else { return }
         phase = .creating; lastError = nil
         let epoch = sessionEpoch
-        // 고른 개체는 레이드에만 실린다 — 다른 활동엔 피커가 없어서, 넘기면 화면에 없는 선택이
-        // 조용히 출전한다.
-        let pick = activity == .raid ? raidPickedMonID : nil
+        let entry = Self.raidEntry(pick: raidPickedMonID, activity: activity)
         Task {
-            guard let snapshot = await buildSnapshot(pick: pick) else {
+            guard let snapshot = await buildSnapshot(entry) else {
                 guard sessionEpoch == epoch else { return }
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
@@ -639,9 +670,9 @@ final class MultiplayerRoomCenter {
         phase = .joining(room.name); lastError = nil
         hostingRole = false
         let epoch = sessionEpoch
-        let pick = RaidRoomName.isRaidRoomName(room.serviceName) ? raidPickedMonID : nil
+        let entry = Self.raidEntry(pick: raidPickedMonID, serviceName: room.serviceName)
         Task {
-            guard let snapshot = await buildSnapshot(pick: pick) else {
+            guard let snapshot = await buildSnapshot(entry) else {
                 guard sessionEpoch == epoch else { return }
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
@@ -1976,17 +2007,17 @@ final class MultiplayerRoomCenter {
     /// 박스에 키워 둔 개체가 아무리 많아도 방 계열(토너먼트·포켓슬론·퀴즈·체육관)에 못 들어갔다.
     /// 내보낼 개체가 하나라도 있으면 그걸로 만든다.
     ///
-    /// `pick` 은 사용자가 고른 개체다(레이드). nil 이거나 후보에서 사라졌으면 예전처럼 대표 개체를
-    /// 쓴다 — 고르지 않은 사용자의 동작은 그대로다.
-    private func buildSnapshot(pick: UUID? = nil) async -> BattleSnapshot? {
+    /// `entry` 는 `raidEntry` 가 낸 값이다 — 고른 개체와 스냅샷 레벨. 레이드가 아니면 둘 다 nil 이라
+    /// 고르지 않은 사용자의 동작은 그대로다(대표 개체를 자기 레벨로 내보낸다).
+    private func buildSnapshot(_ entry: RaidEntry = RaidEntry()) async -> BattleSnapshot? {
         await companion.ensureInheritedMoves()
-        guard let mon = Self.pickedMon(pick, deployable: companion.deployableMons,
+        guard let mon = Self.pickedMon(entry.pick, deployable: companion.deployableMons,
                                        fallback: companion.battleFacadeMon) else { return nil }
         // 동행이면 지금 화면에 뜬 이름·레벨을 그대로 쓰고, 박스 개체면 그 개체 기준으로 만든다.
         if let active = companion.state.active, active.id == mon.id,
            let speciesID = companion.currentSpeciesID,
            let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) {
-            let level = active.level
+            let level = entry.level ?? active.level
             let moves = active.learnedMoves.isEmpty
                 ? await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: profile.types)
                 : await companion.detailedMoves(of: active)
@@ -1996,7 +2027,7 @@ final class MultiplayerRoomCenter {
                                   ability: profile.abilitySlug,
                                   weightHectograms: profile.weightHectograms)
         }
-        return await companion.battleSnapshot(for: mon, level: mon.level)
+        return await companion.battleSnapshot(for: mon, level: entry.level ?? mon.level)
     }
 
     private func buildTournamentLineup(ids requestedIDs: [UUID], count: Int) async -> [BattleSnapshot]? {

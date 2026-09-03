@@ -76,11 +76,27 @@ struct TeamPicker: View {
     /// 정원이 찬 상태에서 누른 경우(넣지도 빼지도 못한다) 아무 반응이 없으면 고장으로 읽히기 때문이다.
     private func toggle(_ monID: UUID) {
         previewedMonID = monID
+        selection = Self.toggled(selection, monID: monID, limit: limit)
+    }
+
+    /// 누른 개체를 넣고 빼는 규칙.
+    ///
+    /// **정원이 1 이면 갈아탄다.** "정원이 찼으면 무시" 만 두면 정원이 6 일 땐 예외인 상태가
+    /// 정원 1(레이드)에선 기본 상태가 되어, 첫 선택 뒤로는 무엇을 눌러도 선택이 안 바뀐다.
+    /// 아래 기술 미리보기만 펼쳐지는 탓에 눌린 것처럼 보여 고장으로도 안 읽힌다.
+    /// 정원이 여럿인 자리는 예전 그대로다 — 거기서 갈아타면 정원째로 누를 때 첫째가 조용히 빠진다.
+    ///
+    /// `nonisolated static` 인 이유는 `MultiplayerRoomCenter.creditsRaceFinish` 와 같다 —
+    /// 화면 없이 전 분기를 검증하려고 순수 함수로 떼어 둔다.
+    nonisolated static func toggled(_ selection: [UUID], monID: UUID, limit: Int) -> [UUID] {
         if let index = selection.firstIndex(of: monID) {
-            selection.remove(at: index)
-        } else if selection.count < limit {
-            selection.append(monID)
+            var next = selection
+            next.remove(at: index)
+            return next
         }
+        if limit == 1 { return [monID] }
+        guard selection.count < limit else { return selection }
+        return selection + [monID]
     }
 
     /// 팀 전체 해제 — 한 칸씩 누르며 순서를 되돌릴 필요 없이 새 조합을 바로 고르게 한다.
