@@ -470,6 +470,36 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertTrue(store.state.boxedMons.isEmpty)
     }
 
+    /// **회귀**: 쓰러진 러너는 추첨 풀에 없다.
+    ///
+    /// `forfeit` 은 hp 만 0 으로 만들고 편성에는 남긴다 — 방을 떠난 사람도 같은 자리를 지난다
+    /// (`retireFighter`). 안 걸러내면 이미 `leaveRoom` 을 지난 사람이 당첨되고, 그 클라이언트는
+    /// 정산도 포획도 부르지 않으므로 **보스가 아무에게도 안 간다**. 화면은 그 사이 "동료가
+    /// 데려갔다" 를 그린다. 바로 위 `survivorBonus` 는 이미 `isAlive` 로 거른다.
+    @MainActor
+    func testAFaintedRunnerIsNeverDrawn() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-fainted")
+        await store.hatch(baseID: 20)
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        var mate = runner("동료")
+        let boss = todaysBoss(tier: .three)
+        // 쓰러진 쪽이 뽑히는 시드를 고른다 — 이 시드가 곧 결함의 트리거다.
+        let seed = seedDrawing(mate.id, from: [me.id, mate.id])
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
+
+        mate.side.hp = 0   // 방을 떠났거나 쓰러졌다 — 편성에는 남는다
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 1_600, mate.id: 0])
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertEqual(center.raidCatcherID, me.id, "방에 남아 있는 사람만 뽑힌다")
+        XCTAssertEqual(store.state.boxedMons.count, 1, "당첨자가 실제로 데려가야 한다")
+        XCTAssertTrue(store.raidCatchClaimedToday)
+    }
+
     /// 진 판은 아무도 못 잡는다 — 정산이 안 열리는 것과 같은 이유다.
     @MainActor
     func testALostRaidCatchesNothing() async {
@@ -558,6 +588,42 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertTrue(didCatch)
         XCTAssertEqual(store.state.active?.currentID, 20)
         XCTAssertTrue(store.state.boxedMons.isEmpty)
+    }
+
+    /// **회귀**: 잡은 보스는 다음 라인 로드를 지나도 **잡은 그 모습**이어야 한다.
+    ///
+    /// 실제 `line(baseSpeciesID:)` 는 최종체를 물어도 체인 **뿌리부터** 트리를 싣고 온다. 저장된
+    /// 경로가 뿌리에서 시작하지 않으면 정규화가 뿌리로 되돌리던 동안, 잡은 가디안이 동행 자리에
+    /// 앉는 순간 레벨 1 랄토스가 됐다 — 추첨 풀 32종 중 21종이 이전 진화를 가진다.
+    ///
+    /// `stubMaxLevelLine`(단일 노드) 로는 어떤 시드로도 못 밟는다. 이 부류를 재려면 3단 라인이 필요하다.
+    @MainActor
+    func testACaughtBossKeepsItsFormWhenTheLineLoads() async {
+        let store = threeStageStore(TestClock(), tag: "raid-catch-form")
+        XCTAssertNil(store.state.active, "테스트 전제: 동행이 없어 잡은 보스가 동행 자리로 간다")
+
+        let didCatch = await store.catchRaidBoss(speciesID: 445)
+        XCTAssertTrue(didCatch)
+        await store.debugReloadCurrentLine()
+
+        XCTAssertEqual(store.state.active?.currentID, 445, "라인 로드가 잡은 보스를 1단계로 되돌렸다")
+        XCTAssertEqual(store.state.active?.pathIDs, [445], "경로는 잡은 자리에서 시작한다")
+        XCTAssertEqual(store.state.active?.totalForms, 1, "최종체를 잡았으면 앞으로 진화할 곳이 없다")
+    }
+
+    /// 같은 계약의 다른 쪽 — 체인 **중간**을 잡으면 남은 진화는 살아 있어야 한다. 뿌리로 되돌리는
+    /// 것도, 단일 형태로 못 박는 것도 둘 다 틀린 답이다(풀에 중간 종이 들어오는 날 조용히 갈린다).
+    @MainActor
+    func testCatchingAMidChainSpeciesKeepsTheRemainingEvolutions() async {
+        let store = threeStageStore(TestClock(), tag: "raid-catch-midchain")
+
+        let didCatch = await store.catchRaidBoss(speciesID: 444)
+        XCTAssertTrue(didCatch)
+        await store.debugReloadCurrentLine()
+
+        XCTAssertEqual(store.state.active?.currentID, 444)
+        XCTAssertEqual(store.state.active?.plannedPathIDs, [444, 445], "남은 진화가 사라졌다")
+        XCTAssertEqual(store.state.active?.totalForms, 2)
     }
 
     // MARK: 게스트 시점 — 호스트와 갈라지는 축

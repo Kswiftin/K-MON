@@ -1270,6 +1270,12 @@ final class CompanionStore {
     }
     /// 테스트 전용 — 스타터 선택 완료 후의 기존 사용자 상태를 재현한다.
     func debugMarkStarterChosen() { state.starterChosen = true; save() }
+
+    /// 테스트용 — 라인을 다시 불러 **정규화까지** 지난다. `loadCurrentLine` 은 private 이고 실제
+    /// 호출부(부화·교환·스위치·포획)는 전부 detached Task 라, 이 자리가 없으면 "다음 라인 로드가
+    /// 개체를 되돌린다" 를 재는 테스트를 쓸 수 없다(`debugApplyGymState` 와 같은 관례 — 사본을
+    /// 두지 않고 실제 경로를 부른다).
+    func debugReloadCurrentLine() async { await loadCurrentLine() }
     /// 테스트 전용 — 레벨 경험치를 직접 주입하고 진화·졸업 판정까지 트리거한다(applyUsage(0) 은
     /// claimAdventure() 가 레벨만 올릴 때 쓰는 것과 같은 형태). 프로덕션 호출 경로 없음.
     func debugAccrueLevelExperience(_ amount: Int) {
