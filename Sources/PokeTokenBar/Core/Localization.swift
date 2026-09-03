@@ -1244,10 +1244,14 @@ struct L {
     ///
     /// "동행" 으로 못 박으면 안 된다. 동행이 알이거나 체육관을 지키는 중이면 `battleFacadeMon` 은
     /// 박스 개체를 돌려주는데, 하필 그 두 경우가 이 피커를 만든 이유다.
+    ///
+    /// **다른 대전에도 적용된다는 사실을 반드시 말한다.** 여기서 고르는 값은 레이드 전용이 아니라
+    /// 대표 포켓몬이다 — 레이드 화면에서 누른 것이 체육관·토너먼트의 출전까지 바꾸는데 화면이
+    /// 입을 다물면, 다음에 진 대전의 원인을 찾을 단서가 없다.
     func raidPickMonHint(_ runner: String) -> String {
-        t("고르지 않으면 나가는 개체는 \(runner)입니다. 방에 들어간 뒤에는 바꿀 수 없어요.",
-          "Without a pick, \(runner) goes. You can't change it after entering a room.",
-          "選ばないと\(runner)が出ます。部屋に入ったあとは変更できません。")
+        t("고르지 않으면 나가는 개체는 \(runner)입니다. 고르면 대표 포켓몬이 바뀌어 다른 대전에도 나갑니다.",
+          "Without a pick, \(runner) goes. Picking here changes your representative, so it goes to other battles too.",
+          "選ばないと\(runner)が出ます。ここで選ぶと代表ポケモンが変わり、ほかの対戦にも出ます。")
     }
     var raidTurnsLeft: String { t("남은 턴", "Turns left", "残りターン") }
     var raidContribution: String { t("기여도", "Contribution", "貢献度") }

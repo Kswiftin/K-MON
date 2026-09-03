@@ -96,6 +96,11 @@ struct RaidView: View {
     /// 스냅샷을 다시 뿌려야 해서 와이어 메시지가 늘어난다(토너먼트가 후보를 방 밖에서 정하는 것과
     /// 같은 자리다).
     ///
+    /// **여기서 고르는 것은 레이드 전용 값이 아니라 대표 포켓몬**(`battleRepresentativeID`)이다.
+    /// 레이드만의 선택을 따로 두면 FriendView 의 "대표 포켓몬" 과 답이 갈려, 어느 쪽에서 고른 게
+    /// 나가는지 알 수 없는 설정이 둘이 된다. 하나를 바꾸면 체육관·토너먼트·퀴즈·포켓슬론·1v1 도
+    /// 같이 바뀐다 — 그 사실은 아래 문구가 말한다. 세이브에 이미 있는 필드라 저장도 공짜다.
+    ///
     /// **티어·방 목록 아래에 둔다.** 위에 두면 피커 높이(칩 줄에 기술 미리보기까지)만큼 이웃의 방
     /// 목록이 화면 밖으로 밀려, 30초짜리 모집 창을 내 피커를 지나쳐 가며 찾게 된다 —
     /// `GymLeagueView` 가 팀 고르기를 맨 아래 고정한 이유와 같다.
@@ -112,8 +117,8 @@ struct RaidView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(l.raidPickMon).font(.caption).bold()
                 TeamPicker(store: store,
-                           selection: Binding(get: { center.raidPickedMonID.map { [$0] } ?? [] },
-                                              set: { center.raidPickedMonID = $0.last }),
+                           selection: Binding(get: { store.battleRepresentative.map { [$0.id] } ?? [] },
+                                              set: { store.setBattleRepresentative($0.last) }),
                            limit: 1)
                     // 방을 여는·들어가는 동안에는 잠근다 — 티어·참가 버튼과 같은 조건이다.
                     // 그 사이에 바꾸면 컨트롤은 따라 바뀌는데 스냅샷은 이미 떠난 뒤라,

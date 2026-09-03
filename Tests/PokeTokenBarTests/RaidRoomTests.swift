@@ -624,84 +624,36 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(SaveTransfer.sanitized(state).battleHistory.count, 1)
     }
 
-    // MARK: 출전 포켓몬 고르기
-
-    private func mon(_ speciesID: Int) -> MonState {
-        MonState(baseID: speciesID, pathIDs: [speciesID], plannedPathIDs: [speciesID],
-                 stageIndex: 0, usedAtStage: 0, rarity: .common, totalForms: 1)
-    }
-
-    /// 고른 개체가 동행을 이긴다 — 이 규칙이 없으면 `battleFacadeMon` 이 언제나 동행을 돌려줘
-    /// 화면의 피커가 아무것도 바꾸지 못한다(고를 수 없던 그대로다).
-    func testAPickedMonOutranksTheCompanion() {
-        let companion = mon(25), picked = mon(143)
-        XCTAssertEqual(MultiplayerRoomCenter.pickedMon(picked.id, deployable: [companion, picked],
-                                                       fallback: companion)?.id, picked.id)
-    }
-
-    /// **트리거 브랜치**: 고른 뒤 그 개체가 체육관 방어팀에 들어가면 `deployableMons` 에서 빠진다.
-    /// 후보 목록을 안 보고 id 만 믿으면 여기서 nil 이 나와 방 입장 자체가 "포켓몬 정보를 불러오지
-    /// 못했습니다" 로 막힌다 — 고른 것이 사라진 벌을 입장 실패로 받는다.
-    func testAStalePickFallsBackInsteadOfBlockingEntry() {
-        let companion = mon(25), deployed = mon(143)
-        XCTAssertEqual(MultiplayerRoomCenter.pickedMon(deployed.id, deployable: [companion],
-                                                       fallback: companion)?.id, companion.id)
-    }
-
-    /// **부류 가드 — 선택이 레이드 밖으로 새면 안 된다.** `buildSnapshot` 은 방 계열 전부
-    /// (체육관·토너먼트·퀴즈·포켓슬론)가 지나는 한 곳이라, 게이트 없이 넘기면 화면에 피커가 없는
-    /// 활동까지 레이드에서 고른 개체가 조용히 출전한다.
-    ///
-    /// 판단을 호출부의 삼항식이 아니라 `raidEntry` 안에 둔 덕에 **여기서 전 분기를 실행한다.**
-    /// 예전엔 이 자리가 소스 grep 이라 `activity == .raid ? nil : raidPickedMonID` 로 뒤집어도
-    /// 2085개가 전부 초록이었다 — 글자만 봤기 때문이다(리뷰에서 주입해 확인했다).
-    func testOnlyRaidRoomsCarryThePick() {
-        let pick = UUID()
-        for activity in RoomActivity.allCases {
-            let entry = MultiplayerRoomCenter.raidEntry(pick: pick, activity: activity)
-            if activity == .raid {
-                XCTAssertEqual(entry.pick, pick, "레이드에서 고른 개체가 안 실리면 피커가 헛돈다")
-            } else {
-                XCTAssertNil(entry.pick, "\(activity) 엔 피커가 없다 — 화면에 없는 선택이 출전한다")
-            }
-        }
-    }
+    // MARK: 레이드 스냅샷 레벨
 
     /// **트리거 브랜치**: 레이드 스냅샷은 처음부터 파티 레벨로 만든다.
     ///
     /// `startRaid` 는 러너의 `snapshot.level` 만 50 으로 눕힌다. 스냅샷을 개체 레벨로 만들어 두면
     /// 몸만 50 이 되고 자동 무브셋은 개체 레벨에 머문다 — `CompanionStore.battleSnapshot` 주석이
-    /// "몸은 50 인데 기술은 3" 으로 한 번 고쳐 둔 결함이 레이드에서 되살아난다. 피커가 생기면서
-    /// Lv.7 박스 개체를 일부러 고를 수 있게 돼 예외가 아니라 기본 경로가 됐다.
-    func testARaidSnapshotIsBuiltAtPartyLevel() {
-        XCTAssertEqual(MultiplayerRoomCenter.raidEntry(pick: nil, activity: .raid).level,
-                       RaidBoss.partyLevel)
-        XCTAssertNil(MultiplayerRoomCenter.raidEntry(pick: nil, activity: .battle).level,
-                     "1v1 은 실제 레벨로 싸운다 — 여기서 눕히면 다른 활동이 망가진다")
+    /// "몸은 50 인데 기술은 3" 으로 한 번 고쳐 둔 결함이 레이드에서 되살아난다. 대표 포켓몬으로
+    /// Lv.7 박스 개체를 일부러 내보낼 수 있게 된 지금은 예외가 아니라 기본 경로다.
+    ///
+    /// 판단을 호출부의 삼항식이 아니라 `raidLevel` 안에 둔 덕에 **여기서 전 분기를 실행한다.**
+    /// 예전엔 이 자리가 소스 grep 이라 조건을 뒤집어도 2085개가 전부 초록이었다 — 글자만 봤기
+    /// 때문이다(리뷰에서 주입해 확인했다).
+    func testOnlyRaidRoomsAreBuiltAtPartyLevel() {
+        for activity in RoomActivity.allCases {
+            let level = MultiplayerRoomCenter.raidLevel(activity: activity)
+            if activity == .raid {
+                XCTAssertEqual(level, RaidBoss.partyLevel, "안 눕히면 몸과 기술의 레벨이 갈린다")
+            } else {
+                XCTAssertNil(level, "\(activity) 는 실제 레벨로 싸운다 — 여기서 눕히면 안 된다")
+            }
+        }
     }
 
     /// 남의 방에 들어갈 때는 활동을 아직 모른다(로비는 붙은 뒤에 온다) — 방 이름으로 가른다.
     /// 여는 자리와 들어가는 자리가 같은 규칙을 각자 적으면 한쪽만 뒤집혀도 안 깨지므로,
     /// 두 입구 모두 이 함수를 지난다.
     func testJoiningSortsRaidRoomsByName() {
-        let pick = UUID()
         let raidRoom = RaidRoomName.make(trainerName: "나", idTag: "abc123", tier: .three)
-        let entry = MultiplayerRoomCenter.raidEntry(pick: pick, serviceName: raidRoom)
-        XCTAssertEqual(entry.pick, pick)
-        XCTAssertEqual(entry.level, RaidBoss.partyLevel)
-
-        let gymRoom = "GYM · 3 · 나#abc123"
-        XCTAssertNil(MultiplayerRoomCenter.raidEntry(pick: pick, serviceName: gymRoom).pick,
-                     "체육관 방에 레이드에서 고른 개체가 실리면 안 된다")
-        XCTAssertNil(MultiplayerRoomCenter.raidEntry(pick: pick, serviceName: gymRoom).level)
-    }
-
-    /// 안 고른 사용자는 오늘 동작 그대로다 — 피커는 선택 사항이라 기본값이 바뀌면 안 된다.
-    func testNoPickKeepsTheFacadeMon() {
-        let companion = mon(25)
-        XCTAssertEqual(MultiplayerRoomCenter.pickedMon(nil, deployable: [companion],
-                                                       fallback: companion)?.id, companion.id)
-        // 내보낼 개체가 하나도 없으면 여전히 nil 이다(알 하나뿐인 세이브).
-        XCTAssertNil(MultiplayerRoomCenter.pickedMon(companion.id, deployable: [], fallback: nil))
+        XCTAssertEqual(MultiplayerRoomCenter.raidLevel(serviceName: raidRoom), RaidBoss.partyLevel)
+        XCTAssertNil(MultiplayerRoomCenter.raidLevel(serviceName: "GYM · 3 · 나#abc123"),
+                     "체육관 방을 레이드로 읽으면 남의 방 편성까지 눕는다")
     }
 }

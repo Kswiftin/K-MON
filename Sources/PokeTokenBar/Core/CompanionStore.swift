@@ -661,12 +661,20 @@ final class CompanionStore {
     /// 박스에 키워 둔 개체가 얼마든지 있을 수 있다 — 그걸로 싸우면 된다. 알 하나뿐일 때만 막는다.
     var hasBattleReadyMon: Bool { !deployableMons.isEmpty }
 
-    /// 나를 대표해 내보낼 개체 — 동행이 있으면 그 개체, 알을 품는 중이면 박스에서 고른다.
-    /// 대표 포켓몬을 지정해 뒀으면 그것을 우선한다.
+    /// 나를 대표해 내보낼 개체 — **지정해 둔 대표가 있으면 그것**, 없으면 동행, 그것도 없으면
+    /// 박스에서 고른다. 방 계열(레이드·체육관·토너먼트·퀴즈·포켓슬론)과 1v1 이 모두 여기를 지난다.
+    ///
+    /// **대표를 동행보다 먼저 본다.** 예전엔 반대라, 동행이 있으면 지정이 통째로 무시됐다.
+    /// 그래서 박스에 5★ 용으로 키워 둔 개체가 있어도 알을 품는 중이 아니면 내보낼 방법이 없었고,
+    /// FriendView 의 "대표 포켓몬" 은 알일 때만 듣는 반쪽 설정이었다.
+    ///
+    /// **지정한 개체가 후보에 남아 있을 때만 이긴다.** 대표를 체육관 방어팀에 넣으면
+    /// `deployableMons` 에서 빠지는데, 거기서 nil 을 돌려주면 방 입장이 통째로 막혀
+    /// 대표가 잠긴 벌을 입장 실패로 받는다.
     var battleFacadeMon: MonState? {
-        if let active = state.active, !gymDefenseMonIDs.contains(active.id) { return active }
         if let representativeID = state.battleRepresentativeID,
            let picked = deployableMons.first(where: { $0.id == representativeID }) { return picked }
+        if let active = state.active, !gymDefenseMonIDs.contains(active.id) { return active }
         return deployableMons.first
     }
     var eggStarted: Bool { state.eggUsage > 0 }
