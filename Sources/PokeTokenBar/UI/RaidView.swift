@@ -62,6 +62,9 @@ struct RaidView: View {
     private var recruiting: some View {
         VStack(alignment: .leading, spacing: 10) {
             todaysBossCard
+            if center.phase != .idle {
+                blockedSessionCard
+            }
             tierPicker
             nearbyRooms
             monPicker
@@ -69,6 +72,25 @@ struct RaidView: View {
                 Text(l.raidAlreadyPaidToday).font(.caption2).foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// 다른 방을 만들거나 참가하던 상태가 남아 있으면 레이드 조작은 안전상 잠긴다. 예전 화면은
+    /// 이유도 탈출구도 없이 버튼만 회색으로 만들어 앱을 재실행해야 했다. 현재 상태를 설명하고,
+    /// 사용자가 명시적으로 끊은 뒤 바로 다시 참가할 수 있게 한다.
+    private var blockedSessionCard: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                .foregroundStyle(.orange)
+            Text(l.t("이전 방 연결이 남아 있어 참가가 잠겨 있습니다.",
+                     "Joining is locked because a previous room connection is still active.",
+                     "前のルーム接続が残っているため参加できません。"))
+                .font(.caption2)
+            Spacer()
+            Button(l.t("연결 초기화", "Reset", "接続をリセット")) { center.leaveRoom() }
+                .controlSize(.small).buttonStyle(.borderedProminent).tint(.orange)
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var todaysBossCard: some View {
