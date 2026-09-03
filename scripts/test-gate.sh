@@ -210,6 +210,11 @@ UNCALLED_MUTATORS=""
 SWIFT_CODE=$(find Sources/PokeTokenBar -name '*.swift' -exec cat {} + | sed '/^[[:space:]]*\/\//d')
 while read -r NAME; do
   [[ -z "$NAME" ]] && continue
+  # `debug` 접두는 **이름 하나하나가 아니라 규칙으로** 건너뛴다. 이 저장소의 `debug…` 는 전부
+  # `/// 테스트 전용` 이 붙은 시딩 훅이라(화면에서 부르지 않는 것이 정상이다), 이름을 박아 두면
+  # `debugSetFoo` 가 하나 늘 때마다 allowlist 가 같이 자란다 — 그때마다 손대는 목록은 결국
+  # 아무도 안 읽는다. 관례를 규칙으로 올려 목록을 "진짜 예외" 에만 쓴다.
+  [[ "$NAME" == debug* ]] && continue
   SKIP=""
   for ALLOWED in "${CORE_ONLY_MUTATORS[@]}"; do [[ "$NAME" == "$ALLOWED" ]] && SKIP=1 && break; done
   [[ -n "$SKIP" ]] && continue
@@ -219,6 +224,10 @@ while read -r NAME; do
   DECLS=$(printf '%s\n' "$SWIFT_CODE" | grep -oE "func ${NAME}\(" | wc -l | tr -d ' ')
   [[ "$CALLS" == "$DECLS" ]] && UNCALLED_MUTATORS+="$NAME"$'\n'
 done < <(awk '
+  # **파일이 바뀌면 상태를 버린다.** 여러 파일을 한 번에 넘기므로, 안 지우면 앞 파일 마지막 함수의
+  # `name`·`priv` 가 다음 파일 첫 줄까지 살아남아 엉뚱한 이름에 `save()` 가 붙는다 — 아래 한 줄과
+  # 똑같은 부류의 사고를 파일 경계에서 한 번 더 내는 셈이다.
+  FNR == 1 { name = ""; priv = 0 }
   # `static`·`nonisolated`·`override` 가 앞에 붙은 선언도 잡아야 한다. 놓치면 `name`·`priv` 가
   # **앞 함수의 값으로 남아**, 그 안의 `save()` 가 엉뚱한 이름에 붙는다(잡아야 할 것을 가리거나,
   # mutator 도 아닌 이름으로 빌드를 깨뜨린다).
@@ -227,11 +236,12 @@ done < <(awk '
     match($0, /func [A-Za-z_]+/); name = substr($0, RSTART + 5, RLENGTH - 5)
   }
   /save\(\)/ && name != "" && !priv && !seen[name] { print name; seen[name] = 1 }
-' Sources/PokeTokenBar/Core/PokemonChat.swift | sort -u)
-# 범위 한계(의도적, #225): 아직 이 한 파일만 훑는다. 같은 awk 를 `Core/CompanionStore.swift` 에
-# 돌리면 호출부 0곳인 mutator 가 8개 나오고, 그중 둘(`ensureStarterCandidates`·`chooseStarter`)은
-# 죽은 종 선택 경로라 allowlist 가 아니라 삭제 판단이 필요하다. 그 판단이 끝나면 범위를
-# `Core/` 전체로 넓힌다.
+' $(find Sources/PokeTokenBar -name '*.swift') | sort -u)
+# **범위는 `Sources/` 전부다**(#225). 예전엔 `Core/PokemonChat.swift` 한 파일만 훑었는데, 그건
+# 결함이 *발견된* 파일이지 부류가 사는 범위가 아니었다 — 같은 awk 를 넓히자 `CompanionStore.swift`
+# 에서 8건이 나왔고 그중 셋(`ensureStarterCandidates`·`chooseStarter`·`beginIncubatingFocusEgg`)은
+# 이미 죽은 제품 경로였다. 경로를 `Core/` 로 한정하지도 않는다: 실측상 결과가 같은데 예외만 하나
+# 늘고, 스토어가 아닌 곳에 새로 생기는 mutator 를 놓칠 자리를 남긴다.
 # 이 가드가 **구조적으로 못 보는** 반대쪽도 있다: 짝이 아예 없는 mutator(켜기만 있고 끄기가
 # 없는 것)는 "호출부 0곳" 이 될 수 없다. `docs/reference/defect-log.md` 의 같은 항목을 본다.
 if [[ -n "$UNCALLED_MUTATORS" ]]; then
