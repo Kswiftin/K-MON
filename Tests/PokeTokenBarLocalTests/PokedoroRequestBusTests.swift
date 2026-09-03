@@ -105,13 +105,13 @@ struct PokedoroRequestBusTests {
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: mailbox.requestURL))
         let fields = try #require(json as? [String: Any])
         #expect(fields["action"] as? String == "start")
-        #expect(fields["minutes"] as? Int == 50)
+        #expect(fields["argument"] as? String == "50")
         #expect(fields["id"] is String)
         #expect(fields["requestedAt"] != nil)
     }
 
-    /// 인자를 안 받는 동작에는 인자 칸이 **아예 없다**. 남겨 두면 `{"action":"stop","minutes":0}`
-    /// 같은 파일이 정상으로 보이고, 손으로 고치는 사용자가 그 값이 뭔가 한다고 믿는다.
+    /// 인자를 안 받는 동작에는 인자 칸이 **아예 없다**. 남겨 두면 `{"action":"stop","argument":null}`
+    /// 같은 파일이 정상으로 보이고, 손으로 고치는 사용자가 그 칸이 뭔가 한다고 믿는다.
     @Test func testAnArgumentlessActionWritesNoArgumentField() throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -121,7 +121,7 @@ struct PokedoroRequestBusTests {
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: mailbox.requestURL))
         let fields = try #require(json as? [String: Any])
         #expect(fields["action"] as? String == "stop")
-        #expect(fields["minutes"] == nil)
+        #expect(fields["argument"] == nil)
     }
 
     /// 이름과 인자가 어긋난 파일은 요청이 **되지 않는다** — 깨진 파일과 같은 취급이다.
@@ -132,7 +132,7 @@ struct PokedoroRequestBusTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let mailbox = PokedoroMailbox(directory: directory)
         try Data("""
-        {"id":"\(UUID().uuidString)","action":"stop","minutes":90,"requestedAt":0}
+        {"id":"\(UUID().uuidString)","action":"stop","argument":"90","requestedAt":0}
         """.utf8).write(to: mailbox.requestURL)
 
         #expect(mailbox.pendingRequest() == nil)
@@ -151,15 +151,100 @@ struct PokedoroRequestBusTests {
         #expect(mailbox.pendingRequest() == nil)
     }
 
-    // MARK: 동작 어휘
+    // MARK: 동작 어휘 — 인자 칸 하나
 
-    /// 이름과 인자가 **한 값**이어야 한다. 예전엔 `verb` 와 `minutes` 가 따로 실려 "stop 인데
-    /// 90분" 같은 요청을 타입이 허락했다 — 표현할 수 없는 상태는 걸러 낼 필요도 없다.
-    @Test func testOnlyStartCarriesALength() {
-        #expect(PokedoroRequest.Action.start(minutes: 25).minutes == 25)
-        #expect(PokedoroRequest.Action.claim.minutes == nil)
-        #expect(PokedoroRequest.Action.stop.minutes == nil)
+    /// 인자는 **칸 하나**(`argument`)로 실린다. 동작마다 칸 이름을 따로 두면 새 동작이 늘 때마다
+    /// "그 동작에 없어야 하는 칸" 검사가 같이 늘고, 한 칸을 빠뜨려도 컴파일이 통과한다.
+    @Test func testEveryArgumentRidesInOneField() {
+        #expect(PokedoroRequest.Action.start(minutes: 50).argument == "50")
+        #expect(PokedoroRequest.Action.use(item: .rareCandy).argument == ItemKind.rareCandy.rawValue)
+        #expect(PokedoroRequest.Action.switchCompanion(number: 3).argument == "3")
+        #expect(PokedoroRequest.Action.rename(nickname: "피카").argument == "피카")
+        for action in [PokedoroRequest.Action.claim, .stop, .evolve] {
+            #expect(action.argument == nil, "\(action) 이 인자 칸을 쓴다")
+        }
     }
+
+    /// 새 동작도 이름 → 동작 → 이름이 제자리로 돌아온다.
+    @Test func testTheNewActionsRoundTripThroughTheirOwnTable() {
+        let actions: [PokedoroRequest.Action] = [
+            .use(item: .rareCandy), .use(item: .fireStone), .evolve,
+            .switchCompanion(number: 2), .rename(nickname: "라이츄")
+        ]
+        for action in actions {
+            #expect(PokedoroRequest.Action(name: action.name, argument: action.argument) == action)
+        }
+    }
+
+    /// 아이템은 **닫힌 목록 대조**다 — 목록 밖 이름은 거절되는 게 아니라 요청으로 읽히지 않는다.
+    @Test func testAnItemOutsideTheNameTableIsNotAnAction() {
+        #expect(PokedoroRequest.Action(name: "use", argument: "masterball") == nil)
+        #expect(PokedoroRequest.Action(name: "use", argument: "") == nil)
+        #expect(PokedoroRequest.Action(name: "use", argument: nil) == nil)
+    }
+
+    /// 사용자가 부르는 이름(현지화된 표시 이름)도 받는다 — 터미널에 `use rare candy` 를 치는
+    /// 사람과 `use 이상한 사탕` 을 치는 사람이 같은 일을 해야 한다.
+    @Test func testAnItemCanBeNamedTheWayTheScreenPrintsIt() {
+        #expect(PokedoroRequest.Action(name: "use", argument: "이상한 사탕") == .use(item: .rareCandy))
+        #expect(PokedoroRequest.Action(name: "use", argument: "Rare Candy") == .use(item: .rareCandy))
+    }
+
+    /// 개체 번호는 `party` 가 찍는 값(1부터)이다. 0 이나 음수는 그 목록에 없으므로 요청이 아니다 —
+    /// 그대로 인덱스로 쓰면 배열 밖을 읽거나 엉뚱한 개체를 건드린다.
+    @Test func testARosterNumberBelowOneIsNotAnAction() {
+        #expect(PokedoroRequest.Action(name: "switch", argument: "1") == .switchCompanion(number: 1))
+        #expect(PokedoroRequest.Action(name: "switch", argument: "0") == nil)
+        #expect(PokedoroRequest.Action(name: "switch", argument: "-2") == nil)
+        #expect(PokedoroRequest.Action(name: "switch", argument: "두번째") == nil)
+    }
+
+    /// 별명은 **인자가 자유 문자열인 유일한 동작**이다. 빈 이름·공백만은 요청이 아니다 — 실수로
+    /// 지운 이름이 조용히 통과하면 사용자는 자기가 무엇을 지웠는지 모른다. 길이 클램프는 실행기가
+    /// 한다(파일을 직접 고친 경로까지 막아야 하므로).
+    @Test func testABlankNicknameIsNotAnAction() {
+        #expect(PokedoroRequest.Action(name: "name", argument: "리자몽") == .rename(nickname: "리자몽"))
+        #expect(PokedoroRequest.Action(name: "name", argument: "   ") == nil)
+        #expect(PokedoroRequest.Action(name: "name", argument: "") == nil)
+        #expect(PokedoroRequest.Action(name: "name", argument: nil) == nil)
+    }
+
+    /// 인자를 안 받는 새 동작에 인자가 붙어도 추측하지 않는다.
+    @Test func testAnArgumentOnEvolveIsNotAnAction() {
+        #expect(PokedoroRequest.Action(name: "evolve", argument: "2") == nil)
+        #expect(PokedoroRequest.Action(name: "evolve", argument: nil) == .evolve)
+    }
+
+    /// 파일에서도 인자 칸은 하나다. 아이템은 **rawValue 로 적힌다** — 표시 이름으로 적으면 언어
+    /// 설정을 바꾼 사용자가 자기 요청 파일을 못 읽는다.
+    @Test func testTheNewActionsWriteOneArgumentField() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+        try mailbox.send(request(.use(item: .rareCandy)))
+
+        let json = try JSONSerialization.jsonObject(with: Data(contentsOf: mailbox.requestURL))
+        let fields = try #require(json as? [String: Any])
+        #expect(fields["action"] as? String == "use")
+        #expect(fields["argument"] as? String == ItemKind.rareCandy.rawValue)
+        #expect(fields["minutes"] == nil, "인자 칸이 두 벌이면 어느 쪽이 진짜인지 알 수 없다")
+    }
+
+    /// 새 동작도 파일 왕복에서 자기 자신이다.
+    @Test func testTheNewActionsSurviveTheFileRoundTrip() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+
+        for action in [PokedoroRequest.Action.use(item: .waterStone), .evolve,
+                       .switchCompanion(number: 4), .rename(nickname: "꼬북")] {
+            let sent = request(action)
+            try mailbox.send(sent)
+            #expect(mailbox.pendingRequest() == sent, "\(action) 이 왕복에서 달라졌다")
+        }
+    }
+
+    // MARK: 동작 어휘
 
     /// 이름은 세 동작이 서로 다르다 — 같은 이름을 두 동작이 쓰면 왕복에서 하나가 다른 것이 된다.
     @Test func testEveryActionHasItsOwnName() {
@@ -169,25 +254,25 @@ struct PokedoroRequestBusTests {
 
     /// 인자를 받지 않는 동작에 인자가 붙었으면 **추측하지 않는다** — 대화 도구 파서와 같은 규칙이다.
     @Test func testAnArgumentOnAnArgumentlessActionIsNotAnAction() {
-        #expect(PokedoroRequest.Action(name: "stop", minutes: 25) == nil)
-        #expect(PokedoroRequest.Action(name: "claim", minutes: 0) == nil)
+        #expect(PokedoroRequest.Action(name: "stop", argument: "25") == nil)
+        #expect(PokedoroRequest.Action(name: "claim", argument: "0") == nil)
     }
 
     @Test func testAnUnknownActionNameIsNotAnAction() {
-        #expect(PokedoroRequest.Action(name: "battle", minutes: nil) == nil)
-        #expect(PokedoroRequest.Action(name: "", minutes: nil) == nil)
+        #expect(PokedoroRequest.Action(name: "battle", argument: nil) == nil)
+        #expect(PokedoroRequest.Action(name: "", argument: nil) == nil)
     }
 
     /// 분이 없는 시작은 그대로 통과한다 — 기본 길이는 실행기가 고른다. 여기서 25 를 채우면
     /// 기본값이 두 곳이 되고, 한쪽만 바뀌면 화면과 터미널이 다른 길이를 켠다.
     @Test func testStartWithoutALengthIsStillAnAction() {
-        #expect(PokedoroRequest.Action(name: "start", minutes: nil) == .start(minutes: nil))
+        #expect(PokedoroRequest.Action(name: "start", argument: nil) == .start(minutes: nil))
     }
 
     /// 이름 → 동작 → 이름이 제자리로 돌아온다. 이 왕복이 곧 파일 규약이다.
     @Test func testActionNamesRoundTripThroughTheirOwnTable() {
         for action in [PokedoroRequest.Action.start(minutes: 90), .claim, .stop] {
-            #expect(PokedoroRequest.Action(name: action.name, minutes: action.minutes) == action)
+            #expect(PokedoroRequest.Action(name: action.name, argument: action.argument) == action)
         }
     }
 
