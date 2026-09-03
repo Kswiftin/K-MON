@@ -57,7 +57,12 @@ echo "  · 빌드 + 인덱스 스토어 준비"
 # **먼저 빌드한다.** 낡은 인덱스를 읽으면 판정이 조용히 거짓이 된다(지운 선언이 유령으로
 # 남거나, 새로 죽은 mutator 가 아직 인덱스에 없어 통과한다). CI 는 앞 단계에서 이미 빌드해
 # 두므로 여기서는 대개 no-op 이고, 로컬에서도 게이트가 곧 쓸 빌드를 앞당기는 것뿐이다.
-swift build >/dev/null
+#
+# **게이트와 같은 플래그로 빌드한다**(`--enable-code-coverage`). 플래그가 다르면 SwiftPM 이
+# 모듈을 통째로 다시 컴파일한다 — plain 빌드 뒤 커버리지 빌드가 19초를 다시 쓰는 것을 실측했다.
+# 인덱스 방출은 커버리지와 무관하므로, 뒤따르는 `swift test --enable-code-coverage` 가 이
+# 산출물을 그대로 재사용하도록 맞추는 쪽이 공짜다.
+swift build --enable-code-coverage >/dev/null
 INDEX_STORE="$(swift build --show-bin-path)/index/store"
 # 스토어가 없으면 **판정하지 않고 실패한다.** SwiftPM 이 인덱스 방출을 멈추거나 경로를 바꾸면
 # "결함 0건" 과 "볼 것이 없었다" 가 구별되지 않는다 — 이 게이트가 존재하는 이유가 그 구별이다.
