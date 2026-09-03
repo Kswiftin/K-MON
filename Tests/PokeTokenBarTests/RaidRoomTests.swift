@@ -362,6 +362,136 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(other.creditRaidReward(500), 500)
     }
 
+    // MARK: 포획 배선 — 방이 추첨을 돌려 한 명에게만 넣는다
+
+    /// 뽑고 싶은 사람이 뽑히는 시드를 찾는다. 추첨이 시드 함수라 테스트가 결과를 고를 수 있다 —
+    /// 못 고르면 "누군가는 뽑힌다" 만 재게 되고, 뽑힌 쪽·안 뽑힌 쪽을 갈라서 못 본다.
+    private func seedDrawing(_ target: UUID, from ids: [UUID],
+                             file: StaticString = #filePath, line: UInt = #line) -> UInt64 {
+        for seed in UInt64(0)..<10_000 where RaidBoss.catcher(runnerIDs: ids, seed: seed) == target {
+            return seed
+        }
+        XCTFail("10,000 개 시드 안에 이 사람이 뽑히는 판이 없다", file: file, line: line)
+        return 0
+    }
+
+    /// **끝에서 끝까지.** 정산이 닫히면 뽑힌 사람의 박스에 보스가 실제로 들어와야 한다.
+    /// 당첨자 계산만 재면 "계산은 맞는데 아무도 안 부른다" 가 초록으로 남는다.
+    @MainActor
+    func testTheDrawnRunnerTakesTheBossHome() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-wired")
+        await store.hatch(baseID: 20)
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        let boss = todaysBoss(tier: .three)
+        let seed = seedDrawing(me.id, from: [me.id, mate.id])
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 800, mate.id: 800])
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertEqual(center.raidCatcherID, me.id)
+        XCTAssertEqual(store.state.boxedMons.count, 1, "뽑혔는데 박스가 비어 있으면 배선이 끊긴 것이다")
+        XCTAssertEqual(store.state.boxedMons.first?.currentID, boss.side.snapshot.speciesID,
+                       "잡힌 종이 오늘의 보스가 아니다")
+        XCTAssertTrue(store.raidCatchClaimedToday)
+    }
+
+    /// 안 뽑힌 사람은 못 잡는다 — 그래도 정산은 그대로 받는다. 둘이 갈리지 않으면 방 전원이 잡는다.
+    @MainActor
+    func testARunnerWhoWasNotDrawnStillGetsPaid() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-not-drawn")
+        await store.hatch(baseID: 20)
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        let boss = todaysBoss(tier: .three)
+        let seed = seedDrawing(mate.id, from: [me.id, mate.id])
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 800, mate.id: 800])
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertEqual(center.raidCatcherID, mate.id, "화면이 누가 가져갔는지 말할 수 있어야 한다")
+        XCTAssertTrue(store.state.boxedMons.isEmpty, "안 뽑혔는데 잡혔다")
+        XCTAssertFalse(store.raidCatchClaimedToday, "남이 잡은 판이 내 원장을 태우면 안 된다")
+        XCTAssertEqual(center.raidPayout, center.raidSettlement?.total, "정산은 그대로 받는다")
+    }
+
+    /// **트리거 브랜치**: 1★ 는 이겨도 포획이 없다. 400 HP 를 둘이 몇 턴에 깨는 티어라 열면
+    /// 하루 한 마리가 사실상 보장된 수입이 된다.
+    @MainActor
+    func testAOneStarWinNeverCatches() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-one-star")
+        await store.hatch(baseID: 20)
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        let boss = todaysBoss()
+        let seed = seedDrawing(me.id, from: [me.id, mate.id])
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .one))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 400])
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertNil(center.raidCatcherID, "1★ 는 추첨 자체가 없다")
+        XCTAssertTrue(store.state.boxedMons.isEmpty)
+        XCTAssertFalse(store.raidCatchClaimedToday)
+    }
+
+    /// **트리거 브랜치**: 혼자 잡으면 포획이 없다. 러너가 한 명이면 추첨이 언제나 자기 자신이라,
+    /// 이 가드가 없으면 3★ 를 혼자 깰 수 있는 사람에게 매일 한 마리가 그냥 나간다.
+    @MainActor
+    func testASoloWinNeverCatches() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-solo")
+        await store.hatch(baseID: 20)
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let boss = todaysBoss(tier: .three)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, boss], tier: .three))
+
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 1_600])
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertNil(center.raidCatcherID, "혼자면 추첨이 열리지 않는다")
+        XCTAssertTrue(store.state.boxedMons.isEmpty)
+    }
+
+    /// 진 판은 아무도 못 잡는다 — 정산이 안 열리는 것과 같은 이유다.
+    @MainActor
+    func testALostRaidCatchesNothing() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-lost")
+        await store.hatch(baseID: 20)
+        let center = MultiplayerRoomCenter(companion: store)
+        var me = runner("나", id: center.myID)
+        var mate = runner("동료")
+        let boss = todaysBoss(tier: .three)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seedDrawing(me.id, from: [me.id, mate.id]),
+                                                 fighters: [me, mate, boss], tier: .three))
+
+        me.side.hp = 0; mate.side.hp = 0   // 파티 전멸
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, boss], events: [])
+        center.applyGuestRaidSettlement([me.id: 800])
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertNil(center.raidCatcherID)
+        XCTAssertTrue(store.state.boxedMons.isEmpty)
+        XCTAssertFalse(store.raidCatchClaimedToday, "진 판이 그날의 포획 기회를 태우면 안 된다")
+    }
+
     // MARK: 포획 — 보스가 박스로 들어온다
 
     /// 잡은 보스는 **박스로** 간다. 동행을 밀어내지 않는다 — 밀어내면 레이드 한 판이 키우던
