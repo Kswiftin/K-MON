@@ -1262,6 +1262,22 @@ struct L {
           "The host left, so the raid ended. Open a new one.",
           "ホストが退出したためレイドが終了しました。もう一度開いてください。")
     }
+    var raidCaughtTitle: String { t("🎉 보스를 잡았다", "🎉 Boss caught", "🎉 ボスを捕まえた") }
+    func raidCaughtBody(_ name: String) -> String {
+        t("\(name)이(가) 박스에 들어왔어요.", "\(name) went into your box.", "\(name)がボックスに入りました。")
+    }
+    /// 결과창 — 내가 뽑혔을 때. 잡힌 개체가 어디로 갔는지 말해 준다(박스를 안 열면 안 보인다).
+    func raidCaughtByMe(_ name: String) -> String {
+        t("추첨에 뽑혀 \(name)을(를) 데려왔다 — 박스에 있어요.",
+          "You were drawn and took \(name) home — it is in your box.",
+          "抽選で選ばれて\(name)を連れ帰った — ボックスにいます。")
+    }
+    /// 결과창 — 남이 뽑혔을 때. 아무 말도 안 하면 "나만 못 받았다" 로 읽힌다.
+    func raidCaughtByOther(trainer: String, name: String) -> String {
+        t("\(trainer) 님이 추첨에 뽑혀 \(name)을(를) 데려갔어요.",
+          "\(trainer) was drawn and took \(name) home.",
+          "\(trainer) さんが抽選で選ばれて\(name)を連れ帰りました。")
+    }
     var raidNextHatch: String { t("다음 5★ 부화", "Next 5★ hatch", "次の5★出現") }
     func raidHatchSoonTitle(minutes: Int) -> String {
         t("⏰ \(minutes)분 뒤 5★ 레이드", "⏰ 5★ raid in \(minutes) min", "⏰ \(minutes)分後に5★レイド")

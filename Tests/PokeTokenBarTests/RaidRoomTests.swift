@@ -377,7 +377,8 @@ final class RaidRoomTests: XCTestCase {
         let partner = store.state.active?.id
         XCTAssertNotNil(partner, "테스트 전제: 동행이 있다")
 
-        XCTAssertTrue(await store.catchRaidBoss(speciesID: 20))
+        let didCatch = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertTrue(didCatch)
 
         XCTAssertEqual(store.state.active?.id, partner, "동행은 그대로다")
         XCTAssertEqual(store.state.boxedMons.count, 1)
@@ -395,8 +396,10 @@ final class RaidRoomTests: XCTestCase {
     func testASecondCatchOnTheSameDayIsRefused() async {
         let store = stubStore(TestClock(), tag: "raid-catch-twice")
         await store.hatch(baseID: 20)
-        XCTAssertTrue(await store.catchRaidBoss(speciesID: 20))
-        XCTAssertFalse(await store.catchRaidBoss(speciesID: 20))
+        let first = await store.catchRaidBoss(speciesID: 20)
+        let second = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertTrue(first)
+        XCTAssertFalse(second)
         XCTAssertEqual(store.state.boxedMons.count, 1, "박스에 두 마리가 들어오면 안 된다")
     }
 
@@ -407,8 +410,9 @@ final class RaidRoomTests: XCTestCase {
     func testAnUndrawableSpeciesIsNeverCaught() async {
         let store = stubStore(TestClock(), tag: "raid-catch-gap")
         await store.hatch(baseID: 20)
-        let gap = try? XCTUnwrap(PokemonAssets.spriteGaps.first)
-        XCTAssertFalse(await store.catchRaidBoss(speciesID: gap ?? 990))
+        let gap = PokemonAssets.spriteGaps.first ?? 990
+        let didCatch = await store.catchRaidBoss(speciesID: gap)
+        XCTAssertFalse(didCatch)
         XCTAssertTrue(store.state.boxedMons.isEmpty)
         XCTAssertFalse(store.raidCatchClaimedToday, "못 잡은 판이 오늘의 기회를 태우면 안 된다")
     }
@@ -420,7 +424,8 @@ final class RaidRoomTests: XCTestCase {
         let store = stubStore(TestClock(), tag: "raid-catch-empty")
         XCTAssertNil(store.state.active, "테스트 전제: 동행이 없다")
 
-        XCTAssertTrue(await store.catchRaidBoss(speciesID: 20))
+        let didCatch = await store.catchRaidBoss(speciesID: 20)
+        XCTAssertTrue(didCatch)
         XCTAssertEqual(store.state.active?.currentID, 20)
         XCTAssertTrue(store.state.boxedMons.isEmpty)
     }
