@@ -13,12 +13,13 @@
 ### `release.sh` 가 검사하는 것
 
 1. 버전 형식이 `x.y.z` 인가
-2. 현재 브랜치가 `main` 인가
-3. 커밋되지 않은 변경이 없는가
-4. `HEAD` 가 `origin/main` 과 같은가 (`git fetch --no-tags origin main`)
-5. `v<version>` 태그가 로컬·원격에 없는가
-6. `./scripts/test-gate.sh` 가 통과하는가 (전체 테스트 + 자체 warning 0 + 로직 코어 커버리지)
-7. 통과하면 주석 태그를 만들어 push → 여기서부터 비가역
+2. `scripts/build-app.sh` 의 `DEFAULT_VERSION` 이 배포할 버전과 같은가
+3. 현재 브랜치가 `main` 인가
+4. 커밋되지 않은 변경이 없는가
+5. `HEAD` 가 `origin/main` 과 같은가 (`git fetch --no-tags origin main`)
+6. `v<version>` 태그가 로컬·원격에 없는가
+7. `./scripts/test-gate.sh` 가 통과하는가 (전체 테스트 + 자체 warning 0 + 로직 코어 커버리지)
+8. 통과하면 주석 태그를 만들어 push → 여기서부터 비가역
 
 ### `release.yml` 이 하는 것
 
@@ -46,7 +47,8 @@
       새 에셋을 추가**한다(기존 이미지 재생성만으로는 새 화면이 문서에 없는 상태로 나간다). 트레이너
       꾸미기(옷장) 화면을 담은 스크린샷은 다음 릴리스에서 갱신이 필요하다.
 - [ ] **`scripts/build-app.sh` 의 `DEFAULT_VERSION`** — 손으로 빌드한 앱만 옛 버전으로 뜨지 않게
-      새 버전으로 올린다. 배포 산출물은 태그에서 주입받으므로 이 값을 쓰지 않는다.
+      새 버전으로 올린다. 배포 산출물은 태그에서 주입받으므로 이 값을 쓰지 않는다. 안 올리면
+      `release.sh` 가 태그를 만들기 전에 멈춘다(v2.24.0 이 이 값을 놓친 채 나가서 게이트를 넣었다).
 
 ## 릴리스 노트
 

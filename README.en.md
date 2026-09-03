@@ -34,10 +34,13 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 - **Battle rules** — type matchups, STAB, physical and special stats, accuracy, critical hits, PP, move priority, six status conditions, and confusion are supported.
 - **Gyms and stat stages** — challenge eight type gyms in 3v3. Every first clear pays Star Pieces and one egg, and the Dragon Gym's egg is guaranteed to be uncommon or better. Clearing all eight grants one shiny egg charge. Attack, Defense, Sp. Atk, Sp. Def, Speed, accuracy, and evasion can change during battle; switching resets those stages.
 - **Team battles and turn playback** — LAN battles also use the team and order you choose. Resolved turns play step by step, with playback speed configurable in Settings.
+- **2–4 player room battles** — create a room from the Friends tab or join one nearby and fight two to four trainers in a single battle. Pick free-for-all or 2 vs 2, and everyone plays the same battle once the host starts it. Recent battles and the Star Pieces they paid stay on the same screen.
 - **Online battle chat** — 1:1 LAN ranked battles and 2–4 player room battles include session-only chat independent of combat. The latest 50 messages stay in an internal scroll area; chat is disabled while battling a legacy 1:1 peer.
-- **Gym Takeover** — one shared gym on your local network: beat the leader and the gym is yours. The leader fields four defenders, and those four are locked out of training, other battles, and trades. Defend in person or let the AI do it, and switch between the two from the battle screen — the change takes effect from the next turn. Each challenger may try once every five minutes, and while a match runs others can only spectate. Both sides are normalized to Lv.50, and a successful defense pays Star Pieces (bonus every third defense, with a daily cap).
+- **Gym Takeover** — one shared gym on your local network: beat the leader and the gym is yours. The leader fields four defenders, and those four are locked out of training, other battles, and trades. Defend in person or let the AI do it, and switch between the two from the battle screen — the change takes effect from the next turn. If the leader ever lets a turn run out, the gym switches to AI defense from then on, so the rest of the match is played by the AI that actually scores type matchups. Each challenger may try once every five minutes, and while a match runs others can only spectate. Both sides are normalized to Lv.50, and a successful defense pays Star Pieces (bonus every third defense, with a daily cap).
 - **Pokéathlon: Change Relay** — practice alone or race with up to four players on a local network. Run with `→`, switch lanes with `↑`/`↓`, avoid obstacles, and change Pokémon with `C`.
-- **Co-op raid** — team up with trainers on your network to take down today's boss. 1★ and 3★ open anytime; 5★ only hatches three set times a day (with a 15-minute-before alert). Payout is based on contribution, turns left, and survivors, and only pays out once per day.
+- **Co-op raid** — team up with trainers on your network to take down today's boss. 1★ and 3★ open anytime; 5★ only hatches three set times a day (with a 15-minute-before alert). You choose which Pokémon you bring on the raid screen, and that choice is saved as your representative, so it goes to your other battles too. Payout is based on contribution, turns left, and survivors, and only pays out once per day. A solo run pays the tier base only — the contribution, turns-left, and survivor terms need two runners. Clear a 3★ or higher with two or more trainers and one runner still standing is drawn to take the boss home; that catch is once per day.
+- **Pokémon tournament** — two to eight trainers on the same network fight through a bracket. Reveal six candidates, confirm the three you send out, and everyone battles at Lv.50. The champion takes an egg home (guaranteed uncommon from five entrants, rare from seven), and Star Pieces pay out by placement: 12,000 for second, 7,000 for third and fourth, 3,000 for fifth through eighth.
+- **Pokémon offer market** — list several Pokémon at once and let nearby trainers offer a Pokémon or Star Pieces for them. Compare the offers in one list and accept or reject each; starred Pokémon cannot be listed.
 
 ## Trainer & wave run
 
@@ -87,8 +90,15 @@ Change the trainer's outfit, and pick one reward item after every wave you clear
 <td width="45%" align="center"><img src="assets/screenshot-raid.png" width="180" alt="Co-op Raid"></td>
 <td width="55%" valign="middle">
 <h3>Co-op raid</h3>
-Team up with trainers on your network to take down today's boss. 1★ and 3★ open anytime; 5★ hatches three set times a day. Join an open room straight from the nearby list.
+Team up with trainers on your network to take down today's boss. 1★ and 3★ open anytime; 5★ hatches three set times a day. Choose which Pokémon you bring at the bottom of the screen, and join an open room straight from the nearby list.
 </td>
+</tr>
+<tr>
+<td width="55%" valign="middle">
+<h3>2–4 player room battle</h3>
+Create a room from the Friends tab or join one nearby and fight two to four trainers at once. Pick free-for-all or 2 vs 2; recent battles and the Star Pieces they paid stay on the same screen.
+</td>
+<td width="45%" align="center"><img src="assets/screenshot-room-battle.png" width="180" alt="2-4 player room battle"></td>
 </tr>
 </table>
 
