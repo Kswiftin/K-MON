@@ -42,14 +42,15 @@ final class EggBattleGateTests: XCTestCase {
         XCTAssertNotNil(s.battleFacadeMon)
     }
 
-    /// 동행이 있으면 그 개체가 나를 대표한다.
-    func testTheActiveCompanionRepresentsMeWhenThereIsOne() {
+    /// 대표 포켓몬을 안 정했으면 동행이 나를 대표한다 — 기본값은 예전 그대로다.
+    func testTheActiveCompanionRepresentsMeWhenNothingIsChosen() {
         let s = store()
         let mon = boxed(4)
         s.debugSetBoxedMons([mon, boxed(7)])
         s.switchCompanion(to: mon.id)
 
         XCTAssertFalse(s.isEgg)
+        XCTAssertNil(s.state.battleRepresentativeID)
         XCTAssertEqual(s.battleFacadeMon?.id, mon.id)
     }
 
@@ -63,6 +64,48 @@ final class EggBattleGateTests: XCTestCase {
 
         XCTAssertTrue(s.isEgg)
         XCTAssertEqual(s.battleFacadeMon?.id, chosen.id)
+    }
+
+    /// **트리거 브랜치 — 동행이 있는데 대표를 따로 정했을 때.**
+    ///
+    /// 예전엔 `state.active` 를 먼저 봐서, 동행이 있으면 대표 지정이 통째로 무시됐다. 그래서
+    /// 박스에 5★ 용으로 키워 둔 개체가 있어도 알을 품는 중이 아니면 내보낼 방법이 없었고,
+    /// FriendView 의 "대표 포켓몬" 은 알일 때만 듣는 반쪽 설정이었다.
+    func testTheChosenRepresentativeOutranksTheCompanion() {
+        let s = store()
+        let companion = boxed(4), chosen = boxed(7)
+        s.debugSetBoxedMons([companion, chosen])
+        s.switchCompanion(to: companion.id)
+        s.setBattleRepresentative(chosen.id)
+
+        XCTAssertFalse(s.isEgg, "동행이 있는 상태여야 이 분기를 밟는다")
+        XCTAssertEqual(s.battleFacadeMon?.id, chosen.id)
+    }
+
+    /// 동행 자신을 대표로 골라도 된다 — `ownedMons` 는 동행을 포함한다.
+    func testTheCompanionItselfCanBeTheRepresentative() {
+        let s = store()
+        let companion = boxed(4)
+        s.debugSetBoxedMons([companion, boxed(7)])
+        s.switchCompanion(to: companion.id)
+        s.setBattleRepresentative(companion.id)
+
+        XCTAssertEqual(s.battleFacadeMon?.id, companion.id)
+    }
+
+    /// **트리거 브랜치**: 대표로 정해 둔 개체가 체육관 방어팀에 들어가면 후보에서 빠진다.
+    /// 그때 id 만 믿고 nil 을 돌려주면 방 입장이 통째로 막혀, 대표가 잠긴 벌을 입장 실패로 받는다.
+    func testARepresentativeLockedInTheGymFallsBackToTheCompanion() {
+        let s = store()
+        let companion = boxed(4)
+        let team = (1...PlayerGym.defenseTeamSize).map { boxed(10 + $0) }
+        s.debugSetBoxedMons([companion] + team)
+        s.switchCompanion(to: companion.id)
+        s.becomeGymLeader()
+        s.setGymDefenseTeam(team.map(\.id))
+        s.setBattleRepresentative(team[0].id)
+
+        XCTAssertEqual(s.battleFacadeMon?.id, companion.id, "잠긴 대표 대신 내보낼 수 있는 것이 나간다")
     }
 
     /// 체육관에 배치한 개체는 내보낼 수 없다 — 그것뿐이면 알일 때와 같이 막혀야 한다.
