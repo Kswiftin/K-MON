@@ -10,6 +10,13 @@ enum PokedoroCommand: Equatable, Sendable {
     case status(oneline: Bool)
     case party
     case dex
+    case bag
+    /// 도전 — 던전 실적·배지·미션·시즌. 앱의 도전 탭이 한 화면에 두는 것과 같은 묶음이다.
+    case challenge
+    /// 도감 목표·업적. 둘 다 "다음에 무엇을 노릴까" 를 답하는 값이라 한 화면이다.
+    case goals
+    /// 개체 상세. 번호는 `party` 가 찍는 값(1부터)이고, 없으면 파트너다.
+    case mon(number: Int?)
     case watch
     case help
     /// 분을 안 적으면 `nil` 이다 — 기본 길이는 실행기가 고른다. 여기서 25 를 박으면 기본값이
@@ -24,7 +31,7 @@ enum PokedoroCommand: Equatable, Sendable {
         case .start: .start
         case .claim: .claim
         case .stop: .stop
-        case .status, .party, .dex, .watch, .help: nil
+        case .status, .party, .dex, .bag, .challenge, .goals, .mon, .watch, .help: nil
         }
     }
 }
@@ -38,6 +45,9 @@ enum PokedoroCommandError: Equatable, Error {
     /// 숫자가 아닌 집중 길이. **조용히 접지 않는다** — 기본값으로 접으면 사용자는 자기가 무엇을
     /// 켰는지 모른 채 같은 오타를 반복한다.
     case invalidMinutes(String)
+    /// 숫자가 아닌 개체 번호. 같은 부류지만 오류를 나눠 두는 이유는 **다음에 할 일이 다르기**
+    /// 때문이다 — 길이는 정해진 셋 중 하나를 골라야 하고, 번호는 `party` 가 찍어 준 값을 봐야 한다.
+    case invalidMonNumber(String)
 
     var message: String {
         switch self {
@@ -48,6 +58,8 @@ enum PokedoroCommandError: Equatable, Error {
             "집중 길이가 숫자가 아니다: \(raw) — "
                 + PokemonChatTool.focusMinutes.map(String.init).joined(separator: "·")
                 + " 중 하나를 쓴다."
+        case .invalidMonNumber(let raw):
+            "개체 번호가 숫자가 아니다: \(raw) — `party` 가 찍는 번호를 쓴다."
         }
     }
 }
@@ -94,9 +106,14 @@ enum PokedoroCommandParser {
             return .status(oneline: options.contains("--oneline"))
         case "party", "mons": return .party
         case "dex": return .dex
+        case "bag", "items": return .bag
+        case "challenge", "ch": return .challenge
+        case "goals", "goal": return .goals
+        case "mon": return .mon(number: try number(in: tail, orThrow: PokedoroCommandError.invalidMonNumber))
         case "watch", "top": return .watch
         case "help", "--help", "-h": return .help
-        case "start", "go": return .start(minutes: try minutes(in: tail))
+        case "start", "go":
+            return .start(minutes: try number(in: tail, orThrow: PokedoroCommandError.invalidMinutes))
         case "claim": return .claim
         case "stop", "cancel": return .stop
         default:
@@ -105,15 +122,20 @@ enum PokedoroCommandParser {
         }
     }
 
-    /// `start` 뒤의 길이. **없으면 `nil`, 숫자가 아니면 오류다.** 조용히 기본값으로 접으면
+    /// 명령 뒤의 숫자 인자. **없으면 `nil`, 숫자가 아니면 오류다.** 조용히 기본값으로 접으면
     /// `start 5o` 가 25분을 켜고, 사용자는 자기 오타를 영영 못 본다.
     ///
-    /// 범위는 여기서 안 본다 — 접는 표는 `PokemonChatTool.nearestFocusLength` 하나이고, 그 표는
-    /// 요청 파일을 손으로 고친 경우까지 막아야 해서 실행기 쪽에 있어야 한다.
-    private static func minutes(in arguments: [String]) throws -> Int? {
+    /// 검사는 한 곳이고 **오류는 부르는 쪽이 준다** — 길이와 번호는 다음에 할 일이 다르므로
+    /// 문구도 달라야 하지만, 자릿수 검사가 두 벌이 되면 한쪽만 관대해진다.
+    ///
+    /// 범위는 여기서 안 본다 — 집중 길이를 접는 표는 `PokemonChatTool.nearestFocusLength` 하나이고,
+    /// 그 표는 요청 파일을 손으로 고친 경우까지 막아야 해서 실행기 쪽에 있어야 한다. 개체 번호의
+    /// 상한도 로스터를 아는 쪽(`PokedoroCLI`)이 본다.
+    private static func number(in arguments: [String],
+                               orThrow error: (String) -> PokedoroCommandError) throws -> Int? {
         guard let raw = arguments.first(where: { !$0.hasPrefix("--") }) else { return nil }
         guard raw.allSatisfy(\.isASCII), raw.allSatisfy(\.isNumber), let value = Int(raw) else {
-            throw PokedoroCommandError.invalidMinutes(raw)
+            throw error(raw)
         }
         return value
     }
@@ -127,7 +149,11 @@ enum PokedoroCommandParser {
     private static let rows: [(String, String)] = [
         ("status [--oneline]", "파트너·모험·잔액. --oneline 은 상태줄용 한 줄"),
         ("party", "보유 포켓몬 목록"),
+        ("mon [번호]", "개체 상세 (생략하면 파트너)"),
         ("dex", "도감"),
+        ("bag", "가방 — 보유 아이템"),
+        ("challenge", "도전 — 던전 실적·배지·미션·시즌"),
+        ("goals", "도감 목표·업적"),
         ("watch", "전체 화면 실시간 보기"),
         ("start [\(lengths)]", "집중 세션 시작 (생략하면 \(PokemonChatTool.focusMinutes[0])분)"),
         ("claim", "끝난 모험의 보상 받기"),

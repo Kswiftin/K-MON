@@ -1,5 +1,18 @@
 import Foundation
 
+/// 진행도를 가진 목록 한 행 — 미션·시즌·도감 목표·업적이 화면에서 같은 모양이다.
+///
+/// 렌더가 스토어를 직접 읽지 않게 하는 자리다(`TUIHomeModel` 과 같은 이유). 네 원장의 타입이
+/// 서로 다르고 진행도는 `@MainActor` 스토어에서만 나오는데, 화면 조립은 그것과 무관하게 검증돼야 한다.
+struct TUIProgressRow: Equatable, Sendable {
+    var label: String
+    var value: Int
+    var target: Int
+    /// 목표에 닿았는가. `>=` 인 이유는 목표를 넘긴 진행도가 세이브에 남아 있을 수 있어서다
+    /// (손편집·구버전). `==` 로 보면 그 행이 영영 미완료로 보인다.
+    var isDone: Bool { value >= target }
+}
+
 /// 화면 한 프레임을 문자열 배열로 만든다. **부수효과 없음** — 터미널 출력은 `TUITerminal` 이 맡는다.
 ///
 /// 모든 반환 줄은 요청한 폭을 넘지 않아야 한다. 넘치면 터미널이 줄을 접어 다음 줄을 밀어내고,
@@ -58,6 +71,53 @@ enum TUIRender {
         String(repeating: "─", count: max(0, width))
     }
 
+    /// 커서 표식이 먹는 칸(`list` 가 붙이는 `"▸ "`).
+    static let listMarkerWidth = 2
+
+    /// 목록 행을 조립할 폭. **목록에 들어갈 행은 이 폭으로 만들어야 한다** — 전체 폭으로 만들면
+    /// `list` 가 표식을 앞에 붙인 뒤 `pad` 가 오른쪽을 잘라 내 값(개수·진행도)이 사라지고,
+    /// 라벨만 남으므로 사용자는 무엇이 잘렸는지도 모른다.
+    ///
+    /// 하한이 있는 이유는 아주 좁은 터미널에서 0 이하가 되면 `rows` 가 빈 줄만 내놓기 때문이다.
+    static func listRowWidth(_ width: Int) -> Int { max(1, width - listMarkerWidth) }
+
+    /// 완료 표식. 커서·활성 표식과 달리 **한 칸짜리**여야 한다 — 두 칸 기호를 쓰면 완료된 행만
+    /// 오른끝이 한 칸 밀린다.
+    static let doneMark = "✓"
+
+    /// 목록이 찍는 개체 번호(1부터). 사람이 세는 대로 찍는다 — 0 번 포켓몬을 보여 주면 사용자가
+    /// 무엇을 칠지 모른다.
+    static func printedRosterNumber(index: Int) -> Int { index + 1 }
+
+    /// 사용자가 친 번호 → 로스터 인덱스. **찍는 쪽과 받는 쪽이 이 한 쌍을 쓴다** — 한쪽만 0 부터
+    /// 세면 사용자는 자기가 고른 것과 다른 개체를 보고, 화면과 입력을 손으로 맞대 보기 전엔 모른다.
+    static func rosterIndex(printed number: Int) -> Int { number - 1 }
+
+    /// 라벨 + 오른끝 값 목록. 가방·개체 상세처럼 목표가 없는 값이 쓴다.
+    static func rows(_ entries: [(label: String, value: String)], width: Int) -> [String] {
+        entries.map { row(left: $0.label, right: $0.value, width: width) }
+    }
+
+    /// 진행 목록. 값 문자열을 만들어 `rows` 에 넘긴다 — 오른끝 정렬 규칙을 두 벌로 쓰지 않는다.
+    static func progress(_ entries: [TUIProgressRow], width: Int) -> [String] {
+        rows(entries.map { entry in
+            (label: entry.label,
+             value: "\(entry.value)/\(entry.target)" + (entry.isDone ? " \(doneMark)" : ""))
+        }, width: width)
+    }
+
+    /// 이동 키 안내. **지금 화면 키는 뺀다** — 눌러도 아무 일도 안 하는 키를 권하는 셈이다.
+    ///
+    /// 키와 이름을 `TUIScreen` 에서 읽는 이유는 키 표(`TUIKeymap`)와 같은 값을 보게 하기
+    /// 위해서다. 손으로 적으면 안내에 있는 키가 안 먹거나, 먹는 키가 안내에 없다.
+    static func screenHints(current: TUIScreen) -> String {
+        TUIScreen.allCases
+            .filter { $0 != current }
+            .map { "\($0.key) \($0.title)" }
+            .joined(separator: "  ")
+            + "  r 새로고침  q 종료"
+    }
+
     /// 홈 화면.
     ///
     /// `keyHints` 는 **전체 화면 보기(`watch`)에서만** 켠다. 한 번 찍고 끝나는 `status` 에
@@ -109,7 +169,7 @@ enum TUIRender {
             // **지금 누를 수 있는 키만** 보여 준다. 상태와 무관하게 다 나열하면 사용자가 먹지도
             // 않는 키를 누르고 화면은 거절 사유로 답한다 — 그건 안내가 아니라 함정이다.
             lines.append(TUIText.truncate(sessionHints(model), to: inner))
-            lines.append(TUIText.truncate("p 포켓몬  d 도감  r 새로고침  q 종료", to: inner))
+            lines.append(TUIText.truncate(screenHints(current: .home), to: inner))
         }
         return lines
     }

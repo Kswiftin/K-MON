@@ -170,6 +170,21 @@ struct TUIRenderTests {
         #expect(TUIRender.progress([], width: 20).isEmpty)
     }
 
+    // MARK: 개체 번호
+
+    /// 목록이 찍는 번호와 `mon <번호>` 가 받는 값은 **같은 표**를 읽어야 한다. 한쪽만 0 부터 세면
+    /// 사용자는 자기가 고른 것과 다른 개체를 보고, 화면과 입력을 손으로 맞대 보기 전엔 모른다.
+    @Test func testPrintedRosterNumbersRoundTrip() {
+        for index in 0..<5 {
+            #expect(TUIRender.rosterIndex(printed: TUIRender.printedRosterNumber(index: index)) == index)
+        }
+    }
+
+    /// 사람이 읽는 목록은 1 부터 센다 — 0 번 포켓몬을 찍으면 사용자가 무엇을 칠지 모른다.
+    @Test func testPrintedRosterNumbersStartAtOne() {
+        #expect(TUIRender.printedRosterNumber(index: 0) == 1)
+    }
+
     // MARK: 목록 표식 폭
 
     /// 목록 행은 **표식 칸을 뺀 폭**으로 조립해야 한다. 전체 폭으로 만들면 `list` 가 커서 표식을
