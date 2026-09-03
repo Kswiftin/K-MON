@@ -323,6 +323,45 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.creditRaidReward(300), 300)
     }
 
+    // MARK: 포획 원장 — 지급 원장과 갈라져 있어야 한다
+
+    /// 포획도 하루 한 마리다. 지급(`creditRaidReward`)과 **같은 규칙, 다른 원장**이다.
+    @MainActor
+    func testTheRaidCatchIsClaimedOncePerDay() {
+        let clock = TestClock()
+        let store = stubStore(clock, tag: "raid-catch-ledger")
+
+        XCTAssertFalse(store.raidCatchClaimedToday)
+        XCTAssertTrue(store.claimRaidCatch())
+        XCTAssertTrue(store.raidCatchClaimedToday)
+        XCTAssertFalse(store.claimRaidCatch(), "같은 날 두 번째 포획은 없다")
+
+        clock.advance(24 * 60 * 60)
+        XCTAssertTrue(store.claimRaidCatch(), "날짜 키가 넘어가면 다시 열린다")
+    }
+
+    /// **이 테스트가 원장을 따로 둔 이유 그 자체다.**
+    ///
+    /// 포획을 지급 원장에 태우면 이런 하루가 된다: 아침에 혼자 1★ 를 돌아 기본급 300 을 받는다 →
+    /// `raidRewardDate` 가 오늘로 찍힌다 → 점심에 친구들과 3★ 를 잡아도 지급이 0 이라 포획까지
+    /// 사라진다. 사용자는 아침에 잃은 것을 점심에야 알게 되고, 화면엔 아무 설명이 없다.
+    @MainActor
+    func testASmallSoloPayoutDoesNotBurnTodaysCatch() {
+        let store = stubStore(TestClock(), tag: "raid-catch-independent")
+
+        XCTAssertEqual(store.creditRaidReward(RaidTier.one.baseReward), RaidTier.one.baseReward)
+        XCTAssertTrue(store.raidRewardClaimedToday)
+
+        XCTAssertFalse(store.raidCatchClaimedToday, "지급 원장이 포획 원장을 태우면 안 된다")
+        XCTAssertTrue(store.claimRaidCatch())
+
+        // 반대 방향도 같다 — 포획을 먼저 해도 그날의 지급은 살아 있다.
+        let other = stubStore(TestClock(), tag: "raid-catch-independent-2")
+        XCTAssertTrue(other.claimRaidCatch())
+        XCTAssertFalse(other.raidRewardClaimedToday)
+        XCTAssertEqual(other.creditRaidReward(500), 500)
+    }
+
     // MARK: 게스트 시점 — 호스트와 갈라지는 축
 
     /// 오늘의 보스 한 마리. 게스트 검증(`validRaidStart`)을 통과하려면 종이 오늘의 종이어야 한다.
@@ -640,6 +679,39 @@ final class RaidRoomTests: XCTestCase {
         imported.raidRewardDate = "2026-09-02"
         current.raidRewardDate = "2026-08-01"
         XCTAssertEqual(SaveTransfer.rebasedForThisDevice(imported, current: current).raidRewardDate,
+                       "2026-09-02")
+    }
+
+    /// 포획 원장도 서명 대상이다 — 지우는 것만으로 같은 날 몇 마리든 다시 잡는다.
+    /// 잡은 개체는 박스에 영구히 남으므로 지급 원장보다 되돌리기 어렵다.
+    func testDeletingTheRaidCatchDateAfterSigningIsDetected() {
+        var state = CompanionState()
+        state.raidCatchDate = "2026-09-02"
+        var signed = SaveTransfer.signed(state)
+        XCTAssertFalse(SaveTransfer.isTampered(signed))
+
+        signed.raidCatchDate = ""
+        XCTAssertTrue(SaveTransfer.isTampered(signed), "지우는 방향이 곧 재포획 방향이다")
+    }
+
+    /// 조건부 append 여야 한다 — 무조건 붙이면 이 필드가 없던 정상 세이브가 전부 조작 판정된다.
+    func testDefaultStateGainsNoRaidCatchCanonicalSegment() {
+        XCTAssertFalse(SaveTransfer.canonicalString(CompanionState()).contains("|rc"))
+    }
+
+    /// 계정 원장이다 — 더 최근 날짜를 안 남기면 맥 A 에서 잡고 내보내 맥 B 로 불러오는 것만으로
+    /// 같은 날 두 마리가 된다(`raidRewardDate` 와 같은 부류·같은 이유).
+    func testRebaseKeepsTheNewerRaidCatchDate() {
+        var imported = CompanionState()
+        imported.raidCatchDate = "2026-08-01"
+        var current = CompanionState()
+        current.raidCatchDate = "2026-09-02"
+        XCTAssertEqual(SaveTransfer.rebasedForThisDevice(imported, current: current).raidCatchDate,
+                       "2026-09-02", "이 기기가 오늘 이미 잡았으면 잡은 것이다")
+
+        imported.raidCatchDate = "2026-09-02"
+        current.raidCatchDate = "2026-08-01"
+        XCTAssertEqual(SaveTransfer.rebasedForThisDevice(imported, current: current).raidCatchDate,
                        "2026-09-02")
     }
 
