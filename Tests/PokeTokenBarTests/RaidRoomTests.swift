@@ -623,4 +623,37 @@ final class RaidRoomTests: XCTestCase {
                                             opponentNames: [])]
         XCTAssertEqual(SaveTransfer.sanitized(state).battleHistory.count, 1)
     }
+
+    // MARK: 출전 포켓몬 고르기
+
+    private func mon(_ speciesID: Int) -> MonState {
+        MonState(baseID: speciesID, pathIDs: [speciesID], plannedPathIDs: [speciesID],
+                 stageIndex: 0, usedAtStage: 0, rarity: .common, totalForms: 1)
+    }
+
+    /// 고른 개체가 동행을 이긴다 — 이 규칙이 없으면 `battleFacadeMon` 이 언제나 동행을 돌려줘
+    /// 화면의 피커가 아무것도 바꾸지 못한다(고를 수 없던 그대로다).
+    func testAPickedMonOutranksTheCompanion() {
+        let companion = mon(25), picked = mon(143)
+        XCTAssertEqual(MultiplayerRoomCenter.pickedMon(picked.id, deployable: [companion, picked],
+                                                       fallback: companion)?.id, picked.id)
+    }
+
+    /// **트리거 브랜치**: 고른 뒤 그 개체가 체육관 방어팀에 들어가면 `deployableMons` 에서 빠진다.
+    /// 후보 목록을 안 보고 id 만 믿으면 여기서 nil 이 나와 방 입장 자체가 "포켓몬 정보를 불러오지
+    /// 못했습니다" 로 막힌다 — 고른 것이 사라진 벌을 입장 실패로 받는다.
+    func testAStalePickFallsBackInsteadOfBlockingEntry() {
+        let companion = mon(25), deployed = mon(143)
+        XCTAssertEqual(MultiplayerRoomCenter.pickedMon(deployed.id, deployable: [companion],
+                                                       fallback: companion)?.id, companion.id)
+    }
+
+    /// 안 고른 사용자는 오늘 동작 그대로다 — 피커는 선택 사항이라 기본값이 바뀌면 안 된다.
+    func testNoPickKeepsTheFacadeMon() {
+        let companion = mon(25)
+        XCTAssertEqual(MultiplayerRoomCenter.pickedMon(nil, deployable: [companion],
+                                                       fallback: companion)?.id, companion.id)
+        // 내보낼 개체가 하나도 없으면 여전히 nil 이다(알 하나뿐인 세이브).
+        XCTAssertNil(MultiplayerRoomCenter.pickedMon(companion.id, deployable: [], fallback: nil))
+    }
 }
