@@ -1,0 +1,13 @@
+{
+  "pins" : [
+    {
+      "identity" : "indexstore-db",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/indexstore-db.git",
+      "state" : {
+        "revision" : "54212fce1aecb199070808bdb265e7f17e396015"
+      }
+    }
+  ],
+  "version" : 2
+}
