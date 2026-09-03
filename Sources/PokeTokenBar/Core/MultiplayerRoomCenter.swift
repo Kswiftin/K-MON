@@ -120,6 +120,26 @@ final class MultiplayerRoomCenter {
 
     /// 이 방의 티어. 호스트는 방을 열 때, 게스트는 `.raidStart` 를 받을 때 채운다.
     private(set) var raidTier: RaidTier?
+    /// 레이드에 들고 갈 개체. **방에 들어가기 전에만 고른다** — 로비에서 바꾸려면 참가자
+    /// `speciesID` 와 스냅샷을 다시 뿌려야 해서 와이어 메시지가 늘어난다(`tournamentPickedTeam`
+    /// 이 방을 열기 전에 정해지는 것과 같은 이유다).
+    ///
+    /// 저장하지 않는다. 세이브에 넣으면 서명 대상 필드가 하나 늘고 이전 규칙까지 딸려 오는데,
+    /// 다시 고르는 비용은 탭 한 번이다. 방을 나가도 지우지 않는다(`tournamentPickedTeam` 과 같다).
+    var raidPickedMonID: UUID?
+
+    /// 이번에 내보낼 개체를 정하는 규칙. **고른 것이 후보에 남아 있을 때만** 이긴다.
+    ///
+    /// 고른 뒤 그 개체가 체육관 방어팀에 들어가면 `deployableMons` 에서 빠진다. 그때 id 만 믿고
+    /// nil 을 돌려주면 방 입장이 통째로 막혀, 고른 것이 사라진 벌을 입장 실패로 받는다.
+    ///
+    /// `nonisolated static` 인 이유는 `creditsRaceFinish` 와 같다 — 네트워크 없이 전 분기를
+    /// 검증하려고 순수 함수로 떼어 둔다.
+    nonisolated static func pickedMon(_ pick: UUID?, deployable: [MonState],
+                                      fallback: MonState?) -> MonState? {
+        guard let pick, let picked = deployable.first(where: { $0.id == pick }) else { return fallback }
+        return picked
+    }
     /// 참가자별 보스에게 넣은 피해. 호스트는 매 라운드 갱신하고, 게스트는 정산 메시지로 한 번 받는다.
     private(set) var raidContributions: [UUID: Int] = [:]
     /// 내 정산 내역 — 화면이 항목별로 그린다(지갑을 바꾼 값은 그 자리에서 설명돼야 한다).
@@ -316,8 +336,11 @@ final class MultiplayerRoomCenter {
         guard phase == .idle else { return }
         phase = .creating; lastError = nil
         let epoch = sessionEpoch
+        // 고른 개체는 레이드에만 실린다 — 다른 활동엔 피커가 없어서, 넘기면 화면에 없는 선택이
+        // 조용히 출전한다.
+        let pick = activity == .raid ? raidPickedMonID : nil
         Task {
-            guard let snapshot = await buildSnapshot() else {
+            guard let snapshot = await buildSnapshot(pick: pick) else {
                 guard sessionEpoch == epoch else { return }
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
@@ -616,8 +639,9 @@ final class MultiplayerRoomCenter {
         phase = .joining(room.name); lastError = nil
         hostingRole = false
         let epoch = sessionEpoch
+        let pick = RaidRoomName.isRaidRoomName(room.serviceName) ? raidPickedMonID : nil
         Task {
-            guard let snapshot = await buildSnapshot() else {
+            guard let snapshot = await buildSnapshot(pick: pick) else {
                 guard sessionEpoch == epoch else { return }
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
             }
@@ -1951,9 +1975,13 @@ final class MultiplayerRoomCenter {
     /// **동행이 알이어도 막지 않는다.** 예전엔 `state.active` 를 요구해서, 알을 품는 동안에는
     /// 박스에 키워 둔 개체가 아무리 많아도 방 계열(토너먼트·포켓슬론·퀴즈·체육관)에 못 들어갔다.
     /// 내보낼 개체가 하나라도 있으면 그걸로 만든다.
-    private func buildSnapshot() async -> BattleSnapshot? {
+    ///
+    /// `pick` 은 사용자가 고른 개체다(레이드). nil 이거나 후보에서 사라졌으면 예전처럼 대표 개체를
+    /// 쓴다 — 고르지 않은 사용자의 동작은 그대로다.
+    private func buildSnapshot(pick: UUID? = nil) async -> BattleSnapshot? {
         await companion.ensureInheritedMoves()
-        guard let mon = companion.battleFacadeMon else { return nil }
+        guard let mon = Self.pickedMon(pick, deployable: companion.deployableMons,
+                                       fallback: companion.battleFacadeMon) else { return nil }
         // 동행이면 지금 화면에 뜬 이름·레벨을 그대로 쓰고, 박스 개체면 그 개체 기준으로 만든다.
         if let active = companion.state.active, active.id == mon.id,
            let speciesID = companion.currentSpeciesID,
