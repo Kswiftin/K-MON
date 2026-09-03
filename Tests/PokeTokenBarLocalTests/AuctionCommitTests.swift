@@ -1,9 +1,16 @@
 import Foundation
 import Network
+import Observation
 import Testing
 @testable import PokeTokenBar
 
-struct AuctionSeededRNG: RandomNumberGenerator {
+/// 재진입 관측자를 **한 번만** 태우는 자리. `withObservationTracking` 의 `onChange` 는 그 안에서
+/// 스토어를 다시 건드리면 자기를 또 부르므로 무한 재귀로 죽는다 — 그 재귀는 결함이 아니라 이
+/// 테스트 장치의 부작용이고, 죽은 테스트는 실패 이유를 못 읽는다. 재진입을 한 번으로 묶어
+/// **그 한 번이 지갑에 남긴 결과**를 단정문으로 읽는다.
+private final class ObserverOnce: @unchecked Sendable { var fired = false }
+
+private struct AuctionSeededRNG: RandomNumberGenerator {
     var state: UInt64
     init(seed: UInt64) { state = seed }
     mutating func next() -> UInt64 {
@@ -15,7 +22,7 @@ struct AuctionSeededRNG: RandomNumberGenerator {
     }
 }
 
-struct AuctionStubProvider: PokeProviding {
+private struct AuctionStubProvider: PokeProviding {
     let value: EvoLine
     func line(baseSpeciesID: Int) async throws -> EvoLine { value }
     func baseSpeciesIndex() async throws -> [BaseSpecies] { [BaseSpecies(id: value.baseID, captureRate: 255)] }
@@ -487,5 +494,189 @@ enum AuctionFixtures {
                              offeringStardust: SaveTransfer.maxTokenValue + 5) != nil)
         #expect(center.outgoingOffers.first?.stardust == SaveTransfer.maxTokenValue,
                 "상한을 넘겨 보내면 게시자가 받자마자 거절한다")
+    }
+
+    // MARK: 배열 첨자를 스토어 변이 너머로 들고 있는 부류 (#229)
+
+    /// **커밋 도중에 제안 배열이 흔들려도 에스크로 표시는 그 제안에 남아야 한다.**
+    ///
+    /// `.accepted` 는 첨자 하나를 일곱 번의 subscript 접근 동안 들고 있었고, 그 중간에
+    /// `escrowStarPieces` → `save()` 가 낀다. 저장이 관측을 깨우고 그 관측자가 `outgoingOffers`
+    /// 를 건드리면 첨자는 그 자리에서 낡는다 — 남의 제안에 에스크로 표시가 찍히고, 정작 별의모래를
+    /// 낸 제안은 환불 대상에서 빠진다. 배열이 짧아지는 방향이면 첨자가 그대로 터진다.
+    ///
+    /// 재진입은 **실제 `Observation`** 으로 만든다. 테스트 전용 훅을 프로덕션에 심으면 그 훅이
+    /// 프로덕션 경로의 사본이 되어, 정작 실사용 경로는 무검증으로 남는다.
+    @Test func anOfferRemovedMidCommitDoesNotMoveTheEscrowToItsNeighbour() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let alsoMine = remoteMon(baseID: 30)
+        #expect(store.receiveAuctionPokemon(alsoMine))
+        store.creditStarPieces(100)
+        let center = PokemonAuctionCenter(companion: store)
+
+        // 등록 순서가 곧 배열 순서다. 가운데(별의모래)를 수락시키고 앞을 치우면 첨자가 뒤로 민다.
+        let ahead = listing(for: remoteMon(baseID: 20))
+        let paying = remoteMon(baseID: 21)
+        let behind = listing(for: remoteMon(baseID: 22))
+        #expect(center.apply(to: ahead, offering: mine) != nil)
+        let payingConnection = try #require(center.apply(to: listing(for: paying),
+                                                         offeringStardust: 100))
+        #expect(center.apply(to: behind, offering: alsoMine) != nil)
+        let aheadID = try #require(offer(center, on: ahead.id)?.id)
+        let payingID = center.outgoingOffers[1].id
+
+        // 지갑을 보는 관측자 하나. 에스크로가 지갑을 건드리는 순간 앞 제안을 치운다 —
+        // 그 제안은 별의모래가 0 이라 여기서 스토어를 되건드리지 않는다.
+        withObservationTracking {
+            _ = store.state.starPieces
+        } onChange: {
+            MainActor.assumeIsolated { center.clearOutgoingResult(aheadID) }
+        }
+
+        center.receive(.accepted(offerID: payingID, pokemon: snapshot(paying)),
+                       connectionID: payingConnection)
+
+        #expect(center.outgoingOffers.count == 2, "관측자가 앞 제안을 치웠어야 한다")
+        #expect(offer(center, on: behind.id)?.stardustEscrowed == false,
+                "별의모래를 내지 않은 제안에 에스크로 표시가 찍혔다 — 첨자가 낡았다")
+        let payer = try #require(center.outgoingOffers.first { $0.id == payingID })
+        #expect(payer.stardustEscrowed,
+                "별의모래를 낸 제안이 환불 대상에서 빠졌다 — 실패하면 100 이 사라진다")
+        #expect(store.availableTokens == 0)
+    }
+    /// **커밋을 마친 뒤에도 완료 표시는 그 제안에 남아야 한다.**
+    ///
+    /// `.completed` 는 `.accepted` 보다 나쁘다 — 첨자를 `performTrade`·`receiveAuctionPokemon`
+    /// 너머로 들고 있었고, 그 둘은 세이브·앨범·대화 기록을 통째로 흔든다. 표시가 옆 제안에
+    /// 찍히면 별의모래를 낸 제안이 `.accepted` + 에스크로인 채로 남아, 게시자는 이미 지급받았는데
+    /// 신청자 쪽에서 환불이 한 번 더 나간다 — **화폐 복제**다.
+    @Test func anOfferRemovedAfterTheCommitDoesNotMoveTheCompletionToItsNeighbour() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        // 개체는 하나뿐이라 뒤에 설 제안은 별의모래 1 짜리로 세운다.
+        store.creditStarPieces(101)
+        let center = PokemonAuctionCenter(companion: store)
+
+        let ahead = listing(for: remoteMon(baseID: 20))
+        let paying = remoteMon(baseID: 21)
+        let behind = listing(for: remoteMon(baseID: 22))
+        #expect(center.apply(to: ahead, offering: mine) != nil)
+        let payingConnection = try #require(center.apply(to: listing(for: paying),
+                                                         offeringStardust: 100))
+        #expect(center.apply(to: behind, offeringStardust: 1) != nil)
+        let aheadID = try #require(offer(center, on: ahead.id)?.id)
+        let payingID = center.outgoingOffers[1].id
+
+        center.receive(.accepted(offerID: payingID, pokemon: snapshot(paying)),
+                       connectionID: payingConnection)
+        #expect(offer(center, on: behind.id)?.status == .pending)
+
+        // 관측자는 **커밋 뒤에** 깨어난다 — `receiveAuctionPokemon` 의 저장이 그 자리다.
+        withObservationTracking {
+            _ = store.state.starPieces
+        } onChange: {
+            MainActor.assumeIsolated { center.clearOutgoingResult(aheadID) }
+        }
+
+        center.receive(.completed(offerID: payingID, memories: nil), connectionID: payingConnection)
+
+        // 관측자가 실제로 깨어났는지 **먼저** 단정한다. 안 깨어나면 아래 세 줄은 배열이 그대로인
+        // 채로 다 통과해, 회귀 테스트가 트리거를 잃고도 초록으로 남는다.
+        #expect(center.outgoingOffers.count == 2, "관측자가 앞 제안을 치웠어야 한다")
+        let payer = try #require(center.outgoingOffers.first { $0.id == payingID })
+        #expect(payer.status == .completed, "완료 표시가 옆 제안에 찍혔다 — 첨자가 낡았다")
+        #expect(payer.stardustEscrowed == false,
+                "별의모래는 상대에게 건너갔다 — 환불 대상으로 남으면 화폐가 복제된다")
+        #expect(offer(center, on: behind.id)?.status == .pending, "남의 제안이 완료로 바뀌었다")
+    }
+
+    /// 모르는 제안 ID 로 온 프레임은 **아무 제안도 건드리지 않는다.** 프레임은 상대가 보내는
+    /// 값이라 이 경로가 곧 신뢰경계다. 첨자를 쓰던 때는 "못 찾음" 을 호출부마다 따로 막아야
+    /// 했고, 그래서 새 호출부가 무검사로 남을 수 있었다 — 지금은 여는 헬퍼가 한 곳에서 막는다.
+    @Test func aFrameForAnUnknownOfferTouchesNothing() throws {
+        let store = makeStore()
+        store.creditStarPieces(100)
+        let theirs = remoteMon()
+        let center = PokemonAuctionCenter(companion: store)
+        let connection = try #require(center.apply(to: listing(for: theirs), offeringStardust: 100))
+
+        center.receive(.accepted(offerID: UUID(), pokemon: snapshot(theirs)), connectionID: connection)
+
+        #expect(center.outgoingOffers.count == 1)
+        #expect(center.outgoingOffers.first?.status == .pending, "남의 제안 ID 한 장이 내 국면을 움직였다")
+        #expect(center.outgoingOffers.first?.stardustEscrowed == false)
+        #expect(store.availableTokens == 100, "모르는 제안에 에스크로가 걷혔다")
+    }
+
+    /// 모르는 ID 대신 **내 다른 제안의 ID** 가 엉뚱한 연결로 오는 경우. 위 테스트는 처음 보는
+    /// UUID 를 쓰므로 "못 찾음" 경로만 밟고 지나가지만, 같은 상대에게 두 건을 걸어 두면 상대는
+    /// 두 ID 를 다 알고 있다 — 국면만 연결로 걸러 놓고 환불을 ID 로 하면 프레임 한 장이 **아직
+    /// 살아 있는** 제안의 에스크로를 풀어 주고, 그 제안은 그대로 성사돼 별의모래가 복제된다.
+    @Test func aFrameOnTheWrongConnectionDoesNotRefundALiveEscrow() throws {
+        let store = makeStore()
+        store.creditStarPieces(200)
+        let theirs = remoteMon(baseID: 20), others = remoteMon(baseID: 21)
+        let center = PokemonAuctionCenter(companion: store)
+        let escrowed = try #require(center.apply(to: listing(for: theirs), offeringStardust: 100))
+        let other = try #require(center.apply(to: listing(for: others), offeringStardust: 100))
+        let escrowedID = try #require(center.outgoingOffers.first?.id)
+
+        center.receive(.accepted(offerID: escrowedID, pokemon: snapshot(theirs)), connectionID: escrowed)
+        #expect(store.availableTokens == 100, "에스크로가 걷혔어야 한다")
+
+        // 같은 ID 를 **다른 연결**로 보낸다. 국면도 지갑도 움직이지 않아야 한다.
+        center.receive(.accepted(offerID: escrowedID, pokemon: snapshot(theirs)), connectionID: other)
+
+        #expect(store.availableTokens == 100, "남의 연결로 온 프레임 한 장이 살아 있는 에스크로를 풀었다")
+        let live = try #require(center.outgoingOffers.first { $0.id == escrowedID })
+        #expect(live.status == .accepted, "남의 연결 프레임이 커밋 중인 제안을 실패로 끌어내렸다")
+        #expect(live.stardustEscrowed, "환불 대상 표시가 지워지면 실패해도 별의모래가 돌아오지 않는다")
+    }
+
+    /// **환불은 표시를 먼저 지우고 지급한다.** 지급이 저장을 돌리고, 그 저장을 본 관측자가 같은
+    /// 제안을 다시 정리로 끌면(`clearOutgoingResult` 에도 환불이 붙어 있다) 표시가 아직 서 있어
+    /// 같은 에스크로가 **두 번** 나간다 — 첨자 결함과 같은 재진입이고, 이쪽은 화폐 복제다.
+    @Test func aRefundSeenByAnObserverIsNotPaidTwice() throws {
+        let store = makeStore()
+        store.creditStarPieces(100)
+        let theirs = remoteMon(baseID: 20)
+        let center = PokemonAuctionCenter(companion: store)
+        let connection = try #require(center.apply(to: listing(for: theirs), offeringStardust: 100))
+        let offerID = try #require(center.outgoingOffers.first?.id)
+
+        center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
+        #expect(store.availableTokens == 0, "에스크로가 걷혔어야 한다")
+
+        // 지급이 지갑을 건드리는 **그 자리에서** 같은 제안을 치운다 — 치우는 경로에도 환불이 있다.
+        let once = ObserverOnce()
+        withObservationTracking {
+            _ = store.state.starPieces
+        } onChange: {
+            MainActor.assumeIsolated {
+                guard !once.fired else { return }
+                once.fired = true
+                center.clearOutgoingResult(offerID)
+            }
+        }
+
+        center.receive(.failed(offerID: offerID), connectionID: connection)
+
+        #expect(center.outgoingOffers.isEmpty, "관측자가 제안을 치웠어야 한다")
+        #expect(store.availableTokens == 100, "같은 에스크로가 두 번 환불됐다 — 별의모래가 복제된다")
+    }
+
+    /// 신청자가 제안을 거둬들이면 **게시자 쪽 자리도 풀려야 한다.** 안 풀리면 잠긴 자리 때문에
+    /// 게시자는 다음 제안을 수락할 수 없고, 화면에는 답을 기다리는 카드가 영영 남는다.
+    @Test func anApplicantsFailureFrameReleasesTheListersSlot() async throws {
+        let store = makeStore()
+        let (center, _, connection, offerID) = await listingCenter(store, offering: remoteMon(baseID: 40))
+        #expect(center.offers.first?.status == .pending)
+
+        center.receive(.failed(offerID: offerID), connectionID: connection)
+
+        #expect(center.offers.first?.status == .failed)
     }
 }
