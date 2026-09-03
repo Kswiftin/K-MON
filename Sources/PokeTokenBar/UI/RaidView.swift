@@ -253,6 +253,12 @@ struct RaidView: View {
                     settlementRow(l.raidContribution, settlement.contribution)
                     settlementRow(l.raidTurnsLeft, settlement.turnBonus)
                     settlementRow(l.raidRewardSurvivors, settlement.survivorBonus)
+                    // 협동 항이 접힌 판은 **그 사실을 말한다** — 안 말하면 `+0 ✨` 세 줄이 규칙이
+                    // 아니라 계산 오류로 읽힌다(아래 하루 한 번 게이트와 같은 이유). 지급이 0 이
+                    // 아니라 그 문구는 안 뜨는 자리다.
+                    if !RaidBoss.coopTermsApply(runnerCount: runnerCount) {
+                        Text(l.raidSoloSettlement).font(.caption2).foregroundStyle(.orange)
+                    }
                     Divider().opacity(0.5)
                     if let payout = center.raidPayout, payout > 0 {
                         settlementRow(l.t("지급", "Paid", "支給"), payout, emphasized: true)
@@ -272,6 +278,11 @@ struct RaidView: View {
             Button(l.t("나가기", "Leave", "退出")) { center.leaveRoom() }
                 .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
         }
+    }
+
+    /// 이 판의 러너 수 — 보스는 사람이 아니라 세지 않는다(정산이 같은 배열에서 세는 것과 같다).
+    private var runnerCount: Int {
+        center.combatFighters.filter { $0.team == .red }.count
     }
 
     /// 누가 보스를 데려갔나. **남이 뽑힌 판도 말해 준다** — 아무 말이 없으면 "나만 못 받았다" 가

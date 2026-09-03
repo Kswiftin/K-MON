@@ -120,6 +120,10 @@ enum RaidBoss {
     /// 협동 항이 붙기 시작하는 머릿수. 이 값 미만이면 정산은 기본급 하나로 접히고 포획도 없다.
     static let minimumCoopRunners = 2
 
+    /// 이 머릿수에 협동 항이 붙나. **정산과 화면이 같은 술어를 본다** — 화면이 "협동 보너스는 2명
+    /// 이상부터" 를 그리는 조건을 따로 적으면, 머릿수 기준을 옮긴 날 문구와 실제 정산이 갈린다.
+    static func coopTermsApply(runnerCount: Int) -> Bool { runnerCount >= minimumCoopRunners }
+
     /// 예약 부화는 항상 5★ 다 — 예약이 존재하는 이유가 "혼자서는 못 여는 티어를 위해 사람을 모으는
     /// 것" 이라서다. 아무 때나 여는 방은 1★·3★ 만 고를 수 있다.
     static let hatchTier = RaidTier.five
@@ -238,7 +242,7 @@ enum RaidBoss {
     static func settlement(tier: RaidTier, myDamage: Int, totalDamage: Int,
                            turnsRemaining: Int, survivingRunners: Int,
                            runnerCount: Int) -> RaidSettlement {
-        guard runnerCount >= minimumCoopRunners else {
+        guard coopTermsApply(runnerCount: runnerCount) else {
             return RaidSettlement(base: tier.baseReward, contribution: 0,
                                   turnBonus: 0, survivorBonus: 0)
         }

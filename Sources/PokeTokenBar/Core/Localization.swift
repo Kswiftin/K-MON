@@ -1288,6 +1288,13 @@ struct L {
     }
     /// 오늘의 한 마리를 이미 데려온 판. **불러오기 실패와 갈라 둔다** — 그 문구는 "오늘 다시 도전할
     /// 수 있어요" 로 끝나는데, 이 판에서는 그게 거짓이다.
+    /// 정산표 — 혼자 돈 판. **말 안 하면 `+0 ✨` 세 줄이 계산 오류로 읽힌다**(하루 한 번 게이트를
+    /// 말해 주는 것과 같은 이유). 지급이 0 이 아니라 그쪽 문구는 안 뜨는 자리다.
+    var raidSoloSettlement: String {
+        t("혼자 돈 판은 기본급만 나가요 — 기여·남은 턴·생존 보너스는 2명 이상부터예요.",
+          "A solo clear pays the base only - contribution, turns left and survivor bonuses need 2+ runners.",
+          "ソロ周回は基本給のみです — 貢献・残りターン・生存ボーナスは2人以上からです。")
+    }
     var raidCatchAlreadyToday: String {
         t("오늘은 이미 보스를 데려왔어요 — 포획은 하루 한 마리예요.",
           "You already took a boss home today - one catch per day.",

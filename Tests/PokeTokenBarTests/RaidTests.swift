@@ -189,6 +189,21 @@ final class RaidTests: XCTestCase {
         XCTAssertEqual(solo.total, RaidTier.one.baseReward)
     }
 
+    /// 화면과 정산이 **같은 술어**를 본다. 정산표에 `+0 ✨` 세 줄이 이유 없이 뜨면 규칙이 아니라
+    /// 계산 오류로 읽히므로 화면이 그 자리에서 설명해야 하고(`raidAlreadyPaidToday` 와 같은 이유),
+    /// 설명 조건을 따로 적으면 문구와 실제 정산이 갈린다.
+    func testCoopTermsApplyExactlyWhenTheSettlementKeepsThem() {
+        XCTAssertFalse(RaidBoss.coopTermsApply(runnerCount: 1), "혼자면 협동 항이 없다")
+        XCTAssertTrue(RaidBoss.coopTermsApply(runnerCount: RaidBoss.minimumCoopRunners))
+        for count in 0...4 {
+            let settled = RaidBoss.settlement(tier: .three, myDamage: 800, totalDamage: 800,
+                                              turnsRemaining: 5, survivingRunners: count,
+                                              runnerCount: count)
+            XCTAssertEqual(settled.contribution > 0, RaidBoss.coopTermsApply(runnerCount: count),
+                           "\(count)인 판에서 화면 술어와 정산이 갈린다")
+        }
+    }
+
     /// **대조군.** 같은 입력에 사람만 하나 더 있으면 네 항이 전부 산다 — 이걸 안 재면
     /// "협동 항이 통째로 죽었다" 도 초록이다.
     func testTwoRunnersKeepEveryCoopTerm() {

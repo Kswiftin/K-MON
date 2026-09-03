@@ -551,7 +551,7 @@ final class MultiplayerRoomCenter {
         // 머릿수 게이트는 **참가자 전체**로 센다. 살아남은 수로 세면 동료가 쓰러진 협동 판이
         // 포획 없는 판이 되는데, 그 동료는 실제로 같이 싸웠다.
         let eligible = runners.filter(\.isAlive)
-        guard tier.grantsCatch, runners.count >= RaidBoss.minimumCoopRunners,
+        guard tier.grantsCatch, RaidBoss.coopTermsApply(runnerCount: runners.count),
               let winner = RaidBoss.catcher(runnerIDs: eligible.map(\.id), seed: raidSeed,
                                             finishedRound: raidFinishedRound) else { return }
         raidCatcherID = winner
