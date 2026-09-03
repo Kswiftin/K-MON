@@ -146,13 +146,29 @@ final class PokemonAuctionCenter {
         offers.removeAll { $0.listingID == listingID }
     }
 
+    /// 아직 어느 제안에도 약속하지 않은 별의모래. 에스크로는 **수락 시점**에 걷히므로 잔액만
+    /// 보면 지킬 수 없는 제안을 여러 건 걸게 된다. **등록 가드와 화면이 같은 이 값을 본다** —
+    /// 두 벌로 두면 한쪽만 넓어져 버튼은 켜지는데 센터가 조용히 거절한다.
+    var unpledgedTokens: Int {
+        let pledged = outgoingOffers
+            .filter { !$0.stardustEscrowed && $0.status.isLive }
+            .reduce(0) { $0 + $1.stardust }
+        return max(0, companion.availableTokens - pledged)
+    }
+
+    /// 제안을 하나 더 걸 수 있는가. 정원은 **살아 있는 제안만** 센다 — 치우지 않은 결과 카드가
+    /// 자리를 먹으면 화면이 이유 없이 잠긴다(끝난 제안은 연결도 곧 닫힌다).
+    var canRegisterOffer: Bool {
+        outgoingOffers.filter { $0.status.isLive }.count < Self.maxOutgoingOffers
+    }
+
     /// 이 개체가 **이미 어딘가에 걸려 있는가** — 내 게시물이든, 내가 건 제안이든.
     ///
     /// 같은 개체가 두 자리를 받치면 둘 다 수락됐을 때 같은 포켓몬이 두 번 커밋된다(하나는
     /// 실패로 끝나지만 그 실패가 어느 쪽인지는 순서 나름이다). 제안이 하나뿐이던 때부터 있던
     /// 구멍인데, 제안이 여러 건 서면 훨씬 쉽게 밟힌다. 호출부마다 가드를 두면 새 호출부가
-    /// 무검사로 남으므로 판정은 여기 하나다.
-    private func isCommitted(_ monID: UUID) -> Bool {
+    /// 무검사로 남으므로 판정은 여기 하나다. 화면도 후보를 이 판정으로 거른다.
+    func isCommitted(_ monID: UUID) -> Bool {
         localListings.values.contains { $0.mon.id == monID }
             || outgoingOffers.contains { $0.monID == monID && $0.status.isLive }
     }
@@ -169,13 +185,10 @@ final class PokemonAuctionCenter {
 
     @discardableResult
     func apply(to listing: AuctionListing, offeringStardust amount: Int) -> UUID? {
-        // 에스크로는 **수락 시점**에 걷힌다 — 등록만 보면 지갑을 넘는 제안을 여러 건 걸 수 있고,
-        // 그러면 뒤에 수락된 제안이 잔액 부족으로 실패한다. 아직 안 걷힌 약속분을 함께 센다
-        // (이미 걷힌 제안은 `availableTokens` 에서 빠져 있으니 두 번 세면 안 된다).
-        let pledged = outgoingOffers
-            .filter { !$0.stardustEscrowed && $0.status.isLive }
-            .reduce(0) { $0 + $1.stardust }
-        guard amount > 0, companion.availableTokens - pledged >= amount else { return nil }
+        // 게시자의 `isValid` 는 상한을 넘는 별의모래를 무조건 거절한다. 보내기 전에 잘라야
+        // 왕복 한 번을 거절로 버리지 않는다 — 지갑 자체가 상한을 넘은 세이브에서만 밟힌다.
+        let amount = min(amount, SaveTransfer.maxTokenValue)
+        guard amount > 0, unpledgedTokens >= amount else { return nil }
         return register(on: listing, monID: nil, stardust: amount, value: .stardust(amount))
     }
 
@@ -183,7 +196,10 @@ final class PokemonAuctionCenter {
     /// 국면 필드를 한쪽에만 더하면 다른 쪽이 조용히 옛 값을 들고 갔다.
     private func register(on listing: AuctionListing, monID: UUID?, stardust: Int,
                           value: AuctionOfferValue) -> UUID? {
-        guard outgoingOffers.count < Self.maxOutgoingOffers else { return nil }
+        guard canRegisterOffer else { return nil }
+        // 새 동작은 앞선 실패의 자국을 지운다. 이 줄이 없으면 `accept` 가 남긴 전역 한 줄이
+        // 지울 방법 없이 화면 아래 영영 붙어 있다.
+        lastError = nil
         let connectionID = UUID(), offerID = UUID()
         let connection = NWConnection(to: listing.endpoint, using: Self.parameters())
         connections[connectionID] = connection
@@ -201,7 +217,7 @@ final class PokemonAuctionCenter {
                               on: connection, id: connectionID)
                 // `.cancelled` 도 본다. 여기서 안 보면 상대가 정상 종료한 연결이 좀비로 남아
                 // 제안이 영영 `.pending` 이고 그 개체는 다른 제안에도 못 쓴다.
-                case .failed, .cancelled: self.drop(connectionID, failed: true)
+                case .failed, .cancelled: self.drop(connectionID)
                 default: break
                 }
             }
@@ -221,7 +237,10 @@ final class PokemonAuctionCenter {
 
     /// 끝난 제안을 화면에서 치운다. 에스크로 환불·연결·타이머까지 이 자리에서 함께 끝낸다.
     func clearOutgoingResult(_ offerID: UUID) {
-        guard let index = outgoingOffers.firstIndex(where: { $0.id == offerID }) else { return }
+        // 커밋이 시작된 제안(`.accepted`)은 치우지 않는다. 여기서 에스크로를 돌려주면 게시자는
+        // 이미 넘긴 뒤라 별의모래가 복제되고 개체는 아무에게도 가지 않는다.
+        guard let index = outgoingOffers.firstIndex(where: { $0.id == offerID }),
+              outgoingOffers[index].status != .accepted else { return }
         refundStardustIfNeeded(at: index)
         outgoingTimeouts.removeValue(forKey: offerID)?.cancel()
         let connectionID = outgoingOffers[index].connectionID
@@ -248,6 +267,7 @@ final class PokemonAuctionCenter {
                                     "出品したポケモンを確認できません。")
             return
         }
+        lastError = nil
         offers[index].status = .accepted
         send(.accepted(offerID: offerID, pokemon: listing), on: connection, id: connectionID)
     }
@@ -288,9 +308,17 @@ final class PokemonAuctionCenter {
         case .accepted(let offerID, let pokemon):
             // 프레임은 **연결과 제안 ID 가 둘 다** 맞는 제안에만 닿는다. 제안이 여럿이라
             // 연결만 보면 남의 제안 국면을 움직인다.
-            guard let index = outgoingIndex(offerID, connectionID),
-                  outgoingOffers[index].status == .pending,
-                  canCommitOutgoing(at: index, received: pokemon) else {
+            guard let index = outgoingIndex(offerID, connectionID) else {
+                failOutgoing(offerID, on: connection, id: connectionID,
+                             reason: companion.l.t("교환을 완료하지 못했습니다.",
+                                                   "Trade could not be completed.",
+                                                   "交換を完了できませんでした。"))
+                return
+            }
+            // 같은 `.accepted` 가 또 오면 **무시한다.** 커밋이 시작된 제안을 여기서 실패로
+            // 끌어내리면 게시자는 이미 넘긴 뒤라 에스크로만 돌아오고 개체는 사라진다.
+            guard outgoingOffers[index].status == .pending else { return }
+            guard canCommitOutgoing(at: index, received: pokemon) else {
                 failOutgoing(offerID, on: connection, id: connectionID,
                              reason: companion.l.t("교환을 완료하지 못했습니다.",
                                                    "Trade could not be completed.",
@@ -487,7 +515,7 @@ final class PokemonAuctionCenter {
                     self.attach(connection, id: id)
                     connection.stateUpdateHandler = { [weak self] state in
                         switch state {
-                        case .failed, .cancelled: Task { @MainActor in self?.drop(id, failed: true) }
+                        case .failed, .cancelled: Task { @MainActor in self?.drop(id) }
                         default: break
                         }
                     }
@@ -557,7 +585,7 @@ final class PokemonAuctionCenter {
         frame.append(payload)
         connection.send(content: frame, completion: .contentProcessed { [weak self] error in
             guard error != nil else { return }
-            Task { @MainActor in self?.drop(id, failed: true) }
+            Task { @MainActor in self?.drop(id) }
         })
     }
 
@@ -565,7 +593,7 @@ final class PokemonAuctionCenter {
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { [weak self, weak connection] data, _, _, _ in
             guard let self, let connection, let data, data.count == 4 else { return }
             let length = data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }.bigEndian
-            guard length > 0, length <= Self.maxMessageBytes else { Task { @MainActor in self.drop(id, failed: true) }; return }
+            guard length > 0, length <= Self.maxMessageBytes else { Task { @MainActor in self.drop(id) }; return }
             Task { @MainActor in self.receiveBody(Int(length), on: connection, id: id) }
         }
     }
@@ -581,7 +609,7 @@ final class PokemonAuctionCenter {
         }
     }
 
-    private func drop(_ id: UUID, failed: Bool) {
+    private func drop(_ id: UUID) {
         connections[id]?.cancel(); connections[id] = nil
         // 커밋을 기다리던 제안이면 실패로 남긴다. 그냥 지우면 게시자 화면에 "교환 처리 중" 이
         // 영영 남고, 잠긴 자리 때문에 다른 제안도 수락할 수 없다.
@@ -593,7 +621,7 @@ final class PokemonAuctionCenter {
         connectionOfferIDs[id] = nil
         // 이 연결을 쓰던 **내 제안 하나만** 실패로 남긴다. 연결이 제안별이라 남의 제안은
         // 그대로 살아 있어야 한다.
-        if failed, let index = outgoingOffers.firstIndex(where: { $0.connectionID == id }),
+        if let index = outgoingOffers.firstIndex(where: { $0.connectionID == id }),
            outgoingOffers[index].status.isLive {
             outgoingOffers[index].status = .failed
             refundStardustIfNeeded(at: index)

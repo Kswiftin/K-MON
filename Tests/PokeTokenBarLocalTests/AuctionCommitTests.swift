@@ -383,4 +383,90 @@ private struct AuctionStubProvider: PokeProviding {
         #expect(center.apply(to: listing(for: remoteMon(baseID: 22)), offeringStardust: 30) != nil)
         #expect(center.outgoingOffers.count == 2)
     }
+
+    /// **커밋이 시작된 제안은 치울 수 없다.** 에스크로는 수락 시점에 걷히고 게시자는 그 다음
+    /// 프레임에서 자기 개체를 넘긴다 — 그 사이에 "확인" 이 눌리면 별의모래만 돌아오고 개체는
+    /// 아무에게도 가지 않는다(화폐 복제).
+    @Test func clearingAnOfferMidCommitCannotRefundTheEscrow() throws {
+        let store = makeStore()
+        store.creditStarPieces(100)
+        let theirs = remoteMon()
+        let center = PokemonAuctionCenter(companion: store)
+        let connection = try #require(center.apply(to: listing(for: theirs), offeringStardust: 100))
+        let offerID = try #require(center.outgoingOffers.first?.id)
+
+        center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
+        #expect(center.outgoingOffers.first?.status == .accepted)
+        #expect(store.availableTokens == 0, "에스크로는 수락 시점에 걷힌다")
+
+        center.clearOutgoingResult(offerID)
+
+        #expect(store.availableTokens == 0, "커밋 중에 치우면 별의모래가 복제된다")
+        #expect(center.outgoingOffers.first?.status == .accepted)
+    }
+
+    /// 같은 `.accepted` 가 두 번 오는 것은 **되돌릴 이유가 아니다.** 실패로 끌어내리면 게시자는
+    /// 이미 넘긴 뒤라 에스크로만 돌아오고 개체는 사라진다.
+    @Test func aRepeatedAcceptedFrameLeavesTheCommitAlone() throws {
+        let store = makeStore()
+        store.creditStarPieces(100)
+        let theirs = remoteMon()
+        let center = PokemonAuctionCenter(companion: store)
+        let connection = try #require(center.apply(to: listing(for: theirs), offeringStardust: 100))
+        let offerID = try #require(center.outgoingOffers.first?.id)
+
+        center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
+        center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
+
+        #expect(center.outgoingOffers.first?.status == .accepted, "같은 프레임이 커밋을 되돌렸다")
+        #expect(store.availableTokens == 0, "되돌리면 에스크로만 돌아온다")
+    }
+
+    /// 정원은 **살아 있는 제안만** 센다. 끝난 제안까지 세면 치우지 않은 결과 카드 여덟 장이
+    /// 시장을 통째로 잠근다 — 버튼은 회색인데 이유는 어디에도 안 적힌다.
+    @Test func theOfferCapCountsOnlyLiveOffers() throws {
+        let store = makeStore()
+        // 지갑은 정원보다 한 칸 넉넉하게 — 막히는 이유가 잔액이 아니라 정원이어야 한다.
+        store.creditStarPieces(PokemonAuctionCenter.maxOutgoingOffers + 1)
+        let center = PokemonAuctionCenter(companion: store)
+        for index in 0..<PokemonAuctionCenter.maxOutgoingOffers {
+            #expect(center.apply(to: listing(for: remoteMon(baseID: 20 + index)),
+                                 offeringStardust: 1) != nil)
+        }
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 19)), offeringStardust: 1) == nil,
+                "정원이 찼다")
+
+        let declined = try #require(center.outgoingOffers.first)
+        center.receive(.declined(offerID: declined.id), connectionID: declined.connectionID)
+
+        #expect(center.apply(to: listing(for: remoteMon(baseID: 19)), offeringStardust: 1) != nil,
+                "거절당해 끝난 제안이 자리를 계속 먹었다")
+    }
+
+    /// 전역 실패 한 줄(`lastError`)은 지워지는 자리가 있어야 한다. 없으면 한 번의 수락 실패가
+    /// 세션 내내 화면 아래 빨간 줄로 남는다.
+    @Test func aNewOfferClearsTheStaleBanner() throws {
+        let store = makeStore()
+        store.creditStarPieces(10)
+        let center = PokemonAuctionCenter(companion: store)
+        center.accept(UUID())
+        #expect(center.lastError != nil)
+
+        #expect(center.apply(to: listing(for: remoteMon()), offeringStardust: 1) != nil)
+        #expect(center.lastError == nil, "새 제안이 앞선 실패의 자국을 지우지 않았다")
+    }
+
+    /// 상한을 넘는 별의모래 제안은 게시자의 `isValid` 가 **무조건** 거절한다. 보내는 쪽에서 자르지
+    /// 않으면 왕복 한 번이 통째로 거절로 버려진다 — `creditStarPieces` 는 상한을 걸지 않으므로
+    /// 지갑이 상한을 넘은 세이브에서 실제로 밟힌다.
+    @Test func anOverCapStardustOfferIsClampedBeforeItLeaves() throws {
+        let store = makeStore()
+        store.creditStarPieces(SaveTransfer.maxTokenValue + 5)
+        let center = PokemonAuctionCenter(companion: store)
+
+        #expect(center.apply(to: listing(for: remoteMon()),
+                             offeringStardust: SaveTransfer.maxTokenValue + 5) != nil)
+        #expect(center.outgoingOffers.first?.stardust == SaveTransfer.maxTokenValue,
+                "상한을 넘겨 보내면 게시자가 받자마자 거절한다")
+    }
 }

@@ -45,7 +45,7 @@ struct PokemonAuctionView: View {
             }
             // 내 제안이 받치고 있는 개체도 후보에서 뺀다 — 게시와 제안이 둘 다 수락되면
             // 같은 개체가 두 번 커밋된다.
-            let candidates = store.deployableMons.filter { !committedMonIDs.contains($0.id) }
+            let candidates = store.deployableMons.filter { !center.isCommitted($0.id) }
             Button {
                 showsListingPicker = true
             } label: {
@@ -108,6 +108,8 @@ struct PokemonAuctionView: View {
                 ContentUnavailableView(store.l.t("올라온 포켓몬이 없어요", "No listings nearby", "近くに出品はありません"),
                                        systemImage: "shippingbox")
             } else {
+                // 행마다 다시 세지 않는다 — 값은 목록 전체에 하나다.
+                let unpledged = center.unpledgedTokens
                 ForEach(center.listings) { listing in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -140,7 +142,7 @@ struct PokemonAuctionView: View {
                                 // 이미 게시·제안에 걸린 개체는 후보에서 뺀다 — 센터가 막지만
                                 // 고를 수 있게 두면 버튼이 조용히 아무 일도 안 한 것처럼 보인다.
                                 MonOfferPicker(store: store, mons: store.deployableMons.filter {
-                                    !committedMonIDs.contains($0.id)
+                                    !center.isCommitted($0.id)
                                 }) { mon in
                                     offerSelections[listing.id] = mon.id
                                     offerPickerListingID = nil
@@ -152,24 +154,30 @@ struct PokemonAuctionView: View {
                                           text: Binding(get: { stardustOffers[listing.id] ?? "" },
                                                         set: { stardustOffers[listing.id] = $0.filter(\.isNumber) }))
                                     .textFieldStyle(.roundedBorder)
-                                Text("/ \(unpledgedTokens.formatted())")
+                                Text("/ \(unpledged.formatted())")
                                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             }
                         }
                         Button(store.l.t("교환 제안", "Send Offer", "交換を提案")) {
+                            // 센터가 거절하면 고른 값을 그대로 둔다 — 지우면 아무 일도 없었던
+                            // 것처럼 보이고 왜 안 갔는지 화면에 남는 단서가 없다.
                             if kind == .pokemon, let offered {
-                                center.apply(to: listing, offering: offered)
-                                offerSelections[listing.id] = nil
+                                if center.apply(to: listing, offering: offered) != nil {
+                                    offerSelections[listing.id] = nil
+                                }
                             } else if kind == .stardust {
-                                center.apply(to: listing, offeringStardust: amount)
-                                stardustOffers[listing.id] = nil
+                                if center.apply(to: listing, offeringStardust: amount) != nil {
+                                    stardustOffers[listing.id] = nil
+                                }
                             }
                         }
                         .buttonStyle(.borderedProminent).controlSize(.small)
-                        // 제안은 여러 건 동시에 걸 수 있다. 막는 것은 정원과 **약속한 별의모래의
-                        // 합**뿐이다 — 잔액만 보면 지킬 수 없는 제안을 여러 건 걸게 된다.
-                        .disabled((kind == .pokemon ? offered == nil : amount <= 0 || amount > unpledgedTokens)
-                                  || center.outgoingOffers.count >= PokemonAuctionCenter.maxOutgoingOffers)
+                        // 버튼은 **센터가 보는 것과 같은 것**을 봐야 한다 — 한쪽만 넓으면
+                        // 버튼은 켜지는데 제안은 안 가고, 화면엔 아무 흔적도 안 남는다.
+                        .disabled((kind == .pokemon
+                                   ? offered.map { center.isCommitted($0.id) || store.isFavorite($0.id) } ?? true
+                                   : amount <= 0 || amount > unpledged)
+                                  || !center.canRegisterOffer)
                     }.padding(8).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
@@ -240,13 +248,14 @@ struct PokemonAuctionView: View {
                     Text(offeredText(offer)).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(statusText(offer.status)).font(.caption2.bold()).foregroundStyle(.secondary)
+                Text(outgoingStatusText(offer.status)).font(.caption2.bold()).foregroundStyle(.secondary)
                 // 대기 중인 제안은 거둬들일 수 있어야 한다 — 그러지 않으면 제한 시간까지 그
-                // 개체가 다른 제안에 묶여 있다.
+                // 개체가 다른 제안에 묶여 있다. 반대로 **커밋 중(`.accepted`)에는 버튼이 없다** —
+                // 여기서 치우면 에스크로만 돌아오고 개체는 아무에게도 가지 않는다.
                 if offer.status == .pending {
                     Button(store.l.t("취소", "Cancel", "取消")) { center.cancelOutgoingOffer(offer.id) }
                         .controlSize(.small)
-                } else {
+                } else if !offer.status.isLive {
                     Button(store.l.t("확인", "Done", "確認")) { center.clearOutgoingResult(offer.id) }
                         .controlSize(.small)
                 }
@@ -257,6 +266,14 @@ struct PokemonAuctionView: View {
         }.padding(8).background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
     }
 
+    /// 내가 건 제안의 국면은 **상대가 한 일**이다 — 게시자 카드의 "거절함"(내가 거절했다) 을
+    /// 그대로 쓰면 방향이 뒤집힌다.
+    private func outgoingStatusText(_ status: AuctionOffer.Status) -> String {
+        status == .declined
+            ? store.l.t("거절됨", "Rejected", "拒否されました")
+            : statusText(status)
+    }
+
     /// 이 제안에 내가 무엇을 걸었는지. 제안이 여럿이면 게시물 이름만으로는 구별되지 않는다.
     private func offeredText(_ offer: OutgoingAuctionOffer) -> String {
         if let monID = offer.monID {
@@ -265,20 +282,5 @@ struct PokemonAuctionView: View {
                 ?? store.l.t("내 포켓몬", "My Pokémon", "自分のポケモン")
         }
         return "\(offer.stardust.formatted()) \(store.l.t("별의모래", "Stardust", "ほしのすな"))"
-    }
-
-    /// 이미 게시물이나 내 제안이 받치고 있는 개체 — 새 제안의 후보에서 뺀다.
-    private var committedMonIDs: Set<UUID> {
-        Set(center.localListings.values.map { $0.mon.id })
-            .union(center.outgoingOffers.filter { $0.status.isLive }.compactMap(\.monID))
-    }
-
-    /// 아직 어느 제안에도 약속하지 않은 별의모래. 에스크로는 수락 시점에 걷히므로 잔액만 보면
-    /// 지킬 수 없는 제안을 여러 건 걸게 된다.
-    private var unpledgedTokens: Int {
-        let pledged = center.outgoingOffers
-            .filter { !$0.stardustEscrowed && $0.status.isLive }
-            .reduce(0) { $0 + $1.stardust }
-        return max(0, store.availableTokens - pledged)
     }
 }
