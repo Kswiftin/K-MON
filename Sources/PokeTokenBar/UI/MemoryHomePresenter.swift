@@ -701,6 +701,12 @@ private struct MemoryHomeWindowView: View {
                         if album.setProfileMessage(profileMessageDraft) { profileMessageError = nil }
                         else { profileMessageError = l.t("줄바꿈 없이 1~60자로 입력해 주세요.", "Use 1–60 characters without line breaks.", "改行なしで1〜60文字にしてください。") }
                     }.buttonStyle(.bordered).controlSize(.small)
+                    // 저장한 문구를 **지우는** 길. `clearProfileMessage` 도 호출부가 없어서,
+                    // 한 번 적은 대문 문구는 덮어쓸 수만 있고 내릴 수 없었다.
+                    Button(l.t("문구 지우기", "Clear message", "一言を消す")) {
+                        album.clearProfileMessage(); profileMessageDraft = ""; profileMessageError = nil
+                    }.buttonStyle(.borderless).controlSize(.small)
+                        .disabled(album.memoryHomeAccess.profileMessage == nil)
                     if let profileMessageError { Text(profileMessageError).font(.caption).foregroundStyle(PokedoroTheme.red) }
                 }
                 Toggle(l.t("대문 문구 LAN 공유", "Share home message on LAN", "一言をLAN共有"), isOn: Binding(get: { album.memoryHomeAccess.sharesProfileMessage }, set: { album.setSharesProfileMessage($0) }))
