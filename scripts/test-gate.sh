@@ -36,6 +36,12 @@ LOGIC_CORE=(
   # 키로 세는 속도 제한)가 사는 곳. 소켓 부분은 단위 테스트가 안 닿아 파일 수치는 낮지만, 배열에
   # 넣지 않으면 그 검증기가 커버리지에서 통째로 빠진다 — PeerAdvertisement 를 넣은 이유와 같다.
   "Sources/PokeTokenBar/Core/PokemonTrade.swift"
+  # 경매도 같은 커밋 프로토콜을 태우는데 배열 밖에 있었다 — `isValid`·`matches`·
+  # `canCommitOutgoing`·`unpledgedTokens`·`isCommitted` 가 전부 여기 있고 그중 셋은 상대가
+  # 보낸 값을 보는 신뢰경계다. #229 의 첨자 결함이 무테스트로 나갈 뻔한 이유가 이것이다:
+  # 커버리지에 아예 안 잡히는 파일은 "몇 %인가" 를 물을 기회조차 없다. `PokemonTrade` 와 같은
+  # 이유로 소켓 부분 때문에 파일 수치는 낮게 나온다.
+  "Sources/PokeTokenBar/Core/PokemonAuction.swift"
   # 광고 이름의 바이트 예산. 네 LAN 센터가 전부 이 한 함수를 지나므로 여기가 무테스트면 부류가
   # 통째로 무테스트다 — 이전엔 `PlayerGymRoomName` 안에 숨어 있어 커버리지에서 보이지 않았다.
   "Sources/PokeTokenBar/Core/LANServiceName.swift"
@@ -75,6 +81,9 @@ LOGIC_CORE=(
   # 게이트 밖에 두면 커버리지 집계에서 조용히 빠져 무테스트로 나갈 수 있다.
   "Sources/PokeTokenBar/Core/RogueRun.swift"
   "Sources/PokeTokenBar/Core/RogueRunSave.swift"
+  # 웨이브 런의 누적 강화(데미지·급소·턴 끝 회복). 엔진이 읽는 순수 계산이라 게이트 대상 —
+  # 배열에 안 넣으면 다음 강화를 더할 때 무테스트로 남는다. **한 번만 넣는다** — 같은 파일을
+  # 두 번 넣으면 합산 커버리지에서 그 파일의 줄 수가 두 번 세어져 임계값이 조용히 기울어진다.
   "Sources/PokeTokenBar/Core/RunBoosts.swift"
   # 런의 2대2 전투 — 타겟팅·네 명 턴 순서·기절 슬롯 보충이 여기 있다. 승패 판정이 사는 파일은
   # 게이트 대상이라는 규칙(`TeamPracticeBattle`)을 그대로 따른다.
@@ -95,9 +104,6 @@ LOGIC_CORE=(
   "Sources/PokeTokenBar/Core/PixelSprite.swift"
   "Sources/PokeTokenBar/Core/TrainerPixelArt.swift"
   "Sources/PokeTokenBar/Core/TrainerSprite.swift"
-  # 웨이브 런의 누적 강화(데미지·급소·턴 끝 회복). 엔진이 읽는 순수 계산이라 게이트 대상 —
-  # 배열에 안 넣으면 다음 강화를 더할 때 무테스트로 남는다.
-  "Sources/PokeTokenBar/Core/RunBoosts.swift"
   # 판 밖으로 남는 유일한 값(최고 웨이브·클리어 횟수). 세이브 경계 정규화가 여기 있어 게이트 대상 —
   # 배열에 안 넣으면 클램프 분기가 커버리지에서 조용히 빠진다.
   "Sources/PokeTokenBar/Core/RunProgress.swift"
