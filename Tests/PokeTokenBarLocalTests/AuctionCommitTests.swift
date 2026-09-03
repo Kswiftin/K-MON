@@ -494,8 +494,7 @@ private struct AuctionStubProvider: PokeProviding {
     /// 프로덕션 경로의 사본이 되어, 정작 실사용 경로는 무검증으로 남는다.
     @Test func anOfferRemovedMidCommitDoesNotMoveTheEscrowToItsNeighbour() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         let alsoMine = remoteMon(baseID: 30)
         #expect(store.receiveAuctionPokemon(alsoMine))
         store.creditStarPieces(100)
@@ -539,8 +538,7 @@ private struct AuctionStubProvider: PokeProviding {
     /// 신청자 쪽에서 환불이 한 번 더 나간다 — **화폐 복제**다.
     @Test func anOfferRemovedAfterTheCommitDoesNotMoveTheCompletionToItsNeighbour() async throws {
         let store = makeStore()
-        await store.hatch(baseID: 1)
-        let mine = try #require(store.state.active)
+        let mine = try await sellableMon(store)
         // 개체는 하나뿐이라 뒤에 설 제안은 별의모래 1 짜리로 세운다.
         store.creditStarPieces(101)
         let center = PokemonAuctionCenter(companion: store)
@@ -657,7 +655,7 @@ private struct AuctionStubProvider: PokeProviding {
     /// 게시자는 다음 제안을 수락할 수 없고, 화면에는 답을 기다리는 카드가 영영 남는다.
     @Test func anApplicantsFailureFrameReleasesTheListersSlot() async throws {
         let store = makeStore()
-        let (center, _, connection, offerID) = await listingCenter(store, offering: remoteMon(baseID: 40))
+        let (center, _, connection, offerID) = try await listingCenter(store, offering: remoteMon(baseID: 40))
         #expect(center.offers.first?.status == .pending)
 
         center.receive(.failed(offerID: offerID), connectionID: connection)
