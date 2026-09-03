@@ -1263,20 +1263,35 @@ struct L {
           "ホストが退出したためレイドが終了しました。もう一度開いてください。")
     }
     var raidCaughtTitle: String { t("🎉 보스를 잡았다", "🎉 Boss caught", "🎉 ボスを捕まえた") }
-    func raidCaughtBody(_ name: String) -> String {
-        t("\(name)이(가) 박스에 들어왔어요.", "\(name) went into your box.", "\(name)がボックスに入りました。")
+    /// **어디로 갔는지 말한다.** 동행이 비어 있으면 잡은 보스가 바로 동행이 되는데(`catchRaidBoss`),
+    /// 그때도 "박스" 라고 말하면 사용자는 빈 박스를 열고 보상이 사라졌다고 판단한다.
+    func raidCaughtBody(_ name: String, toBox: Bool) -> String {
+        toBox ? t("\(name)이(가) 박스에 들어왔어요.", "\(name) went into your box.",
+                  "\(name)がボックスに入りました。")
+              : t("\(name)이(가) 새 동행이 됐어요.", "\(name) is your new companion.",
+                  "\(name)が新しい相棒になりました。")
     }
     /// 결과창 — 내가 뽑혔을 때. 잡힌 개체가 어디로 갔는지 말해 준다(박스를 안 열면 안 보인다).
-    func raidCaughtByMe(_ name: String) -> String {
-        t("추첨에 뽑혀 \(name)을(를) 데려왔다 — 박스에 있어요.",
-          "You were drawn and took \(name) home — it is in your box.",
-          "抽選で選ばれて\(name)を連れ帰った — ボックスにいます。")
+    func raidCaughtByMe(_ name: String, toBox: Bool) -> String {
+        toBox ? t("추첨에 뽑혀 \(name)을(를) 데려왔다 — 박스에 있어요.",
+                  "You were drawn and took \(name) home — it is in your box.",
+                  "抽選で選ばれて\(name)を連れ帰った — ボックスにいます。")
+              : t("추첨에 뽑혀 \(name)을(를) 데려왔다 — 새 동행이 됐어요.",
+                  "You were drawn and took \(name) home — it is your new companion.",
+                  "抽選で選ばれて\(name)を連れ帰った — 新しい相棒になりました。")
     }
     /// 결과창 — 남이 뽑혔을 때. 아무 말도 안 하면 "나만 못 받았다" 로 읽힌다.
     func raidCaughtByOther(trainer: String, name: String) -> String {
         t("\(trainer) 님이 추첨에 뽑혀 \(name)을(를) 데려갔어요.",
           "\(trainer) was drawn and took \(name) home.",
           "\(trainer) さんが抽選で選ばれて\(name)を連れ帰りました。")
+    }
+    /// 오늘의 한 마리를 이미 데려온 판. **불러오기 실패와 갈라 둔다** — 그 문구는 "오늘 다시 도전할
+    /// 수 있어요" 로 끝나는데, 이 판에서는 그게 거짓이다.
+    var raidCatchAlreadyToday: String {
+        t("오늘은 이미 보스를 데려왔어요 — 포획은 하루 한 마리예요.",
+          "You already took a boss home today - one catch per day.",
+          "今日はすでにボスを連れ帰りました — 捕獲は1日1匹です。")
     }
     var raidCatchFailed: String {
         t("보스 정보를 불러오지 못해 데려오지 못했어요 — 오늘 다시 도전할 수 있어요.",

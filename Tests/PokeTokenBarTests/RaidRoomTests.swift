@@ -583,7 +583,12 @@ final class RaidRoomTests: XCTestCase {
         downedBoss.side.hp = 0
         center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
         center.applyGuestRaidSettlement([me.id: 800, mate.id: 800])
-        XCTAssertEqual(center.raidCatcherID, center.myID, "테스트 전제: 내가 뽑혔고 포획이 도는 중이다")
+        XCTAssertEqual(center.raidCatcherID, center.myID, "테스트 전제: 내가 뽑혔다")
+        // 조회가 실제로 붙잡히기를 기다린다 — `Task { }` 는 나중에 시작된다.
+        var spins = 0
+        while await provider.isSuspended() == false, spins < 1_000 { await Task.yield(); spins += 1 }
+        let isSuspended = await provider.isSuspended()
+        XCTAssertTrue(isSuspended, "테스트 전제: 포획이 라인 조회에서 도는 중이다")
 
         center.leaveRoom()          // 라인 조회가 아직 안 끝난 창에서 나간다
         await provider.resume()
@@ -1090,29 +1095,39 @@ private struct RaidLineFailingProvider: PokeProviding {
     func baseSpeciesIndex() async throws -> [BaseSpecies] { [] }
 }
 
-/// 라인 조회를 붙잡아 두는 제공자 — "포획이 도는 중" 이라는 창을 테스트가 직접 만든다.
+/// 라인 조회를 **첫 한 번만** 붙잡아 두는 제공자 — "포획이 도는 중" 이라는 창을 테스트가 직접
+/// 만든다. 풀어 준 뒤의 조회(포획 직후의 라인 재로드)는 바로 돌려준다.
 private actor RaidSuspendedLineProvider: PokeProviding {
     private let species: Int
-    private var continuation: CheckedContinuation<EvoLine, Never>?
+    private var pending: CheckedContinuation<EvoLine, Never>?
+    private var released = false
 
     init(species: Int) { self.species = species }
 
+    private var made: EvoLine {
+        EvoLine(baseID: species, tree: EvoNode(speciesID: species, children: []),
+                rarity: .legendary, names: [species: ["en": "Boss", "ko": "보스", "ja": "ボス"]])
+    }
+
     func line(baseSpeciesID: Int) async throws -> EvoLine {
-        await withCheckedContinuation { continuation in
-            precondition(self.continuation == nil, "한 번에 하나만 붙잡는다")
-            self.continuation = continuation
+        if released { return made }
+        return await withCheckedContinuation { continuation in
+            precondition(pending == nil, "한 번에 하나만 붙잡는다")
+            pending = continuation
         }
     }
 
     func baseSpeciesIndex() async throws -> [BaseSpecies] { [] }
 
+    /// 조회가 실제로 붙잡혀 있나. **폴링이 필요하다** — `Task { }` 는 나중에 시작되므로, 기다리지
+    /// 않고 풀어 주면 풀 대상이 아직 없어 조회가 영원히 매달린다.
+    func isSuspended() -> Bool { pending != nil }
+
     func resume() {
-        let pending = continuation
-        continuation = nil
-        pending?.resume(returning: EvoLine(baseID: species,
-                                           tree: EvoNode(speciesID: species, children: []),
-                                           rarity: .legendary,
-                                           names: [species: ["en": "Boss", "ko": "보스", "ja": "ボス"]]))
+        released = true
+        let waiting = pending
+        pending = nil
+        waiting?.resume(returning: made)
     }
 }
 

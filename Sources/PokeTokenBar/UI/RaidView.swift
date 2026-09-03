@@ -281,7 +281,16 @@ struct RaidView: View {
               let boss = center.combatFighters.first(where: { $0.id == RaidBoss.bossID })
         else { return nil }
         let name = boss.trainerName
-        guard winner != center.myID else { return l.raidCaughtByMe(name) }
+        guard winner != center.myID else {
+            // 내 줄은 **실제 결과**를 기다린다. 뽑힌 것만으로 "박스에 있어요" 를 그리면, 라인 조회가
+            // 실패한 판에서 오류 문구와 모순되는 두 문장이 한 화면에 남고 박스는 비어 있다.
+            // 못 잡은 사유는 `lastError` 가 이미 말한다(같은 스크롤 안에 그려진다).
+            switch center.raidCatchResult {
+            case .box: return l.raidCaughtByMe(name, toBox: true)
+            case .companion: return l.raidCaughtByMe(name, toBox: false)
+            case .claimedToday, .unavailable, nil: return nil
+            }
+        }
         let trainer = center.combatFighters.first { $0.id == winner }?.trainerName ?? "?"
         return l.raidCaughtByOther(trainer: trainer, name: name)
     }

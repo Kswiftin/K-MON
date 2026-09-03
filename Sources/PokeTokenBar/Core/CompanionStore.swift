@@ -2489,7 +2489,11 @@ final class CompanionStore {
         return true
     }
 
-    /// 레이드에서 뽑힌 한 명이 보스를 데려간다. 성공하면 true 이고 오늘의 포획 원장을 쓴다.
+    /// 레이드에서 뽑힌 한 명이 보스를 데려간다. 성공하면 어디로 갔는지 돌려주고 오늘의 원장을 쓴다.
+    ///
+    /// **불리언이 아니다.** 화면이 결과를 문장으로 옮겨야 하는데, 실패(`unavailable`)와 "오늘은 이미
+    /// 잡았다"(`claimedToday`)는 사용자가 할 다음 일이 다르고, 성공도 상자와 빈 동행 자리가 다른
+    /// 문장이다(`RaidCatchResult`).
     ///
     /// **잡은 자리에서 시작하는 경로로 세운다.** 추첨 풀(`RaidBoss.speciesPool`)은 32종 전부 최종
     /// 진화체라 그 경로는 한 칸이고, 체인 뿌리부터 세우면 잡은 그 모습이 아니라 1단계가 들어간다.
@@ -2499,13 +2503,16 @@ final class CompanionStore {
     /// 개체 롤은 부화와 **같은 규칙**이다(성격 25종·종별 성비·이로치 분모). 이로치 확정권은
     /// 알을 위해 산 물건이라 여기서 소모하지 않는다.
     @discardableResult
-    func catchRaidBoss(speciesID: Int) async -> Bool {
+    func catchRaidBoss(speciesID: Int) async -> RaidCatchResult {
+        // 원장을 **먼저 본다** — 여기서 걸린 판은 네트워크를 건드리지도 않았으므로 "불러오지 못했다"
+        // 가 아니라 "오늘은 이미 잡았다" 다. 두 사유를 한 값으로 접으면 화면이 반드시 하나를 틀린다.
+        guard !raidCatchClaimedToday else { return .claimedToday }
         // 그릴 수 없는 번호는 잡지 않는다 — 박스에 빈 칸이 영구히 남는다(교환 경계와 같은 계약).
-        guard !raidCatchClaimedToday, PokemonAssets.hasAnimatedSprite(speciesID: speciesID),
-              let line = try? await provider.line(baseSpeciesID: speciesID) else { return false }
+        guard PokemonAssets.hasAnimatedSprite(speciesID: speciesID),
+              let line = try? await provider.line(baseSpeciesID: speciesID) else { return .unavailable }
         // 원장은 **개체를 만들기 직전에** 찍는다. 위 가드보다 먼저 찍으면 라인 조회 실패가 그날의
         // 기회를 태우고, 뒤에 찍으면 네트워크 창 동안 들어온 두 번째 판이 한 마리를 더 넣는다.
-        guard claimRaidCatch() else { return false }
+        guard claimRaidCatch() else { return .claimedToday }
         let isShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())
@@ -2518,22 +2525,25 @@ final class CompanionStore {
         // 동행이 비어 있으면(졸업 직후 등) 바로 동행으로 — 보관 알 부화와 같은 규칙이다. 라인은
         // 비워 두고 다시 부른다(`performTrade` 와 같은 자리): 밖에서 들어온 개체라 지금 들고 있는
         // 라인이 이 종의 것이 아니다.
+        let destination: RaidCatchResult
         if state.active == nil {
             state.active = caught
             activeGeneration += 1
             currentLine = nil
             Task { await loadCurrentLine() }
+            destination = .companion
         } else {
             state.boxedMons.append(caught)
+            destination = .box
         }
         let name = line.localizedName(speciesID, state.language)
         recordEventMemory("레이드에서 \(name)을(를) 잡았다.", "Caught \(name) in a raid.",
                           "レイドで\(name)を捕まえた。",
                           companionID: caught.id, eventID: "raid-catch:\(caught.id.uuidString)")
-        notifyCompanionEvent(l.raidCaughtTitle, l.raidCaughtBody(name))
-        AppLog.write("raid catch: species=\(speciesID) rarity=\(line.rarity) shiny=\(isShiny)")
+        notifyCompanionEvent(l.raidCaughtTitle, l.raidCaughtBody(name, toBox: destination == .box))
+        AppLog.write("raid catch: species=\(speciesID) rarity=\(line.rarity) shiny=\(isShiny) to=\(destination)")
         save()
-        return true
+        return destination
     }
 
     /// 베팅 정산 지급. 환불도 "판돈과 같은 금액 지급" 이라 같은 경로를 쓴다.
