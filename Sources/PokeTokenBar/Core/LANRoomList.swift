@@ -22,6 +22,17 @@ enum LANRoomList {
         }
     }
 
+    /// 이 이름이 **그 활동의 방인가.** 방 종류를 묻는 자리는 전부 여기로 온다 —
+    /// `PlayerGym.isGymRoomName`·`RaidRoomName.isRaidRoomName`·참가 직전의 토너먼트 판정까지.
+    /// 저마다 접두를 다시 적으면 한쪽만 바뀐 순간 갈라진다.
+    ///
+    /// 소유는 안 본다. 참가 직전에 "이 방이 무슨 방인가" 를 묻는 자리(`MultiplayerRoomCenter.join`)
+    /// 에서는 내 방인지가 답을 바꾸면 안 된다 — 소유까지 보려면 `isVisible` 을 쓴다.
+    static func matches(_ serviceName: String, activity: RoomActivity) -> Bool {
+        // 구분자까지 포함해 비교한다. 접두만 보면 `BATTLE` 이 `BATTLEROYALE` 에 걸린다.
+        serviceName.hasPrefix("\(prefix(for: activity)) · ")
+    }
+
     /// 이 방을 **내 목록에 보여 줄 것인가.** 두 조건을 함께 본다.
     ///
     /// 1. 활동이 맞다 — 안 거르면 배틀 목록에 레이드 방이 뜨고, 붙은 게스트는 자기가 누른 적
@@ -32,7 +43,12 @@ enum LANRoomList {
     /// **`serviceName`(원문)으로 본다.** `name` 은 `#` 앞에서 잘려 있어 내 꼬리표를 못 찾는다 —
     /// 체육관이 그 실수로 자기 방을 남의 방으로 읽었다.
     static func isVisible(_ serviceName: String, activity: RoomActivity, myTag: String) -> Bool {
-        // 구분자까지 포함해 비교한다. 접두만 보면 `BATTLE` 이 `BATTLEROYALE` 에 걸린다.
-        serviceName.hasPrefix("\(prefix(for: activity)) · ") && !serviceName.contains("#\(myTag)")
+        matches(serviceName, activity: activity) && !isMine(serviceName, myTag: myTag)
+    }
+
+    /// 이름 끝의 꼬리표가 내 것인가. `#` 을 붙여 비교한다 — 없이 비교하면 남의 꼬리표
+    /// 부분열이나 트레이너 이름에 우연히 걸린다.
+    static func isMine(_ serviceName: String, myTag: String) -> Bool {
+        serviceName.contains("#\(myTag)")
     }
 }

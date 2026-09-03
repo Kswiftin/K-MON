@@ -5,7 +5,7 @@ import SwiftUI
 /// 화면이 세 국면을 갈아 끼운다: **모집 전**(오늘의 보스·티어 고르기·근처 방 목록),
 /// **로비**(준비·시작), **교전**(보스 한 마리 + 파티 줄 + 정산).
 ///
-/// 대상 고르기가 없다 — 때릴 것은 보스 하나뿐이다. 4인 방(`BattleView.multiplayerArena`)이
+/// 대상 고르기가 없다 — 때릴 것은 보스 하나뿐이다. 4인 방(`RoomBattleView.multiplayerArena`)이
 /// 대상 격자를 그리는 자리에 여기서는 보스 카드가 들어간다.
 struct RaidView: View {
     let store: CompanionStore
@@ -290,7 +290,7 @@ struct RaidView: View {
         }
     }
 
-    /// 로그 줄 만들기 — 4인 방(`BattleView.multiplayerLogLines`)과 **같은 규칙**을 쓴다.
+    /// 로그 줄 만들기 — 4인 방(`RoomBattleView.multiplayerLogLines`)과 **같은 규칙**을 쓴다.
     /// 갈라 두면 같은 사건이 두 화면에서 다른 문장으로 나온다.
     private func logLines(_ events: [BattleEvent], fighters: [MultiplayerFighter]) -> [BattleLog.Line] {
         func fighter(_ actor: BattleActor) -> MultiplayerFighter? {

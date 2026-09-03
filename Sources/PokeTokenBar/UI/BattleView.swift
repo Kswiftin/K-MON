@@ -13,8 +13,6 @@ struct BattleView: View {
     // 수동(IP) 연결 상태
     @State private var manualAddress = ""
     @State private var addressCopied = false
-    @State private var roomMode: MultiplayerBattleMode = .freeForAll
-    @State private var multiplayerTargetID: UUID?
     @State private var peerPage = 0
     @State private var pendingChallengePeer: BattlePeer?
     /// 수동 IP 로 신청하려는 주소. 탐색으로 찾은 상대와 **같은 후보 선택 화면**을 지나야 한다 —

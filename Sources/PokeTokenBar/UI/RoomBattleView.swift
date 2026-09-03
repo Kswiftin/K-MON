@@ -16,6 +16,10 @@ struct RoomBattleView: View {
 
     @State private var roomMode: MultiplayerBattleMode = .freeForAll
     @State private var multiplayerTargetID: UUID?
+    /// 이 화면에서 방을 열거나 붙었는가. 개설·참가 국면에는 활동이 아직 없어 **국면만으로는**
+    /// 누가 연 방인지 알 수 없다 — 모집 화면을 보는 동안 체육관 코디네이터가 방을 열면
+    /// 사용자가 만든 적 없는 방에 대고 "방을 만드는 중…" 을 그리게 된다.
+    @State private var initiatedRoom = false
 
     private var l: L { store.l }
 
@@ -23,32 +27,37 @@ struct RoomBattleView: View {
     /// 화면은 방 배틀인데 뒤에서는 레이드가 도는 상태가 된다.
     ///
     /// 개설·참가 중에는 아직 활동을 모른다(로비는 `await` 뒤에 온다). 그 사이 모집 화면으로
-    /// 되돌리면 방금 누른 "방 만들기" 가 아무 일도 안 한 것처럼 보이므로 국면으로 판단한다.
+    /// 되돌리면 방금 누른 "방 만들기" 가 아무 일도 안 한 것처럼 보이므로, **이 화면이 연
+    /// 방일 때만**(`initiatedHere`) 국면으로 판단한다 — 그 조건이 없으면 체육관 코디네이터가
+    /// 연 방까지 여기 로비가 삼킨다.
     /// `nonisolated` 가 없으면 `View` 의 `@MainActor` 를 물려받아 **동기 테스트에서 못 부른다**
     /// (`MultiplayerRoomCenter.creditsRaceFinish` 와 같은 이유). 로컬 Swift 6.2 는 이 호출을
     /// 통과시키고 CI 의 6.1 만 거절하므로, 명시하지 않으면 로컬 초록 · CI 빨강으로 갈린다.
-    nonisolated static func showsLobby(phase: MultiplayerRoomCenter.Phase, activity: RoomActivity?) -> Bool {
+    nonisolated static func showsLobby(phase: MultiplayerRoomCenter.Phase, activity: RoomActivity?,
+                                       initiatedHere: Bool) -> Bool {
         switch phase {
         case .idle: false
-        case .creating, .joining: true
+        case .creating, .joining: initiatedHere
         default: activity == .battle
         }
     }
 
+    /// 팝오버 본체가 이미 `ScrollView` 다(`PopoverView`). 여기서 하나 더 두면 중첩이 되어
+    /// **안쪽이 스크롤되지 않는다** — 화면에 들어가는 만큼만 보이고 나머지는 볼 방법이 없다.
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             headerBar
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if Self.showsLobby(phase: center.multiplayer.phase,
-                                       activity: center.multiplayer.roomActivity) {
-                        multiplayerLobby
-                    } else {
-                        multiplayerRooms
-                    }
-                }
-                .padding(.horizontal, 2)
+            if Self.showsLobby(phase: center.multiplayer.phase,
+                               activity: center.multiplayer.roomActivity,
+                               initiatedHere: initiatedRoom) {
+                multiplayerLobby
+            } else {
+                multiplayerRooms
             }
+        }
+        .padding(.horizontal, 2)
+        .onChange(of: center.multiplayer.phase == .idle) { _, isIdle in
+            if isIdle { initiatedRoom = false }
         }
     }
 
@@ -57,7 +66,13 @@ struct RoomBattleView: View {
             Label(l.t("2~4인 방 배틀", "Room Battle", "2〜4人ルームバトル"),
                   systemImage: "person.3.fill").font(.callout).bold()
             Spacer()
-            Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
+            // **방을 먼저 접는다.** 방이 살아 있으면 친구 탭이 활동을 보고 이 화면을 다시
+            // 붙잡아(`FriendView.screenHeldByRoom`) 닫기가 눌려도 아무 일이 없는 버튼이 된다.
+            Button {
+                if center.multiplayer.phase != .idle { center.multiplayer.leaveRoom() }
+                initiatedRoom = false
+                onClose()
+            } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
         }
     }
@@ -87,6 +102,7 @@ struct RoomBattleView: View {
             }.pickerStyle(.segmented).labelsHidden()
             HStack {
                 Button(l.t("방 만들기", "Create room", "部屋を作る")) {
+                    initiatedRoom = true
                     center.multiplayer.createRoom(mode: roomMode)
                 }.buttonStyle(.borderedProminent).controlSize(.small)
                     .disabled(center.multiplayer.phase != .idle)
@@ -100,7 +116,9 @@ struct RoomBattleView: View {
                                       myTag: center.multiplayer.myRoomTag)
             }
             if visibleRooms.isEmpty {
-                Text(center.multiplayer.isBrowsing ? l.battleNoPeers : l.battleManualHint)
+                // `battleManualHint`("주소로 직접 연결") 는 여기 쓰지 않는다 — 주소 입력칸은
+                // 1:1 배틀 화면에만 있어서, 이 화면에서는 할 수 없는 일을 시키게 된다.
+                Text(center.multiplayer.isBrowsing ? l.battleNoPeers : l.roomBattleDiscoveryBlocked)
                     .font(.caption2).foregroundStyle(.secondary)
             }
             ForEach(visibleRooms) { room in
@@ -108,7 +126,10 @@ struct RoomBattleView: View {
                     Image(systemName: "door.left.hand.open").foregroundStyle(.secondary)
                     Text(room.name).font(.caption).lineLimit(1)
                     Spacer()
-                    Button(l.t("참가", "Join", "参加")) { center.multiplayer.join(room) }
+                    Button(l.t("참가", "Join", "参加")) {
+                        initiatedRoom = true
+                        center.multiplayer.join(room)
+                    }
                         .controlSize(.small).disabled(center.multiplayer.phase != .idle)
                 }
             }

@@ -221,7 +221,8 @@ struct RaidRoomName: Equatable {
 
     static let prefix = "RAID"
 
-    static func isRaidRoomName(_ name: String) -> Bool { name.hasPrefix("\(prefix) · ") }
+    /// **접두 판정은 `LANRoomList` 한 곳에서만 한다** — 여기에 다시 적으면 표가 갈라진다.
+    static func isRaidRoomName(_ name: String) -> Bool { LANRoomList.matches(name, activity: .raid) }
 
     /// 자를 수 있는 건 트레이너 이름뿐이다 — 접두·티어는 파싱에, 접미는 자기 판정에 쓰인다.
     static func make(trainerName: String, idTag: String, tier: RaidTier) -> String {
