@@ -89,9 +89,16 @@ final class StardustPayoutSurfaceTests: XCTestCase {
 
     /// 졸업. 한 함수 안에서 **넷**이 같은 지갑에 넣는다 — 트레이너 포인트 · 주간 미션 ·
     /// 시즌 챌린지 · 도감 목표. 하나만 배너에 실으면 나머지는 여전히 무설명이다.
+    ///
+    /// **이로치로 졸업시킨다.** 별의조각을 주는 도감 목표는 `shiny1` 하나뿐이라, 평범한 개체로
+    /// 졸업하면 넷째 지급이 0 이고 그 항을 빼도 이 테스트가 초록이다 — 결함을 주입해 실제로
+    /// 확인했다. 부가 지급은 **실제로 일어나는 경로**에서 재야 의미가 있다(#192 가 남긴 규칙).
+    /// 시드 6 은 첫 부화 롤이 `rollsShiny` 를 통과한다. 그 전제가 깨지면 아래 단정이 먼저 터진다.
     func testGraduationPayoutIsExplainedOnScreen() async throws {
-        let store = makeStore(threeStageLine)
+        let store = makeStore(threeStageLine, seed: 6)
         await store.hatch(baseID: 1)
+        XCTAssertEqual(store.state.active?.isShiny, true,
+                       "전제: 이로치라야 졸업이 도감 목표(shiny1)까지 넘는다 — 시드가 바뀌었다")
         advanceOneStage(store, totalForms: 3, stageIndex: 0)
         advanceOneStage(store, totalForms: 3, stageIndex: 1)
         XCTAssertTrue(store.canGraduate, "전제: 최종형에 닿아 졸업 버튼이 뜬다")
@@ -100,6 +107,30 @@ final class StardustPayoutSurfaceTests: XCTestCase {
         XCTAssertTrue(store.graduateCompanion())
 
         try assertPayoutExplains(store, walletBefore: before, source: .graduation)
+        XCTAssertFalse(DexGoals.completed(in: store.state.dex).isEmpty,
+                       "전제: 졸업이 도감 목표를 실제로 넘겼다 — 안 넘으면 넷째 지급이 무검증이다")
+    }
+
+    /// **트리거 브랜치 — 시즌 챌린지가 완료되는 졸업.** 시즌 목표는 졸업 두세 번이라, 한 번만
+    /// 졸업하는 위 테스트에서는 시즌 몫이 0 이고 그 항을 합계에서 빼도 초록이었다(결함 주입으로
+    /// 확인). 목표를 실제로 넘기는 라운드까지 돌려야 그 항이 검증된다.
+    func testTheGraduationThatCompletesASeasonGoalStillExplainsItsWallet() async throws {
+        let store = makeStore(threeStageLine)
+        let goal = try XCTUnwrap(store.seasonRows.first { $0.challenge.event == .graduations },
+                                 "전제: 이번 시즌에 졸업 목표가 있다").challenge
+
+        for round in 1...goal.target {
+            await store.hatch(baseID: 1)
+            advanceOneStage(store, totalForms: 3, stageIndex: 0)
+            advanceOneStage(store, totalForms: 3, stageIndex: 1)
+            let before = store.state.starPieces
+            XCTAssertTrue(store.graduateCompanion(), "라운드 \(round): 졸업이 실행돼야 한다")
+            try assertPayoutExplains(store, walletBefore: before, source: .graduation)
+        }
+
+        XCTAssertGreaterThanOrEqual(
+            store.seasonRows.first { $0.challenge.event == .graduations }?.progress ?? 0, goal.target,
+            "전제: 마지막 졸업이 시즌 목표를 넘겼다 — 안 넘으면 시즌 몫이 무검증이다")
     }
 
     // MARK: 계약 — 정산과 겹치지 않고, 한 번만 건네지고, 남의 세이브로 넘어가지 않는다
@@ -210,9 +241,10 @@ final class StardustPayoutSurfaceTests: XCTestCase {
                                                        stageIndex: stageIndex))
     }
 
-    private func makeStore(_ line: EvoLine, clock: TestClock = TestClock()) -> CompanionStore {
+    private func makeStore(_ line: EvoLine, clock: TestClock = TestClock(),
+                          seed: UInt64 = 11) -> CompanionStore {
         CompanionStore(provider: StubProvider(value: line), clock: clock.closure,
-                       fileURL: stubStoreURL("payout"), rng: SeededRNG(seed: 11))
+                       fileURL: stubStoreURL("payout"), rng: SeededRNG(seed: seed))
     }
 }
 
