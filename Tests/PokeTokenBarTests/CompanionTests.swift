@@ -76,9 +76,14 @@ private func waitUntil(timeout: TimeInterval = 1, _ condition: @escaping () -> B
 
 struct StubProvider: PokeProviding {
     let value: EvoLine
+    /// 종별 타입 인덱스. **비워 두는 것이 기본이지만 구현을 생략하지는 않는다** — 프로토콜 기본
+    /// 구현은 `PokeAPIClient.shared` 로 내려가므로, 이걸 안 두면 이 인덱스를 읽는 코드
+    /// (스타터 타입 추첨)가 테스트에서 네트워크에 닿는다.
+    var types: [Int: [PokemonType]] = [:]
     func line(baseSpeciesID: Int) async throws -> EvoLine { value }
     // 인덱스 = 자기 라인 base 단일 항목 → 선택 롤 1회 소비 후 항상 그 base (테스트 rng 재생 단순화)
     func baseSpeciesIndex() async throws -> [BaseSpecies] { [BaseSpecies(id: value.baseID, captureRate: 255)] }
+    func speciesTypeIndex() async throws -> [Int: [PokemonType]] { types }
 }
 
 private actor SuspendedLineProvider: PokeProviding {
@@ -184,6 +189,77 @@ final class CompanionStoreTests: XCTestCase {
     private func store(_ line: EvoLine, seed: UInt64 = 7) -> CompanionStore {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
         return CompanionStore(provider: StubProvider(value: line), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: seed))
+    }
+
+    // MARK: 스타터 선택 (게임에 들어가는 유일한 문)
+
+    /// **화면에 뜨는 타입은 전부 스토어가 받는 타입이어야 한다.** 이 화면은 신규 사용자가 게임에
+    /// 들어가는 유일한 문이고, 후보 0개인 타입을 격자에 두면 눌러도 아무 일이 없는 버튼이 된다.
+    ///
+    /// 1세대 **기본형**에 없는 타입이 둘이다: `dark` 는 1세대에 아예 없고, `fairy` 는 삐삐·푸린·
+    /// 마임맨이 2세대 이후 진화 전 단계를 얻어 `evolves_from` 이 생겨 기본형 인덱스에서 빠졌다.
+    /// 예전엔 `dark` 만 빠져 있어 `fairy` 를 고른 사용자가 멈춘 버튼을 봤다(#225 리뷰).
+    ///
+    /// 후보 추첨 자체는 `testStarterTypePicksFromTheTypeIndex` 가 밟는다 — 종별 타입이
+    /// `provider.speciesTypeIndex()` 로 오게 된 뒤로 스텁으로 검증할 수 있다.
+    ///
+    /// **타입 이름을 직접 박는다.** `starterUnavailableTypes` 와 대조하면 `starterSelectableTypes`
+    /// 가 그 집합에서 파생되므로 무엇을 넣어도 통과하는 항등식이 된다(결함 주입으로 확인했다 —
+    /// `.fairy` 를 빼도 초록이었다). 잠글 사실은 "이 두 타입이 격자에 없다" 그 자체다.
+    func testStarterTypeGridDoesNotOfferTypesWithNoGenOneBaseSpecies() async {
+        let s = store(noEvo)
+        XCTAssertTrue(s.needsStarterSelection, "전제: 새 세이브는 스타터 선택 화면이다")
+
+        let offered = Set(s.starterSelectableTypes)
+        XCTAssertFalse(offered.contains(.dark), "1세대에 악 타입 종이 없다 — 고를 수 있으면 멈춘 버튼이다")
+        XCTAssertFalse(offered.contains(.fairy),
+                       "1세대 페어리(삐삐·푸린·마임맨)는 2세대 이후 진화 전 단계가 생겨 기본형이 아니다")
+        XCTAssertTrue(offered.contains(.fire), "정상 타입까지 걸러 버리면 화면이 텅 빈다")
+        XCTAssertEqual(offered.count, PokemonType.allCases.count - 2, "빠지는 것은 이 둘뿐이다")
+
+        // 격자에 없는 타입은 스토어도 **네트워크에 닿기 전에** 거절한다(가드 순서가 그렇다) —
+        // 화면과 게이트가 어긋나면 한쪽만 고쳐도 결함이 남는다.
+        for type in [PokemonType.dark, .fairy] {
+            let picked = await s.chooseStarterType(type)
+            XCTAssertFalse(picked, "\(type) 는 후보가 0개라 거절돼야 한다")
+            XCTAssertFalse(s.state.starterChosen, "거절된 선택이 스타터를 확정해서는 안 된다")
+        }
+    }
+
+    /// 스타터는 **한 번**이다. 이미 고른 세이브에서 다시 부르면 알 루프를 리셋하지 않고 거절한다
+    /// (`chooseStarterType` 은 `eggUsage`·`eggTier`·`pendingHatchID` 를 지우므로, 이 가드가 빠지면
+    /// 진행 중인 알과 보증 티어가 함께 날아간다).
+    func testStarterTypeIsRejectedOnceChosen() async throws {
+        let s = store(noEvo)
+        let type = try XCTUnwrap(s.starterSelectableTypes.first)
+        s.debugMarkStarterChosen()
+        XCTAssertFalse(s.needsStarterSelection)
+
+        let picked = await s.chooseStarterType(type)
+        XCTAssertFalse(picked, "이미 고른 세이브에서 두 번째 선택은 거절된다")
+        XCTAssertNil(s.state.active)
+    }
+
+    /// 추첨은 **`provider.speciesTypeIndex()` 한 번**을 읽는다. 예전엔 후보 종마다
+    /// `PokeAPIClient.shared.battleProfile` 을 무제한 `withTaskGroup` 으로 걸어 첫 탭에 HTTP
+    /// 요청 ~75개가 동시에 나갔고, `shared` 직접 호출이라 스텁이 안 걸려 이 경로가 테스트
+    /// 불가였다(그래서 페어리 결함이 3주 살아남았다).
+    ///
+    /// 대조군으로 **인덱스에 없는 타입**을 함께 본다 — 그것이 없으면 인덱스를 아예 읽지 않고
+    /// 아무 타입이나 통과시키는 구현도 초록이다.
+    func testStarterTypePicksFromTheTypeIndex() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("poke-\(UUID().uuidString).json")
+        let s = CompanionStore(provider: StubProvider(value: noEvo, types: [noEvo.baseID: [.fire]]),
+                               clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
+
+        let wrongType = await s.chooseStarterType(.water)
+        XCTAssertFalse(wrongType, "인덱스가 그 종을 물 타입으로 싣지 않았으면 후보가 0개다")
+        XCTAssertFalse(s.state.starterChosen, "거절된 선택이 스타터를 확정해서는 안 된다")
+
+        let picked = await s.chooseStarterType(.fire)
+        XCTAssertTrue(picked, "인덱스에 있는 타입은 뽑혀야 한다")
+        XCTAssertEqual(s.state.active?.baseID, noEvo.baseID, "뽑힌 종이 즉시 부화한다")
+        XCTAssertTrue(s.state.starterChosen)
     }
 
     // MARK: 상태 파일 decode 복원력 (회귀)

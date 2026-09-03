@@ -1494,11 +1494,13 @@ private struct MoveReplacementRow: View {
     }
 }
 
-/// 스타터 선택 — 맨 처음 1회. 알로 시작하는 대신 1세대 기본형 랜덤 3종 중 하나를 고른다.
-/// 후보는 store.ensureStarterCandidates 가 뽑아 고정하고(재렌더/재시작에도 동일), 탭하면 즉시 부화한다.
+/// 스타터 선택 — 맨 처음 1회. 알로 시작하는 대신 **타입**을 고르면, 그 타입의 1세대 미진화체
+/// 한 마리가 무작위로 뽑혀 즉시 부화한다(`store.chooseStarterType`). 어떤 종이 나올지는 고르기
+/// 전엔 모른다 — 종 3종을 보여 주고 택1 하게 하던 예전 화면은 #225 에서 지웠다.
 struct StarterPickerView: View {
     let store: CompanionStore
     @State private var picking = false   // 선택 후 중복 탭 방지
+    @State private var failed = false    // 실패를 **말한다** — 아래 주석 참고
     @State private var trainer = ""
 
     private var l: L { store.l }
@@ -1533,9 +1535,17 @@ struct StarterPickerView: View {
                     ForEach(store.starterSelectableTypes, id: \.self) { type in
                         Button {
                             picking = true
+                            failed = false
                             store.setTrainerName(trainer)
                             Task {
-                                if !(await store.chooseStarterType(type)) { picking = false }
+                                // **실패를 조용히 되돌리지 않는다.** `chooseStarterType` 은 종 인덱스
+                                // 조회 실패(오프라인)로도 false 를 준다. 예전엔 `picking` 만 내려서
+                                // 화면이 격자로 되돌아왔고, 첫 실행 사용자는 눌러도 아무 일이 없는
+                                // 버튼을 이유 없이 다시 보게 됐다 — 게임에 들어가는 유일한 문이다.
+                                if !(await store.chooseStarterType(type)) {
+                                    picking = false
+                                    failed = true
+                                }
                             }
                         } label: {
                             TypeBadge(type: type, language: store.language)
@@ -1544,45 +1554,21 @@ struct StarterPickerView: View {
                         .buttonStyle(.bordered).disabled(!nameReady)
                     }
                 }
-                Text(nameReady
+                Text(failed
+                     ? store.l.t("포켓몬 정보를 받지 못했어요. 인터넷 연결을 확인하고 다시 골라 주세요.",
+                             "Couldn't load Pokémon data. Check your internet connection and pick again.",
+                             "ポケモンの情報を取得できませんでした。インターネット接続を確認してもう一度選んでください。")
+                     : nameReady
                      ? store.l.t("선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다.",
                              "A random unevolved Gen I Pokémon of that type will hatch. Legendary and Mythical Pokémon are excluded.",
                              "選んだタイプの第1世代・未進化ポケモンがランダムでふ化します。伝説・幻は除きます。")
                      : l.starterNeedName)
-                    .font(.caption2).foregroundStyle(nameReady ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.orange))
+                    .font(.caption2)
+                    .foregroundStyle(failed || !nameReady ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .onAppear { if trainer.isEmpty { trainer = store.trainerName } }
-    }
-}
-
-/// 스타터 후보 1장 — 스프라이트 + 이름(비동기 조회) + 탭. 이름은 라인 조회로 채운다(캐시 → 보통 0콜).
-private struct StarterCard: View {
-    let store: CompanionStore
-    let speciesID: Int
-    let disabled: Bool
-    let onPick: () -> Void
-    @State private var name: String = ""
-
-    var body: some View {
-        Button(action: onPick) {
-            VStack(spacing: 6) {
-                SpriteView(speciesID: speciesID, size: 64, bob: true, animated: true)
-                    .frame(width: 64, height: 64)
-                Text(name.isEmpty ? "#\(speciesID)" : name)
-                    .font(.caption2.weight(.medium)).lineLimit(1)
-                    .foregroundStyle(.primary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(Color.secondary.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.secondary.opacity(0.15)))
-        }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .task(id: speciesID) { name = await store.resolveSpeciesName(speciesID) }
     }
 }
 
