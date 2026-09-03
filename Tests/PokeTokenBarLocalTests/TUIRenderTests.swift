@@ -113,6 +113,84 @@ struct TUIRenderTests {
         #expect(TUIRender.list(rows: [], selection: 0, height: 3, width: 20).count == 3)
     }
 
+    // MARK: 라벨 + 값 목록
+
+    /// 값은 오른끝에 붙는다 — 개수·진행도가 열을 이루지 않으면 목록을 훑어 읽을 수 없다.
+    @Test func testValueRowsRightAlignTheValue() {
+        let lines = TUIRender.rows([(label: "이상한 사탕", value: "×3")], width: 20)
+        #expect(lines.count == 1)
+        #expect(lines[0].hasSuffix("×3"))
+        #expect(TUIText.displayWidth(lines[0]) == 20)
+    }
+
+    /// 한글 라벨이 폭을 넘겨도 줄은 폭을 지켜야 한다. 넘치면 터미널이 접어 다음 줄을 밀어내고
+    /// 전체 다시 그리기로는 복구되지 않는다.
+    @Test func testValueRowsNeverExceedWidth() {
+        let long = [(label: String(repeating: "이상한사탕", count: 8), value: "×12")]
+        for width in [10, 24, 40, 80] {
+            for line in TUIRender.rows(long, width: width) {
+                #expect(TUIText.displayWidth(line) <= width, "폭 \(width) 에서 넘침: \(line)")
+            }
+        }
+    }
+
+    @Test func testEmptyValueRowsRenderNothing() {
+        #expect(TUIRender.rows([], width: 20).isEmpty)
+    }
+
+    // MARK: 진행 목록
+
+    @Test func testProgressRowsShowValueOverTarget() {
+        let lines = TUIRender.progress([TUIProgressRow(label: "집중 3회", value: 1, target: 3)], width: 30)
+        #expect(lines[0].contains("1/3"))
+    }
+
+    /// 완료된 행은 표식을 얻는다. 숫자만 주면 사용자가 목록을 훑는 대신 매 줄을 계산해야 한다.
+    @Test func testFinishedProgressRowsAreMarked() {
+        let done = TUIRender.progress([TUIProgressRow(label: "완료", value: 3, target: 3)], width: 30)
+        let open = TUIRender.progress([TUIProgressRow(label: "진행", value: 2, target: 3)], width: 30)
+        #expect(done[0].contains("✓"))
+        #expect(!open[0].contains("✓"), "안 끝난 행에 완료 표식이 붙었다")
+    }
+
+    /// 경계는 `>=` 다. 진행도는 목표값으로 클램프되지만(`Goal.advance`) 손편집·구버전 세이브의
+    /// 초과값이 남아 있을 수 있다 — `==` 로 보면 그 행이 영영 미완료로 보인다.
+    @Test func testProgressIsDoneAtAndAboveTheTarget() {
+        #expect(TUIProgressRow(label: "", value: 3, target: 3).isDone)
+        #expect(TUIProgressRow(label: "", value: 4, target: 3).isDone)
+        #expect(!TUIProgressRow(label: "", value: 2, target: 3).isDone)
+    }
+
+    /// 목표가 0 인 행에서도 줄이 나와야 한다 — 나누기·반복 횟수가 터지면 화면이 통째로 죽는다.
+    @Test func testProgressRowHandlesZeroTarget() {
+        #expect(TUIRender.progress([TUIProgressRow(label: "빈", value: 0, target: 0)], width: 20).count == 1)
+    }
+
+    @Test func testEmptyProgressListRendersNothing() {
+        #expect(TUIRender.progress([], width: 20).isEmpty)
+    }
+
+    // MARK: 목록 표식 폭
+
+    /// 목록 행은 **표식 칸을 뺀 폭**으로 조립해야 한다. 전체 폭으로 만들면 `list` 가 커서 표식을
+    /// 앞에 붙인 뒤 `pad` 가 오른쪽을 잘라 내 값(개수·진행도)이 사라진다 — 라벨만 남으므로
+    /// 사용자는 무엇이 잘렸는지도 모른다.
+    @Test func testRightAlignedValuesSurviveTheCursorMarker() {
+        let width = 24
+        let rows = TUIRender.rows([(label: "이상한 사탕", value: "×3")],
+                                  width: TUIRender.listRowWidth(width))
+        let lines = TUIRender.list(rows: rows, selection: 0, height: 1, width: width)
+        #expect(lines[0].contains("×3"), "커서 표식이 값을 밀어냈다: \(lines[0])")
+        #expect(TUIText.displayWidth(lines[0]) == width)
+    }
+
+    /// 아주 좁은 터미널에서 표식을 뺀 폭이 0 이하로 내려가면 안 된다 — 그 값이 `rows` 의 폭으로
+    /// 그대로 들어가 빈 줄만 나온다.
+    @Test func testListRowWidthStaysPositive() {
+        #expect(TUIRender.listRowWidth(0) > 0)
+        #expect(TUIRender.listRowWidth(1) > 0)
+    }
+
     // MARK: 키 안내
 
     private func idle() -> TUIHomeModel {
