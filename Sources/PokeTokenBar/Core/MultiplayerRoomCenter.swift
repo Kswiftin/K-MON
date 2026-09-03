@@ -1912,8 +1912,14 @@ final class MultiplayerRoomCenter {
         if gymMatch != nil {
             guard isHost, var engine = gymEngine, gymMatch?.turn == round,
                   gymMatch?.winnerID == nil else { return }
+            // 관장이 AI가 아닌데 이 턴을 직접 못 골라 마감 대타(`firstAvailableAction`)를 썼는지
+            // 미리 본다 — 채우고 나면 `myAction` 이 이미 차 있어 구분할 수 없다.
+            let leaderMissedItsTurn = engine.battle.myAction == nil && companion.gymLeadership?.usesAI != true
             // 마감에서는 양쪽을 채우는 것이 맞다 — 시간 안에 안 고른 것을 대신하는 자리다.
             engine.fillTimedOutActions(leaderUsesAI: companion.gymLeadership?.usesAI == true)
+            // 관장이 자리를 비워 마감 대타를 썼다면 다음 턴부터 AI에게 맡긴다 — 안 그러면 남은
+            // 턴 내내 상성도 안 보는 "PP 남은 첫 기술"만 반복해서 낸다.
+            if leaderMissedItsTurn { companion.setGymUsesAI(true) }
             let needsFreshTurn = !engine.isReady
             gymEngine = engine
             gymMatch = engine.snapshot()
