@@ -677,7 +677,12 @@ final class SaveTransferTests: XCTestCase {
         // 남기지 않으면 세이브를 주고받는 것만으로 하루 한 번이 무한이 된다.
         let accountLedger: Set<String> = ["lastCandyDate", "waveRun",
                                           "gymDefenseRewardDate", "gymDefenseRewardToday",
-                                          "raidRewardDate"]
+                                          "raidRewardDate",
+                                          // 레이드 포획 원장도 같은 부류다. 지급 원장과 **따로**
+                                          // 두는 이유는 서로를 태우지 않게 하기 위해서다 —
+                                          // 혼자 돈 1★ 의 소액 지급이 그날의 포획 기회를 없애면
+                                          // 사용자는 잃은 줄도 모르고 잃는다.
+                                          "raidCatchDate"]
         // 기기 환경설정: 현재 기기 값 유지.
         let devicePreference: Set<String> = ["language"]
 

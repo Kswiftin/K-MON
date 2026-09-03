@@ -59,3 +59,26 @@ func maxLevelStore(_ clock: TestClock, tag: String = "maxlevel",
     XCTAssertEqual(s.currentLevel, PokemonBalance.maxLevel, "테스트 전제: 만렙에 닿았다", file: file, line: line)
     return s
 }
+
+// MARK: 3단 진화 라인 시드 (체인 중간·끝에서 시작하는 개체를 세우는 테스트가 공유한다)
+
+/// 뿌리부터 최종체까지 3단인 라인(443 → 444 → 445). **`stubMaxLevelLine` 으로는 못 밟는 부류가
+/// 있다** — 그 시드는 어떤 종을 물어도 단일 노드 트리 하나를 돌려주므로, "저장된 경로가 트리
+/// 뿌리에서 시작하지 않는다" 는 조건이 테스트에서 영원히 성립하지 않는다. 실제 클라이언트의
+/// `line(baseSpeciesID:)` 는 요청한 종이 최종체여도 **체인 전체**를 뿌리부터 싣고 온다
+/// (`PokeAPIClient.line` → `evoNode(from: chainDTO.chain)`).
+let stubThreeStageLine = EvoLine(
+    baseID: 443,
+    tree: EvoNode(speciesID: 443,
+                  children: [EvoNode(speciesID: 444,
+                                     children: [EvoNode(speciesID: 445, children: [])])]),
+    rarity: .rare,
+    names: [443: ["en": "P443", "ko": "포443", "ja": "ポ443"],
+            444: ["en": "P444", "ko": "포444", "ja": "ポ444"],
+            445: ["en": "P445", "ko": "포445", "ja": "ポ445"]])
+
+@MainActor
+func threeStageStore(_ clock: TestClock, tag: String = "three-stage") -> CompanionStore {
+    CompanionStore(provider: StubProvider(value: stubThreeStageLine), clock: clock.closure,
+                   fileURL: stubStoreURL(tag), rng: SeededRNG(seed: 7))
+}

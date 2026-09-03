@@ -299,6 +299,12 @@ struct RaidView: View {
                     settlementRow(l.raidContribution, settlement.contribution)
                     settlementRow(l.raidTurnsLeft, settlement.turnBonus)
                     settlementRow(l.raidRewardSurvivors, settlement.survivorBonus)
+                    // 협동 항이 접힌 판은 **그 사실을 말한다** — 안 말하면 `+0 ✨` 세 줄이 규칙이
+                    // 아니라 계산 오류로 읽힌다(아래 하루 한 번 게이트와 같은 이유). 지급이 0 이
+                    // 아니라 그 문구는 안 뜨는 자리다.
+                    if !RaidBoss.coopTermsApply(runnerCount: runnerCount) {
+                        Text(l.raidSoloSettlement).font(.caption2).foregroundStyle(.orange)
+                    }
                     Divider().opacity(0.5)
                     if let payout = center.raidPayout, payout > 0 {
                         settlementRow(l.t("지급", "Paid", "支給"), payout, emphasized: true)
@@ -311,9 +317,39 @@ struct RaidView: View {
                 .padding(8)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
+            if let caught = catchLine {
+                Text(caught).font(.caption2).foregroundStyle(.purple)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Button(l.t("나가기", "Leave", "退出")) { center.leaveRoom() }
                 .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
         }
+    }
+
+    /// 이 판의 러너 수 — 보스는 사람이 아니라 세지 않는다(정산이 같은 배열에서 세는 것과 같다).
+    private var runnerCount: Int {
+        center.combatFighters.filter { $0.team == .red }.count
+    }
+
+    /// 누가 보스를 데려갔나. **남이 뽑힌 판도 말해 준다** — 아무 말이 없으면 "나만 못 받았다" 가
+    /// 아니라 "이 기능이 안 돌았다" 로 읽힌다. 추첨이 없는 판(1★·1인·패배)은 줄 자체가 없다.
+    private var catchLine: String? {
+        guard let winner = center.raidCatcherID,
+              let boss = center.combatFighters.first(where: { $0.id == RaidBoss.bossID })
+        else { return nil }
+        let name = boss.trainerName
+        guard winner != center.myID else {
+            // 내 줄은 **실제 결과**를 기다린다. 뽑힌 것만으로 "박스에 있어요" 를 그리면, 라인 조회가
+            // 실패한 판에서 오류 문구와 모순되는 두 문장이 한 화면에 남고 박스는 비어 있다.
+            // 못 잡은 사유는 `lastError` 가 이미 말한다(같은 스크롤 안에 그려진다).
+            switch center.raidCatchResult {
+            case .box: return l.raidCaughtByMe(name, toBox: true)
+            case .companion: return l.raidCaughtByMe(name, toBox: false)
+            case .claimedToday, .unavailable, nil: return nil
+            }
+        }
+        let trainer = center.combatFighters.first { $0.id == winner }?.trainerName ?? "?"
+        return l.raidCaughtByOther(trainer: trainer, name: name)
     }
 
     private func settlementRow(_ label: String, _ value: Int, emphasized: Bool = false) -> some View {

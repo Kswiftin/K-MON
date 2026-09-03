@@ -40,6 +40,16 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
         }
     }
 
+    /// 이 티어를 잡으면 보스가 박스로 따라오나. **1★ 는 안 연다** — 400 HP 는 둘이 몇 턴에
+    /// 깨는데 추첨 풀이 전부 전설·유사전설이라, 열면 알 부화(20,000 별의조각)가 뜻을 잃는다.
+    /// 3★ 부터가 "뭉쳐야 잡힌다" 의 시작이고, HP 표가 이미 그 머릿수를 강제한다.
+    var grantsCatch: Bool {
+        switch self {
+        case .one: false
+        case .three, .five: true
+        }
+    }
+
     /// 어느 티어에서도 넘지 못하는 보스 HP 천장. 와이어 디코딩이 이 값을 상한으로 쓴다 —
     /// 티어를 모르는 자리라 개별 티어 값을 쓸 수 없다.
     static var maxBossHP: Int { allCases.map(\.bossHP).max() ?? 0 }
@@ -49,6 +59,23 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
     var recommendedRunners: Int {
         max(1, Int((Double(bossHP) / Double(RaidBoss.runnerDamageBudget)).rounded(.up)))
     }
+}
+
+/// 포획이 어디서 끝났나. **불리언으로는 화면이 반드시 한 번 거짓말을 한다** — 실패와 "오늘은 이미
+/// 잡았다" 가 같은 값이면 문구가 둘 중 하나를 틀리고, 성공도 상자와 빈 동행 자리를 구별하지 못해
+/// 사용자가 빈 상자를 열게 된다.
+enum RaidCatchResult: Sendable, Equatable {
+    /// 상자로 들어갔다(동행이 있는 평소의 판).
+    case box
+    /// 비어 있던 동행 자리를 채웠다 — 졸업 직후 등.
+    case companion
+    /// 오늘의 한 마리를 이미 데려왔다. **불러오기 실패가 아니다**: 네트워크를 건드리지도 않았고,
+    /// 오늘 다시 도전해도 결과가 같다.
+    case claimedToday
+    /// 보스를 세울 수 없었다(라인 조회 실패·그릴 수 없는 번호). 원장을 태우지 않아 오늘 다시 된다.
+    case unavailable
+
+    var isCaught: Bool { self == .box || self == .companion }
 }
 
 /// 한 판의 정산 내역. **항을 나눠 들고 다니는 이유는 완전설명이다** — 지갑을 늘린 값은 화면이
@@ -90,6 +117,12 @@ enum RaidBoss {
     static let turnBonusPerTurn = 10
     /// 살아남은 러너 1명당 보너스.
     static let survivorBonusPerRunner = 50
+    /// 협동 항이 붙기 시작하는 머릿수. 이 값 미만이면 정산은 기본급 하나로 접히고 포획도 없다.
+    static let minimumCoopRunners = 2
+
+    /// 이 머릿수에 협동 항이 붙나. **정산과 화면이 같은 술어를 본다** — 화면이 "협동 보너스는 2명
+    /// 이상부터" 를 그리는 조건을 따로 적으면, 머릿수 기준을 옮긴 날 문구와 실제 정산이 갈린다.
+    static func coopTermsApply(runnerCount: Int) -> Bool { runnerCount >= minimumCoopRunners }
 
     /// 예약 부화는 항상 5★ 다 — 예약이 존재하는 이유가 "혼자서는 못 여는 티어를 위해 사람을 모으는
     /// 것" 이라서다. 아무 때나 여는 방은 1★·3★ 만 고를 수 있다.
@@ -197,15 +230,54 @@ enum RaidBoss {
     /// **기여도 항이 이 식의 존재 이유다.** 없으면 무임승차와 캐리가 같은 값을 받고, 그 순간
     /// 협동은 "누가 대신 잡아 주나"가 된다.
     ///
+    /// **혼자 도는 판은 기본급만 받는다.** 나머지 셋은 협동 항이다 — 혼자면 기여 비율이 언제나
+    /// 100% 라 기여도 항이 무임승차를 가르는 일을 못 하고, 남은 턴·생존도 결국 머릿수가 만드는
+    /// 여유를 재는 값이다. 그 셋이 그대로 붙으면 1인 반복이 협동과 같은 값을 낸다.
+    ///
+    /// **지급을 통째로 0 으로 두지는 않는다.** 1★ 는 혼자 잡히도록 HP 를 고른 티어라(`RaidTier`
+    /// 주석), 0 을 주면 이웃 없는 사용자에게 이 기능이 콘텐츠 0 이 된다 — 줄이되 없애지 않는 것이
+    /// "뭉칠 이유" 와 "혼자서도 돌 만함" 을 동시에 지키는 자리다.
+    ///
     /// 인자는 전부 호스트가 보내오는 값이라 여기서 자른다 — 음수와 100% 초과 기여를 막는다.
     static func settlement(tier: RaidTier, myDamage: Int, totalDamage: Int,
-                           turnsRemaining: Int, survivingRunners: Int) -> RaidSettlement {
+                           turnsRemaining: Int, survivingRunners: Int,
+                           runnerCount: Int) -> RaidSettlement {
+        guard coopTermsApply(runnerCount: runnerCount) else {
+            return RaidSettlement(base: tier.baseReward, contribution: 0,
+                                  turnBonus: 0, survivorBonus: 0)
+        }
         let share = totalDamage > 0 ? min(1, Double(max(0, myDamage)) / Double(totalDamage)) : 0
         return RaidSettlement(
             base: tier.baseReward,
             contribution: Int((Double(tier.baseReward) * share).rounded(.down)),
             turnBonus: turnBonusPerTurn * max(0, turnsRemaining),
             survivorBonus: survivorBonusPerRunner * max(0, survivingRunners))
+    }
+
+    // MARK: 포획 추첨
+
+    /// 보스를 데려갈 한 명. **정렬된 UUID 를 시드로 짚는다.**
+    ///
+    /// 정렬이 계약의 절반이다 — 배열 순서로 짚으면 피어마다 `fighters` 순서가 달라 같은 판에서
+    /// 서로 다른 사람을 당첨자로 계산하고, 그러면 아무도 못 잡거나 둘이 잡는다.
+    ///
+    /// 시드로 짚는 나머지 절반은 **와이어를 안 늘리려는 것**이다. `.raidStart` 가 시드와 편성을
+    /// 이미 함께 나르므로 모든 피어가 새 메시지 없이 같은 답에 닿는다.
+    ///
+    /// **끝난 라운드를 함께 섞는 것이 나머지 절반이다.** `.raidStart` 는 시드와 편성을 같이 나르므로
+    /// 시드만 읽으면 아무 피어나(와이어를 읽는 사람도) 1라운드에 당첨자를 계산할 수 있다. 못 이기는
+    /// 걸 아는 러너들에게 20턴의 누적 피해는 정산 말고는 아무것도 주지 않는데, 기여도 항이 지키려던
+    /// 유인이 바로 그것이다. 판이 끝나야 정해지는 값을 섞으면 **와이어는 그대로 두고** 개시 시점
+    /// 예측만 막는다 — 끝난 라운드는 모든 피어가 스스로 세는 값이다(`raidFinishedRound`).
+    ///
+    /// 시드는 호스트가 고른다 — 조작된 호스트는 자기가 뽑힐 때까지 다시 굴릴 수 있다. LAN 이고
+    /// 클라이언트 권위라 여기서 막을 방법이 없고, 손해의 상한은 `raidCatchDate` 가 잡는다
+    /// (조작해도 그날 가져갈 수 있는 총량은 한 마리다 — `raidRewardDate` 와 같은 규칙).
+    static func catcher(runnerIDs: [UUID], seed: UInt64, finishedRound: Int) -> UUID? {
+        let ordered = runnerIDs.sorted { $0.uuidString < $1.uuidString }
+        guard !ordered.isEmpty else { return nil }
+        var rng = SplitMix64(seed: seed &+ UInt64(bitPattern: Int64(finishedRound)))
+        return ordered[Int(rng.next() % UInt64(ordered.count))]
     }
 }
 

@@ -1111,6 +1111,12 @@ struct CompanionState: Codable, Sendable {
     /// 무결성 서명 대상이다(`SaveTransfer.canonicalString` 의 `rd` 세그먼트) — 지우면 같은 날
     /// 몇 번이든 다시 받는다. 자정 타이머 없이 키 비교로 넘긴다(`MissionBoard` 와 같은 방식).
     var raidRewardDate = ""
+    /// 레이드 보스를 마지막으로 잡은 날짜 키. 하루 한 마리의 멱등 가드이고 같은 이유로 서명
+    /// 대상이다(`rc` 세그먼트).
+    ///
+    /// **지급 원장과 따로 두는 것이 요점이다.** 하나로 합치면 혼자 돈 1★ 의 소액 지급이 그날의
+    /// 포획 기회까지 태워, 사용자는 아침에 잃은 것을 점심에야 알게 된다.
+    var raidCatchDate = ""
     var battleRank = BattleRank()
     /// 진행 중인 랭크전의 에스크로 — 개시 때 지갑에서 빠져나간 판돈과 상대 랭크를 적어 둔다.
     /// 정산이 배틀 **끝**에만 있던 때는 지고 있을 때 앱을 종료하면 판돈을 안 냈다(상대는 승리
@@ -1192,6 +1198,7 @@ struct CompanionState: Codable, Sendable {
         adventureHistory   = c.lenient([Lossy<AdventureRecord>].self, forKey: .adventureHistory, default: []).compactMap(\.value)
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)
         raidRewardDate     = c.lenient(String.self, forKey: .raidRewardDate, default: "")
+        raidCatchDate      = c.lenient(String.self, forKey: .raidCatchDate, default: "")
         battleRank         = c.lenient(BattleRank.self, forKey: .battleRank, default: BattleRank())
         pendingRanked      = c.lenientOptional(PendingRankedBattle.self, forKey: .pendingRanked)
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())

@@ -1284,6 +1284,49 @@ struct L {
           "The host left, so the raid ended. Open a new one.",
           "ホストが退出したためレイドが終了しました。もう一度開いてください。")
     }
+    var raidCaughtTitle: String { t("🎉 보스를 잡았다", "🎉 Boss caught", "🎉 ボスを捕まえた") }
+    /// **어디로 갔는지 말한다.** 동행이 비어 있으면 잡은 보스가 바로 동행이 되는데(`catchRaidBoss`),
+    /// 그때도 "박스" 라고 말하면 사용자는 빈 박스를 열고 보상이 사라졌다고 판단한다.
+    func raidCaughtBody(_ name: String, toBox: Bool) -> String {
+        toBox ? t("\(name)이(가) 박스에 들어왔어요.", "\(name) went into your box.",
+                  "\(name)がボックスに入りました。")
+              : t("\(name)이(가) 새 동행이 됐어요.", "\(name) is your new companion.",
+                  "\(name)が新しい相棒になりました。")
+    }
+    /// 결과창 — 내가 뽑혔을 때. 잡힌 개체가 어디로 갔는지 말해 준다(박스를 안 열면 안 보인다).
+    func raidCaughtByMe(_ name: String, toBox: Bool) -> String {
+        toBox ? t("추첨에 뽑혀 \(name)을(를) 데려왔다 — 박스에 있어요.",
+                  "You were drawn and took \(name) home — it is in your box.",
+                  "抽選で選ばれて\(name)を連れ帰った — ボックスにいます。")
+              : t("추첨에 뽑혀 \(name)을(를) 데려왔다 — 새 동행이 됐어요.",
+                  "You were drawn and took \(name) home — it is your new companion.",
+                  "抽選で選ばれて\(name)を連れ帰った — 新しい相棒になりました。")
+    }
+    /// 결과창 — 남이 뽑혔을 때. 아무 말도 안 하면 "나만 못 받았다" 로 읽힌다.
+    func raidCaughtByOther(trainer: String, name: String) -> String {
+        t("\(trainer) 님이 추첨에 뽑혀 \(name)을(를) 데려갔어요.",
+          "\(trainer) was drawn and took \(name) home.",
+          "\(trainer) さんが抽選で選ばれて\(name)を連れ帰りました。")
+    }
+    /// 오늘의 한 마리를 이미 데려온 판. **불러오기 실패와 갈라 둔다** — 그 문구는 "오늘 다시 도전할
+    /// 수 있어요" 로 끝나는데, 이 판에서는 그게 거짓이다.
+    /// 정산표 — 혼자 돈 판. **말 안 하면 `+0 ✨` 세 줄이 계산 오류로 읽힌다**(하루 한 번 게이트를
+    /// 말해 주는 것과 같은 이유). 지급이 0 이 아니라 그쪽 문구는 안 뜨는 자리다.
+    var raidSoloSettlement: String {
+        t("혼자 돈 판은 기본급만 나가요 — 기여·남은 턴·생존 보너스는 2명 이상부터예요.",
+          "A solo clear pays the base only - contribution, turns left and survivor bonuses need 2+ runners.",
+          "ソロ周回は基本給のみです — 貢献・残りターン・生存ボーナスは2人以上からです。")
+    }
+    var raidCatchAlreadyToday: String {
+        t("오늘은 이미 보스를 데려왔어요 — 포획은 하루 한 마리예요.",
+          "You already took a boss home today - one catch per day.",
+          "今日はすでにボスを連れ帰りました — 捕獲は1日1匹です。")
+    }
+    var raidCatchFailed: String {
+        t("보스 정보를 불러오지 못해 데려오지 못했어요 — 오늘 다시 도전할 수 있어요.",
+          "Could not load the boss, so it did not come home - you can try again today.",
+          "ボスの情報を読み込めず連れ帰れませんでした — 今日中にもう一度挑戦できます。")
+    }
     var raidNextHatch: String { t("다음 5★ 부화", "Next 5★ hatch", "次の5★出現") }
     func raidHatchSoonTitle(minutes: Int) -> String {
         t("⏰ \(minutes)분 뒤 5★ 레이드", "⏰ 5★ raid in \(minutes) min", "⏰ \(minutes)分後に5★レイド")

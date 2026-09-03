@@ -303,6 +303,7 @@ enum SaveTransfer {
             .filter { (1...10_000).contains($0.companionSpeciesID) && (0...maxTokenValue).contains($0.stardust) }
             .sorted { $0.completedAt > $1.completedAt }.prefix(30))
         s.raidRewardDate = clampedKey(s.raidRewardDate)
+        s.raidCatchDate = clampedKey(s.raidCatchDate)
         // 하한이 1 인 이유는 **1인 레이드**다 — `2...4` 였을 때는 혼자 돈 레이드 전적이 불러오기에서
         // 통째로 사라진다(보스는 사람이 아니라 이 수에 들지 않는다).
         s.battleHistory = Array(s.battleHistory
@@ -432,6 +433,9 @@ enum SaveTransfer {
         // 새 필드라 조건부 append 이고 `integrityVersion` 은 올리지 않는다: 값이 든 기존 세이브가
         // 없으니 구서명은 그대로 유효하다.
         if !s.raidRewardDate.isEmpty { p.append("rd\(s.raidRewardDate)") }
+        // 포획 원장도 같은 부류다 — 잡은 개체는 박스에 영구히 남으므로 지우고 다시 잡는 쪽이
+        // 지급보다 이득이 크다. 새 필드라 조건부 append 이고 `integrityVersion` 은 안 올린다.
+        if !s.raidCatchDate.isEmpty { p.append("rc\(s.raidCatchDate)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
@@ -564,6 +568,9 @@ enum SaveTransfer {
         // 받았으면 받은 것이다 — 더 최근 날짜를 남기지 않으면 세이브를 주고받는 것만으로 하루
         // 한 번이 무한이 된다.
         state.raidRewardDate = max(imported.raidRewardDate, current.raidRewardDate)
+        // 포획 원장도 계정 원장이다. 안 병합하면 맥 A 에서 잡고 내보내 맥 B 로 불러오는 것만으로
+        // 같은 날 두 마리가 되고, 이쪽은 지갑이 아니라 박스에 영구히 쌓인다.
+        state.raidCatchDate = max(imported.raidCatchDate, current.raidCatchDate)
         // 체육관 방어 원장도 같은 부류다. 같은 날이면 **많이 받은 쪽**을 남긴다 — 적은 쪽을 쓰면
         // 기기를 옮기는 것만으로 하루 상한이 되살아난다.
         (state.gymDefenseRewardDate, state.gymDefenseRewardToday) = Self.mergedGymDefenseLedger(
