@@ -36,6 +36,12 @@ LOGIC_CORE=(
   # 키로 세는 속도 제한)가 사는 곳. 소켓 부분은 단위 테스트가 안 닿아 파일 수치는 낮지만, 배열에
   # 넣지 않으면 그 검증기가 커버리지에서 통째로 빠진다 — PeerAdvertisement 를 넣은 이유와 같다.
   "Sources/PokeTokenBar/Core/PokemonTrade.swift"
+  # 경매도 같은 커밋 프로토콜을 태우는데 배열 밖에 있었다 — `isValid`·`matches`·
+  # `canCommitOutgoing`·`unpledgedTokens`·`isCommitted` 가 전부 여기 있고 그중 셋은 상대가
+  # 보낸 값을 보는 신뢰경계다. #229 의 첨자 결함이 무테스트로 나갈 뻔한 이유가 이것이다:
+  # 커버리지에 아예 안 잡히는 파일은 "몇 %인가" 를 물을 기회조차 없다. `PokemonTrade` 와 같은
+  # 이유로 소켓 부분 때문에 파일 수치는 낮게 나온다.
+  "Sources/PokeTokenBar/Core/PokemonAuction.swift"
   # 광고 이름의 바이트 예산. 네 LAN 센터가 전부 이 한 함수를 지나므로 여기가 무테스트면 부류가
   # 통째로 무테스트다 — 이전엔 `PlayerGymRoomName` 안에 숨어 있어 커버리지에서 보이지 않았다.
   "Sources/PokeTokenBar/Core/LANServiceName.swift"

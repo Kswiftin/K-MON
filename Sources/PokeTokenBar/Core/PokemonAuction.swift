@@ -354,7 +354,7 @@ final class PokemonAuctionCenter {
                 send(.failed(offerID: offerID), on: connection, id: connectionID); return
             }
             // 앨범은 `performTrade` 가 지운다 — 보낼 값을 미리 만들어 두고 성사 뒤에 보낸다.
-            let outgoing = companion.tradeMemoryPayload(for: listing.mon.id)
+            let outgoingMemories = companion.tradeMemoryPayload(for: listing.mon.id)
             let committed: Bool
             switch offer.value {
             case .pokemon(let pokemon):
@@ -374,7 +374,8 @@ final class PokemonAuctionCenter {
             let listingID = offer.listingID
             localListings[listingID] = nil
             listeners[listingID]?.cancel(); listeners[listingID] = nil
-            send(.completed(offerID: offerID, memories: outgoing), on: connection, id: connectionID)
+            send(.completed(offerID: offerID, memories: outgoingMemories),
+                 on: connection, id: connectionID)
             // 게시물이 사라졌으니 남은 제안은 답을 기다릴 이유가 없다. **ID 를 먼저 걷고**
             // 나서 돈다 — `reject` 가 도는 중에 `offers` 를 고치기 때문이다.
             for other in offers.filter({ $0.listingID == listingID && $0.status == .pending })
@@ -398,8 +399,8 @@ final class PokemonAuctionCenter {
                 // 교환은 스토어를 통째로 흔든다(세이브·앨범·대화). 이유 문구를 **미리** 만들고
                 // 국면은 한 번에 적는다 — 여는 본문 안에서 `companion` 을 부르지 않는다.
                 let reason = companion.l.t("교환을 완료하지 못했습니다.",
-                                                            "Trade could not be completed.",
-                                                            "交換を完了できませんでした。")
+                                           "Trade could not be completed.",
+                                           "交換を完了できませんでした。")
                 refundStardustIfNeeded(offerID)
                 withOutgoing(offerID, on: connectionID) { $0.status = .failed; $0.error = reason }
                 return

@@ -503,15 +503,14 @@ private struct AuctionStubProvider: PokeProviding {
                                                          offeringStardust: 100))
         #expect(center.apply(to: behind, offering: alsoMine) != nil)
         let aheadID = try #require(offer(center, on: ahead.id)?.id)
-        let payingID = try #require(center.outgoingOffers[1].id)
+        let payingID = center.outgoingOffers[1].id
 
         // 지갑을 보는 관측자 하나. 에스크로가 지갑을 건드리는 순간 앞 제안을 치운다 —
         // 그 제안은 별의모래가 0 이라 여기서 스토어를 되건드리지 않는다.
-        nonisolated(unsafe) let observed = center
         withObservationTracking {
             _ = store.state.starPieces
         } onChange: {
-            MainActor.assumeIsolated { observed.clearOutgoingResult(aheadID) }
+            MainActor.assumeIsolated { center.clearOutgoingResult(aheadID) }
         }
 
         center.receive(.accepted(offerID: payingID, pokemon: snapshot(paying)),
@@ -547,18 +546,17 @@ private struct AuctionStubProvider: PokeProviding {
                                                          offeringStardust: 100))
         #expect(center.apply(to: behind, offeringStardust: 1) != nil)
         let aheadID = try #require(offer(center, on: ahead.id)?.id)
-        let payingID = try #require(center.outgoingOffers[1].id)
+        let payingID = center.outgoingOffers[1].id
 
         center.receive(.accepted(offerID: payingID, pokemon: snapshot(paying)),
                        connectionID: payingConnection)
         #expect(offer(center, on: behind.id)?.status == .pending)
 
         // 관측자는 **커밋 뒤에** 깨어난다 — `receiveAuctionPokemon` 의 저장이 그 자리다.
-        nonisolated(unsafe) let observed = center
         withObservationTracking {
             _ = store.state.starPieces
         } onChange: {
-            MainActor.assumeIsolated { observed.clearOutgoingResult(aheadID) }
+            MainActor.assumeIsolated { center.clearOutgoingResult(aheadID) }
         }
 
         center.receive(.completed(offerID: payingID, memories: nil), connectionID: payingConnection)
@@ -568,5 +566,35 @@ private struct AuctionStubProvider: PokeProviding {
         #expect(payer.stardustEscrowed == false,
                 "별의모래는 상대에게 건너갔다 — 환불 대상으로 남으면 화폐가 복제된다")
         #expect(offer(center, on: behind.id)?.status == .pending, "남의 제안이 완료로 바뀌었다")
+    }
+
+    /// 모르는 제안 ID 로 온 프레임은 **아무 제안도 건드리지 않는다.** 프레임은 상대가 보내는
+    /// 값이라 이 경로가 곧 신뢰경계다. 첨자를 쓰던 때는 "못 찾음" 을 호출부마다 따로 막아야
+    /// 했고, 그래서 새 호출부가 무검사로 남을 수 있었다 — 지금은 여는 헬퍼가 한 곳에서 막는다.
+    @Test func aFrameForAnUnknownOfferTouchesNothing() throws {
+        let store = makeStore()
+        store.creditStarPieces(100)
+        let theirs = remoteMon()
+        let center = PokemonAuctionCenter(companion: store)
+        let connection = try #require(center.apply(to: listing(for: theirs), offeringStardust: 100))
+
+        center.receive(.accepted(offerID: UUID(), pokemon: snapshot(theirs)), connectionID: connection)
+
+        #expect(center.outgoingOffers.count == 1)
+        #expect(center.outgoingOffers.first?.status == .pending, "남의 제안 ID 한 장이 내 국면을 움직였다")
+        #expect(center.outgoingOffers.first?.stardustEscrowed == false)
+        #expect(store.availableTokens == 100, "모르는 제안에 에스크로가 걷혔다")
+    }
+
+    /// 신청자가 제안을 거둬들이면 **게시자 쪽 자리도 풀려야 한다.** 안 풀리면 잠긴 자리 때문에
+    /// 게시자는 다음 제안을 수락할 수 없고, 화면에는 답을 기다리는 카드가 영영 남는다.
+    @Test func anApplicantsFailureFrameReleasesTheListersSlot() async throws {
+        let store = makeStore()
+        let (center, _, connection, offerID) = await listingCenter(store, offering: remoteMon(baseID: 40))
+        #expect(center.offers.first?.status == .pending)
+
+        center.receive(.failed(offerID: offerID), connectionID: connection)
+
+        #expect(center.offers.first?.status == .failed)
     }
 }
