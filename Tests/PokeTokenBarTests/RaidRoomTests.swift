@@ -648,6 +648,29 @@ final class RaidRoomTests: XCTestCase {
                                                        fallback: companion)?.id, companion.id)
     }
 
+    /// **부류 가드 — 선택이 레이드 밖으로 새면 안 된다.** `buildSnapshot(pick:)` 은 방 계열 전부
+    /// (체육관·토너먼트·퀴즈·포켓슬론)가 지나는 한 곳이라, 게이트 없이 넘기면 화면에 피커가 없는
+    /// 활동까지 레이드에서 고른 개체가 조용히 출전한다. 지우면 아무 동작 테스트도 안 깨지는
+    /// 종류의 가드라(defect-log) 소스에서 막는다.
+    ///
+    /// 대조군을 먼저 본다 — 이름이 바뀌었는데 검사가 0건이면 이 가드는 아무것도 안 지키면서 초록이다.
+    func testThePickIsOnlyEverPassedOnRaidPaths() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PokeTokenBar/Core/MultiplayerRoomCenter.swift")
+        let uses = try String(contentsOf: url, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+            .filter { $0.contains("raidPickedMonID") && !$0.contains("var raidPickedMonID") }
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+
+        XCTAssertEqual(uses.count, 2, "방을 여는 자리와 참가하는 자리 둘이다 — 늘었으면 아래 규칙부터 본다")
+        for line in uses {
+            XCTAssertTrue(line.contains("== .raid") || line.contains("isRaidRoomName"),
+                          "레이드 게이트 없이 선택을 넘긴다: \(line.trimmingCharacters(in: .whitespaces))")
+        }
+    }
+
     /// 안 고른 사용자는 오늘 동작 그대로다 — 피커는 선택 사항이라 기본값이 바뀌면 안 된다.
     func testNoPickKeepsTheFacadeMon() {
         let companion = mon(25)

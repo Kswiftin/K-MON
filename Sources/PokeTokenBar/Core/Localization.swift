@@ -1238,6 +1238,14 @@ struct L {
     func raidTierLabel(_ tier: Int, runners: Int) -> String {
         t("\(tier)★ · \(runners)인 권장", "\(tier)★ · \(runners) recommended", "\(tier)★ · \(runners)人推奨")
     }
+    var raidPickMon: String { t("들고 갈 포켓몬", "Pokémon you bring", "連れていくポケモン") }
+    /// 안 고른 사용자에게 기본값을 말한다 — 피커가 선택 사항이라 티어 버튼이 잠기지 않고,
+    /// 그러면 아무것도 안 고른 채 방이 열린다. 무엇이 나갔는지는 그때 알면 늦다.
+    var raidPickMonHint: String {
+        t("고르지 않으면 지금 동행이 나갑니다. 방에 들어간 뒤에는 바꿀 수 없어요.",
+          "Without a pick your current companion goes. You can't change it after entering a room.",
+          "選ばないと今の相棒が出ます。部屋に入ったあとは変更できません。")
+    }
     var raidTurnsLeft: String { t("남은 턴", "Turns left", "残りターン") }
     var raidContribution: String { t("기여도", "Contribution", "貢献度") }
     var raidRewardBase: String { t("기본", "Base", "基本") }

@@ -62,6 +62,7 @@ struct RaidView: View {
     private var recruiting: some View {
         VStack(alignment: .leading, spacing: 10) {
             todaysBossCard
+            monPicker
             tierPicker
             nearbyRooms
             if store.raidRewardClaimedToday {
@@ -89,6 +90,23 @@ struct RaidView: View {
         }
         .padding(9)
         .pokedoroCard(tint: .purple)
+    }
+
+    /// 들고 갈 개체를 고른다 — **방에 들어가기 전에만**. 로비에서 바꾸려면 참가자 `speciesID` 와
+    /// 스냅샷을 다시 뿌려야 해서 와이어 메시지가 늘어난다(토너먼트가 후보를 방 밖에서 정하는 것과
+    /// 같은 자리다).
+    ///
+    /// 고르는 것은 **선택 사항이라 티어·참가 버튼을 잠그지 않는다**(6마리를 요구하는 토너먼트와
+    /// 다른 점이다). 안 고르면 예전처럼 `battleFacadeMon` 이 나가고, 그 사실은 아래 문구가 말한다.
+    private var monPicker: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(l.raidPickMon).font(.caption).bold()
+            TeamPicker(store: store,
+                       selection: Binding(get: { center.raidPickedMonID.map { [$0] } ?? [] },
+                                          set: { center.raidPickedMonID = $0.last }),
+                       limit: 1)
+            Text(l.raidPickMonHint).font(.caption2).foregroundStyle(.secondary)
+        }
     }
 
     /// 티어는 고를 수 있고 **보스는 못 고른다** — 고르게 두면 모두가 가장 이득인 하나만 판다.
