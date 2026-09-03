@@ -362,6 +362,69 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(other.creditRaidReward(500), 500)
     }
 
+    // MARK: 포획 — 보스가 박스로 들어온다
+
+    /// 잡은 보스는 **박스로** 간다. 동행을 밀어내지 않는다 — 밀어내면 레이드 한 판이 키우던
+    /// 파트너를 조용히 치운다.
+    ///
+    /// 종은 스텁 라인의 종(20)으로 부른다. 실제 클라이언트의 `line(baseSpeciesID:)` 는 요청한 종을
+    /// 포함한 체인 전체의 이름을 싣고 오므로(`allIDs(tree)`), 요청한 종의 이름이 있다는 전제는
+    /// 스텁과 실물이 같다.
+    @MainActor
+    func testCatchingTheBossPutsItInTheBox() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-box")
+        await store.hatch(baseID: 20)
+        let partner = store.state.active?.id
+        XCTAssertNotNil(partner, "테스트 전제: 동행이 있다")
+
+        XCTAssertTrue(await store.catchRaidBoss(speciesID: 20))
+
+        XCTAssertEqual(store.state.active?.id, partner, "동행은 그대로다")
+        XCTAssertEqual(store.state.boxedMons.count, 1)
+        let caught = try? XCTUnwrap(store.state.boxedMons.first)
+        XCTAssertEqual(caught?.currentID, 20)
+        XCTAssertEqual(caught?.totalForms, 1, "풀은 전부 최종 진화체라 단일 형태로 선다")
+        XCTAssertNotNil(caught?.firstMetAt, "첫 만남이 없으면 홈·추억이 이 개체를 못 센다")
+        XCTAssertNotNil(caught?.names?[20], "이름이 없으면 도감이 종 번호(#20)를 그린다")
+        XCTAssertEqual(caught?.rarity, .common, "희귀도는 라인에서 읽는다 — 박아 두면 전설이 흔해진다")
+        XCTAssertTrue(store.raidCatchClaimedToday, "성공한 포획은 오늘의 원장을 쓴다")
+    }
+
+    /// 하루 한 마리. 두 번째 판이 같은 날 또 잡으면 3★ 를 반복해 하루에 전설을 여러 마리 얻는다.
+    @MainActor
+    func testASecondCatchOnTheSameDayIsRefused() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-twice")
+        await store.hatch(baseID: 20)
+        XCTAssertTrue(await store.catchRaidBoss(speciesID: 20))
+        XCTAssertFalse(await store.catchRaidBoss(speciesID: 20))
+        XCTAssertEqual(store.state.boxedMons.count, 1, "박스에 두 마리가 들어오면 안 된다")
+    }
+
+    /// 스프라이트가 없는 번호는 잡히지 않는다 — 박스에 그릴 수 없는 칸이 영구히 남는다
+    /// (`PokemonAssets.hasAnimatedSprite` 가 교환 경계에서 지키는 것과 같은 계약).
+    /// 원장도 안 쓴다: 못 잡은 판이 그날의 기회를 태우면 안 된다.
+    @MainActor
+    func testAnUndrawableSpeciesIsNeverCaught() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-gap")
+        await store.hatch(baseID: 20)
+        let gap = try? XCTUnwrap(PokemonAssets.spriteGaps.first)
+        XCTAssertFalse(await store.catchRaidBoss(speciesID: gap ?? 990))
+        XCTAssertTrue(store.state.boxedMons.isEmpty)
+        XCTAssertFalse(store.raidCatchClaimedToday, "못 잡은 판이 오늘의 기회를 태우면 안 된다")
+    }
+
+    /// 동행이 비어 있으면(졸업 직후 등) 박스가 아니라 바로 동행으로 들어간다 — 보관 알 부화와
+    /// 같은 규칙이다. 안 그러면 동행 없는 화면을 두고 사용자가 박스에서 직접 꺼내야 한다.
+    @MainActor
+    func testTheCatchFillsAnEmptyCompanionSlot() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-empty")
+        XCTAssertNil(store.state.active, "테스트 전제: 동행이 없다")
+
+        XCTAssertTrue(await store.catchRaidBoss(speciesID: 20))
+        XCTAssertEqual(store.state.active?.currentID, 20)
+        XCTAssertTrue(store.state.boxedMons.isEmpty)
+    }
+
     // MARK: 게스트 시점 — 호스트와 갈라지는 축
 
     /// 오늘의 보스 한 마리. 게스트 검증(`validRaidStart`)을 통과하려면 종이 오늘의 종이어야 한다.
