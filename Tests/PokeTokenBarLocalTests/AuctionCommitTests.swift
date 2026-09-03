@@ -77,11 +77,12 @@ private struct AuctionStubProvider: PokeProviding {
         let listed = store.state.active!
         let center = PokemonAuctionCenter(companion: store)
         center.publish(listed)
+        let listingID = center.localListings.keys.first!
         let connection = attachedConnection(center)
         let offerID = UUID()
         center.receive(.apply(version: AuctionWireMessage.protocolVersion, offerID: offerID,
-                              listingID: center.localListingID!, trainer: "Red",
-                              pokemon: snapshot(offered)), connectionID: connection)
+                              listingID: listingID, trainer: "Red",
+                              value: .pokemon(snapshot(offered))), connectionID: connection)
         return (center, listed, connection, offerID)
     }
 
@@ -139,8 +140,8 @@ private struct AuctionStubProvider: PokeProviding {
         let secondConnection = attachedConnection(center)
         let secondOffer = UUID()
         center.receive(.apply(version: AuctionWireMessage.protocolVersion, offerID: secondOffer,
-                              listingID: center.localListingID!, trainer: "Green",
-                              pokemon: snapshot(second)), connectionID: secondConnection)
+                              listingID: center.localListings.keys.first!, trainer: "Green",
+                              value: .pokemon(snapshot(second))), connectionID: secondConnection)
         #expect(center.offers.count == 2)
 
         center.accept(setup.offerID)
@@ -159,8 +160,8 @@ private struct AuctionStubProvider: PokeProviding {
         let center = setup.center
 
         center.receive(.apply(version: AuctionWireMessage.protocolVersion, offerID: UUID(),
-                              listingID: center.localListingID!, trainer: "Green",
-                              pokemon: snapshot(remoteMon(baseID: 21))), connectionID: setup.connection)
+                              listingID: center.localListings.keys.first!, trainer: "Green",
+                              value: .pokemon(snapshot(remoteMon(baseID: 21)))), connectionID: setup.connection)
 
         #expect(center.offers.count == 1)
         #expect(center.offers.first?.id == setup.offerID)
@@ -198,8 +199,8 @@ private struct AuctionStubProvider: PokeProviding {
         let connection = try #require(center.apply(to: listing(for: theirs), offering: mine))
         let offerID = try #require(center.outgoingOfferID)
 
-        center.cancelListing()
-        #expect(center.localListing == nil)
+        center.cancelListing(center.localListings.keys.first!)
+        #expect(center.localListings.isEmpty)
         #expect(center.outgoingStatus == .pending)
 
         center.receive(.accepted(offerID: offerID, pokemon: snapshot(theirs)), connectionID: connection)
@@ -246,5 +247,42 @@ private struct AuctionStubProvider: PokeProviding {
         #expect(!store.ownedMons.contains { $0.id == setup.listed.id })
         #expect(store.memoryAlbum.entries(for: offered.id).contains { $0.body == "함께 첫 배틀을 이겼다" },
                 "경매로 받은 개체의 앨범이 비면 추억이 교환 경로에서 사라진 것이다")
+    }
+
+    @Test func multiplePokemonCanBeListedAtTheSameTime() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let first = try #require(store.state.active)
+        let second = remoteMon(baseID: 20)
+        #expect(store.receiveAuctionPokemon(second))
+        let center = PokemonAuctionCenter(companion: store)
+
+        center.publish(first)
+        center.publish(second)
+
+        #expect(center.localListings.count == 2)
+        #expect(Set(center.localListings.values.map { $0.mon.id }) == Set([first.id, second.id]))
+    }
+
+    @Test func acceptedStardustOfferPaysSellerAndTransfersListedPokemon() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let listed = try #require(store.state.active)
+        let center = PokemonAuctionCenter(companion: store)
+        center.publish(listed)
+        let listingID = try #require(center.localListings.keys.first)
+        let connection = attachedConnection(center)
+        let offerID = UUID()
+        center.receive(.apply(version: AuctionWireMessage.protocolVersion, offerID: offerID,
+                              listingID: listingID, trainer: "Red", value: .stardust(12_345)),
+                       connectionID: connection)
+
+        center.accept(offerID)
+        center.receive(.commit(offerID: offerID, memories: nil), connectionID: connection)
+
+        #expect(store.availableTokens == 12_345)
+        #expect(!store.ownedMons.contains { $0.id == listed.id })
+        #expect(center.localListings[listingID] == nil)
+        #expect(center.offers.first?.status == .completed)
     }
 }

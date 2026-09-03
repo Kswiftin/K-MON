@@ -94,11 +94,11 @@ final class FavoriteMonTests: XCTestCase {
         let auction = PokemonAuctionCenter(companion: companion)
         XCTAssertTrue(companion.toggleFavorite(boxed.id))
         auction.publish(boxed)
-        XCTAssertNil(auction.localListing, "즐겨찾기한 개체는 게시되지 않는다")
+        XCTAssertTrue(auction.localListings.isEmpty, "즐겨찾기한 개체는 게시되지 않는다")
 
         XCTAssertTrue(companion.toggleFavorite(boxed.id))
         auction.publish(boxed)
-        XCTAssertNotNil(auction.localListing, "별을 끄면 게시된다")
+        XCTAssertFalse(auction.localListings.isEmpty, "별을 끄면 게시된다")
     }
 
     // MARK: 교환 잠금

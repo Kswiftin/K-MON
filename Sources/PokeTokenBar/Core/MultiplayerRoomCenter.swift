@@ -876,14 +876,14 @@ final class MultiplayerRoomCenter {
         if let champion = bracket.championID {
             state.championID = champion; state.currentMatch = nil
             tournamentBracket = bracket; tournamentState = state; tournamentMatch = nil
-            if champion == myID { grantTournamentRewardIfNeeded(state.reward) }
+            grantTournamentRewardIfNeeded(state)
             broadcastTournamentState(); return
         }
         guard let pair = bracket.nextPair() else {
             tournamentBracket = bracket
             if let champion = bracket.championID {
                 state.championID = champion; state.currentMatch = nil; tournamentState = state
-                if champion == myID { grantTournamentRewardIfNeeded(state.reward) }
+                grantTournamentRewardIfNeeded(state)
                 broadcastTournamentState()
             }
             return
@@ -901,9 +901,15 @@ final class MultiplayerRoomCenter {
         phase = .tournament; scheduleTurnTimeout(); broadcastTournamentState(start: true)
     }
 
-    private func grantTournamentRewardIfNeeded(_ reward: TournamentEggReward) {
+    private func grantTournamentRewardIfNeeded(_ state: PokemonTournamentState) {
         guard !tournamentRewarded else { return }
-        tournamentRewarded = true; companion.grantTournamentEgg(reward)
+        guard let placement = state.placement(of: myID) else { return }
+        tournamentRewarded = true
+        if placement == 1 { companion.grantTournamentEgg(state.reward) }
+        else {
+            companion.grantTournamentStardust(TournamentPlacementReward.stardust(for: placement),
+                                               placement: placement)
+        }
     }
 
     private func broadcastTournamentState(start: Bool = false) {
@@ -1666,7 +1672,7 @@ final class MultiplayerRoomCenter {
             case .tournamentState(let state) where self.phase == .tournament:
                 let previousTurn = self.tournamentState?.currentMatch?.turn
                 self.tournamentState = state
-                if state.championID == self.myID { self.grantTournamentRewardIfNeeded(state.reward) }
+                self.grantTournamentRewardIfNeeded(state)
                 if state.currentMatch?.turn != previousTurn {
                     self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 }

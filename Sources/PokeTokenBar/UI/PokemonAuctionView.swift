@@ -1,11 +1,14 @@
 import SwiftUI
 
 struct PokemonAuctionView: View {
+    private enum OfferKind: String, CaseIterable { case pokemon, stardust }
     let store: CompanionStore
     let center: PokemonAuctionCenter
     let onClose: () -> Void
     @State private var selectedListingMonID: UUID?
     @State private var offerSelections: [UUID: UUID] = [:]
+    @State private var offerKinds: [UUID: OfferKind] = [:]
+    @State private var stardustOffers: [UUID: String] = [:]
     @State private var showsListingPicker = false
     /// 제안 목록을 열어 둔 출품의 ID. 카드마다 상태를 두면 `ForEach` 안에서 팝오버가 여러 개
     /// 살아 있게 되므로, 열려 있는 하나만 기억한다.
@@ -20,9 +23,9 @@ struct PokemonAuctionView: View {
                 Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
             }
-            Text(store.l.t("포켓몬을 하나 올리면 여러 트레이너가 교환 제안을 보낼 수 있습니다. 원하는 제안 하나만 수락하세요.",
-                           "List one Pokémon, receive multiple offers, and accept the one you want.",
-                           "1匹を出品し、複数の提案から好きなものを1つ選べます。"))
+            Text(store.l.t("여러 포켓몬을 올리고 포켓몬 또는 별의모래 제안을 비교해 수락하세요.",
+                           "List multiple Pokémon and accept a Pokémon or Stardust offer.",
+                           "複数のポケモンを出品し、ポケモンまたはほしのすなの提案を選べます。"))
                 .font(.caption).foregroundStyle(.secondary)
             myListing
             Divider()
@@ -33,23 +36,54 @@ struct PokemonAuctionView: View {
 
     private var myListing: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(store.l.t("내 경매", "My Listing", "自分の出品")).font(.headline)
-            if let listing = center.localListing {
-                pokemonRow(listing.mon, name: listing.displayName)
+            Text(store.l.t("내 경매 \(center.localListings.count)건", "My Listings (\(center.localListings.count))",
+                           "自分の出品 \(center.localListings.count)件")).font(.headline)
+            ForEach(center.localListings.keys.sorted(by: { $0.uuidString < $1.uuidString }), id: \.self) { id in
+                if let listing = center.localListings[id] {
+                    localListingCard(id: id, listing: listing)
+                }
+            }
+            let listedIDs = Set(center.localListings.values.map { $0.mon.id })
+            let candidates = store.deployableMons.filter { !listedIDs.contains($0.id) }
+            Button {
+                showsListingPicker = true
+            } label: {
+                Label(selectedListingMon.map(nameWithLevel)
+                      ?? store.l.t("게시할 포켓몬 선택", "Choose a Pokémon to list", "出品するポケモンを選ぶ"),
+                      systemImage: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .popover(isPresented: $showsListingPicker) {
+                MonOfferPicker(store: store, mons: candidates) { mon in
+                    selectedListingMonID = mon.id
+                    showsListingPicker = false
+                }
+            }
+            Button(store.l.t("경매 시장에 추가", "Add Listing", "市場に追加")) {
+                center.publish(selectedListingMon)
+                selectedListingMonID = nil
+            }.buttonStyle(.bordered).disabled(selectedListingMon == nil)
+        }.padding(9).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 11))
+    }
+
+    private func localListingCard(id: UUID, listing: TradePokemonSnapshot) -> some View {
+        let listingOffers = center.offers.filter { $0.listingID == id }
+        return VStack(alignment: .leading, spacing: 6) {
+            pokemonRow(listing.mon, name: listing.displayName)
                 HStack {
-                    Text(store.l.t("제안 \(center.offers.filter { $0.status == .pending }.count)건",
-                                   "\(center.offers.filter { $0.status == .pending }.count) offer(s)",
-                                   "提案 \(center.offers.filter { $0.status == .pending }.count)件"))
+                Text(store.l.t("제안 \(listingOffers.filter { $0.status == .pending }.count)건",
+                               "\(listingOffers.filter { $0.status == .pending }.count) offer(s)",
+                               "提案 \(listingOffers.filter { $0.status == .pending }.count)件"))
                         .font(.caption.bold()).foregroundStyle(.orange)
                     Spacer()
                     Button(store.l.t("게시 내리기", "Remove Listing", "出品を取り消す"), role: .destructive) {
-                        center.cancelListing()
+                    center.cancelListing(id)
                     }.controlSize(.small)
                 }
-                ForEach(center.offers) { offer in
+            ForEach(listingOffers) { offer in
                     VStack(alignment: .leading, spacing: 5) {
                         Text(offer.trainerName).font(.caption.bold())
-                        pokemonRow(offer.pokemon.mon, name: offer.pokemon.displayName)
+                    offerValue(offer.value)
                         HStack {
                             Text(statusText(offer.status)).font(.caption2).foregroundStyle(.secondary)
                             Spacer()
@@ -62,29 +96,7 @@ struct PokemonAuctionView: View {
                         }
                     }.padding(7).background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
                 }
-            } else {
-                // 즐겨찾기를 목록에서 빼지 않고 잠긴 줄로 보여 주려면 행마다 별 버튼이 필요하다 —
-                // `Picker` 는 줄에 버튼을 못 달고 줄별 비활성도 안 돼서 팝오버 목록으로 바꿨다.
-                Button {
-                    showsListingPicker = true
-                } label: {
-                    Label(selectedListingMon.map(nameWithLevel)
-                          ?? store.l.t("게시할 포켓몬 선택", "Choose a Pokémon to list", "出品するポケモンを選ぶ"),
-                          systemImage: "chevron.down")
-                }
-                .buttonStyle(.borderless)
-                .popover(isPresented: $showsListingPicker) {
-                    MonOfferPicker(store: store, mons: store.deployableMons) { mon in
-                        selectedListingMonID = mon.id
-                        showsListingPicker = false
-                    }
-                }
-                Button(store.l.t("경매 시장에 올리기", "List on Market", "市場に出品")) {
-                    center.publish(selectedListingMon)
-                    selectedListingMonID = nil
-                }.buttonStyle(.bordered).disabled(selectedListingMon == nil)
-            }
-        }.padding(9).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 11))
+        }.padding(7).background(Color.orange.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
     }
 
     private var market: some View {
@@ -117,26 +129,51 @@ struct PokemonAuctionView: View {
                                 Text("\(listing.trainerName) · Lv.\(listing.level)").font(.caption2).foregroundStyle(.secondary)
                             }
                         }
-                        let offered = offerSelections[listing.id].flatMap(mon(withID:))
-                        Button {
-                            offerPickerListingID = listing.id
-                        } label: {
-                            Label(offered.map(nameWithLevel)
-                                  ?? store.l.t("제안할 내 포켓몬 선택", "Choose your offer", "提案するポケモンを選ぶ"),
-                                  systemImage: "chevron.down")
+                        Picker(store.l.t("제안 종류", "Offer type", "提案の種類"),
+                               selection: Binding(get: { offerKinds[listing.id] ?? .pokemon },
+                                                  set: { offerKinds[listing.id] = $0 })) {
+                            Text(store.l.t("포켓몬", "Pokémon", "ポケモン")).tag(OfferKind.pokemon)
+                            Text(store.l.t("별의모래", "Stardust", "ほしのすな")).tag(OfferKind.stardust)
                         }
-                        .buttonStyle(.borderless)
-                        .popover(isPresented: offerPickerBinding(for: listing.id)) {
-                            MonOfferPicker(store: store, mons: store.deployableMons) { mon in
-                                offerSelections[listing.id] = mon.id
-                                offerPickerListingID = nil
+                        .pickerStyle(.segmented)
+                        let kind = offerKinds[listing.id] ?? .pokemon
+                        let offered = offerSelections[listing.id].flatMap(mon(withID:))
+                        let amount = Int(stardustOffers[listing.id] ?? "") ?? 0
+                        if kind == .pokemon {
+                            Button {
+                                offerPickerListingID = listing.id
+                            } label: {
+                                Label(offered.map(nameWithLevel)
+                                      ?? store.l.t("제안할 내 포켓몬 선택", "Choose your offer", "提案するポケモンを選ぶ"),
+                                      systemImage: "chevron.down")
+                            }
+                            .buttonStyle(.borderless)
+                            .popover(isPresented: offerPickerBinding(for: listing.id)) {
+                                MonOfferPicker(store: store, mons: store.deployableMons) { mon in
+                                    offerSelections[listing.id] = mon.id
+                                    offerPickerListingID = nil
+                                }
+                            }
+                        } else {
+                            HStack {
+                                TextField(store.l.t("제안 금액", "Offer amount", "提案額"),
+                                          text: Binding(get: { stardustOffers[listing.id] ?? "" },
+                                                        set: { stardustOffers[listing.id] = $0.filter(\.isNumber) }))
+                                    .textFieldStyle(.roundedBorder)
+                                Text("/ \(store.availableTokens.formatted())")
+                                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             }
                         }
                         Button(store.l.t("교환 제안", "Send Offer", "交換を提案")) {
-                            if let offered { center.apply(to: listing, offering: offered) }
+                            if kind == .pokemon, let offered {
+                                center.apply(to: listing, offering: offered)
+                            } else if kind == .stardust {
+                                center.apply(to: listing, offeringStardust: amount)
+                            }
                         }
                         .buttonStyle(.borderedProminent).controlSize(.small)
-                        .disabled(offered == nil || center.outgoingStatus == .pending)
+                        .disabled((kind == .pokemon ? offered == nil : amount <= 0 || amount > store.availableTokens)
+                                  || center.outgoingStatus == .pending)
                     }.padding(8).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
@@ -148,6 +185,15 @@ struct PokemonAuctionView: View {
             SpriteView(speciesID: mon.presentationID, size: 36, shiny: mon.isShiny)
             Text(name).font(.callout.bold())
             Spacer(); Text("Lv.\(mon.level)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private func offerValue(_ value: AuctionOfferValue) -> some View {
+        switch value {
+        case .pokemon(let pokemon): pokemonRow(pokemon.mon, name: pokemon.displayName)
+        case .stardust(let amount):
+            Label("\(amount.formatted()) \(store.l.t("별의모래", "Stardust", "ほしのすな"))",
+                  systemImage: "sparkles").font(.callout.bold()).foregroundStyle(.orange)
         }
     }
 
