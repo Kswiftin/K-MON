@@ -421,6 +421,34 @@ if [[ -n "$DUPLICATE_PINS" ]]; then
 fi
 echo "✓ 없음"
 
+# LAN 프레임을 읽는 콜백의 **실패 분기는 연결을 끝내야 한다.** 조용히 리턴하면 상대가 앱을 정상
+# 종료했을 때 아무도 그것을 모른다 — TCP 는 FIN 만 남기고 `NWConnection` 상태는 `.ready` 에
+# 머무르므로 `stateUpdateHandler` 의 `.failed`/`.cancelled` 가 영영 안 뜬다. 죽은 소켓 위에 세션이
+# 살아 있는 것처럼 남는다.
+#
+# 이 부류는 **두 번 물렸다**: `PokemonTrade`(2026-08-30)를 고칠 때 형제 전수를 세지 않아
+# `PokemonAuction` 이 남았고, 그게 `#228` 이 됐다. 부류를 문서에 적는 것으로는 스윕이 완료되지
+# 않는다 — 그래서 게이트로 내린다.
+#
+# 테스트로는 못 막는다 — 이 줄을 밟으려면 살아 있는 소켓 두 개와 **정상 종료**가 필요하고, 닫힌
+# 소켓에 한 바이트라도 쓰면 RST 가 `.failed` 로 돌아와 상태 핸들러가 회수해 버린다(결함을
+# 되주입해도 통과한다). 커버리지로도 못 막는다 — `return` 이든 `drop` 이든 그 줄은 똑같이 세어진다.
+#
+# 한계: 잡는 것은 **한 줄짜리** `else { return }` 이다(`#228` 이 가졌던 그 모양). 여러 줄로
+# 벌어진 나쁜 분기는 못 본다 — 그 형태가 나오면 그때 넓힌다. 비정렬 로드 스윕과 같은 한계이고,
+# 해제 조건도 같다: 프레이밍 다섯 벌을 공용 헬퍼로 합치면 이 게이트를 그 헬퍼의 단위 테스트로 옮긴다.
+echo "▶ 조용히 끝나는 프레임 읽기 스윕 (실패 분기가 연결을 안 끊는다)"
+SILENT_READ=$(grep -rnE 'guard .*\b(data|header)\.count *[=<>!]+.*else \{ *return *\}' Sources/PokeTokenBar \
+              | grep -v '^[^:]*:[0-9]*:[[:space:]]*//' || true)
+if [[ -n "$SILENT_READ" ]]; then
+  echo "✗ 프레임 읽기의 실패 분기가 조용히 리턴하는 곳 $(wc -l <<< "$SILENT_READ" | tr -d ' ')건 —" \
+       "상대가 정상 종료하면 FIN 만 오고 상태는 .ready 에 머물러 죽은 소켓이 남습니다." \
+       "drop()/connectionDropped()/cancel() 로 끝내세요." >&2
+  echo "$SILENT_READ" >&2
+  exit 1
+fi
+echo "✓ 없음"
+
 echo "▶ 비정렬 로드 스윕 (프레임 헤더의 load(as:))"
 # `loadUnaligned(as:` 는 `load(as:` 를 포함하지 않으므로 올바른 쪽은 걸리지 않는다.
 # 규칙을 설명하는 주석에 가드가 걸리는 부류(defect-log)를 피하려고 주석 줄은 뺀다.
