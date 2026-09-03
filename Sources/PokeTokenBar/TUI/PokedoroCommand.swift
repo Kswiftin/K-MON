@@ -81,7 +81,7 @@ enum PokedoroCommandError: Equatable, Error {
                 + PokemonChatTool.focusMinutes.map(String.init).joined(separator: "·")
                 + " 중 하나를 쓴다."
         case .invalidMonNumber(let raw):
-            "개체 번호가 숫자가 아니다: \(raw) — `party` 가 찍는 번호를 쓴다."
+            "개체 번호가 아니다: \(raw) — `party` 가 찍는 번호(1부터)를 쓴다."
         case .missingArgument(let name):
             "`\(name)` 은 인자가 필요하다. `pokedoro help` 로 쓰는 법을 본다."
         case .unexpectedArgument(let name):
@@ -137,7 +137,7 @@ enum PokedoroCommandParser {
         case "bag", "items": return .bag
         case "challenge", "ch": return .challenge
         case "goals", "goal": return .goals
-        case "mon": return .mon(number: try number(in: tail, orThrow: PokedoroCommandError.invalidMonNumber))
+        case "mon": return .mon(number: try rosterNumber(in: tail))
         case "watch", "top": return .watch
         case "help", "--help", "-h": return .help
         case "start", "go":
@@ -152,7 +152,7 @@ enum PokedoroCommandParser {
             try rejectArgument(in: tail, command: name)
             return .evolve
         case "switch":
-            return .switchCompanion(number: try requiredNumber(in: tail, command: name))
+            return .switchCompanion(number: try requiredRosterNumber(in: tail, command: name))
         case "name", "nickname":
             return .rename(nickname: try text(in: tail, command: name))
         default:
@@ -177,10 +177,20 @@ enum PokedoroCommandParser {
         }
     }
 
-    /// 반드시 있어야 하는 번호. 없으면 "빠졌다", 숫자가 아니면 "숫자가 아니다" 로 갈라 말한다 —
-    /// 사용자가 고쳐야 하는 것이 다르다.
-    private static func requiredNumber(in arguments: [String], command: String) throws -> Int {
-        guard let value = try number(in: arguments, orThrow: PokedoroCommandError.invalidMonNumber) else {
+    /// `party` 가 찍는 개체 번호. **1 미만은 그 목록에 없으므로 여기서 막는다** — 요청으로
+    /// 내보내면 앱까지 갔다가 거절로 돌아오고, 앱이 꺼져 있으면 "응답 없음" 으로 끝나 사용자는
+    /// 자기 오타를 영영 못 본다.
+    private static func rosterNumber(in arguments: [String]) throws -> Int? {
+        guard let value = try number(in: arguments, orThrow: PokedoroCommandError.invalidMonNumber)
+        else { return nil }
+        guard value >= 1 else { throw PokedoroCommandError.invalidMonNumber(String(value)) }
+        return value
+    }
+
+    /// 반드시 있어야 하는 개체 번호. 없으면 "빠졌다", 번호가 아니면 "번호가 아니다" 로 갈라
+    /// 말한다 — 사용자가 고쳐야 하는 것이 다르다.
+    private static func requiredRosterNumber(in arguments: [String], command: String) throws -> Int {
+        guard let value = try rosterNumber(in: arguments) else {
             throw PokedoroCommandError.missingArgument(command)
         }
         return value

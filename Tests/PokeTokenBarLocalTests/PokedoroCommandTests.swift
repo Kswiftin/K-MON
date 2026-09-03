@@ -147,11 +147,21 @@ struct PokedoroCommandTests {
         }
     }
 
+    /// `party` 가 찍지 않는 번호(0·음수)는 **여기서** 걸러야 한다. 요청으로 내보내면 앱까지 갔다가
+    /// 거절로 돌아오고, 앱이 꺼져 있으면 "응답 없음" 으로 끝나 사용자는 자기 오타를 영영 못 본다
+    /// (실제로 `switch 0` 이 그렇게 나갔다).
+    @Test func testARosterNumberBelowOneIsRejectedBeforeItBecomesARequest() {
+        #expect(throws: PokedoroCommandError.invalidMonNumber("0")) { try parse(["switch", "0"]) }
+        #expect(throws: PokedoroCommandError.invalidMonNumber("0")) { try parse(["mon", "0"]) }
+    }
+
     /// 진화는 인자를 받지 않는다. 붙여 온 값을 조용히 버리면 사용자는 그 값이 뭔가 했다고 믿는다.
     @Test func testEvolveTakesNoArgument() {
         #expect(throws: PokedoroCommandError.unexpectedArgument("evolve")) {
             try parse(["evolve", "2"])
         }
+        // 오류 타입만 맞고 문구가 비면 사용자는 왜 거절됐는지 알 수 없다.
+        #expect(PokedoroCommandError.unexpectedArgument("evolve").message.contains("evolve"))
     }
 
     /// 네 명령 모두 **앱에 부탁한다** — 세이브를 여는 것만으로 정산이 돌 수 있어서다.

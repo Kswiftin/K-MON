@@ -4599,3 +4599,24 @@ read_when:
   살아 있는 stop 요청이 된다(`testAFileWhoseActionAndArgumentDisagreeIsNotARequest` 빨강).
   `encodeIfPresent` 를 `encode` 로 바꾸면 stop 파일에 `minutes:null` 이 남는다.
   (`PokedoroRequest.Action`, 2026-09-04.)
+
+## 같은 값을 두 입구가 받는데 한쪽에만 범위 가드를 둔 부류
+
+- **입구가 둘이면 가드도 둘 필요하다.** 터미널의 개체 번호는 두 길로 들어온다 — 명령 파서
+  (`pokedoro switch 0`)와 요청 파일(손으로 고친 `{"action":"switch","argument":"0"}`). 파일 쪽
+  디코더에만 `>= 1` 을 두고 파서에는 안 뒀더니, `switch 0` 이 **요청으로 나갔다.**
+- **증상이 오타처럼 안 보인다.** 앱이 떠 있으면 왕복 끝에 "0번 포켓몬이 없다" 가 오고, 앱이 꺼져
+  있으면 3초 뒤 "메뉴바 앱이 응답하지 않는다" 로 끝난다 — 사용자는 자기 오타 대신 앱을 의심한다.
+  잘못된 값일수록 **가까운 쪽에서** 걸러야 원인이 보인다.
+- **처방**: 범위를 든 헬퍼 하나(`rosterNumber`)를 파서의 두 명령(`mon`·`switch`)이 함께 쓰고,
+  디코더는 자기 몫의 가드를 유지한다. 두 가드는 중복이 아니라 **서로 다른 신뢰경계**다 — 파일
+  경로는 파서를 지나지 않는다.
+- **오류 문구도 같이 고친다.** "숫자가 아니다" 는 `0` 에 대해 거짓이다. 한 오류가 두 경우(숫자
+  아님·범위 밖)를 덮으면 문구는 **유효한 형태**를 말해야 한다("`party` 가 찍는 번호(1부터)").
+- **왜 테스트가 못 걸렀나**: 파서 테스트는 "숫자가 아닌 값"(`두번째`)만 봤고, 범위 테스트는
+  디코더 쪽에만 있었다. 두 스위트가 각자 통과하면서 그 사이가 비었다 — **실제 바이너리를 돌려서**
+  발견했다(`swift test` 는 초록이었다).
+- **검증**: `rosterNumber` 의 `value >= 1` 을 지우면
+  `PokedoroCommandTests.testARosterNumberBelowOneIsRejectedBeforeItBecomesARequest` 가 빨강
+  (`"switchCompanion(number: 0)" was returned`).
+  (`PokedoroCommandParser.rosterNumber`, 2026-09-04.)
