@@ -342,7 +342,18 @@ final class PokemonAuctionCenter {
                 // 에스크로가 저장을 돌렸다 — 이 자리가 #229 의 결함 지점이다. 첨자를 들고
                 // 있었다면 관측자 하나가 앞 제안을 치우는 순간 표시가 옆 제안에 찍혔고,
                 // 별의모래를 낸 제안은 환불 대상에서 빠져 그대로 사라졌다.
-                withOutgoing(offerID, on: connectionID) { $0.stardustEscrowed = true }
+                //
+                // 표시를 적을 자리가 없으면(제안이 사라졌으면) 지갑은 이미 비었는데 표시는
+                // 어디에도 없어 환불 경로가 이 별의모래를 영원히 못 찾는다. 지금은 위에서
+                // `.accepted` 를 먼저 적어 유일한 제거 경로(`clearOutgoingResult`)가 막혀 있어
+                // 도달하지 않는다 — 그러나 "도달 경로가 없다" 는 판단이 정확히 #229 를 놓친
+                // 근거였다. 순서가 뒤집히면 여기서 돌려준다. (제안이 없으니 `failOutgoing` 의
+                // 환불은 걸리지 않는다 — 지갑을 직접 되돌린다.)
+                if withOutgoing(offerID, on: connectionID, { $0.stardustEscrowed = true }) == nil {
+                    companion.creditStarPieces(offer.stardust)
+                    send(.failed(offerID: offerID), on: connection, id: connectionID)
+                    return
+                }
             }
             send(.commit(offerID: offerID,
                          memories: offer.monID.flatMap(companion.tradeMemoryPayload(for:))),
@@ -376,10 +387,11 @@ final class PokemonAuctionCenter {
             listeners[listingID]?.cancel(); listeners[listingID] = nil
             send(.completed(offerID: offerID, memories: outgoingMemories),
                  on: connection, id: connectionID)
-            // 게시물이 사라졌으니 남은 제안은 답을 기다릴 이유가 없다. **ID 를 먼저 걷고**
-            // 나서 돈다 — `reject` 가 도는 중에 `offers` 를 고치기 때문이다.
-            for other in offers.filter({ $0.listingID == listingID && $0.status == .pending })
-                .map(\.id) { reject(other) }
+            // 게시물이 사라졌으니 남은 제안은 답을 기다릴 이유가 없다. 도는 값은 **배열 사본**이라
+            // (`cancelListing` 과 같은 형태) `reject` 가 `offers` 를 고쳐도 순회가 흔들리지 않는다.
+            for other in offers where other.listingID == listingID && other.status == .pending {
+                reject(other.id)
+            }
         case .completed(let offerID, let memories):
             guard let offer = outgoing(offerID, on: connectionID), offer.status == .accepted,
                   let received = offer.received else { return }
@@ -476,9 +488,11 @@ final class PokemonAuctionCenter {
 
     private func refundStardustIfNeeded(_ offerID: UUID) {
         guard let offer = outgoing(offerID), offer.stardustEscrowed, offer.stardust > 0 else { return }
-        companion.creditStarPieces(offer.stardust)
-        // 지급이 스토어를 건드렸다 — 자리는 **다시 찾는다.**
+        // 표시를 **먼저** 지우고 지급한다. 지급이 저장을 돌리고 그 저장을 본 관측자가 같은 제안을
+        // 다시 실패·정리로 끌면(`clearOutgoingResult`·`drop` → 여기) 표시가 아직 서 있어 같은
+        // 에스크로가 두 번 나간다 — 첨자 결함과 같은 부류의 재진입이고, 이쪽은 **화폐 복제**다.
         withOutgoing(offerID) { $0.stardustEscrowed = false }
+        companion.creditStarPieces(offer.stardust)
     }
 
     /// 광고값은 TXT 레코드라 이름이 30자에서 잘린다 — 종·레벨·이로치만 대조한다.
@@ -491,8 +505,13 @@ final class PokemonAuctionCenter {
     /// 실패 이유는 **제안 자리에** 적는다. 전역 한 줄로 두면 제안이 여럿일 때 어느 제안의
     /// 실패인지 알 수 없고, 잘못 붙은 이유는 없는 것보다 나쁘다.
     private func failOutgoing(_ offerID: UUID, on connection: NWConnection, id: UUID, reason: String) {
-        withOutgoing(offerID, on: id) { $0.status = .failed; $0.error = reason }
-        refundStardustIfNeeded(offerID)
+        // 환불은 **이 연결의 제안**에만 한다. 국면은 연결로 걸러 놓고 환불만 ID 로 하면, 같은
+        // 상대에게 걸어 둔 다른 제안의 ID 를 실은 프레임 한 장이 **아직 살아 있는** 그 제안의
+        // 에스크로를 풀어 준다 — 지갑은 돌려받고 제안은 그대로 성사돼 별의모래가 복제된다.
+        if outgoing(offerID, on: id) != nil {
+            withOutgoing(offerID, on: id) { $0.status = .failed; $0.error = reason }
+            refundStardustIfNeeded(offerID)
+        }
         send(.failed(offerID: offerID), on: connection, id: id)
     }
 
