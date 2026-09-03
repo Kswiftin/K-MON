@@ -627,11 +627,25 @@ read_when:
   **읽는 쪽이 생기는 시점에** 마이그레이션과 함께 한다.
   회귀: `testHistoryStoresTheBaseStardustOnlyUntilAMigrationSaysOtherwise` — 결정을 못 박는 테스트라,
   빨개지면 회귀가 아니라 결정이 바뀐 것이다.
-- **부류 스윕 미완 (의도적, #200).** 같은 지갑에 지급하면서 반환값을 버리는 자리가 여덟 곳 더 있다
-  (진화 · 레이스 · 배틀 · 던전 · 던전 스윕 · 졸업 3건). 근본 처방은 `accrueTrainerPoints` ·
-  `recordMission` · `recordSeason` · `recordAchievement` 에서 `@discardableResult` 를 떼어 **컴파일러가
-  호출부를 열거하게** 하는 것이다 — `awardExperience` 가 이미 그 계약이고, 형제 넷만 경고 없이 버릴 수
-  있는 상태가 이 부류를 남겼다. 다섯 기능에 걸쳐 각자 표면을 정해야 해서 #200 으로 뺐다.
+- **`@discardableResult` 는 "이 값을 버려도 된다" 는 선언이다 — 지갑을 늘린 값에는 붙이지 않는다.**
+  `awardExperience` 만 그 계약을 지켰고 형제 넷(`accrueTrainerPoints` · `recordMission` ·
+  `recordSeason` · `recordAchievement`)은 붙어 있어서, 여덟 호출부가 지급액을 경고 한 줄 없이 버렸다.
+  뗐더니 컴파일러가 그 자리를 전부 열거했다 — **grep 이 아니라 컴파일러가 스윕의 도구**다. 그 열거가
+  이슈에 없던 아홉 번째(`grantNewlyCompletedDexGoals` → `grantReward`)까지 같이 끌어냈다.
+  회귀는 테스트가 아니라 **타입**이 지킨다: 다시 붙이는 것 말고는 이 계약을 깰 방법이 없다. (#200)
+- **표면은 지급 경로 수만큼 필요하지 않다 — 화면 하나면 된다.** #200 은 "다섯 기능이 각자 표면을
+  정해야 한다" 로 열렸지만, 다섯 벌을 만들면 여섯 번째 경로가 생길 때 또 빠진다. 지급은
+  `announcePayout` 하나로 모으고(`OneShotFeedback<StardustPayout>`), 배너는 `PopoverView` 의 **탭
+  스위치 밖**, 잔액 바로 아래 한 자리에 둔다. 새 경로가 할 일은 한 줄 호출뿐이다.
+  **한 사건은 한 통이다** — 웨이브 런은 두 트랙, 졸업은 넷(트레이너 · 미션 · 시즌 · 도감 목표)이 같은
+  순간에 지급하므로 합산해 한 번 띄운다(`mergedCompletion` 이 미션에서 막은 것과 같은 부류).
+- **합계로 보고하는 함수는 항마다 결함을 주입해 봐야 한다 — 통째로 빼는 주입만으로는 부족하다.**
+  졸업의 네 항 중 둘(도감 목표 · 시즌)은 기본 픽스처에서 값이 **0** 이라, 그 항을 합계에서 빼도 테스트가
+  전부 초록이었다. 배너를 통째로 없애는 주입은 잡히니 "검증됐다" 로 보였다. 별의조각을 주는 도감 목표는
+  `shiny1` 뿐이라 **이로치로 졸업**시켜야 하고(시드 6 이 첫 부화에서 이로치를 굴린다 — 그 전제를 테스트가
+  단정한다), 시즌 목표는 졸업 2~3회라 **목표를 넘기는 라운드까지** 돌려야 한다. #192 의
+  `testFocusSessionCompletionClaimsTheAdventure` 와 똑같은 함정이 항 단위로 재현된 것이다.
+  회귀: `testGraduationPayoutIsExplainedOnScreen` · `testTheGraduationThatCompletesASeasonGoalStillExplainsItsWallet`.
 
 ## 1회성 보상의 멱등 가드가 서명 밖에 있는 부류
 
