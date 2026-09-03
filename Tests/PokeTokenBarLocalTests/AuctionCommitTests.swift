@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Observation
 import Testing
 @testable import PokeTokenBar
 
@@ -471,5 +472,57 @@ private struct AuctionStubProvider: PokeProviding {
                              offeringStardust: SaveTransfer.maxTokenValue + 5) != nil)
         #expect(center.outgoingOffers.first?.stardust == SaveTransfer.maxTokenValue,
                 "상한을 넘겨 보내면 게시자가 받자마자 거절한다")
+    }
+
+    // MARK: 배열 첨자를 스토어 변이 너머로 들고 있는 부류 (#229)
+
+    /// **커밋 도중에 제안 배열이 흔들려도 에스크로 표시는 그 제안에 남아야 한다.**
+    ///
+    /// `.accepted` 는 첨자 하나를 일곱 번의 subscript 접근 동안 들고 있었고, 그 중간에
+    /// `escrowStarPieces` → `save()` 가 낀다. 저장이 관측을 깨우고 그 관측자가 `outgoingOffers`
+    /// 를 건드리면 첨자는 그 자리에서 낡는다 — 남의 제안에 에스크로 표시가 찍히고, 정작 별의모래를
+    /// 낸 제안은 환불 대상에서 빠진다. 배열이 짧아지는 방향이면 첨자가 그대로 터진다.
+    ///
+    /// 재진입은 **실제 `Observation`** 으로 만든다. 테스트 전용 훅을 프로덕션에 심으면 그 훅이
+    /// 프로덕션 경로의 사본이 되어, 정작 실사용 경로는 무검증으로 남는다.
+    @Test func anOfferRemovedMidCommitDoesNotMoveTheEscrowToItsNeighbour() async throws {
+        let store = makeStore()
+        await store.hatch(baseID: 1)
+        let mine = try #require(store.state.active)
+        let alsoMine = remoteMon(baseID: 30)
+        #expect(store.receiveAuctionPokemon(alsoMine))
+        store.creditStarPieces(100)
+        let center = PokemonAuctionCenter(companion: store)
+
+        // 등록 순서가 곧 배열 순서다. 가운데(별의모래)를 수락시키고 앞을 치우면 첨자가 뒤로 민다.
+        let ahead = listing(for: remoteMon(baseID: 20))
+        let paying = remoteMon(baseID: 21)
+        let behind = listing(for: remoteMon(baseID: 22))
+        #expect(center.apply(to: ahead, offering: mine) != nil)
+        let payingConnection = try #require(center.apply(to: listing(for: paying),
+                                                         offeringStardust: 100))
+        #expect(center.apply(to: behind, offering: alsoMine) != nil)
+        let aheadID = try #require(offer(center, on: ahead.id)?.id)
+        let payingID = try #require(center.outgoingOffers[1].id)
+
+        // 지갑을 보는 관측자 하나. 에스크로가 지갑을 건드리는 순간 앞 제안을 치운다 —
+        // 그 제안은 별의모래가 0 이라 여기서 스토어를 되건드리지 않는다.
+        nonisolated(unsafe) let observed = center
+        withObservationTracking {
+            _ = store.state.starPieces
+        } onChange: {
+            MainActor.assumeIsolated { observed.clearOutgoingResult(aheadID) }
+        }
+
+        center.receive(.accepted(offerID: payingID, pokemon: snapshot(paying)),
+                       connectionID: payingConnection)
+
+        #expect(center.outgoingOffers.count == 2, "관측자가 앞 제안을 치웠어야 한다")
+        #expect(offer(center, on: behind.id)?.stardustEscrowed == false,
+                "별의모래를 내지 않은 제안에 에스크로 표시가 찍혔다 — 첨자가 낡았다")
+        let payer = try #require(center.outgoingOffers.first { $0.id == payingID })
+        #expect(payer.stardustEscrowed,
+                "별의모래를 낸 제안이 환불 대상에서 빠졌다 — 실패하면 100 이 사라진다")
+        #expect(store.availableTokens == 0)
     }
 }
