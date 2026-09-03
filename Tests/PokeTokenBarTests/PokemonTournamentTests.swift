@@ -25,6 +25,33 @@ final class PokemonTournamentTests: XCTestCase {
         XCTAssertEqual(TournamentEggReward.forParticipants(7), .rare)
         XCTAssertEqual(TournamentEggReward.forParticipants(8), .rare)
         XCTAssertEqual(TournamentEggReward.rare.guarantee, .rare)
+        XCTAssertEqual(TournamentPlacementReward.stardust(for: 2), 12_000)
+        XCTAssertEqual(TournamentPlacementReward.stardust(for: 3), 7_000)
+        XCTAssertEqual(TournamentPlacementReward.stardust(for: 4), 7_000)
+        XCTAssertEqual(TournamentPlacementReward.stardust(for: 5), 3_000)
+        XCTAssertEqual(TournamentPlacementReward.stardust(for: 8), 3_000)
+        XCTAssertEqual(TournamentPlacementReward.stardust(for: 1), 0)
+    }
+
+    func testCompletedBracketDerivesChampionAndEliminationPlacements() {
+        let ids = (0..<8).map { _ in UUID() }
+        let entrants = ids.map { TournamentEntrant(id: $0, trainerName: "T", speciesID: 25) }
+        let matches = [
+            TournamentBracketMatch(id: UUID(), round: 1, playerA: ids[0], playerB: ids[1], winnerID: ids[0]),
+            TournamentBracketMatch(id: UUID(), round: 1, playerA: ids[2], playerB: ids[3], winnerID: ids[2]),
+            TournamentBracketMatch(id: UUID(), round: 1, playerA: ids[4], playerB: ids[5], winnerID: ids[4]),
+            TournamentBracketMatch(id: UUID(), round: 1, playerA: ids[6], playerB: ids[7], winnerID: ids[6]),
+            TournamentBracketMatch(id: UUID(), round: 2, playerA: ids[0], playerB: ids[2], winnerID: ids[0]),
+            TournamentBracketMatch(id: UUID(), round: 2, playerA: ids[4], playerB: ids[6], winnerID: ids[4]),
+            TournamentBracketMatch(id: UUID(), round: 3, playerA: ids[0], playerB: ids[4], winnerID: ids[0])
+        ]
+        let state = PokemonTournamentState(entrants: entrants, reward: .rare, matches: matches,
+                                           championID: ids[0])
+        XCTAssertEqual(state.placement(of: ids[0]), 1)
+        XCTAssertEqual(state.placement(of: ids[4]), 2)
+        XCTAssertEqual(state.placement(of: ids[2]), 3)
+        XCTAssertEqual(state.placement(of: ids[6]), 3)
+        XCTAssertEqual(state.placement(of: ids[1]), 5)
     }
 
     func testTournamentNeedsAtLeastThreeReadyEntrants() throws {

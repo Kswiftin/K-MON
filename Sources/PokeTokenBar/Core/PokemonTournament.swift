@@ -14,6 +14,17 @@ enum TournamentEggReward: String, Codable, Sendable, Equatable {
     }
 }
 
+enum TournamentPlacementReward {
+    static func stardust(for placement: Int) -> Int {
+        switch placement {
+        case 2: 12_000
+        case 3...4: 7_000
+        case 5...8: 3_000
+        default: 0
+        }
+    }
+}
+
 struct TournamentEntrant: Codable, Sendable, Equatable, Identifiable {
     let id: UUID
     let trainerName: String
@@ -87,6 +98,20 @@ struct PokemonTournamentState: Codable, Sendable, Equatable {
     var bracketRevealUntil: Date?
 
     var champion: TournamentEntrant? { entrants.first { $0.id == championID } }
+
+    /// 싱글 엘리미네이션이라 순위 결정전은 없다. 같은 라운드 탈락자는 공동 순위와 같은 보상을 받는다.
+    func placement(of participantID: UUID) -> Int? {
+        guard let championID else { return nil }
+        if participantID == championID { return 1 }
+        let completed = matches.filter { $0.winnerID != nil }
+        guard let maxRound = completed.map(\.round).max(),
+              let loss = completed.first(where: {
+                  ($0.playerA == participantID || $0.playerB == participantID) && $0.winnerID != participantID
+              }) else { return nil }
+        if loss.round == maxRound { return 2 }
+        if loss.round == maxRound - 1 { return 3 }
+        return 5
+    }
 
     /// 첫 라운드에 상대가 없는 참가자. 홀수 인원의 마지막 한 명은 부전승으로 다음 라운드에
     /// 오르는데, 대진표는 짝이 지어진 경기만 그리므로 그대로 두면 **표에서 사라진다** —

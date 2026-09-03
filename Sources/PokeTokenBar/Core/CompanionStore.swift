@@ -1803,6 +1803,56 @@ final class CompanionStore {
         return true
     }
 
+    /// 경매에서 별의모래로 산 포켓몬을 받는다. 일반 교환과 달리 내보낼 개체가 없으므로
+    /// 동행이 있으면 박스에, 없으면 동행 자리에 둔다. 상대가 보낸 첫 만남 시각은 신뢰하지 않는다.
+    func receiveAuctionPokemon(_ incoming: MonState, incomingMemories: TradeMemoryPayload? = nil) -> Bool {
+        guard PokemonAssets.hasAnimatedSprite(speciesID: incoming.currentID),
+              !ownedMons.contains(where: { $0.id == incoming.id }) else { return false }
+        var received = incoming
+        received.firstMetAt = clock()
+        if state.active == nil {
+            state.active = received
+            activeGeneration += 1
+            currentLine = nil
+            displayedMoves = []
+            evolutionPrompt = nil
+            pendingMoveLearningPrompt = nil
+            moveLearningQueue.removeAll()
+            displayState = .idle
+            Task { await loadCurrentLine() }
+        } else {
+            state.boxedMons.append(received)
+        }
+        settleReceived(received, incomingMemories: incomingMemories)
+        save()
+        return true
+    }
+
+    /// 별의모래 경매 판매를 한 번에 반영한다. 포켓몬을 실제로 찾은 경우에만 지갑을 늘려
+    /// 이미 팔린 게시물이나 중복 커밋이 화폐를 복제하지 못하게 한다.
+    func completeAuctionSale(offeredID: UUID, stardust: Int) -> Bool {
+        guard stardust > 0, !gymDefenseMonIDs.contains(offeredID), !isFavorite(offeredID) else { return false }
+        let sent: MonState
+        if state.active?.id == offeredID {
+            guard let active = state.active else { return false }
+            sent = active
+            state.active = nil
+            activeGeneration += 1
+            currentLine = nil
+            displayedMoves = []
+            displayState = .egg
+        } else if let index = state.boxedMons.firstIndex(where: { $0.id == offeredID }) {
+            sent = state.boxedMons.remove(at: index)
+        } else { return false }
+        preserveDexRecord(for: sent)
+        memoryAlbum.deleteAll(for: sent.id)
+        chatStore.deleteSession(for: sent.id)
+        pruneFavorites()
+        state.starPieces += stardust
+        save()
+        return true
+    }
+
     private static func applyPairedTradeEvolution(to mon: inout MonState, counterpartSpeciesID: Int) {
         let target: Int?
         switch (mon.currentID, counterpartSpeciesID) {
@@ -2436,6 +2486,17 @@ final class CompanionStore {
         notifyCompanionEvent(l.t("토너먼트 우승!", "Tournament Champion!", "トーナメント優勝！"),
                              l.t("우승 보상 알이 도착했습니다.", "Your champion Egg has arrived.",
                                  "優勝報酬のタマゴが届きました。"))
+    }
+
+    func grantTournamentStardust(_ amount: Int, placement: Int) {
+        guard amount > 0 else { return }
+        state.starPieces += amount
+        save()
+        notifyCompanionEvent(l.t("토너먼트 \(placement)위!", "Tournament place #\(placement)!",
+                                 "トーナメント\(placement)位！"),
+                             l.t("순위 보상으로 별의모래 \(amount.formatted())개를 받았습니다.",
+                                 "You received \(amount.formatted()) Stardust as a placement reward.",
+                                 "順位報酬としてほしのすなを\(amount.formatted())個受け取りました。"))
     }
 
     /// 이로치 확정을 **한 번 쓴다.** 남아 있으면 true 를 돌려주고 하나 깎는다.
