@@ -105,6 +105,10 @@ enum PokedoroCommandError: Equatable, Error {
     case missingArgument(String)
     /// 인자를 받지 않는 명령에 인자가 붙었다. 버리고 실행하면 사용자는 그 값이 뭔가 했다고 믿는다.
     case unexpectedArgument(String)
+    /// 인자는 받지만 **개수가 많다**. `unexpectedArgument` 로 접으면 "인자를 받지 않는다" 고
+    /// 말하게 되는데 `wave move 1 2` 는 정상 입력이다 — 문구가 사실이 아닌 것을 주장하면
+    /// 사용자는 맞는 사용법을 의심한다(`switch 0` 의 "숫자가 아니다" 와 같은 부류).
+    case tooManyArguments(String)
     /// 목록 밖 아이템 이름. **어디서 이름을 얻는지** 같이 말한다.
     case unknownItem(String)
     /// 상점이 팔지 않는 물건.
@@ -131,6 +135,8 @@ enum PokedoroCommandError: Equatable, Error {
             "`\(name)` 은 인자가 필요하다. `pokedoro help` 로 쓰는 법을 본다."
         case .unexpectedArgument(let name):
             "`\(name)` 은 인자를 받지 않는다."
+        case .tooManyArguments(let name):
+            "`\(name)` 에 인자가 너무 많다. `pokedoro help` 로 쓰는 법을 본다."
         case .unknownItem(let raw):
             "그런 아이템이 없다: \(raw) — `pokedoro bag` 이 찍는 이름을 쓴다."
         case .unknownGood(let raw):
@@ -294,11 +300,15 @@ enum PokedoroCommandParser {
     }
 
     /// 남는 인자는 버리지 않는다 — 버리고 실행하면 사용자는 그 값이 뭔가 했다고 믿는다.
+    ///
+    /// 인자를 **하나도** 안 받는 하위 명령과 **개수가 넘친** 경우를 갈라 말한다. 하나로 뭉개면
+    /// `wave move 1 2 3` 에 "인자를 받지 않는다" 고 답하는데, 그건 사실이 아니라 사용자가
+    /// 맞는 사용법(`wave move 1 2`)까지 의심하게 된다.
     private static func rejectExtra(_ words: [String], beyond limit: Int,
                                     command: String) throws {
-        guard words.count <= limit else {
-            throw PokedoroCommandError.unexpectedArgument(command)
-        }
+        guard words.count > limit else { return }
+        throw limit == 0 ? PokedoroCommandError.unexpectedArgument(command)
+                         : PokedoroCommandError.tooManyArguments(command)
     }
 
     /// `wave` 가 찍는 번호(1부터). 오류를 개체 번호와 나눠 두는 이유는 **어디서 번호를 얻는지가
@@ -409,7 +419,8 @@ enum PokedoroCommandParser {
 
     \(rows.map { "  " + TUIText.pad($0.0, to: commandColumn) + $0.1 }.joined(separator: "\n"))
 
-    조회는 세이브를 읽기만 한다. 집중 세션 세 동작은 **메뉴바 앱에 요청을 보내고** 앱이 실행한다
-    — 세이브에 쓰는 프로세스를 하나로 두기 위해서다. 앱이 꺼져 있으면 요청은 실행되지 않는다.
+    조회(status·party·wave…)는 세이브를 읽기만 한다. 상태를 바꾸는 명령은 전부 **메뉴바 앱에
+    요청을 보내고** 앱이 실행한다 — 세이브에 쓰는 프로세스를 하나로 두기 위해서다. 앱이 꺼져
+    있으면 그 요청은 실행되지 않는다.
     """
 }

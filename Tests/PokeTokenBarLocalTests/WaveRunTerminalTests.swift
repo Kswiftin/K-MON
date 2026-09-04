@@ -83,6 +83,21 @@ struct WaveRunTerminalTests {
         }
     }
 
+    /// 넘치는 인자는 버리지 않지만, **"인자를 받지 않는다" 고 말하지도 않는다** — `wave move 1 2`
+    /// 는 정상 입력이므로 그 문구는 거짓이고, 사용자는 맞는 사용법까지 의심한다.
+    /// (실제 바이너리를 돌려 잡았다. `switch 0` 의 "숫자가 아니다" 와 같은 부류다.)
+    @Test func testTooManyArgumentsDoesNotClaimTheCommandTakesNone() {
+        #expect(throws: PokedoroCommandError.tooManyArguments("wave move")) {
+            try PokedoroCommandParser.parse(["wave", "move", "1", "2", "3"])
+        }
+        // 인자를 하나도 안 받는 쪽은 그대로 "받지 않는다" 다 — 두 사유는 고쳐야 할 것이 다르다.
+        #expect(throws: PokedoroCommandError.unexpectedArgument("wave forfeit")) {
+            try PokedoroCommandParser.parse(["wave", "forfeit", "1"])
+        }
+        #expect(PokedoroCommandError.tooManyArguments("wave move").message
+                != PokedoroCommandError.unexpectedArgument("wave move").message)
+    }
+
     /// 도움말은 표에서 나온다 — 명령을 더하고 표를 빠뜨리면 사용자가 그 명령을 알 길이 없다.
     @Test func testTheUsageTextListsTheWaveCommands() {
         #expect(PokedoroCommandParser.usage.contains("wave"))
@@ -206,6 +221,87 @@ struct WaveRunTerminalTests {
         #expect(WaveRunScreen.kind(run) == .none)
         #expect(WaveRunScreen.lines(run, language: .ko, width: 60)
             .contains { $0.contains("전멸") })
+    }
+
+    /// 채워야 할 칸의 목록은 **파티 번호로** 찍는다. 목록 순번을 따로 매기면 화면이 보여 준
+    /// 번호와 `wave switch <번호>` 가 받는 번호가 갈라진다(개체 번호에서 이미 밟은 부류).
+    @Test func testTheSendOutListIsNumberedByPartyNumber() throws {
+        var run = Self.battlingRun(partySize: 2)
+        run.debugFaintInBattle(0)
+        let choices = WaveRunScreen.choices(run, language: .ko)
+
+        let only = try #require(choices.first)
+        #expect(choices.count == 1, "벤치에 남은 한 마리만 후보다")
+        #expect(only.number == 2, "1번은 쓰러진 채 필드에 서 있다 — 목록 순번(1)로 찍으면 안 된다")
+        #expect(only.label.contains("내1"), "누구를 내보내는지 이름이 없다")
+        #expect(WaveRunScreen.action(number: 2, in: run) == .waveSwitch(number: 2))
+    }
+
+    /// 험한 길은 **무엇을 주고 무엇을 요구하는지 숫자로** 말한다. "험한 길" 이라고만 쓰면 얼마나
+    /// 위험한지 모르고 고르게 되고, 그러면 선택이 아니라 도박이 된다(앱 화면과 같은 규칙).
+    @Test func testTheRouteListSaysWhatTheRoughPathCosts() throws {
+        var run = Self.battlingRun()
+        run.debugSetStageRouting()
+        let choices = WaveRunScreen.choices(run, language: .ko)
+
+        #expect(choices.count == RunRoute.allCases.count)
+        let risky = try #require(choices.first { $0.label.contains("험한") })
+        #expect(risky.label.contains("\(RunRoute.risky.levelBonus)"))
+        #expect(risky.label.contains("\(RunRoute.risky.pickCount)"))
+    }
+
+    /// 상대를 받는 중에는 누를 것이 없고, **기다리는 중이라고 말한다.** 침묵하면 사용자는 키가
+    /// 죽은 것으로 읽고 같은 키를 계속 누른다.
+    @Test func testALoadingRunSaysItIsWaitingForTheNextOpponent() {
+        var run = Self.battlingRun()
+        run.debugSetStageRouting()
+        run.take(.safe)   // → .loadingWave (상대는 아직 없다)
+
+        #expect(WaveRunScreen.kind(run) == .loading)
+        #expect(WaveRunScreen.numbers(run).isEmpty)
+        #expect(WaveRunScreen.hints(run).contains("받는 중"))
+    }
+
+    /// 판이 없거나 끝났으면 안내가 **새 판을 여는 법**이다 — 두 경우를 갈라 말한다.
+    @Test func testHintsForNoRunAndAFinishedRunAreToldApart() {
+        var finished = Self.battlingRun()
+        finished.debugFail()
+
+        #expect(WaveRunScreen.numbers(finished).isEmpty)
+        #expect(WaveRunScreen.hints(nil).contains("wave start"))
+        #expect(WaveRunScreen.hints(finished).contains("끝났다"),
+                "끝난 판과 판이 없는 것은 다르다 — 사용자는 자기 판이 어디 갔는지 묻는다")
+    }
+
+    /// 상태이상은 **칸 줄에 보인다.** 안 보이면 왜 못 움직이는지, 왜 매 턴 HP 가 줄는지 알 수 없다.
+    @Test func testAStatusConditionIsShownOnTheFieldRow() {
+        var run = Self.battlingRun()
+        run.debugAfflict(.paralysis)
+
+        #expect(WaveRunScreen.lines(run, language: .ko, width: 60)
+            .contains { $0.contains("마비") })
+    }
+
+    /// 턴이 돌면 **무슨 일이 있었는지 줄로 남는다.** 로그가 없으면 HP 숫자만 바뀌어, 무엇에
+    /// 맞았는지도 상성이 통했는지도 알 수 없다.
+    @Test func testThePanelCarriesTheTurnLog() {
+        var run = Self.battlingRun()
+        run.useMove(0)   // 1대1 이라 그 자리에서 턴이 해상된다
+
+        let lines = WaveRunScreen.lines(run, language: .ko, width: 80)
+        #expect(!WaveRunScreen.log(run, language: .ko).isEmpty)
+        #expect(lines.contains { $0.contains("타격") }, "쓴 기술이 판에 안 남았다")
+    }
+
+    /// 답에는 **그 요청이 일으킨 줄만** 싣는다. 전부 실으면 요청 하나가 지난 턴들을 되뇌고,
+    /// 마지막 줄만 실으면 아무 일도 안 한 입력이 지난 턴 결과를 자기 것처럼 보고한다.
+    @Test func testTheLogCanBeSlicedToWhatOneRequestCaused() {
+        var run = Self.battlingRun()
+        run.useMove(0)
+        let played = run.battle.events.count
+        #expect(WaveRunScreen.log(run, language: .ko, since: played).isEmpty,
+                "새 이벤트가 없는데 줄이 나왔다")
+        #expect(!WaveRunScreen.log(run, language: .ko, since: 0).isEmpty)
     }
 
     /// 모든 줄이 요청한 폭 안에 든다. 넘치면 터미널이 줄을 접어 다음 줄을 밀어내고, 전체 다시

@@ -267,6 +267,8 @@ enum WaveRunScreen {
             return route.name(l) + (route == .risky
                                     ? "  상대 +\(RunRoute.risky.levelBonus)Lv · 보상 \(RunRoute.risky.pickCount)장"
                                     : "")
+        // 여기는 **닿지 않는다** — 라벨은 `choices` 가 `numbers` 를 돌며 부르고, 이 두 국면의
+        // `numbers` 는 비어 있다. switch 를 닫기 위한 자리이므로 커버리지에서 `^0` 으로 남는다.
         case .none, .loading:
             return ""
         }

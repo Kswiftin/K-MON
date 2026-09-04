@@ -17,10 +17,15 @@ import Testing
 struct WaveRunExecutorTests {
     private func makeDirectory() -> URL { storeFixtureDirectory("wave-exec") }
 
+    /// 언어를 **못 박는다.** 신규 세이브의 언어는 `AppLanguage.systemDefault` 라 호스트 로케일을
+    /// 따라가는데, 답 문구는 그 언어로 나온다(기술 이름·보상 이름). 안 박으면 한국어 Mac 에서만
+    /// 통과하고 영어 CI 에서 깨진다(#107 과 같은 부류 — 게이트의 로케일 재실행이 실제로 잡았다).
     private func makeStore(in directory: URL) -> CompanionStore {
-        CompanionStore(provider: WaveStubProvider(),
-                       clock: { Date(timeIntervalSince1970: 1_700_000_000) },
-                       fileURL: directory.appendingPathComponent("state.json"))
+        let store = CompanionStore(provider: WaveStubProvider(),
+                                   clock: { Date(timeIntervalSince1970: 1_700_000_000) },
+                                   fileURL: directory.appendingPathComponent("state.json"))
+        store.setLanguage(.ko)
+        return store
     }
 
     private func execute(_ action: PokedoroRequest.Action,
