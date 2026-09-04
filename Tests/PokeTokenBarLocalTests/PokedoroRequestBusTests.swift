@@ -64,12 +64,9 @@ struct PokedoroRequestBusTests {
 
     // MARK: 파일 왕복
 
-    private func makeDirectory() -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokedoro-bus-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
-    }
+    /// 우편함 두 파일만 쓰는 픽스처지만 같은 헬퍼를 쓴다 — 유일한 디렉토리를 여기서 다시 만들
+    /// 이유가 없고, 이름이 고정된 파일을 공용 temp 에 두지 않는다는 규칙은 요청 파일에도 그대로다.
+    private func makeDirectory() -> URL { storeFixtureDirectory("pokedoro-bus") }
 
     /// 터미널이 쓴 것을 앱이 그대로 읽는다. 두 프로세스가 같은 인코딩 규약을 쓰는지 보는 유일한 자리다.
     @Test func testTheAppReadsBackExactlyWhatTheTerminalWrote() throws {

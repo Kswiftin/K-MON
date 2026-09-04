@@ -15,12 +15,10 @@ struct PokedoroRequestExecutorTests {
         var now = Date(timeIntervalSince1970: 1_700_000_000)
     }
 
-    private func makeDirectory() -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pokedoro-exec-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
-    }
+    /// 스토어를 만드는 픽스처라 **디렉토리 단위로** 격리한다 — `CompanionStore` 는 이름이 고정된
+    /// 곁방 세이브(기억 앨범·대화·웨이브 런)를 상태 파일 옆에 만들고, temp 는 실행 사이에도
+    /// 지워지지 않는다(#232).
+    private func makeDirectory() -> URL { storeFixtureDirectory("pokedoro-exec") }
 
     /// 동행이 있는 저장소. `hatch` 없이는 `currentSpeciesID` 가 비어 시작이 항상 거절된다.
     private func makeStore(in directory: URL, clock: Clock, withCompanion: Bool = true) async -> CompanionStore {
