@@ -185,6 +185,34 @@ struct TUIRenderTests {
         #expect(TUIRender.printedRosterNumber(index: 0) == 1)
     }
 
+    // MARK: 목록 화면의 키 안내
+
+    /// 목록에도 **지금 누를 수 있는 키만** 보여 준다. 대상이 없는 화면(도감)에는 커서 동작 키를
+    /// 싣지 않는다 — 눌러도 아무 일이 없는 키를 권하는 것은 안내가 아니라 함정이다.
+    @Test func testListHintsOnlyOfferWhatTheScreenCanDo() {
+        #expect(TUIRender.listHints(screen: .party, canActOnSelection: true).contains("s 교체"))
+        #expect(TUIRender.listHints(screen: .bag, canActOnSelection: true).contains("u 쓰기"))
+        #expect(!TUIRender.listHints(screen: .dex, canActOnSelection: true).contains("s 교체"))
+        #expect(!TUIRender.listHints(screen: .dex, canActOnSelection: true).contains("u 쓰기"))
+    }
+
+    /// 커서가 대상이 될 수 없으면(빈 목록·이미 나와 있는 개체) 그 키도 빠진다.
+    @Test func testListHintsDropCursorActionsWhenTheRowCannotBeActedOn() {
+        let hints = TUIRender.listHints(screen: .party, canActOnSelection: false)
+        #expect(!hints.contains("s 교체"))
+        #expect(!hints.contains("R 놓아주기"))
+        #expect(hints.contains("이동"), "이동·나가기는 언제나 남는다")
+    }
+
+    /// 확인을 기다리는 동안에는 **그 두 갈래만** 보여 준다. 다른 키를 함께 띄우면 사용자가
+    /// 그 키를 눌러 확인이 조용히 취소된다.
+    @Test func testAConfirmationReplacesTheWholeHintLine() {
+        let hints = TUIRender.confirmationHint(question: "리자몽을 놓아준다")
+        #expect(hints.contains("리자몽을 놓아준다"))
+        #expect(hints.contains("y"))
+        #expect(!hints.contains("s 교체"))
+    }
+
     // MARK: 목록 표식 폭
 
     /// 목록 행은 **표식 칸을 뺀 폭**으로 조립해야 한다. 전체 폭으로 만들면 `list` 가 커서 표식을
