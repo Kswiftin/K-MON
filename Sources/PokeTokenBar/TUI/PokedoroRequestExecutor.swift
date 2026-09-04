@@ -15,6 +15,9 @@ import Foundation
 struct PokedoroRequestExecutor {
     let timer: FocusTimer
     let companion: CompanionStore
+    /// LAN 대전에 닿는 좁은 창구. **`nil` 은 "대전이 없다" 와 같은 뜻**이다 — 창구가 없으면
+    /// 볼 판도 낼 턴도 없으므로 사유를 따로 만들지 않는다(앱은 늘 연결해 넘긴다).
+    var battle: (any TerminalBattleControl)?
 
     /// `async` 인 이유는 **부화 하나** 때문이다 — `hatchIfNeeded` 는 PokéAPI 에서 종 라인을 받아
     /// 온다. 앱은 이미 요청 id 를 실행 **전에** 기억하므로(`PokeTokenBarApp`), 이 await 를 넘는
@@ -39,6 +42,10 @@ struct PokedoroRequestExecutor {
         case .wavePick(let number): return await wavePick(request, number: number)
         case .waveRoute(let route): return await waveRoute(request, route: route)
         case .waveForfeit: return waveForfeit(request)
+        case .battleMove(let move): return battleMove(request, move: move)
+        case .battleSwitch(let number): return battleSwitch(request, number: number)
+        case .battleForfeit: return battleForfeit(request)
+        case .battleDecline: return battleDecline(request)
         }
     }
 
@@ -419,6 +426,83 @@ struct PokedoroRequestExecutor {
         case .cleared:     "이 판은 이미 끝났다(전 웨이브 돌파). wave start 로 새 판을 연다."
         case .failed:      "이 판은 이미 끝났다(전멸). wave start 로 새 판을 연다."
         }
+    }
+
+    // MARK: LAN 1대1 대전
+    //
+    // 무엇을 고를 수 있는지는 `NetBattleScreen` 이, 실제 변경은 `BattleCenter` 의 기존 진입점
+    // (`chooseMove`·`switchLAN`·`forfeit`·`declineIncoming`)이 든다. 여기 남는 것은 **번호를
+    // 인덱스로 접는 일과 거절 사유를 갈라 말하는 일**뿐이다.
+
+    /// 지금 대전. 창구가 없으면 대전도 없다.
+    private var battleState: BattleTerminalState? { battle?.terminalState }
+
+    private func battleMove(_ request: PokedoroRequest, move: Int) -> PokedoroReply {
+        guard let control = battle, let state = battleState else { return noBattle(request) }
+        // **번호가 목록에 있는지는 화면 표가 판정한다** — 실행기가 따로 세면 안내와 실행이 갈린다.
+        guard NetBattleScreen.action(number: move, in: state) == .battleMove(move: move) else {
+            return no(request, Self.battleRefusal(state, wanted: .move, number: move))
+        }
+        control.chooseMove(move - 1)
+        return battleDone(request, head: "\(move)번 기술을 냈다.")
+    }
+
+    private func battleSwitch(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = battle, let state = battleState else { return noBattle(request) }
+        guard NetBattleScreen.action(number: number, in: state) == .battleSwitch(number: number)
+        else {
+            return no(request, Self.battleRefusal(state, wanted: .sendOut, number: number))
+        }
+        control.switchLAN(to: number - 1)
+        return battleDone(request, head: "\(number)번으로 교체했다.")
+    }
+
+    /// 항복. **되돌릴 수 없다** — 확인은 명령 쪽(`--yes`)에서 이미 받았다.
+    private func battleForfeit(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = battle, let state = battleState,
+              NetBattleScreen.kind(state) != .none else { return noBattle(request) }
+        control.forfeit()
+        return ok(request, "항복했다 — 이 판은 졌다.")
+    }
+
+    private func battleDecline(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = battle, let state = battleState else { return noBattle(request) }
+        // 거절할 신청이 없는데 성공으로 답하면 사용자는 치웠다고 믿고 앱을 안 열어 본다.
+        guard NetBattleScreen.kind(state) == .incoming else {
+            return no(request, "거절할 대전 신청이 없다.")
+        }
+        control.declineIncoming()
+        return ok(request, "대전 신청을 거절했다.")
+    }
+
+    /// 낸 뒤의 답. **바뀐 판을 되읽어서** 다음에 할 일을 말한다 — 내 클램프 결과를 echo 하면
+    /// 앱이 그 입력을 거절한 날에도 성공으로 보고한다(별명 되읽기와 같은 규칙).
+    private func battleDone(_ request: PokedoroRequest, head: String) -> PokedoroReply {
+        let after = battleState
+        return ok(request, head + " " + (after.map(NetBattleScreen.hints) ?? ""))
+    }
+
+    /// 지금 고를 수 없는 번호의 사유. **무엇을 기다리는지 말한다** — 뭉뚱그리면 사용자는 같은
+    /// 번호를 다시 낸다.
+    private static func battleRefusal(_ state: BattleTerminalState,
+                                      wanted: NetBattleScreen.Kind, number: Int) -> String {
+        let kind = NetBattleScreen.kind(state)
+        guard kind == wanted else {
+            switch kind {
+            case .none:     return "진행 중인 대전이 없다."
+            case .waiting:  return "이번 턴은 이미 냈다 — 상대의 행동을 기다린다."
+            case .sendOut:  return "쓰러진 자리를 먼저 메운다 — battle switch <번호>."
+            case .move:     return "지금은 기술을 고를 차례다 — battle move <n>."
+            case .incoming: return "받은 신청을 먼저 처리한다 — battle decline 또는 앱에서 수락."
+            case .appOnly:  return "앱에서 이어 한다 — 파티 편성은 터미널에 입력 줄이 없다."
+            case .finished: return "대전이 끝났다."
+            }
+        }
+        return "\(number)번은 지금 고를 수 없다 — \(NetBattleScreen.hints(state))"
+    }
+
+    private func noBattle(_ request: PokedoroRequest) -> PokedoroReply {
+        no(request, "진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.")
     }
 
     // MARK: 값

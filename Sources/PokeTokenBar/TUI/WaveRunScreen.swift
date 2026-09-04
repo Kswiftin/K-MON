@@ -177,7 +177,7 @@ enum WaveRunScreen {
     /// 칸 하나 — 이름·레벨·HP. HP 를 숫자와 막대로 **함께** 내는 이유는 막대만으로는 한 대 더
     /// 버티는지 알 수 없고, 숫자만으로는 훑어볼 수 없어서다.
     private static func cell(_ slot: String, _ side: BattleSide, width: Int) -> String {
-        let status = side.status.map { " [\(statusMark($0))]" } ?? ""
+        let status = side.status.map { " [\(statusName($0))]" } ?? ""
         let left = "\(slot) \(side.snapshot.name) Lv.\(side.snapshot.level)\(status)"
         let gauge = TUIRender.bar(progress: Double(max(0, side.hp)) / Double(max(1, side.stats.hp)),
                                   width: 10)
@@ -186,7 +186,10 @@ enum WaveRunScreen {
     }
 
     /// 상태이상 이름. 터미널은 폭이 귀해 길게 적을 수 없고, 안 적으면 왜 못 움직이는지 알 수 없다.
-    private static func statusMark(_ status: Status) -> String {
+    ///
+    /// LAN 대전 화면(`NetBattleScreen`)도 이 표를 읽는다 — 상태 이름을 두 벌 두면 같은 상태가
+    /// 화면에 따라 다른 이름으로 보인다.
+    static func statusName(_ status: Status) -> String {
         switch status {
         case .burn: "화상"
         case .freeze: "얼음"

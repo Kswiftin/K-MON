@@ -39,7 +39,8 @@ enum PokedoroCLI {
         let store = CompanionStore(isReadOnly: true)
         switch command {
         case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
-             .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute:
+             .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
+             .battleMove, .battleSwitch, .battleDecline:
             // 위에서 이미 끝났다. `default` 로 접지 않는 이유는 명령이 늘 때 이 자리가 조용히
             // 아무것도 안 하는 길이 되지 않게 하기 위해서다.
             return Status.ok.rawValue
@@ -77,6 +78,16 @@ enum PokedoroCLI {
             // 보여 주고** 거절한다 — 방생과 같은 규칙이다.
             forfeitPreview(store).forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
+        case .battle:
+            // 대전 판은 세이브에 **없다** — 앱이 내놓는 화면을 읽어야 하고, 그 화면은 터미널이
+            // 붙어 있을 때만 쓰인다. 그래서 신호를 남기고 한 틱을 기다린다(웨이브 런과 다르다).
+            battleRows().forEach { print($0) }
+        case .battleForfeit:
+            // 확인 없이 온 항복이다. **무엇을 잃는지 먼저 말하고** 거절한다(방생과 같은 규칙).
+            ["지금 대전을 항복한다 — 그 판을 지고 랭크 판돈도 넘어간다.",
+             "정말이면: pokedoro battle forfeit --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
         case .watch:
             TUIWatch(store: store).run()
         }
@@ -97,6 +108,7 @@ enum PokedoroCLI {
         switch action {
         // 웨이브 런에서 왕복이 붙는 자리: 판 열기·길(다음 상대)·웨이브를 넘기는 행동(진화 조회).
         // `wave.pick`·`wave.switch`·`wave.forfeit` 는 세이브 안에서 끝나므로 짧게 둔다.
+        // 대전 동작은 여기 없다 — PokéAPI 를 타지 않고 이미 열린 소켓으로 한 줄 보낸다.
         case .hatch, .waveStart, .waveRoute, .waveMove, .waveBall: hatchReplyTimeout
         default: replyTimeout
         }
@@ -315,6 +327,37 @@ enum PokedoroCLI {
             ($0.displayName(language), "★ \(TUIRender.number($0.price))")
         }, width: width)
         return lines
+    }
+
+    /// 앱이 내놓는 대전 화면을 기다려 받는다.
+    ///
+    /// **신호를 먼저 남긴다.** 화면은 터미널이 붙어 있을 때만 쓰이므로(`isAttached`), 한 번 찍고
+    /// 끝나는 명령이 그냥 파일을 읽으면 아무것도 없거나 낡은 것만 본다. 웨이브 런과 갈리는
+    /// 지점이 이것이다 — 그쪽은 세이브에 있어 앱과 무관하게 읽힌다.
+    ///
+    /// 앱이 꺼져 있으면 기다린 만큼만 늦게 "없다" 고 답한다. 무한정 기다리지 않는 이유는
+    /// 요청 왕복과 같다(셸이 멈추는 것은 침묵보다 나쁘다).
+    static let viewTimeout: TimeInterval = 2.5
+
+    static func battleRows() -> [String] {
+        let mailbox = PokedoroMailbox()
+        let width = terminalWidth()
+        try? mailbox.attach(PokedoroAttachment(id: UUID(), width: width, height: 24, at: Date()))
+        let deadline = Date().addingTimeInterval(viewTimeout)
+        while Date() < deadline {
+            if let view = mailbox.view(), !PokedoroViewChannel.isStale(view, now: Date()) {
+                // 다른 화면이 왔다는 것은 **앱은 살아 있고 대전만 없다**는 뜻이다 — 더 기다릴
+                // 이유가 없다.
+                guard view.screen == "battle" else { break }
+                return [TUIRender.row(left: view.title, right: "", width: width),
+                        TUIRender.rule(width: width)]
+                    + view.lines.map { TUIText.truncate($0, to: width) }
+                    + ["", TUIText.truncate(view.keys.joined(separator: "   "), to: width)]
+            }
+            usleep(pollInterval)
+        }
+        return ["진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.",
+                "(대전 판은 세이브에 없어 앱이 떠 있어야 볼 수 있다.)"]
     }
 
     /// 웨이브 런 한 판 + 지금 할 수 있는 것. **`watch` 의 웨이브 화면과 같은 함수를 읽는다** —

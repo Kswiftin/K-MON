@@ -57,6 +57,19 @@ enum PokedoroCommand: Equatable, Sendable {
     /// **되돌릴 수 없다.** 판이 사라지므로 방생과 같은 규칙으로 `--yes` 를 받는다.
     case waveForfeit(confirmed: Bool)
 
+    // MARK: LAN 1대1 대전
+    //
+    // 판이 세이브에 없으므로(`BattleCenter`) 조회도 **앱이 떠 있어야** 한다 — 화면 채널에서 읽는다.
+    // 그래서 웨이브 런의 `wave` 와 달리 읽기 전용 저장소로는 아무것도 알 수 없다.
+
+    case battle
+    case battleMove(move: Int)
+    case battleSwitch(number: Int)
+    /// **되돌릴 수 없다** — 그 판을 지고 랭크 판돈도 넘어간다.
+    case battleForfeit(confirmed: Bool)
+    /// 받은 신청 거절. 확인을 받지 않는다 — 되돌릴 수 있는 일이다.
+    case battleDecline
+
     /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
     ///
     /// **인자를 여기서 함께 넘긴다.** 예전엔 동작만 돌려주고 부르는 쪽이 분을 다시 꺼냈는데,
@@ -83,7 +96,12 @@ enum PokedoroCommand: Equatable, Sendable {
         case .waveRoute(let route): .waveRoute(route)
         // 확인 없는 포기는 방생과 같이 **요청이 아니다** — 무엇을 잃는지 먼저 보여 주고 거절한다.
         case .waveForfeit(let confirmed): confirmed ? .waveForfeit : nil
-        case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help, .wave: nil
+        case .battleMove(let move): .battleMove(move: move)
+        case .battleSwitch(let number): .battleSwitch(number: number)
+        case .battleForfeit(let confirmed): confirmed ? .battleForfeit : nil
+        case .battleDecline: .battleDecline
+        case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help,
+             .wave, .battle: nil
         }
     }
 }
@@ -175,7 +193,8 @@ enum PokedoroCommandParser {
     /// 명령" 으로 답하면 사용자는 오타를 의심하며 같은 명령을 다시 친다.
     ///
     /// 집중 세션(`start`·`claim`·`stop`)은 이제 여기 없다. 터미널이 요청을 보내고 앱이 실행한다.
-    static let appOnlyCommands: Set<String> = ["battle", "trade", "auction", "home", "raid"]
+    /// `battle` 은 여기서 빠졌다 — 터미널이 대전을 보고 턴을 낸다(`battle` 하위 명령).
+    static let appOnlyCommands: Set<String> = ["trade", "auction", "home", "raid"]
 
     /// 실행 파일 이름을 뺀 인자 배열을 받는다. 빈 배열은 `status` 다 — 인자 없이 친 사용자가
     /// 가장 원하는 것이 현재 상태이기 때문이다.
@@ -225,6 +244,8 @@ enum PokedoroCommandParser {
                             confirmed: options.contains("--yes"))
         case "wave":
             return try waveCommand(in: tail, options: options)
+        case "battle", "pvp":
+            return try battleCommand(in: tail, options: options)
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
@@ -294,6 +315,31 @@ enum PokedoroCommandParser {
             try rejectExtra(rest, beyond: 0, command: command)
             return .waveForfeit(confirmed: options.contains("--yes"))
         // **오타로 말한다.** `wave` 를 통째로 모르는 명령으로 접으면 사용자는 기능 자체가 없다고 읽는다.
+        default:
+            throw PokedoroCommandError.unknownCommand(command)
+        }
+    }
+
+    /// `battle <하위 명령> [번호]`. 하위 명령이 없으면 조회다(`wave` 와 같은 규칙).
+    private static func battleCommand(in arguments: [String],
+                                      options: Set<String>) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .battle }
+        let rest = Array(words.dropFirst())
+        let command = "battle \(sub)"
+        switch sub {
+        case "move":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .battleMove(move: try requiredWaveNumber(in: rest, command: command))
+        case "switch":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .battleSwitch(number: try requiredWaveNumber(in: rest, command: command))
+        case "forfeit":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .battleForfeit(confirmed: options.contains("--yes"))
+        case "decline", "no":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .battleDecline
         default:
             throw PokedoroCommandError.unknownCommand(command)
         }
@@ -408,6 +454,11 @@ enum PokedoroCommandParser {
         ("wave pick <번호>", "보상 고르기"),
         ("wave route <\(routes)>", "다음 웨이브로 갈 길"),
         ("wave forfeit --yes", "판 포기 — 되돌릴 수 없다"),
+        ("battle", "LAN 대전 — 지금 판 (앱이 떠 있어야 한다)"),
+        ("battle move <n>", "기술 쓰기"),
+        ("battle switch <번호>", "교체 / 쓰러진 자리 메우기"),
+        ("battle decline", "받은 대전 신청 거절"),
+        ("battle forfeit --yes", "항복 — 되돌릴 수 없다"),
         ("help", "이 도움말"),
     ]
 

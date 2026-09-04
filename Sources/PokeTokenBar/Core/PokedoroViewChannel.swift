@@ -52,15 +52,55 @@ enum PokedoroViewChannel {
         return abs(now.timeIntervalSince(attachment.at)) <= attachmentTimeout
     }
 
+    /// 바뀐 것이 없어도 **이 주기마다 한 번은 다시 쓴다.** 낡음 한계보다 짧아야 한다 — 같거나
+    /// 길면 안 바뀌는 화면이 반드시 한 번은 낡은 상태를 지난다.
+    ///
+    /// 이 값이 없던 동안의 결함: 집중 타이머는 매초 글자가 바뀌어 늘 다시 쓰였지만, 대전 화면은
+    /// 상대를 기다리는 30초 동안 한 글자도 안 바뀐다. 그 사이 파일의 시각이 멈춰 `isStale` 이
+    /// 참이 되고, 터미널은 **진행 중인 대전을 지운다.**
+    static let refreshInterval: TimeInterval = 2
+
     /// 이 화면을 파일에 써야 하는가. **바뀐 것이 없으면 안 쓴다** — 연출 프레임마다 쓰면 디스크가
     /// 갈리고, 터미널은 바뀐 게 없는데도 매번 다시 그린다.
     ///
-    /// 시각은 비교에서 뺀다. 넣으면 매번 달라져 이 판정이 아무것도 거르지 못한다.
+    /// 내용 비교에서 시각은 뺀다(넣으면 매번 달라져 아무것도 거르지 못한다). 대신 **살아 있다는
+    /// 표시로** 주기마다 한 번 다시 쓴다 — 위 `refreshInterval` 의 근거를 본다.
     static func shouldWrite(_ snapshot: PokedoroViewSnapshot,
                             lastWritten: PokedoroViewSnapshot?) -> Bool {
         guard let lastWritten else { return true }
-        return (snapshot.screen, snapshot.title, snapshot.lines, snapshot.keys)
+        let changed = (snapshot.screen, snapshot.title, snapshot.lines, snapshot.keys)
             != (lastWritten.screen, lastWritten.title, lastWritten.lines, lastWritten.keys)
+        if changed { return true }
+        return snapshot.writtenAt.timeIntervalSince(lastWritten.writtenAt) >= refreshInterval
+    }
+
+    /// 생산자가 여럿일 때 **하나를 고른다** — 첫 번째 살아 있는 화면이다. 부르는 쪽이 우선순위
+    /// 순서로 넘긴다(대전이 집중 타이머보다 앞이다: 라이브 판이 도는 동안 타이머 줄을 그리면
+    /// 사용자는 자기 차례를 놓친다).
+    ///
+    /// 앱 루트에 `if let a { … } else if let b { … }` 로 쓰지 않는 이유는 그 자리에 테스트가
+    /// 닿지 않기 때문이다 — 우선순위는 규칙이고, 규칙은 순수 쪽에 둔다.
+    static func preferred(_ candidates: [PokedoroViewSnapshot?]) -> PokedoroViewSnapshot? {
+        candidates.compactMap { $0 }.first
+    }
+
+    /// LAN 1대1 대전 화면. **이 채널의 첫 라이브 생산자**다.
+    ///
+    /// 대전 판은 세이브에 없고 `BattleCenter` 에만 살아서 터미널이 스스로 만들 수 없다 — 웨이브
+    /// 런과 갈리는 지점이 여기다(그쪽은 세이브에 남아 터미널이 직접 읽는다).
+    ///
+    /// 대전이 아예 없으면 `nil` 이다. 빈 화면을 내놓으면 터미널이 빈 줄을 그리고, 우선순위에서
+    /// 뒤에 있는 생산자(집중 타이머)까지 덮는다.
+    static func battleSnapshot(_ state: BattleTerminalState, language: AppLanguage,
+                               width: Int, now: Date) -> PokedoroViewSnapshot? {
+        guard NetBattleScreen.kind(state) != .none else { return nil }
+        return PokedoroViewSnapshot(
+            screen: "battle",
+            title: NetBattleScreen.title(state),
+            lines: NetBattleScreen.lines(state, language: language,
+                                         width: drawableWidth(width)),
+            keys: NetBattleScreen.keys(state),
+            writtenAt: now)
     }
 
     /// 이 화면이 낡았는가(앱이 조용해졌는가).

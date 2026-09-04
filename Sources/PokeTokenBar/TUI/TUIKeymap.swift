@@ -5,6 +5,8 @@ enum TUIScreen: String, CaseIterable, Sendable {
     case home, party, dex, bag, challenge, goals
     /// 웨이브 런. 목록이 아니라 **판**이다 — 커서가 없고 숫자 키가 지금 국면의 선택지다.
     case wave
+    /// LAN 1대1 대전. 판이 세이브에 없어 **앱이 내놓는 화면**을 그린다(`PokedoroViewChannel`).
+    case battle
 
     /// 목록이 있는 화면인가 — 스크롤 키를 받을지 가르는 유일한 기준이다.
     ///
@@ -12,7 +14,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
     /// 화면이 조용히 목록이 되어, 아무 데도 안 쓰이는 커서가 움직인다.
     var isList: Bool {
         switch self {
-        case .home, .wave: false
+        case .home, .wave, .battle: false
         case .party, .dex, .bag, .challenge, .goals: true
         }
     }
@@ -30,6 +32,9 @@ enum TUIScreen: String, CaseIterable, Sendable {
         case .challenge: "m"
         case .goals: "g"
         case .wave: "w"
+        // `b` 는 가방이다. 대전은 versus 의 `v` — 화면 이동 키가 먼저 잡히므로 겹치면 아무 데서도
+        // 안 먹는 키가 된다.
+        case .battle: "v"
         }
     }
 
@@ -44,6 +49,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
         case .challenge: "도전"
         case .goals: "목표"
         case .wave: "웨이브"
+        case .battle: "대전"
         }
     }
 
@@ -80,6 +86,12 @@ enum TUIAction: Equatable, Sendable {
     case throwWaveBall
     /// 판을 버린다 — **되돌릴 수 없다.** 화면이 확인을 한 번 받는다(방생과 같은 규칙).
     case forfeitWaveRun
+    /// LAN 대전 화면의 숫자 키. 기술인지 교체인지는 `NetBattleScreen.action(number:in:)` 이 정한다.
+    case battleChoice(Int)
+    /// 항복 — **되돌릴 수 없다.** 확인을 한 번 받는다.
+    case forfeitBattle
+    /// 받은 신청 거절. 확인을 받지 않는다 — 되돌릴 수 있는 일이다.
+    case declineBattle
     /// 되돌릴 수 없는 동작의 승낙·취소.
     case confirm
     case cancelConfirmation
@@ -115,6 +127,23 @@ enum TUIKeymap {
         case "c": .claimAdventure
         case "x": .cancelAdventure
         default: nil
+        }
+    }
+
+    /// LAN 대전 화면의 키. **판 화면마다 표를 나눠 둔다** — 한 표를 공유하면 볼 던지기가
+    /// 대전에서도 먹는 것처럼 보이고(그 화면에 없는 동작이다), 홈과 공유하면 기술을 고르려다
+    /// 집중 세션이 시작된다.
+    ///
+    /// 숫자가 6까지인 이유는 교체 후보가 팀 여섯 마리이기 때문이다(기술은 넷까지). 목록에 없는
+    /// 번호는 `NetBattleScreen.action` 이 걸러 요청이 되지 않는다.
+    private static func battleKey(_ key: Character) -> TUIAction? {
+        if let number = key.wholeNumberValue, (1...6).contains(number) {
+            return .battleChoice(number)
+        }
+        switch key {
+        case "f": return .forfeitBattle
+        case "n": return .declineBattle
+        default: return nil
         }
     }
 
@@ -197,6 +226,9 @@ enum TUIKeymap {
             }
         case .wave:
             guard let action = waveKey(character) else { return .ignored }
+            return canWrite ? action : .rejected(.readOnly)
+        case .battle:
+            guard let action = battleKey(character) else { return .ignored }
             return canWrite ? action : .rejected(.readOnly)
         case .home:
             // 모험 키는 홈 전용이다. 도감을 넘기다 실수로 세션이 시작되면 안 된다.
