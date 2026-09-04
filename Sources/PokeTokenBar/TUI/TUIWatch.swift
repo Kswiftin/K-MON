@@ -20,6 +20,10 @@ final class TUIWatch {
     private let mailbox = PokedoroMailbox()
     /// 답을 기다리는 요청. 하나만 든다 — 화면에서 키를 연타해도 마지막 것만 유효하다.
     private var pending: PokedoroRequest?
+    /// 확인을 기다리는 **되돌릴 수 없는** 동작. 물어본 문장과 실행할 동작을 **함께** 든다 —
+    /// 확인 사이에 목록이 다시 읽혀 커서 아래 행이 바뀔 수 있으므로, 그때 대상을 다시 찾으면
+    /// 사용자가 승낙한 것과 다른 개체가 사라진다.
+    private var confirmation: (question: String, action: PokedoroRequest.Action)?
 
     init(store: CompanionStore) {
         self.store = store
@@ -80,7 +84,8 @@ final class TUIWatch {
 
     private func handle(_ key: TUIKey) {
         // 쓰기 키(1·2·3·c·x)는 **앱에 요청을 보낸다** — 이 프로세스는 여전히 세이브에 쓰지 않는다.
-        switch TUIKeymap.action(for: key, screen: screen, canWrite: true) {
+        switch TUIKeymap.action(for: key, screen: screen, canWrite: true,
+                                awaitingConfirmation: confirmation != nil) {
         case .quit:
             terminal.stop()
             exit(0)
@@ -99,12 +104,54 @@ final class TUIWatch {
             request(.claim)
         case .cancelAdventure:
             request(.stop)
+        case .useSelected:
+            if let item = selectedItem() { request(.use(item: item.kind)) }
+        case .switchToSelected:
+            if let mon = selectedMon() {
+                request(.switchCompanion(number: TUIRender.printedRosterNumber(index: mon.index)))
+            }
+        case .releaseSelected:
+            // 여기서 바로 보내지 않는다 — 개체가 영영 사라지므로 한 번 더 묻는다.
+            if let mon = selectedMon() {
+                confirmation = ("\(mon.name)을 놓아준다 — 되돌릴 수 없다",
+                                .release(number: TUIRender.printedRosterNumber(index: mon.index)))
+            }
+        case .confirm:
+            if let action = confirmation?.action { request(action) }
+            confirmation = nil
+        case .cancelConfirmation:
+            confirmation = nil
+            status = "취소했다."
         case .rejected(.readOnly):
             status = "이 실행에는 쓰기 권한이 없다 — 집중 세션은 앱이 실행한다."
         case .ignored:
             return
         }
         render()
+    }
+
+    /// 커서가 가리키는 개체·아이템. 목록이 비었거나 커서가 범위를 벗어나면 `nil` 이다 —
+    /// 그 값을 그대로 첨자로 쓰면 배열 밖을 읽는다.
+    private func selectedMon() -> CompanionStore.ChatRosterEntry? {
+        guard screen == .party else { return nil }
+        let entries = PokedoroCLI.partyEntries(store)
+        return entries.indices.contains(selection) ? entries[selection] : nil
+    }
+
+    private func selectedItem() -> (kind: ItemKind, count: Int)? {
+        guard screen == .bag else { return nil }
+        let items = PokedoroCLI.bagEntries(store)
+        return items.indices.contains(selection) ? items[selection] : nil
+    }
+
+    /// 커서 행이 **대상이 될 수 있는가.** 안내가 이 값을 읽는다 — 이미 나와 있는 개체를 가리킬 때
+    /// "s 교체" 를 권하면 눌러도 거절만 돌아온다. 실행을 막지는 않는다(거절 사유는 앱이 말한다).
+    private func canActOnSelection() -> Bool {
+        switch screen {
+        case .party: selectedMon().map { !$0.isActive } ?? false
+        case .bag: selectedItem() != nil
+        case .home, .dex, .challenge, .goals: false
+        }
     }
 
     private func reload() {
@@ -185,8 +232,9 @@ final class TUIWatch {
             lines += TUIRender.list(rows: rows(), selection: selection,
                                     height: listHeight, width: size.width)
             lines.append(TUIRender.rule(width: size.width))
-            lines.append(TUIText.truncate("↑↓/jk 이동   " + TUIRender.screenHints(current: screen),
-                                          to: size.width))
+            let hint = confirmation.map { TUIRender.confirmationHint(question: $0.question) }
+                ?? TUIRender.listHints(screen: screen, canActOnSelection: canActOnSelection())
+            lines.append(TUIText.truncate(hint, to: size.width))
         }
         terminal.draw(lines, height: size.height)
     }
