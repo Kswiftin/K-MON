@@ -378,7 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             Task { @MainActor in
                 guard let self else { return }
                 self.focusTimer.tick()
-                self.handlePokedoroRequestIfNeeded()
+                await self.handlePokedoroRequestIfNeeded()
                 self.applyState()
             }
         }
@@ -396,12 +396,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     ///
     /// 실행한 뒤에 `lastExecutedRequestID` 를 남기는 순서를 지킨다 — 답 쓰기가 실패해도 요청은
     /// 한 번만 실행돼야 한다(터미널은 타임아웃으로 답하고, 그게 두 번 실행되는 것보다 낫다).
-    private func handlePokedoroRequestIfNeeded() {
+    private func handlePokedoroRequestIfNeeded() async {
         guard let request = pokedoroMailbox.pendingRequest(),
               PokedoroRequestBus.shouldExecute(request, now: Date(),
                                                lastExecutedID: lastExecutedRequestID) else { return }
         lastExecutedRequestID = request.id
-        let reply = PokedoroRequestExecutor(timer: focusTimer, companion: companion).execute(request)
+        // id 를 **실행 전에** 남긴다. 실행이 await 를 지나므로(부화는 네트워크를 탄다) 나중에
+        // 남기면 그 사이의 1초 틱이 같은 파일을 다시 보고 같은 요청을 또 실행한다.
+        let reply = await PokedoroRequestExecutor(timer: focusTimer, companion: companion).execute(request)
         // 쓰기 실패는 터미널 쪽에서 타임아웃으로 드러난다. 여기서 재시도하면 같은 초에 다시
         // 실행될 위험만 늘고, 이미 세이브는 바뀐 뒤다.
         try? pokedoroMailbox.post(reply)

@@ -46,7 +46,7 @@ struct PokedoroRequestExecutorTests {
         let timer = FocusTimer()
 
         let sent = request(.start(minutes: 25), at: clock.now)
-        let reply = PokedoroRequestExecutor(timer: timer, companion: store).execute(sent)
+        let reply = await PokedoroRequestExecutor(timer: timer, companion: store).execute(sent)
 
         #expect(reply.succeeded)
         #expect(reply.id == sent.id, "답의 id 가 다르면 터미널이 영영 자기 답을 못 받는다")
@@ -64,10 +64,10 @@ struct PokedoroRequestExecutorTests {
         let store = await makeStore(in: directory, clock: clock)
         let timer = FocusTimer()
         let executor = PokedoroRequestExecutor(timer: timer, companion: store)
-        _ = executor.execute(request(.start(minutes: 25), at: clock.now))
+        _ = await executor.execute(request(.start(minutes: 25), at: clock.now))
         let started = store.activeAdventure
 
-        let second = executor.execute(request(.start(minutes: 90), at: clock.now))
+        let second = await executor.execute(request(.start(minutes: 90), at: clock.now))
 
         #expect(!second.succeeded)
         #expect(store.activeAdventure == started, "거절이 진행 중인 모험을 갈아치웠다")
@@ -81,7 +81,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock, withCompanion: false)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.start(minutes: 25), at: clock.now))
 
         #expect(!reply.succeeded)
@@ -96,7 +96,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.start(minutes: 600), at: clock.now))
 
         #expect(reply.succeeded)
@@ -112,7 +112,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.start(minutes: nil), at: clock.now))
 
         #expect(reply.succeeded)
@@ -129,11 +129,11 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
         let executor = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
-        _ = executor.execute(request(.start(minutes: 25), at: clock.now))
+        _ = await executor.execute(request(.start(minutes: 25), at: clock.now))
         let before = store.availableTokens
         clock.now = clock.now.addingTimeInterval(26 * 60)   // 모험을 끝낸다
 
-        let reply = executor.execute(request(.claim, at: clock.now))
+        let reply = await executor.execute(request(.claim, at: clock.now))
 
         #expect(reply.succeeded)
         #expect(store.activeAdventure == nil)
@@ -149,10 +149,10 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
         let executor = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
-        _ = executor.execute(request(.start(minutes: 90), at: clock.now))
+        _ = await executor.execute(request(.start(minutes: 90), at: clock.now))
         let before = store.availableTokens
 
-        let reply = executor.execute(request(.claim, at: clock.now))
+        let reply = await executor.execute(request(.claim, at: clock.now))
 
         #expect(!reply.succeeded)
         #expect(store.activeAdventure != nil)
@@ -165,7 +165,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.claim, at: clock.now))
 
         #expect(!reply.succeeded)
@@ -180,12 +180,12 @@ struct PokedoroRequestExecutorTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
-        _ = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        _ = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.start(minutes: 25), at: clock.now))
 
         // 앱이 다시 뜬 상황: 타이머는 새로 만들어져 idle 이고 모험만 남아 있다.
         let restarted = FocusTimer()
-        let reply = PokedoroRequestExecutor(timer: restarted, companion: store)
+        let reply = await PokedoroRequestExecutor(timer: restarted, companion: store)
             .execute(request(.stop, at: clock.now))
 
         #expect(reply.succeeded)
@@ -201,7 +201,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.use(item: .rareCandy), at: clock.now))
 
         #expect(!reply.succeeded)
@@ -217,7 +217,7 @@ struct PokedoroRequestExecutorTests {
         let store = await makeStore(in: directory, clock: clock)
         store.debugAddCandy(1)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.use(item: .rareCandy), at: clock.now))
 
         #expect(reply.succeeded)
@@ -232,7 +232,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.use(item: .shinyCharm), at: clock.now))
 
         #expect(!reply.succeeded)
@@ -249,7 +249,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.evolve, at: clock.now))
 
         #expect(!reply.succeeded)
@@ -264,7 +264,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.switchCompanion(number: 99), at: clock.now))
 
         #expect(!reply.succeeded)
@@ -281,7 +281,7 @@ struct PokedoroRequestExecutorTests {
         let active = try #require(store.chatRosterEntries.first { $0.isActive })
 
         let number = TUIRender.printedRosterNumber(index: active.index)
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.switchCompanion(number: number), at: clock.now))
 
         #expect(!reply.succeeded)
@@ -296,7 +296,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.rename(nickname: "리자몽"), at: clock.now))
 
         #expect(reply.succeeded)
@@ -313,7 +313,7 @@ struct PokedoroRequestExecutorTests {
         let store = await makeStore(in: directory, clock: clock)
 
         let long = String(repeating: "가", count: SaveTransfer.maxNameLength + 12)
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.rename(nickname: long), at: clock.now))
 
         #expect(reply.succeeded)
@@ -330,7 +330,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.rename(nickname: "피카\n츄\t!"), at: clock.now))
 
         #expect(reply.succeeded)
@@ -346,7 +346,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock, withCompanion: false)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.rename(nickname: "피카"), at: clock.now))
 
         #expect(!reply.succeeded)
@@ -453,7 +453,7 @@ struct PokedoroRequestExecutorTests {
         // 앱이 1초 틱에서 하는 일.
         let pending = try #require(mailbox.pendingRequest())
         #expect(PokedoroRequestBus.shouldExecute(pending, now: clock.now, lastExecutedID: nil))
-        try mailbox.post(PokedoroRequestExecutor(timer: timer, companion: store).execute(pending))
+        try mailbox.post(await PokedoroRequestExecutor(timer: timer, companion: store).execute(pending))
 
         // 터미널이 받는 것.
         let reply = try #require(mailbox.reply(to: sent.id))
@@ -470,7 +470,7 @@ struct PokedoroRequestExecutorTests {
         let clock = Clock()
         let store = await makeStore(in: directory, clock: clock)
 
-        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
             .execute(request(.stop, at: clock.now))
 
         #expect(!reply.succeeded)

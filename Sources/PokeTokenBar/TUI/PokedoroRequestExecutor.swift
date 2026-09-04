@@ -16,15 +16,21 @@ struct PokedoroRequestExecutor {
     let timer: FocusTimer
     let companion: CompanionStore
 
-    func execute(_ request: PokedoroRequest) -> PokedoroReply {
+    /// `async` 인 이유는 **부화 하나** 때문이다 — `hatchIfNeeded` 는 PokéAPI 에서 종 라인을 받아
+    /// 온다. 앱은 이미 요청 id 를 실행 **전에** 기억하므로(`PokeTokenBarApp`), 이 await 를 넘는
+    /// 1초 틱이 같은 요청을 두 번 실행하지 못한다.
+    func execute(_ request: PokedoroRequest) async -> PokedoroReply {
         switch request.action {
-        case .start(let minutes): start(request, minutes: minutes)
-        case .claim: claim(request)
-        case .stop: stop(request)
-        case .use(let item): use(request, item: item)
-        case .evolve: evolve(request)
-        case .switchCompanion(let number): switchCompanion(request, number: number)
-        case .rename(let nickname): rename(request, nickname: nickname)
+        case .start(let minutes): return start(request, minutes: minutes)
+        case .claim: return claim(request)
+        case .stop: return stop(request)
+        case .use(let item): return use(request, item: item)
+        case .evolve: return evolve(request)
+        case .switchCompanion(let number): return switchCompanion(request, number: number)
+        case .rename(let nickname): return rename(request, nickname: nickname)
+        case .buy(let good, let quantity): return buy(request, good: good, quantity: quantity)
+        case .hatch: return await hatch(request)
+        case .release(let number): return release(request, number: number)
         }
     }
 
@@ -131,6 +137,66 @@ struct PokedoroRequestExecutor {
         // 달라진 날 답과 실제가 갈라진다 — 사용자는 자기가 지은 이름이 왜 다른지 모른다.
         let applied = companion.chatRosterEntries.first { $0.isActive }?.name ?? Self.oneLine(nickname)
         return ok(request, "별명을 '\(applied)'로 바꿨다.")
+    }
+
+    /// 상점 구매. 값과 이름은 `ShopCatalog` 이 들고, 실행은 스토어의 구매 경로 그대로다 —
+    /// 여기서 지갑을 직접 깎으면 화면 버튼과 다른 경로가 된다.
+    private func buy(_ request: PokedoroRequest, good: ShopGood, quantity: Int) -> PokedoroReply {
+        let name = good.displayName(companion.language)
+        let total = good.price * quantity
+        // 잔액을 먼저 본다 — 실패 사유 중 사용자가 **가장 자주 만나고 가장 고치기 쉬운** 것이라
+        // 뭉뚱그린 거절보다 액수를 말해 주는 편이 낫다.
+        guard companion.availableTokens >= total else {
+            return no(request, "별의조각이 모자란다 — \(name) \(quantity)개에 "
+                      + "\(TUIRender.number(total)), 지금 \(TUIRender.number(companion.availableTokens)).")
+        }
+        guard Self.purchase(good, quantity: quantity, companion: companion) else {
+            return no(request, "지금은 \(name)을 살 수 없다.")
+        }
+        return ok(request, "\(name) \(quantity)개를 샀다. 남은 별의조각 "
+                  + "\(TUIRender.number(companion.availableTokens)).")
+    }
+
+    /// 종류별 구매 경로. 스토어의 네 진입점을 그대로 부른다.
+    private static func purchase(_ good: ShopGood, quantity: Int, companion: CompanionStore) -> Bool {
+        switch good {
+        case .item(let kind): companion.buy(kind, quantity: quantity)
+        case .egg: (0..<quantity).allSatisfy { _ in companion.buyEgg(nil) }
+        case .outfit(let item): companion.buyOutfit(item)
+        case .machine(let machine): companion.buyTechnicalMachine(machine, quantity: quantity)
+        }
+    }
+
+    /// 부화. **오래 걸릴 수 있다** — 종 라인을 네트워크에서 받아 온다. 터미널은 그동안 답을
+    /// 기다리므로 한 번 찍고 끝나는 명령의 대기 시간이 이 동작에서만 길다.
+    private func hatch(_ request: PokedoroRequest) async -> PokedoroReply {
+        // 부화했는지는 **활성 개체가 생겼는가**로 판정한다. `hatchIfNeeded` 는 조건이 안 맞으면
+        // 조용히 돌아가므로, 부르고 성공으로 답하면 사용자는 파트너가 생긴 줄 안다.
+        guard !companion.hasActive else {
+            return no(request, "이미 함께 다니는 포켓몬이 있다.")
+        }
+        await companion.hatchIfNeeded()
+        guard companion.hasActive else {
+            return no(request, "아직 부화할 알이 없다. 집중을 더 쌓으면 부화한다.")
+        }
+        return ok(request, "알이 부화했다 — \(PokedoroCLI.partnerName(companion) ?? "새 친구")!")
+    }
+
+    /// 방생. **되돌릴 수 없다** — 확인은 명령 쪽(`--yes`)에서 이미 받았고, 여기서는 대상만 찾는다.
+    private func release(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        let index = TUIRender.rosterIndex(printed: number)
+        guard let target = companion.chatRosterEntries.first(where: { $0.index == index }) else {
+            return no(request, "\(number)번 포켓몬이 없다 — party 로 번호를 확인한다.")
+        }
+        // `releaseMon` 은 박스 개체만 놓아주고 즐겨찾기·체육관 방어를 거절한다. 사유를 갈라
+        // 말하지 않으면 사용자는 왜 안 되는지 모른 채 같은 명령을 반복한다.
+        guard !target.isActive else {
+            return no(request, "\(target.name)은 함께 다니는 중이라 놓아줄 수 없다. 먼저 switch 로 바꾼다.")
+        }
+        guard companion.releaseMon(target.id) else {
+            return no(request, "\(target.name)은 놓아줄 수 없다 — 즐겨찾기이거나 체육관을 지키는 중이다.")
+        }
+        return ok(request, "\(target.name)을 놓아줬다.")
     }
 
     // MARK: 값

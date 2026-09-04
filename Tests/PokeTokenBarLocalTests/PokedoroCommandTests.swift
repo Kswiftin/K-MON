@@ -274,7 +274,7 @@ struct PokedoroCommandTests {
     /// 알아보고 **어디서 하는지** 답해야 한다 — "알 수 없는 명령" 으로 뭉개면 사용자는 오타를
     /// 의심하며 같은 명령을 다시 친다.
     @Test func testAppOnlyCommandsExplainWhereTheyLive() {
-        for name in ["battle", "trade", "auction", "home", "raid", "shop"] {
+        for name in ["battle", "trade", "auction", "home", "raid"] {
             #expect(throws: PokedoroCommandError.appOnlyFeature(name)) {
                 try parse([name])
             }

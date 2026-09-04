@@ -28,6 +28,12 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// **인자가 자유 문자열인 유일한 동작.** 별명은 본래 자유 문자열이고, 길이·개행 클램프는
         /// 실행기가 한다(파일을 직접 고친 경로까지 막아야 하므로).
         case rename(nickname: String)
+        /// 상점 구매. 수량은 **1 이상**이고, 살 수 있는 것은 `ShopCatalog` 에 있는 것뿐이다.
+        case buy(good: ShopGood, quantity: Int)
+        /// 부화 조건이 찼으면 부화시킨다. 앱이 PokéAPI 를 타므로 실행이 오래 걸릴 수 있다.
+        case hatch
+        /// **되돌릴 수 없다.** 확인(`--yes`)은 명령 쪽에서 받고, 여기 오는 요청은 이미 확인된 것이다.
+        case release(number: Int)
 
         /// 파일에 적히는 이름.
         var name: String {
@@ -39,6 +45,9 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .evolve: "evolve"
             case .switchCompanion: "switch"
             case .rename: "name"
+            case .buy: "buy"
+            case .hatch: "hatch"
+            case .release: "release"
             }
         }
 
@@ -53,7 +62,11 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .use(let item): item.rawValue
             case .switchCompanion(let number): String(number)
             case .rename(let nickname): nickname
-            case .claim, .stop, .evolve: nil
+            // 수량 1 은 **안 적는다**. 적으면 같은 요청이 두 모양으로 존재하고, 손으로 고친 파일과
+            // 프로그램이 쓴 파일이 달라 보인다.
+            case .buy(let good, let quantity): quantity > 1 ? "\(good.slug) \(quantity)" : good.slug
+            case .release(let number): String(number)
+            case .claim, .stop, .evolve, .hatch: nil
             }
         }
 
@@ -89,6 +102,27 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 guard let argument,
                       !argument.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                 self = .rename(nickname: argument)
+            case "hatch" where argument == nil: self = .hatch
+            case "buy":
+                // 마지막 조각이 숫자면 수량이다. 이름이 여러 조각인 물건이 있으므로(표시 이름)
+                // 앞쪽을 통째로 이름으로 본다.
+                guard let argument else { return nil }
+                var words = argument.split(separator: " ").map(String.init)
+                var quantity = 1
+                if words.count > 1, let last = words.last, let value = Self.wholeNumber(last) {
+                    // 0개·음수 구매는 요청이 아니다 — 실행해도 아무 일이 안 일어나는데 성공으로
+                    // 보고된다. 숫자가 아닌 마지막 조각은 이름의 일부다(그대로 둔다).
+                    guard value >= 1 else { return nil }
+                    quantity = value
+                    words.removeLast()
+                }
+                guard let good = ShopCatalog.named(words.joined(separator: " ")) else { return nil }
+                // 한 벌뿐인 물건에 수량이 붙었으면 추측하지 않는다.
+                guard quantity == 1 || good.allowsQuantity else { return nil }
+                self = .buy(good: good, quantity: quantity)
+            case "release":
+                guard let argument, let number = Self.wholeNumber(argument), number >= 1 else { return nil }
+                self = .release(number: number)
             default: return nil
             }
         }

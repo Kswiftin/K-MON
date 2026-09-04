@@ -32,6 +32,13 @@ enum PokedoroCommand: Equatable, Sendable {
     /// `party` 가 찍는 번호(1부터).
     case switchCompanion(number: Int)
     case rename(nickname: String)
+    /// 상점 재고. 조회라 세이브를 읽기만 한다.
+    case shop
+    case buy(good: ShopGood, quantity: Int)
+    case hatch
+    /// **되돌릴 수 없다.** `confirmed` 가 거짓이면 요청이 되지 않고, 화면이 무엇을 잃는지 먼저
+    /// 보여 준 뒤 거절한다 — 오타 한 번이 개체를 영영 지우면 안 된다.
+    case release(number: Int, confirmed: Bool)
 
     /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
     ///
@@ -46,7 +53,12 @@ enum PokedoroCommand: Equatable, Sendable {
         case .evolve: .evolve
         case .switchCompanion(let number): .switchCompanion(number: number)
         case .rename(let nickname): .rename(nickname: nickname)
-        case .status, .party, .dex, .bag, .challenge, .goals, .mon, .watch, .help: nil
+        case .buy(let good, let quantity): .buy(good: good, quantity: quantity)
+        case .hatch: .hatch
+        // 확인 없는 방생은 **요청이 아니다.** 여기서 nil 을 돌려주면 CLI 가 읽기 전용 경로로
+        // 내려가 무엇을 잃는지 보여 주고 거절한다.
+        case .release(let number, let confirmed): confirmed ? .release(number: number) : nil
+        case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help: nil
         }
     }
 }
@@ -70,6 +82,8 @@ enum PokedoroCommandError: Equatable, Error {
     case unexpectedArgument(String)
     /// 목록 밖 아이템 이름. **어디서 이름을 얻는지** 같이 말한다.
     case unknownItem(String)
+    /// 상점이 팔지 않는 물건.
+    case unknownGood(String)
 
     var message: String {
         switch self {
@@ -88,6 +102,8 @@ enum PokedoroCommandError: Equatable, Error {
             "`\(name)` 은 인자를 받지 않는다."
         case .unknownItem(let raw):
             "그런 아이템이 없다: \(raw) — `pokedoro bag` 이 찍는 이름을 쓴다."
+        case .unknownGood(let raw):
+            "상점에 그런 물건이 없다: \(raw) — `pokedoro shop` 이 찍는 이름을 쓴다."
         }
     }
 }
@@ -117,7 +133,7 @@ enum PokedoroCommandParser {
     /// 명령" 으로 답하면 사용자는 오타를 의심하며 같은 명령을 다시 친다.
     ///
     /// 집중 세션(`start`·`claim`·`stop`)은 이제 여기 없다. 터미널이 요청을 보내고 앱이 실행한다.
-    static let appOnlyCommands: Set<String> = ["battle", "trade", "auction", "home", "raid", "shop"]
+    static let appOnlyCommands: Set<String> = ["battle", "trade", "auction", "home", "raid"]
 
     /// 실행 파일 이름을 뺀 인자 배열을 받는다. 빈 배열은 `status` 다 — 인자 없이 친 사용자가
     /// 가장 원하는 것이 현재 상태이기 때문이다.
@@ -155,6 +171,16 @@ enum PokedoroCommandParser {
             return .switchCompanion(number: try requiredRosterNumber(in: tail, command: name))
         case "name", "nickname":
             return .rename(nickname: try text(in: tail, command: name))
+        case "shop":
+            return .shop
+        case "buy":
+            return try purchase(in: tail, command: name)
+        case "hatch":
+            try rejectArgument(in: tail, command: name)
+            return .hatch
+        case "release":
+            return .release(number: try requiredRosterNumber(in: tail, command: name),
+                            confirmed: options.contains("--yes"))
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
@@ -168,6 +194,22 @@ enum PokedoroCommandParser {
         let words = arguments.filter { !$0.hasPrefix("--") }
         guard !words.isEmpty else { throw PokedoroCommandError.missingArgument(command) }
         return words.joined(separator: " ")
+    }
+
+    /// `buy <이름> [수량]`. 수량은 이름 **뒤**에 붙는다 — 이름이 여러 조각인 물건이 있으므로
+    /// 마지막 조각이 숫자일 때만 수량으로 본다(요청 파일 파서와 같은 규칙).
+    private static func purchase(in arguments: [String], command: String) throws -> PokedoroCommand {
+        var words = arguments.filter { !$0.hasPrefix("--") }
+        guard !words.isEmpty else { throw PokedoroCommandError.missingArgument(command) }
+        var quantity = 1
+        if words.count > 1, let last = words.last, let value = Int(last), last.allSatisfy(\.isNumber) {
+            guard value >= 1 else { throw PokedoroCommandError.invalidMonNumber(last) }
+            quantity = value
+            words.removeLast()
+        }
+        let raw = words.joined(separator: " ")
+        guard let good = ShopCatalog.named(raw) else { throw PokedoroCommandError.unknownGood(raw) }
+        return .buy(good: good, quantity: quantity)
     }
 
     /// 인자를 받지 않는 명령의 인자 검사.
@@ -236,6 +278,10 @@ enum PokedoroCommandParser {
         ("evolve", "대기 중인 진화 승인"),
         ("switch <번호>", "함께 다닐 포켓몬 바꾸기"),
         ("name <별명>", "파트너 별명 바꾸기"),
+        ("shop", "상점 재고와 값"),
+        ("buy <이름> [수량]", "상점에서 사기 (shop 이 찍는 이름)"),
+        ("hatch", "부화 조건이 찬 알 부화시키기"),
+        ("release <번호> --yes", "포켓몬 놓아주기 — 되돌릴 수 없다"),
         ("help", "이 도움말"),
     ]
 
