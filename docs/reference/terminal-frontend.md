@@ -225,6 +225,11 @@ pokedoro battle move <n>      기술 쓰기 (앱에 요청)
 pokedoro battle switch <번호>  교체 / 쓰러진 자리 메우기 (앱에 요청)
 pokedoro battle decline       받은 신청 거절 (앱에 요청)
 pokedoro battle forfeit --yes 항복 (앱에 요청, 되돌릴 수 없다)
+
+pokedoro room                 LAN 방 — 지금 판 (레이드·방 대전, 앱이 떠 있어야 한다)
+pokedoro room move <n> [대상]  기술 쓰기 (대상 생략하면 첫 상대 · 앱에 요청)
+pokedoro room start           호스트가 판 시작 (앱에 요청)
+pokedoro room leave --yes     방 나가기 (앱에 요청, 정산을 못 받는다)
 ```
 
 **목록과 구매가 한 카탈로그를 읽는다**(`ShopCatalog`). `shop` 이 찍는 이름은 그대로 `buy` 가 받고,
@@ -260,7 +265,7 @@ pokedoro battle forfeit --yes 항복 (앱에 요청, 되돌릴 수 없다)
 나오고, 화면과 입력을 손으로 맞대 보기 전엔 모른다. 범위 밖 번호는 **파트너로 접지 않는다**.
 
 `watch` 에서는 세션을 `1`·`2`·`3`(시작) · `c`(정산) · `x`(종료) 로, 화면 이동을 `h`·`p`·`d`·`b`·
-`m`(도전) · `g`(목표) · `w`(웨이브) · `v`(대전) 로 한다. **키와 화면 이름은 `TUIScreen` 한 곳에 있고** 키 표(`TUIKeymap`)와
+`m`(도전) · `g`(목표) · `w`(웨이브) · `v`(대전) · `o`(방) 로 한다. **키와 화면 이름은 `TUIScreen` 한 곳에 있고** 키 표(`TUIKeymap`)와
 안내(`TUIRender.screenHints`)가 그것을 읽는다 — 두 벌이면 안내에 있는 키가 안 먹거나, 먹는 키가
 안내에 없다. 도전이 `c` 가 아닌 이유는 그 키가 홈에서 정산이기 때문이다: 같은 키를 화면에 따라
 조회와 상태 변경으로 가르면 손이 먼저 움직인다.
@@ -286,7 +291,9 @@ pokedoro battle forfeit --yes 항복 (앱에 요청, 되돌릴 수 없다)
 2대2 에서 상대를 골라 때리는 것과 임의 파티 번호로 교체하는 것은 한 번 찍고 끝나는 명령
 (`wave move <n> <상대>`·`wave switch <번호>`)으로 한다 — 이 화면에는 입력 줄이 없다.
 
-대전 화면은 `1`–`6`(기술 또는 교체) · `t` 없음 · `f`(항복, 확인을 거친다) · `n`(신청 거절)이다.
+대전 화면은 `1`–`6`(기술 또는 교체) · `f`(항복, 확인을 거친다) · `n`(신청 거절)이고,
+방 화면은 `1`–`4`(기술) · `s`(호스트 시작) · `l`(나가기, 확인을 거친다)이다. 방이 `o` 인 것은
+`r` 이 새로고침이라서다.
 `v` 인 이유는 `b` 가 가방 화면 키라서다(볼 던지기가 `t` 인 것과 같은 사정).
 
 **키 안내는 여러 줄로 접는다.** 한 줄로 이어 붙이고 `truncate` 에 맡기면 넘친 오른쪽이 조용히
@@ -373,6 +380,29 @@ pokedoro battle forfeit --yes 항복 (앱에 요청, 되돌릴 수 없다)
 - 대전 동작은 **긴 대기 시간을 쓰지 않는다**(3초). PokéAPI 를 타지 않고 이미 열린 소켓으로 한 줄
   보내는 일이다.
 
+## LAN 방 — 대상은 번호로 지목한다
+
+협동 레이드와 방 대전은 **한 화면**이다(`RoomScreen`). 둘이 같은 센터의 같은 국면(`.battling`)을
+쓰므로 화면을 나누면 같은 규칙을 두 벌 쓰게 된다 — 활동 이름과 레이드 티어만 머리글에서 갈린다.
+통로는 대전과 같다(세이브에 없는 진행 → 화면 채널).
+
+- **대상을 UUID 로 보내지 않는다.** 센터는 참가자를 UUID 로 식별하지만(`submitAction(targetID:)`)
+  그 값은 사람이 칠 수 없다. 화면이 번호를 찍고 **실행기가 `RoomScreen.targetID` 한 곳에서** id 로
+  접는다. 번호와 id 를 각자 구하면 목록이 다시 읽히는 사이 엉뚱한 상대를 때린다. 목록 밖 번호는
+  첫 상대로 접지 않고 거절한다 — 조용히 다른 상대를 때리면 사용자는 로그에서야 알게 된다.
+- **대상 목록은 둘 이상일 때만 찍는다.** 보스 하나짜리 레이드에서는 고를 것이 없다.
+- **방을 만들고 찾는 일은 창구에 없다**(`TerminalRoomControl`). 브라우징과 소켓이라 터미널이 할 수
+  있는 모양이 아니다 — 할 수 없는 일은 창구에 아예 두지 않는다(수락·파티 편성과 같은 규칙).
+  `raid` 는 그래서 여전히 앱 전용 명령이다.
+- **시작 거절은 갈라 말한다** — 호스트가 아닌 것과 사람이 덜 모인 것은 다음에 할 일이 다르다.
+  `s 시작` 키도 그 두 조건을 지날 때만 안내에 오른다.
+- **승패·정산은 센터가 판정한 값을 싣는다**(`myOutcome`·`raidPayout`). 터미널이 전투원 목록으로
+  다시 세면 팀전·관전자·무승부 네 갈래에서 갈라진다.
+
+한 번 찍고 끝나는 조회는 대전과 **같은 함수**를 쓴다(`PokedoroCLI.channelRows(screen:absent:)`) —
+신호를 남기고 한 틱을 기다리는 절차를 기능마다 복제하면 그중 하나만 고쳐지는 날이 온다.
+`watch` 쪽도 같은 이유로 `liveLines(screen:on:absent:)` 하나를 지난다.
+
 종료 코드는 **네 갈래**다. 스크립트가 서로 다르게 대응해야 하기 때문이다.
 
 | 코드 | 뜻 | 사용자가 할 일 |
@@ -404,7 +434,8 @@ set -g status-right '#(pokedoro status --oneline)'
 닿는다 — `TUITextTests`·`TUIRenderTests`·`TUIInputTests`·`PokedoroCommandTests`·
 `WaveRunTerminalTests`·`NetBattleTerminalTests`. 세이브를 여는 쪽은 `ReadOnlyStoreTests`, 요청
 경로는 `PokedoroSessionGateTests`·`PokedoroRequestBusTests`·`PokedoroRequestExecutorTests`·
-`WaveRunExecutorTests`·`NetBattleExecutorTests` 가 본다.
+`WaveRunExecutorTests`·`NetBattleExecutorTests`·`RoomExecutorTests` 가 본다
+(`RoomTerminalTests` 는 순수 투영 쪽이다).
 
 웨이브 런의 실행까지 네트워크 없이 도는 이유는 조회가 **스토어의 `provider` 를 지나기** 때문이다
 (`wildSnapshot`·`evolutionLine`, 그리고 `moveSet` 을 `PokeProviding` 으로 올렸다). 화면이
