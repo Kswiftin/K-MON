@@ -183,6 +183,10 @@ final class MultiplayerRoomCenter {
     private var browser: NWBrowser?
     private var listener: NWListener?
     private var hostConnection: NWConnection?
+    /// 참가 연결과 그 마감. `NWConnection` 은 상대가 사라져도 `.waiting` 에 오래 머물 수 있어서,
+    /// 마감이 없으면 `phase == .joining` 이 영구히 남고 모든 방 참가 버튼이 회색이 된다.
+    private var roomJoinTask: Task<Void, Never>?
+    private var roomJoinTimeoutTask: Task<Void, Never>?
     private var guestConnections: [UUID: NWConnection] = [:]
     private var pendingGuestConnections: [ObjectIdentifier: NWConnection] = [:]
     private var mySnapshot: BattleSnapshot?
@@ -709,7 +713,18 @@ final class MultiplayerRoomCenter {
         hostingRole = false
         let epoch = sessionEpoch
         let level = Self.raidLevel(serviceName: room.serviceName)
-        Task {
+        roomJoinTimeoutTask?.cancel()
+        roomJoinTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard !Task.isCancelled, let self, self.sessionEpoch == epoch,
+                  case .joining = self.phase else { return }
+            self.leaveRoom()
+            self.lastError = self.companion.l.t(
+                "방 연결 시간이 초과되었습니다. 다시 참가해 주세요.",
+                "The room connection timed out. Please try joining again.",
+                "ルームへの接続がタイムアウトしました。もう一度参加してください。")
+        }
+        roomJoinTask = Task {
             guard let snapshot = await buildSnapshot(level: level) else {
                 guard sessionEpoch == epoch else { return }
                 phase = .idle; lastError = "포켓몬 정보를 불러오지 못했습니다."; return
@@ -1530,6 +1545,8 @@ final class MultiplayerRoomCenter {
         }
         if !isHost, let hostConnection { send(.leave(participantID: myID), over: hostConnection) }
         hostConnection?.cancel(); hostConnection = nil
+        roomJoinTask?.cancel(); roomJoinTask = nil
+        roomJoinTimeoutTask?.cancel(); roomJoinTimeoutTask = nil
         guestConnections.values.forEach { $0.cancel() }; guestConnections.removeAll()
         pendingGuestConnections.values.forEach { $0.cancel() }; pendingGuestConnections.removeAll()
         listener?.cancel(); listener = nil
@@ -1715,6 +1732,8 @@ final class MultiplayerRoomCenter {
             guard let self, let connection, connection === self.hostConnection else { return }
             switch message {
             case .lobby(let lobby):
+                self.roomJoinTimeoutTask?.cancel(); self.roomJoinTimeoutTask = nil
+                self.roomJoinTask = nil
                 self.lobby = lobby; self.phase = .joined
                 // 입장하자마자 도전하기로 하고 들어왔으면 여기서 보낸다 — 입장이 비동기라
                 // 로비를 받은 이 시점이 도전을 보낼 수 있는 첫 자리다.
