@@ -128,7 +128,9 @@ enum TUIRender {
             switch screen {
             case .party: keys += ["s 교체", "R 놓아주기"]
             case .bag: keys += ["u 쓰기"]
-            case .home, .dex, .challenge, .goals: break
+            // 판 화면(홈·웨이브)은 목록이 아니라 이 안내를 쓰지 않는다. 웨이브의 키 안내는
+            // 국면마다 달라서 `WaveRunScreen.hints` 가 만든다.
+            case .home, .dex, .challenge, .goals, .wave: break
             }
         }
         return keys.joined(separator: "  ") + "   " + screenHints(current: screen)

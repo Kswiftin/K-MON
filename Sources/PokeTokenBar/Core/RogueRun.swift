@@ -655,6 +655,16 @@ extension RogueRun {
     mutating func debugSetBalls(_ value: Int) { balls = value }
     /// 테스트 전용 — 길 고르기 국면으로 바로 세운다(`take` 의 분기만 재려면 전투를 이길 필요가 없다).
     mutating func debugSetStageRouting() { stage = .routing }
+    /// 테스트 전용 — 보상 화면을 원하는 목록으로 세운다. 실제로 이겨서 도달하면 뽑기가 rng 라
+    /// 원하는 장이 안 뜨고, 화면 투영을 재는 테스트가 매번 다른 목록을 본다.
+    mutating func debugSetStagePicking(offering list: [RunModifier]) {
+        offers = list
+        remainingPicks = max(1, list.count)
+        stage = .picking
+    }
+    /// 테스트 전용 — 끝난 판의 화면을 잰다. 실제로 지려면 상대의 공격 판정이 rng 라 재현되지
+    /// 않는다(전멸 판정 자체는 `WaveBattle.advanceFainted` 쪽 테스트가 든다).
+    mutating func debugFail() { stage = .failed }
     /// 테스트 전용 — 강화가 쌓인 상태를 앞 웨이브를 다 밟지 않고 세운다.
     mutating func debugSetBoosts(_ value: RunBoosts) { boosts = value; stampBoosts() }
     /// 테스트 전용 — 특정 보상이 제시된 상태로 만든다(뽑기는 rng 라 원하는 장이 안 뜬다).

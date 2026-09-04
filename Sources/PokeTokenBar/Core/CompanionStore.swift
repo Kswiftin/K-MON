@@ -587,6 +587,26 @@ final class CompanionStore {
         return "#\(speciesID)"
     }
 
+    /// 소유 개체가 아닌 **종 번호로** 만드는 스냅샷 — 웨이브 런의 야생·스타터가 쓴다.
+    ///
+    /// 여기 있는 이유는 `provider` 다. 예전엔 화면(`RogueRunView`)이 `PokeAPIClient.shared` 를
+    /// 직접 불렀는데, 그러면 판을 여는 경로가 통째로 단위 테스트 밖에 있고 **앱과 터미널이 서로
+    /// 다른 조회를 지나게** 된다(터미널의 요청은 이 스토어를 든 실행기가 처리한다).
+    func wildSnapshot(speciesID: Int, level: Int) async -> BattleSnapshot? {
+        guard let profile = try? await provider.battleProfile(speciesID: speciesID) else { return nil }
+        let moves = await provider.moveSet(speciesID: speciesID, level: level, types: profile.types)
+        return BattleSnapshot(speciesID: speciesID, name: await resolveSpeciesName(speciesID),
+                              trainer: nil, level: level, nature: nil, isShiny: false,
+                              types: profile.types, base: profile.stats, moves: moves,
+                              ability: profile.abilitySlug,
+                              weightHectograms: profile.weightHectograms)
+    }
+
+    /// 진화 라인. 웨이브 런의 레벨업 진화가 읽는다 — `wildSnapshot` 과 같은 이유로 스토어에 둔다.
+    func evolutionLine(speciesID: Int) async -> EvoLine? {
+        try? await provider.line(baseSpeciesID: speciesID)
+    }
+
     func battleSnapshot(for mon: MonState, level: Int = 50) async -> BattleSnapshot? {
         guard let profile = try? await provider.battleProfile(speciesID: mon.presentationID) else { return nil }
         let name = mon.currentID == 479

@@ -38,7 +38,8 @@ enum PokedoroCLI {
 
         let store = CompanionStore(isReadOnly: true)
         switch command {
-        case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy:
+        case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
+             .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute:
             // 위에서 이미 끝났다. `default` 로 접지 않는 이유는 명령이 늘 때 이 자리가 조용히
             // 아무것도 안 하는 길이 되지 않게 하기 위해서다.
             return Status.ok.rawValue
@@ -67,6 +68,15 @@ enum PokedoroCLI {
             // 보여 주고** 거절한다 — 이름을 안 보여 주면 사용자는 번호만 믿고 --yes 를 붙인다.
             releasePreview(store, number: number).forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
+        case .wave:
+            // 판은 세이브에 남으므로 터미널이 **스스로 읽는다** — 화면 채널은 세이브에 없는
+            // 값만 나른다(`PokedoroViewChannel`).
+            waveRows(store, width: terminalWidth()).forEach { print($0) }
+        case .waveForfeit(_):
+            // 확인 없이 온 포기다(확인됐으면 위에서 요청으로 나갔다). **무엇을 잃는지 먼저
+            // 보여 주고** 거절한다 — 방생과 같은 규칙이다.
+            forfeitPreview(store).forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
         case .watch:
             TUIWatch(store: store).run()
         }
@@ -78,13 +88,18 @@ enum PokedoroCLI {
     /// 답을 기다리는 시간. 앱은 1초 틱에서 요청을 집으므로 몇 배의 여유다. 무한정 기다리지
     /// 않는 이유는 앱이 꺼져 있을 때 셸이 멈춰 버리기 때문이다 — 그건 침묵보다 나쁘다.
     static let replyTimeout: TimeInterval = 3
-    /// 부화만 오래 기다린다 — 앱이 PokéAPI 에서 종 라인을 받아 오므로 3초 안에 못 끝낸다.
-    /// 전부 늘리지 않는 이유는, 앱이 꺼져 있을 때 **모든 명령이** 그만큼 셸을 붙잡기 때문이다.
+    /// 네트워크를 타는 동작만 오래 기다린다 — 앱이 PokéAPI 에서 종 라인·무브셋을 받아 오므로
+    /// 3초 안에 못 끝낸다. 전부 늘리지 않는 이유는, 앱이 꺼져 있을 때 **모든 명령이** 그만큼
+    /// 셸을 붙잡기 때문이다.
     static let hatchReplyTimeout: TimeInterval = 20
 
     static func timeout(for action: PokedoroRequest.Action) -> TimeInterval {
-        if case .hatch = action { return hatchReplyTimeout }
-        return replyTimeout
+        switch action {
+        // 웨이브 런에서 왕복이 붙는 자리: 판 열기·길(다음 상대)·웨이브를 넘기는 행동(진화 조회).
+        // `wave.pick`·`wave.switch`·`wave.forfeit` 는 세이브 안에서 끝나므로 짧게 둔다.
+        case .hatch, .waveStart, .waveRoute, .waveMove, .waveBall: hatchReplyTimeout
+        default: replyTimeout
+        }
     }
     private static let pollInterval: useconds_t = 100_000   // 0.1초
 
@@ -300,6 +315,23 @@ enum PokedoroCLI {
             ($0.displayName(language), "★ \(TUIRender.number($0.price))")
         }, width: width)
         return lines
+    }
+
+    /// 웨이브 런 한 판 + 지금 할 수 있는 것. **`watch` 의 웨이브 화면과 같은 함수를 읽는다** —
+    /// 두 곳이 각자 조립하면 한쪽에만 있는 줄이 생긴다.
+    static func waveRows(_ store: CompanionStore, width: Int) -> [String] {
+        let run = store.rogueRun
+        return WaveRunScreen.lines(run, language: store.language, width: width)
+            + ["", TUIText.truncate(WaveRunScreen.hints(run), to: width)]
+    }
+
+    /// 확인 없는 포기가 보는 화면. 판은 세이브에 남는 유일한 진행이라 **무엇을 잃는지 먼저 말한다.**
+    static func forfeitPreview(_ store: CompanionStore) -> [String] {
+        guard let run = store.rogueRun else { return ["진행 중인 웨이브 런이 없다."] }
+        return ["웨이브 \(run.wave)/\(RogueRun.finalWave) 까지 온 판을 버린다 "
+                + "(파티 \(run.party.count)마리).",
+                "되돌릴 수 없다 — 이 판의 파티도 쌓은 강화도 함께 사라진다.",
+                "정말이면: pokedoro wave forfeit --yes"]
     }
 
     /// 확인 없는 방생이 보는 화면. 되돌릴 수 없는 동작이라 **대상과 결과를 먼저 말한다.**

@@ -35,6 +35,29 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// **되돌릴 수 없다.** 확인(`--yes`)은 명령 쪽에서 받고, 여기 오는 요청은 이미 확인된 것이다.
         case release(number: Int)
 
+        // MARK: 웨이브 런
+        //
+        // 이름을 `wave.` 로 묶는 이유는 **낱말이 하나뿐**이기 때문이다. `move`·`pick` 을 최상위에
+        // 두면 다음 라이브 기능(PvP·레이드)이 같은 낱말을 쓰고 싶을 때 이름이 이미 팔려 있고,
+        // 손으로 고친 파일에서 어느 기능의 동작인지도 알 수 없다.
+
+        /// 새 판. 스타터 번호는 `RogueRun.starterPool` 의 순번(1부터)이고, 없으면 앱이 무작위로
+        /// 고른다 — 기본값을 여기 적으면 두 곳이 되고 한쪽만 바뀌는 날 다른 판이 열린다.
+        case waveStart(starter: Int?)
+        /// 기술 하나. `move` 는 내 칸의 기술 순번, `target` 은 상대 필드 칸(1부터)이다.
+        /// **어느 칸이 행동하는지는 싣지 않는다** — 그 값은 판을 든 앱이 안다(`slotsAwaitingAction`).
+        case waveMove(move: Int, target: Int?)
+        /// 파티 번호로 교체. 쓰러진 칸이 있으면 **그 칸을 채우는 무료 출전**이고 아니면 그 칸의
+        /// 행동을 쓰는 교체다 — 화면의 같은 줄이 두 일을 하는 것과 같은 규칙이라 동작도 하나다.
+        case waveSwitch(number: Int)
+        case waveBall(target: Int?)
+        case wavePick(number: Int)
+        /// 길은 **닫힌 목록**(`RunRoute`)이다. 모르는 이름을 안전한 길로 접으면 사용자는 위험한
+        /// 길을 골랐다고 믿은 채 보상 한 장을 잃는다.
+        case waveRoute(RunRoute)
+        /// **되돌릴 수 없다** — 판이 사라진다. 확인은 방생과 같이 명령 쪽에서 받는다.
+        case waveForfeit
+
         /// 파일에 적히는 이름.
         var name: String {
             switch self {
@@ -48,6 +71,13 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .buy: "buy"
             case .hatch: "hatch"
             case .release: "release"
+            case .waveStart: "wave.start"
+            case .waveMove: "wave.move"
+            case .waveSwitch: "wave.switch"
+            case .waveBall: "wave.ball"
+            case .wavePick: "wave.pick"
+            case .waveRoute: "wave.route"
+            case .waveForfeit: "wave.forfeit"
             }
         }
 
@@ -66,7 +96,16 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             // 프로그램이 쓴 파일이 달라 보인다.
             case .buy(let good, let quantity): quantity > 1 ? "\(good.slug) \(quantity)" : good.slug
             case .release(let number): String(number)
-            case .claim, .stop, .evolve, .hatch: nil
+            case .waveStart(let starter): starter.map(String.init)
+            // 타겟 1 은 안 적는다 — 수량 1 을 안 적는 것과 같은 이유다(같은 요청이 두 모양으로
+            // 존재하면 손으로 고친 파일과 프로그램이 쓴 파일이 달라 보인다).
+            case .waveMove(let move, let target):
+                target.map { "\(move) \($0)" } ?? String(move)
+            case .waveSwitch(let number): String(number)
+            case .waveBall(let target): target.map(String.init)
+            case .wavePick(let number): String(number)
+            case .waveRoute(let route): route.rawValue
+            case .claim, .stop, .evolve, .hatch, .waveForfeit: nil
             }
         }
 
@@ -123,8 +162,45 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case "release":
                 guard let argument, let number = Self.wholeNumber(argument), number >= 1 else { return nil }
                 self = .release(number: number)
+            // 웨이브 런 — 번호는 전부 **1 이상**이다. 0 이하를 그대로 인덱스로 접으면 배열 밖을
+            // 읽거나 엉뚱한 칸을 건드린다(개체 번호와 같은 규칙이고, 상한은 판을 아는 실행기가 본다).
+            case "wave.start":
+                guard let argument else { self = .waveStart(starter: nil); return }
+                guard let number = Self.countingNumber(argument) else { return nil }
+                self = .waveStart(starter: number)
+            case "wave.move":
+                guard let argument else { return nil }
+                let words = argument.split(separator: " ").map(String.init)
+                guard let move = words.first.flatMap(Self.countingNumber) else { return nil }
+                switch words.count {
+                case 1: self = .waveMove(move: move, target: nil)
+                case 2:
+                    guard let target = Self.countingNumber(words[1]) else { return nil }
+                    self = .waveMove(move: move, target: target)
+                default: return nil
+                }
+            case "wave.switch":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .waveSwitch(number: number)
+            case "wave.ball":
+                guard let argument else { self = .waveBall(target: nil); return }
+                guard let number = Self.countingNumber(argument) else { return nil }
+                self = .waveBall(target: number)
+            case "wave.pick":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .wavePick(number: number)
+            case "wave.route":
+                guard let argument, let route = RunRoute(rawValue: argument) else { return nil }
+                self = .waveRoute(route)
+            case "wave.forfeit" where argument == nil: self = .waveForfeit
             default: return nil
             }
+        }
+
+        /// 사람이 세는 번호(1부터). 목록에 없는 0 이하는 번호가 아니다.
+        private static func countingNumber(_ raw: String) -> Int? {
+            guard let value = wholeNumber(raw), value >= 1 else { return nil }
+            return value
         }
 
         /// 숫자만 있는 문자열만 숫자다. `" 25 "`·`"+25"` 는 `Int(_:)` 를 통과하므로 자릿수 검사를
