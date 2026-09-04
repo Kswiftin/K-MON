@@ -63,7 +63,7 @@ SwiftPM 은 두 타깃이 같은 소스 디렉터리를 나눠 쓰는 것을 허
 위 정산이 돌 수 있기 때문이다. 대신 상태 디렉터리에 요청 파일을 남기고 앱이 실행한다.
 
 ```
-pokedoro-request.json   터미널만 쓴다   {"id","action":"start|claim|stop","minutes"(start 만),"requestedAt"}
+pokedoro-request.json   터미널만 쓴다   {"id","action":"start|use|buy|release|…","argument"(그 동작이 받을 때만),"requestedAt"}
 pokedoro-reply.json     앱만 쓴다       {"id","succeeded","message"}
 ```
 
@@ -172,7 +172,23 @@ pokedoro use <아이템>         아이템 하나 쓰기 (앱에 요청)
 pokedoro evolve               대기 중인 진화 승인 (앱에 요청)
 pokedoro switch <번호>        함께 다닐 포켓몬 바꾸기 (앱에 요청)
 pokedoro name <별명>          파트너 별명 바꾸기 (앱에 요청)
+pokedoro shop                 상점 재고와 값
+pokedoro buy <이름> [수량]    상점에서 사기 (앱에 요청)
+pokedoro hatch                부화 조건이 찬 알 부화 (앱에 요청, 느리다)
+pokedoro release <번호> --yes 포켓몬 놓아주기 (앱에 요청, 되돌릴 수 없다)
 ```
+
+**목록과 구매가 한 카탈로그를 읽는다**(`ShopCatalog`). `shop` 이 찍는 이름은 그대로 `buy` 가 받고,
+값이 없는 물건(업적 보상 의상)은 애초에 목록에 없다 — 살 수 없는 줄을 보여 주면 사용자가 값을 묻는다.
+
+**부화만 오래 기다린다**(20초, 나머지는 3초). 앱이 PokéAPI 에서 종 라인을 받아 오기 때문이다.
+전부 늘리지 않는 이유는 앱이 그냥 꺼져 있을 때 **모든 명령이** 그만큼 셸을 붙잡기 때문이다.
+실행기가 `async` 인 것도 이 한 동작 때문이고, 앱은 요청 id 를 실행 **전에** 기록하므로 그 `await` 를
+넘는 1초 틱이 같은 요청을 두 번 실행하지 않는다.
+
+**방생은 `--yes` 없이는 요청이 되지 않는다.** 확인이 없으면 터미널이 세이브를 읽기 전용으로 열어
+**무엇을 잃는지 먼저 보여 주고** 종료 코드 1 로 끝난다 — 번호만으로는 무엇을 지우는지 알 수 없고,
+개체와 함께 기억·대화도 사라진다.
 
 **갈래를 고르는 표는 한 곳이다.** 아이템 사용과 진화 승인은 `CompanionAction` 이 실행 경로를 고르고
 결과를 사유 enum 으로 낸다 — 대화 도구와 터미널이 그 표를 함께 읽고 **문구만 각자** 붙인다.

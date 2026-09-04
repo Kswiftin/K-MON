@@ -4620,3 +4620,18 @@ read_when:
   `PokedoroCommandTests.testARosterNumberBelowOneIsRejectedBeforeItBecomesARequest` 가 빨강
   (`"switchCompanion(number: 0)" was returned`).
   (`PokedoroCommandParser.rosterNumber`, 2026-09-04.)
+
+
+## 목록과 구매(조회와 실행)가 서로 다른 표를 읽는 부류
+
+- **"무엇이 있는지" 와 "무엇을 할 수 있는지" 를 다른 곳에서 세면 반드시 갈라진다.** 상점이 그
+  전형이다 — 목록은 카탈로그를, 구매는 스토어의 네 진입점을 각각 훑으면 목록에 뜨는데 못 사는
+  물건(값이 없는 업적 보상 의상)과, 살 수 있는데 목록에 없는 물건이 동시에 생긴다.
+- **처방**: 살 수 있는 것 하나를 값으로 만들고(`ShopGood`: 슬러그·값·표시 이름·수량 허용 여부)
+  목록과 구매가 그 한 표(`ShopCatalog`)를 읽는다. 구매 실행만 종류별 진입점으로 갈라진다.
+- **슬러그와 표시 이름을 함께 받는다.** 요청 파일에는 rawValue 계열(언어 설정을 바꿔도 안 깨진다),
+  사람 입력에는 화면이 방금 찍어 준 이름 — 한쪽만 받으면 사용자가 읽은 대로 쳤을 때 실패한다.
+- **검증**: `testEveryListedGoodCanBeFoundByItsOwnSlug`(목록의 모든 항목이 자기 슬러그로 되찾힌다)와
+  `testTheCatalogOnlyListsThingsWithAPrice`(값 없는 물건은 목록에 없다). 슬러그 중복도 따로 본다 —
+  겹치면 한 이름이 다른 물건을 산다.
+  (`ShopCatalog`·`ShopGood`, 2026-09-04.)
