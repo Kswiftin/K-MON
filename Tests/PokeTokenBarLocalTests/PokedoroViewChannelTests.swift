@@ -1,0 +1,157 @@
+import Foundation
+import Testing
+@testable import PokeTokenBar
+
+/// 앱 → 터미널 **화면 채널**. 라이브 기능(대전·레이드·교환…)은 요청 한 번으로 끝나지 않고 상태가
+/// 계속 바뀌므로, 앱이 지금 화면을 스냅샷으로 내놓고 터미널이 그걸 그린다.
+///
+/// 파일마다 쓰는 쪽은 여전히 **하나**다 — 붙었다는 신호는 터미널만(`pokedoro-attach.json`),
+/// 화면은 앱만(`pokedoro-view.json`) 쓴다. 요청·답 두 파일과 같은 규칙이다.
+@Suite("PokedoroViewChannelTests")
+struct PokedoroViewChannelTests {
+    private static let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func makeDirectory() -> URL { storeFixtureDirectory("pokedoro-view") }
+
+    private func attachment(at offset: TimeInterval = 0, width: Int = 80) -> PokedoroAttachment {
+        PokedoroAttachment(id: UUID(), width: width, height: 24,
+                           at: Self.now.addingTimeInterval(offset))
+    }
+
+    private func snapshot(_ lines: [String], at offset: TimeInterval = 0) -> PokedoroViewSnapshot {
+        PokedoroViewSnapshot(screen: "battle", title: "대전", lines: lines, keys: ["1 기술"],
+                             writtenAt: Self.now.addingTimeInterval(offset))
+    }
+
+    // MARK: 붙어 있는가
+
+    /// 방금 남긴 신호는 붙어 있는 것이다.
+    @Test func testAFreshHeartbeatMeansTheTerminalIsWatching() {
+        #expect(PokedoroViewChannel.isAttached(attachment(), now: Self.now))
+    }
+
+    /// **터미널은 인사하고 죽는다.** 창을 닫거나 kill 당하면 신호 파일은 그대로 남으므로, 나이를
+    /// 안 보면 앱이 영원히 스냅샷을 쓰고 창도 안 띄운다.
+    @Test func testAStaleHeartbeatMeansNobodyIsWatching() {
+        let limit = PokedoroViewChannel.attachmentTimeout
+        #expect(PokedoroViewChannel.isAttached(attachment(at: -limit), now: Self.now))
+        #expect(!PokedoroViewChannel.isAttached(attachment(at: -limit - 1), now: Self.now))
+    }
+
+    /// 어긋남은 **양쪽 대칭**이다 — 미래로 적은 신호 하나로 나이 제한을 우회하면, 그 파일이
+    /// 남아 있는 한 앱이 계속 붙어 있다고 믿는다(요청 우편함과 같은 규칙).
+    @Test func testAHeartbeatDatedInTheFutureIsNotTrusted() {
+        #expect(!PokedoroViewChannel.isAttached(attachment(at: 3 * 3600), now: Self.now))
+    }
+
+    @Test func testNoHeartbeatAtAllMeansNobodyIsWatching() {
+        #expect(!PokedoroViewChannel.isAttached(nil, now: Self.now))
+    }
+
+    // MARK: 바뀔 때만 쓴다
+
+    /// **같은 화면은 다시 쓰지 않는다.** 연출 프레임마다 쓰면 디스크가 갈리고, 터미널은 바뀐 게
+    /// 없는데도 매번 다시 그린다. 시각만 다른 것은 "바뀐 것" 이 아니다.
+    @Test func testAnUnchangedScreenIsNotWrittenAgain() {
+        let first = snapshot(["HP 30/30"])
+        let sameButLater = snapshot(["HP 30/30"], at: 5)
+        #expect(!PokedoroViewChannel.shouldWrite(sameButLater, lastWritten: first))
+    }
+
+    @Test func testAChangedScreenIsWritten() {
+        #expect(PokedoroViewChannel.shouldWrite(snapshot(["HP 12/30"]), lastWritten: snapshot(["HP 30/30"])))
+    }
+
+    /// 키 안내만 바뀌어도 써야 한다 — 누를 수 있는 것이 달라졌는데 화면이 옛 키를 계속 보여 주면
+    /// 사용자는 먹지 않는 키를 누른다.
+    @Test func testAChangedKeyRowIsWritten() {
+        var next = snapshot(["HP 30/30"])
+        next.keys = ["c 정산"]
+        #expect(PokedoroViewChannel.shouldWrite(next, lastWritten: snapshot(["HP 30/30"])))
+    }
+
+    @Test func testTheFirstScreenIsAlwaysWritten() {
+        #expect(PokedoroViewChannel.shouldWrite(snapshot(["HP 30/30"]), lastWritten: nil))
+    }
+
+    // MARK: 낡은 화면
+
+    /// 앱이 죽으면 스냅샷은 마지막 상태로 **얼어붙는다.** 그대로 그리면 사용자는 멈춘 대전을
+    /// 진행 중으로 읽는다 — 나이를 보고 낡았다고 말해야 한다.
+    @Test func testASnapshotStopsBeingTrustedOnceTheAppGoesQuiet() {
+        let limit = PokedoroViewChannel.snapshotTimeout
+        #expect(!PokedoroViewChannel.isStale(snapshot(["x"], at: -limit), now: Self.now))
+        #expect(PokedoroViewChannel.isStale(snapshot(["x"], at: -limit - 1), now: Self.now))
+    }
+
+    // MARK: 파일
+
+    /// 네 파일은 **쓰는 쪽이 서로 다르므로 경로도 다르다.** 겹치면 한 파일에 두 주체가 쓴다.
+    @Test func testEveryChannelFileHasItsOwnPath() {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+
+        let paths = [mailbox.requestURL, mailbox.replyURL, mailbox.attachURL, mailbox.viewURL]
+        #expect(Set(paths.map(\.lastPathComponent)).count == paths.count)
+        for path in paths {
+            #expect(path.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
+                    "\(path.lastPathComponent) 이 세이브 옆에 없다")
+        }
+    }
+
+    @Test func testTheAppReadsBackTheAttachmentTheTerminalWrote() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+
+        let sent = attachment(width: 100)
+        try mailbox.attach(sent)
+        #expect(mailbox.attachment() == sent)
+    }
+
+    @Test func testTheTerminalReadsBackTheViewTheAppWrote() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+
+        let sent = snapshot(["HP 30/30", "무엇을 할까?"])
+        try mailbox.postView(sent)
+        #expect(mailbox.view() == sent)
+    }
+
+    /// 없는 파일과 깨진 파일은 둘 다 `nil` 이다 — 앱의 1초 틱이 이 경로를 매번 밟으므로 여기서
+    /// 죽으면 메뉴바 앱이 통째로 내려간다(요청 우편함과 같은 이유).
+    @Test func testAnAbsentOrCorruptChannelFileIsIgnoredInsteadOfCrashing() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+
+        #expect(mailbox.attachment() == nil)
+        #expect(mailbox.view() == nil)
+
+        try Data("{ not json".utf8).write(to: mailbox.attachURL)
+        try Data("{ not json".utf8).write(to: mailbox.viewURL)
+        #expect(mailbox.attachment() == nil)
+        #expect(mailbox.view() == nil)
+    }
+
+    /// 터미널이 자기 폭을 실어 보내는 이유는 **앱이 줄을 만들기 때문**이다. 폭을 모르면 앱은
+    /// 80칸을 가정하고, 좁은 창에서는 매 줄이 접혀 화면이 흘러간다.
+    @Test func testTheAttachmentCarriesTheTerminalSize() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+        try mailbox.attach(attachment(width: 132))
+
+        #expect(mailbox.attachment()?.width == 132)
+    }
+
+    /// 폭이 0·음수로 들어오면(파이프·손으로 고친 파일) 앱이 그 값으로 줄을 만들 수 없다.
+    /// 화면이 죽는 대신 쓸 수 있는 폭으로 접는다.
+    @Test func testAnImpossibleWidthFallsBackToSomethingDrawable() {
+        #expect(PokedoroViewChannel.drawableWidth(0) > 0)
+        #expect(PokedoroViewChannel.drawableWidth(-5) > 0)
+        #expect(PokedoroViewChannel.drawableWidth(132) == 132)
+    }
+}
