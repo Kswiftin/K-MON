@@ -312,6 +312,100 @@ struct ArenaTerminalTests {
         #expect(PokedoroCommandParser.appOnlyCommands == ["raid"])
     }
 
+    // MARK: 안내 — 사유마다 문구가 다르다
+    //
+    // 이 묶음은 **커버리지에서 `^0` 으로 드러나서** 붙었다. 게이트는 90% 를 넘긴 채 통과했지만
+    // 아래 일곱 갈래는 한 번도 실행되지 않았고, 전부 사용자가 실제로 보는 줄이다.
+
+    /// 트랙의 키는 **뜻을 함께 찍는다.** `1`·`2` 만 보여 주면 어느 쪽이 O 인지 알 수 없다.
+    @Test func testTrackKeysCarryTheMeaningOfEachDigit() {
+        let quiz = RoomScreen.keys(Self.racing(activity: .pokemonQuiz))
+        let race = RoomScreen.keys(Self.racing(activity: .pokeathlon))
+
+        #expect(quiz == ["1 O (참)", "2 X (거짓)", "l 나가기"], "\(quiz)")
+        #expect(race.count == ArenaTrackInput.allCases.count + 1, "\(race)")
+        #expect(race.contains("3 전진"), "\(race)")
+    }
+
+    @Test func testReplaceHintsNameTheSlotsAndTheCommand() {
+        var state = Self.duelling(activity: .gym, phase: .hosting)
+        state.duel?.mine = [ArenaScreen.Slot(number: 1, id: UUID(), label: "이브이", hp: 0,
+                                             maxHP: 90, isActive: true),
+                            ArenaScreen.Slot(number: 2, id: UUID(), label: "피카츄", hp: 50,
+                                             maxHP: 80, isActive: false)]
+
+        let hints = RoomScreen.hints(state)
+        #expect(hints.contains("2 교체"), "\(hints)")
+        #expect(hints.contains("room switch"), "\(hints)")
+    }
+
+    @Test func testTrackHintsListTheDirectionsThatDoSomething() {
+        let hints = RoomScreen.hints(Self.racing(activity: .pokemonQuiz))
+
+        #expect(hints.contains("O (참)"), "\(hints)")
+        #expect(!hints.contains("전진"), "퀴즈에 없는 방향을 권했다: \(hints)")
+    }
+
+    /// 누를 것이 없는 사유 **셋을 갈라 말한다.** 하나로 접으면 원장이 없는 퀴즈에서
+    /// "원장이 닫혔다" 가 나오고, 러너에게 베팅을 권한다.
+    @Test func testEveryReasonForHavingNothingToPressGetsItsOwnWording() {
+        var stalled = Self.racing(activity: .pokeathlon)
+        stalled.track?.canMove = false                      // 출발 전이다
+        var quizWatcher = Self.racing(activity: .pokemonQuiz)
+        quizWatcher.track?.amRacing = false
+        var closedPool = Self.racing(activity: .pokeathlon)
+        closedPool.track?.amRacing = false
+        closedPool.track?.canBet = false
+
+        #expect(RoomScreen.kind(stalled) == .waiting)
+        #expect(RoomScreen.hints(stalled).contains("다음 차례"), "\(RoomScreen.hints(stalled))")
+        #expect(RoomScreen.hints(quizWatcher).contains("관전"),
+                "\(RoomScreen.hints(quizWatcher))")
+        #expect(!RoomScreen.hints(quizWatcher).contains("원장"),
+                "퀴즈에 없는 원장을 말했다: \(RoomScreen.hints(quizWatcher))")
+        #expect(RoomScreen.hints(closedPool).contains("원장이 닫혔다"),
+                "\(RoomScreen.hints(closedPool))")
+    }
+
+    /// 결투의 관전자에게 "이번 라운드는 기다린다" 는 거짓말이다 — 낼 차례가 오지 않는다.
+    @Test func testADuelSpectatorIsToldItIsWatchingNotWaitingForATurn() {
+        var state = Self.duelling(activity: .tournament, phase: .tournament)
+        state.duel?.amFighting = false
+
+        #expect(RoomScreen.kind(state) == .waiting)
+        #expect(RoomScreen.hints(state).contains("관전"), "\(RoomScreen.hints(state))")
+        // 표시도 붙지 않는다 — 내 것이 아닌 팀에 붙으면 내 팀으로 읽힌다.
+        let lines = RoomScreen.lines(state, language: .ko, width: 60)
+        #expect(lines.allSatisfy { !$0.hasPrefix(TUIRender.activeMark) }, "\(lines)")
+    }
+
+    /// 내가 어디 서 있는지와 누가 우승했는지가 줄에 있다.
+    @Test func testMyPositionAndTheWinnerReachTheLines() {
+        var state = Self.racing(activity: .pokemonQuiz)
+        state.track?.myChoice = "O (참)"
+        state.track?.winnerName = "이웃"
+
+        #expect(RoomScreen.kind(state) == .finished)
+        let lines = RoomScreen.lines(state, language: .ko, width: 70)
+        #expect(lines.contains { $0.contains("내 위치") }, "\(lines)")
+        #expect(lines.contains { $0.contains("이웃 우승") }, "\(lines)")
+    }
+
+    /// 로비 안내도 **사유가 셋**이다: 지금 시작할 수 있다 · 사람이 덜 모였다 · 시작이 없는
+    /// 활동이다. 셋째를 "사람을 더 기다린다" 로 접으면 아무리 모여도 안 서는 방을 기다리게 된다.
+    @Test func testEveryLobbyReasonGetsItsOwnWording() {
+        func lobby(_ activity: RoomActivity, canStart: Bool) -> RoomTerminalState {
+            var state = RoomTerminalState(phase: .hosting, activity: activity, myID: UUID())
+            state.isHost = true
+            state.canStart = canStart
+            return state
+        }
+
+        #expect(RoomScreen.hints(lobby(.tournament, canStart: true)).contains("s 시작"))
+        #expect(RoomScreen.hints(lobby(.tournament, canStart: false)).contains("사람을 더"))
+        #expect(RoomScreen.hints(lobby(.gym, canStart: true)).contains("도전자가 오면"))
+    }
+
     // MARK: 픽스처
 
     static func duelling(activity: RoomActivity,
