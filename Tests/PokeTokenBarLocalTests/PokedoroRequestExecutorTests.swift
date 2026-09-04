@@ -352,6 +352,87 @@ struct PokedoroRequestExecutorTests {
         #expect(!reply.succeeded)
     }
 
+    // MARK: 상점
+
+    /// 잔액이 모자라면 **정직하게 실패한다.** 성공으로 뭉개면 사용자는 산 줄 알고 가방을 뒤진다.
+    @Test func testBuyingWithoutEnoughStardustIsRefused() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.buy(good: .item(.rareCandy), quantity: 1), at: clock.now))
+
+        #expect(!reply.succeeded)
+        #expect(reply.message.contains("별의조각"), "왜 안 됐는지 말해야 한다: \(reply.message)")
+    }
+
+    /// 살 수 있으면 **실제 구매 경로**로 간다 — 지갑이 줄고 가방이 는다.
+    @Test func testBuyingSpendsStardustAndFillsTheBag() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+        store.debugAddStardust(500_000)
+        let before = store.availableTokens
+
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.buy(good: .item(.rareCandy), quantity: 2), at: clock.now))
+
+        #expect(reply.succeeded)
+        #expect(store.rareCandyCount == 2)
+        #expect(store.availableTokens < before, "지갑이 줄지 않았으면 실제 경로를 안 밟았다")
+    }
+
+    // MARK: 부화
+
+    /// 부화할 알이 없으면 실패다. 성공으로 답하면 사용자는 파트너가 생긴 줄 안다.
+    @Test func testHatchingWithNothingReadyIsRefused() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.hatch, at: clock.now))
+
+        #expect(!reply.succeeded)
+    }
+
+    // MARK: 방생
+
+    /// 함께 다니는 개체는 놓아줄 수 없다 — `releaseMon` 은 박스만 본다. 성공으로 답하면
+    /// 사용자는 파트너가 사라진 줄 안다.
+    @Test func testReleasingTheActiveCompanionIsRefused() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+        let active = try #require(store.chatRosterEntries.first { $0.isActive })
+
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.release(number: TUIRender.printedRosterNumber(index: active.index)),
+                             at: clock.now))
+
+        #expect(!reply.succeeded)
+        #expect(store.chatRosterEntries.contains { $0.id == active.id }, "개체가 사라졌다")
+    }
+
+    /// 목록에 없는 번호도 거절이다 — 그대로 인덱스로 쓰면 배열 밖을 읽는다.
+    @Test func testReleasingANumberThatIsNotInTheRosterIsRefused() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = await PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.release(number: 99), at: clock.now))
+
+        #expect(!reply.succeeded)
+        #expect(reply.message.contains("99"))
+    }
+
     // MARK: 왕복
 
     /// 세 조각(우편함·실행 판정·실행기)을 **앱이 배선하는 그 순서 그대로** 밟는다. 조각별
