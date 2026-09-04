@@ -146,6 +146,11 @@ LOGIC_CORE=(
   # Memory Home 의 순수 투영. **격자 칸 ↔ 좌표 변환**이 여기 하나뿐이라 게이트 밖에 두면 그
   # 변환이 무테스트로 남는다 — 어긋나면 사용자가 고른 칸과 다른 자리에 가구가 놓인다.
   "Sources/PokeTokenBar/TUI/HomeScreen.swift"
+  # 체육관·토너먼트·포켓슬론·퀴즈의 순수 투영. **판의 형태가 둘**(결투·트랙)이고 결투는 번호
+  # 공간이 둘(기술·팀 자리)이라 그 둘을 배타로 두는 판정이 여기 하나다 — 게이트 밖에 두면
+  # 숫자 키가 기술과 자리를 동시에 뜻하는 부류가 무테스트로 남는다. 이 넷이 원래
+  # `RoomScreen` 의 `case` 에만 열거돼 있고 아무것도 투영하지 않던 것이 이 단계의 결함이다.
+  "Sources/PokeTokenBar/TUI/ArenaScreen.swift"
   # 집중 세션 세 동작의 거절 판정표. 화면·대화·터미널이 **같은 표**를 읽는 자리라 게이트 밖에
   # 두면 한 프런트엔드만 통과하는 분기(휴식 단독·정산 대기 단독)가 무테스트로 나간다.
   "Sources/PokeTokenBar/Core/PokedoroSessionGate.swift"

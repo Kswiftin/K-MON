@@ -89,6 +89,22 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
         case roomLeave
 
+        // MARK: 방의 다른 판 — 결투(체육관·토너먼트)와 트랙(포켓슬론·퀴즈)
+        //
+        // **기술은 `roomMove` 를 그대로 쓴다.** 사용자에게는 "내 차례에 n번 기술" 하나이고,
+        // 어느 창구 함수로 가는지는 판을 아는 실행기가 정한다 — 동작을 갈라 두면 명령도
+        // 갈라야 하고, 사용자는 지금이 어느 판인지 외워야 한다.
+
+        /// 결투의 팀 자리 교체 — 화면이 찍는 자리 번호(1부터). 쓰러진 자리를 메우는 무료
+        /// 출전인지 턴을 쓰는 교체인지는 **엔진이** 가른다.
+        case roomSwitch(slot: Int)
+        /// 트랙의 방향. **닫힌 목록**이다 — 모르는 방향을 안전한 쪽으로 접으면 사용자는
+        /// O 를 골랐다고 믿은 채 X 에 서 있게 된다.
+        case roomTrack(ArenaTrackInput)
+        /// 관전자 베팅 — `runner` 는 순위 목록 번호, `stardust` 는 판돈이다.
+        /// **되돌릴 수 없다**: 원장이 받으면 경기가 끝나야 정산된다.
+        case roomBet(runner: Int, stardust: Int)
+
         // MARK: 교환
         //
         // 번호가 **두 종류**다: 내 개체는 `party` 가 찍는 번호, 상대 목록은 그 세션에만 있는
@@ -190,6 +206,9 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .roomMove: "room.move"
             case .roomStart: "room.start"
             case .roomLeave: "room.leave"
+            case .roomSwitch: "room.switch"
+            case .roomTrack: "room.track"
+            case .roomBet: "room.bet"
             case .tradeAccept: "trade.accept"
             case .tradeDecline: "trade.decline"
             case .tradeOffer: "trade.offer"
@@ -246,6 +265,11 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .battleSwitch(let number): String(number)
             case .roomMove(let move, let target):
                 target.map { "\(move) \($0)" } ?? String(move)
+            case .roomSwitch(let slot): String(slot)
+            // 방향은 **rawValue 로** 적는다 — 표시 이름으로 적으면 언어를 바꾼 사용자가 자기
+            // 요청 파일을 못 읽는다(`use`·`home place` 와 같은 규칙).
+            case .roomTrack(let input): input.rawValue
+            case .roomBet(let runner, let stardust): "\(runner) \(stardust)"
             case .tradeOffer(let number), .tradeWant(let number): String(number)
             case .auctionPost(let number), .auctionUnpost(let number),
                  .auctionAccept(let number), .auctionReject(let number),
@@ -375,6 +399,15 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 }
             case "room.start" where argument == nil: self = .roomStart
             case "room.leave" where argument == nil: self = .roomLeave
+            case "room.switch":
+                guard let argument, let slot = Self.countingNumber(argument) else { return nil }
+                self = .roomSwitch(slot: slot)
+            case "room.track":
+                guard let argument, let input = ArenaTrackInput(rawValue: argument) else { return nil }
+                self = .roomTrack(input)
+            case "room.bet":
+                guard let pair = Self.numberPair(argument) else { return nil }
+                self = .roomBet(runner: pair.0, stardust: pair.1)
             case "trade.accept" where argument == nil: self = .tradeAccept
             case "trade.decline" where argument == nil: self = .tradeDecline
             case "trade.offer":

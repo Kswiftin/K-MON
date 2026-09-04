@@ -2299,6 +2299,15 @@ final class CompanionStore {
         return reward
     }
 
+    /// 이전 배포의 배지 칸을 채운다 — **테스트 전용.**
+    ///
+    /// 이 칸(`gymBadges`)은 아무도 쓰지 않지만 옛 세이브에는 값이 남아 있다. 그 값을 현행
+    /// 리그로 세면 이긴 적 없는 체육관이 배지로 잡히므로, 그 어긋남을 재현하는 데 쓴다.
+    func debugSetLegacyGymBadges(_ badges: Set<String>) {
+        state.gymBadges = badges
+        save()
+    }
+
     // MARK: 공유 체육관 관장 자격
 
     var isGymLeader: Bool { state.gymLeadership != nil }

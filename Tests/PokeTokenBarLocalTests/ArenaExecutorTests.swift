@@ -12,6 +12,7 @@ import Testing
 ///
 /// 그래서 창구가 **활동별 함수를 하나로 접는다**(`startActivity`·`submitDuelMove`) — 라우팅을
 /// 실행기에 두면 활동을 더할 때마다 두 곳을 고쳐야 하고, 한쪽만 고치는 부류가 그대로 생긴다.
+@MainActor
 @Suite("ArenaExecutorTests")
 struct ArenaExecutorTests {
 

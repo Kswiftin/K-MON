@@ -251,15 +251,31 @@ struct ArenaTerminalTests {
                 == .roomBet(runner: 2, stardust: 400))
     }
 
+    /// **거절은 다시 볼 목록을 말한다.** 경매의 오류를 재사용했을 때 `room bet` 이 "경매 번호가
+    /// 아니다 — `pokedoro auction` 을 본다" 로 답했고, `room switch` 는 `party` 번호를 가리켰다.
+    /// 둘 다 사용자를 엉뚱한 화면으로 보낸다(순수 테스트는 통과했고 바이너리가 잡았다).
     @Test func testBadBettingNumbersAreRefusedByName() {
-        #expect(throws: PokedoroCommandError.invalidStardust("0")) {
+        #expect(throws: PokedoroCommandError.invalidBetAmount("0")) {
             try PokedoroCommandParser.parse(["room", "bet", "2", "0", "--yes"])
         }
-        #expect(throws: PokedoroCommandError.self) {
+        #expect(throws: PokedoroCommandError.invalidRunnerNumber("0")) {
             try PokedoroCommandParser.parse(["room", "bet", "0", "400", "--yes"])
         }
-        #expect(throws: PokedoroCommandError.self) {
+        #expect(throws: PokedoroCommandError.missingArgument("room bet")) {
             try PokedoroCommandParser.parse(["room", "bet", "2"])
+        }
+        #expect(throws: PokedoroCommandError.invalidSlotNumber("0")) {
+            try PokedoroCommandParser.parse(["room", "switch", "0"])
+        }
+    }
+
+    /// 경매 쪽 문구는 **그대로다** — 두 목록이 한 오류를 쓰면 한쪽을 고칠 때 다른 쪽이 틀린다.
+    @Test func testTheAuctionKeepsItsOwnWording() {
+        #expect(throws: PokedoroCommandError.invalidStardust("0")) {
+            try PokedoroCommandParser.parse(["auction", "bid", "1", "0", "--yes"])
+        }
+        #expect(throws: PokedoroCommandError.invalidAuctionNumber("0")) {
+            try PokedoroCommandParser.parse(["auction", "bid", "0", "400", "--yes"])
         }
     }
 
