@@ -174,7 +174,9 @@ struct AuctionExecutorTests {
 
         #expect(!reply.succeeded)
         #expect(control.bids.isEmpty)
-        #expect(reply.message.contains("1,200"), "얼마를 걸 수 있는지 말해야 값을 고칠 수 있다")
+        // 자릿수 구분 기호는 로케일이 정한다 — 표를 지나 비교한다(#107 부류).
+        #expect(reply.message.contains(TUIRender.number(1_200)),
+                "얼마를 걸 수 있는지 말해야 값을 고칠 수 있다")
     }
 
     @Test func testABidWithinTheBalanceReachesTheSeam() async throws {

@@ -106,6 +106,31 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// **되돌릴 수 없다** — 협상을 통째로 버린다.
         case tradeCancel
 
+        // MARK: 경매
+        //
+        // 번호가 **넷**이다: 내 개체는 `party` 번호, 근처 게시물·받은 제안·내가 건 제안은 각자
+        // 그 세션의 번호다. 그래서 동작 이름도 넷으로 갈라 둔다 — 한 이름으로 받으면 손으로
+        // 고친 파일에서 어느 목록의 번호인지 알 방법이 없다.
+
+        /// 내 개체를 경매에 올린다 — `party` 번호. **확인을 받지 않는다**: 내릴 수 있고, 팔리는
+        /// 것은 수락(`auctionAccept`)이 한 번 더 물어본 뒤다.
+        case auctionPost(number: Int)
+        case auctionUnpost(number: Int)
+        /// 남의 게시물에 내 개체를 건다 — `listing` 은 시장 번호, `mon` 은 `party` 번호다.
+        /// **되돌릴 수 없다**: 게시자가 수락하는 순간 더 물어볼 새 없이 커밋이 돈다.
+        case auctionApply(listing: Int, mon: Int)
+        /// 남의 게시물에 별의모래를 건다. **되돌릴 수 없다** — 위와 같은 이유다.
+        case auctionBid(listing: Int, stardust: Int)
+        /// 받은 제안을 수락한다. **되돌릴 수 없다** — 게시한 개체가 넘어간다.
+        case auctionAccept(number: Int)
+        /// 받은 제안을 거절한다. 확인을 받지 않는다 — 상대가 다시 걸 수 있다.
+        case auctionReject(number: Int)
+        /// 답을 못 받은 내 제안을 거둬들인다. 확인을 받지 않는다 — 다시 걸 수 있고, 그대로
+        /// 두면 그 개체가 다른 제안에 묶여 있다(자동 시간 제한이 없다).
+        case auctionCancel(number: Int)
+        /// 끝난 제안 카드를 치운다 — 화면 정리다.
+        case auctionClear(number: Int)
+
         /// 파일에 적히는 이름.
         var name: String {
             switch self {
@@ -139,6 +164,14 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .tradeWant: "trade.want"
             case .tradeConfirm: "trade.confirm"
             case .tradeCancel: "trade.cancel"
+            case .auctionPost: "auction.post"
+            case .auctionUnpost: "auction.unpost"
+            case .auctionApply: "auction.apply"
+            case .auctionBid: "auction.bid"
+            case .auctionAccept: "auction.accept"
+            case .auctionReject: "auction.reject"
+            case .auctionCancel: "auction.cancel"
+            case .auctionClear: "auction.clear"
             }
         }
 
@@ -171,6 +204,13 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .roomMove(let move, let target):
                 target.map { "\(move) \($0)" } ?? String(move)
             case .tradeOffer(let number), .tradeWant(let number): String(number)
+            case .auctionPost(let number), .auctionUnpost(let number),
+                 .auctionAccept(let number), .auctionReject(let number),
+                 .auctionCancel(let number), .auctionClear(let number): String(number)
+            // 두 번호는 **둘 다** 적는다. 하나를 생략 가능하게 두면(웨이브의 대상처럼) 어느
+            // 쪽이 빠졌는지 알 수 없고, 추측으로 채우면 사용자가 적지 않은 개체를 내놓는다.
+            case .auctionApply(let listing, let mon): "\(listing) \(mon)"
+            case .auctionBid(let listing, let stardust): "\(listing) \(stardust)"
             case .claim, .stop, .evolve, .hatch, .waveForfeit,
                  .battleForfeit, .battleDecline, .roomStart, .roomLeave,
                  .tradeAccept, .tradeDecline, .tradeConfirm, .tradeCancel: nil
@@ -292,8 +332,43 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 self = .tradeWant(number: number)
             case "trade.confirm" where argument == nil: self = .tradeConfirm
             case "trade.cancel" where argument == nil: self = .tradeCancel
+            // 경매 — 번호는 전부 **1 이상**이고, 어느 목록의 번호인지는 이름이 말한다.
+            case "auction.post":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .auctionPost(number: number)
+            case "auction.unpost":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .auctionUnpost(number: number)
+            case "auction.apply":
+                guard let pair = Self.numberPair(argument) else { return nil }
+                self = .auctionApply(listing: pair.0, mon: pair.1)
+            case "auction.bid":
+                guard let pair = Self.numberPair(argument) else { return nil }
+                self = .auctionBid(listing: pair.0, stardust: pair.1)
+            case "auction.accept":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .auctionAccept(number: number)
+            case "auction.reject":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .auctionReject(number: number)
+            case "auction.cancel":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .auctionCancel(number: number)
+            case "auction.clear":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .auctionClear(number: number)
             default: return nil
             }
+        }
+
+        /// 번호 **둘**. 하나만 적혀 있거나 셋이 적혀 있으면 요청이 아니다 — 빠진 자리를
+        /// 추측으로 채우면 사용자가 적지 않은 개체를 내놓거나 적지 않은 게시물에 제안을 건다.
+        private static func numberPair(_ argument: String?) -> (Int, Int)? {
+            guard let argument else { return nil }
+            let words = argument.split(separator: " ").map(String.init)
+            guard words.count == 2, let first = countingNumber(words[0]),
+                  let second = countingNumber(words[1]) else { return nil }
+            return (first, second)
         }
 
         /// 사람이 세는 번호(1부터). 목록에 없는 0 이하는 번호가 아니다.

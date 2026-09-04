@@ -418,7 +418,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         let reply = await PokedoroRequestExecutor(timer: focusTimer, companion: companion,
                                                    battle: battleCenter,
                                                    room: battleCenter.multiplayer,
-                                                   trade: battleCenter.trading).execute(request)
+                                                   trade: battleCenter.trading,
+                                                   auction: battleCenter.auction).execute(request)
         // 쓰기 실패는 터미널 쪽에서 타임아웃으로 드러난다. 여기서 재시도하면 같은 초에 다시
         // 실행될 위험만 늘고, 이미 세이브는 바뀐 뒤다.
         try? pokedoroMailbox.post(reply)
@@ -432,7 +433,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private func publishTerminalViewIfNeeded() {
         guard isTerminalAttached else { return }
         let now = Date()
-        let width = pokedoroMailbox.attachment().map {
+        let attachment = pokedoroMailbox.attachment()
+        let width = attachment.map {
             PokedoroViewChannel.drawableWidth($0.width)
         } ?? PokedoroViewChannel.fallbackWidth
         // **우선순위는 순수 쪽이 정한다**(`preferred`) — 여기 `if let a else if let b` 로 쓰면
@@ -453,7 +455,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 clockText: focusTimer.clockText(),
                 completed: focusTimer.completedSessions,
                 now: now),
-        ]) else { return }
+            // 경매는 **타이머 뒤**다. 판이 아니라 상시 도는 목록이라(이웃의 게시물 하나로 참이
+            // 된다) 앞에 두면 집중 타이머를 영영 가린다 — 그 화면은 터미널이 부를 때 온다.
+            PokedoroViewChannel.auctionSnapshot(battleCenter.auction.terminalState,
+                                                width: width, now: now),
+        ], wanted: attachment?.screen) else { return }
         guard PokedoroViewChannel.shouldWrite(snapshot, lastWritten: lastPublishedView) else { return }
         lastPublishedView = snapshot
         try? pokedoroMailbox.postView(snapshot)

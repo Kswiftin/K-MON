@@ -94,7 +94,9 @@ final class PokemonAuctionCenter {
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
     /// 동시에 걸 수 있는 제안 수. 포켓몬 제안은 "한 개체는 한 제안" 이라 보유 수가 자연 상한이지만
     /// 별의모래 제안은 그렇지 않다 — 지갑이 크면 작은 제안을 무한히 걸어 연결을 그만큼 연다.
-    static let maxOutgoingOffers = 8
+    /// `nonisolated` 인 이유는 **터미널 화면 투영이 이 값을 읽기** 때문이다 — 순수 함수라
+    /// 메인 액터가 아니고, 정원을 화면에 다시 적으면 두 벌이 되어 한쪽만 바뀐다.
+    nonisolated static let maxOutgoingOffers = 8
 
     /// 장부에 동시에 올릴 수 있는 연결의 수. **유휴 수신 연결은 회수 판정이 아예 안 돈다** —
     /// `reclaimIfIdle` 은 프레임을 읽은 뒤에만 걸리므로 붙어서 아무것도 보내지 않는 피어는
@@ -729,6 +731,67 @@ final class PokemonAuctionCenter {
                         completion: .contentProcessed { _ in connection.cancel() })
     }
 
+    // MARK: 터미널
+
+    /// 번호 → 내놓을 수 있는 개체. **사유를 갈라 돌려준다** — 후보에서 빠지는 이유가 다섯이고
+    /// 사용자가 풀어야 하는 것이 전부 다르다(별을 끄는 것과 파트너를 바꾸는 것은 다른 일이다).
+    ///
+    /// 판정은 센터가 이미 들고 있는 것들과 **같은 값**을 본다(`sellableMons`·`isFavorite`·
+    /// `isCommitted`) — 여기서 따로 세면 한쪽만 넓어져 안내는 되는데 게시가 조용히 안 된다.
+    private func sellable(number: Int) -> (mon: MonState?, refusal: String?) {
+        let index = TUIRender.rosterIndex(printed: number)
+        guard let entry = companion.chatRosterEntries.first(where: { $0.index == index }),
+              let mon = companion.ownedMons.first(where: { $0.id == entry.id }) else {
+            return (nil, "\(number)번 포켓몬이 없다 — party 로 번호를 확인한다.")
+        }
+        if companion.isFavorite(mon.id) {
+            return (nil, "\(entry.name)은 즐겨찾기라 경매에 낼 수 없다 — 앱에서 별을 먼저 끈다.")
+        }
+        guard companion.deployableMons.contains(where: { $0.id == mon.id }) else {
+            return (nil, "\(entry.name)은 체육관을 지키는 중이라 경매에 낼 수 없다.")
+        }
+        // 동행을 팔면 모험 정산이 경험치 전량을 별의조각으로 환산해 총수입이 1.5배가 된다 —
+        // `sellableMons` 가 동행을 빼는 이유이고, 여기서는 그 사유를 사람 말로 옮긴다.
+        guard mon.id != companion.activeMonID else {
+            return (nil, "\(entry.name)은 함께 다니는 중이라 경매에 낼 수 없다 — "
+                    + "switch 로 다른 개체를 먼저 세운다.")
+        }
+        if isCommitted(mon.id) {
+            return (nil, "\(entry.name)은 이미 게시나 제안에 걸려 있다 — "
+                    + "auction 이 찍는 목록을 본다.")
+        }
+        return (mon, nil)
+    }
+
+    private func displayLine(_ snapshot: TradePokemonSnapshot) -> String {
+        "\(snapshot.displayName) Lv.\(snapshot.mon.level)"
+    }
+
+    /// 제안에 실린 값 한 줄.
+    private func valueLine(_ value: AuctionOfferValue) -> String {
+        switch value {
+        case .pokemon(let pokemon): displayLine(pokemon)
+        case .stardust(let amount): "별의모래 \(TUIRender.number(amount))"
+        }
+    }
+
+    /// 내가 그 제안에 무엇을 걸었는지. 성사되면 그 개체는 이미 내 것이 아니라 목록에서 못
+    /// 찾는다 — 그때는 이름만 비운다(앱 카드와 같은 규칙).
+    private func offeredLine(_ offer: OutgoingAuctionOffer) -> String {
+        guard let monID = offer.monID else {
+            return "별의모래 \(TUIRender.number(offer.stardust))"
+        }
+        return companion.chatRosterEntries.first { $0.id == monID }
+            .map { "\($0.name) Lv.\($0.level)" } ?? "내 포켓몬"
+    }
+
+    /// 게시한 개체의 `party` 번호. **없을 수 있다** — 경매에 올려 둔 개체를 교환으로 넘기면
+    /// 게시물은 남고 개체는 내 것이 아니게 된다.
+    private func partyNumber(of monID: UUID) -> Int? {
+        companion.chatRosterEntries.first { $0.id == monID }
+            .map { TUIRender.printedRosterNumber(index: $0.index) }
+    }
+
     private func drop(_ id: UUID) { forget(id)?.cancel() }
 
     /// 장부에서 빼는 것과 소켓을 접는 것은 다른 일이다. 즉시 접는 `drop` 과 흘린 뒤 접는
@@ -750,4 +813,96 @@ final class PokemonAuctionCenter {
         }
         return connection
     }
+}
+
+/// 이 conformance 가 **이 파일 안에 있는 이유**는 `companion` 이 `private` 이기 때문이다 —
+/// 로스터를 봐야 번호를 개체로 접고 사유를 만들 수 있다(교환 창구와 같은 사정).
+extension PokemonAuctionCenter: TerminalAuctionControl {
+    var terminalState: AuctionTerminalState {
+        var state = AuctionTerminalState()
+        state.market = listings.enumerated().map { index, listing in
+            AuctionScreen.Listed(
+                number: index + 1, id: listing.id,
+                label: "\(listing.displayName) Lv.\(listing.level)"
+                    + (listing.isShiny ? " ✨" : "") + "  \(listing.trainerName)")
+        }
+        // **앱 카드와 같은 순서**로 센다(`PokemonAuctionView.myListing`). 딕셔너리는 순서가
+        // 없으므로 두 화면이 각자 정렬하면 같은 게시물이 화면마다 다른 번호를 갖는다.
+        state.mine = localListings.keys.sorted { $0.uuidString < $1.uuidString }
+            .compactMap { id -> AuctionScreen.Posted? in
+                guard let listing = localListings[id] else { return nil }
+                return AuctionScreen.Posted(
+                    number: partyNumber(of: listing.mon.id),
+                    label: displayLine(listing),
+                    offers: offers.filter { $0.listingID == id && $0.status == .pending }.count)
+            }
+        state.incoming = offers.enumerated().map { index, offer in
+            AuctionScreen.Card(number: index + 1, id: offer.id,
+                               label: "\(offer.trainerName)  \(valueLine(offer.value))",
+                               status: offer.status)
+        }
+        state.outgoing = outgoingOffers.enumerated().map { index, offer in
+            AuctionScreen.Card(number: index + 1, id: offer.id,
+                               label: "\(offer.listing.displayName) ← \(offeredLine(offer))",
+                               status: offer.status)
+        }
+        state.unpledged = unpledgedTokens
+        state.canOffer = canRegisterOffer
+        state.lastError = lastError
+        return state
+    }
+
+    func post(number: Int) -> String? {
+        let (mon, refusal) = sellable(number: number)
+        guard let mon else { return refusal }
+        publish(mon)
+        return nil
+    }
+
+    func unpost(number: Int) -> String? {
+        let index = TUIRender.rosterIndex(printed: number)
+        guard let entry = companion.chatRosterEntries.first(where: { $0.index == index }) else {
+            return "\(number)번 포켓몬이 없다 — party 로 번호를 확인한다."
+        }
+        guard let listingID = localListings.first(where: { $0.value.mon.id == entry.id })?.key else {
+            return "\(entry.name)은 경매에 올라 있지 않다 — auction 이 찍는 내 게시물을 본다."
+        }
+        cancelListing(listingID)
+        return nil
+    }
+
+    func apply(listingID: UUID, number: Int) -> String? {
+        guard let listing = listings.first(where: { $0.id == listingID }) else {
+            return Self.listingGone
+        }
+        let (mon, refusal) = sellable(number: number)
+        guard let mon else { return refusal }
+        // **닿지 않는다** — 위 판정이 `apply(to:offering:)` 의 가드와 같은 값을 본다. 그래도
+        // 조용한 무동작을 남기지 않는다: `nil` 이 오면 제안은 안 갔는데 화면엔 흔적이 없다.
+        guard apply(to: listing, offering: mon) != nil else {
+            return "제안을 걸지 못했다 — auction 으로 상태를 다시 본다."
+        }
+        return nil
+    }
+
+    func bid(listingID: UUID, stardust: Int) -> String? {
+        guard let listing = listings.first(where: { $0.id == listingID }) else {
+            return Self.listingGone
+        }
+        // 정원·미약속 잔액·상한은 실행기가 먼저 본다(같은 값을 본다) — 여기 오는 값은 걸 수
+        // 있는 값이고, 그래도 센터가 거절하면 조용히 넘기지 않는다.
+        guard apply(to: listing, offeringStardust: stardust) != nil else {
+            return "별의모래 제안을 걸지 못했다 — auction 으로 미약속 잔액을 다시 본다."
+        }
+        return nil
+    }
+
+    func accept(offerID: UUID) { accept(offerID) }
+    func reject(offerID: UUID) { reject(offerID) }
+    func cancelOffer(offerID: UUID) { cancelOutgoingOffer(offerID) }
+    func clearResult(offerID: UUID) { clearOutgoingResult(offerID) }
+
+    /// 게시물은 Bonjour 목록이라 **명령을 치는 사이에 사라진다.** 번호를 다시 보라고 말한다 —
+    /// 조용히 실패하면 사용자는 자기 번호가 틀린 줄 안다.
+    private static let listingGone = "그 게시물이 사라졌다 — auction 으로 목록을 다시 본다."
 }

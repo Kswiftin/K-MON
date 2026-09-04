@@ -42,7 +42,8 @@ enum PokedoroCLI {
              .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
              .battleMove, .battleSwitch, .battleDecline,
              .roomMove, .roomStart,
-             .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant:
+             .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant,
+             .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear:
             // 위에서 이미 끝났다. `default` 로 접지 않는 이유는 명령이 늘 때 이 자리가 조용히
             // 아무것도 안 하는 길이 되지 않게 하기 위해서다.
             return Status.ok.rawValue
@@ -117,6 +118,29 @@ enum PokedoroCLI {
         case .tradeCancel:
             ["협상을 취소하면 지금까지 고른 것이 사라진다.",
              "정말이면: pokedoro trade cancel --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .auction:
+            // 대전·방·교환과 같다 — 시장도 제안도 세이브에 없어 앱이 내놓는 화면을 기다려 받는다.
+            channelRows(screen: "auction",
+                        absent: ["경매에 아무것도 없다 — 근처에 올라온 것도, 내가 건 제안도 없다.",
+                                 "(시장은 앱이 훑으므로 앱이 떠 있어야 볼 수 있다.)"])
+                .forEach { print($0) }
+        // 확인 없이 온 제안·수락이다. **무엇을 잃는지 먼저 말하고** 거절한다(방생과 같은 규칙).
+        case .auctionApply(let listing, let mon, _):
+            ["\(listing)번 게시물에 \(mon)번 포켓몬을 건다 — 게시자가 수락하면 그대로 넘어간다.",
+             "정말이면: pokedoro auction apply \(listing) \(mon) --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .auctionBid(let listing, let stardust, _):
+            ["\(listing)번 게시물에 별의모래 \(TUIRender.number(stardust)) 를 건다 — "
+                + "게시자가 수락하면 그대로 넘어간다.",
+             "정말이면: pokedoro auction bid \(listing) \(stardust) --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .auctionAccept(let number, _):
+            ["\(number)번 제안을 수락하면 게시한 포켓몬이 상대에게 넘어간다 — 되돌릴 수 없다.",
+             "정말이면: pokedoro auction accept \(number) --yes"]
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
         case .watch:
@@ -375,7 +399,10 @@ enum PokedoroCLI {
     static func channelRows(screen: String, absent: [String]) -> [String] {
         let mailbox = PokedoroMailbox()
         let width = terminalWidth()
-        try? mailbox.attach(PokedoroAttachment(id: UUID(), width: width, height: 24, at: Date()))
+        // **보고 싶은 화면을 신호에 적는다.** 순위만으로 고르면 동시에 참인 두 화면 중 뒤에
+        // 있는 것을 영영 못 본다 — 경매 시장은 집중 세션이 도는 동안에도 참이다.
+        try? mailbox.attach(PokedoroAttachment(id: UUID(), width: width, height: 24, at: Date(),
+                                               screen: screen))
         let deadline = Date().addingTimeInterval(viewTimeout)
         while Date() < deadline {
             if let view = mailbox.view(), !PokedoroViewChannel.isStale(view, now: Date()) {

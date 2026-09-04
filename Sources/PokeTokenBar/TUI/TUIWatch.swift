@@ -194,7 +194,7 @@ final class TUIWatch {
         case .party: selectedMon().map { !$0.isActive } ?? false
         case .bag: selectedItem() != nil
         // 판 화면에는 커서가 없다 — 웨이브의 선택은 숫자 키이고 유효성은 `WaveRunScreen` 이 본다.
-        case .home, .dex, .challenge, .goals, .wave, .battle, .room, .trade: false
+        case .home, .dex, .challenge, .goals, .wave, .battle, .room, .trade, .auction: false
         }
     }
 
@@ -240,8 +240,13 @@ final class TUIWatch {
         frame += 1
         // 보고 있다고 계속 인사한다 — 앱은 나이로 판정하므로 멈추면 곧 "아무도 안 본다" 가 된다.
         let size = terminal.size
+        // **보고 있는 화면을 함께 말한다.** 앱은 그 이름의 생산자를 우선으로 내놓는다 —
+        // 순위만으로 고르면 동시에 참인 두 화면 중 뒤에 있는 것을 영영 못 본다(경매 시장은
+        // 이웃이 하나만 올려 둬도 늘 참이다). 채널 화면이 아닌 이름(홈·목록)은 어느 생산자와도
+        // 안 맞으므로 앱이 순위로 되돌아간다.
         try? mailbox.attach(PokedoroAttachment(id: attachmentID, width: size.width,
-                                               height: size.height, at: Date()))
+                                               height: size.height, at: Date(),
+                                               screen: screen.rawValue))
         // 낡은 화면은 버린다. 앱이 죽으면 파일은 마지막 상태로 얼어붙는데, 그대로 그리면 사용자는
         // 멈춘 타이머를 도는 것으로 읽는다.
         appView = mailbox.view().flatMap { PokedoroViewChannel.isStale($0, now: Date()) ? nil : $0 }
@@ -256,7 +261,7 @@ final class TUIWatch {
     private func rows() -> [String] {
         let width = TUIRender.listRowWidth(terminal.size.width)
         switch screen {
-        case .home, .wave, .battle, .room, .trade: return []
+        case .home, .wave, .battle, .room, .trade, .auction: return []
         case .party: return PokedoroCLI.partyRows(store)
         case .dex: return PokedoroCLI.dexRows(store)
         case .bag: return PokedoroCLI.bagRows(store, width: width)
@@ -327,6 +332,10 @@ final class TUIWatch {
         case .trade:
             lines = liveLines(screen: "trade", on: .trade,
                               absent: "진행 중인 교환이 없다 — 상대를 찾는 일은 앱에서 한다.",
+                              width: size.width)
+        case .auction:
+            lines = liveLines(screen: "auction", on: .auction,
+                              absent: "경매에 아무것도 없다 — 시장은 앱이 훑는다.",
                               width: size.width)
         case .party, .dex, .bag, .challenge, .goals:
             // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
