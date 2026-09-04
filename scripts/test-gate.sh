@@ -143,6 +143,9 @@ LOGIC_CORE=(
   # 자리도 넷이다 — 게이트 밖에 두면 한 목록의 번호가 다른 목록에서 풀리는 부류가 무테스트로
   # 남고, 그건 사용자가 고른 것과 다른 게시물·다른 제안에 손이 가는 결함이다.
   "Sources/PokeTokenBar/TUI/AuctionScreen.swift"
+  # Memory Home 의 순수 투영. **격자 칸 ↔ 좌표 변환**이 여기 하나뿐이라 게이트 밖에 두면 그
+  # 변환이 무테스트로 남는다 — 어긋나면 사용자가 고른 칸과 다른 자리에 가구가 놓인다.
+  "Sources/PokeTokenBar/TUI/HomeScreen.swift"
   # 집중 세션 세 동작의 거절 판정표. 화면·대화·터미널이 **같은 표**를 읽는 자리라 게이트 밖에
   # 두면 한 프런트엔드만 통과하는 분기(휴식 단독·정산 대기 단독)가 무테스트로 나간다.
   "Sources/PokeTokenBar/Core/PokedoroSessionGate.swift"

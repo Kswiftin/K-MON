@@ -158,7 +158,7 @@ enum TUIRender {
             // 판 화면(홈·웨이브·대전)은 목록이 아니라 이 안내를 쓰지 않는다. 그쪽 키 안내는
             // 국면마다 달라서 각자의 화면 투영이 만든다.
             case .home, .dex, .challenge, .goals, .wave, .battle, .room, .trade,
-                 .auction: break
+                 .auction, .memoryHome: break
             }
         }
         return hintLines(keys + screenHintEntries(current: screen), width: width)

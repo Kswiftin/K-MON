@@ -671,8 +671,19 @@ final class PokemonMemoryAlbum {
     private var roomUndoStack: [RoomEditSnapshot] = []
     private var roomRedoStack: [RoomEditSnapshot] = []
     private let fileURL: URL
+    /// 이 앨범이 **파일을 쓸 수 있는가.** 터미널은 세이브를 읽기 전용으로 여는데, 그동안
+    /// `CompanionStore.isReadOnly` 가 지킨 것은 **자기 파일 하나**였다 — 그 스토어가 만든 앨범과
+    /// 대화 기록은 아무 가드 없이 `save()` 를 불렀다. 두 프로세스 사이에 잠금이 없으므로 앱이
+    /// 켜져 있는 동안 터미널이 이 파일을 쓰면 나중 쓰기가 앞 쓰기를 통째로 덮는다.
+    ///
+    /// 읽기는 막지 않는다 — 막는 것은 쓰기뿐이다. `pokedoro home` 이 앱 없이 답하는 근거다.
+    private let isReadOnly: Bool
+    /// 방에 놓을 수 있는 가구 수. **표는 여기 하나다** — 화면·터미널·배치 가드가 같은 값을
+    /// 읽어야 하고, 손으로 적으면 상한을 올리는 날 한쪽만 옛말이 된다.
+    nonisolated static let decorLimit = 12
 
-    init(fileURL: URL? = nil) {
+    init(fileURL: URL? = nil, isReadOnly: Bool = false) {
+        self.isReadOnly = isReadOnly
         self.fileURL = fileURL ?? CompanionStorageLocations().memoryURL
         guard FileManager.default.fileExists(atPath: self.fileURL.path) else { return }
         do {
@@ -995,7 +1006,8 @@ final class PokemonMemoryAlbum {
     }
     func gridPoint(for position: MemoryHomeRoomPosition) -> (Int, Int) { Self.gridPoint(position) }
     func isDecorCellAvailable(_ point: (Int, Int), item: ItemKind, ownedItems: [String: Int], excluding: UUID? = nil) -> Bool {
-        guard Self.roomFurnitureItems.contains(item), memoryHomeAccess.placedDecor.count < 12,
+        guard Self.roomFurnitureItems.contains(item),
+              memoryHomeAccess.placedDecor.count < Self.decorLimit,
               memoryHomeAccess.placedDecor.filter({ $0.item == item && $0.id != excluding }).count < ownedItems[item.rawValue, default: 0] else { return false }
         return !memoryHomeAccess.placedDecor.contains { $0.id != excluding && Self.gridPoint($0.position) == point }
     }
@@ -1532,6 +1544,9 @@ final class PokemonMemoryAlbum {
     private var saveFailed = false
 
     private func save() {
+        // 읽기 전용은 **여기서 끝난다.** 호출부마다 가드를 두면 새 mutator 가 무검사로 남는다 —
+        // 지금 15곳이 `save()` 를 부르고, 그 수는 늘기만 한다.
+        guard !isReadOnly else { return }
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         do {
             let data = try JSONEncoder().encode(snapshot)
@@ -2009,10 +2024,15 @@ final class PokemonChatStore {
     static let maxToolRounds = 3
     private let fileURL: URL
     let album: PokemonMemoryAlbum
+    /// 앨범과 같은 근거의 가드다 — 대화 기록도 세이브 옆에 사는 사용자 데이터이고, 터미널이
+    /// 여는 스토어가 이 파일을 쓰면 앱의 쓰기를 덮는다.
+    private let isReadOnly: Bool
 
-    init(fileURL: URL? = nil, album: PokemonMemoryAlbum? = nil) {
+    init(fileURL: URL? = nil, album: PokemonMemoryAlbum? = nil, isReadOnly: Bool = false) {
+        self.isReadOnly = isReadOnly
         self.fileURL = fileURL ?? Self.defaultURL()
-        self.album = album ?? PokemonMemoryAlbum(fileURL: Self.siblingMemoryURL(for: self.fileURL))
+        self.album = album ?? PokemonMemoryAlbum(fileURL: Self.siblingMemoryURL(for: self.fileURL),
+                                                 isReadOnly: isReadOnly)
         if let data = try? Data(contentsOf: self.fileURL), let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
             sessions = snapshot.sessions.mapValues { session in var session = session; session.messages = Array(session.messages.suffix(200)); return session }
         }
@@ -2197,6 +2217,7 @@ final class PokemonChatStore {
     private var saveFailed = false
 
     private func save() {
+        guard !isReadOnly else { return }
         let dir = fileURL.deletingLastPathComponent(); try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         do {
             let data = try JSONEncoder().encode(Snapshot(sessions: sessions))

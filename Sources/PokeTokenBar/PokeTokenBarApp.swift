@@ -419,7 +419,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                                                    battle: battleCenter,
                                                    room: battleCenter.multiplayer,
                                                    trade: battleCenter.trading,
-                                                   auction: battleCenter.auction).execute(request)
+                                                   auction: battleCenter.auction,
+                                                   // 닉네임이 바뀌면 LAN 광고도 다시 나가야 한다.
+                                                   refreshMemoryHome: { [weak self] in
+                                                       self?.memoryHomeVisits.refreshAccess()
+                                                   }).execute(request)
         // 쓰기 실패는 터미널 쪽에서 타임아웃으로 드러난다. 여기서 재시도하면 같은 초에 다시
         // 실행될 위험만 늘고, 이미 세이브는 바뀐 뒤다.
         try? pokedoroMailbox.post(reply)

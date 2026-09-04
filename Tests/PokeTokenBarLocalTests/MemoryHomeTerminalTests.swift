@@ -11,6 +11,7 @@ import Testing
 /// 고유한 위험은 **읽기 전용이 앨범까지 덮지 않는다**는 것이었다. `CompanionStore` 는 자기
 /// 파일만 지켰고, 그 스토어가 들고 있는 앨범·대화 기록은 아무 가드 없이 `save()` 를 불렀다 —
 /// 이 단계가 앨범을 건드리는 첫 단계라 여기서 막는다.
+@MainActor
 @Suite("MemoryHomeTerminalTests")
 struct MemoryHomeTerminalTests {
 
@@ -73,8 +74,8 @@ struct MemoryHomeTerminalTests {
                 == .homeNickname(name: "lukas"))
         #expect(try PokedoroCommandParser.parse(["home", "roommate", "2"])
                 == .homeRoommate(number: 2))
-        #expect(try PokedoroCommandParser.parse(["home", "place", "bed", "12"])
-                == .homePlace(item: .bed, cell: 12))
+        #expect(try PokedoroCommandParser.parse(["home", "place", "roomBed", "12"])
+                == .homePlace(item: .roomBed, cell: 12))
         #expect(try PokedoroCommandParser.parse(["home", "remove", "1"]) == .homeRemove(number: 1))
         #expect(try PokedoroCommandParser.parse(["home", "reset"]) == .homeReset(confirmed: false))
         #expect(try PokedoroCommandParser.parse(["home", "undo"]) == .homeUndo)
@@ -90,7 +91,16 @@ struct MemoryHomeTerminalTests {
         #expect(throws: PokedoroCommandError.unknownRoomStyle("gothic")) {
             try PokedoroCommandParser.parse(["home", "style", "gothic"])
         }
-        // 가구가 아닌 아이템은 방에 놓을 수 없다 — 목록 밖 이름과 갈라 말한다.
+        // 가구가 아닌 아이템은 방에 놓을 수 없다 — **목록 밖 이름과 갈라 말한다.** 하나로
+        // 뭉개면 "그런 아이템이 없다" 고 답하는데, 사탕은 있고 놓을 수만 없는 것이다.
+        let notFurniture = ItemKind.allCases.first {
+            !ItemKind.memoryHomeFurniture.contains($0) && ItemKind.named($0.rawValue) != nil
+        }
+        if let notFurniture {
+            #expect(throws: PokedoroCommandError.notFurniture(notFurniture.rawValue)) {
+                try PokedoroCommandParser.parse(["home", "place", notFurniture.rawValue, "1"])
+            }
+        }
         #expect(throws: PokedoroCommandError.unknownItem("bogus")) {
             try PokedoroCommandParser.parse(["home", "place", "bogus", "1"])
         }
@@ -117,7 +127,7 @@ struct MemoryHomeTerminalTests {
         let actions: [PokedoroRequest.Action] = [
             .homeMood(.calm), .homeStyle(.retro), .homeNote(body: "한 줄"),
             .homeMessage(text: "대문"), .homeNickname(name: "lukas"),
-            .homeRoommate(number: 2), .homePlace(item: .bed, cell: 12),
+            .homeRoommate(number: 2), .homePlace(item: .roomBed, cell: 12),
             .homeRemove(number: 1), .homeReset, .homeUndo, .homeRedo,
         ]
         for action in actions {
@@ -126,13 +136,13 @@ struct MemoryHomeTerminalTests {
                                                 from: try JSONEncoder().encode(sent))
             #expect(back.action == action, "\(action.name) 이 왕복에서 달라졌다")
         }
-        #expect(PokedoroRequest.Action.homePlace(item: .bed, cell: 1).name == "home.place")
+        #expect(PokedoroRequest.Action.homePlace(item: .roomBed, cell: 1).name == "home.place")
         // 손으로 고친 파일도 **닫힌 목록**을 지나야 한다.
         #expect(PokedoroRequest.Action(name: "home.mood", argument: "happy") == nil)
         #expect(PokedoroRequest.Action(name: "home.style", argument: "gothic") == nil)
         #expect(PokedoroRequest.Action(name: "home.place", argument: "rare-candy 1") == nil)
-        #expect(PokedoroRequest.Action(name: "home.place", argument: "bed") == nil)
-        #expect(PokedoroRequest.Action(name: "home.place", argument: "bed 0") == nil)
+        #expect(PokedoroRequest.Action(name: "home.place", argument: "roomBed") == nil)
+        #expect(PokedoroRequest.Action(name: "home.place", argument: "roomBed 0") == nil)
         #expect(PokedoroRequest.Action(name: "home.note", argument: "  ") == nil)
         #expect(PokedoroRequest.Action(name: "home.reset", argument: "1") == nil)
     }
@@ -237,7 +247,9 @@ struct MemoryHomeTerminalTests {
         let state = store.homeTerminalState
         #expect(state.decorLimit == 12)
         #expect(state.styleName == MemoryHomeRoomStyle.campus.name(L(.ko)))
-        #expect(state.moodName == MemoryHomeMoodStyle.name(.calm, L(.ko)))
+        // 기분은 **이모지와 이름을 함께** 싣는다 — 앱 화면이 그렇게 보여 주므로 같은 값이다.
+        #expect(state.moodName == MemoryHomeMoodStyle.emoji(.calm)
+                + " " + MemoryHomeMoodStyle.name(.calm, L(.ko)))
         #expect(state.styles.contains { $0.isActive }, "지금 쓰는 스타일이 표시돼야 한다")
         #expect(state.styles.count == MemoryHomeRoomStyle.allCases.count)
         // 읽기 전용으로 열어도 같은 값이 나온다 — 이 화면이 앱 없이 도는 근거다.

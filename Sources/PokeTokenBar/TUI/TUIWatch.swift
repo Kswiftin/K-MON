@@ -194,7 +194,8 @@ final class TUIWatch {
         case .party: selectedMon().map { !$0.isActive } ?? false
         case .bag: selectedItem() != nil
         // 판 화면에는 커서가 없다 — 웨이브의 선택은 숫자 키이고 유효성은 `WaveRunScreen` 이 본다.
-        case .home, .dex, .challenge, .goals, .wave, .battle, .room, .trade, .auction: false
+        case .home, .dex, .challenge, .goals, .wave, .battle, .room, .trade, .auction,
+             .memoryHome: false
         }
     }
 
@@ -261,7 +262,7 @@ final class TUIWatch {
     private func rows() -> [String] {
         let width = TUIRender.listRowWidth(terminal.size.width)
         switch screen {
-        case .home, .wave, .battle, .room, .trade, .auction: return []
+        case .home, .wave, .battle, .room, .trade, .auction, .memoryHome: return []
         case .party: return PokedoroCLI.partyRows(store)
         case .dex: return PokedoroCLI.dexRows(store)
         case .bag: return PokedoroCLI.bagRows(store, width: width)
@@ -337,6 +338,13 @@ final class TUIWatch {
             lines = liveLines(screen: "auction", on: .auction,
                               absent: "경매에 아무것도 없다 — 시장은 앱이 훑는다.",
                               width: size.width)
+        case .memoryHome:
+            // 방은 세이브 옆 파일에 있으므로 **화면 채널을 타지 않는다** — 조회 명령
+            // (`pokedoro home`)과 같은 함수를 읽으므로 두 화면이 갈라질 자리가 없다.
+            lines = HomeScreen.lines(store.homeTerminalState, width: size.width)
+            lines.append(TUIRender.rule(width: size.width))
+            if let status { lines.append(TUIText.truncate(status, to: size.width)) }
+            lines += TUIRender.screenHintLines(current: .memoryHome, width: size.width)
         case .party, .dex, .bag, .challenge, .goals:
             // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
             let listHeight = max(1, size.height - 5)

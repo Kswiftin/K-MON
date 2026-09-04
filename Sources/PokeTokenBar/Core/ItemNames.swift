@@ -26,9 +26,23 @@ extension ItemKind {
     /// 통하는데 `rarecandy`·` rareCandy `(기계가 찍어 준 정답 값)는 떨어져, 기계가 준 값이 사람
     /// 말보다 까다로운 상태였다.
     static func named(_ raw: String) -> ItemKind? {
+        match(raw, in: nameable)
+    }
+
+    /// 이름 → **가구.** `named` 와 나눠 두는 이유는 위 주석 그대로다 — 가구는 `use` 로 쓸 수
+    /// 없어 `nameable` 에서 일부러 빠져 있고, 거기에 넣으면 `use 침대` 가 먼저 받아들여진 뒤
+    /// 실패한다. 방에 놓는 명령은 **가구만** 이름으로 받으면 되므로 표를 하나 더 둔다.
+    ///
+    /// 대조 규칙(공백 정리·rawValue·세 언어 표시 이름)은 `match` 하나를 공유한다 — 두 벌로
+    /// 쓰면 한쪽만 관대해져 같은 이름이 명령에 따라 통하고 안 통한다.
+    static func furnitureNamed(_ raw: String) -> ItemKind? {
+        match(raw, in: memoryHomeFurniture.sorted { $0.rawValue < $1.rawValue })
+    }
+
+    private static func match(_ raw: String, in candidates: [ItemKind]) -> ItemKind? {
         let needle = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return nil }
-        return nameable.first { kind in
+        return candidates.first { kind in
             kind.rawValue.lowercased() == needle
                 || AppLanguage.allCases.contains { L($0).itemName(kind).lowercased() == needle }
         }

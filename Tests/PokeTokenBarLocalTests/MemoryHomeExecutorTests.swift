@@ -12,10 +12,20 @@ import Testing
 @Suite("MemoryHomeExecutorTests")
 struct MemoryHomeExecutorTests {
 
-    private func makeStore(in directory: URL) -> CompanionStore {
+    /// 새 세이브는 **알 하나**다 — 동행도 가구도 없다. 이 기능은 방을 꾸미는 일이라 둘 다
+    /// 있어야 검증이 되므로, 픽스처가 동행 하나와 가구 재고를 직접 세운다.
+    ///
+    /// 상점을 지나지 않는 이유: 새 세이브의 별의조각이 0 이라 `buy` 가 거절한다. 여기서 보는
+    /// 것은 배치 규칙이고 구매 규칙은 다른 테스트의 몫이다.
+    private func makeStore(in directory: URL, furniture: Int = 0) -> CompanionStore {
         let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: directory.appendingPathComponent("state.json"))
         store.setLanguage(.ko)
+        let mon = MonState(baseID: 25, pathIDs: [25], stageIndex: 0, usedAtStage: 0,
+                           rarity: .common, totalForms: 1)
+        store.debugSetBoxedMons([mon])
+        store.switchCompanion(to: mon.id)
+        if furniture > 0 { store.debugSetItemCount(.roomBed, furniture) }
         return store
     }
 
@@ -129,19 +139,19 @@ struct MemoryHomeExecutorTests {
         let store = makeStore(in: directory)
 
         // 재고가 없다.
-        let broke = await execute(.homePlace(item: .bed, cell: 12), on: store)
+        let broke = await execute(.homePlace(item: .roomBed, cell: 12), on: store)
         #expect(!broke.succeeded)
         #expect(store.memoryAlbum.memoryHomeAccess.placedDecor.isEmpty)
 
         // 격자 밖은 **재고와 무관하게** 거절이다.
-        let outside = await execute(.homePlace(item: .bed, cell: HomeScreen.cellCount + 1),
+        let outside = await execute(.homePlace(item: .roomBed, cell: HomeScreen.cellCount + 1),
                                     on: store)
         #expect(!outside.succeeded)
         #expect(outside.message != broke.message, "격자 밖과 재고 부족을 갈라 말해야 한다")
 
         // 재고를 주면 놓인다.
-        store.buy(.bed, quantity: 1)
-        let placed = await execute(.homePlace(item: .bed, cell: 12), on: store)
+        store.debugSetItemCount(.roomBed, 1)
+        let placed = await execute(.homePlace(item: .roomBed, cell: 12), on: store)
         #expect(placed.succeeded, "\(placed.message)")
         #expect(store.memoryAlbum.memoryHomeAccess.placedDecor.count == 1)
     }
@@ -150,9 +160,8 @@ struct MemoryHomeExecutorTests {
     @Test func testRemovingUsesThePrintedNumberAndRefusesOutsideIt() async {
         let directory = storeFixtureDirectory("home-exec-remove")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = makeStore(in: directory)
-        store.buy(.bed, quantity: 1)
-        _ = await execute(.homePlace(item: .bed, cell: 12), on: store)
+        let store = makeStore(in: directory, furniture: 1)
+        _ = await execute(.homePlace(item: .roomBed, cell: 12), on: store)
 
         let missing = await execute(.homeRemove(number: 4), on: store)
         #expect(!missing.succeeded)
@@ -173,9 +182,9 @@ struct MemoryHomeExecutorTests {
         #expect(!(await execute(.homeRedo, on: store).succeeded), "다시 실행할 것이 없다")
         #expect(!(await execute(.homeReset, on: store).succeeded), "치울 가구가 없다")
 
-        store.buy(.bed, quantity: 2)
-        _ = await execute(.homePlace(item: .bed, cell: 12), on: store)
-        _ = await execute(.homePlace(item: .bed, cell: 20), on: store)
+        store.debugSetItemCount(.roomBed, 2)
+        _ = await execute(.homePlace(item: .roomBed, cell: 12), on: store)
+        _ = await execute(.homePlace(item: .roomBed, cell: 20), on: store)
         #expect(store.memoryAlbum.memoryHomeAccess.placedDecor.count == 2)
 
         #expect(await execute(.homeReset, on: store).succeeded)

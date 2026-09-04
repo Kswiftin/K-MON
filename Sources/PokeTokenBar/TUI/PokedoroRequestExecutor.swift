@@ -26,6 +26,13 @@ struct PokedoroRequestExecutor {
     /// 경매에 닿는 창구. 여기서 `nil` 은 **"시장을 볼 수 없다"** 다 — 경매는 판이 아니라 늘
     /// 도는 목록이라, 창구가 없다는 것은 앱이 그 목록을 들고 있지 않다는 뜻이다.
     var auction: (any TerminalAuctionControl)?
+    /// Memory Home 은 **창구가 없다** — 앨범은 소켓이 아니라 `companion` 이 이미 들고 있는
+    /// 파일이라, 프로토콜을 두면 통과만 하는 껍데기가 된다.
+    ///
+    /// 닫아 줄 것은 **재광고 하나**다: 공개 닉네임이 바뀌면 LAN 광고 이름도 함께 바뀌어야 하고
+    /// 그 일은 소켓을 든 `MemoryHomeVisitCenter` 가 한다. 능력이 하나뿐이라 프로토콜 대신
+    /// 클로저다 — 두 번째 능력이 생기면 그때 창구로 올린다.
+    var refreshMemoryHome: (() -> Void)?
 
     /// `async` 인 이유는 **부화 하나** 때문이다 — `hatchIfNeeded` 는 PokéAPI 에서 종 라인을 받아
     /// 온다. 앱은 이미 요청 id 를 실행 **전에** 기억하므로(`PokeTokenBarApp`), 이 await 를 넘는
@@ -73,6 +80,17 @@ struct PokedoroRequestExecutor {
         case .auctionReject(let number): return auctionAnswer(request, number: number, accept: false)
         case .auctionCancel(let number): return auctionCancel(request, number: number)
         case .auctionClear(let number): return auctionClear(request, number: number)
+        case .homeMood(let mood): return homeMood(request, mood: mood)
+        case .homeStyle(let style): return homeStyle(request, style: style)
+        case .homeNote(let body): return homeNote(request, body: body)
+        case .homeMessage(let text): return homeMessage(request, text: text)
+        case .homeNickname(let name): return homeNickname(request, name: name)
+        case .homeRoommate(let number): return homeRoommate(request, number: number)
+        case .homePlace(let item, let cell): return homePlace(request, item: item, cell: cell)
+        case .homeRemove(let number): return homeRemove(request, number: number)
+        case .homeReset: return homeReset(request)
+        case .homeUndo: return homeRoomHistory(request, redo: false)
+        case .homeRedo: return homeRoomHistory(request, redo: true)
         }
     }
 
@@ -807,6 +825,157 @@ struct PokedoroRequestExecutor {
 
     private func noAuction(_ request: PokedoroRequest) -> PokedoroReply {
         no(request, "경매 목록을 볼 수 없다 — 시장은 앱이 훑으므로 앱이 떠 있어야 한다.")
+    }
+
+    // MARK: Memory Home
+    //
+    // **창구가 없다** — 앨범은 `companion` 이 이미 들고 있는 파일이다. 그래서 여기서 하는 일은
+    // ⓐ 번호를 접고 ⓑ 앨범이 조용히 거절하는 자리를 사람 말로 갈라 주는 것 둘이다.
+    //
+    // 앨범의 mutator 는 대개 `Void` 이거나 `Bool` 이다. `Void` 인 것들(스타일·초기화·되돌리기)은
+    // **부르기 전에** 같은 조건을 봐야 한다 — 부른 뒤에는 성공과 무동작이 구별되지 않는다.
+
+    private func homeMood(_ request: PokedoroRequest, mood: MemoryHomeMood) -> PokedoroReply {
+        companion.memoryAlbum.setMood(mood)
+        let name = MemoryHomeMoodStyle.name(mood, companion.l)
+        return ok(request, "오늘의 기분을 \(name)으로 바꿨다. "
+                  + HomeScreen.hints(companion.homeTerminalState))
+    }
+
+    /// 잠긴 스타일은 **거절이고 조건을 말한다.** `selectRoomStyle` 은 조용히 무시하므로
+    /// 성공으로 답하면 사용자는 방이 바뀐 줄 알고 다음 일을 한다.
+    private func homeStyle(_ request: PokedoroRequest,
+                           style: MemoryHomeRoomStyle) -> PokedoroReply {
+        let album = companion.memoryAlbum
+        guard album.isRoomStyleUnlocked(style) else {
+            return no(request, "\(style.name(companion.l)) 스타일은 아직 잠겨 있다 — "
+                      + "\(MemoryHomeNames.requirement(style, companion.l))이 필요하다.")
+        }
+        album.selectRoomStyle(style)
+        return ok(request, "방 스타일을 \(style.name(companion.l))으로 바꿨다.")
+    }
+
+    private func homeNote(_ request: PokedoroRequest, body: String) -> PokedoroReply {
+        guard let mon = companion.state.active else {
+            return no(request, "기록을 남길 동행이 없다 — 알이 부화하면 방이 열린다.")
+        }
+        // 길이(280자)는 **앨범이** 판정한다. 여기서 다시 세면 두 벌이 되고, 한쪽만 관대해진다.
+        guard companion.memoryAlbum.addManual(companionID: mon.id, body: body) else {
+            return no(request, "그 기록은 남길 수 없다 — 빈 글이 아니고 280자 이내여야 한다.")
+        }
+        return ok(request, "기록을 남겼다.")
+    }
+
+    private func homeMessage(_ request: PokedoroRequest, text: String) -> PokedoroReply {
+        guard companion.memoryAlbum.setProfileMessage(text) else {
+            return no(request, "그 문구는 쓸 수 없다 — 줄바꿈 없이 1~60자여야 한다.")
+        }
+        return ok(request, "대문 문구를 바꿨다.")
+    }
+
+    /// 닉네임은 **저장 + 재광고**다. 재광고를 빠뜨리면 광고 중인 이름과 자기 필터가 갈라져
+    /// 자기 집이 남의 집 목록에 뜬다 — 앱 화면이 같은 순서를 지킨다(`commitNickname`).
+    private func homeNickname(_ request: PokedoroRequest, name: String) -> PokedoroReply {
+        guard companion.memoryAlbum.setMemoryHomePublicNickname(name) else {
+            return no(request, "그 닉네임은 쓸 수 없다 — 공백 없이 1~40자여야 한다.")
+        }
+        refreshMemoryHome?()
+        return ok(request, "공개 닉네임을 \(companion.memoryAlbum.memoryHomePublicNickname)"
+                  + "으로 바꿨다.")
+    }
+
+    /// 룸메이트를 켜고 끈다. 같은 명령이 두 일을 하는 것은 **화면의 체크 표시와 같은 모양**이다 —
+    /// 켜기·끄기를 나누면 사용자가 지금 상태를 먼저 확인해야 한다.
+    private func homeRoommate(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        let index = TUIRender.rosterIndex(printed: number)
+        guard let entry = companion.chatRosterEntries.first(where: { $0.index == index }) else {
+            return no(request, "\(number)번 포켓몬이 없다 — party 로 번호를 확인한다.")
+        }
+        let album = companion.memoryAlbum
+        var ids = album.memoryHomeAccess.roommateIDs
+        let wasIncluded = ids.contains(entry.id)
+        if wasIncluded { ids.removeAll { $0 == entry.id } } else { ids.append(entry.id) }
+        album.setRoommates(ids, validCompanionIDs: Set(companion.ownedMons.map(\.id)))
+        // **되읽어서** 말한다 — 정원·유효성은 앨범이 보므로 내가 접은 값을 echo 하면 답과
+        // 실제가 갈라질 수 있다.
+        let nowIncluded = album.memoryHomeAccess.roommateIDs.contains(entry.id)
+        guard nowIncluded != wasIncluded else {
+            return no(request, "\(entry.name)을 룸메이트로 넣을 수 없다 — 방이 이미 가득하다.")
+        }
+        return ok(request, nowIncluded ? "\(entry.name)이 같이 살게 됐다."
+                                       : "\(entry.name)이 방에서 나갔다.")
+    }
+
+    /// 칸 번호 → 격자. **격자 밖과 재고 부족을 갈라 말한다** — 사용자가 할 일이 다르다(번호를
+    /// 고치는 것과 가구를 사는 것).
+    private func homePlace(_ request: PokedoroRequest, item: ItemKind,
+                           cell: Int) -> PokedoroReply {
+        guard let point = HomeScreen.gridPoint(cell: cell) else {
+            return no(request, "\(cell)번 칸은 방에 없다 — 1 부터 "
+                      + "\(HomeScreen.cellCount) 사이를 쓴다.")
+        }
+        let album = companion.memoryAlbum
+        guard album.isDecorCellAvailable(point, item: item,
+                                         ownedItems: companion.state.inventory) else {
+            return no(request, Self.placeRefusal(item, album: album, companion: companion))
+        }
+        guard album.placeDecor(item, at: PokemonMemoryAlbum.normalizedGridPoint(point),
+                               ownedItems: companion.state.inventory) != nil else {
+            // **닿지 않는다** — 위 가드가 `placeDecor` 와 같은 조건을 본다. 조용한 무동작을
+            // 남기지 않기 위한 방어다.
+            return no(request, "가구를 놓지 못했다 — home 으로 방을 다시 본다.")
+        }
+        return ok(request, "\(companion.l.itemName(item))을 \(cell)번 칸에 놓았다. "
+                  + HomeScreen.hints(companion.homeTerminalState))
+    }
+
+    /// 배치 거절 사유. `isDecorCellAvailable` 이 셋을 한 `Bool` 로 접으므로 여기서 다시 갈라
+    /// 말한다 — 정원이 찬 것과 재고가 없는 것과 칸이 이미 찬 것은 할 일이 전부 다르다.
+    private static func placeRefusal(_ item: ItemKind, album: PokemonMemoryAlbum,
+                                     companion: CompanionStore) -> String {
+        let placed = album.memoryHomeAccess.placedDecor
+        if placed.count >= PokemonMemoryAlbum.decorLimit {
+            return "방이 가득하다(\(PokemonMemoryAlbum.decorLimit)개) — "
+                + "home remove <번호> 로 하나를 치운다."
+        }
+        let owned = companion.itemCount(item)
+        if placed.filter({ $0.item == item }).count >= owned {
+            return "\(companion.l.itemName(item))을 더 갖고 있지 않다(보유 \(owned)개) — "
+                + "shop 에서 산다."
+        }
+        return "그 칸에는 이미 가구가 있다 — home 이 찍는 칸 번호를 본다."
+    }
+
+    private func homeRemove(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        let state = companion.homeTerminalState
+        guard let id = HomeScreen.placedID(number: number, in: state) else {
+            return no(request, "\(number)번 가구가 없다 — 지금 \(state.placed.count)개가 놓여 있다.")
+        }
+        let label = state.placed.first { $0.number == number }?.label ?? "\(number)번"
+        guard companion.memoryAlbum.removeDecor(id: id) else {
+            return no(request, "\(label)을 치우지 못했다 — home 으로 방을 다시 본다.")
+        }
+        return ok(request, "\(label)을 치웠다.")
+    }
+
+    /// 초기화. **확인은 명령 쪽(`--yes`)에서 이미 받았다.** 치울 것이 없으면 거절이다 —
+    /// `resetDecor` 는 그 경우 아무것도 하지 않고, 성공으로 답하면 사용자는 뭔가 지운 줄 안다.
+    private func homeReset(_ request: PokedoroRequest) -> PokedoroReply {
+        let album = companion.memoryAlbum
+        let count = album.memoryHomeAccess.placedDecor.count
+        guard count > 0 else { return no(request, "치울 가구가 없다.") }
+        album.resetDecor()
+        return ok(request, "가구 \(count)개를 치웠다. home undo 로 되돌릴 수 있다.")
+    }
+
+    private func homeRoomHistory(_ request: PokedoroRequest, redo: Bool) -> PokedoroReply {
+        let album = companion.memoryAlbum
+        guard redo ? album.canRedoRoomEdit : album.canUndoRoomEdit else {
+            return no(request, redo ? "다시 실행할 것이 없다." : "되돌릴 것이 없다.")
+        }
+        if redo { album.redoRoomEdit() } else { album.undoRoomEdit() }
+        return ok(request, (redo ? "다시 실행했다. " : "되돌렸다. ")
+                  + "놓인 가구 \(album.memoryHomeAccess.placedDecor.count)개.")
     }
 
     // MARK: 값
