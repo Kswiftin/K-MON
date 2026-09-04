@@ -1253,9 +1253,14 @@ final class PokemonMemoryAlbum {
         guard memoryHomeAccess.peerAliases.removeValue(forKey: peerID) != nil else { return false }
         save(); return true
     }
+    /// 같이 살 수 있는 수. **표는 여기 하나다** — 넘치면 조용히 잘리므로, 거절 문구를 만드는
+    /// 쪽(터미널 실행기)이 같은 값을 읽어야 "왜 안 들어갔는지" 를 맞게 말한다.
+    nonisolated static let roommateLimit = 3
+
     func setRoommates(_ ids: [UUID], validCompanionIDs: Set<UUID>) {
         var seen = Set<UUID>()
-        let next = ids.filter { validCompanionIDs.contains($0) && seen.insert($0).inserted }.prefix(3).map { $0 }
+        let next = ids.filter { validCompanionIDs.contains($0) && seen.insert($0).inserted }
+            .prefix(Self.roommateLimit).map { $0 }
         guard memoryHomeAccess.roommateIDs != next else { return }
         beginRoomEdit(); memoryHomeAccess.roommateIDs = next; save()
     }

@@ -900,7 +900,8 @@ struct PokedoroRequestExecutor {
         // 실제가 갈라질 수 있다.
         let nowIncluded = album.memoryHomeAccess.roommateIDs.contains(entry.id)
         guard nowIncluded != wasIncluded else {
-            return no(request, "\(entry.name)을 룸메이트로 넣을 수 없다 — 방이 이미 가득하다.")
+            return no(request, "\(entry.name)을 룸메이트로 넣을 수 없다 — 같이 살 수 있는 것은 "
+                      + "\(PokemonMemoryAlbum.roommateLimit)마리까지다.")
         }
         return ok(request, nowIncluded ? "\(entry.name)이 같이 살게 됐다."
                                        : "\(entry.name)이 방에서 나갔다.")
@@ -953,6 +954,8 @@ struct PokedoroRequestExecutor {
         }
         let label = state.placed.first { $0.number == number }?.label ?? "\(number)번"
         guard companion.memoryAlbum.removeDecor(id: id) else {
+            // **닿지 않는다** — 번호를 찾은 목록이 곧 앨범의 목록이다. 조용한 무동작을 남기지
+            // 않기 위한 방어이고, 커버리지에서 `^0` 으로 보인다.
             return no(request, "\(label)을 치우지 못했다 — home 으로 방을 다시 본다.")
         }
         return ok(request, "\(label)을 치웠다.")

@@ -208,6 +208,13 @@ struct MemoryHomeTerminalTests {
         empty.placed = []
         empty.canUndo = false
         #expect(HomeScreen.hints(empty).contains("home place"))
+
+        // 놓여 있고 되돌릴 것이 없으면(앱을 다시 켠 뒤) 평소 안내다 — 세 갈래 모두 다르다.
+        var settled = Self.decorated()
+        settled.canUndo = false
+        let hint = HomeScreen.hints(settled)
+        #expect(hint.contains("home remove"), "치우는 방법이 안내에 없다")
+        #expect(hint != HomeScreen.hints(empty), "안내가 상태에 따라 갈리지 않는다")
     }
 
     @Test func testEveryLineFitsTheRequestedWidth() {
