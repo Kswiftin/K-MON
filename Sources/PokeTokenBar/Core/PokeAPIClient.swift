@@ -18,7 +18,7 @@ struct BaseSpecies: Sendable, Codable {
 /// 포켓몬 라인 데이터 제공(주입 가능 — 테스트는 스텁 사용).
 protocol PokeProviding: Sendable {
     func line(baseSpeciesID: Int) async throws -> EvoLine
-    /// 1~5세대 base 전체 인덱스 (GraphQL 1쿼리, 디스크 캐시).
+    /// 1~9세대 base 전체 인덱스 (GraphQL 1쿼리, 디스크 캐시).
     func baseSpeciesIndex() async throws -> [BaseSpecies]
     /// 단일 종이 base(진화 시작점)면 BaseSpecies, 아니면 nil.
     /// GraphQL 인덱스 엔드포인트 장애 시 REST(pokemon-species)로 부화 후보를 뽑는 폴백용.
@@ -107,7 +107,23 @@ actor PokeAPIClient: PokeProviding {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("base-index.json")
     }()
-    private struct BaseIndexSnapshot: Codable { let fetchedAt: Date; let entries: [BaseSpecies] }
+    /// `maxSpeciesID` 는 이 스냅샷을 만들 때의 `PokemonAssets.speciesRange.upperBound` — 종 범위가
+    /// 넓어져도(#212) 30일 TTL 은 안 지나므로, 값이 없거나 지금 범위와 다르면 시간과 무관하게 다시
+    /// 받는다. 기존 캐시 파일엔 이 키가 없어 디코딩이 실패하고, `try?` 가 그걸 "캐시 없음"으로
+    /// 흡수해 자연스럽게 한 번 재조회로 넘어간다.
+    struct BaseIndexSnapshot: Codable { let fetchedAt: Date; let maxSpeciesID: Int; let entries: [BaseSpecies] }
+
+    /// TTL·종 범위 판정을 뽑아 둔 순수 함수 — 파일 I/O·네트워크 없이 이 조건만 테스트한다.
+    /// 범위 검사를 빼먹었던 게 바로 이 버그였다: 종 범위가 넓어져도 캐시가 30일 동안 옛 범위를
+    /// 그대로 돌려줘, 새로 추가된 종이 부화 후보에 아예 안 들어갔다.
+    static func isBaseIndexSnapshotUsable(_ snapshot: BaseIndexSnapshot,
+                                          currentMaxSpeciesID: Int,
+                                          now: Date,
+                                          ttl: TimeInterval = 30 * 86400) -> Bool {
+        snapshot.maxSpeciesID == currentMaxSpeciesID
+            && now.timeIntervalSince(snapshot.fetchedAt) < ttl
+            && !snapshot.entries.isEmpty
+    }
     private struct GraphQLBaseResponse: Decodable {
         struct DataBox: Decodable { let pokemonspecies: [Row] }
         struct Row: Decodable { let id: Int; let capture_rate: Int }
@@ -129,15 +145,18 @@ actor PokeAPIClient: PokeProviding {
         let data: DataBox
     }
 
-    /// 1~5세대 base(진화라인 시작점) 전체 — PokéAPI GraphQL 1쿼리.
-    /// 우선순위: 메모리 캐시 → 디스크 캐시(30일 TTL) → GraphQL fetch(성공 시 디스크 갱신)
-    /// → TTL 지난 디스크라도 있으면 사용(오프라인 폴백). 전부 실패 시 throw(알 유지, 다음 틱 재시도).
+    /// 1~9세대 base(진화라인 시작점) 전체 — PokéAPI GraphQL 1쿼리.
+    /// 우선순위: 메모리 캐시 → 디스크 캐시(30일 TTL, 종 범위 일치) → GraphQL fetch(성공 시 디스크
+    /// 갱신) → TTL 지났거나 범위가 다른 디스크라도 있으면 사용(오프라인 폴백). 전부 실패 시
+    /// throw(알 유지, 다음 틱 재시도).
     func baseSpeciesIndex() async throws -> [BaseSpecies] {
         if let c = baseIndexCache { return c }
         let disk = (try? Data(contentsOf: Self.baseIndexFile))
             .flatMap { try? JSONDecoder().decode(BaseIndexSnapshot.self, from: $0) }
+        let currentMaxSpeciesID = PokemonAssets.speciesRange.upperBound
         // 디스크 캐시는 이 필터가 없던 빌드가 남겼을 수 있다 — 읽을 때도 한 번 더 거른다.
-        if let disk, Date().timeIntervalSince(disk.fetchedAt) < 30 * 86400, !disk.entries.isEmpty {
+        // 종 범위가 넓어진 뒤의 캐시만 쓴다 — 옛 범위로 받은 캐시는 TTL 이 안 지났어도 새로 받는다.
+        if let disk, Self.isBaseIndexSnapshotUsable(disk, currentMaxSpeciesID: currentMaxSpeciesID, now: Date()) {
             let usable = BaseSpecies.hatchable(disk.entries)
             baseIndexCache = usable
             return usable
@@ -145,12 +164,14 @@ actor PokeAPIClient: PokeProviding {
         do {
             let entries = try await fetchBaseIndex()
             baseIndexCache = entries
-            if let data = try? JSONEncoder().encode(BaseIndexSnapshot(fetchedAt: Date(), entries: entries)) {
+            if let data = try? JSONEncoder().encode(
+                BaseIndexSnapshot(fetchedAt: Date(), maxSpeciesID: currentMaxSpeciesID, entries: entries)) {
                 try? data.write(to: Self.baseIndexFile, options: .atomic)
             }
             return entries
         } catch {
-            if let disk, !disk.entries.isEmpty {   // 오프라인 — 오래된 인덱스라도 사용
+            // 오프라인 — 범위가 지금과 다른(예: 종 확장 전) 오래된 인덱스라도 없는 것보단 낫다.
+            if let disk, !disk.entries.isEmpty {
                 let usable = BaseSpecies.hatchable(disk.entries)
                 baseIndexCache = usable
                 return usable
@@ -197,7 +218,8 @@ actor PokeAPIClient: PokeProviding {
         }
         bases.sort { $0.id < $1.id }
         baseIndexCache = bases
-        if let data = try? JSONEncoder().encode(BaseIndexSnapshot(fetchedAt: Date(), entries: bases)) {
+        if let data = try? JSONEncoder().encode(
+            BaseIndexSnapshot(fetchedAt: Date(), maxSpeciesID: maxID, entries: bases)) {
             try? data.write(to: Self.baseIndexFile, options: .atomic)
         }
         AppLog.write("base index: REST build done — \(bases.count) bases persisted (offline-capable now)")
