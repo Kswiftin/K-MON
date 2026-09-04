@@ -426,6 +426,28 @@ struct ArenaTerminalTests {
         return state
     }
 
+    /// **방은 숫자의 뜻이 셋이다**(기술·결투의 팀 자리·트랙의 방향). 그 뜻을 앱이 실어 주지
+    /// 않으면 터미널은 늘 기술로 넘겨짚고, 포켓슬론·OX 퀴즈의 방향 키와 결투의 교체 키는
+    /// 앱이 권해 놓고도 눌러 보면 거절만 돌아온다.
+    @Test func testTheRoomSnapshotSaysWhatEachDigitMeans() throws {
+        let now = Date()
+        let quiz = try #require(PokedoroViewChannel.roomSnapshot(Self.racing(activity: .pokemonQuiz),
+                                                                  language: .ko, width: 60, now: now))
+        #expect(quiz.numberActions?["1"] == "room.track left")
+        #expect(quiz.numberActions?["2"] == "room.track right")
+        #expect(quiz.numberActions?["3"] == nil, "퀴즈에 전진은 없다")
+
+        var replace = Self.duelling(activity: .gym, phase: .hosting)
+        replace.duel?.mine = [ArenaScreen.Slot(number: 1, id: UUID(), label: "이브이", hp: 0,
+                                               maxHP: 90, isActive: true),
+                              ArenaScreen.Slot(number: 2, id: UUID(), label: "피카츄", hp: 50,
+                                               maxHP: 80, isActive: false)]
+        let duel = try #require(PokedoroViewChannel.roomSnapshot(replace, language: .ko,
+                                                                  width: 60, now: now))
+        #expect(duel.numberActions?["2"] == "room.switch 2",
+                "쓰러진 자리를 메우는 국면인데 숫자가 기술로 나간다")
+    }
+
     static func racing(activity: RoomActivity) -> RoomTerminalState {
         let mine = UUID()
         var state = RoomTerminalState(phase: activity == .pokemonQuiz ? .pokemonQuiz : .pokeathlon,

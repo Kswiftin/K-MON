@@ -188,6 +188,20 @@ struct RoomTerminalTests {
         #expect(RoomScreen.hints(idle).contains("앱"))
     }
 
+    /// 키 안내는 **지금 유효한 번호를 그대로** 적는다. `1-쓸 수 있는 개수` 로 접으면 PP 가
+    /// 떨어져 구멍이 난 번호를 권하고, 뒤쪽의 쓸 수 있는 번호는 안내에서 사라진다
+    /// (`ArenaScreen.duelKeys` 가 같은 이유로 번호를 적고, 여기만 범위로 남아 있었다).
+    @Test func testTheMoveKeysNameTheNumbersNotARange() throws {
+        var state = Self.fighting()
+        let me = try #require(state.fighters.firstIndex { $0.id == state.myID })
+        state.fighters[me].side.pp[0] = 0
+
+        #expect(RoomScreen.numbers(state) == [2])
+        #expect(RoomScreen.keys(state).first == "2 기술",
+                "\(RoomScreen.keys(state)) — 못 쓰는 1번을 권하고 있다")
+        #expect(RoomScreen.hints(state).hasPrefix("2 기술"), "\(RoomScreen.hints(state))")
+    }
+
     /// 대상이 둘 이상일 때만 **대상 목록을 찍는다** — 보스 하나짜리 레이드에서는 고를 것이 없고,
     /// 방 대전에서는 그 목록이 없으면 번호를 어디서 얻는지 알 수 없다.
     @Test func testTheTargetListAppearsOnlyWhenThereIsAChoice() {

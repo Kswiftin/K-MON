@@ -104,6 +104,40 @@ final class FreshEggTests: XCTestCase {
         XCTAssertEqual(s.state.focusEggReadyDates.count, 999)
     }
 
+    /// [회귀] **수량 구매는 전량 아니면 0개다.** 예전엔 터미널의 `buy egg N` 이 `allSatisfy` 로 한 개씩
+    /// 사서, 상한에 걸려 도중에 멈추면 이미 치른 별의조각은 안 돌아오는데 답만 "살 수 없다"가 됐다 —
+    /// 사용자는 못 샀다고 들으면서 지갑은 줄어 있다. 트리거 그대로: 자리는 2개인데 3개를 산다.
+    func testBuyingMoreEggsThanFitChargesNothing() {
+        let s = store(eggs: CompanionStore.storedEggLimit - 2)
+        let before = s.state.starPieces
+        XCTAssertFalse(s.canBuyEgg(nil, quantity: 3), "자리가 2개면 3개는 살 수 없다")
+        XCTAssertFalse(s.buyEgg(nil, quantity: 3))
+        XCTAssertEqual(s.state.starPieces, before, "한 개도 안 샀으면 값도 한 푼 나가지 않는다")
+        XCTAssertEqual(s.state.focusEggs, CompanionStore.storedEggLimit - 2, "부분 구매가 없어야 한다")
+        XCTAssertEqual(s.state.focusEggReadyDates.count, s.state.focusEggs, "개수와 부화 시각이 짝을 이룬다")
+    }
+
+    /// 딱 맞는 수량은 산다 — 위 가드가 전량 구매까지 막아버리면 상한 근처에서 알을 영영 못 산다.
+    func testBuyingExactlyTheRemainingRoomSucceeds() {
+        let s = store(eggs: CompanionStore.storedEggLimit - 2)
+        let before = s.state.starPieces
+        XCTAssertTrue(s.buyEgg(nil, quantity: 2))
+        XCTAssertEqual(s.state.focusEggs, CompanionStore.storedEggLimit)
+        XCTAssertEqual(s.state.starPieces, before - FreshEgg.price * 2, "수량만큼 값을 치른다")
+        XCTAssertEqual(s.state.focusEggReadyDates.count, s.state.focusEggs)
+    }
+
+    /// 0개·음수 구매는 no-op — 값도 안 나가고 알도 안 는다(파서가 막지만 스토어도 스스로 지킨다).
+    func testBuyingZeroOrNegativeEggsIsRefused() {
+        let s = store()
+        let before = s.state.starPieces
+        XCTAssertFalse(s.canBuyEgg(nil, quantity: 0))
+        XCTAssertFalse(s.buyEgg(nil, quantity: 0))
+        XCTAssertFalse(s.buyEgg(nil, quantity: -3))
+        XCTAssertEqual(s.state.starPieces, before)
+        XCTAssertEqual(s.state.focusEggs, 0)
+    }
+
     /// [회귀] 지급 경로도 마찬가지 — `focusEggs` 만 클램프하고 날짜는 무조건 append 하면 두 배열이
     /// 세션 내내 어긋난다(`nextStoredEggHatchAt` 이 없는 알의 카운트다운을 그리고
     /// `hatchStoredEggIfNeeded` 의 `removeFirst()` 짝이 밀린다). 다음 기동의

@@ -449,11 +449,16 @@ enum PokedoroCLI {
         let width = terminalWidth()
         // **보고 싶은 화면을 신호에 적는다.** 순위만으로 고르면 동시에 참인 두 화면 중 뒤에
         // 있는 것을 영영 못 본다 — 경매 시장은 집중 세션이 도는 동안에도 참이다.
-        try? mailbox.attach(PokedoroAttachment(id: UUID(), width: width, height: 24, at: Date(),
+        let attachedAt = Date()
+        try? mailbox.attach(PokedoroAttachment(id: UUID(), width: width, height: 24, at: attachedAt,
                                                screen: screen))
-        let deadline = Date().addingTimeInterval(viewTimeout)
+        let deadline = attachedAt.addingTimeInterval(viewTimeout)
         while Date() < deadline {
-            if let view = mailbox.view(), !PokedoroViewChannel.isStale(view, now: Date()) {
+            // **내 신호보다 오래된 화면은 남의 답이다.** 앞선 명령(`pokedoro battle`)이 남긴
+            // 파일은 낡음 한계(5초) 안에서는 그대로 살아 있어, 그걸 읽고 "다른 화면이 왔다" 로
+            // 판정하면 바로 뒤에 친 `pokedoro room` 이 방 안에 있는데도 "방에 없다" 고 답한다.
+            if let view = mailbox.view(), view.writtenAt >= attachedAt,
+               !PokedoroViewChannel.isStale(view, now: Date()) {
                 // 다른 화면이 왔다는 것은 **앱은 살아 있고 이 기능만 안 돈다**는 뜻이다 —
                 // 더 기다릴 이유가 없다.
                 guard view.screen == screen else { break }

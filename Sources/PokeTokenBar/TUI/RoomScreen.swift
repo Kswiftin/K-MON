@@ -123,6 +123,13 @@ enum RoomScreen {
             }
     }
 
+    /// 낼 수 있는 기술 번호 안내 한 조각. 번호는 엔진 순번 + 1 이라 PP 가 떨어진 자리는 빠지고
+    /// 번호에 구멍이 남는다 — 그 구멍을 `1-n` 으로 덮으면 먹지도 않는 번호를 권하게 된다.
+    static func moveKeys(_ state: RoomTerminalState) -> [String] {
+        let text = numbers(state).map(String.init).joined(separator: "·")
+        return text.isEmpty ? [] : ["\(text) 기술"]
+    }
+
     /// 대상 번호 → id. **접는 자리가 여기 하나뿐이다** — 화면이 찍은 번호와 실행기가 보내는 id 가
     /// 서로 다른 목록에서 나오면 사용자가 고른 것과 다른 상대를 때린다.
     static func targetID(number: Int, in state: RoomTerminalState) -> UUID? {
@@ -198,7 +205,10 @@ enum RoomScreen {
         case .lobby:
             return (canStartNow(state) ? ["s 시작"] : []) + ["l 나가기"]
         case .move:
-            return ["1-\(max(1, numbers(state).count)) 기술", "l 나가기"]
+            // **번호를 그대로 적는다.** `1-n` 으로 접으면 PP 가 떨어져 구멍이 난 번호가 눌러도
+            // 안 되는 것으로 안내되고, 뒤쪽의 쓸 수 있는 번호는 안내에서 사라진다
+            // (`ArenaScreen.duelKeys` 가 같은 이유로 번호를 적는다).
+            return moveKeys(state) + ["l 나가기"]
         case .duelMove:
             return ArenaScreen.duelKeys(state) + ["l 나가기"]
         case .duelReplace:
@@ -232,7 +242,8 @@ enum RoomScreen {
             }
             return "사람을 더 기다린다   l 나가기"
         case .move:
-            return "1-\(max(1, numbers(state).count)) 기술   (room move <n> [대상])   l 나가기"
+            return (moveKeys(state) + ["(room move <n> [대상])", "l 나가기"])
+                .joined(separator: "   ")
         case .duelMove:
             return ArenaScreen.duelHints(state)
         case .duelReplace:
@@ -270,8 +281,12 @@ enum RoomScreen {
             lines.append(TUIText.truncate(standingLine(state), to: inner))
             return lines
         }
-        // 나를 먼저 찍는다 — 내 HP 가 이 판에서 가장 자주 보는 값이다.
-        for fighter in state.fighters.sorted(by: { lhs, _ in lhs.id == state.myID }) {
+        // 나를 먼저 찍는다 — 내 HP 가 이 판에서 가장 자주 보는 값이다. **정렬이 아니라 분할이다**:
+        // `sorted { lhs, _ in lhs.id == myID }` 는 오른쪽을 안 보므로 `f < f` 가 참인 술어이고,
+        // 엄격 약순서가 아니라 표준 라이브러리가 결과를 보장하지 않는다(나머지 순서도 흐트러진다).
+        let ordered = state.fighters.filter { $0.id == state.myID }
+            + state.fighters.filter { $0.id != state.myID }
+        for fighter in ordered {
             lines.append(cell(fighter, mine: fighter.id == state.myID, width: inner))
         }
         if let ending = endingLine(state) {

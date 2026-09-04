@@ -435,9 +435,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     /// 안의 생산자다. 여기 남는 것은 배선뿐이라 앱 루트에 테스트가 안 닿는 것이 문제가 되지 않는다
     /// (요청 실행 배선과 같은 규칙).
     private func publishTerminalViewIfNeeded() {
-        guard isTerminalAttached else { return }
         let now = Date()
+        // 신호 파일은 **한 번만 읽는다.** 두 번 읽으면 매 초 같은 파일을 두 번 열고 두 번
+        // 디코딩하는데, 둘 사이에 터미널이 다시 쓰면 붙었는지와 폭·화면이 서로 다른 신호에서 온다.
         let attachment = pokedoroMailbox.attachment()
+        guard PokedoroViewChannel.isAttached(attachment, now: now) else { return }
         let width = attachment.map {
             PokedoroViewChannel.drawableWidth($0.width)
         } ?? PokedoroViewChannel.fallbackWidth

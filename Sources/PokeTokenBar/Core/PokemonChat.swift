@@ -963,7 +963,8 @@ final class PokemonMemoryAlbum {
     }
     @discardableResult func placeDecor(_ item: ItemKind, at position: MemoryHomeRoomPosition,
                                        ownedItems: [String: Int]) -> MemoryHomePlacedDecor? {
-        guard memoryHomeAccess.placedDecor.count < 12, Self.roomFurnitureItems.contains(item),
+        guard memoryHomeAccess.placedDecor.count < Self.decorLimit,
+              Self.roomFurnitureItems.contains(item),
               memoryHomeAccess.placedDecor.filter({ $0.item == item }).count < ownedItems[item.rawValue, default: 0],
               let position = validatedDecorPosition(position, item: item) else { return nil }
         let decor = MemoryHomePlacedDecor(item: item, position: position)

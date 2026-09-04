@@ -242,6 +242,12 @@ enum PokedoroCommandError: Equatable, Error {
     case unknownItem(String)
     /// 상점이 팔지 않는 물건.
     case unknownGood(String)
+    /// 구매 수량이 아니다. 개체 번호와 갈라 말한다 — `party` 를 보라고 하면 사용자는 목록을
+    /// 열어 엉뚱한 수를 센다(수량은 목록에서 얻는 값이 아니다).
+    case invalidQuantity(String)
+    /// 놓인 가구의 번호가 아니다. 격자 칸(`invalidRoomCell`)과 갈라 말한다 — 다시 볼 목록이
+    /// 다르다(칸은 1–48 의 자리, 이 번호는 `pokedoro home` 이 찍는 목록 순번이다).
+    case invalidDecorNumber(String)
     /// 웨이브 런의 번호가 아니다. 개체 번호와 오류를 나눠 두는 이유와 같다 — **어디서 번호를
     /// 얻는지가 다르다**(`party` 가 아니라 `wave` 가 찍는다).
     case invalidWaveNumber(String)
@@ -292,6 +298,10 @@ enum PokedoroCommandError: Equatable, Error {
             "그런 아이템이 없다: \(raw) — `pokedoro bag` 이 찍는 이름을 쓴다."
         case .unknownGood(let raw):
             "상점에 그런 물건이 없다: \(raw) — `pokedoro shop` 이 찍는 이름을 쓴다."
+        case .invalidQuantity(let raw):
+            "구매 수량이 아니다: \(raw) — 1 이상의 숫자를 쓴다(`buy <이름> [수량]`)."
+        case .invalidDecorNumber(let raw):
+            "놓인 가구의 번호가 아니다: \(raw) — `pokedoro home` 이 찍는 번호(1부터)를 쓴다."
         case .invalidWaveNumber(let raw):
             "웨이브 런의 번호가 아니다: \(raw) — `pokedoro wave` 가 찍는 번호(1부터)를 쓴다."
         case .unknownRoute(let raw):
@@ -376,10 +386,13 @@ enum PokedoroCommandParser {
         case "challenge", "ch": return .challenge
         case "goals", "goal": return .goals
         case "gym": return .gym
-        case "mon": return .mon(number: try rosterNumber(in: tail))
+        case "mon":
+            try rejectExtraPositional(tail, beyond: 1, command: name)
+            return .mon(number: try rosterNumber(in: tail))
         case "watch", "top": return .watch
         case "help", "--help", "-h": return .help
         case "start", "go":
+            try rejectExtraPositional(tail, beyond: 1, command: name)
             return .start(minutes: try number(in: tail, orThrow: PokedoroCommandError.invalidMinutes))
         case "claim": return .claim
         case "stop", "cancel": return .stop
@@ -391,6 +404,7 @@ enum PokedoroCommandParser {
             try rejectArgument(in: tail, command: name)
             return .evolve
         case "switch":
+            try rejectExtraPositional(tail, beyond: 1, command: name)
             return .switchCompanion(number: try requiredRosterNumber(in: tail, command: name))
         case "name", "nickname":
             return .rename(nickname: try text(in: tail, command: name))
@@ -402,6 +416,9 @@ enum PokedoroCommandParser {
             try rejectArgument(in: tail, command: name)
             return .hatch
         case "release":
+            // 남는 인자를 버리지 않는다 — **되돌릴 수 없는 명령**이라 `release 3 9 --yes` 가
+            // 조용히 3번만 놓아주면 사용자는 9번도 갔다고 믿는다(하위 명령은 전부 이 검사를 한다).
+            try rejectExtraPositional(tail, beyond: 1, command: name)
             return .release(number: try requiredRosterNumber(in: tail, command: name),
                             confirmed: options.contains("--yes"))
         case "wave":
@@ -438,7 +455,7 @@ enum PokedoroCommandParser {
         guard !words.isEmpty else { throw PokedoroCommandError.missingArgument(command) }
         var quantity = 1
         if words.count > 1, let last = words.last, let value = Int(last), last.allSatisfy(\.isNumber) {
-            guard value >= 1 else { throw PokedoroCommandError.invalidMonNumber(last) }
+            guard value >= 1 else { throw PokedoroCommandError.invalidQuantity(last) }
             quantity = value
             words.removeLast()
         }
@@ -694,7 +711,7 @@ enum PokedoroCommandParser {
             try rejectExtra(rest, beyond: 1, command: command)
             guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
             return .homeRemove(number: try positiveNumber(
-                raw, orThrow: PokedoroCommandError.invalidRoomCell))
+                raw, orThrow: PokedoroCommandError.invalidDecorNumber))
         case "reset":
             try rejectExtra(rest, beyond: 0, command: command)
             return .homeReset(confirmed: options.contains("--yes"))
@@ -752,6 +769,13 @@ enum PokedoroCommandParser {
         guard words.count > limit else { return }
         throw limit == 0 ? PokedoroCommandError.unexpectedArgument(command)
                          : PokedoroCommandError.tooManyArguments(command)
+    }
+
+    /// 최상위 명령의 남는 인자 검사. 하위 명령은 이미 옵션을 걸러 낸 목록을 넘기지만 최상위는
+    /// 꼬리 전체를 들고 있으므로 `--` 를 먼저 뺀다 — 안 빼면 `release 1 --yes` 가 인자 둘로 세인다.
+    private static func rejectExtraPositional(_ arguments: [String], beyond limit: Int,
+                                              command: String) throws {
+        try rejectExtra(arguments.filter { !$0.hasPrefix("--") }, beyond: limit, command: command)
     }
 
     /// `wave` 가 찍는 번호(1부터). 오류를 개체 번호와 나눠 두는 이유는 **어디서 번호를 얻는지가

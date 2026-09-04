@@ -3421,11 +3421,22 @@ final class CompanionStore {
     /// 현재 알이 보증하는 등급 하한(UI 표시용). 활성 포켓몬이 있으면 알이 없으므로 nil.
     var eggGuarantee: Rarity? { state.active == nil ? state.eggTier : nil }
 
-    /// 알 구매 가능 — 파는 티어이고, 알 저장고에 자리가 있고, 지갑이 그 티어 가격 이상일 때.
+    /// 보관 알 상한. 세 곳(`canBuyEgg`·`addStoredEggs`·`SaveTransfer` 클램프)이 같은 값을 봐야 해서
+    /// 상수로 둔다 — 손으로 적으면 상한을 올리는 날 한쪽만 옛말이 되고, 값을 치르는 자리와
+    /// 잘라내는 자리가 갈리면 사라지는 게 실 재화다.
+    /// `nonisolated` — `SaveTransfer.sanitized` 는 메인 액터 밖에서 도는 정규화라, 액터에 묶어 두면
+    /// 세 번째 사본을 손으로 적을 수밖에 없다(그게 원래 문제였다).
+    nonisolated static let storedEggLimit = 999
+
+    /// 알 구매 가능 — 파는 티어이고, 알 저장고에 `quantity` 만큼 자리가 있고, 지갑이 그 총액 이상일 때.
     ///
     /// **키우던 개체는 건드리지 않는다.** 예전엔 상점의 알이 "지금 개체를 놓아주고 다시 뽑는" 리롤이라
     /// 활성 개체를 요구했지만, 지금은 보관 알을 하나 늘릴 뿐이라 활성 여부와 무관하다.
-    func canBuyEgg(_ tier: Rarity?) -> Bool {
+    ///
+    /// `quantity` 는 **전량 기준**으로 판정한다 — 한 개씩 사다가 상한에서 멈추는 부분 구매를 허용하면
+    /// 이미 치른 값은 안 돌아오는데 답은 "못 샀다"가 된다(`buy(_:quantity:)` 와 같은 계약).
+    func canBuyEgg(_ tier: Rarity?, quantity: Int = 1) -> Bool {
+        guard quantity > 0 else { return false }
         // 파는 티어인지 먼저 확인한다 — 만족 불가능한 보증(전설: capture_rate 로 표현 불가)을 사면
         // 두 롤 경로 모두 후보가 0개라 알이 영영 안 깨지고, 부화가 없으니 보증도 안 풀리며,
         // 새 알 구매는 `hasActive` 에 막혀 되돌릴 수단이 없다. 가격만 계산되면 값이 빠져나가므로
@@ -3434,8 +3445,8 @@ final class CompanionStore {
         // 저장고가 꽉 찼으면 팔지 않는다. `addStoredEggs` 가 잘라내는 자리와 값을 치르는 자리가
         // 달라서, 이 검사가 없으면 별의조각만 빠져나가고 알은 0개 늘어난다(#82 와 같은 부류인데
         // 여기선 사라지는 게 실 재화다).
-        guard state.focusEggs < 999 else { return false }
-        return availableTokens >= FreshEgg.price(guaranteeing: tier)
+        guard state.focusEggs + quantity <= Self.storedEggLimit else { return false }
+        return availableTokens >= FreshEgg.price(guaranteeing: tier) * quantity
     }
 
     /// 알 구매 — 지갑에서 가격을 깎고 **보관 알을 하나 늘린다.** 키우던 개체·도감·확률 가중은
@@ -3444,14 +3455,15 @@ final class CompanionStore {
     /// 여기서 종을 롤하지 않는다 — 롤에는 네트워크가 필요해서 오프라인이면 토큰만 사라진다. 보증만
     /// 상태(`eggTier`)에 적고, 실제 롤은 프리패치/부화 경로가 그 보증을 읽어 수행한다.
     @discardableResult
-    func buyEgg(_ tier: Rarity?) -> Bool {
-        guard canBuyEgg(tier) else { return false }
-        state.starPieces -= FreshEgg.price(guaranteeing: tier)
+    func buyEgg(_ tier: Rarity?, quantity: Int = 1) -> Bool {
+        guard canBuyEgg(tier, quantity: quantity) else { return false }
+        state.starPieces -= FreshEgg.price(guaranteeing: tier) * quantity
         // 값을 매길 때 쓴 보증을 상태에도 적는다. 이 줄이 없어서 등급 보증 알은 값만 비싸고
         // 아무것도 보장하지 않았다 — 상점이 보증 알을 팔지 않아 드러나지 않았을 뿐이다.
         state.eggTier = Self.strongerGuarantee(state.eggTier, tier)
-        _ = addStoredEggs(1)
-        AppLog.write("egg purchased: added to egg inventory")
+        // `canBuyEgg` 가 전량 자리를 이미 확인했으므로 여기서 잘려나갈 몫은 없다.
+        _ = addStoredEggs(quantity)
+        AppLog.write("egg purchased: added \(quantity) to egg inventory")
         save()
         return true
     }
@@ -3538,7 +3550,7 @@ final class CompanionStore {
     /// `@discardableResult` 를 붙이지 않는다 — 붙이면 새 호출부가 잘려나간 몫을 다시 조용히
     /// 버릴 수 있고, 안 붙이면 그 자리가 `_ =` 로 눈에 보인다(#82 의 `gainExperience` 와 같은 계약).
     private func addStoredEggs(_ count: Int, at now: Date? = nil) -> Int {
-        let accepted = min(count, 999 - state.focusEggs)
+        let accepted = min(count, Self.storedEggLimit - state.focusEggs)
         guard accepted > 0 else { return 0 }
         state.focusEggs += accepted
         let readyAt = (now ?? clock()).addingTimeInterval(Self.storedEggHatchDelay)

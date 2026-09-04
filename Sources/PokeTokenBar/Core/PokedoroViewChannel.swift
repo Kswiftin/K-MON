@@ -38,6 +38,16 @@ struct PokedoroViewSnapshot: Codable, Equatable, Sendable {
     /// 지금 누를 수 있는 키. **앱이 보낸다** — 무엇을 할 수 있는지 아는 곳이 앱이고, 터미널이
     /// 따로 판정하면 두 표가 갈라져 먹지도 않는 키를 권하게 된다.
     var keys: [String]
+    /// 숫자 키 하나가 만드는 요청 — `"1" → "battle.switch 1"`. **앱이 정한다**: 판이 세이브에
+    /// 없어 터미널은 그 숫자가 기술인지 교체인지 방향인지 알 방법이 없다.
+    ///
+    /// 이 칸이 없던 동안 `watch` 의 숫자 키는 늘 `battle.move`·`room.move` 로 나갔고, 쓰러진
+    /// 자리를 메우는 국면·결투의 교체·트랙(포켓슬론·퀴즈)의 방향은 앱이 키를 권해 놓고도
+    /// 눌러 보면 거절만 돌아왔다.
+    ///
+    /// 모양은 요청 파일과 **같은 평평한 한 쌍**(이름 + 인자)이라 파서도 `Action(name:argument:)`
+    /// 하나를 그대로 쓴다. **옛 파일에는 없는 칸**이라 없어도 디코딩된다.
+    var numberActions: [String: String]?
     var writtenAt: Date
 }
 
@@ -77,8 +87,12 @@ enum PokedoroViewChannel {
     static func shouldWrite(_ snapshot: PokedoroViewSnapshot,
                             lastWritten: PokedoroViewSnapshot?) -> Bool {
         guard let lastWritten else { return true }
-        let changed = (snapshot.screen, snapshot.title, snapshot.lines, snapshot.keys)
-            != (lastWritten.screen, lastWritten.title, lastWritten.lines, lastWritten.keys)
+        // 숫자 표도 **내용에 넣는다** — 줄과 키가 같은데 숫자의 뜻만 바뀌는 국면이 생기면,
+        // 빼 두었을 때 터미널이 낡은 표로 엉뚱한 요청을 보낸다.
+        let changed = (snapshot.screen, snapshot.title, snapshot.lines,
+                       snapshot.keys, snapshot.numberActions)
+            != (lastWritten.screen, lastWritten.title, lastWritten.lines,
+                lastWritten.keys, lastWritten.numberActions)
         if changed { return true }
         return snapshot.writtenAt.timeIntervalSince(lastWritten.writtenAt) >= refreshInterval
     }
@@ -140,7 +154,22 @@ enum PokedoroViewChannel {
             title: RoomScreen.title(state),
             lines: RoomScreen.lines(state, language: language, width: drawableWidth(width)),
             keys: RoomScreen.keys(state),
+            numberActions: numberActions { RoomScreen.action(number: $0, in: state) },
             writtenAt: now)
+    }
+
+    /// 터미널이 받을 수 있는 숫자 키의 폭. 판마다 뜻이 다르지만(기술 넷·팀 여섯·방향 넷) 표를
+    /// 만드는 쪽은 전부를 훑고 **요청이 되지 않는 번호는 알아서 빠진다** — 화면마다 상한을 다시
+    /// 적으면 그 숫자가 두 벌이 된다.
+    static let numberKeyRange = 1...9
+
+    /// 숫자 → 요청 표. 값은 요청 파일과 같은 평평한 모양(이름 + 인자)이다.
+    static func numberActions(_ action: (Int) -> PokedoroRequest.Action?) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: numberKeyRange.compactMap { number in
+            action(number).map {
+                (String(number), [$0.name, $0.argument].compactMap { $0 }.joined(separator: " "))
+            }
+        })
     }
 
     /// LAN 1대1 대전 화면. **이 채널의 첫 라이브 생산자**다.
@@ -159,6 +188,7 @@ enum PokedoroViewChannel {
             lines: NetBattleScreen.lines(state, language: language,
                                          width: drawableWidth(width)),
             keys: NetBattleScreen.keys(state),
+            numberActions: numberActions { NetBattleScreen.action(number: $0, in: state) },
             writtenAt: now)
     }
 

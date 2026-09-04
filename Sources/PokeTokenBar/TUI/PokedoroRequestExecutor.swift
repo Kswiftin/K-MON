@@ -225,7 +225,9 @@ struct PokedoroRequestExecutor {
     private static func purchase(_ good: ShopGood, quantity: Int, companion: CompanionStore) -> Bool {
         switch good {
         case .item(let kind): companion.buy(kind, quantity: quantity)
-        case .egg: (0..<quantity).allSatisfy { _ in companion.buyEgg(nil) }
+        // 알도 **한 번에** 산다. 예전엔 `allSatisfy` 로 한 개씩 사서, 상한(`storedEggLimit`)에
+        // 걸리면 이미 치른 별의조각은 안 돌아오는데 답만 "살 수 없다"가 됐다 — 지갑은 줄어 있다.
+        case .egg: companion.buyEgg(nil, quantity: quantity)
         case .outfit(let item): companion.buyOutfit(item)
         case .machine(let machine): companion.buyTechnicalMachine(machine, quantity: quantity)
         }

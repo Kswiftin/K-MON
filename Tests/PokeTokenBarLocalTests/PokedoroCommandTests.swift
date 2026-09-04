@@ -233,6 +233,39 @@ struct PokedoroCommandTests {
         #expect(throws: PokedoroCommandError.invalidMonNumber("0")) { try parse(["release", "0"]) }
     }
 
+    /// **남는 인자를 버리지 않는다** — 하위 명령(`wave move 1 2 3`)은 전부 이 검사를 하는데
+    /// 최상위 넷은 빠져 있었다. 되돌릴 수 없는 `release 3 9 --yes` 가 조용히 3번만 놓아주면
+    /// 사용자는 9번도 갔다고 믿는다.
+    @Test func testTopLevelCommandsRejectLeftoverArguments() throws {
+        #expect(throws: PokedoroCommandError.tooManyArguments("release")) {
+            try parse(["release", "3", "9", "--yes"])
+        }
+        #expect(throws: PokedoroCommandError.tooManyArguments("switch")) {
+            try parse(["switch", "1", "2"])
+        }
+        #expect(throws: PokedoroCommandError.tooManyArguments("mon")) { try parse(["mon", "1", "2"]) }
+        #expect(throws: PokedoroCommandError.tooManyArguments("start")) {
+            try parse(["start", "25", "50"])
+        }
+        // `--yes` 는 인자가 아니다 — 옵션까지 세면 정상 입력이 거절된다.
+        #expect(try parse(["release", "3", "--yes"]) == .release(number: 3, confirmed: true))
+    }
+
+    /// 수량 오류는 **개체 번호와 갈라 말한다.** `party` 를 보라고 하면 사용자는 목록을 열어
+    /// 엉뚱한 수를 센다 — 수량은 목록에서 얻는 값이 아니다.
+    @Test func testAZeroQuantitySaysItIsAQuantityNotARosterNumber() {
+        #expect(throws: PokedoroCommandError.invalidQuantity("0")) {
+            try parse(["buy", "egg", "0"])
+        }
+    }
+
+    /// 놓인 가구 번호도 격자 칸과 갈라 말한다 — 다시 볼 목록이 다르다.
+    @Test func testRemovingFurnitureNamesItsOwnNumberSpace() {
+        #expect(throws: PokedoroCommandError.invalidDecorNumber("0")) {
+            try parse(["home", "remove", "0"])
+        }
+    }
+
     @Test func testUsageListsTheShopAndReleaseCommands() {
         for name in ["shop", "buy", "hatch", "release"] {
             #expect(PokedoroCommandParser.usage.contains(name), "도움말에 \(name) 이 없다")

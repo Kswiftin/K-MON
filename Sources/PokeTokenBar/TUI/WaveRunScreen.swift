@@ -57,7 +57,10 @@ enum WaveRunScreen {
             // 쓸 수 있는 기술이 하나도 없으면 발버둥 하나다 — `WaveBattle.choose` 가 그 자리에서
             // 접으므로 번호는 그대로 1 이다.
             guard !side.mustStruggle else { return [1] }
-            return side.moves.indices.map { $0 + 1 }
+            // **PP 가 남은 것만.** 전부 세면 `PokedoroRequestExecutor.waveMove` 의 `canUse` 가
+            // 거절하는 번호를 화면이 권하게 되고, 이 함수가 약속한 "제안 ⊆ 실행 가능" 이 깨진다
+            // (LAN 대전·방·결투는 셋 다 `canUse` 로 거른다 — 여기만 빠져 있었다).
+            return side.moves.indices.filter { side.canUse(moveAt: $0) }.map { $0 + 1 }
         case .sendOut:
             return run.battle.benchCandidates.map { $0 + 1 }
         case .offer:
@@ -95,7 +98,10 @@ enum WaveRunScreen {
         case .none:
             return run == nil ? "wave start 로 새 판" : "판이 끝났다 — wave start 로 새 판"
         case .move:
-            return "1-4 기술   t 잡기   f 판 포기   (wave move <n> [상대])"
+            // **번호를 그대로 적는다.** 상수 4 는 기술이 넷보다 적은 개체와 PP 가 떨어져 구멍이
+            // 난 번호 둘 다에서 거짓말이 된다(대전·방 안내와 같은 규칙).
+            let usable = Self.numbers(run).map(String.init).joined(separator: "·")
+            return "\(usable) 기술   t 잡기   f 판 포기   (wave move <n> [상대])"
         case .sendOut:
             return "쓰러진 칸을 먼저 채운다 — wave switch <파티 번호>"
         case .offer:
