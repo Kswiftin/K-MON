@@ -229,6 +229,65 @@ struct NetBattleTerminalTests {
                 "낸 뒤에도 기술 키를 권하면 누른 사용자는 입력이 씹혔다고 읽는다")
     }
 
+    /// 국면마다 **키 안내와 한 줄 안내가 함께 바뀐다.** 하나만 바뀌면 화면 아래와 채널이
+    /// 서로 다른 키를 권한다.
+    @Test func testEveryPhaseAdvertisesOnlyWhatItCanDo() {
+        var faint = Self.battling(teamSize: 2)
+        faint.battle?.myTeam[0].hp = 0
+        #expect(NetBattleScreen.keys(faint).contains { $0.contains("교체") })
+        #expect(NetBattleScreen.hints(faint).contains("battle switch"))
+
+        let incoming = BattleTerminalState(phase: .incoming(peer: "P"), battle: nil)
+        #expect(NetBattleScreen.keys(incoming) == ["n 거절"])
+
+        let mine = Self.battling()
+        #expect(NetBattleScreen.hints(mine).contains("battle move"))
+
+        // 앱 전용 국면과 끝난 판은 **누를 키가 없다** — 있으면 그건 안내가 아니라 함정이다.
+        for state in [BattleTerminalState(phase: .teamBuilding(peer: "P"), battle: nil),
+                      BattleTerminalState(phase: .finished(iWon: nil, byForfeit: false), battle: nil),
+                      BattleTerminalState(phase: .ready, battle: nil)] {
+            #expect(NetBattleScreen.keys(state).isEmpty, "\(state.phase) 가 키를 권했다")
+            #expect(!NetBattleScreen.hints(state).isEmpty, "무엇을 기다리는지는 말해야 한다")
+        }
+    }
+
+    /// 교체 목록은 **팀 번호와 남은 HP**를 함께 찍는다 — 누구로 바꿀지는 HP 로 정한다.
+    @Test func testTheReplacementListShowsWhoIsLeft() throws {
+        var state = Self.battling(teamSize: 2)
+        state.battle?.myTeam[0].hp = 0
+        let only = try #require(NetBattleScreen.choices(state, language: .ko).first)
+        #expect(only.number == 2)
+        #expect(only.label.contains("내2"))
+        #expect(only.label.contains("/"), "남은 HP 가 안 보이면 교체 판단이 감이 된다")
+    }
+
+    /// 신청을 보낸 쪽과 편성 중인 국면도 **무엇을 기다리는지 한 줄로** 말한다.
+    @Test func testWaitingPhasesNameWhatTheyWaitFor() {
+        let sent = BattleTerminalState(phase: .challenging(peer: "옆자리"), battle: nil)
+        #expect(NetBattleScreen.lines(sent, language: .ko, width: 60)
+            .contains { $0.contains("옆자리") })
+        let building = BattleTerminalState(phase: .teamBuilding(peer: "옆자리"), battle: nil)
+        #expect(NetBattleScreen.lines(building, language: .ko, width: 60)
+            .contains { $0.contains("앱") })
+    }
+
+    /// 턴이 돌면 로그가 판에 남는다 — HP 숫자만 바뀌면 무엇에 맞았는지 알 수 없다.
+    @Test func testThePanelCarriesTheTurnLog() throws {
+        var state = Self.battling()
+        // 스트림을 직접 놓는다. 실제로 턴을 돌리려면 상대 행동까지 필요하고, 그 규칙은
+        // `MultiplayerBattle` 쪽 테스트가 이미 든다 — 여기서 재는 것은 **투영**이다.
+        let mine: BattleActor = .a
+        var battle = try #require(state.battle)
+        let stream: [BattleEvent] = [.turn(1), .move(mine, moveID: 1)]
+        battle.events = stream
+        battle.eventBatches = [NetBattleEventBatch(events: stream, a: battle.me, b: battle.opp)]
+        state.battle = battle
+        #expect(!NetBattleScreen.log(battle, language: .ko).isEmpty)
+        #expect(NetBattleScreen.lines(state, language: .ko, width: 80)
+            .contains { $0.contains("타격") })
+    }
+
     // MARK: 키 배정
 
     @Test func testTheBattleScreenHasItsOwnKey() throws {
