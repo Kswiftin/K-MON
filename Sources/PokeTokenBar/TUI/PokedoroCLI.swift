@@ -40,7 +40,8 @@ enum PokedoroCLI {
         switch command {
         case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
              .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
-             .battleMove, .battleSwitch, .battleDecline:
+             .battleMove, .battleSwitch, .battleDecline,
+             .roomMove, .roomStart:
             // 위에서 이미 끝났다. `default` 로 접지 않는 이유는 명령이 늘 때 이 자리가 조용히
             // 아무것도 안 하는 길이 되지 않게 하기 위해서다.
             return Status.ok.rawValue
@@ -81,11 +82,25 @@ enum PokedoroCLI {
         case .battle:
             // 대전 판은 세이브에 **없다** — 앱이 내놓는 화면을 읽어야 하고, 그 화면은 터미널이
             // 붙어 있을 때만 쓰인다. 그래서 신호를 남기고 한 틱을 기다린다(웨이브 런과 다르다).
-            battleRows().forEach { print($0) }
+            channelRows(screen: "battle",
+                        absent: ["진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.",
+                                 "(대전 판은 세이브에 없어 앱이 떠 있어야 볼 수 있다.)"])
+                .forEach { print($0) }
         case .battleForfeit:
             // 확인 없이 온 항복이다. **무엇을 잃는지 먼저 말하고** 거절한다(방생과 같은 규칙).
             ["지금 대전을 항복한다 — 그 판을 지고 랭크 판돈도 넘어간다.",
              "정말이면: pokedoro battle forfeit --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .room:
+            // 대전과 같다 — 방 상태도 세이브에 없어 앱이 내놓는 화면을 기다려 받는다.
+            channelRows(screen: "room",
+                        absent: ["방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.",
+                                 "(방 상태는 세이브에 없어 앱이 떠 있어야 볼 수 있다.)"])
+                .forEach { print($0) }
+        case .roomLeave:
+            ["방을 나가면 이 판의 정산을 받지 못한다.",
+             "정말이면: pokedoro room leave --yes"]
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
         case .watch:
@@ -339,16 +354,18 @@ enum PokedoroCLI {
     /// 요청 왕복과 같다(셸이 멈추는 것은 침묵보다 나쁘다).
     static let viewTimeout: TimeInterval = 2.5
 
-    static func battleRows() -> [String] {
+    /// 화면 이름을 받는 이유는 **라이브 기능이 늘기 때문**이다. 대전 전용으로 두면 방·다음
+    /// 기능마다 같은 절차(신호 → 대기 → 조립)가 한 벌씩 복제된다.
+    static func channelRows(screen: String, absent: [String]) -> [String] {
         let mailbox = PokedoroMailbox()
         let width = terminalWidth()
         try? mailbox.attach(PokedoroAttachment(id: UUID(), width: width, height: 24, at: Date()))
         let deadline = Date().addingTimeInterval(viewTimeout)
         while Date() < deadline {
             if let view = mailbox.view(), !PokedoroViewChannel.isStale(view, now: Date()) {
-                // 다른 화면이 왔다는 것은 **앱은 살아 있고 대전만 없다**는 뜻이다 — 더 기다릴
-                // 이유가 없다.
-                guard view.screen == "battle" else { break }
+                // 다른 화면이 왔다는 것은 **앱은 살아 있고 이 기능만 안 돈다**는 뜻이다 —
+                // 더 기다릴 이유가 없다.
+                guard view.screen == screen else { break }
                 return [TUIRender.row(left: view.title, right: "", width: width),
                         TUIRender.rule(width: width)]
                     + view.lines.map { TUIText.truncate($0, to: width) }
@@ -356,8 +373,7 @@ enum PokedoroCLI {
             }
             usleep(pollInterval)
         }
-        return ["진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.",
-                "(대전 판은 세이브에 없어 앱이 떠 있어야 볼 수 있다.)"]
+        return absent
     }
 
     /// 웨이브 런 한 판 + 지금 할 수 있는 것. **`watch` 의 웨이브 화면과 같은 함수를 읽는다** —

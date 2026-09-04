@@ -166,6 +166,51 @@ struct RoomTerminalTests {
         #expect(live.keys.contains { $0.contains("기술") })
     }
 
+    /// 국면마다 **키와 한 줄 안내가 함께** 바뀐다. 하나만 바뀌면 화면 아래와 채널이 서로 다른
+    /// 키를 권한다.
+    @Test func testEveryPhaseAdvertisesOnlyWhatItCanDo() {
+        let mine = Self.fighting()
+        #expect(RoomScreen.hints(mine).contains("room move"))
+        #expect(RoomScreen.keys(mine).contains { $0.contains("기술") })
+
+        var submitted = mine
+        submitted.hasSubmitted = true
+        #expect(RoomScreen.keys(submitted) == ["l 나가기"], "낸 뒤에는 나가기만 남는다")
+        #expect(RoomScreen.hints(submitted).contains("기다린다"))
+
+        var done = mine
+        done.outcome = .loss
+        #expect(RoomScreen.keys(done).isEmpty)
+        #expect(RoomScreen.hints(done).contains("끝났다"))
+
+        let idle = RoomTerminalState(phase: .idle, myID: UUID())
+        #expect(RoomScreen.keys(idle).isEmpty)
+        #expect(RoomScreen.hints(idle).contains("앱"))
+    }
+
+    /// 대상이 둘 이상일 때만 **대상 목록을 찍는다** — 보스 하나짜리 레이드에서는 고를 것이 없고,
+    /// 방 대전에서는 그 목록이 없으면 번호를 어디서 얻는지 알 수 없다.
+    @Test func testTheTargetListAppearsOnlyWhenThereIsAChoice() {
+        let raid = Self.fighting()
+        #expect(!RoomScreen.lines(raid, language: .ko, width: 80).contains { $0.hasPrefix("대상") })
+
+        var brawl = raid
+        brawl.activity = .battle
+        brawl.fighters.append(Self.fighter(id: UUID(), name: "옆자리"))
+        let lines = RoomScreen.lines(brawl, language: .ko, width: 80)
+        #expect(lines.contains { $0.hasPrefix("대상") })
+        #expect(RoomScreen.targets(brawl).count == 2)
+    }
+
+    /// PP 가 다 떨어지면 발버둥 하나다 — 목록을 비우면 낼 것이 없는 것처럼 보인다.
+    @Test func testWithNoPPLeftTheOnlyChoiceIsStruggle() throws {
+        var state = Self.fighting()
+        for index in state.fighters[0].side.pp.indices { state.fighters[0].side.pp[index] = 0 }
+        #expect(RoomScreen.numbers(state) == [1])
+        let only = try #require(RoomScreen.choices(state, language: .ko).first)
+        #expect(only.label == MoveSpec.struggle().name(.ko))
+    }
+
     // MARK: 키 배정
 
     @Test func testTheRoomScreenHasItsOwnKey() throws {

@@ -143,6 +143,14 @@ final class TUIWatch {
             confirmation = ("이 대전을 항복한다 — 되돌릴 수 없다", .battleForfeit)
         case .declineBattle:
             request(.battleDecline)
+        case .roomChoice(let number):
+            // 대전과 같다 — 무엇을 누를 수 있는지는 앱이 보낸 키 안내가 말해 주고, 목록 밖
+            // 번호는 앱이 사유를 붙여 거절한다.
+            request(.roomMove(move: number, target: nil))
+        case .startRoom:
+            request(.roomStart)
+        case .leaveRoom:
+            confirmation = ("이 방에서 나간다 — 이 판의 정산을 못 받는다", .roomLeave)
         case .confirm:
             if let action = confirmation?.action { request(action) }
             confirmation = nil
@@ -178,7 +186,7 @@ final class TUIWatch {
         case .party: selectedMon().map { !$0.isActive } ?? false
         case .bag: selectedItem() != nil
         // 판 화면에는 커서가 없다 — 웨이브의 선택은 숫자 키이고 유효성은 `WaveRunScreen` 이 본다.
-        case .home, .dex, .challenge, .goals, .wave, .battle: false
+        case .home, .dex, .challenge, .goals, .wave, .battle, .room: false
         }
     }
 
@@ -240,13 +248,40 @@ final class TUIWatch {
     private func rows() -> [String] {
         let width = TUIRender.listRowWidth(terminal.size.width)
         switch screen {
-        case .home, .wave, .battle: return []
+        case .home, .wave, .battle, .room: return []
         case .party: return PokedoroCLI.partyRows(store)
         case .dex: return PokedoroCLI.dexRows(store)
         case .bag: return PokedoroCLI.bagRows(store, width: width)
         case .challenge: return PokedoroCLI.challengeRows(store, width: width)
         case .goals: return PokedoroCLI.goalRows(store, width: width)
         }
+    }
+
+    /// **앱이 만든 줄을 그대로 그린다.** 라이브 기능의 판은 앱 프로세스에만 살아 터미널이 스스로
+    /// 조립할 수 없다 — 웨이브 런과 갈리는 지점이다(그쪽은 세이브에서 읽는다).
+    ///
+    /// 화면 이름을 받는 이유는 기능이 늘기 때문이다. 대전 전용으로 두면 방·다음 기능마다 같은
+    /// 절차가 한 벌씩 복제되고, 그중 하나만 고쳐지는 날이 온다.
+    private func liveLines(screen name: String, on screen: TUIScreen,
+                           absent: String, width: Int) -> [String] {
+        var lines = [TUIRender.row(left: appView?.screen == name ? (appView?.title ?? screen.title)
+                                        : screen.title,
+                                   right: "", width: width),
+                     TUIRender.rule(width: width)]
+        if let view = appView, view.screen == name {
+            lines += view.lines.map { TUIText.truncate($0, to: width) }
+            lines.append(TUIRender.rule(width: width))
+            if let status { lines.append(TUIText.truncate(status, to: width)) }
+            let hint = confirmation.map { TUIRender.confirmationHint(question: $0.question) }
+                ?? view.keys.joined(separator: "   ")
+            lines.append(TUIText.truncate(hint, to: width))
+        } else {
+            // 붙었는데도 이 화면이 안 오면 **앱이 그 기능을 들고 있지 않다는 뜻**이다.
+            // 빈 화면을 그리면 사용자는 터미널이 고장난 줄 안다.
+            lines.append(TUIText.truncate(absent, to: width))
+            if let status { lines.append(TUIText.truncate(status, to: width)) }
+        }
+        return lines + TUIRender.screenHintLines(current: screen, width: width)
     }
 
     private func render() {
@@ -274,27 +309,13 @@ final class TUIWatch {
             lines.append(TUIText.truncate(hint, to: size.width))
             lines += TUIRender.screenHintLines(current: .wave, width: size.width)
         case .battle:
-            // **앱이 만든 줄을 그대로 그린다.** 대전 판은 `BattleCenter` 에만 살아 터미널이
-            // 스스로 조립할 수 없다 — 웨이브 런과 갈리는 지점이다(그쪽은 세이브에서 읽는다).
-            if let view = appView, view.screen == "battle" {
-                lines = [TUIRender.row(left: view.title, right: "", width: size.width),
-                         TUIRender.rule(width: size.width)]
-                lines += view.lines.map { TUIText.truncate($0, to: size.width) }
-                lines.append(TUIRender.rule(width: size.width))
-                if let status { lines.append(TUIText.truncate(status, to: size.width)) }
-                let hint = confirmation.map { TUIRender.confirmationHint(question: $0.question) }
-                    ?? view.keys.joined(separator: "   ")
-                lines.append(TUIText.truncate(hint, to: size.width))
-            } else {
-                // 붙었는데도 대전 화면이 안 오면 **앱이 대전을 들고 있지 않다는 뜻**이다.
-                // 빈 화면을 그리면 사용자는 터미널이 고장난 줄 안다.
-                lines = [TUIRender.row(left: TUIScreen.battle.title, right: "", width: size.width),
-                         TUIRender.rule(width: size.width),
-                         TUIText.truncate("진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.",
-                                          to: size.width)]
-                if let status { lines.append(TUIText.truncate(status, to: size.width)) }
-            }
-            lines += TUIRender.screenHintLines(current: .battle, width: size.width)
+            lines = liveLines(screen: "battle", on: .battle,
+                              absent: "진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.",
+                              width: size.width)
+        case .room:
+            lines = liveLines(screen: "room", on: .room,
+                              absent: "방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.",
+                              width: size.width)
         case .party, .dex, .bag, .challenge, .goals:
             // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
             let listHeight = max(1, size.height - 5)

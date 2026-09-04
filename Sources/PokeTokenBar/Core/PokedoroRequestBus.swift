@@ -76,6 +76,19 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// 받은 신청을 거절한다. **확인을 받지 않는다** — 되돌릴 수 있는 일이다(상대가 다시 건다).
         case battleDecline
 
+        // MARK: LAN 방 (협동 레이드·방 대전)
+        //
+        // 대전과 같은 성질이다 — 방 상태도 세이브에 없고 `MultiplayerRoomCenter` 가 든다.
+        // **방을 만들고 찾는 일은 없다**: 소켓과 목록 훑기라 터미널이 할 수 있는 모양이 아니다.
+
+        /// 기술 번호(1부터)와 **대상 번호**(1부터, 화면이 찍는 값). 대상을 안 적으면 첫 상대다 —
+        /// 협동 레이드는 보스 하나라 대개 생략한다. UUID 를 싣지 않는 이유는 사람이 칠 수 없어서다.
+        case roomMove(move: Int, target: Int?)
+        /// 호스트가 판을 시작한다. 사람이 덜 모였으면 센터가 거절한다.
+        case roomStart
+        /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
+        case roomLeave
+
         /// 파일에 적히는 이름.
         var name: String {
             switch self {
@@ -100,6 +113,9 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .battleSwitch: "battle.switch"
             case .battleForfeit: "battle.forfeit"
             case .battleDecline: "battle.decline"
+            case .roomMove: "room.move"
+            case .roomStart: "room.start"
+            case .roomLeave: "room.leave"
             }
         }
 
@@ -129,8 +145,10 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .waveRoute(let route): route.rawValue
             case .battleMove(let move): String(move)
             case .battleSwitch(let number): String(number)
+            case .roomMove(let move, let target):
+                target.map { "\(move) \($0)" } ?? String(move)
             case .claim, .stop, .evolve, .hatch, .waveForfeit,
-                 .battleForfeit, .battleDecline: nil
+                 .battleForfeit, .battleDecline, .roomStart, .roomLeave: nil
             }
         }
 
@@ -226,6 +244,19 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 self = .battleSwitch(number: number)
             case "battle.forfeit" where argument == nil: self = .battleForfeit
             case "battle.decline" where argument == nil: self = .battleDecline
+            case "room.move":
+                guard let argument else { return nil }
+                let words = argument.split(separator: " ").map(String.init)
+                guard let move = words.first.flatMap(Self.countingNumber) else { return nil }
+                switch words.count {
+                case 1: self = .roomMove(move: move, target: nil)
+                case 2:
+                    guard let target = Self.countingNumber(words[1]) else { return nil }
+                    self = .roomMove(move: move, target: target)
+                default: return nil
+                }
+            case "room.start" where argument == nil: self = .roomStart
+            case "room.leave" where argument == nil: self = .roomLeave
             default: return nil
             }
         }

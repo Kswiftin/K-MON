@@ -84,6 +84,18 @@ enum PokedoroViewChannel {
         candidates.compactMap { $0 }.first
     }
 
+    /// LAN 방(협동 레이드·방 대전) 화면. 대전과 **같은 통로**다 — 방 상태도 세이브에 없다.
+    static func roomSnapshot(_ state: RoomTerminalState, language: AppLanguage,
+                             width: Int, now: Date) -> PokedoroViewSnapshot? {
+        guard RoomScreen.kind(state) != .none else { return nil }
+        return PokedoroViewSnapshot(
+            screen: "room",
+            title: RoomScreen.title(state),
+            lines: RoomScreen.lines(state, language: language, width: drawableWidth(width)),
+            keys: RoomScreen.keys(state),
+            writtenAt: now)
+    }
+
     /// LAN 1대1 대전 화면. **이 채널의 첫 라이브 생산자**다.
     ///
     /// 대전 판은 세이브에 없고 `BattleCenter` 에만 살아서 터미널이 스스로 만들 수 없다 — 웨이브
