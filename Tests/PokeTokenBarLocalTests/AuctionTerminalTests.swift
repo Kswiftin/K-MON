@@ -165,8 +165,27 @@ struct AuctionTerminalTests {
         #expect(full.outgoing.count == 1, "거둬들일 제안이 있어야 이 안내가 성립한다")
         #expect(AuctionScreen.hints(full).contains("auction cancel"))
 
+        // 시장이 비었고 끝난 카드만 남았으면 치우라고 말한다 — 그 카드는 자리를 먹지 않지만
+        // 쌓이면 목록을 읽을 수 없다.
+        var leftovers = AuctionTerminalState()
+        leftovers.outgoing = [AuctionScreen.Card(number: 1, id: UUID(), label: "피카츄",
+                                                 status: .declined)]
+        #expect(AuctionScreen.hints(leftovers).contains("auction clear"))
+
         // 아무것도 없으면 내 것을 올리라고 말한다.
         #expect(AuctionScreen.hints(AuctionTerminalState()).contains("auction post"))
+    }
+
+    /// 경매에 올려 둔 개체를 **다른 경로**(교환)로 넘기면 게시물은 남고 개체는 내 것이 아니게
+    /// 된다. 그 게시물은 번호로 가리킬 수 없으므로 화면이 그렇다고 말한다 — 조용히 빼면
+    /// 사용자는 앱에만 있는 게시물을 영영 못 찾는다.
+    @Test func testAListingWhoseMonIsGoneSaysSoInsteadOfShowingANumber() {
+        var orphaned = AuctionTerminalState()
+        orphaned.mine = [AuctionScreen.Posted(number: nil, label: "고디탱 Lv.20", offers: 0)]
+        let lines = AuctionScreen.lines(orphaned, width: 60)
+        #expect(lines.contains { $0.contains("내 개체가 아니다") },
+                "번호가 `-` 인 이유를 말하지 않으면 오류로 읽힌다")
+        #expect(!AuctionScreen.isIdle(orphaned), "게시물이 남아 있으면 볼 것이 있다")
     }
 
     /// 센터가 남긴 실패 한 줄은 **화면에 남는다** — 수락이 조용히 실패하면 사용자는 상대가

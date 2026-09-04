@@ -295,6 +295,69 @@ struct AuctionExecutorTests {
         #expect(onCommitting.cancelled.isEmpty && onCommitting.cleared.isEmpty)
     }
 
+    // MARK: 목록 밖 번호
+
+    /// **네 목록의 "그 번호가 없다" 를 각자 확인한다.** 한 목록만 보면 다른 셋은 무테스트로
+    /// 남고, 그중 하나가 첫 항목으로 접히는 날 사용자는 고르지 않은 것에 손을 댄다.
+    ///
+    /// 문구는 **몇 건이 있는지** 함께 말한다 — 다음 값을 고를 수 있어야 한다.
+    @Test func testEveryListSaysHowManyItHasWhenTheNumberIsMissing() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        let control = FakeAuctionControl(AuctionTerminalTests.busy())
+
+        // 시장(2건) · 받은 제안(1건) · 내가 건 제안(1건).
+        let cases: [(PokedoroRequest.Action, String)] = [
+            (.auctionBid(listing: 9, stardust: 10), "2건"),
+            (.auctionAccept(number: 9), "1건"),
+            (.auctionReject(number: 9), "1건"),
+            (.auctionCancel(number: 9), "1건"),
+            (.auctionClear(number: 9), "1건"),
+        ]
+        for (action, count) in cases {
+            let reply = await execute(action, on: store, auction: control)
+            #expect(!reply.succeeded, "\(action.name) 이 없는 번호를 받았다")
+            #expect(reply.message.contains(count),
+                    "\(action.name) 이 몇 건인지 안 말했다: \(reply.message)")
+        }
+        #expect(control.bids.isEmpty && control.accepted.isEmpty && control.rejected.isEmpty
+                && control.cancelled.isEmpty && control.cleared.isEmpty)
+    }
+
+    /// 상한을 넘는 별의모래는 **거절이고 잘라 보내지 않는다.** 센터는 조용히 클램프하므로
+    /// (`min(amount, maxTokenValue)`) 통과시키면 사용자는 자기가 적은 값이 갔다고 믿는다.
+    @Test func testABidAboveTheTransferCeilingIsRefusedRatherThanClamped() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let control = FakeAuctionControl(AuctionTerminalTests.busy())
+
+        let reply = await execute(.auctionBid(listing: 1, stardust: SaveTransfer.maxTokenValue + 1),
+                                  on: makeStore(in: directory), auction: control)
+
+        #expect(!reply.succeeded)
+        #expect(control.bids.isEmpty, "잘라서 보냈다 — 사용자가 적은 값과 다른 값이 걸린다")
+        #expect(reply.message.contains(TUIRender.number(SaveTransfer.maxTokenValue)))
+    }
+
+    /// 제안 쪽 창구 사유도 **그대로 전달된다**(게시 쪽과 같은 규칙) — 개체를 거는 길과
+    /// 별의모래를 거는 길이 둘이라 한쪽만 전달하면 나머지는 조용한 무동작이 된다.
+    @Test func testTheSeamsOfferRefusalReachesTheUserOnBothPaths() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        let control = FakeAuctionControl(AuctionTerminalTests.busy())
+        control.applyRefusal = "그 게시물이 사라졌다 — auction 으로 목록을 다시 본다."
+
+        for action: PokedoroRequest.Action in [.auctionApply(listing: 1, mon: 1),
+                                               .auctionBid(listing: 1, stardust: 10)] {
+            let reply = await execute(action, on: store, auction: control)
+            #expect(!reply.succeeded, "\(action.name) 이 창구 거절을 성공으로 답했다")
+            #expect(reply.message.contains("사라졌다"))
+        }
+        #expect(control.applied.isEmpty && control.bids.isEmpty)
+    }
+
     /// 창구가 없으면 **경매가 없는 것과 같다.**
     @Test func testWithoutAControlEverythingReadsAsNoAuction() async {
         let directory = makeDirectory()
