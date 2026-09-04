@@ -662,6 +662,13 @@ extension RogueRun {
         remainingPicks = max(1, list.count)
         stage = .picking
     }
+    /// 테스트 전용 — **전투 중** 개체의 기술 하나를 PP 0 으로 만든다. PP 를 실제로 다 쓰려면
+    /// 그 기술로 스무 턴을 돌려야 하고, 그 사이에 판이 끝난다.
+    mutating func debugDrainPP(moveIndex: Int) {
+        let index = battle.myField[0].teamIndex
+        guard battle.mine[index].pp.indices.contains(moveIndex) else { return }
+        battle.mine[index].pp[moveIndex] = 0
+    }
     /// 테스트 전용 — 끝난 판의 화면을 잰다. 실제로 지려면 상대의 공격 판정이 rng 라 재현되지
     /// 않는다(전멸 판정 자체는 `WaveBattle.advanceFainted` 쪽 테스트가 든다).
     mutating func debugFail() { stage = .failed }
