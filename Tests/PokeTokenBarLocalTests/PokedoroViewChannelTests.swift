@@ -84,6 +84,34 @@ struct PokedoroViewChannelTests {
         #expect(PokedoroViewChannel.isStale(snapshot(["x"], at: -limit - 1), now: Self.now))
     }
 
+    // MARK: 첫 생산자 — 집중 타이머
+
+    /// 타이머는 **세이브에 없다**(`FocusTimer` 는 저장되지 않는다). 그래서 터미널이 스스로 만들 수
+    /// 없고, 이 채널이 있어야 비로소 보인다 — 채널의 첫 생산자인 이유다.
+    @Test func testTheFocusSnapshotCarriesWhatTheSaveCannotTell() throws {
+        let snapshot = try #require(PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "12:34",
+                                                                      completed: 3, now: Self.now))
+        #expect(snapshot.lines.contains { $0.contains("12:34") })
+        #expect(snapshot.lines.contains { $0.contains("3") }, "오늘 몇 번 했는지도 세이브 밖 값이다")
+        #expect(snapshot.writtenAt == Self.now)
+    }
+
+    /// 단계마다 다른 말을 해야 한다 — 휴식 중에 "집중 중" 이라고 쓰면 사용자는 타이머를 잘못 읽는다.
+    @Test func testTheFocusSnapshotNamesThePhaseItIsIn() throws {
+        let focusing = PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "01:00",
+                                                          completed: 0, now: Self.now)
+        let resting = PokedoroViewChannel.focusSnapshot(phase: .rest, clockText: "01:00",
+                                                         completed: 0, now: Self.now)
+        #expect(focusing?.lines != resting?.lines)
+    }
+
+    /// 아무것도 안 돌 때는 **화면을 내놓지 않는다** — 빈 스냅샷을 쓰면 터미널이 매번 빈 줄을
+    /// 그리고, 파일도 이유 없이 갱신된다.
+    @Test func testAnIdleTimerProducesNoSnapshot() {
+        #expect(PokedoroViewChannel.focusSnapshot(phase: .idle, clockText: "00:00",
+                                                   completed: 0, now: Self.now) == nil)
+    }
+
     // MARK: 파일
 
     /// 네 파일은 **쓰는 쪽이 서로 다르므로 경로도 다르다.** 겹치면 한 파일에 두 주체가 쓴다.
