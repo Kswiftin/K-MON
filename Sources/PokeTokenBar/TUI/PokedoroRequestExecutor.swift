@@ -21,6 +21,8 @@ struct PokedoroRequestExecutor {
     /// LAN 방(레이드·방 대전)에 닿는 창구. `battle` 과 같은 이유로 좁게 두고, `nil` 은
     /// "방에 없다" 와 같은 뜻이다.
     var room: (any TerminalRoomControl)?
+    /// 교환에 닿는 창구. 같은 이유로 좁게 두고, `nil` 은 "교환이 없다" 와 같은 뜻이다.
+    var trade: (any TerminalTradeControl)?
 
     /// `async` 인 이유는 **부화 하나** 때문이다 — `hatchIfNeeded` 는 PokéAPI 에서 종 라인을 받아
     /// 온다. 앱은 이미 요청 id 를 실행 **전에** 기억하므로(`PokeTokenBarApp`), 이 await 를 넘는
@@ -52,6 +54,12 @@ struct PokedoroRequestExecutor {
         case .roomMove(let move, let target): return roomMove(request, move: move, target: target)
         case .roomStart: return roomStart(request)
         case .roomLeave: return roomLeave(request)
+        case .tradeAccept: return tradeAnswer(request, accept: true)
+        case .tradeDecline: return tradeAnswer(request, accept: false)
+        case .tradeOffer(let number): return tradeOffer(request, number: number)
+        case .tradeWant(let number): return tradeWant(request, number: number)
+        case .tradeConfirm: return tradeConfirm(request)
+        case .tradeCancel: return tradeCancel(request)
         }
     }
 
@@ -568,6 +576,78 @@ struct PokedoroRequestExecutor {
 
     private func noRoom(_ request: PokedoroRequest) -> PokedoroReply {
         no(request, "방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.")
+    }
+
+    // MARK: 교환
+    //
+    // 번호가 두 종류라 **접는 자리도 둘**이다: 내 개체는 창구가 `party` 번호로 받고(사유까지
+    // 돌려준다), 상대 목록은 `TradeScreen.remoteID` 가 id 로 접는다.
+
+    private var tradeState: TradeTerminalState? { trade?.terminalState }
+
+    private func tradeAnswer(_ request: PokedoroRequest, accept: Bool) -> PokedoroReply {
+        guard let control = trade, let state = tradeState else { return noTrade(request) }
+        guard TradeScreen.kind(state) == .incoming else {
+            return no(request, "답할 교환 신청이 없다 — " + TradeScreen.hints(state))
+        }
+        if accept {
+            control.accept()
+            return ok(request, "교환 신청을 수락했다. " + TradeScreen.hints(tradeState ?? state))
+        }
+        control.decline()
+        return ok(request, "교환 신청을 거절했다.")
+    }
+
+    private func tradeOffer(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = trade, let state = tradeState else { return noTrade(request) }
+        guard TradeScreen.kind(state) == .negotiating else {
+            return no(request, "지금은 개체를 낼 수 없다 — " + TradeScreen.hints(state))
+        }
+        // 사유는 **창구가** 만든다(체육관 방어·즐겨찾기·없는 번호) — 로스터를 아는 쪽이다.
+        if let refusal = control.offerMon(number: number) { return no(request, refusal) }
+        // 낸 것을 **되읽어서** 말한다. 내가 접은 값을 echo 하면 세이브 경계가 달라진 날 답과
+        // 실제가 갈라진다(별명 되읽기와 같은 규칙).
+        let applied = tradeState?.localOffer ?? "\(number)번"
+        return ok(request, "\(applied)을 냈다. " + TradeScreen.hints(tradeState ?? state))
+    }
+
+    private func tradeWant(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = trade, let state = tradeState else { return noTrade(request) }
+        guard TradeScreen.kind(state) == .negotiating else {
+            return no(request, "지금은 지목할 수 없다 — " + TradeScreen.hints(state))
+        }
+        guard let id = TradeScreen.remoteID(number: number, in: state) else {
+            return no(request, "\(number)번은 상대 목록에 없다 — 지금 "
+                      + "\(state.theirRoster.count) 마리가 올라 있다.")
+        }
+        control.wantRemote(id: id)
+        let label = state.theirRoster.first { $0.number == number }?.label ?? "\(number)번"
+        return ok(request, "\(label)을 원한다고 알렸다.")
+    }
+
+    /// 성사. **되돌릴 수 없다** — 확인은 명령 쪽(`--yes`)에서 이미 받았다.
+    private func tradeConfirm(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = trade, let state = tradeState else { return noTrade(request) }
+        guard TradeScreen.kind(state) == .negotiating else {
+            return no(request, "지금은 성사시킬 수 없다 — " + TradeScreen.hints(state))
+        }
+        // 양쪽이 다 내지 않았으면 확인해도 아무 일이 없다 — 성공으로 답하면 사용자는 끝난 줄 안다.
+        guard state.localOffer != nil, state.remoteOffer != nil else {
+            return no(request, "양쪽이 다 내야 성사시킬 수 있다 — " + TradeScreen.hints(state))
+        }
+        control.confirm()
+        return ok(request, "확인했다. " + TradeScreen.hints(tradeState ?? state))
+    }
+
+    private func tradeCancel(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = trade, let state = tradeState,
+              TradeScreen.kind(state) != .none else { return noTrade(request) }
+        control.cancel()
+        return ok(request, "교환을 취소했다.")
+    }
+
+    private func noTrade(_ request: PokedoroRequest) -> PokedoroReply {
+        no(request, "진행 중인 교환이 없다 — 상대를 찾는 일은 앱에서 한다.")
     }
 
     // MARK: 값

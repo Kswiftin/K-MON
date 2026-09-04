@@ -136,6 +136,9 @@ LOGIC_CORE=(
   # LAN 방(협동 레이드·방 대전)의 순수 투영. **대상 번호 → 참가자 id** 를 접는 자리가 여기 하나뿐이라
   # 게이트 밖에 두면 그 변환이 무테스트로 남는다 — 어긋나면 사용자가 고른 것과 다른 상대를 때린다.
   "Sources/PokeTokenBar/TUI/RoomScreen.swift"
+  # 교환의 순수 투영. **번호가 두 종류**(내 개체는 party 번호, 상대 목록은 세션 번호)라 그 둘을
+  # 가르는 자리가 여기다 — 게이트 밖에 두면 한 낱말이 두 목록을 뜻하게 되는 부류가 무테스트로 남는다.
+  "Sources/PokeTokenBar/TUI/TradeScreen.swift"
   # 집중 세션 세 동작의 거절 판정표. 화면·대화·터미널이 **같은 표**를 읽는 자리라 게이트 밖에
   # 두면 한 프런트엔드만 통과하는 분기(휴식 단독·정산 대기 단독)가 무테스트로 나간다.
   "Sources/PokeTokenBar/Core/PokedoroSessionGate.swift"

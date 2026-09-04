@@ -84,6 +84,18 @@ enum PokedoroViewChannel {
         candidates.compactMap { $0 }.first
     }
 
+    /// 교환 화면. 대전·방과 같은 통로다.
+    static func tradeSnapshot(_ state: TradeTerminalState, width: Int,
+                              now: Date) -> PokedoroViewSnapshot? {
+        guard TradeScreen.kind(state) != .none else { return nil }
+        return PokedoroViewSnapshot(
+            screen: "trade",
+            title: TradeScreen.title(state),
+            lines: TradeScreen.lines(state, width: drawableWidth(width)),
+            keys: TradeScreen.keys(state),
+            writtenAt: now)
+    }
+
     /// LAN 방(협동 레이드·방 대전) 화면. 대전과 **같은 통로**다 — 방 상태도 세이브에 없다.
     static func roomSnapshot(_ state: RoomTerminalState, language: AppLanguage,
                              width: Int, now: Date) -> PokedoroViewSnapshot? {

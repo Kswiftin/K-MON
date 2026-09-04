@@ -122,6 +122,79 @@ struct TradeTerminalTests {
         #expect(live.screen == "trade")
     }
 
+    /// 국면마다 **키와 한 줄 안내가 함께** 바뀐다.
+    @Test func testEveryPhaseAdvertisesOnlyWhatItCanDo() {
+        // 상대를 찾는 중 — 취소만 된다.
+        let connecting = TradeTerminalState(phase: .browsing(peer: "옆자리"))
+        #expect(TradeScreen.kind(connecting) == .connecting)
+        #expect(TradeScreen.keys(connecting) == ["c 취소"])
+        #expect(TradeScreen.hints(connecting).contains("기다린다"))
+        #expect(TradeScreen.lines(connecting, width: 60).contains { $0.contains("앱") })
+
+        // 성사 중·끝난 뒤에는 누를 것이 없다.
+        for phase: PokemonTradeCenter.Phase in [.committing, .animating, .completed,
+                                                .failed("연결이 끊겼다")] {
+            let state = TradeTerminalState(phase: phase)
+            #expect(TradeScreen.kind(state) == .settling, "\(phase) 가 정산으로 안 잡혔다")
+            #expect(TradeScreen.keys(state).isEmpty)
+        }
+        #expect(TradeScreen.lines(TradeTerminalState(phase: .failed("연결이 끊겼다")), width: 60)
+            .contains { $0.contains("연결이 끊겼다") }, "실패 사유가 안 보이면 왜 끝났는지 모른다")
+        #expect(TradeScreen.hints(TradeTerminalState(phase: .completed)).contains("끝났다"))
+    }
+
+    /// 협상의 세 단계가 **서로 다른 다음 할 일**을 말한다 — 안 내면 고르라고, 상대를 기다릴 땐
+    /// 기다리라고, 다 냈으면 성사시키라고.
+    @Test func testNegotiatingHintsWalkThroughTheSteps() {
+        var state = Self.negotiating()
+        state.localOffer = nil
+        #expect(TradeScreen.hints(state).contains("trade offer"))
+
+        state = Self.negotiating()
+        state.remoteOffer = nil
+        #expect(TradeScreen.hints(state).contains("기다린다"))
+
+        #expect(TradeScreen.hints(Self.negotiating()).contains("trade confirm"))
+
+        var confirmed = Self.negotiating()
+        confirmed.localConfirmed = true
+        #expect(TradeScreen.hints(confirmed).contains("상대"))
+        #expect(!TradeScreen.keys(confirmed).contains { $0.contains("성사") },
+                "이미 확인했는데 성사 키를 또 권하면 눌러도 아무 일이 없다")
+    }
+
+    /// 상대가 지목한 개체를 **먼저 말한다** — 그게 이 협상에서 사용자가 답할 질문이다.
+    @Test func testWhatTheyWantIsShown() {
+        var state = Self.negotiating()
+        state.theyWant = "고디탱 Lv.20"
+        #expect(TradeScreen.lines(state, width: 70).contains { $0.contains("원하는") })
+    }
+
+    // MARK: 키 배정
+
+    /// **화면 이동 키는 어떤 화면의 안쪽 키와도 겹칠 수 없다.** 이동 키가 먼저 잡히므로 겹치면
+    /// 그 화면의 동작이 조용히 죽는다 — 교환 화면에 `t` 를 줬더니 웨이브의 볼 던지기가 사라졌다.
+    @Test func testNoScreenKeyShadowsAnInScreenKey() {
+        let screenKeys = Set(TUIScreen.allCases.map(\.key))
+        for screen in TUIScreen.allCases {
+            for key in screenKeys where TUIScreen.screen(for: key) != screen {
+                // 이동 키를 눌렀으면 **이동만** 해야 한다. 그 화면의 동작으로 해석되면 둘 중
+                // 하나는 영영 못 쓰는 키다.
+                #expect(TUIKeymap.action(for: .char(key), screen: screen, canWrite: true)
+                        == .show(TUIScreen.screen(for: key) ?? .home),
+                        "\(screen) 화면에서 \(key) 가 이동이 아니다")
+            }
+        }
+    }
+
+    /// 교환 화면은 **숫자 키를 받지 않는다** — 낼 개체와 원하는 개체가 서로 다른 목록의 번호라
+    /// 한 숫자로 받을 수 없다.
+    @Test func testTheTradeScreenTakesNoNumbers() {
+        #expect(TUIKeymap.action(for: .char("1"), screen: .trade, canWrite: true) == .ignored)
+        #expect(TUIKeymap.action(for: .char("a"), screen: .trade, canWrite: true) == .acceptTrade)
+        #expect(TUIKeymap.action(for: .char("y"), screen: .trade, canWrite: true) == .confirmTrade)
+    }
+
     // MARK: 픽스처
 
     static func negotiating() -> TradeTerminalState {

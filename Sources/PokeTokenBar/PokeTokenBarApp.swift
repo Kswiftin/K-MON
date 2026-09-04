@@ -417,7 +417,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         // 남기면 그 사이의 1초 틱이 같은 파일을 다시 보고 같은 요청을 또 실행한다.
         let reply = await PokedoroRequestExecutor(timer: focusTimer, companion: companion,
                                                    battle: battleCenter,
-                                                   room: battleCenter.multiplayer).execute(request)
+                                                   room: battleCenter.multiplayer,
+                                                   trade: battleCenter.trading).execute(request)
         // 쓰기 실패는 터미널 쪽에서 타임아웃으로 드러난다. 여기서 재시도하면 같은 초에 다시
         // 실행될 위험만 늘고, 이미 세이브는 바뀐 뒤다.
         try? pokedoroMailbox.post(reply)
@@ -444,6 +445,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             PokedoroViewChannel.roomSnapshot(battleCenter.multiplayer.terminalState,
                                              language: companion.language,
                                              width: width, now: now),
+            PokedoroViewChannel.tradeSnapshot(battleCenter.trading.terminalState,
+                                              width: width, now: now),
             // 타이머는 세이브에 없다 — 터미널이 스스로 만들 수 없는 값이라 이 채널의 첫 생산자였다.
             PokedoroViewChannel.focusSnapshot(
                 phase: focusTimer.isRunning ? focusTimer.phase : .idle,

@@ -41,7 +41,8 @@ enum PokedoroCLI {
         case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
              .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
              .battleMove, .battleSwitch, .battleDecline,
-             .roomMove, .roomStart:
+             .roomMove, .roomStart,
+             .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant:
             // 위에서 이미 끝났다. `default` 로 접지 않는 이유는 명령이 늘 때 이 자리가 조용히
             // 아무것도 안 하는 길이 되지 않게 하기 위해서다.
             return Status.ok.rawValue
@@ -101,6 +102,21 @@ enum PokedoroCLI {
         case .roomLeave:
             ["방을 나가면 이 판의 정산을 받지 못한다.",
              "정말이면: pokedoro room leave --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .trade:
+            channelRows(screen: "trade",
+                        absent: ["진행 중인 교환이 없다 — 상대를 찾는 일은 앱에서 한다.",
+                                 "(교환 상은 세이브에 없어 앱이 떠 있어야 볼 수 있다.)"])
+                .forEach { print($0) }
+        case .tradeConfirm:
+            ["교환을 성사시키면 낸 개체가 상대에게 넘어간다 — 되돌릴 수 없다.",
+             "정말이면: pokedoro trade confirm --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .tradeCancel:
+            ["협상을 취소하면 지금까지 고른 것이 사라진다.",
+             "정말이면: pokedoro trade cancel --yes"]
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
         case .watch:

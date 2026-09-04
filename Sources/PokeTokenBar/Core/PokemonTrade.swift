@@ -576,3 +576,51 @@ final class PokemonTradeCenter {
         }
     }
 }
+
+// MARK: - 터미널 창구
+//
+// **이 파일 안에 두는 이유는 `companion` 이 `private` 이라서다.** 다른 파일의 extension 은 그
+// 값을 못 보고, 접근 수준을 넓히면 교환 세션이 들고 있는 스토어가 모듈 전체에 열린다.
+extension PokemonTradeCenter: TerminalTradeControl {
+    var terminalState: TradeTerminalState {
+        var state = TradeTerminalState(phase: phase)
+        state.localOffer = localOffer?.displayName
+        state.remoteOffer = remoteOffer?.displayName
+        state.localConfirmed = localConfirmed
+        state.remoteConfirmed = remoteConfirmed
+        state.theirRoster = remoteRoster.enumerated().map { index, snapshot in
+            TradeScreen.Listed(number: index + 1, id: snapshot.mon.id,
+                               label: snapshot.displayName)
+        }
+        // 상대가 지목한 내 개체는 **이름으로** 싣는다 — 터미널이 id 로 다시 찾으면 진화 라인이
+        // 필요한 표시 이름을 스스로 만들어야 하고, 짧게 사는 명령에서는 자리표시자만 나온다.
+        state.theyWant = remoteRequestedLocalMonID.flatMap { wanted in
+            companion.ownedMons.first { $0.id == wanted }
+                .map { displayName(for: $0) }
+        }
+        return state
+    }
+
+    /// 번호 → 내 개체. **`party` 와 같은 번호를 쓴다** — 교환 후보만으로 목록을 다시 매기면 같은
+    /// 번호가 화면에 따라 다른 개체를 뜻하게 된다(개체 번호에서 이미 밟은 부류).
+    ///
+    /// 후보에서 빠지는 사유는 갈라 말한다: 체육관을 지키는 넷은 넘기면 방어팀에 구멍이 나고,
+    /// 즐겨찾기는 사용자가 스스로 걸어 둔 자물쇠다. 뭉뚱그리면 무엇을 풀어야 하는지 모른다.
+    func offerMon(number: Int) -> String? {
+        let index = TUIRender.rosterIndex(printed: number)
+        guard let entry = companion.chatRosterEntries.first(where: { $0.index == index }),
+              let mon = companion.ownedMons.first(where: { $0.id == entry.id }) else {
+            return "\(number)번 포켓몬이 없다 — party 로 번호를 확인한다."
+        }
+        if companion.isFavorite(mon.id) {
+            return "\(entry.name)은 즐겨찾기라 내놓을 수 없다 — 앱에서 별을 먼저 끈다."
+        }
+        guard companion.deployableMons.contains(where: { $0.id == mon.id }) else {
+            return "\(entry.name)은 체육관을 지키는 중이라 내놓을 수 없다."
+        }
+        selectOffer(mon)
+        return nil
+    }
+
+    func wantRemote(id: UUID) { requestRemotePokemon(id) }
+}

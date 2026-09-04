@@ -151,6 +151,14 @@ final class TUIWatch {
             request(.roomStart)
         case .leaveRoom:
             confirmation = ("이 방에서 나간다 — 이 판의 정산을 못 받는다", .roomLeave)
+        case .acceptTrade:
+            request(.tradeAccept)
+        case .declineTrade:
+            request(.tradeDecline)
+        case .confirmTrade:
+            confirmation = ("교환을 성사시킨다 — 낸 개체가 넘어가고 되돌릴 수 없다", .tradeConfirm)
+        case .cancelTrade:
+            confirmation = ("협상을 취소한다 — 고른 것이 사라진다", .tradeCancel)
         case .confirm:
             if let action = confirmation?.action { request(action) }
             confirmation = nil
@@ -186,7 +194,7 @@ final class TUIWatch {
         case .party: selectedMon().map { !$0.isActive } ?? false
         case .bag: selectedItem() != nil
         // 판 화면에는 커서가 없다 — 웨이브의 선택은 숫자 키이고 유효성은 `WaveRunScreen` 이 본다.
-        case .home, .dex, .challenge, .goals, .wave, .battle, .room: false
+        case .home, .dex, .challenge, .goals, .wave, .battle, .room, .trade: false
         }
     }
 
@@ -248,7 +256,7 @@ final class TUIWatch {
     private func rows() -> [String] {
         let width = TUIRender.listRowWidth(terminal.size.width)
         switch screen {
-        case .home, .wave, .battle, .room: return []
+        case .home, .wave, .battle, .room, .trade: return []
         case .party: return PokedoroCLI.partyRows(store)
         case .dex: return PokedoroCLI.dexRows(store)
         case .bag: return PokedoroCLI.bagRows(store, width: width)
@@ -315,6 +323,10 @@ final class TUIWatch {
         case .room:
             lines = liveLines(screen: "room", on: .room,
                               absent: "방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.",
+                              width: size.width)
+        case .trade:
+            lines = liveLines(screen: "trade", on: .trade,
+                              absent: "진행 중인 교환이 없다 — 상대를 찾는 일은 앱에서 한다.",
                               width: size.width)
         case .party, .dex, .bag, .challenge, .goals:
             // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
