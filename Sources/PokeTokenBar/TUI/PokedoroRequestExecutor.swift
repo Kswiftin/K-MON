@@ -31,6 +31,14 @@ struct PokedoroRequestExecutor {
         case .buy(let good, let quantity): return buy(request, good: good, quantity: quantity)
         case .hatch: return await hatch(request)
         case .release(let number): return release(request, number: number)
+        case .waveStart(let starter): return await waveStart(request, starter: starter)
+        case .waveMove(let move, let target):
+            return await waveMove(request, move: move, target: target)
+        case .waveSwitch(let number): return await waveSwitch(request, number: number)
+        case .waveBall(let target): return await waveBall(request, target: target)
+        case .wavePick(let number): return await wavePick(request, number: number)
+        case .waveRoute(let route): return await waveRoute(request, route: route)
+        case .waveForfeit: return waveForfeit(request)
         }
     }
 
@@ -197,6 +205,220 @@ struct PokedoroRequestExecutor {
             return no(request, "\(target.name)은 놓아줄 수 없다 — 즐겨찾기이거나 체육관을 지키는 중이다.")
         }
         return ok(request, "\(target.name)을 놓아줬다.")
+    }
+
+    // MARK: 웨이브 런
+    //
+    // 규칙은 `RogueRun` 이, 무엇을 고를 수 있는지는 `WaveRunScreen` 이, 네트워크는
+    // `WaveRunLoader` 가 든다. 여기 남는 것은 **거절 사유를 갈라 말하는 일**뿐이다 — 뭉뚱그리면
+    // 사용자는 무엇을 고쳐야 할지 모른 채 같은 명령을 반복한다.
+
+    /// 지금 판. **상대를 받다 만 판은 여기서 이어 받는다** — `.loadingWave` 에는 사용자가 보낼
+    /// 동작이 없으므로, 네트워크가 한 번 흔들린 판은 여기서 다시 열지 않으면 영영 멈춘다.
+    private func currentRun() async -> RogueRun? {
+        if companion.rogueRun?.stage == .loadingWave {
+            await WaveRunLoader.openNextWaveIfNeeded(store: companion)
+        }
+        return companion.rogueRun
+    }
+
+    private func waveStart(_ request: PokedoroRequest, starter: Int?) async -> PokedoroReply {
+        // 진행 중인 판을 덮어쓰지 않는다 — 되돌릴 수 없는 손실이고, 버리는 길은 따로 있다.
+        if let run = companion.rogueRun {
+            return no(request, "이미 웨이브 \(run.wave) 를 도는 중이다. 버리려면 wave forfeit --yes.")
+        }
+        let pool = RogueRun.starterPool
+        let speciesID: Int
+        if let starter {
+            guard let picked = WaveRunLoader.starter(number: starter) else {
+                return no(request, "스타터 번호는 1~\(pool.count) 다 — wave 가 찍는 목록을 본다.")
+            }
+            speciesID = picked
+        } else {
+            speciesID = pool.randomElement() ?? pool[0]
+        }
+        guard await WaveRunLoader.startRun(starter: speciesID, store: companion),
+              let run = companion.rogueRun else {
+            return no(request, "PokéAPI 에 연결하지 못해 판을 열 수 없다. 잠시 뒤 다시 시도한다.")
+        }
+        let name = run.party.first?.snapshot.name ?? "#\(speciesID)"
+        return ok(request, "웨이브 1 시작 — \(name) 와(과) 나섰다. " + Self.next(run))
+    }
+
+    private func waveMove(_ request: PokedoroRequest, move: Int,
+                          target: Int?) async -> PokedoroReply {
+        guard var run = await currentRun() else { return noRun(request) }
+        guard run.stage == .battling else { return no(request, Self.wrongStage(run)) }
+        guard run.battle.slotsNeedingSendOut.isEmpty else {
+            return no(request, "쓰러진 칸을 먼저 채운다 — wave switch <파티 번호>.")
+        }
+        guard let slot = run.battle.slotsAwaitingAction.first,
+              let side = run.battle.mySide(at: slot) else {
+            return no(request, "이번 턴에 행동할 칸이 없다.")
+        }
+        let index = move - 1
+        // 발버둥이면 인덱스와 무관하게 통과한다 — `WaveBattle.choose` 가 그 자리에서 −1 로 접는다.
+        guard side.mustStruggle || side.canUse(moveAt: index) else {
+            return no(request, "\(move)번 기술을 쓸 수 없다 — wave 가 찍는 번호와 남은 PP 를 본다.")
+        }
+        let ordinal = (target ?? 1) - 1
+        guard run.battle.opponentField.indices.contains(ordinal) else {
+            return no(request, "상대 \(target ?? 1)번 칸이 없다 — 지금 서 있는 칸은 "
+                      + "\(run.battle.opponentField.count) 개다.")
+        }
+        let played = run.battle.events.count
+        // PP 가 다 떨어졌으면 무엇을 골랐든 발버둥이다(`WaveBattle.choose`) — 고른 기술 이름을
+        // 그대로 되뇌면 답과 로그가 서로 다른 기술을 말한다.
+        let chosen = side.mustStruggle || !side.moves.indices.contains(index)
+            ? MoveSpec.struggle() : side.moves[index]
+        run.useMove(index, fromSlot: slot, target: ordinal)
+        companion.rogueRun = run
+        return await settled(request, since: played,
+                             head: "\(chosen.name(companion.language)) 을(를) 골랐다.")
+    }
+
+    /// 교체와 기절 보충이 **한 동작**인 이유는 화면의 같은 줄이 두 일을 하기 때문이다
+    /// (`RogueRunView.arena` 의 `onSwitch`). 나누면 사용자가 지금 어느 쪽인지 알아야 한다.
+    private func waveSwitch(_ request: PokedoroRequest, number: Int) async -> PokedoroReply {
+        guard var run = await currentRun() else { return noRun(request) }
+        guard run.stage == .battling else { return no(request, Self.wrongStage(run)) }
+        let index = number - 1
+        guard run.party.indices.contains(index) else {
+            return no(request, "\(number)번 포켓몬이 이 판의 파티에 없다 — wave 로 번호를 확인한다.")
+        }
+        let member = run.party[index]
+        // 사유를 갈라 말한다 — "이미 나와 있다" 와 "쓰러졌다" 는 다음에 할 일이 다르다.
+        guard member.isAlive else {
+            return no(request, "\(member.snapshot.name) 은(는) 쓰러져 있다.")
+        }
+        guard run.battle.benchCandidates.contains(index) else {
+            return no(request, "\(member.snapshot.name) 은(는) 이미 필드에 서 있다.")
+        }
+        let played = run.battle.events.count
+        if let slot = run.battle.slotsNeedingSendOut.first {
+            // 기절 보충은 **턴을 쓰지 않는다**(근거는 `WaveBattle.sendOut`).
+            run.sendOut(index, toSlot: slot)
+            companion.rogueRun = run
+            return await settled(request, since: played,
+                                 head: "\(member.snapshot.name) 이(가) 빈 칸에 나섰다.")
+        }
+        guard let slot = run.battle.slotsAwaitingAction.first else {
+            return no(request, "이번 턴에 행동할 칸이 없다.")
+        }
+        run.switchParty(to: index, fromSlot: slot)
+        companion.rogueRun = run
+        return await settled(request, since: played,
+                             head: "\(member.snapshot.name) 으로 교체했다 — 그 칸은 이번 턴에 때리지 못한다.")
+    }
+
+    private func waveBall(_ request: PokedoroRequest, target: Int?) async -> PokedoroReply {
+        guard var run = await currentRun() else { return noRun(request) }
+        guard run.stage == .battling else { return no(request, Self.wrongStage(run)) }
+        if let refusal = Self.ballRefusal(run) { return no(request, refusal) }
+        let ordinal = (target ?? 1) - 1
+        guard let side = run.battle.opponentSide(at: ordinal), side.isAlive else {
+            return no(request, "상대 \(target ?? 1)번 칸에 잡을 포켓몬이 없다.")
+        }
+        let name = side.snapshot.name
+        let played = run.battle.events.count
+        let caught = run.throwBall(atSlot: ordinal)
+        companion.rogueRun = run
+        return await settled(request, since: played,
+                             head: caught ? "\(name) 을(를) 잡았다!"
+                                          : "\(name) 이(가) 볼에서 튀어나왔다 — 그 턴은 때리지 못했다.")
+    }
+
+    /// 볼을 못 던지는 사유. `canThrowBall` 은 불리언 하나라 이유를 말할 수 없다 — 뭉뚱그리면
+    /// 사용자는 볼이 없는 것과 보스라 안 되는 것을 구분하지 못한다.
+    private static func ballRefusal(_ run: RogueRun) -> String? {
+        guard run.canThrowBall else {
+            if run.balls <= 0 { return "몬스터볼이 없다 — 보상에서 보충한다." }
+            if run.party.count >= RogueRun.partyLimit { return "파티가 가득 찼다." }
+            if RogueRun.isBoss(wave: run.wave) { return "보스에게는 볼을 던질 수 없다." }
+            if !run.battle.slotsNeedingSendOut.isEmpty {
+                return "쓰러진 칸을 먼저 채운다 — wave switch <파티 번호>."
+            }
+            return "지금은 볼을 던질 수 없다."
+        }
+        return nil
+    }
+
+    private func wavePick(_ request: PokedoroRequest, number: Int) async -> PokedoroReply {
+        guard var run = await currentRun() else { return noRun(request) }
+        guard run.stage == .picking else { return no(request, Self.wrongStage(run)) }
+        let index = number - 1
+        guard run.offers.indices.contains(index) else {
+            return no(request, "\(number)번 보상이 없다 — 지금 \(run.offers.count) 장이 떠 있다.")
+        }
+        let name = run.offers[index].name(L(companion.language))
+        run.pick(run.offers[index])
+        companion.rogueRun = run
+        return await settled(request, since: .max, head: "\(name) 을(를) 골랐다.")
+    }
+
+    private func waveRoute(_ request: PokedoroRequest, route: RunRoute) async -> PokedoroReply {
+        guard var run = await currentRun() else { return noRun(request) }
+        guard run.stage == .routing else { return no(request, Self.wrongStage(run)) }
+        run.take(route)
+        companion.rogueRun = run
+        // 길을 고르면 그 자리에서 다음 웨이브를 연다. 안 열면 판이 `.loadingWave` 에 서고,
+        // 그 국면에는 사용자가 보낼 동작이 없다.
+        await WaveRunLoader.openNextWaveIfNeeded(store: companion)
+        guard let opened = companion.rogueRun else { return noRun(request) }
+        guard opened.stage != .loadingWave else {
+            return no(request, "\(route.name(L(companion.language))) 로 정했지만 상대를 받지 못했다 "
+                      + "— PokéAPI 에 연결되면 다음 명령에서 이어 연다.")
+        }
+        return ok(request, "\(route.name(L(companion.language))) 로 웨이브 \(opened.wave) 에 들어섰다. "
+                  + Self.next(opened))
+    }
+
+    private func waveForfeit(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let run = companion.rogueRun else { return noRun(request) }
+        // 화면의 항복과 같다 — 판을 버리고 실적에도 적지 않는다(`RogueRunView.onForfeit`).
+        companion.rogueRun = nil
+        return ok(request, "웨이브 \(run.wave) 에서 판을 버렸다.")
+    }
+
+    /// 동작 하나가 끝난 뒤의 답. **무슨 일이 일어났는지와 다음에 할 일을 함께 말한다** —
+    /// 한 번 찍고 끝나는 명령은 이 한 줄이 화면의 전부다.
+    ///
+    /// 보상 화면으로 넘어갔으면 여기서 진화를 돌린다. 화면이 같은 자리에서 도는 것과 맞춘
+    /// 것이고(`RogueRunView.evolveParty`), 안 돌리면 터미널로만 돈 판은 영영 진화하지 않는다.
+    private func settled(_ request: PokedoroRequest, since played: Int,
+                         head: String) async -> PokedoroReply {
+        var evolved: [String] = []
+        if companion.rogueRun?.stage == .picking {
+            evolved = await WaveRunLoader.evolveParty(store: companion)
+        }
+        var parts = [head]
+        if let run = companion.rogueRun {
+            parts += WaveRunScreen.log(run, language: companion.language, since: played)
+        }
+        parts += evolved.map { "\($0) 이(가) 진화했다!" }
+        parts.append(Self.next(companion.rogueRun))
+        return ok(request, parts.filter { !$0.isEmpty }.joined(separator: " "))
+    }
+
+    /// 다음에 할 일 한 조각. 안내 표는 `WaveRunScreen` 하나다 — 여기서 다시 쓰면 화면과 답이
+    /// 서로 다른 키를 권한다.
+    private static func next(_ run: RogueRun?) -> String { WaveRunScreen.hints(run) }
+
+    private func noRun(_ request: PokedoroRequest) -> PokedoroReply {
+        no(request, "진행 중인 웨이브 런이 없다 — wave start 로 연다.")
+    }
+
+    /// 지금 국면에서는 할 수 없는 일. **무엇을 기다리는지 말한다** — "할 수 없다" 만 주면
+    /// 사용자는 같은 명령을 다시 친다.
+    private static func wrongStage(_ run: RogueRun) -> String {
+        switch run.stage {
+        case .battling:    "지금은 전투 중이다. " + WaveRunScreen.hints(run)
+        case .picking:     "먼저 보상을 고른다. " + WaveRunScreen.hints(run)
+        case .routing:     "먼저 길을 고른다. " + WaveRunScreen.hints(run)
+        case .loadingWave: "다음 상대를 받는 중이다 — 잠시 뒤 다시 시도한다."
+        case .cleared:     "이 판은 이미 끝났다(전 웨이브 돌파). wave start 로 새 판을 연다."
+        case .failed:      "이 판은 이미 끝났다(전멸). wave start 로 새 판을 연다."
+        }
     }
 
     // MARK: 값

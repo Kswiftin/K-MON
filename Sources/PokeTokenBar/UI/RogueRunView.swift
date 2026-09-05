@@ -360,7 +360,7 @@ struct RogueRunView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 4) {
-                            Text(Self.title(offer, l)).font(.callout.bold())
+                            Text(offer.name(l)).font(.callout.bold())
                             // 지속형은 배지로 갈라 보여준다 — 이 판에 남는 장과 그 자리에서 사라지는
                             // 장을 구별하지 못하면 빌드를 고를 수 없다.
                             if offer.isPersistent {
@@ -418,19 +418,12 @@ struct RogueRunView: View {
                     Task { await loadNextWave() }
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(Self.routeTitle(route, l)).font(.callout.bold())
+                        Text(route.name(l)).font(.callout.bold())
                         Text(Self.routeDetail(route, l)).font(.caption2).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-        }
-    }
-
-    private static func routeTitle(_ route: RunRoute, _ l: L) -> String {
-        switch route {
-        case .safe:  return l.t("평탄한 길", "Even path", "平らな道")
-        case .risky: return l.t("험한 길", "Rough path", "険しい道")
         }
     }
 
@@ -444,23 +437,6 @@ struct RogueRunView: View {
             return l.t("상대 레벨 +\(RunRoute.risky.levelBonus), 종족값 상한 +\(RunRoute.risky.statBonus). 넘기면 보상을 \(RunRoute.risky.pickCount) 장 고른다.",
                        "Opponents get +\(RunRoute.risky.levelBonus) levels and +\(RunRoute.risky.statBonus) base-stat headroom. Clear it and pick \(RunRoute.risky.pickCount) rewards.",
                        "相手のレベル +\(RunRoute.risky.levelBonus)、種族値上限 +\(RunRoute.risky.statBonus)。突破すると報酬を \(RunRoute.risky.pickCount) 枚選べる。")
-        }
-    }
-
-    private static func title(_ modifier: RunModifier, _ l: L) -> String {
-        switch modifier {
-        case .potion:  return l.t("상처약", "Potion", "きずぐすり")
-        case .revive:  return l.t("기력의조각", "Revive", "げんきのかけら")
-        case .candy:   return l.t("이상한사탕", "Rare Candy", "ふしぎなアメ")
-        case .elixir:  return l.t("엘릭서", "Elixir", "エリキシル")
-        case .cleanse: return l.t("만병통치제", "Full Heal", "なんでもなおし")
-        case .typeBoost: return l.t("타입 강화판", "Type Booster", "タイプ強化板")
-        case .focusLens: return l.t("초점렌즈", "Scope Lens", "ピントレンズ")
-        case .leftovers: return l.t("먹다남은음식", "Leftovers", "たべのこし")
-        case .ballPouch: return l.t("몬스터볼 보충", "Ball Pouch", "モンスターボール補充")
-        case .xAttack:   return l.t("플러스파워", "X Attack", "プラスパワー")
-        case .xDefense:  return l.t("디펜드업", "X Defense", "ディフェンダー")
-        case .xSpeed:    return l.t("스피드업", "X Speed", "スピーダー")
         }
     }
 

@@ -2,7 +2,7 @@
 summary: "포켓로그식 웨이브 런(오늘의 던전)의 난이도 규칙 — 상대 레벨 곡선, 종족값 티어 상한, 웨이브를 넘는 이월 자원과 회복 지점, 판마다 쌓이는 강화·진화·갈림길을 어떤 근거로 정했는지."
 read_when:
   - 웨이브 런(`RogueRun`)의 난이도·보상 균형을 바꿀 때
-  - 상대 종 추첨(`RogueRunView.wild`)이나 종족값 티어를 손볼 때
+  - 상대 종 추첨(`WaveRunLoader.wild`)이나 종족값 티어를 손볼 때
   - 웨이브를 넘어 무엇이 이월되는지(HP·PP·상태이상·랭크·강화) 판단이 필요할 때
   - 보상 목록(`RunModifier`)·누적 강화(`RunBoosts`)·갈림길(`RunRoute`)을 더하거나 고칠 때
   - 런 중 진화 규칙(`RogueRun.levelUpEvolution`)을 손볼 때
@@ -20,7 +20,9 @@ read_when:
 
 '오늘의 던전' 화면은 층 던전([`layered-dungeon-design.md`](layered-dungeon-design.md))에서
 **포켓로그식 웨이브 런**으로 바뀌었다. 판 구조는 `Core/RogueRun.swift`, 2대2 전투는
-`Core/WaveBattle.swift`, 상대 생성과 화면은 `UI/RogueRunView.swift`·`UI/WaveRunArena.swift` 에 있다.
+`Core/WaveBattle.swift`, **상대 생성·진화 조회는 `Core/WaveRunLoader.swift`**(앱 화면과 터미널이
+함께 쓴다), 화면은 `UI/RogueRunView.swift`·`UI/WaveRunArena.swift` 에 있다. 터미널에서 도는 쪽은
+[`terminal-frontend.md`](terminal-frontend.md) 의 "웨이브 런" 절이다.
 
 ## 판의 뼈대
 
@@ -214,7 +216,7 @@ const bossMultiplier = 1.2;
 
 ## 종족값 티어 — 웨이브 1 에 슬라킹이 나오지 않게
 
-상대 종은 `RogueRunView` 가 `RogueRun.wildSpeciesPool`(획득 가능 종 전체) 에서 균등 추첨한다. 종 자체에 티어가 없으므로 레벨 곡선을
+상대 종은 `WaveRunLoader` 가 `RogueRun.wildSpeciesPool`(획득 가능 종 전체) 에서 균등 추첨한다. 종 자체에 티어가 없으므로 레벨 곡선을
 아무리 맞춰도 웨이브 1 에 슬라킹(종족값 합 670)이나 전설이 나오면 판이 첫 턴에 끝난다.
 그래서 **종족값 합(BST)에 웨이브별 상한**을 둔다(`RogueRun.baseStatTotalCap`).
 
@@ -444,7 +446,8 @@ PP·기술명 줄·행동 판정      대상 수와 무관하게 한 번
   고를 것이 없는 보상 화면. 판은 소모품이라 버리는 쪽이 반쯤 복원된 전투보다 낫다.
   남겨 두면 켤 때마다 같은 실패를 반복하고, 사용자는 새 판을 시작할 수 있다는 걸 알 수 없다.
 - **쓰는 자리는 `CompanionStore.rogueRun` 의 `didSet` 한 곳**이다. 화면이 판을 꺼내 바꾸고
-  되넣는 값 타입으로 다루므로(`RogueRunView.mutate`), 저장을 호출자에게 맡기면 한 경로만 빠져도
+  되넣는 값 타입으로 다루므로(`RogueRunView.mutate`·터미널은 `PokedoroRequestExecutor`), 저장을
+  호출자에게 맡기면 한 경로만 빠져도
   그 행동이 통째로 유실된다.
 
 ## 실적은 근처 트레이너 카드에도 실린다

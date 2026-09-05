@@ -121,6 +121,19 @@ final class TUIWatch {
                 confirmation = ("\(mon.name)을 놓아준다 — 되돌릴 수 없다",
                                 .release(number: TUIRender.printedRosterNumber(index: mon.index)))
             }
+        case .waveChoice(let number):
+            // 숫자가 무엇이 되는지는 판의 국면이 정한다 — 표는 `WaveRunScreen` 하나다.
+            if let action = WaveRunScreen.action(number: number, in: store.rogueRun) {
+                request(action)
+            }
+        case .throwWaveBall:
+            request(.waveBall(target: nil))
+        case .forfeitWaveRun:
+            // 여기서 바로 보내지 않는다 — 판이 통째로 사라지므로 한 번 더 묻는다(방생과 같다).
+            if let run = store.rogueRun {
+                confirmation = ("웨이브 \(run.wave) 까지 온 판을 버린다 — 되돌릴 수 없다",
+                                .waveForfeit)
+            }
         case .confirm:
             if let action = confirmation?.action { request(action) }
             confirmation = nil
@@ -155,7 +168,8 @@ final class TUIWatch {
         switch screen {
         case .party: selectedMon().map { !$0.isActive } ?? false
         case .bag: selectedItem() != nil
-        case .home, .dex, .challenge, .goals: false
+        // 판 화면에는 커서가 없다 — 웨이브의 선택은 숫자 키이고 유효성은 `WaveRunScreen` 이 본다.
+        case .home, .dex, .challenge, .goals, .wave: false
         }
     }
 
@@ -217,7 +231,7 @@ final class TUIWatch {
     private func rows() -> [String] {
         let width = TUIRender.listRowWidth(terminal.size.width)
         switch screen {
-        case .home: return []
+        case .home, .wave: return []
         case .party: return PokedoroCLI.partyRows(store)
         case .dex: return PokedoroCLI.dexRows(store)
         case .bag: return PokedoroCLI.bagRows(store, width: width)
@@ -240,6 +254,16 @@ final class TUIWatch {
                 lines.append(TUIRender.rule(width: size.width))
                 lines += view.lines.map { TUIText.truncate($0, to: size.width) }
             }
+        case .wave:
+            // 판이 세이브에 남으므로 화면 채널을 타지 않는다 — 조회 명령(`pokedoro wave`)과
+            // **같은 함수**를 읽으므로 두 화면이 갈라질 자리가 없다.
+            lines = WaveRunScreen.lines(store.rogueRun, language: store.language, width: size.width)
+            lines.append(TUIRender.rule(width: size.width))
+            if let status { lines.append(TUIText.truncate(status, to: size.width)) }
+            let hint = confirmation.map { TUIRender.confirmationHint(question: $0.question) }
+                ?? WaveRunScreen.hints(store.rogueRun)
+            lines.append(TUIText.truncate(hint, to: size.width))
+            lines.append(TUIText.truncate(TUIRender.screenHints(current: .wave), to: size.width))
         case .party, .dex, .bag, .challenge, .goals:
             // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
             let listHeight = max(1, size.height - 5)

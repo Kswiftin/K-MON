@@ -1,11 +1,21 @@
 import Foundation
 
-/// TUI 가 보여주는 화면. 홈 하나 + 목록 다섯이다.
+/// TUI 가 보여주는 화면. 판(홈·웨이브) 둘 + 목록 다섯이다.
 enum TUIScreen: String, CaseIterable, Sendable {
     case home, party, dex, bag, challenge, goals
+    /// 웨이브 런. 목록이 아니라 **판**이다 — 커서가 없고 숫자 키가 지금 국면의 선택지다.
+    case wave
 
     /// 목록이 있는 화면인가 — 스크롤 키를 받을지 가르는 유일한 기준이다.
-    var isList: Bool { self != .home }
+    ///
+    /// `self != .home` 이 아니라 **판을 열거한다.** 부정형으로 두면 판 화면을 더할 때마다 그
+    /// 화면이 조용히 목록이 되어, 아무 데도 안 쓰이는 커서가 움직인다.
+    var isList: Bool {
+        switch self {
+        case .home, .wave: false
+        case .party, .dex, .bag, .challenge, .goals: true
+        }
+    }
 
     /// 이 화면을 부르는 키. **키 표와 화면 안내가 같은 값을 읽는 자리다** — 두 벌이면 안내에
     /// 있는 키가 아무 일도 안 하거나, 먹는 키가 안내에 없다.
@@ -19,6 +29,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
         // 가르면 손이 먼저 움직여 누르지 않으려던 쪽이 눌린다.
         case .challenge: "m"
         case .goals: "g"
+        case .wave: "w"
         }
     }
 
@@ -32,6 +43,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
         case .bag: "가방"
         case .challenge: "도전"
         case .goals: "목표"
+        case .wave: "웨이브"
         }
     }
 
@@ -62,6 +74,12 @@ enum TUIAction: Equatable, Sendable {
     case useSelected
     case switchToSelected
     case releaseSelected
+    /// 웨이브 화면의 숫자 키. **무엇이 되는지는 이 표가 모른다** — 기술인지 보상인지 길인지는
+    /// 판의 국면이 정하고, 그 변환은 `WaveRunScreen.action(number:in:)` 한 곳에 있다.
+    case waveChoice(Int)
+    case throwWaveBall
+    /// 판을 버린다 — **되돌릴 수 없다.** 화면이 확인을 한 번 받는다(방생과 같은 규칙).
+    case forfeitWaveRun
     /// 되돌릴 수 없는 동작의 승낙·취소.
     case confirm
     case cancelConfirmation
@@ -97,6 +115,22 @@ enum TUIKeymap {
         case "c": .claimAdventure
         case "x": .cancelAdventure
         default: nil
+        }
+    }
+
+    /// 웨이브 화면의 키. **홈의 표와 나눠 둔다** — 두 판 화면이 한 표를 쓰면 대전 중에 기술을
+    /// 고르려다 25분 집중이 시작된다(숫자 키가 홈에서는 길이다).
+    ///
+    /// 볼 던지기가 `b` 가 아닌 이유는 그 글자가 **가방 화면 키**라서다. 화면 이동 키가 먼저
+    /// 잡히므로 `b` 를 배정하면 아무 데서도 안 먹는 키가 된다.
+    private static func waveKey(_ key: Character) -> TUIAction? {
+        if let number = key.wholeNumberValue, (1...4).contains(number) {
+            return .waveChoice(number)
+        }
+        switch key {
+        case "t": return .throwWaveBall
+        case "f": return .forfeitWaveRun
+        default: return nil
         }
     }
 
@@ -147,7 +181,10 @@ enum TUIKeymap {
         // 이동 키는 화면 표에서 읽는다 — 여기 손으로 적으면 화면을 더할 때 키가 빠지고,
         // 안내(`TUIRender.screenHints`)와 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다.
         if let next = TUIScreen.screen(for: character) { return .show(next) }
-        if screen.isList {
+        // **화면마다 자기 표를 고른다.** 예전엔 "목록이 아니면 홈" 이라 새 판 화면이 홈의 키를
+        // 조용히 물려받았다 — 웨이브 화면의 1·2·3 이 집중 세션을 켰다.
+        switch screen {
+        case .party, .dex, .bag, .challenge, .goals:
             // 커서 동작은 쓰기다 — 권한이 없으면 침묵이 아니라 거절로 돌아온다.
             if let selection = selectionAction(character, screen: screen) {
                 return canWrite ? selection : .rejected(.readOnly)
@@ -158,10 +195,14 @@ enum TUIKeymap {
             case "k": return .scroll(-1)
             default: return .ignored
             }
+        case .wave:
+            guard let action = waveKey(character) else { return .ignored }
+            return canWrite ? action : .rejected(.readOnly)
+        case .home:
+            // 모험 키는 홈 전용이다. 도감을 넘기다 실수로 세션이 시작되면 안 된다.
+            guard let action = mutating(character) else { return .ignored }
+            return canWrite ? action : .rejected(.readOnly)
         }
-        // 모험 키는 홈 전용이다. 도감을 넘기다 실수로 세션이 시작되면 안 된다.
-        guard let action = mutating(character) else { return .ignored }
-        return canWrite ? action : .rejected(.readOnly)
     }
 
     /// 목록 커서 이동. 범위를 벗어난 인덱스는 그대로 배열 첨자로 쓰이므로 여기서 막는다.

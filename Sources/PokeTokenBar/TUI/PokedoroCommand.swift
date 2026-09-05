@@ -40,6 +40,23 @@ enum PokedoroCommand: Equatable, Sendable {
     /// 보여 준 뒤 거절한다 — 오타 한 번이 개체를 영영 지우면 안 된다.
     case release(number: Int, confirmed: Bool)
 
+    // MARK: 웨이브 런
+    //
+    // 하위 명령이 하나의 접두어(`wave`) 아래 산다. `move`·`pick` 같은 흔한 낱말을 최상위에 두면
+    // 다음 라이브 기능(PvP·레이드)이 같은 낱말을 쓰고 싶을 때 이름이 이미 팔려 있다.
+
+    /// 진행 중인 판. **조회다** — 판은 세이브에 남으므로(`CompanionStore.rogueRun`) 터미널이
+    /// 스스로 읽는다. 화면 채널(`PokedoroViewChannel`)은 세이브에 **없는** 값을 위한 통로다.
+    case wave
+    case waveStart(starter: Int?)
+    case waveMove(move: Int, target: Int?)
+    case waveSwitch(number: Int)
+    case waveBall(target: Int?)
+    case wavePick(number: Int)
+    case waveRoute(RunRoute)
+    /// **되돌릴 수 없다.** 판이 사라지므로 방생과 같은 규칙으로 `--yes` 를 받는다.
+    case waveForfeit(confirmed: Bool)
+
     /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
     ///
     /// **인자를 여기서 함께 넘긴다.** 예전엔 동작만 돌려주고 부르는 쪽이 분을 다시 꺼냈는데,
@@ -58,7 +75,15 @@ enum PokedoroCommand: Equatable, Sendable {
         // 확인 없는 방생은 **요청이 아니다.** 여기서 nil 을 돌려주면 CLI 가 읽기 전용 경로로
         // 내려가 무엇을 잃는지 보여 주고 거절한다.
         case .release(let number, let confirmed): confirmed ? .release(number: number) : nil
-        case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help: nil
+        case .waveStart(let starter): .waveStart(starter: starter)
+        case .waveMove(let move, let target): .waveMove(move: move, target: target)
+        case .waveSwitch(let number): .waveSwitch(number: number)
+        case .waveBall(let target): .waveBall(target: target)
+        case .wavePick(let number): .wavePick(number: number)
+        case .waveRoute(let route): .waveRoute(route)
+        // 확인 없는 포기는 방생과 같이 **요청이 아니다** — 무엇을 잃는지 먼저 보여 주고 거절한다.
+        case .waveForfeit(let confirmed): confirmed ? .waveForfeit : nil
+        case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help, .wave: nil
         }
     }
 }
@@ -80,10 +105,20 @@ enum PokedoroCommandError: Equatable, Error {
     case missingArgument(String)
     /// 인자를 받지 않는 명령에 인자가 붙었다. 버리고 실행하면 사용자는 그 값이 뭔가 했다고 믿는다.
     case unexpectedArgument(String)
+    /// 인자는 받지만 **개수가 많다**. `unexpectedArgument` 로 접으면 "인자를 받지 않는다" 고
+    /// 말하게 되는데 `wave move 1 2` 는 정상 입력이다 — 문구가 사실이 아닌 것을 주장하면
+    /// 사용자는 맞는 사용법을 의심한다(`switch 0` 의 "숫자가 아니다" 와 같은 부류).
+    case tooManyArguments(String)
     /// 목록 밖 아이템 이름. **어디서 이름을 얻는지** 같이 말한다.
     case unknownItem(String)
     /// 상점이 팔지 않는 물건.
     case unknownGood(String)
+    /// 웨이브 런의 번호가 아니다. 개체 번호와 오류를 나눠 두는 이유와 같다 — **어디서 번호를
+    /// 얻는지가 다르다**(`party` 가 아니라 `wave` 가 찍는다).
+    case invalidWaveNumber(String)
+    /// 목록 밖 길 이름. 안전한 길로 접지 않는 이유는 사용자가 위험한 길을 골랐다고 믿은 채
+    /// 보상 한 장을 잃기 때문이다.
+    case unknownRoute(String)
 
     var message: String {
         switch self {
@@ -100,10 +135,17 @@ enum PokedoroCommandError: Equatable, Error {
             "`\(name)` 은 인자가 필요하다. `pokedoro help` 로 쓰는 법을 본다."
         case .unexpectedArgument(let name):
             "`\(name)` 은 인자를 받지 않는다."
+        case .tooManyArguments(let name):
+            "`\(name)` 에 인자가 너무 많다. `pokedoro help` 로 쓰는 법을 본다."
         case .unknownItem(let raw):
             "그런 아이템이 없다: \(raw) — `pokedoro bag` 이 찍는 이름을 쓴다."
         case .unknownGood(let raw):
             "상점에 그런 물건이 없다: \(raw) — `pokedoro shop` 이 찍는 이름을 쓴다."
+        case .invalidWaveNumber(let raw):
+            "웨이브 런의 번호가 아니다: \(raw) — `pokedoro wave` 가 찍는 번호(1부터)를 쓴다."
+        case .unknownRoute(let raw):
+            "그런 길이 없다: \(raw) — "
+                + RunRoute.allCases.map(\.rawValue).joined(separator: "·") + " 중 하나를 쓴다."
         }
     }
 }
@@ -181,6 +223,8 @@ enum PokedoroCommandParser {
         case "release":
             return .release(number: try requiredRosterNumber(in: tail, command: name),
                             confirmed: options.contains("--yes"))
+        case "wave":
+            return try waveCommand(in: tail, options: options)
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
@@ -210,6 +254,77 @@ enum PokedoroCommandParser {
         let raw = words.joined(separator: " ")
         guard let good = ShopCatalog.named(raw) else { throw PokedoroCommandError.unknownGood(raw) }
         return .buy(good: good, quantity: quantity)
+    }
+
+    /// `wave <하위 명령> [번호…]`. 하위 명령이 없으면 조회다 — 인자 없이 친 사용자가 가장 원하는
+    /// 것이 지금 판의 상태이기 때문이다(최상위 `pokedoro` 가 `status` 인 것과 같은 규칙).
+    private static func waveCommand(in arguments: [String],
+                                    options: Set<String>) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .wave }
+        let rest = Array(words.dropFirst())
+        let command = "wave \(sub)"
+        switch sub {
+        case "start":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .waveStart(starter: try waveNumber(in: rest))
+        case "move":
+            try rejectExtra(rest, beyond: 2, command: command)
+            guard let move = try waveNumber(in: rest) else {
+                throw PokedoroCommandError.missingArgument(command)
+            }
+            return .waveMove(move: move, target: try waveNumber(in: Array(rest.dropFirst())))
+        case "switch":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .waveSwitch(number: try requiredWaveNumber(in: rest, command: command))
+        case "ball":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .waveBall(target: try waveNumber(in: rest))
+        case "pick":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .wavePick(number: try requiredWaveNumber(in: rest, command: command))
+        case "route":
+            try rejectExtra(rest, beyond: 1, command: command)
+            guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+            guard let route = RunRoute(rawValue: raw) else {
+                throw PokedoroCommandError.unknownRoute(raw)
+            }
+            return .waveRoute(route)
+        case "forfeit":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .waveForfeit(confirmed: options.contains("--yes"))
+        // **오타로 말한다.** `wave` 를 통째로 모르는 명령으로 접으면 사용자는 기능 자체가 없다고 읽는다.
+        default:
+            throw PokedoroCommandError.unknownCommand(command)
+        }
+    }
+
+    /// 남는 인자는 버리지 않는다 — 버리고 실행하면 사용자는 그 값이 뭔가 했다고 믿는다.
+    ///
+    /// 인자를 **하나도** 안 받는 하위 명령과 **개수가 넘친** 경우를 갈라 말한다. 하나로 뭉개면
+    /// `wave move 1 2 3` 에 "인자를 받지 않는다" 고 답하는데, 그건 사실이 아니라 사용자가
+    /// 맞는 사용법(`wave move 1 2`)까지 의심하게 된다.
+    private static func rejectExtra(_ words: [String], beyond limit: Int,
+                                    command: String) throws {
+        guard words.count > limit else { return }
+        throw limit == 0 ? PokedoroCommandError.unexpectedArgument(command)
+                         : PokedoroCommandError.tooManyArguments(command)
+    }
+
+    /// `wave` 가 찍는 번호(1부터). 오류를 개체 번호와 나눠 두는 이유는 **어디서 번호를 얻는지가
+    /// 다르기** 때문이다 — `party` 를 보라고 하면 다른 목록을 뒤지게 된다.
+    private static func waveNumber(in arguments: [String]) throws -> Int? {
+        guard let value = try number(in: arguments, orThrow: PokedoroCommandError.invalidWaveNumber)
+        else { return nil }
+        guard value >= 1 else { throw PokedoroCommandError.invalidWaveNumber(String(value)) }
+        return value
+    }
+
+    private static func requiredWaveNumber(in arguments: [String], command: String) throws -> Int {
+        guard let value = try waveNumber(in: arguments) else {
+            throw PokedoroCommandError.missingArgument(command)
+        }
+        return value
     }
 
     /// 인자를 받지 않는 명령의 인자 검사.
@@ -260,7 +375,10 @@ enum PokedoroCommandParser {
 
     /// 왼쪽 칸을 **손으로 맞추지 않는다** — `start [25|50|90]` 은 길이 목록에서 나오므로 목록이
     /// 바뀌면 손으로 맞춘 공백은 그 자리에서 어긋난다(실제로 2칸 어긋난 채로 나갔다).
-    private static let commandColumn = 21
+    ///
+    /// 상수 대신 **표에서 잰다.** 손으로 적은 21 은 `wave route <…>` 를 더하는 순간 모자랐고,
+    /// `TUIText.pad` 는 넘치면 자르므로 도움말이 없는 명령을 알려 주게 된다.
+    private static let commandColumn = (rows.map { TUIText.displayWidth($0.0) }.max() ?? 0) + 2
 
     private static let rows: [(String, String)] = [
         ("status [--oneline]", "파트너·모험·잔액. --oneline 은 상태줄용 한 줄"),
@@ -282,15 +400,27 @@ enum PokedoroCommandParser {
         ("buy <이름> [수량]", "상점에서 사기 (shop 이 찍는 이름)"),
         ("hatch", "부화 조건이 찬 알 부화시키기"),
         ("release <번호> --yes", "포켓몬 놓아주기 — 되돌릴 수 없다"),
+        ("wave", "웨이브 런 — 지금 판"),
+        ("wave start [번호]", "새 판 (번호 = 스타터, 생략하면 무작위)"),
+        ("wave move <n> [상대]", "기술 쓰기 (상대 생략하면 1번 칸)"),
+        ("wave switch <번호>", "교체 — 쓰러진 칸이 있으면 그 칸을 채운다"),
+        ("wave ball [상대]", "몬스터볼 던지기"),
+        ("wave pick <번호>", "보상 고르기"),
+        ("wave route <\(routes)>", "다음 웨이브로 갈 길"),
+        ("wave forfeit --yes", "판 포기 — 되돌릴 수 없다"),
         ("help", "이 도움말"),
     ]
+
+    /// 길 이름은 **목록에서 나온다** — 손으로 적으면 길을 더할 때 도움말만 옛말이 된다.
+    private static let routes = RunRoute.allCases.map(\.rawValue).joined(separator: "|")
 
     static let usage = """
     pokedoro — Pokédoro 를 터미널에서 본다.
 
     \(rows.map { "  " + TUIText.pad($0.0, to: commandColumn) + $0.1 }.joined(separator: "\n"))
 
-    조회는 세이브를 읽기만 한다. 집중 세션 세 동작은 **메뉴바 앱에 요청을 보내고** 앱이 실행한다
-    — 세이브에 쓰는 프로세스를 하나로 두기 위해서다. 앱이 꺼져 있으면 요청은 실행되지 않는다.
+    조회(status·party·wave…)는 세이브를 읽기만 한다. 상태를 바꾸는 명령은 전부 **메뉴바 앱에
+    요청을 보내고** 앱이 실행한다 — 세이브에 쓰는 프로세스를 하나로 두기 위해서다. 앱이 꺼져
+    있으면 그 요청은 실행되지 않는다.
     """
 }

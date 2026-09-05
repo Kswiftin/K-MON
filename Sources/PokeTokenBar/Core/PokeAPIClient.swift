@@ -29,6 +29,10 @@ protocol PokeProviding: Sendable {
     /// 세이브에 든 기술 스펙의 빠진 축을 채우는 조회. `battleProfile` 과 같은 이유로 주입 가능해야
     /// 한다 — 대전 스냅샷이 이 보강을 지나는지를 네트워크 없이 테스트한다.
     func moveDetail(id: Int) async -> MoveSpec?
+    /// 레벨에 맞는 자동 무브셋. `battleProfile` 과 같은 이유로 주입 가능해야 한다 — 웨이브 런의
+    /// 야생·스타터가 이 조회를 지나므로, 여기가 `shared` 직접 호출이면 **판을 여는 경로 전체**를
+    /// 네트워크 없이 테스트할 수 없다.
+    func moveSet(speciesID: Int, level: Int, types: [PokemonType]) async -> [MoveSpec]
     /// 해당 종이 본가 기술머신(machine 방식)으로 기술을 배울 수 있는지 확인한다.
     func canLearnMachine(speciesID: Int, moveID: Int) async -> Bool
     /// 획득 가능 범위 전 종의 타입 (GraphQL 1쿼리, 디스크 캐시). 도감 타입 필터가 읽는다 —
@@ -44,6 +48,10 @@ extension PokeProviding {
 
     func moveDetail(id: Int) async -> MoveSpec? {
         await PokeAPIClient.shared.moveDetail(id: id)
+    }
+
+    func moveSet(speciesID: Int, level: Int, types: [PokemonType]) async -> [MoveSpec] {
+        await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: level, types: types)
     }
 
     func canLearnMachine(speciesID: Int, moveID: Int) async -> Bool {
