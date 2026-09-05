@@ -604,7 +604,9 @@ actor PokeAPIClient: PokeProviding {
     /// **어느 칸에도 못 들어갔다.**
     ///
     /// ponytail: 그 부류는 `pickAttacks` 의 위력 정렬에서 0 이라 늘 꼴찌고, 같은 타입에 더 나은
-    ///           공격기가 없을 때만 칸을 받는다. 기댓값 표를 만들 이유는 아직 없다.
+    ///           공격기가 없을 때만 칸을 받는다. 그래서 기댓값 표를 만들지 않았다.
+    ///           해제 조건: 가변위력기가 자동 무브셋에 실제로 뽑히는 종이 나오면(그때만 정렬이
+    ///           틀린 답을 낸다) 위력 대신 기댓값으로 정렬한다.
     static func pickFour(from specs: [MoveSpec], types: [PokemonType]) -> [MoveSpec] {
         let attacks = specs.filter(VariableDamage.dealsDamage)
         let statusPick = pickStatusMove(from: specs.filter { !VariableDamage.dealsDamage($0) })

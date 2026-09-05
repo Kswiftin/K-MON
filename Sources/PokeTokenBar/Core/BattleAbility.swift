@@ -35,7 +35,9 @@ enum BattleAbility: String, Sendable {
     /// 부유가 모든 기술을 무효로 만든다.
     ///
     /// ponytail: 타오르는불꽃의 불꽃기 강화는 넣지 않는다 — 면역만 들이는 단계다.
-    ///           강화가 필요해지면 `resolveSingleHit` 의 위력 자리에 붙인다.
+    ///           해제 조건: 불꽃 타입 상대에게 면역만 걸리고 위력이 그대로라는 리포트가 오거나,
+    ///           특성 표에 같은 부류(면역 + 강화)가 하나 더 붙으면 `resolveSingleHit` 의
+    ///           위력 자리에 강화를 붙인다.
     var immuneMoveType: PokemonType? {
         switch self {
         case .levitate:    return .ground

@@ -1029,6 +1029,8 @@ enum BattleEngine {
     ///           오늘 도감(1~5세대 37개)에 겹치는 기술은 없어서 밟는 경로가 0 이다 — 생기면
     ///           히트마다 위력이 다시 뽑히므로 뽑기를 루프 앞으로 끌어올린다(rng 순서가
     ///           바뀌니 `rulesVersion` 도 같이 올린다).
+    ///           전제가 깨지는 순간은 `BattleAssumptionGuardTests` 가 잡는다 — 가변위력 기술
+    ///           목록을 동결해 두므로 `VariableDamage` 에 새 기술이 붙으면 거기서 빨개진다.
     static func resolveAttack(attacker: BattleSide, defender: BattleSide,
                               move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
         // 독 타입이 쓰는 맹독은 명중·회피 랭크를 포함한 명중 판정을 건너뛴다.
@@ -1076,6 +1078,8 @@ enum BattleEngine {
         //           기술에서 회복한다. 오늘 `.noEffect` 로 오는 기술은 격투·풀·강철·불꽃·에스퍼·
         //           땅·노말·얼음뿐이라 밟는 경로가 0 이다 — 물·전기가 하나라도 생기면 `AttackOutcome`
         //           에서 실패를 면역과 갈라야 한다(0배 하나로는 구별할 수 없다).
+        //           물·전기가 이 자리로 오는 순간은 `BattleAssumptionGuardTests` 가 잡는다 —
+        //           `.noEffect` 를 낼 수 있는 기술 목록을 동결해 두므로 새 기술이 붙으면 빨개진다.
         case .noEffect:             return AttackOutcome(missed: false, damage: 0,
                                                         effectiveness: 0, isCritical: false)
         case nil:                   break

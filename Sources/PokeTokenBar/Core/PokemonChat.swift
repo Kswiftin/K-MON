@@ -1775,7 +1775,8 @@ enum PokemonChatProviderExecutableResolver {
     ]
 
     /// ponytail: nvm(`~/.nvm/versions/node/<버전>/bin`)처럼 경로에 버전이 박히는 관리자는 글롭이
-    /// 필요해 넣지 않았다. 설정의 직접 입력이 그 경우를 덮는다 — 필요해지면 여기에 글롭을 더한다.
+    /// 필요해 넣지 않았다. 설정의 직접 입력이 그 경우를 덮는다.
+    /// 해제 조건: 설정에 경로를 직접 넣어야 했다는 리포트가 두 번 이상 오면 여기에 글롭을 더한다.
     static func binaryName(for kind: PokemonChatProviderKind) -> String? {
         switch kind {
         case .codex: return "codex"
