@@ -154,6 +154,13 @@ LOGIC_CORE=(
   # 집중 세션 세 동작의 거절 판정표. 화면·대화·터미널이 **같은 표**를 읽는 자리라 게이트 밖에
   # 두면 한 프런트엔드만 통과하는 분기(휴식 단독·정산 대기 단독)가 무테스트로 나간다.
   "Sources/PokeTokenBar/Core/PokedoroSessionGate.swift"
+  # 집중 기능의 코어 셋. 같은 기능의 `PokedoroSessionGate`·`PokedoroViewChannel` 은 이미 배열
+  # 안인데 원장과 체인 규칙만 빠져 있었다 — 셋 다 순수·결정적이라 빠질 이유가 없었고, 배열 밖
+  # 파일은 "몇 %인가" 를 물을 기회조차 없다(`PokemonAuction` 을 넣은 그 이유). 마일스톤 1–3 의
+  # 판정이 무측정으로 남아 있었다는 것을 마일스톤 4 가 드러냈다.
+  "Sources/PokeTokenBar/Core/FocusSessionLog.swift"
+  "Sources/PokeTokenBar/Core/FocusChainRules.swift"
+  "Sources/PokeTokenBar/Core/FocusWeekRecap.swift"
   # 터미널이 앱의 세이브를 움직이는 **유일한 입구**. 나이 제한과 id 두 가드가 여기 있고, 그
   # 둘이 무너지면 앱을 켜는 순간 몇 시간 전 요청이 실행되거나 같은 요청이 매 틱 반복된다.
   "Sources/PokeTokenBar/Core/PokedoroRequestBus.swift"

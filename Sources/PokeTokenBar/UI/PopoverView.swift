@@ -66,6 +66,9 @@ final class PopoverNavigation {
     var showRaid = false
     /// 꾸미기(트레이너 의상) 오버레이. 위 오버레이들과 같은 층이다.
     var showOutfit = false
+    /// 주간 회고 오버레이(PRD 마일스톤 4). 위 오버레이들과 같은 층이다 — 집중 카드에서 열지만
+    /// 뜨는 자리는 팝오버 전체라, 접는 규칙도 형제들과 같아야 한다.
+    var showFocusRecap = false
     /// 대화 오버레이. 다른 오버레이와 달리 **어느 개체의** 대화인지까지 들어야 한다 —
     /// 대화는 활성 개체뿐 아니라 박스 개체로도 열린다(`PokemonRosterView`).
     /// `nil` 이 곧 닫힘이라 플래그를 따로 두지 않는다.
@@ -81,6 +84,7 @@ final class PopoverNavigation {
         showDungeon = false
         showRaid = false
         showOutfit = false
+        showFocusRecap = false
         chatCompanionID = nil
     }
 
@@ -206,6 +210,8 @@ struct PopoverView: View {
                 RaidView(store: companion, onClose: { nav.showRaid = false })
             } else if nav.showOutfit {
                 OutfitView(store: companion, onClose: { nav.showOutfit = false })
+            } else if nav.showFocusRecap {
+                FocusRecapView(store: companion, onClose: { nav.showFocusRecap = false })
             } else if let chatCompanionID = nav.chatCompanionID {
                 // 대화는 전용 창에서 여기로 옮겨 왔다 — 근거는 `PokemonChatPresenter` 주석.
                 // 실행기는 프레젠터가 조립한 한 벌을 받아 쓴다.

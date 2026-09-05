@@ -121,6 +121,37 @@ final class PopoverNavigationTests: XCTestCase {
         XCTAssertFalse(nav.showOutfit)
     }
 
+    /// 주간 회고(마일스톤 4)도 같은 오버레이 층이다 — 설정·체육관·던전·꾸미기·대화와 나란히 뜬다.
+    ///
+    /// **네 경로를 각각 밟는다.** 접는 자리를 한 곳만 고치면 나머지에서 회고가 덮인 채 남고,
+    /// 그러면 배틀 신청이 와도 신청 화면 대신 지난주 막대그래프만 보게 된다 — 던전과 대화가
+    /// 이미 겪은 그 함정이다(`goToChat` 주석).
+    ///
+    /// `goToFocusTimer()` 를 함께 보는 이유: 체인 알림을 누른 사용자가 원하는 것은 **시작 버튼**인데,
+    /// 회고가 그 버튼을 정확히 덮는 자리에 뜬다.
+    func testFocusRecapOverlayFoldsWithTheOthers() {
+        let nav = PopoverNavigation()
+
+        nav.showFocusRecap = true
+        nav.goToBattle()
+        XCTAssertFalse(nav.showFocusRecap, "배틀 신청이 왔는데 회고가 덮고 있다")
+        XCTAssertEqual(nav.tab, .battle)
+
+        nav.showFocusRecap = true
+        nav.goToChat(companionID: UUID())
+        XCTAssertFalse(nav.showFocusRecap, "대화를 열었는데 회고가 위에 남았다")
+
+        nav.showFocusRecap = true
+        nav.goToFocusTimer()
+        XCTAssertFalse(nav.showFocusRecap, "체인 알림을 눌렀는데 회고가 시작 버튼을 덮고 있다")
+        XCTAssertEqual(nav.tab, .home)
+
+        nav.showFocusRecap = true
+        nav.reset()
+        XCTAssertFalse(nav.showFocusRecap, "팝오버를 닫았다 열었는데 회고가 남아 있다")
+        XCTAssertEqual(nav.tab, .home)
+    }
+
     /// 대화 상대가 놓아주기·교환·졸업으로 사라지면 오버레이를 접는다. 안 접으면 이름이 `?` 이고
     /// 스프라이트가 빈 화면에 전송 버튼만 살아 있고, 보내면 죽은 UUID 로 세션이 새로 생겨
     /// 다음 `prune` 까지 디스크에 남는다. 여는 시점의 검사만으로는 이 구간을 못 덮는다.

@@ -493,6 +493,58 @@ final class PopoverLayoutTests: XCTestCase {
                               fileURL: url, rng: SeededRNG(seed: 5))
     }
 
+    // MARK: 집중 카드 — 오늘 줄의 세로 예산
+
+    /// 오늘 줄(`오늘 N/M세션 · X분`)이 쓸 수 있는 높이.
+    ///
+    /// 이 값이 왜 예산인가: 집중 카드는 팝오버 **스크롤 밖**이라 늘어난 만큼 그대로 탭 뷰포트를
+    /// 먹고, 그 뷰포트에서 밀려나는 것은 파트너 카드다 — 미션 카드가 이미 겪은 회귀와 같은 부류다
+    /// (`MissionBoardView` 헤더 주석). 주간 회고 버튼이 이 줄에 들어왔으므로 여기 가드를 세운다.
+    ///
+    /// 22pt 는 `.caption2` 한 줄에 `.controlSize(.small)` 버튼이 들어와도 되는 만큼이고,
+    /// **두 줄로 접히는 순간** 실패한다. 넘으면 예산이 아니라 그 줄을 줄여야 한다.
+    private static let focusTodayRowBudget: CGFloat = 22
+
+    /// 트리거 재현: 아이콘 버튼을 **자기 줄**에 두면 예산을 통째로 넘는다. 이 대조군이 없으면
+    /// 아래 검증이 "애초에 통과할 조건이었다" 는 false confidence 가 된다.
+    func testAButtonOnItsOwnRowBlowsTheFocusTodayRowBudget() {
+        let ownRow = VStack(alignment: .leading, spacing: 4) {
+            Text("오늘 2/4세션 · 50분").font(.caption2)
+            Button { } label: { Image(systemName: "chart.bar.xaxis") }
+                .buttonStyle(.borderless).controlSize(.small)
+        }
+        XCTAssertGreaterThan(renderedHeight(ownRow), Self.focusTodayRowBudget)
+    }
+
+    /// 회고 버튼은 오늘 줄 **안**에 들어간다 — 줄이 새로 생기지 않는다.
+    func testTheWeeklyRecapButtonStaysInsideTheFocusTodayRow() {
+        let row = HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle")
+            Text("오늘 2/4세션 · 50분")
+            Spacer()
+            Button { } label: { Image(systemName: "chart.bar.xaxis") }
+                .buttonStyle(.borderless).controlSize(.small)
+        }
+        .font(.caption2.monospacedDigit())
+        XCTAssertLessThanOrEqual(renderedHeight(row), Self.focusTodayRowBudget)
+    }
+
+    /// 세 언어 어디서도 그 줄이 접히면 안 된다. 한국어만 짧아 로컬에서만 통과하던 회귀를
+    /// 기술 목록에서 이미 겪었다(CI 118pt vs 로컬 78pt).
+    func testTheFocusTodayRowHeightDoesNotDependOnLanguage() {
+        for text in ["오늘 2/4세션 · 50분", "Today 2/4 sessions · 50 min", "今日 2/4セッション・50分"] {
+            let row = HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle")
+                Text(text)
+                Spacer()
+                Button { } label: { Image(systemName: "chart.bar.xaxis") }
+                    .buttonStyle(.borderless).controlSize(.small)
+            }
+            .font(.caption2.monospacedDigit())
+            XCTAssertLessThanOrEqual(renderedHeight(row), Self.focusTodayRowBudget, text)
+        }
+    }
+
     /// 트리거 재현: 미션마다 `ProgressView` 를 한 줄씩 깔면 예산을 두 배로 넘긴다(첫 버전이 211pt).
     /// 이 대조군이 없으면 아래 예산 검증이 "애초에 통과할 조건이었다"는 false confidence 가 된다.
     func testAGaugePerMissionRowBlowsThroughTheBudget() {
