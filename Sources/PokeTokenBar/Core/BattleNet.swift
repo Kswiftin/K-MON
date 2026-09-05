@@ -46,7 +46,7 @@ enum NetMessage: Codable, Sendable {
                 profile: BattleRankProfile, rulesVersion: Int?, chatSupported: Bool?)
     case decline
     case challengeCancelled(reason: BattleChallengeCancellationReason)
-    case action(turn: Int, action: NetBattleAction)
+    case action(turn: Int, action: NetBattleAction, resolvedThrough: Int?)
     /// 구버전 와이어 메시지를 디코딩해 규칙 불일치 경로까지 보낼 때만 남긴다. 새 클라이언트는 전송하지 않는다.
     case move(turn: Int, moveIndex: Int)
     case forfeit
@@ -81,7 +81,15 @@ enum NetMessage: Codable, Sendable {
         var rulesVersion: Int?
         var chatSupported: Bool?
     }
-    private struct ActionPayload: Codable { var turn: Int; var action: NetBattleAction }
+    /// `resolvedThrough` 는 **보내는 쪽이 해상을 끝낸 마지막 턴**이다. 끊김 판정을 두 피어가 같은
+    /// 상태로 하려면 "어느 시점의 상태인지"도 합의돼야 해서 붙었다. 옵셔널인 이유는 구버전 페이로드
+    /// 때문이 아니라(규칙 버전이 그쪽을 막는다) **없으면 합의가 0 에 머물러 환급으로 접히기 때문**이다 —
+    /// 값을 못 받았는데 판정하면 닫으려던 창이 그대로 열린다.
+    private struct ActionPayload: Codable {
+        var turn: Int
+        var action: NetBattleAction
+        var resolvedThrough: Int?
+    }
     private struct MovePayload: Codable { var turn: Int; var moveIndex: Int }
 
     init(from decoder: Decoder) throws {
@@ -121,7 +129,8 @@ enum NetMessage: Codable, Sendable {
                                                                     forKey: .challengeCancelled))
         } else if container.contains(.action) {
             let payload = try container.decode(ActionPayload.self, forKey: .action)
-            self = .action(turn: payload.turn, action: payload.action)
+            self = .action(turn: payload.turn, action: payload.action,
+                           resolvedThrough: payload.resolvedThrough)
         } else if container.contains(.move) {
             let payload = try container.decode(MovePayload.self, forKey: .move)
             self = .move(turn: payload.turn, moveIndex: payload.moveIndex)
@@ -163,8 +172,9 @@ enum NetMessage: Codable, Sendable {
             try container.encode(EmptyPayload(), forKey: .decline)
         case .challengeCancelled(let reason):
             try container.encode(reason, forKey: .challengeCancelled)
-        case .action(let turn, let action):
-            try container.encode(ActionPayload(turn: turn, action: action), forKey: .action)
+        case .action(let turn, let action, let resolvedThrough):
+            try container.encode(ActionPayload(turn: turn, action: action,
+                                               resolvedThrough: resolvedThrough), forKey: .action)
         case .move(let turn, let moveIndex):
             try container.encode(MovePayload(turn: turn, moveIndex: moveIndex), forKey: .move)
         case .forfeit:
@@ -261,6 +271,9 @@ struct NetBattleState {
     var events: [BattleEvent] = []
     var eventBatches: [NetBattleEventBatch] = []
     var isMetronome = false
+    /// 끊김 판정의 근거 — **지금 상태가 아니라 둘 다 해상을 확인한 턴**의 상태를 고른다.
+    /// 지금 상태로 판정하면 한 턴 어긋난 창에서 양쪽이 모두 이긴다(`AgreedTurnLedger` 주석 참조).
+    var agreement = BattleEngine.AgreedTurnLedger()
     /// 일반 대전은 기존 호환성을 위해 자동 출전한다. 토너먼트는 false로 두어 기절 뒤 참가자가
     /// 남은 포켓몬을 직접 고르게 한다.
     var automaticallyReplacesFainted = true
@@ -435,6 +448,9 @@ struct NetBattleState {
         self.oppActive = iAmA ? activeB : activeA
         events.append(contentsOf: turnEvents)
         eventBatches.append(eventBatch)
+        // 해상을 **끝낸 턴**을 기록한다(`turn` 을 올리기 전 값). 다음 행동에 이 값을 실어 보내는
+        // 것이 상대에게 주는 확인이고, 끊김 판정은 서로 확인한 턴의 상태로만 한다.
+        agreement.recordResolved(turn: turn, me: self.myTeam, opp: self.oppTeam)
         turn += 1
         self.myAction = nil
         self.oppAction = nil
@@ -1482,7 +1498,8 @@ final class BattleCenter {
                 guard current.canChoose(action, mine: true), let conn = connection else { return }
                 current.myAction = action
                 battle = current
-                send(.action(turn: current.turn, action: action), over: conn)
+                send(.action(turn: current.turn, action: action,
+                             resolvedThrough: current.agreement.myResolved), over: conn)
                 resolveIfReady()
             }
             return
@@ -1493,7 +1510,8 @@ final class BattleCenter {
         b.myAction = action
         guard let conn = connection else { return }
         battle = b
-        send(.action(turn: b.turn, action: action), over: conn)
+        send(.action(turn: b.turn, action: action,
+                     resolvedThrough: b.agreement.myResolved), over: conn)
         resolveIfReady()
     }
 
@@ -1520,7 +1538,8 @@ final class BattleCenter {
         guard b.canChoose(action, mine: true), let conn = connection else { return }
         if b.replaceFainted(to: index, mine: true) {
             battle = b
-            send(.action(turn: b.turn, action: action), over: conn)
+            send(.action(turn: b.turn, action: action,
+                         resolvedThrough: b.agreement.myResolved), over: conn)
             // 기절을 메운 교체는 턴 행동이 아니다. 새 포켓몬이 나온 시점부터 양쪽에 온전한
             // 30초 선택 시간을 다시 줘야 이전 턴의 남은 몇 초 뒤 자동 기술이 튀어나가지 않는다.
             scheduleTurnTimeout()
@@ -1529,7 +1548,8 @@ final class BattleCenter {
         guard b.opp.isAlive else { return }
         b.myAction = action
         battle = b
-        send(.action(turn: b.turn, action: action), over: conn)
+        send(.action(turn: b.turn, action: action,
+                     resolvedThrough: b.agreement.myResolved), over: conn)
         resolveIfReady()
     }
 
@@ -1891,9 +1911,12 @@ final class BattleCenter {
             dropConnection()
             phase = .ready
             if reason == .timedOut { lastError = l.battleChallengeTimedOut }
-        case .action(let turn, let action):
+        case .action(let turn, let action, let resolvedThrough):
             guard case .battling = phase, var b = battle, b.oppAction == nil, turn == b.turn,
                   b.canChoose(action, mine: false) else { return }
+            // 확인은 **행동을 받아들이기 전에** 기록한다. 아래 `replaceFainted` 갈래는 여기서
+            // 일찍 돌아가므로, 뒤에 두면 교체가 낀 턴마다 합의가 한 턴씩 뒤처진다.
+            if let resolvedThrough { b.agreement.recordPeerResolved(resolvedThrough) }
             if case .switchTo(let index) = action, b.replaceFainted(to: index, mine: false) {
                 battle = b
                 scheduleTurnTimeout()
@@ -1960,7 +1983,12 @@ final class BattleCenter {
             // `byForfeit: false` 다 — 끊김은 기권이 **아니다.** true 로 두면 결과 화면이 `battleYouForfeited`
             // ("기권했어요")를 그려, 와이파이가 끊겨 HP 비율로 진 사람에게 스스로 기권했다고 말한다.
             // 끊겼다는 사실은 `lastError` 가 따로 알린다(다른 phase 의 끊김과 같은 문구).
-            let iWon = battle.flatMap { BattleEngine.disconnectOutcome(me: $0.myTeam, opp: $0.oppTeam) }
+            // **지금 상태가 아니라 합의된 턴의 상태로 판정한다.** `resolveIfReady` 는 두 선택이
+            // 모이는 즉시 해상하므로 한쪽 행동만 도착한 채 끊기면 상태가 한 턴 어긋나고, 그 창에서
+            // 양쪽이 모두 "내가 앞선다"를 봐 판돈이 두 지갑에 동시에 들어간다. 합의된 턴이 없으면
+            // 판정하지 않는다 — `iWon` 이 nil 이면 아래가 환급으로 간다.
+            let iWon = battle?.agreement.agreedState
+                .flatMap { BattleEngine.disconnectOutcome(me: $0.me, opp: $0.opp) }
             phase = .finished(iWon: iWon, byForfeit: false)
             lastError = l.battleConnectionLost
             if let iWon { settleRankedBrawlIfNeeded(won: iWon) } else { refundRankedBrawlIfNeeded() }

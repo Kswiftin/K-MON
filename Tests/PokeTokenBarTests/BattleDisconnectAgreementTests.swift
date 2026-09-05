@@ -58,11 +58,11 @@ final class BattleDisconnectAgreementTests: XCTestCase {
     /// A 는 3 을 해상했고 B 가 알린 값도 3(턴 4 해상 보고는 유실됐다) → 3.
     /// B 는 4 를 해상했지만 A 가 알린 값이 3 → 3. 어느 쪽에서 계산해도 같은 쌍의 min 이다.
     func testBothPeersAgreeOnTheSameTurnEvenWhenOneIsAhead() {
-        var a = AgreedTurnLedger()
+        var a = BattleEngine.AgreedTurnLedger()
         a.recordResolved(turn: 3, me: stateAfterTurn3.a, opp: stateAfterTurn3.b)
         a.recordPeerResolved(3)
 
-        var b = AgreedTurnLedger()
+        var b = BattleEngine.AgreedTurnLedger()
         b.recordResolved(turn: 3, me: stateAfterTurn3.b, opp: stateAfterTurn3.a)
         b.recordResolved(turn: 4, me: stateAfterTurn4.b, opp: stateAfterTurn4.a)
         b.recordPeerResolved(3)     // A 는 턴 3 까지만 해상했다고 알려 왔다
@@ -73,11 +73,11 @@ final class BattleDisconnectAgreementTests: XCTestCase {
 
     /// **핵심 단언** — 같은 턴의 상태로 판정하면 결론이 정확히 반대가 된다. 한쪽만 지급받는다.
     func testJudgingOnTheAgreedTurnMakesExactlyOnePeerWin() throws {
-        var a = AgreedTurnLedger()
+        var a = BattleEngine.AgreedTurnLedger()
         a.recordResolved(turn: 3, me: stateAfterTurn3.a, opp: stateAfterTurn3.b)
         a.recordPeerResolved(3)
 
-        var b = AgreedTurnLedger()
+        var b = BattleEngine.AgreedTurnLedger()
         b.recordResolved(turn: 3, me: stateAfterTurn3.b, opp: stateAfterTurn3.a)
         b.recordResolved(turn: 4, me: stateAfterTurn4.b, opp: stateAfterTurn4.a)
         b.recordPeerResolved(3)
@@ -95,7 +95,7 @@ final class BattleDisconnectAgreementTests: XCTestCase {
     /// 깨끗한 턴 경계 — 양쪽이 같은 턴을 해상하고 서로 확인까지 했다. 판정이 그대로 살아야 한다.
     /// 여기까지 환급으로 접으면 "지고 있을 때 뽑으면 무손실" 이 되살아난다(defect-log 참조).
     func testACleanBoundaryStillProducesAVerdict() throws {
-        var a = AgreedTurnLedger()
+        var a = BattleEngine.AgreedTurnLedger()
         a.recordResolved(turn: 4, me: stateAfterTurn4.a, opp: stateAfterTurn4.b)
         a.recordPeerResolved(4)
 
@@ -107,7 +107,7 @@ final class BattleDisconnectAgreementTests: XCTestCase {
 
     /// 합의된 턴이 하나도 없으면(첫 턴이 해상되기 전에 끊김) 판정하지 않는다 — 환급이다.
     func testNothingAgreedYetYieldsNoVerdict() {
-        var ledger = AgreedTurnLedger()
+        var ledger = BattleEngine.AgreedTurnLedger()
         ledger.recordResolved(turn: 1, me: stateAfterTurn3.a, opp: stateAfterTurn3.b)
         // 상대가 아무것도 확인해 주지 않았다.
         XCTAssertEqual(ledger.agreedTurn, 0)
@@ -116,7 +116,7 @@ final class BattleDisconnectAgreementTests: XCTestCase {
 
     /// 보관함이 배틀 내내 자라면 긴 배틀에서 메모리를 먹는다. 합의된 턴보다 오래된 것은 버린다.
     func testOlderTurnsAreDroppedOnceTheyAreAgreed() {
-        var ledger = AgreedTurnLedger()
+        var ledger = BattleEngine.AgreedTurnLedger()
         for turn in 1...20 {
             ledger.recordResolved(turn: turn, me: stateAfterTurn3.a, opp: stateAfterTurn3.b)
             ledger.recordPeerResolved(turn - 1)

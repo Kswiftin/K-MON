@@ -855,7 +855,7 @@ enum BattleEngine {
     ///      전부 표·정수 계산이라 rng 소비 순서는 그대로지만 같은 입력의 데미지가 달라진다.
     /// 20 = 기절 뒤 강제 교체는 턴 행동이 아니다. 같은 턴에 새 포켓몬의 기술을 다시 선택한다.
     ///      일반 교체와 달리 상대의 단독 공격·턴 종료 잔뎀을 발생시키지 않는다.
-    static let rulesVersion = 20
+    static let rulesVersion = 21
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -877,6 +877,55 @@ enum BattleEngine {
         let mine = me.hp * max(1, opp.stats.hp)
         let theirs = opp.hp * max(1, me.stats.hp)
         return mine == theirs ? nil : mine > theirs
+    }
+
+    /// 끊김 판정이 볼 상태를 고르는 보관함 — **두 피어가 모두 해상했다고 확인된 마지막 턴**의 것.
+    ///
+    /// `disconnectOutcome` 은 "두 피어가 같은 상태를 본다" 를 전제하는데, 그 전제는 턴 경계에서만
+    /// 참이다. `resolveIfReady` 가 두 선택이 모이는 즉시 해상하므로 한쪽 행동만 도착한 채 링크가
+    /// 죽으면 상태가 한 턴 어긋나고, 그 창에서 양쪽이 모두 "내가 앞선다"를 본다. 정산은 각자 자기
+    /// 지갑에만 하므로(공유 원장이 없다) 판돈이 두 지갑에 동시에 들어간다.
+    ///
+    /// **왜 `min` 이 양쪽에서 같은가.** 내가 쓰는 두 값은 (내 해상 턴, 상대가 알린 해상 턴)이고
+    /// 상대가 쓰는 두 값은 (상대 해상 턴, 내가 알린 해상 턴)이다. 보고는 자기 해상 턴을 그대로
+    /// 싣고 전송은 순서를 지키므로, 유실이 있어도 **양쪽이 같은 쌍의 min** 에 도달한다. 같은 턴의
+    /// 상태는 엔진이 결정론적이라 양쪽에서 같은 값이고, 따라서 결론이 정확히 반대가 된다.
+    ///
+    /// 합의된 턴이 없으면 `agreedState` 가 nil 이다 — 판정하지 않고 환급한다.
+    struct AgreedTurnLedger {
+        /// 내가 해상을 끝낸 마지막 턴. 상대에게 보고하는 값이자 `min` 의 한쪽이다.
+        private(set) var myResolved = 0
+        /// 상대가 마지막으로 알려 온 해상 턴.
+        private(set) var peerResolved = 0
+        private var states: [Int: (me: [BattleSide], opp: [BattleSide])] = [:]
+
+        /// 지금 판정 근거로 삼아도 되는 턴 — 둘 다 해상을 확인한 마지막 턴.
+        var agreedTurn: Int { min(myResolved, peerResolved) }
+
+        /// 합의된 턴의 상태. 보관하지 않은 턴이면 nil 이고, 그때는 판정 대신 환급이다.
+        var agreedState: (me: [BattleSide], opp: [BattleSide])? { states[agreedTurn] }
+
+        /// 보관 중인 턴 수 — 보관함이 배틀 내내 자라지 않는지 테스트가 본다.
+        var retainedTurnCount: Int { states.count }
+
+        mutating func recordResolved(turn: Int, me: [BattleSide], opp: [BattleSide]) {
+            myResolved = max(myResolved, turn)
+            states[turn] = (me: me, opp: opp)
+            prune()
+        }
+
+        /// 보고는 뒤로 가지 않는다 — 순서가 뒤집힌 값을 그대로 받으면 합의 턴이 되감긴다.
+        mutating func recordPeerResolved(_ turn: Int) {
+            peerResolved = max(peerResolved, turn)
+            prune()
+        }
+
+        /// 합의된 턴보다 오래된 상태는 다시 볼 일이 없다. 합의 지연은 최대 한 턴이라 보관은 둘이면
+        /// 충분하지만, 경계를 숫자로 박지 않고 **합의 턴 기준**으로 버린다.
+        private mutating func prune() {
+            let keep = agreedTurn
+            states = states.filter { $0.key >= keep }
+        }
     }
 
     /// 팀전 연결 종료 판정 — 한 슬롯이 아니라 양쪽 파티의 남은 HP 합 / 최대 HP 합을 비교한다.
