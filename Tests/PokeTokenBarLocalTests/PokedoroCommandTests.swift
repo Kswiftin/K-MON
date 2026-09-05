@@ -274,9 +274,9 @@ struct PokedoroCommandTests {
     /// 알아보고 **어디서 하는지** 답해야 한다 — "알 수 없는 명령" 으로 뭉개면 사용자는 오타를
     /// 의심하며 같은 명령을 다시 친다.
     @Test func testAppOnlyCommandsExplainWhereTheyLive() {
-        // `battle`(5-2)·`trade`(5-4) 는 이 목록에서 빠졌다 — 터미널이 그 둘을 다룬다.
-        // 남은 것은 상대를 찾거나 픽셀 화면이 필요한 기능이다.
-        for name in ["auction", "home", "raid"] {
+        // `battle`(5-2)·`trade`(5-4)·`auction`(5-5) 는 이 목록에서 빠졌다 — 터미널이 그 셋을
+        // 다룬다. 남은 것은 상대를 찾거나 픽셀 화면이 필요한 기능이다.
+        for name in ["home", "raid"] {
             #expect(throws: PokedoroCommandError.appOnlyFeature(name)) {
                 try parse([name])
             }

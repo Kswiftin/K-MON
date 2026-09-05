@@ -11,6 +11,9 @@ enum TUIScreen: String, CaseIterable, Sendable {
     case room
     /// 교환. 대전·방과 같은 통로를 쓴다.
     case trade
+    /// 경매. 같은 통로를 쓰지만 **누를 키가 없다** — 번호 공간이 넷이라 숫자 한 자리로는
+    /// 어느 목록의 몇 번인지 정할 수 없어, 동작은 전부 명령으로만 한다.
+    case auction
 
     /// 목록이 있는 화면인가 — 스크롤 키를 받을지 가르는 유일한 기준이다.
     ///
@@ -18,7 +21,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
     /// 화면이 조용히 목록이 되어, 아무 데도 안 쓰이는 커서가 움직인다.
     var isList: Bool {
         switch self {
-        case .home, .wave, .battle, .room, .trade: false
+        case .home, .wave, .battle, .room, .trade, .auction: false
         case .party, .dex, .bag, .challenge, .goals: true
         }
     }
@@ -44,6 +47,9 @@ enum TUIScreen: String, CaseIterable, Sendable {
         // **화면 안에서 쓰는 글자도 피한다.** `t` 를 줬더니 화면 이동 키가 먼저 잡혀 웨이브의
         // 볼 던지기가 죽었다(테스트가 잡았다). 교환은 exchange 의 `e`.
         case .trade: "e"
+        // 남은 글자가 거의 없다. `i` 는 입찰(ipchal)이고, 어느 화면의 안쪽 키와도 겹치지
+        // 않는다 — 그 검사는 `testNoScreenKeyShadowsAnInScreenKey` 가 전 조합으로 한다.
+        case .auction: "i"
         }
     }
 
@@ -61,6 +67,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
         case .battle: "대전"
         case .room: "방"
         case .trade: "교환"
+        case .auction: "경매"
         }
     }
 
@@ -154,7 +161,6 @@ enum TUIKeymap {
         }
     }
 
-    /// LAN 방 화면의 키. 대전과 나눠 둔다 — 그쪽의 `n`(신청 거절)이 여기서 먹으면 안 된다.
     /// 교환 화면의 키. **숫자 키가 없다** — 낼 개체와 원하는 개체는 서로 다른 목록의 번호라
     /// 한 숫자로 받을 수 없다(그 둘은 `trade offer`·`trade want` 명령으로 한다).
     private static func tradeKey(_ key: Character) -> TUIAction? {
@@ -167,6 +173,7 @@ enum TUIKeymap {
         }
     }
 
+    /// LAN 방 화면의 키. 대전과 나눠 둔다 — 그쪽의 `n`(신청 거절)이 여기서 먹으면 안 된다.
     private static func roomKey(_ key: Character) -> TUIAction? {
         if let number = key.wholeNumberValue, (1...4).contains(number) {
             return .roomChoice(number)
@@ -284,6 +291,11 @@ enum TUIKeymap {
         case .trade:
             guard let action = tradeKey(character) else { return .ignored }
             return canWrite ? action : .rejected(.readOnly)
+        // 경매는 **표가 없다.** 어느 키도 이 화면의 동작이 아니므로 전부 `.ignored` 다 —
+        // 빈 표를 만들어 두면 나중에 누군가 숫자 키를 채워 넣고, 그 숫자는 네 목록 중 어느
+        // 것도 뜻할 수 없다.
+        case .auction:
+            return .ignored
         case .home:
             // 모험 키는 홈 전용이다. 도감을 넘기다 실수로 세션이 시작되면 안 된다.
             guard let action = mutating(character) else { return .ignored }

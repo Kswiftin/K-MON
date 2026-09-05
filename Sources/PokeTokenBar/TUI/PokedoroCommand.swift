@@ -90,6 +90,24 @@ enum PokedoroCommand: Equatable, Sendable {
     /// **되돌릴 수 없다** — 협상을 버린다.
     case tradeCancel(confirmed: Bool)
 
+    // MARK: 경매
+    //
+    // 번호가 **넷**이다(내 개체·근처 게시물·받은 제안·내가 건 제안). 하위 명령 이름이 어느
+    // 목록의 번호를 받는지 말하고, 거절 문구도 어느 목록을 봐야 하는지 말한다.
+
+    case auction
+    case auctionPost(number: Int)
+    case auctionUnpost(number: Int)
+    /// **되돌릴 수 없다** — 게시자가 수락하면 그대로 커밋이 돈다.
+    case auctionApply(listing: Int, mon: Int, confirmed: Bool)
+    /// **되돌릴 수 없다** — 위와 같은 이유다.
+    case auctionBid(listing: Int, stardust: Int, confirmed: Bool)
+    /// **되돌릴 수 없다** — 게시한 개체가 넘어간다.
+    case auctionAccept(number: Int, confirmed: Bool)
+    case auctionReject(number: Int)
+    case auctionCancel(number: Int)
+    case auctionClear(number: Int)
+
     /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
     ///
     /// **인자를 여기서 함께 넘긴다.** 예전엔 동작만 돌려주고 부르는 쪽이 분을 다시 꺼냈는데,
@@ -129,8 +147,21 @@ enum PokedoroCommand: Equatable, Sendable {
         case .tradeWant(let number): .tradeWant(number: number)
         case .tradeConfirm(let confirmed): confirmed ? .tradeConfirm : nil
         case .tradeCancel(let confirmed): confirmed ? .tradeCancel : nil
+        case .auctionPost(let number): .auctionPost(number: number)
+        case .auctionUnpost(let number): .auctionUnpost(number: number)
+        // 확인 없는 제안·수락은 **요청이 아니다** — 방생·포기와 같이 무엇을 잃는지 먼저
+        // 보여 주고 거절한다.
+        case .auctionApply(let listing, let mon, let confirmed):
+            confirmed ? .auctionApply(listing: listing, mon: mon) : nil
+        case .auctionBid(let listing, let stardust, let confirmed):
+            confirmed ? .auctionBid(listing: listing, stardust: stardust) : nil
+        case .auctionAccept(let number, let confirmed):
+            confirmed ? .auctionAccept(number: number) : nil
+        case .auctionReject(let number): .auctionReject(number: number)
+        case .auctionCancel(let number): .auctionCancel(number: number)
+        case .auctionClear(let number): .auctionClear(number: number)
         case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help,
-             .wave, .battle, .room, .trade: nil
+             .wave, .battle, .room, .trade, .auction: nil
         }
     }
 }
@@ -166,6 +197,12 @@ enum PokedoroCommandError: Equatable, Error {
     /// 목록 밖 길 이름. 안전한 길로 접지 않는 이유는 사용자가 위험한 길을 골랐다고 믿은 채
     /// 보상 한 장을 잃기 때문이다.
     case unknownRoute(String)
+    /// 경매 목록의 번호가 아니다. 웨이브·개체 번호와 나눠 두는 이유는 같다 — **어디서 번호를
+    /// 얻는지가 다르다**(`pokedoro auction` 이 찍는다).
+    case invalidAuctionNumber(String)
+    /// 별의모래 금액이 아니다. 번호와 나눠 말한다 — 번호는 목록에서 얻고 금액은 잔액에서
+    /// 정하므로, 사용자가 다음에 볼 것이 다르다.
+    case invalidStardust(String)
 
     var message: String {
         switch self {
@@ -193,6 +230,11 @@ enum PokedoroCommandError: Equatable, Error {
         case .unknownRoute(let raw):
             "그런 길이 없다: \(raw) — "
                 + RunRoute.allCases.map(\.rawValue).joined(separator: "·") + " 중 하나를 쓴다."
+        case .invalidAuctionNumber(let raw):
+            "경매 목록의 번호가 아니다: \(raw) — `pokedoro auction` 이 찍는 번호(1부터)를 쓴다."
+        case .invalidStardust(let raw):
+            "별의모래 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
+                + "(`pokedoro auction` 이 미약속 잔액을 찍는다)."
         }
     }
 }
@@ -224,7 +266,8 @@ enum PokedoroCommandParser {
     /// 집중 세션(`start`·`claim`·`stop`)은 이제 여기 없다. 터미널이 요청을 보내고 앱이 실행한다.
     /// `battle` 은 여기서 빠졌다 — 터미널이 대전을 보고 턴을 낸다(`battle` 하위 명령).
     /// `trade` 도 빠졌다 — 상대를 찾는 일만 앱에 남는다(`raid` 와 같은 사정).
-    static let appOnlyCommands: Set<String> = ["auction", "home", "raid"]
+    /// `auction` 도 빠졌다 — 시장을 훑는 것은 Bonjour 가 계속 하고, 터미널은 그 목록을 받는다.
+    static let appOnlyCommands: Set<String> = ["home", "raid"]
 
     /// 실행 파일 이름을 뺀 인자 배열을 받는다. 빈 배열은 `status` 다 — 인자 없이 친 사용자가
     /// 가장 원하는 것이 현재 상태이기 때문이다.
@@ -280,6 +323,8 @@ enum PokedoroCommandParser {
             return try roomCommand(in: tail, options: options)
         case "trade":
             return try tradeCommand(in: tail, options: options)
+        case "auction":
+            return try auctionCommand(in: tail, options: options)
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
@@ -435,6 +480,83 @@ enum PokedoroCommandParser {
         }
     }
 
+    /// `auction <하위 명령> [번호…]`. 하위 명령이 없으면 조회다.
+    ///
+    /// **어느 목록의 번호인지가 하위 명령마다 다르다** — `post`·`unpost` 는 `party` 번호,
+    /// `apply`·`bid` 의 첫 인자는 시장 번호, `accept`·`reject` 는 받은 제안, `cancel`·`clear`
+    /// 는 내가 건 제안이다. 그래서 자릿수 검사도 자리마다 다른 오류를 던진다.
+    private static func auctionCommand(in arguments: [String],
+                                       options: Set<String>) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .auction }
+        let rest = Array(words.dropFirst())
+        let command = "auction \(sub)"
+        switch sub {
+        case "post":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .auctionPost(number: try requiredRosterNumber(in: rest, command: command))
+        case "unpost":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .auctionUnpost(number: try requiredRosterNumber(in: rest, command: command))
+        case "apply":
+            let pair = try twoNumbers(rest, command: command,
+                                      second: PokedoroCommandError.invalidMonNumber)
+            return .auctionApply(listing: pair.0, mon: pair.1,
+                                 confirmed: options.contains("--yes"))
+        case "bid":
+            let pair = try twoNumbers(rest, command: command,
+                                      second: PokedoroCommandError.invalidStardust)
+            return .auctionBid(listing: pair.0, stardust: pair.1,
+                               confirmed: options.contains("--yes"))
+        case "accept":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .auctionAccept(number: try requiredAuctionNumber(in: rest, command: command),
+                                  confirmed: options.contains("--yes"))
+        case "reject":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .auctionReject(number: try requiredAuctionNumber(in: rest, command: command))
+        case "cancel":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .auctionCancel(number: try requiredAuctionNumber(in: rest, command: command))
+        case "clear":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .auctionClear(number: try requiredAuctionNumber(in: rest, command: command))
+        default:
+            throw PokedoroCommandError.unknownCommand(command)
+        }
+    }
+
+    /// 자리가 정해진 번호 **둘**. 첫 자리는 늘 시장 번호이고 둘째 자리의 뜻은 부르는 쪽이
+    /// 준다(개체 번호 / 별의모래 금액) — 한 오류로 뭉개면 사용자가 다음에 볼 곳이 틀린다.
+    ///
+    /// 하나만 적혔으면 "빠졌다" 다. 첫 값만 받고 둘째를 기본값으로 접으면 사용자가 고르지 않은
+    /// 개체를 내놓는다(웨이브의 대상 생략과 다른 자리다 — 여기서는 기본값이 있을 수 없다).
+    private static func twoNumbers(_ words: [String], command: String,
+                                   second: (String) -> PokedoroCommandError) throws -> (Int, Int) {
+        try rejectExtra(words, beyond: 2, command: command)
+        guard words.count == 2 else { throw PokedoroCommandError.missingArgument(command) }
+        return (try positiveNumber(words[0], orThrow: PokedoroCommandError.invalidAuctionNumber),
+                try positiveNumber(words[1], orThrow: second))
+    }
+
+    /// `auction` 이 찍는 번호(1부터).
+    private static func requiredAuctionNumber(in arguments: [String],
+                                              command: String) throws -> Int {
+        guard let raw = arguments.first else {
+            throw PokedoroCommandError.missingArgument(command)
+        }
+        return try positiveNumber(raw, orThrow: PokedoroCommandError.invalidAuctionNumber)
+    }
+
+    /// 문자열 하나 → 1 이상의 번호. 배열을 받는 형제(`number(in:orThrow:)`)와 달리 **자리가
+    /// 정해진 인자**에 쓴다 — 두 번호가 서로 다른 목록의 것이면 자리로 구분해야 한다.
+    private static func positiveNumber(_ raw: String,
+                                       orThrow error: (String) -> PokedoroCommandError) throws -> Int {
+        guard raw.allSatisfy(\.isASCII), raw.allSatisfy(\.isNumber), !raw.isEmpty,
+              let value = Int(raw), value >= 1 else { throw error(raw) }
+        return value
+    }
+
     /// 남는 인자는 버리지 않는다 — 버리고 실행하면 사용자는 그 값이 뭔가 했다고 믿는다.
     ///
     /// 인자를 **하나도** 안 받는 하위 명령과 **개수가 넘친** 경우를 갈라 말한다. 하나로 뭉개면
@@ -560,6 +682,15 @@ enum PokedoroCommandParser {
         ("trade want <번호>", "상대에게 원하는 개체 (trade 번호)"),
         ("trade confirm --yes", "교환 성사 — 되돌릴 수 없다"),
         ("trade cancel --yes", "협상 취소"),
+        ("auction", "경매 — 시장·내 게시물·제안"),
+        ("auction post <번호>", "경매에 올리기 (party 번호)"),
+        ("auction unpost <번호>", "게시 내리기 (party 번호)"),
+        ("auction apply <시장> <번호> --yes", "포켓몬으로 제안 — 되돌릴 수 없다"),
+        ("auction bid <시장> <금액> --yes", "별의모래로 제안 — 되돌릴 수 없다"),
+        ("auction accept <번호> --yes", "받은 제안 수락 — 되돌릴 수 없다"),
+        ("auction reject <번호>", "받은 제안 거절"),
+        ("auction cancel <번호>", "내가 건 제안 거둬들이기"),
+        ("auction clear <번호>", "끝난 제안 카드 치우기"),
         ("help", "이 도움말"),
     ]
 

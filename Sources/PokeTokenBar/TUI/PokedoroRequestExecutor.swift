@@ -23,6 +23,9 @@ struct PokedoroRequestExecutor {
     var room: (any TerminalRoomControl)?
     /// 교환에 닿는 창구. 같은 이유로 좁게 두고, `nil` 은 "교환이 없다" 와 같은 뜻이다.
     var trade: (any TerminalTradeControl)?
+    /// 경매에 닿는 창구. 여기서 `nil` 은 **"시장을 볼 수 없다"** 다 — 경매는 판이 아니라 늘
+    /// 도는 목록이라, 창구가 없다는 것은 앱이 그 목록을 들고 있지 않다는 뜻이다.
+    var auction: (any TerminalAuctionControl)?
 
     /// `async` 인 이유는 **부화 하나** 때문이다 — `hatchIfNeeded` 는 PokéAPI 에서 종 라인을 받아
     /// 온다. 앱은 이미 요청 id 를 실행 **전에** 기억하므로(`PokeTokenBarApp`), 이 await 를 넘는
@@ -60,6 +63,16 @@ struct PokedoroRequestExecutor {
         case .tradeWant(let number): return tradeWant(request, number: number)
         case .tradeConfirm: return tradeConfirm(request)
         case .tradeCancel: return tradeCancel(request)
+        case .auctionPost(let number): return auctionPost(request, number: number)
+        case .auctionUnpost(let number): return auctionUnpost(request, number: number)
+        case .auctionApply(let listing, let mon):
+            return auctionApply(request, listing: listing, mon: mon)
+        case .auctionBid(let listing, let stardust):
+            return auctionBid(request, listing: listing, stardust: stardust)
+        case .auctionAccept(let number): return auctionAnswer(request, number: number, accept: true)
+        case .auctionReject(let number): return auctionAnswer(request, number: number, accept: false)
+        case .auctionCancel(let number): return auctionCancel(request, number: number)
+        case .auctionClear(let number): return auctionClear(request, number: number)
         }
     }
 
@@ -648,6 +661,152 @@ struct PokedoroRequestExecutor {
 
     private func noTrade(_ request: PokedoroRequest) -> PokedoroReply {
         no(request, "진행 중인 교환이 없다 — 상대를 찾는 일은 앱에서 한다.")
+    }
+
+    // MARK: 경매
+    //
+    // 번호가 넷이라 **접는 자리도 넷**이다: 내 개체는 창구가 `party` 번호로 받고(사유까지
+    // 돌려준다), 나머지 셋은 `AuctionScreen` 의 **목록별** 함수가 id 로 접는다. 여기서 한
+    // 목록의 번호를 다른 목록으로 넘기면 사용자가 고른 것과 다른 게시물·제안에 손이 간다.
+
+    private func auctionPost(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = auction else { return noAuction(request) }
+        // 사유는 **창구가** 만든다(없는 번호·즐겨찾기·체육관·동행·이미 걸림) — 로스터를 아는 쪽이다.
+        if let refusal = control.post(number: number) { return no(request, refusal) }
+        // 올린 것을 **되읽어서** 말한다 — 내가 접은 값을 echo 하면 세이브 경계가 달라진 날
+        // 답과 실제가 갈라진다(별명 되읽기와 같은 규칙).
+        let after = control.terminalState
+        let label = after.mine.first { $0.number == number }?.label ?? "\(number)번"
+        return ok(request, "\(label)을 경매에 올렸다. " + AuctionScreen.hints(after))
+    }
+
+    private func auctionUnpost(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = auction else { return noAuction(request) }
+        if let refusal = control.unpost(number: number) { return no(request, refusal) }
+        return ok(request, "\(number)번 게시를 내렸다. 걸려 있던 제안은 함께 정리된다.")
+    }
+
+    private func auctionApply(_ request: PokedoroRequest, listing: Int,
+                              mon: Int) -> PokedoroReply {
+        guard let control = auction else { return noAuction(request) }
+        let state = control.terminalState
+        guard state.canOffer else { return no(request, Self.offerSlotsFull) }
+        guard let listingID = AuctionScreen.listingID(number: listing, in: state) else {
+            return no(request, Self.noSuchListing(listing, in: state))
+        }
+        if let refusal = control.apply(listingID: listingID, number: mon) {
+            return no(request, refusal)
+        }
+        return ok(request, "\(Self.marketLabel(listing, in: state))에 제안을 걸었다. "
+                  + AuctionScreen.hints(control.terminalState))
+    }
+
+    private func auctionBid(_ request: PokedoroRequest, listing: Int,
+                            stardust: Int) -> PokedoroReply {
+        guard let control = auction else { return noAuction(request) }
+        let state = control.terminalState
+        guard state.canOffer else { return no(request, Self.offerSlotsFull) }
+        // 상한을 넘는 값은 **거절이고 잘라 보내지 않는다.** 센터는 조용히 클램프하므로
+        // (`min(amount, maxTokenValue)`) 사용자는 자기가 적은 값이 갔다고 믿는다.
+        guard stardust <= SaveTransfer.maxTokenValue else {
+            return no(request, "한 번에 걸 수 있는 별의모래는 "
+                      + "★ \(TUIRender.number(SaveTransfer.maxTokenValue)) 까지다.")
+        }
+        // **화면·센터와 같은 값**을 본다(`unpledgedTokens`) — 잔액만 보면 지킬 수 없는 제안을
+        // 여러 건 걸게 되고, 두 벌로 세면 한쪽만 넓어져 조용히 거절된다.
+        guard stardust <= state.unpledged else {
+            return no(request, "약속하지 않은 별의모래가 ★ \(TUIRender.number(state.unpledged)) "
+                      + "뿐이다 — 걸어 둔 제안을 거둬들이면 늘어난다.")
+        }
+        guard let listingID = AuctionScreen.listingID(number: listing, in: state) else {
+            return no(request, Self.noSuchListing(listing, in: state))
+        }
+        if let refusal = control.bid(listingID: listingID, stardust: stardust) {
+            return no(request, refusal)
+        }
+        return ok(request, "\(Self.marketLabel(listing, in: state))에 별의모래 "
+                  + "\(TUIRender.number(stardust)) 를 걸었다. "
+                  + AuctionScreen.hints(control.terminalState))
+    }
+
+    /// 받은 제안에 답한다. 수락과 거절이 **한 몸통**인 이유는 앞의 두 가드(목록에 있나·아직
+    /// 대기 중인가)가 같기 때문이다 — 따로 두면 한쪽에만 가드를 더하는 날이 온다.
+    private func auctionAnswer(_ request: PokedoroRequest, number: Int,
+                               accept: Bool) -> PokedoroReply {
+        guard let control = auction else { return noAuction(request) }
+        let state = control.terminalState
+        guard let card = AuctionScreen.incoming(number: number, in: state) else {
+            return no(request, "\(number)번 제안이 없다 — 지금 받은 제안은 "
+                      + "\(state.incoming.count)건이다.")
+        }
+        guard card.status == .pending else {
+            return no(request, "\(number)번 제안은 이미 "
+                      + "\(AuctionScreen.statusName(card.status, mine: false))다.")
+        }
+        guard accept else {
+            control.reject(offerID: card.id)
+            return ok(request, "\(card.label) 제안을 거절했다.")
+        }
+        control.accept(offerID: card.id)
+        // 센터는 수락 실패를 **한 줄로 남기고**(`lastError`) 성공하면 그 줄을 지운다 — 그래서
+        // 부른 직후의 이 값이 곧 이 수락의 결과다. 성공으로 답하면 사용자는 개체가 넘어간 줄
+        // 알고 다음 일을 한다.
+        if let error = control.terminalState.lastError { return no(request, error) }
+        return ok(request, "\(card.label) 제안을 수락했다. 교환이 끝나면 결과가 화면에 남는다.")
+    }
+
+    /// 답을 못 받은 내 제안을 거둬들인다. **커밋이 시작된 제안은 손대지 않는다** — 여기서
+    /// 치우면 에스크로만 돌아오고 개체는 아무에게도 가지 않는다(센터 주석의 근거 그대로다).
+    private func auctionCancel(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = auction else { return noAuction(request) }
+        let state = control.terminalState
+        guard let card = AuctionScreen.outgoing(number: number, in: state) else {
+            return no(request, Self.noSuchOutgoing(number, in: state))
+        }
+        guard card.status == .pending else {
+            return no(request, card.status == .accepted
+                      ? "\(number)번은 이미 교환이 시작됐다 — 여기서 치우면 별의모래만 돌아오고 "
+                        + "개체는 아무에게도 가지 않는다."
+                      : "\(number)번은 이미 끝났다 — auction clear \(number) 로 치운다.")
+        }
+        control.cancelOffer(offerID: card.id)
+        return ok(request, "\(card.label) 제안을 거둬들였다.")
+    }
+
+    private func auctionClear(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = auction else { return noAuction(request) }
+        let state = control.terminalState
+        guard let card = AuctionScreen.outgoing(number: number, in: state) else {
+            return no(request, Self.noSuchOutgoing(number, in: state))
+        }
+        guard !card.status.isLive else {
+            return no(request, card.status == .pending
+                      ? "\(number)번은 아직 답을 기다린다 — auction cancel \(number) 로 거둬들인다."
+                      : "\(number)번은 교환이 도는 중이다 — 끝나면 결과가 남는다.")
+        }
+        control.clearResult(offerID: card.id)
+        return ok(request, "\(number)번 제안 카드를 치웠다.")
+    }
+
+    private static let offerSlotsFull =
+        "제안 정원(\(PokemonAuctionCenter.maxOutgoingOffers))이 찼다 — "
+        + "auction cancel <번호> 로 하나를 거둬들인다."
+
+    /// **몇 건이 올라 있는지 함께 말한다** — 번호가 틀렸을 때 다음 값을 고를 수 있어야 한다.
+    private static func noSuchListing(_ number: Int, in state: AuctionTerminalState) -> String {
+        "\(number)번 게시물이 없다 — 지금 \(state.market.count)건이 올라 있다."
+    }
+
+    private static func noSuchOutgoing(_ number: Int, in state: AuctionTerminalState) -> String {
+        "\(number)번은 내가 건 제안이 아니다 — 지금 \(state.outgoing.count)건을 걸어 뒀다."
+    }
+
+    private static func marketLabel(_ number: Int, in state: AuctionTerminalState) -> String {
+        state.market.first { $0.number == number }?.label ?? "\(number)번 게시물"
+    }
+
+    private func noAuction(_ request: PokedoroRequest) -> PokedoroReply {
+        no(request, "경매 목록을 볼 수 없다 — 시장은 앱이 훑으므로 앱이 떠 있어야 한다.")
     }
 
     // MARK: 값

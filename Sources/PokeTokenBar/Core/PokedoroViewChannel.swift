@@ -12,6 +12,15 @@ struct PokedoroAttachment: Codable, Equatable, Sendable {
     var height: Int
     /// 마지막 인사 시각. 터미널은 살아 있는 동안 주기적으로 갱신한다.
     var at: Date
+    /// **터미널이 지금 보고 있는 화면.** 앱은 이 이름의 생산자를 우선으로 내놓는다.
+    ///
+    /// 순위 하나로 고정하던 때의 한계가 경매에서 드러났다: 대전·방·교환은 판이 돌 때만 참이라
+    /// 순위로 충분했지만, 경매 시장은 이웃이 하나만 올려 둬도 늘 참이다 — 앞에 두면 집중
+    /// 타이머를 통째로 가리고, 뒤에 두면 `pokedoro auction` 이 시장을 볼 방법이 없다.
+    ///
+    /// **옛 파일에는 없는 칸**이라 없어도 디코딩된다. 안 그러면 새 앱이 옛 터미널의 신호를
+    /// 통째로 못 읽어 화면이 죽는다.
+    var screen: String?
 }
 
 /// 앱이 내놓는 **지금 화면 한 장**. 앱만 쓴다(`pokedoro-view.json`).
@@ -74,14 +83,40 @@ enum PokedoroViewChannel {
         return snapshot.writtenAt.timeIntervalSince(lastWritten.writtenAt) >= refreshInterval
     }
 
-    /// 생산자가 여럿일 때 **하나를 고른다** — 첫 번째 살아 있는 화면이다. 부르는 쪽이 우선순위
-    /// 순서로 넘긴다(대전이 집중 타이머보다 앞이다: 라이브 판이 도는 동안 타이머 줄을 그리면
-    /// 사용자는 자기 차례를 놓친다).
+    /// 생산자가 여럿일 때 **하나를 고른다.** 부르는 쪽이 우선순위 순서로 넘긴다(대전이 집중
+    /// 타이머보다 앞이다: 라이브 판이 도는 동안 타이머 줄을 그리면 사용자는 자기 차례를 놓친다).
+    ///
+    /// **터미널이 보고 있다고 말한 화면이 순위를 이긴다.** 순위만으로 고르면 동시에 참인 두
+    /// 화면 중 뒤에 있는 것을 영영 못 본다 — 경매가 그 부류를 처음 드러냈다(시장은 상시 참이다).
+    /// 요청한 화면이 지금 없으면 순위로 되돌아간다: 빈 화면을 내놓으면 앱이 죽은 것과 구분되지
+    /// 않는다.
     ///
     /// 앱 루트에 `if let a { … } else if let b { … }` 로 쓰지 않는 이유는 그 자리에 테스트가
     /// 닿지 않기 때문이다 — 우선순위는 규칙이고, 규칙은 순수 쪽에 둔다.
-    static func preferred(_ candidates: [PokedoroViewSnapshot?]) -> PokedoroViewSnapshot? {
-        candidates.compactMap { $0 }.first
+    static func preferred(_ candidates: [PokedoroViewSnapshot?],
+                          wanted: String? = nil) -> PokedoroViewSnapshot? {
+        let live = candidates.compactMap { $0 }
+        if let wanted, let asked = live.first(where: { $0.screen == wanted }) { return asked }
+        return live.first
+    }
+
+    /// 경매 화면. **판이 아니라 목록이다** — 대전·방·교환처럼 국면이 서고 지는 것이 아니라,
+    /// 네 목록(근처 게시물·내 게시물·받은 제안·내가 건 제안)이 각자 차고 빈다.
+    ///
+    /// 그래서 순위에서 **집중 타이머 뒤**에 둔다. 앞에 두면 이웃의 게시물 하나가 집중 타이머를
+    /// 영영 가리고, 그 화면은 터미널이 `wanted` 로 부를 때 온다.
+    ///
+    /// 누를 키가 없어(번호 공간이 넷) 칠 명령을 **줄의 마지막에** 싣는다 — `AuctionScreen.lines`
+    /// 가 그 일을 하므로 여기서 다시 붙이지 않는다.
+    static func auctionSnapshot(_ state: AuctionTerminalState, width: Int,
+                                now: Date) -> PokedoroViewSnapshot? {
+        guard !AuctionScreen.isIdle(state) else { return nil }
+        return PokedoroViewSnapshot(
+            screen: "auction",
+            title: AuctionScreen.title(state),
+            lines: AuctionScreen.lines(state, width: drawableWidth(width)),
+            keys: AuctionScreen.keys(state),
+            writtenAt: now)
     }
 
     /// 교환 화면. 대전·방과 같은 통로다.
