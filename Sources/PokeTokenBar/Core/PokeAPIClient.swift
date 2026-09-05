@@ -939,7 +939,7 @@ extension MoveSpec {
             }
             return StatChange(stat: stat, change: change.change)
         }
-        return MoveSpec(id: dto.id, names: names, type: type,
+        let spec = MoveSpec(id: dto.id, names: names, type: type,
                         power: dto.power ?? 0, damageClass: damageClass,
                         accuracy: dto.accuracy, pp: dto.pp ?? 10,
                         descriptions: descriptions, priority: dto.priority,
@@ -957,6 +957,16 @@ extension MoveSpec {
                         drain: dto.meta?.drain ?? 0, healing: dto.meta?.healing ?? 0,
                         flinchChance: dto.meta?.flinch_chance ?? 0,
                         minHits: dto.meta?.min_hits, maxHits: dto.meta?.max_hits)
+        // 와이어 천장을 넘는 기술은 **상대가 반려한다** — 내 화면엔 멀쩡히 보이는데 대전만 안 된다.
+        // 도감은 원격이라 코드를 안 건드려도 이 날이 온다. ailment 와 같은 규칙으로 한 번 남긴다.
+        if MultiplayerValidation.exceedsTurnDamageCap(spec) {
+            AppLog.write("""
+                move \(dto.id) (\(fallbackName)): power×hits \
+                \(spec.power * (spec.maxHits ?? 1)) exceeds wire cap \
+                \(MultiplayerValidation.turnDamageCap) — peers will reject this move
+                """)
+        }
+        return spec
     }
 }
 struct ChainLink: Decodable, Sendable {

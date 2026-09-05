@@ -272,11 +272,22 @@ enum MultiplayerValidation {
         slug.map { !$0.isEmpty && $0.utf8.count <= BattleAbility.maxSlugLength } ?? true
     }
 
+    /// 한 턴 데미지 천장 — **위력 × 히트 수**. `validMoves` 가 상대 무브셋을 이 값으로 자르고,
+    /// `MoveSpec.from` 은 도감이 이 값을 넘기 시작하면 로그를 남긴다. 두 곳이 리터럴을 따로 들면
+    /// 경고와 반려가 갈라져, 넘었다고 찍은 기술이 통과하거나 통과한다고 본 기술이 반려된다.
+    static let turnDamageCap = 250
+
+    /// 도감 기술이 천장을 넘는가 — 넘으면 **정상 기술이 상대에게서 반려된다.**
+    /// 상대가 보내온 값을 거르는 `validMoves` 와 방향만 다르고 규칙은 같아야 한다.
+    static func exceedsTurnDamageCap(_ move: MoveSpec) -> Bool {
+        move.power * (move.maxHits ?? 1) > turnDamageCap
+    }
+
     /// 상대 무브셋 범위 검사. **1v1 LAN 도 이 함수를 쓴다** — 방에만 두면 1v1 이 무검사가 된다.
     static func validMoves(_ moves: [MoveSpec]) -> Bool {
         guard moves.count <= 4 else { return false }
         return moves.allSatisfy {
-            (0...250).contains($0.power) && (1...100).contains($0.pp)
+            (0...turnDamageCap).contains($0.power) && (1...100).contains($0.pp)
                 && ($0.accuracy.map { (1...100).contains($0) } ?? true)
                 // 상태 부여 확률은 상대가 보내오는 값이다 — 범위를 벗어나면 매번 확정 부여가 된다.
                 && ($0.ailmentChance.map { (0...100).contains($0) } ?? true)
@@ -293,7 +304,9 @@ enum MultiplayerValidation {
                 //
                 // ponytail: 250 은 도감 다단기 총합 최대 100(드래곤애로우·기어소서) 기준으로 잡은
                 //           천장이다 — 총합 100 을 넘는 다단기가 도감에 생기면 다시 계산한다.
-                && $0.power * ($0.maxHits ?? 1) <= 250
+                //           **그 순간을 알리는 것은 `MoveSpec.from` 의 로그다.** 도감은 원격이라
+                //           코드를 안 건드려도 넘어설 수 있고, 넘어서면 정상 기술이 반려된다.
+                && !exceedsTurnDamageCap($0)
                 // 랭크 변화도 상대가 보내오는 값이다. 개수 상한은 랭크가 있는 스탯 수 —
                 // 안 보면 `+6 공격` 이 열두 번 담긴 기술 하나로 첫 턴에 최대 랭크가 된다.
                 && ($0.statChanges.map { changes in
