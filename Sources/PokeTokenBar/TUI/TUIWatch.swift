@@ -16,6 +16,10 @@ final class TUIWatch {
     /// 디스크 재읽기 주기(프레임 수). 0.5초 프레임 기준 5초마다.
     private static let reloadEveryFrames = 10
     private var frame = 0
+    /// 앱에 부탁하는 통로. 이 화면도 세이브에는 쓰지 않는다.
+    private let mailbox = PokedoroMailbox()
+    /// 답을 기다리는 요청. 하나만 든다 — 화면에서 키를 연타해도 마지막 것만 유효하다.
+    private var pending: PokedoroRequest?
 
     init(store: CompanionStore) {
         self.store = store
@@ -75,9 +79,8 @@ final class TUIWatch {
     }
 
     private func handle(_ key: TUIKey) {
-        // 터미널은 세이브를 읽기만 한다. 쓰기 키(1·2·3·c·x)는 `.rejected(.readOnly)` 로 돌아와
-        // 이유를 화면에 남긴다 — 침묵으로 접으면 "키가 안 먹는다" 와 구분되지 않는다.
-        switch TUIKeymap.action(for: key, screen: screen, canWrite: false) {
+        // 쓰기 키(1·2·3·c·x)는 **앱에 요청을 보낸다** — 이 프로세스는 여전히 세이브에 쓰지 않는다.
+        switch TUIKeymap.action(for: key, screen: screen, canWrite: true) {
         case .quit:
             terminal.stop()
             exit(0)
@@ -90,11 +93,14 @@ final class TUIWatch {
             status = nil
         case .scroll(let delta):
             selection = TUIKeymap.clamp(selection: selection, delta: delta, count: rows().count)
-        case .startAdventure, .claimAdventure, .cancelAdventure:
-            // 쓰기 권한이 없으면 위 `action(for:screen:canWrite:)` 가 이 셋을 만들지 않는다.
-            return
+        case .startAdventure(let minutes):
+            request(.start, minutes: minutes)
+        case .claimAdventure:
+            request(.claim, minutes: nil)
+        case .cancelAdventure:
+            request(.stop, minutes: nil)
         case .rejected(.readOnly):
-            status = "터미널은 읽기 전용이다 — 모험은 앱에서 시작한다."
+            status = "이 실행에는 쓰기 권한이 없다 — 집중 세션은 앱이 실행한다."
         case .ignored:
             return
         }
@@ -106,10 +112,42 @@ final class TUIWatch {
         selection = min(selection, max(0, rows().count - 1))
     }
 
+    /// 앱에 요청을 남기고 **기다리지 않는다.** 여기서 막으면 화면이 3초 얼어붙는데, 이 화면은
+    /// 이미 0.5초마다 다시 그리므로 답은 다음 프레임들이 알아서 집어 온다.
+    ///
+    /// 답을 못 받은 채 시간이 지나면 "앱이 응답하지 않는다" 로 바뀐다 — 침묵으로 두면 사용자는
+    /// 키가 안 먹은 것과 앱이 꺼진 것을 구분할 수 없다.
+    private func request(_ verb: PokedoroRequest.Verb, minutes: Int?) {
+        let request = PokedoroRequest(id: UUID(), verb: verb, minutes: minutes, requestedAt: Date())
+        do {
+            try mailbox.send(request)
+        } catch {
+            status = "요청을 남기지 못했다: \(error.localizedDescription)"
+            return
+        }
+        pending = request
+        status = "앱에 요청했다…"
+    }
+
+    /// 기다리던 답이 왔는지 본다. 매 프레임 부른다 — 요청이 없으면 아무것도 안 한다.
+    private func collectReplyIfNeeded() {
+        guard let request = pending else { return }
+        if let reply = mailbox.reply(to: request.id) {
+            pending = nil
+            status = reply.message
+            reload()   // 앱이 바꾼 진행을 곧바로 끌어온다 — 5초 주기를 기다리면 답과 화면이 어긋난다.
+            return
+        }
+        guard Date().timeIntervalSince(request.requestedAt) > PokedoroCLI.replyTimeout else { return }
+        pending = nil
+        status = "메뉴바 앱이 응답하지 않는다 — 집중 세션은 앱이 실행한다."
+    }
+
     // MARK: 그리기
 
     private func tick() {
         frame += 1
+        collectReplyIfNeeded()
         // 주기적 재읽기 — 메뉴바 앱이 바꾼 진행을 끌어온다. 사용자가 r 을 누르지 않아도 낡지 않게.
         if frame % Self.reloadEveryFrames == 0 { reload() }
         render()

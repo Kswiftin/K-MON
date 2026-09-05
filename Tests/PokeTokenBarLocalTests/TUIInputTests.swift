@@ -56,6 +56,17 @@ struct TUIInputTests {
         #expect(action(.char("x"), writable: false) == .rejected(.readOnly))
     }
 
+    /// 쓰기 권한이 있으면 같은 키가 **동작으로** 돌아온다. 위 거절 테스트만 있으면 "언제나
+    /// 거절" 하는 구현도 통과한다 — 두 방향을 함께 봐야 이 표가 실제로 무언가를 가른다.
+    ///
+    /// 지금 `watch` 는 `canWrite: true` 로 돈다(요청은 앱이 실행한다). 그래도 거절 축을 지우지
+    /// 않는 이유는, 권한 없는 실행이 다시 생길 때 침묵 대신 이유를 띄우는 자리가 여기뿐이라서다.
+    @Test func testStateChangingKeysBecomeActionsWithWriteAccess() {
+        #expect(action(.char("1"), writable: true) == .startAdventure(minutes: 25))
+        #expect(action(.char("c"), writable: true) == .claimAdventure)
+        #expect(action(.char("x"), writable: true) == .cancelAdventure)
+    }
+
     /// 읽기 전용이어도 보기·나가기는 막지 않는다. 뷰어로서의 쓸모가 그대로 남아야 한다.
     @Test func testReadOnlySessionCanStillNavigateAndQuit() {
         #expect(action(.char("d"), writable: false) == .show(.dex))

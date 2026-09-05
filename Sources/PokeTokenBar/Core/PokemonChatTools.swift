@@ -24,8 +24,19 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
     case companionSwitch = "companion.switch"
     case memoryRecord = "memory.record"
 
-    /// 화면이 제시하는 집중 길이. 모델이 말한 값은 이 셋 중 가장 가까운 것으로 접힌다.
+    /// 화면이 제시하는 집중 길이. 모델이 말한 값도, 터미널 요청 파일에 적힌 값도 이 셋 중 가장
+    /// 가까운 것으로 접힌다.
     static let focusMinutes = [25, 50, 90]
+
+    /// 가장 가까운 길이로 접는다(동률이면 짧은 쪽). **값을 버리는 대신 접는다** — 버리면 부른
+    /// 쪽이 왜 아무 일도 안 일어났는지 모른 채 같은 실수를 반복한다. 승인 카드도 터미널 답도
+    /// 실제 분을 그대로 보여 주므로 사용자는 무엇을 켜는지 정확히 안다.
+    ///
+    /// 여기 있는 이유는 접는 쪽이 둘이라서다(대화 파서·터미널 요청). 표가 두 벌이 되면 한쪽만
+    /// 넓어져 화면이 제시하지 않는 길이를 그 경로만 켤 수 있게 된다.
+    static func nearestFocusLength(to minutes: Int) -> Int {
+        focusMinutes.min { abs($0 - minutes) < abs($1 - minutes) } ?? focusMinutes[0]
+    }
     /// 도감 번호 상한. 범위를 두는 이유는 주입이 아니라(인자는 이미 `Int` 다) 404 를 부르는
     /// 무의미한 왕복을 막기 위해서다.
     static let highestDexNumber = 1_025
@@ -366,11 +377,9 @@ enum PokemonChatToolParser {
         return Int(raw)
     }
 
-    /// 가장 가까운 길이로 접는다(동률이면 짧은 쪽). 값을 버리는 대신 접는 이유는, 버리면 모델이
-    /// 왜 아무 일도 안 일어났는지 모른 채 같은 실수를 반복하기 때문이다. 승인 카드가 실제 분을
-    /// 그대로 보여 주므로 사용자는 무엇을 켜는지 정확히 안다.
+    /// 접는 규칙은 `PokemonChatTool.nearestFocusLength` 한 곳이다 — 터미널 요청도 같은 표를 쓴다.
     private static func nearestFocusLength(to minutes: Int) -> Int {
-        PokemonChatTool.focusMinutes.min { abs($0 - minutes) < abs($1 - minutes) } ?? PokemonChatTool.focusMinutes[0]
+        PokemonChatTool.nearestFocusLength(to: minutes)
     }
 }
 
@@ -472,14 +481,17 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
     /// 그리고 "보상 받기" 만 그린다. 거기서 종료를 권하면 대화만 화면보다 넓어진다.
     private func isReady(_ action: PokemonChatAction) -> Bool {
         switch action {
-        case .startFocus: return !timer.isRunning && companion.activeAdventure == nil
+        // 실행 가능 조건과 **같은 표**를 읽는다(`PokedoroSessionGate`). 여기서 조건을 다시 쓰면
+        // 칩이 뜨는 규칙과 실행이 막히는 규칙이 갈라지고, 갈라진 걸 알아챌 방법은 손으로 맞대 보는
+        // 것뿐이다. 동행 유무는 `canRun` 이 이미 본다 — `availableActions` 가 둘을 함께 건다.
+        case .startFocus: return PokedoroSessionGate.startRefusal(sessionState) == nil
         // 휴식은 **끝낼 집중이 아니다.** `isRunning` 은 `phase != .idle` 이라 휴식에서도 참인데,
         // 그 값으로 권하면 쉬는 중에 "집중을 끝내자" 칩이 뜨고, 승인 카드는 "끝난 모험 보상은
         // 챙기고, 아직 나가 있는 모험은 취소돼" 라고 말한다 — 그 구간엔 모험이 이미 정산돼 없다.
         // 실행기는 이 상태를 거절하지 않으므로(제안 ⊆ 실행 가능은 지켜진다) 문구가 상태를
         // 잘못 부르는 부류다. 화면의 종료 버튼은 단계 중립("종료")이라 이 칩만 명사를 흘렸다.
         case .stopFocus: return timer.phase == .focus
-        case .claimAdventure: return companion.activeAdventure != nil && !companion.isAdventureInProgress
+        case .claimAdventure: return PokedoroSessionGate.claimRefusal(sessionState) == nil
         // 재고만 보지 않는다 — `useRareCandy` 는 진화 라인이 아직 안 실렸으면 거절한다(기동 직후).
         case .useRareCandy: return companion.canUseRareCandy
         // 대기 여부가 아니라 **승인이 실제로 진화시키는가**를 묻는다. 카드가 뜬 뒤에도 조건은
@@ -588,17 +600,10 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
                     + " eggs=\(reward.bonusEggs) candy=\(reward.foundRareCandy ? 1 : 0)", true)
 
         case .pokedoroStart(let minutes):
-            // 화면은 타이머가 도는 동안 시작 피커를 **아예 안 그린다**(`FocusTimerView`). 휴식 단계도
-            // `isRunning` 이고 그 구간엔 모험이 이미 정산돼 없으므로, 모험만 보는 게이트는 휴식을
-            // 조용히 덮어썼다 — 화면이 못 하는 일을 대화만 할 수 있었다.
-            guard !timer.isRunning else {
-                return ("pokedoro start refused: already in \(timer.phase.rawValue)", false)
-            }
-            // 나가 있는 모험이 있으면 화면도 시작 버튼을 내주지 않는다(`FocusTimerView`). 사유를
-            // 갈라 주면 모델이 다음 수(정산)로 이어 갈 수 있다 — 뭉개면 같은 호출만 반복한다.
-            if companion.activeAdventure != nil {
-                let reason = companion.isAdventureInProgress ? "in progress" : "reward unclaimed"
-                return ("pokedoro start refused: adventure \(reason)", false)
+            // 조건표는 `PokedoroSessionGate` 한 곳이다 — 화면·대화·터미널이 같은 표를 읽어야
+            // "화면이 못 하는 일을 대화만 할 수 있는" 상태가 안 생긴다(휴식 단계가 그랬다).
+            if let refusal = PokedoroSessionGate.startRefusal(sessionState) {
+                return (Self.machineLine(refusal, verb: "start"), false)
             }
             // 지금은 도달할 수 없다 — 주인 게이트가 `state.active != nil`(→ `currentSpeciesID`
             // 비-nil)을, 위 검사가 `state.adventure == nil` 을 보장해 `startFocusAdventure` 의
@@ -611,12 +616,38 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         case .pokedoroStop:
             // 아무것도 안 돌아가는데 "집중을 끝냈어. 수고했어!" 가 뜨면 그건 거짓이다. `FocusTimer` 는
             // 저장되지 않으므로 앱을 다시 연 직후가 항상 이 상태다. 모험만 남은 경우는 끝낼 것이
-            // 있다 — 종료가 그 정산을 맡는다.
-            guard timer.isRunning || companion.activeAdventure != nil else {
-                return ("pokedoro stop refused: nothing running", false)
+            // 있다 — 종료가 그 정산을 맡는다(게이트의 `A || B` 가 그 규칙이다).
+            if let refusal = PokedoroSessionGate.stopRefusal(sessionState) {
+                return (Self.machineLine(refusal, verb: "stop"), false)
             }
             timer.stopFocusSession(companion: companion)
             return (statusLine(), true)
+        }
+    }
+
+    /// 판정에 쓸 값 한 벌. `isRunning` 의 두 조건(`phase != .idle && endsAt != nil`)을 여기서
+    /// 한 값으로 접는다 — 게이트가 어긋난 상태를 볼 일이 없어야 한다.
+    private var sessionState: PokedoroSessionState {
+        PokedoroSessionState(phase: timer.isRunning ? timer.phase : .idle,
+                             hasCompanion: companion.hasActive,
+                             hasAdventure: companion.activeAdventure != nil,
+                             adventureIsInProgress: companion.isAdventureInProgress)
+    }
+
+    /// 거절 사유 → 모델에게 돌려줄 사실 한 줄. **표현만 여기 있다** — 사유를 정하는 것은
+    /// `PokedoroSessionGate` 다. 터미널은 같은 사유를 한국어로 옮긴다.
+    ///
+    /// `.noCompanion` 은 대화 경로에서 도달할 수 없다(`ownerRefusal` 이 먼저 막는다). 그래도
+    /// 같은 문자열로 답한다 — 아래 `startFocusSession` 의 마지막 방어와 답이 갈리면 안 된다.
+    private static func machineLine(_ refusal: PokedoroSessionGate.Refusal, verb: String) -> String {
+        switch refusal {
+        case .timerAlreadyRunning(let phase): "pokedoro \(verb) refused: already in \(phase.rawValue)"
+        case .adventureInProgress: "pokedoro \(verb) refused: adventure in progress"
+        case .adventureUnclaimed: "pokedoro \(verb) refused: adventure reward unclaimed"
+        case .noCompanion: "pokedoro \(verb) refused"
+        case .nothingRunning: "pokedoro \(verb) refused: nothing running"
+        // 정산은 어휘가 다르다 — 대화의 `adventure.claim` 은 `pokedoro.*` 가 아니다.
+        case .nothingToClaim: "adventure none ready"
         }
     }
 

@@ -112,4 +112,73 @@ struct TUIRenderTests {
     @Test func testListHandlesEmptyRows() {
         #expect(TUIRender.list(rows: [], selection: 0, height: 3, width: 20).count == 3)
     }
+
+    // MARK: 키 안내
+
+    private func idle() -> TUIHomeModel {
+        var model = TUIHomeModel.sample
+        model.adventure = nil
+        return model
+    }
+
+    private func adventuring(remainingSeconds: Int) -> TUIHomeModel {
+        var model = TUIHomeModel.sample
+        model.adventure = TUIHomeModel.Adventure(zone: "숲", minutes: 25,
+                                                 remainingSeconds: remainingSeconds, progress: 0.5)
+        return model
+    }
+
+    /// 쉬는 중에는 **시작 키만** 보여 준다. 정산·종료 키를 함께 띄우면 사용자가 먹지도 않는 키를
+    /// 누르고 화면은 거절 사유로 답한다 — 그건 안내가 아니라 함정이다.
+    @Test func testIdleHomeOffersOnlyTheStartKeys() {
+        let hints = TUIRender.sessionHints(idle())
+        #expect(hints.contains("1 25분"))
+        #expect(!hints.contains("c 보상 받기"))
+        #expect(!hints.contains("x 끝내기"))
+    }
+
+    /// 제시 길이는 화면·대화·터미널이 **한 표**를 쓴다. 여기서 손으로 적으면 키 번호와 실제
+    /// 켜지는 길이가 갈라진다.
+    @Test func testTheStartKeysFollowTheOfferedLengths() {
+        let hints = TUIRender.sessionHints(idle())
+        for (index, minutes) in PokemonChatTool.focusMinutes.enumerated() {
+            #expect(hints.contains("\(index + 1) \(minutes)분"), "키 \(index + 1) 이 \(minutes)분을 안 가리킨다")
+        }
+    }
+
+    /// 아직 나가 있는 모험은 정산할 수 없다. "c 보상 받기" 를 띄우면 눌러도 거절만 돌아온다.
+    @Test func testAnOngoingAdventureOffersOnlyStopping() {
+        let hints = TUIRender.sessionHints(adventuring(remainingSeconds: 900))
+        #expect(hints.contains("x 끝내기"))
+        #expect(!hints.contains("c 보상 받기"))
+        #expect(!hints.contains("1 25분"), "모험 중에 시작 키를 권하면 안 된다")
+    }
+
+    /// 끝난 모험에서는 정산이 다음 수다.
+    @Test func testAFinishedAdventureOffersClaiming() {
+        #expect(TUIRender.sessionHints(adventuring(remainingSeconds: 0)).contains("c 보상 받기"))
+    }
+
+    /// `status` 처럼 한 번 찍고 끝나는 출력에는 키 안내를 붙이지 않는다 — 누를 곳이 없는 키를
+    /// 알려 주는 셈이라, 사용자가 그 키를 셸에 친다.
+    @Test func testKeyHintsAppearOnlyInTheFullScreenView() {
+        let once = TUIRender.home(idle(), width: 70).joined(separator: "\n")
+        let watching = TUIRender.home(idle(), width: 70, keyHints: true).joined(separator: "\n")
+        #expect(!once.contains("q 종료"))
+        #expect(watching.contains("q 종료"))
+        #expect(watching.contains("1 25분"))
+    }
+
+    /// 마지막 동작의 결과 한 줄(보상 요약·거절 사유)이 실제로 화면에 실린다. 안 실리면 요청은
+    /// 갔는데 사용자는 아무 답도 못 본다.
+    @Test func testTheStatusLineIsRendered() {
+        var model = idle()
+        model.status = "25분 집중을 시작했다."
+        #expect(TUIRender.home(model, width: 70).contains { $0.contains("25분 집중을 시작했다.") })
+    }
+
+    /// 모험이 없는 홈도 정상 상태다 — 그 줄이 비면 고장으로 읽힌다.
+    @Test func testTheIdleHomeStillSaysWhatTheAdventureRowMeans() {
+        #expect(TUIRender.home(idle(), width: 70).contains { $0.contains("쉬는 중") })
+    }
 }

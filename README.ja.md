@@ -129,6 +129,32 @@ swift build
 
 `build-app.sh` は `/Applications/Pokédoro.app` を作成・インストールします（インストールを省略した場合は `build/Pokédoro.app`）。
 
+## ターミナルから使う
+
+同じ実行ファイルがターミナルでも動きます。リンクを一つ張ると短い名前で呼べます。
+
+```bash
+ln -s "/Applications/Pokédoro.app/Contents/MacOS/PokeTokenBar" /usr/local/bin/pokedoro
+```
+
+```
+pokedoro status [--oneline]   パートナー・冒険・残高（--oneline はステータスバー用の一行）
+pokedoro party                手持ちのポケモン
+pokedoro dex                  ポケモン図鑑
+pokedoro watch                全画面のライブ表示
+pokedoro start [25|50|90]     集中セッションを開始
+pokedoro claim                終わった冒険の報酬を受け取る
+pokedoro stop                 集中セッションを終える
+```
+
+tmux のステータスバーに入れる例です。
+
+```
+set -g status-right '#(pokedoro status --oneline)'
+```
+
+参照系はセーブを読むだけです。集中セッションの三つは**メニューバーアプリに依頼し、アプリが実行します** — セーブに書くプロセスを一つに保つためです。アプリが起動していない場合、その三つは実行されず、その旨を伝えて終了コード `3` で終わります。
+
 ## データ、プライバシー、免責
 
 - 進行データとキャッシュは `~/Library/Application Support/PokeTokenBar/` に保存されます。

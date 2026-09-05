@@ -97,23 +97,34 @@ enum TUIRender {
                 + String(format: " %3d%%", Int((min(1, max(0, adventure.progress)) * 100).rounded())),
                 to: inner))
         } else {
-            // 시작은 앱에서 한다 — 터미널은 세이브를 읽기만 한다(`CompanionStore.isReadOnly`).
-            lines.append(TUIText.truncate("모험     쉬는 중 — 시작은 앱에서", to: inner))
+            lines.append(TUIText.truncate("모험     쉬는 중", to: inner))
         }
 
         lines.append("")
         lines.append(rule(width: inner))
-        if model.isReadOnly {
-            lines.append(TUIText.truncate("읽기 전용 — 진행을 바꾸는 일은 앱에서 한다. r 로 다시 읽는다.", to: inner))
-        }
         if let status = model.status {
             lines.append(TUIText.truncate(status, to: inner))
         }
         if keyHints {
-            lines.append(TUIText.truncate(
-                "p 포켓몬  d 도감  r 새로고침  q 종료", to: inner))
+            // **지금 누를 수 있는 키만** 보여 준다. 상태와 무관하게 다 나열하면 사용자가 먹지도
+            // 않는 키를 누르고 화면은 거절 사유로 답한다 — 그건 안내가 아니라 함정이다.
+            lines.append(TUIText.truncate(sessionHints(model), to: inner))
+            lines.append(TUIText.truncate("p 포켓몬  d 도감  r 새로고침  q 종료", to: inner))
         }
         return lines
+    }
+
+    /// 홈에서 지금 유효한 세션 키. 화면이 제 나름의 조건을 발명하지 않도록 `PokedoroSessionGate`
+    /// 가 보는 것과 **같은 값**(모험 유무·정산 가능 여부)만 읽는다.
+    static func sessionHints(_ model: TUIHomeModel) -> String {
+        guard let adventure = model.adventure else {
+            // 길이 목록은 화면·대화·터미널이 한 표를 쓴다 — 여기서 손으로 적으면 키와 실제
+            // 길이가 갈라진다.
+            return PokemonChatTool.focusMinutes.enumerated()
+                .map { "\($0.offset + 1) \($0.element)분" }
+                .joined(separator: "  ") + "   집중 시작"
+        }
+        return adventure.isClaimable ? "c 보상 받기   x 끝내기" : "x 끝내기"
     }
 
     /// 목록 한 창. 항상 정확히 `height` 줄을 돌려주고, 선택 행은 반드시 창 안에 들어간다 —

@@ -366,11 +366,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     }
 
     private var focusTickTimer: Timer?
+    /// 터미널이 남긴 요청을 받는 우편함. **새 타이머를 두지 않는다** — 이미 1초마다 도는 집중
+    /// 틱에 얹는다. 요청이 없는 초에는 없는 파일을 한 번 여는 것이 전부다.
+    private let pokedoroMailbox = PokedoroMailbox()
+    /// 마지막으로 실행한 요청. 앱은 요청 파일을 **지우지 않으므로**(지우면 터미널의 파일에
+    /// 쓰는 두 번째 주체가 된다) 이 값이 없으면 같은 요청이 매 틱 다시 실행된다.
+    private var lastExecutedRequestID: UUID?
+
     private func startFocusTick() {
         let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 self.focusTimer.tick()
+                self.handlePokedoroRequestIfNeeded()
                 self.applyState()
             }
         }
@@ -378,6 +386,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         RunLoop.main.add(timer, forMode: .common)
         focusTickTimer = timer
         observeOfficeMode()
+    }
+
+    /// 터미널이 남긴 요청을 실행하고 답을 남긴다.
+    ///
+    /// **판단은 전부 밖에 있다** — 실행 여부는 `PokedoroRequestBus`, 거절은
+    /// `PokedoroSessionGate`, 실제 변경과 문구는 `PokedoroRequestExecutor`. 여기 남는 것은
+    /// 배선뿐이라, 앱 루트에 테스트가 안 닿는 것이 문제가 되지 않는다.
+    ///
+    /// 실행한 뒤에 `lastExecutedRequestID` 를 남기는 순서를 지킨다 — 답 쓰기가 실패해도 요청은
+    /// 한 번만 실행돼야 한다(터미널은 타임아웃으로 답하고, 그게 두 번 실행되는 것보다 낫다).
+    private func handlePokedoroRequestIfNeeded() {
+        guard let request = pokedoroMailbox.pendingRequest(),
+              PokedoroRequestBus.shouldExecute(request, now: Date(),
+                                               lastExecutedID: lastExecutedRequestID) else { return }
+        lastExecutedRequestID = request.id
+        let reply = PokedoroRequestExecutor(timer: focusTimer, companion: companion).execute(request)
+        // 쓰기 실패는 터미널 쪽에서 타임아웃으로 드러난다. 여기서 재시도하면 같은 초에 다시
+        // 실행될 위험만 늘고, 이미 세이브는 바뀐 뒤다.
+        try? pokedoroMailbox.post(reply)
     }
 
     private func observeOfficeMode() {

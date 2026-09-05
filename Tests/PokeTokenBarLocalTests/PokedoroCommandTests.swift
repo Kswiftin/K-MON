@@ -27,14 +27,67 @@ struct PokedoroCommandTests {
         #expect(try parse(["top"]) == .watch)
     }
 
+    // MARK: 집중 세션 명령
+
+    /// 세 동작은 터미널에서 **직접 요청한다**. 세이브를 바꾸는 쪽은 여전히 앱이지만
+    /// (`PokedoroRequestBus`), 사용자에게는 그냥 되는 명령이어야 한다.
+    @Test func testFocusSessionCommandsParse() throws {
+        #expect(try parse(["start", "25"]) == .start(minutes: 25))
+        #expect(try parse(["claim"]) == .claim)
+        #expect(try parse(["stop"]) == .stop)
+    }
+
+    /// 분을 안 적으면 실행기가 기본 길이를 고른다. 여기서 25 를 박으면 기본값이 두 곳이 되고,
+    /// 한쪽만 바뀌면 화면과 터미널이 다른 길이를 켠다.
+    @Test func testStartWithoutMinutesLeavesTheChoiceToTheExecutor() throws {
+        #expect(try parse(["start"]) == .start(minutes: nil))
+    }
+
+    /// 별칭. `go` 는 시작, `cancel` 은 종료다 — 앱 버튼의 이름("모험 취소")을 기억하는 사용자가
+    /// 그대로 쳐도 통해야 한다.
+    @Test func testFocusSessionAliases() throws {
+        #expect(try parse(["go", "50"]) == .start(minutes: 50))
+        #expect(try parse(["cancel"]) == .stop)
+    }
+
+    /// 숫자가 아닌 인자를 **조용히 무시하면 안 된다.** `start 5o` 를 25분으로 접으면 사용자는
+    /// 자기가 무엇을 켰는지 모른 채 오타를 반복한다.
+    @Test func testANonNumericLengthIsRejectedByName() {
+        #expect(throws: PokedoroCommandError.invalidMinutes("5o")) {
+            try parse(["start", "5o"])
+        }
+        #expect(PokedoroCommandError.invalidMinutes("5o").message.contains("25"),
+                "쓸 수 있는 길이를 알려 줘야 사용자가 다음에 무엇을 칠지 안다")
+    }
+
+    // MARK: 세이브를 여는가, 요청을 보내는가
+
+    /// **이 표가 뒤집히면 피하려던 일이 그대로 일어난다.** 요청으로 가야 할 명령이 세이브를 열면
+    /// 여는 것만으로 정산이 돌고(`ReadOnlyStoreTests`), 조회 명령이 요청을 보내면 앱이 꺼져
+    /// 있을 때 `status` 가 3초 멈췄다 실패한다.
+    @Test func testOnlySessionCommandsBecomeRequests() {
+        #expect(PokedoroCommand.start(minutes: 25).request == .start)
+        #expect(PokedoroCommand.claim.request == .claim)
+        #expect(PokedoroCommand.stop.request == .stop)
+    }
+
+    @Test func testReadOnlyCommandsNeverBecomeRequests() {
+        let readOnly: [PokedoroCommand] = [.status(oneline: false), .status(oneline: true),
+                                           .party, .dex, .watch, .help]
+        for command in readOnly {
+            #expect(command.request == nil, "\(command) 가 앱에 요청을 보낸다")
+        }
+    }
+
     // MARK: 앱에만 있는 명령
 
-    /// 터미널은 세이브를 **읽기만** 한다. 이름을 알아보고 이유를 말해야 한다 — "알 수 없는 명령"
-    /// 으로 답하면 사용자는 오타를 의심하며 같은 명령을 다시 친다.
-    @Test func testWriteCommandsExplainThatTheyLiveInTheApp() {
-        for name in ["start", "go", "claim", "cancel", "stop"] {
-            #expect(throws: PokedoroCommandError.readOnlyFrontEnd(name)) {
-                try parse([name, "25"])
+    /// 터미널이 다루는 것은 집중 세션뿐이다. 배틀·교환처럼 앱 화면에만 있는 것은 이름을
+    /// 알아보고 **어디서 하는지** 답해야 한다 — "알 수 없는 명령" 으로 뭉개면 사용자는 오타를
+    /// 의심하며 같은 명령을 다시 친다.
+    @Test func testAppOnlyCommandsExplainWhereTheyLive() {
+        for name in ["battle", "trade", "auction", "home", "raid", "shop"] {
+            #expect(throws: PokedoroCommandError.appOnlyFeature(name)) {
+                try parse([name])
             }
         }
     }
@@ -42,8 +95,9 @@ struct PokedoroCommandTests {
     /// 그 이유가 화면에 실제로 나가는 문장인지 본다 — 오류 타입만 맞고 문구가 비면 사용자는
     /// 왜 거절됐는지 알 수 없다.
     @Test func testTheRefusalSaysWhereTheCommandLives() {
-        #expect(PokedoroCommandError.readOnlyFrontEnd("claim").message.contains("앱에서"))
-        #expect(PokedoroCommandParser.usage.contains("읽기만"))
+        #expect(PokedoroCommandError.appOnlyFeature("battle").message.contains("앱"))
+        #expect(PokedoroCommandParser.usage.contains("start"),
+                "도움말이 이제 쓸 수 있는 세션 명령을 알려 줘야 한다")
     }
 
     // MARK: 오타
