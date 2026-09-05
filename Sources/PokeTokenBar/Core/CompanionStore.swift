@@ -2502,6 +2502,17 @@ final class CompanionStore {
     /// 목록엔 둘만 보이는 상태가 생기고, 그건 기록을 못 믿게 만든다.
     var todaysFocusSessions: [FocusSession] { focusSessions.sessions(on: Self.dayKey(clock())) }
 
+    /// 한 주 회고(PRD 마일스톤 4). `weeksAgo` 가 0이면 이번 주다.
+    ///
+    /// **저장 필드가 없다** — 원장에서 파생하므로 세이브도 마이그레이션도 없고, 마일스톤 1 이
+    /// 쌓아 둔 90일치가 그대로 입력이 된다. `clock()` 을 쓰는 이유는 원장 전체가 그렇기 때문이다:
+    /// `Date()` 를 부르면 테스트가 자정도 주 경계도 넘길 수 없다.
+    func focusRecap(weeksAgo: Int = 0) -> FocusWeekRecap {
+        FocusWeekRecap.build(log: focusSessions,
+                             weekStart: Self.weekStart(clock(), weeksAgo: weeksAgo),
+                             now: clock())
+    }
+
     private func persistFocusSessions() {
         guard !isReadOnly else { return }
         do {
@@ -2719,10 +2730,30 @@ final class CompanionStore {
         String(dayKey(date).prefix(7))
     }
 
+    /// 주 단위 달력. **주 키와 주 경계가 같은 월요일을 쓰게 하는 유일한 자리다** — 리터럴이
+    /// 둘이면 한쪽만 고쳐졌을 때 주간 미션과 주간 회고가 다른 주를 센다.
+    ///
+    /// `let` 이 아니라 계산 프로퍼티인 이유는 `SeasonBoard.gregorian` 과 같다: `Calendar` 는 생성
+    /// 시점의 `TimeZone.current` 를 굳히므로, 굳히면 실행 중 시간대를 바꾼 뒤 주 경계가 어긋난다.
+    nonisolated static var isoCalendar: Calendar { Calendar(identifier: .iso8601) }
+
     nonisolated static func weekKey(_ date: Date) -> String {
-        let calendar = Calendar(identifier: .iso8601)
-        let parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        let parts = isoCalendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         return "\(parts.yearForWeekOfYear ?? 0)-W\(parts.weekOfYear ?? 0)"
+    }
+
+    /// 그 주의 월요일 00:00. `weeksAgo` 만큼 거슬러 오른다.
+    ///
+    /// **초 산술(`-86_400 * 7 * n`)을 쓰지 않는다** — DST 가 있는 지역에서 한 주가 167·169시간이라
+    /// 몇 주만 거슬러 올라가도 경계가 하루씩 밀리고, 두 오프셋이 같은 주에 떨어지면 "지난 주"
+    /// 버튼이 아무 일도 안 하는 구간이 생긴다.
+    ///
+    /// 구간을 못 구하면 받은 날짜를 그대로 돌려준다 — 회고 하나 때문에 화면이 죽지는 않게 한다.
+    nonisolated static func weekStart(_ date: Date, weeksAgo: Int = 0) -> Date {
+        let calendar = isoCalendar
+        guard let thisWeek = calendar.dateInterval(of: .weekOfYear, for: date)?.start else { return date }
+        guard weeksAgo != 0 else { return thisWeek }
+        return calendar.date(byAdding: .weekOfYear, value: -weeksAgo, to: thisWeek) ?? thisWeek
     }
 
     // MARK: 생명주기 갱신
