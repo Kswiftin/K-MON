@@ -81,6 +81,11 @@ final class AppSettings {
         didSet { defaults.set(releaseNotesOnUpdateEnabled, forKey: "releaseNotesOnUpdateEnabled") }
     }
     var doNotDisturb: Bool { didSet { defaults.set(doNotDisturb, forKey: "doNotDisturb") } }
+    /// 하루에 마치려는 집중 세션 수. 체인은 **여기서 멈춘다** — 목표를 넘겨서까지 자동으로 미는
+    /// 것이, 디스플레이만 켜 두고 자리를 뜬 경우에 가짜 세션이 쌓이는 마지막 통로다.
+    ///
+    /// 읽을 때 클램프한다(init). 0이 들어오면 체인이 첫 세션부터 죽고, 999면 목표가 사실상 없다.
+    var dailyFocusGoal: Int { didSet { defaults.set(dailyFocusGoal, forKey: "dailyFocusGoal") } }
     /// 팝오버를 열지 않아도 LAN 배틀 신청을 받는다. **켜져 있는 동안에만** Bonjour 리스너가 뜨고,
     /// 리스너가 뜨는 순간 macOS 가 로컬 네트워크 권한을 묻는다 — 배틀을 안 하는 사용자가 그 창을
     /// 영영 안 보게 하는 유일한 스위치다. 기본값은 기존 동작(켜짐)이다.
@@ -125,6 +130,10 @@ final class AppSettings {
         releaseNotesOnUpdateEnabled = defaults.object(forKey: "releaseNotesOnUpdateEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
+        dailyFocusGoal = min(max(defaults.object(forKey: "dailyFocusGoal") as? Int
+                                 ?? FocusChainRules.defaultDailyGoal,
+                                 FocusChainRules.goalRange.lowerBound),
+                             FocusChainRules.goalRange.upperBound)
         battleInvitesEnabled = defaults.object(forKey: "battleInvitesEnabled") as? Bool ?? true
         if let value = defaults.string(forKey: "memoryHomeLANPeerID"), let id = UUID(uuidString: value) {
             memoryHomeLANPeerID = id
