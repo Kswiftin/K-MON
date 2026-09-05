@@ -8,8 +8,10 @@ struct TUIInputTests {
 
     /// `writable` 기본값은 참이다 — 표 자체는 두 경우를 다 답해야 하고, 지금 터미널이 붙이는
     /// 값(거짓)은 아래 "읽기 전용" 절이 따로 본다.
-    private func action(_ key: TUIKey, screen: TUIScreen = .home, writable: Bool = true) -> TUIAction {
-        TUIKeymap.action(for: key, screen: screen, canWrite: writable)
+    private func action(_ key: TUIKey, screen: TUIScreen = .home, writable: Bool = true,
+                        awaitingConfirmation: Bool = false) -> TUIAction {
+        TUIKeymap.action(for: key, screen: screen, canWrite: writable,
+                         awaitingConfirmation: awaitingConfirmation)
     }
 
     // MARK: 이동
@@ -112,6 +114,58 @@ struct TUIInputTests {
         #expect(action(.char("d"), writable: false) == .show(.dex))
         #expect(action(.char("q"), writable: false) == .quit)
         #expect(action(.char("r"), writable: false) == .reload)
+    }
+
+    // MARK: 커서 행에 하는 일
+
+    /// 목록의 동작은 **커서가 가리키는 행**에 걸린다 — 번호를 다시 치게 하면 화면을 보고 있는
+    /// 뜻이 없다. 화면마다 대상이 다르므로 키도 그 화면에서만 산다.
+    @Test func testCursorActionsLiveOnTheScreenThatNamesTheirTarget() {
+        #expect(action(.char("s"), screen: .party) == .switchToSelected)
+        #expect(action(.char("u"), screen: .bag) == .useSelected)
+    }
+
+    /// 다른 화면에서는 같은 키가 아무 일도 하지 않는다. 가방에서 `s` 를 눌러 교체가 일어나면
+    /// 사용자는 무엇이 바뀌었는지 알 수 없다(커서가 가리키는 것이 포켓몬이 아니다).
+    @Test func testCursorActionsDoNothingOnScreensWithoutThatTarget() {
+        #expect(action(.char("s"), screen: .bag) == .ignored)
+        #expect(action(.char("u"), screen: .party) == .ignored)
+        #expect(action(.char("s")) == .ignored, "홈에는 커서가 없다")
+    }
+
+    /// 방생은 **대문자**다. 소문자 `r` 은 새로고침이라 되돌릴 수 없는 동작이 한 글자 옆에 있으면
+    /// 안 되고, Shift 를 함께 눌러야 하는 것 자체가 "의도한 입력" 이라는 뜻이다.
+    @Test func testReleaseNeedsAShiftedKeyOfItsOwn() {
+        #expect(action(.char("R"), screen: .party) == .releaseSelected)
+        #expect(action(.char("r"), screen: .party) == .reload, "소문자는 여전히 새로고침이다")
+    }
+
+    // MARK: 되돌릴 수 없는 동작의 확인
+
+    /// 확인을 기다리는 동안 **`y` 만 승낙이다.**
+    @Test func testOnlyYesConfirms() {
+        #expect(action(.char("y"), screen: .party, awaitingConfirmation: true) == .confirm)
+    }
+
+    /// 나머지 키는 전부 **취소**다 — 종료·이동처럼 평소 먹는 키도 여기서는 먼저 확인을 물린다.
+    /// 확인 창을 띄운 채 다른 일이 일어나면 사용자는 자기가 무엇에 답했는지 알 수 없다.
+    @Test func testAnyOtherKeyCancelsTheConfirmation() {
+        for key in [TUIKey.char("q"), .char("n"), .char("R"), .escape, .down, .unknown] {
+            #expect(action(key, screen: .party, awaitingConfirmation: true) == .cancelConfirmation,
+                    "\(key) 가 확인을 지나쳤다")
+        }
+    }
+
+    /// 확인을 안 기다리는 평소에는 `y` 가 아무 일도 아니다 — 남는 키가 조용히 뭔가 하면 안 된다.
+    @Test func testYesDoesNothingWhenNothingIsWaiting() {
+        #expect(action(.char("y"), screen: .party) == .ignored)
+    }
+
+    /// 쓰기 권한이 없으면 커서 동작도 **거절**로 돌아온다(`.ignored` 와 구분한다).
+    @Test func testCursorActionsAreRejectedWithoutWriteAccess() {
+        #expect(action(.char("s"), screen: .party, writable: false) == .rejected(.readOnly))
+        #expect(action(.char("R"), screen: .party, writable: false) == .rejected(.readOnly))
+        #expect(action(.char("u"), screen: .bag, writable: false) == .rejected(.readOnly))
     }
 
     // MARK: 목록 스크롤

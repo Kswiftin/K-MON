@@ -166,8 +166,19 @@ enum PokedoroCLI {
             : "\(partner) · \(zoneLabel(run.zone)) \(TUIRender.duration(remaining))"
     }
 
+    /// 목록이 커서 행으로 되짚을 값. **행을 만드는 쪽도 이 함수를 쓴다** — 두 곳이 각자 스토어를
+    /// 읽으면 한쪽만 정렬이 바뀌는 날 커서가 다른 개체를 가리킨다.
+    static func partyEntries(_ store: CompanionStore) -> [CompanionStore.ChatRosterEntry] {
+        store.chatRosterEntries
+    }
+
+    /// 가방 목록이 커서 행으로 되짚을 값. `bagRows` 와 같은 순서다(같은 함수를 읽는다).
+    static func bagEntries(_ store: CompanionStore) -> [(kind: ItemKind, count: Int)] {
+        store.ownedItems
+    }
+
     static func partyRows(_ store: CompanionStore) -> [String] {
-        let entries = store.chatRosterEntries
+        let entries = partyEntries(store)
         guard !entries.isEmpty else { return ["보유한 포켓몬이 없다."] }
         return entries.map { entry in
             // 번호를 찍는 이유는 `mon <번호>` 가 이 값을 받기 때문이다 — 안내만 하고 안 찍으면
@@ -192,7 +203,7 @@ enum PokedoroCLI {
     /// 가방. 아이템 이름은 표에서 오므로 네트워크가 필요 없다 — 진화 라인이 있어야 채워지는
     /// 값(`displayName` 부류)을 쓰지 않는다는 규칙을 그대로 지킨다.
     static func bagRows(_ store: CompanionStore, width: Int) -> [String] {
-        let items = store.ownedItems
+        let items = bagEntries(store)
         guard !items.isEmpty else { return ["가방이 비어 있다."] }
         let l = L(store.language)
         return TUIRender.rows(items.map { (l.itemName($0.kind), "×\(TUIRender.number($0.count))") },

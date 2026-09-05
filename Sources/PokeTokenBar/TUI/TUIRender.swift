@@ -118,6 +118,28 @@ enum TUIRender {
             + "  r 새로고침  q 종료"
     }
 
+    /// 목록 화면의 키 안내. **지금 누를 수 있는 것만** 보여 준다(홈의 `sessionHints` 와 같은 규칙).
+    ///
+    /// `canActOnSelection` 이 거짓이면 커서 동작 키를 뺀다 — 빈 목록이거나, 커서가 이미 나와 있는
+    /// 개체를 가리키는 경우다. 눌러도 거절만 돌아오는 키를 권하면 그건 안내가 아니라 함정이다.
+    static func listHints(screen: TUIScreen, canActOnSelection: Bool) -> String {
+        var keys = ["↑↓/jk 이동"]
+        if canActOnSelection {
+            switch screen {
+            case .party: keys += ["s 교체", "R 놓아주기"]
+            case .bag: keys += ["u 쓰기"]
+            case .home, .dex, .challenge, .goals: break
+            }
+        }
+        return keys.joined(separator: "  ") + "   " + screenHints(current: screen)
+    }
+
+    /// 되돌릴 수 없는 동작이 답을 기다리는 줄. **다른 키를 함께 띄우지 않는다** — 그 키를 누르면
+    /// 확인이 조용히 취소되는데, 사용자는 자기가 취소했다는 것을 모른다.
+    static func confirmationHint(question: String) -> String {
+        "\(question). 정말이면 y, 아니면 아무 키나."
+    }
+
     /// 홈 화면.
     ///
     /// `keyHints` 는 **전체 화면 보기(`watch`)에서만** 켠다. 한 번 찍고 끝나는 `status` 에

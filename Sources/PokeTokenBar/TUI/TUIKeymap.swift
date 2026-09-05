@@ -57,6 +57,14 @@ enum TUIAction: Equatable, Sendable {
     case cancelAdventure
     /// 목록 커서 이동량.
     case scroll(Int)
+    /// **커서가 가리키는 행**에 거는 일. 대상을 인자로 안 싣는 이유는 이 표가 로스터·가방을
+    /// 모르기 때문이다 — 무엇이 그 자리에 있는지는 화면이 알고, 표는 "무엇을 할지" 만 정한다.
+    case useSelected
+    case switchToSelected
+    case releaseSelected
+    /// 되돌릴 수 없는 동작의 승낙·취소.
+    case confirm
+    case cancelConfirmation
     /// 이 화면에 배정되지 않은 키.
     case ignored
     case rejected(TUIRejection)
@@ -92,7 +100,28 @@ enum TUIKeymap {
         }
     }
 
-    static func action(for key: TUIKey, screen: TUIScreen, canWrite: Bool) -> TUIAction {
+    /// 커서 행에 거는 동작. **그 화면의 커서가 가리키는 것이 대상이 될 수 있을 때만** 배정한다 —
+    /// 가방에서 `s`(교체)가 먹으면 사용자는 무엇이 바뀌었는지 알 수 없다.
+    private static func selectionAction(_ key: Character, screen: TUIScreen) -> TUIAction? {
+        switch (screen, key) {
+        case (.party, "s"): .switchToSelected
+        // 대문자다. 소문자 `r` 은 새로고침이라 되돌릴 수 없는 동작이 한 글자 옆에 있으면 안 되고,
+        // Shift 를 함께 누르는 것 자체가 "의도한 입력" 이라는 뜻이다.
+        case (.party, "R"): .releaseSelected
+        case (.bag, "u"): .useSelected
+        default: nil
+        }
+    }
+
+    /// `awaitingConfirmation` 은 되돌릴 수 없는 동작이 답을 기다리는 상태다. 그동안 **`y` 외의
+    /// 모든 키는 취소**다 — 평소 먹는 키(종료·이동)가 그대로 먹으면 확인 창을 띄운 채 다른 일이
+    /// 일어나고, 사용자는 자기가 무엇에 답했는지 알 수 없다.
+    static func action(for key: TUIKey, screen: TUIScreen, canWrite: Bool,
+                       awaitingConfirmation: Bool = false) -> TUIAction {
+        if awaitingConfirmation {
+            if case .char("y") = key { return .confirm }
+            return .cancelConfirmation
+        }
         switch key {
         case .escape:
             return screen == .home ? .quit : .show(.home)
@@ -119,6 +148,10 @@ enum TUIKeymap {
         // 안내(`TUIRender.screenHints`)와 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다.
         if let next = TUIScreen.screen(for: character) { return .show(next) }
         if screen.isList {
+            // 커서 동작은 쓰기다 — 권한이 없으면 침묵이 아니라 거절로 돌아온다.
+            if let selection = selectionAction(character, screen: screen) {
+                return canWrite ? selection : .rejected(.readOnly)
+            }
             // vi 키는 목록에서만 산다. 홈에서 j/k 를 받으면 아무 데도 안 쓰이는 커서가 움직인다.
             switch character {
             case "j": return .scroll(1)
