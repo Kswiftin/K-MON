@@ -188,6 +188,10 @@ struct PokedoroReply: Codable, Equatable, Sendable {
 struct PokedoroMailbox: Sendable {
     let requestURL: URL
     let replyURL: URL
+    /// 터미널이 "보고 있다" 고 남기는 신호. 터미널만 쓴다.
+    let attachURL: URL
+    /// 앱이 내놓는 지금 화면. 앱만 쓴다.
+    let viewURL: URL
 
     /// 세이브와 **같은 디렉터리**에 둔다 — `PTB_STATE_DIR` 하나로 프로필 전체가 격리된다는
     /// `CompanionStorageLocations` 의 계약을 요청도 지켜야 한다. 아니면 격리된 QA 세션의
@@ -196,6 +200,8 @@ struct PokedoroMailbox: Sendable {
         let base = directory ?? CompanionStorageLocations().directory
         requestURL = base.appendingPathComponent("pokedoro-request.json")
         replyURL = base.appendingPathComponent("pokedoro-reply.json")
+        attachURL = base.appendingPathComponent("pokedoro-attach.json")
+        viewURL = base.appendingPathComponent("pokedoro-view.json")
     }
 
     // MARK: 터미널 쪽
@@ -213,7 +219,24 @@ struct PokedoroMailbox: Sendable {
         return reply.id == id ? reply : nil
     }
 
+    /// 보고 있다는 신호를 남긴다. **살아 있는 동안 계속 갱신한다** — 터미널은 인사하고 죽을 수
+    /// 있으므로(창을 닫거나 kill 당한다) 앱은 나이로 판정한다.
+    func attach(_ attachment: PokedoroAttachment) throws {
+        try Self.encoder.encode(attachment).write(to: attachURL, options: .atomic)
+    }
+
+    /// 앱이 내놓은 지금 화면.
+    func view() -> PokedoroViewSnapshot? { Self.load(viewURL) }
+
     // MARK: 앱 쪽
+
+    /// 터미널이 남긴 신호. 나이 판정은 `PokedoroViewChannel.isAttached` 가 한다.
+    func attachment() -> PokedoroAttachment? { Self.load(attachURL) }
+
+    /// 지금 화면을 내놓는다. **바뀔 때만** 부른다(`PokedoroViewChannel.shouldWrite`).
+    func postView(_ snapshot: PokedoroViewSnapshot) throws {
+        try Self.encoder.encode(snapshot).write(to: viewURL, options: .atomic)
+    }
 
     /// 지금 놓여 있는 요청. **파일이 없는 것이 정상이다** — 앱은 요청이 없는 매 초에도 이
     /// 경로를 밟는다. 깨진 파일도 `nil` 이다: 여기서 죽으면 메뉴바 앱이 통째로 내려간다.

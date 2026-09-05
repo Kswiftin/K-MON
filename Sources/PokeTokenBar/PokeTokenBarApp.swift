@@ -182,6 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     /// 배틀이 잡히면 창을 **열고 그 화면으로 데려간다.** 붙들지는 않는다 — 급히 치워야 할 때
     /// 닫히지 않으면 곤란하고, 배틀은 창을 닫아도 살아 있어 다시 열면 이어진다.
     private func applyBattleWindow() {
+        // 터미널에서 보고 있는 사용자에게 창이 튀어나오면 화면이 통째로 가려진다 — 그쪽이
+        // 대전을 보고 있는 중일 수도 있다. 붙어 있는 동안에는 앱이 스스로 앞에 나서지 않는다.
+        guard !isTerminalAttached else { return }
         guard battleCenter.wantsForegroundWindow else { return }
 
         // 닫힌 창을 되살리는 것은 **내가 골라야 할 때**뿐이다 — 이미 낸 뒤에도 열면 닫아도 곧바로
@@ -372,6 +375,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     /// 마지막으로 실행한 요청. 앱은 요청 파일을 **지우지 않으므로**(지우면 터미널의 파일에
     /// 쓰는 두 번째 주체가 된다) 이 값이 없으면 같은 요청이 매 틱 다시 실행된다.
     private var lastExecutedRequestID: UUID?
+    /// 마지막으로 내놓은 화면. **바뀔 때만 쓰기** 위해 들고 있는다(`PokedoroViewChannel.shouldWrite`).
+    private var lastPublishedView: PokedoroViewSnapshot?
+
+    /// 지금 터미널이 보고 있는가. 신호 파일의 **나이**로 판정한다 — 터미널은 인사하고 죽을 수
+    /// 있으므로(창을 닫거나 kill 당한다) 파일이 남아 있다는 것만으로는 붙어 있다고 볼 수 없다.
+    private var isTerminalAttached: Bool {
+        PokedoroViewChannel.isAttached(pokedoroMailbox.attachment(), now: Date())
+    }
 
     private func startFocusTick() {
         let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -379,6 +390,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 guard let self else { return }
                 self.focusTimer.tick()
                 await self.handlePokedoroRequestIfNeeded()
+                self.publishTerminalViewIfNeeded()
                 self.applyState()
             }
         }
@@ -407,6 +419,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         // 쓰기 실패는 터미널 쪽에서 타임아웃으로 드러난다. 여기서 재시도하면 같은 초에 다시
         // 실행될 위험만 늘고, 이미 세이브는 바뀐 뒤다.
         try? pokedoroMailbox.post(reply)
+    }
+
+    /// 터미널이 보고 있을 때만 지금 화면을 내놓는다.
+    ///
+    /// **판단은 밖에 있다** — 붙었는지·써야 하는지는 `PokedoroViewChannel`, 무엇을 그릴지는 그
+    /// 안의 생산자다. 여기 남는 것은 배선뿐이라 앱 루트에 테스트가 안 닿는 것이 문제가 되지 않는다
+    /// (요청 실행 배선과 같은 규칙).
+    private func publishTerminalViewIfNeeded() {
+        guard isTerminalAttached else { return }
+        // 타이머는 세이브에 없다 — 터미널이 스스로 만들 수 없는 값이라 이 채널의 첫 생산자다.
+        guard let snapshot = PokedoroViewChannel.focusSnapshot(
+            phase: focusTimer.isRunning ? focusTimer.phase : .idle,
+            clockText: focusTimer.clockText(),
+            completed: focusTimer.completedSessions,
+            now: Date()) else { return }
+        guard PokedoroViewChannel.shouldWrite(snapshot, lastWritten: lastPublishedView) else { return }
+        lastPublishedView = snapshot
+        try? pokedoroMailbox.postView(snapshot)
     }
 
     private func observeOfficeMode() {

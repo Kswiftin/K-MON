@@ -24,6 +24,11 @@ final class TUIWatch {
     /// 확인 사이에 목록이 다시 읽혀 커서 아래 행이 바뀔 수 있으므로, 그때 대상을 다시 찾으면
     /// 사용자가 승낙한 것과 다른 개체가 사라진다.
     private var confirmation: (question: String, action: PokedoroRequest.Action)?
+    /// 이 화면의 신원. 앱이 여러 터미널을 구분할 필요는 아직 없지만, 신호가 누구 것인지 적어 두면
+    /// 나중에 붙은 쪽을 셀 수 있다.
+    private let attachmentID = UUID()
+    /// 앱이 내놓은 지금 화면. **세이브에 없는 값**(집중 타이머 등)은 이 경로로만 온다.
+    private var appView: PokedoroViewSnapshot?
 
     init(store: CompanionStore) {
         self.store = store
@@ -194,6 +199,13 @@ final class TUIWatch {
 
     private func tick() {
         frame += 1
+        // 보고 있다고 계속 인사한다 — 앱은 나이로 판정하므로 멈추면 곧 "아무도 안 본다" 가 된다.
+        let size = terminal.size
+        try? mailbox.attach(PokedoroAttachment(id: attachmentID, width: size.width,
+                                               height: size.height, at: Date()))
+        // 낡은 화면은 버린다. 앱이 죽으면 파일은 마지막 상태로 얼어붙는데, 그대로 그리면 사용자는
+        // 멈춘 타이머를 도는 것으로 읽는다.
+        appView = mailbox.view().flatMap { PokedoroViewChannel.isStale($0, now: Date()) ? nil : $0 }
         collectReplyIfNeeded()
         // 주기적 재읽기 — 메뉴바 앱이 바꾼 진행을 끌어온다. 사용자가 r 을 누르지 않아도 낡지 않게.
         if frame % Self.reloadEveryFrames == 0 { reload() }
@@ -222,6 +234,12 @@ final class TUIWatch {
         switch screen {
         case .home:
             lines = TUIRender.home(model, width: size.width, keyHints: true)
+            // 앱만 아는 값(집중 타이머)은 세이브에 없으므로 스냅샷으로만 온다. 붙어 있지 않거나
+            // 앱이 조용하면 그냥 없는 것이다 — 없는 줄을 만들어 채우지 않는다.
+            if let view = appView {
+                lines.append(TUIRender.rule(width: size.width))
+                lines += view.lines.map { TUIText.truncate($0, to: size.width) }
+            }
         case .party, .dex, .bag, .challenge, .goals:
             // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
             let listHeight = max(1, size.height - 5)
