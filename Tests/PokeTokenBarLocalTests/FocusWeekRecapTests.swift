@@ -204,17 +204,26 @@ struct FocusWeekRecapTests {
 
     // MARK: 되돌아볼 수 있는 범위
 
-    /// **가장 오래된 주가 통째로 보존 기간 안**이어야 한다.
+    /// **가장 오래된 주가 통째로 보존 기간 안**이어야 한다 — 주의 **어느 요일에 열어도.**
     ///
     /// 상한을 손으로 적으면(12) 앞부분이 이미 잘려 나간 반쪽 주가 목록에 남고, 반쪽 주를 온전한
     /// 주와 나란히 비교하는 순간 그 비교가 곧 오답이다. 보존 기간에서 파생해야 90일을 늘렸을 때
     /// 범위가 따라 늘고, 줄였을 때 따라 준다.
-    @Test func testTheOldestReachableWeekFitsEntirelyInsideRetention() {
-        let now = Self.reference
-        let oldest = CompanionStore.weekStart(now, weeksAgo: FocusWeekRecap.maxWeeksBack)
-        let retentionFloor = now.addingTimeInterval(-Double(FocusSessionLog.retentionDays) * 86_400)
-        #expect(oldest >= retentionFloor,
-                "가장 오래된 회고 주의 앞부분이 보존 기간 밖이다 — 반쪽 주를 온전한 주와 비교하게 된다")
+    ///
+    /// **일곱 요일을 다 훑는 이유**: 이 값이 아슬아슬해지는 건 주의 **끝**에서다. 오프셋은 이번 주
+    /// 월요일에서 재는데 그 월요일은 `now` 로부터 최대 7일 전이라, 수요일에 열면 12주도 통과하고
+    /// 일요일 밤에 열어야 비로소 넘친다. 실제로 처음엔 기준 시각 하나(수요일)만 넣었더니 상한을
+    /// 12로 망가뜨려도 초록이었다 — 결함 트리거와 **다른 경로**로 통과해 아무것도 안 지키고 있었다.
+    @Test func testTheOldestReachableWeekFitsEntirelyInsideRetentionOnEveryWeekday() {
+        for day in 0..<7 {
+            let now = moment(day: day, hour: 23, minute: 59)
+            let oldest = CompanionStore.weekStart(now, weeksAgo: FocusWeekRecap.maxWeeksBack)
+            let retentionFloor = now.addingTimeInterval(-Double(FocusSessionLog.retentionDays) * 86_400)
+            #expect(oldest >= retentionFloor, """
+                \(day) 번째 요일에 열면 가장 오래된 회고 주의 앞부분이 보존 기간 밖이다 — \
+                반쪽 주를 온전한 주와 나란히 놓고 늘었다/줄었다를 읽게 된다
+                """)
+        }
     }
 
     /// 주를 거슬러 오를 때 **한 주씩** 움직인다. 초 산술(`-86_400 * 7`)로 만들면 DST 가 있는
