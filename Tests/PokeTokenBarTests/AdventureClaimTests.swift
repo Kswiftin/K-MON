@@ -44,6 +44,28 @@ final class AdventureClaimTests: XCTestCase {
                        "세션 보상은 claimAdventure() 결과 그대로 — 별도 가산이면 이중 지급이다")
     }
 
+    /// 세션 기록은 **재기동을 넘긴다** — 같은 디렉토리로 새 스토어를 세워도 오늘 집계가 살아 있다.
+    /// `FocusTimer.completedSessions` 가 못 하던 바로 그것이고, 터미널의 "오늘 마친 집중 N회" 가
+    /// 문구대로 동작하려면 반드시 필요한 성질이다.
+    ///
+    /// 모험 없이 세션만 끝낸다 — 기록이 **보상 경로와 무관하게** 남는지 보려는 것이다.
+    /// 정산할 모험이 있는 경로에서만 검사하면, 보상이 없을 때 기록이 통째로 빠져도 통과한다.
+    func testFocusSessionSurvivesRestart() {
+        let clock = TestClock()
+        let url = storeStateURL("focus-restart")
+        let store = CompanionStore(provider: StubProvider(value: claimTestLine), clock: clock.closure,
+                                   fileURL: url, rng: SeededRNG(seed: 11))
+        XCTAssertNil(store.activeAdventure, "테스트 전제: 정산할 모험이 없는 경로를 밟는다")
+        _ = store.completeFocusSession(minutes: 25)
+        XCTAssertEqual(store.focusSessionsToday, 1)
+        XCTAssertEqual(store.focusMinutesToday, 25)
+
+        let restarted = CompanionStore(provider: StubProvider(value: claimTestLine), clock: clock.closure,
+                                       fileURL: url, rng: SeededRNG(seed: 11))
+        XCTAssertEqual(restarted.focusSessionsToday, 1, "재기동 후 오늘 집계가 사라졌다")
+        XCTAssertEqual(restarted.focusMinutesToday, 25)
+    }
+
     /// [회귀 가드] 위 테스트는 25분 세션이라 어떤 미션도 완료되지 않아, 미션이 지갑에 **몰래** 더해도
     /// 통과했다(트레이너 레벨과 미션을 합칠 때 실제로 그랬다). 완전설명 불변식은 부가 지급이 실제로
     /// 일어나는 세션에서 검사해야 의미가 있다 — 60분 목표를 넘기는 90분으로 그 분기를 밟는다.

@@ -116,6 +116,16 @@ struct FocusTimerView: View {
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
+            // 오늘의 집계도 세 분기 **밖**이다 — 집중 중이든 쉬는 중이든 "오늘 얼마나 했나"는
+            // 같은 자리에 있어야 한다. 값은 원장에서 온다(재기동·자정을 넘긴다).
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
+                Text(companion.l.t("오늘 \(companion.focusSessionsToday)세션 · \(companion.focusMinutesToday)분",
+                                   "Today \(companion.focusSessionsToday) sessions · \(companion.focusMinutesToday) min",
+                                   "今日 \(companion.focusSessionsToday)セッション・\(companion.focusMinutesToday)分"))
+                Spacer()
+            }
+            .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             // 정산 배너는 세 분기 **밖**에 둔다. 예전엔 idle 분기 안에 있어서, 집중이 끝나는 순간
             // 타이머가 곧바로 휴식으로 넘어가(`FocusTimer.tick` → `startRest`) `isRunning` 이 참이
             // 되면 방금 정산한 결과가 화면에 뜨지도 못했다.

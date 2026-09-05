@@ -459,7 +459,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             PokedoroViewChannel.focusSnapshot(
                 phase: focusTimer.isRunning ? focusTimer.phase : .idle,
                 clockText: focusTimer.clockText(),
-                completed: focusTimer.completedSessions,
+                // "오늘 마친 집중" 은 원장에서 온다. `focusTimer.completedSessions` 는 프로세스
+                // 수명 카운터라 재기동에 0이 되고 자정도 모르는데, 터미널 문구는 오늘을 약속한다.
+                completed: companion.focusSessionsToday,
                 now: now),
             // 경매는 **타이머 뒤**다. 판이 아니라 상시 도는 목록이라(이웃의 게시물 하나로 참이
             // 된다) 앞에 두면 집중 타이머를 영영 가린다 — 그 화면은 터미널이 부를 때 온다.
