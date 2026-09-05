@@ -1649,10 +1649,10 @@ final class CompanionStore {
     /// 예전엔 save() 만 해서 보상이 안 들어오고 `state.adventure` 도 안 비워졌다(#8).
     /// 보상 계산은 claimAdventure() 한 곳에만 있다 — 여기서 따로 더하면 이중 지급이 된다.
     @discardableResult
-    func completeFocusSession(minutes: Int, roll: Int? = nil) -> FocusSessionReward {
+    func completeFocusSession(minutes: Int, label: String? = nil, roll: Int? = nil) -> FocusSessionReward {
         // 기록이 **먼저**다. 정산 아래에 두면 정산할 모험이 없는 세션(위 guard 로 빠지는 경로)이
         // 통째로 기록에서 빠져, 지표가 "모험을 보낸 세션" 만 세게 된다.
-        focusSessions.record(minutes: minutes, at: clock())
+        focusSessions.record(minutes: minutes, label: label, at: clock())
         guard let reward = claimAdventure() else {
             save()
             return FocusSessionReward(minutes: minutes, stardust: 0, foundEgg: false)
@@ -2496,6 +2496,11 @@ final class CompanionStore {
 
     /// 오늘 집중한 분.
     var focusMinutesToday: Int { focusSessions.minutes(on: Self.dayKey(clock())) }
+
+    /// 오늘 마친 세션들 — 기록한 순서(오래된 것부터). 화면이 라벨과 시각을 그리는 자리다.
+    /// 개수·분과 **같은 파생**을 쓴다(`FocusSessionLog.sessions(on:)`) — 갈리면 "오늘 3세션" 인데
+    /// 목록엔 둘만 보이는 상태가 생기고, 그건 기록을 못 믿게 만든다.
+    var todaysFocusSessions: [FocusSession] { focusSessions.sessions(on: Self.dayKey(clock())) }
 
     private func persistFocusSessions() {
         guard !isReadOnly else { return }

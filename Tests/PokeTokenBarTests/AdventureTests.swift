@@ -446,7 +446,7 @@ final class FocusTimerTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 80_000)
         let timer = FocusTimer()
         var rewards = 0
-        timer.onFocusCompleted = { _ in rewards += 1 }
+        timer.onFocusCompleted = { _, _ in rewards += 1 }
         timer.startFocus(minutes: 1, now: start)
         timer.tick(now: start.addingTimeInterval(60))
         XCTAssertEqual(timer.phase, .rest)

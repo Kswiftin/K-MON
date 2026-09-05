@@ -215,18 +215,27 @@ enum PokedoroViewChannel {
     ///   - goal: 하루 목표 세션 수. 완료 수만 내보내면 "3회" 가 많은지 적은지 알 수 없다.
     ///   - isLongRest: 긴 휴식인가. 판정은 `FocusChainRules.isLongRest` 한 곳이고 여기선 말만 바꾼다 —
     ///     15분을 쉬는데 화면이 그냥 "휴식 중" 이면 타이머가 고장 난 것처럼 보인다.
+    ///   - label: 이번 집중의 작업 라벨. **집중 단계에서만** 싣는다 — 휴식 줄에 남으면 쉬는 동안에도
+    ///     "지금 …" 이라고 말한다.
+    ///   - width: 터미널 칸 수. 라벨은 **사용자가 친 문자열**이라 길이를 앱이 통제하지 못하고 한글은
+    ///     한 글자가 두 칸이다. 자르지 않으면 줄이 접히고, 접히는 순간 그 아래 화면이 통째로 밀린다.
     static func focusSnapshot(phase: FocusPhase, clockText: String, completed: Int, goal: Int,
-                              isLongRest: Bool, now: Date) -> PokedoroViewSnapshot? {
+                              isLongRest: Bool, label: String?, width: Int,
+                              now: Date) -> PokedoroViewSnapshot? {
         let title: String
         switch phase {
         case .idle: return nil
         case .focus: title = "집중 중"
         case .rest: title = isLongRest ? "긴 휴식 중" : "휴식 중"
         }
+        var lines = ["\(title)   남은 시간 \(clockText)", "오늘 마친 집중  \(completed)/\(goal)회"]
+        // 타이머가 이미 휴식에서 라벨을 비우지만(`FocusTimer.startRest`) 단계도 함께 본다 —
+        // 한쪽이 뚫려도 다른 쪽이 막는다.
+        if phase == .focus, let label, !label.isEmpty { lines.append("지금  \(label)") }
         return PokedoroViewSnapshot(
             screen: "focus",
             title: title,
-            lines: ["\(title)   남은 시간 \(clockText)", "오늘 마친 집중  \(completed)/\(goal)회"],
+            lines: lines.map { TUIText.truncate($0, to: drawableWidth(width)) },
             // 키는 앱이 정한다 — 무엇을 할 수 있는지 아는 곳이 앱이다. 지금 단계에서 할 수 있는
             // 것은 끝내기뿐이고, 시작 키는 홈이 이미 상태를 보고 고른다.
             keys: ["x 끝내기"],

@@ -237,7 +237,8 @@ struct AuctionTerminalTests {
         let focus = try #require(PokedoroViewChannel.focusSnapshot(phase: .focus,
                                                                     clockText: "24:59",
                                                                     completed: 1, goal: 4,
-                                                                    isLongRest: false, now: now))
+                                                                    isLongRest: false, label: nil,
+                                                                    width: 60, now: now))
         let auction = try #require(PokedoroViewChannel.auctionSnapshot(Self.busy(),
                                                                         width: 60, now: now))
         // 아무 요청이 없으면 순위대로 — 경매는 타이머 뒤다.

@@ -675,10 +675,13 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
 extension FocusTimer {
     /// 집중 시작의 **유일한** 경로. 타이머와 모험은 함께 움직여야 한다 — 따로 부르는 자리가
     /// 둘이 되면 한쪽만 고쳐져 "타이머는 도는데 끝나도 받을 보상이 없는" 상태가 생긴다.
+    ///
+    /// 라벨은 **선택**이고 기본은 없음이다 — 대화(`pokedoro.start`)와 터미널 요청은 라벨을 넘기지
+    /// 않으므로 그 두 경로는 한 글자도 안 바뀐다. 나중에 그쪽이 라벨을 받게 되어도 인자는 여기서만 는다.
     @discardableResult
-    func startFocusSession(minutes: Int, companion: CompanionStore) -> Bool {
+    func startFocusSession(minutes: Int, label: String? = nil, companion: CompanionStore) -> Bool {
         guard companion.startFocusAdventure(minutes: minutes) else { return false }
-        startFocus(minutes: minutes)
+        startFocus(minutes: minutes, label: label)
         return true
     }
 
