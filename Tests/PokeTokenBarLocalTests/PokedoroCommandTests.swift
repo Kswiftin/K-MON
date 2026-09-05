@@ -110,9 +110,16 @@ struct PokedoroCommandTests {
     /// 여는 것만으로 정산이 돌고(`ReadOnlyStoreTests`), 조회 명령이 요청을 보내면 앱이 꺼져
     /// 있을 때 `status` 가 3초 멈췄다 실패한다.
     @Test func testOnlySessionCommandsBecomeRequests() {
-        #expect(PokedoroCommand.start(minutes: 25).request == .start)
+        #expect(PokedoroCommand.start(minutes: 25).request == .start(minutes: 25))
         #expect(PokedoroCommand.claim.request == .claim)
         #expect(PokedoroCommand.stop.request == .stop)
+    }
+
+    /// 명령이 든 인자가 **요청에 그대로 실린다.** 여기서 떨어지면 사용자가 고른 길이가 조용히
+    /// 사라지고 앱은 기본 길이를 켠다 — 화면에는 아무 오류도 안 뜬다.
+    @Test func testTheLengthTheUserTypedRidesAlongWithTheRequest() {
+        #expect(PokedoroCommand.start(minutes: 90).request == .start(minutes: 90))
+        #expect(PokedoroCommand.start(minutes: nil).request == .start(minutes: nil))
     }
 
     @Test func testReadOnlyCommandsNeverBecomeRequests() {

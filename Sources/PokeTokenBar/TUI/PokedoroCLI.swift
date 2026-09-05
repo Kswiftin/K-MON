@@ -32,10 +32,8 @@ enum PokedoroCLI {
 
         // 세션을 바꾸는 명령은 세이브를 **아예 열지 않는다** — 여는 것만으로 정산이 돌 수 있어서다
         // (`ReadOnlyStoreTests`). 앱에 부탁하고 답만 받는다.
-        if let verb = command.request {
-            var minutes: Int?
-            if case .start(let value) = command { minutes = value }
-            return send(verb, minutes: minutes)
+        if let action = command.request {
+            return send(action)
         }
 
         let store = CompanionStore(isReadOnly: true)
@@ -79,8 +77,8 @@ enum PokedoroCLI {
     ///
     /// 판단이 없는 자리다(`TUIWatch` 와 같은 규칙): 실행 여부·거절 사유·문구는 전부 앱 쪽
     /// (`PokedoroRequestBus`·`PokedoroSessionGate`·`PokedoroRequestExecutor`)에 있다.
-    static func send(_ verb: PokedoroRequest.Verb, minutes: Int?) -> Int32 {
-        let request = PokedoroRequest(id: UUID(), verb: verb, minutes: minutes, requestedAt: Date())
+    static func send(_ action: PokedoroRequest.Action) -> Int32 {
+        let request = PokedoroRequest(id: UUID(), action: action, requestedAt: Date())
         let mailbox = PokedoroMailbox()
         do {
             try mailbox.send(request)

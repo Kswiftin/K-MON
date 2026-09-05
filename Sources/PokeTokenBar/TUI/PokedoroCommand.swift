@@ -25,10 +25,13 @@ enum PokedoroCommand: Equatable, Sendable {
     case claim
     case stop
 
-    /// 앱에 요청을 보내는 명령인가. 나머지는 세이브를 읽기 전용으로 열고 끝난다.
-    var request: PokedoroRequest.Verb? {
+    /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
+    ///
+    /// **인자를 여기서 함께 넘긴다.** 예전엔 동작만 돌려주고 부르는 쪽이 분을 다시 꺼냈는데,
+    /// 그러면 명령을 더할 때 인자 꺼내는 자리를 빠뜨려도 컴파일이 통과한다.
+    var request: PokedoroRequest.Action? {
         switch self {
-        case .start: .start
+        case .start(let minutes): .start(minutes: minutes)
         case .claim: .claim
         case .stop: .stop
         case .status, .party, .dex, .bag, .challenge, .goals, .mon, .watch, .help: nil

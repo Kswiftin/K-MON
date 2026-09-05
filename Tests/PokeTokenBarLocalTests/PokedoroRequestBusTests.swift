@@ -12,11 +12,10 @@ import Testing
 struct PokedoroRequestBusTests {
     private static let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-    private func request(verb: PokedoroRequest.Verb = .start, minutes: Int? = 25,
+    private func request(_ action: PokedoroRequest.Action = .start(minutes: 25),
                          at offset: TimeInterval = 0,
                          id: UUID = UUID()) -> PokedoroRequest {
-        PokedoroRequest(id: id, verb: verb, minutes: minutes,
-                        requestedAt: Self.now.addingTimeInterval(offset))
+        PokedoroRequest(id: id, action: action, requestedAt: Self.now.addingTimeInterval(offset))
     }
 
     // MARK: 실행 판정
@@ -29,7 +28,7 @@ struct PokedoroRequestBusTests {
     /// 실행하면, 사용자가 세 시간 전에 포기한 90분 집중이 앱을 켜는 순간 시작된다 — 그 시각엔
     /// 사용자가 무엇 때문에 타이머가 켜졌는지 알 방법이 없다.
     @Test func testAStaleRequestLeftBehindWhileTheAppWasClosedNeverRuns() {
-        let threeHoursAgo = request(minutes: 90, at: -3 * 3600)
+        let threeHoursAgo = request(.start(minutes: 90), at: -3 * 3600)
         #expect(!PokedoroRequestBus.shouldExecute(threeHoursAgo, now: Self.now, lastExecutedID: nil))
     }
 
@@ -57,7 +56,7 @@ struct PokedoroRequestBusTests {
     /// 앞 요청을 처리한 뒤 들어온 **다른** 요청은 막히지 않는다. id 가드가 마지막 하나만 기억하는
     /// 것으로 충분하다는 근거다 — 아니면 정산 직후의 시작이 조용히 삼켜진다.
     @Test func testANewRequestRunsEvenAfterAnotherOneWasJustExecuted() {
-        let previous = request(verb: .claim, minutes: nil)
+        let previous = request(.claim)
         let next = request()
         #expect(PokedoroRequestBus.shouldExecute(next, now: Self.now, lastExecutedID: previous.id))
     }
@@ -74,10 +73,122 @@ struct PokedoroRequestBusTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let mailbox = PokedoroMailbox(directory: directory)
 
-        let sent = request(verb: .start, minutes: 90)
+        let sent = request(.start(minutes: 90))
         try mailbox.send(sent)
 
         #expect(mailbox.pendingRequest() == sent)
+    }
+
+    /// 세 동작 **모두** 왕복해야 한다. 하나만 보면 인코딩이 그 동작에만 맞는 구현도 초록이다
+    /// (인자를 든 동작은 시작 하나뿐이라 특히 그렇다).
+    @Test func testEveryActionSurvivesTheFileRoundTrip() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+
+        for action in [PokedoroRequest.Action.start(minutes: 50), .start(minutes: nil), .claim, .stop] {
+            let sent = request(action)
+            try mailbox.send(sent)
+            #expect(mailbox.pendingRequest() == sent, "\(action) 이 왕복에서 달라졌다")
+        }
+    }
+
+    /// 파일은 **손으로 고칠 수 있는 평평한 JSON** 이어야 한다. 인자를 든 enum 을 Swift 에 그냥
+    /// 맡기면 `{"start":{"minutes":25}}` 같은 중첩이 나오는데, 문서가 약속한 모양이 아니라서
+    /// 사용자가 고친 파일이 조용히 무시된다.
+    @Test func testTheRequestFileStaysFlatAndHandEditable() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+        try mailbox.send(request(.start(minutes: 50)))
+
+        let json = try JSONSerialization.jsonObject(with: Data(contentsOf: mailbox.requestURL))
+        let fields = try #require(json as? [String: Any])
+        #expect(fields["action"] as? String == "start")
+        #expect(fields["minutes"] as? Int == 50)
+        #expect(fields["id"] is String)
+        #expect(fields["requestedAt"] != nil)
+    }
+
+    /// 인자를 안 받는 동작에는 인자 칸이 **아예 없다**. 남겨 두면 `{"action":"stop","minutes":0}`
+    /// 같은 파일이 정상으로 보이고, 손으로 고치는 사용자가 그 값이 뭔가 한다고 믿는다.
+    @Test func testAnArgumentlessActionWritesNoArgumentField() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+        try mailbox.send(request(.stop))
+
+        let json = try JSONSerialization.jsonObject(with: Data(contentsOf: mailbox.requestURL))
+        let fields = try #require(json as? [String: Any])
+        #expect(fields["action"] as? String == "stop")
+        #expect(fields["minutes"] == nil)
+    }
+
+    /// 이름과 인자가 어긋난 파일은 요청이 **되지 않는다** — 깨진 파일과 같은 취급이다.
+    /// 손으로 고칠 수 있는 파일이라 이 조합은 실제로 들어온다. 인자를 버리고 실행하면 사용자는
+    /// 자기가 적은 값이 무시된 것을 모른 채 다른 일이 벌어진 걸 본다.
+    @Test func testAFileWhoseActionAndArgumentDisagreeIsNotARequest() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+        try Data("""
+        {"id":"\(UUID().uuidString)","action":"stop","minutes":90,"requestedAt":0}
+        """.utf8).write(to: mailbox.requestURL)
+
+        #expect(mailbox.pendingRequest() == nil)
+    }
+
+    /// 모르는 이름도 요청이 되지 않는다. 앱 화면에만 있는 기능 이름을 적어도 마찬가지다 —
+    /// 목록 밖 이름은 거절되는 게 아니라 **요청으로 읽히지 않는다**(대화 도구와 같은 성질).
+    @Test func testAFileNamingAnUnknownActionIsNotARequest() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+        try Data("""
+        {"id":"\(UUID().uuidString)","action":"battle","requestedAt":0}
+        """.utf8).write(to: mailbox.requestURL)
+
+        #expect(mailbox.pendingRequest() == nil)
+    }
+
+    // MARK: 동작 어휘
+
+    /// 이름과 인자가 **한 값**이어야 한다. 예전엔 `verb` 와 `minutes` 가 따로 실려 "stop 인데
+    /// 90분" 같은 요청을 타입이 허락했다 — 표현할 수 없는 상태는 걸러 낼 필요도 없다.
+    @Test func testOnlyStartCarriesALength() {
+        #expect(PokedoroRequest.Action.start(minutes: 25).minutes == 25)
+        #expect(PokedoroRequest.Action.claim.minutes == nil)
+        #expect(PokedoroRequest.Action.stop.minutes == nil)
+    }
+
+    /// 이름은 세 동작이 서로 다르다 — 같은 이름을 두 동작이 쓰면 왕복에서 하나가 다른 것이 된다.
+    @Test func testEveryActionHasItsOwnName() {
+        let names = [PokedoroRequest.Action.start(minutes: 25), .claim, .stop].map(\.name)
+        #expect(Set(names).count == names.count)
+    }
+
+    /// 인자를 받지 않는 동작에 인자가 붙었으면 **추측하지 않는다** — 대화 도구 파서와 같은 규칙이다.
+    @Test func testAnArgumentOnAnArgumentlessActionIsNotAnAction() {
+        #expect(PokedoroRequest.Action(name: "stop", minutes: 25) == nil)
+        #expect(PokedoroRequest.Action(name: "claim", minutes: 0) == nil)
+    }
+
+    @Test func testAnUnknownActionNameIsNotAnAction() {
+        #expect(PokedoroRequest.Action(name: "battle", minutes: nil) == nil)
+        #expect(PokedoroRequest.Action(name: "", minutes: nil) == nil)
+    }
+
+    /// 분이 없는 시작은 그대로 통과한다 — 기본 길이는 실행기가 고른다. 여기서 25 를 채우면
+    /// 기본값이 두 곳이 되고, 한쪽만 바뀌면 화면과 터미널이 다른 길이를 켠다.
+    @Test func testStartWithoutALengthIsStillAnAction() {
+        #expect(PokedoroRequest.Action(name: "start", minutes: nil) == .start(minutes: nil))
+    }
+
+    /// 이름 → 동작 → 이름이 제자리로 돌아온다. 이 왕복이 곧 파일 규약이다.
+    @Test func testActionNamesRoundTripThroughTheirOwnTable() {
+        for action in [PokedoroRequest.Action.start(minutes: 90), .claim, .stop] {
+            #expect(PokedoroRequest.Action(name: action.name, minutes: action.minutes) == action)
+        }
     }
 
     /// 답도 같은 규약으로 돌아온다. 터미널은 **자기 요청의 답만** 받아야 한다 — id 가 다르면
