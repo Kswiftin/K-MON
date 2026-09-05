@@ -105,10 +105,12 @@ struct PokedoroViewChannelTests {
     @Test func testTheFocusSnapshotNamesThePhaseItIsIn() throws {
         let focusing = PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "01:00",
                                                           completed: 0, goal: 4,
-                                                          isLongRest: false, now: Self.now)
+                                                          isLongRest: false, label: nil,
+                                                          width: 80, now: Self.now)
         let resting = PokedoroViewChannel.focusSnapshot(phase: .rest, clockText: "01:00",
                                                          completed: 0, goal: 4,
-                                                         isLongRest: false, now: Self.now)
+                                                         isLongRest: false, label: nil,
+                                                         width: 80, now: Self.now)
         #expect(focusing?.lines != resting?.lines)
     }
 
@@ -117,10 +119,12 @@ struct PokedoroViewChannelTests {
     @Test func testTheFocusSnapshotTellsALongBreakFromAShortOne() throws {
         let short = try #require(PokedoroViewChannel.focusSnapshot(phase: .rest, clockText: "04:00",
                                                                     completed: 3, goal: 4,
-                                                                    isLongRest: false, now: Self.now))
+                                                                    isLongRest: false, label: nil,
+                                                                    width: 80, now: Self.now))
         let long = try #require(PokedoroViewChannel.focusSnapshot(phase: .rest, clockText: "14:00",
                                                                    completed: 4, goal: 4,
-                                                                   isLongRest: true, now: Self.now))
+                                                                   isLongRest: true, label: nil,
+                                                                   width: 80, now: Self.now))
         #expect(short.title != long.title)
         #expect(long.lines.first != short.lines.first, "제목만 바뀌고 본문이 그대로면 화면에서 구분되지 않는다")
     }
@@ -129,9 +133,45 @@ struct PokedoroViewChannelTests {
     @Test func testTheFocusSnapshotShowsProgressTowardTheDailyGoal() throws {
         let snapshot = try #require(PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "10:00",
                                                                        completed: 2, goal: 6,
-                                                                       isLongRest: false, now: Self.now))
+                                                                       isLongRest: false, label: nil,
+                                                                       width: 80, now: Self.now))
         #expect(snapshot.lines.contains { $0.contains("2") && $0.contains("6") },
                 "오늘 진행도와 목표가 같은 줄에 있어야 한다")
+    }
+
+    // MARK: 작업 라벨
+
+    /// 라벨을 붙여 시작한 세션은 터미널에서도 그 라벨로 보여야 한다. 팝오버에만 뜨면 같은 앱이
+    /// 두 가지를 말하게 된다 — 터미널을 보는 동안 "무엇을 하기로 했는지" 가 사라진다.
+    @Test func testTheFocusSnapshotCarriesTheSessionLabel() throws {
+        let snapshot = try #require(PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "10:00",
+                                                                       completed: 1, goal: 4,
+                                                                       isLongRest: false, label: "PR 리뷰",
+                                                                       width: 80, now: Self.now))
+        #expect(snapshot.lines.contains { $0.contains("PR 리뷰") })
+    }
+
+    /// 라벨은 **집중 단계의 것**이다. 휴식 줄에 남으면 쉬는 동안에도 "지금 PR 리뷰 중" 이라고 말한다.
+    @Test func testABreakDoesNotShowTheLabelOfTheSessionThatEnded() throws {
+        let resting = try #require(PokedoroViewChannel.focusSnapshot(phase: .rest, clockText: "04:00",
+                                                                      completed: 1, goal: 4,
+                                                                      isLongRest: false, label: "PR 리뷰",
+                                                                      width: 80, now: Self.now))
+        #expect(!resting.lines.contains { $0.contains("PR 리뷰") })
+    }
+
+    /// 라벨은 **사용자가 친 문자열**이라 길이를 앱이 통제하지 못하고, 한글은 한 글자가 두 칸이다.
+    /// 폭을 넘기면 터미널이 줄을 접고, 접히는 순간 그 아래 화면이 통째로 밀린다(`TUIText` 헤더).
+    @Test func testALongLabelIsCutToTheTerminalWidth() throws {
+        let width = 30
+        let snapshot = try #require(
+            PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "10:00", completed: 1, goal: 4,
+                                              isLongRest: false,
+                                              label: String(repeating: "가", count: 40),
+                                              width: width, now: Self.now))
+        for line in snapshot.lines {
+            #expect(TUIText.displayWidth(line) <= width, "라벨 줄이 터미널 폭을 넘겼다: \(line)")
+        }
     }
 
     /// 아무것도 안 돌 때는 **화면을 내놓지 않는다** — 빈 스냅샷을 쓰면 터미널이 매번 빈 줄을
@@ -139,7 +179,8 @@ struct PokedoroViewChannelTests {
     @Test func testAnIdleTimerProducesNoSnapshot() {
         #expect(PokedoroViewChannel.focusSnapshot(phase: .idle, clockText: "00:00",
                                                    completed: 0, goal: 4,
-                                                   isLongRest: false, now: Self.now) == nil)
+                                                   isLongRest: false, label: nil,
+                                                   width: 80, now: Self.now) == nil)
     }
 
     // MARK: 파일
