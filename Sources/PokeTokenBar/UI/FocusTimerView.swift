@@ -5,6 +5,9 @@ struct FocusTimerView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(CompanionStore.self) private var companion
     @State private var selectedMinutes = 25
+    /// 이번 세션에 붙일 작업 라벨. **비어 있는 것이 기본**이고 시작 버튼은 라벨을 요구하지 않는다 —
+    /// 입력이 시작의 마찰이 되면 재려던 세션 자체가 안 시작된다.
+    @State private var label = ""
     /// 마지막 정산 — 스토어에서 한 번 건네받아 들고 있는다(사탕 "+XP" 와 같은 1회성 계약).
     /// 소비하지 않고 스토어를 직접 그리면, 팝오버를 닫았다 열 때마다 같은 정산이 다시 떠오른다.
     @State private var claimBanner: AdventureReward?
@@ -35,8 +38,11 @@ struct FocusTimerView: View {
                         Text(timer.clockText(at: context.date))
                             .font(.system(.title2, design: .monospaced).weight(.semibold))
                         Spacer()
-                        Text(timer.phase == .focus ? focusHint : restHint)
+                        // 라벨이 있으면 그것이 안내 문구 자리를 대신한다 — 줄을 새로 만들면 카드가
+                        // 길어지고, "지금 무엇을 하기로 했나" 는 남은 시간 바로 옆이 제자리다.
+                        Text(timer.phase == .focus ? (timer.focusLabel ?? focusHint) : restHint)
                             .font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.tail)
                         Button(companion.l.t("종료", "Stop", "終了")) {
                             timer.stopFocusSession(companion: companion)
                         }
@@ -89,6 +95,16 @@ struct FocusTimerView: View {
                     }
                 }
             } else {
+                // 라벨은 **선택**이다. 엔터로도 시작되게 해서, 적은 사람은 손을 옮기지 않고
+                // 시작하고 안 적는 사람은 지금까지와 똑같이 버튼 한 번으로 시작한다.
+                TextField(companion.l.t("무엇에 집중하나요? (선택)",
+                                        "What are you focusing on? (optional)",
+                                        "何に集中しますか？（任意）"),
+                          text: $label)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .font(.caption)
+                    .onSubmit { startSession() }
                 Picker("", selection: $selectedMinutes) {
                     // 대화의 `pokedoro.start` 도 같은 목록으로 인자를 접는다 — 두 벌이면 화면이
                     // 제시하지 않는 길이를 도구만 켤 수 있게 된다.
@@ -97,7 +113,7 @@ struct FocusTimerView: View {
                 .pickerStyle(.segmented).labelsHidden()
                 HStack {
                     Button(companion.l.t("모험 보내고 집중 시작", "Send on adventure & focus", "冒険に送って集中開始")) {
-                        timer.startFocusSession(minutes: selectedMinutes, companion: companion)
+                        startSession()
                     }
                     .buttonStyle(.borderedProminent).controlSize(.small)
                     // 진행 중일 때만 막는다. 끝난 모험은 시작 시 자동 정산되므로 여기서 잠그면
@@ -128,6 +144,7 @@ struct FocusTimerView: View {
                 Spacer()
             }
             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+            todaySessionList
             // 정산 배너는 세 분기 **밖**에 둔다. 예전엔 idle 분기 안에 있어서, 집중이 끝나는 순간
             // 타이머가 곧바로 휴식으로 넘어가(`FocusTimer.tick` → `startRest`) `isRunning` 이 참이
             // 되면 방금 정산한 결과가 화면에 뜨지도 못했다.
@@ -175,6 +192,47 @@ struct FocusTimerView: View {
         .onAppear { adoptClaimIfNeeded() }
         .onChange(of: companion.claimFeedbackSeq) { adoptClaimIfNeeded() }
         .onChange(of: timer.completedSessions) { noteSessionCompleted() }
+    }
+
+    /// 여기서 그리는 오늘 기록의 줄 수. 팝오버 카드는 이미 조밀하고 하루 목표 상한이 12세션이다.
+    // ponytail: 최근 5개 — 한 주를 통째로 보는 자리는 주간 회고(마일스톤 4)다.
+    private static let todayListLimit = 5
+
+    /// 오늘 마친 세션들 — 최신이 위. **비면 아무것도 그리지 않는다**(빈 상자는 카드만 늘린다).
+    ///
+    /// 라벨이 없는 세션도 시각·길이로 남는다. 없는 것을 "제목 없음" 으로 채우면 라벨을 안 쓴 것과
+    /// 못 쓴 것이 화면에서 같아 보이고, 그 비율이 이번 마일스톤이 보려던 신호다.
+    @ViewBuilder
+    private var todaySessionList: some View {
+        let recent = Array(companion.todaysFocusSessions.suffix(Self.todayListLimit).reversed())
+        if !recent.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(Array(recent.enumerated()), id: \.offset) { _, session in
+                    HStack(spacing: 5) {
+                        // 시각 표기는 로캘에 맡긴다 — 포맷 문자열을 직접 쓰면 12/24시간 설정을 무시한다.
+                        Text(session.endedAt.formatted(date: .omitted, time: .shortened))
+                            .monospacedDigit()
+                        Text(companion.l.t("\(session.minutes)분", "\(session.minutes) min",
+                                           "\(session.minutes)分"))
+                        if let label = session.label {
+                            Text(label).foregroundStyle(.primary)
+                                .lineLimit(1).truncationMode(.tail)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    /// 집중 시작 — **버튼과 엔터가 같은 자리를 지난다.** 두 벌로 두면 엔터가 비활성 조건을
+    /// 건너뛰어(버튼의 `.disabled` 는 엔터를 막지 않는다) 화면이 막아 둔 상태에서 세션이 시작된다.
+    private func startSession() {
+        guard companion.hasActive, !companion.isAdventureInProgress else { return }
+        timer.startFocusSession(minutes: selectedMinutes, label: label, companion: companion)
+        // 다음 세션이 지난 라벨을 물려받지 않게 비운다 — 지금 도는 라벨은 타이머가 들고 있다.
+        label = ""
     }
 
     /// 스토어가 들고 있는 마지막 정산을 한 번만 건네받는다. 사탕 피드백과 같은 seq + consume 형태다.

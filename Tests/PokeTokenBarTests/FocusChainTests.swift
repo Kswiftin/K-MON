@@ -91,7 +91,7 @@ final class FocusChainTests: XCTestCase {
     func testRestLengthIsReadAfterTheCompletionHookRecords() {
         let timer = FocusTimer()
         var calls: [String] = []
-        timer.onFocusCompleted = { _ in calls.append("record") }
+        timer.onFocusCompleted = { _, _ in calls.append("record") }
         timer.nextRestMinutes = { calls.append("read"); return FocusChainRules.longRestMinutes }
 
         timer.startFocus(minutes: 25, now: start)

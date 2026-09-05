@@ -69,9 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                                              timer: focusTimer, navigation: navigation,
                                              showPopover: { [weak self] in self?.openPopover() })
         Task { await companion.ensureInheritedMoves() }
-        focusTimer.onFocusCompleted = { [weak self] minutes in
+        focusTimer.onFocusCompleted = { [weak self] minutes, label in
             guard let self else { return }
-            self.companion.completeFocusSession(minutes: minutes)
+            // 라벨은 훅이 실어 온 값을 그대로 넘긴다 — 여기서 타이머를 다시 읽으면 휴식이 비우기
+            // 전에 읽어야 한다는 순서 계약이 생기고, 어긋나도 화면엔 아무 오류가 안 뜬다.
+            self.companion.completeFocusSession(minutes: minutes, label: label)
             // 세션이 끝났다는 것부터 알린다. 팝오버 배너는 팝오버를 열어 둔 사람만 보는데,
             // 메뉴바 앱을 쓰는 동안 사용자는 다른 앱에 있다 — 알림이 없으면 집중이 끝난 줄도 모른다.
             let rest = FocusChainRules.restMinutes(completedToday: self.companion.focusSessionsToday)
@@ -543,6 +545,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 goal: settings.dailyFocusGoal,
                 // 긴 휴식 판정도 원장 파생이다 — 화면이 따로 세면 15분 휴식에 "휴식 중" 이 뜬다.
                 isLongRest: FocusChainRules.isLongRest(completedToday: companion.focusSessionsToday),
+                // 라벨은 지금 도는 세션의 것이라 타이머만 안다(원장에는 끝난 세션만 있다).
+                label: focusTimer.focusLabel,
+                width: width,
                 now: now),
             // 경매는 **타이머 뒤**다. 판이 아니라 상시 도는 목록이라(이웃의 게시물 하나로 참이
             // 된다) 앞에 두면 집중 타이머를 영영 가린다 — 그 화면은 터미널이 부를 때 온다.

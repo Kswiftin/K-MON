@@ -95,7 +95,8 @@ struct PokedoroViewChannelTests {
     @Test func testTheFocusSnapshotCarriesWhatTheSaveCannotTell() throws {
         let snapshot = try #require(PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "12:34",
                                                                       completed: 3, goal: 4,
-                                                                      isLongRest: false, now: Self.now))
+                                                                      isLongRest: false, label: nil,
+                                                                      width: 80, now: Self.now))
         #expect(snapshot.lines.contains { $0.contains("12:34") })
         #expect(snapshot.lines.contains { $0.contains("3") }, "오늘 몇 번 했는지도 세이브 밖 값이다")
         #expect(snapshot.writtenAt == Self.now)
