@@ -109,7 +109,7 @@ extension BattleChatTests {
 
         let state = terminalBattleWithLocalAction()
         center.stageBattleForTesting(state)
-        center.handle(.action(turn: state.turn, action: .move(index: 0)))
+        center.handle(.action(turn: state.turn, action: .move(index: 0), resolvedThrough: nil))
 
         XCTAssertEqual(center.chatMessages.count, 1,
                        "결정타의 연결 정리는 소켓만 닫는다 — 주고받은 대화를 지우는 자리가 아니다")
@@ -128,7 +128,7 @@ extension BattleChatTests {
         let state = terminalBattleWithLocalAction()
         center.stageBattleForTesting(state, peerSupportsChat: false)
 
-        center.handle(.action(turn: state.turn, action: .move(index: 0)))
+        center.handle(.action(turn: state.turn, action: .move(index: 0), resolvedThrough: nil))
 
         XCTAssertEqual(center.phase, .battling, "결정타 배치는 결과 화면 전에 재생한다")
         XCTAssertNotNil(center.pendingFinish, "결과는 재생이 따라잡을 때까지 미룬다")
@@ -154,7 +154,7 @@ extension BattleChatTests {
         let (center, _) = centerInBattle(peerChatSupported: true)
         let state = terminalBattleWithLocalAction()
         center.stageBattleForTesting(state)
-        center.handle(.action(turn: state.turn, action: .move(index: 0)))
+        center.handle(.action(turn: state.turn, action: .move(index: 0), resolvedThrough: nil))
 
         XCTAssertFalse(center.chatIsAvailable, "결정타 재생 중에는 입력을 열지 않는다")
         XCTAssertNil(center.chatLockMessage,

@@ -74,13 +74,16 @@ final class NetTeamBattleTests: XCTestCase {
         XCTAssertEqual(acceptedSize, 3)
         XCTAssertEqual(acceptedChat, true)
 
-        let action = NetMessage.action(turn: 7, action: .switchTo(index: 2))
-        guard case .action(let turn, let decodedAction)
+        let action = NetMessage.action(turn: 7, action: .switchTo(index: 2), resolvedThrough: 6)
+        guard case .action(let turn, let decodedAction, let resolvedThrough)
                 = try JSONDecoder().decode(NetMessage.self, from: JSONEncoder().encode(action)) else {
             return XCTFail("action case")
         }
         XCTAssertEqual(turn, 7)
         XCTAssertEqual(decodedAction, .switchTo(index: 2))
+        // 확인값이 와이어에서 떨어지면 합의가 영원히 0 에 머물러 **모든 끊김이 환급**이 된다 —
+        // 무손실 탈주가 되살아나므로 왕복을 여기서 잠근다.
+        XCTAssertEqual(resolvedThrough, 6)
     }
 
     func testSixPokemonPoolRoundTripsBeforeTheFinalTeam() throws {
