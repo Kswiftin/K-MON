@@ -604,7 +604,9 @@ actor PokeAPIClient: PokeProviding {
     /// **어느 칸에도 못 들어갔다.**
     ///
     /// ponytail: 그 부류는 `pickAttacks` 의 위력 정렬에서 0 이라 늘 꼴찌고, 같은 타입에 더 나은
-    ///           공격기가 없을 때만 칸을 받는다. 기댓값 표를 만들 이유는 아직 없다.
+    ///           공격기가 없을 때만 칸을 받는다. 그래서 기댓값 표를 만들지 않았다.
+    ///           해제 조건: 가변위력기가 자동 무브셋에 실제로 뽑히는 종이 나오면(그때만 정렬이
+    ///           틀린 답을 낸다) 위력 대신 기댓값으로 정렬한다.
     static func pickFour(from specs: [MoveSpec], types: [PokemonType]) -> [MoveSpec] {
         let attacks = specs.filter(VariableDamage.dealsDamage)
         let statusPick = pickStatusMove(from: specs.filter { !VariableDamage.dealsDamage($0) })
@@ -939,7 +941,7 @@ extension MoveSpec {
             }
             return StatChange(stat: stat, change: change.change)
         }
-        return MoveSpec(id: dto.id, names: names, type: type,
+        let spec = MoveSpec(id: dto.id, names: names, type: type,
                         power: dto.power ?? 0, damageClass: damageClass,
                         accuracy: dto.accuracy, pp: dto.pp ?? 10,
                         descriptions: descriptions, priority: dto.priority,
@@ -957,6 +959,16 @@ extension MoveSpec {
                         drain: dto.meta?.drain ?? 0, healing: dto.meta?.healing ?? 0,
                         flinchChance: dto.meta?.flinch_chance ?? 0,
                         minHits: dto.meta?.min_hits, maxHits: dto.meta?.max_hits)
+        // 와이어 천장을 넘는 기술은 **상대가 반려한다** — 내 화면엔 멀쩡히 보이는데 대전만 안 된다.
+        // 도감은 원격이라 코드를 안 건드려도 이 날이 온다. ailment 와 같은 규칙으로 한 번 남긴다.
+        if MultiplayerValidation.exceedsTurnDamageCap(spec) {
+            AppLog.write("""
+                move \(dto.id) (\(fallbackName)): power×hits \
+                \(spec.power * (spec.maxHits ?? 1)) exceeds wire cap \
+                \(MultiplayerValidation.turnDamageCap) — peers will reject this move
+                """)
+        }
+        return spec
     }
 }
 struct ChainLink: Decodable, Sendable {
