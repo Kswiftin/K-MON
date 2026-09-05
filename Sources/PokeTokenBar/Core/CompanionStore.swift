@@ -1239,6 +1239,11 @@ final class CompanionStore {
     func debugAccrue(_ dust: Int) { accrue(dust) }
     /// 테스트 전용 — 인벤토리에 사탕 n개 주입(일일 지급 경로를 우회). 사용(useRareCandy) 테스트용.
     func debugAddCandy(_ n: Int) { debugAddItem(.rareCandy, n) }
+    /// 테스트 전용 — 지갑에 별의조각 주입(생산·정산 경로를 우회). 상점 구매 테스트용.
+    func debugAddStardust(_ amount: Int) {
+        state.starPieces += amount
+        save()
+    }
     /// 테스트 전용 — 인벤토리에 아이템 주입(상점 구매 경로를 우회). 진화 아이템 사용 테스트용.
     func debugAddItem(_ kind: ItemKind, _ count: Int = 1) {
         state.inventory[kind.rawValue, default: 0] += count

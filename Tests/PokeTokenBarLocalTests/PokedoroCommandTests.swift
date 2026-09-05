@@ -179,6 +179,67 @@ struct PokedoroCommandTests {
         }
     }
 
+    // MARK: 상점·부화·방생
+
+    @Test func testShopCommandsParse() throws {
+        #expect(try parse(["shop"]) == .shop)
+        #expect(try parse(["buy", "이상한", "사탕"]) == .buy(good: .item(.rareCandy), quantity: 1))
+        #expect(try parse(["buy", "egg"]) == .buy(good: .egg, quantity: 1))
+        #expect(try parse(["hatch"]) == .hatch)
+    }
+
+    /// 수량은 이름 **뒤**에 붙는다. 이름이 여러 조각이어도 마지막 숫자만 수량이다.
+    @Test func testAQuantityFollowsTheGoodName() throws {
+        #expect(try parse(["buy", "이상한", "사탕", "3"]) == .buy(good: .item(.rareCandy), quantity: 3))
+    }
+
+    /// 상점은 이제 앱 전용이 아니다 — 목록도 구매도 터미널에서 된다.
+    @Test func testShopIsNoLongerAnAppOnlyFeature() {
+        #expect(!PokedoroCommandParser.appOnlyCommands.contains("shop"))
+    }
+
+    @Test func testAGoodTheShopDoesNotSellIsRejectedByName() {
+        #expect(throws: PokedoroCommandError.unknownGood("masterball")) {
+            try parse(["buy", "masterball"])
+        }
+        #expect(PokedoroCommandError.unknownGood("masterball").message.contains("shop"))
+    }
+
+    // MARK: 방생 — 되돌릴 수 없는 동작
+
+    /// `--yes` 없이는 **요청이 되지 않는다.** 방생은 개체가 영영 사라지므로, 확인 없이 보내면
+    /// 오타 한 번이 복구 불가능한 손실이 된다.
+    @Test func testReleaseWithoutConfirmationNeverBecomesARequest() throws {
+        let unconfirmed = try parse(["release", "2"])
+        #expect(unconfirmed == .release(number: 2, confirmed: false))
+        #expect(unconfirmed.request == nil, "확인 없는 방생이 앱까지 갔다")
+    }
+
+    /// `--yes` 를 붙이면 그때 요청이 된다.
+    @Test func testReleaseWithConfirmationBecomesARequest() throws {
+        let confirmed = try parse(["release", "2", "--yes"])
+        #expect(confirmed == .release(number: 2, confirmed: true))
+        #expect(confirmed.request == .release(number: 2))
+    }
+
+    /// 확인 플래그는 번호 해석을 방해하지 않는다 — 순서를 바꿔 쳐도 같아야 한다.
+    @Test func testTheConfirmationFlagCanComeBeforeTheNumber() throws {
+        #expect(try parse(["release", "--yes", "3"]) == .release(number: 3, confirmed: true))
+    }
+
+    /// 번호 없는 방생은 거절이다. 조용히 "아무거나" 를 놓아주면 안 된다.
+    @Test func testReleaseNeedsARosterNumber() {
+        #expect(throws: PokedoroCommandError.missingArgument("release")) { try parse(["release"]) }
+        #expect(throws: PokedoroCommandError.invalidMonNumber("0")) { try parse(["release", "0"]) }
+    }
+
+    @Test func testUsageListsTheShopAndReleaseCommands() {
+        for name in ["shop", "buy", "hatch", "release"] {
+            #expect(PokedoroCommandParser.usage.contains(name), "도움말에 \(name) 이 없다")
+        }
+        #expect(PokedoroCommandParser.usage.contains("--yes"), "확인 플래그를 안 알려 주면 못 쓴다")
+    }
+
     // MARK: 세이브를 여는가, 요청을 보내는가
 
     /// **이 표가 뒤집히면 피하려던 일이 그대로 일어난다.** 요청으로 가야 할 명령이 세이브를 열면
@@ -213,7 +274,7 @@ struct PokedoroCommandTests {
     /// 알아보고 **어디서 하는지** 답해야 한다 — "알 수 없는 명령" 으로 뭉개면 사용자는 오타를
     /// 의심하며 같은 명령을 다시 친다.
     @Test func testAppOnlyCommandsExplainWhereTheyLive() {
-        for name in ["battle", "trade", "auction", "home", "raid", "shop"] {
+        for name in ["battle", "trade", "auction", "home", "raid"] {
             #expect(throws: PokedoroCommandError.appOnlyFeature(name)) {
                 try parse([name])
             }

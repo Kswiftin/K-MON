@@ -151,6 +151,93 @@ struct PokedoroRequestBusTests {
         #expect(mailbox.pendingRequest() == nil)
     }
 
+    // MARK: 상점·부화·방생
+
+    /// 살 것은 **슬러그 하나**로 실린다. 표시 이름으로 적으면 언어를 바꾼 사용자가 자기 요청
+    /// 파일을 못 읽는다.
+    @Test func testBuyCarriesItsSlugAndQuantity() {
+        #expect(PokedoroRequest.Action.buy(good: .item(.rareCandy), quantity: 1).argument
+                == ItemKind.rareCandy.rawValue)
+        #expect(PokedoroRequest.Action.buy(good: .item(.rareCandy), quantity: 3).argument
+                == "\(ItemKind.rareCandy.rawValue) 3")
+        #expect(PokedoroRequest.Action.buy(good: .egg, quantity: 1).argument == "egg")
+    }
+
+    /// 수량 1은 **안 적는다** — 적으면 같은 요청이 두 모양으로 존재하고, 왕복 비교가 흔들린다.
+    @Test func testBuyOmitsAQuantityOfOne() {
+        let action = PokedoroRequest.Action.buy(good: .egg, quantity: 1)
+        #expect(action.argument?.contains("1") == false)
+        #expect(PokedoroRequest.Action(name: action.name, argument: action.argument) == action)
+    }
+
+    @Test func testTheShopActionsRoundTripThroughTheirOwnTable() {
+        let actions: [PokedoroRequest.Action] = [
+            .buy(good: .item(.rareCandy), quantity: 2), .buy(good: .egg, quantity: 1),
+            .buy(good: .outfit(.capRed), quantity: 1), .hatch, .release(number: 3)
+        ]
+        for action in actions {
+            #expect(PokedoroRequest.Action(name: action.name, argument: action.argument) == action,
+                    "\(action) 이 표를 왕복하지 못했다")
+        }
+    }
+
+    /// 0개·음수 구매는 요청이 아니다 — 그대로 실행하면 아무 일도 안 일어난 채 성공으로 보고된다.
+    @Test func testAQuantityBelowOneIsNotAnAction() {
+        #expect(PokedoroRequest.Action(name: "buy", argument: "rareCandy 0") == nil)
+        #expect(PokedoroRequest.Action(name: "buy", argument: "rareCandy -1") == nil)
+        #expect(PokedoroRequest.Action(name: "buy", argument: "rareCandy 2")
+                == .buy(good: .item(.rareCandy), quantity: 2))
+    }
+
+    /// 상점에 없는 물건은 요청이 되지 않는다.
+    @Test func testAGoodOutsideTheShopCatalogIsNotAnAction() {
+        #expect(PokedoroRequest.Action(name: "buy", argument: "masterball") == nil)
+        #expect(PokedoroRequest.Action(name: "buy", argument: nil) == nil)
+        // 업적 보상 의상은 상점에서 팔지 않는다 — 이름은 있지만 살 수 없다.
+        #expect(PokedoroRequest.Action(name: "buy", argument: OutfitItem.cloakWorn.rawValue) == nil)
+    }
+
+    @Test func testHatchTakesNoArgument() {
+        #expect(PokedoroRequest.Action(name: "hatch", argument: nil) == .hatch)
+        #expect(PokedoroRequest.Action(name: "hatch", argument: "1") == nil)
+    }
+
+    /// 방생도 `party` 가 찍는 번호다. 1 미만은 그 목록에 없다.
+    @Test func testReleaseTakesARosterNumberAboveZero() {
+        #expect(PokedoroRequest.Action(name: "release", argument: "2") == .release(number: 2))
+        #expect(PokedoroRequest.Action(name: "release", argument: "0") == nil)
+        #expect(PokedoroRequest.Action(name: "release", argument: nil) == nil)
+    }
+
+    // MARK: 상점 카탈로그
+
+    /// 목록과 구매가 **같은 표**를 읽는다 — 두 벌이면 목록에 뜨는데 못 사는 물건이 생긴다.
+    @Test func testEveryListedGoodCanBeFoundByItsOwnSlug() {
+        for good in ShopCatalog.all {
+            #expect(ShopCatalog.named(good.slug) == good, "\(good.slug) 을 되찾지 못했다")
+        }
+    }
+
+    /// 파는 것만 목록에 있다. 값이 없는 물건(업적 보상 의상)이 섞이면 사용자가 살 수 없는 줄을
+    /// 보고 값을 묻는다.
+    @Test func testTheCatalogOnlyListsThingsWithAPrice() {
+        #expect(!ShopCatalog.all.isEmpty)
+        for good in ShopCatalog.all { #expect(good.price > 0, "\(good.slug) 의 값이 0 이다") }
+        #expect(!ShopCatalog.all.contains(.outfit(.cloakWorn)))
+    }
+
+    /// 슬러그는 서로 달라야 한다 — 겹치면 한 이름이 다른 물건을 산다.
+    @Test func testEverySlugIsUnique() {
+        let slugs = ShopCatalog.all.map(\.slug)
+        #expect(Set(slugs).count == slugs.count)
+    }
+
+    /// 사람이 부르는 이름도 받는다 — `shop` 이 찍는 표시 이름을 그대로 쳤을 때 통해야 한다.
+    @Test func testAGoodCanBeNamedTheWayTheShopPrintsIt() {
+        #expect(ShopCatalog.named("이상한 사탕") == .item(.rareCandy))
+        #expect(ShopCatalog.named("Rare Candy") == .item(.rareCandy))
+    }
+
     // MARK: 동작 어휘 — 인자 칸 하나
 
     /// 인자는 **칸 하나**(`argument`)로 실린다. 동작마다 칸 이름을 따로 두면 새 동작이 늘 때마다

@@ -38,7 +38,7 @@ enum PokedoroCLI {
 
         let store = CompanionStore(isReadOnly: true)
         switch command {
-        case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename:
+        case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy:
             // 위에서 이미 끝났다. `default` 로 접지 않는 이유는 명령이 늘 때 이 자리가 조용히
             // 아무것도 안 하는 길이 되지 않게 하기 위해서다.
             return Status.ok.rawValue
@@ -60,6 +60,13 @@ enum PokedoroCLI {
             goalRows(store, width: terminalWidth()).forEach { print($0) }
         case .mon(let number):
             monRows(store, number: number, width: terminalWidth()).forEach { print($0) }
+        case .shop:
+            shopRows(store, width: terminalWidth()).forEach { print($0) }
+        case .release(let number, _):
+            // 확인 없이 온 방생이다(확인됐으면 위에서 요청으로 나갔다). **무엇을 잃는지 먼저
+            // 보여 주고** 거절한다 — 이름을 안 보여 주면 사용자는 번호만 믿고 --yes 를 붙인다.
+            releasePreview(store, number: number).forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
         case .watch:
             TUIWatch(store: store).run()
         }
@@ -71,6 +78,14 @@ enum PokedoroCLI {
     /// 답을 기다리는 시간. 앱은 1초 틱에서 요청을 집으므로 몇 배의 여유다. 무한정 기다리지
     /// 않는 이유는 앱이 꺼져 있을 때 셸이 멈춰 버리기 때문이다 — 그건 침묵보다 나쁘다.
     static let replyTimeout: TimeInterval = 3
+    /// 부화만 오래 기다린다 — 앱이 PokéAPI 에서 종 라인을 받아 오므로 3초 안에 못 끝낸다.
+    /// 전부 늘리지 않는 이유는, 앱이 꺼져 있을 때 **모든 명령이** 그만큼 셸을 붙잡기 때문이다.
+    static let hatchReplyTimeout: TimeInterval = 20
+
+    static func timeout(for action: PokedoroRequest.Action) -> TimeInterval {
+        if case .hatch = action { return hatchReplyTimeout }
+        return replyTimeout
+    }
     private static let pollInterval: useconds_t = 100_000   // 0.1초
 
     /// 요청을 남기고 **내 요청의 답**만 기다린다.
@@ -89,7 +104,7 @@ enum PokedoroCLI {
             return Status.badInput.rawValue
         }
 
-        let deadline = Date().addingTimeInterval(replyTimeout)
+        let deadline = Date().addingTimeInterval(timeout(for: action))
         while Date() < deadline {
             if let reply = mailbox.reply(to: request.id) {
                 let out = reply.succeeded ? FileHandle.standardOutput : FileHandle.standardError
@@ -264,6 +279,27 @@ enum PokedoroCLI {
         if let metAt = mon.firstMetAt { rows.append(("처음 만난 날", day.string(from: metAt))) }
         rows.append(("함께 다니는 중", entry.isActive ? "예" : "아니오"))
         return TUIRender.rows(rows, width: width)
+    }
+
+    /// 상점 재고. 목록과 구매가 **같은 카탈로그**를 읽으므로 여기 뜨는 이름은 그대로 살 수 있다.
+    static func shopRows(_ store: CompanionStore, width: Int) -> [String] {
+        let language = store.language
+        var lines = TUIRender.rows([("보유", "★ \(TUIRender.number(store.availableTokens))")], width: width)
+        lines += TUIRender.rows(ShopCatalog.all.map {
+            ($0.displayName(language), "★ \(TUIRender.number($0.price))")
+        }, width: width)
+        return lines
+    }
+
+    /// 확인 없는 방생이 보는 화면. 되돌릴 수 없는 동작이라 **대상과 결과를 먼저 말한다.**
+    static func releasePreview(_ store: CompanionStore, number: Int) -> [String] {
+        let index = TUIRender.rosterIndex(printed: number)
+        guard let target = store.chatRosterEntries.first(where: { $0.index == index }) else {
+            return ["\(number)번 포켓몬이 없다 — party 로 번호를 확인한다."]
+        }
+        return ["\(number)번 \(target.name) (Lv.\(target.level))을 놓아준다.",
+                "되돌릴 수 없다 — 그 포켓몬과 나눈 기억과 대화도 함께 지워진다.",
+                "정말이면: pokedoro release \(number) --yes"]
     }
 
     /// 목록 안의 구획 머리글. 빈 줄을 앞에 둬 눈이 묶음을 끊어 읽게 한다.
