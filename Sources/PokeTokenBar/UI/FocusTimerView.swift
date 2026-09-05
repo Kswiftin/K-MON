@@ -4,6 +4,8 @@ struct FocusTimerView: View {
     @Environment(FocusTimer.self) private var timer
     @Environment(AppSettings.self) private var settings
     @Environment(CompanionStore.self) private var companion
+    /// 주간 회고를 여는 데만 쓴다 — `PopoverView` 가 이미 환경에 넣어 둔 값이다.
+    @Environment(PopoverNavigation.self) private var nav
     @State private var selectedMinutes = 25
     /// 이번 세션에 붙일 작업 라벨. **비어 있는 것이 기본**이고 시작 버튼은 라벨을 요구하지 않는다 —
     /// 입력이 시작의 마찰이 되면 재려던 세션 자체가 안 시작된다.
@@ -142,6 +144,12 @@ struct FocusTimerView: View {
                                    "Today \(companion.focusSessionsToday)/\(settings.dailyFocusGoal) sessions · \(companion.focusMinutesToday) min",
                                    "今日 \(companion.focusSessionsToday)/\(settings.dailyFocusGoal)セッション・\(companion.focusMinutesToday)分"))
                 Spacer()
+                // 줄을 새로 만들지 않고 이 자리의 빈 공간을 쓴다 — 집중 카드의 세로 예산은
+                // 파트너 카드가 화면에 남느냐를 정한다(`MissionBoardView` 가 겪은 그 회귀).
+                // 회고는 바로 왼쪽 숫자를 설명하는 화면이라 그 옆이 제자리다.
+                Button { nav.showFocusRecap = true } label: { Image(systemName: "chart.bar.xaxis") }
+                    .buttonStyle(.borderless).controlSize(.small)
+                    .help(companion.l.t("주간 회고", "Weekly recap", "週間ふりかえり"))
             }
             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             todaySessionList

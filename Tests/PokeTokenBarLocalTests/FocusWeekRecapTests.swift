@@ -149,6 +149,25 @@ struct FocusWeekRecapTests {
         #expect(again.labels == recap.labels)
     }
 
+    /// 막대 높이의 분모 — **그 주 최다 분**이다.
+    ///
+    /// 화면이 이 값으로 일곱 막대를 나눈다. 틀리면 한 막대가 아니라 **주 전체가** 잘못된 비율로
+    /// 그려지는데, 막대는 여전히 그럴듯한 모양이라 눈으로는 못 잡는다. 빈 주에 0을 내놓는 것도
+    /// 함께 본다: 화면이 그 값으로 나누기 전에 0을 걸러야 한다는 계약이 여기서 시작한다.
+    @Test func testTheBusiestDayIsTheBarScaleDenominator() {
+        let recap = FocusWeekRecap.build(
+            log: log([(moment(day: 0, hour: 9), 25, nil),
+                      (moment(day: 2, hour: 9), 90, nil),
+                      (moment(day: 2, hour: 14), 25, nil),   // 수요일 115분 — 최다
+                      (moment(day: 4, hour: 9), 50, nil)]),
+            weekStart: monday, now: moment(day: 5, hour: 9))
+        #expect(recap.busiestDayMinutes == 115)
+
+        let empty = FocusWeekRecap.build(log: FocusSessionLog(), weekStart: monday,
+                                         now: moment(day: 2, hour: 9))
+        #expect(empty.busiestDayMinutes == 0, "빈 주의 분모가 0이 아니면 화면이 0으로 나눈다")
+    }
+
     /// 같은 라벨의 여러 세션은 한 줄로 합쳐진다 — 회고는 목록이 아니라 요약이다.
     @Test func testSessionsSharingALabelCollapseIntoOneRow() {
         let recap = FocusWeekRecap.build(
