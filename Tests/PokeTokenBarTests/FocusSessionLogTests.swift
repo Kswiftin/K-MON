@@ -92,6 +92,27 @@ final class FocusSessionLogTests: XCTestCase {
         XCTAssertEqual(log.minutes(on: CompanionStore.dayKey(now)), 25)
     }
 
+    /// 복원할 수 없는 파일은 기동 때 **지운다**. 그대로 두면 켤 때마다 같은 실패를 반복하고,
+    /// 기록이 다시 쌓이기 시작한다는 것을 사용자는 화면에서 알 수 없다.
+    /// 웨이브 런 옆 파일이 이미 같은 계약을 지킨다(`loadRogueRun`).
+    @MainActor
+    func testCorruptLogFileIsDiscardedOnLaunch() {
+        let directory = storeDirectory("focus-corrupt")
+        let logURL = directory.appendingPathComponent(CompanionStorageLocations.focusSessionsFileName)
+        try? Data("이건 JSON 이 아니다".utf8).write(to: logURL)
+
+        let store = CompanionStore(provider: StubProvider(value: stubMaxLevelLine), clock: clock.closure,
+                                   fileURL: directory.appendingPathComponent(CompanionStorageLocations.stateFileName),
+                                   rng: SeededRNG(seed: 3))
+
+        XCTAssertEqual(store.focusSessionsToday, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: logURL.path),
+                       "복원 못 할 파일이 남으면 다음 기동도 같은 실패를 반복한다")
+        // 버린 뒤에도 기록은 정상적으로 다시 쌓인다 — 지우는 것이 곧 복구다.
+        store.completeFocusSession(minutes: 25)
+        XCTAssertEqual(store.focusSessionsToday, 1)
+    }
+
     /// 왕복(인코딩 → 디코딩)이 값을 보존한다 — 옆 파일에 적고 다음 기동에 읽는 실제 경로다.
     func testEncodingRoundTripPreservesSessions() throws {
         var log = FocusSessionLog()
