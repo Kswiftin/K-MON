@@ -169,6 +169,17 @@ LOGIC_CORE=(
   # 검증**(`validBoss`)이 여기 있다. 그 검증이 곧 조작 호스트가 보상을 부풀리는 길을 막는 경계라
   # 게이트 밖에 두면 신뢰경계가 통째로 커버리지에서 빠진다.
   "Sources/PokeTokenBar/Core/RaidBoss.swift"
+  # 터미널이 방(체육관·토너먼트·포켓슬론·퀴즈)을 조작하는 자리. **대상 번호 → 참가자 id** 와
+  # 판의 형태(결투·트랙)를 가르는 판정이 여기 있고, `RoomScreen`(투영)은 이미 배열 안인데
+  # 그 투영에 값을 먹이는 쪽만 밖에 있었다 — 한쪽만 세면 번호가 어긋나는 부류를 못 본다.
+  "Sources/PokeTokenBar/Core/TerminalRoomControl.swift"
+  # 터미널에서 웨이브 런을 여는 자리. 야생 추첨·다음 웨이브 개방·진화 정산이 전부 여기라
+  # 배열 밖에 두면 `WaveRunScreen`(투영)만 세어지고 **판을 만드는 쪽**이 무측정으로 남는다.
+  "Sources/PokeTokenBar/Core/WaveRunLoader.swift"
+  # 아이템 사용·진화 수락의 결과표. 화면·대화·터미널 셋이 같은 표를 읽으므로
+  # `PokedoroSessionGate` 를 넣은 그 이유가 그대로 적용된다 — 한 프런트엔드만 통과하는
+  # 거절 분기(`notUsedThisWay`·`conditionsNoLongerMet`)가 게이트 밖이면 무테스트로 나간다.
+  "Sources/PokeTokenBar/Core/CompanionActionOutcome.swift"
 )
 
 # 기능이 **박제된 두 번째 화면**에 남는 부류를 막는다. `eee5c86` 이 팝오버 홈을 창으로 옮기며
