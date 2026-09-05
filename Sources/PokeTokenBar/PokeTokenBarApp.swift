@@ -70,7 +70,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                                              showPopover: { [weak self] in self?.openPopover() })
         Task { await companion.ensureInheritedMoves() }
         focusTimer.onFocusCompleted = { [weak self] minutes in
-            self?.companion.completeFocusSession(minutes: minutes)
+            guard let self else { return }
+            self.companion.completeFocusSession(minutes: minutes)
+            // 세션이 끝났다는 것부터 알린다. 팝오버 배너는 팝오버를 열어 둔 사람만 보는데,
+            // 메뉴바 앱을 쓰는 동안 사용자는 다른 앱에 있다 — 알림이 없으면 집중이 끝난 줄도 모른다.
+            let rest = FocusChainRules.restMinutes(completedToday: self.companion.focusSessionsToday)
+            self.notifyFocusChain(
+                self.companion.l.t("집중 세션 완료!", "Focus session complete!", "集中セッション完了！"),
+                self.companion.l.t("\(rest)분 휴식이 시작됐어요.",
+                                   "A \(rest)-minute break has started.",
+                                   "\(rest)分の休憩が始まりました。"))
         }
         // 체인 배선 둘. **순서가 계약이다** — 위 훅이 원장에 적은 뒤에 아래가 그 집계를 읽는다
         // (`FocusTimer.tick`). 뒤집히면 긴 휴식이 한 세션씩 밀린다.
@@ -280,12 +289,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         completionHandler([.banner, .sound, .list])
     }
 
-    /// 알림 탭 → 팝오버 열기(배틀 신청이면 수락 화면으로 자연스럽게 이어지게).
+    /// 알림 탭 → 팝오버 열기. **어느 화면인지는 알림 종류가 정한다**
+    /// (`PopoverNavigation.destination(forNotificationID:)`).
+    ///
+    /// 예전엔 종류를 안 보고 전부 대전 화면으로 보냈다 — 알림이 죄다 배틀·레이드 계열이라
+    /// 우연히 맞았을 뿐이다. 집중 체인 알림은 **누르면 시작하라는 뜻**이라 대전 탭으로 보내면
+    /// 알림을 누른 사용자가 정작 시작 버튼을 못 본다.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
-        Task { @MainActor in self.openPopover() }
-        Task { @MainActor in self.navigation.goToBattle() }
+        let id = response.notification.request.identifier
+        Task { @MainActor in
+            self.openPopover()
+            switch PopoverNavigation.destination(forNotificationID: id) {
+            case .focusTimer: self.navigation.goToFocusTimer()
+            case .battle: self.navigation.goToBattle()
+            }
+        }
         completionHandler()
     }
 
@@ -392,37 +412,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
 
     // MARK: 세션 체인
 
-    /// 휴식이 끝났다 — 다음 집중으로 잇거나, 사람을 부르거나, 멈춘다.
+    /// 휴식이 끝났다 — 다음 집중을 시작하라고 **부른다**. 시작은 사람이 한다.
     ///
     /// **판정은 여기 없다**(`FocusChainRules.afterRest`). 이 파일은 `@main` 이라 테스트가 닿지
     /// 않는다 — 조건을 여기 쓰면 체인 규칙 전체가 검증 밖으로 나간다. 여기 남는 것은 배선뿐이다.
     private func advanceFocusChain() {
         let decision = FocusChainRules.afterRest(
-            displayAwake: displayAwake,
-            // 방금 끝난 세션과 같은 길이로 잇는다 — 체인은 사용자가 고른 길이를 유지한다.
-            minutes: focusTimer.focusMinutes,
             completedToday: companion.focusSessionsToday,
             dailyGoal: settings.dailyFocusGoal,
             // 시작 거절 판정은 팝오버·대화·터미널과 **같은 표**를 쓴다. 체인만 따로 판정하면
-            // "버튼으론 거절되는데 체인은 통과하는" 상태가 생긴다.
+            // 시작할 수 없는 상태에서 "시작하세요" 라고 부르게 된다.
             refusal: PokedoroSessionGate.startRefusal(
                 PokedoroSessionState(timer: focusTimer, companion: companion)))
         let l = companion.l
         switch decision {
-        case .start(let minutes):
-            focusTimer.startFocusSession(minutes: minutes, companion: companion)
-        case .notify:
+        case .promptNextSession:
             notifyFocusChain(l.t("휴식이 끝났어요", "Break's over", "休憩が終わりました"),
-                             l.t("돌아오면 다음 집중을 시작할 수 있어요.",
-                                 "Start the next focus session when you're back.",
-                                 "戻ったら次の集中を始められます。"))
+                             l.t("눌러서 다음 집중을 시작하세요.",
+                                 "Tap to start your next focus session.",
+                                 "タップして次の集中を始めましょう。"))
         case .goalReached:
             notifyFocusChain(l.t("오늘 목표 달성!", "Daily goal reached!", "今日の目標達成！"),
                              l.t("오늘 \(companion.focusSessionsToday)세션을 마쳤어요. 더 할지는 직접 골라 주세요.",
                                  "\(companion.focusSessionsToday) sessions done today. Keep going if you want to.",
                                  "今日は\(companion.focusSessionsToday)セッション。続けるかはご自由に。"))
         case .halted(let refusal):
-            // 조용히 끝나도 이유는 남긴다 — 없으면 "왜 안 이어졌지" 를 답할 방법이 없다.
+            // 조용히 끝나도 이유는 남긴다 — 없으면 "왜 안 불렀지" 를 답할 방법이 없다.
             AppLog.write("focus chain halted: \(refusal)")
         }
     }
@@ -443,7 +458,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         content.body = body
         content.sound = .default
         UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: "focus-chain-\(focusChainNotifSeq)",
+            UNNotificationRequest(identifier: "\(FocusChainRules.notificationIDPrefix)-\(focusChainNotifSeq)",
                                   content: content, trigger: nil))
     }
 

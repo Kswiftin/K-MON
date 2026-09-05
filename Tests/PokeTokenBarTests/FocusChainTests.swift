@@ -18,10 +18,9 @@ final class FocusChainTests: XCTestCase {
 
     /// 인자 하나만 바꿔 가며 분기를 밟는다. **단독 분기 검증에 필요하다** — 두 조건을 함께
     /// 흔들면 `A || B` 게이트에서 B 단독 경로를 영영 안 밟고도 초록이 뜬다(#56 회귀의 부류).
-    private func afterRest(displayAwake: Bool = true, completedToday: Int = 1, dailyGoal: Int = 4,
+    private func afterRest(completedToday: Int = 1, dailyGoal: Int = 4,
                            refusal: PokedoroSessionGate.Refusal? = nil) -> FocusChainRules.RestEnd {
-        FocusChainRules.afterRest(displayAwake: displayAwake, minutes: 25,
-                                  completedToday: completedToday, dailyGoal: dailyGoal,
+        FocusChainRules.afterRest(completedToday: completedToday, dailyGoal: dailyGoal,
                                   refusal: refusal)
     }
 
@@ -58,31 +57,30 @@ final class FocusChainTests: XCTestCase {
 
     // MARK: 휴식이 끝났을 때 무엇을 하는가
 
-    /// 사람이 앞에 있고(디스플레이 켜짐) 목표가 남았으면 다음 집중이 저절로 시작된다 — 체인의 본체다.
-    func testChainStartsNextSessionWhileDisplayIsAwake() {
-        XCTAssertEqual(afterRest(), .start(minutes: 25))
+    /// 목표가 남았으면 **부르기만 한다.** 다음 집중을 켜는 것은 사람이다.
+    ///
+    /// 자동 시작을 하지 않는 이유: 시작을 앱이 정하면 자리를 비운 사이에도 세션이 쌓여
+    /// 기록이 실제 집중과 무관해진다 — 그 기록이 PRD 주 지표의 기준선이다. 알림은 시작할
+    /// 이유(pain)를 주고, 시작 여부는 사람이 쥔다.
+    func testChainAsksTheUserToStartTheNextSession() {
+        XCTAssertEqual(afterRest(), .promptNextSession)
     }
 
-    /// **디스플레이 잠듦 단독.** 다른 조건은 위와 같다 — 이 한 값만으로 자동 시작이 알림으로 바뀐다.
-    /// 이 분기가 PRD 위험표의 "자리를 비운 사이 가짜 세션" 을 막는 유일한 장치다.
-    func testSleepingDisplayNotifiesInsteadOfStarting() {
-        XCTAssertEqual(afterRest(displayAwake: false), .notify)
-    }
-
-    /// 오늘 목표를 채웠으면 **깨어 있어도** 멈춘다. 목표를 넘겨서까지 자동으로 미는 것이
-    /// 디스플레이만 켜 두고 자리를 뜬 경우에 가짜 세션이 무한히 쌓이는 마지막 통로다.
-    func testChainStopsAtTheDailyGoal() {
+    /// 오늘 목표를 채웠으면 다른 말을 한다. 같은 문구로 계속 부르면 목표가 아무 의미도 없다.
+    func testChainAnnouncesTheGoalInsteadOfAskingForMore() {
         XCTAssertEqual(afterRest(completedToday: 4, dailyGoal: 4), .goalReached)
         XCTAssertEqual(afterRest(completedToday: 9, dailyGoal: 4), .goalReached,
-                       "목표를 이미 넘긴 상태에서도 자동으로 밀지 않는다")
+                       "목표를 이미 넘긴 상태에서도 더 하라고 부르지 않는다")
     }
 
-    /// 거절이 **맨 앞이다.** 깨어 있고 목표가 남았어도, 시작 자체가 막혀 있으면 아무것도 안 한다 —
-    /// 시작할 수 없는 상태에서 "다음 세션 시작!" 알림을 띄우면 알림이 거짓말이 된다.
+    /// 거절이 **맨 앞이다.** 목표가 남았어도 시작 자체가 막혀 있으면 부르지 않는다 —
+    /// 시작할 수 없는 상태에서 "다음 세션 시작하세요" 라고 부르면 알림이 거짓말이 된다.
+    /// 사용자는 알림을 누르고 팝오버를 열었다가 눌리지 않는 버튼만 보게 된다.
     func testBlockedStartHaltsTheChainBeforeAnyNotification() {
         XCTAssertEqual(afterRest(refusal: .noCompanion), .halted(.noCompanion))
-        XCTAssertEqual(afterRest(displayAwake: false, refusal: .adventureUnclaimed),
-                       .halted(.adventureUnclaimed))
+        XCTAssertEqual(afterRest(completedToday: 9, dailyGoal: 4, refusal: .adventureUnclaimed),
+                       .halted(.adventureUnclaimed),
+                       "목표 달성보다도 거절이 앞이다 — 못 하는 일을 축하할 수는 없다")
     }
 
     // MARK: 타이머 훅 — 순서가 곧 계약이다
@@ -118,27 +116,33 @@ final class FocusChainTests: XCTestCase {
                        TimeInterval(FocusChainRules.shortRestMinutes * 60))
     }
 
-    /// 휴식 종료 훅은 `stop()` **뒤에** 오고, `tick` 의 마지막 문장이다.
+    /// 휴식 종료 훅은 `stop()` **뒤에** 온다. 훅 안에서 본 단계가 `.idle` 이어야 한다.
     ///
-    /// 앞에 오면 콜백이 본 단계가 `.rest` 라 `PokedoroSessionGate.startRefusal` 이
-    /// `.timerAlreadyRunning` 으로 거절한다. 뒤에 문장이 더 붙으면 콜백이 켠 세션이 지워진다.
-    /// 두 사고 모두 "체인이 그냥 안 이어진다" 로만 보인다.
+    /// 자동 시작을 걷어내고도 이 순서가 더 중요해졌다: 훅(`advanceFocusChain`)은 **그 자리에서**
+    /// `PokedoroSessionGate.startRefusal` 을 물어 알림을 띄울지 정한다. 훅이 `stop()` 앞에서 불리면
+    /// 게이트가 아직 `.rest` 를 보고 `.timerAlreadyRunning` 으로 거절하고, 판정은 `.halted` 가 되어
+    /// **알림이 아예 안 뜬다** — 체인이 소리 없이 죽고 화면엔 아무 흔적도 없다.
     @MainActor
-    func testRestCompletionHookRunsAfterStopAndItsNewSessionSurvives() {
+    func testRestCompletionHookSeesAnIdleTimerSoTheGateLetsTheNextSessionStart() {
         let timer = FocusTimer()
         let restEnd = start.addingTimeInterval(TimeInterval(FocusChainRules.shortRestMinutes * 60))
         var phaseInsideHook: FocusPhase?
+        var startWasRefusedInsideHook: PokedoroSessionGate.Refusal??
         timer.onRestCompleted = {
             phaseInsideHook = timer.phase
-            timer.startFocus(minutes: 25, now: restEnd)
+            // 프로덕션과 같은 질문을 같은 자리에서 한다 — 타이머 단계 말고는 다 통과하는 상태로 둔다.
+            startWasRefusedInsideHook = PokedoroSessionGate.startRefusal(
+                PokedoroSessionState(phase: timer.phase, hasCompanion: true,
+                                     hasAdventure: false, adventureIsInProgress: false))
         }
 
         timer.startRest(minutes: FocusChainRules.shortRestMinutes, now: start)
         timer.tick(now: restEnd)
 
-        XCTAssertEqual(phaseInsideHook, .idle, "훅이 stop() 앞에서 불렸다 — 게이트가 시작을 거절한다")
-        XCTAssertEqual(timer.phase, .focus, "훅이 켠 세션이 tick 의 뒤 문장에 지워졌다")
-        XCTAssertTrue(timer.isRunning)
+        XCTAssertEqual(phaseInsideHook, .idle, "훅이 stop() 앞에서 불렸다")
+        XCTAssertEqual(startWasRefusedInsideHook, .some(nil),
+                       "훅 시점에 게이트가 시작을 거절한다 — 알림이 안 뜨고 체인이 조용히 죽는다")
+        XCTAssertEqual(timer.phase, .idle, "휴식이 끝났으면 사람이 다시 켤 수 있는 상태여야 한다")
     }
 
     /// 집중이 끝날 때는 휴식 종료 훅이 불리지 않는다. 두 전이가 같은 훅을 밟으면 집중이

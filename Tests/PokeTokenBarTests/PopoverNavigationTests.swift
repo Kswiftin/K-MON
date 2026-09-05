@@ -5,6 +5,39 @@ import XCTest
 // 항상 Home 으로 돌아가게 한다(설정 화면 잔류 방지).
 @MainActor
 final class PopoverNavigationTests: XCTestCase {
+    // MARK: 알림 탭 → 어디로 가는가
+
+    /// 집중 체인 알림을 누르면 **집중 타이머가 있는 화면**으로 가야 한다.
+    ///
+    /// 알림마다 목적지가 다르다는 것을 지금까지 아무도 안 봤다 — `didReceive` 는 종류를 안 보고
+    /// 전부 `goToBattle()` 로 보냈고(주석도 "배틀 신청이면" 이라고 전제한다), 그때는 알림이 죄다
+    /// 배틀·레이드 계열이라 우연히 맞았다. 체인 알림은 **누르면 시작하라는 뜻**이라 그 전제가
+    /// 처음으로 깨진다: 대전 탭엔 시작 버튼이 없어서, 알림을 눌러 앱을 연 사용자가 정작 다음
+    /// 세션을 시작할 수 없다.
+    func testTheFocusChainNotificationOpensTheFocusTimerNotTheBattleTab() {
+        XCTAssertEqual(PopoverNavigation.destination(forNotificationID: "\(FocusChainRules.notificationIDPrefix)-1"),
+                       .focusTimer)
+    }
+
+    /// 나머지는 지금까지 하던 대로 대전 화면이다 — 이 변경으로 배틀 신청 흐름이 바뀌면 안 된다.
+    func testOtherNotificationsStillOpenTheBattleTab() {
+        for id in ["raid-room-abc", "raid-hatch-2", "gym-battle-\(UUID().uuidString)",
+                   "private-message-trade-1", "companion-event-7"] {
+            XCTAssertEqual(PopoverNavigation.destination(forNotificationID: id), .battle, id)
+        }
+    }
+
+    /// 목적지가 정해지면 그 화면이 실제로 열려야 한다 — 오버레이가 덮고 있으면 접는다.
+    /// 체육관을 열어 둔 채 알림을 누르면 시작 버튼이 오버레이 뒤에 가려진다.
+    func testGoingToTheFocusTimerFoldsWhateverOverlayWasCovering() {
+        let nav = PopoverNavigation()
+        nav.showGymLeague = true
+        nav.tab = .battle
+        nav.goToFocusTimer()
+        XCTAssertFalse(nav.showGymLeague)
+        XCTAssertEqual(nav.tab, .home, "집중 타이머는 홈 탭에 있다")
+    }
+
     func testDefaultsToHome() {
         let nav = PopoverNavigation()
         XCTAssertFalse(nav.showSettings)

@@ -91,9 +91,9 @@ struct SettingsView: View {
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(l.t("하루 목표 세션", "Daily session goal", "1日の目標セッション"))
-                    Text(l.t("휴식이 끝나면 목표까지 자동으로 이어집니다. 자리를 비우면(화면 꺼짐) 알림만 옵니다.",
-                             "Sessions chain automatically up to this goal. If you're away (display asleep) you get a notification instead.",
-                             "休憩が終わると目標まで自動でつながります。離席中（画面オフ）は通知のみです。"))
+                    Text(l.t("휴식이 끝나면 알림으로 알려 드립니다. 다음 세션은 직접 시작하세요.",
+                             "You get a notification when the break ends. You start the next session yourself.",
+                             "休憩が終わると通知でお知らせします。次のセッションはご自分で開始してください。"))
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()

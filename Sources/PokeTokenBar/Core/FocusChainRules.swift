@@ -39,33 +39,34 @@ enum FocusChainRules {
         restMinutes(completedToday: completedToday) == longRestMinutes
     }
 
+    /// 체인 알림의 식별자 앞머리. **띄우는 쪽과 눌렀을 때 보내는 쪽이 같은 상수를 본다** —
+    /// 문자열을 두 번 적으면 한쪽만 고쳐졌을 때 알림이 엉뚱한 화면을 연다
+    /// (`PopoverNavigation.destination(forNotificationID:)`).
+    static let notificationIDPrefix = "focus-chain"
+
     /// 휴식이 끝났을 때 무엇을 하는가.
+    ///
+    /// **여기에 "자동으로 시작한다" 는 없다.** 시작을 앱이 정하면 자리를 비운 사이에도 세션이
+    /// 쌓여 기록이 실제 집중과 무관해지는데, 그 기록이 곧 PRD 주 지표의 기준선이다. 체인이 하는
+    /// 일은 "다음 세션을 시작할 이유와 신호" 를 주는 것까지고, 시작 여부는 사람이 쥔다.
     enum RestEnd: Equatable, Sendable {
-        /// 다음 집중을 자동으로 시작한다.
-        case start(minutes: Int)
-        /// 사람이 자리에 없다. 알림만 남기고 돌아와서 고르게 한다.
-        case notify
-        /// 오늘 목표를 채웠다. 더 할지는 사람이 정한다.
+        /// 다음 집중을 시작하라고 부른다. 누르면 집중 타이머 화면이 열린다.
+        case promptNextSession
+        /// 오늘 목표를 채웠다. 더 할지는 사람이 정한다 — 같은 문구로 계속 부르지 않는다.
         case goalReached
         /// 지금은 시작 자체가 막혀 있다. 알림도 띄우지 않는다 — 사유가 남을 뿐이다.
         case halted(PokedoroSessionGate.Refusal)
     }
 
-    /// 휴식 종료 판정. **거절 → 목표 → 사람 유무** 순이다.
+    /// 휴식 종료 판정. **거절 → 목표** 순이다.
     ///
-    /// 거절이 맨 앞인 이유: 시작할 수 없는 상태에서 "다음 세션 시작!" 알림을 띄우면 알림이
-    /// 거짓말이 된다(동행을 부화기에 넣어 비어 있는 경우가 실제 경로다).
-    ///
-    /// 목표가 사람 유무보다 앞인 이유: 목표를 넘겨서까지 자동으로 미는 것이, 디스플레이만 켜 두고
-    /// 자리를 뜬 경우에 가짜 세션이 무한히 쌓이는 마지막 통로다. 목표에서 멈추면 그 손해가
-    /// 하루 목표치로 묶인다.
-    ///
-    /// - Parameter minutes: 이어 갈 집중 길이. 방금 끝난 세션과 같은 길이다 — 체인은 사용자가
-    ///   고른 길이를 유지한다.
-    static func afterRest(displayAwake: Bool, minutes: Int, completedToday: Int,
-                          dailyGoal: Int, refusal: PokedoroSessionGate.Refusal?) -> RestEnd {
+    /// 거절이 맨 앞인 이유: 시작할 수 없는 상태에서 "다음 세션 시작하세요" 라고 부르면 알림이
+    /// 거짓말이 된다. 사용자는 알림을 누르고 팝오버를 열었다가 눌리지 않는 버튼만 보게 된다
+    /// (동행을 부화기에 넣어 비어 있는 경우가 실제 경로다). 목표 달성 축하보다도 앞이다 —
+    /// 못 하는 일을 축하할 수는 없다.
+    static func afterRest(completedToday: Int, dailyGoal: Int,
+                          refusal: PokedoroSessionGate.Refusal?) -> RestEnd {
         if let refusal { return .halted(refusal) }
-        if completedToday >= dailyGoal { return .goalReached }
-        return displayAwake ? .start(minutes: minutes) : .notify
+        return completedToday >= dailyGoal ? .goalReached : .promptNextSession
     }
 }
