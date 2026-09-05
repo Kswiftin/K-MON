@@ -27,6 +27,50 @@ struct PokedoroCommandTests {
         #expect(try parse(["top"]) == .watch)
     }
 
+    // MARK: 조회 명령
+
+    /// 가방·도전·목표는 세이브만 읽는다. 앱에 요청을 보내는 명령으로 만들면 앱이 꺼져 있을 때
+    /// 조회가 3초 멈췄다 실패한다 — 조회는 앱 없이도 되는 것이 이 프런트엔드의 쓸모다.
+    @Test func testReadOnlyScreenCommandsParse() throws {
+        #expect(try parse(["bag"]) == .bag)
+        #expect(try parse(["challenge"]) == .challenge)
+        #expect(try parse(["goals"]) == .goals)
+    }
+
+    @Test func testReadOnlyScreenAliases() throws {
+        #expect(try parse(["items"]) == .bag)
+        #expect(try parse(["ch"]) == .challenge)
+        #expect(try parse(["goal"]) == .goals)
+    }
+
+    /// 번호를 안 적으면 파트너다 — 가장 자주 보는 개체에 인자를 강제하지 않는다.
+    @Test func testMonWithoutANumberMeansThePartner() throws {
+        #expect(try parse(["mon"]) == .mon(number: nil))
+    }
+
+    /// 번호는 `party` 가 찍는 값 그대로(1부터)다. 0 부터 받으면 화면이 찍은 번호와 입력이 한 칸
+    /// 어긋나 사용자가 다른 개체를 본다.
+    @Test func testMonTakesThePrintedNumber() throws {
+        #expect(try parse(["mon", "3"]) == .mon(number: 3))
+    }
+
+    /// 숫자가 아닌 번호를 조용히 파트너로 접으면 사용자는 자기 오타를 영영 못 본다
+    /// (`start 5o` 와 같은 부류다).
+    @Test func testANonNumericMonNumberIsRejectedByName() {
+        #expect(throws: PokedoroCommandError.invalidMonNumber("2번")) {
+            try parse(["mon", "2번"])
+        }
+        #expect(PokedoroCommandError.invalidMonNumber("2번").message.contains("party"),
+                "번호를 어디서 얻는지 알려 줘야 사용자가 다음에 무엇을 칠지 안다")
+    }
+
+    /// 도움말에 없는 기능은 있어도 없는 것이다 — 사용자가 알 방법이 없다.
+    @Test func testUsageListsTheReadOnlyScreens() {
+        for name in ["bag", "challenge", "goals", "mon"] {
+            #expect(PokedoroCommandParser.usage.contains(name), "도움말에 \(name) 이 없다")
+        }
+    }
+
     // MARK: 집중 세션 명령
 
     /// 세 동작은 터미널에서 **직접 요청한다**. 세이브를 바꾸는 쪽은 여전히 앱이지만
@@ -73,7 +117,9 @@ struct PokedoroCommandTests {
 
     @Test func testReadOnlyCommandsNeverBecomeRequests() {
         let readOnly: [PokedoroCommand] = [.status(oneline: false), .status(oneline: true),
-                                           .party, .dex, .watch, .help]
+                                           .party, .dex, .watch, .help,
+                                           .bag, .challenge, .goals,
+                                           .mon(number: nil), .mon(number: 2)]
         for command in readOnly {
             #expect(command.request == nil, "\(command) 가 앱에 요청을 보낸다")
         }

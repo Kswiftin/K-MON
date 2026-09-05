@@ -54,6 +54,14 @@ enum PokedoroCLI {
             partyRows(store).forEach { print($0) }
         case .dex:
             dexRows(store).forEach { print($0) }
+        case .bag:
+            bagRows(store, width: terminalWidth()).forEach { print($0) }
+        case .challenge:
+            challengeRows(store, width: terminalWidth()).forEach { print($0) }
+        case .goals:
+            goalRows(store, width: terminalWidth()).forEach { print($0) }
+        case .mon(let number):
+            monRows(store, number: number, width: terminalWidth()).forEach { print($0) }
         case .watch:
             TUIWatch(store: store).run()
         }
@@ -149,9 +157,12 @@ enum PokedoroCLI {
         let entries = store.chatRosterEntries
         guard !entries.isEmpty else { return ["보유한 포켓몬이 없다."] }
         return entries.map { entry in
+            // 번호를 찍는 이유는 `mon <번호>` 가 이 값을 받기 때문이다 — 안내만 하고 안 찍으면
+            // 사용자는 어디서 번호를 얻는지 모른다. 세는 표는 `TUIRender` 한 곳이다.
+            let number = TUIText.pad("\(TUIRender.printedRosterNumber(index: entry.index)).", to: 4)
             let marks = (entry.isActive ? TUIRender.activeMark + " " : "  ")
                 + (entry.isShiny ? "✨ " : "   ")
-            return marks + TUIText.pad(entry.name, to: 18) + "Lv.\(entry.level)"
+            return number + marks + TUIText.pad(entry.name, to: 18) + "Lv.\(entry.level)"
         }
     }
 
@@ -164,6 +175,111 @@ enum PokedoroCLI {
                 + entry.rarity.rawValue
         }
     }
+
+    /// 가방. 아이템 이름은 표에서 오므로 네트워크가 필요 없다 — 진화 라인이 있어야 채워지는
+    /// 값(`displayName` 부류)을 쓰지 않는다는 규칙을 그대로 지킨다.
+    static func bagRows(_ store: CompanionStore, width: Int) -> [String] {
+        let items = store.ownedItems
+        guard !items.isEmpty else { return ["가방이 비어 있다."] }
+        let l = L(store.language)
+        return TUIRender.rows(items.map { (l.itemName($0.kind), "×\(TUIRender.number($0.count))") },
+                              width: width)
+    }
+
+    /// 도전 — 던전 실적·배지·미션·시즌. 앱의 도전 탭과 같은 묶음이다.
+    ///
+    /// 총량은 **카탈로그에서 읽는다**(`RogueRun.finalWave`·`GymLeague.catalog`). 숫자를 여기
+    /// 적으면 콘텐츠가 늘 때 이 줄만 옛말이 된다 — 대화의 `challenge.status` 와 같은 규칙이다.
+    static func challengeRows(_ store: CompanionStore, width: Int) -> [String] {
+        let l = L(store.language)
+        let run = store.runProgress
+        var lines = TUIRender.rows([
+            ("던전 최고 웨이브", "\(run.bestWave)/\(RogueRun.finalWave)"),
+            ("던전 클리어", "\(TUIRender.number(run.clears))회"),
+            ("\(l.gymLeagueTitle) 배지", "\(store.state.gymBadges.count)/\(GymLeague.catalog.count)")
+        ], width: width)
+
+        lines += section(l.missionsTitle, width: width)
+        lines += TUIRender.progress(store.missionRows.map { row in
+            TUIProgressRow(label: "\(row.mission.period == .daily ? l.missionDaily : l.weekly) "
+                            + l.missionName(row.mission),
+                           value: row.progress, target: row.mission.target)
+        }, width: width)
+
+        lines += section("\(l.seasonTitle) · \(l.seasonDaysLeft(store.seasonDaysRemaining))", width: width)
+        lines += TUIRender.progress(store.seasonRows.map { row in
+            TUIProgressRow(label: l.goalName(row.challenge.event, row.challenge.target),
+                           value: row.progress, target: row.challenge.target)
+        }, width: width)
+        return lines
+    }
+
+    /// 도감 목표·업적. 둘 다 "다음에 무엇을 노릴까" 를 답하는 값이라 한 화면이다.
+    static func goalRows(_ store: CompanionStore, width: Int) -> [String] {
+        let l = L(store.language)
+        var lines = [TUIText.truncate(l.dexTitle, to: width)]
+        lines += TUIRender.progress(store.dexGoalRows.map { row in
+            TUIProgressRow(label: l.dexGoalName(row.goal), value: row.progress, target: row.goal.target)
+        }, width: width)
+
+        lines += section(l.achievementsTitle, width: width)
+        lines += TUIRender.progress(store.achievementRows.map { row in
+            // 다음 문턱이 없으면 최고 단계다 — 자기 카운터를 목표로 삼아 완료로 그린다. 마지막
+            // 문턱을 목표로 쓰면 상한을 넘긴 카운터가 "8/5" 처럼 보인다.
+            let next = store.nextAchievementTier(row.achievement.track)
+            return TUIProgressRow(label: l.achievementName(row.achievement.track),
+                                  value: row.count, target: next?.goal ?? row.count)
+        }, width: width)
+        return lines
+    }
+
+    /// 개체 상세. **세이브에 저장된 값만** 쓴다 — 능력치·기술은 진화 라인을 받아야 채워지므로
+    /// 짧게 살다 죽는 명령에서는 언제나 비어 있다.
+    ///
+    /// 번호는 `party` 가 찍는 값(1부터)이다. 없으면 파트너다 — 가장 자주 보는 개체에 인자를
+    /// 강제하지 않는다. 범위 밖 번호는 **조용히 파트너로 접지 않는다**: 사용자는 자기가 무엇을
+    /// 보고 있는지 모른 채 다른 개체의 값을 읽는다.
+    static func monRows(_ store: CompanionStore, number: Int?, width: Int) -> [String] {
+        let entries = store.chatRosterEntries
+        guard !entries.isEmpty else { return ["보유한 포켓몬이 없다."] }
+        let wanted: CompanionStore.ChatRosterEntry?
+        if let number {
+            // `??` 로 이어 붙이지 않는다 — 못 찾은 번호가 파트너로 접히면 사용자는 자기가 무엇을
+            // 보고 있는지 모른 채 다른 개체의 값을 읽는다.
+            wanted = entries.first { $0.index == TUIRender.rosterIndex(printed: number) }
+        } else {
+            wanted = entries.first { $0.isActive } ?? entries.first
+        }
+        guard let entry = wanted, let mon = store.ownedMons.first(where: { $0.id == entry.id }) else {
+            return ["\(number.map(String.init) ?? "")번 포켓몬이 없다 — party 로 번호를 확인한다."]
+        }
+        var rows: [(label: String, value: String)] = [
+            ("이름", entry.name + (entry.isShiny ? " ✨" : "")),
+            ("번호", "\(TUIRender.printedRosterNumber(index: entry.index))"),
+            ("레벨", "Lv.\(entry.level)"),
+            ("등급", mon.rarity.rawValue),
+            ("형태", "\(mon.stageIndex + 1)/\(mon.totalForms)")
+        ]
+        // 구버전 세이브엔 없는 값들이다. 빈 줄로 채우면 무엇이 없는지가 아니라 무엇이 고장났는지로 읽힌다.
+        if let nature = mon.nature { rows.append(("성격", nature.name(store.language))) }
+        if let gender = mon.gender { rows.append(("성별", gender.symbol)) }
+        if let metAt = mon.firstMetAt { rows.append(("처음 만난 날", day.string(from: metAt))) }
+        rows.append(("함께 다니는 중", entry.isActive ? "예" : "아니오"))
+        return TUIRender.rows(rows, width: width)
+    }
+
+    /// 목록 안의 구획 머리글. 빈 줄을 앞에 둬 눈이 묶음을 끊어 읽게 한다.
+    private static func section(_ title: String, width: Int) -> [String] {
+        ["", TUIText.truncate(title, to: width)]
+    }
+
+    /// 처음 만난 날. 시각은 안 싣는다 — 폭이 귀하고 날짜만으로 할 말이 충분하다.
+    private static let day: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
 
     /// 표시용 지역 이름. `AdventureZone` 은 심볼(SF Symbols)만 들고 있어 터미널에서 쓸 수 없다.
     static func zoneLabel(_ zone: AdventureZone?) -> String {

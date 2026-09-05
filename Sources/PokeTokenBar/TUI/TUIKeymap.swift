@@ -1,11 +1,42 @@
 import Foundation
 
-/// TUI 가 보여주는 화면. 홈 하나 + 목록 둘이다.
+/// TUI 가 보여주는 화면. 홈 하나 + 목록 다섯이다.
 enum TUIScreen: String, CaseIterable, Sendable {
-    case home, party, dex
+    case home, party, dex, bag, challenge, goals
 
     /// 목록이 있는 화면인가 — 스크롤 키를 받을지 가르는 유일한 기준이다.
     var isList: Bool { self != .home }
+
+    /// 이 화면을 부르는 키. **키 표와 화면 안내가 같은 값을 읽는 자리다** — 두 벌이면 안내에
+    /// 있는 키가 아무 일도 안 하거나, 먹는 키가 안내에 없다.
+    var key: Character {
+        switch self {
+        case .home: "h"
+        case .party: "p"
+        case .dex: "d"
+        case .bag: "b"
+        // `c` 가 아니다 — 그 키는 홈에서 정산이다. 같은 키를 화면에 따라 조회와 상태 변경으로
+        // 가르면 손이 먼저 움직여 누르지 않으려던 쪽이 눌린다.
+        case .challenge: "m"
+        case .goals: "g"
+        }
+    }
+
+    /// 머리글·키 안내에 쓰는 이름. 케이스 옆에 두는 이유는 화면을 더할 때 이름을 빠뜨리면
+    /// 컴파일이 막게 하기 위해서다.
+    var title: String {
+        switch self {
+        case .home: "홈"
+        case .party: "포켓몬"
+        case .dex: "도감"
+        case .bag: "가방"
+        case .challenge: "도전"
+        case .goals: "목표"
+        }
+    }
+
+    /// 키 → 화면. 표를 손으로 두 벌 쓰지 않는다.
+    static func screen(for key: Character) -> TUIScreen? { allCases.first { $0.key == key } }
 }
 
 /// 키가 거절된 이유. `.ignored`(그 화면에 없는 키)와 반드시 구분한다 — 화면이 이유를 띄워야
@@ -82,11 +113,11 @@ enum TUIKeymap {
         switch character {
         case "q": return .quit
         case "r": return .reload
-        case "h": return .show(.home)
-        case "p": return .show(.party)
-        case "d": return .show(.dex)
         default: break
         }
+        // 이동 키는 화면 표에서 읽는다 — 여기 손으로 적으면 화면을 더할 때 키가 빠지고,
+        // 안내(`TUIRender.screenHints`)와 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다.
+        if let next = TUIScreen.screen(for: character) { return .show(next) }
         if screen.isList {
             // vi 키는 목록에서만 산다. 홈에서 j/k 를 받으면 아무 데도 안 쓰이는 커서가 움직인다.
             switch character {

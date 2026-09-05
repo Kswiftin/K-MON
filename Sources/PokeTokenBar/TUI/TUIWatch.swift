@@ -153,11 +153,17 @@ final class TUIWatch {
         render()
     }
 
+    /// 목록 행. 폭은 **표식 칸을 뺀 값**으로 넘긴다 — 전체 폭으로 만들면 `TUIRender.list` 가
+    /// 커서 표식을 붙인 뒤 오른쪽(개수·진행도)을 잘라 낸다.
     private func rows() -> [String] {
+        let width = TUIRender.listRowWidth(terminal.size.width)
         switch screen {
-        case .home: []
-        case .party: PokedoroCLI.partyRows(store)
-        case .dex: PokedoroCLI.dexRows(store)
+        case .home: return []
+        case .party: return PokedoroCLI.partyRows(store)
+        case .dex: return PokedoroCLI.dexRows(store)
+        case .bag: return PokedoroCLI.bagRows(store, width: width)
+        case .challenge: return PokedoroCLI.challengeRows(store, width: width)
+        case .goals: return PokedoroCLI.goalRows(store, width: width)
         }
     }
 
@@ -169,17 +175,17 @@ final class TUIWatch {
         switch screen {
         case .home:
             lines = TUIRender.home(model, width: size.width, keyHints: true)
-        case .party, .dex:
-            let title = screen == .party ? "포켓몬" : "도감"
+        case .party, .dex, .bag, .challenge, .goals:
             // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
             let listHeight = max(1, size.height - 5)
-            lines = [TUIRender.row(left: title, right: "★ \(TUIRender.number(store.availableTokens))",
+            lines = [TUIRender.row(left: screen.title,
+                                   right: "★ \(TUIRender.number(store.availableTokens))",
                                    width: size.width),
                      TUIRender.rule(width: size.width)]
             lines += TUIRender.list(rows: rows(), selection: selection,
                                     height: listHeight, width: size.width)
             lines.append(TUIRender.rule(width: size.width))
-            lines.append(TUIText.truncate("↑↓/jk 이동   h 홈  p 포켓몬  d 도감  r 새로고침  q 종료",
+            lines.append(TUIText.truncate("↑↓/jk 이동   " + TUIRender.screenHints(current: screen),
                                           to: size.width))
         }
         terminal.draw(lines, height: size.height)

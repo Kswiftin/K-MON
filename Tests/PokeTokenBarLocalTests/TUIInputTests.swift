@@ -27,6 +27,46 @@ struct TUIInputTests {
         }
     }
 
+    /// 새 조회 화면도 키 하나로 간다. `c` 를 도전 화면에 배정하지 않는 이유는 그 키가 홈에서
+    /// 정산이라서다 — 같은 키가 화면에 따라 조회와 상태 변경으로 갈리면 손이 먼저 움직인다.
+    @Test func testReadOnlyScreenKeysSwitchScreens() {
+        #expect(action(.char("b")) == .show(.bag))
+        #expect(action(.char("m")) == .show(.challenge))
+        #expect(action(.char("g")) == .show(.goals))
+    }
+
+    /// 새 화면은 전부 목록이다 — 스크롤을 못 받으면 첫 창 밖의 행을 영영 못 본다.
+    @Test func testReadOnlyScreensScroll() {
+        for screen in [TUIScreen.bag, .challenge, .goals] {
+            #expect(action(.down, screen: screen) == .scroll(1))
+            #expect(action(.char("k"), screen: screen) == .scroll(-1))
+        }
+    }
+
+    /// 모험 키는 여전히 홈 전용이다. 가방을 넘기다 `c` 를 눌러 정산이 돌면 안 된다.
+    @Test func testAdventureKeysStayHomeOnlyOnTheNewScreens() {
+        for screen in [TUIScreen.bag, .challenge, .goals] {
+            #expect(action(.char("c"), screen: screen) == .ignored)
+            #expect(action(.char("1"), screen: screen) == .ignored)
+        }
+    }
+
+    /// ESC 는 목록에서 홈으로 돌아온다 — 화면이 늘어도 나가는 길은 하나여야 한다.
+    @Test func testEscapeLeavesEveryListScreenForHome() {
+        for screen in TUIScreen.allCases where screen.isList {
+            #expect(action(.escape, screen: screen) == .show(.home))
+        }
+    }
+
+    /// 모르는 시퀀스(Home·PageUp·잘려 온 UTF-8)는 **아무 동작도 아니다.** 어떤 화면에서도
+    /// 동작으로 새면 안 된다 — 디코더가 `.unknown` 으로 돌려주는 이유가 바로 그것이고, 그 값을
+    /// 여기서 문자처럼 다루면 진짜 입력과 구분되지 않는다.
+    @Test func testUnknownKeysDoNothingOnEveryScreen() {
+        for screen in TUIScreen.allCases {
+            #expect(action(.unknown, screen: screen) == .ignored)
+        }
+    }
+
     // MARK: 모험
 
     @Test func testDigitKeysStartTheMatchingSessionLength() {
