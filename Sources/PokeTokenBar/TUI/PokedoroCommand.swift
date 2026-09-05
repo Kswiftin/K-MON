@@ -70,6 +70,14 @@ enum PokedoroCommand: Equatable, Sendable {
     /// 받은 신청 거절. 확인을 받지 않는다 — 되돌릴 수 있는 일이다.
     case battleDecline
 
+    // MARK: LAN 방 (협동 레이드·방 대전)
+
+    case room
+    case roomMove(move: Int, target: Int?)
+    case roomStart
+    /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
+    case roomLeave(confirmed: Bool)
+
     /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
     ///
     /// **인자를 여기서 함께 넘긴다.** 예전엔 동작만 돌려주고 부르는 쪽이 분을 다시 꺼냈는데,
@@ -100,8 +108,11 @@ enum PokedoroCommand: Equatable, Sendable {
         case .battleSwitch(let number): .battleSwitch(number: number)
         case .battleForfeit(let confirmed): confirmed ? .battleForfeit : nil
         case .battleDecline: .battleDecline
+        case .roomMove(let move, let target): .roomMove(move: move, target: target)
+        case .roomStart: .roomStart
+        case .roomLeave(let confirmed): confirmed ? .roomLeave : nil
         case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help,
-             .wave, .battle: nil
+             .wave, .battle, .room: nil
         }
     }
 }
@@ -246,6 +257,8 @@ enum PokedoroCommandParser {
             return try waveCommand(in: tail, options: options)
         case "battle", "pvp":
             return try battleCommand(in: tail, options: options)
+        case "room":
+            return try roomCommand(in: tail, options: options)
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
@@ -340,6 +353,31 @@ enum PokedoroCommandParser {
         case "decline", "no":
             try rejectExtra(rest, beyond: 0, command: command)
             return .battleDecline
+        default:
+            throw PokedoroCommandError.unknownCommand(command)
+        }
+    }
+
+    /// `room <하위 명령> [번호…]`. 하위 명령이 없으면 조회다.
+    private static func roomCommand(in arguments: [String],
+                                    options: Set<String>) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .room }
+        let rest = Array(words.dropFirst())
+        let command = "room \(sub)"
+        switch sub {
+        case "move":
+            try rejectExtra(rest, beyond: 2, command: command)
+            guard let move = try waveNumber(in: rest) else {
+                throw PokedoroCommandError.missingArgument(command)
+            }
+            return .roomMove(move: move, target: try waveNumber(in: Array(rest.dropFirst())))
+        case "start":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .roomStart
+        case "leave":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .roomLeave(confirmed: options.contains("--yes"))
         default:
             throw PokedoroCommandError.unknownCommand(command)
         }
@@ -459,6 +497,10 @@ enum PokedoroCommandParser {
         ("battle switch <번호>", "교체 / 쓰러진 자리 메우기"),
         ("battle decline", "받은 대전 신청 거절"),
         ("battle forfeit --yes", "항복 — 되돌릴 수 없다"),
+        ("room", "LAN 방 — 지금 판 (레이드·방 대전)"),
+        ("room move <n> [대상]", "기술 쓰기 (대상 생략하면 첫 상대)"),
+        ("room start", "호스트가 판 시작"),
+        ("room leave --yes", "방 나가기 — 정산을 못 받는다"),
         ("help", "이 도움말"),
     ]
 

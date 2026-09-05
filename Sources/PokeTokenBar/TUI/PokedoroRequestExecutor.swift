@@ -18,6 +18,9 @@ struct PokedoroRequestExecutor {
     /// LAN 대전에 닿는 좁은 창구. **`nil` 은 "대전이 없다" 와 같은 뜻**이다 — 창구가 없으면
     /// 볼 판도 낼 턴도 없으므로 사유를 따로 만들지 않는다(앱은 늘 연결해 넘긴다).
     var battle: (any TerminalBattleControl)?
+    /// LAN 방(레이드·방 대전)에 닿는 창구. `battle` 과 같은 이유로 좁게 두고, `nil` 은
+    /// "방에 없다" 와 같은 뜻이다.
+    var room: (any TerminalRoomControl)?
 
     /// `async` 인 이유는 **부화 하나** 때문이다 — `hatchIfNeeded` 는 PokéAPI 에서 종 라인을 받아
     /// 온다. 앱은 이미 요청 id 를 실행 **전에** 기억하므로(`PokeTokenBarApp`), 이 await 를 넘는
@@ -46,6 +49,9 @@ struct PokedoroRequestExecutor {
         case .battleSwitch(let number): return battleSwitch(request, number: number)
         case .battleForfeit: return battleForfeit(request)
         case .battleDecline: return battleDecline(request)
+        case .roomMove(let move, let target): return roomMove(request, move: move, target: target)
+        case .roomStart: return roomStart(request)
+        case .roomLeave: return roomLeave(request)
         }
     }
 
@@ -503,6 +509,65 @@ struct PokedoroRequestExecutor {
 
     private func noBattle(_ request: PokedoroRequest) -> PokedoroReply {
         no(request, "진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.")
+    }
+
+    // MARK: LAN 방
+    //
+    // 대전과 같은 모양이다. 다른 점 하나는 **대상**이다: 센터는 UUID 로 받고 사용자는 번호를
+    // 치므로, 그 변환을 여기서 `RoomScreen.targetID` 한 곳으로 지난다.
+
+    private var roomState: RoomTerminalState? { room?.terminalState }
+
+    private func roomMove(_ request: PokedoroRequest, move: Int, target: Int?) -> PokedoroReply {
+        guard let control = room, let state = roomState else { return noRoom(request) }
+        guard RoomScreen.kind(state) == .move else {
+            return no(request, Self.roomRefusal(state))
+        }
+        guard RoomScreen.numbers(state).contains(move) else {
+            return no(request, "\(move)번 기술을 쓸 수 없다 — room 이 찍는 번호와 남은 PP 를 본다.")
+        }
+        // 대상을 안 적으면 첫 상대다. 협동 레이드는 보스 하나라 대개 그것으로 끝난다.
+        let wanted = target ?? 1
+        guard let targetID = RoomScreen.targetID(number: wanted, in: state) else {
+            return no(request, "\(wanted)번 상대가 없다 — 지금 "
+                      + "\(RoomScreen.targets(state).count) 명이 서 있다.")
+        }
+        control.submitAction(targetID: targetID, moveIndex: move - 1)
+        return ok(request, "\(move)번 기술을 냈다. " + RoomScreen.hints(roomState ?? state))
+    }
+
+    private func roomStart(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = room, let state = roomState else { return noRoom(request) }
+        // 사유를 갈라 말한다 — 호스트가 아닌 것과 사람이 덜 모인 것은 다음에 할 일이 다르다.
+        guard state.isHost else { return no(request, "호스트만 시작할 수 있다.") }
+        guard RoomScreen.kind(state) == .lobby else {
+            return no(request, "지금은 시작할 수 있는 상태가 아니다 — " + RoomScreen.hints(state))
+        }
+        guard state.canStart else { return no(request, "사람이 더 모여야 시작할 수 있다.") }
+        control.startRaid()
+        return ok(request, "판을 시작했다.")
+    }
+
+    /// 방 나가기. **되돌릴 수 없다** — 확인은 명령 쪽(`--yes`)에서 이미 받았다.
+    private func roomLeave(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = room, let state = roomState,
+              RoomScreen.kind(state) != .none else { return noRoom(request) }
+        control.leaveRoom()
+        return ok(request, "방에서 나왔다.")
+    }
+
+    private static func roomRefusal(_ state: RoomTerminalState) -> String {
+        switch RoomScreen.kind(state) {
+        case .none:     "방에 없다."
+        case .lobby:    "판이 아직 시작되지 않았다 — " + RoomScreen.hints(state)
+        case .waiting:  "이번 라운드는 이미 냈거나 행동할 수 없다 — " + RoomScreen.hints(state)
+        case .finished: "판이 끝났다."
+        case .move:     RoomScreen.hints(state)
+        }
+    }
+
+    private func noRoom(_ request: PokedoroRequest) -> PokedoroReply {
+        no(request, "방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.")
     }
 
     // MARK: 값

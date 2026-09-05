@@ -7,6 +7,8 @@ enum TUIScreen: String, CaseIterable, Sendable {
     case wave
     /// LAN 1대1 대전. 판이 세이브에 없어 **앱이 내놓는 화면**을 그린다(`PokedoroViewChannel`).
     case battle
+    /// LAN 방(협동 레이드·방 대전). 대전과 같은 통로를 쓴다.
+    case room
 
     /// 목록이 있는 화면인가 — 스크롤 키를 받을지 가르는 유일한 기준이다.
     ///
@@ -14,7 +16,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
     /// 화면이 조용히 목록이 되어, 아무 데도 안 쓰이는 커서가 움직인다.
     var isList: Bool {
         switch self {
-        case .home, .wave, .battle: false
+        case .home, .wave, .battle, .room: false
         case .party, .dex, .bag, .challenge, .goals: true
         }
     }
@@ -35,6 +37,8 @@ enum TUIScreen: String, CaseIterable, Sendable {
         // `b` 는 가방이다. 대전은 versus 의 `v` — 화면 이동 키가 먼저 잡히므로 겹치면 아무 데서도
         // 안 먹는 키가 된다.
         case .battle: "v"
+        // `r` 은 새로고침이다 — 방(room)은 `o`.
+        case .room: "o"
         }
     }
 
@@ -50,6 +54,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
         case .goals: "목표"
         case .wave: "웨이브"
         case .battle: "대전"
+        case .room: "방"
         }
     }
 
@@ -92,6 +97,12 @@ enum TUIAction: Equatable, Sendable {
     case forfeitBattle
     /// 받은 신청 거절. 확인을 받지 않는다 — 되돌릴 수 있는 일이다.
     case declineBattle
+    /// LAN 방 화면의 숫자 키. 무엇이 되는지는 `RoomScreen.action(number:in:)` 이 정한다.
+    case roomChoice(Int)
+    /// 호스트가 판을 시작한다.
+    case startRoom
+    /// 방을 나간다 — **되돌릴 수 없다.** 확인을 한 번 받는다.
+    case leaveRoom
     /// 되돌릴 수 없는 동작의 승낙·취소.
     case confirm
     case cancelConfirmation
@@ -127,6 +138,18 @@ enum TUIKeymap {
         case "c": .claimAdventure
         case "x": .cancelAdventure
         default: nil
+        }
+    }
+
+    /// LAN 방 화면의 키. 대전과 나눠 둔다 — 그쪽의 `n`(신청 거절)이 여기서 먹으면 안 된다.
+    private static func roomKey(_ key: Character) -> TUIAction? {
+        if let number = key.wholeNumberValue, (1...4).contains(number) {
+            return .roomChoice(number)
+        }
+        switch key {
+        case "s": return .startRoom
+        case "l": return .leaveRoom
+        default: return nil
         }
     }
 
@@ -229,6 +252,9 @@ enum TUIKeymap {
             return canWrite ? action : .rejected(.readOnly)
         case .battle:
             guard let action = battleKey(character) else { return .ignored }
+            return canWrite ? action : .rejected(.readOnly)
+        case .room:
+            guard let action = roomKey(character) else { return .ignored }
             return canWrite ? action : .rejected(.readOnly)
         case .home:
             // 모험 키는 홈 전용이다. 도감을 넘기다 실수로 세션이 시작되면 안 된다.

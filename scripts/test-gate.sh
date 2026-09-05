@@ -133,6 +133,9 @@ LOGIC_CORE=(
   # LAN 대전을 터미널 한 판으로 접는 순수 투영. 국면별 숫자 키 표와 "제안 ⊆ 실행 가능" 검사가
   # 여기 있고, 게이트 밖에 두면 국면 하나를 빠뜨려도 아무 신호가 없다(웨이브 런과 같은 이유).
   "Sources/PokeTokenBar/TUI/NetBattleScreen.swift"
+  # LAN 방(협동 레이드·방 대전)의 순수 투영. **대상 번호 → 참가자 id** 를 접는 자리가 여기 하나뿐이라
+  # 게이트 밖에 두면 그 변환이 무테스트로 남는다 — 어긋나면 사용자가 고른 것과 다른 상대를 때린다.
+  "Sources/PokeTokenBar/TUI/RoomScreen.swift"
   # 집중 세션 세 동작의 거절 판정표. 화면·대화·터미널이 **같은 표**를 읽는 자리라 게이트 밖에
   # 두면 한 프런트엔드만 통과하는 분기(휴식 단독·정산 대기 단독)가 무테스트로 나간다.
   "Sources/PokeTokenBar/Core/PokedoroSessionGate.swift"
