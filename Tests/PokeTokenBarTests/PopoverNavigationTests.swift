@@ -1,8 +1,8 @@
 import XCTest
 @testable import PokeTokenBar
 
-// 팝오버 내비게이션 리셋 계약 — 닫혔다 열릴 때 AppDelegate.togglePopover 가 reset()을 불러
-// 항상 Home 으로 돌아가게 한다(설정 화면 잔류 방지).
+// 팝오버 내비게이션 계약 — 닫혔다 열릴 때 AppDelegate.togglePopover 가 prepareForReopen() 을
+// 부른다. 접는 것은 **설정뿐**이다: 보던 탭과 진행 중 오버레이는 그대로 이어진다.
 @MainActor
 final class PopoverNavigationTests: XCTestCase {
     func testDefaultsToHome() {
@@ -11,16 +11,7 @@ final class PopoverNavigationTests: XCTestCase {
         XCTAssertEqual(nav.tab, .home)
     }
 
-    func testResetReturnsToHomeFromSettings() {
-        let nav = PopoverNavigation()
-        nav.showSettings = true
-        nav.tab = .collection
-        nav.reset()
-        XCTAssertFalse(nav.showSettings)   // 설정 화면 닫힘
-        XCTAssertEqual(nav.tab, .home)     // 탭도 Home 으로
-    }
-
-    /// 던전(#79)은 설정·체육관과 같은 층이다 — 배틀 신청이 오면 접혀야 하고 `reset()` 이 닫아야 한다.
+    /// 던전(#79)은 설정·체육관과 같은 층이다 — 배틀 신청이 오면 접혀야 한다.
     /// 접히지 않으면 신청이 온 줄 모른 채 던전만 보게 된다(체육관에서 겪은 그 함정).
     func testDungeonOverlayFoldsWithTheOthers() {
         let nav = PopoverNavigation()
@@ -28,11 +19,6 @@ final class PopoverNavigationTests: XCTestCase {
         nav.goToBattle()
         XCTAssertFalse(nav.showDungeon)
         XCTAssertEqual(nav.tab, .battle)
-
-        nav.showDungeon = true
-        nav.reset()
-        XCTAssertFalse(nav.showDungeon)
-        XCTAssertEqual(nav.tab, .home)
     }
 
     func testGymBattleKeepsTheChallengeOverlay() {
@@ -48,7 +34,7 @@ final class PopoverNavigationTests: XCTestCase {
 
     /// 대화도 같은 오버레이 층이다(별도 창 → 팝오버 이관). 접히는 자리를 한 곳만 고치면 나머지
     /// 경로에서 대화가 덮인 채 남아, 배틀 신청이 와도 신청 화면 대신 대화만 보게 된다 —
-    /// 던전이 겪은 그 함정이다. 세 경로를 **각각** 밟는다.
+    /// 던전이 겪은 그 함정이다. 두 경로를 **각각** 밟는다.
     func testChatOverlayFoldsWithTheOthers() {
         let nav = PopoverNavigation()
         let companion = UUID()
@@ -61,11 +47,6 @@ final class PopoverNavigationTests: XCTestCase {
         nav.chatCompanionID = companion
         nav.goToGymBattle()
         XCTAssertNil(nav.chatCompanionID)
-
-        nav.chatCompanionID = companion
-        nav.reset()
-        XCTAssertNil(nav.chatCompanionID)
-        XCTAssertEqual(nav.tab, .home)
     }
 
     /// 대화를 여는 자리도 **형제 오버레이를 접어야** 한다. 화면 체인이 설정·체육관·던전·꾸미기를

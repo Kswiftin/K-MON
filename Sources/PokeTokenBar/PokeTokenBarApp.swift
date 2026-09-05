@@ -587,7 +587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         if popover.isShown {
             popover.performClose(nil)   // 해제·메뉴 애니메이션 재개는 popoverDidClose 에서
         } else {
-            navigation.reset()   // 닫혔다 열리면 항상 Home 으로 (설정 화면 잔류 방지)
+            navigation.prepareForReopen()   // 설정만 접는다 — 보던 탭·진행 중 오버레이는 유지
             buildPopoverContent()   // 열 때 호스팅 트리 생성(닫힐 때 해제)
             // LSUIElement 앱이 비활성이면 팝오버 내부 버튼 클릭이 무시됨 — show 전에 활성화 보장
             NSApp.activate(ignoringOtherApps: true)
