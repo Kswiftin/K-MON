@@ -192,6 +192,166 @@ struct PokedoroRequestExecutorTests {
         #expect(store.activeAdventure == nil)
     }
 
+    // MARK: 아이템
+
+    /// 재고가 없으면 **정직하게 실패한다.** 성공으로 뭉개면 사용자는 쓴 줄 알고 가방을 다시 본다.
+    @Test func testUsingAnItemTheBagDoesNotHaveIsRefused() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.use(item: .rareCandy), at: clock.now))
+
+        #expect(!reply.succeeded)
+        #expect(reply.message.contains("없다"), "왜 안 됐는지 말해야 한다: \(reply.message)")
+    }
+
+    /// 재고가 있으면 **실제 사용 경로**로 간다 — 여기서 인벤토리를 직접 깎으면 화면 버튼과 다른
+    /// 경로가 되어 소모·연출·진화가 어긋난다.
+    @Test func testUsingARareCandyGoesThroughTheRealPathAndSpendsIt() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+        store.debugAddCandy(1)
+
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.use(item: .rareCandy), at: clock.now))
+
+        #expect(reply.succeeded)
+        #expect(store.rareCandyCount == 0, "재고가 줄지 않았으면 실제 경로를 안 밟았다")
+    }
+
+    /// 보유형(부적)은 "지금 쓴다" 는 개념이 없다. 재고 부족과 **다른 문구**로 답해야 한다 —
+    /// 사용자가 사러 가야 하는지, 애초에 쓰는 물건이 아닌지 갈린다.
+    @Test func testAHeldItemSaysItIsNotUsedThatWay() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.use(item: .shinyCharm), at: clock.now))
+
+        #expect(!reply.succeeded)
+        #expect(!reply.message.contains("없다"), "재고 문구를 재사용하면 안 된다: \(reply.message)")
+    }
+
+    // MARK: 진화
+
+    /// 대기 중인 진화가 없으면 실패다. 성공으로 돌려주면 화면엔 아무 일도 없는데 터미널만
+    /// "진화했다" 고 말한다.
+    @Test func testEvolveWithNothingPendingIsRefused() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.evolve, at: clock.now))
+
+        #expect(!reply.succeeded)
+    }
+
+    // MARK: 파트너 교체
+
+    /// 로스터에 없는 번호는 거절이다 — 그대로 인덱스로 쓰면 배열 밖을 읽는다.
+    @Test func testSwitchingToANumberThatIsNotInTheRosterIsRefused() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.switchCompanion(number: 99), at: clock.now))
+
+        #expect(!reply.succeeded)
+        #expect(reply.message.contains("99"), "어느 번호가 없는지 말해야 한다: \(reply.message)")
+    }
+
+    /// 이미 나와 있는 개체로 바꾸는 것은 **아무 일도 아니다.** 성공으로 답하면 사용자는 교체가
+    /// 일어났다고 믿는다.
+    @Test func testSwitchingToTheCompanionAlreadyOutIsRefused() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+        let active = try #require(store.chatRosterEntries.first { $0.isActive })
+
+        let number = TUIRender.printedRosterNumber(index: active.index)
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.switchCompanion(number: number), at: clock.now))
+
+        #expect(!reply.succeeded)
+    }
+
+    // MARK: 별명
+
+    /// 별명은 붙고, **답이 실제로 붙은 이름을 말한다** — 클램프가 걸렸으면 사용자가 그것을 봐야 한다.
+    @Test func testRenamingTheCompanionAppliesAndReportsTheName() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.rename(nickname: "리자몽"), at: clock.now))
+
+        #expect(reply.succeeded)
+        #expect(reply.message.contains("리자몽"))
+        #expect(store.chatRosterEntries.first { $0.isActive }?.name == "리자몽")
+    }
+
+    /// 세이브 경계보다 긴 이름은 **경계와 같은 값으로 접는다.** 여기서 더 길게 통과시키면 방금
+    /// 넣은 이름이 로드 때 잘려, 사용자는 자기가 지은 이름이 왜 달라졌는지 모른다.
+    @Test func testAnOverlongNicknameIsClampedToTheSaveBoundary() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let long = String(repeating: "가", count: SaveTransfer.maxNameLength + 12)
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.rename(nickname: long), at: clock.now))
+
+        #expect(reply.succeeded)
+        let applied = store.chatRosterEntries.first { $0.isActive }?.name
+        #expect(applied?.count == SaveTransfer.maxNameLength)
+        #expect(reply.message.contains(applied ?? "?"), "접힌 이름을 그대로 보여 줘야 한다")
+    }
+
+    /// 줄바꿈·제어문자는 **한 줄 화면을 깨뜨린다.** 요청 파일은 손으로 고칠 수 있으므로 파서가
+    /// 아니라 실행기가 막아야 한다.
+    @Test func testANicknameWithNewlinesIsFlattened() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.rename(nickname: "피카\n츄\t!"), at: clock.now))
+
+        #expect(reply.succeeded)
+        let applied = store.chatRosterEntries.first { $0.isActive }?.name ?? ""
+        #expect(!applied.contains("\n"))
+        #expect(!applied.contains("\t"))
+    }
+
+    /// 동행이 없으면 이름을 붙일 대상이 없다 — 조용히 성공하면 사용자는 이름이 붙은 줄 안다.
+    @Test func testRenamingWithoutACompanionIsRefused() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock, withCompanion: false)
+
+        let reply = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+            .execute(request(.rename(nickname: "피카"), at: clock.now))
+
+        #expect(!reply.succeeded)
+    }
+
     // MARK: 왕복
 
     /// 세 조각(우편함·실행 판정·실행기)을 **앱이 배선하는 그 순서 그대로** 밟는다. 조각별

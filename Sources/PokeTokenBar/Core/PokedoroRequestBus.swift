@@ -19,6 +19,15 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         case start(minutes: Int?)
         case claim
         case stop
+        /// 아이템 하나 사용. 종류는 **닫힌 목록**(`ItemKind.named`)을 지난 값이다.
+        case use(item: ItemKind)
+        case evolve
+        /// `party` 가 찍는 번호(1부터). 인덱스로 접는 것은 로스터를 아는 실행기가 한다 —
+        /// 파일에는 사용자가 본 값이 그대로 적혀야 손으로 고칠 수 있다.
+        case switchCompanion(number: Int)
+        /// **인자가 자유 문자열인 유일한 동작.** 별명은 본래 자유 문자열이고, 길이·개행 클램프는
+        /// 실행기가 한다(파일을 직접 고친 경로까지 막아야 하므로).
+        case rename(nickname: String)
 
         /// 파일에 적히는 이름.
         var name: String {
@@ -26,14 +35,25 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .start: "start"
             case .claim: "claim"
             case .stop: "stop"
+            case .use: "use"
+            case .evolve: "evolve"
+            case .switchCompanion: "switch"
+            case .rename: "name"
             }
         }
 
-        /// 파일에 적히는 인자. 시작만 값을 갖는다.
-        var minutes: Int? {
+        /// 파일에 적히는 인자 — **칸 하나**다. 동작마다 칸 이름을 따로 두면 새 동작이 늘 때마다
+        /// "그 동작에 없어야 하는 칸" 검사가 같이 늘고, 한 칸을 빠뜨려도 컴파일이 통과한다.
+        /// 대화 도구의 마커 문법(`[[tool:이름(인자)]]`)도 같은 모양이다.
+        var argument: String? {
             switch self {
-            case .start(let minutes): minutes
-            case .claim, .stop: nil
+            case .start(let minutes): minutes.map(String.init)
+            // 표시 이름이 아니라 rawValue 로 적는다 — 표시 이름으로 적으면 언어 설정을 바꾼
+            // 사용자가 자기 요청 파일을 못 읽는다.
+            case .use(let item): item.rawValue
+            case .switchCompanion(let number): String(number)
+            case .rename(let nickname): nickname
+            case .claim, .stop, .evolve: nil
             }
         }
 
@@ -42,13 +62,42 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// **인자를 받지 않는 동작에 인자가 붙었으면 추측하지 않는다**(대화 도구 파서와 같은 규칙).
         /// 인자를 버리고 실행하면 사용자는 자기가 적은 값이 무시된 걸 모른 채 다른 일이 벌어진
         /// 것을 본다. 목록 밖 이름도 거절이 아니라 **요청으로 읽히지 않는 것**이다.
-        init?(name: String, minutes: Int?) {
+        ///
+        /// 인자 변환도 여기서 닫는다 — 통과한 동작은 늘 실행할 수 있는 모양이다(모르는 아이템
+        /// 이름·0 이하의 번호·빈 별명은 동작이 되지 않는다).
+        init?(name: String, argument: String?) {
             switch name {
-            case "start": self = .start(minutes: minutes)
-            case "claim" where minutes == nil: self = .claim
-            case "stop" where minutes == nil: self = .stop
+            case "start":
+                // 분 없는 시작은 그대로 통과한다 — 기본 길이는 실행기가 고른다.
+                guard let argument else { self = .start(minutes: nil); return }
+                guard let minutes = Self.wholeNumber(argument) else { return nil }
+                self = .start(minutes: minutes)
+            case "claim" where argument == nil: self = .claim
+            case "stop" where argument == nil: self = .stop
+            case "evolve" where argument == nil: self = .evolve
+            case "use":
+                guard let argument, let item = ItemKind.named(argument) else { return nil }
+                self = .use(item: item)
+            case "switch":
+                // 0 이하는 `party` 의 목록에 없는 번호다. 그대로 인덱스로 접으면 배열 밖을 읽거나
+                // 엉뚱한 개체를 건드린다.
+                guard let argument, let number = Self.wholeNumber(argument), number >= 1 else { return nil }
+                self = .switchCompanion(number: number)
+            case "name":
+                // 빈 이름·공백만은 요청이 아니다. 실수로 지운 이름이 조용히 통과하면 사용자는
+                // 자기가 무엇을 지웠는지 모른다.
+                guard let argument,
+                      !argument.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                self = .rename(nickname: argument)
             default: return nil
             }
+        }
+
+        /// 숫자만 있는 문자열만 숫자다. `" 25 "`·`"+25"` 는 `Int(_:)` 를 통과하므로 자릿수 검사를
+        /// 먼저 둔다 — 무엇을 붙였는지 추측하지 않겠다는 뜻이다(명령 파서와 같은 규칙).
+        private static func wholeNumber(_ raw: String) -> Int? {
+            guard !raw.isEmpty, raw.allSatisfy(\.isASCII), raw.allSatisfy(\.isNumber) else { return nil }
+            return Int(raw)
         }
     }
 
@@ -61,17 +110,17 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
 /// `{"action":{"start":{"minutes":25}}}` 같은 중첩이 나오는데, 그 파일은 사람이 고치기 어렵고
 /// 문서가 약속한 모양도 아니다(고친 파일이 조용히 무시된다).
 extension PokedoroRequest {
-    private enum CodingKeys: String, CodingKey { case id, action, minutes, requestedAt }
+    private enum CodingKeys: String, CodingKey { case id, action, argument, requestedAt }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         requestedAt = try container.decode(Date.self, forKey: .requestedAt)
         let name = try container.decode(String.self, forKey: .action)
-        let minutes = try container.decodeIfPresent(Int.self, forKey: .minutes)
+        let argument = try container.decodeIfPresent(String.self, forKey: .argument)
         // 이름과 인자가 어긋난 파일은 **요청이 아니다**. 던지면 `pendingRequest()` 가 nil 을
         // 돌려주므로 깨진 파일과 같은 취급이 된다 — 그 경로는 이미 앱을 죽이지 않는다.
-        guard let action = Action(name: name, minutes: minutes) else {
+        guard let action = Action(name: name, argument: argument) else {
             throw DecodingError.dataCorruptedError(forKey: .action, in: container,
                                                    debugDescription: "unknown action \(name)")
         }
@@ -82,9 +131,9 @@ extension PokedoroRequest {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(action.name, forKey: .action)
-        // 인자 칸을 **아예 안 쓴다**. 남겨 두면 `{"action":"stop","minutes":null}` 이 정상으로
+        // 인자 칸을 **아예 안 쓴다**. 남겨 두면 `{"action":"stop","argument":null}` 이 정상으로
         // 보이고, 손으로 고치는 사용자가 그 칸이 뭔가 한다고 믿는다.
-        try container.encodeIfPresent(action.minutes, forKey: .minutes)
+        try container.encodeIfPresent(action.argument, forKey: .argument)
         try container.encode(requestedAt, forKey: .requestedAt)
     }
 }

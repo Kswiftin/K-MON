@@ -336,39 +336,15 @@ enum PokemonChatToolParser {
         }
     }
 
-    /// 아이템 이름을 종류로. rawValue 가 정답이지만(`bag.list` 가 그 값을 찍는다) **현지화된
-    /// 이름도 받는다** — 액션 칩은 사람 문장("이상한 사탕 하나 써 줘")을 입력칸에 채우고, 모델은
-    /// 그 문장에서 rawValue 를 알 길이 없다. `bag.list` 를 먼저 부르면 알 수 있지만 왕복은 셋뿐이라
-    /// 그 한 번이 비싸고, 인자를 든 칩은 이것 하나뿐인데 그게 하필 못 맞추는 칩이었다.
+    /// 아이템 이름을 종류로. 표는 `ItemKind.named` 하나다 — **터미널의 `use <이름>` 이 같은 표를
+    /// 읽는다.** 두 벌이면 한쪽만 넓어져 "대화로는 부를 수 있는데 터미널로는 못 부르는" 아이템이
+    /// 생기고, 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다.
     ///
-    /// 추측이 아니라 **닫힌 목록 대조**다 — 모든 언어의 표시 이름을 그대로 맞춰 보고, 목록 밖
-    /// 이름은 여전히 호출이 되지 않는다.
-    ///
-    /// 정규화는 **한 번만** 걸린다. rawValue 만 원문 그대로 비교하던 동안 `rare candy`(표시
-    /// 이름)는 통하는데 `rarecandy`·` rareCandy `(가방이 찍어 준 정답 값)는 떨어져, 기계가 준
-    /// 값이 사람 말보다 까다로운 상태였다.
-    private static func itemKind(named raw: String) -> ItemKind? {
-        let needle = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return nil }
-        return usableFromChat.first { kind in
-            kind.rawValue.lowercased() == needle
-                || AppLanguage.allCases.contains { L($0).itemName(kind).lowercased() == needle }
-        }
-    }
-
-    /// 이름으로 되짚을 수 있는 종류 — `useItem` 이 갈래를 가진 것들과 진화 아이템 전체다.
-    ///
-    /// 가구는 뺀다. `useItem` 의 어느 갈래로도 성공하지 못하는데(진화 규칙이 없어 `default:` 에서
-    /// `canUseEvolutionItem` 에 걸린다) 이름은 갖고 있어서, 표에 두면 **승인 카드가 먼저 뜨고**
-    /// 그제서야 실패한다 — 사용자에겐 자기가 승인한 일이 안 된 것으로 보인다. 프롬프트가
-    /// "트레이너가 말한 대로" 를 허용한 뒤로는 48종이 전부 그 오답의 사정거리다.
-    ///
-    /// 앱 상태(가방 재고)로 좁히지 않는다. 파싱이 그때그때의 인벤토리에 의존하면 같은 답변이
-    /// 재고에 따라 호출이 되거나 안 되고, 재고는 실행기가 이미 본다(`item ... unavailable`).
-    private static let usableFromChat: [ItemKind] = ItemKind.allCases.filter {
-        // `useItem` 의 명시 케이스와 같은 목록이다. 한쪽만 늘면 그 아이템은 이름으로 못 불린다.
-        $0.evolutionRule != nil || [.rareCandy, .mint, .heartScale, .shinyCharm].contains($0)
-    }
+    /// 현지화된 이름을 받는 이유는 액션 칩이 사람 문장("이상한 사탕 하나 써 줘")을 입력칸에
+    /// 채우고, 모델은 그 문장에서 rawValue 를 알 길이 없기 때문이다. `bag.list` 를 먼저 부르면 알
+    /// 수 있지만 왕복은 셋뿐이라 그 한 번이 비싸고, 인자를 든 칩은 이것 하나뿐인데 그게 하필 못
+    /// 맞추는 칩이었다.
+    private static func itemKind(named raw: String) -> ItemKind? { ItemKind.named(raw) }
 
     /// 숫자만 있는 문자열만 숫자다. `Int("25분")` 은 이미 nil 이지만 `" 25 "`·`"+25"` 는 통과하므로
     /// 자릿수 검사를 먼저 둔다 — 모델이 무엇을 붙였는지 추측하지 않겠다는 뜻이다.
@@ -542,18 +518,13 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
             return (line, succeeded)
 
         case .evolutionAccept:
-            // 대기 중인 진화가 없으면 정직하게 실패다. 성공으로 돌려주면 모델이 진화했다고 말한다.
-            guard companion.evolutionPrompt != nil else { return ("evolution none pending", false) }
-            let stageBefore = companion.activeStageIndex
-            companion.acceptEvolution()
-            // 대기 여부만으로는 부족하다. `acceptEvolution` 은 조건이 안 맞으면 카드만 지우고
-            // **조용히 돌아간다** — 레벨·시간대 경로(`routeMatches`)·요구 파티원·요구 기술·
-            // 로드 안 된 진화 라인이 전부 그 경로다. 카드를 띄운 뒤 조건이 무너지는 건 실제로
-            // 밟힌다(밤 한정 진화를 새벽에 승인하면 그렇다). 형태가 실제로 올라갔는지로 판정한다.
-            guard let stage = companion.activeStageIndex, stage != stageBefore else {
-                return ("evolution refused: conditions no longer met", false)
+            // 판정은 `CompanionAction` 하나다 — 대기 여부만 보면 조건이 무너진 구간(밤 한정
+            // 진화를 새벽에 승인)이 성공으로 보고된다. 여기 남는 것은 문구뿐이다.
+            switch CompanionAction.acceptEvolution(companion: companion) {
+            case .nonePending: return ("evolution none pending", false)
+            case .conditionsNoLongerMet: return ("evolution refused: conditions no longer met", false)
+            case .evolved(let stage): return ("evolution accepted stage=\(stage)", true)
             }
-            return ("evolution accepted stage=\(stage)", true)
 
         case .companionSwitch(let index):
             guard let target = companion.chatRosterEntries.first(where: { $0.index == index }),
@@ -651,30 +622,21 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         }
     }
 
-    /// 아이템 한 종류를 그 종류의 **진짜 사용 경로**로 보낸다. 여기서 인벤토리를 직접 깎지 않는다 —
-    /// 화면 버튼과 다른 경로가 되면 한쪽만 고쳐져 소모·연출·진화가 어긋난다.
+    /// 아이템 한 종류 사용. **갈래를 고르는 표는 `CompanionAction` 하나이고 여기 남는 것은
+    /// 모델에게 돌려줄 문구뿐이다** — 터미널이 같은 표를 읽으므로, 갈래를 여기 다시 쓰면 한쪽만
+    /// 고쳐져 "대화로는 되는데 터미널로는 안 되는" 아이템이 생긴다.
     private func useItem(_ kind: ItemKind) -> (String, Bool) {
-        switch kind {
-        case .rareCandy:
-            let result = companion.useRareCandy()
-            guard result != .unavailable else { return ("item rareCandy unavailable", false) }
-            return ("item rareCandy used result=\(result)", true)
-        case .mint:
-            guard let nature = companion.useMint() else { return ("item mint unavailable", false) }
-            return ("item mint used nature=\(nature.rawValue)", true)
-        case .heartScale:
-            guard companion.canUseHeartScale else { return ("item heartScale unavailable", false) }
-            companion.useHeartScale()
-            // 후보 목록 카드가 뜰 뿐 아직 아무것도 바뀌지 않았다. 성공으로 뭉개면 모델이
-            // "기술을 바꿨어" 라고 말한다.
-            return ("item heartScale opened relearn choices", true)
-        case .shinyCharm:
-            // 보유형(부적)은 대화에서 "지금 쓴다" 는 개념이 없다.
-            return ("item \(kind.rawValue) is not used from chat", false)
-        default:
-            guard companion.canUseEvolutionItem(kind) else { return ("item \(kind.rawValue) unavailable", false) }
-            guard companion.useEvolutionItem(kind) else { return ("item \(kind.rawValue) refused", false) }
-            return ("item \(kind.rawValue) used", true)
+        switch CompanionAction.useItem(kind, companion: companion) {
+        case .candy(let result): return ("item rareCandy used result=\(result)", true)
+        case .mint(let nature): return ("item mint used nature=\(nature.rawValue)", true)
+        // 후보 목록 카드가 뜰 뿐 아직 아무것도 바뀌지 않았다. 성공으로 뭉개면 모델이
+        // "기술을 바꿨어" 라고 말한다.
+        case .relearnOpened: return ("item heartScale opened relearn choices", true)
+        case .evolutionItemUsed: return ("item \(kind.rawValue) used", true)
+        // 보유형(부적)은 대화에서 "지금 쓴다" 는 개념이 없다.
+        case .notUsedThisWay: return ("item \(kind.rawValue) is not used from chat", false)
+        case .unavailable: return ("item \(kind.rawValue) unavailable", false)
+        case .refused: return ("item \(kind.rawValue) refused", false)
         }
     }
 

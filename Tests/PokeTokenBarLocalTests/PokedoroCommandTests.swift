@@ -104,6 +104,81 @@ struct PokedoroCommandTests {
                 "쓸 수 있는 길이를 알려 줘야 사용자가 다음에 무엇을 칠지 안다")
     }
 
+    // MARK: 파트너를 바꾸는 명령
+
+    /// 아이템 이름은 **파서가 닫힌 목록으로 대조한다.** 여기서 걸러야 화면이 이유를 말할 수 있고,
+    /// 통과한 명령은 늘 실행할 수 있는 종류를 든다(`nil` 요청은 조용한 무동작이 된다).
+    @Test func testCompanionCommandsParse() throws {
+        #expect(try parse(["use", "rare candy"]) == .use(item: .rareCandy))
+        #expect(try parse(["evolve"]) == .evolve)
+        #expect(try parse(["switch", "2"]) == .switchCompanion(number: 2))
+        #expect(try parse(["name", "리자몽"]) == .rename(nickname: "리자몽"))
+    }
+
+    /// 셸에서 띄어쓴 이름을 따옴표 없이 쳐도 통해야 한다 — `use 이상한 사탕` 은 인자 두 개로
+    /// 들어온다. 첫 조각만 읽으면 아이템 이름의 절반으로 목록을 뒤지고 늘 실패한다.
+    @Test func testAMultiWordArgumentIsJoinedBackTogether() throws {
+        #expect(try parse(["use", "이상한", "사탕"]) == .use(item: .rareCandy))
+        #expect(try parse(["name", "불꽃", "도마뱀"]) == .rename(nickname: "불꽃 도마뱀"))
+    }
+
+    /// 목록 밖 아이템은 이름으로 거절하고 **어디서 이름을 얻는지** 말한다 — "알 수 없는 명령" 으로
+    /// 뭉개면 사용자는 오타를 의심하며 같은 값을 다시 친다.
+    @Test func testAnItemOutsideTheNameTableIsRejectedByName() {
+        #expect(throws: PokedoroCommandError.unknownItem("masterball")) {
+            try parse(["use", "masterball"])
+        }
+        #expect(PokedoroCommandError.unknownItem("masterball").message.contains("bag"))
+    }
+
+    /// 인자가 필요한 명령을 인자 없이 치면 **이름으로 거절한다.** 조용히 아무것도 안 하면
+    /// 사용자는 명령이 먹었는지조차 모른다.
+    @Test func testACommandMissingItsArgumentIsRejectedByName() {
+        for name in ["use", "switch", "name"] {
+            #expect(throws: PokedoroCommandError.missingArgument(name)) { try parse([name]) }
+        }
+        #expect(PokedoroCommandError.missingArgument("use").message.contains("use"))
+    }
+
+    /// 번호 자리에 숫자가 아닌 값을 치면 거절이다 — `mon` 과 같은 부류이므로 같은 오류를 쓴다.
+    @Test func testSwitchNeedsARosterNumber() {
+        #expect(throws: PokedoroCommandError.invalidMonNumber("두번째")) {
+            try parse(["switch", "두번째"])
+        }
+    }
+
+    /// `party` 가 찍지 않는 번호(0·음수)는 **여기서** 걸러야 한다. 요청으로 내보내면 앱까지 갔다가
+    /// 거절로 돌아오고, 앱이 꺼져 있으면 "응답 없음" 으로 끝나 사용자는 자기 오타를 영영 못 본다
+    /// (실제로 `switch 0` 이 그렇게 나갔다).
+    @Test func testARosterNumberBelowOneIsRejectedBeforeItBecomesARequest() {
+        #expect(throws: PokedoroCommandError.invalidMonNumber("0")) { try parse(["switch", "0"]) }
+        #expect(throws: PokedoroCommandError.invalidMonNumber("0")) { try parse(["mon", "0"]) }
+    }
+
+    /// 진화는 인자를 받지 않는다. 붙여 온 값을 조용히 버리면 사용자는 그 값이 뭔가 했다고 믿는다.
+    @Test func testEvolveTakesNoArgument() {
+        #expect(throws: PokedoroCommandError.unexpectedArgument("evolve")) {
+            try parse(["evolve", "2"])
+        }
+        // 오류 타입만 맞고 문구가 비면 사용자는 왜 거절됐는지 알 수 없다.
+        #expect(PokedoroCommandError.unexpectedArgument("evolve").message.contains("evolve"))
+    }
+
+    /// 네 명령 모두 **앱에 부탁한다** — 세이브를 여는 것만으로 정산이 돌 수 있어서다.
+    @Test func testCompanionCommandsBecomeRequests() {
+        #expect(PokedoroCommand.evolve.request == .evolve)
+        #expect(PokedoroCommand.switchCompanion(number: 2).request == .switchCompanion(number: 2))
+        #expect(PokedoroCommand.rename(nickname: "피카").request == .rename(nickname: "피카"))
+        #expect(PokedoroCommand.use(item: .rareCandy).request == .use(item: .rareCandy))
+    }
+
+    /// 도움말이 새 명령을 알린다.
+    @Test func testUsageListsTheCompanionCommands() {
+        for name in ["use", "evolve", "switch", "name"] {
+            #expect(PokedoroCommandParser.usage.contains(name), "도움말에 \(name) 이 없다")
+        }
+    }
+
     // MARK: 세이브를 여는가, 요청을 보내는가
 
     /// **이 표가 뒤집히면 피하려던 일이 그대로 일어난다.** 요청으로 가야 할 명령이 세이브를 열면
