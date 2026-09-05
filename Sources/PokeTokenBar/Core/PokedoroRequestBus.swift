@@ -131,6 +131,38 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// 끝난 제안 카드를 치운다 — 화면 정리다.
         case auctionClear(number: Int)
 
+        // MARK: Memory Home
+        //
+        // **진행이 파일에 있는 두 번째 기능이다**(웨이브 런이 첫째). 그래서 조회는 터미널이
+        // 직접 하고, 여기 오는 것은 쓰기뿐이다 — 앨범은 `CompanionStore` 가 이미 들고 있어
+        // 창구가 필요 없다.
+        //
+        // 번호가 **셋**이다: 룸메이트는 `party` 번호, 가구를 놓는 칸은 격자 칸 번호(1–48),
+        // 치울 가구는 화면이 찍는 번호다. 이름이 그 셋을 가른다.
+
+        /// 오늘의 기분. **닫힌 목록**이다 — 방 문구와 동행 반응이 이 값으로 갈린다.
+        case homeMood(MemoryHomeMood)
+        /// 방 스타일. 닫힌 목록이고, 잠긴 스타일은 실행기가 조건을 붙여 거절한다.
+        case homeStyle(MemoryHomeRoomStyle)
+        /// 빠른 기록 한 줄. 길이(280자)는 앨범이 판정한다.
+        case homeNote(body: String)
+        /// 대문 문구. 길이(60자)·줄바꿈 금지도 앨범이 판정한다.
+        case homeMessage(text: String)
+        /// 공개 닉네임. 바뀌면 **LAN 광고도 다시** 나간다.
+        case homeNickname(name: String)
+        /// 룸메이트를 켜고 끈다 — `party` 번호. 같은 명령이 두 일을 하는 것은 화면의 체크
+        /// 표시와 같은 모양이다.
+        case homeRoommate(number: Int)
+        /// 가구를 격자에 놓는다. `cell` 은 1–48 이고, 격자 좌표 변환은 `HomeScreen` 이 한다.
+        case homePlace(item: ItemKind, cell: Int)
+        /// 놓인 가구를 치운다 — 화면이 찍는 번호.
+        case homeRemove(number: Int)
+        /// 배치를 통째로 치운다. **확인을 받는다** — 되돌리기 기록은 앱 메모리라 앱을 다시
+        /// 켜면 없다.
+        case homeReset
+        case homeUndo
+        case homeRedo
+
         /// 파일에 적히는 이름.
         var name: String {
             switch self {
@@ -172,6 +204,17 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .auctionReject: "auction.reject"
             case .auctionCancel: "auction.cancel"
             case .auctionClear: "auction.clear"
+            case .homeMood: "home.mood"
+            case .homeStyle: "home.style"
+            case .homeNote: "home.note"
+            case .homeMessage: "home.message"
+            case .homeNickname: "home.nickname"
+            case .homeRoommate: "home.roommate"
+            case .homePlace: "home.place"
+            case .homeRemove: "home.remove"
+            case .homeReset: "home.reset"
+            case .homeUndo: "home.undo"
+            case .homeRedo: "home.redo"
             }
         }
 
@@ -209,11 +252,21 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                  .auctionCancel(let number), .auctionClear(let number): String(number)
             // 두 번호는 **둘 다** 적는다. 하나를 생략 가능하게 두면(웨이브의 대상처럼) 어느
             // 쪽이 빠졌는지 알 수 없고, 추측으로 채우면 사용자가 적지 않은 개체를 내놓는다.
+            case .homeMood(let mood): mood.rawValue
+            case .homeStyle(let style): style.rawValue
+            case .homeNote(let body): body
+            case .homeMessage(let text): text
+            case .homeNickname(let name): name
+            case .homeRoommate(let number), .homeRemove(let number): String(number)
+            // 아이템은 **rawValue 로** 적는다 — 표시 이름으로 적으면 언어를 바꾼 사용자가
+            // 자기 요청 파일을 못 읽는다(`use` 와 같은 규칙).
+            case .homePlace(let item, let cell): "\(item.rawValue) \(cell)"
             case .auctionApply(let listing, let mon): "\(listing) \(mon)"
             case .auctionBid(let listing, let stardust): "\(listing) \(stardust)"
             case .claim, .stop, .evolve, .hatch, .waveForfeit,
                  .battleForfeit, .battleDecline, .roomStart, .roomLeave,
-                 .tradeAccept, .tradeDecline, .tradeConfirm, .tradeCancel: nil
+                 .tradeAccept, .tradeDecline, .tradeConfirm, .tradeCancel,
+                 .homeReset, .homeUndo, .homeRedo: nil
             }
         }
 
@@ -357,8 +410,52 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case "auction.clear":
                 guard let argument, let number = Self.countingNumber(argument) else { return nil }
                 self = .auctionClear(number: number)
+            // Memory Home — 닫힌 목록은 **모르는 값을 접지 않는다.** 손으로 고친 파일에서
+            // 기본값으로 접히면 사용자가 고르지 않은 방이 켜진다.
+            case "home.mood":
+                guard let argument, let mood = MemoryHomeMood(rawValue: argument) else { return nil }
+                self = .homeMood(mood)
+            case "home.style":
+                guard let argument,
+                      let style = MemoryHomeRoomStyle(rawValue: argument) else { return nil }
+                self = .homeStyle(style)
+            case "home.note":
+                guard let body = Self.meaningfulText(argument) else { return nil }
+                self = .homeNote(body: body)
+            case "home.message":
+                guard let text = Self.meaningfulText(argument) else { return nil }
+                self = .homeMessage(text: text)
+            case "home.nickname":
+                guard let name = Self.meaningfulText(argument) else { return nil }
+                self = .homeNickname(name: name)
+            case "home.roommate":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .homeRoommate(number: number)
+            case "home.place":
+                // 가구 이름 + 칸. **둘 다** 있어야 한다 — 칸을 추측으로 채우면 사용자가 고르지
+                // 않은 자리에 가구가 놓인다.
+                guard let argument else { return nil }
+                let words = argument.split(separator: " ").map(String.init)
+                guard words.count == 2, let item = ItemKind.furnitureNamed(words[0]),
+                      let cell = Self.countingNumber(words[1]),
+                      cell <= HomeScreen.cellCount else { return nil }
+                self = .homePlace(item: item, cell: cell)
+            case "home.remove":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .homeRemove(number: number)
+            case "home.reset" where argument == nil: self = .homeReset
+            case "home.undo" where argument == nil: self = .homeUndo
+            case "home.redo" where argument == nil: self = .homeRedo
             default: return nil
             }
+        }
+
+        /// 빈 글·공백만은 요청이 아니다. 실수로 지운 문구가 조용히 통과하면 사용자는 자기가
+        /// 무엇을 지웠는지 모른다(`name` 과 같은 규칙). 길이 상한은 앨범이 판정한다.
+        private static func meaningfulText(_ argument: String?) -> String? {
+            guard let argument,
+                  !argument.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return argument
         }
 
         /// 번호 **둘**. 하나만 적혀 있거나 셋이 적혀 있으면 요청이 아니다 — 빠진 자리를

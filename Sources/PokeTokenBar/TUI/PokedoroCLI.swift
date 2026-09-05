@@ -43,7 +43,9 @@ enum PokedoroCLI {
              .battleMove, .battleSwitch, .battleDecline,
              .roomMove, .roomStart,
              .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant,
-             .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear:
+             .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear,
+             .homeMood, .homeStyle, .homeNote, .homeMessage, .homeNickname, .homeRoommate,
+             .homePlace, .homeRemove, .homeUndo, .homeRedo:
             // 위에서 이미 끝났다. `default` 로 접지 않는 이유는 명령이 늘 때 이 자리가 조용히
             // 아무것도 안 하는 길이 되지 않게 하기 위해서다.
             return Status.ok.rawValue
@@ -142,6 +144,14 @@ enum PokedoroCLI {
             ["\(number)번 제안을 수락하면 게시한 포켓몬이 상대에게 넘어간다 — 되돌릴 수 없다.",
              "정말이면: pokedoro auction accept \(number) --yes"]
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .home:
+            // 방은 세이브 **옆 파일**에 있으므로 터미널이 직접 읽는다 — 화면 채널은 앱 메모리에만
+            // 사는 값을 위한 통로다(웨이브 런과 같은 쪽).
+            homeRows(store, width: terminalWidth()).forEach { print($0) }
+        case .homeReset(_):
+            // 확인 없이 온 초기화다. **무엇을 잃는지 먼저 보여 주고** 거절한다(방생과 같은 규칙).
+            resetPreview(store).forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
         case .watch:
             TUIWatch(store: store).run()
@@ -434,6 +444,23 @@ enum PokedoroCLI {
                 + "(파티 \(run.party.count)마리).",
                 "되돌릴 수 없다 — 이 판의 파티도 쌓은 강화도 함께 사라진다.",
                 "정말이면: pokedoro wave forfeit --yes"]
+    }
+
+    /// Memory Home 한 판. **`watch` 의 홈방 화면과 같은 함수를 읽는다** — 두 곳이 각자
+    /// 조립하면 한쪽에만 있는 줄이 생긴다(웨이브 런과 같은 규칙).
+    static func homeRows(_ store: CompanionStore, width: Int) -> [String] {
+        HomeScreen.lines(store.homeTerminalState, width: width)
+    }
+
+    /// 확인 없는 배치 초기화가 보는 화면. 되돌릴 수 있지만 **한 번에 여러 개**가 사라지고
+    /// 되돌리기 기록은 앱 메모리라, 무엇이 사라지는지 먼저 말한다.
+    static func resetPreview(_ store: CompanionStore) -> [String] {
+        let placed = store.homeTerminalState.placed
+        guard !placed.isEmpty else { return ["치울 가구가 없다."] }
+        return ["가구 \(placed.count)개를 치운다 — "
+                + placed.map(\.label).joined(separator: ", ") + ".",
+                "home undo 로 되돌릴 수 있지만 그 기록은 앱이 켜져 있는 동안만 남는다.",
+                "정말이면: pokedoro home reset --yes"]
     }
 
     /// 확인 없는 방생이 보는 화면. 되돌릴 수 없는 동작이라 **대상과 결과를 먼저 말한다.**

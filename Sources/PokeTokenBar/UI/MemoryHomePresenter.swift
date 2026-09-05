@@ -589,13 +589,10 @@ private struct MemoryHomeWindowView: View {
         }
     }
 
+    /// **표는 `MemoryHomeNames` 하나다** — 터미널의 거절 문구도 같은 값을 읽어야 하고, 두 벌로
+    /// 두면 조건이 바뀔 때 한쪽만 옛말이 된다.
     private func roomStyleRequirement(_ style: MemoryHomeRoomStyle) -> String {
-        switch style {
-        case .campus: return l.t("기본", "Default", "基本")
-        case .lovely: return l.t("집중 첫 업적", "First focus achievement", "集中の初実績")
-        case .nature: return l.t("진화 첫 업적", "First evolution achievement", "進化の初実績")
-        case .retro: return l.t("배틀 첫 업적", "First battle achievement", "バトルの初実績")
-        }
+        MemoryHomeNames.requirement(style, l)
     }
 
     private func roomStyleStatus(_ style: MemoryHomeRoomStyle, unlocked: Bool, active: Bool) -> String {

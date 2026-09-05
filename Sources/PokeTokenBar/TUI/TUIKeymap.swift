@@ -14,6 +14,9 @@ enum TUIScreen: String, CaseIterable, Sendable {
     /// 경매. 같은 통로를 쓰지만 **누를 키가 없다** — 번호 공간이 넷이라 숫자 한 자리로는
     /// 어느 목록의 몇 번인지 정할 수 없어, 동작은 전부 명령으로만 한다.
     case auction
+    /// Memory Home. **진행이 세이브 옆 파일에 있어** 앱 없이도 그려진다(웨이브 런과 같은 쪽).
+    /// 경매와 같은 근거로 누를 키가 없다 — 번호 공간이 셋이다.
+    case memoryHome
 
     /// 목록이 있는 화면인가 — 스크롤 키를 받을지 가르는 유일한 기준이다.
     ///
@@ -21,7 +24,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
     /// 화면이 조용히 목록이 되어, 아무 데도 안 쓰이는 커서가 움직인다.
     var isList: Bool {
         switch self {
-        case .home, .wave, .battle, .room, .trade, .auction: false
+        case .home, .wave, .battle, .room, .trade, .auction, .memoryHome: false
         case .party, .dex, .bag, .challenge, .goals: true
         }
     }
@@ -50,6 +53,10 @@ enum TUIScreen: String, CaseIterable, Sendable {
         // 남은 글자가 거의 없다. `i` 는 입찰(ipchal)이고, 어느 화면의 안쪽 키와도 겹치지
         // 않는다 — 그 검사는 `testNoScreenKeyShadowsAnInScreenKey` 가 전 조합으로 한다.
         case .auction: "i"
+        // **글자 풀이 여기서 바닥났다.** 소문자 26자 중 이동 키 12개·전역 2개·화면 안쪽 키가
+        // 나머지를 다 먹었고 남은 것이 `z` 하나였다. 다음 화면은 글자를 하나 더 찾는 대신
+        // 다른 방식(접두어·목록)을 만들어야 한다 — 억지 글자는 아무도 못 외운다.
+        case .memoryHome: "z"
         }
     }
 
@@ -68,6 +75,7 @@ enum TUIScreen: String, CaseIterable, Sendable {
         case .room: "방"
         case .trade: "교환"
         case .auction: "경매"
+        case .memoryHome: "홈방"
         }
     }
 
@@ -294,7 +302,9 @@ enum TUIKeymap {
         // 경매는 **표가 없다.** 어느 키도 이 화면의 동작이 아니므로 전부 `.ignored` 다 —
         // 빈 표를 만들어 두면 나중에 누군가 숫자 키를 채워 넣고, 그 숫자는 네 목록 중 어느
         // 것도 뜻할 수 없다.
-        case .auction:
+        // 경매·Memory Home 은 **표가 없다.** 번호 공간이 여럿이라 숫자 한 자리로 어느 것인지
+        // 정할 수 없고, 빈 표를 만들어 두면 나중에 누군가 숫자 키를 채워 넣는다.
+        case .auction, .memoryHome:
             return .ignored
         case .home:
             // 모험 키는 홈 전용이다. 도감을 넘기다 실수로 세션이 시작되면 안 된다.

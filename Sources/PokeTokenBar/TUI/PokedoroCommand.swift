@@ -108,6 +108,25 @@ enum PokedoroCommand: Equatable, Sendable {
     case auctionCancel(number: Int)
     case auctionClear(number: Int)
 
+    // MARK: Memory Home
+    //
+    // **조회는 채널을 타지 않는다** — 앨범이 세이브 옆 파일에 있어 터미널이 직접 읽는다
+    // (웨이브 런과 같은 쪽). 그래서 `pokedoro home` 은 앱이 꺼져 있어도 답한다.
+
+    case home
+    case homeMood(MemoryHomeMood)
+    case homeStyle(MemoryHomeRoomStyle)
+    case homeNote(body: String)
+    case homeMessage(text: String)
+    case homeNickname(name: String)
+    case homeRoommate(number: Int)
+    case homePlace(item: ItemKind, cell: Int)
+    case homeRemove(number: Int)
+    /// **확인을 받는다** — 놓은 가구가 한 번에 사라지고, 되돌리기 기록은 앱 메모리다.
+    case homeReset(confirmed: Bool)
+    case homeUndo
+    case homeRedo
+
     /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
     ///
     /// **인자를 여기서 함께 넘긴다.** 예전엔 동작만 돌려주고 부르는 쪽이 분을 다시 꺼냈는데,
@@ -160,8 +179,20 @@ enum PokedoroCommand: Equatable, Sendable {
         case .auctionReject(let number): .auctionReject(number: number)
         case .auctionCancel(let number): .auctionCancel(number: number)
         case .auctionClear(let number): .auctionClear(number: number)
+        case .homeMood(let mood): .homeMood(mood)
+        case .homeStyle(let style): .homeStyle(style)
+        case .homeNote(let body): .homeNote(body: body)
+        case .homeMessage(let text): .homeMessage(text: text)
+        case .homeNickname(let name): .homeNickname(name: name)
+        case .homeRoommate(let number): .homeRoommate(number: number)
+        case .homePlace(let item, let cell): .homePlace(item: item, cell: cell)
+        case .homeRemove(let number): .homeRemove(number: number)
+        // 확인 없는 초기화는 **요청이 아니다** — 무엇을 잃는지 먼저 보여 주고 거절한다.
+        case .homeReset(let confirmed): confirmed ? .homeReset : nil
+        case .homeUndo: .homeUndo
+        case .homeRedo: .homeRedo
         case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help,
-             .wave, .battle, .room, .trade, .auction: nil
+             .wave, .battle, .room, .trade, .auction, .home: nil
         }
     }
 }
@@ -203,6 +234,15 @@ enum PokedoroCommandError: Equatable, Error {
     /// 별의모래 금액이 아니다. 번호와 나눠 말한다 — 번호는 목록에서 얻고 금액은 잔액에서
     /// 정하므로, 사용자가 다음에 볼 것이 다르다.
     case invalidStardust(String)
+    /// 목록 밖 기분 이름.
+    case unknownMood(String)
+    /// 목록 밖 방 스타일 이름.
+    case unknownRoomStyle(String)
+    /// 아이템은 있지만 **방에 놓을 수 없다.** `unknownItem` 과 갈라 말한다 — "그런 아이템이
+    /// 없다" 고 답하면 사탕을 찾아 나서게 되는데, 사탕은 있고 가구가 아닐 뿐이다.
+    case notFurniture(String)
+    /// 격자 밖 칸 번호.
+    case invalidRoomCell(String)
 
     var message: String {
         switch self {
@@ -235,6 +275,17 @@ enum PokedoroCommandError: Equatable, Error {
         case .invalidStardust(let raw):
             "별의모래 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
                 + "(`pokedoro auction` 이 미약속 잔액을 찍는다)."
+        case .unknownMood(let raw):
+            "그런 기분이 없다: \(raw) — "
+                + MemoryHomeMood.allCases.map(\.rawValue).joined(separator: "·") + " 중 하나를 쓴다."
+        case .unknownRoomStyle(let raw):
+            "그런 방 스타일이 없다: \(raw) — "
+                + MemoryHomeRoomStyle.allCases.map(\.rawValue).joined(separator: "·")
+                + " 중 하나를 쓴다."
+        case .notFurniture(let raw):
+            "\(raw) 은 방에 놓을 수 없다 — `pokedoro home` 이 가구 이름을 찍는다."
+        case .invalidRoomCell(let raw):
+            "방 격자의 칸이 아니다: \(raw) — 1 부터 \(HomeScreen.cellCount) 사이를 쓴다."
         }
     }
 }
@@ -267,7 +318,9 @@ enum PokedoroCommandParser {
     /// `battle` 은 여기서 빠졌다 — 터미널이 대전을 보고 턴을 낸다(`battle` 하위 명령).
     /// `trade` 도 빠졌다 — 상대를 찾는 일만 앱에 남는다(`raid` 와 같은 사정).
     /// `auction` 도 빠졌다 — 시장을 훑는 것은 Bonjour 가 계속 하고, 터미널은 그 목록을 받는다.
-    static let appOnlyCommands: Set<String> = ["home", "raid"]
+    /// `home` 도 빠졌다 — 방 상태가 세이브 옆 파일에 있어 터미널이 직접 읽는다(픽셀 아트만
+    /// 옮기지 못하고, 사람이 읽는 사실은 전부 줄로 나온다).
+    static let appOnlyCommands: Set<String> = ["raid"]
 
     /// 실행 파일 이름을 뺀 인자 배열을 받는다. 빈 배열은 `status` 다 — 인자 없이 친 사용자가
     /// 가장 원하는 것이 현재 상태이기 때문이다.
@@ -325,6 +378,8 @@ enum PokedoroCommandParser {
             return try tradeCommand(in: tail, options: options)
         case "auction":
             return try auctionCommand(in: tail, options: options)
+        case "home":
+            return try homeCommand(in: tail, options: options)
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
@@ -526,6 +581,77 @@ enum PokedoroCommandParser {
         }
     }
 
+    /// `home <하위 명령> …`. 하위 명령이 없으면 조회다.
+    ///
+    /// **번호가 셋**이다(룸메이트는 `party`, 놓는 자리는 격자 칸, 치울 가구는 화면 번호) —
+    /// 하위 명령 이름이 그 셋을 가르고, 오류 타입도 자리마다 다르다.
+    private static func homeCommand(in arguments: [String],
+                                    options: Set<String>) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .home }
+        let rest = Array(words.dropFirst())
+        let command = "home \(sub)"
+        switch sub {
+        case "mood":
+            try rejectExtra(rest, beyond: 1, command: command)
+            guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+            guard let mood = MemoryHomeMood(rawValue: raw) else {
+                throw PokedoroCommandError.unknownMood(raw)
+            }
+            return .homeMood(mood)
+        case "style":
+            try rejectExtra(rest, beyond: 1, command: command)
+            guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+            guard let style = MemoryHomeRoomStyle(rawValue: raw) else {
+                throw PokedoroCommandError.unknownRoomStyle(raw)
+            }
+            return .homeStyle(style)
+        // 글은 조각을 **다시 이어 붙인다** — 셸이 띄어쓰기로 잘라 주므로(별명과 같은 규칙).
+        case "note":
+            return .homeNote(body: try text(in: rest, command: command))
+        case "message":
+            return .homeMessage(text: try text(in: rest, command: command))
+        case "nickname":
+            return .homeNickname(name: try text(in: rest, command: command))
+        case "roommate":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .homeRoommate(number: try requiredRosterNumber(in: rest, command: command))
+        case "place":
+            try rejectExtra(rest, beyond: 2, command: command)
+            guard rest.count == 2 else { throw PokedoroCommandError.missingArgument(command) }
+            // 가구 표를 **먼저** 본다. 못 찾았을 때 일반 표에서 찾히면 "있지만 놓을 수
+            // 없다"(사탕)이고, 그것도 없으면 "그런 아이템이 없다" 다 — 사용자가 다음에 할 일이
+            // 다르므로 하나로 뭉개지 않는다.
+            guard let item = ItemKind.furnitureNamed(rest[0]) else {
+                throw ItemKind.named(rest[0]) != nil
+                    ? PokedoroCommandError.notFurniture(rest[0])
+                    : PokedoroCommandError.unknownItem(rest[0])
+            }
+            let cell = try positiveNumber(rest[1],
+                                          orThrow: PokedoroCommandError.invalidRoomCell)
+            guard cell <= HomeScreen.cellCount else {
+                throw PokedoroCommandError.invalidRoomCell(rest[1])
+            }
+            return .homePlace(item: item, cell: cell)
+        case "remove":
+            try rejectExtra(rest, beyond: 1, command: command)
+            guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+            return .homeRemove(number: try positiveNumber(
+                raw, orThrow: PokedoroCommandError.invalidRoomCell))
+        case "reset":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .homeReset(confirmed: options.contains("--yes"))
+        case "undo":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .homeUndo
+        case "redo":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .homeRedo
+        default:
+            throw PokedoroCommandError.unknownCommand(command)
+        }
+    }
+
     /// 자리가 정해진 번호 **둘**. 첫 자리는 늘 시장 번호이고 둘째 자리의 뜻은 부르는 쪽이
     /// 준다(개체 번호 / 별의모래 금액) — 한 오류로 뭉개면 사용자가 다음에 볼 곳이 틀린다.
     ///
@@ -691,8 +817,25 @@ enum PokedoroCommandParser {
         ("auction reject <번호>", "받은 제안 거절"),
         ("auction cancel <번호>", "내가 건 제안 거둬들이기"),
         ("auction clear <번호>", "끝난 제안 카드 치우기"),
+        ("home", "Memory Home — 방·기분·기억 (앱 없이도 된다)"),
+        ("home mood <이름>", "오늘의 기분 (\(moods))"),
+        ("home style <이름>", "방 스타일 (\(roomStyles))"),
+        ("home note <글>", "빠른 기록 남기기"),
+        ("home message <글>", "대문 문구 바꾸기"),
+        ("home nickname <이름>", "공개 닉네임 바꾸기"),
+        ("home roommate <번호>", "룸메이트 켜고 끄기 (party 번호)"),
+        ("home place <가구> <칸>", "가구 놓기 (칸 1-\(HomeScreen.cellCount))"),
+        ("home remove <번호>", "놓인 가구 치우기 (home 이 찍는 번호)"),
+        ("home reset --yes", "배치 초기화"),
+        ("home undo", "방금 꾸민 것 되돌리기"),
+        ("home redo", "되돌린 것 다시 실행"),
         ("help", "이 도움말"),
     ]
+
+    /// 기분·스타일 이름도 **목록에서 나온다** — 손으로 적으면 케이스를 더할 때 도움말만 옛말이 된다.
+    private static let moods = MemoryHomeMood.allCases.map(\.rawValue).joined(separator: "|")
+    private static let roomStyles = MemoryHomeRoomStyle.allCases.map(\.rawValue)
+        .joined(separator: "|")
 
     /// 길 이름은 **목록에서 나온다** — 손으로 적으면 길을 더할 때 도움말만 옛말이 된다.
     private static let routes = RunRoute.allCases.map(\.rawValue).joined(separator: "|")

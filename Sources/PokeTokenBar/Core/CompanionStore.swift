@@ -244,13 +244,17 @@ final class CompanionStore {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // 대화·기억은 상태 파일 **옆에** 산다. 주입된 URL 은 명시적 테스트/임베딩 계약이므로
         // 그 디렉토리를 따라가야 한다 — 기본 위치로 새면 테스트가 실제 사용자 파일을 건드린다.
+        // **읽기 전용은 옆 파일까지 간다.** 이 스토어만 막고 앨범·대화 기록을 무가드로 두면
+        // 터미널이 세이브는 안 건드리면서 기억과 대화는 덮어쓴다 — 잠금이 없는 것은 세 파일이
+        // 다 같다. 주입된 앨범은 부르는 쪽(테스트·앱)이 이미 정한 물건이라 그대로 쓴다.
         self.memoryAlbum = memoryAlbum
-            ?? PokemonMemoryAlbum(fileURL: directory.appendingPathComponent(CompanionStorageLocations.memoryFileName))
+            ?? PokemonMemoryAlbum(fileURL: directory.appendingPathComponent(CompanionStorageLocations.memoryFileName),
+                                  isReadOnly: isReadOnly)
         // 진행 중인 런도 상태 파일 옆에 산다 — 주입된 URL(테스트·임베딩)의 디렉토리를 따라간다.
         self.waveRunURL = directory.appendingPathComponent(CompanionStorageLocations.waveRunFileName)
         self.chatStore = chatStore
             ?? PokemonChatStore(fileURL: directory.appendingPathComponent(CompanionStorageLocations.chatFileName),
-                                album: self.memoryAlbum)
+                                album: self.memoryAlbum, isReadOnly: isReadOnly)
         self.rng = rng
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
