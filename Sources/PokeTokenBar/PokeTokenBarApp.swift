@@ -72,6 +72,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         focusTimer.onFocusCompleted = { [weak self] minutes in
             self?.companion.completeFocusSession(minutes: minutes)
         }
+        // 체인 배선 둘. **순서가 계약이다** — 위 훅이 원장에 적은 뒤에 아래가 그 집계를 읽는다
+        // (`FocusTimer.tick`). 뒤집히면 긴 휴식이 한 세션씩 밀린다.
+        focusTimer.nextRestMinutes = { [weak self] in
+            FocusChainRules.restMinutes(completedToday: self?.companion.focusSessionsToday ?? 0)
+        }
+        focusTimer.onRestCompleted = { [weak self] in self?.advanceFocusChain() }
         updater = UpdateChecker()
         updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)
         observeAutomaticUpdates()
@@ -384,6 +390,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         PokedoroViewChannel.isAttached(pokedoroMailbox.attachment(), now: Date())
     }
 
+    // MARK: 세션 체인
+
+    /// 휴식이 끝났다 — 다음 집중으로 잇거나, 사람을 부르거나, 멈춘다.
+    ///
+    /// **판정은 여기 없다**(`FocusChainRules.afterRest`). 이 파일은 `@main` 이라 테스트가 닿지
+    /// 않는다 — 조건을 여기 쓰면 체인 규칙 전체가 검증 밖으로 나간다. 여기 남는 것은 배선뿐이다.
+    private func advanceFocusChain() {
+        let decision = FocusChainRules.afterRest(
+            displayAwake: displayAwake,
+            // 방금 끝난 세션과 같은 길이로 잇는다 — 체인은 사용자가 고른 길이를 유지한다.
+            minutes: focusTimer.focusMinutes,
+            completedToday: companion.focusSessionsToday,
+            dailyGoal: settings.dailyFocusGoal,
+            // 시작 거절 판정은 팝오버·대화·터미널과 **같은 표**를 쓴다. 체인만 따로 판정하면
+            // "버튼으론 거절되는데 체인은 통과하는" 상태가 생긴다.
+            refusal: PokedoroSessionGate.startRefusal(
+                PokedoroSessionState(timer: focusTimer, companion: companion)))
+        let l = companion.l
+        switch decision {
+        case .start(let minutes):
+            focusTimer.startFocusSession(minutes: minutes, companion: companion)
+        case .notify:
+            notifyFocusChain(l.t("휴식이 끝났어요", "Break's over", "休憩が終わりました"),
+                             l.t("돌아오면 다음 집중을 시작할 수 있어요.",
+                                 "Start the next focus session when you're back.",
+                                 "戻ったら次の集中を始められます。"))
+        case .goalReached:
+            notifyFocusChain(l.t("오늘 목표 달성!", "Daily goal reached!", "今日の目標達成！"),
+                             l.t("오늘 \(companion.focusSessionsToday)세션을 마쳤어요. 더 할지는 직접 골라 주세요.",
+                                 "\(companion.focusSessionsToday) sessions done today. Keep going if you want to.",
+                                 "今日は\(companion.focusSessionsToday)セッション。続けるかはご自由に。"))
+        case .halted(let refusal):
+            // 조용히 끝나도 이유는 남긴다 — 없으면 "왜 안 이어졌지" 를 답할 방법이 없다.
+            AppLog.write("focus chain halted: \(refusal)")
+        }
+    }
+
+    private var focusChainNotifSeq = 0
+    /// 체인 알림. **companion 이벤트가 아니다** — 타이머 사건이라 `companionNotifications` 가 아니라
+    /// 집중 타이머 섹션의 방해금지를 본다. 방해금지 중엔 체인이 조용히 끝나는 게 맞고(방해금지는
+    /// 방해하지 말라는 뜻이다), 그래서 그 경우에도 로그만 남긴다.
+    private func notifyFocusChain(_ title: String, _ body: String) {
+        guard AppEnv.isBundledApp else { return }
+        guard !settings.doNotDisturb else {
+            AppLog.write("focus chain notification suppressed by do-not-disturb")
+            return
+        }
+        focusChainNotifSeq += 1
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "focus-chain-\(focusChainNotifSeq)",
+                                  content: content, trigger: nil))
+    }
+
     private func startFocusTick() {
         let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -462,6 +525,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 // "오늘 마친 집중" 은 원장에서 온다. `focusTimer.completedSessions` 는 프로세스
                 // 수명 카운터라 재기동에 0이 되고 자정도 모르는데, 터미널 문구는 오늘을 약속한다.
                 completed: companion.focusSessionsToday,
+                goal: settings.dailyFocusGoal,
+                // 긴 휴식 판정도 원장 파생이다 — 화면이 따로 세면 15분 휴식에 "휴식 중" 이 뜬다.
+                isLongRest: FocusChainRules.isLongRest(completedToday: companion.focusSessionsToday),
                 now: now),
             // 경매는 **타이머 뒤**다. 판이 아니라 상시 도는 목록이라(이웃의 게시물 하나로 참이
             // 된다) 앞에 두면 집중 타이머를 영영 가린다 — 그 화면은 터미널이 부를 때 온다.

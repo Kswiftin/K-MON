@@ -198,7 +198,8 @@ struct NetBattleTerminalTests {
     @Test func testALiveBattleOutranksTheFocusTimer() throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let focus = try #require(PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "12:34",
-                                                                    completed: 1, now: now))
+                                                                    completed: 1, goal: 4,
+                                                                    isLongRest: false, now: now))
         let battle = PokedoroViewChannel.battleSnapshot(Self.battling(remaining: 10),
                                                         language: .ko, width: 60, now: now)
         #expect(battle != nil)

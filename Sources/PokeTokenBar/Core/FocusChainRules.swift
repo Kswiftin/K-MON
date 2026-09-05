@@ -31,6 +31,14 @@ enum FocusChainRules {
             ? longRestMinutes : shortRestMinutes
     }
 
+    /// 지금 도는 휴식이 긴 휴식인가 — 화면·터미널이 "긴 휴식 중" 이라고 말할 근거.
+    ///
+    /// 길이를 정한 것과 **같은 파생**을 쓴다. 화면이 따로 세면 15분짜리 휴식에 그냥 "휴식 중" 이
+    /// 떠서, 사용자는 왜 길게 쉬는지 알 수 없다 — 긴 휴식이 오는 것 자체가 체인이 주는 보상이다.
+    static func isLongRest(completedToday: Int) -> Bool {
+        restMinutes(completedToday: completedToday) == longRestMinutes
+    }
+
     /// 휴식이 끝났을 때 무엇을 하는가.
     enum RestEnd: Equatable, Sendable {
         /// 다음 집중을 자동으로 시작한다.

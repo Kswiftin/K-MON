@@ -44,6 +44,18 @@ final class FocusChainTests: XCTestCase {
         XCTAssertEqual(FocusChainRules.restMinutes(completedToday: 0), FocusChainRules.shortRestMinutes)
     }
 
+    /// 화면이 "긴 휴식 중" 이라고 말할 근거는 휴식 길이를 정한 것과 **같은 파생**이어야 한다.
+    /// 따로 세면 15분짜리 휴식에 그냥 "휴식 중" 이 뜬다 — 사용자는 왜 길게 쉬는지 알 수 없다.
+    func testLongRestLabelFollowsTheSameDerivationAsItsLength() {
+        for count in 0...9 {
+            XCTAssertEqual(FocusChainRules.isLongRest(completedToday: count),
+                           FocusChainRules.restMinutes(completedToday: count) == FocusChainRules.longRestMinutes,
+                           "\(count)세션째의 라벨과 길이가 어긋난다")
+        }
+        XCTAssertTrue(FocusChainRules.isLongRest(completedToday: FocusChainRules.sessionsPerLongRest))
+        XCTAssertFalse(FocusChainRules.isLongRest(completedToday: 0))
+    }
+
     // MARK: 휴식이 끝났을 때 무엇을 하는가
 
     /// 사람이 앞에 있고(디스플레이 켜짐) 목표가 남았으면 다음 집중이 저절로 시작된다 — 체인의 본체다.
