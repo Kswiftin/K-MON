@@ -1082,12 +1082,10 @@ struct PokedoroRequestExecutor {
 
     // MARK: 값
 
-    /// 판정에 쓸 값 한 벌. `isRunning` 의 두 조건을 경계에서 한 값으로 접는다(대화 실행기와 같다).
+    /// 판정에 쓸 값 한 벌. 조립은 `PokedoroSessionState.init(timer:companion:)` 한 곳이다 —
+    /// 대화 실행기와 이 파일이 주석까지 같은 사본을 들고 있던 자리다.
     private var sessionState: PokedoroSessionState {
-        PokedoroSessionState(phase: timer.isRunning ? timer.phase : .idle,
-                             hasCompanion: companion.hasActive,
-                             hasAdventure: companion.activeAdventure != nil,
-                             adventureIsInProgress: companion.isAdventureInProgress)
+        PokedoroSessionState(timer: timer, companion: companion)
     }
 
     /// 시작 길이 → 지역. 규칙은 `startFocusAdventure` 가 들고 있고 여기선 **이름만** 붙인다.

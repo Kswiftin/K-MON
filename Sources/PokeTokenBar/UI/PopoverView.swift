@@ -89,11 +89,32 @@ final class PopoverNavigation {
         tab = .home
     }
 
+    /// 알림을 누르면 어디로 가는가. **알림마다 목적지가 다르다.**
+    ///
+    /// 예전엔 `didReceive` 가 종류를 안 보고 전부 대전 화면으로 보냈다 — 알림이 죄다 배틀·레이드
+    /// 계열이라 우연히 맞았을 뿐이고, 주석도 "배틀 신청이면" 이라고 전제를 적어 두었다. 집중 체인
+    /// 알림이 그 전제를 처음으로 깬다: **누르면 시작하라는 뜻**인데 대전 탭엔 시작 버튼이 없어서,
+    /// 알림을 눌러 앱을 연 사용자가 정작 다음 세션을 시작할 수 없다.
+    ///
+    /// 판정이 순수한 이유는 `didReceive` 가 `@main` 안이라 테스트가 닿지 않기 때문이다.
+    enum NotificationDestination: Equatable, Sendable { case focusTimer, battle }
+
+    static func destination(forNotificationID id: String) -> NotificationDestination {
+        id.hasPrefix(FocusChainRules.notificationIDPrefix) ? .focusTimer : .battle
+    }
+
     /// 배틀 신청이 오면 그 화면으로 데려간다 — 덮여 있던 오버레이는 접는다.
     /// 체육관을 여기서 안 닫으면 신청이 온 줄 모른 채 목록만 보게 된다.
     func goToBattle() {
         closeOverlays()
         tab = .battle
+    }
+
+    /// 집중 타이머로 데려간다. 홈 탭에 있고(`FocusTimerView`), 오버레이를 접지 않으면
+    /// 시작 버튼이 그 뒤에 가려진다 — 알림을 누른 이유가 바로 그 버튼이다.
+    func goToFocusTimer() {
+        closeOverlays()
+        tab = .home
     }
 
     /// 체육관은 혼자 도전하는 콘텐츠다. 전투 엔진은 친구 대전과 같아도, 시작한 문맥까지 친구 탭으로

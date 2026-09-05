@@ -94,7 +94,8 @@ struct PokedoroViewChannelTests {
     /// 없고, 이 채널이 있어야 비로소 보인다 — 채널의 첫 생산자인 이유다.
     @Test func testTheFocusSnapshotCarriesWhatTheSaveCannotTell() throws {
         let snapshot = try #require(PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "12:34",
-                                                                      completed: 3, now: Self.now))
+                                                                      completed: 3, goal: 4,
+                                                                      isLongRest: false, now: Self.now))
         #expect(snapshot.lines.contains { $0.contains("12:34") })
         #expect(snapshot.lines.contains { $0.contains("3") }, "오늘 몇 번 했는지도 세이브 밖 값이다")
         #expect(snapshot.writtenAt == Self.now)
@@ -103,17 +104,42 @@ struct PokedoroViewChannelTests {
     /// 단계마다 다른 말을 해야 한다 — 휴식 중에 "집중 중" 이라고 쓰면 사용자는 타이머를 잘못 읽는다.
     @Test func testTheFocusSnapshotNamesThePhaseItIsIn() throws {
         let focusing = PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "01:00",
-                                                          completed: 0, now: Self.now)
+                                                          completed: 0, goal: 4,
+                                                          isLongRest: false, now: Self.now)
         let resting = PokedoroViewChannel.focusSnapshot(phase: .rest, clockText: "01:00",
-                                                         completed: 0, now: Self.now)
+                                                         completed: 0, goal: 4,
+                                                         isLongRest: false, now: Self.now)
         #expect(focusing?.lines != resting?.lines)
+    }
+
+    /// 긴 휴식은 짧은 휴식과 **다르게 보여야 한다.** 15분을 쉬는데 화면이 그냥 "휴식 중" 이면
+    /// 사용자는 타이머가 고장 났다고 읽는다 — 왜 긴지가 체인이 주는 보상이다.
+    @Test func testTheFocusSnapshotTellsALongBreakFromAShortOne() throws {
+        let short = try #require(PokedoroViewChannel.focusSnapshot(phase: .rest, clockText: "04:00",
+                                                                    completed: 3, goal: 4,
+                                                                    isLongRest: false, now: Self.now))
+        let long = try #require(PokedoroViewChannel.focusSnapshot(phase: .rest, clockText: "14:00",
+                                                                   completed: 4, goal: 4,
+                                                                   isLongRest: true, now: Self.now))
+        #expect(short.title != long.title)
+        #expect(long.lines.first != short.lines.first, "제목만 바뀌고 본문이 그대로면 화면에서 구분되지 않는다")
+    }
+
+    /// 하루 목표는 진행도와 **함께** 나와야 한다. 완료 수만 있으면 "3회" 가 많은지 적은지 알 수 없다.
+    @Test func testTheFocusSnapshotShowsProgressTowardTheDailyGoal() throws {
+        let snapshot = try #require(PokedoroViewChannel.focusSnapshot(phase: .focus, clockText: "10:00",
+                                                                       completed: 2, goal: 6,
+                                                                       isLongRest: false, now: Self.now))
+        #expect(snapshot.lines.contains { $0.contains("2") && $0.contains("6") },
+                "오늘 진행도와 목표가 같은 줄에 있어야 한다")
     }
 
     /// 아무것도 안 돌 때는 **화면을 내놓지 않는다** — 빈 스냅샷을 쓰면 터미널이 매번 빈 줄을
     /// 그리고, 파일도 이유 없이 갱신된다.
     @Test func testAnIdleTimerProducesNoSnapshot() {
         #expect(PokedoroViewChannel.focusSnapshot(phase: .idle, clockText: "00:00",
-                                                   completed: 0, now: Self.now) == nil)
+                                                   completed: 0, goal: 4,
+                                                   isLongRest: false, now: Self.now) == nil)
     }
 
     // MARK: 파일

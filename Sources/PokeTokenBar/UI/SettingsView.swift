@@ -88,6 +88,20 @@ struct SettingsView: View {
                 Toggle("", isOn: $settings.doNotDisturb)
                     .labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(l.t("하루 목표 세션", "Daily session goal", "1日の目標セッション"))
+                    Text(l.t("휴식이 끝나면 알림으로 알려 드립니다. 다음 세션은 직접 시작하세요.",
+                             "You get a notification when the break ends. You start the next session yourself.",
+                             "休憩が終わると通知でお知らせします。次のセッションはご自分で開始してください。"))
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Stepper(value: $settings.dailyFocusGoal, in: FocusChainRules.goalRange) {
+                    Text("\(settings.dailyFocusGoal)").monospacedDigit()
+                }
+                .controlSize(.small)
+            }
         }
     }
 

@@ -211,18 +211,22 @@ enum PokedoroViewChannel {
     ///
     /// 아무것도 안 돌면 `nil` 이다 — 빈 화면을 내놓으면 터미널이 빈 줄을 그리고 파일도 이유 없이
     /// 갱신된다.
-    static func focusSnapshot(phase: FocusPhase, clockText: String, completed: Int,
-                              now: Date) -> PokedoroViewSnapshot? {
+    /// - Parameters:
+    ///   - goal: 하루 목표 세션 수. 완료 수만 내보내면 "3회" 가 많은지 적은지 알 수 없다.
+    ///   - isLongRest: 긴 휴식인가. 판정은 `FocusChainRules.isLongRest` 한 곳이고 여기선 말만 바꾼다 —
+    ///     15분을 쉬는데 화면이 그냥 "휴식 중" 이면 타이머가 고장 난 것처럼 보인다.
+    static func focusSnapshot(phase: FocusPhase, clockText: String, completed: Int, goal: Int,
+                              isLongRest: Bool, now: Date) -> PokedoroViewSnapshot? {
         let title: String
         switch phase {
         case .idle: return nil
         case .focus: title = "집중 중"
-        case .rest: title = "휴식 중"
+        case .rest: title = isLongRest ? "긴 휴식 중" : "휴식 중"
         }
         return PokedoroViewSnapshot(
             screen: "focus",
             title: title,
-            lines: ["\(title)   남은 시간 \(clockText)", "오늘 마친 집중  \(completed)회"],
+            lines: ["\(title)   남은 시간 \(clockText)", "오늘 마친 집중  \(completed)/\(goal)회"],
             // 키는 앱이 정한다 — 무엇을 할 수 있는지 아는 곳이 앱이다. 지금 단계에서 할 수 있는
             // 것은 끝내기뿐이고, 시작 키는 홈이 이미 상태를 보고 고른다.
             keys: ["x 끝내기"],

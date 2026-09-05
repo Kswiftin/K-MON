@@ -17,6 +17,22 @@ struct PokedoroSessionState: Equatable, Sendable {
     var adventureIsInProgress: Bool
 }
 
+extension PokedoroSessionState {
+    /// 살아 있는 타이머·스토어에서 판정 입력을 조립한다. **조립도 한 곳이다.**
+    ///
+    /// 위 표를 한 벌로 두는 이유가 조립에도 그대로 걸린다 — 프런트엔드마다 이 네 줄을 복사하면
+    /// `isRunning` 을 접는 방식이 갈리는 순간 "대화로는 거절되는데 다른 데서는 통과하는" 상태가
+    /// 생기고, 갈라진 걸 알아챌 방법은 손으로 맞대 보는 것뿐이다. 실제로 대화 도구와 터미널
+    /// 실행기가 주석까지 같은 사본을 들고 있었고, 세션 체인이 세 번째가 될 참이었다.
+    @MainActor
+    init(timer: FocusTimer, companion: CompanionStore) {
+        self.init(phase: timer.isRunning ? timer.phase : .idle,
+                  hasCompanion: companion.hasActive,
+                  hasAdventure: companion.activeAdventure != nil,
+                  adventureIsInProgress: companion.isAdventureInProgress)
+    }
+}
+
 /// 집중 세션 세 동작(시작·정산·종료)의 **유일한 거절 판정표**.
 ///
 /// 팝오버 버튼·대화 도구·터미널 요청이 모두 이 표를 읽는다. 프런트엔드마다 조건을 다시 쓰면

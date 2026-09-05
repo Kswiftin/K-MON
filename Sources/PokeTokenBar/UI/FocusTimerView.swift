@@ -120,9 +120,11 @@ struct FocusTimerView: View {
             // 같은 자리에 있어야 한다. 값은 원장에서 온다(재기동·자정을 넘긴다).
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
-                Text(companion.l.t("오늘 \(companion.focusSessionsToday)세션 · \(companion.focusMinutesToday)분",
-                                   "Today \(companion.focusSessionsToday) sessions · \(companion.focusMinutesToday) min",
-                                   "今日 \(companion.focusSessionsToday)セッション・\(companion.focusMinutesToday)分"))
+                // 목표를 함께 적는다 — 완료 수만 있으면 "3세션" 이 많은지 적은지 알 수 없다.
+                // 체인은 이 목표에서 멈춘다(`FocusChainRules.afterRest`).
+                Text(companion.l.t("오늘 \(companion.focusSessionsToday)/\(settings.dailyFocusGoal)세션 · \(companion.focusMinutesToday)분",
+                                   "Today \(companion.focusSessionsToday)/\(settings.dailyFocusGoal) sessions · \(companion.focusMinutesToday) min",
+                                   "今日 \(companion.focusSessionsToday)/\(settings.dailyFocusGoal)セッション・\(companion.focusMinutesToday)分"))
                 Spacer()
             }
             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
@@ -231,7 +233,11 @@ struct FocusTimerView: View {
     private var title: String {
         switch timer.phase {
         case .focus: companion.l.t("집중 중", "Focus session", "集中中")
-        case .rest: companion.l.t("휴식 중", "Break", "休憩中")
+        // 긴 휴식은 다르게 말한다 — 15분을 쉬는데 "휴식 중" 이면 타이머가 고장 난 것처럼 보인다.
+        // 판정은 휴식 길이를 정한 것과 **같은 파생**이다(`FocusChainRules.isLongRest`).
+        case .rest: FocusChainRules.isLongRest(completedToday: companion.focusSessionsToday)
+            ? companion.l.t("긴 휴식 중", "Long break", "長い休憩中")
+            : companion.l.t("휴식 중", "Break", "休憩中")
         case .idle: companion.l.t("집중 타이머", "Focus timer", "集中タイマー")
         }
     }
