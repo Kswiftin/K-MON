@@ -89,6 +89,23 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
         case roomLeave
 
+        // MARK: 교환
+        //
+        // 번호가 **두 종류**다: 내 개체는 `party` 가 찍는 번호, 상대 목록은 그 세션에만 있는
+        // 번호다. 그래서 동작 이름도 갈라 둔다(`offer` / `want`) — 한 이름으로 받으면 사용자는
+        // 자기 것을 내주려다 남의 것을 지목한다.
+
+        case tradeAccept
+        case tradeDecline
+        /// 내가 낼 개체 — `party` 번호.
+        case tradeOffer(number: Int)
+        /// 상대에게 원하는 개체 — `trade` 가 찍는 번호.
+        case tradeWant(number: Int)
+        /// **되돌릴 수 없다** — 양쪽이 확인하면 개체가 넘어간다.
+        case tradeConfirm
+        /// **되돌릴 수 없다** — 협상을 통째로 버린다.
+        case tradeCancel
+
         /// 파일에 적히는 이름.
         var name: String {
             switch self {
@@ -116,6 +133,12 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .roomMove: "room.move"
             case .roomStart: "room.start"
             case .roomLeave: "room.leave"
+            case .tradeAccept: "trade.accept"
+            case .tradeDecline: "trade.decline"
+            case .tradeOffer: "trade.offer"
+            case .tradeWant: "trade.want"
+            case .tradeConfirm: "trade.confirm"
+            case .tradeCancel: "trade.cancel"
             }
         }
 
@@ -147,8 +170,10 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .battleSwitch(let number): String(number)
             case .roomMove(let move, let target):
                 target.map { "\(move) \($0)" } ?? String(move)
+            case .tradeOffer(let number), .tradeWant(let number): String(number)
             case .claim, .stop, .evolve, .hatch, .waveForfeit,
-                 .battleForfeit, .battleDecline, .roomStart, .roomLeave: nil
+                 .battleForfeit, .battleDecline, .roomStart, .roomLeave,
+                 .tradeAccept, .tradeDecline, .tradeConfirm, .tradeCancel: nil
             }
         }
 
@@ -257,6 +282,16 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 }
             case "room.start" where argument == nil: self = .roomStart
             case "room.leave" where argument == nil: self = .roomLeave
+            case "trade.accept" where argument == nil: self = .tradeAccept
+            case "trade.decline" where argument == nil: self = .tradeDecline
+            case "trade.offer":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .tradeOffer(number: number)
+            case "trade.want":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .tradeWant(number: number)
+            case "trade.confirm" where argument == nil: self = .tradeConfirm
+            case "trade.cancel" where argument == nil: self = .tradeCancel
             default: return nil
             }
         }

@@ -78,6 +78,18 @@ enum PokedoroCommand: Equatable, Sendable {
     /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
     case roomLeave(confirmed: Bool)
 
+    // MARK: 교환
+
+    case trade
+    case tradeAccept
+    case tradeDecline
+    case tradeOffer(number: Int)
+    case tradeWant(number: Int)
+    /// **되돌릴 수 없다** — 개체가 넘어간다.
+    case tradeConfirm(confirmed: Bool)
+    /// **되돌릴 수 없다** — 협상을 버린다.
+    case tradeCancel(confirmed: Bool)
+
     /// 앱에 부탁할 일. `nil` 이면 세이브를 읽기 전용으로 열고 끝나는 조회 명령이다.
     ///
     /// **인자를 여기서 함께 넘긴다.** 예전엔 동작만 돌려주고 부르는 쪽이 분을 다시 꺼냈는데,
@@ -111,8 +123,14 @@ enum PokedoroCommand: Equatable, Sendable {
         case .roomMove(let move, let target): .roomMove(move: move, target: target)
         case .roomStart: .roomStart
         case .roomLeave(let confirmed): confirmed ? .roomLeave : nil
+        case .tradeAccept: .tradeAccept
+        case .tradeDecline: .tradeDecline
+        case .tradeOffer(let number): .tradeOffer(number: number)
+        case .tradeWant(let number): .tradeWant(number: number)
+        case .tradeConfirm(let confirmed): confirmed ? .tradeConfirm : nil
+        case .tradeCancel(let confirmed): confirmed ? .tradeCancel : nil
         case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help,
-             .wave, .battle, .room: nil
+             .wave, .battle, .room, .trade: nil
         }
     }
 }
@@ -205,7 +223,8 @@ enum PokedoroCommandParser {
     ///
     /// 집중 세션(`start`·`claim`·`stop`)은 이제 여기 없다. 터미널이 요청을 보내고 앱이 실행한다.
     /// `battle` 은 여기서 빠졌다 — 터미널이 대전을 보고 턴을 낸다(`battle` 하위 명령).
-    static let appOnlyCommands: Set<String> = ["trade", "auction", "home", "raid"]
+    /// `trade` 도 빠졌다 — 상대를 찾는 일만 앱에 남는다(`raid` 와 같은 사정).
+    static let appOnlyCommands: Set<String> = ["auction", "home", "raid"]
 
     /// 실행 파일 이름을 뺀 인자 배열을 받는다. 빈 배열은 `status` 다 — 인자 없이 친 사용자가
     /// 가장 원하는 것이 현재 상태이기 때문이다.
@@ -259,6 +278,8 @@ enum PokedoroCommandParser {
             return try battleCommand(in: tail, options: options)
         case "room":
             return try roomCommand(in: tail, options: options)
+        case "trade":
+            return try tradeCommand(in: tail, options: options)
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
@@ -383,6 +404,37 @@ enum PokedoroCommandParser {
         }
     }
 
+    /// `trade <하위 명령> [번호]`. 하위 명령이 없으면 조회다.
+    private static func tradeCommand(in arguments: [String],
+                                     options: Set<String>) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .trade }
+        let rest = Array(words.dropFirst())
+        let command = "trade \(sub)"
+        switch sub {
+        case "accept":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .tradeAccept
+        case "decline":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .tradeDecline
+        case "offer":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .tradeOffer(number: try requiredWaveNumber(in: rest, command: command))
+        case "want":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .tradeWant(number: try requiredWaveNumber(in: rest, command: command))
+        case "confirm":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .tradeConfirm(confirmed: options.contains("--yes"))
+        case "cancel":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .tradeCancel(confirmed: options.contains("--yes"))
+        default:
+            throw PokedoroCommandError.unknownCommand(command)
+        }
+    }
+
     /// 남는 인자는 버리지 않는다 — 버리고 실행하면 사용자는 그 값이 뭔가 했다고 믿는다.
     ///
     /// 인자를 **하나도** 안 받는 하위 명령과 **개수가 넘친** 경우를 갈라 말한다. 하나로 뭉개면
@@ -501,6 +553,13 @@ enum PokedoroCommandParser {
         ("room move <n> [대상]", "기술 쓰기 (대상 생략하면 첫 상대)"),
         ("room start", "호스트가 판 시작"),
         ("room leave --yes", "방 나가기 — 정산을 못 받는다"),
+        ("trade", "교환 — 지금 협상"),
+        ("trade accept", "받은 교환 신청 수락"),
+        ("trade decline", "받은 교환 신청 거절"),
+        ("trade offer <번호>", "낼 개체 고르기 (party 번호)"),
+        ("trade want <번호>", "상대에게 원하는 개체 (trade 번호)"),
+        ("trade confirm --yes", "교환 성사 — 되돌릴 수 없다"),
+        ("trade cancel --yes", "협상 취소"),
         ("help", "이 도움말"),
     ]
 
