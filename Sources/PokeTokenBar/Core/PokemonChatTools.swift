@@ -596,13 +596,10 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         }
     }
 
-    /// 판정에 쓸 값 한 벌. `isRunning` 의 두 조건(`phase != .idle && endsAt != nil`)을 여기서
-    /// 한 값으로 접는다 — 게이트가 어긋난 상태를 볼 일이 없어야 한다.
+    /// 판정에 쓸 값 한 벌. 조립은 `PokedoroSessionState.init(timer:companion:)` 한 곳이다 —
+    /// 여기 다시 쓰면 터미널·체인과 접는 방식이 갈릴 수 있고, 갈린 걸 아무 테스트도 못 잡는다.
     private var sessionState: PokedoroSessionState {
-        PokedoroSessionState(phase: timer.isRunning ? timer.phase : .idle,
-                             hasCompanion: companion.hasActive,
-                             hasAdventure: companion.activeAdventure != nil,
-                             adventureIsInProgress: companion.isAdventureInProgress)
+        PokedoroSessionState(timer: timer, companion: companion)
     }
 
     /// 거절 사유 → 모델에게 돌려줄 사실 한 줄. **표현만 여기 있다** — 사유를 정하는 것은
