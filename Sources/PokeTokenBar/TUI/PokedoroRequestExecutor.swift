@@ -64,6 +64,10 @@ struct PokedoroRequestExecutor {
         case .roomMove(let move, let target): return roomMove(request, move: move, target: target)
         case .roomStart: return roomStart(request)
         case .roomLeave: return roomLeave(request)
+        case .roomSwitch(let slot): return roomSwitch(request, slot: slot)
+        case .roomTrack(let input): return roomTrack(request, input: input)
+        case .roomBet(let runner, let stardust):
+            return roomBet(request, runner: runner, stardust: stardust)
         case .tradeAccept: return tradeAnswer(request, accept: true)
         case .tradeDecline: return tradeAnswer(request, accept: false)
         case .tradeOffer(let number): return tradeOffer(request, number: number)
@@ -221,7 +225,9 @@ struct PokedoroRequestExecutor {
     private static func purchase(_ good: ShopGood, quantity: Int, companion: CompanionStore) -> Bool {
         switch good {
         case .item(let kind): companion.buy(kind, quantity: quantity)
-        case .egg: (0..<quantity).allSatisfy { _ in companion.buyEgg(nil) }
+        // 알도 **한 번에** 산다. 예전엔 `allSatisfy` 로 한 개씩 사서, 상한(`storedEggLimit`)에
+        // 걸리면 이미 치른 별의조각은 안 돌아오는데 답만 "살 수 없다"가 됐다 — 지갑은 줄어 있다.
+        case .egg: companion.buyEgg(nil, quantity: quantity)
         case .outfit(let item): companion.buyOutfit(item)
         case .machine(let machine): companion.buyTechnicalMachine(machine, quantity: quantity)
         }
@@ -559,6 +565,9 @@ struct PokedoroRequestExecutor {
 
     private func roomMove(_ request: PokedoroRequest, move: Int, target: Int?) -> PokedoroReply {
         guard let control = room, let state = roomState else { return noRoom(request) }
+        // **같은 명령이 판의 형태에 따라 다른 창구로 간다.** 사용자에게는 "내 차례에 n번 기술"
+        // 하나이므로 명령을 갈라 두지 않았다 — 갈랐다면 지금이 어느 판인지 외워야 한다.
+        if state.duel != nil { return duelMove(request, control: control, state: state, move: move) }
         guard RoomScreen.kind(state) == .move else {
             return no(request, Self.roomRefusal(state))
         }
@@ -582,9 +591,97 @@ struct PokedoroRequestExecutor {
         guard RoomScreen.kind(state) == .lobby else {
             return no(request, "지금은 시작할 수 있는 상태가 아니다 — " + RoomScreen.hints(state))
         }
+        // **시작이 없는 활동이 하나 있다.** 예전엔 활동을 안 보고 `startRaid()` 를 불렀고,
+        // 레이드가 아니면 센터가 조용히 돌아 나오는데 답은 "판을 시작했다" 였다 — 없던 성공이다.
+        guard state.activity?.isHostStarted == true else {
+            return no(request, "이 방은 호스트가 시작하지 않는다 — 도전자가 붙으면 판이 선다.")
+        }
         guard state.canStart else { return no(request, "사람이 더 모여야 시작할 수 있다.") }
-        control.startRaid()
+        control.startActivity()
         return ok(request, "판을 시작했다.")
+    }
+
+    // MARK: 결투와 트랙 — 형태마다 창구가 다르다
+
+    /// 결투(체육관·토너먼트)의 기술. 창구는 **엔진 순번**(0부터)으로 받는다.
+    private func duelMove(_ request: PokedoroRequest, control: any TerminalRoomControl,
+                          state: RoomTerminalState, move: Int) -> PokedoroReply {
+        guard RoomScreen.kind(state) == .duelMove else {
+            return no(request, Self.roomRefusal(state))
+        }
+        guard ArenaScreen.moveNumbers(state).contains(move) else {
+            return no(request, "\(move)번 기술을 쓸 수 없다 — room 이 찍는 번호와 남은 PP 를 본다.")
+        }
+        control.submitDuelMove(index: move - 1)
+        return ok(request, "\(move)번 기술을 냈다. " + RoomScreen.hints(roomState ?? state))
+    }
+
+    /// 결투의 교체. **안내에 없어도 실행은 막지 않는다** — 쓰러진 자리를 메우는 무료 출전과
+    /// 턴을 쓰는 교체를 엔진이 스스로 가르므로, 살아 있는 채로 바꾸는 것도 정당한 손이다.
+    private func roomSwitch(_ request: PokedoroRequest, slot: Int) -> PokedoroReply {
+        guard let control = room, let state = roomState else { return noRoom(request) }
+        guard let duel = state.duel else {
+            return no(request, "지금 도는 것은 \(RoomScreen.title(state))다 — "
+                      + "교체는 체육관·토너먼트의 결투에만 있다.")
+        }
+        // 사유를 셋으로 갈라 말한다. 하나로 접으면 자리가 없는 것과 쓰러진 것이 구분되지 않아
+        // 사용자는 번호를 하나씩 눌러 보게 된다.
+        guard let target = ArenaScreen.slot(number: slot, in: state) else {
+            return no(request, "\(slot)번 자리가 없다 — 지금 \(duel.mine.count) 마리가 있다.")
+        }
+        guard target.isAlive else {
+            return no(request, "\(target.label)은 쓰러져 있다 — 다른 자리를 고른다.")
+        }
+        guard !target.isActive else { return no(request, "\(target.label)은 이미 나와 있다.") }
+        control.submitDuelSwitch(slot: slot - 1)
+        return ok(request, "\(target.label)을 내보냈다.")
+    }
+
+    /// 트랙(포켓슬론·퀴즈)의 방향.
+    private func roomTrack(_ request: PokedoroRequest, input: ArenaTrackInput) -> PokedoroReply {
+        guard let control = room, let state = roomState else { return noRoom(request) }
+        guard let track = state.track else {
+            return no(request, "지금 도는 것은 \(RoomScreen.title(state))다 — "
+                      + "방향은 포켓슬론·OX 퀴즈에만 있다.")
+        }
+        // 관전 중이거나 입력이 막힌 순간은 **사유가 이미 한 곳에 있다**(화면 안내와 같은 문구).
+        guard track.amRacing, track.canMove else {
+            return no(request, ArenaScreen.waitingHints(state, track))
+        }
+        let allowed = ArenaScreen.trackInputs(state)
+        guard allowed.contains(input) else {
+            let quiz = ArenaScreen.isQuiz(state)
+            return no(request, "\(RoomScreen.title(state))에는 그 방향이 없다 — "
+                      + allowed.map { ArenaScreen.trackName($0, quiz: quiz) }
+                          .joined(separator: " · ") + " 중에서 고른다.")
+        }
+        control.submitTrackInput(input)
+        return ok(request, "\(ArenaScreen.trackName(input, quiz: ArenaScreen.isQuiz(state))) 를 냈다.")
+    }
+
+    /// 관전자 베팅. **되돌릴 수 없다** — 확인은 명령 쪽(`--yes`)에서 이미 받았다.
+    ///
+    /// 거절 사유를 여기서 만드는 이유: 호스트의 검사기(`PokeathlonPool.rejection`)가 내는 답은
+    /// 와이어를 타고 비동기로 오므로 이 응답에 실을 수 없다. **알 수 있는 것은 여기서 답한다.**
+    private func roomBet(_ request: PokedoroRequest, runner: Int, stardust: Int) -> PokedoroReply {
+        guard let control = room, let state = roomState else { return noRoom(request) }
+        guard state.activity == .pokeathlon, let track = state.track else {
+            return no(request, "베팅은 포켓슬론에만 있다 — 지금 도는 것은 "
+                      + "\(RoomScreen.title(state))다.")
+        }
+        guard !track.amRacing else {
+            return no(request, "러너는 자기 경기에 걸 수 없다 — 관전으로 들어간 사람만 건다.")
+        }
+        guard track.canBet else { return no(request, "원장이 닫혔다 — 출발한 뒤에는 걸 수 없다.") }
+        guard let runnerID = ArenaScreen.runnerID(number: runner, in: state) else {
+            return no(request, "\(runner)번 러너가 없다 — 지금 \(track.standings.count) 명이 달린다.")
+        }
+        guard stardust <= companion.availableTokens else {
+            return no(request, "별의조각이 \(TUIRender.number(companion.availableTokens)) 밖에 없다.")
+        }
+        control.placeArenaBet(runnerID: runnerID, stardust: stardust)
+        return ok(request, "\(runner)번에 \(TUIRender.number(stardust)) 을 걸었다. "
+                  + "호스트가 받으면 원장에 오른다.")
     }
 
     /// 방 나가기. **되돌릴 수 없다** — 확인은 명령 쪽(`--yes`)에서 이미 받았다.
@@ -601,7 +698,9 @@ struct PokedoroRequestExecutor {
         case .lobby:    "판이 아직 시작되지 않았다 — " + RoomScreen.hints(state)
         case .waiting:  "이번 라운드는 이미 냈거나 행동할 수 없다 — " + RoomScreen.hints(state)
         case .finished: "판이 끝났다."
-        case .move:     RoomScreen.hints(state)
+        case .move, .duelMove, .trackMove: RoomScreen.hints(state)
+        // 기술을 낼 수 없는 이유가 "먼저 내보낼 자리를 고르라" 는 것이므로 안내를 그대로 쓴다.
+        case .duelReplace: RoomScreen.hints(state)
         }
     }
 

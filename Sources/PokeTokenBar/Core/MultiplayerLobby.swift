@@ -3,6 +3,19 @@ import Foundation
 enum BattleTeam: String, Codable, Sendable { case solo, red, blue }
 enum RoomActivity: String, Codable, Sendable, CaseIterable { case battle, pokeathlon, pokemonQuiz, tournament, gym, raid }
 
+extension RoomActivity {
+    /// 호스트가 **직접 시작하는** 활동인가.
+    ///
+    /// 활동마다 시작 함수가 따로다(`startBattle`·`startPokeathlon`·`startPokemonQuiz`·
+    /// `startTournament`·`startRaid`) — 라우팅은 `MultiplayerRoomCenter.startActivity()` 한 곳이고,
+    /// 시작할 함수가 **없는** 활동은 체육관뿐이다. 도전자가 붙어야 판이 서기 때문이다.
+    ///
+    /// 이 값을 표로 둔 이유: 화면이 시작 키를 권할지(`RoomScreen.canStartNow`)와 센터가 무엇을
+    /// 부를지가 **같은 사실**을 봐야 한다. 갈라 두면 권하는 키가 아무 일도 하지 않는다 —
+    /// 실제로 체육관·토너먼트·방 대전 전부 그 상태였다(터미널이 `startRaid()` 만 불렀다).
+    var isHostStarted: Bool { self != .gym }
+}
+
 /// 방에서의 역할. 러너만 경기·전투에 참여하고, 관전자는 베팅만 한다.
 enum LobbyRole: String, Codable, Sendable { case runner, spectator }
 

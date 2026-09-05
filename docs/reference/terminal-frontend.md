@@ -242,10 +242,15 @@ pokedoro battle switch <번호>  교체 / 쓰러진 자리 메우기 (앱에 요
 pokedoro battle decline       받은 신청 거절 (앱에 요청)
 pokedoro battle forfeit --yes 항복 (앱에 요청, 되돌릴 수 없다)
 
-pokedoro room                 LAN 방 — 지금 판 (레이드·방 대전, 앱이 떠 있어야 한다)
+pokedoro room                 LAN 방 — 지금 판 (여섯 활동 전부, 앱이 떠 있어야 한다)
 pokedoro room move <n> [대상]  기술 쓰기 (대상 생략하면 첫 상대 · 앱에 요청)
-pokedoro room start           호스트가 판 시작 (앱에 요청)
+pokedoro room switch <자리>    결투에서 팀 자리 교체 (체육관·토너먼트 · 앱에 요청)
+pokedoro room left|right      OX 퀴즈의 답, 포켓슬론의 레인 (앱에 요청)
+pokedoro room run|swap        포켓슬론 전진·개체 교체 (앱에 요청)
+pokedoro room bet <러너> <금액> --yes  포켓슬론 관전 베팅 (앱에 요청, 되돌릴 수 없다)
+pokedoro room start           호스트가 판 시작 (앱에 요청 · 체육관은 시작이 없다)
 pokedoro room leave --yes     방 나가기 (앱에 요청, 정산을 못 받는다)
+pokedoro gym                  체육관 리그 — 여덟 곳과 딴 배지 (**앱 없이도 된다**)
 
 pokedoro trade                교환 — 지금 협상 (앱이 떠 있어야 한다)
 pokedoro trade accept         받은 신청 수락 (앱에 요청)
@@ -603,6 +608,81 @@ tmux 상태줄에 붙이는 예.
 ```
 set -g status-right '#(pokedoro status --oneline)'
 ```
+
+## 체육관·토너먼트·포켓슬론·OX 퀴즈 — 활동 넷이 아니라 **형태 둘**이다
+
+계획서에는 "#252 의 `RoomScreen` 이 이 넷의 전투 턴을 이미 덮는다" 고 적혀 있었다. **덮은 것은
+`case` 열거뿐이었다.** 그 넷의 판은 `combatFighters` 에 없다 — 체육관은 `gymMatch`, 토너먼트는
+`tournamentState.currentMatch`, 포켓슬론은 `pokeathlonRace`, 퀴즈는 `pokemonQuizGame` 에 산다.
+빈 목록으로 떨어져 "판을 준비하는 중이다" 가 판이 끝날 때까지 남았다(defect-log 의 새 부류).
+
+넷을 넷으로 다루지 않는다.
+
+| 형태 | 활동 | 값 | 근거 |
+|---|---|---|---|
+| **결투** | 체육관 · 토너먼트 | `DuelTerminalState` | `GymMatchState` 와 `TournamentMatchState` 가 구조적으로 같다 — 이름 붙은 두 편, 각자 `[TournamentPokemonState]`, 나온 자리, 턴, 제출 집합, 승자 |
+| **트랙** | 포켓슬론 · OX 퀴즈 | `TrackTerminalState` | 참가자 여럿이 **한 축** 위에 선다 — 퀴즈의 O/X 가 레인 좌우와 같은 축이다 |
+
+**새 화면도 새 키도 없다.** 넷 다 LAN 방에서 벌어지므로 `TUIScreen.room` 그대로이고, 숫자
+키(`1`–`4`)의 뜻만 국면이 정한다 — 그 변환은 이미 있던 `RoomScreen.action(number:in:)` 한 곳이다.
+소문자 풀은 #255 에서 바닥났는데(`h p d b m g w v o e i z`), 이 단계는 글자를 하나도 안 썼다.
+
+**국면(`phase`)보다 판의 유무를 먼저 본다.** 체육관은 판이 도는 동안 `phase` 가 `.hosting`
+그대로다(센터가 같은 이유로 `gymMatch != nil` 을 먼저 본다) — 국면부터 보면 판 중에 로비를
+그리고 시작 키를 권한다.
+
+### 번호 공간 둘을 **배타로** 만든다
+
+결투에는 기술 번호와 팀 자리 번호가 있다. 둘이 한 화면에 동시에 살면 숫자 한 자리로 어느 쪽인지
+정할 수 없다 — 경매에서 넷까지 겪은 그 부류다. 그래서 **앞자리가 쓰러진 동안에만** 숫자가 자리를
+뜻하게 하고(`ArenaScreen.mustReplace` 한 곳이 정한다), 두 국면(`.duelMove`·`.duelReplace`)을
+갈라 둔다. `room switch <자리>` 는 평소 턴에도 **실행된다** — 쓰러진 자리를 메우는 무료 출전인지
+턴을 쓰는 교체인지는 엔진이 스스로 가르므로, 막으면 안내가 실행의 상한이 되어 버린다(제안 ⊆ 실행).
+
+트랙의 방향은 `1`–`4` 이고 러너 번호는 **`room bet` 명령만** 받는다. 같은 숫자 공간에 두면
+`3` 이 "전진" 이자 "3번 러너" 가 된다.
+
+### 기술은 명령을 갈라 두지 않았다
+
+`room move <n>` 하나가 레이드·방 대전·체육관·토너먼트 넷에서 다 먹는다. 사용자에게는 판의
+종류가 아니라 "지금 내 차례" 만 있기 때문이다 — 어느 창구 함수로 갈지는 실행기가 판을 보고
+정한다(`state.duel != nil`). 명령을 갈랐다면 사용자가 지금 무슨 판인지 외워야 한다.
+
+| 명령 | 어디서 먹나 |
+|---|---|
+| `room move <n> [대상]` | 레이드·방 대전(대상 있음) · 체육관·토너먼트(대상 없음) |
+| `room switch <자리>` | 체육관·토너먼트 |
+| `room left` / `room right` | 퀴즈의 O/X · 포켓슬론의 레인 |
+| `room run` / `room swap` | 포켓슬론만 — 퀴즈에서는 **이름을 대며 거절한다** |
+| `room bet <러너> <금액> --yes` | 포켓슬론 관전자만 |
+
+**포켓슬론의 `run` 은 터미널이 불리하다.** 요청이 파일 우편함을 왕복하는 사이 앱에서 누르는
+사람은 여러 번 전진한다. 막지는 않는다(정당한 손이다) — 다만 이 기능을 터미널로 이길 수 있다고
+적지 않는다.
+
+### 시작 함수는 활동마다 다르다
+
+`startRaid`·`startBattle`·`startPokeathlon`·`startPokemonQuiz`·`startTournament` 가 따로이고,
+**체육관만 시작 함수가 없다**(도전이 와야 판이 선다). 터미널은 예전에 `startRaid()` 만 불렀고,
+레이드가 아니면 센터가 조용히 돌아 나오는데 답은 "판을 시작했다" 였다.
+
+라우팅은 `MultiplayerRoomCenter.starter(for:)` **한 표**이고, 화면이 `s 시작` 을 낼지 정하는
+`RoomActivity.isHostStarted` 와 짝이 맞는지 테스트가 전 활동으로 검사한다. 표를 함수 본문의
+`switch` 로 두면 밖에서 볼 수 없다 — 실제로 한 갈래를 지워도 전 스위트가 초록이었다.
+
+### 체육관 리그(배지)는 채널을 안 탄다
+
+배지는 세이브(`gymLeagueBadges`)에 있으므로 `pokedoro gym` 은 **앱 없이 답한다** — 웨이브 런·
+Memory Home 과 같은 쪽이다. 여덟 곳·딴 곳 표시·도전 요건(마릿수·레벨)을 찍고, 요건 숫자는
+`GymLeague` 에서 읽는다.
+
+**도전 자체는 명령이 없다.** 팀 넷을 고르고 관장 팀의 종 데이터를 받아 와야 판이 서므로 앱의
+몫이고, 할 수 없는 일은 명령에 두지 않는다(방을 만드는 일을 안 둔 것과 같다) — 대신 목록의
+마지막 줄이 어디서 하는지 말한다.
+
+`pokedoro challenge` 의 배지 줄은 **`gymLeagueBadges` 를 센다.** `gymBadges` 는 이전 배포의
+칸이고 지금은 아무도 쓰지 않는데 그쪽을 세고 있어서, 체육관을 이겨도 줄이 안 움직이고 앱의
+`GymLeagueView` 와 다른 숫자가 나왔다.
 
 ## 테스트
 

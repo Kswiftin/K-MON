@@ -1228,6 +1228,29 @@ final class MultiplayerRoomCenter {
     /// 테스트 전용 — 게스트가 `.gymRejected` 를 받은 것과 같은 자리를 지난다.
     func debugApplyGymRejection(_ reason: GymChallengeRejection) { gymRejection = reason }
 
+    /// 테스트 전용 — 호스트가 보낸 대진을 받은 것과 같은 자리를 지난다.
+    ///
+    /// 이 셋(대진·경기·문항)을 정식 경로로 세우려면 `buildSnapshot()` 이 PokéAPI 를 타야 해서
+    /// 단위 테스트가 닿지 못한다. 그래서 창구 조립(`terminalState` 의 `duel`·`track`)이 커버리지에서
+    /// 통째로 빠져 있었다 — 관장·도전자를 뒤바꾸는 부류가 아무 신호 없이 살 수 있는 자리다.
+    func debugApplyTournamentMatch(_ match: TournamentMatchState,
+                                   entrants: [TournamentEntrant]) {
+        phase = .tournament
+        tournamentState = PokemonTournamentState(entrants: entrants, reward: .standard)
+        tournamentState?.currentMatch = match
+    }
+
+    func debugApplyPokeathlon(race: PokeathlonRace, pool: PokeathlonPool = PokeathlonPool()) {
+        phase = .pokeathlon
+        pokeathlonRace = race
+        pokeathlonPool = pool
+    }
+
+    func debugApplyPokemonQuiz(_ game: PokemonOXGame) {
+        phase = .pokemonQuiz
+        pokemonQuizGame = game
+    }
+
     /// 끝난 판을 잠시 뒤 치운다 — 관장은 다음 도전을 받을 수 있게, 도전자·관전자는 결과 화면에서
     /// 빠져나올 수 있게. 승계로 방이 닫히는 경우는 `leaveRoom()` 이 대신 정리한다.
     private func scheduleGymMatchClear() {
@@ -1498,6 +1521,81 @@ final class MultiplayerRoomCenter {
         companion.creditStarPieces(payout)
         settlementPayout = payout
         escrowedBet = nil
+    }
+
+    // MARK: 활동별 함수를 한 곳에서 접는다
+    //
+    // 시작·기술·방향은 활동마다 다른 함수다. 부르는 쪽(화면·터미널)이 그 라우팅을 각자 하면
+    // 활동을 더할 때 두 곳을 고쳐야 하고, 한쪽만 고치는 부류가 그대로 생긴다 — 터미널이
+    // `startRaid()` 만 부르고 있던 것이 정확히 그 모양이었다.
+
+    /// 창구가 기술 이름·퀴즈 문항을 접을 때 쓰는 언어. `companion` 이 `private` 이라 여기서 낸다 —
+    /// 창구를 이 파일 안으로 끌고 들어오는 것보다 값 하나를 내는 편이 좁다.
+    var displayLanguage: AppLanguage { companion.language }
+
+    /// 활동 → 시작 함수. **표를 값으로 낸다.**
+    ///
+    /// 함수 본문 안의 `switch` 로 두면 한 갈래를 `break` 로 바꿔도 어떤 테스트도 빨강이 되지
+    /// 않는다 — 실제로 `.battle` 을 지워 보고 확인했고, 전 스위트가 초록이었다. 그게 이 단계에서
+    /// 고친 결함(`startRaid()` 만 부르던 자리)과 **같은 부류**라, 표를 밖에서 볼 수 있게 둔다.
+    ///
+    /// `nil` 은 "호스트가 시작하지 않는다" 다 — 체육관뿐이고, 화면이 읽는
+    /// `RoomActivity.isHostStarted` 와 **한 짝이어야 한다**(그 검사가 `testEveryHostStartedActivityHasAStarter`).
+    func starter(for activity: RoomActivity) -> (() -> Void)? {
+        switch activity {
+        case .raid:        startRaid
+        case .battle:      startBattle
+        case .pokeathlon:  startPokeathlon
+        case .pokemonQuiz: startPokemonQuiz
+        case .tournament:  startTournament
+        // 도전이 와야 판이 선다(`respondToGymChallenge`) — 부를 함수가 없다.
+        case .gym:         nil
+        }
+    }
+
+    /// 호스트가 이 방의 판을 시작한다. **활동이 어느 함수인지는 위 표 한 곳이 안다.**
+    func startActivity() {
+        guard let activity = lobby?.activity else { return }
+        starter(for: activity)?()
+    }
+
+    /// 결투(체육관·토너먼트)에 기술을 낸다. `index` 는 **엔진의 기술 순번**(0부터)이다.
+    /// 어느 판인지는 `gymMatch` 의 유무로 가른다 — 체육관은 `phase` 가 `.hosting` 그대로다.
+    func submitDuelMove(index: Int) { submitDuelAction(.move(index: index)) }
+
+    /// 결투에서 팀 자리를 바꾼다. `slot` 은 팀 순번(0부터)이고, 쓰러진 자리를 메우는 무료
+    /// 출전인지 턴을 쓰는 교체인지는 **엔진이** 가른다(`GymMatchEngine.submit`).
+    func submitDuelSwitch(slot: Int) { submitDuelAction(.switchTo(index: slot)) }
+
+    private func submitDuelAction(_ action: NetBattleAction) {
+        if gymMatch != nil { submitGymAction(action) }
+        else if phase == .tournament { submitTournamentAction(action) }
+    }
+
+    /// 트랙(포켓슬론·퀴즈)에 방향을 낸다. 퀴즈에 없는 방향(전진·교체)은 **여기 오기 전에**
+    /// 실행기가 이름을 대며 거절한다 — 조용히 흘리면 입력이 씹힌 것과 구분되지 않는다.
+    func submitTrackInput(_ input: ArenaTrackInput) {
+        if pokemonQuizGame != nil {
+            switch input {
+            case .left:  pokemonQuizInput(.left)
+            case .right: pokemonQuizInput(.right)
+            case .run, .swap: break
+            }
+            return
+        }
+        guard pokeathlonRace != nil else { return }
+        switch input {
+        case .left:  pokeathlonInput(.dodgeLeft)
+        case .right: pokeathlonInput(.dodgeRight)
+        case .run:   pokeathlonInput(.run)
+        case .swap:  pokeathlonInput(.switchPokemon)
+        }
+    }
+
+    /// 관전자 베팅. 이름을 `placeBet` 과 갈라 둔 이유는 **창구가 좁아야** 하기 때문이다 —
+    /// 터미널은 러너 번호를 id 로 접은 뒤 이것만 부른다.
+    func placeArenaBet(runnerID: UUID, stardust: Int) {
+        placeBet(runnerID: runnerID, amount: stardust)
     }
 
     func submitAction(targetID: UUID, moveIndex: Int) {

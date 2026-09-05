@@ -371,6 +371,22 @@ struct WaveRunTerminalTests {
         #expect(TUIKeymap.action(for: .char("j"), screen: .wave, canWrite: true) == .ignored)
     }
 
+    /// **PP 가 떨어진 기술은 제안이 아니다.** 실행기(`PokedoroRequestExecutor.waveMove`)가
+    /// `canUse` 로 거절하므로, 화면이 그 번호를 세면 "제안 ⊆ 실행 가능" 이 깨져 눌러도 거절만
+    /// 돌아오는 키를 권하게 된다 — LAN 대전·방·결투는 셋 다 걸렀고 웨이브 런만 빠져 있었다.
+    @Test func testASpentMoveIsNeitherOfferedNorHinted() {
+        var run = Self.battlingRun()
+        run.debugDrainPP(moveIndex: 0)
+
+        #expect(WaveRunScreen.kind(run) == .move)
+        #expect(WaveRunScreen.numbers(run) == [2], "PP 0 인 1번이 남았다")
+        #expect(WaveRunScreen.action(number: 1, in: run) == nil,
+                "실행기가 거절할 번호가 요청이 됐다")
+        #expect(WaveRunScreen.action(number: 2, in: run) == .waveMove(move: 2, target: nil))
+        // 안내도 번호를 그대로 적는다 — `1-4` 로 접으면 못 쓰는 1번을 권하게 된다.
+        #expect(WaveRunScreen.hints(run).hasPrefix("2 기술"), "\(WaveRunScreen.hints(run))")
+    }
+
     // MARK: 픽스처
 
     /// 전투 중인 판 하나. 상대는 한 마리, 내 파티는 `partySize` 마리다.

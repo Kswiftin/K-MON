@@ -41,7 +41,7 @@ enum PokedoroCLI {
         case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
              .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
              .battleMove, .battleSwitch, .battleDecline,
-             .roomMove, .roomStart,
+             .roomMove, .roomStart, .roomSwitch, .roomTrack,
              .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant,
              .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear,
              .homeMood, .homeStyle, .homeNote, .homeMessage, .homeNickname, .homeRoommate,
@@ -65,6 +65,9 @@ enum PokedoroCLI {
             challengeRows(store, width: terminalWidth()).forEach { print($0) }
         case .goals:
             goalRows(store, width: terminalWidth()).forEach { print($0) }
+        case .gym:
+            // 배지는 세이브에 있으므로 앱 없이 답한다(웨이브 런·Memory Home 과 같은 쪽).
+            gymRows(store, width: terminalWidth()).forEach { print($0) }
         case .mon(let number):
             monRows(store, number: number, width: terminalWidth()).forEach { print($0) }
         case .shop:
@@ -105,6 +108,13 @@ enum PokedoroCLI {
         case .roomLeave:
             ["방을 나가면 이 판의 정산을 받지 못한다.",
              "정말이면: pokedoro room leave --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .roomBet(let runner, let stardust, _):
+            // 확인 없이 온 베팅이다. 판돈은 원장으로 넘어가고 경기가 끝나야 정산된다.
+            ["\(runner)번에 별의조각 \(TUIRender.number(stardust)) 을 건다 — "
+                + "경기가 끝날 때까지 되돌릴 수 없다.",
+             "정말이면: pokedoro room bet \(runner) \(stardust) --yes"]
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
         case .trade:
@@ -312,7 +322,11 @@ enum PokedoroCLI {
         var lines = TUIRender.rows([
             ("던전 최고 웨이브", "\(run.bestWave)/\(RogueRun.finalWave)"),
             ("던전 클리어", "\(TUIRender.number(run.clears))회"),
-            ("\(l.gymLeagueTitle) 배지", "\(store.state.gymBadges.count)/\(GymLeague.catalog.count)")
+            // **`gymLeagueBadges` 다.** `gymBadges` 는 이전 배포의 칸이고 지금은 아무도 쓰지
+            // 않는다(`recordGymVictory` 가 리그 칸에만 적는다) — 그 칸을 세는 동안 이 줄은
+            // 체육관을 이겨도 움직이지 않았고, 앱의 `GymLeagueView` 와 다른 숫자를 보여 줬다.
+            ("\(l.gymLeagueTitle) 배지",
+             "\(store.state.gymLeagueBadges.count)/\(GymLeague.catalog.count)")
         ], width: width)
 
         lines += section(l.missionsTitle, width: width)
@@ -327,6 +341,30 @@ enum PokedoroCLI {
             TUIProgressRow(label: l.goalName(row.challenge.event, row.challenge.target),
                            value: row.progress, target: row.challenge.target)
         }, width: width)
+        return lines
+    }
+
+    /// 체육관 리그 — 여덟 곳, 딴 배지, 도전 요건.
+    ///
+    /// **진행이 세이브에 있어 채널을 타지 않는다**(웨이브 런·Memory Home 과 같은 쪽). 도전은
+    /// 명령이 없다 — 팀 넷을 고르고 관장 팀의 종 데이터를 받아 와야 판이 서므로 앱의 몫이고,
+    /// 할 수 없는 일은 명령에 두지 않는다(방을 만드는 일을 안 둔 것과 같은 규칙).
+    ///
+    /// 요건·마릿수·레벨은 **표에서 읽는다**(`GymLeague`). 여기 숫자를 적으면 균형을 바꿀 때
+    /// 이 줄만 옛말이 되고, 사용자는 요건을 채웠다고 믿은 채 거절당한다.
+    static func gymRows(_ store: CompanionStore, width: Int) -> [String] {
+        let cleared = store.state.gymLeagueBadges
+        var lines = TUIRender.rows([
+            ("배지", "\(cleared.count)/\(GymLeague.catalog.count)"),
+            ("도전 요건", "\(GymLeague.teamSize)마리 · 전원 Lv.\(GymLeague.minChallengerLevel) 이상")
+        ], width: width)
+        lines += TUIRender.rows(GymLeague.catalog.map { gym in
+            (gym.leaderName(store.language)
+                + (cleared.contains(gym.id) ? " \(TUIRender.doneMark)" : ""),
+             "Lv.\(gym.level)")
+        }, width: width)
+        lines.append(TUIText.truncate(
+            "도전은 앱의 체육관 탭에서 한다 — 팀 편성과 관장 팀 조회가 필요하다.", to: width))
         return lines
     }
 
@@ -411,11 +449,16 @@ enum PokedoroCLI {
         let width = terminalWidth()
         // **보고 싶은 화면을 신호에 적는다.** 순위만으로 고르면 동시에 참인 두 화면 중 뒤에
         // 있는 것을 영영 못 본다 — 경매 시장은 집중 세션이 도는 동안에도 참이다.
-        try? mailbox.attach(PokedoroAttachment(id: UUID(), width: width, height: 24, at: Date(),
+        let attachedAt = Date()
+        try? mailbox.attach(PokedoroAttachment(id: UUID(), width: width, height: 24, at: attachedAt,
                                                screen: screen))
-        let deadline = Date().addingTimeInterval(viewTimeout)
+        let deadline = attachedAt.addingTimeInterval(viewTimeout)
         while Date() < deadline {
-            if let view = mailbox.view(), !PokedoroViewChannel.isStale(view, now: Date()) {
+            // **내 신호보다 오래된 화면은 남의 답이다.** 앞선 명령(`pokedoro battle`)이 남긴
+            // 파일은 낡음 한계(5초) 안에서는 그대로 살아 있어, 그걸 읽고 "다른 화면이 왔다" 로
+            // 판정하면 바로 뒤에 친 `pokedoro room` 이 방 안에 있는데도 "방에 없다" 고 답한다.
+            if let view = mailbox.view(), view.writtenAt >= attachedAt,
+               !PokedoroViewChannel.isStale(view, now: Date()) {
                 // 다른 화면이 왔다는 것은 **앱은 살아 있고 이 기능만 안 돈다**는 뜻이다 —
                 // 더 기다릴 이유가 없다.
                 guard view.screen == screen else { break }

@@ -77,6 +77,22 @@ enum PokedoroCommand: Equatable, Sendable {
     case roomStart
     /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
     case roomLeave(confirmed: Bool)
+    /// 결투(체육관·토너먼트)의 팀 자리 교체. **기술은 `roomMove` 를 그대로 쓴다** —
+    /// 사용자에게는 판의 종류가 아니라 "지금 내 차례" 만 있다.
+    case roomSwitch(slot: Int)
+    /// 트랙(포켓슬론·퀴즈)의 방향. 하위 명령 이름이 곧 방향이라(`left`·`right`·`run`·`swap`)
+    /// 사용자가 값을 외울 것이 없다.
+    case roomTrack(ArenaTrackInput)
+    /// 관전자 베팅 — **되돌릴 수 없다.**
+    case roomBet(runner: Int, stardust: Int, confirmed: Bool)
+
+    // MARK: 체육관 리그
+    //
+    // **진행이 세이브에 남는 세 번째 기능이다**(웨이브 런·Memory Home 다음) — 배지는
+    // `gymLeagueBadges` 에 적히므로 조회에 앱이 필요 없다. 도전은 팀 편성과 종 데이터 조회가
+    // 걸려 있어 앱에서 한다 — 할 수 없는 일은 명령에 두지 않는다.
+
+    case gym
 
     // MARK: 교환
 
@@ -160,6 +176,10 @@ enum PokedoroCommand: Equatable, Sendable {
         case .roomMove(let move, let target): .roomMove(move: move, target: target)
         case .roomStart: .roomStart
         case .roomLeave(let confirmed): confirmed ? .roomLeave : nil
+        case .roomSwitch(let slot): .roomSwitch(slot: slot)
+        case .roomTrack(let input): .roomTrack(input)
+        case .roomBet(let runner, let stardust, let confirmed):
+            confirmed ? .roomBet(runner: runner, stardust: stardust) : nil
         case .tradeAccept: .tradeAccept
         case .tradeDecline: .tradeDecline
         case .tradeOffer(let number): .tradeOffer(number: number)
@@ -192,7 +212,7 @@ enum PokedoroCommand: Equatable, Sendable {
         case .homeUndo: .homeUndo
         case .homeRedo: .homeRedo
         case .status, .party, .dex, .bag, .challenge, .goals, .mon, .shop, .watch, .help,
-             .wave, .battle, .room, .trade, .auction, .home: nil
+             .wave, .battle, .room, .trade, .auction, .home, .gym: nil
         }
     }
 }
@@ -222,6 +242,12 @@ enum PokedoroCommandError: Equatable, Error {
     case unknownItem(String)
     /// 상점이 팔지 않는 물건.
     case unknownGood(String)
+    /// 구매 수량이 아니다. 개체 번호와 갈라 말한다 — `party` 를 보라고 하면 사용자는 목록을
+    /// 열어 엉뚱한 수를 센다(수량은 목록에서 얻는 값이 아니다).
+    case invalidQuantity(String)
+    /// 놓인 가구의 번호가 아니다. 격자 칸(`invalidRoomCell`)과 갈라 말한다 — 다시 볼 목록이
+    /// 다르다(칸은 1–48 의 자리, 이 번호는 `pokedoro home` 이 찍는 목록 순번이다).
+    case invalidDecorNumber(String)
     /// 웨이브 런의 번호가 아니다. 개체 번호와 오류를 나눠 두는 이유와 같다 — **어디서 번호를
     /// 얻는지가 다르다**(`party` 가 아니라 `wave` 가 찍는다).
     case invalidWaveNumber(String)
@@ -231,6 +257,13 @@ enum PokedoroCommandError: Equatable, Error {
     /// 경매 목록의 번호가 아니다. 웨이브·개체 번호와 나눠 두는 이유는 같다 — **어디서 번호를
     /// 얻는지가 다르다**(`pokedoro auction` 이 찍는다).
     case invalidAuctionNumber(String)
+    /// 트랙 순위의 번호가 아니다. 경매 번호와 갈라 말한다 — 사용자가 다시 볼 목록이 다르다.
+    case invalidRunnerNumber(String)
+    /// 결투의 팀 자리 번호가 아니다. **`party` 번호가 아니다** — 결투에 데려간 팀 안의 자리이고,
+    /// 그 목록은 `room` 이 찍는다. 개체 번호로 안내하면 사용자는 로스터를 열어 엉뚱한 수를 센다.
+    case invalidSlotNumber(String)
+    /// 베팅 금액이 아니다. 경매 제안액과 갈라 말한다 — 잔액을 볼 화면이 다르다.
+    case invalidBetAmount(String)
     /// 별의모래 금액이 아니다. 번호와 나눠 말한다 — 번호는 목록에서 얻고 금액은 잔액에서
     /// 정하므로, 사용자가 다음에 볼 것이 다르다.
     case invalidStardust(String)
@@ -265,6 +298,10 @@ enum PokedoroCommandError: Equatable, Error {
             "그런 아이템이 없다: \(raw) — `pokedoro bag` 이 찍는 이름을 쓴다."
         case .unknownGood(let raw):
             "상점에 그런 물건이 없다: \(raw) — `pokedoro shop` 이 찍는 이름을 쓴다."
+        case .invalidQuantity(let raw):
+            "구매 수량이 아니다: \(raw) — 1 이상의 숫자를 쓴다(`buy <이름> [수량]`)."
+        case .invalidDecorNumber(let raw):
+            "놓인 가구의 번호가 아니다: \(raw) — `pokedoro home` 이 찍는 번호(1부터)를 쓴다."
         case .invalidWaveNumber(let raw):
             "웨이브 런의 번호가 아니다: \(raw) — `pokedoro wave` 가 찍는 번호(1부터)를 쓴다."
         case .unknownRoute(let raw):
@@ -272,6 +309,14 @@ enum PokedoroCommandError: Equatable, Error {
                 + RunRoute.allCases.map(\.rawValue).joined(separator: "·") + " 중 하나를 쓴다."
         case .invalidAuctionNumber(let raw):
             "경매 목록의 번호가 아니다: \(raw) — `pokedoro auction` 이 찍는 번호(1부터)를 쓴다."
+        case .invalidRunnerNumber(let raw):
+            "순위 목록의 번호가 아니다: \(raw) — `pokedoro room` 이 찍는 번호(1부터)를 쓴다."
+        case .invalidSlotNumber(let raw):
+            "팀 자리 번호가 아니다: \(raw) — `pokedoro room` 이 찍는 자리 번호(1부터)를 쓴다"
+                + "(결투에 데려간 팀 안의 자리이고, `party` 번호가 아니다)."
+        case .invalidBetAmount(let raw):
+            "베팅 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
+                + "(`pokedoro room` 이 판돈과 내가 건 금액을 찍는다)."
         case .invalidStardust(let raw):
             "별의모래 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
                 + "(`pokedoro auction` 이 미약속 잔액을 찍는다)."
@@ -340,10 +385,14 @@ enum PokedoroCommandParser {
         case "bag", "items": return .bag
         case "challenge", "ch": return .challenge
         case "goals", "goal": return .goals
-        case "mon": return .mon(number: try rosterNumber(in: tail))
+        case "gym": return .gym
+        case "mon":
+            try rejectExtraPositional(tail, beyond: 1, command: name)
+            return .mon(number: try rosterNumber(in: tail))
         case "watch", "top": return .watch
         case "help", "--help", "-h": return .help
         case "start", "go":
+            try rejectExtraPositional(tail, beyond: 1, command: name)
             return .start(minutes: try number(in: tail, orThrow: PokedoroCommandError.invalidMinutes))
         case "claim": return .claim
         case "stop", "cancel": return .stop
@@ -355,6 +404,7 @@ enum PokedoroCommandParser {
             try rejectArgument(in: tail, command: name)
             return .evolve
         case "switch":
+            try rejectExtraPositional(tail, beyond: 1, command: name)
             return .switchCompanion(number: try requiredRosterNumber(in: tail, command: name))
         case "name", "nickname":
             return .rename(nickname: try text(in: tail, command: name))
@@ -366,6 +416,9 @@ enum PokedoroCommandParser {
             try rejectArgument(in: tail, command: name)
             return .hatch
         case "release":
+            // 남는 인자를 버리지 않는다 — **되돌릴 수 없는 명령**이라 `release 3 9 --yes` 가
+            // 조용히 3번만 놓아주면 사용자는 9번도 갔다고 믿는다(하위 명령은 전부 이 검사를 한다).
+            try rejectExtraPositional(tail, beyond: 1, command: name)
             return .release(number: try requiredRosterNumber(in: tail, command: name),
                             confirmed: options.contains("--yes"))
         case "wave":
@@ -402,7 +455,7 @@ enum PokedoroCommandParser {
         guard !words.isEmpty else { throw PokedoroCommandError.missingArgument(command) }
         var quantity = 1
         if words.count > 1, let last = words.last, let value = Int(last), last.allSatisfy(\.isNumber) {
-            guard value >= 1 else { throw PokedoroCommandError.invalidMonNumber(last) }
+            guard value >= 1 else { throw PokedoroCommandError.invalidQuantity(last) }
             quantity = value
             words.removeLast()
         }
@@ -499,6 +552,27 @@ enum PokedoroCommandParser {
         case "leave":
             try rejectExtra(rest, beyond: 0, command: command)
             return .roomLeave(confirmed: options.contains("--yes"))
+        case "switch":
+            try rejectExtra(rest, beyond: 1, command: command)
+            guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+            return .roomSwitch(slot: try positiveNumber(
+                raw, orThrow: PokedoroCommandError.invalidSlotNumber))
+        // 방향은 **하위 명령 이름이 곧 값**이다. `room input <이름>` 으로 두면 사용자가 이름
+        // 목록을 외워야 하고, 오타는 "그런 방향이 없다" 가 아니라 무응답이 된다.
+        case "left", "right", "run", "swap":
+            try rejectExtra(rest, beyond: 0, command: command)
+            // `sub` 가 곧 rawValue 다 — 표를 한 벌로 두려고 이름을 그대로 맞췄고,
+            // 어긋나면 아래 `guard` 가 알려 준다(닿지 않는 자리).
+            guard let input = ArenaTrackInput(rawValue: sub) else {
+                throw PokedoroCommandError.unknownCommand(command)
+            }
+            return .roomTrack(input)
+        case "bet":
+            let pair = try twoNumbers(rest, command: command,
+                                      first: PokedoroCommandError.invalidRunnerNumber,
+                                      second: PokedoroCommandError.invalidBetAmount)
+            return .roomBet(runner: pair.0, stardust: pair.1,
+                            confirmed: options.contains("--yes"))
         default:
             throw PokedoroCommandError.unknownCommand(command)
         }
@@ -637,7 +711,7 @@ enum PokedoroCommandParser {
             try rejectExtra(rest, beyond: 1, command: command)
             guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
             return .homeRemove(number: try positiveNumber(
-                raw, orThrow: PokedoroCommandError.invalidRoomCell))
+                raw, orThrow: PokedoroCommandError.invalidDecorNumber))
         case "reset":
             try rejectExtra(rest, beyond: 0, command: command)
             return .homeReset(confirmed: options.contains("--yes"))
@@ -658,10 +732,12 @@ enum PokedoroCommandParser {
     /// 하나만 적혔으면 "빠졌다" 다. 첫 값만 받고 둘째를 기본값으로 접으면 사용자가 고르지 않은
     /// 개체를 내놓는다(웨이브의 대상 생략과 다른 자리다 — 여기서는 기본값이 있을 수 없다).
     private static func twoNumbers(_ words: [String], command: String,
+                                   first: (String) -> PokedoroCommandError
+                                       = PokedoroCommandError.invalidAuctionNumber,
                                    second: (String) -> PokedoroCommandError) throws -> (Int, Int) {
         try rejectExtra(words, beyond: 2, command: command)
         guard words.count == 2 else { throw PokedoroCommandError.missingArgument(command) }
-        return (try positiveNumber(words[0], orThrow: PokedoroCommandError.invalidAuctionNumber),
+        return (try positiveNumber(words[0], orThrow: first),
                 try positiveNumber(words[1], orThrow: second))
     }
 
@@ -693,6 +769,13 @@ enum PokedoroCommandParser {
         guard words.count > limit else { return }
         throw limit == 0 ? PokedoroCommandError.unexpectedArgument(command)
                          : PokedoroCommandError.tooManyArguments(command)
+    }
+
+    /// 최상위 명령의 남는 인자 검사. 하위 명령은 이미 옵션을 걸러 낸 목록을 넘기지만 최상위는
+    /// 꼬리 전체를 들고 있으므로 `--` 를 먼저 뺀다 — 안 빼면 `release 1 --yes` 가 인자 둘로 세인다.
+    private static func rejectExtraPositional(_ arguments: [String], beyond limit: Int,
+                                              command: String) throws {
+        try rejectExtra(arguments.filter { !$0.hasPrefix("--") }, beyond: limit, command: command)
     }
 
     /// `wave` 가 찍는 번호(1부터). 오류를 개체 번호와 나눠 두는 이유는 **어디서 번호를 얻는지가
@@ -799,8 +882,13 @@ enum PokedoroCommandParser {
         ("battle forfeit --yes", "항복 — 되돌릴 수 없다"),
         ("room", "LAN 방 — 지금 판 (레이드·방 대전)"),
         ("room move <n> [대상]", "기술 쓰기 (대상 생략하면 첫 상대)"),
+        ("room switch <자리>", "결투에서 팀 자리 교체 (체육관·토너먼트)"),
+        ("room left / room right", "OX 퀴즈의 답, 포켓슬론의 레인"),
+        ("room run / room swap", "포켓슬론 전진·개체 교체"),
+        ("room bet <러너> <금액> --yes", "포켓슬론 관전 베팅 — 되돌릴 수 없다"),
         ("room start", "호스트가 판 시작"),
         ("room leave --yes", "방 나가기 — 정산을 못 받는다"),
+        ("gym", "체육관 리그 — 여덟 곳과 딴 배지"),
         ("trade", "교환 — 지금 협상"),
         ("trade accept", "받은 교환 신청 수락"),
         ("trade decline", "받은 교환 신청 거절"),

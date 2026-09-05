@@ -252,6 +252,51 @@ struct NetBattleTerminalTests {
         }
     }
 
+    /// 키 안내는 **지금 유효한 번호를 그대로** 적는다. `1-팀 마릿수` 로 접으면 쓰러진 자리와
+    /// 이미 나와 있는 자리까지 권하게 되고, 그 번호는 `action` 이 걸러 눌러도 아무 일이 없다.
+    @Test func testTheReplacementKeysNameOnlyTheNumbersThatWork() throws {
+        var state = Self.battling(teamSize: 3)
+        state.battle?.myTeam[0].hp = 0
+        state.battle?.myTeam[1].hp = 0
+
+        #expect(NetBattleScreen.kind(state) == .sendOut)
+        #expect(NetBattleScreen.numbers(state) == [3])
+        let key = try #require(NetBattleScreen.keys(state).first)
+        #expect(key == "3 교체", "죽은 1·2 번을 권하는 범위 안내가 남아 있다 — \(key)")
+    }
+
+    /// **숫자의 뜻은 앱이 보낸다.** 터미널에는 판이 없어 그 숫자가 기술인지 교체인지 알 수
+    /// 없다 — 표가 없던 동안 `watch` 의 숫자 키는 늘 `battle.move` 로 나갔고, 쓰러진 자리를
+    /// 메우는 국면에서는 앱이 "교체" 를 권해 놓고도 눌러 보면 거절만 돌아왔다.
+    @Test func testTheSnapshotSaysWhatEachDigitMeans() throws {
+        var state = Self.battling(teamSize: 2)
+        state.battle?.myTeam[0].hp = 0
+        let faint = try #require(PokedoroViewChannel.battleSnapshot(state, language: .ko,
+                                                                     width: 60, now: Date()))
+        #expect(faint.numberActions?["2"] == "battle.switch 2")
+        #expect(faint.numberActions?["1"] == nil, "쓰러진 자리는 요청이 되지 않는다")
+
+        let turn = try #require(PokedoroViewChannel.battleSnapshot(Self.battling(), language: .ko,
+                                                                     width: 60, now: Date()))
+        #expect(turn.numberActions?["1"] == "battle.move 1")
+    }
+
+    /// 그 표는 **요청 파일과 같은 평평한 모양**이라 터미널이 파서 하나로 되읽는다 — 두 벌로
+    /// 두면 앱이 보낸 뜻과 터미널이 만든 요청이 갈라진다.
+    @Test func testEveryPublishedDigitFoldsBackIntoTheSameAction() throws {
+        var state = Self.battling(teamSize: 2)
+        state.battle?.myTeam[0].hp = 0
+        let snapshot = try #require(PokedoroViewChannel.battleSnapshot(state, language: .ko,
+                                                                        width: 60, now: Date()))
+        for (digit, raw) in snapshot.numberActions ?? [:] {
+            let parts = raw.split(separator: " ", maxSplits: 1).map(String.init)
+            let folded = PokedoroRequest.Action(name: parts[0],
+                                                argument: parts.count > 1 ? parts[1] : nil)
+            #expect(folded == NetBattleScreen.action(number: Int(digit) ?? 0, in: state),
+                    "\(raw) 가 되읽히지 않는다")
+        }
+    }
+
     /// 교체 목록은 **팀 번호와 남은 HP**를 함께 찍는다 — 누구로 바꿀지는 HP 로 정한다.
     @Test func testTheReplacementListShowsWhoIsLeft() throws {
         var state = Self.battling(teamSize: 2)

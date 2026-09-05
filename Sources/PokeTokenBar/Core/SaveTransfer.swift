@@ -242,7 +242,7 @@ enum SaveTransfer {
         s.achievements.normalize()
         // 시즌도 같은 자리에서 자른다 — 저장된 시즌의 세트에 없는 키를 버리고 목표에서 클램프한다.
         s.seasons.normalize()
-        s.focusEggs = min(max(0, s.focusEggs), 999)
+        s.focusEggs = min(max(0, s.focusEggs), CompanionStore.storedEggLimit)
         s.focusEggReadyDates = Array(s.focusEggReadyDates.sorted().prefix(s.focusEggs))
         s.eggFragments = min(max(0, s.eggFragments), 9)
         s.weeklyAdventureCount = min(max(0, s.weeklyAdventureCount), 10)

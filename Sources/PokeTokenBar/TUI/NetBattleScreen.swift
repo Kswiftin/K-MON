@@ -79,6 +79,13 @@ enum NetBattleScreen {
         }
     }
 
+    /// 지금 유효한 번호를 그대로 적는 안내 한 조각. 목록이 비면 조각도 없다 — 빈 범위를
+    /// 만들어 두면 누를 것이 없는데 키가 있는 것으로 보인다.
+    static func numberKeys(_ state: BattleTerminalState, noun: String) -> [String] {
+        let text = numbers(state).map(String.init).joined(separator: "·")
+        return text.isEmpty ? [] : ["\(text) \(noun)"]
+    }
+
     static func choices(_ state: BattleTerminalState, language: AppLanguage) -> [Choice] {
         numbers(state).map { Choice(number: $0, label: label($0, in: state, language: language)) }
     }
@@ -113,10 +120,13 @@ enum NetBattleScreen {
     /// 아는 곳이 앱이고, 터미널이 따로 판정하면 두 표가 갈라져 먹지도 않는 키를 권한다.
     static func keys(_ state: BattleTerminalState) -> [String] {
         switch kind(state) {
+        // **번호를 그대로 적는다.** `1-n` 은 두 자리에서 거짓말을 한다: 기술은 PP 가 떨어진
+        // 번호가 빠져 구멍이 나고, 교체는 쓰러진 자리와 이미 나온 자리가 빠진다 — 그 구멍을
+        // 범위로 덮으면 먹지도 않는 번호를 권하고 뒤쪽의 쓸 수 있는 번호는 안내에서 사라진다.
         case .move:
-            return ["1-\(max(1, numbers(state).count)) 기술", "f 항복"]
+            return numberKeys(state, noun: "기술") + ["f 항복"]
         case .sendOut:
-            return ["1-\(max(1, state.battle?.myTeam.count ?? 1)) 교체", "f 항복"]
+            return numberKeys(state, noun: "교체") + ["f 항복"]
         case .incoming:
             return ["n 거절"]
         case .waiting:
@@ -136,9 +146,11 @@ enum NetBattleScreen {
         case .appOnly:
             return "앱에서 이어 한다 — 파티 편성은 터미널에 입력 줄이 없다"
         case .move:
-            return "1-\(max(1, numbers(state).count)) 기술   f 항복   (battle move <n>)"
+            return (numberKeys(state, noun: "기술") + ["f 항복", "(battle move <n>)"])
+                .joined(separator: "   ")
         case .sendOut:
-            return "쓰러졌다 — 교체할 번호를 고른다 (battle switch <번호>)"
+            return (["쓰러졌다 —"] + numberKeys(state, noun: "교체") + ["(battle switch <번호>)"])
+                .joined(separator: " ")
         case .waiting:
             return "상대의 행동을 기다린다"
         case .finished:

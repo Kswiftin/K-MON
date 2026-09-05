@@ -22,7 +22,14 @@ struct RoomExecutorTests {
         func submitAction(targetID: UUID, moveIndex: Int) {
             submitted.append((targetID, moveIndex))
         }
-        func startRaid() { started += 1 }
+        // 결투·트랙 창구는 이 스위트가 쓰지 않는다 — 레이드·방 대전만 본다.
+        func submitDuelMove(index: Int) {}
+        func submitDuelSwitch(slot: Int) {}
+        func submitTrackInput(_ input: ArenaTrackInput) {}
+        func placeArenaBet(runnerID: UUID, stardust: Int) {}
+        /// `startRaid` 에서 이름이 바뀌었다 — 시작 함수가 활동마다 다르고 그 라우팅은 이제
+        /// 센터 안에 있다(예전엔 터미널이 레이드 것만 불러서 다른 방은 눌러도 안 됐다).
+        func startActivity() { started += 1 }
         func leaveRoom() { left += 1 }
     }
 

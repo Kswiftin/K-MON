@@ -97,6 +97,17 @@ struct PokemonOXGame: Codable, Sendable, Equatable {
         players.sorted { $0.score == $1.score ? $0.trainerName < $1.trainerName : $0.score > $1.score }
     }
 
+    /// O/X 로 인정되는 최소 이동. 가운데는 무응답이다.
+    static let answerThreshold = 0.12
+
+    /// 위치 → 답. `nil` 은 가운데(무응답)다.
+    ///
+    /// **판정과 화면이 같은 함수를 본다.** 값을 두 곳에 적으면 터미널이 "O 에 서 있다" 고
+    /// 보여 준 뒤 채점은 무응답으로 처리하는 일이 생긴다.
+    static func choice(at position: Double) -> Bool? {
+        position < -answerThreshold ? false : (position > answerThreshold ? true : nil)
+    }
+
     mutating func move(_ input: PokemonOXInput, playerID: UUID) {
         guard !isFinished, !isRevealing, let i = players.firstIndex(where: { $0.id == playerID }) else { return }
         let delta = input == .left ? -Self.movementStep : Self.movementStep
@@ -106,8 +117,7 @@ struct PokemonOXGame: Codable, Sendable, Equatable {
     mutating func reveal() {
         guard !isFinished, !isRevealing, let question = currentQuestion else { return }
         for i in players.indices {
-            let choice: Bool? = players[i].position < -0.12 ? false : (players[i].position > 0.12 ? true : nil)
-            let correct = choice == question.answer
+            let correct = Self.choice(at: players[i].position) == question.answer
             players[i].lastCorrect = correct
             if correct { players[i].score += 10 }
         }

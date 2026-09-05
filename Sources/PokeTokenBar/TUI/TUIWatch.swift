@@ -135,18 +135,18 @@ final class TUIWatch {
                                 .waveForfeit)
             }
         case .battleChoice(let number):
-            // 대전 판은 세이브에 없다 — **앱이 보낸 화면의 키 안내**가 무엇을 누를 수 있는지
-            // 말해 주므로, 여기서는 그 번호를 그대로 요청으로 보낸다. 목록 밖 번호는 앱이
-            // 거절하고 사유를 답한다(제안 ⊆ 실행 가능은 앱 쪽에서 지킨다).
-            request(.battleMove(move: number))
+            // 대전 판은 세이브에 없다 — **숫자가 무엇이 되는지도 앱이 보내 준다**
+            // (`PokedoroViewSnapshot.numberActions`). 기술로 넘겨짚으면 쓰러진 자리를 메우는
+            // 국면에서 앱이 "1-n 교체" 를 권해 놓고도 눌러 보면 늘 거절만 돌아온다.
+            if let action = liveAction(digit: number, screen: "battle") { request(action) }
         case .forfeitBattle:
             confirmation = ("이 대전을 항복한다 — 되돌릴 수 없다", .battleForfeit)
         case .declineBattle:
             request(.battleDecline)
         case .roomChoice(let number):
-            // 대전과 같다 — 무엇을 누를 수 있는지는 앱이 보낸 키 안내가 말해 주고, 목록 밖
-            // 번호는 앱이 사유를 붙여 거절한다.
-            request(.roomMove(move: number, target: nil))
+            // 대전과 같다 — 방은 숫자의 뜻이 셋이다(기술·결투의 팀 자리·트랙의 방향). 기술로
+            // 넘겨짚으면 포켓슬론·OX 퀴즈의 방향 키가 통째로 죽는다.
+            if let action = liveAction(digit: number, screen: "room") { request(action) }
         case .startRoom:
             request(.roomStart)
         case .leaveRoom:
@@ -171,6 +171,19 @@ final class TUIWatch {
             return
         }
         render()
+    }
+
+    /// 앱이 보낸 표에서 숫자 하나를 요청으로 바꾼다. **화면 이름을 함께 본다** — 앱은 우선순위에
+    /// 따라 다른 화면을 내놓을 수 있고, 그 표의 숫자는 지금 보고 있는 판의 것이 아니다.
+    ///
+    /// 표가 없으면 아무것도 보내지 않는다(옛 앱이 내놓은 화면이다) — 기술로 넘겨짚는 것보다
+    /// 침묵이 낫다. 값의 모양은 요청 파일과 같으므로 파서도 `Action(name:argument:)` 하나다.
+    private func liveAction(digit: Int, screen name: String) -> PokedoroRequest.Action? {
+        guard let view = appView, view.screen == name,
+              let raw = view.numberActions?[String(digit)] else { return nil }
+        let parts = raw.split(separator: " ", maxSplits: 1).map(String.init)
+        guard let action = parts.first else { return nil }
+        return PokedoroRequest.Action(name: action, argument: parts.count > 1 ? parts[1] : nil)
     }
 
     /// 커서가 가리키는 개체·아이템. 목록이 비었거나 커서가 범위를 벗어나면 `nil` 이다 —
