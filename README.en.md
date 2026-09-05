@@ -24,6 +24,9 @@ Pokédoro sends your Pokémon partner on an adventure while you focus, then lets
 2. When the adventure is complete, claim its reward. Claiming grants experience and Star Pieces; longer sessions grant more. Merely leaving the app open records app time, but does not grant Star Pieces automatically.
 3. Each completed session awards egg fragments and has a chance to find a Mystery Egg. Ten fragments make an egg; the first adventure of the day grants an extra fragment, and ten adventures in a week grant a bonus egg.
 4. Use experience to level your partner, and spend Star Pieces in the shop or as ranked-battle stakes. Home also tracks daily and weekly missions for adventure claims, focus time, and graduations; Pokédex goals reward collecting species, types, and shinies.
+5. Finished sessions are kept in a day-keyed log (90 days). Add a one-line label (40 characters max) when you start, and it shows up in today's log and in the weekly recap.
+
+A 5-minute rest follows each session, and every fourth session earns a 15-minute long rest. When a rest ends the app calls you back to the next session but **never starts one for you** — sessions banked while you were away would make the log say nothing about real focus. The daily goal defaults to 4 sessions and can be set anywhere from 1 to 12. The weekly recap shows bars per weekday, totals per label, a daily average, and how many sessions were started on the heels of the previous one.
 
 You can enable Do Not Disturb to block system notifications, the floating pet, and incoming battle challenges while you focus.
 
@@ -100,6 +103,13 @@ Create a room from the Friends tab or join one nearby and fight two to four trai
 </td>
 <td width="45%" align="center"><img src="assets/screenshot-room-battle.png" width="180" alt="2-4 player room battle"></td>
 </tr>
+<tr>
+<td width="45%" align="center"><img src="assets/screenshot-recap.png" width="180" alt="Weekly recap"></td>
+<td width="55%" valign="middle">
+<h3>Focus log & weekly recap</h3>
+Finished sessions stack up by day, each keeping the one-line label you gave it at the start. The weekly recap puts bars per weekday, totals per label, a daily average, and your chained-session count on one screen.
+</td>
+</tr>
 </table>
 
 > Screenshots may lag behind the latest UI; their captions describe only features available in the current app.
@@ -139,12 +149,15 @@ ln -s "/Applications/Pokédoro.app/Contents/MacOS/PokeTokenBar" /usr/local/bin/p
 
 ```
 pokedoro status [--oneline]   Partner, adventure, balance (--oneline for a status bar)
-pokedoro party                Your Pokémon
-pokedoro dex                  Pokédex
+pokedoro party | mon | dex    Your Pokémon · one Pokémon in detail · Pokédex
+pokedoro bag | shop | goals   Bag · shop stock · Pokédex goals and achievements
 pokedoro watch                Full-screen live view
-pokedoro start [25|50|90]     Start a focus session
-pokedoro claim                Collect a finished adventure's reward
-pokedoro stop                 End the focus session
+pokedoro start [25|50|90]     Start a focus session (stop to end, claim to collect)
+pokedoro wave …               A wave run (start · move · ball · pick · route)
+pokedoro battle | room …      LAN battle, and rooms (raid · gym · tournament · Pokéathlon · quiz)
+pokedoro trade | auction …    Trade negotiation · auction market
+pokedoro home …               Memory Home — mood · notes · furniture
+pokedoro help                 The full command list
 ```
 
 For a tmux status bar:
@@ -153,7 +166,9 @@ For a tmux status bar:
 set -g status-right '#(pokedoro status --oneline)'
 ```
 
-Read commands only read the save. The three focus-session commands **send a request to the menu bar app, which performs them** — this keeps exactly one process writing the save. With the app closed those three do nothing, say so, and exit with code `3`.
+Read commands (`status`, `party`, `wave`, `home`, `gym`, …) only read the save, so they answer with the app closed. Every command that changes state **sends a request to the menu bar app, which performs it** — this keeps exactly one process writing the save. With the app closed such a request does nothing, says so, and exits with code `3` (bad input exits `1`, a refusal exits `2`).
+
+Irreversible commands only run when given `--yes`: `release`, `wave forfeit`, `battle forfeit`, `room leave`, `room bet`, `trade confirm`, `auction bid`, and the like.
 
 ## Data, privacy & disclaimer
 

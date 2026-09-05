@@ -24,6 +24,12 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 2. 모험이 완료되면 보상을 직접 수령합니다. 수령할 때 경험치와 별의조각을 얻으며, 긴 집중일수록 보상이 커집니다. 앱을 켜 둔 시간은 기록되지만 별의조각이 자동으로 지급되지는 않습니다.
 3. 완료한 세션에서는 알 조각을 얻고 신비한 알을 발견할 기회도 있습니다. 조각 10개는 알 1개가 되며, 그날 첫 모험에서는 조각을 하나 더 얻고 주간 모험 10회에는 보너스 알을 얻습니다.
 4. 경험치로 파트너의 레벨을 올리고, 별의조각은 상점 구매와 랭크 배틀 판돈에 사용합니다. 홈에는 모험 수령·집중 시간·졸업을 세는 일간·주간 미션이, 도감에는 종·타입·이로치 수집 목표가 표시됩니다.
+5. 마친 세션은 날짜별 기록에 남습니다(90일치). 시작할 때 한 줄 라벨(최대 40자)을 붙이면 오늘의 기록과 주간 회고에서 무엇에 집중했는지 함께 보입니다.
+
+세션 사이에는 5분 휴식이, 네 세션마다 15분 긴 휴식이 붙습니다. 휴식이 끝나면 다음 세션을 시작하라고
+부르지만 **자동으로 시작하지는 않습니다** — 자리를 비운 사이에 쌓인 기록은 실제 집중과 무관해지기
+때문입니다. 하루 목표는 기본 4세션이고 1~12 사이에서 바꿉니다. 주간 회고에서는 요일별 막대, 라벨별
+합계, 하루 평균, 앞 세션에 이어서 시작한 세션 수를 봅니다.
 
 집중 중에는 방해금지 모드를 켤 수 있습니다. 시스템 알림, 플로팅 펫, 수신 배틀 신청을 막습니다.
 
@@ -100,6 +106,13 @@ Pokédoro는 집중하는 동안 포켓몬 파트너를 모험에 보내고, 수
 </td>
 <td width="45%" align="center"><img src="assets/screenshot-room-battle-ko.png" width="180" alt="2~4인 방 배틀"></td>
 </tr>
+<tr>
+<td width="45%" align="center"><img src="assets/screenshot-recap-ko.png" width="180" alt="주간 회고"></td>
+<td width="55%" valign="middle">
+<h3>집중 기록과 주간 회고</h3>
+마친 세션은 날짜별로 쌓이고, 시작할 때 붙인 한 줄 라벨이 함께 남습니다. 주간 회고에서는 요일별 막대와 라벨별 합계, 하루 평균, 앞 세션에 이어서 시작한 세션 수를 한 화면에서 봅니다.
+</td>
+</tr>
 </table>
 
 > 스크린샷은 최신 UI와 다를 수 있습니다. 캡션은 현재 앱에서 확인 가능한 기능만 설명합니다.
@@ -143,12 +156,15 @@ ln -s "/Applications/Pokédoro.app/Contents/MacOS/PokeTokenBar" /usr/local/bin/p
 
 ```
 pokedoro status [--oneline]   파트너·모험·잔액 (--oneline 은 상태줄용 한 줄)
-pokedoro party                보유 포켓몬
-pokedoro dex                  도감
+pokedoro party | mon | dex    보유 포켓몬 · 개체 상세 · 도감
+pokedoro bag | shop | goals   가방 · 상점 재고 · 도감 목표와 업적
 pokedoro watch                전체 화면 실시간 보기
-pokedoro start [25|50|90]     집중 세션 시작
-pokedoro claim                끝난 모험의 보상 받기
-pokedoro stop                 집중 세션 끝내기
+pokedoro start [25|50|90]     집중 세션 시작 (stop 으로 끝내고 claim 으로 수령)
+pokedoro wave …               웨이브 런 한 판 (start · move · ball · pick · route)
+pokedoro battle | room …      LAN 대전, 방 (레이드 · 체육관 · 토너먼트 · 포켓슬론 · 퀴즈)
+pokedoro trade | auction …    교환 협상 · 경매 시장
+pokedoro home …               Memory Home — 기분 · 기록 · 가구 배치
+pokedoro help                 전체 명령 목록
 ```
 
 tmux 상태줄에 붙이는 예입니다.
@@ -157,9 +173,13 @@ tmux 상태줄에 붙이는 예입니다.
 set -g status-right '#(pokedoro status --oneline)'
 ```
 
-조회는 세이브를 읽기만 합니다. 집중 세션 세 동작은 **메뉴바 앱에 요청을 보내고 앱이 실행합니다** —
-세이브에 쓰는 프로세스를 하나로 두기 위해서입니다. 앱이 꺼져 있으면 그 세 명령은 실행되지 않고,
-그 사실을 알려 준 뒤 종료 코드 `3` 으로 끝납니다.
+조회(`status`·`party`·`wave`·`home`·`gym`…)는 세이브를 읽기만 하므로 앱이 꺼져 있어도 답합니다.
+상태를 바꾸는 명령은 전부 **메뉴바 앱에 요청을 보내고 앱이 실행합니다** — 세이브에 쓰는 프로세스를
+하나로 두기 위해서입니다. 앱이 꺼져 있으면 그 요청은 실행되지 않고, 그 사실을 알려 준 뒤 종료 코드
+`3` 으로 끝납니다(잘못된 입력은 `1`, 거절은 `2`).
+
+되돌릴 수 없는 명령은 `--yes` 를 함께 받아야 실행됩니다 — `release`, `wave forfeit`,
+`battle forfeit`, `room leave`, `room bet`, `trade confirm`, `auction bid` 등.
 
 ## 데이터, 개인정보와 면책
 
