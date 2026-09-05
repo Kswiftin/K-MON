@@ -58,6 +58,21 @@ final class FloatingPetSubjectTests: XCTestCase {
         XCTAssertEqual(subject.isShiny, store.currentIsShiny)
     }
 
+    func testSelectedSubjectsContainOnlyTheSelectedDexSpecies() {
+        let store = makeStore()
+        store.debugSetDex([dexEntry(base: 1, final: 3, chain: [1, 2, 3]),
+                           dexEntry(base: 4, final: 6, chain: [4, 5, 6], shiny: true)])
+        let subjects = store.floatingPetSubjects(selectedSpeciesIDs: [2, 6])
+        XCTAssertEqual(subjects.map(\.speciesID), [2, 6])
+        XCTAssertTrue(subjects.contains { $0.speciesID == 6 && $0.isShiny })
+    }
+
+    func testEmptySelectionFallsBackToCurrentPartner() {
+        let store = makeStore()
+        XCTAssertEqual(store.floatingPetSubjects(selectedSpeciesIDs: []).first?.speciesID,
+                       store.currentSpeciesID)
+    }
+
     // MARK: 진화 라인 묶기 (선택 메뉴)
 
     func testLinesGroupEachChainUnderItsBaseForm() {

@@ -999,9 +999,17 @@ final class CompanionStore {
             }
         }
         return acc.sorted { $0.key < $1.key }.map { id, a in
-            DexSpecies(
+            // 활성 파트너는 이미 현재 진화 라인의 다국어 이름을 가지고 있다.
+            // 구버전 세이브의 영어-only names 가 있어도 현재 언어 이름을 우선한다.
+            let activeLocalizedName: String? = {
+                guard let active = state.active,
+                      active.pathIDs.contains(id),
+                      let line = currentLine else { return nil }
+                return line.localizedName(id, state.language)
+            }()
+            return DexSpecies(
                 id: id,
-                name: a.names.flatMap { state.language.resolveName($0) } ?? "#\(id)",
+                name: activeLocalizedName ?? a.names.flatMap { state.language.resolveName($0) } ?? "#\(id)",
                 rarity: a.rarity,
                 isShiny: a.isShiny,
                 isRaising: !a.isGraduated)
@@ -1123,6 +1131,16 @@ final class CompanionStore {
               let pinned = dexSpecies.first(where: { $0.id == pinnedSpeciesID })
         else { return (currentPresentationID, currentIsShiny) }
         return (pinned.id, pinned.isShiny)
+    }
+
+    /// 사용자가 고른 종만 플로팅한다. 목록이 비어 있을 때만 기존처럼 현재 파트너를 하나 띄운다.
+    func floatingPetSubjects(selectedSpeciesIDs: [Int]) -> [(speciesID: Int?, isShiny: Bool)] {
+        var seen = Set<Int>()
+        let uniqueIDs = selectedSpeciesIDs.filter { seen.insert($0).inserted }
+        let subjects = uniqueIDs.compactMap { id in
+            dexSpecies.first(where: { $0.id == id }).map { (speciesID: $0.id, isShiny: $0.isShiny) }
+        }
+        return subjects.isEmpty ? [floatingPetSubject(pinnedSpeciesID: nil)] : subjects
     }
 
     /// 이름이 없는 구버전 졸업 항목의 체인 이름을 채운다(도감 격자 진입 시 1회).

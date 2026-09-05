@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var didCheckUpdate = false
     @State private var trainerNameDraft = ""
     @State private var trainerNameFeedback: String?
+    @State private var isFloatingPetSelectionPresented = false
     private var l: L { companion.l }
 
     private var isBundledApp: Bool { AppEnv.isBundledApp }
@@ -24,12 +25,10 @@ struct SettingsView: View {
         species.isShiny ? "✨ \(species.name)" : species.name
     }
 
-    /// 고른 종이 도감에서 사라졌으면 파트너 표기로 — 실제로 그려지는 대상(floatingPetSubject)과 맞춘다.
+    /// 메뉴 라벨은 선택 수만 요약해, 도감이 커져도 설정 화면이 흔들리지 않게 한다.
     private var floatingPetSpeciesSelectionLabel: String {
-        guard let pinned = settings.floatingPetSpeciesID,
-              let species = companion.dexSpecies.first(where: { $0.id == pinned })
-        else { return l.floatingPetSpeciesFollowsPartner }
-        return speciesMenuLabel(species)
+        let count = settings.floatingPetSpeciesIDs.filter { id in companion.dexSpecies.contains { $0.id == id } }.count
+        return count == 0 ? l.floatingPetSpeciesFollowsPartner : l.floatingPetSpeciesSelectedCount(count)
     }
 
     /// 세이브 봉투에 남길 출처 표기 — 어느 Mac에서 내보낸 파일인지 나중에 알아보기 위한 것.
@@ -46,29 +45,41 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var settings = settings
-        VStack(spacing: 0) {
-            header
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    generalGroup
-                    memoryHomeGroup(settings)
-                    workModeGroup(settings)
-                    chatProviderGroup(settings)
-                    floatingPetGroup(settings)
-                    notificationsGroup(settings)
-                    updateGroup(settings)
-                    transferGroup
-                    aboutSupportGroup
+        Group {
+            if isFloatingPetSelectionPresented {
+                FloatingPetSelectionView(onClose: { isFloatingPetSelectionPresented = false })
+            } else {
+                VStack(spacing: 0) {
+                    header
+                    Divider()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            generalGroup
+                            memoryHomeGroup(settings)
+                            workModeGroup(settings)
+                            chatProviderGroup(settings)
+                            floatingPetGroup(settings)
+                            notificationsGroup(settings)
+                            updateGroup(settings)
+                            transferGroup
+                            aboutSupportGroup
+                        }
+                        .padding(16)
+                    }
+                    Divider()
+                    footer
                 }
-                .padding(16)
+                .frame(height: 460)
             }
-            Divider()
-            footer
         }
-        .frame(height: 460)
+        .frame(height: isFloatingPetSelectionPresented ? 700 : 460)
         .onAppear {
             if trainerNameDraft.isEmpty { trainerNameDraft = companion.trainerName }
+        }
+        .task {
+            // 설정 화면에서도 언어별 포켓몬 이름 보정을 기다린다. 로스터를 한 번도 열지 않은
+            // 기존 세이브는 여기서 처음으로 보정될 수 있다.
+            await companion.backfillMissingOwnedNames()
         }
     }
 
@@ -414,28 +425,85 @@ struct SettingsView: View {
                 groupRow {
                     Text(l.floatingPetSpeciesLabel).font(.callout)
                     Spacer()
-                    // 진화 라인을 하위 메뉴로 접는다 — 도감이 커지면 평평한 목록은 스크롤만 길어진다.
-                    Menu {
-                        Button(l.floatingPetSpeciesFollowsPartner) { settings.floatingPetSpeciesID = nil }
-                        ForEach(companion.dexLines) { line in
-                            Menu(line.name) {
-                                ForEach(line.species) { species in
-                                    Button(speciesMenuLabel(species)) {
-                                        settings.floatingPetSpeciesID = species.id
-                                    }
-                                }
-                            }
-                        }
+                    Button {
+                        isFloatingPetSelectionPresented = true
                     } label: {
-                        Text(floatingPetSpeciesSelectionLabel)
+                        HStack(spacing: 5) {
+                            Text(floatingPetSpeciesSelectionLabel)
+                            Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                        }
                     }
-                    .menuStyle(.borderlessButton).controlSize(.small).frame(maxWidth: 180)
+                    .buttonStyle(.borderless)
                 }
             }
         }
+}
+
+private struct FloatingPetSelectionView: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(CompanionStore.self) private var companion
+    @State private var searchText = ""
+    @State private var showSelectedOnly = false
+    let onClose: () -> Void
+
+    private var l: L { companion.l }
+    private var filteredSpecies: [CompanionStore.DexSpecies] {
+        companion.dexSpecies.filter { species in
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (query.isEmpty || species.name.localizedCaseInsensitiveContains(query) || String(species.id).contains(query))
+                && (!showSelectedOnly || settings.floatingPetSpeciesIDs.contains(species.id))
+        }
     }
 
-    @ViewBuilder
+    var body: some View {
+        @Bindable var settings = settings
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onClose) { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
+                Text(l.t("표시할 포켓몬", "Pokémon shown", "表示するポケモン")).font(.headline)
+                Spacer()
+                Button(l.floatingPetSpeciesFollowsPartner) { settings.floatingPetSpeciesIDs = [] }
+                    .buttonStyle(.borderless).font(.caption)
+            }.padding(12)
+            Divider()
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField(l.t("이름 또는 도감번호 검색", "Search name or Pokédex number", "名前または図鑑番号を検索"), text: $searchText)
+                    .textFieldStyle(.plain)
+                Toggle(l.t("선택됨", "Selected", "選択中"), isOn: $showSelectedOnly)
+                    .toggleStyle(.checkbox).font(.caption)
+            }.padding(10)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(filteredSpecies) { species in
+                        Toggle(isOn: Binding(
+                            get: { settings.floatingPetSpeciesIDs.contains(species.id) },
+                            set: { enabled in
+                                if enabled {
+                                    if !settings.floatingPetSpeciesIDs.contains(species.id) { settings.floatingPetSpeciesIDs.append(species.id) }
+                                } else { settings.floatingPetSpeciesIDs.removeAll { $0 == species.id } }
+                            })) {
+                                HStack(spacing: 8) {
+                                    Text(String(format: "%03d", species.id)).font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 30, alignment: .trailing)
+                                    Text(species.isShiny ? "✨ \(species.name)" : species.name)
+                                    Spacer()
+                                }
+                            }
+                            .toggleStyle(.checkbox).padding(.horizontal, 14).padding(.vertical, 7)
+                        Divider().padding(.leading, 52)
+                    }
+                }
+            }.frame(maxHeight: .infinity)
+            HStack {
+                Text(l.floatingPetSpeciesSelectedCount(settings.floatingPetSpeciesIDs.count)).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(l.t("완료", "Done", "完了"), action: onClose).buttonStyle(.borderedProminent).controlSize(.small)
+            }.padding(12)
+        }.frame(height: 700)
+    }
+}
+
+@ViewBuilder
     private func notificationsGroup(_ settings: AppSettings) -> some View {
         @Bindable var settings = settings
         settingsSection(l.notificationsSection) {
