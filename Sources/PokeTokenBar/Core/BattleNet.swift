@@ -1971,6 +1971,20 @@ final class BattleCenter {
     private func connectionDropped() {
         guard connection != nil else { return }
         connection = nil
+        finishForDroppedConnection()
+    }
+
+    #if DEBUG
+    /// 단위 테스트가 끊김 판정·정산 경로를 연결 없이 밟는 진입점 — 프로덕션과 **같은 함수**를 부른다.
+    /// 판정을 테스트가 직접 계산하면 프로덕션이 다른 상태를 봐도 초록이라, 판정 근거를 되돌리는
+    /// 회귀를 못 잡는다(defect-log: "테스트가 프로덕션 경로 대신 자기 디버그 훅의 사본을 밟는 부류").
+    func dropConnectionForTesting() {
+        connection = nil
+        finishForDroppedConnection()
+    }
+    #endif
+
+    private func finishForDroppedConnection() {
         cancelChallengeTimeout()
         cancelTurnTimeout()   // 상대가 사라진 뒤에 마감이 돌면 이미 끝난 배틀에 기술을 보낸다
         switch phase {

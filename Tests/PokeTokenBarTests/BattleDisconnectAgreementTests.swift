@@ -114,6 +114,54 @@ final class BattleDisconnectAgreementTests: XCTestCase {
         XCTAssertNil(ledger.agreedState, "확인되지 않은 턴으로 판정하면 다시 갈라진다")
     }
 
+    // MARK: 프로덕션 경로 — `connectionDropped` 이 실제로 합의 상태를 보는가
+
+    @MainActor
+    private func stagedCenter(_ state: NetBattleState) -> BattleCenter {
+        let store = CompanionStore(
+            provider: StubProvider(value: EvoLine(baseID: 1, tree: .init(speciesID: 1, children: []),
+                                                  rarity: .common, names: [:])),
+            clock: { Date() },
+            fileURL: storeStateURL("disconnect-agreement"),
+            rng: SeededRNG(seed: 1))
+        let center = BattleCenter(companion: store)
+        center.phase = .battling
+        center.stageBattleForTesting(state)
+        return center
+    }
+
+    /// **판정 근거를 되돌리면 여기서 걸린다.** 지금 상태(150 대 100)로 보면 내가 이기고, 합의된 턴
+    /// (40 대 100)으로 보면 내가 진다. 두 값을 일부러 반대로 놓아, `connectionDropped` 이 어느 쪽을
+    /// 읽는지가 결과를 가르게 한다 — 둘이 같은 픽스처를 쓰면 근거를 되돌려도 초록이다.
+    @MainActor
+    func testTheDroppedConnectionVerdictReadsTheAgreedStateNotTheLiveOne() {
+        var state = NetBattleState(iAmA: true, myTeam: [side(hp: 150)], oppTeam: [side(hp: 100)],
+                                   rng: SplitMix64(seed: 7))
+        state.agreement.recordResolved(turn: 3, me: [side(hp: 40)], opp: [side(hp: 100)])
+        state.agreement.recordPeerResolved(3)
+        state.myAction = .move(index: 0)
+
+        let center = stagedCenter(state)
+        center.dropConnectionForTesting()
+
+        XCTAssertEqual(center.phase, .finished(iWon: false, byForfeit: false),
+                       "지금 상태로 판정하면 이긴 것으로 나온다 — 그러면 상대도 이겨서 판돈이 두 번 나간다")
+    }
+
+    /// 아직 아무것도 합의되지 않은 채 끊기면 판정하지 않는다 — 환급 경로(`iWon: nil`)로 간다.
+    @MainActor
+    func testDroppingBeforeAnyTurnIsAgreedProducesNoVerdict() {
+        var state = NetBattleState(iAmA: true, myTeam: [side(hp: 150)], oppTeam: [side(hp: 100)],
+                                   rng: SplitMix64(seed: 7))
+        state.myAction = .move(index: 0)
+
+        let center = stagedCenter(state)
+        center.dropConnectionForTesting()
+
+        XCTAssertEqual(center.phase, .finished(iWon: nil, byForfeit: false),
+                       "확인된 턴이 없으면 두 피어가 같은 상태를 봤다는 근거가 없다 — 환급이다")
+    }
+
     /// 보관함이 배틀 내내 자라면 긴 배틀에서 메모리를 먹는다. 합의된 턴보다 오래된 것은 버린다.
     func testOlderTurnsAreDroppedOnceTheyAreAgreed() {
         var ledger = BattleEngine.AgreedTurnLedger()
