@@ -190,15 +190,20 @@ struct TUIRenderTests {
     /// 목록에도 **지금 누를 수 있는 키만** 보여 준다. 대상이 없는 화면(도감)에는 커서 동작 키를
     /// 싣지 않는다 — 눌러도 아무 일이 없는 키를 권하는 것은 안내가 아니라 함정이다.
     @Test func testListHintsOnlyOfferWhatTheScreenCanDo() {
-        #expect(TUIRender.listHints(screen: .party, canActOnSelection: true).contains("s 교체"))
-        #expect(TUIRender.listHints(screen: .bag, canActOnSelection: true).contains("u 쓰기"))
-        #expect(!TUIRender.listHints(screen: .dex, canActOnSelection: true).contains("s 교체"))
-        #expect(!TUIRender.listHints(screen: .dex, canActOnSelection: true).contains("u 쓰기"))
+        #expect(TUIRender.listHintLines(screen: .party, canActOnSelection: true, width: 70)
+            .joined(separator: " ").contains("s 교체"))
+        #expect(TUIRender.listHintLines(screen: .bag, canActOnSelection: true, width: 70)
+            .joined(separator: " ").contains("u 쓰기"))
+        #expect(!TUIRender.listHintLines(screen: .dex, canActOnSelection: true, width: 70)
+            .joined(separator: " ").contains("s 교체"))
+        #expect(!TUIRender.listHintLines(screen: .dex, canActOnSelection: true, width: 70)
+            .joined(separator: " ").contains("u 쓰기"))
     }
 
     /// 커서가 대상이 될 수 없으면(빈 목록·이미 나와 있는 개체) 그 키도 빠진다.
     @Test func testListHintsDropCursorActionsWhenTheRowCannotBeActedOn() {
-        let hints = TUIRender.listHints(screen: .party, canActOnSelection: false)
+        let hints = TUIRender.listHintLines(screen: .party, canActOnSelection: false, width: 70)
+            .joined(separator: " ")
         #expect(!hints.contains("s 교체"))
         #expect(!hints.contains("R 놓아주기"))
         #expect(hints.contains("이동"), "이동·나가기는 언제나 남는다")
@@ -278,6 +283,32 @@ struct TUIRenderTests {
     /// 끝난 모험에서는 정산이 다음 수다.
     @Test func testAFinishedAdventureOffersClaiming() {
         #expect(TUIRender.sessionHints(adventuring(remainingSeconds: 0)).contains("c 보상 받기"))
+    }
+
+    /// **화면이 늘어도 나가는 방법은 화면에 남는다.** 한 줄로 이어 붙이고 자르면 넘친 오른쪽이
+    /// 조용히 사라진다 — 대전 화면을 더한 순간 이동 키 목록이 70칸을 넘겨 `q 종료` 가 잘려
+    /// 나갔다(그러면 raw mode 에 갇힌 사용자가 나갈 길을 화면에서 찾을 수 없다).
+    @Test func testTheQuitKeyStaysVisibleAsScreensAreAdded() {
+        for width in [40, 60, 70, 100] {
+            let lines = TUIRender.screenHintLines(current: .home, width: width)
+            #expect(lines.joined(separator: " ").contains("q 종료"),
+                    "폭 \(width) 에서 종료 키가 사라졌다")
+            for line in lines {
+                #expect(TUIText.displayWidth(line) <= width, "폭 \(width) 에서 넘친 줄: \(line)")
+            }
+        }
+    }
+
+    /// 안내 조각은 **폭을 넘기지 않게 접힌다.** 조각 하나가 폭보다 길면 그것만 잘린다 —
+    /// 줄일 수 있는 값이 아니기 때문이다.
+    @Test func testHintLinesWrapInsteadOfOverflowing() {
+        let entries = ["a 하나", "b 둘", "c 셋", "d 넷"]
+        let packed = TUIRender.hintLines(entries, width: 12)
+        #expect(packed.count > 1, "한 줄에 다 들어가면 이 테스트가 아무것도 안 지킨다")
+        for line in packed { #expect(TUIText.displayWidth(line) <= 12) }
+        // 조각은 하나도 빠지지 않는다 — 접는 것이지 버리는 것이 아니다.
+        let joined = packed.joined(separator: " ")
+        for entry in entries { #expect(joined.contains(entry)) }
     }
 
     /// `status` 처럼 한 번 찍고 끝나는 출력에는 키 안내를 붙이지 않는다 — 누를 곳이 없는 키를

@@ -274,7 +274,8 @@ struct PokedoroCommandTests {
     /// 알아보고 **어디서 하는지** 답해야 한다 — "알 수 없는 명령" 으로 뭉개면 사용자는 오타를
     /// 의심하며 같은 명령을 다시 친다.
     @Test func testAppOnlyCommandsExplainWhereTheyLive() {
-        for name in ["battle", "trade", "auction", "home", "raid"] {
+        // `battle` 은 이 목록에서 빠졌다 — 터미널이 대전을 보고 턴을 낸다(Phase 5-2).
+        for name in ["trade", "auction", "home", "raid"] {
             #expect(throws: PokedoroCommandError.appOnlyFeature(name)) {
                 try parse([name])
             }

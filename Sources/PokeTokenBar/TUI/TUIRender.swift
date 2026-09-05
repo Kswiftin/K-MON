@@ -106,34 +106,61 @@ enum TUIRender {
         }, width: width)
     }
 
-    /// 이동 키 안내. **지금 화면 키는 뺀다** — 눌러도 아무 일도 안 하는 키를 권하는 셈이다.
+    /// 안내 조각들을 **폭에 맞게 여러 줄로** 접는다.
+    ///
+    /// 한 줄로 이어 붙이고 `truncate` 에 맡기면 넘친 오른쪽이 **조용히 사라진다.** 화면을 하나
+    /// 더한 순간 실제로 그랬다: 이동 키 목록이 70칸을 넘겨 `q 종료` 가 잘려 나가, 나가는 방법이
+    /// 화면에서 없어졌다. 조각 하나가 폭보다 길면 그 조각만 잘린다(그건 줄일 수 있는 값이 아니다).
+    static func hintLines(_ entries: [String], width: Int) -> [String] {
+        guard width > 0 else { return [] }
+        let gap = "  "
+        var lines: [String] = []
+        var current = ""
+        for entry in entries {
+            let candidate = current.isEmpty ? entry : current + gap + entry
+            if current.isEmpty || TUIText.displayWidth(candidate) <= width {
+                current = candidate
+            } else {
+                lines.append(current)
+                current = entry
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+        return lines.map { TUIText.truncate($0, to: width) }
+    }
+
+    /// 이동 키 안내 조각. **지금 화면 키는 뺀다** — 눌러도 아무 일도 안 하는 키를 권하는 셈이다.
     ///
     /// 키와 이름을 `TUIScreen` 에서 읽는 이유는 키 표(`TUIKeymap`)와 같은 값을 보게 하기
     /// 위해서다. 손으로 적으면 안내에 있는 키가 안 먹거나, 먹는 키가 안내에 없다.
-    static func screenHints(current: TUIScreen) -> String {
-        TUIScreen.allCases
-            .filter { $0 != current }
-            .map { "\($0.key) \($0.title)" }
-            .joined(separator: "  ")
-            + "  r 새로고침  q 종료"
+    ///
+    /// **나가는 키를 앞에 둔다.** 폭이 아주 좁아 한 조각씩 잘릴 때도 `q 종료` 는 첫 줄에 남는다.
+    static func screenHintEntries(current: TUIScreen) -> [String] {
+        ["q 종료", "r 새로고침"]
+            + TUIScreen.allCases.filter { $0 != current }.map { "\($0.key) \($0.title)" }
+    }
+
+    static func screenHintLines(current: TUIScreen, width: Int) -> [String] {
+        hintLines(screenHintEntries(current: current), width: width)
     }
 
     /// 목록 화면의 키 안내. **지금 누를 수 있는 것만** 보여 준다(홈의 `sessionHints` 와 같은 규칙).
     ///
     /// `canActOnSelection` 이 거짓이면 커서 동작 키를 뺀다 — 빈 목록이거나, 커서가 이미 나와 있는
     /// 개체를 가리키는 경우다. 눌러도 거절만 돌아오는 키를 권하면 그건 안내가 아니라 함정이다.
-    static func listHints(screen: TUIScreen, canActOnSelection: Bool) -> String {
+    static func listHintLines(screen: TUIScreen, canActOnSelection: Bool,
+                              width: Int) -> [String] {
         var keys = ["↑↓/jk 이동"]
         if canActOnSelection {
             switch screen {
             case .party: keys += ["s 교체", "R 놓아주기"]
             case .bag: keys += ["u 쓰기"]
-            // 판 화면(홈·웨이브)은 목록이 아니라 이 안내를 쓰지 않는다. 웨이브의 키 안내는
-            // 국면마다 달라서 `WaveRunScreen.hints` 가 만든다.
-            case .home, .dex, .challenge, .goals, .wave: break
+            // 판 화면(홈·웨이브·대전)은 목록이 아니라 이 안내를 쓰지 않는다. 그쪽 키 안내는
+            // 국면마다 달라서 각자의 화면 투영이 만든다.
+            case .home, .dex, .challenge, .goals, .wave, .battle: break
             }
         }
-        return keys.joined(separator: "  ") + "   " + screenHints(current: screen)
+        return hintLines(keys + screenHintEntries(current: screen), width: width)
     }
 
     /// 되돌릴 수 없는 동작이 답을 기다리는 줄. **다른 키를 함께 띄우지 않는다** — 그 키를 누르면
@@ -193,7 +220,7 @@ enum TUIRender {
             // **지금 누를 수 있는 키만** 보여 준다. 상태와 무관하게 다 나열하면 사용자가 먹지도
             // 않는 키를 누르고 화면은 거절 사유로 답한다 — 그건 안내가 아니라 함정이다.
             lines.append(TUIText.truncate(sessionHints(model), to: inner))
-            lines.append(TUIText.truncate(screenHints(current: .home), to: inner))
+            lines += screenHintLines(current: .home, width: inner)
         }
         return lines
     }

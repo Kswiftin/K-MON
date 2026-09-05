@@ -27,7 +27,7 @@ final class TUIWatch {
     /// 이 화면의 신원. 앱이 여러 터미널을 구분할 필요는 아직 없지만, 신호가 누구 것인지 적어 두면
     /// 나중에 붙은 쪽을 셀 수 있다.
     private let attachmentID = UUID()
-    /// 앱이 내놓은 지금 화면. **세이브에 없는 값**(집중 타이머 등)은 이 경로로만 온다.
+    /// 앱이 내놓은 지금 화면. **세이브에 없는 값**(집중 타이머·LAN 대전)은 이 경로로만 온다.
     private var appView: PokedoroViewSnapshot?
 
     init(store: CompanionStore) {
@@ -134,6 +134,15 @@ final class TUIWatch {
                 confirmation = ("웨이브 \(run.wave) 까지 온 판을 버린다 — 되돌릴 수 없다",
                                 .waveForfeit)
             }
+        case .battleChoice(let number):
+            // 대전 판은 세이브에 없다 — **앱이 보낸 화면의 키 안내**가 무엇을 누를 수 있는지
+            // 말해 주므로, 여기서는 그 번호를 그대로 요청으로 보낸다. 목록 밖 번호는 앱이
+            // 거절하고 사유를 답한다(제안 ⊆ 실행 가능은 앱 쪽에서 지킨다).
+            request(.battleMove(move: number))
+        case .forfeitBattle:
+            confirmation = ("이 대전을 항복한다 — 되돌릴 수 없다", .battleForfeit)
+        case .declineBattle:
+            request(.battleDecline)
         case .confirm:
             if let action = confirmation?.action { request(action) }
             confirmation = nil
@@ -169,7 +178,7 @@ final class TUIWatch {
         case .party: selectedMon().map { !$0.isActive } ?? false
         case .bag: selectedItem() != nil
         // 판 화면에는 커서가 없다 — 웨이브의 선택은 숫자 키이고 유효성은 `WaveRunScreen` 이 본다.
-        case .home, .dex, .challenge, .goals, .wave: false
+        case .home, .dex, .challenge, .goals, .wave, .battle: false
         }
     }
 
@@ -231,7 +240,7 @@ final class TUIWatch {
     private func rows() -> [String] {
         let width = TUIRender.listRowWidth(terminal.size.width)
         switch screen {
-        case .home, .wave: return []
+        case .home, .wave, .battle: return []
         case .party: return PokedoroCLI.partyRows(store)
         case .dex: return PokedoroCLI.dexRows(store)
         case .bag: return PokedoroCLI.bagRows(store, width: width)
@@ -263,7 +272,29 @@ final class TUIWatch {
             let hint = confirmation.map { TUIRender.confirmationHint(question: $0.question) }
                 ?? WaveRunScreen.hints(store.rogueRun)
             lines.append(TUIText.truncate(hint, to: size.width))
-            lines.append(TUIText.truncate(TUIRender.screenHints(current: .wave), to: size.width))
+            lines += TUIRender.screenHintLines(current: .wave, width: size.width)
+        case .battle:
+            // **앱이 만든 줄을 그대로 그린다.** 대전 판은 `BattleCenter` 에만 살아 터미널이
+            // 스스로 조립할 수 없다 — 웨이브 런과 갈리는 지점이다(그쪽은 세이브에서 읽는다).
+            if let view = appView, view.screen == "battle" {
+                lines = [TUIRender.row(left: view.title, right: "", width: size.width),
+                         TUIRender.rule(width: size.width)]
+                lines += view.lines.map { TUIText.truncate($0, to: size.width) }
+                lines.append(TUIRender.rule(width: size.width))
+                if let status { lines.append(TUIText.truncate(status, to: size.width)) }
+                let hint = confirmation.map { TUIRender.confirmationHint(question: $0.question) }
+                    ?? view.keys.joined(separator: "   ")
+                lines.append(TUIText.truncate(hint, to: size.width))
+            } else {
+                // 붙었는데도 대전 화면이 안 오면 **앱이 대전을 들고 있지 않다는 뜻**이다.
+                // 빈 화면을 그리면 사용자는 터미널이 고장난 줄 안다.
+                lines = [TUIRender.row(left: TUIScreen.battle.title, right: "", width: size.width),
+                         TUIRender.rule(width: size.width),
+                         TUIText.truncate("진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.",
+                                          to: size.width)]
+                if let status { lines.append(TUIText.truncate(status, to: size.width)) }
+            }
+            lines += TUIRender.screenHintLines(current: .battle, width: size.width)
         case .party, .dex, .bag, .challenge, .goals:
             // 머리글 2줄 + 바닥글 2줄을 빼고 남는 만큼이 목록 창이다.
             let listHeight = max(1, size.height - 5)
@@ -274,9 +305,14 @@ final class TUIWatch {
             lines += TUIRender.list(rows: rows(), selection: selection,
                                     height: listHeight, width: size.width)
             lines.append(TUIRender.rule(width: size.width))
-            let hint = confirmation.map { TUIRender.confirmationHint(question: $0.question) }
-                ?? TUIRender.listHints(screen: screen, canActOnSelection: canActOnSelection())
-            lines.append(TUIText.truncate(hint, to: size.width))
+            if let confirmation {
+                lines.append(TUIText.truncate(
+                    TUIRender.confirmationHint(question: confirmation.question), to: size.width))
+            } else {
+                lines += TUIRender.listHintLines(screen: screen,
+                                                 canActOnSelection: canActOnSelection(),
+                                                 width: size.width)
+            }
         }
         terminal.draw(lines, height: size.height)
     }

@@ -130,6 +130,9 @@ LOGIC_CORE=(
   # 웨이브 런을 터미널 한 판으로 접는 순수 투영. **숫자 키가 무엇이 되는지**(국면별 표)와
   # "제안 ⊆ 실행 가능" 검사가 여기 있고, 게이트 밖에 두면 국면 하나를 빠뜨려도 아무 신호가 없다.
   "Sources/PokeTokenBar/TUI/WaveRunScreen.swift"
+  # LAN 대전을 터미널 한 판으로 접는 순수 투영. 국면별 숫자 키 표와 "제안 ⊆ 실행 가능" 검사가
+  # 여기 있고, 게이트 밖에 두면 국면 하나를 빠뜨려도 아무 신호가 없다(웨이브 런과 같은 이유).
+  "Sources/PokeTokenBar/TUI/NetBattleScreen.swift"
   # 집중 세션 세 동작의 거절 판정표. 화면·대화·터미널이 **같은 표**를 읽는 자리라 게이트 밖에
   # 두면 한 프런트엔드만 통과하는 분기(휴식 단독·정산 대기 단독)가 무테스트로 나간다.
   "Sources/PokeTokenBar/Core/PokedoroSessionGate.swift"

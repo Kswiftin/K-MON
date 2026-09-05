@@ -52,10 +52,14 @@ struct PokedoroViewChannelTests {
 
     /// **같은 화면은 다시 쓰지 않는다.** 연출 프레임마다 쓰면 디스크가 갈리고, 터미널은 바뀐 게
     /// 없는데도 매번 다시 그린다. 시각만 다른 것은 "바뀐 것" 이 아니다.
+    ///
+    /// 단 **갱신 주기까지**다. 그 뒤로는 내용이 같아도 한 번 다시 쓴다 — 안 쓰면 안 바뀌는
+    /// 화면(상대를 기다리는 대전)이 낡음 판정에 걸려 터미널에서 사라진다
+    /// (`NetBattleTerminalTests.testAnUnchangedScreenIsRefreshedBeforeItGoesStale`).
     @Test func testAnUnchangedScreenIsNotWrittenAgain() {
         let first = snapshot(["HP 30/30"])
-        let sameButLater = snapshot(["HP 30/30"], at: 5)
-        #expect(!PokedoroViewChannel.shouldWrite(sameButLater, lastWritten: first))
+        let sameButSoon = snapshot(["HP 30/30"], at: PokedoroViewChannel.refreshInterval / 2)
+        #expect(!PokedoroViewChannel.shouldWrite(sameButSoon, lastWritten: first))
     }
 
     @Test func testAChangedScreenIsWritten() {

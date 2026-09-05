@@ -58,6 +58,24 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// **되돌릴 수 없다** — 판이 사라진다. 확인은 방생과 같이 명령 쪽에서 받는다.
         case waveForfeit
 
+        // MARK: LAN 1대1 대전
+        //
+        // 웨이브 런과 달리 판이 세이브에 없다 — `BattleCenter` 가 든다. 그래서 **볼 때도 앱이
+        // 떠 있어야** 하고(화면 채널), 여기 오는 동작도 전부 그 객체를 지난다.
+        //
+        // 신청·수락·파티 편성은 없다. 상대를 찾는 일은 소켓이고, 수락은 6마리 후보를 고르는
+        // 화면으로 이어진다 — 터미널에 입력 줄이 없어 그 화면을 대신할 방법이 없다.
+
+        /// 기술 번호(1부터). 어느 개체가 쓰는지는 앱이 안다(`NetBattleState.myActive`).
+        case battleMove(move: Int)
+        /// 팀 번호(1부터)로 교체. 쓰러진 자리를 메우는 교체는 **턴을 쓰지 않는다**
+        /// (`NetBattleState.replaceFainted`) — 어느 쪽인지도 앱이 판단한다.
+        case battleSwitch(number: Int)
+        /// **되돌릴 수 없다** — 그 판을 지고 랭크 판돈도 넘어간다.
+        case battleForfeit
+        /// 받은 신청을 거절한다. **확인을 받지 않는다** — 되돌릴 수 있는 일이다(상대가 다시 건다).
+        case battleDecline
+
         /// 파일에 적히는 이름.
         var name: String {
             switch self {
@@ -78,6 +96,10 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .wavePick: "wave.pick"
             case .waveRoute: "wave.route"
             case .waveForfeit: "wave.forfeit"
+            case .battleMove: "battle.move"
+            case .battleSwitch: "battle.switch"
+            case .battleForfeit: "battle.forfeit"
+            case .battleDecline: "battle.decline"
             }
         }
 
@@ -105,7 +127,10 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .waveBall(let target): target.map(String.init)
             case .wavePick(let number): String(number)
             case .waveRoute(let route): route.rawValue
-            case .claim, .stop, .evolve, .hatch, .waveForfeit: nil
+            case .battleMove(let move): String(move)
+            case .battleSwitch(let number): String(number)
+            case .claim, .stop, .evolve, .hatch, .waveForfeit,
+                 .battleForfeit, .battleDecline: nil
             }
         }
 
@@ -193,6 +218,14 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 guard let argument, let route = RunRoute(rawValue: argument) else { return nil }
                 self = .waveRoute(route)
             case "wave.forfeit" where argument == nil: self = .waveForfeit
+            case "battle.move":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .battleMove(move: number)
+            case "battle.switch":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .battleSwitch(number: number)
+            case "battle.forfeit" where argument == nil: self = .battleForfeit
+            case "battle.decline" where argument == nil: self = .battleDecline
             default: return nil
             }
         }
