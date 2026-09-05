@@ -9,12 +9,17 @@ struct CompanionStorageLocations: Sendable {
     /// 진행 중인 웨이브 런. **세이브 본체와 다른 파일이다** — 런은 재화도 도감도 주지 않으므로
     /// 무결성 서명·세이브 이전(migration) 경로에 닿지 않는다는 결정을 그대로 지킨다.
     static let waveRunFileName = "wave-run.json"
+    /// 마친 집중 세션 기록. 웨이브 런과 같은 이유로 **세이브 본체와 다른 파일이다** — 세션 기록은
+    /// 재화도 도감도 주지 않는 자기 계측 데이터라 무결성 서명·세이브 이전 경로에 닿지 않는다.
+    /// 대신 이 디렉토리 안에 있으므로 `PTB_STATE_DIR` 프로필 격리는 그대로 받는다.
+    static let focusSessionsFileName = "focus-sessions.json"
 
     let directory: URL
     var stateURL: URL { directory.appendingPathComponent(Self.stateFileName) }
     var memoryURL: URL { directory.appendingPathComponent(Self.memoryFileName) }
     var chatURL: URL { directory.appendingPathComponent(Self.chatFileName) }
     var waveRunURL: URL { directory.appendingPathComponent(Self.waveRunFileName) }
+    var focusSessionsURL: URL { directory.appendingPathComponent(Self.focusSessionsFileName) }
 
     /// 기본은 Application Support/PokeTokenBar. `PTB_STATE_DIR` 가 있으면 그 디렉토리를 쓴다 —
     /// 개발/QA 격리용(실제 companion 상태를 건드리지 않고 데모 상태로 실행). 프로덕션은 무영향.

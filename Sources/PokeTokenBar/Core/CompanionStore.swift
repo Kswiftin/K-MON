@@ -215,6 +215,8 @@ final class CompanionStore {
     private let fileURL: URL
     /// 진행 중인 웨이브 런 파일 — 상태 파일 옆이다(`CompanionStorageLocations`).
     private let waveRunURL: URL
+    /// 마친 집중 세션 기록 파일 — 같은 이유로 상태 파일 옆이다.
+    private let focusSessionsURL: URL
     let memoryAlbum: PokemonMemoryAlbum
     let chatStore: PokemonChatStore
     private var rng: any RandomNumberGenerator
@@ -252,6 +254,7 @@ final class CompanionStore {
                                   isReadOnly: isReadOnly)
         // 진행 중인 런도 상태 파일 옆에 산다 — 주입된 URL(테스트·임베딩)의 디렉토리를 따라간다.
         self.waveRunURL = directory.appendingPathComponent(CompanionStorageLocations.waveRunFileName)
+        self.focusSessionsURL = directory.appendingPathComponent(CompanionStorageLocations.focusSessionsFileName)
         self.chatStore = chatStore
             ?? PokemonChatStore(fileURL: directory.appendingPathComponent(CompanionStorageLocations.chatFileName),
                                 album: self.memoryAlbum, isReadOnly: isReadOnly)
@@ -259,6 +262,7 @@ final class CompanionStore {
         self.dittoDisguiseRollingEnabled = dittoDisguiseRollingEnabled
         load()
         loadRogueRun()
+        loadFocusSessions()
         // 읽기 전용은 **디스크를 읽는 데서 끝난다.** 아래 정리·정산은 전부 "앱이 죽은 사이에
         // 밀린 일" 이라는 전제 위에 있는데, 그 전제는 이 세이브를 여는 프로세스가 하나일 때만
         // 참이다. 메뉴바 앱이 켜져 있는 동안 터미널이 같은 파일을 열면 진행 중인 랭크전이 패배로
@@ -1646,6 +1650,9 @@ final class CompanionStore {
     /// 보상 계산은 claimAdventure() 한 곳에만 있다 — 여기서 따로 더하면 이중 지급이 된다.
     @discardableResult
     func completeFocusSession(minutes: Int, roll: Int? = nil) -> FocusSessionReward {
+        // 기록이 **먼저**다. 정산 아래에 두면 정산할 모험이 없는 세션(위 guard 로 빠지는 경로)이
+        // 통째로 기록에서 빠져, 지표가 "모험을 보낸 세션" 만 세게 된다.
+        focusSessions.record(minutes: minutes, at: clock())
         guard let reward = claimAdventure() else {
             save()
             return FocusSessionReward(minutes: minutes, stardust: 0, foundEgg: false)
@@ -2475,6 +2482,46 @@ final class CompanionStore {
             return
         }
         rogueRun = restored
+    }
+
+    // MARK: 집중 세션 기록
+
+    /// 마친 집중 세션 원장. 웨이브 런과 같은 형태다 — 값 타입을 꺼내 바꾸고 되넣으므로 쓰기를
+    /// `didSet` 한 곳에 모은다. 저장을 호출자에게 맡기면 한 경로만 빠져도 그 세션이 통째로 사라진다.
+    private(set) var focusSessions = FocusSessionLog() { didSet { persistFocusSessions() } }
+
+    /// 오늘 마친 세션 수. 화면과 터미널이 **이 값 하나**를 본다 —
+    /// `FocusTimer.completedSessions` 는 프로세스 수명 카운터라 재기동에 0이 되고 자정도 모른다.
+    var focusSessionsToday: Int { focusSessions.count(on: Self.dayKey(clock())) }
+
+    /// 오늘 집중한 분.
+    var focusMinutesToday: Int { focusSessions.minutes(on: Self.dayKey(clock())) }
+
+    private func persistFocusSessions() {
+        guard !isReadOnly else { return }
+        do {
+            let data = try FocusSessionLog.encoder.encode(focusSessions)
+            try data.write(to: focusSessionsURL, options: .atomic)
+        } catch {
+            // 조용히 삼키면 "오늘 3세션" 이 다음 기동에 0이 된 이유가 아무 데도 남지 않는다.
+            AppLog.write("focus session log save failed: \(error)")
+            saveFailed = true
+        }
+    }
+
+    /// 기동 시 되살린다. 복원 못 할 파일은 **지운다** — 그대로 두면 켤 때마다 같은 실패를 반복하고,
+    /// 기록이 다시 쌓이기 시작한다는 것을 사용자는 화면에서 알 수 없다.
+    ///
+    /// 로드 직후 정규화한다 — 이 파일은 무결성 서명 밖이라 여기가 신뢰경계다.
+    private func loadFocusSessions() {
+        guard let data = try? Data(contentsOf: focusSessionsURL) else { return }
+        guard var restored = try? FocusSessionLog.decoder.decode(FocusSessionLog.self, from: data) else {
+            AppLog.write("focus session log could not be restored — discarding")
+            try? FileManager.default.removeItem(at: focusSessionsURL)
+            return
+        }
+        restored.normalize(now: clock())
+        focusSessions = restored
     }
 
     /// 웨이브 런 실적. 판 밖으로 남는 것은 이 값 하나다 — 재화도 도감도 주지 않는다.
