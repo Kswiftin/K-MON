@@ -39,3 +39,6 @@ docs/*
 
 # Local-only review-gate opt-out (not published)
 .no-review-gate
+
+# Showdown/PokeAPI extraction cache (scripts/extract-showdown-moves.mjs)
+.cache/
