@@ -417,13 +417,11 @@ struct SettingsView: View {
                     // 진화 라인을 하위 메뉴로 접는다 — 도감이 커지면 평평한 목록은 스크롤만 길어진다.
                     Menu {
                         Button(l.floatingPetSpeciesFollowsPartner) { settings.floatingPetSpeciesID = nil }
-                        ForEach(companion.dexLines) { line in
-                            Menu(line.name) {
-                                ForEach(line.species) { species in
-                                    Button(speciesMenuLabel(species)) {
-                                        settings.floatingPetSpeciesID = species.id
-                                    }
-                                }
+                        ForEach(companion.dexSpecies.sorted {
+                            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                        }) { species in
+                            Button(speciesMenuLabel(species)) {
+                                settings.floatingPetSpeciesID = species.id
                             }
                         }
                     } label: {

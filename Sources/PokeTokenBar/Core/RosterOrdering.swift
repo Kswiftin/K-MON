@@ -17,6 +17,30 @@ enum RosterSort: String, CaseIterable, Sendable {
 /// 뷰가 미리 해석해 넘긴다(여기서 네트워크를 타지 않는다).
 enum RosterOrdering {
 
+    /// 같은 현재 도감 번호가 둘 이상인 종의 번호. 필터 결과에서 다시 세면 검색어나 타입을 바꿀
+    /// 때마다 중복 판정 자체가 달라지므로, 반드시 소유 목록 전체를 받아 계산한다.
+    static func duplicateSpeciesIDs(in mons: [MonState]) -> Set<Int> {
+        let counts = Dictionary(grouping: mons, by: \.currentID).mapValues(\.count)
+        return Set(counts.compactMap { $0.value > 1 ? $0.key : nil })
+    }
+
+    /// 포켓몬을 **고르는** 화면의 공통 가나다순. 포켓몬 탭은 사용자가 고른 정렬을 유지하지만,
+    /// 배틀·교환·경매 같은 선택기는 어디서 열어도 같은 이름 순서여야 한다.
+    /// 별명이 화면에 보이면 별명을 정렬 키로 삼아 표시와 순서를 일치시킨다.
+    static func alphabetizedForSelection(_ mons: [MonState], language: AppLanguage,
+                                          names: [Int: String] = [:]) -> [MonState] {
+        Array(mons.enumerated()).sorted { left, right in
+            let leftName = left.element.nickname
+                ?? names[left.element.currentID] ?? names[left.element.presentationID]
+                ?? displayName(left.element, language: language)
+            let rightName = right.element.nickname
+                ?? names[right.element.currentID] ?? names[right.element.presentationID]
+                ?? displayName(right.element, language: language)
+            let order = leftName.localizedStandardCompare(rightName)
+            return order == .orderedSame ? left.offset < right.offset : order == .orderedAscending
+        }.map(\.element)
+    }
+
     /// 카드에 그리는 이름과 **같은** 문자열. 개체에 저장된 다국어 이름(`MonState.names`)에서 꺼내고,
     /// 없으면 `#종번호`. 정렬 키를 화면과 다른 값으로 잡으면 "이름순인데 순서가 이상하다"가 된다.
     ///

@@ -520,7 +520,8 @@ private struct MemoryHomeWindowView: View {
             }
             HStack {
                 Menu(l.t("룸메이트", "Roommates", "ルームメイト")) {
-                    ForEach(store.ownedMons.filter { $0.id != mon.id }) { candidate in
+                    ForEach(RosterOrdering.alphabetizedForSelection(
+                        store.ownedMons.filter { $0.id != mon.id }, language: store.language)) { candidate in
                         let included = album.memoryHomeAccess.roommateIDs.contains(candidate.id)
                         Button {
                             setRoommate(candidate.id, included: !included)

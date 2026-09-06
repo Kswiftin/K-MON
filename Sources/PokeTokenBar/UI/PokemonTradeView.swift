@@ -84,7 +84,7 @@ struct PokemonTradeView: View {
         let roster = center.remoteRoster.filter {
             PokemonNameSearch.matches(remoteSearchText, names: [$0.displayName] +
                                       PokemonNameSearch.names(for: $0.mon))
-        }
+        }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         return VStack(alignment: .leading, spacing: 10) {
             Text(store.l.t("\(peer)님의 포켓몬", "\(peer)'s Pokémon", "\(peer)のポケモン"))
                 .font(.headline)
@@ -147,7 +147,7 @@ struct PokemonTradeView: View {
         let remoteRoster = center.remoteRoster.filter {
             PokemonNameSearch.matches(remoteSearchText, names: [$0.displayName] +
                                       PokemonNameSearch.names(for: $0.mon))
-        }
+        }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         return VStack(spacing: 12) {
             Text(store.l.t("\(peer)님과 교환", "Trading with \(peer)", "\(peer)と交換"))
                 .font(.headline)
