@@ -40,15 +40,8 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
         }
     }
 
-    /// 이 티어를 잡으면 보스가 박스로 따라오나. **1★ 는 안 연다** — 400 HP 는 둘이 몇 턴에
-    /// 깨는데 추첨 풀이 전부 전설·유사전설이라, 열면 알 부화(20,000 별의조각)가 뜻을 잃는다.
-    /// 3★ 부터가 "뭉쳐야 잡힌다" 의 시작이고, HP 표가 이미 그 머릿수를 강제한다.
-    var grantsCatch: Bool {
-        switch self {
-        case .one: false
-        case .three, .five: true
-        }
-    }
+    /// 모든 티어는 성공 시 등급별 포획 판정을 연다. 티어는 난이도·재화량만 가른다.
+    var grantsCatch: Bool { true }
 
     /// 어느 티어에서도 넘지 못하는 보스 HP 천장. 와이어 디코딩이 이 값을 상한으로 쓴다 —
     /// 티어를 모르는 자리라 개별 티어 값을 쓸 수 없다.
@@ -74,8 +67,34 @@ enum RaidCatchResult: Sendable, Equatable {
     case claimedToday
     /// 보스를 세울 수 없었다(라인 조회 실패·그릴 수 없는 번호). 원장을 태우지 않아 오늘 다시 된다.
     case unavailable
+    /// 포획 판정에는 참여했지만 등급별 확률을 넘지 못했다.
+    case escaped
 
     var isCaught: Bool { self == .box || self == .companion }
+}
+
+/// 하루를 정오 기준 두 레이드로 나누는 키. 보스·보상·포획이 모두 이 키를 공유한다.
+enum RaidHalfDay: String, Sendable, CaseIterable {
+    case morning = "am", afternoon = "pm"
+
+    static func at(_ date: Date, calendar: Calendar = .current) -> Self {
+        calendar.component(.hour, from: date) < 12 ? .morning : .afternoon
+    }
+
+    static func satisfiesEvolution(_ condition: String, at date: Date,
+                                   calendar: Calendar = .current) -> Bool {
+        switch condition {
+        case "day": Self.at(date, calendar: calendar) == .morning
+        case "night": Self.at(date, calendar: calendar) == .afternoon
+        default: false
+        }
+    }
+}
+
+struct RaidCatchAttempt: Identifiable, Sendable, Equatable {
+    let id: UUID
+    let trainerName: String
+    let succeeded: Bool
 }
 
 /// 한 판의 정산 내역. **항을 나눠 들고 다니는 이유는 완전설명이다** — 지갑을 늘린 값은 화면이
@@ -142,6 +161,28 @@ enum RaidBoss {
         644, 646
     ]
 
+    /// 현재 큐레이션 풀의 공식 희귀도. 일반 등급은 레이드 풀에 없다.
+    static func rarity(speciesID: Int) -> Rarity {
+        let legendary: Set<Int> = [150, 249, 250, 384, 483, 484, 487, 643, 644, 646]
+        if legendary.contains(speciesID) { return .legendary }
+        return speciesID == 65 ? .uncommon : .rare
+    }
+
+    static func catchPercent(for rarity: Rarity) -> Int {
+        switch rarity {
+        case .legendary: 5
+        case .rare: 15
+        case .uncommon, .common: 25
+        }
+    }
+
+    static func periodKey(_ date: Date, calendar: Calendar = .current) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        let datePart = String(format: "%04d-%02d-%02d", components.year ?? 0,
+                              components.month ?? 0, components.day ?? 0)
+        return "\(datePart)-\(RaidHalfDay.at(date, calendar: calendar).rawValue)"
+    }
+
     /// 평일 해치 블록(자정으로부터의 분). 08:00–11:00 · 11:30–15:00 · 15:30–**18:15**.
     ///
     /// 사무실 시나리오를 전제한다 — 이 앱은 업무용 맥의 메뉴막대에 살고 LAN 은 대개 사내망이다.
@@ -167,7 +208,28 @@ enum RaidBoss {
     /// 오늘의 보스 종. 플레이어는 고를 수 없다 — 고르게 두면 모두가 가장 이득인 하나만 판다.
     static func speciesID(dayKey: String) -> Int {
         var rng = SplitMix64(seed: seed(dayKey: dayKey))
-        return speciesPool[Int(rng.next() % UInt64(speciesPool.count))]
+        let index = Int(rng.next() % UInt64(speciesPool.count))
+        guard dayKey.hasSuffix("-pm") else { return speciesPool[index] }
+        let morningKey = String(dayKey.dropLast(2)) + "am"
+        var morningRNG = SplitMix64(seed: seed(dayKey: morningKey))
+        let morningIndex = Int(morningRNG.next() % UInt64(speciesPool.count))
+        return speciesPool[index == morningIndex ? (index + 1) % speciesPool.count : index]
+    }
+
+    static func speciesID(at date: Date, calendar: Calendar = .current) -> Int {
+        speciesID(dayKey: periodKey(date, calendar: calendar))
+    }
+
+    /// 참가자마다 독립 포획 판정을 하되 모든 피어가 같은 순서와 결과를 계산한다.
+    static func catchAttempts(runners: [MultiplayerFighter], speciesID: Int,
+                              seed: UInt64, finishedRound: Int) -> [RaidCatchAttempt] {
+        let percent = catchPercent(for: rarity(speciesID: speciesID))
+        return runners.sorted { $0.id.uuidString < $1.id.uuidString }.enumerated().map { index, runner in
+            var rng = SplitMix64(seed: seed &+ UInt64(bitPattern: Int64(finishedRound))
+                                 &+ UInt64(index) &* 0x9E37_79B9_7F4A_7C15)
+            return RaidCatchAttempt(id: runner.id, trainerName: runner.trainerName,
+                                    succeeded: Int(rng.next() % 100) < percent)
+        }
     }
 
     /// 오늘의 5★ 부화 시각 — 자정으로부터의 **분**. 블록마다 하나씩 뽑아 오름차순으로 돌려준다.

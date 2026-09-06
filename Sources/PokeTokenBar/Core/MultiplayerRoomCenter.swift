@@ -160,6 +160,7 @@ final class MultiplayerRoomCenter {
     /// 시작되기 전에 정해지므로, 그 값으로 성공 문구를 그리면 실패한 판에서 오류 문구와 모순되는
     /// 두 문장이 한 화면에 남는다. 뽑히지 않았거나 아직 도는 중이면 nil 이다.
     private(set) var raidCatchResult: RaidCatchResult?
+    private(set) var raidCatchAttempts: [RaidCatchAttempt] = []
     /// 개시 시드. 추첨이 이 값을 쓰므로 판이 끝날 때까지 들고 있어야 한다 — `battle` 의 rng 는
     /// 라운드마다 전진해 같은 답을 두 번 못 낸다.
     private var raidSeed: UInt64 = 0
@@ -418,7 +419,7 @@ final class MultiplayerRoomCenter {
 
     /// 오늘의 보스. 방을 열기 전 화면이 미리 그린다.
     nonisolated var todaysRaidSpeciesID: Int {
-        RaidBoss.speciesID(dayKey: CompanionStore.dayKey(Date()))
+        RaidBoss.speciesID(at: Date())
     }
 
     /// 호스트가 판을 연다 — 러너를 파티 레벨로 눕히고 오늘의 보스를 세운다.
@@ -429,7 +430,7 @@ final class MultiplayerRoomCenter {
     func startRaid() {
         guard isHost, let lobby, lobby.activity == .raid, lobby.canStart,
               let tier = raidTier else { return }
-        let dayKey = CompanionStore.dayKey(Date())
+        let dayKey = RaidBoss.periodKey(Date())
         let epoch = sessionEpoch
         Task {
             guard let bossSnapshot = await raidBossSnapshot(tier: tier, dayKey: dayKey) else {
@@ -462,7 +463,8 @@ final class MultiplayerRoomCenter {
             }
             battle = started
             beginRaidCombat(fighters: fighters, seed: seed)
-            let message = MultiplayerWireMessage.raidStart(seed: seed, fighters: fighters, tier: tier)
+            let message = MultiplayerWireMessage.raidStart(seed: seed, fighters: fighters,
+                                                           tier: tier, periodKey: dayKey)
             for connection in guestConnections.values { send(message, over: connection) }
             injectBossActionIfNeeded()
             scheduleTurnTimeout()
@@ -478,7 +480,7 @@ final class MultiplayerRoomCenter {
         pendingActions.removeAll()
         hasSubmittedAction = false; rewardedBattle = false
         raidContributions = [:]; raidSettlement = nil; raidPayout = nil
-        raidCatcherID = nil; raidCatchResult = nil; raidCatchTask = nil
+        raidCatcherID = nil; raidCatchResult = nil; raidCatchAttempts = []; raidCatchTask = nil
         raidFinishedRound = 0; settledRaid = false; contributionsSettled = false
         chatHistory.reset(); chatMessages = []; chatRateLimiter.reset()
         turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
@@ -561,7 +563,7 @@ final class MultiplayerRoomCenter {
             runnerCount: runners.count)
         raidSettlement = settlement
         raidPayout = companion.creditRaidReward(settlement.total)
-        drawRaidCatcher(runners: runners, tier: tier)
+        if (raidPayout ?? 0) > 0 { drawRaidCatcher(runners: runners) }
     }
 
     /// 보스를 데려갈 한 명을 뽑는다. **와이어를 안 늘린다** — 모든 피어가 `.raidStart` 로 받은
@@ -570,7 +572,7 @@ final class MultiplayerRoomCenter {
     /// 두 게이트가 추첨 자체를 막는다. 1★ 는 티어가 안 열고(`grantsCatch`), 1인 판은 추첨이
     /// 언제나 자기 자신이라 협동이라 부를 수 없다(`minimumCoopRunners`). 둘 다 여기 한 곳에
     /// 두어야 호스트·게스트가 같은 규칙을 본다.
-    private func drawRaidCatcher(runners: [MultiplayerFighter], tier: RaidTier) {
+    private func drawRaidCatcher(runners: [MultiplayerFighter]) {
         // **추첨은 살아 있는 러너만 대상이다.** `forfeit` 은 hp 만 0 으로 만들고 편성에는 남기므로
         // (`retireFighter` — 방을 떠난 사람도 같은 자리를 지난다), 안 걸러내면 이미 `leaveRoom` 을
         // 지난 사람이 당첨된다. 그 클라이언트는 정산도 포획도 부르지 않아 보스가 아무에게도 안 가고,
@@ -579,15 +581,14 @@ final class MultiplayerRoomCenter {
         //
         // 머릿수 게이트는 **참가자 전체**로 센다. 살아남은 수로 세면 동료가 쓰러진 협동 판이
         // 포획 없는 판이 되는데, 그 동료는 실제로 같이 싸웠다.
-        let eligible = runners.filter(\.isAlive)
-        guard tier.grantsCatch, RaidBoss.coopTermsApply(runnerCount: runners.count),
-              let winner = RaidBoss.catcher(runnerIDs: eligible.map(\.id), seed: raidSeed,
-                                            finishedRound: raidFinishedRound) else { return }
-        raidCatcherID = winner
-        // 남이 뽑혔으면 화면에 이름만 그린다 — 지갑과 같은 규칙으로 **자기 것만 자기가 넣는다**.
-        guard winner == myID,
-              let species = combatFighters.first(where: { $0.id == RaidBoss.bossID })?.side.snapshot.speciesID
+        guard let species = combatFighters.first(where: { $0.id == RaidBoss.bossID })?.side.snapshot.speciesID
         else { return }
+        let attempts = RaidBoss.catchAttempts(runners: runners.filter(\.isAlive), speciesID: species,
+                                              seed: raidSeed, finishedRound: raidFinishedRound)
+        raidCatchAttempts = attempts
+        raidCatcherID = attempts.first(where: \.succeeded)?.id
+        guard let mine = attempts.first(where: { $0.id == myID }) else { return }
+        guard mine.succeeded else { raidCatchResult = .escaped; return }
         let epoch = sessionEpoch
         raidCatchTask = Task { [weak self, companion] in
             let result = await companion.catchRaidBoss(speciesID: species)
@@ -598,7 +599,7 @@ final class MultiplayerRoomCenter {
             switch result {
             // 실패도 "오늘은 이미 잡았다" 도 덮어두지 않는다 — 앞은 원장을 안 써 오늘 다시 되고,
             // 뒤는 오늘 다시 해도 같다. 두 사유를 한 문구로 접으면 하나는 반드시 거짓이 된다.
-            case .box, .companion: break
+            case .box, .companion, .escaped: break
             case .claimedToday: self.lastError = companion.l.raidCatchAlreadyToday
             case .unavailable: self.lastError = companion.l.raidCatchFailed
             }
@@ -616,11 +617,12 @@ final class MultiplayerRoomCenter {
 
     /// 호스트가 연 판을 받아들일지. 거절하면 false 이고, 호출부는 수신 루프를 잇지 않는다.
     @discardableResult
-    func applyGuestRaidStart(seed: UInt64, fighters: [MultiplayerFighter], tier: RaidTier) -> Bool {
+    func applyGuestRaidStart(seed: UInt64, fighters: [MultiplayerFighter], tier: RaidTier,
+                             periodKey: String = RaidBoss.periodKey(Date())) -> Bool {
         // **오늘의 보스가 맞는지 내가 직접 확인한다.** 보상은 내 지갑에 내가 넣으므로,
         // 호스트를 믿으면 조작된 방이 약한 보스에 5★ 딱지를 붙여 방 전원에게 5★ 를 뿌린다.
-        let dayKey = CompanionStore.dayKey(Date())
-        guard RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: dayKey),
+        guard periodKey == RaidBoss.periodKey(Date()),
+              RaidBoss.validRaidStart(fighters: fighters, tier: tier, dayKey: periodKey),
               let started = try? MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: seed) else {
             lastError = companion.l.raidBossMismatch; leaveRoom(); return false
         }
@@ -1666,7 +1668,7 @@ final class MultiplayerRoomCenter {
         // 포획 task 는 **취소하지도 버리지도 않는다.** 잡던 개체는 내 세이브에 들어가는 값이라
         // 방을 떠나는 것과 무관하게 끝까지 잡아야 하고, 화면으로 새는 것은 task 안의 epoch 가드가
         // 막는다(형제 task 들은 방이 사라지면 할 일 자체가 없어져 취소한다).
-        raidCatcherID = nil; raidCatchResult = nil; raidSeed = 0
+        raidCatcherID = nil; raidCatchResult = nil; raidCatchAttempts = []; raidSeed = 0
         raidFinishedRound = 0; settledRaid = false; contributionsSettled = false
         pendingActions.removeAll(); combatFighters = []; combatEvents = []; combatRound = 0
         turnEndsAt = nil; rewardedBattle = false
@@ -1849,8 +1851,9 @@ final class MultiplayerRoomCenter {
                 self.chatHistory.reset(); self.chatMessages = []; self.chatRateLimiter.reset()
                 self.turnEndsAt = Date().addingTimeInterval(Self.turnDuration)
                 self.phase = .battling
-            case .raidStart(let seed, let fighters, let tier):
-                guard self.applyGuestRaidStart(seed: seed, fighters: fighters, tier: tier) else { return }
+            case .raidStart(let seed, let fighters, let tier, let periodKey):
+                guard self.applyGuestRaidStart(seed: seed, fighters: fighters,
+                                               tier: tier, periodKey: periodKey) else { return }
             case .raidSettlement(let contributions):
                 self.applyGuestRaidSettlement(contributions)
             case .roundResolved(let round, let fighters, let events):
