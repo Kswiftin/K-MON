@@ -47,6 +47,8 @@ struct WaveBattle: Sendable {
     var turn = 1
     var events: [BattleEvent] = []
     var rng: SplitMix64
+    /// 판 전체 상태(날씨) — 웨이브를 넘어가지 않는다(웨이브마다 새 배틀이다).
+    var field = BattleField()
     /// 승부 — `nil` 은 진행 중이다. 무승부가 값으로 있어야 동시 전멸이 승리로 접히지 않는다
     /// (1대1·팀 연습과 같은 규칙).
     var result: BattleOutcome?
@@ -228,6 +230,16 @@ struct WaveBattle: Sendable {
             events += BattleEngine.endOfTurnResidual(&opponents[slot.teamIndex],
                                                      actor: .fighter(slot.id))
         }
+        // 날씨 몫은 필드 전원에게, 남은 턴은 **턴마다 한 번** 줄인다.
+        for slot in myField {
+            events += BattleEngine.endOfTurnWeather(&mine[slot.teamIndex],
+                                                    actor: .fighter(slot.id), field: field)
+        }
+        for slot in opponentField {
+            events += BattleEngine.endOfTurnWeather(&opponents[slot.teamIndex],
+                                                    actor: .fighter(slot.id), field: field)
+        }
+        events += BattleEngine.advanceField(&field)
         turn += 1
         pendingActions = [:]
         advanceFainted()
@@ -331,13 +343,13 @@ struct WaveBattle: Sendable {
                                                    defender: &opponents[defenderIndex],
                                                    attackerActor: attackerActor,
                                                    defenderActor: defenderActor,
-                                                   move: move, rng: &rng)
+                                                   move: move, field: &field, rng: &rng)
             } else {
                 events += BattleEngine.applyAttack(attacker: &opponents[attackerIndex],
                                                    defender: &mine[defenderIndex],
                                                    attackerActor: attackerActor,
                                                    defenderActor: defenderActor,
-                                                   move: move, rng: &rng)
+                                                   move: move, field: &field, rng: &rng)
             }
             return
         }
@@ -365,7 +377,7 @@ struct WaveBattle: Sendable {
                                             attackerActor: attackerActor,
                                             defenderActor: actor(isMine: target.isMine,
                                                                  slot: target.slot),
-                                            move: move, damageScale: scale, rng: &rng)
+                                            move: move, damageScale: scale, field: field, rng: &rng)
             writeBack(defender, isMine: target.isMine, index: defenderIndex)
         }
         events += BattleEngine.faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)

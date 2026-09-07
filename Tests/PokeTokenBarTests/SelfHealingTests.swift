@@ -34,8 +34,9 @@ final class SelfHealingTests: XCTestCase {
     private func use(_ move: MoveSpec, _ user: inout BattleSide, seed: UInt64 = 9) -> [BattleEvent] {
         var target = side()
         var rng = SplitMix64(seed: seed)
+        var field = BattleField()
         return BattleEngine.applyAttack(attacker: &user, defender: &target, attackerActor: .a,
-                                        defenderActor: .b, move: move, rng: &rng)
+                                        defenderActor: .b, move: move, field: &field, rng: &rng)
     }
 
     private func hasImmune(_ events: [BattleEvent]) -> Bool {
@@ -93,9 +94,10 @@ final class SelfHealingTests: XCTestCase {
         var blocked = 0
         for _ in 0..<4 {
             var target = side()
+            var field = BattleField()
             let events = BattleEngine.applyAttack(attacker: &user, defender: &target,
                                                   attackerActor: .a, defenderActor: .b,
-                                                  move: attack, rng: &rng)
+                                                  move: attack, field: &field, rng: &rng)
             if events.contains(where: { if case .cant = $0 { return true }; return false }) { blocked += 1 }
         }
         XCTAssertEqual(blocked, 2, "두 턴만 쉰다")
@@ -129,8 +131,9 @@ final class SelfHealingTests: XCTestCase {
                                                                 spa: 100, spd: 100, spe: 100)))
         var rng = SplitMix64(seed: 3)
         let before = user.hp
+        var field = BattleField()
         _ = BattleEngine.applyAttack(attacker: &user, defender: &ghost, attackerActor: .a,
-                                     defenderActor: .b, move: recover, rng: &rng)
+                                     defenderActor: .b, move: recover, field: &field, rng: &rng)
         XCTAssertEqual(user.hp - before, user.stats.hp / 2)
         XCTAssertEqual(ghost.hp, ghost.stats.hp, "상대는 건드리지 않는다")
     }

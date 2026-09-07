@@ -265,6 +265,8 @@ struct NetBattleState {
     var myActive = 0
     var oppActive = 0
     var rng: SplitMix64
+    /// 판 전체 상태(날씨). 두 피어가 각자 같은 규칙으로 채우므로 와이어에 싣지 않는다.
+    var field = BattleField()
     var turn = 1
     var myAction: NetBattleAction?
     var oppAction: NetBattleAction?
@@ -366,6 +368,9 @@ struct NetBattleState {
                         events: inout [BattleEvent]) {
             events += BattleEngine.endOfTurnResidual(&a, actor: .a)
             events += BattleEngine.endOfTurnResidual(&b, actor: .b)
+            events += BattleEngine.endOfTurnWeather(&a, actor: .a, field: field)
+            events += BattleEngine.endOfTurnWeather(&b, actor: .b, field: field)
+            events += BattleEngine.advanceField(&field)
         }
 
         switch (actionA, actionB) {
@@ -374,7 +379,7 @@ struct NetBattleState {
             let moveB = spendPP(indexB, override: overrideB, team: &teamB, active: activeB)
             var a = teamA[activeA], b = teamB[activeB]
             turnEvents = BattleEngine.resolveTurn(a: &a, b: &b, moveA: moveA, moveB: moveB,
-                                                  turn: turn, rng: &rng)
+                                                  turn: turn, field: &field, rng: &rng)
             teamA[activeA] = a; teamB[activeB] = b
         case (.switchTo(let indexA), .move(let indexB)):
             switchSlot(indexA, team: &teamA, active: &activeA)
@@ -387,7 +392,7 @@ struct NetBattleState {
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &b, defender: &a,
                                                        attackerActor: .b, defenderActor: .a,
-                                                       move: moveB, rng: &rng)
+                                                       move: moveB, field: &field, rng: &rng)
             }
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b
@@ -400,7 +405,7 @@ struct NetBattleState {
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &a, defender: &b,
                                                        attackerActor: .a, defenderActor: .b,
-                                                       move: moveA, rng: &rng)
+                                                       move: moveA, field: &field, rng: &rng)
             }
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b

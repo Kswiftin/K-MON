@@ -399,6 +399,8 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     var hasModeledStatusEffect: Bool {
         (inflictedStatus != nil && targetsUser != true)
             || (!(statChanges ?? []).isEmpty && statChangePercent > 0)
+            // 날씨기는 상태이상도 랭크도 안 걸지만 판을 바꾼다 — 안 열면 아무도 못 배운다.
+            || BattleWeather.called(byMoveID: id) != nil
     }
 
     /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
@@ -635,7 +637,68 @@ enum Status: String, Codable, Sendable, Equatable, CaseIterable {
 /// 데미지가 어디서 왔는가. 로그·연출은 "기술을 맞았다" 와 "화상으로 깎였다" 를 갈라야 하는데,
 /// 원인이 없으면 잔뎀이 직전 `.move` 에 접혀 **쓰지도 않은 기술 이름**이 붙는다.
 enum DamageCause: String, Codable, Sendable, Equatable {
-    case move, burn, poison, toxic, confusion, recoil
+    case move, burn, poison, toxic, confusion, recoil, weather
+}
+
+// MARK: - 배틀 전체에 걸리는 상태
+
+/// 날씨 — 어느 한쪽의 상태가 아니라 **판 전체**의 상태다. 그래서 `BattleSide` 가 아니라
+/// `BattleField` 에 있고, 배틀 모드마다 하나씩 들고 `applyAttack` 에 넘긴다.
+enum BattleWeather: String, Codable, Sendable, Equatable, CaseIterable {
+    case sun, rain, sandstorm, snow
+
+    /// 지속 턴 — 본가의 지닌물건(구슬류)이 없으므로 늘 5턴이다.
+    static let duration = 5
+
+    /// 이 날씨를 부르는 기술 — PokéAPI id. 싸라기눈(258)은 9세대에서 눈으로 바뀌었고 데미지가
+    /// 없어졌다. 옛 기술을 옛 규칙으로 따로 두면 세는 자리가 둘이 되므로 눈으로 합친다.
+    static func called(byMoveID id: Int) -> BattleWeather? {
+        switch id {
+        case 241:           return .sun          // 쾌청
+        case 240:           return .rain         // 비바라기
+        case 201:           return .sandstorm    // 모래바람
+        case 883, 258, 881: return .snow         // 눈날림 · 싸라기눈 · 한기의고동
+        default:            return nil
+        }
+    }
+
+    /// 이 타입 기술의 데미지 배율 — 분수로 준다. 실수로 곱하면 두 피어의 값이 갈릴 수 있다.
+    func damageScale(of type: PokemonType) -> (numerator: Int, denominator: Int) {
+        switch (self, type) {
+        case (.sun, .fire), (.rain, .water):   return (3, 2)
+        case (.sun, .water), (.rain, .fire):   return (1, 2)
+        default:                               return (1, 1)
+        }
+    }
+
+    /// 턴 끝에 깎이는가 — 모래바람만 깎는다(눈은 9세대에서 데미지가 없어졌다).
+    /// 바위·땅·강철은 모래에 안 깎인다.
+    func residualDamage(for types: [PokemonType], maxHP: Int) -> Int? {
+        guard self == .sandstorm else { return nil }
+        let immune: [PokemonType] = [.rock, .ground, .steel]
+        guard !types.contains(where: immune.contains) else { return nil }
+        return max(1, maxHP / 16)
+    }
+}
+
+/// 판 전체에 걸린 것 — 지금은 날씨뿐이다.
+///
+/// **왜 인자로 나르는가.** 배틀 상태를 들고 있는 타입이 넷(1v1 LAN·연습·웨이브·방)이라, 엔진이
+/// 전역으로 들면 모드끼리 날씨가 새어 든다. 인자라서 빠뜨릴 수 있다는 위험은
+/// `BattleFieldGuardTests` 가 소스에서 막는다(`beginTurn` 을 지키는 방식과 같다).
+struct BattleField: Sendable, Equatable {
+    var weather: BattleWeather?
+    /// 남은 턴 — 0 이면 날씨가 없다.
+    var weatherTurns = 0
+
+    /// 날씨를 건다. 같은 날씨를 다시 걸면 **실패한다**(본가와 같다) — 턴이 연장되면 한쪽이
+    /// 매 턴 다시 걸어 영구 날씨가 된다.
+    mutating func start(_ weather: BattleWeather) -> Bool {
+        guard self.weather != weather else { return false }
+        self.weather = weather
+        weatherTurns = BattleWeather.duration
+        return true
+    }
 }
 
 // MARK: - 배틀 중 한쪽의 상태
@@ -1110,8 +1173,9 @@ enum BattleEngine {
     ///           바뀌니 `rulesVersion` 도 같이 올린다).
     ///           전제가 깨지는 순간은 `BattleAssumptionGuardTests` 가 잡는다 — 가변위력 기술
     ///           목록을 동결해 두므로 `VariableDamage` 에 새 기술이 붙으면 거기서 빨개진다.
-    static func resolveAttack(attacker: BattleSide, defender: BattleSide,
-                              move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
+    static func resolveAttack(attacker: BattleSide, defender: BattleSide, move: MoveSpec,
+                              field: BattleField = BattleField(),
+                              rng: inout SplitMix64) -> AttackOutcome {
         // 독 타입이 쓰는 맹독은 명중·회피 랭크를 포함한 명중 판정을 건너뛴다.
         let poisonTypeToxic = move.id == MoveSpec.toxicMoveID && attacker.snapshot.types.contains(.poison)
         if !poisonTypeToxic, let chance = hitChance(of: move, attacker: attacker, defender: defender),
@@ -1126,7 +1190,7 @@ enum BattleEngine {
         var effectiveness = 1.0, critical = false
         for index in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move,
-                                       hit: index, rng: &rng)
+                                       hit: index, field: field, rng: &rng)
             total += one.damage
             remaining -= one.damage
             actualHits += 1
@@ -1142,7 +1206,7 @@ enum BattleEngine {
     /// 히트 하나. 다단기는 이 함수를 히트마다 부르므로 급소·난수 폭이 히트별로 독립이다
     /// (본가와 같다 — 한 번 뽑아 곱하면 급소가 나면 전 히트가 급소가 된다).
     private static func resolveSingleHit(attacker: BattleSide, defender: BattleSide,
-                                         move: MoveSpec, hit: Int,
+                                         move: MoveSpec, hit: Int, field: BattleField,
                                          rng: inout SplitMix64) -> AttackOutcome {
         // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
         // 그대로 쓰면 아래 식이 데미지를 0 으로 접는다(그게 이 기술들이 죽어 있던 원인이다).
@@ -1216,7 +1280,7 @@ enum BattleEngine {
         let random = 217 + Int(rng.next() % 39)
 
         // 기본 데미지의 `+2` 뒤에 현행 급소 ×1.5를 적용하고, STAB·상성은 그 뒤에 곱한다.
-        // (배지·트레이너킥·날씨·기술보정은 §3.3 대로 안 가져온다.)
+        // (배지·트레이너킥·기술보정은 §3.3 대로 안 가져온다. 날씨는 아래에서 곱한다.)
         var damage = baseDamage(level: attacker.snapshot.level, power: power,
                                 attack: attack, defense: defense)
         damage += 2
@@ -1233,6 +1297,13 @@ enum BattleEngine {
         // 런 강화의 타입 데미지. 상성표를 안 보는 기술(발버둥·변화기)은 여기도 안 탄다 — 플레이트가
         // 발버둥을 올리면 PP 가 마른 뒤가 오히려 강해진다.
         if !ignoresTypeChart { damage = attacker.runBoosts.damage(damage, moveType: move.type) }
+        // 날씨 보정 — 상성표를 보는 기술만 탄다(발버둥은 무속성이라 볕이 세게 만들 이유가 없다).
+        // 정수 분수로 곱한다. 위 주석이 "날씨는 안 가져온다" 였던 자리다 — 날씨 레이어가 생겨서
+        // 그 유예가 끝났다.
+        if !ignoresTypeChart, let weather = field.weather {
+            let scale = weather.damageScale(of: move.type)
+            damage = damage * scale.numerator / scale.denominator
+        }
         damage = damage * random / 255
         // 위력 0(변화기)은 데미지가 없다. `max(1, …)` 만 두면 식의 `+2` 가 살아남아 상태기가 2 데미지를
         // 넣었다 — `learnedMoves` 는 변화기를 걸러내지 않으므로 실제로 밟히는 경로다.
@@ -1284,6 +1355,9 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 생기면 그때 붙인다. 아무도 밟지 않는 분기를 미리 두지 않는다.
     case heal(BattleActor, amount: Int)
     case multiHit(BattleActor, hits: Int)
+    /// 날씨가 시작됐다 / 끝났다. 액터가 없다 — 판 전체의 상태라 어느 쪽의 줄도 아니다.
+    case weatherStarted(BattleWeather)
+    case weatherEnded(BattleWeather)
     case faint(BattleActor)
     /// 새 개체가 필드에 나왔다 — 자기 교체(턴 머리)와 기절 자동 출전(턴 끝) 양쪽이 이 case 다.
     ///
@@ -1461,6 +1535,30 @@ extension BattleEngine {
         return events
     }
 
+    /// 턴 끝의 날씨 몫 — **판 전체에 한 번**이 아니라 개체마다 부른다(모래는 양쪽을 깎는다).
+    /// 잔뎀(`endOfTurnResidual`)과 나란히 서는 함수라 순서는 부르는 쪽이 정한다.
+    static func endOfTurnWeather(_ side: inout BattleSide, actor: BattleActor,
+                                 field: BattleField) -> [BattleEvent] {
+        guard side.isAlive, let weather = field.weather,
+              let amount = weather.residualDamage(for: side.snapshot.types, maxHP: side.stats.hp)
+        else { return [] }
+        side.hp = max(0, side.hp - amount)
+        var events: [BattleEvent] = [.damage(actor, amount: amount, cause: .weather)]
+        if !side.isAlive { events.append(.faint(actor)) }
+        return events
+    }
+
+    /// 날씨의 남은 턴을 하나 줄인다 — **턴마다 한 번**, 개체 수와 무관하게 부른다.
+    /// 개체마다 부르면 2:2 에서 날씨가 절반만 간다.
+    static func advanceField(_ field: inout BattleField) -> [BattleEvent] {
+        guard let weather = field.weather else { return [] }
+        field.weatherTurns -= 1
+        guard field.weatherTurns <= 0 else { return [] }
+        field.weather = nil
+        field.weatherTurns = 0
+        return [.weatherEnded(weather)]
+    }
+
     /// 턴이 시작될 때 "이번 턴에 맞은 것" 을 비운다.
     ///
     /// **`applyAttack` 을 직접 부르는 모든 턴 루프가 이걸 먼저 불러야 한다.** 한 곳만 빠지면 그
@@ -1478,10 +1576,18 @@ extension BattleEngine {
     ///           양쪽 피어가 똑같이 깎으므로 desync 는 없다.
     static func applyAttack(attacker: inout BattleSide, defender: inout BattleSide,
                             attackerActor: BattleActor, defenderActor: BattleActor,
-                            move: MoveSpec, rng: inout SplitMix64) -> [BattleEvent] {
+                            move: MoveSpec, field: inout BattleField,
+                            rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
         guard beginAttack(attacker: &attacker, actor: attackerActor, move: move,
                           rng: &rng, into: &events) else { return events }
+        // 날씨기는 상대를 보지 않는다 — 자기 회복기와 같은 자리에서 빠져나간다.
+        if let weather = BattleWeather.called(byMoveID: move.id) {
+            attacker.lastMoveFailed = !field.start(weather)
+            // 같은 날씨를 다시 걸면 아무 일도 없다. 변화기가 아무것도 못 한 다른 경우와 같은 줄이다.
+            return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
+                                                     : [.weatherStarted(weather)])
+        }
         // 자기 회복기는 상대를 보지 않는다 — 명중·상성·데미지 계산을 통째로 건너뛴다.
         // `resolveAttack` 에 태우면 위력 0 이라 rng 만 태우고 아무것도 안 하는 기술이 된다.
         if let restored = selfHealing(of: move, user: &attacker, actor: attackerActor, rng: &rng) {
@@ -1490,7 +1596,7 @@ extension BattleEngine {
         }
         events += applyHit(attacker: &attacker, defender: &defender,
                            attackerActor: attackerActor, defenderActor: defenderActor,
-                           move: move, rng: &rng)
+                           move: move, field: field, rng: &rng)
         events += faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)
         return events
     }
@@ -1540,9 +1646,11 @@ extension BattleEngine {
     static func applyHit(attacker: inout BattleSide, defender: inout BattleSide,
                          attackerActor: BattleActor, defenderActor: BattleActor,
                          move: MoveSpec, damageScale: Double = 1,
+                         field: BattleField = BattleField(),
                          rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
-        let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
+        let outcome = resolveAttack(attacker: attacker, defender: defender, move: move,
+                                    field: field, rng: &rng)
         // 실패 여부는 **모든 갈래에서** 갱신한다. 성공 갈래만 내리면 한 번 실패한 뒤로 계속 실패로
         // 남아 분함의발구르기가 영원히 두 배가 된다. 광역기는 마지막 대상의 결과가 남는다 —
         // 본가도 여러 대상 중 하나만 실패한 턴을 실패로 세지 않는다.
@@ -1687,7 +1795,7 @@ extension BattleEngine {
     /// rng 소비 순서가 프로토콜의 일부다 — 브랜치를 바꾸면 두 피어 결과가 갈라진다.
     static func resolveTurn(a: inout BattleSide, b: inout BattleSide,
                             moveA: MoveSpec, moveB: MoveSpec, turn: Int,
-                            rng: inout SplitMix64) -> [BattleEvent] {
+                            field: inout BattleField, rng: inout SplitMix64) -> [BattleEvent] {
         beginTurn(&a); beginTurn(&b)
         var events: [BattleEvent] = [.turn(turn)]
         // 마비가 스피드를 깎으므로 순서 계산이 상태를 봐야 한다 — `stats.spe` 를 그대로 넘기면
@@ -1699,14 +1807,18 @@ extension BattleEngine {
             let move = attackerIsA ? moveA : moveB
             events += attackerIsA
                 ? applyAttack(attacker: &a, defender: &b, attackerActor: .a, defenderActor: .b,
-                              move: move, rng: &rng)
+                              move: move, field: &field, rng: &rng)
                 : applyAttack(attacker: &b, defender: &a, attackerActor: .b, defenderActor: .a,
-                              move: move, rng: &rng)
+                              move: move, field: &field, rng: &rng)
         }
         // 잔뎀은 두 공격이 **모두 끝난 뒤**다. 앞에 두면 그 턴의 데미지 계산과 기절 시점이 달라진다.
         // 좌변부터 고정 순서 — 순서가 흔들리면 동시 기절 때 두 피어의 승패가 갈린다.
         events += endOfTurnResidual(&a, actor: .a)
         events += endOfTurnResidual(&b, actor: .b)
+        // 날씨는 잔뎀 뒤, 그리고 **개체 몫 전부가 끝난 뒤에** 한 번 줄인다.
+        events += endOfTurnWeather(&a, actor: .a, field: field)
+        events += endOfTurnWeather(&b, actor: .b, field: field)
+        events += advanceField(&field)
         return events
     }
 }

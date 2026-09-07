@@ -236,6 +236,9 @@ struct L {
         case .confusion: return t("\(name)은(는) 혼란으로 \(damage) 데미지",
                                   "\(name) hurt itself in confusion! \(damage)",
                                   "\(name)は 混乱で \(damage)ダメージ")
+        case .weather:   return t("\(name)은(는) 날씨 데미지! \(damage)",
+                                  "\(name) was buffeted by the weather! \(damage)",
+                                  "\(name)は てんきの ダメージ！ \(damage)")
         case .move:      return battleTookDamage(name, damage: damage)
         case .recoil:    return t("\(name)은(는) 반동으로 \(damage) 데미지",
                                   "\(name) was hurt by recoil! \(damage)",
@@ -247,6 +250,26 @@ struct L {
     /// 알아야 하는 건 "누가 얼마나 회복했나"뿐이고, 무엇으로 회복했는지는 앞 줄의 기술명이 이미 말한다.
     func battleHealed(_ name: String, amount: Int) -> String {
         t("\(name)은(는) \(amount) 회복했다", "\(name) restored \(amount) HP", "\(name)は \(amount)かいふくした")
+    }
+
+    /// 날씨가 시작·종료됐다. 어느 쪽의 줄도 아니다 — 판 전체에 걸린 상태라 이름이 들어가지 않는다.
+    func battleWeatherStarted(_ weather: BattleWeather) -> String {
+        switch weather {
+        case .sun:       return t("햇살이 강해졌다!", "The sunlight turned harsh!", "ひざしが つよくなった！")
+        case .rain:      return t("비가 내리기 시작했다!", "It started to rain!", "あめが ふりはじめた！")
+        case .sandstorm: return t("모래바람이 불기 시작했다!", "A sandstorm kicked up!",
+                                  "すなあらしが ふきはじめた！")
+        case .snow:      return t("눈이 내리기 시작했다!", "It started to snow!", "ゆきが ふりはじめた！")
+        }
+    }
+
+    func battleWeatherEnded(_ weather: BattleWeather) -> String {
+        switch weather {
+        case .sun:       return t("햇살이 원래대로 돌아왔다", "The sunlight faded", "ひざしが もとに もどった")
+        case .rain:      return t("비가 그쳤다", "The rain stopped", "あめが あがった")
+        case .sandstorm: return t("모래바람이 가라앉았다", "The sandstorm subsided", "すなあらしが おさまった")
+        case .snow:      return t("눈이 그쳤다", "The snow stopped", "ゆきが やんだ")
+        }
     }
 
     /// 다단 히트 — 몇 번 맞았는지 안 쓰면 플레이어에겐 "위력이 이상하게 센 기술"로만 보인다.

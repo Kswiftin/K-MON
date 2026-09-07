@@ -211,8 +211,9 @@ final class VariableDamageTests: XCTestCase {
         BattleEngine.beginTurn(&attacker)
         BattleEngine.beginTurn(&defender)
         var rng = SplitMix64(seed: seed)
+        var field = BattleField()
         return BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
-                                        attackerActor: .a, defenderActor: .b, move: move, rng: &rng)
+                                        attackerActor: .a, defenderActor: .b, move: move, field: &field, rng: &rng)
     }
 
     /// 리프블레이드·구르기는 **연이어 쓸수록** 두 배씩 세지고 상한에서 멈춘다. 다른 기술을 끼우면
@@ -316,8 +317,9 @@ final class VariableDamageTests: XCTestCase {
         BattleEngine.beginTurn(&mine)
         mine.flinched = true
         var rng = SplitMix64(seed: 1)
+        var field = BattleField()
         _ = BattleEngine.applyAttack(attacker: &mine, defender: &theirs, attackerActor: .a,
-                                     defenderActor: .b, move: furyCutter, rng: &rng)
+                                     defenderActor: .b, move: furyCutter, field: &field, rng: &rng)
         rng = SplitMix64(seed: 1)
         XCTAssertEqual(VariableDamage.from(furyCutter, attacker: mine, defender: theirs, rng: &rng),
                        .power(40), "못 움직였으면 연속이 끊긴다")
@@ -367,9 +369,10 @@ final class VariableDamageTests: XCTestCase {
         var mine = attacker, theirs = defender
         let before = theirs.hp
         var rng = SplitMix64(seed: seed)
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &mine, defender: &theirs,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, rng: &rng)
+                                              move: move, field: &field, rng: &rng)
         return (before - theirs.hp, events, mine)
     }
 
@@ -495,8 +498,9 @@ final class VariableDamageTests: XCTestCase {
         var attacker = side([.normal], speed: 200), counterer = side([.fighting], speed: 50)
         var rng = SplitMix64(seed: 7)
         let attackerHP = attacker.hp
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &attacker, b: &counterer, moveA: incoming,
-                                              moveB: counter, turn: 1, rng: &rng)
+                                              moveB: counter, turn: 1, field: &field, rng: &rng)
         return (counterer.stats.hp - counterer.hp, attackerHP - attacker.hp, events)
     }
 
@@ -531,12 +535,13 @@ final class VariableDamageTests: XCTestCase {
 
         var attacker = side([.normal]), counterer = side([.fighting])
         var rng = SplitMix64(seed: 7)
+        var field = BattleField()
         _ = BattleEngine.resolveTurn(a: &attacker, b: &counterer, moveA: physical, moveB: physical,
-                                     turn: 1, rng: &rng)
+                                     turn: 1, field: &field, rng: &rng)
         let attackerHP = attacker.hp
         // 2턴째엔 상대가 변화기를 쓴다 — 이번 턴에 맞은 게 없으니 카운터는 실패해야 한다.
         _ = BattleEngine.resolveTurn(a: &attacker, b: &counterer, moveA: status, moveB: counter,
-                                     turn: 2, rng: &rng)
+                                     turn: 2, field: &field, rng: &rng)
         XCTAssertEqual(attackerHP - attacker.hp, 0, "1턴째 데미지가 2턴째에 되돌아오면 안 된다")
     }
 

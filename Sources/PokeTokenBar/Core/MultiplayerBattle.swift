@@ -442,6 +442,8 @@ struct MultiplayerBattle: Sendable {
     /// 실려 있지 않다. 공격자를 아는 유일한 자리가 아래 해상 루프다.
     private(set) var damageDealt: [UUID: Int] = [:]
     private var rng: SplitMix64
+    /// 판 전체 상태(날씨). 호스트만 해상하므로 참가자 전원이 같은 값을 본다.
+    private var field = BattleField()
 
     /// 모드별 정원. 협동 보스전만 한 자리를 더 쓴다 — 러너 1~4 **더하기 보스 하나**라 최대 5다.
     /// 다른 모드의 상한은 그대로 4다(협동전 때문에 개인전이 5명이 되면 안 된다).
@@ -633,7 +635,7 @@ struct MultiplayerBattle: Sendable {
             roundEvents += BattleEngine.applyAttack(attacker: &attacker, defender: &target,
                                                     attackerActor: .fighter(fighters[ai].id),
                                                     defenderActor: .fighter(fighters[ti].id),
-                                                    move: move, rng: &rng)
+                                                    move: move, field: &field, rng: &rng)
             fighters[ai].side = attacker
             fighters[ti].side = target
             // 보스에게 들어간 몫만 센다 — 러너끼리 때릴 수는 없지만, 보스가 러너를 때린 것을
@@ -646,8 +648,11 @@ struct MultiplayerBattle: Sendable {
         for index in fighters.indices {
             var side = fighters[index].side
             roundEvents += BattleEngine.endOfTurnResidual(&side, actor: .fighter(fighters[index].id))
+            roundEvents += BattleEngine.endOfTurnWeather(&side, actor: .fighter(fighters[index].id),
+                                                         field: field)
             fighters[index].side = side
         }
+        roundEvents += BattleEngine.advanceField(&field)
         events.append(contentsOf: roundEvents)
         round += 1
         return roundEvents

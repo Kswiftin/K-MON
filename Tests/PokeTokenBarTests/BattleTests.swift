@@ -252,8 +252,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = slow, b = fast
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: quickAttack(),
-                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+                                                  moveB: flamethrower(), turn: 1, field: &field, rng: &rng)
             XCTAssertEqual(events.moveActors.first, .a, "seed \(seed): 우선도 +1 이 먼저 나가야 한다")
         }
     }
@@ -264,8 +265,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = slow, b = fast
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
-                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+                                                  moveB: flamethrower(), turn: 1, field: &field, rng: &rng)
             XCTAssertEqual(events.moveActors.first, .b, "seed \(seed): 빠른 쪽이 먼저다")
         }
     }
@@ -278,8 +280,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<40 {
             var rng = SplitMix64(seed: seed)
             var a = mirror, b = mirror
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
-                                                  moveB: hydroPump(), turn: 1, rng: &rng)
+                                                  moveB: hydroPump(), turn: 1, field: &field, rng: &rng)
             if let first = events.moveActors.first { firstMovers.insert(first) }
         }
         XCTAssertEqual(firstMovers, [.a, .b], "양쪽 모두 선공을 잡는 seed 가 있어야 한다")
@@ -298,8 +301,9 @@ final class BattleTests: XCTestCase {
     func testResolveTurnEmitsTheTurnNumberFirst() {
         var rng = SplitMix64(seed: 1)
         var a = BattleSide(water()), b = BattleSide(fire())
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: surf(), moveB: flamethrower(),
-                                              turn: 7, rng: &rng)
+                                              turn: 7, field: &field, rng: &rng)
         XCTAssertEqual(events.first, .turn(7))
     }
 
@@ -314,8 +318,9 @@ final class BattleTests: XCTestCase {
                                    base: BattleStats(hp: 1, atk: 1, def: 1, spa: 1, spd: 1, spe: 1))
         var rng = SplitMix64(seed: 3)
         var a = BattleSide(strong), b = BattleSide(frail)
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: .struggle(), moveB: .struggle(),
-                                              turn: 1, rng: &rng)
+                                              turn: 1, field: &field, rng: &rng)
         XCTAssertTrue(events.contains(.faint(.b)), "기절이 스트림에 있어야 한다")
         XCTAssertFalse(events.contains(.faint(.a)), "쓰러지지 않은 쪽에는 없어야 한다")
     }
@@ -328,8 +333,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<64 {
             var rng = SplitMix64(seed: seed)
             var a = BattleSide(water()), b = BattleSide(fire())
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: surf(), moveB: flamethrower(),
-                                                  turn: 1, rng: &rng)
+                                                  turn: 1, field: &field, rng: &rng)
             XCTAssertTrue(events.contains(.superEffective(.b)), "seed \(seed): 물 → 불꽃/비행 = ×2")
             XCTAssertTrue(events.contains(.resisted(.a)), "seed \(seed): 불꽃 → 물 = ×0.5")
             XCTAssertTrue(events.contains { if case .damage(.b, _, _) = $0 { return true } else { return false } })
@@ -342,10 +348,12 @@ final class BattleTests: XCTestCase {
         var rng1 = SplitMix64(seed: 99), rng2 = SplitMix64(seed: 99)
         var a1 = BattleSide(water()), b1 = BattleSide(fire())
         var a2 = BattleSide(water()), b2 = BattleSide(fire())
+        var field = BattleField()
         let e1 = BattleEngine.resolveTurn(a: &a1, b: &b1, moveA: hydroPump(),
-                                          moveB: flamethrower(), turn: 1, rng: &rng1)
+                                          moveB: flamethrower(), turn: 1, field: &field, rng: &rng1)
+        var field2 = BattleField()
         let e2 = BattleEngine.resolveTurn(a: &a2, b: &b2, moveA: hydroPump(),
-                                          moveB: flamethrower(), turn: 1, rng: &rng2)
+                                          moveB: flamethrower(), turn: 1, field: &field2, rng: &rng2)
         XCTAssertEqual(e1, e2, "두 피어가 같은 seed 로 같은 결과를 얻어야 대전이 성립한다")
         XCTAssertEqual(a1.hp, a2.hp)
         XCTAssertEqual(b1.hp, b2.hp)
@@ -357,8 +365,9 @@ final class BattleTests: XCTestCase {
         for seed in UInt64(0)..<40 {
             var rng = SplitMix64(seed: seed)
             var a = BattleSide(water()), b = BattleSide(fire())
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: hydroPump(),
-                                                  moveB: flamethrower(), turn: 1, rng: &rng)
+                                                  moveB: flamethrower(), turn: 1, field: &field, rng: &rng)
             // A 가 빗나갔으면 `.miss(.a)`, 맞았으면 B 쪽에 `.damage` 가 실린다.
             if events.contains(.miss(.a)) { missSeen = true }
             if events.contains(where: { if case .damage(.b, _, _) = $0 { return true } else { return false } }) {
@@ -382,8 +391,9 @@ final class BattleTests: XCTestCase {
                            damageClass: .physical, accuracy: nil, pp: 10)
         var rng = SplitMix64(seed: 1)
         var a = BattleSide(pika), b = BattleSide(dugtrio)
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: thunderbolt, moveB: dig,
-                                              turn: 1, rng: &rng)
+                                              turn: 1, field: &field, rng: &rng)
         // 무효는 `.immune` 로 실리고 데미지 이벤트 자체가 없다 — "0 데미지" 로 새면 맞은 것처럼 읽힌다.
         XCTAssertTrue(events.contains(.immune(.b)))
         XCTAssertFalse(events.contains { if case .damage(.b, _, _) = $0 { return true } else { return false } })
@@ -400,8 +410,9 @@ final class BattleTests: XCTestCase {
         var rng = SplitMix64(seed: 3)
         var a = BattleSide(strong), b = BattleSide(frail)
         // 발버둥(무속성)이라 고스트에도 박힌다 — 선공에 기절하면 공격은 하나뿐이어야 한다.
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: .struggle(), moveB: .struggle(),
-                                              turn: 1, rng: &rng)
+                                              turn: 1, field: &field, rng: &rng)
         XCTAssertEqual(events.moveActors, [.a], "기절한 쪽은 반격하지 못한다")
         XCTAssertEqual(b.hp, 0)
     }

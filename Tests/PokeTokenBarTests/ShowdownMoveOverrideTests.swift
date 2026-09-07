@@ -162,9 +162,10 @@ final class ShowdownMoveOverrideTests: XCTestCase {
             attacker.lastHitThisTurn = IncomingHit(amount: 40, damageClass: .physical)
             var defender = BattleSide(tank())
             var rng = SplitMix64(seed: 7)
+            var field = BattleField()
             _ = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
                                          attackerActor: .a, defenderActor: .b,
-                                         move: move(id: id), rng: &rng)
+                                         move: move(id: id), field: &field, rng: &rng)
             XCTAssertLessThan(defender.hp, defender.stats.hp, "기술 \(id) 가 데미지를 내야 한다")
         }
     }

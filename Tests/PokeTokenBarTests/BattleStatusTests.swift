@@ -24,8 +24,10 @@ final class BattleStatusTests: XCTestCase {
 
     private func attack(_ attacker: inout BattleSide, _ defender: inout BattleSide,
                         _ move: MoveSpec, rng: inout SplitMix64) -> [BattleEvent] {
-        BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
-                                 attackerActor: .a, defenderActor: .b, move: move, rng: &rng)
+        var field = BattleField()
+        return BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
+                                        attackerActor: .a, defenderActor: .b, move: move,
+                                        field: &field, rng: &rng)
     }
 
     // MARK: 화상 — 물리만 절반 (대조군 필수)
@@ -64,8 +66,9 @@ final class BattleStatusTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = quick, b = sluggish
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: harmless(), moveB: harmless(),
-                                                  turn: 1, rng: &rng)
+                                                  turn: 1, field: &field, rng: &rng)
             XCTAssertEqual(events.moveActors.first, .b, "마비로 느려진 쪽은 후공이어야 한다")
         }
     }
@@ -282,8 +285,9 @@ final class BattleStatusTests: XCTestCase {
         BattleEngine.inflict(.burn, on: &a, actor: .a, rng: &rng)
         BattleEngine.inflict(.poison, on: &b, actor: .b, rng: &rng)
 
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: harmless(), moveB: harmless(),
-                                              turn: 1, rng: &rng)
+                                              turn: 1, field: &field, rng: &rng)
 
         let lastMove = events.lastIndex { if case .move = $0 { return true } else { return false } }
         let firstResidual = events.firstIndex { event in
@@ -356,8 +360,9 @@ final class BattleStatusTests: XCTestCase {
             BattleEngine.inflict(.sleep, on: &b, actor: .b, rng: &rng)
             var events: [BattleEvent] = []
             for turn in 1...8 {
+                var field = BattleField()
                 events += BattleEngine.resolveTurn(a: &a, b: &b, moveA: harmless(), moveB: harmless(),
-                                                   turn: turn, rng: &rng)
+                                                   turn: turn, field: &field, rng: &rng)
             }
             return (events, a.hp, b.hp)
         }

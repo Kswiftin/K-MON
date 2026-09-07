@@ -16,6 +16,8 @@ struct TeamPracticeBattle {
     var turn = 1
     var events: [BattleEvent] = []
     var rng: SplitMix64
+    /// 판 전체 상태(날씨) — 이 배틀 하나에 속한다. 모드마다 따로 들어야 날씨가 서로 새지 않는다.
+    var field = BattleField()
     /// 승부 — `nil` 은 아직 진행 중이다. 예전엔 `Bool?` 라 무승부를 담을 자리가 없어
     /// 동시 전멸이 승리로 접혔다(체육관이면 배지까지 나갔다).
     var result: BattleOutcome?
@@ -84,10 +86,14 @@ struct TeamPracticeBattle {
         let (move, moveIndex) = cpuMoveChoice()
         if moveIndex >= 0 { opponents[opponentActive].pp[moveIndex] -= 1 }
         events += BattleEngine.applyAttack(attacker: &opponents[opponentActive], defender: &mine[myActive],
-                                           attackerActor: .b, defenderActor: .a, move: move, rng: &rng)
-        // 교체로 넘긴 턴도 턴이다 — 잔뎀은 그대로 들어간다.
+                                           attackerActor: .b, defenderActor: .a, move: move,
+                                           field: &field, rng: &rng)
+        // 교체로 넘긴 턴도 턴이다 — 잔뎀도 날씨도 그대로 들어간다.
         events += BattleEngine.endOfTurnResidual(&mine[myActive], actor: .a)
         events += BattleEngine.endOfTurnResidual(&opponents[opponentActive], actor: .b)
+        events += BattleEngine.endOfTurnWeather(&mine[myActive], actor: .a, field: field)
+        events += BattleEngine.endOfTurnWeather(&opponents[opponentActive], actor: .b, field: field)
+        events += BattleEngine.advanceField(&field)
     }
 
     /// 내가 공격 대신 다른 행동(볼 던지기)에 턴을 쓴다 — **교체와 같은 대가다.** 상대만 한 번
@@ -120,7 +126,8 @@ struct TeamPracticeBattle {
         if myIndex >= 0 { mine[myActive].pp[myIndex] -= 1 }
         if cpuIndex >= 0 { opponents[opponentActive].pp[cpuIndex] -= 1 }
         let resolved = BattleEngine.resolveTurn(a: &mine[myActive], b: &opponents[opponentActive],
-                                                moveA: myMove, moveB: cpuMove, turn: turn, rng: &rng)
+                                                moveA: myMove, moveB: cpuMove, turn: turn,
+                                                field: &field, rng: &rng)
         events.append(contentsOf: resolved)
         turn += 1
         advanceFainted()
@@ -136,7 +143,8 @@ struct TeamPracticeBattle {
         mine[myActive].pp[slotIndex] -= 1
         opponents[opponentActive].pp[slotIndex] -= 1
         events += BattleEngine.resolveTurn(a: &mine[myActive], b: &opponents[opponentActive],
-                                           moveA: myMove, moveB: cpuMove, turn: turn, rng: &rng)
+                                           moveA: myMove, moveB: cpuMove, turn: turn,
+                                           field: &field, rng: &rng)
         turn += 1
         advanceFainted()
         return true
