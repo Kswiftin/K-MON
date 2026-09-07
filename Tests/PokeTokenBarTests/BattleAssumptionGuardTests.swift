@@ -55,6 +55,7 @@ final class BattleAssumptionGuardTests: XCTestCase {
         // **유일한 다단기.** 히트마다 위력이 오르는 것이 이 기술들의 규칙이라, 루프 안에서 뽑는
         // 것이 맞다 — `from` 에 히트 번호가 넘어간다.
         "tripleKick", "tripleAxel",
+        "risingVoltage",                    // 단발기 — 필드를 보고 두 배가 될 뿐이다
     ]
 
     // MARK: 소스 스캔

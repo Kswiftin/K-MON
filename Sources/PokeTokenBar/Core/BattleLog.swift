@@ -81,6 +81,12 @@ enum BattleLog {
             case .weatherEnded(let weather):
                 flush()
                 out.append(Line(actor: nil, text: l.battleWeatherEnded(weather)))
+            case .terrainStarted(let terrain):
+                flush()
+                out.append(Line(actor: nil, text: l.battleTerrainStarted(terrain)))
+            case .terrainEnded(let terrain):
+                flush()
+                out.append(Line(actor: nil, text: l.battleTerrainEnded(terrain)))
             case .faint(let actor):
                 flush()
                 out.append(Line(actor: actor, text: l.battleFainted(name(actor))))

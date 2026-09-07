@@ -169,6 +169,139 @@ final class BattleWeatherTests: XCTestCase {
                                        return false }.count, 2, "모래는 양쪽을 깎는다")
     }
 
+    // MARK: 필드 (땅에 깔리는 쪽)
+
+    private func flying() -> BattleSide { side([.flying], hp: 9_999) }
+
+    /// 필드기는 필드를 깔고 그 줄을 남긴다. 무브셋 게이트도 같이 열려 있어야 한다 —
+    /// 안 열면 날씨기와 똑같이 "코드엔 있는데 아무도 못 배우는" 기술이 된다.
+    func testATerrainMoveStartsTheTerrainAndIsLearnable() {
+        var field = BattleField()
+        let electricTerrain = move(604, power: 0, damageClass: .status)
+        let events = attack(electricTerrain, field: &field, attacker: side(), defender: side()).events
+        XCTAssertEqual(field.terrain, .electric)
+        XCTAssertEqual(field.terrainTurns, BattleTerrain.duration)
+        XCTAssertTrue(events.contains(.terrainStarted(.electric)))
+        for id in [604, 580, 581, 678] {
+            XCTAssertTrue(move(id, power: 0, damageClass: .status).hasModeledStatusEffect,
+                          "id \(id) 를 못 배우면 필드를 깔 방법이 없다")
+        }
+    }
+
+    /// 필드 보정은 **땅에 닿은 쪽만** 받는다. 뜬 쪽까지 받으면 필드와 날씨의 차이가 사라진다.
+    func testTerrainBoostsOnlyGroundedAttackers() {
+        var none = BattleField(), electric = BattleField()
+        _ = electric.start(.electric)
+        let bolt = move(1, type: .electric)
+        let target = side([.normal], hp: 9_999)
+
+        let base = attack(bolt, field: &none, attacker: side(), defender: target).dealt
+        XCTAssertGreaterThan(attack(bolt, field: &electric, attacker: side(), defender: target).dealt,
+                             base, "땅에 닿은 쪽은 1.3배")
+        XCTAssertEqual(attack(bolt, field: &electric, attacker: flying(), defender: target).dealt,
+                       attack(bolt, field: &none, attacker: flying(), defender: target).dealt,
+                       "뜬 쪽은 필드를 안 받는다")
+    }
+
+    /// 미스트필드는 올리는 게 아니라 **드래곤을 반으로** 깎는다 — 맞는 쪽이 땅에 닿았을 때만이다.
+    func testMistyTerrainHalvesDragonAgainstGroundedTargets() {
+        var none = BattleField(), misty = BattleField()
+        _ = misty.start(.misty)
+        let dragonMove = move(2, type: .dragon)
+        let grounded = side([.normal], hp: 9_999)
+
+        XCTAssertLessThan(attack(dragonMove, field: &misty, attacker: side(), defender: grounded).dealt,
+                          attack(dragonMove, field: &none, attacker: side(), defender: grounded).dealt)
+        XCTAssertEqual(attack(dragonMove, field: &misty, attacker: side(), defender: flying()).dealt,
+                       attack(dragonMove, field: &none, attacker: side(), defender: flying()).dealt,
+                       "뜬 상대는 안개의 보호를 못 받는다")
+    }
+
+    /// 일렉트릭필드는 잠듦만, 미스트필드는 주 상태 전부를 막는다 — 땅에 닿은 쪽만이다.
+    func testTerrainBlocksTheStatusesItShould() {
+        var sleepMove = move(79, power: 0, damageClass: .status)
+        sleepMove.ailment = "sleep"; sleepMove.ailmentChance = 0
+        var electric = BattleField(), misty = BattleField(), none = BattleField()
+        _ = electric.start(.electric); _ = misty.start(.misty)
+
+        XCTAssertNotNil(afflicted(sleepMove, field: &none), "필드가 없으면 잠든다")
+        XCTAssertNil(afflicted(sleepMove, field: &electric), "일렉트릭필드는 잠들지 않는다")
+        XCTAssertNil(afflicted(sleepMove, field: &misty), "미스트필드도 막는다")
+        XCTAssertNotNil(afflicted(sleepMove, field: &electric, target: flying()),
+                        "뜬 쪽은 필드가 안 지켜 준다")
+
+        var burnMove = move(261, power: 0, damageClass: .status)
+        burnMove.ailment = "burn"; burnMove.ailmentChance = 0
+        XCTAssertNotNil(afflicted(burnMove, field: &electric),
+                        "일렉트릭필드는 잠듦만 막는다 — 화상까지 막으면 미스트필드와 구별이 없다")
+        XCTAssertNil(afflicted(burnMove, field: &misty))
+    }
+
+    /// 상태가 걸렸으면 그 상태를, 아니면 nil.
+    private func afflicted(_ spec: MoveSpec, field: inout BattleField,
+                           target: BattleSide? = nil) -> Status? {
+        var mine = side(), theirs = target ?? side([.normal], hp: 9_999)
+        var rng = SplitMix64(seed: 4)
+        _ = BattleEngine.applyAttack(attacker: &mine, defender: &theirs, attackerActor: .a,
+                                     defenderActor: .b, move: spec, field: &field, rng: &rng)
+        return theirs.status
+    }
+
+    /// 그래스필드는 땅에 닿은 쪽을 턴 끝에 회복시킨다. 모래와 **같은 자리**라 둘 다 걸리면
+    /// 회복이 먼저다 — 순서가 바뀌면 모래에 쓰러진 개체가 그 턴에 되살아난다.
+    func testGrassyTerrainHealsGroundedAndStillTakesTheSandstorm() {
+        var field = BattleField()
+        _ = field.start(.grassy)
+        var hurt = side([.normal], hp: 10)
+        let healed = BattleEngine.endOfTurnWeather(&hurt, actor: .a, field: field)
+        XCTAssertEqual(hurt.hp, 10 + max(1, hurt.stats.hp / 16))
+        XCTAssertTrue(healed.contains { if case .heal = $0 { return true }; return false })
+
+        var floating = flying()
+        floating.hp = 10
+        XCTAssertEqual(BattleEngine.endOfTurnWeather(&floating, actor: .a, field: field), [],
+                       "뜬 쪽은 풀에 안 닿는다")
+
+        _ = field.start(.sandstorm)
+        var both = side([.normal], hp: 10)
+        let events = BattleEngine.endOfTurnWeather(&both, actor: .a, field: field)
+        XCTAssertEqual(events.count, 2, "회복과 모래가 둘 다 나온다")
+        if case .heal = events[0] {} else { XCTFail("회복이 먼저여야 한다") }
+    }
+
+    /// 라이징볼트는 일렉트릭필드 위의 **상대**에게 두 배다.
+    func testRisingVoltageDoublesOnElectricTerrain() {
+        let risingVoltage = move(VariableDamage.MoveID.risingVoltage, type: .electric, power: 70)
+        var electric = BattleField()
+        _ = electric.start(.electric)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(risingVoltage, attacker: side(), defender: side(),
+                                           field: BattleField(), rng: &rng), .power(70))
+        XCTAssertEqual(VariableDamage.from(risingVoltage, attacker: side(), defender: side(),
+                                           field: electric, rng: &rng), .power(140))
+        XCTAssertEqual(VariableDamage.from(risingVoltage, attacker: side(), defender: flying(),
+                                           field: electric, rng: &rng), .power(70),
+                       "뜬 상대는 필드 위에 없다")
+    }
+
+    /// 필드도 5턴이다. 날씨와 **같이** 걸려 있으면 둘 다 각자 줄어야 한다 — 한 카운터를 나눠 쓰면
+    /// 나중에 깐 쪽이 먼저 걸린 쪽의 남은 턴을 물려받는다.
+    func testWeatherAndTerrainCountDownIndependently() {
+        var field = BattleField()
+        _ = field.start(.rain)
+        _ = BattleEngine.advanceField(&field)
+        _ = field.start(.psychic)
+        XCTAssertEqual(field.weatherTurns, BattleWeather.duration - 1)
+        XCTAssertEqual(field.terrainTurns, BattleTerrain.duration)
+
+        var ended: [BattleEvent] = []
+        for _ in 0..<BattleTerrain.duration { ended += BattleEngine.advanceField(&field) }
+        XCTAssertEqual(ended, [.weatherEnded(.rain), .terrainEnded(.psychic)],
+                       "비가 먼저 끝나고 필드가 나중에 끝난다")
+        XCTAssertNil(field.weather)
+        XCTAssertNil(field.terrain)
+    }
+
     // MARK: 모드마다 빠뜨리지 않았는지
 
     /// `applyAttack` 을 부르는 곳은 **전부** 날씨를 넘겨야 한다. 한 곳만 빠지면 그 모드에서만

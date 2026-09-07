@@ -399,8 +399,9 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     var hasModeledStatusEffect: Bool {
         (inflictedStatus != nil && targetsUser != true)
             || (!(statChanges ?? []).isEmpty && statChangePercent > 0)
-            // 날씨기는 상태이상도 랭크도 안 걸지만 판을 바꾼다 — 안 열면 아무도 못 배운다.
+            // 날씨기·필드기는 상태이상도 랭크도 안 걸지만 판을 바꾼다 — 안 열면 아무도 못 배운다.
             || BattleWeather.called(byMoveID: id) != nil
+            || BattleTerrain.called(byMoveID: id) != nil
     }
 
     /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
@@ -681,7 +682,45 @@ enum BattleWeather: String, Codable, Sendable, Equatable, CaseIterable {
     }
 }
 
-/// 판 전체에 걸린 것 — 지금은 날씨뿐이다.
+/// 필드 — 땅에 깔리는 상태다. 날씨와 달리 **땅에 닿은 개체에게만** 걸린다(비행·부유는 안 받는다).
+enum BattleTerrain: String, Codable, Sendable, Equatable, CaseIterable {
+    case electric, grassy, misty, psychic
+
+    static let duration = 5
+
+    /// 이 필드를 까는 기술 — PokéAPI id.
+    static func called(byMoveID id: Int) -> BattleTerrain? {
+        switch id {
+        case 604: return .electric      // 일렉트릭필드
+        case 580: return .grassy        // 그래스필드
+        case 581: return .misty         // 미스트필드
+        case 678: return .psychic       // 사이코필드
+        default:  return nil
+        }
+    }
+
+    /// 땅에 닿은 **공격자**의 이 타입 기술을 1.3배로 만든다.
+    var boostedType: PokemonType? {
+        switch self {
+        case .electric: return .electric
+        case .grassy:   return .grass
+        case .psychic:  return .psychic
+        case .misty:    return nil      // 미스트필드는 올리지 않고 드래곤을 반으로 깎는다
+        }
+    }
+
+    /// 땅에 닿은 개체가 이 상태에 안 걸리는가 — 일렉트릭필드는 잠듦만, 미스트필드는 주 상태 전부.
+    func blocks(_ status: Status) -> Bool {
+        switch self {
+        case .electric: return status == .sleep
+        // 미스트필드는 주 상태와 혼란을 전부 막는다. 풀죽음은 여기를 지나지 않는다.
+        case .misty:    return status != .flinch
+        default:        return false
+        }
+    }
+}
+
+/// 판 전체에 걸린 것 — 날씨와 필드.
 ///
 /// **왜 인자로 나르는가.** 배틀 상태를 들고 있는 타입이 넷(1v1 LAN·연습·웨이브·방)이라, 엔진이
 /// 전역으로 들면 모드끼리 날씨가 새어 든다. 인자라서 빠뜨릴 수 있다는 위험은
@@ -690,6 +729,22 @@ struct BattleField: Sendable, Equatable {
     var weather: BattleWeather?
     /// 남은 턴 — 0 이면 날씨가 없다.
     var weatherTurns = 0
+    var terrain: BattleTerrain?
+    var terrainTurns = 0
+
+    /// 필드를 깐다. 같은 필드를 다시 깔면 실패한다(날씨와 같은 이유).
+    mutating func start(_ terrain: BattleTerrain) -> Bool {
+        guard self.terrain != terrain else { return false }
+        self.terrain = terrain
+        terrainTurns = BattleTerrain.duration
+        return true
+    }
+
+    /// 이 개체가 땅에 닿아 있는가 — 필드 효과는 닿은 쪽에만 걸린다.
+    /// 비행 타입과 부유 특성이 뜬 쪽이다(공중에 뜨는 기술은 엔진에 없다).
+    static func isGrounded(_ side: BattleSide) -> Bool {
+        !side.snapshot.types.contains(.flying) && side.ability != .levitate
+    }
 
     /// 날씨를 건다. 같은 날씨를 다시 걸면 **실패한다**(본가와 같다) — 턴이 연장되면 한쪽이
     /// 매 턴 다시 걸어 영구 날씨가 된다.
@@ -1211,7 +1266,8 @@ enum BattleEngine {
         // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
         // 그대로 쓰면 아래 식이 데미지를 0 으로 접는다(그게 이 기술들이 죽어 있던 원인이다).
         var power = move.power
-        switch VariableDamage.from(move, attacker: attacker, defender: defender, hit: hit, rng: &rng) {
+        switch VariableDamage.from(move, attacker: attacker, defender: defender, hit: hit,
+                                   field: field, rng: &rng) {
         case .power(let computed):  power = computed
         case .fixedHP(let amount):  return fixedOutcome(amount, move: move, defender: defender)
         case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender)
@@ -1304,6 +1360,16 @@ enum BattleEngine {
             let scale = weather.damageScale(of: move.type)
             damage = damage * scale.numerator / scale.denominator
         }
+        // 필드 보정 — **땅에 닿은 쪽만** 받는다. 올려 주는 쪽은 공격자 기준(그래스필드에서 뜬
+        // 포켓몬이 쓰는 풀 기술은 안 오른다), 미스트필드의 드래곤 반감은 맞는 쪽 기준이다.
+        if !ignoresTypeChart, let terrain = field.terrain {
+            if terrain.boostedType == move.type, BattleField.isGrounded(attacker) {
+                damage = damage * 13 / 10
+            }
+            if terrain == .misty, move.type == .dragon, BattleField.isGrounded(defender) {
+                damage /= 2
+            }
+        }
         damage = damage * random / 255
         // 위력 0(변화기)은 데미지가 없다. `max(1, …)` 만 두면 식의 `+2` 가 살아남아 상태기가 2 데미지를
         // 넣었다 — `learnedMoves` 는 변화기를 걸러내지 않으므로 실제로 밟히는 경로다.
@@ -1358,6 +1424,8 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 날씨가 시작됐다 / 끝났다. 액터가 없다 — 판 전체의 상태라 어느 쪽의 줄도 아니다.
     case weatherStarted(BattleWeather)
     case weatherEnded(BattleWeather)
+    case terrainStarted(BattleTerrain)
+    case terrainEnded(BattleTerrain)
     case faint(BattleActor)
     /// 새 개체가 필드에 나왔다 — 자기 교체(턴 머리)와 기절 자동 출전(턴 끝) 양쪽이 이 case 다.
     ///
@@ -1539,11 +1607,21 @@ extension BattleEngine {
     /// 잔뎀(`endOfTurnResidual`)과 나란히 서는 함수라 순서는 부르는 쪽이 정한다.
     static func endOfTurnWeather(_ side: inout BattleSide, actor: BattleActor,
                                  field: BattleField) -> [BattleEvent] {
+        var events: [BattleEvent] = []
+        // 그래스필드는 땅에 닿은 쪽을 매 턴 회복시킨다 — 모래와 **같은 자리**에서 본다.
+        // 회복이 먼저다: 모래에 깎여 쓰러진 뒤 되살아나는 순서가 되면 안 된다.
+        if side.isAlive, field.terrain == .grassy, BattleField.isGrounded(side) {
+            let healed = min(max(1, side.stats.hp / 16), side.stats.hp - side.hp)
+            if healed > 0 {
+                side.hp += healed
+                events.append(.heal(actor, amount: healed))
+            }
+        }
         guard side.isAlive, let weather = field.weather,
               let amount = weather.residualDamage(for: side.snapshot.types, maxHP: side.stats.hp)
-        else { return [] }
+        else { return events }
         side.hp = max(0, side.hp - amount)
-        var events: [BattleEvent] = [.damage(actor, amount: amount, cause: .weather)]
+        events.append(.damage(actor, amount: amount, cause: .weather))
         if !side.isAlive { events.append(.faint(actor)) }
         return events
     }
@@ -1551,12 +1629,24 @@ extension BattleEngine {
     /// 날씨의 남은 턴을 하나 줄인다 — **턴마다 한 번**, 개체 수와 무관하게 부른다.
     /// 개체마다 부르면 2:2 에서 날씨가 절반만 간다.
     static func advanceField(_ field: inout BattleField) -> [BattleEvent] {
-        guard let weather = field.weather else { return [] }
-        field.weatherTurns -= 1
-        guard field.weatherTurns <= 0 else { return [] }
-        field.weather = nil
-        field.weatherTurns = 0
-        return [.weatherEnded(weather)]
+        var events: [BattleEvent] = []
+        if let weather = field.weather {
+            field.weatherTurns -= 1
+            if field.weatherTurns <= 0 {
+                field.weather = nil
+                field.weatherTurns = 0
+                events.append(.weatherEnded(weather))
+            }
+        }
+        if let terrain = field.terrain {
+            field.terrainTurns -= 1
+            if field.terrainTurns <= 0 {
+                field.terrain = nil
+                field.terrainTurns = 0
+                events.append(.terrainEnded(terrain))
+            }
+        }
+        return events
     }
 
     /// 턴이 시작될 때 "이번 턴에 맞은 것" 을 비운다.
@@ -1581,6 +1671,12 @@ extension BattleEngine {
         var events: [BattleEvent] = []
         guard beginAttack(attacker: &attacker, actor: attackerActor, move: move,
                           rng: &rng, into: &events) else { return events }
+        // 필드기도 상대를 보지 않는다 — 날씨기와 같은 자리다.
+        if let terrain = BattleTerrain.called(byMoveID: move.id) {
+            attacker.lastMoveFailed = !field.start(terrain)
+            return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
+                                                     : [.terrainStarted(terrain)])
+        }
         // 날씨기는 상대를 보지 않는다 — 자기 회복기와 같은 자리에서 빠져나간다.
         if let weather = BattleWeather.called(byMoveID: move.id) {
             attacker.lastMoveFailed = !field.start(weather)
@@ -1713,7 +1809,8 @@ extension BattleEngine {
         }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         if defender.isAlive {
-            events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor, rng: &rng)
+            events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor,
+                                           field: field, rng: &rng)
         }
         // **랭크는 기절 앞에서 본다.** 예전엔 기절이 여기서 조기반환해 상대를 쓰러뜨린 턴의 자기
         // 랭크 상승(고대의힘 부류)이 통째로 사라졌다 — 본가는 KO 여부와 무관하게 오른다. 상대 몫만
@@ -1779,13 +1876,18 @@ extension BattleEngine {
     /// 기술의 2차효과(상태 부여). 붙을 수 있는지를 **확률 판정보다 먼저** 보므로, 이미 다른 상태가
     /// 걸려 있거나 면역인 상대에게는 rng 를 쓰지 않는다 — 두 피어의 소비량이 같아야 한다.
     private static func applySecondaryEffect(of move: MoveSpec, to side: inout BattleSide,
-                                             actor: BattleActor, rng: inout SplitMix64) -> [BattleEvent] {
+                                             actor: BattleActor, field: BattleField,
+                                             rng: inout SplitMix64) -> [BattleEvent] {
         // **자기 대상 상태기는 상대에게 걸지 않는다.** 잠자기는 `ailment: sleep` 이라 여기까지 오는데
         // 회복은 구현이 없어서, 걸면 남는 게 필중 100% 수면기다(대상을 모르는 게 아니라 아는데
         // 반대로 거는 경우다). 구현할 때는 `targetsUser` 를 보고 회복까지 같이 넣는다.
         guard move.targetsUser != true else { return [] }
         if move.flinchPercent > 0, side.isAlive, Int(rng.next() % 100) < move.flinchPercent { side.flinched = true }
+        // 필드가 막는 상태는 걸리지 않는다 — 땅에 닿은 쪽만이다(일렉트릭필드는 잠듦,
+        // 미스트필드는 주 상태 전부). 막히면 확률 판정을 굴리지 않아 rng 소비가 줄지만, 두 피어가
+        // 같은 필드를 보므로 갈리지 않는다.
         guard let status = move.inflictedStatus, side.canBeAfflicted(by: status),
+              !(field.terrain?.blocks(status) == true && BattleField.isGrounded(side)),
               Int(rng.next() % 100) < move.ailmentChancePercent else { return [] }
         return inflict(status, on: &side, actor: actor, rng: &rng)
     }

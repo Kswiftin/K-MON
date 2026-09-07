@@ -272,6 +272,30 @@ struct L {
         }
     }
 
+    /// 필드가 깔렸다 / 걷혔다. 날씨와 같은 자리의 줄이다.
+    func battleTerrainStarted(_ terrain: BattleTerrain) -> String {
+        switch terrain {
+        case .electric: return t("발밑에 전기가 흐르기 시작했다!", "An electric current ran across the field!",
+                                 "あしもとに でんきが はしった！")
+        case .grassy:   return t("발밑에 풀이 무성해졌다!", "Grass grew to cover the field!",
+                                 "あしもとに くさが しげった！")
+        case .misty:    return t("발밑에 안개가 자욱해졌다!", "Mist swirled around the field!",
+                                 "あしもとに きりが たちこめた！")
+        case .psychic:  return t("발밑이 이상해졌다!", "The field got weird!", "あしもとが ふしぎな かんじに なった！")
+        }
+    }
+
+    func battleTerrainEnded(_ terrain: BattleTerrain) -> String {
+        switch terrain {
+        case .electric: return t("발밑의 전기가 사라졌다", "The electric current disappeared",
+                                 "あしもとの でんきが きえた")
+        case .grassy:   return t("발밑의 풀이 사라졌다", "The grass disappeared", "あしもとの くさが きえた")
+        case .misty:    return t("발밑의 안개가 걷혔다", "The mist disappeared", "あしもとの きりが はれた")
+        case .psychic:  return t("발밑이 원래대로 돌아왔다", "The weirdness disappeared",
+                                 "あしもとが もとに もどった")
+        }
+    }
+
     /// 다단 히트 — 몇 번 맞았는지 안 쓰면 플레이어에겐 "위력이 이상하게 센 기술"로만 보인다.
     /// 급소·상성 문구와 같은 자리(공격 줄의 노트)에 붙는다.
     func battleMultiHit(_ hits: Int) -> String {
