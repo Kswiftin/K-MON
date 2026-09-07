@@ -49,6 +49,33 @@ final class BattleLogTests: XCTestCase {
         XCTAssertEqual(lines(stream)[3], "턴 2")
     }
 
+    /// 붙어 있던 상태가 **일한** 줄은 접히지 않는다 — 때린 쪽 줄에 붙이면 누가 버텼는지가
+    /// 뒤바뀌어 읽힌다(인내·운명공동체·원한은 맞은 쪽의 줄이다).
+    func testATriggeredVolatileGetsItsOwnLine() {
+        let stream: [BattleEvent] = [.move(.a, moveID: 57), .damage(.b, amount: 10, cause: .move),
+                                     .volatileTriggered(.b, .endure)]
+        XCTAssertEqual(lines(stream), ["거북왕의 파도타기! 10 데미지", "리자몽은(는) 공격을 버텼다!"])
+        XCTAssertEqual(lines([.volatileTriggered(.b, .destinyBond)], .en),
+                       ["리자몽 took its attacker down with it!"])
+        XCTAssertEqual(lines([.volatileTriggered(.b, .grudge)], .ja).count, 1)
+    }
+
+    /// 일한 문구는 **붙은 문구와 다르고** 상태끼리도 다르다 — 같으면 로그가 "걸었다" 와 "걸렸다" 를
+    /// 구별하지 못한다(운명공동체는 두 줄이 한 배틀에 다 나온다).
+    func testEveryTriggeredVolatileHasItsOwnWording() {
+        for lang in AppLanguage.allCases {
+            let l = L(lang)
+            for volatileStatus in [BattleVolatile.endure, .destinyBond, .grudge] {
+                XCTAssertNotEqual(l.battleVolatileTriggered("리자몽", volatileStatus),
+                                  l.battleVolatileStarted("리자몽", volatileStatus),
+                                  "\(lang) 의 \(volatileStatus) 는 붙은 줄과 일한 줄이 같다")
+            }
+            let all = BattleVolatile.allCases.map { l.battleVolatileTriggered("리자몽", $0) }
+            XCTAssertEqual(Set(all).count, BattleVolatile.allCases.count,
+                           "\(lang) 에서 두 상태가 같은 문구를 쓴다")
+        }
+    }
+
     /// 빗나감·무효는 데미지 숫자 없이 렌더된다 — "0 데미지" 로 새면 맞았는데 0 인 것처럼 보인다.
     func testMissAndImmunityRenderWithoutADamageNumber() {
         XCTAssertEqual(lines([.move(.a, moveID: 57), .miss(.a)]),
