@@ -275,6 +275,35 @@ struct L {
                                          "\(name)は まるくなった！")
         case .charge:           return t("\(name)은(는) 전기를 모았다!", "\(name) began charging power!",
                                          "\(name)は でんきを ためた！")
+        case .endure:           return t("\(name)은(는) 공격에 대비했다!", "\(name) braced itself!",
+                                         "\(name)は こうげきに そなえた！")
+        case .destinyBond:      return t("\(name)은(는) 상대를 길동무로 정했다!",
+                                         "\(name) is trying to take its foe down with it!",
+                                         "\(name)は あいてを みちづれに しようとしている！")
+        case .grudge:           return t("\(name)은(는) 원한을 품었다!",
+                                         "\(name) wants its foe to bear a grudge!",
+                                         "\(name)は うらみを こめている！")
+        }
+    }
+
+    /// 붙어 있던 상태가 **일한** 줄 — 버텼다 / 길동무로 데려갔다 / PP 를 앗았다.
+    ///
+    /// 셋 말고는 이 줄이 나가지 않는다(붙는 순간이나 턴 끝에만 일한다). 그래도 나머지를 한 자리에
+    /// 모아 **붙는 줄**로 되돌려 두는 이유는, 나중에 일하는 상태가 하나 늘었을 때 로그가 조용히
+    /// 비는 것보다 상태 이름이라도 나오는 편이 낫기 때문이다(컴파일러가 분류를 강제한다).
+    func battleVolatileTriggered(_ name: String, _ volatileStatus: BattleVolatile) -> String {
+        switch volatileStatus {
+        case .endure:      return t("\(name)은(는) 공격을 버텼다!", "\(name) endured the hit!",
+                                    "\(name)は こうげきを もちこたえた！")
+        case .destinyBond: return t("\(name)은(는) 상대를 길동무로 데려갔다!",
+                                    "\(name) took its attacker down with it!",
+                                    "\(name)は あいてを みちづれに した！")
+        case .grudge:      return t("\(name)의 원한이 상대 기술의 PP 를 앗았다!",
+                                    "\(name)'s grudge drained the PP of the move that felled it!",
+                                    "\(name)の うらみが わざの PPを うばった！")
+        case .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge:
+            return battleVolatileStarted(name, volatileStatus)
         }
     }
 
@@ -302,6 +331,12 @@ struct L {
                                          "\(name)は まるまりを といた")
         case .charge:           return t("\(name)의 전기가 흩어졌다", "\(name)'s charge faded",
                                          "\(name)の でんきが きえた")
+        case .endure:           return t("\(name)의 대비가 풀렸다", "\(name) is no longer braced",
+                                         "\(name)の そなえが とけた")
+        case .destinyBond:      return t("\(name)의 길동무가 풀렸다", "\(name)'s Destiny Bond faded",
+                                         "\(name)の みちづれが とけた")
+        case .grudge:           return t("\(name)의 원한이 풀렸다", "\(name)'s grudge faded",
+                                         "\(name)の うらみが とけた")
         }
     }
 

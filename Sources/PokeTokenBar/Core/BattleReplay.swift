@@ -93,6 +93,9 @@ enum BattleReplay {
         case .guardUp, .guardBlocked:                           return 0.40
         // 붙은 volatile 은 뒤따라 HP 가 움직인다(잔뎀·회복) — 날씨와 같은 한 박자를 준다.
         case .volatileStarted, .volatileEnded:                  return 0.40
+        // 일한 줄은 뒤에 큰 일이 따라온다(기절·PP 소진) — 문구를 읽을 시간이 없으면 상대가 왜
+        // 같이 쓰러졌는지 화면으로는 알 수 없다. 그래서 기절과 같은 박자를 준다.
+        case .volatileTriggered:                                return 0.60
         // 테라스탈은 배틀당 한 번뿐인 장면이라 가장 긴 문구 박자를 준다.
         case .terastallized:                                    return 0.60
         // 랭크는 **로그 줄만** 늘린다 — 팝 문구가 없고(`popupKey` 가 nil), 랭크 배지는 배치 끝에
@@ -150,7 +153,7 @@ enum BattleReplay {
              .faint, .status, .cureStatus, .cant, .boost, .multiHit,
              .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
              .sideConditionStarted, .sideConditionEnded, .guardUp, .guardBlocked,
-             .terastallized, .volatileStarted, .volatileEnded:
+             .terastallized, .volatileStarted, .volatileEnded, .volatileTriggered:
             return
         }
     }
@@ -189,7 +192,7 @@ enum BattleReplay {
         case .turn, .move, .damage, .heal, .multiHit, .faint, .sendOut, .status, .cureStatus,
              .cant, .boost, .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
              .sideConditionStarted, .sideConditionEnded, .guardUp, .terastallized,
-             .volatileStarted, .volatileEnded:
+             .volatileStarted, .volatileEnded, .volatileTriggered:
             return nil
         }
     }

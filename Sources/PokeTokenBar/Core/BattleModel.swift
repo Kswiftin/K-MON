@@ -919,6 +919,10 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// 순서 규칙과 부딪히지 않고 뒤에 붙는다. 충전·레이저포커스만 턴을 세고, 나머지 셋은
     /// 교체할 때까지 산다.
     case focusEnergy, laserFocus, minimize, defenseCurl, charge
+    /// 마지막 셋은 **쓰러지는 순간**에만 답한다(버틴다·같이 데려간다·PP 를 앗는다). 턴 끝에는
+    /// HP 도 배율도 만지지 않으므로 위 순서 규칙과 부딪히지 않고 뒤에 붙는다. 인내만 한 턴짜리고,
+    /// 운명공동체·원한은 **주인이 다음 기술을 낼 때** 풀린다(`endsOnNextMove`).
+    case endure, destinyBond, grudge
 
     /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
     /// `ShowdownEffectTableTests` 가 동결한다.
@@ -935,6 +939,9 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case "minimize":         self = .minimize
         case "defensecurl":      self = .defenseCurl
         case "charge":           self = .charge
+        case "endure":           self = .endure
+        case "destinybond":      self = .destinyBond
+        case "grudge":           self = .grudge
         default:                 return nil
         }
     }
@@ -951,7 +958,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// 함께 오르는 셋(작아지기·방어태세·충전)이 있어서, 그 갈래는 랭크도 같이 움직여야 한다.
     var targetsUser: Bool {
         switch self {
-        case .aquaRing, .ingrain, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge:
+        case .aquaRing, .ingrain, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
+             .endure, .destinyBond, .grudge:
             return true
         case .leechSeed, .nightmare, .curse, .partiallyTrapped:
             return false
@@ -967,8 +975,12 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     var selfDuration: Int {
         switch self {
         case .charge, .laserFocus: return 2
+        // 인내는 **쓴 턴에만** 산다 — 1 이면 그 턴 끝에 풀린다. 운명공동체·원한은 턴이 아니라
+        // 주인의 다음 행동까지 살아야 하므로 0(무기한)이고, 푸는 자리는 `beginAttack` 이다.
+        case .endure: return 1
         case .aquaRing, .ingrain, .focusEnergy, .minimize, .defenseCurl,
-             .leechSeed, .nightmare, .curse, .partiallyTrapped: return 0
+             .leechSeed, .nightmare, .curse, .partiallyTrapped,
+             .destinyBond, .grudge: return 0
         }
     }
 
@@ -980,7 +992,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .focusEnergy: return 2
         case .laserFocus:  return 3
         case .minimize, .defenseCurl, .charge, .aquaRing, .ingrain,
-             .leechSeed, .nightmare, .curse, .partiallyTrapped: return 0
+             .leechSeed, .nightmare, .curse, .partiallyTrapped,
+             .endure, .destinyBond, .grudge: return 0
         }
     }
 
@@ -993,7 +1006,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         switch self {
         case .aquaRing, .ingrain: return 16
         case .leechSeed, .nightmare, .curse, .partiallyTrapped,
-             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge: return nil
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
+             .endure, .destinyBond, .grudge: return nil
         }
     }
 
@@ -1006,7 +1020,32 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .curse:                         return (4, .curse)
         case .partiallyTrapped:              return (8, .trap)
         case .aquaRing, .ingrain, .leechSeed,
-             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge: return nil
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
+             .endure, .destinyBond, .grudge: return nil
+        }
+    }
+
+    /// 주인이 **다음 기술을 낼 때** 풀리는가 — 턴이 아니라 행동을 세는 부류다.
+    ///
+    /// 운명공동체·원한은 본가에서 "다음 행동까지" 산다. 턴 끝(`selfDuration`)으로 재면 느린 쪽이
+    /// 건 운명공동체가 다음 턴의 선공에 아무 일도 하지 않고, 무기한으로 두면 한 번 건 것이 배틀
+    /// 내내 산다. 그래서 푸는 자리가 `BattleEngine.beginAttack`(주인이 실제로 움직인 순간)이다.
+    var endsOnNextMove: Bool {
+        switch self {
+        case .destinyBond, .grudge: return true
+        case .endure, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge: return false
+        }
+    }
+
+    /// 방어기와 **연속 실패 카운터를 공유하는가**(인내 하나다). 따로 두면 방어와 인내를 번갈아
+    /// 눌러 벌점 없이 매 턴 살아남는다 — 본가도 같은 카운터를 쓴다.
+    var sharesGuardStreak: Bool {
+        switch self {
+        case .endure: return true
+        case .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse,
+             .partiallyTrapped, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge:
+            return false
         }
     }
 
@@ -1412,6 +1451,12 @@ enum BattleEngine {
     ///      (+2 / 확정)·데미지 두 배·위력 두 배가 달라진다. **rng 소비도 갈린다**: 이 다섯은 이제
     ///      데미지 경로를 안 지나므로 구버전이 뽑던 급소·난수 폭 두 번을 안 뽑고, 작아진 상대를
     ///      때리는 플래그 기술(발구르기 부류)은 명중 판정을 건너뛰어 한 번 덜 뽑는다.
+    ///      + 기절 순간에 답하는 volatile 셋(인내·운명공동체·원한) — 인내는 기술 데미지를 남은
+    ///      HP 하나로 자르고(잔뎀으로는 여전히 쓰러진다), 운명공동체는 쓰러뜨린 쪽을 함께 0 으로
+    ///      만들고, 원한은 쓰러뜨린 기술의 PP 를 0 으로 만든다. **rng 소비도 갈린다**: 인내는 방어
+    ///      부류와 연속 실패 카운터를 공유하므로 방어를 쓴 다음 턴의 인내가 한 번 더 뽑는다.
+    ///      `BattleEvent` 에 case 하나(`volatileTriggered`)가 늘어 구버전은 그 이벤트를
+    ///      디코딩하지 못한다.
     static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1925,6 +1970,11 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 조이기인지가 문구의 절반이다.
     case volatileStarted(BattleActor, BattleVolatile)
     case volatileEnded(BattleActor, BattleVolatile)
+    /// 붙어 있던 상태가 **일했다** — 인내로 버텼다 / 운명공동체로 데려갔다 / 원한으로 PP 를 앗았다.
+    /// 액터는 그 상태의 **주인**이다(버틴 쪽·쓰러진 쪽). 붙는 줄(`volatileStarted`)과 나누는 이유는
+    /// 시점이다: 셋은 붙는 턴이 아니라 쓰러지는 순간에 일하고, 그 순간에 줄이 없으면 상대가 왜
+    /// 같이 쓰러졌는지 로그로 설명되지 않는다.
+    case volatileTriggered(BattleActor, BattleVolatile)
     /// 이번 턴 몸을 지켰다 / 그 방어가 상대의 기술을 막았다. 액터는 **지킨 쪽**이다 —
     /// 막힌 줄이 누구의 방어인지가 문구의 절반이고, 공격자는 바로 앞 줄이 이미 말한다.
     case guardUp(BattleActor)
@@ -2288,6 +2338,13 @@ extension BattleEngine {
             return events + raiseGuard(user: &attacker, actor: attackerActor,
                                        defenderActor: defenderActor, rng: &rng)
         }
+        // 인내도 방어기와 **같은 카운터**를 쓴다(`BattleVolatile.sharesGuardStreak`) — 아래 연속
+        // 끊기보다 앞이어야 자기 카운터를 스스로 지우지 않는다. 막는 게 아니라 버티는 것이라
+        // `BattleGuard` 가 아니지만, 연속 사용 벌점은 하나를 나눠 쓴다.
+        if let selfVolatile = BattleVolatile.called(byMoveID: move.id), selfVolatile.sharesGuardStreak {
+            return events + raiseEndure(selfVolatile, user: &attacker, actor: attackerActor,
+                                        defenderActor: defenderActor, rng: &rng)
+        }
         // 편 방어기(와이드가드 부류)는 편 전체를 지킨다 — 개인 방어와 **같은 카운터**를 쓴다.
         // 여기가 연속 끊기(아래 줄)보다 앞이어야 자기 카운터를 스스로 지우지 않는다.
         if let teamGuard = BattleSideCondition.called(byMoveID: move.id), teamGuard.guardsTheTeam {
@@ -2379,6 +2436,21 @@ extension BattleEngine {
         return succeeded ? [.sideConditionStarted(team, condition)] : [.immune(defenderActor)]
     }
 
+    /// 인내 한 번 — 성공하면 이번 턴 쓰러지지 않는 상태가 자기에게 붙는다.
+    ///
+    /// 확률·카운터는 방어기와 **하나를 공유한다**(본가와 같다). 이미 붙어 있으면(같은 턴에 두 번)
+    /// 실패고, 성공 판정을 지난 뒤에 보므로 rng 소비는 성공·실패에서 같다 — `raiseTeamGuard` 와
+    /// 같은 모양이다.
+    private static func raiseEndure(_ volatileStatus: BattleVolatile, user: inout BattleSide,
+                                    actor: BattleActor, defenderActor: BattleActor,
+                                    rng: inout SplitMix64) -> [BattleEvent] {
+        let succeeded = guardSucceeds(streak: user.guardStreak, rng: &rng)
+            && user.start(volatileStatus, turns: volatileStatus.selfDuration)
+        user.lastMoveFailed = !succeeded
+        user.guardStreak = succeeded ? user.guardStreak + 1 : 0
+        return succeeded ? [.volatileStarted(actor, volatileStatus)] : [.immune(defenderActor)]
+    }
+
     /// 방어 성공 판정 — 연속 성공 횟수만큼 확률이 1/3^n 로 떨어진다.
     ///
     /// **rng 는 연속일 때만 뽑는다.** 첫 방어에서 뽑으면 방어를 넣은 뒤 모든 판정이 한 칸씩 밀려,
@@ -2407,6 +2479,13 @@ extension BattleEngine {
             attacker.lastMoveID = nil
             attacker.lastMoveFailed = true
             return false
+        }
+        // 운명공동체·원한은 **주인이 움직이는 순간** 풀린다(본가와 같다). 못 움직인 턴(잠듦·마비)에는
+        // 위에서 조기반환하므로 그대로 살아 있다 — 그것도 본가와 같다.
+        for volatileStatus in BattleVolatile.allCases where volatileStatus.endsOnNextMove {
+            guard attacker.volatiles[volatileStatus] != nil else { continue }
+            attacker.volatiles[volatileStatus] = nil
+            events.append(.volatileEnded(actor, volatileStatus))
         }
         // 위력을 **뽑기 전에** 올린다 — 리프블레이드는 첫 사용이 1회차(기본 위력)여야 한다.
         if attacker.lastMoveID == move.id {
@@ -2490,7 +2569,12 @@ extension BattleEngine {
             else if outcome.effectiveness < 1 { events.append(.resisted(defenderActor)) }
         }
         // 감쇠는 **0 을 만들지 않는다** — 1 이라도 들어가야 "맞았는데 안 깎였다"가 안 된다.
-        let damage = scaled(outcome.damage, by: damageScale)
+        var damage = scaled(outcome.damage, by: damageScale)
+        // 인내는 **기술 데미지로만** 버틴다 — 남은 HP 하나를 남기고 자른다(쇼다운 `onDamage` 와 같은
+        // 자리다). 잔뎀·혼란 자멸은 여기를 지나지 않으므로 그쪽으로는 쓰러진다(본가와 같다).
+        // 다단기는 합계로 한 번 자른다 — 이 엔진이 히트별로 HP 를 깎지 않기 때문이다.
+        let endured = defender.has(.endure) && damage >= defender.hp
+        if endured { damage = defender.hp - 1 }
         // 데미지 0(변화기)은 `.damage` 를 내보내지 않는다 — "0 데미지" 줄은 맞았는데 안 깎인 것처럼 읽힌다.
         if damage > 0 {
             defender.hp = max(0, defender.hp - damage)
@@ -2520,6 +2604,9 @@ extension BattleEngine {
                 // 순서고, 여기서 내면 "때린 쪽이 쓰러졌다 → 맞은 쪽이 독에 걸렸다"로 읽힌다.
             }
         }
+        // HP 1 에서 버티면 자른 데미지가 0 이라 위 블록을 아예 지나지 않는다 — 그래서 버틴 줄은
+        // 데미지 줄과 **따로** 낸다(안 그러면 그 턴이 로그에 무반응으로 남는다).
+        if endured { events.append(.volatileTriggered(defenderActor, .endure)) }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         if defender.isAlive {
             events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor,
@@ -2537,7 +2624,16 @@ extension BattleEngine {
         events += applyStatChanges(of: move, attacker: &attacker, defender: &defender,
                                    attackerActor: attackerActor, defenderActor: defenderActor,
                                    field: field, defenderTeam: defenderTeam, rng: &rng)
-        if !defender.isAlive { events.append(.faint(defenderActor)) }
+        if !defender.isAlive {
+            events.append(.faint(defenderActor))
+            // **기절 순간의 훅은 이 자리 하나다.** 광역기는 대상마다 `applyHit` 을 직접 부르므로
+            // (`WaveBattle`) 여기 둬야 네 모드가 같은 규칙을 쓴다 — 방어 판정·상대 volatile 이
+            // 이 자리로 내려온 것과 같은 이유다. 턴 끝 잔뎀에는 **두지 않는다**: 운명공동체·원한은
+            // "상대의 기술로 쓰러졌다" 가 조건이라, 독으로 쓰러진 턴에 걸리면 아무도 안 때렸는데
+            // 상대가 같이 쓰러진다(본가·쇼다운도 기술로 쓰러질 때만 발동한다).
+            events += faintTriggers(of: move, victim: &defender, killer: &attacker,
+                                    victimActor: defenderActor)
+        }
         // 반동으로 때린 쪽이 쓰러졌으면 맞은 쪽 **뒤에** 적는다(Showdown 순서). 여기 오기 전에
         // 공격측이 죽는 길은 반동뿐이다. 혼란 자멸은 `canAct` 에서 조기반환한다.
         if !attacker.isAlive { events.append(.faint(attackerActor)) }
@@ -2613,6 +2709,30 @@ extension BattleEngine {
             let cost = max(1, attacker.stats.hp / 2)
             attacker.hp = max(0, attacker.hp - cost)
             events.append(.damage(attackerActor, amount: cost, cause: .curse))
+        }
+        return events
+    }
+
+    /// 상대의 기술로 쓰러진 순간에 답하는 둘 — 운명공동체(같이 데려간다)·원한(그 기술의 PP 를 앗는다).
+    ///
+    /// 쓰러진 쪽에 붙어 있던 상태를 읽으므로 **쓰러뜨린 쪽을 함께 만진다**. `.faint(쓰러뜨린 쪽)` 줄은
+    /// 여기서 내지 않는다 — `applyHit` 이 맞은 쪽 뒤에 한 번 낸다(쇼다운 순서).
+    private static func faintTriggers(of move: MoveSpec, victim: inout BattleSide,
+                                      killer: inout BattleSide,
+                                      victimActor: BattleActor) -> [BattleEvent] {
+        var events: [BattleEvent] = []
+        if victim.has(.destinyBond), killer.isAlive {
+            killer.hp = 0
+            events.append(.volatileTriggered(victimActor, .destinyBond))
+        }
+        // 원한은 **쓰러뜨린 그 기술**의 PP 만 앗는다. 같은 id 를 두 칸에 든 무브셋은 없으므로
+        // 첫 칸으로 찾는다. 이미 0 이면(발버둥으로 쓰러뜨린 경우 무브셋에 없다) 아무 일도 없다 —
+        // "PP 를 앗았다" 줄만 남는 턴을 만들지 않는다.
+        if victim.has(.grudge),
+           let index = killer.moves.firstIndex(where: { $0.id == move.id }),
+           killer.pp.indices.contains(index), killer.pp[index] > 0 {
+            killer.pp[index] = 0
+            events.append(.volatileTriggered(victimActor, .grudge))
         }
         return events
     }

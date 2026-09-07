@@ -18,8 +18,8 @@ final class ShowdownEffectTableTests: XCTestCase {
     private static let unmodeledVolatiles: Set<String> = [
         // 기술 **선택**을 막는 부류 — 네 모드(1v1·모의전·웨이브·방)와 터미널 UI 까지 번진다.
         "disable", "encore", "taunt", "torment", "imprison", "healblock",
-        // 기절 시점 훅이 없다 — 쓰러지는 순간에 무언가 하는 자리가 엔진에 아직 없다.
-        "destinybond", "grudge", "endure", "bide",
+        // 맞은 데미지를 모아 두 배로 되돌려주는 부류 — 기술이 나가기 전에 턴을 잡아먹는 자리가 없다.
+        "bide",
         // HP 대신 맞는 층(대타출동)이 없다 — 데미지·상태 경로 전부를 지나야 한다.
         "substitute",
         // 다인전 타겟 유도 — 대상을 고르는 자리가 방·웨이브에만 있다.
