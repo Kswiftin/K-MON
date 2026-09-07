@@ -21,6 +21,28 @@ final class FirstRunChromeTests: XCTestCase {
         XCTAssertTrue(PopoverChrome.showsGameChrome(needsStarterSelection: false))
     }
 
+    // MARK: 첫 화면의 창 높이
+
+    /// 크롬을 접었으면 창도 같이 줄여야 한다. 780pt 는 도감 · 상점의 520pt 격자에 맞춘 값이라,
+    /// 스타터 화면(이름칸 + 타입 16종 4행 격자 + 안내 한 줄 ≈ 500pt)에 그대로 쓰면 아래
+    /// 300pt 가 빈 채로 남는다 — 접어서 정돈한 화면이 아니라 덜 만든 화면으로 읽힌다.
+    func testTheFirstRunWindowIsShorterThanATab() {
+        let screen: CGFloat = 1440
+        XCTAssertLessThan(PopoverMetrics.firstRunHeight(screenHeight: screen),
+                          PopoverMetrics.height(for: .home, screenHeight: screen),
+                          "고를 것 하나만 남긴 화면이 도감 격자와 같은 높이일 이유가 없다")
+    }
+
+    /// 작은 화면에서는 탭과 같은 상한을 받는다 — 첫 화면만 예외를 두면 그 화면에서 클리핑(#9)이
+    /// 되살아난다.
+    func testTheFirstRunWindowStillObeysTheScreen() {
+        let tiny: CGFloat = 400
+        XCTAssertLessThanOrEqual(PopoverMetrics.firstRunHeight(screenHeight: tiny),
+                                 PopoverMetrics.maxHeight(screenHeight: tiny))
+        XCTAssertGreaterThanOrEqual(PopoverMetrics.firstRunHeight(screenHeight: tiny),
+                                    PopoverMetrics.minHeight)
+    }
+
     // MARK: 첫 화면이 무슨 앱인지 말한다
 
     /// 처음 열면 이름 입력칸부터 나왔다. 이 앱이 집중 타이머인지 포켓몬 게임인지, 왜 이름을

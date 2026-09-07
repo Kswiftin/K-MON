@@ -78,6 +78,23 @@ enum PopoverMetrics {
     static func currentHeight(for tab: PopoverTab) -> CGFloat {
         height(for: tab, screenHeight: NSScreen.main?.visibleFrame.height ?? fallbackScreenHeight)
     }
+
+    /// 스타터를 고르는 동안의 창 높이. `tabHeight` 는 도감 · 상점 · 가방이 안에 든 520pt 격자에
+    /// 맞춘 값이라, 게임 크롬을 접은 첫 화면에 그대로 쓰면 아래가 300pt 가까이 빈다.
+    ///
+    /// 값은 화면 내용에서 나왔다 — 소개 두 줄 · 이름칸 · 타입 16종(폭 332pt 에 4열이라 4행) ·
+    /// 안내 한 줄로 약 500pt 다. 남은 여유는 en · ja 에서 안내가 세 줄로 접힐 때를 위한 것이다.
+    /// 탭과 같은 화면 상한을 받는다 — 첫 화면만 예외를 두면 좁은 화면에서 클리핑(#9)이 되살아난다.
+    static let firstRunContentHeight: CGFloat = 540
+
+    static func firstRunHeight(screenHeight: CGFloat) -> CGFloat {
+        min(firstRunContentHeight, maxHeight(screenHeight: screenHeight))
+    }
+
+    @MainActor
+    static var currentFirstRunHeight: CGFloat {
+        firstRunHeight(screenHeight: NSScreen.main?.visibleFrame.height ?? fallbackScreenHeight)
+    }
 }
 
 @MainActor
@@ -258,7 +275,10 @@ struct PopoverView: View {
                 // 그려 떨리고, 화면을 넘기면 스크롤 대신 잘라낸다(#9). 창 크기는 고정하고 넘치는
                 // 부분만 탭 안에서 스크롤한다 — 타이머·탭바·푸터는 스크롤 밖이라 항상 제자리다.
                 mainContent
-                    .frame(height: PopoverMetrics.currentHeight(for: nav.tab))
+                    .frame(height: PopoverChrome.showsGameChrome(
+                        needsStarterSelection: companion.needsStarterSelection)
+                           ? PopoverMetrics.currentHeight(for: nav.tab)
+                           : PopoverMetrics.currentFirstRunHeight)
             }
         }
         .frame(width: PopoverMetrics.width)
