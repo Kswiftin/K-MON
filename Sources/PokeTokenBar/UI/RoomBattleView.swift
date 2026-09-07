@@ -61,6 +61,11 @@ struct RoomBattleView: View {
         }
     }
 
+    /// 편 표시 — 색 동그라미 **와 글자**. 표기를 한 곳에 두어 대기실과 교전 화면이 갈리지 않게 한다.
+    private func teamMark(_ team: BattleTeam) -> String {
+        team == .red ? "🔴 R" : "🔵 B"
+    }
+
     private var headerBar: some View {
         PokedoroOverlayHeader(title: l.t("2~4인 방 배틀", "Room Battle", "2〜4人ルームバトル"),
                               systemImage: "person.3.fill",
@@ -187,7 +192,9 @@ struct RoomBattleView: View {
                         }
                         Spacer()
                         if lobby.mode == .teams {
-                            Text(participant.team == .red ? "🔴" : "🔵")
+                            // 색만으로 편을 가르면 색각 이상 사용자는 자기 편을 못 찾는다 —
+                            // 글자를 함께 둔다. 이 화면에서 편은 승패를 읽는 유일한 단서다.
+                            Text(teamMark(participant.team))
                         }
                         Image(systemName: participant.isReady ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(participant.isReady ? .green : .secondary)
@@ -261,7 +268,7 @@ struct RoomBattleView: View {
                     VStack(spacing: 2) {
                         HStack {
                             if isTeamBattle {
-                                Text(fighter.team == .red ? "🔴" : "🔵").font(.caption2)
+                                Text(teamMark(fighter.team)).font(.caption2)
                             }
                             Text(fighter.trainerName).font(.caption2).bold().lineLimit(1)
                         }

@@ -307,7 +307,15 @@ private struct MemoryHomeWindowView: View {
                     Text("\(log.daysTogether) \(l.t("일 함께", "days together", "日いっしょ"))").font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            MemoryHomeRule(label: l.t("친밀도", "Closeness", "なかよし度"), value: String(repeating: "♥", count: log.closenessHearts) + String(repeating: "♡", count: 5 - log.closenessHearts))
+            // 하트 글리프는 화면 판독기가 "하트 하트 하트 흰하트 흰하트" 로 읽는다 — 눈으로는
+            // 게이지지만 귀로는 수가 아니다. 읽을 값은 따로 준다.
+            MemoryHomeRule(label: l.t("친밀도", "Closeness", "なかよし度"),
+                           value: String(repeating: "♥", count: log.closenessHearts)
+                                + String(repeating: "♡", count: 5 - log.closenessHearts))
+                .accessibilityLabel(l.t("친밀도", "Closeness", "なかよし度"))
+                .accessibilityValue(l.t("5점 만점에 \(log.closenessHearts)점",
+                                        "\(log.closenessHearts) out of 5",
+                                        "5点中\(log.closenessHearts)点"))
             let mood = store.memoryAlbum.mood()
             MemoryHomeRule(label: l.t("현재 기분", "Mood", "今の気分"), value: mood.map { MemoryHomeMoodStyle.emoji($0) + " " + MemoryHomeMoodStyle.name($0, l) } ?? "—")
             Button(l.t("프로필 보기", "View profile", "プロフィールを見る")) { tab = .profile }

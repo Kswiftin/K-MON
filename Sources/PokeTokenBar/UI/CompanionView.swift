@@ -90,6 +90,9 @@ extension EnvironmentValues {
 
 struct SpriteView: View {
     @Environment(\.spriteAntialiasing) private var antialiasing
+    /// 상시 반복 애니메이션은 시스템의 "동작 줄이기" 를 따라야 한다. 이 둥실거림은 끝이 없고
+    /// 화면에 늘 떠 있어, 전정기관이 예민한 사용자에게는 계속 흔들리는 화면이 된다.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let speciesID: Int?
     var size: CGFloat = 84
     var bob: Bool = false
@@ -244,7 +247,7 @@ struct SpriteView: View {
             }
         }
         .onAppear {
-            guard bob else { return }
+            guard bob, !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { up = true }
         }
     }
@@ -462,6 +465,9 @@ struct EvoLineView: View {
 
 /// 팝오버 상단 — 현재 포켓몬 + 진화 진행 + 부화/진화 연출.
 struct CompanionHeader: View {
+    /// 알 흔들림도 끝이 없는 반복이라 "동작 줄이기" 를 따른다. 끄더라도 부화 임박은 계속
+    /// 보인다 — 흔들리지 않는 대신 기울어진 채로 멈춘다(`eggImminent` 가 각도를 유지한다).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let store: CompanionStore
     // 연출 상태 — 부화/진화 순간 흰 플래시 + 스프링 스케일(본가 진화 신 오마주)
     @State private var flashOpacity: Double = 0
@@ -861,7 +867,7 @@ struct CompanionHeader: View {
     }
 
     private func syncEggWiggle() {
-        if eggImminent {
+        if eggImminent, !reduceMotion {
             withAnimation(.easeInOut(duration: 0.35).repeatForever(autoreverses: true)) { eggWiggle = true }
         } else {
             withAnimation(.default) { eggWiggle = false }
