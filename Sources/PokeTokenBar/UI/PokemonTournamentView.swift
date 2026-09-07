@@ -65,7 +65,7 @@ struct PokemonTournamentView: View {
                     HStack {
                         SpriteView(speciesID: player.speciesID, size: 28)
                         Text(player.trainerName).font(.caption.bold())
-                        if player.isHost { Text("HOST").font(.system(size: 8)).foregroundStyle(.orange) }
+                        if player.isHost { Text("HOST").font(PokedoroTheme.badgeFont(size: 8)).foregroundStyle(.orange) }
                         Spacer()
                         Image(systemName: player.isReady ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(player.isReady ? .green : .secondary)

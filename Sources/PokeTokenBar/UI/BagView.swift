@@ -80,7 +80,7 @@ private struct TechnicalMachineBagCard: View {
                     .frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(machine.label).font(.system(size: 9, weight: .black, design: .rounded))
+                        Text(machine.label).font(.system(size: 10, weight: .black, design: .rounded))
                             .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
                             .background(.purple, in: Capsule())
                         Text(move?.name(store.language) ?? machine.slug).font(.callout.weight(.semibold))

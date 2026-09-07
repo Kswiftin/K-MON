@@ -183,7 +183,7 @@ struct RaidView: View {
                         VStack(spacing: 1) {
                             Text("\(tier.rawValue)★").font(.callout.bold())
                             Text(l.raidTierLabel(tier.rawValue, runners: tier.recommendedRunners))
-                                .font(.system(size: 9)).foregroundStyle(.secondary)
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                     }

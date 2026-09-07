@@ -69,7 +69,7 @@ private struct GymRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(gym.type.name(store.language))
-                .font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                .font(PokedoroTheme.badgeFont(size: 9, weight: .heavy)).foregroundStyle(.white)
                 .frame(width: 42)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color.accentColor.opacity(0.55)))
@@ -106,7 +106,7 @@ private struct RewardLabel: View {
                     Text("🥚")
                     if let tier = reward.eggGuarantee {
                         Text(store.l.rarityLabel(tier))
-                            .font(.system(size: 8, weight: .bold))
+                            .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                             .foregroundStyle(Color.accentColor)
                     }
                 }

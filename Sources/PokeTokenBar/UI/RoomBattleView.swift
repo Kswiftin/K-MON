@@ -173,7 +173,7 @@ struct RoomBattleView: View {
                       systemImage: "person.3.fill").font(.callout).bold()
                 Spacer()
                 Text(center.multiplayer.isHost ? l.t("방장", "HOST", "ホスト") : "")
-                    .font(.system(size: 9, weight: .bold)).foregroundStyle(.orange)
+                    .font(PokedoroTheme.badgeFont(size: 9, weight: .bold)).foregroundStyle(.orange)
             }
             if case .creating = center.multiplayer.phase {
                 ProgressView(l.t("방을 만드는 중…", "Creating room…", "部屋を作成中…"))
@@ -188,7 +188,7 @@ struct RoomBattleView: View {
                         SpriteView(speciesID: participant.speciesID, size: 30)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(participant.trainerName).font(.caption).bold().lineLimit(1)
-                            Text(participant.isHost ? "HOST" : "PLAYER").font(.system(size: 8)).foregroundStyle(.secondary)
+                            Text(participant.isHost ? "HOST" : "PLAYER").font(PokedoroTheme.badgeFont(size: 8)).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if lobby.mode == .teams {
@@ -284,7 +284,7 @@ struct RoomBattleView: View {
                         Text(fighter.id == center.multiplayer.myID
                              ? HPReadout.mine(hp: fighter.side.hp, max: fighter.side.stats.hp)
                              : HPReadout.theirs(hp: fighter.side.hp, max: fighter.side.stats.hp))
-                            .font(.system(size: 8, design: .monospaced)).foregroundStyle(.secondary)
+                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                         StatusBadgeRow(side: fighter.side)
                         // 방 화면도 랭크를 그린다 — 없으면 4인 방에선 로그 문장으로만 남는다.
                         StageArrows(side: fighter.side)

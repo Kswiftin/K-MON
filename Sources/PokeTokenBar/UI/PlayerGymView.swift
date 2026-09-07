@@ -246,21 +246,21 @@ struct PlayerGymView: View {
                 ForEach(store.gymDefenseLog.prefix(8)) { record in
                     HStack(spacing: 6) {
                         Image(systemName: record.defended ? "shield.fill" : "flag.slash.fill")
-                            .font(.system(size: 8))
+                            .font(PokedoroTheme.glyphFont(size: 8))
                             .foregroundStyle(record.defended ? Color.green : Color.orange)
                         Text(record.challengerName).font(.caption2.bold()).lineLimit(1)
                         Text(record.defended ? l.playerGymDefended : l.playerGymYielded)
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(record.defended ? Color.green : Color.orange)
                         if record.payout > 0 {
                             Text("⭐ \(GameNumberFormatter.compact(record.payout))")
-                                .font(.system(size: 8, design: .monospaced))
+                                .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 2)
                         Text(l.playerGymTimeAgo(l.playerGymDuration(
                             minutes: PlayerGym.tenureMinutes(since: record.at, now: tick))))
-                            .font(.system(size: 8)).foregroundStyle(.tertiary)
+                            .font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
             }

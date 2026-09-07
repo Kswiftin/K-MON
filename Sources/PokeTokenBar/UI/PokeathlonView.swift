@@ -177,7 +177,7 @@ struct PokeathlonView: View {
             SpriteView(speciesID: player.speciesID, size: 28)
             Text(player.trainerName).font(.caption.bold())
             Spacer()
-            if player.isHost { Text("HOST").font(.system(size: 8, weight: .bold)).foregroundStyle(.orange) }
+            if player.isHost { Text("HOST").font(PokedoroTheme.badgeFont(size: 8, weight: .bold)).foregroundStyle(.orange) }
             if showsReady {
                 Image(systemName: player.isReady ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(player.isReady ? .green : .secondary)
@@ -248,9 +248,9 @@ struct PokeathlonView: View {
                     let x = usable * CGFloat((player.position + 1) / 2)
                     VStack(spacing: -3) {
                         SpriteView(speciesID: player.speciesID, size: 28)
-                        Text(player.trainerName).font(.system(size: 8, weight: .bold)).lineLimit(1)
+                        Text(player.trainerName).font(PokedoroTheme.badgeFont(size: 8, weight: .bold)).lineLimit(1)
                             .padding(.horizontal, 3).background(.white.opacity(0.86), in: Capsule())
-                        Text("\(player.score)점").font(.system(size: 8, weight: .black).monospacedDigit())
+                        Text("\(player.score)점").font(PokedoroTheme.badgeFont(size: 8, weight: .black).monospacedDigit())
                     }
                     .frame(width: 42)
                     .offset(x: x, y: 20 + CGFloat(index % 5) * 32 + (game.isRevealing && player.lastCorrect == false ? 24 : 0))
@@ -348,7 +348,7 @@ struct PokeathlonView: View {
                     .font(.caption.bold()).foregroundStyle(.white)
                 Spacer()
                 Text(store.l.t("실시간 순위", "LIVE STANDINGS", "リアルタイム順位"))
-                    .font(.system(size: 9, weight: .black)).foregroundStyle(.white.opacity(0.75))
+                    .font(.system(size: 10, weight: .black)).foregroundStyle(.white.opacity(0.75))
             }
             HStack(spacing: 5) {
                 ForEach(Array(standings.enumerated()), id: \.element.id) { index, racer in
@@ -369,8 +369,8 @@ struct PokeathlonView: View {
                 .background(position == 1 ? Color.yellow : Color.white.opacity(0.18), in: Circle())
             SpriteView(speciesID: racer.activeSpeciesID, size: 20)
             VStack(alignment: .leading, spacing: 0) {
-                Text(racer.trainerName).font(.system(size: 9, weight: .bold)).lineLimit(1)
-                Text("\(racer.distance)m").font(.system(size: 8).monospacedDigit()).opacity(0.8)
+                Text(racer.trainerName).font(.system(size: 10, weight: .bold)).lineLimit(1)
+                Text("\(racer.distance)m").font(.system(size: 10).monospacedDigit()).opacity(0.8)
             }
         }
         .foregroundStyle(.white).padding(.horizontal, 4).padding(.vertical, 3)
@@ -434,10 +434,10 @@ struct PokeathlonView: View {
         let x = min(usableWidth, usableWidth * CGFloat(racer.distance % 100) / 100)
         return VStack(spacing: -4) {
             Text(racer.id == center.myID ? "▼" : "")
-                .font(.system(size: 8, weight: .black)).foregroundStyle(.yellow)
+                .font(PokedoroTheme.glyphFont(size: 8, weight: .black)).foregroundStyle(.yellow)
             SpriteView(speciesID: racer.activeSpeciesID, size: 34)
                 .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
-            Text(racer.trainerName).font(.system(size: 8, weight: .bold)).lineLimit(1)
+            Text(racer.trainerName).font(PokedoroTheme.badgeFont(size: 8, weight: .bold)).lineLimit(1)
                 .padding(.horizontal, 3).background(.white.opacity(0.78), in: Capsule())
         }
         .frame(width: 42)

@@ -105,14 +105,14 @@ struct FocusRecapView: View {
                 let isToday = day.dayKey == todayKey
                 VStack(spacing: 3) {
                     Text(day.minutes > 0 ? "\(day.minutes)" : " ")
-                        .font(.system(size: 9)).monospacedDigit().foregroundStyle(.secondary)
+                        .font(.system(size: 10)).monospacedDigit().foregroundStyle(.secondary)
                     // 0분인 날도 실선 한 줄은 남긴다 — 칸이 통째로 비면 요일 이름만 떠 있어
                     // 막대가 아니라 오류처럼 보인다.
                     RoundedRectangle(cornerRadius: 3)
                         .fill(isToday ? PokedoroTheme.red : PokedoroTheme.blue.opacity(0.55))
                         .frame(height: barLength(minutes: day.minutes, peak: peak))
                     Text(day.date.formatted(Date.FormatStyle(locale: locale).weekday(.abbreviated)))
-                        .font(.system(size: 9, weight: isToday ? .bold : .regular))
+                        .font(.system(size: 10, weight: isToday ? .bold : .regular))
                         .foregroundStyle(isToday ? .primary : .secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -157,7 +157,7 @@ struct FocusRecapView: View {
             Text(l.t("앞 세션이 끝나고 \(FocusWeekRecap.chainWindowMinutes)분 안에 시작한 경우",
                      "Started within \(FocusWeekRecap.chainWindowMinutes) min of the previous session",
                      "前のセッション終了から\(FocusWeekRecap.chainWindowMinutes)分以内に開始した場合"))
-                .font(.system(size: 9)).foregroundStyle(.secondary)
+                .font(.system(size: 10)).foregroundStyle(.secondary)
         }
         .padding(.top, 2)
     }

@@ -137,10 +137,10 @@ struct WaveRunArenaView: View {
                 .animation(.easeInOut(duration: 0.08).repeatCount(4, autoreverses: true),
                            value: isStruck)
             HStack(spacing: 3) {
-                if side.snapshot.isShiny { Text("✨").font(.system(size: 8)) }
+                if side.snapshot.isShiny { Text("✨").font(PokedoroTheme.glyphFont(size: 8)) }
                 Text(side.snapshot.name).font(.system(size: 10, weight: .bold)).lineLimit(1)
                 Text(l.battleLv(side.snapshot.level))
-                    .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer(minLength: 2)
                 StatusBadgeRow(side: side)
             }
@@ -161,12 +161,12 @@ struct WaveRunArenaView: View {
             .frame(height: 4)
             HStack(spacing: 3) {
                 Text(isMine ? l.battleMyPokemon : theirTitle)
-                    .font(.system(size: 8)).foregroundStyle(.tertiary).lineLimit(1)
+                    .font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                 Spacer(minLength: 2)
                 StageArrows(side: side)
                 Text(isMine ? HPReadout.mine(hp: side.hp, max: side.stats.hp)
                             : HPReadout.theirs(hp: side.hp, max: side.stats.hp))
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
         }
@@ -198,10 +198,10 @@ struct WaveRunArenaView: View {
             Text(l.t("\(actingCell.ordinal + 1)번 칸 — \(actingCell.side.snapshot.name) 의 행동",
                      "Slot \(actingCell.ordinal + 1) — \(actingCell.side.snapshot.name)'s action",
                      "\(actingCell.ordinal + 1)番目の枠 — \(actingCell.side.snapshot.name) の行動"))
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
         } else {
             Text(l.battleYourTurn)
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
         }
     }
 
@@ -243,7 +243,7 @@ struct WaveRunArenaView: View {
         } else if sendOutSlot == nil {
             // 행동을 다 정했거나 재생 중이다 — 빈 자리를 두면 아래 줄이 위로 밀려 올라온다.
             Text(l.battleWaitingOpponent)
-                .font(.system(size: 9)).foregroundStyle(.tertiary)
+                .font(.system(size: 10)).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
         }
     }

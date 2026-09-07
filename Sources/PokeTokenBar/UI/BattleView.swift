@@ -524,7 +524,7 @@ struct BattleView: View {
                         ForEach(Array(center.incomingBattlePool.enumerated()), id: \.offset) { _, snapshot in
                             VStack(spacing: 1) {
                                 SpriteView(speciesID: snapshot.speciesID, size: 30, shiny: snapshot.isShiny)
-                                Text(snapshot.name).font(.system(size: 7)).lineLimit(1)
+                                Text(snapshot.name).font(.system(size: 10)).lineLimit(1)
                             }.frame(maxWidth: .infinity)
                         }
                     }

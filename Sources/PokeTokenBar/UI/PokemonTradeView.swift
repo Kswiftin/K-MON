@@ -168,7 +168,7 @@ struct PokemonTradeView: View {
                                     VStack(spacing: 2) {
                                         SpriteView(speciesID: entry.mon.presentationID, size: 34,
                                                    shiny: entry.mon.isShiny)
-                                        Text(entry.displayName).font(.system(size: 8, weight: .semibold)).lineLimit(1)
+                                        Text(entry.displayName).font(.system(size: 10, weight: .semibold)).lineLimit(1)
                                     }
                                     .padding(5).frame(width: 70)
                                     .background(center.requestedRemoteMonID == entry.mon.id

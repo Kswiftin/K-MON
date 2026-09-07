@@ -587,7 +587,7 @@ private struct MemoryHomeWindowView: View {
                             RoundedRectangle(cornerRadius: 5).fill(MemoryHomeRoomStyle.tint(for: style)).frame(height: 18)
                             Text(style.name(l)).font(.caption2.weight(.semibold)).lineLimit(1)
                             Text(roomStyleStatus(style, unlocked: unlocked, active: style == album.roomStyle))
-                                .font(.system(size: 9)).lineLimit(1).foregroundStyle(unlocked ? Color.secondary : Color.orange)
+                                .font(.system(size: 10)).lineLimit(1).foregroundStyle(unlocked ? Color.secondary : Color.orange)
                         }.frame(maxWidth: .infinity).padding(5)
                     }.buttonStyle(.plain)
                     .background(style == album.roomStyle ? MemoryHomeRoomStyle.tint(for: style).opacity(0.18) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))

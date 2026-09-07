@@ -190,7 +190,7 @@ struct RaidArenaView: View {
                 .animation(.easeInOut(duration: 0.08).repeatCount(4, autoreverses: true),
                            value: isStruck)
             HStack(spacing: 3) {
-                Text(cell.title).font(.system(size: 9, weight: .bold)).lineLimit(1)
+                Text(cell.title).font(.system(size: 10, weight: .bold)).lineLimit(1)
                 Spacer(minLength: 2)
                 StatusBadgeRow(side: side)
             }
@@ -212,7 +212,7 @@ struct RaidArenaView: View {
                 // 내 실수치만 드러낸다 — 남의 HP 는 원래 모르는 정보다(4인 방과 같은 규칙).
                 Text(isMine ? HPReadout.mine(hp: side.hp, max: side.stats.hp)
                             : HPReadout.theirs(hp: side.hp, max: side.stats.hp))
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
         }

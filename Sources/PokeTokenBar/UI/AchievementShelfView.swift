@@ -31,7 +31,7 @@ struct AchievementShelfView: View {
                         .font(.caption2).lineLimit(1)
                         .foregroundStyle(next == nil ? .secondary : .primary)
                     Text(tierDots(reached: row.tier, of: row.achievement.tiers.count))
-                        .font(.system(size: 9)).foregroundStyle(.orange)
+                        .font(PokedoroTheme.badgeFont(size: 9)).foregroundStyle(.orange)
                         .accessibilityLabel(l.achievementTierLabel(row.tier, row.achievement.tiers.count))
                     Spacer(minLength: 4)
                     if let next {

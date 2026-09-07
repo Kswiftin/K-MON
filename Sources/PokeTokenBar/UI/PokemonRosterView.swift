@@ -361,7 +361,7 @@ private struct RosterMonCard: View {
                     .overlay(alignment: .topLeading) {
                         if mon.isShiny {
                             Text("✨")
-                                .font(.system(size: 8))
+                                .font(PokedoroTheme.glyphFont(size: 8))
                                 .padding(.horizontal, 2)
                                 .background(.regularMaterial, in: Capsule())
                                 .accessibilityLabel(store.l.dexShinyLabel)
@@ -375,11 +375,11 @@ private struct RosterMonCard: View {
                     }
                 }
                 .font(.system(size: 10, weight: .bold)).lineLimit(1)
-                Text("Lv.\(mon.level)").font(.system(size: 8)).foregroundStyle(.secondary)
+                Text("Lv.\(mon.level)").font(.system(size: 10)).foregroundStyle(.secondary)
                 HStack(spacing: 3) {
                     ForEach(types, id: \.self) { type in
                         Text(type.name(store.language).uppercased())
-                            .font(.system(size: 7, weight: .heavy)).foregroundStyle(.white)
+                            .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy)).foregroundStyle(.white)
                             .padding(.horizontal, 3).padding(.vertical, 1)
                             .background(type.rosterColor, in: Capsule())
                     }
@@ -388,7 +388,7 @@ private struct RosterMonCard: View {
                      ? store.l.gymDeployedBadge
                      : isActive ? store.l.t("동행 중", "Active", "同行中")
                                 : store.l.t("교체", "Switch", "交代"))
-                    .font(.system(size: 7, weight: .bold))
+                    .font(PokedoroTheme.badgeFont(size: 7, weight: .bold))
                     .foregroundStyle(isGymDeployed ? .orange : isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
         }
@@ -423,7 +423,7 @@ private struct RosterMonCard: View {
         .overlay(alignment: .topLeading) {
             if mon.isNewlyHatched {
                 Text("NEW")
-                    .font(.system(size: 7, weight: .black))
+                    .font(PokedoroTheme.badgeFont(size: 7, weight: .black))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4).padding(.vertical, 2)
                     .background(Color.red, in: Capsule())

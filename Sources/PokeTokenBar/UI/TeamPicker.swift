@@ -267,7 +267,7 @@ struct TeamPicker: View {
         return VStack(alignment: .leading, spacing: 3) {
             let name = displayName(mon)
             Text(l.t("\(name)의 기술", "\(name)'s moves", "\(name)のわざ"))
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary).lineLimit(1)
             ForEach(0..<Self.previewRows, id: \.self) { row in
                 HStack(spacing: 6) {
@@ -284,14 +284,14 @@ struct TeamPicker: View {
     private func moveCell(_ move: MoveSpec?) -> some View {
         HStack(spacing: 3) {
             Text(move.map { $0.name(store.language) } ?? "—")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 2)
             if let move {
                 MoveCategoryIcon(damageClass: move.damageClass, l: l)
                 Text(move.damageClass == .status ? l.moveCategoryStatus
                      : "\(l.moveCategory(move.damageClass)) · \(l.movePowerShort(move.power))")
-                    .font(.system(size: 8)).foregroundStyle(.secondary)
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
                     .lineLimit(1).fixedSize()
             }
         }
@@ -310,7 +310,7 @@ struct TeamPicker: View {
                 }
             } label: {
                 HStack(spacing: 2) {
-                    Image(systemName: "line.3.horizontal.decrease.circle").font(.system(size: 9))
+                    Image(systemName: "line.3.horizontal.decrease.circle").font(PokedoroTheme.glyphFont(size: 9))
                     Text(typeFilter?.name(store.language) ?? l.teamFilterAllTypes)
                 }
                 .font(.caption2)
@@ -345,7 +345,7 @@ struct TeamPicker: View {
             page = 0
         } label: {
             HStack(spacing: 2) {
-                Image(systemName: sortOrder.iconName).font(.system(size: 9))
+                Image(systemName: sortOrder.iconName).font(PokedoroTheme.glyphFont(size: 9))
                 Text(sortOrderLabel)
             }
             .font(.caption2)
@@ -400,7 +400,7 @@ private struct PickedSlot: View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 0) {
                 SpriteView(speciesID: mon.currentID, size: 28, shiny: mon.isShiny)
-                Text("\(order)").font(.system(size: 7, weight: .heavy)).foregroundStyle(.secondary)
+                Text("\(order)").font(PokedoroTheme.badgeFont(size: 7, weight: .heavy)).foregroundStyle(.secondary)
             }
             .frame(width: Self.width, height: Self.height)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.18)))
@@ -436,13 +436,13 @@ struct TeamPickChip: View {
                     SpriteView(speciesID: mon.currentID, size: 44, shiny: mon.isShiny)
                     if let pickedIndex {
                         Text("\(pickedIndex + 1)")
-                            .font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                            .font(PokedoroTheme.badgeFont(size: 9, weight: .heavy)).foregroundStyle(.white)
                             .frame(width: 15, height: 15)
                             .background(Circle().fill(Color.accentColor))
                     }
                 }
-                Text(name).font(.system(size: 9, weight: .semibold)).lineLimit(1)
-                Text("Lv.\(mon.level)").font(.system(size: 8)).foregroundStyle(.secondary)
+                Text(name).font(.system(size: 10, weight: .semibold)).lineLimit(1)
+                Text("Lv.\(mon.level)").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             .frame(width: width, height: Self.height)
         }

@@ -390,7 +390,7 @@ struct EvoLineView: View {
                 }
             } label: {
                 Image(systemName: forward ? "chevron.right" : "chevron.left")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(PokedoroTheme.glyphFont(size: 9, weight: .bold))
                     .accessibilityLabel(forward ? pageForwardLabel : pageBackLabel)
                     .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
@@ -452,8 +452,8 @@ struct EvoLineView: View {
                         }
                     if let names, case .species(let id) = node.content {
                         Text(names[id] ?? "…")
-                            .font(.system(size: 8)).foregroundStyle(.secondary)
-                            .lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: thumb + Self.nameSlack)
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .lineLimit(1).minimumScaleFactor(0.9).frame(maxWidth: thumb + Self.nameSlack)
                     }
                 }
                 .frame(width: thumb + (names == nil ? 0 : Self.nameSlack))
@@ -631,7 +631,7 @@ struct CompanionHeader: View {
                             }
                         }
                         if let r = store.rarity, !editingName {
-                            Text(store.l.rarityLabel(r).uppercased()).font(.system(size: 8, weight: .bold))
+                            Text(store.l.rarityLabel(r).uppercased()).font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(rarityColor(r)).foregroundStyle(.white)
                                 .clipShape(Capsule())
@@ -716,7 +716,7 @@ struct CompanionHeader: View {
                             // 등급 보증 알이면 무엇을 품고 있는지 — 도감 칩과 같은 라벨·색.
                             // 알 스프라이트는 한 장뿐이라 등급 구분은 이 배지가 유일한 신호다.
                             if let guarantee = store.eggGuarantee {
-                                Text(store.l.eggGuaranteeHint(guarantee)).font(.system(size: 8, weight: .bold))
+                                Text(store.l.eggGuaranteeHint(guarantee)).font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                                     .padding(.horizontal, 5).padding(.vertical, 1)
                                     .background(rarityColor(guarantee)).foregroundStyle(.white)
                                     .clipShape(Capsule())
@@ -894,7 +894,7 @@ struct TypeBadge: View {
         // lineLimit/fixedSize 가 없으면 좁은 행(긴 기술 이름 옆)에서 배지 글자가 줄바꿈돼
         // 행 높이가 통째로 늘어난다 — 기술 목록이 언어에 따라 다른 높이로 그려지던 원인.
         Text(type.name(language).uppercased())
-            .font(.system(size: 8, weight: .heavy))
+            .font(PokedoroTheme.badgeFont(size: 8, weight: .heavy))
             .foregroundStyle(.white)
             .lineLimit(1).fixedSize()
             .padding(.horizontal, 7).padding(.vertical, 2)
@@ -917,7 +917,7 @@ struct MoveCategoryIcon: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 9, weight: .bold)).foregroundStyle(color)
+            .font(PokedoroTheme.glyphFont(size: 9, weight: .bold)).foregroundStyle(color)
             .frame(width: 14, height: 14)
             .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
             .help(l.moveCategory(damageClass))
@@ -1035,7 +1035,7 @@ struct MoveListView: View {
                 Text(l.movePP(move.pp))
             }
             .font(.caption2).foregroundStyle(.secondary)
-            .lineLimit(1).minimumScaleFactor(0.75)
+            .lineLimit(1).minimumScaleFactor(0.9)
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
     }
@@ -1160,15 +1160,15 @@ private struct StatBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(l.statsAtLevel(level))
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
             ForEach(0..<2, id: \.self) { row in
                 HStack(spacing: 4) {
                     ForEach(0..<3, id: \.self) { column in
                         let cell = cells[row * 3 + column]
                         HStack(spacing: 3) {
                             Text(cell.label)
-                                .font(.system(size: 9)).foregroundStyle(.secondary)
-                                .lineLimit(1).minimumScaleFactor(0.8)
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                                .lineLimit(1).minimumScaleFactor(0.9)
                             Text("\(cell.value)")
                                 .font(.system(size: 10, weight: .semibold)).monospacedDigit()
                         }
@@ -1324,7 +1324,7 @@ private struct RelearnCandidateRow: View {
                         Text(l.movePP(move.pp))
                     }
                     .font(.caption2).foregroundStyle(.secondary)
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .lineLimit(1).minimumScaleFactor(0.9)
                 }
                 // 설명이 없는 기술도 있다(번역 누락·구기술). 빈 Text 를 그리면 행 높이만 들쭉날쭉해진다.
                 if let description = move.description(language), !description.isEmpty {
@@ -1389,7 +1389,7 @@ private struct MoveLearningCard: View {
                             Text(store.l.movePP(prompt.move.pp))
                         }
                         .font(.caption2).foregroundStyle(.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .lineLimit(1).minimumScaleFactor(0.9)
                     }
                 }
                 Spacer()
@@ -1458,7 +1458,7 @@ private struct MoveLearningCard: View {
 
     private func learningStat(_ label: String, _ value: Int) -> some View {
         VStack(spacing: 1) { Text(label).foregroundStyle(.secondary); Text("\(value)").bold() }
-            .font(.system(size: 8)).frame(maxWidth: .infinity).padding(.vertical, 3)
+            .font(.system(size: 10)).frame(maxWidth: .infinity).padding(.vertical, 3)
             .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 4))
     }
 }
@@ -1493,7 +1493,7 @@ private struct MoveReplacementRow: View {
                     Text(l.movePP(move.pp))
                 }
                 .font(.caption2).foregroundStyle(.secondary)
-                .lineLimit(1).minimumScaleFactor(0.75)
+                .lineLimit(1).minimumScaleFactor(0.9)
             }
             .padding(.horizontal, 7).padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1609,11 +1609,11 @@ struct RarityTally: View {
     var body: some View {
         HStack(spacing: 3) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text(label).font(.system(size: 9, weight: isSelected ? .semibold : .medium))
-            Text("\(count)").font(.system(size: 9, weight: .bold))
+            Text(label).font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+            Text("\(count)").font(.system(size: 10, weight: .bold))
             if isSelected {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 7, weight: .bold)).foregroundStyle(color)
+                    .font(PokedoroTheme.glyphFont(size: 7, weight: .bold)).foregroundStyle(color)
             }
         }
         .foregroundStyle(.primary)
@@ -1684,7 +1684,7 @@ struct DexGoalStrip: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.system(size: 9))
+        .font(.system(size: 10))
         .lineLimit(1)
     }
 }
@@ -1882,8 +1882,8 @@ private struct DexGridView: View {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: (caughtOnly || caughtOnlyLocked) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 9))
-                Text(store.l.dexCaughtOnly).font(.system(size: 9, weight: .medium))
+                    .font(PokedoroTheme.glyphFont(size: 9))
+                Text(store.l.dexCaughtOnly).font(.system(size: 10, weight: .medium))
             }
             .foregroundStyle(.primary)
             .padding(.horizontal, 6).padding(.vertical, 2)
@@ -1910,11 +1910,11 @@ private struct DexGridView: View {
                     Circle().fill(type.color).frame(width: 6, height: 6)
                     Text(type.name(store.language))
                 } else {
-                    Image(systemName: "line.3.horizontal.decrease").font(.system(size: 8))
+                    Image(systemName: "line.3.horizontal.decrease").font(PokedoroTheme.glyphFont(size: 8))
                     Text(store.l.dexTypeFilter)
                 }
             }
-            .font(.system(size: 9, weight: selectedType == nil ? .medium : .semibold))
+            .font(.system(size: 10, weight: selectedType == nil ? .medium : .semibold))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -1994,7 +1994,7 @@ private struct DexGridView: View {
                 // 가릴 이유가 없어진다. 타입을 알고 싶으면 타입 필터로 좁히면 된다.
                 Text(sel.species.map { "#\($0.id) \($0.name) · \(store.l.rarityLabel($0.rarity))" }
                      ?? "#\(sel.id) \(store.l.dexNotCaught)")
-                    .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
             if pageCount > 1 {
@@ -2092,9 +2092,9 @@ private struct DexSpeciesCell: View {
                         if slot.species?.isRaising == true { raisingBadge.fixedSize() }
                     }
                 Text(slot.species?.name ?? Self.unknownName)
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(slot.isCaught ? .primary : .secondary)
-                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .lineLimit(1).minimumScaleFactor(0.9)
             }
             .frame(maxWidth: .infinity)
             // 번호·이로치는 스프라이트(44)가 아니라 **칸 안쪽 폭**(74)에 건다 — 스프라이트에 걸면
@@ -2105,7 +2105,7 @@ private struct DexSpeciesCell: View {
                 // ✨ = 이 종의 이로치를 잡은 적이 있다는 표식(탭하면 그 색으로 바뀐다).
                 if slot.species?.isShiny == true {
                     Text("✨")
-                        .font(.system(size: 8))
+                        .font(PokedoroTheme.glyphFont(size: 8))
                         .padding(.horizontal, 2)
                         .background(.regularMaterial, in: Capsule())
                         .accessibilityLabel(store.l.dexShinyLabel)
@@ -2129,7 +2129,7 @@ private struct DexSpeciesCell: View {
     /// 스프라이트 위 라벨에 이미 쓰는 패턴과 동일.
     private var numberTag: some View {
         Text("#\(slot.id)")
-            .font(.system(size: 8, weight: .medium))
+            .font(PokedoroTheme.badgeFont(size: 8, weight: .medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 2)
             .background(.regularMaterial, in: Capsule())
@@ -2140,7 +2140,7 @@ private struct DexSpeciesCell: View {
     /// material 을 한 겹 깔아 대비를 확보한다(로그는 카드 배경 위라 필요 없었다).
     private var raisingBadge: some View {
         Text(store.l.dexRaising.uppercased())
-            .font(.system(size: 8, weight: .bold))
+            .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .foregroundStyle(Color.accentColor)
             .background(Color.accentColor.opacity(0.14), in: Capsule())
@@ -2175,13 +2175,13 @@ private struct DexEntryRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(store.l.rarityLabel(entry.rarity).uppercased())
-                    .font(.system(size: 8, weight: .bold))
+                    .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(rarityColor(entry.rarity)).foregroundStyle(.white)
                     .clipShape(Capsule())
                 if store.isActiveDexEntry(entry) {
                     Text(store.l.dexRaising.uppercased())
-                        .font(.system(size: 8, weight: .bold))
+                        .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Color.accentColor.opacity(0.14))
                         .foregroundStyle(Color.accentColor)
@@ -2195,7 +2195,7 @@ private struct DexEntryRow: View {
                 Spacer()
                 if let nature = entry.nature {
                     Text(nature.name(store.language))
-                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }
             EvoLineView(nodes: entry.chainOrder.map { EvoLineItem(.species($0), .done) },
@@ -2204,7 +2204,7 @@ private struct DexEntryRow: View {
                         shiny: entry.isShiny, names: names,
                         maxWidth: PopoverMetrics.contentWidth - Self.cardPadding * 2)
             if let caughtAt = entry.caughtAt {
-                Text(caughtAt, style: .relative).font(.system(size: 9)).foregroundStyle(.tertiary)
+                Text(caughtAt, style: .relative).font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
         .padding(Self.cardPadding)

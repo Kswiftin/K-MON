@@ -9,6 +9,28 @@ enum PokedoroTheme {
     static let mint = Color(red: 0.35, green: 0.57, blue: 0.49)
     static let ink = Color(red: 0.16, green: 0.20, blue: 0.26)
 
+    /// 읽는 글자의 최소 크기. macOS 의 가장 작은 텍스트 스타일(`caption2` = 10pt)이 하한이고,
+    /// 그 아래는 읽는 글자가 아니라 표식일 때만 허용한다(`badgeFont` · `glyphFont`).
+    ///
+    /// macOS 에는 Dynamic Type 이 없다 — `dynamicTypeSize` 를 키워도 `.caption2` 조차 안 커진다
+    /// (접근성 텍스트 크기는 `com.apple.universalaccess` 의 `FontSizeCategory` 에 등록한 앱에만
+    /// 걸린다). 그러니 사용자가 키울 방법이 없고, 우리가 정한 크기가 곧 사용자가 보는 크기다.
+    static let minimumTextSize: CGFloat = 10
+
+    /// 캡슐 배지 · 스프라이트 위 표식 전용 크기. 읽는 문장이 아니라 한두 단어짜리 표식이라
+    /// 10pt 하한 밖에 둔다 — 자리가 고정폭(체육관 타입 캡슐은 42pt)이라 키우면 글자가 잘린다.
+    static func badgeFont(size: CGFloat = 8, weight: Font.Weight = .bold,
+                          design: Font.Design = .default) -> Font {
+        .system(size: size, weight: weight, design: design)
+    }
+
+    /// 글자가 아니라 그림인 자리(SF Symbol · 이모지 표식)의 크기. 여기서는 pt 가 글자 크기가
+    /// 아니라 그림 크기라 하한을 적용하지 않는다.
+    static func glyphFont(size: CGFloat, weight: Font.Weight = .regular,
+                          design: Font.Design = .default) -> Font {
+        .system(size: size, weight: weight, design: design)
+    }
+
     static var pageBackground: some View {
         Color(nsColor: .windowBackgroundColor)
         .ignoresSafeArea()
@@ -33,7 +55,7 @@ struct BattleRankBadge: View {
 
     var body: some View {
         Text(rank.displayName)
-            .font(.system(size: 9, weight: .bold))
+            .font(PokedoroTheme.badgeFont(size: 9, weight: .bold))
             .foregroundStyle(.white)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(rank.tier.tint, in: Capsule())
@@ -162,7 +184,7 @@ struct PokedoroTabBar: View {
                 Button { withAnimation(.snappy(duration: 0.22)) { selection = tab } } label: {
                     VStack(spacing: 3) {
                         Image(systemName: icon).font(.system(size: 14, weight: .bold))
-                        Text(title).font(.system(size: 9, weight: .bold)).lineLimit(1)
+                        Text(title).font(.system(size: 10, weight: .bold)).lineLimit(1)
                     }
                     // **고정 색을 쓰면 안 되는 자리다.** 뒤에 깔리는 알약은 모드에 따라 밝기가
                     // 뒤집히는데 `ink`(고정 다크 네이비)는 안 바뀐다 — 다크 모드에서 대비가

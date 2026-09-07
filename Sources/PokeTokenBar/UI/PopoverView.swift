@@ -356,7 +356,7 @@ struct PopoverView: View {
                     // `p` 만 두면 무슨 단위인지 알 길이 없다 — 첫 사용자가 이 줄에서 유일하게
                     // 못 읽는 조각이라 툴팁으로 푼다.
                     Text("NEXT \(remaining)p")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
                         .monospacedDigit().foregroundStyle(.secondary)
                         .help(l.trainerNextLevelHint(remaining))
                         .accessibilityLabel(l.trainerNextLevelHint(remaining))

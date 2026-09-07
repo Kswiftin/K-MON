@@ -21,9 +21,10 @@ enum BattleFieldMetrics {
     /// 로그 줄 수와 그 칸의 **고정** 높이. 높이가 로그를 따라 커지면 늘어난 만큼 아래 기술 버튼이
     /// 잘린다. 전체 로그는 Phase 9 에서 별 시트로 붙는다.
     static let logLines = 4
-    /// 4줄 × 9pt + 줄간격 + 패딩. 예산 검증은 **보고하는** 높이만 보므로 실제로 담기는지는
-    /// `testTheLogBoxIsTallEnoughForTheLinesItDraws` 가 본다(58 이면 2pt 넘친다).
-    static let logHeight: CGFloat = 64
+    /// 4줄 × 10pt + 줄간격 + 패딩. 예산 검증은 **보고하는** 높이만 보므로 실제로 담기는지는
+    /// `testTheLogBoxIsTallEnoughForTheLinesItDraws` 가 본다(64 면 4pt 넘친다 — 로그 글자를
+    /// 9pt 에서 10pt 하한으로 올릴 때 그 테스트가 먼저 걸렸다).
+    static let logHeight: CGFloat = 68
 }
 
 // MARK: - HP 표시
@@ -258,7 +259,7 @@ struct StageArrows: View {
     var body: some View {
         if let text = StageReadout.text(side.stages) {
             Text(text)
-                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 // 일곱 축이 다 붙으면 칸보다 넓다. 우선도를 낮춰 **화살표가 먼저 잘리게** 한다 —
@@ -273,7 +274,7 @@ struct StatusBadge: View {
 
     var body: some View {
         Text(status.badge)
-            .font(.system(size: 8, weight: .bold))
+            .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
             .foregroundStyle(.white)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
@@ -317,16 +318,16 @@ struct CombatantBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
-                if side.snapshot.isShiny { Text("✨").font(.system(size: 9)) }
+                if side.snapshot.isShiny { Text("✨").font(PokedoroTheme.glyphFont(size: 9)) }
                 Text(side.snapshot.name).font(.caption.bold()).lineLimit(1)
                 Text(l.battleLv(side.snapshot.level))
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 // 이름이 이미 이 줄에서 가장 먼저 잘리는 요소다(위 주석) — 타입 배지는 그 뒤,
                 // 로그 칩·기술 버튼과 같은 타입색 팔레트(`battleColor`)로 작게 붙인다.
                 // **지금** 타입이다 — 테라스탈한 개체는 접힌 타입 하나만 보여야 상성이 왜 달라졌는지 읽힌다.
                 ForEach(side.activeTypes, id: \.self) { type in
                     Text(type.name(l.lang).uppercased())
-                        .font(.system(size: 7, weight: .heavy))
+                        .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy))
                         .foregroundStyle(type.battleLabelColor)
                         .padding(.horizontal, 3).padding(.vertical, 1)
                         .background(type.battleColor, in: Capsule())
@@ -347,13 +348,13 @@ struct CombatantBar: View {
             }
             .frame(height: 6)
             HStack(spacing: 4) {
-                Text(title).font(.system(size: 8)).foregroundStyle(.tertiary).lineLimit(1)
+                Text(title).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                 Spacer(minLength: 2)
                 StageArrows(side: side)
                 Text(revealsExactHP
                      ? HPReadout.mine(hp: side.hp, max: maxHP)
                      : HPReadout.theirs(hp: side.hp, max: maxHP))
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
         }
@@ -659,7 +660,7 @@ struct BattleMoveEffect: View {
                 .position(progress ? end : start)
             ForEach(0..<8, id: \.self) { index in
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 9 + CGFloat(index % 3) * 2))
+                    .font(PokedoroTheme.glyphFont(size: 9 + CGFloat(index % 3) * 2))
                     .foregroundStyle(index.isMultiple(of: 2) ? Color.yellow : Color.orange)
                     .offset(y: progress ? -CGFloat(22 + index * 3) : 0)
                     .rotationEffect(.degrees(Double(index) * 45))
@@ -827,13 +828,13 @@ struct MoveGridView: View {
         return Button { onChoose(index) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 3) {
-                    Image(systemName: move.damageClass.symbolName).font(.system(size: 8, weight: .bold))
+                    Image(systemName: move.damageClass.symbolName).font(PokedoroTheme.glyphFont(size: 8, weight: .bold))
                     Text(move.name(language)).font(.caption2.bold()).lineLimit(1)
                     // 무엇이 전원을 때리는지 버튼에서 읽혀야 한다 — 설명 툴팁만으로는 고르는
                     // 순간에 보이지 않는다(2대2 에서 지진과 단일기의 차이가 곧 판단이다).
                     if showsSpreadMark && move.hitsSpread {
                         Image(systemName: "circle.hexagongrid.fill")
-                            .font(.system(size: 7, weight: .bold))
+                            .font(PokedoroTheme.glyphFont(size: 7, weight: .bold))
                     }
                 }
                 HStack(spacing: 5) {
@@ -847,10 +848,10 @@ struct MoveGridView: View {
                             .background(tier == .ample ? Color.clear : tier.color, in: Capsule())
                     }
                 }
-                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 if let hint = effectivenessHint(move) {
                     Text(hint.text)
-                        .font(.system(size: 7, weight: .heavy))
+                        .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 4).padding(.vertical, 1)
                         .background(hint.color, in: Capsule())
@@ -889,7 +890,7 @@ struct BeginnerBadgeView: View {
     var body: some View {
         let badge = l.t("🐣 저는 개초보입니다", "🐣 total newbie here", "🐣 ド初心者です")
         Text(owner.map { "\($0) · \(badge)" } ?? badge)
-            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .font(PokedoroTheme.badgeFont(size: 8, weight: .bold, design: .rounded))
             .foregroundStyle(Color.brown.opacity(0.88))
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Color.yellow.opacity(0.28), in: RoundedRectangle(cornerRadius: 4))
@@ -909,7 +910,7 @@ struct SwitchStripView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text(label).font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+            Text(label).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             ForEach(slots) { slot in
                 Button { onSwitch(slot.index) } label: {
                     VStack(spacing: 1) {
@@ -1002,7 +1003,7 @@ struct BattleLogRow: View {
                 chip(moveType: moveType, damageClass: damageClass, moveDisplayName: moveDisplayName)
             } else {
                 Text(line.text)
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(isMine == true ? .primary : .secondary)
@@ -1014,16 +1015,16 @@ struct BattleLogRow: View {
 
     private func chip(moveType: PokemonType, damageClass: MoveDamageClass, moveDisplayName: String) -> some View {
         HStack(spacing: 3) {
-            Image(systemName: damageClass.symbolName).font(.system(size: 7, weight: .bold))
+            Image(systemName: damageClass.symbolName).font(PokedoroTheme.glyphFont(size: 7, weight: .bold))
             if let actorName = line.actorName {
-                Text(actorName).font(.system(size: 9, weight: .bold)).lineLimit(1)
+                Text(actorName).font(.system(size: 10, weight: .bold)).lineLimit(1)
             }
-            Text(moveDisplayName).font(.system(size: 9, weight: .semibold)).lineLimit(1)
+            Text(moveDisplayName).font(.system(size: 10, weight: .semibold)).lineLimit(1)
             if let damage = line.damage {
-                Text("-\(damage)").font(.system(size: 9, weight: .bold, design: .monospaced))
+                Text("-\(damage)").font(.system(size: 10, weight: .bold, design: .monospaced))
             }
             ForEach(line.badges, id: \.self) { badge in
-                Text(badge).font(.system(size: 7, weight: .bold)).lineLimit(1)
+                Text(badge).font(PokedoroTheme.badgeFont(size: 7, weight: .bold)).lineLimit(1)
                     .padding(.horizontal, 3)
                     .background(Color.black.opacity(0.16), in: Capsule())
             }
@@ -1203,7 +1204,7 @@ struct BattleArenaView: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text(l.battleYourTurn)
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             }
             if mine.isAlive {
                 MoveGridView(moves: mine.mustStruggle ? [.struggle()] : mine.moves,

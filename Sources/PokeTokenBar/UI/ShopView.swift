@@ -139,7 +139,7 @@ private struct TechnicalMachineShopCard: View {
                     .frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(machine.label).font(.system(size: 9, weight: .black, design: .rounded))
+                        Text(machine.label).font(.system(size: 10, weight: .black, design: .rounded))
                             .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
                             .background(.purple, in: Capsule())
                         Text(move?.name(store.language) ?? machine.slug.replacingOccurrences(of: "-", with: " ").capitalized)
@@ -439,7 +439,7 @@ private struct EggCard: View {
                         Text(l.eggName(tier)).font(.callout.weight(.semibold))
                         if let tier {
                             // 도감 칩과 같은 라벨·색 — 상점의 등급 표기가 도감과 한 말로 맞물리게.
-                            Text(l.rarityLabel(tier).uppercased()).font(.system(size: 8, weight: .bold))
+                            Text(l.rarityLabel(tier).uppercased()).font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(rarityColor(tier)).foregroundStyle(.white)
                                 .clipShape(Capsule())

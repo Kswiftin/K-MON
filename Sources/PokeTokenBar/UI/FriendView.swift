@@ -343,7 +343,7 @@ struct FriendView: View {
                             BattleRankBadge(rank: rank)
                         } else {
                             Text(store.l.t("랭크 정보 없음", "Rank unavailable", "ランク情報なし"))
-                                .font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+                                .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Color.gray.opacity(0.16), in: Capsule()).fixedSize()
                         }
