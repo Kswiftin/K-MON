@@ -213,9 +213,12 @@ struct WaveBattle: Sendable {
             let leftPriority = left.move(at: lhs.0.moveIndex).turnPriority
             let rightPriority = right.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
-            if left.effectiveSpeed != right.effectiveSpeed {
-                return left.effectiveSpeed > right.effectiveSpeed
-            }
+            // 순풍은 편에 깔리므로 스피드를 편과 함께 물어야 한다 — 내 칸은 늘 좌변(.a)이다.
+            let leftSpeed = BattleEngine.orderingSpeed(left, team: teamSlot(isMine: lhs.0.isMine),
+                                                       field: field)
+            let rightSpeed = BattleEngine.orderingSpeed(right, team: teamSlot(isMine: rhs.0.isMine),
+                                                        field: field)
+            if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }
             return lhs.1 < rhs.1
         }.map(\.0)
 
@@ -305,6 +308,10 @@ struct WaveBattle: Sendable {
         return hit
     }
 
+    /// 편 — 내 칸은 좌변, 상대 칸은 우변이다. 진영 상태(장막·순풍)를 어느 쪽에서 읽을지가
+    /// 이 한 줄에 달려 있어, `applyAttack` 이 쓰는 값과 같은 자리에서 답한다.
+    private func teamSlot(isMine: Bool) -> BattleTeamSlot { isMine ? .a : .b }
+
     private func teamIndex(isMine: Bool, slot: Int) -> Int {
         isMine ? myField[slot].teamIndex : opponentField[slot].teamIndex
     }
@@ -379,7 +386,10 @@ struct WaveBattle: Sendable {
                                             attackerActor: attackerActor,
                                             defenderActor: actor(isMine: target.isMine,
                                                                  slot: target.slot),
-                                            move: move, damageScale: scale, field: field, rng: &rng)
+                                            move: move, damageScale: scale, field: field,
+                                            attackerTeam: teamSlot(isMine: attack.isMine),
+                                            defenderTeam: teamSlot(isMine: target.isMine),
+                                            rng: &rng)
             writeBack(defender, isMine: target.isMine, index: defenderIndex)
         }
         events += BattleEngine.faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)

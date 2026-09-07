@@ -314,6 +314,8 @@ struct L {
                                     "しろいきりに つつまれた！")
         case .luckyChant:  return t("행운의부적이 편을 감쌌다!", "The team is protected from critical hits!",
                                     "こううんの まもりに つつまれた！")
+        case .tailwind:    return t("순풍이 불기 시작했다!", "The tailwind blew from behind the team!",
+                                    "おいかぜが 吹き始めた！")
         }
     }
 
@@ -327,6 +329,8 @@ struct L {
         case .mist:        return t("하얀안개가 걷혔다", "The mist wore off", "しろいきりが きえた")
         case .luckyChant:  return t("행운의부적이 사라졌다", "The lucky chant wore off",
                                     "こううんの まもりが きえた")
+        case .tailwind:    return t("순풍이 멎었다", "The tailwind petered out",
+                                    "おいかぜが やんだ")
         }
     }
 

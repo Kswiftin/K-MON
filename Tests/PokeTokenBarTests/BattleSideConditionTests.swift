@@ -184,7 +184,7 @@ final class BattleSideConditionTests: XCTestCase {
         again = []
 
         var ended: [BattleEvent] = []
-        for _ in 0..<BattleSideCondition.duration { ended = BattleEngine.advanceField(&field) }
+        for _ in 0..<BattleSideCondition.reflect.duration { ended = BattleEngine.advanceField(&field) }
         XCTAssertTrue(ended.contains(.sideConditionEnded(.a, .reflect)))
         XCTAssertFalse(field.has(.reflect, for: .a), "5턴이면 걷힌다")
     }
@@ -210,18 +210,14 @@ final class BattleSideConditionTests: XCTestCase {
     /// `applyAttack` 을 부르는 **모든 모드**가 공격자의 편을 넘겨야 한다. 한 곳만 빠지면 그 모드에서
     /// 장막이 늘 좌변에 깔린다 — 화면에는 정상으로 보이고 누구를 지키는지만 틀린다.
     func testEveryModePassesTheAttackersTeam() throws {
-        let sources = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources")
-        let files = try XCTUnwrap(FileManager.default.enumerator(at: sources,
-                                                                includingPropertiesForKeys: nil))
         var callersWithoutTeam: [String] = []
-        for case let url as URL in files where url.pathExtension == "swift" {
-            let text = try String(contentsOf: url, encoding: .utf8)
-            guard text.contains("applyAttack(attacker:"), !text.contains("static func applyAttack") else {
+        // 주석은 `SourceScan` 이 떼고 온다 — 안 떼면 인자를 지워도 그 이름을 말하는 주석이 남아
+        // 통과한다(`docs/reference/defect-log.md` "소스를 문자열로 스캔하는 가드" 절).
+        for (name, code) in try SourceScan.sources() {
+            guard code.contains("applyAttack(attacker:"), !code.contains("static func applyAttack") else {
                 continue
             }
-            if !text.contains("attackerTeam:") { callersWithoutTeam.append(url.lastPathComponent) }
+            if !code.contains("attackerTeam:") { callersWithoutTeam.append(name) }
         }
         XCTAssertEqual(callersWithoutTeam, [],
                        "편을 안 넘기면 그 모드의 장막이 엉뚱한 쪽을 지킨다")

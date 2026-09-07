@@ -756,13 +756,17 @@ enum BattleTeamSlot: Codable, Sendable, Equatable, Hashable {
 
 /// 한 진영에만 깔리는 상태 — 날씨·필드가 판 전체인 것과 다르다.
 ///
-/// 여기 있는 여섯은 전부 **1대1 에서 뜻이 있는** 것들이다. 압정뿌리기 부류(입장 데미지)와
+/// 여기 있는 일곱은 전부 **1대1 에서 뜻이 있는** 것들이다. 압정뿌리기 부류(입장 데미지)와
 /// 방어 계열(와이드가드·퀵가드)은 각각 교체와 protect 상태가 먼저라 아직 없다.
+///
+/// 순풍만 데미지가 아니라 **턴 순서**를 바꾼다 — 그래서 `BattleEngine.orderingSpeed` 를 지나는
+/// 모드만 순풍을 본다(모드마다 순서 계산이 따로라, 새 모드가 직접 스피드를 읽으면 조용히 빠진다).
 enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
-    case reflect, lightScreen, auroraVeil, safeguard, mist, luckyChant
+    case reflect, lightScreen, auroraVeil, safeguard, mist, luckyChant, tailwind
 
-    /// 지속 턴 — 본가의 빛의점토가 없으므로 전부 5턴이다.
-    static let duration = 5
+    /// 지속 턴. 장막·부적은 본가의 빛의점토가 없으므로 전부 5턴이고, 순풍만 4턴이다 —
+    /// 한 턴 더 불면 그 턴의 선공이 통째로 뒤집힌다.
+    var duration: Int { self == .tailwind ? 4 : 5 }
 
     init?(showdownKey: String) {
         switch showdownKey.lowercased() {
@@ -772,13 +776,14 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
         case "safeguard":   self = .safeguard
         case "mist":        self = .mist
         case "luckychant":  self = .luckyChant
+        case "tailwind":    self = .tailwind
         default:            return nil
         }
     }
 
     /// 이 상태를 까는 기술인가 — 날씨·필드와 같은 자리에서 데이터가 답한다.
     ///
-    /// 여기 있는 여섯은 전부 **자기 편에** 깔린다. 상대 편에 깔리는 부류(압정뿌리기·스텔스록)는
+    /// 여기 있는 일곱은 전부 **자기 편에** 깔린다. 상대 편에 깔리는 부류(압정뿌리기·스텔스록)는
     /// 교체가 있어야 뜻이 있어 아직 없다 — 그때 `sideConditionTarget` 을 보는 분기가 같이 들어온다
     /// (지금 미리 두면 아무도 밟지 않는 갈래다). 그 전제는
     /// `ShowdownEffectTableTests` 가 데이터에서 확인한다.
@@ -821,7 +826,7 @@ struct BattleField: Sendable, Equatable {
     mutating func start(_ condition: BattleSideCondition, for team: BattleTeamSlot) -> Bool {
         guard !has(condition, for: team) else { return false }
         guard condition != .auroraVeil || weather == .snow else { return false }
-        sideConditions[team, default: [:]][condition] = BattleSideCondition.duration
+        sideConditions[team, default: [:]][condition] = condition.duration
         return true
     }
 
@@ -974,8 +979,9 @@ struct BattleSide: Sendable, Equatable {
         }
     }
 
-    /// 턴 순서에 쓰는 스피드 — 랭크를 먼저 곱하고, 마비면 그 뒤에 50%.
-    /// 순서 계산이 `stats.spe` 를 직접 읽으면 마비·랭크가 스탯 화면에만 보이고 실제 선공은 그대로다.
+    /// **개체 몫**의 스피드 — 랭크를 먼저 곱하고, 마비면 그 뒤에 50%.
+    /// `stats.spe` 를 직접 읽으면 마비·랭크가 스탯 화면에만 보이고 실제 선공은 그대로다.
+    /// 편에 깔린 것(순풍)은 여기서 모른다 — 순서를 재는 자리는 `BattleEngine.orderingSpeed` 를 쓴다.
     var effectiveSpeed: Int {
         let boosted = runBoosts.scaled(StatStages.apply(rawStat(.spe), stage: stage(.spe)),
                                        stacks: runBoosts.speed)
@@ -1117,8 +1123,9 @@ enum BattleEngine {
     ///      랭크 합, 악몽의 상태 배율, 리프블레이드·에코보이스·원한의응보의 누적 카운터,
     ///      트리플킥 부류의 히트별 위력, 리벤지의 후공 배율) + 날씨·필드 레이어(볕·비의 1.5·0.5배,
     ///      모래 잔뎀, 세 필드의 1.3배와 상태 차단, 그래스필드 회복) + 진영 상태(리플렉터·빛의장막·
-    ///      오로라베일의 반감, 신비의부적·하얀안개·행운의부적의 차단). 새 상태는 전부 지역
-    ///      값이라 와이어는 그대로고 rng 소비 순서도 그대로지만, 같은 입력의 데미지가 갈린다.
+    ///      오로라베일의 반감, 신비의부적·하얀안개·행운의부적의 차단, 순풍의 스피드 2배).
+    ///      새 상태는 전부 지역 값이라 와이어는 그대로고 rng 소비 순서도 그대로지만, 같은 입력의
+    ///      데미지가 갈린다. 순풍은 **턴 순서**까지 갈라 놓는다(그 뒤 판정이 통째로 밀린다).
     static let rulesVersion = 23
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1347,6 +1354,7 @@ enum BattleEngine {
     ///           목록을 동결해 두므로 `VariableDamage` 에 새 기술이 붙으면 거기서 빨개진다.
     static func resolveAttack(attacker: BattleSide, defender: BattleSide, move: MoveSpec,
                               field: BattleField = BattleField(),
+                              attackerTeam: BattleTeamSlot = .a,
                               defenderTeam: BattleTeamSlot = .b,
                               rng: inout SplitMix64) -> AttackOutcome {
         // 독 타입이 쓰는 맹독은 명중·회피 랭크를 포함한 명중 판정을 건너뛴다.
@@ -1363,8 +1371,8 @@ enum BattleEngine {
         var effectiveness = 1.0, critical = false
         for index in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move,
-                                       hit: index, field: field, defenderTeam: defenderTeam,
-                                       rng: &rng)
+                                       hit: index, field: field, attackerTeam: attackerTeam,
+                                       defenderTeam: defenderTeam, rng: &rng)
             total += one.damage
             remaining -= one.damage
             actualHits += 1
@@ -1381,13 +1389,15 @@ enum BattleEngine {
     /// (본가와 같다 — 한 번 뽑아 곱하면 급소가 나면 전 히트가 급소가 된다).
     private static func resolveSingleHit(attacker: BattleSide, defender: BattleSide,
                                          move: MoveSpec, hit: Int, field: BattleField,
+                                         attackerTeam: BattleTeamSlot,
                                          defenderTeam: BattleTeamSlot,
                                          rng: inout SplitMix64) -> AttackOutcome {
         // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
         // 그대로 쓰면 아래 식이 데미지를 0 으로 접는다(그게 이 기술들이 죽어 있던 원인이다).
         var power = move.power
         switch VariableDamage.from(move, attacker: attacker, defender: defender, hit: hit,
-                                   field: field, rng: &rng) {
+                                   field: field, attackerTeam: attackerTeam,
+                                   defenderTeam: defenderTeam, rng: &rng) {
         case .power(let computed):  power = computed
         case .fixedHP(let amount):  return fixedOutcome(amount, move: move, defender: defender)
         case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender)
@@ -1503,6 +1513,16 @@ enum BattleEngine {
         let dealt = (effectiveness == 0 || power <= 0) ? 0 : max(1, damage)
         return AttackOutcome(missed: false, damage: dealt,
                              effectiveness: effectiveness, isCritical: isCritical)
+    }
+
+    /// 턴 순서에 쓰는 스피드 — 개체 상태(`BattleSide.effectiveSpeed`) 위에 **편에 깔린 것**을 얹는다.
+    ///
+    /// 순서 계산이 모드마다 따로라(1v1 `resolveTurn`·방·웨이브) 이 함수 하나를 지나게 한다.
+    /// 한 모드가 `effectiveSpeed` 를 직접 읽으면 그 모드에서만 순풍이 없고, 화면에는 아무 오류도
+    /// 안 보인다 — 그래서 `BattleTailwindTests` 가 순서를 재는 소스 자리를 스캔한다.
+    /// 스피드를 위력으로 읽는 기술(일렉트릭볼·자이로볼)도 이 값을 봐야 순서와 위력이 갈라지지 않는다.
+    static func orderingSpeed(_ side: BattleSide, team: BattleTeamSlot, field: BattleField) -> Int {
+        field.has(.tailwind, for: team) ? side.effectiveSpeed * 2 : side.effectiveSpeed
     }
 
     /// 두 공격자 중 누가 먼저인가 — 본가와 같은 순서로 본다: **기술 우선도 → 스피드 → 무작위**.
@@ -1854,7 +1874,8 @@ extension BattleEngine {
         }
         events += applyHit(attacker: &attacker, defender: &defender,
                            attackerActor: attackerActor, defenderActor: defenderActor,
-                           move: move, field: field, defenderTeam: defenderTeam, rng: &rng)
+                           move: move, field: field, attackerTeam: attackerTeam,
+                           defenderTeam: defenderTeam, rng: &rng)
         events += faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)
         return events
     }
@@ -1907,11 +1928,13 @@ extension BattleEngine {
                          attackerActor: BattleActor, defenderActor: BattleActor,
                          move: MoveSpec, damageScale: Double = 1,
                          field: BattleField = BattleField(),
+                         attackerTeam: BattleTeamSlot = .a,
                          defenderTeam: BattleTeamSlot = .b,
                          rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move,
-                                    field: field, defenderTeam: defenderTeam, rng: &rng)
+                                    field: field, attackerTeam: attackerTeam,
+                                    defenderTeam: defenderTeam, rng: &rng)
         // 실패 여부는 **모든 갈래에서** 갱신한다. 성공 갈래만 내리면 한 번 실패한 뒤로 계속 실패로
         // 남아 분함의발구르기가 영원히 두 배가 된다. 광역기는 마지막 대상의 결과가 남는다 —
         // 본가도 여러 대상 중 하나만 실패한 턴을 실패로 세지 않는다.
@@ -2075,7 +2098,8 @@ extension BattleEngine {
         // 마비가 스피드를 깎으므로 순서 계산이 상태를 봐야 한다 — `stats.spe` 를 그대로 넘기면
         // 마비가 스탯 표시에만 남고 선공은 그대로다.
         let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
-                                     speedA: a.effectiveSpeed, speedB: b.effectiveSpeed, rng: &rng)
+                                     speedA: orderingSpeed(a, team: .a, field: field),
+                                     speedB: orderingSpeed(b, team: .b, field: field), rng: &rng)
         for attackerIsA in aIsFirst ? [true, false] : [false, true] {
             guard a.isAlive && b.isAlive else { break }   // 선공에 기절하면 후공 없음
             let move = attackerIsA ? moveA : moveB

@@ -33,10 +33,15 @@ enum VariableDamage: Equatable, Sendable {
     ///   위력이 오르는 기술(트리플킥·트리플악셀)은 이 값만 보면 된다. 단발기는 늘 0 이다.
     static func from(_ move: MoveSpec, attacker: BattleSide, defender: BattleSide,
                      hit: Int = 0, field: BattleField = BattleField(),
+                     attackerTeam: BattleTeamSlot = .a, defenderTeam: BattleTeamSlot = .b,
                      rng: inout SplitMix64) -> VariableDamage? {
         switch move.id {
-        case MoveID.electroBall:  return .power(electroBallPower(attacker: attacker, defender: defender))
-        case MoveID.gyroBall:     return .power(gyroBallPower(attacker: attacker, defender: defender))
+        case MoveID.electroBall:
+            return .power(electroBallPower(attacker: attacker, defender: defender, field: field,
+                                           attackerTeam: attackerTeam, defenderTeam: defenderTeam))
+        case MoveID.gyroBall:
+            return .power(gyroBallPower(attacker: attacker, defender: defender, field: field,
+                                        attackerTeam: attackerTeam, defenderTeam: defenderTeam))
         case MoveID.flail, MoveID.reversal:
             return .power(lowHealthPower(attacker))
         case MoveID.wringOut, MoveID.crushGrip:
@@ -144,11 +149,16 @@ enum VariableDamage: Equatable, Sendable {
 
     // MARK: 위력 계산
 
-    /// 일렉트릭볼 — 상대보다 빠를수록 세다. 마비의 스피드 감소가 그대로 반영되도록
-    /// `effectiveSpeed` 를 쓴다(랭크만 보는 `stats.spe` 로는 마비가 위력에 안 잡힌다).
+    /// 일렉트릭볼 — 상대보다 빠를수록 세다. 마비·랭크·순풍이 그대로 반영되도록 순서 계산과
+    /// **같은 값**(`BattleEngine.orderingSpeed`)을 쓴다. `stats.spe` 로는 마비가 위력에 안 잡히고,
+    /// `effectiveSpeed` 만 보면 순풍이 순서만 바꾸고 위력은 예전 값으로 남는다.
     /// 나눗셈 대신 곱으로 비교한다 — 정수 나눗셈은 경계에서 값이 한 칸씩 밀린다.
-    static func electroBallPower(attacker: BattleSide, defender: BattleSide) -> Int {
-        let mine = attacker.effectiveSpeed, theirs = defender.effectiveSpeed
+    static func electroBallPower(attacker: BattleSide, defender: BattleSide,
+                                 field: BattleField = BattleField(),
+                                 attackerTeam: BattleTeamSlot = .a,
+                                 defenderTeam: BattleTeamSlot = .b) -> Int {
+        let mine = BattleEngine.orderingSpeed(attacker, team: attackerTeam, field: field)
+        let theirs = BattleEngine.orderingSpeed(defender, team: defenderTeam, field: field)
         if mine <= theirs { return 40 }
         if mine <= theirs * 2 { return 60 }
         if mine <= theirs * 3 { return 80 }
@@ -157,8 +167,13 @@ enum VariableDamage: Equatable, Sendable {
     }
 
     /// 자이로볼 — 일렉트릭볼의 반대로, 느릴수록 세다.
-    static func gyroBallPower(attacker: BattleSide, defender: BattleSide) -> Int {
-        let power = 25 * defender.effectiveSpeed / max(1, attacker.effectiveSpeed) + 1
+    static func gyroBallPower(attacker: BattleSide, defender: BattleSide,
+                              field: BattleField = BattleField(),
+                              attackerTeam: BattleTeamSlot = .a,
+                              defenderTeam: BattleTeamSlot = .b) -> Int {
+        let mine = BattleEngine.orderingSpeed(attacker, team: attackerTeam, field: field)
+        let theirs = BattleEngine.orderingSpeed(defender, team: defenderTeam, field: field)
+        let power = 25 * theirs / max(1, mine) + 1
         return min(150, max(1, power))
     }
 

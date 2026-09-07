@@ -10,7 +10,6 @@ final class ShowdownEffectTableTests: XCTestCase {
 
     /// 아직 구현하지 않은 자기 편 상태 — **왜 없는지**를 함께 잠근다. 구현하면 여기서 뺀다.
     private static let unmodeledAllySideConditions: Set<String> = [
-        "tailwind",                                     // 턴 순서 계산이 모드마다 따로다
         "wideguard", "quickguard", "matblock", "craftyshield",  // protect 상태가 먼저다
     ]
 

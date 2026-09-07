@@ -598,20 +598,16 @@ final class VariableDamageTests: XCTestCase {
     /// `applyAttack` 을 직접 부르는 턴 루프는 **전부** 기록을 비워야 한다. 한 곳만 빠지면
     /// 그 모드에서만 카운터가 지난 턴 데미지를 되돌려준다. 새 모드가 생기면 여기서 먼저 깨진다.
     func testEveryTurnLoopClearsTheIncomingHit() throws {
-        let sources = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources")
-        let files = try XCTUnwrap(FileManager.default.enumerator(at: sources,
-                                                                includingPropertiesForKeys: nil))
         var loopsWithoutReset: [String] = []
-        for case let url as URL in files where url.pathExtension == "swift" {
-            let text = try String(contentsOf: url, encoding: .utf8)
+        // 주석은 `SourceScan` 이 떼고 온다 — 안 떼면 호출을 지워도 그 이름을 말하는 주석이 남아
+        // 통과한다(`docs/reference/defect-log.md` "소스를 문자열로 스캔하는 가드" 절).
+        for (name, code) in try SourceScan.sources() {
             // 정의(`static func applyAttack`)가 아니라 **호출**만 센다.
-            let callsApplyAttack = text.contains("applyAttack(attacker:")
-                && !text.contains("static func applyAttack")
-            let isEngine = url.lastPathComponent == "BattleModel.swift"
+            let callsApplyAttack = code.contains("applyAttack(attacker:")
+                && !code.contains("static func applyAttack")
+            let isEngine = name == "BattleModel.swift"
             guard callsApplyAttack || isEngine else { continue }
-            if !text.contains("beginTurn(") { loopsWithoutReset.append(url.lastPathComponent) }
+            if !code.contains("beginTurn(") { loopsWithoutReset.append(name) }
         }
         XCTAssertEqual(loopsWithoutReset, [],
                        "턴 루프가 기록을 안 비우면 그 모드에서만 카운터가 지난 턴 값을 되돌려준다")

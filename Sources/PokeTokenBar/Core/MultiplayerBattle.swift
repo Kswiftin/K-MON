@@ -619,10 +619,12 @@ struct MultiplayerBattle: Sendable {
             let rightPriority = rightFighter.side.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
             // `stats` 는 배틀 시작에 한 번 계산된 값이다. 여기서 `effectiveStats()` 를 부르던
-            // 때는 비교 횟수만큼 스탯을 다시 만들었다. 마비 보정은 `effectiveSpeed` 가 들고 있다 —
-            // 1v1 과 같은 값을 봐야 두 모드의 순서 규칙이 갈라지지 않는다.
-            let leftSpeed = leftFighter.side.effectiveSpeed
-            let rightSpeed = rightFighter.side.effectiveSpeed
+            // 때는 비교 횟수만큼 스탯을 다시 만들었다. 마비·순풍 보정은 `orderingSpeed` 가 들고
+            // 있다 — 1v1 과 같은 값을 봐야 두 모드의 순서 규칙이 갈라지지 않는다.
+            let leftSpeed = BattleEngine.orderingSpeed(leftFighter.side,
+                                                       team: leftFighter.teamSlot, field: field)
+            let rightSpeed = BattleEngine.orderingSpeed(rightFighter.side,
+                                                        team: rightFighter.teamSlot, field: field)
             if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }
             return lhs.1 < rhs.1
         }.map(\.0)
