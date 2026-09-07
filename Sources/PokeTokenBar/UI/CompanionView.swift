@@ -1791,9 +1791,14 @@ private struct DexGridView: View {
         let slice = Array(visible.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 8) {
             header(all)
-            PokemonSearchField(text: $searchText, l: store.l)
+            // 페이저는 격자 **위**다 — 로스터와 같은 이유(2026-09-07 리포트). 탭 콘텐츠 520 이
+            // 팝오버 뷰포트보다 높아 하단 줄은 스크롤 밖으로 밀린다.
+            HStack(spacing: 6) {
+                PokemonSearchField(text: $searchText, l: store.l)
+                pager(visible, current: current, pageCount: pageCount)
+            }
             grid(slice)
-            footer(visible, current: current, pageCount: pageCount)
+            footer(visible)
         }
         // 이름이 저장돼 있지 않은 구버전 졸업분을 채운다 — 격자는 저장분만 읽으므로 이게 없으면
         // 칸이 `#41` 로 남는다. 저장된 항목은 조회하지 않으므로 채워진 뒤로는 아무 일도 하지 않는다.
@@ -1958,15 +1963,30 @@ private struct DexGridView: View {
         .frame(maxHeight: .infinity)
     }
 
-    /// 하단 한 줄 — 왼쪽은 선택한 칸의 희귀도, 오른쪽은 페이저.
-    /// 페이저가 1페이지라 안 보일 때도 이 줄을 **항상** 예약한다 — 페이지 수나 선택 여부에 따라
-    /// 격자 높이가 흔들리지 않게.
+    /// 페이지 이동 — 검색칸 오른쪽. 1페이지뿐이면 그리지 않는다.
     ///
     /// 받는 건 이번 페이지가 아니라 **필터를 통과한 전체**다 — 점프 메뉴가 페이지마다 어느 번호대인지
-    /// 적으려면 다른 페이지의 칸도 봐야 한다. 고른 칸을 여기서 찾아도 결과는 같다: 페이지·필터가
-    /// 바뀔 때마다 `selectedID` 를 지우므로 선택은 항상 현재 페이지 안에 있다.
-    private func footer(_ visible: [CompanionStore.DexSlot],
-                        current: Int, pageCount: Int) -> some View {
+    /// 적으려면 다른 페이지의 칸도 봐야 한다.
+    @ViewBuilder private func pager(_ visible: [CompanionStore.DexSlot],
+                                    current: Int, pageCount: Int) -> some View {
+        if pageCount > 1 {
+            HStack(spacing: 6) {
+                Button { jump(to: current - 1, in: pageCount) } label: { Image(systemName: "chevron.left") }
+                .buttonStyle(.plain).disabled(current == 0)
+                .accessibilityLabel(store.l.dexPagePrev)
+                pageJumpMenu(visible, current: current, pageCount: pageCount)
+                Button { jump(to: current + 1, in: pageCount) } label: { Image(systemName: "chevron.right") }
+                .buttonStyle(.plain).disabled(current == pageCount - 1)
+                .accessibilityLabel(store.l.dexPageNext)
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .fixedSize()
+        }
+    }
+
+    /// 하단 한 줄 — 선택한 칸의 희귀도. 고른 칸이 없을 때도 이 줄을 **항상** 예약한다 —
+    /// 선택 여부에 따라 격자 높이가 흔들리지 않게.
+    private func footer(_ visible: [CompanionStore.DexSlot]) -> some View {
         HStack(spacing: 8) {
             if let sel = visible.first(where: { $0.id == selectedID }) {
                 // 칸은 번호·스프라이트·이름만 보여주므로 희귀도가 선택으로 얻는 정보다.
@@ -1977,15 +1997,6 @@ private struct DexGridView: View {
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
-            if pageCount > 1 {
-                Button { jump(to: current - 1, in: pageCount) } label: { Image(systemName: "chevron.left") }
-                .buttonStyle(.plain).disabled(current == 0)
-                .accessibilityLabel(store.l.dexPagePrev)
-                pageJumpMenu(visible, current: current, pageCount: pageCount)
-                Button { jump(to: current + 1, in: pageCount) } label: { Image(systemName: "chevron.right") }
-                .buttonStyle(.plain).disabled(current == pageCount - 1)
-                .accessibilityLabel(store.l.dexPageNext)
-            }
         }
         .font(.system(size: 11, weight: .semibold))
         .frame(height: 18)

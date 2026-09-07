@@ -806,6 +806,114 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertEqual(loadingHeight, loadedHeight, accuracy: 2,
                        "자리표시자와 완성본 높이가 다르면 펼친 직후 팝오버가 두 번 리사이즈된다")
     }
+
+    // MARK: 오버레이 이름 — 글자를 붙인 자리가 폭에 들어오나
+
+    /// 회고 버튼에 글자("회고")를 붙였으니 오늘 줄이 팝오버 콘텐츠 폭 안에 남아야 한다.
+    /// 최악값으로 잰다 — 하루 목표 상한 12세션에 분은 네 자리까지 본다. 넘치면 글자가 잘려
+    /// 이름을 주려던 목적이 사라진다.
+    func testTheFocusTodayRowWithTheRecapLabelFitsTheContentWidth() {
+        let row = HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle")
+            Text("오늘 12/12세션 · 1440분")
+            Spacer()
+            Button { } label: { Label("회고", systemImage: "chart.bar.xaxis") }
+                .buttonStyle(.borderless).controlSize(.small)
+        }
+        .font(.caption2.monospacedDigit())
+        XCTAssertLessThanOrEqual(intrinsicWidth(row), PopoverMetrics.contentWidth,
+                                 "오늘 줄이 팝오버 폭을 넘겼다 — 회고 글자가 먼저 잘린다")
+    }
+
+    /// 꾸미기 버튼이 트레이너 바로 올라왔다(친구 탭 카드 안에서 옮김). 그 줄은 레벨 · 다음 레벨까지
+    /// 남은 포인트 · 잔액을 이미 싣고 있어, 최악값에서도 폭에 들어오는지가 옮길 수 있느냐의 조건이다.
+    func testTheTrainerBarRowFitsWithTheWardrobeButton() {
+        let row = HStack(spacing: 7) {
+            PokeBallMark(size: 22)
+            Text("트레이너 Lv.\(TrainerLevel.maximumLevel)")
+                .font(.caption.weight(.bold)).monospacedDigit()
+            Text("NEXT 9999p")
+                .font(.system(size: 10, weight: .bold, design: .rounded)).monospacedDigit()
+            Spacer()
+            Text("⭐ " + GameNumberFormatter.compact(999_999))
+                .font(.caption.weight(.bold)).monospacedDigit()
+            Button("꾸미기") { }
+                .buttonStyle(.borderless).controlSize(.small)
+                .font(.caption.weight(.semibold))
+        }
+        XCTAssertLessThanOrEqual(intrinsicWidth(row), PopoverMetrics.contentWidth,
+                                 "트레이너 바가 팝오버 폭을 넘겼다 — 잔액이나 꾸미기 글자가 잘린다")
+    }
+
+    // MARK: 페이지 컨트롤 — 뷰포트 안에 있는가
+
+    private var layoutDefaults: UserDefaults { UserDefaults(suiteName: "popover-layout-guard")! }
+
+    private func layoutStore(_ name: String) -> CompanionStore {
+        CompanionStore(provider: StubProvider(value: moveTestLine), clock: { Date() },
+                       fileURL: storeStateURL(name), rng: SeededRNG(seed: 7))
+    }
+
+    /// 팝오버 크롬이 확실히 먹는 세로 — 여기서 재지 못하는 조각(팝오버 패딩 28 · 트레이너 바 46 ·
+    /// 하단 탭 줄 40 · `VStack` 간격 4×12)을 보수적으로 더한 값이다. 실제 크롬은 이보다 크다.
+    private static let popoverChromeExtras: CGFloat = 28 + 46 + 40 + 48
+
+    /// **트리거 재현.** 격자 탭은 520pt 프레임을 고정으로 요청하는데, 팝오버 창(780pt)에서 크롬을
+    /// 빼면 그만큼 남지 않는다 — 탭 콘텐츠의 아래쪽 100pt 이상이 스크롤 밖으로 밀린다.
+    ///
+    /// 이 대조군이 없으면 아래 규칙 검증이 "애초에 문제가 없던 조건" 을 지키는 셈이 된다.
+    /// 2026-09-07 리포트가 이 계산의 실물이다: 159마리(11페이지)를 가진 사용자가 하단 줄에 있던
+    /// 다음 페이지 버튼을 못 봤다.
+    @MainActor
+    func testPagedGridTabsAreTallerThanThePopoverViewport() {
+        let store = layoutStore("paged-grid-viewport")
+        let chrome = renderedHeight(FocusTimerView()
+                                        .environment(store)
+                                        .environment(AppSettings(defaults: layoutDefaults))
+                                        .environment(FocusTimer())
+                                        .environment(PopoverNavigation()))
+            + renderedHeight(PokedoroTabBar(selection: .constant(.pokemon), l: store.l))
+            + Self.popoverChromeExtras
+        XCTAssertGreaterThan(chrome + PokemonRosterView.contentHeight, PopoverMetrics.tabHeight,
+                            "격자 탭이 뷰포트에 다 들어오면 페이저 위치 규칙이 무의미해진다")
+        XCTAssertGreaterThan(chrome + CollectionView.contentHeight, PopoverMetrics.tabHeight)
+    }
+
+    /// **규칙.** 페이지 컨트롤은 격자 **위**에 그린다. 아래에 두면 위 계산만큼 뷰포트 밖으로 밀려,
+    /// 페이지가 여럿인데도 첫 페이지만 보고 그게 전부라고 읽는다.
+    ///
+    /// 소스 순서로 검사하는 이유: 화면 안 좌표는 순수 함수로 잴 수 없고, 높이만 재면 페이저가
+    /// 위에 있든 아래 있든 같은 값이 나온다. 결함을 되돌려 보면(페이저를 격자 뒤로 옮기면)
+    /// 이 검증이 실패한다.
+    func testPagedGridScreensDrawThePageControlAboveTheGrid() throws {
+        // 격자를 페이지로 넘기는 화면과, 그 화면이 사는 구조체 이름.
+        let screens = [("PokemonRosterView", "struct PokemonRosterView"),
+                       ("CompanionView", "private struct DexGridView")]
+        for (file, declaration) in screens {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/PokeTokenBar/UI/\(file).swift")
+            let lines = try String(contentsOf: url, encoding: .utf8).components(separatedBy: .newlines)
+            guard let start = lines.firstIndex(where: { $0.hasPrefix(declaration) }) else {
+                return XCTFail("\(declaration) 를 못 찾았다 — 이름이 바뀌면 가드가 무력해진다")
+            }
+            // 구조체 끝은 열 0 의 닫는 중괄호다.
+            let end = lines[(start + 1)...].firstIndex { $0 == "}" } ?? lines.count
+            let body = Array(lines[start..<end])
+
+            func callSite(_ name: String) -> Int? {
+                body.firstIndex { line in
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    return trimmed.hasPrefix("\(name)(") && !trimmed.contains("func ")
+                }
+            }
+            guard let pager = callSite("pager"), let grid = callSite("grid") else {
+                return XCTFail("\(file): 페이저·격자 호출을 못 찾았다")
+            }
+            XCTAssertLessThan(pager, grid,
+                              "\(file): 페이저가 격자 아래에 있으면 팝오버 뷰포트 밖으로 밀린다")
+        }
+    }
 }
 
 private let moveTestLine: EvoLine = {

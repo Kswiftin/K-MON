@@ -33,7 +33,10 @@ struct PokemonRosterView: View {
     @Environment(PokemonChatPresenter.self) private var chatPresenter
 
     /// 도감·상점·가방과 같은 520. 탭을 넘나들어도 팝오버가 리사이즈되지 않는다.
-    private static let contentHeight: CGFloat = 520
+    ///
+    /// `PopoverLayoutTests` 가 읽는다(`CollectionView.contentHeight` 와 같은 이유로 internal) —
+    /// 이 값이 팝오버 뷰포트보다 크다는 사실이 페이저를 격자 위에 두는 근거다.
+    static let contentHeight: CGFloat = 520
     private static let columns = 3
     private static let rows = 5
     /// 한 페이지 15칸. 격자에 주어지는 세로(520 − 헤더 − 페이저 − 간격 ≈ 468)를 5행이 나누면
@@ -64,9 +67,15 @@ struct PokemonRosterView: View {
         let slice = Array(arranged.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 6) {
             header(shownCount: arranged.count, ownedCount: owned.count, owned: owned)
-            PokemonSearchField(text: $searchText, l: store.l)
+            // 검색칸과 페이저가 한 줄이다 — 페이저는 격자 **위**에 있어야 한다. 아래에 두었을 때는
+            // 탭 콘텐츠(520)가 팝오버 뷰포트보다 높아 스크롤 밖으로 밀려, 11페이지를 가진 사용자가
+            // 다음 페이지 버튼을 못 봤다(2026-09-07 리포트).
+            HStack(spacing: 6) {
+                PokemonSearchField(text: $searchText, l: store.l)
+                pager(current: current, pageCount: pageCount)
+            }
             grid(slice)
-            footer(current: current, pageCount: pageCount)
+            footer()
         }
         .frame(height: Self.contentHeight, alignment: .top)
         // 상세정보 팝오버를 탭 오른쪽에 고정한다. 카드마다 다른 위치(그 카드의 정보 아이콘)에
@@ -270,15 +279,11 @@ struct PokemonRosterView: View {
         .frame(maxHeight: .infinity)
     }
 
-    /// 하단 한 줄 — 왼쪽은 모아둔 알, 오른쪽은 페이저. 페이저가 1페이지라 안 보일 때도 이 줄을
-    /// 항상 예약한다(도감과 같은 규칙) — 페이지 수에 따라 격자 높이가 흔들리지 않게.
-    private func footer(current: Int, pageCount: Int) -> some View {
-        HStack(spacing: 8) {
-            if store.focusEggCount > 0 {
-                Text("🥚 × \(store.focusEggCount)").font(.caption.bold())
-            }
-            Spacer(minLength: 4)
-            if pageCount > 1 {
+    /// 페이지 이동 — 검색칸 오른쪽. 1페이지뿐이면 자리만 비워 둔다(칸 폭이 페이지 수에 따라
+    /// 흔들리지 않게).
+    @ViewBuilder private func pager(current: Int, pageCount: Int) -> some View {
+        if pageCount > 1 {
+            HStack(spacing: 6) {
                 Button { page = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
                     .buttonStyle(.plain).disabled(current == 0)
                     .accessibilityLabel(store.l.dexPagePrev)
@@ -290,6 +295,19 @@ struct PokemonRosterView: View {
                     .buttonStyle(.plain).disabled(current == pageCount - 1)
                     .accessibilityLabel(store.l.dexPageNext)
             }
+            .font(.system(size: 11, weight: .semibold))
+            .fixedSize()
+        }
+    }
+
+    /// 하단 한 줄 — 모아둔 알. 알이 없을 때도 이 줄을 항상 예약한다(도감과 같은 규칙) —
+    /// 알을 얻는 순간 격자 높이가 흔들리지 않게.
+    private func footer() -> some View {
+        HStack(spacing: 8) {
+            if store.focusEggCount > 0 {
+                Text("🥚 × \(store.focusEggCount)").font(.caption.bold())
+            }
+            Spacer(minLength: 4)
         }
         .font(.system(size: 11, weight: .semibold))
         .frame(height: 18)
