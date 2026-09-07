@@ -19,6 +19,38 @@ struct L {
         }
     }
 
+    // MARK: 첫 화면
+
+    /// 스타터를 고르기 전 화면의 첫 줄. **무슨 앱인지 먼저 말한다** — 예전엔 트레이너 이름
+    /// 입력칸부터 나와서, 처음 연 사람은 이게 집중 타이머인지 포켓몬 게임인지 왜 이름을 묻는지
+    /// 알 수 없었다.
+    var onboardingHeadline: String {
+        t("집중하면 포켓몬이 자라요", "Focus, and your Pokémon grows", "集中するとポケモンが育ちます")
+    }
+
+    /// 그 다음 줄 — 지금 할 일 하나를 말한다. 화면에 남겨 둔 것도 그 하나뿐이다.
+    var onboardingSubhead: String {
+        t("이름을 정하고 함께 시작할 타입을 고르세요.",
+          "Pick a name, then choose the type you'll start with.",
+          "名前を決めて、一緒に始めるタイプを選びましょう。")
+    }
+
+    /// 경험치 단위. 보상 미리보기 줄이 `EXP` 를 그대로 박아 두어 한국어 · 일본어 사용자도
+    /// 영어를 봤다 — 같은 줄의 다른 조각은 전부 세 언어를 탄다.
+    var experienceUnit: String { t("경험치", "EXP", "経験値") }
+
+    /// 트레이너 바의 `NEXT 320p` 가 무슨 단위인지 푼다.
+    func trainerNextLevelHint(_ points: Int) -> String {
+        t("다음 트레이너 레벨까지 \(points) 포인트",
+          "\(points) points to the next trainer level",
+          "次のトレーナーレベルまで \(points) ポイント")
+    }
+
+    /// 트레이너 바 오른쪽 숫자가 무엇인지 푼다 — 재화 이름은 앱 전체와 같은 것을 쓴다.
+    var starPieceBalanceHint: String {
+        t("보유 별의조각", "Star Pieces you hold", "手持ちのほしのかけら")
+    }
+
     // MARK: 탭
     var home: String { t("홈", "Home", "ホーム") }
     /// 최상위 탭 라벨. **하위 세그먼트(도감 | 업적)의 상위어여야 한다** — "도감" 이던 때는 도감 탭

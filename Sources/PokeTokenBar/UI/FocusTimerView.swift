@@ -321,6 +321,7 @@ struct FocusTimerView: View {
     private func rewardText(_ minutes: Int) -> String {
         let reward = AdventureRules.amounts(minutes: minutes)
         let fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
-        return "+\(GameNumberFormatter.compact(reward.experience)) EXP · +\(GameNumberFormatter.compact(reward.starPieces)) ⭐ · +\(fragments) 🧩"
+        return "+\(GameNumberFormatter.compact(reward.experience)) \(companion.l.experienceUnit)"
+            + " · +\(GameNumberFormatter.compact(reward.starPieces)) ⭐ · +\(fragments) 🧩"
     }
 }

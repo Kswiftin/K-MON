@@ -1508,6 +1508,16 @@ struct StarterPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // 0) 무슨 앱인지 먼저 말한다. 예전엔 이름 입력칸부터 나와서, 처음 연 사람은 이게
+            //    집중 타이머인지 포켓몬 게임인지 왜 이름을 묻는지 알 수 없었다.
+            VStack(alignment: .leading, spacing: 3) {
+                Label(l.onboardingHeadline, systemImage: "timer")
+                    .font(.headline)
+                Text(l.onboardingSubhead)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             // 1) 트레이너 이름 — 배틀에 표시된다. 이름을 넣어야 스타터를 고를 수 있다.
             VStack(alignment: .leading, spacing: 4) {
                 Text(l.trainerNamePrompt).font(.callout.weight(.semibold))

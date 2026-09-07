@@ -26,6 +26,19 @@ enum PopoverTab: CaseIterable {
     var contentHeight: CGFloat { PopoverMetrics.tabHeight }
 }
 
+/// 첫 실행 화면이 무엇을 보여 주는가.
+///
+/// 판정을 조각마다 두지 않고 한 곳에 둔다. 타이머 · 탭바 · 트레이너 바는 각자 자기 상태만 보므로
+/// "아직 게임이 시작되지 않았다" 는 그중 누구의 상태도 아니고, 그래서 아무도 안 봤다 —
+/// 스타터를 고르기 전인데 타이머가 **없는 파트너의** 보상을 약속하고 있었다.
+enum PopoverChrome {
+    /// 게임 크롬(트레이너 바 · 집중 타이머 · 탭바 · 상점 · 가방)을 그리는가.
+    ///
+    /// 스타터를 고르기 전에는 전부 접는다. 그 탭들은 눌러도 빈 화면이고, 남길 이유가 있는 것은
+    /// 고르는 일 하나뿐이다. 설정 · 종료는 게임 크롬이 아니라 언제나 남는다.
+    static func showsGameChrome(needsStarterSelection: Bool) -> Bool { !needsStarterSelection }
+}
+
 enum PopoverMetrics {
     static let width: CGFloat = 360
     static let padding: CGFloat = 14
@@ -320,13 +333,21 @@ struct PopoverView: View {
                 Text("\(l.trainerLevelLabel) Lv.\(companion.trainerLevel.level)")
                     .font(.caption.weight(.bold)).monospacedDigit()
                 if let remaining = companion.trainerLevel.pointsToNextLevel {
+                    // `p` 만 두면 무슨 단위인지 알 길이 없다 — 첫 사용자가 이 줄에서 유일하게
+                    // 못 읽는 조각이라 툴팁으로 푼다.
                     Text("NEXT \(remaining)p")
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .monospacedDigit().foregroundStyle(.secondary)
+                        .help(l.trainerNextLevelHint(remaining))
+                        .accessibilityLabel(l.trainerNextLevelHint(remaining))
                 }
                 Spacer()
-                Text("✦ " + GameNumberFormatter.compact(companion.availableTokens))
+                // 보상 줄이 쓰는 것과 **같은 기호**여야 한다. 잔액은 `✦`, 보상은 `⭐` 이던 동안
+                // 화면 위아래의 두 숫자가 같은 재화라는 걸 이어 볼 방법이 없었다.
+                Text("⭐ " + GameNumberFormatter.compact(companion.availableTokens))
                     .font(.caption.weight(.bold)).foregroundStyle(.orange).monospacedDigit()
+                    .help(l.starPieceBalanceHint)
+                    .accessibilityLabel("\(l.starPieceBalanceHint) \(companion.availableTokens)")
             }
             ProgressView(value: companion.trainerLevel.progress)
                 .tint(PokedoroTheme.blue)
@@ -346,7 +367,7 @@ struct PopoverView: View {
     @ViewBuilder private var payoutNotice: some View {
         if let payout = payoutBanner {
             HStack(spacing: 6) {
-                Text("✦").font(.caption.weight(.bold)).foregroundStyle(.orange)
+                Text("⭐").font(.caption.weight(.bold)).foregroundStyle(.orange)
                 Text(l.payoutSettled(payout))
                     .font(.caption.weight(.semibold)).foregroundStyle(.green)
                 Spacer()
@@ -372,12 +393,16 @@ struct PopoverView: View {
 
     private var mainContent: some View {
         @Bindable var nav = nav
+        let showsGameChrome = PopoverChrome.showsGameChrome(
+            needsStarterSelection: companion.needsStarterSelection)
         return VStack(alignment: .leading, spacing: 12) {
             updateBanner
-            trainerBar
-            payoutNotice
-            FocusTimerView()
-            PokedoroTabBar(selection: $nav.tab, l: l)
+            if showsGameChrome {
+                trainerBar
+                payoutNotice
+                FocusTimerView()
+                PokedoroTabBar(selection: $nav.tab, l: l)
+            }
 
             // 탭 콘텐츠만 스크롤한다. 짧은 탭은 위로 붙고 남는 자리는 빈 공간으로 둔다 —
             // 창 높이가 고정이라 탭을 바꾸거나 기술 목록을 펼쳐도 팝오버는 그대로다.
@@ -392,7 +417,7 @@ struct PopoverView: View {
                     case .shop: ShopView(store: companion, nav: nav)
                     case .home:
                         // 스타터를 아직 안 고른 첫 화면에는 띄우지 않는다 — 첫 한 시간은 대상이 아니다.
-                        if !companion.needsStarterSelection { MissionBoardView(store: companion) }
+                        if showsGameChrome { MissionBoardView(store: companion) }
                         CompanionHeader(store: companion)
                         if settings.memoryHomeEnabled {
                             MemoryHomeQuickCard(store: companion) { memoryHomePresenter.open() }
@@ -448,9 +473,11 @@ struct PopoverView: View {
                 Text("\(l.totalPlaytime) \(l.duration(companion.activeSecondsTotal))")
                     .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
             }
-            footerTabButton(.shop, title: l.shop, icon: "cart")
-            // 가방은 포켓몬 탭 안에 있었다 — 어느 탭에서 쓰든 상관없는 소지품이라 상점 옆이 제자리다.
-            footerTabButton(.bag, title: l.bag, icon: "backpack.fill")
+            if PopoverChrome.showsGameChrome(needsStarterSelection: companion.needsStarterSelection) {
+                footerTabButton(.shop, title: l.shop, icon: "cart")
+                // 가방은 포켓몬 탭 안에 있었다 — 어느 탭에서 쓰든 상관없는 소지품이라 상점 옆이 제자리다.
+                footerTabButton(.bag, title: l.bag, icon: "backpack.fill")
+            }
             Spacer()
             Button { nav.showSettings = true } label: { Image(systemName: "gearshape") }
                 .buttonStyle(.borderless).help(l.settings).accessibilityLabel(l.settings)
