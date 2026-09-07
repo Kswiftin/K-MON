@@ -20,9 +20,10 @@ final class BattlePhase5Tests: XCTestCase {
         var move = attack(); move.drain = 50
         var rng = SplitMix64(seed: 1)
 
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, rng: &rng)
+                                              move: move, field: &field, rng: &rng)
 
         XCTAssertEqual(attacker.hp, attacker.stats.hp, "drain must not exceed maximum HP")
         XCTAssertTrue(events.contains(.heal(.a, amount: 1)))
@@ -34,9 +35,10 @@ final class BattlePhase5Tests: XCTestCase {
         var move = attack(); move.drain = -100
         var rng = SplitMix64(seed: 1)
 
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, rng: &rng)
+                                              move: move, field: &field, rng: &rng)
 
         XCTAssertEqual(attacker.hp, 0)
         XCTAssertTrue(events.contains { if case .damage(.a, _, cause: .recoil) = $0 { return true }; return false })
@@ -50,9 +52,10 @@ final class BattlePhase5Tests: XCTestCase {
     func testStruggleCostsTheUserAQuarterOfTheDamageDealt() {
         var attacker = BattleSide(snapshot()), defender = BattleSide(snapshot())
         var rng = SplitMix64(seed: 1)
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: .struggle(), rng: &rng)
+                                              move: .struggle(), field: &field, rng: &rng)
 
         let dealt = defender.stats.hp - defender.hp
         XCTAssertGreaterThan(dealt, 0, "발버둥은 상성을 안 타는 공격기다")
@@ -65,9 +68,10 @@ final class BattlePhase5Tests: XCTestCase {
         var attacker = BattleSide(snapshot()), defender = BattleSide(snapshot())
         var move = attack(); move.minHits = 2; move.maxHits = 2
         var rng = SplitMix64(seed: 5)
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, rng: &rng)
+                                              move: move, field: &field, rng: &rng)
 
         XCTAssertTrue(events.contains(.multiHit(.a, hits: 2)))
         XCTAssertEqual(events.filter { if case .damage(.b, _, .move) = $0 { return true }; return false }.count, 1)
@@ -85,8 +89,9 @@ final class BattlePhase5Tests: XCTestCase {
         for seed in UInt64(1)...200 {
             a = BattleSide(snapshot(speed: 10)); b = BattleSide(snapshot(speed: 200))
             rng = SplitMix64(seed: seed)
+            var field = BattleField()
             first = BattleEngine.resolveTurn(a: &a, b: &b, moveA: flinching, moveB: ordinary,
-                                             turn: 1, rng: &rng)
+                                             turn: 1, field: &field, rng: &rng)
             if first.contains(.cant(.b, .flinch)) { break }
         }
         XCTAssertTrue(first.contains(.cant(.b, .flinch)), "200 seed 안에 풀린치가 한 번도 안 걸렸다")
@@ -94,8 +99,9 @@ final class BattlePhase5Tests: XCTestCase {
                        "선공한 쪽이 자기 풀린치에 걸리면 안 된다")
         XCTAssertTrue(b.flinched, "풀죽음은 다음 턴이 시작될 때까지 volatile 로 남는다")
 
+        var field = BattleField()
         let second = BattleEngine.resolveTurn(a: &a, b: &b, moveA: ordinary, moveB: ordinary,
-                                              turn: 2, rng: &rng)
+                                              turn: 2, field: &field, rng: &rng)
         XCTAssertTrue(second.contains(.move(.b, moveID: 2)))
         XCTAssertFalse(b.flinched)
     }
@@ -112,8 +118,9 @@ final class BattlePhase5Tests: XCTestCase {
         var rng = SplitMix64(seed: 99)
         var opponentMoved = 0
         for turn in 1...20 {
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: fakeOut,
-                                                  moveB: attack(id: 2), turn: turn, rng: &rng)
+                                                  moveB: attack(id: 2), turn: turn, field: &field, rng: &rng)
             if events.contains(.move(.b, moveID: 2)) { opponentMoved += 1 }
         }
         XCTAssertGreaterThan(opponentMoved, 10, "20턴 중 절반도 못 움직이면 배틀이 잠긴 것이다")
@@ -174,9 +181,10 @@ final class BattlePhase5Tests: XCTestCase {
         let before = attacker.hp
         var rng = SplitMix64(seed: 7)
 
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: attack(), rng: &rng)
+                                              move: attack(), field: &field, rng: &rng)
 
         XCTAssertEqual(attacker.hp, before, "drain 없는 기술이 HP 를 움직이면 안 된다")
         XCTAssertFalse(events.contains { if case .heal = $0 { return true }; return false })
@@ -210,9 +218,10 @@ final class BattlePhase5Tests: XCTestCase {
         var move = attack(power: 25); move.minHits = 5; move.maxHits = 5
         var rng = SplitMix64(seed: 3)
 
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, rng: &rng)
+                                              move: move, field: &field, rng: &rng)
 
         XCTAssertEqual(defender.hp, 0)
         XCTAssertFalse(events.contains { if case .multiHit(_, let hits) = $0 { return hits > 1 }; return false },
@@ -229,9 +238,10 @@ final class BattlePhase5Tests: XCTestCase {
         var rng = SplitMix64(seed: 11)
         BattleEngine.beginTurn(&attacker); BattleEngine.beginTurn(&defender)
 
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, rng: &rng)
+                                              move: move, field: &field, rng: &rng)
         let total = events.reduce(0) { sum, event in
             if case .damage(.b, let amount, .move) = event { return sum + amount }
             return sum
@@ -330,8 +340,9 @@ final class BattlePhase5Tests: XCTestCase {
             var rng = SplitMix64(seed: 4242)
             var events: [BattleEvent] = []
             for turn in 1...4 {
+                var field = BattleField()
                 events += BattleEngine.resolveTurn(a: &a, b: &b, moveA: multi, moveB: leech,
-                                                   turn: turn, rng: &rng)
+                                                   turn: turn, field: &field, rng: &rng)
             }
             return events
         }

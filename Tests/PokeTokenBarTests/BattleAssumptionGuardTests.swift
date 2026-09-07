@@ -27,7 +27,7 @@ final class BattleAssumptionGuardTests: XCTestCase {
         "lowKick", "grassKnot",             // 격투 · 풀 (체중 미수신)
         "heavySlam", "heatCrash",           // 강철 · 불꽃 (체중 미수신)
         "counter", "mirrorCoat",            // 격투 · 에스퍼 (맞은 게 없음)
-        "metalBurst",                       // 강철 (맞은 게 없음)
+        "metalBurst", "comeuppance",        // 강철 · 악 (맞은 게 없음)
         "guillotine", "hornDrill",          // 노말 (레벨 우위)
         "fissure", "sheerCold",             // 땅 · 얼음 (레벨 우위)
     ]
@@ -42,7 +42,21 @@ final class BattleAssumptionGuardTests: XCTestCase {
         "lowKick", "grassKnot",
         "heavySlam", "heatCrash",
         "trumpCard",
+        "hardPress",                        // 단발기 — 히트마다 다시 뽑히지 않는다
         "magnitude",
+        // 아래는 PokéAPI 위력이 살아 있고 상황 배율만 붙는 부류다. 전부 단발기다.
+        "eruption", "waterSpout", "dragonEnergy",
+        "storedPower", "powerTrip",
+        "hex", "infernalParade",
+        "avalanche", "acrobatics",
+        // 턴을 넘어 쌓인 카운터에서 위력을 뽑는 부류. 역시 전부 단발기다.
+        "furyCutter", "rollout", "echoedVoice",
+        "rageFist", "stompingTantrum", "temperFlare",
+        "payback",                          // 단발기 — 상대가 이번 턴에 움직였나만 본다
+        // **유일한 다단기.** 히트마다 위력이 오르는 것이 이 기술들의 규칙이라, 루프 안에서 뽑는
+        // 것이 맞다 — `from` 에 히트 번호가 넘어간다.
+        "tripleKick", "tripleAxel",
+        "risingVoltage",                    // 단발기 — 필드를 보고 두 배가 될 뿐이다
     ]
 
     // MARK: 소스 스캔
@@ -119,9 +133,10 @@ final class BattleAssumptionGuardTests: XCTestCase {
             .reduce(into: Set<String>()) { $0.formUnion($1.labels) }
 
         XCTAssertEqual(variablePower, Self.frozenVariablePower, """
-            가변위력 기술이 바뀌었다. `resolveAttack` 은 위력을 다단기 루프 **안**에서 뽑으므로, \
-            새 기술의 `maxHits` 가 1 보다 크면 히트마다 위력이 다시 뽑힌다. 단발기면 위 목록만 \
-            갱신하고, 다단기면 뽑기를 루프 앞으로 올리고 `rulesVersion` 도 함께 올려라. \
+            가변위력 기술이 바뀌었다. `resolveAttack` 은 위력을 다단기 루프 **안**에서 히트 번호와 \
+            함께 뽑으므로, 새 기술의 `maxHits` 가 1 보다 크면 **히트마다 다시 뽑힌다.** 히트가 \
+            갈수록 세지는 기술(트리플킥 부류)이면 그게 맞는 동작이고, 히트 내내 같은 위력이어야 \
+            하는 기술이면 뽑기를 루프 앞으로 올리고 `rulesVersion` 도 함께 올려라. \
             차이: \(variablePower.symmetricDifference(Self.frozenVariablePower).sorted())
             """)
     }

@@ -24,8 +24,10 @@ final class BattleStatusTests: XCTestCase {
 
     private func attack(_ attacker: inout BattleSide, _ defender: inout BattleSide,
                         _ move: MoveSpec, rng: inout SplitMix64) -> [BattleEvent] {
-        BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
-                                 attackerActor: .a, defenderActor: .b, move: move, rng: &rng)
+        var field = BattleField()
+        return BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
+                                        attackerActor: .a, defenderActor: .b, move: move,
+                                        field: &field, rng: &rng)
     }
 
     // MARK: 화상 — 물리만 절반 (대조군 필수)
@@ -64,8 +66,9 @@ final class BattleStatusTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = quick, b = sluggish
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: harmless(), moveB: harmless(),
-                                                  turn: 1, rng: &rng)
+                                                  turn: 1, field: &field, rng: &rng)
             XCTAssertEqual(events.moveActors.first, .b, "마비로 느려진 쪽은 후공이어야 한다")
         }
     }
@@ -282,8 +285,9 @@ final class BattleStatusTests: XCTestCase {
         BattleEngine.inflict(.burn, on: &a, actor: .a, rng: &rng)
         BattleEngine.inflict(.poison, on: &b, actor: .b, rng: &rng)
 
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: harmless(), moveB: harmless(),
-                                              turn: 1, rng: &rng)
+                                              turn: 1, field: &field, rng: &rng)
 
         let lastMove = events.lastIndex { if case .move = $0 { return true } else { return false } }
         let firstResidual = events.firstIndex { event in
@@ -356,8 +360,9 @@ final class BattleStatusTests: XCTestCase {
             BattleEngine.inflict(.sleep, on: &b, actor: .b, rng: &rng)
             var events: [BattleEvent] = []
             for turn in 1...8 {
+                var field = BattleField()
                 events += BattleEngine.resolveTurn(a: &a, b: &b, moveA: harmless(), moveB: harmless(),
-                                                   turn: turn, rng: &rng)
+                                                   turn: turn, field: &field, rng: &rng)
             }
             return (events, a.hp, b.hp)
         }
@@ -371,12 +376,12 @@ final class BattleStatusTests: XCTestCase {
 
     /// 규칙이 바뀌면 버전을 올린다 — 구버전 피어는 같은 배틀을 다르게 보므로 핸드셰이크에서 막아야 한다.
     func testRulesVersionMovesWithTheStatusConditions() {
-        XCTAssertEqual(BattleEngine.rulesVersion, 21,
+        XCTAssertEqual(BattleEngine.rulesVersion, 23,
                        """
                        상태이상 = 3, 변화기 = 4, 끊김/에스크로 = 5, LAN 팀전 = 6, 출전 이벤트 = 7, \
                        랭크 = 8, 가변 위력 = 9, 체중 = 10, 되돌려주기 = 11, 변화기 상성 = 12, \
                        드레인·반동·다단·풀린치 = 13, 특성 면역·흡수 = 14, 자기 회복 = 15, 현행 상태·급소 = 16, \
-                       손가락흔들기 입력 = 17, 끊김 판정의 턴 합의(`resolvedThrough`) = 21
+                       손가락흔들기 입력 = 17, 끊김 판정의 턴 합의(`resolvedThrough`) = 21, 쇼다운 기술 데이터 보정 = 22, 상황 배율·누적 카운터 가변 위력(분화·어시스트파워·악몽·리프블레이드·리벤지 부류) + 날씨·필드·진영 상태 레이어(순풍의 턴 순서 포함) + 방어 부류 + 테라스탈(모의전·LAN, 와이어에 행동 하나 추가) = 23
                        """)
     }
 

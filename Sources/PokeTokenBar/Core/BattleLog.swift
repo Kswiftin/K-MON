@@ -74,6 +74,36 @@ enum BattleLog {
                 // 급소·상성과 같은 자리(공격 줄의 노트)다. 자기 줄로 빼면 "3번 맞았다"가
                 // 데미지 줄과 떨어져 무엇이 세 번 맞은 건지 안 읽힌다.
                 begin(actor); pending?.notes.append(l.battleMultiHit(hits))
+            case .weatherStarted(let weather):
+                // 판 전체의 줄이라 주인이 없다 — 진행 중인 행동에 접으면 남의 기술 줄에 날씨가 붙는다.
+                flush()
+                out.append(Line(actor: nil, text: l.battleWeatherStarted(weather)))
+            case .weatherEnded(let weather):
+                flush()
+                out.append(Line(actor: nil, text: l.battleWeatherEnded(weather)))
+            case .terrainStarted(let terrain):
+                flush()
+                out.append(Line(actor: nil, text: l.battleTerrainStarted(terrain)))
+            case .terrainEnded(let terrain):
+                flush()
+                out.append(Line(actor: nil, text: l.battleTerrainEnded(terrain)))
+            case .sideConditionStarted(_, let condition):
+                // 날씨와 같은 자리의 줄이다 — 편은 앞 줄(기술을 쓴 줄)이 이미 말한다.
+                flush()
+                out.append(Line(actor: nil, text: l.battleSideConditionStarted(condition)))
+            case .sideConditionEnded(_, let condition):
+                flush()
+                out.append(Line(actor: nil, text: l.battleSideConditionEnded(condition)))
+            case .terastallized(let actor, let type):
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleTerastallized(name(actor), type: type)))
+            case .guardUp(let actor):
+                flush()
+                out.append(Line(actor: actor, text: l.battleGuardUp(name(actor))))
+            case .guardBlocked(let actor):
+                flush()
+                out.append(Line(actor: actor, text: l.battleGuardBlocked(name(actor))))
             case .faint(let actor):
                 flush()
                 out.append(Line(actor: actor, text: l.battleFainted(name(actor))))

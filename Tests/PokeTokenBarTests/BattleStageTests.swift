@@ -42,8 +42,9 @@ final class BattleStageTests: XCTestCase {
     private func attack(_ attacker: inout BattleSide, _ defender: inout BattleSide,
                         _ move: MoveSpec, seed: UInt64 = 1) -> [BattleEvent] {
         var rng = SplitMix64(seed: seed)
+        var field = BattleField()
         return BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
-                                        attackerActor: .a, defenderActor: .b, move: move, rng: &rng)
+                                        attackerActor: .a, defenderActor: .b, move: move, field: &field, rng: &rng)
     }
 
     // MARK: 랭크 배율표 — Gen 3+ 분수 (§3.2 결정)
@@ -225,8 +226,9 @@ final class BattleStageTests: XCTestCase {
         for seed in UInt64(0)..<20 {
             var rng = SplitMix64(seed: seed)
             var a = slow, b = fast
+            var field = BattleField()
             let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: tackle(), moveB: tackle(),
-                                                  turn: 1, rng: &rng)
+                                                  turn: 1, field: &field, rng: &rng)
             let first = events.compactMap { event -> BattleActor? in
                 if case .move(let actor, _) = event { return actor } else { return nil }
             }.first

@@ -16,9 +16,19 @@ struct TeamPracticeBattle {
     var turn = 1
     var events: [BattleEvent] = []
     var rng: SplitMix64
+    /// 판 전체 상태(날씨) — 이 배틀 하나에 속한다. 모드마다 따로 들어야 날씨가 서로 새지 않는다.
+    var field = BattleField()
     /// 승부 — `nil` 은 아직 진행 중이다. 예전엔 `Bool?` 라 무승부를 담을 자리가 없어
     /// 동시 전멸이 승리로 접혔다(체육관이면 배지까지 나갔다).
     var result: BattleOutcome?
+
+    /// 테라스탈을 이미 썼나 — **진영당 한 번**이다(본가와 같다). 개체가 지금 그 상태인지는
+    /// `BattleSide.isTerastallized` 가 들고, 횟수 제약은 진영 것이라 여기 있다.
+    var myTerastalUsed = false
+    var opponentTerastalUsed = false
+
+    /// 지금 테라스탈할 수 있나 — 화면의 버튼이 이 값을 본다.
+    var canTerastallizeMine: Bool { result == nil && !myTerastalUsed && mine[myActive].isAlive }
 
     var mySlot: BattleSide { mine[myActive] }
     var opponentSlot: BattleSide { opponents[opponentActive] }
@@ -84,10 +94,15 @@ struct TeamPracticeBattle {
         let (move, moveIndex) = cpuMoveChoice()
         if moveIndex >= 0 { opponents[opponentActive].pp[moveIndex] -= 1 }
         events += BattleEngine.applyAttack(attacker: &opponents[opponentActive], defender: &mine[myActive],
-                                           attackerActor: .b, defenderActor: .a, move: move, rng: &rng)
-        // 교체로 넘긴 턴도 턴이다 — 잔뎀은 그대로 들어간다.
+                                           attackerActor: .b, defenderActor: .a, move: move,
+                                           field: &field, attackerTeam: .b, defenderTeam: .a,
+                                           rng: &rng)
+        // 교체로 넘긴 턴도 턴이다 — 잔뎀도 날씨도 그대로 들어간다.
         events += BattleEngine.endOfTurnResidual(&mine[myActive], actor: .a)
         events += BattleEngine.endOfTurnResidual(&opponents[opponentActive], actor: .b)
+        events += BattleEngine.endOfTurnWeather(&mine[myActive], actor: .a, field: field)
+        events += BattleEngine.endOfTurnWeather(&opponents[opponentActive], actor: .b, field: field)
+        events += BattleEngine.advanceField(&field)
     }
 
     /// 내가 공격 대신 다른 행동(볼 던지기)에 턴을 쓴다 — **교체와 같은 대가다.** 상대만 한 번
@@ -111,16 +126,39 @@ struct TeamPracticeBattle {
         advanceFainted()
     }
 
+    /// 테라스탈 — **턴을 쓰지 않는다.** 본가에서도 테라스탈은 기술 선택과 함께 선언하는 것이라
+    /// 그 턴에 공격도 한다. 여기서는 버튼을 먼저 누르고 기술을 고르는 순서로 나뉘어 있고, 그래서
+    /// 이 함수는 상태만 세우고 턴을 넘기지 않는다.
+    mutating func terastallizeMine() -> Bool {
+        guard canTerastallizeMine else { return false }
+        myTerastalUsed = true
+        events += BattleEngine.declareTerastal(&mine[myActive], actor: .a)
+        return true
+    }
+
+    /// CPU 의 테라스탈 — 절반 이하로 깎였을 때 한 번 쓴다. 무작위를 쓰지 않아 `rng` 소비가 늘지
+    /// 않는다(같은 seed 의 배틀이 그대로 재현된다).
+    private mutating func cpuTerastallizeIfWorthwhile() {
+        guard !opponentTerastalUsed, opponents[opponentActive].isAlive,
+              opponents[opponentActive].hp * 2 <= opponents[opponentActive].stats.hp else { return }
+        opponentTerastalUsed = true
+        events += BattleEngine.declareTerastal(&opponents[opponentActive], actor: .b)
+    }
+
     mutating func useMove(_ index: Int) -> Bool {
         guard result == nil, mine[myActive].isAlive, opponents[opponentActive].isAlive else { return false }
         let myIndex = mine[myActive].mustStruggle ? -1 : index
         guard myIndex == -1 || mine[myActive].canUse(moveAt: myIndex) else { return false }
         let myMove = mine[myActive].move(at: myIndex)
+        // 기술을 고르기 **전에** 정한다 — AI 의 기술 추정이 테라스탈 뒤의 타입을 보고 골라야
+        // 자기 테라 타입 기술을 제대로 평가한다.
+        cpuTerastallizeIfWorthwhile()
         let (cpuMove, cpuIndex) = cpuMoveChoice()
         if myIndex >= 0 { mine[myActive].pp[myIndex] -= 1 }
         if cpuIndex >= 0 { opponents[opponentActive].pp[cpuIndex] -= 1 }
         let resolved = BattleEngine.resolveTurn(a: &mine[myActive], b: &opponents[opponentActive],
-                                                moveA: myMove, moveB: cpuMove, turn: turn, rng: &rng)
+                                                moveA: myMove, moveB: cpuMove, turn: turn,
+                                                field: &field, rng: &rng)
         events.append(contentsOf: resolved)
         turn += 1
         advanceFainted()
@@ -136,7 +174,8 @@ struct TeamPracticeBattle {
         mine[myActive].pp[slotIndex] -= 1
         opponents[opponentActive].pp[slotIndex] -= 1
         events += BattleEngine.resolveTurn(a: &mine[myActive], b: &opponents[opponentActive],
-                                           moveA: myMove, moveB: cpuMove, turn: turn, rng: &rng)
+                                           moveA: myMove, moveB: cpuMove, turn: turn,
+                                           field: &field, rng: &rng)
         turn += 1
         advanceFainted()
         return true

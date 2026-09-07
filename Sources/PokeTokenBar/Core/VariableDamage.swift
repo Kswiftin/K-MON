@@ -29,16 +29,27 @@ enum VariableDamage: Equatable, Sendable {
     /// 이 기술이 위력을 상황에서 뽑는 부류면 그 결과, 아니면 `nil`(보통 기술이라는 뜻).
     ///
     /// 이름을 `MoveSpec.from(_ dto:)` 과 맞춘다 — 둘 다 "바깥 값 하나를 이 타입으로 옮긴다" 이다.
+    /// - Parameter hit: 몇 번째 히트인가(0 부터). 다단기는 히트마다 이 함수를 지나므로, 히트별로
+    ///   위력이 오르는 기술(트리플킥·트리플악셀)은 이 값만 보면 된다. 단발기는 늘 0 이다.
     static func from(_ move: MoveSpec, attacker: BattleSide, defender: BattleSide,
+                     hit: Int = 0, field: BattleField = BattleField(),
+                     attackerTeam: BattleTeamSlot = .a, defenderTeam: BattleTeamSlot = .b,
                      rng: inout SplitMix64) -> VariableDamage? {
         switch move.id {
-        case MoveID.electroBall:  return .power(electroBallPower(attacker: attacker, defender: defender))
-        case MoveID.gyroBall:     return .power(gyroBallPower(attacker: attacker, defender: defender))
+        case MoveID.electroBall:
+            return .power(electroBallPower(attacker: attacker, defender: defender, field: field,
+                                           attackerTeam: attackerTeam, defenderTeam: defenderTeam))
+        case MoveID.gyroBall:
+            return .power(gyroBallPower(attacker: attacker, defender: defender, field: field,
+                                        attackerTeam: attackerTeam, defenderTeam: defenderTeam))
         case MoveID.flail, MoveID.reversal:
             return .power(lowHealthPower(attacker))
         case MoveID.wringOut, MoveID.crushGrip:
             return .power(targetHealthPower(defender))
         case MoveID.punishment:   return .power(punishmentPower(defender))
+        // 하드프레스는 크러시그립과 같은 식이고 상한만 100 이다. PokéAPI 는 위력을 **0** 으로 주는데
+        // (`null` 이 아니다) 그대로 두면 데미지가 0 으로 접혀 기술명만 찍히고 아무 일도 안 일어난다.
+        case MoveID.hardPress:    return .power(targetHealthPower(defender, max: 100))
         case MoveID.lowKick, MoveID.grassKnot:
             // 체중을 못 받아왔으면 **실패시킨다.** 0 으로 접으면 "가장 가벼움"이 되어 모든 상대에게
             // 최저 위력이 나가고, 그게 맞는 값인지 화면에서 구별할 수 없다.
@@ -49,6 +60,55 @@ enum VariableDamage: Equatable, Sendable {
                   let theirs = defender.snapshot.weightHectograms, theirs > 0 else { return .noEffect }
             return .power(weightRatioPower(attacker: mine, defender: theirs))
         case MoveID.trumpCard:    return .power(trumpCardPower(attacker, move: move))
+        // 아래 부류는 PokéAPI 가 위력을 제대로 주는 기술이다 — 죽어 있지는 않았고, 상황 배율만
+        // 빠져 있었다. 그래서 기본 위력은 여기서 다시 적지 않고 `basePower` 로 데이터에서 읽는다.
+        case MoveID.eruption, MoveID.waterSpout, MoveID.dragonEnergy:
+            return .power(healthProportionalPower(attacker, base: basePower(move, fallback: 150)))
+        case MoveID.storedPower, MoveID.powerTrip:
+            return .power(raisedStagePower(attacker, base: basePower(move, fallback: 20)))
+        case MoveID.hex:
+            return .power(statusPunishingPower(defender, base: basePower(move, fallback: 65)))
+        case MoveID.infernalParade:
+            return .power(statusPunishingPower(defender, base: basePower(move, fallback: 60)))
+        case MoveID.avalanche:
+            // 이번 턴에 맞았으면 두 배. 우선도 −4 라 대개 후공이므로 조건이 실제로 자주 선다.
+            let base = basePower(move, fallback: 60)
+            return .power(attacker.lastHitThisTurn == nil ? base : base * 2)
+        // 히트마다 위력이 오르는 다단기 — `resolveAttack` 이 히트 번호를 넘겨 준다.
+        // 본가는 히트마다 명중을 따로 굴리지만 엔진은 기술 단위로 한 번 굴린다(다단기 공통 규칙).
+        case MoveID.risingVoltage:
+            // 일렉트릭필드 위의 **상대**에게 두 배. 뜬 상대는 필드를 안 받으므로 그대로다.
+            let base = basePower(move, fallback: 70)
+            let charged = field.terrain == .electric && BattleField.isGrounded(defender)
+            return .power(charged ? base * 2 : base)
+        case MoveID.tripleKick:
+            return .power(basePower(move, fallback: 10) * (hit + 1))
+        case MoveID.tripleAxel:
+            return .power(basePower(move, fallback: 20) * (hit + 1))
+        case MoveID.furyCutter:
+            return .power(doublingStreakPower(attacker, base: basePower(move, fallback: 40), cap: 160))
+        case MoveID.rollout:
+            // 본가는 5턴간 사용자를 이 기술에 **묶는데** 기술 강제 상태가 엔진에 없다(`unmodeledMoveIDs`
+            // 의 참기와 같은 이유). 그래서 연이어 고르는 동안만 세진다 — 상한은 본가와 같다.
+            return .power(doublingStreakPower(attacker, base: basePower(move, fallback: 30), cap: 480))
+        case MoveID.echoedVoice:
+            // 본가는 **누가 썼든** 그 턴에 나온 횟수를 세는 필드값이다. 필드 레이어가 없으므로
+            // 쓰는 쪽의 연속 횟수로 센다 — 1대1 에서 갈리는 건 상대도 같이 쓸 때뿐이다.
+            return .power(min(200, basePower(move, fallback: 40) * max(1, attacker.consecutiveMoveUses)))
+        case MoveID.rageFist:
+            return .power(min(350, basePower(move, fallback: 50) * (1 + attacker.timesHit)))
+        case MoveID.payback:
+            // 상대가 이번 턴 행동을 이미 썼으면 두 배. 본가는 교체한 상대에게도 두 배지만, 교체를
+            // 하는 모드(체육관·웨이브)에서도 교체는 `beginAttack` 을 지나지 않아 여기서 안 보인다.
+            let base = basePower(move, fallback: 50)
+            return .power(defender.movedThisTurn ? base * 2 : base)
+        case MoveID.stompingTantrum, MoveID.temperFlare:
+            let base = basePower(move, fallback: 75)
+            return .power(attacker.lastMoveFailed ? base * 2 : base)
+        case MoveID.acrobatics:
+            // 본가는 "지닌물건이 없으면" 두 배인데, 대전에 지닌물건 축이 아직 없어(이슈 #24 의
+            // Phase 5) 조건이 늘 참이다. 지닌물건이 생기면 여기에 분기를 세운다.
+            return .power(basePower(move, fallback: 55) * 2)
         case MoveID.magnitude:    return .power(magnitudePower(rng: &rng))
 
         // 되돌려주는 기술 — 이번 턴에 맞은 것이 없으면 실패한다. 카운터·미러코트는 우선도 −5 라
@@ -58,8 +118,8 @@ enum VariableDamage: Equatable, Sendable {
             return counterDamage(attacker, matching: .physical, multipliedBy: 2)
         case MoveID.mirrorCoat:
             return counterDamage(attacker, matching: .special, multipliedBy: 2)
-        case MoveID.metalBurst:
-            // 분류를 가리지 않는다. 배율만 1.5 배로 낮다.
+        case MoveID.metalBurst, MoveID.comeuppance:
+            // 분류를 가리지 않는다. 배율만 1.5 배로 낮다. 인과응보는 9세대판 메탈버스트라 규칙이 같다.
             guard let hit = attacker.lastHitThisTurn else { return .noEffect }
             return .fixedHP(max(1, hit.amount * 3 / 2))
 
@@ -68,7 +128,10 @@ enum VariableDamage: Equatable, Sendable {
         case MoveID.seismicToss, MoveID.nightShade:
             return .fixedHP(attacker.snapshot.level)
         case MoveID.psywave:      return .fixedHP(psywaveDamage(attacker, rng: &rng))
-        case MoveID.superFang:    return .fixedHP(max(1, defender.hp / 2))
+        // 황폐가는 상대 **현재** HP 의 절반이다(깨물어부수기와 같은 식). PokéAPI 가 주는 위력 1 을
+        // 그대로 쓰면 레벨과 무관하게 한 자릿수 데미지가 나온다.
+        case MoveID.superFang, MoveID.ruination:
+            return .fixedHP(max(1, defender.hp / 2))
         // 상대를 내 HP 까지 끌어내린다 — 내가 더 건강하면 아무 일도 없다(0 은 `.damage` 를 안 낸다).
         case MoveID.endeavor:     return .fixedHP(max(0, defender.hp - attacker.hp))
         case MoveID.finalGambit:  return .fixedHP(attacker.hp)
@@ -86,11 +149,16 @@ enum VariableDamage: Equatable, Sendable {
 
     // MARK: 위력 계산
 
-    /// 일렉트릭볼 — 상대보다 빠를수록 세다. 마비의 스피드 감소가 그대로 반영되도록
-    /// `effectiveSpeed` 를 쓴다(랭크만 보는 `stats.spe` 로는 마비가 위력에 안 잡힌다).
+    /// 일렉트릭볼 — 상대보다 빠를수록 세다. 마비·랭크·순풍이 그대로 반영되도록 순서 계산과
+    /// **같은 값**(`BattleEngine.orderingSpeed`)을 쓴다. `stats.spe` 로는 마비가 위력에 안 잡히고,
+    /// `effectiveSpeed` 만 보면 순풍이 순서만 바꾸고 위력은 예전 값으로 남는다.
     /// 나눗셈 대신 곱으로 비교한다 — 정수 나눗셈은 경계에서 값이 한 칸씩 밀린다.
-    static func electroBallPower(attacker: BattleSide, defender: BattleSide) -> Int {
-        let mine = attacker.effectiveSpeed, theirs = defender.effectiveSpeed
+    static func electroBallPower(attacker: BattleSide, defender: BattleSide,
+                                 field: BattleField = BattleField(),
+                                 attackerTeam: BattleTeamSlot = .a,
+                                 defenderTeam: BattleTeamSlot = .b) -> Int {
+        let mine = BattleEngine.orderingSpeed(attacker, team: attackerTeam, field: field)
+        let theirs = BattleEngine.orderingSpeed(defender, team: defenderTeam, field: field)
         if mine <= theirs { return 40 }
         if mine <= theirs * 2 { return 60 }
         if mine <= theirs * 3 { return 80 }
@@ -99,8 +167,13 @@ enum VariableDamage: Equatable, Sendable {
     }
 
     /// 자이로볼 — 일렉트릭볼의 반대로, 느릴수록 세다.
-    static func gyroBallPower(attacker: BattleSide, defender: BattleSide) -> Int {
-        let power = 25 * defender.effectiveSpeed / max(1, attacker.effectiveSpeed) + 1
+    static func gyroBallPower(attacker: BattleSide, defender: BattleSide,
+                              field: BattleField = BattleField(),
+                              attackerTeam: BattleTeamSlot = .a,
+                              defenderTeam: BattleTeamSlot = .b) -> Int {
+        let mine = BattleEngine.orderingSpeed(attacker, team: attackerTeam, field: field)
+        let theirs = BattleEngine.orderingSpeed(defender, team: defenderTeam, field: field)
+        let power = 25 * theirs / max(1, mine) + 1
         return min(150, max(1, power))
     }
 
@@ -117,15 +190,53 @@ enum VariableDamage: Equatable, Sendable {
         }
     }
 
-    /// 목조르기·크러시그립 — 상대 HP 가 많을수록 세다.
-    static func targetHealthPower(_ defender: BattleSide) -> Int {
-        max(1, 120 * defender.hp / max(1, defender.stats.hp))
+    /// 목조르기·크러시그립·하드프레스 — 상대 HP 가 많을수록 세다. 상한만 기술마다 다르다
+    /// (크러시그립 계열 120, 하드프레스 100).
+    static func targetHealthPower(_ defender: BattleSide, max ceiling: Int = 120) -> Int {
+        Swift.max(1, ceiling * defender.hp / Swift.max(1, defender.stats.hp))
     }
 
     /// 응징 — 상대가 **올린** 랭크만 센다. 내린 랭크까지 세면 상대를 깎아 놓고 응징이 약해진다.
     static func punishmentPower(_ defender: BattleSide) -> Int {
-        let raised = BattleStat.allCases.reduce(0) { $0 + max(0, defender.stage($1)) }
-        return min(200, 60 + 20 * raised)
+        min(200, raisedStagePower(defender, base: 60))
+    }
+
+    /// 기본 위력 — PokéAPI 값을 쓰되 **0 이면 쇼다운 기준값으로 되돌린다.**
+    ///
+    /// 0 은 값이 아니라 "없음"일 수 있다(하드프레스가 실제로 0 으로 왔다). 상황 배율을 곱하는
+    /// 부류에서 0 을 그대로 쓰면 무엇을 곱해도 0 이라 기술이 통째로 죽는다.
+    static func basePower(_ move: MoveSpec, fallback: Int) -> Int {
+        move.power > 0 ? move.power : fallback
+    }
+
+    /// 분화·물대포·드래곤에너지 — **내** 남은 HP 비율만큼 위력이 준다.
+    static func healthProportionalPower(_ side: BattleSide, base: Int) -> Int {
+        max(1, base * side.hp / max(1, side.stats.hp))
+    }
+
+    /// 어시스트파워·긍지의칼날·응징 — **올린** 랭크 하나당 20 씩 더한다. 어느 쪽 랭크를 세는지는
+    /// 부르는 자리가 정한다(어시스트파워는 자기, 응징은 상대).
+    static func raisedStagePower(_ side: BattleSide, base: Int) -> Int {
+        base + 20 * BattleStat.allCases.reduce(0) { $0 + max(0, side.stage($1)) }
+    }
+
+    /// 리프블레이드·구르기 — 연이어 쓴 횟수만큼 두 배씩. 상한이 없으면 여섯 턴 만에 위력이
+    /// 네 자리가 된다. `consecutiveMoveUses` 는 이 기술을 쓰는 턴에 이미 올라 있으므로 1 회차가
+    /// 기본 위력이다.
+    static func doublingStreakPower(_ side: BattleSide, base: Int, cap: Int) -> Int {
+        let steps = Swift.max(0, side.consecutiveMoveUses - 1)
+        // 지수는 상한에 닿는 지점에서 자른다 — 32 턴을 넘기면 시프트가 오버플로한다.
+        var power = base
+        for _ in 0..<steps {
+            power *= 2
+            if power >= cap { return cap }
+        }
+        return Swift.min(cap, power)
+    }
+
+    /// 악몽·저승의불꽃 — 상대가 **주** 상태이상일 때만 두 배다. 혼란은 volatile 이라 세지 않는다.
+    static func statusPunishingPower(_ defender: BattleSide, base: Int) -> Int {
+        defender.status == nil ? base : base * 2
     }
 
     /// 되돌려주기 — 이번 턴에 **그 분류로** 맞은 데미지의 배수를 그대로 돌려준다.
@@ -205,23 +316,45 @@ enum VariableDamage: Equatable, Sendable {
         static let nightShade = 101
         static let psywave = 149
         static let superFang = 162
+        static let tripleKick = 167
         static let flail = 175
         static let reversal = 179
+        static let rollout = 205
+        static let furyCutter = 210
         static let magnitude = 222
         static let mirrorCoat = 243
         static let endeavor = 283
+        static let eruption = 284
+        static let waterSpout = 323
         static let sheerCold = 329
         static let gyroBall = 360
         static let metalBurst = 368
         static let trumpCard = 376
         static let wringOut = 378
         static let punishment = 386
+        static let avalanche = 419
         static let grassKnot = 447
         static let crushGrip = 462
         static let heavySlam = 484
         static let electroBall = 486
+        static let echoedVoice = 497
+        static let storedPower = 500
+        static let hex = 506
+        static let acrobatics = 512
         static let finalGambit = 515
+        static let payback = 371
         static let heatCrash = 535
+        static let powerTrip = 681
+        static let stompingTantrum = 707
+        static let risingVoltage = 804
+        static let tripleAxel = 813
+        static let dragonEnergy = 820
+        static let infernalParade = 844
+        static let ruination = 877
+        static let rageFist = 889
+        static let comeuppance = 894
+        static let hardPress = 912
+        static let temperFlare = 915
     }
 
     /// 아직 모델링하지 않은 가변 위력 기술 — **무브셋 후보에서 뺀다.**

@@ -172,6 +172,16 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
 
     var isAlive: Bool { side.isAlive }
 
+    /// 진영 상태(장막·부적)가 걸리는 자리. 팀전은 팀 하나가 한 편이고, **개인전은 참가자 하나가
+    /// 한 편**이다 — 좌우 두 자리로 접으면 한 명의 리플렉터가 경쟁자 전원을 지킨다.
+    var teamSlot: BattleTeamSlot {
+        switch team {
+        case .red:  return .a
+        case .blue: return .b
+        case .solo: return .solo(id)
+        }
+    }
+
     // 와이어 계약은 `snapshot`/`hp`/`pp` 를 **평면으로** 보낸다 — `side` 로 묶은 건 내부 구조 변경일
     // 뿐이라 JSON 모양을 그대로 뒀다. 상태이상은 받는 쪽이 배지를 그려야 해서 필드가 늘었다.
     // `stats`·`moves` 는 스냅샷에서 파생되므로 보내지 않고 받는 쪽이 다시 만든다.
@@ -296,7 +306,10 @@ enum MultiplayerValidation {
         guard moves.count <= 4 else { return false }
         return moves.allSatisfy {
             (0...turnDamageCap).contains($0.power) && (1...100).contains($0.pp)
-                && ($0.accuracy.map { (1...100).contains($0) } ?? true)
+                // 0 을 반려하지 않는다 — PokéAPI 가 필중 기술에 싣는 값이라, 구버전 피어와 옛
+                // 세이브에 그대로 남아 있다(`MoveSpec.neverMisses`). 여기서 자르면 그 기술 하나가
+                // **무브셋 전체를 반려시켜** 상대 팀이 입장에서 막힌다.
+                && ($0.accuracy.map { (0...100).contains($0) } ?? true)
                 // 상태 부여 확률은 상대가 보내오는 값이다 — 범위를 벗어나면 매번 확정 부여가 된다.
                 && ($0.ailmentChance.map { (0...100).contains($0) } ?? true)
                 && ($0.statChance.map { (0...100).contains($0) } ?? true)
@@ -439,6 +452,8 @@ struct MultiplayerBattle: Sendable {
     /// 실려 있지 않다. 공격자를 아는 유일한 자리가 아래 해상 루프다.
     private(set) var damageDealt: [UUID: Int] = [:]
     private var rng: SplitMix64
+    /// 판 전체 상태(날씨). 호스트만 해상하므로 참가자 전원이 같은 값을 본다.
+    private var field = BattleField()
 
     /// 모드별 정원. 협동 보스전만 한 자리를 더 쓴다 — 러너 1~4 **더하기 보스 하나**라 최대 5다.
     /// 다른 모드의 상한은 그대로 4다(협동전 때문에 개인전이 5명이 되면 안 된다).
@@ -604,10 +619,12 @@ struct MultiplayerBattle: Sendable {
             let rightPriority = rightFighter.side.move(at: rhs.0.moveIndex).turnPriority
             if leftPriority != rightPriority { return leftPriority > rightPriority }
             // `stats` 는 배틀 시작에 한 번 계산된 값이다. 여기서 `effectiveStats()` 를 부르던
-            // 때는 비교 횟수만큼 스탯을 다시 만들었다. 마비 보정은 `effectiveSpeed` 가 들고 있다 —
-            // 1v1 과 같은 값을 봐야 두 모드의 순서 규칙이 갈라지지 않는다.
-            let leftSpeed = leftFighter.side.effectiveSpeed
-            let rightSpeed = rightFighter.side.effectiveSpeed
+            // 때는 비교 횟수만큼 스탯을 다시 만들었다. 마비·순풍 보정은 `orderingSpeed` 가 들고
+            // 있다 — 1v1 과 같은 값을 봐야 두 모드의 순서 규칙이 갈라지지 않는다.
+            let leftSpeed = BattleEngine.orderingSpeed(leftFighter.side,
+                                                       team: leftFighter.teamSlot, field: field)
+            let rightSpeed = BattleEngine.orderingSpeed(rightFighter.side,
+                                                        team: rightFighter.teamSlot, field: field)
             if leftSpeed != rightSpeed { return leftSpeed > rightSpeed }
             return lhs.1 < rhs.1
         }.map(\.0)
@@ -630,7 +647,9 @@ struct MultiplayerBattle: Sendable {
             roundEvents += BattleEngine.applyAttack(attacker: &attacker, defender: &target,
                                                     attackerActor: .fighter(fighters[ai].id),
                                                     defenderActor: .fighter(fighters[ti].id),
-                                                    move: move, rng: &rng)
+                                                    move: move, field: &field,
+                                                    attackerTeam: fighters[ai].teamSlot,
+                                                    defenderTeam: fighters[ti].teamSlot, rng: &rng)
             fighters[ai].side = attacker
             fighters[ti].side = target
             // 보스에게 들어간 몫만 센다 — 러너끼리 때릴 수는 없지만, 보스가 러너를 때린 것을
@@ -643,8 +662,11 @@ struct MultiplayerBattle: Sendable {
         for index in fighters.indices {
             var side = fighters[index].side
             roundEvents += BattleEngine.endOfTurnResidual(&side, actor: .fighter(fighters[index].id))
+            roundEvents += BattleEngine.endOfTurnWeather(&side, actor: .fighter(fighters[index].id),
+                                                         field: field)
             fighters[index].side = side
         }
+        roundEvents += BattleEngine.advanceField(&field)
         events.append(contentsOf: roundEvents)
         round += 1
         return roundEvents

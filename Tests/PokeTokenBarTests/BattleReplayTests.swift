@@ -69,8 +69,9 @@ final class BattleReplayTests: XCTestCase {
         var b = BattleSide(mon(name: "후공"))
         var rng = SplitMix64(seed: seed)
         let move = a.move(at: 0)
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &a, b: &b, moveA: move, moveB: move,
-                                              turn: 1, rng: &rng)
+                                              turn: 1, field: &field, rng: &rng)
         return (events, a, b)
     }
 

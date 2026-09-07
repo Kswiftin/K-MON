@@ -116,6 +116,8 @@ struct L {
     var battleSwitch: String { t("교체", "Switch", "こうたい") }
     var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }
     var battleNoEffect: String { t("효과가 없었다…", "It had no effect…", "こうかがないようだ…") }
+    /// 방어에 막힌 순간의 팝 — 이름이 없다(누가 막았는지는 같은 순간의 로그 줄이 말한다).
+    var battleGuardBlockedPopup: String { t("막혔다!", "Blocked!", "防がれた！") }
     var battleOppForfeited: String { t("상대가 기권했어요 — 승리!", "Opponent forfeited — you win!", "相手が降参しました — 勝ち！") }
     var battleYouForfeited: String { t("기권했어요.", "You forfeited.", "降参しました。") }
     var battleWon: String { t("이겼다! 🏆", "You won! 🏆", "勝った！ 🏆") }
@@ -236,6 +238,9 @@ struct L {
         case .confusion: return t("\(name)은(는) 혼란으로 \(damage) 데미지",
                                   "\(name) hurt itself in confusion! \(damage)",
                                   "\(name)は 混乱で \(damage)ダメージ")
+        case .weather:   return t("\(name)은(는) 날씨 데미지! \(damage)",
+                                  "\(name) was buffeted by the weather! \(damage)",
+                                  "\(name)は てんきの ダメージ！ \(damage)")
         case .move:      return battleTookDamage(name, damage: damage)
         case .recoil:    return t("\(name)은(는) 반동으로 \(damage) 데미지",
                                   "\(name) was hurt by recoil! \(damage)",
@@ -247,6 +252,109 @@ struct L {
     /// 알아야 하는 건 "누가 얼마나 회복했나"뿐이고, 무엇으로 회복했는지는 앞 줄의 기술명이 이미 말한다.
     func battleHealed(_ name: String, amount: Int) -> String {
         t("\(name)은(는) \(amount) 회복했다", "\(name) restored \(amount) HP", "\(name)は \(amount)かいふくした")
+    }
+
+    /// 날씨가 시작·종료됐다. 어느 쪽의 줄도 아니다 — 판 전체에 걸린 상태라 이름이 들어가지 않는다.
+    func battleWeatherStarted(_ weather: BattleWeather) -> String {
+        switch weather {
+        case .sun:       return t("햇살이 강해졌다!", "The sunlight turned harsh!", "ひざしが つよくなった！")
+        case .rain:      return t("비가 내리기 시작했다!", "It started to rain!", "あめが ふりはじめた！")
+        case .sandstorm: return t("모래바람이 불기 시작했다!", "A sandstorm kicked up!",
+                                  "すなあらしが ふきはじめた！")
+        case .snow:      return t("눈이 내리기 시작했다!", "It started to snow!", "ゆきが ふりはじめた！")
+        }
+    }
+
+    func battleWeatherEnded(_ weather: BattleWeather) -> String {
+        switch weather {
+        case .sun:       return t("햇살이 원래대로 돌아왔다", "The sunlight faded", "ひざしが もとに もどった")
+        case .rain:      return t("비가 그쳤다", "The rain stopped", "あめが あがった")
+        case .sandstorm: return t("모래바람이 가라앉았다", "The sandstorm subsided", "すなあらしが おさまった")
+        case .snow:      return t("눈이 그쳤다", "The snow stopped", "ゆきが やんだ")
+        }
+    }
+
+    /// 필드가 깔렸다 / 걷혔다. 날씨와 같은 자리의 줄이다.
+    func battleTerrainStarted(_ terrain: BattleTerrain) -> String {
+        switch terrain {
+        case .electric: return t("발밑에 전기가 흐르기 시작했다!", "An electric current ran across the field!",
+                                 "あしもとに でんきが はしった！")
+        case .grassy:   return t("발밑에 풀이 무성해졌다!", "Grass grew to cover the field!",
+                                 "あしもとに くさが しげった！")
+        case .misty:    return t("발밑에 안개가 자욱해졌다!", "Mist swirled around the field!",
+                                 "あしもとに きりが たちこめた！")
+        case .psychic:  return t("발밑이 이상해졌다!", "The field got weird!", "あしもとが ふしぎな かんじに なった！")
+        }
+    }
+
+    func battleTerrainEnded(_ terrain: BattleTerrain) -> String {
+        switch terrain {
+        case .electric: return t("발밑의 전기가 사라졌다", "The electric current disappeared",
+                                 "あしもとの でんきが きえた")
+        case .grassy:   return t("발밑의 풀이 사라졌다", "The grass disappeared", "あしもとの くさが きえた")
+        case .misty:    return t("발밑의 안개가 걷혔다", "The mist disappeared", "あしもとの きりが はれた")
+        case .psychic:  return t("발밑이 원래대로 돌아왔다", "The weirdness disappeared",
+                                 "あしもとが もとに もどった")
+        }
+    }
+
+    /// 진영 상태가 깔렸다 / 걷혔다.
+    ///
+    /// 어느 편인지는 문구에 넣지 않는다 — 바로 앞 줄이 누가 그 기술을 썼는지 이미 말한다.
+    /// 양쪽이 같은 장막을 폈을 때만 걷히는 줄이 모호해지는데, 남은 턴은 화면의 배지가 들고 있다.
+    func battleSideConditionStarted(_ condition: BattleSideCondition) -> String {
+        switch condition {
+        case .reflect:     return t("리플렉터가 펼쳐졌다!", "Reflect raised the team's Defense!",
+                                    "リフレクターが はられた！")
+        case .lightScreen: return t("빛의장막이 펼쳐졌다!", "Light Screen raised the team's Sp. Def!",
+                                    "ひかりのかべが はられた！")
+        case .auroraVeil:  return t("오로라베일이 펼쳐졌다!", "Aurora Veil shielded the team!",
+                                    "オーロラベールが はられた！")
+        case .safeguard:   return t("신비의부적이 편을 감쌌다!", "The team is cloaked in a mystical veil!",
+                                    "しんぴのまもりに つつまれた！")
+        case .mist:        return t("하얀안개가 편을 감쌌다!", "The team became shrouded in mist!",
+                                    "しろいきりに つつまれた！")
+        case .luckyChant:  return t("행운의부적이 편을 감쌌다!", "The team is protected from critical hits!",
+                                    "こううんの まもりに つつまれた！")
+        case .tailwind:    return t("순풍이 불기 시작했다!", "The tailwind blew from behind the team!",
+                                    "おいかぜが 吹き始めた！")
+        }
+    }
+
+    /// 테라스탈 버튼. 남은 횟수가 없으면 버튼 자체가 사라지므로 "쓸 수 없음" 문구는 없다.
+    var battleTerastallize: String { t("테라스탈", "Terastallize", "テラスタル") }
+
+    /// 테라스탈 — 타입 이름이 들어가므로 언어별 이름 표를 지난다.
+    func battleTerastallized(_ name: String, type: PokemonType) -> String {
+        let typeName = type.name(lang)
+        return t("\(name)가 \(typeName) 테라스탈했다!",
+                 "\(name) terastallized into the \(typeName) type!",
+                 "\(name)は \(typeName)テラスタルした！")
+    }
+
+    /// 방어를 친 줄과 그것이 막은 줄. 이름이 들어가므로 `KeyPath` 팝으로 담을 수 없다 —
+    /// 막힌 순간의 팝은 이름 없는 `battleGuardBlockedPopup` 이 맡는다.
+    func battleGuardUp(_ name: String) -> String {
+        t("\(name)는 몸을 지켰다!", "\(name) protected itself!", "\(name)は 身を守っている！")
+    }
+
+    func battleGuardBlocked(_ name: String) -> String {
+        t("\(name)는 공격을 막아냈다!", "\(name) protected itself!", "\(name)は 攻撃を 防いだ！")
+    }
+
+    func battleSideConditionEnded(_ condition: BattleSideCondition) -> String {
+        switch condition {
+        case .reflect:     return t("리플렉터가 사라졌다", "Reflect wore off", "リフレクターが きえた")
+        case .lightScreen: return t("빛의장막이 사라졌다", "Light Screen wore off", "ひかりのかべが きえた")
+        case .auroraVeil:  return t("오로라베일이 사라졌다", "Aurora Veil wore off", "オーロラベールが きえた")
+        case .safeguard:   return t("신비의부적이 사라졌다", "The mystical veil wore off",
+                                    "しんぴのまもりが きえた")
+        case .mist:        return t("하얀안개가 걷혔다", "The mist wore off", "しろいきりが きえた")
+        case .luckyChant:  return t("행운의부적이 사라졌다", "The lucky chant wore off",
+                                    "こううんの まもりが きえた")
+        case .tailwind:    return t("순풍이 멎었다", "The tailwind petered out",
+                                    "おいかぜが やんだ")
+        }
     }
 
     /// 다단 히트 — 몇 번 맞았는지 안 쓰면 플레이어에겐 "위력이 이상하게 센 기술"로만 보인다.

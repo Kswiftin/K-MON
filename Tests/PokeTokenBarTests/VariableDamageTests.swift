@@ -24,8 +24,9 @@ final class VariableDamageTests: XCTestCase {
     }
 
     private func spec(_ id: Int, type: PokemonType = .normal,
-                      damageClass: MoveDamageClass = .physical, accuracy: Int? = 100) -> MoveSpec {
-        var move = MoveSpec(id: id, names: ["ko": "기술"], type: type, power: 0,
+                      damageClass: MoveDamageClass = .physical, accuracy: Int? = 100,
+                      power: Int = 0) -> MoveSpec {
+        var move = MoveSpec(id: id, names: ["ko": "기술"], type: type, power: power,
                             damageClass: damageClass, accuracy: accuracy, pp: 10)
         move.ailment = "none"; move.ailmentChance = 0
         move.statChanges = []; move.statChance = 0; move.targetsUser = false
@@ -98,6 +99,310 @@ final class VariableDamageTests: XCTestCase {
                        "내가 훨씬 가벼우면 최저 — 상대 체중만 보는 구현이면 여기서 갈린다")
     }
 
+    // MARK: 위력에 상황이 곱해지는 기술 — 기본 위력은 PokéAPI 값이다
+
+    /// 분화·물대포·드래곤에너지는 **내 남은 HP 비율**만큼만 나간다. 비율을 안 보면 빈사에서도
+    /// 150 이 그대로 나가 어느 웨이브든 한 방이 된다(고치기 전 동작이 그랬다).
+    func testHealthProportionalMovesFadeWithTheUsersHealth() {
+        let full = side()
+        XCTAssertEqual(VariableDamage.healthProportionalPower(full, base: 150), 150,
+                       "만피에서는 기본 위력 그대로다")
+        let half = side(hp: full.stats.hp / 2)
+        XCTAssertEqual(VariableDamage.healthProportionalPower(half, base: 150),
+                       150 * half.hp / full.stats.hp, "남은 비율 그대로 — 반피면 절반쯤")
+        XCTAssertLessThan(VariableDamage.healthProportionalPower(half, base: 150), 80)
+        XCTAssertEqual(VariableDamage.healthProportionalPower(side(hp: 1), base: 150), 1,
+                       "빈사 직전에도 최소 1 — 0 이면 데미지 줄이 통째로 사라진다")
+
+        // 세 기술이 같은 분기에 있으므로 하나만 통과시키면 나머지가 표에 있는지 알 수 없다.
+        var rng = SplitMix64(seed: 1)
+        for id in [VariableDamage.MoveID.eruption, VariableDamage.MoveID.waterSpout,
+                   VariableDamage.MoveID.dragonEnergy] {
+            let move = spec(id, damageClass: .special, power: 150)
+            XCTAssertEqual(VariableDamage.from(move, attacker: side(hp: 1), defender: side(), rng: &rng),
+                           .power(1), "위력 표에 없으면 빈사에서도 150 이 그대로 나간다")
+        }
+    }
+
+    /// 어시스트파워·긍지의칼날은 **내가 올린** 랭크를 센다. 응징(상대 랭크)과 방향이 반대라
+    /// 같이 잠근다 — 한쪽만 보면 side 를 뒤바꾼 구현이 통과한다.
+    func testStagePoweredMovesReadOppositeSides() {
+        var boosted = side()
+        boosted.changeStage(.atk, by: 2)
+        boosted.changeStage(.spe, by: 1)
+        boosted.changeStage(.def, by: -3)
+        XCTAssertEqual(VariableDamage.raisedStagePower(boosted, base: 20), 80, "20 + 20×3")
+        XCTAssertEqual(VariableDamage.raisedStagePower(side(), base: 20), 20, "랭크가 없으면 기본 위력")
+
+        var rng = SplitMix64(seed: 1)
+        let storedPower = spec(VariableDamage.MoveID.storedPower, damageClass: .special, power: 20)
+        XCTAssertEqual(VariableDamage.from(storedPower, attacker: boosted, defender: side(), rng: &rng),
+                       .power(80), "쓰는 쪽 랭크를 본다")
+        XCTAssertEqual(VariableDamage.from(storedPower, attacker: side(), defender: boosted, rng: &rng),
+                       .power(20), "상대 랭크는 어시스트파워를 세게 만들지 않는다")
+        let powerTrip = spec(VariableDamage.MoveID.powerTrip, power: 20)
+        XCTAssertEqual(VariableDamage.from(powerTrip, attacker: boosted, defender: side(), rng: &rng),
+                       .power(80), "긍지의칼날도 같은 표를 탄다")
+    }
+
+    /// 악몽·저승의불꽃은 **상대가 상태이상일 때만** 두 배다. 조건 없이 두 배면 늘 두 배인 기술이 된다.
+    func testStatusPunishingMovesDoubleOnlyAgainstAStatusedTarget() {
+        let hex = spec(VariableDamage.MoveID.hex, type: .ghost, damageClass: .special, power: 65)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(hex, attacker: side(), defender: side(), rng: &rng),
+                       .power(65), "멀쩡한 상대에게는 기본 위력")
+        var burned = side()
+        burned.status = .burn
+        XCTAssertEqual(VariableDamage.from(hex, attacker: side(), defender: burned, rng: &rng),
+                       .power(130))
+
+        var confusedOnly = side()
+        confusedOnly.confusionTurns = 3
+        XCTAssertEqual(VariableDamage.from(hex, attacker: side(), defender: confusedOnly, rng: &rng),
+                       .power(65), "혼란은 주 상태이상이 아니다 — 여기서 두 배가 되면 안 된다")
+
+        let infernalParade = spec(VariableDamage.MoveID.infernalParade, type: .ghost,
+                                  damageClass: .special, power: 60)
+        XCTAssertEqual(VariableDamage.from(infernalParade, attacker: side(), defender: burned, rng: &rng),
+                       .power(120), "저승의불꽃은 기본 위력만 다르고 규칙이 같다")
+    }
+
+    /// 어벤저는 **이번 턴에 맞았을 때만** 두 배다. 턴이 넘어가면 다시 기본 위력이어야 한다 —
+    /// `lastHitThisTurn` 을 안 비우는 구현이면 한 번 맞은 뒤로 계속 두 배가 된다.
+    func testAvalancheDoublesOnlyAfterTakingAHitThisTurn() {
+        let avalanche = spec(VariableDamage.MoveID.avalanche, type: .ice, power: 60)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(avalanche, attacker: side(), defender: side(), rng: &rng),
+                       .power(60))
+
+        var hurt = side()
+        hurt.lastHitThisTurn = IncomingHit(amount: 30, damageClass: .physical)
+        XCTAssertEqual(VariableDamage.from(avalanche, attacker: hurt, defender: side(), rng: &rng),
+                       .power(120))
+
+        BattleEngine.beginTurn(&hurt)
+        XCTAssertEqual(VariableDamage.from(avalanche, attacker: hurt, defender: side(), rng: &rng),
+                       .power(60), "지난 턴에 맞은 것은 세지 않는다")
+    }
+
+    /// 아크로바트는 **지닌물건이 없을 때** 두 배다. 대전에 지닌물건 축이 아직 없으므로 늘 두 배다 —
+    /// 조건이 생기기 전까지 기본 위력 55 로 두면 본가의 절반 세기로 싸운다.
+    func testAcrobaticsAlwaysDoublesWhileBattlesHaveNoHeldItems() {
+        let acrobatics = spec(VariableDamage.MoveID.acrobatics, type: .flying, power: 55)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(acrobatics, attacker: side(), defender: side(), rng: &rng),
+                       .power(110))
+    }
+
+    /// 리벤지는 **상대가 이번 턴에 이미 행동했을 때** 두 배다. 우선도 0 짜리라 선공을 잡은 턴에는
+    /// 기본 위력이고, 후공이면 두 배가 된다 — 이 조건이 없으면 기술이 늘 절반 세기로 나간다.
+    func testPaybackDoublesOnlyAfterTheTargetHasActed() {
+        let payback = spec(VariableDamage.MoveID.payback, type: .dark, power: 50)
+        let jab = spec(84, type: .electric, power: 40)
+        var mine = side([.dark], hp: 9_999), theirs = side([.normal], hp: 9_999)
+
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(payback, attacker: mine, defender: theirs, rng: &rng),
+                       .power(50), "상대가 아직 안 움직인 턴은 기본 위력")
+
+        _ = turn(jab, &theirs, &mine)
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(payback, attacker: mine, defender: theirs, rng: &rng),
+                       .power(100), "상대가 먼저 움직였으면 두 배")
+
+        BattleEngine.beginTurn(&theirs)
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(payback, attacker: mine, defender: theirs, rng: &rng),
+                       .power(50), "지난 턴에 움직인 것은 세지 않는다")
+    }
+
+    /// 못 움직인 턴도 **행동을 쓴 것**이다(본가·쇼다운 모두 "이 턴에 더 움직이지 않는다" 로 본다).
+    /// 성공한 기술만 세면 마비·풀린치로 굳은 상대에게 리벤지가 약해진다.
+    func testPaybackCountsATargetThatLostItsTurnToParalysis() {
+        let payback = spec(VariableDamage.MoveID.payback, type: .dark, power: 50)
+        let jab = spec(84, type: .electric, power: 40)
+        var mine = side([.dark], hp: 9_999), theirs = side([.normal], hp: 9_999)
+
+        BattleEngine.beginTurn(&mine)
+        BattleEngine.beginTurn(&theirs)
+        theirs.flinched = true
+        var rng = SplitMix64(seed: 1)
+        var field = BattleField()
+        _ = BattleEngine.applyAttack(attacker: &theirs, defender: &mine, attackerActor: .b,
+                                     defenderActor: .a, move: jab, field: &field, rng: &rng)
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(payback, attacker: mine, defender: theirs, rng: &rng),
+                       .power(100), "풀린치로 굳은 턴도 상대의 행동을 쓴 턴이다")
+    }
+
+    /// PokéAPI 가 위력을 **0** 으로 주면(하드프레스가 실제로 그랬다) 곱해도 0 이라 기술이 죽는다.
+    /// 0 은 값이 아니라 "없음"이므로 쇼다운 기준값으로 되돌린다.
+    func testAZeroBasePowerFallsBackInsteadOfCollapsing() {
+        let brokenHex = spec(VariableDamage.MoveID.hex, type: .ghost, damageClass: .special, power: 0)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(brokenHex, attacker: side(), defender: side(), rng: &rng),
+                       .power(65), "위력 0 을 그대로 쓰면 PP 만 태우는 죽은 기술이 된다")
+    }
+
+    // MARK: 턴을 넘어 쌓이는 카운터에서 위력을 뽑는 기술
+
+    /// 한 턴을 굴린다 — 카운터가 턴 경계를 어떻게 넘는지 보려면 사본을 돌려받아야 한다.
+    private func turn(_ move: MoveSpec, _ attacker: inout BattleSide, _ defender: inout BattleSide,
+                      seed: UInt64 = 42) -> [BattleEvent] {
+        BattleEngine.beginTurn(&attacker)
+        BattleEngine.beginTurn(&defender)
+        var rng = SplitMix64(seed: seed)
+        var field = BattleField()
+        return BattleEngine.applyAttack(attacker: &attacker, defender: &defender,
+                                        attackerActor: .a, defenderActor: .b, move: move, field: &field, rng: &rng)
+    }
+
+    /// 리프블레이드·구르기는 **연이어 쓸수록** 두 배씩 세지고 상한에서 멈춘다. 다른 기술을 끼우면
+    /// 처음으로 돌아간다 — 리셋이 없으면 한 배틀 안에서 영원히 상한으로 싸운다.
+    func testConsecutiveUseMovesDoubleUntilTheCapAndResetOnAnotherMove() {
+        let furyCutter = spec(VariableDamage.MoveID.furyCutter, type: .bug, power: 40)
+        let filler = spec(84, type: .electric, power: 40)
+        var mine = side(), theirs = side(hp: 9_999)
+
+        var powers: [Int] = []
+        for _ in 0..<6 {
+            _ = turn(furyCutter, &mine, &theirs)
+            var rng = SplitMix64(seed: 1)
+            // 카운터는 `beginAttack` 이 이 턴 몫까지 올려 뒀다 — 지금 뽑으면 **이 턴에 쓰인** 위력이다.
+            powers.append({ if case .power(let p) = VariableDamage.from(furyCutter, attacker: mine,
+                                                                       defender: theirs, rng: &rng)! {
+                return p } else { return -1 } }())
+        }
+        XCTAssertEqual(powers, [40, 80, 160, 160, 160, 160],
+                       "두 배씩 오르고 160 에서 멈춘다 — 상한이 없으면 배틀이 한 방으로 끝난다")
+
+        _ = turn(filler, &mine, &theirs)
+        _ = turn(furyCutter, &mine, &theirs)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(furyCutter, attacker: mine, defender: theirs, rng: &rng),
+                       .power(40), "다른 기술을 끼우면 연속이 끊긴다")
+    }
+
+    /// 에코보이스는 두 배가 아니라 **기본 위력만큼 더한다**(40 → 80 → 120…). 곱으로 구현하면
+    /// 같은 방향이라 첫 두 턴은 값이 같아 못 걸린다 — 세 번째 턴에서 갈린다.
+    func testEchoedVoiceAddsInsteadOfDoubling() {
+        let echoedVoice = spec(VariableDamage.MoveID.echoedVoice, damageClass: .special, power: 40)
+        var mine = side(), theirs = side(hp: 9_999)
+        var powers: [Int] = []
+        for _ in 0..<6 {
+            _ = turn(echoedVoice, &mine, &theirs)
+            var rng = SplitMix64(seed: 1)
+            if case .power(let p)? = VariableDamage.from(echoedVoice, attacker: mine,
+                                                         defender: theirs, rng: &rng) { powers.append(p) }
+        }
+        XCTAssertEqual(powers, [40, 80, 120, 160, 200, 200], "40 씩 더해 200 에서 멈춘다")
+    }
+
+    /// 원한의응보는 **맞은 횟수**로 세진다. 턴이 넘어가도 줄지 않는다 — `lastHitThisTurn` 처럼
+    /// 턴마다 비우는 값으로 구현하면 늘 기본 위력이 된다.
+    func testRageFistGrowsWithTheHitsTaken() {
+        let rageFist = spec(VariableDamage.MoveID.rageFist, type: .ghost, power: 50)
+        let jab = spec(84, type: .electric, power: 40)
+        var mine = side(hp: 9_999), theirs = side(hp: 9_999)
+
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(rageFist, attacker: mine, defender: theirs, rng: &rng),
+                       .power(50), "한 번도 안 맞았으면 기본 위력")
+        for _ in 0..<3 { _ = turn(jab, &theirs, &mine) }
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(rageFist, attacker: mine, defender: theirs, rng: &rng),
+                       .power(200), "50 + 50×3 — 턴이 바뀌어도 누적이 남는다")
+    }
+
+    /// 분함의발구르기·역상승은 **직전 내 기술이 실패했을 때만** 두 배다. 실패는 빗나감과 무효
+    /// 둘 다다 — 빗나감만 보면 상성 0 배로 튕긴 턴이 안 잡힌다.
+    func testFailurePunishingMovesDoubleAfterAFailedMove() {
+        let tantrum = spec(VariableDamage.MoveID.stompingTantrum, type: .ground, power: 75)
+        let rarelyHits = spec(84, type: .electric, accuracy: 1, power: 40)
+        let blocked = spec(85, type: .electric, power: 40)       // 전기는 땅에게 무효
+        var mine = side(), theirs = side([.ground], hp: 9_999)
+
+        _ = turn(tantrum, &mine, &theirs)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(tantrum, attacker: mine, defender: theirs, rng: &rng),
+                       .power(75), "성공한 뒤에는 기본 위력")
+
+        let missEvents = turn(rarelyHits, &mine, &theirs, seed: 7)
+        XCTAssertTrue(missEvents.contains { if case .miss = $0 { return true }; return false },
+                      "빗나가지 않았으면 이 테스트가 재는 것이 없다")
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(tantrum, attacker: mine, defender: theirs, rng: &rng),
+                       .power(150), "빗나간 다음 턴은 두 배")
+
+        let immuneEvents = turn(blocked, &mine, &theirs)
+        XCTAssertTrue(immuneEvents.contains { if case .immune = $0 { return true }; return false })
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(tantrum, attacker: mine, defender: theirs, rng: &rng),
+                       .power(150), "무효도 실패다")
+
+        _ = turn(tantrum, &mine, &theirs)
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(tantrum, attacker: mine, defender: theirs, rng: &rng),
+                       .power(75), "성공하면 플래그가 내려간다")
+    }
+
+    /// 못 움직인 턴(풀린치·마비)은 기술이 **나가지 않은** 것이다 — 연속 카운터는 끊기고,
+    /// 직전 기술은 실패로 친다.
+    func testNotMovingBreaksTheStreakAndCountsAsAFailure() {
+        let furyCutter = spec(VariableDamage.MoveID.furyCutter, type: .bug, power: 40)
+        let tantrum = spec(VariableDamage.MoveID.stompingTantrum, type: .ground, power: 75)
+        var mine = side(), theirs = side(hp: 9_999)
+        _ = turn(furyCutter, &mine, &theirs)
+        _ = turn(furyCutter, &mine, &theirs)
+
+        BattleEngine.beginTurn(&mine)
+        mine.flinched = true
+        var rng = SplitMix64(seed: 1)
+        var field = BattleField()
+        _ = BattleEngine.applyAttack(attacker: &mine, defender: &theirs, attackerActor: .a,
+                                     defenderActor: .b, move: furyCutter, field: &field, rng: &rng)
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(furyCutter, attacker: mine, defender: theirs, rng: &rng),
+                       .power(40), "못 움직였으면 연속이 끊긴다")
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(tantrum, attacker: mine, defender: theirs, rng: &rng),
+                       .power(150), "못 움직인 턴도 실패로 친다")
+    }
+
+    // MARK: 히트마다 세지는 다단기
+
+    /// 트리플킥·트리플악셀은 **히트가 갈수록** 세진다(10/20/30, 20/40/60). 히트 번호를 안 넘기면
+    /// 세 히트가 전부 기본 위력이라 기술이 3분의 1 세기로 나간다.
+    func testEscalatingMultiHitMovesGrowWithTheHitIndex() {
+        let tripleKick = spec(VariableDamage.MoveID.tripleKick, type: .fighting, power: 10)
+        let tripleAxel = spec(VariableDamage.MoveID.tripleAxel, type: .ice, power: 20)
+        var rng = SplitMix64(seed: 1)
+        for (index, expected) in [10, 20, 30].enumerated() {
+            XCTAssertEqual(VariableDamage.from(tripleKick, attacker: side(), defender: side(),
+                                               hit: index, rng: &rng), .power(expected))
+        }
+        for (index, expected) in [20, 40, 60].enumerated() {
+            XCTAssertEqual(VariableDamage.from(tripleAxel, attacker: side(), defender: side(),
+                                               hit: index, rng: &rng), .power(expected))
+        }
+    }
+
+    /// 엔진을 통과시켜 본다 — 세 히트를 **같은** 위력으로 때리는 대조군보다 세야 한다.
+    /// 히트 번호를 루프 밖에서 한 번만 뽑는 구현이면 두 값이 같아진다.
+    func testTripleKickHitsHarderThanAFlatThreeHitMove() {
+        var tripleKick = spec(VariableDamage.MoveID.tripleKick, type: .fighting, power: 10)
+        tripleKick.minHits = 3; tripleKick.maxHits = 3
+        var flat = spec(24, type: .fighting, power: 10)          // 대조군: 위력 표에 없는 3연타
+        flat.minHits = 3; flat.maxHits = 3
+
+        let escalating = attack(tripleKick, side([.fighting]), side([.normal], hp: 9_999))
+        let control = attack(flat, side([.fighting]), side([.normal], hp: 9_999))
+        XCTAssertGreaterThan(escalating.dealt, control.dealt,
+                             "10+20+30 이 10+10+10 보다 세지 않으면 히트 번호가 안 넘어간 것이다")
+        XCTAssertTrue(escalating.events.contains { if case .multiHit(_, let hits) = $0 { return hits == 3 }
+                                                   return false }, "세 번 맞아야 이 비교가 성립한다")
+    }
+
     // MARK: 엔진 — 한 턴
 
     private func attack(_ move: MoveSpec, _ attacker: BattleSide, _ defender: BattleSide,
@@ -105,9 +410,10 @@ final class VariableDamageTests: XCTestCase {
         var mine = attacker, theirs = defender
         let before = theirs.hp
         var rng = SplitMix64(seed: seed)
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &mine, defender: &theirs,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, rng: &rng)
+                                              move: move, field: &field, rng: &rng)
         return (before - theirs.hp, events, mine)
     }
 
@@ -233,8 +539,9 @@ final class VariableDamageTests: XCTestCase {
         var attacker = side([.normal], speed: 200), counterer = side([.fighting], speed: 50)
         var rng = SplitMix64(seed: 7)
         let attackerHP = attacker.hp
+        var field = BattleField()
         let events = BattleEngine.resolveTurn(a: &attacker, b: &counterer, moveA: incoming,
-                                              moveB: counter, turn: 1, rng: &rng)
+                                              moveB: counter, turn: 1, field: &field, rng: &rng)
         return (counterer.stats.hp - counterer.hp, attackerHP - attacker.hp, events)
     }
 
@@ -269,12 +576,13 @@ final class VariableDamageTests: XCTestCase {
 
         var attacker = side([.normal]), counterer = side([.fighting])
         var rng = SplitMix64(seed: 7)
+        var field = BattleField()
         _ = BattleEngine.resolveTurn(a: &attacker, b: &counterer, moveA: physical, moveB: physical,
-                                     turn: 1, rng: &rng)
+                                     turn: 1, field: &field, rng: &rng)
         let attackerHP = attacker.hp
         // 2턴째엔 상대가 변화기를 쓴다 — 이번 턴에 맞은 게 없으니 카운터는 실패해야 한다.
         _ = BattleEngine.resolveTurn(a: &attacker, b: &counterer, moveA: status, moveB: counter,
-                                     turn: 2, rng: &rng)
+                                     turn: 2, field: &field, rng: &rng)
         XCTAssertEqual(attackerHP - attacker.hp, 0, "1턴째 데미지가 2턴째에 되돌아오면 안 된다")
     }
 
@@ -290,20 +598,16 @@ final class VariableDamageTests: XCTestCase {
     /// `applyAttack` 을 직접 부르는 턴 루프는 **전부** 기록을 비워야 한다. 한 곳만 빠지면
     /// 그 모드에서만 카운터가 지난 턴 데미지를 되돌려준다. 새 모드가 생기면 여기서 먼저 깨진다.
     func testEveryTurnLoopClearsTheIncomingHit() throws {
-        let sources = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources")
-        let files = try XCTUnwrap(FileManager.default.enumerator(at: sources,
-                                                                includingPropertiesForKeys: nil))
         var loopsWithoutReset: [String] = []
-        for case let url as URL in files where url.pathExtension == "swift" {
-            let text = try String(contentsOf: url, encoding: .utf8)
+        // 주석은 `SourceScan` 이 떼고 온다 — 안 떼면 호출을 지워도 그 이름을 말하는 주석이 남아
+        // 통과한다(`docs/reference/defect-log.md` "소스를 문자열로 스캔하는 가드" 절).
+        for (name, code) in try SourceScan.sources() {
             // 정의(`static func applyAttack`)가 아니라 **호출**만 센다.
-            let callsApplyAttack = text.contains("applyAttack(attacker:")
-                && !text.contains("static func applyAttack")
-            let isEngine = url.lastPathComponent == "BattleModel.swift"
+            let callsApplyAttack = code.contains("applyAttack(attacker:")
+                && !code.contains("static func applyAttack")
+            let isEngine = name == "BattleModel.swift"
             guard callsApplyAttack || isEngine else { continue }
-            if !text.contains("beginTurn(") { loopsWithoutReset.append(url.lastPathComponent) }
+            if !code.contains("beginTurn(") { loopsWithoutReset.append(name) }
         }
         XCTAssertEqual(loopsWithoutReset, [],
                        "턴 루프가 기록을 안 비우면 그 모드에서만 카운터가 지난 턴 값을 되돌려준다")

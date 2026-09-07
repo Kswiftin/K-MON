@@ -12,6 +12,18 @@ Sparkle powers in-app updates. It ships as a signed binary framework inside the 
 so its MIT notice travels with the release. `scripts/build-app.sh` copies the framework with
 `ditto` to preserve its versioned symlinks and signed updater helpers.
 
+## Pokémon Showdown move data
+
+- **Component:** `Sources/PokeTokenBar/Core/ShowdownMoveOverrides.swift` (generated)
+- **Source:** https://github.com/smogon/pokemon-showdown (`data/moves.ts`)
+- **License:** MIT
+
+PokéAPI is the app's move source, but its `move_meta` table stops at generation 7: most gen-8+
+moves arrive with no multi-hit, drain, ailment, flinch or crit-rate at all, and it writes `0`
+rather than null for a move that never misses. `scripts/extract-showdown-moves.mjs` mirrors the
+corrected values from Showdown's data table and generates the Swift override map; run it again to
+refresh. Only plain data values are copied — none of Showdown's engine code ships here.
+
 ## Artwork
 
 **All artwork in this app is original.** Memory Home's mini-room sprites, wallpaper and floor

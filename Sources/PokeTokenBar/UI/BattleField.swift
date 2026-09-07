@@ -323,7 +323,8 @@ struct CombatantBar: View {
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                 // 이름이 이미 이 줄에서 가장 먼저 잘리는 요소다(위 주석) — 타입 배지는 그 뒤,
                 // 로그 칩·기술 버튼과 같은 타입색 팔레트(`battleColor`)로 작게 붙인다.
-                ForEach(side.snapshot.types, id: \.self) { type in
+                // **지금** 타입이다 — 테라스탈한 개체는 접힌 타입 하나만 보여야 상성이 왜 달라졌는지 읽힌다.
+                ForEach(side.activeTypes, id: \.self) { type in
                     Text(type.name(l.lang).uppercased())
                         .font(.system(size: 7, weight: .heavy))
                         .foregroundStyle(type.battleLabelColor)
@@ -1144,6 +1145,18 @@ struct BattleArenaView: View {
     let onChoose: (Int) -> Void
     let onSwitch: (Int) -> Void
     let onForfeit: () -> Void
+    /// 테라스탈 버튼 — `nil` 은 **그 모드가 테라스탈을 아예 지원하지 않는다**는 뜻이다(방·웨이브).
+    /// 이미 써서 남은 횟수가 없는 것은 `canTerastallize == false` 이고, 그때도 버튼은 남는다.
+    ///
+    /// 다 쓴 버튼을 지우지 않는 이유: 이 줄이 재배치되며 옆 버튼(항복) 자리가 바뀌고, 한 판에
+    /// 한 번뿐인 기능이라 사라지면 존재 자체를 못 배운다. 이 화면의 다른 조작(기술·교체·채팅
+    /// 전송)도 같은 규칙으로 비활성만 한다 — 줄을 통째로 숨기는 것은 그 줄이 뜻을 잃을 때뿐이다.
+    var onTerastallize: (() -> Void)? = nil
+    /// 지금 누를 수 있나 — 남은 횟수가 있고 배틀이 진행 중인가.
+    var canTerastallize = false
+    /// 토글이 켜져 있나 — LAN 은 기술 선택과 함께 나가므로 "무장했다" 를 보여 줘야 한다.
+    /// 모의전처럼 누르는 즉시 적용되는 모드는 늘 `false` 다.
+    var isTerastalArmed = false
     var chat: BattleChatConfiguration? = nil
 
     /// 재생이 끝나기 전에 다음 기술을 고르면 무엇이 일어났는지 보지 못한 채 턴이 넘어간다.
@@ -1197,7 +1210,7 @@ struct BattleArenaView: View {
                              pp: mine.mustStruggle ? [] : mine.pp,
                              language: l.lang,
                              isEnabled: acceptsInput,
-                             effectivenessAgainst: myBeginnerMode ? theirs.snapshot.types : nil,
+                             effectivenessAgainst: myBeginnerMode ? theirs.activeTypes : nil,
                              onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
             } else if needsForcedReplacement {
                 VStack(alignment: .leading, spacing: 5) {
@@ -1252,6 +1265,14 @@ struct BattleArenaView: View {
                         .font(.caption.monospacedDigit().bold())
                         .foregroundStyle(left <= 5 ? .red : .orange)
                 }
+            }
+            if let onTerastallize {
+                Button(l.battleTerastallize, action: onTerastallize)
+                    .controlSize(.mini)
+                    .disabled(!canTerastallize || !acceptsSwitchInput)
+                    // 켜진 상태는 색으로만 말한다 — 버튼 스타일을 갈아 끼우면 같은 줄의 다른
+                    // 버튼들과 높이가 달라져 줄이 흔들린다.
+                    .foregroundStyle(isTerastalArmed ? Color.orange : Color.secondary)
             }
             Spacer()
             if showsForfeit {

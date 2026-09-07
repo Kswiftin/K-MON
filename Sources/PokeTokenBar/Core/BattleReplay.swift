@@ -85,6 +85,14 @@ enum BattleReplay {
         case .sendOut:                                          return 0.40
         case .crit, .superEffective, .resisted, .miss, .immune: return 0.30
         case .status, .cureStatus, .cant:                       return 0.40
+        // 날씨는 판 전체의 줄이라 한 박자 준다 — 데미지·문구가 뒤따라오기 때문이다.
+        case .weatherStarted, .weatherEnded,
+             .terrainStarted, .terrainEnded,
+             .sideConditionStarted, .sideConditionEnded:        return 0.40
+        // 방어는 한 박자 — 막힌 줄 뒤에 아무 일도 안 일어나므로, 짧으면 무슨 일이 있었는지 안 보인다.
+        case .guardUp, .guardBlocked:                           return 0.40
+        // 테라스탈은 배틀당 한 번뿐인 장면이라 가장 긴 문구 박자를 준다.
+        case .terastallized:                                    return 0.60
         // 랭크는 **로그 줄만** 늘린다 — 팝 문구가 없고(`popupKey` 가 nil), 랭크 배지는 배치 끝에
         // 엔진 값으로 스냅하므로 재생 중 화면이 바뀌지 않는다. 상태이상과 같은 0.40 을 주면
         // 다축 한 방(고대의힘 부류, 다섯 축)이 2.0초로 예산을 혼자 채워 같은 턴의 HP 보간과
@@ -137,7 +145,10 @@ enum BattleReplay {
         // 움직이는데 여기 빠지면 바가 배틀 내내 어긋난 채로 남는다. 컴파일이 깨지는 편이
         // `reconcile()` 로그를 한참 뒤에 발견하는 편보다 낫다.
         case .turn, .move, .miss, .immune, .crit, .superEffective, .resisted,
-             .faint, .status, .cureStatus, .cant, .boost, .multiHit:
+             .faint, .status, .cureStatus, .cant, .boost, .multiHit,
+             .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
+             .sideConditionStarted, .sideConditionEnded, .guardUp, .guardBlocked,
+             .terastallized:
             return
         }
     }
@@ -169,7 +180,13 @@ enum BattleReplay {
         case .immune:         return \.battleNoEffect
         // 팝이 없는 이벤트 — 전부 팝으로 만들면 화면이 문구로 덮여 정작 급소가 묻힌다.
         // 교체(`.sendOut`)는 스프라이트가 바뀌는 것이 곧 문구다.
-        case .turn, .move, .damage, .heal, .multiHit, .faint, .sendOut, .status, .cureStatus, .cant, .boost:
+        // 날씨는 문구에 이름이 들어가 `KeyPath` 로 못 담는다 — 로그 줄로만 나간다.
+        case .guardBlocked:   return \.battleGuardBlockedPopup
+        // 팝이 없는 이벤트 — 전부 팝으로 만들면 화면이 문구로 덮여 정작 급소가 묻힌다.
+        // 방어를 **친** 줄(`.guardUp`)은 로그로만 나간다 — 팝은 막힌 순간에만 뜬다.
+        case .turn, .move, .damage, .heal, .multiHit, .faint, .sendOut, .status, .cureStatus,
+             .cant, .boost, .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
+             .sideConditionStarted, .sideConditionEnded, .guardUp, .terastallized:
             return nil
         }
     }

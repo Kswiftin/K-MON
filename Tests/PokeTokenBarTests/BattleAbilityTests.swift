@@ -30,9 +30,10 @@ final class BattleAbilityTests: XCTestCase {
         side.status = defenderStatus
         if let defenderHP { side.hp = defenderHP }
         var rng = SplitMix64(seed: seed)
+        var field = BattleField()
         let events = BattleEngine.applyAttack(attacker: &attacker, defender: &side,
                                               attackerActor: .a, defenderActor: .b,
-                                              move: move, rng: &rng)
+                                              move: move, field: &field, rng: &rng)
         return (side.hp, side.stats.hp, events)
     }
 
