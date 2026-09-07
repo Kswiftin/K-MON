@@ -334,13 +334,28 @@ struct L {
     /// 양쪽이 같은 장막을 폈을 때만 걷히는 줄이 모호해지는데, 남은 턴은 화면의 배지가 들고 있다.
     func battleSideConditionStarted(_ condition: BattleSideCondition) -> String {
         switch condition {
-        case .reflect:     return "리플렉터가 펼쳐졌다!"
-        case .lightScreen: return "빛의장막이 펼쳐졌다!"
-        case .auroraVeil:  return "오로라베일이 펼쳐졌다!"
-        case .safeguard:   return "신비의부적이 편을 감쌌다!"
-        case .mist:        return "하얀안개가 편을 감쌌다!"
-        case .luckyChant:  return "행운의부적이 편을 감쌌다!"
-        case .tailwind:    return "순풍이 불기 시작했다!"
+        case .reflect:     return t("리플렉터가 펼쳐졌다!", "Reflect raised the team's Defense!",
+                                    "リフレクターが はられた！")
+        case .lightScreen: return t("빛의장막이 펼쳐졌다!", "Light Screen raised the team's Sp. Def!",
+                                    "ひかりのかべが はられた！")
+        case .auroraVeil:  return t("오로라베일이 펼쳐졌다!", "Aurora Veil shielded the team!",
+                                    "オーロラベールが はられた！")
+        case .safeguard:   return t("신비의부적이 편을 감쌌다!", "The team is cloaked in a mystical veil!",
+                                    "しんぴのまもりに つつまれた！")
+        case .mist:        return t("하얀안개가 편을 감쌌다!", "The team became shrouded in mist!",
+                                    "しろいきりに つつまれた！")
+        case .luckyChant:  return t("행운의부적이 편을 감쌌다!", "The team is protected from critical hits!",
+                                    "こううんの まもりに つつまれた！")
+        case .tailwind:    return t("순풍이 불기 시작했다!", "The tailwind blew from behind the team!",
+                                    "おいかぜが 吹き始めた！")
+        case .wideGuard:   return t("와이드가드로 편을 지켰다!", "Wide Guard protected the team!",
+                                    "ワイドガードで まもりを かためた！")
+        case .quickGuard:  return t("퀵가드로 편을 지켰다!", "Quick Guard protected the team!",
+                                    "ファストガードで まもりを かためた！")
+        case .matBlock:    return t("니가하지마로 편을 지켰다!", "Mat Block shielded the team!",
+                                    "たたみがえしで まもりを かためた！")
+        case .craftyShield: return t("트릭가드로 편을 지켰다!", "Crafty Shield shielded the team!",
+                                     "トリックガードで まもりを かためた！")
         }
     }
 
@@ -363,13 +378,21 @@ struct L {
 
     func battleSideConditionEnded(_ condition: BattleSideCondition) -> String {
         switch condition {
-        case .reflect:     return "리플렉터가 사라졌다"
-        case .lightScreen: return "빛의장막이 사라졌다"
-        case .auroraVeil:  return "오로라베일이 사라졌다"
-        case .safeguard:   return "신비의부적이 사라졌다"
-        case .mist:        return "하얀안개가 걷혔다"
-        case .luckyChant:  return "행운의부적이 사라졌다"
-        case .tailwind:    return "순풍이 멎었다"
+        case .reflect:     return t("리플렉터가 사라졌다", "Reflect wore off", "リフレクターが きえた")
+        case .lightScreen: return t("빛의장막이 사라졌다", "Light Screen wore off", "ひかりのかべが きえた")
+        case .auroraVeil:  return t("오로라베일이 사라졌다", "Aurora Veil wore off", "オーロラベールが きえた")
+        case .safeguard:   return t("신비의부적이 사라졌다", "The mystical veil wore off",
+                                    "しんぴのまもりが きえた")
+        case .mist:        return t("하얀안개가 걷혔다", "The mist wore off", "しろいきりが きえた")
+        case .luckyChant:  return t("행운의부적이 사라졌다", "The lucky chant wore off",
+                                    "こううんの まもりが きえた")
+        case .tailwind:    return t("순풍이 멎었다", "The tailwind petered out",
+                                    "おいかぜが やんだ")
+        // 편 방어기는 한 턴짜리라 걷히는 줄이 매 턴 나간다 — 그래서 문구를 짧게 둔다.
+        case .wideGuard:   return t("와이드가드가 풀렸다", "Wide Guard wore off", "ワイドガードが きえた")
+        case .quickGuard:  return t("퀵가드가 풀렸다", "Quick Guard wore off", "ファストガードが きえた")
+        case .matBlock:    return t("니가하지마가 풀렸다", "Mat Block wore off", "たたみがえしが きえた")
+        case .craftyShield: return t("트릭가드가 풀렸다", "Crafty Shield wore off", "トリックガードが きえた")
         }
     }
 

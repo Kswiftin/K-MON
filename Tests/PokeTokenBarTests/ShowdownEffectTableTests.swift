@@ -9,9 +9,9 @@ import XCTest
 final class ShowdownEffectTableTests: XCTestCase {
 
     /// 아직 구현하지 않은 자기 편 상태 — **왜 없는지**를 함께 잠근다. 구현하면 여기서 뺀다.
-    private static let unmodeledAllySideConditions: Set<String> = [
-        "wideguard", "quickguard", "matblock", "craftyshield",  // protect 상태가 먼저다
-    ]
+    /// 자기 편 상태는 지금 전부 구현했다. 새 키가 늘면 사유와 함께 여기 적는다 —
+    /// 빈 집합이어도 **테스트는 남긴다**(다음 키가 조용히 지나가지 않게 하는 것이 이 목록의 일이다).
+    private static let unmodeledAllySideConditions: Set<String> = []
 
     /// 아직 구현하지 않은 volatile — **왜 없는지**를 함께 잠근다. 구현하면 여기서 뺀다.
     /// 방어 부류 여덟 키(`protect`·`kingsshield` …)는 `BattleGuard` 가 이미 아니까 여기 없다.

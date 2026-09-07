@@ -791,17 +791,50 @@ enum BattleTeamSlot: Codable, Sendable, Equatable, Hashable {
 
 /// 한 진영에만 깔리는 상태 — 날씨·필드가 판 전체인 것과 다르다.
 ///
-/// 여기 있는 일곱은 전부 **1대1 에서 뜻이 있는** 것들이다. 압정뿌리기 부류(입장 데미지)와
-/// 방어 계열(와이드가드·퀵가드)은 각각 교체와 protect 상태가 먼저라 아직 없다.
+/// 압정뿌리기 부류(입장 데미지)는 교체 진입 훅이 먼저라 아직 없다.
+///
+/// 뒤의 넷은 **편 방어기**다(와이드가드·퀵가드·니가하지마·트릭가드). 개인 방어(`BattleGuard`)와
+/// 달리 편 전체를 지키고 막는 기술의 종류가 갈린다. 한 턴짜리라 지속 턴도 1 이다.
 ///
 /// 순풍만 데미지가 아니라 **턴 순서**를 바꾼다 — 그래서 `BattleEngine.orderingSpeed` 를 지나는
 /// 모드만 순풍을 본다(모드마다 순서 계산이 따로라, 새 모드가 직접 스피드를 읽으면 조용히 빠진다).
 enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
     case reflect, lightScreen, auroraVeil, safeguard, mist, luckyChant, tailwind
+    case wideGuard, quickGuard, matBlock, craftyShield
 
     /// 지속 턴. 장막·부적은 본가의 빛의점토가 없으므로 전부 5턴이고, 순풍만 4턴이다 —
-    /// 한 턴 더 불면 그 턴의 선공이 통째로 뒤집힌다.
-    var duration: Int { self == .tailwind ? 4 : 5 }
+    /// 한 턴 더 불면 그 턴의 선공이 통째로 뒤집힌다. 편 방어기는 개인 방어와 같이 한 턴이다.
+    var duration: Int {
+        switch self {
+        case .tailwind:                                       return 4
+        case .wideGuard, .quickGuard, .matBlock, .craftyShield: return 1
+        default:                                              return 5
+        }
+    }
+
+    /// 편 전체를 지키는 방어기인가. 참이면 **개인 방어와 같은 규칙**을 탄다: 연속으로 쓰면
+    /// 실패 확률이 붙고(같은 카운터를 쓴다), 막는 판정은 대상 단위 입구에서 본다.
+    var guardsTheTeam: Bool {
+        switch self {
+        case .wideGuard, .quickGuard, .matBlock, .craftyShield: return true
+        default:                                                return false
+        }
+    }
+
+    /// 이 기술을 막는가 — 넷이 갈리는 것은 **무엇을 막느냐**뿐이다.
+    ///
+    /// 니가하지마는 본가에서 "나온 첫 턴에만" 쓸 수 있는데 그 게이트가 엔진에 없다
+    /// (속임수와 같은 자리 — `MoveSpec.flinchChanceCap` 의 설명 참조). 게이트 대신 지속 턴 1 과
+    /// 연속 실패 확률이 남아 있어, 매 턴 눌러도 개인 방어보다 세지지는 않는다.
+    func blocks(_ move: MoveSpec) -> Bool {
+        switch self {
+        case .wideGuard:    return move.hitsSpread
+        case .quickGuard:   return move.turnPriority > 0
+        case .matBlock:     return move.damageClass != .status
+        case .craftyShield: return move.damageClass == .status
+        default:            return false
+        }
+    }
 
     init?(showdownKey: String) {
         switch showdownKey.lowercased() {
@@ -811,8 +844,12 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
         case "safeguard":   self = .safeguard
         case "mist":        self = .mist
         case "luckychant":  self = .luckyChant
-        case "tailwind":    self = .tailwind
-        default:            return nil
+        case "tailwind":     self = .tailwind
+        case "wideguard":    self = .wideGuard
+        case "quickguard":   self = .quickGuard
+        case "matblock":     self = .matBlock
+        case "craftyshield": self = .craftyShield
+        default:             return nil
         }
     }
 
@@ -956,6 +993,11 @@ struct BattleField: Sendable, Equatable {
     /// 이 진영이 맞는 데미지가 장막에 반으로 깎이는가.
     func halvesDamage(_ damageClass: MoveDamageClass, against team: BattleTeamSlot) -> Bool {
         BattleSideCondition.allCases.contains { $0.halves(damageClass) && has($0, for: team) }
+    }
+
+    /// 편 방어기(와이드가드 부류)가 이 기술을 막는가. 넷 중 하나라도 막으면 막힌다.
+    func blocksMove(_ move: MoveSpec, against team: BattleTeamSlot) -> Bool {
+        BattleSideCondition.allCases.contains { $0.guardsTheTeam && $0.blocks(move) && has($0, for: team) }
     }
 
     /// 신비의부적 — 이 진영은 상대가 거는 상태이상을 받지 않는다.
@@ -1301,7 +1343,10 @@ enum BattleEngine {
     ///      여부는 `BattleSide`(와이어에 없는 타입)에만 산다. rng 소비도 늘지 않는다.
     /// 24 = 개체에 붙어 턴을 넘어 사는 상태(`BattleVolatile`) 여섯 — 조이기(열 기술)·저주·
     ///      나이트메어의 턴 끝 잔뎀, 아쿠아링·뿌리박기의 턴 끝 회복, 그리고 씨뿌리기(깎은 만큼
-    ///      뿌린 자리가 회복한다 — 네 모드가 잔뎀 뒤·날씨 앞에서 부른다). 상태는 전부 `BattleSide`
+    ///      뿌린 자리가 회복한다 — 네 모드가 잔뎀 뒤·날씨 앞에서 부른다).
+    ///      + 편 방어기 넷(와이드가드·퀵가드·니가하지마·트릭가드) — 한 턴짜리 진영 상태로 깔리고
+    ///      막는 기술의 종류만 서로 갈린다. **연속 실패 확률을 개인 방어와 공유하므로** 방어를
+    ///      쓴 다음 턴의 편 방어기는 rng 를 한 번 더 뽑는다(구버전은 안 뽑고 늘 성공한다). 상태는 전부 `BattleSide`
     ///      (와이어에 없는 타입)에 살지만 **rng 소비가 갈린다**: 조이기는 붙는 자리에서 지속 턴을
     ///      한 번 더 뽑으므로, 구버전은 그 뒤 모든 판정이 한 칸씩 밀린다. 같은 입력의 HP 도 갈린다.
     ///      `DamageCause` 에 원인 셋(`trap`·`curse`·`nightmare`)과 `BattleEvent` 에 case 둘
@@ -2155,6 +2200,13 @@ extension BattleEngine {
             return events + raiseGuard(user: &attacker, actor: attackerActor,
                                        defenderActor: defenderActor, rng: &rng)
         }
+        // 편 방어기(와이드가드 부류)는 편 전체를 지킨다 — 개인 방어와 **같은 카운터**를 쓴다.
+        // 여기가 연속 끊기(아래 줄)보다 앞이어야 자기 카운터를 스스로 지우지 않는다.
+        if let teamGuard = BattleSideCondition.called(byMoveID: move.id), teamGuard.guardsTheTeam {
+            return events + raiseTeamGuard(teamGuard, user: &attacker, actor: attackerActor,
+                                           defenderActor: defenderActor, team: attackerTeam,
+                                           field: &field, rng: &rng)
+        }
         // 방어기가 아닌 기술을 냈으면 연속 성공은 끊긴다 — 안 끊으면 한 번 쌓은 확률 벌점이
         // 배틀 끝까지 남아, 사이에 다른 기술을 낀 방어가 이유 없이 실패한다.
         attacker.guardStreak = 0
@@ -2207,14 +2259,38 @@ extension BattleEngine {
     private static func raiseGuard(user: inout BattleSide, actor: BattleActor,
                                    defenderActor: BattleActor,
                                    rng: inout SplitMix64) -> [BattleEvent] {
-        var odds = 1
-        for _ in 0..<user.guardStreak { odds *= BattleGuard.consecutiveFailureBase }
-        let succeeded = odds == 1 || Int(rng.next() % UInt64(odds)) == 0
+        let succeeded = guardSucceeds(streak: user.guardStreak, rng: &rng)
         user.lastMoveFailed = !succeeded
         user.isGuarding = succeeded
         // 실패하면 연속이 끊긴다 — 안 끊으면 한 번 실패한 뒤로 확률이 영영 회복되지 않는다.
         user.guardStreak = succeeded ? user.guardStreak + 1 : 0
         return succeeded ? [.guardUp(actor)] : [.immune(defenderActor)]
+    }
+
+    /// 편 방어기 한 번 — 성공하면 **편에** 한 턴짜리 상태가 깔린다.
+    ///
+    /// 확률·카운터는 개인 방어와 **하나를 공유한다**(본가와 같다). 따로 두면 방어와 와이드가드를
+    /// 번갈아 눌러 벌점 없는 무적이 된다. 이미 깔려 있으면(같은 턴에 두 번) 실패다 — 다른 진영
+    /// 상태와 같은 규칙이고, 성공 판정을 지난 뒤에 보므로 rng 소비는 성공·실패에서 같다.
+    private static func raiseTeamGuard(_ condition: BattleSideCondition, user: inout BattleSide,
+                                       actor: BattleActor, defenderActor: BattleActor,
+                                       team: BattleTeamSlot, field: inout BattleField,
+                                       rng: inout SplitMix64) -> [BattleEvent] {
+        let succeeded = guardSucceeds(streak: user.guardStreak, rng: &rng)
+            && field.start(condition, for: team)
+        user.lastMoveFailed = !succeeded
+        user.guardStreak = succeeded ? user.guardStreak + 1 : 0
+        return succeeded ? [.sideConditionStarted(team, condition)] : [.immune(defenderActor)]
+    }
+
+    /// 방어 성공 판정 — 연속 성공 횟수만큼 확률이 1/3^n 로 떨어진다.
+    ///
+    /// **rng 는 연속일 때만 뽑는다.** 첫 방어에서 뽑으면 방어를 넣은 뒤 모든 판정이 한 칸씩 밀려,
+    /// 같은 seed 로 예전 판이 재현되지 않는다. 개인 방어와 편 방어기가 이 한 함수를 공유한다.
+    private static func guardSucceeds(streak: Int, rng: inout SplitMix64) -> Bool {
+        var odds = 1
+        for _ in 0..<streak { odds *= BattleGuard.consecutiveFailureBase }
+        return odds == 1 || Int(rng.next() % UInt64(odds)) == 0
     }
 
     /// 공격의 **머리** — 행동 가능 판정과 `.move` 줄. 대상이 몇이든 여기는 **한 번만** 지난다.
@@ -2277,7 +2353,10 @@ extension BattleEngine {
         // 데이터가 예외로 답한다.
         // 테라버스트는 여기서 실제로 나가는 형태가 된다 — 아래 전부(상성·STAB·분류)가 그 값을 본다.
         let move = move.asUsed(by: attacker)
-        if defender.isGuarding, move.targetsUser != true, !BattleGuard.isIgnored(byMoveID: move.id) {
+        // 편 방어기(와이드가드 부류)는 **편에** 깔리므로 개인 방어와 조건이 다르지만 같은 자리에서
+        // 본다 — 두 판정이 갈리면 광역기가 한쪽만 통과한다. 페인트 부류는 둘 다 뚫는다.
+        let isBlockable = move.targetsUser != true && !BattleGuard.isIgnored(byMoveID: move.id)
+        if isBlockable, defender.isGuarding || field.blocksMove(move, against: defenderTeam) {
             attacker.lastMoveFailed = true   // 분함의발구르기는 막힌 것도 실패로 센다(본가와 같다)
             return [.guardBlocked(defenderActor)]
         }
