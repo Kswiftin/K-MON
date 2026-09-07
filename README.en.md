@@ -93,7 +93,7 @@ Change the trainer's outfit, and pick one reward item after every wave you clear
 <td width="45%" align="center"><img src="assets/screenshot-raid.png" width="180" alt="Co-op Raid"></td>
 <td width="55%" valign="middle">
 <h3>Co-op raid</h3>
-Team up with trainers on your network to take down today's boss. 1★ and 3★ open anytime; 5★ hatches three set times a day. Choose which Pokémon you bring at the bottom of the screen, and join an open room straight from the nearby list.
+Team up with trainers on your network to take down the boss. Morning and afternoon each bring a different boss, and you can claim the reward once per half-day. 1★ and 3★ open anytime; 5★ hatches three set times a day. Choose which Pokémon you bring at the bottom of the screen, and join an open room straight from the nearby list.
 </td>
 </tr>
 <tr>
