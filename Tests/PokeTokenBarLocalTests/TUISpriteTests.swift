@@ -68,7 +68,7 @@ struct TUISpriteTests {
             let i = (y * 4 + x) * 4
             rgba[i] = 200; rgba[i + 1] = 100; rgba[i + 2] = 50; rgba[i + 3] = 255
         }
-        let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba), columns: 2)
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba), columns: 2, pixelRows: 2)
         #expect(fitted?.width == 2)
         #expect(fitted?.height == 2)
         // 잘라 낸 뒤에는 네 픽셀 모두 불투명이어야 한다 — 여백이 남았으면 alpha 0 이 섞인다.
@@ -79,24 +79,135 @@ struct TUISpriteTests {
     /// 0 폭 격자를 만들면 그 뒤 계산이 전부 0 으로 나눈다.
     @Test func testFitReturnsNilWhenNothingIsOpaque() {
         let blank = TUISprite.Pixels(width: 4, height: 4, rgba: [UInt8](repeating: 0, count: 64))
-        #expect(TUISprite.fit(blank, columns: 2) == nil)
+        #expect(TUISprite.fit(blank, columns: 2, pixelRows: 2) == nil)
     }
 
-    /// 아주 좁은 터미널에서 칸 수가 0 이하로 계산될 수 있다. 크래시하지 않고 `nil` 이어야 한다.
-    @Test func testFitRejectsNonPositiveColumns() {
+    /// 아주 좁은·짧은 터미널에서 예산이 0 이하로 계산될 수 있다. 크래시하지 않고 `nil` 이어야 한다.
+    @Test func testFitRejectsNonPositiveBudgets() {
         let pixels = TUISprite.Pixels(width: 2, height: 2, rgba: [UInt8](repeating: 255, count: 16))
-        #expect(TUISprite.fit(pixels, columns: 0) == nil)
-        #expect(TUISprite.fit(pixels, columns: -3) == nil)
+        #expect(TUISprite.fit(pixels, columns: 0, pixelRows: 4) == nil)
+        #expect(TUISprite.fit(pixels, columns: -3, pixelRows: 4) == nil)
+        #expect(TUISprite.fit(pixels, columns: 4, pixelRows: 0) == nil)
+        #expect(TUISprite.fit(pixels, columns: 4, pixelRows: -2) == nil)
     }
 
     /// 세로는 항상 짝수여야 한다 — 반칸 하나가 픽셀 두 줄이라, 홀수면 마지막 줄이 반쪽으로 남는다.
     @Test func testFitKeepsPixelHeightEven() {
         let pixels = TUISprite.Pixels(width: 8, height: 8, rgba: [UInt8](repeating: 255, count: 8 * 8 * 4))
         for columns in 1...12 {
-            let fitted = TUISprite.fit(pixels, columns: columns)
-            #expect(fitted!.height % 2 == 0)
-            #expect(fitted!.rgba.count == fitted!.width * fitted!.height * 4)
+            for pixelRows in [2, 4, 10, 24] {
+                let fitted = TUISprite.fit(pixels, columns: columns, pixelRows: pixelRows)!
+                #expect(fitted.height % 2 == 0)
+                #expect(fitted.rgba.count == fitted.width * fitted.height * 4)
+            }
         }
+    }
+
+    /// **두 예산 안에 비율을 지켜 넣는다.** 가로세로를 같은 배율로 줄여야 파트너가 늘거나 눌리지
+    /// 않고, 정사각으로 맞추면 넓은 종의 위아래에 빈 띠가 생겨 `watch` 의 줄 예산을 그만큼 버린다.
+    @Test func testFitScalesBothAxesByTheSameFactor() {
+        // 가로가 두 배인 내용(16×8, 전부 불투명).
+        let pixels = TUISprite.Pixels(width: 16, height: 8,
+                                      rgba: [UInt8](repeating: 255, count: 16 * 8 * 4))
+        let fitted = TUISprite.fit(pixels, columns: 16, pixelRows: 40)!
+        #expect(fitted.width == 16)
+        #expect(fitted.height == 8, "비율이 어긋났다")
+        // 세로 예산이 더 좁으면 그쪽이 배율을 정한다.
+        let short = TUISprite.fit(pixels, columns: 16, pixelRows: 4)!
+        #expect(short.height == 4)
+        #expect(short.width == 8, "세로 예산이 배율을 정하지 못했다")
+    }
+
+    /// **가장 가까운 픽셀만 집지 않고 면적을 평균한다.** 96px 원본을 40칸으로 줄이면 최근접은
+    /// 원본의 절반 이상을 버려 곡선이 계단으로 깨진다. 한 칸 간격으로 검정·흰색이 번갈아 있는
+    /// 원본을 절반으로 줄이면 평균은 중간값이고, 최근접은 검정 아니면 흰색이다.
+    @Test func testFitAveragesTheSourceAreaInsteadOfPickingOnePixel() {
+        var rgba: [UInt8] = []
+        for _ in 0..<4 {
+            for x in 0..<4 {
+                let level: UInt8 = x % 2 == 0 ? 0 : 255
+                rgba += [level, level, level, 255]
+            }
+        }
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba), columns: 2, pixelRows: 2)!
+        for i in stride(from: 0, to: fitted.rgba.count, by: 4) {
+            let level = Int(fitted.rgba[i])
+            #expect(level >= 100, "중간값이 아니다 — 최근접으로 집었다")
+            #expect(level <= 155, "중간값이 아니다 — 최근접으로 집었다")
+        }
+    }
+
+    /// 색은 **알파로 가중**해 평균한다. 투명 픽셀의 색(대개 검정)을 같은 무게로 섞으면
+    /// 스프라이트 테두리가 한 칸 안쪽까지 검게 죽는다.
+    @Test func testFitWeightsColorByAlpha() {
+        // 양끝은 불투명 빨강, 가운데 둘은 완전 투명한 검정. 경계가 전 폭을 덮으므로 두 칸으로
+        // 줄이면 한 칸 안에서 빨강과 투명이 섞인다.
+        var rgba: [UInt8] = []
+        for _ in 0..<4 {
+            for x in 0..<4 { rgba += (x == 0 || x == 3) ? [255, 0, 0, 255] : [0, 0, 0, 0] }
+        }
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba), columns: 2, pixelRows: 2)!
+        // 색은 **순수 빨강**이어야 한다. 알파를 무시하고 평균하면 투명한 검정이 절반 섞여 127 이 된다.
+        let red = Int(fitted.rgba[0])
+        let green = Int(fitted.rgba[1])
+        let alpha = Int(fitted.rgba[3])
+        #expect(red == 255, "투명한 검정이 색을 끌어내렸다")
+        #expect(green == 0)
+        // 알파는 덮인 비율이다 — 절반만 덮였다.
+        #expect(alpha >= 120)
+        #expect(alpha <= 135)
+    }
+
+    /// 반칸 하나는 색이 하나뿐이라 반투명을 표현할 수 없다. **절반 이상 덮인 칸만** 그린다 —
+    /// 조금 걸친 칸까지 그리면 스프라이트 주위에 한 칸짜리 후광이 생겨 실루엣이 부푼다.
+    @Test func testCellsCoveredLessThanHalfAreNotDrawn() {
+        let faint = TUISprite.Pixels(width: 1, height: 2, rgba: [9, 9, 9, 100,  0, 0, 0, 0])
+        let solid = TUISprite.Pixels(width: 1, height: 2, rgba: [9, 9, 9, 200,  0, 0, 0, 0])
+        #expect(TUISprite.rows(faint) == ["\u{1B}[0m \u{1B}[0m"])
+        #expect(TUISprite.rows(solid) == ["\u{1B}[0m\u{1B}[38;2;9;9;9m▀\u{1B}[0m"])
+    }
+
+    /// 자를 경계는 반대로 **희미한 테두리까지** 포함한다. 그리는 판정으로 경계를 잡으면
+    /// 안티에일리어싱된 윤곽이 잘려 스프라이트가 한 칸씩 깎인다.
+    @Test func testCropBoundsIncludeFaintEdges() {
+        // 가운데만 진하고 둘레는 희미한 3×3.
+        let faint: [UInt8] = [9, 9, 9, 20]
+        let solid: [UInt8] = [9, 9, 9, 255]
+        var rgba: [UInt8] = []
+        for y in 0..<3 {
+            for x in 0..<3 { rgba += (x == 1 && y == 1) ? solid : faint }
+        }
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 3, height: 3, rgba: rgba), columns: 3, pixelRows: 4)!
+        // 둘레까지 경계에 들었으면 3×3 이 그대로 3칸으로 온다(가운데 한 점만 잡으면 1칸이 된다).
+        #expect(fitted.width == 3)
+        #expect(fitted.rgba[3] > 0, "희미한 왼쪽 위가 경계에서 빠졌다")
+    }
+
+    /// 가로로 넓은 스프라이트의 **양끝을 잘라 내지 않는다.** 짧은 변을 기준으로 정사각으로
+    /// 자르면(고래왕자는 106×68 이다) 지느러미가 통째로 사라지고, 잘린 것이 무엇인지 사용자는
+    /// 알 수 없다.
+    @Test func testFitKeepsBothEdgesOfWideContent() {
+        // 8×2 전부 불투명 — 왼끝 빨강, 오른끝 파랑, 가운데 초록.
+        var rgba: [UInt8] = []
+        for _ in 0..<2 {
+            for x in 0..<8 {
+                if x == 0 { rgba += [255, 0, 0, 255] }
+                else if x == 7 { rgba += [0, 0, 255, 255] }
+                else { rgba += [0, 255, 0, 255] }
+            }
+        }
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 8, height: 2, rgba: rgba), columns: 4,
+                                   pixelRows: 8)!
+        #expect(fitted.width == 4)
+        // 내용이 있는 줄에서 왼끝에 빨강이, 오른끝에 파랑이 남아 있어야 한다.
+        let rows = (0..<fitted.height).map { y in (0..<fitted.width).map { x -> [UInt8] in
+            let i = (y * fitted.width + x) * 4
+            return Array(fitted.rgba[i..<(i + 4)])
+        } }
+        let withContent = rows.filter { $0.contains { $0[3] > 0 } }
+        #expect(!withContent.isEmpty, "내용이 있는 줄이 하나도 없다")
+        #expect(withContent.contains { $0.first![0] > 0 }, "왼끝 빨강이 잘렸다")
+        #expect(withContent.contains { $0.last![2] > 0 }, "오른끝 파랑이 잘렸다")
     }
 
     // MARK: 블록 — 폭·높이·색 판정
@@ -148,15 +259,75 @@ struct TUISpriteTests {
                                  colorAllowed: true, bobbed: false).isEmpty)
     }
 
-    /// 짧은 창에서도 뺀다. `TUITerminal.draw` 는 높이를 넘는 줄을 **버리므로**(prefix), 그림이
-    /// 들어가면 아래쪽 키 안내가 화면에서 사라진다.
-    @Test func testBlockIsEmptyWhenRowBudgetIsTooSmall() {
-        let pixels = Self.solid(32)
-        let full = TUISprite.block(pixels, width: 80, maxRows: 40, colorAllowed: true, bobbed: false)
-        #expect(TUISprite.block(pixels, width: 80, maxRows: full.count - 1,
-                                colorAllowed: true, bobbed: false).isEmpty)
-        #expect(TUISprite.block(pixels, width: 80, maxRows: full.count,
-                                colorAllowed: true, bobbed: false).count == full.count)
+    /// 짧은 창에서는 **작게 그린다.** `TUITerminal.draw` 는 높이를 넘는 줄을 버리므로(prefix)
+    /// 예산을 넘길 수는 없지만, 넘길 것 같으면 통째로 빼는 것이 아니라 칸 수를 줄인다 —
+    /// 24줄 터미널에서 그림이 영영 안 나오는 것을 막는다.
+    @Test func testBlockShrinksToTheRowBudgetInsteadOfVanishing() {
+        let pixels = Self.solid(64)
+        let roomy = TUISprite.block(pixels, width: 120, maxRows: 60, colorAllowed: true, bobbed: false)
+        let tight = TUISprite.block(pixels, width: 120, maxRows: 8, colorAllowed: true, bobbed: false)
+        #expect(!tight.isEmpty, "예산이 8줄이면 작게라도 그려야 한다")
+        #expect(tight.count <= 8)
+        #expect(tight.count < roomy.count)
+    }
+
+    /// 예산이 가장 작은 그림도 못 담으면 그때는 뺀다 — 몇 칸짜리 그림은 파트너로 보이지 않는다.
+    @Test func testBlockIsEmptyBelowTheSmallestUsefulBlock() {
+        let smallest = TUISprite.minimumColumns / 2 + 1
+        for budget in 0..<smallest {
+            #expect(TUISprite.block(Self.solid(64), width: 120, maxRows: budget,
+                                    colorAllowed: true, bobbed: false).isEmpty)
+        }
+        #expect(!TUISprite.block(Self.solid(64), width: 120, maxRows: smallest,
+                                 colorAllowed: true, bobbed: false).isEmpty)
+    }
+
+    /// 스프라이트 **안쪽**의 빈 자리(모서리·다리 사이)는 알파 0 인 칸이 된다. 색을 계산하지 않고
+    /// 공백으로 남겨야 한다 — 알파 합이 0 이라 색을 구하면 0 으로 나눈다.
+    @Test func testFullyTransparentCellsStayEmpty() {
+        // 왼쪽 위와 오른쪽 아래 모서리만 불투명 → 경계는 전체 4×4, 가운데는 비어 있다.
+        var rgba = [UInt8](repeating: 0, count: 4 * 4 * 4)
+        for (x, y) in [(0, 0), (3, 3)] {
+            let i = (y * 4 + x) * 4
+            rgba[i] = 200; rgba[i + 1] = 100; rgba[i + 2] = 50; rgba[i + 3] = 255
+        }
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba),
+                                   columns: 2, pixelRows: 2)!
+        // 오른쪽 위 칸은 원본이 전부 투명하다.
+        #expect(fitted.rgba[(0 * 2 + 1) * 4 + 3] == 0)
+        // 그 칸은 공백으로 그려진다.
+        #expect(TUISprite.rows(fitted)[0].hasSuffix("\u{1B}[0m \u{1B}[0m"))
+    }
+
+    // MARK: 두 예산
+
+    /// 넓은 창에서는 상한까지 쓴다. 20칸으로 묶어 두면 소스(96~106px)가 가진 해상도를 절반도
+    /// 못 쓴다.
+    @Test func testColumnsUseTheCapWhenThereIsRoom() {
+        #expect(TUISprite.columns(width: 200) == TUISprite.maximumColumns)
+        #expect(TUISprite.columns(width: TUISprite.minimumWidth - 1) == 0)
+    }
+
+    /// 픽셀 줄 예산은 **남은 글자 줄의 두 배**다 — 반칸 하나가 픽셀 두 줄이다. 흔들림에 쓰는
+    /// 한 줄은 먼저 뗀다.
+    @Test func testPixelRowsAreTwiceTheRemainingTextRows() {
+        #expect(TUISprite.pixelRows(maxRows: 11) == 20)
+        #expect(TUISprite.pixelRows(maxRows: 6) == 10)
+        #expect(TUISprite.pixelRows(maxRows: 1) == 0)
+        #expect(TUISprite.pixelRows(maxRows: 0) == 0)
+    }
+
+    /// 한 번 찍는 명령은 예산이 없다는 뜻으로 `.max` 를 넘긴다. 두 배로 부풀리는 계산이
+    /// **정수 넘침으로 죽지 않아야** 한다.
+    @Test func testPixelRowsSurviveAnUnboundedBudget() {
+        #expect(TUISprite.pixelRows(maxRows: .max) == TUISprite.maximumColumns)
+    }
+
+    /// 픽셀 줄 수는 항상 짝수다 — 홀수면 마지막 글자 줄이 반쪽으로 남는다.
+    @Test func testPixelRowsAreAlwaysEven() {
+        for maxRows in 0...200 {
+            #expect(TUISprite.pixelRows(maxRows: maxRows) % 2 == 0)
+        }
     }
 
     /// 그림 줄은 폭 계산을 통과하지 않는다는 전제로 만든다. 그래서 **칸 수를 스스로 지켜야** 한다 —

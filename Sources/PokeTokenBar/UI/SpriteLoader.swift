@@ -240,12 +240,26 @@ enum SpriteLoader {
     /// 없고, 기다리게 만들면 세이브에서만 값을 꺼낸다는 터미널의 규칙이 깨진다.
     ///
     /// 캐시에 없으면 `nil` 이고, 그때 터미널은 그림 없이 그린다 — 없음은 고장이 아니다.
-    /// **정적 96px PNG 키를 쓴다**: 20칸으로 접으면 HOME 512px 렌더와 구별되지 않고, 메뉴바가
-    /// 파트너를 띄울 때 항상 이 키를 채우므로 적중률이 가장 높다.
+    ///
+    /// **픽셀이 가장 많은 후보를 고른다.** 터미널은 40칸(=40×40 픽셀)까지 쓰므로 어느 소스가
+    /// 오는지가 곧 해상도다.
+    /// - HOME 512 정지 렌더 — 설정이 "선명하게" 일 때 받아 둔다. 있으면 압도적으로 크다.
+    ///   (`highResolution: true` 는 HOME 이 없으면 정적 96 으로 폴백하므로 둘 중 하나가 온다.)
+    /// - showdown 애니메이션 — 여백 없이 잘려 있어 96px 정적보다 **실물이 크다**(고래왕자 106×68).
+    /// - 정적 96px PNG — 여백이 절반이라 실물은 60px 안팎이다.
+    ///
+    /// 비교는 **면적이 아니라 긴 변**으로 한다. 정적 96×96 은 여백까지 세어 면적으로는 잘려 있는
+    /// showdown 을 늘 이기지만, 잘라 낸 뒤 실제로 쓰는 픽셀은 더 적다.
     static func cachedPixels(speciesID: Int, shiny: Bool) -> TUISprite.Pixels? {
-        guard let image = cachedImage(speciesID: speciesID, shiny: shiny) else { return nil }
-        var rect = CGRect(origin: .zero, size: image.size)
-        guard let cg = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return nil }
+        let candidates = [cachedImage(speciesID: speciesID, shiny: shiny, highResolution: true),
+                          cachedImage(speciesID: speciesID, animated: true, shiny: shiny)]
+            .compactMap { image -> CGImage? in
+                guard let image else { return nil }
+                var rect = CGRect(origin: .zero, size: image.size)
+                return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+            }
+        guard let cg = candidates.max(by: { max($0.width, $0.height) < max($1.width, $1.height) })
+        else { return nil }
         return pixels(from: cg)
     }
 
