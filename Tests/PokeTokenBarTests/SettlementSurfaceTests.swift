@@ -132,7 +132,8 @@ final class SettlementSurfaceTests: XCTestCase {
                                      overflowExperience: PokemonBalance.experiencePerOverflowStarPiece * 7)
 
         XCTAssertEqual(reward.bannerLines,
-                       [.eggs(3), .settled(reward.totalStardust), .overflowConverted(reward.overflowBonus), .rareCandy],
+                       [.eggs(3), .experience(main: 1_000, party: 0, partyCount: 0),
+                        .settled(reward.totalStardust), .overflowConverted(reward.overflowBonus), .rareCandy],
                        "네 지급이 각자 한 줄씩 — 하나로 뭉치면 나머지가 화면에서 사라진다")
     }
 
@@ -141,7 +142,8 @@ final class SettlementSurfaceTests: XCTestCase {
         let reward = AdventureReward(experience: 1_000, starPieces: 40,
                                      foundRareCandy: false, foundEgg: false)
 
-        XCTAssertEqual(reward.bannerLines, [.settled(40)])
+        XCTAssertEqual(reward.bannerLines,
+                       [.experience(main: 1_000, party: 0, partyCount: 0), .settled(40)])
     }
 
     /// 알이 하나여도 줄은 뜬다(개수만 1). `> 1` 로 개수를 적는 판단은 뷰에 남아 있으므로, 여기서는

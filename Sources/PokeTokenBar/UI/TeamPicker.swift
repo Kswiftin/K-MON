@@ -14,6 +14,8 @@ struct TeamPicker: View {
     /// 이 화면에서 고를 수 있는 최대 인원. 체육관은 관장 팀에 맞춰 4(`GymLeague.teamSize`),
     /// 모의전은 화면에서 고른 크기다.
     let limit: Int
+    var title: String? = nil
+    var requiredIDs: Set<UUID> = []
     /// nil이면 전체 후보, 값이 있으면 미리 공개한 6마리 풀 안에서만 최종 엔트리를 고른다.
     var allowedIDs: Set<UUID>? = nil
     @State private var page = 0
@@ -87,6 +89,7 @@ struct TeamPicker: View {
     /// 정원이 찬 상태에서 누른 경우(넣지도 빼지도 못한다) 아무 반응이 없으면 고장으로 읽히기 때문이다.
     private func toggle(_ monID: UUID) {
         previewedMonID = monID
+        guard !requiredIDs.contains(monID) else { return }
         selection = Self.toggled(selection, monID: monID, limit: limit)
     }
 
@@ -112,7 +115,7 @@ struct TeamPicker: View {
 
     /// 팀 전체 해제 — 한 칸씩 누르며 순서를 되돌릴 필요 없이 새 조합을 바로 고르게 한다.
     private func clearSelection() {
-        selection.removeAll()
+        selection = selection.filter { requiredIDs.contains($0) }
     }
 
     /// 대전에 실제로 나가는 목록을 그대로 받는다 — `CompanionStore.battleSnapshot` 과 같은 규칙이다.
@@ -192,14 +195,14 @@ struct TeamPicker: View {
     /// 제목 줄 — 이 자리가 무엇인지 먼저 말하고, 고른 수를 오른쪽에 둔다.
     private var header: some View {
         HStack(spacing: 6) {
-            Label(l.teamPickerTitle, systemImage: "person.2.badge.gearshape")
+            Label(title ?? l.teamPickerTitle, systemImage: "person.2.badge.gearshape")
                 .font(.caption.weight(.semibold))
             Spacer(minLength: 4)
             Button("전체 해제", action: clearSelection)
                 .buttonStyle(.plain)
                 .font(.caption2)
                 .foregroundStyle(Color.accentColor)
-                .disabled(selection.isEmpty)
+                .disabled(selection.allSatisfy { requiredIDs.contains($0) })
             Text("\(min(selection.count, limit)) / \(limit)")
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .foregroundStyle(selection.count >= limit ? AnyShapeStyle(Color.accentColor)
@@ -225,6 +228,7 @@ struct TeamPicker: View {
                    let mon = candidates.first(where: { $0.id == selection[slot] }) {
                     PickedSlot(mon: mon, order: slot + 1,
                                removeLabel: "팀에서 빼기",
+                               canRemove: !requiredIDs.contains(mon.id),
                                onRemove: { toggle(mon.id) })
                 } else {
                     RoundedRectangle(cornerRadius: 6)
@@ -391,6 +395,7 @@ private struct PickedSlot: View {
     let order: Int
     /// 이 칸을 빼는 버튼이 읽힐 이름. 이 뷰는 `L` 을 들지 않으므로 부르는 자리가 건넨다.
     let removeLabel: String
+    let canRemove: Bool
     let onRemove: () -> Void
 
     static let width: CGFloat = 38
@@ -404,15 +409,17 @@ private struct PickedSlot: View {
             }
             .frame(width: Self.width, height: Self.height)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.18)))
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
-                    .accessibilityLabel(removeLabel)
+            if canRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
+                        .accessibilityLabel(removeLabel)
+                }
+                .buttonStyle(.plain)
+                .offset(x: 3, y: -3)
             }
-            .buttonStyle(.plain)
-            .offset(x: 3, y: -3)
         }
         .frame(width: Self.width, height: Self.height)
     }

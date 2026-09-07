@@ -274,6 +274,11 @@ enum SaveTransfer {
            !s.boxedMons.contains(where: { $0.id == representativeID }) {
             s.battleRepresentativeID = nil
         }
+        let ownedIDs = Set(([s.active].compactMap { $0 } + s.boxedMons).map(\.id))
+        var seenHomeParty: Set<UUID> = []
+        s.homePartyIDs = s.homePartyIDs.filter {
+            ownedIDs.contains($0) && seenHomeParty.insert($0).inserted
+        }.prefix(6).map { $0 }
         // 체육관 방어팀은 **박스 개체만** 가리킨다. 활성 개체는 성장하므로 배치 대상이 아니고,
         // 소유하지 않은 id·중복·정원 초과는 손편집이나 개체 소멸(교환·방생)로 생길 수 있다.
         // 정원 미만이 되어도 자격까지 뺏지는 않는다 — 그러면 정규화 한 번에 관장이 사라진다.
@@ -461,6 +466,7 @@ enum SaveTransfer {
         if let run = s.adventure {
             p.append("adv\(run.id)|\(run.zone.rawValue)|\(run.startedAt.timeIntervalSince1970)|\(run.endsAt.timeIntervalSince1970)|\(run.companionSpeciesID)")
         }
+        if !s.homePartyIDs.isEmpty { p.append("hparty" + s.homePartyIDs.map(\.uuidString).joined(separator: ",")) }
         if !s.adventureHistory.isEmpty {
             p.append("ah" + s.adventureHistory.map { "\($0.id)|\($0.zone.rawValue)|\($0.stardust)|\($0.foundRareCandy)" }.joined(separator: ","))
         }
