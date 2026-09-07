@@ -154,7 +154,9 @@ pokedoro bag | shop | goals   Bag · shop stock · Pokédex goals and achievemen
 pokedoro watch                Full-screen live view
 pokedoro start [25|50|90]     Start a focus session (stop to end, claim to collect)
 pokedoro wave …               A wave run (start · move · ball · pick · route)
-pokedoro battle | room …      LAN battle, and rooms (raid · gym · tournament · Pokéathlon · quiz)
+pokedoro battle | room …      LAN battle and rooms (co-op raid · Gym Takeover · tournament, etc.)
+pokedoro gym …                Challenge-tab Gym Raids: list · team selection · challenge
+pokedoro gym contest …        LAN Gym Takeover: discover · open · challenge · spectate · manage
 pokedoro trade | auction …    Trade negotiation · auction market
 pokedoro home …               Memory Home — mood · notes · furniture
 pokedoro help                 The full command list
