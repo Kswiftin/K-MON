@@ -677,7 +677,12 @@ final class SaveTransferTests: XCTestCase {
                                           // 두는 이유는 서로를 태우지 않게 하기 위해서다 —
                                           // 혼자 돈 1★ 의 소액 지급이 그날의 포획 기회를 없애면
                                           // 사용자는 잃은 줄도 모르고 잃는다.
-                                          "raidCatchDate"]
+                                          "raidCatchDate",
+                                          // 3★·5★ 전용 지급·포획 원장(#270) — 티어마다 다른 종·
+                                          // 포획 확률을 주게 되면서 원장도 티어별로 갈렸다. 같은
+                                          // 이유(계정 원장, 병합)로 여기 함께 둔다.
+                                          "raidRewardDateTierThree", "raidRewardDateTierFive",
+                                          "raidCatchDateTierThree", "raidCatchDateTierFive"]
         let classified = progress.union(deviceLedger).union(accountLedger)
         let actual = Set(Mirror(reflecting: CompanionState()).children.compactMap(\.label))
         XCTAssertEqual(actual, classified, """

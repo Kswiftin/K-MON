@@ -308,7 +308,11 @@ enum SaveTransfer {
             .filter { (1...10_000).contains($0.companionSpeciesID) && (0...maxTokenValue).contains($0.stardust) }
             .sorted { $0.completedAt > $1.completedAt }.prefix(30))
         s.raidRewardDate = clampedKey(s.raidRewardDate)
+        s.raidRewardDateTierThree = clampedKey(s.raidRewardDateTierThree)
+        s.raidRewardDateTierFive = clampedKey(s.raidRewardDateTierFive)
         s.raidCatchDate = clampedKey(s.raidCatchDate)
+        s.raidCatchDateTierThree = clampedKey(s.raidCatchDateTierThree)
+        s.raidCatchDateTierFive = clampedKey(s.raidCatchDateTierFive)
         // 하한이 1 인 이유는 **1인 레이드**다 — `2...4` 였을 때는 혼자 돈 레이드 전적이 불러오기에서
         // 통째로 사라진다(보스는 사람이 아니라 이 수에 들지 않는다).
         s.battleHistory = Array(s.battleHistory
@@ -449,6 +453,13 @@ enum SaveTransfer {
         // 포획 원장도 같은 부류다 — 잡은 개체는 박스에 영구히 남으므로 지우고 다시 잡는 쪽이
         // 지급보다 이득이 크다. 새 필드라 조건부 append 이고 `integrityVersion` 은 안 올린다.
         if !s.raidCatchDate.isEmpty { p.append("rc\(s.raidCatchDate)") }
+        // 3★·5★ 전용 원장(#270) — 위 둘과 같은 이유로 조건부 append, `integrityVersion` 안 올림.
+        // 접두를 `rd`/`rc` 와 겹치지 않게 고른다 — `.contains("|rd")` 처럼 부분 문자열로 검사하는
+        // 테스트(`testDefaultStateGainsNoRaidCanonicalSegment`)가 "rd3" 를 "rd" 로 오판하지 않도록.
+        if !s.raidRewardDateTierThree.isEmpty { p.append("r3d\(s.raidRewardDateTierThree)") }
+        if !s.raidRewardDateTierFive.isEmpty { p.append("r5d\(s.raidRewardDateTierFive)") }
+        if !s.raidCatchDateTierThree.isEmpty { p.append("c3d\(s.raidCatchDateTierThree)") }
+        if !s.raidCatchDateTierFive.isEmpty { p.append("c5d\(s.raidCatchDateTierFive)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
@@ -580,6 +591,11 @@ enum SaveTransfer {
         // 포획 원장도 계정 원장이다. 안 병합하면 맥 A 에서 잡고 내보내 맥 B 로 불러오는 것만으로
         // 같은 날 두 마리가 되고, 이쪽은 지갑이 아니라 박스에 영구히 쌓인다.
         state.raidCatchDate = max(imported.raidCatchDate, current.raidCatchDate)
+        // 3★·5★ 전용 원장(#270)도 같은 이유로 병합한다.
+        state.raidRewardDateTierThree = max(imported.raidRewardDateTierThree, current.raidRewardDateTierThree)
+        state.raidRewardDateTierFive = max(imported.raidRewardDateTierFive, current.raidRewardDateTierFive)
+        state.raidCatchDateTierThree = max(imported.raidCatchDateTierThree, current.raidCatchDateTierThree)
+        state.raidCatchDateTierFive = max(imported.raidCatchDateTierFive, current.raidCatchDateTierFive)
         // 체육관 방어 원장도 같은 부류다. 같은 날이면 **많이 받은 쪽**을 남긴다 — 적은 쪽을 쓰면
         // 기기를 옮기는 것만으로 하루 상한이 되살아난다.
         (state.gymDefenseRewardDate, state.gymDefenseRewardToday) = Self.mergedGymDefenseLedger(

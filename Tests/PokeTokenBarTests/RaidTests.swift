@@ -34,7 +34,7 @@ final class RaidTests: XCTestCase {
     private func boss(tier: RaidTier = .one, dayKey: String = "2026-09-02",
                       speed: Int = 1) -> MultiplayerFighter {
         var snapshot = tank(level: tier.bossLevel, speed: speed)
-        snapshot.speciesID = RaidBoss.speciesID(dayKey: dayKey)
+        snapshot.speciesID = RaidBoss.speciesID(dayKey: dayKey, tier: tier)
         snapshot.moves = [tackle(power: 40)]
         return RaidBoss.bossFighter(tier: tier, snapshot: snapshot)
     }
@@ -43,8 +43,26 @@ final class RaidTests: XCTestCase {
 
     /// 같은 날은 모두에게 같은 보스다. 이게 깨지면 게스트의 오늘자 검증이 정상 호스트를 거절한다.
     func testTodaysBossIsDeterministicPerDayKey() {
-        XCTAssertEqual(RaidBoss.speciesID(dayKey: "2026-09-02"), RaidBoss.speciesID(dayKey: "2026-09-02"))
-        XCTAssertTrue(RaidBoss.speciesPool.contains(RaidBoss.speciesID(dayKey: "2026-09-02")))
+        for tier in RaidTier.allCases {
+            XCTAssertEqual(RaidBoss.speciesID(dayKey: "2026-09-02", tier: tier),
+                           RaidBoss.speciesID(dayKey: "2026-09-02", tier: tier))
+            XCTAssertTrue(RaidBoss.speciesPool(for: tier).contains(
+                RaidBoss.speciesID(dayKey: "2026-09-02", tier: tier)))
+        }
+    }
+
+    /// **회귀(#270)**: 티어마다 풀이 갈리므로 같은 날이어도 티어가 다르면 보스도 다르다(각 풀이
+    /// 서로소라 우연히 같은 값이 나올 수도 없다). 이게 깨지면 1★와 5★가 다시 같은 종을 내고,
+    /// 티어를 나눈 의미가 사라진다.
+    func testEachTierDrawsFromItsOwnPool() {
+        for dayKey in ["2026-09-02", "2026-09-20", "2026-12-25"] {
+            let byTier = RaidTier.allCases.map { RaidBoss.speciesID(dayKey: dayKey, tier: $0) }
+            XCTAssertEqual(Set(byTier).count, RaidTier.allCases.count,
+                           "\(dayKey): 티어마다 다른 종이어야 한다")
+        }
+        XCTAssertTrue(Set(RaidBoss.uncommonSpeciesPool).isDisjoint(with: RaidBoss.rareSpeciesPool))
+        XCTAssertTrue(Set(RaidBoss.uncommonSpeciesPool).isDisjoint(with: RaidBoss.legendarySpeciesPool))
+        XCTAssertTrue(Set(RaidBoss.rareSpeciesPool).isDisjoint(with: RaidBoss.legendarySpeciesPool))
     }
 
     /// 날짜가 바뀌면 로테이션이 돈다. 한 해를 돌려 **풀의 절반 이상**이 실제로 나오는지 본다 —
@@ -52,16 +70,18 @@ final class RaidTests: XCTestCase {
     func testBossRotatesAcrossTheYear() {
         var seen = Set<Int>()
         for month in 1...12 {
-            for day in 1...28 { seen.insert(RaidBoss.speciesID(dayKey: String(format: "2026-%02d-%02d", month, day))) }
+            for day in 1...28 {
+                seen.insert(RaidBoss.speciesID(dayKey: String(format: "2026-%02d-%02d", month, day), tier: .three))
+            }
         }
-        XCTAssertGreaterThan(seen.count, RaidBoss.speciesPool.count / 2,
+        XCTAssertGreaterThan(seen.count, RaidBoss.speciesPool(for: .three).count / 2,
                              "1년치 날짜가 풀의 절반도 못 밟으면 로테이션이 아니다")
     }
 
     /// 자리를 바꾼 날짜 키가 같은 보스를 내면 안 된다 — 자릿수를 안 보는 합산 해시의 전형적 붕괴다.
     func testDayKeyHashIsPositionSensitive() {
-        XCTAssertNotEqual(RaidBoss.speciesID(dayKey: "2026-09-02"),
-                          RaidBoss.speciesID(dayKey: "2026-09-20"))
+        XCTAssertNotEqual(RaidBoss.speciesID(dayKey: "2026-09-02", tier: .three),
+                          RaidBoss.speciesID(dayKey: "2026-09-20", tier: .three))
     }
 
     func testNoonSplitsTheDayIntoTwoDifferentBosses() {
@@ -72,8 +92,8 @@ final class RaidTests: XCTestCase {
 
         XCTAssertEqual(RaidBoss.periodKey(morning, calendar: calendar), "2026-09-07-am")
         XCTAssertEqual(RaidBoss.periodKey(afternoon, calendar: calendar), "2026-09-07-pm")
-        XCTAssertNotEqual(RaidBoss.speciesID(at: morning, calendar: calendar),
-                          RaidBoss.speciesID(at: afternoon, calendar: calendar))
+        XCTAssertNotEqual(RaidBoss.speciesID(at: morning, tier: .three, calendar: calendar),
+                          RaidBoss.speciesID(at: afternoon, tier: .three, calendar: calendar))
     }
 
     func testCatchRatesFollowRarity() {
@@ -370,7 +390,7 @@ final class RaidTests: XCTestCase {
         XCTAssertTrue(RaidBoss.validRaidStart(fighters: honest, tier: .five, dayKey: today))
 
         var wrongSpecies = boss(tier: .five, dayKey: today)
-        wrongSpecies.side.snapshot.speciesID = RaidBoss.speciesID(dayKey: today) == 129 ? 10 : 129
+        wrongSpecies.side.snapshot.speciesID = RaidBoss.speciesID(dayKey: today, tier: .five) == 129 ? 10 : 129
         XCTAssertFalse(RaidBoss.validRaidStart(fighters: [runner(), wrongSpecies],
                                                tier: .five, dayKey: today),
                        "오늘의 종이 아니면 거절한다")

@@ -31,12 +31,17 @@ enum RaidTier: Int, Codable, Sendable, CaseIterable {
     }
 
     /// 잡았을 때의 기본급(별의조각). 기여도 항이 여기에 비율로 붙으므로 이 값이 곧 티어의 단가다.
-    /// 기준선 — 일일 미션 합 800 · 이상한 사탕 5,000 · 알 20,000.
+    /// 기준선 — 알(보증 없음) 20,000.
+    ///
+    /// **세 티어를 혼자 다 돌아도(협동 보너스 없이) 알 하나 값이 나오게 잡았다(#270).** 티어를
+    /// 나눠 각자 원장을 준 뒤로 세 번 다 도는 유인이 생겼는데, 예전 기본급(300+800+2,000=3,100)
+    /// 으로는 반나절 다 채워도 알 값의 15% 뿐이었다 — 비율(1 : 2.5 : 6.5)은 옛 값과 거의 같게
+    /// 유지하고 절대값만 올렸다.
     var baseReward: Int {
         switch self {
-        case .one: 300
-        case .three: 800
-        case .five: 2_000
+        case .one: 2_000
+        case .three: 5_000
+        case .five: 13_000
         }
     }
 
@@ -136,7 +141,12 @@ enum RaidBoss {
     static let turnBonusPerTurn = 10
     /// 살아남은 러너 1명당 보너스.
     static let survivorBonusPerRunner = 50
-    /// 협동 항이 붙기 시작하는 머릿수. 이 값 미만이면 정산은 기본급 하나로 접히고 포획도 없다.
+    /// 협동 항이 붙기 시작하는 머릿수. 이 값 미만이면 정산은 기본급 하나로 접힌다.
+    ///
+    /// **포획은 이 값과 무관하다.** 예전엔 이 자리에 "포획도 없다" 고 적혀 있었는데, 그걸 실제로
+    /// 막는 코드가 없었다 — `drawRaidCatcher` 는 인원수를 안 보고 이탈자(`hasLeft`)만 거른다.
+    /// `testASoloWinGetsTheSameRarityCatchChance` 가 혼자 3★ 를 깨고도 잡히는 것을 이미 검증하고
+    /// 있었다. 별·인원과 무관하게 클리어(그 반나절·그 티어의 첫 승리)만 하면 포획 추첨이 돈다.
     static let minimumCoopRunners = 2
 
     /// 이 머릿수에 협동 항이 붙나. **정산과 화면이 같은 술어를 본다** — 화면이 "협동 보너스는 2명
@@ -154,18 +164,34 @@ enum RaidBoss {
 
     /// 보스가 될 수 있는 종. **큐레이션이다** — 전 범위 균등 추첨은 "오늘의 보스: 캐터피" 를 만든다.
     /// 1~5세대(PokéAPI 1...649) 안에서 고른다.
-    static let speciesPool = [
-        3, 6, 9, 65, 94, 130, 131, 143, 149, 150,
-        212, 229, 248, 249, 250, 257, 260, 282, 289, 373,
-        376, 384, 392, 445, 448, 483, 484, 487, 635, 643,
-        644, 646
+    ///
+    /// **티어마다 다른 풀을 쓴다(#270).** 예전엔 티어와 무관하게 반나절 보스가 하나였다 — 1★로도
+    /// 5★와 같은 종·같은 포획 확률을 얻으니, 사람을 더 모아야 하는 것 말고는 5★를 돌 이유가
+    /// 없었다. 이제 1★=고급, 3★=희귀, 5★=전설로 갈라 티어마다 고유한 포획 기회를 준다.
+    static let uncommonSpeciesPool = [
+        3, 6, 9, 94, 131, 143, 212, 229, 257, 282, 392
+    ]
+    static let rareSpeciesPool = [
+        65, 130, 149, 248, 260, 289, 373, 376, 445, 448, 635
+    ]
+    static let legendarySpeciesPool = [
+        150, 249, 250, 384, 483, 484, 487, 643, 644, 646
     ]
 
-    /// 현재 큐레이션 풀의 공식 희귀도. 일반 등급은 레이드 풀에 없다.
+    /// 티어가 뽑는 풀. `speciesID(dayKey:tier:)` 가 이 풀 안에서만 고른다.
+    static func speciesPool(for tier: RaidTier) -> [Int] {
+        switch tier {
+        case .one: uncommonSpeciesPool
+        case .three: rareSpeciesPool
+        case .five: legendarySpeciesPool
+        }
+    }
+
+    /// 현재 큐레이션 풀의 공식 희귀도. 일반 등급은 레이드 풀에 없다 — 풀이 곧 티어를 가르므로
+    /// 종만 보고도 등급이 정해진다.
     static func rarity(speciesID: Int) -> Rarity {
-        let legendary: Set<Int> = [150, 249, 250, 384, 483, 484, 487, 643, 644, 646]
-        if legendary.contains(speciesID) { return .legendary }
-        return speciesID == 65 ? .uncommon : .rare
+        if legendarySpeciesPool.contains(speciesID) { return .legendary }
+        return uncommonSpeciesPool.contains(speciesID) ? .uncommon : .rare
     }
 
     static func catchPercent(for rarity: Rarity) -> Int {
@@ -206,18 +232,25 @@ enum RaidBoss {
     }
 
     /// 오늘의 보스 종. 플레이어는 고를 수 없다 — 고르게 두면 모두가 가장 이득인 하나만 판다.
-    static func speciesID(dayKey: String) -> Int {
-        var rng = SplitMix64(seed: seed(dayKey: dayKey))
-        let index = Int(rng.next() % UInt64(speciesPool.count))
-        guard dayKey.hasSuffix("-pm") else { return speciesPool[index] }
-        let morningKey = String(dayKey.dropLast(2)) + "am"
+    ///
+    /// 시드를 **티어로도 가른다**(`seed(dayKey:) ^ tier.rawValue` 대신 dayKey 에 접미를 붙인다 —
+    /// 같은 시드 계열을 재사용하는 다른 자리(`seed(dayKey:)` 를 직접 쓰는 코드)와 우연히 부딪히지
+    /// 않게 완전히 별도 문자열로 해시한다). 안 가르면 세 티어가 매번 같은 종을 뽑아 풀을 나눈
+    /// 의미가 없어진다.
+    static func speciesID(dayKey: String, tier: RaidTier) -> Int {
+        let pool = speciesPool(for: tier)
+        let tierKey = "\(dayKey)-t\(tier.rawValue)"
+        var rng = SplitMix64(seed: seed(dayKey: tierKey))
+        let index = Int(rng.next() % UInt64(pool.count))
+        guard dayKey.hasSuffix("-pm") else { return pool[index] }
+        let morningKey = String(dayKey.dropLast(2)) + "am-t\(tier.rawValue)"
         var morningRNG = SplitMix64(seed: seed(dayKey: morningKey))
-        let morningIndex = Int(morningRNG.next() % UInt64(speciesPool.count))
-        return speciesPool[index == morningIndex ? (index + 1) % speciesPool.count : index]
+        let morningIndex = Int(morningRNG.next() % UInt64(pool.count))
+        return pool[index == morningIndex ? (index + 1) % pool.count : index]
     }
 
-    static func speciesID(at date: Date, calendar: Calendar = .current) -> Int {
-        speciesID(dayKey: periodKey(date, calendar: calendar))
+    static func speciesID(at date: Date, tier: RaidTier, calendar: Calendar = .current) -> Int {
+        speciesID(dayKey: periodKey(date, calendar: calendar), tier: tier)
     }
 
     /// 참가자마다 독립 포획 판정을 하되 모든 피어가 같은 순서와 결과를 계산한다.
@@ -268,7 +301,7 @@ enum RaidBoss {
     /// 방 전원이 5★ 보상을 30초 만에 받는다.
     static func validBoss(_ fighter: MultiplayerFighter, tier: RaidTier, dayKey: String) -> Bool {
         fighter.id == bossID && fighter.team == .blue
-            && fighter.side.snapshot.speciesID == speciesID(dayKey: dayKey)
+            && fighter.side.snapshot.speciesID == speciesID(dayKey: dayKey, tier: tier)
             && fighter.side.snapshot.level == tier.bossLevel
             && fighter.side.hp == tier.bossHP
             && fighter.side.status == nil && fighter.side.confusionTurns == 0
