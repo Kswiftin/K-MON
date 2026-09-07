@@ -296,7 +296,10 @@ enum MultiplayerValidation {
         guard moves.count <= 4 else { return false }
         return moves.allSatisfy {
             (0...turnDamageCap).contains($0.power) && (1...100).contains($0.pp)
-                && ($0.accuracy.map { (1...100).contains($0) } ?? true)
+                // 0 을 반려하지 않는다 — PokéAPI 가 필중 기술에 싣는 값이라, 구버전 피어와 옛
+                // 세이브에 그대로 남아 있다(`MoveSpec.neverMisses`). 여기서 자르면 그 기술 하나가
+                // **무브셋 전체를 반려시켜** 상대 팀이 입장에서 막힌다.
+                && ($0.accuracy.map { (0...100).contains($0) } ?? true)
                 // 상태 부여 확률은 상대가 보내오는 값이다 — 범위를 벗어나면 매번 확정 부여가 된다.
                 && ($0.ailmentChance.map { (0...100).contains($0) } ?? true)
                 && ($0.statChance.map { (0...100).contains($0) } ?? true)

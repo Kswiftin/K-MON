@@ -27,7 +27,7 @@ final class BattleAssumptionGuardTests: XCTestCase {
         "lowKick", "grassKnot",             // 격투 · 풀 (체중 미수신)
         "heavySlam", "heatCrash",           // 강철 · 불꽃 (체중 미수신)
         "counter", "mirrorCoat",            // 격투 · 에스퍼 (맞은 게 없음)
-        "metalBurst",                       // 강철 (맞은 게 없음)
+        "metalBurst", "comeuppance",        // 강철 · 악 (맞은 게 없음)
         "guillotine", "hornDrill",          // 노말 (레벨 우위)
         "fissure", "sheerCold",             // 땅 · 얼음 (레벨 우위)
     ]
@@ -42,6 +42,7 @@ final class BattleAssumptionGuardTests: XCTestCase {
         "lowKick", "grassKnot",
         "heavySlam", "heatCrash",
         "trumpCard",
+        "hardPress",                        // 단발기 — 히트마다 다시 뽑히지 않는다
         "magnitude",
     ]
 

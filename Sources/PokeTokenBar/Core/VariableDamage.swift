@@ -39,6 +39,9 @@ enum VariableDamage: Equatable, Sendable {
         case MoveID.wringOut, MoveID.crushGrip:
             return .power(targetHealthPower(defender))
         case MoveID.punishment:   return .power(punishmentPower(defender))
+        // 하드프레스는 크러시그립과 같은 식이고 상한만 100 이다. PokéAPI 는 위력을 **0** 으로 주는데
+        // (`null` 이 아니다) 그대로 두면 데미지가 0 으로 접혀 기술명만 찍히고 아무 일도 안 일어난다.
+        case MoveID.hardPress:    return .power(targetHealthPower(defender, max: 100))
         case MoveID.lowKick, MoveID.grassKnot:
             // 체중을 못 받아왔으면 **실패시킨다.** 0 으로 접으면 "가장 가벼움"이 되어 모든 상대에게
             // 최저 위력이 나가고, 그게 맞는 값인지 화면에서 구별할 수 없다.
@@ -58,8 +61,8 @@ enum VariableDamage: Equatable, Sendable {
             return counterDamage(attacker, matching: .physical, multipliedBy: 2)
         case MoveID.mirrorCoat:
             return counterDamage(attacker, matching: .special, multipliedBy: 2)
-        case MoveID.metalBurst:
-            // 분류를 가리지 않는다. 배율만 1.5 배로 낮다.
+        case MoveID.metalBurst, MoveID.comeuppance:
+            // 분류를 가리지 않는다. 배율만 1.5 배로 낮다. 인과응보는 9세대판 메탈버스트라 규칙이 같다.
             guard let hit = attacker.lastHitThisTurn else { return .noEffect }
             return .fixedHP(max(1, hit.amount * 3 / 2))
 
@@ -68,7 +71,10 @@ enum VariableDamage: Equatable, Sendable {
         case MoveID.seismicToss, MoveID.nightShade:
             return .fixedHP(attacker.snapshot.level)
         case MoveID.psywave:      return .fixedHP(psywaveDamage(attacker, rng: &rng))
-        case MoveID.superFang:    return .fixedHP(max(1, defender.hp / 2))
+        // 황폐가는 상대 **현재** HP 의 절반이다(깨물어부수기와 같은 식). PokéAPI 가 주는 위력 1 을
+        // 그대로 쓰면 레벨과 무관하게 한 자릿수 데미지가 나온다.
+        case MoveID.superFang, MoveID.ruination:
+            return .fixedHP(max(1, defender.hp / 2))
         // 상대를 내 HP 까지 끌어내린다 — 내가 더 건강하면 아무 일도 없다(0 은 `.damage` 를 안 낸다).
         case MoveID.endeavor:     return .fixedHP(max(0, defender.hp - attacker.hp))
         case MoveID.finalGambit:  return .fixedHP(attacker.hp)
@@ -117,9 +123,10 @@ enum VariableDamage: Equatable, Sendable {
         }
     }
 
-    /// 목조르기·크러시그립 — 상대 HP 가 많을수록 세다.
-    static func targetHealthPower(_ defender: BattleSide) -> Int {
-        max(1, 120 * defender.hp / max(1, defender.stats.hp))
+    /// 목조르기·크러시그립·하드프레스 — 상대 HP 가 많을수록 세다. 상한만 기술마다 다르다
+    /// (크러시그립 계열 120, 하드프레스 100).
+    static func targetHealthPower(_ defender: BattleSide, max ceiling: Int = 120) -> Int {
+        Swift.max(1, ceiling * defender.hp / Swift.max(1, defender.stats.hp))
     }
 
     /// 응징 — 상대가 **올린** 랭크만 센다. 내린 랭크까지 세면 상대를 깎아 놓고 응징이 약해진다.
@@ -222,6 +229,9 @@ enum VariableDamage: Equatable, Sendable {
         static let electroBall = 486
         static let finalGambit = 515
         static let heatCrash = 535
+        static let ruination = 877
+        static let comeuppance = 894
+        static let hardPress = 912
     }
 
     /// 아직 모델링하지 않은 가변 위력 기술 — **무브셋 후보에서 뺀다.**

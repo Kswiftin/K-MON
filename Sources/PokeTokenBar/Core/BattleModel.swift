@@ -345,6 +345,16 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
         return ailment.flatMap(Status.init(ailment:))
     }
 
+    /// 이 명중률이 **필중**을 뜻하는가 — 이 규칙의 정본이다.
+    ///
+    /// PokéAPI 는 안 빗나가는 기술에 null 이 아니라 **0** 을 싣는 경우가 있다(타키온커터·파이어월·
+    /// 드래곤치어). 그대로 읽으면 명중 0% 라 그 기술은 영영 빗나간다. 0% 명중인 기술은 도감에
+    /// 없으므로 0 은 언제나 "명중 판정을 안 탄다" 는 뜻이다.
+    ///
+    /// `from` 이 디코딩할 때 nil 로 접지만 판정도 같은 규칙을 본다 — 옛 세이브와 구버전 피어가
+    /// 이미 0 을 실어 보내고 있어, 디코딩만 고치면 그 데이터는 계속 빗나간다.
+    static func neverMisses(_ accuracy: Int?) -> Bool { (accuracy ?? 0) <= 0 }
+
     /// 2차효과 확률의 기본값 규칙 — **상태·랭크가 이 한 곳을 공유한다.** 명시 확률이 있으면 그
     /// 값이고, 없으면 변화기는 100(효과가 기술 본체라 PokéAPI 가 0 을 준다) 공격기는 0 이다.
     /// 복제해 두면 한쪽만 고쳐도 컴파일·테스트가 아무것도 알려주지 않고 두 축이 갈라진다.
@@ -855,7 +865,12 @@ enum BattleEngine {
     ///      전부 표·정수 계산이라 rng 소비 순서는 그대로지만 같은 입력의 데미지가 달라진다.
     /// 20 = 기절 뒤 강제 교체는 턴 행동이 아니다. 같은 턴에 새 포켓몬의 기술을 다시 선택한다.
     ///      일반 교체와 달리 상대의 단독 공격·턴 종료 잔뎀을 발생시키지 않는다.
-    static let rulesVersion = 21
+    /// 22 = PokéAPI 결손을 쇼다운 표로 메운다(`ShowdownMoveData`) + 명중률 0 을 필중으로 읽는다
+    ///      + 하드프레스·황폐가·인과응보. **rng 소비가 갈린다**: 보정으로 다단기가 된 기술
+    ///      (타키온커터 2히트·파퓰레이션밤 10히트 …)은 명중 뒤에 히트 수를 뽑고 히트마다 급소·난수를
+    ///      다시 뽑으므로, 구버전은 같은 기술을 1히트로 보고 그 뒤 모든 판정이 어긋난다.
+    ///      명중률 0 도 값이 아니라 **경로**가 바뀐다 — 구버전은 명중 rng 를 뽑고 늘 빗나갔다.
+    static let rulesVersion = 22
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -1059,7 +1074,7 @@ enum BattleEngine {
     /// 깎으므로 부호를 뒤집어 같은 표를 읽는다. 100 초과는 그대로 둔다(안 빗나간다는 뜻이고,
     /// Gen 2 의 1/256 miss 는 §3.3 대로 뺐다).
     static func hitChance(of move: MoveSpec, attacker: BattleSide, defender: BattleSide) -> Int? {
-        guard let accuracy = move.accuracy else { return nil }
+        guard !MoveSpec.neverMisses(move.accuracy), let accuracy = move.accuracy else { return nil }
         let withAccuracy = accuracy * StatStages.accuracyPercent(stage: attacker.stage(.accuracy)) / 100
         return withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
     }

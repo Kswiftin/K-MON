@@ -943,7 +943,9 @@ extension MoveSpec {
         }
         let spec = MoveSpec(id: dto.id, names: names, type: type,
                         power: dto.power ?? 0, damageClass: damageClass,
-                        accuracy: dto.accuracy, pp: dto.pp ?? 10,
+                        // 0 은 "명중 판정을 안 탄다" 는 뜻이다 — `MoveSpec.neverMisses` 참조.
+                        accuracy: MoveSpec.neverMisses(dto.accuracy) ? nil : dto.accuracy,
+                        pp: dto.pp ?? 10,
                         descriptions: descriptions, priority: dto.priority,
                         critRate: dto.meta?.crit_rate,
                         ailment: ailment, ailmentChance: dto.meta?.ailment_chance,
@@ -959,6 +961,7 @@ extension MoveSpec {
                         drain: dto.meta?.drain ?? 0, healing: dto.meta?.healing ?? 0,
                         flinchChance: dto.meta?.flinch_chance ?? 0,
                         minHits: dto.meta?.min_hits, maxHits: dto.meta?.max_hits)
+            .applyingShowdownOverrides()
         // 와이어 천장을 넘는 기술은 **상대가 반려한다** — 내 화면엔 멀쩡히 보이는데 대전만 안 된다.
         // 도감은 원격이라 코드를 안 건드려도 이 날이 온다. ailment 와 같은 규칙으로 한 번 남긴다.
         if MultiplayerValidation.exceedsTurnDamageCap(spec) {
