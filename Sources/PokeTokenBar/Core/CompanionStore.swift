@@ -1430,6 +1430,7 @@ final class CompanionStore {
             // 모험 중 파티 전원이 교환·졸업으로 떠났다면 기존의 "받을 개체 없음" 규칙대로
             // 메인 몫 전량을 초과 경험치로 환산한다.
             overflow += reward.experience
+            state.starPieces += PokemonBalance.starPieces(forOverflowExperience: reward.experience)
         }
         let sharedAmount = reward.experience * 3 / 10
         for id in recipients.dropFirst() {
