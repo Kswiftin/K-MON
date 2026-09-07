@@ -155,8 +155,9 @@ pokedoro party | mon | dex    Your Pokémon · one Pokémon in detail · Pokéde
 pokedoro bag | shop | goals   Bag · shop stock · Pokédex goals and achievements
 pokedoro watch                Full-screen live view
 pokedoro start [25|50|90]     Start a focus session (stop to end, claim to collect)
+pokedoro learn …              Learn moves · Heart Scale choices · use Technical Machines
 pokedoro wave …               A wave run (start · move · ball · pick · route)
-pokedoro raid …               Discover · create · join · spectate co-op raids; pick a representative
+pokedoro raid …               Discover · create · join · spectate co-op raids; pick a representative · ready up
 pokedoro battle | room …      LAN battles; room ready-up · combat · settlement
 pokedoro gym …                Challenge-tab Gym Raids: list · team selection · challenge
 pokedoro gym contest …        LAN Gym Takeover: discover · open · challenge · spectate · manage
@@ -164,6 +165,10 @@ pokedoro trade | auction …    Trade negotiation · auction market
 pokedoro home …               Memory Home — mood · notes · furniture
 pokedoro help                 The full command list
 ```
+
+<p align="center"><img src="assets/screenshot-terminal-tui.png" width="360" alt="Terminal commands for co-op raid rooms and move learning"></p>
+
+You can discover, join, and ready up in co-op raid rooms, then complete move learning—including Heart Scale choices and Technical Machines—with `learn`.
 
 For a tmux status bar:
 
