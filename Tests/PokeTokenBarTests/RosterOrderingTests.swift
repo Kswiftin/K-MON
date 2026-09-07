@@ -131,13 +131,22 @@ final class RosterOrderingTests: XCTestCase {
                       "해석 전엔 필터에 올릴 게 없다")
     }
 
-    /// 팀 고르기는 높은 레벨이 기본이되, 오름·내림·부화순을 모두 거쳐 되돌릴 수 있다.
-    func testTeamPickerDefaultsToDescendingLevelAndCyclesToCaughtOrder() {
-        XCTAssertEqual(TeamPickerLevelOrder.defaultOrder, .descending)
-        XCTAssertEqual(TeamPickerLevelOrder.descending.next, .ascending)
-        XCTAssertEqual(TeamPickerLevelOrder.ascending.next, .caught)
-        XCTAssertEqual(TeamPickerLevelOrder.caught.next, .descending,
-                       "되돌릴 수 없으면 한 번 누른 사용자는 부화순을 잃는다")
+    func testDuplicateSpeciesFilterReturnsEveryMemberOfRepeatedSpecies() {
+        let box = [mon(25, level: 3), mon(4), mon(25, level: 9), mon(7), mon(7)]
+        let duplicateIDs = RosterOrdering.duplicateSpeciesIDs(in: box)
+        XCTAssertEqual(duplicateIDs, Set([7, 25]))
+        XCTAssertEqual(box.filter { duplicateIDs.contains($0.currentID) }.map(\.currentID),
+                       [25, 25, 7, 7], "중복 종당 하나가 아니라 해당 개체를 모두 보여 준다")
+    }
+
+    func testSelectionListsAreAlwaysAlphabeticalAndStableForDuplicateNames() {
+        var secondBulbasaur = mon(1, level: 9, name: "이상해씨")
+        secondBulbasaur.nickname = "나리"
+        let box = [mon(25, name: "피카츄"), mon(1, level: 3, name: "이상해씨"),
+                   mon(4, name: "파이리"), secondBulbasaur]
+        let arranged = RosterOrdering.alphabetizedForSelection(box, language: .ko)
+        XCTAssertEqual(arranged.map { $0.nickname ?? RosterOrdering.displayName($0, language: .ko) },
+                       ["나리", "이상해씨", "파이리", "피카츄"])
     }
 
     /// 정렬은 **탭을 떠나도 남아야 한다.** 뷰의 `@State` 에 있던 동안 홈에 갔다 오는 것만으로
@@ -161,11 +170,4 @@ final class RosterOrderingTests: XCTestCase {
         XCTAssertFalse(reopened.rosterSortAscending)
     }
 
-    /// 아이콘이 방향을 말한다 — 세 상태가 같은 그림이면 지금 어느 정렬인지 화면에서 알 수 없다.
-    func testEachTeamPickerLevelOrderShowsItsOwnIcon() {
-        let icons = TeamPickerLevelOrder.allCases.map(\.iconName)
-        XCTAssertEqual(Set(icons).count, TeamPickerLevelOrder.allCases.count)
-        XCTAssertEqual(TeamPickerLevelOrder.ascending.iconName, "arrow.up")
-        XCTAssertEqual(TeamPickerLevelOrder.descending.iconName, "arrow.down")
-    }
 }

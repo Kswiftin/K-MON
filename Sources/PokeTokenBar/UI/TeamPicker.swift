@@ -24,8 +24,6 @@ struct TeamPicker: View {
     @State private var monTypes: [Int: [PokemonType]] = [:]
     /// 종 id → 표시 이름. 스프라이트만으로는 무엇인지 알아보기 어렵다.
     @State private var speciesNames: [Int: String] = [:]
-    /// 칩 줄의 레벨 정렬. 전투에는 키운 개체를 먼저 고르는 편이 자연스러워 높은 레벨이 기본이다.
-    @State private var levelOrder: TeamPickerLevelOrder = .defaultOrder
     /// 기술을 펼쳐 볼 개체 — 칩이나 고른 칸을 누르면 그 개체로 바뀐다.
     /// 처음엔 비어 있다. 아무것도 안 눌렀는데 자리를 잡아먹으면 배틀 탭 세로 예산만 축낸다.
     @State private var previewedMonID: UUID?
@@ -58,18 +56,8 @@ struct TeamPicker: View {
         mon.nickname ?? speciesNames[mon.currentID] ?? "#\(mon.currentID)"
     }
 
-    /// 레벨 정렬 — 순서 규칙은 박스와 **같은** `RosterOrdering` 을 쓴다. 여기서 다시 구현하면
-    /// 같은 "레벨순" 이 화면마다 다른 순서가 된다(동레벨 tie-break 이 특히 갈린다).
     private func arranged(_ mons: [MonState]) -> [MonState] {
-        switch levelOrder {
-        case .caught:     return mons
-        case .ascending:  return RosterOrdering.arrange(mons, sort: .level, ascending: true)
-        case .descending: return RosterOrdering.arrange(mons, sort: .level, ascending: false)
-        }
-    }
-
-    private var levelOrderLabel: String {
-        levelOrder == .caught ? l.t("부화순", "Caught", "ふ化順") : l.t("레벨순", "Level", "レベル順")
+        RosterOrdering.alphabetizedForSelection(mons, language: store.language, names: speciesNames)
     }
 
     /// 누른 개체는 팀에 넣고 빼는 것과 **별개로** 기술을 펼친다. 뺄 때도 펼친 채로 두는 이유는,
@@ -306,7 +294,6 @@ struct TeamPicker: View {
             }
             .menuStyle(.borderlessButton).fixedSize()
             .disabled(availableTypes.isEmpty)
-            levelSortButton
             Spacer(minLength: 8)
             if pageCount > 1 {
                 Button { page = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
@@ -323,54 +310,6 @@ struct TeamPicker: View {
         .frame(height: 16)   // 페이저가 없는 페이지에서도 아래 여백이 같도록 자리를 예약한다.
     }
 
-    /// 레벨 정렬 버튼 — 누를 때마다 부화순 → 레벨 오름 → 레벨 내림으로 돈다.
-    ///
-    /// 오름·내림 **두 상태만** 두면 원래 순서(부화순)로 돌아갈 길이 없어진다. 지금까지 이 줄의
-    /// 유일한 순서였으므로 그 자리를 없애지 않는다. 방향은 아이콘이 말하므로 글자에는 화살표를
-    /// 넣지 않는다 — 좁은 줄에서 같은 정보를 두 번 그리게 된다.
-    private var levelSortButton: some View {
-        Button {
-            levelOrder = levelOrder.next
-            page = 0
-        } label: {
-            HStack(spacing: 2) {
-                Image(systemName: levelOrder.iconName).font(.system(size: 9))
-                Text(levelOrderLabel)
-            }
-            .font(.caption2)
-            .foregroundStyle(levelOrder == .caught ? AnyShapeStyle(.secondary)
-                                                   : AnyShapeStyle(Color.accentColor))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(l.t("레벨 정렬", "Sort by level", "レベルで並べ替え"))
-    }
-}
-
-/// 팀 고르기 줄의 레벨 정렬 상태.
-///
-/// `caught` 는 저장 순서다. 기본은 높은 레벨순이지만, 레벨 오름·내림과 부화순을 모두 순환해
-/// 원하는 기준으로 되돌릴 수 있게 한다.
-enum TeamPickerLevelOrder: CaseIterable, Sendable {
-    case caught, ascending, descending
-
-    static let defaultOrder: TeamPickerLevelOrder = .descending
-
-    var next: TeamPickerLevelOrder {
-        switch self {
-        case .caught:     return .descending
-        case .descending: return .ascending
-        case .ascending:  return .caught
-        }
-    }
-
-    /// 박스 정렬 메뉴와 같은 아이콘 — 두 화면이 다른 그림을 쓰면 같은 기능으로 안 읽힌다.
-    var iconName: String {
-        switch self {
-        case .caught:     return "arrow.up.arrow.down"
-        case .ascending:  return "arrow.up"
-        case .descending: return "arrow.down"
-        }
-    }
 }
 
 /// 고른 팀의 한 칸 — 스프라이트에 출전 순서, 누르면 뺀다.

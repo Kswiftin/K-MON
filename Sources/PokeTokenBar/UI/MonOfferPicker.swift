@@ -17,9 +17,9 @@ struct MonOfferPicker: View {
     @State private var searchText = ""
 
     var body: some View {
-        let matches = mons.filter {
+        let matches = RosterOrdering.alphabetizedForSelection(mons.filter {
             PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(for: $0))
-        }
+        }, language: store.language)
         return VStack(alignment: .leading, spacing: 8) {
             PokemonSearchField(text: $searchText, l: store.l)
             if matches.contains(where: { store.isFavorite($0.id) }) {
