@@ -69,6 +69,9 @@ struct RogueRunView: View {
     @State private var evolutionCheckedWave = 0
     /// 방금 던진 볼의 결과. 사용자가 확인할 때까지 전투 화면을 붙잡는다.
     @State private var throwNotice: BallThrowNotice?
+    /// 방금 이 판의 클리어로 오늘의 알 보상을 받았는가. `recordResult` 가 한 번만 채운다 —
+    /// 이미 오늘 받은 뒤라면 `recordRunResult` 가 false 를 돌려주므로 조용히 넘어간다.
+    @State private var justEarnedDailyEgg = false
 
 
     var body: some View {
@@ -444,6 +447,9 @@ struct RogueRunView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(line).font(.callout)
             recordLine
+            if justEarnedDailyEgg {
+                Text(l.waveRunDailyEggEarned).font(.caption).foregroundStyle(.green)
+            }
             // 끝난 판은 여기서 비운다 — 남겨 두면 다음에 던전 탭을 열 때 결과 화면이 다시 뜬다.
             Button(l.battleClose) { store.rogueRun = nil; onClose() }
         }
@@ -466,8 +472,8 @@ struct RogueRunView: View {
     private func recordResult() {
         guard let run = store.rogueRun, !run.resultRecorded,
               run.stage == .cleared || run.stage == .failed else { return }
-        store.recordRunResult(reachedWave: run.wave, cleared: run.stage == .cleared,
-                              tookOnlyRiskyRoutes: run.tookOnlyRiskyRoutes)
+        justEarnedDailyEgg = store.recordRunResult(reachedWave: run.wave, cleared: run.stage == .cleared,
+                                                   tookOnlyRiskyRoutes: run.tookOnlyRiskyRoutes)
         mutate { $0.markResultRecorded() }
     }
 
