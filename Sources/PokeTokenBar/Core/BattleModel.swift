@@ -675,6 +675,9 @@ enum DamageCause: String, Codable, Sendable, Equatable {
     /// volatile 하나에 원인 하나를 두는 이유는 로그다: "무엇에 맞았는지"를 잃으면 잔뎀이
     /// 전부 같은 줄로 읽혀, 조이기가 풀렸는데도 계속 깎이는 오구현이 화면에서 안 보인다.
     case trap, curse, nightmare, leechSeed
+    /// 교체로 나올 때 밟은 몫 — 압정뿌리기·스텔스록. 넷을 한 원인으로 묶는 이유는 문구다:
+    /// 어느 것을 밟았는지는 밟기 전에 나간 시작 줄이 이미 말한다.
+    case hazard
 }
 
 // MARK: - 배틀 전체에 걸리는 상태
@@ -791,24 +794,70 @@ enum BattleTeamSlot: Codable, Sendable, Equatable, Hashable {
 
 /// 한 진영에만 깔리는 상태 — 날씨·필드가 판 전체인 것과 다르다.
 ///
-/// 압정뿌리기 부류(입장 데미지)는 교체 진입 훅이 먼저라 아직 없다.
+/// 셋으로 갈린다.
 ///
-/// 뒤의 넷은 **편 방어기**다(와이드가드·퀵가드·니가하지마·트릭가드). 개인 방어(`BattleGuard`)와
-/// 달리 편 전체를 지키고 막는 기술의 종류가 갈린다. 한 턴짜리라 지속 턴도 1 이다.
+/// **장막·부적·순풍**은 자기 편에 깔리고 턴을 센다. 순풍만 데미지가 아니라 **턴 순서**를 바꾼다 —
+/// 그래서 `BattleEngine.orderingSpeed` 를 지나는 모드만 순풍을 본다(모드마다 순서 계산이 따로라,
+/// 새 모드가 직접 스피드를 읽으면 조용히 빠진다).
 ///
-/// 순풍만 데미지가 아니라 **턴 순서**를 바꾼다 — 그래서 `BattleEngine.orderingSpeed` 를 지나는
-/// 모드만 순풍을 본다(모드마다 순서 계산이 따로라, 새 모드가 직접 스피드를 읽으면 조용히 빠진다).
+/// **편 방어기** 넷(와이드가드·퀵가드·니가하지마·트릭가드)은 개인 방어(`BattleGuard`)와 달리 편
+/// 전체를 지키고 막는 기술의 종류가 갈린다. 한 턴짜리라 지속 턴도 1 이다.
+///
+/// **입장 데미지** 넷(끈적끈적네트·스텔스록·압정뿌리기·독압정)만 규칙이 셋 다 다르다:
+/// ①**상대 편**에 깔린다(어느 편인지는 데이터가 답한다 — `landsOnFoeSide`) ②턴이 지나도 걷히지
+/// 않고 **층**으로 쌓인다 ③효과는 기술을 쓴 턴이 아니라 **다음 교체**에 나온다
+/// (`BattleEngine.applyEntryHazards`). `allCases` 의 **선언 순서가 밟는 순서**다.
 enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
     case reflect, lightScreen, auroraVeil, safeguard, mist, luckyChant, tailwind
     case wideGuard, quickGuard, matBlock, craftyShield
+    /// 밟는 순서 그대로 적는다(본가 순서 — 끈적끈적네트 → 스텔스록 → 압정 → 독압정).
+    /// 순서를 바꾸면 같은 판에서 로그 줄 순서가 달라진다.
+    case stickyWeb, stealthRock, spikes, toxicSpikes
 
     /// 지속 턴. 장막·부적은 본가의 빛의점토가 없으므로 전부 5턴이고, 순풍만 4턴이다 —
     /// 한 턴 더 불면 그 턴의 선공이 통째로 뒤집힌다. 편 방어기는 개인 방어와 같이 한 턴이다.
+    ///
+    /// 입장 데미지는 **0** 이다 — 걷히지 않으므로 셀 턴이 없다. 저장하는 숫자도 남은 턴이 아니라
+    /// 층 수라, `BattleEngine.advanceField` 가 이 부류를 감소 루프에서 빼고 지나간다.
+    /// `default` 를 두지 않는다: 새 case 가 조용히 5턴이 되면 걷히지 않아야 할 것이 걷힌다.
     var duration: Int {
         switch self {
-        case .tailwind:                                       return 4
-        case .wideGuard, .quickGuard, .matBlock, .craftyShield: return 1
-        default:                                              return 5
+        case .tailwind:                                         return 4
+        case .wideGuard, .quickGuard, .matBlock, .craftyShield:  return 1
+        case .stickyWeb, .stealthRock, .spikes, .toxicSpikes:    return 0
+        case .reflect, .lightScreen, .auroraVeil,
+             .safeguard, .mist, .luckyChant:                     return 5
+        }
+    }
+
+    /// 교체로 새로 나오는 개체가 밟는 부류인가. 참이면 저장된 숫자가 남은 턴이 아니라 **층 수**다.
+    var isEntryHazard: Bool {
+        switch self {
+        case .stickyWeb, .stealthRock, .spikes, .toxicSpikes:   return true
+        case .reflect, .lightScreen, .auroraVeil, .safeguard, .mist, .luckyChant, .tailwind,
+             .wideGuard, .quickGuard, .matBlock, .craftyShield: return false
+        }
+    }
+
+    /// 쌓이는 층 수 상한. 상한이 없으면 매 턴 다시 깔아 교체가 즉사가 되고, 1 로 접으면
+    /// 압정·독압정이 본가보다 약한 채 두 번째 사용이 실패한다.
+    var maxLayers: Int {
+        switch self {
+        case .spikes:      return 3
+        case .toxicSpikes: return 2
+        case .stickyWeb, .stealthRock, .reflect, .lightScreen, .auroraVeil, .safeguard,
+             .mist, .luckyChant, .tailwind,
+             .wideGuard, .quickGuard, .matBlock, .craftyShield: return 1
+        }
+    }
+
+    /// **접지한 개체만** 밟는가. 스텔스록만 공중에 뜬 쪽도 맞는다(본가와 같다) — 나머지 셋은
+    /// 발밑에 놓인 것이라 비행·부유가 지난다(`BattleField.isGrounded`).
+    var hitsOnlyGrounded: Bool {
+        switch self {
+        case .spikes, .toxicSpikes, .stickyWeb: return true
+        case .stealthRock, .reflect, .lightScreen, .auroraVeil, .safeguard, .mist, .luckyChant,
+             .tailwind, .wideGuard, .quickGuard, .matBlock, .craftyShield: return false
         }
     }
 
@@ -817,7 +866,8 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
     var guardsTheTeam: Bool {
         switch self {
         case .wideGuard, .quickGuard, .matBlock, .craftyShield: return true
-        default:                                                return false
+        case .reflect, .lightScreen, .auroraVeil, .safeguard, .mist, .luckyChant, .tailwind,
+             .stickyWeb, .stealthRock, .spikes, .toxicSpikes:   return false
         }
     }
 
@@ -832,7 +882,8 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
         case .quickGuard:   return move.turnPriority > 0
         case .matBlock:     return move.damageClass != .status
         case .craftyShield: return move.damageClass == .status
-        default:            return false
+        case .reflect, .lightScreen, .auroraVeil, .safeguard, .mist, .luckyChant, .tailwind,
+             .stickyWeb, .stealthRock, .spikes, .toxicSpikes: return false
         }
     }
 
@@ -849,18 +900,27 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
         case "quickguard":   self = .quickGuard
         case "matblock":     self = .matBlock
         case "craftyshield": self = .craftyShield
+        case "stickyweb":    self = .stickyWeb
+        case "stealthrock":  self = .stealthRock
+        case "spikes":       self = .spikes
+        case "toxicspikes":  self = .toxicSpikes
         default:             return nil
         }
     }
 
     /// 이 상태를 까는 기술인가 — 날씨·필드와 같은 자리에서 데이터가 답한다.
-    ///
-    /// 여기 있는 일곱은 전부 **자기 편에** 깔린다. 상대 편에 깔리는 부류(압정뿌리기·스텔스록)는
-    /// 교체가 있어야 뜻이 있어 아직 없다 — 그때 `sideConditionTarget` 을 보는 분기가 같이 들어온다
-    /// (지금 미리 두면 아무도 밟지 않는 갈래다). 그 전제는
-    /// `ShowdownEffectTableTests` 가 데이터에서 확인한다.
     static func called(byMoveID id: Int) -> BattleSideCondition? {
         ShowdownMoveData.effects[id]?.sideCondition.flatMap(BattleSideCondition.init(showdownKey:))
+    }
+
+    /// 이 기술이 상태를 **상대 편에** 까는가 — 압정 부류가 그렇다.
+    ///
+    /// 열거형이 아니라 **기술**에 묻는 이유는 같은 상태를 양쪽에 까는 기술이 생길 수 있어서다
+    /// (쇼다운도 상태가 아니라 기술마다 `sideConditionTarget` 을 든다). 엔진이 열거형에서 편을
+    /// 파생하면 그 순간 데이터를 두 번 적는 셈이 되고, 한쪽만 바뀌면 조용히 어긋난다.
+    /// 이 대응이 데이터와 맞는지는 `ShowdownEffectTableTests` 가 확인한다.
+    static func landsOnFoeSide(moveID id: Int) -> Bool {
+        ShowdownMoveData.effects[id]?.sideConditionTarget == "foeSide"
     }
 
     /// 이 분류의 데미지를 반으로 깎는가. 오로라베일은 둘 다 깎는 대신 눈이 있어야 깔린다.
@@ -869,7 +929,9 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
         case .reflect:     return damageClass == .physical
         case .lightScreen: return damageClass == .special
         case .auroraVeil:  return damageClass != .status
-        default:           return false
+        case .safeguard, .mist, .luckyChant, .tailwind,
+             .wideGuard, .quickGuard, .matBlock, .craftyShield,
+             .stickyWeb, .stealthRock, .spikes, .toxicSpikes: return false
         }
     }
 }
@@ -1069,20 +1131,35 @@ struct BattleField: Sendable, Equatable {
     var weatherTurns = 0
     var terrain: BattleTerrain?
     var terrainTurns = 0
-    /// 편별로 깔린 상태와 남은 턴. 없는 키는 "안 깔렸다" 이므로 0 턴짜리 항목을 남기지 않는다 —
+    /// 편별로 깔린 상태와 그 숫자. 없는 키는 "안 깔렸다" 이므로 0 짜리 항목을 남기지 않는다 —
     /// 그래야 `has` 한 번으로 읽히고, 두 피어가 같은 순서로 훑는다(`allCases` 순).
+    ///
+    /// **숫자의 뜻이 부류마다 다르다**: 턴을 세는 상태는 남은 턴이고, 입장 데미지
+    /// (`BattleSideCondition.isEntryHazard`)는 쌓인 **층 수**다(걷히지 않으므로 셀 턴이 없다).
+    /// 자리를 나누지 않는 이유는 읽는 쪽이다 — `has`·순회·와이어가 한 벌이어야 새 부류가
+    /// 그 셋 중 하나에서만 빠지는 일이 없다. 읽을 때는 `layers(_:for:)` 로 뜻을 밝힌다.
     var sideConditions: [BattleTeamSlot: [BattleSideCondition: Int]] = [:]
 
     func has(_ condition: BattleSideCondition, for team: BattleTeamSlot) -> Bool {
         (sideConditions[team]?[condition] ?? 0) > 0
     }
 
+    /// 쌓인 층 수 — 입장 데미지만 1 보다 클 수 있다. 안 깔렸으면 0 이다.
+    func layers(_ condition: BattleSideCondition, for team: BattleTeamSlot) -> Int {
+        sideConditions[team]?[condition] ?? 0
+    }
+
     /// 진영 상태를 깐다. 이미 깔려 있으면 **실패한다**(날씨와 같은 이유 — 매 턴 다시 깔면 영구다).
     /// 오로라베일은 눈이 내릴 때만 깔린다.
+    ///
+    /// 입장 데미지만 다시 깔 수 있다 — **층 상한까지**다(`maxLayers`). 상한 위는 다른 상태와 같이
+    /// 실패라, 매 턴 다시 깔아도 교체 즉사가 되지 않는다.
     mutating func start(_ condition: BattleSideCondition, for team: BattleTeamSlot) -> Bool {
-        guard !has(condition, for: team) else { return false }
         guard condition != .auroraVeil || weather == .snow else { return false }
-        sideConditions[team, default: [:]][condition] = condition.duration
+        let current = layers(condition, for: team)
+        guard current < (condition.isEntryHazard ? condition.maxLayers : 1) else { return false }
+        sideConditions[team, default: [:]][condition] = condition.isEntryHazard ? current + 1
+                                                                               : condition.duration
         return true
     }
 
@@ -1457,6 +1534,11 @@ enum BattleEngine {
     ///      부류와 연속 실패 카운터를 공유하므로 방어를 쓴 다음 턴의 인내가 한 번 더 뽑는다.
     ///      `BattleEvent` 에 case 하나(`volatileTriggered`)가 늘어 구버전은 그 이벤트를
     ///      디코딩하지 못한다.
+    ///      + 입장 데미지 넷(압정뿌리기·독압정·스텔스록·끈적끈적네트) — **상대 편에** 깔리고
+    ///      교체로 나오는 개체가 밟는다. rng 소비는 갈리지 않지만(밟기는 난수를 안 쓴다) 같은
+    ///      입력의 HP·상태·랭크가 갈린다: 구버전은 교체할 때 아무 일도 없고, 층을 쌓는 두 번째
+    ///      사용이 실패로 접힌다. `BattleSideCondition` 에 case 넷, `DamageCause` 에 원인
+    ///      하나(`hazard`)가 늘어 구버전은 그 진영 상태와 그 데미지 줄을 디코딩하지 못한다.
     static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1560,6 +1642,64 @@ enum BattleEngine {
         // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
         // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.
         side.resetStages()
+    }
+
+    /// 필드에 **새로 나온** 개체가 자기 편에 깔린 입장 데미지를 밟는다.
+    ///
+    /// **왜 `prepareForSwitch` 의 짝이 따로 필요한가.** 물러나는 쪽의 정리는 개체 하나만 만지면
+    /// 끝나지만, 밟기는 판(`BattleField`)과 **어느 편의 자리인지**를 알아야 한다. 그 둘을 아는
+    /// 것은 모드뿐이라(모드마다 좌우가 다르고 개인전은 참가자 하나가 한 편) 인자로 받는다.
+    /// 출전을 내면서 이 함수를 빠뜨린 모드는 `BattleEntryHazardTests` 가 소스에서 찾아낸다 —
+    /// 한 곳만 빠지면 그 모드에서만 압정이 아무 일도 하지 않고 화면에는 정상으로 보인다.
+    ///
+    /// **난수를 쓰지 않는다.** `inflict` 를 부르지만 독·맹독은 카운터를 뽑지 않는 갈래라 소비가
+    /// 0 이다. 여기서 뽑으면 교체마다 두 피어의 소비가 갈려 그 뒤 모든 판정이 한 칸씩 밀린다.
+    /// (독 면역 판정을 `inflict` 에 맡기는 이유이기도 하다 — 면역 규칙의 정본은 한 곳이다.)
+    ///
+    /// 밟는 순서는 `BattleSideCondition.allCases` 의 선언 순서다(끈적끈적네트 → 스텔스록 →
+    /// 압정 → 독압정). 쓰러지면 남은 것은 밟지 않고 기절 줄로 끝낸다 — 계속 밟으면 쓰러진
+    /// 개체에 독이 붙어 재생과 엔진의 최종 상태가 갈린다.
+    static func applyEntryHazards(_ side: inout BattleSide, actor: BattleActor,
+                                  team: BattleTeamSlot, field: BattleField,
+                                  rng: inout SplitMix64) -> [BattleEvent] {
+        guard side.isAlive else { return [] }
+        var events: [BattleEvent] = []
+        let grounded = BattleField.isGrounded(side)
+        for condition in BattleSideCondition.allCases where condition.isEntryHazard {
+            let layers = field.layers(condition, for: team)
+            guard layers > 0, grounded || !condition.hitsOnlyGrounded else { continue }
+            switch condition {
+            case .stickyWeb:
+                let applied = side.changeStage(.spe, by: -1)
+                if applied != 0 { events.append(.boost(actor, .spe, applied)) }
+            case .stealthRock:
+                // 바위 상성으로 배율이 갈린다 — 1/8 을 기준으로 ×0.25 ~ ×4.
+                // 배율이 2의 거듭제곱뿐이라 `Double` 곱이 정확하다(두 피어가 같은 정수를 본다).
+                let multiplier = TypeChart.effectiveness(.rock, against: side.activeTypes)
+                events += hazardDamage(&side, actor: actor,
+                                       amount: Int(Double(side.stats.hp) * multiplier / 8.0))
+            case .spikes:
+                // 층에 따라 1/8·1/6·1/4 — 나누는 수가 10 − 2×층이다.
+                events += hazardDamage(&side, actor: actor, amount: side.stats.hp / (10 - 2 * layers))
+            case .toxicSpikes:
+                // 2층이면 맹독이다. 데미지는 없고 상태만 붙는다(잔뎀은 턴 끝이 낸다).
+                events += inflict(layers >= 2 ? .toxic : .poison, on: &side, actor: actor, rng: &rng)
+            case .reflect, .lightScreen, .auroraVeil, .safeguard, .mist, .luckyChant, .tailwind,
+                 .wideGuard, .quickGuard, .matBlock, .craftyShield:
+                continue                    // 입장 데미지가 아니다 — 위 `where` 가 이미 걸렀다
+            }
+            if !side.isAlive { break }
+        }
+        if !side.isAlive { events.append(.faint(actor)) }
+        return events
+    }
+
+    /// 밟아서 깎인 몫 한 번. 최소 1 이다 — 0 이면 줄만 남고 아무 일도 안 한 것으로 읽힌다.
+    private static func hazardDamage(_ side: inout BattleSide, actor: BattleActor,
+                                     amount: Int) -> [BattleEvent] {
+        let dealt = min(max(1, amount), side.hp)
+        side.hp -= dealt
+        return [.damage(actor, amount: dealt, cause: .hazard)]
     }
 
     /// 공격 1회의 결과. 1v1 과 멀티가 같은 값을 내야 하므로 계산은 `resolveAttack` 한 곳에만 둔다.
@@ -2286,8 +2426,11 @@ extension BattleEngine {
         let teams = (BattleTeamSlot.fixed + field.sideConditions.keys.filter { !BattleTeamSlot.fixed.contains($0) }
             .sorted { $0.sortKey < $1.sortKey })
         for team in teams {
-            for condition in BattleSideCondition.allCases where field.has(condition, for: team) {
-                let left = (field.sideConditions[team]?[condition] ?? 0) - 1
+            // 입장 데미지는 여기를 지나지 않는다 — 저장된 숫자가 남은 턴이 아니라 층 수라,
+            // 같이 감소시키면 세 턴 뒤 압정이 조용히 사라진다.
+            for condition in BattleSideCondition.allCases
+            where !condition.isEntryHazard && field.has(condition, for: team) {
+                let left = field.layers(condition, for: team) - 1
                 if left <= 0 {
                     field.sideConditions[team]?[condition] = nil
                     events.append(.sideConditionEnded(team, condition))
@@ -2361,11 +2504,15 @@ extension BattleEngine {
             return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
                                                      : [.terrainStarted(terrain)])
         }
-        // 진영 상태기도 상대를 보지 않는다 — 자기 편에 까는 것뿐이다.
+        // 진영 상태기는 데미지·상성을 보지 않는다. **어느 편에 까는지는 데이터가 답한다** —
+        // 장막·순풍은 자기 편이고 압정 부류는 상대 편이다. 열거형에서 파생하면 데이터를 두 번
+        // 적는 셈이라, 쇼다운이 같은 상태를 양쪽에 까는 기술을 더하면 조용히 어긋난다.
         if let condition = BattleSideCondition.called(byMoveID: move.id) {
-            attacker.lastMoveFailed = !field.start(condition, for: attackerTeam)
+            let team = BattleSideCondition.landsOnFoeSide(moveID: move.id) ? defenderTeam
+                                                                           : attackerTeam
+            attacker.lastMoveFailed = !field.start(condition, for: team)
             return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
-                                                     : [.sideConditionStarted(attackerTeam, condition)])
+                                                     : [.sideConditionStarted(team, condition)])
         }
         // 자기에게 거는 volatile(아쿠아링·뿌리박기)도 상대를 보지 않는다 — 진영 상태기와 같은 자리다.
         // 이미 붙어 있으면 실패한다(매 턴 다시 걸면 실패 없는 무한 회복이 된다).

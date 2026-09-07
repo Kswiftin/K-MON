@@ -160,7 +160,25 @@ struct WaveBattle: Sendable {
               benchCandidates.contains(teamIndex) else { return false }
         myField[ordinal].teamIndex = teamIndex
         events.append(.sendOut(actor(mine: ordinal), teamIndex: teamIndex))
+        stepOnHazards(isMine: true, slot: ordinal)
+        // 밟아서 그 자리에서 쓰러질 수 있다 — 전멸이면 여기서 승부를 적어야 한다.
+        advanceFainted()
         return true
+    }
+
+    /// 새로 나온 개체가 자기 편에 깔린 입장 데미지를 밟는다 — 출전을 내는 세 자리가 이것을 쓴다.
+    /// 2대2 라 밟는 것은 **그 칸의 개체**뿐이다(같은 편 다른 칸은 이미 나와 있다).
+    private mutating func stepOnHazards(isMine: Bool, slot: Int) {
+        let index = teamIndex(isMine: isMine, slot: slot)
+        let team = teamSlot(isMine: isMine)
+        let who = actor(isMine: isMine, slot: slot)
+        if isMine {
+            events += BattleEngine.applyEntryHazards(&mine[index], actor: who, team: team,
+                                                     field: field, rng: &rng)
+        } else {
+            events += BattleEngine.applyEntryHazards(&opponents[index], actor: who, team: team,
+                                                     field: field, rng: &rng)
+        }
     }
 
     /// 한 칸의 행동을 적는다. 살아 있는 칸이 모두 채워지면 **그 자리에서 턴을 해상한다** —
@@ -293,6 +311,8 @@ struct WaveBattle: Sendable {
             BattleEngine.prepareForSwitch(&mine[myField[ordinal].teamIndex])
             myField[ordinal].teamIndex = teamIndex
             events.append(.sendOut(actor(mine: ordinal), teamIndex: teamIndex))
+            // 밟기는 공격보다 **앞**이다(교체가 공격보다 먼저인 것과 같은 이유).
+            stepOnHazards(isMine: true, slot: ordinal)
         }
     }
 
@@ -449,14 +469,28 @@ struct WaveBattle: Sendable {
         }
         // 상대의 빈 칸은 스스로 채운다 — 고를 사람이 없다. 내 칸은 사용자가 고른다
         // (`slotsNeedingSendOut`).
-        for ordinal in opponentField.indices
-        where !opponents[opponentField[ordinal].teamIndex].isAlive {
-            let onField = Set(opponentField.map(\.teamIndex))
-            guard let next = opponents.indices.first(where: {
-                opponents[$0].isAlive && !onField.contains($0)
-            }) else { continue }
-            opponentField[ordinal].teamIndex = next
-            events.append(.sendOut(actor(opponent: ordinal), teamIndex: next))
+        // **채우고 밟기를 반복한다.** 새로 나온 개체가 압정으로 그 자리에서 쓰러질 수 있어서다 —
+        // 한 번만 채우면 상대 칸이 빈 채로 다음 턴이 돌아 그 칸이 아무것도 하지 않는다.
+        // 반복은 끝난다: 매 바퀴가 필드에 없던 살아 있는 후보 하나를 소비한다.
+        while true {
+            var filledAny = false
+            for ordinal in opponentField.indices
+            where !opponents[opponentField[ordinal].teamIndex].isAlive {
+                let onField = Set(opponentField.map(\.teamIndex))
+                guard let next = opponents.indices.first(where: {
+                    opponents[$0].isAlive && !onField.contains($0)
+                }) else { continue }
+                opponentField[ordinal].teamIndex = next
+                events.append(.sendOut(actor(opponent: ordinal), teamIndex: next))
+                stepOnHazards(isMine: false, slot: ordinal)
+                filledAny = true
+            }
+            guard filledAny else { return }
+            // 밟기로 상대가 전멸할 수 있다 — 그 판정은 위와 같은 자리(양쪽 함께)에서 다시 본다.
+            if !opponents.contains(where: \.isAlive) {
+                result = mine.contains(where: \.isAlive) ? .win : .draw
+                return
+            }
         }
     }
 }

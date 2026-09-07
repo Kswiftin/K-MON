@@ -243,6 +243,9 @@ struct L {
         case .nightmare: return t("\(name)은(는) 악몽에 시달렸다! \(damage)",
                                   "\(name) is locked in a nightmare! \(damage)",
                                   "\(name)は あくむに くるしんでいる！ \(damage)")
+        case .hazard:    return t("\(name)은(는) 발밑에 깔린 것을 밟았다! \(damage)",
+                                  "\(name) was hurt by what was laid on the ground! \(damage)",
+                                  "\(name)は あしもとの しかけで ダメージ！ \(damage)")
         }
     }
 
@@ -412,6 +415,21 @@ struct L {
                                     "たたみがえしで まもりを かためた！")
         case .craftyShield: return t("트릭가드로 편을 지켰다!", "Crafty Shield shielded the team!",
                                      "トリックガードで まもりを かためた！")
+        // 입장 데미지는 **상대 편에** 깔린다 — 그래서 문구가 "상대" 를 말한다(나머지는 앞 줄이
+        // 누가 썼는지 말하므로 편을 안 밝힌다). 몇 층인지는 문구에 넣지 않는다: 같은 줄이 다시
+        // 나가는 것이 곧 한 층 더 쌓였다는 뜻이고, 넣으면 세 언어를 층 수만큼 적어야 한다.
+        case .spikes:      return t("상대 발밑에 압정이 흩뿌려졌다!",
+                                    "Spikes were scattered around the opposing team!",
+                                    "相手の 足下に まきびしを ばらまいた！")
+        case .toxicSpikes: return t("상대 발밑에 독압정이 흩뿌려졌다!",
+                                    "Poison spikes were scattered around the opposing team!",
+                                    "相手の 足下に どくびしを ばらまいた！")
+        case .stealthRock: return t("상대 주위에 스텔스록이 떠올랐다!",
+                                    "Pointed stones float in the air around the opposing team!",
+                                    "相手の まわりに とがった いわが ただよいはじめた！")
+        case .stickyWeb:   return t("상대 발밑에 끈적끈적네트가 깔렸다!",
+                                    "A sticky web spreads out beneath the opposing team!",
+                                    "相手の 足下に ねばねばネットが 広がった！")
         }
     }
 
@@ -449,6 +467,17 @@ struct L {
         case .quickGuard:  return t("퀵가드가 풀렸다", "Quick Guard wore off", "ファストガードが きえた")
         case .matBlock:    return t("니가하지마가 풀렸다", "Mat Block wore off", "たたみがえしが きえた")
         case .craftyShield: return t("트릭가드가 풀렸다", "Crafty Shield wore off", "トリックガードが きえた")
+        // 입장 데미지는 턴으로 걷히지 않아 이 줄이 지금은 나가지 않는다. 그래도 문구를 두는
+        // 이유는 제거 수단(코트체인지·고속스핀)이 붙는 자리가 이미 정해져 있기 때문이다 —
+        // 그때 걷히는 줄이 없으면 사라진 것이 로그로 설명되지 않는다.
+        case .spikes:      return t("발밑의 압정이 사라졌다", "The spikes disappeared",
+                                    "あしもとの まきびしが きえた")
+        case .toxicSpikes: return t("발밑의 독압정이 사라졌다", "The poison spikes disappeared",
+                                    "あしもとの どくびしが きえた")
+        case .stealthRock: return t("떠 있던 스텔스록이 사라졌다", "The pointed stones disappeared",
+                                    "ただよっていた とがった いわが きえた")
+        case .stickyWeb:   return t("발밑의 끈적끈적네트가 사라졌다", "The sticky web disappeared",
+                                    "あしもとの ねばねばネットが きえた")
         }
     }
 

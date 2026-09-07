@@ -83,16 +83,34 @@ final class ShowdownEffectTableTests: XCTestCase {
         }
     }
 
-    /// **엔진이 아는 여섯은 전부 자기 편에 깔린다** — `called(byMoveID:)` 가 편을 안 보고 답해도
-    /// 되는 근거다. 상대 편에 깔리는 부류(압정뿌리기·스텔스록)를 구현하는 순간 이 단언이 깨지고,
-    /// 그때 편을 보는 분기를 같이 넣어야 한다.
-    func testEverySideConditionTheEngineKnowsLandsOnItsOwnSide() {
-        let foeSideMoves = ShowdownMoveData.effects.filter { $0.value.sideConditionTarget == "foeSide" }
-        XCTAssertFalse(foeSideMoves.isEmpty, "상대 편 상태가 하나도 없으면 이 테스트가 재는 것이 없다")
+    /// **엔진이 고르는 편은 데이터가 말하는 편과 같다.** 편을 열거형에서 파생하면 데이터를 두 번
+    /// 적는 셈이라, 쇼다운이 같은 상태를 양쪽에 까는 기술을 더하면 조용히 어긋난다 — 그 어긋남은
+    /// 화면에 "장막을 상대에게 씌운다"로 나타난다.
+    func testTheEngineLandsEachSideConditionOnTheSideTheDataNames() {
+        var foeSide = 0, allySide = 0
         for (id, effect) in ShowdownMoveData.effects where effect.sideCondition != nil {
             guard BattleSideCondition.called(byMoveID: id) != nil else { continue }
-            XCTAssertEqual(effect.sideConditionTarget, "allySide",
-                           "'\(effect.sideCondition ?? "?")'(기술 \(id))는 상대 편에 깔리는데 엔진이 자기 편에 깐다")
+            let target = try? XCTUnwrap(effect.sideConditionTarget,
+                                        "'\(effect.sideCondition ?? "?")'(기술 \(id))에 편이 안 적혀 있다")
+            XCTAssertEqual(BattleSideCondition.landsOnFoeSide(moveID: id), target == "foeSide",
+                           "기술 \(id) 의 편을 엔진이 데이터와 다르게 읽는다")
+            if target == "foeSide" { foeSide += 1 } else { allySide += 1 }
+        }
+        // 양쪽이 실제로 존재해야 이 테스트가 재는 것이 있다(한쪽만이면 "늘 자기 편" 으로 뒤집어도 통과한다).
+        XCTAssertGreaterThan(foeSide, 0, "상대 편에 까는 기술이 하나도 안 잡혔다")
+        XCTAssertGreaterThan(allySide, 0, "자기 편에 까는 기술이 하나도 안 잡혔다")
+    }
+
+    /// 입장 데미지 넷은 **전부** 엔진이 안다. 데이터에 있는데 모르면 그 기술은 턴만 태운다.
+    func testEveryEntryHazardInTheDataReachesTheEngine() {
+        let hazardKeys = Set(BattleSideCondition.allCases.filter(\.isEntryHazard).map(\.rawValue))
+        XCTAssertEqual(hazardKeys.count, 4)
+        for (id, effect) in ShowdownMoveData.effects {
+            guard effect.sideConditionTarget == "foeSide", let key = effect.sideCondition else { continue }
+            let condition = BattleSideCondition.called(byMoveID: id)
+            XCTAssertNotNil(condition, "상대 편 상태 '\(key)'(기술 \(id))를 엔진이 모른다")
+            XCTAssertEqual(condition?.isEntryHazard, true,
+                           "'\(key)' 를 밟는 부류로 안 세면 교체가 그것을 지나친다")
         }
     }
 

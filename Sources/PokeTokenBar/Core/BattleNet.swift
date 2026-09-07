@@ -360,11 +360,21 @@ struct NetBattleState {
             oppActive = index
         }
         let actor: BattleActor = mine ? (iAmA ? .a : .b) : (iAmA ? .b : .a)
-        let sendOut = BattleEvent.sendOut(actor, teamIndex: index)
+        // 새로 나온 개체가 깔린 것을 밟는다 — 편은 개체가 아니라 **엔진 좌우 자리**다.
+        var stepped: [BattleEvent] = []
+        let slot: BattleTeamSlot = actor == .a ? .a : .b
+        if mine {
+            stepped = BattleEngine.applyEntryHazards(&myTeam[index], actor: actor, team: slot,
+                                                     field: field, rng: &rng)
+        } else {
+            stepped = BattleEngine.applyEntryHazards(&oppTeam[index], actor: actor, team: slot,
+                                                     field: field, rng: &rng)
+        }
+        let batch = [BattleEvent.sendOut(actor, teamIndex: index)] + stepped
         let sideA = iAmA ? me : opp
         let sideB = iAmA ? opp : me
-        events.append(sendOut)
-        eventBatches.append(NetBattleEventBatch(events: [sendOut], a: sideA, b: sideB))
+        events.append(contentsOf: batch)
+        eventBatches.append(NetBattleEventBatch(events: batch, a: sideA, b: sideB))
         return true
     }
 
@@ -438,6 +448,9 @@ struct NetBattleState {
             // 출전은 상대 공격보다 **앞**이다 — 재생기가 이 순서대로 개체를 갈아타야 새로 나온
             // 개체가 맞는 그림이 된다(뒤에 두면 이전 개체가 남의 데미지를 맞는다).
             turnEvents = [.turn(turn), .sendOut(.a, teamIndex: indexA)]
+            // 밟기는 상대 공격보다 **앞**이다(본가와 같다) — 압정으로 쓰러지면 그 턴에 맞지 않는다.
+            turnEvents += BattleEngine.applyEntryHazards(&a, actor: .a, team: .a,
+                                                         field: field, rng: &rng)
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &b, defender: &a,
                                                        attackerActor: .b, defenderActor: .a,
@@ -453,6 +466,8 @@ struct NetBattleState {
             var a = teamA[activeA], b = teamB[activeB]
             BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             turnEvents = [.turn(turn), .sendOut(.b, teamIndex: indexB)]
+            turnEvents += BattleEngine.applyEntryHazards(&b, actor: .b, team: .b,
+                                                         field: field, rng: &rng)
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &a, defender: &b,
                                                        attackerActor: .a, defenderActor: .b,
@@ -471,6 +486,12 @@ struct NetBattleState {
             BattleEngine.beginTurn(&a); BattleEngine.beginTurn(&b)
             turnEvents = [.turn(turn),
                           .sendOut(.a, teamIndex: indexA), .sendOut(.b, teamIndex: indexB)]
+            // 양쪽이 교체한 턴은 **좌변부터** 밟는다 — 스피드로 갈리면 순풍·랭크가 로그 순서를
+            // 흔들고, 두 피어가 그 순간의 스피드를 다르게 계산할 여지가 생긴다.
+            turnEvents += BattleEngine.applyEntryHazards(&a, actor: .a, team: .a,
+                                                         field: field, rng: &rng)
+            turnEvents += BattleEngine.applyEntryHazards(&b, actor: .b, team: .b,
+                                                         field: field, rng: &rng)
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b
         case (.metronome, _), (_, .metronome),
@@ -494,16 +515,28 @@ struct NetBattleState {
         let bWiped = !teamB.contains(where: \.isAlive)
         // 자동 출전도 스트림에 남는다 — 재생기가 이 이벤트를 보고서야 표시 상태를 새 개체로
         // 갈아탄다. 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그린다.
-        if automaticallyReplacesFainted, !aWiped, !teamA[activeA].isAlive,
-           let next = teamA.indices.first(where: { teamA[$0].isAlive }) {
+        // **채우고 밟기를 반복한다.** 새로 나온 개체가 압정으로 그 자리에서 쓰러질 수 있어서다 —
+        // 한 번만 채우면 활성 칸이 죽은 개체로 남아 다음 턴에 아무 기술도 나가지 않는다.
+        // 반복은 끝난다: 매 바퀴가 살아 있던 후보 하나를 소비하고, 밟기는 HP 만 깎는다.
+        while automaticallyReplacesFainted, !aWiped, !teamA[activeA].isAlive,
+              let next = teamA.indices.first(where: { teamA[$0].isAlive }) {
             activeA = next
             turnEvents.append(.sendOut(.a, teamIndex: next))
+            turnEvents += BattleEngine.applyEntryHazards(&teamA[activeA], actor: .a, team: .a,
+                                                         field: field, rng: &rng)
         }
-        if automaticallyReplacesFainted, !bWiped, !teamB[activeB].isAlive,
-           let next = teamB.indices.first(where: { teamB[$0].isAlive }) {
+        while automaticallyReplacesFainted, !bWiped, !teamB[activeB].isAlive,
+              let next = teamB.indices.first(where: { teamB[$0].isAlive }) {
             activeB = next
             turnEvents.append(.sendOut(.b, teamIndex: next))
+            turnEvents += BattleEngine.applyEntryHazards(&teamB[activeB], actor: .b, team: .b,
+                                                         field: field, rng: &rng)
         }
+        // 전멸 판정은 **밟은 뒤에 다시 본다.** 위 두 값은 "출전 전에 이미 전멸했나" 라서 채우기
+        // 여부를 가르는 데 맞지만, 승부에 쓰면 압정으로 파티가 눕는 턴을 놓친다 — 그러면 활성
+        // 칸이 죽은 개체인 채 다음 턴을 기다려 배틀이 멈춘다.
+        let aWipedAfterHazards = !teamA.contains(where: \.isAlive)
+        let bWipedAfterHazards = !teamB.contains(where: \.isAlive)
         // 배치는 **자동 출전 이벤트까지 담은 뒤** 만든다 — 배치 이벤트 수가 평평한 `events` 와
         // 어긋나면 `BattleLogSource.netBattle` 의 진행도 자르기가 그만큼 밀린다.
         let eventBatch = NetBattleEventBatch(events: turnEvents, a: contextA, b: contextB,
@@ -523,9 +556,9 @@ struct NetBattleState {
         self.myAction = nil
         self.oppAction = nil
 
-        guard aWiped || bWiped else { return nil }
-        if aWiped && bWiped { return .draw }
-        let aWon = !aWiped
+        guard aWipedAfterHazards || bWipedAfterHazards else { return nil }
+        if aWipedAfterHazards && bWipedAfterHazards { return .draw }
+        let aWon = !aWipedAfterHazards
         return (iAmA == aWon) ? .win : .loss
     }
 }

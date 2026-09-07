@@ -47,12 +47,17 @@ struct TeamPracticeBattle {
         if isForcedReplacement {
             // 기절 뒤 출전은 행동을 소비하지 않는다. 출전 연출만 남기고 새 포켓몬의 기술 선택을 받는다.
             events.append(.sendOut(.a, teamIndex: index))
+            stepOnHazards()
+            // 밟아서 그 자리에서 쓰러질 수 있다 — 전멸이면 여기서 승부를 적어야 한다.
+            advanceFainted()
             return true
         }
         // 턴 머리와 출전을 **여기서** 적는다 — 재생기가 개체 전환을 알아야 새로 나온 개체를
         // 이전 개체 HP 로 그리지 않고, 출전이 상대 공격보다 먼저여야 순서가 실제와 맞는다.
         events.append(.turn(turn))
         events.append(.sendOut(.a, teamIndex: index))
+        // 밟기는 상대 공격보다 **앞**이다(본가와 같다) — 압정으로 쓰러지면 그 턴에 맞지 않는다.
+        stepOnHazards()
         opponentAttacksAlone()
         turn += 1
         advanceFainted()
@@ -194,20 +199,38 @@ struct TeamPracticeBattle {
     /// 승리로 접혀 체육관 배지까지 나갔다. 1v1(`resolveIfReady`)은 같은 상황을 무승부로 본다 —
     /// 두 엔진이 같은 규칙을 봐야 한다.
     private mutating func advanceFainted() {
-        let myTeamWiped = !mine.contains(where: \.isAlive)
-        let opponentTeamWiped = !opponents.contains(where: \.isAlive)
-        if myTeamWiped || opponentTeamWiped {
-            result = myTeamWiped ? (opponentTeamWiped ? .draw : .loss) : .win
-            return
-        }
-        // 자동 출전도 스트림에 남는다 — 재생기가 이 이벤트를 보고서야 표시 상태를 새 개체로
-        // 갈아탄다. 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그린다.
-        if !opponents[opponentActive].isAlive,
-           let next = opponents.indices.first(where: { opponents[$0].isAlive }) {
+        // **채우고 밟기를 반복한다.** 새로 나온 개체가 압정으로 그 자리에서 쓰러질 수 있어서다 —
+        // 한 번만 채우면 CPU 자리가 빈 채로 다음 턴이 돌아 아무도 공격하지 않는다. 반복은
+        // 끝난다: 매 바퀴가 살아 있던 후보 하나를 소비하고, 밟기는 HP 만 깎는다.
+        while true {
+            let myTeamWiped = !mine.contains(where: \.isAlive)
+            let opponentTeamWiped = !opponents.contains(where: \.isAlive)
+            if myTeamWiped || opponentTeamWiped {
+                result = myTeamWiped ? (opponentTeamWiped ? .draw : .loss) : .win
+                return
+            }
+            // 자동 출전도 스트림에 남는다 — 재생기가 이 이벤트를 보고서야 표시 상태를 새 개체로
+            // 갈아탄다. 없으면 기절 턴에 새로 나온 만피 개체를 이전 개체의 HP 로 깎아 그린다.
+            //
+            // 내 다음 포켓몬은 자동으로 고르지 않는다. 화면의 교체 줄에서 사용자가 직접 선택한다.
+            // CPU 쪽은 선택할 사람이 없으므로 여기서 계속 자동 출전한다.
+            guard !opponents[opponentActive].isAlive,
+                  let next = opponents.indices.first(where: { opponents[$0].isAlive }) else { return }
             opponentActive = next
             events.append(.sendOut(.b, teamIndex: next))
+            stepOnHazards(mine: false)
         }
-        // 내 다음 포켓몬은 자동으로 고르지 않는다. 화면의 교체 줄에서 사용자가 직접 선택한다.
-        // CPU 쪽은 선택할 사람이 없으므로 위에서 계속 자동 출전한다.
+    }
+
+    /// 새로 나온 개체가 자기 편에 깔린 입장 데미지를 밟는다 — 출전을 내는 세 자리가 이것을 쓴다.
+    /// 엔진 좌변이 나(`.a`)라 편도 그대로 좌우로 갈린다.
+    private mutating func stepOnHazards(mine isMine: Bool = true) {
+        if isMine {
+            events += BattleEngine.applyEntryHazards(&mine[myActive], actor: .a, team: .a,
+                                                     field: field, rng: &rng)
+        } else {
+            events += BattleEngine.applyEntryHazards(&opponents[opponentActive], actor: .b, team: .b,
+                                                     field: field, rng: &rng)
+        }
     }
 }
