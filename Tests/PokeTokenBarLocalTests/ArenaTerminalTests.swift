@@ -307,9 +307,9 @@ struct ArenaTerminalTests {
         #expect(PokedoroRequest.Action(name: "room.bet", argument: "2 0") == nil)
     }
 
-    /// 이 넷은 이제 앱 전용이 아니다 — 남은 것은 방을 만들고 찾는 일뿐이다.
-    @Test func testOnlyOpeningARoomStaysInTheApp() {
-        #expect(PokedoroCommandParser.appOnlyCommands == ["raid"])
+    /// 라이브 기능도 앱 요청 우편함을 통해 TUI에서 다룬다.
+    @Test func testNoCommandRemainsAppOnly() {
+        #expect(PokedoroCommandParser.appOnlyCommands.isEmpty)
     }
 
     // MARK: 안내 — 사유마다 문구가 다르다

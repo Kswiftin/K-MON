@@ -107,6 +107,7 @@ struct TUIInputTests {
         #expect(action(.char("1"), writable: true) == .startAdventure(minutes: 25))
         #expect(action(.char("c"), writable: true) == .claimAdventure)
         #expect(action(.char("x"), writable: true) == .cancelAdventure)
+        #expect(action(.char("j"), screen: .room, writable: true) == .toggleRoomReady)
     }
 
     /// 읽기 전용이어도 보기·나가기는 막지 않는다. 뷰어로서의 쓸모가 그대로 남아야 한다.

@@ -43,7 +43,8 @@ enum PokedoroCLI {
              .battleMove, .battleSwitch, .battleDecline, .battleTerastallize, .battleClose,
              .gymChallenge, .gymTeam, .playerGymStatus, .playerGymOpen, .playerGymChallenge,
              .playerGymSpectate, .playerGymDefense, .playerGymAI, .playerGymTakeover,
-             .roomMove, .roomStart, .roomSwitch, .roomTrack,
+             .raid, .raidCreate, .raidJoin, .raidMon,
+             .roomMove, .roomReady, .roomStart, .roomSwitch, .roomTrack,
              .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant,
              .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear,
              .homeMood, .homeStyle, .homeNote, .homeMessage, .homeNickname, .homeRoommate,
@@ -108,7 +109,7 @@ enum PokedoroCLI {
         case .room:
             // 대전과 같다 — 방 상태도 세이브에 없어 앱이 내놓는 화면을 기다려 받는다.
             channelRows(screen: "room",
-                        absent: ["방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.",
+                        absent: ["방에 없다 — pokedoro raid로 협동 레이드 방을 찾거나 연다.",
                                  "(방 상태는 세이브에 없어 앱이 떠 있어야 볼 수 있다.)"])
                 .forEach { print($0) }
         case .roomLeave:

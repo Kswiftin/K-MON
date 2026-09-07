@@ -156,7 +156,8 @@ pokedoro bag | shop | goals   バッグ・ショップの在庫・図鑑の目�
 pokedoro watch                全画面のライブ表示
 pokedoro start [25|50|90]     集中セッションを開始（stop で終了、claim で受け取り）
 pokedoro wave …               ウェーブラン一戦（start · move · ball · pick · route）
-pokedoro battle | room …      LAN バトルと部屋（共闘レイド・ジム争奪戦・トーナメントなど）
+pokedoro raid …               共闘レイドの検索・開設・参加・観戦・代表ポケモン選択
+pokedoro battle | room …      LAN バトル・部屋の準備・戦闘・精算
 pokedoro gym …                挑戦タブのジムレイド一覧・チーム編成・挑戦
 pokedoro gym contest …        LAN ジム争奪戦の検索・開設・挑戦・観戦・運営
 pokedoro trade | auction …    交換の交渉・オークション市場

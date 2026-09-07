@@ -75,7 +75,12 @@ struct PokedoroRequestExecutor {
         case .playerGymAI(let enabled): return playerGymAI(request, enabled: enabled)
         case .playerGymResign: return playerGymResign(request)
         case .playerGymTakeover: return playerGymTakeover(request)
+        case .raidStatus: return raidStatus(request)
+        case .raidCreate(let tier): return raidCreate(request, tier: tier)
+        case .raidJoin(let number, let role): return raidJoin(request, number: number, role: role)
+        case .raidMon(let number): return raidMon(request, number: number)
         case .roomMove(let move, let target): return roomMove(request, move: move, target: target)
+        case .roomReady: return roomReady(request)
         case .roomStart: return roomStart(request)
         case .roomLeave: return roomLeave(request)
         case .roomSwitch(let slot): return roomSwitch(request, slot: slot)
@@ -751,6 +756,80 @@ struct PokedoroRequestExecutor {
         no(request, "출전 가능한 서로 다른 party 번호 \(count)개를 순서대로 적는다.")
     }
 
+    // MARK: 협동 레이드 모집
+
+    private func raidStatus(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = room else { return noRoom(request) }
+        let state = control.terminalState
+        var lines = ["협동 레이드 · \(roomPhaseName(state.phase))"]
+        if let representative = companion.battleFacadeMon {
+            lines.append("대표 포켓몬  \(RosterOrdering.displayName(representative))")
+        } else {
+            lines.append("대표 포켓몬  출전 가능한 포켓몬이 없다")
+        }
+        let rooms = control.terminalRaidRooms
+        if rooms.isEmpty {
+            lines.append(control.terminalRaidBrowsing ? "근처에 열린 레이드 방이 없다." : "LAN 방 검색이 꺼져 있다.")
+        } else {
+            lines += rooms.map { "\($0.number). \($0.tier.rawValue)★  \($0.trainerName)" }
+            lines.append("참가: pokedoro raid join <방 번호>")
+        }
+        if let error = control.terminalRaidError { lines.append("오류  \(error)") }
+        return ok(request, lines.joined(separator: "\n"))
+    }
+
+    private func raidCreate(_ request: PokedoroRequest, tier: RaidTier) -> PokedoroReply {
+        guard let control = room else { return noRoom(request) }
+        guard control.terminalState.phase == .idle else {
+            return no(request, "이미 방 연결이 있다 — room으로 확인하거나 room leave --yes로 나간다.")
+        }
+        guard control.createRaidFromTerminal(tier: tier) else {
+            return no(request, control.terminalRaidError ?? "\(tier.rawValue)★ 레이드 방을 열지 못했다.")
+        }
+        return ok(request, "\(tier.rawValue)★ 협동 레이드 방을 열고 있다. room으로 로비를 확인한다.")
+    }
+
+    private func raidJoin(_ request: PokedoroRequest, number: Int, role: LobbyRole) -> PokedoroReply {
+        guard let control = room else { return noRoom(request) }
+        guard control.terminalState.phase == .idle else {
+            return no(request, "이미 방 연결이 있다 — room으로 확인하거나 room leave --yes로 나간다.")
+        }
+        guard control.joinRaidFromTerminal(number: number, role: role) else {
+            return no(request, "\(number)번 레이드 방이 없다 — pokedoro raid로 목록을 다시 본다.")
+        }
+        let verb = role == .spectator ? "관전자로 들어가고 있다" : "러너로 들어가고 있다"
+        return ok(request, "\(number)번 협동 레이드 방에 \(verb). room으로 연결 상태를 확인한다.")
+    }
+
+    private func raidMon(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = room else { return noRoom(request) }
+        guard control.terminalState.phase == .idle else {
+            return no(request, "대표 포켓몬은 방에 들어가기 전에만 바꿀 수 있다.")
+        }
+        let deployable = Set(companion.deployableMons.map(\.id))
+        guard let entry = PokedoroCLI.partyEntries(companion).first(where: {
+            TUIRender.printedRosterNumber(index: $0.index) == number && deployable.contains($0.id)
+        }) else {
+            return no(request, "출전 가능한 \(number)번 포켓몬이 없다 — pokedoro party로 번호를 본다.")
+        }
+        companion.setBattleRepresentative(entry.id)
+        return ok(request, "협동 레이드 대표 포켓몬을 \(entry.name)으로 정했다.")
+    }
+
+    private func roomPhaseName(_ phase: MultiplayerRoomCenter.Phase) -> String {
+        switch phase {
+        case .idle: "방 밖"
+        case .creating: "방 개설 중"
+        case .hosting: "로비 호스트"
+        case .joining(let name): "\(name) 참가 중"
+        case .joined: "로비 참가"
+        case .battling: "전투 중"
+        case .pokeathlon: "포켓슬론 중"
+        case .pokemonQuiz: "OX 퀴즈 중"
+        case .tournament: "토너먼트 중"
+        }
+    }
+
     // MARK: LAN 방
     //
     // 대전과 같은 모양이다. 다른 점 하나는 **대상**이다: 센터는 UUID 로 받고 사용자는 번호를
@@ -794,6 +873,17 @@ struct PokedoroRequestExecutor {
         guard state.canStart else { return no(request, "사람이 더 모여야 시작할 수 있다.") }
         control.startActivity()
         return ok(request, "판을 시작했다.")
+    }
+
+    private func roomReady(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = room, let state = roomState else { return noRoom(request) }
+        guard RoomScreen.kind(state) == .lobby else {
+            return no(request, "지금은 준비 상태를 바꿀 수 없다 — " + RoomScreen.hints(state))
+        }
+        guard control.toggleReadyFromTerminal() else {
+            return no(request, "로비 참가자만 준비 상태를 바꿀 수 있다.")
+        }
+        return ok(request, state.isReady ? "준비를 취소했다." : "준비했다.")
     }
 
     // MARK: 결투와 트랙 — 형태마다 창구가 다르다
@@ -900,7 +990,7 @@ struct PokedoroRequestExecutor {
     }
 
     private func noRoom(_ request: PokedoroRequest) -> PokedoroReply {
-        no(request, "방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.")
+        no(request, "방에 없다 — pokedoro raid로 협동 레이드 방을 찾거나 연다.")
     }
 
     // MARK: 교환

@@ -95,14 +95,22 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         case playerGymResign
         case playerGymTakeover
 
-        // MARK: LAN 방 (협동 레이드·방 대전)
+        // MARK: 협동 레이드 방 찾기·LAN 방
         //
-        // 대전과 같은 성질이다 — 방 상태도 세이브에 없고 `MultiplayerRoomCenter` 가 든다.
-        // **방을 만들고 찾는 일은 없다**: 소켓과 목록 훑기라 터미널이 할 수 있는 모양이 아니다.
+        // 방 상태와 발견 목록은 세이브에 없고 `MultiplayerRoomCenter` 가 든다. 터미널은 번호만
+        // 요청 파일에 싣고, 앱이 **그 순간의 목록**에서 다시 찾아 참가한다. `NWEndpoint` 를 파일에
+        // 직렬화하지 않는 이유는 목록이 바뀐 뒤 오래된 끝점으로 붙지 않게 하기 위해서다.
+
+        case raidStatus
+        case raidCreate(tier: RaidTier)
+        case raidJoin(number: Int, role: LobbyRole)
+        /// `party` 가 찍는 번호로 대표 포켓몬을 고른다.
+        case raidMon(number: Int)
 
         /// 기술 번호(1부터)와 **대상 번호**(1부터, 화면이 찍는 값). 대상을 안 적으면 첫 상대다 —
         /// 협동 레이드는 보스 하나라 대개 생략한다. UUID 를 싣지 않는 이유는 사람이 칠 수 없어서다.
         case roomMove(move: Int, target: Int?)
+        case roomReady
         /// 호스트가 판을 시작한다. 사람이 덜 모였으면 센터가 거절한다.
         case roomStart
         /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
@@ -234,7 +242,12 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .playerGymAI: "gym.contest.ai"
             case .playerGymResign: "gym.contest.resign"
             case .playerGymTakeover: "gym.contest.takeover"
+            case .raidStatus: "raid.status"
+            case .raidCreate: "raid.create"
+            case .raidJoin(_, let role): role == .runner ? "raid.join" : "raid.spectate"
+            case .raidMon: "raid.mon"
             case .roomMove: "room.move"
+            case .roomReady: "room.ready"
             case .roomStart: "room.start"
             case .roomLeave: "room.leave"
             case .roomSwitch: "room.switch"
@@ -299,6 +312,8 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .playerGymOpen(let team), .playerGymChallenge(let team),
                  .playerGymDefense(let team): team.map(String.init).joined(separator: " ")
             case .playerGymAI(let enabled): enabled ? "on" : "off"
+            case .raidCreate(let tier): String(tier.rawValue)
+            case .raidJoin(let number, _), .raidMon(let number): String(number)
             case .roomMove(let move, let target):
                 target.map { "\(move) \($0)" } ?? String(move)
             case .roomSwitch(let slot): String(slot)
@@ -326,7 +341,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .claim, .stop, .evolve, .hatch, .waveForfeit,
                  .battleForfeit, .battleDecline, .battleTerastallize, .battleClose,
                  .playerGymStatus, .playerGymSpectate, .playerGymResign, .playerGymTakeover,
-                 .roomStart, .roomLeave,
+                 .raidStatus, .roomReady, .roomStart, .roomLeave,
                  .tradeAccept, .tradeDecline, .tradeConfirm, .tradeCancel,
                  .homeReset, .homeUndo, .homeRedo: nil
             }
@@ -447,6 +462,17 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case "gym.contest.ai" where argument == "off": self = .playerGymAI(enabled: false)
             case "gym.contest.resign" where argument == nil: self = .playerGymResign
             case "gym.contest.takeover" where argument == nil: self = .playerGymTakeover
+            case "raid.status" where argument == nil: self = .raidStatus
+            case "raid.create":
+                guard let argument, let raw = Self.wholeNumber(argument),
+                      let tier = RaidTier(rawValue: raw) else { return nil }
+                self = .raidCreate(tier: tier)
+            case "raid.join", "raid.spectate":
+                guard let argument, let number = Self.wholeNumber(argument), number >= 1 else { return nil }
+                self = .raidJoin(number: number, role: name == "raid.join" ? .runner : .spectator)
+            case "raid.mon":
+                guard let argument, let number = Self.wholeNumber(argument), number >= 1 else { return nil }
+                self = .raidMon(number: number)
             case "room.move":
                 guard let argument else { return nil }
                 let words = argument.split(separator: " ").map(String.init)
@@ -459,6 +485,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 default: return nil
                 }
             case "room.start" where argument == nil: self = .roomStart
+            case "room.ready" where argument == nil: self = .roomReady
             case "room.leave" where argument == nil: self = .roomLeave
             case "room.switch":
                 guard let argument, let slot = Self.countingNumber(argument) else { return nil }

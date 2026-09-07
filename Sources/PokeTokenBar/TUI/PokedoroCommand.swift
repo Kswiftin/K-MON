@@ -72,10 +72,16 @@ enum PokedoroCommand: Equatable, Sendable {
     case battleTerastallize
     case battleClose
 
-    // MARK: LAN 방 (협동 레이드·방 대전)
+    // MARK: 협동 레이드 찾기·LAN 방
+
+    case raid
+    case raidCreate(tier: RaidTier)
+    case raidJoin(number: Int, role: LobbyRole)
+    case raidMon(number: Int)
 
     case room
     case roomMove(move: Int, target: Int?)
+    case roomReady
     case roomStart
     /// **되돌릴 수 없다** — 그 판의 정산을 못 받는다.
     case roomLeave(confirmed: Bool)
@@ -197,7 +203,12 @@ enum PokedoroCommand: Equatable, Sendable {
         case .playerGymAI(let enabled): .playerGymAI(enabled: enabled)
         case .playerGymResign(let confirmed): confirmed ? .playerGymResign : nil
         case .playerGymTakeover: .playerGymTakeover
+        case .raid: .raidStatus
+        case .raidCreate(let tier): .raidCreate(tier: tier)
+        case .raidJoin(let number, let role): .raidJoin(number: number, role: role)
+        case .raidMon(let number): .raidMon(number: number)
         case .roomMove(let move, let target): .roomMove(move: move, target: target)
+        case .roomReady: .roomReady
         case .roomStart: .roomStart
         case .roomLeave(let confirmed): confirmed ? .roomLeave : nil
         case .roomSwitch(let slot): .roomSwitch(slot: slot)
@@ -277,6 +288,8 @@ enum PokedoroCommandError: Equatable, Error {
     case invalidWaveNumber(String)
     /// 체육관 목록 번호. 웨이브 번호와 출처가 달라 별도 문구로 돌려준다.
     case invalidGymNumber(String)
+    /// 협동 레이드 방 목록 번호 또는 티어가 아니다.
+    case invalidRaidNumber(String)
     /// 목록 밖 길 이름. 안전한 길로 접지 않는 이유는 사용자가 위험한 길을 골랐다고 믿은 채
     /// 보상 한 장을 잃기 때문이다.
     case unknownRoute(String)
@@ -332,6 +345,8 @@ enum PokedoroCommandError: Equatable, Error {
             "웨이브 런의 번호가 아니다: \(raw) — `pokedoro wave` 가 찍는 번호(1부터)를 쓴다."
         case .invalidGymNumber(let raw):
             "체육관 번호가 아니다: \(raw) — `pokedoro gym` 이 찍는 번호(1부터)를 쓴다."
+        case .invalidRaidNumber(let raw):
+            "레이드 방 번호 또는 티어가 아니다: \(raw) — 방 번호는 `pokedoro raid`, 티어는 1·3·5를 쓴다."
         case .unknownRoute(let raw):
             "그런 길이 없다: \(raw) — "
                 + RunRoute.allCases.map(\.rawValue).joined(separator: "·") + " 중 하나를 쓴다."
@@ -389,11 +404,11 @@ enum PokedoroCommandParser {
     ///
     /// 집중 세션(`start`·`claim`·`stop`)은 이제 여기 없다. 터미널이 요청을 보내고 앱이 실행한다.
     /// `battle` 은 여기서 빠졌다 — 터미널이 대전을 보고 턴을 낸다(`battle` 하위 명령).
-    /// `trade` 도 빠졌다 — 상대를 찾는 일만 앱에 남는다(`raid` 와 같은 사정).
+    /// `trade` 도 빠졌다 — 상대를 찾는 일만 앱에 남는다.
     /// `auction` 도 빠졌다 — 시장을 훑는 것은 Bonjour 가 계속 하고, 터미널은 그 목록을 받는다.
     /// `home` 도 빠졌다 — 방 상태가 세이브 옆 파일에 있어 터미널이 직접 읽는다(픽셀 아트만
     /// 옮기지 못하고, 사람이 읽는 사실은 전부 줄로 나온다).
-    static let appOnlyCommands: Set<String> = ["raid"]
+    static let appOnlyCommands: Set<String> = []
 
     /// 실행 파일 이름을 뺀 인자 배열을 받는다. 빈 배열은 `status` 다 — 인자 없이 친 사용자가
     /// 가장 원하는 것이 현재 상태이기 때문이다.
@@ -454,6 +469,8 @@ enum PokedoroCommandParser {
             return try waveCommand(in: tail, options: options)
         case "battle", "pvp":
             return try battleCommand(in: tail, options: options)
+        case "raid":
+            return try raidCommand(in: tail)
         case "room":
             return try roomCommand(in: tail, options: options)
         case "trade":
@@ -465,6 +482,35 @@ enum PokedoroCommandParser {
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
+        }
+    }
+
+    /// 발견 목록은 앱이 계속 훑고, 터미널은 그 목록에 찍힌 번호만 되돌려 보낸다.
+    private static func raidCommand(in arguments: [String]) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .raid }
+        let rest = Array(words.dropFirst())
+        let command = "raid \(sub)"
+        try rejectExtra(rest, beyond: 1, command: command)
+        guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+        switch sub {
+        case "create":
+            guard let number = Int(raw), raw.allSatisfy(\.isNumber),
+                  let tier = RaidTier(rawValue: number) else {
+                throw PokedoroCommandError.invalidRaidNumber(raw)
+            }
+            return .raidCreate(tier: tier)
+        case "join":
+            return .raidJoin(number: try positiveNumber(
+                raw, orThrow: PokedoroCommandError.invalidRaidNumber), role: .runner)
+        case "spectate":
+            return .raidJoin(number: try positiveNumber(
+                raw, orThrow: PokedoroCommandError.invalidRaidNumber), role: .spectator)
+        case "mon":
+            return .raidMon(number: try positiveNumber(
+                raw, orThrow: PokedoroCommandError.invalidMonNumber))
+        default:
+            throw PokedoroCommandError.unknownCommand(command)
         }
     }
 
@@ -584,6 +630,9 @@ enum PokedoroCommandParser {
         case "start":
             try rejectExtra(rest, beyond: 0, command: command)
             return .roomStart
+        case "ready":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .roomReady
         case "leave":
             try rejectExtra(rest, beyond: 0, command: command)
             return .roomLeave(confirmed: options.contains("--yes"))
@@ -977,6 +1026,11 @@ enum PokedoroCommandParser {
         ("battle switch <번호>", "교체 / 쓰러진 자리 메우기"),
         ("battle decline", "받은 대전 신청 거절"),
         ("battle forfeit --yes", "항복 — 되돌릴 수 없다"),
+        ("raid", "협동 레이드 — 발견한 방과 현재 상태"),
+        ("raid create <1|3|5>", "티어를 골라 협동 레이드 방 개설"),
+        ("raid join <방>", "목록의 방에 러너로 참가"),
+        ("raid spectate <방>", "목록의 방에 관전자로 참가"),
+        ("raid mon <번호>", "출전할 대표 포켓몬 선택 (party 번호)"),
         ("room", "LAN 방 — 지금 판 (레이드·방 대전)"),
         ("room move <n> [대상]", "기술 쓰기 (대상 생략하면 첫 상대)"),
         ("room switch <자리>", "결투에서 팀 자리 교체 (체육관·토너먼트)"),
@@ -984,6 +1038,7 @@ enum PokedoroCommandParser {
         ("room run / room swap", "포켓슬론 전진·개체 교체"),
         ("room bet <러너> <금액> --yes", "포켓슬론 관전 베팅 — 되돌릴 수 없다"),
         ("room start", "호스트가 판 시작"),
+        ("room ready", "로비 준비 / 준비 취소"),
         ("room leave --yes", "방 나가기 — 정산을 못 받는다"),
         ("gym", "체육관 리그 — 여덟 곳과 딴 배지"),
         ("gym challenge <번호>", "목록의 체육관에 도전 (자동 편성)"),

@@ -151,6 +151,8 @@ final class TUIWatch {
             // 대전과 같다 — 방은 숫자의 뜻이 셋이다(기술·결투의 팀 자리·트랙의 방향). 기술로
             // 넘겨짚으면 포켓슬론·OX 퀴즈의 방향 키가 통째로 죽는다.
             if let action = liveAction(digit: number, screen: "room") { request(action) }
+        case .toggleRoomReady:
+            request(.roomReady)
         case .startRoom:
             request(.roomStart)
         case .leaveRoom:
@@ -350,7 +352,7 @@ final class TUIWatch {
                               width: size.width)
         case .room:
             lines = liveLines(screen: "room", on: .room,
-                              absent: "방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.",
+                              absent: "방에 없다 — pokedoro raid로 협동 레이드 방을 찾거나 연다.",
                               width: size.width)
         case .trade:
             lines = liveLines(screen: "trade", on: .trade,
