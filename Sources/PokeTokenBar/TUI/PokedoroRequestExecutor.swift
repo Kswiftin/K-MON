@@ -826,13 +826,13 @@ struct PokedoroRequestExecutor {
         // 상한을 넘는 값은 **거절이고 잘라 보내지 않는다.** 센터는 조용히 클램프하므로
         // (`min(amount, maxTokenValue)`) 사용자는 자기가 적은 값이 갔다고 믿는다.
         guard stardust <= SaveTransfer.maxTokenValue else {
-            return no(request, "한 번에 걸 수 있는 별의모래는 "
+            return no(request, "한 번에 걸 수 있는 별의조각은 "
                       + "★ \(TUIRender.number(SaveTransfer.maxTokenValue)) 까지다.")
         }
         // **화면·센터와 같은 값**을 본다(`unpledgedTokens`) — 잔액만 보면 지킬 수 없는 제안을
         // 여러 건 걸게 되고, 두 벌로 세면 한쪽만 넓어져 조용히 거절된다.
         guard stardust <= state.unpledged else {
-            return no(request, "약속하지 않은 별의모래가 ★ \(TUIRender.number(state.unpledged)) "
+            return no(request, "약속하지 않은 별의조각이 ★ \(TUIRender.number(state.unpledged)) "
                       + "뿐이다 — 걸어 둔 제안을 거둬들이면 늘어난다.")
         }
         guard let listingID = AuctionScreen.listingID(number: listing, in: state) else {
@@ -841,7 +841,7 @@ struct PokedoroRequestExecutor {
         if let refusal = control.bid(listingID: listingID, stardust: stardust) {
             return no(request, refusal)
         }
-        return ok(request, "\(Self.marketLabel(listing, in: state))에 별의모래 "
+        return ok(request, "\(Self.marketLabel(listing, in: state))에 별의조각 "
                   + "\(TUIRender.number(stardust)) 를 걸었다. "
                   + AuctionScreen.hints(control.terminalState))
     }
@@ -882,7 +882,7 @@ struct PokedoroRequestExecutor {
         }
         guard card.status == .pending else {
             return no(request, card.status == .accepted
-                      ? "\(number)번은 이미 교환이 시작됐다 — 여기서 치우면 별의모래만 돌아오고 "
+                      ? "\(number)번은 이미 교환이 시작됐다 — 여기서 치우면 별의조각만 돌아오고 "
                         + "개체는 아무에게도 가지 않는다."
                       : "\(number)번은 이미 끝났다 — auction clear \(number) 로 치운다.")
         }

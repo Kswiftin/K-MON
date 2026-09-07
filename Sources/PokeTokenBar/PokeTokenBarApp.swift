@@ -377,7 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         }
     }
 
-    /// 방치 생산 틱 — 60초마다 경과 시간을 별의모래로 적립한다(CompanionStore.tick 이 슬립 캡 처리).
+    /// 방치 생산 틱 — 60초마다 경과 시간을 별의조각으로 적립한다(CompanionStore.tick 이 슬립 캡 처리).
     private var idleTickTimer: Timer?
     private func startIdleTick() {
         companion.tick()   // 기동 즉시 기준점 시드(첫 틱은 적립 없음)

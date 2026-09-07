@@ -135,7 +135,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// 남의 게시물에 내 개체를 건다 — `listing` 은 시장 번호, `mon` 은 `party` 번호다.
         /// **되돌릴 수 없다**: 게시자가 수락하는 순간 더 물어볼 새 없이 커밋이 돈다.
         case auctionApply(listing: Int, mon: Int)
-        /// 남의 게시물에 별의모래를 건다. **되돌릴 수 없다** — 위와 같은 이유다.
+        /// 남의 게시물에 별의조각을 건다. **되돌릴 수 없다** — 위와 같은 이유다.
         case auctionBid(listing: Int, stardust: Int)
         /// 받은 제안을 수락한다. **되돌릴 수 없다** — 게시한 개체가 넘어간다.
         case auctionAccept(number: Int)

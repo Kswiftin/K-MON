@@ -560,9 +560,9 @@ struct L {
     var transferSectionTitle: String { t("백업 & 이전", "Backup & Transfer", "バックアップと移行") }
     var exportSaveLabel: String { t("세이브 내보내기", "Export save", "セーブを書き出す") }
     var exportSaveHint: String {
-        t("도감·누적 별의모래·가방·현재 포켓몬을 파일 하나로 저장해요",
-          "Saves your Pokédex, lifetime Stardust, Bag, and current Pokémon as one file",
-          "図鑑・累計トークン・バッグ・現在のポケモンを1つのファイルに保存します")
+        t("도감·누적 별의조각·가방·현재 포켓몬을 파일 하나로 저장해요",
+          "Saves your Pokédex, lifetime Star Pieces, Bag, and current Pokémon as one file",
+          "図鑑・累計ほしのかけら・バッグ・現在のポケモンを1つのファイルに保存します")
     }
     var exportSaveButton: String { t("내보내기…", "Export…", "書き出す…") }
     var importSaveLabel: String { t("세이브 불러오기", "Import save", "セーブを読み込む") }
@@ -922,9 +922,9 @@ struct L {
     var eggImminent: String { t("곧 부화해요!", "About to hatch!", "もうすぐ孵化！") }
     /// 첫 실행(아직 적립 0) 안내 — "왜 아무 일도 안 일어나지"를 방지.
     var eggFirstRunHint: String {
-        t("앱을 켜 두면 별의모래가 쌓여 자라요. 잠시 뒤 알이 부화해요.",
-          "Grows on Stardust that piles up while the app is running. Your egg hatches soon.",
-          "アプリを起動している間にほしのすなが貯まって育ちます。まもなくタマゴが孵化します。") }
+        t("앱을 켜 두면 별의조각이 쌓여 자라요. 잠시 뒤 알이 부화해요.",
+          "Grows on Star Pieces that pile up while the app is running. Your egg hatches soon.",
+          "アプリを起動している間にほしのかけらが貯まって育ちます。まもなくタマゴが孵化します。") }
     var notifEvolveTitle: String { t("✨ 진화!", "✨ Evolved!", "✨ 進化！") }
     func notifEvolveBody(_ name: String) -> String { t("\(name)(으)로 진화했어요!", "Evolved into \(name)!", "\(name) に進化しました！") }
     // 메타몽 위장 리빌 — 진화 못 하는 메타몽이 첫 진화 순간 정체를 드러낸다.
@@ -1724,7 +1724,7 @@ struct L {
     var relearnEmpty: String { t("지금 떠올릴 수 있는 기술이 없어요.", "There are no moves to relearn right now.", "いま思い出せる技はありません。") }
     var relearnClose: String { t("닫기", "Close", "閉じる") }
 
-    // MARK: 상점 (재화 = 별의모래)
+    // MARK: 상점 (재화 = 별의조각)
     var shop: String { t("상점", "Shop", "ショップ") }
     var spendableTokens: String { t("보유 별의조각", "Star Pieces", "ほしのかけら") }
     var shopHint: String { t("모험에서 얻은 별의조각으로 아이템을 살 수 있어요.", "Buy items with Star Pieces earned from adventures.", "冒険で手に入れたほしのかけらで購入できます。") }

@@ -288,8 +288,8 @@ struct PokemonTournamentView: View {
     }
 
     private var rewardGuide: some View {
-        Text(store.l.t("최소 3명 · 1위: 참가 인원별 알 · 2위: 별의모래 12,000 · 공동 3위: 7,000 · 공동 5위: 3,000",
-                       "Minimum 3 · 1st: Egg by entrant count · 2nd: 12,000 Stardust · joint 3rd: 7,000 · joint 5th: 3,000",
+        Text(store.l.t("최소 3명 · 1위: 참가 인원별 알 · 2위: 별의조각 12,000 · 공동 3위: 7,000 · 공동 5위: 3,000",
+                       "Minimum 3 · 1st: Egg by entrant count · 2nd: 12,000 Star Pieces · joint 3rd: 7,000 · joint 5th: 3,000",
                        "最低3人・1位：参加人数別タマゴ・2位：12,000・同率3位：7,000・同率5位：3,000"))
             .font(.caption2).foregroundStyle(.secondary)
     }

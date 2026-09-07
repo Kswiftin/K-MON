@@ -29,7 +29,7 @@ struct CandyFeedback: Equatable {
     var stardust: Int
 }
 
-/// 게임 상태의 출처. 앱이 켜져 있는 동안 시간이 별의모래로 적립돼(tick) 포켓몬을 진화시키고,
+/// 게임 상태의 출처. 앱이 켜져 있는 동안 시간이 별의조각으로 적립돼(tick) 포켓몬을 진화시키고,
 /// 최종체 + 추가 임계 도달 시 도감(라인 전체)에 보존 + 새 알. 진화 트리/희귀도/이름은
 /// PokeProviding 으로 런타임 주입하며 시간 기반 성장과 게임 상태를 관리한다.
 @MainActor
@@ -1222,9 +1222,9 @@ final class CompanionStore {
         })
     }
 
-    // MARK: 생산 틱 (시간 → 별의모래)
+    // MARK: 생산 틱 (시간 → 별의조각)
 
-    /// 방치 생산 — 앱이 켜져 있는 동안 경과 시간을 별의모래로 적립한다. AppDelegate 의 60초 타이머와
+    /// 방치 생산 — 앱이 켜져 있는 동안 경과 시간을 별의조각으로 적립한다. AppDelegate 의 60초 타이머와
     /// refresh 훅이 호출한다. 슬립·시계 점프는 maxTickInterval 캡으로 잘린다(켜져 있던 시간만 인정).
     /// 부화·진화·졸업은 공통 성장량 적용 경로를 사용한다.
     func tick() {
@@ -1248,7 +1248,7 @@ final class CompanionStore {
         if state.activeSecondsDate != today { state.activeSecondsDate = today; state.activeSecondsToday = 0 }
         state.activeSecondsTotal += elapsed
         state.activeSecondsToday += elapsed
-        // 별의모래는 완료한 집중 세션에서만 지급한다. 틱은 함께한 시간 기록과 생명주기 갱신만 담당한다.
+        // 별의조각은 완료한 집중 세션에서만 지급한다. 틱은 함께한 시간 기록과 생명주기 갱신만 담당한다.
     }
 
     /// 생산분을 상태에 반영 — 알이면 인큐베이션, 활성이면 성장(진화/졸업 판정). tick 과 테스트가 공유.
@@ -1827,7 +1827,7 @@ final class CompanionStore {
         return true
     }
 
-    /// 경매에서 별의모래로 산 포켓몬을 받는다. 일반 교환과 달리 내보낼 개체가 없으므로
+    /// 경매에서 별의조각으로 산 포켓몬을 받는다. 일반 교환과 달리 내보낼 개체가 없으므로
     /// 동행이 있으면 박스에, 없으면 동행 자리에 둔다. 상대가 보낸 첫 만남 시각은 신뢰하지 않는다.
     func receiveAuctionPokemon(_ incoming: MonState, incomingMemories: TradeMemoryPayload? = nil) -> Bool {
         guard PokemonAssets.hasAnimatedSprite(speciesID: incoming.currentID),
@@ -1852,7 +1852,7 @@ final class CompanionStore {
         return true
     }
 
-    /// 별의모래 경매 판매를 한 번에 반영한다. 포켓몬을 실제로 찾은 경우에만 지갑을 늘려
+    /// 별의조각 경매 판매를 한 번에 반영한다. 포켓몬을 실제로 찾은 경우에만 지갑을 늘려
     /// 이미 팔린 게시물이나 중복 커밋이 화폐를 복제하지 못하게 한다.
     ///
     /// **동행(`state.active`)은 팔지 못한다 — 박스 개체만 나간다.** 예전엔 여기서 동행을 비워
@@ -2589,9 +2589,9 @@ final class CompanionStore {
         save()
         notifyCompanionEvent(l.t("토너먼트 \(placement)위!", "Tournament place #\(placement)!",
                                  "トーナメント\(placement)位！"),
-                             l.t("순위 보상으로 별의모래 \(amount.formatted())개를 받았습니다.",
-                                 "You received \(amount.formatted()) Stardust as a placement reward.",
-                                 "順位報酬としてほしのすなを\(amount.formatted())個受け取りました。"))
+                             l.t("순위 보상으로 별의조각 \(amount.formatted())개를 받았습니다.",
+                                 "You received \(amount.formatted()) Star Pieces as a placement reward.",
+                                 "順位報酬としてほしのかけらを\(amount.formatted())個受け取りました。"))
     }
 
     /// 이로치 확정을 **한 번 쓴다.** 남아 있으면 true 를 돌려주고 하나 깎는다.
@@ -2794,7 +2794,7 @@ final class CompanionStore {
         save()
     }
 
-    /// 별의모래 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
+    /// 별의조각 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
     /// 라인 미로딩(재시작 직후·오프라인)이어도 성장량은 항상 적립하고 진화 판정만 미룬다.
     func applyUsage(_ delta: Int, maxTransitions: Int = .max) {
         guard state.active != nil else { return }
@@ -3313,9 +3313,9 @@ final class CompanionStore {
         return true
     }
 
-    // MARK: 상점 (재화 = 별의모래)
+    // MARK: 상점 (재화 = 별의조각)
 
-    /// 쓸 수 있는 별의모래 = 지갑 잔액. 성장 미터(`usedSinceInstall`)는 여기에 들어오지 않는다 —
+    /// 쓸 수 있는 별의조각 = 지갑 잔액. 성장 미터(`usedSinceInstall`)는 여기에 들어오지 않는다 —
     /// 구매도 판돈도 `starPieces` 만 깎아서 진화 진행·오늘/주/월 통계는 그대로다.
     var availableTokens: Int { max(0, state.starPieces) }
 

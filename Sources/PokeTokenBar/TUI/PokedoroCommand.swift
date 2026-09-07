@@ -264,7 +264,7 @@ enum PokedoroCommandError: Equatable, Error {
     case invalidSlotNumber(String)
     /// 베팅 금액이 아니다. 경매 제안액과 갈라 말한다 — 잔액을 볼 화면이 다르다.
     case invalidBetAmount(String)
-    /// 별의모래 금액이 아니다. 번호와 나눠 말한다 — 번호는 목록에서 얻고 금액은 잔액에서
+    /// 별의조각 금액이 아니다. 번호와 나눠 말한다 — 번호는 목록에서 얻고 금액은 잔액에서
     /// 정하므로, 사용자가 다음에 볼 것이 다르다.
     case invalidStardust(String)
     /// 목록 밖 기분 이름.
@@ -318,7 +318,7 @@ enum PokedoroCommandError: Equatable, Error {
             "베팅 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
                 + "(`pokedoro room` 이 판돈과 내가 건 금액을 찍는다)."
         case .invalidStardust(let raw):
-            "별의모래 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
+            "별의조각 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
                 + "(`pokedoro auction` 이 미약속 잔액을 찍는다)."
         case .unknownMood(let raw):
             "그런 기분이 없다: \(raw) — "
@@ -727,7 +727,7 @@ enum PokedoroCommandParser {
     }
 
     /// 자리가 정해진 번호 **둘**. 첫 자리는 늘 시장 번호이고 둘째 자리의 뜻은 부르는 쪽이
-    /// 준다(개체 번호 / 별의모래 금액) — 한 오류로 뭉개면 사용자가 다음에 볼 곳이 틀린다.
+    /// 준다(개체 번호 / 별의조각 금액) — 한 오류로 뭉개면 사용자가 다음에 볼 곳이 틀린다.
     ///
     /// 하나만 적혔으면 "빠졌다" 다. 첫 값만 받고 둘째를 기본값으로 접으면 사용자가 고르지 않은
     /// 개체를 내놓는다(웨이브의 대상 생략과 다른 자리다 — 여기서는 기본값이 있을 수 없다).
@@ -900,7 +900,7 @@ enum PokedoroCommandParser {
         ("auction post <번호>", "경매에 올리기 (party 번호)"),
         ("auction unpost <번호>", "게시 내리기 (party 번호)"),
         ("auction apply <시장> <번호> --yes", "포켓몬으로 제안 — 되돌릴 수 없다"),
-        ("auction bid <시장> <금액> --yes", "별의모래로 제안 — 되돌릴 수 없다"),
+        ("auction bid <시장> <금액> --yes", "별의조각으로 제안 — 되돌릴 수 없다"),
         ("auction accept <번호> --yes", "받은 제안 수락 — 되돌릴 수 없다"),
         ("auction reject <번호>", "받은 제안 거절"),
         ("auction cancel <번호>", "내가 건 제안 거둬들이기"),

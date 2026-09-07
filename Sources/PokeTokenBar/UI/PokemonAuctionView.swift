@@ -19,9 +19,9 @@ struct PokemonAuctionView: View {
             PokedoroOverlayHeader(title: store.l.t("포켓몬 경매 시장", "Pokémon Offer Market", "ポケモン交換市場"),
                                   systemImage: "storefront.fill", tint: .orange,
                                   closeLabel: store.l.close, onClose: onClose)
-            Text(store.l.t("여러 포켓몬을 올리고 포켓몬 또는 별의모래 제안을 비교해 수락하세요.",
-                           "List multiple Pokémon and accept a Pokémon or Stardust offer.",
-                           "複数のポケモンを出品し、ポケモンまたはほしのすなの提案を選べます。"))
+            Text(store.l.t("여러 포켓몬을 올리고 포켓몬 또는 별의조각 제안을 비교해 수락하세요.",
+                           "List multiple Pokémon and accept a Pokémon or Star Pieces offer.",
+                           "複数のポケモンを出品し、ポケモンまたはほしのかけらの提案を選べます。"))
                 .font(.caption).foregroundStyle(.secondary)
             myListing
             Divider()
@@ -119,7 +119,7 @@ struct PokemonAuctionView: View {
                                selection: Binding(get: { offerKinds[listing.id] ?? .pokemon },
                                                   set: { offerKinds[listing.id] = $0 })) {
                             Text(store.l.t("포켓몬", "Pokémon", "ポケモン")).tag(OfferKind.pokemon)
-                            Text(store.l.t("별의모래", "Stardust", "ほしのすな")).tag(OfferKind.stardust)
+                            Text(store.l.t("별의조각", "Star Pieces", "ほしのかけら")).tag(OfferKind.stardust)
                         }
                         .pickerStyle(.segmented)
                         let kind = offerKinds[listing.id] ?? .pokemon
@@ -192,7 +192,7 @@ struct PokemonAuctionView: View {
         switch value {
         case .pokemon(let pokemon): pokemonRow(pokemon.mon, name: pokemon.displayName)
         case .stardust(let amount):
-            Label("\(amount.formatted()) \(store.l.t("별의모래", "Stardust", "ほしのすな"))",
+            Label("\(amount.formatted()) \(store.l.t("별의조각", "Star Pieces", "ほしのかけら"))",
                   systemImage: "sparkles").font(.callout.bold()).foregroundStyle(.orange)
         }
     }
@@ -277,6 +277,6 @@ struct PokemonAuctionView: View {
             return mon(withID: monID).map(nameWithLevel)
                 ?? store.l.t("내 포켓몬", "My Pokémon", "自分のポケモン")
         }
-        return "\(offer.stardust.formatted()) \(store.l.t("별의모래", "Stardust", "ほしのすな"))"
+        return "\(offer.stardust.formatted()) \(store.l.t("별의조각", "Star Pieces", "ほしのかけら"))"
     }
 }

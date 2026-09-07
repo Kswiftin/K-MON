@@ -19,7 +19,7 @@ protocol TerminalAuctionControl: AnyObject {
     func unpost(number: Int) -> String?
     /// 남의 게시물에 **개체를** 건다.
     func apply(listingID: UUID, number: Int) -> String?
-    /// 남의 게시물에 **별의모래를** 건다.
+    /// 남의 게시물에 **별의조각을** 건다.
     func bid(listingID: UUID, stardust: Int) -> String?
     func accept(offerID: UUID)
     func reject(offerID: UUID)

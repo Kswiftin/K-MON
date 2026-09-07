@@ -145,7 +145,7 @@ enum PokedoroCLI {
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
         case .auctionBid(let listing, let stardust, _):
-            ["\(listing)번 게시물에 별의모래 \(TUIRender.number(stardust)) 를 건다 — "
+            ["\(listing)번 게시물에 별의조각 \(TUIRender.number(stardust)) 를 건다 — "
                 + "게시자가 수락하면 그대로 넘어간다.",
              "정말이면: pokedoro auction bid \(listing) \(stardust) --yes"]
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }

@@ -541,7 +541,7 @@ enum SaveTransfer {
 
     /// 토큰 경제 세이브(economyVersion < currentVersion)의 리셋 마이그레이션 — 도감·수집·언어만
     /// 계승하고 진행(활성 개체·알·재화·인벤토리)은 새로 시작한다(2026-08-13 결정). 토큰 누적과
-    /// 별의모래는 단위가 달라 환산하지 않는다. 로드/불러오기 공통 경계(sanitized)에서 호출된다.
+    /// 별의조각은 단위가 달라 환산하지 않는다. 로드/불러오기 공통 경계(sanitized)에서 호출된다.
     static func migratedToIdleEconomy(_ state: CompanionState) -> CompanionState {
         guard state.economyVersion < IdleEconomy.currentVersion else { return state }
         var fresh = CompanionState()

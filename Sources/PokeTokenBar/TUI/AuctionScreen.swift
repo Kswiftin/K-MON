@@ -19,7 +19,7 @@ struct AuctionTerminalState {
     var incoming: [AuctionScreen.Card] = []
     /// 내가 건 제안 — 이 세션 번호.
     var outgoing: [AuctionScreen.Card] = []
-    /// 아직 어느 제안에도 약속하지 않은 별의모래. **화면·실행기·센터가 같은 값을 본다**
+    /// 아직 어느 제안에도 약속하지 않은 별의조각. **화면·실행기·센터가 같은 값을 본다**
     /// (`PokemonAuctionCenter.unpledgedTokens`) — 두 벌로 두면 한쪽만 넓어져 안내는 걸라고
     /// 하는데 센터가 조용히 거절한다.
     var unpledged = 0

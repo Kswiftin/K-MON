@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 상점 — 별의모래(`CompanionStore.availableTokens`)로 아이템 구매(이상한 사탕·민트).
+/// 상점 — 별의조각(`CompanionStore.availableTokens`)로 아이템 구매(이상한 사탕·민트).
 /// 인라인 확인(버튼 morph) — .sheet/.alert 금지(BagView 주석과 동일: transient 팝오버가 닫힐 때
 /// 고아 시트가 이후 클릭을 먹통내는 결함 회피).
 struct ShopView: View {
