@@ -15,7 +15,7 @@ struct PokemonTradeView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            PokedoroOverlayHeader(title: store.l.t("포켓몬 교환", "Pokémon Trade", "ポケモン交換"),
+            PokedoroOverlayHeader(title: "포켓몬 교환",
                                   systemImage: "arrow.left.arrow.right.circle.fill",
                                   closeLabel: store.l.close, onClose: close)
             Divider()
@@ -29,48 +29,45 @@ struct PokemonTradeView: View {
         case .ready:
             peerList
         case .browsing(let peer):
-            waiting(title: store.l.t("\(peer)님의 포켓몬을 불러오는 중…",
-                                     "Loading \(peer)'s Pokémon…", "\(peer)のポケモンを読み込み中…"))
+            waiting(title: "\(peer)님의 포켓몬을 불러오는 중…")
         case .roster(let peer):
             rosterPreview(peer: peer)
         case .requesting(let peer):
-            waiting(title: store.l.t("\(peer)님에게 교환 신청 중", "Requesting a trade with \(peer)", "\(peer)に交換を申請中"))
+            waiting(title: "\(peer)님에게 교환 신청 중")
         case .incoming(let peer):
             VStack(spacing: 18) {
                 Image(systemName: "person.crop.circle.badge.questionmark").font(.system(size: 48)).foregroundStyle(.blue)
-                Text(store.l.t("\(peer)님의 교환 신청", "Trade request from \(peer)", "\(peer)からの交換申請"))
+                Text("\(peer)님의 교환 신청")
                     .font(.headline)
                 HStack {
-                    Button(store.l.t("거절", "Decline", "断る"), role: .cancel) { center.decline() }
-                    Button(store.l.t("수락", "Accept", "受ける")) { center.accept() }.buttonStyle(.borderedProminent)
+                    Button("거절", role: .cancel) { center.decline() }
+                    Button("수락") { center.accept() }.buttonStyle(.borderedProminent)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         case .negotiating(let peer):
             negotiation(peer: peer)
         case .committing:
-            waiting(title: store.l.t("교환 정보를 확인하는 중…", "Verifying trade…", "交換内容を確認中…"), cancellable: false)
+            waiting(title: "교환 정보를 확인하는 중…", cancellable: false)
         case .animating:
             TradeAnimationView(sent: center.localOffer, received: center.remoteOffer) { center.finishAnimation() }
         case .completed:
             VStack(spacing: 14) {
                 Image(systemName: "checkmark.seal.fill").font(.system(size: 52)).foregroundStyle(.green)
-                Text(store.l.t("교환 완료!", "Trade complete!", "交換完了！")).font(.title2.bold())
+                Text("교환 완료!").font(.title2.bold())
                 if let received = center.remoteOffer {
                     // 이름은 상대가 부르는 값이고 프레임 상한(1MB)까지 채울 수 있다. 나머지 표시
                     // 자리는 전부 한 줄로 자르는데 여기만 빠져 있었다 — 팝오버 안이라 한 줄이
                     // 패널 레이아웃을 통째로 무너뜨린다.
-                    Text(store.l.t("\(received.displayName)이(가) 동료가 되었습니다.",
-                                   "\(received.displayName) joined you.",
-                                   "\(received.displayName)が仲間になりました。"))
+                    Text("\(received.displayName)이(가) 동료가 되었습니다.")
                         .lineLimit(1)
                 }
-                Button(store.l.t("확인", "Done", "完了")) { close() }.buttonStyle(.borderedProminent)
+                Button("확인") { close() }.buttonStyle(.borderedProminent)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed(let message):
             VStack(spacing: 14) {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 42)).foregroundStyle(.orange)
                 Text(message)
-                Button(store.l.t("닫기", "Close", "閉じる")) { close() }
+                Button("닫기") { close() }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -81,7 +78,7 @@ struct PokemonTradeView: View {
                                       PokemonNameSearch.names(for: $0.mon))
         }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         return VStack(alignment: .leading, spacing: 10) {
-            Text(store.l.t("\(peer)님의 포켓몬", "\(peer)'s Pokémon", "\(peer)のポケモン"))
+            Text("\(peer)님의 포켓몬")
                 .font(.headline)
             PokemonSearchField(text: $remoteSearchText, l: store.l)
             // 팝오버 본체가 이미 `ScrollView` 다 — 여기 하나 더 두면 안쪽이 스크롤되지 않아
@@ -98,19 +95,17 @@ struct PokemonTradeView: View {
                     .pokedoroCard()
                 }
             }
-            Button(store.l.t("돌아가기", "Back", "戻る")) { close() }
+            Button("돌아가기") { close() }
         }
     }
 
     private var peerList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(store.l.t("근처 트레이너", "Nearby Trainers", "近くのトレーナー")).font(.headline)
-            Text(store.l.t("같은 네트워크에서 앱을 실행 중인 트레이너에게 신청하세요.",
-                           "Choose a trainer running the app on the same network.",
-                           "同じネットワークでアプリを起動中のトレーナーを選んでください。"))
+            Text("근처 트레이너").font(.headline)
+            Text("같은 네트워크에서 앱을 실행 중인 트레이너에게 신청하세요.")
                 .font(.caption).foregroundStyle(.secondary)
             if center.peers.isEmpty {
-                ContentUnavailableView(store.l.t("트레이너를 찾는 중…", "Looking for trainers…", "トレーナーを検索中…"),
+                ContentUnavailableView("트레이너를 찾는 중…",
                                        systemImage: "dot.radiowaves.left.and.right")
             } else {
                 // 여기도 팝오버 `ScrollView` 안이다 — 자기 스크롤을 두면 넷째 트레이너부터
@@ -121,7 +116,7 @@ struct PokemonTradeView: View {
                             Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.blue)
                             Text(peer.name).font(.headline)
                             Spacer()
-                            Button(store.l.t("교환 신청", "Request", "申請")) { center.request(peer) }
+                            Button("교환 신청") { center.request(peer) }
                                 .buttonStyle(.borderedProminent).controlSize(.small)
                         }.padding(10).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                     }
@@ -134,7 +129,7 @@ struct PokemonTradeView: View {
         VStack(spacing: 18) {
             ProgressView().controlSize(.large)
             Text(title).font(.headline)
-            if cancellable { Button(store.l.t("취소", "Cancel", "キャンセル")) { center.cancel() } }
+            if cancellable { Button("취소") { center.cancel() } }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -144,19 +139,18 @@ struct PokemonTradeView: View {
                                       PokemonNameSearch.names(for: $0.mon))
         }.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
         return VStack(spacing: 12) {
-            Text(store.l.t("\(peer)님과 교환", "Trading with \(peer)", "\(peer)と交換"))
+            Text("\(peer)님과 교환")
                 .font(.headline)
             HStack(spacing: 14) {
-                offerCard(title: store.l.t("내 포켓몬", "Your Pokémon", "自分のポケモン"),
+                offerCard(title: "내 포켓몬",
                           offer: center.localOffer, confirmed: center.localConfirmed, isMine: true)
                 Image(systemName: "arrow.left.arrow.right").font(.title2.bold()).foregroundStyle(.blue)
-                offerCard(title: store.l.t("상대 포켓몬", "Their Pokémon", "相手のポケモン"),
+                offerCard(title: "상대 포켓몬",
                           offer: center.remoteOffer, confirmed: center.remoteConfirmed, isMine: false)
             }
             if !center.remoteRoster.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(store.l.t("상대에게 원하는 포켓몬 요청", "Request a Pokémon",
-                                   "相手に希望ポケモンを伝える"))
+                    Text("상대에게 원하는 포켓몬 요청")
                         .font(.caption.bold())
                     PokemonSearchField(text: $remoteSearchText, l: store.l)
                     ScrollView(.horizontal) {
@@ -183,18 +177,14 @@ struct PokemonTradeView: View {
             if let wanted = center.remoteRequestedLocalMonID,
                let entry = store.ownedMons.first(where: { $0.id == wanted }) {
                 HStack {
-                    Text(store.l.t("상대가 원하는 포켓몬: \(monLabel(entry))",
-                                   "They requested: \(monLabel(entry))",
-                                   "相手の希望: \(monLabel(entry))"))
+                    Text("상대가 원하는 포켓몬: \(monLabel(entry))")
                         .font(.caption.bold())
                     Spacer()
-                    Button(store.l.t("올려두기", "Offer", "提示する")) { center.offerRequestedPokemon() }
+                    Button("올려두기") { center.offerRequestedPokemon() }
                         .controlSize(.small).buttonStyle(.bordered)
                 }
             }
-            Text(store.l.t("포켓몬을 바꾸면 두 사람의 확인이 모두 해제됩니다.",
-                           "Changing an offer clears both confirmations.",
-                           "ポケモンを変更すると双方の確認が解除されます。"))
+            Text("포켓몬을 바꾸면 두 사람의 확인이 모두 해제됩니다.")
                 .font(.caption).foregroundStyle(.secondary)
             outgoingMemoryNotice
             BattleChatPanel(configuration: BattleChatConfiguration(
@@ -205,11 +195,11 @@ struct PokemonTradeView: View {
                 l: store.l,
                 onSend: { center.sendChat($0) }))
             HStack {
-                Button(store.l.t("교환 취소", "Cancel Trade", "交換をやめる"), role: .cancel) { center.cancel() }
+                Button("교환 취소", role: .cancel) { center.cancel() }
                 Spacer()
                 Button(center.localConfirmed
-                       ? store.l.t("확인 완료", "Confirmed", "確認済み")
-                       : store.l.t("이 내용으로 교환", "Confirm Trade", "この内容で交換")) {
+                       ? "확인 완료"
+                       : "이 내용으로 교환") {
                     center.confirm()
                 }
                 .buttonStyle(.borderedProminent)
@@ -225,10 +215,7 @@ struct PokemonTradeView: View {
     private var outgoingMemoryNotice: some View {
         if let mine = center.localOffer,
            let count = store.tradeMemoryPayload(for: mine.mon.id)?.entries.count, count > 0 {
-            Label(store.l.t(
-                "교환하면 이 포켓몬이 겪은 일 \(count)개가 상대에게 함께 갑니다. 대화에서 남은 기억과 손글씨 메모는 가지 않습니다.",
-                "Trading also sends \(count) of this Pokémon's events to your partner. Conversation memories and handwritten notes stay on this Mac.",
-                "交換すると、このポケモンが経験した出来事\(count)件も相手に渡ります。会話から残った記憶と手書きメモは渡りません。"),
+            Label("교환하면 이 포켓몬이 겪은 일 \(count)개가 상대에게 함께 갑니다. 대화에서 남은 기억과 손글씨 메모는 가지 않습니다.",
                   systemImage: "arrow.up.forward.square")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -243,18 +230,18 @@ struct PokemonTradeView: View {
                 Text("Lv.\(offer.mon.level)\(offer.mon.isShiny ? " ✨" : "")").font(.caption)
             } else {
                 Image(systemName: "questionmark").font(.system(size: 42)).foregroundStyle(.tertiary).frame(height: 76)
-                Text(store.l.t("선택 전", "Not selected", "未選択")).foregroundStyle(.secondary)
+                Text("선택 전").foregroundStyle(.secondary)
             }
             if isMine {
                 Button { showsOfferPicker.toggle() } label: {
-                    Label(store.l.t("포켓몬 선택", "Choose Pokémon", "ポケモンを選ぶ"),
+                    Label("포켓몬 선택",
                           systemImage: "chevron.down")
                 }
                 .buttonStyle(.borderless)
                 .popover(isPresented: $showsOfferPicker) { offerPicker }
             }
-            Label(confirmed ? store.l.t("확인 완료", "Confirmed", "確認済み")
-                            : store.l.t("확인 대기", "Waiting", "確認待ち"),
+            Label(confirmed ? "확인 완료"
+                            : "확인 대기",
                   systemImage: confirmed ? "checkmark.circle.fill" : "clock")
                 .font(.caption.bold()).foregroundStyle(confirmed ? .green : .secondary)
         }
@@ -270,7 +257,7 @@ struct PokemonTradeView: View {
     }
 
     private func monLabel(_ mon: MonState) -> String {
-        let name = mon.nickname ?? mon.names?[mon.currentID]?[store.language.rawValue] ?? "#\(mon.currentID)"
+        let name = mon.nickname ?? mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
         return "\(name) · Lv.\(mon.level)"
     }
 

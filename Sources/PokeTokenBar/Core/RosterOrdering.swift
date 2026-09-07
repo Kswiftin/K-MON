@@ -27,15 +27,15 @@ enum RosterOrdering {
     /// 포켓몬을 **고르는** 화면의 공통 가나다순. 포켓몬 탭은 사용자가 고른 정렬을 유지하지만,
     /// 배틀·교환·경매 같은 선택기는 어디서 열어도 같은 이름 순서여야 한다.
     /// 별명이 화면에 보이면 별명을 정렬 키로 삼아 표시와 순서를 일치시킨다.
-    static func alphabetizedForSelection(_ mons: [MonState], language: AppLanguage,
+    static func alphabetizedForSelection(_ mons: [MonState],
                                           names: [Int: String] = [:]) -> [MonState] {
         Array(mons.enumerated()).sorted { left, right in
             let leftName = left.element.nickname
                 ?? names[left.element.currentID] ?? names[left.element.presentationID]
-                ?? displayName(left.element, language: language)
+                ?? displayName(left.element)
             let rightName = right.element.nickname
                 ?? names[right.element.currentID] ?? names[right.element.presentationID]
-                ?? displayName(right.element, language: language)
+                ?? displayName(right.element)
             let order = leftName.localizedStandardCompare(rightName)
             return order == .orderedSame ? left.offset < right.offset : order == .orderedAscending
         }.map(\.element)
@@ -46,10 +46,10 @@ enum RosterOrdering {
     ///
     /// 별명(`nickname`)은 쓰지 않는다 — 카드가 별명을 그리지 않기 때문이다. 카드가 별명을 그리게
     /// 되면 이 함수도 같이 바꿔야 한다.
-    static func displayName(_ mon: MonState, language: AppLanguage,
+    static func displayName(_ mon: MonState,
                             resolved: [Int: String] = [:]) -> String {
         if let name = resolved[mon.presentationID], !name.isEmpty { return name }
-        if let stored = mon.names?[mon.currentID], let name = language.resolveName(stored), !name.isEmpty {
+        if let stored = mon.names?[mon.currentID], let name = PokemonNaming.name(stored), !name.isEmpty {
             return name
         }
         return "#\(mon.currentID)"
@@ -69,8 +69,7 @@ enum RosterOrdering {
 
     /// 필터 적용 후 정렬. 같은 키끼리는 저장 순서를 유지한다(정렬이 흔들리지 않게).
     static func arrange(_ mons: [MonState], sort: RosterSort, ascending: Bool = true,
-                        typeFilter: PokemonType? = nil, types: [Int: [PokemonType]] = [:],
-                        language: AppLanguage = .en, names: [Int: String] = [:]) -> [MonState] {
+                        typeFilter: PokemonType? = nil, types: [Int: [PokemonType]] = [:], names: [Int: String] = [:]) -> [MonState] {
         let filtered = mons.filter { passesTypeFilter($0, type: typeFilter, types: types) }
         let indexed = Array(filtered.enumerated())
         let sorted: [(offset: Int, element: MonState)]
@@ -95,8 +94,8 @@ enum RosterOrdering {
             }
         case .name:
             sorted = indexed.sorted { a, b in
-                let l = displayName(a.element, language: language, resolved: names)
-                let r = displayName(b.element, language: language, resolved: names)
+                let l = displayName(a.element, resolved: names)
+                let r = displayName(b.element, resolved: names)
                 let order = l.localizedStandardCompare(r)
                 if order == .orderedSame { return a.offset < b.offset }
                 return order == .orderedAscending

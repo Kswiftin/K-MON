@@ -52,10 +52,8 @@ final class TrainerOutfitTests: XCTestCase {
         XCTAssertEqual(a.canonical, "hat:straw_hat,top:tee_white")
     }
 
-    func testEveryItemAndSlotIsNamedInAllThreeLanguages() {
-        for lang in [AppLanguage.ko, .en, .ja] {
-            for item in OutfitItem.allCases { XCTAssertFalse(L(lang).outfitItemName(item).isEmpty, "\(item) \(lang)") }
-            for slot in OutfitSlot.allCases { XCTAssertFalse(L(lang).outfitSlotName(slot).isEmpty, "\(slot) \(lang)") }
-        }
+    func testEveryItemAndSlotIsNamed() {
+        for item in OutfitItem.allCases { XCTAssertFalse(L().outfitItemName(item).isEmpty, "\(item)") }
+        for slot in OutfitSlot.allCases { XCTAssertFalse(L().outfitSlotName(slot).isEmpty, "\(slot)") }
     }
 }

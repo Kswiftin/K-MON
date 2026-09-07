@@ -44,7 +44,6 @@ enum AuctionFixtures {
                                    clock: { AuctionFixtures.now },
                                    fileURL: directory.appendingPathComponent("state.json"),
                                    rng: AuctionSeededRNG(seed: 1))
-        store.setLanguage(AppLanguage.ko)
         return store
     }
 

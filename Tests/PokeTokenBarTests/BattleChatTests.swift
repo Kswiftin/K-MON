@@ -139,11 +139,9 @@ extension BattleChatTests {
 
     /// 새 메시지 버튼이 개수를 그린다. 보간 백슬래시가 빠져 리터럴 "(count)" 가 나가고 있었다.
     func testTheNewMessageButtonShowsTheActualCount() {
-        for lang in [AppLanguage.ko, .en, .ja] {
-            let text = L(lang).battleChatNewMessages(3)
-            XCTAssertTrue(text.contains("3"), "\(lang): 개수가 들어가야 한다 — \(text)")
-            XCTAssertFalse(text.contains("(count)"), "\(lang): 보간이 빠졌다 — \(text)")
-        }
+        let text = L().battleChatNewMessages(3)
+        XCTAssertTrue(text.contains("3"), "개수가 들어가야 한다 — \(text)")
+        XCTAssertFalse(text.contains("(count)"), "보간이 빠졌다 — \(text)")
     }
 }
 

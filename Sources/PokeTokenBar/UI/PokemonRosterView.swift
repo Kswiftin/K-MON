@@ -57,8 +57,7 @@ struct PokemonRosterView: View {
         }
         let arranged = RosterOrdering.arrange(searched, sort: settings.rosterSort,
                                               ascending: settings.rosterSortAscending,
-                                              typeFilter: typeFilter, types: types,
-                                              language: store.language, names: names)
+                                              typeFilter: typeFilter, types: types, names: names)
         let pageCount = Self.pageCount(ownedCount: arranged.count)
         // 졸업·방출·필터로 마릿수가 줄면 보던 페이지가 사라진다 — 범위 밖이면 마지막 페이지로 당긴다.
         let current = min(page, pageCount - 1)
@@ -87,15 +86,13 @@ struct PokemonRosterView: View {
         }
         .confirmationDialog(releaseQuestion(releaseTarget), isPresented: releaseDialogBinding,
                             titleVisibility: .visible) {
-            Button(store.l.t("놓아주기", "Release", "にがす"), role: .destructive) {
+            Button("놓아주기", role: .destructive) {
                 if let target = releaseTarget { store.releaseMon(target.id) }
                 releaseTarget = nil
             }
-            Button(store.l.t("취소", "Cancel", "キャンセル"), role: .cancel) { releaseTarget = nil }
+            Button("취소", role: .cancel) { releaseTarget = nil }
         } message: {
-            Text(store.l.t("놓아준 포켓몬은 돌아오지 않습니다. 졸업해 도감에 기록된 개체라면 도감 기록은 남습니다.",
-                     "A released Pokémon does not come back. If it had graduated, its Pokédex record stays.",
-                     "にがしたポケモンは戻りません。卒業して図鑑に記録された個体なら記録は残ります。"))
+            Text("놓아준 포켓몬은 돌아오지 않습니다. 졸업해 도감에 기록된 개체라면 도감 기록은 남습니다.")
         }
     }
 
@@ -109,9 +106,7 @@ struct PokemonRosterView: View {
 
     private func releaseQuestion(_ mon: MonState?) -> String {
         guard let mon else { return "" }
-        return store.l.t("Lv.\(mon.level) 포켓몬을 놓아줄까요?",
-                          "Release this Lv.\(mon.level) Pokémon?",
-                          "Lv.\(mon.level) のポケモンをにがしますか？")
+        return "Lv.\(mon.level) 포켓몬을 놓아줄까요?"
     }
 
     /// 박스 전체의 이름·타입을 한 번 해석한다. 이름은 개체에 저장된 다국어 이름으로 대부분 끝나고
@@ -120,7 +115,7 @@ struct PokemonRosterView: View {
         for mon in owned {
             let id = mon.presentationID
             if names[id] == nil {
-                let local = RosterOrdering.displayName(mon, language: store.language)
+                let local = RosterOrdering.displayName(mon)
                 names[id] = local.hasPrefix("#") ? await store.resolveSpeciesName(id) : local
             }
             if types[id] == nil,
@@ -134,12 +129,12 @@ struct PokemonRosterView: View {
     private func ownedNameTaskID(_ owned: [MonState]) -> String {
         let identities = owned.map { "\($0.id):\($0.presentationID):\($0.names?[$0.currentID]?.count ?? 0)" }
             .sorted().joined(separator: "|")
-        return "\(store.language.rawValue)|\(identities)"
+        return "ko|\(identities)"
     }
 
     private func header(shownCount: Int, ownedCount: Int, owned: [MonState]) -> some View {
         HStack(spacing: 6) {
-            Label(store.l.t("소유 포켓몬", "Owned Pokémon", "手持ちポケモン"), systemImage: "square.grid.2x2.fill")
+            Label("소유 포켓몬", systemImage: "square.grid.2x2.fill")
                 .font(.headline)
             Spacer(minLength: 2)
             sortMenu
@@ -178,8 +173,8 @@ struct PokemonRosterView: View {
         }
         .menuStyle(.borderlessButton).fixedSize()
         .accessibilityLabel(settings.rosterSortAscending
-                            ? store.l.t("정렬 — 오름차순", "Sort — ascending", "並べ替え — 昇順")
-                            : store.l.t("정렬 — 내림차순", "Sort — descending", "並べ替え — 降順"))
+                            ? "정렬 — 오름차순"
+                            : "정렬 — 내림차순")
     }
 
     /// 켜짐/꺼짐이 아이콘 자체로 읽혀야 한다 — 채워진 노란 별이 카드의 즐겨찾기 표시와 같은 그림이라,
@@ -214,36 +209,34 @@ struct PokemonRosterView: View {
         .buttonStyle(.borderless)
         // 필터를 켠 채 마지막 중복을 방생해도 다시 전체 보기로 돌아갈 수 있어야 한다.
         .disabled(duplicateCount == 0 && !duplicatesOnly)
-        .accessibilityLabel(store.l.t("중복 종만 보기", "Show duplicate species only", "重複する種類のみ表示"))
+        .accessibilityLabel("중복 종만 보기")
         .accessibilityAddTraits(duplicatesOnly ? .isSelected : [])
-        .help(store.l.t("같은 도감 번호가 2마리 이상인 포켓몬만 표시합니다.",
-                        "Shows only Pokémon whose Pokédex number appears at least twice.",
-                        "同じ図鑑番号が2匹以上いるポケモンだけを表示します。"))
+        .help("같은 도감 번호가 2마리 이상인 포켓몬만 표시합니다.")
     }
 
     private func typeMenu(owned: [MonState]) -> some View {
         let available = RosterOrdering.availableTypes(owned, types: types)
         return Menu {
-            Button(store.l.t("전체 타입", "All types", "すべてのタイプ")) { typeFilter = nil; page = 0 }
+            Button("전체 타입") { typeFilter = nil; page = 0 }
             ForEach(available, id: \.self) { type in
-                Button(type.name(store.language)) { typeFilter = type; page = 0 }
+                Button(type.name) { typeFilter = type; page = 0 }
             }
         } label: {
-            Label(typeFilter?.name(store.language) ?? store.l.t("타입", "Type", "タイプ"),
+            Label(typeFilter?.name ?? "타입",
                   systemImage: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 10, weight: .semibold))
         }
         .menuStyle(.borderlessButton).fixedSize()
         .disabled(!didResolveTypes || available.isEmpty)
-        .accessibilityLabel(store.l.t("타입 필터", "Type filter", "タイプで絞り込み"))
+        .accessibilityLabel("타입 필터")
     }
 
     private func sortLabel(_ option: RosterSort) -> String {
         switch option {
-        case .caught:    return store.l.t("부화순", "Caught", "ふ化順")
-        case .dexNumber: return store.l.t("도감번호순", "Dex No.", "図鑑番号順")
-        case .name:      return store.l.t("이름순", "Name", "名前順")
-        case .level:     return store.l.t("레벨순", "Level", "レベル順")
+        case .caught:    return "부화순"
+        case .dexNumber: return "도감번호순"
+        case .name:      return "이름순"
+        case .level:     return "레벨순"
         }
     }
 
@@ -330,9 +323,9 @@ private struct RosterMonCard: View {
                 store.markPokemonSeen(mon.id)
                 infoTarget = mon
             } label: {
-                Label(store.l.t("정보", "Info", "情報"), systemImage: "info.circle")
+                Label("정보", systemImage: "info.circle")
             }
-            Button(action: onChat) { Label(store.l.t("대화", "Chat", "話す"), systemImage: "bubble.left.and.bubble.right") }
+            Button(action: onChat) { Label("대화", systemImage: "bubble.left.and.bubble.right") }
             Button { store.toggleFavorite(mon.id) } label: {
                 Label(isFavorite ? store.l.unfavorite : store.l.favorite,
                       systemImage: isFavorite ? "star.slash" : "star")
@@ -342,7 +335,7 @@ private struct RosterMonCard: View {
             // 즐겨찾기도 같은 부류의 잠금이고, 여기선 별을 끄는 것이 곧 해제다.
             if !isActive, !isGymDeployed, !isFavorite {
                 Button(role: .destructive, action: onRelease) {
-                    Label(store.l.t("놓아주기", "Release", "にがす"), systemImage: "hand.wave")
+                    Label("놓아주기", systemImage: "hand.wave")
                 }
             }
         }
@@ -378,7 +371,7 @@ private struct RosterMonCard: View {
                 Text("Lv.\(mon.level)").font(.system(size: 10)).foregroundStyle(.secondary)
                 HStack(spacing: 3) {
                     ForEach(types, id: \.self) { type in
-                        Text(type.name(store.language).uppercased())
+                        Text(type.name.uppercased())
                             .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy)).foregroundStyle(.white)
                             .padding(.horizontal, 3).padding(.vertical, 1)
                             .background(type.rosterColor, in: Capsule())
@@ -386,8 +379,8 @@ private struct RosterMonCard: View {
                 }
                 Text(isGymDeployed
                      ? store.l.gymDeployedBadge
-                     : isActive ? store.l.t("동행 중", "Active", "同行中")
-                                : store.l.t("교체", "Switch", "交代"))
+                     : isActive ? "동행 중"
+                                : "교체")
                     .font(PokedoroTheme.badgeFont(size: 7, weight: .bold))
                     .foregroundStyle(isGymDeployed ? .orange : isActive ? .green : .secondary)
             }.frame(maxWidth: .infinity).padding(4)
@@ -406,10 +399,10 @@ private struct RosterMonCard: View {
                     infoTarget = mon
                 } label: { Image(systemName: "info.circle") }
                     .buttonStyle(.borderless).controlSize(.mini)
-                    .accessibilityLabel(store.l.t("포켓몬 정보", "Pokémon info", "ポケモン情報"))
+                    .accessibilityLabel("포켓몬 정보")
                 Button(action: onChat) { Image(systemName: "bubble.left") }
                     .buttonStyle(.borderless).controlSize(.mini)
-                    .accessibilityLabel(store.l.t("대화", "Chat", "話す"))
+                    .accessibilityLabel("대화")
                 // 채워진 노란 별이 잠금 표시를 겸한다 — 별도 배지 없이 상태와 토글이 한 자리다.
                 Button { store.toggleFavorite(mon.id) } label: {
                     Image(systemName: isFavorite ? "star.fill" : "star")
@@ -428,7 +421,7 @@ private struct RosterMonCard: View {
                     .padding(.horizontal, 4).padding(.vertical, 2)
                     .background(Color.red, in: Capsule())
                     .padding(3)
-                    .accessibilityLabel(store.l.t("새 포켓몬", "New Pokémon", "新しいポケモン"))
+                    .accessibilityLabel("새 포켓몬")
             }
         }
     }
@@ -446,7 +439,7 @@ private struct PokemonDetailCard: View {
             HStack {
                 SpriteView(speciesID: mon.presentationID, size: 54, shiny: mon.isShiny)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(RosterOrdering.displayName(mon, language: store.language)).font(.headline)
+                    Text(RosterOrdering.displayName(mon)).font(.headline)
                     Text("#\(String(format: "%03d", mon.currentID)) · Lv.\(mon.level) \(mon.gender?.symbol ?? "")")
                         .font(.caption).foregroundStyle(.secondary)
                     Text(evolutionText).font(.caption2).foregroundStyle(.orange)
@@ -454,7 +447,7 @@ private struct PokemonDetailCard: View {
             }
             if let abilityText, !abilityText.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
-                    Label(store.l.t("특성", "Ability", "とくせい"), systemImage: "sparkles")
+                    Label("특성", systemImage: "sparkles")
                         .font(.caption.bold())
                     Text(abilityText)
                         .font(.caption2).foregroundStyle(.secondary)
@@ -469,7 +462,7 @@ private struct PokemonDetailCard: View {
             } else {
                 ForEach(mon.learnedMoves) { move in
                     HStack(spacing: 5) {
-                        Text(move.name(store.language)).font(.caption.bold())
+                        Text(move.name).font(.caption.bold())
                         MoveCategoryIcon(damageClass: move.damageClass, l: store.l)
                         Text(store.l.moveCategory(move.damageClass)).font(.caption2)
                             .foregroundStyle(move.damageClass == .physical ? .orange : move.damageClass == .special ? .blue : .secondary)
@@ -481,20 +474,20 @@ private struct PokemonDetailCard: View {
             }
         }
         .padding(14).frame(width: 330)
-        .task(id: "\(mon.presentationID)-\(store.language.rawValue)") {
+        .task(id: "\(mon.presentationID)-ko") {
             profile = try? await PokeAPIClient.shared.battleProfile(speciesID: mon.presentationID)
             line = try? await PokeAPIClient.shared.line(baseSpeciesID: mon.baseID)
             abilityText = await PokeAPIClient.shared
-                .chatSpeciesIdentity(speciesID: mon.presentationID, language: store.language).ability
+                .chatSpeciesIdentity(speciesID: mon.presentationID).ability
         }
     }
 
     private func statGrid(_ s: BattleStats) -> some View {
-        let values = [("HP", s.hp), (store.l.t("공격", "Attack", "攻撃"), s.atk),
-                      (store.l.t("방어", "Defense", "防御"), s.def),
-                      (store.l.t("특공", "Sp. Atk", "特攻"), s.spa),
-                      (store.l.t("특방", "Sp. Def", "特防"), s.spd),
-                      (store.l.t("스피드", "Speed", "素早さ"), s.spe)]
+        let values = [("HP", s.hp), ("공격", s.atk),
+                      ("방어", s.def),
+                      ("특공", s.spa),
+                      ("특방", s.spd),
+                      ("스피드", s.spe)]
         return LazyVGrid(columns: [.init(.flexible()), .init(.flexible()), .init(.flexible())], spacing: 5) {
             ForEach(values, id: \.0) { label, value in
                 HStack { Text(label); Spacer(); Text("\(value)").bold() }
@@ -510,19 +503,19 @@ private struct PokemonDetailCard: View {
             ? node.children.first(where: { $0.speciesID == mon.plannedPathIDs[nextIndex] }) ?? node.children[0]
             : node.children[0]
         var parts: [String] = []
-        if let g = next.evolutionGender { parts.append(g.name(store.language)) }
-        if let time = next.evolutionTimeOfDay { parts.append(time == "day" ? store.l.t("낮", "Daytime", "昼") : store.l.t("밤", "Night", "夜")) }
+        if let g = next.evolutionGender { parts.append(g.name) }
+        if let time = next.evolutionTimeOfDay { parts.append(time == "day" ? "낮" : "밤") }
         if let move = next.evolutionKnownMoveID {
-            let name = line?.evolutionMoveNames[move].flatMap { store.language.resolveName($0) } ?? "#\(move)"
-            parts.append(store.l.t("\(name) 습득 후 레벨업", "Level up knowing \(name)", "\(name)を覚えてレベルアップ"))
+            let name = line?.evolutionMoveNames[move].flatMap { PokemonNaming.name($0) } ?? "#\(move)"
+            parts.append("\(name) 습득 후 레벨업")
         }
-        else if let level = next.evolutionLevel { parts.append(store.l.t("Lv.\(level)에 진화", "Evolves at Lv.\(level)", "Lv.\(level)で進化")) }
+        else if let level = next.evolutionLevel { parts.append("Lv.\(level)에 진화") }
         else if let item = ItemKind.allCases.first(where: { $0.evolutionRule?.opens(next) == true }) { parts.append(store.l.evolutionNeedsItem(store.l.itemName(item))) }
-        else if next.evolutionPartySpeciesID == 223 { parts.append(store.l.t("총어 보유 후 레벨업", "Level up while owning Remoraid", "テッポウオを所持してレベルアップ")) }
+        else if next.evolutionPartySpeciesID == 223 { parts.append("총어 보유 후 레벨업") }
         // 레벨 조건 없는 레벨업 진화(친밀도·장소 등)는 키우면 진화한다 — 홈의
         // `evolutionRequirementText` 와 같은 말을 해야 두 화면이 어긋나지 않는다.
-        else if next.evolutionTrigger == "level-up" { parts.append(store.l.t("레벨업으로 진화", "Evolves by leveling up", "レベルアップで進化")) }
-        else { parts.append(store.l.t("특수 조건으로 진화", "Special evolution condition", "特殊な条件で進化")) }
+        else if next.evolutionTrigger == "level-up" { parts.append("레벨업으로 진화") }
+        else { parts.append("특수 조건으로 진화") }
         return parts.joined(separator: " · ")
     }
 }

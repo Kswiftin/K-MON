@@ -75,13 +75,11 @@ struct SettingsView: View {
     @ViewBuilder
     private func workModeGroup(_ settings: AppSettings) -> some View {
         @Bindable var settings = settings
-        settingsSection(l.t("집중 타이머", "Focus timer", "集中タイマー")) {
+        settingsSection("집중 타이머") {
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(l.t("방해금지 모드", "Do Not Disturb", "おやすみモード"))
-                    Text(l.t("알림과 배틀 신청을 받지 않습니다.",
-                             "Blocks notifications and incoming battle challenges.",
-                             "通知とバトルの申し込みを受け取りません。"))
+                    Text("방해금지 모드")
+                    Text("알림과 배틀 신청을 받지 않습니다.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -90,10 +88,8 @@ struct SettingsView: View {
             }
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(l.t("하루 목표 세션", "Daily session goal", "1日の目標セッション"))
-                    Text(l.t("휴식이 끝나면 알림으로 알려 드립니다. 다음 세션은 직접 시작하세요.",
-                             "You get a notification when the break ends. You start the next session yourself.",
-                             "休憩が終わると通知でお知らせします。次のセッションはご自分で開始してください。"))
+                    Text("하루 목표 세션")
+                    Text("휴식이 끝나면 알림으로 알려 드립니다. 다음 세션은 직접 시작하세요.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -107,10 +103,8 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func chatProviderGroup(_ settings: AppSettings) -> some View {
-        settingsSection(l.t("포켓몬 대화 CLI", "Pokémon chat CLI", "ポケモン会話 CLI")) {
-            Text(l.t("Finder/launchd의 PATH를 사용하지 않습니다. 흔한 설치 위치를 먼저 찾아보고, 없으면 아래에 경로를 직접 넣으세요.",
-                     "The app never uses Finder or launchd PATH. Common install locations are searched first; type a path below if none matched.",
-                     "Finder/launchd の PATH は使いません。よくあるインストール先を先に探し、見つからなければ下にパスを直接入力してください。"))
+        settingsSection("포켓몬 대화 CLI") {
+            Text("Finder/launchd의 PATH를 사용하지 않습니다. 흔한 설치 위치를 먼저 찾아보고, 없으면 아래에 경로를 직접 넣으세요.")
                 .font(.caption2).foregroundStyle(.secondary)
             ForEach(PokemonChatProviderSafety.verifiedKinds, id: \.self) { kind in
                 chatProviderRow(kind, settings: settings)
@@ -129,44 +123,36 @@ struct SettingsView: View {
             searchPaths: PokemonChatProviderExecutableResolver.standardPaths(for: kind))
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(kind.label(l.lang))
+                Text(kind.label)
                 Spacer()
                 if let resolved {
                     Label(resolved.path, systemImage: "checkmark.circle.fill")
                         .font(.caption2).foregroundStyle(.green).lineLimit(1).truncationMode(.middle)
                 } else {
-                    Label(l.t("찾지 못함", "Not found", "未検出"), systemImage: "exclamationmark.triangle.fill")
+                    Label("찾지 못함", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundStyle(.orange)
                 }
-                Button(l.t("선택…", "Choose…", "選択…")) { chooseChatExecutable(kind, settings: settings) }
+                Button("선택…") { chooseChatExecutable(kind, settings: settings) }
                 if settings.chatProviderExecutablePath(for: kind) != nil {
-                    Button(l.t("지우기", "Clear", "消去")) { settings.setChatProviderExecutablePath(nil, for: kind) }
+                    Button("지우기") { settings.setChatProviderExecutablePath(nil, for: kind) }
                 }
             }
             // 직접 입력을 파일 선택창과 함께 둔다 — NSOpenPanel 은 `~/.local` 같은 숨김 폴더로
             // Cmd+Shift+G 없이 갈 수 없어, 정작 CLI 가 가장 많이 사는 자리를 못 고른다.
-            TextField(l.t("예: \(NSHomeDirectory())/.local/bin/\(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")",
-                          "e.g. \(NSHomeDirectory())/.local/bin/\(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")",
-                          "例: \(NSHomeDirectory())/.local/bin/\(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")"),
+            TextField("예: \(NSHomeDirectory())/.local/bin/\(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")",
                       text: chatExecutablePathBinding(kind, settings: settings))
                 .textFieldStyle(.roundedBorder).font(.caption2)
             if let typed = settings.chatProviderExecutablePath(for: kind), !typed.isEmpty,
                PokemonChatProviderExecutableResolver.validatedExecutable(typed) == nil {
                 // 저장은 막지 않는다(오타를 고치는 중일 수 있다). 다만 이 경로로는 아무것도 실행되지
                 // 않는다는 사실을 대화 창까지 끌고 가지 않는다.
-                Text(l.t("이 경로에는 실행 가능한 파일이 없습니다.",
-                         "No executable file at this path.",
-                         "このパスに実行可能なファイルがありません。"))
+                Text("이 경로에는 실행 가능한 파일이 없습니다.")
                     .font(.caption2).foregroundStyle(.red)
             }
             if resolved == nil {
-                Text(l.t("찾아본 곳: \(PokemonChatProviderExecutableResolver.searchDirectories.joined(separator: ", "))",
-                         "Searched: \(PokemonChatProviderExecutableResolver.searchDirectories.joined(separator: ", "))",
-                         "探した場所: \(PokemonChatProviderExecutableResolver.searchDirectories.joined(separator: ", "))"))
+                Text("찾아본 곳: \(PokemonChatProviderExecutableResolver.searchDirectories.joined(separator: ", "))")
                     .font(.caption2).foregroundStyle(.secondary)
-                Text(l.t("터미널에서 `which \(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")` 결과를 위에 붙여 넣으면 됩니다.",
-                         "Paste the output of `which \(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")` above.",
-                         "ターミナルの `which \(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")` の結果を上に貼り付けてください。"))
+                Text("터미널에서 `which \(PokemonChatProviderExecutableResolver.binaryName(for: kind) ?? "")` 결과를 위에 붙여 넣으면 됩니다.")
                     .font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
@@ -184,7 +170,7 @@ struct SettingsView: View {
         // 알아야만 자기 설치분에 닿는다.
         panel.showsHiddenFiles = true
         panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory() + "/.local/bin")
-        panel.message = l.t("CLI 실행 파일을 선택하세요.", "Choose the CLI executable.", "CLI 実行ファイルを選んでください。")
+        panel.message = "CLI 실행 파일을 선택하세요."
         if panel.runModal() == .OK, let url = panel.url { settings.setChatProviderExecutablePath(url.path, for: kind) }
     }
 
@@ -223,27 +209,14 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { commitTrainerName() }
                         .onChange(of: trainerNameDraft) { trainerNameFeedback = nil }
-                    Button(l.t("저장", "Save", "保存")) { commitTrainerName() }
+                    Button("저장") { commitTrainerName() }
                         .buttonStyle(.borderedProminent)
                         .disabled(normalizedTrainerName.isEmpty || normalizedTrainerName == companion.trainerName)
                 }
                 Text(trainerNameFeedback
-                     ?? l.t("배틀·교환·멀티플레이에서 다른 트레이너에게 표시됩니다.",
-                            "Shown to other trainers in battles, trades, and multiplayer.",
-                            "バトル・交換・マルチプレイでほかのトレーナーに表示されます。"))
+                     ?? "배틀·교환·멀티플레이에서 다른 트레이너에게 표시됩니다.")
                     .font(.caption2)
                     .foregroundStyle(trainerNameFeedback == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.green))
-            }
-            Divider()
-            groupRow {
-                Text(l.language)
-                Spacer()
-                Picker("", selection: Binding(
-                    get: { companion.language },
-                    set: { companion.setLanguage($0) })) {
-                    ForEach(AppLanguage.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
-                .labelsHidden().pickerStyle(.menu).fixedSize()
             }
             Divider()
             groupRow {
@@ -286,10 +259,8 @@ struct SettingsView: View {
             Divider()
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(l.t("초보자 모드", "Beginner mode", "初心者モード"))
-                    Text(l.t("배틀 기술 버튼에 상대 타입 상성을 표시하며, 친구들에게 초보자 배지가 공개됩니다.",
-                             "Shows type matchups on move buttons and displays a public beginner badge.",
-                             "技ボタンに相性を表示し、公開の初心者バッジが付きます。"))
+                    Text("초보자 모드")
+                    Text("배틀 기술 버튼에 상대 타입 상성을 표시하며, 친구들에게 초보자 배지가 공개됩니다.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -308,19 +279,17 @@ struct SettingsView: View {
         guard !normalizedTrainerName.isEmpty else { return }
         companion.setTrainerName(normalizedTrainerName)
         trainerNameDraft = companion.trainerName
-        trainerNameFeedback = l.t("닉네임을 저장했습니다.", "Nickname saved.", "ニックネームを保存しました。")
+        trainerNameFeedback = "닉네임을 저장했습니다."
     }
 
     @ViewBuilder
     private func memoryHomeGroup(_ settings: AppSettings) -> some View {
         @Bindable var settings = settings
-        settingsSection(l.t("기억 홈", "Memory Home", "メモリーホーム")) {
+        settingsSection("기억 홈") {
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(l.t("홈에 기억 표시", "Show memories on Home", "ホームに思い出を表示"))
-                    Text(l.t("기본으로 켜져 있으며, 개인 메모는 대화 제공자에게 전달되지 않습니다.",
-                             "On by default. Private notes are never sent to chat providers.",
-                             "初期設定はオンです。個人メモは会話プロバイダに送信されません。"))
+                    Text("홈에 기억 표시")
+                    Text("기본으로 켜져 있으며, 개인 메모는 대화 제공자에게 전달되지 않습니다.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -329,10 +298,8 @@ struct SettingsView: View {
             Divider()
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(l.t("로컬 사용 진단", "Local usage diagnostics", "ローカル利用診断"))
-                    Text(l.t("동의 시 홈 방문과 메모 생성 횟수만 이 Mac에 집계합니다.",
-                             "With consent, only Home visits and note counts are aggregated on this Mac.",
-                             "同意すると、ホーム閲覧とメモ作成数だけをこの Mac に集計します。"))
+                    Text("로컬 사용 진단")
+                    Text("동의 시 홈 방문과 메모 생성 횟수만 이 Mac에 집계합니다.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -341,9 +308,9 @@ struct SettingsView: View {
             if settings.memoryHomeDiagnosticsEnabled {
                 Divider()
                 groupRow {
-                    Text(l.t("진단 JSON 내보내기", "Export diagnostics JSON", "診断 JSON を書き出す"))
+                    Text("진단 JSON 내보내기")
                     Spacer()
-                    Button(l.t("내보내기", "Export", "書き出す")) { exportMemoryHomeDiagnostics() }
+                    Button("내보내기") { exportMemoryHomeDiagnostics() }
                 }
             }
         }
@@ -436,10 +403,8 @@ struct SettingsView: View {
             }
             groupRow {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(l.t("배틀 신청 받기", "Receive battle invites", "バトル招待を受け取る"))
-                    Text(l.t("끄면 LAN 탐색을 시작하지 않아 로컬 네트워크 권한을 묻지 않습니다. 적용은 재시작 후.",
-                             "Off skips LAN discovery, so macOS never asks for local network access. Takes effect after a restart.",
-                             "オフにすると LAN 探索を行わないため、ローカルネットワーク権限を聞かれません。再起動後に反映。"))
+                    Text("배틀 신청 받기")
+                    Text("끄면 LAN 탐색을 시작하지 않아 로컬 네트워크 권한을 묻지 않습니다. 적용은 재시작 후.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -681,7 +646,7 @@ struct SettingsView: View {
 
     private func exportMemoryHomeDiagnostics() {
         let panel = NSSavePanel()
-        panel.title = l.t("기억 홈 진단 내보내기", "Export Memory Home diagnostics", "メモリーホーム診断を書き出す")
+        panel.title = "기억 홈 진단 내보내기"
         panel.nameFieldStringValue = "PokeTokenBar-MemoryHome-Diagnostics.json"
         panel.allowedContentTypes = [.json]
         NSApp.activate(ignoringOtherApps: true)

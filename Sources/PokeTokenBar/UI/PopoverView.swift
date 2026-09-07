@@ -286,7 +286,7 @@ struct PopoverView: View {
         .tint(PokedoroTheme.blue)
         .fontDesign(.rounded)
         .environment(\.spriteAntialiasing, settings.imageAntialiasing)
-        .environment(\.locale, companion.language.displayLocale)
+        .environment(\.locale, PokemonNaming.locale)
         // 신호를 읽는 **바로 그 자리에서** 끈다. 끄는 일을 아래 화면에 맡기면 그 화면이 조건부로
         // 그려지는 순간(친구 탭 관문이 그랬다) 신호가 영영 안 꺼져 열 때마다 여기로 튄다.
         // 탭만 바꾸면 위에 덮인 오버레이가 그대로 남아 신청 화면이 안 보인다 — 탭 전환과 오버레이

@@ -617,15 +617,19 @@ final class RogueRunTests: XCTestCase {
                       "피격·기절 연출을 렌더러에 넘겨야 한다")
     }
 
-    /// 화면 문구는 전부 `L.t` 를 지나야 한다 — 프로토타입이라 영어 리터럴로 두었더니 한국어 사용자에게
-    /// 그대로 영어가 나갔다.
+    /// 화면 문구는 한국어로 쓰여야 한다 — 프로토타입이라 영어 리터럴로 두었더니 한국어 사용자에게
+    /// 그대로 영어가 나갔다. "PokéAPI" 처럼 ASCII 로 시작하는 고유명사가 앞에 붙는 한국어 문장은
+    /// 오탐이므로, 첫 40자 안에 한글이 하나도 없을 때만(=진짜로 통째로 영어일 때만) 걸린다.
     func testRunScreenHasNoUntranslatedSentences() throws {
         let source = try Self.viewSource()
         var offenders: [String] = []
         for marker in ["Text(\"", "Button(\""] {
             for segment in source.components(separatedBy: marker).dropFirst() {
                 guard let first = segment.first, first.isLetter, first.isASCII else { continue }
-                offenders.append(marker + segment.prefix(40))
+                let prefix = segment.prefix(40)
+                let containsHangul = prefix.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) }
+                guard !containsHangul else { continue }
+                offenders.append(marker + prefix)
             }
         }
         XCTAssertTrue(offenders.isEmpty, "번역을 지나지 않은 문구: \(offenders)")

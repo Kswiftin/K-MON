@@ -88,15 +88,4 @@ final class DexShinyFilterTests: XCTestCase {
         XCTAssertTrue(roster.contains("dexShinyLabel"),
                       "이모지는 스크린리더가 일관되게 읽지 못한다 — 명사를 같이 단다")
     }
-
-    /// 문구는 세 언어 모두 있어야 한다 — 두 언어만 채우는 부류를 막는 게 이 레포의 규칙이다.
-    func testFilterCopyExistsInAllThreeLanguages() {
-        for lang in AppLanguage.allCases {
-            let l = L(lang)
-            XCTAssertFalse(l.dexShinyFilter.isEmpty, "\(lang) 라벨 누락")
-            XCTAssertFalse(l.dexShinyFilterHint.isEmpty, "\(lang) 설명 누락")
-        }
-        XCTAssertNotEqual(L(.ko).dexShinyFilterHint, L(.en).dexShinyFilterHint)
-        XCTAssertNotEqual(L(.ko).dexShinyFilterHint, L(.ja).dexShinyFilterHint)
-    }
 }

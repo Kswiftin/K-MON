@@ -29,21 +29,20 @@ final class MoveHoverTests: XCTestCase {
 
     /// 아무것도 안 올렸을 때는 빈칸이 아니라 안내 문구가 나온다 — 슬롯이 왜 비었는지 알 수 있어야 한다.
     func testShowsHintWhenNothingHovered() {
-        let text = L(.ko).moveHoverText(nil)
+        let text = L().moveHoverText(nil)
         XCTAssertFalse(text.isEmpty)
-        XCTAssertEqual(text, L(.ko).moveHoverHint)
+        XCTAssertEqual(text, L().moveHoverHint)
     }
 
     /// 설명이 있으면 그대로 보여준다.
     func testUsesDescriptionWhenPresent() {
-        let m = move(descriptions: ["ko": "강렬한 불꽃을 발사해 공격한다.", "en": "The target is scorched."])
-        XCTAssertEqual(L(.ko).moveHoverText(m), "강렬한 불꽃을 발사해 공격한다.")
-        XCTAssertEqual(L(.en).moveHoverText(m), "The target is scorched.")
+        let m = move(descriptions: ["ko": "강렬한 불꽃을 발사해 공격한다."])
+        XCTAssertEqual(L().moveHoverText(m), "강렬한 불꽃을 발사해 공격한다.")
     }
 
     /// 트리거 브랜치 ①: descriptions 자체가 nil(합성 기술·fetch 실패). 빈칸 대신 스탯 요약이 나와야 한다.
     func testFallsBackToStatsWhenDescriptionsAreNil() {
-        let text = L(.ko).moveHoverText(move(descriptions: nil))
+        let text = L().moveHoverText(move(descriptions: nil))
         XCTAssertFalse(text.isEmpty)
         XCTAssertTrue(text.contains("90"), "위력이 빠졌다: \(text)")
         XCTAssertTrue(text.contains("100"), "명중이 빠졌다: \(text)")
@@ -52,7 +51,7 @@ final class MoveHoverTests: XCTestCase {
 
     /// 트리거 브랜치 ②: 키는 있는데 값이 빈 문자열. 빈 슬롯이 되면 안 된다.
     func testFallsBackWhenDescriptionIsEmptyString() {
-        let text = L(.ko).moveHoverText(move(descriptions: ["ko": "", "en": ""]))
+        let text = L().moveHoverText(move(descriptions: ["ko": "", "en": ""]))
         XCTAssertFalse(text.isEmpty)
         XCTAssertTrue(text.contains("90"), "빈 설명인데 스탯 폴백이 없다: \(text)")
     }
@@ -61,8 +60,8 @@ final class MoveHoverTests: XCTestCase {
     func testAlwaysHitsMoveKeepsAccuracySlot() {
         var m = move()
         m.accuracy = nil
-        let text = L(.ko).moveHoverText(m)
-        XCTAssertTrue(text.contains(L(.ko).moveAlwaysHits), text)
+        let text = L().moveHoverText(m)
+        XCTAssertTrue(text.contains(L().moveAlwaysHits), text)
     }
 
     /// 변화기는 위력이 0이라 "위력 0"이 아니라 "—"로 나와야 한다.
@@ -70,21 +69,9 @@ final class MoveHoverTests: XCTestCase {
     func testStatusMoveShowsDashInsteadOfZeroPower() {
         let status = MoveSpec(id: 45, names: ["ko": "울음소리", "en": "Growl", "ja": "なきごえ"],
                               type: .normal, power: 0, damageClass: .status, accuracy: 100, pp: 40)
-        let text = L(.ko).moveHoverText(status)
+        let text = L().moveHoverText(status)
         XCTAssertTrue(text.contains("—"), "변화기인데 위력 자리가 —가 아니다: \(text)")
         XCTAssertFalse(text.contains("위력 0"), text)
-    }
-
-    /// en/ja 에서는 어떤 분기에서도 한글이 남으면 안 된다(#10 부류).
-    func testNoHangulInNonKoreanLanguages() {
-        for lang in [AppLanguage.en, .ja] {
-            let l = L(lang)
-            XCTAssertFalse(containsHangul(l.moveHoverHint), "\(lang) 안내에 한글: \(l.moveHoverHint)")
-            XCTAssertFalse(containsHangul(l.moveHoverText(move(descriptions: nil))),
-                           "\(lang) 폴백에 한글: \(l.moveHoverText(move(descriptions: nil)))")
-            XCTAssertFalse(containsHangul(l.moveHoverText(nil)))
-        }
-        XCTAssertTrue(containsHangul(L(.ko).moveHoverHint))   // 대조군
     }
 
     // MARK: 호버 상태 전이
@@ -264,14 +251,14 @@ final class MoveHoverTests: XCTestCase {
                      MoveSpec(id: 99, names: ["ko": "다른 기술"], type: .water, power: 60,
                               damageClass: .special, accuracy: 100, pp: 20,
                               descriptions: ["ko": "두 번째 설명"])]
-        XCTAssertEqual(MoveListView.panelText(hoveredID: 99, moves: moves, l: L(.ko)), "두 번째 설명")
-        XCTAssertEqual(MoveListView.panelText(hoveredID: nil, moves: moves, l: L(.ko)), L(.ko).moveHoverHint)
+        XCTAssertEqual(MoveListView.panelText(hoveredID: 99, moves: moves, l: L()), "두 번째 설명")
+        XCTAssertEqual(MoveListView.panelText(hoveredID: nil, moves: moves, l: L()), L().moveHoverHint)
     }
 
     /// 목록이 바뀐 뒤(레벨업 재로드) 남은 옛 id 는 엉뚱한 기술이 아니라 안내 문구로 떨어진다.
     func testStaleHoveredIDFallsBackToHint() {
-        XCTAssertEqual(MoveListView.panelText(hoveredID: 12_345, moves: [move()], l: L(.ko)),
-                       L(.ko).moveHoverHint)
+        XCTAssertEqual(MoveListView.panelText(hoveredID: 12_345, moves: [move()], l: L()),
+                       L().moveHoverHint)
     }
 
     // MARK: 레이아웃 (팝오버 흔들림 방지 — #9 부류)
@@ -303,12 +290,10 @@ final class MoveHoverTests: XCTestCase {
 
     /// 안내 문구 상태와 설명 상태의 높이도 같다 — 처음 호버하는 순간에도 안 흔들려야 한다.
     func testPanelHeightMatchesHintState() {
-        for lang in [AppLanguage.ko, .en, .ja] {
-            let l = L(lang)
-            XCTAssertEqual(renderedHeight(MoveHoverPanel(text: l.moveHoverHint)),
-                           renderedHeight(MoveHoverPanel(text: l.moveHoverText(move(descriptions: nil)))),
-                           accuracy: 0.5, "\(lang) 에서 안내/설명 높이가 다르다")
-        }
+        let l = L()
+        XCTAssertEqual(renderedHeight(MoveHoverPanel(text: l.moveHoverHint)),
+                       renderedHeight(MoveHoverPanel(text: l.moveHoverText(move(descriptions: nil)))),
+                       accuracy: 0.5, "안내/설명 높이가 다르다")
     }
 }
 

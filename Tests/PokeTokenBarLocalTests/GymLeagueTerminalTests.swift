@@ -19,7 +19,6 @@ struct GymLeagueTerminalTests {
     private func makeStore(_ directory: URL) -> CompanionStore {
         let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: directory.appendingPathComponent("state.json"))
-        store.setLanguage(.ko)
         return store
     }
 
@@ -66,7 +65,7 @@ struct GymLeagueTerminalTests {
         let rows = PokedoroCLI.gymRows(store, width: 72)
 
         for gym in GymLeague.catalog {
-            #expect(rows.contains { $0.contains(gym.leaderName(.ko)) },
+            #expect(rows.contains { $0.contains(gym.leaderName) },
                     "\(gym.id) 가 목록에 없다")
         }
     }
@@ -80,8 +79,8 @@ struct GymLeagueTerminalTests {
         store.recordGymVictory(gym)
 
         let rows = PokedoroCLI.gymRows(store, width: 72)
-        let row = try #require(rows.first { $0.contains(gym.leaderName(.ko)) })
-        let other = try #require(rows.first { $0.contains(GymLeague.catalog[1].leaderName(.ko)) })
+        let row = try #require(rows.first { $0.contains(gym.leaderName) })
+        let other = try #require(rows.first { $0.contains(GymLeague.catalog[1].leaderName) })
 
         #expect(row != other)
         #expect(row.contains(TUIRender.doneMark), "\(row)")

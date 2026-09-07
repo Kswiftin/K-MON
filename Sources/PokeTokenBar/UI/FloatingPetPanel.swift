@@ -91,7 +91,6 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             _ = settings.floatingPetMovementSpeed
             _ = settings.floatingPetSpeciesID
             _ = settings.doNotDisturb
-            _ = companion.language
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -161,7 +160,6 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
             hosting.onOpenMemoryHome = onOpenMemoryHome
             hosting.onChat = onChat
             hosting.onHide = onHide
-            hosting.languageProvider = { [weak self] in self?.companion.language ?? .systemDefault }
             hosting.onHoverChange = { [weak self] hovering in
                 if hovering { self?.showHoverCallout() } else { self?.hideHoverCallout() }
             }
@@ -374,7 +372,7 @@ final class FloatingPetController: NSObject, NSWindowDelegate {
     }
 
     private func currentHoverText() -> String {
-        "\(L(companion.language).todayTokens) \(L(companion.language).duration(companion.activeSecondsToday))"
+        "\(L().todayTokens) \(L().duration(companion.activeSecondsToday))"
     }
 
     private func showHoverCallout() {
@@ -664,7 +662,6 @@ final class PetHostingView: NSHostingView<AnyView> {
     var onHide: (() -> Void)?
     var onHoverChange: ((Bool) -> Void)?
     var onDragChange: ((Bool) -> Void)?
-    var languageProvider: () -> AppLanguage = { .systemDefault }
 
     private var mouseDownScreen: NSPoint?
     private var originAtDown: NSPoint?
@@ -729,18 +726,18 @@ final class PetHostingView: NSHostingView<AnyView> {
     private func showContextMenu(_ event: NSEvent) {
         onHoverChange?(false)
         NSApp.activate(ignoringOtherApps: true)
-        let l = L(languageProvider())
+        let l = L()
         let menu = NSMenu(title: "")
         menu.autoenablesItems = false
         let open = menu.addItem(withTitle: l.floatingPetMenuOpen,
                                 action: #selector(handleOpen(_:)), keyEquivalent: "")
         open.target = self
         open.isEnabled = true
-        let home = menu.addItem(withTitle: l.t("미니홈피 열기", "Open Poké Home", "ポケホームを開く"),
+        let home = menu.addItem(withTitle: "미니홈피 열기",
                                 action: #selector(handleOpenMemoryHome(_:)), keyEquivalent: "")
         home.target = self
         home.isEnabled = true
-        let chat = menu.addItem(withTitle: l.t("대화하기", "Chat", "話す"),
+        let chat = menu.addItem(withTitle: "대화하기",
                                 action: #selector(handleChat(_:)), keyEquivalent: "")
         chat.target = self
         chat.isEnabled = true

@@ -63,21 +63,15 @@ struct ChallengeView: View {
     /// 혼자 도전 — 누르면 각자 전체 화면으로 열린다(`PopoverNavigation`).
     private var soloChallenges: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(l.t("혼자 도전", "Solo challenges", "ひとりで挑戦"), systemImage: "flag.fill")
+            Label("혼자 도전", systemImage: "flag.fill")
                 .font(.caption.weight(.semibold))
             challengeCard(title: l.gymLeagueTitle, systemImage: "building.columns.fill", tint: .purple,
-                          subtitle: l.t("체육관을 차례로 돌며 배지를 모으세요.",
-                                        "Clear the gyms in order and collect badges.",
-                                        "ジムを順番に回ってバッジを集めよう。")) { nav.showGymLeague = true }
+                          subtitle: "체육관을 차례로 돌며 배지를 모으세요.") { nav.showGymLeague = true }
             challengeCard(title: l.dungeonTitle, systemImage: "map.fill", tint: .red,
-                          subtitle: l.t("무작위로 이어지는 웨이브를 오르는 로그라이크 런.",
-                                        "A roguelike run through randomly generated waves.",
-                                        "ランダムに続くウェーブを進むローグライクラン。")) { nav.showDungeon = true }
-            challengeCard(title: l.t("포켓몬 경매 시장", "Pokémon Offer Market", "ポケモン交換市場"),
+                          subtitle: "무작위로 이어지는 웨이브를 오르는 로그라이크 런.") { nav.showDungeon = true }
+            challengeCard(title: "포켓몬 경매 시장",
                           systemImage: "storefront.fill", tint: .orange,
-                          subtitle: l.t("한 마리를 올리고 여러 교환 제안을 받아보세요.",
-                                        "List one Pokémon and compare offers from nearby trainers.",
-                                        "1匹を出品し、近くのトレーナーの提案を比べましょう。")) { showsAuction = true }
+                          subtitle: "한 마리를 올리고 여러 교환 제안을 받아보세요.") { showsAuction = true }
         }
     }
 
@@ -87,12 +81,10 @@ struct ChallengeView: View {
     /// 헤딩 아래 카드가 하나는 있어야 하므로 비워 두지 않는다.
     private var neighborChallenges: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(l.t("이웃과 함께", "With neighbors", "近所の人と"), systemImage: "person.2.wave.2.fill")
+            Label("이웃과 함께", systemImage: "person.2.wave.2.fill")
                 .font(.caption.weight(.semibold))
             challengeCard(title: l.raidTitle, systemImage: "person.3.sequence.fill", tint: .teal,
-                          subtitle: l.t("오전·오후 보스에 혼자, 또는 이웃과 함께 도전하세요.",
-                                        "Take on the morning or afternoon boss solo or with neighbors.",
-                                        "午前・午後のボスに一人で、または近所の人と挑もう。")) { nav.showRaid = true }
+                          subtitle: "오전·오후 보스에 혼자, 또는 이웃과 함께 도전하세요.") { nav.showRaid = true }
         }
     }
 

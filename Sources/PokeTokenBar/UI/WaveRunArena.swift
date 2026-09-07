@@ -54,7 +54,7 @@ struct WaveRunArenaView: View {
                 SwitchStripView(slots: switchSlots,
                                 label: sendOutSlot == nil
                                     ? l.battleSwitch
-                                    : l.t("내보내기", "Send out", "くり出す"),
+                                    : "내보내기",
                                 isEnabled: isEnabled && (acceptsInput || sendOutSlot != nil),
                                 onSwitch: onSwitch)
             }
@@ -185,19 +185,15 @@ struct WaveRunArenaView: View {
     @ViewBuilder
     private var prompt: some View {
         if let sendOutSlot {
-            Label(l.t("\(sendOutSlot + 1)번 칸에 내보낼 포켓몬을 고른다 (턴을 쓰지 않는다)",
-                      "Choose who takes slot \(sendOutSlot + 1) (this costs no turn)",
-                      "\(sendOutSlot + 1)番目の枠に出すポケモンを選ぶ（ターンを消費しない）"),
+            Label("\(sendOutSlot + 1)번 칸에 내보낼 포켓몬을 고른다 (턴을 쓰지 않는다)",
                   systemImage: "arrow.up.circle")
                 .font(.caption2).foregroundStyle(.orange)
         } else if pendingMove != nil {
-            Label(l.t("때릴 상대를 고른다", "Choose a target", "攻撃する相手を選ぶ"),
+            Label("때릴 상대를 고른다",
                   systemImage: "scope")
                 .font(.caption2).foregroundStyle(.orange)
         } else if let actingCell, mine.count > 1 {
-            Text(l.t("\(actingCell.ordinal + 1)번 칸 — \(actingCell.side.snapshot.name) 의 행동",
-                     "Slot \(actingCell.ordinal + 1) — \(actingCell.side.snapshot.name)'s action",
-                     "\(actingCell.ordinal + 1)番目の枠 — \(actingCell.side.snapshot.name) の行動"))
+            Text("\(actingCell.ordinal + 1)번 칸 — \(actingCell.side.snapshot.name) 의 행동")
                 .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
         } else {
             Text(l.battleYourTurn)
@@ -227,14 +223,13 @@ struct WaveRunArenaView: View {
                     .buttonStyle(.plain)
                     .disabled(!isEnabled)
                 }
-                Button(l.t("취소", "Cancel", "やめる")) { self.pendingMove = nil }
+                Button("취소") { self.pendingMove = nil }
                     .controlSize(.small)
             }
         } else if let actingCell {
             let side = actingCell.side
             MoveGridView(moves: side.mustStruggle ? [.struggle()] : side.moves,
                          pp: side.mustStruggle ? [] : side.pp,
-                         language: l.lang,
                          isEnabled: acceptsInput,
                          // 필드에 둘 이상이 서 있을 때만 광역 표시를 켠다 — 단일전에서는 "전체" 가
                          // 가리킬 대상이 하나뿐이라 정보가 아니고 버튼만 복잡해진다.

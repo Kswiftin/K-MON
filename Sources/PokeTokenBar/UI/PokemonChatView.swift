@@ -43,10 +43,10 @@ struct PokemonChatView: View {
     }
     private var baseProfile: PokemonChatProfile {
         store.ownedMons.first(where: { $0.id == companionID }).map(store.chatProfile(for:))
-            ?? PokemonChatProfile(speciesID: 0, displayName: "?", nickname: nil, nature: nil, level: 1, stage: "", flavorText: nil, language: store.language)
+            ?? PokemonChatProfile(speciesID: 0, displayName: "?", nickname: nil, nature: nil, level: 1, stage: "", flavorText: nil)
     }
     private var profile: PokemonChatProfile { var value = baseProfile; if let identity { value.apply(identity) }; return value }
-    private var l: L { L(profile.language) }
+    private var l: L { L() }
 
     /// **고르지 않아도 보낼 수 있다.** 저장된 선택이 없거나 못 쓰게 됐으면 설치된 검증 CLI 중
     /// 우선순위 첫 번째로 폴백한다. 판정은 Core 한 벌(`PokemonChatProviderSelection`)이다.
@@ -68,8 +68,7 @@ struct PokemonChatView: View {
     }
 
     private var unavailableReason: String? {
-        PokemonChatProviderSelection.unavailableMessage(stored: providerRaw, effective: effectiveKind,
-                                                        language: profile.language)
+        PokemonChatProviderSelection.unavailableMessage(stored: providerRaw, effective: effectiveKind)
     }
 
     var body: some View {
@@ -83,7 +82,7 @@ struct PokemonChatView: View {
         // 전용 창의 520 보다 커져 메시지 영역이 그만큼 늘어난다.
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
         .task(id: profile.speciesID) {
-            identity = await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID, language: profile.language)
+            identity = await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: profile.speciesID)
         }
     }
 
@@ -92,13 +91,13 @@ struct PokemonChatView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Button { self.destination = nil } label: {
-                    Label(l.t("대화로", "Back to chat", "会話へ"), systemImage: "chevron.left")
+                    Label("대화로", systemImage: "chevron.left")
                 }.buttonStyle(.borderless)
                 Spacer()
             }.padding(12)
             Divider()
             switch destination {
-            case .album: PokemonMemoryAlbumView(companionID: companionID, language: profile.language, album: album)
+            case .album: PokemonMemoryAlbumView(companionID: companionID, album: album)
             case .dailyDex: TodayPokedexView(profile: profile)
             }
             Spacer(minLength: 0)
@@ -152,15 +151,15 @@ struct PokemonChatView: View {
                 firstSendConsentCard
                 // 동의는 이 줄과 아래 버튼이 함께 이룬다 — 어디로 나가는지 읽고 누르는 것.
                 if let effectiveKind {
-                    PokemonChatConsentLabel(kind: effectiveKind, language: profile.language)
+                    PokemonChatConsentLabel(kind: effectiveKind)
                 }
                 HStack(alignment: .bottom, spacing: 8) {
-                    TextField(l.t("메시지를 입력하세요", "Type a message", "メッセージを入力"), text: draft, axis: .vertical)
+                    TextField("메시지를 입력하세요", text: draft, axis: .vertical)
                         .textFieldStyle(.roundedBorder).lineLimit(1...4)
                         .onSubmit(send)
                     Button(action: send) { Image(systemName: "paperplane.fill") }
                         .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
-                        .accessibilityLabel(l.t("보내기", "Send", "送信"))
+                        .accessibilityLabel("보내기")
                 }
             }.padding(PokemonChatConsentLabel.horizontalPadding)
         }
@@ -176,24 +175,22 @@ struct PokemonChatView: View {
             Menu {
                 providerPicker
                 Divider()
-                Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
-                Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
-                Button(l.t("기록 삭제", "Delete history", "履歴を削除"),
+                Button("기억 앨범") { destination = .album }
+                Button("새 대화") { chat.startNewSession(for: companionID, profile: profile) }
+                Button("기록 삭제",
                        role: .destructive) { confirmingHistoryDelete = true }
             } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
             // 이 화면만 Esc 닫기를 끈다 — 입력칸에 쓰다 만 메시지가 있는데 Esc 한 번에 화면째
             // 사라지면 초안이 함께 날아간다. 형제 오버레이엔 초안이 없어 Esc 가 안전하다.
             PokedoroOverlayCloseButton(label: l.close, escapeCloses: false, onClose: onClose)
         }.padding(12)
-        .confirmationDialog(l.t("이 대화 기록을 지울까요?", "Delete this chat history?", "この会話履歴を削除しますか？"),
+        .confirmationDialog("이 대화 기록을 지울까요?",
                             isPresented: $confirmingHistoryDelete, titleVisibility: .visible) {
-            Button(l.t("지우기", "Delete", "削除"), role: .destructive) { chat.deleteSession(for: companionID) }
+            Button("지우기", role: .destructive) { chat.deleteSession(for: companionID) }
             Button(l.cancel, role: .cancel) { }
         } message: {
             // "새 대화" 와 무엇이 다른지 여기서 말한다 — 메뉴에서는 둘 다 화면이 비는 것으로 보인다.
-            Text(l.t("주고받은 말이 모두 사라지고 되돌릴 수 없습니다. 이어서 새로 시작만 하려면 '새 대화' 를 쓰세요.",
-                     "Every message is gone for good. To start fresh without erasing, use New chat.",
-                     "やり取りはすべて消え、元に戻せません。消さずに始め直すなら「新しい会話」を使ってください。"))
+            Text("주고받은 말이 모두 사라지고 되돌릴 수 없습니다. 이어서 새로 시작만 하려면 '새 대화' 를 쓰세요.")
         }
     }
 
@@ -205,16 +202,16 @@ struct PokemonChatView: View {
     /// 달라져, "자동 선택" 은 영영 선택된 적이 없고 차단된 저장값은 목록 어디에도 안 뜨면서 배너만
     /// 그 이름을 말한다.
     private var providerPicker: some View {
-        Picker(l.t("대화 상대 AI", "Chat AI", "会話 AI"), selection: $providerRaw) {
+        Picker("대화 상대 AI", selection: $providerRaw) {
             // 빈 값은 "안 골랐다" 가 아니라 **자동에 맡긴다** 는 뜻이 됐다. 고른 걸 되돌리는 길.
-            Text(l.t("자동 선택", "Automatic", "自動選択")).tag("")
+            Text("자동 선택").tag("")
             // 차단된 제공자도 보여 준다 — 목록에서 지우면 왜 못 쓰는지 알 길이 없다. 대신
             // 자물쇠를 달고 고를 수 없게 한다(`(disabled)` 라고 *쓰기만* 하면 골라진다).
             ForEach(PokemonChatProviderKind.allCases, id: \.self) { kind in
                 if PokemonChatProviderSafety.availability(for: kind).isVerified {
-                    Text(kind.label(profile.language)).tag(kind.rawValue)
+                    Text(kind.label).tag(kind.rawValue)
                 } else {
-                    Label(kind.label(profile.language), systemImage: "lock.fill")
+                    Label(kind.label, systemImage: "lock.fill")
                         .disabled(true).tag(kind.rawValue)
                 }
             }
@@ -242,8 +239,8 @@ struct PokemonChatView: View {
 
     private var chipRow: some View {
         PokemonChatChipRow(actions: toolbox.availableActions(owner: companionID),
-                           questions: chips, language: profile.language,
-                           onAction: { fill(with: $0.phrase(profile.language)) },
+                           questions: chips,
+                           onAction: { fill(with: $0.phrase) },
                            onQuestion: { question in
                                if question == dailyDexQuestion { destination = .dailyDex }
                                else { fill(with: question) }
@@ -255,25 +252,25 @@ struct PokemonChatView: View {
     }
 
     private var chips: [String] {
-        var values = [l.t("너의 타입이 뭐야?", "What type are you?", "きみのタイプは？"),
-                      l.t("지금 기분은 어때?", "How are you feeling?", "いまの気分は？"),
+        var values = ["너의 타입이 뭐야?",
+                      "지금 기분은 어때?",
                       dailyDexQuestion]
-        if !profile.moves.isEmpty { values.insert(l.t("배운 기술을 알려 줘", "Tell me your moves", "覚えた技を教えて"), at: 1) }
-        if profile.genus != nil { values.insert(l.t("너는 어떤 포켓몬이야?", "What kind of Pokémon are you?", "どんなポケモンなの？"), at: 1) }
-        if profile.nextEvolution != nil { values.insert(l.t("다음 진화는 언제야?", "When is your next evolution?", "次の進化はいつ？"), at: 2) }
+        if !profile.moves.isEmpty { values.insert("배운 기술을 알려 줘", at: 1) }
+        if profile.genus != nil { values.insert("너는 어떤 포켓몬이야?", at: 1) }
+        if profile.nextEvolution != nil { values.insert("다음 진화는 언제야?", at: 2) }
         return values
     }
-    private var dailyDexQuestion: String { l.t("오늘의 도감을 보여 줘", "Show today’s Pokédex", "今日の図鑑を見せて") }
+    private var dailyDexQuestion: String { "오늘의 도감을 보여 줘" }
 
     /// 상태를 바꾸는 도구는 여기를 지나야만 실행된다. 카드가 실제 인자(분 수)를 그대로 보여 주므로
     /// 사용자는 무엇을 켜는지 정확히 알고 누른다.
     @ViewBuilder private var proposalCard: some View {
         if let proposal = chat.pendingProposal, proposal.companionID == companionID, proposal.state == .pending {
             VStack(alignment: .leading, spacing: 6) {
-                Text(proposal.call.approvalQuestion(profile.language)).font(.callout)
+                Text(proposal.call.approvalQuestion).font(.callout)
                 HStack {
-                    Button(l.t("승인", "Approve", "承認")) { resolve(approved: true) }.buttonStyle(.borderedProminent)
-                    Button(l.t("거절", "Reject", "断る")) { resolve(approved: false) }.buttonStyle(.bordered)
+                    Button("승인") { resolve(approved: true) }.buttonStyle(.borderedProminent)
+                    Button("거절") { resolve(approved: false) }.buttonStyle(.bordered)
                 }
             }
             .padding(10)
@@ -319,14 +316,14 @@ struct PokemonChatView: View {
         if let pendingFirstSend {
             VStack(alignment: .leading, spacing: 6) {
                 Text(PokemonChatProviderSelection.firstSendConsentQuestion(
-                    kind: pendingFirstSend, language: profile.language)).font(.callout)
+                    kind: pendingFirstSend)).font(.callout)
                 HStack {
-                    Button(l.t("보내기", "Send", "送信")) {
+                    Button("보내기") {
                         settings.hasAcknowledgedExternalChatSend = true
                         self.pendingFirstSend = nil
                         if let provider { deliverDraft(through: provider) }
                     }.buttonStyle(.borderedProminent)
-                    Button(l.t("취소", "Cancel", "キャンセル")) { self.pendingFirstSend = nil }
+                    Button("취소") { self.pendingFirstSend = nil }
                         .buttonStyle(.bordered)
                 }
             }
@@ -351,7 +348,6 @@ struct PokemonChatView: View {
 struct PokemonChatChipRow: View {
     let actions: [PokemonChatAction]
     let questions: [String]
-    let language: AppLanguage
     /// 누른 것이 **무엇이었는지** 그대로 넘긴다. 문구 하나로 합치면 호출부가 현지화된 표시
     /// 문자열을 되비교해 정체를 알아내야 하고(`phrase == dailyDexQuestion`), 그 비교는 액션
     /// 문구 하나가 우연히 같아지는 날 입력칸 대신 다른 화면으로 나간다 — 줄은 이미 답을 안다.
@@ -379,15 +375,13 @@ struct PokemonChatChipRow: View {
                 // 상태를 바꾸는 쪽이 앞에 온다. 칠할 때 채워진 배경을 쓰는 건 "이건 무언가를
                 // 일으킨다" 를 질문 칩과 구분하기 위해서다 — 뜻이 다르면 생김새도 달라야 한다.
                 ForEach(actions, id: \.self) { action in
-                    Button(action.phrase(language)) { onAction(action) }
+                    Button(action.phrase) { onAction(action) }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                         // 채워진 배경만으로는 부족하다. macOS 의 "색상 없이 구분"·고대비에서
                         // 그 한 가지 단서가 평평해지고, VoiceOver 에는 애초에 색이 없다 —
                         // 그러면 "집중을 끝내자"(승인 카드가 뜨는 요청)와 "지금 기분은 어때?"
                         // (잡담)가 똑같은 버튼 두 개로 들린다.
-                        .accessibilityHint(L(language).t("입력칸에 부탁을 채워요. 보내면 승인을 물어봐요.",
-                                                        "Fills the composer with a request. Sending it asks for your approval.",
-                                                        "入力欄にお願いを入れます。送ると承認をたずねます。"))
+                        .accessibilityHint("입력칸에 부탁을 채워요. 보내면 승인을 물어봐요.")
                 }
                 ForEach(questions, id: \.self) { question in
                     Button(question) { onQuestion(question) }
@@ -414,12 +408,11 @@ struct PokemonChatConsentLabel: View {
     static let contentWidth: CGFloat = PopoverMetrics.width - horizontalPadding * 2
 
     let kind: PokemonChatProviderKind
-    let language: AppLanguage
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(PokemonChatProviderSelection.externalSendLabel(kind: kind, language: language))
-            Label(L(language).t("도구·MCP 격리", "Tools & MCP isolated", "ツール・MCP 隔離"),
+            Text(PokemonChatProviderSelection.externalSendLabel(kind: kind))
+            Label("도구·MCP 격리",
                   systemImage: "lock.fill")
                 .foregroundStyle(.green)
             Spacer(minLength: 0)
@@ -431,19 +424,19 @@ struct PokemonChatConsentLabel: View {
 
 private struct TodayPokedexView: View {
     let profile: PokemonChatProfile
-    private var l: L { L(profile.language) }
+    private var l: L { L() }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(l.t("오늘의 도감", "Today’s Pokédex", "今日の図鑑")).font(.headline)
+            Text("오늘의 도감").font(.headline)
             Text(profile.displayName).font(.title2)
             if let flavor = profile.flavorText { Text(flavor) }
-            if let genus = profile.genus { Text(l.t("분류: \(genus)", "Genus: \(genus)", "分類: \(genus)")) }
-            if let habitat = profile.habitat { Text(l.t("서식지: \(habitat)", "Habitat: \(habitat)", "生息地: \(habitat)")) }
-            if let ability = profile.ability { Text(l.t("특성: \(ability)", "Ability: \(ability)", "特性: \(ability)")) }
+            if let genus = profile.genus { Text("분류: \(genus)") }
+            if let habitat = profile.habitat { Text("서식지: \(habitat)") }
+            if let ability = profile.ability { Text("특성: \(ability)") }
             if !profile.types.isEmpty { Label(profile.types.joined(separator: " · "), systemImage: "circle.hexagongrid") }
-            Text(l.t("현재 형태: \(profile.stage)", "Current form: \(profile.stage)", "現在の姿: \(profile.stage)"))
-            if let next = profile.nextEvolution { Text(l.t("다음 진화: \(next)", "Next evolution: \(next)", "次の進化: \(next)")) }
-            Text(l.t("앱이 알고 있는 사실만 표시합니다.", "Only facts known by the app are shown.", "アプリが知っている事実だけを表示します。"))
+            Text("현재 형태: \(profile.stage)")
+            if let next = profile.nextEvolution { Text("다음 진화: \(next)") }
+            Text("앱이 알고 있는 사실만 표시합니다.")
                 .font(.caption).foregroundStyle(.secondary)
         }.padding().frame(width: 360)
     }
@@ -451,41 +444,38 @@ private struct TodayPokedexView: View {
 
 private struct PokemonMemoryAlbumView: View {
     let companionID: UUID
-    let language: AppLanguage
     let album: PokemonMemoryAlbum
     /// 지울지 묻는 중인 손글씨 메모. `nil` 이 곧 닫힘이라 플래그를 따로 두지 않는다.
     /// 자동 기록은 지울 수 없고(`source == .manual` 만 버튼이 뜬다) 손으로 쓴 것만 대상이라,
     /// 되돌릴 방법이 없는 쪽이 정확히 사용자가 직접 쓴 글이다.
     @State private var pendingDeletion: PokemonMemory?
-    private var l: L { L(language) }
+    private var l: L { L() }
     var body: some View {
         VStack(alignment: .leading) {
-            Text(l.t("기억 앨범", "Memory album", "思い出アルバム")).font(.headline)
+            Text("기억 앨범").font(.headline)
             List {
                 ForEach(album.entries(for: companionID).reversed()) { memory in
                     HStack { VStack(alignment: .leading) { Text(memory.body); Text(memory.createdAt, style: .date).font(.caption2).foregroundStyle(.secondary) }; Spacer()
                         if memory.source == .manual {
                             Button(role: .destructive) { pendingDeletion = memory } label: { Image(systemName: "trash") }
                                 .buttonStyle(.borderless)
-                                .accessibilityLabel(l.t("이 기억 지우기", "Delete this memory", "この思い出を削除"))
+                                .accessibilityLabel("이 기억 지우기")
                         }
                     }
                 }
             }
         }.padding().frame(width: 400, height: 440)
-        .confirmationDialog(l.t("이 기억을 지울까요?", "Delete this memory?", "この思い出を削除しますか？"),
+        .confirmationDialog("이 기억을 지울까요?",
                             isPresented: Binding(get: { pendingDeletion != nil },
                                                  set: { if !$0 { pendingDeletion = nil } }),
                             titleVisibility: .visible) {
-            Button(l.t("지우기", "Delete", "削除"), role: .destructive) {
+            Button("지우기", role: .destructive) {
                 if let memory = pendingDeletion { _ = album.delete(memory) }
                 pendingDeletion = nil
             }
             Button(l.cancel, role: .cancel) { pendingDeletion = nil }
         } message: {
-            Text(l.t("직접 쓴 기억이라 되돌릴 수 없습니다.",
-                     "You wrote this one yourself; it cannot be brought back.",
-                     "自分で書いた思い出なので元に戻せません。"))
+            Text("직접 쓴 기억이라 되돌릴 수 없습니다.")
         }
     }
 }
@@ -585,7 +575,7 @@ private struct PokemonThinkingBubble: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 9)
             .background(.secondary.opacity(0.12), in: Capsule())
-            Text(L(profile.language).t("생각 중", "Thinking", "考え中")).font(.caption).foregroundStyle(.secondary)
+            Text("생각 중").font(.caption).foregroundStyle(.secondary)
             Spacer()
         }
         .accessibilityElement(children: .ignore)

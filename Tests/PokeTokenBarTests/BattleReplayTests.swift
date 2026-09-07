@@ -309,7 +309,7 @@ final class BattleReplayTests: XCTestCase {
     /// 급소·상성·빗나감은 재생 중 화면에 한 번 뜬다. 로그는 재생이 그 줄에 닿아야 나오므로,
     /// 이 팝이 없으면 급소가 화면 어디에도 안 보인 채 HP 만 크게 깎인다.
     func testOnlyTheAnnounceableEventsPopAPhrase() {
-        let l = L(.ko)
+        let l = L()
         XCTAssertEqual(BattleReplay.popup(for: .crit(.b), l: l), l.battleCritical)
         XCTAssertEqual(BattleReplay.popup(for: .superEffective(.b), l: l), l.battleSuperEffective)
         XCTAssertEqual(BattleReplay.popup(for: .resisted(.b), l: l), l.battleNotVeryEffective)
@@ -319,7 +319,7 @@ final class BattleReplayTests: XCTestCase {
 
     /// 데미지·기술·턴에는 팝이 없다 — 전부 팝으로 만들면 화면이 문구로 덮이고, 정작 급소가 묻힌다.
     func testOrdinaryEventsDoNotPopAnything() {
-        let l = L(.ko)
+        let l = L()
         XCTAssertNil(BattleReplay.popup(for: .damage(.b, amount: 12, cause: .move), l: l))
         XCTAssertNil(BattleReplay.popup(for: .move(.a, moveID: 1), l: l))
         XCTAssertNil(BattleReplay.popup(for: .turn(3), l: l))
@@ -337,14 +337,6 @@ final class BattleReplayTests: XCTestCase {
         XCTAssertEqual(BattleReplay.popped(.superEffective(.b), carrying: .crit(.b)),
                        .superEffective(.b), "새 팝은 옛 팝을 밀어낸다")
         XCTAssertNil(BattleReplay.popped(.turn(2), carrying: nil), "팝이 없던 자리에 없던 문구를 만들지 않는다")
-    }
-
-    /// 세 언어 모두 팝 문구가 있다 — 한 언어만 채우면 나머지 언어에서 빈 팝이 뜬다.
-    func testThePopPhraseExistsInEveryLanguage() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let phrase = BattleReplay.popup(for: .crit(.b), l: L(language))
-            XCTAssertFalse(phrase?.isEmpty ?? true, "\(language.rawValue) 에서 급소 팝이 비었다")
-        }
     }
 
     // MARK: 맞은 쪽 (shake·flash 대상)
@@ -581,15 +573,12 @@ final class ReplaySpeedSettingTests: XCTestCase {
                        "끄기를 고른 사용자에게 다시 켜서 애니메이션을 보여 주면 안 된다")
     }
 
-    /// 세 속도가 세 언어에서 각각 다른 이름을 가진다 — 같은 이름 두 개면 고를 수 없다.
-    func testEverySpeedIsLabelledInEveryLanguage() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let l = L(language)
-            let names = ReplaySpeed.allCases.map { l.battleReplaySpeedName($0) }
-            XCTAssertFalse(names.contains { $0.isEmpty }, "\(language.rawValue) 에 빈 이름이 있다")
-            XCTAssertEqual(Set(names).count, ReplaySpeed.allCases.count,
-                           "\(language.rawValue) 에서 두 속도의 이름이 같다")
-            XCTAssertFalse(l.battleReplaySpeedLabel.isEmpty)
-        }
+    /// 세 속도가 각각 다른 이름을 가진다 — 같은 이름 두 개면 고를 수 없다.
+    func testEverySpeedIsLabelled() {
+        let l = L()
+        let names = ReplaySpeed.allCases.map { l.battleReplaySpeedName($0) }
+        XCTAssertFalse(names.contains { $0.isEmpty }, "빈 이름이 있다")
+        XCTAssertEqual(Set(names).count, ReplaySpeed.allCases.count, "두 속도의 이름이 같다")
+        XCTAssertFalse(l.battleReplaySpeedLabel.isEmpty)
     }
 }

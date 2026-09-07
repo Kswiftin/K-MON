@@ -41,28 +41,12 @@ final class MemoryHomeSeasonTests: XCTestCase {
                        "네 계절이 모두 어떤 달에는 나와야 한다")
     }
 
-    // MARK: - 3개 언어
+    // MARK: - 이름
 
-    /// 뷰 안 `private` 함수였다면 이 검증이 아예 불가능하다 — `MemoryHomeMoodStyle` 과 같은 이유로
-    /// 파일 스코프에 둔다. 호스트 로케일과 무관하게 `L` 을 직접 만들어 세 언어를 모두 밟는다.
-    func testEachSeasonHasAllThreeLanguageNames() {
-        for season in MemoryHomeSeason.allCases {
-            let ko = MemoryHomeSeasonStyle.name(season, L(.ko))
-            let en = MemoryHomeSeasonStyle.name(season, L(.en))
-            let ja = MemoryHomeSeasonStyle.name(season, L(.ja))
-            XCTAssertFalse(ko.isEmpty, "\(season) 한국어 이름이 비었다")
-            XCTAssertFalse(en.isEmpty, "\(season) 영어 이름이 비었다")
-            XCTAssertFalse(ja.isEmpty, "\(season) 일본어 이름이 비었다")
-            XCTAssertNotEqual(ko, en, "\(season) 한국어가 영어로 새어 나갔다")
-        }
-    }
-
-    func testSeasonNamesAreDistinctWithinALanguage() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let names = MemoryHomeSeason.allCases.map { MemoryHomeSeasonStyle.name($0, L(language)) }
-            XCTAssertEqual(Set(names).count, MemoryHomeSeason.allCases.count,
-                           "\(language) 에서 두 계절이 같은 이름이다")
-        }
+    func testSeasonNamesAreDistinct() {
+        let names = MemoryHomeSeason.allCases.map { MemoryHomeSeasonStyle.name($0) }
+        XCTAssertEqual(Set(names).count, MemoryHomeSeason.allCases.count, "두 계절이 같은 이름이다")
+        XCTAssertFalse(names.contains { $0.isEmpty })
     }
 
     func testEachSeasonHasItsOwnSymbol() {

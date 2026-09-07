@@ -19,7 +19,6 @@ struct ArenaSeamTests {
         let directory = storeFixtureDirectory(name)
         let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: directory.appendingPathComponent("state.json"))
-        store.setLanguage(.ko)
         return (MultiplayerRoomCenter(companion: store), directory)
     }
 
@@ -219,7 +218,7 @@ struct ArenaSeamTests {
         #expect(duel.caption == "2 라운드")
         #expect(duel.moves.map(\.number) == [1, 2])
         #expect(RoomScreen.kind(state) == .duelMove)
-        #expect(RoomScreen.lines(state, language: .ko, width: 70)
+        #expect(RoomScreen.lines(state, width: 70)
             .contains { $0.contains("2 라운드") })
 
         // 승자 이름도 **경기에서** 나온다. A 를 늘 승자로 두면 이긴 판이 진 판으로 보인다.

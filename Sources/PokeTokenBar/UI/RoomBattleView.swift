@@ -67,7 +67,7 @@ struct RoomBattleView: View {
     }
 
     private var headerBar: some View {
-        PokedoroOverlayHeader(title: l.t("2~4인 방 배틀", "Room Battle", "2〜4人ルームバトル"),
+        PokedoroOverlayHeader(title: "2~4인 방 배틀",
                               systemImage: "person.3.fill",
                               closeLabel: l.close) {
             // **방을 먼저 접는다.** 방이 살아 있으면 친구 탭이 활동을 보고 이 화면을 다시
@@ -93,16 +93,16 @@ struct RoomBattleView: View {
     private var multiplayerRooms: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Label(l.t("최대 4인 배틀", "Up to 4 players", "最大4人バトル"),
+                Label("최대 4인 배틀",
                       systemImage: "person.3.fill").font(.caption).bold()
                 Spacer()
             }
             Picker("", selection: $roomMode) {
-                Text(l.t("개인전", "Free-for-all", "個人戦")).tag(MultiplayerBattleMode.freeForAll)
+                Text("개인전").tag(MultiplayerBattleMode.freeForAll)
                 Text("2 vs 2").tag(MultiplayerBattleMode.teams)
             }.pickerStyle(.segmented).labelsHidden()
             HStack {
-                Button(l.t("방 만들기", "Create room", "部屋を作る")) {
+                Button("방 만들기") {
                     initiatedRoom = true
                     center.multiplayer.createRoom(mode: roomMode)
                 }.buttonStyle(.borderedProminent).controlSize(.small)
@@ -127,7 +127,7 @@ struct RoomBattleView: View {
                     Image(systemName: "door.left.hand.open").foregroundStyle(.secondary)
                     Text(room.name).font(.caption).lineLimit(1)
                     Spacer()
-                    Button(l.t("참가", "Join", "参加")) {
+                    Button("참가") {
                         initiatedRoom = true
                         center.multiplayer.join(room)
                     }
@@ -139,7 +139,7 @@ struct RoomBattleView: View {
             }
             if !store.recentBattles.isEmpty {
                 Divider().padding(.vertical, 1)
-                Text(l.t("최근 배틀", "Recent battles", "最近のバトル")).font(.caption2).bold()
+                Text("최근 배틀").font(.caption2).bold()
                 ForEach(store.recentBattles.prefix(3)) { record in
                     HStack(spacing: 5) {
                         Image(systemName: record.won ? "trophy.fill" : "shield.fill")
@@ -169,19 +169,19 @@ struct RoomBattleView: View {
     private var multiplayerLobbyContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label(l.t("4인 배틀 로비", "Multiplayer lobby", "マルチバトルのロビー"),
+                Label("4인 배틀 로비",
                       systemImage: "person.3.fill").font(.callout).bold()
                 Spacer()
-                Text(center.multiplayer.isHost ? l.t("방장", "HOST", "ホスト") : "")
+                Text(center.multiplayer.isHost ? "방장" : "")
                     .font(PokedoroTheme.badgeFont(size: 9, weight: .bold)).foregroundStyle(.orange)
             }
             if case .creating = center.multiplayer.phase {
-                ProgressView(l.t("방을 만드는 중…", "Creating room…", "部屋を作成中…"))
+                ProgressView("방을 만드는 중…")
             } else if case .joining(let name) = center.multiplayer.phase {
                 ProgressView("\(name)…")
             }
             if let lobby = center.multiplayer.lobby {
-                Text(lobby.mode == .teams ? "2 vs 2" : l.t("개인전", "Free-for-all", "個人戦"))
+                Text(lobby.mode == .teams ? "2 vs 2" : "개인전")
                     .font(.caption2).foregroundStyle(.secondary)
                 ForEach(lobby.participants) { participant in
                     HStack(spacing: 7) {
@@ -203,7 +203,7 @@ struct RoomBattleView: View {
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
                 }
                 ForEach(lobby.runners.count..<max(lobby.runners.count, lobby.capacity), id: \.self) { _ in
-                    HStack { Image(systemName: "person.crop.circle.dashed"); Text(l.t("참가자 대기 중", "Waiting for player", "参加者を待っています")) }
+                    HStack { Image(systemName: "person.crop.circle.dashed"); Text("참가자 대기 중") }
                         .font(.caption2).foregroundStyle(.tertiary).padding(5)
                 }
                 if lobby.mode == .teams, let me = center.multiplayer.myParticipant {
@@ -213,17 +213,17 @@ struct RoomBattleView: View {
                 }
                 HStack {
                     Button(center.multiplayer.myParticipant?.isReady == true
-                           ? l.t("준비 취소", "Cancel ready", "準備をやめる")
-                           : l.t("준비", "Ready", "準備完了")) {
+                           ? "준비 취소"
+                           : "준비") {
                         center.multiplayer.toggleReady()
                     }.buttonStyle(.borderedProminent).controlSize(.small)
                     Spacer()
                     if center.multiplayer.isHost, lobby.canStart {
-                        Button(l.t("배틀 시작", "Start battle", "バトル開始")) {
+                        Button("배틀 시작") {
                             center.multiplayer.startBattle()
                         }.buttonStyle(.borderedProminent).controlSize(.small)
                     }
-                    Button(l.t("나가기", "Leave", "退出")) { center.multiplayer.leaveRoom() }
+                    Button("나가기") { center.multiplayer.leaveRoom() }
                         .controlSize(.small)
                 }
             }
@@ -247,7 +247,7 @@ struct RoomBattleView: View {
         }
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("⚔️ \(l.t("4인 배틀", "Multiplayer Battle", "マルチバトル"))")
+                Text("⚔️ 4인 배틀")
                     .font(.callout).bold()
                 Spacer()
                 Text("R\(center.multiplayer.combatRound)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -302,25 +302,25 @@ struct RoomBattleView: View {
             if center.multiplayer.isBattleFinished {
                 Text(roomResultText(center.multiplayer.myOutcome))
                     .font(.title3).bold().frame(maxWidth: .infinity)
-                Button(l.t("로비 나가기", "Leave", "ロビーを出る")) { center.multiplayer.leaveRoom() }
+                Button("로비 나가기") { center.multiplayer.leaveRoom() }
                     .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
             } else if me?.isAlive == false {
-                Text(l.t("탈락 — 배틀을 관전하고 있습니다.", "Knocked out — spectating.", "戦闘不能 — 観戦中です。"))
+                Text("탈락 — 배틀을 관전하고 있습니다.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             } else if center.multiplayer.hasSubmittedAction {
-                HStack { ProgressView().controlSize(.small); Text(l.t("다른 참가자의 행동을 기다리는 중…", "Waiting for other players…", "ほかの参加者の行動を待っています…")) }
+                HStack { ProgressView().controlSize(.small); Text("다른 참가자의 행동을 기다리는 중…") }
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             } else {
                 Text(multiplayerTargetID == nil
-                     ? l.t("공격할 상대를 선택하세요.", "Choose a target.", "攻撃する相手を選んでください。")
-                     : l.t("기술을 선택하세요.", "Choose a move.", "わざを選んでください。"))
+                     ? "공격할 상대를 선택하세요."
+                     : "기술을 선택하세요.")
                     .font(.caption).bold()
                 if let me {
                     // 1v1 과 같은 버튼·같은 발버둥 처리를 쓴다. 발버둥이 없던 동안은 PP 가 전부
                     // 마르면 네 칸이 모두 비활성이라 턴 마감까지 아무것도 할 수 없었다.
                     let struggling = me.side.mustStruggle
                     MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,
-                                 pp: struggling ? [] : me.side.pp, language: store.language,
+                                 pp: struggling ? [] : me.side.pp,
                                  isEnabled: multiplayerTargetID != nil) { index in
                         guard let target = multiplayerTargetID else { return }
                         center.multiplayer.submitAction(targetID: target, moveIndex: struggling ? -1 : index)
@@ -350,9 +350,8 @@ struct RoomBattleView: View {
 
     /// 방 결과 문구 — 승/패/무/관전 네 갈래. `nil` 은 전투원이 아니었다는 뜻이다(관전자).
     /// 1v1 의 `finishText` 와 같은 규칙 — 판정이 낸 값을 그대로 문구로 옮기고 화면에서 다시 갈라
-    /// 판단하지 않는다. 문구도 1v1 과 같은 `l.battleWon`/`l.battleLost` 를 쓴다. 여기서
-    /// `language == .ko ? … : …` 로 직접 갈랐을 때는 일본어 사용자에게 영어가 나갔고(세 갈래 중 두
-    /// 갈래만 번역됨), 같은 결과를 두 화면이 다른 문구로 말했다.
+    /// 판단하지 않는다. 문구도 1v1 과 같은 `l.battleWon`/`l.battleLost` 를 쓴다. 이 화면이 문구를
+    /// 직접 적었을 때는 같은 결과를 두 화면이 다른 말로 알렸다.
     private func roomResultText(_ outcome: BattleOutcome?) -> String {
         switch outcome {
         case .win:  return l.battleWon

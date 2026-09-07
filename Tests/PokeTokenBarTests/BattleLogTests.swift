@@ -13,8 +13,8 @@ final class BattleLogTests: XCTestCase {
                  accuracy: 100, pp: 20)
     }
 
-    private func lines(_ events: [BattleEvent], _ lang: AppLanguage = .ko) -> [String] {
-        BattleLog.lines(events, l: L(lang),
+    private func lines(_ events: [BattleEvent]) -> [String] {
+        BattleLog.lines(events, l: L(),
                         name: { $0 == .a ? "거북왕" : "리자몽" },
                         move: { _, id in id == 57 ? spec(57, "파도타기") : spec(53, "화염방사") })
             .map(\.text)
@@ -32,11 +32,9 @@ final class BattleLogTests: XCTestCase {
                        ["리자몽의 화염방사! 40 데미지 · 효과가 별로인 듯하다…"])
     }
 
-    /// 3언어 모두 같은 접기 규칙을 따른다.
-    func testAttackLineIsLocalized() {
+    func testAttackLineWithCritFolds() {
         let stream: [BattleEvent] = [.move(.a, moveID: 57), .crit(.b), .damage(.b, amount: 122, cause: .move)]
-        XCTAssertEqual(lines(stream, .en), ["거북왕 used 파도타기! 122 damage · A critical hit!"])
-        XCTAssertEqual(lines(stream, .ja), ["거북왕の파도타기！ 122ダメージ · きゅうしょにあたった！"])
+        XCTAssertEqual(lines(stream), ["거북왕의 파도타기! 122 데미지 · 급소에 맞았다!"])
     }
 
     /// 턴마다 구분선이 들어가고, 그 턴의 행동은 행동별로 한 줄씩이다.
@@ -77,7 +75,7 @@ final class BattleLogTests: XCTestCase {
     /// 맞은 쪽을 가리키지만, 그 줄의 주인은 여전히 때린 쪽이어야 한다.
     func testLineOwnerIsTheActingSide() {
         let out = BattleLog.lines([.turn(1), .move(.b, moveID: 53), .crit(.a), .damage(.a, amount: 40, cause: .move)],
-                                  l: L(.ko), name: { _ in "X" }, move: { _, id in spec(id, "Y") })
+                                  l: L(), name: { _ in "X" }, move: { _, id in spec(id, "Y") })
         XCTAssertEqual(out.count, 2)
         XCTAssertNil(out[0].actor, "턴 구분선은 주인이 없다")
         XCTAssertEqual(out[1].actor, .b, "때린 쪽이 그 줄의 주인이다")
@@ -128,21 +126,17 @@ final class BattleLogTests: XCTestCase {
                        ["거북왕은(는) 혼란에 빠져 자신을 공격했다!", "거북왕은(는) 혼란으로 19 데미지"])
     }
 
-    /// 상태 문구도 3언어 모두 있어야 한다 — 한 언어만 채우고 넘어가는 게 흔하다.
-    func testStatusLinesAreLocalized() {
-        XCTAssertEqual(lines([.status(.a, .paralysis)], .en),
-                       ["거북왕 is paralyzed! It may be unable to move!"])
-        XCTAssertEqual(lines([.status(.a, .paralysis)], .ja), ["거북왕は しびれて 技が でにくくなった！"])
-        XCTAssertEqual(lines([.damage(.a, amount: 21, cause: .burn)], .en),
-                       ["거북왕 was hurt by its burn! 21"])
-        XCTAssertEqual(lines([.damage(.a, amount: 21, cause: .burn)], .ja),
-                       ["거북왕は やけどの ダメージ！ 21"])
+    func testStatusLinesRender() {
+        XCTAssertEqual(lines([.status(.a, .paralysis)]),
+                       ["거북왕은(는) 마비되어 기술이 나오기 어려워졌다!"])
+        XCTAssertEqual(lines([.damage(.a, amount: 21, cause: .burn)]),
+                       ["거북왕은(는) 화상 데미지! 21"])
     }
 
     /// 줄의 주인은 그 상태를 겪는 쪽이다 — 뷰가 내 편/상대 색을 이 값으로 가른다.
     func testStatusLineOwnerIsTheAfflictedSide() {
         let out = BattleLog.lines([.status(.b, .burn), .cant(.b, .sleep)],
-                                  l: L(.ko), name: { _ in "X" }, move: { _, id in spec(id, "Y") })
+                                  l: L(), name: { _ in "X" }, move: { _, id in spec(id, "Y") })
         XCTAssertEqual(out.map(\.actor), [.b, .b])
     }
 
@@ -150,7 +144,7 @@ final class BattleLogTests: XCTestCase {
     func testFighterActorsUseTheSameFold() {
         let id = UUID()
         let out = BattleLog.lines([.move(.fighter(id), moveID: 1), .damage(.b, amount: 5, cause: .move)],
-                                  l: L(.ko), name: { $0 == .fighter(id) ? "P1" : "P2" },
+                                  l: L(), name: { $0 == .fighter(id) ? "P1" : "P2" },
                                   move: { _, id in spec(id, "몸통박치기") })
         XCTAssertEqual(out.map(\.text), ["P1의 몸통박치기! 5 데미지"])
         XCTAssertEqual(out[0].actor, .fighter(id))

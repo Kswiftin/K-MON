@@ -293,9 +293,7 @@ final class PokemonAuctionCenter {
                   && ($0.status == .accepted || $0.status == .completed) }),
               let connectionID = connectionOfferIDs.first(where: { $0.value == offerID })?.key,
               let connection = connections[connectionID] else {
-            lastError = companion.l.t("게시한 포켓몬을 확인할 수 없습니다.",
-                                    "The listed Pokémon is no longer available.",
-                                    "出品したポケモンを確認できません。")
+            lastError = "게시한 포켓몬을 확인할 수 없습니다."
             return
         }
         lastError = nil
@@ -348,9 +346,7 @@ final class PokemonAuctionCenter {
             // 연결만 보면 남의 제안 국면을 움직인다.
             guard let offer = outgoing(offerID, on: connectionID) else {
                 failOutgoing(offerID, on: connection, id: connectionID,
-                             reason: companion.l.t("교환을 완료하지 못했습니다.",
-                                                   "Trade could not be completed.",
-                                                   "交換を完了できませんでした。"))
+                             reason: "교환을 완료하지 못했습니다.")
                 return
             }
             // 같은 `.accepted` 가 또 오면 **무시한다.** 커밋이 시작된 제안을 여기서 실패로
@@ -358,26 +354,21 @@ final class PokemonAuctionCenter {
             guard offer.status == .pending else { return }
             guard canCommitOutgoing(offerID, received: pokemon) else {
                 failOutgoing(offerID, on: connection, id: connectionID,
-                             reason: companion.l.t("교환을 완료하지 못했습니다.",
-                                                   "Trade could not be completed.",
-                                                   "交換を完了できませんでした。"))
+                             reason: "교환을 완료하지 못했습니다.")
                 return
             }
             // 광고(TXT)와 실제로 온 개체를 대조한다. 목록에서 본 것과 다른 개체가 오면 화면은
             // 그대로 성사되고 상자에만 다른 포켓몬이 앉는다 — 그건 교환이 아니라 바꿔치기다.
             guard matches(offer.listing, pokemon) else {
                 failOutgoing(offerID, on: connection, id: connectionID,
-                             reason: companion.l.t("목록에 올라온 포켓몬과 다른 개체가 왔습니다.",
-                                                   "The Pokémon offered does not match the listing.",
-                                                   "出品と異なるポケモンが届きました。"))
+                             reason: "목록에 올라온 포켓몬과 다른 개체가 왔습니다.")
                 return
             }
             withOutgoing(offerID, on: connectionID) { $0.received = pokemon; $0.status = .accepted }
             if offer.stardust > 0 {
                 guard companion.escrowStarPieces(offer.stardust) else {
                     failOutgoing(offerID, on: connection, id: connectionID,
-                                 reason: companion.l.t("별의조각이 부족합니다.", "Not enough Star Pieces.",
-                                                       "ほしのかけらが足りません。"))
+                                 reason: "별의조각이 부족합니다.")
                     return
                 }
                 // 에스크로가 저장을 돌렸다 — 이 자리가 #229 의 결함 지점이다. 첨자를 들고
@@ -451,9 +442,7 @@ final class PokemonAuctionCenter {
             guard committed else {
                 // 교환은 스토어를 통째로 흔든다(세이브·앨범·대화). 이유 문구를 **미리** 만들고
                 // 국면은 한 번에 적는다 — 여는 본문 안에서 `companion` 을 부르지 않는다.
-                let reason = companion.l.t("교환을 완료하지 못했습니다.",
-                                           "Trade could not be completed.",
-                                           "交換を完了できませんでした。")
+                let reason = "교환을 완료하지 못했습니다."
                 refundStardustIfNeeded(offerID)
                 withOutgoing(offerID, on: connectionID) { $0.status = .failed; $0.error = reason }
                 return
@@ -558,7 +547,7 @@ final class PokemonAuctionCenter {
 
     private func displayName(_ mon: MonState) -> String {
         if let nickname = mon.nickname, !nickname.isEmpty { return nickname }
-        return mon.names?[mon.currentID]?[companion.language.rawValue] ?? "#\(mon.currentID)"
+        return mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
     }
 
     private func startListener(for listingID: UUID) {

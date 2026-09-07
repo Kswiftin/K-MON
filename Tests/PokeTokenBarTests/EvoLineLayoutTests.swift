@@ -33,7 +33,7 @@ final class EvoLineLayoutTests: XCTestCase {
 
     /// 트리거 재현: 폭 제한이 없으면 긴 라인은 팝오버 콘텐츠 폭을 넘는다(= 버그 조건).
     func testLongEvolutionLineWithoutMaxWidthOverflowsPopoverContent() {
-        let w = renderedWidth(EvoLineView(nodes: longNodes, mysteryLabel: L(.en).unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음"),
+        let w = renderedWidth(EvoLineView(nodes: longNodes, mysteryLabel: L().unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음"),
                               proposing: PopoverMetrics.contentWidth)
         XCTAssertGreaterThan(w, PopoverMetrics.contentWidth,
                              "폭 제한 없는 진화 라인은 넘쳐야 한다 — 안 넘치면 아래 fit 검증이 무의미해진다")
@@ -41,7 +41,7 @@ final class EvoLineLayoutTests: XCTestCase {
 
     /// 수정 후: 팝오버가 주는 폭을 넘지 않는다(→ 부모 VStack 이 안 부풀고 팝오버가 안 잘린다).
     func testLongEvolutionLineFitsPopoverContentWidth() {
-        let w = renderedWidth(EvoLineView(nodes: longNodes, mysteryLabel: L(.en).unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음",
+        let w = renderedWidth(EvoLineView(nodes: longNodes, mysteryLabel: L().unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음",
                                           maxWidth: PopoverMetrics.contentWidth),
                               proposing: PopoverMetrics.contentWidth)
         XCTAssertLessThanOrEqual(w, PopoverMetrics.contentWidth)
@@ -54,7 +54,7 @@ final class EvoLineLayoutTests: XCTestCase {
         let nodes = ids.map { EvoLineItem(.species($0), .done) }
         let names = Dictionary(uniqueKeysWithValues: ids.map { ($0, "이상해씨") })
         let w = renderedWidth(
-            EvoLineView(nodes: nodes, mysteryLabel: L(.ko).unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음",
+            EvoLineView(nodes: nodes, mysteryLabel: L().unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음",
                         thumb: 56, names: names, maxWidth: cardWidth),
             proposing: cardWidth)
         XCTAssertLessThanOrEqual(w, cardWidth)
@@ -65,7 +65,7 @@ final class EvoLineLayoutTests: XCTestCase {
         // 3칸 = 40*3 + 화살표 10*2 + 간격 2*4 = 148pt
         let expected = EvoLineView.rowWidth(count: 3, thumb: 40, hasNames: false)
         XCTAssertEqual(expected, 148)
-        let w = renderedWidth(EvoLineView(nodes: threeStageNodes, mysteryLabel: L(.en).unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음",
+        let w = renderedWidth(EvoLineView(nodes: threeStageNodes, mysteryLabel: L().unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음",
                                           maxWidth: PopoverMetrics.contentWidth),
                               proposing: PopoverMetrics.contentWidth)
         XCTAssertEqual(w, expected, accuracy: 0.5)
@@ -79,7 +79,7 @@ final class EvoLineLayoutTests: XCTestCase {
             let nodes = (1...count).map { i in
                 i == count ? EvoLineItem(.mystery, .future) : EvoLineItem(.species(i), .done)
             }
-            let rendered = renderedWidth(EvoLineView(nodes: nodes, mysteryLabel: L(.en).unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음"),
+            let rendered = renderedWidth(EvoLineView(nodes: nodes, mysteryLabel: L().unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음"),
                                          proposing: 4000)
             XCTAssertEqual(rendered,
                            EvoLineView.rowWidth(count: count, thumb: 40, hasNames: false),
@@ -91,7 +91,7 @@ final class EvoLineLayoutTests: XCTestCase {
     func testNamedMysteryCellReservesNameColumnWidth() {
         let nodes = [EvoLineItem(.species(1), .done), EvoLineItem(.mystery, .future)]
         let names = [1: String(repeating: "W", count: 20)]
-        let rendered = renderedWidth(EvoLineView(nodes: nodes, mysteryLabel: L(.en).unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음", names: names),
+        let rendered = renderedWidth(EvoLineView(nodes: nodes, mysteryLabel: L().unknownNextEvolution, pageBackLabel: "이전", pageForwardLabel: "다음", names: names),
                                      proposing: 4000)
 
         XCTAssertEqual(rendered,

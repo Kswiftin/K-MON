@@ -80,15 +80,12 @@ final class MemoryHomeMilestoneCardTests: XCTestCase {
         XCTAssertEqual(ids, ["first-meeting", "together-30", "home-visits-10", "together-100"],
                        "카드가 날짜순으로 정렬되지 않았다")
     }
-    func testNewCardKindsHaveIconAndTitleInAllThreeLanguages() {
+    func testNewCardKindsHaveIconAndTitle() {
         let kinds: [PokemonMemoryMilestone.Kind] = [.togetherDays(30), .togetherDays(100), .homeVisits(10)]
-        for language in [AppLanguage.ko, .en, .ja] {
-            let l = L(language)
-            for kind in kinds {
-                let milestone = PokemonMemoryMilestone(id: "probe", kind: kind, occurredAt: met)
-                XCTAssertFalse(MemoryHomeCardStyle.icon(milestone).isEmpty, "\(kind) 아이콘 없음")
-                XCTAssertFalse(MemoryHomeCardStyle.title(milestone, l).isEmpty, "\(language)/\(kind) 제목 없음")
-            }
+        for kind in kinds {
+            let milestone = PokemonMemoryMilestone(id: "probe", kind: kind, occurredAt: met)
+            XCTAssertFalse(MemoryHomeCardStyle.icon(milestone).isEmpty, "\(kind) 아이콘 없음")
+            XCTAssertFalse(MemoryHomeCardStyle.title(milestone).isEmpty, "\(kind) 제목 없음")
         }
     }
 }

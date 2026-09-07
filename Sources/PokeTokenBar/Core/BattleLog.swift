@@ -157,7 +157,7 @@ enum BattleLog {
                             text: ([l.battleTookDamage(who, damage: damage)] + notes).joined(separator: " · "))
             }
             let spec = move(actor, moveID)
-            let moveText = spec.name(l.lang)
+            let moveText = spec.name
             // 데미지 숫자는 실제로 깎였을 때만 붙인다 — 빗나감·무효에 "0 데미지" 를 붙이면 맞았는데
             // 0 인 것처럼 읽히고, 위력 없는 변화기(Phase 3)도 같은 이유로 숫자가 없어야 한다.
             if missed {

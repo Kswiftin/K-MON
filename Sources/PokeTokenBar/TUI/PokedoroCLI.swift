@@ -307,7 +307,7 @@ enum PokedoroCLI {
     static func bagRows(_ store: CompanionStore, width: Int) -> [String] {
         let items = bagEntries(store)
         guard !items.isEmpty else { return ["가방이 비어 있다."] }
-        let l = L(store.language)
+        let l = L()
         return TUIRender.rows(items.map { (l.itemName($0.kind), "×\(TUIRender.number($0.count))") },
                               width: width)
     }
@@ -317,7 +317,7 @@ enum PokedoroCLI {
     /// 총량은 **카탈로그에서 읽는다**(`RogueRun.finalWave`·`GymLeague.catalog`). 숫자를 여기
     /// 적으면 콘텐츠가 늘 때 이 줄만 옛말이 된다 — 대화의 `challenge.status` 와 같은 규칙이다.
     static func challengeRows(_ store: CompanionStore, width: Int) -> [String] {
-        let l = L(store.language)
+        let l = L()
         let run = store.runProgress
         var lines = TUIRender.rows([
             ("던전 최고 웨이브", "\(run.bestWave)/\(RogueRun.finalWave)"),
@@ -359,7 +359,7 @@ enum PokedoroCLI {
             ("도전 요건", "\(GymLeague.teamSize)마리 · 전원 Lv.\(GymLeague.minChallengerLevel) 이상")
         ], width: width)
         lines += TUIRender.rows(GymLeague.catalog.map { gym in
-            (gym.leaderName(store.language)
+            (gym.leaderName
                 + (cleared.contains(gym.id) ? " \(TUIRender.doneMark)" : ""),
              "Lv.\(gym.level)")
         }, width: width)
@@ -370,7 +370,7 @@ enum PokedoroCLI {
 
     /// 도감 목표·업적. 둘 다 "다음에 무엇을 노릴까" 를 답하는 값이라 한 화면이다.
     static func goalRows(_ store: CompanionStore, width: Int) -> [String] {
-        let l = L(store.language)
+        let l = L()
         var lines = [TUIText.truncate(l.dexTitle, to: width)]
         lines += TUIRender.progress(store.dexGoalRows.map { row in
             TUIProgressRow(label: l.dexGoalName(row.goal), value: row.progress, target: row.goal.target)
@@ -415,7 +415,7 @@ enum PokedoroCLI {
             ("형태", "\(mon.stageIndex + 1)/\(mon.totalForms)")
         ]
         // 구버전 세이브엔 없는 값들이다. 빈 줄로 채우면 무엇이 없는지가 아니라 무엇이 고장났는지로 읽힌다.
-        if let nature = mon.nature { rows.append(("성격", nature.name(store.language))) }
+        if let nature = mon.nature { rows.append(("성격", nature.name)) }
         if let gender = mon.gender { rows.append(("성별", gender.symbol)) }
         if let metAt = mon.firstMetAt { rows.append(("처음 만난 날", day.string(from: metAt))) }
         rows.append(("함께 다니는 중", entry.isActive ? "예" : "아니오"))
@@ -424,10 +424,9 @@ enum PokedoroCLI {
 
     /// 상점 재고. 목록과 구매가 **같은 카탈로그**를 읽으므로 여기 뜨는 이름은 그대로 살 수 있다.
     static func shopRows(_ store: CompanionStore, width: Int) -> [String] {
-        let language = store.language
         var lines = TUIRender.rows([("보유", "★ \(TUIRender.number(store.availableTokens))")], width: width)
         lines += TUIRender.rows(ShopCatalog.all.map {
-            ($0.displayName(language), "★ \(TUIRender.number($0.price))")
+            ($0.displayName, "★ \(TUIRender.number($0.price))")
         }, width: width)
         return lines
     }
@@ -476,7 +475,7 @@ enum PokedoroCLI {
     /// 두 곳이 각자 조립하면 한쪽에만 있는 줄이 생긴다.
     static func waveRows(_ store: CompanionStore, width: Int) -> [String] {
         let run = store.rogueRun
-        return WaveRunScreen.lines(run, language: store.language, width: width)
+        return WaveRunScreen.lines(run, width: width)
             + ["", TUIText.truncate(WaveRunScreen.hints(run), to: width)]
     }
 

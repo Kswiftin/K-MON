@@ -67,9 +67,7 @@ struct BattleView: View {
         case .poolBuilding(let peer):
             VStack(spacing: 8) {
                 ProgressView()
-                Text(l.t("\(peer)님과 후보 6마리를 공개하는 중…",
-                         "Revealing six candidates with \(peer)…",
-                         "\(peer)と候補6匹を公開中…"))
+                Text("\(peer)님과 후보 6마리를 공개하는 중…")
                     .font(.caption).foregroundStyle(.secondary)
             }
         case .waitingTeam(let peer):
@@ -200,7 +198,7 @@ struct BattleView: View {
             Text(finishText(iWon: iWon, byForfeit: byForfeit)).font(.title3).bold()
             if center.battle != nil || center.teamPractice != nil {
                 Text(center.isPracticeBattle
-                     ? l.t("모의전 결과", "Practice result", "練習バトルの結果")
+                     ? "모의전 결과"
                      : store.battleRank.displayName)
                     .font(.caption).bold()
                 if center.lastRankDelta != 0 {
@@ -260,15 +258,13 @@ struct BattleView: View {
     private func candidateSelection(named opponent: String, challenge: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Button { pendingChallengePeer = nil; pendingManualAddress = nil } label: {
-                Label(l.t("다른 트레이너 선택", "Choose another trainer", "別のトレーナーを選ぶ"),
+                Label("다른 트레이너 선택",
                       systemImage: "chevron.left")
             }.buttonStyle(.borderless)
-            Label(l.t("배틀 후보 6마리", "Six Battle Candidates", "バトル候補6匹"),
+            Label("배틀 후보 6마리",
                   systemImage: "square.grid.3x2.fill")
                 .font(.caption.bold())
-            Text(l.t("\(opponent)님과 배틀할 후보를 고르세요. 이후에 상대를 다시 고르지 않습니다.",
-                     "Choose the pool for your battle with \(opponent). You won't choose the trainer again.",
-                     "\(opponent)と戦う候補を選んでください。相手の再選択はありません。"))
+            Text("\(opponent)님과 배틀할 후보를 고르세요. 이후에 상대를 다시 고르지 않습니다.")
                 .font(.caption).foregroundStyle(.secondary)
             TeamPicker(store: store,
                        selection: Binding(get: { center.pickedTeam }, set: { center.pickedTeam = $0 }),
@@ -296,7 +292,7 @@ struct BattleView: View {
         return VStack(alignment: .leading, spacing: 6) {
             // 제목이 Lv.50 을 말하지 않는다 — 그 규칙은 아래 상대 목록(맞짱)에만 해당하고,
             // 같은 섹션의 모의전은 키운 레벨 그대로 나간다.
-            Label(l.t("랭크배틀", "Ranked Battle", "ランクバトル"),
+            Label("랭크배틀",
                   systemImage: "shield.lefthalf.filled")
                 .font(.caption.bold())
             Picker("", selection: Binding(get: { center.rankedTeamSize }, set: { center.rankedTeamSize = $0 })) {
@@ -305,9 +301,7 @@ struct BattleView: View {
                 Text("6 vs 6").tag(6)
             }.pickerStyle(.segmented).labelsHidden()
 
-            Text(l.t("먼저 후보 6마리를 공개한 뒤 실제 출전 포켓몬을 고릅니다.",
-                     "Reveal six candidates first, then choose the battle team.",
-                     "先に候補6匹を公開してから実際の出場ポケモンを選びます。"))
+            Text("먼저 후보 6마리를 공개한 뒤 실제 출전 포켓몬을 고릅니다.")
                 .font(.caption2).foregroundStyle(.secondary)
             HStack {
                 Label(store.battleRank.displayName, systemImage: "shield.lefthalf.filled")
@@ -320,7 +314,7 @@ struct BattleView: View {
 
             HStack(spacing: 6) {
                 Text(l.battleNearby).font(.caption).bold()
-                Text(l.t("· 전원 Lv.50", "· all Lv.50", "· 全員 Lv.50"))
+                Text("· 전원 Lv.50")
                     .font(.caption2).foregroundStyle(.secondary)
                 if case .preparing = center.phase { ProgressView().controlSize(.mini) }
                 Spacer()
@@ -391,8 +385,8 @@ struct BattleView: View {
                     // 복사 뒤 아이콘이 체크로 바뀌는 것이 유일한 성공 신호다 — 화면 판독기
                     // 사용자에게는 이름도 함께 바뀌어야 그 신호가 전달된다.
                     .accessibilityLabel(addressCopied
-                                        ? l.t("주소를 복사했어요", "Address copied", "アドレスをコピーしました")
-                                        : l.t("주소 복사", "Copy address", "アドレスをコピー"))
+                                        ? "주소를 복사했어요"
+                                        : "주소 복사")
                     Spacer()
                 }
             }
@@ -458,9 +452,7 @@ struct BattleView: View {
                 .font(.caption2)
             }
             if store.deployableMons.count < 6 {
-                Text(l.t("배틀을 수락하려면 포켓몬이 6마리 필요합니다.",
-                         "You need six Pokémon to accept this battle.",
-                         "バトルを承認するにはポケモンが6匹必要です。"))
+                Text("배틀을 수락하려면 포켓몬이 6마리 필요합니다.")
                     .font(.caption2).foregroundStyle(.orange)
             } else if let error = center.lastError {
                 Text(error).font(.caption2).foregroundStyle(.orange)
@@ -481,12 +473,10 @@ struct BattleView: View {
 
     private func poolSelectingView(peer: String) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Label(l.t("공개할 후보 6마리", "Choose Six Candidates", "公開する候補6匹"),
+            Label("공개할 후보 6마리",
                   systemImage: "square.grid.3x2.fill")
                 .font(.headline)
-            Text(l.t("\(peer)님에게 공개할 포켓몬 6마리를 선택하세요. 서로의 후보가 준비되면 실제 출전 파티를 고릅니다.",
-                     "Choose six Pokémon to reveal to \(peer). After both pools are ready, choose the actual battle team.",
-                     "\(peer)に公開する6匹を選んでください。両方の候補が揃ったら実際の出場パーティを選びます。"))
+            Text("\(peer)님에게 공개할 포켓몬 6마리를 선택하세요. 서로의 후보가 준비되면 실제 출전 파티를 고릅니다.")
                 .font(.caption).foregroundStyle(.secondary)
             TeamPicker(store: store,
                        selection: Binding(get: { center.incomingPickedTeam },
@@ -498,7 +488,7 @@ struct BattleView: View {
                 Spacer()
                 Text("\(center.incomingPickedTeam.count) / 6")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                Button(l.t("후보 공개", "Reveal Candidates", "候補を公開")) { center.confirmBattlePool() }
+                Button("후보 공개") { center.confirmBattlePool() }
                     .buttonStyle(.borderedProminent)
                     .disabled(center.incomingPickedTeam.count != 6)
             }
@@ -507,18 +497,16 @@ struct BattleView: View {
 
     private func teamBuildingView(peer: String, waiting: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(l.t("파티 편성", "Choose Your Party", "パーティ編成"), systemImage: "person.3.fill")
+            Label("파티 편성", systemImage: "person.3.fill")
                 .font(.headline)
-            Text(l.t("\(peer)님이 수락했습니다. 두 트레이너가 모두 확인하면 배틀이 시작됩니다.",
-                     "\(peer) accepted. The battle starts after both trainers confirm.",
-                     "\(peer)が承認しました。両方が確認するとバトル開始です。"))
+            Text("\(peer)님이 수락했습니다. 두 트레이너가 모두 확인하면 배틀이 시작됩니다.")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("", selection: Binding(get: { center.incomingTeamSize }, set: { _ in })) {
                 Text("\(center.incomingTeamSize) vs \(center.incomingTeamSize)").tag(center.incomingTeamSize)
             }.pickerStyle(.segmented).labelsHidden().disabled(true)
             if !center.incomingBattlePool.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(l.t("상대 후보 6마리", "Opponent's six candidates", "相手の候補6匹"))
+                    Text("상대 후보 6마리")
                         .font(.caption.bold())
                     HStack(spacing: 5) {
                         ForEach(Array(center.incomingBattlePool.enumerated()), id: \.offset) { _, snapshot in
@@ -541,10 +529,10 @@ struct BattleView: View {
                 Spacer()
                 if waiting {
                     ProgressView().controlSize(.small)
-                    Text(l.t("상대 확인 대기 중…", "Waiting for opponent…", "相手の確認待ち…"))
+                    Text("상대 확인 대기 중…")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Button(l.t("파티 확인", "Confirm Party", "パーティ確認")) { center.confirmBattleTeam() }
+                    Button("파티 확인") { center.confirmBattleTeam() }
                         .buttonStyle(.borderedProminent)
                         .disabled(store.ownedMons.count < center.incomingTeamSize)
                 }

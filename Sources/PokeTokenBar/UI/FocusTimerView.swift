@@ -31,7 +31,7 @@ struct FocusTimerView: View {
                 Label(title, systemImage: timer.phase == .rest ? "cup.and.saucer.fill" : "timer")
                     .font(.callout.weight(.bold))
                 Spacer()
-                Toggle(companion.l.t("방해금지", "Do Not Disturb", "おやすみ"), isOn: $settings.doNotDisturb)
+                Toggle("방해금지", isOn: $settings.doNotDisturb)
                     .toggleStyle(.checkbox).font(.caption2)
             }
             if timer.isRunning, timer.endsAt != nil {
@@ -45,7 +45,7 @@ struct FocusTimerView: View {
                         Text(timer.phase == .focus ? (timer.focusLabel ?? focusHint) : restHint)
                             .font(.caption2).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.tail)
-                        Button(companion.l.t("종료", "Stop", "終了")) {
+                        Button("종료") {
                             timer.stopFocusSession(companion: companion)
                         }
                             .controlSize(.small)
@@ -62,7 +62,7 @@ struct FocusTimerView: View {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            Label(companion.l.t("진행 중인 모험", "Active adventure", "進行中の冒険"),
+                            Label("진행 중인 모험",
                                   systemImage: "map.fill")
                                 .font(.caption.weight(.semibold))
                             Spacer()
@@ -70,7 +70,7 @@ struct FocusTimerView: View {
                                 // 결과는 버리지만 사라지지 않는다 — `claimAdventure()` 가 스토어에
                                 // 배너를 남기고, 위 `adoptClaimIfNeeded` 가 그걸 건네받는다. 예전엔
                                 // 여기서 `_ =` 로 버린 게 곧 "지급을 아무도 설명하지 않음" 이었다.
-                                Button(companion.l.t("보상 받기", "Claim", "受け取る")) {
+                                Button("보상 받기") {
                                     companion.claimAdventure()
                                 }
                                 .buttonStyle(.borderedProminent).controlSize(.small)
@@ -81,15 +81,11 @@ struct FocusTimerView: View {
                         }
                         ProgressView(value: adventure.progress(at: context.date)).tint(.green)
                         Text(adventure.isComplete(at: context.date)
-                             ? companion.l.t("완료된 모험의 보상을 받아야 다음 집중을 시작할 수 있어요.",
-                                     "Claim this reward before starting another focus session.",
-                                     "この報酬を受け取ってから次の集中を始められます。")
-                             : companion.l.t("앱을 다시 열어도 모험은 계속 진행됩니다.",
-                                     "The adventure continues after reopening the app.",
-                                     "アプリを開き直しても冒険は続きます。"))
+                             ? "완료된 모험의 보상을 받아야 다음 집중을 시작할 수 있어요."
+                             : "앱을 다시 열어도 모험은 계속 진행됩니다.")
                             .font(.caption2).foregroundStyle(.secondary)
                         if !adventure.isComplete(at: context.date) {
-                            Button(companion.l.t("모험 취소", "Cancel adventure", "冒険をやめる")) {
+                            Button("모험 취소") {
                                 companion.cancelFocusAdventure()
                             }
                             .controlSize(.small)
@@ -99,9 +95,7 @@ struct FocusTimerView: View {
             } else {
                 // 라벨은 **선택**이다. 엔터로도 시작되게 해서, 적은 사람은 손을 옮기지 않고
                 // 시작하고 안 적는 사람은 지금까지와 똑같이 버튼 한 번으로 시작한다.
-                TextField(companion.l.t("무엇에 집중하나요? (선택)",
-                                        "What are you focusing on? (optional)",
-                                        "何に集中しますか？（任意）"),
+                TextField("무엇에 집중하나요? (선택)",
                           text: $label)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
@@ -114,7 +108,7 @@ struct FocusTimerView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 HStack {
-                    Button(companion.l.t("모험 보내고 집중 시작", "Send on adventure & focus", "冒険に送って集中開始")) {
+                    Button("모험 보내고 집중 시작") {
                         startSession()
                     }
                     .buttonStyle(.borderedProminent).controlSize(.small)
@@ -140,17 +134,15 @@ struct FocusTimerView: View {
                 Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
                 // 목표를 함께 적는다 — 완료 수만 있으면 "3세션" 이 많은지 적은지 알 수 없다.
                 // 체인은 이 목표에서 멈춘다(`FocusChainRules.afterRest`).
-                Text(companion.l.t("오늘 \(companion.focusSessionsToday)/\(settings.dailyFocusGoal)세션 · \(companion.focusMinutesToday)분",
-                                   "Today \(companion.focusSessionsToday)/\(settings.dailyFocusGoal) sessions · \(companion.focusMinutesToday) min",
-                                   "今日 \(companion.focusSessionsToday)/\(settings.dailyFocusGoal)セッション・\(companion.focusMinutesToday)分"))
+                Text("오늘 \(companion.focusSessionsToday)/\(settings.dailyFocusGoal)세션 · \(companion.focusMinutesToday)분")
                 Spacer()
                 // 줄을 새로 만들지 않고 이 자리의 빈 공간을 쓴다 — 집중 카드의 세로 예산은
                 // 파트너 카드가 화면에 남느냐를 정한다(`MissionBoardView` 가 겪은 그 회귀).
                 // 회고는 바로 왼쪽 숫자를 설명하는 화면이라 그 옆이 제자리다.
                 Button { nav.showFocusRecap = true } label: { Image(systemName: "chart.bar.xaxis") }
                     .buttonStyle(.borderless).controlSize(.small)
-                    .help(companion.l.t("주간 회고", "Weekly recap", "週間ふりかえり"))
-                    .accessibilityLabel(companion.l.t("주간 회고", "Weekly recap", "週間ふりかえり"))
+                    .help("주간 회고")
+                    .accessibilityLabel("주간 회고")
             }
             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             todaySessionList
@@ -169,7 +161,7 @@ struct FocusTimerView: View {
             } else if sessionDone, noticeIsCurrent {
                 // 정산할 게 없는 세션 완료(대화 칩으로 먼저 받은 뒤 tick 이 오는 경우)도 끝났다는
                 // 말은 남긴다 — 예전 `timer.lastReward` 가 하던 최소한의 일이다.
-                Text(companion.l.t("집중 세션 완료!", "Focus session complete!", "集中セッション完了！"))
+                Text("집중 세션 완료!")
                     .font(.caption.weight(.semibold)).foregroundStyle(.green)
             }
             if companion.focusEggCount > 0, let readyAt = companion.nextStoredEggHatchAt {
@@ -221,8 +213,7 @@ struct FocusTimerView: View {
                         // 시각 표기는 로캘에 맡긴다 — 포맷 문자열을 직접 쓰면 12/24시간 설정을 무시한다.
                         Text(session.endedAt.formatted(date: .omitted, time: .shortened))
                             .monospacedDigit()
-                        Text(companion.l.t("\(session.minutes)분", "\(session.minutes) min",
-                                           "\(session.minutes)分"))
+                        Text("\(session.minutes)분")
                         if let label = session.label {
                             Text(label).foregroundStyle(.primary)
                                 .lineLimit(1).truncationMode(.tail)
@@ -276,10 +267,8 @@ struct FocusTimerView: View {
         switch line {
         case .eggs(let count):
             Text(count > 1
-                 ? companion.l.t("🎉 신비한 알 \(count)개 발견!",
-                                 "🎉 \(count) Mystery Eggs found!",
-                                 "🎉 ふしぎなタマゴ\(count)個発見！")
-                 : companion.l.t("🎉 신비한 알 발견!", "🎉 Mystery Egg found!", "🎉 ふしぎなタマゴ発見！"))
+                 ? "🎉 신비한 알 \(count)개 발견!"
+                 : "🎉 신비한 알 발견!")
                 .font(.caption.weight(.semibold)).foregroundStyle(.purple)
         case .settled(let stardust):
             // 첫 줄일 때만 강조한다 — 알 줄이 위에 오면 그쪽이 머리글이라 둘 다 굵으면 서로 밀린다.
@@ -290,34 +279,30 @@ struct FocusTimerView: View {
             Text(companion.l.claimOverflowConverted(stardust))
                 .font(.caption2).foregroundStyle(.orange)
         case .rareCandy:
-            Text(companion.l.t("🍬 \(companion.l.itemName(.rareCandy)) 1개 발견!",
-                               "🍬 Found a \(companion.l.itemName(.rareCandy))!",
-                               "🍬 \(companion.l.itemName(.rareCandy))を1個発見！"))
+            Text("🍬 \(companion.l.itemName(.rareCandy)) 1개 발견!")
                 .font(.caption2).foregroundStyle(.pink)
         }
     }
 
     private var title: String {
         switch timer.phase {
-        case .focus: companion.l.t("집중 중", "Focus session", "集中中")
+        case .focus: "집중 중"
         // 긴 휴식은 다르게 말한다 — 15분을 쉬는데 "휴식 중" 이면 타이머가 고장 난 것처럼 보인다.
         // 판정은 휴식 길이를 정한 것과 **같은 파생**이다(`FocusChainRules.isLongRest`).
         case .rest: FocusChainRules.isLongRest(completedToday: companion.focusSessionsToday)
-            ? companion.l.t("긴 휴식 중", "Long break", "長い休憩中")
-            : companion.l.t("휴식 중", "Break", "休憩中")
-        case .idle: companion.l.t("집중 타이머", "Focus timer", "集中タイマー")
+            ? "긴 휴식 중"
+            : "휴식 중"
+        case .idle: "집중 타이머"
         }
     }
-    private var focusHint: String { companion.l.t("완료 시 파트너 보상", "Partner reward on completion", "完了でパートナーに報酬") }
-    private var restHint: String { companion.l.t("잠깐 쉬어가세요", "Take a short break", "少し休みましょう") }
+    private var focusHint: String { "완료 시 파트너 보상" }
+    private var restHint: String { "잠깐 쉬어가세요" }
     private func adventureText(_ minutes: Int) -> String {
-        companion.l.t("파트너가 \(minutes)분 모험 중 · 완료해야 보상",
-                      "Partner exploring for \(minutes)m · finish to claim",
-                      "パートナーが\(minutes)分の冒険中 · 完了で報酬")
+        "파트너가 \(minutes)분 모험 중 · 완료해야 보상"
     }
     private func eggChanceText(_ minutes: Int) -> String {
         let chance = Double(FocusRewardRules.eggChanceBasisPoints(minutes: minutes)) / 100
-        return companion.l.t("신비한 알 확률 \(chance.formatted())%", "Mystery Egg chance \(chance.formatted())%", "ふしぎなタマゴ確率 \(chance.formatted())%")
+        return "신비한 알 확률 \(chance.formatted())%"
     }
     private func rewardText(_ minutes: Int) -> String {
         let reward = AdventureRules.amounts(minutes: minutes)

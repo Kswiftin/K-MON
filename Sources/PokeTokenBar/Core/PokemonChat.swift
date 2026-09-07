@@ -23,20 +23,18 @@ enum PokemonHabitat: String, Codable, Sendable, CaseIterable {
     case roughTerrain = "rough-terrain"
     case watersEdge = "waters-edge"
 
-    func name(_ lang: AppLanguage) -> String {
-        let names: (String, String, String)
+    var name: String {
         switch self {
-        case .cave:         names = ("동굴", "Cave", "洞窟")
-        case .forest:       names = ("숲", "Forest", "森")
-        case .grassland:    names = ("초원", "Grassland", "草原")
-        case .mountain:     names = ("산", "Mountain", "山")
-        case .rare:         names = ("희귀한 장소", "Rare", "珍しい場所")
-        case .roughTerrain: names = ("험한 지형", "Rough terrain", "荒れ地")
-        case .sea:          names = ("바다", "Sea", "海")
-        case .urban:        names = ("도시", "Urban", "都市")
-        case .watersEdge:   names = ("물가", "Water's edge", "水辺")
+        case .cave:         "동굴"
+        case .forest:       "숲"
+        case .grassland:    "초원"
+        case .mountain:     "산"
+        case .rare:         "희귀한 장소"
+        case .roughTerrain: "험한 지형"
+        case .sea:          "바다"
+        case .urban:        "도시"
+        case .watersEdge:   "물가"
         }
-        switch lang { case .ko: return names.0; case .en: return names.1; case .ja: return names.2 }
     }
 }
 
@@ -47,12 +45,12 @@ struct PokemonSpeciesIdentity: Codable, Sendable, Equatable {
     let ability: String?
 
     init(genera: [String: String], habitatSlug: String?, flavorTexts: [String: String],
-         abilityNames: [String: String], abilityTexts: [String: String], language: AppLanguage) {
-        flavorText = language.resolveProse(flavorTexts)
-        genus = language.resolveProse(genera)
-        habitat = habitatSlug.flatMap(PokemonHabitat.init(rawValue:))?.name(language)
-        if let name = language.resolveName(abilityNames) {
-            ability = language.resolveProse(abilityTexts).map { "\(name) — \($0)" } ?? name
+         abilityNames: [String: String], abilityTexts: [String: String]) {
+        flavorText = PokemonNaming.prose(flavorTexts)
+        genus = PokemonNaming.prose(genera)
+        habitat = habitatSlug.flatMap(PokemonHabitat.init(rawValue:))?.name
+        if let name = PokemonNaming.name(abilityNames) {
+            ability = PokemonNaming.prose(abilityTexts).map { "\(name) — \($0)" } ?? name
         } else {
             ability = nil
         }
@@ -73,7 +71,6 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
     var genus: String?
     var habitat: String?
     var ability: String?
-    let language: AppLanguage
     var types: [String] = []
     /// 이 개체의 실제 능력치 여섯 칸(홈 화면과 같은 값). 도구가 아니라 프로필로 싣는 이유는
     /// 여기가 이미 타입·기술·다음 진화를 싣는 자리라서다 — 도구로 하면 왕복 한 번을 더 쓴다.
@@ -82,7 +79,7 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
     var nextEvolution: String?
 
     init(speciesID: Int, displayName: String, nickname: String?, isShiny: Bool = false,
-         nature: String?, level: Int, stage: String, flavorText: String?, language: AppLanguage,
+         nature: String?, level: Int, stage: String, flavorText: String?,
          genus: String? = nil, habitat: String? = nil, ability: String? = nil,
          types: [String] = [], stats: String? = nil, moves: [String] = [], nextEvolution: String? = nil) {
         self.speciesID = speciesID
@@ -96,7 +93,6 @@ struct PokemonChatProfile: Codable, Sendable, Equatable {
         self.genus = genus
         self.habitat = habitat
         self.ability = ability
-        self.language = language
         self.types = types
         self.stats = stats
         self.moves = moves
@@ -180,7 +176,7 @@ struct PokemonChatRequest: Sendable {
                              profile.ability.map { "ability \($0)" }].compactMap { $0 }
         let identity = identityFacts.isEmpty ? nil : "Species identity: \(identityFacts.joined(separator: "; "))."
         return """
-        You are \(name), a Pokémon companion speaking directly to your trainer in \(profile.language.label).
+        You are \(name), a Pokémon companion speaking directly to your trainer in Korean.
         Reply in 1–3 short, warm sentences only. Reflect this individual’s nature, species traits, and current state.
         Let supplied species details shape how this Pokémon describes itself and its everyday perspective.
         Never claim to be an AI, assistant, model, tool, or software, and never explain code, files, terminals, web research, projects, or your own capabilities.
@@ -237,7 +233,7 @@ enum PokemonChatReplyGuard {
         // 뭉개면 사용자에게도 로그에도 구분이 남지 않는다.
         guard !trimmed.isEmpty else {
             AppLog.write("chat guard: empty reply — silence line shown")
-            return (silence(profile.language), .replaced)
+            return (silence(), .replaced)
         }
         let lower = trimmed.lowercased()
         // 어느 낱말에 걸렸는지를 남긴다. 길이만 찍으면 다음 오탐도 추측으로 찾게 되는데,
@@ -247,7 +243,7 @@ enum PokemonChatReplyGuard {
             return (text, text == trimmed ? .kept : .clipped)
         }
         AppLog.write("chat guard: role break on \"\(needle)\" — reply replaced (\(trimmed.count) chars)")
-        return (redirect(profile.language), .replaced)
+        return (redirect(), .replaced)
     }
 
     /// 상한을 넘으면 상한 안의 **마지막 문장 경계**에서 접는다. 단 그 경계가 창의 절반보다 앞이면
@@ -262,38 +258,24 @@ enum PokemonChatReplyGuard {
         return String(head[...cut])
     }
 
-    /// 변형이 비지 않는 건 `steerLines` 가 리터럴 세 줄씩이고 테스트가 언어별 3개 이상을 고정해서다 —
+    /// 변형이 비지 않는 건 `steerLines` 가 리터럴 세 줄이고 테스트가 그 개수를 고정해서다 —
     /// 그래서 폴백 분기를 두지 않는다(한 번도 안 도는 분기는 검증된 것과 구별되지 않는다).
-    static func redirect(_ language: AppLanguage) -> String {
-        steerLines(language).randomElement()!
+    static func redirect() -> String {
+        steerLines().randomElement()!
     }
 
     /// 모델이 끝까지 아무 말도 하지 않았을 때. 질문을 못 알아들은 게 아니므로 "잘 모르겠어" 가
     /// 아니라 **다시 물어봐 달라**고 한다.
-    static func silence(_ language: AppLanguage) -> String {
-        switch language {
-        case .ko: return "앗, 지금은 말이 잘 안 나와… 한 번만 다시 말 걸어 줄래?"
-        case .ja: return "あれ、いまはうまく言葉が出てこないみたい…もう一度話しかけてくれる？"
-        case .en: return "Oh, the words aren’t coming out right now… could you say that to me again?"
-        }
-    }
+    static func silence() -> String { "앗, 지금은 말이 잘 안 나와… 한 번만 다시 말 걸어 줄래?" }
 
     /// 갈아치울 때 쓰는 문구들. **질문을 모른다고 말하지 않는다** — 실제로 벌어진 일은 답변이
     /// 경계를 넘었다는 것뿐이고 사용자의 질문은 멀쩡하다. 변형을 여러 개 두는 이유는 한 문장만
     /// 두면 갈아치우기가 **반드시** 같은 화면이 되기 때문이다(리포트된 화면이 그랬다). 직전 문구를
     /// 기억해 빼지는 않는다 — 순수 함수에 전역 가변 상태를 다는 값이 연속 반복 1/3 → 0 보다 크다.
-    static func steerLines(_ language: AppLanguage) -> [String] {
-        switch language {
-        case .ko: return ["그 이야기는 나랑 어울리지 않는걸! 대신 오늘 내 기분 이야기 들어 볼래?",
-                          "음, 그건 내 세계 밖의 일이야. 우리 모험 이야기나 할까?",
-                          "그건 접어 두고, 내 도감에 뭐라고 적혀 있는지 들려줄까?"]
-        case .ja: return ["その話はぼくには向いてないな！かわりに今日の気分を聞いてくれる？",
-                          "うーん、それはぼくの世界の外の話だよ。冒険の話をしようか？",
-                          "それはおいといて、ぼくの図鑑の説明を教えてあげようか？"]
-        case .en: return ["That’s not really my world! Want to hear how my day went instead?",
-                          "Hmm, that’s outside my world. Shall we talk about our adventures?",
-                          "Let’s leave that — want to hear what my Pokédex entry says?"]
-        }
+    static func steerLines() -> [String] {
+        ["그 이야기는 나랑 어울리지 않는걸! 대신 오늘 내 기분 이야기 들어 볼래?",
+         "음, 그건 내 세계 밖의 일이야. 우리 모험 이야기나 할까?",
+         "그건 접어 두고, 내 도감에 뭐라고 적혀 있는지 들려줄까?"]
     }
 }
 
@@ -1573,12 +1555,12 @@ enum PokemonChatProviderKind: String, Codable, CaseIterable, Sendable {
     case codex, claude, opencode, custom
 
     /// 제공자 이름은 피커·설정 두 화면이 함께 쓴다. 화면마다 하드코딩하면 한 곳을 빠뜨린다.
-    func label(_ language: AppLanguage) -> String {
+    var label: String {
         switch self {
         case .codex: return "Codex"
         case .claude: return "Claude Code"
         case .opencode: return "OpenCode"
-        case .custom: return L(language).t("사용자 CLI", "Custom CLI", "カスタム CLI")
+        case .custom: return "사용자 CLI"
         }
     }
 }
@@ -1592,16 +1574,12 @@ enum PokemonChatBlockReason: Sendable, Equatable {
     /// 앱이 내용을 모르는 임의 실행 파일이다 — 어떤 격리도 약속할 수 없다.
     case arbitraryExecutable
 
-    func message(_ language: AppLanguage) -> String {
+    var message: String {
         switch self {
         case .unverifiedToolContract:
-            return L(language).t("이 CLI 는 실행별로 도구·MCP 를 끄는 방법을 제공하지 않아, 앱이 격리를 보장할 수 없습니다.",
-                                 "This CLI offers no per-run way to disable tools and MCP, so the app cannot guarantee isolation.",
-                                 "この CLI は実行ごとにツール・MCP を無効化する手段がないため、アプリが隔離を保証できません。")
+            return "이 CLI 는 실행별로 도구·MCP 를 끄는 방법을 제공하지 않아, 앱이 격리를 보장할 수 없습니다."
         case .arbitraryExecutable:
-            return L(language).t("임의의 실행 파일이라 도구 격리를 보장할 수 없어 대화에 쓸 수 없습니다.",
-                                 "An arbitrary executable cannot be tool-isolated, so it is unavailable for chat.",
-                                 "任意の実行ファイルはツール隔離を保証できないため、会話には使えません。")
+            return "임의의 실행 파일이라 도구 격리를 보장할 수 없어 대화에 쓸 수 없습니다."
         }
     }
 }
@@ -1688,20 +1666,18 @@ enum PokemonChatProviderSelection {
     }
 
     /// 고를 것이 하나도 없을 때의 안내. 차단 사유(`PokemonChatBlockReason`)와 같은 이유로 문구를
-    /// Core 에 둔다 — 뷰가 들면 커버리지 게이트 밖에 남고, 세 언어 중 하나가 조용히 빠진다.
-    static func noProviderMessage(_ language: AppLanguage) -> String {
-        L(language).t("설치된 대화 CLI 를 찾지 못했습니다. 설정에서 경로를 넣으세요.",
-                      "No chat CLI was found on this Mac. Type its path in Settings.",
-                      "会話用 CLI が見つかりません。設定でパスを入力してください。")
+    /// Core 에 둔다 — 뷰가 들면 커버리지 게이트 밖에 남고, 문구가 조용히 빠진다.
+    static var noProviderMessage: String {
+        "설치된 대화 CLI 를 찾지 못했습니다. 설정에서 경로를 넣으세요."
     }
 
     /// **전송 버튼이 곧 동의다.** 자동 선택이 "어느 CLI 인가" 를 사용자 손에서 가져갔으므로, 그
     /// 답을 누르는 자리에서 돌려준다 — 이름 없는 "외부 전송" 은 어디로 나가는지 말해 주지 않는다.
-    static func externalSendLabel(kind: PokemonChatProviderKind, language: AppLanguage) -> String {
-        let name = kind.label(language)
+    static func externalSendLabel(kind: PokemonChatProviderKind) -> String {
+        let name = kind.label
         // 영어만 시제를 고를 수 있어 함정이 있다. "Sent" 는 **이미 나갔다**는 보고라, 누르기 전에
         // 읽는 동의 문구로는 틀린 주장이다. 한국어 "외부 전송"·일본어 "外部送信" 은 시제 없는 명사다.
-        return L(language).t("외부 전송 → \(name)", "Sends externally → \(name)", "外部送信 → \(name)")
+        return "외부 전송 → \(name)"
     }
 
     /// 자동 선택은 "어느 CLI 인가" 만 대신 정했는데, 예전엔 **피커에서 고르는 행위 자체가 첫 전송의
@@ -1715,22 +1691,16 @@ enum PokemonChatProviderSelection {
 
     /// 물어보는 문장도 대상 CLI 를 **이름으로** 말한다. "외부로 보냅니다" 만으로는 어디로 가는지
     /// 모른 채 승인하게 된다 — 동의 줄과 같은 이유다.
-    static func firstSendConsentQuestion(kind: PokemonChatProviderKind, language: AppLanguage) -> String {
-        let name = kind.label(language)
-        return L(language).t(
-            "이 대화를 이 Mac 의 \(name) 에게 보냅니다. 계속할까요? (처음 한 번만 묻습니다)",
-            "This conversation will be sent to \(name) on this Mac. Continue? (asked only once)",
-            "この会話をこの Mac の \(name) に送ります。続けますか？（最初の一度だけ確認します）")
+    static func firstSendConsentQuestion(kind: PokemonChatProviderKind) -> String {
+        let name = kind.label
+        return "이 대화를 이 Mac 의 \(name) 에게 보냅니다. 계속할까요? (처음 한 번만 묻습니다)"
     }
 
     /// 고른 CLI 가 안 깔려 폴백했을 때. **이름을 말해야 한다** — 설정은 검증 CLI 마다 경로 칸이
     /// 따로라, 이름 없는 "설정에서 경로를 넣으세요" 로는 어느 칸인지 알 수 없다.
-    static func notInstalledMessage(_ kind: PokemonChatProviderKind, _ language: AppLanguage) -> String {
-        let name = kind.label(language)
-        return L(language).t(
-            "\(name) 실행 파일을 찾지 못해 다른 CLI 로 보냅니다. 설정에서 \(name) 경로를 넣으세요.",
-            "Could not find the \(name) executable, so messages go to another CLI. Type the \(name) path in Settings.",
-            "\(name) の実行ファイルが見つからないため別の CLI に送ります。設定で \(name) のパスを入力してください。")
+    static func notInstalledMessage(_ kind: PokemonChatProviderKind) -> String {
+        let name = kind.label
+        return "\(name) 실행 파일을 찾지 못해 다른 CLI 로 보냅니다. 설정에서 \(name) 경로를 넣으세요."
     }
 
     /// 보낼 수 없거나 고른 대로 안 나가는 사유를 한 벌로 판정한다. **고른 것(`stored`)과 실제로
@@ -1742,12 +1712,11 @@ enum PokemonChatProviderSelection {
     /// 폴백을 부르는 것은 차단만이 아니다. 고른 CLI 를 **지워도** 조용히 다른 벤더로 나간다 —
     /// 두 경우 모두 말해야 사용자가 자기 선택이 왜 무시됐는지 안다(피커가 차단 종류를 목록에서
     /// 지우지 않고 굳이 보여 주는 이유와 같다).
-    static func unavailableMessage(stored: String, effective: PokemonChatProviderKind?,
-                                   language: AppLanguage) -> String? {
-        guard let effective else { return noProviderMessage(language) }
+    static func unavailableMessage(stored: String, effective: PokemonChatProviderKind?) -> String? {
+        guard let effective else { return noProviderMessage }
         guard let chosen = PokemonChatProviderKind(rawValue: stored), chosen != effective else { return nil }
-        return PokemonChatProviderSafety.availability(for: chosen).blockReason?.message(language)
-            ?? notInstalledMessage(chosen, language)
+        return PokemonChatProviderSafety.availability(for: chosen).blockReason?.message
+            ?? notInstalledMessage(chosen)
     }
 }
 
@@ -2201,7 +2170,7 @@ final class PokemonChatStore {
             proposal.reject()
         }
         pendingProposal = nil
-        appendSystemMessage(proposal.call.outcome(approved: approved, success: success, language: profile.language),
+        appendSystemMessage(proposal.call.outcome(approved: approved, success: success),
                             for: proposal.companionID, profile: profile)
     }
 

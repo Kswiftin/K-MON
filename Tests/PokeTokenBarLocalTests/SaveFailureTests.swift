@@ -25,7 +25,7 @@ import Testing
         let store = store(at: unwritable)
         #expect(!store.saveFailed, "아직 아무것도 저장하지 않았다")
 
-        store.setLanguage(.en)   // 저장을 부르는 가장 짧은 경로
+        store.debugMarkStarterChosen()   // 저장을 부르는 가장 짧은 경로
 
         #expect(store.saveFailed, "저장이 실패했는데 화면이 읽을 신호가 없다")
     }
@@ -36,7 +36,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = store(at: directory.appendingPathComponent("state.json"))
-        store.setLanguage(.en)
+        store.debugMarkStarterChosen()
 
         #expect(!store.saveFailed)
         #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("state.json").path))

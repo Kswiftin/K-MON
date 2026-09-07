@@ -68,13 +68,13 @@ private struct GymRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(gym.type.name(store.language))
+            Text(gym.type.name)
                 .font(PokedoroTheme.badgeFont(size: 9, weight: .heavy)).foregroundStyle(.white)
                 .frame(width: 42)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color.accentColor.opacity(0.55)))
             VStack(alignment: .leading, spacing: 1) {
-                Text(gym.leaderName(store.language)).font(.caption.bold()).lineLimit(1)
+                Text(gym.leaderName).font(.caption.bold()).lineLimit(1)
                 Text(store.l.gymLeaderLevel(gym.level) + "+")
                     .font(.caption2).foregroundStyle(.secondary)
             }

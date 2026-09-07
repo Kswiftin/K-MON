@@ -9,29 +9,27 @@ enum PokemonType: String, Codable, Sendable, CaseIterable {
     case rock, ghost, dragon, dark, steel, fairy
 
     /// 본가 공식 번역 명칭 (ko/en/ja).
-    func name(_ lang: AppLanguage) -> String {
-        let names: (String, String, String)
+    var name: String {
         switch self {
-        case .normal:   names = ("노말", "Normal", "ノーマル")
-        case .fire:     names = ("불꽃", "Fire", "ほのお")
-        case .water:    names = ("물", "Water", "みず")
-        case .electric: names = ("전기", "Electric", "でんき")
-        case .grass:    names = ("풀", "Grass", "くさ")
-        case .ice:      names = ("얼음", "Ice", "こおり")
-        case .fighting: names = ("격투", "Fighting", "かくとう")
-        case .poison:   names = ("독", "Poison", "どく")
-        case .ground:   names = ("땅", "Ground", "じめん")
-        case .flying:   names = ("비행", "Flying", "ひこう")
-        case .psychic:  names = ("에스퍼", "Psychic", "エスパー")
-        case .bug:      names = ("벌레", "Bug", "むし")
-        case .rock:     names = ("바위", "Rock", "いわ")
-        case .ghost:    names = ("고스트", "Ghost", "ゴースト")
-        case .dragon:   names = ("드래곤", "Dragon", "ドラゴン")
-        case .dark:     names = ("악", "Dark", "あく")
-        case .steel:    names = ("강철", "Steel", "はがね")
-        case .fairy:    names = ("페어리", "Fairy", "フェアリー")
+        case .normal:    "노말"
+        case .fire:      "불꽃"
+        case .water:     "물"
+        case .electric:  "전기"
+        case .grass:     "풀"
+        case .ice:       "얼음"
+        case .fighting:  "격투"
+        case .poison:    "독"
+        case .ground:    "땅"
+        case .flying:    "비행"
+        case .psychic:   "에스퍼"
+        case .bug:       "벌레"
+        case .rock:      "바위"
+        case .ghost:     "고스트"
+        case .dragon:    "드래곤"
+        case .dark:      "악"
+        case .steel:     "강철"
+        case .fairy:     "페어리"
         }
-        switch lang { case .ko: return names.0; case .en: return names.1; case .ja: return names.2 }
     }
 }
 
@@ -151,18 +149,16 @@ enum BattleStat: String, Codable, Sendable, Equatable, CaseIterable, CodingKeyRe
     }
 
     /// 로그 문구용 이름 — `PokemonType.name` 과 같은 자리에 둔다(본가 공식 명칭).
-    func name(_ lang: AppLanguage) -> String {
-        let names: (String, String, String)
+    var name: String {
         switch self {
-        case .atk:      names = ("공격", "Attack", "こうげき")
-        case .def:      names = ("방어", "Defense", "ぼうぎょ")
-        case .spa:      names = ("특수공격", "Sp. Atk", "とくこう")
-        case .spd:      names = ("특수방어", "Sp. Def", "とくぼう")
-        case .spe:      names = ("스피드", "Speed", "すばやさ")
-        case .accuracy: names = ("명중률", "accuracy", "めいちゅう")
-        case .evasion:  names = ("회피율", "evasiveness", "かいひ")
+        case .atk:       "공격"
+        case .def:       "방어"
+        case .spa:       "특수공격"
+        case .spd:       "특수방어"
+        case .spe:       "스피드"
+        case .accuracy:  "명중률"
+        case .evasion:   "회피율"
         }
-        switch lang { case .ko: return names.0; case .en: return names.1; case .ja: return names.2 }
     }
 }
 
@@ -243,7 +239,7 @@ enum NatureEffect {
 enum MoveDamageClass: String, Codable, Sendable { case physical, special, status }
 
 /// 대전에서 고르는 기술 하나 — PokéAPI move 에서 필요한 것만. 스냅샷에 실려 상대에게 전달되므로
-/// 이름은 다국어 맵(수신 측이 자기 언어로 표시).
+/// 이름은 PokéAPI 가 준 언어별 맵 그대로 오간다 — 표를 줄이면 옛 버전과 프레임 모양이 어긋난다.
 struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     var id: Int                     // PokéAPI move id. 음수 = 로컬 합성 기술(fetch 실패 폴백)
     var names: [String: String]     // langCode → 이름
@@ -475,10 +471,12 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     /// **거는 상태**로 판정하므로(강철은 독을 안 받는다) 상성표를 꺼도 그대로 막힌다.
     static let typeBlockedStatusMoveIDs: Set<Int> = [thunderWaveID]
 
-    func name(_ lang: AppLanguage) -> String { lang.resolveName(names) ?? names.values.first ?? "?" }
-    func description(_ lang: AppLanguage) -> String? {
+    /// 화면·로그에 쓰는 이름. `names` 는 PokéAPI 가 준 언어별 표 그대로 LAN 으로도 오가므로
+    /// 표 자체는 줄이지 않고, 읽을 때 한국어를 고른다.
+    var name: String { PokemonNaming.name(names) ?? names.values.first ?? "?" }
+    var flavorText: String? {
         guard let descriptions else { return nil }
-        return lang.resolveName(descriptions) ?? descriptions["en"] ?? descriptions.values.first
+        return PokemonNaming.name(descriptions) ?? descriptions["en"] ?? descriptions.values.first
     }
 
     /// 발버둥 — PP 전부 소진 시 폴백(무속성 취급은 엔진에서 id 로 판정).
@@ -506,8 +504,8 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
         return [
             synth(-1, "몸통박치기", "Tackle", "たいあたり", .normal, 40, .physical, 100, 35),
             synth(-2, "속이기", "Fake Out", "ねこだまし", .normal, 40, .physical, 100, 10),
-            synth(-3, "\(t1.name(.ko)) 일격", "\(t1.name(.en)) Strike", "\(t1.name(.ja))のいちげき", t1, 80, .physical, 100, 15),
-            synth(-4, "\(t2.name(.ko)) 파동", "\(t2.name(.en)) Pulse", "\(t2.name(.ja))のはどう", t2, 70, .special, 100, 20),
+            synth(-3, "\(t1.name) 일격", "\(t1.name) Strike", "\(t1.name)のいちげき", t1, 80, .physical, 100, 15),
+            synth(-4, "\(t2.name) 파동", "\(t2.name) Pulse", "\(t2.name)のはどう", t2, 70, .special, 100, 20),
         ]
     }
 }

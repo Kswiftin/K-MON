@@ -91,11 +91,9 @@ struct RogueRunView: View {
     }
 
     private var headerTitle: String {
-        guard let run = store.rogueRun else { return l.t("웨이브 런", "Wave Run", "ウェーブラン") }
-        let boss = RogueRun.isBoss(wave: run.wave) ? l.t(" · 보스", " · BOSS", " · ボス") : ""
-        return l.t("웨이브 \(run.wave)/\(RogueRun.finalWave)\(boss)",
-                   "Wave \(run.wave)/\(RogueRun.finalWave)\(boss)",
-                   "ウェーブ \(run.wave)/\(RogueRun.finalWave)\(boss)")
+        guard let run = store.rogueRun else { return "웨이브 런" }
+        let boss = RogueRun.isBoss(wave: run.wave) ? " · 보스" : ""
+        return "웨이브 \(run.wave)/\(RogueRun.finalWave)\(boss)"
     }
 
     @ViewBuilder
@@ -107,12 +105,8 @@ struct RogueRunView: View {
             case .routing:    routePicker(run)
             case .loading:    ProgressView().frame(maxWidth: .infinity)
             case .ending where run.stage == .cleared:
-                ending(l.t("\(RogueRun.finalWave) 웨이브를 모두 돌파했다.",
-                           "Cleared all \(RogueRun.finalWave) waves.",
-                           "\(RogueRun.finalWave) ウェーブすべてを突破した。"))
-            case .ending:     ending(l.t("웨이브 \(run.wave) 에서 파티가 전멸했다.",
-                                          "Party wiped on wave \(run.wave).",
-                                          "ウェーブ \(run.wave) でパーティが全滅した。"))
+                ending("\(RogueRun.finalWave) 웨이브를 모두 돌파했다.")
+            case .ending:     ending("웨이브 \(run.wave) 에서 파티가 전멸했다.")
             }
         } else {
             switch setup {
@@ -120,11 +114,9 @@ struct RogueRunView: View {
                 ProgressView().frame(maxWidth: .infinity)
             case .failedToLoad:
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(l.t("PokéAPI 에 연결하지 못했다. 야생 포켓몬을 만들 수 없어 판을 시작할 수 없다.",
-                             "Could not reach PokéAPI. A run needs it to build wild Pokémon.",
-                             "PokéAPI に接続できなかった。野生ポケモンを作れないため開始できない。"))
+                    Text("PokéAPI 에 연결하지 못했다. 야생 포켓몬을 만들 수 없어 판을 시작할 수 없다.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button(l.t("다시 시도", "Retry", "再試行")) {
+                    Button("다시 시도") {
                         setup = .loading
                         Task { await loadStarters() }
                     }
@@ -139,7 +131,7 @@ struct RogueRunView: View {
 
     private func starterPicker(_ candidates: [BattleSnapshot]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(l.t("첫 포켓몬을 고른다", "Pick your starter", "最初のポケモンを選ぶ"))
+            Text("첫 포켓몬을 고른다")
                 .font(.caption).foregroundStyle(.secondary)
             recordLine
             HStack(spacing: 10) {
@@ -221,9 +213,7 @@ struct RogueRunView: View {
     private func catchBar(_ run: RogueRun, theirs: [WaveRunArenaView.Cell]) -> some View {
         HStack(spacing: 8) {
             Label("\(run.balls)", systemImage: "circle.circle")
-            Text(l.t("파티 \(run.party.count)/\(RogueRun.partyLimit)",
-                     "Party \(run.party.count)/\(RogueRun.partyLimit)",
-                     "手持ち \(run.party.count)/\(RogueRun.partyLimit)"))
+            Text("파티 \(run.party.count)/\(RogueRun.partyLimit)")
                 .foregroundStyle(.secondary)
             Spacer()
             // 상대가 둘이면 **어느 쪽에 던질지**가 선택이다 — 성공률이 HP 에 따라 달라서, 버튼이
@@ -236,8 +226,8 @@ struct RogueRunView: View {
                     throwNotice = BallThrowNotice(target: name, caught: caught)
                 } label: {
                     Text(theirs.count > 1
-                         ? "\(l.t("잡기", "Catch", "捕まえる")) \(target.side.snapshot.name) \(Int(RogueRun.catchChance(target: target.side) * 100))%"
-                         : "\(l.t("잡기", "Catch", "捕まえる")) \(Int(RogueRun.catchChance(target: target.side) * 100))%")
+                         ? "잡기 \(target.side.snapshot.name) \(Int(RogueRun.catchChance(target: target.side) * 100))%"
+                         : "잡기 \(Int(RogueRun.catchChance(target: target.side) * 100))%")
                 }
                 .disabled(!run.canThrowBall || !acceptsInput(run))
             }
@@ -251,15 +241,12 @@ struct RogueRunView: View {
     private func noticeBar(_ notice: BallThrowNotice) -> some View {
         HStack(spacing: 8) {
             Label(notice.caught
-                  ? l.t("\(notice.target) 을(를) 잡았다!", "Caught \(notice.target)!",
-                        "\(notice.target) を捕まえた！")
-                  : l.t("\(notice.target) 이(가) 볼에서 튀어나왔다!",
-                        "\(notice.target) broke free!",
-                        "\(notice.target) がボールから出てきた！"),
+                  ? "\(notice.target) 을(를) 잡았다!"
+                  : "\(notice.target) 이(가) 볼에서 튀어나왔다!",
                   systemImage: notice.caught ? "checkmark.circle.fill" : "xmark.circle")
                 .font(.caption.bold())
             Spacer()
-            Button(l.t("계속", "Continue", "つづける")) { throwNotice = nil }
+            Button("계속") { throwNotice = nil }
                 .controlSize(.small)
         }
     }
@@ -272,7 +259,7 @@ struct RogueRunView: View {
             HStack(spacing: 8) {
                 ForEach(run.boosts.typeDamage.sorted { $0.key.rawValue < $1.key.rawValue },
                         id: \.key) { entry in
-                    Label("\(entry.key.name(store.language)) ×\(entry.value)",
+                    Label("\(entry.key.name) ×\(entry.value)",
                           systemImage: "bolt.fill")
                 }
                 if run.boosts.critStages > 0 {
@@ -296,8 +283,8 @@ struct RogueRunView: View {
         let onField = Set(run.battle.myField.map(\.teamIndex))
         return WaveRunArenaView(
             mine: myCells, theirs: theirCells, l: l, turn: run.battle.turn,
-            theirTitle: RogueRun.isBoss(wave: run.wave) ? l.t("보스", "BOSS", "ボス")
-                                                        : l.t("야생", "Wild", "野生"),
+            theirTitle: RogueRun.isBoss(wave: run.wave) ? "보스"
+                                                        : "야생",
             logLines: BattleLogSource.waveRun(Array(run.battle.events.prefix(animator.playedCount)),
                                               cells: myCells + theirCells, l: l),
             overlay: animator.overlay,
@@ -339,16 +326,12 @@ struct RogueRunView: View {
     private func rewardPicker(_ run: RogueRun) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(evolved, id: \.self) { name in
-                Text(l.t("\(name) 이(가) 진화했다!", "\(name) evolved!", "\(name) がしんかした！"))
+                Text("\(name) 이(가) 진화했다!")
                     .font(.callout.bold())
             }
             Text(run.remainingPicks > 1
-                 ? l.t("웨이브 \(run.wave) 돌파 — \(run.remainingPicks) 장 중 첫 장을 고른다",
-                       "Wave \(run.wave) cleared — pick the first of \(run.remainingPicks)",
-                       "ウェーブ \(run.wave) 突破 — \(run.remainingPicks) 枚のうち一枚目を選ぶ")
-                 : l.t("웨이브 \(run.wave) 돌파 — 하나를 고른다",
-                       "Wave \(run.wave) cleared — pick one",
-                       "ウェーブ \(run.wave) 突破 — 一つ選ぶ"))
+                 ? "웨이브 \(run.wave) 돌파 — \(run.remainingPicks) 장 중 첫 장을 고른다"
+                 : "웨이브 \(run.wave) 돌파 — 하나를 고른다")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(run.offers, id: \.self) { offer in
                 Button {
@@ -357,16 +340,16 @@ struct RogueRunView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 4) {
-                            Text(offer.name(l)).font(.callout.bold())
+                            Text(offer.name).font(.callout.bold())
                             // 지속형은 배지로 갈라 보여준다 — 이 판에 남는 장과 그 자리에서 사라지는
                             // 장을 구별하지 못하면 빌드를 고를 수 없다.
                             if offer.isPersistent {
-                                Text(l.t("지속", "Keeps", "永続"))
+                                Text("지속")
                                     .font(.caption2).padding(.horizontal, 4)
                                     .background(.tint.opacity(0.2), in: Capsule())
                             }
                         }
-                        Text(Self.detail(offer, type: run.boostableType, language: store.language, l))
+                        Text(Self.detail(offer, type: run.boostableType, l))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -405,9 +388,7 @@ struct RogueRunView: View {
     /// "위험한 길"이라고만 쓰면 얼마나 위험한지 모르고 고르게 되고, 그러면 선택이 아니라 도박이 된다.
     private func routePicker(_ run: RogueRun) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(l.t("웨이브 \(run.wave + 1) 로 가는 길을 고른다",
-                     "Choose the path to wave \(run.wave + 1)",
-                     "ウェーブ \(run.wave + 1) への道を選ぶ"))
+            Text("웨이브 \(run.wave + 1) 로 가는 길을 고른다")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(RunRoute.allCases, id: \.self) { route in
                 Button {
@@ -415,7 +396,7 @@ struct RogueRunView: View {
                     Task { await loadNextWave() }
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(route.name(l)).font(.callout.bold())
+                        Text(route.name).font(.callout.bold())
                         Text(Self.routeDetail(route, l)).font(.caption2).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -427,64 +408,35 @@ struct RogueRunView: View {
     private static func routeDetail(_ route: RunRoute, _ l: L) -> String {
         switch route {
         case .safe:
-            return l.t("상대도 보상도 규칙 그대로다.",
-                       "Opponents and rewards stay as they are.",
-                       "相手も報酬も規則どおりだ。")
+            return "상대도 보상도 규칙 그대로다."
         case .risky:
-            return l.t("상대 레벨 +\(RunRoute.risky.levelBonus), 종족값 상한 +\(RunRoute.risky.statBonus). 넘기면 보상을 \(RunRoute.risky.pickCount) 장 고른다.",
-                       "Opponents get +\(RunRoute.risky.levelBonus) levels and +\(RunRoute.risky.statBonus) base-stat headroom. Clear it and pick \(RunRoute.risky.pickCount) rewards.",
-                       "相手のレベル +\(RunRoute.risky.levelBonus)、種族値上限 +\(RunRoute.risky.statBonus)。突破すると報酬を \(RunRoute.risky.pickCount) 枚選べる。")
+            return "상대 레벨 +\(RunRoute.risky.levelBonus), 종족값 상한 +\(RunRoute.risky.statBonus). 넘기면 보상을 \(RunRoute.risky.pickCount) 장 고른다."
         }
     }
 
-    private static func detail(_ modifier: RunModifier, type: PokemonType?,
-                               language: AppLanguage, _ l: L) -> String {
+    private static func detail(_ modifier: RunModifier, type: PokemonType?, _ l: L) -> String {
         switch modifier {
-        case .potion:  return l.t("살아 있는 전원의 최대 HP 40% 를 회복한다.",
-                                  "Heal 40% of max HP on every conscious member.",
-                                  "戦えるポケモン全員の最大HPの40%を回復する。")
-        case .revive:  return l.t("쓰러진 한 마리를 최대 HP 의 절반으로 되살린다.",
-                                  "Bring one fainted member back at half HP.",
-                                  "ひんしのポケモン1匹を最大HPの半分で復活させる。")
-        case .candy:   return l.t("파티 전원의 레벨이 2 오른다.",
-                                  "The whole party gains 2 levels.",
-                                  "パーティ全員のレベルが2上がる。")
-        case .elixir:  return l.t("파티 전원의 기술 PP 를 모두 회복한다.",
-                                  "Restore every move's PP.",
-                                  "パーティ全員の技のPPをすべて回復する。")
-        case .cleanse: return l.t("파티의 상태이상과 혼란을 해제한다.",
-                                  "Clear status and confusion from the party.",
-                                  "パーティの状態異常と混乱を回復する。")
+        case .potion:  return "살아 있는 전원의 최대 HP 40% 를 회복한다."
+        case .revive:  return "쓰러진 한 마리를 최대 HP 의 절반으로 되살린다."
+        case .candy:   return "파티 전원의 레벨이 2 오른다."
+        case .elixir:  return "파티 전원의 기술 PP 를 모두 회복한다."
+        case .cleanse: return "파티의 상태이상과 혼란을 해제한다."
         // 어떤 타입이 올라가는지 **고르기 전에** 보여준다 — 모르고 고르면 빌드가 아니라 복권이다.
         case .typeBoost:
-            let name = type?.name(language) ?? l.t("선두", "lead", "先頭")
-            return l.t("\(name) 타입 기술 데미지가 20% 오른다. 판이 끝날 때까지 남고 중첩된다.",
-                       "\(name)-type moves deal 20% more damage. Keeps stacking for the run.",
-                       "\(name)タイプの技のダメージが20%上がる。ラン中ずっと残り、重ねられる。")
+            let name = type?.name ?? "선두"
+            return "\(name) 타입 기술 데미지가 20% 오른다. 판이 끝날 때까지 남고 중첩된다."
         case .focusLens:
-            return l.t("급소 단계가 1 오른다. 판이 끝날 때까지 남고 중첩된다.",
-                       "Raises the critical-hit stage by 1. Keeps stacking for the run.",
-                       "急所ランクが1上がる。ラン中ずっと残り、重ねられる。")
+            return "급소 단계가 1 오른다. 판이 끝날 때까지 남고 중첩된다."
         case .leftovers:
-            return l.t("턴이 끝날 때마다 최대 HP 의 1/16 을 회복한다. 판이 끝날 때까지 남고 중첩된다.",
-                       "Restores 1/16 of max HP at the end of every turn. Keeps stacking for the run.",
-                       "ターン終了ごとに最大HPの1/16を回復する。ラン中ずっと残り、重ねられる。")
+            return "턴이 끝날 때마다 최대 HP 의 1/16 을 회복한다. 판이 끝날 때까지 남고 중첩된다."
         case .ballPouch:
-            return l.t("몬스터볼 \(RogueTuning.standard.ballsPerPouch) 개를 채운다(최대 \(RogueTuning.standard.ballCap) 개).",
-                       "Adds \(RogueTuning.standard.ballsPerPouch) Poké Balls (up to \(RogueTuning.standard.ballCap)).",
-                       "モンスターボールを \(RogueTuning.standard.ballsPerPouch) 個補充する(最大 \(RogueTuning.standard.ballCap) 個)。")
+            return "몬스터볼 \(RogueTuning.standard.ballsPerPouch) 개를 채운다(최대 \(RogueTuning.standard.ballCap) 개)."
         case .xAttack:
-            return l.t("파티의 공격이 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다.",
-                       "The party's Attack rises \(RunBoosts.statPercentPerStack)%. Keeps stacking for the run.",
-                       "パーティの攻撃が \(RunBoosts.statPercentPerStack)% 上がる。ラン中ずっと残り、重ねられる。")
+            return "파티의 공격이 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다."
         case .xDefense:
-            return l.t("파티의 방어가 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다.",
-                       "The party's Defense rises \(RunBoosts.statPercentPerStack)%. Keeps stacking for the run.",
-                       "パーティの防御が \(RunBoosts.statPercentPerStack)% 上がる。ラン中ずっと残り、重ねられる。")
+            return "파티의 방어가 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다."
         case .xSpeed:
-            return l.t("파티의 스피드가 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다.",
-                       "The party's Speed rises \(RunBoosts.statPercentPerStack)%. Keeps stacking for the run.",
-                       "パーティのすばやさが \(RunBoosts.statPercentPerStack)% 上がる。ラン中ずっと残り、重ねられる。")
+            return "파티의 스피드가 \(RunBoosts.statPercentPerStack)% 오른다. 판이 끝날 때까지 남고 중첩된다."
         }
     }
 
@@ -504,9 +456,7 @@ struct RogueRunView: View {
     private var recordLine: some View {
         let progress = store.runProgress
         if progress.finished > 0 {
-            Text(l.t("최고 웨이브 \(progress.bestWave)/\(RogueRun.finalWave) · 클리어 \(progress.clears)회 · 판 \(progress.finished)회",
-                     "Best wave \(progress.bestWave)/\(RogueRun.finalWave) · \(progress.clears) cleared · \(progress.finished) runs",
-                     "最高ウェーブ \(progress.bestWave)/\(RogueRun.finalWave) · クリア \(progress.clears)回 · \(progress.finished)回"))
+            Text("최고 웨이브 \(progress.bestWave)/\(RogueRun.finalWave) · 클리어 \(progress.clears)회 · 판 \(progress.finished)회")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

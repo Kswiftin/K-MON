@@ -136,11 +136,11 @@ enum RoomScreen {
         targets(state).first { $0.number == number }?.id
     }
 
-    static func choices(_ state: RoomTerminalState, language: AppLanguage) -> [Choice] {
+    static func choices(_ state: RoomTerminalState) -> [Choice] {
         guard let me = state.fighters.first(where: { $0.id == state.myID }) else { return [] }
         return numbers(state).map { number in
             guard !me.side.mustStruggle else {
-                return Choice(number: number, label: MoveSpec.struggle().name(language))
+                return Choice(number: number, label: MoveSpec.struggle().name)
             }
             let index = number - 1
             // **닿지 않는다** — 번호는 `numbers` 가 `moves.indices` 에서 만든 값이다. switch 없이
@@ -150,7 +150,7 @@ enum RoomScreen {
             }
             let remaining = me.side.pp.indices.contains(index) ? me.side.pp[index] : 0
             return Choice(number: number,
-                          label: "\(me.side.moves[index].name(language))  \(remaining)/\(me.side.moves[index].pp)")
+                          label: "\(me.side.moves[index].name)  \(remaining)/\(me.side.moves[index].pp)")
         }
     }
 
@@ -265,12 +265,12 @@ enum RoomScreen {
 
     // MARK: 줄
 
-    static func lines(_ state: RoomTerminalState, language: AppLanguage, width: Int) -> [String] {
+    static func lines(_ state: RoomTerminalState, width: Int) -> [String] {
         let inner = max(1, width)
         // 형태가 다른 판은 형태별로 접는다 — 전투원 목록으로 그리려 하면 빈 목록이 되어
         // "판을 준비하는 중이다" 가 판이 끝날 때까지 남는다(#252 가 그랬다).
         if let duel = state.duel {
-            return ArenaScreen.duelLines(state, duel, language: language, width: inner)
+            return ArenaScreen.duelLines(state, duel, width: inner)
         }
         if let track = state.track { return ArenaScreen.trackLines(state, track, width: inner) }
         var lines = [TUIRender.row(left: title(state),
@@ -294,7 +294,7 @@ enum RoomScreen {
             lines.append(TUIText.truncate(ending, to: inner))
             return lines
         }
-        let offered = choices(state, language: language)
+        let offered = choices(state)
         if !offered.isEmpty {
             lines.append(TUIRender.rule(width: inner))
             lines += offered.map { TUIText.truncate("\($0.number) \($0.label)", to: inner) }

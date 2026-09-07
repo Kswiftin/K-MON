@@ -60,7 +60,7 @@ struct FriendView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if battleCenter.phase == .ready {
                         Button { destination = nil } label: {
-                            Label(store.l.t("친구 메뉴", "Friends", "フレンドメニュー"),
+                            Label("친구 메뉴",
                                   systemImage: "chevron.left")
                         }.buttonStyle(.borderless)
                     }
@@ -148,13 +148,11 @@ struct FriendView: View {
     private var privateMessageCard: some View {
         VStack(spacing: 14) {
             Image(systemName: "envelope.badge.fill").font(.system(size: 42)).foregroundStyle(.blue)
-            Text(store.l.t("메시지가 왔습니다", "You have a message", "メッセージが届きました"))
+            Text("메시지가 왔습니다")
                 .font(.headline)
-            Text(store.l.t("내용은 확인 버튼을 누른 뒤 표시됩니다.",
-                           "Details remain hidden until you choose to view them.",
-                           "内容は確認ボタンを押すまで表示されません。"))
+            Text("내용은 확인 버튼을 누른 뒤 표시됩니다.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            Button(store.l.t("메시지 확인", "View Message", "メッセージを確認")) {
+            Button("메시지 확인") {
                 revealsIncomingMessage = true
                 if case .incoming = battleCenter.trading.phase { destination = .trade }
                 else { destination = .battle }
@@ -170,12 +168,10 @@ struct FriendView: View {
         VStack(alignment: .leading, spacing: 14) {
             myTrainerCard
             VStack(alignment: .leading, spacing: 4) {
-                Label(store.l.t("친구와 함께", "Play with Friends", "フレンドと遊ぶ"),
+                Label("친구와 함께",
                       systemImage: "person.2.fill")
                     .font(.title3.bold())
-                Text(store.l.t("같은 네트워크에 있는 트레이너와 즐길 활동을 선택하세요.",
-                               "Choose what to do with a trainer on the same network.",
-                               "同じネットワークのトレーナーと遊ぶ内容を選んでください。"))
+                Text("같은 네트워크에 있는 트레이너와 즐길 활동을 선택하세요.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -207,11 +203,9 @@ struct FriendView: View {
                 HStack {
                     Image(systemName: "person.3.fill").foregroundStyle(PokedoroTheme.blue)
                     VStack(alignment: .leading) {
-                        Text(store.l.t("2~4인 방 배틀", "2-4 Player Room Battle", "2〜4人ルームバトル"))
+                        Text("2~4인 방 배틀")
                             .font(.headline)
-                        Text(store.l.t("개인전 또는 2 vs 2 · 방을 열고 이웃을 기다립니다",
-                                       "Free-for-all or 2 vs 2 · open a room and wait for neighbors",
-                                       "個人戦または2対2・部屋を開いて待ちます"))
+                        Text("개인전 또는 2 vs 2 · 방을 열고 이웃을 기다립니다")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(); Image(systemName: "chevron.right")
@@ -224,10 +218,9 @@ struct FriendView: View {
                 HStack {
                     Image(systemName: "trophy.fill").foregroundStyle(.orange)
                     VStack(alignment: .leading) {
-                        Text(store.l.t("3대3 포켓몬 토너먼트", "3-on-3 Pokémon Tournament", "3対3ポケモントーナメント"))
+                        Text("3대3 포켓몬 토너먼트")
                             .font(.headline)
-                        Text(store.l.t("최대 8명 · 경기 중이 아니면 실시간 관전", "Up to 8 · spectate every other match",
-                                       "最大8人・対戦外はリアルタイム観戦"))
+                        Text("최대 8명 · 경기 중이 아니면 실시간 관전")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(); Image(systemName: "chevron.right")
@@ -236,13 +229,11 @@ struct FriendView: View {
 
             if battleCenter.peers.isEmpty {
                 ContentUnavailableView(
-                    store.l.t("근처 트레이너를 찾는 중…", "Looking for nearby trainers…", "近くのトレーナーを検索中…"),
+                    "근처 트레이너를 찾는 중…",
                     systemImage: "dot.radiowaves.left.and.right",
-                    description: Text(store.l.t("같은 네트워크에서 Pokédoro를 실행하면 여기에 표시됩니다.",
-                                                "Trainers running Pokédoro on the same network appear here.",
-                                                "同じネットワークでPokédoroを起動すると表示されます。")))
+                    description: Text("같은 네트워크에서 Pokédoro를 실행하면 여기에 표시됩니다."))
             } else {
-                Text(store.l.t("근처 트레이너", "Nearby Trainers", "近くのトレーナー")).font(.headline)
+                Text("근처 트레이너").font(.headline)
                 LazyVStack(spacing: 8) {
                     ForEach(battleCenter.peers) { peer in
                         trainerRow(peer)
@@ -261,10 +252,8 @@ struct FriendView: View {
             TrainerAvatarView(outfit: store.outfit, scale: 2)
             VStack(alignment: .leading, spacing: 2) {
                 Text(store.hasTrainerName ? store.trainerName
-                     : store.l.t("나", "You", "自分")).font(.headline).lineLimit(1)
-                Text(store.l.t("트레이너 Lv.\(store.trainerLevel.level)",
-                               "Trainer Lv.\(store.trainerLevel.level)",
-                               "トレーナー Lv.\(store.trainerLevel.level)"))
+                     : "나").font(.headline).lineLimit(1)
+                Text("트레이너 Lv.\(store.trainerLevel.level)")
                     .font(.caption2).foregroundStyle(.secondary)
                 BattleRankBadge(rank: store.battleRank)
                 if settings.beginnerModeEnabled { BeginnerBadgeView(l: store.l) }
@@ -286,7 +275,7 @@ struct FriendView: View {
 
     private var representativeMenu: some View {
         Button { showsRepresentativePicker.toggle() } label: {
-            Label(store.l.t("대표 포켓몬", "Representative", "代表ポケモン"),
+            Label("대표 포켓몬",
                   systemImage: "star.circle.fill")
         }
         .buttonStyle(.borderless).controlSize(.small)
@@ -299,7 +288,7 @@ struct FriendView: View {
         }, sort: .level, ascending: false)
         return VStack(alignment: .leading, spacing: 8) {
             PokemonSearchField(text: $representativeSearchText, l: store.l)
-            Button(store.l.t("대표 포켓몬 없음", "No representative", "代表ポケモンなし")) {
+            Button("대표 포켓몬 없음") {
                 store.setBattleRepresentative(nil)
                 showsRepresentativePicker = false
             }
@@ -313,7 +302,7 @@ struct FriendView: View {
                         } label: {
                             HStack {
                                 SpriteView(speciesID: mon.presentationID, size: 28, shiny: mon.isShiny)
-                                let name = RosterOrdering.displayName(mon, language: store.language)
+                                let name = RosterOrdering.displayName(mon)
                                 Text("\(name) · Lv.\(mon.level)").lineLimit(1)
                                 Spacer()
                             }.contentShape(Rectangle())
@@ -334,7 +323,7 @@ struct FriendView: View {
                 if let speciesID = peer.advertisement.representativeSpeciesID {
                     SpriteView(speciesID: speciesID, size: 34,
                                shiny: peer.advertisement.representativeIsShiny)
-                        .help(store.l.t("대표 포켓몬", "Representative Pokémon", "代表ポケモン"))
+                        .help("대표 포켓몬")
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(peer.name).font(.headline).lineLimit(1)
@@ -342,23 +331,21 @@ struct FriendView: View {
                         if let rank = peer.advertisement.rank {
                             BattleRankBadge(rank: rank)
                         } else {
-                            Text(store.l.t("랭크 정보 없음", "Rank unavailable", "ランク情報なし"))
+                            Text("랭크 정보 없음")
                                 .font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Color.gray.opacity(0.16), in: Capsule()).fixedSize()
                         }
                         Text(peer.advertisement.trainerLevel.map {
-                            store.l.t("트레이너 Lv.\($0)", "Trainer Lv.\($0)", "トレーナー Lv.\($0)")
-                        } ?? store.l.t("레벨 정보 없음", "Level unavailable", "レベル情報なし"))
+                            "트레이너 Lv.\($0)"
+                        } ?? "레벨 정보 없음")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize()
                     }
                     if peer.advertisement.beginnerMode { BeginnerBadgeView(l: store.l) }
                     // 던전 기록은 있을 때만 그린다 — 한 판도 안 돌린 상대에게 `0/30` 을 붙이면
                     // 기록 없음과 첫 판 전멸이 같은 줄이 된다.
                     if let record = peer.advertisement.runRecord {
-                        Text(store.l.t("던전 최고 \(record.wave)/\(record.finalWave) · 클리어 \(record.clears)회",
-                                       "Dungeon best \(record.wave)/\(record.finalWave) · \(record.clears) cleared",
-                                       "ダンジョン最高 \(record.wave)/\(record.finalWave) · クリア \(record.clears)回"))
+                        Text("던전 최고 \(record.wave)/\(record.finalWave) · 클리어 \(record.clears)회")
                             .font(.caption2).foregroundStyle(.secondary).fixedSize()
                     }
                 }
@@ -369,7 +356,7 @@ struct FriendView: View {
                     destination = .battle
                     battleCenter.challenge(peer)
                 } label: {
-                    Label(store.l.t("배틀 신청", "Battle", "バトル"), systemImage: "bolt.fill")
+                    Label("배틀 신청", systemImage: "bolt.fill")
                 }
                 .buttonStyle(.borderedProminent).tint(.red)
                 // 알을 품는 중이라도 박스에 키워 둔 개체가 있으면 그걸로 싸운다 —
@@ -380,35 +367,31 @@ struct FriendView: View {
                     destination = .battle
                     battleCenter.challengeMetronome(peer)
                 } label: {
-                    Label(store.l.t("손가락흔들기", "Metronome", "ゆびをふる"),
+                    Label("손가락흔들기",
                           systemImage: "hand.point.up.left.fill")
                 }
                 .buttonStyle(.borderedProminent).tint(.purple)
                 .disabled(battleCenter.phase != .ready)
-                .help(store.l.t("서로 동일한 Lv.50 대여 토게키스로 대결합니다.",
-                                "Battle each other with identical Lv.50 rental Togekiss.",
-                                "同じLv.50レンタルトゲキッスで対戦します。"))
+                .help("서로 동일한 Lv.50 대여 토게키스로 대결합니다.")
 
                 Button {
                     guard let tradePeer else { return }
                     destination = .trade
                     battleCenter.trading.request(tradePeer)
                 } label: {
-                    Label(store.l.t("교환 신청", "Trade", "交換"), systemImage: "arrow.left.arrow.right")
+                    Label("교환 신청", systemImage: "arrow.left.arrow.right")
                 }
                 .buttonStyle(.borderedProminent).tint(.blue)
                 .disabled(tradePeer == nil)
                 .help(tradePeer == nil
-                      ? store.l.t("상대가 교환 기능을 지원하는 최신 버전인지 확인하세요.",
-                                  "Ask them to update to a version that supports trading.",
-                                  "相手が交換対応の最新版か確認してください。") : "")
+                      ? "상대가 교환 기능을 지원하는 최신 버전인지 확인하세요." : "")
 
                 Button {
                     guard let tradePeer else { return }
                     destination = .trade
                     battleCenter.trading.viewRoster(tradePeer)
                 } label: {
-                    Label(store.l.t("포켓몬 보기", "View Pokémon", "ポケモンを見る"), systemImage: "eye.fill")
+                    Label("포켓몬 보기", systemImage: "eye.fill")
                 }
                 .buttonStyle(.bordered).disabled(tradePeer == nil)
             }

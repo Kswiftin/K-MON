@@ -157,10 +157,10 @@ struct WaveRunTerminalTests {
 
     /// 진행 중인 판이 없으면 **없다고 말하고 여는 법을 알려 준다.** 빈 화면을 그리면 고장으로 읽힌다.
     @Test func testTheScreenTellsYouHowToOpenARunWhenThereIsNone() {
-        let lines = WaveRunScreen.lines(nil, language: .ko, width: 60)
+        let lines = WaveRunScreen.lines(nil, width: 60)
         #expect(!lines.isEmpty)
         #expect(lines.contains { $0.contains("wave start") })
-        #expect(WaveRunScreen.choices(nil, language: .ko).isEmpty)
+        #expect(WaveRunScreen.choices(nil).isEmpty)
     }
 
     /// 전투 중에는 숫자 키가 **기술**이다. PP 와 함께 찍는 이유는 남은 PP 가 곧 이 판의 자원이라
@@ -168,7 +168,7 @@ struct WaveRunTerminalTests {
     @Test func testDuringABattleTheNumbersAreMoves() throws {
         let run = Self.battlingRun()
         #expect(WaveRunScreen.kind(run) == .move)
-        let choices = WaveRunScreen.choices(run, language: .ko)
+        let choices = WaveRunScreen.choices(run)
         #expect(choices.count == 2, "기술 수만큼 찍는다")
         #expect(choices.first?.number == 1, "번호는 1부터다 — 0번 기술을 보여 주면 무엇을 칠지 모른다")
         #expect(choices.first?.label.contains("타격") == true)
@@ -181,7 +181,7 @@ struct WaveRunTerminalTests {
         var run = Self.battlingRun()
         run.debugSetStagePicking(offering: [.potion])
         #expect(WaveRunScreen.kind(run) == .offer)
-        #expect(WaveRunScreen.choices(run, language: .ko).count == 1)
+        #expect(WaveRunScreen.choices(run).count == 1)
         #expect(WaveRunScreen.action(number: 1, in: run) == .wavePick(number: 1))
     }
 
@@ -219,7 +219,7 @@ struct WaveRunTerminalTests {
         var run = Self.battlingRun()
         run.debugFail()
         #expect(WaveRunScreen.kind(run) == .none)
-        #expect(WaveRunScreen.lines(run, language: .ko, width: 60)
+        #expect(WaveRunScreen.lines(run, width: 60)
             .contains { $0.contains("전멸") })
     }
 
@@ -228,7 +228,7 @@ struct WaveRunTerminalTests {
     @Test func testTheSendOutListIsNumberedByPartyNumber() throws {
         var run = Self.battlingRun(partySize: 2)
         run.debugFaintInBattle(0)
-        let choices = WaveRunScreen.choices(run, language: .ko)
+        let choices = WaveRunScreen.choices(run)
 
         let only = try #require(choices.first)
         #expect(choices.count == 1, "벤치에 남은 한 마리만 후보다")
@@ -242,7 +242,7 @@ struct WaveRunTerminalTests {
     @Test func testTheRouteListSaysWhatTheRoughPathCosts() throws {
         var run = Self.battlingRun()
         run.debugSetStageRouting()
-        let choices = WaveRunScreen.choices(run, language: .ko)
+        let choices = WaveRunScreen.choices(run)
 
         #expect(choices.count == RunRoute.allCases.count)
         let risky = try #require(choices.first { $0.label.contains("험한") })
@@ -278,7 +278,7 @@ struct WaveRunTerminalTests {
         var run = Self.battlingRun()
         run.debugAfflict(.paralysis)
 
-        #expect(WaveRunScreen.lines(run, language: .ko, width: 60)
+        #expect(WaveRunScreen.lines(run, width: 60)
             .contains { $0.contains("마비") })
     }
 
@@ -288,8 +288,8 @@ struct WaveRunTerminalTests {
         var run = Self.battlingRun()
         run.useMove(0)   // 1대1 이라 그 자리에서 턴이 해상된다
 
-        let lines = WaveRunScreen.lines(run, language: .ko, width: 80)
-        #expect(!WaveRunScreen.log(run, language: .ko).isEmpty)
+        let lines = WaveRunScreen.lines(run, width: 80)
+        #expect(!WaveRunScreen.log(run).isEmpty)
         #expect(lines.contains { $0.contains("타격") }, "쓴 기술이 판에 안 남았다")
     }
 
@@ -299,9 +299,9 @@ struct WaveRunTerminalTests {
         var run = Self.battlingRun()
         run.useMove(0)
         let played = run.battle.events.count
-        #expect(WaveRunScreen.log(run, language: .ko, since: played).isEmpty,
+        #expect(WaveRunScreen.log(run, since: played).isEmpty,
                 "새 이벤트가 없는데 줄이 나왔다")
-        #expect(!WaveRunScreen.log(run, language: .ko, since: 0).isEmpty)
+        #expect(!WaveRunScreen.log(run, since: 0).isEmpty)
     }
 
     /// 모든 줄이 요청한 폭 안에 든다. 넘치면 터미널이 줄을 접어 다음 줄을 밀어내고, 전체 다시
@@ -309,7 +309,7 @@ struct WaveRunTerminalTests {
     @Test func testEveryLineFitsTheRequestedWidth() {
         let run = Self.battlingRun()
         for width in [20, 40, 80] {
-            for line in WaveRunScreen.lines(run, language: .ko, width: width) {
+            for line in WaveRunScreen.lines(run, width: width) {
                 #expect(TUIText.displayWidth(line) <= width, "폭 \(width) 에서 넘친 줄: \(line)")
             }
         }

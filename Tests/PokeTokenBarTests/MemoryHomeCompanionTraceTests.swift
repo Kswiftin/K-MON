@@ -36,9 +36,9 @@ final class MemoryHomeCompanionTraceTests: XCTestCase {
         let (album, _) = makeAlbum()
         let date = try XCTUnwrap(dayKeyDate(try noisyDay()))
 
-        XCTAssertTrue(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(.ko), now: date))
+        XCTAssertTrue(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(), now: date))
         XCTAssertEqual(album.memoryHomeAccess.guestbookEntries.count, 1)
-        XCTAssertFalse(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(.ko), now: date),
+        XCTAssertFalse(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(), now: date),
                        "같은 날 두 번째 호출은 아무것도 남기지 않아야 한다")
         XCTAssertEqual(album.memoryHomeAccess.guestbookEntries.count, 1)
     }
@@ -50,7 +50,7 @@ final class MemoryHomeCompanionTraceTests: XCTestCase {
             .first(where: { !MemoryHomeCompanionTrace.leavesTrace(dayKey: $0) }))
         let date = try XCTUnwrap(dayKeyDate(quiet))
 
-        XCTAssertFalse(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(.ko), now: date))
+        XCTAssertFalse(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(), now: date))
         XCTAssertTrue(album.memoryHomeAccess.guestbookEntries.isEmpty)
     }
 
@@ -59,7 +59,7 @@ final class MemoryHomeCompanionTraceTests: XCTestCase {
         let (album, url) = makeAlbum()
         let date = try XCTUnwrap(dayKeyDate(try noisyDay()))
 
-        XCTAssertTrue(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(.ko), now: date))
+        XCTAssertTrue(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(), now: date))
         let entry = try XCTUnwrap(album.memoryHomeAccess.guestbookEntries.first)
         XCTAssertEqual(entry.authorKind, .companion)
         XCTAssertEqual(entry.author, "피카츄")
@@ -76,23 +76,20 @@ final class MemoryHomeCompanionTraceTests: XCTestCase {
 
         XCTAssertTrue(album.addGuestbookEntry(author: "트레이너", body: "오늘의 한마디",
                                               authorKind: .trainer, createdAt: date))
-        XCTAssertTrue(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(.ko), now: date))
+        XCTAssertTrue(album.recordCompanionTraceIfNeeded(companionName: "피카츄", l: L(), now: date))
         XCTAssertEqual(album.memoryHomeAccess.guestbookEntries.filter { $0.authorKind == .companion }.count, 1)
     }
 
     /// 그날 기분과 어긋나는 문구가 나오면 §17 을 배신한다 — 우울한 날 "진짜 신났어!" 는 안 된다.
     func testTraceBodyFollowsTheDayMood() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let l = L(language)
-            let bodies = MemoryHomeMood.allCases.map { MemoryHomeCompanionTrace.body(mood: $0, l) }
-            XCTAssertEqual(Set(bodies).count, MemoryHomeMood.allCases.count,
-                           "\(language): 기분 5개가 서로 다른 문구여야 한다")
-            XCTAssertFalse(bodies.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
-            // 방명록 본문 캡을 넘으면 `addGuestbookEntry` 가 조용히 거부한다.
-            XCTAssertFalse(bodies.contains { $0.count > MemoryHomeAccessSettings.guestbookBodyLimit })
-            XCTAssertFalse(MemoryHomeCompanionTrace.body(mood: nil, l).isEmpty,
-                           "\(language): 기분을 고르지 않은 날에도 문구가 있어야 한다")
-        }
+        let l = L()
+        let bodies = MemoryHomeMood.allCases.map { MemoryHomeCompanionTrace.body(mood: $0, l) }
+        XCTAssertEqual(Set(bodies).count, MemoryHomeMood.allCases.count, "기분 5개가 서로 다른 문구여야 한다")
+        XCTAssertFalse(bodies.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+        // 방명록 본문 캡을 넘으면 `addGuestbookEntry` 가 조용히 거부한다.
+        XCTAssertFalse(bodies.contains { $0.count > MemoryHomeAccessSettings.guestbookBodyLimit })
+        XCTAssertFalse(MemoryHomeCompanionTrace.body(mood: nil, l).isEmpty,
+                       "기분을 고르지 않은 날에도 문구가 있어야 한다")
     }
 
     /// 흔적이 남는 날 하나. 전 달을 훑어 하나도 없으면 `leavesTrace` 가 상수 false 인 것이므로

@@ -68,7 +68,10 @@ extension PokeProviding {
 actor PokeAPIClient: PokeProviding {
     static let shared = PokeAPIClient()
     private let base = URL(string: "https://pokeapi.co/api/v2")!
-    private let langCodes = ["ko", "en", "ja-Hrkt", "ja"]
+    /// 응답에서 남길 언어 칸. 화면은 한국어만 그리지만 **영어도 함께 받는다** — 한국어 이름이 없는
+    /// 종·기술이 있고, 그때 `PokemonNaming.name` 이 영어로 폴백한다(폴백 대상이 안 담겨 있으면
+    /// 폴백 자체가 못 돈다).
+    private let langCodes = PokemonNaming.apiCodes + ["en"]
     private var speciesCache: [Int: SpeciesDTO] = [:]
     private var chatSpeciesIdentityCache: [String: PokemonSpeciesIdentity] = [:]
     private var lineCache: [Int: EvoLine] = [:]   // 프리패칭 → 부화 순간 네트워크 0
@@ -355,8 +358,8 @@ actor PokeAPIClient: PokeProviding {
     /// 대화에 필요한 종 정보만 fetch 한다. 각 응답은 독립적으로 실패할 수 있고 결과는 부분 정체성으로 남긴다.
     /// 페르소나 필드는 `SpeciesDTO` 가 아니라 `ChatSpeciesDTO` 로 따로 받는다 — 그래야 부화·진화라인
     /// 로드가 종 응답에서 가장 큰 배열(`flavor_text_entries`)을 매번 디코딩하고 버리지 않는다.
-    func chatSpeciesIdentity(speciesID: Int, language: AppLanguage) async -> PokemonSpeciesIdentity {
-        let cacheKey = "\(speciesID)-\(language.rawValue)"
+    func chatSpeciesIdentity(speciesID: Int) async -> PokemonSpeciesIdentity {
+        let cacheKey = "\(speciesID)-ko"
         if let cached = chatSpeciesIdentityCache[cacheKey] { return cached }
 
         var genera: [String: String] = [:]
@@ -395,7 +398,7 @@ actor PokeAPIClient: PokeProviding {
 
         let identity = PokemonSpeciesIdentity(
             genera: genera, habitatSlug: habitatSlug, flavorTexts: flavorTexts,
-            abilityNames: abilityNames, abilityTexts: abilityTexts, language: language
+            abilityNames: abilityNames, abilityTexts: abilityTexts
         )
         // Do not turn a total transient outage into a permanent empty identity. A successful
         // species response is useful even if optional ability enrichment failed.

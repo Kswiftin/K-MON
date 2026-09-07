@@ -26,7 +26,7 @@ struct MonOfferPicker: View {
         }
         let matches = defaultsToLevelOrder
             ? RosterOrdering.arrange(filtered, sort: .level, ascending: false)
-            : RosterOrdering.alphabetizedForSelection(filtered, language: store.language)
+            : RosterOrdering.alphabetizedForSelection(filtered)
         return VStack(alignment: .leading, spacing: 8) {
             PokemonSearchField(text: $searchText, l: store.l)
             if matches.contains(where: { store.isFavorite($0.id) }) {
@@ -67,7 +67,7 @@ struct MonOfferPicker: View {
     }
 
     private func label(_ mon: MonState) -> String {
-        let name = mon.nickname ?? mon.names?[mon.currentID]?[store.language.rawValue] ?? "#\(mon.currentID)"
+        let name = mon.nickname ?? mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
         return "\(name) · Lv.\(mon.level)"
     }
 }

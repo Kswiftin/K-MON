@@ -26,7 +26,7 @@ struct ArenaTerminalTests {
         let state = Self.duelling(activity: .tournament, phase: .tournament)
 
         #expect(RoomScreen.kind(state) == .duelMove)
-        let lines = RoomScreen.lines(state, language: .ko, width: 60)
+        let lines = RoomScreen.lines(state, width: 60)
         #expect(!lines.contains { $0.contains("판을 준비하는 중") })
         #expect(lines.contains { $0.contains("타격") }, "내 기술이 줄에 없다: \(lines)")
     }
@@ -50,7 +50,7 @@ struct ArenaTerminalTests {
         let state = Self.racing(activity: .pokemonQuiz)
 
         #expect(RoomScreen.kind(state) == .trackMove)
-        let lines = RoomScreen.lines(state, language: .ko, width: 70)
+        let lines = RoomScreen.lines(state, width: 70)
         #expect(lines.contains { $0.contains("불꽃타입 기술은") }, "문항이 없다: \(lines)")
     }
 
@@ -132,7 +132,7 @@ struct ArenaTerminalTests {
         state.duel?.iWon = false
 
         #expect(RoomScreen.kind(state) == .finished)
-        let lines = RoomScreen.lines(state, language: .ko, width: 60)
+        let lines = RoomScreen.lines(state, width: 60)
         #expect(lines.contains { $0.contains("졌다") }, "\(lines)")
         #expect(lines.contains { $0.contains("관장 민") }, "\(lines)")
         #expect(RoomScreen.keys(state).isEmpty)
@@ -141,7 +141,7 @@ struct ArenaTerminalTests {
     /// 양쪽 팀이 줄에 다 나온다 — 상대의 남은 마릿수를 모르면 교체를 고를 수 없다.
     @Test func testBothTeamsAppearInTheLines() {
         let state = Self.duelling(activity: .tournament, phase: .tournament)
-        let lines = RoomScreen.lines(state, language: .ko, width: 70)
+        let lines = RoomScreen.lines(state, width: 70)
 
         #expect(lines.contains { $0.contains("이브이") })
         #expect(lines.contains { $0.contains("고라파덕") })
@@ -206,7 +206,7 @@ struct ArenaTerminalTests {
         #expect(state.track?.standings.map(\.number) == [1, 2])
         #expect(ArenaScreen.runnerID(number: 2, in: state) == second.id)
         #expect(ArenaScreen.runnerID(number: 3, in: state) == nil)
-        let lines = RoomScreen.lines(state, language: .ko, width: 70)
+        let lines = RoomScreen.lines(state, width: 70)
         #expect(lines.contains { $0.contains("2 ") && $0.contains("이웃") }, "\(lines)")
     }
 
@@ -217,7 +217,7 @@ struct ArenaTerminalTests {
         state.track?.pot = 1_200
         state.track?.myBet = ArenaScreen.Bet(runnerName: "이웃", amount: 400)
 
-        let lines = RoomScreen.lines(state, language: .ko, width: 70)
+        let lines = RoomScreen.lines(state, width: 70)
         #expect(lines.contains { $0.contains(TUIRender.number(1_200)) }, "\(lines)")
         #expect(lines.contains { $0.contains(TUIRender.number(400)) }, "\(lines)")
     }
@@ -225,7 +225,7 @@ struct ArenaTerminalTests {
     /// 내 자리에 표시가 있다 — 여덟 명이 달리는 트랙에서 내 줄을 못 찾으면 아무 소용이 없다.
     @Test func testMyOwnLaneIsMarked() throws {
         let state = Self.racing(activity: .pokeathlon)
-        let lines = RoomScreen.lines(state, language: .ko, width: 70)
+        let lines = RoomScreen.lines(state, width: 70)
         let mine = try #require(lines.first { $0.contains("나") })
 
         #expect(mine.contains(TUIRender.activeMark), "\(lines)")
@@ -375,7 +375,7 @@ struct ArenaTerminalTests {
         #expect(RoomScreen.kind(state) == .waiting)
         #expect(RoomScreen.hints(state).contains("관전"), "\(RoomScreen.hints(state))")
         // 표시도 붙지 않는다 — 내 것이 아닌 팀에 붙으면 내 팀으로 읽힌다.
-        let lines = RoomScreen.lines(state, language: .ko, width: 60)
+        let lines = RoomScreen.lines(state, width: 60)
         #expect(lines.allSatisfy { !$0.hasPrefix(TUIRender.activeMark) }, "\(lines)")
     }
 
@@ -386,7 +386,7 @@ struct ArenaTerminalTests {
         state.track?.winnerName = "이웃"
 
         #expect(RoomScreen.kind(state) == .finished)
-        let lines = RoomScreen.lines(state, language: .ko, width: 70)
+        let lines = RoomScreen.lines(state, width: 70)
         #expect(lines.contains { $0.contains("내 위치") }, "\(lines)")
         #expect(lines.contains { $0.contains("이웃 우승") }, "\(lines)")
     }
@@ -431,8 +431,7 @@ struct ArenaTerminalTests {
     /// 앱이 권해 놓고도 눌러 보면 거절만 돌아온다.
     @Test func testTheRoomSnapshotSaysWhatEachDigitMeans() throws {
         let now = Date()
-        let quiz = try #require(PokedoroViewChannel.roomSnapshot(Self.racing(activity: .pokemonQuiz),
-                                                                  language: .ko, width: 60, now: now))
+        let quiz = try #require(PokedoroViewChannel.roomSnapshot(Self.racing(activity: .pokemonQuiz), width: 60, now: now))
         #expect(quiz.numberActions?["1"] == "room.track left")
         #expect(quiz.numberActions?["2"] == "room.track right")
         #expect(quiz.numberActions?["3"] == nil, "퀴즈에 전진은 없다")
@@ -442,7 +441,7 @@ struct ArenaTerminalTests {
                                                maxHP: 90, isActive: true),
                               ArenaScreen.Slot(number: 2, id: UUID(), label: "피카츄", hp: 50,
                                                maxHP: 80, isActive: false)]
-        let duel = try #require(PokedoroViewChannel.roomSnapshot(replace, language: .ko,
+        let duel = try #require(PokedoroViewChannel.roomSnapshot(replace,
                                                                   width: 60, now: now))
         #expect(duel.numberActions?["2"] == "room.switch 2",
                 "쓰러진 자리를 메우는 국면인데 숫자가 기술로 나간다")

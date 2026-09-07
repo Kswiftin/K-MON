@@ -678,14 +678,11 @@ final class SaveTransferTests: XCTestCase {
                                           // 혼자 돈 1★ 의 소액 지급이 그날의 포획 기회를 없애면
                                           // 사용자는 잃은 줄도 모르고 잃는다.
                                           "raidCatchDate"]
-        // 기기 환경설정: 현재 기기 값 유지.
-        let devicePreference: Set<String> = ["language"]
-
-        let classified = progress.union(deviceLedger).union(accountLedger).union(devicePreference)
+        let classified = progress.union(deviceLedger).union(accountLedger)
         let actual = Set(Mirror(reflecting: CompanionState()).children.compactMap(\.label))
         XCTAssertEqual(actual, classified, """
             CompanionState 필드가 바뀌었다. 세이브 이전에서 이 필드가 무엇인지 정하고 목록을 갱신하라 —
-            진행(그대로) / 로컬 장부(새 기기 기준 재설정) / 계정 원장(병합) / 기기 환경설정(현재 값 유지).
+            진행(그대로) / 로컬 장부(새 기기 기준 재설정) / 계정 원장(병합).
             """)
     }
 
@@ -710,27 +707,6 @@ final class SaveTransferTests: XCTestCase {
             기본값으로 돌아간다. 디코더에 `c.lenient(...)` 줄을 추가해라.
             """)
     }
-
-    /// [딥리뷰 M-c] `language` 는 진행이 아니라 이 기기에서 보는 방식이다. 일본어 Mac 의 세이브가
-    /// 영어 Mac 의 UI 언어를 조용히 바꾸면 안 된다.
-    func testImportKeepsThisDevicesLanguage() throws {
-        let url = tempURL("lang")
-        var mine = CompanionState()
-        mine.language = .en
-        try JSONEncoder().encode(mine).write(to: url)
-        let s = store(at: url)
-        XCTAssertEqual(s.language, .en)
-
-        var imported = oldMacState()
-        imported.language = .ja
-        let data = try SaveTransfer.encode(state: imported, appVersion: "2.5.0",
-                                           deviceName: "JA Mac", now: transferNow)
-        try s.applySave(try SaveTransfer.decode(data))
-
-        XCTAssertEqual(s.language, .en, "불러온 세이브의 언어가 이 기기 설정을 덮으면 안 된다")
-        XCTAssertEqual(s.state.dex.count, imported.dex.count, "진행은 그대로 들어와야 한다")
-    }
-
 
     /// 일일 사탕 원장은 로컬 날짜라 비교 가능 — 더 최근 값을 남겨 재지급을 막는다.
     func testRebaseKeepsNewerCandyDateAndResetsTick() {
@@ -851,19 +827,17 @@ final class SaveTransferTests: XCTestCase {
     // MARK: 오류 문구 매핑
 
     func testImportErrorMessagesAreLocalizedNotRawSwiftText() {
-        for lang in [AppLanguage.ko, .en, .ja] {
-            let l = L(lang)
-            let notSave = l.importErrorMessage(SaveTransferError.notASaveFile)
-            let newer = l.importErrorMessage(SaveTransferError.newerSchema(found: 2, supported: 1))
-            XCTAssertEqual(notSave, l.importErrorNotSaveFile, "\(lang)")
-            XCTAssertEqual(newer, l.importErrorNewerSchema, "\(lang)")
-            for message in [notSave, newer] {
-                XCTAssertFalse(message.contains("SaveTransferError"), "원문 노출: \(message)")
-                XCTAssertFalse(message.contains("couldn't be completed"), "원문 노출: \(message)")
-            }
+        let l = L()
+        let notSave = l.importErrorMessage(SaveTransferError.notASaveFile)
+        let newer = l.importErrorMessage(SaveTransferError.newerSchema(found: 2, supported: 1))
+        XCTAssertEqual(notSave, l.importErrorNotSaveFile)
+        XCTAssertEqual(newer, l.importErrorNewerSchema)
+        for message in [notSave, newer] {
+            XCTAssertFalse(message.contains("SaveTransferError"), "원문 노출: \(message)")
+            XCTAssertFalse(message.contains("couldn't be completed"), "원문 노출: \(message)")
         }
         let other = NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoSuchFileError)
-        XCTAssertEqual(L(.en).importErrorMessage(other), other.localizedDescription)
+        XCTAssertEqual(L().importErrorMessage(other), other.localizedDescription)
     }
 
     func testSuggestedFileNameCarriesDate() {

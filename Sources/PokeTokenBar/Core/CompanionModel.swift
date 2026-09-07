@@ -5,44 +5,29 @@ enum CompanionStateKind: String, Sendable {
     case egg, idle, working, focus, levelUp
 }
 
-/// 앱 언어. 포켓몬 이름은 PokéAPI 다국어 names 에서 가져온다.
-enum AppLanguage: String, Codable, Sendable, CaseIterable {
-    case ko, en, ja
-    /// PokéAPI language.name 후보(첫 매칭 사용)
-    var apiCodes: [String] {
-        switch self {
-        case .ko: return ["ko"]
-        case .en: return ["en"]
-        case .ja: return ["ja-Hrkt", "ja"]
-        }
-    }
-    var label: String {
-        switch self { case .ko: return "한국어"; case .en: return "English"; case .ja: return "日本語" }
-    }
+/// PokéAPI 다국어 데이터에서 **한국어**를 골라내는 규칙.
+///
+/// 앱 UI 는 한국어 하나만 그리지만(2026-09-07 결정), PokéAPI 가 주는 이름·설명은 언어별 표라
+/// 어느 칸을 읽을지 정하는 자리가 여전히 필요하다. 그 규칙이 여기 한 곳에 있다.
+enum PokemonNaming {
+    /// PokéAPI `language.name` 후보 — 첫 매칭을 쓴다.
+    static let apiCodes = ["ko"]
 
-    var displayLocale: Locale { Locale(identifier: rawValue) }
+    /// 앱이 날짜·숫자를 그릴 로케일.
+    static let locale = Locale(identifier: "ko")
 
-    /// byLang(langCode→name) 에서 이 언어의 이름을 고른다(apiCodes 첫 매칭 → 영어 폴백).
-    func resolveName(_ byLang: [String: String]) -> String? {
+    /// byLang(언어코드→이름)에서 한국어 이름을 고른다. **영어로 폴백한다** — 한국어 이름이 없는
+    /// 종·기술이 실제로 있고, 그때 이름을 통째로 비우면 화면에 `#25` 같은 번호만 남는다.
+    static func name(_ byLang: [String: String]) -> String? {
         for code in apiCodes { if let n = byLang[code] { return n } }
         return byLang["en"]
     }
 
-    /// 설명 문장은 요청 언어와 정확히 맞을 때만 쓴다. 이름 한 단어와 달리 영어 설명 전체를
-    /// 폴백하면 포켓몬의 말투와 페르소나가 요청 언어 밖으로 새어 나간다.
-    func resolveProse(_ byLang: [String: String]) -> String? {
+    /// 설명 문장은 **폴백하지 않는다.** 이름 한 단어와 달리 영어 설명 전체를 그대로 내보내면
+    /// 포켓몬의 말투와 페르소나가 한국어 밖으로 새어 나간다.
+    static func prose(_ byLang: [String: String]) -> String? {
         for code in apiCodes { if let text = byLang[code] { return text } }
         return nil
-    }
-
-    /// 신규 설치 기본 언어 — 시스템 선호 언어에서 유추(글로벌 출시: 한국어 강제 금지).
-    /// ko/ja 만 매칭, 그 외 전부 영어(fallback-of-fallback). 기존 사용자는 저장된 언어를 그대로 쓴다.
-    static var systemDefault: AppLanguage {
-        switch Locale.preferredLanguages.first?.prefix(2).lowercased() {
-        case "ko": return .ko
-        case "ja": return .ja
-        default:   return .en
-        }
     }
 }
 
@@ -660,8 +645,8 @@ struct EvoLine: Sendable {
         self.evolutionMoveNames = evolutionMoveNames
     }
 
-    func localizedName(_ id: Int, _ lang: AppLanguage) -> String {
-        lang.resolveName(names[id] ?? [:]) ?? "#\(id)"   // 폴백 순서는 AppLanguage.resolveName 단일 소스
+    func localizedName(_ id: Int) -> String {
+        PokemonNaming.name(names[id] ?? [:]) ?? "#\(id)"   // 폴백 순서는 PokemonNaming.name 단일 소스
     }
 }
 
@@ -673,11 +658,11 @@ enum PokemonGender: String, Codable, Sendable {
         switch self { case .male: return "♂"; case .female: return "♀"; case .genderless: return "—" }
     }
 
-    func name(_ language: AppLanguage) -> String {
+    var name: String {
         switch self {
-        case .male: return L(language).t("수컷", "Male", "オス")
-        case .female: return L(language).t("암컷", "Female", "メス")
-        case .genderless: return L(language).t("무성", "Gender unknown", "性別不明")
+        case .male: return "수컷"
+        case .female: return "암컷"
+        case .genderless: return "무성"
         }
     }
 
@@ -699,37 +684,35 @@ enum PokemonNature: String, Codable, Sendable, CaseIterable {
     case modest, mild, quiet, bashful, rash
     case calm, gentle, sassy, careful, quirky
 
-    /// 본가 공식 번역 명칭 (ko/en/ja).
-    func name(_ lang: AppLanguage) -> String {
-        let names: (String, String, String)
+    /// 본가 공식 번역 명칭.
+    var name: String {
         switch self {
-        case .hardy:   names = ("노력", "Hardy", "がんばりや")
-        case .lonely:  names = ("외로움", "Lonely", "さみしがり")
-        case .brave:   names = ("용감", "Brave", "ゆうかん")
-        case .adamant: names = ("고집", "Adamant", "いじっぱり")
-        case .naughty: names = ("개구쟁이", "Naughty", "やんちゃ")
-        case .bold:    names = ("대담", "Bold", "ずぶとい")
-        case .docile:  names = ("온순", "Docile", "すなお")
-        case .relaxed: names = ("무사태평", "Relaxed", "のんき")
-        case .impish:  names = ("장난꾸러기", "Impish", "わんぱく")
-        case .lax:     names = ("촐랑", "Lax", "のうてんき")
-        case .timid:   names = ("겁쟁이", "Timid", "おくびょう")
-        case .hasty:   names = ("성급", "Hasty", "せっかち")
-        case .serious: names = ("성실", "Serious", "まじめ")
-        case .jolly:   names = ("명랑", "Jolly", "ようき")
-        case .naive:   names = ("천진난만", "Naive", "むじゃき")
-        case .modest:  names = ("조심", "Modest", "ひかえめ")
-        case .mild:    names = ("의젓", "Mild", "おっとり")
-        case .quiet:   names = ("냉정", "Quiet", "れいせい")
-        case .bashful: names = ("수줍음", "Bashful", "てれや")
-        case .rash:    names = ("덜렁", "Rash", "うっかりや")
-        case .calm:    names = ("차분", "Calm", "おだやか")
-        case .gentle:  names = ("얌전", "Gentle", "おとなしい")
-        case .sassy:   names = ("건방", "Sassy", "なまいき")
-        case .careful: names = ("신중", "Careful", "しんちょう")
-        case .quirky:  names = ("변덕", "Quirky", "きまぐれ")
+        case .hardy:    "노력"
+        case .lonely:   "외로움"
+        case .brave:    "용감"
+        case .adamant:  "고집"
+        case .naughty:  "개구쟁이"
+        case .bold:     "대담"
+        case .docile:   "온순"
+        case .relaxed:  "무사태평"
+        case .impish:   "장난꾸러기"
+        case .lax:      "촐랑"
+        case .timid:    "겁쟁이"
+        case .hasty:    "성급"
+        case .serious:  "성실"
+        case .jolly:    "명랑"
+        case .naive:    "천진난만"
+        case .modest:   "조심"
+        case .mild:     "의젓"
+        case .quiet:    "냉정"
+        case .bashful:  "수줍음"
+        case .rash:     "덜렁"
+        case .calm:     "차분"
+        case .gentle:   "얌전"
+        case .sassy:    "건방"
+        case .careful:  "신중"
+        case .quirky:   "변덕"
         }
-        switch lang { case .ko: return names.0; case .en: return names.1; case .ja: return names.2 }
     }
 }
 
@@ -766,17 +749,15 @@ enum RotomForm: String, Codable, CaseIterable, Sendable {
         case .mow: 437
         }
     }
-    func name(_ language: AppLanguage) -> String {
-        let value: (String, String, String)
+    var name: String {
         switch self {
-        case .normal: value = ("로토무", "Rotom", "ロトム")
-        case .heat: value = ("히트로토무", "Heat Rotom", "ヒートロトム")
-        case .wash: value = ("워시로토무", "Wash Rotom", "ウォッシュロトム")
-        case .frost: value = ("프로스트로토무", "Frost Rotom", "フロストロトム")
-        case .fan: value = ("스핀로토무", "Fan Rotom", "スピンロトム")
-        case .mow: value = ("커트로토무", "Mow Rotom", "カットロトム")
+        case .normal: "로토무"
+        case .heat: "히트로토무"
+        case .wash: "워시로토무"
+        case .frost: "프로스트로토무"
+        case .fan: "스핀로토무"
+        case .mow: "커트로토무"
         }
-        return switch language { case .ko: value.0; case .en: value.1; case .ja: value.2 }
     }
 }
 
@@ -1099,7 +1080,6 @@ struct CompanionState: Codable, Sendable {
     /// 남은 이로치 확정 부화 횟수. 부화 한 번에 하나씩 쓴다.
     /// ★영속이어야 한다 — `eggTier` 와 같은 이유로, 받은 시점과 쓰는 시점이 떨어져 있다.
     var shinyEggCharges = 0
-    var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
     // 기술머신 인벤토리 (본가 move id → 개수). 별도 키라 ItemKind 확장 없이 카탈로그를 늘릴 수 있다.
@@ -1191,7 +1171,6 @@ struct CompanionState: Codable, Sendable {
         gymBadges          = c.lenient(Set<String>.self, forKey: .gymBadges, default: [])
         gymLeagueBadges    = c.lenient(Set<String>.self, forKey: .gymLeagueBadges, default: [])
         shinyEggCharges    = c.lenient(Int.self, forKey: .shinyEggCharges, default: 0)
-        language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
         technicalMachines  = c.lenient([Int: Int].self, forKey: .technicalMachines, default: [:])
         adventure          = c.lenientOptional(AdventureRun.self, forKey: .adventure)

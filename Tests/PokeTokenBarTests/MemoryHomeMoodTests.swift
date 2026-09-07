@@ -70,27 +70,22 @@ final class MemoryHomeMoodTests: XCTestCase {
                        "형식이 깨진 dayKey 가 살아남았다")
     }
 
-    func testEveryMoodHasEmojiNameAndReactionInAllThreeLanguages() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let l = L(language)
-            for mood in MemoryHomeMood.allCases {
-                XCTAssertFalse(MemoryHomeMoodStyle.emoji(mood).isEmpty, "\(mood) 이모지 없음")
-                XCTAssertFalse(MemoryHomeMoodStyle.name(mood, l).isEmpty, "\(language)/\(mood) 이름 없음")
-                let reaction = MemoryHomeMoodStyle.reaction(mood, companion: "피카츄", l)
-                XCTAssertFalse(reaction.isEmpty, "\(language)/\(mood) 반응 없음")
-                XCTAssertTrue(reaction.contains("피카츄"), "\(language)/\(mood) 반응에 동행 이름이 안 들어갔다")
-            }
+    func testEveryMoodHasEmojiNameAndReaction() {
+        let l = L()
+        for mood in MemoryHomeMood.allCases {
+            XCTAssertFalse(MemoryHomeMoodStyle.emoji(mood).isEmpty, "\(mood) 이모지 없음")
+            XCTAssertFalse(MemoryHomeMoodStyle.name(mood).isEmpty, "\(mood) 이름 없음")
+            let reaction = MemoryHomeMoodStyle.reaction(mood, companion: "피카츄", l)
+            XCTAssertFalse(reaction.isEmpty, "\(mood) 반응 없음")
+            XCTAssertTrue(reaction.contains("피카츄"), "\(mood) 반응에 동행 이름이 안 들어갔다")
         }
     }
 
-    func testMoodNamesAreDistinctWithinEachLanguage() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let l = L(language)
-            let names = Set(MemoryHomeMood.allCases.map { MemoryHomeMoodStyle.name($0, l) })
-            XCTAssertEqual(names.count, MemoryHomeMood.allCases.count,
-                           "\(language) 기분 이름이 중복돼 접근성 라벨이 구별되지 않는다")
-            let emoji = Set(MemoryHomeMood.allCases.map { MemoryHomeMoodStyle.emoji($0) })
-            XCTAssertEqual(emoji.count, MemoryHomeMood.allCases.count, "기분 이모지가 중복됐다")
-        }
+    func testMoodNamesAreDistinct() {
+        let names = Set(MemoryHomeMood.allCases.map { MemoryHomeMoodStyle.name($0) })
+        XCTAssertEqual(names.count, MemoryHomeMood.allCases.count,
+                       "기분 이름이 중복돼 접근성 라벨이 구별되지 않는다")
+        let emoji = Set(MemoryHomeMood.allCases.map { MemoryHomeMoodStyle.emoji($0) })
+        XCTAssertEqual(emoji.count, MemoryHomeMood.allCases.count, "기분 이모지가 중복됐다")
     }
 }

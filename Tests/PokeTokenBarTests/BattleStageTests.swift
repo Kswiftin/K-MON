@@ -487,19 +487,17 @@ final class BattleStageTests: XCTestCase {
     // MARK: 로그 — 랭크 변화가 자기 줄로 나간다
 
     func testBoostEventsBecomeTheirOwnLocalizedLine() {
-        func lines(_ events: [BattleEvent], _ lang: AppLanguage) -> [String] {
-            BattleLog.lines(events, l: L(lang), name: { $0 == .a ? "거북왕" : "리자몽" },
+        func lines(_ events: [BattleEvent]) -> [String] {
+            BattleLog.lines(events, l: L(), name: { $0 == .a ? "거북왕" : "리자몽" },
                             move: { _, id in
                                 MoveSpec(id: id, names: ["ko": "칼춤"], type: .normal, power: 0,
                                         damageClass: .status, accuracy: nil, pp: 20)
                             }).map(\.text)
         }
         let stream: [BattleEvent] = [.move(.a, moveID: 14), .boost(.a, .atk, 2)]
-        XCTAssertEqual(lines(stream, .ko), ["거북왕의 칼춤!", "거북왕의 공격이 크게 올라갔다!"])
-        XCTAssertEqual(lines(stream, .en), ["거북왕 used 칼춤!", "거북왕's Attack rose sharply!"])
-        XCTAssertEqual(lines([.boost(.b, .spe, -1)], .ko), ["리자몽의 스피드가 떨어졌다!"])
-        XCTAssertEqual(lines([.boost(.b, .spe, -1)], .ja), ["리자몽の すばやさが さがった！"])
-        XCTAssertEqual(lines([.boost(.a, .accuracy, 1)], .ko).first, "거북왕의 명중률이 올라갔다!")
+        XCTAssertEqual(lines(stream), ["거북왕의 칼춤!", "거북왕의 공격이 크게 올라갔다!"])
+        XCTAssertEqual(lines([.boost(.b, .spe, -1)]), ["리자몽의 스피드가 떨어졌다!"])
+        XCTAssertEqual(lines([.boost(.a, .accuracy, 1)]).first, "거북왕의 명중률이 올라갔다!")
     }
 
     /// 화면 배지 — 0 인 랭크는 빼고, 캐논 순서(공·방·특공·특방·스피드·명중·회피)로.
@@ -558,12 +556,10 @@ final class BattleStageTests: XCTestCase {
     func testEveryStatHasALabelANameAndABaseline() {
         XCTAssertEqual(BattleStat.allCases.map(\.shortLabel),
                        ["Atk", "Def", "SpA", "SpD", "Spe", "Acc", "Eva"])
-        for lang in [AppLanguage.ko, .en, .ja] {
-            let names = BattleStat.allCases.map { $0.name(lang) }
-            XCTAssertEqual(Set(names).count, BattleStat.allCases.count,
-                           "\(lang): 이름이 겹치면 로그에서 어느 스탯인지 알 수 없다")
-            XCTAssertFalse(names.contains { $0.isEmpty }, "\(lang): 빈 이름")
-        }
+        let names = BattleStat.allCases.map { $0.name }
+        XCTAssertEqual(Set(names).count, BattleStat.allCases.count,
+                       "이름이 겹치면 로그에서 어느 스탯인지 알 수 없다")
+        XCTAssertFalse(names.contains { $0.isEmpty }, "빈 이름")
         let side = BattleSide(tank(speed: 100))
         XCTAssertEqual(BattleStat.allCases.map { side.rawStat($0) },
                        [120, 120, 120, 120, 120, 100, 100],
@@ -825,7 +821,7 @@ final class BattleStageTests: XCTestCase {
 
     /// 랭크 0 짜리 `.boost` 는 줄이 없다 — 이벤트 스트림도 호스트가 보내오는 값이다.
     func testZeroBoostEventDrawsNoLine() {
-        let lines = BattleLog.lines([.boost(.a, .atk, 0)], l: L(.ko),
+        let lines = BattleLog.lines([.boost(.a, .atk, 0)], l: L(),
                                     name: { _ in "거북왕" },
                                     move: { _, id in
                                         MoveSpec(id: id, names: ["ko": "칼춤"], type: .normal, power: 0,

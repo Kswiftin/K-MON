@@ -31,12 +31,10 @@ final class MissionBoardTests: XCTestCase {
         XCTAssertEqual(Set(MissionBoard.catalog.map(\.id)).count, MissionBoard.catalog.count)
     }
 
-    /// 미션 이름은 세 언어 모두에서 채워져야 한다 — 한 언어만 비면 그 언어 사용자에겐 빈 줄이 보인다.
-    func testEveryMissionIsNamedInAllThreeLanguages() {
+    /// 미션 이름은 채워져야 한다 — 비면 빈 줄이 보인다.
+    func testEveryMissionIsNamed() {
         for mission in MissionBoard.catalog {
-            for lang in [AppLanguage.ko, .en, .ja] {
-                XCTAssertFalse(L(lang).missionName(mission).isEmpty, "\(mission.id) / \(lang)")
-            }
+            XCTAssertFalse(L().missionName(mission).isEmpty, "\(mission.id)")
         }
     }
 
@@ -44,10 +42,8 @@ final class MissionBoardTests: XCTestCase {
     /// 실패할 수 없다. 이벤트·목표가 같은 미션을 더하면 카드에 **같은 이름 두 줄**이 보이고 알림도
     /// 구분되지 않는다. 사라진 빈 문자열 폴백 가드를 이 검사가 대신한다.
     func testMissionNamesTellTheMissionsApart() {
-        for lang in [AppLanguage.ko, .en, .ja] {
-            let names = MissionBoard.catalog.map { L(lang).missionName($0) }
-            XCTAssertEqual(Set(names).count, names.count, "\(lang.rawValue): \(names)")
-        }
+        let names = MissionBoard.catalog.map { L().missionName($0) }
+        XCTAssertEqual(Set(names).count, names.count, "\(names)")
     }
 
     // MARK: 기록·완료

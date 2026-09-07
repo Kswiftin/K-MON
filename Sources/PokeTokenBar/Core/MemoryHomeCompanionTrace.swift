@@ -22,29 +22,17 @@ enum MemoryHomeCompanionTrace {
     static func body(mood: MemoryHomeMood?, _ l: L) -> String {
         switch mood {
         case .excited:
-            return l.t("오늘 진짜 신났어! 또 놀자ㅋㅋ",
-                       "Today was so much fun! Let's do it again.",
-                       "今日はすごく楽しかった！また遊ぼう。")
+            return "오늘 진짜 신났어! 또 놀자ㅋㅋ"
         case .down:
-            return l.t("아무 말 안 해도 돼. 옆에 있을게.",
-                       "You don't have to say anything. I'll stay right here.",
-                       "何も言わなくていいよ。そばにいるね。")
+            return "아무 말 안 해도 돼. 옆에 있을게."
         case .annoyed:
-            return l.t("잠깐 쉬자. 그러고 나서 같이 놀자.",
-                       "Let's take a break first. Then let's play.",
-                       "少し休もう。それから一緒に遊ぼう。")
+            return "잠깐 쉬자. 그러고 나서 같이 놀자."
         case .fluttering:
-            return l.t("두근두근… 내일도 여기 있을게!",
-                       "My heart's racing… I'll be here tomorrow too!",
-                       "どきどき…明日もここにいるね！")
+            return "두근두근… 내일도 여기 있을게!"
         case .calm:
-            return l.t("오늘도 같이 있어서 좋았어.",
-                       "It was nice being together today too.",
-                       "今日も一緒でよかった。")
+            return "오늘도 같이 있어서 좋았어."
         case .none:
-            return l.t("방문 찍고 감~ 발자국 남겨 둘게.",
-                       "Stopped by! Leaving some pawprints behind.",
-                       "遊びに来たよ〜 足あとを残しておくね。")
+            return "방문 찍고 감~ 발자국 남겨 둘게."
         }
     }
 }

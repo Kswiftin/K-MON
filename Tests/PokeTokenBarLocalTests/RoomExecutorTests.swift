@@ -38,7 +38,6 @@ struct RoomExecutorTests {
     private func makeStore(in directory: URL) -> CompanionStore {
         let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: directory.appendingPathComponent("state.json"))
-        store.setLanguage(.ko)
         return store
     }
 

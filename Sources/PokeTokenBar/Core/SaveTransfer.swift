@@ -534,7 +534,6 @@ enum SaveTransfer {
     /// 스타터부터 다시 고르게 해 조작 이득을 무효화한다.
     static func resetForTamper(_ state: CompanionState) -> CompanionState {
         var fresh = CompanionState()
-        fresh.language = state.language
         fresh.trainerName = state.trainerName
         return fresh
     }
@@ -547,7 +546,6 @@ enum SaveTransfer {
         var fresh = CompanionState()
         fresh.dex = state.dex
         fresh.collectedFinals = state.collectedFinals
-        fresh.language = state.language
         AppLog.write("economy migration: v\(state.economyVersion) → v\(IdleEconomy.currentVersion) — progress reset, dex(\(state.dex.count)) preserved")
         return fresh
     }
@@ -559,12 +557,9 @@ enum SaveTransfer {
     ///    → 그대로. 알 보증(`eggTier`)은 산 물건이지 이 기기의 장부가 아니라 기기를 옮겨도 따라간다.
     ///  - **로컬 장부**: 이 기기의 시계 기준값(`lastTickAt`) → 리셋. 옛 기기의 시각을 그대로 들여오면
     ///    다음 틱이 그 시각과의 경과분(캡 적용)을 이 기기 가동 시간으로 오인한다.
-    ///  - **기기 환경설정**: 진행이 아니라 이 기기에서 보는 방식(`language`) → **현재 기기 값을 지킨다**.
-    ///    일본어 Mac 의 세이브가 영어 Mac 의 UI 언어를 바꾸면 안 된다.
     static func rebasedForThisDevice(_ imported: CompanionState,
                                      current: CompanionState) -> CompanionState {
         var state = imported
-        state.language = current.language
         state.lastTickAt = nil
         // 체육관 관장은 **이 기기에서 돌고 있는 살아있는 역할**이지 진행이 아니다. 따라오게 두면
         // 세이브를 옮긴 기기가 호스팅하지도 않는 체육관의 관장을 자처하고, 방어팀 넷이 그 기기에서

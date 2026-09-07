@@ -179,35 +179,32 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertNil(chat.pendingProposal)
     }
 
-    /// 승인 카드와 결과 문구는 세 언어 모두에서 사람 문장이다. enum 슬러그가 새면 사용자는
+    /// 승인 카드와 결과 문구는 사람 문장이다. enum 슬러그가 새면 사용자는
     /// 자기가 무엇을 켜는지 모른 채 누르게 된다.
-    func testApprovalTextIsHumanInEveryLanguageAndNeverLeaksASlug() {
+    func testApprovalTextIsHumanAndNeverLeaksASlug() {
         let slugs = Set(PokemonChatTool.allCases.map(\.rawValue))
         let calls: [PokemonChatToolCall] = [.pokedoroStart(minutes: 25), .pokedoroStop,
                                             .pokedoroStatus, .pokedexLookup(speciesID: 25),
                                             .bagList, .rosterList, .evolutionAccept,
                                             .itemUse(kind: .rareCandy), .companionSwitch(index: 2),
                                             .memoryRecord(body: "오늘 같이 집중했어")]
-        for language in [AppLanguage.ko, .en, .ja] {
-            var lines: [String] = []
-            for call in calls {
-                lines.append(call.approvalQuestion(language))
-                lines.append(call.outcome(approved: true, success: true, language: language))
-                lines.append(call.outcome(approved: true, success: false, language: language))
-                lines.append(call.outcome(approved: false, success: false, language: language))
-            }
-            XCTAssertFalse(lines.contains { $0.isEmpty }, "\(language.rawValue) 에 빈 문구가 있다")
-            XCTAssertFalse(lines.contains { line in slugs.contains(where: line.contains) },
-                           "\(language.rawValue): \(lines)")
+        var lines: [String] = []
+        for call in calls {
+            lines.append(call.approvalQuestion)
+            lines.append(call.outcome(approved: true, success: true))
+            lines.append(call.outcome(approved: true, success: false))
+            lines.append(call.outcome(approved: false, success: false))
         }
+        XCTAssertFalse(lines.contains { $0.isEmpty }, "빈 문구가 있다")
+        XCTAssertFalse(lines.contains { line in slugs.contains(where: line.contains) }, "\(lines)")
 
         // 승인·거절·실패는 서로 다른 문장이어야 한다 — 같으면 눌러도 무슨 일이 났는지 알 수 없다.
         let start = PokemonChatToolCall.pokedoroStart(minutes: 25)
-        XCTAssertEqual(Set([start.outcome(approved: true, success: true, language: .ko),
-                            start.outcome(approved: true, success: false, language: .ko),
-                            start.outcome(approved: false, success: false, language: .ko)]).count, 3)
+        XCTAssertEqual(Set([start.outcome(approved: true, success: true),
+                            start.outcome(approved: true, success: false),
+                            start.outcome(approved: false, success: false)]).count, 3)
         // 실제 인자가 문장에 실린다 — 25분 승인이 50분을 켜는 걸 사용자가 볼 수 있어야 한다.
-        XCTAssertTrue(PokemonChatToolCall.pokedoroStart(minutes: 50).approvalQuestion(.ko).contains("50"))
+        XCTAssertTrue(PokemonChatToolCall.pokedoroStart(minutes: 50).approvalQuestion.contains("50"))
     }
 
     // MARK: 루프
@@ -382,10 +379,10 @@ final class PokemonChatToolTests: XCTestCase {
     /// 도감 조회는 받은 사실만 싣는다. 빈 조회를 빈 줄로 돌려주면 모델이 침묵을 사실로 읽는다.
     func testTheToolboxTurnsASpeciesLookupIntoFactsOrSaysItHasNone() async {
         let store = makeCompanionStore()
-        let full = PokemonChatToolbox(timer: FocusTimer(), companion: store, album: makeAlbum()) { _, language in
+        let full = PokemonChatToolbox(timer: FocusTimer(), companion: store, album: makeAlbum()) { _ in
             PokemonSpeciesIdentity(genera: ["ko": "쥐포켓몬"], habitatSlug: "forest",
                                    flavorTexts: ["ko": "전기를 볼에 저장한다."],
-                                   abilityNames: ["ko": "정전기"], abilityTexts: [:], language: language)
+                                   abilityNames: ["ko": "정전기"], abilityTexts: [:])
         }
 
         let found = await full.runAsActive(.pokedexLookup(speciesID: 25))
@@ -811,7 +808,7 @@ final class PokemonChatToolTests: XCTestCase {
         XCTAssertEqual(store.itemCount(.rareCandy), 1, "남의 대화의 승인이 활성 개체에 적용됐다")
         XCTAssertEqual(chat.messages(for: boxed.id).last?.body,
                        PokemonChatToolCall.itemUse(kind: .rareCandy)
-                           .outcome(approved: true, success: false, language: .ko),
+                           .outcome(approved: true, success: false),
                        "실패가 성공 문구로 보고됐다")
     }
 
@@ -902,10 +899,7 @@ final class PokemonChatToolTests: XCTestCase {
     /// (`cancelFocusAdventure`), 카드가 "끝낼까?" 만 물으면 사용자는 무엇을 승인하는지 모른다.
     func testStoppingFocusWarnsThatTheAdventureIsLost() {
         let stop = PokemonChatToolCall.pokedoroStop
-        for (language, word) in [(AppLanguage.ko, "모험"), (.en, "adventure"), (.ja, "冒険")] {
-            XCTAssertTrue(stop.approvalQuestion(language).contains(word),
-                          "\(language.rawValue): \(stop.approvalQuestion(language))")
-        }
+        XCTAssertTrue(stop.approvalQuestion.contains("모험"), stop.approvalQuestion)
     }
 
     /// ...그리고 카드 문장이 **참이어야** 한다. `cancelFocusAdventure` 는 완료 여부를 안 봐서
@@ -1152,12 +1146,9 @@ final class PokemonChatToolTests: XCTestCase {
         let stop = PokemonChatToolCall.pokedoroStop
         // 낱말이 아니라 **뜻**을 단언한다. "보상 없이 취소돼" 에도 '보상'·'취소' 가 들어 있어,
         // 낱말만 보면 정산을 말하지 않는 옛 문구에서도 통과한다(실제로 그랬다).
-        for (language, reward, loss) in [(AppLanguage.ko, "끝난 모험", "취소"),
-                                         (.en, "finished", "cancel"), (.ja, "終わった", "取り消")] {
-            let question = stop.approvalQuestion(language)
-            XCTAssertTrue(question.contains(reward), "\(language.rawValue): \(question)")
-            XCTAssertTrue(question.contains(loss), "\(language.rawValue): \(question)")
-        }
+        let question = stop.approvalQuestion
+        XCTAssertTrue(question.contains("끝난 모험"), question)
+        XCTAssertTrue(question.contains("취소"), question)
     }
 
     // MARK: 제안 — 지금 성공할 수 있는 일
@@ -1329,19 +1320,17 @@ final class PokemonChatToolTests: XCTestCase {
     /// 여기에 갈래를 더해야 한다.
     func testActionPhrasesQuoteTheirOwnCall() {
         for action in PokemonChatAction.allCases {
-            for language in AppLanguage.allCases {
-                let phrase = action.phrase(language)
-                switch action.call {
-                case .pokedoroStart(let minutes):
-                    XCTAssertTrue(phrase.contains("\(minutes)"),
-                                  "\(action)/\(language.rawValue): 문구가 호출의 \(minutes)분을 안 말한다")
-                case .itemUse(let kind):
-                    let name = L(language).itemName(kind)
-                    XCTAssertTrue(phrase.contains(name),
-                                  "\(action)/\(language.rawValue): 문구('\(phrase)')가 호출이 쓸 이름('\(name)')을 안 말한다")
-                default:
-                    continue
-                }
+            let phrase = action.phrase
+            switch action.call {
+            case .pokedoroStart(let minutes):
+                XCTAssertTrue(phrase.contains("\(minutes)"),
+                              "\(action): 문구가 호출의 \(minutes)분을 안 말한다")
+            case .itemUse(let kind):
+                let name = L().itemName(kind)
+                XCTAssertTrue(phrase.contains(name),
+                              "\(action): 문구('\(phrase)')가 호출이 쓸 이름('\(name)')을 안 말한다")
+            default:
+                continue
             }
         }
     }
@@ -1354,12 +1343,10 @@ final class PokemonChatToolTests: XCTestCase {
     /// `testActionPhrasesQuoteTheirOwnCall` 이 건다 — 여기서 둘을 겸하면 입력을 표에서 뽑는
     /// 순간 항등식이 되어(표 → 표) 칩 문구가 어떻게 틀리든 초록이 된다.
     func testItemUseAcceptsTheLocalizedNameThatBagListPrints() {
-        for language in AppLanguage.allCases {
-            let name = L(language).itemName(.rareCandy)
-            let (_, call) = PokemonChatToolParser.parse("좋아! [[tool:item.use(\(name))]]")
-            XCTAssertEqual(call, .itemUse(kind: .rareCandy),
-                           "\(language.rawValue): 표시 이름(\(name))으로는 호출이 안 만들어진다")
-        }
+        let name = L().itemName(.rareCandy)
+        let (_, call) = PokemonChatToolParser.parse("좋아! [[tool:item.use(\(name))]]")
+        XCTAssertEqual(call, .itemUse(kind: .rareCandy),
+                       "표시 이름(\(name))으로는 호출이 안 만들어진다")
         let (_, raw) = PokemonChatToolParser.parse("[[tool:item.use(rareCandy)]]")
         XCTAssertEqual(raw, .itemUse(kind: .rareCandy), "회귀: bag.list 가 찍는 rawValue 는 계속 통해야 한다")
     }
@@ -1380,11 +1367,9 @@ final class PokemonChatToolTests: XCTestCase {
     /// 48종을 통째로 열어 두면 프롬프트가 "트레이너가 말한 대로" 를 허용하는 지금, 가구 이름
     /// 한 번에 승인 카드가 떴다가 그제서야 실패한다. 사용자에겐 승인한 일이 안 된 것으로 보인다.
     func testNamesOnlyReachItemsChatCanActuallyUse() {
-        for language in AppLanguage.allCases {
-            let bed = L(language).itemName(.roomBed)
-            XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(\(bed))]]").call,
-                         "\(language.rawValue): 가구('\(bed)')가 호출이 됐다 — 승인 카드까지 간다")
-        }
+        let bed = L().itemName(.roomBed)
+        XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(\(bed))]]").call,
+                     "가구('\(bed)')가 호출이 됐다 — 승인 카드까지 간다")
         XCTAssertNil(PokemonChatToolParser.parse("[[tool:item.use(roomBed)]]").call,
                      "회귀: rawValue 로도 가구는 쓸 수 없어야 한다")
         // 대조군. 위 단언만 두면 표를 통째로 비워도 통과한다.
@@ -1393,14 +1378,11 @@ final class PokemonChatToolTests: XCTestCase {
     }
 
     /// 이름으로 되짚는 순간 **이름이 겹치면 엉뚱한 아이템을 쓴다** — 그리고 아이템 사용은
-    /// 소모라 되돌릴 수 없다. 세 언어를 한 자루에 넣고 대조하므로 언어를 가로질러도 겹치면 안 된다.
-    /// (rawValue 와 현지화 이름이 겹치는 경우도 같은 함정이라 함께 센다.)
+    /// 소모라 되돌릴 수 없다. rawValue 와 표시 이름이 겹치는 경우도 같은 함정이라 함께 센다.
     func testNoTwoItemsAnswerToTheSameName() {
         var owner: [String: ItemKind] = [:]
         for kind in ItemKind.allCases {
-            var names = [kind.rawValue]
-            // 언어를 손으로 세지 않는다 — 네 번째 언어가 붙는 날 새 충돌을 못 보고 지나친다.
-            for language in AppLanguage.allCases { names.append(L(language).itemName(kind)) }
+            let names = [kind.rawValue, L().itemName(kind)]
             for name in Set(names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }) {
                 if let existing = owner[name], existing != kind {
                     XCTFail("'\(name)' 를 \(existing) 와 \(kind) 가 함께 쓴다 — 이름으로는 못 가른다")
@@ -1430,19 +1412,14 @@ final class PokemonChatToolTests: XCTestCase {
 
     /// 칩 문구는 사용자가 **읽고 보내는 문장**이다. 마커(`[[tool:...]]`)를 넣으면 사용자가 기계
     /// 문법을 보내게 되고, 그건 대화를 우회하는 두 번째 실행 경로다.
-    func testActionPhrasesAreHumanSentencesInAllThreeLanguages() {
+    func testActionPhrasesAreHumanSentences() {
         for action in PokemonChatAction.allCases {
-            var seen = Set<String>()
-            for language in [AppLanguage.ko, .en, .ja] {
-                let phrase = action.phrase(language)
-                XCTAssertFalse(phrase.isEmpty, "\(action)/\(language.rawValue): 빈 문구")
-                // `[[tool:` 만 막으면 규칙보다 좁다. 사용자 메시지는 그대로 대화 기록에 실려
-                // 다음 왕복의 문맥으로 CLI 에 되돌아가므로, 대괄호 문법을 보여 주는 것만으로도
-                // 모델에게 마커를 흉내 낼 본을 준다 — 그리고 그 마커는 실제로 파싱된다.
-                XCTAssertFalse(phrase.contains("[["), "\(action)/\(language.rawValue): 마커 문법이 새어 나왔다")
-                seen.insert(phrase)
-            }
-            XCTAssertEqual(seen.count, 3, "\(action): 세 언어 중 둘이 같은 문구다")
+            let phrase = action.phrase
+            XCTAssertFalse(phrase.isEmpty, "\(action): 빈 문구")
+            // `[[tool:` 만 막으면 규칙보다 좁다. 사용자 메시지는 그대로 대화 기록에 실려
+            // 다음 왕복의 문맥으로 CLI 에 되돌아가므로, 대괄호 문법을 보여 주는 것만으로도
+            // 모델에게 마커를 흉내 낼 본을 준다 — 그리고 그 마커는 실제로 파싱된다.
+            XCTAssertFalse(phrase.contains("[["), "\(action): 마커 문법이 새어 나왔다")
         }
     }
 
@@ -1533,9 +1510,9 @@ final class PokemonChatToolTests: XCTestCase {
             EvoNode(speciesID: 31, children: [], evolutionTrigger: "use-item", evolutionItem: "fire-stone")]),
         rarity: .common, names: [30: ["ko": "니드리나"], 31: ["ko": "니드퀸"]])
 
-    private static let emptyLookup: (Int, AppLanguage) async -> PokemonSpeciesIdentity = { _, language in
+    private static let emptyLookup: (Int) async -> PokemonSpeciesIdentity = { _ in
         PokemonSpeciesIdentity(genera: [:], habitatSlug: nil, flavorTexts: [:],
-                               abilityNames: [:], abilityTexts: [:], language: language)
+                               abilityNames: [:], abilityTexts: [:])
     }
 
     private func temporaryURL() -> URL {
@@ -1552,7 +1529,6 @@ final class PokemonChatToolTests: XCTestCase {
         let store = CompanionStore(provider: ToolLineProvider(line: line),
                                    clock: clock?.closure ?? { Date(timeIntervalSince1970: 1_000) },
                                    fileURL: temporaryURL(), rng: SeededRNG(seed: 1))
-        store.setLanguage(.ko)
         return store
     }
 }
@@ -1624,5 +1600,5 @@ private struct StubToolbox: PokemonChatToolRunning {
 private extension PokemonChatProfile {
     static let toolFixture = PokemonChatProfile(speciesID: 25, displayName: "피카츄", nickname: nil,
                                                 nature: "온순", level: 5, stage: "첫 번째 형태",
-                                                flavorText: nil, language: .ko)
+                                                flavorText: nil)
 }

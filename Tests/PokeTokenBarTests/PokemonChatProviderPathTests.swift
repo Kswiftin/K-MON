@@ -258,11 +258,10 @@ final class PokemonChatProviderPathTests: XCTestCase {
     }
 
     /// 안내 문구는 Core 에 둔다 — 차단 사유(`PokemonChatBlockReason`)와 같은 이유로, 뷰가 문구를
-    /// 들면 커버리지 게이트 밖에 남고 세 언어 중 하나가 조용히 빠진다.
-    func testTheMissingCLIGuidanceExistsInAllThreeLanguages() {
-        let messages = [AppLanguage.ko, .en, .ja].map(PokemonChatProviderSelection.noProviderMessage)
-        XCTAssertEqual(Set(messages).count, 3, "세 언어가 서로 다른 문장이어야 한다")
-        XCTAssertFalse(messages.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+    /// 들면 커버리지 게이트 밖에 남는다.
+    func testTheMissingCLIGuidanceExists() {
+        XCTAssertFalse(PokemonChatProviderSelection.noProviderMessage
+            .trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     // MARK: 동의 — 전송 버튼이 곧 동의다
@@ -271,16 +270,10 @@ final class PokemonChatProviderPathTests: XCTestCase {
     /// 돌려줘야** 누르는 행위가 동의가 된다. 이름 없는 "외부 전송" 은 어디로 가는지 안 알려준다.
     func testTheExternalSendLabelNamesTheCLIThatWillReceiveTheMessage() {
         for kind in PokemonChatProviderSafety.verifiedKinds {
-            for language in [AppLanguage.ko, .en, .ja] {
-                let label = PokemonChatProviderSelection.externalSendLabel(kind: kind, language: language)
-                XCTAssertTrue(label.contains(kind.label(language)),
-                              "\(language.rawValue)/\(kind.rawValue): 대상 CLI 이름이 없다 — '\(label)'")
-            }
+            let label = PokemonChatProviderSelection.externalSendLabel(kind: kind)
+            XCTAssertTrue(label.contains(kind.label),
+                          "\(kind.rawValue): 대상 CLI 이름이 없다 — '\(label)'")
         }
-        let translated = [AppLanguage.ko, .en, .ja].map {
-            PokemonChatProviderSelection.externalSendLabel(kind: .claude, language: $0)
-        }
-        XCTAssertEqual(Set(translated).count, 3, "세 언어가 서로 다른 문장이어야 한다")
     }
 
     /// 이 줄은 **누르기 전에** 읽는 문구다. 완료를 보고하는 어투면 사용자는 "이미 나갔다" 로 읽고,
@@ -288,7 +281,7 @@ final class PokemonChatProviderPathTests: XCTestCase {
     /// 구하지 않는다. 한국어 "외부 전송"·일본어 "外部送信" 은 시제 없는 명사라 영어만 빠지는 함정이다.
     func testTheConsentLabelDescribesAPendingSendNotACompletedOne() {
         for kind in PokemonChatProviderSafety.verifiedKinds {
-            let english = PokemonChatProviderSelection.externalSendLabel(kind: kind, language: .en)
+            let english = PokemonChatProviderSelection.externalSendLabel(kind: kind)
             for completed in ["sent ", "was sent", "has been sent"] {
                 XCTAssertFalse(english.lowercased().contains(completed),
                                "'\(english)': 완료형이라 이미 나갔다는 뜻으로 읽힌다")
@@ -314,16 +307,10 @@ final class PokemonChatProviderPathTests: XCTestCase {
 
     /// 물어보는 문장도 대상 CLI 를 이름으로 말해야 한다. "외부로 보냅니다" 만으로는 어디로 가는지
     /// 모른 채 승인하게 된다 — 동의 줄과 같은 이유다.
-    func testTheFirstSendQuestionNamesTheCLIInAllThreeLanguages() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let question = PokemonChatProviderSelection.firstSendConsentQuestion(kind: .claude, language: language)
-            XCTAssertTrue(question.contains(PokemonChatProviderKind.claude.label(language)),
-                          "\(language.rawValue): 어디로 보내는지 안 적혀 있다 — '\(question)'")
-        }
-        let translated = [AppLanguage.ko, .en, .ja].map {
-            PokemonChatProviderSelection.firstSendConsentQuestion(kind: .claude, language: $0)
-        }
-        XCTAssertEqual(Set(translated).count, 3, "세 언어가 서로 다른 문장이어야 한다")
+    func testTheFirstSendQuestionNamesTheCLI() {
+        let question = PokemonChatProviderSelection.firstSendConsentQuestion(kind: .claude)
+        XCTAssertTrue(question.contains(PokemonChatProviderKind.claude.label),
+                      "어디로 보내는지 안 적혀 있다 — '\(question)'")
     }
 
     /// 새로 깐 사람은 **반드시** 묻는 쪽에서 시작한다. 기본값이 `true` 로 새면 이 기능은 코드에만
@@ -361,33 +348,29 @@ final class PokemonChatProviderPathTests: XCTestCase {
     func testEveryReasonAChatCannotSendHasItsOwnGuidance() {
         // 보낼 수 있으면 배너는 없다 — 고르지 않은 첫 방문도 포함.
         XCTAssertNil(PokemonChatProviderSelection.unavailableMessage(
-            stored: "", effective: .codex, language: .ko))
+            stored: "", effective: .codex))
         XCTAssertNil(PokemonChatProviderSelection.unavailableMessage(
-            stored: "claude", effective: .claude, language: .ko))
+            stored: "claude", effective: .claude))
 
         // 검증 CLI 가 하나도 안 잡힘.
         XCTAssertEqual(PokemonChatProviderSelection.unavailableMessage(
-            stored: "", effective: nil, language: .ko),
-                       PokemonChatProviderSelection.noProviderMessage(.ko))
+            stored: "", effective: nil),
+                       PokemonChatProviderSelection.noProviderMessage)
 
         // 고른 종류가 차단됨 — 폴백이 보내 주더라도 왜 그 선택이 안 쓰이는지 말해야 한다.
         XCTAssertEqual(PokemonChatProviderSelection.unavailableMessage(
-            stored: "opencode", effective: .codex, language: .ko),
-                       PokemonChatBlockReason.unverifiedToolContract.message(.ko))
+            stored: "opencode", effective: .codex),
+                       PokemonChatBlockReason.unverifiedToolContract.message)
         XCTAssertEqual(PokemonChatProviderSelection.unavailableMessage(
-            stored: "custom", effective: .codex, language: .ko),
-                       PokemonChatBlockReason.arbitraryExecutable.message(.ko))
-        XCTAssertNotEqual(PokemonChatBlockReason.unverifiedToolContract.message(.ko),
-                          PokemonChatBlockReason.arbitraryExecutable.message(.ko),
+            stored: "custom", effective: .codex),
+                       PokemonChatBlockReason.arbitraryExecutable.message)
+        XCTAssertNotEqual(PokemonChatBlockReason.unverifiedToolContract.message,
+                          PokemonChatBlockReason.arbitraryExecutable.message,
                           "두 차단 사유는 사용자가 할 수 있는 일이 다르다")
     }
 
-    /// 사유별 문구가 세 언어를 다 갖췄는가. 한 언어만 비면 그 사용자는 막힌 채 영어를 본다.
-    ///
-    /// **사유마다 그 사유가 실제로 나오는 상태를 줘야 한다.** 옛 판은 전부 `effective: nil` 로
-    /// 물었는데 그 상태에서는 어느 `stored` 든 한 갈래로 수렴한다 — 차단 사유의 번역은 한 번도
-    /// 안 밟히면서 세 갈래가 나와 통과했다(답이 우연히 같아 가드가 안 깨지는 부류).
-    func testEveryUnavailableGuidanceIsWrittenInAllThreeLanguages() {
+    /// 사유별 문구가 채워졌는가. 비면 사용자는 막힌 채 빈 줄을 본다.
+    func testEveryUnavailableGuidanceIsWritten() {
         let cases: [(stored: String, effective: PokemonChatProviderKind?)] = [
             ("", nil),                  // 하나도 안 깔림
             ("opencode", .codex),       // 고른 것이 차단됨
@@ -395,23 +378,20 @@ final class PokemonChatProviderPathTests: XCTestCase {
             ("claude", .codex),         // 고른 것이 사라져 폴백됨
         ]
         for (stored, effective) in cases {
-            let messages = [AppLanguage.ko, .en, .ja].compactMap {
-                PokemonChatProviderSelection.unavailableMessage(stored: stored, effective: effective, language: $0)
-            }
-            XCTAssertEqual(Set(messages).count, 3, "'\(stored)': 세 갈래가 아니다")
+            let message = PokemonChatProviderSelection.unavailableMessage(stored: stored, effective: effective)
+            XCTAssertFalse(message?.trimmingCharacters(in: .whitespaces).isEmpty ?? true,
+                           "'\(stored)': 안내 문구가 비었다")
         }
     }
 
     /// 우선순위는 **사용자가 할 수 있는 일**이 먼저다. CLI 를 하나도 안 깐 사용자에게 차단 사유를
     /// 앞세우면 "설치하세요" 대신 "그 CLI 는 도구 격리가 안 됩니다" 를 읽는다 — 손쓸 데가 없는
     /// 안내이고 버튼은 이유 없이 비활성인 채다.
-    ///
-    /// 옛 `...ThreeLanguages` 가 `effective: nil` 로만 물어 이 역전을 잡기는커녕 고정하고 있었다.
     func testWithNoCLIInstalledTheGuidanceSaysToInstallOneEvenIfTheOldPickIsBlocked() {
         for stored in ["opencode", "custom"] {
             XCTAssertEqual(PokemonChatProviderSelection.unavailableMessage(
-                stored: stored, effective: nil, language: .ko),
-                           PokemonChatProviderSelection.noProviderMessage(.ko),
+                stored: stored, effective: nil),
+                           PokemonChatProviderSelection.noProviderMessage,
                            "'\(stored)': 못 쓰는 CLI 설명이 설치 안내를 가렸다")
         }
     }
@@ -422,13 +402,11 @@ final class PokemonChatProviderPathTests: XCTestCase {
     /// 이름을 말해야 하는 이유: 설정은 검증 CLI 마다 경로 칸이 따로다. "설정에서 경로를 넣으세요"
     /// 만으로는 두 칸 중 어디를 채울지 모른다.
     func testDeletingTheChosenCLIIsExplainedInsteadOfSilentlyRedirecting() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let message = PokemonChatProviderSelection.unavailableMessage(
-                stored: "claude", effective: .codex, language: language)
-            XCTAssertNotNil(message, "\(language.rawValue): 고른 CLI 가 사라졌는데 아무 말도 없다")
-            XCTAssertTrue(message?.contains(PokemonChatProviderKind.claude.label(language)) == true,
-                          "\(language.rawValue): 어느 칸에 경로를 넣을지 모른다 — '\(message ?? "nil")'")
-        }
+        let message = PokemonChatProviderSelection.unavailableMessage(
+            stored: "claude", effective: .codex)
+        XCTAssertNotNil(message, "고른 CLI 가 사라졌는데 아무 말도 없다")
+        XCTAssertTrue(message?.contains(PokemonChatProviderKind.claude.label) == true,
+                      "어느 칸에 경로를 넣을지 모른다 — '\(message ?? "nil")'")
     }
 
     /// 캐시 키는 `override` 로 만드는데 기본 `lookup` 은 그 인자를 **버리고** 다른 기본값 키를 다시

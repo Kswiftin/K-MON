@@ -54,34 +54,24 @@ final class BattleRankTests: XCTestCase {
 
 private func evoNode(_ id: Int, _ children: [EvoNode] = []) -> EvoNode { EvoNode(speciesID: id, children: children) }
 
-// MARK: EvoLine 다국어 이름 폴백
+// MARK: EvoLine 이름 폴백 (한국어 → 영어 → #id)
 
 final class EvoLineNameTests: XCTestCase {
-    func testPicksLanguageSpecificThenFallsBackToEnglishThenID() {
+    func testPicksKoreanThenFallsBackToEnglishThenID() {
         let line = EvoLine(
             baseID: 1, tree: evoNode(1), rarity: .common,
             names: [
-                1: ["ja-Hrkt": "ピカ", "ja": "ピカチュウ", "en": "Pika", "ko": "피카"],
-                2: ["en": "Eevee"],   // ja/ko 없음 → en 폴백
+                1: ["en": "Pika", "ko": "피카"],
+                2: ["en": "Eevee"],   // ko 없음 → en 폴백
                 3: [:],               // 비어 있음 → #id
             ])
-        // ja 는 ja-Hrkt 를 ja 보다 먼저 시도
-        XCTAssertEqual(line.localizedName(1, .ja), "ピカ")
-        XCTAssertEqual(line.localizedName(1, .ko), "피카")
-        XCTAssertEqual(line.localizedName(1, .en), "Pika")
-        // 해당 언어 없으면 en 폴백
-        XCTAssertEqual(line.localizedName(2, .ja), "Eevee")
-        XCTAssertEqual(line.localizedName(2, .ko), "Eevee")
+        XCTAssertEqual(line.localizedName(1), "피카")
+        // 한국어 없으면 en 폴백
+        XCTAssertEqual(line.localizedName(2), "Eevee")
         // en 도 없으면 #id
-        XCTAssertEqual(line.localizedName(3, .ko), "#3")
+        XCTAssertEqual(line.localizedName(3), "#3")
         // 아예 없는 id
-        XCTAssertEqual(line.localizedName(99, .en), "#99")
-    }
-
-    func testJaFallsBackFromHrktToPlainJa() {
-        let line = EvoLine(baseID: 1, tree: evoNode(1), rarity: .common,
-                           names: [1: ["ja": "ピカチュウ", "en": "Pika"]])
-        XCTAssertEqual(line.localizedName(1, .ja), "ピカチュウ")   // ja-Hrkt 없음 → ja
+        XCTAssertEqual(line.localizedName(99), "#99")
     }
 }
 
@@ -217,7 +207,6 @@ final class StatePersistenceLogicTests: XCTestCase {
         st.lastTickAt = Date(timeIntervalSince1970: 1_700_000_000)
         st.lastCandyDate = "2026-06-27"
         st.collectedFinals = ["1:3", "10:12"]
-        st.language = .ja
         st.dex = [DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .rare, caughtAt: nil)]
 
         let data = try JSONEncoder().encode(st)
@@ -229,7 +218,6 @@ final class StatePersistenceLogicTests: XCTestCase {
         XCTAssertEqual(back.lastTickAt, Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertEqual(back.lastCandyDate, "2026-06-27")
         XCTAssertEqual(back.collectedFinals, ["1:3", "10:12"])
-        XCTAssertEqual(back.language, .ja)
         XCTAssertEqual(back.dex.count, 1)
         XCTAssertEqual(back.dex[0].chainOrder, [1, 2, 3])
     }

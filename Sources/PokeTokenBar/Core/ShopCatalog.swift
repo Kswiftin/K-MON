@@ -42,10 +42,10 @@ enum ShopGood: Equatable, Sendable {
     }
 
     /// 사람이 읽는 이름. 목록과 답 문구가 같은 값을 쓰게 여기 한 곳에 둔다.
-    func displayName(_ language: AppLanguage) -> String {
+    var displayName: String {
         switch self {
-        case .item(let kind): L(language).itemName(kind)
-        case .egg: L(language).t("신비한 알", "Mystery Egg", "ふしぎなタマゴ")
+        case .item(let kind): L().itemName(kind)
+        case .egg: "신비한 알"
         // 의상·기술머신은 현지화 표가 없다. 슬러그를 그대로 보여 주는 편이 "없음" 보다 낫다 —
         // 사용자가 그 값을 그대로 쳐서 살 수 있다.
         case .outfit(let item): item.rawValue
@@ -72,7 +72,7 @@ enum ShopCatalog {
         guard !needle.isEmpty else { return nil }
         return all.first { good in
             good.slug.lowercased() == needle
-                || AppLanguage.allCases.contains { good.displayName($0).lowercased() == needle }
+                || good.displayName.lowercased() == needle
         }
     }
 }

@@ -20,38 +20,33 @@ struct PokemonAuctionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PokedoroOverlayHeader(title: store.l.t("포켓몬 경매 시장", "Pokémon Offer Market", "ポケモン交換市場"),
+            PokedoroOverlayHeader(title: "포켓몬 경매 시장",
                                   systemImage: "storefront.fill", tint: .orange,
                                   closeLabel: store.l.close, onClose: onClose)
-            Text(store.l.t("여러 포켓몬을 올리고 포켓몬 또는 별의조각 제안을 비교해 수락하세요.",
-                           "List multiple Pokémon and accept a Pokémon or Star Pieces offer.",
-                           "複数のポケモンを出品し、ポケモンまたはほしのかけらの提案を選べます。"))
+            Text("여러 포켓몬을 올리고 포켓몬 또는 별의조각 제안을 비교해 수락하세요.")
                 .font(.caption).foregroundStyle(.secondary)
             myListing
             Divider()
             market
             if let error = center.lastError { Text(error).font(.caption).foregroundStyle(.red) }
         }
-        .confirmationDialog(store.l.t("게시를 내릴까요?", "Remove this listing?", "出品を取り消しますか？"),
+        .confirmationDialog("게시를 내릴까요?",
                             isPresented: Binding(get: { pendingListingCancel != nil },
                                                  set: { if !$0 { pendingListingCancel = nil } }),
                             titleVisibility: .visible) {
-            Button(store.l.t("내리기", "Remove", "取り消す"), role: .destructive) {
+            Button("내리기", role: .destructive) {
                 if let id = pendingListingCancel { center.cancelListing(id) }
                 pendingListingCancel = nil
             }
             Button(store.l.cancel, role: .cancel) { pendingListingCancel = nil }
         } message: {
-            Text(store.l.t("받아 둔 제안도 함께 사라집니다. 다시 올리려면 처음부터 게시해야 해요.",
-                           "The offers you have received disappear with it. Listing again starts over.",
-                           "受け取った提案も一緒に消えます。もう一度出品するには最初からになります。"))
+            Text("받아 둔 제안도 함께 사라집니다. 다시 올리려면 처음부터 게시해야 해요.")
         }
     }
 
     private var myListing: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(store.l.t("내 경매 \(center.localListings.count)건", "My Listings (\(center.localListings.count))",
-                           "自分の出品 \(center.localListings.count)件")).font(.headline)
+            Text("내 경매 \(center.localListings.count)건").font(.headline)
             ForEach(center.localListings.keys.sorted(by: { $0.uuidString < $1.uuidString }), id: \.self) { id in
                 if let listing = center.localListings[id] {
                     localListingCard(id: id, listing: listing)
@@ -64,7 +59,7 @@ struct PokemonAuctionView: View {
                 showsListingPicker = true
             } label: {
                 Label(selectedListingMon.map(nameWithLevel)
-                      ?? store.l.t("게시할 포켓몬 선택", "Choose a Pokémon to list", "出品するポケモンを選ぶ"),
+                      ?? "게시할 포켓몬 선택",
                       systemImage: "chevron.down")
             }
             .buttonStyle(.borderless)
@@ -74,7 +69,7 @@ struct PokemonAuctionView: View {
                     showsListingPicker = false
                 }
             }
-            Button(store.l.t("경매 시장에 추가", "Add Listing", "市場に追加")) {
+            Button("경매 시장에 추가") {
                 center.publish(selectedListingMon)
                 selectedListingMonID = nil
             }.buttonStyle(.bordered).disabled(selectedListingMon == nil)
@@ -86,12 +81,10 @@ struct PokemonAuctionView: View {
         return VStack(alignment: .leading, spacing: 6) {
             pokemonRow(listing.mon, name: listing.displayName)
                 HStack {
-                Text(store.l.t("제안 \(listingOffers.filter { $0.status == .pending }.count)건",
-                               "\(listingOffers.filter { $0.status == .pending }.count) offer(s)",
-                               "提案 \(listingOffers.filter { $0.status == .pending }.count)件"))
+                Text("제안 \(listingOffers.filter { $0.status == .pending }.count)건")
                         .font(.caption.bold()).foregroundStyle(.orange)
                     Spacer()
-                    Button(store.l.t("게시 내리기", "Remove Listing", "出品を取り消す"), role: .destructive) {
+                    Button("게시 내리기", role: .destructive) {
                         pendingListingCancel = id
                     }.controlSize(.small)
                 }
@@ -103,9 +96,9 @@ struct PokemonAuctionView: View {
                             Text(statusText(offer.status)).font(.caption2).foregroundStyle(.secondary)
                             Spacer()
                             if offer.status == .pending {
-                                Button(store.l.t("거절", "Reject", "拒否")) { center.reject(offer.id) }
+                                Button("거절") { center.reject(offer.id) }
                                     .controlSize(.small)
-                                Button(store.l.t("수락", "Accept", "承認")) { center.accept(offer.id) }
+                                Button("수락") { center.accept(offer.id) }
                                     .buttonStyle(.borderedProminent).controlSize(.small)
                             }
                         }
@@ -116,10 +109,10 @@ struct PokemonAuctionView: View {
 
     private var market: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(store.l.t("근처 경매 목록", "Nearby Listings", "近くの出品" )).font(.headline)
+            Text("근처 경매 목록").font(.headline)
             ForEach(center.outgoingOffers) { outgoingCard($0) }
             if center.listings.isEmpty {
-                ContentUnavailableView(store.l.t("올라온 포켓몬이 없어요", "No listings nearby", "近くに出品はありません"),
+                ContentUnavailableView("올라온 포켓몬이 없어요",
                                        systemImage: "shippingbox")
             } else {
                 // 행마다 다시 세지 않는다 — 값은 목록 전체에 하나다.
@@ -133,11 +126,11 @@ struct PokemonAuctionView: View {
                                 Text("\(listing.trainerName) · Lv.\(listing.level)").font(.caption2).foregroundStyle(.secondary)
                             }
                         }
-                        Picker(store.l.t("제안 종류", "Offer type", "提案の種類"),
+                        Picker("제안 종류",
                                selection: Binding(get: { offerKinds[listing.id] ?? .pokemon },
                                                   set: { offerKinds[listing.id] = $0 })) {
-                            Text(store.l.t("포켓몬", "Pokémon", "ポケモン")).tag(OfferKind.pokemon)
-                            Text(store.l.t("별의조각", "Star Pieces", "ほしのかけら")).tag(OfferKind.stardust)
+                            Text("포켓몬").tag(OfferKind.pokemon)
+                            Text("별의조각").tag(OfferKind.stardust)
                         }
                         .pickerStyle(.segmented)
                         let kind = offerKinds[listing.id] ?? .pokemon
@@ -148,7 +141,7 @@ struct PokemonAuctionView: View {
                                 offerPickerListingID = listing.id
                             } label: {
                                 Label(offered.map(nameWithLevel)
-                                      ?? store.l.t("제안할 내 포켓몬 선택", "Choose your offer", "提案するポケモンを選ぶ"),
+                                      ?? "제안할 내 포켓몬 선택",
                                       systemImage: "chevron.down")
                             }
                             .buttonStyle(.borderless)
@@ -164,7 +157,7 @@ struct PokemonAuctionView: View {
                             }
                         } else {
                             HStack {
-                                TextField(store.l.t("제안 금액", "Offer amount", "提案額"),
+                                TextField("제안 금액",
                                           text: Binding(get: { stardustOffers[listing.id] ?? "" },
                                                         set: { stardustOffers[listing.id] = $0.filter(\.isNumber) }))
                                     .textFieldStyle(.roundedBorder)
@@ -172,7 +165,7 @@ struct PokemonAuctionView: View {
                                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             }
                         }
-                        Button(store.l.t("교환 제안", "Send Offer", "交換を提案")) {
+                        Button("교환 제안") {
                             // 센터가 거절하면 고른 값을 그대로 둔다 — 지우면 아무 일도 없었던
                             // 것처럼 보이고 왜 안 갔는지 화면에 남는 단서가 없다.
                             if kind == .pokemon, let offered {
@@ -210,7 +203,7 @@ struct PokemonAuctionView: View {
         switch value {
         case .pokemon(let pokemon): pokemonRow(pokemon.mon, name: pokemon.displayName)
         case .stardust(let amount):
-            Label("\(amount.formatted()) \(store.l.t("별의조각", "Star Pieces", "ほしのかけら"))",
+            Label("\(amount.formatted()) 별의조각",
                   systemImage: "sparkles").font(.callout.bold()).foregroundStyle(.orange)
         }
     }
@@ -237,16 +230,16 @@ struct PokemonAuctionView: View {
 
     private func displayName(_ mon: MonState) -> String {
         mon.nickname.flatMap { $0.isEmpty ? nil : $0 }
-            ?? mon.names?[mon.currentID]?[store.language.rawValue] ?? "#\(mon.currentID)"
+            ?? mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
     }
 
     private func statusText(_ status: AuctionOffer.Status) -> String {
         switch status {
-        case .pending: return store.l.t("응답 대기", "Pending", "返信待ち")
-        case .accepted: return store.l.t("교환 처리 중", "Trading", "交換中")
-        case .declined: return store.l.t("거절함", "Rejected", "拒否済み")
-        case .completed: return store.l.t("교환 완료", "Completed", "交換完了")
-        case .failed: return store.l.t("교환 실패", "Failed", "交換失敗")
+        case .pending: return "응답 대기"
+        case .accepted: return "교환 처리 중"
+        case .declined: return "거절함"
+        case .completed: return "교환 완료"
+        case .failed: return "교환 실패"
         }
     }
 
@@ -267,10 +260,10 @@ struct PokemonAuctionView: View {
                 // 개체가 다른 제안에 묶여 있다. 반대로 **커밋 중(`.accepted`)에는 버튼이 없다** —
                 // 여기서 치우면 에스크로만 돌아오고 개체는 아무에게도 가지 않는다.
                 if offer.status == .pending {
-                    Button(store.l.t("취소", "Cancel", "取消")) { center.cancelOutgoingOffer(offer.id) }
+                    Button("취소") { center.cancelOutgoingOffer(offer.id) }
                         .controlSize(.small)
                 } else if !offer.status.isLive {
-                    Button(store.l.t("확인", "Done", "確認")) { center.clearOutgoingResult(offer.id) }
+                    Button("확인") { center.clearOutgoingResult(offer.id) }
                         .controlSize(.small)
                 }
             }
@@ -284,7 +277,7 @@ struct PokemonAuctionView: View {
     /// 그대로 쓰면 방향이 뒤집힌다.
     private func outgoingStatusText(_ status: AuctionOffer.Status) -> String {
         status == .declined
-            ? store.l.t("거절됨", "Rejected", "拒否されました")
+            ? "거절됨"
             : statusText(status)
     }
 
@@ -293,8 +286,8 @@ struct PokemonAuctionView: View {
         if let monID = offer.monID {
             // 성사되면 그 개체는 이미 내 것이 아니다 — 목록에서 못 찾으면 이름만 비운다.
             return mon(withID: monID).map(nameWithLevel)
-                ?? store.l.t("내 포켓몬", "My Pokémon", "自分のポケモン")
+                ?? "내 포켓몬"
         }
-        return "\(offer.stardust.formatted()) \(store.l.t("별의조각", "Star Pieces", "ほしのかけら"))"
+        return "\(offer.stardust.formatted()) 별의조각"
     }
 }

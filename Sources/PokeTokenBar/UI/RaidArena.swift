@@ -230,25 +230,23 @@ struct RaidArenaView: View {
             switch RaidArena.prompt(isReplaying: overlay.isPlaying, isAlive: me.side.isAlive,
                                     isFinished: isFinished, hasSubmitted: !acceptsInput) {
             case .replaying:
-                Text(l.t("턴을 재생하는 중…", "Playing the turn…", "ターンを再生中…"))
+                Text("턴을 재생하는 중…")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             case .finished:
                 // 끝난 판은 아무도 안 기다린다 — 결과 줄이 바로 아래에 있다.
                 EmptyView()
             case .knockedOut:
-                Text(l.t("탈락 — 파티를 응원하고 있습니다.", "Knocked out - cheering the party on.",
-                         "戦闘不能 — パーティを応援中です。"))
+                Text("탈락 — 파티를 응원하고 있습니다.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             case .waitingForOthers:
                 HStack { ProgressView().controlSize(.small)
-                    Text(l.t("다른 참가자의 행동을 기다리는 중…", "Waiting for other players…",
-                             "ほかの参加者の行動を待っています…")) }
+                    Text("다른 참가자의 행동을 기다리는 중…") }
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             case .chooseMove:
                 // 대상 고르기가 없다 — 때릴 것은 보스 하나다. 상성 힌트는 1v1 과 같은 자리에 붙는다.
                 let struggling = me.side.mustStruggle
                 MoveGridView(moves: struggling ? [.struggle()] : me.side.moves,
-                             pp: struggling ? [] : me.side.pp, language: l.lang,
+                             pp: struggling ? [] : me.side.pp,
                              isEnabled: true,
                              effectivenessAgainst: boss.side.activeTypes) { index in
                     onMove(struggling ? -1 : index)

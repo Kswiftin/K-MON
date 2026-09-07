@@ -33,9 +33,9 @@ enum PokemonOXQuestionFactory {
             }
             let shownType = matchingTypes.randomElement() ?? .normal
             questions.append(.init(id: nextID, speciesID: fact.speciesID,
-                ko: "\(shownType.name(.ko))타입 기술은 \(fact.name("ko"))에게 효과가 굉장하다.",
-                en: "\(shownType.name(.en))-type moves are super effective against \(fact.name("en")).",
-                ja: "\(shownType.name(.ja))タイプのわざは\(fact.name("ja-Hrkt"))に効果抜群だ。",
+                ko: "\(shownType.name)타입 기술은 \(fact.name("ko"))에게 효과가 굉장하다.",
+                en: "\(shownType.name)-type moves are super effective against \(fact.name("en")).",
+                ja: "\(shownType.name)タイプのわざは\(fact.name("ja-Hrkt"))に効果抜群だ。",
                 answer: typeAnswer))
             nextID += 1
 

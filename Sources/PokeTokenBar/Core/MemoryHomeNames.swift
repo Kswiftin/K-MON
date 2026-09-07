@@ -9,12 +9,12 @@ import Foundation
 enum MemoryHomeNames {
     /// 이 스타일이 열리는 조건. 해금 판정은 `PokemonMemoryAlbum.isRoomStyleUnlocked` 가 하고
     /// 여기선 **이름만** 붙인다 — 판정과 문구를 한 함수에 두면 문구를 고치려다 조건이 바뀐다.
-    static func requirement(_ style: MemoryHomeRoomStyle, _ l: L) -> String {
+    static func requirement(_ style: MemoryHomeRoomStyle) -> String {
         switch style {
-        case .campus: l.t("기본", "Default", "基本")
-        case .lovely: l.t("집중 첫 업적", "First focus achievement", "集中の初実績")
-        case .nature: l.t("진화 첫 업적", "First evolution achievement", "進化の初実績")
-        case .retro: l.t("배틀 첫 업적", "First battle achievement", "バトルの初実績")
+        case .campus: "기본"
+        case .lovely: "집중 첫 업적"
+        case .nature: "진화 첫 업적"
+        case .retro: "배틀 첫 업적"
         }
     }
 }

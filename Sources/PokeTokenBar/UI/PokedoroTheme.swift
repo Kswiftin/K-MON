@@ -162,10 +162,10 @@ struct PokedoroTabBar: View {
     private func chrome(for tab: PopoverTab) -> (title: String, icon: String) {
         switch tab {
         case .home: (l.home, "house.fill")
-        case .pokemon: (l.t("포켓몬", "Pokémon", "ポケモン"), "circle.grid.cross.fill")
+        case .pokemon: ("포켓몬", "circle.grid.cross.fill")
         case .collection: (l.collection, "book.closed.fill")
-        case .battle: (l.t("친구", "Friends", "フレンド"), "person.2.fill")
-        case .challenge: (l.t("도전", "Challenge", "チャレンジ"), "flag.checkered")
+        case .battle: ("친구", "person.2.fill")
+        case .challenge: ("도전", "flag.checkered")
         case .shop: (l.shop, "cart")
         case .bag: (l.bag, "backpack.fill")
         }

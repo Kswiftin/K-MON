@@ -286,8 +286,7 @@ final class PokemonTradeCenter {
 
     private func displayName(for mon: MonState) -> String {
         if let nickname = mon.nickname, !nickname.isEmpty { return nickname }
-        let code = companion.language.rawValue
-        return mon.names?[mon.currentID]?[code] ?? "#\(mon.currentID)"
+        return mon.names?[mon.currentID].flatMap { PokemonNaming.name($0) } ?? "#\(mon.currentID)"
     }
 
     /// **국면을 반드시 본다.** `.confirm(true)` 는 상대가 부르는 프레임이라 두 번 올 수 있는데
@@ -438,8 +437,8 @@ final class PokemonTradeCenter {
     private func postPrivateMessageNotification() {
         guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false), AppEnv.isBundledApp else { return }
         let content = UNMutableNotificationContent()
-        content.title = companion.l.t("메시지가 왔습니다", "You have a message", "メッセージが届きました")
-        content.body = companion.l.t("눌러서 확인하세요.", "Click to view it.", "クリックして確認してください。")
+        content.title = "메시지가 왔습니다"
+        content.body = "눌러서 확인하세요."
         content.sound = .default
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: "private-message-trade-\(UUID().uuidString)",

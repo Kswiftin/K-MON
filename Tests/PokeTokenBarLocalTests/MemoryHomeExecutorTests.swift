@@ -20,7 +20,6 @@ struct MemoryHomeExecutorTests {
     private func makeStore(in directory: URL, furniture: Int = 0) -> CompanionStore {
         let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: directory.appendingPathComponent("state.json"))
-        store.setLanguage(.ko)
         // **두 마리**를 세운다. 한 마리뿐이면 룸메이트 테스트가 `guard` 로 빠져나가 본문을
         // 한 줄도 밟지 않는다 — 초록이지만 아무것도 지키지 않는 상태였고, `^0` 이 그것을 드러냈다.
         let mon = MonState(baseID: 25, pathIDs: [25], stageIndex: 0, usedAtStage: 0,
@@ -55,7 +54,7 @@ struct MemoryHomeExecutorTests {
 
         #expect(reply.succeeded, "\(reply.message)")
         #expect(store.memoryAlbum.mood() == .annoyed)
-        #expect(reply.message.contains(MemoryHomeMoodStyle.name(.annoyed, L(.ko))),
+        #expect(reply.message.contains(MemoryHomeMoodStyle.name(.annoyed)),
                 "고른 기분을 되읽어 말해야 무엇이 걸렸는지 안다")
     }
 
@@ -72,7 +71,7 @@ struct MemoryHomeExecutorTests {
 
         #expect(!reply.succeeded)
         #expect(store.memoryAlbum.roomStyle != locked)
-        #expect(reply.message.contains(MemoryHomeNames.requirement(locked, L(.ko))),
+        #expect(reply.message.contains(MemoryHomeNames.requirement(locked)),
                 "무엇을 하면 열리는지 말해야 다음에 할 일을 안다")
     }
 
@@ -154,7 +153,6 @@ struct MemoryHomeExecutorTests {
         // 알만 있는 새 세이브다 — 픽스처를 안 쓴다.
         let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: directory.appendingPathComponent("state.json"))
-        store.setLanguage(.ko)
 
         let reply = await execute(.homeNote(body: "한 줄"), on: store)
         #expect(!reply.succeeded)

@@ -27,9 +27,9 @@ struct RosterSelectionOrderingTests {
     func selectionListsAreAlphabetical() {
         let mons = [mon(25, name: "피카츄"), mon(1, name: "이상해씨"),
                     mon(4, name: "파이리"), mon(7, name: "꼬부기", nickname: "나리")]
-        let arranged = RosterOrdering.alphabetizedForSelection(mons, language: .ko)
+        let arranged = RosterOrdering.alphabetizedForSelection(mons)
 
-        #expect(arranged.map { $0.nickname ?? RosterOrdering.displayName($0, language: .ko) }
+        #expect(arranged.map { $0.nickname ?? RosterOrdering.displayName($0) }
                 == ["나리", "이상해씨", "파이리", "피카츄"])
     }
 }

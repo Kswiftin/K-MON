@@ -109,7 +109,7 @@ struct PokedoroCommandTests {
     /// 아이템 이름은 **파서가 닫힌 목록으로 대조한다.** 여기서 걸러야 화면이 이유를 말할 수 있고,
     /// 통과한 명령은 늘 실행할 수 있는 종류를 든다(`nil` 요청은 조용한 무동작이 된다).
     @Test func testCompanionCommandsParse() throws {
-        #expect(try parse(["use", "rare candy"]) == .use(item: .rareCandy))
+        #expect(try parse(["use", "이상한 사탕"]) == .use(item: .rareCandy))
         #expect(try parse(["evolve"]) == .evolve)
         #expect(try parse(["switch", "2"]) == .switchCompanion(number: 2))
         #expect(try parse(["name", "리자몽"]) == .rename(nickname: "리자몽"))

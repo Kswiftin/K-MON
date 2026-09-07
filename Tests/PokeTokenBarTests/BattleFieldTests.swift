@@ -270,7 +270,6 @@ final class BattleFieldTests: XCTestCase {
                        allPPSpent: Bool = false,
                        turnEndsAt: Date? = nil,
                        theirHP: Int? = nil,
-                       language: AppLanguage = .ko,
                        overlay: ReplayOverlay = .idle,
                        stagesOnEverySide: Bool = false) -> BattleArenaView {
         var theirs = BattleSide(mon([.fire, .flying], name: "상대이름이제법긴트레이너"))
@@ -295,7 +294,7 @@ final class BattleFieldTests: XCTestCase {
         return BattleArenaView(
             mine: mine, theirs: theirs,
             myTitle: "내 포켓몬", theirTitle: "상대 트레이너",
-            l: L(language), turn: 7,
+            l: L(), turn: 7,
             logLines: (0..<logLines).map {
                 BattleLog.Line(actor: $0.isMultiple(of: 2) ? .a : .b,
                                text: "탱커의 몸통박치기! 상대는 12 데미지를 받았다 (\($0))")
@@ -310,19 +309,15 @@ final class BattleFieldTests: XCTestCase {
 
     /// 재생 중 화면도 같은 예산이다 — 급소 문구가 뜨고 한쪽이 흔들리는 그 프레임이다.
     /// 팝 문구가 자리를 **차지하면** 재생될 때마다 아래 기술 버튼이 밀려 내려가 잘린다.
-    /// 세 언어를 다 재는 이유는 문구 길이가 언어마다 다르기 때문이다(영어 CI 에서만 넘친 전례가 있다).
     func testTheArenaKeepsItsBudgetWhileAPhraseIsPoppedOnTheField() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let playing = ReplayOverlay(isPlaying: true, hit: .b, popped: .crit(.b))
-            let height = renderedHeight(arena(language: language, overlay: playing),
-                                        proposingWidth: PopoverMetrics.contentWidth)
-            XCTAssertLessThanOrEqual(height, Self.battleViewportBudget,
-                                     "\(language.rawValue) 재생 프레임이 예산을 넘긴다")
-            XCTAssertEqual(height,
-                           renderedHeight(arena(language: language), proposingWidth: PopoverMetrics.contentWidth),
-                           accuracy: 1,
-                           "\(language.rawValue): 팝 문구가 레이아웃을 밀면 재생 중에만 버튼이 내려간다")
-        }
+        let playing = ReplayOverlay(isPlaying: true, hit: .b, popped: .crit(.b))
+        let height = renderedHeight(arena(overlay: playing),
+                                    proposingWidth: PopoverMetrics.contentWidth)
+        XCTAssertLessThanOrEqual(height, Self.battleViewportBudget, "재생 프레임이 예산을 넘긴다")
+        XCTAssertEqual(height,
+                       renderedHeight(arena(), proposingWidth: PopoverMetrics.contentWidth),
+                       accuracy: 1,
+                       "팝 문구가 레이아웃을 밀면 재생 중에만 버튼이 내려간다")
     }
 
     /// 배틀 탭 전체가 팝오버 콘텐츠 폭과 세로 예산 안에 들어간다. 넘치면 NSPopover 가 스크롤이 아니라
@@ -409,7 +404,7 @@ final class BattleFieldTests: XCTestCase {
         XCTAssertLessThanOrEqual(side.stats.hp, 0, "이 케이스를 만들지 못하면 아래 검증이 분기를 안 밟는다")
         XCTAssertEqual(HPReadout.ratio(hp: side.hp, max: side.stats.hp), 0,
                        "0 나눗셈은 NaN 폭이 되고, NaN 프레임은 레이아웃을 무너뜨린다")
-        let bar = CombatantBar(side: side, title: "손상", l: L(.ko), revealsExactHP: true)
+        let bar = CombatantBar(side: side, title: "손상", l: L(), revealsExactHP: true)
         XCTAssertGreaterThan(renderedHeight(bar, proposingWidth: BattleFieldMetrics.barWidth), 0)
     }
 
@@ -458,17 +453,14 @@ final class BattleFieldTests: XCTestCase {
                              "대조군이 안 넘치면 위 검증이 무의미해진다")
     }
 
-    /// 세 언어 어디서도 예산을 넘기지 않는다. 한국어 이름이 짧아 로컬에선 통과하고 영어로 도는 CI 에서만
-    /// 넘치는 회귀를 기술 목록에서 이미 겪었다(CI 118pt vs 로컬 78pt).
+    /// 예산을 넘기지 않는다.
     func testTheArenaFitsInEveryLanguage() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            XCTAssertLessThanOrEqual(
-                renderedHeight(arena(language: language), proposingWidth: PopoverMetrics.contentWidth),
-                Self.battleViewportBudget, "\(language.rawValue) 에서 예산을 넘긴다")
-            XCTAssertLessThanOrEqual(
-                renderedWidth(arena(language: language), proposing: 4_000), PopoverMetrics.contentWidth,
-                "\(language.rawValue) 에서 폭을 더 요구한다")
-        }
+        XCTAssertLessThanOrEqual(
+            renderedHeight(arena(), proposingWidth: PopoverMetrics.contentWidth),
+            Self.battleViewportBudget, "예산을 넘긴다")
+        XCTAssertLessThanOrEqual(
+            renderedWidth(arena(), proposing: 4_000), PopoverMetrics.contentWidth,
+            "폭을 더 요구한다")
     }
 
     /// 예산 검증은 **자리를 얼마나 차지하는가**만 본다 — 아무것도 그리지 않는 뷰도 전부 통과한다.
@@ -539,7 +531,7 @@ final class BattleFieldTests: XCTestCase {
         }
         let panel = BattleChatPanel(configuration: BattleChatConfiguration(
             messages: messages, mySenderID: me, isEnabled: true, unavailableMessage: nil,
-            l: L(.ko), onSend: { _ in }))
+            l: L(), onSend: { _ in }))
         let bounds = CGRect(x: 0, y: 0, width: PopoverMetrics.contentWidth, height: 158)
         // 문서 이미지도 앱의 밝은 팝오버 바탕에서 읽히게 만든다.
         let screenshot = ZStack { Color.white; panel.padding(8) }.preferredColorScheme(.light)

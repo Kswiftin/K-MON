@@ -326,7 +326,7 @@ struct CombatantBar: View {
                 // 로그 칩·기술 버튼과 같은 타입색 팔레트(`battleColor`)로 작게 붙인다.
                 // **지금** 타입이다 — 테라스탈한 개체는 접힌 타입 하나만 보여야 상성이 왜 달라졌는지 읽힌다.
                 ForEach(side.activeTypes, id: \.self) { type in
-                    Text(type.name(l.lang).uppercased())
+                    Text(type.name.uppercased())
                         .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy))
                         .foregroundStyle(type.battleLabelColor)
                         .padding(.horizontal, 3).padding(.vertical, 1)
@@ -449,7 +449,7 @@ struct BattleFieldView: View {
                     .animation(.easeIn(duration: 0.58), value: side.isAlive)
 
                 if !side.isAlive {
-                    Text(l.t("기절", "FAINTED", "ひんし"))
+                    Text("기절")
                         .font(.system(size: max(10, size * 0.12), weight: .black, design: .rounded))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 9)
@@ -804,7 +804,6 @@ struct MoveGridView: View {
     let moves: [MoveSpec]
     /// 비어 있으면 PP 를 표시하지 않는다 — 발버둥은 PP 개념이 없다.
     let pp: [Int]
-    let language: AppLanguage
     let isEnabled: Bool
     /// 초보자 모드일 때만 상대 타입을 넘긴다. nil 이면 상성 정보가 버튼에 전혀 나타나지 않는다.
     var effectivenessAgainst: [PokemonType]? = nil
@@ -829,7 +828,7 @@ struct MoveGridView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 3) {
                     Image(systemName: move.damageClass.symbolName).font(PokedoroTheme.glyphFont(size: 8, weight: .bold))
-                    Text(move.name(language)).font(.caption2.bold()).lineLimit(1)
+                    Text(move.name).font(.caption2.bold()).lineLimit(1)
                     // 무엇이 전원을 때리는지 버튼에서 읽혀야 한다 — 설명 툴팁만으로는 고르는
                     // 순간에 보이지 않는다(2대2 에서 지진과 단일기의 차이가 곧 판단이다).
                     if showsSpreadMark && move.hitsSpread {
@@ -868,13 +867,13 @@ struct MoveGridView: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled || !tier.isSelectable)
-        .help(move.description(language) ?? move.name(language))
+        .help(move.flavorText ?? move.name)
     }
 
     private func effectivenessHint(_ move: MoveSpec) -> (text: String, color: Color)? {
         guard move.damageClass != .status, let types = effectivenessAgainst else { return nil }
         let multiplier = TypeChart.effectiveness(move.type, against: types)
-        let l = L(language)
+        let l = L()
         if multiplier == 0 { return (l.battleNoEffect, .gray) }
         if multiplier > 1 { return (l.battleSuperEffective, .green) }
         if multiplier < 1 { return (l.battleNotVeryEffective, .orange) }
@@ -888,7 +887,7 @@ struct BeginnerBadgeView: View {
     var owner: String? = nil
 
     var body: some View {
-        let badge = l.t("🐣 저는 개초보입니다", "🐣 total newbie here", "🐣 ド初心者です")
+        let badge = "🐣 저는 개초보입니다"
         Text(owner.map { "\($0) · \(badge)" } ?? badge)
             .font(PokedoroTheme.badgeFont(size: 8, weight: .bold, design: .rounded))
             .foregroundStyle(Color.brown.opacity(0.88))
@@ -1189,7 +1188,7 @@ struct BattleArenaView: View {
                             myActor: myActor, overlay: overlay, calledMoves: calledMoves)
                 .frame(height: BattleFieldMetrics.fieldHeight)
             if !allowsActions {
-                Label(l.t("현재 경기를 관전 중입니다.", "You are spectating this match.", "この試合を観戦中です。"),
+                Label("현재 경기를 관전 중입니다.",
                       systemImage: "eye.fill")
                     .font(.caption).foregroundStyle(.secondary)
             } else if isWaitingForOpponent {
@@ -1198,9 +1197,7 @@ struct BattleArenaView: View {
                     Text(l.battleWaitingOpponent).font(.caption).foregroundStyle(.secondary)
                 }
             } else if !theirs.isAlive {
-                Text(l.t("상대가 다음 포켓몬을 선택하고 있습니다…",
-                         "Opponent is choosing their next Pokémon…",
-                         "相手が次のポケモンを選んでいます…"))
+                Text("상대가 다음 포켓몬을 선택하고 있습니다…")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text(l.battleYourTurn)
@@ -1209,20 +1206,15 @@ struct BattleArenaView: View {
             if mine.isAlive {
                 MoveGridView(moves: mine.mustStruggle ? [.struggle()] : mine.moves,
                              pp: mine.mustStruggle ? [] : mine.pp,
-                             language: l.lang,
                              isEnabled: acceptsInput,
                              effectivenessAgainst: myBeginnerMode ? theirs.activeTypes : nil,
                              onChoose: { onChoose(mine.mustStruggle ? -1 : $0) })
             } else if needsForcedReplacement {
                 VStack(alignment: .leading, spacing: 5) {
-                    Label(l.t("\(mine.snapshot.name)이(가) 쓰러졌습니다!",
-                              "\(mine.snapshot.name) fainted!",
-                              "\(mine.snapshot.name)は たおれた！"),
+                    Label("\(mine.snapshot.name)이(가) 쓰러졌습니다!",
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.headline)
-                    Text(l.t("아래에서 다음 포켓몬을 선택하세요.",
-                             "Choose your next Pokémon below.",
-                             "下から次のポケモンを選んでください。"))
+                    Text("아래에서 다음 포켓몬을 선택하세요.")
                         .font(.subheadline.weight(.semibold))
                 }
                 .foregroundStyle(.white)
@@ -1254,10 +1246,10 @@ struct BattleArenaView: View {
         HStack(spacing: 8) {
             Text(l.battleTurnLabel(turn)).font(.caption.bold()).monospacedDigit()
             if myBeginnerMode {
-                BeginnerBadgeView(l: l, owner: l.t("나", "YOU", "自分"))
+                BeginnerBadgeView(l: l, owner: "나")
             }
             if theirBeginnerMode {
-                BeginnerBadgeView(l: l, owner: l.t("상대", "FOE", "相手"))
+                BeginnerBadgeView(l: l, owner: "상대")
             }
             if let turnEndsAt, !isWaitingForOpponent {
                 TimelineView(.periodic(from: .now, by: 1)) { context in

@@ -41,7 +41,6 @@ struct ArenaExecutorTests {
     private func makeStore(in directory: URL, starPieces: Int = 0) -> CompanionStore {
         let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: directory.appendingPathComponent("state.json"))
-        store.setLanguage(.ko)
         if starPieces > 0 { store.creditStarPieces(starPieces) }
         return store
     }

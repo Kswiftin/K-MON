@@ -140,12 +140,12 @@ struct PokedoroRequestExecutor {
     /// 아이템 하나 사용. **갈래를 고르는 표는 `CompanionAction` 하나이고 여기 남는 것은 문구뿐이다** —
     /// 대화가 같은 표를 읽으므로, 여기서 갈래를 다시 쓰면 한쪽만 고쳐진다.
     private func use(_ request: PokedoroRequest, item: ItemKind) -> PokedoroReply {
-        let name = L(companion.language).itemName(item)
+        let name = L().itemName(item)
         switch CompanionAction.useItem(item, companion: companion) {
         case .candy(let result):
             return ok(request, "\(name)을 썼다 — \(Self.candyLine(result))")
         case .mint(let nature):
-            return ok(request, "\(name)을 썼다. 성격이 \(nature.name(companion.language))가 됐다.")
+            return ok(request, "\(name)을 썼다. 성격이 \(nature.name)가 됐다.")
         // 후보 카드가 떴을 뿐 아직 아무것도 안 바뀌었다 — 고르는 화면은 앱에만 있다. "바꿨다" 로
         // 답하면 사용자는 끝난 줄 알고 앱을 안 열어 본다.
         case .relearnOpened:
@@ -206,7 +206,7 @@ struct PokedoroRequestExecutor {
     /// 상점 구매. 값과 이름은 `ShopCatalog` 이 들고, 실행은 스토어의 구매 경로 그대로다 —
     /// 여기서 지갑을 직접 깎으면 화면 버튼과 다른 경로가 된다.
     private func buy(_ request: PokedoroRequest, good: ShopGood, quantity: Int) -> PokedoroReply {
-        let name = good.displayName(companion.language)
+        let name = good.displayName
         let total = good.price * quantity
         // 잔액을 먼저 본다 — 실패 사유 중 사용자가 **가장 자주 만나고 가장 고치기 쉬운** 것이라
         // 뭉뚱그린 거절보다 액수를 말해 주는 편이 낫다.
@@ -332,7 +332,7 @@ struct PokedoroRequestExecutor {
         run.useMove(index, fromSlot: slot, target: ordinal)
         companion.rogueRun = run
         return await settled(request, since: played,
-                             head: "\(chosen.name(companion.language)) 을(를) 골랐다.")
+                             head: "\(chosen.name) 을(를) 골랐다.")
     }
 
     /// 교체와 기절 보충이 **한 동작**인 이유는 화면의 같은 줄이 두 일을 하기 때문이다
@@ -408,7 +408,7 @@ struct PokedoroRequestExecutor {
         guard run.offers.indices.contains(index) else {
             return no(request, "\(number)번 보상이 없다 — 지금 \(run.offers.count) 장이 떠 있다.")
         }
-        let name = run.offers[index].name(L(companion.language))
+        let name = run.offers[index].name
         run.pick(run.offers[index])
         companion.rogueRun = run
         return await settled(request, since: .max, head: "\(name) 을(를) 골랐다.")
@@ -424,10 +424,10 @@ struct PokedoroRequestExecutor {
         await WaveRunLoader.openNextWaveIfNeeded(store: companion)
         guard let opened = companion.rogueRun else { return noRun(request) }
         guard opened.stage != .loadingWave else {
-            return no(request, "\(route.name(L(companion.language))) 로 정했지만 상대를 받지 못했다 "
+            return no(request, "\(route.name) 로 정했지만 상대를 받지 못했다 "
                       + "— PokéAPI 에 연결되면 다음 명령에서 이어 연다.")
         }
-        return ok(request, "\(route.name(L(companion.language))) 로 웨이브 \(opened.wave) 에 들어섰다. "
+        return ok(request, "\(route.name) 로 웨이브 \(opened.wave) 에 들어섰다. "
                   + Self.next(opened))
     }
 
@@ -451,7 +451,7 @@ struct PokedoroRequestExecutor {
         }
         var parts = [head]
         if let run = companion.rogueRun {
-            parts += WaveRunScreen.log(run, language: companion.language, since: played)
+            parts += WaveRunScreen.log(run, since: played)
         }
         parts += evolved.map { "\($0) 이(가) 진화했다!" }
         parts.append(Self.next(companion.rogueRun))
@@ -936,7 +936,7 @@ struct PokedoroRequestExecutor {
 
     private func homeMood(_ request: PokedoroRequest, mood: MemoryHomeMood) -> PokedoroReply {
         companion.memoryAlbum.setMood(mood)
-        let name = MemoryHomeMoodStyle.name(mood, companion.l)
+        let name = MemoryHomeMoodStyle.name(mood)
         return ok(request, "오늘의 기분을 \(name)으로 바꿨다. "
                   + HomeScreen.hints(companion.homeTerminalState))
     }
@@ -947,11 +947,11 @@ struct PokedoroRequestExecutor {
                            style: MemoryHomeRoomStyle) -> PokedoroReply {
         let album = companion.memoryAlbum
         guard album.isRoomStyleUnlocked(style) else {
-            return no(request, "\(style.name(companion.l)) 스타일은 아직 잠겨 있다 — "
-                      + "\(MemoryHomeNames.requirement(style, companion.l))이 필요하다.")
+            return no(request, "\(style.name) 스타일은 아직 잠겨 있다 — "
+                      + "\(MemoryHomeNames.requirement(style))이 필요하다.")
         }
         album.selectRoomStyle(style)
-        return ok(request, "방 스타일을 \(style.name(companion.l))으로 바꿨다.")
+        return ok(request, "방 스타일을 \(style.name)으로 바꿨다.")
     }
 
     private func homeNote(_ request: PokedoroRequest, body: String) -> PokedoroReply {

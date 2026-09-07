@@ -24,11 +24,11 @@ struct ShopView: View {
         LazyVStack(alignment: .leading, spacing: 10) {
             walletHeader(l)
             Picker("", selection: $category) {
-                Text(l.t("도구", "Items", "どうぐ")).tag(ShopCategory.general)
-                Text(l.t("진화", "Evolution", "進化")).tag(ShopCategory.evolution)
-                Text(l.t("알", "Eggs", "タマゴ")).tag(ShopCategory.eggs)
-                Text(l.t("기술머신", "TMs", "わざマシン")).tag(ShopCategory.machines)
-                Text(l.t("의상", "Outfits", "ふく")).tag(ShopCategory.outfits)
+                Text("도구").tag(ShopCategory.general)
+                Text("진화").tag(ShopCategory.evolution)
+                Text("알").tag(ShopCategory.eggs)
+                Text("기술머신").tag(ShopCategory.machines)
+                Text("의상").tag(ShopCategory.outfits)
             }
             .pickerStyle(.segmented)
 
@@ -46,7 +46,7 @@ struct ShopView: View {
                     EggCard(store: store, nav: nav, tier: tier)
                 }
             case .machines:
-                TextField(l.t("기술명 또는 TM 번호 검색", "Search move or TM number", "わざ名・TM番号を検索"),
+                TextField("기술명 또는 TM 번호 검색",
                           text: $machineQuery)
                     .textFieldStyle(.roundedBorder)
                 if filteredMachines.isEmpty {
@@ -142,10 +142,10 @@ private struct TechnicalMachineShopCard: View {
                         Text(machine.label).font(.system(size: 10, weight: .black, design: .rounded))
                             .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
                             .background(.purple, in: Capsule())
-                        Text(move?.name(store.language) ?? machine.slug.replacingOccurrences(of: "-", with: " ").capitalized)
+                        Text(move?.name ?? machine.slug.replacingOccurrences(of: "-", with: " ").capitalized)
                             .font(.callout.weight(.semibold))
                         if let move {
-                            TypeBadge(type: move.type, language: store.language)
+                            TypeBadge(type: move.type)
                             MoveCategoryIcon(damageClass: move.damageClass, l: store.l)
                         }
                         let owned = store.technicalMachineCount(machine.moveID)
@@ -153,20 +153,14 @@ private struct TechnicalMachineShopCard: View {
                             Text("×\(owned)").font(.caption2.bold()).foregroundStyle(.secondary)
                         }
                     }
-                    Text(move?.description(store.language)
-                         ?? store.l.t("포켓몬에게 기술을 가르치는 일회용 기술머신입니다.",
-                                      "A single-use machine that teaches a move.",
-                                      "ポケモンにわざを教える使い切りのマシンです。"))
+                    Text(move?.flavorText
+                         ?? "포켓몬에게 기술을 가르치는 일회용 기술머신입니다.")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     if let move {
                         HStack(spacing: 10) {
-                            Label(store.l.t("위력 \(move.power > 0 ? String(move.power) : "—")",
-                                            "Power \(move.power > 0 ? String(move.power) : "—")",
-                                            "威力 \(move.power > 0 ? String(move.power) : "—")"),
+                            Label("위력 \(move.power > 0 ? String(move.power) : "—")",
                                   systemImage: "burst.fill")
-                            Label(store.l.t("명중률 \(move.accuracy.map { "\($0)%" } ?? "—")",
-                                            "Accuracy \(move.accuracy.map { "\($0)%" } ?? "—")",
-                                            "命中 \(move.accuracy.map { "\($0)%" } ?? "—")"),
+                            Label("명중률 \(move.accuracy.map { "\($0)%" } ?? "—")",
                                   systemImage: "scope")
                         }
                         .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
@@ -177,7 +171,7 @@ private struct TechnicalMachineShopCard: View {
             }
             if confirming {
                 HStack {
-                    Text(store.l.buyConfirm(move?.name(store.language) ?? machine.slug,
+                    Text(store.l.buyConfirm(move?.name ?? machine.slug,
                                             quantity: quantity,
                                             total: GameNumberFormatter.compact(machine.price * quantity)))
                         .font(.caption2).foregroundStyle(.secondary)
@@ -211,7 +205,7 @@ private struct TechnicalMachineShopCard: View {
         }
         .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") {
             move = await PokeAPIClient.shared.moveDetail(id: machine.moveID)
-            if let move { onResolveName(move.name(store.language)) }
+            if let move { onResolveName(move.name) }
             if let speciesID = store.currentSpeciesID {
                 canActiveLearn = await PokeAPIClient.shared.canLearnMachine(speciesID: speciesID,
                                                                             moveID: machine.moveID)
@@ -231,18 +225,18 @@ private struct TechnicalMachineShopCard: View {
 
     @ViewBuilder private var compatibilityLabel: some View {
         if store.currentSpeciesID == nil {
-            Label(store.l.t("홈 포켓몬이 없습니다.", "No home Pokémon.", "ホームポケモンがいません。"),
+            Label("홈 포켓몬이 없습니다.",
                   systemImage: "minus.circle")
                 .font(.caption2).foregroundStyle(.secondary)
         } else if let canActiveLearn {
             Label(canActiveLearn
-                  ? store.l.t("현재 홈 포켓몬이 배울 수 있음", "Home Pokémon can learn it", "ホームのポケモンが覚えられます")
-                  : store.l.t("현재 홈 포켓몬은 배울 수 없음", "Home Pokémon cannot learn it", "ホームのポケモンは覚えられません"),
+                  ? "현재 홈 포켓몬이 배울 수 있음"
+                  : "현재 홈 포켓몬은 배울 수 없음",
                   systemImage: canActiveLearn ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(canActiveLearn ? .green : .secondary)
         } else {
-            Label(store.l.t("습득 가능 여부 확인 중", "Checking compatibility", "覚えられるか確認中"),
+            Label("습득 가능 여부 확인 중",
                   systemImage: "ellipsis.circle")
                 .font(.caption2).foregroundStyle(.secondary)
         }

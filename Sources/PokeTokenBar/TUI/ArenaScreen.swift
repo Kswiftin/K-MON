@@ -245,8 +245,7 @@ enum ArenaScreen {
     /// 언어를 받는 이유는 **발버둥 하나** 때문이다. 나머지 기술 이름은 창구가 조립할 때 이미
     /// 접었지만(`TerminalRoomControl.moves`), 발버둥은 목록이 비었을 때 화면이 만든다 —
     /// 여기서 `.ko` 로 못 박으면 일본어 사용자에게 한국어가 나간다(그 검사가 `LanguageSplitGuard`).
-    static func duelLines(_ state: RoomTerminalState, _ duel: DuelTerminalState,
-                          language: AppLanguage, width: Int) -> [String] {
+    static func duelLines(_ state: RoomTerminalState, _ duel: DuelTerminalState, width: Int) -> [String] {
         let turn = duel.turn > 0 ? "\(duel.turn) 턴" : ""
         var lines = [TUIRender.row(left: RoomScreen.title(state),
                                    right: [duel.caption, turn].compactMap { $0 }
@@ -265,7 +264,7 @@ enum ArenaScreen {
             return lines
         }
         let offered = duel.mustStruggle
-            ? [Move(number: 1, label: MoveSpec.struggle().name(language), pp: 1, maxPP: 1)]
+            ? [Move(number: 1, label: MoveSpec.struggle().name, pp: 1, maxPP: 1)]
             : duel.moves
         guard duel.amFighting, !duel.hasSubmitted, !mustReplace(duel),
               !offered.isEmpty else { return lines }

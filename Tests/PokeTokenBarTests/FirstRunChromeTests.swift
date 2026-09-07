@@ -46,22 +46,17 @@ final class FirstRunChromeTests: XCTestCase {
     // MARK: 첫 화면이 무슨 앱인지 말한다
 
     /// 처음 열면 이름 입력칸부터 나왔다. 이 앱이 집중 타이머인지 포켓몬 게임인지, 왜 이름을
-    /// 묻는지 어디에도 없었다 — 세 언어 모두에서 한 줄로 말한다.
+    /// 묻는지 어디에도 없었다.
     func testTheStarterScreenSaysWhatTheAppIs() {
-        for language in AppLanguage.allCases {
-            let l = L(language)
-            XCTAssertFalse(l.onboardingHeadline.isEmpty, "\(language)")
-            XCTAssertFalse(l.onboardingSubhead.isEmpty, "\(language)")
-        }
+        let l = L()
+        XCTAssertFalse(l.onboardingHeadline.isEmpty)
+        XCTAssertFalse(l.onboardingSubhead.isEmpty)
     }
 
     // MARK: 보상 줄의 단위
 
-    /// 보상 미리보기가 `EXP` 를 하드코딩해 한국어 · 일본어 사용자도 영어를 봤다. 형제 문구
-    /// (`focusHint` · `adventureText`)는 전부 세 언어를 타는데 이 줄만 빠져 있었다.
+    /// 보상 미리보기가 `EXP` 를 하드코딩해 한국어 사용자도 영어를 봤다.
     func testTheRewardPreviewSpeaksTheChosenLanguage() {
-        XCTAssertEqual(L(.ko).experienceUnit, "경험치")
-        XCTAssertEqual(L(.ja).experienceUnit, "経験値")
-        XCTAssertEqual(L(.en).experienceUnit, "EXP")
+        XCTAssertEqual(L().experienceUnit, "경험치")
     }
 }

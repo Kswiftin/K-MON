@@ -46,7 +46,7 @@ enum MenuBarStatus: Equatable {
         switch self {
         case .battleChallengeSent(let peer): return l.menuBarBattleChallengeSent(peer)
         case .battleChallengeReceived(let peer): return l.menuBarBattleChallengeReceived(peer)
-        case .privateMessage: return l.t("메시지가 왔습니다", "You have a message", "メッセージが届きました")
+        case .privateMessage: return "메시지가 왔습니다"
         case .battling(let peer, let isMyTurn): return l.menuBarBattling(peer, isMyTurn: isMyTurn)
         case .focus(let prefix, let clock): return "\(prefix) \(clock)"
         case .adventuring(let remaining): return "\(l.menuBarAdventuring) \(remaining)"

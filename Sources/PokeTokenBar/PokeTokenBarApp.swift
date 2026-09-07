@@ -78,10 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             // 메뉴바 앱을 쓰는 동안 사용자는 다른 앱에 있다 — 알림이 없으면 집중이 끝난 줄도 모른다.
             let rest = FocusChainRules.restMinutes(completedToday: self.companion.focusSessionsToday)
             self.notifyFocusChain(
-                self.companion.l.t("집중 세션 완료!", "Focus session complete!", "集中セッション完了！"),
-                self.companion.l.t("\(rest)분 휴식이 시작됐어요.",
-                                   "A \(rest)-minute break has started.",
-                                   "\(rest)分の休憩が始まりました。"))
+                "집중 세션 완료!",
+                "\(rest)분 휴식이 시작됐어요.")
         }
         // 체인 배선 둘. **순서가 계약이다** — 위 훅이 원장에 적은 뒤에 아래가 그 집계를 읽는다
         // (`FocusTimer.tick`). 뒤집히면 긴 휴식이 한 세션씩 밀린다.
@@ -429,15 +427,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         let l = companion.l
         switch decision {
         case .promptNextSession:
-            notifyFocusChain(l.t("휴식이 끝났어요", "Break's over", "休憩が終わりました"),
-                             l.t("눌러서 다음 집중을 시작하세요.",
-                                 "Tap to start your next focus session.",
-                                 "タップして次の集中を始めましょう。"))
+            notifyFocusChain("휴식이 끝났어요",
+                             "눌러서 다음 집중을 시작하세요.")
         case .goalReached:
-            notifyFocusChain(l.t("오늘 목표 달성!", "Daily goal reached!", "今日の目標達成！"),
-                             l.t("오늘 \(companion.focusSessionsToday)세션을 마쳤어요. 더 할지는 직접 골라 주세요.",
-                                 "\(companion.focusSessionsToday) sessions done today. Keep going if you want to.",
-                                 "今日は\(companion.focusSessionsToday)セッション。続けるかはご自由に。"))
+            notifyFocusChain("오늘 목표 달성!",
+                             "오늘 \(companion.focusSessionsToday)세션을 마쳤어요. 더 할지는 직접 골라 주세요.")
         case .halted(let refusal):
             // 조용히 끝나도 이유는 남긴다 — 없으면 "왜 안 불렀지" 를 답할 방법이 없다.
             AppLog.write("focus chain halted: \(refusal)")
@@ -528,10 +522,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         // 그리면 사용자는 자기 차례를 놓친다.
         guard let snapshot = PokedoroViewChannel.preferred([
             PokedoroViewChannel.battleSnapshot(battleCenter.terminalState,
-                                               language: companion.language,
                                                width: width, now: now),
             PokedoroViewChannel.roomSnapshot(battleCenter.multiplayer.terminalState,
-                                             language: companion.language,
                                              width: width, now: now),
             PokedoroViewChannel.tradeSnapshot(battleCenter.trading.terminalState,
                                               width: width, now: now),

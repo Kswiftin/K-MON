@@ -117,7 +117,6 @@ final class IdleEconomyTests: XCTestCase {
         old.inventory = [ItemKind.rareCandy.rawValue: 7]
         old.dex = [DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: nil)]
         old.collectedFinals = ["1:3"]
-        old.language = .ja
         let migrated = SaveTransfer.migratedToIdleEconomy(old)
         XCTAssertEqual(migrated.economyVersion, IdleEconomy.currentVersion)
         XCTAssertEqual(migrated.usedSinceInstall, 0)
@@ -127,7 +126,6 @@ final class IdleEconomyTests: XCTestCase {
         XCTAssertTrue(migrated.inventory.isEmpty, "인벤토리도 새로 시작(전면 리셋 결정)")
         XCTAssertEqual(migrated.dex.count, 1, "도감은 계승")
         XCTAssertEqual(migrated.collectedFinals, ["1:3"], "수집(확률 가중)도 계승")
-        XCTAssertEqual(migrated.language, .ja, "언어도 계승")
     }
 
     func testCurrentVersionSavePassesThroughUntouched() {

@@ -29,13 +29,11 @@ final class DexGoalTests: XCTestCase {
         XCTAssertTrue(DexGoals.catalog.allSatisfy { !$0.reward.isEmpty })
     }
 
-    /// 목표 이름은 세 언어 모두에서 채워져야 한다 — 한 언어만 비면 그 언어 사용자에겐 빈 줄이 보인다.
+    /// 목표 이름은 채워져야 한다 — 비면 사용자에겐 빈 줄이 보인다.
     /// (`missionName` 과 같은 계약: 이름 없는 목표는 빈 문자열을 돌려 여기서 실패한다.)
-    func testEveryGoalIsNamedInAllThreeLanguages() {
+    func testEveryGoalIsNamed() {
         for goal in DexGoals.catalog {
-            for lang in [AppLanguage.ko, .en, .ja] {
-                XCTAssertFalse(L(lang).dexGoalName(goal).isEmpty, "\(goal.id) / \(lang)")
-            }
+            XCTAssertFalse(L().dexGoalName(goal).isEmpty, "\(goal.id)")
         }
     }
 
@@ -300,8 +298,8 @@ final class DexGoalGrantTests: XCTestCase {
         XCTAssertEqual(raising, 3, "테스트 전제: 아직 졸업 안 한 라인이 총계에 섞여 있어야 한다")
         XCTAssertEqual(all.count - raising, DexGoals.progress(.species, in: store.state.dex))
         // 언어를 고정한다 — 신규 설치 기본값은 `.systemDefault` 라 `store.l` 은 CI 로케일에 딸려간다.
-        XCTAssertEqual(L(.ko).dexSpeciesTotal(all.count, raising: raising), "12종 (3 육성중)")
-        XCTAssertEqual(L(.ko).dexSpeciesTotal(9, raising: 0), "9종",
+        XCTAssertEqual(L().dexSpeciesTotal(all.count, raising: raising), "12종 (3 육성중)")
+        XCTAssertEqual(L().dexSpeciesTotal(9, raising: 0), "9종",
                        "육성중이 없으면 기존 문구 그대로여야 한다")
     }
 
