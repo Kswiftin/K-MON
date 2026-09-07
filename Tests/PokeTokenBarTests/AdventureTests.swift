@@ -158,7 +158,7 @@ final class AdventureTests: XCTestCase {
         let json = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
         XCTAssertEqual(Set(json?.keys.sorted() ?? []),
                        ["id", "trainerName", "team", "snapshot", "hp", "pp",
-                        "status", "statusCounter", "confusionTurns", "stages"])
+                        "status", "statusCounter", "confusionTurns", "stages", "hasLeft"])
         XCTAssertEqual(json?["hp"] as? Int, 42)
         XCTAssertEqual(json?["pp"] as? [Int], [7])
         XCTAssertEqual(json?["status"] as? String, "toxic")
