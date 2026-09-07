@@ -505,8 +505,8 @@ final class RaidRoomTests: XCTestCase {
         let me = runner("나", id: center.myID)
         var mate = runner("동료")
         let boss = todaysBoss(tier: .three)
-        // 쓰러진 쪽이 뽑히는 시드를 고른다 — 이 시드가 곧 결함의 트리거다.
-        let seed = seedDrawing(mate.id, from: [me.id, mate.id], finishedRound: 1)
+        // 생존자 한 명에게 포획 성공이 나는 시드를 골라, 쓰러진 동료가 결과 순서에 끼지 않음을 본다.
+        let seed = seedDrawing(me.id, from: [me.id], finishedRound: 1)
         XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
 
         mate.side.hp = 0   // 방을 떠났거나 쓰러졌다 — 편성에는 남는다
