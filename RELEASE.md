@@ -32,7 +32,8 @@
    `PTB_REQUIRE_STABLE_SIGN=1` 이라 ad-hoc 폴백이 금지된다)
 5. Sparkle 프레임워크 임베드·서명·OAuth Client ID 확인
 6. `Pokedoro.zip` + `Pokedoro.zip.sha256` + 서명된 `appcast.xml` 생성
-7. 모든 검사를 통과한 **뒤에** GitHub Release 공개 (`--generate-notes`)
+7. 모든 검사를 통과한 **뒤에** GitHub Release 공개 — `RELEASE_NOTES.ko.md` 가 있으면 그 내용을,
+   없으면 `--generate-notes`(PR 제목 목록, 영어)로 대체한다
 
 > 태그를 push 한 뒤 워크플로가 끝나기 전에 다른 PR 을 `main` 에 머지하면 2단계에서 실패한다.
 > 런이 끝날 때까지 머지를 멈춘다.
@@ -56,10 +57,17 @@
 - [ ] **`scripts/build-app.sh` 의 `DEFAULT_VERSION`** — 손으로 빌드한 앱만 옛 버전으로 뜨지 않게
       새 버전으로 올린다. 배포 산출물은 태그에서 주입받으므로 이 값을 쓰지 않는다. 안 올리면
       `release.sh` 가 태그를 만들기 전에 멈춘다(v2.24.0 이 이 값을 놓친 채 나가서 게이트를 넣었다).
+- [ ] **`RELEASE_NOTES.ko.md`** — 이번 릴리스의 변경 내역을 한글로 새로 쓴다. 앱 내 업데이트
+      팝업(`ReleaseNotesPresenter`)이 이 파일 내용을 그대로 보여 주므로, 지난 릴리스 내용을
+      그대로 남겨 두면 사용자가 옛 변경 내역을 다시 본다.
 
 ## 릴리스 노트
 
-CI 가 `gh release create --generate-notes` 로 PR 목록에서 자동 생성한다. 요약을 손보려면 공개 후:
+CI 가 태그 커밋의 `RELEASE_NOTES.ko.md` 를 GitHub Release 본문으로 쓴다 — 앱 내 업데이트 팝업이
+이 본문을 그대로 보여 주므로 한글로 쓴다. 파일이 없거나 비어 있으면 `--generate-notes`(PR 제목
+목록, 영어)로 대체되므로 빠뜨려도 배포 자체는 막히지 않지만, 그러면 팝업이 영어로 나간다.
+
+공개 후 손보려면:
 
 ```bash
 gh release edit v2.9.0 --notes-file /tmp/notes.md
