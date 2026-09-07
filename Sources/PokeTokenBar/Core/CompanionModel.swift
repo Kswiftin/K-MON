@@ -1089,16 +1089,30 @@ struct CompanionState: Codable, Sendable {
     var adventure: AdventureRun?
     var adventureHistory: [AdventureRecord] = []
     var battleHistory: [BattleRecord] = []
-    /// 레이드 보상을 마지막으로 받은 오전/오후 키. **구간당 한 번 지급의 유일한 멱등 가드**라
-    /// 무결성 서명 대상이다(`SaveTransfer.canonicalString` 의 `rd` 세그먼트) — 지우면 같은 날
-    /// 몇 번이든 다시 받는다. 정오 타이머 없이 키 비교로 넘긴다.
+    /// 레이드 보상을 마지막으로 받은 오전/오후 키 — **1★ 전용**. **구간당 한 번 지급의 유일한
+    /// 멱등 가드**라 무결성 서명 대상이다(`SaveTransfer.canonicalString` 의 `rd` 세그먼트) —
+    /// 지우면 같은 날 몇 번이든 다시 받는다. 정오 타이머 없이 키 비교로 넘긴다.
+    ///
+    /// **티어마다 원장이 갈린다(#270).** 티어별로 다른 보스·다른 포획 확률을 주게 되면서, 하나로
+    /// 묶으면 1★ 로 받은 뒤 3★·5★ 를 잡아도 지급·포획이 없어진다 — 티어를 나눈 의미가 사라진다.
+    /// 이 필드는 예전부터 있던 이름을 그대로 1★ 전용으로 물려받는다(옛 세이브의 값도 그대로
+    /// 유효하다 — 갱신 직후 1★ 는 "이미 받음"이지만 3★·5★ 는 새로 열린다).
     var raidRewardDate = ""
-    /// 레이드 보스를 마지막으로 잡은 오전/오후 키. 구간당 한 마리의 멱등 가드이고 같은 이유로 서명
-    /// 대상이다(`rc` 세그먼트).
+    /// 3★ 전용 지급 원장 — `raidRewardDate` 와 같은 규칙, 다른 티어.
+    var raidRewardDateTierThree = ""
+    /// 5★ 전용 지급 원장 — `raidRewardDate` 와 같은 규칙, 다른 티어.
+    var raidRewardDateTierFive = ""
+    /// 레이드 보스를 마지막으로 잡은 오전/오후 키 — **1★ 전용**. 구간당 한 마리의 멱등 가드이고
+    /// 같은 이유로 서명 대상이다(`rc` 세그먼트).
     ///
     /// **지급 원장과 따로 두는 것이 요점이다.** 하나로 합치면 혼자 돈 1★ 의 소액 지급이 그날의
-    /// 포획 기회까지 태워, 사용자는 아침에 잃은 것을 점심에야 알게 된다.
+    /// 포획 기회까지 태워, 사용자는 아침에 잃은 것을 점심에야 알게 된다. 티어별로 갈리는 이유는
+    /// 위 지급 원장과 같다.
     var raidCatchDate = ""
+    /// 3★ 전용 포획 원장 — `raidCatchDate` 와 같은 규칙, 다른 티어.
+    var raidCatchDateTierThree = ""
+    /// 5★ 전용 포획 원장 — `raidCatchDate` 와 같은 규칙, 다른 티어.
+    var raidCatchDateTierFive = ""
     var battleRank = BattleRank()
     /// 진행 중인 랭크전의 에스크로 — 개시 때 지갑에서 빠져나간 판돈과 상대 랭크를 적어 둔다.
     /// 정산이 배틀 **끝**에만 있던 때는 지고 있을 때 앱을 종료하면 판돈을 안 냈다(상대는 승리
@@ -1180,7 +1194,11 @@ struct CompanionState: Codable, Sendable {
         adventureHistory   = c.lenient([Lossy<AdventureRecord>].self, forKey: .adventureHistory, default: []).compactMap(\.value)
         battleHistory      = c.lenient([Lossy<BattleRecord>].self, forKey: .battleHistory, default: []).compactMap(\.value)
         raidRewardDate     = c.lenient(String.self, forKey: .raidRewardDate, default: "")
+        raidRewardDateTierThree = c.lenient(String.self, forKey: .raidRewardDateTierThree, default: "")
+        raidRewardDateTierFive  = c.lenient(String.self, forKey: .raidRewardDateTierFive, default: "")
         raidCatchDate      = c.lenient(String.self, forKey: .raidCatchDate, default: "")
+        raidCatchDateTierThree  = c.lenient(String.self, forKey: .raidCatchDateTierThree, default: "")
+        raidCatchDateTierFive   = c.lenient(String.self, forKey: .raidCatchDateTierFive, default: "")
         battleRank         = c.lenient(BattleRank.self, forKey: .battleRank, default: BattleRank())
         pendingRanked      = c.lenientOptional(PendingRankedBattle.self, forKey: .pendingRanked)
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())

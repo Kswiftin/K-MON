@@ -2658,10 +2658,33 @@ final class CompanionStore {
         return true
     }
 
-    /// 현재 오전/오후 레이드 보상을 이미 받았나. 정오 타이머 대신 구간 키를 비교한다.
-    var raidRewardClaimedToday: Bool { state.raidRewardDate == RaidBoss.periodKey(clock()) }
+    /// 티어별 지급 원장의 자리 — 1★ 은 옛 필드를 그대로 물려받는다(#270, 세이브 호환).
+    private static func raidRewardDateKeyPath(_ tier: RaidTier) -> WritableKeyPath<CompanionState, String> {
+        switch tier {
+        case .one: \.raidRewardDate
+        case .three: \.raidRewardDateTierThree
+        case .five: \.raidRewardDateTierFive
+        }
+    }
 
-    /// 레이드 정산 지급 — **오전·오후 한 번씩만** 준다(시도 무제한, 구간별 지급 1회).
+    /// 티어별 포획 원장의 자리 — `raidRewardDateKeyPath` 와 같은 이유·같은 짝이다.
+    private static func raidCatchDateKeyPath(_ tier: RaidTier) -> WritableKeyPath<CompanionState, String> {
+        switch tier {
+        case .one: \.raidCatchDate
+        case .three: \.raidCatchDateTierThree
+        case .five: \.raidCatchDateTierFive
+        }
+    }
+
+    /// 현재 오전/오후, 1★ 레이드 보상을 이미 받았나. 정오 타이머 대신 구간 키를 비교한다.
+    var raidRewardClaimedToday: Bool { raidRewardClaimedToday(tier: .one) }
+
+    /// 티어별 판정(#270) — 3★·5★ 는 각자 원장을 쓰므로 1★ 로 받았어도 따로 열려 있다.
+    func raidRewardClaimedToday(tier: RaidTier) -> Bool {
+        state[keyPath: Self.raidRewardDateKeyPath(tier)] == RaidBoss.periodKey(clock())
+    }
+
+    /// 레이드 정산 지급 — **티어마다, 오전·오후 한 번씩만** 준다(시도 무제한, 구간·티어별 지급 1회).
     ///
     /// 실제 지급액을 반환한다. 이미 받았으면 0 이고, 호출부는 그 값을 그대로 화면에 쓴다 —
     /// 지갑을 바꾸는 값은 창 안에 보이는 표면을 하나 가져야 한다(defect-log: 한 지갑에 지급하는
@@ -2669,25 +2692,30 @@ final class CompanionStore {
     ///
     /// **0 이하는 원장을 소모하지 않는다.** 소모하면 진 판이 그날의 지급 기회를 태운다.
     @discardableResult
-    func creditRaidReward(_ amount: Int) -> Int {
-        guard amount > 0, !raidRewardClaimedToday else { return 0 }
-        state.raidRewardDate = RaidBoss.periodKey(clock())
+    func creditRaidReward(_ amount: Int, tier: RaidTier = .one) -> Int {
+        guard amount > 0, !raidRewardClaimedToday(tier: tier) else { return 0 }
+        state[keyPath: Self.raidRewardDateKeyPath(tier)] = RaidBoss.periodKey(clock())
         state.starPieces += amount
         save()
         return amount
     }
 
-    /// 현재 오전/오후 레이드에서 이미 보스를 잡았나.
-    var raidCatchClaimedToday: Bool { state.raidCatchDate == RaidBoss.periodKey(clock()) }
+    /// 현재 오전/오후, 1★ 레이드에서 이미 보스를 잡았나.
+    var raidCatchClaimedToday: Bool { raidCatchClaimedToday(tier: .one) }
 
-    /// 오늘의 포획 기회를 쓴다. 남아 있었으면 true 를 돌려주고 원장을 찍는다.
+    /// 티어별 판정(#270) — `raidRewardClaimedToday(tier:)` 와 같은 짝이다.
+    func raidCatchClaimedToday(tier: RaidTier) -> Bool {
+        state[keyPath: Self.raidCatchDateKeyPath(tier)] == RaidBoss.periodKey(clock())
+    }
+
+    /// 이 티어의 오늘 포획 기회를 쓴다. 남아 있었으면 true 를 돌려주고 원장을 찍는다.
     ///
-    /// **지급(`creditRaidReward`)과 원장을 나눠 둔다.** 같은 "하루 한 번" 이지만 태우는 사건이
+    /// **지급(`creditRaidReward`)과 원장을 나눠 둔다.** 같은 "구간당 한 번" 이지만 태우는 사건이
     /// 다르다 — 혼자 돈 1★ 의 소액 지급이 그날의 포획까지 없애면, 잃은 줄도 모르고 잃는다.
     @discardableResult
-    func claimRaidCatch() -> Bool {
-        guard !raidCatchClaimedToday else { return false }
-        state.raidCatchDate = RaidBoss.periodKey(clock())
+    func claimRaidCatch(tier: RaidTier = .one) -> Bool {
+        guard !raidCatchClaimedToday(tier: tier) else { return false }
+        state[keyPath: Self.raidCatchDateKeyPath(tier)] = RaidBoss.periodKey(clock())
         save()
         return true
     }
@@ -2698,24 +2726,24 @@ final class CompanionStore {
     /// 잡았다"(`claimedToday`)는 사용자가 할 다음 일이 다르고, 성공도 상자와 빈 동행 자리가 다른
     /// 문장이다(`RaidCatchResult`).
     ///
-    /// **잡은 자리에서 시작하는 경로로 세운다.** 추첨 풀(`RaidBoss.speciesPool`)은 32종 전부 최종
-    /// 진화체라 그 경로는 한 칸이고, 체인 뿌리부터 세우면 잡은 그 모습이 아니라 1단계가 들어간다.
+    /// **잡은 자리에서 시작하는 경로로 세운다.** 세 티어 풀(`RaidBoss.speciesPool(for:)`)이 전부
+    /// 최종 진화체라 그 경로는 한 칸이고, 체인 뿌리부터 세우면 잡은 그 모습이 아니라 1단계가 들어간다.
     /// 뿌리에서 시작하지 않는 경로를 다음 라인 로드가 되돌리지 않는 것은 `longestValidPath` 의
     /// 계약이다 — 그게 없던 동안 잡은 가디안이 동행 자리에 앉는 순간 랄토스가 됐다.
     ///
     /// 개체 롤은 부화와 **같은 규칙**이다(성격 25종·종별 성비·이로치 분모). 이로치 확정권은
     /// 알을 위해 산 물건이라 여기서 소모하지 않는다.
     @discardableResult
-    func catchRaidBoss(speciesID: Int) async -> RaidCatchResult {
+    func catchRaidBoss(speciesID: Int, tier: RaidTier = .one) async -> RaidCatchResult {
         // 원장을 **먼저 본다** — 여기서 걸린 판은 네트워크를 건드리지도 않았으므로 "불러오지 못했다"
         // 가 아니라 "오늘은 이미 잡았다" 다. 두 사유를 한 값으로 접으면 화면이 반드시 하나를 틀린다.
-        guard !raidCatchClaimedToday else { return .claimedToday }
+        guard !raidCatchClaimedToday(tier: tier) else { return .claimedToday }
         // 그릴 수 없는 번호는 잡지 않는다 — 박스에 빈 칸이 영구히 남는다(교환 경계와 같은 계약).
         guard PokemonAssets.hasAnimatedSprite(speciesID: speciesID),
               let line = try? await provider.line(baseSpeciesID: speciesID) else { return .unavailable }
         // 원장은 **개체를 만들기 직전에** 찍는다. 위 가드보다 먼저 찍으면 라인 조회 실패가 그날의
         // 기회를 태우고, 뒤에 찍으면 네트워크 창 동안 들어온 두 번째 판이 한 마리를 더 넣는다.
-        guard claimRaidCatch() else { return .claimedToday }
+        guard claimRaidCatch(tier: tier) else { return .claimedToday }
         let isShiny = Self.rollsShiny(roll: rng.next(), charmOwned: ownsShinyCharm)
         let nature = PokemonNature.allCases[Int(rng.next() % UInt64(PokemonNature.allCases.count))]
         let gender = PokemonGender.from(genderRate: line.genderRate, roll: rng.next())

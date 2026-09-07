@@ -417,9 +417,9 @@ final class MultiplayerRoomCenter {
         createRoom(mode: .coopBoss, activity: .raid)
     }
 
-    /// 오늘의 보스. 방을 열기 전 화면이 미리 그린다.
-    nonisolated var todaysRaidSpeciesID: Int {
-        RaidBoss.speciesID(at: Date())
+    /// 오늘의 보스 — 티어마다 다른 종이다(#270). 방을 열기 전 화면이 티어별로 미리 그린다.
+    nonisolated func todaysRaidSpeciesID(tier: RaidTier) -> Int {
+        RaidBoss.speciesID(at: Date(), tier: tier)
     }
 
     /// 호스트가 판을 연다 — 러너를 파티 레벨로 눕히고 오늘의 보스를 세운다.
@@ -488,7 +488,7 @@ final class MultiplayerRoomCenter {
     }
 
     private func raidBossSnapshot(tier: RaidTier, dayKey: String) async -> BattleSnapshot? {
-        let speciesID = RaidBoss.speciesID(dayKey: dayKey)
+        let speciesID = RaidBoss.speciesID(dayKey: dayKey, tier: tier)
         guard let profile = try? await PokeAPIClient.shared.battleProfile(speciesID: speciesID) else { return nil }
         let moves = await PokeAPIClient.shared.moveSet(speciesID: speciesID, level: tier.bossLevel,
                                                        types: profile.types)
@@ -562,17 +562,28 @@ final class MultiplayerRoomCenter {
             survivingRunners: runners.filter(\.isAlive).count,
             runnerCount: runners.count)
         raidSettlement = settlement
-        raidPayout = companion.creditRaidReward(settlement.total)
-        if (raidPayout ?? 0) > 0 { drawRaidCatcher(runners: runners) }
+        raidPayout = companion.creditRaidReward(settlement.total, tier: tier)
+        // **포획 추첨은 이 티어·구간의 첫 승리에서만 돈다.** 설계 문서(lan-raid-design.md)에 명시된
+        // 규칙이다 — "추가 판에도 참가하고 채팅할 수 있지만 같은 구간의 보상·포획은 없다." 별의조각
+        // 지급 성공(`raidPayout > 0`)이 곧 "이 티어의 첫 승리인가"의 대리 판정이라 여기 묶는다.
+        // 한때 지급 여부와 무관하게 항상 돌리도록 고쳤던 적이 있는데, 그건 이 규칙을 어기는 잘못된
+        // 수정이었다 — 화면에 결과가 안 보이는 문제는 게이트가 아니라 `finishedFooter`(화면)가
+        // 안내 없이 비어 버리는 쪽에서 고쳐야 한다.
+        //
+        // **티어마다 원장이 갈린다(#270).** 1★로 이미 받았어도 3★·5★는 각자 첫 승리를 기다린다 —
+        // 종도 다르고 포획 확률도 다른, 사실상 독립된 세 레이드이기 때문이다.
+        if (raidPayout ?? 0) > 0 { drawRaidCatcher(runners: runners, tier: tier) }
     }
 
     /// 보스를 데려갈 한 명을 뽑는다. 모든 피어가 `.raidStart` 로 받은 같은 시드와 같은 편성
     /// (`hasLeft` 포함)에서 같은 답을 계산한다.
     ///
-    /// 두 게이트가 추첨 자체를 막는다. 1★ 는 티어가 안 열고(`grantsCatch`), 1인 판은 추첨이
-    /// 언제나 자기 자신이라 협동이라 부를 수 없다(`minimumCoopRunners`). 둘 다 여기 한 곳에
-    /// 두어야 호스트·게스트가 같은 규칙을 본다.
-    private func drawRaidCatcher(runners: [MultiplayerFighter]) {
+    /// **별·인원과 무관하다.** 1★든 5★든, 혼자든 여럿이든 클리어(그 반나절·그 티어의 첫 승리)만
+    /// 하면 추첨이 돈다 — `minimumCoopRunners`(2인)는 별의조각 협동 보너스에만 걸리는 문턱이고
+    /// 포획 추첨을 막지 않는다. 이 자리엔 한때 "1인 판은 추첨을 안 연다"는 반대 주장이 적혀
+    /// 있었는데, 그걸 실제로 막는 코드가 없었다(`testASoloWinGetsTheSameRarityCatchChance` 가
+    /// 혼자 3★ 를 깨고도 잡히는 것을 이미 검증하고 있었다) — 사용자 확인 후 정정.
+    private func drawRaidCatcher(runners: [MultiplayerFighter], tier: RaidTier) {
         // **추첨에서 빠지는 것은 방을 나간 사람뿐이다(`hasLeft`).** 쓰러졌지만 판 끝까지 남은
         // 참가자는 대상이다 — 승리에 기여했는데 포획 기회만 없는 것이 이상하다는 지적으로
         // 바꿨다(#270). `hasLeft` 는 `retireFighter` 가 `.leave`·연결 끊김에서만 세우므로,
@@ -593,10 +604,20 @@ final class MultiplayerRoomCenter {
         raidCatchAttempts = attempts
         raidCatcherID = attempts.first(where: \.succeeded)?.id
         guard let mine = attempts.first(where: { $0.id == myID }) else { return }
+        // **오늘 이미 잡았으면 주사위와 무관하게 "이미 진행했다"다.** 먼저 안 보면, 이번 추첨에서
+        // 마침 실패가 나온 경우 "놓쳤다"로 보여 방금 기회를 날린 것처럼 읽힌다 — 사실은 애초에
+        // 오늘 몫을 다 썼을 뿐이다(#270 뒤 사용자 지적).
+        guard !companion.raidCatchClaimedToday(tier: tier) else {
+            raidCatchResult = .claimedToday
+            // 비동기 경로(아래 `catchRaidBoss`)의 `.claimedToday` 분기와 같은 안내를 띄운다 —
+            // 여기서 빼먹으면 이 이른 반환만 결과는 맞는데 화면에 이유가 안 뜬다.
+            lastError = companion.l.raidCatchAlreadyToday
+            return
+        }
         guard mine.succeeded else { raidCatchResult = .escaped; return }
         let epoch = sessionEpoch
         raidCatchTask = Task { [weak self, companion] in
-            let result = await companion.catchRaidBoss(speciesID: species)
+            let result = await companion.catchRaidBoss(speciesID: species, tier: tier)
             // await 뒤의 쓰기는 **사용자가 이미 떠난 방의 것일 수 있다**(`sessionEpoch` 관례).
             // 포획 자체는 위에서 이미 끝났다 — 개체는 내 세이브의 값이라 방과 함께 사라지지 않는다.
             guard let self, self.sessionEpoch == epoch else { return }

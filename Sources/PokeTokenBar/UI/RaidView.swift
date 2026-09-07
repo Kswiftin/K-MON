@@ -91,31 +91,42 @@ struct RaidView: View {
         .background(PokedoroTheme.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 
+    /// 티어마다 다른 종을 준다(#270) — 1★=고급, 3★=희귀, 5★=전설. 예전엔 반나절에 보스가
+    /// 하나뿐이라 5★는 사람을 더 모아야 하는 것 말고는 1★와 다를 게 없었다. 세 칸을 나란히
+    /// 보여줘 어느 티어가 무엇을 주는지 방을 열기 전에 알 수 있게 한다.
     private var todaysBossCard: some View {
-        HStack(spacing: 10) {
-            SpriteView(speciesID: center.todaysRaidSpeciesID, size: 56)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(RaidHalfDay.at(Date()) == .morning
-                     ? "오전 레이드 보스"
-                     : "오후 레이드 보스")
-                    .font(.caption2).foregroundStyle(.secondary)
-                // 이름은 비동기 조회라 여기서 쓰지 않는다 — 스프라이트가 이미 누구인지 말하고,
-                // 정확한 이름은 교전이 시작되면 스냅샷이 싣고 온다.
-                Text(l.raidTitle).font(.callout).bold()
-                let rarity = RaidBoss.rarity(speciesID: center.todaysRaidSpeciesID)
-                Text("포획 확률 \(RaidBoss.catchPercent(for: rarity))%")
-                    .font(.caption2).foregroundStyle(.purple)
-                // 다음 5★ 시각은 **아침에 공개된다** — 무작위인데 안 알려 주면 마침 접속해 있던
-                // 사람만 참여하게 되고, 그러면 무작위로 둔 이유가 사라진다.
-                if let next = RaidSchedule.nextHatch(after: Date()) {
-                    Text("\(l.raidNextHatch) · \(next.formatted(date: .omitted, time: .shortened))")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(RaidHalfDay.at(Date()) == .morning
+                 ? "오전 레이드 보스"
+                 : "오후 레이드 보스")
+                .font(.caption2).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ForEach(RaidTier.allCases, id: \.rawValue) { tier in bossPreview(tier: tier) }
             }
-            Spacer()
+            // 다음 5★ 시각은 **아침에 공개된다** — 무작위인데 안 알려 주면 마침 접속해 있던
+            // 사람만 참여하게 되고, 그러면 무작위로 둔 이유가 사라진다.
+            if let next = RaidSchedule.nextHatch(after: Date()) {
+                Text("\(l.raidNextHatch) · \(next.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
         .padding(9)
         .pokedoroCard()
+    }
+
+    /// 한 티어의 보스 미리보기 — 스프라이트 + 티어 + 포획 확률. 이름은 비동기 조회라 여기서
+    /// 쓰지 않는다 — 스프라이트가 이미 누구인지 말하고, 정확한 이름은 교전이 시작되면 스냅샷이
+    /// 싣고 온다.
+    private func bossPreview(tier: RaidTier) -> some View {
+        let species = center.todaysRaidSpeciesID(tier: tier)
+        let rarity = RaidBoss.rarity(speciesID: species)
+        return VStack(spacing: 2) {
+            SpriteView(speciesID: species, size: 40)
+            Text("\(tier.rawValue)★").font(.caption2.bold())
+            Text("\(RaidBoss.catchPercent(for: rarity))%")
+                .font(.caption2).foregroundStyle(.purple)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     /// 들고 갈 개체를 고른다 — **방에 들어가기 전에만**. 로비에서 바꾸려면 참가자 `speciesID` 와
@@ -343,7 +354,14 @@ struct RaidView: View {
                 .padding(8)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
-            catchSequence
+            if center.raidCatchAttempts.isEmpty {
+                // 이 구간의 첫 승리가 아니면 포획 추첨 자체가 안 돈다(설계 그대로) — 안내 없이
+                // 비우면 "이 판만 왜 조용하지"로 읽힌다. 위 지급 게이트와 같은 이유의 문구다.
+                Text("이번 승리는 포획 대상이 아닙니다 — 포획 추첨은 이 구간의 첫 승리에서만 진행됩니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                catchSequence
+            }
             Button("나가기") { center.leaveRoom() }
                 .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
         }
@@ -383,10 +401,21 @@ struct RaidView: View {
     private var catchSequence: some View {
         if !center.raidCatchAttempts.isEmpty {
             VStack(alignment: .leading, spacing: 5) {
-                Text("포획 결과").font(.caption.bold())
+                HStack(spacing: 4) {
+                    Text("포획 결과").font(.caption.bold())
+                    // 방금 겨룬 티어의 확률이다 — 티어마다 종·확률이 다르므로(#270) "오늘의 보스"
+                    // 하나로 계산하면 다른 티어의 확률이 섞여 나온다. `raidTier`는 정산이 이미
+                    // 끝난 뒤라 항상 채워져 있다(nil 은 안전망일 뿐이다).
+                    Text("· \(RaidBoss.catchPercent(for: RaidBoss.rarity(speciesID: center.todaysRaidSpeciesID(tier: center.raidTier ?? .one))))%")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 ForEach(Array(center.raidCatchAttempts.enumerated()), id: \.element.id) { index, attempt in
+                    // "이미 진행했습니다"는 **내 줄에만** 안다 — 오늘 이미 잡았는지는 각자의
+                    // 세이브에만 있는 값이라 와이어를 안 타고, 남의 줄은 주사위 결과만 보여준다.
                     catchRow(attempt, revealed: index < revealedCatchAttempts,
-                             drumrolling: index == revealedCatchAttempts)
+                             drumrolling: index == revealedCatchAttempts,
+                             alreadyClaimed: attempt.id == center.myID
+                                && center.raidCatchResult == .claimedToday)
                 }
             }
             .animation(.spring(response: 0.35), value: revealedCatchAttempts)
@@ -395,23 +424,30 @@ struct RaidView: View {
 
     /// 세 국면 — **대기**(순서가 아직 안 옴), **두구두구**(바로 다음 차례, 물음표가 맥동한다),
     /// **공개**(결과 확정). `.symbolEffect(.pulse)`가 macOS 14 최소 타깃에서 바로 쓰인다.
-    private func catchRow(_ attempt: RaidCatchAttempt, revealed: Bool, drumrolling: Bool) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: revealed
-                  ? (attempt.succeeded ? "circle.inset.filled" : "circle.dashed")
-                  : "questionmark.circle.fill")
-                .foregroundStyle(revealed ? (attempt.succeeded ? .green : .secondary) : .secondary)
+    ///
+    /// `alreadyClaimed`는 공개된 결과를 **덮어쓴다** — 오늘 몫을 이미 썼으면 이번 주사위가 무엇이든
+    /// "놓쳤다"가 아니라 "이미 진행했습니다"다. 그 둘을 같은 문구로 두면 방금 실패한 것으로 읽힌다.
+    private func catchRow(_ attempt: RaidCatchAttempt, revealed: Bool, drumrolling: Bool,
+                          alreadyClaimed: Bool) -> some View {
+        let tint: Color = !revealed ? .secondary
+            : alreadyClaimed ? .blue : (attempt.succeeded ? .green : .secondary)
+        return HStack(spacing: 7) {
+            Image(systemName: !revealed ? "questionmark.circle.fill"
+                  : alreadyClaimed ? "checkmark.circle"
+                  : (attempt.succeeded ? "circle.inset.filled" : "circle.dashed"))
+                .foregroundStyle(tint)
                 .symbolEffect(.pulse, isActive: drumrolling)
             Text(attempt.trainerName).font(.caption.bold())
                 .opacity(revealed || drumrolling ? 1 : 0.5)
             Spacer()
-            Text(revealed
-                 ? (attempt.succeeded ? "잡았다!"
-                                       : "놓쳤다")
-                 : (drumrolling ? "두구두구…"
-                                : "대기 중"))
+            Text(!revealed
+                 ? (drumrolling ? "두구두구…"
+                                : "대기 중")
+                 : alreadyClaimed ? "이미 진행했습니다"
+                 : (attempt.succeeded ? "잡았다!"
+                                       : "놓쳤다"))
                 .font(.caption)
-                .foregroundStyle(revealed ? (attempt.succeeded ? .green : .secondary) : .secondary)
+                .foregroundStyle(tint)
         }
         .padding(6)
         .background(Color.primary.opacity(revealed ? 0.04 : 0.02), in: RoundedRectangle(cornerRadius: 7))
