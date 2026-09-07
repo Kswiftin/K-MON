@@ -16,10 +16,10 @@ struct RosterSelectionOrderingTests {
         let mons = [mon(25, name: "피카츄"), mon(4, name: "파이리"),
                     mon(25, name: "피카츄"), mon(7, name: "꼬부기"),
                     mon(7, name: "꼬부기")]
-        let duplicateIDs = RosterOrdering.duplicateSpeciesIDs(in: mons)
+        let duplicateIDs = RosterOrdering.duplicateEvolutionFamilyIDs(in: mons)
 
         #expect(duplicateIDs == Set([7, 25]))
-        #expect(mons.filter { duplicateIDs.contains($0.currentID) }.map(\.currentID)
+        #expect(mons.filter { duplicateIDs.contains($0.baseID) }.map(\.currentID)
                 == [25, 25, 7, 7])
     }
 

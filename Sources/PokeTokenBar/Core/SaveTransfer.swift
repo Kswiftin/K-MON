@@ -606,10 +606,6 @@ enum SaveTransfer {
         (state.gymDefenseRewardDate, state.gymDefenseRewardToday) = Self.mergedGymDefenseLedger(
             imported: (imported.gymDefenseRewardDate, imported.gymDefenseRewardToday),
             current: (current.gymDefenseRewardDate, current.gymDefenseRewardToday))
-        // 던전 진행도 같은 부류다 — 날짜 키가 로컬 날짜 문자열이라 비교할 수 있다.
-        // 같은 날이면 **합친다**: 한쪽에서 이미 정산했는데 다른 쪽 값을 그대로 쓰면 같은 날 보상을
-        // 두 번 받는다(맥 A 에서 클리어하고 내보내 맥 B 로 불러오는 경로). 다른 날이면 더 최근 쪽을
-        // 남긴다 — 지난 날 기록은 어차피 다음 기록에서 비워진다.
         // 런 실적은 소모되지 않는 누적이라 각 축의 큰 값을 쓴다 — 한쪽을 고르면 다른 기기에서
         // 세운 최고 기록이 사라진다(던전 진행도와 달리 날짜로 낡지 않는다).
         state.waveRun = RunProgress.merged(imported.waveRun, current.waveRun)

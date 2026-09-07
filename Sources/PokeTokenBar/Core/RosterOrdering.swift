@@ -17,11 +17,18 @@ enum RosterSort: String, CaseIterable, Sendable {
 /// 뷰가 미리 해석해 넘긴다(여기서 네트워크를 타지 않는다).
 enum RosterOrdering {
 
-    /// 같은 현재 도감 번호가 둘 이상인 종의 번호. 필터 결과에서 다시 세면 검색어나 타입을 바꿀
-    /// 때마다 중복 판정 자체가 달라지므로, 반드시 소유 목록 전체를 받아 계산한다.
-    static func duplicateSpeciesIDs(in mons: [MonState]) -> Set<Int> {
-        let counts = Dictionary(grouping: mons, by: \.currentID).mapValues(\.count)
+    /// 같은 진화 계보의 개체가 둘 이상인 계보 번호. 파이리와 리자몽처럼 현재 모습이 달라도
+    /// `baseID` 가 같으면 한 가족이다. 필터 결과에서 다시 세면 검색어나 타입을 바꿀 때마다 중복
+    /// 판정 자체가 달라지므로, 반드시 소유 목록 전체를 받아 계산한다.
+    static func duplicateEvolutionFamilyIDs(in mons: [MonState]) -> Set<Int> {
+        let counts = Dictionary(grouping: mons, by: \.baseID).mapValues(\.count)
         return Set(counts.compactMap { $0.value > 1 ? $0.key : nil })
+    }
+
+    /// 영구 도감에 아직 기록되지 않은 현재 모습만 남긴다. 소유 개체로 합성한 도감 목록을 넘기면
+    /// 모든 개체가 등록된 것으로 보이므로, 호출자는 `CompanionState.dex` 의 종 번호만 넘겨야 한다.
+    static func unregistered(_ mons: [MonState], registeredSpeciesIDs: Set<Int>) -> [MonState] {
+        mons.filter { !registeredSpeciesIDs.contains($0.currentID) }
     }
 
     /// 포켓몬을 **고르는** 화면의 공통 가나다순. 포켓몬 탭은 사용자가 고른 정렬을 유지하지만,
