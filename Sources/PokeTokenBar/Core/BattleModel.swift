@@ -441,6 +441,26 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
 
     /// 맹독 — PokéAPI move id.
     static let toxicMoveID = 92
+    /// 테라버스트 — 테라스탈 상태에서만 타입·분류가 바뀌는 유일한 기술이다.
+    static let teraBlastID = 851
+
+    /// **이 개체가 지금 쓰는 형태**의 기술. 스펙(도감 값)과 실제로 나가는 값이 갈리는 자리를
+    /// 한 함수로 모은다 — 지금은 테라버스트뿐이다.
+    ///
+    /// 테라스탈 상태면 타입이 테라 타입이 되고, 분류는 **공격·특공 중 높은 쪽**으로 갈린다
+    /// (랭크를 포함한 현재 값 기준 — 본가와 같다). 테라스탈이 아니면 도감 그대로 노말 특수기다.
+    ///
+    /// 엔진의 **대상 단위 입구**(`applyHit`)와 AI 추정이 이 함수를 지난다. 한 자리라도 원본 스펙을
+    /// 쓰면 그 경로에서만 테라버스트가 노말로 나가고, 화면에는 위력만 이상하게 보인다.
+    func asUsed(by attacker: BattleSide) -> MoveSpec {
+        guard id == MoveSpec.teraBlastID, attacker.isTerastallized else { return self }
+        var used = self
+        used.type = attacker.snapshot.teraType
+        let attack = StatStages.apply(attacker.rawStat(.atk), stage: attacker.stage(.atk))
+        let special = StatStages.apply(attacker.rawStat(.spa), stage: attacker.stage(.spa))
+        used.damageClass = attack > special ? .physical : .special
+        return used
+    }
 
     /// 전기자석파 — PokéAPI move id.
     static let thunderWaveID = 86
@@ -534,6 +554,15 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
         let overall = min(1.0, (Double(stageIndex) + p) / Double(k))
         return min(100, max(5, 5 + Int((overall * 95.0).rounded())))
     }
+
+    /// 테라스탈했을 때 이 개체가 되는 타입.
+    ///
+    /// 지금은 **첫 번째 타입에서 파생한다** — 본가에서도 야생·부화 개체의 테라 타입은 자기 타입
+    /// 중 하나이고, 그것을 바꾸는 것은 테라피스(아이템)다. 그 아이템 경로가 붙으면 여기에 저장
+    /// 값이 생기고 이 파생은 기본값이 된다. 지금 저장 필드를 미리 두면 쓰는 데가 없는 칸이다.
+    ///
+    /// 그래서 **와이어에 실을 것이 없다**: 두 피어가 같은 `types` 를 보고 같은 답을 낸다.
+    var teraType: PokemonType { types.first ?? .normal }
 
     /// 유효 스탯 — 식은 `BattleStats.effective` 한 곳에 있다(홈 화면도 같은 식을 쓴다).
     func effectiveStats() -> BattleStats { base.effective(level: level, nature: nature) }
@@ -886,7 +915,7 @@ struct BattleField: Sendable, Equatable {
     /// 이 개체가 땅에 닿아 있는가 — 필드 효과는 닿은 쪽에만 걸린다.
     /// 비행 타입과 부유 특성이 뜬 쪽이다(공중에 뜨는 기술은 엔진에 없다).
     static func isGrounded(_ side: BattleSide) -> Bool {
-        !side.snapshot.types.contains(.flying) && side.ability != .levitate
+        !side.activeTypes.contains(.flying) && side.ability != .levitate
     }
 
     /// 날씨를 건다. 같은 날씨를 다시 걸면 **실패한다**(본가와 같다) — 턴이 연장되면 한쪽이
@@ -961,6 +990,13 @@ struct BattleSide: Sendable, Equatable {
     /// 턴을 넘어 살고, 방어가 아닌 기술을 냈거나 방어가 실패하면 0 으로 돌아간다
     /// (`consecutiveMoveUses` 와 달리 방어기끼리는 서로 다른 기술이어도 이어진다 — 본가와 같다).
     var guardStreak = 0
+    /// 테라스탈했나 — **배틀당 한 번**이고 한 번 하면 안 풀린다(본가와 같다). 교체해도 그 개체는
+    /// 계속 테라스탈 상태다. 한 번뿐이라는 제약은 진영 단위라 모드가 들고 있고
+    /// (`TeamPracticeBattle.myTerastalUsed`), 이 값은 개체가 지금 그 상태인지만 말한다.
+    ///
+    /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다 — 두 피어가 각자 같은 규칙으로
+    /// 세운다(`lastHitThisTurn` 과 같은 이유).
+    var isTerastallized = false
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
     var flinched = false
@@ -1004,6 +1040,12 @@ struct BattleSide: Sendable, Equatable {
 
     /// 교체하면 랭크는 전부 사라진다(본가와 같다). 남겨 두면 다시 나올 때 옛 랭크로 싸운다.
     mutating func resetStages() { stages = [:] }
+
+    /// **지금** 이 개체의 타입 — 테라스탈하면 테라 타입 하나로 접힌다.
+    ///
+    /// 상성·STAB·부유 판정·모래 면역이 전부 이 값을 봐야 한다. `snapshot.types` 를 직접 읽는
+    /// 자리가 남으면 그 규칙에서만 테라스탈이 없고, 화면에는 숫자만 다르게 보인다.
+    var activeTypes: [PokemonType] { isTerastallized ? [snapshot.teraType] : snapshot.types }
 
     /// 랭크 **전**의 스탯. 명중·회피는 스탯이 아니라 랭크만 있는 축이라 기준값 100 이다.
     func rawStat(_ stat: BattleStat) -> Int {
@@ -1166,6 +1208,10 @@ enum BattleEngine {
     ///      데미지가 갈린다. 순풍은 **턴 순서**까지 갈라 놓는다(그 뒤 판정이 통째로 밀린다).
     ///      + 방어 부류 여덟(막는 일만, 접촉 부가 효과는 아직 없다). **연속 방어에서만 rng 를
     ///      한 번 더 뽑는다**(1/3^연속) — 첫 방어는 뽑지 않으므로 예전 판의 소비 순서는 그대로다.
+    ///      + 테라스탈(모의전에서만 쓸 수 있다 — LAN·방·웨이브는 턴 액션이 아직 없다).
+    ///      타입이 하나로 접히고 STAB 가 세 갈래가 되며 테라버스트의 타입·분류가 바뀐다.
+    ///      **와이어는 그대로다**: 테라 타입은 두 피어가 같은 `types` 에서 파생하고, 테라스탈
+    ///      여부는 `BattleSide`(와이어에 없는 타입)에만 산다. rng 소비도 늘지 않는다.
     static let rulesVersion = 23
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1304,7 +1350,7 @@ enum BattleEngine {
     /// 부유는 지진을 막고 갈라진땅은 못 막았다 — 특성이 붙는 갈림길은 여기 하나여야 한다.
     static func typeMultiplier(of move: MoveSpec, against defender: BattleSide) -> Double {
         if defender.ability?.immuneMoveType == move.type { return 0 }
-        let multiplier = TypeChart.effectiveness(move.type, against: defender.snapshot.types)
+        let multiplier = TypeChart.effectiveness(move.type, against: defender.activeTypes)
         if defender.ability == .wonderGuard, move.damageClass != .status, multiplier <= 1 { return 0 }
         return multiplier
     }
@@ -1321,6 +1367,9 @@ enum BattleEngine {
     /// 카탈로그 체육관 관장(`TeamPracticeBattle` 의 `.damageFocused`)과 공유 체육관의 AI 방어
     /// (`GymMatchEngine`)가 **같은 식을 써야** 두 컨텐츠의 체감이 갈리지 않는다.
     static func expectedDamageScore(of move: MoveSpec, from attacker: BattleSide, to defender: BattleSide) -> Int {
+        // 실제로 나가는 형태로 재야 한다 — 테라버스트를 노말 특수기로 보면 AI 가 자기 최대 피해
+        // 기술을 저평가한다(`applyHit` 과 같은 함수를 지난다).
+        let move = move.asUsed(by: attacker)
         guard move.damageClass != .status, move.power > 0 else { return 0 }
         let effectiveness = typeMultiplier(of: move, against: defender)
         guard effectiveness > 0 else { return 0 }
@@ -1342,8 +1391,8 @@ enum BattleEngine {
 
         var damage = baseDamage(level: attacker.snapshot.level, power: power,
                                 attack: attack, defense: defense) + 2
-        if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }
-        damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
+        damage = stabbed(damage, of: move.type, by: attacker)
+        damage = TypeChart.apply(damage, of: move.type, against: defender.activeTypes)
         if let ability = defender.ability {
             damage = ability.adjustedDamage(damage, moveType: move.type, effectiveness: effectiveness)
         }
@@ -1398,7 +1447,7 @@ enum BattleEngine {
                               defenderTeam: BattleTeamSlot = .b,
                               rng: inout SplitMix64) -> AttackOutcome {
         // 독 타입이 쓰는 맹독은 명중·회피 랭크를 포함한 명중 판정을 건너뛴다.
-        let poisonTypeToxic = move.id == MoveSpec.toxicMoveID && attacker.snapshot.types.contains(.poison)
+        let poisonTypeToxic = move.id == MoveSpec.toxicMoveID && attacker.activeTypes.contains(.poison)
         if !poisonTypeToxic, let chance = hitChance(of: move, attacker: attacker, defender: defender),
            Int(rng.next() % 100) >= chance {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
@@ -1517,8 +1566,8 @@ enum BattleEngine {
         // 위의 `effectiveness` 와 **같은 게이트**여야 한다. 예전 `!isStruggle` 은 위력 0 이
         // 데미지를 접어 준 덕에 우연히 같았을 뿐이다(위력 있는 무상성 기술이 생기면 갈라진다).
         if !ignoresTypeChart {
-            if attacker.snapshot.types.contains(move.type) { damage = damage * 3 / 2 }   // STAB ×1.5
-            damage = TypeChart.apply(damage, of: move.type, against: defender.snapshot.types)
+            damage = stabbed(damage, of: move.type, by: attacker)
+            damage = TypeChart.apply(damage, of: move.type, against: defender.activeTypes)
         }
         if let ability = defender.ability {
             damage = ability.adjustedDamage(damage, moveType: move.type, effectiveness: effectiveness)
@@ -1553,6 +1602,24 @@ enum BattleEngine {
         let dealt = (effectiveness == 0 || power <= 0) ? 0 : max(1, damage)
         return AttackOutcome(missed: false, damage: dealt,
                              effectiveness: effectiveness, isCritical: isCritical)
+    }
+
+    /// 자기 타입 보정(STAB). 테라스탈 때문에 **세 갈래**다 — AI 추정과 실제 데미지가 같은
+    /// 함수를 봐야 화면의 예상치와 결과가 갈라지지 않는다.
+    ///
+    /// - 평소: 자기 타입이면 1.5배.
+    /// - 테라스탈: 테라 타입이면서 원래 타입이기도 하면 **2배**. 한쪽만 해당하면 1.5배 —
+    ///   즉 접혀 나간 옛 타입 기술도 1.5배로 남는다(본가와 같다. "현재 타입만 STAB" 으로 짜면
+    ///   그 기술만 조용히 약해지고 화면에 표시가 없다).
+    ///
+    /// "테라 타입이 원래에 없던 타입" 갈래는 테라 타입이 아직 첫 번째 타입에서 파생되므로
+    /// 지금은 밟히지 않는다 — 식은 그때를 이미 담고 있다(테라피스 아이템이 붙는 자리).
+    static func stabbed(_ damage: Int, of moveType: PokemonType, by attacker: BattleSide) -> Int {
+        let isOriginal = attacker.snapshot.types.contains(moveType)
+        guard attacker.isTerastallized else { return isOriginal ? damage * 3 / 2 : damage }
+        let isTera = attacker.snapshot.teraType == moveType
+        if isTera && isOriginal { return damage * 2 }
+        return (isTera || isOriginal) ? damage * 3 / 2 : damage
     }
 
     /// 턴 순서에 쓰는 스피드 — 개체 상태(`BattleSide.effectiveSpeed`) 위에 **편에 깔린 것**을 얹는다.
@@ -1615,6 +1682,8 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 한쪽 진영에만 깔린 상태 — 어느 편인지가 문구의 절반이다("우리 편은/상대 편은").
     case sideConditionStarted(BattleTeamSlot, BattleSideCondition)
     case sideConditionEnded(BattleTeamSlot, BattleSideCondition)
+    /// 테라스탈했다 — 액터와 그 개체가 된 타입. 배틀당 한 번뿐이라 로그에 한 줄이면 충분하다.
+    case terastallized(BattleActor, PokemonType)
     /// 이번 턴 몸을 지켰다 / 그 방어가 상대의 기술을 막았다. 액터는 **지킨 쪽**이다 —
     /// 막힌 줄이 누구의 방어인지가 문구의 절반이고, 공격자는 바로 앞 줄이 이미 말한다.
     case guardUp(BattleActor)
@@ -1811,7 +1880,7 @@ extension BattleEngine {
             }
         }
         guard side.isAlive, let weather = field.weather,
-              let amount = weather.residualDamage(for: side.snapshot.types, maxHP: side.stats.hp)
+              let amount = weather.residualDamage(for: side.activeTypes, maxHP: side.stats.hp)
         else { return events }
         side.hp = max(0, side.hp - amount)
         events.append(.damage(actor, amount: amount, cause: .weather))
@@ -2010,6 +2079,8 @@ extension BattleEngine {
         // 여럿일 때 막은 쪽만 막히는 것이 본가와 같은 판정이다.
         // **자기에게 거는 기술은 막히지 않는다**(방어와 나 사이에는 아무것도 없다), 페인트 부류는
         // 데이터가 예외로 답한다.
+        // 테라버스트는 여기서 실제로 나가는 형태가 된다 — 아래 전부(상성·STAB·분류)가 그 값을 본다.
+        let move = move.asUsed(by: attacker)
         if defender.isGuarding, move.targetsUser != true, !BattleGuard.isIgnored(byMoveID: move.id) {
             attacker.lastMoveFailed = true   // 분함의발구르기는 막힌 것도 실패로 센다(본가와 같다)
             return [.guardBlocked(defenderActor)]

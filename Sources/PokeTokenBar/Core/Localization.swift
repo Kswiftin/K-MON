@@ -321,6 +321,17 @@ struct L {
         }
     }
 
+    /// 테라스탈 버튼. 남은 횟수가 없으면 버튼 자체가 사라지므로 "쓸 수 없음" 문구는 없다.
+    var battleTerastallize: String { t("테라스탈", "Terastallize", "テラスタル") }
+
+    /// 테라스탈 — 타입 이름이 들어가므로 언어별 이름 표를 지난다.
+    func battleTerastallized(_ name: String, type: PokemonType) -> String {
+        let typeName = type.name(lang)
+        return t("\(name)가 \(typeName) 테라스탈했다!",
+                 "\(name) terastallized into the \(typeName) type!",
+                 "\(name)は \(typeName)テラスタルした！")
+    }
+
     /// 방어를 친 줄과 그것이 막은 줄. 이름이 들어가므로 `KeyPath` 팝으로 담을 수 없다 —
     /// 막힌 순간의 팝은 이름 없는 `battleGuardBlockedPopup` 이 맡는다.
     func battleGuardUp(_ name: String) -> String {

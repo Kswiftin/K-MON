@@ -157,7 +157,10 @@ struct BattleView: View {
             overlay: animator.overlay,
             onChoose: { center.chooseTeamPracticeMove($0) },
             onSwitch: { center.switchTeamPractice(to: $0) },
-            onForfeit: { center.forfeit() })
+            onForfeit: { center.forfeit() },
+            // 남은 횟수가 없으면 버튼을 안 그린다 — 눌러도 아무 일 없는 버튼을 두지 않는다.
+            onTerastallize: practice.canTerastallizeMine
+                ? { center.terastallizeTeamPractice() } : nil)
         .onAppear { replay(practice.events, sides: [.a: engineMine, .b: engineTheirs]) }
         .onChange(of: practice.events.count) {
             replay(practice.events, sides: [.a: engineMine, .b: engineTheirs])

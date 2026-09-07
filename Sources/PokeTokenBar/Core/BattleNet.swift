@@ -1167,6 +1167,12 @@ final class BattleCenter {
         settlePracticeResult(practice)
     }
 
+    /// 테라스탈 — 턴을 쓰지 않으므로 승부가 나지 않는다(그래서 `settlePracticeResult` 를 안 부른다).
+    func terastallizeTeamPractice() {
+        guard var practice = teamPractice, practice.terastallizeMine() else { return }
+        teamPractice = practice
+    }
+
     private func chooseMetronomeTurn() async {
         guard var practice = teamPractice, isMetronomeBattle, !isResolvingMetronome else { return }
         isResolvingMetronome = true
