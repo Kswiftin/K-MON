@@ -94,6 +94,12 @@ enum BattleLog {
             case .sideConditionEnded(_, let condition):
                 flush()
                 out.append(Line(actor: nil, text: l.battleSideConditionEnded(condition)))
+            case .guardUp(let actor):
+                flush()
+                out.append(Line(actor: actor, text: l.battleGuardUp(name(actor))))
+            case .guardBlocked(let actor):
+                flush()
+                out.append(Line(actor: actor, text: l.battleGuardBlocked(name(actor))))
             case .faint(let actor):
                 flush()
                 out.append(Line(actor: actor, text: l.battleFainted(name(actor))))

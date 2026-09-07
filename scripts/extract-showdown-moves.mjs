@@ -159,6 +159,25 @@ function readEffects(move) {
   return effect
 }
 
+/**
+ * Targets that never point at an opponent — Protect cannot come between the user and these,
+ * so their missing `protect` flag says nothing about whether a guard stops them.
+ */
+const NON_OPPOSING_TARGETS = new Set([
+  'self', 'allySide', 'foeSide', 'all', 'allies', 'adjacentAlly', 'adjacentAllyOrSelf',
+])
+
+/**
+ * Does a guard (Protect and its kin) let this move through? Showdown spells that as the absent
+ * `protect` flag on a move that does point at an opponent — Feint, Shadow Force, Roar.
+ *
+ * The engine needs the *exceptions* rather than the rule: almost every move is blocked, so a
+ * hand-kept "these get through" list is the shape that goes stale silently.
+ */
+function ignoresProtect(move) {
+  return !NON_OPPOSING_TARGETS.has(move.target) && !move.flags?.protect
+}
+
 /** Why a move cannot be fixed by data alone — each reason is hand-written engine work. */
 function engineWorkReasons(move) {
   const reasons = []
@@ -230,10 +249,15 @@ const swiftLiteral = (value) => (typeof value === 'string' ? `"${value}"` : Stri
  * Render the override map as a Swift source file. Generated rather than parsed at runtime so
  * the table costs nothing to load and a bad extraction breaks the build instead of a battle.
  */
-function renderSwift(overrides, effects) {
+function renderSwift(overrides, effects, piercing) {
   const entries = Object.entries(overrides)
     .map(([id, override]) => [Number(id), override])
     .sort((a, b) => a[0] - b[0])
+
+  const piercingLines = Object.entries(piercing)
+    .map(([id, name]) => [Number(id), name])
+    .sort((a, b) => a[0] - b[0])
+    .map(([id, name]) => `        ${id},  // ${name}`)
 
   const effectLines = Object.entries(effects)
     .map(([id, effect]) => [Number(id), effect])
@@ -303,6 +327,13 @@ ${lines.join('\n')}
     static let effects: [Int: ShowdownMoveEffect] = [
 ${effectLines.join('\n')}
     ]
+
+    /// Moves a guard (Protect and its kin) does **not** stop: they point at an opponent and
+    /// Showdown leaves the \`protect\` flag off. The exceptions are the list because the rule is
+    /// "everything is blocked" — a hand-kept list of blocked moves would go stale in silence.
+    static let ignoringGuard: Set<Int> = [
+${piercingLines.join('\n')}
+    ]
 }
 
 extension MoveSpec {
@@ -341,6 +372,7 @@ async function main() {
 
   const overrides = {}
   const effects = {}
+  const piercing = {}
   const engineWork = []
   let unmatched = 0
   let metaGapsFilled = 0
@@ -354,6 +386,7 @@ async function main() {
     const { changed, hadMeta } = diffAgainstPokeAPI(readShowdownMove(move), api)
     const effect = readEffects(move)
     if (Object.keys(effect).length) effects[move.num] = { name: move.name, ...effect }
+    if (ignoresProtect(move)) piercing[move.num] = move.name
     const reasons = engineWorkReasons(move)
     // `isNonstandard` marks moves no current game can produce (Z-moves, LGPE, CAP fakemon).
     // They reach the app only if PokéAPI hands one out, so they are not scoping work.
@@ -373,7 +406,7 @@ async function main() {
   await writeFile(workPath, `${JSON.stringify(engineWork, null, 2)}\n`)
   if (swiftPath) {
     await mkdir(dirname(swiftPath), { recursive: true })
-    await writeFile(swiftPath, renderSwift(overrides, effects))
+    await writeFile(swiftPath, renderSwift(overrides, effects, piercing))
   }
 
   const byField = Object.entries(fieldCounts).sort((a, b) => b[1] - a[1])
@@ -381,6 +414,7 @@ async function main() {
   console.log(`no PokéAPI id       ${unmatched}`)
   console.log(`overrides written   ${Object.keys(overrides).length}  → ${outPath}`)
   console.log(`effects written     ${Object.keys(effects).length}`)
+  console.log(`moves guards miss   ${Object.keys(piercing).length}`)
   console.log(`  of those, moves PokéAPI had no meta row for: ${metaGapsFilled}`)
   console.log('\ncorrected fields')
   for (const [field, count] of byField) console.log(`  ${field.padEnd(16)}${count}`)

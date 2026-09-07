@@ -116,6 +116,8 @@ struct L {
     var battleSwitch: String { t("교체", "Switch", "こうたい") }
     var battleMissed: String { t("빗나갔다!", "It missed!", "はずれた！") }
     var battleNoEffect: String { t("효과가 없었다…", "It had no effect…", "こうかがないようだ…") }
+    /// 방어에 막힌 순간의 팝 — 이름이 없다(누가 막았는지는 같은 순간의 로그 줄이 말한다).
+    var battleGuardBlockedPopup: String { t("막혔다!", "Blocked!", "防がれた！") }
     var battleOppForfeited: String { t("상대가 기권했어요 — 승리!", "Opponent forfeited — you win!", "相手が降参しました — 勝ち！") }
     var battleYouForfeited: String { t("기권했어요.", "You forfeited.", "降参しました。") }
     var battleWon: String { t("이겼다! 🏆", "You won! 🏆", "勝った！ 🏆") }
@@ -317,6 +319,16 @@ struct L {
         case .tailwind:    return t("순풍이 불기 시작했다!", "The tailwind blew from behind the team!",
                                     "おいかぜが 吹き始めた！")
         }
+    }
+
+    /// 방어를 친 줄과 그것이 막은 줄. 이름이 들어가므로 `KeyPath` 팝으로 담을 수 없다 —
+    /// 막힌 순간의 팝은 이름 없는 `battleGuardBlockedPopup` 이 맡는다.
+    func battleGuardUp(_ name: String) -> String {
+        t("\(name)는 몸을 지켰다!", "\(name) protected itself!", "\(name)は 身を守っている！")
+    }
+
+    func battleGuardBlocked(_ name: String) -> String {
+        t("\(name)는 공격을 막아냈다!", "\(name) protected itself!", "\(name)は 攻撃を 防いだ！")
     }
 
     func battleSideConditionEnded(_ condition: BattleSideCondition) -> String {

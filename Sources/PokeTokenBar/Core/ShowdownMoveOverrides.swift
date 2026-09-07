@@ -196,6 +196,94 @@ enum ShowdownMoveData {
         913: .init(volatileStatus: "dragoncheer"),  // Dragon Cheer
         917: .init(volatileStatus: "healblock"),  // Psychic Noise
     ]
+
+    /// Moves a guard (Protect and its kin) does **not** stop: they point at an opponent and
+    /// Showdown leaves the `protect` flag off. The exceptions are the list because the rule is
+    /// "everything is blocked" — a hand-kept list of blocked moves would go stale in silence.
+    static let ignoringGuard: Set<Int> = [
+        18,  // Whirlwind
+        46,  // Roar
+        119,  // Mirror Move
+        144,  // Transform
+        166,  // Sketch
+        174,  // Curse
+        176,  // Conversion 2
+        212,  // Mean Look
+        215,  // Heal Bell
+        244,  // Psych Up
+        248,  // Future Sight
+        267,  // Nature Power
+        272,  // Role Play
+        312,  // Aromatherapy
+        335,  // Block
+        353,  // Doom Desire
+        364,  // Feint
+        467,  // Shadow Force
+        495,  // After You
+        516,  // Bestow
+        566,  // Phantom Force
+        589,  // Play Nice
+        590,  // Confide
+        593,  // Hyperspace Hole
+        621,  // Hyperspace Fury
+        622,  // Breakneck Blitz
+        624,  // All-Out Pummeling
+        626,  // Supersonic Skystrike
+        628,  // Acid Downpour
+        630,  // Tectonic Rage
+        632,  // Continental Crush
+        634,  // Savage Spin-Out
+        636,  // Never-Ending Nightmare
+        638,  // Corkscrew Crash
+        640,  // Inferno Overdrive
+        642,  // Hydro Vortex
+        644,  // Bloom Doom
+        646,  // Gigavolt Havoc
+        648,  // Shattered Psyche
+        650,  // Subzero Slammer
+        652,  // Devastating Drake
+        654,  // Black Hole Eclipse
+        656,  // Twinkle Tackle
+        658,  // Catastropika
+        695,  // Sinister Arrow Raid
+        696,  // Malicious Moonsault
+        697,  // Oceanic Operetta
+        698,  // Guardian of Alola
+        699,  // Soul-Stealing 7-Star Strike
+        700,  // Stoked Sparksurfer
+        701,  // Pulverizing Pancake
+        703,  // Genesis Supernova
+        715,  // Tearful Look
+        719,  // 10,000,000 Volt Thunderbolt
+        723,  // Light That Burns the Sky
+        724,  // Searing Sunraze Smash
+        725,  // Menacing Moonraze Maelstrom
+        726,  // Let's Snuggle Forever
+        727,  // Splintered Stormshards
+        728,  // Clangorous Soulblaze
+        757,  // Max Flare
+        758,  // Max Flutterby
+        759,  // Max Lightning
+        760,  // Max Strike
+        761,  // Max Knuckle
+        762,  // Max Phantasm
+        763,  // Max Hailstorm
+        764,  // Max Ooze
+        765,  // Max Geyser
+        766,  // Max Airstream
+        767,  // Max Starfall
+        768,  // Max Wyrmwind
+        769,  // Max Mindstorm
+        770,  // Max Rockfall
+        771,  // Max Quake
+        772,  // Max Darkness
+        773,  // Max Overgrowth
+        774,  // Max Steelspike
+        777,  // Decorate
+        867,  // Doodle
+        887,  // Hyper Drill
+        910,  // Mighty Cleave
+    ]
 }
 
 extension MoveSpec {

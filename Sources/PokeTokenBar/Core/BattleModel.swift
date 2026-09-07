@@ -403,6 +403,8 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
             || BattleWeather.called(byMoveID: id) != nil
             || BattleTerrain.called(byMoveID: id) != nil
             || BattleSideCondition.called(byMoveID: id) != nil
+            // 방어기는 상태도 랭크도 안 걸고 **이번 턴 자기를 지킨다**(같은 이유로 열어 준다).
+            || BattleGuard.called(byMoveID: id)
     }
 
     /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
@@ -802,6 +804,35 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
     }
 }
 
+/// 이번 턴 자기를 지키는 기술(방어·잠깨기·니들가드 부류).
+///
+/// **왜 열거형이 아닌가.** 쇼다운은 여덟 개의 volatile 키로 갈라 두지만(`protect`·`kingsshield`·
+/// `spikyshield`·`banefulbunker`·`burningbulwark`·`silktrap`·`obstruct`·`maxguard`) 갈리는 것은
+/// **막은 뒤에 상대에게 무엇을 하나**뿐이다. 그 부가 효과는 접촉 판정(`flags.contact`)이 있어야
+/// 하고 엔진에 아직 없다 — 그래서 지금은 **막는 일만** 여덟이 똑같이 한다. 접촉이 들어오면
+/// 여기가 열거형이 되고 키마다 갈래가 붙는다(그 전에 미리 갈라 두면 아무도 밟지 않는 갈래다).
+enum BattleGuard {
+    /// 막는 일을 부르는 쇼다운 키. 이 키를 쓰는 기술이 늘면(9세대 실크트랩처럼) 자동으로 따라온다.
+    static let showdownKeys: Set<String> = [
+        "protect", "kingsshield", "spikyshield", "banefulbunker",
+        "burningbulwark", "silktrap", "obstruct", "maxguard",
+    ]
+
+    /// 연속으로 쓰면 실패하기 쉬워진다 — 성공 확률 1/3^(연속 성공 횟수). 안 두면 방어를 매 턴
+    /// 눌러 무적이 된다(CPU 도 무작위로 고르므로 실제로 그렇게 된다).
+    static let consecutiveFailureBase = 3
+
+    /// 이 기술이 방어기인가 — 날씨·필드·진영 상태와 같은 자리에서 데이터가 답한다.
+    static func called(byMoveID id: Int) -> Bool {
+        guard let key = ShowdownMoveData.effects[id]?.volatileStatus else { return false }
+        return showdownKeys.contains(key)
+    }
+
+    /// 방어를 **뚫는** 기술인가(페인트·섀도다이브·울부짖기). 규칙이 "거의 다 막힌다" 라서
+    /// 데이터가 예외만 들고 있다 — 막히는 목록을 손으로 들면 조용히 낡는다.
+    static func isIgnored(byMoveID id: Int) -> Bool { ShowdownMoveData.ignoringGuard.contains(id) }
+}
+
 /// 판 전체에 걸린 것 — 날씨와 필드.
 ///
 /// **왜 인자로 나르는가.** 배틀 상태를 들고 있는 타입이 넷(1v1 LAN·연습·웨이브·방)이라, 엔진이
@@ -923,6 +954,13 @@ struct BattleSide: Sendable, Equatable {
     /// 행동을 소비했는지라, 마비·풀린치로 굳은 턴도 참이다(본가·쇼다운 모두 "이 턴에 더 움직이지
     /// 않는다" 로 판정한다). `lastHitThisTurn` 과 같은 자리(`beginTurn`)에서 비운다.
     var movedThisTurn = false
+    /// **이번 턴에** 방어기가 성공했나 — 상대의 공격이 이 값을 보고 막힌다.
+    /// `beginTurn` 에서 비우므로 다음 턴의 공격은 그대로 들어온다(방어는 한 턴짜리다).
+    var isGuarding = false
+    /// 방어기를 **연속으로 성공한 횟수** — 다음 방어의 성공 확률이 1/3^이 값이다.
+    /// 턴을 넘어 살고, 방어가 아닌 기술을 냈거나 방어가 실패하면 0 으로 돌아간다
+    /// (`consecutiveMoveUses` 와 달리 방어기끼리는 서로 다른 기술이어도 이어진다 — 본가와 같다).
+    var guardStreak = 0
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
     var flinched = false
@@ -1126,6 +1164,8 @@ enum BattleEngine {
     ///      오로라베일의 반감, 신비의부적·하얀안개·행운의부적의 차단, 순풍의 스피드 2배).
     ///      새 상태는 전부 지역 값이라 와이어는 그대로고 rng 소비 순서도 그대로지만, 같은 입력의
     ///      데미지가 갈린다. 순풍은 **턴 순서**까지 갈라 놓는다(그 뒤 판정이 통째로 밀린다).
+    ///      + 방어 부류 여덟(막는 일만, 접촉 부가 효과는 아직 없다). **연속 방어에서만 rng 를
+    ///      한 번 더 뽑는다**(1/3^연속) — 첫 방어는 뽑지 않으므로 예전 판의 소비 순서는 그대로다.
     static let rulesVersion = 23
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1575,6 +1615,10 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 한쪽 진영에만 깔린 상태 — 어느 편인지가 문구의 절반이다("우리 편은/상대 편은").
     case sideConditionStarted(BattleTeamSlot, BattleSideCondition)
     case sideConditionEnded(BattleTeamSlot, BattleSideCondition)
+    /// 이번 턴 몸을 지켰다 / 그 방어가 상대의 기술을 막았다. 액터는 **지킨 쪽**이다 —
+    /// 막힌 줄이 누구의 방어인지가 문구의 절반이고, 공격자는 바로 앞 줄이 이미 말한다.
+    case guardUp(BattleActor)
+    case guardBlocked(BattleActor)
     case faint(BattleActor)
     /// 새 개체가 필드에 나왔다 — 자기 교체(턴 머리)와 기절 자동 출전(턴 끝) 양쪽이 이 case 다.
     ///
@@ -1824,6 +1868,8 @@ extension BattleEngine {
         side.lastHitThisTurn = nil
         side.flinched = false
         side.movedThisTurn = false
+        // 방어는 한 턴짜리다 — 안 비우면 한 번 성공한 방어가 배틀이 끝날 때까지 모든 공격을 막는다.
+        side.isGuarding = false
     }
 
     /// 공격 1회를 해상해 양쪽 상태를 갱신하고, 그 결과를 이벤트로 남긴다.
@@ -1847,6 +1893,14 @@ extension BattleEngine {
         var events: [BattleEvent] = []
         guard beginAttack(attacker: &attacker, actor: attackerActor, move: move,
                           rng: &rng, into: &events) else { return events }
+        // 방어기는 자기에게 건다 — 상대·상성·데미지를 통째로 건너뛴다.
+        if BattleGuard.called(byMoveID: move.id) {
+            return events + raiseGuard(user: &attacker, actor: attackerActor,
+                                       defenderActor: defenderActor, rng: &rng)
+        }
+        // 방어기가 아닌 기술을 냈으면 연속 성공은 끊긴다 — 안 끊으면 한 번 쌓은 확률 벌점이
+        // 배틀 끝까지 남아, 사이에 다른 기술을 낀 방어가 이유 없이 실패한다.
+        attacker.guardStreak = 0
         // 필드기도 상대를 보지 않는다 — 날씨기와 같은 자리다.
         if let terrain = BattleTerrain.called(byMoveID: move.id) {
             attacker.lastMoveFailed = !field.start(terrain)
@@ -1878,6 +1932,24 @@ extension BattleEngine {
                            defenderTeam: defenderTeam, rng: &rng)
         events += faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)
         return events
+    }
+
+    /// 방어기 한 번 — 성공하면 이번 턴 자기를 지키고 연속 횟수를 올린다.
+    ///
+    /// 연속으로 쓰면 확률이 1/3, 1/9, 1/27… 로 떨어진다(본가·쇼다운과 같은 식). **rng 는 연속일
+    /// 때만 뽑는다** — 첫 방어에서 뽑으면 방어를 넣은 뒤 모든 판정이 한 칸씩 밀려, 같은 seed 로
+    /// 예전 판이 재현되지 않는다(연속 방어는 예전에 존재하지 않던 경로라 밀릴 판이 없다).
+    private static func raiseGuard(user: inout BattleSide, actor: BattleActor,
+                                   defenderActor: BattleActor,
+                                   rng: inout SplitMix64) -> [BattleEvent] {
+        var odds = 1
+        for _ in 0..<user.guardStreak { odds *= BattleGuard.consecutiveFailureBase }
+        let succeeded = odds == 1 || Int(rng.next() % UInt64(odds)) == 0
+        user.lastMoveFailed = !succeeded
+        user.isGuarding = succeeded
+        // 실패하면 연속이 끊긴다 — 안 끊으면 한 번 실패한 뒤로 확률이 영영 회복되지 않는다.
+        user.guardStreak = succeeded ? user.guardStreak + 1 : 0
+        return succeeded ? [.guardUp(actor)] : [.immune(defenderActor)]
     }
 
     /// 공격의 **머리** — 행동 가능 판정과 `.move` 줄. 대상이 몇이든 여기는 **한 번만** 지난다.
@@ -1931,6 +2003,17 @@ extension BattleEngine {
                          attackerTeam: BattleTeamSlot = .a,
                          defenderTeam: BattleTeamSlot = .b,
                          rng: inout SplitMix64) -> [BattleEvent] {
+        // 상대가 이번 턴 몸을 지켰으면 여기서 끝난다 — 명중·데미지·상태·랭크 전부 건너뛴다.
+        //
+        // **`applyAttack` 이 아니라 여기서 본다.** 광역기는 대상마다 `applyHit` 을 직접 부르므로
+        // (`WaveBattle`), 위에서 한 번만 보면 그 모드의 광역기가 방어를 통과한다 — 그리고 대상이
+        // 여럿일 때 막은 쪽만 막히는 것이 본가와 같은 판정이다.
+        // **자기에게 거는 기술은 막히지 않는다**(방어와 나 사이에는 아무것도 없다), 페인트 부류는
+        // 데이터가 예외로 답한다.
+        if defender.isGuarding, move.targetsUser != true, !BattleGuard.isIgnored(byMoveID: move.id) {
+            attacker.lastMoveFailed = true   // 분함의발구르기는 막힌 것도 실패로 센다(본가와 같다)
+            return [.guardBlocked(defenderActor)]
+        }
         var events: [BattleEvent] = []
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move,
                                     field: field, attackerTeam: attackerTeam,
