@@ -86,11 +86,8 @@ struct RogueRunView: View {
     }
 
     private var header: some View {
-        HStack {
-            Label(headerTitle, systemImage: "flame.fill").font(.headline)
-            Spacer()
-            Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.plain)
-        }
+        ChallengeOverlayHeader(title: headerTitle, systemImage: "flame.fill", tint: .red,
+                               closeHelp: l.battleClose, onClose: onClose)
     }
 
     private var headerTitle: String {

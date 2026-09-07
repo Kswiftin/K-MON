@@ -53,12 +53,8 @@ struct RaidView: View {
     }
 
     private var header: some View {
-        HStack {
-            Label(l.raidTitle, systemImage: "person.3.sequence.fill").font(.callout).bold()
-            Spacer()
-            Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-        }
+        ChallengeOverlayHeader(title: l.raidTitle, systemImage: "person.3.sequence.fill",
+                               tint: .teal, closeHelp: l.battleClose, onClose: onClose)
     }
 
     // MARK: 모집 전
