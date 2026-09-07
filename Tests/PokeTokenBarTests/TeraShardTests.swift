@@ -173,18 +173,33 @@ final class TeraShardTests: XCTestCase {
                       "이름표에 없으면 대화·터미널이 이 아이템을 부를 수 없다")
     }
 
-    /// **소모형 비진화 아이템은 가방의 세 switch 에 명시 케이스로 있어야 한다.** `default:` 는
-    /// 진화 아이템 전체를 받으므로, 빠뜨리면 "진화 가능할 때 사용" 이 뜨고 `useEvolutionItem`
-    /// 으로 흘러간다(`ItemKind.heartScale` 의 주석이 경고하는 그 함정이다).
-    func testEveryConsumableNonEvolutionItemIsSpeltOutInTheBag() throws {
-        let bag = try XCTUnwrap(SourceScan.sources().first { $0.name == "BagView.swift" }?.code)
-        let consumables = ItemKind.allCases.filter {
-            $0.evolutionRule == nil && !$0.isPassive && $0.roomReaction == nil
+    /// **아이템 하나는 가방 갈래 하나로 답해야 한다** — `bagUse` 가 없던 동안 가방은 같은 질문을
+    /// 네 자리에서 따로 물었고, 진화가 아닌 새 아이템은 네 곳에 다 적어야 했다. 한 자리만
+    /// 빠뜨리면 컴파일은 통과한 채 "진화 가능할 때 사용" 이 뜨고 `useEvolutionItem` 으로 흘러간다
+    /// (`heartScale` 의 주석이 경고하던 함정이고, 테라피스에서 실제로 한 자리가 빠졌다).
+    ///
+    /// 그 빠뜨림은 이제 **컴파일 오류**다(네 switch 가 `default:` 없이 `bagUse` 를 훑는다).
+    /// 여기서는 축 자체가 진화 규칙과 어긋나지 않는지만 본다.
+    func testTheBagAxisAgreesWithTheEvolutionRule() {
+        for kind in ItemKind.allCases {
+            XCTAssertEqual(kind.bagUse == .evolutionItem, kind.isEvolutionItem,
+                           "\(kind.rawValue) 의 가방 갈래와 진화 규칙이 어긋난다")
+            XCTAssertEqual(kind.bagUse == .passive, kind.isPassive)
+            XCTAssertEqual(kind.bagUse == .furniture, kind.roomReaction != nil)
         }
-        XCTAssertGreaterThanOrEqual(consumables.count, 4)
-        for kind in consumables {
-            XCTAssertTrue(bag.contains(".\(kind.rawValue)"),
-                          "가방이 \(kind.rawValue) 를 진화 아이템으로 흘려보낸다")
+        XCTAssertEqual(ItemKind.teraShard.bagUse, .teraShard)
+    }
+
+    /// **모든 아이템에 설명이 있다.** 설명이 진화 갈래로 흘러간 아이템은 빈 문자열이 되고,
+    /// 가방·상점에 빈 줄이 뜬다(문구를 안 적었다는 신호가 화면에 안 나온다).
+    func testEveryItemHasADescriptionInEveryLanguage() {
+        for lang in AppLanguage.allCases {
+            let l = L(lang)
+            for kind in ItemKind.allCases {
+                XCTAssertFalse(l.itemDescription(kind).isEmpty,
+                               "\(kind.rawValue) 의 \(lang) 설명이 비었다")
+                XCTAssertFalse(l.itemName(kind).isEmpty, "\(kind.rawValue) 의 \(lang) 이름이 비었다")
+            }
         }
     }
 
@@ -196,12 +211,19 @@ final class TeraShardTests: XCTestCase {
     }
 
     /// 한 개 쓰면 테라 타입이 **반드시 바뀌고** 재고가 하나 줄어든다(민트와 같은 규칙).
+    ///
+    /// **18종을 다 시작 타입으로 넣어 본다.** 하나만 쓰면 후보에서 제외하지 않는 오구현도 그 seed
+    /// 가 우연히 다른 타입을 뽑아 통과한다(실제로 결함 주입에서 그렇게 지나갔다 —
+    /// `docs/reference/defect-log.md` "확률 tie-break 에 기대는 테스트" 와 같은 부류다).
+    /// 18종을 다 돌리면 제외를 안 하는 구현은 반드시 한 번 자기 타입을 뽑는다.
     func testUsingAShardAlwaysChangesTheTeraTypeAndSpendsOne() throws {
-        let s = store(shards: 2, teraType: .fairy)
-        let new = try XCTUnwrap(s.useTeraShard())
-        XCTAssertNotEqual(new, .fairy, "같은 타입이 다시 나오면 쓴 값이 없다")
-        XCTAssertEqual(s.state.active?.teraType, new)
-        XCTAssertEqual(s.itemCount(.teraShard), 1)
+        for current in PokemonType.allCases {
+            let s = store(shards: 2, teraType: current)
+            let new = try XCTUnwrap(s.useTeraShard())
+            XCTAssertNotEqual(new, current, "\(current) 로 시작하면 같은 타입이 다시 나온다")
+            XCTAssertEqual(s.state.active?.teraType, new)
+            XCTAssertEqual(s.itemCount(.teraShard), 1)
+        }
     }
 
     /// 재고가 없으면 아무것도 소모하지 않고 `nil` 이다.

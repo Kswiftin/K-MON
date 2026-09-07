@@ -206,45 +206,43 @@ private struct ItemCard: View {
         .pokedoroCard()
     }
 
-    /// 이 아이템을 지금 쓸 수 있나 (kind 별 — 사탕은 라인 로딩 필요, 민트는 활성 포켓몬만).
+    /// 이 아이템을 지금 쓸 수 있나 (갈래별 — 사탕은 라인 로딩 필요, 민트·테라피스는 활성 포켓몬만).
+    ///
+    /// 아래 세 switch 는 **`default:` 를 두지 않는다.** 갈래를 하나 늘렸는데 한 자리만 빠뜨리면
+    /// 컴파일은 통과한 채 그 아이템이 진화 아이템처럼 다뤄진다 — `ItemKind.bagUse` 가 있는 이유다.
     private var canUse: Bool {
-        switch kind {
-        case .rareCandy: return store.canUseRareCandy
-        case .mint:      return store.canUseMint
-        case .teraShard: return store.canUseTeraShard
-        case .shinyCharm: return false   // 보유형 — 사용 개념 없음(상시 효과)
-        case .heartScale: return store.canUseHeartScale
-        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return false
-        default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
-            return store.canUseEvolutionItem(kind)
+        switch kind.bagUse {
+        case .candy:          return store.canUseRareCandy
+        case .mint:           return store.canUseMint
+        case .teraShard:      return store.canUseTeraShard
+        case .heartScale:     return store.canUseHeartScale
+        case .passive:        return false   // 보유형 — 사용 개념 없음(상시 효과)
+        case .furniture:      return false
+        case .evolutionItem:  return store.canUseEvolutionItem(kind)
         }
     }
     /// 사용 컨트롤 효과 힌트 ("+XP" / "성격 랜덤 변경").
     private func effectHint(_ l: L) -> String {
-        switch kind {
-        case .rareCandy: return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
-        case .mint:      return l.mintEffectHint
-        case .teraShard: return l.teraShardEffectHint
-        case .shinyCharm: return l.shinyCharmEffectHint
+        switch kind.bagUse {
+        case .candy:      return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
+        case .mint:       return l.mintEffectHint
+        case .teraShard:  return l.teraShardEffectHint
         case .heartScale: return l.heartScaleEffectHint
-        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return "미니룸에서 배치"
-        default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
-            return "진화 가능할 때 사용"
+        case .passive:    return l.shinyCharmEffectHint
+        case .furniture:  return l.t("미니룸에서 배치", "Place in Mini Room", "ミニルームで配置")
+        case .evolutionItem:
+            return l.t("진화 가능할 때 사용", "Use when evolution is available", "進化できるときに使う")
         }
     }
     private func performUse() {
-        switch kind {
-        case .rareCandy: _ = store.useRareCandy()
-        case .mint:      _ = store.useMint()
-        case .teraShard: _ = store.useTeraShard()
-        case .shinyCharm: break   // 보유형 — 사용 동작 없음
+        switch kind.bagUse {
+        case .candy:      _ = store.useRareCandy()
+        case .mint:       _ = store.useMint()
+        case .teraShard:  _ = store.useTeraShard()
         case .heartScale: store.useHeartScale()
-        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: break
-        default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
-            _ = store.useEvolutionItem(kind)
+        case .passive:    break   // 보유형 — 사용 동작 없음
+        case .furniture:  break
+        case .evolutionItem: _ = store.useEvolutionItem(kind)
         }
     }
 

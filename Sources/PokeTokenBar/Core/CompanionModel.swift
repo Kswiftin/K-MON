@@ -199,6 +199,19 @@ enum EvolutionItemRule: Sendable, Equatable {
     }
 }
 
+/// 가방에서 아이템 하나를 다루는 방식 — `ItemKind.bagUse` 가 답한다.
+///
+/// 진화 아이템 40여 종을 한 case 로 접는다: 갈래가 갈리는 것은 **어느 진화 규칙인가**뿐이고
+/// 그 질문은 `EvolutionItemRule` 이 이미 답한다. 나머지는 하나씩 다르게 다뤄야 하는 것들이다.
+enum BagUse: Sendable, Equatable, CaseIterable {
+    case candy, mint, heartScale, teraShard
+    /// 지니고만 있는 물건(이로치 부적) — "지금 쓴다" 는 개념이 없다.
+    case passive
+    /// 미니룸 가구 — 가방에서 쓰는 것이 아니라 방에서 배치한다.
+    case furniture
+    case evolutionItem
+}
+
 /// 인벤토리 아이템 종류 — 확장 대비 enum. rawValue 로 CompanionState.inventory 에 저장.
 enum ItemKind: String, Codable, Sendable, CaseIterable {
     case rareCandy
@@ -299,6 +312,40 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .masterpieceTeacup: return .useItem("masterpiece-teacup")
         }
     }
+    /// 가방이 이 아이템을 **어떻게 다루는가**.
+    ///
+    /// **왜 이 축이 있는가.** 가방은 같은 갈래를 세 번(쓸 수 있나·효과 힌트·실제 사용) 묻고
+    /// 설명 문구가 한 번 더 묻는다. 그 네 자리가 각각 `ItemKind` 를 직접 switch 하고 `default:`
+    /// 로 진화 아이템 전체를 받고 있어서, 진화가 아닌 새 아이템은 **네 자리에 다 적어야** 하고
+    /// 하나만 빠뜨리면 컴파일은 통과한 채 "진화 가능할 때 사용" 이 뜨고 설명이 빈 문자열이 된다
+    /// (하트비늘의 주석이 경고하던 함정이고, 실제로 테라피스에서 한 자리가 빠졌다).
+    ///
+    /// 축을 하나 두면 그 네 자리가 이 열거형을 **`default:` 없이** switch 할 수 있고, 그때부터
+    /// 빠뜨림은 컴파일 오류다. 소스 문자열 스캔으로는 잡을 수 없다 — 스캔은 파일 단위라 한 파일
+    /// 안의 네 자리 중 하나만 남아도 통과한다.
+    var bagUse: BagUse {
+        switch self {
+        case .rareCandy:  return .candy
+        case .mint:       return .mint
+        case .heartScale: return .heartScale
+        case .teraShard:  return .teraShard
+        case .shinyCharm: return .passive
+        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
+             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
+            return .furniture
+        case .linkingCord, .fireStone, .waterStone, .thunderStone, .leafStone, .iceStone,
+             .moonStone, .sunStone, .shinyStone, .duskStone, .dawnStone,
+             .kingsRock, .metalCoat, .dragonScale, .upgrade, .dubiousDisc,
+             .deepSeaTooth, .deepSeaScale, .protector, .electirizer, .magmarizer,
+             .reaperCloth, .razorClaw, .razorFang, .prismScale, .ovalStone,
+             .sachet, .whippedDream, .tartApple, .sweetApple, .crackedPot, .chippedPot,
+             .scrollOfDarkness, .scrollOfWaters, .blackAugurite, .peatBlock,
+             .auspiciousArmor, .maliciousArmor, .syrupyApple, .metalAlloy,
+             .unremarkableTeacup, .masterpieceTeacup:
+            return .evolutionItem
+        }
+    }
+
     /// 진화에 쓰는 아이템인가 — 가방·상점의 "쓰면 진화" 분기가 이걸로 묶인다(케이스 30여 개를
     /// 스위치마다 다시 나열하면 새 아이템을 넣을 때 한 곳을 빠뜨린다).
     var isEvolutionItem: Bool { evolutionRule != nil }

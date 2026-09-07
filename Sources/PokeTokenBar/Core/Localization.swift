@@ -1589,35 +1589,39 @@ struct L {
         case .helmetExplorer: return "탐험가 헬멧"
         }
     }
-    var outfitTitle: String { "꾸미기" }
-    var outfitWardrobe: String { "꾸미기" }
-    var outfitTakeOff: String { "벗기" }
-    var outfitLocked: String { "업적으로 해금" }
+    var outfitTitle: String { t("꾸미기", "Wardrobe", "きせかえ") }
+    var outfitWardrobe: String { t("꾸미기", "Wardrobe", "きせかえ") }
+    var outfitTakeOff: String { t("벗기", "Take off", "はずす") }
+    var outfitLocked: String { t("업적으로 해금", "Unlock via achievements", "実績で解放") }
+    /// 아이템 설명 — 가방과 상점이 읽는다. **`default:` 를 두지 않는다**: 진화가 아닌 새 아이템이
+    /// 진화 갈래로 흘러가면 설명이 빈 문자열이 된다(`ItemKind.bagUse` 가 있는 이유).
     func itemDescription(_ kind: ItemKind) -> String {
-        switch kind {
-        case .rareCandy:
+        switch kind.bagUse {
+        case .candy:
             let xp = GameNumberFormatter.compact(RareCandy.xp)   // 상수에서 파생(하드코딩 드리프트 방지)
             return "현재 포켓몬의 경험치를 \(xp) 올려줘요."
         case .mint:
-            return "현재 포켓몬의 성격을 랜덤으로 바꿔줘요."
-        // 하트비늘(#97) — 아래 `default:` 는 진화 아이템 전용이라 여기에 명시하지 않으면
-        // `evolutionRule == nil` 로 흘러가 설명이 빈 문자열이 된다.
+            return t("현재 포켓몬의 성격을 랜덤으로 바꿔줘요.",
+                     "Randomly changes your Pokémon's nature.",
+                     "ポケモンのせいかくをランダムに変えます。")
         case .heartScale:
             return t("지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요.",
                      "Recalls one move it could have learned by now. With four moves, one is forgotten.",
                      "これまでに覚えられた技をひとつ思い出します。技が4つなら1つ忘れます。")
-        // 테라피스(#3) — 하트비늘과 같은 이유로 여기에 명시한다(진화 아이템이 아니다).
         case .teraShard:
             return t("테라스탈했을 때 되는 타입을 랜덤으로 바꿔줘요. 대전에서만 쓰이는 타입이에요.",
                      "Randomly changes the type it becomes when it Terastallizes. It only matters in battle.",
                      "テラスタルしたときのタイプをランダムに変えます。対戦でのみ意味があります。")
-        case .shinyCharm:
-            return "보유하면 이로치 포켓몬이 태어날 확률이 올라가요."
-        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
-            return "미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요."
-        default:
-            // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 27개 나열하면 새 아이템을 넣을 때 빠뜨린다.
+        case .passive:
+            return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
+                     "While owned, raises the chance of hatching a shiny.",
+                     "持っていると色違いが生まれる確率が上がります。")
+        case .furniture:
+            return t("미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요.",
+                     "Furniture for your mini room. It never affects growth or rewards.",
+                     "ミニルームに置く家具です。成長や報酬には影響しません。")
+        case .evolutionItem:
+            // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 40개 나열하면 새 아이템을 넣을 때 빠뜨린다.
             switch kind.evolutionRule {
             case .plainTrade:
                 return "통신교환으로 진화하는 포켓몬을 진화시켜요."
@@ -1626,7 +1630,8 @@ struct L {
             case .heldItem:
                 return "이 도구를 지녀야 진화하는 포켓몬을 진화시켜요."
             case nil:
-                return ""   // 진화 아이템이 아닌데 설명이 없는 경우(도달 불가 — 위 케이스가 다 덮는다)
+                // 진화 갈래인데 규칙이 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
+                return ""
             }
         }
     }
