@@ -92,6 +92,11 @@ enum VariableDamage: Equatable, Sendable {
             return .power(min(200, basePower(move, fallback: 40) * max(1, attacker.consecutiveMoveUses)))
         case MoveID.rageFist:
             return .power(min(350, basePower(move, fallback: 50) * (1 + attacker.timesHit)))
+        case MoveID.payback:
+            // 상대가 이번 턴 행동을 이미 썼으면 두 배. 본가는 교체한 상대에게도 두 배지만, 교체를
+            // 하는 모드(체육관·웨이브)에서도 교체는 `beginAttack` 을 지나지 않아 여기서 안 보인다.
+            let base = basePower(move, fallback: 50)
+            return .power(defender.movedThisTurn ? base * 2 : base)
         case MoveID.stompingTantrum, MoveID.temperFlare:
             let base = basePower(move, fallback: 75)
             return .power(attacker.lastMoveFailed ? base * 2 : base)
@@ -322,6 +327,7 @@ enum VariableDamage: Equatable, Sendable {
         static let hex = 506
         static let acrobatics = 512
         static let finalGambit = 515
+        static let payback = 371
         static let heatCrash = 535
         static let powerTrip = 681
         static let stompingTantrum = 707

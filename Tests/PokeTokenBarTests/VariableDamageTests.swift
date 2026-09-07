@@ -194,6 +194,47 @@ final class VariableDamageTests: XCTestCase {
                        .power(110))
     }
 
+    /// 리벤지는 **상대가 이번 턴에 이미 행동했을 때** 두 배다. 우선도 0 짜리라 선공을 잡은 턴에는
+    /// 기본 위력이고, 후공이면 두 배가 된다 — 이 조건이 없으면 기술이 늘 절반 세기로 나간다.
+    func testPaybackDoublesOnlyAfterTheTargetHasActed() {
+        let payback = spec(VariableDamage.MoveID.payback, type: .dark, power: 50)
+        let jab = spec(84, type: .electric, power: 40)
+        var mine = side([.dark], hp: 9_999), theirs = side([.normal], hp: 9_999)
+
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(payback, attacker: mine, defender: theirs, rng: &rng),
+                       .power(50), "상대가 아직 안 움직인 턴은 기본 위력")
+
+        _ = turn(jab, &theirs, &mine)
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(payback, attacker: mine, defender: theirs, rng: &rng),
+                       .power(100), "상대가 먼저 움직였으면 두 배")
+
+        BattleEngine.beginTurn(&theirs)
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(payback, attacker: mine, defender: theirs, rng: &rng),
+                       .power(50), "지난 턴에 움직인 것은 세지 않는다")
+    }
+
+    /// 못 움직인 턴도 **행동을 쓴 것**이다(본가·쇼다운 모두 "이 턴에 더 움직이지 않는다" 로 본다).
+    /// 성공한 기술만 세면 마비·풀린치로 굳은 상대에게 리벤지가 약해진다.
+    func testPaybackCountsATargetThatLostItsTurnToParalysis() {
+        let payback = spec(VariableDamage.MoveID.payback, type: .dark, power: 50)
+        let jab = spec(84, type: .electric, power: 40)
+        var mine = side([.dark], hp: 9_999), theirs = side([.normal], hp: 9_999)
+
+        BattleEngine.beginTurn(&mine)
+        BattleEngine.beginTurn(&theirs)
+        theirs.flinched = true
+        var rng = SplitMix64(seed: 1)
+        var field = BattleField()
+        _ = BattleEngine.applyAttack(attacker: &theirs, defender: &mine, attackerActor: .b,
+                                     defenderActor: .a, move: jab, field: &field, rng: &rng)
+        rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(payback, attacker: mine, defender: theirs, rng: &rng),
+                       .power(100), "풀린치로 굳은 턴도 상대의 행동을 쓴 턴이다")
+    }
+
     /// PokéAPI 가 위력을 **0** 으로 주면(하드프레스가 실제로 그랬다) 곱해도 0 이라 기술이 죽는다.
     /// 0 은 값이 아니라 "없음"이므로 쇼다운 기준값으로 되돌린다.
     func testAZeroBasePowerFallsBackInsteadOfCollapsing() {

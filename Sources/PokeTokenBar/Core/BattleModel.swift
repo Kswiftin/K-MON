@@ -807,6 +807,10 @@ struct BattleSide: Sendable, Equatable {
     /// 직전에 낸 내 기술이 실패했나 — 분함의발구르기·역상승이 본다. 빗나감·무효·못 움직임이
     /// 전부 실패다(본가도 같다).
     var lastMoveFailed = false
+    /// **이번 턴에** 행동을 썼나 — 리벤지가 상대의 이 값을 본다. 기술이 나갔는지가 아니라
+    /// 행동을 소비했는지라, 마비·풀린치로 굳은 턴도 참이다(본가·쇼다운 모두 "이 턴에 더 움직이지
+    /// 않는다" 로 판정한다). `lastHitThisTurn` 과 같은 자리(`beginTurn`)에서 비운다.
+    var movedThisTurn = false
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
     var flinched = false
@@ -1002,6 +1006,11 @@ enum BattleEngine {
     ///      (타키온커터 2히트·파퓰레이션밤 10히트 …)은 명중 뒤에 히트 수를 뽑고 히트마다 급소·난수를
     ///      다시 뽑으므로, 구버전은 같은 기술을 1히트로 보고 그 뒤 모든 판정이 어긋난다.
     ///      명중률 0 도 값이 아니라 **경로**가 바뀐다 — 구버전은 명중 rng 를 뽑고 늘 빗나갔다.
+    /// 23 = 상황에서 위력을 뽑는 기술이 한 묶음으로 늘었다(분화 부류의 HP 비례, 어시스트파워의
+    ///      랭크 합, 악몽의 상태 배율, 리프블레이드·에코보이스·원한의응보의 누적 카운터,
+    ///      트리플킥 부류의 히트별 위력, 리벤지의 후공 배율) + 날씨·필드 레이어(볕·비의 1.5·0.5배,
+    ///      모래 잔뎀, 세 필드의 1.3배와 상태 차단, 그래스필드 회복). 새 상태는 전부 지역
+    ///      값이라 와이어는 그대로고 rng 소비 순서도 그대로지만, 같은 입력의 데미지가 갈린다.
     static let rulesVersion = 23
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1654,7 +1663,11 @@ extension BattleEngine {
     /// **`applyAttack` 을 직접 부르는 모든 턴 루프가 이걸 먼저 불러야 한다.** 한 곳만 빠지면 그
     /// 모드에서만 카운터가 지난 턴 데미지를 되돌려준다 — 화면에는 정상으로 보이고 숫자만 틀린다.
     /// 빠뜨림은 `VariableDamageTests.testEveryTurnLoopClearsTheIncomingHit` 이 소스에서 막는다.
-    static func beginTurn(_ side: inout BattleSide) { side.lastHitThisTurn = nil; side.flinched = false }
+    static func beginTurn(_ side: inout BattleSide) {
+        side.lastHitThisTurn = nil
+        side.flinched = false
+        side.movedThisTurn = false
+    }
 
     /// 공격 1회를 해상해 양쪽 상태를 갱신하고, 그 결과를 이벤트로 남긴다.
     /// 1v1·연습·멀티가 전부 이 함수를 지나므로 **세 모드의 이벤트 어휘가 같다** — 데미지 함수를
@@ -1706,6 +1719,8 @@ extension BattleEngine {
     /// `false` 면 못 움직였다 — 사유(`.cant`·혼란 자멸)는 `events` 에 들어간다.
     static func beginAttack(attacker: inout BattleSide, actor: BattleActor, move: MoveSpec,
                             rng: inout SplitMix64, into events: inout [BattleEvent]) -> Bool {
+        // 행동을 쓴 것은 여기까지 왔다는 뜻이다 — 기술이 나갔는지와 무관하다(못 움직인 턴도 쓴 턴이다).
+        attacker.movedThisTurn = true
         // 못 움직이면 `.move` 자체가 나가지 않는다 — Showdown 도 `|move|` 대신 `|cant|` 를 보낸다.
         guard canAct(&attacker, actor: actor, rng: &rng, into: &events) else {
             // 기술이 아예 나가지 않았다 — 연속은 끊기고, 직전 기술은 실패로 친다.

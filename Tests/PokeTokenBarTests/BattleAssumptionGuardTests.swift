@@ -52,6 +52,7 @@ final class BattleAssumptionGuardTests: XCTestCase {
         // 턴을 넘어 쌓인 카운터에서 위력을 뽑는 부류. 역시 전부 단발기다.
         "furyCutter", "rollout", "echoedVoice",
         "rageFist", "stompingTantrum", "temperFlare",
+        "payback",                          // 단발기 — 상대가 이번 턴에 움직였나만 본다
         // **유일한 다단기.** 히트마다 위력이 오르는 것이 이 기술들의 규칙이라, 루프 안에서 뽑는
         // 것이 맞다 — `from` 에 히트 번호가 넘어간다.
         "tripleKick", "tripleAxel",
