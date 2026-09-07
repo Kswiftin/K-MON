@@ -55,7 +55,11 @@ enum PokedoroCLI {
             if oneline {
                 print(onelineStatus(store))
             } else {
-                TUIRender.home(homeModel(store), width: terminalWidth()).forEach { print($0) }
+                let width = terminalWidth()
+                var model = homeModel(store)
+                // 한 번 찍고 끝나는 출력에는 높이 예산이 없다 — 넘치면 셸이 스크롤한다.
+                model.partnerArt = partnerArt(store, width: width, maxRows: .max, frame: 0)
+                TUIRender.home(model, width: width).forEach { print($0) }
             }
         case .party:
             partyRows(store).forEach { print($0) }
@@ -263,6 +267,31 @@ enum PokedoroCLI {
             adventure: adventure,
             isReadOnly: true,
             status: nil)
+    }
+
+    /// 홈에 얹을 파트너 그림. **한 번 찍는 명령과 `watch` 가 같은 함수를 쓴다** — 프런트엔드마다
+    /// 판정을 쓰면 한쪽에만 그림이 나오거나 조건이 갈라진다(터미널 문서의 "판정은 한 곳씩만").
+    ///
+    /// 대상은 플로팅 펫과 **같은 규칙**이다(`floatingPetSubject`) — 도감에 고정해 둔 종이 있으면
+    /// 그 종, 없으면 지금 파트너다. 두 표면이 서로 다른 개체를 띄우면 사용자는 어느 쪽이 맞는지
+    /// 알 수 없다.
+    ///
+    /// `frame` 은 `watch` 의 틱 번호다. 한 번 찍는 명령은 0 을 넘겨 정지 상태로 그린다.
+    static func partnerArt(_ store: CompanionStore, width: Int, maxRows: Int, frame: Int) -> [String] {
+        let subject = store.floatingPetSubject(pinnedSpeciesID: AppSettings().floatingPetSpeciesID)
+        guard let speciesID = subject.speciesID else { return [] }   // 알을 품고 있다
+        let environment = ProcessInfo.processInfo.environment
+        return TUISprite.block(
+            SpriteLoader.cachedPixels(speciesID: speciesID, shiny: subject.isShiny),
+            width: width, maxRows: maxRows,
+            colorAllowed: TUISprite.colorAllowed(isTTY: isatty(STDOUT_FILENO) == 1,
+                                                 noColor: environment["NO_COLOR"] != nil,
+                                                 term: environment["TERM"]),
+            bobbed: TUISprite.isBobbed(frame: frame,
+                                       lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled),
+            // 조각을 얼마나 쪼갤지는 **터미널이 그릴 수 있는가**로 갈린다 — 6분면 글리프는
+            // macOS 기본 폰트에 없어서, 그리지 못하는 터미널에서는 그림이 통째로 두부가 된다.
+            subcells: TUISprite.subcells(environment: environment))
     }
 
     /// tmux 상태줄·셸 프롬프트에 꽂는 한 줄. 폭이 귀한 자리라 라벨을 빼고 기호만 쓴다.

@@ -68,7 +68,9 @@ struct TUIRenderTests {
         let model = TUIHomeModel.sample
         for width in [24, 40, 80, 120] {
             for line in TUIRender.home(model, width: width) {
-                #expect(TUIText.displayWidth(line) <= width, "폭 \(width) 에서 넘침: \(line)")
+                // 그림 줄에는 SGR escape 가 섞이므로 `displayWidth` 로 세면 안 된다 — 그쪽은
+                // escape 바이트를 글자로 센다. `visibleWidth` 는 escape 를 0 칸으로 본다.
+                #expect(TUISprite.visibleWidth(line) <= width, "폭 \(width) 에서 넘침: \(line)")
             }
         }
     }
@@ -332,5 +334,50 @@ struct TUIRenderTests {
     /// 모험이 없는 홈도 정상 상태다 — 그 줄이 비면 고장으로 읽힌다.
     @Test func testTheIdleHomeStillSaysWhatTheAdventureRowMeans() {
         #expect(TUIRender.home(idle(), width: 70).contains { $0.contains("쉬는 중") })
+    }
+
+    // MARK: 파트너 그림
+
+    /// **그림 줄은 한 바이트도 손대지 않고 나간다.** `TUIText.truncate`·`pad` 를 통과하면
+    /// escape 바이트가 글자로 세어져 SGR 중간에서 잘리고, 그 줄부터 커서 열이 어긋난다 —
+    /// 터미널에 반 칸 되돌리기가 없어 다시 그려도 복구되지 않는다.
+    @Test func testHomePassesSpriteRowsThroughVerbatim() {
+        let pixels = TUISprite.Pixels(width: 8, height: 8,
+                                      rgba: (0..<64).flatMap { i -> [UInt8] in [UInt8(i * 3), 40, 200, 255] })
+        let artwork = TUISprite.block(pixels, width: TUISprite.minimumWidth, maxRows: 40,
+                                      colorAllowed: true, bobbed: false, subcells: .quadrant)
+        var model = idle()
+        model.partnerArt = artwork
+        let rendered = TUIRender.home(model, width: TUISprite.minimumWidth)
+        // 그림 줄은 escape 때문에 **글자 수가 칸 수보다 훨씬 많다**(20칸 한 줄이 700자쯤). 폭으로
+        // 자르는 코드가 한 줄이라도 끼어 있으면 이 단정이 곧바로 깨진다.
+        #expect(artwork.contains { $0.count > TUISprite.minimumWidth })
+        for line in artwork where !line.isEmpty {
+            #expect(rendered.contains(line))
+        }
+    }
+
+    /// 그림이 없을 때(캐시 미스·파이프·좁은 창) 홈은 지금까지의 화면 그대로다. 자리를 비워
+    /// 두면 이유 없는 빈 줄이 생겨 사용자는 무언가 사라진 것으로 읽는다.
+    @Test func testHomeWithoutSpriteAddsNoLines() {
+        var model = idle()
+        model.partnerArt = []
+        #expect(TUIRender.home(model, width: 70) == TUIRender.home(idle(), width: 70))
+    }
+
+    /// 그림이 들어간 홈도 폭을 지킨다. 그림 줄은 폭 계산을 통과하지 않으므로 **스스로** 칸 수를
+    /// 지켜야 하고(`TUISprite.block`), 홈은 그것을 그대로 얹는다.
+    @Test func testHomeWithSpriteStaysWithinWidth() {
+        let pixels = TUISprite.Pixels(width: 16, height: 16,
+                                      rgba: (0..<256).flatMap { _ -> [UInt8] in [10, 20, 30, 255] })
+        for width in [40, 70, 120] {
+            var model = idle()
+            model.partnerArt = TUISprite.block(pixels, width: width, maxRows: 40,
+                                               colorAllowed: true, bobbed: false, subcells: .quadrant)
+            #expect(!model.partnerArt.isEmpty)
+            for line in TUIRender.home(model, width: width, keyHints: true) {
+                #expect(TUISprite.visibleWidth(line) <= width)
+            }
+        }
     }
 }

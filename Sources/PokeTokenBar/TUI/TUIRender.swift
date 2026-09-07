@@ -182,6 +182,11 @@ enum TUIRender {
         lines.append(rule(width: inner))
         lines.append("")
 
+        // **그림 줄은 자르지 않는다.** SGR escape 가 섞여 있어 `TUIText.truncate` 를 통과하면
+        // escape 중간에서 잘리고, 그 줄부터 커서 열이 어긋난다. 칸 수는 만든 쪽
+        // (`TUISprite.block`)이 이미 지켰고, 폭·높이가 모자라면 애초에 빈 배열로 온다.
+        lines += model.partnerArt
+
         if let name = model.partnerName {
             let shiny = model.isShiny ? " ✨" : ""
             lines.append(row(left: "파트너   \(name)\(shiny)",

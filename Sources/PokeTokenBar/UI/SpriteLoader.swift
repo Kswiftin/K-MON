@@ -235,6 +235,64 @@ enum SpriteLoader {
         return croppedEgg
     }
 
+    /// 디스크 캐시에 이미 있는 스프라이트를 픽셀 격자로 — **네트워크 없음**(`cachedImage` 와 같은
+    /// 규율). 터미널이 쓰는 유일한 그림 경로다: 한 번 찍고 죽는 명령은 받아 오는 것을 기다릴 수
+    /// 없고, 기다리게 만들면 세이브에서만 값을 꺼낸다는 터미널의 규칙이 깨진다.
+    ///
+    /// 캐시에 없으면 `nil` 이고, 그때 터미널은 그림 없이 그린다 — 없음은 고장이 아니다.
+    ///
+    /// **픽셀이 가장 많은 후보를 고른다.** 터미널은 40칸(=40×40 픽셀)까지 쓰므로 어느 소스가
+    /// 오는지가 곧 해상도다.
+    /// - HOME 512 정지 렌더 — 설정이 "선명하게" 일 때 받아 둔다. 있으면 압도적으로 크다.
+    ///   (`highResolution: true` 는 HOME 이 없으면 정적 96 으로 폴백하므로 둘 중 하나가 온다.)
+    /// - showdown 애니메이션 — 여백 없이 잘려 있어 96px 정적보다 **실물이 크다**(고래왕자 106×68).
+    /// - 정적 96px PNG — 여백이 절반이라 실물은 60px 안팎이다.
+    ///
+    /// 비교는 **면적이 아니라 긴 변**으로 한다. 정적 96×96 은 여백까지 세어 면적으로는 잘려 있는
+    /// showdown 을 늘 이기지만, 잘라 낸 뒤 실제로 쓰는 픽셀은 더 적다.
+    static func cachedPixels(speciesID: Int, shiny: Bool) -> TUISprite.Pixels? {
+        let candidates = [cachedImage(speciesID: speciesID, shiny: shiny, highResolution: true),
+                          cachedImage(speciesID: speciesID, animated: true, shiny: shiny)]
+            .compactMap { image -> CGImage? in
+                guard let image else { return nil }
+                var rect = CGRect(origin: .zero, size: image.size)
+                return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+            }
+        guard let cg = candidates.max(by: { max($0.width, $0.height) < max($1.width, $1.height) })
+        else { return nil }
+        return pixels(from: cg)
+    }
+
+    /// 이미지를 RGBA 격자로. 알파는 **되돌린** 값으로 낸다 — `CGContext` 는 미리 곱한 값만
+    /// 그리므로, 그대로 쓰면 반투명 테두리가 검게 죽는다.
+    static func pixels(from image: CGImage) -> TUISprite.Pixels? {
+        let width = image.width, height = image.height
+        // 스프라이트는 512×512 이하다. 상한을 두는 이유는 캐시 파일이 깨졌을 때 CLI 가 거대한
+        // 버퍼를 잡고 멈추지 않게 하기 위해서다.
+        guard width > 0, height > 0, width * height <= 4_194_304 else { return nil }
+
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+
+        for i in stride(from: 0, to: rgba.count, by: 4) {
+            let alpha = Int(rgba[i + 3])
+            guard alpha > 0, alpha < 255 else { continue }
+            for channel in 0..<3 {
+                rgba[i + channel] = UInt8(min(255, Int(rgba[i + channel]) * 255 / alpha))
+            }
+        }
+        return TUISprite.Pixels(width: width, height: height, rgba: rgba)
+    }
+
     /// 비투명(alpha>0) 콘텐츠 경계로 크롭 — 큰 투명 여백 제거. 96×96 1회만 수행(메모이즈).
     private static func cropToContent(_ image: NSImage) -> NSImage {
         guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return image }

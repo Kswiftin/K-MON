@@ -124,6 +124,7 @@ LOGIC_CORE=(
   # 전부 테스트가 닿는 자리이고, 게이트 밖에 두면 새 명령·새 키가 무테스트로 나간다.
   # 터미널 제어(TUITerminal)와 실행 루프(TUIWatch)는 판단을 두지 않으므로 대상이 아니다.
   "Sources/PokeTokenBar/TUI/TUIText.swift"
+  "Sources/PokeTokenBar/TUI/TUISprite.swift"
   "Sources/PokeTokenBar/TUI/TUIRender.swift"
   "Sources/PokeTokenBar/TUI/TUIKeymap.swift"
   "Sources/PokeTokenBar/TUI/PokedoroCommand.swift"

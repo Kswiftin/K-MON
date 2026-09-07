@@ -19,6 +19,13 @@ struct TUIHomeModel: Equatable, Sendable {
     var partnerName: String?
     var partnerLevel: Int
     var isShiny: Bool
+    /// 파트너 그림. 이미 터미널 칸으로 접힌 줄이고(`TUISprite.block`) **빈 배열이 정상**이다 —
+    /// 스프라이트 캐시가 비었거나, 출력이 파이프거나, 창이 좁으면 그림 없이 그린다.
+    ///
+    /// 왜 완성된 줄로 받나: 이 줄에는 SGR escape 가 들어가 폭 계산(`TUIText.displayWidth`)을
+    /// 통과할 수 없다. 렌더가 픽셀을 받아 조립하면 그 판정이 렌더 안으로 들어와 순수 함수가
+    /// 디스크(스프라이트 캐시)를 읽게 된다.
+    var partnerArt: [String] = []
     var levelProgress: Double
     var experienceToNextLevel: Int
     var starPieces: Int
