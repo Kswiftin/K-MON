@@ -1,3 +1,5 @@
+import CoreGraphics
+import Foundation
 import Testing
 @testable import PokeTokenBar
 
@@ -190,6 +192,51 @@ struct TUISpriteTests {
             #expect(slice.allSatisfy { $0 == slice.first })
         }
         #expect(Set(phases).count == 2)   // 두 위상이 실제로 다 나온다
+    }
+
+    /// CSI 가 아닌 escape(`ESC c` 처럼 두 글자로 끝나는 시퀀스)도 0 칸이다. 그림은 CSI 만 쓰지만
+    /// 이 함수는 홈의 **모든 줄**을 세는 데 쓰이므로, 다른 시퀀스에서 글자가 새면 총폭 단정이
+    /// 헛돈다. 한글은 두 칸, 영문은 한 칸이다.
+    @Test func testVisibleWidthSkipsNonCSIEscapes() {
+        #expect(TUISprite.visibleWidth("\u{1B}c가A") == 3)
+        #expect(TUISprite.visibleWidth("가A") == 3)
+    }
+
+    // MARK: 캐시 이미지 → 픽셀
+
+    /// 알파가 **미리 곱해진** 값을 그대로 쓰면 반투명 테두리가 검게 죽는다. 되돌려야 원래 색이다.
+    /// (스프라이트 테두리는 안티에일리어싱이라 알파가 중간값인 픽셀이 실제로 있다.)
+    @MainActor
+    @Test func testPixelsUndoPremultipliedAlpha() {
+        // 알파 128 에 곱해진 빨강 128 → 되돌리면 255 다.
+        let image = Self.image(width: 1, height: 1, bytes: [128, 0, 0, 128])
+        let pixels = SpriteLoader.pixels(from: image)
+        #expect(pixels?.rgba[3] == 128)
+        #expect((pixels?.rgba[0] ?? 0) >= 250, "곱해진 알파를 되돌리지 않았다: \(pixels?.rgba[0] ?? 0)")
+    }
+
+    /// 위아래가 뒤집히면 안 된다. CoreGraphics 의 사용자 좌표는 왼쪽 **아래**가 원점이라,
+    /// 그리는 방향을 확인하지 않으면 파트너가 거꾸로 선다 — 색만 보는 검증으로는 안 걸린다.
+    @MainActor
+    @Test func testPixelsKeepImageOrientation() {
+        // 위 줄 빨강, 아래 줄 파랑.
+        let image = Self.image(width: 1, height: 2, bytes: [255, 0, 0, 255,
+                                                            0, 0, 255, 255])
+        let pixels = SpriteLoader.pixels(from: image)
+        #expect(pixels?.width == 1)
+        #expect(pixels?.height == 2)
+        #expect(pixels?.rgba.prefix(4).elementsEqual([255, 0, 0, 255]) == true, "위 줄이 빨강이 아니다")
+        #expect(pixels?.rgba.suffix(4).elementsEqual([0, 0, 255, 255]) == true, "아래 줄이 파랑이 아니다")
+    }
+
+    /// 테스트용 RGBA 이미지. 바이트는 위에서 아래로, 알파는 미리 곱해진 값이다.
+    private static func image(width: Int, height: Int, bytes: [UInt8]) -> CGImage {
+        let provider = CGDataProvider(data: Data(bytes) as CFData)!
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false,
+                       intent: .defaultIntent)!
     }
 
     /// 색은 **터미널일 때만** 쓴다. 파이프·리다이렉트(`pokedoro status > file`)와 `NO_COLOR`,

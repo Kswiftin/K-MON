@@ -235,6 +235,50 @@ enum SpriteLoader {
         return croppedEgg
     }
 
+    /// 디스크 캐시에 이미 있는 스프라이트를 픽셀 격자로 — **네트워크 없음**(`cachedImage` 와 같은
+    /// 규율). 터미널이 쓰는 유일한 그림 경로다: 한 번 찍고 죽는 명령은 받아 오는 것을 기다릴 수
+    /// 없고, 기다리게 만들면 세이브에서만 값을 꺼낸다는 터미널의 규칙이 깨진다.
+    ///
+    /// 캐시에 없으면 `nil` 이고, 그때 터미널은 그림 없이 그린다 — 없음은 고장이 아니다.
+    /// **정적 96px PNG 키를 쓴다**: 20칸으로 접으면 HOME 512px 렌더와 구별되지 않고, 메뉴바가
+    /// 파트너를 띄울 때 항상 이 키를 채우므로 적중률이 가장 높다.
+    static func cachedPixels(speciesID: Int, shiny: Bool) -> TUISprite.Pixels? {
+        guard let image = cachedImage(speciesID: speciesID, shiny: shiny) else { return nil }
+        var rect = CGRect(origin: .zero, size: image.size)
+        guard let cg = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return nil }
+        return pixels(from: cg)
+    }
+
+    /// 이미지를 RGBA 격자로. 알파는 **되돌린** 값으로 낸다 — `CGContext` 는 미리 곱한 값만
+    /// 그리므로, 그대로 쓰면 반투명 테두리가 검게 죽는다.
+    static func pixels(from image: CGImage) -> TUISprite.Pixels? {
+        let width = image.width, height = image.height
+        // 스프라이트는 512×512 이하다. 상한을 두는 이유는 캐시 파일이 깨졌을 때 CLI 가 거대한
+        // 버퍼를 잡고 멈추지 않게 하기 위해서다.
+        guard width > 0, height > 0, width * height <= 4_194_304 else { return nil }
+
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+
+        for i in stride(from: 0, to: rgba.count, by: 4) {
+            let alpha = Int(rgba[i + 3])
+            guard alpha > 0, alpha < 255 else { continue }
+            for channel in 0..<3 {
+                rgba[i + channel] = UInt8(min(255, Int(rgba[i + channel]) * 255 / alpha))
+            }
+        }
+        return TUISprite.Pixels(width: width, height: height, rgba: rgba)
+    }
+
     /// 비투명(alpha>0) 콘텐츠 경계로 크롭 — 큰 투명 여백 제거. 96×96 1회만 수행(메모이즈).
     private static func cropToContent(_ image: NSImage) -> NSImage {
         guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return image }

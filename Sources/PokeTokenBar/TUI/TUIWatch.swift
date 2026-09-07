@@ -322,6 +322,11 @@ final class TUIWatch {
         var lines: [String]
         switch screen {
         case .home:
+            // **예산은 재서 정한다.** 홈이 몇 줄인지 여기 적으면 홈에 줄이 늘 때 그 숫자만
+            // 옛말이 되고, 넘친 줄은 `TUITerminal.draw` 가 잘라 키 안내가 사라진다.
+            let spent = TUIRender.home(model, width: size.width, keyHints: true).count
+            model.partnerArt = PokedoroCLI.partnerArt(store, width: size.width,
+                                                      maxRows: size.height - spent, frame: frame)
             lines = TUIRender.home(model, width: size.width, keyHints: true)
             // 앱만 아는 값(집중 타이머)은 세이브에 없으므로 스냅샷으로만 온다. 붙어 있지 않거나
             // 앱이 조용하면 그냥 없는 것이다 — 없는 줄을 만들어 채우지 않는다.
