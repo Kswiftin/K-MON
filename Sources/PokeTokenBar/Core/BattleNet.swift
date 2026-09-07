@@ -869,6 +869,7 @@ final class BattleCenter {
             !$0.types.isEmpty && (1...100).contains($0.level)
                 && MultiplayerValidation.validMoves($0.moves ?? [])
                 && MultiplayerValidation.validAbility($0.ability)
+                && MultiplayerValidation.validHeldItem($0.heldItem)
         }
     }
     private let myServiceName: String   // Bonjour 광고 이름 — 고유 접미로 같은 계정명 두 기기 충돌 방지
@@ -1184,7 +1185,7 @@ final class BattleCenter {
                                               base: profile.stats, moves: moves,
                                               ability: profile.abilitySlug,
                                               // CPU — 종 번호로 만드는 개체라 바꿀 테라 타입이 없다.
-                                              storedTeraType: nil,
+                                              storedTeraType: nil, heldItem: nil,
                                               weightHectograms: profile.weightHectograms))
             }
             guard cpuTeam.count == rankedTeamSize else { phase = .ready; lastError = l.battleStatsFailed; return }
@@ -1235,7 +1236,7 @@ final class BattleCenter {
                                                  types: profile.types, base: profile.stats, moves: moves,
                                                  ability: profile.abilitySlug,
                                                  // 관장 팀도 종 번호로 만든다(CPU 와 같은 이유).
-                                                 storedTeraType: nil,
+                                                 storedTeraType: nil, heldItem: nil,
                                                  weightHectograms: profile.weightHectograms))
             }
             guard leaderTeam.count == GymLeague.teamSize else {
@@ -1509,7 +1510,7 @@ final class BattleCenter {
                                         name: "대여 토게키스",
                                         trainer: trainerDisplayName, level: 50, nature: nil, isShiny: false,
                                         types: profile.types, base: profile.stats, moves: [metronome],
-                                        ability: profile.abilitySlug, storedTeraType: nil,
+                                        ability: profile.abilitySlug, storedTeraType: nil, heldItem: nil,
                                         weightHectograms: profile.weightHectograms)
             pendingMyLineup = [rental]
             isMetronomeBattle = true

@@ -109,6 +109,12 @@ enum BattleLog {
                 flush()
                 out.append(Line(actor: actor,
                                 text: l.battleVolatileTriggered(name(actor), volatileStatus)))
+            case .heldItemTriggered(let actor, let item):
+                // 주인이 있는 줄이다 — 진행 중인 행동에 접으면 "기합의띠로 버텼다" 가 때린 쪽 줄에
+                // 붙어 누가 버텼는지가 뒤바뀐다(`volatileTriggered` 와 같은 이유).
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleHeldItemTriggered(name(actor), item: item)))
             case .terastallized(let actor, let type):
                 flush()
                 out.append(Line(actor: actor,

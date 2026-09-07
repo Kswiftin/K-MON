@@ -96,6 +96,8 @@ enum BattleReplay {
         // 일한 줄은 뒤에 큰 일이 따라온다(기절·PP 소진) — 문구를 읽을 시간이 없으면 상대가 왜
         // 같이 쓰러졌는지 화면으로는 알 수 없다. 그래서 기절과 같은 박자를 준다.
         case .volatileTriggered:                                return 0.60
+        // 지닌물건이 일한 줄도 같은 박자다 — 버틴 뒤에 무슨 일이 있었는지 읽을 시간이 필요하다.
+        case .heldItemTriggered:                                return 0.60
         // 테라스탈은 배틀당 한 번뿐인 장면이라 가장 긴 문구 박자를 준다.
         case .terastallized:                                    return 0.60
         // 랭크는 **로그 줄만** 늘린다 — 팝 문구가 없고(`popupKey` 가 nil), 랭크 배지는 배치 끝에
@@ -153,7 +155,10 @@ enum BattleReplay {
              .faint, .status, .cureStatus, .cant, .boost, .multiHit,
              .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
              .sideConditionStarted, .sideConditionEnded, .guardUp, .guardBlocked,
-             .terastallized, .volatileStarted, .volatileEnded, .volatileTriggered:
+             .terastallized, .volatileStarted, .volatileEnded, .volatileTriggered,
+             // 기합의띠로 버틴 줄은 HP 를 움직이지 않는다 — 남은 HP 하나는 그 앞의 `.damage` 가
+             // 이미 깎아 둔 값이다(엔진이 데미지를 잘라서 낸다).
+             .heldItemTriggered:
             return
         }
     }
@@ -192,7 +197,10 @@ enum BattleReplay {
         case .turn, .move, .damage, .heal, .multiHit, .faint, .sendOut, .status, .cureStatus,
              .cant, .boost, .weatherStarted, .weatherEnded, .terrainStarted, .terrainEnded,
              .sideConditionStarted, .sideConditionEnded, .guardUp, .terastallized,
-             .volatileStarted, .volatileEnded, .volatileTriggered:
+             .volatileStarted, .volatileEnded, .volatileTriggered,
+             // 지닌물건이 일한 줄은 문구에 **아이템 이름**이 들어가 `KeyPath` 로 담을 수 없다 —
+             // 날씨와 같은 이유로 로그 줄로만 나간다.
+             .heldItemTriggered:
             return nil
         }
     }

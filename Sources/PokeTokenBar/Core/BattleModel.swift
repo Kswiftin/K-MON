@@ -549,6 +549,16 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     /// 배율부터 갈린다(각자 화면에는 정상으로 보인다). 스냅샷을 만드는 자리가 이 값을 싣는지는
     /// `ability` 와 같은 스캔이 센다.
     var storedTeraType: PokemonType? = nil
+    /// 지금 지니고 있는 물건 — 배틀에서 하는 일은 `ItemKind.heldBattleEffect` 가 답한다.
+    ///
+    /// **와이어에 실린다.** 안 실으면 한쪽 피어만 데미지 배율·회복·버티기를 얹어 같은 판의 HP 가
+    /// 갈린다(각자 화면에는 정상으로 보인다). 스냅샷을 만드는 자리가 이 값을 싣는지는 `ability`
+    /// 와 같은 스캔이 센다.
+    ///
+    /// 피어가 보내온 값이라 **지닐 수 없는 물건은 거절한다**
+    /// (`MultiplayerValidation.validHeldItem`). 모르는 이름은 디코딩에서 `nil` 로 접히므로
+    /// (특성 슬러그와 같은 정책) 신버전이 아이템을 늘려도 옛 피어가 대전에서 막히지 않는다.
+    var heldItem: ItemKind? = nil
     /// 헥토그램(0.1kg). 체중으로 위력이 정해지는 기술이 본다.
     ///
     /// 옵셔널인 이유는 **조회 실패**다(피어 호환이 아니다 — 이 필드가 없던 시절과는 `rulesVersion`
@@ -634,6 +644,11 @@ extension BattleSnapshot {
             .map { Array($0.prefix(Self.maximumMoves)) }
         ability = try c.decodeIfPresent(String.self, forKey: .ability)
         storedTeraType = try c.decodeIfPresent(PokemonType.self, forKey: .storedTeraType)
+        // 모르는 아이템 이름은 **접는다**. 타입된 디코딩은 오류를 던지고, 그 오류는 스냅샷 전체를
+        // 못 읽게 만들어 대전 자체가 성립하지 않는다 — 신버전이 아이템을 하나 늘리면 옛 피어가
+        // 통째로 막힌다(`ability` 를 슬러그 원문으로 싣는 것과 같은 이유다).
+        heldItem = (try c.decodeIfPresent(String.self, forKey: .heldItem))
+            .flatMap(ItemKind.init(rawValue:))
         weightHectograms = (try c.decodeIfPresent(Int.self, forKey: .weightHectograms))
             .map { min(Self.maximumWeightHectograms, max(0, $0)) }
     }
@@ -1307,6 +1322,15 @@ struct BattleSide: Sendable, Equatable {
     /// **`rulesVersion` 을 올리지 않는 근거**: `BattleSide` 는 `Codable` 이 아니라 와이어에
     /// 실리지 않고, 비어 있으면 데미지도 rng 소비도 이 필드가 없던 때와 한 값도 다르지 않다.
     var runBoosts = RunBoosts()
+    /// 지니고 있던 물건이 이 배틀에서 **일하고 소모됐나** — 기합의띠는 1회용이다.
+    ///
+    /// 스냅샷의 값을 지우지 않는 이유는 그것이 **와이어의 값**이라서다: 지우면 같은 스냅샷을
+    /// 다시 쓰는 자리(재입장·정산)가 아이템 없는 개체를 보게 된다. 소모는 배틀 안에서만 산다 —
+    /// 세이브의 재고는 배틀이 깎지 않는다(가방이 아이템을 잃는 유일한 자리는 `giveHeldItem` 이다).
+    ///
+    /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다 — 두 피어가 각자 같은 규칙으로
+    /// 세운다(`isTerastallized` 와 같은 이유).
+    var heldItemConsumed = false
 
     init(_ snapshot: BattleSnapshot) {
         self.snapshot = snapshot
@@ -1328,6 +1352,13 @@ struct BattleSide: Sendable, Equatable {
         guard !has(volatileStatus) else { return false }
         volatiles[volatileStatus] = turns
         return true
+    }
+
+    /// 지금 이 개체가 지닌물건에서 받는 효과 — 소모됐으면 `nil` 이다(없는 것과 같다).
+    /// 읽는 자리를 하나로 두는 이유는 소모 조건이다: `snapshot.heldItem` 을 직접 보는 코드가
+    /// 남으면 그 자리만 1회용 제약을 잃는다(기합의띠가 회복기 하나로 무적이 된다).
+    var heldEffect: HeldItemEffect? {
+        heldItemConsumed ? nil : snapshot.heldItem?.heldBattleEffect
     }
 
     /// 이 개체의 특성 — 스냅샷의 슬러그를 해석한 값. 모르는 슬러그는 `nil` 이라 특성이 없는 것과 같다.
@@ -1551,6 +1582,11 @@ enum BattleEngine {
     ///      + 테라 타입을 스냅샷에 **저장 값으로** 싣는다(테라피스 아이템). 구버전 피어는 그 필드를
     ///      안 보내므로 같은 개체가 첫 번째 타입으로 테라스탈하고, STAB 과 상성 배율이 갈린다.
     ///      rng 소비는 그대로다.
+    ///      + 지닌물건 3종을 스냅샷에 싣는다(생명의구슬·기합의띠·먹다남은음식). 구버전 피어는 그
+    ///      필드를 안 보내므로 데미지 배율(×1.3)·턴 끝 자해(1/10)·턴 끝 회복(1/16)·만피 버티기가
+    ///      한쪽에만 얹혀 같은 판의 HP 가 갈린다. rng 소비는 그대로다(전부 정수 계산이다).
+    ///      `BattleEvent` 에 case 하나(`heldItemTriggered`)가 늘어 구버전은 그 이벤트를
+    ///      디코딩하지 못한다.
     static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -2016,6 +2052,13 @@ enum BattleEngine {
         if defender.has(.minimize), ShowdownMoveData.hittingMinimizedHarder.contains(move.id) {
             damage *= 2
         }
+        // 생명의구슬은 **공식을 타는 히트에만** 얹는다 — 고정 데미지·일격필살은 이 줄에 오기 전에
+        // `fixedOutcome` 으로 빠져나가므로 저절로 제외된다(본가와 같다). 위력이 아니라 데미지에
+        // 곱하는 자리는 작아지기 두 배와 같은 이유다: 위력에 곱하면 식의 `+2` 와 급소 배율이
+        // 배가 되는 값 앞에 들어가 1.3배가 정확히 1.3배가 아니게 된다.
+        if attacker.heldEffect == .lifeOrb {
+            damage = damage * HeldItemBalance.lifeOrbNumerator / HeldItemBalance.lifeOrbDenominator
+        }
         // 장막은 **급소를 못 막는다**(3세대 이후). 급소가 뚫지 못하면 장막 한 장으로 판이 잠긴다.
         // 고정 데미지·일격필살은 여기 오기 전에 빠져나가므로 장막을 타지 않는다(본가와 같다).
         if !isCritical, field.halvesDamage(move.damageClass, against: defenderTeam) { damage /= 2 }
@@ -2127,6 +2170,12 @@ enum BattleEvent: Codable, Sendable, Equatable {
     /// 시점이다: 셋은 붙는 턴이 아니라 쓰러지는 순간에 일하고, 그 순간에 줄이 없으면 상대가 왜
     /// 같이 쓰러졌는지 로그로 설명되지 않는다.
     case volatileTriggered(BattleActor, BattleVolatile)
+    /// 지니고 있던 물건이 **일했다** — 기합의띠로 버텼다. 액터는 그 물건의 **주인**이다.
+    ///
+    /// `volatileTriggered` 를 쓸 수 없다: 지닌물건은 volatile 이 아니라 개체에 붙은 물건이고,
+    /// 문구도 "무엇으로 버텼는지" 를 말해야 한다(어휘를 합치면 "인내로 버텼다" 와 구별되지 않는다).
+    /// 생명의구슬의 자해는 이 case 가 아니라 `.damage(cause: .recoil)` 이다 — 반동은 반동이다.
+    case heldItemTriggered(BattleActor, ItemKind)
     /// 이번 턴 몸을 지켰다 / 그 방어가 상대의 기술을 막았다. 액터는 **지킨 쪽**이다 —
     /// 막힌 줄이 누구의 방어인지가 문구의 절반이고, 공격자는 바로 앞 줄이 이미 말한다.
     case guardUp(BattleActor)
@@ -2191,7 +2240,14 @@ extension BattleEngine {
         let full = side.stats.hp
         // 런 강화의 턴 끝 회복은 **잔뎀보다 먼저**다(본가와 같다). 만피면 회복량이 0 이라
         // 이벤트도 나가지 않는다.
-        let heal = min(side.runBoosts.leftoversHeal(maxHP: full), full - side.hp)
+        //
+        // **런 강화의 회복과 지닌물건의 회복은 합산한다.** 둘은 사는 자리가 다르다 — 스택은 판
+        // 안에서만 살고(`RunBoosts`), 지닌물건은 개체에 붙어 와이어에 실린다. 그래서 웨이브 런에서
+        // 둘이 겹치는 판이 실제로 있고, 한쪽만 보는 구현은 그 판에서 회복을 조용히 잃는다.
+        // 줄은 **한 줄**이다: 같은 턴의 같은 회복을 두 줄로 내면 로그가 두 번 회복한 것처럼 읽힌다.
+        let leftovers = side.heldEffect == .leftovers
+            ? max(1, full / HeldItemBalance.leftoversDivisor) : 0
+        let heal = min(side.runBoosts.leftoversHeal(maxHP: full) + leftovers, full - side.hp)
         if heal > 0 {
             side.hp += heal
             events.append(.heal(actor, amount: heal))
@@ -2202,6 +2258,15 @@ extension BattleEngine {
             events.append(.damage(actor, amount: hurt.amount, cause: hurt.cause))
         }
         events += volatileResidual(&side, actor: actor)
+        // 생명의구슬의 대가 — **매 턴** 최대 HP 의 1/10 이다. 본가는 공격할 때마다지만, 이 엔진은
+        // 광역기가 대상마다 `applyHit` 을 부르므로 그 자리에 두면 대상 수만큼 중복 과금된다.
+        // 턴 끝 한 자리에 모으면 네 모드가 같은 규칙을 받고 난수도 안 쓴다(두 피어가 같은 값을 본다).
+        // 원인은 `.recoil` 을 쓴다 — 반동을 두 어휘로 나누면 로그가 같은 일을 다르게 말한다.
+        if side.isAlive, side.heldEffect == .lifeOrb {
+            let cost = min(max(1, full / HeldItemBalance.lifeOrbRecoilDivisor), side.hp)
+            side.hp -= cost
+            events.append(.damage(actor, amount: cost, cause: .recoil))
+        }
         if !side.isAlive { events.append(.faint(actor)) }
         return events
     }
@@ -2734,6 +2799,17 @@ extension BattleEngine {
         // 다단기는 합계로 한 번 자른다 — 이 엔진이 히트별로 HP 를 깎지 않기 때문이다.
         let endured = defender.has(.endure) && damage >= defender.hp
         if endured { damage = defender.hp - 1 }
+        // 기합의띠도 같은 자리에서 자른다 — **인내가 이미 버텼으면 일하지 않는다**(둘 다 세면 로그가
+        // 같은 일을 두 번 말하고 1회용 띠가 헛되게 소모된다). 조건은 본가와 같다: **만피**에서
+        // 맞은 치명적인 한 방 하나다(만피가 아니어도 버티면 HP 1 짜리 무적이 된다).
+        // 다단기는 합계로 한 번 자른다 — 인내와 같은 이유다(엔진이 히트별로 HP 를 깎지 않는다).
+        // 잔뎀·혼란 자멸은 여기를 지나지 않으므로 그쪽으로는 쓰러진다(인내와 같다).
+        let sashed = !endured && defender.heldEffect == .focusSash
+            && defender.hp == defender.stats.hp && damage >= defender.hp
+        if sashed {
+            damage = defender.hp - 1
+            defender.heldItemConsumed = true
+        }
         // 데미지 0(변화기)은 `.damage` 를 내보내지 않는다 — "0 데미지" 줄은 맞았는데 안 깎인 것처럼 읽힌다.
         if damage > 0 {
             defender.hp = max(0, defender.hp - damage)
@@ -2766,6 +2842,11 @@ extension BattleEngine {
         // HP 1 에서 버티면 자른 데미지가 0 이라 위 블록을 아예 지나지 않는다 — 그래서 버틴 줄은
         // 데미지 줄과 **따로** 낸다(안 그러면 그 턴이 로그에 무반응으로 남는다).
         if endured { events.append(.volatileTriggered(defenderActor, .endure)) }
+        // 띠가 버틴 줄도 데미지 줄과 **따로** 낸다 — 만피가 1 이었던 개체(최대 HP 1)는 자른
+        // 데미지가 0 이라 위 데미지 블록을 아예 지나지 않는다(인내와 같은 이유).
+        if sashed, let item = defender.snapshot.heldItem {
+            events.append(.heldItemTriggered(defenderActor, item))
+        }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         if defender.isAlive {
             events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor,

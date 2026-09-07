@@ -496,7 +496,7 @@ final class MultiplayerRoomCenter {
         return BattleSnapshot(speciesID: speciesID, name: await companion.resolveSpeciesName(speciesID),
                               trainer: nil, level: tier.bossLevel, nature: nil, isShiny: false,
                               types: profile.types, base: profile.stats, moves: moves,
-                              ability: profile.abilitySlug, storedTeraType: nil,
+                              ability: profile.abilitySlug, storedTeraType: nil, heldItem: nil,
                               weightHectograms: profile.weightHectograms)
     }
 
@@ -2213,6 +2213,7 @@ final class MultiplayerRoomCenter {
                                   level: level, nature: active.nature, isShiny: active.isShiny,
                                   types: profile.types, base: profile.stats, moves: moves,
                                   ability: profile.abilitySlug, storedTeraType: active.teraType,
+                                  heldItem: active.heldItem,
                                   weightHectograms: profile.weightHectograms)
         }
         return await companion.battleSnapshot(for: mon, level: level ?? mon.level)

@@ -633,7 +633,7 @@ final class CompanionStore {
         return BattleSnapshot(speciesID: speciesID, name: await resolveSpeciesName(speciesID),
                               trainer: nil, level: level, nature: nil, isShiny: false,
                               types: profile.types, base: profile.stats, moves: moves,
-                              ability: profile.abilitySlug, storedTeraType: nil,
+                              ability: profile.abilitySlug, storedTeraType: nil, heldItem: nil,
                               weightHectograms: profile.weightHectograms)
     }
 
@@ -656,6 +656,7 @@ final class CompanionStore {
                               level: level, nature: mon.nature, isShiny: mon.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
                               ability: profile.abilitySlug, storedTeraType: mon.teraType,
+                              heldItem: mon.heldItem,
                               weightHectograms: profile.weightHectograms)
     }
 
@@ -3349,6 +3350,33 @@ final class CompanionStore {
         teraShardFeedback.fire(new)
         save()
         return new
+    }
+
+    // MARK: 지닌물건 (동행에게 붙이는 물건 — 생명의구슬·기합의띠·먹다남은음식)
+
+    /// 지니게 할 수 있나 — 활성 개체 + 재고>0 + **아직 그것을 지니고 있지 않음**.
+    ///
+    /// 이미 같은 것을 지녔으면 거절한다: 통과시키면 재고에서 하나 빠지고 돌려받는 하나가 그
+    /// 자리에 들어와 아무것도 안 바뀌는데 사용자에겐 "썼다" 로 보인다.
+    /// `currentLine` 은 보지 않는다(민트·테라피스와 같은 이유 — 값이 `MonState` 에 있다).
+    func canGiveHeldItem(_ kind: ItemKind) -> Bool {
+        hasActive && kind.heldBattleEffect != nil && itemCount(kind) > 0
+            && state.active?.heldItem != kind
+    }
+
+    /// 지닌물건 하나를 동행에게 붙인다. **한 번에 하나**라, 먼저 지녔던 것은 가방으로 **돌려준다** —
+    /// 사라지게 두면 사용자가 산 물건이 조용히 없어진다(되돌릴 방법이 없다).
+    /// 실패하면 아무것도 바꾸지 않는다(무소모).
+    @discardableResult
+    func giveHeldItem(_ kind: ItemKind) -> Bool {
+        guard canGiveHeldItem(kind), state.active != nil else { return false }
+        state.inventory[kind.rawValue] = itemCount(kind) - 1
+        if let previous = state.active!.heldItem {
+            state.inventory[previous.rawValue] = itemCount(previous) + 1
+        }
+        state.active!.heldItem = kind
+        save()
+        return true
     }
 
     // MARK: 하트비늘 (기술 다시 배우기 — #97)

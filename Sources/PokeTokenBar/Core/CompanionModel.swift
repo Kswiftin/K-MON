@@ -205,6 +205,10 @@ enum EvolutionItemRule: Sendable, Equatable {
 /// 그 질문은 `EvolutionItemRule` 이 이미 답한다. 나머지는 하나씩 다르게 다뤄야 하는 것들이다.
 enum BagUse: Sendable, Equatable, CaseIterable {
     case candy, mint, heartScale, teraShard
+    /// 동행에게 **지니게 하는** 물건(생명의구슬·기합의띠·먹다남은음식) — 쓰는 것이 아니라 붙는다.
+    /// 셋을 한 case 로 접는 이유는 진화 아이템과 같다: 갈래가 갈리는 것은 **어느 배틀 효과인가**
+    /// 뿐이고 그 질문은 `ItemKind.heldBattleEffect` 가 답한다.
+    case heldItem
     /// 지니고만 있는 물건(이로치 부적) — "지금 쓴다" 는 개념이 없다.
     case passive
     /// 미니룸 가구 — 가방에서 쓰는 것이 아니라 방에서 배치한다.
@@ -252,6 +256,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// `evolutionRule` 이 nil 이므로 **가방·문구의 `default:`(= 진화 아이템 전체) 분기에 명시
     /// 케이스로 반드시 넣어야 한다**(하트비늘과 같은 함정 — `TeraShardTests` 가 소스에서 센다).
     case teraShard
+    /// 지닌물건 3종 — 개체에 **붙어서** 배틀 안에서 일한다(쓰면 사라지는 소모품이 아니다).
+    /// 진화용 지닌물건(위 `kingsRock` 부류)과 이름이 겹치지만 다른 물건이다: 그쪽은 "쓰면 진화하는
+    /// 아이템" 으로 취급하고 배틀을 안 지난다. 효과는 `heldBattleEffect` 가 답한다.
+    case lifeOrb, focusSash, leftovers
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -266,6 +274,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     var evolutionRule: EvolutionItemRule? {
         switch self {
         case .rareCandy, .mint, .shinyCharm, .heartScale, .teraShard,
+             .lifeOrb, .focusSash, .leftovers,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -329,6 +338,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint:       return .mint
         case .heartScale: return .heartScale
         case .teraShard:  return .teraShard
+        case .lifeOrb, .focusSash, .leftovers: return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
@@ -346,6 +356,21 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         }
     }
 
+    /// 이 아이템을 지녔을 때 **배틀에서** 하는 일. nil = 지닐 수 없는 물건이다.
+    ///
+    /// 이 축이 세 자리를 함께 정한다: 가방이 "지니게 하기" 를 띄우는지(`bagUse`), 피어가 보내온
+    /// 스냅샷을 받아 주는지(`MultiplayerValidation.validHeldItem`), 엔진이 무엇을 얹는지.
+    /// 셋을 각자 물으면 하나만 빠뜨렸을 때 컴파일은 통과한 채 "가방에서는 지니게 할 수 있는데
+    /// 배틀에서는 아무 일도 안 하는" 아이템이 생긴다.
+    var heldBattleEffect: HeldItemEffect? {
+        switch self {
+        case .lifeOrb:    return .lifeOrb
+        case .focusSash:  return .focusSash
+        case .leftovers:  return .leftovers
+        default:          return nil
+        }
+    }
+
     /// 진화에 쓰는 아이템인가 — 가방·상점의 "쓰면 진화" 분기가 이걸로 묶인다(케이스 30여 개를
     /// 스위치마다 다시 나열하면 새 아이템을 넣을 때 한 곳을 빠뜨린다).
     var isEvolutionItem: Bool { evolutionRule != nil }
@@ -359,6 +384,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .shinyCharm: return "shiny-charm"
         case .heartScale: return "heart-scale"
         case .teraShard: return nil   // PokéAPI 에 테라피스 스프라이트 없음(9세대) → 이모지 폴백
+        case .lifeOrb: return "life-orb"
+        case .focusSash: return "focus-sash"
+        case .leftovers: return "leftovers"
         default: return evolutionRule?.apiItemName
         }
     }
@@ -389,6 +417,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .metalAlloy: return "⚙️"
         case .heartScale: return "💗"
         case .teraShard: return "💎"
+        case .lifeOrb: return "🔮"; case .focusSash: return "🎗️"; case .leftovers: return "🍱"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -403,6 +432,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .shinyCharm: return nil
         case .heartScale: return MoveRelearn.price
         case .teraShard: return TeraShard.price
+        case .lifeOrb: return HeldItemBalance.lifeOrbPrice
+        case .focusSash: return HeldItemBalance.focusSashPrice
+        case .leftovers: return HeldItemBalance.leftoversPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -508,6 +540,38 @@ enum Mint {
     /// 사탕(5,000)의 1/5로 싸게 둬서 성격을 마음에 들 때까지 굴려보는 가벼운 재미. 성장을 안 줘서
     /// 이중계산 이슈도 없음(가격 = 순수 소비). 2026-08-14 재책정(#19), 비율은 유지.
     static let price = 1_000
+}
+
+/// 지닌물건이 배틀에서 하는 일 — `ItemKind.heldBattleEffect` 가 답한다.
+///
+/// 아이템 종류와 따로 두는 이유는 엔진이다: 엔진은 "무엇이 붙었나" 가 아니라 "무엇을 얹나" 만
+/// 알면 되고, 같은 효과를 주는 아이템이 늘어도(본가의 조개껍질방울 부류) 엔진은 그대로다.
+enum HeldItemEffect: Sendable, Equatable, CaseIterable {
+    /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
+    case lifeOrb
+    /// 만피에서 치명적인 한 방을 HP 1 로 버틴다. 배틀 안에서 1회만이다.
+    case focusSash
+    /// 턴 끝에 최대 HP 의 1/16 을 회복한다.
+    case leftovers
+}
+
+/// 지닌물건 3종 밸런스 상수 — 수치의 정본이다. 엔진과 문구가 각자 리터럴을 들면 설명이 실제와
+/// 어긋나고(설명은 1/16, 코드는 1/8), 그 어긋남은 화면에 아무 오류도 안 낸다.
+enum HeldItemBalance {
+    /// 데미지 배율 — 정수 분수로 곱한다(부동소수 오차가 끼면 두 피어의 데미지가 갈린다).
+    static let lifeOrbNumerator = 13
+    static let lifeOrbDenominator = 10
+    /// 생명의구슬의 턴 끝 자해 — 최대 HP 의 1/10.
+    static let lifeOrbRecoilDivisor = 10
+    /// 먹다남은음식의 턴 끝 회복 — 최대 HP 의 1/16.
+    static let leftoversDivisor = 16
+
+    /// 상점가. 셋 다 **성장 1회분(사탕 5,000) 근처**다 — 코스메틱(민트·테라피스)과 달리 대전
+    /// 성능을 상시로 바꾸므로 그보다 비싸고, 성장 한 번보다 비싸게 두면 대전을 안 하는 사용자에게
+    /// 아무 값도 없는 물건이 최고가가 된다. 생명의구슬이 가장 비싼 이유는 유일한 **공격** 강화라서다.
+    static let lifeOrbPrice = 5_000
+    static let focusSashPrice = 4_000
+    static let leftoversPrice = 3_500
 }
 
 /// 테라피스 밸런스 상수 — 테라스탈 타입을 무작위로 바꾸는 소모품(#3).
@@ -853,6 +917,9 @@ struct MonState: Codable, Sendable, Identifiable {
     /// `nil` 이면 대전 스냅샷이 첫 번째 타입에서 파생한다(`BattleSnapshot.teraType`).
     /// 진화해도 유지한다(이로치·성격과 같은 개체 값이다).
     var teraType: PokemonType? = nil
+    /// 지금 지니고 있는 물건 — **한 번에 하나**다(`CompanionStore.giveHeldItem` 이 바꿔 준다).
+    /// 배틀에는 스냅샷(`BattleSnapshot.heldItem`)으로 실려 나간다. 진화해도 유지한다.
+    var heldItem: ItemKind? = nil
     /// 진화 체인 각 종의 다국어 이름(speciesID → langCode → name). 부화 시 로드된 라인에서 저장한다 —
     /// `DexEntry.names` 와 같은 패턴이다. 박스에 있는 개체는 `currentLine` 이 없어(활성 개체만 로드됨)
     /// 이게 없으면 도감이 이름 대신 종 번호(#25)를 그린다. 구버전 저장분엔 없어(nil) 뷰가 폴백한다.
@@ -888,7 +955,8 @@ struct MonState: Codable, Sendable, Identifiable {
          evolutionStatRelation: Int? = nil,
          nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false,
          names: [Int: [String: String]]? = nil, isGraduated: Bool = false, firstMetAt: Date? = nil,
-         isNewlyHatched: Bool = false, teraType: PokemonType? = nil) {
+         isNewlyHatched: Bool = false, teraType: PokemonType? = nil,
+         heldItem: ItemKind? = nil) {
         self.baseID = baseID
         self.pathIDs = pathIDs
         if let plannedPathIDs, !plannedPathIDs.isEmpty {
@@ -912,6 +980,7 @@ struct MonState: Codable, Sendable, Identifiable {
         self.firstMetAt = firstMetAt
         self.isNewlyHatched = isNewlyHatched
         self.teraType = teraType
+        self.heldItem = heldItem
     }
 
     // 하위호환 디코딩: shiny/nature 는 구버전 저장에 없음 → 기본값.
@@ -949,6 +1018,11 @@ struct MonState: Codable, Sendable, Identifiable {
         names = try c.decodeIfPresent([Int: [String: String]].self, forKey: .names)
         isGraduated = try c.decodeIfPresent(Bool.self, forKey: .isGraduated) ?? false
         teraType = try c.decodeIfPresent(PokemonType.self, forKey: .teraType)
+        // **모르는 이름은 접는다**(던지지 않는다). 타입된 디코딩은 raw 가 안 맞으면 오류를 던지고,
+        // 이 개체의 디코딩 실패는 `CompanionState` 전체를 기본값(알)로 되돌린다 — 앱을 되돌려
+        // 설치한 사용자가 동행을 잃는다. 아이템 하나를 못 읽는 것과 세이브를 잃는 것은 값이 다르다.
+        heldItem = (try c.decodeIfPresent(String.self, forKey: .heldItem))
+            .flatMap(ItemKind.init(rawValue:))
     }
 }
 

@@ -216,6 +216,7 @@ private struct ItemCard: View {
         case .mint:           return store.canUseMint
         case .teraShard:      return store.canUseTeraShard
         case .heartScale:     return store.canUseHeartScale
+        case .heldItem:       return store.canGiveHeldItem(kind)
         case .passive:        return false   // 보유형 — 사용 개념 없음(상시 효과)
         case .furniture:      return false
         case .evolutionItem:  return store.canUseEvolutionItem(kind)
@@ -228,6 +229,7 @@ private struct ItemCard: View {
         case .mint:       return l.mintEffectHint
         case .teraShard:  return l.teraShardEffectHint
         case .heartScale: return l.heartScaleEffectHint
+        case .heldItem:   return l.heldItemEffectHint(kind)
         case .passive:    return l.shinyCharmEffectHint
         case .furniture:  return l.t("미니룸에서 배치", "Place in Mini Room", "ミニルームで配置")
         case .evolutionItem:
@@ -240,6 +242,7 @@ private struct ItemCard: View {
         case .mint:       _ = store.useMint()
         case .teraShard:  _ = store.useTeraShard()
         case .heartScale: store.useHeartScale()
+        case .heldItem:   store.giveHeldItem(kind)
         case .passive:    break   // 보유형 — 사용 동작 없음
         case .furniture:  break
         case .evolutionItem: _ = store.useEvolutionItem(kind)
@@ -281,12 +284,21 @@ private struct ItemCard: View {
         } else {
             // 알(부화 전)/활성 없음/(사탕만)라인 미로딩 — 비활성 + 사유. 쓸 수 없어도 버릴 수는 있다.
             HStack {
-                Text(store.isEgg ? l.useAfterHatch : l.useNeedsPokemon)
+                Text(unusableReason(l))
                     .font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 discardButton(l)
             }
         }
+    }
+
+    /// 왜 못 쓰는가. 지닌물건은 **이미 지니고 있어서** 막히는 경우가 있는데, 그때 "포켓몬이
+    /// 필요해요" 를 띄우면 재고도 동행도 있는 사용자가 이유를 알 수 없다.
+    private func unusableReason(_ l: L) -> String {
+        if kind.bagUse == .heldItem, store.state.active?.heldItem == kind {
+            return l.heldItemAlreadyHeld
+        }
+        return store.isEgg ? l.useAfterHatch : l.useNeedsPokemon
     }
 
     /// 버리기는 되돌릴 수 없어 문구를 한 줄 위에 따로 둔다 — 버튼과 같은 줄에 넣으면 잘린다.
@@ -324,6 +336,9 @@ private struct ItemCard: View {
     private func useNow() {
         confirming = false
         performUse()
+        // 지닌물건은 **가방에 머문다** — 홈에는 연출이 없어 탭을 옮기면 아무 일도 안 일어난 것처럼
+        // 보인다. 가방에 남으면 그 카드가 곧바로 "이미 지니고 있어요" 로 바뀌어 결과가 보인다.
+        guard kind.bagUse != .heldItem else { return }
         nav.tab = .home
     }
 }

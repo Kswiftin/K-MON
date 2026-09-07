@@ -310,6 +310,15 @@ struct L {
         }
     }
 
+    /// 지니고 있던 물건이 일한 줄 — **무엇으로** 버텼는지가 문구의 절반이다(인내와 구별된다).
+    /// 지금 이 줄을 내는 것은 기합의띠뿐이고, 나머지 둘은 자기 줄이 이미 있다(회복·반동 데미지).
+    func battleHeldItemTriggered(_ name: String, item: ItemKind) -> String {
+        let itemName = self.itemName(item)
+        return t("\(name)은(는) \(itemName)으로 버텼다!",
+                 "\(name) hung on with its \(itemName)!",
+                 "\(name)は \(itemName)で もちこたえた！")
+    }
+
     func battleVolatileEnded(_ name: String, _ volatileStatus: BattleVolatile) -> String {
         switch volatileStatus {
         case .aquaRing:         return t("\(name)의 물의베일이 사라졌다", "\(name)'s veil of water faded",
@@ -1504,6 +1513,9 @@ struct L {
         case .rareCandy: return t("이상한 사탕", "Rare Candy", "ふしぎなアメ")
         case .mint:      return t("민트", "Mint", "ミント")
         case .teraShard: return t("테라피스", "Tera Shard", "テラピース")
+        case .lifeOrb: return t("생명의구슬", "Life Orb", "いのちのたま")
+        case .focusSash: return t("기합의띠", "Focus Sash", "きあいのタスキ")
+        case .leftovers: return t("먹다남은음식", "Leftovers", "たべのこし")
         case .shinyCharm: return t("이로치 부적", "Shiny Charm", "ひかるおまもり")
         case .linkingCord: return t("연결의끈", "Linking Cord", "つながりのヒモ")
         case .fireStone: return t("불꽃의돌", "Fire Stone", "ほのおのいし")
@@ -1612,6 +1624,27 @@ struct L {
             return t("테라스탈했을 때 되는 타입을 랜덤으로 바꿔줘요. 대전에서만 쓰이는 타입이에요.",
                      "Randomly changes the type it becomes when it Terastallizes. It only matters in battle.",
                      "テラスタルしたときのタイプをランダムに変えます。対戦でのみ意味があります。")
+        case .heldItem:
+            // 문구가 아이템마다 갈린다 — 셋을 한 줄로 뭉개면 무엇을 사는지 화면에서 알 수 없다.
+            // 수치는 상수에서 파생하지 않는다(분모를 문장에 녹여야 자연스럽고, 어긋나면
+            // `HeldItemTests` 가 아니라 사람이 읽는다) — 상수를 바꾸면 이 세 줄도 함께 본다.
+            switch kind.heldBattleEffect {
+            case .lifeOrb:
+                return t("대전에서 기술 데미지가 1.3배가 돼요. 대신 턴이 끝날 때 최대 HP의 1/10을 잃어요.",
+                         "In battle, move damage becomes 1.3×. In exchange it loses 1/10 of its max HP each turn.",
+                         "対戦で技のダメージが1.3倍になります。代わりに毎ターン最大HPの1/10を失います。")
+            case .focusSash:
+                return t("체력이 가득할 때 쓰러질 한 방을 HP 1로 버텨요. 대전 한 번에 한 번만이에요.",
+                         "At full HP it survives a knockout hit with 1 HP left. Once per battle.",
+                         "HPが満タンのとき、倒れる一撃をHP1で耐えます。対戦で一度だけです。")
+            case .leftovers:
+                return t("대전에서 턴이 끝날 때마다 최대 HP의 1/16을 회복해요.",
+                         "In battle it restores 1/16 of its max HP at the end of each turn.",
+                         "対戦で毎ターンの終わりに最大HPの1/16を回復します。")
+            case nil:
+                // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
+                return ""
+            }
         case .passive:
             return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
                      "While owned, raises the chance of hatching a shiny.",
@@ -1637,6 +1670,19 @@ struct L {
     }
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
     var mintEffectHint: String { t("성격 랜덤 변경", "Random nature", "せいかくランダム変更") }
+    /// 지닌물건 3종의 효과 힌트 — 가방 사용 컨트롤의 "+XP" 자리다. 아이템마다 갈린다(무엇이
+    /// 붙는지가 이 물건의 전부라, 셋을 "지니게 하기" 한 줄로 뭉개면 고를 근거가 사라진다).
+    func heldItemEffectHint(_ kind: ItemKind) -> String {
+        switch kind.heldBattleEffect {
+        case .lifeOrb:   return t("데미지 ×1.3 / 자해", "1.3× damage / recoil", "ダメージ1.3倍 / 反動")
+        case .focusSash: return t("만피에서 한 방 버티기", "Survive one hit at full HP", "満タンで一撃耐える")
+        case .leftovers: return t("턴 끝 HP 회복", "Heals each turn", "ターン終わりに回復")
+        case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
+        }
+    }
+    /// 이미 지니고 있는 물건을 또 지니게 할 수는 없다 — 가방이 비활성 사유로 쓴다. "포켓몬이
+    /// 필요해요" 로 뭉개면 재고도 동행도 있는데 거절당한 사용자가 이유를 알 수 없다.
+    var heldItemAlreadyHeld: String { t("이미 지니고 있어요", "Already held", "すでに持っています") }
     /// 테라피스(#3) — 성격과 달리 대전 성능을 바꾸므로 문구도 "테라 타입" 을 밝힌다.
     var teraShardEffectHint: String { t("테라 타입 랜덤 변경", "Random Tera type", "テラスタイプランダム変更") }
     /// 바뀐 타입을 알리는 줄 — 어떤 타입이 됐는지가 이 아이템의 결과 전부다.

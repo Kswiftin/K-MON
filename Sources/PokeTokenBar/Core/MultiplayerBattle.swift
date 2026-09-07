@@ -270,7 +270,8 @@ enum MultiplayerValidation {
               participant.speciesID == snapshot.speciesID,
               (1...10_000).contains(snapshot.speciesID), (1...100).contains(snapshot.level),
               (1...2).contains(snapshot.types.count),
-              validAbility(snapshot.ability) else { return false }
+              validAbility(snapshot.ability),
+              validHeldItem(snapshot.heldItem) else { return false }
         let stats = snapshot.base
         guard [stats.hp, stats.atk, stats.def, stats.spa, stats.spd, stats.spe]
             .allSatisfy({ (1...255).contains($0) }) else { return false }
@@ -288,6 +289,18 @@ enum MultiplayerValidation {
     /// 배틀을 안 바꾸고, 여기서 거르면 신버전 피어가 특성을 하나 늘릴 때마다 입장 자체가 거절된다.
     static func validAbility(_ slug: String?) -> Bool {
         slug.map { !$0.isEmpty && $0.utf8.count <= BattleAbility.maxSlugLength } ?? true
+    }
+
+    /// 지닌물건 화이트리스트 — **지닐 수 있는 물건만** 통과한다.
+    ///
+    /// 모르는 이름은 여기 오기 전에 디코딩이 `nil` 로 접으므로(신버전 피어가 아이템을 늘려도
+    /// 입장이 막히지 않는다) 이 함수가 거절하는 것은 **아는데 지닐 수 없는 물건**이다. 거절해 두는
+    /// 이유는 그 조합이 정상 앱에서 나올 수 없어서다 — 사탕·가구에 배틀 효과가 붙는 날
+    /// (`heldBattleEffect` 가 늘어나는 날) 검증이 없으면 그 자리가 곧 조작 경로가 된다.
+    ///
+    /// 특성 슬러그와 같은 이유로 **두 입구가 다 본다**: 방 입장만 보면 1v1 LAN 이 무검사가 된다.
+    static func validHeldItem(_ kind: ItemKind?) -> Bool {
+        kind.map { $0.heldBattleEffect != nil } ?? true
     }
 
     /// 한 턴 데미지 천장 — **위력 × 히트 수**. `validMoves` 가 상대 무브셋을 이 값으로 자르고,

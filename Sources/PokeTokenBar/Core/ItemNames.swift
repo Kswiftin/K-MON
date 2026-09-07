@@ -12,9 +12,10 @@ extension ItemKind {
     ///
     /// 앱 상태(가방 재고)로 좁히지 않는다. 이름 대조가 그때그때의 인벤토리에 의존하면 같은 입력이
     /// 재고에 따라 이름이 되거나 안 되고, 재고는 실행기가 이미 본다.
-    static let nameable: [ItemKind] = ItemKind.allCases.filter {
-        $0.evolutionRule != nil || [.rareCandy, .mint, .heartScale, .shinyCharm, .teraShard].contains($0)
-    }
+    /// **손 목록이 아니라 가방 갈래로 판정한다.** 손으로 들던 동안 새 아이템은 여기에도 따로
+    /// 적어야 했고(빠뜨리면 대화·터미널이 그 아이템의 이름조차 못 부른다), 그 부류를 없애려고
+    /// `bagUse` 축을 뽑았다 — 가구 하나만 빼면 나머지는 전부 `useItem` 에 갈래가 있다.
+    static let nameable: [ItemKind] = ItemKind.allCases.filter { $0.bagUse != .furniture }
 
     /// 이름 → 종류. **화면이 찍어 준 이름 그대로도 받는다** — 대화의 `bag.list` 는 rawValue 를,
     /// 터미널의 `bag` 은 현지화된 표시 이름을 찍으므로 둘 다 정답이어야 한다. 한쪽만 받으면
