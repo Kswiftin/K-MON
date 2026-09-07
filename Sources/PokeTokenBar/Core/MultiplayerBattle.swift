@@ -158,6 +158,10 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
     var team: BattleTeam
     /// 배틀 상태 — 세 모드가 공유하는 `BattleSide` 하나. 새 기전은 여기 한 번만 얹는다.
     var side: BattleSide
+    /// 방을 나갔거나 연결이 끊겨 **몰수당한** 참가자다(`MultiplayerBattle.forfeit`). `hp == 0` 은
+    /// 이 경우와 "싸우다 쓰러졌지만 방에는 남아 있다"를 구분하지 못한다 — 레이드 포획 추첨은
+    /// 후자도 대상이어야 하므로(#270) 별도 필드로 든다.
+    var hasLeft = false
 
     init(participant: LobbyParticipant, snapshot: BattleSnapshot) {
         id = participant.id
@@ -172,7 +176,7 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
     // 뿐이라 JSON 모양을 그대로 뒀다. 상태이상은 받는 쪽이 배지를 그려야 해서 필드가 늘었다.
     // `stats`·`moves` 는 스냅샷에서 파생되므로 보내지 않고 받는 쪽이 다시 만든다.
     private enum CodingKeys: String, CodingKey {
-        case id, trainerName, team, snapshot, hp, pp, status, statusCounter, confusionTurns, stages
+        case id, trainerName, team, snapshot, hp, pp, status, statusCounter, confusionTurns, stages, hasLeft
     }
 
     init(from decoder: Decoder) throws {
@@ -218,6 +222,9 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
                 out[stat] = StatStages.clamped(pair.value)
             }
         side = decoded
+        // 이 키가 없던 시절의 피어는 없다 — 같은 방은 항상 같은 `protocolVersion` 이다. 그래도
+        // 없으면 false 로 두는 편이, 못 받았다고 몰수 판정을 지어내는 것보다 안전하다.
+        hasLeft = try container.decodeIfPresent(Bool.self, forKey: .hasLeft) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -232,6 +239,7 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
         try container.encode(side.statusCounter, forKey: .statusCounter)
         try container.encode(side.confusionTurns, forKey: .confusionTurns)
         try container.encode(side.stages, forKey: .stages)
+        try container.encode(hasLeft, forKey: .hasLeft)
     }
 }
 
@@ -375,7 +383,10 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 14: 기절 뒤 강제 교체가 턴을 소비하지 않고 새 포켓몬의 기술 선택을 받음.
     // 방은 `rulesVersion` 을 안 본다 — 규칙 차이를 막을 곳이 여기뿐이라 규칙이 바뀌면 이 값도 같이 올린다.
     // 15: LAN 협동 레이드(`.raidStart`·`.raidSettlement`, `MultiplayerBattleMode.coopBoss`).
-    static let protocolVersion = 16
+    // 16: 레이드 포획을 참가자별 확률·순차 공개로, 보상 원장을 오전·오후로 분리.
+    // 17: 레이드 포획 추첨에서 몰수당한(`MultiplayerFighter.hasLeft`) 참가자만 제외 — 쓰러졌지만
+    //     방에 남은 참가자는 대상이다.
+    static let protocolVersion = 17
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -541,6 +552,7 @@ struct MultiplayerBattle: Sendable {
     mutating func forfeit(participantID: UUID) {
         guard let index = fighters.firstIndex(where: { $0.id == participantID }) else { return }
         fighters[index].side.hp = 0
+        fighters[index].hasLeft = true
     }
 
     static func automaticActions(fighters: [MultiplayerFighter], mode: MultiplayerBattleMode,

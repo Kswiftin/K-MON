@@ -268,7 +268,7 @@ struct PokemonTradeView: View {
     }
 
     private var offerPicker: some View {
-        MonOfferPicker(store: store, mons: store.ownedMons) { mon in
+        MonOfferPicker(store: store, mons: store.ownedMons, defaultsToLevelOrder: true) { mon in
             center.selectOffer(mon)
             showsOfferPicker = false
         }

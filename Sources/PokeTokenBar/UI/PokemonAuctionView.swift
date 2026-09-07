@@ -139,7 +139,7 @@ struct PokemonAuctionView: View {
                                 // 고를 수 있게 두면 버튼이 조용히 아무 일도 안 한 것처럼 보인다.
                                 MonOfferPicker(store: store, mons: center.sellableMons.filter {
                                     !center.isCommitted($0.id)
-                                }) { mon in
+                                }, defaultsToLevelOrder: true) { mon in
                                     offerSelections[listing.id] = mon.id
                                     offerPickerListingID = nil
                                 }

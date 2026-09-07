@@ -566,24 +566,29 @@ final class MultiplayerRoomCenter {
         if (raidPayout ?? 0) > 0 { drawRaidCatcher(runners: runners) }
     }
 
-    /// 보스를 데려갈 한 명을 뽑는다. **와이어를 안 늘린다** — 모든 피어가 `.raidStart` 로 받은
-    /// 같은 시드와 같은 편성에서 같은 답을 계산한다.
+    /// 보스를 데려갈 한 명을 뽑는다. 모든 피어가 `.raidStart` 로 받은 같은 시드와 같은 편성
+    /// (`hasLeft` 포함)에서 같은 답을 계산한다.
     ///
     /// 두 게이트가 추첨 자체를 막는다. 1★ 는 티어가 안 열고(`grantsCatch`), 1인 판은 추첨이
     /// 언제나 자기 자신이라 협동이라 부를 수 없다(`minimumCoopRunners`). 둘 다 여기 한 곳에
     /// 두어야 호스트·게스트가 같은 규칙을 본다.
     private func drawRaidCatcher(runners: [MultiplayerFighter]) {
-        // **추첨은 살아 있는 러너만 대상이다.** `forfeit` 은 hp 만 0 으로 만들고 편성에는 남기므로
-        // (`retireFighter` — 방을 떠난 사람도 같은 자리를 지난다), 안 걸러내면 이미 `leaveRoom` 을
-        // 지난 사람이 당첨된다. 그 클라이언트는 정산도 포획도 부르지 않아 보스가 아무에게도 안 가고,
-        // 남은 사람 화면에는 "동료가 데려갔다" 만 남는다. `survivorBonus` 가 같은 배열을 이미
-        // `isAlive` 로 거른다 — 추첨만 안 거르던 것이 비대칭이었다.
+        // **추첨에서 빠지는 것은 방을 나간 사람뿐이다(`hasLeft`).** 쓰러졌지만 판 끝까지 남은
+        // 참가자는 대상이다 — 승리에 기여했는데 포획 기회만 없는 것이 이상하다는 지적으로
+        // 바꿨다(#270). `hasLeft` 는 `retireFighter` 가 `.leave`·연결 끊김에서만 세우므로,
+        // hp 만으로는 못 가르던 "쓰러짐"과 "이탈"이 갈린다. 이탈자를 걸러내지 않으면 이미
+        // `leaveRoom` 을 지난 사람이 당첨돼 그 클라이언트는 정산도 포획도 부르지 않으므로
+        // **보스가 아무에게도 안 가고**, 남은 사람 화면에는 "동료가 데려갔다" 만 남는다.
+        //
+        // `survivorBonus`(정산 보상 크기)는 여전히 `isAlive` 로 센다 — 그건 "몇 명이 버텼는가"를
+        // 보는 별개 기준이고, 포획 추첨은 "몇 명이 판에 남았는가"를 본다. 둘을 같은 값으로
+        // 묶을 필요가 없다.
         //
         // 머릿수 게이트는 **참가자 전체**로 센다. 살아남은 수로 세면 동료가 쓰러진 협동 판이
         // 포획 없는 판이 되는데, 그 동료는 실제로 같이 싸웠다.
         guard let species = combatFighters.first(where: { $0.id == RaidBoss.bossID })?.side.snapshot.speciesID
         else { return }
-        let attempts = RaidBoss.catchAttempts(runners: runners.filter(\.isAlive), speciesID: species,
+        let attempts = RaidBoss.catchAttempts(runners: runners.filter { !$0.hasLeft }, speciesID: species,
                                               seed: raidSeed, finishedRound: raidFinishedRound)
         raidCatchAttempts = attempts
         raidCatcherID = attempts.first(where: \.succeeded)?.id

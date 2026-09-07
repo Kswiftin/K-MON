@@ -294,9 +294,9 @@ struct FriendView: View {
     }
 
     private var representativePicker: some View {
-        let mons = RosterOrdering.alphabetizedForSelection(store.ownedMons.filter {
+        let mons = RosterOrdering.arrange(store.ownedMons.filter {
             PokemonNameSearch.matches(representativeSearchText, names: PokemonNameSearch.names(for: $0))
-        }, language: store.language)
+        }, sort: .level, ascending: false)
         return VStack(alignment: .leading, spacing: 8) {
             PokemonSearchField(text: $representativeSearchText, l: store.l)
             Button(store.l.t("대표 포켓몬 없음", "No representative", "代表ポケモンなし")) {

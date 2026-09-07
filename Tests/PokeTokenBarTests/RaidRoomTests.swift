@@ -491,25 +491,25 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.state.boxedMons.count, 1)
     }
 
-    /// **회귀**: 쓰러진 러너는 추첨 풀에 없다.
+    /// **회귀**: 방을 나간 러너는 추첨 풀에 없다.
     ///
-    /// `forfeit` 은 hp 만 0 으로 만들고 편성에는 남긴다 — 방을 떠난 사람도 같은 자리를 지난다
-    /// (`retireFighter`). 안 걸러내면 이미 `leaveRoom` 을 지난 사람이 당첨되고, 그 클라이언트는
-    /// 정산도 포획도 부르지 않으므로 **보스가 아무에게도 안 간다**. 화면은 그 사이 "동료가
-    /// 데려갔다" 를 그린다. 바로 위 `survivorBonus` 는 이미 `isAlive` 로 거른다.
+    /// `forfeit` 은 hp 를 0 으로 만들고 `hasLeft` 를 세우지만 편성에는 남긴다 — 방을 떠난 사람도
+    /// 같은 자리를 지난다(`retireFighter`). `hasLeft` 로 안 걸러내면 이미 `leaveRoom` 을 지난
+    /// 사람이 당첨되고, 그 클라이언트는 정산도 포획도 부르지 않으므로 **보스가 아무에게도 안
+    /// 간다**. 화면은 그 사이 "동료가 데려갔다" 를 그린다.
     @MainActor
-    func testAFaintedRunnerIsNeverDrawn() async {
-        let store = stubStore(TestClock(), tag: "raid-catch-fainted")
+    func testARunnerWhoLeftIsNeverDrawn() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-left")
         await store.hatch(baseID: 20)
         let center = MultiplayerRoomCenter(companion: store)
         let me = runner("나", id: center.myID)
         var mate = runner("동료")
         let boss = todaysBoss(tier: .three)
-        // 생존자 한 명에게 포획 성공이 나는 시드를 골라, 쓰러진 동료가 결과 순서에 끼지 않음을 본다.
+        // 생존자 한 명에게 포획 성공이 나는 시드를 골라, 나간 동료가 결과 순서에 끼지 않음을 본다.
         let seed = seedDrawing(me.id, from: [me.id], finishedRound: 1)
         XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
 
-        mate.side.hp = 0   // 방을 떠났거나 쓰러졌다 — 편성에는 남는다
+        mate.side.hp = 0; mate.hasLeft = true   // 방을 나갔다 — 편성에는 남는다
         var downedBoss = boss
         downedBoss.side.hp = 0
         center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
@@ -519,6 +519,33 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(center.raidCatcherID, me.id, "방에 남아 있는 사람만 뽑힌다")
         XCTAssertEqual(store.state.boxedMons.count, 1, "당첨자가 실제로 데려가야 한다")
         XCTAssertTrue(store.raidCatchClaimedToday)
+    }
+
+    /// **회귀**: 쓰러졌지만 방에 남은 러너는 추첨 대상이다(#270). `hasLeft` 를 안 세우면
+    /// hp 만으로는 "쓰러짐"과 "이탈"을 못 갈라, 같이 싸우고도 쓰러진 참가자가 위 테스트처럼
+    /// 통째로 제외됐다 — 승리에 기여했는데 포획 기회만 없는 것이 이상하다는 지적으로 바꿨다.
+    @MainActor
+    func testAFaintedButPresentRunnerIsStillDrawn() async {
+        let store = stubStore(TestClock(), tag: "raid-catch-fainted-present")
+        await store.hatch(baseID: 20)
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        var mate = runner("동료")
+        let boss = todaysBoss(tier: .three)
+        // 내가 아니라 쓰러진 동료가 뽑히는 시드를 골라, 대상에서 안 빠졌음을 직접 본다.
+        let seed = seedDrawing(mate.id, from: [me.id, mate.id], finishedRound: 1)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
+
+        mate.side.hp = 0   // 싸우다 쓰러졌을 뿐 방은 나가지 않았다 — hasLeft 는 false 로 남는다
+        var downedBoss = boss
+        downedBoss.side.hp = 0
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, downedBoss], events: [])
+        center.applyGuestRaidSettlement([me.id: 1_600, mate.id: 0])
+        await center.debugAwaitRaidCatch()
+
+        XCTAssertEqual(center.raidCatcherID, mate.id, "쓰러졌어도 방에 남았으면 대상이다")
+        // 동료의 포획은 동료 자신의 클라이언트가 지갑에 넣는다 — 내 화면은 결과만 본다.
+        XCTAssertEqual(store.state.boxedMons.count, 0)
     }
 
     /// 내가 뽑히는 이긴 3★ 판을 한 판 돈다 — 포획 **결과만** 다른 테스트들이 같은 여섯 줄을 쓴다.
