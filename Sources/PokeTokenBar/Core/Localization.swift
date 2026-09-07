@@ -107,8 +107,6 @@ struct L {
     func menuBarBattleChallengeReceived(_ peer: String) -> String { "\(peer) 수락 대기" }
     func menuBarBattling(_ peer: String, isMyTurn: Bool) -> String {
         let koTurn = isMyTurn ? "내 턴" : "상대 턴"
-        let enTurn = isMyTurn ? "Your turn" : "Opponent's turn"
-        let jaTurn = isMyTurn ? "自分のターン" : "相手のターン"
         return "\(peer)와 대결 중 · \(koTurn)"
     }
     /// 랭크전 판돈을 못 낼 때 — 세 경로(수신 수락·수락 응답·개시 에스크로)가 같은 문구를 쓴다.

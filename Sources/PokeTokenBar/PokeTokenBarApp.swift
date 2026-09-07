@@ -424,7 +424,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
             // 시작할 수 없는 상태에서 "시작하세요" 라고 부르게 된다.
             refusal: PokedoroSessionGate.startRefusal(
                 PokedoroSessionState(timer: focusTimer, companion: companion)))
-        let l = companion.l
         switch decision {
         case .promptNextSession:
             notifyFocusChain("휴식이 끝났어요",

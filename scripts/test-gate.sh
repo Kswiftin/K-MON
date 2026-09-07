@@ -498,6 +498,9 @@ swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG"
 # 반복해서 찍히므로 sort -u 로 접는다.
 # ponytail: 재컴파일이 없는 warm build 는 warning 을 다시 찍지 않아 로컬에서 놓칠 수 있다 —
 #           신뢰 기준은 매번 cold build 인 CI 다. 로컬에서 볼 때는 `swift package clean` 뒤에 돌린다.
+#           **이 전제는 한 번 깨졌다**: `ci.yml` 이 게이트 앞에 `swift build` 를 두고 있어서
+#           CI 의 게이트도 warm 이었고, #274 의 미사용 바인딩 경고 3건이 초록으로 지나갔다.
+#           그 단계를 뺐다(2026-09-07). **게이트 앞에 빌드 단계를 다시 두면 이 검사가 죽는다.**
 #           해제 조건 없음(영구): CI 가 cold build 인 동안은 이게 답이고 올릴 단계가 없다.
 #           CI 가 빌드 캐시를 쓰기 시작하면 그때 이 게이트를 clean build 로 고정해야 한다.
 OWN_WARNINGS=$(grep -oE '(Sources|Tests)/PokeTokenBar[^ ]*\.swift:[0-9]+:[0-9]+: warning: .*' "$TEST_LOG" | sort -u || true)
