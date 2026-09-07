@@ -611,7 +611,7 @@ final class RaidRoomTests: XCTestCase {
 
         let center = MultiplayerRoomCenter(companion: store)
         let me = runner("나", id: center.myID)
-        var mate = runner("동료")
+        let mate = runner("동료")
         let boss = todaysBoss(tier: .three)
         // 내가 아니라 동료가 뽑히는 시드 — 내 주사위는 실패로 나온다.
         let seed = seedDrawing(mate.id, from: [me.id, mate.id], finishedRound: 1)
