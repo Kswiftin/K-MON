@@ -35,13 +35,13 @@ final class ReviewRegressionTests: XCTestCase {
         XCTAssertNil(battle.resolveChosenActions())
         XCTAssertEqual(battle.oppActive, 1, "픽스처가 자동 출전을 실제로 밟아야 한다")
 
-        let lines = BattleLogSource.netBattle(battle, mine: .a, l: L(.en)).map(\.text)
-        let defenderLines = BattleLogSource.netBattle(battle, mine: .b, l: L(.en)).map(\.text)
+        let lines = BattleLogSource.netBattle(battle, mine: .a, l: L()).map(\.text)
+        let defenderLines = BattleLogSource.netBattle(battle, mine: .b, l: L()).map(\.text)
 
-        XCTAssertTrue(lines.contains { $0.contains("Fainted Lead used Lead Move") },
+        XCTAssertTrue(lines.contains { $0.contains("Fainted Lead의 Lead Move") },
                       "교체 전 기술을 새 포켓몬의 무브셋으로 재해석하면 Struggle로 보인다")
-        XCTAssertTrue(lines.contains("Fainted Lead fainted!"))
-        XCTAssertFalse(lines.contains("Healthy Reserve fainted!"),
+        XCTAssertTrue(lines.contains("Fainted Lead은(는) 쓰러졌다!"))
+        XCTAssertFalse(lines.contains("Healthy Reserve은(는) 쓰러졌다!"),
                        "자동 출전한 생존 포켓몬이 기절한 것으로 표시되어서는 안 된다")
         XCTAssertEqual(defenderLines, lines, "challenger/defender 어느 화면에서도 전투원 문맥은 같아야 한다")
     }
@@ -74,7 +74,7 @@ final class ReviewRegressionTests: XCTestCase {
     /// 넘어가며 세야 한다.
     func testLANLogStopsAtThePlayedEventCount() {
         let battle = twoBatchBattle()
-        let l = L(.en)
+        let l = L()
         XCTAssertEqual(battle.eventBatches.count, 2, "픽스처가 배치 경계를 실제로 만들어야 한다")
         // 잘림이 기대는 불변식: 평평한 스트림은 배치들을 이어 붙인 것과 같은 순서·개수다.
         XCTAssertEqual(battle.events, battle.eventBatches.flatMap(\.events))
@@ -102,9 +102,9 @@ final class ReviewRegressionTests: XCTestCase {
                           "배치 중간에서 자르지 않고 배치 단위로만 자르면 이 두 지점이 같아진다")
         let played = atEveryProgress[firstBatch]
         XCTAssertLessThan(played.count, full.count, "1턴까지만 재생됐으면 로그도 그만큼이어야 한다")
-        XCTAssertTrue(played.contains { $0.contains("Fainted Lead used Lead Move") },
+        XCTAssertTrue(played.contains { $0.contains("Fainted Lead의 Lead Move") },
                       "배치 안에서 자르더라도 그 배치의 이름·기술 문맥은 살아 있어야 한다")
-        XCTAssertFalse(played.contains("Fainted Lead fainted!"),
+        XCTAssertFalse(played.contains("Fainted Lead은(는) 쓰러졌다!"),
                        "2턴 결과가 재생보다 먼저 로그에 새면 재생이 결과를 스포일한다")
         XCTAssertEqual(atEveryProgress[battle.events.count], full,
                        "전부 재생됐으면 자르지 않은 로그와 같아야 한다")

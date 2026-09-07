@@ -16,7 +16,7 @@ import XCTest
 private func chainNames(_ tree: EvoNode) -> [Int: [String: String]] {
     func ids(_ node: EvoNode) -> [Int] { [node.speciesID] + node.children.flatMap(ids) }
     var out: [Int: [String: String]] = [:]
-    for id in ids(tree) { out[id] = ["ko": "포\(id)", "en": "P\(id)", "ja": "ポ\(id)"] }
+    for id in ids(tree) { out[id] = ["ko": "포\(id)"] }
     return out
 }
 private func line(base: Int, tree: EvoNode) -> EvoLine {
@@ -92,13 +92,13 @@ final class EvolutionBranchTests: XCTestCase {
         XCTAssertNil(byID[470]?.level, "조건을 지어내면 그걸 채우려다 시간을 버린다")
     }
 
-    /// 이름은 지금 언어로 나온다 — 갈래 목록이 종 번호만 보여주면 무엇으로 가는지 모른다.
-    func testBranchesAreNamedInTheCurrentLanguage() async {
+    /// 이름은 한국어로 나온다 — 갈래 목록이 종 번호만 보여주면 무엇으로 가는지 모른다.
+    func testBranchesAreNamedInKorean() async {
         let companion = store(poliwhirlLine)
         await companion.hatch(baseID: 61)
         for branch in companion.evolutionBranches {
             XCTAssertEqual(branch.targetName,
-                           poliwhirlLine.localizedName(branch.id, companion.language))
+                           poliwhirlLine.localizedName(branch.id))
         }
     }
 
@@ -139,19 +139,9 @@ final class EvolutionBranchTests: XCTestCase {
 
     // MARK: 문구
 
-    func testBranchCopyExistsInAllThreeLanguages() {
-        for language in AppLanguage.allCases {
-            let localized = L(language)
-            XCTAssertFalse(localized.evolutionBranchCount(2).isEmpty, "\(language) 개수 문구 누락")
-            XCTAssertFalse(localized.evolutionBranchUnknownCondition.isEmpty, "\(language) 조건불명 문구 누락")
-        }
-        XCTAssertNotEqual(L(.ko).evolutionBranchCount(2), L(.en).evolutionBranchCount(2))
-        XCTAssertNotEqual(L(.ko).evolutionBranchCount(2), L(.ja).evolutionBranchCount(2))
-    }
-
     /// 갈래 한 줄은 조건과 대상이 **붙어** 있어야 한다 — 따로 놓으면 어느 쪽이 짝인지 모른다.
     func testABranchRowKeepsTheConditionNextToItsTarget() {
-        let row = L(.ko).evolutionBranchRow(condition: "물의돌", target: "강챙이")
+        let row = L().evolutionBranchRow(condition: "물의돌", target: "강챙이")
         XCTAssertTrue(row.contains("물의돌"))
         XCTAssertTrue(row.contains("강챙이"))
         XCTAssertLessThan(try XCTUnwrap(row.range(of: "물의돌")).lowerBound,

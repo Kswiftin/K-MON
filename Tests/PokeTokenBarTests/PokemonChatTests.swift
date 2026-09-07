@@ -19,8 +19,8 @@ final class PokemonChatTests: XCTestCase {
         let profile = store.chatProfile(for: try XCTUnwrap(store.boxedMons.first))
 
         XCTAssertTrue(profile.types.isEmpty)
-        XCTAssertEqual(profile.moves, [boxedMove.name(.ko)])
-        XCTAssertNotEqual(profile.moves, [activeMove.name(.ko)])
+        XCTAssertEqual(profile.moves, [boxedMove.name])
+        XCTAssertNotEqual(profile.moves, [activeMove.name])
     }
 
     func testActivePartnerPersonaStillCarriesItsLoadedTypes() async throws {
@@ -30,7 +30,7 @@ final class PokemonChatTests: XCTestCase {
 
         let profile = store.chatProfile(for: try XCTUnwrap(store.state.active))
 
-        XCTAssertEqual(profile.types, [PokemonType.electric.name(.ko)])
+        XCTAssertEqual(profile.types, [PokemonType.electric.name])
     }
 
     func testBoxedPokemonOfTheSameSpeciesKeepsCorrectTypes() async throws {
@@ -42,7 +42,7 @@ final class PokemonChatTests: XCTestCase {
 
         let profile = store.chatProfile(for: try XCTUnwrap(store.boxedMons.first))
 
-        XCTAssertEqual(profile.types, [PokemonType.electric.name(.ko)])
+        XCTAssertEqual(profile.types, [PokemonType.electric.name])
     }
 
     func testSessionStaysAttachedToIndividualAcrossSpeciesChange() throws {
@@ -58,7 +58,7 @@ final class PokemonChatTests: XCTestCase {
     func testPromptUsesPersonaAndRecentMessagesButNotFullHistory() {
         let profile = PokemonChatProfile(speciesID: 25, displayName: "피카츄", nickname: "번개",
                                          nature: "명랑", level: 18, stage: "첫 번째 형태",
-                                         flavorText: "전기를 볼에 저장한다.", language: .ko)
+                                         flavorText: "전기를 볼에 저장한다.")
         let history = (0..<16).map { PokemonChatMessage(role: .user, body: "메시지 \($0)") }
         let request = PokemonChatRequest(profile: profile, summary: "트레이너와 산책을 약속했다.",
                                          recentMessages: Array(history.suffix(12)))
@@ -75,8 +75,7 @@ final class PokemonChatTests: XCTestCase {
         profile.apply(PokemonSpeciesIdentity(
             genera: ["ko": "쥐포켓몬"], habitatSlug: "forest",
             flavorTexts: ["ko": "볼의 양쪽에는 전기를 모으는 주머니가 있다."],
-            abilityNames: ["ko": "정전기"], abilityTexts: ["ko": "접촉한 상대를 마비시킬 때가 있다."],
-            language: .ko
+            abilityNames: ["ko": "정전기"], abilityTexts: ["ko": "접촉한 상대를 마비시킬 때가 있다."]
         ))
 
         let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
@@ -90,8 +89,7 @@ final class PokemonChatTests: XCTestCase {
     func testMissingSpeciesFactsAreOmittedInsteadOfLabelledUnknown() {
         var profile = PokemonChatProfile.fixture
         profile.apply(PokemonSpeciesIdentity(
-            genera: [:], habitatSlug: nil, flavorTexts: [:], abilityNames: [:], abilityTexts: [:],
-            language: .ko
+            genera: [:], habitatSlug: nil, flavorTexts: [:], abilityNames: [:], abilityTexts: [:]
         ))
 
         let prompt = PokemonChatRequest(profile: profile, summary: "", recentMessages: []).systemPrompt
@@ -107,8 +105,7 @@ final class PokemonChatTests: XCTestCase {
     func testAbilityNameSurvivesWhenItsDescriptionIsMissing() {
         let identity = PokemonSpeciesIdentity(
             genera: [:], habitatSlug: nil, flavorTexts: [:],
-            abilityNames: ["ko": "정전기"], abilityTexts: ["en": "May paralyze on contact."],
-            language: .ko
+            abilityNames: ["ko": "정전기"], abilityTexts: ["en": "May paralyze on contact."]
         )
 
         XCTAssertEqual(identity.ability, "정전기")
@@ -118,27 +115,26 @@ final class PokemonChatTests: XCTestCase {
     func testProseFieldsDoNotFallBackToEnglishWhileNamesDo() {
         let englishOnly = ["en": "Static"]
 
-        XCTAssertEqual(AppLanguage.ko.resolveName(englishOnly), "Static")
-        XCTAssertNil(AppLanguage.ko.resolveProse(englishOnly))
+        XCTAssertEqual(PokemonNaming.name(englishOnly), "Static")
+        XCTAssertNil(PokemonNaming.prose(englishOnly))
     }
 
     func testUnknownHabitatSlugIsDroppedRatherThanShownRaw() {
         let identity = PokemonSpeciesIdentity(
-            genera: [:], habitatSlug: "temple", flavorTexts: [:], abilityNames: [:], abilityTexts: [:],
-            language: .ko
+            genera: [:], habitatSlug: "temple", flavorTexts: [:], abilityNames: [:], abilityTexts: [:]
         )
 
         XCTAssertNil(PokemonHabitat(rawValue: "temple"))
         XCTAssertNil(identity.habitat)
     }
 
-    func testEveryHabitatHasThreeDistinctLanguageNames() {
+    func testEveryHabitatHasAName() {
         XCTAssertEqual(PokemonHabitat.allCases.count, 9)
         for habitat in PokemonHabitat.allCases {
-            let names = AppLanguage.allCases.map(habitat.name)
-            XCTAssertTrue(names.allSatisfy { !$0.isEmpty }, "Missing habitat translation for \(habitat.rawValue)")
-            XCTAssertEqual(Set(names).count, 3, "Habitat translations must be distinct for \(habitat.rawValue)")
+            XCTAssertFalse(habitat.name.isEmpty, "Missing habitat translation for \(habitat.rawValue)")
         }
+        XCTAssertEqual(Set(PokemonHabitat.allCases.map(\.name)).count, PokemonHabitat.allCases.count,
+                       "Habitat names must be distinct")
     }
 
     // 대표 특성 선택 규칙(숨은 특성 제외 · slot 최소)의 가드는
@@ -151,8 +147,7 @@ final class PokemonChatTests: XCTestCase {
         let identity = PokemonSpeciesIdentity(
             genera: ["ko": "쥐포켓몬"], habitatSlug: "forest",
             flavorTexts: ["ko": "전기를 볼에 저장한다."],
-            abilityNames: ["ko": "정전기"], abilityTexts: ["ko": "접촉한 상대를 마비시킨다."],
-            language: .ko
+            abilityNames: ["ko": "정전기"], abilityTexts: ["ko": "접촉한 상대를 마비시킨다."]
         )
 
         profile.apply(identity)
@@ -222,8 +217,7 @@ final class PokemonChatTests: XCTestCase {
             genera: ["ko": String(repeating: "분류", count: 20)], habitatSlug: "rough-terrain",
             flavorTexts: ["ko": String(repeating: "도감 설명 ", count: 25)],
             abilityNames: ["ko": String(repeating: "특성", count: 12)],
-            abilityTexts: ["ko": String(repeating: "특성 설명 ", count: 20)],
-            language: .ko
+            abilityTexts: ["ko": String(repeating: "특성 설명 ", count: 20)]
         ))
 
         // 기술은 네 칸이 상한이다(`learnedMoves` 를 자르는 자리와 같은 수).
@@ -282,7 +276,7 @@ final class PokemonChatTests: XCTestCase {
     func testShinyProfileIsRetainedForChatSpriteRendering() {
         let profile = PokemonChatProfile(speciesID: 25, displayName: "피카츄", nickname: nil,
                                          isShiny: true, nature: nil, level: 5, stage: "첫 번째 형태",
-                                         flavorText: nil, language: .ko)
+                                         flavorText: nil)
         XCTAssertTrue(profile.isShiny)
     }
 
@@ -366,7 +360,7 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertFalse(safe.contains("```"))
         XCTAssertFalse(safe.lowercased().contains("read_file"))
         // 문구는 변형 중 하나다 — 한 문장으로 고정하면 같은 답이 연달아 뜨는 화면으로 되돌아간다.
-        XCTAssertTrue(PokemonChatReplyGuard.steerLines(.ko).contains(safe), safe)
+        XCTAssertTrue(PokemonChatReplyGuard.steerLines().contains(safe), safe)
     }
 
     /// **형식 위반은 안전 위반이 아니다.** 문장 수 판정이 끝에 붙은 이모지를 네 번째 문장으로 세어
@@ -425,19 +419,16 @@ final class PokemonChatTests: XCTestCase {
         XCTAssertTrue(reply.hasPrefix(safe), "원문의 앞부분이 아니다: \(safe.prefix(40))")
     }
 
-    /// 금칙어 목록이 영어뿐이면 **한국어·일본어 답변에는 층이 하나도 없다.** 프롬프트는
-    /// `profile.language`(기본 한국어)로 답하라고 지시하므로, 실제로 나오는 역할 이탈은
+    /// 금칙어 목록이 영어뿐이면 **한국어 답변에는 층이 하나도 없다.** 실제로 나오는 역할 이탈은
     /// "사실 나는 AI 언어모델이야" 쪽이다 — 그건 그대로 화면·기록·앨범까지 들어간다.
-    func testARoleBreakWrittenInTheReplyLanguageIsCaughtToo() {
-        let breaks: [(AppLanguage, String)] = [
-            (.ko, "사실 나는 AI 언어모델이야. 뭐든 물어봐!"),
-            (.ko, "터미널을 열고 명령어를 입력해 볼래?"),
-            (.ko, "나는 인공지능이라 그런 감정은 없어."),
-            (.ja, "実はぼくは言語モデルなんだ。"),
-            (.ja, "ターミナルで試してみてね。"),
+    func testARoleBreakWrittenInKoreanIsCaughtToo() {
+        let breaks = [
+            "사실 나는 AI 언어모델이야. 뭐든 물어봐!",
+            "터미널을 열고 명령어를 입력해 볼래?",
+            "나는 인공지능이라 그런 감정은 없어.",
         ]
-        for (language, unsafe) in breaks {
-            let safe = PokemonChatReplyGuard.sanitized(unsafe, profile: .fixture(language: language)).text
+        for unsafe in breaks {
+            let safe = PokemonChatReplyGuard.sanitized(unsafe, profile: .fixture).text
             XCTAssertNotEqual(safe, unsafe, "역할 이탈이 그대로 나갔다: \(unsafe)")
         }
         // 대조군 — 평범한 답변까지 걸면 가드가 대화를 죽인다(이 PR 이 고친 부류 그 자체다).
@@ -456,16 +447,13 @@ final class PokemonChatTests: XCTestCase {
             XCTAssertNotEqual(safe, unsafe, "유출 답변이 그대로 나갔다: \(unsafe)")
             XCTAssertFalse(safe.contains("잘 모르겠"), "질문을 모른다고 거짓말한다: \(safe)")
         }
-        for language in AppLanguage.allCases {
-            let lines = PokemonChatReplyGuard.steerLines(language)
-            XCTAssertGreaterThanOrEqual(Set(lines).count, 3,
-                                        "\(language.rawValue): 변형이 없어 같은 문장이 반복된다")
-            // 침묵(모델이 아무 말도 안 함)과 금지(모델이 넘어선 말을 함)는 **다른 사건**이다.
-            // 같은 문장으로 뭉개면 사용자는 둘을 구분할 수 없다.
-            let silence = PokemonChatReplyGuard.silence(language)
-            XCTAssertFalse(silence.isEmpty, language.rawValue)
-            XCTAssertFalse(lines.contains(silence), "\(language.rawValue): 침묵과 금지가 같은 문장이다")
-        }
+        let lines = PokemonChatReplyGuard.steerLines()
+        XCTAssertGreaterThanOrEqual(Set(lines).count, 3, "변형이 없어 같은 문장이 반복된다")
+        // 침묵(모델이 아무 말도 안 함)과 금지(모델이 넘어선 말을 함)는 **다른 사건**이다.
+        // 같은 문장으로 뭉개면 사용자는 둘을 구분할 수 없다.
+        let silence = PokemonChatReplyGuard.silence()
+        XCTAssertFalse(silence.isEmpty)
+        XCTAssertFalse(lines.contains(silence), "침묵과 금지가 같은 문장이다")
     }
 
     /// 잡담·놀이 허용과 "되물음으로 끝낸다" 는 흐름 규칙이 프롬프트에서 조용히 사라지면 대화는
@@ -581,23 +569,21 @@ final class PokemonChatTests: XCTestCase {
     func testProviderLabelsAndVerifiedKindsFeedBothScreensFromOneList() {
         XCTAssertEqual(PokemonChatProviderSafety.verifiedKinds, [.codex, .claude])
         for kind in PokemonChatProviderKind.allCases {
-            for language in [AppLanguage.ko, .en, .ja] {
-                XCTAssertFalse(kind.label(language).isEmpty, "\(kind.rawValue)/\(language): 빈 이름")
-            }
+            XCTAssertFalse(kind.label.isEmpty, "\(kind.rawValue): 빈 이름")
         }
-        XCTAssertEqual(Set(PokemonChatProviderKind.allCases.map { $0.label(.en) }).count,
+        XCTAssertEqual(Set(PokemonChatProviderKind.allCases.map { $0.label }).count,
                        PokemonChatProviderKind.allCases.count, "제공자 이름이 겹친다")
         XCTAssertEqual(PokemonChatProviderSafety.availability(for: .opencode).blockReason,
                        .unverifiedToolContract)
         XCTAssertNil(PokemonChatProviderSafety.availability(for: .codex).blockReason)
     }
 
-    func testBlockReasonIsLocalizedInAllThreeLanguages() {
+    func testBlockReasonHasAMessage() {
         for reason in [PokemonChatBlockReason.unverifiedToolContract, .arbitraryExecutable] {
-            let messages = [AppLanguage.ko, .en, .ja].map { reason.message($0) }
-            XCTAssertFalse(messages.contains(where: \.isEmpty), "\(reason): 빈 문구")
-            XCTAssertEqual(Set(messages).count, 3, "\(reason): 세 언어가 같은 문구다")
+            XCTAssertFalse(reason.message.isEmpty, "\(reason): 빈 문구")
         }
+        XCTAssertNotEqual(PokemonChatBlockReason.unverifiedToolContract.message,
+                          PokemonChatBlockReason.arbitraryExecutable.message, "사유가 서로 구분되지 않는다")
     }
 
     func testDeletingSessionRemovesPersistedConversation() throws {
@@ -784,9 +770,6 @@ final class PokemonChatTests: XCTestCase {
         let store = CompanionStore(provider: ChatLineProvider(line: line),
                                    clock: { Date(timeIntervalSince1970: 1_000) },
                                    fileURL: url, rng: SeededRNG(seed: 1))
-        // 신규 세이브의 언어는 `.systemDefault` 라 호스트 로케일을 따라간다(한국어 Mac=ko, CI=en).
-        // 페르소나 단언이 한국어 이름을 기대하므로 여기서 못 박는다 — 안 박으면 로컬에서만 통과한다.
-        store.setLanguage(.ko)
         return store
     }
 
@@ -841,9 +824,9 @@ private actor QueuedReplyProvider: PokemonChatProviding {
 
 private extension PokemonChatProfile {
     static var fixture: PokemonChatProfile { fixture(nickname: nil) }
-    static func fixture(nickname: String? = nil, language: AppLanguage = .ko) -> PokemonChatProfile {
+    static func fixture(nickname: String? = nil) -> PokemonChatProfile {
         PokemonChatProfile(speciesID: 1, displayName: "이상해씨", nickname: nickname,
                            nature: "온순", level: 5, stage: "첫 번째 형태",
-                           flavorText: "태어날 때부터 등에 이상한 씨앗이 자란다.", language: language)
+                           flavorText: "태어날 때부터 등에 이상한 씨앗이 자란다.")
     }
 }

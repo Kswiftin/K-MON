@@ -6,7 +6,7 @@ import Foundation
 /// 파생한다(POKÉLOG·일기·계절이 같은 원칙을 쓴다). 그래서 세이브 마이그레이션이 필요 없고,
 /// 기존 사용자의 방도 업데이트 즉시 자기 종의 문장을 갖는다.
 ///
-/// 뷰 안 `private` 함수로 두지 않는 이유는 `MemoryHomeMoodStyle` 과 같다 — 뷰 안이면 세 언어
+/// 뷰 안 `private` 함수로 두지 않는 이유는 `MemoryHomeMoodStyle` 과 같다 — 뷰 안이면
 /// 문구가 무테스트로 남는다. 실제로 그렇게 돼 있던 동안 이 문구는 가구 3종만 보는 3줄이었고,
 /// 종을 아예 읽지 않아 누구의 방이든 같은 문장이 나왔다.
 enum MemoryHomeRoomLife {
@@ -35,7 +35,7 @@ enum MemoryHomeRoomLife {
                      mood: MemoryHomeMood?, season: MemoryHomeSeason,
                      timeOfDay: MemoryHomeTimeOfDay = .day, companion: String, _ l: L) -> String {
         if let paired = decor.lazy.compactMap({ pairLines[Pair(speciesID: speciesID, item: $0)] }).first {
-            return l.t(paired.ko, paired.en, paired.ja)
+            return paired.ko
         }
         if let roommate = roommates.first {
             return roommateLine(roommate, others: roommates.count - 1, timeOfDay: timeOfDay,
@@ -56,21 +56,15 @@ enum MemoryHomeRoomLife {
                                      timeOfDay: MemoryHomeTimeOfDay, companion: String,
                                      _ l: L) -> String {
         let company = others > 0
-            ? l.t("\(roommate) 외 \(others)마리", "\(roommate) and \(others) more", "\(roommate) ほか \(others) 匹")
+            ? "\(roommate) 외 \(others)마리"
             : roommate
         switch timeOfDay {
         case .morning:
-            return l.t("\(companion)이 \(company) 곁에서 같이 부스스 일어났어요.",
-                       "\(companion) woke up bleary-eyed next to \(company).",
-                       "\(companion)が \(company) のそばで一緒に寝ぼけまなこで起きました。")
+            return "\(companion)이 \(company) 곁에서 같이 부스스 일어났어요."
         case .day:
-            return l.t("\(companion)이 \(company) 옆에 딱 붙어 뒹굴고 있어요.",
-                       "\(companion) is glued to \(company)'s side, rolling around.",
-                       "\(companion)が \(company) にぴったりくっついて転がっています。")
+            return "\(companion)이 \(company) 옆에 딱 붙어 뒹굴고 있어요."
         case .night:
-            return l.t("\(companion)이 \(company) 곁에 몸을 붙이고 잠들었어요.",
-                       "\(companion) fell asleep pressed up against \(company).",
-                       "\(companion)が \(company) に体を寄せて眠りました。")
+            return "\(companion)이 \(company) 곁에 몸을 붙이고 잠들었어요."
         }
     }
 
@@ -80,17 +74,11 @@ enum MemoryHomeRoomLife {
         let name = l.itemName(item)
         switch item.roomReaction {
         case "onTop":
-            return l.t("\(name) 위에 올라가 몸을 말고 있어요.",
-                       "Curled up on top of the \(name).",
-                       "\(name)の上で丸くなっています。")
+            return "\(name) 위에 올라가 몸을 말고 있어요."
         case "under":
-            return l.t("\(name) 불빛 아래에서 꾸벅꾸벅 졸고 있어요.",
-                       "Dozing off under the \(name)'s glow.",
-                       "\(name)の明かりの下でうとうとしています。")
+            return "\(name) 불빛 아래에서 꾸벅꾸벅 졸고 있어요."
         default:
-            return l.t("\(name) 옆에 자리를 잡고 앉았어요.",
-                       "Settled in right beside the \(name).",
-                       "\(name)のそばに座り込みました。")
+            return "\(name) 옆에 자리를 잡고 앉았어요."
         }
     }
 
@@ -103,13 +91,9 @@ enum MemoryHomeRoomLife {
                                  companion: String, _ l: L) -> String {
         switch timeOfDay {
         case .morning:
-            return l.t("\(companion)이 아침 햇살에 눈을 비비며 기지개를 켜고 있어요.",
-                       "\(companion) is stretching and rubbing its eyes in the morning light.",
-                       "\(companion)が朝の光の中で目をこすりながら伸びをしています。")
+            return "\(companion)이 아침 햇살에 눈을 비비며 기지개를 켜고 있어요."
         case .night:
-            return l.t("\(companion)이 불을 끈 방에서 새근새근 잠들었어요.",
-                       "\(companion) is fast asleep in the darkened room.",
-                       "\(companion)が明かりを消した部屋ですやすや眠っています。")
+            return "\(companion)이 불을 끈 방에서 새근새근 잠들었어요."
         case .day:
             return seasonLine(season, companion: companion, l)
         }
@@ -118,21 +102,13 @@ enum MemoryHomeRoomLife {
     private static func seasonLine(_ season: MemoryHomeSeason, companion: String, _ l: L) -> String {
         switch season {
         case .spring:
-            return l.t("\(companion)이 창밖 벚꽃을 구경하고 있어요.",
-                       "\(companion) is watching the spring blossoms outside.",
-                       "\(companion)が窓の外の桜を眺めています。")
+            return "\(companion)이 창밖 벚꽃을 구경하고 있어요."
         case .summer:
-            return l.t("\(companion)이 시원한 바닥을 찾아 뒹굴고 있어요.",
-                       "\(companion) is rolling around hunting for a cool spot on the floor.",
-                       "\(companion)が涼しい床を探して転がっています。")
+            return "\(companion)이 시원한 바닥을 찾아 뒹굴고 있어요."
         case .autumn:
-            return l.t("\(companion)이 창틈으로 들어온 낙엽을 굴리고 있어요.",
-                       "\(companion) is batting around a leaf that blew in.",
-                       "\(companion)が窓から入った落ち葉を転がしています。")
+            return "\(companion)이 창틈으로 들어온 낙엽을 굴리고 있어요."
         case .winter:
-            return l.t("\(companion)이 첫눈을 기다리며 창가에 붙어 있어요.",
-                       "\(companion) is pressed against the window waiting for the first snow.",
-                       "\(companion)が初雪を待って窓辺にはりついています。")
+            return "\(companion)이 첫눈을 기다리며 창가에 붙어 있어요."
         }
     }
 
@@ -238,7 +214,7 @@ enum MemoryHomeRoomLife {
 
 /// 기분별 이모지·이름·반응 문구. **Core 에 둔다** — 이 파일(`roomLine`)이 반응 문구를 부르므로
 /// 뷰에 두면 코어가 UI 파일에 기대고, 앱 없이 코어만 세우는 밸런스 시뮬레이터가 컴파일되지 않는다.
-/// 뷰 안 `private` 함수로 두지 않는 이유는 세 언어 문구가 무테스트로 남기 때문이다. 종별 반응은 없다: 1000종 × 5기분은 헤더의 범위가 아니다.
+/// 뷰 안 `private` 함수로 두지 않는 이유는 문구가 무테스트로 남기 때문이다. 종별 반응은 없다: 1000종 × 5기분은 헤더의 범위가 아니다.
 enum MemoryHomeMoodStyle {
     static func emoji(_ mood: MemoryHomeMood) -> String {
         switch mood {
@@ -250,33 +226,23 @@ enum MemoryHomeMoodStyle {
         }
     }
 
-    static func name(_ mood: MemoryHomeMood, _ l: L) -> String {
+    static func name(_ mood: MemoryHomeMood) -> String {
         switch mood {
-        case .excited: l.t("신남", "Excited", "うきうき")
-        case .calm: l.t("평범", "Calm", "ふつう")
-        case .down: l.t("우울", "Down", "しずんだ")
-        case .annoyed: l.t("짜증", "Annoyed", "いらいら")
-        case .fluttering: l.t("설렘", "Fluttering", "どきどき")
+        case .excited: "신남"
+        case .calm: "평범"
+        case .down: "우울"
+        case .annoyed: "짜증"
+        case .fluttering: "설렘"
         }
     }
 
     static func reaction(_ mood: MemoryHomeMood, companion: String, _ l: L) -> String {
         switch mood {
-        case .excited: l.t("\(companion)도 꼬리를 흔들며 같이 신났어요.",
-                           "\(companion) is bouncing around with you.",
-                           "\(companion)も一緒にうきうきしています。")
-        case .calm: l.t("\(companion)이 옆에서 조용히 낮잠을 자요.",
-                        "\(companion) is dozing quietly beside you.",
-                        "\(companion)がそばで静かに眠っています。")
-        case .down: l.t("\(companion)이 말없이 옆에 앉았어요.",
-                        "\(companion) sat down next to you without a word.",
-                        "\(companion)が何も言わずに隣に座りました。")
-        case .annoyed: l.t("\(companion)도 같이 머리를 감싸 쥐었어요.",
-                           "\(companion) is holding its head right along with you.",
-                           "\(companion)も一緒に頭を抱えています。")
-        case .fluttering: l.t("\(companion)이 하트를 띄웠어요.",
-                              "\(companion) let out a little heart.",
-                              "\(companion)がハートを浮かべました。")
+        case .excited: "\(companion)도 꼬리를 흔들며 같이 신났어요."
+        case .calm: "\(companion)이 옆에서 조용히 낮잠을 자요."
+        case .down: "\(companion)이 말없이 옆에 앉았어요."
+        case .annoyed: "\(companion)도 같이 머리를 감싸 쥐었어요."
+        case .fluttering: "\(companion)이 하트를 띄웠어요."
         }
     }
 }

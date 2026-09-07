@@ -321,27 +321,23 @@ final class DailyCandyTests: XCTestCase {
 final class CandyNotificationCopyTests: XCTestCase {
     /// 제목에 개수와 아이템명이 들어간다.
     func testTitleIncludesCountAndItem() {
-        let l = L(.ko)
+        let l = L()
         let one = l.notifCandyTitle(item: l.itemName(.rareCandy), count: 1)
         XCTAssertTrue(one.contains("이상한 사탕"))
         XCTAssertTrue(one.contains("1개"), one)
     }
 
-    /// 일일 보상 본문은 비어 있지 않고 3개 언어 모두 존재.
-    func testDailyBodyLocalizedAllLanguages() {
-        for lang in AppLanguage.allCases {
-            XCTAssertFalse(L(lang).notifDailyCandyBody.isEmpty, "\(lang)")
-        }
+    /// 일일 보상 본문은 비어 있지 않다.
+    func testDailyBodyLocalized() {
+        XCTAssertFalse(L().notifDailyCandyBody.isEmpty)
     }
 
-    /// 3개 언어 모두 개수 치환 + 비어있지 않음.
-    func testTitleLocalizedAllLanguages() {
-        for lang in AppLanguage.allCases {
-            let l = L(lang)
-            let title = l.notifCandyTitle(item: l.itemName(.rareCandy), count: 3)
-            XCTAssertTrue(title.contains("3"), "\(lang): \(title)")
-            XCTAssertFalse(title.isEmpty)
-        }
+    /// 개수 치환 + 비어있지 않음.
+    func testTitleLocalized() {
+        let l = L()
+        let title = l.notifCandyTitle(item: l.itemName(.rareCandy), count: 3)
+        XCTAssertTrue(title.contains("3"), title)
+        XCTAssertFalse(title.isEmpty)
     }
 
 }

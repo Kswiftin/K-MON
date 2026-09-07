@@ -6,9 +6,9 @@ final class BattleChatTests: XCTestCase {
         let id = UUID(), sender = UUID()
         let message = BattleChatMessage(id: id, senderID: sender, senderName: "Ash", body: "hello", sentAt: .distantPast)
         XCTAssertEqual(try JSONDecoder().decode(BattleChatMessage.self, from: JSONEncoder().encode(message)), message)
-        XCTAssertEqual(BattleChatPolicy.normalizedBody("  hello\n  world  "), "hello world")
-        XCTAssertNil(BattleChatPolicy.normalizedBody(" \n\t "))
-        XCTAssertNil(BattleChatPolicy.normalizedBody(String(repeating: "a", count: 201)))
+        XCTAssertEqual(PeerTextPolicy.normalizedBody("  hello\n  world  "), "hello world")
+        XCTAssertNil(PeerTextPolicy.normalizedBody(" \n\t "))
+        XCTAssertNil(PeerTextPolicy.normalizedBody(String(repeating: "a", count: 201)))
     }
 
     func testBurstLimitRecoveryAndHistoryCap() {
@@ -139,11 +139,9 @@ extension BattleChatTests {
 
     /// 새 메시지 버튼이 개수를 그린다. 보간 백슬래시가 빠져 리터럴 "(count)" 가 나가고 있었다.
     func testTheNewMessageButtonShowsTheActualCount() {
-        for lang in [AppLanguage.ko, .en, .ja] {
-            let text = L(lang).battleChatNewMessages(3)
-            XCTAssertTrue(text.contains("3"), "\(lang): 개수가 들어가야 한다 — \(text)")
-            XCTAssertFalse(text.contains("(count)"), "\(lang): 보간이 빠졌다 — \(text)")
-        }
+        let text = L().battleChatNewMessages(3)
+        XCTAssertTrue(text.contains("3"), "개수가 들어가야 한다 — \(text)")
+        XCTAssertFalse(text.contains("(count)"), "보간이 빠졌다 — \(text)")
     }
 }
 
@@ -230,7 +228,7 @@ extension BattleChatTests {
                                                   body: body)))
         }
         XCTAssertEqual(center.chatMessages.map(\.body), ["하나", "둘"])
-        XCTAssertEqual(center.chatMessages.first?.senderName.count, BattleChatPolicy.maximumNameLength)
+        XCTAssertEqual(center.chatMessages.first?.senderName.count, PeerTextPolicy.maximumNameLength)
         XCTAssertEqual(Set(center.chatMessages.map(\.id)).count, 2, "화면 키는 상대가 정하지 않는다")
     }
 
@@ -248,7 +246,7 @@ extension BattleChatTests {
         let host = UUID(), reused = UUID()
 
         center.acceptRelayedChat(BattleChatMessage(senderID: host, senderName: "Host",
-                                                   body: String(repeating: "a", count: BattleChatPolicy.maximumLength + 1)))
+                                                   body: String(repeating: "a", count: PeerTextPolicy.maximumLength + 1)))
         center.acceptRelayedChat(BattleChatMessage(senderID: host, senderName: "Host", body: "   "))
         XCTAssertTrue(center.chatMessages.isEmpty, "본문은 게스트 쪽에서도 다시 잰다")
 
@@ -258,7 +256,7 @@ extension BattleChatTests {
                                                        body: body))
         }
         XCTAssertEqual(center.chatMessages.map(\.body), ["하나", "둘"])
-        XCTAssertEqual(center.chatMessages.first?.senderName.count, BattleChatPolicy.maximumNameLength)
+        XCTAssertEqual(center.chatMessages.first?.senderName.count, PeerTextPolicy.maximumNameLength)
         XCTAssertEqual(Set(center.chatMessages.map(\.id)).count, 2, "화면 키는 중계된 값을 쓰지 않는다")
     }
 }

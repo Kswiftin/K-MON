@@ -328,7 +328,7 @@ final class TUIWatch {
         case .wave:
             // 판이 세이브에 남으므로 화면 채널을 타지 않는다 — 조회 명령(`pokedoro wave`)과
             // **같은 함수**를 읽으므로 두 화면이 갈라질 자리가 없다.
-            lines = WaveRunScreen.lines(store.rogueRun, language: store.language, width: size.width)
+            lines = WaveRunScreen.lines(store.rogueRun, width: size.width)
             lines.append(TUIRender.rule(width: size.width))
             if let status { lines.append(TUIText.truncate(status, to: size.width)) }
             let hint = confirmation.map { TUIRender.confirmationHint(question: $0.question) }

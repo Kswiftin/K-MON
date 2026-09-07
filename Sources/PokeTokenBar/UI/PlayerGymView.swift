@@ -42,13 +42,8 @@ struct PlayerGymView: View {
     }
 
     private var header: some View {
-        HStack {
-            Label(l.playerGymTitle, systemImage: "building.columns.fill")
-                .font(.title3.bold()).foregroundStyle(.purple)
-            Spacer()
-            Button { onClose() } label: { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-        }
+        PokedoroOverlayHeader(title: l.playerGymTitle, systemImage: "building.columns.fill",
+                              closeLabel: l.close, onClose: onClose)
     }
 
     @ViewBuilder private var notices: some View {
@@ -71,7 +66,7 @@ struct PlayerGymView: View {
                 HStack {
                     Button(l.playerGymTakeOver) { coordinator.takeOverAbandonedGym() }
                         .buttonStyle(.borderedProminent).controlSize(.small)
-                    Button(l.t("나중에", "Later", "あとで")) { center.dismissGymTakeoverOffer() }
+                    Button("나중에") { center.dismissGymTakeoverOffer() }
                         .controlSize(.small)
                 }
             }.padding(8).background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
@@ -111,9 +106,7 @@ struct PlayerGymView: View {
                     } else {
                         Text(room.name).font(.caption.bold()).lineLimit(1)
                     }
-                    Text(l.t("도전 팀 4마리를 고르고 도전하세요.",
-                             "Pick four Pokémon and challenge.",
-                             "4体を選んで挑戦してください。"))
+                    Text("도전 팀 4마리를 고르고 도전하세요.")
                         .font(.caption2).foregroundStyle(.secondary)
                     // 프로토콜이 갈리면 붙어도 입장에서 거절된다 — 누르기 전에 이유를 말한다.
                     if center.visibleGymCompatibility == .theirAppIsOutdated {
@@ -131,7 +124,7 @@ struct PlayerGymView: View {
                             .controlSize(.small)
                             .disabled(center.phase != .idle)
                     }
-                }.padding(9).pokedoroCard(tint: .purple)
+                }.padding(9).pokedoroCard()
 
                 TeamPicker(store: store,
                            selection: Binding(get: { center.gymPickedTeam },
@@ -154,9 +147,7 @@ struct PlayerGymView: View {
                     Text(l.playerGymSearching).font(.caption).foregroundStyle(.secondary)
                 }
             } else {
-                Text(l.t("열린 체육관이 없습니다. 직접 열어 관장이 되어 보세요.",
-                         "No gym is open. Open one and become the leader.",
-                         "開いているジムがありません。自分で開いてリーダーになりましょう。"))
+                Text("열린 체육관이 없습니다. 직접 열어 관장이 되어 보세요.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button(l.playerGymOpen) { coordinator.openGym() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
@@ -168,7 +159,7 @@ struct PlayerGymView: View {
                 if center.gymRejection == nil {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text(l.t("도전을 보내는 중…", "Sending your challenge…", "挑戦を送信中…"))
+                        Text("도전을 보내는 중…")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } else {
@@ -197,9 +188,9 @@ struct PlayerGymView: View {
                         .foregroundStyle(remaining <= 60 ? .red : .orange)
                     Text(l.playerGymSetupCountdown(clockText))
                         .font(.caption2).foregroundStyle(.secondary)
-                }.padding(9).pokedoroCard(tint: remaining <= 60 ? .red : .orange)
+                }.padding(9).pokedoroCard()
             } else {
-                Label(l.t("도전을 기다리는 중입니다.", "Waiting for challengers.", "挑戦を待っています。"),
+                Label("도전을 기다리는 중입니다.",
                       systemImage: "checkmark.seal.fill")
                     .font(.caption).foregroundStyle(.green)
             }
@@ -251,21 +242,21 @@ struct PlayerGymView: View {
                 ForEach(store.gymDefenseLog.prefix(8)) { record in
                     HStack(spacing: 6) {
                         Image(systemName: record.defended ? "shield.fill" : "flag.slash.fill")
-                            .font(.system(size: 8))
+                            .font(PokedoroTheme.glyphFont(size: 8))
                             .foregroundStyle(record.defended ? Color.green : Color.orange)
                         Text(record.challengerName).font(.caption2.bold()).lineLimit(1)
                         Text(record.defended ? l.playerGymDefended : l.playerGymYielded)
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(record.defended ? Color.green : Color.orange)
                         if record.payout > 0 {
                             Text("⭐ \(GameNumberFormatter.compact(record.payout))")
-                                .font(.system(size: 8, design: .monospaced))
+                                .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 2)
                         Text(l.playerGymTimeAgo(l.playerGymDuration(
                             minutes: PlayerGym.tenureMinutes(since: record.at, now: tick))))
-                            .font(.system(size: 8)).foregroundStyle(.tertiary)
+                            .font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
             }
@@ -291,7 +282,7 @@ struct PlayerGymView: View {
 
             if let winner = match.winnerID {
                 let name = winner == match.leaderID ? match.leaderName : match.challengerName
-                Text(l.t("\(name) 승리!", "\(name) wins!", "\(name)の勝利！"))
+                Text("\(name) 승리!")
                     .font(.headline).frame(maxWidth: .infinity)
                 if winner == center.myID, amChallenger { Text(l.playerGymBecameLeader).font(.caption) }
                 if winner != center.myID, amLeader { Text(l.playerGymLostLeadership).font(.caption) }
@@ -363,7 +354,7 @@ struct PlayerGymView: View {
         let leader = match.leaderTeam.map(\.side)
         let challenger = match.challengerTeam.map(\.side)
         return VStack(alignment: .leading, spacing: 6) {
-            Label(l.t("관전 중입니다.", "Spectating.", "観戦中です。"), systemImage: "eye.fill")
+            Label("관전 중입니다.", systemImage: "eye.fill")
                 .font(.caption).foregroundStyle(.secondary)
             if leader.indices.contains(match.leaderActive), challenger.indices.contains(match.challengerActive) {
                 BattleFieldView(mine: leader[match.leaderActive],

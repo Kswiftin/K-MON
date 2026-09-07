@@ -277,38 +277,30 @@ final class BattlePhase5Tests: XCTestCase {
         XCTAssertEqual(paralyzed.side.status, .paralysis)
     }
 
-    /// 드레인 회복 줄은 3개 언어다. `"+12 HP"` 처럼 굽어 있으면 세 언어가 같은 문구를 받는데,
-    /// `.ko`/`.ja` 대칭만 보는 `LanguageSplitGuardTests` 는 그 부류를 못 잡는다.
+    /// 드레인 회복 줄은 회복량을 밝혀야 한다 — `"+12 HP"` 처럼 굽어 있으면 줄이 무의미하다.
     func testDrainHealLineIsLocalized() {
-        func line(_ language: AppLanguage) -> String {
-            BattleLog.lines([.heal(.a, amount: 12)], l: L(language),
-                            name: { _ in "거북왕" },
-                            move: { _, id in
-                                MoveSpec(id: id, names: ["ko": "메가드레인"], type: .grass, power: 40,
-                                        damageClass: .special, accuracy: 100, pp: 15)
-                            })
-                .map(\.text).joined()
-        }
-        XCTAssertTrue(line(.ko).contains("12"), "회복량이 안 보이면 줄이 무의미하다")
-        XCTAssertNotEqual(line(.ko), line(.en))
-        XCTAssertNotEqual(line(.en), line(.ja))
+        let line = BattleLog.lines([.heal(.a, amount: 12)], l: L(),
+                                   name: { _ in "거북왕" },
+                                   move: { _, id in
+                                       MoveSpec(id: id, names: ["ko": "메가드레인"], type: .grass, power: 40,
+                                               damageClass: .special, accuracy: 100, pp: 15)
+                                   })
+            .map(\.text).joined()
+        XCTAssertTrue(line.contains("12"), "회복량이 안 보이면 줄이 무의미하다")
     }
 
     /// 다단 히트는 **화면에 몇 번 맞았는지 나와야** 기전이 존재한다. 이벤트만 흘리고 문구가
     /// 없으면 플레이어에겐 "위력이 이상하게 센 기술"로만 보인다.
     func testMultiHitLineTellsThePlayerHowManyTimesItLanded() {
-        func line(_ language: AppLanguage) -> String {
-            BattleLog.lines([.move(.a, moveID: 24), .multiHit(.a, hits: 4),
-                             .damage(.b, amount: 60, cause: .move)], l: L(language),
-                            name: { _ in "시드라" },
-                            move: { _, id in
-                                MoveSpec(id: id, names: ["ko": "더블어택"], type: .normal, power: 15,
-                                        damageClass: .physical, accuracy: 90, pp: 10)
-                            })
-                .map(\.text).joined(separator: " | ")
-        }
-        XCTAssertTrue(line(.ko).contains("4"), "히트 수가 로그에 없으면 다단은 보이지 않는 기전이다")
-        XCTAssertNotEqual(line(.ko), line(.ja))
+        let line = BattleLog.lines([.move(.a, moveID: 24), .multiHit(.a, hits: 4),
+                                    .damage(.b, amount: 60, cause: .move)], l: L(),
+                                   name: { _ in "시드라" },
+                                   move: { _, id in
+                                       MoveSpec(id: id, names: ["ko": "더블어택"], type: .normal, power: 15,
+                                               damageClass: .physical, accuracy: 90, pp: 10)
+                                   })
+            .map(\.text).joined(separator: " | ")
+        XCTAssertTrue(line.contains("4"), "히트 수가 로그에 없으면 다단은 보이지 않는 기전이다")
     }
 
     /// 엔진이 적용하지 못하는 변화기는 **사용자에게 권하지도 않는다.** 습득창·하트비늘이 보는

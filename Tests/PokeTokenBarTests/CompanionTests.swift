@@ -329,13 +329,12 @@ final class CompanionStoreTests: XCTestCase {
 
     // MARK: 도감 이름 (컬렉션 표시)
 
-    /// 저장된 체인 종별 다국어 이름을 현재 언어로 해석 — 없으면 nil(뷰가 async 조회로 폴백).
+    /// 저장된 체인 종별 다국어 이름을 해석 — 없으면 nil(뷰가 async 조회로 폴백).
     func testDexStoredChainNamesResolvePerLanguage() {
         let s = store(linear3)
         let named = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: nil,
                              names: [1: ["ko": "포1", "en": "P1"], 2: ["ko": "포2", "en": "P2"], 3: ["ko": "포3", "en": "P3"]])
-        s.setLanguage(.ko); XCTAssertEqual(s.dexStoredChainNames(named), [1: "포1", 2: "포2", 3: "포3"])
-        s.setLanguage(.en); XCTAssertEqual(s.dexStoredChainNames(named), [1: "P1", 2: "P2", 3: "P3"])
+        XCTAssertEqual(s.dexStoredChainNames(named), [1: "포1", 2: "포2", 3: "포3"])
         // 저장 이름 없음 → nil
         XCTAssertNil(s.dexStoredChainNames(DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3],
                                                     rarity: .common, caughtAt: nil)))
@@ -344,7 +343,6 @@ final class CompanionStoreTests: XCTestCase {
     /// 이름 미저장(구버전) 항목은 line 조회로 체인 전 종의 이름을 얻는다(chainOrder 전부 채움).
     func testDexResolveChainNamesFetchesWhenUnstored() async {
         let s = store(linear3)   // line 이름: 포1/포2/포3
-        s.setLanguage(.ko)
         let bare = DexEntry(baseID: 1, finalID: 3, chainOrder: [1, 2, 3], rarity: .common, caughtAt: nil)
         let names = await s.dexResolveChainNames(bare)
         XCTAssertEqual(names, [1: "포1", 2: "포2", 3: "포3"])
@@ -361,7 +359,6 @@ final class CompanionStoreTests: XCTestCase {
         XCTAssertEqual(s.state.dex.first?.chainOrder, [1, 2, 3])
         XCTAssertEqual(s.state.dex.first?.names?[1]?["ko"], "포1")   // 초기 단계도 저장
         XCTAssertEqual(s.state.dex.first?.names?[3]?["ja"], "ポ3")   // 최종 단계도 저장
-        s.setLanguage(.ko)
         XCTAssertEqual(s.state.dex.first.map { s.dexStoredChainNames($0) }, [1: "포1", 2: "포2", 3: "포3"])
     }
 
@@ -373,7 +370,6 @@ final class CompanionStoreTests: XCTestCase {
         try? json.data(using: .utf8)!.write(to: url)
         let s = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow },
                                fileURL: url, rng: SeededRNG(seed: 7))
-        s.setLanguage(.ko)
         XCTAssertEqual(s.state.dex.count, 1)                        // 구버전 JSON 로드 성공
         XCTAssertNil(s.state.dex.first?.names)                      // 이름 없음(구버전)
         let names = await s.dexResolveChainNames(s.state.dex[0])
@@ -470,7 +466,6 @@ final class CompanionStoreTests: XCTestCase {
     /// (부화 직후가 이 경로다. 파일 주입 테스트는 currentLine 이 nil 이라 이 분기를 밟지 못한다.)
     func testDexSpeciesNamesActiveSpeciesFromLoadedLine() async {
         let s = store(linear3)
-        s.setLanguage(.ko)
         await s.hatch(baseID: 1)
         let sp = s.dexSpecies
         XCTAssertEqual(sp.map(\.id), [1], "도달분만 — 아직 진화 전이라 2·3 은 미보유")
@@ -570,7 +565,6 @@ final class CompanionStoreTests: XCTestCase {
     /// (진화 3단까지 왔으면 3칸 모두. 알을 새로 사면 실제로 3칸이 다 빠진다.)
     func testDexSpeciesMarksEveryUnsecuredStageAsRaising() async {
         let s = store(linear3)
-        s.setLanguage(.ko)
         await s.hatch(baseID: 1)
         s.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
         XCTAssertEqual(s.state.active?.stageIndex, 1, "2단계까지 진화")
@@ -708,15 +702,11 @@ final class CompanionStoreTests: XCTestCase {
     }
 
     func testDexRaisingLabelLocalized() {
-        XCTAssertEqual(L(.en).dexRaising, "Raising")
-        XCTAssertEqual(L(.ko).dexRaising, "키우는 중")
-        XCTAssertEqual(L(.ja).dexRaising, "育成中")
+        XCTAssertEqual(L().dexRaising, "키우는 중")
     }
 
     func testUnknownNextEvolutionAccessibilityLabelLocalized() {
-        XCTAssertEqual(L(.ko).unknownNextEvolution, "알 수 없는 다음 진화")
-        XCTAssertEqual(L(.en).unknownNextEvolution, "Unknown next evolution")
-        XCTAssertEqual(L(.ja).unknownNextEvolution, "次の進化先は不明")
+        XCTAssertEqual(L().unknownNextEvolution, "알 수 없는 다음 진화")
     }
 
     func testEggOverflowCarriesToHatchedMon() async {
@@ -763,7 +753,6 @@ final class CompanionStoreTests: XCTestCase {
 
     func testEvolvesThroughLineAndGraduatesWithFullChain() async {
         let s = store(linear3)
-        s.setLanguage(.ko)   // 로케일 무관하게 한국어 표시명("포3") 검증 (CI 는 영어 로케일)
         await s.hatch(baseID: 1)
         XCTAssertEqual(s.currentSpeciesID, 1)
         XCTAssertEqual(s.state.active?.totalForms, 3)
@@ -834,12 +823,8 @@ final class CompanionStoreTests: XCTestCase {
 
         XCTAssertNil(s.nextEvolutionLevel, "레벨로는 진화하지 않는 종이라 이 자리가 비어 있었다")
         XCTAssertEqual(s.nextEvolutionItem, .fireStone)
-        s.setLanguage(.ko)
         XCTAssertEqual(s.evolutionRequirementText, "불꽃의돌 필요")
-        // 언어는 신규 설치 기본값이 `.systemDefault` 라 CI 로케일에 딸려간다 — `store.l` 로 재면
-        // 로컬(한국어)만 통과하고 CI(영어)에서 깨진다. 문구는 언어를 고정해 잰다.
-        XCTAssertEqual(L(.ko).evolutionNeedsItem(L(.ko).itemName(.fireStone)), "불꽃의돌 필요")
-        XCTAssertEqual(L(.en).evolutionNeedsItem(L(.en).itemName(.fireStone)), "Needs Fire Stone")
+        XCTAssertEqual(L().evolutionNeedsItem(L().itemName(.fireStone)), "불꽃의돌 필요")
     }
 
     /// 대조군: 레벨 진화 종에는 아이템 안내가 붙지 않는다 — 두 안내가 같이 뜨면 어느 쪽을 따라야
@@ -855,7 +840,6 @@ final class CompanionStoreTests: XCTestCase {
     func testFinalFormStillShowsEvolutionStatusOnHome() async {
         let s = store(noEvo)
         await s.hatch(baseID: 20)
-        s.setLanguage(.ko)
         XCTAssertEqual(s.evolutionRequirementText, "최종 진화체 · Lv.30에 졸업")
     }
 
@@ -1271,7 +1255,6 @@ final class CompanionStoreTests: XCTestCase {
     /// 박스 개체는 currentLine 이 없다 — 개체에 저장된 이름으로 그려야 종 번호(#4)로 안 떨어진다.
     func testBoxedCompanionUsesItsStoredNames() async {
         let s = store(linear3)
-        s.setLanguage(.ko)
         await s.hatch(baseID: 1)
         s.debugSetBoxedMons([MonState(baseID: 4, pathIDs: [4], stageIndex: 0, usedAtStage: 0,
                                       rarity: .common, totalForms: 1,
@@ -1449,11 +1432,9 @@ final class CompanionStoreTests: XCTestCase {
         let s1 = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 1))
         await s1.hatch(baseID: 1)
         s1.applyUsage(PokemonBalance.phaseThreshold(rarity: .common, totalForms: 3, stageIndex: 0))
-        s1.setLanguage(.ja)
         let s2 = CompanionStore(provider: StubProvider(value: linear3), clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 1))
         XCTAssertEqual(s2.state.active?.currentID, 2)
         XCTAssertEqual(s2.state.active?.stageIndex, 1)
-        XCTAssertEqual(s2.language, .ja)
     }
 
     func testReloadPreservesCompleteShortPlannedRouteLength() async {
@@ -1593,9 +1574,7 @@ final class CompanionStoreTests: XCTestCase {
     func testLocalizedName() async {
         let s = store(linear3)
         await s.hatch(baseID: 1)
-        s.setLanguage(.ko); XCTAssertEqual(s.displayName, "포1")
-        s.setLanguage(.en); XCTAssertEqual(s.displayName, "P1")
-        s.setLanguage(.ja); XCTAssertEqual(s.displayName, "ポ1")
+        XCTAssertEqual(s.displayName, "포1")
     }
 
     /// [문서화] 비대칭 깊이 분기에서도 부화 시 선택한 경로 길이를 totalForms 로 고정한다.
@@ -1621,55 +1600,43 @@ final class CompanionStoreTests: XCTestCase {
     }
 }
 
-// MARK: 이름 폴백 (AppLanguage.resolveName)
+/// 앱은 한국어만 그리는데 `Text(_, style: .relative)` 같은 자동 문장은 **시스템 로케일**을 따라간다.
+/// 영어 로케일 Mac 에서는 "포획 기록" 옆에 "3 hours ago" 가 붙어 한 화면에 두 언어가 섞인다.
+/// 팝오버 루트가 `\.locale` 로 `PokemonNaming.locale` 을 내려주므로, 그 값이 실제로 한국어 상대
+/// 시각을 만들어내는지까지 고정한다 — 식별자만 비교하면 잘못 매핑해도 통과한다.
+///
+/// `test-gate.sh` 가 같은 번들을 영어 로케일로 한 번 더 돌리는 이유가 이 부류다(#107).
+final class DisplayLocaleTests: XCTestCase {
+    func testDisplayLocaleIsKorean() {
+        XCTAssertEqual(PokemonNaming.locale.identifier, "ko")
+    }
 
-/// [회귀] `resolveName` 의 폴백 순서(요청 언어 → 영어)를 재는 유일한 단언이 삭제된 대화 테스트
-/// 파일 안에 있었다. 이 함수는 종·기술·특성·체육관 이름 전부가 지나는 길이라, 커버는 붙어 있던
-/// 기능이 아니라 함수 쪽에 있어야 한다. 대조군까지 둬 "언제나 영어"·"언제나 nil" 을 배제한다.
-final class NameFallbackTests: XCTestCase {
-    func testResolveNameFallsBackToEnglishButPrefersTheRequestedLanguage() {
-        let englishOnly = ["en": "Static"]
-        XCTAssertEqual(AppLanguage.ko.resolveName(englishOnly), "Static")
-        XCTAssertEqual(AppLanguage.ja.resolveName(englishOnly), "Static")
-
-        // 요청 언어가 있으면 영어를 쓰지 않는다.
-        let both = ["en": "Static", "ko": "정전기", "ja": "せいでんき"]
-        XCTAssertEqual(AppLanguage.ko.resolveName(both), "정전기")
-        XCTAssertEqual(AppLanguage.ja.resolveName(both), "せいでんき")
-
-        // 폴백 대상조차 없으면 nil — 빈 문자열이나 아무 값이나 고르지 않는다.
-        XCTAssertNil(AppLanguage.ko.resolveName(["de": "Statik"]))
+    func testRelativeTimeFollowsTheAppLocaleNotTheSystem() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let past = now.addingTimeInterval(-3 * 3600)
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = PokemonNaming.locale
+        let text = formatter.localizedString(for: past, relativeTo: now)
+        XCTAssertTrue(text.contains("시간"), "한국어 상대 시각이 아니다 — \(text)")
     }
 }
 
-// MARK: 표시 로케일 (자동 생성 문장)
+// MARK: 이름 폴백 (PokemonNaming.name)
 
-/// 앱 언어와 시스템 로케일이 다를 때 `Text(_, style: .relative)` 같은 자동 문장이 시스템을 따라가면
-/// 한 화면에 두 언어가 섞인다(한국어 Mac + 영어 앱 → "Catch log" 옆에 "3시간 46분").
-/// 팝오버 루트가 `\.locale` 로 앱 언어를 내려주므로, 그 매핑이 실제로 해당 언어의 상대 시각을
-/// 만들어내는지까지 고정한다 — 코드만 비교하면 잘못 매핑해도 통과한다.
-final class DisplayLocaleTests: XCTestCase {
-    func testDisplayLocaleMatchesLanguageCode() {
-        XCTAssertEqual(AppLanguage.ko.displayLocale.identifier, "ko")
-        XCTAssertEqual(AppLanguage.en.displayLocale.identifier, "en")
-        XCTAssertEqual(AppLanguage.ja.displayLocale.identifier, "ja")
-    }
+/// [회귀] 이름 폴백 순서(한국어 → 영어)를 재는 유일한 단언이 삭제된 대화 테스트 파일 안에
+/// 있었다. 이 함수는 종·기술·특성·체육관 이름 전부가 지나는 길이라, 커버는 붙어 있던 기능이
+/// 아니라 함수 쪽에 있어야 한다. 대조군까지 둬 "언제나 영어"·"언제나 nil" 을 배제한다.
+final class NameFallbackTests: XCTestCase {
+    func testResolveNamePrefersKoreanAndFallsBackToEnglish() {
+        let englishOnly = ["en": "Static"]
+        XCTAssertEqual(PokemonNaming.name(englishOnly), "Static")
 
-    func testRelativeTimeFollowsAppLanguageNotSystem() {
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let past = now.addingTimeInterval(-3 * 3600)
+        // 한국어가 있으면 영어보다 우선한다.
+        let both = ["en": "Static", "ko": "정전기"]
+        XCTAssertEqual(PokemonNaming.name(both), "정전기")
 
-        func relative(_ lang: AppLanguage) -> String {
-            let f = RelativeDateTimeFormatter()
-            f.locale = lang.displayLocale
-            return f.localizedString(for: past, relativeTo: now)
-        }
-
-        XCTAssertTrue(relative(.en).contains("hour"), "영어: \(relative(.en))")
-        XCTAssertTrue(relative(.ko).contains("시간"), "한국어: \(relative(.ko))")
-        XCTAssertTrue(relative(.ja).contains("時間"), "일본어: \(relative(.ja))")
-        // 세 언어가 서로 달라야 한다 — 하나로 고정돼 있으면 매핑이 죽은 것이다.
-        XCTAssertEqual(Set([relative(.en), relative(.ko), relative(.ja)]).count, 3)
+        // 폴백 대상조차 없으면 nil — 빈 문자열이나 아무 값이나 고르지 않는다.
+        XCTAssertNil(PokemonNaming.name(["de": "Statik"]))
     }
 }
 
@@ -1779,7 +1746,6 @@ final class CompanionIdentityTests: XCTestCase {
 
         let female = store(EvoLine(baseID: 415, tree: tree, rarity: .common, names: names, genderRate: 8), seed: 7)
         await female.hatch(baseID: 415)
-        female.setLanguage(.ko)
         XCTAssertEqual(female.state.active?.gender, .female)
         XCTAssertEqual(female.state.active?.plannedPathIDs, [415, 416])
         XCTAssertEqual(female.evolutionRequirementText, "암컷 · Lv.21에 진화")
@@ -1797,7 +1763,6 @@ final class CompanionIdentityTests: XCTestCase {
                            evolutionMoveNames: [rollout.id: rollout.names])
         let s = store(line, seed: 7)
         await s.hatch(baseID: 108)
-        s.setLanguage(.ko)
         XCTAssertEqual(s.evolutionRequirementText, "구르기 습득 후 레벨업")
 
         s.debugAccrueLevelExperience(PokemonBalance.experiencePerLevel)
@@ -1827,7 +1792,6 @@ final class CompanionIdentityTests: XCTestCase {
                            names: [172: ["ko": "피츄"], 25: ["ko": "피카츄"]])
         let s = store(line, seed: 7)
         await s.hatch(baseID: 172)
-        s.setLanguage(.ko)
         XCTAssertEqual(s.evolutionRequirementText, "레벨업으로 진화",
                        "오지 않을 '특수 조건' 이 아니라 키우면 된다고 말해야 한다")
 
@@ -1926,12 +1890,6 @@ final class CompanionIdentityTests: XCTestCase {
     func testCurrentIDFallsBackToBaseWhenPathEmpty() {
         let m = MonState(baseID: 42, pathIDs: [], stageIndex: 0, usedAtStage: 0, rarity: .common, totalForms: 1)
         XCTAssertEqual(m.currentID, 42)
-    }
-
-    /// 신규 설치 기본 언어는 시스템 로케일에서 유추 — 유효한 케이스이고 크래시 없음(한국어 강제 아님).
-    func testSystemDefaultLanguageResolves() {
-        XCTAssertTrue(AppLanguage.allCases.contains(AppLanguage.systemDefault))
-        XCTAssertEqual(CompanionState().language, AppLanguage.systemDefault)
     }
 
     /// 부화/진화가 연출 트리거(celebrationSeq)를 올리고, consume 후 비워지는지.
@@ -2187,14 +2145,12 @@ final class CompanionIdentityTests: XCTestCase {
         XCTAssertEqual(SpriteStore.cacheKey(speciesID: 25, animated: false, shiny: true), "25-shs")
     }
 
-    /// 성격 25종 — 3개 언어 명칭이 전부 비어있지 않고 중복 없는지.
+    /// 성격 25종 — 명칭이 전부 비어있지 않고 중복 없는지.
     func testNatureNamesComplete() {
         XCTAssertEqual(PokemonNature.allCases.count, 25)
-        for lang in AppLanguage.allCases {
-            let names = PokemonNature.allCases.map { $0.name(lang) }
-            XCTAssertEqual(Set(names).count, 25, "\(lang) 중복/누락")
-            XCTAssertFalse(names.contains(where: \.isEmpty))
-        }
+        let names = PokemonNature.allCases.map { $0.name }
+        XCTAssertEqual(Set(names).count, 25, "중복/누락")
+        XCTAssertFalse(names.contains(where: \.isEmpty))
     }
 }
 

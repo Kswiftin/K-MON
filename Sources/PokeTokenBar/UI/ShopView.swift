@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 상점 — 별의모래(`CompanionStore.availableTokens`)로 아이템 구매(이상한 사탕·민트).
+/// 상점 — 별의조각(`CompanionStore.availableTokens`)로 아이템 구매(이상한 사탕·민트).
 /// 인라인 확인(버튼 morph) — .sheet/.alert 금지(BagView 주석과 동일: transient 팝오버가 닫힐 때
 /// 고아 시트가 이후 클릭을 먹통내는 결함 회피).
 struct ShopView: View {
@@ -24,11 +24,11 @@ struct ShopView: View {
         LazyVStack(alignment: .leading, spacing: 10) {
             walletHeader(l)
             Picker("", selection: $category) {
-                Text(l.t("도구", "Items", "どうぐ")).tag(ShopCategory.general)
-                Text(l.t("진화", "Evolution", "進化")).tag(ShopCategory.evolution)
-                Text(l.t("알", "Eggs", "タマゴ")).tag(ShopCategory.eggs)
-                Text(l.t("기술머신", "TMs", "わざマシン")).tag(ShopCategory.machines)
-                Text(l.t("의상", "Outfits", "ふく")).tag(ShopCategory.outfits)
+                Text("도구").tag(ShopCategory.general)
+                Text("진화").tag(ShopCategory.evolution)
+                Text("알").tag(ShopCategory.eggs)
+                Text("기술머신").tag(ShopCategory.machines)
+                Text("의상").tag(ShopCategory.outfits)
             }
             .pickerStyle(.segmented)
 
@@ -46,7 +46,7 @@ struct ShopView: View {
                     EggCard(store: store, nav: nav, tier: tier)
                 }
             case .machines:
-                TextField(l.t("기술명 또는 TM 번호 검색", "Search move or TM number", "わざ名・TM番号を検索"),
+                TextField("기술명 또는 TM 번호 검색",
                           text: $machineQuery)
                     .textFieldStyle(.roundedBorder)
                 if filteredMachines.isEmpty {
@@ -89,7 +89,9 @@ struct ShopView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .pokedoroCard(tint: PokedoroTheme.yellow, emphasized: true)
+        // 잔액은 상태가 아니라 상시 표시라 강조하지 않는다 — 강조 예산은 집중 카드가 쓴다.
+        // 숫자 자체가 24pt 굵은 글자라 카드 테두리에 색이 없어도 이 줄이 화면의 첫 줄로 읽힌다.
+        .pokedoroCard()
     }
 }
 
@@ -139,13 +141,13 @@ private struct TechnicalMachineShopCard: View {
                     .frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(machine.label).font(.system(size: 9, weight: .black, design: .rounded))
+                        Text(machine.label).font(.system(size: 10, weight: .black, design: .rounded))
                             .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
                             .background(.purple, in: Capsule())
-                        Text(move?.name(store.language) ?? machine.slug.replacingOccurrences(of: "-", with: " ").capitalized)
+                        Text(move?.name ?? machine.slug.replacingOccurrences(of: "-", with: " ").capitalized)
                             .font(.callout.weight(.semibold))
                         if let move {
-                            TypeBadge(type: move.type, language: store.language)
+                            TypeBadge(type: move.type)
                             MoveCategoryIcon(damageClass: move.damageClass, l: store.l)
                         }
                         let owned = store.technicalMachineCount(machine.moveID)
@@ -153,20 +155,14 @@ private struct TechnicalMachineShopCard: View {
                             Text("×\(owned)").font(.caption2.bold()).foregroundStyle(.secondary)
                         }
                     }
-                    Text(move?.description(store.language)
-                         ?? store.l.t("포켓몬에게 기술을 가르치는 일회용 기술머신입니다.",
-                                      "A single-use machine that teaches a move.",
-                                      "ポケモンにわざを教える使い切りのマシンです。"))
+                    Text(move?.flavorText
+                         ?? "포켓몬에게 기술을 가르치는 일회용 기술머신입니다.")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     if let move {
                         HStack(spacing: 10) {
-                            Label(store.l.t("위력 \(move.power > 0 ? String(move.power) : "—")",
-                                            "Power \(move.power > 0 ? String(move.power) : "—")",
-                                            "威力 \(move.power > 0 ? String(move.power) : "—")"),
+                            Label("위력 \(move.power > 0 ? String(move.power) : "—")",
                                   systemImage: "burst.fill")
-                            Label(store.l.t("명중률 \(move.accuracy.map { "\($0)%" } ?? "—")",
-                                            "Accuracy \(move.accuracy.map { "\($0)%" } ?? "—")",
-                                            "命中 \(move.accuracy.map { "\($0)%" } ?? "—")"),
+                            Label("명중률 \(move.accuracy.map { "\($0)%" } ?? "—")",
                                   systemImage: "scope")
                         }
                         .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
@@ -177,7 +173,7 @@ private struct TechnicalMachineShopCard: View {
             }
             if confirming {
                 HStack {
-                    Text(store.l.buyConfirm(move?.name(store.language) ?? machine.slug,
+                    Text(store.l.buyConfirm(move?.name ?? machine.slug,
                                             quantity: quantity,
                                             total: GameNumberFormatter.compact(machine.price * quantity)))
                         .font(.caption2).foregroundStyle(.secondary)
@@ -203,7 +199,7 @@ private struct TechnicalMachineShopCard: View {
             }
         }
         .padding(10)
-        .pokedoroCard(tint: .purple)
+        .pokedoroCard()
         // 잔액이 줄면(여기서 샀든 다른 카드에서 샀든) 선택 수량을 상한까지 끌어내린다 — 안 그러면
         // 살 수 없는 수량이 남아 확인 문구는 "5장"인데 구매는 조용히 실패한다.
         .onChange(of: affordableCount) { _, newCount in
@@ -211,7 +207,7 @@ private struct TechnicalMachineShopCard: View {
         }
         .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") {
             move = await PokeAPIClient.shared.moveDetail(id: machine.moveID)
-            if let move { onResolveName(move.name(store.language)) }
+            if let move { onResolveName(move.name) }
             if let speciesID = store.currentSpeciesID {
                 canActiveLearn = await PokeAPIClient.shared.canLearnMachine(speciesID: speciesID,
                                                                             moveID: machine.moveID)
@@ -231,18 +227,18 @@ private struct TechnicalMachineShopCard: View {
 
     @ViewBuilder private var compatibilityLabel: some View {
         if store.currentSpeciesID == nil {
-            Label(store.l.t("홈 포켓몬이 없습니다.", "No home Pokémon.", "ホームポケモンがいません。"),
+            Label("홈 포켓몬이 없습니다.",
                   systemImage: "minus.circle")
                 .font(.caption2).foregroundStyle(.secondary)
         } else if let canActiveLearn {
             Label(canActiveLearn
-                  ? store.l.t("현재 홈 포켓몬이 배울 수 있음", "Home Pokémon can learn it", "ホームのポケモンが覚えられます")
-                  : store.l.t("현재 홈 포켓몬은 배울 수 없음", "Home Pokémon cannot learn it", "ホームのポケモンは覚えられません"),
+                  ? "현재 홈 포켓몬이 배울 수 있음"
+                  : "현재 홈 포켓몬은 배울 수 없음",
                   systemImage: canActiveLearn ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(canActiveLearn ? .green : .secondary)
         } else {
-            Label(store.l.t("습득 가능 여부 확인 중", "Checking compatibility", "覚えられるか確認中"),
+            Label("습득 가능 여부 확인 중",
                   systemImage: "ellipsis.circle")
                 .font(.caption2).foregroundStyle(.secondary)
         }
@@ -283,7 +279,7 @@ private struct ShopItemCard: View {
             buyControls(l)
         }
         .padding(10)
-        .pokedoroCard(tint: PokedoroTheme.blue)
+        .pokedoroCard()
         // 잔액이 줄면(여기서 샀든 다른 카드에서 샀든) 선택 수량을 상한까지 끌어내린다 — 안 그러면
         // 살 수 없는 수량이 남아 확인 문구는 "5개"인데 구매는 조용히 실패한다.
         .onChange(of: affordableCount) { _, newCount in
@@ -343,6 +339,10 @@ private struct ShopItemCard: View {
 /// 의상 상점 카드 — `ShopItemCard` 와 같은 골격이지만 아이콘이 아이템 스프라이트가 아니라
 /// 그 슬롯 하나만 입힌 트레이너 미리보기다. 재구매 불가(보유형)라 `owned` 분기만 있고 개수 표시는 없다.
 private struct ShopOutfitCard: View {
+    /// 구매가 거절됐나. `buyOutfit` 은 잔액이 모자라거나 이미 가진 것이면 false 를 주는데,
+    /// 반환값을 버리면 확인까지 누른 사용자가 아무 변화도 없는 화면을 보게 된다 —
+    /// 다른 화면에서 거의 동시에 산 경우가 그렇다.
+    @State private var purchaseFailed = false
     let store: CompanionStore
     let item: OutfitItem
     @State private var confirming = false
@@ -395,7 +395,7 @@ private struct ShopOutfitCard: View {
                     Button(l.buy) { confirming = true }
                         .buttonStyle(.bordered).controlSize(.small)
                 } else {
-                    Text(l.notEnoughTokens)
+                    Text(purchaseFailed ? l.purchaseFailed : l.notEnoughTokens)
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
             }
@@ -404,7 +404,7 @@ private struct ShopOutfitCard: View {
 
     private func buyNow() {
         confirming = false
-        _ = store.buyOutfit(item)
+        purchaseFailed = !store.buyOutfit(item)
     }
 }
 
@@ -435,7 +435,7 @@ private struct EggCard: View {
                         Text(l.eggName(tier)).font(.callout.weight(.semibold))
                         if let tier {
                             // 도감 칩과 같은 라벨·색 — 상점의 등급 표기가 도감과 한 말로 맞물리게.
-                            Text(l.rarityLabel(tier).uppercased()).font(.system(size: 8, weight: .bold))
+                            Text(l.rarityLabel(tier).uppercased()).font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(rarityColor(tier)).foregroundStyle(.white)
                                 .clipShape(Capsule())
@@ -450,7 +450,7 @@ private struct EggCard: View {
             controls(l)
         }
         .padding(10)
-        .pokedoroCard(tint: .orange)
+        .pokedoroCard()
     }
 
     @ViewBuilder

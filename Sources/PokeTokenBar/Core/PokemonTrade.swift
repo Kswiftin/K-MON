@@ -52,7 +52,7 @@ struct TradeMemoryPayload: Codable, Sendable, Equatable {
     /// 신뢰경계 클램프다 — `private` 로 두면 원격 페이로드 검증이 무테스트로 남는다.
     /// (`MemoryHomeVisitCenter.valid` 를 열어 둔 이유와 같다.)
     ///
-    /// 본문 정규화는 같은 소켓의 형제 경계(`BattleChatPolicy.normalizedBody`)를 그대로 쓴다.
+    /// 본문 정규화는 같은 소켓의 형제 경계(`PeerTextPolicy.normalizedBody`)를 그대로 쓴다.
     /// 여기서 따로 접다가 스칼라 단위로 훑는 판을 썼고, ZWJ 가 제어문자로 잡혀 이모지 가족이
     /// 쪼개지면서 길이가 부풀어 정상 추억이 통째로 버려졌다 — 보낸 쪽은 같은 교환에서 앨범을
     /// 지우므로 그 줄은 영구 소실이었다.
@@ -63,7 +63,7 @@ struct TradeMemoryPayload: Codable, Sendable, Equatable {
                 // 손글씨는 트레이너가 직접 쓴 글이라 양방향 모두 오가지 않는다. 앨범의
                 // `record` 도 같은 이유로 `.manual` 을 거부하지만, 경계에서도 명시적으로 막는다.
                 guard entry.source != .manual,
-                      let body = BattleChatPolicy.normalizedBody(entry.body, limit: bodyLimit) else { return nil }
+                      let body = PeerTextPolicy.normalizedBody(entry.body, limit: bodyLimit) else { return nil }
                 return TradeMemoryEntry(body: body, source: entry.source,
                                         createdAt: clampedDate(entry.createdAt, now: now))
             })
@@ -262,7 +262,7 @@ final class PokemonTradeCenter {
     /// 협상 중이고 상대가 채팅을 지원할 때만 나간다. 내 발신 예산은 상대 것과 분리돼 있다.
     func sendChat(_ body: String) {
         guard case .negotiating = phase, peerSupportsChat,
-              let text = BattleChatPolicy.normalizedBody(body),
+              let text = PeerTextPolicy.normalizedBody(body),
               chatRateLimiter.allows(chatSenderID) else { return }
         let message = BattleChatMessage(senderID: chatSenderID, senderName: myName, body: text)
         appendChat(message)
@@ -274,7 +274,7 @@ final class PokemonTradeCenter {
     /// (`id` 는 `Identifiable` 키라 상대가 같은 값을 두 번 보내면 화면의 `ForEach` 가 무너진다.)
     private func acceptChat(_ incoming: BattleChatMessage) {
         guard case .negotiating(let peer) = phase,
-              let body = BattleChatPolicy.normalizedBody(incoming.body), body == incoming.body,
+              let body = PeerTextPolicy.normalizedBody(incoming.body), body == incoming.body,
               chatRateLimiter.allows(remoteChatSenderID) else { return }
         appendChat(BattleChatMessage(senderID: remoteChatSenderID, senderName: peer, body: body))
     }
@@ -286,8 +286,7 @@ final class PokemonTradeCenter {
 
     private func displayName(for mon: MonState) -> String {
         if let nickname = mon.nickname, !nickname.isEmpty { return nickname }
-        let code = companion.language.rawValue
-        return mon.names?[mon.currentID]?[code] ?? "#\(mon.currentID)"
+        return mon.names?[mon.currentID].flatMap { PokemonNaming.name($0) } ?? "#\(mon.currentID)"
     }
 
     /// **국면을 반드시 본다.** `.confirm(true)` 는 상대가 부르는 프레임이라 두 번 올 수 있는데
@@ -321,7 +320,7 @@ final class PokemonTradeCenter {
         case .rosterRequest(let trainer):
             guard phase == .ready else { return }
             send(.roster(localRoster))
-            AppLog.write("trade roster preview sent to \(BattleChatPolicy.displayName(trainer) ?? "?")")
+            AppLog.write("trade roster preview sent to \(PeerTextPolicy.displayName(trainer) ?? "?")")
         case .roster(let roster):
             remoteRoster = Array(roster.prefix(100))
             if case .browsing(let peer) = phase { phase = .roster(peer: peer) }
@@ -330,7 +329,7 @@ final class PokemonTradeCenter {
         // 같은 클램프를 두 분기에 건다: 신청을 받는 쪽(`.request`)과 거는 쪽(`.accept`).
         case .request(let version, let trainer, let chatSupported):
             guard version == TradeWireMessage.protocolVersion, phase == .ready,
-                  let peer = BattleChatPolicy.displayName(trainer) else {
+                  let peer = PeerTextPolicy.displayName(trainer) else {
                 send(.decline(reason: "busy-or-incompatible")); return
             }
             isInitiator = false
@@ -341,7 +340,7 @@ final class PokemonTradeCenter {
             // 이름이 비면 브라우저가 이미 보여 준 이름을 그대로 쓴다 — 여기서 세션을 깰 이유는 없다.
             guard case .requesting(let browsed) = phase else { return }
             peerSupportsChat = chatSupported == true
-            phase = .negotiating(peer: BattleChatPolicy.displayName(trainer) ?? browsed)
+            phase = .negotiating(peer: PeerTextPolicy.displayName(trainer) ?? browsed)
             send(.roster(localRoster))
         case .chat(let message):
             acceptChat(message)
@@ -438,8 +437,8 @@ final class PokemonTradeCenter {
     private func postPrivateMessageNotification() {
         guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false), AppEnv.isBundledApp else { return }
         let content = UNMutableNotificationContent()
-        content.title = companion.l.t("메시지가 왔습니다", "You have a message", "メッセージが届きました")
-        content.body = companion.l.t("눌러서 확인하세요.", "Click to view it.", "クリックして確認してください。")
+        content.title = "메시지가 왔습니다"
+        content.body = "눌러서 확인하세요."
         content.sound = .default
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: "private-message-trade-\(UUID().uuidString)",

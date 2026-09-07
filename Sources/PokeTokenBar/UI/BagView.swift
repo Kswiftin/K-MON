@@ -16,9 +16,7 @@ struct BagView: View {
                 if store.eggFragmentCount > 0 {
                     HStack {
                         Text("🧩").font(.title2)
-                        Text(store.l.t("알 조각 \(store.eggFragmentCount)/10 · 주간 모험 \(store.weeklyAdventureProgress)/10",
-                                 "Egg Fragments \(store.eggFragmentCount)/10 · Weekly \(store.weeklyAdventureProgress)/10",
-                                 "タマゴのかけら \(store.eggFragmentCount)/10 · 週間 \(store.weeklyAdventureProgress)/10"))
+                        Text("알 조각 \(store.eggFragmentCount)/10 · 주간 모험 \(store.weeklyAdventureProgress)/10")
                             .font(.caption.bold())
                     }
                 }
@@ -26,17 +24,15 @@ struct BagView: View {
                     HStack(spacing: 10) {
                         Text("🥚").font(.system(size: 30))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(store.l.t("신비한 알 ×\(store.focusEggCount)", "Mystery Egg ×\(store.focusEggCount)", "ふしぎなタマゴ ×\(store.focusEggCount)"))
+                            Text("신비한 알 ×\(store.focusEggCount)")
                                 .font(.callout.weight(.semibold))
-                            Text(store.l.t("집중 모험에서 발견한 알입니다. 안전하게 보관 중이에요.",
-                                     "Found during focus adventures and stored safely.",
-                                     "集中の冒険で見つけたタマゴです。安全に保管中です。"))
+                            Text("집중 모험에서 발견한 알입니다. 안전하게 보관 중이에요.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }
                     .padding(10)
-                    .pokedoroCard(tint: .purple)
+                    .pokedoroCard()
                 }
                 ForEach(store.ownedItems, id: \.kind) { item in
                     ItemCard(store: store, nav: nav, kind: item.kind, count: item.count)
@@ -80,18 +76,18 @@ private struct TechnicalMachineBagCard: View {
                     .frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(machine.label).font(.system(size: 9, weight: .black, design: .rounded))
+                        Text(machine.label).font(.system(size: 10, weight: .black, design: .rounded))
                             .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
                             .background(.purple, in: Capsule())
-                        Text(move?.name(store.language) ?? machine.slug).font(.callout.weight(.semibold))
+                        Text(move?.name ?? machine.slug).font(.callout.weight(.semibold))
                         Text("×\(count)").font(.caption.bold()).foregroundStyle(.secondary)
                         if let move {
-                            TypeBadge(type: move.type, language: store.language)
+                            TypeBadge(type: move.type)
                             MoveCategoryIcon(damageClass: move.damageClass, l: store.l)
                         }
                     }
-                    Text(move?.description(store.language)
-                         ?? store.l.t("포켓몬에게 기술을 가르칩니다.", "Teaches a move to a Pokémon.", "ポケモンにわざを教えます。"))
+                    Text(move?.flavorText
+                         ?? "포켓몬에게 기술을 가르칩니다.")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer()
@@ -112,14 +108,14 @@ private struct TechnicalMachineBagCard: View {
             }
         }
         .padding(10)
-        .pokedoroCard(tint: .purple)
+        .pokedoroCard()
         .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") { await refresh() }
     }
 
     /// 아이템 카드와 같은 규약 — 되돌릴 수 없다는 문구를 버튼 위 한 줄에 둔다.
     private func discardControls(_ l: L) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(l.discardConfirm(move?.name(store.language) ?? machine.label))
+            Text(l.discardConfirm(move?.name ?? machine.label))
                 .font(.caption2).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
@@ -143,12 +139,12 @@ private struct TechnicalMachineBagCard: View {
 
     private var statusText: String {
         if store.state.active?.learnedMoves.contains(where: { $0.id == machine.moveID }) == true {
-            return store.l.t("이미 배운 기술", "Already learned", "すでに覚えています")
+            return "이미 배운 기술"
         }
-        if checking { return store.l.t("배울 수 있는지 확인 중…", "Checking compatibility…", "覚えられるか確認中…") }
+        if checking { return "배울 수 있는지 확인 중…" }
         return canLearn
-            ? store.l.t("현재 포켓몬이 배울 수 있어요", "The current Pokémon can learn it", "今のポケモンが覚えられます")
-            : store.l.t("현재 포켓몬은 배울 수 없어요", "The current Pokémon cannot learn it", "今のポケモンは覚えられません")
+            ? "현재 포켓몬이 배울 수 있어요"
+            : "현재 포켓몬은 배울 수 없어요"
     }
 
     @MainActor private func refresh() async {
@@ -207,7 +203,7 @@ private struct ItemCard: View {
             useControls(l)
         }
         .padding(10)
-        .pokedoroCard(tint: PokedoroTheme.blue)
+        .pokedoroCard()
     }
 
     /// 이 아이템을 지금 쓸 수 있나 (kind 별 — 사탕은 라인 로딩 필요, 민트는 활성 포켓몬만).
@@ -231,9 +227,9 @@ private struct ItemCard: View {
         case .shinyCharm: return l.shinyCharmEffectHint
         case .heartScale: return l.heartScaleEffectHint
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return l.t("미니룸에서 배치", "Place in Mini Room", "ミニルームで配置")
+             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return "미니룸에서 배치"
         default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
-            return l.t("진화 가능할 때 사용", "Use when evolution is available", "進化できるときに使う")
+            return "진화 가능할 때 사용"
         }
     }
     private func performUse() {

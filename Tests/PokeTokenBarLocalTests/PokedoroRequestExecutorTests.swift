@@ -102,7 +102,7 @@ struct PokedoroRequestExecutorTests {
         #expect(reply.succeeded)
         let run = try #require(store.activeAdventure)
         let minutes = Int((run.endsAt.timeIntervalSince(run.startedAt) / 60).rounded())
-        #expect(PokemonChatTool.focusMinutes.contains(minutes), "화면이 안 주는 길이가 켜졌다: \(minutes)")
+        #expect(FocusChainRules.focusMinutes.contains(minutes), "화면이 안 주는 길이가 켜졌다: \(minutes)")
     }
 
     /// 분이 아예 없는 `start` 요청(손으로 쓴 파일)도 크래시하지 않고 기본 길이로 간다.

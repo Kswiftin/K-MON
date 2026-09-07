@@ -40,12 +40,8 @@ struct OutfitView: View {
     }
 
     private var header: some View {
-        HStack {
-            Label(l.outfitTitle, systemImage: "tshirt.fill").font(.headline)
-            Spacer()
-            Button(action: onClose) { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
-        }
+        PokedoroOverlayHeader(title: l.outfitTitle, systemImage: "tshirt.fill",
+                              closeLabel: l.close, onClose: onClose)
     }
 
     private var preview: some View {
@@ -68,8 +64,10 @@ struct OutfitView: View {
             HStack(spacing: 24) {
                 Button { rotate(-1) } label: { Image(systemName: "chevron.left") }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("왼쪽으로 돌리기")
                 Button { rotate(1) } label: { Image(systemName: "chevron.right") }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("오른쪽으로 돌리기")
             }
         }
         .frame(maxWidth: .infinity)

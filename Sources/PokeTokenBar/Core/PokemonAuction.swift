@@ -23,7 +23,7 @@ struct AuctionOffer: Identifiable {
         case pending, accepted, declined, completed, failed
 
         /// 아직 결과가 나지 않은 제안 — **내놓은 것이 여전히 걸려 있다.** 개체를 두 번 걸지
-        /// 못하게 막는 판정과 별의모래 미결분 합계가 둘 다 이 질문을 한다.
+        /// 못하게 막는 판정과 별의조각 미결분 합계가 둘 다 이 질문을 한다.
         var isLive: Bool { self == .pending || self == .accepted }
     }
     let id: UUID
@@ -49,7 +49,7 @@ struct OutgoingAuctionOffer: Identifiable {
     /// 이 제안이 쓰는 연결. 들어온 프레임은 **연결과 제안 ID 가 둘 다** 맞을 때만 받아들인다.
     let connectionID: UUID
     let listing: AuctionListing
-    /// 내가 내놓은 개체. `nil` 이면 별의모래 제안이다.
+    /// 내가 내놓은 개체. `nil` 이면 별의조각 제안이다.
     let monID: UUID?
     let stardust: Int
     var stardustEscrowed = false
@@ -93,7 +93,7 @@ final class PokemonAuctionCenter {
     nonisolated static let serviceType = "_kmonauct._tcp"
     private nonisolated static let maxMessageBytes: UInt32 = 1_000_000
     /// 동시에 걸 수 있는 제안 수. 포켓몬 제안은 "한 개체는 한 제안" 이라 보유 수가 자연 상한이지만
-    /// 별의모래 제안은 그렇지 않다 — 지갑이 크면 작은 제안을 무한히 걸어 연결을 그만큼 연다.
+    /// 별의조각 제안은 그렇지 않다 — 지갑이 크면 작은 제안을 무한히 걸어 연결을 그만큼 연다.
     /// `nonisolated` 인 이유는 **터미널 화면 투영이 이 값을 읽기** 때문이다 — 순수 함수라
     /// 메인 액터가 아니고, 정원을 화면에 다시 적으면 두 벌이 되어 한쪽만 바뀐다.
     nonisolated static let maxOutgoingOffers = 8
@@ -159,7 +159,7 @@ final class PokemonAuctionCenter {
         for id in Array(connectionOfferIDs.keys) { reclaimIfIdle(id) }
     }
 
-    /// 아직 어느 제안에도 약속하지 않은 별의모래. 에스크로는 **수락 시점**에 걷히므로 잔액만
+    /// 아직 어느 제안에도 약속하지 않은 별의조각. 에스크로는 **수락 시점**에 걷히므로 잔액만
     /// 보면 지킬 수 없는 제안을 여러 건 걸게 된다. **등록 가드와 화면이 같은 이 값을 본다** —
     /// 두 벌로 두면 한쪽만 넓어져 버튼은 켜지는데 센터가 조용히 거절한다.
     var unpledgedTokens: Int {
@@ -209,7 +209,7 @@ final class PokemonAuctionCenter {
 
     @discardableResult
     func apply(to listing: AuctionListing, offeringStardust amount: Int) -> UUID? {
-        // 게시자의 `isValid` 는 상한을 넘는 별의모래를 무조건 거절한다. 보내기 전에 잘라야
+        // 게시자의 `isValid` 는 상한을 넘는 별의조각을 무조건 거절한다. 보내기 전에 잘라야
         // 왕복 한 번을 거절로 버리지 않는다 — 지갑 자체가 상한을 넘은 세이브에서만 밟힌다.
         let amount = min(amount, SaveTransfer.maxTokenValue)
         guard amount > 0, unpledgedTokens >= amount else { return nil }
@@ -267,7 +267,7 @@ final class PokemonAuctionCenter {
     /// 끝난 제안을 화면에서 치운다. 에스크로 환불과 연결까지 이 자리에서 함께 끝낸다.
     func clearOutgoingResult(_ offerID: UUID) {
         // 커밋이 시작된 제안(`.accepted`)은 치우지 않는다. 여기서 에스크로를 돌려주면 게시자는
-        // 이미 넘긴 뒤라 별의모래가 복제되고 개체는 아무에게도 가지 않는다.
+        // 이미 넘긴 뒤라 별의조각이 복제되고 개체는 아무에게도 가지 않는다.
         guard let offer = outgoing(offerID), offer.status != .accepted else { return }
         refundStardustIfNeeded(offerID)
         // 제안을 먼저 지우고 접는다. `cancelOutgoingOffer` 는 방금 `.failed` 를 보냈고, 즉시
@@ -293,9 +293,7 @@ final class PokemonAuctionCenter {
                   && ($0.status == .accepted || $0.status == .completed) }),
               let connectionID = connectionOfferIDs.first(where: { $0.value == offerID })?.key,
               let connection = connections[connectionID] else {
-            lastError = companion.l.t("게시한 포켓몬을 확인할 수 없습니다.",
-                                    "The listed Pokémon is no longer available.",
-                                    "出品したポケモンを確認できません。")
+            lastError = "게시한 포켓몬을 확인할 수 없습니다."
             return
         }
         lastError = nil
@@ -333,7 +331,7 @@ final class PokemonAuctionCenter {
                   let listing = localListings[listingID],
                   sellableMons.contains(where: { $0.id == listing.mon.id }),
                   isValid(value, for: listing),
-                  let safeName = BattleChatPolicy.displayName(trainer),
+                  let safeName = PeerTextPolicy.displayName(trainer),
                   // 한 연결은 제안 하나만 나른다. 덮어쓰게 두면 앞 제안의 거절·수락 프레임이
                   // 상대에게 못 나간다(연결을 못 찾는다).
                   connectionOfferIDs[connectionID] == nil,
@@ -348,9 +346,7 @@ final class PokemonAuctionCenter {
             // 연결만 보면 남의 제안 국면을 움직인다.
             guard let offer = outgoing(offerID, on: connectionID) else {
                 failOutgoing(offerID, on: connection, id: connectionID,
-                             reason: companion.l.t("교환을 완료하지 못했습니다.",
-                                                   "Trade could not be completed.",
-                                                   "交換を完了できませんでした。"))
+                             reason: "교환을 완료하지 못했습니다.")
                 return
             }
             // 같은 `.accepted` 가 또 오면 **무시한다.** 커밋이 시작된 제안을 여기서 실패로
@@ -358,34 +354,29 @@ final class PokemonAuctionCenter {
             guard offer.status == .pending else { return }
             guard canCommitOutgoing(offerID, received: pokemon) else {
                 failOutgoing(offerID, on: connection, id: connectionID,
-                             reason: companion.l.t("교환을 완료하지 못했습니다.",
-                                                   "Trade could not be completed.",
-                                                   "交換を完了できませんでした。"))
+                             reason: "교환을 완료하지 못했습니다.")
                 return
             }
             // 광고(TXT)와 실제로 온 개체를 대조한다. 목록에서 본 것과 다른 개체가 오면 화면은
             // 그대로 성사되고 상자에만 다른 포켓몬이 앉는다 — 그건 교환이 아니라 바꿔치기다.
             guard matches(offer.listing, pokemon) else {
                 failOutgoing(offerID, on: connection, id: connectionID,
-                             reason: companion.l.t("목록에 올라온 포켓몬과 다른 개체가 왔습니다.",
-                                                   "The Pokémon offered does not match the listing.",
-                                                   "出品と異なるポケモンが届きました。"))
+                             reason: "목록에 올라온 포켓몬과 다른 개체가 왔습니다.")
                 return
             }
             withOutgoing(offerID, on: connectionID) { $0.received = pokemon; $0.status = .accepted }
             if offer.stardust > 0 {
                 guard companion.escrowStarPieces(offer.stardust) else {
                     failOutgoing(offerID, on: connection, id: connectionID,
-                                 reason: companion.l.t("별의모래가 부족합니다.", "Not enough Stardust.",
-                                                       "ほしのすなが足りません。"))
+                                 reason: "별의조각이 부족합니다.")
                     return
                 }
                 // 에스크로가 저장을 돌렸다 — 이 자리가 #229 의 결함 지점이다. 첨자를 들고
                 // 있었다면 관측자 하나가 앞 제안을 치우는 순간 표시가 옆 제안에 찍혔고,
-                // 별의모래를 낸 제안은 환불 대상에서 빠져 그대로 사라졌다.
+                // 별의조각을 낸 제안은 환불 대상에서 빠져 그대로 사라졌다.
                 //
                 // 표시를 적을 자리가 없으면(제안이 사라졌으면) 지갑은 이미 비었는데 표시는
-                // 어디에도 없어 환불 경로가 이 별의모래를 영원히 못 찾는다. 지금은 위에서
+                // 어디에도 없어 환불 경로가 이 별의조각을 영원히 못 찾는다. 지금은 위에서
                 // `.accepted` 를 먼저 적어 유일한 제거 경로(`clearOutgoingResult`)가 막혀 있어
                 // 도달하지 않는다 — 그러나 "도달 경로가 없다" 는 판단이 정확히 #229 를 놓친
                 // 근거였다. 순서가 뒤집히면 여기서 돌려준다. (제안이 없으니 `failOutgoing` 의
@@ -451,16 +442,14 @@ final class PokemonAuctionCenter {
             guard committed else {
                 // 교환은 스토어를 통째로 흔든다(세이브·앨범·대화). 이유 문구를 **미리** 만들고
                 // 국면은 한 번에 적는다 — 여는 본문 안에서 `companion` 을 부르지 않는다.
-                let reason = companion.l.t("교환을 완료하지 못했습니다.",
-                                           "Trade could not be completed.",
-                                           "交換を完了できませんでした。")
+                let reason = "교환을 완료하지 못했습니다."
                 refundStardustIfNeeded(offerID)
                 withOutgoing(offerID, on: connectionID) { $0.status = .failed; $0.error = reason }
                 return
             }
             withOutgoing(offerID, on: connectionID) {
                 $0.status = .completed
-                // 별의모래는 상대에게 건너갔다 — 여기서 환불 대상에서 뺀다.
+                // 별의조각은 상대에게 건너갔다 — 여기서 환불 대상에서 뺀다.
                 $0.stardustEscrowed = false
             }
         case .declined(let offerID):
@@ -548,7 +537,7 @@ final class PokemonAuctionCenter {
     private func failOutgoing(_ offerID: UUID, on connection: NWConnection, id: UUID, reason: String) {
         // 환불은 **이 연결의 제안**에만 한다. 국면은 연결로 걸러 놓고 환불만 ID 로 하면, 같은
         // 상대에게 걸어 둔 다른 제안의 ID 를 실은 프레임 한 장이 **아직 살아 있는** 그 제안의
-        // 에스크로를 풀어 준다 — 지갑은 돌려받고 제안은 그대로 성사돼 별의모래가 복제된다.
+        // 에스크로를 풀어 준다 — 지갑은 돌려받고 제안은 그대로 성사돼 별의조각이 복제된다.
         if outgoing(offerID, on: id) != nil {
             withOutgoing(offerID, on: id) { $0.status = .failed; $0.error = reason }
             refundStardustIfNeeded(offerID)
@@ -558,7 +547,7 @@ final class PokemonAuctionCenter {
 
     private func displayName(_ mon: MonState) -> String {
         if let nickname = mon.nickname, !nickname.isEmpty { return nickname }
-        return mon.names?[mon.currentID]?[companion.language.rawValue] ?? "#\(mon.currentID)"
+        return mon.names?[mon.currentID]?["ko"] ?? "#\(mon.currentID)"
     }
 
     private func startListener(for listingID: UUID) {
@@ -771,7 +760,7 @@ final class PokemonAuctionCenter {
     private func valueLine(_ value: AuctionOfferValue) -> String {
         switch value {
         case .pokemon(let pokemon): displayLine(pokemon)
-        case .stardust(let amount): "별의모래 \(TUIRender.number(amount))"
+        case .stardust(let amount): "별의조각 \(TUIRender.number(amount))"
         }
     }
 
@@ -779,7 +768,7 @@ final class PokemonAuctionCenter {
     /// 찾는다 — 그때는 이름만 비운다(앱 카드와 같은 규칙).
     private func offeredLine(_ offer: OutgoingAuctionOffer) -> String {
         guard let monID = offer.monID else {
-            return "별의모래 \(TUIRender.number(offer.stardust))"
+            return "별의조각 \(TUIRender.number(offer.stardust))"
         }
         return companion.chatRosterEntries.first { $0.id == monID }
             .map { "\($0.name) Lv.\($0.level)" } ?? "내 포켓몬"
@@ -892,7 +881,7 @@ extension PokemonAuctionCenter: TerminalAuctionControl {
         // 정원·미약속 잔액·상한은 실행기가 먼저 본다(같은 값을 본다) — 여기 오는 값은 걸 수
         // 있는 값이고, 그래도 센터가 거절하면 조용히 넘기지 않는다.
         guard apply(to: listing, offeringStardust: stardust) != nil else {
-            return "별의모래 제안을 걸지 못했다 — auction 으로 미약속 잔액을 다시 본다."
+            return "별의조각 제안을 걸지 못했다 — auction 으로 미약속 잔액을 다시 본다."
         }
         return nil
     }

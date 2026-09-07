@@ -33,8 +33,6 @@ struct NetBattleExecutorTests {
     private func makeStore(in directory: URL) -> CompanionStore {
         let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
                                    fileURL: directory.appendingPathComponent("state.json"))
-        // 언어를 못 박는다 — 답 문구가 세이브 언어로 나오고 신규 세이브는 호스트 로케일을 따른다.
-        store.setLanguage(.ko)
         return store
     }
 

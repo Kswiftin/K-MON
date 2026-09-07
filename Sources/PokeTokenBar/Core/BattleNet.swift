@@ -1190,7 +1190,7 @@ final class BattleCenter {
                 }
                 let name = await companion.resolveSpeciesName(speciesID)
                 leaderTeam.append(BattleSnapshot(speciesID: speciesID, name: name,
-                                                 trainer: gym.leaderName(companion.language),
+                                                 trainer: gym.leaderName,
                                                  level: leaderLevel, nature: nil, isShiny: false,
                                                  types: profile.types, base: profile.stats, moves: moves,
                                                  ability: profile.abilitySlug,
@@ -1316,9 +1316,7 @@ final class BattleCenter {
         guard kind == .metronome || (Self.supportedTeamSizes.contains(teamSize)
                                      && companion.deployableMons.count >= 6
                                      && pickedTeam.count == 6) else {
-            lastError = l.t("먼저 후보 포켓몬 6마리를 선택하세요.",
-                            "Choose six candidate Pokémon first.",
-                            "先に候補のポケモンを6匹選んでください。")
+            lastError = "먼저 후보 포켓몬 6마리를 선택하세요."
             return
         }
         lastError = nil
@@ -1466,7 +1464,7 @@ final class BattleCenter {
             // 전용전은 PP 고갈로 발버둥에 떨어지는 모드가 아니다.
             metronome.pp = 99
             let rental = BattleSnapshot(speciesID: 468,
-                                        name: l.t("대여 토게키스", "Rental Togekiss", "レンタルトゲキッス"),
+                                        name: "대여 토게키스",
                                         trainer: trainerDisplayName, level: 50, nature: nil, isShiny: false,
                                         types: profile.types, base: profile.stats, moves: [metronome],
                                         ability: profile.abilitySlug, weightHectograms: profile.weightHectograms)
@@ -1499,7 +1497,7 @@ final class BattleCenter {
     private func prepareBattlePool(peer: String, connection conn: NWConnection, selection: [UUID]) {
         let ids = Array(selection.filter { id in companion.deployableMons.contains(where: { $0.id == id }) }.prefix(6))
         guard ids.count == 6 else {
-            lastError = l.t("후보 포켓몬 6마리가 필요합니다.", "Six candidate Pokémon are required.", "候補のポケモンが6匹必要です。")
+            lastError = "후보 포켓몬 6마리가 필요합니다."
             return
         }
         phase = .poolBuilding(peer: peer)
@@ -1683,7 +1681,7 @@ final class BattleCenter {
     /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
     func sendChat(_ body: String) {
         guard case .battling = phase, chatIsAvailable,
-              let text = BattleChatPolicy.normalizedBody(body), chatRateLimiter.allows(chatSenderID) else { return }
+              let text = PeerTextPolicy.normalizedBody(body), chatRateLimiter.allows(chatSenderID) else { return }
         let message = BattleChatMessage(senderID: chatSenderID, senderName: myName, body: text)
         chatHistory.append(message); chatMessages = chatHistory.messages
         send(.chat(message), over: connection)
@@ -2024,8 +2022,8 @@ final class BattleCenter {
         // 말풍선으로 그린다. 교환(`PokemonTradeCenter.acceptChat`)과 같은 경계를 친다.
         case .chat(let message):
             guard case .battling = phase, chatIsAvailable,
-                  let body = BattleChatPolicy.normalizedBody(message.body), body == message.body,
-                  let name = BattleChatPolicy.displayName(message.senderName),
+                  let body = PeerTextPolicy.normalizedBody(message.body), body == message.body,
+                  let name = PeerTextPolicy.displayName(message.senderName),
                   chatRateLimiter.allows(remoteChatSenderID) else { return }
             chatHistory.append(BattleChatMessage(senderID: remoteChatSenderID, senderName: name, body: body))
             chatMessages = chatHistory.messages
@@ -2224,8 +2222,8 @@ final class BattleCenter {
         AppLog.write("private \(kind) request received — posting generic notification")
         guard AppEnv.isBundledApp else { AppLog.write("battle notif skipped: not bundled app"); return }
         let content = UNMutableNotificationContent()
-        content.title = l.t("메시지가 왔습니다", "You have a message", "メッセージが届きました")
-        content.body = l.t("눌러서 확인하세요.", "Click to view it.", "クリックして確認してください。")
+        content.title = "메시지가 왔습니다"
+        content.body = "눌러서 확인하세요."
         content.sound = .default
         let center = UNUserNotificationCenter.current()
         // completion 은 시스템이 **백그라운드 큐**에서 부른다 — @MainActor 문맥에서 만든 클로저가 격리를

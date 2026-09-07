@@ -162,8 +162,8 @@ enum TUIKeymap {
         // 길이는 **표에서 읽는다**(`TUIRender.sessionHints` 가 같은 표로 안내를 만든다) — 손으로
         // 적으면 목록이 바뀌는 날 안내와 키가 갈라져, 화면이 권한 길이와 다른 세션이 켜진다.
         if let number = key.wholeNumberValue,
-           PokemonChatTool.focusMinutes.indices.contains(number - 1) {
-            return .startAdventure(minutes: PokemonChatTool.focusMinutes[number - 1])
+           FocusChainRules.focusMinutes.indices.contains(number - 1) {
+            return .startAdventure(minutes: FocusChainRules.focusMinutes[number - 1])
         }
         switch key {
         case "c": return .claimAdventure

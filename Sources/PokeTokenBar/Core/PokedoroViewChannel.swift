@@ -146,13 +146,13 @@ enum PokedoroViewChannel {
     }
 
     /// LAN 방(협동 레이드·방 대전) 화면. 대전과 **같은 통로**다 — 방 상태도 세이브에 없다.
-    static func roomSnapshot(_ state: RoomTerminalState, language: AppLanguage,
+    static func roomSnapshot(_ state: RoomTerminalState,
                              width: Int, now: Date) -> PokedoroViewSnapshot? {
         guard RoomScreen.kind(state) != .none else { return nil }
         return PokedoroViewSnapshot(
             screen: "room",
             title: RoomScreen.title(state),
-            lines: RoomScreen.lines(state, language: language, width: drawableWidth(width)),
+            lines: RoomScreen.lines(state, width: drawableWidth(width)),
             keys: RoomScreen.keys(state),
             numberActions: numberActions { RoomScreen.action(number: $0, in: state) },
             writtenAt: now)
@@ -179,13 +179,13 @@ enum PokedoroViewChannel {
     ///
     /// 대전이 아예 없으면 `nil` 이다. 빈 화면을 내놓으면 터미널이 빈 줄을 그리고, 우선순위에서
     /// 뒤에 있는 생산자(집중 타이머)까지 덮는다.
-    static func battleSnapshot(_ state: BattleTerminalState, language: AppLanguage,
+    static func battleSnapshot(_ state: BattleTerminalState,
                                width: Int, now: Date) -> PokedoroViewSnapshot? {
         guard NetBattleScreen.kind(state) != .none else { return nil }
         return PokedoroViewSnapshot(
             screen: "battle",
             title: NetBattleScreen.title(state),
-            lines: NetBattleScreen.lines(state, language: language,
+            lines: NetBattleScreen.lines(state,
                                          width: drawableWidth(width)),
             keys: NetBattleScreen.keys(state),
             numberActions: numberActions { NetBattleScreen.action(number: $0, in: state) },

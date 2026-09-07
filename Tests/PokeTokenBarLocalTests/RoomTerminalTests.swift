@@ -67,7 +67,7 @@ struct RoomTerminalTests {
         let idle = RoomTerminalState(phase: .idle, myID: UUID())
         #expect(RoomScreen.kind(idle) == .none)
         #expect(RoomScreen.numbers(idle).isEmpty)
-        #expect(RoomScreen.lines(idle, language: .ko, width: 60).contains { $0.contains("앱") })
+        #expect(RoomScreen.lines(idle, width: 60).contains { $0.contains("앱") })
     }
 
     /// 로비에서는 **호스트만** 시작할 수 있고, 그 사실이 화면에 보인다 — 게스트에게 시작 키를
@@ -132,7 +132,7 @@ struct RoomTerminalTests {
         state.outcome = .win
         state.payout = 1_200
         #expect(RoomScreen.kind(state) == .finished)
-        let lines = RoomScreen.lines(state, language: .ko, width: 60)
+        let lines = RoomScreen.lines(state, width: 60)
         #expect(lines.contains { $0.contains("이겼") })
         #expect(lines.contains { $0.contains("1,200") }, "정산액이 안 보이면 기여도가 의미를 잃는다")
     }
@@ -148,7 +148,7 @@ struct RoomTerminalTests {
     @Test func testEveryLineFitsTheRequestedWidth() {
         for state in [Self.fighting(), RoomTerminalState(phase: .idle, myID: UUID())] {
             for width in [20, 40, 80] {
-                for line in RoomScreen.lines(state, language: .ko, width: width) {
+                for line in RoomScreen.lines(state, width: width) {
                     #expect(TUIText.displayWidth(line) <= width, "폭 \(width) 에서 넘친 줄: \(line)")
                 }
             }
@@ -158,9 +158,8 @@ struct RoomTerminalTests {
     /// 방 화면도 채널로 온다 — 진행 중이 아니면 스냅샷을 내놓지 않는다(빈 줄이 타이머를 덮는다).
     @Test func testTheChannelOnlyPublishesALiveRoom() throws {
         let now = Date()
-        #expect(PokedoroViewChannel.roomSnapshot(RoomTerminalState(phase: .idle, myID: UUID()),
-                                                  language: .ko, width: 60, now: now) == nil)
-        let live = try #require(PokedoroViewChannel.roomSnapshot(Self.fighting(), language: .ko,
+        #expect(PokedoroViewChannel.roomSnapshot(RoomTerminalState(phase: .idle, myID: UUID()), width: 60, now: now) == nil)
+        let live = try #require(PokedoroViewChannel.roomSnapshot(Self.fighting(),
                                                                   width: 60, now: now))
         #expect(live.screen == "room")
         #expect(live.keys.contains { $0.contains("기술") })
@@ -206,12 +205,12 @@ struct RoomTerminalTests {
     /// 방 대전에서는 그 목록이 없으면 번호를 어디서 얻는지 알 수 없다.
     @Test func testTheTargetListAppearsOnlyWhenThereIsAChoice() {
         let raid = Self.fighting()
-        #expect(!RoomScreen.lines(raid, language: .ko, width: 80).contains { $0.hasPrefix("대상") })
+        #expect(!RoomScreen.lines(raid, width: 80).contains { $0.hasPrefix("대상") })
 
         var brawl = raid
         brawl.activity = .battle
         brawl.fighters.append(Self.fighter(id: UUID(), name: "옆자리"))
-        let lines = RoomScreen.lines(brawl, language: .ko, width: 80)
+        let lines = RoomScreen.lines(brawl, width: 80)
         #expect(lines.contains { $0.hasPrefix("대상") })
         #expect(RoomScreen.targets(brawl).count == 2)
     }
@@ -221,8 +220,8 @@ struct RoomTerminalTests {
         var state = Self.fighting()
         for index in state.fighters[0].side.pp.indices { state.fighters[0].side.pp[index] = 0 }
         #expect(RoomScreen.numbers(state) == [1])
-        let only = try #require(RoomScreen.choices(state, language: .ko).first)
-        #expect(only.label == MoveSpec.struggle().name(.ko))
+        let only = try #require(RoomScreen.choices(state).first)
+        #expect(only.label == MoveSpec.struggle().name)
     }
 
     // MARK: 키 배정

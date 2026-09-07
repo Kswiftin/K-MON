@@ -95,9 +95,6 @@ final class TradeMemoryTests: XCTestCase {
         let store = CompanionStore(provider: StubProvider(value: line), clock: { self.now },
                                    fileURL: stateURL,
                                    rng: SeededRNG(seed: 1))
-        // 기억 본문은 저장 시점 언어로 굳는다(부화 기록 등). 호스트 로케일을 그대로 두면 영어
-        // 로케일 재실행에서만 깨진다 — 기대값을 언어로 못 박는다.
-        store.setLanguage(.ko)
         return store
     }
 
@@ -569,7 +566,7 @@ final class TradeMemoryTests: XCTestCase {
         XCTAssertEqual(clean.entries.first?.body, family,
                        "ZWJ 가 잘리면 이모지가 낱개로 쪼개지고 글자 수가 부푼다")
         XCTAssertEqual(clean.entries.last?.body, "안녕 끝",
-                       "공백 런은 형제 경계(BattleChatPolicy)와 같은 규칙으로 접힌다")
+                       "공백 런은 형제 경계(PeerTextPolicy)와 같은 규칙으로 접힌다")
     }
 
     /// 상대가 부르는 `firstMetAt` 은 **아예 쓰지 않는다.** 창으로 자르기만 하면 상한(3650일)까지

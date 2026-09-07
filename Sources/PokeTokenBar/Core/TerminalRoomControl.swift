@@ -136,7 +136,7 @@ extension MultiplayerRoomCenter: TerminalRoomControl {
     private func moves(of side: BattleSide) -> [ArenaScreen.Move] {
         side.moves.indices.filter { side.canUse(moveAt: $0) }.map { index in
             ArenaScreen.Move(number: index + 1,
-                             label: side.moves[index].name(displayLanguage),
+                             label: side.moves[index].name,
                              pp: side.pp.indices.contains(index) ? side.pp[index] : 0,
                              maxPP: side.moves[index].pp)
         }
@@ -171,13 +171,7 @@ extension MultiplayerRoomCenter: TerminalRoomControl {
         return track
     }
 
-    private func text(of question: PokemonOXQuestion) -> String {
-        switch displayLanguage {
-        case .ko: question.ko
-        case .en: question.en
-        case .ja: question.ja
-        }
-    }
+    private func text(of question: PokemonOXQuestion) -> String { question.ko }
 
     private func track(race: PokeathlonRace) -> TrackTerminalState {
         let ordered = race.racers.sorted {

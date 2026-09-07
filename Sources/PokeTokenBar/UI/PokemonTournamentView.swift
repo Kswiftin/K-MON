@@ -9,16 +9,12 @@ struct PokemonTournamentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(store.l.t("포켓몬 토너먼트", "Pokémon Tournament", "ポケモントーナメント"),
-                      systemImage: "trophy.fill").font(.title3.bold()).foregroundStyle(.orange)
-                Spacer()
-                Button { close() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-            }
+            PokedoroOverlayHeader(title: "포켓몬 토너먼트",
+                                  systemImage: "trophy.fill",
+                                  closeLabel: store.l.close, onClose: close)
             switch center.phase {
             case .idle: browser
-            case .creating, .joining: ProgressView(store.l.t("토너먼트 방에 연결 중…", "Connecting…", "接続中…"))
+            case .creating, .joining: ProgressView("토너먼트 방에 연결 중…")
             case .hosting, .joined: lobby
             case .tournament: tournament
             default: browser
@@ -29,29 +25,29 @@ struct PokemonTournamentView: View {
 
     private var browser: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(store.l.t("후보 6마리 · 전원 Lv.50", "Six candidates · all Lv.50", "候補6匹・全員 Lv.50"))
+            Text("후보 6마리 · 전원 Lv.50")
                 .font(.caption.bold())
             TeamPicker(store: store,
                        selection: Binding(get: { center.tournamentPickedTeam },
                                           set: { center.tournamentPickedTeam = $0 }), limit: 6)
-            Button(store.l.t("8인 토너먼트 방 만들기", "Create tournament room", "トーナメント部屋を作る")) {
+            Button("8인 토너먼트 방 만들기") {
                 center.createTournamentRoom()
             }.buttonStyle(.borderedProminent).disabled(center.tournamentPickedTeam.count != 6)
             Divider()
-            Text(store.l.t("참가 가능한 방", "Available rooms", "参加できる部屋")).font(.caption.bold())
+            Text("참가 가능한 방").font(.caption.bold())
             // 포켓애슬론과 같은 자리를 지난다 — 접두만 보면 내가 연 방이 내 목록에 뜬다.
             let rooms = center.rooms.filter {
                 LANRoomList.isVisible($0.serviceName, activity: .tournament, myTag: center.myRoomTag)
             }
             if rooms.isEmpty {
-                Text(store.l.t("토너먼트 방을 찾는 중…", "Looking for tournaments…", "大会を検索中…"))
+                Text("토너먼트 방을 찾는 중…")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(rooms) { room in
                     HStack {
                         Text(room.name).font(.caption).lineLimit(1)
                         Spacer()
-                        Button(store.l.t("참가", "Join", "参加")) { center.join(room) }
+                        Button("참가") { center.join(room) }
                             .controlSize(.small).disabled(center.tournamentPickedTeam.count != 6)
                     }
                 }
@@ -62,14 +58,14 @@ struct PokemonTournamentView: View {
 
     private var lobby: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(store.l.t("참가자 로비 (2~8명)", "Tournament lobby (2–8)", "参加者ロビー（2〜8人）"))
+            Text("참가자 로비 (2~8명)")
                 .font(.headline)
             if let lobby = center.lobby {
                 ForEach(lobby.runners) { player in
                     HStack {
                         SpriteView(speciesID: player.speciesID, size: 28)
                         Text(player.trainerName).font(.caption.bold())
-                        if player.isHost { Text("HOST").font(.system(size: 8)).foregroundStyle(.orange) }
+                        if player.isHost { Text("HOST").font(PokedoroTheme.badgeFont(size: 8)).foregroundStyle(.orange) }
                         Spacer()
                         Image(systemName: player.isReady ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(player.isReady ? .green : .secondary)
@@ -83,34 +79,31 @@ struct PokemonTournamentView: View {
                     }
                 }
                 if center.tournamentPools[center.myID]?.count == 6 {
-                    Text(store.l.t("공개된 후보 중 실제 출전할 3마리", "Choose three from your revealed pool",
-                                   "公開した候補から出場する3匹"))
+                    Text("공개된 후보 중 실제 출전할 3마리")
                         .font(.caption.bold())
                     TeamPicker(store: store,
                                selection: Binding(get: { center.tournamentFinalTeam },
                                                   set: { center.tournamentFinalTeam = $0 }),
                                limit: 3, allowedIDs: Set(center.tournamentPickedTeam))
-                    Button(store.l.t("출전 3마리 확정", "Confirm three", "出場3匹を確定")) {
+                    Button("출전 3마리 확정") {
                         center.confirmTournamentTeam()
                     }
                     .buttonStyle(.bordered).controlSize(.small)
                     .disabled(center.tournamentFinalTeam.count != 3)
                 }
-                Text(store.l.t("참가자가 많을수록 우승 알의 등급이 올라갑니다.",
-                               "More entrants improve the champion Egg.",
-                               "参加者が多いほど優勝タマゴの等級が上がります。"))
+                Text("참가자가 많을수록 우승 알의 등급이 올라갑니다.")
                     .font(.caption2).foregroundStyle(.secondary)
                 HStack {
                     Button(center.myParticipant?.isReady == true
-                           ? store.l.t("준비 취소", "Cancel ready", "準備取消")
-                           : store.l.t("준비", "Ready", "準備")) { center.toggleReady() }
+                           ? "준비 취소"
+                           : "준비") { center.toggleReady() }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                     Spacer()
                     if center.isHost, lobby.canStart {
-                        Button(store.l.t("대진 시작", "Start bracket", "対戦開始")) { center.startTournament() }
+                        Button("대진 시작") { center.startTournament() }
                             .buttonStyle(.borderedProminent).controlSize(.small)
                     }
-                    Button(store.l.t("나가기", "Leave", "退出")) { close() }.controlSize(.small)
+                    Button("나가기") { close() }.controlSize(.small)
                 }
             }
         }
@@ -121,11 +114,10 @@ struct PokemonTournamentView: View {
             if let champion = state.champion {
                 VStack(spacing: 12) {
                     Image(systemName: "trophy.fill").font(.system(size: 52)).foregroundStyle(.yellow)
-                    Text(store.l.t("우승: \(champion.trainerName)", "Champion: \(champion.trainerName)",
-                                   "優勝：\(champion.trainerName)"))
+                    Text("우승: \(champion.trainerName)")
                         .font(.title2.bold())
                     Text(rewardName(state.reward)).font(.headline).foregroundStyle(.orange)
-                    Button(store.l.t("나가기", "Leave", "退出")) { close() }.buttonStyle(.borderedProminent)
+                    Button("나가기") { close() }.buttonStyle(.borderedProminent)
                 }.frame(maxWidth: .infinity).padding(.vertical, 30)
             } else if let match = state.currentMatch {
                 matchView(match, state: state)
@@ -138,7 +130,7 @@ struct PokemonTournamentView: View {
     private func openingBracket(_ state: PokemonTournamentState, until: Date) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label(store.l.t("대진 추첨 완료!", "Bracket Draw Complete!", "対戦カード決定！"),
+                Label("대진 추첨 완료!",
                       systemImage: "trophy.fill").font(.title3.bold()).foregroundStyle(.orange)
                 Spacer()
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -146,9 +138,7 @@ struct PokemonTournamentView: View {
                         .font(.headline.monospacedDigit()).foregroundStyle(.orange)
                 }
             }
-            Text(store.l.t("첫 라운드 대진입니다. 10초 후 첫 경기가 시작됩니다.",
-                           "First-round pairings. The opening match begins in 10 seconds.",
-                           "1回戦の組み合わせです。10秒後に開始します。"))
+            Text("첫 라운드 대진입니다. 10초 후 첫 경기가 시작됩니다.")
                 .font(.caption).foregroundStyle(.secondary)
             VStack(spacing: 10) {
                 ForEach(state.openingMatches ?? []) { match in
@@ -166,7 +156,7 @@ struct PokemonTournamentView: View {
                 ForEach(state.byeEntrants) { entrant in
                     HStack(spacing: 8) {
                         entrantCard(state, id: entrant.id)
-                        Text(store.l.t("부전승", "Bye", "不戦勝"))
+                        Text("부전승")
                             .font(.caption.bold()).foregroundStyle(.orange)
                             .frame(maxWidth: .infinity)
                     }
@@ -208,15 +198,14 @@ struct PokemonTournamentView: View {
         let theirName = viewingB ? match.nameA : match.nameB
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(store.l.t("\(match.round)라운드", "Round \(match.round)", "第\(match.round)ラウンド"))
+                Text("\(match.round)라운드")
                     .font(.caption.bold()).foregroundStyle(.orange)
                 Spacer()
                 Text("\(match.nameA)  VS  \(match.nameB)").font(.caption.bold())
             }
             if let winner = match.winnerID {
                 let name = winner == match.playerA ? match.nameA : match.nameB
-                Text(store.l.t("\(name) 승리! 다음 대진을 준비합니다.", "\(name) wins! Preparing the next match.",
-                               "\(name)の勝利！次の対戦を準備します。"))
+                Text("\(name) 승리! 다음 대진을 준비합니다.")
                     .font(.headline).frame(maxWidth: .infinity)
             }
             if let shownMySide = shownMine.side, let shownTheirSide = shownTheirs.side {
@@ -276,7 +265,7 @@ struct PokemonTournamentView: View {
 
     private func bracket(_ state: PokemonTournamentState) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(store.l.t("대진표", "Bracket", "トーナメント表")).font(.caption.bold())
+            Text("대진표").font(.caption.bold())
             ForEach(state.matches) { match in
                 let a = state.entrants.first { $0.id == match.playerA }?.trainerName ?? "?"
                 let b = state.entrants.first { $0.id == match.playerB }?.trainerName ?? "?"
@@ -288,17 +277,15 @@ struct PokemonTournamentView: View {
     }
 
     private var rewardGuide: some View {
-        Text(store.l.t("최소 3명 · 1위: 참가 인원별 알 · 2위: 별의모래 12,000 · 공동 3위: 7,000 · 공동 5위: 3,000",
-                       "Minimum 3 · 1st: Egg by entrant count · 2nd: 12,000 Stardust · joint 3rd: 7,000 · joint 5th: 3,000",
-                       "最低3人・1位：参加人数別タマゴ・2位：12,000・同率3位：7,000・同率5位：3,000"))
+        Text("최소 3명 · 1위: 참가 인원별 알 · 2위: 별의조각 12,000 · 공동 3위: 7,000 · 공동 5위: 3,000")
             .font(.caption2).foregroundStyle(.secondary)
     }
 
     private func rewardName(_ reward: TournamentEggReward) -> String {
         switch reward {
-        case .standard: return store.l.t("일반 알 획득", "Standard Egg earned", "通常タマゴ獲得")
-        case .uncommon: return store.l.t("고급 알 획득", "Uncommon Egg earned", "上級タマゴ獲得")
-        case .rare: return store.l.t("희귀 알 획득", "Rare Egg earned", "レアタマゴ獲得")
+        case .standard: return "일반 알 획득"
+        case .uncommon: return "고급 알 획득"
+        case .rare: return "희귀 알 획득"
         }
     }
 

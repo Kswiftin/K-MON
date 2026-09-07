@@ -85,7 +85,7 @@ struct NetBattleTerminalTests {
         let idle = BattleTerminalState(phase: .ready, battle: nil)
         #expect(NetBattleScreen.kind(idle) == .none)
         #expect(NetBattleScreen.numbers(idle).isEmpty)
-        #expect(NetBattleScreen.lines(idle, language: .ko, width: 60)
+        #expect(NetBattleScreen.lines(idle, width: 60)
             .contains { $0.contains("앱") })
     }
 
@@ -94,12 +94,12 @@ struct NetBattleTerminalTests {
     @Test func testOnMyTurnTheNumbersAreMovesAndTheClockIsShown() throws {
         let state = Self.battling(remaining: 23)
         #expect(NetBattleScreen.kind(state) == .move)
-        let choices = NetBattleScreen.choices(state, language: .ko)
+        let choices = NetBattleScreen.choices(state)
         #expect(choices.count == 2)
         #expect(choices.first?.number == 1)
         #expect(choices.first?.label.contains("타격") == true)
         #expect(NetBattleScreen.action(number: 1, in: state) == .battleMove(move: 1))
-        #expect(NetBattleScreen.lines(state, language: .ko, width: 60)
+        #expect(NetBattleScreen.lines(state, width: 60)
             .contains { $0.contains("23") }, "남은 시간이 안 보이면 자동 제출을 예측할 수 없다")
     }
 
@@ -132,7 +132,7 @@ struct NetBattleTerminalTests {
         #expect(NetBattleScreen.numbers(state).isEmpty)
         #expect(NetBattleScreen.hints(state).contains("거절"))
         #expect(NetBattleScreen.hints(state).contains("앱"), "수락은 앱에서 한다고 말해야 한다")
-        #expect(NetBattleScreen.lines(state, language: .ko, width: 60)
+        #expect(NetBattleScreen.lines(state, width: 60)
             .contains { $0.contains("옆자리") }, "누가 걸었는지 안 보이면 수락 판단이 불가능하다")
     }
 
@@ -153,8 +153,8 @@ struct NetBattleTerminalTests {
         let won = BattleTerminalState(phase: .finished(iWon: true, byForfeit: false), battle: nil)
         let forfeited = BattleTerminalState(phase: .finished(iWon: false, byForfeit: true), battle: nil)
         #expect(NetBattleScreen.kind(won) == .finished)
-        #expect(NetBattleScreen.lines(won, language: .ko, width: 60).contains { $0.contains("이겼") })
-        #expect(NetBattleScreen.lines(forfeited, language: .ko, width: 60)
+        #expect(NetBattleScreen.lines(won, width: 60).contains { $0.contains("이겼") })
+        #expect(NetBattleScreen.lines(forfeited, width: 60)
             .contains { $0.contains("항복") })
     }
 
@@ -162,7 +162,7 @@ struct NetBattleTerminalTests {
         for state in [Self.battling(remaining: 30), Self.battling(teamSize: 3),
                       BattleTerminalState(phase: .incoming(peer: "아주아주긴이름을가진트레이너"), battle: nil)] {
             for width in [20, 40, 80] {
-                for line in NetBattleScreen.lines(state, language: .ko, width: width) {
+                for line in NetBattleScreen.lines(state, width: width) {
                     #expect(TUIText.displayWidth(line) <= width, "폭 \(width) 에서 넘친 줄: \(line)")
                 }
             }
@@ -201,8 +201,7 @@ struct NetBattleTerminalTests {
                                                                     completed: 1, goal: 4,
                                                                     isLongRest: false, label: nil,
                                                                     width: 60, now: now))
-        let battle = PokedoroViewChannel.battleSnapshot(Self.battling(remaining: 10),
-                                                        language: .ko, width: 60, now: now)
+        let battle = PokedoroViewChannel.battleSnapshot(Self.battling(remaining: 10), width: 60, now: now)
         #expect(battle != nil)
         #expect(PokedoroViewChannel.preferred([battle, focus])?.screen == "battle")
         // 대전이 없으면 타이머가 그려진다 — 우선순위는 있음/없음을 덮어쓰지 않는다.
@@ -213,19 +212,18 @@ struct NetBattleTerminalTests {
     /// 아무 대전도 없으면 **화면을 내놓지 않는다** — 빈 스냅샷을 쓰면 터미널이 빈 줄을 그리고
     /// 타이머 생산자까지 덮는다.
     @Test func testAnIdleBattleCenterProducesNoSnapshot() {
-        #expect(PokedoroViewChannel.battleSnapshot(BattleTerminalState(phase: .ready, battle: nil),
-                                                    language: .ko, width: 60, now: Date()) == nil)
+        #expect(PokedoroViewChannel.battleSnapshot(BattleTerminalState(phase: .ready, battle: nil), width: 60, now: Date()) == nil)
     }
 
     /// 키 안내는 **앱이 보낸다**(채널의 규칙). 내 차례가 아니면 기술 키가 실리지 않아야 한다.
     @Test func testTheSnapshotCarriesOnlyThePressableKeys() throws {
         var mine = Self.battling(remaining: 20)
-        let onMyTurn = try #require(PokedoroViewChannel.battleSnapshot(mine, language: .ko,
+        let onMyTurn = try #require(PokedoroViewChannel.battleSnapshot(mine,
                                                                         width: 60, now: Date()))
         #expect(onMyTurn.keys.contains { $0.contains("기술") })
 
         mine.battle?.myAction = .move(index: 0)
-        let waiting = try #require(PokedoroViewChannel.battleSnapshot(mine, language: .ko,
+        let waiting = try #require(PokedoroViewChannel.battleSnapshot(mine,
                                                                        width: 60, now: Date()))
         #expect(!waiting.keys.contains { $0.contains("기술") },
                 "낸 뒤에도 기술 키를 권하면 누른 사용자는 입력이 씹혔다고 읽는다")
@@ -273,12 +271,12 @@ struct NetBattleTerminalTests {
     @Test func testTheSnapshotSaysWhatEachDigitMeans() throws {
         var state = Self.battling(teamSize: 2)
         state.battle?.myTeam[0].hp = 0
-        let faint = try #require(PokedoroViewChannel.battleSnapshot(state, language: .ko,
+        let faint = try #require(PokedoroViewChannel.battleSnapshot(state,
                                                                      width: 60, now: Date()))
         #expect(faint.numberActions?["2"] == "battle.switch 2")
         #expect(faint.numberActions?["1"] == nil, "쓰러진 자리는 요청이 되지 않는다")
 
-        let turn = try #require(PokedoroViewChannel.battleSnapshot(Self.battling(), language: .ko,
+        let turn = try #require(PokedoroViewChannel.battleSnapshot(Self.battling(),
                                                                      width: 60, now: Date()))
         #expect(turn.numberActions?["1"] == "battle.move 1")
     }
@@ -288,7 +286,7 @@ struct NetBattleTerminalTests {
     @Test func testEveryPublishedDigitFoldsBackIntoTheSameAction() throws {
         var state = Self.battling(teamSize: 2)
         state.battle?.myTeam[0].hp = 0
-        let snapshot = try #require(PokedoroViewChannel.battleSnapshot(state, language: .ko,
+        let snapshot = try #require(PokedoroViewChannel.battleSnapshot(state,
                                                                         width: 60, now: Date()))
         for (digit, raw) in snapshot.numberActions ?? [:] {
             let parts = raw.split(separator: " ", maxSplits: 1).map(String.init)
@@ -303,7 +301,7 @@ struct NetBattleTerminalTests {
     @Test func testTheReplacementListShowsWhoIsLeft() throws {
         var state = Self.battling(teamSize: 2)
         state.battle?.myTeam[0].hp = 0
-        let only = try #require(NetBattleScreen.choices(state, language: .ko).first)
+        let only = try #require(NetBattleScreen.choices(state).first)
         #expect(only.number == 2)
         #expect(only.label.contains("내2"))
         #expect(only.label.contains("/"), "남은 HP 가 안 보이면 교체 판단이 감이 된다")
@@ -312,10 +310,10 @@ struct NetBattleTerminalTests {
     /// 신청을 보낸 쪽과 편성 중인 국면도 **무엇을 기다리는지 한 줄로** 말한다.
     @Test func testWaitingPhasesNameWhatTheyWaitFor() {
         let sent = BattleTerminalState(phase: .challenging(peer: "옆자리"), battle: nil)
-        #expect(NetBattleScreen.lines(sent, language: .ko, width: 60)
+        #expect(NetBattleScreen.lines(sent, width: 60)
             .contains { $0.contains("옆자리") })
         let building = BattleTerminalState(phase: .teamBuilding(peer: "옆자리"), battle: nil)
-        #expect(NetBattleScreen.lines(building, language: .ko, width: 60)
+        #expect(NetBattleScreen.lines(building, width: 60)
             .contains { $0.contains("앱") })
     }
 
@@ -330,8 +328,8 @@ struct NetBattleTerminalTests {
         battle.events = stream
         battle.eventBatches = [NetBattleEventBatch(events: stream, a: battle.me, b: battle.opp)]
         state.battle = battle
-        #expect(!NetBattleScreen.log(battle, language: .ko).isEmpty)
-        #expect(NetBattleScreen.lines(state, language: .ko, width: 80)
+        #expect(!NetBattleScreen.log(battle).isEmpty)
+        #expect(NetBattleScreen.lines(state, width: 80)
             .contains { $0.contains("타격") })
     }
 

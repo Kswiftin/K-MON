@@ -14,8 +14,13 @@ struct BattleChatMessage: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// 순수 입력 정규화와 전송 빈도 제한. 네트워크 경계와 UI가 같은 정책을 사용한다.
-enum BattleChatPolicy {
+/// 상대가 보낸 글의 정규화·상한 정본. 네트워크 경계와 화면이 같은 정책을 쓴다.
+///
+/// **채팅만의 규칙이 아니다.** 표시 이름 자르기(`displayName`)와 본문 정규화(`normalizedBody`)는
+/// 교환·경매·방 배틀·체육관이 함께 쓴다 — 상대가 보낸 글은 어느 기능으로 들어오든 같은 규칙을
+/// 지나야 한다. 예전 이름이 `BattleChatPolicy` 라, 교환 쪽을 짜는 사람이 이 정본을 찾지 못하고
+/// 자기 자리에 다시 짜기 좋은 자리였다.
+enum PeerTextPolicy {
     static let maximumLength = 200
     static let historyLimit = 50
 
@@ -71,8 +76,8 @@ struct BattleChatHistory: Sendable {
     private(set) var messages: [BattleChatMessage] = []
     mutating func append(_ message: BattleChatMessage) {
         messages.append(message)
-        if messages.count > BattleChatPolicy.historyLimit {
-            messages.removeFirst(messages.count - BattleChatPolicy.historyLimit)
+        if messages.count > PeerTextPolicy.historyLimit {
+            messages.removeFirst(messages.count - PeerTextPolicy.historyLimit)
         }
     }
     mutating func reset() { messages.removeAll() }

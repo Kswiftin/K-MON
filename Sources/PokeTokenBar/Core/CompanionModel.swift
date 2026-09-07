@@ -5,44 +5,29 @@ enum CompanionStateKind: String, Sendable {
     case egg, idle, working, focus, levelUp
 }
 
-/// 앱 언어. 포켓몬 이름은 PokéAPI 다국어 names 에서 가져온다.
-enum AppLanguage: String, Codable, Sendable, CaseIterable {
-    case ko, en, ja
-    /// PokéAPI language.name 후보(첫 매칭 사용)
-    var apiCodes: [String] {
-        switch self {
-        case .ko: return ["ko"]
-        case .en: return ["en"]
-        case .ja: return ["ja-Hrkt", "ja"]
-        }
-    }
-    var label: String {
-        switch self { case .ko: return "한국어"; case .en: return "English"; case .ja: return "日本語" }
-    }
+/// PokéAPI 다국어 데이터에서 **한국어**를 골라내는 규칙.
+///
+/// 앱 UI 는 한국어 하나만 그리지만(2026-09-07 결정), PokéAPI 가 주는 이름·설명은 언어별 표라
+/// 어느 칸을 읽을지 정하는 자리가 여전히 필요하다. 그 규칙이 여기 한 곳에 있다.
+enum PokemonNaming {
+    /// PokéAPI `language.name` 후보 — 첫 매칭을 쓴다.
+    static let apiCodes = ["ko"]
 
-    var displayLocale: Locale { Locale(identifier: rawValue) }
+    /// 앱이 날짜·숫자를 그릴 로케일.
+    static let locale = Locale(identifier: "ko")
 
-    /// byLang(langCode→name) 에서 이 언어의 이름을 고른다(apiCodes 첫 매칭 → 영어 폴백).
-    func resolveName(_ byLang: [String: String]) -> String? {
+    /// byLang(언어코드→이름)에서 한국어 이름을 고른다. **영어로 폴백한다** — 한국어 이름이 없는
+    /// 종·기술이 실제로 있고, 그때 이름을 통째로 비우면 화면에 `#25` 같은 번호만 남는다.
+    static func name(_ byLang: [String: String]) -> String? {
         for code in apiCodes { if let n = byLang[code] { return n } }
         return byLang["en"]
     }
 
-    /// 설명 문장은 요청 언어와 정확히 맞을 때만 쓴다. 이름 한 단어와 달리 영어 설명 전체를
-    /// 폴백하면 포켓몬의 말투와 페르소나가 요청 언어 밖으로 새어 나간다.
-    func resolveProse(_ byLang: [String: String]) -> String? {
+    /// 설명 문장은 **폴백하지 않는다.** 이름 한 단어와 달리 영어 설명 전체를 그대로 내보내면
+    /// 포켓몬의 말투와 페르소나가 한국어 밖으로 새어 나간다.
+    static func prose(_ byLang: [String: String]) -> String? {
         for code in apiCodes { if let text = byLang[code] { return text } }
         return nil
-    }
-
-    /// 신규 설치 기본 언어 — 시스템 선호 언어에서 유추(글로벌 출시: 한국어 강제 금지).
-    /// ko/ja 만 매칭, 그 외 전부 영어(fallback-of-fallback). 기존 사용자는 저장된 언어를 그대로 쓴다.
-    static var systemDefault: AppLanguage {
-        switch Locale.preferredLanguages.first?.prefix(2).lowercased() {
-        case "ko": return .ko
-        case "ja": return .ja
-        default:   return .en
-        }
     }
 }
 
@@ -91,15 +76,15 @@ enum Rarity: String, Codable, Sendable {
     }
 }
 
-/// 방치형 경제 — 재화는 **별의모래(stardust)**. 앱이 켜져 있는 동안 시간으로 생산되고,
+/// 방치형 경제 — 재화는 **별의조각(stardust)**. 앱이 켜져 있는 동안 시간으로 생산되고,
 /// 성장(부화·진화·졸업)과 상점이 같은 단위를 쓴다. 수치는 토큰 경제 시절의 표를 그대로 계승한다
 /// (헤비유저 ~253M/일 기준으로 튜닝된 값 — 생산 속도를 그 등가로 맞춰 소요 기간 감각을 유지).
 enum IdleEconomy {
     /// 경제 스키마 버전. 이 값보다 낮은 세이브(토큰 경제 시절)는 로드/불러오기 경계에서
-    /// 도감·수집만 남기고 진행을 리셋한다(SaveTransfer.sanitized). 토큰 누적과 별의모래는
+    /// 도감·수집만 남기고 진행을 리셋한다(SaveTransfer.sanitized). 토큰 누적과 별의조각은
     /// 단위가 달라 환산하지 않는다(2026-08-13 결정: 전면 리셋).
     static let currentVersion = 2
-    /// 기본 생산 속도 — 초당 별의모래. 7,000/s = 25.2M/시간: 알 부화(5M) ≈ 12분,
+    /// 기본 생산 속도 — 초당 별의조각. 7,000/s = 25.2M/시간: 알 부화(5M) ≈ 12분,
     /// common 졸업(750M) ≈ 30시간, legendary(6B) ≈ 240시간(하루 10시간 가동 시 ≈ 24일) —
     /// README 의 "common ≈3일 → legendary ≈24일" 약속을 실행 시간 기준으로 유지한다.
     static let dustPerSecond: Double = 7_000
@@ -113,7 +98,7 @@ enum IdleEconomy {
 /// 성장 밸런스 — 졸업 총량 T 는 같은 희귀도면 진화 단계 수와 무관하게 동일.
 /// 형태 k개 라인에서 i번째 형태 성장 비용 = T·i / (k(k+1)/2) → 합 = T, 단계↑일수록 비용↑.
 enum PokemonBalance {
-    /// 알 부화 임계 — 이만큼 별의모래가 쌓여야 알이 깨진다(즉시 부화 대신 기대감). 초과분은 부화체 성장에 이월.
+    /// 알 부화 임계 — 이만큼 별의조각이 쌓여야 알이 깨진다(즉시 부화 대신 기대감). 초과분은 부화체 성장에 이월.
     static let eggHatchThreshold = 5_000_000
 
     /// 진화가 아예 없는 종(totalForms==1)의 졸업 게이팅 레벨 — 희귀도 무관 단일 기준. 희귀도는
@@ -451,12 +436,12 @@ struct TechnicalMachine: Identifiable, Hashable, Sendable {
 
 /// 이상한 사탕 밸런스 상수.
 enum RareCandy {
-    /// 사용 시 현재 포켓몬에 주입하는 XP(별의모래 환산). 최소 진화 임계(커먼 1형태 125M)보다 작아
+    /// 사용 시 현재 포켓몬에 주입하는 XP(별의조각 환산). 최소 진화 임계(커먼 1형태 125M)보다 작아
     /// 사탕 1개는 최대 1단계만 올린다(연쇄·졸업 폭주 없음). applyUsage 로 주입 → 이월/진화/졸업 자동.
     static let xp = 100_000_000
     /// 일일 보상 개수 — 그 날 첫 틱에 지급(방치형 출석 보상. 토큰 한도 연동 지급의 대체, 2026-08-13).
     static let dailyGrant = 1
-    /// 상점 구매가(재화 = 별의조각 starPieces). 2026-08-14 재책정(#19) — 옛 값(5억)은 별의모래
+    /// 상점 구매가(재화 = 별의조각 starPieces). 2026-08-14 재책정(#19) — 옛 값(5억)은 별의조각
     /// 시절 통화 단위 그대로라, 지금 지갑(모험 1회 수백~수천)으로는 사실상 못 사는 가격이었다.
     /// 해안 모험(2시간) 1회 최대 수입이 7,200 이라, 그보다 조금 싸게 잡아 "모험 한 번 다녀오면
     /// 살 수 있는" 감각으로 맞춘다. 무료 획득(일일 보상 1개)이 항상 이득이도록 그보다는 비싸게.
@@ -484,7 +469,7 @@ enum ShinyCharm {
 enum FreshEgg {
     /// 상점 구매가(재화 = 별의조각 starPieces). 마음에 안 드는 부화를 리롤하는 프리미엄. 폐기 개체는
     /// 졸업이 아니라 그냥 사라지므로 도감·확률(collectedFinals)에 무영향 — "뽑은 적 없던 것처럼".
-    /// 2026-08-14 재책정(#19): 옛 값(20억)은 별의모래 시절 단위였다. 사탕(5,000)이 "모험 한 번"이면
+    /// 2026-08-14 재책정(#19): 옛 값(20억)은 별의조각 시절 단위였다. 사탕(5,000)이 "모험 한 번"이면
     /// 알은 "며칠 모아서 지르는 것" — 해안 모험(2시간, 7,200) 약 3회분으로 잡는다.
     static let price = 20_000
 
@@ -660,8 +645,8 @@ struct EvoLine: Sendable {
         self.evolutionMoveNames = evolutionMoveNames
     }
 
-    func localizedName(_ id: Int, _ lang: AppLanguage) -> String {
-        lang.resolveName(names[id] ?? [:]) ?? "#\(id)"   // 폴백 순서는 AppLanguage.resolveName 단일 소스
+    func localizedName(_ id: Int) -> String {
+        PokemonNaming.name(names[id] ?? [:]) ?? "#\(id)"   // 폴백 순서는 PokemonNaming.name 단일 소스
     }
 }
 
@@ -673,11 +658,11 @@ enum PokemonGender: String, Codable, Sendable {
         switch self { case .male: return "♂"; case .female: return "♀"; case .genderless: return "—" }
     }
 
-    func name(_ language: AppLanguage) -> String {
+    var name: String {
         switch self {
-        case .male: return L(language).t("수컷", "Male", "オス")
-        case .female: return L(language).t("암컷", "Female", "メス")
-        case .genderless: return L(language).t("무성", "Gender unknown", "性別不明")
+        case .male: return "수컷"
+        case .female: return "암컷"
+        case .genderless: return "무성"
         }
     }
 
@@ -699,37 +684,35 @@ enum PokemonNature: String, Codable, Sendable, CaseIterable {
     case modest, mild, quiet, bashful, rash
     case calm, gentle, sassy, careful, quirky
 
-    /// 본가 공식 번역 명칭 (ko/en/ja).
-    func name(_ lang: AppLanguage) -> String {
-        let names: (String, String, String)
+    /// 본가 공식 번역 명칭.
+    var name: String {
         switch self {
-        case .hardy:   names = ("노력", "Hardy", "がんばりや")
-        case .lonely:  names = ("외로움", "Lonely", "さみしがり")
-        case .brave:   names = ("용감", "Brave", "ゆうかん")
-        case .adamant: names = ("고집", "Adamant", "いじっぱり")
-        case .naughty: names = ("개구쟁이", "Naughty", "やんちゃ")
-        case .bold:    names = ("대담", "Bold", "ずぶとい")
-        case .docile:  names = ("온순", "Docile", "すなお")
-        case .relaxed: names = ("무사태평", "Relaxed", "のんき")
-        case .impish:  names = ("장난꾸러기", "Impish", "わんぱく")
-        case .lax:     names = ("촐랑", "Lax", "のうてんき")
-        case .timid:   names = ("겁쟁이", "Timid", "おくびょう")
-        case .hasty:   names = ("성급", "Hasty", "せっかち")
-        case .serious: names = ("성실", "Serious", "まじめ")
-        case .jolly:   names = ("명랑", "Jolly", "ようき")
-        case .naive:   names = ("천진난만", "Naive", "むじゃき")
-        case .modest:  names = ("조심", "Modest", "ひかえめ")
-        case .mild:    names = ("의젓", "Mild", "おっとり")
-        case .quiet:   names = ("냉정", "Quiet", "れいせい")
-        case .bashful: names = ("수줍음", "Bashful", "てれや")
-        case .rash:    names = ("덜렁", "Rash", "うっかりや")
-        case .calm:    names = ("차분", "Calm", "おだやか")
-        case .gentle:  names = ("얌전", "Gentle", "おとなしい")
-        case .sassy:   names = ("건방", "Sassy", "なまいき")
-        case .careful: names = ("신중", "Careful", "しんちょう")
-        case .quirky:  names = ("변덕", "Quirky", "きまぐれ")
+        case .hardy:    "노력"
+        case .lonely:   "외로움"
+        case .brave:    "용감"
+        case .adamant:  "고집"
+        case .naughty:  "개구쟁이"
+        case .bold:     "대담"
+        case .docile:   "온순"
+        case .relaxed:  "무사태평"
+        case .impish:   "장난꾸러기"
+        case .lax:      "촐랑"
+        case .timid:    "겁쟁이"
+        case .hasty:    "성급"
+        case .serious:  "성실"
+        case .jolly:    "명랑"
+        case .naive:    "천진난만"
+        case .modest:   "조심"
+        case .mild:     "의젓"
+        case .quiet:    "냉정"
+        case .bashful:  "수줍음"
+        case .rash:     "덜렁"
+        case .calm:     "차분"
+        case .gentle:   "얌전"
+        case .sassy:    "건방"
+        case .careful:  "신중"
+        case .quirky:   "변덕"
         }
-        switch lang { case .ko: return names.0; case .en: return names.1; case .ja: return names.2 }
     }
 }
 
@@ -766,17 +749,15 @@ enum RotomForm: String, Codable, CaseIterable, Sendable {
         case .mow: 437
         }
     }
-    func name(_ language: AppLanguage) -> String {
-        let value: (String, String, String)
+    var name: String {
         switch self {
-        case .normal: value = ("로토무", "Rotom", "ロトム")
-        case .heat: value = ("히트로토무", "Heat Rotom", "ヒートロトム")
-        case .wash: value = ("워시로토무", "Wash Rotom", "ウォッシュロトム")
-        case .frost: value = ("프로스트로토무", "Frost Rotom", "フロストロトム")
-        case .fan: value = ("스핀로토무", "Fan Rotom", "スピンロトム")
-        case .mow: value = ("커트로토무", "Mow Rotom", "カットロトム")
+        case .normal: "로토무"
+        case .heat: "히트로토무"
+        case .wash: "워시로토무"
+        case .frost: "프로스트로토무"
+        case .fan: "스핀로토무"
+        case .mow: "커트로토무"
         }
-        return switch language { case .ko: value.0; case .en: value.1; case .ja: value.2 }
     }
 }
 
@@ -1042,7 +1023,7 @@ struct CompanionState: Codable, Sendable {
     var activeSecondsDate: String = ""
     /// 일일 사탕을 지급한 로컬 날짜(YYYY-MM-DD). 날짜가 바뀐 첫 틱에 재지급.
     var lastCandyDate = ""
-    // 별의모래: 설치 이후 생산 누적(성장 미터, 불변)
+    // 별의조각: 설치 이후 생산 누적(성장 미터, 불변)
     var usedSinceInstall = 0
     // **더는 쓰지 않는 지출 원장.** 지갑은 `starPieces` 하나이고, 이 값을 올리는 코드는 없다.
     // 남겨 두는 이유는 두 가지뿐이다: `starPieces` 가 없던 세이브가 잔액을 여기서 도출하고
@@ -1050,7 +1031,7 @@ struct CompanionState: Codable, Sendable {
     // 그 옛 세이브의 값을 그대로 본다. 지우면 옛 세이브의 잔액과 서명이 함께 깨진다.
     var spentTokens = 0
     var starPieces = 0
-    // 현재 알이 생긴 뒤 쌓인 별의모래(부화 인큐베이션). 누적(usedSinceInstall)과 별개 — 졸업 후 새 알마다 0.
+    // 현재 알이 생긴 뒤 쌓인 별의조각(부화 인큐베이션). 누적(usedSinceInstall)과 별개 — 졸업 후 새 알마다 0.
     var eggUsage = 0
     // 현재 알이 보증하는 등급 하한(프리미엄 알). nil = 보증 없음(무료 알·기본 알).
     // ★영속이어야 한다 — 구매 시점엔 종을 못 정한다(롤에 네트워크가 필요). 보증을 상태에 적어 두고
@@ -1099,7 +1080,6 @@ struct CompanionState: Codable, Sendable {
     /// 남은 이로치 확정 부화 횟수. 부화 한 번에 하나씩 쓴다.
     /// ★영속이어야 한다 — `eggTier` 와 같은 이유로, 받은 시점과 쓰는 시점이 떨어져 있다.
     var shinyEggCharges = 0
-    var language: AppLanguage = .systemDefault   // 신규 설치 = 시스템 로케일
     // 인벤토리 (ItemKind.rawValue → 개수)
     var inventory: [String: Int] = [:]
     // 기술머신 인벤토리 (본가 move id → 개수). 별도 키라 ItemKind 확장 없이 카탈로그를 늘릴 수 있다.
@@ -1191,7 +1171,6 @@ struct CompanionState: Codable, Sendable {
         gymBadges          = c.lenient(Set<String>.self, forKey: .gymBadges, default: [])
         gymLeagueBadges    = c.lenient(Set<String>.self, forKey: .gymLeagueBadges, default: [])
         shinyEggCharges    = c.lenient(Int.self, forKey: .shinyEggCharges, default: 0)
-        language           = c.lenient(AppLanguage.self, forKey: .language, default: .systemDefault)
         inventory          = c.lenient([String: Int].self, forKey: .inventory, default: [:])
         technicalMachines  = c.lenient([Int: Int].self, forKey: .technicalMachines, default: [:])
         adventure          = c.lenientOptional(AdventureRun.self, forKey: .adventure)

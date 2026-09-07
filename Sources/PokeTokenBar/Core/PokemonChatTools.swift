@@ -24,19 +24,6 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
     case companionSwitch = "companion.switch"
     case memoryRecord = "memory.record"
 
-    /// 화면이 제시하는 집중 길이. 모델이 말한 값도, 터미널 요청 파일에 적힌 값도 이 셋 중 가장
-    /// 가까운 것으로 접힌다.
-    static let focusMinutes = [25, 50, 90]
-
-    /// 가장 가까운 길이로 접는다(동률이면 짧은 쪽). **값을 버리는 대신 접는다** — 버리면 부른
-    /// 쪽이 왜 아무 일도 안 일어났는지 모른 채 같은 실수를 반복한다. 승인 카드도 터미널 답도
-    /// 실제 분을 그대로 보여 주므로 사용자는 무엇을 켜는지 정확히 안다.
-    ///
-    /// 여기 있는 이유는 접는 쪽이 둘이라서다(대화 파서·터미널 요청). 표가 두 벌이 되면 한쪽만
-    /// 넓어져 화면이 제시하지 않는 길이를 그 경로만 켤 수 있게 된다.
-    static func nearestFocusLength(to minutes: Int) -> Int {
-        focusMinutes.min { abs($0 - minutes) < abs($1 - minutes) } ?? focusMinutes[0]
-    }
     /// 도감 번호 상한. 범위를 두는 이유는 주입이 아니라(인자는 이미 `Int` 다) 404 를 부르는
     /// 무의미한 왕복을 막기 위해서다.
     static let highestDexNumber = 1_025
@@ -49,7 +36,7 @@ enum PokemonChatTool: String, CaseIterable, Sendable {
         case .pokedoroStatus:
             return "[[tool:\(rawValue)]] — check the focus timer"
         case .pokedoroStart:
-            let lengths = Self.focusMinutes.map(String.init).joined(separator: "|")
+            let lengths = FocusChainRules.focusMinutes.map(String.init).joined(separator: "|")
             return "[[tool:\(rawValue)(<\(lengths)>)]] — ask the trainer to start a focus session"
         case .pokedoroStop:
             return "[[tool:\(rawValue)]] — ask the trainer to stop the focus session"
@@ -136,74 +123,61 @@ enum PokemonChatToolCall: Equatable, Sendable {
     }
 
     /// 승인 카드에 실을 사람 문장. enum 슬러그를 그대로 보여 주지 않는다.
-    func approvalQuestion(_ language: AppLanguage) -> String {
+    var approvalQuestion: String {
         switch self {
         case .pokedoroStart(let minutes):
-            return L(language).t("\(minutes)분 집중을 시작할까?",
-                                 "Shall we start a \(minutes)-minute focus session?",
-                                 "\(minutes)分の集中を始める？")
+            return "\(minutes)분 집중을 시작할까?"
         case .pokedoroStop:
             // 종료가 하는 일 **둘 다** 적는다. `stopFocusSession` 은 끝난 모험을 정산하고
             // (`claimAdventure`) 아직 나가 있는 모험만 취소한다(`cancelFocusAdventure`).
             // 한쪽만 적으면 승인한 것과 실제가 갈라진다 — "취소돼" 만 읽고 눌렀는데 지갑이 늘거나,
             // 반대로 보상이 조용히 사라진다. 결과 문구가 아니라 **카드**에 적는 이유는, 승인 전에
             // 알아야 승인의 뜻이 있어서다.
-            return L(language).t("집중을 끝낼까? 끝난 모험 보상은 챙기고, 아직 나가 있는 모험은 취소돼.",
-                                 "Shall we stop the focus session? A finished adventure's reward is collected; one still out is cancelled.",
-                                 "集中を終える？終わった冒険の報酬は受け取って、まだ出ている冒険は取り消されるよ。")
+            return "집중을 끝낼까? 끝난 모험 보상은 챙기고, 아직 나가 있는 모험은 취소돼."
         case .adventureClaim:
-            return L(language).t("모험 보상을 받아 올까?",
-                                 "Shall we collect the adventure reward?",
-                                 "冒険の報酬を受け取る？")
+            return "모험 보상을 받아 올까?"
         case .itemUse(let kind):
-            let name = L(language).itemName(kind)
-            return L(language).t("\(name)을(를) 하나 써 볼까?",
-                                 "Shall we use one \(name)?",
-                                 "\(name)を1つ使ってみる？")
+            let name = L().itemName(kind)
+            return "\(name)을(를) 하나 써 볼까?"
         case .evolutionAccept:
-            return L(language).t("나, 진화해도 될까?", "May I evolve?", "ぼく、進化してもいい？")
+            return "나, 진화해도 될까?"
         case .companionSwitch(let index):
-            return L(language).t("\(index + 1)번째 친구를 데리고 나갈까?",
-                                 "Shall we bring out teammate #\(index + 1)?",
-                                 "\(index + 1)番目の子を連れて行く？")
+            return "\(index + 1)번째 친구를 데리고 나갈까?"
         case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList, .memoryRecord,
              .dexProgress, .challengeStatus:
-            return L(language).t("확인해 볼까?", "Shall I check?", "確認してみる？")
+            return "확인해 볼까?"
         }
     }
 
     /// 승인·거절·실패를 사용자에게 알리는 한 줄. 실행 결과는 화면(타이머)에도 보이지만,
     /// 눌렀는데 아무 일도 안 일어난 경우가 대화에서 침묵으로 보이면 안 된다.
-    func outcome(approved: Bool, success: Bool, language: AppLanguage) -> String {
-        let l = L(language)
+    func outcome(approved: Bool, success: Bool) -> String {
+        let l = L()
         guard approved else {
-            return l.t("알겠어, 나중에 하자.", "Okay, let's do it later.", "わかった、あとにしよう。")
+            return "알겠어, 나중에 하자."
         }
         guard success else {
-            return l.t("지금은 그렇게 할 수 없어.", "I can't do that right now.", "今はそれができないよ。")
+            return "지금은 그렇게 할 수 없어."
         }
         switch self {
         case .pokedoroStart(let minutes):
-            return l.t("\(minutes)분 집중을 시작했어. 같이 가자!",
-                       "Started a \(minutes)-minute focus session. Let's go!",
-                       "\(minutes)分の集中を始めたよ。いっしょにがんばろう！")
+            return "\(minutes)분 집중을 시작했어. 같이 가자!"
         case .pokedoroStop:
-            return l.t("집중을 끝냈어. 수고했어!", "Focus session stopped. Nice work!", "集中を終えたよ。おつかれさま！")
+            return "집중을 끝냈어. 수고했어!"
         case .adventureClaim:
-            return l.t("모험 보상을 받았어. 고마워!", "Collected the adventure reward. Thank you!",
-                       "冒険の報酬を受け取ったよ。ありがとう！")
+            return "모험 보상을 받았어. 고마워!"
         case .itemUse(let kind):
             let name = l.itemName(kind)
-            return l.t("\(name)을(를) 썼어. 고마워!", "Used one \(name). Thank you!", "\(name)を使ったよ。ありがとう！")
+            return "\(name)을(를) 썼어. 고마워!"
         case .evolutionAccept:
-            return l.t("나, 진화했어! 잘 부탁해.", "I evolved! Look after me.", "進化したよ！これからもよろしく。")
+            return "나, 진화했어! 잘 부탁해."
         case .companionSwitch:
-            return l.t("친구랑 자리를 바꿨어.", "We swapped places.", "友だちと交代したよ。")
+            return "친구랑 자리를 바꿨어."
         case .memoryRecord:
-            return l.t("방금 이야기를 기억해 둘게.", "I'll remember what we just said.", "いまの話、覚えておくね。")
+            return "방금 이야기를 기억해 둘게."
         case .pokedexLookup, .pokedoroStatus, .bagList, .rosterList,
              .dexProgress, .challengeStatus:
-            return l.t("확인했어.", "Checked.", "確認したよ。")
+            return "확인했어."
         }
     }
 }
@@ -228,7 +202,7 @@ enum PokemonChatAction: CaseIterable, Sendable {
         switch self {
         // 화면이 제시하는 세 길이 중 첫 번째. 칩을 셋으로 늘리면 칩 줄이 그것만으로 찬다 —
         // 다른 길이는 사용자가 문장을 고쳐 보내면 파서가 가장 가까운 값으로 접는다.
-        case .startFocus: return .pokedoroStart(minutes: PokemonChatTool.focusMinutes[0])
+        case .startFocus: return .pokedoroStart(minutes: FocusChainRules.focusMinutes[0])
         case .stopFocus: return .pokedoroStop
         case .claimAdventure: return .adventureClaim
         case .useRareCandy: return .itemUse(kind: .rareCandy)
@@ -238,27 +212,27 @@ enum PokemonChatAction: CaseIterable, Sendable {
 
     /// 입력칸에 채울 **사용자의 문장**. 마커가 아니라 사람 말이다 — 사용자가 무엇을 보내는지 읽고
     /// 고칠 수 있어야 하고, 마커를 사용자가 보내면 그게 곧 두 번째 실행 경로다.
-    func phrase(_ language: AppLanguage) -> String {
-        let l = L(language)
+    var phrase: String {
+        let l = L()
         switch self {
         case .startFocus:
             // 상수표를 다시 읽지 않는다 — 자기 `call` 이 켤 값을 그대로 말한다. 두 벌이면
             // 위 `case .startFocus` 의 길이만 바꿨을 때 칩은 25분이라 쓰고 카드는 50분을 켠다.
             guard case .pokedoroStart(let minutes) = call else { return "" }
-            return l.t("\(minutes)분 집중하자", "Let's focus for \(minutes) minutes", "\(minutes)分集中しよう")
+            return "\(minutes)분 집중하자"
         case .stopFocus:
-            return l.t("집중을 끝내자", "Let's stop the focus session", "集中を終えよう")
+            return "집중을 끝내자"
         case .claimAdventure:
-            return l.t("모험 보상 받아 줘", "Collect the adventure reward", "冒険の報酬を受け取って")
+            return "모험 보상 받아 줘"
         case .useRareCandy:
             // 이름도 상수표를 다시 읽지 않는다 — 자기 `call` 이 쓸 아이템의 **표시 이름 그대로**
             // 말한다. 두 벌이던 동안 한국어 문구만 붙여 써(`이상한사탕`) 파서가 받는 이름
             // (`이상한 사탕`)과 갈라졌고, 인자를 든 유일한 칩이 한국어에서 아무 일도 못 했다.
             guard case .itemUse(let kind) = call else { return "" }
             let name = l.itemName(kind)
-            return l.t("\(name) 하나 써 줘", "Use one \(name)", "\(name)を1つ使って")
+            return "\(name) 하나 써 줘"
         case .acceptEvolution:
-            return l.t("진화하자", "Let's evolve", "進化しよう")
+            return "진화하자"
         }
     }
 }
@@ -353,9 +327,9 @@ enum PokemonChatToolParser {
         return Int(raw)
     }
 
-    /// 접는 규칙은 `PokemonChatTool.nearestFocusLength` 한 곳이다 — 터미널 요청도 같은 표를 쓴다.
+    /// 접는 규칙은 `FocusChainRules.nearestFocusLength` 한 곳이다 — 터미널 요청도 같은 표를 쓴다.
     private static func nearestFocusLength(to minutes: Int) -> Int {
-        PokemonChatTool.nearestFocusLength(to: minutes)
+        FocusChainRules.nearestFocusLength(to: minutes)
     }
 }
 
@@ -411,11 +385,11 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
     let album: PokemonMemoryAlbum
     /// 종 정보 조회. 주입받는 이유는 실행기 자체를 네트워크 없이 시험하기 위해서다. 기본값을 두지
     /// 않는 건 프로덕션 생성 지점이 하나뿐이라서다 — 기본값은 그 하나가 무엇을 넣었는지 가린다.
-    let lookup: (Int, AppLanguage) async -> PokemonSpeciesIdentity
+    let lookup: (Int) async -> PokemonSpeciesIdentity
 
     /// PokéAPI 를 그대로 쓰는 프로덕션 조회. 대화 창을 열 때 이 값이 주입된다.
-    nonisolated static func apiLookup(_ id: Int, _ language: AppLanguage) async -> PokemonSpeciesIdentity {
-        await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: id, language: language)
+    nonisolated static func apiLookup(_ id: Int) async -> PokemonSpeciesIdentity {
+        await PokeAPIClient.shared.chatSpeciesIdentity(speciesID: id)
     }
 
     /// 암시적으로 "지금 나와 있는 나" 에 작용하는 도구는 그 개체의 대화에서만 돈다. 판정이 여기
@@ -547,7 +521,7 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         case .pokedoroStatus:
             return (statusLine(), true)
         case .pokedexLookup(let id):
-            let identity = await lookup(id, companion.language)
+            let identity = await lookup(id)
             let facts = [identity.genus.map { "genus=\($0)" },
                          identity.habitat.map { "habitat=\($0)" },
                          identity.ability.map { "ability=\($0)" },

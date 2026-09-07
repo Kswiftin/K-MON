@@ -65,7 +65,7 @@ struct TeamPicker: View {
     private func arranged(_ mons: [MonState]) -> [MonState] {
         switch sortOrder {
         case .alphabetical:
-            return RosterOrdering.alphabetizedForSelection(mons, language: store.language, names: speciesNames)
+            return RosterOrdering.alphabetizedForSelection(mons, names: speciesNames)
         case .levelDescending:
             return RosterOrdering.arrange(mons, sort: .level, ascending: false)
         case .levelAscending:
@@ -77,9 +77,9 @@ struct TeamPicker: View {
 
     private var sortOrderLabel: String {
         switch sortOrder {
-        case .alphabetical: l.t("가나다순", "A–Z", "あいうえお順")
-        case .levelDescending, .levelAscending: l.t("레벨순", "Level", "レベル順")
-        case .caught: l.t("부화순", "Caught", "ふ化順")
+        case .alphabetical: "가나다순"
+        case .levelDescending, .levelAscending: "레벨순"
+        case .caught: "부화순"
         }
     }
 
@@ -195,7 +195,7 @@ struct TeamPicker: View {
             Label(l.teamPickerTitle, systemImage: "person.2.badge.gearshape")
                 .font(.caption.weight(.semibold))
             Spacer(minLength: 4)
-            Button(l.t("전체 해제", "Clear all", "すべて解除"), action: clearSelection)
+            Button("전체 해제", action: clearSelection)
                 .buttonStyle(.plain)
                 .font(.caption2)
                 .foregroundStyle(Color.accentColor)
@@ -224,6 +224,7 @@ struct TeamPicker: View {
                 if slot < selection.count,
                    let mon = candidates.first(where: { $0.id == selection[slot] }) {
                     PickedSlot(mon: mon, order: slot + 1,
+                               removeLabel: "팀에서 빼기",
                                onRemove: { toggle(mon.id) })
                 } else {
                     RoundedRectangle(cornerRadius: 6)
@@ -265,8 +266,8 @@ struct TeamPicker: View {
         let moves = previewMoves[mon.id]
         return VStack(alignment: .leading, spacing: 3) {
             let name = displayName(mon)
-            Text(l.t("\(name)의 기술", "\(name)'s moves", "\(name)のわざ"))
-                .font(.system(size: 9, weight: .semibold))
+            Text("\(name)의 기술")
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary).lineLimit(1)
             ForEach(0..<Self.previewRows, id: \.self) { row in
                 HStack(spacing: 6) {
@@ -282,15 +283,15 @@ struct TeamPicker: View {
     /// 먼저 보는 건 무엇을 들고 나가는지와 얼마나 세게 때리는지다.
     private func moveCell(_ move: MoveSpec?) -> some View {
         HStack(spacing: 3) {
-            Text(move.map { $0.name(store.language) } ?? "—")
-                .font(.system(size: 9, weight: .semibold))
+            Text(move.map { $0.name } ?? "—")
+                .font(.system(size: 10, weight: .semibold))
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 2)
             if let move {
                 MoveCategoryIcon(damageClass: move.damageClass, l: l)
                 Text(move.damageClass == .status ? l.moveCategoryStatus
                      : "\(l.moveCategory(move.damageClass)) · \(l.movePowerShort(move.power))")
-                    .font(.system(size: 8)).foregroundStyle(.secondary)
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
                     .lineLimit(1).fixedSize()
             }
         }
@@ -305,12 +306,12 @@ struct TeamPicker: View {
             Menu {
                 Button(l.teamFilterAllTypes) { typeFilter = nil; page = 0 }
                 ForEach(availableTypes, id: \.self) { type in
-                    Button(type.name(store.language)) { typeFilter = type; page = 0 }
+                    Button(type.name) { typeFilter = type; page = 0 }
                 }
             } label: {
                 HStack(spacing: 2) {
-                    Image(systemName: "line.3.horizontal.decrease.circle").font(.system(size: 9))
-                    Text(typeFilter?.name(store.language) ?? l.teamFilterAllTypes)
+                    Image(systemName: "line.3.horizontal.decrease.circle").font(PokedoroTheme.glyphFont(size: 9))
+                    Text(typeFilter?.name ?? l.teamFilterAllTypes)
                 }
                 .font(.caption2)
                 .foregroundStyle(typeFilter == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
@@ -344,7 +345,7 @@ struct TeamPicker: View {
             page = 0
         } label: {
             HStack(spacing: 2) {
-                Image(systemName: sortOrder.iconName).font(.system(size: 9))
+                Image(systemName: sortOrder.iconName).font(PokedoroTheme.glyphFont(size: 9))
                 Text(sortOrderLabel)
             }
             .font(.caption2)
@@ -352,7 +353,7 @@ struct TeamPicker: View {
                                                          : AnyShapeStyle(Color.accentColor))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(l.t("정렬 방식", "Sort order", "並べ替え"))
+        .accessibilityLabel("정렬 방식")
     }
 }
 
@@ -388,6 +389,8 @@ enum TeamPickerSortOrder: CaseIterable, Sendable {
 private struct PickedSlot: View {
     let mon: MonState
     let order: Int
+    /// 이 칸을 빼는 버튼이 읽힐 이름. 이 뷰는 `L` 을 들지 않으므로 부르는 자리가 건넨다.
+    let removeLabel: String
     let onRemove: () -> Void
 
     static let width: CGFloat = 38
@@ -397,7 +400,7 @@ private struct PickedSlot: View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 0) {
                 SpriteView(speciesID: mon.currentID, size: 28, shiny: mon.isShiny)
-                Text("\(order)").font(.system(size: 7, weight: .heavy)).foregroundStyle(.secondary)
+                Text("\(order)").font(PokedoroTheme.badgeFont(size: 7, weight: .heavy)).foregroundStyle(.secondary)
             }
             .frame(width: Self.width, height: Self.height)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.18)))
@@ -406,6 +409,7 @@ private struct PickedSlot: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
+                    .accessibilityLabel(removeLabel)
             }
             .buttonStyle(.plain)
             .offset(x: 3, y: -3)
@@ -432,13 +436,13 @@ struct TeamPickChip: View {
                     SpriteView(speciesID: mon.currentID, size: 44, shiny: mon.isShiny)
                     if let pickedIndex {
                         Text("\(pickedIndex + 1)")
-                            .font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                            .font(PokedoroTheme.badgeFont(size: 9, weight: .heavy)).foregroundStyle(.white)
                             .frame(width: 15, height: 15)
                             .background(Circle().fill(Color.accentColor))
                     }
                 }
-                Text(name).font(.system(size: 9, weight: .semibold)).lineLimit(1)
-                Text("Lv.\(mon.level)").font(.system(size: 8)).foregroundStyle(.secondary)
+                Text(name).font(.system(size: 10, weight: .semibold)).lineLimit(1)
+                Text("Lv.\(mon.level)").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             .frame(width: width, height: Self.height)
         }

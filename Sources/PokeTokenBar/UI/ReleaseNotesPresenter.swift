@@ -46,7 +46,7 @@ final class ReleaseNotesPresenter: NSObject, NSWindowDelegate {
             ReleaseNotesView(store: store, version: version, notes: notes,
                              close: { [weak window] in window?.close() })
                 .environment(store)
-                .environment(\.locale, store.language.displayLocale))
+                .environment(\.locale, PokemonNaming.locale))
         window.title = store.l.releaseNotesWindowTitle
         // contentViewController 를 붙이면 AppKit 이 SwiftUI 의 fitting size 로 창을 다시 잰다.
         // 그 값은 minSize 까지 쪼그라들어 본문이 서너 줄로 접힌다 — 붙인 **뒤에** 크기를 잡는다.

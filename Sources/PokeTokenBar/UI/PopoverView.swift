@@ -1,16 +1,17 @@
 import AppKit
 import SwiftUI
 
-enum PopoverTab {
-    case home, pokemon, collection, battle, challenge, shop, bag
-
-    /// 팝오버가 유지하는 높이. 탭 안에서 콘텐츠가 늘고 줄어도(기술 목록 펼침, 로딩 자리표시자,
-    /// 진화 프롬프트) 이 값은 그대로라 창이 다시 그려지지 않는다 — 펼칠 때마다 커졌다 작아지며
-    /// 떨리던 원인을 없앤다.
+/// 첫 실행 화면이 무엇을 보여 주는가.
+///
+/// 판정을 조각마다 두지 않고 한 곳에 둔다. 타이머 · 탭바 · 트레이너 바는 각자 자기 상태만 보므로
+/// "아직 게임이 시작되지 않았다" 는 그중 누구의 상태도 아니고, 그래서 아무도 안 봤다 —
+/// 스타터를 고르기 전인데 타이머가 **없는 파트너의** 보상을 약속하고 있었다.
+enum PopoverChrome {
+    /// 게임 크롬(트레이너 바 · 집중 타이머 · 탭바 · 상점 · 가방)을 그리는가.
     ///
-    /// 모든 탭이 같은 값을 쓴다. 예전엔 홈만 560 이라 탭을 옮길 때마다 창이 220pt 씩 뛰었다.
-    /// 홈은 콘텐츠가 짧아 아래가 비지만, 창이 제자리에 있는 편이 낫다.
-    var contentHeight: CGFloat { PopoverMetrics.tabHeight }
+    /// 스타터를 고르기 전에는 전부 접는다. 그 탭들은 눌러도 빈 화면이고, 남길 이유가 있는 것은
+    /// 고르는 일 하나뿐이다. 설정 · 종료는 게임 크롬이 아니라 언제나 남는다.
+    static func showsGameChrome(needsStarterSelection: Bool) -> Bool { !needsStarterSelection }
 }
 
 enum PopoverMetrics {
@@ -51,6 +52,23 @@ enum PopoverMetrics {
     @MainActor
     static func currentHeight(for tab: PopoverTab) -> CGFloat {
         height(for: tab, screenHeight: NSScreen.main?.visibleFrame.height ?? fallbackScreenHeight)
+    }
+
+    /// 스타터를 고르는 동안의 창 높이. `tabHeight` 는 도감 · 상점 · 가방이 안에 든 520pt 격자에
+    /// 맞춘 값이라, 게임 크롬을 접은 첫 화면에 그대로 쓰면 아래가 300pt 가까이 빈다.
+    ///
+    /// 값은 화면 내용에서 나왔다 — 소개 두 줄 · 이름칸 · 타입 16종(폭 332pt 에 4열이라 4행) ·
+    /// 안내 한 줄로 약 500pt 다. 남은 여유는 en · ja 에서 안내가 세 줄로 접힐 때를 위한 것이다.
+    /// 탭과 같은 화면 상한을 받는다 — 첫 화면만 예외를 두면 좁은 화면에서 클리핑(#9)이 되살아난다.
+    static let firstRunContentHeight: CGFloat = 540
+
+    static func firstRunHeight(screenHeight: CGFloat) -> CGFloat {
+        min(firstRunContentHeight, maxHeight(screenHeight: screenHeight))
+    }
+
+    @MainActor
+    static var currentFirstRunHeight: CGFloat {
+        firstRunHeight(screenHeight: NSScreen.main?.visibleFrame.height ?? fallbackScreenHeight)
     }
 }
 
@@ -232,7 +250,10 @@ struct PopoverView: View {
                 // 그려 떨리고, 화면을 넘기면 스크롤 대신 잘라낸다(#9). 창 크기는 고정하고 넘치는
                 // 부분만 탭 안에서 스크롤한다 — 타이머·탭바·푸터는 스크롤 밖이라 항상 제자리다.
                 mainContent
-                    .frame(height: PopoverMetrics.currentHeight(for: nav.tab))
+                    .frame(height: PopoverChrome.showsGameChrome(
+                        needsStarterSelection: companion.needsStarterSelection)
+                           ? PopoverMetrics.currentHeight(for: nav.tab)
+                           : PopoverMetrics.currentFirstRunHeight)
             }
         }
         .frame(width: PopoverMetrics.width)
@@ -240,7 +261,7 @@ struct PopoverView: View {
         .tint(PokedoroTheme.blue)
         .fontDesign(.rounded)
         .environment(\.spriteAntialiasing, settings.imageAntialiasing)
-        .environment(\.locale, companion.language.displayLocale)
+        .environment(\.locale, PokemonNaming.locale)
         // 신호를 읽는 **바로 그 자리에서** 끈다. 끄는 일을 아래 화면에 맡기면 그 화면이 조건부로
         // 그려지는 순간(친구 탭 관문이 그랬다) 신호가 영영 안 꺼져 열 때마다 여기로 튄다.
         // 탭만 바꾸면 위에 덮인 오버레이가 그대로 남아 신청 화면이 안 보인다 — 탭 전환과 오버레이
@@ -290,7 +311,9 @@ struct PopoverView: View {
                 }
             }
             .padding(8)
-            .pokedoroCard(tint: PokedoroTheme.blue, emphasized: true)
+            // 무채색 카드다 — 강조 예산은 집중 카드가 쓴다. 이 줄의 신호는 색 테두리가 아니라
+            // 채워진 "업데이트" 버튼이고, 그건 배너를 무채색으로 둬도 그대로 눈에 띈다.
+            .pokedoroCard()
         }
     }
 
@@ -307,20 +330,34 @@ struct PopoverView: View {
                 Text("\(l.trainerLevelLabel) Lv.\(companion.trainerLevel.level)")
                     .font(.caption.weight(.bold)).monospacedDigit()
                 if let remaining = companion.trainerLevel.pointsToNextLevel {
+                    // `p` 만 두면 무슨 단위인지 알 길이 없다 — 첫 사용자가 이 줄에서 유일하게
+                    // 못 읽는 조각이라 툴팁으로 푼다.
                     Text("NEXT \(remaining)p")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
                         .monospacedDigit().foregroundStyle(.secondary)
+                        .help(l.trainerNextLevelHint(remaining))
+                        .accessibilityLabel(l.trainerNextLevelHint(remaining))
                 }
                 Spacer()
-                Text("✦ " + GameNumberFormatter.compact(companion.availableTokens))
+                // 보상 줄이 쓰는 것과 **같은 기호**여야 한다. 잔액은 `✦`, 보상은 `⭐` 이던 동안
+                // 화면 위아래의 두 숫자가 같은 재화라는 걸 이어 볼 방법이 없었다.
+                Text("⭐ " + GameNumberFormatter.compact(companion.availableTokens))
                     .font(.caption.weight(.bold)).foregroundStyle(.orange).monospacedDigit()
+                    .help(l.starPieceBalanceHint)
+                    .accessibilityLabel("\(l.starPieceBalanceHint) \(companion.availableTokens)")
+                // 꾸미기는 **내 트레이너**를 갈아입히는 화면이라 트레이너가 있는 줄이 제자리다.
+                // 예전엔 친구 탭의 대표 포켓몬 카드 안에 있었다 — 남을 만나러 가는 화면 안에
+                // 파묻혀 있어서, 내 옷장을 찾으려면 친구 탭을 먼저 열어야 했다.
+                Button(l.outfitWardrobe) { nav.showOutfit = true }
+                    .buttonStyle(.borderless).controlSize(.small)
+                    .font(.caption.weight(.semibold))
             }
             ProgressView(value: companion.trainerLevel.progress)
                 .tint(PokedoroTheme.blue)
                 .scaleEffect(x: 1, y: 1.35)
         }
         .padding(.horizontal, 11).padding(.vertical, 8)
-        .pokedoroCard(tint: PokedoroTheme.yellow)
+        .pokedoroCard()
     }
 
     /// 정산 **밖**의 지급을 알리는 줄(#200). 지갑을 바꾼 값은 창 안에 보이는 표면을 하나 가져야
@@ -333,13 +370,13 @@ struct PopoverView: View {
     @ViewBuilder private var payoutNotice: some View {
         if let payout = payoutBanner {
             HStack(spacing: 6) {
-                Text("✦").font(.caption.weight(.bold)).foregroundStyle(.orange)
+                Text("⭐").font(.caption.weight(.bold)).foregroundStyle(.orange)
                 Text(l.payoutSettled(payout))
                     .font(.caption.weight(.semibold)).foregroundStyle(.green)
                 Spacer()
             }
             .padding(.horizontal, 11).padding(.vertical, 6)
-            .pokedoroCard(tint: PokedoroTheme.yellow)
+            .pokedoroCard()
             .transition(.opacity)
         }
     }
@@ -359,12 +396,16 @@ struct PopoverView: View {
 
     private var mainContent: some View {
         @Bindable var nav = nav
+        let showsGameChrome = PopoverChrome.showsGameChrome(
+            needsStarterSelection: companion.needsStarterSelection)
         return VStack(alignment: .leading, spacing: 12) {
             updateBanner
-            trainerBar
-            payoutNotice
-            FocusTimerView()
-            PokedoroTabBar(selection: $nav.tab, l: l)
+            if showsGameChrome {
+                trainerBar
+                payoutNotice
+                FocusTimerView()
+                PokedoroTabBar(selection: $nav.tab, l: l)
+            }
 
             // 탭 콘텐츠만 스크롤한다. 짧은 탭은 위로 붙고 남는 자리는 빈 공간으로 둔다 —
             // 창 높이가 고정이라 탭을 바꾸거나 기술 목록을 펼쳐도 팝오버는 그대로다.
@@ -379,7 +420,7 @@ struct PopoverView: View {
                     case .shop: ShopView(store: companion, nav: nav)
                     case .home:
                         // 스타터를 아직 안 고른 첫 화면에는 띄우지 않는다 — 첫 한 시간은 대상이 아니다.
-                        if !companion.needsStarterSelection { MissionBoardView(store: companion) }
+                        if showsGameChrome { MissionBoardView(store: companion) }
                         CompanionHeader(store: companion)
                         if settings.memoryHomeEnabled {
                             MemoryHomeQuickCard(store: companion) { memoryHomePresenter.open() }
@@ -408,22 +449,43 @@ struct PopoverView: View {
         }
     }
 
+    /// 상점 · 가방은 탭이면서 자리가 footer 다. 탭바가 안 그리므로 **여기가 유일한 선택 표시**다 —
+    /// 활성 표시가 없으면 상점에 들어간 순간 탭바 다섯 개가 전부 비선택이 되어 화면 어디에도
+    /// "지금 여기" 가 남지 않는다. 색만으로 표시하지 않고 알약 배경을 함께 깔아, 색을 구분 못 해도
+    /// 현재 위치가 보이게 한다.
+    private func footerTabButton(_ tab: PopoverTab, title: String, icon: String) -> some View {
+        let isCurrent = nav.tab == tab
+        return Button { nav.tab = tab } label: {
+            Label(title, systemImage: icon)
+                .fontWeight(isCurrent ? .bold : .regular)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(isCurrent
+                            ? AnyShapeStyle(PokedoroTheme.blue.opacity(0.18))
+                            : AnyShapeStyle(Color.clear),
+                            in: Capsule())
+        }
+        .buttonStyle(.borderless)
+        .help(title)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
+    }
+
     private var footer: some View {
         HStack(spacing: 12) {
             if nav.tab == .home {
                 Text("\(l.totalPlaytime) \(l.duration(companion.activeSecondsTotal))")
                     .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
             }
-            Button { nav.tab = .shop } label: { Label(l.shop, systemImage: "cart") }
-                .buttonStyle(.borderless).help(l.shop)
-            // 가방은 포켓몬 탭 안에 있었다 — 어느 탭에서 쓰든 상관없는 소지품이라 상점 옆이 제자리다.
-            Button { nav.tab = .bag } label: { Label(l.bag, systemImage: "backpack.fill") }
-                .buttonStyle(.borderless).help(l.bag)
+            if PopoverChrome.showsGameChrome(needsStarterSelection: companion.needsStarterSelection) {
+                footerTabButton(.shop, title: l.shop, icon: "cart")
+                // 가방은 포켓몬 탭 안에 있었다 — 어느 탭에서 쓰든 상관없는 소지품이라 상점 옆이 제자리다.
+                footerTabButton(.bag, title: l.bag, icon: "backpack.fill")
+            }
             Spacer()
             Button { nav.showSettings = true } label: { Image(systemName: "gearshape") }
-                .buttonStyle(.borderless).help(l.settings)
+                .buttonStyle(.borderless).help(l.settings).accessibilityLabel(l.settings)
             Button { NSApplication.shared.terminate(nil) } label: { Image(systemName: "power") }
-                .buttonStyle(.borderless).help(l.quit)
+                .buttonStyle(.borderless).help(l.quit).accessibilityLabel(l.quit)
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.94), in: Capsule())

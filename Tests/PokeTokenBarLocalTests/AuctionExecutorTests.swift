@@ -62,13 +62,9 @@ struct AuctionExecutorTests {
 
     private func makeDirectory() -> URL { storeFixtureDirectory("auction-exec") }
 
-    /// 언어를 못 박는다 — 새 세이브의 언어는 호스트 로케일을 따르므로, 영어 기계에서만 문구
-    /// 검사가 무너진다(#107 부류).
     private func makeStore(in directory: URL) -> CompanionStore {
-        let store = CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
-                                   fileURL: directory.appendingPathComponent("state.json"))
-        store.setLanguage(.ko)
-        return store
+        CompanionStore(clock: { Date(timeIntervalSince1970: 1_700_000_000) },
+                       fileURL: directory.appendingPathComponent("state.json"))
     }
 
     private func execute(_ action: PokedoroRequest.Action, on store: CompanionStore,

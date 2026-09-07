@@ -43,8 +43,8 @@ struct Gym: Identifiable, Sendable, Equatable {
         self.firstClearReward = firstClearReward
     }
 
-    func leaderName(_ language: AppLanguage) -> String {
-        language.resolveName(names) ?? names["en"] ?? names.values.first ?? "?"
+    var leaderName: String {
+        PokemonNaming.name(names) ?? names["en"] ?? names.values.first ?? "?"
     }
 }
 

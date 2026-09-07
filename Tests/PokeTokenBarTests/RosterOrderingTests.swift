@@ -86,7 +86,7 @@ final class RosterOrderingTests: XCTestCase {
     /// 뷰가 조회해 넘긴 이름(`names`)이 있으면 그게 우선이다.
     func testResolvedNamesOverrideTheNumberFallback() {
         let box = [mon(25), mon(4)]
-        XCTAssertEqual(RosterOrdering.displayName(box[0], language: .en), "#25")
+        XCTAssertEqual(RosterOrdering.displayName(box[0]), "#25")
         let arranged = RosterOrdering.arrange(box, sort: .name, names: [25: "Pikachu", 4: "Charmander"])
         XCTAssertEqual(arranged.map(\.currentID), [4, 25], "Charmander < Pikachu")
     }
@@ -144,8 +144,8 @@ final class RosterOrderingTests: XCTestCase {
         secondBulbasaur.nickname = "나리"
         let box = [mon(25, name: "피카츄"), mon(1, level: 3, name: "이상해씨"),
                    mon(4, name: "파이리"), secondBulbasaur]
-        let arranged = RosterOrdering.alphabetizedForSelection(box, language: .ko)
-        XCTAssertEqual(arranged.map { $0.nickname ?? RosterOrdering.displayName($0, language: .ko) },
+        let arranged = RosterOrdering.alphabetizedForSelection(box)
+        XCTAssertEqual(arranged.map { $0.nickname ?? RosterOrdering.displayName($0) },
                        ["나리", "이상해씨", "파이리", "피카츄"])
     }
 

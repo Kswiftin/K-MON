@@ -99,12 +99,8 @@ final class HomeStatSourceTests: XCTestCase {
         XCTAssertNil(companion.currentStats)
     }
 
-    /// 문구는 세 언어 모두 있어야 하고, 기준 레벨을 밝혀야 한다 — 안 밝히면 종족값으로 읽힌다.
-    func testTheHeaderNamesTheLevelInAllThreeLanguages() {
-        for language in AppLanguage.allCases {
-            XCTAssertTrue(L(language).statsAtLevel(37).contains("37"), "\(language) 기준 레벨 누락")
-        }
-        XCTAssertNotEqual(L(.ko).statsAtLevel(37), L(.en).statsAtLevel(37))
-        XCTAssertNotEqual(L(.ko).statsAtLevel(37), L(.ja).statsAtLevel(37))
+    /// 문구가 기준 레벨을 밝혀야 한다 — 안 밝히면 종족값으로 읽힌다.
+    func testTheHeaderNamesTheLevel() {
+        XCTAssertTrue(L().statsAtLevel(37).contains("37"), "기준 레벨 누락")
     }
 }

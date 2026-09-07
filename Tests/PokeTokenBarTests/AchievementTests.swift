@@ -78,14 +78,12 @@ final class AchievementLadderTests: XCTestCase {
         XCTAssertEqual(seen, Set(OutfitItem.allCases.filter { $0.shopPrice == nil }))
     }
 
-    /// 업적 이름은 세 언어 모두 채워져야 한다 — 한 언어만 비면 그 사용자에겐 빈 줄이 보인다.
+    /// 업적 이름은 채워져야 한다 — 비면 빈 줄이 보인다.
     /// 트랙 추가는 `achievementName` 의 exhaustive switch 가 컴파일에서 막으니, 여기서 잡는 건
-    /// `t()` 인자 하나를 빈 문자열로 두고 넘어가는 경우다.
-    func testEveryTrackIsNamedInAllThreeLanguages() {
+    /// 빈 문자열로 두고 넘어가는 경우다.
+    func testEveryTrackIsNamed() {
         for track in AchievementTrack.allCases {
-            for lang in [AppLanguage.ko, .en, .ja] {
-                XCTAssertFalse(L(lang).achievementName(track).isEmpty, "\(track) / \(lang)")
-            }
+            XCTAssertFalse(L().achievementName(track).isEmpty, "\(track)")
         }
     }
 

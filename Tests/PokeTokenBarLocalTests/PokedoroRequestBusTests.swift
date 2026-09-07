@@ -235,7 +235,6 @@ struct PokedoroRequestBusTests {
     /// 사람이 부르는 이름도 받는다 — `shop` 이 찍는 표시 이름을 그대로 쳤을 때 통해야 한다.
     @Test func testAGoodCanBeNamedTheWayTheShopPrintsIt() {
         #expect(ShopCatalog.named("이상한 사탕") == .item(.rareCandy))
-        #expect(ShopCatalog.named("Rare Candy") == .item(.rareCandy))
     }
 
     // MARK: 동작 어휘 — 인자 칸 하나
@@ -274,7 +273,6 @@ struct PokedoroRequestBusTests {
     /// 사람과 `use 이상한 사탕` 을 치는 사람이 같은 일을 해야 한다.
     @Test func testAnItemCanBeNamedTheWayTheScreenPrintsIt() {
         #expect(PokedoroRequest.Action(name: "use", argument: "이상한 사탕") == .use(item: .rareCandy))
-        #expect(PokedoroRequest.Action(name: "use", argument: "Rare Candy") == .use(item: .rareCandy))
     }
 
     /// 개체 번호는 `party` 가 찍는 값(1부터)이다. 0 이나 음수는 그 목록에 없으므로 요청이 아니다 —

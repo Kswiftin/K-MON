@@ -5,7 +5,7 @@ import XCTest
 /// (1) 좁은 조건이 먼저 이긴다 (2) 어떤 입력에서도 빈 문장이 나오지 않는다.
 @MainActor
 final class MemoryHomeRoomLifeTests: XCTestCase {
-    private let l = L(.ko)
+    private let l = L()
 
     // MARK: - 우선순위
 
@@ -122,20 +122,17 @@ final class MemoryHomeRoomLifeTests: XCTestCase {
         XCTAssertTrue(line.contains("1"), "나머지 1마리가 문장에 없다: \(line)")
     }
 
-    /// 룸메이트 문구도 세 시간대·세 언어가 모두 채워져 있어야 한다.
-    func testRoommateLineIsFilledInEveryTimeAndLanguage() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let l = L(language)
-            let lines = MemoryHomeTimeOfDay.allCases.map {
-                MemoryHomeRoomLife.line(speciesID: 1, decor: [], roommates: ["피카츄"], mood: nil,
-                                        season: .spring, timeOfDay: $0, companion: "이상해씨", l)
-            }
-            XCTAssertEqual(Set(lines).count, MemoryHomeTimeOfDay.allCases.count,
-                           "\(language) 에서 시간대별 룸메이트 문구가 겹쳤다")
-            for line in lines {
-                XCTAssertFalse(line.trimmingCharacters(in: .whitespaces).isEmpty,
-                               "\(language) 룸메이트 문구가 비었다")
-            }
+    /// 룸메이트 문구도 세 시간대가 모두 채워져 있어야 한다.
+    func testRoommateLineIsFilledInEveryTime() {
+        let lines = MemoryHomeTimeOfDay.allCases.map {
+            MemoryHomeRoomLife.line(speciesID: 1, decor: [], roommates: ["피카츄"], mood: nil,
+                                    season: .spring, timeOfDay: $0, companion: "이상해씨", l)
+        }
+        XCTAssertEqual(Set(lines).count, MemoryHomeTimeOfDay.allCases.count,
+                       "시간대별 룸메이트 문구가 겹쳤다")
+        for line in lines {
+            XCTAssertFalse(line.trimmingCharacters(in: .whitespaces).isEmpty,
+                           "룸메이트 문구가 비었다")
         }
     }
 
@@ -165,17 +162,13 @@ final class MemoryHomeRoomLifeTests: XCTestCase {
                       "짝이 하나도 없는 가구: \(missing.map(\.rawValue).sorted().joined(separator: ", "))")
     }
 
-    /// 세 언어 모두 채워져 있어야 한다. `l.t` 는 빈 문자열도 그대로 통과시키므로 컴파일러가
-    /// 못 잡는 부류다.
-    func testEveryPairIsTranslatedInThreeLanguages() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let l = L(language)
-            for key in MemoryHomeRoomLife.pairedSpecies {
-                let line = MemoryHomeRoomLife.line(speciesID: key.speciesID, decor: [key.item],
-                                                   mood: nil, season: .spring, companion: "동행", l)
-                XCTAssertFalse(line.trimmingCharacters(in: .whitespaces).isEmpty,
-                               "\(language) 에서 (\(key.speciesID), \(key.item.rawValue)) 문구가 비었다")
-            }
+    /// 모든 짝 문구가 채워져 있어야 한다. 빈 문자열도 컴파일러가 못 잡는 부류다.
+    func testEveryPairHasANonEmptyLine() {
+        for key in MemoryHomeRoomLife.pairedSpecies {
+            let line = MemoryHomeRoomLife.line(speciesID: key.speciesID, decor: [key.item],
+                                               mood: nil, season: .spring, companion: "동행", l)
+            XCTAssertFalse(line.trimmingCharacters(in: .whitespaces).isEmpty,
+                           "(\(key.speciesID), \(key.item.rawValue)) 문구가 비었다")
         }
     }
 

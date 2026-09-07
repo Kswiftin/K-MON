@@ -205,8 +205,7 @@ final class BattleTests: XCTestCase {
         XCTAssertEqual(spec.type, .normal)
         XCTAssertEqual(spec.damageClass, .physical)
         XCTAssertEqual(spec.turnPriority, 0)
-        XCTAssertEqual(spec.name(.ko), "베어가르기")
-        XCTAssertEqual(spec.name(.en), "Slash")
+        XCTAssertEqual(spec.name, "베어가르기")
     }
 
     /// `meta` 가 없는 응답(옛 캐시)은 보통 급소율로 읽는다 — `nil` 이 곧 0단계다.
@@ -238,7 +237,7 @@ final class BattleTests: XCTestCase {
         """.utf8)
         let plain = try XCTUnwrap(MoveSpec.from(try JSONDecoder().decode(MoveDTO.self, from: noNames),
                                                fallbackName: "tackle", languages: ["ko", "en"]))
-        XCTAssertEqual(plain.name(.en), "tackle")
+        XCTAssertEqual(plain.name, "tackle")
     }
 
     // MARK: 턴 순서 — 우선도 → 스피드 → 무작위

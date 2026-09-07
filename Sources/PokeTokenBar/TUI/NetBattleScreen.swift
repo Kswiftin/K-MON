@@ -86,8 +86,8 @@ enum NetBattleScreen {
         return text.isEmpty ? [] : ["\(text) \(noun)"]
     }
 
-    static func choices(_ state: BattleTerminalState, language: AppLanguage) -> [Choice] {
-        numbers(state).map { Choice(number: $0, label: label($0, in: state, language: language)) }
+    static func choices(_ state: BattleTerminalState) -> [Choice] {
+        numbers(state).map { Choice(number: $0, label: label($0, in: state)) }
     }
 
     /// 숫자 하나 → 앱에 보낼 요청. **목록에 없는 번호는 요청이 되지 않는다**(제안 ⊆ 실행 가능).
@@ -160,7 +160,7 @@ enum NetBattleScreen {
 
     // MARK: 줄
 
-    static func lines(_ state: BattleTerminalState, language: AppLanguage,
+    static func lines(_ state: BattleTerminalState,
                       width: Int) -> [String] {
         let inner = max(1, width)
         var lines = [TUIRender.row(left: title(state), right: clock(state), width: inner)]
@@ -177,12 +177,12 @@ enum NetBattleScreen {
                 "\(index + 1)\(side.isAlive ? "" : "✗")"
             }.joined(separator: " "), to: inner))
         }
-        let log = self.log(battle, language: language).suffix(logTail)
+        let log = self.log(battle).suffix(logTail)
         if !log.isEmpty {
             lines.append(TUIRender.rule(width: inner))
             lines += log.map { TUIText.truncate($0, to: inner) }
         }
-        let offered = choices(state, language: language)
+        let offered = choices(state)
         if !offered.isEmpty {
             lines.append(TUIRender.rule(width: inner))
             lines += offered.map { TUIText.truncate("\($0.number) \($0.label)", to: inner) }
@@ -234,23 +234,22 @@ enum NetBattleScreen {
     /// 이벤트 → 사람이 읽는 줄. **턴이 벌어졌을 때의 문맥으로** 이름·기술을 해석하는 자리는
     /// `BattleLogSource.netBattle` 하나다 — 활성 개체가 바뀐 뒤의 이름으로 옛 줄을 그리면
     /// 지나간 턴이 엉뚱한 포켓몬 이야기가 된다.
-    static func log(_ battle: NetBattleState, language: AppLanguage) -> [String] {
-        BattleLogSource.netBattle(battle, mine: battle.iAmA ? .a : .b, l: L(language))
+    static func log(_ battle: NetBattleState) -> [String] {
+        BattleLogSource.netBattle(battle, mine: battle.iAmA ? .a : .b, l: L())
             .map(\.text)
     }
 
     // MARK: 라벨
 
-    private static func label(_ number: Int, in state: BattleTerminalState,
-                              language: AppLanguage) -> String {
+    private static func label(_ number: Int, in state: BattleTerminalState) -> String {
         guard let battle = state.battle else { return "" }
         switch kind(state) {
         case .move:
-            guard !battle.mustStruggle else { return MoveSpec.struggle().name(language) }
+            guard !battle.mustStruggle else { return MoveSpec.struggle().name }
             let index = number - 1
             guard battle.me.moves.indices.contains(index) else { return "" }
             let remaining = battle.me.pp.indices.contains(index) ? battle.me.pp[index] : 0
-            return "\(battle.me.moves[index].name(language))  \(remaining)/\(battle.me.moves[index].pp)"
+            return "\(battle.me.moves[index].name)  \(remaining)/\(battle.me.moves[index].pp)"
         case .sendOut:
             let index = number - 1
             guard battle.myTeam.indices.contains(index) else { return "" }

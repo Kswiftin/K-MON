@@ -264,7 +264,7 @@ enum PokedoroCommandError: Equatable, Error {
     case invalidSlotNumber(String)
     /// 베팅 금액이 아니다. 경매 제안액과 갈라 말한다 — 잔액을 볼 화면이 다르다.
     case invalidBetAmount(String)
-    /// 별의모래 금액이 아니다. 번호와 나눠 말한다 — 번호는 목록에서 얻고 금액은 잔액에서
+    /// 별의조각 금액이 아니다. 번호와 나눠 말한다 — 번호는 목록에서 얻고 금액은 잔액에서
     /// 정하므로, 사용자가 다음에 볼 것이 다르다.
     case invalidStardust(String)
     /// 목록 밖 기분 이름.
@@ -284,7 +284,7 @@ enum PokedoroCommandError: Equatable, Error {
             "`\(name)` 은 앱 화면에서 한다. 터미널이 다루는 것은 조회와 집중 세션이다."
         case .invalidMinutes(let raw):
             "집중 길이가 숫자가 아니다: \(raw) — "
-                + PokemonChatTool.focusMinutes.map(String.init).joined(separator: "·")
+                + FocusChainRules.focusMinutes.map(String.init).joined(separator: "·")
                 + " 중 하나를 쓴다."
         case .invalidMonNumber(let raw):
             "개체 번호가 아니다: \(raw) — `party` 가 찍는 번호(1부터)를 쓴다."
@@ -318,7 +318,7 @@ enum PokedoroCommandError: Equatable, Error {
             "베팅 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
                 + "(`pokedoro room` 이 판돈과 내가 건 금액을 찍는다)."
         case .invalidStardust(let raw):
-            "별의모래 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
+            "별의조각 금액이 아니다: \(raw) — 1 이상의 숫자를 쓴다"
                 + "(`pokedoro auction` 이 미약속 잔액을 찍는다)."
         case .unknownMood(let raw):
             "그런 기분이 없다: \(raw) — "
@@ -727,7 +727,7 @@ enum PokedoroCommandParser {
     }
 
     /// 자리가 정해진 번호 **둘**. 첫 자리는 늘 시장 번호이고 둘째 자리의 뜻은 부르는 쪽이
-    /// 준다(개체 번호 / 별의모래 금액) — 한 오류로 뭉개면 사용자가 다음에 볼 곳이 틀린다.
+    /// 준다(개체 번호 / 별의조각 금액) — 한 오류로 뭉개면 사용자가 다음에 볼 곳이 틀린다.
     ///
     /// 하나만 적혔으면 "빠졌다" 다. 첫 값만 받고 둘째를 기본값으로 접으면 사용자가 고르지 않은
     /// 개체를 내놓는다(웨이브의 대상 생략과 다른 자리다 — 여기서는 기본값이 있을 수 없다).
@@ -826,7 +826,7 @@ enum PokedoroCommandParser {
     /// 검사는 한 곳이고 **오류는 부르는 쪽이 준다** — 길이와 번호는 다음에 할 일이 다르므로
     /// 문구도 달라야 하지만, 자릿수 검사가 두 벌이 되면 한쪽만 관대해진다.
     ///
-    /// 범위는 여기서 안 본다 — 집중 길이를 접는 표는 `PokemonChatTool.nearestFocusLength` 하나이고,
+    /// 범위는 여기서 안 본다 — 집중 길이를 접는 표는 `FocusChainRules.nearestFocusLength` 하나이고,
     /// 그 표는 요청 파일을 손으로 고친 경우까지 막아야 해서 실행기 쪽에 있어야 한다. 개체 번호의
     /// 상한도 로스터를 아는 쪽(`PokedoroCLI`)이 본다.
     private static func number(in arguments: [String],
@@ -838,7 +838,7 @@ enum PokedoroCommandParser {
         return value
     }
 
-    private static let lengths = PokemonChatTool.focusMinutes.map(String.init).joined(separator: "|")
+    private static let lengths = FocusChainRules.focusMinutes.map(String.init).joined(separator: "|")
 
     /// 왼쪽 칸을 **손으로 맞추지 않는다** — `start [25|50|90]` 은 길이 목록에서 나오므로 목록이
     /// 바뀌면 손으로 맞춘 공백은 그 자리에서 어긋난다(실제로 2칸 어긋난 채로 나갔다).
@@ -856,7 +856,7 @@ enum PokedoroCommandParser {
         ("challenge", "도전 — 던전 실적·배지·미션·시즌"),
         ("goals", "도감 목표·업적"),
         ("watch", "전체 화면 실시간 보기"),
-        ("start [\(lengths)]", "집중 세션 시작 (생략하면 \(PokemonChatTool.focusMinutes[0])분)"),
+        ("start [\(lengths)]", "집중 세션 시작 (생략하면 \(FocusChainRules.focusMinutes[0])분)"),
         ("claim", "끝난 모험의 보상 받기"),
         ("stop", "집중 세션 끝내기"),
         ("use <아이템>", "아이템 하나 쓰기 (bag 이 찍는 이름)"),
@@ -900,7 +900,7 @@ enum PokedoroCommandParser {
         ("auction post <번호>", "경매에 올리기 (party 번호)"),
         ("auction unpost <번호>", "게시 내리기 (party 번호)"),
         ("auction apply <시장> <번호> --yes", "포켓몬으로 제안 — 되돌릴 수 없다"),
-        ("auction bid <시장> <금액> --yes", "별의모래로 제안 — 되돌릴 수 없다"),
+        ("auction bid <시장> <금액> --yes", "별의조각으로 제안 — 되돌릴 수 없다"),
         ("auction accept <번호> --yes", "받은 제안 수락 — 되돌릴 수 없다"),
         ("auction reject <번호>", "받은 제안 거절"),
         ("auction cancel <번호>", "내가 건 제안 거둬들이기"),

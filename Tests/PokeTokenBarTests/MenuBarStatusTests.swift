@@ -31,15 +31,13 @@ final class MenuBarStatusTests: XCTestCase {
         XCTAssertEqual(status.compactTitle, "B")
     }
 
-    func testBattleDescriptionsAreLocalizedForEveryLanguage() {
+    func testBattleDescriptionsAreLocalized() {
         let states: [MenuBarStatus] = [.battleChallengeSent(peer: "Misty"),
                                        .battleChallengeReceived(peer: "Kasumi"),
                                        .battling(peer: "Brock", isMyTurn: true),
                                        .battling(peer: "Takeshi", isMyTurn: false)]
-        for language in AppLanguage.allCases {
-            for status in states {
-                XCTAssertFalse(status.fullDescription(L(language)).isEmpty)
-            }
+        for status in states {
+            XCTAssertFalse(status.fullDescription(L()).isEmpty)
         }
     }
 
@@ -107,14 +105,12 @@ final class MenuBarStatusTests: XCTestCase {
         XCTAssertLessThanOrEqual(widest, 56)
     }
 
-    /// fullDescription(_:) 도 세 언어 모두 모든 상태를 렌더할 수 있어야 한다(툴팁 문구 누락 방지).
-    func testFullDescriptionRendersEveryStateInEveryLanguage() {
+    /// fullDescription(_:) 은 모든 상태를 렌더할 수 있어야 한다(툴팁 문구 누락 방지).
+    func testFullDescriptionRendersEveryState() {
         let states: [MenuBarStatus] = [.focus(prefix: "FOCUS", clock: "24:59"),
                                        .adventuring(remaining: "12:34"), .adventureClaimable, .resting]
-        for language in AppLanguage.allCases {
-            for status in states {
-                XCTAssertFalse(status.fullDescription(L(language)).isEmpty)
-            }
+        for status in states {
+            XCTAssertFalse(status.fullDescription(L()).isEmpty)
         }
     }
 }

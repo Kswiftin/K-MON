@@ -287,14 +287,12 @@ final class SeasonBoardTests: XCTestCase {
 
     // MARK: 문구
 
-    /// 목표 이름은 세 언어 모두에서 채워져야 한다 — 한 언어만 비면 그 언어 사용자에겐 빈 줄이 보인다.
-    func testEveryChallengeIsNamedInAllThreeLanguages() {
+    /// 목표 이름은 채워져야 한다 — 비면 빈 줄이 보인다.
+    func testEveryChallengeIsNamed() {
         for set in SeasonBoard.rotation {
             for challenge in set {
-                for lang in [AppLanguage.ko, .en, .ja] {
-                    XCTAssertFalse(L(lang).goalName(challenge.event, challenge.target).isEmpty,
-                                   "\(challenge.id) / \(lang)")
-                }
+                XCTAssertFalse(L().goalName(challenge.event, challenge.target).isEmpty,
+                               "\(challenge.id)")
             }
         }
     }
@@ -302,24 +300,10 @@ final class SeasonBoardTests: XCTestCase {
     /// 미션 이름은 같은 함수에 위임한다 — 두 곳에 같은 문구를 두면 한쪽만 고쳐진다.
     func testMissionNamesDelegateToTheSharedGoalName() {
         for mission in MissionBoard.catalog {
-            XCTAssertEqual(L(.ko).missionName(mission), L(.ko).goalName(mission.event, mission.target))
+            XCTAssertEqual(L().missionName(mission), L().goalName(mission.event, mission.target))
         }
     }
 
-    /// 시즌 졸업 목표는 2~5 라 영어 단수 문구가 그대로면 "Graduate 3 partner" 가 된다.
-    func testEnglishGraduationCopyMatchesTheTargetCount() {
-        XCTAssertTrue(L(.en).goalName(.graduations, 1).hasSuffix("partner"))
-        XCTAssertTrue(L(.en).goalName(.graduations, 3).hasSuffix("partners"))
-    }
-
-    /// 복수형은 **세 이벤트 전부**에 걸려야 한다 — 졸업만 고쳐 두면 목표값 조절로 1 이 되는 순간
-    /// "Claim 1 adventures"·"Focus 1 minutes" 가 나온다(같은 부류를 한 케이스만 고친 자리).
-    func testEnglishGoalCopyIsSingularForEveryEventAtOne() {
-        XCTAssertTrue(L(.en).goalName(.adventures, 1).hasSuffix("adventure"), L(.en).goalName(.adventures, 1))
-        XCTAssertTrue(L(.en).goalName(.focusMinutes, 1).hasSuffix("minute"), L(.en).goalName(.focusMinutes, 1))
-        XCTAssertTrue(L(.en).goalName(.adventures, 2).hasSuffix("adventures"))
-        XCTAssertTrue(L(.en).goalName(.focusMinutes, 60).hasSuffix("minutes"))
-    }
 }
 
 // MARK: 적립 경로 (스토어)

@@ -90,6 +90,9 @@ extension EnvironmentValues {
 
 struct SpriteView: View {
     @Environment(\.spriteAntialiasing) private var antialiasing
+    /// 상시 반복 애니메이션은 시스템의 "동작 줄이기" 를 따라야 한다. 이 둥실거림은 끝이 없고
+    /// 화면에 늘 떠 있어, 전정기관이 예민한 사용자에게는 계속 흔들리는 화면이 된다.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let speciesID: Int?
     var size: CGFloat = 84
     var bob: Bool = false
@@ -244,7 +247,7 @@ struct SpriteView: View {
             }
         }
         .onAppear {
-            guard bob else { return }
+            guard bob, !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { up = true }
         }
     }
@@ -259,6 +262,10 @@ struct SpriteView: View {
 struct EvoLineView: View {
     let nodes: [EvoLineItem]
     let mysteryLabel: String
+    /// 넘김 셰브론이 화면 판독기에 읽힐 이름. 이 뷰는 `L` 을 들지 않고 필요한 문구만 받는다
+    /// (`mysteryLabel` 과 같은 방식) — 도감 카드와 파트너 카드가 둘 다 쓴다.
+    let pageBackLabel: String
+    let pageForwardLabel: String
     var thumb: CGFloat = 40
     var shiny: Bool = false     // 개체가 shiny 면 라인 전체를 shiny 스프라이트로
     var names: [Int: String]? = nil   // 제공되면 각 스프라이트 밑에 작은 이름 라벨(도감 단계별 이름)
@@ -383,7 +390,8 @@ struct EvoLineView: View {
                 }
             } label: {
                 Image(systemName: forward ? "chevron.right" : "chevron.left")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(PokedoroTheme.glyphFont(size: 9, weight: .bold))
+                    .accessibilityLabel(forward ? pageForwardLabel : pageBackLabel)
                     .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
                     .background(.regularMaterial, in: Circle())
@@ -444,8 +452,8 @@ struct EvoLineView: View {
                         }
                     if let names, case .species(let id) = node.content {
                         Text(names[id] ?? "…")
-                            .font(.system(size: 8)).foregroundStyle(.secondary)
-                            .lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: thumb + Self.nameSlack)
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .lineLimit(1).minimumScaleFactor(0.9).frame(maxWidth: thumb + Self.nameSlack)
                     }
                 }
                 .frame(width: thumb + (names == nil ? 0 : Self.nameSlack))
@@ -457,6 +465,9 @@ struct EvoLineView: View {
 
 /// 팝오버 상단 — 현재 포켓몬 + 진화 진행 + 부화/진화 연출.
 struct CompanionHeader: View {
+    /// 알 흔들림도 끝이 없는 반복이라 "동작 줄이기" 를 따른다. 끄더라도 부화 임박은 계속
+    /// 보인다 — 흔들리지 않는 대신 기울어진 채로 멈춘다(`eggImminent` 가 각도를 유지한다).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let store: CompanionStore
     // 연출 상태 — 부화/진화 순간 흰 플래시 + 스프링 스케일(본가 진화 신 오마주)
     @State private var flashOpacity: Double = 0
@@ -523,9 +534,7 @@ struct CompanionHeader: View {
             // 저장이 막히면(디스크 가득·권한) 진행이 조용히 사라진다. 홈은 어느 화면에서 돌아와도
             // 지나는 자리라 여기에 띄운다.
             if store.saveFailed {
-                Label(store.l.t("진행 상황을 저장하지 못했습니다. 디스크 공간과 권한을 확인해 주세요.",
-                                "Could not save your progress. Check disk space and permissions.",
-                                "進行状況を保存できませんでした。ディスク容量と権限を確認してください。"),
+                Label("진행 상황을 저장하지 못했습니다. 디스크 공간과 권한을 확인해 주세요.",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.red)
                     .padding(6)
@@ -599,6 +608,7 @@ struct CompanionHeader: View {
                                 .onSubmit { commitNickname() }
                             Button(action: commitNickname) { Image(systemName: "checkmark") }
                                 .buttonStyle(.borderless).controlSize(.small)
+                                .accessibilityLabel("이름 저장")
                         } else {
                             Text(store.displayName).font(.callout.weight(.semibold))
                             if store.currentIsShiny { Text("✨").font(.system(size: 11)) }
@@ -614,22 +624,26 @@ struct CompanionHeader: View {
                                     editingName = true
                                 } label: { Image(systemName: "pencil").font(.system(size: 10)) }
                                 .buttonStyle(.borderless).controlSize(.mini)
+                                .accessibilityLabel("이름 바꾸기")
                                 .foregroundStyle(.secondary)
                             }
                         }
                         if let r = store.rarity, !editingName {
-                            Text(store.l.rarityLabel(r).uppercased()).font(.system(size: 8, weight: .bold))
+                            Text(store.l.rarityLabel(r).uppercased()).font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(rarityColor(r)).foregroundStyle(.white)
                                 .clipShape(Capsule())
                         }
                         if store.hasActive, !editingName {
+                            // 글자를 함께 둔다 — 아이콘만 있는 동안 대화 화면은 앱에서 이름이
+                            // 불리는 자리가 없었다(발견 가능성). 이름을 주는 자리는 그 기능을
+                            // 소유한 화면이고, 파트너와의 대화는 파트너 카드의 것이다.
                             Button { if let id = store.activeMonID { chatPresenter.open(companionID: id) } } label: {
-                                Image(systemName: "bubble.left.and.bubble.right")
+                                Label("대화", systemImage: "bubble.left.and.bubble.right")
                                     .font(.system(size: 11, weight: .semibold))
                             }
                             .buttonStyle(.borderless).controlSize(.mini)
-                            .accessibilityLabel(store.l.t("포켓몬과 대화", "Chat with Pokémon", "ポケモンと話す"))
+                            .accessibilityLabel("포켓몬과 대화")
                         }
                         // 쓸 수 있을 때만 나온다 — 재고가 0 이거나 알 상태면 자리조차 잡지 않는다.
                         // `canUseRareCandy` 는 가방이 보는 것과 **같은 판정**이다. 여기서 조건을
@@ -638,12 +652,12 @@ struct CompanionHeader: View {
                     }
                     if store.hasActive {
                         // 단계 + 성격(부화 시 확정된 개체 아이덴티티)
-                        let nature = store.currentNature.map { " · \($0.name(store.language))" } ?? ""
+                        let nature = store.currentNature.map { " · \($0.name)" } ?? ""
                         Text("Lv.\(store.currentLevel) · " + store.stageText + nature)
                             .font(.caption2).foregroundStyle(.secondary)
                         if !store.currentTypes.isEmpty {
                             HStack(spacing: 4) {
-                                ForEach(store.currentTypes, id: \.self) { TypeBadge(type: $0, language: store.language) }
+                                ForEach(store.currentTypes, id: \.self) { TypeBadge(type: $0) }
                             }
                         }
                         if let abilityText, !abilityText.isEmpty {
@@ -656,12 +670,12 @@ struct CompanionHeader: View {
                         if store.currentSpeciesID == 479 {
                             Menu {
                                 ForEach(RotomForm.allCases, id: \.self) { form in
-                                    Button(form.name(store.language)) {
+                                    Button(form.name) {
                                         Task { await store.changeRotomForm(form) }
                                     }
                                 }
                             } label: {
-                                Label((store.state.active?.rotomForm ?? .normal).name(store.language),
+                                Label((store.state.active?.rotomForm ?? .normal).name,
                                       systemImage: "bolt.horizontal.circle.fill")
                                     .font(.caption2.weight(.semibold))
                             }
@@ -669,10 +683,8 @@ struct CompanionHeader: View {
                         }
                         HStack {
                             Text(store.experienceToNextLevel > 0
-                                 ? store.l.t("다음 레벨까지 \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP",
-                                         "\(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP to next level",
-                                         "次のレベルまで \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP")
-                                 : store.l.t("최고 레벨", "Max level", "最高レベル"))
+                                 ? "다음 레벨까지 \(GameNumberFormatter.compact(store.experienceToNextLevel)) EXP"
+                                 : "최고 레벨")
                                 .font(.caption2).foregroundStyle(.tertiary)
                             Spacer()
                         }
@@ -691,8 +703,7 @@ struct CompanionHeader: View {
                         // 능력치 여섯 칸 — 고정 표시. 타입과 같은 조회에서 오므로 여기 두는 데
                         // 추가 네트워크가 없다. 아직 못 받았으면 줄 자체를 그리지 않는다.
                         if let stats = store.currentStats {
-                            StatBlock(stats: stats, level: store.currentLevel, l: store.l,
-                                      language: store.language)
+                            StatBlock(stats: stats, level: store.currentLevel, l: store.l)
                         }
                     } else {
                         // 알 인큐베이션 — 부화까지 진행 (임박 시 문구·색 전환)
@@ -703,7 +714,7 @@ struct CompanionHeader: View {
                             // 등급 보증 알이면 무엇을 품고 있는지 — 도감 칩과 같은 라벨·색.
                             // 알 스프라이트는 한 장뿐이라 등급 구분은 이 배지가 유일한 신호다.
                             if let guarantee = store.eggGuarantee {
-                                Text(store.l.eggGuaranteeHint(guarantee)).font(.system(size: 8, weight: .bold))
+                                Text(store.l.eggGuaranteeHint(guarantee)).font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                                     .padding(.horizontal, 5).padding(.vertical, 1)
                                     .background(rarityColor(guarantee)).foregroundStyle(.white)
                                     .clipShape(Capsule())
@@ -714,7 +725,7 @@ struct CompanionHeader: View {
                             Text(store.l.eggToHatch(GameNumberFormatter.compact(store.eggTokensToHatch)))
                                 .font(.caption2).foregroundStyle(.tertiary)
                             Spacer(minLength: 0)
-                            Text(store.l.t("집중 세션을 완료하면 부화", "Complete focus sessions to hatch", "集中セッションの完了でふ化"))
+                            Text("집중 세션을 완료하면 부화")
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                         // 첫 실행(적립 0) — 정적 알 앞에서 "고장났나" 오해 방지용 한 줄 안내
@@ -730,7 +741,9 @@ struct CompanionHeader: View {
             }
             if store.hasActive, !store.lineNodes.isEmpty {
                 // 폭을 안 주면 분기 라인(이브이)이 넘쳐 팝오버 콘텐츠 전체가 좌우로 잘린다.
-                EvoLineView(nodes: store.lineNodes, mysteryLabel: store.l.unknownNextEvolution, shiny: store.currentIsShiny,
+                EvoLineView(nodes: store.lineNodes, mysteryLabel: store.l.unknownNextEvolution,
+                            pageBackLabel: store.l.previousPage, pageForwardLabel: store.l.nextPage,
+                            shiny: store.currentIsShiny,
                             maxWidth: PopoverMetrics.contentWidth)
             }
             if store.hasActive {
@@ -745,7 +758,7 @@ struct CompanionHeader: View {
                         .font(.caption.weight(.semibold))
                 }
                 .padding(8)
-                .pokedoroCard(tint: PokedoroTheme.yellow)
+                .pokedoroCard()
             }
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
             if store.canGraduate { GraduateCard(store: store) }
@@ -765,13 +778,13 @@ struct CompanionHeader: View {
             }
         }
         .task(id: store.currentPresentationID) { await store.loadCurrentTypes() }
-        .task(id: "\(store.currentPresentationID ?? 0)-\(store.language.rawValue)") {
+        .task(id: "\(store.currentPresentationID ?? 0)-ko") {
             guard let speciesID = store.currentPresentationID else {
                 abilityText = nil
                 return
             }
             abilityText = await PokeAPIClient.shared
-                .chatSpeciesIdentity(speciesID: speciesID, language: store.language).ability
+                .chatSpeciesIdentity(speciesID: speciesID).ability
         }
         // 진화에 필요한 기술 이름. 기술을 배우면 요구가 사라지므로 무브셋이 바뀔 때도 다시 본다.
         .task(id: store.currentMoveSetIdentity) { await store.loadEvolutionRequiredMove() }
@@ -852,7 +865,7 @@ struct CompanionHeader: View {
     }
 
     private func syncEggWiggle() {
-        if eggImminent {
+        if eggImminent, !reduceMotion {
             withAnimation(.easeInOut(duration: 0.35).repeatForever(autoreverses: true)) { eggWiggle = true }
         } else {
             withAnimation(.default) { eggWiggle = false }
@@ -873,13 +886,12 @@ struct CompanionHeader: View {
 
 struct TypeBadge: View {
     let type: PokemonType
-    let language: AppLanguage
 
     var body: some View {
         // lineLimit/fixedSize 가 없으면 좁은 행(긴 기술 이름 옆)에서 배지 글자가 줄바꿈돼
         // 행 높이가 통째로 늘어난다 — 기술 목록이 언어에 따라 다른 높이로 그려지던 원인.
-        Text(type.name(language).uppercased())
-            .font(.system(size: 8, weight: .heavy))
+        Text(type.name.uppercased())
+            .font(PokedoroTheme.badgeFont(size: 8, weight: .heavy))
             .foregroundStyle(.white)
             .lineLimit(1).fixedSize()
             .padding(.horizontal, 7).padding(.vertical, 2)
@@ -902,7 +914,7 @@ struct MoveCategoryIcon: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: 9, weight: .bold)).foregroundStyle(color)
+            .font(PokedoroTheme.glyphFont(size: 9, weight: .bold)).foregroundStyle(color)
             .frame(width: 14, height: 14)
             .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
             .help(l.moveCategory(damageClass))
@@ -1008,9 +1020,9 @@ struct MoveListView: View {
     /// 기술 한 줄. 자리표시자와 완성본이 이 한 곳을 공유해야 높이가 구조적으로 같아진다.
     private func row(_ move: MoveSpec) -> some View {
         HStack(spacing: 6) {
-            Text(move.name(store.language)).font(.caption.weight(.semibold))
+            Text(move.name).font(.caption.weight(.semibold))
                 .lineLimit(1).layoutPriority(1)
-            TypeBadge(type: move.type, language: store.language)
+            TypeBadge(type: move.type)
             MoveCategoryIcon(damageClass: move.damageClass, l: l)
             Spacer(minLength: 2)
             Group {
@@ -1020,7 +1032,7 @@ struct MoveListView: View {
                 Text(l.movePP(move.pp))
             }
             .font(.caption2).foregroundStyle(.secondary)
-            .lineLimit(1).minimumScaleFactor(0.75)
+            .lineLimit(1).minimumScaleFactor(0.9)
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
     }
@@ -1030,10 +1042,10 @@ struct MoveListView: View {
     /// 사용자가 꼭 봐야 하는 정보는 위 `MoveHoverPanel` 에 직접 그린다.
     private func moveHelp(_ move: MoveSpec) -> String {
         let details = l.moveDetailLine(move)
-        if let description = move.description(store.language), !description.isEmpty {
-            return "\(move.name(store.language))\n\(description)\n\(details)"
+        if let description = move.flavorText, !description.isEmpty {
+            return "\(move.name)\n\(description)\n\(details)"
         }
-        return "\(move.name(store.language))\n\(details)"
+        return "\(move.name)\n\(details)"
     }
 }
 
@@ -1069,13 +1081,11 @@ private struct GraduateCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(store.l.t("다 키웠어요!", "Fully grown!", "育ちきりました！"), systemImage: "graduationcap.fill")
+            Label("다 키웠어요!", systemImage: "graduationcap.fill")
                 .font(.caption.weight(.semibold))
-            Text(store.l.t("도감에 기록하고 새 알을 받아요. 이 포켓몬은 박스에 보관돼 언제든 다시 데려올 수 있어요.",
-                     "Records it in the Pokédex and starts a new egg. This Pokémon moves to your box, so you can bring it back anytime.",
-                     "図鑑に記録して新しいタマゴを受け取ります。このポケモンはボックスに預けられ、いつでも連れ戻せます。"))
+            Text("도감에 기록하고 새 알을 받아요. 이 포켓몬은 박스에 보관돼 언제든 다시 데려올 수 있어요.")
                 .font(.caption2).foregroundStyle(.secondary)
-            Button(store.l.t("도감에 등록하고 새 알 받기", "Record and get a new egg", "図鑑に登録して新しいタマゴ")) {
+            Button("도감에 등록하고 새 알 받기") {
                 store.graduateCompanion()
             }
             .buttonStyle(.borderedProminent).controlSize(.small)
@@ -1091,7 +1101,7 @@ private struct EvolutionPromptCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(store.l.t("진화할 수 있어요!", "Evolution is available!", "進化できます！"), systemImage: "sparkles")
+            Label("진화할 수 있어요!", systemImage: "sparkles")
                 .font(.caption.weight(.semibold)).foregroundStyle(.orange)
             HStack(spacing: 10) {
                 SpriteView(speciesID: prompt.fromSpeciesID, size: 46, shiny: store.state.active?.isShiny ?? false)
@@ -1099,17 +1109,17 @@ private struct EvolutionPromptCard: View {
                 SpriteView(speciesID: prompt.toSpeciesID, size: 46, shiny: store.state.active?.isShiny ?? false)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(prompt.toName).font(.callout.bold())
-                    Text(store.l.t("Lv.\(prompt.requiredLevel) 진화", "Evolves at Lv. \(prompt.requiredLevel)", "Lv.\(prompt.requiredLevel) で進化"))
+                    Text("Lv.\(prompt.requiredLevel) 진화")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
-            Text(store.l.t("\(prompt.toName)(으)로 진화할까요?", "Evolve into \(prompt.toName)?", "\(prompt.toName) に進化させますか？"))
+            Text("\(prompt.toName)(으)로 진화할까요?")
                 .font(.caption)
             HStack {
-                Button(store.l.t("예, 진화할래요", "Yes, evolve", "はい、進化させる")) { store.acceptEvolution() }
+                Button("예, 진화할래요") { store.acceptEvolution() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
-                Button(store.l.t("아니오", "No", "いいえ")) { store.declineEvolution() }
+                Button("아니오") { store.declineEvolution() }
                     .controlSize(.small)
             }
         }
@@ -1124,36 +1134,35 @@ private struct EvolutionPromptCard: View {
 /// 성격을 바꿔도 숫자가 안 움직인다 — 민트를 쓰는 의미가 화면에서 사라진다. 그래서 머리글에
 /// 기준 레벨을 함께 적는다(안 적으면 종족값으로 오해한다).
 ///
-/// 3열로 자른 이유는 폭이다. 한 줄에 여섯을 세우면 일본어 라벨(`とくこう`)에서 넘친다.
+/// 3열로 자른 이유는 폭이다. 한 줄에 여섯을 세우면 가장 긴 라벨(`특수공격`)에서 넘친다.
 /// 칸마다 `maxWidth: .infinity` 를 걸어 숫자 자리를 맞춘다 — 안 걸면 라벨 길이에 따라
 /// 열이 어긋나 표로 안 읽힌다.
 private struct StatBlock: View {
     let stats: BattleStats
     let level: Int
     let l: L
-    let language: AppLanguage
 
     private var cells: [(label: String, value: Int)] {
         [(l.statHP, stats.hp),
-         (BattleStat.atk.name(language), stats.atk),
-         (BattleStat.def.name(language), stats.def),
-         (BattleStat.spa.name(language), stats.spa),
-         (BattleStat.spd.name(language), stats.spd),
-         (BattleStat.spe.name(language), stats.spe)]
+         (BattleStat.atk.name, stats.atk),
+         (BattleStat.def.name, stats.def),
+         (BattleStat.spa.name, stats.spa),
+         (BattleStat.spd.name, stats.spd),
+         (BattleStat.spe.name, stats.spe)]
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(l.statsAtLevel(level))
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
             ForEach(0..<2, id: \.self) { row in
                 HStack(spacing: 4) {
                     ForEach(0..<3, id: \.self) { column in
                         let cell = cells[row * 3 + column]
                         HStack(spacing: 3) {
                             Text(cell.label)
-                                .font(.system(size: 9)).foregroundStyle(.secondary)
-                                .lineLimit(1).minimumScaleFactor(0.8)
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                                .lineLimit(1).minimumScaleFactor(0.9)
                             Text("\(cell.value)")
                                 .font(.system(size: 10, weight: .semibold)).monospacedDigit()
                         }
@@ -1244,7 +1253,7 @@ private struct MoveRelearnCard: View {
                 Text(l.relearnPickTitle).font(.caption2).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(slice) { move in
-                        RelearnCandidateRow(move: move, language: store.language, l: l) {
+                        RelearnCandidateRow(move: move, l: l) {
                             store.pickRelearnCandidate(move)
                         }
                     }
@@ -1288,7 +1297,6 @@ private struct MoveRelearnCard: View {
 /// 목록이 읽히지 않는다. 잘린 뒷부분은 툴팁이 들고 있다.
 private struct RelearnCandidateRow: View {
     let move: MoveSpec
-    let language: AppLanguage
     let l: L
     let onTap: () -> Void
 
@@ -1296,9 +1304,9 @@ private struct RelearnCandidateRow: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Text(move.name(language)).font(.caption.weight(.semibold))
+                    Text(move.name).font(.caption.weight(.semibold))
                         .lineLimit(1).layoutPriority(1)
-                    TypeBadge(type: move.type, language: language)
+                    TypeBadge(type: move.type)
                     MoveCategoryIcon(damageClass: move.damageClass, l: l)
                     Spacer(minLength: 2)
                     Group {
@@ -1309,10 +1317,10 @@ private struct RelearnCandidateRow: View {
                         Text(l.movePP(move.pp))
                     }
                     .font(.caption2).foregroundStyle(.secondary)
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .lineLimit(1).minimumScaleFactor(0.9)
                 }
                 // 설명이 없는 기술도 있다(번역 누락·구기술). 빈 Text 를 그리면 행 높이만 들쭉날쭉해진다.
-                if let description = move.description(language), !description.isEmpty {
+                if let description = move.flavorText, !description.isEmpty {
                     Text(description)
                         .font(.caption2).foregroundStyle(.secondary)
                         .lineLimit(2).multilineTextAlignment(.leading)
@@ -1324,8 +1332,8 @@ private struct RelearnCandidateRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(move.description(language) ?? l.moveDetailLine(move))
-        .accessibilityLabel(move.name(language))
+        .help(move.flavorText ?? l.moveDetailLine(move))
+        .accessibilityLabel(move.name)
         .accessibilityValue(l.moveDetailLine(move))
     }
 }
@@ -1344,22 +1352,22 @@ private struct MoveLearningCard: View {
             if let s = profile?.stats {
                 HStack(spacing: 5) {
                     learningStat("HP", s.hp)
-                    learningStat(store.l.t("공격", "Atk", "攻撃"), s.atk)
-                    learningStat(store.l.t("방어", "Def", "防御"), s.def)
-                    learningStat(store.l.t("특공", "SpA", "特攻"), s.spa)
-                    learningStat(store.l.t("특방", "SpD", "特防"), s.spd)
-                    learningStat(store.l.t("속도", "Spe", "素早"), s.spe)
+                    learningStat("공격", s.atk)
+                    learningStat("방어", s.def)
+                    learningStat("특공", s.spa)
+                    learningStat("특방", s.spd)
+                    learningStat("속도", s.spe)
                 }
             }
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(prompt.move.name(store.language)).font(.callout.bold())
+                    Text(prompt.move.name).font(.callout.bold())
                     HStack(spacing: 5) {
                         // 다시 배우는 기술엔 습득 레벨이 없다 — 현재 레벨을 여기 찍으면 없는 숫자를 만든다.
                         if prompt.origin == .levelUp {
                             Text("Lv.\(prompt.level)").font(.caption2).foregroundStyle(.secondary)
                         }
-                        TypeBadge(type: prompt.move.type, language: store.language)
+                        TypeBadge(type: prompt.move.type)
                         MoveCategoryIcon(damageClass: prompt.move.damageClass, l: store.l)
                         // 행 라벨과 같은 L 어휘를 쓴다 — 예전엔 "변화"/"Power N"이 박혀 있어
                         // 한국어 UI 에 "Power 90", 영어 UI 에 "변화"가 나왔다(#10 부류).
@@ -1374,7 +1382,7 @@ private struct MoveLearningCard: View {
                             Text(store.l.movePP(prompt.move.pp))
                         }
                         .font(.caption2).foregroundStyle(.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .lineLimit(1).minimumScaleFactor(0.9)
                     }
                 }
                 Spacer()
@@ -1391,25 +1399,24 @@ private struct MoveLearningCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let active = store.state.active, active.learnedMoves.count >= 4 {
-                Text(store.l.t("잊을 기술을 선택하세요.", "Choose a move to forget.", "忘れるわざを選んでください。"))
+                Text("잊을 기술을 선택하세요.")
                     .font(.caption2).foregroundStyle(.secondary)
                 ForEach(Array(active.learnedMoves.enumerated()), id: \.element.id) { index, move in
-                    MoveReplacementRow(move: move, newMoveName: prompt.move.name(store.language),
-                                       language: store.language, l: store.l) {
+                    MoveReplacementRow(move: move, newMoveName: prompt.move.name, l: store.l) {
                         store.acceptMoveLearning(replacing: index)
                     }
                 }
             } else {
                 HStack {
-                    Button(store.l.t("예, 배울래요", "Yes, learn it", "はい、覚える")) {
+                    Button("예, 배울래요") {
                         store.acceptMoveLearning()
                     }.buttonStyle(.borderedProminent).controlSize(.small)
-                    Button(store.l.t("아니오", "No", "いいえ")) { store.declineMoveLearning() }
+                    Button("아니오") { store.declineMoveLearning() }
                         .controlSize(.small)
                 }
             }
             if store.state.active?.learnedMoves.count ?? 0 >= 4 {
-                Button(store.l.t("배우지 않기", "Don't learn", "覚えない")) { store.declineMoveLearning() }
+                Button("배우지 않기") { store.declineMoveLearning() }
                     .controlSize(.small)
             }
         }
@@ -1425,11 +1432,9 @@ private struct MoveLearningCard: View {
         switch prompt.origin {
         case .heartScale: return store.l.relearnHeader
         case .technicalMachine:
-            return store.l.t("기술머신으로 기술을 배울 수 있어요",
-                             "A Technical Machine can teach this move",
-                             "わざマシンでわざを覚えられます")
+            return "기술머신으로 기술을 배울 수 있어요"
         case .levelUp:
-            return store.l.t("새로운 기술을 배울 수 있어요", "A new move is available", "新しいわざを覚えられます")
+            return "새로운 기술을 배울 수 있어요"
         }
     }
 
@@ -1443,7 +1448,7 @@ private struct MoveLearningCard: View {
 
     private func learningStat(_ label: String, _ value: Int) -> some View {
         VStack(spacing: 1) { Text(label).foregroundStyle(.secondary); Text("\(value)").bold() }
-            .font(.system(size: 8)).frame(maxWidth: .infinity).padding(.vertical, 3)
+            .font(.system(size: 10)).frame(maxWidth: .infinity).padding(.vertical, 3)
             .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 4))
     }
 }
@@ -1459,16 +1464,15 @@ private struct MoveLearningCard: View {
 private struct MoveReplacementRow: View {
     let move: MoveSpec
     let newMoveName: String
-    let language: AppLanguage
     let l: L
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 6) {
-                Text(move.name(language)).font(.caption.weight(.semibold))
+                Text(move.name).font(.caption.weight(.semibold))
                     .lineLimit(1).layoutPriority(1)
-                TypeBadge(type: move.type, language: language)
+                TypeBadge(type: move.type)
                 MoveCategoryIcon(damageClass: move.damageClass, l: l)
                 Spacer(minLength: 2)
                 Group {
@@ -1478,7 +1482,7 @@ private struct MoveReplacementRow: View {
                     Text(l.movePP(move.pp))
                 }
                 .font(.caption2).foregroundStyle(.secondary)
-                .lineLimit(1).minimumScaleFactor(0.75)
+                .lineLimit(1).minimumScaleFactor(0.9)
             }
             .padding(.horizontal, 7).padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1487,9 +1491,7 @@ private struct MoveReplacementRow: View {
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(l.t("\(move.name(language)) 잊고 \(newMoveName) 배우기",
-                                "Forget \(move.name(language)) and learn \(newMoveName)",
-                                "\(move.name(language))を忘れて\(newMoveName)を覚える"))
+        .accessibilityLabel("\(move.name) 잊고 \(newMoveName) 배우기")
         .accessibilityValue(l.moveDetailLine(move))
     }
 }
@@ -1508,6 +1510,16 @@ struct StarterPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // 0) 무슨 앱인지 먼저 말한다. 예전엔 이름 입력칸부터 나와서, 처음 연 사람은 이게
+            //    집중 타이머인지 포켓몬 게임인지 왜 이름을 묻는지 알 수 없었다.
+            VStack(alignment: .leading, spacing: 3) {
+                Label(l.onboardingHeadline, systemImage: "timer")
+                    .font(.headline)
+                Text(l.onboardingSubhead)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             // 1) 트레이너 이름 — 배틀에 표시된다. 이름을 넣어야 스타터를 고를 수 있다.
             VStack(alignment: .leading, spacing: 4) {
                 Text(l.trainerNamePrompt).font(.callout.weight(.semibold))
@@ -1520,12 +1532,12 @@ struct StarterPickerView: View {
             Divider()
 
             // 2) 타입 선택 — 해당 타입의 1세대 미진화체 한 마리가 알에서 무작위로 부화한다.
-            Text(store.l.t("원하는 타입을 골라요", "Choose a type", "好きなタイプを選ぼう"))
+            Text("원하는 타입을 골라요")
                 .font(.callout.weight(.semibold))
             if picking {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(store.l.t("알 속의 포켓몬을 만나고 있어요…", "Meeting the Pokémon inside the Egg…", "タマゴの中のポケモンに会っています…"))
+                    Text("알 속의 포켓몬을 만나고 있어요…")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -1548,20 +1560,16 @@ struct StarterPickerView: View {
                                 }
                             }
                         } label: {
-                            TypeBadge(type: type, language: store.language)
+                            TypeBadge(type: type)
                                 .frame(maxWidth: .infinity).padding(.vertical, 5)
                         }
                         .buttonStyle(.bordered).disabled(!nameReady)
                     }
                 }
                 Text(failed
-                     ? store.l.t("포켓몬 정보를 받지 못했어요. 인터넷 연결을 확인하고 다시 골라 주세요.",
-                             "Couldn't load Pokémon data. Check your internet connection and pick again.",
-                             "ポケモンの情報を取得できませんでした。インターネット接続を確認してもう一度選んでください。")
+                     ? "포켓몬 정보를 받지 못했어요. 인터넷 연결을 확인하고 다시 골라 주세요."
                      : nameReady
-                     ? store.l.t("선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다.",
-                             "A random unevolved Gen I Pokémon of that type will hatch. Legendary and Mythical Pokémon are excluded.",
-                             "選んだタイプの第1世代・未進化ポケモンがランダムでふ化します。伝説・幻は除きます。")
+                     ? "선택한 타입의 1세대 미진화체가 알에서 무작위로 태어나요. 전설·환상은 제외됩니다."
                      : l.starterNeedName)
                     .font(.caption2)
                     .foregroundStyle(failed || !nameReady ? AnyShapeStyle(.orange) : AnyShapeStyle(.tertiary))
@@ -1584,11 +1592,11 @@ struct RarityTally: View {
     var body: some View {
         HStack(spacing: 3) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text(label).font(.system(size: 9, weight: isSelected ? .semibold : .medium))
-            Text("\(count)").font(.system(size: 9, weight: .bold))
+            Text(label).font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+            Text("\(count)").font(.system(size: 10, weight: .bold))
             if isSelected {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 7, weight: .bold)).foregroundStyle(color)
+                    .font(PokedoroTheme.glyphFont(size: 7, weight: .bold)).foregroundStyle(color)
             }
         }
         .foregroundStyle(.primary)
@@ -1659,7 +1667,7 @@ struct DexGoalStrip: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.system(size: 9))
+        .font(.system(size: 10))
         .lineLimit(1)
     }
 }
@@ -1786,9 +1794,14 @@ private struct DexGridView: View {
         let slice = Array(visible.dropFirst(current * Self.pageSize).prefix(Self.pageSize))
         VStack(alignment: .leading, spacing: 8) {
             header(all)
-            PokemonSearchField(text: $searchText, l: store.l)
+            // 페이저는 격자 **위**다 — 로스터와 같은 이유(2026-09-07 리포트). 탭 콘텐츠 520 이
+            // 팝오버 뷰포트보다 높아 하단 줄은 스크롤 밖으로 밀린다.
+            HStack(spacing: 6) {
+                PokemonSearchField(text: $searchText, l: store.l)
+                pager(visible, current: current, pageCount: pageCount)
+            }
             grid(slice)
-            footer(visible, current: current, pageCount: pageCount)
+            footer(visible)
         }
         // 이름이 저장돼 있지 않은 구버전 졸업분을 채운다 — 격자는 저장분만 읽으므로 이게 없으면
         // 칸이 `#41` 로 남는다. 저장된 항목은 조회하지 않으므로 채워진 뒤로는 아무 일도 하지 않는다.
@@ -1857,8 +1870,8 @@ private struct DexGridView: View {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: (caughtOnly || caughtOnlyLocked) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 9))
-                Text(store.l.dexCaughtOnly).font(.system(size: 9, weight: .medium))
+                    .font(PokedoroTheme.glyphFont(size: 9))
+                Text(store.l.dexCaughtOnly).font(.system(size: 10, weight: .medium))
             }
             .foregroundStyle(.primary)
             .padding(.horizontal, 6).padding(.vertical, 2)
@@ -1877,19 +1890,19 @@ private struct DexGridView: View {
             Button(store.l.dexTypeFilterAll) { applyType(nil) }
             Divider()
             ForEach(PokemonType.allCases, id: \.self) { type in
-                Button(type.name(store.language)) { applyType(type) }
+                Button(type.name) { applyType(type) }
             }
         } label: {
             HStack(spacing: 3) {
                 if let type = selectedType {
                     Circle().fill(type.color).frame(width: 6, height: 6)
-                    Text(type.name(store.language))
+                    Text(type.name)
                 } else {
-                    Image(systemName: "line.3.horizontal.decrease").font(.system(size: 8))
+                    Image(systemName: "line.3.horizontal.decrease").font(PokedoroTheme.glyphFont(size: 8))
                     Text(store.l.dexTypeFilter)
                 }
             }
-            .font(.system(size: 9, weight: selectedType == nil ? .medium : .semibold))
+            .font(.system(size: 10, weight: selectedType == nil ? .medium : .semibold))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -1953,26 +1966,14 @@ private struct DexGridView: View {
         .frame(maxHeight: .infinity)
     }
 
-    /// 하단 한 줄 — 왼쪽은 선택한 칸의 희귀도, 오른쪽은 페이저.
-    /// 페이저가 1페이지라 안 보일 때도 이 줄을 **항상** 예약한다 — 페이지 수나 선택 여부에 따라
-    /// 격자 높이가 흔들리지 않게.
+    /// 페이지 이동 — 검색칸 오른쪽. 1페이지뿐이면 그리지 않는다.
     ///
     /// 받는 건 이번 페이지가 아니라 **필터를 통과한 전체**다 — 점프 메뉴가 페이지마다 어느 번호대인지
-    /// 적으려면 다른 페이지의 칸도 봐야 한다. 고른 칸을 여기서 찾아도 결과는 같다: 페이지·필터가
-    /// 바뀔 때마다 `selectedID` 를 지우므로 선택은 항상 현재 페이지 안에 있다.
-    private func footer(_ visible: [CompanionStore.DexSlot],
-                        current: Int, pageCount: Int) -> some View {
-        HStack(spacing: 8) {
-            if let sel = visible.first(where: { $0.id == selectedID }) {
-                // 칸은 번호·스프라이트·이름만 보여주므로 희귀도가 선택으로 얻는 정보다.
-                // 미포획 칸은 타입을 밝히지 않는다 — 실루엣을 세워 놓고 정체를 옆줄에 적으면
-                // 가릴 이유가 없어진다. 타입을 알고 싶으면 타입 필터로 좁히면 된다.
-                Text(sel.species.map { "#\($0.id) \($0.name) · \(store.l.rarityLabel($0.rarity))" }
-                     ?? "#\(sel.id) \(store.l.dexNotCaught)")
-                    .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            if pageCount > 1 {
+    /// 적으려면 다른 페이지의 칸도 봐야 한다.
+    @ViewBuilder private func pager(_ visible: [CompanionStore.DexSlot],
+                                    current: Int, pageCount: Int) -> some View {
+        if pageCount > 1 {
+            HStack(spacing: 6) {
                 Button { jump(to: current - 1, in: pageCount) } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain).disabled(current == 0)
                 .accessibilityLabel(store.l.dexPagePrev)
@@ -1981,6 +1982,24 @@ private struct DexGridView: View {
                 .buttonStyle(.plain).disabled(current == pageCount - 1)
                 .accessibilityLabel(store.l.dexPageNext)
             }
+            .font(.system(size: 11, weight: .semibold))
+            .fixedSize()
+        }
+    }
+
+    /// 하단 한 줄 — 선택한 칸의 희귀도. 고른 칸이 없을 때도 이 줄을 **항상** 예약한다 —
+    /// 선택 여부에 따라 격자 높이가 흔들리지 않게.
+    private func footer(_ visible: [CompanionStore.DexSlot]) -> some View {
+        HStack(spacing: 8) {
+            if let sel = visible.first(where: { $0.id == selectedID }) {
+                // 칸은 번호·스프라이트·이름만 보여주므로 희귀도가 선택으로 얻는 정보다.
+                // 미포획 칸은 타입을 밝히지 않는다 — 실루엣을 세워 놓고 정체를 옆줄에 적으면
+                // 가릴 이유가 없어진다. 타입을 알고 싶으면 타입 필터로 좁히면 된다.
+                Text(sel.species.map { "#\($0.id) \($0.name) · \(store.l.rarityLabel($0.rarity))" }
+                     ?? "#\(sel.id) \(store.l.dexNotCaught)")
+                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
         }
         .font(.system(size: 11, weight: .semibold))
         .frame(height: 18)
@@ -2041,7 +2060,7 @@ private struct DexSpeciesCell: View {
     /// interpolation(.none) 으로 축소하므로 이 크기에서도 식별에 문제없다.
     private static let thumb: CGFloat = 44
 
-    /// 미포획 칸의 이름 자리. 세 언어가 같은 글자를 쓰므로 `L` 로 올리지 않는다 —
+    /// 미포획 칸의 이름 자리. 글자가 아니라 기호라 `L` 로 올리지 않는다 —
     /// 스크린리더용 문장은 `dexNotCaught` 가 따로 들고 있다.
     private static let unknownName = "???"
 
@@ -2059,17 +2078,17 @@ private struct DexSpeciesCell: View {
                     .opacity(slot.isCaught ? 1 : 0.45)
                     .frame(width: Self.thumb, height: Self.thumb)
                     // 표식은 스프라이트 아래가 아니라 위에 겹친다 — 별도 줄로 빼면 칸 높이가 넘친다.
-                    // 이 줄은 번호·이로치와 폭을 다투지 않아 세 언어 모두 8pt 그대로 들어간다
-                    // (가장 긴 en "RAISING" 이 캡슐 포함 45pt, 칸 안쪽 폭 74pt).
+                    // 이 줄은 번호·이로치와 폭을 다투지 않아 8pt 그대로 들어간다
+                    // (라벨이 캡슐 포함 45pt, 칸 안쪽 폭 74pt).
                     // `fixedSize` 필수 — 오버레이는 붙은 뷰(스프라이트 44)의 폭을 제안받아서, 없으면
                     // 칸이 아니라 스프라이트 폭에 갇혀 "RAISIN/G" 로 줄바꿈된다.
                     .overlay(alignment: .bottom) {
                         if slot.species?.isRaising == true { raisingBadge.fixedSize() }
                     }
                 Text(slot.species?.name ?? Self.unknownName)
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(slot.isCaught ? .primary : .secondary)
-                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .lineLimit(1).minimumScaleFactor(0.9)
             }
             .frame(maxWidth: .infinity)
             // 번호·이로치는 스프라이트(44)가 아니라 **칸 안쪽 폭**(74)에 건다 — 스프라이트에 걸면
@@ -2080,7 +2099,7 @@ private struct DexSpeciesCell: View {
                 // ✨ = 이 종의 이로치를 잡은 적이 있다는 표식(탭하면 그 색으로 바뀐다).
                 if slot.species?.isShiny == true {
                     Text("✨")
-                        .font(.system(size: 8))
+                        .font(PokedoroTheme.glyphFont(size: 8))
                         .padding(.horizontal, 2)
                         .background(.regularMaterial, in: Capsule())
                         .accessibilityLabel(store.l.dexShinyLabel)
@@ -2104,7 +2123,7 @@ private struct DexSpeciesCell: View {
     /// 스프라이트 위 라벨에 이미 쓰는 패턴과 동일.
     private var numberTag: some View {
         Text("#\(slot.id)")
-            .font(.system(size: 8, weight: .medium))
+            .font(PokedoroTheme.badgeFont(size: 8, weight: .medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 2)
             .background(.regularMaterial, in: Capsule())
@@ -2115,7 +2134,7 @@ private struct DexSpeciesCell: View {
     /// material 을 한 겹 깔아 대비를 확보한다(로그는 카드 배경 위라 필요 없었다).
     private var raisingBadge: some View {
         Text(store.l.dexRaising.uppercased())
-            .font(.system(size: 8, weight: .bold))
+            .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .foregroundStyle(Color.accentColor)
             .background(Color.accentColor.opacity(0.14), in: Capsule())
@@ -2150,13 +2169,13 @@ private struct DexEntryRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(store.l.rarityLabel(entry.rarity).uppercased())
-                    .font(.system(size: 8, weight: .bold))
+                    .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(rarityColor(entry.rarity)).foregroundStyle(.white)
                     .clipShape(Capsule())
                 if store.isActiveDexEntry(entry) {
                     Text(store.l.dexRaising.uppercased())
-                        .font(.system(size: 8, weight: .bold))
+                        .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Color.accentColor.opacity(0.14))
                         .foregroundStyle(Color.accentColor)
@@ -2169,22 +2188,23 @@ private struct DexEntryRow: View {
                 }
                 Spacer()
                 if let nature = entry.nature {
-                    Text(nature.name(store.language))
-                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text(nature.name)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }
             EvoLineView(nodes: entry.chainOrder.map { EvoLineItem(.species($0), .done) },
-                        mysteryLabel: store.l.unknownNextEvolution, thumb: 56,
+                        mysteryLabel: store.l.unknownNextEvolution,
+                        pageBackLabel: store.l.previousPage, pageForwardLabel: store.l.nextPage, thumb: 56,
                         shiny: entry.isShiny, names: names,
                         maxWidth: PopoverMetrics.contentWidth - Self.cardPadding * 2)
             if let caughtAt = entry.caughtAt {
-                Text(caughtAt, style: .relative).font(.system(size: 9)).foregroundStyle(.tertiary)
+                Text(caughtAt, style: .relative).font(.system(size: 10)).foregroundStyle(.tertiary)
             }
         }
         .padding(Self.cardPadding)
         .background(Color.secondary.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .task(id: "\(entry.id)-\(store.language.rawValue)") {
+        .task(id: "\(entry.id)-ko") {
             if store.dexStoredChainNames(entry) == nil {   // 저장분 없으면(구버전) 조회
                 resolved = await store.dexResolveChainNames(entry)
             }

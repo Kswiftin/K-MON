@@ -33,7 +33,7 @@ struct MissionBoardView: View {
                 HStack(spacing: 6) {
                     // 주기 배지가 "오늘/이번 주"를 대신 말해 주므로 미션 이름에서는 뺐다(가로도 아낀다).
                     Text(row.mission.period == .daily ? l.missionDaily : l.weekly)
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(row.mission.period == .daily ? .blue : .purple)
                     Text(l.missionName(row.mission))
                         .font(.caption2).lineLimit(1)

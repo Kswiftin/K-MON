@@ -14,21 +14,21 @@ extension CompanionStore {
     var homeTerminalState: HomeTerminalState {
         let album = memoryAlbum
         let access = album.memoryHomeAccess
-        let l = L(language)
+        let l = L()
         var state = HomeTerminalState(nickname: album.memoryHomePublicNickname,
-                                      styleName: album.roomStyle.name(l))
+                                      styleName: album.roomStyle.name)
         state.message = access.profileMessage
         state.visitToday = access.visitToday
         state.visitTotal = access.visitTotal
-        state.seasonName = MemoryHomeSeasonStyle.name(MemoryHomeSeason.current(), l)
+        state.seasonName = MemoryHomeSeasonStyle.name(MemoryHomeSeason.current())
         state.isLANOpen = access.visibility == .open
         state.decorLimit = PokemonMemoryAlbum.decorLimit
 
         state.styles = MemoryHomeRoomStyle.allCases.map { style in
-            HomeScreen.Style(name: style.name(l),
+            HomeScreen.Style(name: style.name,
                              isUnlocked: album.isRoomStyleUnlocked(style),
                              isActive: style == album.roomStyle,
-                             requirement: MemoryHomeNames.requirement(style, l))
+                             requirement: MemoryHomeNames.requirement(style))
         }
         // **화면과 같은 순서로 센다** — 앱은 `layer` 로 쌓아 그리므로 그 순서를 그대로 쓴다.
         // 두 화면이 각자 정렬하면 같은 가구가 화면마다 다른 번호를 갖는다.
@@ -44,7 +44,7 @@ extension CompanionStore {
                                          label: l.itemName(decor.item))
             }
         state.moodName = album.mood().map {
-            MemoryHomeMoodStyle.emoji($0) + " " + MemoryHomeMoodStyle.name($0, l)
+            MemoryHomeMoodStyle.emoji($0) + " " + MemoryHomeMoodStyle.name($0)
         }
         state.canUndo = album.canUndoRoomEdit
         state.canRedo = album.canRedoRoomEdit
@@ -61,7 +61,7 @@ extension CompanionStore {
         state.closenessHearts = log.closenessHearts
         state.pinned = album.pinned(for: mon.id)?.body
         state.recent = album.timeline(for: mon.id).prefix(3).map(\.body)
-        state.cards = album.milestones(for: mon.id).map { MemoryHomeCardStyle.title($0, l) }
+        state.cards = album.milestones(for: mon.id).map { MemoryHomeCardStyle.title($0) }
         state.roomLine = MemoryHomeRoomLife.line(
             speciesID: mon.currentID,
             decor: access.placedDecor.map(\.item),

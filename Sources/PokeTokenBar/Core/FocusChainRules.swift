@@ -10,8 +10,23 @@ import Foundation
 /// **판정은 순수하다.** `FocusTimer` 도 `CompanionStore` 도 `@MainActor` 에 네트워크 로딩까지
 /// 물려 있어, 조건표를 거기 두면 표만 따로 검증할 방법이 없어진다(`PokedoroSessionGate` 와 같은 이유).
 enum FocusChainRules {
-    /// 집중 길이는 세션마다 고르는데(`PokemonChatTool.focusMinutes`) 휴식 길이가 상수인 이유:
-    /// 여는 순간 "4세션 후 긴 휴식" 이라는 규칙이 설정값에 의존하게 된다.
+    /// 화면·터미널·대화가 함께 제시하는 집중 길이. **정본은 여기다** — 예전엔 대화 도구
+    /// (`PokemonChatTool`)가 들고 있어서, 집중 기능의 값 하나가 대화 샌드박스 파일에 살고
+    /// 휴식 길이만 여기 있었다. 표가 갈리면 한쪽만 넓어져 화면이 제시하지 않는 길이를 그 경로만
+    /// 켤 수 있게 된다.
+    static let focusMinutes = [25, 50, 90]
+
+    /// 부른 값을 가장 가까운 길이로 접는다(동률이면 짧은 쪽). **버리지 않고 접는다** — 버리면
+    /// 부른 쪽이 왜 아무 일도 안 일어났는지 모른 채 같은 실수를 반복한다. 승인 카드도 터미널
+    /// 답도 실제 분을 그대로 보여 주므로 사용자는 무엇을 켜는지 정확히 안다.
+    ///
+    /// 접는 쪽이 둘이다 — 대화 파서와 터미널 요청.
+    static func nearestFocusLength(to minutes: Int) -> Int {
+        focusMinutes.min { abs($0 - minutes) < abs($1 - minutes) } ?? focusMinutes[0]
+    }
+
+    /// 집중 길이는 세션마다 고르는데 휴식 길이가 상수인 이유: 여는 순간 "4세션 후 긴 휴식" 이라는
+    /// 규칙이 설정값에 의존하게 된다.
     // ponytail: 5/15 고정 — 다른 길이가 실제로 필요해지면 그때 연다.
     static let shortRestMinutes = 5
     static let longRestMinutes = 15

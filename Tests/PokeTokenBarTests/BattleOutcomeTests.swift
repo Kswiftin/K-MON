@@ -257,9 +257,7 @@ final class BattleOutcomeTests: XCTestCase {
     /// 방 결과 화면은 승/패/무/관전 **네 갈래**다. 예전엔 `didIWin` 하나로 갈라 무승부(동시 전멸)와
     /// 관전자에게 "패배"라고 말했다 — 관전자는 싸우지도 않았고, 무승부는 진 게 아니다.
     func testTheRoomResultCoversDrawAndSpectators() throws {
-        for lang in AppLanguage.allCases {
-            XCTAssertFalse(L(lang).battleSpectatorFinished.isEmpty, "\(lang) 문구가 있어야 한다")
-        }
+        XCTAssertFalse(L().battleSpectatorFinished.isEmpty, "문구가 있어야 한다")
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         // 방 배틀 화면은 `RoomBattleView` 로 떼어냈다(#209) — 스캔 대상도 함께 옮긴다.

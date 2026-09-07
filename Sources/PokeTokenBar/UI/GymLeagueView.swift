@@ -24,13 +24,11 @@ struct GymLeagueView: View {
 
     private var picker: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ChallengeOverlayHeader(title: l.gymLeagueTitle, systemImage: "building.columns.fill",
-                                   tint: .purple, closeHelp: l.battleClose,
-                                   trailing: AnyView(
-                                       Text(l.gymBadgeCount(store.state.gymLeagueBadges.count,
-                                                            GymLeague.catalog.count))
-                                           .font(.caption2).foregroundStyle(.secondary)
-                                   ), onClose: onClose)
+            PokedoroOverlayHeader(title: l.gymLeagueTitle, systemImage: "building.columns.fill",
+                                  tint: .purple, closeLabel: l.close, onClose: onClose) {
+                Text(l.gymBadgeCount(store.state.gymLeagueBadges.count, GymLeague.catalog.count))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             if let error = center.lastError {
                 Text(error).font(.caption2).foregroundStyle(.orange)
             }
@@ -70,13 +68,13 @@ private struct GymRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(gym.type.name(store.language))
-                .font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+            Text(gym.type.name)
+                .font(PokedoroTheme.badgeFont(size: 9, weight: .heavy)).foregroundStyle(.white)
                 .frame(width: 42)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color.accentColor.opacity(0.55)))
             VStack(alignment: .leading, spacing: 1) {
-                Text(gym.leaderName(store.language)).font(.caption.bold()).lineLimit(1)
+                Text(gym.leaderName).font(.caption.bold()).lineLimit(1)
                 Text(store.l.gymLeaderLevel(gym.level) + "+")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -108,7 +106,7 @@ private struct RewardLabel: View {
                     Text("🥚")
                     if let tier = reward.eggGuarantee {
                         Text(store.l.rarityLabel(tier))
-                            .font(.system(size: 8, weight: .bold))
+                            .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                             .foregroundStyle(Color.accentColor)
                     }
                 }

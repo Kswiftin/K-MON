@@ -152,22 +152,18 @@ final class HeartScaleTests: XCTestCase {
         XCTAssertEqual(s.availableTokens, before - 500)
     }
 
-    // MARK: 문구 (ko/en/ja 전부)
+    // MARK: 문구
 
-    func testHeartScaleCopyExistsInAllThreeLanguages() {
-        for lang in AppLanguage.allCases {
-            let l = L(lang)
-            XCTAssertFalse(l.itemName(.heartScale).isEmpty, "\(lang) 이름 누락")
-            XCTAssertFalse(l.itemDescription(.heartScale).isEmpty, "\(lang) 설명 누락")
-            XCTAssertFalse(l.heartScaleEffectHint.isEmpty)
-            XCTAssertFalse(l.relearnPickTitle.isEmpty)
-            XCTAssertFalse(l.relearnEmpty.isEmpty)
-            XCTAssertFalse(l.relearnHeader.isEmpty)
-            XCTAssertFalse(l.relearnLoading.isEmpty)
-            XCTAssertFalse(l.relearnClose.isEmpty)
-        }
-        XCTAssertNotEqual(L(.ko).itemName(.heartScale), L(.en).itemName(.heartScale))
-        XCTAssertNotEqual(L(.ko).itemDescription(.heartScale), L(.ja).itemDescription(.heartScale))
+    func testHeartScaleCopyExists() {
+        let l = L()
+        XCTAssertFalse(l.itemName(.heartScale).isEmpty, "이름 누락")
+        XCTAssertFalse(l.itemDescription(.heartScale).isEmpty, "설명 누락")
+        XCTAssertFalse(l.heartScaleEffectHint.isEmpty)
+        XCTAssertFalse(l.relearnPickTitle.isEmpty)
+        XCTAssertFalse(l.relearnEmpty.isEmpty)
+        XCTAssertFalse(l.relearnHeader.isEmpty)
+        XCTAssertFalse(l.relearnLoading.isEmpty)
+        XCTAssertFalse(l.relearnClose.isEmpty)
     }
 
     // MARK: 후보 개수 — 무브셋 상한을 물려받지 않는다
@@ -224,7 +220,7 @@ final class HeartScaleTests: XCTestCase {
         XCTAssertTrue(row.contains("moveAlwaysHits"), "명중 판정이 없는 기술도 그 자리를 채워야 한다")
         XCTAssertTrue(row.contains("movePP"), "PP 가 없다")
         XCTAssertTrue(row.contains("movePowerShort"), "위력이 없다")
-        XCTAssertTrue(row.contains("move.description("), "설명이 없다")
+        XCTAssertTrue(row.contains("move.flavorText"), "설명이 없다")
     }
 
     /// 두 조회가 갈라지지 않게 잠근다 — 무브셋에는 들어가는데 다시 배우기에는 안 뜨는 기술이

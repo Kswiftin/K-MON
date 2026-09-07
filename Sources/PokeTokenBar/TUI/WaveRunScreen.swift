@@ -72,9 +72,9 @@ enum WaveRunScreen {
         }
     }
 
-    static func choices(_ run: RogueRun?, language: AppLanguage) -> [Choice] {
+    static func choices(_ run: RogueRun?) -> [Choice] {
         guard let run else { return [] }
-        let l = L(language)
+        let l = L()
         return numbers(run).map { number in
             Choice(number: number, label: label(number, in: run, l: l))
         }
@@ -118,7 +118,7 @@ enum WaveRunScreen {
 
     /// 판 한 장. 모든 줄이 `width` 를 넘지 않는다 — 넘치면 터미널이 줄을 접어 다음 줄을 밀어내고,
     /// 전체 다시 그리기 방식에서는 그 밀림이 복구되지 않는다.
-    static func lines(_ run: RogueRun?, language: AppLanguage, width: Int) -> [String] {
+    static func lines(_ run: RogueRun?, width: Int) -> [String] {
         let inner = max(1, width)
         guard let run else { return idleLines(width: inner) }
         var lines = [TUIRender.row(left: header(run), right: tally(run), width: inner)]
@@ -129,12 +129,12 @@ enum WaveRunScreen {
             lines.append(TUIText.truncate(ending, to: inner))
             return lines
         }
-        let log = self.log(run, language: language).suffix(logTail)
+        let log = self.log(run).suffix(logTail)
         if !log.isEmpty {
             lines.append(TUIRender.rule(width: inner))
             lines += log.map { TUIText.truncate($0, to: inner) }
         }
-        let offered = choices(run, language: language)
+        let offered = choices(run)
         if !offered.isEmpty {
             lines.append(TUIRender.rule(width: inner))
             lines += offered.map { TUIText.truncate("\($0.number) \($0.label)", to: inner) }
@@ -225,10 +225,10 @@ enum WaveRunScreen {
     /// `since` 는 **그 번호 뒤에 붙은 줄만** 달라는 뜻이다. 한 번 찍고 끝나는 명령의 답이
     /// 이 값을 쓴다 — 전부 실으면 요청 하나가 지난 턴들을 통째로 되뇌고, 마지막 줄만 실으면
     /// 아무 일도 안 일어난 입력(2대2 의 첫 칸)이 지난 턴의 결과를 자기 것처럼 보고한다.
-    static func log(_ run: RogueRun, language: AppLanguage, since index: Int = 0) -> [String] {
+    static func log(_ run: RogueRun, since index: Int = 0) -> [String] {
         let events = run.battle.events
         guard index < events.count else { return [] }
-        return lines(of: Array(events[max(0, index)...]), in: run, l: L(language))
+        return lines(of: Array(events[max(0, index)...]), in: run, l: L())
     }
 
     private static func lines(of events: [BattleEvent], in run: RogueRun, l: L) -> [String] {
@@ -256,11 +256,11 @@ enum WaveRunScreen {
         switch kind(run) {
         case .move:
             guard let side = actingSide(run) else { return "" }
-            guard !side.mustStruggle else { return MoveSpec.struggle().name(l.lang) }
+            guard !side.mustStruggle else { return MoveSpec.struggle().name }
             let index = number - 1
             guard side.moves.indices.contains(index) else { return "" }
             let remaining = side.pp.indices.contains(index) ? side.pp[index] : 0
-            return "\(side.moves[index].name(l.lang))  \(remaining)/\(side.moves[index].pp)"
+            return "\(side.moves[index].name)  \(remaining)/\(side.moves[index].pp)"
         case .sendOut:
             let index = number - 1
             guard run.party.indices.contains(index) else { return "" }
@@ -270,10 +270,10 @@ enum WaveRunScreen {
             let index = number - 1
             guard run.offers.indices.contains(index) else { return "" }
             let offer = run.offers[index]
-            return offer.name(l) + (offer.isPersistent ? "  [지속]" : "")
+            return offer.name + (offer.isPersistent ? "  [지속]" : "")
         case .route:
             let route = RunRoute.allCases[number - 1]
-            return route.name(l) + (route == .risky
+            return route.name + (route == .risky
                                     ? "  상대 +\(RunRoute.risky.levelBonus)Lv · 보상 \(RunRoute.risky.pickCount)장"
                                     : "")
         // 여기는 **닿지 않는다** — 라벨은 `choices` 가 `numbers` 를 돌며 부르고, 이 두 국면의

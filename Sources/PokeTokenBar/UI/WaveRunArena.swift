@@ -40,12 +40,18 @@ struct WaveRunArenaView: View {
     /// 타겟을 고르는 중인 기술. 상대가 둘일 때만 이 단계를 지난다 — 하나면 고를 것이 없다.
     @State private var pendingMove: Int?
 
+    /// 줄 간격. 1대1 전투 화면과 값이 같지만 **그쪽 예산을 읽지 않는다** — 두 화면은 담는 것이
+    /// 다르고(웨이브 런은 경로·부스트 줄이 더 붙는다), 한쪽을 조정하면 다른 쪽이 따라 움직이는
+    /// 것은 우연을 계약으로 오해한 결과다. 폭은 팝오버가 주는 값(`PopoverMetrics.contentWidth`)을
+    /// 직접 읽는다.
+    private static let rowSpacing: CGFloat = 7
+
     private var actingCell: Cell? { mine.first { $0.ordinal == actingSlot } }
     private var livingTargets: [Cell] { theirs.filter { $0.side.isAlive } }
     private var acceptsInput: Bool { isEnabled && actingSlot != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: BattleFieldMetrics.spacing) {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
             header
             field
             prompt
@@ -54,13 +60,13 @@ struct WaveRunArenaView: View {
                 SwitchStripView(slots: switchSlots,
                                 label: sendOutSlot == nil
                                     ? l.battleSwitch
-                                    : l.t("내보내기", "Send out", "くり出す"),
+                                    : "내보내기",
                                 isEnabled: isEnabled && (acceptsInput || sendOutSlot != nil),
                                 onSwitch: onSwitch)
             }
             BattleLogBox(lines: logLines, myActors: Set(mine.map(\.actor)))
         }
-        .frame(maxWidth: BattleFieldMetrics.width, alignment: .leading)
+        .frame(maxWidth: PopoverMetrics.contentWidth, alignment: .leading)
         // 고르던 기술은 그 칸의 것이다 — 칸이 넘어가면 버린다. 안 버리면 2번 칸이 1번 칸에서
         // 고른 기술 인덱스로 공격한다.
         .onChange(of: actingSlot) { pendingMove = nil }
@@ -137,10 +143,10 @@ struct WaveRunArenaView: View {
                 .animation(.easeInOut(duration: 0.08).repeatCount(4, autoreverses: true),
                            value: isStruck)
             HStack(spacing: 3) {
-                if side.snapshot.isShiny { Text("✨").font(.system(size: 8)) }
+                if side.snapshot.isShiny { Text("✨").font(PokedoroTheme.glyphFont(size: 8)) }
                 Text(side.snapshot.name).font(.system(size: 10, weight: .bold)).lineLimit(1)
                 Text(l.battleLv(side.snapshot.level))
-                    .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer(minLength: 2)
                 StatusBadgeRow(side: side)
             }
@@ -161,12 +167,12 @@ struct WaveRunArenaView: View {
             .frame(height: 4)
             HStack(spacing: 3) {
                 Text(isMine ? l.battleMyPokemon : theirTitle)
-                    .font(.system(size: 8)).foregroundStyle(.tertiary).lineLimit(1)
+                    .font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                 Spacer(minLength: 2)
                 StageArrows(side: side)
                 Text(isMine ? HPReadout.mine(hp: side.hp, max: side.stats.hp)
                             : HPReadout.theirs(hp: side.hp, max: side.stats.hp))
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
         }
@@ -185,23 +191,19 @@ struct WaveRunArenaView: View {
     @ViewBuilder
     private var prompt: some View {
         if let sendOutSlot {
-            Label(l.t("\(sendOutSlot + 1)번 칸에 내보낼 포켓몬을 고른다 (턴을 쓰지 않는다)",
-                      "Choose who takes slot \(sendOutSlot + 1) (this costs no turn)",
-                      "\(sendOutSlot + 1)番目の枠に出すポケモンを選ぶ（ターンを消費しない）"),
+            Label("\(sendOutSlot + 1)번 칸에 내보낼 포켓몬을 고른다 (턴을 쓰지 않는다)",
                   systemImage: "arrow.up.circle")
                 .font(.caption2).foregroundStyle(.orange)
         } else if pendingMove != nil {
-            Label(l.t("때릴 상대를 고른다", "Choose a target", "攻撃する相手を選ぶ"),
+            Label("때릴 상대를 고른다",
                   systemImage: "scope")
                 .font(.caption2).foregroundStyle(.orange)
         } else if let actingCell, mine.count > 1 {
-            Text(l.t("\(actingCell.ordinal + 1)번 칸 — \(actingCell.side.snapshot.name) 의 행동",
-                     "Slot \(actingCell.ordinal + 1) — \(actingCell.side.snapshot.name)'s action",
-                     "\(actingCell.ordinal + 1)番目の枠 — \(actingCell.side.snapshot.name) の行動"))
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+            Text("\(actingCell.ordinal + 1)번 칸 — \(actingCell.side.snapshot.name) 의 행동")
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
         } else {
             Text(l.battleYourTurn)
-                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
         }
     }
 
@@ -227,14 +229,13 @@ struct WaveRunArenaView: View {
                     .buttonStyle(.plain)
                     .disabled(!isEnabled)
                 }
-                Button(l.t("취소", "Cancel", "やめる")) { self.pendingMove = nil }
+                Button("취소") { self.pendingMove = nil }
                     .controlSize(.small)
             }
         } else if let actingCell {
             let side = actingCell.side
             MoveGridView(moves: side.mustStruggle ? [.struggle()] : side.moves,
                          pp: side.mustStruggle ? [] : side.pp,
-                         language: l.lang,
                          isEnabled: acceptsInput,
                          // 필드에 둘 이상이 서 있을 때만 광역 표시를 켠다 — 단일전에서는 "전체" 가
                          // 가리킬 대상이 하나뿐이라 정보가 아니고 버튼만 복잡해진다.
@@ -243,7 +244,7 @@ struct WaveRunArenaView: View {
         } else if sendOutSlot == nil {
             // 행동을 다 정했거나 재생 중이다 — 빈 자리를 두면 아래 줄이 위로 밀려 올라온다.
             Text(l.battleWaitingOpponent)
-                .font(.system(size: 9)).foregroundStyle(.tertiary)
+                .font(.system(size: 10)).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
         }
     }

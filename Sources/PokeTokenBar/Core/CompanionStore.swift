@@ -29,7 +29,7 @@ struct CandyFeedback: Equatable {
     var stardust: Int
 }
 
-/// 게임 상태의 출처. 앱이 켜져 있는 동안 시간이 별의모래로 적립돼(tick) 포켓몬을 진화시키고,
+/// 게임 상태의 출처. 앱이 켜져 있는 동안 시간이 별의조각으로 적립돼(tick) 포켓몬을 진화시키고,
 /// 최종체 + 추가 임계 도달 시 도감(라인 전체)에 보존 + 새 알. 진화 트리/희귀도/이름은
 /// PokeProviding 으로 런타임 주입하며 시간 기반 성장과 게임 상태를 관리한다.
 @MainActor
@@ -301,10 +301,8 @@ final class CompanionStore {
 
     // MARK: 파생값 (UI)
 
-    var language: AppLanguage { state.language }
-    func setLanguage(_ lang: AppLanguage) { state.language = lang; save() }
-    /// 앱 전체 UI 문자열 — language 변경 시 자동 재렌더.
-    var l: L { L(language) }
+    /// 앱 전체 UI 문자열.
+    var l: L { L() }
 
     var hasActive: Bool { state.active != nil }
     var rarity: Rarity? { state.active?.rarity }
@@ -405,7 +403,7 @@ final class CompanionStore {
               node.children.count >= 2 else { return [] }
         return node.children.map { child in
             EvolutionBranch(id: child.speciesID,
-                            targetName: line.localizedName(child.speciesID, state.language),
+                            targetName: line.localizedName(child.speciesID),
                             item: ItemKind.allCases.first { $0.evolutionRule?.opens(child) == true },
                             level: child.evolutionLevel)
         }
@@ -418,7 +416,7 @@ final class CompanionStore {
     /// 다음 진화 대상의 표시 이름 — 안내 문구가 "무엇으로" 진화하는지 말하려면 필요하다.
     var nextEvolutionName: String? {
         guard let next = nextEvolutionNode, let line = currentLine else { return nil }
-        return line.localizedName(next.speciesID, state.language)
+        return line.localizedName(next.speciesID)
     }
 
     /// 지금 개체의 "종 + 배운 기술" 을 한 값으로 묶은 것. 뷰가 이 값이 바뀔 때만 안내를 다시 받는다 —
@@ -460,50 +458,49 @@ final class CompanionStore {
             return l.finalForm
         }
         var conditions: [String] = []
-        if let gender = next.evolutionGender { conditions.append(gender.name(language)) }
+        if let gender = next.evolutionGender { conditions.append(gender.name) }
         if let time = next.evolutionTimeOfDay {
-            conditions.append(time == "day" ? l.t("낮", "Daytime", "昼") : l.t("밤", "Night", "夜"))
+            conditions.append(time == "day" ? "낮" : "밤")
         }
         if let relation = next.evolutionRelativePhysicalStats {
-            conditions.append(relation > 0 ? l.t("공격 > 방어", "Attack > Defense", "攻撃 > 防御")
-                              : relation < 0 ? l.t("공격 < 방어", "Attack < Defense", "攻撃 < 防御")
-                              : l.t("공격 = 방어", "Attack = Defense", "攻撃 = 防御"))
+            conditions.append(relation > 0 ? "공격 > 방어"
+                              : relation < 0 ? "공격 < 방어"
+                              : "공격 = 방어")
         }
         if let partyID = next.evolutionPartySpeciesID {
             let partyName = ownedMons.first(where: { $0.currentID == partyID })
-                .map { RosterOrdering.displayName($0, language: language) } ?? specialSpeciesName(partyID)
-            conditions.append(l.t("\(partyName) 보유", "Own \(partyName)", "\(partyName)を所持"))
+                .map { RosterOrdering.displayName($0) } ?? specialSpeciesName(partyID)
+            conditions.append("\(partyName) 보유")
         }
         let genderPrefix = conditions.isEmpty ? "" : conditions.joined(separator: " · ") + " · "
         if let moveID = next.evolutionKnownMoveID {
             let moveName = currentLine?.evolutionMoveNames[moveID]
-                .flatMap { language.resolveName($0) } ?? "#\(moveID)"
-            return genderPrefix + l.t("\(moveName) 습득 후 레벨업", "Level up knowing \(moveName)",
-                                      "\(moveName)を覚えてレベルアップ")
+                .flatMap { PokemonNaming.name($0) } ?? "#\(moveID)"
+            return genderPrefix + "\(moveName) 습득 후 레벨업"
         }
         if let level = next.evolutionLevel {
-            return genderPrefix + l.t("Lv.\(level)에 진화", "Evolves at Lv.\(level)", "Lv.\(level) で進化")
+            return genderPrefix + "Lv.\(level)에 진화"
         }
         if let item = nextEvolutionItem { return genderPrefix + l.evolutionNeedsItem(l.itemName(item)) }
         switch next.evolutionTrigger {
         case "level-up":
-            return genderPrefix + l.t("레벨업으로 진화", "Evolves by leveling up", "レベルアップで進化")
+            return genderPrefix + "레벨업으로 진화"
         case "trade":
             if let partnerID = next.evolutionTradeSpeciesID {
                 let partner = specialSpeciesName(partnerID)
-                return genderPrefix + l.t("\(partner)와 교환", "Trade with \(partner)", "\(partner)と交換")
+                return genderPrefix + "\(partner)와 교환"
             }
             return genderPrefix + l.evolutionNeedsItem(l.itemName(.linkingCord))
         default:
-            return genderPrefix + l.t("특수 조건으로 진화", "Evolves under a special condition", "特殊な条件で進化")
+            return genderPrefix + "특수 조건으로 진화"
         }
     }
 
     private func specialSpeciesName(_ id: Int) -> String {
         switch id {
-        case 223: return l.t("총어", "Remoraid", "テッポウオ")
-        case 588: return l.t("딱정곤", "Karrablast", "カブルモ")
-        case 616: return l.t("쪼마리", "Shelmet", "チョボマキ")
+        case 223: return "총어"
+        case 588: return "딱정곤"
+        case 616: return "쪼마리"
         default: return "#\(id)"
         }
     }
@@ -590,7 +587,7 @@ final class CompanionStore {
     /// 라인 조회 후 캐시, 실패 시 #번호 폴백.
     func resolveSpeciesName(_ speciesID: Int) async -> String {
         if let line = try? await provider.line(baseSpeciesID: speciesID) {
-            return line.localizedName(speciesID, state.language)
+            return line.localizedName(speciesID)
         }
         return "#\(speciesID)"
     }
@@ -618,7 +615,7 @@ final class CompanionStore {
     func battleSnapshot(for mon: MonState, level: Int = 50) async -> BattleSnapshot? {
         guard let profile = try? await provider.battleProfile(speciesID: mon.presentationID) else { return nil }
         let name = mon.currentID == 479
-            ? (mon.rotomForm ?? .normal).name(language)
+            ? (mon.rotomForm ?? .normal).name
             : await resolveSpeciesName(mon.currentID)
         // 자동 무브셋은 **스냅샷 레벨** 기준이다. 예전엔 여기만 `mon.level` 이라, Lv.50 으로 나가는
         // 개체가 자기 실제 레벨까지 배우는 기술만 들고 갔다 — 몸은 50 인데 기술은 3 인 상태.
@@ -695,14 +692,14 @@ final class CompanionStore {
     var displayName: String {
         guard let a = state.active, let line = currentLine else { return "Token Egg" }
         if let nick = a.nickname, !nick.trimmingCharacters(in: .whitespaces).isEmpty { return nick }
-        if a.currentID == 479, let form = a.rotomForm { return form.name(state.language) }
-        return line.localizedName(a.currentID, state.language)
+        if a.currentID == 479, let form = a.rotomForm { return form.name }
+        return line.localizedName(a.currentID)
     }
     /// 종 이름(별명 무시) — 별명 입력 플레이스홀더·리셋 기준값.
     var speciesName: String {
         guard let a = state.active, let line = currentLine else { return "" }
-        if a.currentID == 479, let form = a.rotomForm { return form.name(state.language) }
-        return line.localizedName(a.currentID, state.language)
+        if a.currentID == 479, let form = a.rotomForm { return form.name }
+        return line.localizedName(a.currentID)
     }
     var currentNickname: String? { state.active?.nickname }
     /// AI 대화는 종이 아니라 개체 UUID를 키로 삼는다. 같은 개체가 진화해도 이 스냅샷만 새 형태로 갱신한다.
@@ -711,7 +708,7 @@ final class CompanionStore {
         // currentTypes/displayedMoves are presentation caches for the active species. A boxed mon can ask
         // for a profile while those caches still belong to another species, so assemble individual data
         // from MonState and reuse the tagged type cache only when the requested species owns it.
-        let types = mon.currentID == currentSpeciesID ? currentTypes.map { $0.name(language) } : []
+        let types = mon.currentID == currentSpeciesID ? currentTypes.map { $0.name } : []
         // 능력치는 **개체의** 값이다 — `currentStats` 가 활성 개체의 레벨·성격으로 계산하므로,
         // 종만 맞춰 싣는 타입과 달리 활성 개체가 아니면 아예 넣지 않는다. 같은 종의 레벨 3 짜리
         // 프로필에 레벨 20 의 숫자가 실리면 그럴듯하게 틀린 값이 되고, 그건 안 들킨다.
@@ -720,11 +717,11 @@ final class CompanionStore {
         } : nil
         return PokemonChatProfile(speciesID: mon.currentID, displayName: speciesName, nickname: mon.nickname,
                                   isShiny: mon.isShiny,
-                                  nature: mon.nature?.name(language), level: mon.level,
+                                  nature: mon.nature?.name, level: mon.level,
                                   stage: mon.id == activeMonID ? stageText : "Lv.\(mon.level)",
-                                  flavorText: nil, language: language,
+                                  flavorText: nil,
                                   types: types, stats: stats,
-                                  moves: mon.learnedMoves.map { $0.name(language) },
+                                  moves: mon.learnedMoves.map { $0.name },
                                   nextEvolution: nextEvolutionName(for: mon))
     }
 
@@ -746,7 +743,7 @@ final class CompanionStore {
     /// 종 이름 한 곳. 로스터는 이름만 필요하므로 프로필을 만들지 않는다 — 프로필 한 벌은 진화 트리
     /// 조회와 능력치 문자열 조립까지 딸려 오는데, 로스터는 그 둘을 곧바로 버린다.
     private func chatSpeciesName(for mon: MonState) -> String {
-        mon.names.flatMap { language.resolveName($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
+        mon.names.flatMap { PokemonNaming.name($0[mon.currentID] ?? [:]) } ?? "#\(mon.currentID)"
     }
 
     var chatRosterEntries: [ChatRosterEntry] {
@@ -762,7 +759,7 @@ final class CompanionStore {
 
     private func nextEvolutionName(for mon: MonState) -> String? {
         guard let node = currentLine?.tree.node(withID: mon.currentID), let next = node.children.first else { return nil }
-        return currentLine?.localizedName(next.speciesID, language)
+        return currentLine?.localizedName(next.speciesID)
     }
 
     /// 현재 포켓몬 별명 설정 — 공백이면 nil(종 이름으로 표시). 진화해도 유지.
@@ -1001,7 +998,7 @@ final class CompanionStore {
         return acc.sorted { $0.key < $1.key }.map { id, a in
             DexSpecies(
                 id: id,
-                name: a.names.flatMap { state.language.resolveName($0) } ?? "#\(id)",
+                name: a.names.flatMap { PokemonNaming.name($0) } ?? "#\(id)",
                 rarity: a.rarity,
                 isShiny: a.isShiny,
                 isRaising: !a.isGraduated)
@@ -1133,7 +1130,7 @@ final class CompanionStore {
     /// 오프라인이면 `dexResolveChainNames` 가 저장 없이 폴백만 돌려주므로 다음 진입에서 다시 시도한다.
     func backfillMissingDexNames() async {
         for entry in state.dex where entry.chainOrder.contains(where: {
-            entry.names?[$0].flatMap { state.language.resolveName($0) } == nil
+            entry.names?[$0].flatMap { PokemonNaming.name($0) } == nil
         }) {
             _ = await dexResolveChainNames(entry)   // 성공분만 내부에서 state.dex 에 저장
         }
@@ -1143,11 +1140,8 @@ final class CompanionStore {
     /// 화면의 임시 문자열만 채우면 첫 네트워크 실패 뒤 `#399`가 계속 남고, 교환/대화처럼 다른 화면은
     /// 여전히 번호를 읽는다. 개체의 base 라인을 병합해 모든 표시 경로가 같은 저장 데이터를 쓰게 한다.
     func backfillMissingOwnedNames() async {
-        // inout으로 state의 개체를 갱신하는 동안 state.language를 다시 읽으면 Swift 독점 접근 충돌이다.
-        // 현재 언어를 값으로 고정해 병합 클로저가 state를 중첩 접근하지 않게 한다.
-        let language = state.language
         let targets = ownedMons.filter { mon in
-            mon.names?[mon.currentID].flatMap { language.resolveName($0) } == nil
+            mon.names?[mon.currentID].flatMap { PokemonNaming.name($0) } == nil
         }
         guard !targets.isEmpty else { return }
         var changed = false
@@ -1156,7 +1150,7 @@ final class CompanionStore {
             guard let line = try? await provider.line(baseSpeciesID: target.baseID) else { continue }
             func merge(_ mon: inout MonState) {
                 var names = mon.names ?? [:]
-                for id in mon.pathIDs where names[id].flatMap({ language.resolveName($0) }) == nil {
+                for id in mon.pathIDs where names[id].flatMap({ PokemonNaming.name($0) }) == nil {
                     if let resolved = line.names[id] { names[id] = resolved }
                 }
                 guard names != mon.names else { return }
@@ -1196,7 +1190,7 @@ final class CompanionStore {
     /// 없으면 nil(뷰가 async 조회로 폴백).
     func dexStoredChainNames(_ entry: DexEntry) -> [Int: String]? {
         guard let names = entry.names, !names.isEmpty else { return nil }
-        return names.compactMapValues { state.language.resolveName($0) }
+        return names.compactMapValues { PokemonNaming.name($0) }
     }
 
     /// 이름 미저장(구버전) 항목용 — line 을 1회 조회해 체인 전 종의 다국어 이름을 얻고 항목에 백필한다
@@ -1210,7 +1204,7 @@ final class CompanionStore {
             return Dictionary(uniqueKeysWithValues: entry.chainOrder.map { ($0, stored[$0] ?? "#\($0)") })
         }
         var chainNames = entry.names ?? [:]
-        for id in entry.chainOrder where chainNames[id].flatMap({ state.language.resolveName($0) }) == nil {
+        for id in entry.chainOrder where chainNames[id].flatMap({ PokemonNaming.name($0) }) == nil {
             if let resolved = line.names[id] { chainNames[id] = resolved }
         }
         if let idx = state.dex.firstIndex(where: { $0.id == entry.id }), chainNames != entry.names {
@@ -1218,13 +1212,13 @@ final class CompanionStore {
             save()
         }
         return Dictionary(uniqueKeysWithValues: entry.chainOrder.map { id in
-            (id, chainNames[id].flatMap { state.language.resolveName($0) } ?? "#\(id)")
+            (id, chainNames[id].flatMap { PokemonNaming.name($0) } ?? "#\(id)")
         })
     }
 
-    // MARK: 생산 틱 (시간 → 별의모래)
+    // MARK: 생산 틱 (시간 → 별의조각)
 
-    /// 방치 생산 — 앱이 켜져 있는 동안 경과 시간을 별의모래로 적립한다. AppDelegate 의 60초 타이머와
+    /// 방치 생산 — 앱이 켜져 있는 동안 경과 시간을 별의조각으로 적립한다. AppDelegate 의 60초 타이머와
     /// refresh 훅이 호출한다. 슬립·시계 점프는 maxTickInterval 캡으로 잘린다(켜져 있던 시간만 인정).
     /// 부화·진화·졸업은 공통 성장량 적용 경로를 사용한다.
     func tick() {
@@ -1248,7 +1242,7 @@ final class CompanionStore {
         if state.activeSecondsDate != today { state.activeSecondsDate = today; state.activeSecondsToday = 0 }
         state.activeSecondsTotal += elapsed
         state.activeSecondsToday += elapsed
-        // 별의모래는 완료한 집중 세션에서만 지급한다. 틱은 함께한 시간 기록과 생명주기 갱신만 담당한다.
+        // 별의조각은 완료한 집중 세션에서만 지급한다. 틱은 함께한 시간 기록과 생명주기 갱신만 담당한다.
     }
 
     /// 생산분을 상태에 반영 — 알이면 인큐베이션, 활성이면 성장(진화/졸업 판정). tick 과 테스트가 공유.
@@ -1344,7 +1338,7 @@ final class CompanionStore {
 
     private func recordEventMemory(_ ko: String, _ en: String, _ ja: String,
                                    companionID: UUID, eventID: String, occurredAt: Date? = nil) {
-        memoryAlbum.record(companionID: companionID, body: l.t(ko, en, ja), source: .event,
+        memoryAlbum.record(companionID: companionID, body: ko, source: .event,
                            eventID: eventID, createdAt: occurredAt ?? clock())
     }
     var activeAdventure: AdventureRun? { state.adventure }
@@ -1754,9 +1748,7 @@ final class CompanionStore {
         }
         // 도착한 추억은 **보낸 쪽 언어**로 쓰여 있다. 내 언어로 된 이 한 줄이 그 맥락을 준다.
         memoryAlbum.record(companionID: received.id,
-                           body: l.t("이전 트레이너와의 기억을 안고 왔다.",
-                                     "Arrived carrying memories of a previous trainer.",
-                                     "前のトレーナーとの思い出を抱えてやってきた。"),
+                           body: "이전 트레이너와의 기억을 안고 왔다.",
                            source: .event, createdAt: clock())
         AppLog.write("trade adopted \(clean.entries.count) memories")
     }
@@ -1827,7 +1819,7 @@ final class CompanionStore {
         return true
     }
 
-    /// 경매에서 별의모래로 산 포켓몬을 받는다. 일반 교환과 달리 내보낼 개체가 없으므로
+    /// 경매에서 별의조각으로 산 포켓몬을 받는다. 일반 교환과 달리 내보낼 개체가 없으므로
     /// 동행이 있으면 박스에, 없으면 동행 자리에 둔다. 상대가 보낸 첫 만남 시각은 신뢰하지 않는다.
     func receiveAuctionPokemon(_ incoming: MonState, incomingMemories: TradeMemoryPayload? = nil) -> Bool {
         guard PokemonAssets.hasAnimatedSprite(speciesID: incoming.currentID),
@@ -1852,7 +1844,7 @@ final class CompanionStore {
         return true
     }
 
-    /// 별의모래 경매 판매를 한 번에 반영한다. 포켓몬을 실제로 찾은 경우에만 지갑을 늘려
+    /// 별의조각 경매 판매를 한 번에 반영한다. 포켓몬을 실제로 찾은 경우에만 지갑을 늘려
     /// 이미 팔린 게시물이나 중복 커밋이 화폐를 복제하지 못하게 한다.
     ///
     /// **동행(`state.active`)은 팔지 못한다 — 박스 개체만 나간다.** 예전엔 여기서 동행을 비워
@@ -2578,20 +2570,16 @@ final class CompanionStore {
         guard addStoredEggs(1) > 0 else { return }
         state.eggTier = Self.strongerGuarantee(state.eggTier, reward.guarantee)
         save()
-        notifyCompanionEvent(l.t("토너먼트 우승!", "Tournament Champion!", "トーナメント優勝！"),
-                             l.t("우승 보상 알이 도착했습니다.", "Your champion Egg has arrived.",
-                                 "優勝報酬のタマゴが届きました。"))
+        notifyCompanionEvent("토너먼트 우승!",
+                             "우승 보상 알이 도착했습니다.")
     }
 
     func grantTournamentStardust(_ amount: Int, placement: Int) {
         guard amount > 0 else { return }
         state.starPieces += amount
         save()
-        notifyCompanionEvent(l.t("토너먼트 \(placement)위!", "Tournament place #\(placement)!",
-                                 "トーナメント\(placement)位！"),
-                             l.t("순위 보상으로 별의모래 \(amount.formatted())개를 받았습니다.",
-                                 "You received \(amount.formatted()) Stardust as a placement reward.",
-                                 "順位報酬としてほしのすなを\(amount.formatted())個受け取りました。"))
+        notifyCompanionEvent("토너먼트 \(placement)위!",
+                             "순위 보상으로 별의조각 \(amount.formatted())개를 받았습니다.")
     }
 
     /// 이로치 확정을 **한 번 쓴다.** 남아 있으면 true 를 돌려주고 하나 깎는다.
@@ -2685,7 +2673,7 @@ final class CompanionStore {
             state.boxedMons.append(caught)
             destination = .box
         }
-        let name = line.localizedName(speciesID, state.language)
+        let name = line.localizedName(speciesID)
         recordEventMemory("레이드에서 \(name)을(를) 잡았다.", "Caught \(name) in a raid.",
                           "レイドで\(name)を捕まえた。",
                           companionID: caught.id, eventID: "raid-catch:\(caught.id.uuidString)")
@@ -2794,7 +2782,7 @@ final class CompanionStore {
         save()
     }
 
-    /// 별의모래 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
+    /// 별의조각 증분을 현재 포켓몬에 적용 — 임계 도달 시 진화/졸업.
     /// 라인 미로딩(재시작 직후·오프라인)이어도 성장량은 항상 적립하고 진화 판정만 미룬다.
     func applyUsage(_ delta: Int, maxTransitions: Int = .max) {
         guard state.active != nil else { return }
@@ -2853,7 +2841,7 @@ final class CompanionStore {
                 if evolutionPrompt == nil {
                     evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
                         toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
-                        toName: line.localizedName(next.speciesID, state.language))
+                        toName: line.localizedName(next.speciesID))
                 }
                 break
             }
@@ -2876,7 +2864,7 @@ final class CompanionStore {
                 if evolutionPrompt == nil {
                     evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
                         toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
-                        toName: line.localizedName(next.speciesID, state.language))
+                        toName: line.localizedName(next.speciesID))
                 }
                 break
             }
@@ -2887,7 +2875,7 @@ final class CompanionStore {
                 if evolutionPrompt == nil {
                     evolutionPrompt = EvolutionPrompt(monID: a.id, fromSpeciesID: a.currentID,
                         toSpeciesID: next.speciesID, requiredLevel: requiredLevel,
-                        toName: line.localizedName(next.speciesID, state.language))
+                        toName: line.localizedName(next.speciesID))
                 }
                 break
             }
@@ -3095,7 +3083,7 @@ final class CompanionStore {
         paid += grantNewlyCompletedDexGoals(before: goalsBefore)
         // 졸업 한 번이 지갑을 넷에서 늘린다 — 넷을 합쳐 한 통으로 보고한다.
         announcePayout(paid, .graduation)
-        let name = currentLine?.localizedName(finalID, state.language) ?? ""
+        let name = currentLine?.localizedName(finalID) ?? ""
         justGraduated = name
         notifyCompanionEvent(l.notifGraduateTitle, l.notifGraduateBody(name))
         eventUntil = clock().addingTimeInterval(6)
@@ -3304,7 +3292,7 @@ final class CompanionStore {
         state.active!.stageIndex += 1
         state.active!.totalForms = state.active!.plannedPathIDs.count
         state.active!.usedAtStage = 0
-        let newName = line.localizedName(next.speciesID, state.language)
+        let newName = line.localizedName(next.speciesID)
         justEvolvedTo = newName
         fireCelebration(.evolve)
         eventUntil = clock().addingTimeInterval(4)
@@ -3313,9 +3301,9 @@ final class CompanionStore {
         return true
     }
 
-    // MARK: 상점 (재화 = 별의모래)
+    // MARK: 상점 (재화 = 별의조각)
 
-    /// 쓸 수 있는 별의모래 = 지갑 잔액. 성장 미터(`usedSinceInstall`)는 여기에 들어오지 않는다 —
+    /// 쓸 수 있는 별의조각 = 지갑 잔액. 성장 미터(`usedSinceInstall`)는 여기에 들어오지 않는다 —
     /// 구매도 판돈도 `starPieces` 만 깎아서 진화 진행·오늘/주/월 통계는 그대로다.
     var availableTokens: Int { max(0, state.starPieces) }
 
@@ -3606,7 +3594,7 @@ final class CompanionStore {
         }
         state.focusEggs -= 1
         state.focusEggReadyDates.removeFirst()
-        let name = line.localizedName(line.baseID, state.language)
+        let name = line.localizedName(line.baseID)
         // Stored eggs can hatch into the box while another companion is active.  Attribute
         // the evidence to the newborn rather than whichever companion happens to be active.
         recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。",
@@ -3818,7 +3806,7 @@ final class CompanionStore {
         let hatchedID = state.active!.id
         memoryAlbum.recordFirstMeeting(companionID: hatchedID, at: state.active!.firstMetAt!)
         AppLog.write("hatch: base=\(line.baseID) rarity=\(line.rarity) shiny=\(isShiny) forms=\(evolutionPlan.count) ditto=\(dittoDisguise != nil)")
-        let name = line.localizedName(line.baseID, state.language)
+        let name = line.localizedName(line.baseID)
         recordEventMemory("\(name)이(가) 알에서 태어났다.", "\(name) hatched from an egg.", "\(name)がタマゴから生まれた。",
                           companionID: hatchedID, eventID: "hatch:\(hatchedID.uuidString)")
         notifyCompanionEvent(showShiny ? l.notifShinyHatchTitle : l.notifHatchTitle,
@@ -3849,7 +3837,7 @@ final class CompanionStore {
               var m = state.active, m.dittoDisguise != nil, !m.dittoRevealed else { return }
         let latestFirstEvoThr = PokemonBalance.phaseThreshold(rarity: m.rarity, totalForms: m.totalForms, stageIndex: 0)
         guard m.usedAtStage >= latestFirstEvoThr else { return }
-        let disguiseName = currentLine?.localizedName(m.baseID, state.language) ?? "#\(m.baseID)"
+        let disguiseName = currentLine?.localizedName(m.baseID) ?? "#\(m.baseID)"
         let carryOver = max(0, m.usedAtStage - latestFirstEvoThr)   // 위장체 첫 진화 초과분 → 메타몽 성장 이월
         // 메타몽으로 전환 — rarity/forms 는 로드한 라인에서, isShiny/nature/dittoDisguise 는 유지.
         m.baseID = dittoLine.baseID

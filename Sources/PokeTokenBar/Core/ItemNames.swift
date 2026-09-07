@@ -33,7 +33,7 @@ extension ItemKind {
     /// 없어 `nameable` 에서 일부러 빠져 있고, 거기에 넣으면 `use 침대` 가 먼저 받아들여진 뒤
     /// 실패한다. 방에 놓는 명령은 **가구만** 이름으로 받으면 되므로 표를 하나 더 둔다.
     ///
-    /// 대조 규칙(공백 정리·rawValue·세 언어 표시 이름)은 `match` 하나를 공유한다 — 두 벌로
+    /// 대조 규칙(공백 정리·rawValue·표시 이름)은 `match` 하나를 공유한다 — 두 벌로
     /// 쓰면 한쪽만 관대해져 같은 이름이 명령에 따라 통하고 안 통한다.
     static func furnitureNamed(_ raw: String) -> ItemKind? {
         match(raw, in: memoryHomeFurniture.sorted { $0.rawValue < $1.rawValue })
@@ -44,7 +44,7 @@ extension ItemKind {
         guard !needle.isEmpty else { return nil }
         return candidates.first { kind in
             kind.rawValue.lowercased() == needle
-                || AppLanguage.allCases.contains { L($0).itemName(kind).lowercased() == needle }
+                || L().itemName(kind).lowercased() == needle
         }
     }
 }

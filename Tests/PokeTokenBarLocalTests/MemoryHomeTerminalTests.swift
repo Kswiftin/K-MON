@@ -248,20 +248,18 @@ struct MemoryHomeTerminalTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let stateURL = directory.appendingPathComponent("state.json")
         let store = CompanionStore(fileURL: stateURL)
-        store.setLanguage(.ko)
         store.memoryAlbum.setMood(.calm)
 
         let state = store.homeTerminalState
         #expect(state.decorLimit == 12)
-        #expect(state.styleName == MemoryHomeRoomStyle.campus.name(L(.ko)))
+        #expect(state.styleName == MemoryHomeRoomStyle.campus.name)
         // 기분은 **이모지와 이름을 함께** 싣는다 — 앱 화면이 그렇게 보여 주므로 같은 값이다.
         #expect(state.moodName == MemoryHomeMoodStyle.emoji(.calm)
-                + " " + MemoryHomeMoodStyle.name(.calm, L(.ko)))
+                + " " + MemoryHomeMoodStyle.name(.calm))
         #expect(state.styles.contains { $0.isActive }, "지금 쓰는 스타일이 표시돼야 한다")
         #expect(state.styles.count == MemoryHomeRoomStyle.allCases.count)
         // 읽기 전용으로 열어도 같은 값이 나온다 — 이 화면이 앱 없이 도는 근거다.
         let readOnly = CompanionStore(fileURL: stateURL, isReadOnly: true)
-        readOnly.setLanguage(.ko)
         #expect(readOnly.homeTerminalState.moodName == state.moodName)
     }
 

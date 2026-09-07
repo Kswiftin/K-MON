@@ -173,7 +173,7 @@ final class TradeChatTests: XCTestCase {
     @MainActor
     func testPeerTrainerNameIsClampedOnBothHandshakeBranches() {
         let huge = String(repeating: "괴", count: 5_000)
-        let clamped = String(repeating: "괴", count: BattleChatPolicy.maximumNameLength)
+        let clamped = String(repeating: "괴", count: PeerTextPolicy.maximumNameLength)
 
         // 받는 쪽 — `.request`
         let incoming = makeCenter()
@@ -211,7 +211,7 @@ final class TradeChatTests: XCTestCase {
             center.receive(.chat(BattleChatMessage(senderID: sender, senderName: name, body: body)))
         }
 
-        incoming(String(repeating: "a", count: BattleChatPolicy.maximumLength + 1))
+        incoming(String(repeating: "a", count: PeerTextPolicy.maximumLength + 1))
         incoming("   ")
         incoming("  앞뒤가 안 다듬어진 문장  ")   // 정규형이 아니면 그대로 버린다
         XCTAssertTrue(center.chatMessages.isEmpty)

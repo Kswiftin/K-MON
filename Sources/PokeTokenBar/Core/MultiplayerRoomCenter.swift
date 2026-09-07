@@ -726,10 +726,7 @@ final class MultiplayerRoomCenter {
             guard !Task.isCancelled, let self, self.sessionEpoch == epoch,
                   case .joining = self.phase else { return }
             self.leaveRoom()
-            self.lastError = self.companion.l.t(
-                "방 연결 시간이 초과되었습니다. 다시 참가해 주세요.",
-                "The room connection timed out. Please try joining again.",
-                "ルームへの接続がタイムアウトしました。もう一度参加してください。")
+            self.lastError = "방 연결 시간이 초과되었습니다. 다시 참가해 주세요."
         }
         roomJoinTask = Task {
             guard let snapshot = await buildSnapshot(level: level) else {
@@ -1116,10 +1113,8 @@ final class MultiplayerRoomCenter {
         guard !(UserDefaults.standard.object(forKey: "doNotDisturb") as? Bool ?? false), AppEnv.isBundledApp else { return }
         guard let matchID = gymMatch?.matchID else { return }
         let content = UNMutableNotificationContent()
-        content.title = companion.l.t("체육관 배틀 중입니다", "Gym battle in progress", "ジム戦が進行中です")
-        content.body = companion.l.t("\(challengerName) 님의 도전을 AI 가 방어하고 있습니다.",
-                                     "\(challengerName) is challenging — your AI is defending.",
-                                     "\(challengerName) さんの挑戦を AI が防衛中です。")
+        content.title = "체육관 배틀 중입니다"
+        content.body = "\(challengerName) 님의 도전을 AI 가 방어하고 있습니다."
         content.sound = .default
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: "gym-battle-\(matchID.uuidString)",
@@ -1536,10 +1531,6 @@ final class MultiplayerRoomCenter {
     // 활동을 더할 때 두 곳을 고쳐야 하고, 한쪽만 고치는 부류가 그대로 생긴다 — 터미널이
     // `startRaid()` 만 부르고 있던 것이 정확히 그 모양이었다.
 
-    /// 창구가 기술 이름·퀴즈 문항을 접을 때 쓰는 언어. `companion` 이 `private` 이라 여기서 낸다 —
-    /// 창구를 이 파일 안으로 끌고 들어오는 것보다 값 하나를 내는 편이 좁다.
-    var displayLanguage: AppLanguage { companion.language }
-
     /// 활동 → 시작 함수. **표를 값으로 낸다.**
     ///
     /// 함수 본문 안의 `switch` 로 두면 한 갈래를 `break` 로 바꿔도 어떤 테스트도 빨강이 되지
@@ -1935,8 +1926,8 @@ final class MultiplayerRoomCenter {
     private func acceptChat(_ incoming: BattleChatMessage, from participantID: UUID) {
         guard (phase == .battling || phase == .tournament), incoming.senderID == participantID,
               let participant = lobby?.participants.first(where: { $0.id == participantID }),
-              let body = BattleChatPolicy.normalizedBody(incoming.body),
-              let name = BattleChatPolicy.displayName(participant.trainerName),
+              let body = PeerTextPolicy.normalizedBody(incoming.body),
+              let name = PeerTextPolicy.displayName(participant.trainerName),
               chatRateLimiter.allows(participantID) else { return }
         // `id` 는 상대가 고른 값이라 새로 짓는다 — 같은 값을 두 번 보내면 `ForEach` 가 무너진다.
         let message = BattleChatMessage(senderID: participantID, senderName: name,
@@ -1950,8 +1941,8 @@ final class MultiplayerRoomCenter {
     /// 인증한 값이고, 내가 보낸 말도 이 중계로 되돌아온다). `id` 는 새로 짓는다 — 중계된 값이
     /// 되풀이되면 화면의 `ForEach` 가 중복 키로 무너진다.
     func acceptRelayedChat(_ incoming: BattleChatMessage) {
-        guard let body = BattleChatPolicy.normalizedBody(incoming.body), body == incoming.body,
-              let name = BattleChatPolicy.displayName(incoming.senderName) else { return }
+        guard let body = PeerTextPolicy.normalizedBody(incoming.body), body == incoming.body,
+              let name = PeerTextPolicy.displayName(incoming.senderName) else { return }
         chatHistory.append(BattleChatMessage(senderID: incoming.senderID, senderName: name,
                                              body: body, sentAt: incoming.sentAt))
         chatMessages = chatHistory.messages
@@ -1959,7 +1950,7 @@ final class MultiplayerRoomCenter {
 
     func sendChat(_ body: String) {
         guard (phase == .battling || phase == .tournament),
-              let normalized = BattleChatPolicy.normalizedBody(body) else { return }
+              let normalized = PeerTextPolicy.normalizedBody(body) else { return }
         let message = BattleChatMessage(senderID: myID, senderName: trainerName, body: normalized)
         if isHost { acceptChat(message, from: myID) }
         else if let hostConnection { send(.chat(message), over: hostConnection) }

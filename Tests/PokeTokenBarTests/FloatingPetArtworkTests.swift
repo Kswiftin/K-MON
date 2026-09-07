@@ -81,20 +81,15 @@ final class FloatingPetArtworkTests: XCTestCase {
         XCTAssertEqual(FloatingPetArtwork.allCases.count, 2)
     }
 
-    /// 문구는 세 언어 모두 있어야 하고, **"선명하게" 는 돌아다니기가 남는다는 걸 말해야 한다** —
+    /// **"선명하게" 는 돌아다니기가 남는다는 걸 말해야 한다** —
     /// 안 그러면 펫이 아예 멈추는 줄 알고 아무도 안 고른다.
     func testTheSharpHintSaysRoamingStillWorks() {
-        for language in AppLanguage.allCases {
-            let localized = L(language)
-            for artwork in FloatingPetArtwork.allCases {
-                XCTAssertFalse(localized.floatingPetArtworkLabel(artwork).isEmpty, "\(language) 라벨 누락")
-                XCTAssertFalse(localized.floatingPetArtworkHint(artwork).isEmpty, "\(language) 설명 누락")
-            }
+        let localized = L()
+        for artwork in FloatingPetArtwork.allCases {
+            XCTAssertFalse(localized.floatingPetArtworkLabel(artwork).isEmpty, "라벨 누락")
+            XCTAssertFalse(localized.floatingPetArtworkHint(artwork).isEmpty, "설명 누락")
         }
-        XCTAssertNotEqual(L(.ko).floatingPetArtworkLabel(.sharp), L(.en).floatingPetArtworkLabel(.sharp))
-        XCTAssertNotEqual(L(.ko).floatingPetArtworkLabel(.sharp), L(.ja).floatingPetArtworkLabel(.sharp))
 
-        XCTAssertTrue(L(.ko).floatingPetArtworkHint(.sharp).contains("돌아다니기"))
-        XCTAssertTrue(L(.en).floatingPetArtworkHint(.sharp).contains("Roaming"))
+        XCTAssertTrue(L().floatingPetArtworkHint(.sharp).contains("돌아다니기"))
     }
 }

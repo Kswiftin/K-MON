@@ -214,16 +214,15 @@ final class MemoryHomeDateCardTests: XCTestCase {
                        "숨긴 하루가 연속을 계속 이어 주고 있다")
     }
 
-    /// 새 `Kind` 케이스에 아이콘·세 언어 제목이 붙어 있어야 한다. `switch` 는 컴파일러가
+    /// 새 `Kind` 케이스에 아이콘·제목이 붙어 있어야 한다. `switch` 는 컴파일러가
     /// 강제하지만 **빈 문자열**은 강제하지 못한다.
-    func testDateCardKindsHaveIconAndTitleInAllThreeLanguages() {
+    func testDateCardKindsHaveIconAndTitle() {
         for kind in [PokemonMemoryMilestone.Kind.firstWinter, .christmas,
                      .newYear, .allFourSeasons, .memoryStreak(7)] {
             let milestone = PokemonMemoryMilestone(id: "x", kind: kind, occurredAt: Date())
             XCTAssertFalse(MemoryHomeCardStyle.icon(milestone).isEmpty)
-            let titles = [AppLanguage.ko, .en, .ja].map { MemoryHomeCardStyle.title(milestone, L($0)) }
-            XCTAssertEqual(Set(titles).count, 3, "\(kind): 세 언어 제목이 서로 달라야 한다")
-            XCTAssertFalse(titles.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+            XCTAssertFalse(MemoryHomeCardStyle.title(milestone).trimmingCharacters(in: .whitespaces).isEmpty,
+                           "\(kind): 제목이 비어 있다")
         }
     }
 }

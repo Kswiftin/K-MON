@@ -147,7 +147,7 @@ final class PopoverLayoutTests: XCTestCase {
 
     // MARK: 레이드 아레나 — 4인 파티가 폭에 들어가나
 
-    private func raidArena(names: [String], language: AppLanguage = .ko) -> some View {
+    private func raidArena(names: [String]) -> some View {
         func snapshot(_ name: String, level: Int) -> BattleSnapshot {
             var made = BattleSnapshot(speciesID: 143, name: name, trainer: nil, level: level,
                                       nature: nil, isShiny: false, types: [.normal, .flying],
@@ -169,7 +169,7 @@ final class PopoverLayoutTests: XCTestCase {
         return RaidArenaView(
             boss: RaidArenaView.Cell(id: RaidBoss.bossID, title: "보스", side: bossSide),
             bossMaxHP: RaidTier.five.bossHP, party: party,
-            myID: party.first?.id ?? RaidBoss.bossID, l: L(language),
+            myID: party.first?.id ?? RaidBoss.bossID, l: L(),
             round: 7, turnsLeft: 14, overlay: .idle, logLines: [],
             acceptsInput: true, isFinished: false, onMove: { _ in })
     }
@@ -177,12 +177,9 @@ final class PopoverLayoutTests: XCTestCase {
     /// 파티 넷이 두 칸씩 접혀 팝오버 폭 안에 들어와야 한다. 넘치면 이름과 HP 표기가 먼저 잘리고,
     /// 그건 "누가 얼마나 남았나" 를 못 보는 것과 같다.
     func testTheRaidArenaFitsTheContentWidthWithAFullParty() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let width = renderedWidth(raidArena(names: ["가", "나", "다", "라"], language: language),
-                                      proposing: PopoverMetrics.contentWidth)
-            XCTAssertLessThanOrEqual(width, PopoverMetrics.contentWidth,
-                                     "\(language.rawValue): 4인 파티가 폭을 넘겼다")
-        }
+        let width = renderedWidth(raidArena(names: ["가", "나", "다", "라"]),
+                                  proposing: PopoverMetrics.contentWidth)
+        XCTAssertLessThanOrEqual(width, PopoverMetrics.contentWidth, "4인 파티가 폭을 넘겼다")
     }
 
     /// **대조군**: 넷이 하나보다 높아야 한다. 파티 격자가 실제로 안 그려지고 있으면 위 폭 검증은
@@ -257,9 +254,9 @@ final class PopoverLayoutTests: XCTestCase {
 
     // MARK: 근처 트레이너 카드 (진행도가 잘리지 않는가)
 
-    private func peerStore(_ language: AppLanguage = .ko) -> CompanionStore {
+    private func peerStore() -> CompanionStore {
         let url = storeStateURL("peer-layout")
-        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)"}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1}"#
         try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: moveTestLine),
                               clock: { Date(timeIntervalSince1970: 1_755_000_000) },
@@ -290,9 +287,8 @@ final class PopoverLayoutTests: XCTestCase {
                           achievementCeiling: PeerAdvertisement.maximumTierCeiling)
     }
 
-    private func peerRow(_ name: String, _ advertisement: PeerAdvertisement,
-                         _ language: AppLanguage = .ko) -> some View {
-        PeerRow(store: peerStore(language), peer: peer(name, advertisement),
+    private func peerRow(_ name: String, _ advertisement: PeerAdvertisement) -> some View {
+        PeerRow(store: peerStore(), peer: peer(name, advertisement),
                 isEnabled: true, onChallenge: {})
     }
 
@@ -312,14 +308,10 @@ final class PopoverLayoutTests: XCTestCase {
                              "레벨·배지가 카드에 실제로 그려지지 않으면 폭 검증이 무의미해진다")
     }
 
-    /// 최악의 진행도를 실은 카드가 세 언어 모두 팝오버 콘텐츠 폭 안에 들어와야 한다.
-    /// 버튼 문구가 언어마다 다르다(대결 신청 / Challenge / 対戦を申し込む).
+    /// 최악의 진행도를 실은 카드가 팝오버 콘텐츠 폭 안에 들어와야 한다.
     func testPeerRowFitsTheContentWidthInEveryLanguage() {
-        for language in [AppLanguage.ko, .en, .ja] {
-            let width = intrinsicWidth(peerRow("Ash", widestAdvertisement, language))
-            XCTAssertLessThanOrEqual(width, PopoverMetrics.contentWidth,
-                                     "\(language.rawValue): 진행도 줄이 카드 폭을 넘겼다")
-        }
+        let width = intrinsicWidth(peerRow("Ash", widestAdvertisement))
+        XCTAssertLessThanOrEqual(width, PopoverMetrics.contentWidth, "진행도 줄이 카드 폭을 넘겼다")
     }
 
     /// 두 줄을 유지해야 한다. 진행도 때문에 세 번째 줄이 생기면 한 페이지 5명 예산이 깨지고,
@@ -342,25 +334,13 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertEqual(long, short, accuracy: 1, "긴 이름이 카드 높이를 키웠다")
     }
 
-    /// 세 언어에서 카드 높이가 같아야 한다. 한 언어에서만 줄바꿈되면 그 언어에서만 목록이 넘친다.
-    /// 기술 목록에서 이미 겪은 부류다(CI 118pt vs 로컬 78pt).
-    func testPeerRowHeightDoesNotDependOnLanguage() {
-        let korean = renderedHeight(peerRow("Ash", widestAdvertisement, .ko),
-                                    proposingWidth: PopoverMetrics.contentWidth)
-        for language in [AppLanguage.en, .ja] {
-            XCTAssertEqual(renderedHeight(peerRow("Ash", widestAdvertisement, language),
-                                          proposingWidth: PopoverMetrics.contentWidth),
-                           korean, accuracy: 1, "\(language.rawValue) 에서 카드 높이가 달라졌다")
-        }
-    }
-
     // MARK: 대화 — 외부 전송 동의 줄
 
     /// 대조군: 이름이 긴 CLI 는 줄을 더 넓게 만들어야 한다. 이게 없으면 누가 대상 이름을 지워도
     /// 아래 폭 검증은 그냥 통과한다 — 총폭 검증은 누가 빠졌는지를 못 잡는다(defect-log).
     func testTheConsentLineActuallyCarriesTheProviderName() {
-        let short = intrinsicWidth(PokemonChatConsentLabel(kind: .codex, language: .ko))    // "Codex"
-        let long = intrinsicWidth(PokemonChatConsentLabel(kind: .claude, language: .ko))    // "Claude Code"
+        let short = intrinsicWidth(PokemonChatConsentLabel(kind: .codex))    // "Codex"
+        let long = intrinsicWidth(PokemonChatConsentLabel(kind: .claude))    // "Claude Code"
         XCTAssertGreaterThan(long, short, "대상 CLI 이름이 안 그려지면 폭 검증이 무의미해진다")
     }
 
@@ -373,12 +353,10 @@ final class PopoverLayoutTests: XCTestCase {
     /// 340 으로 **느슨해져** 실제로 잘리는 338pt 라벨을 통과시킨다 — 막으려던 실패를 통과시킨다.
     func testTheConsentLineFitsTheContentWidthInEveryLanguage() {
         for kind in PokemonChatProviderSafety.verifiedKinds {
-            for language in [AppLanguage.ko, .en, .ja] {
-                XCTAssertLessThanOrEqual(
-                    intrinsicWidth(PokemonChatConsentLabel(kind: kind, language: language)),
-                    PokemonChatConsentLabel.contentWidth,
-                    "\(language.rawValue)/\(kind.rawValue): 동의 줄이 팝오버 폭을 넘겼다")
-            }
+            XCTAssertLessThanOrEqual(
+                intrinsicWidth(PokemonChatConsentLabel(kind: kind)),
+                PokemonChatConsentLabel.contentWidth,
+                "\(kind.rawValue): 동의 줄이 팝오버 폭을 넘겼다")
         }
     }
 
@@ -405,14 +383,13 @@ final class PopoverLayoutTests: XCTestCase {
     func testActionChipsDoNotMakeTheChipRowTaller() {
         let questions = ["너의 타입이 뭐야?", "지금 기분은 어때?", "오늘의 도감을 보여 줘",
                          "배운 기술을 알려 줘", "너는 어떤 포켓몬이야?", "다음 진화는 언제야?"]
-        let bare = renderedHeight(PokemonChatChipRow(actions: [], questions: questions,
-                                                     language: .ko, onAction: { _ in }, onQuestion: { _ in }),
+        let bare = renderedHeight(PokemonChatChipRow(actions: [], questions: questions, onAction: { _ in }, onQuestion: { _ in }),
                                   proposingWidth: PopoverMetrics.width)
         let withActions = renderedHeight(
             // 오늘의 최대치(3개)는 액션끼리 서로 배타적이라 우연히 그런 것뿐이다 — 공존 가능한
             // 케이스가 하나 붙는 순간 화면은 네 개를 그리는데 이 테스트만 셋을 재고 초록으로 남는다.
             PokemonChatChipRow(actions: PokemonChatAction.allCases,
-                               questions: questions, language: .ko, onAction: { _ in }, onQuestion: { _ in }),
+                               questions: questions, onAction: { _ in }, onQuestion: { _ in }),
             proposingWidth: PopoverMetrics.width)
 
         XCTAssertEqual(withActions, bare, accuracy: 1, "액션 칩이 칩 줄을 두 줄로 만들었다")
@@ -423,14 +400,11 @@ final class PopoverLayoutTests: XCTestCase {
     /// 질문 없이 액션 하나만 준 줄이 빈 줄보다 높아야 한다. 이걸 안 걸면 `ForEach(actions)` 를
     /// 지운 채로 대화 칩 기능의 유일한 뷰 테스트가 전부 초록으로 남는다.
     func testTheChipRowActuallyDrawsItsActionChips() {
-        let empty = renderedHeight(PokemonChatChipRow(actions: [], questions: [],
-                                                      language: .ko, onAction: { _ in }, onQuestion: { _ in }),
+        let empty = renderedHeight(PokemonChatChipRow(actions: [], questions: [], onAction: { _ in }, onQuestion: { _ in }),
                                    proposingWidth: PopoverMetrics.width)
-        let onlyAction = renderedHeight(PokemonChatChipRow(actions: [.startFocus], questions: [],
-                                                           language: .ko, onAction: { _ in }, onQuestion: { _ in }),
+        let onlyAction = renderedHeight(PokemonChatChipRow(actions: [.startFocus], questions: [], onAction: { _ in }, onQuestion: { _ in }),
                                         proposingWidth: PopoverMetrics.width)
-        let onlyQuestion = renderedHeight(PokemonChatChipRow(actions: [], questions: ["너의 타입이 뭐야?"],
-                                                             language: .ko, onAction: { _ in }, onQuestion: { _ in }),
+        let onlyQuestion = renderedHeight(PokemonChatChipRow(actions: [], questions: ["너의 타입이 뭐야?"], onAction: { _ in }, onQuestion: { _ in }),
                                           proposingWidth: PopoverMetrics.width)
 
         XCTAssertGreaterThan(onlyAction, empty, "액션 칩이 아무것도 안 그린다")
@@ -484,9 +458,9 @@ final class PopoverLayoutTests: XCTestCase {
     /// 파트너가 뷰포트 밖으로 밀려 홈 탭을 열었을 때 앱의 주인공이 안 보인다.
     private static let missionCardBudget: CGFloat = 100
 
-    private func missionStore(_ language: AppLanguage = .ko) -> CompanionStore {
+    private func missionStore() -> CompanionStore {
         let url = storeStateURL("mission-layout")
-        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)"}"#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1}"#
         try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: moveTestLine),
                               clock: { Date(timeIntervalSince1970: 1_755_000_000) },
@@ -522,7 +496,7 @@ final class PopoverLayoutTests: XCTestCase {
             Image(systemName: "checkmark.circle")
             Text("오늘 2/4세션 · 50분")
             Spacer()
-            Button { } label: { Image(systemName: "chart.bar.xaxis") }
+            Button { } label: { Label("회고", systemImage: "chart.bar.xaxis") }
                 .buttonStyle(.borderless).controlSize(.small)
         }
         .font(.caption2.monospacedDigit())
@@ -532,17 +506,16 @@ final class PopoverLayoutTests: XCTestCase {
     /// 세 언어 어디서도 그 줄이 접히면 안 된다. 한국어만 짧아 로컬에서만 통과하던 회귀를
     /// 기술 목록에서 이미 겪었다(CI 118pt vs 로컬 78pt).
     func testTheFocusTodayRowHeightDoesNotDependOnLanguage() {
-        for text in ["오늘 2/4세션 · 50분", "Today 2/4 sessions · 50 min", "今日 2/4セッション・50分"] {
-            let row = HStack(spacing: 4) {
-                Image(systemName: "checkmark.circle")
-                Text(text)
-                Spacer()
-                Button { } label: { Image(systemName: "chart.bar.xaxis") }
-                    .buttonStyle(.borderless).controlSize(.small)
-            }
-            .font(.caption2.monospacedDigit())
-            XCTAssertLessThanOrEqual(renderedHeight(row), Self.focusTodayRowBudget, text)
+        let text = "오늘 2/4세션 · 50분"
+        let row = HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle")
+            Text(text)
+            Spacer()
+            Button { } label: { Label("회고", systemImage: "chart.bar.xaxis") }
+                .buttonStyle(.borderless).controlSize(.small)
         }
+        .font(.caption2.monospacedDigit())
+        XCTAssertLessThanOrEqual(renderedHeight(row), Self.focusTodayRowBudget, text)
     }
 
     /// 트리거 재현: 미션마다 `ProgressView` 를 한 줄씩 깔면 예산을 두 배로 넘긴다(첫 버전이 211pt).
@@ -570,21 +543,6 @@ final class PopoverLayoutTests: XCTestCase {
                                  Self.missionCardBudget)
     }
 
-    /// 예산 여유가 3pt 뿐이라 **언어가 높이를 흔들면 안 된다**. 이름이 한 줄을 넘기는 순간 행이
-    /// 통째로 커지는데, 그 회귀를 기술 목록에서 이미 겪었다(CI 118pt vs 로컬 78pt — 한국어 이름만
-    /// 짧아 로컬에선 안 걸렸다).
-    ///
-    /// 지금은 세 언어 다 이름이 짧아 아무것도 줄바꿈되지 않는다 — 즉 이 테스트는 현재
-    /// `lineLimit(1)` 을 밟지 못한다. 미션을 더하거나 문구를 늘렸을 때 한 언어만 넘치는 상황을
-    /// 잡는 **전방 가드**다. 실패하면 예산이 아니라 그 문구를 줄여야 한다.
-    func testMissionCardHeightDoesNotDependOnLanguage() {
-        let korean = renderedHeight(MissionBoardView(store: missionStore(.ko)))
-        for language in [AppLanguage.en, .ja] {
-            XCTAssertEqual(renderedHeight(MissionBoardView(store: missionStore(language))), korean,
-                           accuracy: 1, "\(language.rawValue) 에서 행 높이가 달라졌다")
-        }
-    }
-
     // MARK: 도감 목표 줄 — 세로 예산
 
     /// 도감 헤더가 쓸 수 있는 여유. 컬렉션 탭 예산은 `520 − 세그먼트 24 − 헤더 39 − 하단 18 − 간격 24
@@ -597,7 +555,7 @@ final class PopoverLayoutTests: XCTestCase {
     private static let dexHeaderSpacing: CGFloat = 5
     private static let dexGoalStripBudget: CGFloat = 24 - dexHeaderSpacing
 
-    private func dexGoalStore(_ language: AppLanguage = .ko) -> CompanionStore {
+    private func dexGoalStore() -> CompanionStore {
         let url = storeStateURL("dexgoal-layout")
         // 세 축이 **모두 분수로 보이는** 상태 — 종 12/25, 타입 8/9, 이로치 2/3.
         // 한 축이라도 사다리 끝까지 넘으면 그 칸이 "✓" 한 글자가 되어 최악의 폭에서 빠진다.
@@ -606,7 +564,7 @@ final class PopoverLayoutTests: XCTestCase {
             #"{"baseID":\#(100 + i),"finalID":\#(100 + i),"chainOrder":[\#(100 + i)],"rarity":"common","#
                 + #""isShiny":\#(i < 2),"types":["\#(types[i % types.count])"]}"#
         }
-        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"#
             + #""dex":[\#(entries.joined(separator: ","))]}"#
         try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: moveTestLine),
@@ -633,16 +591,6 @@ final class PopoverLayoutTests: XCTestCase {
                                  Self.dexGoalStripBudget)
     }
 
-    /// 축 라벨이 세 언어에서 길이가 다르다(종 / Species / 種). 한 언어에서 줄바꿈되면 그 언어에서만
-    /// 격자가 눌린다 — 기술 목록에서 이미 겪은 부류(CI 118pt vs 로컬 78pt)라 전방 가드를 둔다.
-    func testDexGoalStripHeightDoesNotDependOnLanguage() {
-        let korean = renderedHeight(DexGoalStrip(store: dexGoalStore(.ko)))
-        for language in [AppLanguage.en, .ja] {
-            XCTAssertEqual(renderedHeight(DexGoalStrip(store: dexGoalStore(language))), korean,
-                           accuracy: 1, "\(language.rawValue) 에서 목표 줄 높이가 달라졌다")
-        }
-    }
-
     // MARK: 업적 선반 — 세로 예산
 
     /// 업적 선반은 컬렉션 탭 세그먼트 하나를 차지한다. 6행이라(던전 트랙 2개 추가) 예산은 넉넉하지만
@@ -652,11 +600,11 @@ final class PopoverLayoutTests: XCTestCase {
     /// 4행 160pt 기준에서 던전 트랙 2행만큼(행당 ~14pt) 얹었다.
     private static let achievementShelfBudget: CGFloat = 188
 
-    private func achievementStore(_ language: AppLanguage = .ko) -> CompanionStore {
+    private func achievementStore() -> CompanionStore {
         let url = storeStateURL("achievement-layout")
         // 네 트랙이 **모두 분수로 보이는** 상태 — 한 트랙이라도 사다리 끝을 넘으면 그 행이 "✓" 한
         // 글자가 되어 최악의 폭에서 빠진다.
-        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"#
             + #""achievements":{"counts":{"focus":100,"evolve":4,"battle":2,"race":2}}}"#
         try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: moveTestLine),
@@ -698,15 +646,6 @@ final class PopoverLayoutTests: XCTestCase {
                                  PopoverMetrics.currentHeight(for: .battle))
     }
 
-    /// 트랙 이름이 세 언어에서 길이가 다르다(집중 시간 / Focus time / 集中時間). 한 언어에서
-    /// 줄바꿈되면 그 언어에서만 선반이 커진다 — 기술 목록에서 이미 겪은 부류(CI 118pt vs 로컬 78pt).
-    func testAchievementShelfHeightDoesNotDependOnLanguage() {
-        let korean = renderedHeight(AchievementShelfView(store: achievementStore(.ko)))
-        for language in [AppLanguage.en, .ja] {
-            XCTAssertEqual(renderedHeight(AchievementShelfView(store: achievementStore(language))),
-                           korean, accuracy: 1, "\(language.rawValue) 에서 선반 높이가 달라졌다")
-        }
-    }
 
     // MARK: 시즌 카드 — 세로 예산
 
@@ -726,13 +665,13 @@ final class PopoverLayoutTests: XCTestCase {
     /// 어느 쪽 문구가 더 긴지 단정할 수 없어 둘 다 예산에 넣는다.
     /// 시즌 키는 **시계에서 뽑는다** — 상수로 박으면 시계를 옮길 때 세트가 어긋나 진행도가 전부 0 이
     /// 되고, 예산 검증이 가장 짧은 화면을 재면서 조용히 통과한다.
-    private func seasonStore(_ language: AppLanguage = .ko, progressRatio: Double = 0.5,
+    private func seasonStore(progressRatio: Double = 0.5,
                              at date: Date = seasonDates[0]) -> CompanionStore {
         let url = storeStateURL("season-layout")
         let key = CompanionStore.seasonKey(date)
         let counts = SeasonBoard.challenges(forSeasonKey: key)
             .map { "\"\($0.id)\":\(Int(Double($0.target) * progressRatio))" }.joined(separator: ",")
-        let json = #"{"economyVersion":2,"forcedResetVersion":1,"language":"\#(language.rawValue)","#
+        let json = #"{"economyVersion":2,"forcedResetVersion":1,"#
             + #""seasons":{"seasonKey":"\#(key)","counts":{\#(counts)}}}"#
         try? Data(json.utf8).write(to: url)
         return CompanionStore(provider: StubProvider(value: moveTestLine), clock: { date },
@@ -783,16 +722,6 @@ final class PopoverLayoutTests: XCTestCase {
             + CollectionView.cardSpacing
             + renderedHeight(AchievementShelfView(store: achievementStore()))
         XCTAssertLessThanOrEqual(combined, CollectionView.contentHeight)
-    }
-
-    /// 남은 일수 문구가 세 언어에서 길이가 다르다(12일 남음 / 12d left / 残り12日). 한 언어에서
-    /// 헤더가 줄바꿈되면 그 언어에서만 카드가 커진다 — 기술 목록에서 이미 겪은 부류다.
-    func testSeasonCardHeightDoesNotDependOnLanguage() {
-        let korean = renderedHeight(SeasonChallengeView(store: seasonStore(.ko)))
-        for language in [AppLanguage.en, .ja] {
-            XCTAssertEqual(renderedHeight(SeasonChallengeView(store: seasonStore(language))),
-                           korean, accuracy: 1, "\(language.rawValue) 에서 카드 높이가 달라졌다")
-        }
     }
 
     // MARK: 기술 목록 행 — 가로 폭 · 자리표시자 높이
@@ -876,6 +805,114 @@ final class PopoverLayoutTests: XCTestCase {
                                            proposingWidth: maxWidth)
         XCTAssertEqual(loadingHeight, loadedHeight, accuracy: 2,
                        "자리표시자와 완성본 높이가 다르면 펼친 직후 팝오버가 두 번 리사이즈된다")
+    }
+
+    // MARK: 오버레이 이름 — 글자를 붙인 자리가 폭에 들어오나
+
+    /// 회고 버튼에 글자("회고")를 붙였으니 오늘 줄이 팝오버 콘텐츠 폭 안에 남아야 한다.
+    /// 최악값으로 잰다 — 하루 목표 상한 12세션에 분은 네 자리까지 본다. 넘치면 글자가 잘려
+    /// 이름을 주려던 목적이 사라진다.
+    func testTheFocusTodayRowWithTheRecapLabelFitsTheContentWidth() {
+        let row = HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle")
+            Text("오늘 12/12세션 · 1440분")
+            Spacer()
+            Button { } label: { Label("회고", systemImage: "chart.bar.xaxis") }
+                .buttonStyle(.borderless).controlSize(.small)
+        }
+        .font(.caption2.monospacedDigit())
+        XCTAssertLessThanOrEqual(intrinsicWidth(row), PopoverMetrics.contentWidth,
+                                 "오늘 줄이 팝오버 폭을 넘겼다 — 회고 글자가 먼저 잘린다")
+    }
+
+    /// 꾸미기 버튼이 트레이너 바로 올라왔다(친구 탭 카드 안에서 옮김). 그 줄은 레벨 · 다음 레벨까지
+    /// 남은 포인트 · 잔액을 이미 싣고 있어, 최악값에서도 폭에 들어오는지가 옮길 수 있느냐의 조건이다.
+    func testTheTrainerBarRowFitsWithTheWardrobeButton() {
+        let row = HStack(spacing: 7) {
+            PokeBallMark(size: 22)
+            Text("트레이너 Lv.\(TrainerLevel.maximumLevel)")
+                .font(.caption.weight(.bold)).monospacedDigit()
+            Text("NEXT 9999p")
+                .font(.system(size: 10, weight: .bold, design: .rounded)).monospacedDigit()
+            Spacer()
+            Text("⭐ " + GameNumberFormatter.compact(999_999))
+                .font(.caption.weight(.bold)).monospacedDigit()
+            Button("꾸미기") { }
+                .buttonStyle(.borderless).controlSize(.small)
+                .font(.caption.weight(.semibold))
+        }
+        XCTAssertLessThanOrEqual(intrinsicWidth(row), PopoverMetrics.contentWidth,
+                                 "트레이너 바가 팝오버 폭을 넘겼다 — 잔액이나 꾸미기 글자가 잘린다")
+    }
+
+    // MARK: 페이지 컨트롤 — 뷰포트 안에 있는가
+
+    private var layoutDefaults: UserDefaults { UserDefaults(suiteName: "popover-layout-guard")! }
+
+    private func layoutStore(_ name: String) -> CompanionStore {
+        CompanionStore(provider: StubProvider(value: moveTestLine), clock: { Date() },
+                       fileURL: storeStateURL(name), rng: SeededRNG(seed: 7))
+    }
+
+    /// 팝오버 크롬이 확실히 먹는 세로 — 여기서 재지 못하는 조각(팝오버 패딩 28 · 트레이너 바 46 ·
+    /// 하단 탭 줄 40 · `VStack` 간격 4×12)을 보수적으로 더한 값이다. 실제 크롬은 이보다 크다.
+    private static let popoverChromeExtras: CGFloat = 28 + 46 + 40 + 48
+
+    /// **트리거 재현.** 격자 탭은 520pt 프레임을 고정으로 요청하는데, 팝오버 창(780pt)에서 크롬을
+    /// 빼면 그만큼 남지 않는다 — 탭 콘텐츠의 아래쪽 100pt 이상이 스크롤 밖으로 밀린다.
+    ///
+    /// 이 대조군이 없으면 아래 규칙 검증이 "애초에 문제가 없던 조건" 을 지키는 셈이 된다.
+    /// 2026-09-07 리포트가 이 계산의 실물이다: 159마리(11페이지)를 가진 사용자가 하단 줄에 있던
+    /// 다음 페이지 버튼을 못 봤다.
+    @MainActor
+    func testPagedGridTabsAreTallerThanThePopoverViewport() {
+        let store = layoutStore("paged-grid-viewport")
+        let chrome = renderedHeight(FocusTimerView()
+                                        .environment(store)
+                                        .environment(AppSettings(defaults: layoutDefaults))
+                                        .environment(FocusTimer())
+                                        .environment(PopoverNavigation()))
+            + renderedHeight(PokedoroTabBar(selection: .constant(.pokemon), l: store.l))
+            + Self.popoverChromeExtras
+        XCTAssertGreaterThan(chrome + PokemonRosterView.contentHeight, PopoverMetrics.tabHeight,
+                            "격자 탭이 뷰포트에 다 들어오면 페이저 위치 규칙이 무의미해진다")
+        XCTAssertGreaterThan(chrome + CollectionView.contentHeight, PopoverMetrics.tabHeight)
+    }
+
+    /// **규칙.** 페이지 컨트롤은 격자 **위**에 그린다. 아래에 두면 위 계산만큼 뷰포트 밖으로 밀려,
+    /// 페이지가 여럿인데도 첫 페이지만 보고 그게 전부라고 읽는다.
+    ///
+    /// 소스 순서로 검사하는 이유: 화면 안 좌표는 순수 함수로 잴 수 없고, 높이만 재면 페이저가
+    /// 위에 있든 아래 있든 같은 값이 나온다. 결함을 되돌려 보면(페이저를 격자 뒤로 옮기면)
+    /// 이 검증이 실패한다.
+    func testPagedGridScreensDrawThePageControlAboveTheGrid() throws {
+        // 격자를 페이지로 넘기는 화면과, 그 화면이 사는 구조체 이름.
+        let screens = [("PokemonRosterView", "struct PokemonRosterView"),
+                       ("CompanionView", "private struct DexGridView")]
+        for (file, declaration) in screens {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("Sources/PokeTokenBar/UI/\(file).swift")
+            let lines = try String(contentsOf: url, encoding: .utf8).components(separatedBy: .newlines)
+            guard let start = lines.firstIndex(where: { $0.hasPrefix(declaration) }) else {
+                return XCTFail("\(declaration) 를 못 찾았다 — 이름이 바뀌면 가드가 무력해진다")
+            }
+            // 구조체 끝은 열 0 의 닫는 중괄호다.
+            let end = lines[(start + 1)...].firstIndex { $0 == "}" } ?? lines.count
+            let body = Array(lines[start..<end])
+
+            func callSite(_ name: String) -> Int? {
+                body.firstIndex { line in
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    return trimmed.hasPrefix("\(name)(") && !trimmed.contains("func ")
+                }
+            }
+            guard let pager = callSite("pager"), let grid = callSite("grid") else {
+                return XCTFail("\(file): 페이저·격자 호출을 못 찾았다")
+            }
+            XCTAssertLessThan(pager, grid,
+                              "\(file): 페이저가 격자 아래에 있으면 팝오버 뷰포트 밖으로 밀린다")
+        }
     }
 }
 

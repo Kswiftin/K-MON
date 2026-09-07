@@ -159,9 +159,7 @@ final class MemoryHomeVisitCenter {
         guard let target = MemoryHomeSurf.target(in: homes, visited: visited, after: surfCursor) else {
             // 목록이 비었을 때 아무것도 하지 않으면 죽은 버튼이 된다 — 이 화면의 다른 실패와
             // 같은 자리(`lastError`)에 이유를 적는다.
-            lastError = companion.l.t("파도타기 할 홈이 아직 안 보여요. 같은 LAN의 다른 Mac에서 홈을 공개해 주세요.",
-                                      "No homes to surf yet. Open a home on another Mac on this LAN.",
-                                      "波乗りできるホームがまだありません。同じLANの別のMacでホームを公開してください。")
+            lastError = "파도타기 할 홈이 아직 안 보여요. 같은 LAN의 다른 Mac에서 홈을 공개해 주세요."
             return
         }
         visit(target)
@@ -441,13 +439,9 @@ final class MemoryHomeVisitCenter {
     private func networkFailureMessage(_ error: NWError) -> String {
         guard error.localizedDescription.localizedCaseInsensitiveContains("noauth") else {
             AppLog.write("memory home discovery failed: \(error)")
-            return companion.l.t("주변 홈을 찾을 수 없어요. 네트워크 상태를 확인해 주세요.",
-                                 "Nearby homes are unavailable. Check your network connection.",
-                                 "近くのホームを探せません。ネットワークの状態を確認してください。")
+            return "주변 홈을 찾을 수 없어요. 네트워크 상태를 확인해 주세요."
         }
-        return companion.l.t("주변 홈을 찾을 수 없어요. 앱을 다시 열어 로컬 네트워크 접근을 허용해 주세요.",
-                             "Nearby homes are unavailable. Reopen the app and allow local network access.",
-                             "近くのホームを探せません。アプリを開き直してローカルネットワークへのアクセスを許可してください。")
+        return "주변 홈을 찾을 수 없어요. 앱을 다시 열어 로컬 네트워크 접근을 허용해 주세요."
     }
     private func cancelConnections() {
         connections.values.forEach { $0.cancel() }

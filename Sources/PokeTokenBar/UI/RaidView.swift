@@ -53,8 +53,8 @@ struct RaidView: View {
     }
 
     private var header: some View {
-        ChallengeOverlayHeader(title: l.raidTitle, systemImage: "person.3.sequence.fill",
-                               tint: .teal, closeHelp: l.battleClose, onClose: onClose)
+        PokedoroOverlayHeader(title: l.raidTitle, systemImage: "person.3.sequence.fill",
+                              tint: .teal, closeLabel: l.close, onClose: onClose)
     }
 
     // MARK: 모집 전
@@ -81,16 +81,14 @@ struct RaidView: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
                 .foregroundStyle(.orange)
-            Text(l.t("이전 방 연결이 남아 있어 참가가 잠겨 있습니다.",
-                     "Joining is locked because a previous room connection is still active.",
-                     "前のルーム接続が残っているため参加できません。"))
+            Text("이전 방 연결이 남아 있어 참가가 잠겨 있습니다.")
                 .font(.caption2)
             Spacer()
-            Button(l.t("연결 초기화", "Reset", "接続をリセット")) { center.leaveRoom() }
-                .controlSize(.small).buttonStyle(.borderedProminent).tint(.orange)
+            Button("연결 초기화") { center.leaveRoom() }
+                .controlSize(.small).buttonStyle(.borderedProminent).tint(PokedoroTheme.yellow)
         }
         .padding(8)
-        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .background(PokedoroTheme.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var todaysBossCard: some View {
@@ -98,16 +96,14 @@ struct RaidView: View {
             SpriteView(speciesID: center.todaysRaidSpeciesID, size: 56)
             VStack(alignment: .leading, spacing: 2) {
                 Text(RaidHalfDay.at(Date()) == .morning
-                     ? l.t("오전 레이드 보스", "Morning raid boss", "午前のレイドボス")
-                     : l.t("오후 레이드 보스", "Afternoon raid boss", "午後のレイドボス"))
+                     ? "오전 레이드 보스"
+                     : "오후 레이드 보스")
                     .font(.caption2).foregroundStyle(.secondary)
                 // 이름은 비동기 조회라 여기서 쓰지 않는다 — 스프라이트가 이미 누구인지 말하고,
                 // 정확한 이름은 교전이 시작되면 스냅샷이 싣고 온다.
                 Text(l.raidTitle).font(.callout).bold()
                 let rarity = RaidBoss.rarity(speciesID: center.todaysRaidSpeciesID)
-                Text(l.t("포획 확률 \(RaidBoss.catchPercent(for: rarity))%",
-                         "Catch chance \(RaidBoss.catchPercent(for: rarity))%",
-                         "捕獲率 \(RaidBoss.catchPercent(for: rarity))%"))
+                Text("포획 확률 \(RaidBoss.catchPercent(for: rarity))%")
                     .font(.caption2).foregroundStyle(.purple)
                 // 다음 5★ 시각은 **아침에 공개된다** — 무작위인데 안 알려 주면 마침 접속해 있던
                 // 사람만 참여하게 되고, 그러면 무작위로 둔 이유가 사라진다.
@@ -119,7 +115,7 @@ struct RaidView: View {
             Spacer()
         }
         .padding(9)
-        .pokedoroCard(tint: .purple)
+        .pokedoroCard()
     }
 
     /// 들고 갈 개체를 고른다 — **방에 들어가기 전에만**. 로비에서 바꾸려면 참가자 `speciesID` 와
@@ -164,7 +160,7 @@ struct RaidView: View {
     /// 화면이 거짓말을 한다. 하필 그 두 경우가 이 피커를 만든 이유다.
     private var defaultRunnerName: String {
         guard let mon = store.battleFacadeMon else { return "" }
-        return RosterOrdering.displayName(mon, language: store.language)
+        return RosterOrdering.displayName(mon)
     }
 
     /// 티어는 고를 수 있고 **보스는 못 고른다** — 고르게 두면 모두가 가장 이득인 하나만 판다.
@@ -183,7 +179,7 @@ struct RaidView: View {
                         VStack(spacing: 1) {
                             Text("\(tier.rawValue)★").font(.callout.bold())
                             Text(l.raidTierLabel(tier.rawValue, runners: tier.recommendedRunners))
-                                .font(.system(size: 9)).foregroundStyle(.secondary)
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                     }
@@ -210,7 +206,7 @@ struct RaidView: View {
                     Text("\(parsed.tier.rawValue)★").font(.caption.bold()).foregroundStyle(.purple)
                     Text(parsed.trainerName).font(.caption).lineLimit(1)
                     Spacer()
-                    Button(l.t("참가", "Join", "参加")) { center.join(peer) }
+                    Button("참가") { center.join(peer) }
                         .controlSize(.small).disabled(center.phase != .idle)
                 }
             }
@@ -238,17 +234,17 @@ struct RaidView: View {
             }
             HStack {
                 Button(center.myParticipant?.isReady == true
-                       ? l.t("준비 취소", "Cancel ready", "準備をやめる")
-                       : l.t("준비", "Ready", "準備完了")) { center.toggleReady() }
+                       ? "준비 취소"
+                       : "준비") { center.toggleReady() }
                     .buttonStyle(.borderedProminent).controlSize(.small)
                 Spacer()
                 // 러너 한 명이면 혼자 시작한다 — LAN 은 이웃이 없을 수 있고, 1★ 를 혼자 못 돌면
                 // 이웃 없는 사용자에게 이 기능은 콘텐츠가 0 이다.
                 if center.isHost, lobby.canStart {
-                    Button(l.t("레이드 시작", "Start raid", "レイド開始")) { center.startRaid() }
+                    Button("레이드 시작") { center.startRaid() }
                         .buttonStyle(.borderedProminent).controlSize(.small)
                 }
-                Button(l.t("나가기", "Leave", "退出")) { center.leaveRoom() }.controlSize(.small)
+                Button("나가기") { center.leaveRoom() }.controlSize(.small)
             }
         }
     }
@@ -337,7 +333,7 @@ struct RaidView: View {
                     }
                     Divider().opacity(0.5)
                     if let payout = center.raidPayout, payout > 0 {
-                        settlementRow(l.t("지급", "Paid", "支給"), payout, emphasized: true)
+                        settlementRow("지급", payout, emphasized: true)
                     } else {
                         // 하루 한 번 게이트에 걸렸다는 사실을 **말해 준다** — 안 말하면 정산표만
                         // 보이고 잔액이 안 늘어 계산이 틀린 것처럼 보인다.
@@ -348,7 +344,7 @@ struct RaidView: View {
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
             catchSequence
-            Button(l.t("나가기", "Leave", "退出")) { center.leaveRoom() }
+            Button("나가기") { center.leaveRoom() }
                 .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
         }
     }
@@ -372,7 +368,7 @@ struct RaidView: View {
             switch center.raidCatchResult {
             case .box: return l.raidCaughtByMe(name, toBox: true)
             case .companion: return l.raidCaughtByMe(name, toBox: false)
-            case .escaped: return l.t("포켓몬이 볼에서 빠져나왔다.", "The Pokémon broke free.", "ポケモンがボールから出てしまった。")
+            case .escaped: return "포켓몬이 볼에서 빠져나왔다."
             case .claimedToday, .unavailable, nil: return nil
             }
         }
@@ -387,7 +383,7 @@ struct RaidView: View {
     private var catchSequence: some View {
         if !center.raidCatchAttempts.isEmpty {
             VStack(alignment: .leading, spacing: 5) {
-                Text(l.t("포획 결과", "Catch results", "捕獲結果")).font(.caption.bold())
+                Text("포획 결과").font(.caption.bold())
                 ForEach(Array(center.raidCatchAttempts.enumerated()), id: \.element.id) { index, attempt in
                     catchRow(attempt, revealed: index < revealedCatchAttempts,
                              drumrolling: index == revealedCatchAttempts)
@@ -410,10 +406,10 @@ struct RaidView: View {
                 .opacity(revealed || drumrolling ? 1 : 0.5)
             Spacer()
             Text(revealed
-                 ? (attempt.succeeded ? l.t("잡았다!", "Caught it!", "捕まえた！")
-                                       : l.t("놓쳤다", "Broke free", "逃げられた"))
-                 : (drumrolling ? l.t("두구두구…", "Drumroll…", "ドキドキ…")
-                                : l.t("대기 중", "Waiting", "待機中")))
+                 ? (attempt.succeeded ? "잡았다!"
+                                       : "놓쳤다")
+                 : (drumrolling ? "두구두구…"
+                                : "대기 중"))
                 .font(.caption)
                 .foregroundStyle(revealed ? (attempt.succeeded ? .green : .secondary) : .secondary)
         }
@@ -452,9 +448,9 @@ struct RaidView: View {
     /// 전부 "턴이 다 됐습니다" 로 덮으면 17턴 남기고 전멸한 판도 화력 부족으로 읽힌다.
     private var resultText: String {
         switch center.myOutcome {
-        case .win: l.t("보스를 쓰러뜨렸다!", "The boss is down!", "ボスを倒した！")
+        case .win: "보스를 쓰러뜨렸다!"
         case .loss: RaidBoss.endedByTurnCap(round: center.combatRound) ? l.raidTurnCapReached : l.raidPartyWiped
-        default: l.t("레이드 종료", "Raid over", "レイド終了")
+        default: "레이드 종료"
         }
     }
 

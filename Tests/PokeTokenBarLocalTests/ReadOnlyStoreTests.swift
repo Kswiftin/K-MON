@@ -63,8 +63,7 @@ import Testing
         let before = try Data(contentsOf: fileURL)
 
         let reader = store(at: directory, readOnly: true)
-        reader.setLanguage(.en)                 // 평소라면 저장을 부르는 가장 짧은 경로
-        reader.creditStarPieces(5_000)
+        reader.creditStarPieces(5_000)          // 평소라면 저장을 부르는 가장 짧은 경로
         #expect(!reader.saveFailed, "쓰기를 시도조차 하지 않으므로 실패도 없어야 한다")
 
         #expect(try Data(contentsOf: fileURL) == before, "읽기 전용 저장소가 세이브를 덮어썼다")
