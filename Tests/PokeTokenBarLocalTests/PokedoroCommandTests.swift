@@ -164,6 +164,16 @@ struct PokedoroCommandTests {
         #expect(PokedoroCommandError.unexpectedArgument("evolve").message.contains("evolve"))
     }
 
+    @Test func testLearnCommandsParse() throws {
+        let machine = try #require(TechnicalMachine.catalog.first)
+        #expect(try parse(["learn"]) == .learn)
+        #expect(try parse(["learn", "accept", "2"]) == .learnAccept(replace: 2))
+        #expect(try parse(["learn", "decline"]) == .learnDecline)
+        #expect(try parse(["learn", "relearn", "1"]) == .learnRelearn(number: 1))
+        #expect(try parse(["learn", "cancel"]) == .learnCancel)
+        #expect(try parse(["learn", "tm", machine.label]) == .learnTM(machine: machine))
+    }
+
     /// 네 명령 모두 **앱에 부탁한다** — 세이브를 여는 것만으로 정산이 돌 수 있어서다.
     @Test func testCompanionCommandsBecomeRequests() {
         #expect(PokedoroCommand.evolve.request == .evolve)
@@ -174,7 +184,7 @@ struct PokedoroCommandTests {
 
     /// 도움말이 새 명령을 알린다.
     @Test func testUsageListsTheCompanionCommands() {
-        for name in ["use", "evolve", "switch", "name"] {
+        for name in ["use", "evolve", "learn", "switch", "name"] {
             #expect(PokedoroCommandParser.usage.contains(name), "도움말에 \(name) 이 없다")
         }
     }
@@ -307,13 +317,8 @@ struct PokedoroCommandTests {
     /// 알아보고 **어디서 하는지** 답해야 한다 — "알 수 없는 명령" 으로 뭉개면 사용자는 오타를
     /// 의심하며 같은 명령을 다시 친다.
     @Test func testAppOnlyCommandsExplainWhereTheyLive() {
-        // `battle`(5-2)·`trade`(5-4)·`auction`(5-5)·`home`(5-6) 이 이 목록에서 빠졌다 —
-        // 터미널이 그 넷을 다룬다. 남은 것은 상대를 찾아야 하는 기능이다.
-        for name in ["raid"] {
-            #expect(throws: PokedoroCommandError.appOnlyFeature(name)) {
-                try parse([name])
-            }
-        }
+        // 라이브 기능도 실행 중인 앱에 요청하는 경로가 있어 더는 앱 화면 전용 명령이 없다.
+        #expect(PokedoroCommandParser.appOnlyCommands.isEmpty)
     }
 
     /// 그 이유가 화면에 실제로 나가는 문장인지 본다 — 오류 타입만 맞고 문구가 비면 사용자는

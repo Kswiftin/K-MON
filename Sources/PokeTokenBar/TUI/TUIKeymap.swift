@@ -122,6 +122,8 @@ enum TUIAction: Equatable, Sendable {
     case closeBattleResult
     /// LAN 방 화면의 숫자 키. 무엇이 되는지는 `RoomScreen.action(number:in:)` 이 정한다.
     case roomChoice(Int)
+    /// 로비에서 준비 상태를 켜고 끈다. `r` 은 전역 새로고침이라 준비(junbi)의 `j` 를 쓴다.
+    case toggleRoomReady
     /// 호스트가 판을 시작한다.
     case startRoom
     /// 방을 나간다 — **되돌릴 수 없다.** 확인을 한 번 받는다.
@@ -192,6 +194,7 @@ enum TUIKeymap {
             return .roomChoice(number)
         }
         switch key {
+        case "j": return .toggleRoomReady
         case "s": return .startRoom
         case "l": return .leaveRoom
         default: return nil

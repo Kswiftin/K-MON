@@ -19,6 +19,7 @@ struct RoomTerminalTests {
         #expect(try PokedoroCommandParser.parse(["room", "move", "2"]) == .roomMove(move: 2, target: nil))
         #expect(try PokedoroCommandParser.parse(["room", "move", "2", "3"]) == .roomMove(move: 2, target: 3))
         #expect(try PokedoroCommandParser.parse(["room", "start"]) == .roomStart)
+        #expect(try PokedoroCommandParser.parse(["room", "ready"]) == .roomReady)
         #expect(try PokedoroCommandParser.parse(["room", "leave"]) == .roomLeave(confirmed: false))
     }
 
@@ -29,14 +30,20 @@ struct RoomTerminalTests {
         #expect(try PokedoroCommandParser.parse(["room", "leave", "--yes"]).request == .roomLeave)
     }
 
-    /// `raid` 는 여전히 앱 전용이다 — **방을 만들고 찾는 일은 소켓**이라 터미널이 할 수 없다.
-    /// `room` 은 이미 들어간 방을 보고 턴을 내는 명령이다.
-    @Test func testOpeningARoomStaysInTheApp() {
-        #expect(PokedoroCommandParser.appOnlyCommands.contains("raid"))
+    @Test func testEveryRaidLobbyCommandParses() throws {
+        #expect(try PokedoroCommandParser.parse(["raid"]) == .raid)
+        #expect(try PokedoroCommandParser.parse(["raid", "create", "3"]) == .raidCreate(tier: .three))
+        #expect(try PokedoroCommandParser.parse(["raid", "join", "2"])
+                == .raidJoin(number: 2, role: .runner))
+        #expect(try PokedoroCommandParser.parse(["raid", "spectate", "1"])
+                == .raidJoin(number: 1, role: .spectator))
+        #expect(try PokedoroCommandParser.parse(["raid", "mon", "4"]) == .raidMon(number: 4))
+        #expect(!PokedoroCommandParser.appOnlyCommands.contains("raid"))
     }
 
     @Test func testRoomActionNamesAreNamespaced() {
         #expect(PokedoroRequest.Action.roomMove(move: 1, target: nil).name == "room.move")
+        #expect(PokedoroRequest.Action.roomReady.name == "room.ready")
         #expect(PokedoroRequest.Action.roomStart.name == "room.start")
         #expect(PokedoroRequest.Action.roomLeave.name == "room.leave")
     }
@@ -44,7 +51,9 @@ struct RoomTerminalTests {
     @Test func testEveryRoomActionSurvivesTheRoundTripThroughTheFile() throws {
         let actions: [PokedoroRequest.Action] = [
             .roomMove(move: 2, target: nil), .roomMove(move: 2, target: 4),
-            .roomStart, .roomLeave
+            .raidStatus, .raidCreate(tier: .five),
+            .raidJoin(number: 2, role: .runner), .raidJoin(number: 1, role: .spectator),
+            .raidMon(number: 3), .roomReady, .roomStart, .roomLeave
         ]
         for action in actions {
             let sent = PokedoroRequest(id: UUID(), action: action, requestedAt: Date())
@@ -58,16 +67,17 @@ struct RoomTerminalTests {
         #expect(PokedoroRequest.Action(name: "room.move", argument: "0") == nil)
         #expect(PokedoroRequest.Action(name: "room.move", argument: "1 0") == nil)
         #expect(PokedoroRequest.Action(name: "room.start", argument: "1") == nil)
+        #expect(PokedoroRequest.Action(name: "room.ready", argument: "1") == nil)
         #expect(PokedoroRequest.Action(name: "room.leave", argument: "1") == nil)
     }
 
     // MARK: 화면 투영
 
-    @Test func testNoRoomSaysWhereToOpenOne() {
+    @Test func testNoRoomSaysHowToOpenOne() {
         let idle = RoomTerminalState(phase: .idle, myID: UUID())
         #expect(RoomScreen.kind(idle) == .none)
         #expect(RoomScreen.numbers(idle).isEmpty)
-        #expect(RoomScreen.lines(idle, width: 60).contains { $0.contains("앱") })
+        #expect(RoomScreen.lines(idle, width: 60).contains { $0.contains("raid") })
     }
 
     /// 로비에서는 **호스트만** 시작할 수 있고, 그 사실이 화면에 보인다 — 게스트에게 시작 키를
@@ -78,6 +88,7 @@ struct RoomTerminalTests {
         host.canStart = true
         #expect(RoomScreen.kind(host) == .lobby)
         #expect(RoomScreen.keys(host).contains { $0.contains("시작") })
+        #expect(RoomScreen.keys(host).contains { $0.contains("준비") })
 
         var guest = host
         guest.isHost = false
@@ -210,7 +221,7 @@ struct RoomTerminalTests {
 
         let idle = RoomTerminalState(phase: .idle, myID: UUID())
         #expect(RoomScreen.keys(idle).isEmpty)
-        #expect(RoomScreen.hints(idle).contains("앱"))
+        #expect(RoomScreen.hints(idle).contains("raid"))
     }
 
     /// 키 안내는 **지금 유효한 번호를 그대로** 적는다. `1-쓸 수 있는 개수` 로 접으면 PP 가

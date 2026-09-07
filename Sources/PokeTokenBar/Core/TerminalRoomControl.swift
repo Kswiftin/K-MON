@@ -1,10 +1,14 @@
 import Foundation
 
+/// Bonjour 끝점 대신 사람이 다시 입력할 수 있는 번호와 방 정보만 터미널에 내놓는다.
+struct TerminalRaidRoom: Equatable, Sendable {
+    var number: Int
+    var trainerName: String
+    var tier: RaidTier
+}
+
 /// 터미널이 LAN 방에 닿는 **좁은 창구.** 근거는 `TerminalBattleControl` 과 같다 — 센터를 그대로
 /// 넘기면 실행기 테스트가 listener·browser 를 살려 실제 LAN 으로 나간다.
-///
-/// **방을 만들거나 찾는 일은 없다.** 그건 소켓과 목록 훑기라 터미널이 할 수 있는 모양이 아니고,
-/// 할 수 없는 일은 창구에 아예 없어야 한다(수락·파티 편성을 대전 창구에 안 둔 것과 같다).
 ///
 /// 손을 내는 함수가 셋인 이유는 **판의 형태가 셋**이기 때문이다: 전투원 목록(레이드·방 대전),
 /// 결투(체육관·토너먼트), 트랙(포켓슬론·퀴즈). 활동 여섯이 아니라 형태 셋이다 —
@@ -12,6 +16,12 @@ import Foundation
 @MainActor
 protocol TerminalRoomControl: AnyObject {
     var terminalState: RoomTerminalState { get }
+    var terminalRaidRooms: [TerminalRaidRoom] { get }
+    var terminalRaidBrowsing: Bool { get }
+    var terminalRaidError: String? { get }
+    func createRaidFromTerminal(tier: RaidTier) -> Bool
+    func joinRaidFromTerminal(number: Int, role: LobbyRole) -> Bool
+    func toggleReadyFromTerminal() -> Bool
     /// 대상은 **id 로** 받는다. 번호 → id 변환은 목록을 아는 실행기가 `RoomScreen.targetID` 로 한다.
     func submitAction(targetID: UUID, moveIndex: Int)
     /// 결투의 기술 — **엔진 순번**(0부터)이다. 화면 번호를 그대로 넘기면 옆 기술이 나간다.
@@ -35,6 +45,8 @@ extension MultiplayerRoomCenter: TerminalRoomControl {
         state.hasSubmitted = hasSubmittedAction
         state.isHost = isHost
         state.canStart = lobby?.canStart ?? false
+        state.participants = lobby?.participants ?? []
+        state.isReady = myParticipant?.isReady ?? false
         state.raidTier = raidTier
         // 승패·정산은 **센터가 이미 판정한 값**을 싣는다. 터미널이 전투원 목록으로 다시 세면
         // 팀전·관전자·무승부에서 갈라진다(그 네 갈래를 `myOutcome` 하나가 든다).
@@ -47,6 +59,40 @@ extension MultiplayerRoomCenter: TerminalRoomControl {
         state.duel = duelTerminalState
         state.track = trackTerminalState
         return state
+    }
+
+    var terminalRaidRooms: [TerminalRaidRoom] {
+        visibleTerminalRaidPeers.enumerated().map { index, pair in
+            TerminalRaidRoom(number: index + 1, trainerName: pair.1.trainerName, tier: pair.1.tier)
+        }
+    }
+
+    var terminalRaidBrowsing: Bool { isBrowsing }
+    var terminalRaidError: String? { lastError }
+
+    private var visibleTerminalRaidPeers: [(MultiplayerRoomPeer, RaidRoomName)] {
+        rooms.compactMap { peer in
+            guard let parsed = RaidRoomName.parse(peer.serviceName), parsed.idTag != myRoomTag else { return nil }
+            return (peer, parsed)
+        }
+    }
+
+    func createRaidFromTerminal(tier: RaidTier) -> Bool {
+        guard phase == .idle else { return false }
+        createRaidRoom(tier: tier)
+        return phase != .idle
+    }
+
+    func joinRaidFromTerminal(number: Int, role: LobbyRole) -> Bool {
+        guard phase == .idle, visibleTerminalRaidPeers.indices.contains(number - 1) else { return false }
+        join(visibleTerminalRaidPeers[number - 1].0, as: role)
+        return true
+    }
+
+    func toggleReadyFromTerminal() -> Bool {
+        guard (phase == .hosting || phase == .joined), myParticipant != nil, !isInPlay else { return false }
+        toggleReady()
+        return true
     }
 
     // MARK: 결투 — 체육관과 토너먼트가 같은 값으로 접힌다

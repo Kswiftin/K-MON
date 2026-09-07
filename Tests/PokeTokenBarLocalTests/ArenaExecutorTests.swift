@@ -18,6 +18,9 @@ struct ArenaExecutorTests {
 
     private final class FakeRoomControl: TerminalRoomControl {
         var terminalState: RoomTerminalState
+        var terminalRaidRooms: [TerminalRaidRoom] = []
+        var terminalRaidBrowsing = true
+        var terminalRaidError: String?
         var submitted: [(target: UUID, move: Int)] = []
         var duelMoves: [Int] = []
         var duelSwitches: [Int] = []
@@ -27,6 +30,9 @@ struct ArenaExecutorTests {
         var left = 0
 
         init(_ state: RoomTerminalState) { terminalState = state }
+        func createRaidFromTerminal(tier: RaidTier) -> Bool { false }
+        func joinRaidFromTerminal(number: Int, role: LobbyRole) -> Bool { false }
+        func toggleReadyFromTerminal() -> Bool { false }
         func submitAction(targetID: UUID, moveIndex: Int) { submitted.append((targetID, moveIndex)) }
         func submitDuelMove(index: Int) { duelMoves.append(index) }
         func submitDuelSwitch(slot: Int) { duelSwitches.append(slot) }
@@ -335,7 +341,7 @@ struct ArenaExecutorTests {
         for action in actions {
             let reply = await execute(action, on: store, room: nil)
             #expect(!reply.succeeded, "\(action.name)")
-            #expect(reply.message.contains("앱"), "\(action.name): \(reply.message)")
+            #expect(reply.message.contains("raid"), "\(action.name): \(reply.message)")
         }
     }
 }

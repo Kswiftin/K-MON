@@ -38,12 +38,14 @@ enum PokedoroCLI {
 
         let store = CompanionStore(isReadOnly: true)
         switch command {
-        case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
+        case .help, .start, .claim, .stop, .use, .evolve, .learn, .learnAccept, .learnDecline,
+             .learnRelearn, .learnCancel, .learnTM, .switchCompanion, .rename, .hatch, .buy,
              .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
              .battleMove, .battleSwitch, .battleDecline, .battleTerastallize, .battleClose,
              .gymChallenge, .gymTeam, .playerGymStatus, .playerGymOpen, .playerGymChallenge,
              .playerGymSpectate, .playerGymDefense, .playerGymAI, .playerGymTakeover,
-             .roomMove, .roomStart, .roomSwitch, .roomTrack,
+             .raid, .raidCreate, .raidJoin, .raidMon,
+             .roomMove, .roomReady, .roomStart, .roomSwitch, .roomTrack,
              .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant,
              .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear,
              .homeMood, .homeStyle, .homeNote, .homeMessage, .homeNickname, .homeRoommate,
@@ -108,7 +110,7 @@ enum PokedoroCLI {
         case .room:
             // 대전과 같다 — 방 상태도 세이브에 없어 앱이 내놓는 화면을 기다려 받는다.
             channelRows(screen: "room",
-                        absent: ["방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다.",
+                        absent: ["방에 없다 — pokedoro raid로 협동 레이드 방을 찾거나 연다.",
                                  "(방 상태는 세이브에 없어 앱이 떠 있어야 볼 수 있다.)"])
                 .forEach { print($0) }
         case .roomLeave:
@@ -195,7 +197,7 @@ enum PokedoroCLI {
         // 웨이브 런에서 왕복이 붙는 자리: 판 열기·길(다음 상대)·웨이브를 넘기는 행동(진화 조회).
         // `wave.pick`·`wave.switch`·`wave.forfeit` 는 세이브 안에서 끝나므로 짧게 둔다.
         // 대전 동작은 여기 없다 — PokéAPI 를 타지 않고 이미 열린 소켓으로 한 줄 보낸다.
-        case .hatch, .waveStart, .waveRoute, .waveMove, .waveBall: hatchReplyTimeout
+        case .hatch, .learnTM, .waveStart, .waveRoute, .waveMove, .waveBall: hatchReplyTimeout
         default: replyTimeout
         }
     }

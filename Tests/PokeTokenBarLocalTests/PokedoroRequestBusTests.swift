@@ -246,7 +246,7 @@ struct PokedoroRequestBusTests {
         #expect(PokedoroRequest.Action.use(item: .rareCandy).argument == ItemKind.rareCandy.rawValue)
         #expect(PokedoroRequest.Action.switchCompanion(number: 3).argument == "3")
         #expect(PokedoroRequest.Action.rename(nickname: "피카").argument == "피카")
-        for action in [PokedoroRequest.Action.claim, .stop, .evolve] {
+        for action in [PokedoroRequest.Action.claim, .stop, .evolve, .learnStatus, .learnDecline, .learnCancel] {
             #expect(action.argument == nil, "\(action) 이 인자 칸을 쓴다")
         }
     }
@@ -255,6 +255,9 @@ struct PokedoroRequestBusTests {
     @Test func testTheNewActionsRoundTripThroughTheirOwnTable() {
         let actions: [PokedoroRequest.Action] = [
             .use(item: .rareCandy), .use(item: .fireStone), .evolve,
+            .learnStatus, .learnAccept(replace: nil), .learnAccept(replace: 2), .learnDecline,
+            .learnRelearn(number: 1), .learnCancel,
+            .learnTM(machine: TechnicalMachine.catalog[0]),
             .switchCompanion(number: 2), .rename(nickname: "라이츄")
         ]
         for action in actions {
@@ -322,6 +325,9 @@ struct PokedoroRequestBusTests {
         let mailbox = PokedoroMailbox(directory: directory)
 
         for action in [PokedoroRequest.Action.use(item: .waterStone), .evolve,
+                       .learnStatus, .learnAccept(replace: 1), .learnDecline,
+                       .learnRelearn(number: 1), .learnCancel,
+                       .learnTM(machine: TechnicalMachine.catalog[0]),
                        .switchCompanion(number: 4), .rename(nickname: "꼬북")] {
             let sent = request(action)
             try mailbox.send(sent)

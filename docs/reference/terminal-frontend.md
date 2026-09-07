@@ -302,6 +302,12 @@ pokedoro claim                끝난 모험의 보상 받기 (앱에 요청)
 pokedoro stop                 집중 세션 끝내기 (앱에 요청)
 pokedoro use <아이템>         아이템 하나 쓰기 (앱에 요청)
 pokedoro evolve               대기 중인 진화 승인 (앱에 요청)
+pokedoro learn                기술 배우기·하트비늘 후보 상태
+pokedoro learn accept [자리]  기술 배우기 승인 (기술 4개면 바꿀 자리)
+pokedoro learn decline        기술 배우기 거절
+pokedoro learn relearn <후보> 하트비늘 기술 후보 선택
+pokedoro learn cancel         하트비늘 기술 후보 닫기
+pokedoro learn tm <TM|이름>   기술머신 사용
 pokedoro switch <번호>        함께 다닐 포켓몬 바꾸기 (앱에 요청)
 pokedoro name <별명>          파트너 별명 바꾸기 (앱에 요청)
 pokedoro shop                 상점 재고와 값
@@ -556,9 +562,13 @@ pokedoro home undo / redo     방금 꾸민 것 되돌리기·다시 실행 (앱
 - **대상 목록은 둘 이상일 때만 찍는다.** 보스 하나짜리 레이드에서는 고를 것이 없다.
 - **레이드 대상은 보스 id 하나로 고정한다.** 편성은 러너들이 보스보다 앞에 서므로 단순히 "나 아닌
   첫 전투원"을 고르면 2인 이상 판에서 동료를 대상으로 내고, 센터가 아군 공격을 거절한다.
-- **방을 만들고 찾는 일은 창구에 없다**(`TerminalRoomControl`). 브라우징과 소켓이라 터미널이 할 수
-  있는 모양이 아니다 — 할 수 없는 일은 창구에 아예 두지 않는다(수락·파티 편성과 같은 규칙).
-  `raid` 는 그래서 여전히 앱 전용 명령이다.
+- **방 번호는 앱의 현재 목록에서 해석한다**(`TerminalRoomControl`). 터미널 요청에는 Bonjour의
+  `NWEndpoint`를 싣지 않고 `raid`가 찍은 번호만 싣는다. 앱은 실행 순간 목록을 다시 찾아
+  개설·참가·관전을 수행하므로, 사라진 방이나 오래된 끝점은 성공으로 보고되지 않는다.
+- **대표 포켓몬은 방 밖에서 고른다**(`raid mon <party 번호>`). 로비에 들어간 뒤 스냅샷과 표시
+  종이 갈리는 일을 막기 위해 앱 화면과 같은 시점 제약을 둔다.
+- **로비 준비도 터미널 동작이다**(`room ready`, `watch`의 `j`). 참가만 되고 준비를 못 하면
+  `MultiplayerLobby.canStart`가 영원히 거짓이라 실제로는 방에 들어가도 판을 시작할 수 없다.
 - **시작 거절은 갈라 말한다** — 호스트가 아닌 것과 사람이 덜 모인 것은 다음에 할 일이 다르다.
   `s 시작` 키도 그 두 조건을 지날 때만 안내에 오른다.
 - **승패·정산은 센터가 판정한 값을 싣는다**(`myOutcome`·`raidSettlement`·`raidPayout`). 터미널이

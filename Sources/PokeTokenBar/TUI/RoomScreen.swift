@@ -15,6 +15,8 @@ struct RoomTerminalState {
     var isHost = false
     /// 호스트가 지금 시작할 수 있나(`MultiplayerLobby.canStart`).
     var canStart = false
+    var participants: [LobbyParticipant] = []
+    var isReady = false
     var raidTier: RaidTier?
     /// 끝난 판의 내 승패. `nil` 은 "줄 결과가 없다" — 아직 안 끝났거나 관전자다.
     var outcome: BattleOutcome?
@@ -212,7 +214,8 @@ enum RoomScreen {
     static func keys(_ state: RoomTerminalState) -> [String] {
         switch kind(state) {
         case .lobby:
-            return (canStartNow(state) ? ["s 시작"] : []) + ["l 나가기"]
+            return [state.isReady ? "j 준비 취소" : "j 준비"]
+                + (canStartNow(state) ? ["s 시작"] : []) + ["l 나가기"]
         case .move:
             // **번호를 그대로 적는다.** `1-n` 으로 접으면 PP 가 떨어져 구멍이 난 번호가 눌러도
             // 안 되는 것으로 안내되고, 뒤쪽의 쓸 수 있는 번호는 안내에서 사라진다
@@ -241,15 +244,16 @@ enum RoomScreen {
     static func hints(_ state: RoomTerminalState) -> String {
         switch kind(state) {
         case .none:
-            return "방에 없다 — 방을 만들거나 찾는 일은 앱에서 한다(소켓)"
+            return "방에 없다 — raid로 협동 레이드 방을 찾거나 연다"
         case .lobby:
-            guard state.isHost else { return "호스트가 시작할 때까지 기다린다   l 나가기" }
-            if canStartNow(state) { return "s 시작   l 나가기" }
+            let ready = state.isReady ? "j 준비 취소" : "j 준비"
+            guard state.isHost else { return "\(ready)   호스트가 시작할 때까지 기다린다   l 나가기" }
+            if canStartNow(state) { return "\(ready)   s 시작   l 나가기" }
             // 시작이 없는 활동과 사람이 덜 모인 것은 **다음에 할 일이 다르다.**
             guard state.activity?.isHostStarted == true else {
-                return "도전자가 오면 판이 선다 — 여는 일은 앱에서 한다   l 나가기"
+                return "\(ready)   도전자가 오면 판이 선다   l 나가기"
             }
-            return "사람을 더 기다린다   l 나가기"
+            return "\(ready)   사람을 더 기다린다   l 나가기"
         case .move:
             return (moveKeys(state) + ["(room move <n> [대상])", "l 나가기"])
                 .joined(separator: "   ")
@@ -268,7 +272,7 @@ enum RoomScreen {
             }
             return "이번 라운드는 기다린다   l 나가기"
         case .finished:
-            return "판이 끝났다 — 다음 방은 앱에서 연다"
+            return "판이 끝났다 — 다음 협동 레이드는 raid로 찾거나 연다"
         }
     }
 
@@ -286,6 +290,14 @@ enum RoomScreen {
                                    right: state.round > 0 ? "\(state.round) 라운드" : "",
                                    width: inner)]
         lines.append(TUIRender.rule(width: inner))
+        if kind(state) == .lobby, !state.participants.isEmpty {
+            lines += state.participants.map { participant in
+                let role = participant.role == .spectator ? "관전" : (participant.isReady ? "준비" : "대기")
+                let host = participant.isHost ? " · 호스트" : ""
+                return TUIText.truncate("\(participant.trainerName)  \(role)\(host)", to: inner)
+            }
+            return lines
+        }
         guard !state.fighters.isEmpty else {
             lines.append(TUIText.truncate(standingLine(state), to: inner))
             return lines
@@ -326,7 +338,7 @@ enum RoomScreen {
 
     private static func standingLine(_ state: RoomTerminalState) -> String {
         switch kind(state) {
-        case .none:  "방에 없다. 방을 만들거나 찾는 것은 앱에서 한다."
+        case .none:  "방에 없다. raid로 협동 레이드 방을 찾거나 연다."
         case .lobby: state.isHost ? "방을 열었다. 참가자를 기다린다." : "방에 들어왔다. 호스트를 기다린다."
         default:     "판을 준비하는 중이다."
         }

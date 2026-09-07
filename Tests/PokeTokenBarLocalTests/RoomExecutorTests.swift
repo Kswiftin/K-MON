@@ -14,11 +14,25 @@ import Testing
 struct RoomExecutorTests {
     private final class FakeRoomControl: TerminalRoomControl {
         var terminalState: RoomTerminalState
+        var terminalRaidRooms: [TerminalRaidRoom] = []
+        var terminalRaidBrowsing = true
+        var terminalRaidError: String?
         var submitted: [(target: UUID, move: Int)] = []
+        var created: [RaidTier] = []
+        var joined: [(number: Int, role: LobbyRole)] = []
+        var readied = 0
         var started = 0
         var left = 0
 
         init(_ state: RoomTerminalState) { terminalState = state }
+        func createRaidFromTerminal(tier: RaidTier) -> Bool {
+            created.append(tier); terminalState.phase = .creating; return true
+        }
+        func joinRaidFromTerminal(number: Int, role: LobbyRole) -> Bool {
+            guard terminalRaidRooms.contains(where: { $0.number == number }) else { return false }
+            joined.append((number, role)); terminalState.phase = .joining("방"); return true
+        }
+        func toggleReadyFromTerminal() -> Bool { readied += 1; return true }
         func submitAction(targetID: UUID, moveIndex: Int) {
             submitted.append((targetID, moveIndex))
         }
@@ -49,6 +63,61 @@ struct RoomExecutorTests {
     }
 
     // MARK: 기술과 대상
+
+    @Test func testRaidRoomsCanBeListedCreatedJoinedAndSpectated() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+
+        let listed = FakeRoomControl(RoomTerminalState(phase: .idle, myID: UUID()))
+        listed.terminalRaidRooms = [TerminalRaidRoom(number: 1, trainerName: "이웃", tier: .three)]
+        let status = await execute(.raidStatus, on: store, room: listed)
+        #expect(status.succeeded)
+        #expect(status.message.contains("1. 3★"))
+
+        let creator = FakeRoomControl(RoomTerminalState(phase: .idle, myID: UUID()))
+        #expect(await execute(.raidCreate(tier: .three), on: store, room: creator).succeeded)
+        #expect(creator.created == [.three])
+
+        for role in [LobbyRole.runner, .spectator] {
+            let joiner = FakeRoomControl(RoomTerminalState(phase: .idle, myID: UUID()))
+            joiner.terminalRaidRooms = listed.terminalRaidRooms
+            #expect(await execute(.raidJoin(number: 1, role: role), on: store, room: joiner).succeeded)
+            #expect(joiner.joined.first?.role == role)
+        }
+    }
+
+    @Test func testReadyReachesTheLobby() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var state = RoomTerminalState(phase: .joined, activity: .raid, myID: UUID())
+        state.isReady = false
+        let control = FakeRoomControl(state)
+
+        let reply = await execute(.roomReady, on: makeStore(in: directory), room: control)
+
+        #expect(reply.succeeded)
+        #expect(control.readied == 1)
+        #expect(reply.message.contains("준비했다"))
+    }
+
+    @Test func testRaidMonUsesThePrintedPartyNumber() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        let mon = MonState(baseID: 7, pathIDs: [7], stageIndex: 0, usedAtStage: 0,
+                           rarity: .common, totalForms: 1,
+                           names: [7: ["ko": "꼬부기", "en": "Squirtle"]])
+        store.debugSetBoxedMons([mon])
+        let entry = try #require(PokedoroCLI.partyEntries(store).first { $0.id == mon.id })
+        let number = TUIRender.printedRosterNumber(index: entry.index)
+        let control = FakeRoomControl(RoomTerminalState(phase: .idle, myID: UUID()))
+
+        let reply = await execute(.raidMon(number: number), on: store, room: control)
+
+        #expect(reply.succeeded)
+        #expect(store.battleRepresentative?.id == mon.id)
+    }
 
     /// 대상을 안 적으면 **첫 상대**다. 협동 레이드는 보스 하나라 그것으로 끝난다.
     @Test func testAMoveWithoutATargetHitsTheFirstOpponent() async throws {
@@ -165,7 +234,9 @@ struct RoomExecutorTests {
         let store = makeStore(in: directory)
 
         for action: PokedoroRequest.Action in [.roomMove(move: 1, target: nil), .roomStart,
-                                               .roomLeave] {
+                                               .roomReady, .roomLeave, .raidStatus,
+                                               .raidCreate(tier: .one),
+                                               .raidJoin(number: 1, role: .runner)] {
             let reply = await execute(action, on: store, room: nil)
             #expect(!reply.succeeded)
             #expect(reply.message.contains("방에 없다"), "\(action.name) 의 사유가 다르다")

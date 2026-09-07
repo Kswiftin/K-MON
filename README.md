@@ -161,7 +161,8 @@ pokedoro bag | shop | goals   가방 · 상점 재고 · 도감 목표와 업적
 pokedoro watch                전체 화면 실시간 보기
 pokedoro start [25|50|90]     집중 세션 시작 (stop 으로 끝내고 claim 으로 수령)
 pokedoro wave …               웨이브 런 한 판 (start · move · ball · pick · route)
-pokedoro battle | room …      LAN 대전, 방 (협동 레이드 · 체육관 쟁탈전 · 토너먼트 등)
+pokedoro raid …               협동 레이드 검색 · 개설 · 참가 · 관전 · 대표 포켓몬
+pokedoro battle | room …      LAN 대전, 방 로비 준비 · 전투 · 정산
 pokedoro gym …                도전 탭 체육관 레이드 목록 · 팀 편성 · 도전
 pokedoro gym contest …        LAN 체육관 쟁탈전 검색 · 개설 · 도전 · 관전 · 운영
 pokedoro trade | auction …    교환 협상 · 경매 시장
