@@ -13,6 +13,10 @@ struct PokemonAuctionView: View {
     /// 제안 목록을 열어 둔 출품의 ID. 카드마다 상태를 두면 `ForEach` 안에서 팝오버가 여러 개
     /// 살아 있게 되므로, 열려 있는 하나만 기억한다.
     @State private var offerPickerListingID: UUID?
+    /// 내리려는 게시물. `nil` 이 곧 닫힘이다. 게시를 내리면 **그 게시에 붙은 대기 중 제안도 함께**
+    /// 사라지는데, 버튼만 봐서는 내 물건만 회수하는 것으로 읽힌다 — 앱의 다른 비가역 행동과 같이
+    /// 무엇을 잃는지 말하고 묻는다.
+    @State private var pendingListingCancel: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -27,6 +31,20 @@ struct PokemonAuctionView: View {
             Divider()
             market
             if let error = center.lastError { Text(error).font(.caption).foregroundStyle(.red) }
+        }
+        .confirmationDialog(store.l.t("게시를 내릴까요?", "Remove this listing?", "出品を取り消しますか？"),
+                            isPresented: Binding(get: { pendingListingCancel != nil },
+                                                 set: { if !$0 { pendingListingCancel = nil } }),
+                            titleVisibility: .visible) {
+            Button(store.l.t("내리기", "Remove", "取り消す"), role: .destructive) {
+                if let id = pendingListingCancel { center.cancelListing(id) }
+                pendingListingCancel = nil
+            }
+            Button(store.l.cancel, role: .cancel) { pendingListingCancel = nil }
+        } message: {
+            Text(store.l.t("받아 둔 제안도 함께 사라집니다. 다시 올리려면 처음부터 게시해야 해요.",
+                           "The offers you have received disappear with it. Listing again starts over.",
+                           "受け取った提案も一緒に消えます。もう一度出品するには最初からになります。"))
         }
     }
 
@@ -74,7 +92,7 @@ struct PokemonAuctionView: View {
                         .font(.caption.bold()).foregroundStyle(.orange)
                     Spacer()
                     Button(store.l.t("게시 내리기", "Remove Listing", "出品を取り消す"), role: .destructive) {
-                    center.cancelListing(id)
+                        pendingListingCancel = id
                     }.controlSize(.small)
                 }
             ForEach(listingOffers) { offer in

@@ -43,6 +43,14 @@ struct L {
     var previousPage: String { t("이전", "Previous", "前へ") }
     var nextPage: String { t("다음", "Next", "次へ") }
 
+    /// 확인까지 누른 구매가 거절됐을 때. 잔액 부족 안내와 **다른 말**이어야 한다 — 눌러서 거절된
+    /// 것과 애초에 못 누르는 것은 사용자가 할 일이 다르다.
+    var purchaseFailed: String {
+        t("구매하지 못했어요. 잔액을 확인하고 다시 시도해 주세요.",
+          "Purchase didn't go through. Check your balance and try again.",
+          "購入できませんでした。残高を確認してもう一度お試しください。")
+    }
+
     /// 트레이너 바의 `NEXT 320p` 가 무슨 단위인지 푼다.
     func trainerNextLevelHint(_ points: Int) -> String {
         t("다음 트레이너 레벨까지 \(points) 포인트",

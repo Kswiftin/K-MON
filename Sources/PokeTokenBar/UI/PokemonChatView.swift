@@ -15,6 +15,10 @@ struct PokemonChatView: View {
     /// 첫 전송 확인이 떠 있는 동안 어느 CLI 를 묻고 있는지. 팝오버가 닫히면 뷰째로 사라지므로
     /// 확인 창도 함께 사라진다 — 승인 없이 남는 상태가 없다.
     @State private var pendingFirstSend: PokemonChatProviderKind?
+    /// 기록 삭제 확인이 떠 있나. 앱의 다른 비가역 행동(놓아주기 · 아이템 버리기 · 경매 철회)은
+    /// 전부 확인을 거치는데 이 메뉴만 예외였다 — 메뉴에서 한 칸 아래를 누르면 대화가 통째로
+    /// 사라졌고, 바로 위 "새 대화" 와 결과가 겉으로 구분되지 않았다.
+    @State private var confirmingHistoryDelete = false
     @AppStorage("pokemonChatProvider") private var providerRaw = ""
 
     /// 입력 중인 문장은 **스토어**가 든다. 팝오버는 바깥 클릭에 닫히며 콘텐츠 뷰를 통째로
@@ -174,12 +178,23 @@ struct PokemonChatView: View {
                 Divider()
                 Button(l.t("기억 앨범", "Memory album", "思い出アルバム")) { destination = .album }
                 Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
-                Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
+                Button(l.t("기록 삭제", "Delete history", "履歴を削除"),
+                       role: .destructive) { confirmingHistoryDelete = true }
             } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
             // 이 화면만 Esc 닫기를 끈다 — 입력칸에 쓰다 만 메시지가 있는데 Esc 한 번에 화면째
             // 사라지면 초안이 함께 날아간다. 형제 오버레이엔 초안이 없어 Esc 가 안전하다.
             PokedoroOverlayCloseButton(label: l.close, escapeCloses: false, onClose: onClose)
         }.padding(12)
+        .confirmationDialog(l.t("이 대화 기록을 지울까요?", "Delete this chat history?", "この会話履歴を削除しますか？"),
+                            isPresented: $confirmingHistoryDelete, titleVisibility: .visible) {
+            Button(l.t("지우기", "Delete", "削除"), role: .destructive) { chat.deleteSession(for: companionID) }
+            Button(l.cancel, role: .cancel) { }
+        } message: {
+            // "새 대화" 와 무엇이 다른지 여기서 말한다 — 메뉴에서는 둘 다 화면이 비는 것으로 보인다.
+            Text(l.t("주고받은 말이 모두 사라지고 되돌릴 수 없습니다. 이어서 새로 시작만 하려면 '새 대화' 를 쓰세요.",
+                     "Every message is gone for good. To start fresh without erasing, use New chat.",
+                     "やり取りはすべて消え、元に戻せません。消さずに始め直すなら「新しい会話」を使ってください。"))
+        }
     }
 
     /// 제공자 선택은 `⋯` 메뉴 안에 산다. 전용 줄(`statusBar`)이었을 때 **띄워 보니** 우측 230pt 가
@@ -438,6 +453,10 @@ private struct PokemonMemoryAlbumView: View {
     let companionID: UUID
     let language: AppLanguage
     let album: PokemonMemoryAlbum
+    /// 지울지 묻는 중인 손글씨 메모. `nil` 이 곧 닫힘이라 플래그를 따로 두지 않는다.
+    /// 자동 기록은 지울 수 없고(`source == .manual` 만 버튼이 뜬다) 손으로 쓴 것만 대상이라,
+    /// 되돌릴 방법이 없는 쪽이 정확히 사용자가 직접 쓴 글이다.
+    @State private var pendingDeletion: PokemonMemory?
     private var l: L { L(language) }
     var body: some View {
         VStack(alignment: .leading) {
@@ -446,7 +465,7 @@ private struct PokemonMemoryAlbumView: View {
                 ForEach(album.entries(for: companionID).reversed()) { memory in
                     HStack { VStack(alignment: .leading) { Text(memory.body); Text(memory.createdAt, style: .date).font(.caption2).foregroundStyle(.secondary) }; Spacer()
                         if memory.source == .manual {
-                            Button(role: .destructive) { _ = album.delete(memory) } label: { Image(systemName: "trash") }
+                            Button(role: .destructive) { pendingDeletion = memory } label: { Image(systemName: "trash") }
                                 .buttonStyle(.borderless)
                                 .accessibilityLabel(l.t("이 기억 지우기", "Delete this memory", "この思い出を削除"))
                         }
@@ -454,6 +473,20 @@ private struct PokemonMemoryAlbumView: View {
                 }
             }
         }.padding().frame(width: 400, height: 440)
+        .confirmationDialog(l.t("이 기억을 지울까요?", "Delete this memory?", "この思い出を削除しますか？"),
+                            isPresented: Binding(get: { pendingDeletion != nil },
+                                                 set: { if !$0 { pendingDeletion = nil } }),
+                            titleVisibility: .visible) {
+            Button(l.t("지우기", "Delete", "削除"), role: .destructive) {
+                if let memory = pendingDeletion { _ = album.delete(memory) }
+                pendingDeletion = nil
+            }
+            Button(l.cancel, role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text(l.t("직접 쓴 기억이라 되돌릴 수 없습니다.",
+                     "You wrote this one yourself; it cannot be brought back.",
+                     "自分で書いた思い出なので元に戻せません。"))
+        }
     }
 }
 

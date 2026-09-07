@@ -343,6 +343,10 @@ private struct ShopItemCard: View {
 /// 의상 상점 카드 — `ShopItemCard` 와 같은 골격이지만 아이콘이 아이템 스프라이트가 아니라
 /// 그 슬롯 하나만 입힌 트레이너 미리보기다. 재구매 불가(보유형)라 `owned` 분기만 있고 개수 표시는 없다.
 private struct ShopOutfitCard: View {
+    /// 구매가 거절됐나. `buyOutfit` 은 잔액이 모자라거나 이미 가진 것이면 false 를 주는데,
+    /// 반환값을 버리면 확인까지 누른 사용자가 아무 변화도 없는 화면을 보게 된다 —
+    /// 다른 화면에서 거의 동시에 산 경우가 그렇다.
+    @State private var purchaseFailed = false
     let store: CompanionStore
     let item: OutfitItem
     @State private var confirming = false
@@ -395,7 +399,7 @@ private struct ShopOutfitCard: View {
                     Button(l.buy) { confirming = true }
                         .buttonStyle(.bordered).controlSize(.small)
                 } else {
-                    Text(l.notEnoughTokens)
+                    Text(purchaseFailed ? l.purchaseFailed : l.notEnoughTokens)
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
             }
@@ -404,7 +408,7 @@ private struct ShopOutfitCard: View {
 
     private func buyNow() {
         confirming = false
-        _ = store.buyOutfit(item)
+        purchaseFailed = !store.buyOutfit(item)
     }
 }
 
