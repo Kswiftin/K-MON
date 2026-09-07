@@ -345,7 +345,7 @@ struct TUIRenderTests {
         let pixels = TUISprite.Pixels(width: 8, height: 8,
                                       rgba: (0..<64).flatMap { i -> [UInt8] in [UInt8(i * 3), 40, 200, 255] })
         let artwork = TUISprite.block(pixels, width: TUISprite.minimumWidth, maxRows: 40,
-                                      colorAllowed: true, bobbed: false)
+                                      colorAllowed: true, bobbed: false, subcells: .quadrant)
         var model = idle()
         model.partnerArt = artwork
         let rendered = TUIRender.home(model, width: TUISprite.minimumWidth)
@@ -373,7 +373,7 @@ struct TUIRenderTests {
         for width in [40, 70, 120] {
             var model = idle()
             model.partnerArt = TUISprite.block(pixels, width: width, maxRows: 40,
-                                               colorAllowed: true, bobbed: false)
+                                               colorAllowed: true, bobbed: false, subcells: .quadrant)
             #expect(!model.partnerArt.isEmpty)
             for line in TUIRender.home(model, width: width, keyHints: true) {
                 #expect(TUISprite.visibleWidth(line) <= width)

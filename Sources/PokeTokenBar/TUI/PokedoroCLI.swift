@@ -288,7 +288,10 @@ enum PokedoroCLI {
                                                  noColor: environment["NO_COLOR"] != nil,
                                                  term: environment["TERM"]),
             bobbed: TUISprite.isBobbed(frame: frame,
-                                       lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled))
+                                       lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled),
+            // 조각을 얼마나 쪼갤지는 **터미널이 그릴 수 있는가**로 갈린다 — 6분면 글리프는
+            // macOS 기본 폰트에 없어서, 그리지 못하는 터미널에서는 그림이 통째로 두부가 된다.
+            subcells: TUISprite.subcells(environment: environment))
     }
 
     /// tmux 상태줄·셸 프롬프트에 꽂는 한 줄. 폭이 귀한 자리라 라벨을 빼고 기호만 쓴다.
