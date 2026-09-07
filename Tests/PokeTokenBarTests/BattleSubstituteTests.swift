@@ -227,23 +227,33 @@ final class BattleSubstituteTests: XCTestCase {
         XCTAssertEqual(attacker.stage(.atk), 1, "자기 대상 기술이 상대의 층에 막혔다")
     }
 
-    /// 반동·드레인은 **인형에 넣은 데미지** 기준이다(쇼다운과 같다).
-    func testDrainAndRecoilCountTheDamageDealtToTheSubstitute() {
+    /// 반동·드레인은 **인형에 실제로 들어간 만큼**이 기준이다(쇼다운과 같다).
+    ///
+    /// 인형을 부수고 남은 데미지로 재면 한 방에 인형째 부순 기술이 인형 HP 의 몇 배를 빨아들인다 —
+    /// 그래서 회복량·반동량의 **상한**까지 본다(줄이 나왔는지만 보면 그 결함이 그대로 지나간다).
+    func testDrainAndRecoilCountOnlyTheDamageThatLandedOnTheSubstitute() {
         var user = side(); var foe = side()
         use(substituteMove(), by: &user, on: &foe)
+        let doll = user.substituteHP
+
         var drainer = side(hp: 10)
-        var draining = attackMove(power: 20)
+        var draining = attackMove(power: 250)
         draining.drain = 50
         let drained = hit(draining, by: &drainer, on: &user)
-        XCTAssertTrue(drained.contains { if case .heal(.a, _) = $0 { return true }; return false },
-                      "인형을 때린 드레인이 회복하지 않았다")
+        let healed = drained.compactMap { if case .heal(.a, let amount) = $0 { return amount }; return nil }
+        XCTAssertEqual(healed.count, 1, "인형을 때린 드레인이 회복하지 않았다")
+        XCTAssertLessThanOrEqual(healed[0], doll / 2 + 1, "인형 HP 를 넘긴 데미지까지 빨아들였다")
 
+        var user2 = side(); use(substituteMove(), by: &user2, on: &foe)
         var recoiler = side()
-        var recoiling = attackMove(power: 20)
-        recoiling.drain = -33
-        let recoiled = hit(recoiling, by: &recoiler, on: &user)
-        XCTAssertTrue(recoiled.contains { if case .damage(.a, _, .recoil) = $0 { return true }; return false },
-                      "인형을 때린 반동이 돌아오지 않았다")
+        var recoiling = attackMove(power: 250)
+        recoiling.drain = -50
+        let recoiled = hit(recoiling, by: &recoiler, on: &user2)
+        let recoil = recoiled.compactMap {
+            if case .damage(.a, let amount, .recoil) = $0 { return amount }; return nil
+        }
+        XCTAssertEqual(recoil.count, 1, "인형을 때린 반동이 돌아오지 않았다")
+        XCTAssertLessThanOrEqual(recoil[0], doll / 2 + 1, "인형 HP 를 넘긴 데미지로 반동을 맞았다")
     }
 
     // MARK: 사라지는 자리
