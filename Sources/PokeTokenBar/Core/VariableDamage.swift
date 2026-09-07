@@ -52,6 +52,24 @@ enum VariableDamage: Equatable, Sendable {
                   let theirs = defender.snapshot.weightHectograms, theirs > 0 else { return .noEffect }
             return .power(weightRatioPower(attacker: mine, defender: theirs))
         case MoveID.trumpCard:    return .power(trumpCardPower(attacker, move: move))
+        // 아래 부류는 PokéAPI 가 위력을 제대로 주는 기술이다 — 죽어 있지는 않았고, 상황 배율만
+        // 빠져 있었다. 그래서 기본 위력은 여기서 다시 적지 않고 `basePower` 로 데이터에서 읽는다.
+        case MoveID.eruption, MoveID.waterSpout, MoveID.dragonEnergy:
+            return .power(healthProportionalPower(attacker, base: basePower(move, fallback: 150)))
+        case MoveID.storedPower, MoveID.powerTrip:
+            return .power(raisedStagePower(attacker, base: basePower(move, fallback: 20)))
+        case MoveID.hex:
+            return .power(statusPunishingPower(defender, base: basePower(move, fallback: 65)))
+        case MoveID.infernalParade:
+            return .power(statusPunishingPower(defender, base: basePower(move, fallback: 60)))
+        case MoveID.avalanche:
+            // 이번 턴에 맞았으면 두 배. 우선도 −4 라 대개 후공이므로 조건이 실제로 자주 선다.
+            let base = basePower(move, fallback: 60)
+            return .power(attacker.lastHitThisTurn == nil ? base : base * 2)
+        case MoveID.acrobatics:
+            // 본가는 "지닌물건이 없으면" 두 배인데, 대전에 지닌물건 축이 아직 없어(이슈 #24 의
+            // Phase 5) 조건이 늘 참이다. 지닌물건이 생기면 여기에 분기를 세운다.
+            return .power(basePower(move, fallback: 55) * 2)
         case MoveID.magnitude:    return .power(magnitudePower(rng: &rng))
 
         // 되돌려주는 기술 — 이번 턴에 맞은 것이 없으면 실패한다. 카운터·미러코트는 우선도 −5 라
@@ -131,8 +149,31 @@ enum VariableDamage: Equatable, Sendable {
 
     /// 응징 — 상대가 **올린** 랭크만 센다. 내린 랭크까지 세면 상대를 깎아 놓고 응징이 약해진다.
     static func punishmentPower(_ defender: BattleSide) -> Int {
-        let raised = BattleStat.allCases.reduce(0) { $0 + max(0, defender.stage($1)) }
-        return min(200, 60 + 20 * raised)
+        min(200, raisedStagePower(defender, base: 60))
+    }
+
+    /// 기본 위력 — PokéAPI 값을 쓰되 **0 이면 쇼다운 기준값으로 되돌린다.**
+    ///
+    /// 0 은 값이 아니라 "없음"일 수 있다(하드프레스가 실제로 0 으로 왔다). 상황 배율을 곱하는
+    /// 부류에서 0 을 그대로 쓰면 무엇을 곱해도 0 이라 기술이 통째로 죽는다.
+    static func basePower(_ move: MoveSpec, fallback: Int) -> Int {
+        move.power > 0 ? move.power : fallback
+    }
+
+    /// 분화·물대포·드래곤에너지 — **내** 남은 HP 비율만큼 위력이 준다.
+    static func healthProportionalPower(_ side: BattleSide, base: Int) -> Int {
+        max(1, base * side.hp / max(1, side.stats.hp))
+    }
+
+    /// 어시스트파워·긍지의칼날·응징 — **올린** 랭크 하나당 20 씩 더한다. 어느 쪽 랭크를 세는지는
+    /// 부르는 자리가 정한다(어시스트파워는 자기, 응징은 상대).
+    static func raisedStagePower(_ side: BattleSide, base: Int) -> Int {
+        base + 20 * BattleStat.allCases.reduce(0) { $0 + max(0, side.stage($1)) }
+    }
+
+    /// 악몽·저승의불꽃 — 상대가 **주** 상태이상일 때만 두 배다. 혼란은 volatile 이라 세지 않는다.
+    static func statusPunishingPower(_ defender: BattleSide, base: Int) -> Int {
+        defender.status == nil ? base : base * 2
     }
 
     /// 되돌려주기 — 이번 턴에 **그 분류로** 맞은 데미지의 배수를 그대로 돌려준다.
@@ -217,18 +258,27 @@ enum VariableDamage: Equatable, Sendable {
         static let magnitude = 222
         static let mirrorCoat = 243
         static let endeavor = 283
+        static let eruption = 284
+        static let waterSpout = 323
         static let sheerCold = 329
         static let gyroBall = 360
         static let metalBurst = 368
         static let trumpCard = 376
         static let wringOut = 378
         static let punishment = 386
+        static let avalanche = 419
         static let grassKnot = 447
         static let crushGrip = 462
         static let heavySlam = 484
         static let electroBall = 486
+        static let storedPower = 500
+        static let hex = 506
+        static let acrobatics = 512
         static let finalGambit = 515
         static let heatCrash = 535
+        static let powerTrip = 681
+        static let dragonEnergy = 820
+        static let infernalParade = 844
         static let ruination = 877
         static let comeuppance = 894
         static let hardPress = 912

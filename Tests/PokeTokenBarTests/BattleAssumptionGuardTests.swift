@@ -44,6 +44,11 @@ final class BattleAssumptionGuardTests: XCTestCase {
         "trumpCard",
         "hardPress",                        // 단발기 — 히트마다 다시 뽑히지 않는다
         "magnitude",
+        // 아래는 PokéAPI 위력이 살아 있고 상황 배율만 붙는 부류다. 전부 단발기다.
+        "eruption", "waterSpout", "dragonEnergy",
+        "storedPower", "powerTrip",
+        "hex", "infernalParade",
+        "avalanche", "acrobatics",
     ]
 
     // MARK: 소스 스캔

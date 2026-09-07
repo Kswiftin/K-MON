@@ -24,8 +24,9 @@ final class VariableDamageTests: XCTestCase {
     }
 
     private func spec(_ id: Int, type: PokemonType = .normal,
-                      damageClass: MoveDamageClass = .physical, accuracy: Int? = 100) -> MoveSpec {
-        var move = MoveSpec(id: id, names: ["ko": "기술"], type: type, power: 0,
+                      damageClass: MoveDamageClass = .physical, accuracy: Int? = 100,
+                      power: Int = 0) -> MoveSpec {
+        var move = MoveSpec(id: id, names: ["ko": "기술"], type: type, power: power,
                             damageClass: damageClass, accuracy: accuracy, pp: 10)
         move.ailment = "none"; move.ailmentChance = 0
         move.statChanges = []; move.statChance = 0; move.targetsUser = false
@@ -96,6 +97,110 @@ final class VariableDamageTests: XCTestCase {
                        "5배부터 최대")
         XCTAssertEqual(VariableDamage.weightRatioPower(attacker: 60, defender: 3600), 40,
                        "내가 훨씬 가벼우면 최저 — 상대 체중만 보는 구현이면 여기서 갈린다")
+    }
+
+    // MARK: 위력에 상황이 곱해지는 기술 — 기본 위력은 PokéAPI 값이다
+
+    /// 분화·물대포·드래곤에너지는 **내 남은 HP 비율**만큼만 나간다. 비율을 안 보면 빈사에서도
+    /// 150 이 그대로 나가 어느 웨이브든 한 방이 된다(고치기 전 동작이 그랬다).
+    func testHealthProportionalMovesFadeWithTheUsersHealth() {
+        let full = side()
+        XCTAssertEqual(VariableDamage.healthProportionalPower(full, base: 150), 150,
+                       "만피에서는 기본 위력 그대로다")
+        let half = side(hp: full.stats.hp / 2)
+        XCTAssertEqual(VariableDamage.healthProportionalPower(half, base: 150),
+                       150 * half.hp / full.stats.hp, "남은 비율 그대로 — 반피면 절반쯤")
+        XCTAssertLessThan(VariableDamage.healthProportionalPower(half, base: 150), 80)
+        XCTAssertEqual(VariableDamage.healthProportionalPower(side(hp: 1), base: 150), 1,
+                       "빈사 직전에도 최소 1 — 0 이면 데미지 줄이 통째로 사라진다")
+
+        // 세 기술이 같은 분기에 있으므로 하나만 통과시키면 나머지가 표에 있는지 알 수 없다.
+        var rng = SplitMix64(seed: 1)
+        for id in [VariableDamage.MoveID.eruption, VariableDamage.MoveID.waterSpout,
+                   VariableDamage.MoveID.dragonEnergy] {
+            let move = spec(id, damageClass: .special, power: 150)
+            XCTAssertEqual(VariableDamage.from(move, attacker: side(hp: 1), defender: side(), rng: &rng),
+                           .power(1), "위력 표에 없으면 빈사에서도 150 이 그대로 나간다")
+        }
+    }
+
+    /// 어시스트파워·긍지의칼날은 **내가 올린** 랭크를 센다. 응징(상대 랭크)과 방향이 반대라
+    /// 같이 잠근다 — 한쪽만 보면 side 를 뒤바꾼 구현이 통과한다.
+    func testStagePoweredMovesReadOppositeSides() {
+        var boosted = side()
+        boosted.changeStage(.atk, by: 2)
+        boosted.changeStage(.spe, by: 1)
+        boosted.changeStage(.def, by: -3)
+        XCTAssertEqual(VariableDamage.raisedStagePower(boosted, base: 20), 80, "20 + 20×3")
+        XCTAssertEqual(VariableDamage.raisedStagePower(side(), base: 20), 20, "랭크가 없으면 기본 위력")
+
+        var rng = SplitMix64(seed: 1)
+        let storedPower = spec(VariableDamage.MoveID.storedPower, damageClass: .special, power: 20)
+        XCTAssertEqual(VariableDamage.from(storedPower, attacker: boosted, defender: side(), rng: &rng),
+                       .power(80), "쓰는 쪽 랭크를 본다")
+        XCTAssertEqual(VariableDamage.from(storedPower, attacker: side(), defender: boosted, rng: &rng),
+                       .power(20), "상대 랭크는 어시스트파워를 세게 만들지 않는다")
+        let powerTrip = spec(VariableDamage.MoveID.powerTrip, power: 20)
+        XCTAssertEqual(VariableDamage.from(powerTrip, attacker: boosted, defender: side(), rng: &rng),
+                       .power(80), "긍지의칼날도 같은 표를 탄다")
+    }
+
+    /// 악몽·저승의불꽃은 **상대가 상태이상일 때만** 두 배다. 조건 없이 두 배면 늘 두 배인 기술이 된다.
+    func testStatusPunishingMovesDoubleOnlyAgainstAStatusedTarget() {
+        let hex = spec(VariableDamage.MoveID.hex, type: .ghost, damageClass: .special, power: 65)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(hex, attacker: side(), defender: side(), rng: &rng),
+                       .power(65), "멀쩡한 상대에게는 기본 위력")
+        var burned = side()
+        burned.status = .burn
+        XCTAssertEqual(VariableDamage.from(hex, attacker: side(), defender: burned, rng: &rng),
+                       .power(130))
+
+        var confusedOnly = side()
+        confusedOnly.confusionTurns = 3
+        XCTAssertEqual(VariableDamage.from(hex, attacker: side(), defender: confusedOnly, rng: &rng),
+                       .power(65), "혼란은 주 상태이상이 아니다 — 여기서 두 배가 되면 안 된다")
+
+        let infernalParade = spec(VariableDamage.MoveID.infernalParade, type: .ghost,
+                                  damageClass: .special, power: 60)
+        XCTAssertEqual(VariableDamage.from(infernalParade, attacker: side(), defender: burned, rng: &rng),
+                       .power(120), "저승의불꽃은 기본 위력만 다르고 규칙이 같다")
+    }
+
+    /// 어벤저는 **이번 턴에 맞았을 때만** 두 배다. 턴이 넘어가면 다시 기본 위력이어야 한다 —
+    /// `lastHitThisTurn` 을 안 비우는 구현이면 한 번 맞은 뒤로 계속 두 배가 된다.
+    func testAvalancheDoublesOnlyAfterTakingAHitThisTurn() {
+        let avalanche = spec(VariableDamage.MoveID.avalanche, type: .ice, power: 60)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(avalanche, attacker: side(), defender: side(), rng: &rng),
+                       .power(60))
+
+        var hurt = side()
+        hurt.lastHitThisTurn = IncomingHit(amount: 30, damageClass: .physical)
+        XCTAssertEqual(VariableDamage.from(avalanche, attacker: hurt, defender: side(), rng: &rng),
+                       .power(120))
+
+        BattleEngine.beginTurn(&hurt)
+        XCTAssertEqual(VariableDamage.from(avalanche, attacker: hurt, defender: side(), rng: &rng),
+                       .power(60), "지난 턴에 맞은 것은 세지 않는다")
+    }
+
+    /// 아크로바트는 **지닌물건이 없을 때** 두 배다. 대전에 지닌물건 축이 아직 없으므로 늘 두 배다 —
+    /// 조건이 생기기 전까지 기본 위력 55 로 두면 본가의 절반 세기로 싸운다.
+    func testAcrobaticsAlwaysDoublesWhileBattlesHaveNoHeldItems() {
+        let acrobatics = spec(VariableDamage.MoveID.acrobatics, type: .flying, power: 55)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(acrobatics, attacker: side(), defender: side(), rng: &rng),
+                       .power(110))
+    }
+
+    /// PokéAPI 가 위력을 **0** 으로 주면(하드프레스가 실제로 그랬다) 곱해도 0 이라 기술이 죽는다.
+    /// 0 은 값이 아니라 "없음"이므로 쇼다운 기준값으로 되돌린다.
+    func testAZeroBasePowerFallsBackInsteadOfCollapsing() {
+        let brokenHex = spec(VariableDamage.MoveID.hex, type: .ghost, damageClass: .special, power: 0)
+        var rng = SplitMix64(seed: 1)
+        XCTAssertEqual(VariableDamage.from(brokenHex, attacker: side(), defender: side(), rng: &rng),
+                       .power(65), "위력 0 을 그대로 쓰면 PP 만 태우는 죽은 기술이 된다")
     }
 
     // MARK: 엔진 — 한 턴
