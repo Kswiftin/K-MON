@@ -10,6 +10,10 @@ import SwiftUI
 /// 포켓슬론(체인지릴레이·포켓몬 OX)은 근거리 방을 쓰지만 혼자 연습도 되고, 성격이 "겨루는
 /// 콘텐츠"라 같은 탭에 둔다. 탭을 새로 만드는 대신 포켓슬론 탭을 넓힌 이유는 탭바가 이미
 /// 다섯 칸이어서다 — 여섯 칸이 되면 칸당 55pt 라 긴 라벨이 잘린다.
+///
+/// 레이드도 같은 이유로 "혼자 도전"이 아니라 포켓슬론 옆(`neighborChallenges`)에 둔다 — 이웃이
+/// 있으면 협동, 없으면 1★ 솔로라 체육관·던전처럼 순수 혼자용이 아니다. 진입 카드(체육관·던전·
+/// 레이드·경매)는 친구 탭이 이미 쓰는 아이콘+제목+부제+화살표(`pokedoroCard`) 모양으로 통일한다.
 struct ChallengeView: View {
     let store: CompanionStore
     @Environment(BattleCenter.self) private var battleCenter
@@ -28,6 +32,9 @@ struct ChallengeView: View {
             // 두 탭이 하나처럼 움직인다. 도전 탭 소유 활동(OX·포켓슬론)만 여기서 이어 그린다.
             if battleCenter.multiplayer.phase == .idle || !presentsPokeathlonContent {
                 soloChallenges
+                // 레이드는 이웃이 있으면 협동, 없으면 1★ 솔로다 — 체육관·던전처럼 순수 혼자용이
+                // 아니라 포켓슬론과 같은 "LAN 방을 쓰되 혼자도 되는" 부류라 그 옆에 묶는다.
+                neighborChallenges
             }
             if presentsPokeathlonContent { PokeathlonView(store: store) }
             }
@@ -58,39 +65,48 @@ struct ChallengeView: View {
         VStack(alignment: .leading, spacing: 6) {
             Label(l.t("혼자 도전", "Solo challenges", "ひとりで挑戦"), systemImage: "flag.fill")
                 .font(.caption.weight(.semibold))
-            HStack(spacing: 6) {
-                Button { nav.showGymLeague = true } label: {
-                    Label(l.gymLeagueTitle, systemImage: "building.columns.fill")
-                }
-                .controlSize(.small)
-                Button { nav.showDungeon = true } label: {
-                    Label(l.dungeonTitle, systemImage: "map.fill")
-                }
-                .controlSize(.small)
-                // 레이드는 이웃이 있으면 협동이고 없으면 1★ 솔로다 — 어느 쪽이든 "겨루는 콘텐츠"라
-                // 체육관·던전과 같은 줄에 둔다.
-                Button { nav.showRaid = true } label: {
-                    Label(l.raidTitle, systemImage: "person.3.sequence.fill")
-                }
-                .controlSize(.small)
-                Spacer(minLength: 4)
-            }
-            Divider().opacity(0.5)
-            Button { showsAuction = true } label: {
-                HStack {
-                    Image(systemName: "storefront.fill").foregroundStyle(.orange)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(l.t("포켓몬 경매 시장", "Pokémon Offer Market", "ポケモン交換市場"))
-                            .font(.callout.bold())
-                        Text(l.t("한 마리를 올리고 여러 교환 제안을 받아보세요.",
-                                 "List one Pokémon and compare offers from nearby trainers.",
-                                 "1匹を出品し、近くのトレーナーの提案を比べましょう。"))
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                    Spacer(); Image(systemName: "chevron.right")
-                }.padding(9).pokedoroCard(tint: .orange)
-            }.buttonStyle(.plain)
-            Divider().opacity(0.5)
+            challengeCard(title: l.gymLeagueTitle, systemImage: "building.columns.fill", tint: .purple,
+                          subtitle: l.t("체육관을 차례로 돌며 배지를 모으세요.",
+                                        "Clear the gyms in order and collect badges.",
+                                        "ジムを順番に回ってバッジを集めよう。")) { nav.showGymLeague = true }
+            challengeCard(title: l.dungeonTitle, systemImage: "map.fill", tint: .red,
+                          subtitle: l.t("무작위로 이어지는 웨이브를 오르는 로그라이크 런.",
+                                        "A roguelike run through randomly generated waves.",
+                                        "ランダムに続くウェーブを進むローグライクラン。")) { nav.showDungeon = true }
+            challengeCard(title: l.t("포켓몬 경매 시장", "Pokémon Offer Market", "ポケモン交換市場"),
+                          systemImage: "storefront.fill", tint: .orange,
+                          subtitle: l.t("한 마리를 올리고 여러 교환 제안을 받아보세요.",
+                                        "List one Pokémon and compare offers from nearby trainers.",
+                                        "1匹を出品し、近くのトレーナーの提案を比べましょう。")) { showsAuction = true }
         }
+    }
+
+    /// 레이드는 이웃이 있으면 협동, 없으면 1★ 솔로다 — 포켓슬론과 같은 "LAN 방을 쓰되 혼자도
+    /// 되는" 부류라 포켓슬론 바로 위에 묶는다. `soloChallenges` 와 같은 조건으로만 그려지므로
+    /// (`body` 참고) 포켓슬론이 실제로 안 그려지는 경우에도 이 묶음만 남을 수 있다 — 그럴 때도
+    /// 헤딩 아래 카드가 하나는 있어야 하므로 비워 두지 않는다.
+    private var neighborChallenges: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(l.t("이웃과 함께", "With neighbors", "近所の人と"), systemImage: "person.2.wave.2.fill")
+                .font(.caption.weight(.semibold))
+            challengeCard(title: l.raidTitle, systemImage: "person.3.sequence.fill", tint: .teal,
+                          subtitle: l.t("오전·오후 보스에 혼자, 또는 이웃과 함께 도전하세요.",
+                                        "Take on the morning or afternoon boss solo or with neighbors.",
+                                        "午前・午後のボスに一人で、または近所の人と挑もう。")) { nav.showRaid = true }
+        }
+    }
+
+    private func challengeCard(title: String, systemImage: String, tint: Color, subtitle: String,
+                                action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: systemImage).foregroundStyle(tint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.callout.bold())
+                    Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(); Image(systemName: "chevron.right")
+            }.padding(9).pokedoroCard(tint: tint)
+        }.buttonStyle(.plain)
     }
 }

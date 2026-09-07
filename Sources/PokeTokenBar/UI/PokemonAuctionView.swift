@@ -16,13 +16,9 @@ struct PokemonAuctionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(store.l.t("포켓몬 경매 시장", "Pokémon Offer Market", "ポケモン交換市場"),
-                      systemImage: "storefront.fill").font(.title3.bold()).foregroundStyle(.orange)
-                Spacer()
-                Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-            }
+            ChallengeOverlayHeader(title: store.l.t("포켓몬 경매 시장", "Pokémon Offer Market", "ポケモン交換市場"),
+                                   systemImage: "storefront.fill", tint: .orange,
+                                   closeHelp: store.l.battleClose, onClose: onClose)
             Text(store.l.t("여러 포켓몬을 올리고 포켓몬 또는 별의모래 제안을 비교해 수락하세요.",
                            "List multiple Pokémon and accept a Pokémon or Stardust offer.",
                            "複数のポケモンを出品し、ポケモンまたはほしのすなの提案を選べます。"))
