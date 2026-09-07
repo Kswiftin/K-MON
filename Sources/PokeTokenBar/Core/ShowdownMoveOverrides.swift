@@ -284,6 +284,29 @@ enum ShowdownMoveData {
         887,  // Hyper Drill
         910,  // Mighty Cleave
     ]
+
+    /// Moves that hit a Minimized target harder — double damage, and the accuracy roll is
+    /// skipped. Showdown carries this as the `minimize` move flag; the engine implements the
+    /// rule once and asks here which moves carry the flag.
+    static let hittingMinimizedHarder: Set<Int> = [
+        23,  // Stomp
+        34,  // Body Slam
+        407,  // Dragon Rush
+        484,  // Heavy Slam
+        535,  // Heat Crash
+        537,  // Steamroller
+        560,  // Flying Press
+        696,  // Malicious Moonsault
+        916,  // Supercell Slam
+    ]
+
+    /// Moves whose base power doubles while the user carries Defense Curl's volatile. Showdown
+    /// keeps the check inside each move's own base-power callback, so this set is read out of
+    /// those callbacks rather than kept by hand.
+    static let doubledByDefenseCurl: Set<Int> = [
+        205,  // Rollout
+        301,  // Ice Ball
+    ]
 }
 
 extension MoveSpec {

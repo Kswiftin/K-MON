@@ -25,8 +25,7 @@ final class ShowdownEffectTableTests: XCTestCase {
         // 다인전 타겟 유도 — 대상을 고르는 자리가 방·웨이브에만 있다.
         "followme", "ragepowder", "spotlight", "helpinghand",
         // 랭크·급소·명중 배율을 한 줄씩 얹는 부류. 얹는 자리는 있고 아직 안 얹었다.
-        "focusenergy", "minimize", "defensecurl", "charge", "laserfocus", "stockpile",
-        "dragoncheer", "noretreat", "powertrick", "powershift",
+        "stockpile", "dragoncheer", "noretreat", "powertrick", "powershift",
         // 상성·접지·명중 규칙을 바꾸는 부류 — 상성표를 지나는 자리가 하나가 아니다.
         "foresight", "miracleeye", "smackdown", "telekinesis", "magnetrise", "tarshot",
         "electrify", "gastroacid", "embargo", "octolock",

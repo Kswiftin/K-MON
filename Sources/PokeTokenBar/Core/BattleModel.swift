@@ -915,6 +915,10 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// **나열 순서가 곧 턴 끝 처리 순서다** — 회복 둘이 먼저, 그다음 깎는 셋이다. 훑는 쪽이
     /// `allCases` 를 쓰므로 딕셔너리 순회 순서가 이벤트에 남지 않는다(두 피어의 로그가 갈리지 않는다).
     case aquaRing, ingrain, leechSeed, nightmare, curse, partiallyTrapped
+    /// 뒤 다섯은 턴 끝에 HP 를 만지지 않는다 — 배율만 얹는다(급소 단계·회피·위력). 그래서 위
+    /// 순서 규칙과 부딪히지 않고 뒤에 붙는다. 충전·레이저포커스만 턴을 세고, 나머지 셋은
+    /// 교체할 때까지 산다.
+    case focusEnergy, laserFocus, minimize, defenseCurl, charge
 
     /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
     /// `ShowdownEffectTableTests` 가 동결한다.
@@ -926,6 +930,11 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case "nightmare":        self = .nightmare
         case "curse":            self = .curse
         case "partiallytrapped": self = .partiallyTrapped
+        case "focusenergy":      self = .focusEnergy
+        case "laserfocus":       self = .laserFocus
+        case "minimize":         self = .minimize
+        case "defensecurl":      self = .defenseCurl
+        case "charge":           self = .charge
         default:                 return nil
         }
     }
@@ -937,10 +946,49 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     }
 
     /// 자기에게 거는가 — 대상이 갈리면 `applyAttack` 이 상대를 볼지 말지가 갈린다.
-    var targetsUser: Bool { self == .aquaRing || self == .ingrain }
+    ///
+    /// 배율만 얹는 다섯(기합충전·레이저포커스·작아지기·방어태세·충전)도 자기에게 건다 — 랭크가
+    /// 함께 오르는 셋(작아지기·방어태세·충전)이 있어서, 그 갈래는 랭크도 같이 움직여야 한다.
+    var targetsUser: Bool {
+        switch self {
+        case .aquaRing, .ingrain, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge:
+            return true
+        case .leechSeed, .nightmare, .curse, .partiallyTrapped:
+            return false
+        }
+    }
+
+    /// 자기에게 걸었을 때 사는 턴 — 0 은 무기한(교체할 때까지)이다.
+    ///
+    /// 충전과 레이저포커스만 턴을 센다(쇼다운도 둘만 `duration` 을 둔다). **2 여야 한다**: 건 턴의
+    /// 끝에 1 로 줄고 다음 턴 끝에 풀리므로, 노리던 "다음 턴 한 방"에만 배율이 살아 있다. 1 로
+    /// 두면 건 턴 끝에 풀려 아무 기술도 못 받고, 0(무기한)으로 두면 충전이 전기 기술을 영구히
+    /// 두 배로 만든다.
+    var selfDuration: Int { (self == .charge || self == .laserFocus) ? 2 : 0 }
+
+    /// 이 상태가 얹는 급소 단계. 레이저포커스는 3 을 얹어 표의 상한(100%)에 닿는다 —
+    /// "확정 급소" 를 따로 표현하지 않는 이유가 그것이다(`critThreshold` 가 이미 잠근다).
+    /// 행운의부적은 결과만 막으므로 여기서 볼 필요가 없다.
+    var critStages: Int {
+        switch self {
+        case .focusEnergy: return 2
+        case .laserFocus:  return 3
+        default:           return 0
+        }
+    }
 
     /// 턴 끝에 회복하는 최대 HP 분모. 깎는 쪽과 한 축에 두지 않는 이유는 순서다 — 회복이 먼저다.
-    var healDivisor: Int? { targetsUser ? 16 : nil }
+    ///
+    /// **`targetsUser` 로 답하지 않는다.** 자기에게 거는 volatile 이 회복하는 부류(아쿠아링·
+    /// 뿌리박기)와 배율만 얹는 부류로 갈렸으므로, 그 축으로 물으면 기합충전이 매 턴 1/16 을
+    /// 회복하는 기술이 된다.
+    var healDivisor: Int? {
+        switch self {
+        case .aquaRing, .ingrain: return 16
+        case .leechSeed, .nightmare, .curse, .partiallyTrapped,
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge: return nil
+        }
+    }
 
     /// 턴 끝에 깎는 최대 HP 분모와 로그에 남는 원인.
     /// **씨뿌리기는 여기서 답하지 않는다**(`nil`) — 깎은 만큼 뿌린 쪽이 회복하므로 개체 하나만
@@ -950,14 +998,16 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .nightmare:                     return (4, .nightmare)
         case .curse:                         return (4, .curse)
         case .partiallyTrapped:              return (8, .trap)
-        case .aquaRing, .ingrain, .leechSeed: return nil
+        case .aquaRing, .ingrain, .leechSeed,
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge: return nil
         }
     }
 
     /// 씨뿌리기가 빨아내는 최대 HP 분모.
     static let leechSeedDivisor = 8
 
-    /// 조이기가 깎는 턴 수 — 4~5턴(본가와 같다). 턴을 세는 유일한 volatile 이라 여기 상수로 둔다.
+    /// 조이기가 깎는 턴 수 — 4~5턴(본가와 같다). 난수로 뽑는 유일한 기간이라 여기 상수로 둔다
+    /// (충전·레이저포커스의 기간은 고정값이라 `selfDuration` 이 답한다).
     static let trapTurnFloor = 4
     static let trapTurnSpread: UInt64 = 2
 }
@@ -1351,6 +1401,10 @@ enum BattleEngine {
     ///      한 번 더 뽑으므로, 구버전은 그 뒤 모든 판정이 한 칸씩 밀린다. 같은 입력의 HP 도 갈린다.
     ///      `DamageCause` 에 원인 셋(`trap`·`curse`·`nightmare`)과 `BattleEvent` 에 case 둘
     ///      (`volatileStarted`·`volatileEnded`)이 늘어 구버전은 그 이벤트를 디코딩하지 못한다.
+    ///      + 배율만 얹는 volatile 다섯(기합충전·레이저포커스·작아지기·방어태세·충전) — 급소 단계
+    ///      (+2 / 확정)·데미지 두 배·위력 두 배가 달라진다. **rng 소비도 갈린다**: 이 다섯은 이제
+    ///      데미지 경로를 안 지나므로 구버전이 뽑던 급소·난수 폭 두 번을 안 뽑고, 작아진 상대를
+    ///      때리는 플래그 기술(발구르기 부류)은 명중 판정을 건너뛰어 한 번 덜 뽑는다.
     static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1562,6 +1616,11 @@ enum BattleEngine {
     /// 깎으므로 부호를 뒤집어 같은 표를 읽는다. 100 초과는 그대로 둔다(안 빗나간다는 뜻이고,
     /// Gen 2 의 1/256 miss 는 §3.3 대로 뺐다).
     static func hitChance(of move: MoveSpec, attacker: BattleSide, defender: BattleSide) -> Int? {
+        // 작아진 상대에게 플래그 달린 기술은 **명중을 굴리지 않는다**(쇼다운의 `onAccuracy` 가
+        // true 를 돌려주는 자리). 올린 회피 랭크가 그 기술들에는 통하지 않는 것이 작아지기의 대가다.
+        if defender.has(.minimize), ShowdownMoveData.hittingMinimizedHarder.contains(move.id) {
+            return nil
+        }
         guard !MoveSpec.neverMisses(move.accuracy), let accuracy = move.accuracy else { return nil }
         let withAccuracy = accuracy * StatStages.accuracyPercent(stage: attacker.stage(.accuracy)) / 100
         return withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
@@ -1648,6 +1707,13 @@ enum BattleEngine {
         case nil:                   break
         }
         if let ability = attacker.ability { power = ability.adjustedPower(power, move: move) }
+        // 충전은 전기 기술만, 방어태세는 구르기·아이스볼만 두 배로 만든다. **어느 기술인지는
+        // 데이터가 답한다**(`ShowdownMoveData`) — 손 목록이면 세대마다 붙는 기술이 조용히 빠진다.
+        // 가변위력을 뽑은 **뒤**라서 구르기의 연속 배율까지 함께 두 배가 된다(본가와 같다).
+        if attacker.has(.charge), move.type == .electric { power *= 2 }
+        if attacker.has(.defenseCurl), ShowdownMoveData.doubledByDefenseCurl.contains(move.id) {
+            power *= 2
+        }
         // 발버둥은 무속성(상성·STAB 미적용). 변화기도 상성을 타지 않는다 — 노말↔고스트 면역은
         // **데미지 기술의 규칙**이라, 이상한빛은 노말에게 노래는 고스트에게 통해야 한다.
         // 상성으로 막히는 상태기(전기자석파)만 `typeBlockedStatusMoveIDs` 에 명시한다.
@@ -1668,7 +1734,12 @@ enum BattleEngine {
         let isPhysical = move.damageClass == .physical
         // 런 강화의 급소 단계는 기술 단계에 더한다 — 표의 상한(3단계 = 100%)은 `critThreshold` 가
         // 이미 잠그므로 스택 수를 따로 자르지 않는다.
-        let critStage = move.critStage + attacker.runBoosts.critStages
+        // 기합충전(+2)·레이저포커스(+3)도 여기서 더한다. 둘이 겹쳐도 표가 3 단계에서 막히므로
+        // 확정 급소보다 세지지 않는다 — 상한을 따로 자르지 않는 이유가 그것이다.
+        let volatileCritStages = BattleVolatile.allCases
+            .filter { attacker.has($0) }
+            .reduce(0) { $0 + $1.critStages }
+        let critStage = move.critStage + attacker.runBoosts.critStages + volatileCritStages
         // 급소 판정은 **행운의부적이 있어도 그대로 굴린다** — 뽑는 횟수가 갈리면 그 뒤 모든 판정이
         // 밀린다. 막는 것은 결과뿐이다.
         let rolledCritical = rng.next() % critDenominator < critThreshold(stage: critStage)
@@ -1734,6 +1805,12 @@ enum BattleEngine {
             if terrain == .misty, move.type == .dragon, BattleField.isGrounded(defender) {
                 damage /= 2
             }
+        }
+        // 작아진 상대는 **플래그 달린 기술**(발구르기 부류)에 두 배로 맞는다. 위력이 아니라
+        // 데미지에 곱하는 자리가 쇼다운과 같다(`onSourceModifyDamage`) — 위력에 곱하면 식의
+        // `+2` 와 급소 배율이 배가 되는 값 앞에 들어가 두 배가 정확히 두 배가 아니게 된다.
+        if defender.has(.minimize), ShowdownMoveData.hittingMinimizedHarder.contains(move.id) {
+            damage *= 2
         }
         // 장막은 **급소를 못 막는다**(3세대 이후). 급소가 뚫지 못하면 장막 한 장으로 판이 잠긴다.
         // 고정 데미지·일격필살은 여기 오기 전에 빠져나가므로 장막을 타지 않는다(본가와 같다).
@@ -1982,13 +2059,17 @@ extension BattleEngine {
                 events.append(.volatileEnded(actor, volatileStatus))
                 continue
             }
-            // 쓰러진 뒤에는 남은 volatile 이 더 깎지 않는다 — 만지면 재생과 엔진의 최종 HP 가 갈린다.
-            guard side.isAlive, let residual = volatileStatus.residualDamage else { continue }
-            let amount = max(1, side.stats.hp / residual.divisor)
-            side.hp = max(0, side.hp - amount)
-            events.append(.damage(actor, amount: amount, cause: residual.cause))
-            // 턴을 세는 것은 조이기뿐이다(`remaining` 0 은 무기한). 깎은 **뒤에** 줄여야 4턴짜리가
-            // 네 번 깎는다 — 먼저 줄이면 마지막 턴이 잔뎀 없이 풀린다.
+            // 쓰러진 뒤에는 남은 volatile 이 더 깎지도, 턴을 세지도 않는다 — 만지면 재생과
+            // 엔진의 최종 HP 가 갈리고, 쓰러진 개체의 해제 줄이 기절 뒤에 하나 더 붙는다.
+            guard side.isAlive else { continue }
+            if let residual = volatileStatus.residualDamage {
+                let amount = max(1, side.stats.hp / residual.divisor)
+                side.hp = max(0, side.hp - amount)
+                events.append(.damage(actor, amount: amount, cause: residual.cause))
+            }
+            // 턴을 세는 것은 조이기·충전·레이저포커스다(`remaining` 0 은 무기한). 깎은 **뒤에**
+            // 줄여야 4턴짜리가 네 번 깎는다 — 먼저 줄이면 마지막 턴이 잔뎀 없이 풀린다.
+            // 잔뎀이 없는 부류도 여기서 세야 한다: 안 세면 충전이 영구 배율이 된다.
             guard remaining > 0 else { continue }
             if remaining <= 1 {
                 side.volatiles[volatileStatus] = nil
@@ -2225,10 +2306,18 @@ extension BattleEngine {
         // 자기에게 거는 volatile(아쿠아링·뿌리박기)도 상대를 보지 않는다 — 진영 상태기와 같은 자리다.
         // 이미 붙어 있으면 실패한다(매 턴 다시 걸면 실패 없는 무한 회복이 된다).
         if let volatileStatus = BattleVolatile.called(byMoveID: move.id), volatileStatus.targetsUser {
-            let started = attacker.start(volatileStatus)
-            attacker.lastMoveFailed = !started
-            return events + (started ? [.volatileStarted(attackerActor, volatileStatus)]
-                                     : [.immune(defenderActor)])
+            let started = attacker.start(volatileStatus, turns: volatileStatus.selfDuration)
+            var applied: [BattleEvent] = started ? [.volatileStarted(attackerActor, volatileStatus)] : []
+            // **랭크도 같이 오르는 부류가 있다**(작아지기 회피 +2·방어태세 방어 +1·충전 특방 +1).
+            // 이 갈래가 조기반환하므로 `applyStatChanges` 를 여기서 직접 불러야 한다 — 안 부르면
+            // 작아지기가 회피를 하나도 안 올린다(이 다섯을 volatile 로 옮기기 전에는 올랐다).
+            // 두 번째 사용도 랭크는 오른다(본가와 같다): 그래서 실패 판정은 `started` 가 아니라
+            // **아무 일도 없었는가**로 본다.
+            applied += applyStatChanges(of: move, attacker: &attacker, defender: &defender,
+                                        attackerActor: attackerActor, defenderActor: defenderActor,
+                                        field: field, defenderTeam: defenderTeam, rng: &rng)
+            attacker.lastMoveFailed = applied.isEmpty
+            return events + (applied.isEmpty ? [.immune(defenderActor)] : applied)
         }
         // 날씨기는 상대를 보지 않는다 — 자기 회복기와 같은 자리에서 빠져나간다.
         if let weather = BattleWeather.called(byMoveID: move.id) {

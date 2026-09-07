@@ -264,6 +264,17 @@ struct L {
                                          "\(name)は のろわれた！")
         case .partiallyTrapped: return t("\(name)은(는) 조여졌다!", "\(name) was squeezed!",
                                          "\(name)は しめつけられた！")
+        case .focusEnergy:      return t("\(name)은(는) 기합이 충전됐다!", "\(name) is getting pumped!",
+                                         "\(name)は きあいを ためている！")
+        case .laserFocus:       return t("\(name)은(는) 집중하기 시작했다!",
+                                         "\(name) began concentrating intensely!",
+                                         "\(name)は しゅうちゅうし はじめた！")
+        case .minimize:         return t("\(name)은(는) 작아졌다!", "\(name) minimized!",
+                                         "\(name)は ちいさくなった！")
+        case .defenseCurl:      return t("\(name)은(는) 몸을 웅크렸다!", "\(name) curled up!",
+                                         "\(name)は まるくなった！")
+        case .charge:           return t("\(name)은(는) 전기를 모았다!", "\(name) began charging power!",
+                                         "\(name)は でんきを ためた！")
         }
     }
 
@@ -281,6 +292,16 @@ struct L {
                                          "\(name)の のろいが とけた")
         case .partiallyTrapped: return t("\(name)은(는) 조이기에서 벗어났다", "\(name) was freed from the bind",
                                          "\(name)は しめつけから ぬけだした")
+        case .focusEnergy:      return t("\(name)의 기합이 풀렸다", "\(name) is no longer pumped",
+                                         "\(name)の きあいが とけた")
+        case .laserFocus:       return t("\(name)의 집중이 풀렸다", "\(name) is no longer concentrating",
+                                         "\(name)の しゅうちゅうが とけた")
+        case .minimize:         return t("\(name)은(는) 원래 크기로 돌아왔다", "\(name) is no longer minimized",
+                                         "\(name)は もとの おおきさに もどった")
+        case .defenseCurl:      return t("\(name)은(는) 몸을 풀었다", "\(name) uncurled",
+                                         "\(name)は まるまりを といた")
+        case .charge:           return t("\(name)의 전기가 흩어졌다", "\(name)'s charge faded",
+                                         "\(name)の でんきが きえた")
         }
     }
 
