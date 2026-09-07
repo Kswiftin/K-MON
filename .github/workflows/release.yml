@@ -139,6 +139,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The in-app update popup shows this release body verbatim (see
+          # ReleaseNotesPresenter), so it needs to be Korean rather than
+          # --generate-notes' English PR-title list. RELEASE_NOTES.ko.md is
+          # written by hand before tagging; fall back to --generate-notes if
+          # it was forgotten so a missing file never blocks the release.
+          notes_flag=(--generate-notes)
+          if [[ -s RELEASE_NOTES.ko.md ]]; then
+            notes_flag=(--notes-file RELEASE_NOTES.ko.md)
+          fi
           for attempt in 1 2 3; do
             if gh release create "$GITHUB_REF_NAME" \
                 build/release-feed/Pokedoro.zip \
@@ -147,7 +156,7 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" \
                 --verify-tag \
                 --title "K-MON $GITHUB_REF_NAME" \
-                --generate-notes; then
+                "${notes_flag[@]}"; then
               exit 0
             fi
             echo "gh release create failed (attempt $attempt/3)" >&2
