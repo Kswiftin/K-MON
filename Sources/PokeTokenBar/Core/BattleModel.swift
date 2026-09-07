@@ -401,6 +401,8 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
             || BattleSideCondition.called(byMoveID: id) != nil
             // 방어기는 상태도 랭크도 안 걸고 **이번 턴 자기를 지킨다**(같은 이유로 열어 준다).
             || BattleGuard.called(byMoveID: id)
+            // volatile 을 거는 기술도 상태이상 표에는 없다 — 안 열면 아무도 못 배운다.
+            || BattleVolatile.called(byMoveID: id) != nil
     }
 
     /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
@@ -669,6 +671,10 @@ enum Status: String, Codable, Sendable, Equatable, CaseIterable {
 /// 원인이 없으면 잔뎀이 직전 `.move` 에 접혀 **쓰지도 않은 기술 이름**이 붙는다.
 enum DamageCause: String, Codable, Sendable, Equatable {
     case move, burn, poison, toxic, confusion, recoil, weather
+    /// 개체에 붙은 상태(`BattleVolatile`)가 깎은 몫 — 조이기·저주·나이트메어.
+    /// volatile 하나에 원인 하나를 두는 이유는 로그다: "무엇에 맞았는지"를 잃으면 잔뎀이
+    /// 전부 같은 줄로 읽혀, 조이기가 풀렸는데도 계속 깎이는 오구현이 화면에서 안 보인다.
+    case trap, curse, nightmare
 }
 
 // MARK: - 배틀 전체에 걸리는 상태
@@ -860,6 +866,59 @@ enum BattleGuard {
     static func isIgnored(byMoveID id: Int) -> Bool { ShowdownMoveData.ignoringGuard.contains(id) }
 }
 
+/// 개체에 붙어 **턴을 넘어 사는** 상태 — 조이기·저주·나이트메어·아쿠아링·뿌리박기.
+///
+/// 주 상태이상(`Status`)과 세 가지가 다르다: 여러 개가 동시에 붙고(그래서 `BattleSide` 가 표로
+/// 든다), 잔뎀·회복이 `BattleEngine.endOfTurnResidual` 한 자리에 얹히고, 교체하면 전부 사라진다.
+///
+/// **교체 금지는 아직 없다.** 본가의 조이기·뿌리박기는 물러나는 것 자체를 막지만, 교체 게이트는
+/// 네 모드와 터미널 UI 에 흩어져 있어 상태 하나로 막을 수 없다. 아무도 읽지 않는 필드를 미리 두지
+/// 않는 것이 이 파일의 규칙이라, 막는 자리를 만들 때 같이 넣는다.
+enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
+    /// **나열 순서가 곧 턴 끝 처리 순서다** — 회복 둘이 먼저, 그다음 깎는 셋이다. 훑는 쪽이
+    /// `allCases` 를 쓰므로 딕셔너리 순회 순서가 이벤트에 남지 않는다(두 피어의 로그가 갈리지 않는다).
+    case aquaRing, ingrain, nightmare, curse, partiallyTrapped
+
+    /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
+    /// `ShowdownEffectTableTests` 가 동결한다.
+    init?(showdownKey: String) {
+        switch showdownKey.lowercased() {
+        case "aquaring":         self = .aquaRing
+        case "ingrain":          self = .ingrain
+        case "nightmare":        self = .nightmare
+        case "curse":            self = .curse
+        case "partiallytrapped": self = .partiallyTrapped
+        default:                 return nil
+        }
+    }
+
+    /// 이 상태를 부르는 기술인가 — 날씨·필드·진영 상태와 같은 자리에서 데이터가 답한다.
+    /// 조이기만 열 기술이 같은 키를 부르므로, 손 목록이면 새 기술 하나가 조용히 빠진다.
+    static func called(byMoveID id: Int) -> BattleVolatile? {
+        ShowdownMoveData.effects[id]?.volatileStatus.flatMap(BattleVolatile.init(showdownKey:))
+    }
+
+    /// 자기에게 거는가 — 대상이 갈리면 `applyAttack` 이 상대를 볼지 말지가 갈린다.
+    var targetsUser: Bool { self == .aquaRing || self == .ingrain }
+
+    /// 턴 끝에 회복하는 최대 HP 분모. 깎는 쪽과 한 축에 두지 않는 이유는 순서다 — 회복이 먼저다.
+    var healDivisor: Int? { targetsUser ? 16 : nil }
+
+    /// 턴 끝에 깎는 최대 HP 분모와 로그에 남는 원인.
+    var residualDamage: (divisor: Int, cause: DamageCause)? {
+        switch self {
+        case .nightmare:          return (4, .nightmare)
+        case .curse:              return (4, .curse)
+        case .partiallyTrapped:   return (8, .trap)
+        case .aquaRing, .ingrain: return nil
+        }
+    }
+
+    /// 조이기가 깎는 턴 수 — 4~5턴(본가와 같다). 턴을 세는 유일한 volatile 이라 여기 상수로 둔다.
+    static let trapTurnFloor = 4
+    static let trapTurnSpread: UInt64 = 2
+}
+
 /// 판 전체에 걸린 것 — 날씨와 필드.
 ///
 /// **왜 인자로 나르는가.** 배틀 상태를 들고 있는 타입이 넷(1v1 LAN·연습·웨이브·방)이라, 엔진이
@@ -995,6 +1054,13 @@ struct BattleSide: Sendable, Equatable {
     /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다 — 두 피어가 각자 같은 규칙으로
     /// 세운다(`lastHitThisTurn` 과 같은 이유).
     var isTerastallized = false
+    /// 붙어 있는 volatile 과 **남은 턴**. 0 은 "턴을 세지 않는다"(교체하거나 조건이 깨질 때까지
+    /// 남는다)는 뜻이고, 키가 없으면 안 붙은 것이다 — 진영 상태와 같은 규칙이라 0 턴짜리 항목을
+    /// 남기지 않는다. 그래야 "하나도 안 붙었다" 가 `isEmpty` 한 번으로 읽힌다.
+    ///
+    /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다 — 두 피어가 각자 같은 규칙으로
+    /// 채운다(`isTerastallized` 와 같은 이유). 그래서 `rulesVersion` 만 올리면 된다.
+    var volatiles: [BattleVolatile: Int] = [:]
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
     var flinched = false
@@ -1018,6 +1084,17 @@ struct BattleSide: Sendable, Equatable {
 
     var isAlive: Bool { hp > 0 }
     var isConfused: Bool { confusionTurns > 0 }
+
+    func has(_ volatileStatus: BattleVolatile) -> Bool { volatiles[volatileStatus] != nil }
+
+    /// volatile 을 붙이고 **실제로 붙었는지**를 돌려준다. 이미 붙어 있으면 실패다(진영 상태·날씨와
+    /// 같은 이유 — 매 턴 다시 걸면 아쿠아링이 실패 없는 무한 회복이 된다).
+    /// `turns` 0 은 턴을 세지 않는다는 뜻이다.
+    mutating func start(_ volatileStatus: BattleVolatile, turns: Int = 0) -> Bool {
+        guard !has(volatileStatus) else { return false }
+        volatiles[volatileStatus] = turns
+        return true
+    }
 
     /// 이 개체의 특성 — 스냅샷의 슬러그를 해석한 값. 모르는 슬러그는 `nil` 이라 특성이 없는 것과 같다.
     /// 해석은 사전 조회 한 번이라 턴마다 불러도 싸다(그래서 저장하지 않고 스냅샷 하나만 진실로 둔다).
@@ -1212,7 +1289,13 @@ enum BattleEngine {
     ///      타입이 하나로 접히고 STAB 가 세 갈래가 되며 테라버스트의 타입·분류가 바뀐다.
     ///      **와이어는 그대로다**: 테라 타입은 두 피어가 같은 `types` 에서 파생하고, 테라스탈
     ///      여부는 `BattleSide`(와이어에 없는 타입)에만 산다. rng 소비도 늘지 않는다.
-    static let rulesVersion = 23
+    /// 24 = 개체에 붙어 턴을 넘어 사는 상태(`BattleVolatile`) 다섯 — 조이기(열 기술)·저주·
+    ///      나이트메어의 턴 끝 잔뎀과 아쿠아링·뿌리박기의 턴 끝 회복. 상태는 전부 `BattleSide`
+    ///      (와이어에 없는 타입)에 살지만 **rng 소비가 갈린다**: 조이기는 붙는 자리에서 지속 턴을
+    ///      한 번 더 뽑으므로, 구버전은 그 뒤 모든 판정이 한 칸씩 밀린다. 같은 입력의 HP 도 갈린다.
+    ///      `DamageCause` 에 원인 셋(`trap`·`curse`·`nightmare`)과 `BattleEvent` 에 case 둘
+    ///      (`volatileStarted`·`volatileEnded`)이 늘어 구버전은 그 이벤트를 디코딩하지 못한다.
+    static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -1308,6 +1391,9 @@ enum BattleEngine {
         // 혼란·풀죽음은 volatile — 다시 나왔을 때 이전 상태를 이어 가지 않는다.
         side.confusionTurns = 0
         side.flinched = false
+        // 붙어 있던 volatile 도 전부 사라진다(본가와 같다). 남겨 두면 조이기·저주를 교체로 피했다가
+        // 그 상태 그대로 다시 나온다 — 랭크를 지우는 것과 같은 이유다.
+        side.volatiles = [:]
         // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
         // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.
         side.resetStages()
@@ -1694,6 +1780,10 @@ enum BattleEvent: Codable, Sendable, Equatable {
     case sideConditionEnded(BattleTeamSlot, BattleSideCondition)
     /// 테라스탈했다 — 액터와 그 개체가 된 타입. 배틀당 한 번뿐이라 로그에 한 줄이면 충분하다.
     case terastallized(BattleActor, PokemonType)
+    /// 개체에 붙은 상태가 붙었다 / 풀렸다. 진영 상태와 달리 **주인이 있다** — 누구에게 붙은
+    /// 조이기인지가 문구의 절반이다.
+    case volatileStarted(BattleActor, BattleVolatile)
+    case volatileEnded(BattleActor, BattleVolatile)
     /// 이번 턴 몸을 지켰다 / 그 방어가 상대의 기술을 막았다. 액터는 **지킨 쪽**이다 —
     /// 막힌 줄이 누구의 방어인지가 문구의 절반이고, 공격자는 바로 앞 줄이 이미 말한다.
     case guardUp(BattleActor)
@@ -1744,36 +1834,90 @@ extension BattleEngine {
         return [.status(actor, status)]
     }
 
-    /// 턴 끝 잔뎀 — 화상은 1/16, 독은 1/8, 맹독은 n/16 으로 매턴 커진다.
+    /// 턴 끝 잔뎀 — 화상은 1/16, 독은 1/8, 맹독은 n/16 으로 매턴 커진다. 개체에 붙은
+    /// volatile(조이기·저주·나이트메어의 잔뎀, 아쿠아링·뿌리박기의 회복)도 같은 자리에서 본다.
+    ///
+    /// 순서는 **회복 전부 → 주 상태 → volatile 잔뎀**이고, 기절 줄은 **맨 끝에 한 번**이다.
+    /// 회복을 뒤로 밀면 잔뎀으로 쓰러진 개체가 그 턴에 되살아나고, 기절을 잔뎀마다 내면 같은
+    /// 개체가 한 턴에 두 번 쓰러진다(재생이 그대로 두 번 그린다).
+    ///
     /// rng 를 쓰지 않으므로 호출 순서만 고정하면 두 피어가 같은 값을 본다.
     static func endOfTurnResidual(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
         guard side.isAlive else { return [] }
         var events: [BattleEvent] = []
-        // 런 강화의 턴 끝 회복은 **잔뎀보다 먼저**다(본가와 같다). 뒤로 밀면 화상 데미지로 쓰러진
-        // 개체가 그 턴에 되살아난다. 만피면 회복량이 0 이라 이벤트도 나가지 않는다.
-        let heal = min(side.runBoosts.leftoversHeal(maxHP: side.stats.hp), side.stats.hp - side.hp)
+        let full = side.stats.hp
+        // 런 강화의 턴 끝 회복은 **잔뎀보다 먼저**다(본가와 같다). 만피면 회복량이 0 이라
+        // 이벤트도 나가지 않는다.
+        let heal = min(side.runBoosts.leftoversHeal(maxHP: full), full - side.hp)
         if heal > 0 {
             side.hp += heal
             events.append(.heal(actor, amount: heal))
         }
-        guard let status = side.status else { return events }
-        let full = side.stats.hp
-        let amount: Int
-        let cause: DamageCause
-        switch status {
-        case .burn:
-            amount = max(1, full / 16); cause = .burn
-        case .poison:
-            amount = max(1, full / 8);  cause = .poison
-        case .toxic:
-            amount = max(1, full * side.statusCounter / 16); cause = .toxic
-            side.statusCounter += 1
-        case .paralysis, .sleep, .freeze, .confusion, .flinch:
-            return events
+        events += volatileRecovery(&side, actor: actor)
+        if let hurt = statusResidual(&side) {
+            side.hp = max(0, side.hp - hurt.amount)
+            events.append(.damage(actor, amount: hurt.amount, cause: hurt.cause))
         }
-        side.hp = max(0, side.hp - amount)
-        events.append(.damage(actor, amount: amount, cause: cause))
+        events += volatileResidual(&side, actor: actor)
         if !side.isAlive { events.append(.faint(actor)) }
+        return events
+    }
+
+    /// 주 상태이상이 이번 턴 깎는 몫. 깎지 않는 상태(마비·잠듦·얼음·혼란·풀죽음)는 `nil` 이다.
+    /// 맹독은 여기서 누적 배수를 올린다 — 깎는 자리와 세는 자리가 갈리면 한쪽만 고치게 된다.
+    private static func statusResidual(_ side: inout BattleSide) -> (amount: Int, cause: DamageCause)? {
+        let full = side.stats.hp
+        switch side.status {
+        case .burn:   return (max(1, full / 16), .burn)
+        case .poison: return (max(1, full / 8), .poison)
+        case .toxic:
+            defer { side.statusCounter += 1 }
+            return (max(1, full * side.statusCounter / 16), .toxic)
+        case .paralysis, .sleep, .freeze, .confusion, .flinch, nil: return nil
+        }
+    }
+
+    /// volatile 의 턴 끝 **회복**(아쿠아링·뿌리박기). 잔뎀과 자리를 나눈 이유는 순서다 — 둘을 한
+    /// 루프에서 돌리면 `allCases` 순서가 곧 "회복이 먼저인가" 를 정해 버린다.
+    private static func volatileRecovery(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
+        var events: [BattleEvent] = []
+        for volatileStatus in BattleVolatile.allCases {
+            guard side.has(volatileStatus), let divisor = volatileStatus.healDivisor else { continue }
+            let healed = min(max(1, side.stats.hp / divisor), side.stats.hp - side.hp)
+            guard healed > 0 else { continue }        // 만피면 줄을 내지 않는다(0 회복은 거짓말이다)
+            side.hp += healed
+            events.append(.heal(actor, amount: healed))
+        }
+        return events
+    }
+
+    /// volatile 의 턴 끝 **잔뎀과 해제**. 조이기는 턴을 세고, 나이트메어는 상대가 깨면 그 자리에서
+    /// 풀린다 — 해제 갈래가 없으면 조건이 사라진 뒤에도 HP 가 계속 빠진다.
+    private static func volatileResidual(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
+        var events: [BattleEvent] = []
+        for volatileStatus in BattleVolatile.allCases {
+            guard let remaining = side.volatiles[volatileStatus] else { continue }
+            // 나이트메어는 잠든 동안만 산다. 잠을 깬 턴에는 깎지 않고 풀린다.
+            if volatileStatus == .nightmare, side.status != .sleep {
+                side.volatiles[volatileStatus] = nil
+                events.append(.volatileEnded(actor, volatileStatus))
+                continue
+            }
+            // 쓰러진 뒤에는 남은 volatile 이 더 깎지 않는다 — 만지면 재생과 엔진의 최종 HP 가 갈린다.
+            guard side.isAlive, let residual = volatileStatus.residualDamage else { continue }
+            let amount = max(1, side.stats.hp / residual.divisor)
+            side.hp = max(0, side.hp - amount)
+            events.append(.damage(actor, amount: amount, cause: residual.cause))
+            // 턴을 세는 것은 조이기뿐이다(`remaining` 0 은 무기한). 깎은 **뒤에** 줄여야 4턴짜리가
+            // 네 번 깎는다 — 먼저 줄이면 마지막 턴이 잔뎀 없이 풀린다.
+            guard remaining > 0 else { continue }
+            if remaining <= 1 {
+                side.volatiles[volatileStatus] = nil
+                events.append(.volatileEnded(actor, volatileStatus))
+            } else {
+                side.volatiles[volatileStatus] = remaining - 1
+            }
+        }
         return events
     }
 
@@ -1992,6 +2136,14 @@ extension BattleEngine {
             return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
                                                      : [.sideConditionStarted(attackerTeam, condition)])
         }
+        // 자기에게 거는 volatile(아쿠아링·뿌리박기)도 상대를 보지 않는다 — 진영 상태기와 같은 자리다.
+        // 이미 붙어 있으면 실패한다(매 턴 다시 걸면 실패 없는 무한 회복이 된다).
+        if let volatileStatus = BattleVolatile.called(byMoveID: move.id), volatileStatus.targetsUser {
+            let started = attacker.start(volatileStatus)
+            attacker.lastMoveFailed = !started
+            return events + (started ? [.volatileStarted(attackerActor, volatileStatus)]
+                                     : [.immune(defenderActor)])
+        }
         // 날씨기는 상대를 보지 않는다 — 자기 회복기와 같은 자리에서 빠져나간다.
         if let weather = BattleWeather.called(byMoveID: move.id) {
             attacker.lastMoveFailed = !field.start(weather)
@@ -2163,6 +2315,12 @@ extension BattleEngine {
         if defender.isAlive {
             events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor,
                                            field: field, defenderTeam: defenderTeam, rng: &rng)
+            // 상대에게 붙는 volatile(조이기·저주·나이트메어)은 **대상 단위 입구**인 여기서 붙인다.
+            // `applyAttack` 에 두면 대상마다 `applyHit` 을 직접 부르는 광역 모드(`WaveBattle`)에서
+            // 아무에게도 안 붙는다 — 방어 판정이 이 자리로 내려온 것과 같은 이유다.
+            events += applyVolatile(of: move, attacker: &attacker, defender: &defender,
+                                    attackerActor: attackerActor, defenderActor: defenderActor,
+                                    rng: &rng)
         }
         // **랭크는 기절 앞에서 본다.** 예전엔 기절이 여기서 조기반환해 상대를 쓰러뜨린 턴의 자기
         // 랭크 상승(고대의힘 부류)이 통째로 사라졌다 — 본가는 KO 여부와 무관하게 오른다. 상대 몫만
@@ -2190,6 +2348,56 @@ extension BattleEngine {
     private static func scaled(_ damage: Int, by factor: Double) -> Int {
         guard factor != 1, damage > 0 else { return damage }
         return max(1, Int((Double(damage) * factor).rounded(.down)))
+    }
+
+    /// 상대에게 붙는 volatile(조이기·저주·나이트메어)을 붙인다. 붙지 않으면 그 사실을 남긴다 —
+    /// 데미지 없는 변화기가 이벤트를 안 내면 로그에 기술명 한 줄만 남아 무반응으로 읽힌다.
+    ///
+    /// **rng 는 턴을 세는 조이기에서만 한 번 쓴다.** 조건(잠들었나·이미 붙었나)을 확률보다 먼저
+    /// 보므로 두 피어의 소비량이 갈리지 않는다.
+    private static func applyVolatile(of move: MoveSpec, attacker: inout BattleSide,
+                                      defender: inout BattleSide, attackerActor: BattleActor,
+                                      defenderActor: BattleActor,
+                                      rng: inout SplitMix64) -> [BattleEvent] {
+        guard let volatileStatus = BattleVolatile.called(byMoveID: move.id),
+              !volatileStatus.targetsUser else { return [] }
+        // 저주는 **쓴 쪽의 타입이 규칙을 가른다**: 고스트는 최대 HP 절반을 내고 상대를 저주하고,
+        // 나머지는 자기 랭크를 움직인다(본가와 같다). 랭크 갈래를 `applyStatChanges` 에 맡길 수
+        // 없는 이유는 부호다 — 올림과 내림이 한 기술에 섞여 `statChangePercent` 가 0 을 준다
+        // (`MoveSpec.hasAmbiguousStatTargets`). 그래서 이 기술의 랭크는 여기서 직접 움직인다.
+        if volatileStatus == .curse, !attacker.activeTypes.contains(.ghost) {
+            var events: [BattleEvent] = []
+            for change in move.statChanges ?? [] {
+                let applied = attacker.changeStage(change.stat, by: change.change)
+                guard applied != 0 else { continue }
+                events.append(.boost(attackerActor, change.stat, applied))
+            }
+            attacker.lastMoveFailed = events.isEmpty
+            return events
+        }
+        // 나이트메어는 잠든 상대에게만 걸린다 — 깨어 있으면 실패다(붙여 두면 깨는 순간 풀리는
+        // 갈래가 곧바로 지워, 아무 일도 없었던 턴이 성공으로 기록된다).
+        if volatileStatus == .nightmare, defender.status != .sleep {
+            attacker.lastMoveFailed = true
+            return [.immune(defenderActor)]
+        }
+        let turns = volatileStatus == .partiallyTrapped
+            ? BattleVolatile.trapTurnFloor + Int(rng.next() % BattleVolatile.trapTurnSpread)
+            : 0
+        guard defender.start(volatileStatus, turns: turns) else {
+            attacker.lastMoveFailed = true
+            return [.immune(defenderActor)]
+        }
+        attacker.lastMoveFailed = false
+        var events: [BattleEvent] = [.volatileStarted(defenderActor, volatileStatus)]
+        // 고스트의 저주는 대가가 있다 — 최대 HP 절반이고, 그것으로 쓰러질 수 있다(본가와 같다).
+        // 기절 줄은 여기서 내지 않는다: `applyHit` 이 랭크·2차효과 뒤 맨 끝에서 낸다.
+        if volatileStatus == .curse {
+            let cost = max(1, attacker.stats.hp / 2)
+            attacker.hp = max(0, attacker.hp - cost)
+            events.append(.damage(attackerActor, amount: cost, cause: .curse))
+        }
+        return events
     }
 
     /// 기술의 랭크 변화. **부호가 대상을 정한다** — 올리면 자기, 내리면 상대다. `stat_changes` 에는

@@ -94,6 +94,15 @@ enum BattleLog {
             case .sideConditionEnded(_, let condition):
                 flush()
                 out.append(Line(actor: nil, text: l.battleSideConditionEnded(condition)))
+            case .volatileStarted(let actor, let volatileStatus):
+                // 주인이 있는 줄이다 — 진행 중인 행동에 접으면 "조이기가 붙었다" 가 때린 쪽 줄에 붙는다.
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleVolatileStarted(name(actor), volatileStatus)))
+            case .volatileEnded(let actor, let volatileStatus):
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleVolatileEnded(name(actor), volatileStatus)))
             case .terastallized(let actor, let type):
                 flush()
                 out.append(Line(actor: actor,

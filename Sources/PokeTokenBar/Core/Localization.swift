@@ -228,7 +228,52 @@ struct L {
         case .confusion: return "\(name)은(는) 혼란으로 \(damage) 데미지"
         case .weather:   return "\(name)은(는) 날씨 데미지! \(damage)"
         case .move:      return battleTookDamage(name, damage: damage)
-        case .recoil:    return "\(name)은(는) 반동으로 \(damage) 데미지"
+        case .recoil:    return t("\(name)은(는) 반동으로 \(damage) 데미지",
+                                  "\(name) was hurt by recoil! \(damage)",
+                                  "\(name)は 反動で \(damage)ダメージ")
+        case .trap:      return t("\(name)은(는) 조이기 데미지! \(damage)",
+                                  "\(name) is hurt by the bind! \(damage)",
+                                  "\(name)は しめつけの ダメージ！ \(damage)")
+        case .curse:     return t("\(name)은(는) 저주 데미지! \(damage)",
+                                  "\(name) is afflicted by the curse! \(damage)",
+                                  "\(name)は のろいの ダメージ！ \(damage)")
+        case .nightmare: return t("\(name)은(는) 악몽에 시달렸다! \(damage)",
+                                  "\(name) is locked in a nightmare! \(damage)",
+                                  "\(name)は あくむに くるしんでいる！ \(damage)")
+        }
+    }
+
+    /// 개체에 붙은 상태가 붙었다 / 풀렸다. 진영 상태와 달리 이름이 들어간다 — 누구에게 붙은
+    /// 조이기인지가 문구의 절반이고, 필드에 개체가 넷인 모드(방·웨이브)에선 그것 없이는 안 읽힌다.
+    func battleVolatileStarted(_ name: String, _ volatileStatus: BattleVolatile) -> String {
+        switch volatileStatus {
+        case .aquaRing:         return t("\(name)은(는) 물의베일을 둘렀다!",
+                                         "\(name) surrounded itself with a veil of water!",
+                                         "\(name)は みずの ベールを まとった！")
+        case .ingrain:          return t("\(name)은(는) 뿌리를 내렸다!", "\(name) planted its roots!",
+                                         "\(name)は ねを はった！")
+        case .nightmare:        return t("\(name)은(는) 악몽을 꾸기 시작했다!",
+                                         "\(name) began having a nightmare!",
+                                         "\(name)は あくむを みはじめた！")
+        case .curse:            return t("\(name)은(는) 저주에 걸렸다!", "\(name) was cursed!",
+                                         "\(name)は のろわれた！")
+        case .partiallyTrapped: return t("\(name)은(는) 조여졌다!", "\(name) was squeezed!",
+                                         "\(name)は しめつけられた！")
+        }
+    }
+
+    func battleVolatileEnded(_ name: String, _ volatileStatus: BattleVolatile) -> String {
+        switch volatileStatus {
+        case .aquaRing:         return t("\(name)의 물의베일이 사라졌다", "\(name)'s veil of water faded",
+                                         "\(name)の みずの ベールが きえた")
+        case .ingrain:          return t("\(name)의 뿌리가 사라졌다", "\(name)'s roots withered",
+                                         "\(name)の ねが きえた")
+        case .nightmare:        return t("\(name)은(는) 악몽에서 깨어났다", "\(name) woke from its nightmare",
+                                         "\(name)は あくむから めざめた")
+        case .curse:            return t("\(name)의 저주가 풀렸다", "\(name)'s curse lifted",
+                                         "\(name)の のろいが とけた")
+        case .partiallyTrapped: return t("\(name)은(는) 조이기에서 벗어났다", "\(name) was freed from the bind",
+                                         "\(name)は しめつけから ぬけだした")
         }
     }
 

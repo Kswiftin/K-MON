@@ -13,6 +13,50 @@ final class ShowdownEffectTableTests: XCTestCase {
         "wideguard", "quickguard", "matblock", "craftyshield",  // protect 상태가 먼저다
     ]
 
+    /// 아직 구현하지 않은 volatile — **왜 없는지**를 함께 잠근다. 구현하면 여기서 뺀다.
+    /// 방어 부류 여덟 키(`protect`·`kingsshield` …)는 `BattleGuard` 가 이미 아니까 여기 없다.
+    private static let unmodeledVolatiles: Set<String> = [
+        // 기술 **선택**을 막는 부류 — 네 모드(1v1·모의전·웨이브·방)와 터미널 UI 까지 번진다.
+        "disable", "encore", "taunt", "torment", "imprison", "healblock",
+        // 기절 시점 훅이 없다 — 쓰러지는 순간에 무언가 하는 자리가 엔진에 아직 없다.
+        "destinybond", "grudge", "endure", "bide",
+        // HP 대신 맞는 층(대타출동)이 없다 — 데미지·상태 경로 전부를 지나야 한다.
+        "substitute",
+        // 다인전 타겟 유도 — 대상을 고르는 자리가 방·웨이브에만 있다.
+        "followme", "ragepowder", "spotlight", "helpinghand",
+        // 랭크·급소·명중 배율을 한 줄씩 얹는 부류. 얹는 자리는 있고 아직 안 얹었다.
+        "focusenergy", "minimize", "defensecurl", "charge", "laserfocus", "stockpile",
+        "dragoncheer", "noretreat", "powertrick", "powershift",
+        // 상성·접지·명중 규칙을 바꾸는 부류 — 상성표를 지나는 자리가 하나가 아니다.
+        "foresight", "miracleeye", "smackdown", "telekinesis", "magnetrise", "tarshot",
+        "electrify", "gastroacid", "embargo", "octolock",
+        // 기술을 훔치거나 되돌리는 부류 — 기술이 나가기 **전에** 끼어드는 자리가 없다.
+        "snatch", "magiccoat",
+        // 나머지 턴 끝·행동 판정 부류. 잔뎀 자리는 열렸으니 다음 배치로 이어진다.
+        "leechseed", "saltcure", "syrupbomb", "sparklingaria", "powder", "attract", "yawn",
+    ]
+
+    /// volatile 도 구현한 것과 **아직 아닌 것**으로만 갈린다 — 새 키가 늘면 어느 쪽인지 답해야 한다.
+    /// 이 열거형이 없던 시절에는 데이터에 키가 있어도 그 기술이 턴만 태우고 아무 일도 하지 않았다.
+    func testEveryVolatileIsEitherModelledOrKnowinglyMissing() {
+        for (id, effect) in ShowdownMoveData.effects {
+            guard let key = effect.volatileStatus else { continue }
+            if BattleVolatile.called(byMoveID: id) != nil { continue }
+            if BattleGuard.called(byMoveID: id) { continue }
+            XCTAssertTrue(Self.unmodeledVolatiles.contains(key),
+                          "volatile '\(key)'(기술 \(id))가 구현도 안 됐고 미구현 목록에도 없다")
+        }
+    }
+
+    /// 미구현 목록에 **구현한 키가 남아 있지 않은지** 본다. 남으면 목록이 낡았다는 뜻이고,
+    /// 낡은 목록은 다음에 붙일 것을 세는 데 쓸 수 없다.
+    func testTheUnmodeledVolatileListHasNoStaleEntries() {
+        for key in Self.unmodeledVolatiles {
+            XCTAssertNil(BattleVolatile(showdownKey: key), "'\(key)' 는 이미 구현했다 — 목록에서 뺀다")
+            XCTAssertFalse(BattleGuard.showdownKeys.contains(key), "'\(key)' 는 방어 부류가 이미 안다")
+        }
+    }
+
     /// 날씨를 부르는 기술은 **전부** 엔진이 안다. 하나라도 모르면 그 기술은 턴만 태운다.
     func testEveryWeatherMoveInTheDataReachesTheEngine() {
         for (id, effect) in ShowdownMoveData.effects {
