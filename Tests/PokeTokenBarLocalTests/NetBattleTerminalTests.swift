@@ -353,8 +353,10 @@ struct NetBattleTerminalTests {
     @Test func testTheBattleScreenKeysAreItsOwn() {
         #expect(TUIKeymap.action(for: .char("f"), screen: .battle, canWrite: true) == .forfeitBattle)
         #expect(TUIKeymap.action(for: .char("n"), screen: .battle, canWrite: true) == .declineBattle)
-        // 웨이브 화면의 키가 여기서 먹으면 안 된다 — 볼 던지기는 이 화면에 없는 동작이다.
-        #expect(TUIKeymap.action(for: .char("t"), screen: .battle, canWrite: true) == .ignored)
+        #expect(TUIKeymap.action(for: .char("t"), screen: .battle, canWrite: true)
+                == .terastallizeBattle)
+        #expect(TUIKeymap.action(for: .char("x"), screen: .battle, canWrite: true)
+                == .closeBattleResult)
     }
 
     @Test func testBattleKeysAreRefusedNotIgnoredWithoutWriteAccess() {

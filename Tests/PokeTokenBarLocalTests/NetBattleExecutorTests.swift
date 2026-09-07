@@ -21,6 +21,9 @@ struct NetBattleExecutorTests {
         var practiceMoves: [Int] = []
         var practiceSwitches: [Int] = []
         var challengedGyms: [Int] = []
+        var gymTeams: [[UUID]] = []
+        var terastallized = 0
+        var dismissed = 0
         var forfeited = 0
         var declined = 0
 
@@ -29,7 +32,10 @@ struct NetBattleExecutorTests {
         func switchLAN(to index: Int) { switchedTo.append(index) }
         func chooseTeamPracticeMove(_ index: Int) { practiceMoves.append(index) }
         func switchTeamPractice(to index: Int) { practiceSwitches.append(index) }
+        func terastallizeTeamPractice() { terastallized += 1 }
+        func dismissResult() { dismissed += 1 }
         func startGymChallenge(number: Int) -> Bool { challengedGyms.append(number); return true }
+        func setGymChallengeTeam(_ ids: [UUID]) { gymTeams.append(ids) }
         func forfeit() { forfeited += 1 }
         func declineIncoming() { declined += 1 }
     }
@@ -155,6 +161,39 @@ struct NetBattleExecutorTests {
 
         #expect(reply.succeeded, "\(reply.message)")
         #expect(control.challengedGyms == [1])
+    }
+
+    @Test func testGymTeamUsesPartyNumbersInOrder() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        store.debugSetBoxedMons((1...4).map { id in
+            MonState(baseID: id, pathIDs: [id], stageIndex: 0, usedAtStage: 0,
+                     rarity: .common, totalForms: 1)
+        })
+        let entries = PokedoroCLI.partyEntries(store)
+        let control = FakeBattleControl(BattleTerminalState(phase: .ready, battle: nil))
+
+        let reply = await execute(.gymTeam(team: [4, 2, 1, 3]), on: store, battle: control)
+
+        #expect(reply.succeeded, "\(reply.message)")
+        #expect(control.gymTeams == [[entries[3].id, entries[1].id, entries[0].id, entries[2].id]])
+    }
+
+    @Test func testGymTerastallizeAndResultCloseReachThePracticeBattle() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        let control = FakeBattleControl(Self.gymBattling())
+
+        #expect((await execute(.battleTerastallize, on: store, battle: control)).succeeded)
+        #expect(control.terastallized == 1)
+
+        var finished = control.terminalState
+        finished.practice?.result = .win
+        control.terminalState = finished
+        #expect((await execute(.battleClose, on: store, battle: control)).succeeded)
+        #expect(control.dismissed == 1)
     }
 
     /// 지금 나와 있는 개체로 바꾸는 것은 아무 일도 아니다 — `canChoose` 가 거절하므로 성공으로

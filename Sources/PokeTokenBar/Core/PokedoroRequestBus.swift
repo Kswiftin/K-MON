@@ -75,11 +75,25 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         case battleForfeit
         /// 받은 신청을 거절한다. **확인을 받지 않는다** — 되돌릴 수 있는 일이다(상대가 다시 건다).
         case battleDecline
+        case battleTerastallize
+        case battleClose
 
         // MARK: 체육관 리그
 
         /// `gym` 목록의 체육관 순번(1부터). 팀을 따로 고르지 않으면 앱과 같은 자동 편성을 쓴다.
         case gymChallenge(number: Int)
+        case gymTeam(team: [Int])
+
+        // MARK: 체육관 쟁탈전
+
+        case playerGymStatus
+        case playerGymOpen(team: [Int])
+        case playerGymChallenge(team: [Int])
+        case playerGymSpectate
+        case playerGymDefense(team: [Int])
+        case playerGymAI(enabled: Bool)
+        case playerGymResign
+        case playerGymTakeover
 
         // MARK: LAN 방 (협동 레이드·방 대전)
         //
@@ -208,7 +222,18 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .battleSwitch: "battle.switch"
             case .battleForfeit: "battle.forfeit"
             case .battleDecline: "battle.decline"
+            case .battleTerastallize: "battle.tera"
+            case .battleClose: "battle.close"
             case .gymChallenge: "gym.challenge"
+            case .gymTeam: "gym.team"
+            case .playerGymStatus: "gym.contest.status"
+            case .playerGymOpen: "gym.contest.open"
+            case .playerGymChallenge: "gym.contest.challenge"
+            case .playerGymSpectate: "gym.contest.spectate"
+            case .playerGymDefense: "gym.contest.defense"
+            case .playerGymAI: "gym.contest.ai"
+            case .playerGymResign: "gym.contest.resign"
+            case .playerGymTakeover: "gym.contest.takeover"
             case .roomMove: "room.move"
             case .roomStart: "room.start"
             case .roomLeave: "room.leave"
@@ -270,6 +295,10 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .battleMove(let move): String(move)
             case .battleSwitch(let number): String(number)
             case .gymChallenge(let number): String(number)
+            case .gymTeam(let team): team.map(String.init).joined(separator: " ")
+            case .playerGymOpen(let team), .playerGymChallenge(let team),
+                 .playerGymDefense(let team): team.map(String.init).joined(separator: " ")
+            case .playerGymAI(let enabled): enabled ? "on" : "off"
             case .roomMove(let move, let target):
                 target.map { "\(move) \($0)" } ?? String(move)
             case .roomSwitch(let slot): String(slot)
@@ -295,7 +324,9 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .auctionApply(let listing, let mon): "\(listing) \(mon)"
             case .auctionBid(let listing, let stardust): "\(listing) \(stardust)"
             case .claim, .stop, .evolve, .hatch, .waveForfeit,
-                 .battleForfeit, .battleDecline, .roomStart, .roomLeave,
+                 .battleForfeit, .battleDecline, .battleTerastallize, .battleClose,
+                 .playerGymStatus, .playerGymSpectate, .playerGymResign, .playerGymTakeover,
+                 .roomStart, .roomLeave,
                  .tradeAccept, .tradeDecline, .tradeConfirm, .tradeCancel,
                  .homeReset, .homeUndo, .homeRedo: nil
             }
@@ -393,9 +424,29 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 self = .battleSwitch(number: number)
             case "battle.forfeit" where argument == nil: self = .battleForfeit
             case "battle.decline" where argument == nil: self = .battleDecline
+            case "battle.tera" where argument == nil: self = .battleTerastallize
+            case "battle.close" where argument == nil: self = .battleClose
             case "gym.challenge":
                 guard let argument, let number = Self.countingNumber(argument) else { return nil }
                 self = .gymChallenge(number: number)
+            case "gym.team":
+                guard let team = Self.numberList(argument, count: GymLeague.teamSize) else { return nil }
+                self = .gymTeam(team: team)
+            case "gym.contest.status" where argument == nil: self = .playerGymStatus
+            case "gym.contest.open":
+                guard let team = Self.numberList(argument, count: PlayerGym.defenseTeamSize) else { return nil }
+                self = .playerGymOpen(team: team)
+            case "gym.contest.challenge":
+                guard let team = Self.numberList(argument, count: PlayerGym.defenseTeamSize) else { return nil }
+                self = .playerGymChallenge(team: team)
+            case "gym.contest.spectate" where argument == nil: self = .playerGymSpectate
+            case "gym.contest.defense":
+                guard let team = Self.numberList(argument, count: PlayerGym.defenseTeamSize) else { return nil }
+                self = .playerGymDefense(team: team)
+            case "gym.contest.ai" where argument == "on": self = .playerGymAI(enabled: true)
+            case "gym.contest.ai" where argument == "off": self = .playerGymAI(enabled: false)
+            case "gym.contest.resign" where argument == nil: self = .playerGymResign
+            case "gym.contest.takeover" where argument == nil: self = .playerGymTakeover
             case "room.move":
                 guard let argument else { return nil }
                 let words = argument.split(separator: " ").map(String.init)
@@ -509,6 +560,14 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             guard words.count == 2, let first = countingNumber(words[0]),
                   let second = countingNumber(words[1]) else { return nil }
             return (first, second)
+        }
+
+        private static func numberList(_ argument: String?, count: Int) -> [Int]? {
+            guard let argument else { return nil }
+            let words = argument.split(separator: " ").map(String.init)
+            guard words.count == count else { return nil }
+            let numbers = words.compactMap(countingNumber)
+            return numbers.count == count && Set(numbers).count == count ? numbers : nil
         }
 
         /// 사람이 세는 번호(1부터). 목록에 없는 0 이하는 번호가 아니다.

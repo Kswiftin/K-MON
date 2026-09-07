@@ -239,6 +239,8 @@ pokedoro wave forfeit --yes   판 포기 (앱에 요청, 되돌릴 수 없다)
 pokedoro battle               LAN 대전 — 지금 판 (앱이 떠 있어야 한다)
 pokedoro battle move <n>      기술 쓰기 (앱에 요청)
 pokedoro battle switch <번호>  교체 / 쓰러진 자리 메우기 (앱에 요청)
+pokedoro battle tera          도전 탭 체육관 레이드에서 테라스탈 (앱에 요청)
+pokedoro battle close         끝난 대전 결과 닫기 (앱에 요청)
 pokedoro battle decline       받은 신청 거절 (앱에 요청)
 pokedoro battle forfeit --yes 항복 (앱에 요청, 되돌릴 수 없다)
 
@@ -250,8 +252,17 @@ pokedoro room run|swap        포켓슬론 전진·개체 교체 (앱에 요청)
 pokedoro room bet <러너> <금액> --yes  포켓슬론 관전 베팅 (앱에 요청, 되돌릴 수 없다)
 pokedoro room start           호스트가 판 시작 (앱에 요청 · 체육관은 시작이 없다)
 pokedoro room leave --yes     방 나가기 (앱에 요청, 정산을 못 받는다)
-pokedoro gym                  체육관 리그 — 여덟 곳과 딴 배지 (**앱 없이도 된다**)
-pokedoro gym challenge <번호> 목록의 체육관에 도전 (앱에 요청 · 자동 편성)
+pokedoro gym                  도전 탭 체육관 레이드 — 여덟 곳과 딴 배지 (**앱 없이도 된다**)
+pokedoro gym team <번호 4개>   출전 팀과 순서 지정 (party 번호 · 앱에 요청)
+pokedoro gym challenge <번호> 목록의 체육관에 도전 (앱에 요청)
+pokedoro gym contest          LAN 체육관 쟁탈전 검색·관장 상태 (앱에 요청)
+pokedoro gym contest open <번호 4개>      방어팀을 정해 체육관 개설 (앱에 요청)
+pokedoro gym contest challenge <번호 4개> 보이는 체육관에 도전 (앱에 요청)
+pokedoro gym contest spectate             보이는 체육관 관전 (앱에 요청)
+pokedoro gym contest defense <번호 4개>   관장 방어팀과 순서 교체 (앱에 요청)
+pokedoro gym contest ai <on|off>          관장 전투 AI 설정 (앱에 요청)
+pokedoro gym contest takeover             이탈한 관장 자리 이어받기 (앱에 요청)
+pokedoro gym contest resign --yes         관장 자리에서 내려오기 (앱에 요청)
 
 pokedoro trade                교환 — 지금 협상 (앱이 떠 있어야 한다)
 pokedoro trade accept         받은 신청 수락 (앱에 요청)
@@ -674,16 +685,27 @@ set -g status-right '#(pokedoro status --oneline)'
 `RoomActivity.isHostStarted` 와 짝이 맞는지 테스트가 전 활동으로 검사한다. 표를 함수 본문의
 `switch` 로 두면 밖에서 볼 수 없다 — 실제로 한 갈래를 지워도 전 스위트가 초록이었다.
 
-### 체육관 리그 목록은 세이브, 판은 채널을 탄다
+### 두 체육관은 서로 다른 기능이다
+
+`gym`은 도전 탭의 **체육관 레이드**이고 `gym contest`는 같은 LAN에서 주인을 겨루는
+**체육관 쟁탈전**이다. 전자는 `BattleCenter`의 로컬 `TeamPracticeBattle`, 후자는
+`PlayerGymCoordinator`와 `MultiplayerRoomCenter`를 쓴다. 이름이 비슷해도 상태와 명령을 섞지 않는다.
+
+쟁탈전은 `gym contest`로 검색·관장·최근 방어 기록과 보상을 확인하고, 개설·도전·관전·방어팀
+변경·AI 전환·퇴위·인수를 모두 앱 요청 채널로 보낸다. 실제 결투가 시작된 뒤에는 공용 `room`
+화면에서 기술과 팀 교체를 한다.
+
+### 도전 탭 체육관 레이드 목록은 세이브, 판은 채널을 탄다
 
 배지는 세이브(`gymLeagueBadges`)에 있으므로 `pokedoro gym` 은 **앱 없이 답한다** — 웨이브 런·
 Memory Home 과 같은 쪽이다. 여덟 곳·딴 곳 표시·도전 요건(마릿수·레벨)을 찍고, 요건 숫자는
 `GymLeague` 에서 읽는다.
 
-`gym challenge <번호>`는 목록 번호를 앱에 보내고, 앱이 `BattleCenter.startGymChallenge`에서 빈
-자리를 자동 편성한 뒤 관장 팀 데이터를 받아 판을 세운다. 진행 중인 체육관전은 LAN `battle`이 아니라
+`gym team <번호 4개>`는 앱의 출전 팀과 순서를 먼저 바꾸고, `gym challenge <번호>`는 목록 번호를
+앱에 보내 관장 팀 데이터를 받아 판을 세운다. 팀을 지정하지 않은 경우에는 빈 자리를 자동 편성한다.
+진행 중인 체육관 레이드는 LAN `battle`이 아니라
 `TeamPracticeBattle`에 있으므로 터미널 상태가 둘을 함께 싣고, `battle move`·`battle switch`와
-`watch`의 대전 화면이 실제 엔진에 맞는 창구로 라우팅한다. 이 구분이 없으면 화면은 기술을 보여도
+`battle tera`·`battle close`, `watch`의 대전 화면이 실제 엔진에 맞는 창구로 라우팅한다. 이 구분이 없으면 화면은 기술을 보여도
 요청은 비어 있는 LAN 판으로 나가 조용히 사라진다.
 
 `pokedoro challenge` 의 배지 줄은 **`gymLeagueBadges` 를 센다.** `gymBadges` 는 이전 배포의

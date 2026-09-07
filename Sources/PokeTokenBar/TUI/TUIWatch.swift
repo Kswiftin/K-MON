@@ -143,6 +143,10 @@ final class TUIWatch {
             confirmation = ("이 대전을 항복한다 — 되돌릴 수 없다", .battleForfeit)
         case .declineBattle:
             request(.battleDecline)
+        case .terastallizeBattle:
+            request(.battleTerastallize)
+        case .closeBattleResult:
+            request(.battleClose)
         case .roomChoice(let number):
             // 대전과 같다 — 방은 숫자의 뜻이 셋이다(기술·결투의 팀 자리·트랙의 방향). 기술로
             // 넘겨짚으면 포켓슬론·OX 퀴즈의 방향 키가 통째로 죽는다.

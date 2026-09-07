@@ -40,8 +40,9 @@ enum PokedoroCLI {
         switch command {
         case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
              .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
-             .battleMove, .battleSwitch, .battleDecline,
-             .gymChallenge,
+             .battleMove, .battleSwitch, .battleDecline, .battleTerastallize, .battleClose,
+             .gymChallenge, .gymTeam, .playerGymStatus, .playerGymOpen, .playerGymChallenge,
+             .playerGymSpectate, .playerGymDefense, .playerGymAI, .playerGymTakeover,
              .roomMove, .roomStart, .roomSwitch, .roomTrack,
              .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant,
              .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear,
@@ -109,6 +110,11 @@ enum PokedoroCLI {
         case .roomLeave:
             ["방을 나가면 이 판의 정산을 받지 못한다.",
              "정말이면: pokedoro room leave --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .playerGymResign:
+            ["체육관 관장 자리와 방어팀 배치를 내려놓는다.",
+             "정말이면: pokedoro gym contest resign --yes"]
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
         case .roomBet(let runner, let stardust, _):

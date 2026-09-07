@@ -147,14 +147,18 @@ enum NetBattleScreen {
         // 번호가 빠져 구멍이 나고, 교체는 쓰러진 자리와 이미 나온 자리가 빠진다 — 그 구멍을
         // 범위로 덮으면 먹지도 않는 번호를 권하고 뒤쪽의 쓸 수 있는 번호는 안내에서 사라진다.
         case .move:
-            return numberKeys(state, noun: "기술") + ["f 항복"]
+            return numberKeys(state, noun: "기술")
+                + (state.activeGym != nil && state.practice?.canTerastallizeMine == true ? ["t 테라"] : [])
+                + ["f 항복"]
         case .sendOut:
             return numberKeys(state, noun: "교체") + ["f 항복"]
         case .incoming:
             return ["n 거절"]
         case .waiting:
             return ["f 항복"]
-        case .none, .appOnly, .finished:
+        case .finished:
+            return state.activeGym == nil ? [] : ["x 결과 닫기"]
+        case .none, .appOnly:
             return []
         }
     }
@@ -169,7 +173,12 @@ enum NetBattleScreen {
         case .appOnly:
             return "앱에서 이어 한다 — 파티 편성은 터미널에 입력 줄이 없다"
         case .move:
-            return (numberKeys(state, noun: "기술") + ["f 항복", "(battle move <n>)"])
+            var hints = numberKeys(state, noun: "기술")
+            if state.activeGym != nil {
+                hints += ["교체 battle switch <팀 번호>"]
+                if state.practice?.canTerastallizeMine == true { hints += ["t 테라"] }
+            }
+            return (hints + ["f 항복", "(battle move <n>)"])
                 .joined(separator: "   ")
         case .sendOut:
             return (["쓰러졌다 —"] + numberKeys(state, noun: "교체") + ["(battle switch <번호>)"])
@@ -179,7 +188,7 @@ enum NetBattleScreen {
         case .finished:
             return state.activeGym == nil
                 ? "대전이 끝났다 — 다음 판은 앱에서 시작한다"
-                : "체육관전이 끝났다 — gym 으로 배지와 보상을 확인한다"
+                : "체육관전이 끝났다 — x 또는 battle close로 닫고 다음 도전을 시작한다"
         }
     }
 
@@ -197,6 +206,16 @@ enum NetBattleScreen {
                 lines.append(TUIText.truncate("팀   " + practice.mine.enumerated().map { index, side in
                     "\(index + 1)\(side.isAlive ? "" : "✗")"
                 }.joined(separator: " "), to: inner))
+            }
+            let log = BattleLogSource.twoSided(practice.events, mine: .a, l: L(),
+                                               myName: practice.mySlot.snapshot.name,
+                                               theirName: practice.opponentSlot.snapshot.name,
+                                               myMoves: practice.mySlot.moves,
+                                               theirMoves: practice.opponentSlot.moves)
+                .suffix(logTail).map(\.text)
+            if !log.isEmpty {
+                lines.append(TUIRender.rule(width: inner))
+                lines += log.map { TUIText.truncate($0, to: inner) }
             }
             if practice.result != nil {
                 lines.append(TUIRender.rule(width: inner))

@@ -118,6 +118,8 @@ enum TUIAction: Equatable, Sendable {
     case forfeitBattle
     /// 받은 신청 거절. 확인을 받지 않는다 — 되돌릴 수 있는 일이다.
     case declineBattle
+    case terastallizeBattle
+    case closeBattleResult
     /// LAN 방 화면의 숫자 키. 무엇이 되는지는 `RoomScreen.action(number:in:)` 이 정한다.
     case roomChoice(Int)
     /// 호스트가 판을 시작한다.
@@ -209,6 +211,8 @@ enum TUIKeymap {
         switch key {
         case "f": return .forfeitBattle
         case "n": return .declineBattle
+        case "t": return .terastallizeBattle
+        case "x": return .closeBattleResult
         default: return nil
         }
     }
