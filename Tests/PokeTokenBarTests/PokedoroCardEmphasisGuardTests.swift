@@ -45,3 +45,45 @@ final class PokedoroCardEmphasisGuardTests: XCTestCase {
                        "예산 밖에서 카드를 강조한다 — 함께 뜨는 강조가 둘이 되면 둘 다 신호가 아니게 된다: \(unbudgeted)")
     }
 }
+
+/// **채운 버튼의 색은 테마 팔레트에서만 온다.**
+///
+/// 친구 탭 상대 카드는 채운 버튼(`borderedProminent`) 셋을 시스템 원색 `.red` · `.purple` · `.blue`
+/// 로 나란히 두고 있었다. 시스템 원색은 채도가 최대치라 셋이 서로 소리를 지르고, 그 줄에서
+/// 무엇이 기본 동작인지가 사라진다(사용자 지적: "너무 쨍하다").
+///
+/// 규칙은 둘이다 — ⓐ 채움은 그 화면의 주 동작에만, ⓑ 색은 `PokedoroTheme` 의 낮은 채도 팔레트에서만.
+/// ⓑ 만 기계로 지킨다. ⓐ 는 "무엇이 주 동작인가" 라는 화면의 판단이라 소스에서 셀 수 없다.
+///
+/// 게이지(`ProgressView`)는 규칙 밖이다 — 채운 면적이 작고 값의 상태(위험·완료)를 색으로
+/// 말하는 자리라, 버튼 채움과 같은 예산을 쓰지 않는다.
+final class ProminentButtonTintGuardTests: XCTestCase {
+
+    private static let systemColors = ["red", "blue", "green", "orange", "purple", "pink",
+                                        "yellow", "mint", "teal", "indigo", "brown", "cyan"]
+
+    func testFilledButtonsAreTintedFromTheThemePalette() throws {
+        let files = SwiftSourceScan.files(under: "UI", from: #filePath)
+        XCTAssertGreaterThan(files.count, 10, "UI 소스를 못 찾았다 — 경로가 깨지면 가드가 무력해진다")
+
+        var checkedButtonTints = 0
+        var offenders: [String] = []
+        for file in files {
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: .newlines)
+            for (index, line) in lines.enumerated() {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.hasPrefix("//"), trimmed.contains(".tint(") else { continue }
+                // 버튼에 붙은 tint 인가 — 같은 줄이거나 바로 위 두 줄에 `buttonStyle` 이 있다.
+                let window = lines[max(0, index - 2)...index].joined(separator: "\n")
+                guard window.contains("buttonStyle") else { continue }
+                checkedButtonTints += 1
+                if Self.systemColors.contains(where: { trimmed.contains(".tint(.\($0))") }) {
+                    offenders.append("\(file.lastPathComponent):\(index + 1)")
+                }
+            }
+        }
+        // 대조군: 버튼 tint 를 하나도 못 찾았으면 위 판정 창(2줄)이 낡은 것이다.
+        XCTAssertGreaterThan(checkedButtonTints, 3, "버튼 tint 를 못 찾았다 — 판정 창이 낡았다")
+        XCTAssertEqual(offenders, [], "시스템 원색으로 채운 버튼: \(offenders)")
+    }
+}

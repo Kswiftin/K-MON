@@ -358,7 +358,10 @@ struct FriendView: View {
                 } label: {
                     Label("배틀 신청", systemImage: "bolt.fill")
                 }
-                .buttonStyle(.borderedProminent).tint(.red)
+                // 한 줄에 채운 버튼은 **하나**다 — 셋이 다 채워져 있으면 셋 다 주 동작이 아니게
+                // 된다(카드 강조 예산과 같은 논리). 배틀이 이 카드의 기본 동작이라 그것만 채우고,
+                // 색은 시스템 원색이 아니라 채도를 낮춘 테마색을 쓴다.
+                .buttonStyle(.borderedProminent).tint(PokedoroTheme.red)
                 // 알을 품는 중이라도 박스에 키워 둔 개체가 있으면 그걸로 싸운다 —
                 // 막아야 하는 것은 "동행이 알"이 아니라 "내보낼 개체가 없다"이다.
                 .disabled(!store.hasBattleReadyMon || battleCenter.phase != .ready)
@@ -370,7 +373,7 @@ struct FriendView: View {
                     Label("손가락흔들기",
                           systemImage: "hand.point.up.left.fill")
                 }
-                .buttonStyle(.borderedProminent).tint(.purple)
+                .buttonStyle(.bordered)
                 .disabled(battleCenter.phase != .ready)
                 .help("서로 동일한 Lv.50 대여 토게키스로 대결합니다.")
 
@@ -381,7 +384,7 @@ struct FriendView: View {
                 } label: {
                     Label("교환 신청", systemImage: "arrow.left.arrow.right")
                 }
-                .buttonStyle(.borderedProminent).tint(.blue)
+                .buttonStyle(.bordered)
                 .disabled(tradePeer == nil)
                 .help(tradePeer == nil
                       ? "상대가 교환 기능을 지원하는 최신 버전인지 확인하세요." : "")

@@ -85,10 +85,10 @@ struct RaidView: View {
                 .font(.caption2)
             Spacer()
             Button("연결 초기화") { center.leaveRoom() }
-                .controlSize(.small).buttonStyle(.borderedProminent).tint(.orange)
+                .controlSize(.small).buttonStyle(.borderedProminent).tint(PokedoroTheme.yellow)
         }
         .padding(8)
-        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .background(PokedoroTheme.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var todaysBossCard: some View {

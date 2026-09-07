@@ -278,11 +278,14 @@ struct PokeathlonView: View {
                 Button { center.pokemonQuizInput(.left) } label: {
                     Label("X", systemImage: "arrow.left").frame(maxWidth: .infinity).padding(.vertical, 7)
                 }
-                .buttonStyle(.borderedProminent).tint(.red).keyboardShortcut(.leftArrow, modifiers: [])
+                // X·O 는 좌우 대결이라 둘 다 주 동작이다 — 채움을 유지하고 색만 테마로 낮춘다.
+                .buttonStyle(.borderedProminent).tint(PokedoroTheme.red)
+                .keyboardShortcut(.leftArrow, modifiers: [])
                 Button { center.pokemonQuizInput(.right) } label: {
                     Label("O", systemImage: "arrow.right").frame(maxWidth: .infinity).padding(.vertical, 7)
                 }
-                .buttonStyle(.borderedProminent).tint(.blue).keyboardShortcut(.rightArrow, modifiers: [])
+                .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
+                .keyboardShortcut(.rightArrow, modifiers: [])
             }
             .controlSize(.large).disabled(now >= game.deadline)
         }
@@ -477,7 +480,8 @@ struct PokeathlonView: View {
                     Label("달리기  →", systemImage: "figure.run")
                         .frame(maxWidth: .infinity).padding(.vertical, 5)
                 }
-                .buttonStyle(.borderedProminent).tint(.green).keyboardShortcut(.rightArrow, modifiers: [])
+                .buttonStyle(.borderedProminent).tint(PokedoroTheme.mint)
+                .keyboardShortcut(.rightArrow, modifiers: [])
                 Button { center.pokeathlonInput(.dodgeLeft) } label: { Image(systemName: "arrow.up") }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.upArrow, modifiers: [])
                     .accessibilityLabel("위로 피하기")
@@ -488,7 +492,8 @@ struct PokeathlonView: View {
                     Label("교대  C", systemImage: "arrow.triangle.2.circlepath")
                         .frame(maxWidth: .infinity).padding(.vertical, 5)
                 }
-                .buttonStyle(.borderedProminent).tint(.blue).keyboardShortcut("c", modifiers: [])
+                .buttonStyle(.borderedProminent).tint(PokedoroTheme.blue)
+                .keyboardShortcut("c", modifiers: [])
             }
             .controlSize(.large)
             .disabled(now < race.startsAt)
