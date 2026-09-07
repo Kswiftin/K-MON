@@ -296,6 +296,40 @@ struct L {
         }
     }
 
+    /// 진영 상태가 깔렸다 / 걷혔다.
+    ///
+    /// 어느 편인지는 문구에 넣지 않는다 — 바로 앞 줄이 누가 그 기술을 썼는지 이미 말한다.
+    /// 양쪽이 같은 장막을 폈을 때만 걷히는 줄이 모호해지는데, 남은 턴은 화면의 배지가 들고 있다.
+    func battleSideConditionStarted(_ condition: BattleSideCondition) -> String {
+        switch condition {
+        case .reflect:     return t("리플렉터가 펼쳐졌다!", "Reflect raised the team's Defense!",
+                                    "リフレクターが はられた！")
+        case .lightScreen: return t("빛의장막이 펼쳐졌다!", "Light Screen raised the team's Sp. Def!",
+                                    "ひかりのかべが はられた！")
+        case .auroraVeil:  return t("오로라베일이 펼쳐졌다!", "Aurora Veil shielded the team!",
+                                    "オーロラベールが はられた！")
+        case .safeguard:   return t("신비의부적이 편을 감쌌다!", "The team is cloaked in a mystical veil!",
+                                    "しんぴのまもりに つつまれた！")
+        case .mist:        return t("하얀안개가 편을 감쌌다!", "The team became shrouded in mist!",
+                                    "しろいきりに つつまれた！")
+        case .luckyChant:  return t("행운의부적이 편을 감쌌다!", "The team is protected from critical hits!",
+                                    "こううんの まもりに つつまれた！")
+        }
+    }
+
+    func battleSideConditionEnded(_ condition: BattleSideCondition) -> String {
+        switch condition {
+        case .reflect:     return t("리플렉터가 사라졌다", "Reflect wore off", "リフレクターが きえた")
+        case .lightScreen: return t("빛의장막이 사라졌다", "Light Screen wore off", "ひかりのかべが きえた")
+        case .auroraVeil:  return t("오로라베일이 사라졌다", "Aurora Veil wore off", "オーロラベールが きえた")
+        case .safeguard:   return t("신비의부적이 사라졌다", "The mystical veil wore off",
+                                    "しんぴのまもりが きえた")
+        case .mist:        return t("하얀안개가 걷혔다", "The mist wore off", "しろいきりが きえた")
+        case .luckyChant:  return t("행운의부적이 사라졌다", "The lucky chant wore off",
+                                    "こううんの まもりが きえた")
+        }
+    }
+
     /// 다단 히트 — 몇 번 맞았는지 안 쓰면 플레이어에겐 "위력이 이상하게 센 기술"로만 보인다.
     /// 급소·상성 문구와 같은 자리(공격 줄의 노트)에 붙는다.
     func battleMultiHit(_ hits: Int) -> String {

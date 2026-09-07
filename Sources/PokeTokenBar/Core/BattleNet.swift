@@ -392,7 +392,9 @@ struct NetBattleState {
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &b, defender: &a,
                                                        attackerActor: .b, defenderActor: .a,
-                                                       move: moveB, field: &field, rng: &rng)
+                                                       move: moveB, field: &field,
+                                                       attackerTeam: .b, defenderTeam: .a,
+                                                       rng: &rng)
             }
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b
@@ -405,7 +407,9 @@ struct NetBattleState {
             if a.isAlive && b.isAlive {
                 turnEvents += BattleEngine.applyAttack(attacker: &a, defender: &b,
                                                        attackerActor: .a, defenderActor: .b,
-                                                       move: moveA, field: &field, rng: &rng)
+                                                       move: moveA, field: &field,
+                                                       attackerTeam: .a, defenderTeam: .b,
+                                                       rng: &rng)
             }
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b

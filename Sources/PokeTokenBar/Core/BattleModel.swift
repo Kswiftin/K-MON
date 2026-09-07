@@ -402,6 +402,7 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
             // 날씨기·필드기는 상태이상도 랭크도 안 걸지만 판을 바꾼다 — 안 열면 아무도 못 배운다.
             || BattleWeather.called(byMoveID: id) != nil
             || BattleTerrain.called(byMoveID: id) != nil
+            || BattleSideCondition.called(byMoveID: id) != nil
     }
 
     /// 랭크 변화가 걸리는 확률(%) — 2차효과는 `stat_chance` 를 그대로 쓰고, 위력 없는 변화기는
@@ -720,6 +721,65 @@ enum BattleTerrain: String, Codable, Sendable, Equatable, CaseIterable {
     }
 }
 
+/// 편 — 한쪽 진영 전체에 걸리는 상태(장막·부적)의 주인이다. 개체가 아니라 **자리**라서
+/// 교체가 있는 모드에서도 살아남는다.
+enum BattleTeamSlot: Codable, Sendable, Equatable, Hashable {
+    case a, b
+    /// 개인전(방의 free-for-all)은 참가자 하나가 곧 한 편이다. 좌우 두 자리로 접으면 한 명이 편
+    /// 리플렉터가 경쟁자 전원을 지킨다 — `BattleActor` 가 UUID 로 갈리는 것과 같은 이유다.
+    case solo(UUID)
+
+    /// 판에 실제로 존재하는 편 — 진영 상태를 턴마다 훑을 때 쓴다. 개인전 자리는 깔린 것이 있을
+    /// 때만 나타나므로 여기 상수로 둘 수 없다(그래서 `CaseIterable` 이 아니다).
+    static let fixed: [BattleTeamSlot] = [.a, .b]
+
+    /// 순회를 고정하기 위한 키. 값 자체에 뜻은 없다 — 두 피어가 같은 순서로 훑기만 하면 된다.
+    var sortKey: String {
+        switch self {
+        case .a:               return "a"
+        case .b:               return "b"
+        case .solo(let id):    return "solo:" + id.uuidString
+        }
+    }
+}
+
+/// 한 진영에만 깔리는 상태 — 날씨·필드가 판 전체인 것과 다르다.
+///
+/// 여기 있는 여섯은 전부 **1대1 에서 뜻이 있는** 것들이다. 압정뿌리기 부류(입장 데미지)와
+/// 방어 계열(와이드가드·퀵가드)은 각각 교체와 protect 상태가 먼저라 아직 없다.
+enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
+    case reflect, lightScreen, auroraVeil, safeguard, mist, luckyChant
+
+    /// 지속 턴 — 본가의 빛의점토가 없으므로 전부 5턴이다.
+    static let duration = 5
+
+    /// 이 상태를 까는 기술 — PokéAPI id. 기술이 하나씩이라 표를 따로 두지 않는다.
+    var moveID: Int {
+        switch self {
+        case .reflect:     return 115
+        case .lightScreen: return 113
+        case .auroraVeil:  return 694
+        case .safeguard:   return 219
+        case .mist:        return 54
+        case .luckyChant:  return 381
+        }
+    }
+
+    static func called(byMoveID id: Int) -> BattleSideCondition? {
+        allCases.first { $0.moveID == id }
+    }
+
+    /// 이 분류의 데미지를 반으로 깎는가. 오로라베일은 둘 다 깎는 대신 눈이 있어야 깔린다.
+    func halves(_ damageClass: MoveDamageClass) -> Bool {
+        switch self {
+        case .reflect:     return damageClass == .physical
+        case .lightScreen: return damageClass == .special
+        case .auroraVeil:  return damageClass != .status
+        default:           return false
+        }
+    }
+}
+
 /// 판 전체에 걸린 것 — 날씨와 필드.
 ///
 /// **왜 인자로 나르는가.** 배틀 상태를 들고 있는 타입이 넷(1v1 LAN·연습·웨이브·방)이라, 엔진이
@@ -731,6 +791,36 @@ struct BattleField: Sendable, Equatable {
     var weatherTurns = 0
     var terrain: BattleTerrain?
     var terrainTurns = 0
+    /// 편별로 깔린 상태와 남은 턴. 없는 키는 "안 깔렸다" 이므로 0 턴짜리 항목을 남기지 않는다 —
+    /// 그래야 `has` 한 번으로 읽히고, 두 피어가 같은 순서로 훑는다(`allCases` 순).
+    var sideConditions: [BattleTeamSlot: [BattleSideCondition: Int]] = [:]
+
+    func has(_ condition: BattleSideCondition, for team: BattleTeamSlot) -> Bool {
+        (sideConditions[team]?[condition] ?? 0) > 0
+    }
+
+    /// 진영 상태를 깐다. 이미 깔려 있으면 **실패한다**(날씨와 같은 이유 — 매 턴 다시 깔면 영구다).
+    /// 오로라베일은 눈이 내릴 때만 깔린다.
+    mutating func start(_ condition: BattleSideCondition, for team: BattleTeamSlot) -> Bool {
+        guard !has(condition, for: team) else { return false }
+        guard condition != .auroraVeil || weather == .snow else { return false }
+        sideConditions[team, default: [:]][condition] = BattleSideCondition.duration
+        return true
+    }
+
+    /// 이 진영이 맞는 데미지가 장막에 반으로 깎이는가.
+    func halvesDamage(_ damageClass: MoveDamageClass, against team: BattleTeamSlot) -> Bool {
+        BattleSideCondition.allCases.contains { $0.halves(damageClass) && has($0, for: team) }
+    }
+
+    /// 신비의부적 — 이 진영은 상대가 거는 상태이상을 받지 않는다.
+    func blocksStatus(against team: BattleTeamSlot) -> Bool { has(.safeguard, for: team) }
+
+    /// 하얀안개 — 이 진영은 상대가 내리는 랭크를 받지 않는다(자기 상승은 그대로다).
+    func blocksStatDrop(against team: BattleTeamSlot) -> Bool { has(.mist, for: team) }
+
+    /// 행운의부적 — 이 진영은 급소를 맞지 않는다.
+    func blocksCrit(against team: BattleTeamSlot) -> Bool { has(.luckyChant, for: team) }
 
     /// 필드를 깐다. 같은 필드를 다시 깔면 실패한다(날씨와 같은 이유).
     mutating func start(_ terrain: BattleTerrain) -> Bool {
@@ -1009,7 +1099,8 @@ enum BattleEngine {
     /// 23 = 상황에서 위력을 뽑는 기술이 한 묶음으로 늘었다(분화 부류의 HP 비례, 어시스트파워의
     ///      랭크 합, 악몽의 상태 배율, 리프블레이드·에코보이스·원한의응보의 누적 카운터,
     ///      트리플킥 부류의 히트별 위력, 리벤지의 후공 배율) + 날씨·필드 레이어(볕·비의 1.5·0.5배,
-    ///      모래 잔뎀, 세 필드의 1.3배와 상태 차단, 그래스필드 회복). 새 상태는 전부 지역
+    ///      모래 잔뎀, 세 필드의 1.3배와 상태 차단, 그래스필드 회복) + 진영 상태(리플렉터·빛의장막·
+    ///      오로라베일의 반감, 신비의부적·하얀안개·행운의부적의 차단). 새 상태는 전부 지역
     ///      값이라 와이어는 그대로고 rng 소비 순서도 그대로지만, 같은 입력의 데미지가 갈린다.
     static let rulesVersion = 23
 
@@ -1239,6 +1330,7 @@ enum BattleEngine {
     ///           목록을 동결해 두므로 `VariableDamage` 에 새 기술이 붙으면 거기서 빨개진다.
     static func resolveAttack(attacker: BattleSide, defender: BattleSide, move: MoveSpec,
                               field: BattleField = BattleField(),
+                              defenderTeam: BattleTeamSlot = .b,
                               rng: inout SplitMix64) -> AttackOutcome {
         // 독 타입이 쓰는 맹독은 명중·회피 랭크를 포함한 명중 판정을 건너뛴다.
         let poisonTypeToxic = move.id == MoveSpec.toxicMoveID && attacker.snapshot.types.contains(.poison)
@@ -1254,7 +1346,8 @@ enum BattleEngine {
         var effectiveness = 1.0, critical = false
         for index in 0..<requestedHits where remaining > 0 {
             let one = resolveSingleHit(attacker: attacker, defender: defender, move: move,
-                                       hit: index, field: field, rng: &rng)
+                                       hit: index, field: field, defenderTeam: defenderTeam,
+                                       rng: &rng)
             total += one.damage
             remaining -= one.damage
             actualHits += 1
@@ -1271,6 +1364,7 @@ enum BattleEngine {
     /// (본가와 같다 — 한 번 뽑아 곱하면 급소가 나면 전 히트가 급소가 된다).
     private static func resolveSingleHit(attacker: BattleSide, defender: BattleSide,
                                          move: MoveSpec, hit: Int, field: BattleField,
+                                         defenderTeam: BattleTeamSlot,
                                          rng: inout SplitMix64) -> AttackOutcome {
         // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
         // 그대로 쓰면 아래 식이 데미지를 0 으로 접는다(그게 이 기술들이 죽어 있던 원인이다).
@@ -1316,7 +1410,10 @@ enum BattleEngine {
         // 런 강화의 급소 단계는 기술 단계에 더한다 — 표의 상한(3단계 = 100%)은 `critThreshold` 가
         // 이미 잠그므로 스택 수를 따로 자르지 않는다.
         let critStage = move.critStage + attacker.runBoosts.critStages
-        let isCritical = rng.next() % critDenominator < critThreshold(stage: critStage)
+        // 급소 판정은 **행운의부적이 있어도 그대로 굴린다** — 뽑는 횟수가 갈리면 그 뒤 모든 판정이
+        // 밀린다. 막는 것은 결과뿐이다.
+        let rolledCritical = rng.next() % critDenominator < critThreshold(stage: critStage)
+        let isCritical = rolledCritical && !field.blocksCrit(against: defenderTeam)
         // 급소는 **불리한 랭크만** 무시한다(Gen 3+): 공격측의 마이너스와 방어측의 플러스가 빠진다.
         // 전부 무시하는 Gen 1·2 방식이면 랭크를 올린 쪽이 급소에서 손해를 봐 올릴 이유가 없어진다.
         let offense: BattleStat = isPhysical ? .atk : .spa
@@ -1379,6 +1476,9 @@ enum BattleEngine {
                 damage /= 2
             }
         }
+        // 장막은 **급소를 못 막는다**(3세대 이후). 급소가 뚫지 못하면 장막 한 장으로 판이 잠긴다.
+        // 고정 데미지·일격필살은 여기 오기 전에 빠져나가므로 장막을 타지 않는다(본가와 같다).
+        if !isCritical, field.halvesDamage(move.damageClass, against: defenderTeam) { damage /= 2 }
         damage = damage * random / 255
         // 위력 0(변화기)은 데미지가 없다. `max(1, …)` 만 두면 식의 `+2` 가 살아남아 상태기가 2 데미지를
         // 넣었다 — `learnedMoves` 는 변화기를 걸러내지 않으므로 실제로 밟히는 경로다.
@@ -1435,6 +1535,9 @@ enum BattleEvent: Codable, Sendable, Equatable {
     case weatherEnded(BattleWeather)
     case terrainStarted(BattleTerrain)
     case terrainEnded(BattleTerrain)
+    /// 한쪽 진영에만 깔린 상태 — 어느 편인지가 문구의 절반이다("우리 편은/상대 편은").
+    case sideConditionStarted(BattleTeamSlot, BattleSideCondition)
+    case sideConditionEnded(BattleTeamSlot, BattleSideCondition)
     case faint(BattleActor)
     /// 새 개체가 필드에 나왔다 — 자기 교체(턴 머리)와 기절 자동 출전(턴 끝) 양쪽이 이 case 다.
     ///
@@ -1655,6 +1758,23 @@ extension BattleEngine {
                 events.append(.terrainEnded(terrain))
             }
         }
+        // 진영 상태는 편·상태 **둘 다 고정 순서**로 훑는다. 딕셔너리 순회는 실행마다 순서가
+        // 달라져서, 그 순서가 이벤트에 남으면 두 피어의 로그가 갈린다.
+        // 개인전 자리는 깔린 것이 있을 때만 생기므로 고정 두 자리에 더해 **키로 남은 것**까지 본다.
+        // 정렬은 `sortKey` — 딕셔너리 순회 순서가 이벤트에 남으면 두 피어의 로그가 갈린다.
+        let teams = (BattleTeamSlot.fixed + field.sideConditions.keys.filter { !BattleTeamSlot.fixed.contains($0) }
+            .sorted { $0.sortKey < $1.sortKey })
+        for team in teams {
+            for condition in BattleSideCondition.allCases where field.has(condition, for: team) {
+                let left = (field.sideConditions[team]?[condition] ?? 0) - 1
+                if left <= 0 {
+                    field.sideConditions[team]?[condition] = nil
+                    events.append(.sideConditionEnded(team, condition))
+                } else {
+                    field.sideConditions[team]?[condition] = left
+                }
+            }
+        }
         return events
     }
 
@@ -1677,9 +1797,15 @@ extension BattleEngine {
     /// ponytail: 못 움직인 턴에도 PP 는 이미 호출부에서 깎인 뒤다(본가는 안 깎는다). 되돌리려면
     ///           기술 선택 자체를 엔진 안으로 옮겨야 하는데, 그건 교체(Phase 4)와 같이 할 일이다.
     ///           양쪽 피어가 똑같이 깎으므로 desync 는 없다.
+    ///
+    /// `attackerTeam`·`defenderTeam` 은 **진영 상태**(장막·부적)의 주인이다. 개체가 아니라 자리라서
+    /// 인자로 받는다 — 모드마다 좌우가 다르고(멀티는 `.red`/`.blue`, 개인전은 참가자 하나가 한 편),
+    /// 빠뜨리면 장막이 늘 좌변에 깔린다. 둘을 따로 받는 이유는 개인전이다: 상대가 "반대편" 하나로
+    /// 정해지지 않는다.
     static func applyAttack(attacker: inout BattleSide, defender: inout BattleSide,
                             attackerActor: BattleActor, defenderActor: BattleActor,
                             move: MoveSpec, field: inout BattleField,
+                            attackerTeam: BattleTeamSlot = .a, defenderTeam: BattleTeamSlot = .b,
                             rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
         guard beginAttack(attacker: &attacker, actor: attackerActor, move: move,
@@ -1689,6 +1815,12 @@ extension BattleEngine {
             attacker.lastMoveFailed = !field.start(terrain)
             return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
                                                      : [.terrainStarted(terrain)])
+        }
+        // 진영 상태기도 상대를 보지 않는다 — 자기 편에 까는 것뿐이다.
+        if let condition = BattleSideCondition.called(byMoveID: move.id) {
+            attacker.lastMoveFailed = !field.start(condition, for: attackerTeam)
+            return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
+                                                     : [.sideConditionStarted(attackerTeam, condition)])
         }
         // 날씨기는 상대를 보지 않는다 — 자기 회복기와 같은 자리에서 빠져나간다.
         if let weather = BattleWeather.called(byMoveID: move.id) {
@@ -1705,7 +1837,7 @@ extension BattleEngine {
         }
         events += applyHit(attacker: &attacker, defender: &defender,
                            attackerActor: attackerActor, defenderActor: defenderActor,
-                           move: move, field: field, rng: &rng)
+                           move: move, field: field, defenderTeam: defenderTeam, rng: &rng)
         events += faintFromSelfDestruct(move, attacker: &attacker, actor: attackerActor)
         return events
     }
@@ -1758,10 +1890,11 @@ extension BattleEngine {
                          attackerActor: BattleActor, defenderActor: BattleActor,
                          move: MoveSpec, damageScale: Double = 1,
                          field: BattleField = BattleField(),
+                         defenderTeam: BattleTeamSlot = .b,
                          rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move,
-                                    field: field, rng: &rng)
+                                    field: field, defenderTeam: defenderTeam, rng: &rng)
         // 실패 여부는 **모든 갈래에서** 갱신한다. 성공 갈래만 내리면 한 번 실패한 뒤로 계속 실패로
         // 남아 분함의발구르기가 영원히 두 배가 된다. 광역기는 마지막 대상의 결과가 남는다 —
         // 본가도 여러 대상 중 하나만 실패한 턴을 실패로 세지 않는다.
@@ -1825,14 +1958,14 @@ extension BattleEngine {
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         if defender.isAlive {
             events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor,
-                                           field: field, rng: &rng)
+                                           field: field, defenderTeam: defenderTeam, rng: &rng)
         }
         // **랭크는 기절 앞에서 본다.** 예전엔 기절이 여기서 조기반환해 상대를 쓰러뜨린 턴의 자기
         // 랭크 상승(고대의힘 부류)이 통째로 사라졌다 — 본가는 KO 여부와 무관하게 오른다. 상대 몫만
         // `applyStatChanges` 가 걸러낸다. `.faint` 를 맨 뒤로 미루는 건 Showdown 순서와도 같다.
         events += applyStatChanges(of: move, attacker: &attacker, defender: &defender,
                                    attackerActor: attackerActor, defenderActor: defenderActor,
-                                   rng: &rng)
+                                   field: field, defenderTeam: defenderTeam, rng: &rng)
         if !defender.isAlive { events.append(.faint(defenderActor)) }
         // 반동으로 때린 쪽이 쓰러졌으면 맞은 쪽 **뒤에** 적는다(Showdown 순서). 여기 오기 전에
         // 공격측이 죽는 길은 반동뿐이다. 혼란 자멸은 `canAct` 에서 조기반환한다.
@@ -1865,7 +1998,8 @@ extension BattleEngine {
     /// 상승(배가르기)도 `statChangePercent` 가 0 으로 접는다.
     private static func applyStatChanges(of move: MoveSpec, attacker: inout BattleSide,
                                          defender: inout BattleSide, attackerActor: BattleActor,
-                                         defenderActor: BattleActor,
+                                         defenderActor: BattleActor, field: BattleField,
+                                         defenderTeam: BattleTeamSlot,
                                          rng: inout SplitMix64) -> [BattleEvent] {
         let changes = move.statChanges ?? []
         let percent = move.statChangePercent
@@ -1878,6 +2012,8 @@ extension BattleEngine {
         var events: [BattleEvent] = []
         for change in applicable {
             let targetsSelf = change.change > 0
+            // 하얀안개는 **상대가 내리는** 랭크만 막는다. 자기 상승까지 막으면 쓴 쪽이 손해를 본다.
+            if !targetsSelf, field.blocksStatDrop(against: defenderTeam) { continue }
             let applied = targetsSelf
                 ? attacker.changeStage(change.stat, by: change.change)
                 : defender.changeStage(change.stat, by: change.change)
@@ -1892,6 +2028,7 @@ extension BattleEngine {
     /// 걸려 있거나 면역인 상대에게는 rng 를 쓰지 않는다 — 두 피어의 소비량이 같아야 한다.
     private static func applySecondaryEffect(of move: MoveSpec, to side: inout BattleSide,
                                              actor: BattleActor, field: BattleField,
+                                             defenderTeam: BattleTeamSlot,
                                              rng: inout SplitMix64) -> [BattleEvent] {
         // **자기 대상 상태기는 상대에게 걸지 않는다.** 잠자기는 `ailment: sleep` 이라 여기까지 오는데
         // 회복은 구현이 없어서, 걸면 남는 게 필중 100% 수면기다(대상을 모르는 게 아니라 아는데
@@ -1901,7 +2038,10 @@ extension BattleEngine {
         // 필드가 막는 상태는 걸리지 않는다 — 땅에 닿은 쪽만이다(일렉트릭필드는 잠듦,
         // 미스트필드는 주 상태 전부). 막히면 확률 판정을 굴리지 않아 rng 소비가 줄지만, 두 피어가
         // 같은 필드를 보므로 갈리지 않는다.
+        // 신비의부적은 **상대가 거는** 상태를 막는다. 필드가 막을 때와 같은 자리라 확률 판정을
+        // 굴리지 않는다 — 두 피어가 같은 판을 보므로 소비량이 갈리지 않는다.
         guard let status = move.inflictedStatus, side.canBeAfflicted(by: status),
+              !field.blocksStatus(against: defenderTeam),
               !(field.terrain?.blocks(status) == true && BattleField.isGrounded(side)),
               Int(rng.next() % 100) < move.ailmentChancePercent else { return [] }
         return inflict(status, on: &side, actor: actor, rng: &rng)
@@ -1924,9 +2064,11 @@ extension BattleEngine {
             let move = attackerIsA ? moveA : moveB
             events += attackerIsA
                 ? applyAttack(attacker: &a, defender: &b, attackerActor: .a, defenderActor: .b,
-                              move: move, field: &field, rng: &rng)
+                              move: move, field: &field, attackerTeam: .a, defenderTeam: .b,
+                              rng: &rng)
                 : applyAttack(attacker: &b, defender: &a, attackerActor: .b, defenderActor: .a,
-                              move: move, field: &field, rng: &rng)
+                              move: move, field: &field, attackerTeam: .b, defenderTeam: .a,
+                              rng: &rng)
         }
         // 잔뎀은 두 공격이 **모두 끝난 뒤**다. 앞에 두면 그 턴의 데미지 계산과 기절 시점이 달라진다.
         // 좌변부터 고정 순서 — 순서가 흔들리면 동시 기절 때 두 피어의 승패가 갈린다.

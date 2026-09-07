@@ -343,13 +343,15 @@ struct WaveBattle: Sendable {
                                                    defender: &opponents[defenderIndex],
                                                    attackerActor: attackerActor,
                                                    defenderActor: defenderActor,
-                                                   move: move, field: &field, rng: &rng)
+                                                   move: move, field: &field,
+                                                   attackerTeam: .a, defenderTeam: .b, rng: &rng)
             } else {
                 events += BattleEngine.applyAttack(attacker: &opponents[attackerIndex],
                                                    defender: &mine[defenderIndex],
                                                    attackerActor: attackerActor,
                                                    defenderActor: defenderActor,
-                                                   move: move, field: &field, rng: &rng)
+                                                   move: move, field: &field,
+                                                   attackerTeam: .b, defenderTeam: .a, rng: &rng)
             }
             return
         }

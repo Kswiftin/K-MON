@@ -87,6 +87,13 @@ enum BattleLog {
             case .terrainEnded(let terrain):
                 flush()
                 out.append(Line(actor: nil, text: l.battleTerrainEnded(terrain)))
+            case .sideConditionStarted(_, let condition):
+                // 날씨와 같은 자리의 줄이다 — 편은 앞 줄(기술을 쓴 줄)이 이미 말한다.
+                flush()
+                out.append(Line(actor: nil, text: l.battleSideConditionStarted(condition)))
+            case .sideConditionEnded(_, let condition):
+                flush()
+                out.append(Line(actor: nil, text: l.battleSideConditionEnded(condition)))
             case .faint(let actor):
                 flush()
                 out.append(Line(actor: actor, text: l.battleFainted(name(actor))))

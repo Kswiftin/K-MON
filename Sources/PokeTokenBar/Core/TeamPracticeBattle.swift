@@ -87,7 +87,8 @@ struct TeamPracticeBattle {
         if moveIndex >= 0 { opponents[opponentActive].pp[moveIndex] -= 1 }
         events += BattleEngine.applyAttack(attacker: &opponents[opponentActive], defender: &mine[myActive],
                                            attackerActor: .b, defenderActor: .a, move: move,
-                                           field: &field, rng: &rng)
+                                           field: &field, attackerTeam: .b, defenderTeam: .a,
+                                           rng: &rng)
         // 교체로 넘긴 턴도 턴이다 — 잔뎀도 날씨도 그대로 들어간다.
         events += BattleEngine.endOfTurnResidual(&mine[myActive], actor: .a)
         events += BattleEngine.endOfTurnResidual(&opponents[opponentActive], actor: .b)

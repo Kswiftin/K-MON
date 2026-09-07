@@ -172,6 +172,16 @@ struct MultiplayerFighter: Codable, Sendable, Equatable, Identifiable {
 
     var isAlive: Bool { side.isAlive }
 
+    /// 진영 상태(장막·부적)가 걸리는 자리. 팀전은 팀 하나가 한 편이고, **개인전은 참가자 하나가
+    /// 한 편**이다 — 좌우 두 자리로 접으면 한 명의 리플렉터가 경쟁자 전원을 지킨다.
+    var teamSlot: BattleTeamSlot {
+        switch team {
+        case .red:  return .a
+        case .blue: return .b
+        case .solo: return .solo(id)
+        }
+    }
+
     // 와이어 계약은 `snapshot`/`hp`/`pp` 를 **평면으로** 보낸다 — `side` 로 묶은 건 내부 구조 변경일
     // 뿐이라 JSON 모양을 그대로 뒀다. 상태이상은 받는 쪽이 배지를 그려야 해서 필드가 늘었다.
     // `stats`·`moves` 는 스냅샷에서 파생되므로 보내지 않고 받는 쪽이 다시 만든다.
@@ -635,7 +645,9 @@ struct MultiplayerBattle: Sendable {
             roundEvents += BattleEngine.applyAttack(attacker: &attacker, defender: &target,
                                                     attackerActor: .fighter(fighters[ai].id),
                                                     defenderActor: .fighter(fighters[ti].id),
-                                                    move: move, field: &field, rng: &rng)
+                                                    move: move, field: &field,
+                                                    attackerTeam: fighters[ai].teamSlot,
+                                                    defenderTeam: fighters[ti].teamSlot, rng: &rng)
             fighters[ai].side = attacker
             fighters[ti].side = target
             // 보스에게 들어간 몫만 센다 — 러너끼리 때릴 수는 없지만, 보스가 러너를 때린 것을
