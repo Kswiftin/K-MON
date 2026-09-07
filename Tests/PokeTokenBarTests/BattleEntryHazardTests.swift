@@ -258,6 +258,20 @@ final class BattleEntryHazardTests: XCTestCase {
         XCTAssertEqual(events.last, .faint(.b))
     }
 
+    /// 쓰러진 뒤에 남은 **데미지형**도 밟지 않는다 — 위 테스트는 상태형(독압정)만 재므로
+    /// `inflict` 의 생존 가드에 가려 통과한다. 여기서는 스텔스록으로 쓰러진 뒤 압정이 0 데미지
+    /// 줄을 내지 않는지 본다("맞았는데 0" 은 로그에서 거짓말이다).
+    func testNoZeroDamageLineIsLeftAfterAHazardFaint() {
+        var field = laid(.stealthRock)
+        for _ in 0..<3 { XCTAssertTrue(field.start(.spikes, for: .b)) }
+        var entering = side([.normal], hp: 200)
+        entering.hp = 1
+        var rng = SplitMix64(seed: 1)
+        let events = switchIn(&entering, field: field, rng: &rng)
+        XCTAssertEqual(events, [.damage(.b, amount: 1, cause: .hazard), .faint(.b)],
+                       "쓰러진 뒤에 압정이 한 줄 더 냈다")
+    }
+
     /// 이미 쓰러진 개체는 아무것도 밟지 않는다(자동 출전이 죽은 칸을 다시 부를 수 있다).
     func testAFaintedSwitchInStepsOnNothing() {
         var entering = side([.normal], hp: 200)
@@ -380,6 +394,24 @@ final class BattleEntryHazardTests: XCTestCase {
 
         XCTAssertLessThanOrEqual(battle.mine[2].hp, full - full / 8,
                                  "턴을 쓴 교체가 압정을 안 밟았다")
+    }
+
+    /// 웨이브 — 턴 끝에 상대 빈 칸을 스스로 채우는 출전도 밟는다. 내 쪽만 배선하면 여기가 빠진다.
+    func testWaveAutomaticOpponentSendOutStepsOnSpikes() {
+        var battle = WaveBattle(mine: [BattleSide(monSnapshot(1)), BattleSide(monSnapshot(2))],
+                                opponents: [BattleSide(monSnapshot(9)), BattleSide(monSnapshot(10)),
+                                            BattleSide(monSnapshot(11))],
+                                rng: SplitMix64(seed: 3))
+        XCTAssertTrue(battle.field.start(.spikes, for: .b))
+        battle.opponents[battle.opponentField[0].teamIndex].hp = 1
+        let full = battle.opponents[2].stats.hp
+
+        XCTAssertTrue(battle.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertTrue(battle.choose(.move(index: 0, target: 0), forSlot: 1))
+
+        XCTAssertEqual(battle.opponentField[0].teamIndex, 2, "빈 칸이 안 채워졌다")
+        XCTAssertLessThanOrEqual(battle.opponents[2].hp, full - full / 8,
+                                 "자동으로 채운 상대 칸이 압정을 안 밟았다")
     }
 
     /// 1v1 LAN — 교체 행동으로 나온 개체가 밟는다.
