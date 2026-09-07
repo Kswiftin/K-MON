@@ -155,8 +155,9 @@ pokedoro party | mon | dex    手持ち・個体の詳細・ポケモン図鑑
 pokedoro bag | shop | goals   バッグ・ショップの在庫・図鑑の目標と実績
 pokedoro watch                全画面のライブ表示
 pokedoro start [25|50|90]     集中セッションを開始（stop で終了、claim で受け取り）
+pokedoro learn …              わざ習得・ハートのウロコ候補・わざマシン使用
 pokedoro wave …               ウェーブラン一戦（start · move · ball · pick · route）
-pokedoro raid …               共闘レイドの検索・開設・参加・観戦・代表ポケモン選択
+pokedoro raid …               共闘レイドの検索・開設・参加・観戦・代表ポケモン選択・準備
 pokedoro battle | room …      LAN バトル・部屋の準備・戦闘・精算
 pokedoro gym …                挑戦タブのジムレイド一覧・チーム編成・挑戦
 pokedoro gym contest …        LAN ジム争奪戦の検索・開設・挑戦・観戦・運営
@@ -164,6 +165,10 @@ pokedoro trade | auction …    交換の交渉・オークション市場
 pokedoro home …               Memory Home — きぶん・記録・家具の配置
 pokedoro help                 全コマンド一覧
 ```
+
+<p align="center"><img src="assets/screenshot-terminal-tui.png" width="360" alt="共闘レイドの部屋とわざ習得コマンドを示すターミナル"></p>
+
+共闘レイドの部屋を検索して参加・準備まで進められ、`learn` でハートのウロコ候補とわざマシンを含むわざ習得を最後まで操作できます。
 
 tmux のステータスバーに入れる例です。
 
