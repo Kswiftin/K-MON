@@ -37,18 +37,19 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
-      # Coverage flags, not a plain build: the next step compiles the same module
-      # with --enable-code-coverage, and mismatched flags make SwiftPM recompile it
-      # from scratch. Measured on this runner: 100s here, then 79s again inside the
-      # gate. Aligning them costs nothing -- a coverage build compiles the same code
-      # with instrumentation added, so this step still fails on any compile error,
-      # and the release configuration is covered by build-app.sh in release.yml.
-      - name: Build
-        run: swift build --enable-code-coverage
-
-      # test-gate.sh runs `swift test --enable-code-coverage` and then enforces a
-      # line-coverage floor on the logic-core files. It replaces a bare `swift test`:
-      # the tests still run, and a coverage regression now fails the build.
+      # 게이트 앞에 빌드 단계를 두지 않는다. 두면 게이트 안에서 모듈을 컴파일하는 유일한 빌드
+      # (`mutator-sweep.sh` 의 `swift build --enable-code-coverage`)가 no-op 이 되고,
+      # **재컴파일이 없는 빌드는 컴파일러 warning 을 다시 찍지 않는다** — 게이트의 warning 검사가
+      # 볼 로그가 비어 버린다. #274 의 미사용 바인딩 경고 3건이 그 길로 초록을 받고 `main` 에
+      # 들어갔다. 컴파일 오류는 게이트가 같은 잡에서 어차피 잡고, 릴리스 구성은 release.yml 의
+      # build-app.sh 가 본다.
+      #
+      # 이 규칙은 주석이 아니라 게이트가 지킨다 — `test-gate.sh` 는 컴파일 흔적이 없는 로그를
+      # CI 에서 통과시키지 않는다(관측 없음 ≠ 위반 없음). 아래 단계를 되돌려도 게이트가 빨강이 된다.
+      #
+      # test-gate.sh 는 `swift test --enable-code-coverage` 를 돌린 뒤 로직 코어 파일의 라인
+      # 커버리지 하한을 지킨다. 맨 `swift test` 를 대신하는 자리다 — 테스트는 그대로 돌고
+      # 커버리지 후퇴도 빌드를 실패시킨다.
       - name: Test + coverage gate
         run: ./scripts/test-gate.sh
 

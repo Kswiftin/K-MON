@@ -3,7 +3,7 @@
 # test-gate.sh — 안정성 가드레일. CI(ci.yml·release.yml)와 release.sh 가 이 스크립트를 돌린다.
 # 커밋/머지 전 로컬에서도 같은 게이트를 그대로 실행한다.
 #
-#   1) swift test 전체 통과
+#   1) swift test 전체 통과 — **판정은 2) 뒤로 미룬다**(아래 실패 순서 절 참고)
 #   2) 자체 코드(Sources/·Tests/)에 컴파일러 warning 0건
 #   3) 같은 테스트 번들을 영어 로케일로 재실행 (CI 로케일 패리티)
 #   4) "로직 코어" 파일 집합의 라인 커버리지 >= THRESHOLD
@@ -16,9 +16,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# The lifecycle/economy split added several platform-only branches to the store;
-# keep the gate above the measured 69.60% baseline while those branches remain
-# integration-tested through the macOS app target.
+# 후퇴 감지가 아니라 **바닥선**이다 — 로직 코어에 무테스트 파일이 새로 들어오는 것만 막는다.
+# 69 는 2.x 초기 실측(69.60%)에서 온 값이고 지금 실측은 91.40% 다(2026-09-07, `4a663a2` 기준
+# 게이트 실행). 실측은 main 이 움직일 때마다 바뀌므로 이 숫자는 자릿수만 참고한다.
+# 22%p 여유라 웬만한 후퇴는 통과한다는 뜻이니, **이 숫자를 후퇴 감지의 증거로 읽지 않는다** —
+# 새 조건 분기의 증거는 `llvm-cov show --show-line-counts-or-regions` 의 `^0` 뿐이다.
+# 값을 69 에 둔 것은 명시적 선택이다(2026-09-07): 리팩터링 중 일시적 하락에 게이트가 걸리는
+# 쪽이 비용이 크다고 봤다. 올릴 조건: 후퇴 감지를 게이트에 맡기기로 하면 실측 -2%p 로 맞춘다.
 THRESHOLD="${THRESHOLD:-69}"
 
 LOGIC_CORE=(
@@ -223,10 +227,19 @@ if [[ -n "$ORPHAN_SHEETS" ]]; then
 fi
 echo "✓ 없음"
 
+# 아래 warning 검사·로케일 재실행·커버리지가 증거로 읽는 로그. **여기서 만든다** — 모듈을
+# 실제로 컴파일하는 것은 바로 다음 줄의 mutator 스윕이고(`swift build --enable-code-coverage`),
+# 그 출력이 컴파일러 warning 의 유일한 출처다. 뒤따르는 `swift test` 는 같은 플래그라 재컴파일이
+# 없어 warning 을 다시 찍지 않는다.
+BUILD_LOG=$(mktemp)
+TEST_LOG=$(mktemp)
+LOCALE_LOG=$(mktemp)
+trap 'rm -f "$BUILD_LOG" "$TEST_LOG" "$LOCALE_LOG"' EXIT
+
 # 위 두 게이트의 셋째 형제 — "세이브에 쓰기만 하는 API" 스윕은 `mutator-sweep.sh` 가 가진다.
 # 게이트와 결함 주입 하네스(`verify-mutator-gate.sh`)가 같은 파일을 부르려고 떼어냈다;
 # 이유와 한계는 그 파일 머리주석에 있다.
-./scripts/mutator-sweep.sh
+PTB_BUILD_LOG="$BUILD_LOG" ./scripts/mutator-sweep.sh
 
 # 문자열 보간에서 백슬래시가 빠진 오타는 Swift 가 **평범한 리터럴로 받아들인다** — 컴파일러도
 # warning 게이트도 절대 못 잡고, 화면에 표현식 소스가 그대로 찍힌 채 릴리스로 나간다
@@ -488,24 +501,62 @@ echo "✓ 없음"
 
 echo
 echo "▶ swift test (--enable-code-coverage)"
-TEST_LOG=$(mktemp)
-LOCALE_LOG=$(mktemp)
-trap 'rm -f "$TEST_LOG" "$LOCALE_LOG"' EXIT
-swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG"
+# **실패해도 여기서 죽지 않는다.** `set -e` 로 즉시 나가면 아래 warning 검사에 도달하지 못하고,
+# 테스트를 고쳐 재실행할 때는 그 빌드가 warm 이라 경고가 다시 찍히지 않는다 — 결함을 유발한
+# 바로 그 실행에서 검사가 두 번 연속 눈을 감는다(#274 가 새어나간 부류의 반복). 그래서 종료코드를
+# 들고 있다가 warning 검사 뒤에 낸다. 로케일 재실행·커버리지는 테스트 산출물이 필요하므로
+# warning 검사까지만 돌리고 거기서 끝낸다.
+TEST_STATUS=0
+swift test --enable-code-coverage 2>&1 | tee "$TEST_LOG" || TEST_STATUS=$?
+
+echo
+echo "▶ 자체 코드 컴파일러 warning"
+# **관측 없음을 통과로 읽지 않는다.** warning 검사는 컴파일 로그를 증거로 쓰므로, 그 로그를 만드는
+# 빌드가 warm 이면 "위반 없음" 과 "볼 것이 없었다" 가 둘 다 빈 문자열로 나온다 — #274 의 미사용
+# 바인딩 3건이 정확히 그 구별 없음으로 초록을 받았다. 그래서 모듈 컴파일 흔적을 먼저 확인한다.
+# `Compiling PokeTokenBar ` 는 뒤에 공백이 있어 `PokeTokenBarPackageTests` 와 겹치지 않는다.
+# ponytail: 흔적 유무만 본다 — 파일 하나만 재컴파일된 부분 빌드도 통과한다(그 파일의 warning 은
+#           보이고 나머지는 안 보인다). 전수 보장은 매 실행 clean build 뿐이라 값이 안 맞는다.
+#           올릴 조건: CI 가 빌드 캐시를 쓰기 시작하면 그때 이 게이트를 clean build 로 고정한다.
+SAW_COMPILE=1
+if ! grep -qE 'Compiling PokeTokenBar |Emitting module PokeTokenBar$' "$BUILD_LOG" "$TEST_LOG"; then
+  SAW_COMPILE=0
+  if [[ -n "${CI:-}" ]]; then
+    echo "✗ warning 검사가 컴파일을 관측하지 못했습니다 — warm build 의 0건은 증거가 아닙니다." >&2
+    echo "  게이트 앞에 빌드 단계가 생겼거나 .build 가 캐시되고 있습니다." >&2
+    exit 1
+  fi
+  echo "⚠ warm build — warning 검사가 아무것도 보지 못했습니다(0건은 '위반 없음' 이 아닙니다)." >&2
+  echo "  경고까지 보려면 \`swift package clean\` 뒤에 다시 돌리세요." >&2
+fi
 
 # 자체 코드의 컴파일러 warning 은 게이트 실패로 취급한다 — 쌓아 두면 새로 생긴 게 옛것에 묻힌다.
 # 경로로 걸러 의존성(.build/checkouts)의 warning 은 빼 둔다. 같은 warning 이 frontend 잡마다
 # 반복해서 찍히므로 sort -u 로 접는다.
-# ponytail: 재컴파일이 없는 warm build 는 warning 을 다시 찍지 않아 로컬에서 놓칠 수 있다 —
-#           신뢰 기준은 매번 cold build 인 CI 다. 로컬에서 볼 때는 `swift package clean` 뒤에 돌린다.
-#           해제 조건 없음(영구): CI 가 cold build 인 동안은 이게 답이고 올릴 단계가 없다.
-#           CI 가 빌드 캐시를 쓰기 시작하면 그때 이 게이트를 clean build 로 고정해야 한다.
-OWN_WARNINGS=$(grep -oE '(Sources|Tests)/PokeTokenBar[^ ]*\.swift:[0-9]+:[0-9]+: warning: .*' "$TEST_LOG" | sort -u || true)
+# **두 로그를 함께 본다.** 모듈을 컴파일하는 것은 mutator 스윕의 `swift build` 이고(`$BUILD_LOG`),
+# `swift test` 는 같은 플래그라 재컴파일 없이 통과한다(`$TEST_LOG` 에는 테스트 타깃분만 남는다).
+# 한쪽만 보면 Sources/ 의 warning 을 통째로 놓친다 — 그것이 #274 가 새어나간 경로다.
+OWN_WARNINGS=$(grep -hoE '(Sources|Tests)/PokeTokenBar[^ ]*\.swift:[0-9]+:[0-9]+: warning: .*' \
+               "$BUILD_LOG" "$TEST_LOG" | sort -u || true)
 if [[ -n "$OWN_WARNINGS" ]]; then
   echo
   echo "✗ 자체 코드 warning $(wc -l <<< "$OWN_WARNINGS" | tr -d ' ')건 — 고친 뒤 다시 실행하세요." >&2
   echo "$OWN_WARNINGS" >&2
   exit 1
+fi
+echo "✓ 없음"
+
+# 보류한 판정을 여기서 낸다 — warning 검사가 이 실행의 컴파일 로그를 다 읽은 뒤다.
+if (( TEST_STATUS != 0 )); then
+  echo
+  echo "✗ swift test 실패 (exit $TEST_STATUS) — 위 로그의 실패 케이스를 고친 뒤 다시 실행하세요." >&2
+  # 위 ⚠ 가 떴다면 0건은 "위반 없음" 이 아니라 "관측 없음" 이다 — 여기서 안심시키지 않는다.
+  if (( SAW_COMPILE )); then
+    echo "  자체 코드 warning 은 0건이었습니다(이 실행의 컴파일 로그 기준)." >&2
+  else
+    echo "  이 실행은 warning 을 관측하지 못했습니다 — 위 ⚠ 를 보세요." >&2
+  fi
+  exit "$TEST_STATUS"
 fi
 
 # CI 러너는 영어 로케일, 개발 Mac 은 한국어다. 앱 문구 자체는 이제 한국어로 고정돼 있지만
@@ -523,7 +574,20 @@ fi
 # 계측 바이너리가 저장소 루트에 default.profraw 를 떨구지 않도록 커버리지 출력을 임시 경로로 돌린다.
 if LLVM_PROFILE_FILE="$(mktemp -d)/locale.profraw" \
      xcrun xctest -AppleLanguages "(en-US)" -XCTest All "$BUNDLE" > "$LOCALE_LOG" 2>&1; then
-  grep -E 'Executed [0-9]+ tests' "$LOCALE_LOG" | tail -1
+  # **0건도 실패다.** `xctest` 는 한 건도 돌리지 않아도 0 으로 끝나므로, 종료코드만 보면
+  # "로케일 격차 없음" 과 "아무것도 보지 않았다" 가 같은 초록이 된다 — 게이트가 이미 그 구별
+  # 없음으로 한 번 뚫렸다(#274, warning 검사). 개수를 뽑아 못 박는다.
+  # ponytail: 이 재실행은 XCTest 만 돈다 — 같은 번들 안의 swift-testing 케이스는 `xctest` 가
+  #           열거하지 못해 로케일 패리티 밖에 있다. Package.swift 가 새 테스트를 그쪽으로
+  #           안내하므로 이 검사의 적용 범위는 계속 줄어든다. 올릴 조건: `swift test` 가 테스트
+  #           바이너리에 인자를 넘길 수 있게 되면 두 타깃을 한 번에 영어 로케일로 돌린다.
+  LOCALE_RAN=$(grep -oE 'Executed [0-9]+ test' "$LOCALE_LOG" | tail -1 | grep -oE '[0-9]+' || true)
+  if [[ -z "$LOCALE_RAN" || "$LOCALE_RAN" -eq 0 ]]; then
+    echo "✗ 영어 로케일 재실행이 테스트를 0건 돌렸습니다 — 통과가 아니라 관측 실패입니다." >&2
+    echo "  번들($BUNDLE)에 XCTest 케이스가 있는지, PTB_NO_XCTEST 가 켜져 있지 않은지 보세요." >&2
+    exit 1
+  fi
+  echo "Executed $LOCALE_RAN tests (en-US)"
 else
   grep -E 'error:' "$LOCALE_LOG" >&2 || tail -20 "$LOCALE_LOG" >&2
   echo "✗ 영어 로케일에서 실패 — 호스트 로케일에 의존하는 테스트가 있습니다." >&2
@@ -541,6 +605,20 @@ fi
 
 echo
 echo "▶ 로직 코어 커버리지 (임계값 ${THRESHOLD}%)"
+# **목록의 경로부터 대조한다.** `llvm-cov` 는 없는 경로를 stderr 로 흘리고(여기선 `2>/dev/null`
+# 로 지운다) 그 파일을 TOTAL 에서 그냥 뺀다 — 파일을 옮기거나 이름을 바꾸면 커버리지가 오히려
+# 올라가며 통과한다. `LOGIC_CORE` 가 손으로 적는 목록이라 그 드리프트가 실제로 일어난다
+# (defect-log: "새 순수 로직 파일을 넣지 않으면 커버리지 밖으로 나간다" 의 반대 방향).
+MISSING_CORE=""
+for CORE_FILE in "${LOGIC_CORE[@]}"; do
+  [[ -f "$CORE_FILE" ]] || MISSING_CORE+="$CORE_FILE"$'\n'
+done
+if [[ -n "$MISSING_CORE" ]]; then
+  echo "✗ LOGIC_CORE 에 없는 경로가 있습니다 — 그 파일은 커버리지에서 조용히 빠집니다." >&2
+  echo "$MISSING_CORE" >&2
+  echo "  파일을 옮겼다면 이 배열의 경로도 같이 고치세요." >&2
+  exit 1
+fi
 REPORT=$(xcrun llvm-cov report "$BIN" -instr-profile="$PROF" "${LOGIC_CORE[@]}" 2>/dev/null)
 echo "$REPORT"
 

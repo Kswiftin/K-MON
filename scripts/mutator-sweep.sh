@@ -55,14 +55,27 @@ UNCALLED_MUTATORS=""
 # 접두 규칙. 도구가 못 보는 것 목록은 `Tools/MutatorGate/Sources/main.swift` 머리주석에 있다.
 echo "  · 빌드 + 인덱스 스토어 준비"
 # **먼저 빌드한다.** 낡은 인덱스를 읽으면 판정이 조용히 거짓이 된다(지운 선언이 유령으로
-# 남거나, 새로 죽은 mutator 가 아직 인덱스에 없어 통과한다). CI 는 앞 단계에서 이미 빌드해
-# 두므로 여기서는 대개 no-op 이고, 로컬에서도 게이트가 곧 쓸 빌드를 앞당기는 것뿐이다.
+# 남거나, 새로 죽은 mutator 가 아직 인덱스에 없어 통과한다). 게이트가 곧 쓸 빌드를 앞당기는
+# 것뿐이라 로컬에서도 CI 에서도 추가 비용은 없다.
 #
 # **게이트와 같은 플래그로 빌드한다**(`--enable-code-coverage`). 플래그가 다르면 SwiftPM 이
 # 모듈을 통째로 다시 컴파일한다 — plain 빌드 뒤 커버리지 빌드가 19초를 다시 쓰는 것을 실측했다.
 # 인덱스 방출은 커버리지와 무관하므로, 뒤따르는 `swift test --enable-code-coverage` 가 이
 # 산출물을 그대로 재사용하도록 맞추는 쪽이 공짜다.
-swift build --enable-code-coverage >/dev/null
+#
+# **그래서 파이프라인에서 모듈을 실제로 컴파일하는 자리는 여기 하나다 — 출력을 버리면 안 된다.**
+# `>/dev/null` 이던 때는 여기서 찍힌 warning 과 컴파일 오류 본문이 통째로 사라졌고, 뒤따르는
+# `swift test` 는 재컴파일이 없어 아무것도 다시 찍지 않았다 → `test-gate.sh` 의 warning 검사가
+# 언제나 0건을 읽었다(#274 의 미사용 바인딩 3건이 그 길로 초록을 받았다). `swift build` 는 진단을
+# **stdout** 에 찍으므로 stdout 을 버리는 것이 곧 진단을 버리는 것이다(실측 확인, 2026-09-07).
+# 그래서 성공하면 조용히 넘어가되(스윕 출력을 컴파일 로그로 덮지 않는다) 실패하면 본문을 내고,
+# 호출자가 `PTB_BUILD_LOG` 를 주면 거기에 남긴다 — `test-gate.sh` 가 그 파일을 warning 검사의
+# 증거로 읽는다.
+BUILD_OUT=$(swift build --enable-code-coverage 2>&1) || {
+  printf '%s\n' "$BUILD_OUT" >&2
+  exit 1
+}
+printf '%s\n' "$BUILD_OUT" >> "${PTB_BUILD_LOG:-/dev/null}"
 INDEX_STORE="$(swift build --show-bin-path)/index/store"
 # 스토어가 없으면 **판정하지 않고 실패한다.** SwiftPM 이 인덱스 방출을 멈추거나 경로를 바꾸면
 # "결함 0건" 과 "볼 것이 없었다" 가 구별되지 않는다 — 이 게이트가 존재하는 이유가 그 구별이다.
