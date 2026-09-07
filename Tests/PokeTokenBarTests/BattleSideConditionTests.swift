@@ -164,8 +164,8 @@ final class BattleSideConditionTests: XCTestCase {
     }
 
     /// 기술로 깔린다 — 같은 것을 다시 깔면 실패하고(영구 장막 방지), 5턴이 지나면 걷힌다.
-    func testAScreenLastsFiveTurnsAndCannotBeRefreshed() {
-        let reflect = spec(BattleSideCondition.reflect.moveID, damageClass: .status,
+    func testAScreenLastsFiveTurnsAndCannotBeRefreshed() throws {
+        let reflect = spec(try XCTUnwrap(moveID(calling: .reflect)), damageClass: .status,
                            power: 0, accuracy: nil)
         var field = BattleField()
         var caster = side(), target = side(hp: 9_999)
@@ -189,10 +189,18 @@ final class BattleSideConditionTests: XCTestCase {
         XCTAssertFalse(field.has(.reflect, for: .a), "5턴이면 걷힌다")
     }
 
+    /// 이 상태를 까는 기술의 id — 데이터에서 되짚는다(엔진은 반대 방향만 안다).
+    private func moveID(calling condition: BattleSideCondition) -> Int? {
+        ShowdownMoveData.effects.keys.sorted().first {
+            BattleSideCondition.called(byMoveID: $0) == condition
+        }
+    }
+
     /// 무브셋 게이트가 이 기술들을 통과시켜야 한다 — 막혀 있으면 아무도 배우지 못해 코드가 죽는다.
-    func testSideConditionMovesAreOfferedInMovesets() {
+    func testSideConditionMovesAreOfferedInMovesets() throws {
         for condition in BattleSideCondition.allCases {
-            let move = spec(condition.moveID, damageClass: .status, power: 0, accuracy: nil)
+            let move = spec(try XCTUnwrap(moveID(calling: condition)),
+                            damageClass: .status, power: 0, accuracy: nil)
             XCTAssertTrue(move.hasModeledStatusEffect,
                           "\(condition) 를 부르는 기술이 무브셋 후보에서 빠진다")
             XCTAssertTrue(VariableDamage.isUsable(move))

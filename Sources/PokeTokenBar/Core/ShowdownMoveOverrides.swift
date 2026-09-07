@@ -25,6 +25,18 @@ struct ShowdownMoveOverride: Sendable {
     var flinchChance: Int?
 }
 
+/// The categorical effect a move calls, if any. The engine implements each effect once and
+/// looks up *which* move calls it here, instead of keeping its own list of ids.
+struct ShowdownMoveEffect: Sendable {
+    /// Showdown's own keys — the engine maps the ones it models and ignores the rest.
+    var weather: String?
+    var terrain: String?
+    var sideCondition: String?
+    /// Which side the condition lands on: `allySide` (Reflect) or `foeSide` (Spikes).
+    var sideConditionTarget: String?
+    var volatileStatus: String?
+}
+
 enum ShowdownMoveData {
     /// Keyed by PokéAPI move id (Showdown's `num`).
     static let overrides: [Int: ShowdownMoveOverride] = [
@@ -83,6 +95,106 @@ enum ShowdownMoveData {
         913: .init(alwaysHits: true),  // Dragon Cheer
         918: .init(flinchChance: 100),  // Upper Hand
         919: .init(ailment: "poison", ailmentChance: 50),  // Malignant Chain
+    ]
+
+    /// Keyed the same way. Present only for moves that call one of the categorical effects.
+    static let effects: [Int: ShowdownMoveEffect] = [
+        20: .init(volatileStatus: "partiallytrapped"),  // Bind
+        35: .init(volatileStatus: "partiallytrapped"),  // Wrap
+        50: .init(volatileStatus: "disable"),  // Disable
+        54: .init(sideCondition: "mist", sideConditionTarget: "allySide"),  // Mist
+        73: .init(volatileStatus: "leechseed"),  // Leech Seed
+        83: .init(volatileStatus: "partiallytrapped"),  // Fire Spin
+        107: .init(volatileStatus: "minimize"),  // Minimize
+        111: .init(volatileStatus: "defensecurl"),  // Defense Curl
+        113: .init(sideCondition: "lightscreen", sideConditionTarget: "allySide"),  // Light Screen
+        115: .init(sideCondition: "reflect", sideConditionTarget: "allySide"),  // Reflect
+        116: .init(volatileStatus: "focusenergy"),  // Focus Energy
+        117: .init(volatileStatus: "bide"),  // Bide
+        128: .init(volatileStatus: "partiallytrapped"),  // Clamp
+        164: .init(volatileStatus: "substitute"),  // Substitute
+        171: .init(volatileStatus: "nightmare"),  // Nightmare
+        174: .init(volatileStatus: "curse"),  // Curse
+        182: .init(volatileStatus: "protect"),  // Protect
+        191: .init(sideCondition: "spikes", sideConditionTarget: "foeSide"),  // Spikes
+        193: .init(volatileStatus: "foresight"),  // Foresight
+        194: .init(volatileStatus: "destinybond"),  // Destiny Bond
+        197: .init(volatileStatus: "protect"),  // Detect
+        201: .init(weather: "Sandstorm"),  // Sandstorm
+        203: .init(volatileStatus: "endure"),  // Endure
+        213: .init(volatileStatus: "attract"),  // Attract
+        219: .init(sideCondition: "safeguard", sideConditionTarget: "allySide"),  // Safeguard
+        227: .init(volatileStatus: "encore"),  // Encore
+        240: .init(weather: "RainDance"),  // Rain Dance
+        241: .init(weather: "sunnyday"),  // Sunny Day
+        250: .init(volatileStatus: "partiallytrapped"),  // Whirlpool
+        254: .init(volatileStatus: "stockpile"),  // Stockpile
+        258: .init(weather: "hail"),  // Hail
+        259: .init(volatileStatus: "torment"),  // Torment
+        266: .init(volatileStatus: "followme"),  // Follow Me
+        268: .init(volatileStatus: "charge"),  // Charge
+        269: .init(volatileStatus: "taunt"),  // Taunt
+        270: .init(volatileStatus: "helpinghand"),  // Helping Hand
+        275: .init(volatileStatus: "ingrain"),  // Ingrain
+        277: .init(volatileStatus: "magiccoat"),  // Magic Coat
+        281: .init(volatileStatus: "yawn"),  // Yawn
+        286: .init(volatileStatus: "imprison"),  // Imprison
+        288: .init(volatileStatus: "grudge"),  // Grudge
+        289: .init(volatileStatus: "snatch"),  // Snatch
+        316: .init(volatileStatus: "foresight"),  // Odor Sleuth
+        328: .init(volatileStatus: "partiallytrapped"),  // Sand Tomb
+        357: .init(volatileStatus: "miracleeye"),  // Miracle Eye
+        366: .init(sideCondition: "tailwind", sideConditionTarget: "allySide"),  // Tailwind
+        373: .init(volatileStatus: "embargo"),  // Embargo
+        377: .init(volatileStatus: "healblock"),  // Heal Block
+        379: .init(volatileStatus: "powertrick"),  // Power Trick
+        380: .init(volatileStatus: "gastroacid"),  // Gastro Acid
+        381: .init(sideCondition: "luckychant", sideConditionTarget: "allySide"),  // Lucky Chant
+        390: .init(sideCondition: "toxicspikes", sideConditionTarget: "foeSide"),  // Toxic Spikes
+        392: .init(volatileStatus: "aquaring"),  // Aqua Ring
+        393: .init(volatileStatus: "magnetrise"),  // Magnet Rise
+        446: .init(sideCondition: "stealthrock", sideConditionTarget: "foeSide"),  // Stealth Rock
+        463: .init(volatileStatus: "partiallytrapped"),  // Magma Storm
+        469: .init(sideCondition: "wideguard", sideConditionTarget: "allySide"),  // Wide Guard
+        476: .init(volatileStatus: "ragepowder"),  // Rage Powder
+        477: .init(volatileStatus: "telekinesis"),  // Telekinesis
+        479: .init(volatileStatus: "smackdown"),  // Smack Down
+        501: .init(sideCondition: "quickguard", sideConditionTarget: "allySide"),  // Quick Guard
+        561: .init(sideCondition: "matblock", sideConditionTarget: "allySide"),  // Mat Block
+        564: .init(sideCondition: "stickyweb", sideConditionTarget: "foeSide"),  // Sticky Web
+        578: .init(sideCondition: "craftyshield", sideConditionTarget: "allySide"),  // Crafty Shield
+        580: .init(terrain: "grassyterrain"),  // Grassy Terrain
+        581: .init(terrain: "mistyterrain"),  // Misty Terrain
+        582: .init(volatileStatus: "electrify"),  // Electrify
+        588: .init(volatileStatus: "kingsshield"),  // King's Shield
+        596: .init(volatileStatus: "spikyshield"),  // Spiky Shield
+        600: .init(volatileStatus: "powder"),  // Powder
+        604: .init(terrain: "electricterrain"),  // Electric Terrain
+        611: .init(volatileStatus: "partiallytrapped"),  // Infestation
+        614: .init(volatileStatus: "smackdown"),  // Thousand Arrows
+        661: .init(volatileStatus: "banefulbunker"),  // Baneful Bunker
+        664: .init(volatileStatus: "sparklingaria"),  // Sparkling Aria
+        671: .init(volatileStatus: "spotlight"),  // Spotlight
+        673: .init(volatileStatus: "laserfocus"),  // Laser Focus
+        678: .init(terrain: "psychicterrain"),  // Psychic Terrain
+        694: .init(sideCondition: "auroraveil", sideConditionTarget: "allySide"),  // Aurora Veil
+        743: .init(volatileStatus: "maxguard"),  // Max Guard
+        748: .init(volatileStatus: "noretreat"),  // No Retreat
+        749: .init(volatileStatus: "tarshot"),  // Tar Shot
+        753: .init(volatileStatus: "octolock"),  // Octolock
+        779: .init(volatileStatus: "partiallytrapped"),  // Snap Trap
+        792: .init(volatileStatus: "obstruct"),  // Obstruct
+        819: .init(volatileStatus: "partiallytrapped"),  // Thunder Cage
+        829: .init(volatileStatus: "powershift"),  // Power Shift
+        852: .init(volatileStatus: "silktrap"),  // Silk Trap
+        864: .init(volatileStatus: "saltcure"),  // Salt Cure
+        880: .init(volatileStatus: "substitute"),  // Shed Tail
+        881: .init(weather: "snowscape"),  // Chilly Reception
+        883: .init(weather: "snowscape"),  // Snowscape
+        903: .init(volatileStatus: "syrupbomb"),  // Syrup Bomb
+        908: .init(volatileStatus: "burningbulwark"),  // Burning Bulwark
+        913: .init(volatileStatus: "dragoncheer"),  // Dragon Cheer
+        917: .init(volatileStatus: "healblock"),  // Psychic Noise
     ]
 }
 

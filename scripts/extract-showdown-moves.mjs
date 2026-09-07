@@ -138,6 +138,27 @@ function readShowdownMove(move) {
   return Object.fromEntries(Object.entries(read).filter(([, value]) => value !== undefined))
 }
 
+/**
+ * The categorical effects — the ones where every move in the category does the same thing and
+ * only the name differs. The engine implements the effect once and asks this table which move
+ * calls it, so a new Reflect-alike or a second snow move cannot go missing behind a hand-kept
+ * id list. Anything expressed as a callback (variable power, fixed damage) is *not* here: those
+ * are one formula per move and stay hand-written.
+ */
+function readEffects(move) {
+  const effect = {}
+  if (move.weather) effect.weather = move.weather
+  if (move.terrain) effect.terrain = move.terrain
+  if (move.sideCondition) {
+    effect.sideCondition = move.sideCondition
+    // Reflect lands on the user's side, Spikes on the target's — the name alone cannot say which.
+    effect.sideConditionTarget = move.target === 'foeSide' ? 'foeSide' : 'allySide'
+  }
+  const volatile = move.volatileStatus ?? move.secondary?.volatileStatus
+  if (volatile && volatile !== 'flinch' && !AILMENT_BY_VOLATILE[volatile]) effect.volatileStatus = volatile
+  return effect
+}
+
 /** Why a move cannot be fixed by data alone — each reason is hand-written engine work. */
 function engineWorkReasons(move) {
   const reasons = []
@@ -209,10 +230,18 @@ const swiftLiteral = (value) => (typeof value === 'string' ? `"${value}"` : Stri
  * Render the override map as a Swift source file. Generated rather than parsed at runtime so
  * the table costs nothing to load and a bad extraction breaks the build instead of a battle.
  */
-function renderSwift(overrides) {
+function renderSwift(overrides, effects) {
   const entries = Object.entries(overrides)
     .map(([id, override]) => [Number(id), override])
     .sort((a, b) => a[0] - b[0])
+
+  const effectLines = Object.entries(effects)
+    .map(([id, effect]) => [Number(id), effect])
+    .sort((a, b) => a[0] - b[0])
+    .map(([id, { name, ...fields }]) => {
+      const parts = Object.entries(fields).map(([field, value]) => `${field}: ${swiftLiteral(value)}`)
+      return `        ${id}: .init(${parts.join(', ')}),  // ${name}`
+    })
 
   const lines = entries.map(([id, { name, ...fields }]) => {
     const parts = []
@@ -252,10 +281,27 @@ struct ShowdownMoveOverride: Sendable {
     var flinchChance: Int?
 }
 
+/// The categorical effect a move calls, if any. The engine implements each effect once and
+/// looks up *which* move calls it here, instead of keeping its own list of ids.
+struct ShowdownMoveEffect: Sendable {
+    /// Showdown's own keys — the engine maps the ones it models and ignores the rest.
+    var weather: String?
+    var terrain: String?
+    var sideCondition: String?
+    /// Which side the condition lands on: \`allySide\` (Reflect) or \`foeSide\` (Spikes).
+    var sideConditionTarget: String?
+    var volatileStatus: String?
+}
+
 enum ShowdownMoveData {
     /// Keyed by PokéAPI move id (Showdown's \`num\`).
     static let overrides: [Int: ShowdownMoveOverride] = [
 ${lines.join('\n')}
+    ]
+
+    /// Keyed the same way. Present only for moves that call one of the categorical effects.
+    static let effects: [Int: ShowdownMoveEffect] = [
+${effectLines.join('\n')}
     ]
 }
 
@@ -294,6 +340,7 @@ async function main() {
   const [showdownMoves, apiMoves] = await Promise.all([loadShowdownMoves(), loadPokeAPIMoves()])
 
   const overrides = {}
+  const effects = {}
   const engineWork = []
   let unmatched = 0
   let metaGapsFilled = 0
@@ -305,6 +352,8 @@ async function main() {
     if (!move.num || move.num <= 0 || !api) { unmatched += 1; continue }
 
     const { changed, hadMeta } = diffAgainstPokeAPI(readShowdownMove(move), api)
+    const effect = readEffects(move)
+    if (Object.keys(effect).length) effects[move.num] = { name: move.name, ...effect }
     const reasons = engineWorkReasons(move)
     // `isNonstandard` marks moves no current game can produce (Z-moves, LGPE, CAP fakemon).
     // They reach the app only if PokéAPI hands one out, so they are not scoping work.
@@ -324,13 +373,14 @@ async function main() {
   await writeFile(workPath, `${JSON.stringify(engineWork, null, 2)}\n`)
   if (swiftPath) {
     await mkdir(dirname(swiftPath), { recursive: true })
-    await writeFile(swiftPath, renderSwift(overrides))
+    await writeFile(swiftPath, renderSwift(overrides, effects))
   }
 
   const byField = Object.entries(fieldCounts).sort((a, b) => b[1] - a[1])
   console.log(`showdown moves      ${Object.keys(showdownMoves).length}`)
   console.log(`no PokéAPI id       ${unmatched}`)
   console.log(`overrides written   ${Object.keys(overrides).length}  → ${outPath}`)
+  console.log(`effects written     ${Object.keys(effects).length}`)
   console.log(`  of those, moves PokéAPI had no meta row for: ${metaGapsFilled}`)
   console.log('\ncorrected fields')
   for (const [field, count] of byField) console.log(`  ${field.padEnd(16)}${count}`)

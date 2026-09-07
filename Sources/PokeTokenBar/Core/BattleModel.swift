@@ -652,16 +652,23 @@ enum BattleWeather: String, Codable, Sendable, Equatable, CaseIterable {
     /// 지속 턴 — 본가의 지닌물건(구슬류)이 없으므로 늘 5턴이다.
     static let duration = 5
 
-    /// 이 날씨를 부르는 기술 — PokéAPI id. 싸라기눈(258)은 9세대에서 눈으로 바뀌었고 데미지가
-    /// 없어졌다. 옛 기술을 옛 규칙으로 따로 두면 세는 자리가 둘이 되므로 눈으로 합친다.
-    static func called(byMoveID id: Int) -> BattleWeather? {
-        switch id {
-        case 241:           return .sun          // 쾌청
-        case 240:           return .rain         // 비바라기
-        case 201:           return .sandstorm    // 모래바람
-        case 883, 258, 881: return .snow         // 눈날림 · 싸라기눈 · 한기의고동
-        default:            return nil
+    /// 쇼다운이 쓰는 키 → 이 열거형. 싸라기눈(`hail`)은 9세대에서 눈으로 바뀌었고 데미지가
+    /// 없어졌다 — 옛 기술을 옛 규칙으로 따로 두면 세는 자리가 둘이 되므로 눈으로 합친다.
+    init?(showdownKey: String) {
+        switch showdownKey.lowercased() {
+        case "sunnyday":            self = .sun
+        case "raindance":           self = .rain
+        case "sandstorm":           self = .sandstorm
+        case "hail", "snowscape":   self = .snow
+        default:                    return nil
         }
+    }
+
+    /// 이 날씨를 부르는 기술인가 — **id 목록을 손으로 들지 않는다.** 어느 기술이 무엇을 부르는지는
+    /// 추출한 데이터(`ShowdownMoveData.effects`)가 답하고, 엔진은 효과만 구현한다. 손 목록이던
+    /// 시절에는 새로 생긴 같은 부류(한기의고동 같은 두 번째 눈 기술)가 조용히 빠졌다.
+    static func called(byMoveID id: Int) -> BattleWeather? {
+        ShowdownMoveData.effects[id]?.weather.flatMap(BattleWeather.init(showdownKey:))
     }
 
     /// 이 타입 기술의 데미지 배율 — 분수로 준다. 실수로 곱하면 두 피어의 값이 갈릴 수 있다.
@@ -689,15 +696,19 @@ enum BattleTerrain: String, Codable, Sendable, Equatable, CaseIterable {
 
     static let duration = 5
 
-    /// 이 필드를 까는 기술 — PokéAPI id.
-    static func called(byMoveID id: Int) -> BattleTerrain? {
-        switch id {
-        case 604: return .electric      // 일렉트릭필드
-        case 580: return .grassy        // 그래스필드
-        case 581: return .misty         // 미스트필드
-        case 678: return .psychic       // 사이코필드
-        default:  return nil
+    init?(showdownKey: String) {
+        switch showdownKey.lowercased() {
+        case "electricterrain": self = .electric
+        case "grassyterrain":   self = .grassy
+        case "mistyterrain":    self = .misty
+        case "psychicterrain":  self = .psychic
+        default:                return nil
         }
+    }
+
+    /// 이 필드를 까는 기술인가 — 날씨와 같은 자리에서 데이터가 답한다.
+    static func called(byMoveID id: Int) -> BattleTerrain? {
+        ShowdownMoveData.effects[id]?.terrain.flatMap(BattleTerrain.init(showdownKey:))
     }
 
     /// 땅에 닿은 **공격자**의 이 타입 기술을 1.3배로 만든다.
@@ -753,20 +764,26 @@ enum BattleSideCondition: String, Codable, Sendable, Equatable, CaseIterable {
     /// 지속 턴 — 본가의 빛의점토가 없으므로 전부 5턴이다.
     static let duration = 5
 
-    /// 이 상태를 까는 기술 — PokéAPI id. 기술이 하나씩이라 표를 따로 두지 않는다.
-    var moveID: Int {
-        switch self {
-        case .reflect:     return 115
-        case .lightScreen: return 113
-        case .auroraVeil:  return 694
-        case .safeguard:   return 219
-        case .mist:        return 54
-        case .luckyChant:  return 381
+    init?(showdownKey: String) {
+        switch showdownKey.lowercased() {
+        case "reflect":     self = .reflect
+        case "lightscreen": self = .lightScreen
+        case "auroraveil":  self = .auroraVeil
+        case "safeguard":   self = .safeguard
+        case "mist":        self = .mist
+        case "luckychant":  self = .luckyChant
+        default:            return nil
         }
     }
 
+    /// 이 상태를 까는 기술인가 — 날씨·필드와 같은 자리에서 데이터가 답한다.
+    ///
+    /// 여기 있는 여섯은 전부 **자기 편에** 깔린다. 상대 편에 깔리는 부류(압정뿌리기·스텔스록)는
+    /// 교체가 있어야 뜻이 있어 아직 없다 — 그때 `sideConditionTarget` 을 보는 분기가 같이 들어온다
+    /// (지금 미리 두면 아무도 밟지 않는 갈래다). 그 전제는
+    /// `ShowdownEffectTableTests` 가 데이터에서 확인한다.
     static func called(byMoveID id: Int) -> BattleSideCondition? {
-        allCases.first { $0.moveID == id }
+        ShowdownMoveData.effects[id]?.sideCondition.flatMap(BattleSideCondition.init(showdownKey:))
     }
 
     /// 이 분류의 데미지를 반으로 깎는가. 오로라베일은 둘 다 깎는 대신 눈이 있어야 깔린다.
