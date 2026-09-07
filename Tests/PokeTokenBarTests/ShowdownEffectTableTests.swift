@@ -20,8 +20,6 @@ final class ShowdownEffectTableTests: XCTestCase {
         "disable", "encore", "taunt", "torment", "imprison", "healblock",
         // 맞은 데미지를 모아 두 배로 되돌려주는 부류 — 기술이 나가기 전에 턴을 잡아먹는 자리가 없다.
         "bide",
-        // HP 대신 맞는 층(대타출동)이 없다 — 데미지·상태 경로 전부를 지나야 한다.
-        "substitute",
         // 다인전 타겟 유도 — 대상을 고르는 자리가 방·웨이브에만 있다.
         "followme", "ragepowder", "spotlight", "helpinghand",
         // 랭크·급소·명중 배율을 한 줄씩 얹는 부류. 얹는 자리는 있고 아직 안 얹었다.
