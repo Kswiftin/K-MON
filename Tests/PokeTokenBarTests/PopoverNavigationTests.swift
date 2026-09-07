@@ -110,6 +110,9 @@ final class PopoverNavigationTests: XCTestCase {
     ///
     /// `goToFocusTimer()` 를 함께 보는 이유: 체인 알림을 누른 사용자가 원하는 것은 **시작 버튼**인데,
     /// 회고가 그 버튼을 정확히 덮는 자리에 뜬다.
+    ///
+    /// **창을 닫았다 여는 경로는 여기서 보지 않는다** — 그 계약은 `PopoverReopenTests` 가 들고 있고,
+    /// 지금은 접히는 것이 설정뿐이라 회고는 남는다(#226).
     func testFocusRecapOverlayFoldsWithTheOthers() {
         let nav = PopoverNavigation()
 
@@ -125,11 +128,6 @@ final class PopoverNavigationTests: XCTestCase {
         nav.showFocusRecap = true
         nav.goToFocusTimer()
         XCTAssertFalse(nav.showFocusRecap, "체인 알림을 눌렀는데 회고가 시작 버튼을 덮고 있다")
-        XCTAssertEqual(nav.tab, .home)
-
-        nav.showFocusRecap = true
-        nav.reset()
-        XCTAssertFalse(nav.showFocusRecap, "팝오버를 닫았다 열었는데 회고가 남아 있다")
         XCTAssertEqual(nav.tab, .home)
     }
 
