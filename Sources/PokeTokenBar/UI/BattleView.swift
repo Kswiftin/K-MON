@@ -121,8 +121,9 @@ struct BattleView: View {
             onChoose: { center.chooseMove($0) },
             onSwitch: { center.switchLAN(to: $0) },
             onForfeit: { center.forfeit() },
-            // 남은 횟수가 없으면 버튼을 안 그린다. 켜 두면 다음 기술 선택과 **한 행동으로** 나간다.
-            onTerastallize: battle.canTerastallize ? { center.toggleTerastalArmed() } : nil,
+            // 켜 두면 다음 기술 선택과 **한 행동으로** 나간다. 다 쓴 뒤에도 버튼은 남는다(비활성).
+            onTerastallize: { center.toggleTerastalArmed() },
+            canTerastallize: battle.canTerastallize,
             isTerastalArmed: battle.terastalArmed,
             chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.chatSenderID,
                                           isEnabled: center.chatIsAvailable,
@@ -161,9 +162,8 @@ struct BattleView: View {
             onChoose: { center.chooseTeamPracticeMove($0) },
             onSwitch: { center.switchTeamPractice(to: $0) },
             onForfeit: { center.forfeit() },
-            // 남은 횟수가 없으면 버튼을 안 그린다 — 눌러도 아무 일 없는 버튼을 두지 않는다.
-            onTerastallize: practice.canTerastallizeMine
-                ? { center.terastallizeTeamPractice() } : nil)
+            onTerastallize: { center.terastallizeTeamPractice() },
+            canTerastallize: practice.canTerastallizeMine)
         .onAppear { replay(practice.events, sides: [.a: engineMine, .b: engineTheirs]) }
         .onChange(of: practice.events.count) {
             replay(practice.events, sides: [.a: engineMine, .b: engineTheirs])
