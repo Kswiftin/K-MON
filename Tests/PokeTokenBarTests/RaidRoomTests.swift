@@ -418,7 +418,7 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.state.boxedMons.count, 1, "뽑혔는데 박스가 비어 있으면 배선이 끊긴 것이다")
         XCTAssertEqual(store.state.boxedMons.first?.currentID, boss.side.snapshot.speciesID,
                        "잡힌 종이 오늘의 보스가 아니다")
-        XCTAssertTrue(store.raidCatchClaimedToday)
+        XCTAssertTrue(store.raidCatchClaimedToday(tier: .three), "이 판은 3★ 원장에 찍혀야 한다")
     }
 
     /// 안 뽑힌 사람은 못 잡는다 — 그래도 정산은 그대로 받는다. 둘이 갈리지 않으면 방 전원이 잡는다.
@@ -445,8 +445,8 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(center.raidPayout, center.raidSettlement?.total, "정산은 그대로 받는다")
     }
 
-    /// **트리거 브랜치**: 1★ 는 이겨도 포획이 없다. 400 HP 를 둘이 몇 턴에 깨는 티어라 열면
-    /// 하루 한 마리가 사실상 보장된 수입이 된다.
+    /// **트리거 브랜치**: 1★ 도 이기면 포획이 있다(포획은 별·인원과 무관하다 — 위 주석 정정 참고).
+    /// 400 HP 를 둘이 몇 턴에 깨는 티어라 열면 하루 한 마리가 사실상 보장된 수입이 된다.
     @MainActor
     func testAOneStarWinGetsTheSameRarityCatchChance() async {
         let store = stubStore(TestClock(), tag: "raid-catch-one-star")
@@ -518,7 +518,7 @@ final class RaidRoomTests: XCTestCase {
 
         XCTAssertEqual(center.raidCatcherID, me.id, "방에 남아 있는 사람만 뽑힌다")
         XCTAssertEqual(store.state.boxedMons.count, 1, "당첨자가 실제로 데려가야 한다")
-        XCTAssertTrue(store.raidCatchClaimedToday)
+        XCTAssertTrue(store.raidCatchClaimedToday(tier: .three), "이 판은 3★ 원장에 찍혀야 한다")
     }
 
     /// **회귀**: 쓰러졌지만 방에 남은 러너는 추첨 대상이다(#270). `hasLeft` 를 안 세우면
@@ -577,8 +577,11 @@ final class RaidRoomTests: XCTestCase {
     func testASecondWinOfTheDayDrawsNoCatcher() async {
         let store = stubStore(TestClock(), tag: "raid-catch-second-win-no-draw")
         await store.hatch(baseID: 20)
-        XCTAssertEqual(store.creditRaidReward(RaidTier.one.baseReward), RaidTier.one.baseReward)
-        XCTAssertTrue(store.raidRewardClaimedToday, "테스트 전제: 별의조각은 이미 받았다")
+        // 이 판이 실제로 겨루는 티어(3★)의 원장을 미리 채운다 — 원장이 티어별로 갈리므로
+        // 1★를 미리 채워도 3★ 승리는 여전히 "이 구간의 첫 승리" 다.
+        XCTAssertEqual(store.creditRaidReward(RaidTier.three.baseReward, tier: .three),
+                       RaidTier.three.baseReward)
+        XCTAssertTrue(store.raidRewardClaimedToday(tier: .three), "테스트 전제: 별의조각은 이미 받았다")
 
         let center = MultiplayerRoomCenter(companion: store)
         let me = runner("나", id: center.myID)
@@ -604,7 +607,7 @@ final class RaidRoomTests: XCTestCase {
     func testAnAlreadyClaimedCatcherIsNeverToldTheyEscaped() async {
         let store = stubStore(TestClock(), tag: "raid-catch-claimed-then-missed")
         await store.hatch(baseID: 20)
-        store.claimRaidCatch()   // 오늘 이미 한 마리 데려왔다
+        store.claimRaidCatch(tier: .three)   // 오늘 이 티어(3★)로 이미 한 마리 데려왔다
 
         let center = MultiplayerRoomCenter(companion: store)
         let me = runner("나", id: center.myID)
@@ -634,7 +637,7 @@ final class RaidRoomTests: XCTestCase {
     func testASecondCatchInTheSameDayTellsTheUserWhy() async {
         let store = stubStore(TestClock(), tag: "raid-catch-claimed-msg")
         await store.hatch(baseID: 20)
-        store.claimRaidCatch()   // 오전에 이미 한 마리 데려왔다
+        store.claimRaidCatch(tier: .three)   // 오전에 이 티어(3★)로 이미 한 마리 데려왔다
 
         let center = await raidWhereIAmDrawn(store)
 
