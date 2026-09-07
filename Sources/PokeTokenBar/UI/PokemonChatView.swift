@@ -156,6 +156,7 @@ struct PokemonChatView: View {
                         .onSubmit(send)
                     Button(action: send) { Image(systemName: "paperplane.fill") }
                         .disabled(draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider == nil)
+                        .accessibilityLabel(l.t("보내기", "Send", "送信"))
                 }
             }.padding(PokemonChatConsentLabel.horizontalPadding)
         }
@@ -445,7 +446,9 @@ private struct PokemonMemoryAlbumView: View {
                 ForEach(album.entries(for: companionID).reversed()) { memory in
                     HStack { VStack(alignment: .leading) { Text(memory.body); Text(memory.createdAt, style: .date).font(.caption2).foregroundStyle(.secondary) }; Spacer()
                         if memory.source == .manual {
-                            Button(role: .destructive) { _ = album.delete(memory) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+                            Button(role: .destructive) { _ = album.delete(memory) } label: { Image(systemName: "trash") }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel(l.t("이 기억 지우기", "Delete this memory", "この思い出を削除"))
                         }
                     }
                 }

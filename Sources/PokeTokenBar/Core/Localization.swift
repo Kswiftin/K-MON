@@ -39,6 +39,10 @@ struct L {
     /// 영어를 봤다 — 같은 줄의 다른 조각은 전부 세 언어를 탄다.
     var experienceUnit: String { t("경험치", "EXP", "経験値") }
 
+    /// 한 화면씩 넘기는 셰브론의 이름. 진화 라인과 도감 카드가 함께 쓴다.
+    var previousPage: String { t("이전", "Previous", "前へ") }
+    var nextPage: String { t("다음", "Next", "次へ") }
+
     /// 트레이너 바의 `NEXT 320p` 가 무슨 단위인지 푼다.
     func trainerNextLevelHint(_ points: Int) -> String {
         t("다음 트레이너 레벨까지 \(points) 포인트",

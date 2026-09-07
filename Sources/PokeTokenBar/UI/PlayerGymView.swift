@@ -42,13 +42,8 @@ struct PlayerGymView: View {
     }
 
     private var header: some View {
-        HStack {
-            Label(l.playerGymTitle, systemImage: "building.columns.fill")
-                .font(.title3.bold()).foregroundStyle(.purple)
-            Spacer()
-            Button { onClose() } label: { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-        }
+        PokedoroOverlayHeader(title: l.playerGymTitle, systemImage: "building.columns.fill",
+                              closeLabel: l.close, onClose: onClose)
     }
 
     @ViewBuilder private var notices: some View {

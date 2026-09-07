@@ -388,6 +388,11 @@ struct BattleView: View {
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.mini)
+                    // 복사 뒤 아이콘이 체크로 바뀌는 것이 유일한 성공 신호다 — 화면 판독기
+                    // 사용자에게는 이름도 함께 바뀌어야 그 신호가 전달된다.
+                    .accessibilityLabel(addressCopied
+                                        ? l.t("주소를 복사했어요", "Address copied", "アドレスをコピーしました")
+                                        : l.t("주소 복사", "Copy address", "アドレスをコピー"))
                     Spacer()
                 }
             }

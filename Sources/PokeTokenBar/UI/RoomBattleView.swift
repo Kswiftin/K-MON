@@ -62,18 +62,14 @@ struct RoomBattleView: View {
     }
 
     private var headerBar: some View {
-        HStack {
-            Label(l.t("2~4인 방 배틀", "Room Battle", "2〜4人ルームバトル"),
-                  systemImage: "person.3.fill").font(.callout).bold()
-            Spacer()
+        PokedoroOverlayHeader(title: l.t("2~4인 방 배틀", "Room Battle", "2〜4人ルームバトル"),
+                              systemImage: "person.3.fill",
+                              closeLabel: l.close) {
             // **방을 먼저 접는다.** 방이 살아 있으면 친구 탭이 활동을 보고 이 화면을 다시
             // 붙잡아(`FriendView.screenHeldByRoom`) 닫기가 눌려도 아무 일이 없는 버튼이 된다.
-            Button {
-                if center.multiplayer.phase != .idle { center.multiplayer.leaveRoom() }
-                initiatedRoom = false
-                onClose()
-            } label: { Image(systemName: "xmark.circle.fill") }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
+            if center.multiplayer.phase != .idle { center.multiplayer.leaveRoom() }
+            initiatedRoom = false
+            onClose()
         }
     }
 

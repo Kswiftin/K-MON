@@ -224,6 +224,7 @@ struct TeamPicker: View {
                 if slot < selection.count,
                    let mon = candidates.first(where: { $0.id == selection[slot] }) {
                     PickedSlot(mon: mon, order: slot + 1,
+                               removeLabel: l.t("팀에서 빼기", "Remove from team", "チームから外す"),
                                onRemove: { toggle(mon.id) })
                 } else {
                     RoundedRectangle(cornerRadius: 6)
@@ -388,6 +389,8 @@ enum TeamPickerSortOrder: CaseIterable, Sendable {
 private struct PickedSlot: View {
     let mon: MonState
     let order: Int
+    /// 이 칸을 빼는 버튼이 읽힐 이름. 이 뷰는 `L` 을 들지 않으므로 부르는 자리가 건넨다.
+    let removeLabel: String
     let onRemove: () -> Void
 
     static let width: CGFloat = 38
@@ -406,6 +409,7 @@ private struct PickedSlot: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
+                    .accessibilityLabel(removeLabel)
             }
             .buttonStyle(.plain)
             .offset(x: 3, y: -3)

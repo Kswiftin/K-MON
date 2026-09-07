@@ -9,13 +9,9 @@ struct PokemonTournamentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(store.l.t("포켓몬 토너먼트", "Pokémon Tournament", "ポケモントーナメント"),
-                      systemImage: "trophy.fill").font(.title3.bold()).foregroundStyle(.orange)
-                Spacer()
-                Button { close() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-            }
+            PokedoroOverlayHeader(title: store.l.t("포켓몬 토너먼트", "Pokémon Tournament", "ポケモントーナメント"),
+                                  systemImage: "trophy.fill",
+                                  closeLabel: store.l.close, onClose: close)
             switch center.phase {
             case .idle: browser
             case .creating, .joining: ProgressView(store.l.t("토너먼트 방에 연결 중…", "Connecting…", "接続中…"))

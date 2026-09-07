@@ -150,6 +150,7 @@ struct FocusTimerView: View {
                 Button { nav.showFocusRecap = true } label: { Image(systemName: "chart.bar.xaxis") }
                     .buttonStyle(.borderless).controlSize(.small)
                     .help(companion.l.t("주간 회고", "Weekly recap", "週間ふりかえり"))
+                    .accessibilityLabel(companion.l.t("주간 회고", "Weekly recap", "週間ふりかえり"))
             }
             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
             todaySessionList

@@ -42,36 +42,32 @@ final class OverlayChromeTests: XCTestCase {
 
     // MARK: 닫기 버튼은 한 벌뿐이다
 
-    private var uiSourceRoot: URL {
-        URL(fileURLWithPath: #filePath)                 // Tests/PokeTokenBarTests/이 파일
-            .deletingLastPathComponent()                // Tests/PokeTokenBarTests
-            .deletingLastPathComponent()                // Tests
-            .deletingLastPathComponent()                // 저장소 루트
-            .appendingPathComponent("Sources/PokeTokenBar/UI")
-    }
-
     /// 닫기 버튼을 화면마다 직접 만들면 아이콘 · 위치 · 라벨이 갈라진다. 갈라진 뒤에는 어느 쪽이
     /// 정본인지 코드만 봐서는 알 수 없어, 다음 오버레이도 가장 가까운 것을 베낀다.
     ///
     /// 접근성이 이 규칙에 얹혀 있다: 아이콘만 있는 버튼은 `help`(마우스 툴팁) 로는 VoiceOver 에
     /// 안 읽힌다. 공용 버튼 한 곳에서 `accessibilityLabel` 까지 달아야 화면이 늘어도 안 샌다.
     ///
-    /// 검사 대상은 `Button(action: onClose)` 라는 **아이콘 버튼 표기**뿐이다. 본문에 라벨이 있는
-    /// `Button(l.battleClose) { … onClose() }`(웨이브 런 결산의 '확인') 는 헤더 닫기가 아니라
-    /// 그 화면의 결론 버튼이라 규칙 밖이다.
+    /// **표기가 아니라 하는 일로 본다.** 처음엔 `Button(action: onClose)` 라는 문자열만 찾았는데,
+    /// 그 한 표기를 치우고 나서도 `Button { close() }` 로 쓴 닫기가 네 곳(`PlayerGymView` ·
+    /// `PokemonTournamentView` · `PokemonTradeView` · `RoomBattleView`) 그대로 살아 있었다 —
+    /// 가드가 초록인 채로 규칙이 절반만 지켜졌다. 그래서 "아이콘만 있는 버튼이 닫기 동작을
+    /// 부른다" 로 넓힌다.
+    ///
+    /// 본문에 라벨이 있는 `Button(l.battleClose) { … onClose() }`(웨이브 런 결산의 '확인') 는
+    /// 헤더 닫기가 아니라 그 화면의 결론 버튼이라 규칙 밖이다.
     func testNoScreenBuildsItsOwnCloseButton() throws {
-        let files = FileManager.default.enumerator(at: uiSourceRoot, includingPropertiesForKeys: nil)?
-            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
+        let files = SwiftSourceScan.files(under: "UI", from: #filePath)
         // 경로가 깨지면 빈 목록을 훑고 조용히 통과한다 — 그걸 막는 단언.
         XCTAssertGreaterThan(files.count, 10, "UI 소스를 못 찾았다 — 경로가 깨지면 가드가 무력해진다")
 
         var offenders: [String] = []
         for file in files where file.lastPathComponent != "PokedoroTheme.swift" {
-            for (index, line) in try String(contentsOf: file, encoding: .utf8)
-                .components(separatedBy: .newlines).enumerated()
-            where !line.trimmingCharacters(in: .whitespaces).hasPrefix("//")
-                && line.contains("Button(action: onClose)") {
-                offenders.append("\(file.lastPathComponent):\(index + 1)")
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: .newlines)
+            for block in SwiftSourceScan.buttonBlocks(in: lines)
+            where SwiftSourceScan.isIconOnly(block.text)
+                && (block.text.contains("onClose") || block.text.contains("close()")) {
+                offenders.append("\(file.lastPathComponent):\(block.start + 1)")
             }
         }
         XCTAssertEqual(offenders, [],

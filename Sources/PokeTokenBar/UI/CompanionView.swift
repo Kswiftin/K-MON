@@ -259,6 +259,10 @@ struct SpriteView: View {
 struct EvoLineView: View {
     let nodes: [EvoLineItem]
     let mysteryLabel: String
+    /// 넘김 셰브론이 화면 판독기에 읽힐 이름. 이 뷰는 `L` 을 들지 않고 필요한 문구만 받는다
+    /// (`mysteryLabel` 과 같은 방식) — 도감 카드와 파트너 카드가 둘 다 쓴다.
+    let pageBackLabel: String
+    let pageForwardLabel: String
     var thumb: CGFloat = 40
     var shiny: Bool = false     // 개체가 shiny 면 라인 전체를 shiny 스프라이트로
     var names: [Int: String]? = nil   // 제공되면 각 스프라이트 밑에 작은 이름 라벨(도감 단계별 이름)
@@ -384,6 +388,7 @@ struct EvoLineView: View {
             } label: {
                 Image(systemName: forward ? "chevron.right" : "chevron.left")
                     .font(.system(size: 9, weight: .bold))
+                    .accessibilityLabel(forward ? pageForwardLabel : pageBackLabel)
                     .foregroundStyle(.secondary)
                     .frame(width: 16, height: 16)
                     .background(.regularMaterial, in: Circle())
@@ -599,6 +604,7 @@ struct CompanionHeader: View {
                                 .onSubmit { commitNickname() }
                             Button(action: commitNickname) { Image(systemName: "checkmark") }
                                 .buttonStyle(.borderless).controlSize(.small)
+                                .accessibilityLabel(store.l.t("이름 저장", "Save name", "名前を保存"))
                         } else {
                             Text(store.displayName).font(.callout.weight(.semibold))
                             if store.currentIsShiny { Text("✨").font(.system(size: 11)) }
@@ -614,6 +620,7 @@ struct CompanionHeader: View {
                                     editingName = true
                                 } label: { Image(systemName: "pencil").font(.system(size: 10)) }
                                 .buttonStyle(.borderless).controlSize(.mini)
+                                .accessibilityLabel(store.l.t("이름 바꾸기", "Rename", "名前を変更"))
                                 .foregroundStyle(.secondary)
                             }
                         }
@@ -730,7 +737,9 @@ struct CompanionHeader: View {
             }
             if store.hasActive, !store.lineNodes.isEmpty {
                 // 폭을 안 주면 분기 라인(이브이)이 넘쳐 팝오버 콘텐츠 전체가 좌우로 잘린다.
-                EvoLineView(nodes: store.lineNodes, mysteryLabel: store.l.unknownNextEvolution, shiny: store.currentIsShiny,
+                EvoLineView(nodes: store.lineNodes, mysteryLabel: store.l.unknownNextEvolution,
+                            pageBackLabel: store.l.previousPage, pageForwardLabel: store.l.nextPage,
+                            shiny: store.currentIsShiny,
                             maxWidth: PopoverMetrics.contentWidth)
             }
             if store.hasActive {
@@ -2184,7 +2193,8 @@ private struct DexEntryRow: View {
                 }
             }
             EvoLineView(nodes: entry.chainOrder.map { EvoLineItem(.species($0), .done) },
-                        mysteryLabel: store.l.unknownNextEvolution, thumb: 56,
+                        mysteryLabel: store.l.unknownNextEvolution,
+                        pageBackLabel: store.l.previousPage, pageForwardLabel: store.l.nextPage, thumb: 56,
                         shiny: entry.isShiny, names: names,
                         maxWidth: PopoverMetrics.contentWidth - Self.cardPadding * 2)
             if let caughtAt = entry.caughtAt {

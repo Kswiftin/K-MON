@@ -67,12 +67,14 @@ struct FocusRecapView: View {
                 Image(systemName: "chevron.left")
             }
             .buttonStyle(.borderless)
+            .accessibilityLabel(l.t("지난 주", "Previous week", "先週"))
             .disabled(weeksAgo >= FocusWeekRecap.maxWeeksBack)
             Spacer()
             Text(weekTitle(recap)).font(.caption.weight(.semibold)).monospacedDigit()
             Spacer()
             Button { weeksAgo = max(weeksAgo - 1, 0) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(l.t("다음 주", "Next week", "翌週"))
                 .disabled(weeksAgo == 0)
         }
     }

@@ -15,14 +15,9 @@ struct PokemonTradeView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            HStack {
-                Label(store.l.t("포켓몬 교환", "Pokémon Trade", "ポケモン交換"),
-                      systemImage: "arrow.left.arrow.right.circle.fill")
-                    .font(.title3.bold())
-                Spacer()
-                Button { close() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-            }
+            PokedoroOverlayHeader(title: store.l.t("포켓몬 교환", "Pokémon Trade", "ポケモン交換"),
+                                  systemImage: "arrow.left.arrow.right.circle.fill",
+                                  closeLabel: store.l.close, onClose: close)
             Divider()
             content
         }

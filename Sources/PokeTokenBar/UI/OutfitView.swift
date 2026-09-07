@@ -64,8 +64,10 @@ struct OutfitView: View {
             HStack(spacing: 24) {
                 Button { rotate(-1) } label: { Image(systemName: "chevron.left") }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel(l.t("왼쪽으로 돌리기", "Turn left", "左に回す"))
                 Button { rotate(1) } label: { Image(systemName: "chevron.right") }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel(l.t("오른쪽으로 돌리기", "Turn right", "右に回す"))
             }
         }
         .frame(maxWidth: .infinity)

@@ -487,8 +487,10 @@ struct PokeathlonView: View {
                 .buttonStyle(.borderedProminent).tint(.green).keyboardShortcut(.rightArrow, modifiers: [])
                 Button { center.pokeathlonInput(.dodgeLeft) } label: { Image(systemName: "arrow.up") }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.upArrow, modifiers: [])
+                    .accessibilityLabel(store.l.t("위로 피하기", "Dodge up", "上によける"))
                 Button { center.pokeathlonInput(.dodgeRight) } label: { Image(systemName: "arrow.down") }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.downArrow, modifiers: [])
+                    .accessibilityLabel(store.l.t("아래로 피하기", "Dodge down", "下によける"))
                 Button { center.pokeathlonInput(.switchPokemon) } label: {
                     Label(store.l.t("교대  C", "SWITCH  C", "交代  C"), systemImage: "arrow.triangle.2.circlepath")
                         .frame(maxWidth: .infinity).padding(.vertical, 5)
