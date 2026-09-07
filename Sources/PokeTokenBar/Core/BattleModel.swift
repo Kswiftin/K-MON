@@ -964,7 +964,13 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// 끝에 1 로 줄고 다음 턴 끝에 풀리므로, 노리던 "다음 턴 한 방"에만 배율이 살아 있다. 1 로
     /// 두면 건 턴 끝에 풀려 아무 기술도 못 받고, 0(무기한)으로 두면 충전이 전기 기술을 영구히
     /// 두 배로 만든다.
-    var selfDuration: Int { (self == .charge || self == .laserFocus) ? 2 : 0 }
+    var selfDuration: Int {
+        switch self {
+        case .charge, .laserFocus: return 2
+        case .aquaRing, .ingrain, .focusEnergy, .minimize, .defenseCurl,
+             .leechSeed, .nightmare, .curse, .partiallyTrapped: return 0
+        }
+    }
 
     /// 이 상태가 얹는 급소 단계. 레이저포커스는 3 을 얹어 표의 상한(100%)에 닿는다 —
     /// "확정 급소" 를 따로 표현하지 않는 이유가 그것이다(`critThreshold` 가 이미 잠근다).
@@ -973,7 +979,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         switch self {
         case .focusEnergy: return 2
         case .laserFocus:  return 3
-        default:           return 0
+        case .minimize, .defenseCurl, .charge, .aquaRing, .ingrain,
+             .leechSeed, .nightmare, .curse, .partiallyTrapped: return 0
         }
     }
 
