@@ -37,11 +37,15 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
-      # 게이트 앞에 빌드 단계를 두지 않는다. 두면 게이트의 `swift test` 가 warm build 가 되고,
-      # **warm build 는 컴파일러 warning 을 다시 찍지 않는다** — 게이트의 warning 검사가 통째로
-      # 헛돈다(`test-gate.sh` 의 warning 절). 실제로 #274 의 미사용 바인딩 경고 3건이 그 길로
-      # 초록을 받고 `main` 에 들어갔다. 컴파일 오류는 게이트가 같은 잡에서 어차피 잡고,
-      # 릴리스 구성은 release.yml 의 build-app.sh 가 본다.
+      # 게이트 앞에 빌드 단계를 두지 않는다. 두면 게이트 안에서 모듈을 컴파일하는 유일한 빌드
+      # (`mutator-sweep.sh` 의 `swift build --enable-code-coverage`)가 no-op 이 되고,
+      # **재컴파일이 없는 빌드는 컴파일러 warning 을 다시 찍지 않는다** — 게이트의 warning 검사가
+      # 볼 로그가 비어 버린다. #274 의 미사용 바인딩 경고 3건이 그 길로 초록을 받고 `main` 에
+      # 들어갔다. 컴파일 오류는 게이트가 같은 잡에서 어차피 잡고, 릴리스 구성은 release.yml 의
+      # build-app.sh 가 본다.
+      #
+      # 이 규칙은 주석이 아니라 게이트가 지킨다 — `test-gate.sh` 는 컴파일 흔적이 없는 로그를
+      # CI 에서 통과시키지 않는다(관측 없음 ≠ 위반 없음). 아래 단계를 되돌려도 게이트가 빨강이 된다.
       #
       # test-gate.sh 는 `swift test --enable-code-coverage` 를 돌린 뒤 로직 코어 파일의 라인
       # 커버리지 하한을 지킨다. 맨 `swift test` 를 대신하는 자리다 — 테스트는 그대로 돌고

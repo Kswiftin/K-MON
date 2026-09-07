@@ -55,7 +55,16 @@ read_when:
 - **같은 버전 재사용 불가.** `release.sh` 가 로컬·원격 태그 존재를 막으므로, 실패한 태그는
   `git tag -d` + `git push origin :refs/tags/<tag>` 로 지운 뒤 다시 시작한다.
 - **로컬 warm build 는 warning 을 숨긴다.** `test-gate.sh` 의 warning 검사는 재컴파일 로그에 의존하므로
-  로컬에서는 `swift package clean` 뒤에 돌린다. 신뢰 기준은 매번 cold build 인 CI 다.
+  로컬에서는 `swift package clean` 뒤에 돌린다. 신뢰 기준은 매번 cold build 인 CI 다(태그 push 뒤
+  `release.yml` 이 게이트를 새 러너에서 다시 돌린다).
+  지금은 게이트가 그 상태를 **말한다** — 컴파일 흔적이 없으면 조용한 ✓ 대신 "warm build — warning
+  검사가 아무것도 보지 못했습니다" 를 찍고, CI 에서는 실패한다. 그 줄이 보이면 경고 0건은 증거가
+  아니다(#274 의 미사용 바인딩 3건이 정확히 그 구별 없음으로 `main` 에 들어갔다).
+- **`main` 은 검사받지 않는다 — 검사받는 것은 PR 이다.** `ci.yml` 의 `build-test` 가
+  `pull_request` 에서만 도는 것은 macOS 러너 10배 과금 때문에 내린 명시적 결정이다(근거와 되돌릴
+  조건은 `defect-log.md` 의 같은 항목). 그래서 두 PR 이 교차 머지된 `main` 조합은 어느 잡도 검사한
+  적이 없다. 릴리스 전 `main` 상태를 믿을 근거는 태그 push 뒤 `release.yml` 이 새 러너에서 돌리는
+  게이트 하나다 — 그 런이 초록이 되기 전에는 배포된 것으로 치지 않는다.
 - **커버리지 숫자는 증거가 아니다.** 새 조건 분기를 넣었으면 `xcrun llvm-cov show ... --show-regions` 로
   `^0` 을 직접 본다. 새 로직 코어 파일은 `test-gate.sh` 의 `LOGIC_CORE` 배열에 넣어야 세어진다 —
   넣지 않으면 게이트 밖에서 무테스트로 남는다(2.9.0 에서 `GymLeague.swift` 가 그 상태였다).
