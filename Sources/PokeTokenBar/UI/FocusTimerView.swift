@@ -277,6 +277,11 @@ struct FocusTimerView: View {
                  ? "🎉 신비한 알 \(count)개 발견!"
                  : "🎉 신비한 알 발견!")
                 .font(.caption.weight(.semibold)).foregroundStyle(.purple)
+        case .experience(let main, let party, let partyCount):
+            Text(partyCount > 0
+                 ? "메인 +\(GameNumberFormatter.compact(main)) EXP · 파티 \(partyCount)마리 +\(GameNumberFormatter.compact(party / partyCount)) EXP씩"
+                 : "메인 +\(GameNumberFormatter.compact(main)) EXP")
+                .font(.caption2).foregroundStyle(.blue)
         case .settled(let stardust):
             // 첫 줄일 때만 강조한다 — 알 줄이 위에 오면 그쪽이 머리글이라 둘 다 굵으면 서로 밀린다.
             Text(companion.l.claimSettled(stardust))
@@ -314,7 +319,8 @@ struct FocusTimerView: View {
     private func rewardText(_ minutes: Int) -> String {
         let reward = AdventureRules.amounts(minutes: minutes)
         let fragments = minutes >= 90 ? 6 : (minutes >= 50 ? 3 : 1)
-        return "+\(GameNumberFormatter.compact(reward.experience)) \(companion.l.experienceUnit)"
+        return "메인 +\(GameNumberFormatter.compact(reward.experience)) \(companion.l.experienceUnit)"
+            + " · 파티 각 +\(GameNumberFormatter.compact(reward.experience * 3 / 10))"
             + " · +\(GameNumberFormatter.compact(reward.starPieces)) ⭐ · +\(fragments) 🧩"
     }
 }

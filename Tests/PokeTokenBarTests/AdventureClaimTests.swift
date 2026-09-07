@@ -44,6 +44,67 @@ final class AdventureClaimTests: XCTestCase {
                        "세션 보상은 claimAdventure() 결과 그대로 — 별도 가산이면 이중 지급이다")
     }
 
+    func testAdventurePartyAwardsFullExperienceToLeadAndThirtyPercentToFiveReserves() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        let leadID = try! XCTUnwrap(store.activeMonID)
+        let reserves = (20..<26).map {
+            MonState(baseID: $0, pathIDs: [$0], stageIndex: 0, usedAtStage: 0,
+                     rarity: .common, totalForms: 1)
+        }
+        store.debugSetBoxedMons(reserves)
+        store.setHomeParty([leadID] + reserves.map(\.id))
+
+        XCTAssertEqual(store.homeParty.count, 6, "홈 파티는 메인 포함 여섯 마리까지만 저장한다")
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        let rewardedParty = store.homeParty.map(\.id)
+
+        clock.advance(25 * 60)
+        let reward = try! XCTUnwrap(store.claimAdventure())
+        let full = AdventureRules.amounts(minutes: 25).experience
+        let shared = full * 3 / 10
+        XCTAssertEqual(store.ownedMons.first(where: { $0.id == leadID })?.levelExperience, full)
+        for id in rewardedParty.dropFirst() {
+            XCTAssertEqual(store.ownedMons.first(where: { $0.id == id })?.levelExperience, shared)
+        }
+        XCTAssertEqual(store.ownedMons.first(where: { $0.id == reserves.last?.id })?.levelExperience, 0,
+                       "일곱 번째 개체는 파티 밖이라 경험치를 받지 않는다")
+        XCTAssertEqual(reward.partyExperience, shared * 5)
+        XCTAssertEqual(reward.partyMemberCount, 5)
+        XCTAssertEqual(reward.totalExperience, full + shared * 5)
+    }
+
+    func testChangingHomePartyDuringAdventureChangesWhoGetsExperienceAtClaimTime() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        let first = MonState(baseID: 20, pathIDs: [20], stageIndex: 0, usedAtStage: 0,
+                             rarity: .common, totalForms: 1)
+        let second = MonState(baseID: 21, pathIDs: [21], stageIndex: 0, usedAtStage: 0,
+                              rarity: .common, totalForms: 1)
+        store.debugSetBoxedMons([first, second])
+        store.setHomeParty([first.id])
+        XCTAssertTrue(store.startFocusAdventure(minutes: 25))
+        store.setHomeParty([second.id])
+
+        clock.advance(25 * 60)
+        XCTAssertNotNil(store.claimAdventure())
+        let shared = AdventureRules.amounts(minutes: 25).experience * 3 / 10
+        XCTAssertEqual(store.ownedMons.first(where: { $0.id == first.id })?.levelExperience, 0)
+        XCTAssertEqual(store.ownedMons.first(where: { $0.id == second.id })?.levelExperience, shared)
+    }
+
+    func testHomePartyAlwaysKeepsActiveFirstAndRejectsMissingOrDuplicateIDs() async {
+        let clock = TestClock()
+        let store = await hatchedStore(clock)
+        let leadID = try! XCTUnwrap(store.activeMonID)
+        let reserve = MonState(baseID: 25, pathIDs: [25], stageIndex: 0, usedAtStage: 0,
+                               rarity: .common, totalForms: 1)
+        store.debugSetBoxedMons([reserve])
+        store.setHomeParty([reserve.id, reserve.id, UUID()])
+
+        XCTAssertEqual(store.homeParty.map(\.id), [leadID, reserve.id])
+    }
+
     /// 세션 기록은 **재기동을 넘긴다** — 같은 디렉토리로 새 스토어를 세워도 오늘 집계가 살아 있다.
     /// `FocusTimer.completedSessions` 가 못 하던 바로 그것이고, 터미널의 "오늘 마친 집중 N회" 가
     /// 문구대로 동작하려면 반드시 필요한 성질이다.

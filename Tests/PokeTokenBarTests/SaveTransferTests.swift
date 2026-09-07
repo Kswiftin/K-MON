@@ -645,7 +645,7 @@ final class SaveTransferTests: XCTestCase {
                                      "technicalMachines",
                                      // 트레이너 꾸미기 — 산 의상과 착용 상태는 진행이라 그대로 따라간다.
                                      "outfit", "ownedOutfits", "battleRepresentativeID",
-                                     "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons",
+                                     "activeSecondsTotal", "activeSecondsToday", "activeSecondsDate", "boxedMons", "homePartyIDs",
                                      // 즐겨찾기는 그 개체에 건 잠금이다 — 개체가 따라가는데 잠금만
                                      // 두고 오면 옮긴 기기에서 아끼던 포켓몬이 그냥 놓아줄 수 있게 된다.
                                      "favoriteMonIDs",

@@ -507,6 +507,31 @@ final class CompanionStore {
     var boxedMons: [MonState] { state.boxedMons }
     var ownedMons: [MonState] { (state.active.map { [$0] } ?? []) + state.boxedMons }
 
+    /// 홈에 편성한 모험 파티. 메인 파트너를 첫 칸에 강제하고, 사라진 개체·중복·7번째 이후는
+    /// 읽는 자리에서도 제거해 구버전/교환 직후의 낡은 UUID가 보상 대상으로 살아나지 않게 한다.
+    var homeParty: [MonState] {
+        guard let active = state.active else { return [] }
+        let owned = Dictionary(uniqueKeysWithValues: deployableMons.map { ($0.id, $0) })
+        var seen: Set<UUID> = [active.id]
+        let reserves = state.homePartyIDs.compactMap { id -> MonState? in
+            guard seen.insert(id).inserted, let mon = owned[id] else { return nil }
+            return mon
+        }
+        return Array(([active] + reserves).prefix(6))
+    }
+
+    func setHomeParty(_ ids: [UUID]) {
+        guard let active = state.active else { return }
+        let owned = Set(deployableMons.map(\.id))
+        var seen: Set<UUID> = [active.id]
+        let reserves = ids.compactMap { id -> UUID? in
+            guard id != active.id, owned.contains(id), seen.insert(id).inserted else { return nil }
+            return id
+        }
+        state.homePartyIDs = [active.id] + Array(reserves.prefix(5))
+        save()
+    }
+
     // MARK: 즐겨찾기 (놓아주기·경매 출품 잠금)
 
     func isFavorite(_ id: UUID) -> Bool { state.favoriteMonIDs.contains(id) }
@@ -1393,9 +1418,27 @@ final class CompanionStore {
         // 정산된다. 예전엔 이 블록을
         // 통째로 건너뛰어 전량이 조용히 사라지면서 `appliedExperience` 는 전량 적립됐다고
         // 보고했다. 상한 초과분과 정확히 같은 부류다.
-        let oldLevel = state.active?.level ?? 0
-        reward.overflowExperience = awardExperience(reward.experience)
-        let newLevel = state.active?.level ?? 0
+        // 모험 시작 때가 아니라 **수령 순간의 홈 파티**가 받는다. 진행 중 편성을 바꿔 성장 대상을
+        // 고를 수 있어야 하므로 AdventureRun에는 파티 스냅샷을 저장하지 않는다.
+        let recipients = homeParty.prefix(6).map(\.id)
+        let mainID = recipients.first
+        let oldLevel = state.active?.id == mainID ? state.active?.level ?? 0 : 0
+        var overflow = 0
+        if let mainID {
+            overflow += awardExperience(reward.experience, to: mainID)
+        } else {
+            // 모험 중 파티 전원이 교환·졸업으로 떠났다면 기존의 "받을 개체 없음" 규칙대로
+            // 메인 몫 전량을 초과 경험치로 환산한다.
+            overflow += reward.experience
+        }
+        let sharedAmount = reward.experience * 3 / 10
+        for id in recipients.dropFirst() {
+            overflow += awardExperience(sharedAmount, to: id)
+            reward.partyExperience += sharedAmount
+            reward.partyMemberCount += 1
+        }
+        reward.overflowExperience = overflow
+        let newLevel = state.active?.id == mainID ? state.active?.level ?? 0 : 0
         applyUsage(0)   // 활성 개체가 없으면 그대로 되돌아온다.
         if newLevel > oldLevel { queueMoveLearning(from: oldLevel + 1, through: newLevel) }
         if reward.foundRareCandy { state.inventory[ItemKind.rareCandy.rawValue, default: 0] += 1 }
@@ -1469,6 +1512,28 @@ final class CompanionStore {
         // 별의조각도 알림 없이 들어간다.
         if hadPartner {
             notifyCompanionEvent(l.notifMaxLevelOverflowTitle, l.notifMaxLevelOverflowBody(stardust))
+        }
+        return overflow
+    }
+
+    /// 지정한 모험 파티원에게 경험치를 준다. 활성 파트너와 박스 개체를 같은 산술로 처리하고,
+    /// 만렙 초과분은 기존 규칙대로 별의조각으로 환산한다.
+    private func awardExperience(_ amount: Int, to id: UUID) -> Int {
+        let overflow: Int
+        let isActive = state.active?.id == id
+        if isActive {
+            overflow = state.active!.gainExperience(amount)
+        } else if let index = state.boxedMons.firstIndex(where: { $0.id == id }) {
+            overflow = state.boxedMons[index].gainExperience(amount)
+        } else {
+            return max(0, amount)
+        }
+        let stardust = PokemonBalance.starPieces(forOverflowExperience: overflow)
+        if stardust > 0 {
+            state.starPieces += stardust
+            if isActive {
+                notifyCompanionEvent(l.notifMaxLevelOverflowTitle, l.notifMaxLevelOverflowBody(stardust))
+            }
         }
         return overflow
     }

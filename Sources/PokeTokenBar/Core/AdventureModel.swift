@@ -47,12 +47,16 @@ struct AdventureReward: Sendable, Equatable {
     /// 만렙에 걸려 개체에 적립되지 못한 경험치(원 단위). 위 넷과 같은 계약으로 이 몫도 지갑에
     /// 들어가 있다 — 다만 지급 단위가 경험치가 아니라 그 환산분(`overflowBonus`)이다.
     var overflowExperience = 0
+    /// 서브 파티원들에게 실제로 지급을 시도한 경험치 합계(각각 메인 보상의 30%).
+    var partyExperience = 0
+    var partyMemberCount = 0
     /// 위 초과분을 되돌린 별의조각. 저장하지 않고 계산한다 — 원 단위와 환산분을 각각 저장하면
     /// 둘이 어긋난 상태가 표현 가능해진다.
     var overflowBonus: Int { PokemonBalance.starPieces(forOverflowExperience: overflowExperience) }
     /// 실제로 개체에 들어간 경험치. 만렙이면 `experience` 보다 작다 — 굴린 값을 그대로 "얻은
     /// 경험치" 로 보고하면 오르지도 않은 레벨을 올랐다고 말하게 된다.
-    var appliedExperience: Int { experience - overflowExperience }
+    var totalExperience: Int { experience + partyExperience }
+    var appliedExperience: Int { totalExperience - overflowExperience }
     var stardust: Int { starPieces }
     /// 이 정산이 지갑에 더한 별의조각 **전부**. 지급 경로가 하나 늘 때 합산 지점(대화 도구·
     /// 테스트)이 따라오지 않는 부류를 이 한 곳으로 막는다 — 실제로 미션 몫이 그렇게 빠졌었다.
@@ -68,6 +72,8 @@ enum ClaimBannerLine: Equatable {
     /// 이번 정산으로 들어온 알. **개수를 싣는다** — 조각 완성 · 주간 10회 · 희귀 알이 겹치면 둘
     /// 이상이 함께 들어오는데, "한 개 찾았다" 로 뭉치면 나머지가 화면에서 사라진다.
     case eggs(Int)
+    /// 메인 파트너 100%와 서브 파티 총 지급량. 정산 직후 어느 포켓몬이 성장했는지 숨기지 않는다.
+    case experience(main: Int, party: Int, partyCount: Int)
     /// 지갑에 더해진 별의조각 **전부**(`totalStardust`).
     case settled(Int)
     /// 위 금액 중 만렙에 걸린 경험치를 되돌린 몫(#82). 따로 더 받은 게 아니다.
@@ -82,6 +88,7 @@ extension AdventureReward {
     var bannerLines: [ClaimBannerLine] {
         var lines: [ClaimBannerLine] = []
         if bonusEggs > 0 { lines.append(.eggs(bonusEggs)) }
+        lines.append(.experience(main: experience, party: partyExperience, partyCount: partyMemberCount))
         lines.append(.settled(totalStardust))
         if overflowBonus > 0 { lines.append(.overflowConverted(overflowBonus)) }
         if foundRareCandy { lines.append(.rareCandy) }

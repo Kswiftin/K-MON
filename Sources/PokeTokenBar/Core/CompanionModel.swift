@@ -1062,6 +1062,8 @@ struct CompanionState: Codable, Sendable {
     // 현재 포켓몬(없으면 알)
     var active: MonState?
     var boxedMons: [MonState] = []
+    /// 홈 모험 파티. 첫 슬롯은 항상 활성 파트너이며 나머지 다섯 슬롯만 사용자가 고른다.
+    var homePartyIDs: [UUID] = []
     /// 즐겨찾기한 개체 ID — 놓아주기·경매 출품을 막는 자물쇠.
     ///
     /// `MonState` 에 두지 않는 이유: 개체는 교환으로 그대로 상대에게 건너간다(`performTrade` 가
@@ -1164,6 +1166,7 @@ struct CompanionState: Codable, Sendable {
         // active 손상(빈 pathIDs 등) → 알로 폴백하되 도감·인벤토리는 보존.
         active             = c.lenientOptional(MonState.self, forKey: .active)
         boxedMons          = c.lenient([Lossy<MonState>].self, forKey: .boxedMons, default: []).compactMap(\.value)
+        homePartyIDs       = c.lenient([UUID].self, forKey: .homePartyIDs, default: [])
         favoriteMonIDs     = c.lenient(Set<UUID>.self, forKey: .favoriteMonIDs, default: [])
         // 도감은 항목별 격리 — 손상 항목 하나가 도감 전체를 날리지 않게.
         dex                = c.lenient([Lossy<DexEntry>].self, forKey: .dex, default: []).compactMap(\.value)

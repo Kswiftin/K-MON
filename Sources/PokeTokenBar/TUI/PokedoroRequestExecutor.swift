@@ -1148,6 +1148,9 @@ struct PokedoroRequestExecutor {
         reward.bannerLines.map { line in
             switch line {
             case .eggs(let count): "신비한 알 +\(count)"
+            case .experience(let main, let party, let partyCount):
+                partyCount > 0 ? "경험치 메인 +\(TUIRender.number(main)), 파티 \(partyCount)마리 +\(TUIRender.number(party / partyCount))씩"
+                               : "경험치 +\(TUIRender.number(main))"
             case .settled(let stardust): "별의조각 +\(TUIRender.number(stardust))"
             case .overflowConverted(let stardust): "(만렙 초과분 \(TUIRender.number(stardust)) 환산 포함)"
             case .rareCandy: "이상한사탕 +1"

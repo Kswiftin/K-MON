@@ -494,6 +494,7 @@ struct CompanionHeader: View {
     /// 접혀 있으면 팝오버를 열 때마다 한 번 더 눌러야 했다. 접으면 그 팝오버가 열려 있는 동안은
     /// 접힌 채로 있고, 닫았다 열면 다시 펼쳐진다(`@State` 라 팝오버 생명주기를 따른다).
     @State private var showingMoves = true
+    @State private var showingAdventureParty = false
     /// 홈에서도 배틀에 적용되는 기본 특성을 바로 확인할 수 있게 한다.
     @State private var abilityText: String?
 
@@ -519,6 +520,28 @@ struct CompanionHeader: View {
         }
         .buttonStyle(.borderless).controlSize(.mini)
         .accessibilityLabel(store.l.itemName(.rareCandy))
+    }
+
+    @ViewBuilder
+    private var adventurePartySection: some View {
+        if store.hasActive, store.ownedMons.count > 1 {
+            let activeIDs = Set([store.activeMonID].compactMap { $0 })
+            DisclosureGroup(isExpanded: $showingAdventureParty) {
+                TeamPicker(store: store,
+                           selection: Binding(get: { store.homeParty.map(\.id) },
+                                              set: { store.setHomeParty($0) }),
+                           limit: 6,
+                           title: "모험 파티",
+                           requiredIDs: activeIDs)
+                Text("보상 수령 시 메인 파트너는 경험치 100%, 나머지 파티원은 각각 30%를 받습니다.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } label: {
+                Label("모험 파티 \(store.homeParty.count)/6", systemImage: "person.3.fill")
+                    .font(.caption.weight(.semibold))
+            }
+            .padding(8)
+            .pokedoroCard()
+        }
     }
 
     var body: some View {
@@ -739,6 +762,7 @@ struct CompanionHeader: View {
                 }
                 Spacer()
             }
+            adventurePartySection
             if store.hasActive, !store.lineNodes.isEmpty {
                 // 폭을 안 주면 분기 라인(이브이)이 넘쳐 팝오버 콘텐츠 전체가 좌우로 잘린다.
                 EvoLineView(nodes: store.lineNodes, mysteryLabel: store.l.unknownNextEvolution,
