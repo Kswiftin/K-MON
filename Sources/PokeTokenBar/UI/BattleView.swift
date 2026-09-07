@@ -121,6 +121,9 @@ struct BattleView: View {
             onChoose: { center.chooseMove($0) },
             onSwitch: { center.switchLAN(to: $0) },
             onForfeit: { center.forfeit() },
+            // 남은 횟수가 없으면 버튼을 안 그린다. 켜 두면 다음 기술 선택과 **한 행동으로** 나간다.
+            onTerastallize: battle.canTerastallize ? { center.toggleTerastalArmed() } : nil,
+            isTerastalArmed: battle.terastalArmed,
             chat: BattleChatConfiguration(messages: center.chatMessages, mySenderID: center.chatSenderID,
                                           isEnabled: center.chatIsAvailable,
                                           unavailableMessage: center.chatLockMessage,

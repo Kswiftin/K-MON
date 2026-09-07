@@ -207,6 +207,74 @@ final class BattleTeraTests: XCTestCase {
         XCTAssertEqual(hurt.rng.next(), healthy.rng.next())
     }
 
+    /// LAN 은 **한 행동으로** 선언한다 — 선언과 기술이 나뉘면 사이에 상대 행동이 끼어들고
+    /// 두 피어의 순서가 갈린다.
+    func testLanDeclaresTerastalAsPartOfTheSameAction() {
+        let declared = NetBattleAction.terastallizeAndMove(index: 2)
+        XCTAssertTrue(declared.declaresTerastal)
+        XCTAssertEqual(declared.withoutTerastal, .move(index: 2),
+                       "턴 해상은 선언을 뗀 기술만 본다")
+        XCTAssertFalse(NetBattleAction.move(index: 2).declaresTerastal)
+        XCTAssertEqual(NetBattleAction.switchTo(index: 1).withoutTerastal, .switchTo(index: 1))
+    }
+
+    /// 와이어를 왕복해도 같은 행동이다 — 상대가 선언을 못 읽으면 두 피어가 다른 판을 본다.
+    func testTheTerastalActionSurvivesTheWire() throws {
+        let sent = NetBattleAction.terastallizeAndMove(index: 1)
+        let data = try JSONEncoder().encode(sent)
+        XCTAssertEqual(try JSONDecoder().decode(NetBattleAction.self, from: data), sent)
+    }
+
+    /// 남은 횟수가 없으면 **행동 자체가 무효다.** 그냥 기술로 접어 주면 한쪽만 테라스탈한 판이 된다.
+    func testASecondTerastalActionIsRejectedOutright() {
+        var state = netState()
+        XCTAssertTrue(state.canTerastallize)
+        XCTAssertTrue(state.canChoose(.terastallizeAndMove(index: 0), mine: true))
+        state.myTerastalUsed = true
+        XCTAssertFalse(state.canTerastallize)
+        XCTAssertFalse(state.canChoose(.terastallizeAndMove(index: 0), mine: true))
+        XCTAssertTrue(state.canChoose(.move(index: 0), mine: true), "기술 자체는 여전히 쓸 수 있다")
+    }
+
+    /// 선언한 턴에 **그 턴의 공격부터** 테라스탈 타입으로 나간다 — 다음 턴부터면 한 턴을 잃는다.
+    func testTheDeclaredTurnAlreadyFightsWithTheTeraType() {
+        var state = netState()
+        state.myAction = .terastallizeAndMove(index: 0)
+        state.oppAction = .move(index: 0)
+        _ = state.resolveChosenActions()
+
+        XCTAssertTrue(state.myTerastalUsed)
+        XCTAssertTrue(state.myTeam[0].isTerastallized)
+        XCTAssertFalse(state.oppTeam[0].isTerastallized, "상대는 선언하지 않았다")
+        // 선언 줄은 턴 머리 **바로 뒤**다 — 공격 줄보다 앞이어야 로그가 순서대로 읽힌다.
+        let declaredAt = state.events.firstIndex(of: .terastallized(.a, .water))
+        let firstMove = state.events.firstIndex { if case .move = $0 { return true }; return false }
+        XCTAssertEqual(declaredAt, 1)
+        XCTAssertNotNil(firstMove)
+        XCTAssertLessThan(try! XCTUnwrap(declaredAt), try! XCTUnwrap(firstMove))
+    }
+
+    /// 1v1 배틀 하나 — 물 vs 불꽃, 양쪽 다 물 기술 하나만 든다.
+    private func netState() -> NetBattleState {
+        var move = MoveSpec(id: 57, names: ["ko": "기술"], type: .water, power: 60,
+                            damageClass: .special, accuracy: 100, pp: 10)
+        move.ailment = "none"; move.ailmentChance = 0
+        move.statChanges = []; move.statChance = 0; move.targetsUser = false
+        func snapshot(_ types: [PokemonType]) -> BattleSnapshot {
+            var out = BattleSnapshot(speciesID: 6, name: "테스트", trainer: nil, level: 50,
+                                     nature: nil, isShiny: false, types: types,
+                                     base: BattleStats(hp: 200, atk: 100, def: 100,
+                                                       spa: 100, spd: 100, spe: 100),
+                                     weightHectograms: 100)
+            out.moves = [move]
+            return out
+        }
+        return NetBattleState(iAmA: true,
+                              myTeam: [BattleSide(snapshot([.water]))],
+                              oppTeam: [BattleSide(snapshot([.fire]))],
+                              rng: SplitMix64(seed: 7))
+    }
+
     /// AI 추정도 실제로 나가는 형태를 봐야 한다 — 노말로 재면 CPU 가 자기 최대 피해 기술을
     /// 저평가한다(화면에는 "왜 이 기술을 안 쓰지" 로만 보인다).
     func testTheAIScoresTeraBlastWithItsTeraType() {

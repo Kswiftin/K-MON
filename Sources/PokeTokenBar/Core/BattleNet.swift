@@ -11,8 +11,21 @@ import UserNotifications
 /// (`MultiplayerRoomCenter` + `PokeathlonRace`)이 담당한다 — 호스트가 판정하는 방식.
 enum NetBattleAction: Codable, Sendable, Equatable {
     case move(index: Int)              // -1 = 발버둥(PP 소진)
+    /// 테라스탈을 선언하고 그 턴에 기술을 쓴다 — 본가와 같이 **한 행동**이다. 별도 메시지로
+    /// 나누면 선언과 기술 사이에 상대의 행동이 끼어들 수 있고, 그러면 두 피어의 순서가 갈린다.
+    case terastallizeAndMove(index: Int)
     case metronome(move: MoveSpec)     // 손가락흔들기로 실제 발동할 기술 전체를 피어와 공유
     case switchTo(index: Int)
+
+    /// 이 행동이 테라스탈을 선언하나.
+    var declaresTerastal: Bool { if case .terastallizeAndMove = self { return true }; return false }
+
+    /// 테라스탈 선언을 뗀 행동 — 턴 해상은 **선언 여부를 모르는 채** 기술만 본다.
+    /// (손가락흔들기를 `.move(index: 0)` 으로 접는 것과 같은 정규화다.)
+    var withoutTerastal: NetBattleAction {
+        if case .terastallizeAndMove(let index) = self { return .move(index: index) }
+        return self
+    }
 }
 
 enum NetBattleKind: String, Codable, Sendable {
@@ -268,6 +281,19 @@ struct NetBattleState {
     /// 판 전체 상태(날씨). 두 피어가 각자 같은 규칙으로 채우므로 와이어에 싣지 않는다.
     var field = BattleField()
     var turn = 1
+    /// 테라스탈을 이미 썼나 — **진영당 한 번**이다. 개체가 지금 그 상태인지는
+    /// `BattleSide.isTerastallized` 가 들고, 횟수 제약은 진영 것이라 여기 있다.
+    /// 와이어에 싣지 않는다: 두 피어가 같은 행동 스트림을 보고 각자 같은 값을 세운다.
+    var myTerastalUsed = false
+    var oppTerastalUsed = false
+
+    /// 지금 테라스탈을 얹을 수 있나 — 화면의 토글이 이 값을 본다. PP 는 묻지 않는다:
+    /// 발버둥(index −1)에도 테라스탈은 얹힌다.
+    var canTerastallize: Bool { !myTerastalUsed && me.isAlive && opp.isAlive }
+
+    /// 다음 기술 선택에 테라스탈을 얹을까 — 화면의 토글이 이 값을 세운다(행동은 아직 안 나갔다).
+    var terastalArmed = false
+
     var myAction: NetBattleAction?
     var oppAction: NetBattleAction?
     var events: [BattleEvent] = []
@@ -299,6 +325,11 @@ struct NetBattleState {
         let opposingActive = mine ? oppActive : myActive
         guard team.indices.contains(active) else { return false }
         switch action {
+        case .terastallizeAndMove(let index):
+            // 남은 테라스탈이 없으면 **행동 자체가 무효다** — 그냥 기술로 접어 주면 두 피어가
+            // 서로 다른 행동을 해상한다(한쪽은 테라스탈, 한쪽은 아니다).
+            return !(mine ? myTerastalUsed : oppTerastalUsed)
+                && canChoose(.move(index: index), mine: mine)
         case .move(let index):
             return opposingTeam.indices.contains(opposingActive) && opposingTeam[opposingActive].isAlive
                 && team[active].isAlive
@@ -349,9 +380,22 @@ struct NetBattleState {
         let rawActionB = iAmA ? oppAction : myAction
         let overrideA: MoveSpec? = { if case .metronome(let move) = rawActionA { return move }; return nil }()
         let overrideB: MoveSpec? = { if case .metronome(let move) = rawActionB { return move }; return nil }()
-        let actionA: NetBattleAction = overrideA == nil ? rawActionA : .move(index: 0)
-        let actionB: NetBattleAction = overrideB == nil ? rawActionB : .move(index: 0)
+        let actionA: NetBattleAction = overrideA == nil ? rawActionA.withoutTerastal : .move(index: 0)
+        let actionB: NetBattleAction = overrideB == nil ? rawActionB.withoutTerastal : .move(index: 0)
         var turnEvents: [BattleEvent] = []
+
+        // 테라스탈은 턴 머리에서, **좌변부터 고정 순서**로 일어난다. 스피드 순으로 하면 순풍·랭크가
+        // 순서를 흔들고, 두 피어가 그 순간의 스피드를 다르게 계산할 여지가 생긴다(선언은 데미지에
+        // 영향을 주지 않으므로 순서 자체가 규칙일 뿐이다). 난수를 쓰지 않아 소비량은 그대로다.
+        var teraEvents: [BattleEvent] = []
+        if rawActionA.declaresTerastal, !(iAmA ? myTerastalUsed : oppTerastalUsed) {
+            if iAmA { myTerastalUsed = true } else { oppTerastalUsed = true }
+            teraEvents += BattleEngine.declareTerastal(&teamA[activeA], actor: .a)
+        }
+        if rawActionB.declaresTerastal, !(iAmA ? oppTerastalUsed : myTerastalUsed) {
+            if iAmA { oppTerastalUsed = true } else { myTerastalUsed = true }
+            teraEvents += BattleEngine.declareTerastal(&teamB[activeB], actor: .b)
+        }
 
         func switchSlot(_ index: Int, team: inout [BattleSide], active: inout Int) {
             BattleEngine.prepareForSwitch(&team[active])
@@ -424,9 +468,19 @@ struct NetBattleState {
                           .sendOut(.a, teamIndex: indexA), .sendOut(.b, teamIndex: indexB)]
             finishTurn(&a, &b, events: &turnEvents)
             teamA[activeA] = a; teamB[activeB] = b
-        case (.metronome, _), (_, .metronome):
-            // 위에서 실제 기술을 보존한 `.move(0)`으로 정규화하므로 도달하지 않는다.
+        case (.metronome, _), (_, .metronome),
+             (.terastallizeAndMove, _), (_, .terastallizeAndMove):
+            // 위에서 정규화한다 — 손가락흔들기는 실제 기술을 보존한 `.move(0)` 으로,
+            // 테라스탈 선언은 `withoutTerastal` 로 떼어낸 뒤라 여기 오지 않는다.
             return nil
+        }
+
+        // 선언 줄은 `.turn` 바로 뒤에 온다 — 앞에 두면 로그가 턴 머리보다 먼저 시작하고, 뒤로
+        // 밀면 이미 테라스탈한 개체의 공격 줄이 선언보다 먼저 나온다.
+        if !teraEvents.isEmpty {
+            var insertAt = 0
+            if case .turn = turnEvents.first { insertAt = 1 }
+            turnEvents.insert(contentsOf: teraEvents, at: insertAt)
         }
 
         // 자동 출전으로 active index를 바꾸기 전에 이번 이벤트의 실제 이름·기술 문맥을 고정한다.
@@ -1167,6 +1221,15 @@ final class BattleCenter {
         settlePracticeResult(practice)
     }
 
+    /// LAN 대전의 테라스탈 토글 — 누른 순간에는 아무것도 나가지 않는다. 다음 기술 선택이
+    /// `terastallizeAndMove` 로 나가고, 그때 비로소 상대가 알게 된다(본가와 같이 한 행동이다).
+    func toggleTerastalArmed() {
+        guard case .battling = phase, var b = battle, b.myAction == nil,
+              b.canTerastallize else { return }
+        b.terastalArmed.toggle()
+        battle = b
+    }
+
     /// 테라스탈 — 턴을 쓰지 않으므로 승부가 나지 않는다(그래서 `settlePracticeResult` 를 안 부른다).
     func terastallizeTeamPractice() {
         guard var practice = teamPractice, practice.terastallizeMine() else { return }
@@ -1520,8 +1583,13 @@ final class BattleCenter {
             return
         }
         let idx = b.mustStruggle ? -1 : index
-        let action = NetBattleAction.move(index: idx)
+        // 토글이 켜져 있으면 이번 기술과 **한 행동으로** 나간다. 남은 횟수가 없으면 토글은
+        // 애초에 켜지지 않는다(`canChoose` 가 그 행동을 무효로 본다).
+        let action = b.terastalArmed
+            ? NetBattleAction.terastallizeAndMove(index: idx)
+            : NetBattleAction.move(index: idx)
         guard b.canChoose(action, mine: true) else { return }
+        b.terastalArmed = false
         b.myAction = action
         guard let conn = connection else { return }
         battle = b

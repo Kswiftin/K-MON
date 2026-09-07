@@ -132,8 +132,7 @@ struct TeamPracticeBattle {
     mutating func terastallizeMine() -> Bool {
         guard canTerastallizeMine else { return false }
         myTerastalUsed = true
-        mine[myActive].isTerastallized = true
-        events.append(.terastallized(.a, mine[myActive].snapshot.teraType))
+        events += BattleEngine.declareTerastal(&mine[myActive], actor: .a)
         return true
     }
 
@@ -143,8 +142,7 @@ struct TeamPracticeBattle {
         guard !opponentTerastalUsed, opponents[opponentActive].isAlive,
               opponents[opponentActive].hp * 2 <= opponents[opponentActive].stats.hp else { return }
         opponentTerastalUsed = true
-        opponents[opponentActive].isTerastallized = true
-        events.append(.terastallized(.b, opponents[opponentActive].snapshot.teraType))
+        events += BattleEngine.declareTerastal(&opponents[opponentActive], actor: .b)
     }
 
     mutating func useMove(_ index: Int) -> Bool {

@@ -1148,6 +1148,9 @@ struct BattleArenaView: View {
     /// 테라스탈 버튼 — `nil` 이면 그리지 않는다. 아직 이 모드가 테라스탈을 지원하지 않거나
     /// (LAN·방), 이미 써서 남은 횟수가 없을 때 nil 이다.
     var onTerastallize: (() -> Void)? = nil
+    /// 토글이 켜져 있나 — LAN 은 기술 선택과 함께 나가므로 "무장했다" 를 보여 줘야 한다.
+    /// 모의전처럼 누르는 즉시 적용되는 모드는 늘 `false` 다(버튼이 그 뒤로 사라진다).
+    var isTerastalArmed = false
     var chat: BattleChatConfiguration? = nil
 
     /// 재생이 끝나기 전에 다음 기술을 고르면 무엇이 일어났는지 보지 못한 채 턴이 넘어간다.
@@ -1261,6 +1264,9 @@ struct BattleArenaView: View {
                 Button(l.battleTerastallize, action: onTerastallize)
                     .controlSize(.mini)
                     .disabled(!acceptsSwitchInput)
+                    // 켜진 상태는 색으로만 말한다 — 버튼 스타일을 갈아 끼우면 같은 줄의 다른
+                    // 버튼들과 높이가 달라져 줄이 흔들린다.
+                    .foregroundStyle(isTerastalArmed ? Color.orange : Color.secondary)
             }
             Spacer()
             if showsForfeit {

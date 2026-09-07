@@ -1208,7 +1208,9 @@ enum BattleEngine {
     ///      데미지가 갈린다. 순풍은 **턴 순서**까지 갈라 놓는다(그 뒤 판정이 통째로 밀린다).
     ///      + 방어 부류 여덟(막는 일만, 접촉 부가 효과는 아직 없다). **연속 방어에서만 rng 를
     ///      한 번 더 뽑는다**(1/3^연속) — 첫 방어는 뽑지 않으므로 예전 판의 소비 순서는 그대로다.
-    ///      + 테라스탈(모의전에서만 쓸 수 있다 — LAN·방·웨이브는 턴 액션이 아직 없다).
+    ///      + 테라스탈(모의전·LAN 1v1 — 방·웨이브는 턴 액션이 아직 없다). LAN 은 **와이어에 행동
+    ///      하나가 늘었다**(`NetBattleAction.terastallizeAndMove`): 구버전은 그 행동을 디코딩하지
+    ///      못하므로 같은 버전끼리만 붙는다(이 값이 이미 그것을 막는다).
     ///      타입이 하나로 접히고 STAB 가 세 갈래가 되며 테라버스트의 타입·분류가 바뀐다.
     ///      **와이어는 그대로다**: 테라 타입은 두 피어가 같은 `types` 에서 파생하고, 테라스탈
     ///      여부는 `BattleSide`(와이어에 없는 타입)에만 산다. rng 소비도 늘지 않는다.
@@ -1602,6 +1604,16 @@ enum BattleEngine {
         let dealt = (effectiveness == 0 || power <= 0) ? 0 : max(1, damage)
         return AttackOutcome(missed: false, damage: dealt,
                              effectiveness: effectiveness, isCritical: isCritical)
+    }
+
+    /// 테라스탈 선언 — 개체를 테라스탈 상태로 만들고 줄 하나를 낸다. **난수를 쓰지 않는다.**
+    ///
+    /// 횟수 제약(진영당 한 번)은 모드가 들고 있고 이 함수는 그것을 묻지 않는다 — 이미 그 상태면
+    /// 아무 일도 안 하고 빈 스트림을 낸다(같은 줄을 두 번 내면 로그가 거짓말을 한다).
+    static func declareTerastal(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
+        guard side.isAlive, !side.isTerastallized else { return [] }
+        side.isTerastallized = true
+        return [.terastallized(actor, side.snapshot.teraType)]
     }
 
     /// 자기 타입 보정(STAB). 테라스탈 때문에 **세 갈래**다 — AI 추정과 실제 데미지가 같은
