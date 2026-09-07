@@ -380,29 +380,46 @@ struct RaidView: View {
         return l.raidCaughtByOther(trainer: trainer, name: name)
     }
 
+    /// 전체 목록을 처음부터 그린다 — **총 몇 명이 뽑는지**를 먼저 보여줘야 "몇 번째 차례인지"가
+    /// 뜻을 가진다. 공개된 자리만 그리면 목록이 한 줄씩 늘어나는 것처럼 보여 두구두구가 아니라
+    /// 로딩으로 읽힌다.
     @ViewBuilder
     private var catchSequence: some View {
         if !center.raidCatchAttempts.isEmpty {
             VStack(alignment: .leading, spacing: 5) {
                 Text(l.t("포획 결과", "Catch results", "捕獲結果")).font(.caption.bold())
-                ForEach(Array(center.raidCatchAttempts.prefix(revealedCatchAttempts))) { attempt in
-                    HStack(spacing: 7) {
-                        Image(systemName: attempt.succeeded ? "circle.inset.filled" : "circle.dashed")
-                            .foregroundStyle(attempt.succeeded ? .green : .secondary)
-                        Text(attempt.trainerName).font(.caption.bold())
-                        Spacer()
-                        Text(attempt.succeeded
-                             ? l.t("잡았다!", "Caught it!", "捕まえた！")
-                             : l.t("놓쳤다", "Broke free", "逃げられた"))
-                            .font(.caption).foregroundStyle(attempt.succeeded ? .green : .secondary)
-                    }
-                    .padding(6)
-                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
-                    .transition(.scale.combined(with: .opacity))
+                ForEach(Array(center.raidCatchAttempts.enumerated()), id: \.element.id) { index, attempt in
+                    catchRow(attempt, revealed: index < revealedCatchAttempts,
+                             drumrolling: index == revealedCatchAttempts)
                 }
             }
             .animation(.spring(response: 0.35), value: revealedCatchAttempts)
         }
+    }
+
+    /// 세 국면 — **대기**(순서가 아직 안 옴), **두구두구**(바로 다음 차례, 물음표가 맥동한다),
+    /// **공개**(결과 확정). `.symbolEffect(.pulse)`가 macOS 14 최소 타깃에서 바로 쓰인다.
+    private func catchRow(_ attempt: RaidCatchAttempt, revealed: Bool, drumrolling: Bool) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: revealed
+                  ? (attempt.succeeded ? "circle.inset.filled" : "circle.dashed")
+                  : "questionmark.circle.fill")
+                .foregroundStyle(revealed ? (attempt.succeeded ? .green : .secondary) : .secondary)
+                .symbolEffect(.pulse, isActive: drumrolling)
+            Text(attempt.trainerName).font(.caption.bold())
+                .opacity(revealed || drumrolling ? 1 : 0.5)
+            Spacer()
+            Text(revealed
+                 ? (attempt.succeeded ? l.t("잡았다!", "Caught it!", "捕まえた！")
+                                       : l.t("놓쳤다", "Broke free", "逃げられた"))
+                 : (drumrolling ? l.t("두구두구…", "Drumroll…", "ドキドキ…")
+                                : l.t("대기 중", "Waiting", "待機中")))
+                .font(.caption)
+                .foregroundStyle(revealed ? (attempt.succeeded ? .green : .secondary) : .secondary)
+        }
+        .padding(6)
+        .background(Color.primary.opacity(revealed ? 0.04 : 0.02), in: RoundedRectangle(cornerRadius: 7))
+        .transition(.scale.combined(with: .opacity))
     }
 
     private func revealCatchAttempts() {
@@ -413,7 +430,8 @@ struct RaidView: View {
         catchRevealTask = Task { @MainActor in
             for count in 1...total {
                 guard !Task.isCancelled else { return }
-                try? await Task.sleep(for: .milliseconds(900))
+                // 2초 — 다음 차례가 물음표로 맥동하는 동안의 "두구두구" 길이다.
+                try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled else { return }
                 revealedCatchAttempts = count
             }
