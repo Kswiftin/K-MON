@@ -12,50 +12,92 @@ import Testing
 @Suite("TUISpriteTests")
 struct TUISpriteTests {
 
-    // MARK: 픽셀 → 반칸
+    // MARK: 픽셀 → 사분면 칸
 
-    /// 픽셀 두 줄이 글자 한 줄이 된다 — 위는 전경, 아래는 배경, 글자는 `▀`.
-    /// 칸마다 `[0m` 을 먼저 내는 이유는 앞 칸의 배경색이 다음 칸으로 새지 않게 하기 위해서다.
-    @Test func testTwoPixelRowsBecomeOneHalfBlockLine() {
+    /// 칸 하나는 **가로 2 · 세로 2** 조각이다. 위 두 조각과 아래 두 조각의 색이 갈리면 위가
+    /// 전경, 아래가 배경인 `▀` 다 — 반칸으로 그리던 것과 같은 결과여야 한다.
+    @Test func testTopAndBottomSplitDrawsTheUpperHalfBlock() {
         let pixels = TUISprite.Pixels(width: 2, height: 2, rgba: [
-            255, 0, 0, 255,   0, 255, 0, 255,     // 위: 빨강 · 초록
-            0, 0, 255, 255,   0, 0, 0, 0,         // 아래: 파랑 · 투명
+            255, 0, 0, 255,   255, 0, 0, 255,     // 위 두 조각: 빨강
+            0, 0, 255, 255,   0, 0, 255, 255,     // 아래 두 조각: 파랑
         ])
-        let lines = TUISprite.rows(pixels)
-        #expect(lines.count == 1)
-        #expect(lines[0] == "\u{1B}[0m\u{1B}[38;2;255;0;0;48;2;0;0;255m▀"
-                + "\u{1B}[0m\u{1B}[38;2;0;255;0m▀"
-                + "\u{1B}[0m")
+        #expect(TUISprite.rows(pixels) == ["\u{1B}[0m\u{1B}[38;2;255;0;0;48;2;0;0;255m▀\u{1B}[0m"])
     }
 
-    /// 위가 비고 아래만 있으면 아래쪽 반칸(`▄`)이다. `▀` 에 배경색만 넣어 표현하면 앞 칸이 남긴
-    /// 전경색이 그 칸에 그려진다.
-    @Test func testBottomOnlyPixelUsesLowerHalfBlock() {
-        let pixels = TUISprite.Pixels(width: 1, height: 2, rgba: [
-            0, 0, 0, 0,
-            9, 8, 7, 255,
+    /// **가로로 갈리면 왼쪽 반칸(`▌`)이다.** 반칸(`▀`)만 쓰면 이 구분이 아예 표현되지 않아
+    /// 가로 해상도가 칸 수에 묶인다 — 사분면을 쓰는 이유가 이것이다.
+    @Test func testLeftAndRightSplitDrawsTheLeftHalfBlock() {
+        let pixels = TUISprite.Pixels(width: 2, height: 2, rgba: [
+            255, 0, 0, 255,   0, 0, 255, 255,
+            255, 0, 0, 255,   0, 0, 255, 255,
+        ])
+        #expect(TUISprite.rows(pixels) == ["\u{1B}[0m\u{1B}[38;2;255;0;0;48;2;0;0;255m▌\u{1B}[0m"])
+    }
+
+    /// 대각선도 자기 글리프가 있다(`▚`). 없는 것으로 접으면 스프라이트의 사선 테두리가
+    /// 계단이 아니라 뭉개짐으로 나온다.
+    @Test func testDiagonalSplitDrawsTheDiagonalGlyph() {
+        let pixels = TUISprite.Pixels(width: 2, height: 2, rgba: [
+            255, 0, 0, 255,   0, 0, 255, 255,
+            0, 0, 255, 255,   255, 0, 0, 255,
+        ])
+        #expect(TUISprite.rows(pixels) == ["\u{1B}[0m\u{1B}[38;2;255;0;0;48;2;0;0;255m▚\u{1B}[0m"])
+    }
+
+    /// 네 조각이 같은 색이면 꽉 찬 칸(`█`)이고 배경색을 쓰지 않는다 — 안 쓰는 색을 실어 보내면
+    /// 프레임마다 바이트만 늘어난다.
+    @Test func testUniformCellDrawsAFullBlockWithoutABackground() {
+        let pixels = TUISprite.Pixels(width: 2, height: 2,
+                                      rgba: (0..<4).flatMap { _ -> [UInt8] in [7, 8, 9, 255] })
+        #expect(TUISprite.rows(pixels) == ["\u{1B}[0m\u{1B}[38;2;7;8;9m█\u{1B}[0m"])
+    }
+
+    /// 조각 하나만 불투명하면 그 사분면만 그린다(`▘`). 투명한 자리는 **터미널 배경**이어야 하므로
+    /// 배경색을 지정하지 않는다 — 지정하면 스프라이트 밖이 사각형으로 칠해진다.
+    @Test func testASingleOpaqueQuadrantDrawsOnlyThatCorner() {
+        let pixels = TUISprite.Pixels(width: 2, height: 2, rgba: [
+            9, 9, 9, 255,   0, 0, 0, 0,
+            0, 0, 0, 0,     0, 0, 0, 0,
+        ])
+        #expect(TUISprite.rows(pixels) == ["\u{1B}[0m\u{1B}[38;2;9;9;9m▘\u{1B}[0m"])
+    }
+
+    /// 아래 두 조각만 있으면 아래쪽 반칸(`▄`)이다.
+    @Test func testBottomOnlyCellUsesLowerHalfBlock() {
+        let pixels = TUISprite.Pixels(width: 2, height: 2, rgba: [
+            0, 0, 0, 0,     0, 0, 0, 0,
+            9, 8, 7, 255,   9, 8, 7, 255,
         ])
         #expect(TUISprite.rows(pixels) == ["\u{1B}[0m\u{1B}[38;2;9;8;7m▄\u{1B}[0m"])
     }
 
-    /// 양쪽이 투명하면 공백이다 — 색을 지운 뒤 공백을 내야 한다. 그냥 공백만 내면 앞 칸의
+    /// 네 조각이 다 투명하면 공백이다 — 색을 지운 뒤 공백을 내야 한다. 그냥 공백만 내면 앞 칸의
     /// 배경색이 그 칸을 칠한다.
     @Test func testTransparentCellClearsColorBeforeSpace() {
-        let pixels = TUISprite.Pixels(width: 1, height: 2, rgba: Array(repeating: 0, count: 8))
+        let pixels = TUISprite.Pixels(width: 2, height: 2, rgba: Array(repeating: 0, count: 16))
         #expect(TUISprite.rows(pixels) == ["\u{1B}[0m \u{1B}[0m"])
     }
 
-    /// 픽셀 높이가 홀수면 마지막 글자 줄의 아래 절반이 **없다**. 없는 픽셀을 읽으면 배열 범위를
-    /// 넘어 크래시한다(`TUIRender.bar` 의 클램프와 같은 부류).
+    /// 픽셀 높이가 홀수면 마지막 글자 줄의 **아래 두 조각이 없다.** 없는 픽셀을 읽으면 배열
+    /// 범위를 넘어 크래시한다.
     @Test func testOddPixelHeightTreatsMissingBottomRowAsTransparent() {
-        let pixels = TUISprite.Pixels(width: 1, height: 1, rgba: [1, 2, 3, 255])
+        let pixels = TUISprite.Pixels(width: 2, height: 1, rgba: [1, 2, 3, 255,  1, 2, 3, 255])
         #expect(TUISprite.rows(pixels) == ["\u{1B}[0m\u{1B}[38;2;1;2;3m▀\u{1B}[0m"])
+    }
+
+    /// 가로 조각 수가 홀수인 격자는 칸으로 나눌 수 없다 — 반쪽 칸을 그리는 대신 아무것도 내지
+    /// 않는다. (`fit` 은 항상 짝수로 만들지만, 이 함수만 따로 부르는 자리가 생길 수 있다.)
+    @Test func testOddSampleWidthYieldsNoLines() {
+        let pixels = TUISprite.Pixels(width: 3, height: 2,
+                                      rgba: (0..<6).flatMap { _ -> [UInt8] in [1, 1, 1, 255] })
+        #expect(TUISprite.rows(pixels).isEmpty)
     }
 
     /// 빈 격자는 빈 배열이다. 빈 문자열 한 줄을 내면 홈 화면에 이유 없는 빈 줄이 생긴다.
     @Test func testEmptyPixelsYieldNoLines() {
         #expect(TUISprite.rows(TUISprite.Pixels(width: 0, height: 0, rgba: [])).isEmpty)
     }
+
 
     // MARK: 자르기와 줄이기
 
@@ -69,7 +111,8 @@ struct TUISpriteTests {
             rgba[i] = 200; rgba[i + 1] = 100; rgba[i + 2] = 50; rgba[i + 3] = 255
         }
         let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba), columns: 2, pixelRows: 2)
-        #expect(fitted?.width == 2)
+        // 가로 표본은 칸 수의 **두 배**다 — 칸 하나를 좌우로 쪼개 그린다.
+        #expect(fitted?.width == 2 * TUISprite.horizontalSubcells)
         #expect(fitted?.height == 2)
         // 잘라 낸 뒤에는 네 픽셀 모두 불투명이어야 한다 — 여백이 남았으면 alpha 0 이 섞인다.
         #expect(fitted?.rgba.enumerated().allSatisfy { $0.offset % 4 != 3 || $0.element == 255 } == true)
@@ -110,12 +153,12 @@ struct TUISpriteTests {
         let pixels = TUISprite.Pixels(width: 16, height: 8,
                                       rgba: [UInt8](repeating: 255, count: 16 * 8 * 4))
         let fitted = TUISprite.fit(pixels, columns: 16, pixelRows: 40)!
-        #expect(fitted.width == 16)
+        #expect(fitted.width == 16 * TUISprite.horizontalSubcells)
         #expect(fitted.height == 8, "비율이 어긋났다")
         // 세로 예산이 더 좁으면 그쪽이 배율을 정한다.
         let short = TUISprite.fit(pixels, columns: 16, pixelRows: 4)!
         #expect(short.height == 4)
-        #expect(short.width == 8, "세로 예산이 배율을 정하지 못했다")
+        #expect(short.width == 8 * TUISprite.horizontalSubcells, "세로 예산이 배율을 정하지 못했다")
     }
 
     /// **가장 가까운 픽셀만 집지 않고 면적을 평균한다.** 96px 원본을 40칸으로 줄이면 최근접은
@@ -124,12 +167,13 @@ struct TUISpriteTests {
     @Test func testFitAveragesTheSourceAreaInsteadOfPickingOnePixel() {
         var rgba: [UInt8] = []
         for _ in 0..<4 {
-            for x in 0..<4 {
+            for x in 0..<8 {
                 let level: UInt8 = x % 2 == 0 ? 0 : 255
                 rgba += [level, level, level, 255]
             }
         }
-        let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba), columns: 2, pixelRows: 2)!
+        // 원본 8칸 → 표본 4개(칸 2개)라 표본 하나가 검정·흰색을 함께 덮는다.
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 8, height: 4, rgba: rgba), columns: 2, pixelRows: 2)!
         for i in stride(from: 0, to: fitted.rgba.count, by: 4) {
             let level = Int(fitted.rgba[i])
             #expect(level >= 100, "중간값이 아니다 — 최근접으로 집었다")
@@ -140,13 +184,13 @@ struct TUISpriteTests {
     /// 색은 **알파로 가중**해 평균한다. 투명 픽셀의 색(대개 검정)을 같은 무게로 섞으면
     /// 스프라이트 테두리가 한 칸 안쪽까지 검게 죽는다.
     @Test func testFitWeightsColorByAlpha() {
-        // 양끝은 불투명 빨강, 가운데 둘은 완전 투명한 검정. 경계가 전 폭을 덮으므로 두 칸으로
-        // 줄이면 한 칸 안에서 빨강과 투명이 섞인다.
+        // 양끝만 불투명 빨강이고 가운데는 완전 투명한 검정. 경계가 전 폭(8칸)을 덮으므로 표본
+        // 하나(원본 두 칸)마다 빨강과 투명이 섞인다.
         var rgba: [UInt8] = []
         for _ in 0..<4 {
-            for x in 0..<4 { rgba += (x == 0 || x == 3) ? [255, 0, 0, 255] : [0, 0, 0, 0] }
+            for x in 0..<8 { rgba += (x == 0 || x == 7) ? [255, 0, 0, 255] : [0, 0, 0, 0] }
         }
-        let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba), columns: 2, pixelRows: 2)!
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 8, height: 4, rgba: rgba), columns: 2, pixelRows: 2)!
         // 색은 **순수 빨강**이어야 한다. 알파를 무시하고 평균하면 투명한 검정이 절반 섞여 127 이 된다.
         let red = Int(fitted.rgba[0])
         let green = Int(fitted.rgba[1])
@@ -161,8 +205,10 @@ struct TUISpriteTests {
     /// 반칸 하나는 색이 하나뿐이라 반투명을 표현할 수 없다. **절반 이상 덮인 칸만** 그린다 —
     /// 조금 걸친 칸까지 그리면 스프라이트 주위에 한 칸짜리 후광이 생겨 실루엣이 부푼다.
     @Test func testCellsCoveredLessThanHalfAreNotDrawn() {
-        let faint = TUISprite.Pixels(width: 1, height: 2, rgba: [9, 9, 9, 100,  0, 0, 0, 0])
-        let solid = TUISprite.Pixels(width: 1, height: 2, rgba: [9, 9, 9, 200,  0, 0, 0, 0])
+        let faint = TUISprite.Pixels(width: 2, height: 2, rgba: [9, 9, 9, 100,  9, 9, 9, 100,
+                                                                 0, 0, 0, 0,    0, 0, 0, 0])
+        let solid = TUISprite.Pixels(width: 2, height: 2, rgba: [9, 9, 9, 200,  9, 9, 9, 200,
+                                                                 0, 0, 0, 0,    0, 0, 0, 0])
         #expect(TUISprite.rows(faint) == ["\u{1B}[0m \u{1B}[0m"])
         #expect(TUISprite.rows(solid) == ["\u{1B}[0m\u{1B}[38;2;9;9;9m▀\u{1B}[0m"])
     }
@@ -179,7 +225,7 @@ struct TUISpriteTests {
         }
         let fitted = TUISprite.fit(TUISprite.Pixels(width: 3, height: 3, rgba: rgba), columns: 3, pixelRows: 4)!
         // 둘레까지 경계에 들었으면 3×3 이 그대로 3칸으로 온다(가운데 한 점만 잡으면 1칸이 된다).
-        #expect(fitted.width == 3)
+        #expect(fitted.width == 3 * TUISprite.horizontalSubcells)
         #expect(fitted.rgba[3] > 0, "희미한 왼쪽 위가 경계에서 빠졌다")
     }
 
@@ -198,7 +244,7 @@ struct TUISpriteTests {
         }
         let fitted = TUISprite.fit(TUISprite.Pixels(width: 8, height: 2, rgba: rgba), columns: 4,
                                    pixelRows: 8)!
-        #expect(fitted.width == 4)
+        #expect(fitted.width == 4 * TUISprite.horizontalSubcells)
         // 내용이 있는 줄에서 왼끝에 빨강이, 오른끝에 파랑이 남아 있어야 한다.
         let rows = (0..<fitted.height).map { y in (0..<fitted.width).map { x -> [UInt8] in
             let i = (y * fitted.width + x) * 4
@@ -282,21 +328,21 @@ struct TUISpriteTests {
                                  colorAllowed: true, bobbed: false).isEmpty)
     }
 
-    /// 스프라이트 **안쪽**의 빈 자리(모서리·다리 사이)는 알파 0 인 칸이 된다. 색을 계산하지 않고
-    /// 공백으로 남겨야 한다 — 알파 합이 0 이라 색을 구하면 0 으로 나눈다.
-    @Test func testFullyTransparentCellsStayEmpty() {
-        // 왼쪽 위와 오른쪽 아래 모서리만 불투명 → 경계는 전체 4×4, 가운데는 비어 있다.
-        var rgba = [UInt8](repeating: 0, count: 4 * 4 * 4)
-        for (x, y) in [(0, 0), (3, 3)] {
-            let i = (y * 4 + x) * 4
-            rgba[i] = 200; rgba[i + 1] = 100; rgba[i + 2] = 50; rgba[i + 3] = 255
+    /// 스프라이트 **안쪽**의 빈 자리(다리 사이·꼬리 옆)는 알파 0 인 표본으로 남아야 한다.
+    /// 색을 계산하면 알파 합이 0 이라 0 으로 나눈다.
+    @Test func testFitLeavesHollowRegionsTransparent() {
+        // 양끝 두 칸씩만 불투명 → 경계는 전 폭(8칸)이고 가운데 넷은 비어 있다.
+        var rgba: [UInt8] = []
+        for _ in 0..<4 {
+            for x in 0..<8 { rgba += (x < 2 || x > 5) ? [200, 100, 50, 255] : [0, 0, 0, 0] }
         }
-        let fitted = TUISprite.fit(TUISprite.Pixels(width: 4, height: 4, rgba: rgba),
+        let fitted = TUISprite.fit(TUISprite.Pixels(width: 8, height: 4, rgba: rgba),
                                    columns: 2, pixelRows: 2)!
-        // 오른쪽 위 칸은 원본이 전부 투명하다.
-        #expect(fitted.rgba[(0 * 2 + 1) * 4 + 3] == 0)
-        // 그 칸은 공백으로 그려진다.
-        #expect(TUISprite.rows(fitted)[0].hasSuffix("\u{1B}[0m \u{1B}[0m"))
+        // 표본 4개 중 가운데 둘은 원본이 전부 투명하다.
+        #expect(fitted.rgba[0 * 4 + 3] == 255)
+        #expect(fitted.rgba[1 * 4 + 3] == 0)
+        #expect(fitted.rgba[2 * 4 + 3] == 0)
+        #expect(fitted.rgba[3 * 4 + 3] == 255)
     }
 
     // MARK: 두 예산

@@ -3,9 +3,14 @@ import Foundation
 /// 파트너 포켓몬을 터미널 칸으로 접는다. **부수효과 없음** — 픽셀을 읽어 오는 일은
 /// `SpriteLoader.cachedPixels` 가 하고, 여기서는 받은 격자를 글자로 바꾼다.
 ///
-/// 왜 반칸(`▀`)인가: 터미널 칸은 세로가 가로의 두 배쯤이라, 칸마다 위·아래 색을 따로 주면
-/// 픽셀이 정사각으로 보이고 세로 해상도가 두 배가 된다. 한 칸에 한 색을 쓰면 스프라이트가
-/// 절반으로 눌린다.
+/// 칸 하나를 **가로 2 · 세로 2 조각**으로 쪼개 사분면 글리프(`▘▖▌▚▛` … `█`)로 그린다.
+/// 세로를 쪼개는 이유는 터미널 칸이 세로로 두 배쯤 길어서다(그래야 조각이 정사각으로 보인다).
+/// 가로까지 쪼개는 이유는 **자리를 늘리지 않고 해상도를 올릴 방법이 그것뿐**이기 때문이다 —
+/// 반칸(`▀`)만 쓰면 칸마다 가로 한 조각이라 24칸이 곧 가로 24픽셀의 상한이 된다.
+///
+/// 대가는 칸에 색이 **둘뿐**(전경·배경)이라는 것이다. 네 조각의 색이 갈리면 두 무리로 묶어
+/// 근사하고, 투명이 섞인 칸은 색을 하나만 쓴다(투명한 자리는 터미널 배경이어야 한다).
+/// 세로는 이 방법으로 늘지 않는다 — 사분면도 칸마다 세로 두 조각이다.
 ///
 /// **이 파일이 만든 줄은 `TUIText.truncate`·`pad` 를 통과시키지 않는다.** 그 둘은 SGR escape
 /// 바이트를 글자 한 칸으로 세므로(`TUIText.displayWidth`) escape 중간에서 잘리고, 그 줄부터
@@ -33,10 +38,18 @@ enum TUISprite {
     /// 그리는 판정은 이 값이 아니라 `coverageFloor` 다 — 둘의 방향이 반대라 값이 다르다.
     static let alphaFloor: UInt8 = 8
 
-    /// **그릴지 말지**의 문턱. 반칸 하나는 색이 하나뿐이라 반투명을 표현할 방법이 없으므로
+    /// **그릴지 말지**의 문턱. 조각 하나에 색이 하나뿐이라 반투명을 표현할 방법이 없으므로
     /// 절반 이상 덮인 칸만 그린다. 조금 걸친 칸까지 그리면 스프라이트 주위에 한 칸짜리 후광이
     /// 생겨 실루엣이 부푼다(줄일 때 테두리 칸의 알파는 대개 중간값이다).
     static let coverageFloor: UInt8 = 128
+
+    /// 칸 하나를 가로로 몇 조각으로 쪼개는가. 사분면 글리프가 2 를 넘지 못한다 — 더 쪼개려면
+    /// 6분면(`U+1FB00` 대)이 필요한데 그 글리프는 macOS 기본 폰트(Menlo)에 없어 두부가 나온다.
+    static let horizontalSubcells = 2
+
+    /// 두 색으로 갈랐다고 볼 채널 차이의 합. 이보다 가까우면 한 색으로 본다 — 거의 같은 색을
+    /// 갈라 놓으면 글리프만 어지러워지고 보이는 것은 달라지지 않는다.
+    static let colorSplitFloor = 24
 
     /// 그림의 가로 칸 수 상한. **화면에서 차지하는 자리로 정한 값이다** — 해상도가 아니다.
     /// 소스(96~106px)는 40칸까지 채울 수 있지만, 그러면 100칸 창에서 홈의 절반이 그림이 된다.
@@ -78,7 +91,7 @@ enum TUISprite {
         return min(maximumColumns, width)
     }
 
-    /// 이 창에 쓸 수 있는 **픽셀** 줄 수 — 남은 글자 줄의 두 배다(반칸 하나가 픽셀 두 줄).
+    /// 이 창에 쓸 수 있는 표본 줄 수 — 남은 글자 줄의 두 배다(칸 하나가 세로 두 조각).
     /// 흔들림에 쓰는 한 줄은 먼저 뗀다. 홀수가 되지 않는 이유는 두 배 한 값이라서다.
     ///
     /// 예산을 **먼저 접는다**: 한 번 찍는 명령은 예산이 없다는 뜻으로 `.max` 를 넘기므로,
@@ -122,16 +135,18 @@ enum TUISprite {
             targetHeight = pixelRows
             targetWidth = min(columns, max(1, boxWidth * pixelRows / boxHeight))
         }
-        // 세로는 **짝수**여야 한다 — 반칸 하나가 픽셀 두 줄이라, 홀수면 마지막 줄이 반쪽으로 남는다.
+        // 세로는 **짝수**여야 한다 — 칸 하나가 세로 두 조각이라, 홀수면 마지막 줄이 반쪽으로 남는다.
         targetHeight = max(2, targetHeight - targetHeight % 2)
 
-        var out = [UInt8](repeating: 0, count: targetWidth * targetHeight * 4)
+        // 가로 표본은 칸 수의 **두 배**다 — 칸 하나를 좌우로 쪼개 그리므로 그만큼 더 뽑는다.
+        let sampleColumns = targetWidth * horizontalSubcells
+        var out = [UInt8](repeating: 0, count: sampleColumns * targetHeight * 4)
         for ty in 0..<targetHeight {
             let y0 = minY + ty * boxHeight / targetHeight
             let y1 = max(y0 + 1, minY + (ty + 1) * boxHeight / targetHeight)
-            for tx in 0..<targetWidth {
-                let x0 = minX + tx * boxWidth / targetWidth
-                let x1 = max(x0 + 1, minX + (tx + 1) * boxWidth / targetWidth)
+            for tx in 0..<sampleColumns {
+                let x0 = minX + tx * boxWidth / sampleColumns
+                let x1 = max(x0 + 1, minX + (tx + 1) * boxWidth / sampleColumns)
                 // 한 칸이 덮는 **원본 면적을 평균**한다. 가장 가까운 픽셀만 집으면 96px 원본에서
                 // 절반 이상을 버려 곡선이 계단으로 깨진다.
                 var red = 0, green = 0, blue = 0, alpha = 0, samples = 0
@@ -152,43 +167,39 @@ enum TUISprite {
                 // `samples` 는 조건에 넣지 않는다: 범위를 `max(x0 + 1, …)` 로 잡아 **항상 1 이상**이고,
                 // 죽은 조건을 끼워 두면 이 가드가 무엇을 지키는지 읽을 수 없다.
                 guard alpha > 0 else { continue }
-                let to = (ty * targetWidth + tx) * 4
+                let to = (ty * sampleColumns + tx) * 4
                 out[to] = UInt8(min(255, red / alpha))
                 out[to + 1] = UInt8(min(255, green / alpha))
                 out[to + 2] = UInt8(min(255, blue / alpha))
                 out[to + 3] = UInt8(min(255, alpha / samples))
             }
         }
-        return Pixels(width: targetWidth, height: targetHeight, rgba: out)
+        return Pixels(width: sampleColumns, height: targetHeight, rgba: out)
     }
 
-    /// 픽셀 두 줄을 글자 한 줄로. 위 픽셀은 전경, 아래 픽셀은 배경이고 글자는 `▀` 다.
+    /// 표본 격자를 글자 줄로. 칸 하나가 **가로 2 · 세로 2** 조각이다.
     ///
     /// 칸마다 `ESC[0m` 을 먼저 낸다 — 앞 칸이 남긴 배경색이 다음 칸으로 새면 투명한 자리가
-    /// 앞 칸 색으로 칠해진다. 아래만 있는 칸은 `▄` 에 전경색을 쓴다(`▀` 에 배경색만 주면
-    /// 그 칸의 전경색이 앞 칸에서 흘러온 값이다).
+    /// 앞 칸 색으로 칠해진다.
     static func rows(_ pixels: Pixels) -> [String] {
         guard pixels.width > 0, pixels.height > 0,
+              // 가로 조각 수가 홀수면 칸으로 나눌 수 없다. 반쪽 칸을 그리면 그 줄부터 열이 밀린다.
+              pixels.width % horizontalSubcells == 0,
               pixels.rgba.count == pixels.width * pixels.height * 4 else { return [] }
 
+        let cells = pixels.width / horizontalSubcells
         var lines: [String] = []
         for top in stride(from: 0, to: pixels.height, by: 2) {
             var line = ""
-            for x in 0..<pixels.width {
-                let upper = color(pixels, x: x, y: top)
-                // 홀수 높이의 마지막 줄은 아래 절반이 **없다**. 없는 픽셀을 읽으면 배열 범위를 넘는다.
-                let lower = top + 1 < pixels.height ? color(pixels, x: x, y: top + 1) : nil
-                line += "\u{1B}[0m"
-                switch (upper, lower) {
-                case let (upper?, lower?):
-                    line += "\u{1B}[38;2;\(upper);48;2;\(lower)m▀"
-                case let (upper?, nil):
-                    line += "\u{1B}[38;2;\(upper)m▀"
-                case let (nil, lower?):
-                    line += "\u{1B}[38;2;\(lower)m▄"
-                case (nil, nil):
-                    line += " "
-                }
+            for index in 0..<cells {
+                let left = index * horizontalSubcells
+                // 홀수 높이의 마지막 줄은 아래 두 조각이 **없다**. 없는 픽셀을 읽으면 배열 범위를 넘는다.
+                let hasBottom = top + 1 < pixels.height
+                let quadrants = [sample(pixels, x: left, y: top),
+                                 sample(pixels, x: left + 1, y: top),
+                                 hasBottom ? sample(pixels, x: left, y: top + 1) : nil,
+                                 hasBottom ? sample(pixels, x: left + 1, y: top + 1) : nil]
+                line += "\u{1B}[0m" + glyph(quadrants)
             }
             lines.append(line + "\u{1B}[0m")
         }
@@ -209,7 +220,8 @@ enum TUISprite {
               let fitted = fit(pixels, columns: columns(width: width),
                                pixelRows: pixelRows(maxRows: maxRows)),
               // 몇 칸짜리로 줄어들면 파트너로 보이지 않는다 — 자리만 먹는다.
-              fitted.width >= minimumColumns else { return [] }
+              // `fitted.width` 는 표본 수이므로 칸 수로 되돌려 센다.
+              fitted.width / horizontalSubcells >= minimumColumns else { return [] }
         // 줄 예산은 여기서 다시 보지 않는다 — `pixelRows` 가 흔들림 한 줄을 먼저 떼고 남은 줄의
         // 두 배를 상한으로 주므로, `fit` 을 지난 그림은 이미 예산 안이다. 여기서 한 번 더 세면
         // **어느 쪽도 실제로 걸리지 않는 가드**가 되어 무엇을 지키는지 알 수 없게 된다
@@ -245,10 +257,71 @@ enum TUISprite {
         return count
     }
 
-    /// `R;G;B` — 불투명하지 않으면 `nil`.
-    private static func color(_ pixels: Pixels, x: Int, y: Int) -> String? {
+    private typealias RGB = (r: Int, g: Int, b: Int)
+
+    /// 조각 하나의 색 — 절반도 안 덮였으면 `nil`(투명).
+    private static func sample(_ pixels: Pixels, x: Int, y: Int) -> RGB? {
         let i = (y * pixels.width + x) * 4
         guard pixels.rgba[i + 3] >= coverageFloor else { return nil }
-        return "\(pixels.rgba[i]);\(pixels.rgba[i + 1]);\(pixels.rgba[i + 2])"
+        return (Int(pixels.rgba[i]), Int(pixels.rgba[i + 1]), Int(pixels.rgba[i + 2]))
+    }
+
+    /// 사분면 글리프 — 켜진 조각의 조합마다 하나씩 있다(TL=1 · TR=2 · BL=4 · BR=8).
+    /// 열여섯 가지가 전부 유니코드 Block Elements 안에 있어 `▀` 와 같은 폰트 지원을 받는다.
+    private static let quadrantGlyphs: [Character] = [
+        " ", "▘", "▝", "▀", "▖", "▌", "▞", "▛", "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█",
+    ]
+
+    /// 조각 넷을 **글리프 하나 + 색 둘**로 접는다. `nil` 은 투명이다.
+    ///
+    /// 투명이 섞인 칸은 색을 하나만 쓴다 — 투명한 자리는 터미널 배경이어야 하고, 배경색을
+    /// 지정하면 스프라이트 밖이 사각형으로 칠해진다.
+    ///
+    /// 네 조각이 다 불투명하고 색이 갈리면 두 무리로 묶는다. 기준은 **처음 만나는 조각**
+    /// (왼→오, 위→아래)이고 두 번째 기준은 그 색에서 가장 먼 조각이다. 기준을 이렇게 못 박아야
+    /// 같은 그림이 항상 같은 글리프·같은 전경색으로 나온다 — 무리 둘 중 어느 쪽을 전경으로
+    /// 삼든 화면은 같지만, 프레임마다 바뀌면 `watch` 가 깜빡인다.
+    private static func glyph(_ quadrants: [RGB?]) -> String {
+        var mask = 0
+        for (index, quadrant) in quadrants.enumerated() where quadrant != nil { mask |= 1 << index }
+        guard mask != 0 else { return " " }
+
+        let opaque = quadrants.compactMap { $0 }
+        guard mask == 0b1111 else {
+            return "\u{1B}[38;2;\(mean(opaque))m" + String(quadrantGlyphs[mask])
+        }
+        // 이 분기는 네 조각이 다 불투명하다 — 그래서 `opaque` 의 순서가 조각 번호와 그대로 맞고,
+        // 아래 반복이 옵셔널을 다시 풀지 않는다(풀면 절대 안 도는 분기가 하나 생긴다).
+        let anchor = opaque[0]
+        let far = opaque.reduce(anchor) { distance($0, anchor) >= distance($1, anchor) ? $0 : $1 }
+        guard distance(far, anchor) > colorSplitFloor else {
+            return "\u{1B}[38;2;\(mean(opaque))m█"
+        }
+        var near: [RGB] = [], apart: [RGB] = []
+        var nearMask = 0
+        for (index, quadrant) in opaque.enumerated() {
+            if distance(quadrant, anchor) <= distance(quadrant, far) {
+                near.append(quadrant)
+                nearMask |= 1 << index
+            } else {
+                apart.append(quadrant)
+            }
+        }
+        return "\u{1B}[38;2;\(mean(near));48;2;\(mean(apart))m" + String(quadrantGlyphs[nearMask])
+    }
+
+    /// 채널 차이의 합. 사람 눈에 맞춘 거리가 아니지만, 한 칸 안의 네 조각을 가르는 데는 충분하고
+    /// 정수만 쓴다.
+    private static func distance(_ one: RGB, _ other: RGB) -> Int {
+        abs(one.r - other.r) + abs(one.g - other.g) + abs(one.b - other.b)
+    }
+
+    /// `R;G;B` 평균.
+    private static func mean(_ colors: [RGB]) -> String {
+        let count = max(1, colors.count)
+        let red = colors.reduce(0) { $0 + $1.r } / count
+        let green = colors.reduce(0) { $0 + $1.g } / count
+        let blue = colors.reduce(0) { $0 + $1.b } / count
+        return "\(red);\(green);\(blue)"
     }
 }
