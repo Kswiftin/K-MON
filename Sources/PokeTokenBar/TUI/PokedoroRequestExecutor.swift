@@ -170,8 +170,11 @@ struct PokedoroRequestExecutor {
         case .candy(let result):
             return ok(request, "\(name)을 썼다 — \(Self.candyLine(result))")
         case .mint(let nature):
-            return ok(request, "\(name)을 썼다. 성격이 \(nature.name)가 됐다.")
-        // 후보 카드가 떴을 뿐 아직 아무것도 안 바뀌었다. TUI도 같은 카드를 이어서 조작한다.
+            return ok(request, "\(name)을 썼다. 성격이 \(nature.name(companion.language))가 됐다.")
+        case .teraShard(let type):
+            return ok(request, "\(name)을 썼다. 테라 타입이 \(type.name(companion.language))가 됐다.")
+        // 후보 카드가 떴을 뿐 아직 아무것도 안 바뀌었다 — 고르는 화면은 앱에만 있다. "바꿨다" 로
+        // 답하면 사용자는 끝난 줄 알고 앱을 안 열어 본다.
         case .relearnOpened:
             return ok(request, "\(name)을 썼다. 후보를 불러온 뒤 learn으로 확인한다.")
         case .evolutionItemUsed:

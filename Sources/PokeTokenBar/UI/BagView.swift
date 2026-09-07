@@ -211,6 +211,7 @@ private struct ItemCard: View {
         switch kind {
         case .rareCandy: return store.canUseRareCandy
         case .mint:      return store.canUseMint
+        case .teraShard: return store.canUseTeraShard
         case .shinyCharm: return false   // 보유형 — 사용 개념 없음(상시 효과)
         case .heartScale: return store.canUseHeartScale
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -224,6 +225,7 @@ private struct ItemCard: View {
         switch kind {
         case .rareCandy: return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
         case .mint:      return l.mintEffectHint
+        case .teraShard: return l.teraShardEffectHint
         case .shinyCharm: return l.shinyCharmEffectHint
         case .heartScale: return l.heartScaleEffectHint
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -236,6 +238,7 @@ private struct ItemCard: View {
         switch kind {
         case .rareCandy: _ = store.useRareCandy()
         case .mint:      _ = store.useMint()
+        case .teraShard: _ = store.useTeraShard()
         case .shinyCharm: break   // 보유형 — 사용 동작 없음
         case .heartScale: store.useHeartScale()
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,

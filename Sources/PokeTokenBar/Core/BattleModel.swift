@@ -539,6 +539,16 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
     /// `VariableDamageTests.testEveryBattleSnapshotSiteCarriesTheWireOnlyFields` 가 소스에서 센다
     /// (인자 이름만 보므로 선언 순서는 자유다). 전부 기본값 `nil` 이라 빠뜨려도 컴파일은 통과한다.
     var ability: String? = nil
+    /// 테라스탈했을 때 되는 타입 — **테라피스로 바꿨을 때만** 값이 있다. `nil` 이면 아래
+    /// `teraType` 이 첫 번째 타입에서 파생한다(아이템이 없던 시절의 규칙 그대로).
+    ///
+    /// 읽는 자리는 `teraType` 하나다 — 이 저장 값을 직접 읽는 코드를 두면 그 자리만 파생 폴백을
+    /// 잃고, 아이템을 안 쓴 개체 전부가 노말로 테라스탈한다.
+    ///
+    /// **와이어에 실린다.** 안 실으면 두 피어가 같은 개체를 다른 타입으로 테라스탈시켜 상성
+    /// 배율부터 갈린다(각자 화면에는 정상으로 보인다). 스냅샷을 만드는 자리가 이 값을 싣는지는
+    /// `ability` 와 같은 스캔이 센다.
+    var storedTeraType: PokemonType? = nil
     /// 헥토그램(0.1kg). 체중으로 위력이 정해지는 기술이 본다.
     ///
     /// 옵셔널인 이유는 **조회 실패**다(피어 호환이 아니다 — 이 필드가 없던 시절과는 `rulesVersion`
@@ -555,14 +565,12 @@ struct BattleSnapshot: Codable, Sendable, Equatable {
         return min(100, max(5, 5 + Int((overall * 95.0).rounded())))
     }
 
-    /// 테라스탈했을 때 이 개체가 되는 타입.
+    /// 테라스탈했을 때 이 개체가 되는 타입 — **저장 값이 있으면 그것, 없으면 첫 번째 타입**이다.
     ///
-    /// 지금은 **첫 번째 타입에서 파생한다** — 본가에서도 야생·부화 개체의 테라 타입은 자기 타입
-    /// 중 하나이고, 그것을 바꾸는 것은 테라피스(아이템)다. 그 아이템 경로가 붙으면 여기에 저장
-    /// 값이 생기고 이 파생은 기본값이 된다. 지금 저장 필드를 미리 두면 쓰는 데가 없는 칸이다.
-    ///
-    /// 그래서 **와이어에 실을 것이 없다**: 두 피어가 같은 `types` 를 보고 같은 답을 낸다.
-    var teraType: PokemonType { types.first ?? .normal }
+    /// 폴백을 두는 이유는 본가와 같다: 야생·부화 개체의 테라 타입은 자기 타입 중 하나이고, 그것을
+    /// 바꾸는 것이 테라피스(`ItemKind.teraShard`)다. 그래서 아이템을 안 쓴 개체와 이 필드가
+    /// 없던 세이브·피어가 모두 예전과 같은 답을 받는다.
+    var teraType: PokemonType { storedTeraType ?? types.first ?? .normal }
 
     /// 유효 스탯 — 식은 `BattleStats.effective` 한 곳에 있다(홈 화면도 같은 식을 쓴다).
     func effectiveStats() -> BattleStats { base.effective(level: level, nature: nature) }
@@ -625,6 +633,7 @@ extension BattleSnapshot {
         moves = (try c.decodeIfPresent([MoveSpec].self, forKey: .moves))
             .map { Array($0.prefix(Self.maximumMoves)) }
         ability = try c.decodeIfPresent(String.self, forKey: .ability)
+        storedTeraType = try c.decodeIfPresent(PokemonType.self, forKey: .storedTeraType)
         weightHectograms = (try c.decodeIfPresent(Int.self, forKey: .weightHectograms))
             .map { min(Self.maximumWeightHectograms, max(0, $0)) }
     }
@@ -1539,6 +1548,9 @@ enum BattleEngine {
     ///      입력의 HP·상태·랭크가 갈린다: 구버전은 교체할 때 아무 일도 없고, 층을 쌓는 두 번째
     ///      사용이 실패로 접힌다. `BattleSideCondition` 에 case 넷, `DamageCause` 에 원인
     ///      하나(`hazard`)가 늘어 구버전은 그 진영 상태와 그 데미지 줄을 디코딩하지 못한다.
+    ///      + 테라 타입을 스냅샷에 **저장 값으로** 싣는다(테라피스 아이템). 구버전 피어는 그 필드를
+    ///      안 보내므로 같은 개체가 첫 번째 타입으로 테라스탈하고, STAB 과 상성 배율이 갈린다.
+    ///      rng 소비는 그대로다.
     static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -2034,8 +2046,8 @@ enum BattleEngine {
     ///   즉 접혀 나간 옛 타입 기술도 1.5배로 남는다(본가와 같다. "현재 타입만 STAB" 으로 짜면
     ///   그 기술만 조용히 약해지고 화면에 표시가 없다).
     ///
-    /// "테라 타입이 원래에 없던 타입" 갈래는 테라 타입이 아직 첫 번째 타입에서 파생되므로
-    /// 지금은 밟히지 않는다 — 식은 그때를 이미 담고 있다(테라피스 아이템이 붙는 자리).
+    /// "테라 타입이 원래에 없던 타입" 갈래는 테라피스(`ItemKind.teraShard`)로만 생긴다 —
+    /// 그 아이템이 붙기 전에는 도달할 수 없는 갈래였다(`TeraShardTests` 가 셋을 다 잠근다).
     static func stabbed(_ damage: Int, of moveType: PokemonType, by attacker: BattleSide) -> Int {
         let isOriginal = attacker.snapshot.types.contains(moveType)
         guard attacker.isTerastallized else { return isOriginal ? damage * 3 / 2 : damage }

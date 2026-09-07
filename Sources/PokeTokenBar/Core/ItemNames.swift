@@ -13,7 +13,7 @@ extension ItemKind {
     /// 앱 상태(가방 재고)로 좁히지 않는다. 이름 대조가 그때그때의 인벤토리에 의존하면 같은 입력이
     /// 재고에 따라 이름이 되거나 안 되고, 재고는 실행기가 이미 본다.
     static let nameable: [ItemKind] = ItemKind.allCases.filter {
-        $0.evolutionRule != nil || [.rareCandy, .mint, .heartScale, .shinyCharm].contains($0)
+        $0.evolutionRule != nil || [.rareCandy, .mint, .heartScale, .shinyCharm, .teraShard].contains($0)
     }
 
     /// 이름 → 종류. **화면이 찍어 준 이름 그대로도 받는다** — 대화의 `bag.list` 는 rawValue 를,

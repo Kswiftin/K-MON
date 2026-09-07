@@ -235,6 +235,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// **가방·문구의 `default:`(= 진화 아이템 전체) 분기에 명시 케이스로 반드시 넣어야 한다** — 빠뜨리면
     /// "진화 가능할 때 사용" 이 뜨고 설명이 빈 문자열이 되며 `useEvolutionItem` 으로 흘러간다.
     case heartScale
+    /// 테라피스(#3) — 테라스탈했을 때 되는 타입을 무작위로 바꾼다. 진화가 아니라 개체 값 변경이라
+    /// `evolutionRule` 이 nil 이므로 **가방·문구의 `default:`(= 진화 아이템 전체) 분기에 명시
+    /// 케이스로 반드시 넣어야 한다**(하트비늘과 같은 함정 — `TeraShardTests` 가 소스에서 센다).
+    case teraShard
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -248,7 +252,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 이 아이템이 여는 진화 조건. nil = 진화 아이템이 아님(사탕·민트·부적).
     var evolutionRule: EvolutionItemRule? {
         switch self {
-        case .rareCandy, .mint, .shinyCharm, .heartScale,
+        case .rareCandy, .mint, .shinyCharm, .heartScale, .teraShard,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -307,6 +311,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint: return nil   // PokéAPI 에 민트 스프라이트 없음(8세대 아이템) → 이모지 폴백
         case .shinyCharm: return "shiny-charm"
         case .heartScale: return "heart-scale"
+        case .teraShard: return nil   // PokéAPI 에 테라피스 스프라이트 없음(9세대) → 이모지 폴백
         default: return evolutionRule?.apiItemName
         }
     }
@@ -336,6 +341,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .auspiciousArmor: return "🛡️"; case .maliciousArmor: return "🗡️"
         case .metalAlloy: return "⚙️"
         case .heartScale: return "💗"
+        case .teraShard: return "💎"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -349,6 +355,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mint: return Mint.price
         case .shinyCharm: return nil
         case .heartScale: return MoveRelearn.price
+        case .teraShard: return TeraShard.price
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -454,6 +461,14 @@ enum Mint {
     /// 사탕(5,000)의 1/5로 싸게 둬서 성격을 마음에 들 때까지 굴려보는 가벼운 재미. 성장을 안 줘서
     /// 이중계산 이슈도 없음(가격 = 순수 소비). 2026-08-14 재책정(#19), 비율은 유지.
     static let price = 1_000
+}
+
+/// 테라피스 밸런스 상수 — 테라스탈 타입을 무작위로 바꾸는 소모품(#3).
+enum TeraShard {
+    /// 상점 구매가. 민트(1,000)와 사탕(5,000) 사이에 둔다 — 성격처럼 굴려 보는 물건이지만
+    /// 성격과 달리 **대전 성능을 바꾼다**(상성 배율과 STAB 이 갈린다). 성장 1회분(사탕)보다는
+    /// 싸게 둬서 마음에 드는 타입이 나올 때까지 몇 번 굴릴 수 있게 한다.
+    static let price = 2_500
 }
 
 /// 이로치 부적 밸런스 상수 — 보유형(1회 구매·영구, 소비 안 됨).
@@ -787,6 +802,10 @@ struct MonState: Codable, Sendable, Identifiable {
     var levelExperience = 0
     var learnedMoves: [MoveSpec] = []
     var rotomForm: RotomForm? = nil
+    /// 테라스탈했을 때 되는 타입 — **테라피스(`ItemKind.teraShard`)로 바꿨을 때만** 값이 있다.
+    /// `nil` 이면 대전 스냅샷이 첫 번째 타입에서 파생한다(`BattleSnapshot.teraType`).
+    /// 진화해도 유지한다(이로치·성격과 같은 개체 값이다).
+    var teraType: PokemonType? = nil
     /// 진화 체인 각 종의 다국어 이름(speciesID → langCode → name). 부화 시 로드된 라인에서 저장한다 —
     /// `DexEntry.names` 와 같은 패턴이다. 박스에 있는 개체는 `currentLine` 이 없어(활성 개체만 로드됨)
     /// 이게 없으면 도감이 이름 대신 종 번호(#25)를 그린다. 구버전 저장분엔 없어(nil) 뷰가 폴백한다.
@@ -822,7 +841,7 @@ struct MonState: Codable, Sendable, Identifiable {
          evolutionStatRelation: Int? = nil,
          nickname: String? = nil, dittoDisguise: Int? = nil, dittoRevealed: Bool = false,
          names: [Int: [String: String]]? = nil, isGraduated: Bool = false, firstMetAt: Date? = nil,
-         isNewlyHatched: Bool = false) {
+         isNewlyHatched: Bool = false, teraType: PokemonType? = nil) {
         self.baseID = baseID
         self.pathIDs = pathIDs
         if let plannedPathIDs, !plannedPathIDs.isEmpty {
@@ -845,6 +864,7 @@ struct MonState: Codable, Sendable, Identifiable {
         self.dittoRevealed = dittoRevealed
         self.firstMetAt = firstMetAt
         self.isNewlyHatched = isNewlyHatched
+        self.teraType = teraType
     }
 
     // 하위호환 디코딩: shiny/nature 는 구버전 저장에 없음 → 기본값.
@@ -881,6 +901,7 @@ struct MonState: Codable, Sendable, Identifiable {
         rotomForm = try c.decodeIfPresent(RotomForm.self, forKey: .rotomForm)
         names = try c.decodeIfPresent([Int: [String: String]].self, forKey: .names)
         isGraduated = try c.decodeIfPresent(Bool.self, forKey: .isGraduated) ?? false
+        teraType = try c.decodeIfPresent(PokemonType.self, forKey: .teraType)
     }
 }
 

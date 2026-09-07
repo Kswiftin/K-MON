@@ -1501,20 +1501,21 @@ struct L {
     /// 아이템 표시명 — species 처럼 공식 현지명.
     func itemName(_ kind: ItemKind) -> String {
         switch kind {
-        case .rareCandy: return "이상한 사탕"
-        case .mint:      return "민트"
-        case .shinyCharm: return "이로치 부적"
-        case .linkingCord: return "연결의끈"
-        case .fireStone: return "불꽃의돌"
-        case .waterStone: return "물의돌"
-        case .thunderStone: return "천둥의돌"
-        case .leafStone: return "리프의돌"
-        case .iceStone: return "얼음의돌"
-        case .moonStone: return "달의돌"
-        case .sunStone: return "태양의돌"
-        case .shinyStone: return "빛의돌"
-        case .duskStone: return "어둠의돌"
-        case .dawnStone: return "각성의돌"
+        case .rareCandy: return t("이상한 사탕", "Rare Candy", "ふしぎなアメ")
+        case .mint:      return t("민트", "Mint", "ミント")
+        case .teraShard: return t("테라피스", "Tera Shard", "テラピース")
+        case .shinyCharm: return t("이로치 부적", "Shiny Charm", "ひかるおまもり")
+        case .linkingCord: return t("연결의끈", "Linking Cord", "つながりのヒモ")
+        case .fireStone: return t("불꽃의돌", "Fire Stone", "ほのおのいし")
+        case .waterStone: return t("물의돌", "Water Stone", "みずのいし")
+        case .thunderStone: return t("천둥의돌", "Thunder Stone", "かみなりのいし")
+        case .leafStone: return t("리프의돌", "Leaf Stone", "リーフのいし")
+        case .iceStone: return t("얼음의돌", "Ice Stone", "こおりのいし")
+        case .moonStone: return t("달의돌", "Moon Stone", "つきのいし")
+        case .sunStone: return t("태양의돌", "Sun Stone", "たいようのいし")
+        case .shinyStone: return t("빛의돌", "Shiny Stone", "ひかりのいし")
+        case .duskStone: return t("어둠의돌", "Dusk Stone", "やみのいし")
+        case .dawnStone: return t("각성의돌", "Dawn Stone", "めざめいし")
         // 지닌물건 진화 아이템(#89) — 본가 공식 현지명 그대로.
         case .kingsRock: return "왕의징표석"
         case .metalCoat: return "금속코트"
@@ -1602,7 +1603,14 @@ struct L {
         // 하트비늘(#97) — 아래 `default:` 는 진화 아이템 전용이라 여기에 명시하지 않으면
         // `evolutionRule == nil` 로 흘러가 설명이 빈 문자열이 된다.
         case .heartScale:
-            return "지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요."
+            return t("지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요.",
+                     "Recalls one move it could have learned by now. With four moves, one is forgotten.",
+                     "これまでに覚えられた技をひとつ思い出します。技が4つなら1つ忘れます。")
+        // 테라피스(#3) — 하트비늘과 같은 이유로 여기에 명시한다(진화 아이템이 아니다).
+        case .teraShard:
+            return t("테라스탈했을 때 되는 타입을 랜덤으로 바꿔줘요. 대전에서만 쓰이는 타입이에요.",
+                     "Randomly changes the type it becomes when it Terastallizes. It only matters in battle.",
+                     "テラスタルしたときのタイプをランダムに変えます。対戦でのみ意味があります。")
         case .shinyCharm:
             return "보유하면 이로치 포켓몬이 태어날 확률이 올라가요."
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -1623,7 +1631,16 @@ struct L {
         }
     }
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
-    var mintEffectHint: String { "성격 랜덤 변경" }
+    var mintEffectHint: String { t("성격 랜덤 변경", "Random nature", "せいかくランダム変更") }
+    /// 테라피스(#3) — 성격과 달리 대전 성능을 바꾸므로 문구도 "테라 타입" 을 밝힌다.
+    var teraShardEffectHint: String { t("테라 타입 랜덤 변경", "Random Tera type", "テラスタイプランダム変更") }
+    /// 바뀐 타입을 알리는 줄 — 어떤 타입이 됐는지가 이 아이템의 결과 전부다.
+    func teraShardUsed(_ type: PokemonType) -> String {
+        let name = type.name(lang)
+        return t("테라 타입이 \(name)(으)로 바뀌었어요!",
+                 "Its Tera type changed to \(name)!",
+                 "テラスタイプが\(name)に変わりました！")
+    }
 
     // MARK: 하트비늘 (기술 다시 배우기 — #97)
     var heartScaleEffectHint: String { "기술 다시 배우기" }

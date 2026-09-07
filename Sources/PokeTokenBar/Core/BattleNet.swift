@@ -1183,6 +1183,8 @@ final class BattleCenter {
                                               level: level, nature: nil, isShiny: false, types: profile.types,
                                               base: profile.stats, moves: moves,
                                               ability: profile.abilitySlug,
+                                              // CPU — 종 번호로 만드는 개체라 바꿀 테라 타입이 없다.
+                                              storedTeraType: nil,
                                               weightHectograms: profile.weightHectograms))
             }
             guard cpuTeam.count == rankedTeamSize else { phase = .ready; lastError = l.battleStatsFailed; return }
@@ -1232,6 +1234,8 @@ final class BattleCenter {
                                                  level: leaderLevel, nature: nil, isShiny: false,
                                                  types: profile.types, base: profile.stats, moves: moves,
                                                  ability: profile.abilitySlug,
+                                                 // 관장 팀도 종 번호로 만든다(CPU 와 같은 이유).
+                                                 storedTeraType: nil,
                                                  weightHectograms: profile.weightHectograms))
             }
             guard leaderTeam.count == GymLeague.teamSize else {
@@ -1505,7 +1509,8 @@ final class BattleCenter {
                                         name: "대여 토게키스",
                                         trainer: trainerDisplayName, level: 50, nature: nil, isShiny: false,
                                         types: profile.types, base: profile.stats, moves: [metronome],
-                                        ability: profile.abilitySlug, weightHectograms: profile.weightHectograms)
+                                        ability: profile.abilitySlug, storedTeraType: nil,
+                                        weightHectograms: profile.weightHectograms)
             pendingMyLineup = [rental]
             isMetronomeBattle = true
             send(.teamReady(snapshot: rental, lineup: [rental], teamSize: 1,

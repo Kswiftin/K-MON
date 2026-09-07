@@ -5,6 +5,8 @@ import Foundation
 enum ItemUseOutcome: Equatable, Sendable {
     case candy(CompanionStore.CandyUseResult)
     case mint(PokemonNature)
+    /// 테라피스 — 바뀐 타입을 싣는다(민트가 성격을 싣는 것과 같은 이유: 결과가 그 값이다).
+    case teraShard(PokemonType)
     /// 기술 후보 카드가 떴을 뿐 **아직 아무것도 안 바뀌었다.** 성공으로 뭉개면 부른 쪽이
     /// "기술을 바꿨다" 고 말한다.
     case relearnOpened
@@ -44,6 +46,9 @@ enum CompanionAction {
         case .mint:
             guard let nature = companion.useMint() else { return .unavailable }
             return .mint(nature)
+        case .teraShard:
+            guard let type = companion.useTeraShard() else { return .unavailable }
+            return .teraShard(type)
         case .heartScale:
             guard companion.canUseHeartScale else { return .unavailable }
             companion.useHeartScale()

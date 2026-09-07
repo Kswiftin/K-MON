@@ -496,7 +496,8 @@ final class MultiplayerRoomCenter {
         return BattleSnapshot(speciesID: speciesID, name: await companion.resolveSpeciesName(speciesID),
                               trainer: nil, level: tier.bossLevel, nature: nil, isShiny: false,
                               types: profile.types, base: profile.stats, moves: moves,
-                              ability: profile.abilitySlug, weightHectograms: profile.weightHectograms)
+                              ability: profile.abilitySlug, storedTeraType: nil,
+                              weightHectograms: profile.weightHectograms)
     }
 
     /// 보스 몫을 채운다. **호스트만** 부르고, 라운드가 열릴 때마다 지나야 한다 — 안 채우면
@@ -2211,7 +2212,7 @@ final class MultiplayerRoomCenter {
             return BattleSnapshot(speciesID: speciesID, name: companion.displayName, trainer: trainerName,
                                   level: level, nature: active.nature, isShiny: active.isShiny,
                                   types: profile.types, base: profile.stats, moves: moves,
-                                  ability: profile.abilitySlug,
+                                  ability: profile.abilitySlug, storedTeraType: active.teraType,
                                   weightHectograms: profile.weightHectograms)
         }
         return await companion.battleSnapshot(for: mon, level: level ?? mon.level)

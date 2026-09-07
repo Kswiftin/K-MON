@@ -198,6 +198,10 @@ final class CompanionStore {
     var mintFeedbackSeq: Int { mintFeedback.seq }
     var mintFeedbackNature: PokemonNature? { mintFeedback.value }
     func consumeMintFeedback() { mintFeedback.consume() }
+    private var teraShardFeedback = OneShotFeedback<PokemonType>()
+    var teraShardFeedbackSeq: Int { teraShardFeedback.seq }
+    var teraShardFeedbackType: PokemonType? { teraShardFeedback.value }
+    func consumeTeraShardFeedback() { teraShardFeedback.consume() }
 
     /// 이전 개체 · 이전 세이브 기준의 1회성 피드백을 **모두** 무효로 만든다. 하나라도 빠뜨리면
     /// 불러온 직후 남의 개체 "+XP" 나 남의 세이브 정산액이 새 개체 위에 떠오른다 — 뷰가 이미
@@ -206,6 +210,7 @@ final class CompanionStore {
         celebrationFeedback.invalidate()
         candyFeedback.invalidate()
         mintFeedback.invalidate()
+        teraShardFeedback.invalidate()
         claimFeedback.invalidate()
         payoutFeedback.invalidate()
     }
@@ -628,7 +633,7 @@ final class CompanionStore {
         return BattleSnapshot(speciesID: speciesID, name: await resolveSpeciesName(speciesID),
                               trainer: nil, level: level, nature: nil, isShiny: false,
                               types: profile.types, base: profile.stats, moves: moves,
-                              ability: profile.abilitySlug,
+                              ability: profile.abilitySlug, storedTeraType: nil,
                               weightHectograms: profile.weightHectograms)
     }
 
@@ -650,7 +655,7 @@ final class CompanionStore {
         return BattleSnapshot(speciesID: mon.presentationID, name: mon.nickname ?? name, trainer: trainerName,
                               level: level, nature: mon.nature, isShiny: mon.isShiny,
                               types: profile.types, base: profile.stats, moves: moves,
-                              ability: profile.abilitySlug,
+                              ability: profile.abilitySlug, storedTeraType: mon.teraType,
                               weightHectograms: profile.weightHectograms)
     }
 
@@ -3317,6 +3322,31 @@ final class CompanionStore {
         state.active!.nature = new
         state.inventory[ItemKind.mint.rawValue] = itemCount(.mint) - 1
         mintFeedback.fire(new)
+        save()
+        return new
+    }
+
+    // MARK: 테라피스 (테라 타입 랜덤 재설정 — #3)
+
+    /// 사용 가능 — 활성 포켓몬 + 재고>0. `currentLine` 은 보지 않는다(민트와 같은 이유: 테라
+    /// 타입은 `MonState` 에 있어 재시작 직후·오프라인에도 판정할 수 있다).
+    var canUseTeraShard: Bool { hasActive && itemCount(.teraShard) > 0 }
+
+    /// 테라피스 1개 사용 — 테라 타입을 **현재와 다른** 무작위 타입으로 교체(반드시 바뀐다).
+    /// 성장·종·통계 전부 무관하다. 사용 불가면 nil(무소모). 바뀐 타입을 반환한다(피드백용).
+    ///
+    /// 저장 값이 `nil` 인 개체(아직 안 쓴 개체·구버전 저장)는 후보가 18종 전체다 — 민트가 성격
+    /// `nil` 을 다루는 방식과 같다. 여기서 "첫 번째 타입" 을 제외하지 않는 이유는 `MonState` 가
+    /// 타입을 들지 않아서다(타입은 종에서 파생하고, 그 조회는 라인 로딩을 요구한다).
+    @discardableResult
+    func useTeraShard() -> PokemonType? {
+        guard canUseTeraShard, state.active != nil else { return nil }
+        let current = state.active!.teraType
+        let pool = PokemonType.allCases.filter { $0 != current }
+        let new = pool[Int(rng.next() % UInt64(pool.count))]
+        state.active!.teraType = new
+        state.inventory[ItemKind.teraShard.rawValue] = itemCount(.teraShard) - 1
+        teraShardFeedback.fire(new)
         save()
         return new
     }

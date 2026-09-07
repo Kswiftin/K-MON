@@ -570,6 +570,8 @@ struct RogueRunView: View {
         return BattleSnapshot(speciesID: speciesID, name: name, trainer: nil, level: level,
                               nature: nil, isShiny: false, types: profile.types,
                               base: profile.stats, moves: moves, ability: profile.abilitySlug,
+                              // 종 번호로 만드는 야생·스타터 — 바꿀 테라 타입을 든 세이브가 없다.
+                              storedTeraType: nil,
                               weightHectograms: profile.weightHectograms)
     }
 }
