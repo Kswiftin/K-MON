@@ -29,8 +29,10 @@ enum VariableDamage: Equatable, Sendable {
     /// 이 기술이 위력을 상황에서 뽑는 부류면 그 결과, 아니면 `nil`(보통 기술이라는 뜻).
     ///
     /// 이름을 `MoveSpec.from(_ dto:)` 과 맞춘다 — 둘 다 "바깥 값 하나를 이 타입으로 옮긴다" 이다.
+    /// - Parameter hit: 몇 번째 히트인가(0 부터). 다단기는 히트마다 이 함수를 지나므로, 히트별로
+    ///   위력이 오르는 기술(트리플킥·트리플악셀)은 이 값만 보면 된다. 단발기는 늘 0 이다.
     static func from(_ move: MoveSpec, attacker: BattleSide, defender: BattleSide,
-                     rng: inout SplitMix64) -> VariableDamage? {
+                     hit: Int = 0, rng: inout SplitMix64) -> VariableDamage? {
         switch move.id {
         case MoveID.electroBall:  return .power(electroBallPower(attacker: attacker, defender: defender))
         case MoveID.gyroBall:     return .power(gyroBallPower(attacker: attacker, defender: defender))
@@ -66,6 +68,12 @@ enum VariableDamage: Equatable, Sendable {
             // 이번 턴에 맞았으면 두 배. 우선도 −4 라 대개 후공이므로 조건이 실제로 자주 선다.
             let base = basePower(move, fallback: 60)
             return .power(attacker.lastHitThisTurn == nil ? base : base * 2)
+        // 히트마다 위력이 오르는 다단기 — `resolveAttack` 이 히트 번호를 넘겨 준다.
+        // 본가는 히트마다 명중을 따로 굴리지만 엔진은 기술 단위로 한 번 굴린다(다단기 공통 규칙).
+        case MoveID.tripleKick:
+            return .power(basePower(move, fallback: 10) * (hit + 1))
+        case MoveID.tripleAxel:
+            return .power(basePower(move, fallback: 20) * (hit + 1))
         case MoveID.furyCutter:
             return .power(doublingStreakPower(attacker, base: basePower(move, fallback: 40), cap: 160))
         case MoveID.rollout:
@@ -282,6 +290,7 @@ enum VariableDamage: Equatable, Sendable {
         static let nightShade = 101
         static let psywave = 149
         static let superFang = 162
+        static let tripleKick = 167
         static let flail = 175
         static let reversal = 179
         static let rollout = 205
@@ -310,6 +319,7 @@ enum VariableDamage: Equatable, Sendable {
         static let heatCrash = 535
         static let powerTrip = 681
         static let stompingTantrum = 707
+        static let tripleAxel = 813
         static let dragonEnergy = 820
         static let infernalParade = 844
         static let ruination = 877

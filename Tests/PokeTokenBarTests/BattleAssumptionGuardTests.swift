@@ -52,6 +52,9 @@ final class BattleAssumptionGuardTests: XCTestCase {
         // 턴을 넘어 쌓인 카운터에서 위력을 뽑는 부류. 역시 전부 단발기다.
         "furyCutter", "rollout", "echoedVoice",
         "rageFist", "stompingTantrum", "temperFlare",
+        // **유일한 다단기.** 히트마다 위력이 오르는 것이 이 기술들의 규칙이라, 루프 안에서 뽑는
+        // 것이 맞다 — `from` 에 히트 번호가 넘어간다.
+        "tripleKick", "tripleAxel",
     ]
 
     // MARK: 소스 스캔
@@ -128,9 +131,10 @@ final class BattleAssumptionGuardTests: XCTestCase {
             .reduce(into: Set<String>()) { $0.formUnion($1.labels) }
 
         XCTAssertEqual(variablePower, Self.frozenVariablePower, """
-            가변위력 기술이 바뀌었다. `resolveAttack` 은 위력을 다단기 루프 **안**에서 뽑으므로, \
-            새 기술의 `maxHits` 가 1 보다 크면 히트마다 위력이 다시 뽑힌다. 단발기면 위 목록만 \
-            갱신하고, 다단기면 뽑기를 루프 앞으로 올리고 `rulesVersion` 도 함께 올려라. \
+            가변위력 기술이 바뀌었다. `resolveAttack` 은 위력을 다단기 루프 **안**에서 히트 번호와 \
+            함께 뽑으므로, 새 기술의 `maxHits` 가 1 보다 크면 **히트마다 다시 뽑힌다.** 히트가 \
+            갈수록 세지는 기술(트리플킥 부류)이면 그게 맞는 동작이고, 히트 내내 같은 위력이어야 \
+            하는 기술이면 뽑기를 루프 앞으로 올리고 `rulesVersion` 도 함께 올려라. \
             차이: \(variablePower.symmetricDifference(Self.frozenVariablePower).sorted())
             """)
     }

@@ -1124,8 +1124,9 @@ enum BattleEngine {
         var remaining = defender.hp
         var total = 0, actualHits = 0, lastHit = 0
         var effectiveness = 1.0, critical = false
-        for _ in 0..<requestedHits where remaining > 0 {
-            let one = resolveSingleHit(attacker: attacker, defender: defender, move: move, rng: &rng)
+        for index in 0..<requestedHits where remaining > 0 {
+            let one = resolveSingleHit(attacker: attacker, defender: defender, move: move,
+                                       hit: index, rng: &rng)
             total += one.damage
             remaining -= one.damage
             actualHits += 1
@@ -1141,11 +1142,12 @@ enum BattleEngine {
     /// 히트 하나. 다단기는 이 함수를 히트마다 부르므로 급소·난수 폭이 히트별로 독립이다
     /// (본가와 같다 — 한 번 뽑아 곱하면 급소가 나면 전 히트가 급소가 된다).
     private static func resolveSingleHit(attacker: BattleSide, defender: BattleSide,
-                                         move: MoveSpec, rng: inout SplitMix64) -> AttackOutcome {
+                                         move: MoveSpec, hit: Int,
+                                         rng: inout SplitMix64) -> AttackOutcome {
         // PokéAPI 가 `power: null` 로 주는 공격기 — 위력을 여기서 뽑는다. `move.power` 는 0 이라
         // 그대로 쓰면 아래 식이 데미지를 0 으로 접는다(그게 이 기술들이 죽어 있던 원인이다).
         var power = move.power
-        switch VariableDamage.from(move, attacker: attacker, defender: defender, rng: &rng) {
+        switch VariableDamage.from(move, attacker: attacker, defender: defender, hit: hit, rng: &rng) {
         case .power(let computed):  power = computed
         case .fixedHP(let amount):  return fixedOutcome(amount, move: move, defender: defender)
         case .oneHitKO:             return fixedOutcome(defender.hp, move: move, defender: defender)

@@ -326,6 +326,40 @@ final class VariableDamageTests: XCTestCase {
                        .power(150), "못 움직인 턴도 실패로 친다")
     }
 
+    // MARK: 히트마다 세지는 다단기
+
+    /// 트리플킥·트리플악셀은 **히트가 갈수록** 세진다(10/20/30, 20/40/60). 히트 번호를 안 넘기면
+    /// 세 히트가 전부 기본 위력이라 기술이 3분의 1 세기로 나간다.
+    func testEscalatingMultiHitMovesGrowWithTheHitIndex() {
+        let tripleKick = spec(VariableDamage.MoveID.tripleKick, type: .fighting, power: 10)
+        let tripleAxel = spec(VariableDamage.MoveID.tripleAxel, type: .ice, power: 20)
+        var rng = SplitMix64(seed: 1)
+        for (index, expected) in [10, 20, 30].enumerated() {
+            XCTAssertEqual(VariableDamage.from(tripleKick, attacker: side(), defender: side(),
+                                               hit: index, rng: &rng), .power(expected))
+        }
+        for (index, expected) in [20, 40, 60].enumerated() {
+            XCTAssertEqual(VariableDamage.from(tripleAxel, attacker: side(), defender: side(),
+                                               hit: index, rng: &rng), .power(expected))
+        }
+    }
+
+    /// 엔진을 통과시켜 본다 — 세 히트를 **같은** 위력으로 때리는 대조군보다 세야 한다.
+    /// 히트 번호를 루프 밖에서 한 번만 뽑는 구현이면 두 값이 같아진다.
+    func testTripleKickHitsHarderThanAFlatThreeHitMove() {
+        var tripleKick = spec(VariableDamage.MoveID.tripleKick, type: .fighting, power: 10)
+        tripleKick.minHits = 3; tripleKick.maxHits = 3
+        var flat = spec(24, type: .fighting, power: 10)          // 대조군: 위력 표에 없는 3연타
+        flat.minHits = 3; flat.maxHits = 3
+
+        let escalating = attack(tripleKick, side([.fighting]), side([.normal], hp: 9_999))
+        let control = attack(flat, side([.fighting]), side([.normal], hp: 9_999))
+        XCTAssertGreaterThan(escalating.dealt, control.dealt,
+                             "10+20+30 이 10+10+10 보다 세지 않으면 히트 번호가 안 넘어간 것이다")
+        XCTAssertTrue(escalating.events.contains { if case .multiHit(_, let hits) = $0 { return hits == 3 }
+                                                   return false }, "세 번 맞아야 이 비교가 성립한다")
+    }
+
     // MARK: 엔진 — 한 턴
 
     private func attack(_ move: MoveSpec, _ attacker: BattleSide, _ defender: BattleSide,
