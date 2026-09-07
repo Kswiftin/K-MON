@@ -76,6 +76,11 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// 받은 신청을 거절한다. **확인을 받지 않는다** — 되돌릴 수 있는 일이다(상대가 다시 건다).
         case battleDecline
 
+        // MARK: 체육관 리그
+
+        /// `gym` 목록의 체육관 순번(1부터). 팀을 따로 고르지 않으면 앱과 같은 자동 편성을 쓴다.
+        case gymChallenge(number: Int)
+
         // MARK: LAN 방 (협동 레이드·방 대전)
         //
         // 대전과 같은 성질이다 — 방 상태도 세이브에 없고 `MultiplayerRoomCenter` 가 든다.
@@ -203,6 +208,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .battleSwitch: "battle.switch"
             case .battleForfeit: "battle.forfeit"
             case .battleDecline: "battle.decline"
+            case .gymChallenge: "gym.challenge"
             case .roomMove: "room.move"
             case .roomStart: "room.start"
             case .roomLeave: "room.leave"
@@ -263,6 +269,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .waveRoute(let route): route.rawValue
             case .battleMove(let move): String(move)
             case .battleSwitch(let number): String(number)
+            case .gymChallenge(let number): String(number)
             case .roomMove(let move, let target):
                 target.map { "\(move) \($0)" } ?? String(move)
             case .roomSwitch(let slot): String(slot)
@@ -386,6 +393,9 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
                 self = .battleSwitch(number: number)
             case "battle.forfeit" where argument == nil: self = .battleForfeit
             case "battle.decline" where argument == nil: self = .battleDecline
+            case "gym.challenge":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .gymChallenge(number: number)
             case "room.move":
                 guard let argument else { return nil }
                 let words = argument.split(separator: " ").map(String.init)

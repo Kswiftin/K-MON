@@ -18,6 +18,12 @@ protocol TerminalBattleControl: AnyObject {
     /// 기술 인덱스(0부터). 번호 → 인덱스 변환은 부르는 쪽(실행기)이 한다.
     func chooseMove(_ index: Int)
     func switchLAN(to index: Int)
+    /// 로컬 체육관전은 LAN `battle` 이 아니라 `teamPractice` 에 산다. 두 함수를 갈라 두지 않으면
+    /// 화면은 체육관 기술을 안내하고 실행기는 비어 있는 LAN 판에 기술을 내는 조용한 무동작이 된다.
+    func chooseTeamPracticeMove(_ index: Int)
+    func switchTeamPractice(to index: Int)
+    /// `gym` 목록이 찍는 순번(1부터)으로 로컬 체육관전을 연다.
+    @discardableResult func startGymChallenge(number: Int) -> Bool
     func forfeit()
     func declineIncoming()
 }
@@ -27,8 +33,17 @@ extension BattleCenter: TerminalBattleControl {
     /// 파일이 오래된 만큼 어긋난 값을 그린다 — 사용자는 없는 시간을 믿고 턴을 놓친다.
     var terminalState: BattleTerminalState {
         BattleTerminalState(phase: phase, battle: battle,
+                            practice: activeGym == nil ? nil : teamPractice,
+                            activeGym: activeGym, gymReward: lastGymReward,
                             remainingSeconds: turnEndsAt.map {
                                 Int($0.timeIntervalSinceNow.rounded())
                             })
+    }
+
+    @discardableResult func startGymChallenge(number: Int) -> Bool {
+        guard let gym = GymLeague.catalog.indices.contains(number - 1)
+                ? GymLeague.catalog[number - 1] : nil else { return false }
+        startGymChallenge(gym)
+        return phase != .ready
     }
 }

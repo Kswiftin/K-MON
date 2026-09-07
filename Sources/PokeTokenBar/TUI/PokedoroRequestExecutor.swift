@@ -61,6 +61,7 @@ struct PokedoroRequestExecutor {
         case .battleSwitch(let number): return battleSwitch(request, number: number)
         case .battleForfeit: return battleForfeit(request)
         case .battleDecline: return battleDecline(request)
+        case .gymChallenge(let number): return gymChallenge(request, number: number)
         case .roomMove(let move, let target): return roomMove(request, move: move, target: target)
         case .roomStart: return roomStart(request)
         case .roomLeave: return roomLeave(request)
@@ -494,7 +495,11 @@ struct PokedoroRequestExecutor {
         guard NetBattleScreen.action(number: move, in: state) == .battleMove(move: move) else {
             return no(request, Self.battleRefusal(state, wanted: .move, number: move))
         }
-        control.chooseMove(move - 1)
+        if state.activeGym != nil {
+            control.chooseTeamPracticeMove(move - 1)
+        } else {
+            control.chooseMove(move - 1)
+        }
         return battleDone(request, head: "\(move)번 기술을 냈다.")
     }
 
@@ -504,7 +509,11 @@ struct PokedoroRequestExecutor {
         else {
             return no(request, Self.battleRefusal(state, wanted: .sendOut, number: number))
         }
-        control.switchLAN(to: number - 1)
+        if state.activeGym != nil {
+            control.switchTeamPractice(to: number - 1)
+        } else {
+            control.switchLAN(to: number - 1)
+        }
         return battleDone(request, head: "\(number)번으로 교체했다.")
     }
 
@@ -554,6 +563,21 @@ struct PokedoroRequestExecutor {
 
     private func noBattle(_ request: PokedoroRequest) -> PokedoroReply {
         no(request, "진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.")
+    }
+
+    private func gymChallenge(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = battle else { return no(request, "메뉴바 앱이 체육관을 열 수 없다.") }
+        guard GymLeague.catalog.indices.contains(number - 1) else {
+            return no(request, "\(number)번 체육관이 없다 — gym 이 찍는 번호를 쓴다.")
+        }
+        guard NetBattleScreen.kind(control.terminalState) == .none else {
+            return no(request, "다른 대전이 진행 중이다.")
+        }
+        let gym = GymLeague.catalog[number - 1]
+        guard control.startGymChallenge(number: number) else {
+            return no(request, "체육관전을 시작하지 못했다 — 출전 포켓몬 수와 레벨을 확인한다.")
+        }
+        return ok(request, "\(gym.leaderName) 체육관에 도전했다. battle 또는 watch 의 대전 화면에서 이어 한다.")
     }
 
     // MARK: LAN 방

@@ -362,6 +362,29 @@ struct NetBattleTerminalTests {
                 == .rejected(.readOnly))
     }
 
+    /// 로컬 체육관전은 LAN `battle` 이 아니라 `TeamPracticeBattle` 에 산다. 그 판도 같은 대전
+    /// 화면에서 기술과 교체를 내야 "체육관은 TUI가 안 된다"는 빈 투영으로 돌아가지 않는다.
+    @Test func testAGymPracticeBattleIsProjectedAndPublishesItsMoves() throws {
+        let state = Self.gymBattling()
+
+        #expect(NetBattleScreen.kind(state) == .move)
+        #expect(NetBattleScreen.title(state).contains(GymLeague.catalog[0].leaderName))
+        #expect(NetBattleScreen.action(number: 1, in: state) == .battleMove(move: 1))
+        #expect(NetBattleScreen.lines(state, width: 60).contains { $0.contains("관장") })
+        let snapshot = try #require(PokedoroViewChannel.battleSnapshot(state, width: 60, now: Date()))
+        #expect(snapshot.numberActions?["1"] == "battle.move 1")
+    }
+
+    @Test func testAGymVictoryShowsTheRewardInTheTerminal() {
+        var state = Self.gymBattling()
+        state.practice?.result = .win
+        state.gymReward = GymReward(starPieces: 500, eggs: 1)
+
+        let lines = NetBattleScreen.lines(state, width: 80)
+
+        #expect(lines.contains { $0.contains("500") && $0.contains("알 +1") }, "\(lines)")
+    }
+
     // MARK: 픽스처
 
     /// 내 차례인 대전. 팀 크기를 키우면 교체 후보가 생긴다.
@@ -373,6 +396,16 @@ struct NetBattleTerminalTests {
                                    oppTeam: [BattleSide(snapshot(name: "상대"))],
                                    rng: SplitMix64(seed: 3)),
             remainingSeconds: remaining)
+    }
+
+    static func gymBattling() -> BattleTerminalState {
+        BattleTerminalState(
+            phase: .battling, battle: nil,
+            practice: TeamPracticeBattle(
+                mine: [BattleSide(snapshot(name: "내1")), BattleSide(snapshot(name: "내2"))],
+                opponents: [BattleSide(snapshot(name: "관장"))],
+                rng: SplitMix64(seed: 3)),
+            activeGym: GymLeague.catalog[0])
     }
 
     static func snapshot(name: String) -> BattleSnapshot {

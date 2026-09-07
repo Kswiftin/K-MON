@@ -162,6 +162,7 @@ pokedoro watch                전체 화면 실시간 보기
 pokedoro start [25|50|90]     집중 세션 시작 (stop 으로 끝내고 claim 으로 수령)
 pokedoro wave …               웨이브 런 한 판 (start · move · ball · pick · route)
 pokedoro battle | room …      LAN 대전, 방 (레이드 · 체육관 · 토너먼트 · 포켓슬론 · 퀴즈)
+pokedoro gym [challenge 번호] 체육관 목록 · 자동 편성으로 도전
 pokedoro trade | auction …    교환 협상 · 경매 시장
 pokedoro home …               Memory Home — 기분 · 기록 · 가구 배치
 pokedoro help                 전체 명령 목록

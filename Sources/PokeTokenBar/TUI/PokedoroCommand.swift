@@ -90,9 +90,10 @@ enum PokedoroCommand: Equatable, Sendable {
     //
     // **진행이 세이브에 남는 세 번째 기능이다**(웨이브 런·Memory Home 다음) — 배지는
     // `gymLeagueBadges` 에 적히므로 조회에 앱이 필요 없다. 도전은 팀 편성과 종 데이터 조회가
-    // 걸려 있어 앱에서 한다 — 할 수 없는 일은 명령에 두지 않는다.
+    // 필요해 실행 중인 앱에 요청하고, 이후 턴은 대전 채널에서 이어 간다.
 
     case gym
+    case gymChallenge(number: Int)
 
     // MARK: 교환
 
@@ -173,6 +174,7 @@ enum PokedoroCommand: Equatable, Sendable {
         case .battleSwitch(let number): .battleSwitch(number: number)
         case .battleForfeit(let confirmed): confirmed ? .battleForfeit : nil
         case .battleDecline: .battleDecline
+        case .gymChallenge(let number): .gymChallenge(number: number)
         case .roomMove(let move, let target): .roomMove(move: move, target: target)
         case .roomStart: .roomStart
         case .roomLeave(let confirmed): confirmed ? .roomLeave : nil
@@ -251,6 +253,8 @@ enum PokedoroCommandError: Equatable, Error {
     /// 웨이브 런의 번호가 아니다. 개체 번호와 오류를 나눠 두는 이유와 같다 — **어디서 번호를
     /// 얻는지가 다르다**(`party` 가 아니라 `wave` 가 찍는다).
     case invalidWaveNumber(String)
+    /// 체육관 목록 번호. 웨이브 번호와 출처가 달라 별도 문구로 돌려준다.
+    case invalidGymNumber(String)
     /// 목록 밖 길 이름. 안전한 길로 접지 않는 이유는 사용자가 위험한 길을 골랐다고 믿은 채
     /// 보상 한 장을 잃기 때문이다.
     case unknownRoute(String)
@@ -304,6 +308,8 @@ enum PokedoroCommandError: Equatable, Error {
             "놓인 가구의 번호가 아니다: \(raw) — `pokedoro home` 이 찍는 번호(1부터)를 쓴다."
         case .invalidWaveNumber(let raw):
             "웨이브 런의 번호가 아니다: \(raw) — `pokedoro wave` 가 찍는 번호(1부터)를 쓴다."
+        case .invalidGymNumber(let raw):
+            "체육관 번호가 아니다: \(raw) — `pokedoro gym` 이 찍는 번호(1부터)를 쓴다."
         case .unknownRoute(let raw):
             "그런 길이 없다: \(raw) — "
                 + RunRoute.allCases.map(\.rawValue).joined(separator: "·") + " 중 하나를 쓴다."
@@ -385,7 +391,8 @@ enum PokedoroCommandParser {
         case "bag", "items": return .bag
         case "challenge", "ch": return .challenge
         case "goals", "goal": return .goals
-        case "gym": return .gym
+        case "gym":
+            return try gymCommand(in: tail)
         case "mon":
             try rejectExtraPositional(tail, beyond: 1, command: name)
             return .mon(number: try rosterNumber(in: tail))
@@ -576,6 +583,20 @@ enum PokedoroCommandParser {
         default:
             throw PokedoroCommandError.unknownCommand(command)
         }
+    }
+
+    /// `gym` 은 조회, `gym challenge <번호>` 는 앱에 도전을 부탁한다. 번호는 바로 위 목록이
+    /// 찍는 순번이라 체육관 id 를 사람이 외울 필요가 없다.
+    private static func gymCommand(in arguments: [String]) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .gym }
+        let command = "gym \(sub)"
+        guard sub == "challenge" else { throw PokedoroCommandError.unknownCommand(command) }
+        let rest = Array(words.dropFirst())
+        try rejectExtra(rest, beyond: 1, command: command)
+        guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+        return .gymChallenge(number: try positiveNumber(
+            raw, orThrow: PokedoroCommandError.invalidGymNumber))
     }
 
     /// `trade <하위 명령> [번호]`. 하위 명령이 없으면 조회다.
@@ -889,6 +910,7 @@ enum PokedoroCommandParser {
         ("room start", "호스트가 판 시작"),
         ("room leave --yes", "방 나가기 — 정산을 못 받는다"),
         ("gym", "체육관 리그 — 여덟 곳과 딴 배지"),
+        ("gym challenge <번호>", "목록의 체육관에 도전 (자동 편성)"),
         ("trade", "교환 — 지금 협상"),
         ("trade accept", "받은 교환 신청 수락"),
         ("trade decline", "받은 교환 신청 거절"),

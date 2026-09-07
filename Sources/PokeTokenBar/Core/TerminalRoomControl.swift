@@ -40,6 +40,7 @@ extension MultiplayerRoomCenter: TerminalRoomControl {
         // 팀전·관전자·무승부에서 갈라진다(그 네 갈래를 `myOutcome` 하나가 든다).
         state.outcome = isBattleFinished ? myOutcome : nil
         state.payout = raidPayout ?? settlementPayout
+        state.raidSettlement = raidSettlement
         // **형태가 다른 판은 따로 싣는다.** 체육관·토너먼트·포켓슬론·퀴즈의 판은
         // `combatFighters` 에 없어서, 예전 화면은 그 넷에서 빈 목록을 그리며 "판을 준비하는
         // 중이다" 를 판이 끝날 때까지 남겼다.
