@@ -60,9 +60,10 @@ enum LobbyError: Error, Equatable {
     case runnersFull, spectatorsFull, duplicate, invalidCapacity, hostCannotLeave, unsupportedRole
 }
 
-/// 네트워크와 분리된 2~4인 로비 규칙. 호스트가 단일 진실 공급원으로 이 상태를 갱신한다.
+/// 네트워크와 분리된 활동별 정원 로비 규칙. 호스트가 단일 진실 공급원으로 이 상태를 갱신한다.
 struct MultiplayerLobby: Codable, Sendable, Equatable {
     static let quizCapacity = 10
+    static let raidCapacity = 8
     private(set) var participants: [LobbyParticipant]
     let capacity: Int
     let activity: RoomActivity
@@ -73,8 +74,8 @@ struct MultiplayerLobby: Codable, Sendable, Equatable {
         case .tournament: allowed = (2...8).contains(capacity)
         // 체육관은 관장 1 + 도전자 1 이 한 판이다. 남는 자리는 전부 관전자 몫이라 러너 정원은 둘이다.
         case .gym: allowed = capacity == 2
-        // 레이드 파티는 넷이 상한이다. 보스는 참가자가 아니라 로비 정원에 들지 않는다.
-        case .raid: allowed = capacity == 4
+        // 레이드 파티는 여덟이 상한이다. 보스는 참가자가 아니라 로비 정원에 들지 않는다.
+        case .raid: allowed = capacity == Self.raidCapacity
         default: allowed = (2...4).contains(capacity)
         }
         guard allowed else { throw LobbyError.invalidCapacity }

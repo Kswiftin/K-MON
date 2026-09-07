@@ -365,10 +365,10 @@ enum MultiplayerValidation {
             return fighters.count == 4 && fighters.filter { $0.team == .red }.count == 2
                 && fighters.filter { $0.team == .blue }.count == 2
         case .coopBoss:
-            // 보스 하나 + 러너 1~4. **러너 1명을 허용하는 것이 요점이다** — LAN 은 이웃이 없을 수
+            // 보스 하나 + 러너 1~8. **러너 1명을 허용하는 것이 요점이다** — LAN 은 이웃이 없을 수
             // 있고, 1★ 를 혼자 못 돌면 이 기능은 이웃 없는 사람에게 콘텐츠가 0 이다.
             return fighters.filter { $0.team == .blue }.count == 1
-                && (1...4).contains(fighters.filter { $0.team == .red }.count)
+                && (1...MultiplayerLobby.raidCapacity).contains(fighters.filter { $0.team == .red }.count)
                 && fighters.allSatisfy { $0.team != .solo }
                 // 러너는 전부 파티 레벨로 눕는다(체육관·토너먼트와 같은 규칙). **레벨은 따로 봐야
                 // 한다** — `hp == stats.hp` 는 개시 시점에 계산된 스탯과 비교하므로, 스냅샷의 레벨만
@@ -399,7 +399,8 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 16: 레이드 포획을 참가자별 확률·순차 공개로, 보상 원장을 오전·오후로 분리.
     // 17: 레이드 포획 추첨에서 몰수당한(`MultiplayerFighter.hasLeft`) 참가자만 제외 — 쓰러졌지만
     //     방에 남은 참가자는 대상이다.
-    static let protocolVersion = 17
+    // 18: 협동 레이드 러너 정원을 4명에서 8명으로 확대.
+    static let protocolVersion = 18
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -455,10 +456,10 @@ struct MultiplayerBattle: Sendable {
     /// 판 전체 상태(날씨). 호스트만 해상하므로 참가자 전원이 같은 값을 본다.
     private var field = BattleField()
 
-    /// 모드별 정원. 협동 보스전만 한 자리를 더 쓴다 — 러너 1~4 **더하기 보스 하나**라 최대 5다.
+    /// 모드별 정원. 협동 보스전만 한 자리를 더 쓴다 — 러너 1~8 **더하기 보스 하나**라 최대 9다.
     /// 다른 모드의 상한은 그대로 4다(협동전 때문에 개인전이 5명이 되면 안 된다).
     static func validCount(_ count: Int, mode: MultiplayerBattleMode) -> Bool {
-        mode == .coopBoss ? (2...5).contains(count) : (2...4).contains(count)
+        mode == .coopBoss ? (2...(MultiplayerLobby.raidCapacity + 1)).contains(count) : (2...4).contains(count)
     }
 
     init(fighters: [MultiplayerFighter], mode: MultiplayerBattleMode, seed: UInt64) throws {

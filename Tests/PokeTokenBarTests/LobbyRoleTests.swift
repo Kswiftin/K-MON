@@ -109,14 +109,15 @@ final class LobbyRoleTests: XCTestCase {
         // 12 = 공유 체육관(도전·거절·상태·행동·승계),
         // 15 = LAN 협동 레이드(`.raidStart`·`.raidSettlement`, `MultiplayerBattleMode.coopBoss`),
         // 16 = 레이드 포획을 참가자별 확률·순차 공개로, 보상 원장을 오전·오후로 분리,
-        // 17 = 레이드 포획 추첨에서 몰수당한(`hasLeft`) 참가자만 제외.
+        // 17 = 레이드 포획 추첨에서 몰수당한(`hasLeft`) 참가자만 제외,
+        // 18 = 협동 레이드 러너 정원을 4명에서 8명으로 확대.
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
         //
         // **이 값을 리터럴로 박는 테스트는 여기 하나뿐이다.** 다섯 군데에 박혀 있던 동안은 누가
         // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
         // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
         // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 17)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 18)
     }
 
     func testBettingMessagesRoundTrip() throws {

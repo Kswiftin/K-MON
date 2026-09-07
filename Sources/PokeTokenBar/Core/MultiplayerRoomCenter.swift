@@ -389,6 +389,7 @@ final class MultiplayerRoomCenter {
                 switch activity {
                 case .pokemonQuiz: capacity = MultiplayerLobby.quizCapacity
                 case .tournament: capacity = 8
+                case .raid: capacity = MultiplayerLobby.raidCapacity
                 // 관장과 도전자 둘이 러너다. 나머지는 관전자 정원으로 들어온다.
                 case .gym: capacity = 2
                 default: capacity = 4

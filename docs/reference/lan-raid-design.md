@@ -47,8 +47,8 @@ read_when:
 
 갈라진 것은 둘뿐이다.
 
-- **정원**: 러너 1~4 **+ 보스 하나**라 최대 5다(`MultiplayerBattle.validCount`). 다른 모드의 상한은 4 그대로다.
-- **개시 편성**: `.blue` 정확히 하나, `.red` 1~4, 러너는 전부 파티 레벨(50).
+- **정원**: 러너 1~8 **+ 보스 하나**라 최대 9다(`MultiplayerLobby.raidCapacity`·`MultiplayerBattle.validCount`). 다른 모드의 상한은 4 그대로다.
+- **개시 편성**: `.blue` 정확히 하나, `.red` 1~8, 러너는 전부 파티 레벨(50).
 
 턴 상한도 새 종료 상태를 만들지 않는다 — 상한을 넘기면 호스트가 파티를 전멸 처리하고
 (`endByTurnCap`), 그 뒤는 기존 경로가 패배로 닫는다.
