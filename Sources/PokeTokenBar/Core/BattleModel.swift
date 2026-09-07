@@ -2799,12 +2799,17 @@ extension BattleEngine {
         // 다단기는 합계로 한 번 자른다 — 이 엔진이 히트별로 HP 를 깎지 않기 때문이다.
         let endured = defender.has(.endure) && damage >= defender.hp
         if endured { damage = defender.hp - 1 }
-        // 기합의띠도 같은 자리에서 자른다 — **인내가 이미 버텼으면 일하지 않는다**(둘 다 세면 로그가
-        // 같은 일을 두 번 말하고 1회용 띠가 헛되게 소모된다). 조건은 본가와 같다: **만피**에서
-        // 맞은 치명적인 한 방 하나다(만피가 아니어도 버티면 HP 1 짜리 무적이 된다).
+        // 기합의띠도 같은 자리에서 자른다. 조건은 본가와 같다: **만피**에서 맞은 치명적인 한 방
+        // 하나다(만피가 아니어도 버티면 HP 1 짜리 무적이 된다).
         // 다단기는 합계로 한 번 자른다 — 인내와 같은 이유다(엔진이 히트별로 HP 를 깎지 않는다).
         // 잔뎀·혼란 자멸은 여기를 지나지 않으므로 그쪽으로는 쓰러진다(인내와 같다).
-        let sashed = !endured && defender.heldEffect == .focusSash
+        //
+        // **인내와 겹칠 때 `endured` 를 따로 묻지 않는다.** 위에서 인내가 이미 데미지를 `hp - 1` 로
+        // 잘랐으므로 아래의 `damage >= defender.hp` 가 거짓이 된다 — 그것이 "둘 다 발동하지
+        // 않는다" 를 보장하는 유일한 이유다. `!endured` 를 덧붙여 두면 그 가드가 **도달 불가한
+        // 죽은 조건**이 되어, 인내의 자르기를 없애는 결함이 들어와도 이 자리는 초록으로 남는다
+        // (결함 주입에서 실제로 그렇게 지나갔다).
+        let sashed = defender.heldEffect == .focusSash
             && defender.hp == defender.stats.hp && damage >= defender.hp
         if sashed {
             damage = defender.hp - 1

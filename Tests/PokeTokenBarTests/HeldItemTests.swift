@@ -375,6 +375,10 @@ final class HeldItemTests: XCTestCase {
 
     /// 인내와 겹치면 **줄이 두 개 나가지 않는다** — 인내가 이미 HP 1 을 남겼으므로 띠는 일할 것이
     /// 없다(둘 다 발동으로 세면 로그가 같은 일을 두 번 말하고 띠가 헛되게 소모된다).
+    ///
+    /// 이 테스트가 잠그는 것은 **인내의 자르기**다: 엔진에 `!endured` 같은 별도 가드를 두면 그것이
+    /// 도달 불가한 죽은 조건이 되어, 인내의 자르기를 없애는 결함이 들어와도 초록으로 남는다.
+    /// 가드를 지우고 나니 그 결함이 이 테스트를 빨갛게 만든다(주입해 확인).
     func testEndureTakesPrecedenceOverTheSash() {
         var attacker = side()
         var victim = side(held: .focusSash)
