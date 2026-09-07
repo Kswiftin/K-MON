@@ -607,7 +607,13 @@ final class MultiplayerRoomCenter {
         // **오늘 이미 잡았으면 주사위와 무관하게 "이미 진행했다"다.** 먼저 안 보면, 이번 추첨에서
         // 마침 실패가 나온 경우 "놓쳤다"로 보여 방금 기회를 날린 것처럼 읽힌다 — 사실은 애초에
         // 오늘 몫을 다 썼을 뿐이다(#270 뒤 사용자 지적).
-        guard !companion.raidCatchClaimedToday(tier: tier) else { raidCatchResult = .claimedToday; return }
+        guard !companion.raidCatchClaimedToday(tier: tier) else {
+            raidCatchResult = .claimedToday
+            // 비동기 경로(아래 `catchRaidBoss`)의 `.claimedToday` 분기와 같은 안내를 띄운다 —
+            // 여기서 빼먹으면 이 이른 반환만 결과는 맞는데 화면에 이유가 안 뜬다.
+            lastError = companion.l.raidCatchAlreadyToday
+            return
+        }
         guard mine.succeeded else { raidCatchResult = .escaped; return }
         let epoch = sessionEpoch
         raidCatchTask = Task { [weak self, companion] in
