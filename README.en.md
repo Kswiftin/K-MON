@@ -18,12 +18,14 @@ Pokédoro sends your Pokémon partner on an adventure while you focus, then lets
 
 > An unofficial, non-commercial Pokémon fan project. Pokémon data and sprites are fetched at runtime from [PokéAPI](https://pokeapi.co/).
 
+> **The in-app UI is Korean-only**, Pokémon and move names included (PokéAPI's Korean names, falling back to English only where Korean is missing). This README stays available in English and Japanese for documentation purposes.
+
 ## How it works
 
 1. Choose a 25-, 50-, or 90-minute focus session and send your current partner on an adventure of the same length.
 2. When the adventure is complete, claim its reward. Claiming grants experience and Star Pieces; longer sessions grant more. Merely leaving the app open records app time, but does not grant Star Pieces automatically.
 3. Each completed session awards egg fragments and has a chance to find a Mystery Egg. Ten fragments make an egg; the first adventure of the day grants an extra fragment, and ten adventures in a week grant a bonus egg.
-4. Use experience to level your partner, and spend Star Pieces in the shop or as ranked-battle stakes. Home also tracks daily and weekly missions for adventure claims, focus time, and graduations; Pokédex goals reward collecting species, types, and shinies.
+4. Use experience to level your partner, and spend Star Pieces in the shop or as ranked-battle stakes. Pick up to five reserve companions from Home to round out an adventure party — claiming splits experience 100% to the active partner and 30% to each chosen reserve. Home also tracks daily and weekly missions for adventure claims, focus time, and graduations; Pokédex goals reward collecting species, types, and shinies.
 5. Finished sessions are kept in a day-keyed log (90 days). Add a one-line label (40 characters max) when you start, and it shows up in today's log and in the weekly recap.
 
 A 5-minute rest follows each session, and every fourth session earns a 15-minute long rest. When a rest ends the app calls you back to the next session but **never starts one for you** — sessions banked while you were away would make the log say nothing about real focus. The daily goal defaults to 4 sessions and can be set anywhere from 1 to 12. The weekly recap shows bars per weekday, totals per label, a daily average, and how many sessions were started on the heels of the previous one.
@@ -34,7 +36,7 @@ You can enable Do Not Disturb to block system notifications, the floating pet, a
 
 - **LAN battles** — discover people on the same local network with Bonjour, send a challenge, and have the other player accept it manually. A received challenge can raise a notification; during a battle the window stays pinned open.
 - **Practice and ranked battles** — practice against the CPU in 1v1, 3v3, or 6v6 with a chosen team and order. Ranked LAN battles normalize Pokémon to Lv.50; CPU practice uses the levels you raised.
-- **Battle rules** — type matchups, STAB, physical and special stats, accuracy, critical hits, PP, move priority, six status conditions, and confusion are supported.
+- **Battle rules** — type matchups, STAB, physical and special stats, accuracy, critical hits, PP, move priority, six status conditions, and confusion are supported. Also weather and terrain, side conditions like Reflect/Light Screen/Aurora Veil, Tailwind's priority boost, the eight-move Protect family, and Terastallization (usable in practice battles and LAN 1v1).
 - **Gyms and stat stages** — challenge eight type gyms in 3v3. Every first clear pays Star Pieces and one egg, and the Dragon Gym's egg is guaranteed to be uncommon or better. Clearing all eight grants one shiny egg charge. Attack, Defense, Sp. Atk, Sp. Def, Speed, accuracy, and evasion can change during battle; switching resets those stages.
 - **Team battles and turn playback** — LAN battles also use the team and order you choose. Resolved turns play step by step, with playback speed configurable in Settings.
 - **2–4 player room battles** — create a room from the Friends tab or join one nearby and fight two to four trainers in a single battle. Pick free-for-all or 2 vs 2, and everyone plays the same battle once the host starts it. Recent battles and the Star Pieces they paid stay on the same screen.
