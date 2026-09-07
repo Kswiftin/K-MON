@@ -255,6 +255,27 @@ struct PokedoroRequestExecutorTests {
         #expect(!reply.succeeded)
     }
 
+    // MARK: 기술 배우기
+
+    @Test func testRelearnCandidateCanBePickedAndAcceptedInTheTerminal() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let clock = Clock()
+        let store = await makeStore(in: directory, clock: clock)
+        let move = MoveSpec(id: 1, names: ["ko": "타격"], type: .normal, power: 40,
+                            damageClass: .physical, accuracy: nil, pp: 20)
+        store.debugAddItem(.heartScale)
+        store.debugPresentRelearnPrompt(candidates: [move])
+        let executor = PokedoroRequestExecutor(timer: FocusTimer(), companion: store)
+
+        let picked = await executor.execute(request(.learnRelearn(number: 1), at: clock.now))
+        let accepted = await executor.execute(request(.learnAccept(replace: nil), at: clock.now))
+
+        #expect(picked.succeeded)
+        #expect(accepted.succeeded)
+        #expect(store.state.active?.learnedMoves.contains(where: { $0.id == move.id }) == true)
+    }
+
     // MARK: 파트너 교체
 
     /// 로스터에 없는 번호는 거절이다 — 그대로 인덱스로 쓰면 배열 밖을 읽는다.

@@ -38,7 +38,8 @@ enum PokedoroCLI {
 
         let store = CompanionStore(isReadOnly: true)
         switch command {
-        case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
+        case .help, .start, .claim, .stop, .use, .evolve, .learn, .learnAccept, .learnDecline,
+             .learnRelearn, .learnCancel, .learnTM, .switchCompanion, .rename, .hatch, .buy,
              .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
              .battleMove, .battleSwitch, .battleDecline, .battleTerastallize, .battleClose,
              .gymChallenge, .gymTeam, .playerGymStatus, .playerGymOpen, .playerGymChallenge,
@@ -196,7 +197,7 @@ enum PokedoroCLI {
         // 웨이브 런에서 왕복이 붙는 자리: 판 열기·길(다음 상대)·웨이브를 넘기는 행동(진화 조회).
         // `wave.pick`·`wave.switch`·`wave.forfeit` 는 세이브 안에서 끝나므로 짧게 둔다.
         // 대전 동작은 여기 없다 — PokéAPI 를 타지 않고 이미 열린 소켓으로 한 줄 보낸다.
-        case .hatch, .waveStart, .waveRoute, .waveMove, .waveBall: hatchReplyTimeout
+        case .hatch, .learnTM, .waveStart, .waveRoute, .waveMove, .waveBall: hatchReplyTimeout
         default: replyTimeout
         }
     }

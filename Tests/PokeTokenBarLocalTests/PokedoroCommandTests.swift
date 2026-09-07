@@ -164,6 +164,16 @@ struct PokedoroCommandTests {
         #expect(PokedoroCommandError.unexpectedArgument("evolve").message.contains("evolve"))
     }
 
+    @Test func testLearnCommandsParse() throws {
+        let machine = try #require(TechnicalMachine.catalog.first)
+        #expect(try parse(["learn"]) == .learn)
+        #expect(try parse(["learn", "accept", "2"]) == .learnAccept(replace: 2))
+        #expect(try parse(["learn", "decline"]) == .learnDecline)
+        #expect(try parse(["learn", "relearn", "1"]) == .learnRelearn(number: 1))
+        #expect(try parse(["learn", "cancel"]) == .learnCancel)
+        #expect(try parse(["learn", "tm", machine.label]) == .learnTM(machine: machine))
+    }
+
     /// 네 명령 모두 **앱에 부탁한다** — 세이브를 여는 것만으로 정산이 돌 수 있어서다.
     @Test func testCompanionCommandsBecomeRequests() {
         #expect(PokedoroCommand.evolve.request == .evolve)
@@ -174,7 +184,7 @@ struct PokedoroCommandTests {
 
     /// 도움말이 새 명령을 알린다.
     @Test func testUsageListsTheCompanionCommands() {
-        for name in ["use", "evolve", "switch", "name"] {
+        for name in ["use", "evolve", "learn", "switch", "name"] {
             #expect(PokedoroCommandParser.usage.contains(name), "도움말에 \(name) 이 없다")
         }
     }

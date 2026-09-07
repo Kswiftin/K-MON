@@ -40,6 +40,15 @@ enum PokedoroCommand: Equatable, Sendable {
     /// 보여 준 뒤 거절한다 — 오타 한 번이 개체를 영영 지우면 안 된다.
     case release(number: Int, confirmed: Bool)
 
+    // MARK: 기술 배우기
+
+    case learn
+    case learnAccept(replace: Int?)
+    case learnDecline
+    case learnRelearn(number: Int)
+    case learnCancel
+    case learnTM(machine: TechnicalMachine)
+
     // MARK: 웨이브 런
     //
     // 하위 명령이 하나의 접두어(`wave`) 아래 산다. `move`·`pick` 같은 흔한 낱말을 최상위에 두면
@@ -203,6 +212,12 @@ enum PokedoroCommand: Equatable, Sendable {
         case .playerGymAI(let enabled): .playerGymAI(enabled: enabled)
         case .playerGymResign(let confirmed): confirmed ? .playerGymResign : nil
         case .playerGymTakeover: .playerGymTakeover
+        case .learn: .learnStatus
+        case .learnAccept(let replace): .learnAccept(replace: replace)
+        case .learnDecline: .learnDecline
+        case .learnRelearn(let number): .learnRelearn(number: number)
+        case .learnCancel: .learnCancel
+        case .learnTM(let machine): .learnTM(machine: machine)
         case .raid: .raidStatus
         case .raidCreate(let tier): .raidCreate(tier: tier)
         case .raidJoin(let number, let role): .raidJoin(number: number, role: role)
@@ -465,6 +480,8 @@ enum PokedoroCommandParser {
             try rejectExtraPositional(tail, beyond: 1, command: name)
             return .release(number: try requiredRosterNumber(in: tail, command: name),
                             confirmed: options.contains("--yes"))
+        case "learn":
+            return try learnCommand(in: tail)
         case "wave":
             return try waveCommand(in: tail, options: options)
         case "battle", "pvp":
@@ -482,6 +499,38 @@ enum PokedoroCommandParser {
         default:
             if appOnlyCommands.contains(name) { throw PokedoroCommandError.appOnlyFeature(name) }
             throw PokedoroCommandError.unknownCommand(name)
+        }
+    }
+
+    private static func learnCommand(in arguments: [String]) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .learn }
+        let rest = Array(words.dropFirst())
+        let command = "learn \(sub)"
+        switch sub {
+        case "accept":
+            try rejectExtra(rest, beyond: 1, command: command)
+            return .learnAccept(replace: try waveNumber(in: rest))
+        case "decline":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .learnDecline
+        case "relearn":
+            try rejectExtra(rest, beyond: 1, command: command)
+            guard let number = try waveNumber(in: rest) else {
+                throw PokedoroCommandError.missingArgument(command)
+            }
+            return .learnRelearn(number: number)
+        case "cancel":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .learnCancel
+        case "tm":
+            let raw = try text(in: rest, command: command)
+            guard let machine = TechnicalMachine.catalog.first(where: {
+                $0.label.lowercased() == raw.lowercased() || $0.slug.lowercased() == raw.lowercased()
+            }) else { throw PokedoroCommandError.unknownCommand(command) }
+            return .learnTM(machine: machine)
+        default:
+            throw PokedoroCommandError.unknownCommand(command)
         }
     }
 
@@ -1007,6 +1056,12 @@ enum PokedoroCommandParser {
         ("stop", "집중 세션 끝내기"),
         ("use <아이템>", "아이템 하나 쓰기 (bag 이 찍는 이름)"),
         ("evolve", "대기 중인 진화 승인"),
+        ("learn", "기술 배우기·교체·하트비늘 후보 상태"),
+        ("learn accept [자리]", "기술 배우기 승인 (4개면 바꿀 기술 자리)"),
+        ("learn decline", "기술 배우기 거절"),
+        ("learn relearn <후보>", "하트비늘 후보 선택"),
+        ("learn cancel", "하트비늘 후보 닫기"),
+        ("learn tm <TM번호|이름>", "보유 기술머신 사용"),
         ("switch <번호>", "함께 다닐 포켓몬 바꾸기"),
         ("name <별명>", "파트너 별명 바꾸기"),
         ("shop", "상점 재고와 값"),

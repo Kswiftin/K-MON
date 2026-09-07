@@ -51,6 +51,12 @@ struct PokedoroRequestExecutor {
         case .buy(let good, let quantity): return buy(request, good: good, quantity: quantity)
         case .hatch: return await hatch(request)
         case .release(let number): return release(request, number: number)
+        case .learnStatus: return learnStatus(request)
+        case .learnAccept(let replace): return learnAccept(request, replace: replace)
+        case .learnDecline: return learnDecline(request)
+        case .learnRelearn(let number): return learnRelearn(request, number: number)
+        case .learnCancel: return learnCancel(request)
+        case .learnTM(let machine): return await learnTM(request, machine: machine)
         case .waveStart(let starter): return await waveStart(request, starter: starter)
         case .waveMove(let move, let target):
             return await waveMove(request, move: move, target: target)
@@ -165,10 +171,9 @@ struct PokedoroRequestExecutor {
             return ok(request, "\(name)을 썼다 — \(Self.candyLine(result))")
         case .mint(let nature):
             return ok(request, "\(name)을 썼다. 성격이 \(nature.name)가 됐다.")
-        // 후보 카드가 떴을 뿐 아직 아무것도 안 바뀌었다 — 고르는 화면은 앱에만 있다. "바꿨다" 로
-        // 답하면 사용자는 끝난 줄 알고 앱을 안 열어 본다.
+        // 후보 카드가 떴을 뿐 아직 아무것도 안 바뀌었다. TUI도 같은 카드를 이어서 조작한다.
         case .relearnOpened:
-            return ok(request, "\(name)을 썼다. 배울 기술은 앱의 포켓몬 화면에서 고른다.")
+            return ok(request, "\(name)을 썼다. 후보를 불러온 뒤 learn으로 확인한다.")
         case .evolutionItemUsed:
             return ok(request, "\(name)을 썼다.")
         // 재고 부족과 **갈라 말한다**: 사러 가야 하는지, 애초에 쓰는 물건이 아닌지 다르다.
@@ -192,6 +197,75 @@ struct PokedoroRequestExecutor {
             let name = PokedoroCLI.partnerName(companion) ?? "파트너"
             return ok(request, "진화했다 — \(name) (\(stage + 1)번째 형태)")
         }
+    }
+
+    // MARK: 기술 배우기
+
+    private func learnStatus(_ request: PokedoroRequest) -> PokedoroReply {
+        if companion.isLoadingRelearnCandidates {
+            return ok(request, "하트비늘 기술 후보를 불러오는 중이다. 잠시 뒤 learn으로 확인한다.")
+        }
+        if let prompt = companion.relearnPrompt {
+            let candidates = prompt.candidates.enumerated().map { "\($0.offset + 1). \($0.element.name)" }
+            let body = candidates.isEmpty ? "다시 배울 기술이 없다." : candidates.joined(separator: "\n")
+            return ok(request, "하트비늘 후보\n\(body)\n선택: learn relearn <후보> · 취소: learn cancel")
+        }
+        guard let prompt = companion.moveLearningPrompt else {
+            return no(request, "배울 기술이 없다. 하트비늘은 use heart-scale로 후보를 연다.")
+        }
+        let moves = companion.state.active?.learnedMoves ?? []
+        let listed = moves.enumerated().map { "\($0.offset + 1). \($0.element.name)" }.joined(separator: " · ")
+        let action = moves.count < 4 ? "learn accept · learn decline"
+            : "learn accept <바꿀 자리> · learn decline"
+        return ok(request, "\(prompt.move.name)을 배울 수 있다.\n현재 기술  \(listed)\n\(action)")
+    }
+
+    private func learnAccept(_ request: PokedoroRequest, replace: Int?) -> PokedoroReply {
+        guard let prompt = companion.moveLearningPrompt else {
+            return no(request, "승인할 기술 배우기가 없다.")
+        }
+        let count = companion.state.active?.learnedMoves.count ?? 0
+        if count >= 4 {
+            guard let replace, (1...count).contains(replace) else {
+                return no(request, "기술이 4개다 — learn accept <1-\(count)>로 바꿀 자리를 고른다.")
+            }
+        } else if replace != nil {
+            return no(request, "빈 기술 자리가 있다 — learn accept만 입력한다.")
+        }
+        companion.acceptMoveLearning(replacing: replace.map { $0 - 1 })
+        return ok(request, "\(prompt.move.name)을 배웠다.")
+    }
+
+    private func learnDecline(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let prompt = companion.moveLearningPrompt else { return no(request, "거절할 기술 배우기가 없다.") }
+        companion.declineMoveLearning()
+        return ok(request, "\(prompt.move.name)을 배우지 않았다.")
+    }
+
+    private func learnRelearn(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let prompt = companion.relearnPrompt else { return no(request, "고를 하트비늘 후보가 없다.") }
+        guard prompt.candidates.indices.contains(number - 1) else {
+            return no(request, "\(number)번 후보가 없다 — learn이 찍는 번호를 쓴다.")
+        }
+        let move = prompt.candidates[number - 1]
+        companion.pickRelearnCandidate(move)
+        return ok(request, "\(move.name)을 골랐다. " + (learnStatus(request).message))
+    }
+
+    private func learnCancel(_ request: PokedoroRequest) -> PokedoroReply {
+        guard companion.relearnPrompt != nil else { return no(request, "닫을 하트비늘 후보가 없다.") }
+        companion.cancelRelearn()
+        return ok(request, "하트비늘 후보를 닫았다.")
+    }
+
+    private func learnTM(_ request: PokedoroRequest, machine: TechnicalMachine) async -> PokedoroReply {
+        guard companion.technicalMachineCount(machine.moveID) > 0 else {
+            return no(request, "보유한 \(machine.label)이 없다 — shop에서 산다.")
+        }
+        guard await companion.useTechnicalMachine(machine) else {
+            return no(request, "지금 포켓몬은 \(machine.label)을 배울 수 없거나 이미 배웠다.")
+        }
+        return ok(request, "\(machine.label) 기술을 골랐다. " + learnStatus(request).message)
     }
 
     /// 파트너 교체. 번호는 `party` 가 찍는 값이고, **인덱스로 접는 것은 로스터를 아는 여기서** 한다.

@@ -35,6 +35,15 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
         /// **되돌릴 수 없다.** 확인(`--yes`)은 명령 쪽에서 받고, 여기 오는 요청은 이미 확인된 것이다.
         case release(number: Int)
 
+        // MARK: 기술 배우기
+
+        case learnStatus
+        case learnAccept(replace: Int?)
+        case learnDecline
+        case learnRelearn(number: Int)
+        case learnCancel
+        case learnTM(machine: TechnicalMachine)
+
         // MARK: 웨이브 런
         //
         // 이름을 `wave.` 로 묶는 이유는 **낱말이 하나뿐**이기 때문이다. `move`·`pick` 을 최상위에
@@ -219,6 +228,12 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .buy: "buy"
             case .hatch: "hatch"
             case .release: "release"
+            case .learnStatus: "learn.status"
+            case .learnAccept: "learn.accept"
+            case .learnDecline: "learn.decline"
+            case .learnRelearn: "learn.relearn"
+            case .learnCancel: "learn.cancel"
+            case .learnTM: "learn.tm"
             case .waveStart: "wave.start"
             case .waveMove: "wave.move"
             case .waveSwitch: "wave.switch"
@@ -296,6 +311,9 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             // 프로그램이 쓴 파일이 달라 보인다.
             case .buy(let good, let quantity): quantity > 1 ? "\(good.slug) \(quantity)" : good.slug
             case .release(let number): String(number)
+            case .learnAccept(let replace): replace.map(String.init)
+            case .learnRelearn(let number): String(number)
+            case .learnTM(let machine): machine.slug
             case .waveStart(let starter): starter.map(String.init)
             // 타겟 1 은 안 적는다 — 수량 1 을 안 적는 것과 같은 이유다(같은 요청이 두 모양으로
             // 존재하면 손으로 고친 파일과 프로그램이 쓴 파일이 달라 보인다).
@@ -338,7 +356,7 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case .homePlace(let item, let cell): "\(item.rawValue) \(cell)"
             case .auctionApply(let listing, let mon): "\(listing) \(mon)"
             case .auctionBid(let listing, let stardust): "\(listing) \(stardust)"
-            case .claim, .stop, .evolve, .hatch, .waveForfeit,
+            case .claim, .stop, .evolve, .hatch, .learnStatus, .learnDecline, .learnCancel, .waveForfeit,
                  .battleForfeit, .battleDecline, .battleTerastallize, .battleClose,
                  .playerGymStatus, .playerGymSpectate, .playerGymResign, .playerGymTakeover,
                  .raidStatus, .roomReady, .roomStart, .roomLeave,
@@ -400,6 +418,21 @@ struct PokedoroRequest: Codable, Equatable, Sendable {
             case "release":
                 guard let argument, let number = Self.wholeNumber(argument), number >= 1 else { return nil }
                 self = .release(number: number)
+            case "learn.status" where argument == nil: self = .learnStatus
+            case "learn.accept":
+                guard let argument else { self = .learnAccept(replace: nil); return }
+                guard let replace = Self.countingNumber(argument) else { return nil }
+                self = .learnAccept(replace: replace)
+            case "learn.decline" where argument == nil: self = .learnDecline
+            case "learn.relearn":
+                guard let argument, let number = Self.countingNumber(argument) else { return nil }
+                self = .learnRelearn(number: number)
+            case "learn.cancel" where argument == nil: self = .learnCancel
+            case "learn.tm":
+                guard let argument, let machine = TechnicalMachine.catalog.first(where: {
+                    $0.slug == argument || $0.label.lowercased() == argument.lowercased()
+                }) else { return nil }
+                self = .learnTM(machine: machine)
             // 웨이브 런 — 번호는 전부 **1 이상**이다. 0 이하를 그대로 인덱스로 접으면 배열 밖을
             // 읽거나 엉뚱한 칸을 건드린다(개체 번호와 같은 규칙이고, 상한은 판을 아는 실행기가 본다).
             case "wave.start":

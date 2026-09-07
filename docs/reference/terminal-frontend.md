@@ -302,6 +302,12 @@ pokedoro claim                끝난 모험의 보상 받기 (앱에 요청)
 pokedoro stop                 집중 세션 끝내기 (앱에 요청)
 pokedoro use <아이템>         아이템 하나 쓰기 (앱에 요청)
 pokedoro evolve               대기 중인 진화 승인 (앱에 요청)
+pokedoro learn                기술 배우기·하트비늘 후보 상태
+pokedoro learn accept [자리]  기술 배우기 승인 (기술 4개면 바꿀 자리)
+pokedoro learn decline        기술 배우기 거절
+pokedoro learn relearn <후보> 하트비늘 기술 후보 선택
+pokedoro learn cancel         하트비늘 기술 후보 닫기
+pokedoro learn tm <TM|이름>   기술머신 사용
 pokedoro switch <번호>        함께 다닐 포켓몬 바꾸기 (앱에 요청)
 pokedoro name <별명>          파트너 별명 바꾸기 (앱에 요청)
 pokedoro shop                 상점 재고와 값
