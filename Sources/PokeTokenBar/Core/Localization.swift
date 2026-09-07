@@ -289,6 +289,15 @@ struct L {
         case .substitute:       return t("\(name)은(는) 대타를 내세웠다!",
                                          "\(name) put up a substitute!",
                                          "\(name)は みがわりを だした！")
+        case .followMe:         return t("\(name)은(는) 상대의 공격을 자기에게 모았다!",
+                                         "\(name) became the center of attention!",
+                                         "\(name)は こうげきを ひきつけた！")
+        case .ragePowder:       return t("\(name)은(는) 성원의 가루를 뿌렸다!",
+                                         "\(name) scattered a rage powder!",
+                                         "\(name)は いかりのこなを まきちらした！")
+        case .spotlight:        return t("\(name)에게 스포트라이트가 비쳤다!",
+                                         "\(name) was put in the spotlight!",
+                                         "\(name)に スポットライトが あたった！")
         }
     }
 
@@ -307,6 +316,15 @@ struct L {
         case .grudge:      return t("\(name)의 원한이 상대 기술의 PP 를 앗았다!",
                                     "\(name)'s grudge drained the PP of the move that felled it!",
                                     "\(name)の うらみが わざの PPを うばった！")
+        case .followMe:    return t("\(name)이(가) 공격을 끌어 대신 받았다!",
+                                    "\(name) drew the attack in!",
+                                    "\(name)が こうげきを ひきつけた！")
+        case .ragePowder:  return t("\(name)의 가루가 공격을 끌어왔다!",
+                                    "\(name)'s powder pulled the attack in!",
+                                    "\(name)の こなが こうげきを ひきよせた！")
+        case .spotlight:   return t("스포트라이트가 \(name)에게 공격을 모았다!",
+                                    "The spotlight drew the attack onto \(name)!",
+                                    "スポットライトが \(name)に こうげきを あつめた！")
         case .substitute:  return t("\(name) 대신 대타가 맞았다!",
                                     "The substitute took the hit for \(name)!",
                                     "\(name)の みがわりが ダメージを うけた！")
@@ -357,6 +375,15 @@ struct L {
                                          "\(name)の うらみが とけた")
         case .substitute:       return t("\(name)의 대타가 부서졌다", "\(name)'s substitute broke",
                                          "\(name)の みがわりが こわれた")
+        case .followMe:         return t("\(name)에게 모이던 공격이 흩어졌다",
+                                         "\(name) is no longer the center of attention",
+                                         "\(name)への ひきつけが おわった")
+        case .ragePowder:       return t("\(name)의 성원의 가루가 걷혔다",
+                                         "\(name)'s rage powder settled",
+                                         "\(name)の いかりのこなが きえた")
+        case .spotlight:        return t("\(name)의 스포트라이트가 꺼졌다",
+                                         "\(name)'s spotlight faded",
+                                         "\(name)の スポットライトが きえた")
         }
     }
 

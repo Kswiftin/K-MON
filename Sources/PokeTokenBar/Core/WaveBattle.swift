@@ -353,7 +353,12 @@ struct WaveBattle: Sendable {
         guard move.hitsSpread else {
             guard let slot = foeSlots.contains(attack.target) ? attack.target : foeSlots.first
             else { return [] }
-            return [(foesAreMine, slot)]
+            // 유도(따라와·성원·스포트라이트)는 고른 자리보다 세다 — 판정은 방과 **같은 함수**가 한다.
+            let drawn = BattleEngine.redirectedTarget(
+                move: move, attacker: side(of: attack),
+                candidates: foeSlots.map { (slot: $0, side: foesAreMine ? mine[myField[$0].teamIndex]
+                                                                        : opponents[opponentField[$0].teamIndex]) })
+            return [(foesAreMine, drawn?.slot ?? slot)]
         }
         var hit = foeSlots.map { (isMine: foesAreMine, slot: $0) }
         if move.reach == .allOthers {
@@ -393,6 +398,16 @@ struct WaveBattle: Sendable {
 
         guard move.hitsSpread else {
             let target = hits[0]
+            // 끌려간 턴은 **로그가 말해야 한다** — 안 말하면 고른 자리가 아닌 곳이 맞은 이유가
+            // 화면에 남지 않는다(유도를 쓴 칸의 줄은 이미 지난 턴 순서에 있다).
+            if target.slot != attack.target,
+               let drawn = BattleVolatile.allCases.first(where: {
+                   $0.drawsAttacks && (target.isMine ? mine[teamIndex(isMine: true, slot: target.slot)]
+                                                     : opponents[teamIndex(isMine: false, slot: target.slot)])
+                       .has($0)
+               }) {
+                events.append(.volatileTriggered(actor(isMine: target.isMine, slot: target.slot), drawn))
+            }
             let defenderIndex = teamIndex(isMine: target.isMine, slot: target.slot)
             let defenderActor = actor(isMine: target.isMine, slot: target.slot)
             if attack.moveIndex >= 0 {

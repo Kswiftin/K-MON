@@ -611,8 +611,13 @@ struct MultiplayerBattle: Sendable {
                   let target = fighters.first(where: { $0.id == action.targetID }) else {
                 throw MultiplayerBattleError.unknownFighter
             }
-            guard attacker.id != target.id, target.isAlive,
-                  mode == .freeForAll || attacker.team != target.team else {
+            // **자기에게 거는 기술은 자기를 지목한다**(따라와·대타출동·방어·회복). 그 경우 아래
+            // "자기 자신·같은 편은 못 때린다" 규칙이 그대로 걸리면 방에서는 그 기술을 아예 낼 수
+            // 없다 — 액션을 보낼 방법이 없어 화면에서 조용히 실패한다.
+            let selfAimed = attacker.side.move(at: action.moveIndex).targetsUser == true
+            guard selfAimed || (attacker.id != target.id
+                                && (mode == .freeForAll || attacker.team != target.team)),
+                  target.isAlive else {
                 throw MultiplayerBattleError.invalidTarget
             }
             guard action.moveIndex == -1 || attacker.side.canUse(moveAt: action.moveIndex) else {
@@ -648,9 +653,22 @@ struct MultiplayerBattle: Sendable {
         var roundEvents: [BattleEvent] = [.turn(round)]
         for action in ordered {
             guard let ai = fighters.firstIndex(where: { $0.id == action.attackerID }), fighters[ai].isAlive,
-                  let ti = fighters.firstIndex(where: { $0.id == action.targetID }), fighters[ti].isAlive else { continue }
+                  let chosenIndex = fighters.firstIndex(where: { $0.id == action.targetID }),
+                  fighters[chosenIndex].isAlive else { continue }
             // 인덱스·PP 는 위 사전 검증을 통과한 값이다.
             let move = fighters[ai].side.move(at: action.moveIndex)
+            // 유도(따라와·성원·스포트라이트)는 고른 대상보다 세다 — 판정은 웨이브 런과 **같은
+            // 함수**가 한다. 끌어올 후보는 **지목된 참가자와 한 편인** 살아 있는 참가자들이라,
+            // 개인전(참가자 하나가 한 편)에서는 자기 자신뿐이고 남의 유도가 끼어들지 않는다.
+            let drawnTeam = fighters[chosenIndex].teamSlot
+            let drawn = BattleEngine.redirectedTarget(
+                move: move, attacker: fighters[ai].side,
+                candidates: fighters.indices.filter { fighters[$0].teamSlot == drawnTeam }
+                    .map { (slot: $0, side: fighters[$0].side) })
+            let ti = drawn?.slot ?? chosenIndex
+            if let drawn, drawn.slot != chosenIndex {
+                roundEvents.append(.volatileTriggered(.fighter(fighters[ti].id), drawn.volatileStatus))
+            }
             if action.moveIndex >= 0 { fighters[ai].side.pp[action.moveIndex] -= 1 }
             // 양쪽을 지역 사본으로 꺼내 넘긴다 — 같은 배열의 두 원소를 동시에 inout 으로 잡으면
             // 배타적 접근 위반이다. 공격측도 inout 인 건 행동 가능 판정(잠듦·혼란)이 공격측 상태를
@@ -664,8 +682,11 @@ struct MultiplayerBattle: Sendable {
                                                     move: move, field: &field,
                                                     attackerTeam: fighters[ai].teamSlot,
                                                     defenderTeam: fighters[ti].teamSlot, rng: &rng)
-            fighters[ai].side = attacker
+            // **방어측을 먼저 쓰고 공격측을 나중에 쓴다.** 자기에게 거는 기술은 둘이 같은 자리라
+            // (따라와·대타출동·방어), 순서가 반대면 시전 **전에** 뜬 방어측 사본이 방금 붙은
+            // 상태를 통째로 덮어쓴다 — 그 기술이 아무 일도 하지 않은 턴이 된다.
             fighters[ti].side = target
+            fighters[ai].side = attacker
             // 보스에게 들어간 몫만 센다 — 러너끼리 때릴 수는 없지만, 보스가 러너를 때린 것을
             // 기여도로 세면 정산이 보스에게 보상을 배정한다.
             if mode == .coopBoss, fighters[ti].team == .blue {

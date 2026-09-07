@@ -1014,6 +1014,10 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// `BattleSide.raiseSubstitute()`·`absorbIntoSubstitute(_:)` 둘뿐이다 — 한쪽만 만지면
     /// "인형은 없는데 HP 가 남았다" 가 되고, 그 개체는 다음 공격을 이유 없이 흘린다.
     case substitute
+    /// 다인전 타겟 유도 셋 — 이번 턴 상대의 단일 타겟 공격을 자기(스포트라이트는 지목한 자리)로
+    /// 끌어온다. **한 케이스로 접지 않는 이유는 성원의 가루다**: 풀 타입은 가루를 무시하므로
+    /// 어느 기술이 걸었는지가 판정을 가른다(하나로 접으면 그 예외를 물을 자리가 없다).
+    case followMe, ragePowder, spotlight
 
     /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
     /// `ShowdownEffectTableTests` 가 동결한다.
@@ -1034,6 +1038,9 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case "destinybond":      self = .destinyBond
         case "grudge":           self = .grudge
         case "substitute":       self = .substitute
+        case "followme":         self = .followMe
+        case "ragepowder":       self = .ragePowder
+        case "spotlight":        self = .spotlight
         default:                 return nil
         }
     }
@@ -1051,9 +1058,10 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     var targetsUser: Bool {
         switch self {
         case .aquaRing, .ingrain, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .endure, .destinyBond, .grudge, .substitute:
+             .endure, .destinyBond, .grudge, .substitute, .followMe, .ragePowder:
             return true
-        case .leechSeed, .nightmare, .curse, .partiallyTrapped:
+        // 스포트라이트만 **남을 지목한다** — 지목된 자리가 이번 턴의 공격을 받는다.
+        case .leechSeed, .nightmare, .curse, .partiallyTrapped, .spotlight:
             return false
         }
     }
@@ -1069,7 +1077,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .charge, .laserFocus: return 2
         // 인내는 **쓴 턴에만** 산다 — 1 이면 그 턴 끝에 풀린다. 운명공동체·원한은 턴이 아니라
         // 주인의 다음 행동까지 살아야 하므로 0(무기한)이고, 푸는 자리는 `beginAttack` 이다.
-        case .endure: return 1
+        // 유도 셋도 그 턴만 산다 — 무기한이면 한 번 쓴 자리가 배틀 내내 모든 공격을 받는다.
+        case .endure, .followMe, .ragePowder, .spotlight: return 1
         case .aquaRing, .ingrain, .focusEnergy, .minimize, .defenseCurl,
              .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .destinyBond, .grudge, .substitute: return 0
@@ -1085,7 +1094,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .laserFocus:  return 3
         case .minimize, .defenseCurl, .charge, .aquaRing, .ingrain,
              .leechSeed, .nightmare, .curse, .partiallyTrapped,
-             .endure, .destinyBond, .grudge, .substitute: return 0
+             .endure, .destinyBond, .grudge, .substitute,
+             .followMe, .ragePowder, .spotlight: return 0
         }
     }
 
@@ -1099,7 +1109,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .aquaRing, .ingrain: return 16
         case .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .endure, .destinyBond, .grudge, .substitute: return nil
+             .endure, .destinyBond, .grudge, .substitute,
+             .followMe, .ragePowder, .spotlight: return nil
         }
     }
 
@@ -1113,7 +1124,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .partiallyTrapped:              return (8, .trap)
         case .aquaRing, .ingrain, .leechSeed,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .endure, .destinyBond, .grudge, .substitute: return nil
+             .endure, .destinyBond, .grudge, .substitute,
+             .followMe, .ragePowder, .spotlight: return nil
         }
     }
 
@@ -1126,7 +1138,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         switch self {
         case .destinyBond, .grudge: return true
         case .endure, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
-             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge, .substitute: return false
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge, .substitute,
+             .followMe, .ragePowder, .spotlight: return false
         }
     }
 
@@ -1137,8 +1150,48 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .endure: return true
         case .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse,
              .partiallyTrapped, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .substitute:
+             .substitute, .followMe, .ragePowder, .spotlight:
             return false
+        }
+    }
+
+    /// 이번 턴 **상대의 단일 타겟 공격을 이 자리로 끌어오는가**(따라와·성원·스포트라이트).
+    ///
+    /// 필드에 넷이 서는 모드(웨이브 런·방)에서만 값을 가진다 — 1대1 은 끌어올 상대가 하나뿐이라
+    /// 이 축을 물어도 답이 달라지지 않는다.
+    var drawsAttacks: Bool {
+        switch self {
+        case .followMe, .ragePowder, .spotlight: return true
+        case .substitute, .endure, .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed,
+             .nightmare, .curse, .partiallyTrapped, .focusEnergy, .laserFocus, .minimize,
+             .defenseCurl, .charge:
+            return false
+        }
+    }
+
+    /// 풀 타입이 **무시하는** 유도인가 — 성원 하나다(가루를 뿌리는 기술이라 본가도 풀 타입에게
+    /// 통하지 않는다). 따라와·스포트라이트는 가루가 아니므로 타입을 가리지 않는다.
+    var ignoredByGrassTypes: Bool {
+        switch self {
+        case .ragePowder: return true
+        case .followMe, .spotlight, .substitute, .endure, .destinyBond, .grudge, .aquaRing,
+             .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped, .focusEnergy,
+             .laserFocus, .minimize, .defenseCurl, .charge:
+            return false
+        }
+    }
+
+    /// 유도가 겹쳤을 때 이기는 순서 — 스포트라이트가 따라와·성원보다 세다(쇼다운의
+    /// `onFoeRedirectTargetPriority` 와 같은 값). 같은 값끼리는 호출부가 준 자리 순서로 정한다 —
+    /// 무작위로 고르면 같은 seed 의 판이 재현되지 않는다.
+    var drawPriority: Int {
+        switch self {
+        case .spotlight:            return 2
+        case .followMe, .ragePowder: return 1
+        case .substitute, .endure, .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed,
+             .nightmare, .curse, .partiallyTrapped, .focusEnergy, .laserFocus, .minimize,
+             .defenseCurl, .charge:
+            return 0
         }
     }
 
@@ -2794,6 +2847,35 @@ extension BattleEngine {
         guard VariableDamage.userFaints(after: move), attacker.isAlive else { return [] }
         attacker.hp = 0
         return [.faint(actor)]
+    }
+
+    /// 다인전에서 이 공격이 **실제로 향하는 자리** — 유도(따라와·성원·스포트라이트)가 끼어든다.
+    ///
+    /// 두 모드(웨이브 런·방)가 이 한 함수를 쓴다. 각자 자기 배열에서 판정하면 한쪽에서만 유도가
+    /// 듣고 화면에는 정상으로 보인다 — 모드마다 배열 모양이 다를 뿐 규칙은 하나다.
+    ///
+    /// `candidates` 는 **맞을 자리(방어 편)의 살아 있는 개체들**이고, 순서가 곧 동점의 승자다
+    /// (무작위로 고르면 같은 seed 의 판이 재현되지 않는다). 끌려가지 않으면 `nil` 이다.
+    ///
+    /// 광역기와 자기 대상 기술은 애초에 끌 자리가 없다 — 전자는 이미 전원을 때리고, 후자는
+    /// 상대를 보지 않는다.
+    static func redirectedTarget<Slot>(move: MoveSpec, attacker: BattleSide,
+                                       candidates: [(slot: Slot, side: BattleSide)])
+        -> (slot: Slot, volatileStatus: BattleVolatile)? {
+        guard !move.hitsSpread, move.targetsUser != true else { return nil }
+        var best: (slot: Slot, volatileStatus: BattleVolatile)?
+        for candidate in candidates where candidate.side.isAlive {
+            for volatileStatus in BattleVolatile.allCases where volatileStatus.drawsAttacks {
+                guard candidate.side.has(volatileStatus) else { continue }
+                // 풀 타입은 성원의 가루를 무시한다(본가와 같다). 따라와는 가루가 아니라 그대로 끈다.
+                if volatileStatus.ignoredByGrassTypes,
+                   attacker.activeTypes.contains(.grass) { continue }
+                if volatileStatus.drawPriority > (best?.volatileStatus.drawPriority ?? 0) {
+                    best = (candidate.slot, volatileStatus)
+                }
+            }
+        }
+        return best
     }
 
     /// 대상 **하나**에 실제로 적용한다 — 명중·상성·데미지·2차효과·랭크·기절. `.move` 줄은 이
