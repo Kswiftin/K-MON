@@ -311,7 +311,9 @@ struct PopoverView: View {
                 }
             }
             .padding(8)
-            .pokedoroCard(tint: PokedoroTheme.blue, emphasized: true)
+            // 무채색 카드다 — 강조 예산은 집중 카드가 쓴다. 이 줄의 신호는 색 테두리가 아니라
+            // 채워진 "업데이트" 버튼이고, 그건 배너를 무채색으로 둬도 그대로 눈에 띈다.
+            .pokedoroCard()
         }
     }
 
@@ -343,13 +345,19 @@ struct PopoverView: View {
                     .font(.caption.weight(.bold)).foregroundStyle(.orange).monospacedDigit()
                     .help(l.starPieceBalanceHint)
                     .accessibilityLabel("\(l.starPieceBalanceHint) \(companion.availableTokens)")
+                // 꾸미기는 **내 트레이너**를 갈아입히는 화면이라 트레이너가 있는 줄이 제자리다.
+                // 예전엔 친구 탭의 대표 포켓몬 카드 안에 있었다 — 남을 만나러 가는 화면 안에
+                // 파묻혀 있어서, 내 옷장을 찾으려면 친구 탭을 먼저 열어야 했다.
+                Button(l.outfitWardrobe) { nav.showOutfit = true }
+                    .buttonStyle(.borderless).controlSize(.small)
+                    .font(.caption.weight(.semibold))
             }
             ProgressView(value: companion.trainerLevel.progress)
                 .tint(PokedoroTheme.blue)
                 .scaleEffect(x: 1, y: 1.35)
         }
         .padding(.horizontal, 11).padding(.vertical, 8)
-        .pokedoroCard(tint: PokedoroTheme.yellow)
+        .pokedoroCard()
     }
 
     /// 정산 **밖**의 지급을 알리는 줄(#200). 지갑을 바꾼 값은 창 안에 보이는 표면을 하나 가져야
@@ -368,7 +376,7 @@ struct PopoverView: View {
                 Spacer()
             }
             .padding(.horizontal, 11).padding(.vertical, 6)
-            .pokedoroCard(tint: PokedoroTheme.yellow)
+            .pokedoroCard()
             .transition(.opacity)
         }
     }

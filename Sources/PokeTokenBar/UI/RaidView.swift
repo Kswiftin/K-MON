@@ -115,7 +115,7 @@ struct RaidView: View {
             Spacer()
         }
         .padding(9)
-        .pokedoroCard(tint: .purple)
+        .pokedoroCard()
     }
 
     /// 들고 갈 개체를 고른다 — **방에 들어가기 전에만**. 로비에서 바꾸려면 참가자 `speciesID` 와

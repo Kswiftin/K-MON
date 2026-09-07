@@ -64,8 +64,7 @@ struct BattleRankBadge: View {
 }
 
 private struct PokedoroCardModifier: ViewModifier {
-    var tint: Color
-    var emphasized: Bool
+    var emphasis: Color?
 
     func body(content: Content) -> some View {
         content
@@ -73,7 +72,7 @@ private struct PokedoroCardModifier: ViewModifier {
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(alignment: .top) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(emphasized ? tint.opacity(0.26) : Color.primary.opacity(0.075),
+                    .strokeBorder(emphasis?.opacity(0.26) ?? Color.primary.opacity(0.075),
                                   lineWidth: 1)
                     .allowsHitTesting(false)
             }
@@ -81,8 +80,18 @@ private struct PokedoroCardModifier: ViewModifier {
 }
 
 extension View {
-    func pokedoroCard(tint: Color = PokedoroTheme.blue, emphasized: Bool = false) -> some View {
-        modifier(PokedoroCardModifier(tint: tint, emphasized: emphasized))
+    /// 게임 카드 한 장. **강조 예산은 한 화면에 하나다** — `emphasis` 를 주면 테두리가 그 색을
+    /// 띠고, 그 순간 그 카드가 화면에서 "지금 여기를 보라" 고 말하는 유일한 카드여야 한다.
+    /// 색은 **상태 신호**일 때만 준다(집중 중 빨강 · 휴식 중 파랑). 상시 강조는 강조가 아니다 —
+    /// 카드 넷이 저마다 색 테두리를 두르면 어디를 봐야 할지가 사라진다.
+    ///
+    /// 색을 장식으로 넘기는 자리를 없애려고 `emphasis` 하나만 받는다. 예전 API 는 강조 여부와
+    /// 무관하게 `tint` 를 받았고, 그래서 **그려지지도 않는 색**을 25곳이 넘겨 두고 있었다
+    /// (무채색 카드는 테두리를 `Color.primary` 로 그린다 — tint 는 쓰이지 않았다).
+    ///
+    /// 허용 파일은 `PokedoroCardEmphasisGuardTests` 가 지킨다.
+    func pokedoroCard(emphasis: Color? = nil) -> some View {
+        modifier(PokedoroCardModifier(emphasis: emphasis))
     }
 }
 

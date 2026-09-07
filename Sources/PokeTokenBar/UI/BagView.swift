@@ -32,7 +32,7 @@ struct BagView: View {
                         Spacer()
                     }
                     .padding(10)
-                    .pokedoroCard(tint: .purple)
+                    .pokedoroCard()
                 }
                 ForEach(store.ownedItems, id: \.kind) { item in
                     ItemCard(store: store, nav: nav, kind: item.kind, count: item.count)
@@ -108,7 +108,7 @@ private struct TechnicalMachineBagCard: View {
             }
         }
         .padding(10)
-        .pokedoroCard(tint: .purple)
+        .pokedoroCard()
         .task(id: "\(store.currentSpeciesID ?? 0)-\(machine.moveID)") { await refresh() }
     }
 
@@ -203,7 +203,7 @@ private struct ItemCard: View {
             useControls(l)
         }
         .padding(10)
-        .pokedoroCard(tint: PokedoroTheme.blue)
+        .pokedoroCard()
     }
 
     /// 이 아이템을 지금 쓸 수 있나 (kind 별 — 사탕은 라인 로딩 필요, 민트는 활성 포켓몬만).

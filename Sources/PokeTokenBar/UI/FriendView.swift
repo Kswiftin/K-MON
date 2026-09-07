@@ -161,7 +161,9 @@ struct FriendView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 44)
-        .pokedoroCard(tint: PokedoroTheme.blue, emphasized: true)
+        // 도착 신호는 파란 봉투 아이콘과 채워진 "메시지 확인" 버튼이 낸다 — 카드 테두리까지
+        // 색을 쓰면 팝오버에 강조가 둘(집중 카드 + 이 카드)이 되어 어디를 볼지가 사라진다.
+        .pokedoroCard()
     }
 
     private var chooser: some View {
@@ -194,7 +196,7 @@ struct FriendView: View {
                             .foregroundStyle(gymStatusLine == nil ? Color.secondary : Color.purple)
                     }
                     Spacer(); Image(systemName: "chevron.right")
-                }.padding(10).pokedoroCard(tint: .purple)
+                }.padding(10).pokedoroCard()
             }.buttonStyle(.plain)
 
             Button {
@@ -209,7 +211,7 @@ struct FriendView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(); Image(systemName: "chevron.right")
-                }.padding(10).pokedoroCard(tint: PokedoroTheme.blue)
+                }.padding(10).pokedoroCard()
             }.buttonStyle(.plain)
 
             Button {
@@ -224,7 +226,7 @@ struct FriendView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer(); Image(systemName: "chevron.right")
-                }.padding(10).pokedoroCard(tint: .orange)
+                }.padding(10).pokedoroCard()
             }.buttonStyle(.plain)
 
             if battleCenter.peers.isEmpty {
@@ -265,8 +267,6 @@ struct FriendView: View {
                                shiny: representative.isShiny)
                 }
                 representativeMenu
-                Button(store.l.outfitWardrobe) { nav.showOutfit = true }
-                    .buttonStyle(.bordered).controlSize(.small)
             }
         }
         .padding(10)
@@ -398,7 +398,7 @@ struct FriendView: View {
             .controlSize(.small)
         }
         .padding(10)
-        .pokedoroCard(tint: PokedoroTheme.blue)
+        .pokedoroCard()
     }
 
 }

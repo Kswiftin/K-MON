@@ -124,7 +124,7 @@ struct PlayerGymView: View {
                             .controlSize(.small)
                             .disabled(center.phase != .idle)
                     }
-                }.padding(9).pokedoroCard(tint: .purple)
+                }.padding(9).pokedoroCard()
 
                 TeamPicker(store: store,
                            selection: Binding(get: { center.gymPickedTeam },
@@ -188,7 +188,7 @@ struct PlayerGymView: View {
                         .foregroundStyle(remaining <= 60 ? .red : .orange)
                     Text(l.playerGymSetupCountdown(clockText))
                         .font(.caption2).foregroundStyle(.secondary)
-                }.padding(9).pokedoroCard(tint: remaining <= 60 ? .red : .orange)
+                }.padding(9).pokedoroCard()
             } else {
                 Label("도전을 기다리는 중입니다.",
                       systemImage: "checkmark.seal.fill")

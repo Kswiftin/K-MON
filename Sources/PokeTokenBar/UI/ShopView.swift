@@ -89,7 +89,9 @@ struct ShopView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .pokedoroCard(tint: PokedoroTheme.yellow, emphasized: true)
+        // 잔액은 상태가 아니라 상시 표시라 강조하지 않는다 — 강조 예산은 집중 카드가 쓴다.
+        // 숫자 자체가 24pt 굵은 글자라 카드 테두리에 색이 없어도 이 줄이 화면의 첫 줄로 읽힌다.
+        .pokedoroCard()
     }
 }
 
@@ -197,7 +199,7 @@ private struct TechnicalMachineShopCard: View {
             }
         }
         .padding(10)
-        .pokedoroCard(tint: .purple)
+        .pokedoroCard()
         // 잔액이 줄면(여기서 샀든 다른 카드에서 샀든) 선택 수량을 상한까지 끌어내린다 — 안 그러면
         // 살 수 없는 수량이 남아 확인 문구는 "5장"인데 구매는 조용히 실패한다.
         .onChange(of: affordableCount) { _, newCount in
@@ -277,7 +279,7 @@ private struct ShopItemCard: View {
             buyControls(l)
         }
         .padding(10)
-        .pokedoroCard(tint: PokedoroTheme.blue)
+        .pokedoroCard()
         // 잔액이 줄면(여기서 샀든 다른 카드에서 샀든) 선택 수량을 상한까지 끌어내린다 — 안 그러면
         // 살 수 없는 수량이 남아 확인 문구는 "5개"인데 구매는 조용히 실패한다.
         .onChange(of: affordableCount) { _, newCount in
@@ -448,7 +450,7 @@ private struct EggCard: View {
             controls(l)
         }
         .padding(10)
-        .pokedoroCard(tint: .orange)
+        .pokedoroCard()
     }
 
     @ViewBuilder

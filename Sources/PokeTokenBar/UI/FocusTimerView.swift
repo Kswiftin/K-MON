@@ -139,7 +139,11 @@ struct FocusTimerView: View {
                 // 줄을 새로 만들지 않고 이 자리의 빈 공간을 쓴다 — 집중 카드의 세로 예산은
                 // 파트너 카드가 화면에 남느냐를 정한다(`MissionBoardView` 가 겪은 그 회귀).
                 // 회고는 바로 왼쪽 숫자를 설명하는 화면이라 그 옆이 제자리다.
-                Button { nav.showFocusRecap = true } label: { Image(systemName: "chart.bar.xaxis") }
+                // 아이콘만 두었을 때는 이 화면을 여는 사람이 없었다 — 오버레이 이름은 그것을
+                // 소유한 자리에서 **글자로** 말해야 한다(아이콘은 이름이 아니다).
+                Button { nav.showFocusRecap = true } label: {
+                    Label("회고", systemImage: "chart.bar.xaxis")
+                }
                     .buttonStyle(.borderless).controlSize(.small)
                     .help("주간 회고")
                     .accessibilityLabel("주간 회고")
@@ -186,8 +190,11 @@ struct FocusTimerView: View {
             }
         }
         .padding(11)
-        .pokedoroCard(tint: timer.phase == .focus ? PokedoroTheme.red : PokedoroTheme.blue,
-                      emphasized: timer.isRunning)
+        // 팝오버 안에서 색 테두리를 두르는 카드는 **이것 하나**다(강조 예산 — `pokedoroCard`).
+        // 돌고 있을 때만 강조하므로 색이 곧 상태다: 집중은 빨강, 휴식은 파랑, 멈춰 있으면 무채색.
+        .pokedoroCard(emphasis: timer.isRunning
+                      ? (timer.phase == .focus ? PokedoroTheme.red : PokedoroTheme.blue)
+                      : nil)
         // 기동 직후 자동 정산된 모험(`CompanionStore.init` 의 복구 경로)도 여기서 잡힌다 —
         // 그 정산은 버튼도 세션 완료도 거치지 않아 onChange 만으로는 못 본다.
         .onAppear { adoptClaimIfNeeded() }

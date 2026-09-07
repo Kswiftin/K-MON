@@ -73,7 +73,13 @@ enum SwiftSourceScan {
     }
 
     /// 라벨에 글자가 없는 버튼인가 — 아이콘만 있어 스스로 이름을 말하지 못하는 부류.
+    ///
+    /// `accessibilityLabel(` 을 먼저 지운다. 부분일치로 `Label(` 를 찾으면 그 modifier 가 걸려
+    /// **글자를 안 단 버튼도 "글자 있음"** 으로 읽혔다 — 화면 판독기용 이름은 화면에 보이는
+    /// 글자가 아니다(`OverlayEntryLabelGuardTests` 를 세우다 드러난 스캐너 결함).
     static func isIconOnly(_ block: String) -> Bool {
-        block.contains("Image(systemName:") && !block.contains("Text(") && !block.contains("Label(")
+        let visible = block.replacingOccurrences(of: "accessibilityLabel(", with: "")
+        return visible.contains("Image(systemName:")
+            && !visible.contains("Text(") && !visible.contains("Label(")
     }
 }

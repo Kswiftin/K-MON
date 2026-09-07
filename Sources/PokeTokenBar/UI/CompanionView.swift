@@ -635,8 +635,11 @@ struct CompanionHeader: View {
                                 .clipShape(Capsule())
                         }
                         if store.hasActive, !editingName {
+                            // 글자를 함께 둔다 — 아이콘만 있는 동안 대화 화면은 앱에서 이름이
+                            // 불리는 자리가 없었다(발견 가능성). 이름을 주는 자리는 그 기능을
+                            // 소유한 화면이고, 파트너와의 대화는 파트너 카드의 것이다.
                             Button { if let id = store.activeMonID { chatPresenter.open(companionID: id) } } label: {
-                                Image(systemName: "bubble.left.and.bubble.right")
+                                Label("대화", systemImage: "bubble.left.and.bubble.right")
                                     .font(.system(size: 11, weight: .semibold))
                             }
                             .buttonStyle(.borderless).controlSize(.mini)
@@ -755,7 +758,7 @@ struct CompanionHeader: View {
                         .font(.caption.weight(.semibold))
                 }
                 .padding(8)
-                .pokedoroCard(tint: PokedoroTheme.yellow)
+                .pokedoroCard()
             }
             if let prompt = store.evolutionPrompt { EvolutionPromptCard(store: store, prompt: prompt) }
             if store.canGraduate { GraduateCard(store: store) }

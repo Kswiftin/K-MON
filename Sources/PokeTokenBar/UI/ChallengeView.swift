@@ -98,7 +98,7 @@ struct ChallengeView: View {
                     Text(subtitle).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer(); Image(systemName: "chevron.right")
-            }.padding(9).pokedoroCard(tint: tint)
+            }.padding(9).pokedoroCard()
         }.buttonStyle(.plain)
     }
 }

@@ -496,7 +496,7 @@ final class PopoverLayoutTests: XCTestCase {
             Image(systemName: "checkmark.circle")
             Text("오늘 2/4세션 · 50분")
             Spacer()
-            Button { } label: { Image(systemName: "chart.bar.xaxis") }
+            Button { } label: { Label("회고", systemImage: "chart.bar.xaxis") }
                 .buttonStyle(.borderless).controlSize(.small)
         }
         .font(.caption2.monospacedDigit())
@@ -511,7 +511,7 @@ final class PopoverLayoutTests: XCTestCase {
             Image(systemName: "checkmark.circle")
             Text(text)
             Spacer()
-            Button { } label: { Image(systemName: "chart.bar.xaxis") }
+            Button { } label: { Label("회고", systemImage: "chart.bar.xaxis") }
                 .buttonStyle(.borderless).controlSize(.small)
         }
         .font(.caption2.monospacedDigit())
