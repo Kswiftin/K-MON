@@ -40,7 +40,9 @@ enum PokedoroCLI {
         switch command {
         case .help, .start, .claim, .stop, .use, .evolve, .switchCompanion, .rename, .hatch, .buy,
              .waveStart, .waveMove, .waveSwitch, .waveBall, .wavePick, .waveRoute,
-             .battleMove, .battleSwitch, .battleDecline,
+             .battleMove, .battleSwitch, .battleDecline, .battleTerastallize, .battleClose,
+             .gymChallenge, .gymTeam, .playerGymStatus, .playerGymOpen, .playerGymChallenge,
+             .playerGymSpectate, .playerGymDefense, .playerGymAI, .playerGymTakeover,
              .roomMove, .roomStart, .roomSwitch, .roomTrack,
              .tradeAccept, .tradeDecline, .tradeOffer, .tradeWant,
              .auctionPost, .auctionUnpost, .auctionReject, .auctionCancel, .auctionClear,
@@ -108,6 +110,11 @@ enum PokedoroCLI {
         case .roomLeave:
             ["방을 나가면 이 판의 정산을 받지 못한다.",
              "정말이면: pokedoro room leave --yes"]
+                .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+            return Status.badInput.rawValue
+        case .playerGymResign:
+            ["체육관 관장 자리와 방어팀 배치를 내려놓는다.",
+             "정말이면: pokedoro gym contest resign --yes"]
                 .forEach { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
             return Status.badInput.rawValue
         case .roomBet(let runner, let stardust, _):
@@ -347,9 +354,6 @@ enum PokedoroCLI {
     /// 체육관 리그 — 여덟 곳, 딴 배지, 도전 요건.
     ///
     /// **진행이 세이브에 있어 채널을 타지 않는다**(웨이브 런·Memory Home 과 같은 쪽). 도전은
-    /// 명령이 없다 — 팀 넷을 고르고 관장 팀의 종 데이터를 받아 와야 판이 서므로 앱의 몫이고,
-    /// 할 수 없는 일은 명령에 두지 않는다(방을 만드는 일을 안 둔 것과 같은 규칙).
-    ///
     /// 요건·마릿수·레벨은 **표에서 읽는다**(`GymLeague`). 여기 숫자를 적으면 균형을 바꿀 때
     /// 이 줄만 옛말이 되고, 사용자는 요건을 채웠다고 믿은 채 거절당한다.
     static func gymRows(_ store: CompanionStore, width: Int) -> [String] {
@@ -358,13 +362,13 @@ enum PokedoroCLI {
             ("배지", "\(cleared.count)/\(GymLeague.catalog.count)"),
             ("도전 요건", "\(GymLeague.teamSize)마리 · 전원 Lv.\(GymLeague.minChallengerLevel) 이상")
         ], width: width)
-        lines += TUIRender.rows(GymLeague.catalog.map { gym in
-            (gym.leaderName
+        lines += TUIRender.rows(GymLeague.catalog.enumerated().map { index, gym in
+            ("\(index + 1) \(gym.leaderName)"
                 + (cleared.contains(gym.id) ? " \(TUIRender.doneMark)" : ""),
              "Lv.\(gym.level)")
         }, width: width)
         lines.append(TUIText.truncate(
-            "도전은 앱의 체육관 탭에서 한다 — 팀 편성과 관장 팀 조회가 필요하다.", to: width))
+            "도전: pokedoro gym challenge <번호> — 비어 있는 자리는 자동 편성한다.", to: width))
         return lines
     }
 

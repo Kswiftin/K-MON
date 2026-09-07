@@ -177,3 +177,73 @@ final class PlayerGymCoordinator {
         yieldedToExistingGym = true
     }
 }
+
+extension PlayerGymCoordinator: TerminalPlayerGymControl {
+    var terminalState: PlayerGymTerminalState {
+        let visible = rooms.visibleGymRoom
+        return PlayerGymTerminalState(
+            isLeader: companion.isGymLeader,
+            phase: rooms.phase,
+            visibleLeader: visible.flatMap { PlayerGymRoomName.parse($0.serviceName)?.leaderName }
+                ?? visible?.name,
+            canChallengeVisibleGym: visible != nil
+                && rooms.visibleGymCompatibility?.allowsChallenge != false,
+            discoveryUnavailable: isDiscoveryUnavailable,
+            hasScannedOnce: hasScannedOnce,
+            needsAppUpdate: needsAppUpdateForGym,
+            defenseTeam: companion.gymLeadership?.defenseMonIDs ?? [],
+            usesAI: companion.gymLeadership?.usesAI ?? false,
+            consecutiveDefenses: companion.gymLeadership?.consecutiveDefenses ?? 0,
+            earnedToday: companion.gymDefenseEarnedToday,
+            defenseLog: companion.gymDefenseLog,
+            setupSecondsRemaining: setupSecondsRemaining.map { Int($0.rounded(.up)) },
+            takeoverAvailable: rooms.gymLeaderAbandonedMatch)
+    }
+
+    func refreshForTerminal() { refresh() }
+
+    func openFromTerminal(defenseTeam: [UUID]) -> Bool {
+        guard rooms.phase == .idle, !needsAppUpdateForGym, hasScannedOnce,
+              rooms.gymRoomHoldingTheSlot == nil,
+              defenseTeam.count == PlayerGym.defenseTeamSize else { return false }
+        openGym()
+        guard companion.isGymLeader else { return false }
+        companion.setGymDefenseTeam(defenseTeam)
+        return companion.gymLeadership?.hasFullDefenseTeam == true
+    }
+
+    func challengeFromTerminal(team: [UUID]) -> Bool {
+        guard rooms.phase == .idle, let room = rooms.visibleGymRoom,
+              rooms.visibleGymCompatibility?.allowsChallenge != false,
+              team.count == PlayerGym.defenseTeamSize else { return false }
+        rooms.gymPickedTeam = team
+        rooms.joinAndChallengeGym(room)
+        return rooms.phase != .idle
+    }
+
+    func spectateFromTerminal() -> Bool {
+        guard rooms.phase == .idle, let room = rooms.visibleGymRoom else { return false }
+        rooms.join(room, as: .spectator)
+        return rooms.phase != .idle
+    }
+
+    func setDefenseTeamFromTerminal(_ team: [UUID]) -> Bool {
+        guard companion.isGymLeader, team.count == PlayerGym.defenseTeamSize else { return false }
+        companion.setGymDefenseTeam(team)
+        return companion.gymLeadership?.defenseMonIDs == team
+    }
+
+    func setAIFromTerminal(_ enabled: Bool) -> Bool {
+        guard companion.isGymLeader else { return false }
+        companion.setGymUsesAI(enabled)
+        return companion.gymLeadership?.usesAI == enabled
+    }
+
+    func resignFromTerminal() { resign() }
+
+    func takeOverFromTerminal() -> Bool {
+        guard rooms.gymLeaderAbandonedMatch else { return false }
+        takeOverAbandonedGym()
+        return companion.isGymLeader
+    }
+}

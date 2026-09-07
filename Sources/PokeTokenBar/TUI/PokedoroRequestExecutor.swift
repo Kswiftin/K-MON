@@ -18,6 +18,8 @@ struct PokedoroRequestExecutor {
     /// LAN 대전에 닿는 좁은 창구. **`nil` 은 "대전이 없다" 와 같은 뜻**이다 — 창구가 없으면
     /// 볼 판도 낼 턴도 없으므로 사유를 따로 만들지 않는다(앱은 늘 연결해 넘긴다).
     var battle: (any TerminalBattleControl)?
+    /// LAN 체육관 쟁탈전. 도전 탭의 로컬 체육관과 수명주기가 달라 별도 창구를 쓴다.
+    var playerGym: (any TerminalPlayerGymControl)?
     /// LAN 방(레이드·방 대전)에 닿는 창구. `battle` 과 같은 이유로 좁게 두고, `nil` 은
     /// "방에 없다" 와 같은 뜻이다.
     var room: (any TerminalRoomControl)?
@@ -61,6 +63,18 @@ struct PokedoroRequestExecutor {
         case .battleSwitch(let number): return battleSwitch(request, number: number)
         case .battleForfeit: return battleForfeit(request)
         case .battleDecline: return battleDecline(request)
+        case .battleTerastallize: return battleTerastallize(request)
+        case .battleClose: return battleClose(request)
+        case .gymChallenge(let number): return gymChallenge(request, number: number)
+        case .gymTeam(let team): return gymTeam(request, team: team)
+        case .playerGymStatus: return playerGymStatus(request)
+        case .playerGymOpen(let team): return playerGymOpen(request, team: team)
+        case .playerGymChallenge(let team): return playerGymChallenge(request, team: team)
+        case .playerGymSpectate: return playerGymSpectate(request)
+        case .playerGymDefense(let team): return playerGymDefense(request, team: team)
+        case .playerGymAI(let enabled): return playerGymAI(request, enabled: enabled)
+        case .playerGymResign: return playerGymResign(request)
+        case .playerGymTakeover: return playerGymTakeover(request)
         case .roomMove(let move, let target): return roomMove(request, move: move, target: target)
         case .roomStart: return roomStart(request)
         case .roomLeave: return roomLeave(request)
@@ -494,17 +508,32 @@ struct PokedoroRequestExecutor {
         guard NetBattleScreen.action(number: move, in: state) == .battleMove(move: move) else {
             return no(request, Self.battleRefusal(state, wanted: .move, number: move))
         }
-        control.chooseMove(move - 1)
+        if state.activeGym != nil {
+            control.chooseTeamPracticeMove(move - 1)
+        } else {
+            control.chooseMove(move - 1)
+        }
         return battleDone(request, head: "\(move)번 기술을 냈다.")
     }
 
     private func battleSwitch(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
         guard let control = battle, let state = battleState else { return noBattle(request) }
+        if let practice = state.practice, state.activeGym != nil {
+            guard practice.availableSwitches.contains(number - 1) else {
+                return no(request, "\(number)번은 교체할 수 없다 — 살아 있는 다른 팀 자리를 고른다.")
+            }
+            control.switchTeamPractice(to: number - 1)
+            return battleDone(request, head: "\(number)번으로 교체했다.")
+        }
         guard NetBattleScreen.action(number: number, in: state) == .battleSwitch(number: number)
         else {
             return no(request, Self.battleRefusal(state, wanted: .sendOut, number: number))
         }
-        control.switchLAN(to: number - 1)
+        if state.activeGym != nil {
+            control.switchTeamPractice(to: number - 1)
+        } else {
+            control.switchLAN(to: number - 1)
+        }
         return battleDone(request, head: "\(number)번으로 교체했다.")
     }
 
@@ -524,6 +553,24 @@ struct PokedoroRequestExecutor {
         }
         control.declineIncoming()
         return ok(request, "대전 신청을 거절했다.")
+    }
+
+    private func battleTerastallize(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = battle, let state = battleState,
+              state.activeGym != nil, state.practice?.canTerastallizeMine == true else {
+            return no(request, "지금 테라스탈할 수 있는 체육관 레이드가 없다.")
+        }
+        control.terastallizeTeamPractice()
+        return ok(request, "현재 포켓몬을 테라스탈했다.")
+    }
+
+    private func battleClose(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = battle, let state = battleState,
+              NetBattleScreen.kind(state) == .finished else {
+            return no(request, "닫을 대전 결과가 없다.")
+        }
+        control.dismissResult()
+        return ok(request, "대전 결과를 닫았다. 다음 도전을 시작할 수 있다.")
     }
 
     /// 낸 뒤의 답. **바뀐 판을 되읽어서** 다음에 할 일을 말한다 — 내 클램프 결과를 echo 하면
@@ -554,6 +601,154 @@ struct PokedoroRequestExecutor {
 
     private func noBattle(_ request: PokedoroRequest) -> PokedoroReply {
         no(request, "진행 중인 대전이 없다 — 신청은 앱의 친구 탭에서 한다.")
+    }
+
+    private func gymChallenge(_ request: PokedoroRequest, number: Int) -> PokedoroReply {
+        guard let control = battle else { return no(request, "메뉴바 앱이 체육관을 열 수 없다.") }
+        guard GymLeague.catalog.indices.contains(number - 1) else {
+            return no(request, "\(number)번 체육관이 없다 — gym 이 찍는 번호를 쓴다.")
+        }
+        guard NetBattleScreen.kind(control.terminalState) == .none else {
+            return no(request, "다른 대전이 진행 중이다.")
+        }
+        let gym = GymLeague.catalog[number - 1]
+        guard control.startGymChallenge(number: number) else {
+            return no(request, "체육관전을 시작하지 못했다 — 출전 포켓몬 수와 레벨을 확인한다.")
+        }
+        return ok(request, "\(gym.leaderName) 체육관에 도전했다. battle 또는 watch 의 대전 화면에서 이어 한다.")
+    }
+
+    private func gymTeam(_ request: PokedoroRequest, team: [Int]) -> PokedoroReply {
+        guard let control = battle else { return no(request, "메뉴바 앱이 체육관 레이드 팀을 바꿀 수 없다.") }
+        guard let ids = terminalTeam(numbers: team, count: GymLeague.teamSize,
+                                     allowedIDs: Set(companion.deployableMons.map(\.id))) else {
+            return invalidTeam(request, count: GymLeague.teamSize)
+        }
+        control.setGymChallengeTeam(ids)
+        return ok(request, "체육관 레이드 출전 팀과 순서를 지정했다.")
+    }
+
+    // MARK: 체육관 쟁탈전
+
+    private func playerGymStatus(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = playerGym else { return no(request, "메뉴바 앱이 체육관 쟁탈전을 열 수 없다.") }
+        control.refreshForTerminal()
+        let state = control.terminalState
+        let latestDefense = state.defenseLog.first.map { latest in
+            let outcome = latest.defended ? "방어 성공" : "자리 내줌"
+            let payout = latest.payout > 0 ? " · ⭐ \(TUIRender.number(latest.payout))" : ""
+            return "\n최근 방어: \(latest.challengerName) · \(outcome)\(payout)"
+        } ?? ""
+        if state.needsAppUpdate { return no(request, "체육관 쟁탈전을 쓰려면 앱을 업데이트해야 한다.") }
+        if state.isLeader {
+            var parts = ["내가 관장이다", "방어팀 \(state.defenseTeam.count)/\(PlayerGym.defenseTeamSize)",
+                         "AI \(state.usesAI ? "켬" : "끔")",
+                         "오늘 \(TUIRender.number(state.earnedToday))/\(TUIRender.number(PlayerGym.dailyDefenseRewardCap))"]
+            if state.consecutiveDefenses > 0 { parts.append("연속 방어 \(state.consecutiveDefenses)회") }
+            if let seconds = state.setupSecondsRemaining { parts.append("편성 마감 \(TUIRender.duration(seconds))") }
+            return ok(request, parts.joined(separator: " · ") + latestDefense)
+        }
+        if state.takeoverAvailable {
+            return ok(request, "관장이 이탈한 체육관이 있다 — takeover로 이어받을 수 있다." + latestDefense)
+        }
+        if let leader = state.visibleLeader {
+            let action = state.canChallengeVisibleGym
+                ? "challenge <party 번호 4개> 또는 spectate"
+                : "지금은 관전(spectate)만 가능"
+            return ok(request, "\(leader)의 체육관이 보인다 — \(action)." + latestDefense)
+        }
+        if state.discoveryUnavailable {
+            return no(request, "LAN 탐색이 꺼져 있다 — 앱 설정에서 켠다." + latestDefense)
+        }
+        if !state.hasScannedOnce {
+            return ok(request, "주변 체육관을 검색 중이다. 잠시 뒤 다시 확인한다." + latestDefense)
+        }
+        return ok(request, "열린 체육관이 없다 — open <party 번호 4개>로 개설할 수 있다." + latestDefense)
+    }
+
+    private func playerGymOpen(_ request: PokedoroRequest, team: [Int]) -> PokedoroReply {
+        guard let control = playerGym else { return no(request, "메뉴바 앱이 체육관 쟁탈전을 열 수 없다.") }
+        control.refreshForTerminal()
+        let boxed = Set(companion.state.boxedMons.map(\.id))
+        let deployable = Set(companion.deployableMons.map(\.id))
+        guard let ids = terminalTeam(numbers: team, count: PlayerGym.defenseTeamSize,
+                                     allowedIDs: boxed.intersection(deployable)) else {
+            return invalidTeam(request, count: PlayerGym.defenseTeamSize)
+        }
+        guard control.openFromTerminal(defenseTeam: ids) else {
+            return no(request, "체육관을 열지 못했다 — 검색이 끝났는지, 다른 체육관이나 방이 없는지 확인한다.")
+        }
+        return ok(request, "체육관을 열고 방어팀을 배치했다. room 또는 watch에서 도전을 기다린다.")
+    }
+
+    private func playerGymChallenge(_ request: PokedoroRequest, team: [Int]) -> PokedoroReply {
+        guard let control = playerGym else { return no(request, "메뉴바 앱이 체육관 쟁탈전을 열 수 없다.") }
+        control.refreshForTerminal()
+        guard let ids = terminalTeam(numbers: team, count: PlayerGym.defenseTeamSize,
+                                     allowedIDs: Set(companion.deployableMons.map(\.id))) else {
+            return invalidTeam(request, count: PlayerGym.defenseTeamSize)
+        }
+        guard control.challengeFromTerminal(team: ids) else {
+            return no(request, "도전할 체육관이 없거나 지금 입장할 수 없다.")
+        }
+        return ok(request, "체육관에 도전했다. room 또는 watch에서 전투를 이어 한다.")
+    }
+
+    private func playerGymSpectate(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = playerGym, control.spectateFromTerminal() else {
+            return no(request, "관전할 체육관이 없거나 지금 입장할 수 없다.")
+        }
+        return ok(request, "체육관에 관전자로 들어갔다. room 또는 watch에서 본다.")
+    }
+
+    private func playerGymDefense(_ request: PokedoroRequest, team: [Int]) -> PokedoroReply {
+        guard let control = playerGym else {
+            return no(request, "메뉴바 앱이 체육관 쟁탈전을 열 수 없다.")
+        }
+        let boxed = Set(companion.state.boxedMons.map(\.id))
+        let eligible = Set(companion.deployableMons.map(\.id)).union(control.terminalState.defenseTeam)
+        guard let ids = terminalTeam(numbers: team, count: PlayerGym.defenseTeamSize,
+                                     allowedIDs: boxed.intersection(eligible)),
+              control.setDefenseTeamFromTerminal(ids) else {
+            return invalidTeam(request, count: PlayerGym.defenseTeamSize)
+        }
+        return ok(request, "체육관 방어팀과 출전 순서를 바꿨다.")
+    }
+
+    private func playerGymAI(_ request: PokedoroRequest, enabled: Bool) -> PokedoroReply {
+        guard let control = playerGym, control.setAIFromTerminal(enabled) else {
+            return no(request, "내가 체육관 관장일 때만 AI 설정을 바꿀 수 있다.")
+        }
+        return ok(request, "체육관 방어 AI를 \(enabled ? "켰다" : "껐다").")
+    }
+
+    private func playerGymResign(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = playerGym, control.terminalState.isLeader else {
+            return no(request, "내가 지키는 체육관이 없다.")
+        }
+        control.resignFromTerminal()
+        return ok(request, "체육관 관장 자리에서 내려왔다.")
+    }
+
+    private func playerGymTakeover(_ request: PokedoroRequest) -> PokedoroReply {
+        guard let control = playerGym, control.takeOverFromTerminal() else {
+            return no(request, "이어받을 수 있는 이탈 체육관이 없다.")
+        }
+        return ok(request, "이탈한 관장의 체육관을 이어받았다. defense로 방어팀을 확인한다.")
+    }
+
+    private func terminalTeam(numbers: [Int], count: Int, allowedIDs: Set<UUID>) -> [UUID]? {
+        guard numbers.count == count, Set(numbers).count == numbers.count else { return nil }
+        let entries = PokedoroCLI.partyEntries(companion)
+        let ids = numbers.compactMap { number in
+            entries.first { $0.index == TUIRender.rosterIndex(printed: number) }?.id
+        }
+        guard ids.count == numbers.count, ids.allSatisfy(allowedIDs.contains) else { return nil }
+        return ids
+    }
+
+    private func invalidTeam(_ request: PokedoroRequest, count: Int) -> PokedoroReply {
+        no(request, "출전 가능한 서로 다른 party 번호 \(count)개를 순서대로 적는다.")
     }
 
     // MARK: LAN 방

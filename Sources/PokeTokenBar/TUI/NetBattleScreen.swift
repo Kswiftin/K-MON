@@ -8,6 +8,11 @@ import Foundation
 struct BattleTerminalState {
     var phase: BattleCenter.Phase
     var battle: NetBattleState?
+    /// 체육관 리그는 `TeamPracticeBattle` 엔진을 쓴다. 앱 화면에서는 같은 경기장이라 보였지만
+    /// 터미널에는 LAN 판만 실려 체육관전 전체가 `appOnly` 로 떨어졌다.
+    var practice: TeamPracticeBattle? = nil
+    var activeGym: Gym? = nil
+    var gymReward: GymReward? = nil
     /// 이번 턴이 끝나기까지 남은 초. `nil` 이면 마감이 없다(대전 밖이거나 이미 낸 뒤).
     ///
     /// 초로 접어 넘기는 이유는 **터미널이 시계를 다시 계산하지 않게** 하기 위해서다 — 마감 시각을
@@ -47,6 +52,11 @@ enum NetBattleScreen {
     // MARK: 국면
 
     static func kind(_ state: BattleTerminalState) -> Kind {
+        if let practice = state.practice, state.activeGym != nil {
+            if practice.result != nil { return .finished }
+            if !practice.mySlot.isAlive { return .sendOut }
+            return .move
+        }
         switch state.phase {
         case .ready:    return .none
         case .incoming: return .incoming
@@ -64,6 +74,18 @@ enum NetBattleScreen {
 
     /// 지금 유효한 번호. **이 목록이 진실이고 라벨도 요청도 여기서 파생된다.**
     static func numbers(_ state: BattleTerminalState) -> [Int] {
+        if let practice = state.practice, state.activeGym != nil {
+            switch kind(state) {
+            case .move:
+                guard !practice.mySlot.mustStruggle else { return [1] }
+                return practice.mySlot.moves.indices
+                    .filter { practice.mySlot.canUse(moveAt: $0) }.map { $0 + 1 }
+            case .sendOut:
+                return practice.availableSwitches.map { $0 + 1 }
+            default:
+                return []
+            }
+        }
         guard let battle = state.battle else { return [] }
         switch kind(state) {
         case .move:
@@ -104,7 +126,8 @@ enum NetBattleScreen {
 
     /// 머리글. 채널의 `title` 이 되고 `watch` 의 첫 줄이 된다.
     static func title(_ state: BattleTerminalState) -> String {
-        switch state.phase {
+        if let gym = state.activeGym { return "\(gym.leaderName) 체육관" }
+        return switch state.phase {
         case .ready: "대전 없음"
         case .incoming(let peer): "\(peer) 의 대전 신청"
         case .challenging(let peer): "\(peer) 에게 신청 중"
@@ -124,14 +147,18 @@ enum NetBattleScreen {
         // 번호가 빠져 구멍이 나고, 교체는 쓰러진 자리와 이미 나온 자리가 빠진다 — 그 구멍을
         // 범위로 덮으면 먹지도 않는 번호를 권하고 뒤쪽의 쓸 수 있는 번호는 안내에서 사라진다.
         case .move:
-            return numberKeys(state, noun: "기술") + ["f 항복"]
+            return numberKeys(state, noun: "기술")
+                + (state.activeGym != nil && state.practice?.canTerastallizeMine == true ? ["t 테라"] : [])
+                + ["f 항복"]
         case .sendOut:
             return numberKeys(state, noun: "교체") + ["f 항복"]
         case .incoming:
             return ["n 거절"]
         case .waiting:
             return ["f 항복"]
-        case .none, .appOnly, .finished:
+        case .finished:
+            return state.activeGym == nil ? [] : ["x 결과 닫기"]
+        case .none, .appOnly:
             return []
         }
     }
@@ -146,7 +173,12 @@ enum NetBattleScreen {
         case .appOnly:
             return "앱에서 이어 한다 — 파티 편성은 터미널에 입력 줄이 없다"
         case .move:
-            return (numberKeys(state, noun: "기술") + ["f 항복", "(battle move <n>)"])
+            var hints = numberKeys(state, noun: "기술")
+            if state.activeGym != nil {
+                hints += ["교체 battle switch <팀 번호>"]
+                if state.practice?.canTerastallizeMine == true { hints += ["t 테라"] }
+            }
+            return (hints + ["f 항복", "(battle move <n>)"])
                 .joined(separator: "   ")
         case .sendOut:
             return (["쓰러졌다 —"] + numberKeys(state, noun: "교체") + ["(battle switch <번호>)"])
@@ -154,7 +186,9 @@ enum NetBattleScreen {
         case .waiting:
             return "상대의 행동을 기다린다"
         case .finished:
-            return "대전이 끝났다 — 다음 판은 앱에서 시작한다"
+            return state.activeGym == nil
+                ? "대전이 끝났다 — 다음 판은 앱에서 시작한다"
+                : "체육관전이 끝났다 — x 또는 battle close로 닫고 다음 도전을 시작한다"
         }
     }
 
@@ -165,6 +199,36 @@ enum NetBattleScreen {
         let inner = max(1, width)
         var lines = [TUIRender.row(left: title(state), right: clock(state), width: inner)]
         lines.append(TUIRender.rule(width: inner))
+        if let practice = state.practice, state.activeGym != nil {
+            lines.append(cell("상대", practice.opponentSlot, width: inner))
+            lines.append(cell("나", practice.mySlot, width: inner))
+            if practice.mine.count > 1 {
+                lines.append(TUIText.truncate("팀   " + practice.mine.enumerated().map { index, side in
+                    "\(index + 1)\(side.isAlive ? "" : "✗")"
+                }.joined(separator: " "), to: inner))
+            }
+            let log = BattleLogSource.twoSided(practice.events, mine: .a, l: L(),
+                                               myName: practice.mySlot.snapshot.name,
+                                               theirName: practice.opponentSlot.snapshot.name,
+                                               myMoves: practice.mySlot.moves,
+                                               theirMoves: practice.opponentSlot.moves)
+                .suffix(logTail).map(\.text)
+            if !log.isEmpty {
+                lines.append(TUIRender.rule(width: inner))
+                lines += log.map { TUIText.truncate($0, to: inner) }
+            }
+            if practice.result != nil {
+                lines.append(TUIRender.rule(width: inner))
+                lines.append(TUIText.truncate(gymEndingLine(state, practice: practice), to: inner))
+            } else {
+                let offered = choices(state)
+                if !offered.isEmpty {
+                    lines.append(TUIRender.rule(width: inner))
+                    lines += offered.map { TUIText.truncate("\($0.number) \($0.label)", to: inner) }
+                }
+            }
+            return lines
+        }
         guard let battle = state.battle else {
             lines.append(TUIText.truncate(standingLine(state), to: inner))
             return lines
@@ -242,6 +306,22 @@ enum NetBattleScreen {
     // MARK: 라벨
 
     private static func label(_ number: Int, in state: BattleTerminalState) -> String {
+        if let practice = state.practice, state.activeGym != nil {
+            let index = number - 1
+            switch kind(state) {
+            case .move:
+                guard !practice.mySlot.mustStruggle else { return MoveSpec.struggle().name }
+                guard practice.mySlot.moves.indices.contains(index) else { return "" }
+                let remaining = practice.mySlot.pp.indices.contains(index) ? practice.mySlot.pp[index] : 0
+                return "\(practice.mySlot.moves[index].name)  \(remaining)/\(practice.mySlot.moves[index].pp)"
+            case .sendOut:
+                guard practice.mine.indices.contains(index) else { return "" }
+                let member = practice.mine[index]
+                return "\(member.snapshot.name) Lv.\(member.snapshot.level)  \(member.hp)/\(member.stats.hp)"
+            default:
+                return ""
+            }
+        }
         guard let battle = state.battle else { return "" }
         switch kind(state) {
         case .move:
@@ -260,5 +340,24 @@ enum NetBattleScreen {
         case .none, .incoming, .appOnly, .waiting, .finished:
             return ""
         }
+    }
+
+    private static func gymEndingLine(_ state: BattleTerminalState,
+                                      practice: TeamPracticeBattle) -> String {
+        let result: String
+        switch practice.result {
+        case .win?: result = "이겼다!"
+        case .loss?: result = "졌다."
+        case .draw?: result = "무승부다."
+        case nil: return ""
+        }
+        guard let reward = state.gymReward else {
+            return result + (practice.result == .win ? " 재도전 보상은 없다." : "")
+        }
+        var parts: [String] = []
+        if reward.starPieces > 0 { parts.append("별의조각 +\(TUIRender.number(reward.starPieces))") }
+        if reward.eggs > 0 { parts.append("알 +\(reward.eggs)") }
+        if reward.shinyCharges > 0 { parts.append("이로치 알 확정 +\(reward.shinyCharges)") }
+        return parts.isEmpty ? result : result + " " + parts.joined(separator: " · ")
     }
 }

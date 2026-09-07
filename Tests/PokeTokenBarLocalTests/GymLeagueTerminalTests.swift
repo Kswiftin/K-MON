@@ -100,19 +100,29 @@ struct GymLeagueTerminalTests {
         #expect(rows.contains { $0.contains("\(GymLeague.teamSize)") }, "\(rows)")
     }
 
-    /// 도전은 **앱에서** 한다 — 팀을 고르고 종 데이터를 받아 와야 판이 선다. 안내가 그 말을
-    /// 해야 사용자가 터미널에서 명령을 찾다 그만두지 않는다.
-    @Test func testTheListSaysWhereChallengingHappens() throws {
+    /// 목록 번호는 그대로 도전 요청이 된다. 앱이 팀과 종 데이터를 준비하고 터미널은 세이브를
+    /// 직접 쓰지 않는다.
+    @Test func testTheListNumberCanStartAChallengeThroughTheApp() throws {
         let directory = storeFixtureDirectory("gym-where")
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let rows = PokedoroCLI.gymRows(makeStore(directory), width: 72)
 
-        #expect(rows.contains { $0.contains("앱") }, "\(rows)")
+        #expect(rows.contains { $0.contains("gym challenge") }, "\(rows)")
+        #expect(try PokedoroCommandParser.parse(["gym", "challenge", "1"]).request
+                == .gymChallenge(number: 1))
     }
 
     /// 조회라 **요청이 되지 않는다** — 앱이 꺼져 있어도 답한다(웨이브 런·Memory Home 과 같다).
     @Test func testTheGymListNeedsNoRunningApp() throws {
         #expect(try PokedoroCommandParser.parse(["gym"]).request == nil)
+    }
+
+    @Test func testTheGymChallengeSurvivesTheRequestFileRoundTrip() throws {
+        let sent = PokedoroRequest(id: UUID(), action: .gymChallenge(number: 3), requestedAt: Date())
+        let back = try JSONDecoder().decode(PokedoroRequest.self,
+                                            from: JSONEncoder().encode(sent))
+        #expect(back.action == .gymChallenge(number: 3))
+        #expect(PokedoroRequest.Action(name: "gym.challenge", argument: "0") == nil)
     }
 }

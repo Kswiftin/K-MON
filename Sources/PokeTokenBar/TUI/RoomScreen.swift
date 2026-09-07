@@ -20,6 +20,8 @@ struct RoomTerminalState {
     var outcome: BattleOutcome?
     /// 정산으로 받은 별의조각.
     var payout: Int?
+    /// 레이드 정산표. `payout == 0` 이어도 값이 있으면 이미 이번 오전/오후 보상을 받은 판이다.
+    var raidSettlement: RaidSettlement?
 
     /// 지금 도는 **결투**(체육관·토너먼트). 이 값이 있으면 `fighters` 는 비어 있다 — 그 둘의 판은
     /// `combatFighters` 가 아니라 각자의 상태에 산다.
@@ -114,8 +116,15 @@ enum RoomScreen {
 
     /// 때릴 수 있는 상대. **나를 뺀 살아 있는 전투원**이다 — 협동 레이드는 보스 하나, 방 대전은 여럿.
     static func targets(_ state: RoomTerminalState) -> [Target] {
-        state.fighters
-            .filter { $0.id != state.myID && $0.isAlive }
+        let candidates: [MultiplayerFighter]
+        if state.activity == .raid {
+            // 레이드 편성은 [러너들..., 보스]다. 단순히 "나 아닌 첫 전투원"을 고르면 2인 이상
+            // 판에서 동료가 1번 대상이 되고, 센터가 아군 공격을 거절해 TUI 레이드가 멈춘다.
+            candidates = state.fighters.filter { $0.id == RaidBoss.bossID && $0.isAlive }
+        } else {
+            candidates = state.fighters.filter { $0.id != state.myID && $0.isAlive }
+        }
+        return candidates
             .enumerated()
             .map { index, fighter in
                 Target(number: index + 1, id: fighter.id,
@@ -291,6 +300,12 @@ enum RoomScreen {
         }
         if let ending = endingLine(state) {
             lines.append(TUIRender.rule(width: inner))
+            if let settlement = state.raidSettlement {
+                lines.append(TUIText.truncate(
+                    "정산  기본 \(TUIRender.number(settlement.base)) · 기여 \(TUIRender.number(settlement.contribution))"
+                        + " · 턴 \(TUIRender.number(settlement.turnBonus)) · 생존 \(TUIRender.number(settlement.survivorBonus))",
+                    to: inner))
+            }
             lines.append(TUIText.truncate(ending, to: inner))
             return lines
         }
@@ -325,8 +340,13 @@ enum RoomScreen {
         case .loss: head = "졌다."
         case .draw: head = "무승부다."
         }
-        guard let payout = state.payout, payout > 0 else { return head }
-        return head + " 별의조각 +\(TUIRender.number(payout))"
+        if let payout = state.payout, payout > 0 {
+            return head + " 별의조각 +\(TUIRender.number(payout))"
+        }
+        if state.activity == .raid, state.raidSettlement != nil {
+            return head + " 이번 오전/오후 보상은 이미 받았다."
+        }
+        return head
     }
 
     private static func cell(_ fighter: MultiplayerFighter, mine: Bool, width: Int) -> String {

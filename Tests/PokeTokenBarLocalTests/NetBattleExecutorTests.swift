@@ -18,12 +18,24 @@ struct NetBattleExecutorTests {
         var terminalState: BattleTerminalState
         var chosenMoves: [Int] = []
         var switchedTo: [Int] = []
+        var practiceMoves: [Int] = []
+        var practiceSwitches: [Int] = []
+        var challengedGyms: [Int] = []
+        var gymTeams: [[UUID]] = []
+        var terastallized = 0
+        var dismissed = 0
         var forfeited = 0
         var declined = 0
 
         init(_ state: BattleTerminalState) { terminalState = state }
         func chooseMove(_ index: Int) { chosenMoves.append(index) }
         func switchLAN(to index: Int) { switchedTo.append(index) }
+        func chooseTeamPracticeMove(_ index: Int) { practiceMoves.append(index) }
+        func switchTeamPractice(to index: Int) { practiceSwitches.append(index) }
+        func terastallizeTeamPractice() { terastallized += 1 }
+        func dismissResult() { dismissed += 1 }
+        func startGymChallenge(number: Int) -> Bool { challengedGyms.append(number); return true }
+        func setGymChallengeTeam(_ ids: [UUID]) { gymTeams.append(ids) }
         func forfeit() { forfeited += 1 }
         func declineIncoming() { declined += 1 }
     }
@@ -120,6 +132,70 @@ struct NetBattleExecutorTests {
         #expect(control.switchedTo == [1])
     }
 
+    /// 체육관전은 LAN 판이 아니라 `TeamPracticeBattle` 이다. 같은 화면 동작이 올바른 엔진 창구로
+    /// 가야 하며, 빈 LAN 판에 보내 조용히 사라지면 안 된다.
+    @Test func testGymMovesAndSwitchesReachThePracticeBattle() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        var state = Self.gymBattling()
+        let control = FakeBattleControl(state)
+
+        #expect((await execute(.battleMove(move: 2), on: store, battle: control)).succeeded)
+        #expect(control.practiceMoves == [1])
+        #expect(control.chosenMoves.isEmpty)
+
+        state.practice?.mine[0].hp = 0
+        control.terminalState = state
+        #expect((await execute(.battleSwitch(number: 2), on: store, battle: control)).succeeded)
+        #expect(control.practiceSwitches == [1])
+        #expect(control.switchedTo.isEmpty)
+    }
+
+    @Test func testGymChallengeUsesTheNumberPrintedByGym() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let control = FakeBattleControl(BattleTerminalState(phase: .ready, battle: nil))
+
+        let reply = await execute(.gymChallenge(number: 1), on: makeStore(in: directory), battle: control)
+
+        #expect(reply.succeeded, "\(reply.message)")
+        #expect(control.challengedGyms == [1])
+    }
+
+    @Test func testGymTeamUsesPartyNumbersInOrder() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        store.debugSetBoxedMons((1...4).map { id in
+            MonState(baseID: id, pathIDs: [id], stageIndex: 0, usedAtStage: 0,
+                     rarity: .common, totalForms: 1)
+        })
+        let entries = PokedoroCLI.partyEntries(store)
+        let control = FakeBattleControl(BattleTerminalState(phase: .ready, battle: nil))
+
+        let reply = await execute(.gymTeam(team: [4, 2, 1, 3]), on: store, battle: control)
+
+        #expect(reply.succeeded, "\(reply.message)")
+        #expect(control.gymTeams == [[entries[3].id, entries[1].id, entries[0].id, entries[2].id]])
+    }
+
+    @Test func testGymTerastallizeAndResultCloseReachThePracticeBattle() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = makeStore(in: directory)
+        let control = FakeBattleControl(Self.gymBattling())
+
+        #expect((await execute(.battleTerastallize, on: store, battle: control)).succeeded)
+        #expect(control.terastallized == 1)
+
+        var finished = control.terminalState
+        finished.practice?.result = .win
+        control.terminalState = finished
+        #expect((await execute(.battleClose, on: store, battle: control)).succeeded)
+        #expect(control.dismissed == 1)
+    }
+
     /// 지금 나와 있는 개체로 바꾸는 것은 아무 일도 아니다 — `canChoose` 가 거절하므로 성공으로
     /// 답하면 사용자는 교체가 일어났다고 믿는다.
     @Test func testSwitchingToTheActiveMemberIsRefused() async {
@@ -202,6 +278,16 @@ struct NetBattleExecutorTests {
                                    oppTeam: [BattleSide(snapshot(name: "상대"))],
                                    rng: SplitMix64(seed: 5)),
             remainingSeconds: 20)
+    }
+
+    static func gymBattling() -> BattleTerminalState {
+        BattleTerminalState(
+            phase: .battling, battle: nil,
+            practice: TeamPracticeBattle(
+                mine: [BattleSide(snapshot(name: "내1")), BattleSide(snapshot(name: "내2"))],
+                opponents: [BattleSide(snapshot(name: "관장"))],
+                rng: SplitMix64(seed: 5)),
+            activeGym: GymLeague.catalog[0])
     }
 
     static func snapshot(name: String) -> BattleSnapshot {

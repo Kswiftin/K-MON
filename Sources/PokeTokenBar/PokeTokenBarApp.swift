@@ -491,6 +491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         // 남기면 그 사이의 1초 틱이 같은 파일을 다시 보고 같은 요청을 또 실행한다.
         let reply = await PokedoroRequestExecutor(timer: focusTimer, companion: companion,
                                                    battle: battleCenter,
+                                                   playerGym: playerGym,
                                                    room: battleCenter.multiplayer,
                                                    trade: battleCenter.trading,
                                                    auction: battleCenter.auction,

@@ -110,6 +110,19 @@ struct RoomTerminalTests {
         #expect(RoomScreen.targetID(number: 9, in: state) == nil)
     }
 
+    /// 2인 이상 레이드의 편성은 러너들이 보스보다 앞에 선다. 여기서 단순히 "나 아닌 첫 사람"을
+    /// 고르면 동료를 때리려다 센터가 거절하고 TUI 전투와 정산이 함께 멈춘다.
+    @Test func testARaidAlwaysTargetsTheBossInsteadOfATeammate() throws {
+        var state = Self.fighting()
+        let teammate = Self.fighter(id: UUID(), name: "동료")
+        state.fighters.insert(teammate, at: 1)
+
+        let targets = RoomScreen.targets(state)
+
+        #expect(targets.map(\.id) == [RaidBoss.bossID])
+        #expect(RoomScreen.targetID(number: 1, in: state) == RaidBoss.bossID)
+    }
+
     /// 이미 낸 라운드에는 누를 것이 없다.
     @Test func testAfterSubmittingThereIsNothingToPress() {
         var state = Self.fighting()
@@ -135,6 +148,19 @@ struct RoomTerminalTests {
         let lines = RoomScreen.lines(state, width: 60)
         #expect(lines.contains { $0.contains("이겼") })
         #expect(lines.contains { $0.contains("1,200") }, "정산액이 안 보이면 기여도가 의미를 잃는다")
+    }
+
+    @Test func testARepeatedRaidExplainsWhyThePayoutIsZero() {
+        var state = Self.fighting()
+        state.outcome = .win
+        state.payout = 0
+        state.raidSettlement = RaidSettlement(base: 300, contribution: 20,
+                                               turnBonus: 100, survivorBonus: 50)
+
+        let lines = RoomScreen.lines(state, width: 80)
+
+        #expect(lines.contains { $0.contains("이미 받았다") }, "\(lines)")
+        #expect(lines.contains { $0.contains("정산") }, "\(lines)")
     }
 
     /// 레이드는 티어를 머리글에 싣는다 — 1★ 와 5★ 는 같은 화면이지만 전혀 다른 판이다.
@@ -244,14 +270,14 @@ struct RoomTerminalTests {
         let mine = UUID()
         var state = RoomTerminalState(phase: .battling, activity: .raid, myID: mine)
         state.round = 2
-        state.fighters = [Self.fighter(id: mine, name: "나"),
-                          Self.fighter(id: UUID(), name: "보스")]
+        state.fighters = [Self.fighter(id: mine, name: "나", team: .red),
+                          Self.fighter(id: RaidBoss.bossID, name: "보스", team: .blue)]
         return state
     }
 
-    static func fighter(id: UUID, name: String) -> MultiplayerFighter {
+    static func fighter(id: UUID, name: String, team: BattleTeam = .solo) -> MultiplayerFighter {
         MultiplayerFighter(
-            participant: LobbyParticipant(id: id, trainerName: name, speciesID: 1, team: .solo,
+            participant: LobbyParticipant(id: id, trainerName: name, speciesID: 1, team: team,
                                           isReady: true, isHost: false),
             snapshot: BattleSnapshot(
                 speciesID: 1, name: name, trainer: name, level: 50, nature: nil, isShiny: false,

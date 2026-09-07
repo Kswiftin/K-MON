@@ -69,6 +69,8 @@ enum PokedoroCommand: Equatable, Sendable {
     case battleForfeit(confirmed: Bool)
     /// 받은 신청 거절. 확인을 받지 않는다 — 되돌릴 수 있는 일이다.
     case battleDecline
+    case battleTerastallize
+    case battleClose
 
     // MARK: LAN 방 (협동 레이드·방 대전)
 
@@ -90,9 +92,19 @@ enum PokedoroCommand: Equatable, Sendable {
     //
     // **진행이 세이브에 남는 세 번째 기능이다**(웨이브 런·Memory Home 다음) — 배지는
     // `gymLeagueBadges` 에 적히므로 조회에 앱이 필요 없다. 도전은 팀 편성과 종 데이터 조회가
-    // 걸려 있어 앱에서 한다 — 할 수 없는 일은 명령에 두지 않는다.
+    // 필요해 실행 중인 앱에 요청하고, 이후 턴은 대전 채널에서 이어 간다.
 
     case gym
+    case gymChallenge(number: Int)
+    case gymTeam(team: [Int])
+    case playerGymStatus
+    case playerGymOpen(team: [Int])
+    case playerGymChallenge(team: [Int])
+    case playerGymSpectate
+    case playerGymDefense(team: [Int])
+    case playerGymAI(enabled: Bool)
+    case playerGymResign(confirmed: Bool)
+    case playerGymTakeover
 
     // MARK: 교환
 
@@ -173,6 +185,18 @@ enum PokedoroCommand: Equatable, Sendable {
         case .battleSwitch(let number): .battleSwitch(number: number)
         case .battleForfeit(let confirmed): confirmed ? .battleForfeit : nil
         case .battleDecline: .battleDecline
+        case .battleTerastallize: .battleTerastallize
+        case .battleClose: .battleClose
+        case .gymChallenge(let number): .gymChallenge(number: number)
+        case .gymTeam(let team): .gymTeam(team: team)
+        case .playerGymStatus: .playerGymStatus
+        case .playerGymOpen(let team): .playerGymOpen(team: team)
+        case .playerGymChallenge(let team): .playerGymChallenge(team: team)
+        case .playerGymSpectate: .playerGymSpectate
+        case .playerGymDefense(let team): .playerGymDefense(team: team)
+        case .playerGymAI(let enabled): .playerGymAI(enabled: enabled)
+        case .playerGymResign(let confirmed): confirmed ? .playerGymResign : nil
+        case .playerGymTakeover: .playerGymTakeover
         case .roomMove(let move, let target): .roomMove(move: move, target: target)
         case .roomStart: .roomStart
         case .roomLeave(let confirmed): confirmed ? .roomLeave : nil
@@ -251,6 +275,8 @@ enum PokedoroCommandError: Equatable, Error {
     /// 웨이브 런의 번호가 아니다. 개체 번호와 오류를 나눠 두는 이유와 같다 — **어디서 번호를
     /// 얻는지가 다르다**(`party` 가 아니라 `wave` 가 찍는다).
     case invalidWaveNumber(String)
+    /// 체육관 목록 번호. 웨이브 번호와 출처가 달라 별도 문구로 돌려준다.
+    case invalidGymNumber(String)
     /// 목록 밖 길 이름. 안전한 길로 접지 않는 이유는 사용자가 위험한 길을 골랐다고 믿은 채
     /// 보상 한 장을 잃기 때문이다.
     case unknownRoute(String)
@@ -304,6 +330,8 @@ enum PokedoroCommandError: Equatable, Error {
             "놓인 가구의 번호가 아니다: \(raw) — `pokedoro home` 이 찍는 번호(1부터)를 쓴다."
         case .invalidWaveNumber(let raw):
             "웨이브 런의 번호가 아니다: \(raw) — `pokedoro wave` 가 찍는 번호(1부터)를 쓴다."
+        case .invalidGymNumber(let raw):
+            "체육관 번호가 아니다: \(raw) — `pokedoro gym` 이 찍는 번호(1부터)를 쓴다."
         case .unknownRoute(let raw):
             "그런 길이 없다: \(raw) — "
                 + RunRoute.allCases.map(\.rawValue).joined(separator: "·") + " 중 하나를 쓴다."
@@ -385,7 +413,8 @@ enum PokedoroCommandParser {
         case "bag", "items": return .bag
         case "challenge", "ch": return .challenge
         case "goals", "goal": return .goals
-        case "gym": return .gym
+        case "gym":
+            return try gymCommand(in: tail, options: options)
         case "mon":
             try rejectExtraPositional(tail, beyond: 1, command: name)
             return .mon(number: try rosterNumber(in: tail))
@@ -527,6 +556,12 @@ enum PokedoroCommandParser {
         case "decline", "no":
             try rejectExtra(rest, beyond: 0, command: command)
             return .battleDecline
+        case "tera", "terastallize":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .battleTerastallize
+        case "close":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .battleClose
         default:
             throw PokedoroCommandError.unknownCommand(command)
         }
@@ -575,6 +610,68 @@ enum PokedoroCommandParser {
                             confirmed: options.contains("--yes"))
         default:
             throw PokedoroCommandError.unknownCommand(command)
+        }
+    }
+
+    /// `gym` 은 조회, `gym challenge <번호>` 는 앱에 도전을 부탁한다. 번호는 바로 위 목록이
+    /// 찍는 순번이라 체육관 id 를 사람이 외울 필요가 없다.
+    private static func gymCommand(in arguments: [String],
+                                   options: Set<String>) throws -> PokedoroCommand {
+        let words = arguments.filter { !$0.hasPrefix("--") }
+        guard let sub = words.first else { return .gym }
+        let command = "gym \(sub)"
+        let rest = Array(words.dropFirst())
+        if sub == "challenge" {
+            try rejectExtra(rest, beyond: 1, command: command)
+            guard let raw = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+            return .gymChallenge(number: try positiveNumber(
+                raw, orThrow: PokedoroCommandError.invalidGymNumber))
+        }
+        if sub == "team" {
+            guard rest.count == GymLeague.teamSize else {
+                throw rest.isEmpty ? PokedoroCommandError.missingArgument(command)
+                                   : PokedoroCommandError.unexpectedArgument(command)
+            }
+            return .gymTeam(team: try rest.map { try positiveNumber(
+                $0, orThrow: PokedoroCommandError.invalidMonNumber) })
+        }
+        guard sub == "contest" else { throw PokedoroCommandError.unknownCommand(command) }
+        return try playerGymCommand(in: rest, options: options)
+    }
+
+    private static func playerGymCommand(in words: [String],
+                                         options: Set<String>) throws -> PokedoroCommand {
+        guard let sub = words.first else { return .playerGymStatus }
+        let rest = Array(words.dropFirst())
+        let command = "gym contest \(sub)"
+        func team() throws -> [Int] {
+            guard rest.count == PlayerGym.defenseTeamSize else {
+                throw rest.isEmpty ? PokedoroCommandError.missingArgument(command)
+                                   : PokedoroCommandError.unexpectedArgument(command)
+            }
+            return try rest.map { try positiveNumber(
+                $0, orThrow: PokedoroCommandError.invalidMonNumber) }
+        }
+        switch sub {
+        case "status": try rejectExtra(rest, beyond: 0, command: command); return .playerGymStatus
+        case "open": return .playerGymOpen(team: try team())
+        case "challenge": return .playerGymChallenge(team: try team())
+        case "spectate": try rejectExtra(rest, beyond: 0, command: command); return .playerGymSpectate
+        case "defense": return .playerGymDefense(team: try team())
+        case "ai":
+            try rejectExtra(rest, beyond: 1, command: command)
+            guard let value = rest.first else { throw PokedoroCommandError.missingArgument(command) }
+            guard value == "on" || value == "off" else {
+                throw PokedoroCommandError.unknownCommand("\(command) \(value)")
+            }
+            return .playerGymAI(enabled: value == "on")
+        case "resign":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .playerGymResign(confirmed: options.contains("--yes"))
+        case "takeover":
+            try rejectExtra(rest, beyond: 0, command: command)
+            return .playerGymTakeover
+        default: throw PokedoroCommandError.unknownCommand(command)
         }
     }
 
@@ -889,6 +986,17 @@ enum PokedoroCommandParser {
         ("room start", "호스트가 판 시작"),
         ("room leave --yes", "방 나가기 — 정산을 못 받는다"),
         ("gym", "체육관 리그 — 여덟 곳과 딴 배지"),
+        ("gym challenge <번호>", "목록의 체육관에 도전 (자동 편성)"),
+        ("gym team <번호 4개>", "체육관 레이드 출전 팀과 순서 지정"),
+        ("gym contest", "체육관 쟁탈전 검색·관장 상태"),
+        ("gym contest open <번호 4개>", "방어팀을 정해 체육관 개설"),
+        ("gym contest challenge <번호 4개>", "보이는 체육관에 도전"),
+        ("gym contest spectate", "보이는 체육관 관전"),
+        ("gym contest defense <번호 4개>", "관장의 방어팀 교체"),
+        ("gym contest ai <on|off>", "관장 전투를 AI에 맡기기"),
+        ("gym contest resign --yes", "관장 자리에서 퇴위"),
+        ("battle tera", "체육관 레이드에서 테라스탈"),
+        ("battle close", "끝난 대전 결과 닫기"),
         ("trade", "교환 — 지금 협상"),
         ("trade accept", "받은 교환 신청 수락"),
         ("trade decline", "받은 교환 신청 거절"),
