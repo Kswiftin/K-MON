@@ -13,13 +13,20 @@ struct MonOfferPicker: View {
     /// 고를 수 있는 후보 — 호출부가 체육관 배치 같은 자기 사정으로 미리 좁힌다.
     /// 즐겨찾기는 여기서 빼지 않는다(그게 이 화면이 하는 일이다).
     let mons: [MonState]
+    /// 경매 게시(`PokemonAuctionView`)만 가나다순이 기본이고, 나머지(교환·경매 제안)는
+    /// 레벨순이 기본이다(#270) — 내보낼 개체를 고르는 자리라 키운 개체가 먼저 보이는 편이
+    /// 자연스럽다. 셋이 한 컴포넌트를 쓰므로 기본값은 호출부가 정한다.
+    var defaultsToLevelOrder = false
     let onSelect: (MonState) -> Void
     @State private var searchText = ""
 
     var body: some View {
-        let matches = RosterOrdering.alphabetizedForSelection(mons.filter {
+        let filtered = mons.filter {
             PokemonNameSearch.matches(searchText, names: PokemonNameSearch.names(for: $0))
-        }, language: store.language)
+        }
+        let matches = defaultsToLevelOrder
+            ? RosterOrdering.arrange(filtered, sort: .level, ascending: false)
+            : RosterOrdering.alphabetizedForSelection(filtered, language: store.language)
         return VStack(alignment: .leading, spacing: 8) {
             PokemonSearchField(text: $searchText, l: store.l)
             if matches.contains(where: { store.isFavorite($0.id) }) {
