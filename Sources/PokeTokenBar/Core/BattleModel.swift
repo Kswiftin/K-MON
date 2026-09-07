@@ -1009,6 +1009,11 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// HP 도 배율도 만지지 않으므로 위 순서 규칙과 부딪히지 않고 뒤에 붙는다. 인내만 한 턴짜리고,
     /// 운명공동체·원한은 **주인이 다음 기술을 낼 때** 풀린다(`endsOnNextMove`).
     case endure, destinyBond, grudge
+    /// 대타출동은 **HP 를 든 층**이라 이 표에 남은 턴을 세지 않는다(값은 늘 0 = 무기한). 층의 HP 는
+    /// `BattleSide.substituteHP` 한 곳에 있고, 붙는 것과 HP 를 **함께** 만지는 자리는
+    /// `BattleSide.raiseSubstitute()`·`absorbIntoSubstitute(_:)` 둘뿐이다 — 한쪽만 만지면
+    /// "인형은 없는데 HP 가 남았다" 가 되고, 그 개체는 다음 공격을 이유 없이 흘린다.
+    case substitute
 
     /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
     /// `ShowdownEffectTableTests` 가 동결한다.
@@ -1028,6 +1033,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case "endure":           self = .endure
         case "destinybond":      self = .destinyBond
         case "grudge":           self = .grudge
+        case "substitute":       self = .substitute
         default:                 return nil
         }
     }
@@ -1045,7 +1051,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     var targetsUser: Bool {
         switch self {
         case .aquaRing, .ingrain, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .endure, .destinyBond, .grudge:
+             .endure, .destinyBond, .grudge, .substitute:
             return true
         case .leechSeed, .nightmare, .curse, .partiallyTrapped:
             return false
@@ -1066,7 +1072,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .endure: return 1
         case .aquaRing, .ingrain, .focusEnergy, .minimize, .defenseCurl,
              .leechSeed, .nightmare, .curse, .partiallyTrapped,
-             .destinyBond, .grudge: return 0
+             .destinyBond, .grudge, .substitute: return 0
         }
     }
 
@@ -1079,7 +1085,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .laserFocus:  return 3
         case .minimize, .defenseCurl, .charge, .aquaRing, .ingrain,
              .leechSeed, .nightmare, .curse, .partiallyTrapped,
-             .endure, .destinyBond, .grudge: return 0
+             .endure, .destinyBond, .grudge, .substitute: return 0
         }
     }
 
@@ -1093,7 +1099,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .aquaRing, .ingrain: return 16
         case .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .endure, .destinyBond, .grudge: return nil
+             .endure, .destinyBond, .grudge, .substitute: return nil
         }
     }
 
@@ -1107,7 +1113,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         case .partiallyTrapped:              return (8, .trap)
         case .aquaRing, .ingrain, .leechSeed,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
-             .endure, .destinyBond, .grudge: return nil
+             .endure, .destinyBond, .grudge, .substitute: return nil
         }
     }
 
@@ -1120,7 +1126,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         switch self {
         case .destinyBond, .grudge: return true
         case .endure, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
-             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge: return false
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge, .substitute: return false
         }
     }
 
@@ -1130,7 +1136,8 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         switch self {
         case .endure: return true
         case .destinyBond, .grudge, .aquaRing, .ingrain, .leechSeed, .nightmare, .curse,
-             .partiallyTrapped, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge:
+             .partiallyTrapped, .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
+             .substitute:
             return false
         }
     }
@@ -1331,6 +1338,15 @@ struct BattleSide: Sendable, Equatable {
     /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다 — 두 피어가 각자 같은 규칙으로
     /// 세운다(`isTerastallized` 와 같은 이유).
     var heldItemConsumed = false
+    /// 대타출동으로 세운 층의 남은 HP — 0 이면 층이 없다. `volatiles[.substitute]` 는 붙었는지만
+    /// 말하고 값(남은 턴)은 늘 0 이라, **HP 의 정본은 이 한 칸이다**.
+    ///
+    /// 두 값을 함께 만지는 자리를 `raiseSubstitute()`·`absorbIntoSubstitute(_:)` 둘로 막아 둔다.
+    /// 밖에서 따로 만지면 "인형은 없는데 HP 가 남았다"(공격을 이유 없이 흘린다)나 그 반대가 된다.
+    ///
+    /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다 — 두 피어가 각자 같은 규칙으로
+    /// 세운다(`isTerastallized` 와 같은 이유).
+    var substituteHP = 0
 
     init(_ snapshot: BattleSnapshot) {
         self.snapshot = snapshot
@@ -1351,6 +1367,36 @@ struct BattleSide: Sendable, Equatable {
     mutating func start(_ volatileStatus: BattleVolatile, turns: Int = 0) -> Bool {
         guard !has(volatileStatus) else { return false }
         volatiles[volatileStatus] = turns
+        return true
+    }
+
+    /// 층이 서 있는가 — 데미지·상태·랭크가 주인에게 닿는지를 이 한 값이 가른다.
+    var hasSubstitute: Bool { substituteHP > 0 }
+
+    /// 층을 세운다. **값은 인형과 대가가 따로다**: 인형은 늘 최대 HP 의 1/4 이고, 내는 값만
+    /// 기술마다 다르다(대타출동 1/4, 쉐도우테일 1/2 — `ShowdownMoveData.substituteCostDivisor`).
+    ///
+    /// 실패 조건은 본가와 같다: 이미 서 있거나, HP 가 대가 **이하**거나(치르면 그 자리에서
+    /// 쓰러진다), 최대 HP 가 1 이다(누루프시 조항 — 1/4 이 0 이라 층이 서지 않는다).
+    ///
+    /// 쇼다운의 쉐도우테일은 대가를 올림으로 매기지만 여기는 내림이다 — 최대 HP 가 홀수일 때
+    /// 1 만큼 싸다. 올림·내림을 데이터가 나르지 않아서고, 그 한 칸이 규칙을 뒤집지 않는다.
+    mutating func raiseSubstitute(costDivisor: Int) -> Bool {
+        let doll = stats.hp / 4
+        let cost = stats.hp / max(1, costDivisor)
+        guard !hasSubstitute, doll > 0, cost > 0, hp > cost else { return false }
+        hp -= cost
+        substituteHP = doll
+        volatiles[.substitute] = 0
+        return true
+    }
+
+    /// 층이 대신 맞는다 — **넘긴 데미지는 주인에게 넘어가지 않는다**(본가와 같다).
+    /// 부서졌으면 `true` 다(호출부가 부서진 줄과 대신 맞은 줄을 가른다).
+    mutating func absorbIntoSubstitute(_ damage: Int) -> Bool {
+        substituteHP = max(0, substituteHP - damage)
+        guard substituteHP == 0 else { return false }
+        volatiles[.substitute] = nil
         return true
     }
 
@@ -1587,6 +1633,10 @@ enum BattleEngine {
     ///      한쪽에만 얹혀 같은 판의 HP 가 갈린다. rng 소비는 그대로다(전부 정수 계산이다).
     ///      `BattleEvent` 에 case 하나(`heldItemTriggered`)가 늘어 구버전은 그 이벤트를
     ///      디코딩하지 못한다.
+    ///      + 대타출동(쉐도우테일 포함) — HP 대신 맞는 층이 데미지·상태·랭크 앞에 선다. 구버전
+    ///      피어는 그 기술이 턴만 태우므로 같은 판의 HP·상태·랭크가 통째로 갈린다. rng 소비도
+    ///      갈린다: 층에 막힌 기술은 2차효과 확률·랭크 확률을 굴리지 않는다. `BattleVolatile` 에
+    ///      case 하나(`substitute`)가 늘어 구버전은 그 상태의 이벤트를 디코딩하지 못한다.
     static let rulesVersion = 24
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
@@ -1686,6 +1736,9 @@ enum BattleEngine {
         // 붙어 있던 volatile 도 전부 사라진다(본가와 같다). 남겨 두면 조이기·저주를 교체로 피했다가
         // 그 상태 그대로 다시 나온다 — 랭크를 지우는 것과 같은 이유다.
         side.volatiles = [:]
+        // 층도 함께 내린다. `volatiles` 만 비우면 HP 가 남아 다시 나온 개체가 공격을 흘린다 —
+        // 두 값이 한 상태의 두 면이라 지우는 자리도 하나여야 한다.
+        side.substituteHP = 0
         side.leechSeedSource = nil
         // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
         // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.
@@ -2591,6 +2644,18 @@ extension BattleEngine {
             return events + (attacker.lastMoveFailed ? [.immune(defenderActor)]
                                                      : [.sideConditionStarted(team, condition)])
         }
+        // 대타출동은 자기에게 걸지만 **대가와 층 HP** 가 있어 아래 갈래로 다룰 수 없다. 아래는
+        // `start` 만 부르므로 여기 두지 않으면 HP 를 안 내고 층도 0 인 인형이 선다.
+        if BattleVolatile.called(byMoveID: move.id) == .substitute {
+            // **쉐도우테일의 교체는 아직 없다.** 교체 게이트가 네 모드와 터미널 UI 에 흩어져 있어
+            // 엔진 안에서 부를 자리가 없다 — 그 자리를 만들 때(항목 8 이후) 여기서 함께 부른다.
+            // 지금은 대가가 비싼 대타출동으로 나간다.
+            let raised = attacker.raiseSubstitute(
+                costDivisor: ShowdownMoveData.substituteCostDivisor[move.id] ?? 4)
+            attacker.lastMoveFailed = !raised
+            return events + (raised ? [.volatileStarted(attackerActor, .substitute)]
+                                    : [.immune(defenderActor)])
+        }
         // 자기에게 거는 volatile(아쿠아링·뿌리박기)도 상대를 보지 않는다 — 진영 상태기와 같은 자리다.
         // 이미 붙어 있으면 실패한다(매 턴 다시 걸면 실패 없는 무한 회복이 된다).
         if let volatileStatus = BattleVolatile.called(byMoveID: move.id), volatileStatus.targetsUser {
@@ -2759,6 +2824,10 @@ extension BattleEngine {
             attacker.lastMoveFailed = true   // 분함의발구르기는 막힌 것도 실패로 센다(본가와 같다)
             return [.guardBlocked(defenderActor)]
         }
+        // 층이 서 있으면 이 기술은 **인형에게** 간다. 자기에게 거는 기술은 층과 상관없고(방어와
+        // 나 사이에 아무것도 없다), 층을 지나가는 기술은 데이터가 답한다(소리 기술 부류).
+        let hitsSubstitute = defender.hasSubstitute && move.targetsUser != true
+            && !ShowdownMoveData.bypassingSubstitute.contains(move.id)
         var events: [BattleEvent] = []
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move,
                                     field: field, attackerTeam: attackerTeam,
@@ -2797,7 +2866,9 @@ extension BattleEngine {
         // 인내는 **기술 데미지로만** 버틴다 — 남은 HP 하나를 남기고 자른다(쇼다운 `onDamage` 와 같은
         // 자리다). 잔뎀·혼란 자멸은 여기를 지나지 않으므로 그쪽으로는 쓰러진다(본가와 같다).
         // 다단기는 합계로 한 번 자른다 — 이 엔진이 히트별로 HP 를 깎지 않기 때문이다.
-        let endured = defender.has(.endure) && damage >= defender.hp
+        // 인내·기합의띠는 **주인이 맞을 때만** 답한다. 층이 받는 데미지에 걸면 인형 하나로
+        // 그 배틀의 인내·띠가 소모된다(주인의 HP 는 한 칸도 안 줄었는데).
+        let endured = !hitsSubstitute && defender.has(.endure) && damage >= defender.hp
         if endured { damage = defender.hp - 1 }
         // 기합의띠도 같은 자리에서 자른다. 조건은 본가와 같다: **만피**에서 맞은 치명적인 한 방
         // 하나다(만피가 아니어도 버티면 HP 1 짜리 무적이 된다).
@@ -2809,7 +2880,7 @@ extension BattleEngine {
         // 않는다" 를 보장하는 유일한 이유다. `!endured` 를 덧붙여 두면 그 가드가 **도달 불가한
         // 죽은 조건**이 되어, 인내의 자르기를 없애는 결함이 들어와도 이 자리는 초록으로 남는다
         // (결함 주입에서 실제로 그렇게 지나갔다).
-        let sashed = defender.heldEffect == .focusSash
+        let sashed = !hitsSubstitute && defender.heldEffect == .focusSash
             && defender.hp == defender.stats.hp && damage >= defender.hp
         if sashed {
             damage = defender.hp - 1
@@ -2817,18 +2888,20 @@ extension BattleEngine {
         }
         // 데미지 0(변화기)은 `.damage` 를 내보내지 않는다 — "0 데미지" 줄은 맞았는데 안 깎인 것처럼 읽힌다.
         if damage > 0 {
-            defender.hp = max(0, defender.hp - damage)
-            // 되돌려주는 기술(카운터 계열)이 이번 턴에 읽는다. 잔뎀·혼란 자멸은 여기를 지나지 않으므로
-            // 기록되지 않는다 — 본가도 기술 데미지만 되돌려준다.
-            //
-            // **다단기는 마지막 히트만 기록한다**(본가와 같다). 합계를 넣으면 카운터가 5회 히트의
-            // 총합을 2배로 되돌려줘 되돌리기가 히트 수만큼 세진다.
-            // 원한의응보가 배틀 내내 센다. 다단기도 여기를 한 번만 지나므로 기술 하나로 센다.
-            defender.timesHit += 1
-            defender.lastHitThisTurn = IncomingHit(
-                amount: outcome.lastHitDamage.map { scaled($0, by: damageScale) } ?? damage,
-                damageClass: move.damageClass)
-            events.append(.damage(defenderActor, amount: damage, cause: .move))
+            if hitsSubstitute {
+                // 넘긴 데미지는 주인에게 넘어가지 않는다 — 그래서 아래 드레인·반동도 **인형에
+                // 실제로 들어간 만큼**을 본다(쇼다운과 같다). `.damage` 줄은 내지 않는다:
+                // 재생기가 그 줄을 보고 주인의 HP 바를 깎으면 엔진의 최종 HP 와 갈린다.
+                let absorbed = min(damage, defender.substituteHP)
+                let broke = defender.absorbIntoSubstitute(damage)
+                damage = absorbed
+                events.append(broke ? .volatileEnded(defenderActor, .substitute)
+                                    : .volatileTriggered(defenderActor, .substitute))
+            } else {
+                defender.hp = max(0, defender.hp - damage)
+                ownerHitBookkeeping(&defender, actor: defenderActor, move: move, damage: damage,
+                                    outcome: outcome, damageScale: damageScale, into: &events)
+            }
             // 드레인·반동은 **넣은 데미지의 비율**이다. PokéAPI `meta.drain` 하나가 양쪽을 겸한다 —
             // 양수는 흡수, 음수는 반동. rng 를 안 쓰므로 소비 순서가 흔들리지 않는다.
             // 다단기는 합계로 한 번만 계산한다. 히트마다 회복하면 로그가 다섯 줄이 된다.
@@ -2853,7 +2926,8 @@ extension BattleEngine {
             events.append(.heldItemTriggered(defenderActor, item))
         }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
-        if defender.isAlive {
+        // 층에 막힌 기술은 2차효과·상대 volatile 도 주인에게 닿지 않는다 — 인형은 마비되지 않는다.
+        if defender.isAlive, !hitsSubstitute {
             events += applySecondaryEffect(of: move, to: &defender, actor: defenderActor,
                                            field: field, defenderTeam: defenderTeam, rng: &rng)
             // 상대에게 붙는 volatile(조이기·저주·나이트메어)은 **대상 단위 입구**인 여기서 붙인다.
@@ -2868,7 +2942,8 @@ extension BattleEngine {
         // `applyStatChanges` 가 걸러낸다. `.faint` 를 맨 뒤로 미루는 건 Showdown 순서와도 같다.
         events += applyStatChanges(of: move, attacker: &attacker, defender: &defender,
                                    attackerActor: attackerActor, defenderActor: defenderActor,
-                                   field: field, defenderTeam: defenderTeam, rng: &rng)
+                                   field: field, defenderTeam: defenderTeam,
+                                   targetIsShielded: hitsSubstitute, rng: &rng)
         if !defender.isAlive {
             events.append(.faint(defenderActor))
             // **기절 순간의 훅은 이 자리 하나다.** 광역기는 대상마다 `applyHit` 을 직접 부르므로
@@ -2891,6 +2966,27 @@ extension BattleEngine {
             events.append(.immune(defenderActor))
         }
         return events
+    }
+
+    /// 주인이 실제로 맞았을 때만 남는 기록 — 깎인 줄·되돌려줄 데미지·맞은 횟수.
+    ///
+    /// 층(대타출동)이 대신 맞은 턴에는 **하나도 남지 않는다**: 주인의 HP 는 그대로이므로 카운터가
+    /// 되돌려줄 것도, 원한의응보가 셀 것도 없다. 세 줄이 흩어져 있으면 층을 붙이는 다음 사람이
+    /// 하나만 빠뜨린다 — 그래서 한 자리에 모은다.
+    private static func ownerHitBookkeeping(_ defender: inout BattleSide, actor: BattleActor,
+                                            move: MoveSpec, damage: Int, outcome: AttackOutcome,
+                                            damageScale: Double, into events: inout [BattleEvent]) {
+        // 원한의응보가 배틀 내내 센다. 다단기도 여기를 한 번만 지나므로 기술 하나로 센다.
+        defender.timesHit += 1
+        // 되돌려주는 기술(카운터 계열)이 이번 턴에 읽는다. 잔뎀·혼란 자멸은 여기를 지나지 않으므로
+        // 기록되지 않는다 — 본가도 기술 데미지만 되돌려준다.
+        //
+        // **다단기는 마지막 히트만 기록한다**(본가와 같다). 합계를 넣으면 카운터가 5회 히트의
+        // 총합을 2배로 되돌려줘 되돌리기가 히트 수만큼 세진다.
+        defender.lastHitThisTurn = IncomingHit(
+            amount: outcome.lastHitDamage.map { scaled($0, by: damageScale) } ?? damage,
+            damageClass: move.damageClass)
+        events.append(.damage(actor, amount: damage, cause: .move))
     }
 
     /// 광역 감쇠를 곱한 데미지. **0 으로 접지 않는다** — 원래 데미지가 1 이상이었으면 최소 1 은
@@ -2994,13 +3090,16 @@ extension BattleEngine {
                                          defender: inout BattleSide, attackerActor: BattleActor,
                                          defenderActor: BattleActor, field: BattleField,
                                          defenderTeam: BattleTeamSlot,
+                                         targetIsShielded: Bool = false,
                                          rng: inout SplitMix64) -> [BattleEvent] {
         let changes = move.statChanges ?? []
         let percent = move.statChangePercent
         // 쓰러진 상대에게는 못 걸지만 **자기 랭크 상승은 KO 여부와 무관하다**(본가와 같다). 상대가
         // 쓰러졌으면 자기 몫(양수)만 남기고 본다 — 남는 게 없으면 rng 도 쓰지 않는다. 조건은 두
         // 피어가 똑같이 보므로(누가 쓰러졌는지) 소비량이 갈라지지 않는다.
-        let applicable = defender.isAlive ? changes : changes.filter { $0.change > 0 }
+        // 층 뒤에 있는 상대에게도 못 건다 — 쓰러진 상대와 **같은 규칙**이라 자기 몫(양수)만 남는다.
+        let applicable = defender.isAlive && !targetIsShielded
+            ? changes : changes.filter { $0.change > 0 }
         guard !applicable.isEmpty, percent > 0, attacker.isAlive else { return [] }
         guard Int(rng.next() % 100) < percent else { return [] }
         var events: [BattleEvent] = []

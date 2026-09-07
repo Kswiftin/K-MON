@@ -286,6 +286,9 @@ struct L {
         case .grudge:           return t("\(name)은(는) 원한을 품었다!",
                                          "\(name) wants its foe to bear a grudge!",
                                          "\(name)は うらみを こめている！")
+        case .substitute:       return t("\(name)은(는) 대타를 내세웠다!",
+                                         "\(name) put up a substitute!",
+                                         "\(name)は みがわりを だした！")
         }
     }
 
@@ -304,6 +307,9 @@ struct L {
         case .grudge:      return t("\(name)의 원한이 상대 기술의 PP 를 앗았다!",
                                     "\(name)'s grudge drained the PP of the move that felled it!",
                                     "\(name)の うらみが わざの PPを うばった！")
+        case .substitute:  return t("\(name) 대신 대타가 맞았다!",
+                                    "The substitute took the hit for \(name)!",
+                                    "\(name)の みがわりが ダメージを うけた！")
         case .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge:
             return battleVolatileStarted(name, volatileStatus)
@@ -349,6 +355,8 @@ struct L {
                                          "\(name)の みちづれが とけた")
         case .grudge:           return t("\(name)의 원한이 풀렸다", "\(name)'s grudge faded",
                                          "\(name)の うらみが とけた")
+        case .substitute:       return t("\(name)의 대타가 부서졌다", "\(name)'s substitute broke",
+                                         "\(name)の みがわりが こわれた")
         }
     }
 

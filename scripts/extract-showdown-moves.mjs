@@ -197,6 +197,30 @@ function doubledByDefenseCurl(move) {
     && /volatiles\['defensecurl'\]/.test(String(move.basePowerCallback))
 }
 
+/**
+ * Does this move reach the owner through a Substitute? Showdown spells that as the `bypasssub`
+ * move flag, which every sound move carries alongside the handful of others that ignore the
+ * doll (Whirlwind, Transform, Perish Song).
+ *
+ * The engine needs the flag rather than a hand-kept sound-move list: a new sound move would
+ * otherwise be blocked by the doll in silence, and nothing about the move would say why.
+ */
+function passesThroughSubstitute(move) {
+  return Boolean(move.flags?.bypasssub)
+}
+
+/**
+ * What fraction of max HP a move charges for raising a Substitute. Substitute takes a quarter,
+ * Shed Tail half — Showdown keeps each number inside the move's own `onHit` callback, so the
+ * callback's source answers rather than a two-id list that goes stale the moment a third move
+ * raises a doll.
+ */
+function substituteCostDivisor(move) {
+  if (move.volatileStatus !== 'substitute' || !move.onHit) return null
+  const found = /maxhp \s*\/\s*(\d+)/.exec(String(move.onHit))
+  return found ? Number(found[1]) : null
+}
+
 /** Why a move cannot be fixed by data alone — each reason is hand-written engine work. */
 function engineWorkReasons(move) {
   const reasons = []
@@ -268,7 +292,7 @@ const swiftLiteral = (value) => (typeof value === 'string' ? `"${value}"` : Stri
  * Render the override map as a Swift source file. Generated rather than parsed at runtime so
  * the table costs nothing to load and a bad extraction breaks the build instead of a battle.
  */
-function renderSwift(overrides, effects, piercing, minimized, curled) {
+function renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost) {
   const entries = Object.entries(overrides)
     .map(([id, override]) => [Number(id), override])
     .sort((a, b) => a[0] - b[0])
@@ -373,6 +397,24 @@ ${idSetLines(minimized)}
     static let doubledByDefenseCurl: Set<Int> = [
 ${idSetLines(curled)}
     ]
+
+    /// Moves that reach the owner **through** a Substitute — every sound move, plus the few
+    /// others Showdown marks with the \`bypasssub\` flag. The engine implements the doll once and
+    /// asks here which moves ignore it, so a new sound move is not blocked in silence.
+    static let bypassingSubstitute: Set<Int> = [
+${idSetLines(bypassingSub)}
+    ]
+
+    /// How much max HP each Substitute-raising move charges, as the divisor Showdown writes in
+    /// the move's own \`onHit\` callback: Substitute a quarter, Shed Tail half. The doll itself is
+    /// always a quarter of max HP — only the price differs, so only the price is read out here.
+    static let substituteCostDivisor: [Int: Int] = [
+${Object.entries(substituteCost)
+  .map(([id, entry]) => [Number(id), entry])
+  .sort((a, b) => a[0] - b[0])
+  .map(([id, { divisor, name }]) => `        ${id}: ${divisor},  // ${name}`)
+  .join('\n')}
+    ]
 }
 
 extension MoveSpec {
@@ -414,6 +456,8 @@ async function main() {
   const piercing = {}
   const minimized = {}
   const curled = {}
+  const bypassingSub = {}
+  const substituteCost = {}
   const engineWork = []
   let unmatched = 0
   let metaGapsFilled = 0
@@ -430,6 +474,9 @@ async function main() {
     if (ignoresProtect(move)) piercing[move.num] = move.name
     if (hitsMinimizedHarder(move)) minimized[move.num] = move.name
     if (doubledByDefenseCurl(move)) curled[move.num] = move.name
+    if (passesThroughSubstitute(move)) bypassingSub[move.num] = move.name
+    const subCost = substituteCostDivisor(move)
+    if (subCost) substituteCost[move.num] = { divisor: subCost, name: move.name }
     const reasons = engineWorkReasons(move)
     // `isNonstandard` marks moves no current game can produce (Z-moves, LGPE, CAP fakemon).
     // They reach the app only if PokéAPI hands one out, so they are not scoping work.
@@ -449,7 +496,7 @@ async function main() {
   await writeFile(workPath, `${JSON.stringify(engineWork, null, 2)}\n`)
   if (swiftPath) {
     await mkdir(dirname(swiftPath), { recursive: true })
-    await writeFile(swiftPath, renderSwift(overrides, effects, piercing, minimized, curled))
+    await writeFile(swiftPath, renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost))
   }
 
   const byField = Object.entries(fieldCounts).sort((a, b) => b[1] - a[1])
