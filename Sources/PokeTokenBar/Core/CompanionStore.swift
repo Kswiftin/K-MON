@@ -2604,11 +2604,10 @@ final class CompanionStore {
         return true
     }
 
-    /// 오늘 레이드 보상을 이미 받았나 — 화면이 "오늘 지급 완료"를 그리는 근거다.
-    /// 자정 타이머가 아니라 **날짜 키 비교**로 넘긴다(`MissionBoard`·체육관 방어 원장과 같은 방식).
-    var raidRewardClaimedToday: Bool { state.raidRewardDate == Self.dayKey(clock()) }
+    /// 현재 오전/오후 레이드 보상을 이미 받았나. 정오 타이머 대신 구간 키를 비교한다.
+    var raidRewardClaimedToday: Bool { state.raidRewardDate == RaidBoss.periodKey(clock()) }
 
-    /// 레이드 정산 지급 — **하루 한 번만** 준다(#79 와 같은 규칙: 시도 무제한, 지급 1회).
+    /// 레이드 정산 지급 — **오전·오후 한 번씩만** 준다(시도 무제한, 구간별 지급 1회).
     ///
     /// 실제 지급액을 반환한다. 이미 받았으면 0 이고, 호출부는 그 값을 그대로 화면에 쓴다 —
     /// 지갑을 바꾸는 값은 창 안에 보이는 표면을 하나 가져야 한다(defect-log: 한 지갑에 지급하는
@@ -2618,14 +2617,14 @@ final class CompanionStore {
     @discardableResult
     func creditRaidReward(_ amount: Int) -> Int {
         guard amount > 0, !raidRewardClaimedToday else { return 0 }
-        state.raidRewardDate = Self.dayKey(clock())
+        state.raidRewardDate = RaidBoss.periodKey(clock())
         state.starPieces += amount
         save()
         return amount
     }
 
-    /// 오늘 레이드 보스를 이미 잡았나 — 화면이 "오늘 포획 완료" 를 그리는 근거다.
-    var raidCatchClaimedToday: Bool { state.raidCatchDate == Self.dayKey(clock()) }
+    /// 현재 오전/오후 레이드에서 이미 보스를 잡았나.
+    var raidCatchClaimedToday: Bool { state.raidCatchDate == RaidBoss.periodKey(clock()) }
 
     /// 오늘의 포획 기회를 쓴다. 남아 있었으면 true 를 돌려주고 원장을 찍는다.
     ///
@@ -2634,7 +2633,7 @@ final class CompanionStore {
     @discardableResult
     func claimRaidCatch() -> Bool {
         guard !raidCatchClaimedToday else { return false }
-        state.raidCatchDate = Self.dayKey(clock())
+        state.raidCatchDate = RaidBoss.periodKey(clock())
         save()
         return true
     }
@@ -2943,8 +2942,7 @@ final class CompanionStore {
               node.evolutionRelativePhysicalStats == nil
                 || node.evolutionRelativePhysicalStats == mon.evolutionStatRelation else { return false }
         guard let time = node.evolutionTimeOfDay else { return true }
-        let hour = Calendar.current.component(.hour, from: date)
-        return time == "day" ? (6..<18).contains(hour) : !(6..<18).contains(hour)
+        return RaidHalfDay.satisfiesEvolution(time, at: date)
     }
 
     private func makeEvolutionPlan(from root: EvoNode, baseID: Int, gender: PokemonGender? = nil) -> [Int] {

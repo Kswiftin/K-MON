@@ -246,7 +246,8 @@ final class RaidRoomTests: XCTestCase {
     /// **배열**(k,v,k,v)로 인코딩된다 — 모양이 조용히 깨지면 정산이 통째로 0 이 된다.
     func testRaidWireMessagesRoundTrip() throws {
         let fighters = [runner("A"), boss(tier: .five)]
-        let start = MultiplayerWireMessage.raidStart(seed: 42, fighters: fighters, tier: .five)
+        let start = MultiplayerWireMessage.raidStart(seed: 42, fighters: fighters, tier: .five,
+                                                     periodKey: RaidBoss.periodKey(Date()))
         XCTAssertEqual(try JSONDecoder().decode(MultiplayerWireMessage.self,
                                                 from: JSONEncoder().encode(start)), start)
 
@@ -313,6 +314,21 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(store.state.starPieces, before + 1_000)
     }
 
+    @MainActor
+    func testRaidRewardReopensAtNoon() {
+        let calendar = Calendar.current
+        let morning = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7,
+                                                          hour: 11, minute: 59))!
+        let clock = TestClock(morning)
+        let store = stubStore(clock, tag: "raid-half-day-reward")
+
+        XCTAssertEqual(store.creditRaidReward(500), 500)
+        XCTAssertEqual(store.creditRaidReward(500), 0)
+        clock.advance(60)
+        XCTAssertFalse(store.raidRewardClaimedToday)
+        XCTAssertEqual(store.creditRaidReward(500), 500)
+    }
+
     /// 0 이하는 원장을 소모하지 않는다 — 안 그러면 진 판이 그날의 지급 기회를 태운다.
     @MainActor
     func testALostRaidDoesNotBurnTheDailyPayout() {
@@ -368,11 +384,14 @@ final class RaidRoomTests: XCTestCase {
     /// 못 고르면 "누군가는 뽑힌다" 만 재게 되고, 뽑힌 쪽·안 뽑힌 쪽을 갈라서 못 본다.
     private func seedDrawing(_ target: UUID, from ids: [UUID], finishedRound: Int,
                              file: StaticString = #filePath, line: UInt = #line) -> UInt64 {
-        for seed in UInt64(0)..<10_000
-        where RaidBoss.catcher(runnerIDs: ids, seed: seed, finishedRound: finishedRound) == target {
-            return seed
+        let runners = ids.map { runner("runner", id: $0) }
+        let species = RaidBoss.speciesID(at: Date())
+        for seed in UInt64(0)..<100_000 {
+            let caught = RaidBoss.catchAttempts(runners: runners, speciesID: species, seed: seed,
+                                                finishedRound: finishedRound).filter(\.succeeded).map(\.id)
+            if caught == [target] { return seed }
         }
-        XCTFail("10,000 개 시드 안에 이 사람이 뽑히는 판이 없다", file: file, line: line)
+        XCTFail("100,000 개 시드 안에 이 사람만 잡는 판이 없다", file: file, line: line)
         return 0
     }
 
@@ -429,7 +448,7 @@ final class RaidRoomTests: XCTestCase {
     /// **트리거 브랜치**: 1★ 는 이겨도 포획이 없다. 400 HP 를 둘이 몇 턴에 깨는 티어라 열면
     /// 하루 한 마리가 사실상 보장된 수입이 된다.
     @MainActor
-    func testAOneStarWinNeverCatches() async {
+    func testAOneStarWinGetsTheSameRarityCatchChance() async {
         let store = stubStore(TestClock(), tag: "raid-catch-one-star")
         await store.hatch(baseID: 20)
         let center = MultiplayerRoomCenter(companion: store)
@@ -445,21 +464,22 @@ final class RaidRoomTests: XCTestCase {
         center.applyGuestRaidSettlement([me.id: 400])
         await center.debugAwaitRaidCatch()
 
-        XCTAssertNil(center.raidCatcherID, "1★ 는 추첨 자체가 없다")
-        XCTAssertTrue(store.state.boxedMons.isEmpty)
-        XCTAssertFalse(store.raidCatchClaimedToday)
+        XCTAssertEqual(center.raidCatcherID, me.id, "별 등급과 무관하게 포획 확률을 적용한다")
+        XCTAssertEqual(store.state.boxedMons.count, 1)
+        XCTAssertTrue(store.raidCatchClaimedToday)
     }
 
     /// **트리거 브랜치**: 혼자 잡으면 포획이 없다. 러너가 한 명이면 추첨이 언제나 자기 자신이라,
     /// 이 가드가 없으면 3★ 를 혼자 깰 수 있는 사람에게 매일 한 마리가 그냥 나간다.
     @MainActor
-    func testASoloWinNeverCatches() async {
+    func testASoloWinGetsTheSameRarityCatchChance() async {
         let store = stubStore(TestClock(), tag: "raid-catch-solo")
         await store.hatch(baseID: 20)
         let center = MultiplayerRoomCenter(companion: store)
         let me = runner("나", id: center.myID)
         let boss = todaysBoss(tier: .three)
-        XCTAssertTrue(center.applyGuestRaidStart(seed: 1, fighters: [me, boss], tier: .three))
+        let seed = seedDrawing(me.id, from: [me.id], finishedRound: 1)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, boss], tier: .three))
 
         var downedBoss = boss
         downedBoss.side.hp = 0
@@ -467,8 +487,8 @@ final class RaidRoomTests: XCTestCase {
         center.applyGuestRaidSettlement([me.id: 1_600])
         await center.debugAwaitRaidCatch()
 
-        XCTAssertNil(center.raidCatcherID, "혼자면 추첨이 열리지 않는다")
-        XCTAssertTrue(store.state.boxedMons.isEmpty)
+        XCTAssertEqual(center.raidCatcherID, me.id, "혼자 성공해도 포획 확률은 적용된다")
+        XCTAssertEqual(store.state.boxedMons.count, 1)
     }
 
     /// **회귀**: 쓰러진 러너는 추첨 풀에 없다.
@@ -485,8 +505,8 @@ final class RaidRoomTests: XCTestCase {
         let me = runner("나", id: center.myID)
         var mate = runner("동료")
         let boss = todaysBoss(tier: .three)
-        // 쓰러진 쪽이 뽑히는 시드를 고른다 — 이 시드가 곧 결함의 트리거다.
-        let seed = seedDrawing(mate.id, from: [me.id, mate.id], finishedRound: 1)
+        // 생존자 한 명에게 포획 성공이 나는 시드를 골라, 쓰러진 동료가 결과 순서에 끼지 않음을 본다.
+        let seed = seedDrawing(me.id, from: [me.id], finishedRound: 1)
         XCTAssertTrue(center.applyGuestRaidStart(seed: seed, fighters: [me, mate, boss], tier: .three))
 
         mate.side.hp = 0   // 방을 떠났거나 쓰러졌다 — 편성에는 남는다
@@ -568,7 +588,7 @@ final class RaidRoomTests: XCTestCase {
     /// 잡던 개체는 그대로 잡는다 — 그건 내 세이브에 들어가는 값이라 방을 떠나는 것과 무관하다.
     @MainActor
     func testALeftRoomNeverShowsTheCatchResult() async {
-        let species = RaidBoss.speciesID(dayKey: CompanionStore.dayKey(Date()))
+        let species = RaidBoss.speciesID(at: Date())
         let provider = RaidSuspendedLineProvider(species: species)
         let store = CompanionStore(provider: provider, clock: TestClock().closure,
                                    fileURL: storeStateURL("raid-catch-stale"), rng: SeededRNG(seed: 7))
@@ -730,7 +750,7 @@ final class RaidRoomTests: XCTestCase {
     /// 오늘의 보스 한 마리. 게스트 검증(`validRaidStart`)을 통과하려면 종이 오늘의 종이어야 한다.
     private func todaysBoss(tier: RaidTier = .one) -> MultiplayerFighter {
         var todays = snapshot(level: tier.bossLevel, moves: [move(id: 33, power: 40)])
-        todays.speciesID = RaidBoss.speciesID(dayKey: CompanionStore.dayKey(Date()))
+        todays.speciesID = RaidBoss.speciesID(at: Date())
         return RaidBoss.bossFighter(tier: tier, snapshot: todays)
     }
 
@@ -1165,4 +1185,3 @@ private actor RaidSuspendedLineProvider: PokeProviding {
 }
 
 private enum RaidProviderError: Error { case offline }
-

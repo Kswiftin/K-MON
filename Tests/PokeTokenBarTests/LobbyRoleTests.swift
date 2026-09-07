@@ -114,7 +114,7 @@ final class LobbyRoleTests: XCTestCase {
         // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
         // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
         // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 15)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 16)
     }
 
     func testBettingMessagesRoundTrip() throws {

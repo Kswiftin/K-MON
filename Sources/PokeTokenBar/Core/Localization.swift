@@ -1258,9 +1258,9 @@ struct L {
     var raidRewardBase: String { t("기본", "Base", "基本") }
     var raidRewardSurvivors: String { t("생존", "Survivors", "生存") }
     var raidAlreadyPaidToday: String {
-        t("오늘의 레이드 보상은 이미 받았습니다 — 계속 돌 수는 있어요.",
-          "You already claimed today's raid reward - you can still keep running raids.",
-          "今日のレイド報酬は受け取り済みです — 挑戦は続けられます。")
+        t("이번 오전/오후 레이드 보상은 이미 받았습니다 — 계속 참가할 수는 있어요.",
+          "You already claimed this half-day raid reward - you can still keep raiding.",
+          "この午前・午後のレイド報酬は受取済みです — 挑戦は続けられます。")
     }
     var raidTurnCapReached: String {
         t("턴이 다 됐습니다 — 보스가 버텼어요.", "Out of turns - the boss held on.",

@@ -64,6 +64,37 @@ final class RaidTests: XCTestCase {
                           RaidBoss.speciesID(dayKey: "2026-09-20"))
     }
 
+    func testNoonSplitsTheDayIntoTwoDifferentBosses() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let morning = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7, hour: 11, minute: 59))!
+        let afternoon = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7, hour: 12))!
+
+        XCTAssertEqual(RaidBoss.periodKey(morning, calendar: calendar), "2026-09-07-am")
+        XCTAssertEqual(RaidBoss.periodKey(afternoon, calendar: calendar), "2026-09-07-pm")
+        XCTAssertNotEqual(RaidBoss.speciesID(at: morning, calendar: calendar),
+                          RaidBoss.speciesID(at: afternoon, calendar: calendar))
+    }
+
+    func testCatchRatesFollowRarity() {
+        XCTAssertEqual(RaidBoss.catchPercent(for: .legendary), 5)
+        XCTAssertEqual(RaidBoss.catchPercent(for: .rare), 15)
+        XCTAssertEqual(RaidBoss.catchPercent(for: .uncommon), 25)
+    }
+
+    func testEvolutionDayAndNightAlsoChangeAtNoon() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let beforeNoon = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7,
+                                                             hour: 11, minute: 59))!
+        let noon = calendar.date(from: DateComponents(year: 2026, month: 9, day: 7, hour: 12))!
+
+        XCTAssertTrue(RaidHalfDay.satisfiesEvolution("day", at: beforeNoon, calendar: calendar))
+        XCTAssertFalse(RaidHalfDay.satisfiesEvolution("night", at: beforeNoon, calendar: calendar))
+        XCTAssertFalse(RaidHalfDay.satisfiesEvolution("day", at: noon, calendar: calendar))
+        XCTAssertTrue(RaidHalfDay.satisfiesEvolution("night", at: noon, calendar: calendar))
+    }
+
     // MARK: 티어 표 — 설계 의도를 산수로 못 박는다
 
     /// 1★는 혼자, 3★는 둘, 5★는 셋. **보스 HP 는 참가 인원으로 스케일하지 않으므로** 이 관계는
@@ -270,10 +301,9 @@ final class RaidTests: XCTestCase {
         XCTAssertEqual(RaidBoss.catcher(runnerIDs: ids, seed: 99, finishedRound: 7), first)
     }
 
-    /// 1★ 는 포획을 안 연다. 400 HP 는 둘이 몇 턴에 깨는데 풀이 전부 전설·유사전설이라,
-    /// 열면 알 부화(20,000 별의조각)가 뜻을 잃는다. 3★ 부터가 "뭉쳐야 잡힌다" 의 시작이다.
+    /// 티어는 포획 기회를 막지 않고 난이도와 별의조각만 가른다.
     func testOnlyThreeAndFiveStarGrantACatch() {
-        XCTAssertFalse(RaidTier.one.grantsCatch)
+        XCTAssertTrue(RaidTier.one.grantsCatch)
         XCTAssertTrue(RaidTier.three.grantsCatch)
         XCTAssertTrue(RaidTier.five.grantsCatch)
     }

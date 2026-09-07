@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// LAN 협동 레이드(#80) — 오늘의 보스 하나를 같은 네트워크의 트레이너들이 함께 친다.
+/// LAN 협동 레이드(#80) — 오전·오후의 보스를 같은 네트워크의 트레이너들이 함께 친다.
 ///
 /// 화면이 세 국면을 갈아 끼운다: **모집 전**(오늘의 보스·티어 고르기·근처 방 목록),
 /// **로비**(준비·시작), **교전**(보스 한 마리 + 파티 줄 + 정산).
@@ -15,6 +15,8 @@ struct RaidView: View {
     /// 턴 재생기 — 1v1·웨이브 런·토너먼트와 **같은 구동자**를 쓴다. 없으면 턴이 해상되는 순간
     /// HP 가 최종값으로 튀고 로그가 한꺼번에 나타나, 무엇이 일어났는지 볼 시간이 없다.
     @State private var animator = BattleAnimator()
+    @State private var revealedCatchAttempts = 0
+    @State private var catchRevealTask: Task<Void, Never>?
     @Environment(AppSettings.self) private var settings
 
     private var center: MultiplayerRoomCenter { battleCenter.multiplayer }
@@ -46,6 +48,8 @@ struct RaidView: View {
         // 로그와 채팅이 잘린 채로 뜬다. 형제 오버레이(체육관·던전·꾸미기·대화)와 같은 값을 쓴다 —
         // 오버레이마다 창 높이가 뛰면 화면을 옮길 때마다 창이 요동친다.
         .frame(height: PopoverMetrics.currentHeight(for: .battle))
+        .onChange(of: center.raidCatchAttempts.count) { revealCatchAttempts() }
+        .onDisappear { catchRevealTask?.cancel() }
     }
 
     private var header: some View {
@@ -97,10 +101,18 @@ struct RaidView: View {
         HStack(spacing: 10) {
             SpriteView(speciesID: center.todaysRaidSpeciesID, size: 56)
             VStack(alignment: .leading, spacing: 2) {
-                Text(l.raidTodaysBoss).font(.caption2).foregroundStyle(.secondary)
+                Text(RaidHalfDay.at(Date()) == .morning
+                     ? l.t("오전 레이드 보스", "Morning raid boss", "午前のレイドボス")
+                     : l.t("오후 레이드 보스", "Afternoon raid boss", "午後のレイドボス"))
+                    .font(.caption2).foregroundStyle(.secondary)
                 // 이름은 비동기 조회라 여기서 쓰지 않는다 — 스프라이트가 이미 누구인지 말하고,
                 // 정확한 이름은 교전이 시작되면 스냅샷이 싣고 온다.
                 Text(l.raidTitle).font(.callout).bold()
+                let rarity = RaidBoss.rarity(speciesID: center.todaysRaidSpeciesID)
+                Text(l.t("포획 확률 \(RaidBoss.catchPercent(for: rarity))%",
+                         "Catch chance \(RaidBoss.catchPercent(for: rarity))%",
+                         "捕獲率 \(RaidBoss.catchPercent(for: rarity))%"))
+                    .font(.caption2).foregroundStyle(.purple)
                 // 다음 5★ 시각은 **아침에 공개된다** — 무작위인데 안 알려 주면 마침 접속해 있던
                 // 사람만 참여하게 되고, 그러면 무작위로 둔 이유가 사라진다.
                 if let next = RaidSchedule.nextHatch(after: Date()) {
@@ -339,10 +351,7 @@ struct RaidView: View {
                 .padding(8)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
-            if let caught = catchLine {
-                Text(caught).font(.caption2).foregroundStyle(.purple)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            catchSequence
             Button(l.t("나가기", "Leave", "退出")) { center.leaveRoom() }
                 .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
         }
@@ -367,11 +376,52 @@ struct RaidView: View {
             switch center.raidCatchResult {
             case .box: return l.raidCaughtByMe(name, toBox: true)
             case .companion: return l.raidCaughtByMe(name, toBox: false)
+            case .escaped: return l.t("포켓몬이 볼에서 빠져나왔다.", "The Pokémon broke free.", "ポケモンがボールから出てしまった。")
             case .claimedToday, .unavailable, nil: return nil
             }
         }
         let trainer = center.combatFighters.first { $0.id == winner }?.trainerName ?? "?"
         return l.raidCaughtByOther(trainer: trainer, name: name)
+    }
+
+    @ViewBuilder
+    private var catchSequence: some View {
+        if !center.raidCatchAttempts.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(l.t("포획 결과", "Catch results", "捕獲結果")).font(.caption.bold())
+                ForEach(Array(center.raidCatchAttempts.prefix(revealedCatchAttempts))) { attempt in
+                    HStack(spacing: 7) {
+                        Image(systemName: attempt.succeeded ? "circle.inset.filled" : "circle.dashed")
+                            .foregroundStyle(attempt.succeeded ? .green : .secondary)
+                        Text(attempt.trainerName).font(.caption.bold())
+                        Spacer()
+                        Text(attempt.succeeded
+                             ? l.t("잡았다!", "Caught it!", "捕まえた！")
+                             : l.t("놓쳤다", "Broke free", "逃げられた"))
+                            .font(.caption).foregroundStyle(attempt.succeeded ? .green : .secondary)
+                    }
+                    .padding(6)
+                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.35), value: revealedCatchAttempts)
+        }
+    }
+
+    private func revealCatchAttempts() {
+        catchRevealTask?.cancel()
+        revealedCatchAttempts = 0
+        let total = center.raidCatchAttempts.count
+        guard total > 0 else { return }
+        catchRevealTask = Task { @MainActor in
+            for count in 1...total {
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(for: .milliseconds(900))
+                guard !Task.isCancelled else { return }
+                revealedCatchAttempts = count
+            }
+        }
     }
 
     private func settlementRow(_ label: String, _ value: Int, emphasized: Bool = false) -> some View {

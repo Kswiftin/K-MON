@@ -1107,11 +1107,11 @@ struct CompanionState: Codable, Sendable {
     var adventure: AdventureRun?
     var adventureHistory: [AdventureRecord] = []
     var battleHistory: [BattleRecord] = []
-    /// 레이드 보상을 마지막으로 받은 날짜 키. **하루 한 번 지급의 유일한 멱등 가드**라
+    /// 레이드 보상을 마지막으로 받은 오전/오후 키. **구간당 한 번 지급의 유일한 멱등 가드**라
     /// 무결성 서명 대상이다(`SaveTransfer.canonicalString` 의 `rd` 세그먼트) — 지우면 같은 날
-    /// 몇 번이든 다시 받는다. 자정 타이머 없이 키 비교로 넘긴다(`MissionBoard` 와 같은 방식).
+    /// 몇 번이든 다시 받는다. 정오 타이머 없이 키 비교로 넘긴다.
     var raidRewardDate = ""
-    /// 레이드 보스를 마지막으로 잡은 날짜 키. 하루 한 마리의 멱등 가드이고 같은 이유로 서명
+    /// 레이드 보스를 마지막으로 잡은 오전/오후 키. 구간당 한 마리의 멱등 가드이고 같은 이유로 서명
     /// 대상이다(`rc` 세그먼트).
     ///
     /// **지급 원장과 따로 두는 것이 요점이다.** 하나로 합치면 혼자 돈 1★ 의 소액 지급이 그날의

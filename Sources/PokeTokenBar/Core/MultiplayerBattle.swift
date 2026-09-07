@@ -375,7 +375,7 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 14: 기절 뒤 강제 교체가 턴을 소비하지 않고 새 포켓몬의 기술 선택을 받음.
     // 방은 `rulesVersion` 을 안 본다 — 규칙 차이를 막을 곳이 여기뿐이라 규칙이 바뀌면 이 값도 같이 올린다.
     // 15: LAN 협동 레이드(`.raidStart`·`.raidSettlement`, `MultiplayerBattleMode.coopBoss`).
-    static let protocolVersion = 15
+    static let protocolVersion = 16
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -409,7 +409,7 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     case gymHandoff(gymID: UUID)
     // 레이드. `.start` 에 티어를 끼우지 않고 case 를 새로 낸 이유는 호환이다 — `.start` 의 모양을
     // 바꾸면 1v1·4인 방까지 전부 JSON 이 달라진다.
-    case raidStart(seed: UInt64, fighters: [MultiplayerFighter], tier: RaidTier)
+    case raidStart(seed: UInt64, fighters: [MultiplayerFighter], tier: RaidTier, periodKey: String)
     /// 정산의 기여도 항. 남은 턴·생존자는 받는 쪽이 자기 `combatFighters`·`combatRound` 로 알지만,
     /// **누가 얼마나 넣었는지는 호스트만 안다**(`MultiplayerBattle.damageDealt`).
     case raidSettlement(contributions: [UUID: Int])
