@@ -66,6 +66,21 @@ enum VariableDamage: Equatable, Sendable {
             // 이번 턴에 맞았으면 두 배. 우선도 −4 라 대개 후공이므로 조건이 실제로 자주 선다.
             let base = basePower(move, fallback: 60)
             return .power(attacker.lastHitThisTurn == nil ? base : base * 2)
+        case MoveID.furyCutter:
+            return .power(doublingStreakPower(attacker, base: basePower(move, fallback: 40), cap: 160))
+        case MoveID.rollout:
+            // 본가는 5턴간 사용자를 이 기술에 **묶는데** 기술 강제 상태가 엔진에 없다(`unmodeledMoveIDs`
+            // 의 참기와 같은 이유). 그래서 연이어 고르는 동안만 세진다 — 상한은 본가와 같다.
+            return .power(doublingStreakPower(attacker, base: basePower(move, fallback: 30), cap: 480))
+        case MoveID.echoedVoice:
+            // 본가는 **누가 썼든** 그 턴에 나온 횟수를 세는 필드값이다. 필드 레이어가 없으므로
+            // 쓰는 쪽의 연속 횟수로 센다 — 1대1 에서 갈리는 건 상대도 같이 쓸 때뿐이다.
+            return .power(min(200, basePower(move, fallback: 40) * max(1, attacker.consecutiveMoveUses)))
+        case MoveID.rageFist:
+            return .power(min(350, basePower(move, fallback: 50) * (1 + attacker.timesHit)))
+        case MoveID.stompingTantrum, MoveID.temperFlare:
+            let base = basePower(move, fallback: 75)
+            return .power(attacker.lastMoveFailed ? base * 2 : base)
         case MoveID.acrobatics:
             // 본가는 "지닌물건이 없으면" 두 배인데, 대전에 지닌물건 축이 아직 없어(이슈 #24 의
             // Phase 5) 조건이 늘 참이다. 지닌물건이 생기면 여기에 분기를 세운다.
@@ -171,6 +186,20 @@ enum VariableDamage: Equatable, Sendable {
         base + 20 * BattleStat.allCases.reduce(0) { $0 + max(0, side.stage($1)) }
     }
 
+    /// 리프블레이드·구르기 — 연이어 쓴 횟수만큼 두 배씩. 상한이 없으면 여섯 턴 만에 위력이
+    /// 네 자리가 된다. `consecutiveMoveUses` 는 이 기술을 쓰는 턴에 이미 올라 있으므로 1 회차가
+    /// 기본 위력이다.
+    static func doublingStreakPower(_ side: BattleSide, base: Int, cap: Int) -> Int {
+        let steps = Swift.max(0, side.consecutiveMoveUses - 1)
+        // 지수는 상한에 닿는 지점에서 자른다 — 32 턴을 넘기면 시프트가 오버플로한다.
+        var power = base
+        for _ in 0..<steps {
+            power *= 2
+            if power >= cap { return cap }
+        }
+        return Swift.min(cap, power)
+    }
+
     /// 악몽·저승의불꽃 — 상대가 **주** 상태이상일 때만 두 배다. 혼란은 volatile 이라 세지 않는다.
     static func statusPunishingPower(_ defender: BattleSide, base: Int) -> Int {
         defender.status == nil ? base : base * 2
@@ -255,6 +284,8 @@ enum VariableDamage: Equatable, Sendable {
         static let superFang = 162
         static let flail = 175
         static let reversal = 179
+        static let rollout = 205
+        static let furyCutter = 210
         static let magnitude = 222
         static let mirrorCoat = 243
         static let endeavor = 283
@@ -271,17 +302,21 @@ enum VariableDamage: Equatable, Sendable {
         static let crushGrip = 462
         static let heavySlam = 484
         static let electroBall = 486
+        static let echoedVoice = 497
         static let storedPower = 500
         static let hex = 506
         static let acrobatics = 512
         static let finalGambit = 515
         static let heatCrash = 535
         static let powerTrip = 681
+        static let stompingTantrum = 707
         static let dragonEnergy = 820
         static let infernalParade = 844
         static let ruination = 877
+        static let rageFist = 889
         static let comeuppance = 894
         static let hardPress = 912
+        static let temperFlare = 915
     }
 
     /// 아직 모델링하지 않은 가변 위력 기술 — **무브셋 후보에서 뺀다.**

@@ -675,6 +675,20 @@ struct BattleSide: Sendable, Equatable {
     /// 상태마다 뜻이 다른 한 칸 — 맹독은 누적 배수(1, 2, 3…), 잠듦은 남은 카운터다.
     /// 주 상태가 하나뿐이라 두 값이 동시에 필요할 일이 없어 칸을 나누지 않는다.
     var statusCounter = 0
+    /// 직전에 **낸** 기술과 연이어 낸 횟수 — 리프블레이드·구르기·에코보이스가 여기서 위력을 뽑는다.
+    ///
+    /// `lastHitThisTurn` 과 달리 **턴을 넘어 산다**. 끊기는 자리는 두 곳뿐이다: 다른 기술을 냈을
+    /// 때(다시 1) 와 못 움직였을 때(0). `BattleEngine.beginAttack` 한 곳에서만 갱신한다 —
+    /// 세 모드가 같은 함수를 지나므로 모드마다 카운터가 갈리지 않는다.
+    var lastMoveID: Int?
+    var consecutiveMoveUses = 0
+    /// 이 배틀에서 **기술로** 맞은 횟수 — 원한의응보가 센다. 잔뎀·혼란 자멸은 세지 않는다
+    /// (`lastHitThisTurn` 과 같은 자리에서 올린다). 다단기는 히트가 아니라 **기술 하나로** 센다 —
+    /// 엔진이 다단기를 합계 한 번으로 적용하므로 히트마다 셀 자리가 없다.
+    var timesHit = 0
+    /// 직전에 낸 내 기술이 실패했나 — 분함의발구르기·역상승이 본다. 빗나감·무효·못 움직임이
+    /// 전부 실패다(본가도 같다).
+    var lastMoveFailed = false
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
     var flinched = false
@@ -1469,6 +1483,7 @@ extension BattleEngine {
         // 자기 회복기는 상대를 보지 않는다 — 명중·상성·데미지 계산을 통째로 건너뛴다.
         // `resolveAttack` 에 태우면 위력 0 이라 rng 만 태우고 아무것도 안 하는 기술이 된다.
         if let restored = selfHealing(of: move, user: &attacker, actor: attackerActor, rng: &rng) {
+            attacker.lastMoveFailed = false
             return events + restored
         }
         events += applyHit(attacker: &attacker, defender: &defender,
@@ -1488,7 +1503,20 @@ extension BattleEngine {
     static func beginAttack(attacker: inout BattleSide, actor: BattleActor, move: MoveSpec,
                             rng: inout SplitMix64, into events: inout [BattleEvent]) -> Bool {
         // 못 움직이면 `.move` 자체가 나가지 않는다 — Showdown 도 `|move|` 대신 `|cant|` 를 보낸다.
-        guard canAct(&attacker, actor: actor, rng: &rng, into: &events) else { return false }
+        guard canAct(&attacker, actor: actor, rng: &rng, into: &events) else {
+            // 기술이 아예 나가지 않았다 — 연속은 끊기고, 직전 기술은 실패로 친다.
+            attacker.consecutiveMoveUses = 0
+            attacker.lastMoveID = nil
+            attacker.lastMoveFailed = true
+            return false
+        }
+        // 위력을 **뽑기 전에** 올린다 — 리프블레이드는 첫 사용이 1회차(기본 위력)여야 한다.
+        if attacker.lastMoveID == move.id {
+            attacker.consecutiveMoveUses += 1
+        } else {
+            attacker.lastMoveID = move.id
+            attacker.consecutiveMoveUses = 1
+        }
         events.append(.move(actor, moveID: move.id))
         return true
     }
@@ -1513,6 +1541,10 @@ extension BattleEngine {
                          rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move, rng: &rng)
+        // 실패 여부는 **모든 갈래에서** 갱신한다. 성공 갈래만 내리면 한 번 실패한 뒤로 계속 실패로
+        // 남아 분함의발구르기가 영원히 두 배가 된다. 광역기는 마지막 대상의 결과가 남는다 —
+        // 본가도 여러 대상 중 하나만 실패한 턴을 실패로 세지 않는다.
+        attacker.lastMoveFailed = outcome.missed || outcome.effectiveness == 0
         if outcome.missed { return events + [.miss(attackerActor)] }
         if outcome.effectiveness == 0 {
             events.append(.immune(defenderActor))
@@ -1548,6 +1580,8 @@ extension BattleEngine {
             //
             // **다단기는 마지막 히트만 기록한다**(본가와 같다). 합계를 넣으면 카운터가 5회 히트의
             // 총합을 2배로 되돌려줘 되돌리기가 히트 수만큼 세진다.
+            // 원한의응보가 배틀 내내 센다. 다단기도 여기를 한 번만 지나므로 기술 하나로 센다.
+            defender.timesHit += 1
             defender.lastHitThisTurn = IncomingHit(
                 amount: outcome.lastHitDamage.map { scaled($0, by: damageScale) } ?? damage,
                 damageClass: move.damageClass)

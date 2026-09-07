@@ -49,6 +49,9 @@ final class BattleAssumptionGuardTests: XCTestCase {
         "storedPower", "powerTrip",
         "hex", "infernalParade",
         "avalanche", "acrobatics",
+        // 턴을 넘어 쌓인 카운터에서 위력을 뽑는 부류. 역시 전부 단발기다.
+        "furyCutter", "rollout", "echoedVoice",
+        "rageFist", "stompingTantrum", "temperFlare",
     ]
 
     // MARK: 소스 스캔
