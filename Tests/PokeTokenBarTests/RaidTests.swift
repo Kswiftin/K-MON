@@ -363,13 +363,19 @@ final class RaidTests: XCTestCase {
         XCTAssertNoThrow(try MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: 1))
     }
 
-    /// 4인 파티 + 보스 = 5명. 기존 `(2...4)` 정원 가드에 그대로 걸리는 자리다.
-    func testFullPartyRaidExceedsTheOldFighterCap() throws {
-        let fighters = [runner("A"), runner("B"), runner("C"), runner("D"), boss()]
+    /// 8인 파티 + 보스 = 9명. 기존 4인 레이드 정원 가드에 그대로 걸리는 자리다.
+    func testEightRunnerRaidExceedsTheOldFighterCap() throws {
+        let fighters = (1...8).map { runner("R\($0)") } + [boss()]
         XCTAssertTrue(MultiplayerValidation.validStart(fighters: fighters, mode: .coopBoss))
         XCTAssertNoThrow(try MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: 1))
         // 다른 모드는 상한이 그대로다 — 협동전 때문에 개인전이 5명이 되면 안 된다.
         XCTAssertThrowsError(try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: 1))
+    }
+
+    func testRaidRejectsANinthRunner() throws {
+        let fighters = (1...9).map { runner("R\($0)") } + [boss()]
+        XCTAssertFalse(MultiplayerValidation.validStart(fighters: fighters, mode: .coopBoss))
+        XCTAssertThrowsError(try MultiplayerBattle(fighters: fighters, mode: .coopBoss, seed: 1))
     }
 
     func testRaidStartNeedsExactlyOneBoss() {
@@ -443,11 +449,26 @@ final class RaidTests: XCTestCase {
     func testRaidLobbyStartsWithASingleRunner() throws {
         let host = LobbyParticipant(id: UUID(), trainerName: "호스트", speciesID: 143,
                                     team: .red, isReady: false, isHost: true)
-        var lobby = try MultiplayerLobby(host: host, capacity: 4, activity: .raid)
+        var lobby = try MultiplayerLobby(host: host, capacity: MultiplayerLobby.raidCapacity, activity: .raid)
         XCTAssertFalse(lobby.canStart, "준비 전에는 못 연다")
         lobby.setReady(true, participantID: host.id)
         XCTAssertTrue(lobby.canStart, "1인 레이드는 혼자서도 시작한다")
         XCTAssertEqual(lobby.mode, .coopBoss)
+    }
+
+    func testRaidLobbyAcceptsEightRunnersAndRejectsTheNinth() throws {
+        let host = LobbyParticipant(id: UUID(), trainerName: "호스트", speciesID: 143,
+                                    team: .red, isReady: true, isHost: true)
+        var lobby = try MultiplayerLobby(host: host, capacity: MultiplayerLobby.raidCapacity, activity: .raid)
+        for index in 2...8 {
+            try lobby.join(LobbyParticipant(id: UUID(), trainerName: "참가자 \(index)", speciesID: 25,
+                                            team: .red, isReady: true, isHost: false))
+        }
+        XCTAssertEqual(lobby.runners.count, 8)
+        XCTAssertThrowsError(try lobby.join(LobbyParticipant(id: UUID(), trainerName: "아홉 번째", speciesID: 25,
+                                                             team: .red, isReady: true, isHost: false))) { error in
+            XCTAssertEqual(error as? LobbyError, .runnersFull)
+        }
     }
 
     /// 형제 활동은 그대로여야 한다 — 레이드 예외가 4인 방까지 1명으로 열지 않는지 본다.
