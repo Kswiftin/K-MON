@@ -86,8 +86,8 @@ struct RogueRunView: View {
     }
 
     private var header: some View {
-        ChallengeOverlayHeader(title: headerTitle, systemImage: "flame.fill", tint: .red,
-                               closeHelp: l.battleClose, onClose: onClose)
+        PokedoroOverlayHeader(title: headerTitle, systemImage: "flame.fill", tint: .red,
+                              closeLabel: l.close, onClose: onClose)
     }
 
     private var headerTitle: String {

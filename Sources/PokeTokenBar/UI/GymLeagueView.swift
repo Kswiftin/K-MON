@@ -24,13 +24,11 @@ struct GymLeagueView: View {
 
     private var picker: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ChallengeOverlayHeader(title: l.gymLeagueTitle, systemImage: "building.columns.fill",
-                                   tint: .purple, closeHelp: l.battleClose,
-                                   trailing: AnyView(
-                                       Text(l.gymBadgeCount(store.state.gymLeagueBadges.count,
-                                                            GymLeague.catalog.count))
-                                           .font(.caption2).foregroundStyle(.secondary)
-                                   ), onClose: onClose)
+            PokedoroOverlayHeader(title: l.gymLeagueTitle, systemImage: "building.columns.fill",
+                                  tint: .purple, closeLabel: l.close, onClose: onClose) {
+                Text(l.gymBadgeCount(store.state.gymLeagueBadges.count, GymLeague.catalog.count))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             if let error = center.lastError {
                 Text(error).font(.caption2).foregroundStyle(.orange)
             }

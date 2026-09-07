@@ -444,7 +444,12 @@ final class AdventureClaimTests: XCTestCase {
                     || trimmed.hasPrefix("fileprivate struct ") else { return nil }
             let parts = trimmed.split(separator: " ")
             guard let structIndex = parts.firstIndex(of: "struct"), parts.count > structIndex + 1 else { return nil }
-            let name = parts[structIndex + 1].split(separator: ":").first.map(String.init) ?? ""
+            // 제네릭 뷰(`struct X<T: View>: View`)는 이름 뒤에 타입 인자가 붙는다. `<` 에서 안 자르면
+            // 이름이 `X<T` 가 되어 호출부(`X(`)를 영영 못 찾고, 멀쩡히 붙어 있는 뷰를 미마운트로 신고한다.
+            let name = parts[structIndex + 1]
+                .split(separator: ":").first
+                .flatMap { $0.split(separator: "<").first }
+                .map(String.init) ?? ""
             guard trimmed.contains(": View"), !name.isEmpty else { return nil }
             return name
         }

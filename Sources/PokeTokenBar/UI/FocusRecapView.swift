@@ -54,13 +54,9 @@ struct FocusRecapView: View {
     }
 
     private var header: some View {
-        HStack {
-            Label(l.t("주간 회고", "Weekly recap", "週間ふりかえり"), systemImage: "chart.bar.xaxis")
-                .font(.headline)
-            Spacer()
-            Button(action: onClose) { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
-        }
+        PokedoroOverlayHeader(title: l.t("주간 회고", "Weekly recap", "週間ふりかえり"),
+                              systemImage: "chart.bar.xaxis",
+                              closeLabel: l.close, onClose: onClose)
     }
 
     /// 주 이동. **이번 주보다 앞으로는 못 간다** — 아직 오지 않은 주는 빈 막대 일곱 개일 뿐이다.

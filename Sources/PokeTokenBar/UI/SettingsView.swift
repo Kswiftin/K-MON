@@ -188,25 +188,13 @@ struct SettingsView: View {
         if panel.runModal() == .OK, let url = panel.url { settings.setChatProviderExecutablePath(url.path, for: kind) }
     }
 
+    /// 형제 오버레이와 **같은 헤더**를 쓴다. 예전엔 여기만 좌상단 "‹ 뒤로" 였고 나머지는 우상단
+    /// `xmark` 라, 설정을 열었다 닫는 사람은 매번 반대쪽을 먼저 봤다.
     private var header: some View {
-        HStack(spacing: 6) {
-            Button(action: onClose) {
-                HStack(spacing: 2) {
-                    Image(systemName: "chevron.backward")
-                    Text(l.back)
-                }
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
-            .keyboardShortcut(.cancelAction)
-            Spacer()
-            Text(l.settings).font(.headline)
-            Spacer()
-            // 좌측 뒤로 버튼과 시각적 균형 (제목 중앙 정렬 유지)
-            Text(l.back).opacity(0).accessibilityHidden(true)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        PokedoroOverlayHeader(title: l.settings, systemImage: "gearshape",
+                              closeLabel: l.close, onClose: onClose)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
     }
 
     private var footer: some View {

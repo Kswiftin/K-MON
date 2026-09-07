@@ -40,12 +40,8 @@ struct OutfitView: View {
     }
 
     private var header: some View {
-        HStack {
-            Label(l.outfitTitle, systemImage: "tshirt.fill").font(.headline)
-            Spacer()
-            Button(action: onClose) { Image(systemName: "xmark") }
-                .buttonStyle(.plain)
-        }
+        PokedoroOverlayHeader(title: l.outfitTitle, systemImage: "tshirt.fill",
+                              closeLabel: l.close, onClose: onClose)
     }
 
     private var preview: some View {

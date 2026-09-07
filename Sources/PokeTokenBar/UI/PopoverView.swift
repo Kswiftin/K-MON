@@ -1,8 +1,21 @@
 import AppKit
 import SwiftUI
 
-enum PopoverTab {
+enum PopoverTab: CaseIterable {
     case home, pokemon, collection, battle, challenge, shop, bag
+
+    /// 탭바가 그리는 탭.
+    static let tabBarTabs: [PopoverTab] = [.home, .pokemon, .collection, .battle, .challenge]
+
+    /// footer 가 그리는 탭. 상점 · 가방은 **어느 탭에서 쓰든 상관없는** 소지품이라 탭바가 아니라
+    /// 아래 줄에 산다. 자리는 다르지만 같은 `tab` 값이므로 선택 표시도 똑같이 필요하다 —
+    /// 예전엔 footer 버튼에 활성 표시가 없어, 상점에 들어가면 탭바 다섯 개가 전부 비선택이 되어
+    /// 화면 어디에도 "지금 여기" 가 없었다.
+    static let footerTabs: [PopoverTab] = [.shop, .bag]
+
+    /// 지금 위치를 footer 가 표시하는가. 판정을 뷰 안에 인라인으로 두면 탭을 더할 때 목록과
+    /// 표시 중 한쪽만 고치게 된다(`OverlayChromeTests` 가 둘을 함께 본다).
+    var isFooterDestination: Bool { Self.footerTabs.contains(self) }
 
     /// 팝오버가 유지하는 높이. 탭 안에서 콘텐츠가 늘고 줄어도(기술 목록 펼침, 로딩 자리표시자,
     /// 진화 프롬프트) 이 값은 그대로라 창이 다시 그려지지 않는다 — 펼칠 때마다 커졌다 작아지며
@@ -408,22 +421,41 @@ struct PopoverView: View {
         }
     }
 
+    /// 상점 · 가방은 탭이면서 자리가 footer 다. 탭바가 안 그리므로 **여기가 유일한 선택 표시**다 —
+    /// 활성 표시가 없으면 상점에 들어간 순간 탭바 다섯 개가 전부 비선택이 되어 화면 어디에도
+    /// "지금 여기" 가 남지 않는다. 색만으로 표시하지 않고 알약 배경을 함께 깔아, 색을 구분 못 해도
+    /// 현재 위치가 보이게 한다.
+    private func footerTabButton(_ tab: PopoverTab, title: String, icon: String) -> some View {
+        let isCurrent = nav.tab == tab
+        return Button { nav.tab = tab } label: {
+            Label(title, systemImage: icon)
+                .fontWeight(isCurrent ? .bold : .regular)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(isCurrent
+                            ? AnyShapeStyle(PokedoroTheme.blue.opacity(0.18))
+                            : AnyShapeStyle(Color.clear),
+                            in: Capsule())
+        }
+        .buttonStyle(.borderless)
+        .help(title)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
+    }
+
     private var footer: some View {
         HStack(spacing: 12) {
             if nav.tab == .home {
                 Text("\(l.totalPlaytime) \(l.duration(companion.activeSecondsTotal))")
                     .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
             }
-            Button { nav.tab = .shop } label: { Label(l.shop, systemImage: "cart") }
-                .buttonStyle(.borderless).help(l.shop)
+            footerTabButton(.shop, title: l.shop, icon: "cart")
             // 가방은 포켓몬 탭 안에 있었다 — 어느 탭에서 쓰든 상관없는 소지품이라 상점 옆이 제자리다.
-            Button { nav.tab = .bag } label: { Label(l.bag, systemImage: "backpack.fill") }
-                .buttonStyle(.borderless).help(l.bag)
+            footerTabButton(.bag, title: l.bag, icon: "backpack.fill")
             Spacer()
             Button { nav.showSettings = true } label: { Image(systemName: "gearshape") }
-                .buttonStyle(.borderless).help(l.settings)
+                .buttonStyle(.borderless).help(l.settings).accessibilityLabel(l.settings)
             Button { NSApplication.shared.terminate(nil) } label: { Image(systemName: "power") }
-                .buttonStyle(.borderless).help(l.quit)
+                .buttonStyle(.borderless).help(l.quit).accessibilityLabel(l.quit)
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.94), in: Capsule())

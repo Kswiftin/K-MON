@@ -64,18 +64,96 @@ extension View {
     }
 }
 
+/// 오버레이 닫기 버튼 **정본**. 아이콘 · 위치 · 라벨을 여기 한 곳에서만 정한다.
+///
+/// 예전엔 화면마다 직접 만들어 설정은 좌상단 "‹ 뒤로", 레이드는 `xmark.circle.fill`, 나머지는
+/// 우상단 `xmark` 였다. 오버레이는 팝오버 **전체**를 갈아 끼우므로 돌아가는 길이 화면마다 다르면
+/// 사용자는 열 때마다 닫기를 다시 찾는다.
+///
+/// `help` 와 `accessibilityLabel` 을 **둘 다** 단다. `help` 는 마우스 툴팁이라 VoiceOver 에는
+/// 안 읽힌다 — 아이콘뿐인 버튼에서 툴팁만 달면 화면 판독기 사용자에게는 이름 없는 버튼이다.
+struct PokedoroOverlayCloseButton: View {
+    let label: String
+    /// Esc 로도 닫는다. 초안을 든 화면(대화 입력)만 끈다 — 타이핑 중 Esc 한 번에 쓰던 글이
+    /// 화면째 사라지면 닫기가 편해진 것이 아니라 위험해진 것이다.
+    var escapeCloses: Bool = true
+    let onClose: () -> Void
+
+    var body: some View {
+        Button(action: onClose) { Image(systemName: "xmark") }
+            .buttonStyle(.plain)
+            .help(label)
+            .accessibilityLabel(label)
+            .keyboardShortcut(escapeCloses ? .cancelAction : nil)
+    }
+}
+
+/// 오버레이 헤더 정본 — 제목 · 부가 컨트롤 · 닫기.
+///
+/// 제목이 한 줄 라벨인 오버레이가 쓴다. 대화처럼 제목 자리가 두 줄(이름 + 설명)인 화면은 헤더를
+/// 직접 짜되 닫기만 `PokedoroOverlayCloseButton` 을 쓴다.
+struct PokedoroOverlayHeader<Trailing: View>: View {
+    let title: String
+    let systemImage: String
+    /// 화면을 알아보게 하는 색. 도전 탭 오버레이는 각자 색을 갖고(체육관 보라·던전 빨강·경매
+    /// 주황·레이드 청록), 나머지는 `.primary` 로 둔다.
+    let tint: Color
+    let closeLabel: String
+    let onClose: () -> Void
+    private let trailing: Trailing
+
+    init(title: String, systemImage: String, tint: Color = .primary, closeLabel: String,
+         onClose: @escaping () -> Void, @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.systemImage = systemImage
+        self.tint = tint
+        self.closeLabel = closeLabel
+        self.onClose = onClose
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label(title, systemImage: systemImage).font(.headline).lineLimit(1)
+                .foregroundStyle(tint)
+            Spacer(minLength: 4)
+            trailing
+            PokedoroOverlayCloseButton(label: closeLabel, onClose: onClose)
+        }
+    }
+}
+
+extension PokedoroOverlayHeader where Trailing == EmptyView {
+    init(title: String, systemImage: String, tint: Color = .primary, closeLabel: String,
+         onClose: @escaping () -> Void) {
+        self.init(title: title, systemImage: systemImage, tint: tint, closeLabel: closeLabel,
+                  onClose: onClose) { EmptyView() }
+    }
+}
+
 struct PokedoroTabBar: View {
     @Binding var selection: PopoverTab
     let l: L
 
+    /// 라벨 · 아이콘은 여기 있고 **어떤 탭이 탭바에 오는지는** `PopoverTab.tabBarTabs` 가 정한다.
+    /// 목록이 둘로 갈리면 탭을 더할 때 한쪽만 고쳐 어디에도 안 뜨는 탭이 생긴다.
+    private func chrome(for tab: PopoverTab) -> (title: String, icon: String) {
+        switch tab {
+        case .home: (l.home, "house.fill")
+        case .pokemon: (l.t("포켓몬", "Pokémon", "ポケモン"), "circle.grid.cross.fill")
+        case .collection: (l.collection, "book.closed.fill")
+        case .battle: (l.t("친구", "Friends", "フレンド"), "person.2.fill")
+        case .challenge: (l.t("도전", "Challenge", "チャレンジ"), "flag.checkered")
+        case .shop: (l.shop, "cart")
+        case .bag: (l.bag, "backpack.fill")
+        }
+    }
+
     private var tabs: [(PopoverTab, String, String)] {
-        [
-            (.home, l.home, "house.fill"),
-            (.pokemon, l.t("포켓몬", "Pokémon", "ポケモン"), "circle.grid.cross.fill"),
-            (.collection, l.collection, "book.closed.fill"),
-            (.battle, l.t("친구", "Friends", "フレンド"), "person.2.fill"),
-            (.challenge, l.t("도전", "Challenge", "チャレンジ"), "flag.checkered")
-        ]
+        PopoverTab.tabBarTabs.map { tab in
+            let chrome = chrome(for: tab)
+            return (tab, chrome.title, chrome.icon)
+        }
     }
 
     var body: some View {

@@ -175,7 +175,9 @@ struct PokemonChatView: View {
                 Button(l.t("새 대화", "New chat", "新しい会話")) { chat.startNewSession(for: companionID, profile: profile) }
                 Button(l.t("기록 삭제", "Delete history", "履歴を削除"), role: .destructive) { chat.deleteSession(for: companionID) }
             } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
-            Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
+            // 이 화면만 Esc 닫기를 끈다 — 입력칸에 쓰다 만 메시지가 있는데 Esc 한 번에 화면째
+            // 사라지면 초안이 함께 날아간다. 형제 오버레이엔 초안이 없어 Esc 가 안전하다.
+            PokedoroOverlayCloseButton(label: l.close, escapeCloses: false, onClose: onClose)
         }.padding(12)
     }
 

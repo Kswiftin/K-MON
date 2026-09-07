@@ -53,8 +53,8 @@ struct RaidView: View {
     }
 
     private var header: some View {
-        ChallengeOverlayHeader(title: l.raidTitle, systemImage: "person.3.sequence.fill",
-                               tint: .teal, closeHelp: l.battleClose, onClose: onClose)
+        PokedoroOverlayHeader(title: l.raidTitle, systemImage: "person.3.sequence.fill",
+                              tint: .teal, closeLabel: l.close, onClose: onClose)
     }
 
     // MARK: 모집 전
