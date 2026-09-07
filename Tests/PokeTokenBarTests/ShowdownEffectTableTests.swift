@@ -33,7 +33,7 @@ final class ShowdownEffectTableTests: XCTestCase {
         // 기술을 훔치거나 되돌리는 부류 — 기술이 나가기 **전에** 끼어드는 자리가 없다.
         "snatch", "magiccoat",
         // 나머지 턴 끝·행동 판정 부류. 잔뎀 자리는 열렸으니 다음 배치로 이어진다.
-        "leechseed", "saltcure", "syrupbomb", "sparklingaria", "powder", "attract", "yawn",
+        "saltcure", "syrupbomb", "sparklingaria", "powder", "attract", "yawn",
     ]
 
     /// volatile 도 구현한 것과 **아직 아닌 것**으로만 갈린다 — 새 키가 늘면 어느 쪽인지 답해야 한다.

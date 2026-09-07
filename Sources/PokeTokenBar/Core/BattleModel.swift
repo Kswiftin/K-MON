@@ -674,7 +674,7 @@ enum DamageCause: String, Codable, Sendable, Equatable {
     /// 개체에 붙은 상태(`BattleVolatile`)가 깎은 몫 — 조이기·저주·나이트메어.
     /// volatile 하나에 원인 하나를 두는 이유는 로그다: "무엇에 맞았는지"를 잃으면 잔뎀이
     /// 전부 같은 줄로 읽혀, 조이기가 풀렸는데도 계속 깎이는 오구현이 화면에서 안 보인다.
-    case trap, curse, nightmare
+    case trap, curse, nightmare, leechSeed
 }
 
 // MARK: - 배틀 전체에 걸리는 상태
@@ -877,7 +877,7 @@ enum BattleGuard {
 enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// **나열 순서가 곧 턴 끝 처리 순서다** — 회복 둘이 먼저, 그다음 깎는 셋이다. 훑는 쪽이
     /// `allCases` 를 쓰므로 딕셔너리 순회 순서가 이벤트에 남지 않는다(두 피어의 로그가 갈리지 않는다).
-    case aquaRing, ingrain, nightmare, curse, partiallyTrapped
+    case aquaRing, ingrain, leechSeed, nightmare, curse, partiallyTrapped
 
     /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
     /// `ShowdownEffectTableTests` 가 동결한다.
@@ -885,6 +885,7 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
         switch showdownKey.lowercased() {
         case "aquaring":         self = .aquaRing
         case "ingrain":          self = .ingrain
+        case "leechseed":        self = .leechSeed
         case "nightmare":        self = .nightmare
         case "curse":            self = .curse
         case "partiallytrapped": self = .partiallyTrapped
@@ -905,14 +906,19 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     var healDivisor: Int? { targetsUser ? 16 : nil }
 
     /// 턴 끝에 깎는 최대 HP 분모와 로그에 남는 원인.
+    /// **씨뿌리기는 여기서 답하지 않는다**(`nil`) — 깎은 만큼 뿌린 쪽이 회복하므로 개체 하나만
+    /// 만지는 이 자리에서 처리할 수 없다. 그 몫은 `BattleEngine.endOfTurnLeechSeed` 가 맡는다.
     var residualDamage: (divisor: Int, cause: DamageCause)? {
         switch self {
-        case .nightmare:          return (4, .nightmare)
-        case .curse:              return (4, .curse)
-        case .partiallyTrapped:   return (8, .trap)
-        case .aquaRing, .ingrain: return nil
+        case .nightmare:                     return (4, .nightmare)
+        case .curse:                         return (4, .curse)
+        case .partiallyTrapped:              return (8, .trap)
+        case .aquaRing, .ingrain, .leechSeed: return nil
         }
     }
+
+    /// 씨뿌리기가 빨아내는 최대 HP 분모.
+    static let leechSeedDivisor = 8
 
     /// 조이기가 깎는 턴 수 — 4~5턴(본가와 같다). 턴을 세는 유일한 volatile 이라 여기 상수로 둔다.
     static let trapTurnFloor = 4
@@ -1061,6 +1067,10 @@ struct BattleSide: Sendable, Equatable {
     /// `BattleSide` 는 `Codable` 이 아니라 와이어에 실리지 않는다 — 두 피어가 각자 같은 규칙으로
     /// 채운다(`isTerastallized` 와 같은 이유). 그래서 `rulesVersion` 만 올리면 된다.
     var volatiles: [BattleVolatile: Int] = [:]
+    /// 씨뿌리기를 **누가** 걸었나 — 빨아낸 HP 를 받을 자리다. 개체가 아니라 **자리**(액터)를 들고
+    /// 있어서, 뿌린 쪽이 교체돼도 그 자리에 선 개체가 받는다(본가와 같다).
+    /// 자리를 배열의 몇 번째로 푸는 것은 모드의 일이다 — 모드마다 배열이 다르다.
+    var leechSeedSource: BattleActor?
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
     var flinched = false
@@ -1289,8 +1299,9 @@ enum BattleEngine {
     ///      타입이 하나로 접히고 STAB 가 세 갈래가 되며 테라버스트의 타입·분류가 바뀐다.
     ///      **와이어는 그대로다**: 테라 타입은 두 피어가 같은 `types` 에서 파생하고, 테라스탈
     ///      여부는 `BattleSide`(와이어에 없는 타입)에만 산다. rng 소비도 늘지 않는다.
-    /// 24 = 개체에 붙어 턴을 넘어 사는 상태(`BattleVolatile`) 다섯 — 조이기(열 기술)·저주·
-    ///      나이트메어의 턴 끝 잔뎀과 아쿠아링·뿌리박기의 턴 끝 회복. 상태는 전부 `BattleSide`
+    /// 24 = 개체에 붙어 턴을 넘어 사는 상태(`BattleVolatile`) 여섯 — 조이기(열 기술)·저주·
+    ///      나이트메어의 턴 끝 잔뎀, 아쿠아링·뿌리박기의 턴 끝 회복, 그리고 씨뿌리기(깎은 만큼
+    ///      뿌린 자리가 회복한다 — 네 모드가 잔뎀 뒤·날씨 앞에서 부른다). 상태는 전부 `BattleSide`
     ///      (와이어에 없는 타입)에 살지만 **rng 소비가 갈린다**: 조이기는 붙는 자리에서 지속 턴을
     ///      한 번 더 뽑으므로, 구버전은 그 뒤 모든 판정이 한 칸씩 밀린다. 같은 입력의 HP 도 갈린다.
     ///      `DamageCause` 에 원인 셋(`trap`·`curse`·`nightmare`)과 `BattleEvent` 에 case 둘
@@ -1394,6 +1405,7 @@ enum BattleEngine {
         // 붙어 있던 volatile 도 전부 사라진다(본가와 같다). 남겨 두면 조이기·저주를 교체로 피했다가
         // 그 상태 그대로 다시 나온다 — 랭크를 지우는 것과 같은 이유다.
         side.volatiles = [:]
+        side.leechSeedSource = nil
         // 랭크도 물러나면 사라진다. 남겨 두면 칼춤을 세 번 쌓아 두고 교체로 피했다가 그 랭크
         // 그대로 다시 나오는 무료 세팅이 된다 — CPU/체육관과 LAN 교체가 같이 이 규칙을 쓴다.
         side.resetStages()
@@ -1860,6 +1872,28 @@ extension BattleEngine {
         }
         events += volatileResidual(&side, actor: actor)
         if !side.isAlive { events.append(.faint(actor)) }
+        return events
+    }
+
+    /// 씨뿌리기의 턴 끝 — 깎은 만큼 씨를 뿌린 쪽이 회복한다.
+    ///
+    /// **두 개체를 동시에 만지는 유일한 턴 끝 효과**라 잔뎀(`endOfTurnResidual`, 개체 하나)과 자리를
+    /// 따로 뒀다: 깎는 쪽과 받는 쪽이 다른 배열에 있는 모드가 둘이다(웨이브·방). 받는 쪽을 인자로
+    /// 받는 이유도 그것이다 — 뿌린 자리(`BattleSide.leechSeedSource`)가 어느 배열의 몇 번째인지는
+    /// 모드만 안다. **잔뎀 뒤에 부른다**: 그 앞에 두면 화상으로 쓰러질 개체에게서 먼저 빨아낸다.
+    ///
+    /// 뿌린 쪽이 쓰러져 있으면 깎기만 하고 회복은 없다(본가와 같다). rng 는 쓰지 않는다.
+    ///
+    /// 이 함수를 빠뜨린 턴 루프는 `BattleVolatileTests` 가 소스에서 찾아낸다 — 한 모드만 안 부르면
+    /// 그 모드에서 씨뿌리기가 아무 일도 하지 않고, 화면에는 정상으로 보인다.
+    static func endOfTurnLeechSeed(seeded: inout BattleSide, seededActor: BattleActor,
+                                   seeder: inout BattleSide, seederActor: BattleActor) -> [BattleEvent] {
+        guard seeded.isAlive, seeded.has(.leechSeed) else { return [] }
+        let amount = max(1, seeded.stats.hp / BattleVolatile.leechSeedDivisor)
+        seeded.hp = max(0, seeded.hp - amount)
+        var events: [BattleEvent] = [.damage(seededActor, amount: amount, cause: .leechSeed)]
+        if seeder.isAlive { events += heal(&seeder, actor: seederActor, upTo: amount) }
+        if !seeded.isAlive { events.append(.faint(seededActor)) }
         return events
     }
 
@@ -2375,6 +2409,12 @@ extension BattleEngine {
             attacker.lastMoveFailed = events.isEmpty
             return events
         }
+        // 풀 타입에는 씨가 박히지 않는다(본가와 같다). 상성표가 아니라 이 기술만의 규칙이라
+        // 여기서 본다 — 씨뿌리기는 풀 기술이고 풀은 풀을 0.5배로 받을 뿐 무효가 아니다.
+        if volatileStatus == .leechSeed, defender.activeTypes.contains(.grass) {
+            attacker.lastMoveFailed = true
+            return [.immune(defenderActor)]
+        }
         // 나이트메어는 잠든 상대에게만 걸린다 — 깨어 있으면 실패다(붙여 두면 깨는 순간 풀리는
         // 갈래가 곧바로 지워, 아무 일도 없었던 턴이 성공으로 기록된다).
         if volatileStatus == .nightmare, defender.status != .sleep {
@@ -2389,6 +2429,8 @@ extension BattleEngine {
             return [.immune(defenderActor)]
         }
         attacker.lastMoveFailed = false
+        // 빨아낸 HP 를 받을 자리를 함께 적는다. 안 적으면 씨가 박혀도 아무도 회복하지 않는다.
+        if volatileStatus == .leechSeed { defender.leechSeedSource = attackerActor }
         var events: [BattleEvent] = [.volatileStarted(defenderActor, volatileStatus)]
         // 고스트의 저주는 대가가 있다 — 최대 HP 절반이고, 그것으로 쓰러질 수 있다(본가와 같다).
         // 기절 줄은 여기서 내지 않는다: `applyHit` 이 랭크·2차효과 뒤 맨 끝에서 낸다.
@@ -2487,6 +2529,9 @@ extension BattleEngine {
         // 좌변부터 고정 순서 — 순서가 흔들리면 동시 기절 때 두 피어의 승패가 갈린다.
         events += endOfTurnResidual(&a, actor: .a)
         events += endOfTurnResidual(&b, actor: .b)
+        // 씨뿌리기는 짝이 있어야 처리된다. 1대1 은 상대가 하나뿐이라 자리를 찾을 것이 없다.
+        events += endOfTurnLeechSeed(seeded: &a, seededActor: .a, seeder: &b, seederActor: .b)
+        events += endOfTurnLeechSeed(seeded: &b, seededActor: .b, seeder: &a, seederActor: .a)
         // 날씨는 잔뎀 뒤, 그리고 **개체 몫 전부가 끝난 뒤에** 한 번 줄인다.
         events += endOfTurnWeather(&a, actor: .a, field: field)
         events += endOfTurnWeather(&b, actor: .b, field: field)

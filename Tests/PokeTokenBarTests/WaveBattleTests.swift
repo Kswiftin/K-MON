@@ -33,6 +33,52 @@ final class WaveBattleTests: XCTestCase {
                    rng: SplitMix64(seed: seed))
     }
 
+    // MARK: 씨뿌리기 (2대2 에서 누가 받는가)
+
+    /// 씨뿌리기가 빨아낸 HP 는 **뿌린 칸**이 받는다 — 마주 보는 칸이 아니다.
+    /// 2대2 라 이 둘이 갈리고, 자리를 안 찾는 오구현은 1대1 테스트를 전부 통과한다.
+    func testLeechSeedSapsIntoTheSlotThatPlantedIt() {
+        var subject = battle(mine: [snapshot(1), snapshot(2)],
+                             opponents: [snapshot(90), snapshot(91)])
+        // 두 번째 상대 칸이 씨를 뿌렸다 — 내 0번 칸과 마주 보는 칸은 0번이다.
+        let planter = subject.opponentField[1].id
+        XCTAssertTrue(subject.mine[0].start(.leechSeed))
+        subject.mine[0].leechSeedSource = .fighter(planter)
+        subject.opponents[0].hp = 100
+        subject.opponents[1].hp = 100
+
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 0))
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 1))
+
+        let sap = subject.mine[0].stats.hp / 8
+        XCTAssertEqual(subject.opponents[1].hp, 100 + sap,
+                       "뿌린 칸이 받아야 한다 — 마주 보는 칸이 받으면 자리를 안 찾은 것이다")
+        XCTAssertLessThanOrEqual(subject.opponents[0].hp, 100,
+                                 "뿌리지 않은 칸은 씨로 회복하지 않는다")
+    }
+
+    /// **반대 방향**: 내 칸이 뿌리고 상대 칸이 빨린다. 두 방향은 배열이 갈리므로(`mine`·`opponents`)
+    /// 한쪽만 재면 다른 쪽 쓰기가 엉뚱한 배열로 가는 오구현이 초록으로 지나간다.
+    func testLeechSeedAlsoSapsFromTheOpponentIntoMySlot() {
+        var subject = battle(mine: [snapshot(1), snapshot(2)],
+                             opponents: [snapshot(90), snapshot(91)])
+        let planter = subject.myField[1].id
+        XCTAssertTrue(subject.opponents[0].start(.leechSeed))
+        subject.opponents[0].leechSeedSource = .fighter(planter)
+        subject.mine[1].hp = 100
+
+        let sap = subject.opponents[0].stats.hp / 8
+        let seeded = subject.opponentField[0].id
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 1), forSlot: 0))
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 1), forSlot: 1))
+
+        // 이 칸은 CPU 의 공격도 받으므로 최종 HP 로는 씨 몫만 떼어낼 수 없다 — 스트림으로 잰다.
+        XCTAssertTrue(subject.events.contains(.heal(.fighter(planter), amount: sap)),
+                      "뿌린 내 칸이 받는다")
+        XCTAssertTrue(subject.events.contains(.damage(.fighter(seeded), amount: sap, cause: .leechSeed)),
+                      "빨린 상대 칸에서 그만큼 빠진다")
+    }
+
     // MARK: 필드 구성
 
     /// 상대가 둘이면 양쪽 다 두 칸이다 — 앞 상대를 눕히면 다음이 나오는 **연전이 아니다**.

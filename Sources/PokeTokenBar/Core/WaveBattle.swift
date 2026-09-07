@@ -72,6 +72,40 @@ struct WaveBattle: Sendable {
             : leads.map { FieldSlot(id: UUID(), teamIndex: $0) }
     }
 
+    // MARK: 턴 끝
+
+    /// 씨뿌리기의 턴 끝 — 빨아낸 HP 를 뿌린 **칸**이 받는다. 칸 id 로 양쪽 필드를 찾으므로 그
+    /// 칸의 개체가 교체돼도 지금 서 있는 개체가 받는다(본가와 같다).
+    ///
+    /// 엔진이 짝을 못 찾는 이유는 배열이다 — 깎는 쪽과 받는 쪽이 `mine`·`opponents` 로 갈려 있어
+    /// 자리를 푸는 일은 이 타입만 할 수 있다. 자리를 못 찾으면 그 씨는 이번 턴 아무 일도 하지 않는다.
+    private mutating func resolveLeechSeed() {
+        for (seededIsMine, slot) in myField.map({ (true, $0) }) + opponentField.map({ (false, $0) }) {
+            var seeded = seededIsMine ? mine[slot.teamIndex] : opponents[slot.teamIndex]
+            guard seeded.has(.leechSeed), let source = seeded.leechSeedSource,
+                  let seeder = place(of: source),
+                  seeder != (seededIsMine, slot.teamIndex) else { continue }
+            var receiver = seeder.isMine ? mine[seeder.teamIndex] : opponents[seeder.teamIndex]
+            events += BattleEngine.endOfTurnLeechSeed(seeded: &seeded, seededActor: .fighter(slot.id),
+                                                      seeder: &receiver, seederActor: source)
+            if seededIsMine { mine[slot.teamIndex] = seeded } else { opponents[slot.teamIndex] = seeded }
+            if seeder.isMine { mine[seeder.teamIndex] = receiver }
+            else { opponents[seeder.teamIndex] = receiver }
+        }
+    }
+
+    /// 이 칸 id 가 지금 어느 배열의 몇 번째인가. 칸은 배틀이 끝날 때까지 남으므로(교체돼도 자리는
+    /// 그대로) 라운드 중에 사라지지 않는다.
+    private func place(of actor: BattleActor) -> (isMine: Bool, teamIndex: Int)? {
+        if let slot = myField.first(where: { BattleActor.fighter($0.id) == actor }) {
+            return (true, slot.teamIndex)
+        }
+        if let slot = opponentField.first(where: { BattleActor.fighter($0.id) == actor }) {
+            return (false, slot.teamIndex)
+        }
+        return nil
+    }
+
     // MARK: 필드 읽기
 
     func mySide(at ordinal: Int) -> BattleSide? {
@@ -233,6 +267,8 @@ struct WaveBattle: Sendable {
             events += BattleEngine.endOfTurnResidual(&opponents[slot.teamIndex],
                                                      actor: .fighter(slot.id))
         }
+        // 씨뿌리기는 잔뎀 뒤, 날씨 앞이다(1v1·방과 같은 순서).
+        resolveLeechSeed()
         // 날씨 몫은 필드 전원에게, 남은 턴은 **턴마다 한 번** 줄인다.
         for slot in myField {
             events += BattleEngine.endOfTurnWeather(&mine[slot.teamIndex],

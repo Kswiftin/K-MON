@@ -412,6 +412,11 @@ struct NetBattleState {
                         events: inout [BattleEvent]) {
             events += BattleEngine.endOfTurnResidual(&a, actor: .a)
             events += BattleEngine.endOfTurnResidual(&b, actor: .b)
+            // 씨뿌리기는 짝이 있어야 처리된다 — 1대1 은 상대가 하나뿐이다.
+            events += BattleEngine.endOfTurnLeechSeed(seeded: &a, seededActor: .a,
+                                                      seeder: &b, seederActor: .b)
+            events += BattleEngine.endOfTurnLeechSeed(seeded: &b, seededActor: .b,
+                                                      seeder: &a, seederActor: .a)
             events += BattleEngine.endOfTurnWeather(&a, actor: .a, field: field)
             events += BattleEngine.endOfTurnWeather(&b, actor: .b, field: field)
             events += BattleEngine.advanceField(&field)

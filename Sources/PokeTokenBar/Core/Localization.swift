@@ -237,6 +237,9 @@ struct L {
         case .curse:     return t("\(name)은(는) 저주 데미지! \(damage)",
                                   "\(name) is afflicted by the curse! \(damage)",
                                   "\(name)は のろいの ダメージ！ \(damage)")
+        case .leechSeed: return t("\(name)은(는) 씨뿌리기에 체력을 빨렸다! \(damage)",
+                                  "\(name)'s health is sapped by Leech Seed! \(damage)",
+                                  "\(name)は やどりぎに たいりょくを すいとられた！ \(damage)")
         case .nightmare: return t("\(name)은(는) 악몽에 시달렸다! \(damage)",
                                   "\(name) is locked in a nightmare! \(damage)",
                                   "\(name)は あくむに くるしんでいる！ \(damage)")
@@ -252,6 +255,8 @@ struct L {
                                          "\(name)は みずの ベールを まとった！")
         case .ingrain:          return t("\(name)은(는) 뿌리를 내렸다!", "\(name) planted its roots!",
                                          "\(name)は ねを はった！")
+        case .leechSeed:        return t("\(name)에게 씨가 박혔다!", "\(name) was seeded!",
+                                         "\(name)に やどりぎが うえつけられた！")
         case .nightmare:        return t("\(name)은(는) 악몽을 꾸기 시작했다!",
                                          "\(name) began having a nightmare!",
                                          "\(name)は あくむを みはじめた！")
@@ -268,6 +273,8 @@ struct L {
                                          "\(name)の みずの ベールが きえた")
         case .ingrain:          return t("\(name)의 뿌리가 사라졌다", "\(name)'s roots withered",
                                          "\(name)の ねが きえた")
+        case .leechSeed:        return t("\(name)의 씨가 사라졌다", "\(name)'s Leech Seed withered",
+                                         "\(name)の やどりぎが きえた")
         case .nightmare:        return t("\(name)은(는) 악몽에서 깨어났다", "\(name) woke from its nightmare",
                                          "\(name)は あくむから めざめた")
         case .curse:            return t("\(name)의 저주가 풀렸다", "\(name)'s curse lifted",

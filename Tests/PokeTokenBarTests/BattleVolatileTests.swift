@@ -192,6 +192,72 @@ final class BattleVolatileTests: XCTestCase {
         XCTAssertEqual(capped.stage(.atk), 6)
     }
 
+    // MARK: 씨뿌리기
+
+    /// 씨뿌리기는 깎은 만큼 **뿌린 쪽이** 회복한다 — 두 개체를 동시에 만지는 유일한 턴 끝 효과다.
+    func testLeechSeedMovesHPFromTheSeededToTheSeeder() {
+        var seeder = side([.grass], hp: 50), seeded = side([.water], hp: 100)
+        use(statusMove(73, type: .grass), by: &seeder, on: &seeded)
+        XCTAssertTrue(seeded.has(.leechSeed), "씨가 안 박혔다")
+        XCTAssertEqual(seeded.leechSeedSource, .a, "뿌린 자리를 안 적으면 아무도 회복하지 않는다")
+
+        let sap = seeded.stats.hp / 8
+        let events = BattleEngine.endOfTurnLeechSeed(seeded: &seeded, seededActor: .b,
+                                                     seeder: &seeder, seederActor: .a)
+        XCTAssertEqual(damageAmounts(events, cause: .leechSeed), [sap])
+        XCTAssertEqual(seeded.hp, 100 - sap)
+        XCTAssertEqual(seeder.hp, 50 + sap, "빨아낸 만큼 뿌린 쪽이 찬다")
+        XCTAssertTrue(events.contains(.heal(.a, amount: sap)))
+    }
+
+    /// 풀 타입에는 씨가 박히지 않는다(본가와 같다). 상성표는 풀에게 0.5배를 주므로 이 규칙이
+    /// 없으면 풀 타입이 씨뿌리기에 걸린다.
+    func testLeechSeedDoesNotStickToGrassTypes() {
+        var seeder = side([.grass]), grass = side([.grass], hp: 100)
+        let events = use(statusMove(73, type: .grass), by: &seeder, on: &grass)
+        XCTAssertFalse(grass.has(.leechSeed))
+        XCTAssertTrue(events.contains(.immune(.b)))
+        XCTAssertTrue(seeder.lastMoveFailed)
+    }
+
+    /// 뿌린 쪽이 쓰러져 있으면 깎기만 한다 — 회복을 그대로 넣으면 쓰러진 개체의 HP 가 되살아난다.
+    func testLeechSeedSapsNothingIntoAFaintedSeeder() {
+        var downed = side([.grass], hp: 0), seeded = side([.water], hp: 100)
+        XCTAssertTrue(seeded.start(.leechSeed))
+        let events = BattleEngine.endOfTurnLeechSeed(seeded: &seeded, seededActor: .b,
+                                                     seeder: &downed, seederActor: .a)
+        XCTAssertEqual(downed.hp, 0, "쓰러진 쪽은 회복하지 않는다")
+        XCTAssertFalse(events.contains { if case .heal = $0 { return true } else { return false } })
+        XCTAssertEqual(damageAmounts(events, cause: .leechSeed).count, 1, "깎기는 그대로 들어간다")
+    }
+
+    /// 씨뿌리기는 **개체 하나만 보는 잔뎀 자리에서 처리하지 않는다.** 양쪽에서 처리하면 한 턴에
+    /// 두 번 빨린다 — 그 갈래를 여기서 잠근다.
+    func testLeechSeedIsNotHandledByTheGenericResidual() {
+        var seeded = side([.water], hp: 100)
+        XCTAssertTrue(seeded.start(.leechSeed))
+        XCTAssertTrue(BattleEngine.endOfTurnResidual(&seeded, actor: .b).isEmpty,
+                      "잔뎀 자리가 씨까지 빨면 한 턴에 두 번 빨린다")
+        XCTAssertEqual(seeded.hp, 100)
+    }
+
+    /// **트리거 브랜치**: 잔뎀을 도는 턴 루프가 씨뿌리기도 도는지 소스에서 센다. 한 모드만
+    /// 빠뜨리면 그 모드에서 씨뿌리기가 아무 일도 하지 않고 화면에는 정상으로 보인다 — 짝이 필요해
+    /// 함수가 갈린 효과라 컴파일러가 못 잡는다. 주석은 `SourceScan` 이 떼고 온다.
+    func testEveryTurnLoopThatRunsResidualsAlsoRunsLeechSeed() throws {
+        var loopsWithoutLeechSeed: [String] = []
+        for (name, code) in try SourceScan.sources() {
+            // 정의(`static func endOfTurnResidual`)가 아니라 **호출**만 센다.
+            let callsResidual = code.contains("endOfTurnResidual(&")
+            guard callsResidual else { continue }
+            if !code.contains("endOfTurnLeechSeed(seeded:") && !code.contains("resolveLeechSeed()") {
+                loopsWithoutLeechSeed.append(name)
+            }
+        }
+        XCTAssertEqual(loopsWithoutLeechSeed, [],
+                       "잔뎀은 도는데 씨뿌리기를 안 도는 턴 루프가 있다 — 그 모드에서만 씨가 죽는다")
+    }
+
     // MARK: 나이트메어
 
     /// 나이트메어는 **잠든 상대에게만** 걸리고, 깨면 그 자리에서 풀린다.

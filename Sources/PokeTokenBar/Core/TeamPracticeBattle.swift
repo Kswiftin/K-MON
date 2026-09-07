@@ -100,6 +100,11 @@ struct TeamPracticeBattle {
         // 교체로 넘긴 턴도 턴이다 — 잔뎀도 날씨도 그대로 들어간다.
         events += BattleEngine.endOfTurnResidual(&mine[myActive], actor: .a)
         events += BattleEngine.endOfTurnResidual(&opponents[opponentActive], actor: .b)
+        // 씨뿌리기는 짝이 있어야 처리된다 — 필드에 한 칸씩이라 상대가 곧 뿌린 자리다.
+        events += BattleEngine.endOfTurnLeechSeed(seeded: &mine[myActive], seededActor: .a,
+                                                  seeder: &opponents[opponentActive], seederActor: .b)
+        events += BattleEngine.endOfTurnLeechSeed(seeded: &opponents[opponentActive], seededActor: .b,
+                                                  seeder: &mine[myActive], seederActor: .a)
         events += BattleEngine.endOfTurnWeather(&mine[myActive], actor: .a, field: field)
         events += BattleEngine.endOfTurnWeather(&opponents[opponentActive], actor: .b, field: field)
         events += BattleEngine.advanceField(&field)

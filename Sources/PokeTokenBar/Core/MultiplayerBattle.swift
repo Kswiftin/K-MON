@@ -660,9 +660,30 @@ struct MultiplayerBattle: Sendable {
             }
         }
         // 턴 끝 잔뎀 — 1v1 과 같은 규칙이다. 참가자 배열 순서로 고정해야 모든 피어가 같은 순서로 본다.
+        // **순서도 1v1 과 같다**: 잔뎀 전원 → 씨뿌리기 → 날씨 전원. 씨뿌리기는 두 참가자를 동시에
+        // 만져 개체별 한 패스에 끼울 수 없으므로, 세 패스로 나눠 모드끼리 순서가 갈리지 않게 한다.
         for index in fighters.indices {
             var side = fighters[index].side
             roundEvents += BattleEngine.endOfTurnResidual(&side, actor: .fighter(fighters[index].id))
+            fighters[index].side = side
+        }
+        // 씨뿌리기는 뿌린 **자리**가 받는다. 같은 배열의 두 원소를 동시에 inout 으로 잡을 수 없어
+        // 지역 사본으로 꺼내 넘긴다(공격 해상과 같은 이유). 참가자 배열은 라운드 중에 줄지 않으므로
+        // 자리는 언제나 찾는다 — 못 찾으면 그 씨는 이번 라운드에 아무 일도 하지 않는다.
+        for index in fighters.indices where fighters[index].side.has(.leechSeed) {
+            guard let source = fighters[index].side.leechSeedSource,
+                  let sourceIndex = fighters.firstIndex(where: { BattleActor.fighter($0.id) == source }),
+                  sourceIndex != index else { continue }
+            var seeded = fighters[index].side
+            var seeder = fighters[sourceIndex].side
+            roundEvents += BattleEngine.endOfTurnLeechSeed(seeded: &seeded,
+                                                           seededActor: .fighter(fighters[index].id),
+                                                           seeder: &seeder, seederActor: source)
+            fighters[index].side = seeded
+            fighters[sourceIndex].side = seeder
+        }
+        for index in fighters.indices {
+            var side = fighters[index].side
             roundEvents += BattleEngine.endOfTurnWeather(&side, actor: .fighter(fighters[index].id),
                                                          field: field)
             fighters[index].side = side
