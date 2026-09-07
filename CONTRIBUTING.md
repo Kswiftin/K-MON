@@ -34,16 +34,21 @@ both pass locally first.
 3. Open a pull request against `main`.
 4. Once CI passes and the change is reviewed, it is merged via **squash merge**.
 
-### Language: English first
+### Language: Korean
 
-This repository uses **English as its first language** for collaboration
+This repository uses **Korean as its working language** for collaboration
 artifacts:
 
-- **Pull request titles and bodies must be in English.**
-- **Commit messages should be in English.**
+- **Pull request titles and bodies are written in Korean.**
+- **Commit messages are written in Korean.**
+- Code identifiers, API names, CLI commands, and error strings stay as they are.
 
 Because the repository squash-merges, the PR title becomes the commit subject on
-`main`, so English PRs keep the public history consistent.
+`main` — the public history is Korean too, and that is intended.
+
+If you are more comfortable in another language, open the PR in it and say so:
+a maintainer will translate the title before merging. Nothing here is meant to
+turn away a contribution over its language.
 
 ### Commit & PR conventions
 

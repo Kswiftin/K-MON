@@ -1,35 +1,34 @@
-<!-- Write the PR title and this description in English (see CONTRIBUTING.md). -->
+<!-- PR 제목·본문은 한국어로 쓴다 (CONTRIBUTING.md 참고). 다른 언어가 편하면 그 언어로 열고 그렇다고 적어 준다 — 머지 전에 제목을 옮긴다. -->
 
-## Summary
+## 요약
 
-<!-- What does this PR do, and why? Keep it focused. -->
+<!-- 무엇을 왜 바꿨나. 한 가지에 집중한다. -->
 
-## Type of change
+## 변경 종류
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor / cleanup
-- [ ] Documentation
-- [ ] Other:
+- [ ] 결함 수정
+- [ ] 새 기능
+- [ ] 리팩토링 · 정리
+- [ ] 문서
+- [ ] 기타:
 
-## UI changes
+## 화면 변경
 
 <!--
-When this PR changes anything under `Sources/PokeTokenBar/UI/`, describe the
-before/after below. Images (screenshots or GIFs) are welcome but optional — a
-clear text description is fine. The canonical app screenshots in `assets/` are
-regenerated at release, so they don't need updating per PR. Remove this section
-only if there are no UI changes.
+`Sources/PokeTokenBar/UI/` 아래를 건드렸으면 아래에 before/after 를 적는다.
+스크린샷·GIF 는 환영하지만 선택이다 — 글로 분명히 적으면 충분하다. `assets/` 의 정식
+스크린샷은 릴리스 때 다시 그리므로 PR 마다 갱신할 필요는 없다.
+화면 변경이 없을 때만 이 절을 지운다.
 -->
 
 | Before | After |
 | ------ | ----- |
 |        |       |
 
-## Checklist
+## 체크리스트
 
-- [ ] `swift build` and `swift test` pass locally
-- [ ] PR title and description are written in English
-- [ ] UI changes are described above (before/after — images optional)
-- [ ] No copyrighted assets, secrets, or private tooling references are committed (see [CONTRIBUTING](../CONTRIBUTING.md))
-- [ ] Tests were added or updated for this change
+- [ ] `swift build` · `swift test` 가 로컬에서 통과한다
+- [ ] PR 제목·본문을 한국어로 썼다
+- [ ] 화면 변경을 위에 적었다 (before/after — 이미지는 선택)
+- [ ] 저작권 있는 에셋·비밀값·비공개 도구 참조를 커밋하지 않았다 ([CONTRIBUTING](../CONTRIBUTING.md) 참고)
+- [ ] 이 변경에 맞는 테스트를 더하거나 고쳤다
