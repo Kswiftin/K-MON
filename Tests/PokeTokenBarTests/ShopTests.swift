@@ -184,7 +184,11 @@ final class ShopTests: XCTestCase {
         try? json.data(using: .utf8)!.write(to: url)
         let s = CompanionStore(provider: ShopNoProvider(), clock: { self.now }, fileURL: url, rng: SeededRNG(seed: 1))
         XCTAssertTrue(s.itemCount(.shinyCharm) > 0)
-        XCTAssertEqual(s.purchasableItems.last, .rareCandy, "보유형은 구매 목록에서 제외")
+        // **목록의 마지막이 무엇인지로 묻지 않는다** — 그러면 "사탕이 가장 비싼 판매품" 이라는
+        // 전제가 단언에 숨어, 사탕과 같은 값의 아이템이 들어오는 날(지닌물건 3종) 규칙과 무관하게
+        // 빨개진다. 이 테스트가 잠그려는 것은 **보유형이 목록에 없다**는 것 하나다.
+        XCTAssertFalse(s.purchasableItems.contains(.shinyCharm), "보유형은 구매 목록에서 제외")
+        XCTAssertFalse(s.purchasableItems.isEmpty, "목록이 비면 이 단언은 아무것도 안 잠근다")
     }
 
     // MARK: shopEntries (판매 아이템 + 알 3종을 하나의 가격 오름차순 목록으로 병합)
