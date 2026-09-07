@@ -284,7 +284,7 @@ enum PokedoroCommandError: Equatable, Error {
             "`\(name)` 은 앱 화면에서 한다. 터미널이 다루는 것은 조회와 집중 세션이다."
         case .invalidMinutes(let raw):
             "집중 길이가 숫자가 아니다: \(raw) — "
-                + PokemonChatTool.focusMinutes.map(String.init).joined(separator: "·")
+                + FocusChainRules.focusMinutes.map(String.init).joined(separator: "·")
                 + " 중 하나를 쓴다."
         case .invalidMonNumber(let raw):
             "개체 번호가 아니다: \(raw) — `party` 가 찍는 번호(1부터)를 쓴다."
@@ -826,7 +826,7 @@ enum PokedoroCommandParser {
     /// 검사는 한 곳이고 **오류는 부르는 쪽이 준다** — 길이와 번호는 다음에 할 일이 다르므로
     /// 문구도 달라야 하지만, 자릿수 검사가 두 벌이 되면 한쪽만 관대해진다.
     ///
-    /// 범위는 여기서 안 본다 — 집중 길이를 접는 표는 `PokemonChatTool.nearestFocusLength` 하나이고,
+    /// 범위는 여기서 안 본다 — 집중 길이를 접는 표는 `FocusChainRules.nearestFocusLength` 하나이고,
     /// 그 표는 요청 파일을 손으로 고친 경우까지 막아야 해서 실행기 쪽에 있어야 한다. 개체 번호의
     /// 상한도 로스터를 아는 쪽(`PokedoroCLI`)이 본다.
     private static func number(in arguments: [String],
@@ -838,7 +838,7 @@ enum PokedoroCommandParser {
         return value
     }
 
-    private static let lengths = PokemonChatTool.focusMinutes.map(String.init).joined(separator: "|")
+    private static let lengths = FocusChainRules.focusMinutes.map(String.init).joined(separator: "|")
 
     /// 왼쪽 칸을 **손으로 맞추지 않는다** — `start [25|50|90]` 은 길이 목록에서 나오므로 목록이
     /// 바뀌면 손으로 맞춘 공백은 그 자리에서 어긋난다(실제로 2칸 어긋난 채로 나갔다).
@@ -856,7 +856,7 @@ enum PokedoroCommandParser {
         ("challenge", "도전 — 던전 실적·배지·미션·시즌"),
         ("goals", "도감 목표·업적"),
         ("watch", "전체 화면 실시간 보기"),
-        ("start [\(lengths)]", "집중 세션 시작 (생략하면 \(PokemonChatTool.focusMinutes[0])분)"),
+        ("start [\(lengths)]", "집중 세션 시작 (생략하면 \(FocusChainRules.focusMinutes[0])분)"),
         ("claim", "끝난 모험의 보상 받기"),
         ("stop", "집중 세션 끝내기"),
         ("use <아이템>", "아이템 하나 쓰기 (bag 이 찍는 이름)"),

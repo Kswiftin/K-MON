@@ -232,7 +232,7 @@ enum TUIRender {
         guard let adventure = model.adventure else {
             // 길이 목록은 화면·대화·터미널이 한 표를 쓴다 — 여기서 손으로 적으면 키와 실제
             // 길이가 갈라진다.
-            return PokemonChatTool.focusMinutes.enumerated()
+            return FocusChainRules.focusMinutes.enumerated()
                 .map { "\($0.offset + 1) \($0.element)분" }
                 .joined(separator: "  ") + "   집중 시작"
         }

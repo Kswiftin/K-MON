@@ -1926,8 +1926,8 @@ final class MultiplayerRoomCenter {
     private func acceptChat(_ incoming: BattleChatMessage, from participantID: UUID) {
         guard (phase == .battling || phase == .tournament), incoming.senderID == participantID,
               let participant = lobby?.participants.first(where: { $0.id == participantID }),
-              let body = BattleChatPolicy.normalizedBody(incoming.body),
-              let name = BattleChatPolicy.displayName(participant.trainerName),
+              let body = PeerTextPolicy.normalizedBody(incoming.body),
+              let name = PeerTextPolicy.displayName(participant.trainerName),
               chatRateLimiter.allows(participantID) else { return }
         // `id` 는 상대가 고른 값이라 새로 짓는다 — 같은 값을 두 번 보내면 `ForEach` 가 무너진다.
         let message = BattleChatMessage(senderID: participantID, senderName: name,
@@ -1941,8 +1941,8 @@ final class MultiplayerRoomCenter {
     /// 인증한 값이고, 내가 보낸 말도 이 중계로 되돌아온다). `id` 는 새로 짓는다 — 중계된 값이
     /// 되풀이되면 화면의 `ForEach` 가 중복 키로 무너진다.
     func acceptRelayedChat(_ incoming: BattleChatMessage) {
-        guard let body = BattleChatPolicy.normalizedBody(incoming.body), body == incoming.body,
-              let name = BattleChatPolicy.displayName(incoming.senderName) else { return }
+        guard let body = PeerTextPolicy.normalizedBody(incoming.body), body == incoming.body,
+              let name = PeerTextPolicy.displayName(incoming.senderName) else { return }
         chatHistory.append(BattleChatMessage(senderID: incoming.senderID, senderName: name,
                                              body: body, sentAt: incoming.sentAt))
         chatMessages = chatHistory.messages
@@ -1950,7 +1950,7 @@ final class MultiplayerRoomCenter {
 
     func sendChat(_ body: String) {
         guard (phase == .battling || phase == .tournament),
-              let normalized = BattleChatPolicy.normalizedBody(body) else { return }
+              let normalized = PeerTextPolicy.normalizedBody(body) else { return }
         let message = BattleChatMessage(senderID: myID, senderName: trainerName, body: normalized)
         if isHost { acceptChat(message, from: myID) }
         else if let hostConnection { send(.chat(message), over: hostConnection) }

@@ -53,7 +53,7 @@ extension PokeathlonRacer {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
-        trainerName = BattleChatPolicy.displayName(
+        trainerName = PeerTextPolicy.displayName(
             try c.decodeIfPresent(String.self, forKey: .trainerName) ?? "") ?? "?"
         speciesID = PokemonAssets.clampedID(try c.decode(Int.self, forKey: .speciesID))
         let team = (try c.decodeIfPresent([Int].self, forKey: .teamSpeciesIDs) ?? [])

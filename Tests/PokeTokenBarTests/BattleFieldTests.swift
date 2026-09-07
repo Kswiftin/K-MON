@@ -524,7 +524,7 @@ final class BattleFieldTests: XCTestCase {
     /// 남기고, 평소 CI에서는 파일 시스템에 흔적을 남기지 않는다.
     func testBattleChatPanelKeepsHistoryInsideItsFixedViewportAndRasters() throws {
         let me = UUID(), other = UUID()
-        let messages = (0..<BattleChatPolicy.historyLimit).map { index in
+        let messages = (0..<PeerTextPolicy.historyLimit).map { index in
             BattleChatMessage(senderID: index.isMultiple(of: 2) ? me : other,
                               senderName: index.isMultiple(of: 2) ? "나" : "Misty",
                               body: "채팅 메시지 \(index + 1)", sentAt: .distantPast)

@@ -1681,7 +1681,7 @@ final class BattleCenter {
     /// 채팅은 행동 선택과 별도 프레임으로만 전송한다.
     func sendChat(_ body: String) {
         guard case .battling = phase, chatIsAvailable,
-              let text = BattleChatPolicy.normalizedBody(body), chatRateLimiter.allows(chatSenderID) else { return }
+              let text = PeerTextPolicy.normalizedBody(body), chatRateLimiter.allows(chatSenderID) else { return }
         let message = BattleChatMessage(senderID: chatSenderID, senderName: myName, body: text)
         chatHistory.append(message); chatMessages = chatHistory.messages
         send(.chat(message), over: connection)
@@ -2022,8 +2022,8 @@ final class BattleCenter {
         // 말풍선으로 그린다. 교환(`PokemonTradeCenter.acceptChat`)과 같은 경계를 친다.
         case .chat(let message):
             guard case .battling = phase, chatIsAvailable,
-                  let body = BattleChatPolicy.normalizedBody(message.body), body == message.body,
-                  let name = BattleChatPolicy.displayName(message.senderName),
+                  let body = PeerTextPolicy.normalizedBody(message.body), body == message.body,
+                  let name = PeerTextPolicy.displayName(message.senderName),
                   chatRateLimiter.allows(remoteChatSenderID) else { return }
             chatHistory.append(BattleChatMessage(senderID: remoteChatSenderID, senderName: name, body: body))
             chatMessages = chatHistory.messages

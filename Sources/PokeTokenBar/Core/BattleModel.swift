@@ -607,10 +607,10 @@ extension BattleSnapshot {
         v = try c.decodeIfPresent(Int.self, forKey: .v) ?? 1
         speciesID = PokemonAssets.clampedID(try c.decode(Int.self, forKey: .speciesID))
         // 이름은 길이를 재는 게 아니라 자른다 — 거부하면 대전 자체가 성립하지 않는다
-        // (`BattleChatPolicy.displayName` 이 그 규칙의 정본이다).
-        name = BattleChatPolicy.displayName(try c.decode(String.self, forKey: .name)) ?? "?"
+        // (`PeerTextPolicy.displayName` 이 그 규칙의 정본이다).
+        name = PeerTextPolicy.displayName(try c.decode(String.self, forKey: .name)) ?? "?"
         trainer = (try c.decodeIfPresent(String.self, forKey: .trainer))
-            .flatMap(BattleChatPolicy.displayName)
+            .flatMap(PeerTextPolicy.displayName)
         level = min(Self.levelRange.upperBound,
                     max(Self.levelRange.lowerBound, try c.decode(Int.self, forKey: .level)))
         nature = try c.decodeIfPresent(PokemonNature.self, forKey: .nature)

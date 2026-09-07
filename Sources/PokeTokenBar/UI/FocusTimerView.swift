@@ -104,7 +104,7 @@ struct FocusTimerView: View {
                 Picker("", selection: $selectedMinutes) {
                     // 대화의 `pokedoro.start` 도 같은 목록으로 인자를 접는다 — 두 벌이면 화면이
                     // 제시하지 않는 길이를 도구만 켤 수 있게 된다.
-                    ForEach(PokemonChatTool.focusMinutes, id: \.self) { Text("\($0)m").tag($0) }
+                    ForEach(FocusChainRules.focusMinutes, id: \.self) { Text("\($0)m").tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 HStack {

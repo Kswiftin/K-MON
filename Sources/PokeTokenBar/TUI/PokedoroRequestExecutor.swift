@@ -103,7 +103,7 @@ struct PokedoroRequestExecutor {
     private func start(_ request: PokedoroRequest, minutes requested: Int?) -> PokedoroReply {
         // 요청 파일은 손으로 고칠 수 있는 **신뢰경계**다. 적힌 분을 그대로 믿으면 화면이 제시하지
         // 않는 길이를 터미널만 켤 수 있다 — 접는 표는 대화와 공유한다.
-        let minutes = PokemonChatTool.nearestFocusLength(to: requested ?? PokemonChatTool.focusMinutes[0])
+        let minutes = FocusChainRules.nearestFocusLength(to: requested ?? FocusChainRules.focusMinutes[0])
         if let refusal = PokedoroSessionGate.startRefusal(sessionState) {
             return reply(request, refused: refusal)
         }

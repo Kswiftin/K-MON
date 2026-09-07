@@ -1057,7 +1057,7 @@ struct BattleChatPanel: View {
             HStack {
                 Text(configuration.l.battleChatTitle).font(.caption.bold())
                 Spacer()
-                Text("\(draft.count)/\(BattleChatPolicy.maximumLength)")
+                Text("\(draft.count)/\(PeerTextPolicy.maximumLength)")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             ScrollViewReader { proxy in
@@ -1107,7 +1107,7 @@ struct BattleChatPanel: View {
     }
 
     private var canSend: Bool {
-        configuration.isEnabled && BattleChatPolicy.normalizedBody(draft) != nil
+        configuration.isEnabled && PeerTextPolicy.normalizedBody(draft) != nil
     }
 
     private func send() {

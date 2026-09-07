@@ -40,12 +40,18 @@ struct WaveRunArenaView: View {
     /// 타겟을 고르는 중인 기술. 상대가 둘일 때만 이 단계를 지난다 — 하나면 고를 것이 없다.
     @State private var pendingMove: Int?
 
+    /// 줄 간격. 1대1 전투 화면과 값이 같지만 **그쪽 예산을 읽지 않는다** — 두 화면은 담는 것이
+    /// 다르고(웨이브 런은 경로·부스트 줄이 더 붙는다), 한쪽을 조정하면 다른 쪽이 따라 움직이는
+    /// 것은 우연을 계약으로 오해한 결과다. 폭은 팝오버가 주는 값(`PopoverMetrics.contentWidth`)을
+    /// 직접 읽는다.
+    private static let rowSpacing: CGFloat = 7
+
     private var actingCell: Cell? { mine.first { $0.ordinal == actingSlot } }
     private var livingTargets: [Cell] { theirs.filter { $0.side.isAlive } }
     private var acceptsInput: Bool { isEnabled && actingSlot != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: BattleFieldMetrics.spacing) {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
             header
             field
             prompt
@@ -60,7 +66,7 @@ struct WaveRunArenaView: View {
             }
             BattleLogBox(lines: logLines, myActors: Set(mine.map(\.actor)))
         }
-        .frame(maxWidth: BattleFieldMetrics.width, alignment: .leading)
+        .frame(maxWidth: PopoverMetrics.contentWidth, alignment: .leading)
         // 고르던 기술은 그 칸의 것이다 — 칸이 넘어가면 버린다. 안 버리면 2번 칸이 1번 칸에서
         // 고른 기술 인덱스로 공격한다.
         .onChange(of: actingSlot) { pendingMove = nil }

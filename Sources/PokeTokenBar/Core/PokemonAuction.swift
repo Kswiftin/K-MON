@@ -331,7 +331,7 @@ final class PokemonAuctionCenter {
                   let listing = localListings[listingID],
                   sellableMons.contains(where: { $0.id == listing.mon.id }),
                   isValid(value, for: listing),
-                  let safeName = BattleChatPolicy.displayName(trainer),
+                  let safeName = PeerTextPolicy.displayName(trainer),
                   // 한 연결은 제안 하나만 나른다. 덮어쓰게 두면 앞 제안의 거절·수락 프레임이
                   // 상대에게 못 나간다(연결을 못 찾는다).
                   connectionOfferIDs[connectionID] == nil,

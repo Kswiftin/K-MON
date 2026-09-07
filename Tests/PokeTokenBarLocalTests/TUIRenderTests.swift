@@ -267,7 +267,7 @@ struct TUIRenderTests {
     /// 켜지는 길이가 갈라진다.
     @Test func testTheStartKeysFollowTheOfferedLengths() {
         let hints = TUIRender.sessionHints(idle())
-        for (index, minutes) in PokemonChatTool.focusMinutes.enumerated() {
+        for (index, minutes) in FocusChainRules.focusMinutes.enumerated() {
             #expect(hints.contains("\(index + 1) \(minutes)분"), "키 \(index + 1) 이 \(minutes)분을 안 가리킨다")
         }
     }

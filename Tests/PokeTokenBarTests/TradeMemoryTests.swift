@@ -566,7 +566,7 @@ final class TradeMemoryTests: XCTestCase {
         XCTAssertEqual(clean.entries.first?.body, family,
                        "ZWJ 가 잘리면 이모지가 낱개로 쪼개지고 글자 수가 부푼다")
         XCTAssertEqual(clean.entries.last?.body, "안녕 끝",
-                       "공백 런은 형제 경계(BattleChatPolicy)와 같은 규칙으로 접힌다")
+                       "공백 런은 형제 경계(PeerTextPolicy)와 같은 규칙으로 접힌다")
     }
 
     /// 상대가 부르는 `firstMetAt` 은 **아예 쓰지 않는다.** 창으로 자르기만 하면 상한(3650일)까지
