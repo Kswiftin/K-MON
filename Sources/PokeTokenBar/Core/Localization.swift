@@ -1174,6 +1174,9 @@ struct L {
     var raidAlreadyPaidToday: String {
         "이번 오전/오후 레이드 보상은 이미 받았습니다 — 계속 참가할 수는 있어요."
     }
+    /// 티어 카드의 완료 배지 — `raidRewardClaimedToday(tier:)` 를 그대로 보여준다.
+    var raidRewardClaimedBadge: String { "완료" }
+    var raidRewardOpenBadge: String { "미완료" }
     var raidTurnCapReached: String {
         "턴이 다 됐습니다 — 보스가 버텼어요."
     }

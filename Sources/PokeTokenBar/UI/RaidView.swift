@@ -68,9 +68,6 @@ struct RaidView: View {
             tierPicker
             nearbyRooms
             monPicker
-            if store.raidRewardClaimedToday {
-                Text(l.raidAlreadyPaidToday).font(.caption2).foregroundStyle(.secondary)
-            }
         }
     }
 
@@ -114,17 +111,27 @@ struct RaidView: View {
         .pokedoroCard()
     }
 
-    /// 한 티어의 보스 미리보기 — 스프라이트 + 티어 + 포획 확률. 이름은 비동기 조회라 여기서
-    /// 쓰지 않는다 — 스프라이트가 이미 누구인지 말하고, 정확한 이름은 교전이 시작되면 스냅샷이
-    /// 싣고 온다.
+    /// 한 티어의 보스 미리보기 — 스프라이트 + 티어 + 포획 확률 + 오늘 완료 여부. 이름은 비동기
+    /// 조회라 여기서 쓰지 않는다 — 스프라이트가 이미 누구인지 말하고, 정확한 이름은 교전이
+    /// 시작되면 스냅샷이 싣고 온다.
+    ///
+    /// **완료 여부는 티어마다 따로 판정한다**(#270) — 1★ 보상을 받았어도 3★·5★ 는 각자 원장이라
+    /// 여전히 열려 있다. 세 칸을 하나의 문구로 묶으면 그 사실이 안 보인다.
     private func bossPreview(tier: RaidTier) -> some View {
         let species = center.todaysRaidSpeciesID(tier: tier)
         let rarity = RaidBoss.rarity(speciesID: species)
+        let claimed = store.raidRewardClaimedToday(tier: tier)
         return VStack(spacing: 2) {
             SpriteView(speciesID: species, size: 40)
             Text("\(tier.rawValue)★").font(.caption2.bold())
             Text("\(RaidBoss.catchPercent(for: rarity))%")
                 .font(.caption2).foregroundStyle(.purple)
+            HStack(spacing: 2) {
+                Image(systemName: claimed ? "checkmark.circle.fill" : "circle")
+                Text(claimed ? l.raidRewardClaimedBadge : l.raidRewardOpenBadge)
+            }
+            .font(.caption2)
+            .foregroundStyle(claimed ? .green : .secondary)
         }
         .frame(maxWidth: .infinity)
     }
