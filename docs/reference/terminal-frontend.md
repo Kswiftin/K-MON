@@ -72,6 +72,7 @@ SwiftPM 은 두 타깃이 같은 소스 디렉터리를 나눠 쓰는 것을 허
 pokedoro-request.json   터미널만 쓴다   {"id","action":"start|use|buy|release|…","argument"(그 동작이 받을 때만),"requestedAt"}
 pokedoro-reply.json     앱만 쓴다       {"id","succeeded","message"}
 pokedoro-attach.json    터미널만 쓴다   {"id","width","height","at"}        — 보고 있다는 신호
+pokedoro-control.json   터미널만 쓴다   {"id","at"}                           — TUI 조작 lease
 pokedoro-view.json      앱만 쓴다       {"screen","title","lines","keys","writtenAt"} — 지금 화면
 ```
 
@@ -131,6 +132,10 @@ pokedoro-view.json      앱만 쓴다       {"screen","title","lines","keys","wr
 - **붙었는지는 나이로 본다.** 터미널은 인사하고 죽을 수 있다(창을 닫거나 kill 당한다). 파일이
   남아 있다는 것만으로 붙어 있다고 보면 앱이 영원히 스냅샷을 쓰고 창도 안 띄운다. 어긋남은
   **양쪽 대칭**이다 — 미래로 적은 신호 하나로 제한을 우회하면 그 파일이 남는 한 계속 붙어 있다.
+- **단발 명령도 짧은 조작 lease를 남긴다.** `watch`만 attach를 갱신하므로 `raid join`·`room start`
+  같은 한 번 실행하고 끝나는 명령은 그 신호가 없다. 이때 방이 시작되면 앱의 자동 창 정책이 터미널을
+  가린다. `pokedoro-control.json`은 그 공백만 메우며, 30초 뒤 만료돼 터미널을 떠난 사용자의 새 대전
+  알림까지 오래 숨기지 않는다.
 - **바뀔 때만 쓴다 — 다만 살아 있다는 표시는 계속 보낸다.** 내용 비교에서 시각은 뺀다(넣으면 매번
   달라 아무것도 못 거른다). 그런데 내용만 보면 **안 바뀌는 화면이 낡은 것으로 판정된다**: 집중
   타이머는 매초 글자가 바뀌어 문제가 안 보였지만, 대전 화면은 상대를 기다리는 30초 동안 한 글자도

@@ -699,6 +699,8 @@ struct PokedoroMailbox: Sendable {
     let replyURL: URL
     /// 터미널이 "보고 있다" 고 남기는 신호. 터미널만 쓴다.
     let attachURL: URL
+    /// 터미널이 조작을 이어 가고 있다는 짧은 lease. 터미널만 쓴다.
+    let controlURL: URL
     /// 앱이 내놓는 지금 화면. 앱만 쓴다.
     let viewURL: URL
 
@@ -710,6 +712,7 @@ struct PokedoroMailbox: Sendable {
         requestURL = base.appendingPathComponent("pokedoro-request.json")
         replyURL = base.appendingPathComponent("pokedoro-reply.json")
         attachURL = base.appendingPathComponent("pokedoro-attach.json")
+        controlURL = base.appendingPathComponent("pokedoro-control.json")
         viewURL = base.appendingPathComponent("pokedoro-view.json")
     }
 
@@ -734,6 +737,11 @@ struct PokedoroMailbox: Sendable {
         try Self.encoder.encode(attachment).write(to: attachURL, options: .atomic)
     }
 
+    /// 화면을 띄우지 않는 단발 명령도 조작 중인 동안 앱이 자동으로 앞에 나서지 않게 한다.
+    func claimTerminalControl(_ lease: PokedoroTerminalLease) throws {
+        try Self.encoder.encode(lease).write(to: controlURL, options: .atomic)
+    }
+
     /// 앱이 내놓은 지금 화면.
     func view() -> PokedoroViewSnapshot? { Self.load(viewURL) }
 
@@ -741,6 +749,9 @@ struct PokedoroMailbox: Sendable {
 
     /// 터미널이 남긴 신호. 나이 판정은 `PokedoroViewChannel.isAttached` 가 한다.
     func attachment() -> PokedoroAttachment? { Self.load(attachURL) }
+
+    /// 터미널 조작 lease. 만료 여부는 `PokedoroTerminalControl`이 한 곳에서 판정한다.
+    func terminalControlLease() -> PokedoroTerminalLease? { Self.load(controlURL) }
 
     /// 지금 화면을 내놓는다. **바뀔 때만** 부른다(`PokedoroViewChannel.shouldWrite`).
     func postView(_ snapshot: PokedoroViewSnapshot) throws {

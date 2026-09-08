@@ -264,9 +264,11 @@ final class TUIWatch {
         // 순위만으로 고르면 동시에 참인 두 화면 중 뒤에 있는 것을 영영 못 본다(경매 시장은
         // 이웃이 하나만 올려 둬도 늘 참이다). 채널 화면이 아닌 이름(홈·목록)은 어느 생산자와도
         // 안 맞으므로 앱이 순위로 되돌아간다.
+        let now = Date()
         try? mailbox.attach(PokedoroAttachment(id: attachmentID, width: size.width,
-                                               height: size.height, at: Date(),
+                                               height: size.height, at: now,
                                                screen: screen.rawValue))
+        try? mailbox.claimTerminalControl(PokedoroTerminalLease(id: attachmentID, at: now))
         // 낡은 화면은 버린다. 앱이 죽으면 파일은 마지막 상태로 얼어붙는데, 그대로 그리면 사용자는
         // 멈춘 타이머를 도는 것으로 읽는다.
         appView = mailbox.view().flatMap { PokedoroViewChannel.isStale($0, now: Date()) ? nil : $0 }
