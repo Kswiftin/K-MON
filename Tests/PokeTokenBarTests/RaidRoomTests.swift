@@ -301,11 +301,21 @@ final class RaidRoomTests: XCTestCase {
                                    clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
         XCTAssertEqual(first.creditRaidReward(500), 500)
         XCTAssertTrue(first.raidRewardClaimedToday, "지급 직후에는 당연히 참이다")
+        let canonicalBeforeSave = SaveTransfer.canonicalString(first.state)
+        let rawSavedFile = (try? String(contentsOf: url, encoding: .utf8)) ?? "<읽기 실패>"
+        print("DIAGNOSTIC canonical(before)=\(canonicalBeforeSave)")
+        print("DIAGNOSTIC raw file=\(rawSavedFile)")
 
         // "재시작" — 같은 파일을 새 인스턴스가 다시 읽는다. 시각은 고정해 오전/오후 경계를
         // 지나지 않았다는 것을 보장한다(경계를 지나면 재지급이 의도된 동작이다).
         let second = CompanionStore(provider: StubProvider(value: stubMaxLevelLine),
                                     clock: { fixedNow }, fileURL: url, rng: SeededRNG(seed: 7))
+        // 진단: 무결성 리셋(resetForTamper)이 원인이면 starPieces 도 0 이 된다 — 원장 필드만
+        // 초기화되는 것과 "전체 리셋"을 구분한다.
+        print("DIAGNOSTIC starPieces=\(second.state.starPieces) raidRewardDate=\(second.state.raidRewardDate)")
+        print("DIAGNOSTIC canonical(after)=\(SaveTransfer.canonicalString(second.state))")
+        XCTAssertEqual(second.state.starPieces, 500,
+                       "starPieces 도 사라졌다면 전체 리셋(무결성 조작 판정)이 원인이다")
         XCTAssertTrue(second.raidRewardClaimedToday,
                       "재시작 후에도 오늘 이미 받았다는 사실이 유지돼야 한다 — 안 그러면 앱을 껐다 켤 때마다 재지급된다")
         XCTAssertEqual(second.creditRaidReward(500), 0, "재시작 후 재도전해도 이미 받은 날은 0이어야 한다")
