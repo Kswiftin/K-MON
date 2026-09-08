@@ -199,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private func applyBattleWindow() {
         // 터미널에서 보고 있는 사용자에게 창이 튀어나오면 화면이 통째로 가려진다 — 그쪽이
         // 대전을 보고 있는 중일 수도 있다. 붙어 있는 동안에는 앱이 스스로 앞에 나서지 않는다.
-        guard !isTerminalAttached else { return }
+        guard !isTerminalControlling else { return }
         guard battleCenter.wantsForegroundWindow else { return }
 
         // 닫힌 창을 되살리는 것은 **내가 골라야 할 때**뿐이다 — 이미 낸 뒤에도 열면 닫아도 곧바로
@@ -404,10 +404,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     /// 마지막으로 내놓은 화면. **바뀔 때만 쓰기** 위해 들고 있는다(`PokedoroViewChannel.shouldWrite`).
     private var lastPublishedView: PokedoroViewSnapshot?
 
-    /// 지금 터미널이 보고 있는가. 신호 파일의 **나이**로 판정한다 — 터미널은 인사하고 죽을 수
-    /// 있으므로(창을 닫거나 kill 당한다) 파일이 남아 있다는 것만으로는 붙어 있다고 볼 수 없다.
-    private var isTerminalAttached: Bool {
-        PokedoroViewChannel.isAttached(pokedoroMailbox.attachment(), now: Date())
+    /// 터미널이 화면을 보고 있거나 방금 조작했다면 앱이 자동으로 앞에 나서지 않는다.
+    /// 단발 명령도 lease를 남기므로, 방 시작·내 턴 전환이 응답 직후 팝오버를 열지 못한다.
+    private var isTerminalControlling: Bool {
+        let now = Date()
+        return PokedoroTerminalControl.suppressesForegroundWindow(
+            attachment: pokedoroMailbox.attachment(), lease: pokedoroMailbox.terminalControlLease(), now: now)
     }
 
     // MARK: 세션 체인

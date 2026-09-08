@@ -23,6 +23,31 @@ struct PokedoroAttachment: Codable, Equatable, Sendable {
     var screen: String?
 }
 
+/// 터미널이 지금 **조작 중**이라고 남기는 짧은 lease. 화면 채널의 attach와 다르다: 한 번 실행하고
+/// 끝나는 `pokedoro room start`도 방을 시작한 직후 앱 창이 앞을 가리지 않아야 한다.
+/// 터미널만 `pokedoro-control.json`에 쓰고, 앱은 읽기만 한다.
+struct PokedoroTerminalLease: Codable, Equatable, Sendable {
+    var id: UUID
+    var at: Date
+}
+
+/// 터미널의 화면 시청·조작 상태가 앱의 자동 창 열기를 막는지 정한다.
+/// attach만 보면 `watch`에는 맞지만 단발 명령은 빠진다. 둘 중 하나가 살아 있으면 터미널 쪽을 우선한다.
+enum PokedoroTerminalControl {
+    /// 단발 명령 뒤에도 다음 입력을 칠 여유는 주되, 터미널을 떠난 사용자의 새 대전 알림을 오래 숨기지 않는다.
+    static let leaseTimeout: TimeInterval = 30
+
+    static func isActive(_ lease: PokedoroTerminalLease?, now: Date) -> Bool {
+        guard let lease else { return false }
+        return abs(now.timeIntervalSince(lease.at)) <= leaseTimeout
+    }
+
+    static func suppressesForegroundWindow(attachment: PokedoroAttachment?,
+                                           lease: PokedoroTerminalLease?, now: Date) -> Bool {
+        PokedoroViewChannel.isAttached(attachment, now: now) || isActive(lease, now: now)
+    }
+}
+
 /// 앱이 내놓는 **지금 화면 한 장**. 앱만 쓴다(`pokedoro-view.json`).
 ///
 /// 줄을 이미 사람이 읽는 문자열로 담는 이유는, 무엇이 벌어지고 있는지 아는 곳이 앱뿐이기

@@ -208,9 +208,11 @@ enum PokedoroCLI {
     /// 판단이 없는 자리다(`TUIWatch` 와 같은 규칙): 실행 여부·거절 사유·문구는 전부 앱 쪽
     /// (`PokedoroRequestBus`·`PokedoroSessionGate`·`PokedoroRequestExecutor`)에 있다.
     static func send(_ action: PokedoroRequest.Action) -> Int32 {
-        let request = PokedoroRequest(id: UUID(), action: action, requestedAt: Date())
+        let now = Date()
+        let request = PokedoroRequest(id: UUID(), action: action, requestedAt: now)
         let mailbox = PokedoroMailbox()
         do {
+            try mailbox.claimTerminalControl(PokedoroTerminalLease(id: request.id, at: now))
             try mailbox.send(request)
         } catch {
             // 요청을 남기지도 못한 것과 앱이 안 받은 것은 고칠 방법이 다르다. 뭉개면 사용자는

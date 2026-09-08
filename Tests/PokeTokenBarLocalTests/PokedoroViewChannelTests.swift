@@ -18,6 +18,10 @@ struct PokedoroViewChannelTests {
                            at: Self.now.addingTimeInterval(offset))
     }
 
+    private func lease(at offset: TimeInterval = 0) -> PokedoroTerminalLease {
+        PokedoroTerminalLease(id: UUID(), at: Self.now.addingTimeInterval(offset))
+    }
+
     private func snapshot(_ lines: [String], at offset: TimeInterval = 0) -> PokedoroViewSnapshot {
         PokedoroViewSnapshot(screen: "battle", title: "대전", lines: lines, keys: ["1 기술"],
                              writtenAt: Self.now.addingTimeInterval(offset))
@@ -46,6 +50,27 @@ struct PokedoroViewChannelTests {
 
     @Test func testNoHeartbeatAtAllMeansNobodyIsWatching() {
         #expect(!PokedoroViewChannel.isAttached(nil, now: Self.now))
+    }
+
+    // MARK: 단발 명령의 제어 lease
+
+    @Test func testAFreshTerminalLeaseSuppressesTheForegroundWindowWithoutWatch() {
+        #expect(PokedoroTerminalControl.suppressesForegroundWindow(
+            attachment: nil, lease: lease(), now: Self.now))
+    }
+
+    @Test func testAnExpiredOrFutureLeaseDoesNotSuppressTheForegroundWindow() {
+        let limit = PokedoroTerminalControl.leaseTimeout
+        #expect(PokedoroTerminalControl.isActive(lease(at: -limit), now: Self.now))
+        #expect(!PokedoroTerminalControl.suppressesForegroundWindow(
+            attachment: nil, lease: lease(at: -limit - 1), now: Self.now))
+        #expect(!PokedoroTerminalControl.suppressesForegroundWindow(
+            attachment: nil, lease: lease(at: 3 * 3600), now: Self.now))
+    }
+
+    @Test func testAnExistingWatchStillSuppressesTheForegroundWindowWithoutANewLease() {
+        #expect(PokedoroTerminalControl.suppressesForegroundWindow(
+            attachment: attachment(), lease: nil, now: Self.now))
     }
 
     // MARK: 바뀔 때만 쓴다
@@ -192,7 +217,7 @@ struct PokedoroViewChannelTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let mailbox = PokedoroMailbox(directory: directory)
 
-        let paths = [mailbox.requestURL, mailbox.replyURL, mailbox.attachURL, mailbox.viewURL]
+        let paths = [mailbox.requestURL, mailbox.replyURL, mailbox.attachURL, mailbox.controlURL, mailbox.viewURL]
         #expect(Set(paths.map(\.lastPathComponent)).count == paths.count)
         for path in paths {
             #expect(path.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
@@ -208,6 +233,16 @@ struct PokedoroViewChannelTests {
         let sent = attachment(width: 100)
         try mailbox.attach(sent)
         #expect(mailbox.attachment() == sent)
+    }
+
+    @Test func testTheAppReadsBackTheTerminalControlLease() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = PokedoroMailbox(directory: directory)
+
+        let sent = lease()
+        try mailbox.claimTerminalControl(sent)
+        #expect(mailbox.terminalControlLease() == sent)
     }
 
     @Test func testTheTerminalReadsBackTheViewTheAppWrote() throws {
@@ -228,11 +263,14 @@ struct PokedoroViewChannelTests {
         let mailbox = PokedoroMailbox(directory: directory)
 
         #expect(mailbox.attachment() == nil)
+        #expect(mailbox.terminalControlLease() == nil)
         #expect(mailbox.view() == nil)
 
         try Data("{ not json".utf8).write(to: mailbox.attachURL)
+        try Data("{ not json".utf8).write(to: mailbox.controlURL)
         try Data("{ not json".utf8).write(to: mailbox.viewURL)
         #expect(mailbox.attachment() == nil)
+        #expect(mailbox.terminalControlLease() == nil)
         #expect(mailbox.view() == nil)
     }
 
