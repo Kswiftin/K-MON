@@ -106,11 +106,7 @@ final class RunProgressTests: XCTestCase {
     @MainActor
     func testOnlyTheFirstClearOfTheDayPaysDungeonReward() {
         let clock = TestClock(Date(timeIntervalSince1970: 1_789_000_000))
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("dungeon-reward-\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent("state.json")
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = storeStateURL("dungeon-reward")
         let store = CompanionStore(provider: StubProvider(value: stubMaxLevelLine),
                                    clock: clock.closure, fileURL: url,
                                    rng: SeededRNG(seed: 1))
