@@ -293,7 +293,7 @@ private struct RosterMonCard: View {
                 Text("Lv.\(mon.level)").font(.system(size: 10)).foregroundStyle(.secondary)
                 HStack(spacing: 3) {
                     ForEach(types, id: \.self) { type in
-                        Text(type.name.uppercased())
+                        Text(type.name)
                             .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy)).foregroundStyle(.white)
                             .padding(.horizontal, 3).padding(.vertical, 1)
                             .background(type.rosterColor, in: Capsule())

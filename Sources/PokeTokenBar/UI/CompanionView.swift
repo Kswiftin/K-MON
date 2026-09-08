@@ -652,7 +652,7 @@ struct CompanionHeader: View {
                             }
                         }
                         if let r = store.rarity, !editingName {
-                            Text(store.l.rarityLabel(r).uppercased()).font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
+                            Text(store.l.rarityLabel(r)).font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(rarityColor(r)).foregroundStyle(.white)
                                 .clipShape(Capsule())
@@ -914,7 +914,7 @@ struct TypeBadge: View {
     var body: some View {
         // lineLimit/fixedSize 가 없으면 좁은 행(긴 기술 이름 옆)에서 배지 글자가 줄바꿈돼
         // 행 높이가 통째로 늘어난다 — 기술 목록이 언어에 따라 다른 높이로 그려지던 원인.
-        Text(type.name.uppercased())
+        Text(type.name)
             .font(PokedoroTheme.badgeFont(size: 8, weight: .heavy))
             .foregroundStyle(.white)
             .lineLimit(1).fixedSize()
@@ -2157,7 +2157,7 @@ private struct DexSpeciesCell: View {
     /// 글자·색을 맞춰 두 화면이 같은 말을 쓰게 한다. accent 틴트는 반투명이라 스프라이트가 비치므로
     /// material 을 한 겹 깔아 대비를 확보한다(로그는 카드 배경 위라 필요 없었다).
     private var raisingBadge: some View {
-        Text(store.l.dexRaising.uppercased())
+        Text(store.l.dexRaising)
             .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
             .padding(.horizontal, 5).padding(.vertical, 1)
             .foregroundStyle(Color.accentColor)
@@ -2192,13 +2192,13 @@ private struct DexEntryRow: View {
         let names = resolved.isEmpty ? store.dexStoredChainNames(entry) : resolved
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text(store.l.rarityLabel(entry.rarity).uppercased())
+                Text(store.l.rarityLabel(entry.rarity))
                     .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(rarityColor(entry.rarity)).foregroundStyle(.white)
                     .clipShape(Capsule())
                 if store.isActiveDexEntry(entry) {
-                    Text(store.l.dexRaising.uppercased())
+                    Text(store.l.dexRaising)
                         .font(PokedoroTheme.badgeFont(size: 8, weight: .bold))
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Color.accentColor.opacity(0.14))
