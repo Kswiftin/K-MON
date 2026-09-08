@@ -1,6 +1,6 @@
 import Foundation
 
-enum Facing: CaseIterable, Sendable { case down, up, left, right }
+enum Facing: CaseIterable, Sendable, Codable { case down, up, left, right }
 
 /// base + 착용 레이어를 `OutfitSlot.allCases` 순서로 얹는다. 착용이 바뀔 때만 만든다 —
 /// 매 프레임 합성 금지(설계 "게임루프와 에너지").
