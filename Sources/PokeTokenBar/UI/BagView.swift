@@ -231,9 +231,9 @@ private struct ItemCard: View {
         case .heartScale: return l.heartScaleEffectHint
         case .heldItem:   return l.heldItemEffectHint(kind)
         case .passive:    return l.shinyCharmEffectHint
-        case .furniture:  return l.t("미니룸에서 배치", "Place in Mini Room", "ミニルームで配置")
+        case .furniture:  return "미니룸에서 배치"
         case .evolutionItem:
-            return l.t("진화 가능할 때 사용", "Use when evolution is available", "進化できるときに使う")
+            return "진화 가능할 때 사용"
         }
     }
     private func performUse() {

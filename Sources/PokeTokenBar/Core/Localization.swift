@@ -228,24 +228,12 @@ struct L {
         case .confusion: return "\(name)은(는) 혼란으로 \(damage) 데미지"
         case .weather:   return "\(name)은(는) 날씨 데미지! \(damage)"
         case .move:      return battleTookDamage(name, damage: damage)
-        case .recoil:    return t("\(name)은(는) 반동으로 \(damage) 데미지",
-                                  "\(name) was hurt by recoil! \(damage)",
-                                  "\(name)は 反動で \(damage)ダメージ")
-        case .trap:      return t("\(name)은(는) 조이기 데미지! \(damage)",
-                                  "\(name) is hurt by the bind! \(damage)",
-                                  "\(name)は しめつけの ダメージ！ \(damage)")
-        case .curse:     return t("\(name)은(는) 저주 데미지! \(damage)",
-                                  "\(name) is afflicted by the curse! \(damage)",
-                                  "\(name)は のろいの ダメージ！ \(damage)")
-        case .leechSeed: return t("\(name)은(는) 씨뿌리기에 체력을 빨렸다! \(damage)",
-                                  "\(name)'s health is sapped by Leech Seed! \(damage)",
-                                  "\(name)は やどりぎに たいりょくを すいとられた！ \(damage)")
-        case .nightmare: return t("\(name)은(는) 악몽에 시달렸다! \(damage)",
-                                  "\(name) is locked in a nightmare! \(damage)",
-                                  "\(name)は あくむに くるしんでいる！ \(damage)")
-        case .hazard:    return t("\(name)은(는) 발밑에 깔린 것을 밟았다! \(damage)",
-                                  "\(name) was hurt by what was laid on the ground! \(damage)",
-                                  "\(name)は あしもとの しかけで ダメージ！ \(damage)")
+        case .recoil:    return "\(name)은(는) 반동으로 \(damage) 데미지"
+        case .trap:      return "\(name)은(는) 조이기 데미지! \(damage)"
+        case .curse:     return "\(name)은(는) 저주 데미지! \(damage)"
+        case .leechSeed: return "\(name)은(는) 씨뿌리기에 체력을 빨렸다! \(damage)"
+        case .nightmare: return "\(name)은(는) 악몽에 시달렸다! \(damage)"
+        case .hazard:    return "\(name)은(는) 발밑에 깔린 것을 밟았다! \(damage)"
         }
     }
 
@@ -253,67 +241,31 @@ struct L {
     /// 조이기인지가 문구의 절반이고, 필드에 개체가 넷인 모드(방·웨이브)에선 그것 없이는 안 읽힌다.
     func battleVolatileStarted(_ name: String, _ volatileStatus: BattleVolatile) -> String {
         switch volatileStatus {
-        case .aquaRing:         return t("\(name)은(는) 물의베일을 둘렀다!",
-                                         "\(name) surrounded itself with a veil of water!",
-                                         "\(name)は みずの ベールを まとった！")
-        case .ingrain:          return t("\(name)은(는) 뿌리를 내렸다!", "\(name) planted its roots!",
-                                         "\(name)は ねを はった！")
-        case .leechSeed:        return t("\(name)에게 씨가 박혔다!", "\(name) was seeded!",
-                                         "\(name)に やどりぎが うえつけられた！")
-        case .nightmare:        return t("\(name)은(는) 악몽을 꾸기 시작했다!",
-                                         "\(name) began having a nightmare!",
-                                         "\(name)は あくむを みはじめた！")
-        case .curse:            return t("\(name)은(는) 저주에 걸렸다!", "\(name) was cursed!",
-                                         "\(name)は のろわれた！")
-        case .partiallyTrapped: return t("\(name)은(는) 조여졌다!", "\(name) was squeezed!",
-                                         "\(name)は しめつけられた！")
-        case .focusEnergy:      return t("\(name)은(는) 기합이 충전됐다!", "\(name) is getting pumped!",
-                                         "\(name)は きあいを ためている！")
-        case .laserFocus:       return t("\(name)은(는) 집중하기 시작했다!",
-                                         "\(name) began concentrating intensely!",
-                                         "\(name)は しゅうちゅうし はじめた！")
-        case .minimize:         return t("\(name)은(는) 작아졌다!", "\(name) minimized!",
-                                         "\(name)は ちいさくなった！")
-        case .defenseCurl:      return t("\(name)은(는) 몸을 웅크렸다!", "\(name) curled up!",
-                                         "\(name)は まるくなった！")
-        case .charge:           return t("\(name)은(는) 전기를 모았다!", "\(name) began charging power!",
-                                         "\(name)は でんきを ためた！")
-        case .endure:           return t("\(name)은(는) 공격에 대비했다!", "\(name) braced itself!",
-                                         "\(name)は こうげきに そなえた！")
-        case .destinyBond:      return t("\(name)은(는) 상대를 길동무로 정했다!",
-                                         "\(name) is trying to take its foe down with it!",
-                                         "\(name)は あいてを みちづれに しようとしている！")
-        case .grudge:           return t("\(name)은(는) 원한을 품었다!",
-                                         "\(name) wants its foe to bear a grudge!",
-                                         "\(name)は うらみを こめている！")
-        case .substitute:       return t("\(name)은(는) 대타를 내세웠다!",
-                                         "\(name) put up a substitute!",
-                                         "\(name)は みがわりを だした！")
-        case .followMe:         return t("\(name)은(는) 상대의 공격을 자기에게 모았다!",
-                                         "\(name) became the center of attention!",
-                                         "\(name)は こうげきを ひきつけた！")
-        case .ragePowder:       return t("\(name)은(는) 성원의 가루를 뿌렸다!",
-                                         "\(name) scattered a rage powder!",
-                                         "\(name)は いかりのこなを まきちらした！")
-        case .spotlight:        return t("\(name)에게 스포트라이트가 비쳤다!",
-                                         "\(name) was put in the spotlight!",
-                                         "\(name)に スポットライトが あたった！")
-        case .helpingHand:      return t("\(name)이(가) 도움을 받았다!",
-                                         "\(name) is ready to help!",
-                                         "\(name)は てだすけを うけた！")
-        case .disable:          return t("\(name)의 기술이 봉인됐다!", "\(name)'s move was disabled!",
-                                         "\(name)の わざを かなしばりした！")
-        case .encore:           return t("\(name)에게 앙코르가 걸렸다!", "\(name) received an encore!",
-                                         "\(name)に アンコールが かかった！")
-        case .taunt:            return t("\(name)은(는) 도발에 넘어갔다!", "\(name) fell for the taunt!",
-                                         "\(name)は ちょうはつに のった！")
-        case .torment:          return t("\(name)은(는) 트집이 잡혔다!", "\(name) was subjected to torment!",
-                                         "\(name)は いちゃもんを つけられた！")
-        case .imprison:         return t("\(name)은(는) 같은 기술을 봉인당했다!",
-                                         "\(name)'s shared moves were sealed away!",
-                                         "\(name)は おなじ わざを ふういんされた！")
-        case .healBlock:        return t("\(name)은(는) 회복을 봉쇄당했다!", "\(name) was prevented from healing!",
-                                         "\(name)は かいふくを ふうじられた！")
+        case .aquaRing:         return "\(name)은(는) 물의베일을 둘렀다!"
+        case .ingrain:          return "\(name)은(는) 뿌리를 내렸다!"
+        case .leechSeed:        return "\(name)에게 씨가 박혔다!"
+        case .nightmare:        return "\(name)은(는) 악몽을 꾸기 시작했다!"
+        case .curse:            return "\(name)은(는) 저주에 걸렸다!"
+        case .partiallyTrapped: return "\(name)은(는) 조여졌다!"
+        case .focusEnergy:      return "\(name)은(는) 기합이 충전됐다!"
+        case .laserFocus:       return "\(name)은(는) 집중하기 시작했다!"
+        case .minimize:         return "\(name)은(는) 작아졌다!"
+        case .defenseCurl:      return "\(name)은(는) 몸을 웅크렸다!"
+        case .charge:           return "\(name)은(는) 전기를 모았다!"
+        case .endure:           return "\(name)은(는) 공격에 대비했다!"
+        case .destinyBond:      return "\(name)은(는) 상대를 길동무로 정했다!"
+        case .grudge:           return "\(name)은(는) 원한을 품었다!"
+        case .substitute:       return "\(name)은(는) 대타를 내세웠다!"
+        case .followMe:         return "\(name)은(는) 상대의 공격을 자기에게 모았다!"
+        case .ragePowder:       return "\(name)은(는) 성원의 가루를 뿌렸다!"
+        case .spotlight:        return "\(name)에게 스포트라이트가 비쳤다!"
+        case .helpingHand:      return "\(name)이(가) 도움을 받았다!"
+        case .disable:          return "\(name)의 기술이 봉인됐다!"
+        case .encore:           return "\(name)에게 앙코르가 걸렸다!"
+        case .taunt:            return "\(name)은(는) 도발에 넘어갔다!"
+        case .torment:          return "\(name)은(는) 트집이 잡혔다!"
+        case .imprison:         return "\(name)은(는) 같은 기술을 봉인당했다!"
+        case .healBlock:        return "\(name)은(는) 회복을 봉쇄당했다!"
         }
     }
 
@@ -324,29 +276,14 @@ struct L {
     /// 비는 것보다 상태 이름이라도 나오는 편이 낫기 때문이다(컴파일러가 분류를 강제한다).
     func battleVolatileTriggered(_ name: String, _ volatileStatus: BattleVolatile) -> String {
         switch volatileStatus {
-        case .endure:      return t("\(name)은(는) 공격을 버텼다!", "\(name) endured the hit!",
-                                    "\(name)は こうげきを もちこたえた！")
-        case .destinyBond: return t("\(name)은(는) 상대를 길동무로 데려갔다!",
-                                    "\(name) took its attacker down with it!",
-                                    "\(name)は あいてを みちづれに した！")
-        case .grudge:      return t("\(name)의 원한이 상대 기술의 PP 를 앗았다!",
-                                    "\(name)'s grudge drained the PP of the move that felled it!",
-                                    "\(name)の うらみが わざの PPを うばった！")
-        case .followMe:    return t("\(name)이(가) 공격을 끌어 대신 받았다!",
-                                    "\(name) drew the attack in!",
-                                    "\(name)が こうげきを ひきつけた！")
-        case .ragePowder:  return t("\(name)의 가루가 공격을 끌어왔다!",
-                                    "\(name)'s powder pulled the attack in!",
-                                    "\(name)の こなが こうげきを ひきよせた！")
-        case .spotlight:   return t("스포트라이트가 \(name)에게 공격을 모았다!",
-                                    "The spotlight drew the attack onto \(name)!",
-                                    "スポットライトが \(name)に こうげきを あつめた！")
-        case .helpingHand: return t("\(name)의 기술에 도움이 실렸다!",
-                                    "\(name)'s move got a helping hand!",
-                                    "\(name)の わざに てだすけが のった！")
-        case .substitute:  return t("\(name) 대신 대타가 맞았다!",
-                                    "The substitute took the hit for \(name)!",
-                                    "\(name)の みがわりが ダメージを うけた！")
+        case .endure:      return "\(name)은(는) 공격을 버텼다!"
+        case .destinyBond: return "\(name)은(는) 상대를 길동무로 데려갔다!"
+        case .grudge:      return "\(name)의 원한이 상대 기술의 PP 를 앗았다!"
+        case .followMe:    return "\(name)이(가) 공격을 끌어 대신 받았다!"
+        case .ragePowder:  return "\(name)의 가루가 공격을 끌어왔다!"
+        case .spotlight:   return "스포트라이트가 \(name)에게 공격을 모았다!"
+        case .helpingHand: return "\(name)의 기술에 도움이 실렸다!"
+        case .substitute:  return "\(name) 대신 대타가 맞았다!"
         case .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
              .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
              .disable, .encore, .taunt, .torment, .imprison, .healBlock:
@@ -358,66 +295,36 @@ struct L {
     /// 지금 이 줄을 내는 것은 기합의띠뿐이고, 나머지 둘은 자기 줄이 이미 있다(회복·반동 데미지).
     func battleHeldItemTriggered(_ name: String, item: ItemKind) -> String {
         let itemName = self.itemName(item)
-        return t("\(name)은(는) \(itemName)으로 버텼다!",
-                 "\(name) hung on with its \(itemName)!",
-                 "\(name)は \(itemName)で もちこたえた！")
+        return "\(name)은(는) \(itemName)으로 버텼다!"
     }
 
     func battleVolatileEnded(_ name: String, _ volatileStatus: BattleVolatile) -> String {
         switch volatileStatus {
-        case .aquaRing:         return t("\(name)의 물의베일이 사라졌다", "\(name)'s veil of water faded",
-                                         "\(name)の みずの ベールが きえた")
-        case .ingrain:          return t("\(name)의 뿌리가 사라졌다", "\(name)'s roots withered",
-                                         "\(name)の ねが きえた")
-        case .leechSeed:        return t("\(name)의 씨가 사라졌다", "\(name)'s Leech Seed withered",
-                                         "\(name)の やどりぎが きえた")
-        case .nightmare:        return t("\(name)은(는) 악몽에서 깨어났다", "\(name) woke from its nightmare",
-                                         "\(name)は あくむから めざめた")
-        case .curse:            return t("\(name)의 저주가 풀렸다", "\(name)'s curse lifted",
-                                         "\(name)の のろいが とけた")
-        case .partiallyTrapped: return t("\(name)은(는) 조이기에서 벗어났다", "\(name) was freed from the bind",
-                                         "\(name)は しめつけから ぬけだした")
-        case .focusEnergy:      return t("\(name)의 기합이 풀렸다", "\(name) is no longer pumped",
-                                         "\(name)の きあいが とけた")
-        case .laserFocus:       return t("\(name)의 집중이 풀렸다", "\(name) is no longer concentrating",
-                                         "\(name)の しゅうちゅうが とけた")
-        case .minimize:         return t("\(name)은(는) 원래 크기로 돌아왔다", "\(name) is no longer minimized",
-                                         "\(name)は もとの おおきさに もどった")
-        case .defenseCurl:      return t("\(name)은(는) 몸을 풀었다", "\(name) uncurled",
-                                         "\(name)は まるまりを といた")
-        case .charge:           return t("\(name)의 전기가 흩어졌다", "\(name)'s charge faded",
-                                         "\(name)の でんきが きえた")
-        case .endure:           return t("\(name)의 대비가 풀렸다", "\(name) is no longer braced",
-                                         "\(name)の そなえが とけた")
-        case .destinyBond:      return t("\(name)의 길동무가 풀렸다", "\(name)'s Destiny Bond faded",
-                                         "\(name)の みちづれが とけた")
-        case .grudge:           return t("\(name)의 원한이 풀렸다", "\(name)'s grudge faded",
-                                         "\(name)の うらみが とけた")
-        case .substitute:       return t("\(name)의 대타가 부서졌다", "\(name)'s substitute broke",
-                                         "\(name)の みがわりが こわれた")
-        case .followMe:         return t("\(name)에게 모이던 공격이 흩어졌다",
-                                         "\(name) is no longer the center of attention",
-                                         "\(name)への ひきつけが おわった")
-        case .ragePowder:       return t("\(name)의 성원의 가루가 걷혔다",
-                                         "\(name)'s rage powder settled",
-                                         "\(name)の いかりのこなが きえた")
-        case .spotlight:        return t("\(name)의 스포트라이트가 꺼졌다",
-                                         "\(name)'s spotlight faded",
-                                         "\(name)の スポットライトが きえた")
-        case .helpingHand:      return t("\(name)의 도움이 끝났다", "\(name)'s helping hand ended",
-                                         "\(name)の てだすけが おわった")
-        case .disable:          return t("\(name)의 기술 봉인이 풀렸다", "\(name)'s move is no longer disabled",
-                                         "\(name)の かなしばりが とけた")
-        case .encore:           return t("\(name)의 앙코르가 끝났다", "\(name)'s encore ended",
-                                         "\(name)の アンコールが おわった")
-        case .taunt:            return t("\(name)의 도발이 풀렸다", "\(name)'s taunt wore off",
-                                         "\(name)の ちょうはつが とけた")
-        case .torment:          return t("\(name)의 트집이 풀렸다", "\(name)'s torment ended",
-                                         "\(name)の いちゃもんが とけた")
-        case .imprison:         return t("\(name)의 기술 봉인이 걷혔다", "\(name)'s sealed moves came back",
-                                         "\(name)の ふういんが とけた")
-        case .healBlock:        return t("\(name)은(는) 다시 회복할 수 있다", "\(name) can heal again",
-                                         "\(name)は また かいふくできる")
+        case .aquaRing:         return "\(name)의 물의베일이 사라졌다"
+        case .ingrain:          return "\(name)의 뿌리가 사라졌다"
+        case .leechSeed:        return "\(name)의 씨가 사라졌다"
+        case .nightmare:        return "\(name)은(는) 악몽에서 깨어났다"
+        case .curse:            return "\(name)의 저주가 풀렸다"
+        case .partiallyTrapped: return "\(name)은(는) 조이기에서 벗어났다"
+        case .focusEnergy:      return "\(name)의 기합이 풀렸다"
+        case .laserFocus:       return "\(name)의 집중이 풀렸다"
+        case .minimize:         return "\(name)은(는) 원래 크기로 돌아왔다"
+        case .defenseCurl:      return "\(name)은(는) 몸을 풀었다"
+        case .charge:           return "\(name)의 전기가 흩어졌다"
+        case .endure:           return "\(name)의 대비가 풀렸다"
+        case .destinyBond:      return "\(name)의 길동무가 풀렸다"
+        case .grudge:           return "\(name)의 원한이 풀렸다"
+        case .substitute:       return "\(name)의 대타가 부서졌다"
+        case .followMe:         return "\(name)에게 모이던 공격이 흩어졌다"
+        case .ragePowder:       return "\(name)의 성원의 가루가 걷혔다"
+        case .spotlight:        return "\(name)의 스포트라이트가 꺼졌다"
+        case .helpingHand:      return "\(name)의 도움이 끝났다"
+        case .disable:          return "\(name)의 기술 봉인이 풀렸다"
+        case .encore:           return "\(name)의 앙코르가 끝났다"
+        case .taunt:            return "\(name)의 도발이 풀렸다"
+        case .torment:          return "\(name)의 트집이 풀렸다"
+        case .imprison:         return "\(name)의 기술 봉인이 걷혔다"
+        case .healBlock:        return "\(name)은(는) 다시 회복할 수 있다"
         }
     }
 
@@ -425,13 +332,13 @@ struct L {
     /// 다시 쓸 수 있는지가 화면에서 사라진다(도발은 세 턴을 기다리고, 구애는 교체해야 풀린다).
     func moveSelectionLockReason(_ lock: MoveSelectionLock) -> String {
         switch lock {
-        case .disable:    return t("기술이 봉인됐다", "Move is disabled", "わざが かなしばり")
-        case .encore:     return t("앙코르로 한 기술만", "Encore allows only one move", "アンコールで1つだけ")
-        case .taunt:      return t("도발로 변화기 금지", "Taunt blocks status moves", "ちょうはつで へんかわざ不可")
-        case .torment:    return t("트집으로 연속 금지", "Torment blocks a repeat", "いちゃもんで れんぞく不可")
-        case .imprison:   return t("상대가 봉인한 기술", "Sealed by Imprison", "ふういんされた わざ")
-        case .healBlock:  return t("회복이 봉쇄됐다", "Healing is blocked", "かいふくが ふうじられた")
-        case .choiceItem: return t("구애로 기술 고정", "Locked in by the Choice item", "こだわりで わざ固定")
+        case .disable:    return "기술이 봉인됐다"
+        case .encore:     return "앙코르로 한 기술만"
+        case .taunt:      return "도발로 변화기 금지"
+        case .torment:    return "트집으로 연속 금지"
+        case .imprison:   return "상대가 봉인한 기술"
+        case .healBlock:  return "회복이 봉쇄됐다"
+        case .choiceItem: return "구애로 기술 고정"
         }
     }
 
@@ -485,43 +392,24 @@ struct L {
     /// 양쪽이 같은 장막을 폈을 때만 걷히는 줄이 모호해지는데, 남은 턴은 화면의 배지가 들고 있다.
     func battleSideConditionStarted(_ condition: BattleSideCondition) -> String {
         switch condition {
-        case .reflect:     return t("리플렉터가 펼쳐졌다!", "Reflect raised the team's Defense!",
-                                    "リフレクターが はられた！")
-        case .lightScreen: return t("빛의장막이 펼쳐졌다!", "Light Screen raised the team's Sp. Def!",
-                                    "ひかりのかべが はられた！")
-        case .auroraVeil:  return t("오로라베일이 펼쳐졌다!", "Aurora Veil shielded the team!",
-                                    "オーロラベールが はられた！")
-        case .safeguard:   return t("신비의부적이 편을 감쌌다!", "The team is cloaked in a mystical veil!",
-                                    "しんぴのまもりに つつまれた！")
-        case .mist:        return t("하얀안개가 편을 감쌌다!", "The team became shrouded in mist!",
-                                    "しろいきりに つつまれた！")
-        case .luckyChant:  return t("행운의부적이 편을 감쌌다!", "The team is protected from critical hits!",
-                                    "こううんの まもりに つつまれた！")
-        case .tailwind:    return t("순풍이 불기 시작했다!", "The tailwind blew from behind the team!",
-                                    "おいかぜが 吹き始めた！")
-        case .wideGuard:   return t("와이드가드로 편을 지켰다!", "Wide Guard protected the team!",
-                                    "ワイドガードで まもりを かためた！")
-        case .quickGuard:  return t("퀵가드로 편을 지켰다!", "Quick Guard protected the team!",
-                                    "ファストガードで まもりを かためた！")
-        case .matBlock:    return t("니가하지마로 편을 지켰다!", "Mat Block shielded the team!",
-                                    "たたみがえしで まもりを かためた！")
-        case .craftyShield: return t("트릭가드로 편을 지켰다!", "Crafty Shield shielded the team!",
-                                     "トリックガードで まもりを かためた！")
+        case .reflect:     return "리플렉터가 펼쳐졌다!"
+        case .lightScreen: return "빛의장막이 펼쳐졌다!"
+        case .auroraVeil:  return "오로라베일이 펼쳐졌다!"
+        case .safeguard:   return "신비의부적이 편을 감쌌다!"
+        case .mist:        return "하얀안개가 편을 감쌌다!"
+        case .luckyChant:  return "행운의부적이 편을 감쌌다!"
+        case .tailwind:    return "순풍이 불기 시작했다!"
+        case .wideGuard:   return "와이드가드로 편을 지켰다!"
+        case .quickGuard:  return "퀵가드로 편을 지켰다!"
+        case .matBlock:    return "니가하지마로 편을 지켰다!"
+        case .craftyShield: return "트릭가드로 편을 지켰다!"
         // 입장 데미지는 **상대 편에** 깔린다 — 그래서 문구가 "상대" 를 말한다(나머지는 앞 줄이
         // 누가 썼는지 말하므로 편을 안 밝힌다). 몇 층인지는 문구에 넣지 않는다: 같은 줄이 다시
         // 나가는 것이 곧 한 층 더 쌓였다는 뜻이고, 넣으면 세 언어를 층 수만큼 적어야 한다.
-        case .spikes:      return t("상대 발밑에 압정이 흩뿌려졌다!",
-                                    "Spikes were scattered around the opposing team!",
-                                    "相手の 足下に まきびしを ばらまいた！")
-        case .toxicSpikes: return t("상대 발밑에 독압정이 흩뿌려졌다!",
-                                    "Poison spikes were scattered around the opposing team!",
-                                    "相手の 足下に どくびしを ばらまいた！")
-        case .stealthRock: return t("상대 주위에 스텔스록이 떠올랐다!",
-                                    "Pointed stones float in the air around the opposing team!",
-                                    "相手の まわりに とがった いわが ただよいはじめた！")
-        case .stickyWeb:   return t("상대 발밑에 끈적끈적네트가 깔렸다!",
-                                    "A sticky web spreads out beneath the opposing team!",
-                                    "相手の 足下に ねばねばネットが 広がった！")
+        case .spikes:      return "상대 발밑에 압정이 흩뿌려졌다!"
+        case .toxicSpikes: return "상대 발밑에 독압정이 흩뿌려졌다!"
+        case .stealthRock: return "상대 주위에 스텔스록이 떠올랐다!"
+        case .stickyWeb:   return "상대 발밑에 끈적끈적네트가 깔렸다!"
         }
     }
 
@@ -544,32 +432,25 @@ struct L {
 
     func battleSideConditionEnded(_ condition: BattleSideCondition) -> String {
         switch condition {
-        case .reflect:     return t("리플렉터가 사라졌다", "Reflect wore off", "リフレクターが きえた")
-        case .lightScreen: return t("빛의장막이 사라졌다", "Light Screen wore off", "ひかりのかべが きえた")
-        case .auroraVeil:  return t("오로라베일이 사라졌다", "Aurora Veil wore off", "オーロラベールが きえた")
-        case .safeguard:   return t("신비의부적이 사라졌다", "The mystical veil wore off",
-                                    "しんぴのまもりが きえた")
-        case .mist:        return t("하얀안개가 걷혔다", "The mist wore off", "しろいきりが きえた")
-        case .luckyChant:  return t("행운의부적이 사라졌다", "The lucky chant wore off",
-                                    "こううんの まもりが きえた")
-        case .tailwind:    return t("순풍이 멎었다", "The tailwind petered out",
-                                    "おいかぜが やんだ")
+        case .reflect:     return "리플렉터가 사라졌다"
+        case .lightScreen: return "빛의장막이 사라졌다"
+        case .auroraVeil:  return "오로라베일이 사라졌다"
+        case .safeguard:   return "신비의부적이 사라졌다"
+        case .mist:        return "하얀안개가 걷혔다"
+        case .luckyChant:  return "행운의부적이 사라졌다"
+        case .tailwind:    return "순풍이 멎었다"
         // 편 방어기는 한 턴짜리라 걷히는 줄이 매 턴 나간다 — 그래서 문구를 짧게 둔다.
-        case .wideGuard:   return t("와이드가드가 풀렸다", "Wide Guard wore off", "ワイドガードが きえた")
-        case .quickGuard:  return t("퀵가드가 풀렸다", "Quick Guard wore off", "ファストガードが きえた")
-        case .matBlock:    return t("니가하지마가 풀렸다", "Mat Block wore off", "たたみがえしが きえた")
-        case .craftyShield: return t("트릭가드가 풀렸다", "Crafty Shield wore off", "トリックガードが きえた")
+        case .wideGuard:   return "와이드가드가 풀렸다"
+        case .quickGuard:  return "퀵가드가 풀렸다"
+        case .matBlock:    return "니가하지마가 풀렸다"
+        case .craftyShield: return "트릭가드가 풀렸다"
         // 입장 데미지는 턴으로 걷히지 않아 이 줄이 지금은 나가지 않는다. 그래도 문구를 두는
         // 이유는 제거 수단(코트체인지·고속스핀)이 붙는 자리가 이미 정해져 있기 때문이다 —
         // 그때 걷히는 줄이 없으면 사라진 것이 로그로 설명되지 않는다.
-        case .spikes:      return t("발밑의 압정이 사라졌다", "The spikes disappeared",
-                                    "あしもとの まきびしが きえた")
-        case .toxicSpikes: return t("발밑의 독압정이 사라졌다", "The poison spikes disappeared",
-                                    "あしもとの どくびしが きえた")
-        case .stealthRock: return t("떠 있던 스텔스록이 사라졌다", "The pointed stones disappeared",
-                                    "ただよっていた とがった いわが きえた")
-        case .stickyWeb:   return t("발밑의 끈적끈적네트가 사라졌다", "The sticky web disappeared",
-                                    "あしもとの ねばねばネットが きえた")
+        case .spikes:      return "발밑의 압정이 사라졌다"
+        case .toxicSpikes: return "발밑의 독압정이 사라졌다"
+        case .stealthRock: return "떠 있던 스텔스록이 사라졌다"
+        case .stickyWeb:   return "발밑의 끈적끈적네트가 사라졌다"
         }
     }
 
@@ -1593,26 +1474,26 @@ struct L {
     /// 아이템 표시명 — species 처럼 공식 현지명.
     func itemName(_ kind: ItemKind) -> String {
         switch kind {
-        case .rareCandy: return t("이상한 사탕", "Rare Candy", "ふしぎなアメ")
-        case .mint:      return t("민트", "Mint", "ミント")
-        case .teraShard: return t("테라피스", "Tera Shard", "テラピース")
-        case .lifeOrb: return t("생명의구슬", "Life Orb", "いのちのたま")
-        case .focusSash: return t("기합의띠", "Focus Sash", "きあいのタスキ")
-        case .leftovers: return t("먹다남은음식", "Leftovers", "たべのこし")
-        case .choiceBand: return t("구애머리띠", "Choice Band", "こだわりハチマキ")
-        case .choiceSpecs: return t("구애안경", "Choice Specs", "こだわりメガネ")
-        case .shinyCharm: return t("이로치 부적", "Shiny Charm", "ひかるおまもり")
-        case .linkingCord: return t("연결의끈", "Linking Cord", "つながりのヒモ")
-        case .fireStone: return t("불꽃의돌", "Fire Stone", "ほのおのいし")
-        case .waterStone: return t("물의돌", "Water Stone", "みずのいし")
-        case .thunderStone: return t("천둥의돌", "Thunder Stone", "かみなりのいし")
-        case .leafStone: return t("리프의돌", "Leaf Stone", "リーフのいし")
-        case .iceStone: return t("얼음의돌", "Ice Stone", "こおりのいし")
-        case .moonStone: return t("달의돌", "Moon Stone", "つきのいし")
-        case .sunStone: return t("태양의돌", "Sun Stone", "たいようのいし")
-        case .shinyStone: return t("빛의돌", "Shiny Stone", "ひかりのいし")
-        case .duskStone: return t("어둠의돌", "Dusk Stone", "やみのいし")
-        case .dawnStone: return t("각성의돌", "Dawn Stone", "めざめいし")
+        case .rareCandy: return "이상한 사탕"
+        case .mint:      return "민트"
+        case .teraShard: return "테라피스"
+        case .lifeOrb: return "생명의구슬"
+        case .focusSash: return "기합의띠"
+        case .leftovers: return "먹다남은음식"
+        case .choiceBand: return "구애머리띠"
+        case .choiceSpecs: return "구애안경"
+        case .shinyCharm: return "이로치 부적"
+        case .linkingCord: return "연결의끈"
+        case .fireStone: return "불꽃의돌"
+        case .waterStone: return "물의돌"
+        case .thunderStone: return "천둥의돌"
+        case .leafStone: return "리프의돌"
+        case .iceStone: return "얼음의돌"
+        case .moonStone: return "달의돌"
+        case .sunStone: return "태양의돌"
+        case .shinyStone: return "빛의돌"
+        case .duskStone: return "어둠의돌"
+        case .dawnStone: return "각성의돌"
         // 지닌물건 진화 아이템(#89) — 본가 공식 현지명 그대로.
         case .kingsRock: return "왕의징표석"
         case .metalCoat: return "금속코트"
@@ -1686,10 +1567,10 @@ struct L {
         case .helmetExplorer: return "탐험가 헬멧"
         }
     }
-    var outfitTitle: String { t("꾸미기", "Wardrobe", "きせかえ") }
-    var outfitWardrobe: String { t("꾸미기", "Wardrobe", "きせかえ") }
-    var outfitTakeOff: String { t("벗기", "Take off", "はずす") }
-    var outfitLocked: String { t("업적으로 해금", "Unlock via achievements", "実績で解放") }
+    var outfitTitle: String { "꾸미기" }
+    var outfitWardrobe: String { "꾸미기" }
+    var outfitTakeOff: String { "벗기" }
+    var outfitLocked: String { "업적으로 해금" }
     /// 아이템 설명 — 가방과 상점이 읽는다. **`default:` 를 두지 않는다**: 진화가 아닌 새 아이템이
     /// 진화 갈래로 흘러가면 설명이 빈 문자열이 된다(`ItemKind.bagUse` 가 있는 이유).
     func itemDescription(_ kind: ItemKind) -> String {
@@ -1698,54 +1579,34 @@ struct L {
             let xp = GameNumberFormatter.compact(RareCandy.xp)   // 상수에서 파생(하드코딩 드리프트 방지)
             return "현재 포켓몬의 경험치를 \(xp) 올려줘요."
         case .mint:
-            return t("현재 포켓몬의 성격을 랜덤으로 바꿔줘요.",
-                     "Randomly changes your Pokémon's nature.",
-                     "ポケモンのせいかくをランダムに変えます。")
+            return "현재 포켓몬의 성격을 랜덤으로 바꿔줘요."
         case .heartScale:
-            return t("지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요.",
-                     "Recalls one move it could have learned by now. With four moves, one is forgotten.",
-                     "これまでに覚えられた技をひとつ思い出します。技が4つなら1つ忘れます。")
+            return "지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요."
         case .teraShard:
-            return t("테라스탈했을 때 되는 타입을 랜덤으로 바꿔줘요. 대전에서만 쓰이는 타입이에요.",
-                     "Randomly changes the type it becomes when it Terastallizes. It only matters in battle.",
-                     "テラスタルしたときのタイプをランダムに変えます。対戦でのみ意味があります。")
+            return "테라스탈했을 때 되는 타입을 랜덤으로 바꿔줘요. 대전에서만 쓰이는 타입이에요."
         case .heldItem:
             // 문구가 아이템마다 갈린다 — 셋을 한 줄로 뭉개면 무엇을 사는지 화면에서 알 수 없다.
             // 수치는 상수에서 파생하지 않는다(분모를 문장에 녹여야 자연스럽고, 어긋나면
             // `HeldItemTests` 가 아니라 사람이 읽는다) — 상수를 바꾸면 이 세 줄도 함께 본다.
             switch kind.heldBattleEffect {
             case .lifeOrb:
-                return t("대전에서 기술 데미지가 1.3배가 돼요. 대신 턴이 끝날 때 최대 HP의 1/10을 잃어요.",
-                         "In battle, move damage becomes 1.3×. In exchange it loses 1/10 of its max HP each turn.",
-                         "対戦で技のダメージが1.3倍になります。代わりに毎ターン最大HPの1/10を失います。")
+                return "대전에서 기술 데미지가 1.3배가 돼요. 대신 턴이 끝날 때 최대 HP의 1/10을 잃어요."
             case .focusSash:
-                return t("체력이 가득할 때 쓰러질 한 방을 HP 1로 버텨요. 대전 한 번에 한 번만이에요.",
-                         "At full HP it survives a knockout hit with 1 HP left. Once per battle.",
-                         "HPが満タンのとき、倒れる一撃をHP1で耐えます。対戦で一度だけです。")
+                return "체력이 가득할 때 쓰러질 한 방을 HP 1로 버텨요. 대전 한 번에 한 번만이에요."
             case .leftovers:
-                return t("대전에서 턴이 끝날 때마다 최대 HP의 1/16을 회복해요.",
-                         "In battle it restores 1/16 of its max HP at the end of each turn.",
-                         "対戦で毎ターンの終わりに最大HPの1/16を回復します。")
+                return "대전에서 턴이 끝날 때마다 최대 HP의 1/16을 회복해요."
             case .choiceBand:
-                return t("물리 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요.",
-                         "Physical move damage becomes 1.5×. In exchange it can only use the first move it picked.",
-                         "物理技のダメージが1.5倍になります。代わりに最初に出した技しか使えなくなります。")
+                return "물리 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
             case .choiceSpecs:
-                return t("특수 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요.",
-                         "Special move damage becomes 1.5×. In exchange it can only use the first move it picked.",
-                         "特殊技のダメージが1.5倍になります。代わりに最初に出した技しか使えなくなります。")
+                return "특수 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
             }
         case .passive:
-            return t("보유하면 이로치 포켓몬이 태어날 확률이 올라가요.",
-                     "While owned, raises the chance of hatching a shiny.",
-                     "持っていると色違いが生まれる確率が上がります。")
+            return "보유하면 이로치 포켓몬이 태어날 확률이 올라가요."
         case .furniture:
-            return t("미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요.",
-                     "Furniture for your mini room. It never affects growth or rewards.",
-                     "ミニルームに置く家具です。成長や報酬には影響しません。")
+            return "미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요."
         case .evolutionItem:
             // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 40개 나열하면 새 아이템을 넣을 때 빠뜨린다.
             switch kind.evolutionRule {
@@ -1762,30 +1623,28 @@ struct L {
         }
     }
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
-    var mintEffectHint: String { t("성격 랜덤 변경", "Random nature", "せいかくランダム変更") }
+    var mintEffectHint: String { "성격 랜덤 변경" }
     /// 지닌물건 3종의 효과 힌트 — 가방 사용 컨트롤의 "+XP" 자리다. 아이템마다 갈린다(무엇이
     /// 붙는지가 이 물건의 전부라, 셋을 "지니게 하기" 한 줄로 뭉개면 고를 근거가 사라진다).
     func heldItemEffectHint(_ kind: ItemKind) -> String {
         switch kind.heldBattleEffect {
-        case .lifeOrb:   return t("데미지 ×1.3 / 자해", "1.3× damage / recoil", "ダメージ1.3倍 / 反動")
-        case .focusSash: return t("만피에서 한 방 버티기", "Survive one hit at full HP", "満タンで一撃耐える")
-        case .leftovers: return t("턴 끝 HP 회복", "Heals each turn", "ターン終わりに回復")
-        case .choiceBand: return t("물리 ×1.5 / 기술 고정", "1.5× physical / locked in", "物理1.5倍 / 技固定")
-        case .choiceSpecs: return t("특수 ×1.5 / 기술 고정", "1.5× special / locked in", "特殊1.5倍 / 技固定")
+        case .lifeOrb:   return "데미지 ×1.3 / 자해"
+        case .focusSash: return "만피에서 한 방 버티기"
+        case .leftovers: return "턴 끝 HP 회복"
+        case .choiceBand: return "물리 ×1.5 / 기술 고정"
+        case .choiceSpecs: return "특수 ×1.5 / 기술 고정"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }
     /// 이미 지니고 있는 물건을 또 지니게 할 수는 없다 — 가방이 비활성 사유로 쓴다. "포켓몬이
     /// 필요해요" 로 뭉개면 재고도 동행도 있는데 거절당한 사용자가 이유를 알 수 없다.
-    var heldItemAlreadyHeld: String { t("이미 지니고 있어요", "Already held", "すでに持っています") }
+    var heldItemAlreadyHeld: String { "이미 지니고 있어요" }
     /// 테라피스(#3) — 성격과 달리 대전 성능을 바꾸므로 문구도 "테라 타입" 을 밝힌다.
-    var teraShardEffectHint: String { t("테라 타입 랜덤 변경", "Random Tera type", "テラスタイプランダム変更") }
+    var teraShardEffectHint: String { "테라 타입 랜덤 변경" }
     /// 바뀐 타입을 알리는 줄 — 어떤 타입이 됐는지가 이 아이템의 결과 전부다.
     func teraShardUsed(_ type: PokemonType) -> String {
-        let name = type.name(lang)
-        return t("테라 타입이 \(name)(으)로 바뀌었어요!",
-                 "Its Tera type changed to \(name)!",
-                 "テラスタイプが\(name)に変わりました！")
+        let name = type.name
+        return "테라 타입이 \(name)(으)로 바뀌었어요!"
     }
 
     // MARK: 하트비늘 (기술 다시 배우기 — #97)

@@ -270,16 +270,14 @@ final class BattleSubstituteTests: XCTestCase {
     // MARK: 로그
 
     /// 세운 줄·대신 맞은 줄·부서진 줄이 **셋 다 다르다** — 같으면 로그가 무슨 일이 났는지 못 말한다.
-    func testTheThreeSubstituteLinesReadDifferentlyInEveryLanguage() {
-        for lang in AppLanguage.allCases {
-            let l = L(lang)
-            let started = l.battleVolatileStarted("리자몽", .substitute)
-            let triggered = l.battleVolatileTriggered("리자몽", .substitute)
-            let ended = l.battleVolatileEnded("리자몽", .substitute)
-            XCTAssertEqual(Set([started, triggered, ended]).count, 3, "\(lang) 에서 세 줄이 겹친다")
-            for line in [started, triggered, ended] {
-                XCTAssertTrue(line.contains("리자몽"), "\(lang) 문구에 이름이 없다")
-            }
+    func testTheThreeSubstituteLinesReadDifferently() {
+        let l = L()
+        let started = l.battleVolatileStarted("리자몽", .substitute)
+        let triggered = l.battleVolatileTriggered("리자몽", .substitute)
+        let ended = l.battleVolatileEnded("리자몽", .substitute)
+        XCTAssertEqual(Set([started, triggered, ended]).count, 3, "세 줄이 겹친다")
+        for line in [started, triggered, ended] {
+            XCTAssertTrue(line.contains("리자몽"), "문구에 이름이 없다")
         }
     }
 }

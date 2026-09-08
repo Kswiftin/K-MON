@@ -439,17 +439,15 @@ final class BattleSelectionLockTests: XCTestCase {
         XCTAssertEqual(side(moves: [attackMove(33)]).selectionLocks, [nil])
     }
 
-    /// 잠금 사유는 세 언어 다 있고 **서로 다르다** — 같은 문구를 돌려주면 화면이 왜 못 누르는지
-    /// 말하지 못한다(비활성 버튼만 남고 이유가 사라진다).
-    func testEveryLockReasonReadsInThreeLanguages() {
-        for language in AppLanguage.allCases {
-            let l = L(language)
-            var seen: Set<String> = []
-            for lock in MoveSelectionLock.allCases {
-                let text = l.moveSelectionLockReason(lock)
-                XCTAssertFalse(text.isEmpty, "\(lock) 의 \(language) 문구가 비어 있다")
-                XCTAssertTrue(seen.insert(text).inserted, "\(lock) 이 다른 잠금과 같은 문구다: \(text)")
-            }
+    /// 잠금 사유는 일곱이 **서로 다르다** — 같은 문구를 돌려주면 화면이 왜 못 누르는지 말하지
+    /// 못한다(비활성 버튼만 남고 이유가 사라진다).
+    func testEveryLockReasonHasItsOwnWording() {
+        let l = L()
+        var seen: Set<String> = []
+        for lock in MoveSelectionLock.allCases {
+            let text = l.moveSelectionLockReason(lock)
+            XCTAssertFalse(text.isEmpty, "\(lock) 의 문구가 비어 있다")
+            XCTAssertTrue(seen.insert(text).inserted, "\(lock) 이 다른 잠금과 같은 문구다: \(text)")
         }
     }
 

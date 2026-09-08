@@ -129,20 +129,17 @@ final class HeldItemTests: XCTestCase {
         }
     }
 
-    /// 이름·설명·효과 힌트가 세 언어에 다 있다. 하나라도 비면 가방·상점에 빈 줄이 뜬다.
-    func testTheThreeAreNamedInEveryLanguage() {
-        for lang in AppLanguage.allCases {
-            let l = L(lang)
-            for kind in Self.three {
-                XCTAssertFalse(l.itemName(kind).isEmpty, "\(kind.rawValue)/\(lang)")
-                XCTAssertFalse(l.itemDescription(kind).isEmpty, "\(kind.rawValue)/\(lang)")
-                XCTAssertFalse(l.heldItemEffectHint(kind).isEmpty, "\(kind.rawValue)/\(lang)")
-            }
-            // 가방의 비활성 사유 — 화면에만 뜨는 문구라 여기서만 잡힌다.
-            XCTAssertFalse(l.heldItemAlreadyHeld.isEmpty, "\(lang)")
+    /// 이름·설명·효과 힌트가 다 채워져 있다. 하나라도 비면 가방·상점에 빈 줄이 뜬다.
+    func testTheThreeAreNamedAndDescribed() {
+        let l = L()
+        for kind in Self.three {
+            XCTAssertFalse(l.itemName(kind).isEmpty, kind.rawValue)
+            XCTAssertFalse(l.itemDescription(kind).isEmpty, kind.rawValue)
+            XCTAssertFalse(l.heldItemEffectHint(kind).isEmpty, kind.rawValue)
         }
+        // 가방의 비활성 사유 — 화면에만 뜨는 문구라 여기서만 잡힌다.
+        XCTAssertFalse(l.heldItemAlreadyHeld.isEmpty)
         // 설명은 아이템마다 갈린다 — 한 문구로 뭉개면 무엇을 사는지 알 수 없다.
-        let l = L(.ko)
         XCTAssertNotEqual(l.itemDescription(.lifeOrb), l.itemDescription(.leftovers))
         XCTAssertNotEqual(l.heldItemEffectHint(.lifeOrb), l.heldItemEffectHint(.focusSash))
     }
@@ -402,29 +399,27 @@ final class HeldItemTests: XCTestCase {
 
     // MARK: - 로그·재생
 
-    /// 발동 줄이 세 언어에 다 있고 **주인 이름이 들어간다**(맞은 쪽의 줄이다).
-    func testTheTriggerLineIsRenderedInEveryLanguage() {
-        for lang in AppLanguage.allCases {
-            let lines = BattleLog.lines([.heldItemTriggered(.b, .focusSash)], l: L(lang),
-                                        name: { $0 == .a ? "거북왕" : "리자몽" },
-                                        move: { _, id in
-                                            MoveSpec(id: id, names: ["ko": "공격"], type: .normal,
-                                                     power: 40, damageClass: .physical,
-                                                     accuracy: 100, pp: 20)
-                                        })
-            XCTAssertEqual(lines.count, 1, "\(lang)")
-            XCTAssertEqual(lines[0].actor, .b, "\(lang)")
-            XCTAssertTrue(lines[0].text.contains("리자몽"), "\(lang): \(lines[0].text)")
-            XCTAssertTrue(lines[0].text.contains(L(lang).itemName(.focusSash)),
-                          "\(lang): 무엇이 일했는지가 문구의 절반이다 — \(lines[0].text)")
-        }
+    /// 발동 줄에 **주인 이름이 들어간다**(맞은 쪽의 줄이다).
+    func testTheTriggerLineNamesTheHolder() {
+        let lines = BattleLog.lines([.heldItemTriggered(.b, .focusSash)], l: L(),
+                                    name: { $0 == .a ? "거북왕" : "리자몽" },
+                                    move: { _, id in
+                                        MoveSpec(id: id, names: ["ko": "공격"], type: .normal,
+                                                 power: 40, damageClass: .physical,
+                                                 accuracy: 100, pp: 20)
+                                    })
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertEqual(lines[0].actor, .b)
+        XCTAssertTrue(lines[0].text.contains("리자몽"), lines[0].text)
+        XCTAssertTrue(lines[0].text.contains(L().itemName(.focusSash)),
+                      "무엇이 일했는지가 문구의 절반이다 — \(lines[0].text)")
     }
 
     /// 진행 중인 행동에 접히지 않는다 — 때린 쪽 줄에 붙으면 누가 버텼는지가 뒤바뀐다.
     func testTheTriggerLineIsNotFoldedIntoTheAttack() {
         let lines = BattleLog.lines([.move(.a, moveID: 33), .damage(.b, amount: 19, cause: .move),
                                      .heldItemTriggered(.b, .focusSash)],
-                                    l: L(.ko), name: { $0 == .a ? "거북왕" : "리자몽" },
+                                    l: L(), name: { $0 == .a ? "거북왕" : "리자몽" },
                                     move: { _, id in
                                         MoveSpec(id: id, names: ["ko": "공격"], type: .normal,
                                                  power: 40, damageClass: .physical,

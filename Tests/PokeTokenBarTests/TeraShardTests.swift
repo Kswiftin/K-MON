@@ -162,13 +162,11 @@ final class TeraShardTests: XCTestCase {
         XCTAssertLessThan(price, RareCandy.price)
     }
 
-    /// 이름·효과 문구가 세 언어에 다 있다. 하나라도 비면 가방에 빈 줄이 뜬다.
-    func testTheShardIsNamedInEveryLanguage() {
-        for lang in AppLanguage.allCases {
-            let l = L(lang)
-            XCTAssertFalse(l.itemName(.teraShard).isEmpty)
-            XCTAssertFalse(l.teraShardEffectHint.isEmpty)
-        }
+    /// 이름·효과 문구가 채워져 있다. 하나라도 비면 가방에 빈 줄이 뜬다.
+    func testTheShardIsNamed() {
+        let l = L()
+        XCTAssertFalse(l.itemName(.teraShard).isEmpty)
+        XCTAssertFalse(l.teraShardEffectHint.isEmpty)
         XCTAssertTrue(ItemKind.nameable.contains(.teraShard),
                       "이름표에 없으면 대화·터미널이 이 아이템을 부를 수 없다")
     }
@@ -192,14 +190,11 @@ final class TeraShardTests: XCTestCase {
 
     /// **모든 아이템에 설명이 있다.** 설명이 진화 갈래로 흘러간 아이템은 빈 문자열이 되고,
     /// 가방·상점에 빈 줄이 뜬다(문구를 안 적었다는 신호가 화면에 안 나온다).
-    func testEveryItemHasADescriptionInEveryLanguage() {
-        for lang in AppLanguage.allCases {
-            let l = L(lang)
-            for kind in ItemKind.allCases {
-                XCTAssertFalse(l.itemDescription(kind).isEmpty,
-                               "\(kind.rawValue) 의 \(lang) 설명이 비었다")
-                XCTAssertFalse(l.itemName(kind).isEmpty, "\(kind.rawValue) 의 \(lang) 이름이 비었다")
-            }
+    func testEveryItemHasADescription() {
+        let l = L()
+        for kind in ItemKind.allCases {
+            XCTAssertFalse(l.itemDescription(kind).isEmpty, "\(kind.rawValue) 의 설명이 비었다")
+            XCTAssertFalse(l.itemName(kind).isEmpty, "\(kind.rawValue) 의 이름이 비었다")
         }
     }
 

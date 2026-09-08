@@ -874,8 +874,7 @@ struct MoveGridView: View {
         .buttonStyle(.plain)
         .disabled(!selectable)
         // 잠긴 칸의 툴팁은 **잠금 사유**다 — 기술 설명이 그대로면 왜 못 누르는지 알 수 없다.
-        .help(lock.map { L(language).moveSelectionLockReason($0) }
-            ?? move.description(language) ?? move.name(language))
+        .help(lock.map { L().moveSelectionLockReason($0) } ?? move.flavorText ?? move.name)
     }
 
     private func effectivenessHint(_ move: MoveSpec) -> (text: String, color: Color)? {

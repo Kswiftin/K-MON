@@ -319,12 +319,9 @@ final class BattleRedirectTests: XCTestCase {
     // MARK: 로그
 
     /// 유도가 붙은 줄이 **세 기술 모두** 자기 문구를 가진다 — 같으면 로그가 어느 유도인지 못 말한다.
-    func testEachDrawHasItsOwnWordingInEveryLanguage() {
-        for lang in AppLanguage.allCases {
-            let l = L(lang)
-            let lines = [BattleVolatile.followMe, .ragePowder, .spotlight]
-                .map { l.battleVolatileStarted("리자몽", $0) }
-            XCTAssertEqual(Set(lines).count, 3, "\(lang) 에서 유도 문구가 겹친다")
-        }
+    func testEachDrawHasItsOwnWording() {
+        let lines = [BattleVolatile.followMe, .ragePowder, .spotlight]
+            .map { L().battleVolatileStarted("리자몽", $0) }
+        XCTAssertEqual(Set(lines).count, 3, "유도 문구가 겹친다")
     }
 }
