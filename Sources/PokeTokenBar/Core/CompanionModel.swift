@@ -1126,26 +1126,33 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     /// payload 를 든 갈래가 생겨 자동 합성이 끊긴다 — 손으로 짓되 **타입 강화는 표에서 만든다**
     /// (18줄을 손으로 적으면 타입 하나가 빠져도 컴파일이 통과한다).
     static var allCases: [HeldItemEffect] {
-        [.lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
-         .flameOrb, .toxicOrb, .assaultVest, .pinchCrit, .pinchHeal]
-            + PokemonType.allCases.map(HeldItemEffect.typeBoost)
-            + PokemonType.allCases.map(HeldItemEffect.resistBerry)
-            + HeldItemEffect.pinchRaisedStats.map(HeldItemEffect.pinchStatBoost)
-            + PokemonType.allCases.map(HeldItemEffect.gem)
-            + [.ironBall, .movesLast, .lightBall, .thickClub, .metalPowder, .quickPowder,
-               .luckyPunch, .leek, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
-               .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
-               .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
-               .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
-               .floatStone,
-               .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-               .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
-               .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-               .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
-               .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-               .loadedDice, .bindingBand, .gripClaw, .throatSpray,
-               .quickClaw, .focusBand]
-            + [.pinchBestBoost, .pinchSureHit, .pinchHurry]
+        // 한 표현식으로 이어 붙이면 타입체커가 시간 안에 못 푼다(CI 빌드 실패, 2026-09-09).
+        // 조각마다 타입을 못박아 추론을 끊는다.
+        var all: [HeldItemEffect] = [.lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs,
+                                     .choiceScarf, .flameOrb, .toxicOrb, .assaultVest,
+                                     .pinchCrit, .pinchHeal]
+        all += PokemonType.allCases.map(HeldItemEffect.typeBoost)
+        all += PokemonType.allCases.map(HeldItemEffect.resistBerry)
+        all += HeldItemEffect.pinchRaisedStats.map(HeldItemEffect.pinchStatBoost)
+        all += PokemonType.allCases.map(HeldItemEffect.gem)
+        let plain: [HeldItemEffect] = [
+            .ironBall, .movesLast, .lightBall, .thickClub, .metalPowder, .quickPowder,
+            .luckyPunch, .leek, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+            .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+            .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+            .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+            .floatStone,
+            .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+            .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+            .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+            .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+            .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+            .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+            .quickClaw, .focusBand,
+            .pinchBestBoost, .pinchSureHit, .pinchHurry,
+        ]
+        all += plain
+        return all
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
