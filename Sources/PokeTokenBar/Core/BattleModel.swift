@@ -389,14 +389,34 @@ struct MoveSpec: Codable, Sendable, Equatable, Identifiable {
     ///           리셋해야 한다. 만들면 클램프를 지우고 속임수에 게이트를 태운다.
     static let flinchChanceCap = 30
     var flinchPercent: Int { min(Self.flinchChanceCap, max(0, flinchChance ?? 0)) }
-    func hitCount(rng: inout SplitMix64) -> Int {
+    /// 이 기술이 상대를 만지는가 — 쇼다운의 `contact` 플래그다. PokéAPI 에는 접촉 열이 아예 없어
+    /// 이 데이터만이 답한다(손 목록이면 277개가 조용히 낡는다).
+    var makesContact: Bool { ShowdownMoveData.makingContact.contains(id) }
+    /// 펀치 기술인가 — 쇼다운의 `punch` 플래그다(펀치글러브가 읽는다).
+    var isPunch: Bool { ShowdownMoveData.punching.contains(id) }
+    /// 소리 기술인가 — 쇼다운의 `sound` 플래그다(목스프레이가 읽는다).
+    var isSound: Bool { ShowdownMoveData.sound.contains(id) }
+
+    /// 이번에 맞는 횟수. `minimumHits` 는 속임수주사위가 주는 하한이다 — **단발 기술은 만지지
+    /// 않는다**(하한을 그냥 얹으면 몸통박치기가 네 번 맞는다). 인자로 받는 이유는 난수 소비다:
+    /// 하한이 있어도 폭은 그대로 뽑아야 두 피어의 rng 가 갈리지 않는다.
+    func hitCount(rng: inout SplitMix64, minimumHits: Int?) -> Int {
         let low = min(10, max(1, minHits ?? 1))
         let high = min(10, max(low, maxHits ?? low))
         guard low != high else { return low }
+        let rolled: Int
         if low == 2, high == 5 {
-            switch rng.next() % 8 { case 0...2: return 2; case 3...5: return 3; case 6: return 4; default: return 5 }
+            switch rng.next() % 8 {
+            case 0...2: rolled = 2
+            case 3...5: rolled = 3
+            case 6:     rolled = 4
+            default:    rolled = 5
+            }
+        } else {
+            rolled = low + Int(rng.next() % UInt64(high - low + 1))
         }
-        return low + Int(rng.next() % UInt64(high - low + 1))
+        guard let minimumHits else { return rolled }
+        return min(high, max(rolled, minimumHits))
     }
     var hasModeledStatusEffect: Bool {
         (inflictedStatus != nil && targetsUser != true)
@@ -1480,6 +1500,15 @@ struct BattleSide: Sendable, Equatable {
     /// 있어서, 뿌린 쪽이 교체돼도 그 자리에 선 개체가 받는다(본가와 같다).
     /// 자리를 배열의 몇 번째로 푸는 것은 모드의 일이다 — 모드마다 배열이 다르다.
     var leechSeedSource: BattleActor?
+    /// 걸린 조이기의 잔뎀 분모 — 거는 쪽이 조임밴드를 쥐고 있었으면 그 값이 여기 남는다.
+    /// 값이 없으면 기본 분모(`BattleVolatile.residualDamage`)다. 걸릴 때 정해지는 이유는 턴 끝이
+    /// 개체 하나만 본다는 것이다 — 그 자리에서는 거는 쪽의 물건을 다시 물을 수 없다.
+    var trapDamageDivisor: Int?
+    /// 배틀 중에 **받아 쥔** 물건 — 지금은 접촉으로 옮겨 오는 끈적끈적바늘 하나다.
+    ///
+    /// 스냅샷을 고쳐 쓰지 않는 이유는 그것이 와이어의 값이라서다(`heldItemConsumed` 와 같은
+    /// 판단이다). 그래서 "지금 무엇을 쥐고 있나" 를 묻는 자리는 `activeHeldItem` 하나다.
+    var acquiredItem: ItemKind?
     /// 남은 혼란 턴 — 이 수만큼 자멸 판정을 굴린다.
     var confusionTurns = 0
     var flinched = false
@@ -1580,8 +1609,12 @@ struct BattleSide: Sendable, Equatable {
     /// 남으면 그 자리만 1회용 제약을 잃는다(기합의띠가 회복기 하나로 무적이 된다).
     /// 종 전용 물건(전기구슬 부류)의 **종 조건도 여기서** 본다 — 배율을 곱하는 자리마다 물으면
     /// 한 자리만 빠뜨렸을 때 그 배율만 아무에게나 붙는다.
+    /// 지금 이 개체가 쥔 물건 — 배틀 중에 받아 쥔 것이 있으면 그것이다. 로그에 이름을 싣는
+    /// 자리도 이것을 본다(스냅샷을 직접 보면 옮겨 온 바늘이 옛 이름으로 남는다).
+    var activeHeldItem: ItemKind? { acquiredItem ?? snapshot.heldItem }
+
     var heldEffect: HeldItemEffect? {
-        guard !heldItemConsumed, let effect = snapshot.heldItem?.heldBattleEffect else { return nil }
+        guard !heldItemConsumed, let effect = activeHeldItem?.heldBattleEffect else { return nil }
         if let species = effect.restrictedSpecies, !species.contains(snapshot.speciesID) { return nil }
         return effect
     }
@@ -1923,7 +1956,11 @@ enum BattleEngine {
     ///      + 방아쇠 하나에 랭크를 올리고 사라지는 물건 10종(약점보험·구근·충전지·눈덩이·
     ///      빛이끼가 맞은 히트에, 허탕보험이 빗나간 자기 기술에, 씨앗 넷이 발밑의 필드에 답한다).
     ///      구버전 피어는 그 랭크를 안 올려 그 뒤 모든 데미지·명중이 갈린다.
-    static let rulesVersion = 35
+    ///      + 기술의 성질에 답하는 물건 8종(울퉁불퉁멧·끈적끈적바늘의 접촉 반응, 방호패드·
+    ///      펀치글러브의 접촉 해제, 펀치글러브의 펀치 ×1.1, 속임수주사위의 다단 하한 4,
+    ///      조임밴드의 조이기 잔뎀 1/6, 끈기갈고리손톱의 조이기 7턴, 목스프레이의 특공 상승).
+    ///      **rng 소비까지 바꾼다** — 끈기갈고리손톱은 4~5턴 난수를 굴리지 않는다.
+    static let rulesVersion = 36
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2280,7 +2317,8 @@ enum BattleEngine {
            Int(rng.next() % 100) >= chance {
             return AttackOutcome(missed: true, damage: 0, effectiveness: 1, isCritical: false)
         }
-        let requestedHits = move.hitCount(rng: &rng)
+        let requestedHits = move.hitCount(rng: &rng,
+                                          minimumHits: attacker.heldEffect?.minimumMultiHits)
         // 남은 HP 는 지역에서 센다 — `defender` 는 값 사본이라 히트 사이에 줄지 않는다.
         // 안 세면 이미 쓰러진 상대를 남은 횟수만큼 계속 때린다.
         var remaining = defender.hp
@@ -2508,7 +2546,7 @@ enum BattleEngine {
         // `effectiveness` 가 1 이라 달인의띠가 저절로 빠진다(게이트를 따로 두지 않는 이유).
         if let scale = attacker.heldEffect?.outgoingDamageScale(
                 damageClass: move.damageClass, effectiveness: effectiveness,
-                consecutiveUses: attacker.consecutiveMoveUses) {
+                consecutiveUses: attacker.consecutiveMoveUses, isPunch: move.isPunch) {
             damage = damage * scale.numerator / scale.denominator
         }
         // 장막은 **급소를 못 막는다**(3세대 이후). 급소가 뚫지 못하면 장막 한 장으로 판이 잠긴다.
@@ -2775,7 +2813,7 @@ extension BattleEngine {
     /// 모드만 빠뜨리면 거기서만 열매가 안 터진다. 소모가 1회용을 보장하므로 결과는 같다.
     static func triggerPinchBerry(_ side: inout BattleSide, actor: BattleActor) -> [BattleEvent] {
         guard side.isAlive, let action = side.heldEffect?.pinchAction,
-              let item = side.snapshot.heldItem,
+              let item = side.activeHeldItem,
               side.hp * HeldItemBalance.pinchThresholdDivisor <= side.stats.hp else { return [] }
         side.heldItemConsumed = true
         var events: [BattleEvent] = [.heldItemTriggered(actor, item)]
@@ -2860,7 +2898,10 @@ extension BattleEngine {
             // 엔진의 최종 HP 가 갈리고, 쓰러진 개체의 해제 줄이 기절 뒤에 하나 더 붙는다.
             guard side.isAlive else { continue }
             if let residual = volatileStatus.residualDamage {
-                let amount = max(1, side.stats.hp / residual.divisor)
+                // 조이기만 분모가 걸릴 때 정해진다 — 조임밴드가 키운 값이 있으면 그것을 쓴다.
+                let divisor = volatileStatus == .partiallyTrapped
+                    ? (side.trapDamageDivisor ?? residual.divisor) : residual.divisor
+                let amount = max(1, side.stats.hp / divisor)
                 side.hp = max(0, side.hp - amount)
                 events.append(.damage(actor, amount: amount, cause: residual.cause))
             }
@@ -3104,7 +3145,7 @@ extension BattleEngine {
     /// 붙으면(±6 에 닿아 있으면) 물건도 남는다 — 아무 일도 없었는데 사라지면 로그가 거짓말을 한다.
     static func applyItemStageGains(_ gains: [StatChange], to side: inout BattleSide,
                                     actor: BattleActor) -> [BattleEvent] {
-        guard side.isAlive, let item = side.snapshot.heldItem else { return [] }
+        guard side.isAlive, let item = side.activeHeldItem else { return [] }
         var events: [BattleEvent] = []
         for gain in gains {
             let applied = side.changeStage(gain.stat, by: gain.change)
@@ -3115,6 +3156,31 @@ extension BattleEngine {
         return events + [.heldItemTriggered(actor, item)]
     }
 
+    /// 접촉으로 맞은 쪽의 물건이 **때린 쪽에** 하는 일 — 울퉁불퉁멧은 깎고, 끈적끈적바늘은
+    /// 옮겨 간다. 한 자리인 이유는 조건이 같아서다: 둘 다 "접촉으로 맞았다" 만 본다.
+    ///
+    /// 바늘이 옮겨 갈 자리는 **빈손일 때만** 이다(본가와 같다) — 안 보면 상대의 물건을 조용히
+    /// 덮어써, 지니고 싸운 물건이 배틀 도중 사라진다.
+    static func applyContactEffects(attacker: inout BattleSide, defender: inout BattleSide,
+                                    attackerActor: BattleActor,
+                                    defenderActor: BattleActor) -> [BattleEvent] {
+        guard let effect = defender.heldEffect, let item = defender.activeHeldItem else { return [] }
+        var events: [BattleEvent] = []
+        if let divisor = effect.contactDamageDivisor {
+            let amount = min(max(1, attacker.stats.hp / divisor), attacker.hp)
+            attacker.hp -= amount
+            events.append(.damage(attackerActor, amount: amount, cause: .heldItem))
+            events.append(.heldItemTriggered(defenderActor, item))
+        }
+        if effect.transfersOnContact, attacker.activeHeldItem == nil || attacker.heldItemConsumed {
+            defender.heldItemConsumed = true
+            attacker.acquiredItem = item
+            attacker.heldItemConsumed = false
+            events.append(.heldItemTriggered(attackerActor, item))
+        }
+        return events
+    }
+
     /// 기술 하나가 랭크·잠금에 남긴 것에 답하는 물건들 — 하양허브·흉내허브·멘탈허브.
     ///
     /// 세 물건을 한 함수에 두는 이유는 부르는 자리가 같아서다: 셋 다 "기술이 끝난 지금" 을 본다.
@@ -3122,7 +3188,7 @@ extension BattleEngine {
     static func settleStageItems(_ side: inout BattleSide, actor: BattleActor,
                                  foeStagesBefore: [BattleStat: Int],
                                  foeStagesAfter: [BattleStat: Int]) -> [BattleEvent] {
-        guard let effect = side.heldEffect, let item = side.snapshot.heldItem, side.isAlive
+        guard let effect = side.heldEffect, let item = side.activeHeldItem, side.isAlive
         else { return [] }
         var events: [BattleEvent] = []
         if effect.copiesFoeStatBoosts {
@@ -3445,6 +3511,12 @@ extension BattleEngine {
         let hitsSubstitute = defender.hasSubstitute && move.targetsUser != true
             && !ShowdownMoveData.bypassingSubstitute.contains(move.id)
         var events: [BattleEvent] = []
+        // 목스프레이는 **소리 기술을 쓴 것만** 본다 — 맞았는지 빗나갔는지를 묻지 않으므로 명중
+        // 판정 앞이다. 막힌 기술은 위에서 이미 돌아갔으니 여기 오지 않는다(쓰지 못한 턴이다).
+        // 광역기가 대상마다 이 자리를 지나도 두 번 오르지 않는다: 첫 번에 소모된다.
+        if move.isSound, let gains = attacker.heldEffect?.stageGainOnOwnSoundMove {
+            events += applyItemStageGains(gains, to: &attacker, actor: attackerActor)
+        }
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move,
                                     field: field, attackerTeam: attackerTeam,
                                     defenderTeam: defenderTeam, rng: &rng)
@@ -3556,7 +3628,7 @@ extension BattleEngine {
         if endured { events.append(.volatileTriggered(defenderActor, .endure)) }
         // 띠가 버틴 줄도 데미지 줄과 **따로** 낸다 — 만피가 1 이었던 개체(최대 HP 1)는 자른
         // 데미지가 0 이라 위 데미지 블록을 아예 지나지 않는다(인내와 같은 이유).
-        if sashed, let item = defender.snapshot.heldItem {
+        if sashed, let item = defender.activeHeldItem {
             events.append(.heldItemTriggered(defenderActor, item))
         }
         // 약점 반감 열매는 **깎은 그 히트에서** 사라진다. 조건을 여기서 다시 묻지 않고
@@ -3565,12 +3637,12 @@ extension BattleEngine {
         //
         // **층이 대신 맞아도 소모한다**(기합의띠와 반대다). 열매는 이미 그 히트의 데미지를 깎았고,
         // 깎은 채로 남겨 두면 인형이 서 있는 동안 반감이 공짜로 무한히 계속된다.
-        if outcome.berryHalved, let item = defender.snapshot.heldItem {
+        if outcome.berryHalved, let item = defender.activeHeldItem {
             defender.heldItemConsumed = true
             events.append(.heldItemTriggered(defenderActor, item))
         }
         // 주얼은 **올린 그 기술에서** 사라진다. 층이 대신 맞아도 마찬가지다 — 위력은 이미 올랐다.
-        if outcome.gemSpent, let item = attacker.snapshot.heldItem {
+        if outcome.gemSpent, let item = attacker.activeHeldItem {
             attacker.heldItemConsumed = true
             events.append(.heldItemTriggered(attackerActor, item))
         }
@@ -3585,9 +3657,20 @@ extension BattleEngine {
         // 풍선은 **데미지가 들어간 히트**에서 터진다(본가와 같다) — 변화기와 빗나간 기술은
         // 안 터뜨린다. 층이 대신 맞으면 터지지 않는다: 인형이 맞은 것이라 주인은 아직 떠 있다.
         if damage > 0, !hitsSubstitute, defender.heldEffect?.consumedWhenHit == true,
-           let item = defender.snapshot.heldItem {
+           let item = defender.activeHeldItem {
             defender.heldItemConsumed = true
             events.append(.heldItemTriggered(defenderActor, item))
+        }
+        // 접촉에 답하는 물건(울퉁불퉁멧·끈적끈적바늘)은 **때린 쪽을 만진다** — 위 물건들과 주인이
+        // 반대라서 자리를 나눈다. 접촉 여부는 데이터가 답하고(`MoveSpec.makesContact`), 때린 쪽의
+        // 물건이 그 접촉을 없앨 수 있다(방호패드는 전부, 펀치글러브는 펀치만).
+        //
+        // 층이 대신 맞으면 답하지 않는다 — 인형을 만진 것이라 주인에게 닿지 않았다.
+        if damage > 0, !hitsSubstitute, move.makesContact, attacker.isAlive,
+           attacker.heldEffect?.suppressesContact(isPunch: move.isPunch) != true {
+            events += applyContactEffects(attacker: &attacker, defender: &defender,
+                                          attackerActor: attackerActor,
+                                          defenderActor: defenderActor)
         }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         // 층에 막힌 기술은 2차효과·상대 volatile 도 주인에게 닿지 않는다 — 인형은 마비되지 않는다.
@@ -3719,9 +3802,15 @@ extension BattleEngine {
             }
         default: break
         }
-        let turns = volatileStatus == .partiallyTrapped
-            ? BattleVolatile.trapTurnFloor + Int(rng.next() % BattleVolatile.trapTurnSpread)
-            : volatileStatus.foeDuration
+        // 끈기갈고리손톱은 4~5턴 난수를 **대신한다** — 값이 있으면 굴리지 않는다. 두 피어가 같은
+        // 물건을 스냅샷으로 보므로 rng 소비가 갈리지 않는다(은밀망토와 같은 자리의 판단이다).
+        let turns: Int
+        if volatileStatus == .partiallyTrapped {
+            turns = attacker.heldEffect?.trapTurns
+                ?? BattleVolatile.trapTurnFloor + Int(rng.next() % BattleVolatile.trapTurnSpread)
+        } else {
+            turns = volatileStatus.foeDuration
+        }
         guard defender.start(volatileStatus, turns: turns) else {
             attacker.lastMoveFailed = true
             return [.immune(defenderActor)]
@@ -3729,6 +3818,11 @@ extension BattleEngine {
         attacker.lastMoveFailed = false
         // 빨아낸 HP 를 받을 자리를 함께 적는다. 안 적으면 씨가 박혀도 아무도 회복하지 않는다.
         if volatileStatus == .leechSeed { defender.leechSeedSource = attackerActor }
+        // 조임밴드가 키운 잔뎀도 **걸린 쪽에** 적는다(씨뿌리기의 회복 자리와 같은 짝이다) — 턴 끝은
+        // 개체 하나만 보므로, 거는 쪽의 물건을 그때 다시 물을 방법이 없다.
+        if volatileStatus == .partiallyTrapped {
+            defender.trapDamageDivisor = attacker.heldEffect?.trapDamageDivisor
+        }
         // 어느 칸을 막는지는 상태와 **함께** 적는다(층 HP 와 같은 짝이다) — 위 조건 검사를 이미
         // 지났으므로 여기서 다시 실패할 수 없다.
         switch volatileStatus {

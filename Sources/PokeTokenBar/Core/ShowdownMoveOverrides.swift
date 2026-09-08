@@ -308,6 +308,356 @@ enum ShowdownMoveData {
         301,  // Ice Ball
     ]
 
+    /// Moves that touch the target — Showdown's `contact` move flag. The engine implements the
+    /// contact rule once (Rocky Helmet, Sticky Barb, Protective Pads) and asks here which moves
+    /// carry the flag; PokéAPI has no contact column at all, so nothing else can answer.
+    static let makingContact: Set<Int> = [
+        1,  // Pound
+        2,  // Karate Chop
+        3,  // Double Slap
+        4,  // Comet Punch
+        5,  // Mega Punch
+        7,  // Fire Punch
+        8,  // Ice Punch
+        9,  // Thunder Punch
+        10,  // Scratch
+        11,  // Vise Grip
+        12,  // Guillotine
+        15,  // Cut
+        17,  // Wing Attack
+        19,  // Fly
+        20,  // Bind
+        21,  // Slam
+        22,  // Vine Whip
+        23,  // Stomp
+        24,  // Double Kick
+        25,  // Mega Kick
+        26,  // Jump Kick
+        27,  // Rolling Kick
+        29,  // Headbutt
+        30,  // Horn Attack
+        31,  // Fury Attack
+        32,  // Horn Drill
+        33,  // Tackle
+        34,  // Body Slam
+        35,  // Wrap
+        36,  // Take Down
+        37,  // Thrash
+        38,  // Double-Edge
+        44,  // Bite
+        64,  // Peck
+        65,  // Drill Peck
+        66,  // Submission
+        67,  // Low Kick
+        68,  // Counter
+        69,  // Seismic Toss
+        70,  // Strength
+        80,  // Petal Dance
+        91,  // Dig
+        98,  // Quick Attack
+        99,  // Rage
+        117,  // Bide
+        122,  // Lick
+        127,  // Waterfall
+        128,  // Clamp
+        130,  // Skull Bash
+        132,  // Constrict
+        136,  // High Jump Kick
+        141,  // Leech Life
+        146,  // Dizzy Punch
+        152,  // Crabhammer
+        154,  // Fury Swipes
+        158,  // Hyper Fang
+        162,  // Super Fang
+        163,  // Slash
+        165,  // Struggle
+        167,  // Triple Kick
+        168,  // Thief
+        172,  // Flame Wheel
+        175,  // Flail
+        179,  // Reversal
+        183,  // Mach Punch
+        185,  // Feint Attack
+        200,  // Outrage
+        205,  // Rollout
+        206,  // False Swipe
+        209,  // Spark
+        210,  // Fury Cutter
+        211,  // Steel Wing
+        216,  // Return
+        218,  // Frustration
+        223,  // Dynamic Punch
+        224,  // Megahorn
+        228,  // Pursuit
+        229,  // Rapid Spin
+        231,  // Iron Tail
+        232,  // Metal Claw
+        233,  // Vital Throw
+        238,  // Cross Chop
+        242,  // Crunch
+        245,  // Extreme Speed
+        249,  // Rock Smash
+        252,  // Fake Out
+        263,  // Facade
+        264,  // Focus Punch
+        265,  // Smelling Salts
+        276,  // Superpower
+        279,  // Revenge
+        280,  // Brick Break
+        282,  // Knock Off
+        283,  // Endeavor
+        291,  // Dive
+        292,  // Arm Thrust
+        299,  // Blaze Kick
+        301,  // Ice Ball
+        302,  // Needle Arm
+        305,  // Poison Fang
+        306,  // Crush Claw
+        309,  // Meteor Mash
+        310,  // Astonish
+        325,  // Shadow Punch
+        327,  // Sky Uppercut
+        332,  // Aerial Ace
+        337,  // Dragon Claw
+        340,  // Bounce
+        342,  // Poison Tail
+        343,  // Covet
+        344,  // Volt Tackle
+        348,  // Leaf Blade
+        358,  // Wake-Up Slap
+        359,  // Hammer Arm
+        360,  // Gyro Ball
+        365,  // Pluck
+        369,  // U-turn
+        370,  // Close Combat
+        371,  // Payback
+        372,  // Assurance
+        376,  // Trump Card
+        378,  // Wring Out
+        386,  // Punishment
+        387,  // Last Resort
+        389,  // Sucker Punch
+        394,  // Flare Blitz
+        395,  // Force Palm
+        398,  // Poison Jab
+        400,  // Night Slash
+        401,  // Aqua Tail
+        404,  // X-Scissor
+        407,  // Dragon Rush
+        409,  // Drain Punch
+        413,  // Brave Bird
+        416,  // Giga Impact
+        418,  // Bullet Punch
+        419,  // Avalanche
+        421,  // Shadow Claw
+        422,  // Thunder Fang
+        423,  // Ice Fang
+        424,  // Fire Fang
+        425,  // Shadow Sneak
+        428,  // Zen Headbutt
+        431,  // Rock Climb
+        438,  // Power Whip
+        440,  // Cross Poison
+        442,  // Iron Head
+        447,  // Grass Knot
+        450,  // Bug Bite
+        452,  // Wood Hammer
+        453,  // Aqua Jet
+        457,  // Head Smash
+        458,  // Double Hit
+        462,  // Crush Grip
+        467,  // Shadow Force
+        480,  // Storm Throw
+        484,  // Heavy Slam
+        488,  // Flame Charge
+        490,  // Low Sweep
+        492,  // Foul Play
+        498,  // Chip Away
+        507,  // Sky Drop
+        509,  // Circle Throw
+        512,  // Acrobatics
+        514,  // Retaliate
+        525,  // Dragon Tail
+        528,  // Wild Charge
+        529,  // Drill Run
+        530,  // Dual Chop
+        531,  // Heart Stamp
+        532,  // Horn Leech
+        533,  // Sacred Sword
+        534,  // Razor Shell
+        535,  // Heat Crash
+        537,  // Steamroller
+        541,  // Tail Slap
+        543,  // Head Charge
+        544,  // Gear Grind
+        550,  // Bolt Strike
+        557,  // V-create
+        560,  // Flying Press
+        565,  // Fell Stinger
+        566,  // Phantom Force
+        577,  // Draining Kiss
+        583,  // Play Rough
+        609,  // Nuzzle
+        610,  // Hold Back
+        611,  // Infestation
+        612,  // Power-Up Punch
+        620,  // Dragon Ascent
+        658,  // Catastropika
+        660,  // First Impression
+        663,  // Darkest Lariat
+        665,  // Ice Hammer
+        667,  // High Horsepower
+        669,  // Solar Blade
+        675,  // Throat Chop
+        677,  // Anchor Shot
+        679,  // Lunge
+        680,  // Fire Lash
+        681,  // Power Trip
+        684,  // Smart Strike
+        688,  // Trop Kick
+        692,  // Dragon Hammer
+        693,  // Brutal Swing
+        696,  // Malicious Moonsault
+        699,  // Soul-Stealing 7-Star Strike
+        701,  // Pulverizing Pancake
+        706,  // Psychic Fangs
+        707,  // Stomping Tantrum
+        709,  // Accelerock
+        710,  // Liquidation
+        712,  // Spectral Thief
+        713,  // Sunsteel Strike
+        716,  // Zing Zap
+        718,  // Multi-Attack
+        721,  // Plasma Fists
+        724,  // Searing Sunraze Smash
+        726,  // Let's Snuggle Forever
+        729,  // Zippy Zap
+        731,  // Floaty Fall
+        735,  // Sizzly Slide
+        741,  // Veevee Volley
+        742,  // Double Iron Bash
+        746,  // Jaw Lock
+        754,  // Bolt Beak
+        755,  // Fishious Rend
+        776,  // Body Press
+        779,  // Snap Trap
+        781,  // Behemoth Blade
+        782,  // Behemoth Bash
+        784,  // Breaking Swipe
+        785,  // Branch Poke
+        789,  // Spirit Break
+        793,  // False Surrender
+        798,  // Steel Roller
+        803,  // Grassy Glide
+        806,  // Skitter Smack
+        808,  // Lash Out
+        812,  // Flip Turn
+        813,  // Triple Axel
+        814,  // Dual Wingbeat
+        817,  // Wicked Blow
+        818,  // Surging Strikes
+        823,  // Thunderous Kick
+        827,  // Dire Claw
+        828,  // Psyshield Bash
+        830,  // Stone Axe
+        834,  // Wave Crash
+        838,  // Headlong Rush
+        845,  // Ceaseless Edge
+        853,  // Axe Kick
+        857,  // Jet Punch
+        859,  // Spin Out
+        860,  // Population Bomb
+        861,  // Ice Spinner
+        862,  // Glaive Rush
+        865,  // Triple Dive
+        866,  // Mortal Spin
+        869,  // Kowtow Cleave
+        872,  // Aqua Step
+        873,  // Raging Bull
+        875,  // Psyblade
+        878,  // Collision Course
+        879,  // Electro Drift
+        884,  // Pounce
+        885,  // Trailblaze
+        887,  // Hyper Drill
+        889,  // Rage Fist
+        891,  // Bitter Blade
+        892,  // Double Shock
+        894,  // Comeuppance
+        910,  // Mighty Cleave
+        912,  // Hard Press
+        915,  // Temper Flare
+        916,  // Supercell Slam
+        918,  // Upper Hand
+    ]
+
+    /// Punching moves — Showdown's `punch` move flag, which Punching Glove reads.
+    static let punching: Set<Int> = [
+        4,  // Comet Punch
+        5,  // Mega Punch
+        7,  // Fire Punch
+        8,  // Ice Punch
+        9,  // Thunder Punch
+        146,  // Dizzy Punch
+        183,  // Mach Punch
+        223,  // Dynamic Punch
+        264,  // Focus Punch
+        309,  // Meteor Mash
+        325,  // Shadow Punch
+        327,  // Sky Uppercut
+        359,  // Hammer Arm
+        409,  // Drain Punch
+        418,  // Bullet Punch
+        612,  // Power-Up Punch
+        665,  // Ice Hammer
+        721,  // Plasma Fists
+        742,  // Double Iron Bash
+        817,  // Wicked Blow
+        818,  // Surging Strikes
+        838,  // Headlong Rush
+        857,  // Jet Punch
+        889,  // Rage Fist
+    ]
+
+    /// Sound moves — Showdown's `sound` move flag, which Throat Spray reads. Kept apart from
+    /// `bypassingSubstitute` (which every sound move also carries) because the two rules differ: a
+    /// handful of non-sound moves bypass the doll too.
+    static let sound: Set<Int> = [
+        45,  // Growl
+        46,  // Roar
+        47,  // Sing
+        48,  // Supersonic
+        103,  // Screech
+        173,  // Snore
+        195,  // Perish Song
+        215,  // Heal Bell
+        253,  // Uproar
+        304,  // Hyper Voice
+        319,  // Metal Sound
+        320,  // Grass Whistle
+        336,  // Howl
+        405,  // Bug Buzz
+        448,  // Chatter
+        496,  // Round
+        497,  // Echoed Voice
+        547,  // Relic Song
+        555,  // Snarl
+        568,  // Noble Roar
+        574,  // Disarming Voice
+        575,  // Parting Shot
+        586,  // Boomburst
+        590,  // Confide
+        664,  // Sparkling Aria
+        691,  // Clanging Scales
+        728,  // Clangorous Soulblaze
+        775,  // Clangorous Soul
+        786,  // Overdrive
+        826,  // Eerie Spell
+        871,  // Torch Song
+        914,  // Alluring Voice
+        917,  // Psychic Noise
+    ]
+
     /// Moves that reach the owner **through** a Substitute — every sound move, plus the few
     /// others Showdown marks with the `bypasssub` flag. The engine implements the doll once and
     /// asks here which moves ignore it, so a new sound move is not blocked in silence.

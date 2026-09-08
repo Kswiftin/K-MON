@@ -437,7 +437,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     부가효과는 확률을 안 굴려 rng 소비 횟수까지 갈린다.
     // 30: 방아쇠 하나에 랭크를 올리고 사라지는 물건 10종(약점보험·구근·충전지·눈덩이·빛이끼·
     //     허탕보험·씨앗 넷). 구버전 게스트는 그 랭크를 안 올려 뒤 라운드의 데미지·명중이 갈린다.
-    static let protocolVersion = 30
+    // 31: 기술의 성질(접촉·펀치·소리)에 답하는 물건 8종. 끈기갈고리손톱이 조이기 턴 난수를
+    //     굴리지 않아 rng 소비 횟수까지 갈리고, 접촉 반응은 때린 쪽의 HP 를 깎는다.
+    static let protocolVersion = 31
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

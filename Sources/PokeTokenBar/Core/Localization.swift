@@ -1642,6 +1642,14 @@ struct L {
         case .grassySeed: return "그래스시드"
         case .mistySeed: return "미스트시드"
         case .psychicSeed: return "사이코시드"
+        case .rockyHelmet: return "울퉁불퉁멧"
+        case .stickyBarb: return "끈적끈적바늘"
+        case .protectivePads: return "방호패드"
+        case .punchingGlove: return "펀치글러브"
+        case .loadedDice: return "속임수주사위"
+        case .bindingBand: return "조임밴드"
+        case .gripClaw: return "끈기갈고리손톱"
+        case .throatSpray: return "목스프레이"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1878,6 +1886,22 @@ struct L {
                 return "해당 필드 위에서 방어가 올라가고 사라져요."
             case .mistySeed, .psychicSeed:
                 return "해당 필드 위에서 특수방어가 올라가고 사라져요."
+            case .rockyHelmet:
+                return "몸이 닿는 기술로 나를 때린 상대가 체력을 조금 잃어요."
+            case .stickyBarb:
+                return "매 턴 체력이 조금 줄지만, 몸이 닿는 기술에 맞으면 때린 상대에게 옮겨 가요."
+            case .protectivePads:
+                return "내 기술이 상대에게 닿지 않아서 접촉 반격을 받지 않아요."
+            case .punchingGlove:
+                return "펀치 기술의 위력이 조금 올라가고, 그 기술은 상대에게 닿지 않아요."
+            case .loadedDice:
+                return "여러 번 맞히는 기술이 최소 네 번 맞아요."
+            case .bindingBand:
+                return "내가 건 조이기가 상대의 체력을 더 많이 깎아요."
+            case .gripClaw:
+                return "내가 건 조이기가 일곱 턴 동안 이어져요."
+            case .throatSpray:
+                return "소리 기술을 쓰면 특수공격이 올라가고 사라져요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1973,6 +1997,14 @@ struct L {
         case .grassySeed: return "그래스필드에서 방어 +1 / 1회"
         case .mistySeed: return "미스트필드에서 특방 +1 / 1회"
         case .psychicSeed: return "사이코필드에서 특방 +1 / 1회"
+        case .rockyHelmet: return "접촉 기술로 때린 상대 HP 1/6"
+        case .stickyBarb: return "매 턴 HP 1/8 감소 / 접촉 시 상대에게 이동"
+        case .protectivePads: return "내 기술의 접촉 해제"
+        case .punchingGlove: return "펀치 기술 위력 ×1.1 / 접촉 해제"
+        case .loadedDice: return "다단 기술 최소 4회"
+        case .bindingBand: return "내가 건 조이기 잔뎀 1/6"
+        case .gripClaw: return "내가 건 조이기 7턴"
+        case .throatSpray: return "소리 기술을 쓰면 특공 +1 / 1회"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

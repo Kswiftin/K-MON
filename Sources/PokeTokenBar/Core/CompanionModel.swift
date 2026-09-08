@@ -377,6 +377,13 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 필드다. 올리는 랭크는 셋 다 같은 값(`StatChange` 목록)으로 답해 올리는 자리를 하나로 둔다.
     case weaknessPolicy, absorbBulb, cellBattery, snowball, luminousMoss, blunderPolicy
     case electricSeed, grassySeed, mistySeed, psychicSeed
+    /// 기술의 **성질**에 답하는 물건 8종 — 접촉(울퉁불퉁멧·끈적끈적바늘·방호패드)·펀치
+    /// (펀치글러브)·소리(목스프레이)·다단(속임수주사위)·조이기(조임밴드·끈기갈고리손톱)다.
+    ///
+    /// 성질은 PokéAPI 에 없다(접촉·펀치·소리 플래그가 없는 테이블이다) — 쇼다운 데이터가 어느
+    /// 기술인지 답하고(`ShowdownMoveData.makingContact` 등) 엔진은 규칙만 구현한다.
+    case rockyHelmet, stickyBarb, protectivePads, punchingGlove
+    case loadedDice, bindingBand, gripClaw, throatSpray
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -420,6 +427,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -511,7 +520,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed:
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -598,6 +609,14 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .grassySeed:  return .grassySeed
         case .mistySeed:   return .mistySeed
         case .psychicSeed: return .psychicSeed
+        case .rockyHelmet: return .rockyHelmet
+        case .stickyBarb:  return .stickyBarb
+        case .protectivePads: return .protectivePads
+        case .punchingGlove: return .punchingGlove
+        case .loadedDice:  return .loadedDice
+        case .bindingBand: return .bindingBand
+        case .gripClaw:    return .gripClaw
+        case .throatSpray: return .throatSpray
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
@@ -805,10 +824,12 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-             .electricSeed, .grassySeed, .mistySeed, .psychicSeed:
+             .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .bindingBand, .gripClaw:
             return kebabRawValue
         // 9세대 물건 셋도 PokéAPI 에 스프라이트가 없다(통굽부츠·만능우산과 같은 자리).
-        case .mirrorHerb, .clearAmulet, .covertCloak, .blunderPolicy: return nil
+        case .mirrorHerb, .clearAmulet, .covertCloak, .blunderPolicy,
+             .punchingGlove, .loadedDice, .throatSpray: return nil
         // 통굽부츠·만능우산은 PokéAPI 에 스프라이트가 없다(8세대 아이템) — 규칙에서 파생시키면
         // 화면에 깨진 이미지가 남으므로 이모지 폴백만 쓴다(민트·테라피스와 같은 자리).
         case .heavyDutyBoots, .utilityUmbrella: return nil
@@ -919,6 +940,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .luminousMoss: return "🌱"; case .blunderPolicy: return "📋"
         case .electricSeed: return "⚡"; case .grassySeed: return "🌾"
         case .mistySeed: return "🌫️"; case .psychicSeed: return "🔯"
+        case .rockyHelmet: return "⛑️"; case .stickyBarb: return "🌵"
+        case .protectivePads: return "🧤"; case .punchingGlove: return "🥊"
+        case .loadedDice: return "🎲"; case .bindingBand: return "🎗️"
+        case .gripClaw: return "🪝"; case .throatSpray: return "💨"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -958,7 +983,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed:
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray:
             return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
@@ -1090,7 +1117,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
                .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
                .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
                .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-               .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed]
+               .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+               .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+               .loadedDice, .bindingBand, .gripClaw, .throatSpray]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -1159,6 +1188,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     /// 방아쇠 하나에 랭크를 올리고 사라지는 열 갈래 — 맞은 히트·빗나간 내 기술·발밑의 필드다.
     case weaknessPolicy, absorbBulb, cellBattery, snowball, luminousMoss, blunderPolicy
     case electricSeed, grassySeed, mistySeed, psychicSeed
+    /// 기술의 성질에 답하는 여덟 갈래 — 접촉·펀치·소리·다단·조이기다.
+    case rockyHelmet, stickyBarb, protectivePads, punchingGlove
+    case loadedDice, bindingBand, gripClaw, throatSpray
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -1184,7 +1216,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return nil
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return nil
         }
     }
 
@@ -1206,7 +1240,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return nil
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return nil
         }
     }
 
@@ -1232,7 +1268,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return nil
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return nil
         }
     }
 
@@ -1279,7 +1317,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return false
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return false
         }
     }
 
@@ -1314,7 +1354,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
-             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return nil
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
+             .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return nil
         }
     }
 
@@ -1376,9 +1418,11 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     /// 상성표를 안 보는 기술(발버둥·변화기)은 `effectiveness` 가 1 로 들어오므로 달인의띠가
     /// 저절로 빠진다 — 부르는 쪽이 게이트를 따로 두지 않아도 되는 이유다.
     func outgoingDamageScale(damageClass: MoveDamageClass, effectiveness: Double,
-                             consecutiveUses: Int) -> (numerator: Int, denominator: Int)? {
+                             consecutiveUses: Int,
+                             isPunch: Bool) -> (numerator: Int, denominator: Int)? {
         switch self {
-        case .muscleBand where damageClass == .physical,
+        case .punchingGlove where isPunch,
+             .muscleBand where damageClass == .physical,
              .wiseGlasses where damageClass == .special:
             return (HeldItemBalance.damageToolNumerator, HeldItemBalance.damageToolDenominator)
         case .expertBelt where effectiveness > 1:
@@ -1433,6 +1477,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     func endOfTurnHPChange(holderTypes: [PokemonType]) -> ResidualHPChange? {
         switch self {
         case .leftovers: return .heal(divisor: HeldItemBalance.leftoversDivisor)
+        // 끈적끈적바늘은 쥔 쪽을 깎는다 — 접촉으로 옮겨 가기 전까지 매 턴이다.
+        case .stickyBarb: return .hurt(divisor: HeldItemBalance.stickyBarbDivisor)
         case .blackSludge:
             return holderTypes.contains(.poison)
                 ? .heal(divisor: HeldItemBalance.leftoversDivisor)
@@ -1596,6 +1642,43 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         }
     }
 
+    /// **소리 기술을 쓰면** 올리는 랭크 — 목스프레이다. 맞은 히트·빗나감·필드 축과 나눈 이유는
+    /// 방아쇠가 기술의 성질이라서다: 맞고 안 맞고를 보지 않는다(쓴 것만으로 터진다).
+    var stageGainOnOwnSoundMove: [StatChange]? {
+        self == .throatSpray
+            ? [StatChange(stat: .spa, change: HeldItemBalance.reactorStages)] : nil
+    }
+
+    /// 접촉 기술로 때린 쪽이 잃는 최대 HP 의 분모 — 울퉁불퉁멧이다. 없으면 nil.
+    var contactDamageDivisor: Int? {
+        self == .rockyHelmet ? HeldItemBalance.rockyHelmetDivisor : nil
+    }
+
+    /// 접촉으로 **때린 쪽에게 옮겨 가는가** — 끈적끈적바늘이다. 소모(`heldItemConsumed`)와 다르다:
+    /// 없어지는 것이 아니라 상대가 쥐게 되므로, 옮기는 자리가 받는 쪽도 함께 만져야 한다.
+    var transfersOnContact: Bool { self == .stickyBarb }
+
+    /// 이 물건을 쥔 쪽의 기술이 **접촉에서 빠지는가** — 방호패드는 전부, 펀치글러브는 펀치만이다.
+    /// 인자를 받는 이유는 펀치글러브다: 같은 물건이 기술에 따라 답이 갈린다.
+    func suppressesContact(isPunch: Bool) -> Bool {
+        switch self {
+        case .protectivePads: return true
+        case .punchingGlove:  return isPunch
+        default:              return false
+        }
+    }
+
+    /// 다단 기술이 최소 몇 번 맞나 — 속임수주사위다. 없으면 nil(뽑은 횟수 그대로다).
+    var minimumMultiHits: Int? { self == .loadedDice ? HeldItemBalance.loadedDiceFloor : nil }
+
+    /// 이 물건을 쥔 쪽이 **거는** 조이기의 잔뎀 분모 — 조임밴드다. 쥔 쪽이 아니라 걸린 쪽이 깎이는
+    /// 물건이라, 거는 자리가 걸린 쪽에 값을 적어 둔다(`BattleSide.trapDamageDivisor`).
+    var trapDamageDivisor: Int? { self == .bindingBand ? HeldItemBalance.bindingBandDivisor : nil }
+
+    /// 이 물건을 쥔 쪽이 거는 조이기가 몇 턴 가나 — 끈기갈고리손톱이다. 값이 있으면 4~5턴 난수를
+    /// **굴리지 않는다**(두 피어가 같은 물건을 보므로 rng 소비가 갈리지 않는다).
+    var trapTurns: Int? { self == .gripClaw ? HeldItemBalance.gripClawTrapTurns : nil }
+
     /// 맞으면 사라지는가 — 풍선이다. 약점 반감 열매처럼 히트를 깎고 사라지는 것이 아니라 **데미지가
     /// 들어간 사실만** 보므로 조건을 물건 쪽에서 답한다(깎는 자리와 없애는 자리가 갈리지 않는다).
     var consumedWhenHit: Bool { self == .airBalloon }
@@ -1667,6 +1750,16 @@ enum HeldItemBalance {
     /// 대가만 있는 물건 셋(검은철구·느림보꼬리·만복향로)의 상점가 — 성능을 **깎는** 물건이라
     /// 값을 낮게 둔다. 0 원으로 두지 않는 이유는 자이로볼·카운터 조합에서 실제로 이득이라서다.
     static let drawbackPrice = 900
+    /// 울퉁불퉁멧이 때린 쪽에서 깎는 몫 — 최대 HP 의 1/6(본가와 같다).
+    static let rockyHelmetDivisor = 6
+    /// 끈적끈적바늘이 쥔 쪽에서 매 턴 깎는 몫 — 최대 HP 의 1/8(본가와 같다).
+    static let stickyBarbDivisor = 8
+    /// 속임수주사위가 보장하는 다단 횟수 — 최소 4회(본가와 같다).
+    static let loadedDiceFloor = 4
+    /// 조임밴드가 키운 조이기 잔뎀의 분모 — 1/8 이 1/6 이 된다(본가와 같다).
+    static let bindingBandDivisor = 6
+    /// 끈기갈고리손톱이 만드는 조이기 턴 — 7턴(본가와 같다). 기본은 4~5턴 난수다.
+    static let gripClawTrapTurns = 7
     /// 보험 둘이 올리는 랭크 — 두 단계다(본가와 같다). 한 번뿐인 대신 크다.
     static let policyStages = 2
     /// 타입 반응 넷과 씨앗 넷이 올리는 랭크 — 한 단계다.
