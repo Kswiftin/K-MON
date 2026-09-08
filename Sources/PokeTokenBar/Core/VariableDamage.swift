@@ -53,11 +53,11 @@ enum VariableDamage: Equatable, Sendable {
         case MoveID.lowKick, MoveID.grassKnot:
             // 체중을 못 받아왔으면 **실패시킨다.** 0 으로 접으면 "가장 가벼움"이 되어 모든 상대에게
             // 최저 위력이 나가고, 그게 맞는 값인지 화면에서 구별할 수 없다.
-            guard let weight = defender.snapshot.weightHectograms else { return .noEffect }
+            guard let weight = defender.effectiveWeightHectograms else { return .noEffect }
             return .power(targetWeightPower(weight))
         case MoveID.heavySlam, MoveID.heatCrash:
-            guard let mine = attacker.snapshot.weightHectograms,
-                  let theirs = defender.snapshot.weightHectograms, theirs > 0 else { return .noEffect }
+            guard let mine = attacker.effectiveWeightHectograms,
+                  let theirs = defender.effectiveWeightHectograms, theirs > 0 else { return .noEffect }
             return .power(weightRatioPower(attacker: mine, defender: theirs))
         case MoveID.trumpCard:    return .power(trumpCardPower(attacker, move: move))
         // 아래 부류는 PokéAPI 가 위력을 제대로 주는 기술이다 — 죽어 있지는 않았고, 상황 배율만

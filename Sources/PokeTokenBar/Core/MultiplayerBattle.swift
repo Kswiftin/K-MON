@@ -429,7 +429,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     조개껍질방울과 큰뿌리의 회복·검은오물의 턴 끝 회복 또는 데미지). 명중이 갈리면 난수
     //     소비 횟수까지 갈리고, `DamageCause` 에 원인 하나(`heldItem`)가 늘어 구버전 게스트는
     //     그 데미지 줄이 처음 뜨는 라운드에서 디코딩에 실패한다.
-    static let protocolVersion = 26
+    // 27: 면역·무시 물건 6종(풍선·통굽부츠·방진고글·만능우산·겨냥표적·가벼운돌). 구버전 게스트는
+    //     그 이름을 모르는 아이템으로 접어 땅 기술 면역·입장 데미지·날씨·체중 위력이 갈린다.
+    static let protocolVersion = 27
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

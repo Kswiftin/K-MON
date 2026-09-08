@@ -347,6 +347,14 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     case muscleBand, wiseGlasses, expertBelt, metronome, scopeLens
     case wideLens, zoomLens, brightPowder, laxIncense
     case shellBell, blackSludge, bigRoot
+    /// 면역·무시 물건 6종 — 앞의 도구들이 배율을 **얹는** 반면 이쪽은 이미 있는 규칙 한 줄을
+    /// 지닌 개체에게만 **건너뛴다**. 풍선은 땅에 닿지 않게 하고(맞으면 터진다), 통굽부츠는 입장
+    /// 데미지를, 방진고글은 날씨 잔뎀을, 만능우산은 볕·비의 위력 보정을 지운다. 겨냥표적은
+    /// 반대로 지닌 쪽의 타입 면역을 지워 **더 맞게** 하고, 가벼운돌은 체중을 절반으로 만든다.
+    ///
+    /// 탈출보타(조이기 탈출)는 여기 없다 — 이 엔진에는 교체를 막는 규칙 자체가 없어서, 넣으면
+    /// 아무것도 풀지 않는 물건이 된다(교체 강제 부류와 함께 간다).
+    case airBalloon, heavyDutyBoots, safetyGoggles, utilityUmbrella, ringTarget, floatStone
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -384,6 +392,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .brightPowder, .laxIncense,
              .shellBell, .blackSludge, .bigRoot,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -469,7 +479,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .brightPowder, .laxIncense,
-             .shellBell, .blackSludge, .bigRoot:
+             .shellBell, .blackSludge, .bigRoot,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -529,6 +541,12 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .shellBell:   return .shellBell
         case .blackSludge: return .blackSludge
         case .bigRoot:     return .bigRoot
+        case .airBalloon:     return .airBalloon
+        case .heavyDutyBoots: return .heavyDutyBoots
+        case .safetyGoggles:  return .safetyGoggles
+        case .utilityUmbrella: return .utilityUmbrella
+        case .ringTarget:     return .ringTarget
+        case .floatStone:     return .floatStone
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
@@ -731,8 +749,12 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         // 일반 배틀 도구 12종은 케이스명이 곧 API 아이템명이다(열매·주얼과 같은 규칙).
         case .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .brightPowder, .laxIncense,
-             .shellBell, .blackSludge, .bigRoot:
+             .shellBell, .blackSludge, .bigRoot,
+             .airBalloon, .safetyGoggles, .ringTarget, .floatStone:
             return kebabRawValue
+        // 통굽부츠·만능우산은 PokéAPI 에 스프라이트가 없다(8세대 아이템) — 규칙에서 파생시키면
+        // 화면에 깨진 이미지가 남으므로 이모지 폴백만 쓴다(민트·테라피스와 같은 자리).
+        case .heavyDutyBoots, .utilityUmbrella: return nil
         default: return evolutionRule?.apiItemName
         }
     }
@@ -826,6 +848,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .scopeLens: return "🔭"; case .wideLens: return "🔍"; case .zoomLens: return "🔎"
         case .brightPowder: return "🌟"; case .laxIncense: return "🕯️"
         case .shellBell: return "🐚"; case .blackSludge: return "🛢️"; case .bigRoot: return "🌳"
+        case .airBalloon: return "🎈"; case .heavyDutyBoots: return "🥾"
+        case .safetyGoggles: return "🥽"; case .utilityUmbrella: return "☂️"
+        case .ringTarget: return "🎯"; case .floatStone: return "🪨"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -859,7 +884,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
             return HeldItemBalance.speciesBoundPrice
         case .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
              .wideLens, .zoomLens, .brightPowder, .laxIncense,
-             .shellBell, .blackSludge, .bigRoot:
+             .shellBell, .blackSludge, .bigRoot,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone:
             return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
@@ -985,7 +1012,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
             + [.ironBall, .movesLast, .lightBall, .thickClub, .metalPowder, .quickPowder,
                .luckyPunch, .leek, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
                .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
-               .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge]
+               .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+               .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+               .floatStone]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -1044,6 +1073,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case shellBell, bigRoot
     /// 턴 끝에 독 타입이면 회복, 아니면 데미지 — 한 물건이 두 답을 낸다(`endOfTurnHPChange`).
     case blackSludge
+    /// 규칙 한 줄을 **건너뛰는** 여섯 갈래. 앞의 물건들이 배율을 얹는 것과 반대로, 이쪽은 이미
+    /// 있는 규칙(땅 접지·입장 데미지·날씨·타입 면역·체중)이 지닌 개체에게만 안 걸리게 한다.
+    case airBalloon, heavyDutyBoots, safetyGoggles, utilityUmbrella, ringTarget, floatStone
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -1063,7 +1095,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
              .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
-             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return nil
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone: return nil
         }
     }
 
@@ -1079,7 +1113,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
              .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
-             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return nil
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone: return nil
         }
     }
 
@@ -1099,7 +1135,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
              .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
-             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return nil
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone: return nil
         }
     }
 
@@ -1140,7 +1178,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
              .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
-             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return false
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone: return false
         }
     }
 
@@ -1169,7 +1209,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
              .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
              .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
-             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return nil
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
+             .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
+             .floatStone: return nil
         }
     }
 
@@ -1314,9 +1356,52 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     /// 방향이 반대라서다(한 축에 부호를 실으면 배율을 곱하는 자리가 둘 중 하나를 잊는다).
     var halvesSpeed: Bool { self == .ironBall }
 
-    /// 지닌 개체를 **땅에 닿게** 하는가 — 검은철구뿐이다. 비행·부유의 땅 기술 면역과 필드 효과가
-    /// 같은 이 값을 봐야 "지진은 맞는데 그래스필드는 안 받는" 반쪽 접지가 안 생긴다.
-    var groundsHolder: Bool { self == .ironBall }
+    /// 이 물건이 지닌 개체의 **발**을 어느 쪽으로 옮기는가 — nil 이면 타입·특성이 정하는 대로다.
+    ///
+    /// 내려놓는 검은철구와 띄우는 풍선을 한 축에 두는 이유는 묻는 자리가 같아서다: 땅 기술 면역
+    /// (`BattleEngine.typeMultiplier`)·발밑 함정(`applyEntryHazards`)·필드 효과가 전부
+    /// `BattleField.isGrounded` 하나를 본다. 축을 둘로 나누면 한 자리만 한쪽 물건을 빠뜨려
+    /// "지진은 맞는데 그래스필드는 안 받는" 반쪽 접지가 생긴다.
+    var groundContact: GroundContact? {
+        switch self {
+        case .ironBall:   return .grounded
+        case .airBalloon: return .airborne
+        default:          return nil
+        }
+    }
+
+    /// 발이 어디 있나 — 물건이 정하는 두 답. 참·거짓 하나로 두지 않는 이유는 "물건이 아무 말도
+    /// 안 한다"(nil)와 "땅에 닿는다"(false)가 다른 뜻이라서다.
+    enum GroundContact: Equatable, Sendable {
+        case grounded, airborne
+    }
+
+    /// 입장할 때 발밑에 깔린 것을 **통째로** 건너뛰는가 — 통굽부츠다. 뜬 개체가 압정을 피하는 것
+    /// (`groundContact`)과 나눈 이유는 범위다: 부츠는 스텔스록까지 피하고, 뜬 개체는 못 피한다.
+    var ignoresEntryHazards: Bool { self == .heavyDutyBoots }
+
+    /// 턴 끝의 날씨 데미지를 막는가 — 방진고글이다.
+    var blocksWeatherResidual: Bool { self == .safetyGoggles }
+
+    /// 볕·비의 **위력 보정**을 안 받는가 — 만능우산이다. 날씨 잔뎀 축(`blocksWeatherResidual`)과
+    /// 나눈 이유는 두 물건이 서로의 일을 안 하기 때문이다: 우산은 모래에 깎이고, 고글은 볕 아래서
+    /// 불꽃 기술이 그대로 세진다. 한 축으로 접으면 둘 중 하나가 본가에 없는 면역을 얻는다.
+    var ignoresWeatherPowerScale: Bool { self == .utilityUmbrella }
+
+    /// 지닌 개체의 **타입 면역**이 사라지는가 — 겨냥표적이다. 특성 면역(부유·타오르는불꽃)은
+    /// 그대로다: 본가와 같고, 상성표를 보는 자리와 특성을 보는 자리가 이미 갈려 있어 저절로 그렇다.
+    var ignoresTypeImmunity: Bool { self == .ringTarget }
+
+    /// 체중에 곱하는 분수 — 가벼운돌이다. 읽는 자리는 `BattleSide.effectiveWeightHectograms`
+    /// 하나다(체중을 보는 기술이 넷이라, 기술마다 물으면 한 기술만 돌을 못 본다).
+    var weightScale: (numerator: Int, denominator: Int)? {
+        self == .floatStone ? (HeldItemBalance.floatStoneNumerator,
+                               HeldItemBalance.floatStoneDenominator) : nil
+    }
+
+    /// 맞으면 사라지는가 — 풍선이다. 약점 반감 열매처럼 히트를 깎고 사라지는 것이 아니라 **데미지가
+    /// 들어간 사실만** 보므로 조건을 물건 쪽에서 답한다(깎는 자리와 없애는 자리가 갈리지 않는다).
+    var consumedWhenHit: Bool { self == .airBalloon }
 
     /// 같은 우선도 안에서 뒤로 밀리는가 — 느림보꼬리·만복향로다. 스피드 배율이 아니라 별도 축인
     /// 이유는 규칙이 다르기 때문이다: 아무리 빨라도 뒤로 가고, 우선도는 이기지 못한다.
@@ -1385,6 +1470,9 @@ enum HeldItemBalance {
     /// 대가만 있는 물건 셋(검은철구·느림보꼬리·만복향로)의 상점가 — 성능을 **깎는** 물건이라
     /// 값을 낮게 둔다. 0 원으로 두지 않는 이유는 자이로볼·카운터 조합에서 실제로 이득이라서다.
     static let drawbackPrice = 900
+    /// 가벼운돌이 체중에 곱하는 분수 — 본가와 같은 절반이다.
+    static let floatStoneNumerator = 1
+    static let floatStoneDenominator = 2
     /// 종 전용 물건의 상점가 — 쥘 수 있는 개체가 하나뿐이라 싸게 둔다.
     static let speciesBoundPrice = 1_200
 

@@ -1615,6 +1615,12 @@ struct L {
         case .shellBell: return "조개껍질방울"
         case .blackSludge: return "검은오물"
         case .bigRoot: return "큰뿌리"
+        case .airBalloon: return "풍선"
+        case .heavyDutyBoots: return "통굽부츠"
+        case .safetyGoggles: return "방진고글"
+        case .utilityUmbrella: return "만능우산"
+        case .ringTarget: return "겨냥표적"
+        case .floatStone: return "가벼운돌"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1801,6 +1807,18 @@ struct L {
                 return "체력을 흡수하는 기술의 회복량이 1.3배가 돼요."
             case .blackSludge:
                 return "독타입이 지니면 턴 끝에 회복하고, 그 밖의 포켓몬은 오히려 체력이 줄어요."
+            case .airBalloon:
+                return "공중에 떠서 땅타입 기술을 맞지 않아요. 다른 기술에 맞으면 터져서 사라져요."
+            case .heavyDutyBoots:
+                return "땅에 깔린 압정이나 스텔스록을 밟지 않아요."
+            case .safetyGoggles:
+                return "모래바람에 체력이 줄지 않아요."
+            case .utilityUmbrella:
+                return "쨍쨍한 햇살과 비의 위력 보정을 받지 않아요."
+            case .ringTarget:
+                return "원래 통하지 않는 타입의 기술도 맞게 돼요. 특성으로 막는 기술은 그대로예요."
+            case .floatStone:
+                return "몸무게가 절반이 돼요. 몸무게로 위력이 정해지는 기술에 덜 아파요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1869,6 +1887,12 @@ struct L {
         case .shellBell: return "준 데미지의 1/8 회복"
         case .bigRoot: return "흡수 회복 ×1.3"
         case .blackSludge: return "독타입 회복 / 그 외 데미지"
+        case .airBalloon: return "땅타입 면역 / 맞으면 터짐"
+        case .heavyDutyBoots: return "입장 함정 무시"
+        case .safetyGoggles: return "모래바람 데미지 무시"
+        case .utilityUmbrella: return "햇살·비 위력 보정 무시"
+        case .ringTarget: return "타입 면역 해제"
+        case .floatStone: return "몸무게 1/2"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

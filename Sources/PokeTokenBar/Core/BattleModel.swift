@@ -1370,9 +1370,10 @@ struct BattleField: Sendable, Equatable {
     /// 이 개체가 땅에 닿아 있는가 — 필드 효과는 닿은 쪽에만 걸린다.
     /// 비행 타입과 부유 특성이 뜬 쪽이다(공중에 뜨는 기술은 엔진에 없다).
     static func isGrounded(_ side: BattleSide) -> Bool {
-        // 검은철구는 뜬 개체를 내려놓는다 — 땅 기술 면역(`BattleEngine.typeMultiplier`)과 **같은
-        // 축**(`groundsHolder`)을 봐야 "지진은 맞는데 그래스필드는 안 받는" 반쪽 접지가 안 생긴다.
-        if side.heldEffect?.groundsHolder == true { return true }
+        // 물건이 발을 옮긴다 — 검은철구는 뜬 개체를 내려놓고 풍선은 닿은 개체를 띄운다. 땅 기술
+        // 면역(`BattleEngine.typeMultiplier`)과 **같은 축**(`groundContact`)을 봐야 "지진은 맞는데
+        // 그래스필드는 안 받는" 반쪽 접지가 안 생긴다.
+        if let contact = side.heldEffect?.groundContact { return contact == .grounded }
         return !side.activeTypes.contains(.flying) && side.ability != .levitate
     }
 
@@ -1570,6 +1571,17 @@ struct BattleSide: Sendable, Equatable {
         guard !heldItemConsumed, let effect = snapshot.heldItem?.heldBattleEffect else { return nil }
         if let species = effect.restrictedSpecies, !species.contains(snapshot.speciesID) { return nil }
         return effect
+    }
+
+    /// 지금 이 개체의 체중(헥토그램) — 물건이 깎으면 깎인 값이다. 값이 없으면(조회 실패) 그대로
+    /// `nil` 이라, 체중을 보는 기술은 예전처럼 실패한다(0 으로 접으면 "가장 가벼움" 이 된다).
+    ///
+    /// 체중을 보는 기술이 넷이라 읽는 자리를 하나로 둔다 — 기술마다 물건을 물으면 한 기술만
+    /// 가벼운돌을 못 본다.
+    var effectiveWeightHectograms: Int? {
+        guard let weight = snapshot.weightHectograms else { return nil }
+        guard let scale = heldEffect?.weightScale else { return weight }
+        return max(1, weight * scale.numerator / scale.denominator)
     }
 
     /// 이 개체의 특성 — 스냅샷의 슬러그를 해석한 값. 모르는 슬러그는 `nil` 이라 특성이 없는 것과 같다.
@@ -1886,7 +1898,11 @@ enum BattleEngine {
     ///      명중 배율은 **난수 소비까지** 바꾼다: 같은 seed 에서 맞고 빗나감이 갈리면 그 뒤 급소·
     ///      난수 폭을 뽑는 횟수가 달라진다. `DamageCause` 에 원인 하나(`heldItem`)가 늘어
     ///      구버전은 그 이벤트를 디코딩하지 못한다.
-    static let rulesVersion = 31
+    ///      + 면역·무시 물건 6종(풍선의 땅 기술 면역과 맞으면 터짐, 통굽부츠의 입장 데미지 무시,
+    ///      방진고글의 날씨 잔뎀 무시, 만능우산의 볕·비 위력 보정 무시, 겨냥표적의 타입 면역 해제,
+    ///      가벼운돌의 체중 절반). 구버전 피어는 그 이름을 모르는 값으로 접어 **통하지 않던 기술이
+    ///      통하고** 밟지 않던 함정을 밟는다 — 데미지가 아니라 맞고 안 맞고가 갈린다.
+    static let rulesVersion = 32
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2019,6 +2035,9 @@ enum BattleEngine {
                                   team: BattleTeamSlot, field: BattleField,
                                   rng: inout SplitMix64) -> [BattleEvent] {
         guard side.isAlive else { return [] }
+        // 통굽부츠는 **깔린 것 전부**를 건너뛴다 — 뜬 개체(`isGrounded`)가 압정만 피하는 것과
+        // 다르다. 그래서 층을 훑기 전에 통째로 빠진다.
+        guard side.heldEffect?.ignoresEntryHazards != true else { return [] }
         var events: [BattleEvent] = []
         let grounded = BattleField.isGrounded(side)
         for condition in BattleSideCondition.allCases where condition.isEntryHazard {
@@ -2103,12 +2122,18 @@ enum BattleEngine {
     /// 공식을 타는 히트(`resolveSingleHit`)와 안 타는 히트(`fixedOutcome`)가 각자 상성을 보던 동안
     /// 부유는 지진을 막고 갈라진땅은 못 막았다 — 특성이 붙는 갈림길은 여기 하나여야 한다.
     static func typeMultiplier(of move: MoveSpec, against defender: BattleSide) -> Double {
-        // 검은철구를 쥔 개체는 땅에 닿아 있으므로 땅 기술의 **면역만** 사라진다(부유 특성과 비행
-        // 타입 둘 다). 나머지 상성은 그대로다 — 비행/강철이면 강철 몫의 2배가 남는다.
-        let grounded = move.type == .ground && defender.heldEffect?.groundsHolder == true
+        // 물건이 발을 옮기면 땅 기술의 **면역만** 갈린다. 검은철구를 쥔 개체는 부유·비행이어도
+        // 지진을 맞고, 풍선을 쥔 개체는 어떤 타입이어도 안 맞는다. 나머지 상성은 그대로다 —
+        // 내려놓은 비행/강철이면 강철 몫의 2배가 남는다.
+        let contact = defender.heldEffect?.groundContact
+        if move.type == .ground, contact == .airborne { return 0 }
+        let grounded = move.type == .ground && contact == .grounded
         if !grounded, defender.ability?.immuneMoveType == move.type { return 0 }
         let types = grounded ? defender.activeTypes.filter { $0 != .flying } : defender.activeTypes
-        let multiplier = TypeChart.effectiveness(move.type, against: types)
+        var multiplier = TypeChart.effectiveness(move.type, against: types)
+        // 겨냥표적은 **상성표의** 0 만 지운다 — 위 특성 면역은 이미 지났으므로 부유는 그대로 막는다
+        // (본가와 같다). 배율을 1 로 두는 이유도 본가와 같다: 통하게만 하고 세게 만들지는 않는다.
+        if multiplier == 0, defender.heldEffect?.ignoresTypeImmunity == true { multiplier = 1 }
         if defender.ability == .wonderGuard, move.damageClass != .status, multiplier <= 1 { return 0 }
         return multiplier
     }
@@ -2391,7 +2416,10 @@ enum BattleEngine {
         // 날씨 보정 — 상성표를 보는 기술만 탄다(발버둥은 무속성이라 볕이 세게 만들 이유가 없다).
         // 정수 분수로 곱한다. 위 주석이 "날씨는 안 가져온다" 였던 자리다 — 날씨 레이어가 생겨서
         // 그 유예가 끝났다.
-        if !ignoresTypeChart, let weather = field.weather {
+        // 만능우산을 쥔 쪽은 볕·비를 안 본다 — **때리는 쪽** 기준이다(본가와 같다: 위력 보정은
+        // 기술을 내는 개체가 날씨를 어떻게 겪는지의 문제다).
+        if !ignoresTypeChart, let weather = field.weather,
+           attacker.heldEffect?.ignoresWeatherPowerScale != true {
             let scale = weather.damageScale(of: move.type)
             damage = damage * scale.numerator / scale.denominator
         }
@@ -2936,7 +2964,9 @@ extension BattleEngine {
                 events.append(.heal(actor, amount: healed))
             }
         }
-        guard side.isAlive, let weather = field.weather,
+        // 방진고글은 날씨의 턴 끝 데미지만 막는다 — 위력 보정(만능우산)은 여기를 지나지 않는다.
+        guard side.isAlive, side.heldEffect?.blocksWeatherResidual != true,
+              let weather = field.weather,
               let amount = weather.residualDamage(for: side.activeTypes, maxHP: side.stats.hp)
         else { return events }
         side.hp = max(0, side.hp - amount)
@@ -3417,6 +3447,13 @@ extension BattleEngine {
         if outcome.gemSpent, let item = attacker.snapshot.heldItem {
             attacker.heldItemConsumed = true
             events.append(.heldItemTriggered(attackerActor, item))
+        }
+        // 풍선은 **데미지가 들어간 히트**에서 터진다(본가와 같다) — 변화기와 빗나간 기술은
+        // 안 터뜨린다. 층이 대신 맞으면 터지지 않는다: 인형이 맞은 것이라 주인은 아직 떠 있다.
+        if damage > 0, !hitsSubstitute, defender.heldEffect?.consumedWhenHit == true,
+           let item = defender.snapshot.heldItem {
+            defender.heldItemConsumed = true
+            events.append(.heldItemTriggered(defenderActor, item))
         }
         // 2차효과는 데미지 뒤다 — 쓰러진 상대에게는 붙지 않는다(그 경우 rng 도 쓰지 않는다).
         // 층에 막힌 기술은 2차효과·상대 volatile 도 주인에게 닿지 않는다 — 인형은 마비되지 않는다.

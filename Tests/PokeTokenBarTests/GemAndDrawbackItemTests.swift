@@ -92,7 +92,7 @@ final class GemAndDrawbackItemTests: XCTestCase {
         XCTAssertEqual(ItemKind.laggingTail.heldBattleEffect, .movesLast)
         XCTAssertEqual(ItemKind.fullIncense.heldBattleEffect, .movesLast)
         XCTAssertTrue(HeldItemEffect.ironBall.halvesSpeed)
-        XCTAssertTrue(HeldItemEffect.ironBall.groundsHolder)
+        XCTAssertEqual(HeldItemEffect.ironBall.groundContact, .grounded)
         XCTAssertFalse(HeldItemEffect.ironBall.movesLast)
         XCTAssertTrue(HeldItemEffect.movesLast.movesLast)
         XCTAssertFalse(HeldItemEffect.movesLast.halvesSpeed)
