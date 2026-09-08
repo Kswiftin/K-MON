@@ -435,7 +435,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     걷히는 턴을 다르게 세어 세 턴 동안 데미지·필드 효과가 갈린다.
     // 29: 허브·무효화 물건 5종(하양허브·멘탈허브·흉내허브·클리어참·은밀망토). 은밀망토가 막은
     //     부가효과는 확률을 안 굴려 rng 소비 횟수까지 갈린다.
-    static let protocolVersion = 29
+    // 30: 방아쇠 하나에 랭크를 올리고 사라지는 물건 10종(약점보험·구근·충전지·눈덩이·빛이끼·
+    //     허탕보험·씨앗 넷). 구버전 게스트는 그 랭크를 안 올려 뒤 라운드의 데미지·명중이 갈린다.
+    static let protocolVersion = 30
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

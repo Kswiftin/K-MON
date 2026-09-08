@@ -369,6 +369,14 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 파워허브(2턴 기술 즉발)와 특성가드(특성 변경 차단)는 없다 — 이 엔진에는 2턴 기술도 특성을
     /// 바꾸는 기술도 없어서 아무 일도 하지 않는 물건이 된다.
     case whiteHerb, mentalHerb, mirrorHerb, clearAmulet, covertCloak
+    /// 맞으면·빗나가면·필드 위에서 **한 번 랭크를 올리고 사라지는** 물건 10종. 약점보험은 효과가
+    /// 굉장한 히트에, 구근·충전지·눈덩이·빛이끼는 자기 타입 히트에, 허탕보험은 **자기 기술이
+    /// 빗나갔을 때**, 씨앗 넷은 발밑의 필드에 답한다.
+    ///
+    /// 위급 열매(`pinchAction`)와 갈리는 점은 방아쇠뿐이다 — 저기는 HP, 여기는 맞은 히트·빗나감·
+    /// 필드다. 올리는 랭크는 셋 다 같은 값(`StatChange` 목록)으로 답해 올리는 자리를 하나로 둔다.
+    case weaknessPolicy, absorbBulb, cellBattery, snowball, luminousMoss, blunderPolicy
+    case electricSeed, grassySeed, mistySeed, psychicSeed
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -410,6 +418,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
              .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -499,7 +509,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak:
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -576,6 +588,16 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .mirrorHerb:  return .mirrorHerb
         case .clearAmulet: return .clearAmulet
         case .covertCloak: return .covertCloak
+        case .weaknessPolicy: return .weaknessPolicy
+        case .absorbBulb:  return .absorbBulb
+        case .cellBattery: return .cellBattery
+        case .snowball:    return .snowball
+        case .luminousMoss: return .luminousMoss
+        case .blunderPolicy: return .blunderPolicy
+        case .electricSeed: return .electricSeed
+        case .grassySeed:  return .grassySeed
+        case .mistySeed:   return .mistySeed
+        case .psychicSeed: return .psychicSeed
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
@@ -781,10 +803,12 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .shellBell, .blackSludge, .bigRoot,
              .airBalloon, .safetyGoggles, .ringTarget, .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-             .whiteHerb, .mentalHerb:
+             .whiteHerb, .mentalHerb,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .electricSeed, .grassySeed, .mistySeed, .psychicSeed:
             return kebabRawValue
         // 9세대 물건 셋도 PokéAPI 에 스프라이트가 없다(통굽부츠·만능우산과 같은 자리).
-        case .mirrorHerb, .clearAmulet, .covertCloak: return nil
+        case .mirrorHerb, .clearAmulet, .covertCloak, .blunderPolicy: return nil
         // 통굽부츠·만능우산은 PokéAPI 에 스프라이트가 없다(8세대 아이템) — 규칙에서 파생시키면
         // 화면에 깨진 이미지가 남으므로 이모지 폴백만 쓴다(민트·테라피스와 같은 자리).
         case .heavyDutyBoots, .utilityUmbrella: return nil
@@ -890,6 +914,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .whiteHerb: return "🌿"; case .mentalHerb: return "🍀"
         case .mirrorHerb: return "🪞"; case .clearAmulet: return "🔮"
         case .covertCloak: return "🧥"
+        case .weaknessPolicy: return "📄"; case .absorbBulb: return "🫧"
+        case .cellBattery: return "🔋"; case .snowball: return "❄️"
+        case .luminousMoss: return "🌱"; case .blunderPolicy: return "📋"
+        case .electricSeed: return "⚡"; case .grassySeed: return "🌾"
+        case .mistySeed: return "🌫️"; case .psychicSeed: return "🔯"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -927,7 +956,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak:
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed:
             return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
@@ -1057,7 +1088,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
                .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
                .floatStone,
                .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-               .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak]
+               .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+               .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+               .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -1123,6 +1156,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case lightClay, icyRock, smoothRock, heatRock, dampRock, terrainExtender
     /// 다른 기전이 이미 한 일에 답하는 다섯 갈래 — 랭크·선택 잠금·부가효과다.
     case whiteHerb, mentalHerb, mirrorHerb, clearAmulet, covertCloak
+    /// 방아쇠 하나에 랭크를 올리고 사라지는 열 갈래 — 맞은 히트·빗나간 내 기술·발밑의 필드다.
+    case weaknessPolicy, absorbBulb, cellBattery, snowball, luminousMoss, blunderPolicy
+    case electricSeed, grassySeed, mistySeed, psychicSeed
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -1146,7 +1182,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return nil
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return nil
         }
     }
 
@@ -1166,7 +1204,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return nil
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return nil
         }
     }
 
@@ -1190,7 +1230,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return nil
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return nil
         }
     }
 
@@ -1235,7 +1277,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return false
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return false
         }
     }
 
@@ -1268,7 +1312,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
-             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return nil
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
+             .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
+             .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed: return nil
         }
     }
 
@@ -1503,6 +1549,53 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     /// 일은 못 막는다: 부가효과는 데미지에 얹힌 덤이고, 울부짖기의 하락은 그 기술 자체다.
     var blocksAddedEffects: Bool { self == .covertCloak }
 
+    /// 맞은 히트에 답해 올리는 랭크 — 안 답하면 nil. 조건이 물건 밖(히트의 타입·상성)에 있어
+    /// 값이 아니라 물음이다.
+    ///
+    /// **데미지가 실제로 들어간 히트만** 이 물음에 온다(부르는 쪽이 그렇게 부른다) — 흘린 기술에
+    /// 답하면 땅 타입이 전기를 무효로 만든 턴에 충전지가 터진다.
+    func stageGainOnHit(moveType: PokemonType, effectiveness: Double) -> [StatChange]? {
+        switch self {
+        case .weaknessPolicy where effectiveness > 1:
+            return [StatChange(stat: .atk, change: HeldItemBalance.policyStages),
+                    StatChange(stat: .spa, change: HeldItemBalance.policyStages)]
+        case .absorbBulb where moveType == .water:
+            return [StatChange(stat: .spa, change: HeldItemBalance.reactorStages)]
+        case .cellBattery where moveType == .electric:
+            return [StatChange(stat: .atk, change: HeldItemBalance.reactorStages)]
+        case .snowball where moveType == .ice:
+            return [StatChange(stat: .atk, change: HeldItemBalance.reactorStages)]
+        case .luminousMoss where moveType == .water:
+            return [StatChange(stat: .spd, change: HeldItemBalance.reactorStages)]
+        default:
+            return nil
+        }
+    }
+
+    /// **자기 기술이 빗나갔을 때** 올리는 랭크 — 허탕보험이다. 맞은 히트 축과 나눈 이유는 주인이
+    /// 반대라서다(저기는 맞는 쪽, 여기는 때리는 쪽).
+    var stageGainOnOwnMiss: [StatChange]? {
+        self == .blunderPolicy
+            ? [StatChange(stat: .spe, change: HeldItemBalance.policyStages)] : nil
+    }
+
+    /// 발밑의 필드에 답해 올리는 랭크 — 씨앗 넷이다. 맞은 히트 축과 나눈 이유는 방아쇠가 히트가
+    /// 아니라서다: 아무도 때리지 않아도 터진다.
+    ///
+    /// **터지는 시점이 본가와 다르다.** 본가는 필드가 깔리거나 개체가 나오는 순간이지만, 이 엔진에는
+    /// 출전 훅이 네 모드에 흩어져 있어 부를 자리가 없다 — 그래서 두 피어가 반드시 함께 지나는
+    /// 턴 끝(`BattleEngine.endOfTurnWeather`)에서 본다. 한 턴 늦게 오를 뿐 결과는 같다.
+    func stageGainOnTerrain(_ terrain: BattleTerrain) -> [StatChange]? {
+        switch (self, terrain) {
+        case (.electricSeed, .electric), (.grassySeed, .grassy):
+            return [StatChange(stat: .def, change: HeldItemBalance.reactorStages)]
+        case (.mistySeed, .misty), (.psychicSeed, .psychic):
+            return [StatChange(stat: .spd, change: HeldItemBalance.reactorStages)]
+        default:
+            return nil
+        }
+    }
+
     /// 맞으면 사라지는가 — 풍선이다. 약점 반감 열매처럼 히트를 깎고 사라지는 것이 아니라 **데미지가
     /// 들어간 사실만** 보므로 조건을 물건 쪽에서 답한다(깎는 자리와 없애는 자리가 갈리지 않는다).
     var consumedWhenHit: Bool { self == .airBalloon }
@@ -1574,6 +1667,10 @@ enum HeldItemBalance {
     /// 대가만 있는 물건 셋(검은철구·느림보꼬리·만복향로)의 상점가 — 성능을 **깎는** 물건이라
     /// 값을 낮게 둔다. 0 원으로 두지 않는 이유는 자이로볼·카운터 조합에서 실제로 이득이라서다.
     static let drawbackPrice = 900
+    /// 보험 둘이 올리는 랭크 — 두 단계다(본가와 같다). 한 번뿐인 대신 크다.
+    static let policyStages = 2
+    /// 타입 반응 넷과 씨앗 넷이 올리는 랭크 — 한 단계다.
+    static let reactorStages = 1
     /// 지속 시간을 늘리는 물건이 만드는 턴 — 본가와 같은 8턴이다(기본은 5턴). 한 상수인 이유는
     /// 여섯 물건이 같은 값을 주기 때문이다 — 물건마다 리터럴을 들면 하나만 조용히 어긋난다.
     static let extendedFieldTurns = 8

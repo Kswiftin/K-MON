@@ -1920,7 +1920,10 @@ enum BattleEngine {
     ///      + 허브·무효화 물건 5종(하양허브의 랭크 원복, 멘탈허브의 선택 잠금 해제, 흉내허브의
     ///      랭크 상승 따라하기, 클리어참의 하락 차단, 은밀망토의 부가효과 차단). 은밀망토는
     ///      **rng 소비까지 바꾼다** — 막힌 부가효과는 확률을 굴리지 않는다.
-    static let rulesVersion = 34
+    ///      + 방아쇠 하나에 랭크를 올리고 사라지는 물건 10종(약점보험·구근·충전지·눈덩이·
+    ///      빛이끼가 맞은 히트에, 허탕보험이 빗나간 자기 기술에, 씨앗 넷이 발밑의 필드에 답한다).
+    ///      구버전 피어는 그 랭크를 안 올려 그 뒤 모든 데미지·명중이 갈린다.
+    static let rulesVersion = 35
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2978,6 +2981,12 @@ extension BattleEngine {
     static func endOfTurnWeather(_ side: inout BattleSide, actor: BattleActor,
                                  field: BattleField) -> [BattleEvent] {
         var events: [BattleEvent] = []
+        // 씨앗 넷도 **땅에 닿은 쪽만** 받는다 — 필드 위에 서 있는 것이 방아쇠이기 때문이다.
+        // 본가는 필드가 깔리는 순간 터지지만 이 엔진에는 출전 훅이 없어 여기서 본다(한 턴 늦다).
+        if side.isAlive, let terrain = field.terrain, BattleField.isGrounded(side),
+           let gains = side.heldEffect?.stageGainOnTerrain(terrain) {
+            events += applyItemStageGains(gains, to: &side, actor: actor)
+        }
         // 그래스필드는 땅에 닿은 쪽을 매 턴 회복시킨다 — 모래와 **같은 자리**에서 본다.
         // 회복이 먼저다: 모래에 깎여 쓰러진 뒤 되살아나는 순서가 되면 안 된다.
         if side.isAlive, field.terrain == .grassy, BattleField.isGrounded(side) {
@@ -3086,6 +3095,24 @@ extension BattleEngine {
         events += settleStageItems(&defender, actor: defenderActor,
                                    foeStagesBefore: attackerStagesBefore, foeStagesAfter: attacker.stages)
         return events
+    }
+
+    /// 물건이 올려 주는 랭크를 얹고 그 물건을 없앤다 — 방아쇠가 다른 열 물건이 **한 자리**를 쓴다.
+    ///
+    /// 랭크를 올리는 자리를 물건마다 두지 않는 이유는 소모 규칙이다: 올리는 것과 없애는 것이 늘
+    /// 짝이라, 자리를 나누면 한쪽만 빠뜨린 물건이 무한히 랭크를 올린다. 올릴 랭크가 하나도 안
+    /// 붙으면(±6 에 닿아 있으면) 물건도 남는다 — 아무 일도 없었는데 사라지면 로그가 거짓말을 한다.
+    static func applyItemStageGains(_ gains: [StatChange], to side: inout BattleSide,
+                                    actor: BattleActor) -> [BattleEvent] {
+        guard side.isAlive, let item = side.snapshot.heldItem else { return [] }
+        var events: [BattleEvent] = []
+        for gain in gains {
+            let applied = side.changeStage(gain.stat, by: gain.change)
+            if applied != 0 { events.append(.boost(actor, gain.stat, applied)) }
+        }
+        guard !events.isEmpty else { return [] }
+        side.heldItemConsumed = true
+        return events + [.heldItemTriggered(actor, item)]
     }
 
     /// 기술 하나가 랭크·잠금에 남긴 것에 답하는 물건들 — 하양허브·흉내허브·멘탈허브.
@@ -3425,7 +3452,14 @@ extension BattleEngine {
         // 남아 분함의발구르기가 영원히 두 배가 된다. 광역기는 마지막 대상의 결과가 남는다 —
         // 본가도 여러 대상 중 하나만 실패한 턴을 실패로 세지 않는다.
         attacker.lastMoveFailed = outcome.missed || outcome.effectiveness == 0
-        if outcome.missed { return events + [.miss(attackerActor)] }
+        if outcome.missed {
+            // 허탕보험은 **빗나간 그 자리**에서 답한다 — 때린 쪽의 물건이라 아래 맞은 쪽 갈래와
+            // 자리가 다르다.
+            if let gains = attacker.heldEffect?.stageGainOnOwnMiss {
+                events += applyItemStageGains(gains, to: &attacker, actor: attackerActor)
+            }
+            return events + [.miss(attackerActor)]
+        }
         if outcome.effectiveness == 0 {
             events.append(.immune(defenderActor))
             // 흡수 특성(저수·전기흡수)은 무효 **위에** 회복을 얹는다. 만피면 회복량이 0 이라 줄을
@@ -3539,6 +3573,14 @@ extension BattleEngine {
         if outcome.gemSpent, let item = attacker.snapshot.heldItem {
             attacker.heldItemConsumed = true
             events.append(.heldItemTriggered(attackerActor, item))
+        }
+        // 맞은 히트에 답하는 물건들(약점보험·구근·충전지·눈덩이·빛이끼)도 **데미지가 들어간
+        // 히트**만 본다 — 흘린 기술에 답하면 땅 타입이 전기를 무효로 만든 턴에 충전지가 터진다.
+        // 층이 대신 맞았으면 주인은 맞지 않았으므로 답하지 않는다(기합의띠와 같은 기준).
+        if damage > 0, !hitsSubstitute,
+           let gains = defender.heldEffect?.stageGainOnHit(moveType: move.type,
+                                                           effectiveness: outcome.effectiveness) {
+            events += applyItemStageGains(gains, to: &defender, actor: defenderActor)
         }
         // 풍선은 **데미지가 들어간 히트**에서 터진다(본가와 같다) — 변화기와 빗나간 기술은
         // 안 터뜨린다. 층이 대신 맞으면 터지지 않는다: 인형이 맞은 것이라 주인은 아직 떠 있다.

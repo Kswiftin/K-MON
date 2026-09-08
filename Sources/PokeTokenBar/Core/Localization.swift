@@ -1632,6 +1632,16 @@ struct L {
         case .mirrorHerb: return "흉내허브"
         case .clearAmulet: return "클리어참"
         case .covertCloak: return "은밀망토"
+        case .weaknessPolicy: return "약점보험"
+        case .absorbBulb: return "구근"
+        case .cellBattery: return "충전지"
+        case .snowball: return "눈덩이"
+        case .luminousMoss: return "빛이끼"
+        case .blunderPolicy: return "허탕보험"
+        case .electricSeed: return "일렉트릭시드"
+        case .grassySeed: return "그래스시드"
+        case .mistySeed: return "미스트시드"
+        case .psychicSeed: return "사이코시드"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1852,6 +1862,22 @@ struct L {
                 return "상대가 내 능력을 떨어뜨릴 수 없어요."
             case .covertCloak:
                 return "공격 기술에 덤으로 붙는 효과를 받지 않아요."
+            case .weaknessPolicy:
+                return "효과가 굉장한 기술에 맞으면 공격과 특수공격이 크게 올라가고 사라져요."
+            case .absorbBulb:
+                return "물타입 기술에 맞으면 특수공격이 올라가고 사라져요."
+            case .cellBattery:
+                return "전기타입 기술에 맞으면 공격이 올라가고 사라져요."
+            case .snowball:
+                return "얼음타입 기술에 맞으면 공격이 올라가고 사라져요."
+            case .luminousMoss:
+                return "물타입 기술에 맞으면 특수방어가 올라가고 사라져요."
+            case .blunderPolicy:
+                return "내 기술이 빗나가면 스피드가 크게 올라가고 사라져요."
+            case .electricSeed, .grassySeed:
+                return "해당 필드 위에서 방어가 올라가고 사라져요."
+            case .mistySeed, .psychicSeed:
+                return "해당 필드 위에서 특수방어가 올라가고 사라져요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1937,6 +1963,16 @@ struct L {
         case .mirrorHerb: return "상대 능력 상승 따라하기 / 1회"
         case .clearAmulet: return "능력 하락 차단"
         case .covertCloak: return "부가효과 차단"
+        case .weaknessPolicy: return "효과 굉장에 맞으면 공격·특공 +2 / 1회"
+        case .absorbBulb: return "물 기술에 맞으면 특공 +1 / 1회"
+        case .cellBattery: return "전기 기술에 맞으면 공격 +1 / 1회"
+        case .snowball: return "얼음 기술에 맞으면 공격 +1 / 1회"
+        case .luminousMoss: return "물 기술에 맞으면 특방 +1 / 1회"
+        case .blunderPolicy: return "기술이 빗나가면 스피드 +2 / 1회"
+        case .electricSeed: return "일렉트릭필드에서 방어 +1 / 1회"
+        case .grassySeed: return "그래스필드에서 방어 +1 / 1회"
+        case .mistySeed: return "미스트필드에서 특방 +1 / 1회"
+        case .psychicSeed: return "사이코필드에서 특방 +1 / 1회"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

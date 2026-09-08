@@ -134,13 +134,15 @@ final class LobbyRoleTests: XCTestCase {
         // 29 = 허브·무효화 물건 5종(하양허브의 랭크 원복·멘탈허브의 잠금 해제·흉내허브의 따라
         //      올리기·클리어참의 하락 차단·은밀망토의 부가효과 차단 — 망토가 막으면 확률을 안
         //      굴려 rng 소비 횟수까지 갈린다).
+        // 30 = 방아쇠 하나에 랭크를 올리고 사라지는 물건 10종(맞은 히트·빗나간 자기 기술·발밑의
+        //      필드 — 구버전 게스트는 그 랭크를 안 올려 뒤 라운드가 통째로 갈린다).
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
         //
         // **이 값을 리터럴로 박는 테스트는 여기 하나뿐이다.** 다섯 군데에 박혀 있던 동안은 누가
         // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
         // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
         // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 29)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 30)
     }
 
     /// `BattleEvent` 의 case 수를 동결한다 — **늘리면 `protocolVersion` 도 올려야 한다.**
