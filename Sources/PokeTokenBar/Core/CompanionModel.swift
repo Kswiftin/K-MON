@@ -278,6 +278,18 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 돌격조끼 — 특수방어 1.5배를 주고 **변화기를 못 쓴다**. 대가가 기술 분류라 잠금 자리는
     /// 도발과 같다(`MoveSelectionLock`).
     case assaultVest
+    /// 타입 강화 도구 — 지닌 개체가 **그 타입 기술**을 낼 때만 위력이 오른다(×1.2). 대가가 없는
+    /// 대신 폭이 좁다: 한 타입만 오르고, 상성표를 안 보는 기술(발버둥·변화기)은 안 오른다.
+    ///
+    /// 강철 타입 도구(금속코트)가 빠져 있다 — 이 저장소에서 금속코트는 **진화 아이템**이고
+    /// 가방 갈래(`bagUse`)는 하나뿐이라 같은 아이템에 두 쓰임을 겹칠 수 없다.
+    /// `magnet` 이 아니라 `magnetItem` 인 것은 이름 충돌 회피다.
+    case silverPowder, softSand, hardStone, miracleSeed
+    case blackGlasses, blackBelt, magnetItem, mysticWater
+    case sharpBeak, poisonBarb, neverMeltIce, spellTag
+    case twistedSpoon, charcoal, dragonFang, silkScarf
+    case fairyFeather, seaIncense, oddIncense, rockIncense
+    case waveIncense, roseIncense
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -294,6 +306,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .rareCandy, .mint, .shinyCharm, .heartScale, .teraShard,
              .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .flameOrb, .toxicOrb, .assaultVest,
+             .silverPowder, .softSand, .hardStone, .miracleSeed, .blackGlasses, .blackBelt,
+             .magnetItem, .mysticWater, .sharpBeak, .poisonBarb, .neverMeltIce, .spellTag,
+             .twistedSpoon, .charcoal, .dragonFang, .silkScarf, .fairyFeather, .seaIncense,
+             .oddIncense, .rockIncense, .waveIncense, .roseIncense,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -358,7 +374,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .heartScale: return .heartScale
         case .teraShard:  return .teraShard
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
-             .flameOrb, .toxicOrb, .assaultVest:
+             .flameOrb, .toxicOrb, .assaultVest,
+             .silverPowder, .softSand, .hardStone, .miracleSeed, .blackGlasses, .blackBelt,
+             .magnetItem, .mysticWater, .sharpBeak, .poisonBarb, .neverMeltIce, .spellTag,
+             .twistedSpoon, .charcoal, .dragonFang, .silkScarf, .fairyFeather, .seaIncense,
+             .oddIncense, .rockIncense, .waveIncense, .roseIncense:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -394,7 +414,42 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .flameOrb:    return .flameOrb
         case .toxicOrb:    return .toxicOrb
         case .assaultVest: return .assaultVest
-        default:          return nil
+        default:
+            // 타입 강화 도구는 표에서 답한다 — 22종을 여기 다시 나열하면 하나 빠뜨렸을 때
+            // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
+            return typeEnhancedType.map { HeldItemEffect.typeBoost($0) }
+        }
+    }
+
+    /// 이 아이템이 위력을 올려 주는 기술 타입 — 타입 강화 도구가 아니면 nil.
+    ///
+    /// 표를 아이템 쪽에 두는 이유는 이 값이 곧 아이템의 정체라서다: 물건마다 갈리는 것이 타입
+    /// 하나뿐이라, 효과 쪽에 두면 22줄짜리 스위치가 두 벌 생긴다.
+    var typeEnhancedType: PokemonType? {
+        switch self {
+        case .silverPowder: return .bug
+        case .softSand: return .ground
+        case .hardStone: return .rock
+        case .miracleSeed: return .grass
+        case .blackGlasses: return .dark
+        case .blackBelt: return .fighting
+        case .magnetItem: return .electric
+        case .mysticWater: return .water
+        case .sharpBeak: return .flying
+        case .poisonBarb: return .poison
+        case .neverMeltIce: return .ice
+        case .spellTag: return .ghost
+        case .twistedSpoon: return .psychic
+        case .charcoal: return .fire
+        case .dragonFang: return .dragon
+        case .silkScarf: return .normal
+        case .fairyFeather: return .fairy
+        case .seaIncense: return .water
+        case .oddIncense: return .psychic
+        case .rockIncense: return .rock
+        case .waveIncense: return .water
+        case .roseIncense: return .grass
+        default: return nil
         }
     }
 
@@ -420,6 +475,28 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .flameOrb: return "flame-orb"
         case .toxicOrb: return "toxic-orb"
         case .assaultVest: return "assault-vest"
+        case .silverPowder: return "silver-powder"
+        case .softSand: return "soft-sand"
+        case .hardStone: return "hard-stone"
+        case .miracleSeed: return "miracle-seed"
+        case .blackGlasses: return "black-glasses"
+        case .blackBelt: return "black-belt"
+        case .magnetItem: return "magnet"
+        case .mysticWater: return "mystic-water"
+        case .sharpBeak: return "sharp-beak"
+        case .poisonBarb: return "poison-barb"
+        case .neverMeltIce: return "never-melt-ice"
+        case .spellTag: return "spell-tag"
+        case .twistedSpoon: return "twisted-spoon"
+        case .charcoal: return "charcoal"
+        case .dragonFang: return "dragon-fang"
+        case .silkScarf: return "silk-scarf"
+        case .fairyFeather: return "fairy-feather"
+        case .seaIncense: return "sea-incense"
+        case .oddIncense: return "odd-incense"
+        case .rockIncense: return "rock-incense"
+        case .waveIncense: return "wave-incense"
+        case .roseIncense: return "rose-incense"
         default: return evolutionRule?.apiItemName
         }
     }
@@ -455,6 +532,28 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .choiceScarf: return "🧣"
         case .flameOrb: return "🔥"; case .toxicOrb: return "☠️"
         case .assaultVest: return "🦺"
+        case .silverPowder: return "✨"
+        case .softSand: return "🏖️"
+        case .hardStone: return "🪨"
+        case .miracleSeed: return "🌱"
+        case .blackGlasses: return "🕶"
+        case .blackBelt: return "🥋"
+        case .magnetItem: return "🧲"
+        case .mysticWater: return "💧"
+        case .sharpBeak: return "🪶"
+        case .poisonBarb: return "🧪"
+        case .neverMeltIce: return "🧊"
+        case .spellTag: return "🏷️"
+        case .twistedSpoon: return "🥄"
+        case .charcoal: return "🪵"
+        case .dragonFang: return "🦷"
+        case .silkScarf: return "🎀"
+        case .fairyFeather: return "🪽"
+        case .seaIncense: return "🌊"
+        case .oddIncense: return "🌀"
+        case .rockIncense: return "⛰️"
+        case .waveIncense: return "🌀"
+        case .roseIncense: return "🌹"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -475,6 +574,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .choiceBand, .choiceSpecs, .choiceScarf: return HeldItemBalance.choicePrice
         case .flameOrb, .toxicOrb: return HeldItemBalance.orbPrice
         case .assaultVest: return HeldItemBalance.assaultVestPrice
+        case _ where typeEnhancedType != nil: return HeldItemBalance.typeEnhancerPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -587,6 +687,13 @@ enum Mint {
 /// 아이템 종류와 따로 두는 이유는 엔진이다: 엔진은 "무엇이 붙었나" 가 아니라 "무엇을 얹나" 만
 /// 알면 되고, 같은 효과를 주는 아이템이 늘어도(본가의 조개껍질방울 부류) 엔진은 그대로다.
 enum HeldItemEffect: Sendable, Equatable, CaseIterable {
+    /// payload 를 든 갈래가 생겨 자동 합성이 끊긴다 — 손으로 짓되 **타입 강화는 표에서 만든다**
+    /// (18줄을 손으로 적으면 타입 하나가 빠져도 컴파일이 통과한다).
+    static var allCases: [HeldItemEffect] {
+        [.lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+         .flameOrb, .toxicOrb, .assaultVest] + PokemonType.allCases.map(HeldItemEffect.typeBoost)
+    }
+
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
     case lifeOrb
     /// 만피에서 치명적인 한 방을 HP 1 로 버틴다. 배틀 안에서 1회만이다.
@@ -601,6 +708,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case flameOrb, toxicOrb
     /// 특수 기술에 대한 방어를 1.5 배로 만들고, 그 대가로 변화기를 못 쓴다.
     case assaultVest
+    /// 한 타입의 기술 위력을 1.2 배로 만든다 — 대가가 없는 대신 폭이 타입 하나로 좁다.
+    /// 타입을 payload 로 든 유일한 갈래라, `allCases` 를 손으로 짓는다(아래).
+    case typeBoost(PokemonType)
 
     /// 이 물건이 1.5 배로 만드는 데미지 계통 — 묶는 대가와 짝이다. `nil` 이면 배율이 없다.
     ///
@@ -611,7 +721,7 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .choiceBand:  return .physical
         case .choiceSpecs: return .special
         case .lifeOrb, .focusSash, .leftovers, .choiceScarf,
-             .flameOrb, .toxicOrb, .assaultVest: return nil
+             .flameOrb, .toxicOrb, .assaultVest, .typeBoost: return nil
         }
     }
 
@@ -620,8 +730,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     var guardedDamageClass: MoveDamageClass? {
         switch self {
         case .assaultVest: return .special
-        case .lifeOrb, .focusSash, .leftovers,
-             .choiceBand, .choiceSpecs, .choiceScarf, .flameOrb, .toxicOrb: return nil
+        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .flameOrb, .toxicOrb, .typeBoost: return nil
         }
     }
 
@@ -634,9 +744,16 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         switch self {
         case .flameOrb: return .burn
         case .toxicOrb: return .toxic
-        case .lifeOrb, .focusSash, .leftovers,
-             .choiceBand, .choiceSpecs, .choiceScarf, .assaultVest: return nil
+        case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
+             .assaultVest, .typeBoost: return nil
         }
+    }
+
+    /// 이 물건이 위력을 올려 주는 기술 타입 — 타입 강화 도구뿐이다. 데미지 계통 축
+    /// (`boostedDamageClass`)과 나눈 이유는 재는 것이 달라서다: 저기는 물리·특수, 여기는 타입이다.
+    var boostedMoveType: PokemonType? {
+        if case .typeBoost(let type) = self { return type }
+        return nil
     }
 
     /// 스피드를 1.5 배로 만드는가 — 구애스카프뿐이다. 데미지 배율 축과 나눈 이유는 곱하는 자리가
@@ -654,7 +771,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     var locksIntoOneMove: Bool {
         switch self {
         case .choiceBand, .choiceSpecs, .choiceScarf: return true
-        case .lifeOrb, .focusSash, .leftovers, .flameOrb, .toxicOrb, .assaultVest: return false
+        case .lifeOrb, .focusSash, .leftovers, .flameOrb, .toxicOrb, .assaultVest,
+             .typeBoost: return false
         }
     }
 }
@@ -680,6 +798,13 @@ enum HeldItemBalance {
     /// 물리 어태커가 싸다는 뜻 없는 차별이 된다). 생명의구슬(5,000)보다 싼 이유는 대가가 크다:
     /// 배율이 한 계통에만 붙고 기술 하나에 묶인다.
     static let choicePrice = 4_500
+
+    /// 타입 강화 도구의 상점가 — 지닌물건 중 **가장 싸다**. 배율이 1.2 로 가장 작고 한 타입에만
+    /// 붙어서, 값을 올리면 생명의구슬(모든 기술 ×1.3)을 살 이유만 남는다.
+    static let typeEnhancerPrice = 2_800
+    /// 타입 강화 배율 — 본가와 같은 ×1.2. 정수 분수로 곱하는 이유는 다른 배율과 같다.
+    static let typeEnhancerNumerator = 12
+    static let typeEnhancerDenominator = 10
 
     /// 구슬 2종의 상점가 — 둘이 같은 값이다(거는 상태만 갈릴 뿐 같은 물건이다). 지닌물건 중
     /// **가장 싸다**: 주는 것이 강화가 아니라 상태이상이라, 근성 같은 특성과 짝지어야 이득이 되고

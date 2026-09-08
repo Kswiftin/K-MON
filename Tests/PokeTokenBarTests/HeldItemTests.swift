@@ -113,11 +113,17 @@ final class HeldItemTests: XCTestCase {
         XCTAssertEqual(ItemKind.lifeOrb.heldBattleEffect, .lifeOrb)
         XCTAssertEqual(ItemKind.focusSash.heldBattleEffect, .focusSash)
         XCTAssertEqual(ItemKind.leftovers.heldBattleEffect, .leftovers)
-        // 효과 셋이 전부 아이템을 갖는다 — 아이템 없는 효과는 아무도 못 켜는 죽은 갈래다.
-        for effect in HeldItemEffect.allCases {
+        // 효과가 전부 아이템을 갖는다 — 아이템 없는 효과는 아무도 못 켤 수 있는 죽은 갈래다.
+        //
+        // **강철 타입 강화만 예외다.** 본가에서 그 자리는 금속코트인데, 이 저장소에서 금속코트는
+        // 이미 진화 아이템이고 가방 갈래(`ItemKind.bagUse`)는 아이템당 하나뿐이라 두 쓰임을 겹칠
+        // 수 없다. 다른 강철 도구는 본가에도 없다 — 겸용을 표현할 방법이 생기기 전까지 남는 구멍이다.
+        for effect in HeldItemEffect.allCases where effect != .typeBoost(.steel) {
             XCTAssertTrue(ItemKind.allCases.contains { $0.heldBattleEffect == effect },
                           "\(effect) 를 주는 아이템이 없다")
         }
+        XCTAssertNil(ItemKind.allCases.first { $0.heldBattleEffect == .typeBoost(.steel) },
+                     "강철 도구가 생겼으면 위 예외를 걷어낸다")
     }
 
     /// 값은 사탕(성장 1회분) 근처다 — 대전 성능을 상시로 바꾸므로 코스메틱(민트·테라피스)보다 비싸다.

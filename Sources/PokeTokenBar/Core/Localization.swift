@@ -1503,6 +1503,28 @@ struct L {
         case .flameOrb: return "화염구슬"
         case .toxicOrb: return "독구슬"
         case .assaultVest: return "돌격조끼"
+        case .silverPowder: return "은가루"
+        case .softSand: return "부드러운모래"
+        case .hardStone: return "딱딱한돌"
+        case .miracleSeed: return "기적의씨"
+        case .blackGlasses: return "검은안경"
+        case .blackBelt: return "검은띠"
+        case .magnetItem: return "자석"
+        case .mysticWater: return "신비의물방울"
+        case .sharpBeak: return "예리한부리"
+        case .poisonBarb: return "독바늘"
+        case .neverMeltIce: return "녹지않는얼음"
+        case .spellTag: return "저주받은부적"
+        case .twistedSpoon: return "휘어진스푼"
+        case .charcoal: return "목탄"
+        case .dragonFang: return "용의이빨"
+        case .silkScarf: return "실크스카프"
+        case .fairyFeather: return "페어리깃털"
+        case .seaIncense: return "바다향로"
+        case .oddIncense: return "이상한향로"
+        case .rockIncense: return "바위향로"
+        case .waveIncense: return "파도향로"
+        case .roseIncense: return "장미향로"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1628,6 +1650,8 @@ struct L {
                 return "대전에서 턴이 끝날 때 자신이 맹독에 걸려요. 독을 이용하는 특성과 짝지어 쓰는 물건이에요."
             case .assaultVest:
                 return "특수 기술에 받는 데미지가 줄어요. 대신 대전에서 변화기를 쓸 수 없어요."
+            case .typeBoost(let type):
+                return "\(type.name) 타입 기술의 위력이 1.2배가 돼요. 대가는 없어요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1666,6 +1690,7 @@ struct L {
         case .flameOrb: return "턴 끝 자신이 화상"
         case .toxicOrb: return "턴 끝 자신이 맹독"
         case .assaultVest: return "특수 방어 ×1.5 / 변화기 금지"
+        case .typeBoost(let type): return "\(type.name) 기술 ×1.2"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

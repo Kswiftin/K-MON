@@ -92,10 +92,15 @@ final class HeldItemVarietyTests: XCTestCase {
             XCTAssertFalse(l.itemDescription(kind).isEmpty, kind.rawValue)
             XCTAssertFalse(l.heldItemEffectHint(kind).isEmpty, kind.rawValue)
         }
-        let hints = Set(ItemKind.allCases.filter { $0.bagUse == .heldItem }
-            .map { l.heldItemEffectHint($0) })
-        XCTAssertEqual(hints.count, ItemKind.allCases.filter { $0.bagUse == .heldItem }.count,
-                       "지닌물건 효과 힌트가 겹친다")
+        // 문구는 **효과 단위**로 갈린다. 아이템 단위가 아닌 이유는 향로 부류다 — 바다향로와
+        // 신비의물방울은 같은 물 타입 강화라 같은 문구가 맞다(다른 문구를 지어내면 거짓이 된다).
+        let held = ItemKind.allCases.filter { $0.bagUse == .heldItem }
+        var effects: [HeldItemEffect] = []
+        for effect in held.compactMap(\.heldBattleEffect) where !effects.contains(effect) {
+            effects.append(effect)
+        }
+        let hints = Set(held.map { l.heldItemEffectHint($0) })
+        XCTAssertEqual(hints.count, effects.count, "효과가 다른데 힌트가 겹친다")
     }
 
     /// 스프라이트 이름이 있다 — 지닌물건은 진화 규칙에서 파일명을 파생할 수 없어(규칙이 nil 이다)
@@ -239,6 +244,71 @@ final class HeldItemVarietyTests: XCTestCase {
         XCTAssertFalse(l.battleCantUseMove("리자몽", lock: .assaultVest).isEmpty)
         let reasons = Set(MoveSelectionLock.allCases.map { l.moveSelectionLockReason($0) })
         XCTAssertEqual(reasons.count, MoveSelectionLock.allCases.count, "잠금 사유 문구가 겹친다")
+    }
+
+    // MARK: - 타입 강화 도구 22종
+
+    /// 22종이 전부 지닌물건 축을 탄다 + 이름·스프라이트·값이 채워져 있다.
+    func testTheTypeEnhancersRideTheHeldItemAxis() throws {
+        let l = L()
+        let enhancers = ItemKind.allCases.filter { $0.typeEnhancedType != nil }
+        XCTAssertEqual(enhancers.count, 22)
+        for kind in enhancers {
+            XCTAssertEqual(kind.bagUse, .heldItem, kind.rawValue)
+            XCTAssertEqual(kind.heldBattleEffect?.boostedMoveType, kind.typeEnhancedType,
+                           "\(kind.rawValue) 의 아이템 표와 효과 축이 어긋난다")
+            XCTAssertNil(kind.evolutionRule, kind.rawValue)
+            XCTAssertNotNil(kind.spriteName, kind.rawValue)
+            XCTAssertFalse(l.itemName(kind).isEmpty, kind.rawValue)
+            XCTAssertTrue(MultiplayerValidation.validHeldItem(kind), kind.rawValue)
+            XCTAssertEqual(try XCTUnwrap(kind.shopPrice), HeldItemBalance.typeEnhancerPrice,
+                           kind.rawValue)
+        }
+        // 강철만 빠진다 — 그 자리(금속코트)는 이 저장소에서 진화 아이템이다.
+        let covered = Set(enhancers.compactMap(\.typeEnhancedType))
+        XCTAssertEqual(Set(PokemonType.allCases).subtracting(covered), [.steel],
+                       "덮는 타입이 바뀌었다 — 예외는 강철 하나여야 한다")
+    }
+
+    /// 그 타입 기술만 1.2배가 된다.
+    func testATypeEnhancerRaisesOnlyItsOwnType() {
+        var fire = attackMove(35, power: 60)
+        fire.type = .fire
+        var water = attackMove(36, power: 60)
+        water.type = .water
+        func dealt(_ move: MoveSpec, holding item: ItemKind?) -> Int {
+            var attacker = side(held: item, moves: [move])
+            var victim = side(moves: [move])
+            return use(move, by: &attacker, on: &victim, seed: 11).reduce(0) {
+                if case .damage(.b, let amount, .move) = $1 { return $0 + amount }
+                return $0
+            }
+        }
+        let bare = dealt(fire, holding: nil)
+        XCTAssertGreaterThan(bare, 0)
+        // 배율을 난수 폭 앞에서 곱하므로 정수 절단이 한두 점 어긋난다 — 그 폭만 허용한다
+        // (생명의구슬 테스트와 같은 이유).
+        let expected = bare * HeldItemBalance.typeEnhancerNumerator
+            / HeldItemBalance.typeEnhancerDenominator
+        XCTAssertLessThanOrEqual(abs(dealt(fire, holding: .charcoal) - expected), 2,
+                                 "목탄은 불꽃 기술의 1.2배다")
+        XCTAssertEqual(dealt(water, holding: .charcoal), dealt(water, holding: nil),
+                       "목탄이 물 기술까지 올렸다")
+    }
+
+    /// 발버둥은 안 오른다 — 상성표를 안 보는 기술은 도구도 안 탄다(런 강화와 같은 게이트다).
+    /// 이 가드가 없으면 PP 가 마른 뒤가 오히려 강해진다.
+    func testATypeEnhancerDoesNotRaiseStruggle() {
+        func dealt(holding item: ItemKind?) -> Int {
+            var attacker = side(held: item, moves: [attackMove()])
+            var victim = side(moves: [attackMove()])
+            return use(.struggle(), by: &attacker, on: &victim, seed: 11).reduce(0) {
+                if case .damage(.b, let amount, .move) = $1 { return $0 + amount }
+                return $0
+            }
+        }
+        XCTAssertGreaterThan(dealt(holding: nil), 0)
+        XCTAssertEqual(dealt(holding: .silkScarf), dealt(holding: nil))
     }
 
     // MARK: - 구애스카프

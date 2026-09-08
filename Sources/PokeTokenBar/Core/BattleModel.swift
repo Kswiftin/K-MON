@@ -1851,7 +1851,7 @@ enum BattleEngine {
     ///      쪽이 먼저 움직인 턴에서 갈린다: 구버전은 이미 고른 기술을 그대로 내고 이 버전은 못 낸다.
     ///      데미지·상태가 통째로 갈리고 rng 소비도 갈린다(막힌 턴은 명중·급소를 굴리지 않는다).
     ///      `BattleEvent` 에 case 하나(`moveBlocked`)가 늘어 구버전은 그 이벤트를 디코딩하지 못한다.
-    static let rulesVersion = 25
+    static let rulesVersion = 26
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2339,6 +2339,13 @@ enum BattleEngine {
         // 배가 되는 값 앞에 들어가 1.3배가 정확히 1.3배가 아니게 된다.
         if attacker.heldEffect == .lifeOrb {
             damage = damage * HeldItemBalance.lifeOrbNumerator / HeldItemBalance.lifeOrbDenominator
+        }
+        // 타입 강화 도구 — 상성표를 보는 기술만 탄다(런 강화의 타입 데미지와 같은 게이트다:
+        // 도구가 발버둥을 올리면 PP 가 마른 뒤가 오히려 강해진다). 물건이 아니라
+        // `boostedMoveType` 으로 묻는다.
+        if !ignoresTypeChart, attacker.heldEffect?.boostedMoveType == move.type {
+            damage = damage * HeldItemBalance.typeEnhancerNumerator
+                / HeldItemBalance.typeEnhancerDenominator
         }
         // 구애 2종도 같은 자리에서 얹는다 — 한 계통만 올리므로 물건이 아니라
         // `boostedDamageClass` 로 묻는다(물건 이름을 직접 보면 세 번째 구애가 늘 때 빠진다).
