@@ -51,6 +51,37 @@ final class WaveRunAchievementTests: XCTestCase {
         run.take(.safe)
         XCTAssertFalse(run.tookOnlyRiskyRoutes)
     }
+
+    /// 클리어는 알 하나도 낸다 — 업적과 별개의 지급 경로다.
+    func testClearingAWaveRunGrantsOneEgg() {
+        let store = makeStore()
+        XCTAssertEqual(store.state.focusEggs, 0)
+        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        XCTAssertEqual(store.state.focusEggs, 1, "클리어가 알 하나를 안 냈다")
+    }
+
+    /// 같은 날 두 번째 클리어는 알을 또 주지 않는다 — `waveRunEggRewardDate` 원장이 하루 한 번을 막는다.
+    func testClearingTwiceInOneDayGrantsOnlyOneEgg() {
+        let store = makeStore()
+        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true)
+        XCTAssertEqual(store.state.focusEggs, 1)
+    }
+
+    /// 실패한 판은 알을 주지 않는다.
+    func testFailedRunGrantsNoEgg() {
+        let store = makeStore()
+        store.recordRunResult(reachedWave: 4, cleared: false)
+        XCTAssertEqual(store.state.focusEggs, 0)
+    }
+
+    /// 반환값은 화면(`RogueRunView`)이 "오늘의 알 보상을 받았습니다" 배너를 띄우는 유일한 신호다 —
+    /// 두 번째 클리어에서 false 가 안 나오면 이미 받은 날에도 배너가 다시 뜬다.
+    func testRecordRunResultReturnsWhetherTheDailyEggWasJustGranted() {
+        let store = makeStore()
+        XCTAssertTrue(store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true))
+        XCTAssertFalse(store.recordRunResult(reachedWave: RogueRun.finalWave, cleared: true))
+    }
 }
 
 private func waveRunSnapshot() -> BattleSnapshot {

@@ -1091,6 +1091,8 @@ struct L {
 
     // MARK: 퍼즐 던전 (#79)
     var dungeonTitle: String { "오늘의 던전" }
+    /// 오늘의 던전 클리어 알 보상 — 하루 첫 클리어에서만 뜬다(`recordRunResult`).
+    var waveRunDailyEggEarned: String { "오늘의 클리어 알 보상을 받았습니다!" }
     var gymBadgeEarned: String { "배지 획득" }
     func gymNeedsMorePokemon(_ count: Int) -> String {
         "체육관은 \(count)마리로 도전해요 — 포켓몬이 부족합니다."

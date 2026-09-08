@@ -2607,17 +2607,30 @@ final class CompanionStore {
     /// 업적(`dungeon`·`dungeonSweep`)도 여기서 올린다. 퍼즐 던전이 웨이브 런으로 갈릴 때 이
     /// 배선이 안 따라와, 두 트랙 여덟 칸이 도달 불가인 채로 나갔다 — 화면에 보이는데 영영 안
     /// 차는 칸이다. `dungeonSweep` 은 난이도 축을 잇는다: 갈림길을 **전부 위험한 길로** 왔나.
-    func recordRunResult(reachedWave: Int, cleared: Bool, tookOnlyRiskyRoutes: Bool = false) {
+    ///
+    /// **클리어 알 보상은 하루 한 번뿐이다**(`waveRunEggRewardDate`, `dayKey` 비교). 판마다
+    /// 재화·알을 주지 않는다는 결정은 그대로 두되(반복 파밍 방지), 업적 사다리처럼 상한이
+    /// 확실한 예외를 하나 더 둔다 — 하루 여러 판을 돌아도 알은 하루 첫 클리어에서만 나온다.
+    @discardableResult
+    func recordRunResult(reachedWave: Int, cleared: Bool, tookOnlyRiskyRoutes: Bool = false) -> Bool {
         state.waveRun.record(reachedWave: reachedWave, cleared: cleared)
         state.waveRun.normalize()
+        var grantedDailyEgg = false
         if cleared {
             // 두 트랙이 같은 판에서 함께 넘어간다 — 배너는 **한 통**이다. 지급마다 띄우면
             // 같은 클리어를 두 번 말한다(`mergedCompletion` 이 미션에서 막은 그 문제).
             let paid = recordAchievement(.dungeon, 1)
                 + (tookOnlyRiskyRoutes ? recordAchievement(.dungeonSweep, 1) : 0)
             announcePayout(paid, .dungeon)
+
+            let today = Self.dayKey(clock())
+            if state.waveRunEggRewardDate != today, addStoredEggs(1) > 0 {
+                state.waveRunEggRewardDate = today
+                grantedDailyEgg = true
+            }
         }
         save()
+        return grantedDailyEgg
     }
 
     /// 보상 지급 — 알은 보관 알로 들어가고(5분 뒤 부화), 보증과 이로치 확정은 상태에 쌓인다.

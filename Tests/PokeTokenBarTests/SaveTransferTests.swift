@@ -491,7 +491,7 @@ final class SaveTransferTests: XCTestCase {
     private static let frozenCanonicalPrefixes: Set<String> = [
         // 세그먼트 접두 — 하나라도 사라지면 이미 배포된 서명을 재현할 수 없다.
         "v", "u", "sp", "pc", "eg", "br", "pr", "tp", "msd", "achfocus", "sn",
-        "gbbrock", "glbbug", "shc", "gd", "dcd", "rd", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
+        "gbbrock", "glbbug", "shc", "gd", "dcd", "rd", "wed", "fe", "fer", "ef", "ab", "wk", "wc", "tier", "cand", "inv",
         "adv", "ah", "bh", "act", "box", "dex", "dg", "cf", "sec",
         // 값에서 나온 토큰 — fixture 가 고정하므로 결정적이다. 열거형 rawValue 변경도 기존 서명을
         // 깨는 같은 부류라 일부러 얼려 둔다. `""` 는 숫자로만 된 이어붙임 조각.
@@ -516,6 +516,8 @@ final class SaveTransferTests: XCTestCase {
         s.gymDefenseRewardDate = "2026-09-02"
         s.gymDefenseRewardToday = 1
         s.raidRewardDate = "2026-09-02"
+        // `wed` 도 같은 일일 원장 부류다 — fixture 가 안 켜면 이 접두도 동결 집합에 안 잡힌다.
+        s.waveRunEggRewardDate = "2026-09-02"
         // `dcd` 도 같은 부류다 — fixture 가 안 켜면 이 접두가 동결 집합에 아예 안 잡힌다.
         // #206 이 이 세그먼트를 추가했을 때 두 동결 가드가 모두 초록이었던 이유가 그거다.
         s.lastCandyDate = "2026-09-02"
@@ -670,7 +672,9 @@ final class SaveTransferTests: XCTestCase {
         // 세이브를 주고받는 것만으로 하루 상한이 되살아나지 않는다.
         // 레이드 일일 지급 날짜도 같은 부류다 — 로컬 날짜 문자열이라 비교 가능하고, 더 최근 값을
         // 남기지 않으면 세이브를 주고받는 것만으로 하루 한 번이 무한이 된다.
-        let accountLedger: Set<String> = ["lastCandyDate", "waveRun",
+        // 웨이브 런 클리어 알의 하루 원장도 같은 부류다 — 레이드 지급 원장과 같은 이유로
+        // 더 최근 값을 남겨야 세이브를 주고받는 것만으로 하루 한 번이 무한이 되지 않는다.
+        let accountLedger: Set<String> = ["lastCandyDate", "waveRun", "waveRunEggRewardDate",
                                           "gymDefenseRewardDate", "gymDefenseRewardToday",
                                           "raidRewardDate",
                                           // 레이드 포획 원장도 같은 부류다. 지급 원장과 **따로**
@@ -723,6 +727,17 @@ final class SaveTransferTests: XCTestCase {
         let out = SaveTransfer.rebasedForThisDevice(imported, current: current)
         XCTAssertNil(out.lastTickAt, "옛 기기 시각을 이 기기 가동 시간으로 오인하지 않게 리셋")
         XCTAssertEqual(out.lastCandyDate, "2026-08-13", "더 최근 날짜를 남겨 사탕 재지급 방지")
+    }
+
+    /// 웨이브 런 클리어 알의 하루 원장도 같은 부류다 — 안 병합하면 맥 A 에서 오늘 받고 내보내
+    /// 맥 B 로 불러오는 것만으로 하루 두 번째 알을 받는다.
+    func testRebaseKeepsNewerWaveRunEggRewardDate() {
+        var imported = oldMacState()
+        imported.waveRunEggRewardDate = "2026-08-13"
+        var current = CompanionState()
+        current.waveRunEggRewardDate = "2026-08-01"
+        let out = SaveTransfer.rebasedForThisDevice(imported, current: current)
+        XCTAssertEqual(out.waveRunEggRewardDate, "2026-08-13", "더 최근 날짜를 남겨 재지급 방지")
     }
 
     // MARK: 백업 가드레일 (딥리뷰 M-a·M-b)

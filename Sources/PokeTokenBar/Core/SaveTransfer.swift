@@ -313,6 +313,7 @@ enum SaveTransfer {
         s.raidCatchDate = clampedKey(s.raidCatchDate)
         s.raidCatchDateTierThree = clampedKey(s.raidCatchDateTierThree)
         s.raidCatchDateTierFive = clampedKey(s.raidCatchDateTierFive)
+        s.waveRunEggRewardDate = clampedKey(s.waveRunEggRewardDate)
         // 하한이 1 인 이유는 **1인 레이드**다 — `2...4` 였을 때는 혼자 돈 레이드 전적이 불러오기에서
         // 통째로 사라진다(보스는 사람이 아니라 이 수에 들지 않는다).
         s.battleHistory = Array(s.battleHistory
@@ -460,6 +461,10 @@ enum SaveTransfer {
         if !s.raidRewardDateTierFive.isEmpty { p.append("r5d\(s.raidRewardDateTierFive)") }
         if !s.raidCatchDateTierThree.isEmpty { p.append("c3d\(s.raidCatchDateTierThree)") }
         if !s.raidCatchDateTierFive.isEmpty { p.append("c5d\(s.raidCatchDateTierFive)") }
+        // 웨이브 런 클리어 알 보상의 하루 원장 — 위 레이드 원장들과 같은 부류다. 서명 밖에 두면
+        // 지우는 것만으로 같은 날 클리어할 때마다 알을 다시 받는다. 새 필드라 조건부 append,
+        // `integrityVersion` 은 올리지 않는다.
+        if !s.waveRunEggRewardDate.isEmpty { p.append("wed\(s.waveRunEggRewardDate)") }
         if s.focusEggs != 0 { p.append("fe\(s.focusEggs)") }
         if !s.focusEggReadyDates.isEmpty {
             p.append("fer" + s.focusEggReadyDates.map { String($0.timeIntervalSince1970) }.joined(separator: ","))
@@ -608,6 +613,8 @@ enum SaveTransfer {
         // 런 실적은 소모되지 않는 누적이라 각 축의 큰 값을 쓴다 — 한쪽을 고르면 다른 기기에서
         // 세운 최고 기록이 사라진다(던전 진행도와 달리 날짜로 낡지 않는다).
         state.waveRun = RunProgress.merged(imported.waveRun, current.waveRun)
+        // 웨이브 런 클리어 알도 하루 원장이다 — 레이드 지급 원장과 같은 이유로 더 최근 날짜를 남긴다.
+        state.waveRunEggRewardDate = max(imported.waveRunEggRewardDate, current.waveRunEggRewardDate)
         return state
     }
 

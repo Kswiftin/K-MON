@@ -1125,6 +1125,10 @@ struct CompanionState: Codable, Sendable {
     /// 웨이브 런 실적 — 최고 도달 웨이브·클리어 횟수·끝난 판 수. 진행 중인 런은 여기 없다
     /// (메모리 전용이다) — 판 안의 값을 저장하면 이상 상태 복구 경로가 그만큼 늘어난다.
     var waveRun = RunProgress()
+    /// 웨이브 런 클리어 알 보상을 지급한 날짜 키(`dayKey`) — 하루 한 번 가드. `raidRewardDate` 와
+    /// 같은 규칙이다. 진행 중인 런과 달리 계정 단위로 계속 남아야 하므로 여기(`waveRun`이 아니라
+    /// `CompanionState`)에 둔다.
+    var waveRunEggRewardDate = ""
     // 누적 행동 업적(집중·진화·배틀·레이스). 도달 단계는 저장하지 않고 카운터에서 계산한다.
     var achievements = AchievementLadder()
     // 시즌 순환 챌린지 진행도. 세트는 저장하지 않고 시즌 키에서 고른다(SeasonBoard 참고).
@@ -1204,6 +1208,7 @@ struct CompanionState: Codable, Sendable {
         trainer            = c.lenient(TrainerLevel.self, forKey: .trainer, default: TrainerLevel())
         missions           = c.lenient(MissionBoard.self, forKey: .missions, default: MissionBoard())
         waveRun            = c.lenient(RunProgress.self, forKey: .waveRun, default: RunProgress())
+        waveRunEggRewardDate = c.lenient(String.self, forKey: .waveRunEggRewardDate, default: "")
         seasons            = c.lenient(SeasonBoard.self, forKey: .seasons, default: SeasonBoard())
         achievements       = c.lenient(AchievementLadder.self, forKey: .achievements,
                                        default: AchievementLadder())
