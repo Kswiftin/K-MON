@@ -325,7 +325,7 @@ struct WaveBattle: Sendable {
     private mutating func cpuAttacks() -> [Attack] {
         livingOpponentSlots.compactMap { ordinal in
             let side = opponents[opponentField[ordinal].teamIndex]
-            let candidates = side.pp.indices.filter { side.pp[$0] > 0 }
+            let candidates = side.moves.indices.filter { side.canUse(moveAt: $0) }
             let moveIndex = candidates.isEmpty
                 ? -1
                 : candidates[Int(rng.next() % UInt64(candidates.count))]

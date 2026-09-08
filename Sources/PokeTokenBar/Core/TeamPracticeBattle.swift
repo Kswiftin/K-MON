@@ -71,7 +71,7 @@ struct TeamPracticeBattle {
     /// 잡을 수 없다. 체육관 관장은 그 무작위성을 쓰지 않고 예상 피해가 가장 큰 기술을 고른다.
     private mutating func cpuMoveChoice() -> (move: MoveSpec, index: Int) {
         let slot = opponents[opponentActive]
-        let candidates = slot.pp.indices.filter { slot.pp[$0] > 0 }
+        let candidates = slot.moves.indices.filter { slot.canUse(moveAt: $0) }
         guard !candidates.isEmpty else { return (MoveSpec.struggle(), -1) }
 
         if case .damageFocused = opponentMoveStrategy {

@@ -372,4 +372,59 @@ final class BattleSelectionLockTests: XCTestCase {
 
         XCTAssertNil(mon.choiceLockedMoveID)
     }
+
+    // MARK: 고르는 자리가 넷 + 터미널이다
+
+    /// **CPU 도 잠금을 지킨다.** 웨이브의 CPU 는 자기 배열에서 직접 행동을 만들어 모드의
+    /// 사전 검증을 지나지 않으므로, 남은 PP 만 보고 고르면 도발당한 상대가 변화기를 그대로 낸다
+    /// (화면에는 도발이 걸린 것으로 보이고 효과만 새어 나간다).
+    func testTheWaveCPUPicksStruggleWhenEveryMoveIsLocked() {
+        let paralyzer = statusMove(86)
+        var status = paralyzer
+        status.ailment = "paralysis"; status.ailmentChance = 100
+        let foe = BattleSnapshot(speciesID: 90, name: "상대", trainer: "T", level: 50, nature: nil,
+                                 isShiny: false, types: [.normal],
+                                 base: BattleStats(hp: 200, atk: 80, def: 80, spa: 80, spd: 80, spe: 60),
+                                 moves: [status])
+        let mine = BattleSnapshot(speciesID: 1, name: "내편", trainer: "T", level: 50, nature: nil,
+                                  isShiny: false, types: [.normal],
+                                  base: BattleStats(hp: 200, atk: 80, def: 80, spa: 80, spd: 80, spe: 200),
+                                  moves: [attackMove(33)])
+        var subject = WaveBattle(mine: [BattleSide(mine)], opponents: [BattleSide(foe)],
+                                 rng: SplitMix64(seed: 5))
+        XCTAssertTrue(subject.opponents[0].start(.taunt, turns: 3))
+        let foeHP = subject.opponents[0].hp
+
+        XCTAssertTrue(subject.choose(.move(index: 0, target: 0), forSlot: 0))
+
+        XCTAssertNil(subject.mine[0].status, "도발당한 상대가 변화기를 그대로 냈다")
+        XCTAssertLessThan(subject.opponents[0].hp, foeHP,
+                          "낼 기술이 없으면 발버둥이라 반동으로 HP 가 줄어야 한다")
+    }
+
+    /// 기술을 **고르는 자리**는 남은 PP 가 아니라 `canUse(moveAt:)` 로 고른다 — 잠금을 모르는
+    /// 자리가 하나 남으면 그 모드에서만 도발·구애가 새어 나가고, 화면에는 정상으로 보인다.
+    /// 부류로 막아야 하는 이유는 자리가 다섯이라서다(CPU 넷 + 보스 폴백).
+    func testNoChooserPicksAMoveByRawPPAlone() {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
+        XCTAssertFalse(files.isEmpty, "소스를 못 찾으면 이 가드는 아무것도 지키지 않는다")
+
+        var offenders: [String] = []
+        for file in files {
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            for (number, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                let code = line.split(separator: "//", maxSplits: 1).first.map(String.init) ?? ""
+                guard code.contains("pp") else { continue }
+                // 고르는 자리의 두 모양: `pp` 를 걸러 후보를 만드는 것과 첫 칸을 찾는 것.
+                if code.contains("pp[$0] > 0") || code.contains("pp.firstIndex(where: { $0 > 0 })") {
+                    offenders.append("\(file.lastPathComponent):\(number + 1)")
+                }
+            }
+        }
+        XCTAssertEqual(offenders, [], "이 자리는 canUse(moveAt:) 로 골라야 한다: \(offenders)")
+    }
 }

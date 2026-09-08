@@ -573,7 +573,8 @@ struct MultiplayerBattle: Sendable {
         }
         // 점수가 전부 0 이거나 PP 가 말랐어도 **행동은 낸다** — 안 내면 라운드가 마감까지 멈춘다.
         // `-1` 은 발버둥이다(1v1·개인전과 같은 규약).
-        let chosen = best ?? (0, boss.side.pp.firstIndex(where: { $0 > 0 }) ?? -1, fallbackTarget.id)
+        let chosen = best ?? (0, boss.side.moves.indices.first { boss.side.canUse(moveAt: $0) } ?? -1,
+                              fallbackTarget.id)
         return MultiplayerAction(attackerID: boss.id, targetID: chosen.targetID,
                                  moveIndex: chosen.moveIndex)
     }
@@ -593,7 +594,8 @@ struct MultiplayerBattle: Sendable {
             }.sorted { $0.id.uuidString < $1.id.uuidString }
             guard let target = targets.first else { return nil }
             return MultiplayerAction(attackerID: fighter.id, targetID: target.id,
-                                     moveIndex: fighter.side.pp.firstIndex(where: { $0 > 0 }) ?? -1)
+                                     moveIndex: fighter.side.moves.indices
+                                         .first { fighter.side.canUse(moveAt: $0) } ?? -1)
         }
     }
 
