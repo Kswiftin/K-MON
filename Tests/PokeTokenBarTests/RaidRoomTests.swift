@@ -163,81 +163,41 @@ final class RaidRoomTests: XCTestCase {
             previous: [theirs], current: [theirs, second], myIDTag: "MYTAG1"), [second])
     }
 
-    // MARK: 예약 부화 시각표
+    // MARK: 보스 교체(정오·자정) 알림 시각
 
-    /// 시각표는 **아침에 공개된다** — 무작위인데 공개하지 않으면 마침 접속해 있던 사람만 참여한다.
-    /// 그래서 하루치를 미리 계산할 수 있어야 하고, 모든 클라이언트가 같은 답을 내야 한다.
-    func testHatchesAreThreeAscendingTimesOnTheGivenDay() throws {
-        let calendar = RaidSchedule.calendar
-        let noon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 12)))
-        let hatches = RaidSchedule.hatches(on: noon)
+    /// 항상 정확히 둘을 낸다 — 자정 직전이어도 다음 자정과 그다음 정오가 잡혀 알림 개수가
+    /// 흔들리지 않는다(예약 부화 창을 없애며 "하루 셋" 대신 "하루 둘"이 됐다).
+    func testUpcomingBossRotationsAlwaysReturnsTwoAscendingTimes() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let morning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 9)))
+        let rotations = MultiplayerRoomCenter.upcomingBossRotations(after: morning, calendar: calendar)
 
-        XCTAssertEqual(hatches.count, 3)
-        XCTAssertEqual(hatches, hatches.sorted())
-        for hatch in hatches {
-            XCTAssertTrue(calendar.isDate(hatch, inSameDayAs: noon), "그날 안에 있어야 한다")
-        }
-        // 같은 날의 어느 시각으로 물어도 같은 시각표다 — 아침에 공개한 표가 오후에 바뀌면 안 된다.
-        let evening = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 20)))
-        XCTAssertEqual(RaidSchedule.hatches(on: evening), hatches)
+        XCTAssertEqual(rotations.count, 2)
+        XCTAssertEqual(rotations, rotations.sorted())
+        for rotation in rotations { XCTAssertGreaterThan(rotation, morning) }
     }
 
-    /// 부화한 보스는 45분간 산다. 그 창 안이면 5★ 방을 열 수 있고, 밖이면 못 연다.
-    func testAHatchIsActiveForItsWindowAndNotBefore() throws {
-        let calendar = RaidSchedule.calendar
-        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 0)))
-        let first = try XCTUnwrap(RaidSchedule.hatches(on: day).first)
+    /// 아침에 물으면 [오늘 정오, 내일 자정]이다 — 오늘 자정은 이미 지났으니 후보에서 빠진다.
+    func testMorningSeesTodaysNoonThenTomorrowsMidnight() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let morning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 9)))
+        let rotations = MultiplayerRoomCenter.upcomingBossRotations(after: morning, calendar: calendar)
 
-        XCTAssertNil(RaidSchedule.activeHatch(at: first.addingTimeInterval(-60)), "부화 1분 전엔 없다")
-        XCTAssertEqual(RaidSchedule.activeHatch(at: first), first)
-        XCTAssertEqual(RaidSchedule.activeHatch(at: first.addingTimeInterval(44 * 60)), first)
-        XCTAssertNil(RaidSchedule.activeHatch(at: first.addingTimeInterval(46 * 60)), "45분이 지나면 닫힌다")
+        let todayNoon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 12)))
+        let tomorrowMidnight = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 3, hour: 0)))
+        XCTAssertEqual(rotations, [todayNoon, tomorrowMidnight])
     }
 
-    /// 다음 부화는 **내일까지 넘어가서** 찾는다 — 오늘 셋이 다 지난 저녁에 nil 을 내면 화면이
-    /// "다음 5★ 없음" 을 그린다.
-    func testNextHatchRollsOverIntoTomorrow() throws {
-        let calendar = RaidSchedule.calendar
+    /// 자정 직전에 물으면 오늘 몫은 이미 다 지났으니 [내일 자정, 내일 정오]로 넘어간다 —
+    /// nil을 내면 화면이 밤새 "다음 교체 없음"을 그린다.
+    func testLateNightRollsOverIntoTomorrow() throws {
+        let calendar = Calendar(identifier: .gregorian)
         let lateNight = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 23, minute: 30)))
-        let next = try XCTUnwrap(RaidSchedule.nextHatch(after: lateNight))
-        XCTAssertGreaterThan(next, lateNight)
-        XCTAssertTrue(calendar.isDate(next, inSameDayAs: lateNight.addingTimeInterval(24 * 60 * 60)),
-                      "오늘 게 다 지났으면 내일 첫 부화다")
+        let rotations = MultiplayerRoomCenter.upcomingBossRotations(after: lateNight, calendar: calendar)
 
-        // **대조군**: 오늘 것이 남아 있으면 내일로 넘어가지 않는다. 이 갈래를 안 밟으면
-        // "항상 내일 첫 부화" 라는 오구현도 위 단언만으로는 초록이다.
-        let dawn = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 1)))
-        let today = try XCTUnwrap(RaidSchedule.nextHatch(after: dawn))
-        XCTAssertEqual(today, RaidSchedule.hatches(on: dawn).first)
-    }
-
-    /// 주말은 창이 뒤로 밀린다 — 2026-09-05 는 토요일이다.
-    func testWeekendUsesTheLaterWindows() throws {
-        let calendar = RaidSchedule.calendar
-        let saturday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 5, hour: 0)))
-        XCTAssertEqual(calendar.component(.weekday, from: saturday), 7, "토요일이어야 한다")
-        let first = try XCTUnwrap(RaidSchedule.hatches(on: saturday).first)
-        let minute = calendar.component(.hour, from: first) * 60 + calendar.component(.minute, from: first)
-        XCTAssertTrue(RaidBoss.weekendBlocks[0].contains(minute), "주말 첫 창은 11시 이후다")
-    }
-
-    /// 15분 전 알림은 **필수다** — 시각이 무작위라 습관이 대신해 주지 못한다. 예약할 시각은
-    /// 지금보다 미래인 것만이어야 한다(과거로 예약하면 알림이 즉시 터지거나 조용히 버려진다).
-    func testReminderTimesAreFifteenMinutesAheadAndInTheFuture() throws {
-        let calendar = RaidSchedule.calendar
-        let morning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 7)))
-        let reminders = RaidSchedule.upcomingReminders(after: morning)
-        let hatches = RaidSchedule.hatches(on: morning)
-
-        XCTAssertEqual(reminders.count, 3, "아침엔 셋 다 남아 있다")
-        for (reminder, hatch) in zip(reminders, hatches) {
-            XCTAssertEqual(hatch.timeIntervalSince(reminder), TimeInterval(RaidSchedule.reminderLeadMinutes * 60))
-            XCTAssertGreaterThan(reminder, morning)
-        }
-
-        // 마지막 부화 뒤에는 오늘 몫이 없다 — 내일 것은 내일 아침에 다시 건다.
-        let lastHatch = try XCTUnwrap(hatches.last)
-        XCTAssertTrue(RaidSchedule.upcomingReminders(after: lastHatch).isEmpty)
+        let tomorrowMidnight = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 3, hour: 0)))
+        let tomorrowNoon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 3, hour: 12)))
+        XCTAssertEqual(rotations, [tomorrowMidnight, tomorrowNoon])
     }
 
     // MARK: 와이어 계약
@@ -1032,37 +992,15 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(center.announcedRaidRooms, [theirs], "다시 뜬 방은 다시 알린다")
     }
 
-    /// **회귀(#10)**: 5★ 를 부화 창 안으로 가두는 검사가 티어 피커의 **렌더 시점** 계산 한 곳뿐이라,
-    /// 화면을 열어 둔 채 45분 창이 지나면 버튼이 그대로 남아 창 밖에서 5★ 방이 열렸다.
+    /// 세 티어 모두 상시 열려 있다(2026-09-08, 예약 부화 창 폐지) — 5★ 를 여는 데 시각 게이트가
+    /// 다시 생기지 않았는지 지킨다.
     @MainActor
-    func testFiveStarRoomsOnlyOpenInsideAHatchWindow() throws {
-        let store = stubStore(TestClock(), tag: "raid-hatch-gate")
+    func testAllTiersOpenWithoutATimeGate() {
+        let store = stubStore(TestClock(), tag: "raid-open-anytime")
         let center = MultiplayerRoomCenter(companion: store)
-        let calendar = RaidSchedule.calendar
-        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 0)))
-        let hatch = try XCTUnwrap(RaidSchedule.hatches(on: day).first)
 
-        center.createRaidRoom(tier: .five, now: hatch.addingTimeInterval(TimeInterval(
-            (RaidBoss.activeMinutes + 1) * 60)))
-        XCTAssertNil(center.raidTier, "창 밖에서는 티어조차 잡히지 않는다")
-        XCTAssertEqual(center.lastError, store.l.raidHatchClosed)
-
-        // **대조군**: 창 안이면 열린다. 이걸 안 밟으면 "5★ 를 언제나 막는다" 도 초록이다.
-        center.createRaidRoom(tier: .five, now: hatch)
+        center.createRaidRoom(tier: .five)
         XCTAssertEqual(center.raidTier, .five)
-
-        // 1★·3★ 는 창과 무관하다 — 아무 때나 여는 방이 존재하는 이유다.
-        center.leaveRoom()
-        center.createRaidRoom(tier: .one, now: hatch.addingTimeInterval(TimeInterval(
-            (RaidBoss.activeMinutes + 1) * 60)))
-        XCTAssertEqual(center.raidTier, .one)
-    }
-
-    /// **회귀(#12)**: 예약 알림 제거 개수를 평일 블록 수 하나에서만 뽑아, 주말 블록이 하나라도
-    /// 많아지면 지워지지 않는 알림이 남는다(껐는데도 어제 예약이 살아 터진다).
-    func testHatchReminderIdentifiersCoverBothWeekdayAndWeekend() {
-        XCTAssertGreaterThanOrEqual(RaidBoss.hatchBlocksPerDay, RaidBoss.weekdayBlocks.count)
-        XCTAssertGreaterThanOrEqual(RaidBoss.hatchBlocksPerDay, RaidBoss.weekendBlocks.count)
     }
 
     /// **회귀(#8)**: 패배 문구가 무조건 "턴이 다 됐습니다" 라, 3턴 만에 전멸한 판도 턴 초과라고

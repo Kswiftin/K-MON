@@ -1,7 +1,7 @@
 import XCTest
 @testable import PokeTokenBar
 
-/// LAN 협동 레이드(#80)의 순수 코어 — 오늘의 보스·해치 시각·정산·협동 보스전 판정.
+/// LAN 협동 레이드(#80)의 순수 코어 — 오늘의 보스·정산·협동 보스전 판정.
 ///
 /// 이 파일이 지키는 것은 **표**다. 티어 숫자는 언제든 조정하는 손잡이지만, 조정이 "1★는 혼자,
 /// 3★는 둘, 5★는 셋" 이라는 설계 의도를 조용히 깨뜨리면 안 된다 — 그 관계를 산수로 못 박는다.
@@ -141,48 +141,6 @@ final class RaidTests: XCTestCase {
         XCTAssertLessThan(RaidTier.three.bossLevel, RaidTier.five.bossLevel)
         XCTAssertLessThanOrEqual(RaidTier.five.bossLevel, RaidBoss.partyLevel,
                                  "보스가 파티보다 높은 레벨이면 화력이 HP 표와 무관하게 튄다")
-    }
-
-    // MARK: 해치 시각 — 아침에 공개되는 무작위
-
-    func testThreeHatchesOnePerBlock() {
-        let minutes = RaidBoss.hatchMinutes(dayKey: "2026-09-02", isWeekend: false)
-        XCTAssertEqual(minutes.count, RaidBoss.weekdayBlocks.count)
-        for (minute, block) in zip(minutes, RaidBoss.weekdayBlocks) {
-            XCTAssertTrue(block.contains(minute), "\(minute) 분이 블록 \(block) 밖이다")
-        }
-        XCTAssertEqual(minutes, minutes.sorted(), "블록이 겹치지 않으므로 결과도 오름차순이다")
-    }
-
-    func testHatchTimesAreDeterministicPerDay() {
-        XCTAssertEqual(RaidBoss.hatchMinutes(dayKey: "2026-09-02", isWeekend: false),
-                       RaidBoss.hatchMinutes(dayKey: "2026-09-02", isWeekend: false))
-        XCTAssertNotEqual(RaidBoss.hatchMinutes(dayKey: "2026-09-02", isWeekend: false),
-                          RaidBoss.hatchMinutes(dayKey: "2026-09-03", isWeekend: false))
-    }
-
-    /// 주말은 사무실 시나리오가 아니다 — 창이 통째로 뒤로 밀린다.
-    func testWeekendWindowsShiftLater() {
-        let weekday = RaidBoss.hatchMinutes(dayKey: "2026-09-05", isWeekend: false)
-        let weekend = RaidBoss.hatchMinutes(dayKey: "2026-09-05", isWeekend: true)
-        XCTAssertGreaterThan(weekend[0], weekday[0])
-        XCTAssertGreaterThan(weekend[2], weekday[2])
-    }
-
-    /// **마지막 블록은 창을 넘지 않는다.** 45분 활성이 창 밖에서 끝나면 "오늘 마지막"이 아무도
-    /// 없는 시간대에 열린다 — 이슈의 열린 질문을 캡으로 닫은 자리다.
-    func testTheLastHatchFinishesInsideItsWindow() {
-        for offset in 0...365 {
-            let key = String(format: "2026-01-%02d", (offset % 28) + 1)
-            for weekend in [false, true] {
-                let last = RaidBoss.hatchMinutes(dayKey: key, isWeekend: weekend)[2]
-                let blocks = weekend ? RaidBoss.weekendBlocks : RaidBoss.weekdayBlocks
-                XCTAssertLessThanOrEqual(last + RaidBoss.activeMinutes,
-                                         blocks[2].upperBound + RaidBoss.activeMinutes)
-                XCTAssertLessThanOrEqual(last + RaidBoss.activeMinutes, 22 * 60,
-                                         "마지막 해치가 22시를 넘겨 끝난다")
-            }
-        }
     }
 
     // MARK: 정산 — 기여도가 무임승차를 가른다

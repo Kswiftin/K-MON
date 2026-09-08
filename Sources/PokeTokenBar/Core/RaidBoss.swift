@@ -135,8 +135,6 @@ enum RaidBoss {
     /// 러너 한 명이 상한까지 넣는 기대 피해. 레벨 50 끼리 한 턴 약 60 × 20턴 = 1,200 이다.
     /// **티어 HP 표가 이 값을 기준으로 머릿수를 가른다** — 400(혼자) · 1,600(둘) · 2,800(셋).
     static let runnerDamageBudget = 1_200
-    /// 부화한 보스가 살아 있는 시간(분).
-    static let activeMinutes = 45
     /// 남은 턴 1 당 보너스.
     static let turnBonusPerTurn = 10
     /// 살아남은 러너 1명당 보너스.
@@ -152,11 +150,6 @@ enum RaidBoss {
     /// 이 머릿수에 협동 항이 붙나. **정산과 화면이 같은 술어를 본다** — 화면이 "협동 보너스는 2명
     /// 이상부터" 를 그리는 조건을 따로 적으면, 머릿수 기준을 옮긴 날 문구와 실제 정산이 갈린다.
     static func coopTermsApply(runnerCount: Int) -> Bool { runnerCount >= minimumCoopRunners }
-
-    /// 예약 부화는 항상 5★ 다 — 예약이 존재하는 이유가 "혼자서는 못 여는 티어를 위해 사람을 모으는
-    /// 것" 이라서다. 아무 때나 여는 방은 1★·3★ 만 고를 수 있다.
-    static let hatchTier = RaidTier.five
-    static let adHocTiers: [RaidTier] = [.one, .three]
 
     /// 방 안에서 보스를 가리키는 고정 id. 참가자 UUID 와 겹칠 일이 없고, 고정이라 화면·정산·로그가
     /// 팀 색이 아니라 이름으로 보스를 짚을 수 있다.
@@ -209,20 +202,6 @@ enum RaidBoss {
         return "\(datePart)-\(RaidHalfDay.at(date, calendar: calendar).rawValue)"
     }
 
-    /// 평일 해치 블록(자정으로부터의 분). 08:00–11:00 · 11:30–15:00 · 15:30–**18:15**.
-    ///
-    /// 사무실 시나리오를 전제한다 — 이 앱은 업무용 맥의 메뉴막대에 살고 LAN 은 대개 사내망이다.
-    /// **마지막 블록만 창보다 일찍 닫는다**(18:15). 45분 활성이라 19:00 에 부화하면 19:45 에 끝나
-    /// 아무도 없는 시간대로 넘어간다 — 이슈의 열린 질문을 캡으로 닫은 자리다.
-    static let weekdayBlocks: [ClosedRange<Int>] = [480...660, 690...900, 930...1095]
-    /// 주말 블록 — 사무실이 없으니 통째로 뒤로 민다. 11:00–14:00 · 14:30–18:00 · 18:30–21:15.
-    /// 마지막 부화가 21:15 + 45분 = 22:00 에 닫힌다.
-    static let weekendBlocks: [ClosedRange<Int>] = [660...840, 870...1080, 1110...1275]
-
-    /// 하루에 걸리는 부화 알림 개수. **평일·주말 중 많은 쪽**이다 — 한쪽 수로만 알림을 지우면
-    /// 블록이 더 많은 요일에 건 예약이 다음 날 안 지워져, 껐는데도 어제 알림이 살아 터진다.
-    static var hatchBlocksPerDay: Int { max(weekdayBlocks.count, weekendBlocks.count) }
-
     /// 날짜 키 → 난수 시드.
     ///
     /// **자릿값을 곱한다.** 코드포인트를 그냥 더하면 `2026-09-02` 와 `2026-09-20` 이 같은 시드가
@@ -262,21 +241,6 @@ enum RaidBoss {
                                  &+ UInt64(index) &* 0x9E37_79B9_7F4A_7C15)
             return RaidCatchAttempt(id: runner.id, trainerName: runner.trainerName,
                                     succeeded: Int(rng.next() % 100) < percent)
-        }
-    }
-
-    /// 오늘의 5★ 부화 시각 — 자정으로부터의 **분**. 블록마다 하나씩 뽑아 오름차순으로 돌려준다.
-    ///
-    /// **분으로 돌려주고 `Date` 로 굽지 않는다.** 달력·시간대를 코어에 들이면 `TimeZone.current`
-    /// 캐시(defect-log)와 DST 경계가 순수 함수 안으로 따라 들어온다. 굽는 일은 호출부 몫이다.
-    ///
-    /// 블록마다 하나씩 뽑는 이유는 뭉침 방지다. 하루 전체에서 셋을 균등 추첨하면 09:05·09:20·09:40
-    /// 같은 날이 나와 "하나를 놓쳐도 둘이 남는다" 는 보증이 사라진다.
-    static func hatchMinutes(dayKey: String, isWeekend: Bool) -> [Int] {
-        var rng = SplitMix64(seed: seed(dayKey: dayKey))
-        _ = rng.next()   // 첫 뽑기는 종이 썼다 — 종과 시각이 한 값에서 갈라지지 않게 건너뛴다.
-        return (isWeekend ? weekendBlocks : weekdayBlocks).map { block in
-            block.lowerBound + Int(rng.next() % UInt64(block.count))
         }
     }
 
@@ -408,58 +372,5 @@ struct RaidRoomName: Equatable {
               let raw = Int(head[..<separator.lowerBound]),
               let tier = RaidTier(rawValue: raw) else { return nil }
         return RaidRoomName(tier: tier, trainerName: String(head[separator.upperBound...]), idTag: idTag)
-    }
-}
-
-/// 예약 부화의 달력 층 — `RaidBoss.hatchMinutes` 가 낸 **분**을 그날의 `Date` 로 굽는다.
-///
-/// 코어와 나눠 둔 이유는 시간대다. `TimeZone.current` 는 프로세스 첫 값에 캐시되므로(defect-log)
-/// 달력을 순수 추첨 안에 들이면 시간대가 바뀐 뒤에도 옛 값으로 계산한다. `Calendar(identifier:)`
-/// 를 매번 새로 만드는 이 자리 하나에만 달력을 둔다.
-enum RaidSchedule {
-    /// 부화 15분 전에 알린다. **선택이 아니라 필수다** — 시각이 무작위라 습관이 대신해 주지 못한다.
-    static let reminderLeadMinutes = 15
-
-    /// `SeasonBoard.gregorian` 과 같은 접근자 규약 — 캐시된 시간대를 물려받지 않는다.
-    static var calendar: Calendar { Calendar(identifier: .gregorian) }
-
-    /// 그날의 5★ 부화 시각 셋(오름차순). 같은 날의 어느 시각으로 물어도 같은 답이다 —
-    /// 아침에 공개한 표가 오후에 바뀌면 "공개된 무작위" 가 아니다.
-    static func hatches(on date: Date, calendar: Calendar = RaidSchedule.calendar) -> [Date] {
-        let midnight = calendar.startOfDay(for: date)
-        let weekday = calendar.component(.weekday, from: date)
-        let minutes = RaidBoss.hatchMinutes(dayKey: CompanionStore.dayKey(date),
-                                            isWeekend: weekday == 1 || weekday == 7)
-        return minutes.compactMap { calendar.date(byAdding: .minute, value: $0, to: midnight) }
-    }
-
-    /// 지금 살아 있는 부화. 없으면 5★ 방을 열 수 없다.
-    static func activeHatch(at now: Date, calendar: Calendar = RaidSchedule.calendar) -> Date? {
-        hatches(on: now, calendar: calendar).last {
-            $0 <= now && now < $0.addingTimeInterval(TimeInterval(RaidBoss.activeMinutes * 60))
-        }
-    }
-
-    /// 다음 부화. **오늘 게 다 지났으면 내일 첫 부화를 본다** — nil 을 내면 화면이 저녁 내내
-    /// "다음 5★ 없음" 을 그린다.
-    static func nextHatch(after now: Date, calendar: Calendar = RaidSchedule.calendar) -> Date? {
-        if let today = hatches(on: now, calendar: calendar).first(where: { $0 > now }) { return today }
-        // 그레고리력에 하루를 더하는 계산은 실패할 입력이 없다 — 그래도 API 가 옵셔널이라
-        // 폴백을 둔다(24시간 가산은 DST 를 가로지르는 날에만 한 시간 어긋나고, 그 어긋남은
-        // 다음 날 첫 부화 시각 표시에서 흡수된다).
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)
-            ?? now.addingTimeInterval(24 * 60 * 60)
-        return hatches(on: tomorrow, calendar: calendar).first
-    }
-
-    /// 오늘 남은 부화의 **알림 예약 시각**. 지나간 것과 이미 부화한 것은 빼고 돌려준다 —
-    /// 과거 시각으로 예약하면 알림이 즉시 터지거나 조용히 버려진다.
-    ///
-    /// 내일 몫을 여기서 같이 내지 않는 이유는 재예약이다: 날짜가 바뀌면 앱이 다시 걸므로
-    /// 하루치만 들고 있으면 된다(자정에 깨어날 이유를 만들지 않는다).
-    static func upcomingReminders(after now: Date, calendar: Calendar = RaidSchedule.calendar) -> [Date] {
-        hatches(on: now, calendar: calendar)
-            .map { $0.addingTimeInterval(TimeInterval(-reminderLeadMinutes * 60)) }
-            .filter { $0 > now }
     }
 }
