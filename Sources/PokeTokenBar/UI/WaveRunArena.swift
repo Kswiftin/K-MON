@@ -240,6 +240,7 @@ struct WaveRunArenaView: View {
                          // 필드에 둘 이상이 서 있을 때만 광역 표시를 켠다 — 단일전에서는 "전체" 가
                          // 가리킬 대상이 하나뿐이라 정보가 아니고 버튼만 복잡해진다.
                          showsSpreadMark: theirs.count + mine.count > 2,
+                         locks: side.mustStruggle ? [] : side.selectionLocks,
                          onChoose: { index in choose(moveIndex: side.mustStruggle ? -1 : index) })
         } else if sendOutSlot == nil {
             // 행동을 다 정했거나 재생 중이다 — 빈 자리를 두면 아래 줄이 위로 밀려 올라온다.

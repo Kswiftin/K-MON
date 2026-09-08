@@ -94,6 +94,27 @@ enum BattleLog {
             case .sideConditionEnded(_, let condition):
                 flush()
                 out.append(Line(actor: nil, text: l.battleSideConditionEnded(condition)))
+            case .volatileStarted(let actor, let volatileStatus):
+                // 주인이 있는 줄이다 — 진행 중인 행동에 접으면 "조이기가 붙었다" 가 때린 쪽 줄에 붙는다.
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleVolatileStarted(name(actor), volatileStatus)))
+            case .volatileEnded(let actor, let volatileStatus):
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleVolatileEnded(name(actor), volatileStatus)))
+            case .volatileTriggered(let actor, let volatileStatus):
+                // 진행 중인 행동에 접지 않는다 — "버텼다"·"길동무" 는 맞은 쪽의 줄이고, 때린 쪽 줄에
+                // 붙이면 누가 버텼는지가 뒤바뀌어 읽힌다(붙는 줄과 같은 이유다).
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleVolatileTriggered(name(actor), volatileStatus)))
+            case .heldItemTriggered(let actor, let item):
+                // 주인이 있는 줄이다 — 진행 중인 행동에 접으면 "기합의띠로 버텼다" 가 때린 쪽 줄에
+                // 붙어 누가 버텼는지가 뒤바뀐다(`volatileTriggered` 와 같은 이유).
+                flush()
+                out.append(Line(actor: actor,
+                                text: l.battleHeldItemTriggered(name(actor), item: item)))
             case .terastallized(let actor, let type):
                 flush()
                 out.append(Line(actor: actor,
@@ -121,6 +142,9 @@ enum BattleLog {
             case .cant(let actor, let status):
                 flush()
                 out.append(Line(actor: actor, text: l.battleCantMove(name(actor), status: status)))
+            case .moveBlocked(let actor, let lock):
+                flush()
+                out.append(Line(actor: actor, text: l.battleCantUseMove(name(actor), lock: lock)))
             case .boost(let actor, let stat, let amount) where amount != 0:
                 // 랭크 변화는 **자기 줄**이다. 진행 중인 행동에 접으면 "칼춤! 0 데미지 · 공격이
                 // 올라갔다" 처럼 쓰지도 않은 데미지 칸에 붙어 읽힌다.

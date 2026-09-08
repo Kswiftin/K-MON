@@ -653,7 +653,7 @@ final class VariableDamageTests: XCTestCase {
         // **다음 호출의 인자**를 이 호출 것으로 읽어 빠뜨림을 덮는다. 그래서 다음 `BattleSnapshot(`
         // 앞에서 먼저 자르고, 남은 길이를 이 상한으로 다시 자른다.
         let window = 800
-        let required = ["weightHectograms:", "ability:"]
+        let required = ["weightHectograms:", "ability:", "storedTeraType:"]
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources")

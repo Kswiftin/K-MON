@@ -178,6 +178,61 @@ function ignoresProtect(move) {
   return !NON_OPPOSING_TARGETS.has(move.target) && !move.flags?.protect
 }
 
+/**
+ * Does this move hit a Minimized target harder? Showdown spells it as the `minimize` move flag,
+ * which Minimize's own condition reads to both double the damage and bypass the accuracy roll.
+ * The flag is the whole rule, so the engine asks the table which moves carry it.
+ */
+function hitsMinimizedHarder(move) {
+  return Boolean(move.flags?.minimize)
+}
+
+/**
+ * Does Defense Curl double this move's base power? Showdown keeps that check inside each move's
+ * own `basePowerCallback` (Rollout, Ice Ball) rather than in a flag, so the callback's source is
+ * the only place that answers — reading it beats hand-keeping a two-id list that goes stale.
+ */
+function doubledByDefenseCurl(move) {
+  return typeof move.basePowerCallback === 'function'
+    && /volatiles\['defensecurl'\]/.test(String(move.basePowerCallback))
+}
+
+/**
+ * Does Heal Block stop this move? Showdown spells that as the `heal` move flag, which its own
+ * `healblock` condition reads to disable the move outright. Drain moves carry the flag too
+ * (Giga Drain, Drain Punch), so Heal Block takes those off the menu as well.
+ *
+ * The engine needs the flag rather than PokéAPI's `healing` column: that column stops at
+ * generation 7, so a gen-8+ healing move would slip past Heal Block with nothing to say why.
+ */
+function blockedByHealBlock(move) {
+  return Boolean(move.flags?.heal)
+}
+
+/**
+ * Does this move reach the owner through a Substitute? Showdown spells that as the `bypasssub`
+ * move flag, which every sound move carries alongside the handful of others that ignore the
+ * doll (Whirlwind, Transform, Perish Song).
+ *
+ * The engine needs the flag rather than a hand-kept sound-move list: a new sound move would
+ * otherwise be blocked by the doll in silence, and nothing about the move would say why.
+ */
+function passesThroughSubstitute(move) {
+  return Boolean(move.flags?.bypasssub)
+}
+
+/**
+ * What fraction of max HP a move charges for raising a Substitute. Substitute takes a quarter,
+ * Shed Tail half — Showdown keeps each number inside the move's own `onHit` callback, so the
+ * callback's source answers rather than a two-id list that goes stale the moment a third move
+ * raises a doll.
+ */
+function substituteCostDivisor(move) {
+  if (move.volatileStatus !== 'substitute' || !move.onHit) return null
+  const found = /maxhp \s*\/\s*(\d+)/.exec(String(move.onHit))
+  return found ? Number(found[1]) : null
+}
+
 /** Why a move cannot be fixed by data alone — each reason is hand-written engine work. */
 function engineWorkReasons(move) {
   const reasons = []
@@ -249,7 +304,7 @@ const swiftLiteral = (value) => (typeof value === 'string' ? `"${value}"` : Stri
  * Render the override map as a Swift source file. Generated rather than parsed at runtime so
  * the table costs nothing to load and a bad extraction breaks the build instead of a battle.
  */
-function renderSwift(overrides, effects, piercing) {
+function renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost, healing) {
   const entries = Object.entries(overrides)
     .map(([id, override]) => [Number(id), override])
     .sort((a, b) => a[0] - b[0])
@@ -258,6 +313,12 @@ function renderSwift(overrides, effects, piercing) {
     .map(([id, name]) => [Number(id), name])
     .sort((a, b) => a[0] - b[0])
     .map(([id, name]) => `        ${id},  // ${name}`)
+
+  const idSetLines = (ids) => Object.entries(ids)
+    .map(([id, name]) => [Number(id), name])
+    .sort((a, b) => a[0] - b[0])
+    .map(([id, name]) => `        ${id},  // ${name}`)
+    .join('\n')
 
   const effectLines = Object.entries(effects)
     .map(([id, effect]) => [Number(id), effect])
@@ -334,6 +395,44 @@ ${effectLines.join('\n')}
     static let ignoringGuard: Set<Int> = [
 ${piercingLines.join('\n')}
     ]
+
+    /// Moves that hit a Minimized target harder — double damage, and the accuracy roll is
+    /// skipped. Showdown carries this as the \`minimize\` move flag; the engine implements the
+    /// rule once and asks here which moves carry the flag.
+    static let hittingMinimizedHarder: Set<Int> = [
+${idSetLines(minimized)}
+    ]
+
+    /// Moves whose base power doubles while the user carries Defense Curl's volatile. Showdown
+    /// keeps the check inside each move's own base-power callback, so this set is read out of
+    /// those callbacks rather than kept by hand.
+    static let doubledByDefenseCurl: Set<Int> = [
+${idSetLines(curled)}
+    ]
+
+    /// Moves that reach the owner **through** a Substitute — every sound move, plus the few
+    /// others Showdown marks with the \`bypasssub\` flag. The engine implements the doll once and
+    /// asks here which moves ignore it, so a new sound move is not blocked in silence.
+    static let bypassingSubstitute: Set<Int> = [
+${idSetLines(bypassingSub)}
+    ]
+
+    /// How much max HP each Substitute-raising move charges, as the divisor Showdown writes in
+    /// the move's own \`onHit\` callback: Substitute a quarter, Shed Tail half. The doll itself is
+    /// always a quarter of max HP — only the price differs, so only the price is read out here.
+    /// Moves Heal Block stops, as Showdown's \`heal\` move flag marks them — drain moves included
+    /// (Showdown's own \`healblock\` condition disables every move carrying the flag).
+    static let healing: Set<Int> = [
+${idSetLines(healing)}
+    ]
+
+    static let substituteCostDivisor: [Int: Int] = [
+${Object.entries(substituteCost)
+  .map(([id, entry]) => [Number(id), entry])
+  .sort((a, b) => a[0] - b[0])
+  .map(([id, { divisor, name }]) => `        ${id}: ${divisor},  // ${name}`)
+  .join('\n')}
+    ]
 }
 
 extension MoveSpec {
@@ -373,6 +472,11 @@ async function main() {
   const overrides = {}
   const effects = {}
   const piercing = {}
+  const minimized = {}
+  const curled = {}
+  const bypassingSub = {}
+  const substituteCost = {}
+  const healing = {}
   const engineWork = []
   let unmatched = 0
   let metaGapsFilled = 0
@@ -387,6 +491,12 @@ async function main() {
     const effect = readEffects(move)
     if (Object.keys(effect).length) effects[move.num] = { name: move.name, ...effect }
     if (ignoresProtect(move)) piercing[move.num] = move.name
+    if (hitsMinimizedHarder(move)) minimized[move.num] = move.name
+    if (doubledByDefenseCurl(move)) curled[move.num] = move.name
+    if (passesThroughSubstitute(move)) bypassingSub[move.num] = move.name
+    const subCost = substituteCostDivisor(move)
+    if (subCost) substituteCost[move.num] = { divisor: subCost, name: move.name }
+    if (blockedByHealBlock(move)) healing[move.num] = move.name
     const reasons = engineWorkReasons(move)
     // `isNonstandard` marks moves no current game can produce (Z-moves, LGPE, CAP fakemon).
     // They reach the app only if PokéAPI hands one out, so they are not scoping work.
@@ -406,7 +516,7 @@ async function main() {
   await writeFile(workPath, `${JSON.stringify(engineWork, null, 2)}\n`)
   if (swiftPath) {
     await mkdir(dirname(swiftPath), { recursive: true })
-    await writeFile(swiftPath, renderSwift(overrides, effects, piercing))
+    await writeFile(swiftPath, renderSwift(overrides, effects, piercing, minimized, curled, bypassingSub, substituteCost, healing))
   }
 
   const byField = Object.entries(fieldCounts).sort((a, b) => b[1] - a[1])
@@ -415,6 +525,8 @@ async function main() {
   console.log(`overrides written   ${Object.keys(overrides).length}  → ${outPath}`)
   console.log(`effects written     ${Object.keys(effects).length}`)
   console.log(`moves guards miss   ${Object.keys(piercing).length}`)
+  console.log(`minimize-flagged    ${Object.keys(minimized).length}`)
+  console.log(`defense-curl doubled ${Object.keys(curled).length}`)
   console.log(`  of those, moves PokéAPI had no meta row for: ${metaGapsFilled}`)
   console.log('\ncorrected fields')
   for (const [field, count] of byField) console.log(`  ${field.padEnd(16)}${count}`)

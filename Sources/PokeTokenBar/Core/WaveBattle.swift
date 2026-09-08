@@ -72,6 +72,40 @@ struct WaveBattle: Sendable {
             : leads.map { FieldSlot(id: UUID(), teamIndex: $0) }
     }
 
+    // MARK: 턴 끝
+
+    /// 씨뿌리기의 턴 끝 — 빨아낸 HP 를 뿌린 **칸**이 받는다. 칸 id 로 양쪽 필드를 찾으므로 그
+    /// 칸의 개체가 교체돼도 지금 서 있는 개체가 받는다(본가와 같다).
+    ///
+    /// 엔진이 짝을 못 찾는 이유는 배열이다 — 깎는 쪽과 받는 쪽이 `mine`·`opponents` 로 갈려 있어
+    /// 자리를 푸는 일은 이 타입만 할 수 있다. 자리를 못 찾으면 그 씨는 이번 턴 아무 일도 하지 않는다.
+    private mutating func resolveLeechSeed() {
+        for (seededIsMine, slot) in myField.map({ (true, $0) }) + opponentField.map({ (false, $0) }) {
+            var seeded = seededIsMine ? mine[slot.teamIndex] : opponents[slot.teamIndex]
+            guard seeded.has(.leechSeed), let source = seeded.leechSeedSource,
+                  let seeder = place(of: source),
+                  seeder != (seededIsMine, slot.teamIndex) else { continue }
+            var receiver = seeder.isMine ? mine[seeder.teamIndex] : opponents[seeder.teamIndex]
+            events += BattleEngine.endOfTurnLeechSeed(seeded: &seeded, seededActor: .fighter(slot.id),
+                                                      seeder: &receiver, seederActor: source)
+            if seededIsMine { mine[slot.teamIndex] = seeded } else { opponents[slot.teamIndex] = seeded }
+            if seeder.isMine { mine[seeder.teamIndex] = receiver }
+            else { opponents[seeder.teamIndex] = receiver }
+        }
+    }
+
+    /// 이 칸 id 가 지금 어느 배열의 몇 번째인가. 칸은 배틀이 끝날 때까지 남으므로(교체돼도 자리는
+    /// 그대로) 라운드 중에 사라지지 않는다.
+    private func place(of actor: BattleActor) -> (isMine: Bool, teamIndex: Int)? {
+        if let slot = myField.first(where: { BattleActor.fighter($0.id) == actor }) {
+            return (true, slot.teamIndex)
+        }
+        if let slot = opponentField.first(where: { BattleActor.fighter($0.id) == actor }) {
+            return (false, slot.teamIndex)
+        }
+        return nil
+    }
+
     // MARK: 필드 읽기
 
     func mySide(at ordinal: Int) -> BattleSide? {
@@ -126,7 +160,25 @@ struct WaveBattle: Sendable {
               benchCandidates.contains(teamIndex) else { return false }
         myField[ordinal].teamIndex = teamIndex
         events.append(.sendOut(actor(mine: ordinal), teamIndex: teamIndex))
+        stepOnHazards(isMine: true, slot: ordinal)
+        // 밟아서 그 자리에서 쓰러질 수 있다 — 전멸이면 여기서 승부를 적어야 한다.
+        advanceFainted()
         return true
+    }
+
+    /// 새로 나온 개체가 자기 편에 깔린 입장 데미지를 밟는다 — 출전을 내는 세 자리가 이것을 쓴다.
+    /// 2대2 라 밟는 것은 **그 칸의 개체**뿐이다(같은 편 다른 칸은 이미 나와 있다).
+    private mutating func stepOnHazards(isMine: Bool, slot: Int) {
+        let index = teamIndex(isMine: isMine, slot: slot)
+        let team = teamSlot(isMine: isMine)
+        let who = actor(isMine: isMine, slot: slot)
+        if isMine {
+            events += BattleEngine.applyEntryHazards(&mine[index], actor: who, team: team,
+                                                     field: field, rng: &rng)
+        } else {
+            events += BattleEngine.applyEntryHazards(&opponents[index], actor: who, team: team,
+                                                     field: field, rng: &rng)
+        }
     }
 
     /// 한 칸의 행동을 적는다. 살아 있는 칸이 모두 채워지면 **그 자리에서 턴을 해상한다** —
@@ -233,6 +285,8 @@ struct WaveBattle: Sendable {
             events += BattleEngine.endOfTurnResidual(&opponents[slot.teamIndex],
                                                      actor: .fighter(slot.id))
         }
+        // 씨뿌리기는 잔뎀 뒤, 날씨 앞이다(1v1·방과 같은 순서).
+        resolveLeechSeed()
         // 날씨 몫은 필드 전원에게, 남은 턴은 **턴마다 한 번** 줄인다.
         for slot in myField {
             events += BattleEngine.endOfTurnWeather(&mine[slot.teamIndex],
@@ -257,6 +311,8 @@ struct WaveBattle: Sendable {
             BattleEngine.prepareForSwitch(&mine[myField[ordinal].teamIndex])
             myField[ordinal].teamIndex = teamIndex
             events.append(.sendOut(actor(mine: ordinal), teamIndex: teamIndex))
+            // 밟기는 공격보다 **앞**이다(교체가 공격보다 먼저인 것과 같은 이유).
+            stepOnHazards(isMine: true, slot: ordinal)
         }
     }
 
@@ -269,7 +325,7 @@ struct WaveBattle: Sendable {
     private mutating func cpuAttacks() -> [Attack] {
         livingOpponentSlots.compactMap { ordinal in
             let side = opponents[opponentField[ordinal].teamIndex]
-            let candidates = side.pp.indices.filter { side.pp[$0] > 0 }
+            let candidates = side.moves.indices.filter { side.canUse(moveAt: $0) }
             let moveIndex = candidates.isEmpty
                 ? -1
                 : candidates[Int(rng.next() % UInt64(candidates.count))]
@@ -294,10 +350,24 @@ struct WaveBattle: Sendable {
     private func targets(of attack: Attack, move: MoveSpec) -> [(isMine: Bool, slot: Int)] {
         let foeSlots = attack.isMine ? livingOpponentSlots : livingMySlots
         let foesAreMine = !attack.isMine
+        // **아군을 지목하는 기술(도우미)은 자기 편에서 자리를 찾는다.** 필드가 2대2 라 아군은
+        // 하나뿐이므로 고른 값을 묻지 않는다 — 화면이 상대 칸만 나열해도 이 기술이 닿는다.
+        // 혼자 남았으면 걸 아군이 없어 실패한다(빈 배열).
+        if move.targetsAlly {
+            let allySlots = (attack.isMine ? livingMySlots : livingOpponentSlots)
+                .filter { $0 != attack.slot }
+            guard let slot = allySlots.first else { return [] }
+            return [(attack.isMine, slot)]
+        }
         guard move.hitsSpread else {
             guard let slot = foeSlots.contains(attack.target) ? attack.target : foeSlots.first
             else { return [] }
-            return [(foesAreMine, slot)]
+            // 유도(따라와·성원·스포트라이트)는 고른 자리보다 세다 — 판정은 방과 **같은 함수**가 한다.
+            let drawn = BattleEngine.redirectedTarget(
+                move: move, attacker: side(of: attack),
+                candidates: foeSlots.map { (slot: $0, side: foesAreMine ? mine[myField[$0].teamIndex]
+                                                                        : opponents[opponentField[$0].teamIndex]) })
+            return [(foesAreMine, drawn?.slot ?? slot)]
         }
         var hit = foeSlots.map { (isMine: foesAreMine, slot: $0) }
         if move.reach == .allOthers {
@@ -337,14 +407,41 @@ struct WaveBattle: Sendable {
 
         guard move.hitsSpread else {
             let target = hits[0]
+            // 끌려간 턴은 **로그가 말해야 한다** — 안 말하면 고른 자리가 아닌 곳이 맞은 이유가
+            // 화면에 남지 않는다(유도를 쓴 칸의 줄은 이미 지난 턴 순서에 있다).
+            if target.slot != attack.target,
+               let drawn = BattleVolatile.allCases.first(where: {
+                   $0.drawsAttacks && (target.isMine ? mine[teamIndex(isMine: true, slot: target.slot)]
+                                                     : opponents[teamIndex(isMine: false, slot: target.slot)])
+                       .has($0)
+               }) {
+                events.append(.volatileTriggered(actor(isMine: target.isMine, slot: target.slot), drawn))
+            }
             let defenderIndex = teamIndex(isMine: target.isMine, slot: target.slot)
             let defenderActor = actor(isMine: target.isMine, slot: target.slot)
             if attack.moveIndex >= 0 {
                 if attack.isMine { mine[attackerIndex].pp[attack.moveIndex] -= 1 }
                 else { opponents[attackerIndex].pp[attack.moveIndex] -= 1 }
             }
-            // 공격자와 방어자가 반드시 다른 배열에 있으므로(단일 타겟은 늘 상대편이다) 배열 원소를
-            // 그대로 inout 으로 넘길 수 있다.
+            // **아군에게 거는 기술(도우미)은 둘이 같은 배열에 있다** — 같은 배열의 두 원소를
+            // 동시에 inout 으로 잡으면 배타적 접근 위반이라, 광역기와 같은 모양으로 사본을
+            // 꺼내 돌린다. 쓰는 순서는 방과 같다: 방어측을 먼저, 시전자를 나중에(둘이 같은
+            // 자리인 경우까지 한 규칙으로 덮는다).
+            if target.isMine == attack.isMine {
+                var caster = attack.isMine ? mine[attackerIndex] : opponents[attackerIndex]
+                var ally = attack.isMine ? mine[defenderIndex] : opponents[defenderIndex]
+                events += BattleEngine.applyAttack(attacker: &caster, defender: &ally,
+                                                   attackerActor: attackerActor,
+                                                   defenderActor: defenderActor,
+                                                   move: move, field: &field,
+                                                   attackerTeam: teamSlot(isMine: attack.isMine),
+                                                   defenderTeam: teamSlot(isMine: target.isMine),
+                                                   rng: &rng)
+                writeBack(ally, isMine: target.isMine, index: defenderIndex)
+                writeBack(caster, isMine: attack.isMine, index: attackerIndex)
+                return
+            }
+            // 공격자와 방어자가 다른 배열에 있으면 배열 원소를 그대로 inout 으로 넘길 수 있다.
             if attack.isMine {
                 events += BattleEngine.applyAttack(attacker: &mine[attackerIndex],
                                                    defender: &opponents[defenderIndex],
@@ -413,14 +510,28 @@ struct WaveBattle: Sendable {
         }
         // 상대의 빈 칸은 스스로 채운다 — 고를 사람이 없다. 내 칸은 사용자가 고른다
         // (`slotsNeedingSendOut`).
-        for ordinal in opponentField.indices
-        where !opponents[opponentField[ordinal].teamIndex].isAlive {
-            let onField = Set(opponentField.map(\.teamIndex))
-            guard let next = opponents.indices.first(where: {
-                opponents[$0].isAlive && !onField.contains($0)
-            }) else { continue }
-            opponentField[ordinal].teamIndex = next
-            events.append(.sendOut(actor(opponent: ordinal), teamIndex: next))
+        // **채우고 밟기를 반복한다.** 새로 나온 개체가 압정으로 그 자리에서 쓰러질 수 있어서다 —
+        // 한 번만 채우면 상대 칸이 빈 채로 다음 턴이 돌아 그 칸이 아무것도 하지 않는다.
+        // 반복은 끝난다: 매 바퀴가 필드에 없던 살아 있는 후보 하나를 소비한다.
+        while true {
+            var filledAny = false
+            for ordinal in opponentField.indices
+            where !opponents[opponentField[ordinal].teamIndex].isAlive {
+                let onField = Set(opponentField.map(\.teamIndex))
+                guard let next = opponents.indices.first(where: {
+                    opponents[$0].isAlive && !onField.contains($0)
+                }) else { continue }
+                opponentField[ordinal].teamIndex = next
+                events.append(.sendOut(actor(opponent: ordinal), teamIndex: next))
+                stepOnHazards(isMine: false, slot: ordinal)
+                filledAny = true
+            }
+            guard filledAny else { return }
+            // 밟기로 상대가 전멸할 수 있다 — 그 판정은 위와 같은 자리(양쪽 함께)에서 다시 본다.
+            if !opponents.contains(where: \.isAlive) {
+                result = mine.contains(where: \.isAlive) ? .win : .draw
+                return
+            }
         }
     }
 }

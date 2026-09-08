@@ -284,6 +284,163 @@ enum ShowdownMoveData {
         887,  // Hyper Drill
         910,  // Mighty Cleave
     ]
+
+    /// Moves that hit a Minimized target harder — double damage, and the accuracy roll is
+    /// skipped. Showdown carries this as the `minimize` move flag; the engine implements the
+    /// rule once and asks here which moves carry the flag.
+    static let hittingMinimizedHarder: Set<Int> = [
+        23,  // Stomp
+        34,  // Body Slam
+        407,  // Dragon Rush
+        484,  // Heavy Slam
+        535,  // Heat Crash
+        537,  // Steamroller
+        560,  // Flying Press
+        696,  // Malicious Moonsault
+        916,  // Supercell Slam
+    ]
+
+    /// Moves whose base power doubles while the user carries Defense Curl's volatile. Showdown
+    /// keeps the check inside each move's own base-power callback, so this set is read out of
+    /// those callbacks rather than kept by hand.
+    static let doubledByDefenseCurl: Set<Int> = [
+        205,  // Rollout
+        301,  // Ice Ball
+    ]
+
+    /// Moves that reach the owner **through** a Substitute — every sound move, plus the few
+    /// others Showdown marks with the `bypasssub` flag. The engine implements the doll once and
+    /// asks here which moves ignore it, so a new sound move is not blocked in silence.
+    static let bypassingSubstitute: Set<Int> = [
+        18,  // Whirlwind
+        45,  // Growl
+        46,  // Roar
+        47,  // Sing
+        48,  // Supersonic
+        50,  // Disable
+        102,  // Mimic
+        103,  // Screech
+        114,  // Haze
+        166,  // Sketch
+        173,  // Snore
+        174,  // Curse
+        176,  // Conversion 2
+        180,  // Spite
+        193,  // Foresight
+        194,  // Destiny Bond
+        195,  // Perish Song
+        213,  // Attract
+        215,  // Heal Bell
+        227,  // Encore
+        244,  // Psych Up
+        253,  // Uproar
+        259,  // Torment
+        269,  // Taunt
+        270,  // Helping Hand
+        272,  // Role Play
+        285,  // Skill Swap
+        286,  // Imprison
+        288,  // Grudge
+        289,  // Snatch
+        304,  // Hyper Voice
+        316,  // Odor Sleuth
+        319,  // Metal Sound
+        320,  // Grass Whistle
+        357,  // Miracle Eye
+        382,  // Me First
+        384,  // Power Swap
+        385,  // Guard Swap
+        391,  // Heart Swap
+        405,  // Bug Buzz
+        432,  // Defog
+        448,  // Chatter
+        495,  // After You
+        496,  // Round
+        497,  // Echoed Voice
+        513,  // Reflect Type
+        516,  // Bestow
+        547,  // Relic Song
+        555,  // Snarl
+        568,  // Noble Roar
+        574,  // Disarming Voice
+        575,  // Parting Shot
+        586,  // Boomburst
+        587,  // Fairy Lock
+        589,  // Play Nice
+        590,  // Confide
+        593,  // Hyperspace Hole
+        597,  // Aromatic Mist
+        600,  // Powder
+        602,  // Magnetic Flux
+        607,  // Hold Hands
+        621,  // Hyperspace Fury
+        664,  // Sparkling Aria
+        674,  // Gear Up
+        683,  // Speed Swap
+        689,  // Instruct
+        691,  // Clanging Scales
+        712,  // Spectral Thief
+        728,  // Clangorous Soulblaze
+        752,  // Teatime
+        786,  // Overdrive
+        791,  // Life Dew
+        811,  // Coaching
+        816,  // Jungle Healing
+        826,  // Eerie Spell
+        871,  // Torch Song
+        913,  // Dragon Cheer
+        914,  // Alluring Voice
+        917,  // Psychic Noise
+    ]
+
+    /// How much max HP each Substitute-raising move charges, as the divisor Showdown writes in
+    /// the move's own `onHit` callback: Substitute a quarter, Shed Tail half. The doll itself is
+    /// always a quarter of max HP — only the price differs, so only the price is read out here.
+    /// Moves Heal Block stops, as Showdown's `heal` move flag marks them — drain moves included
+    /// (Showdown's own `healblock` condition disables every move carrying the flag).
+    static let healing: Set<Int> = [
+        71,  // Absorb
+        72,  // Mega Drain
+        105,  // Recover
+        135,  // Soft-Boiled
+        138,  // Dream Eater
+        141,  // Leech Life
+        156,  // Rest
+        202,  // Giga Drain
+        208,  // Milk Drink
+        234,  // Morning Sun
+        235,  // Synthesis
+        236,  // Moonlight
+        256,  // Swallow
+        273,  // Wish
+        303,  // Slack Off
+        355,  // Roost
+        361,  // Healing Wish
+        409,  // Drain Punch
+        456,  // Heal Order
+        461,  // Lunar Dance
+        505,  // Heal Pulse
+        532,  // Horn Leech
+        570,  // Parabolic Charge
+        577,  // Draining Kiss
+        613,  // Oblivion Wing
+        659,  // Shore Up
+        666,  // Floral Healing
+        668,  // Strength Sap
+        685,  // Purify
+        733,  // Bouncy Bubble
+        791,  // Life Dew
+        816,  // Jungle Healing
+        849,  // Lunar Blessing
+        863,  // Revival Blessing
+        891,  // Bitter Blade
+        902,  // Matcha Gotcha
+    ]
+
+    static let substituteCostDivisor: [Int: Int] = [
+        164: 4,  // Substitute
+        880: 2,  // Shed Tail
+    ]
 }
 
 extension MoveSpec {

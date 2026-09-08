@@ -600,9 +600,12 @@ struct PokemonChatToolbox: PokemonChatToolRunning {
         switch CompanionAction.useItem(kind, companion: companion) {
         case .candy(let result): return ("item rareCandy used result=\(result)", true)
         case .mint(let nature): return ("item mint used nature=\(nature.rawValue)", true)
+        case .teraShard(let type): return ("item teraShard used teraType=\(type.rawValue)", true)
         // 후보 목록 카드가 뜰 뿐 아직 아무것도 바뀌지 않았다. 성공으로 뭉개면 모델이
         // "기술을 바꿨어" 라고 말한다.
         case .relearnOpened: return ("item heartScale opened relearn choices", true)
+        // 지닌물건은 쓴 것이 아니라 **붙었다** — "used" 로 말하면 모델이 소모품으로 설명한다.
+        case .heldItemGiven: return ("item \(kind.rawValue) is now held by the partner", true)
         case .evolutionItemUsed: return ("item \(kind.rawValue) used", true)
         // 보유형(부적)은 대화에서 "지금 쓴다" 는 개념이 없다.
         case .notUsedThisWay: return ("item \(kind.rawValue) is not used from chat", false)

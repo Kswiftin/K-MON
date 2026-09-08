@@ -171,11 +171,17 @@ struct PokedoroRequestExecutor {
             return ok(request, "\(name)을 썼다 — \(Self.candyLine(result))")
         case .mint(let nature):
             return ok(request, "\(name)을 썼다. 성격이 \(nature.name)가 됐다.")
-        // 후보 카드가 떴을 뿐 아직 아무것도 안 바뀌었다. TUI도 같은 카드를 이어서 조작한다.
+        case .teraShard(let type):
+            return ok(request, "\(name)을 썼다. 테라 타입이 \(type.name)가 됐다.")
+        // 후보 카드가 떴을 뿐 아직 아무것도 안 바뀌었다 — 고르는 화면은 앱에만 있다. "바꿨다" 로
+        // 답하면 사용자는 끝난 줄 알고 앱을 안 열어 본다.
         case .relearnOpened:
             return ok(request, "\(name)을 썼다. 후보를 불러온 뒤 learn으로 확인한다.")
         case .evolutionItemUsed:
             return ok(request, "\(name)을 썼다.")
+        // 쓴 것이 아니라 붙었다 — "썼다" 로 답하면 사용자는 소모됐다고 읽는다.
+        case .heldItemGiven:
+            return ok(request, "\(name)을 지니게 했다.")
         // 재고 부족과 **갈라 말한다**: 사러 가야 하는지, 애초에 쓰는 물건이 아닌지 다르다.
         case .notUsedThisWay:
             return no(request, "\(name)은 지니고만 있는 물건이라 쓰는 것이 아니다.")

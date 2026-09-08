@@ -82,6 +82,31 @@ final class AdventureTests: XCTestCase {
         XCTAssertEqual(first.round, 2)
     }
 
+    /// 씨뿌리기가 빨아낸 HP 는 **뿌린 참가자**가 받는다 — 이번 라운드에 누구를 때렸는지와 무관하다.
+    /// 넷이 도는 개인전에서 그 둘이 갈린다(1대1 테스트는 어느 오구현으로도 통과한다).
+    func testLeechSeedSapsIntoTheFighterThatPlantedIt() throws {
+        let ids = (0..<4).map { _ in UUID() }
+        var fighters = ids.enumerated().map { soloMoveFighter($0.element, speed: 400 - $0.offset) }
+        // 2번이 씨를 뿌렸다 — 0번이 이번 라운드에 때리는 상대는 1번이다.
+        XCTAssertTrue(fighters[0].side.start(.leechSeed))
+        fighters[0].side.leechSeedSource = .fighter(ids[2])
+        let sap = fighters[0].side.stats.hp / 8
+        fighters[2].side.hp = 10
+        var battle = try MultiplayerBattle(fighters: fighters, mode: .freeForAll, seed: 5)
+
+        // 살아 있는 넷이 모두 행동해야 한 라운드다(`unknownFighter`). 대상을 1번·3번으로 몰아
+        // 아무도 0번·2번을 때리지 않게 한다 — 씨가 옮긴 HP 만 남아 값이 하나로 읽힌다.
+        _ = try battle.resolveRound([
+            MultiplayerAction(attackerID: ids[0], targetID: ids[1], moveIndex: 0),
+            MultiplayerAction(attackerID: ids[1], targetID: ids[3], moveIndex: 0),
+            MultiplayerAction(attackerID: ids[2], targetID: ids[3], moveIndex: 0),
+            MultiplayerAction(attackerID: ids[3], targetID: ids[1], moveIndex: 0),
+        ])
+        XCTAssertEqual(battle.fighters[2].side.hp, 10 + sap, "뿌린 참가자가 받아야 한다")
+        XCTAssertEqual(battle.fighters[0].side.hp, battle.fighters[0].side.stats.hp - sap,
+                       "빨린 쪽에서 같은 만큼 빠진다")
+    }
+
     /// 기술 1개(위력 40 / PP 20)만 든 파이터 — 스피드로 라운드 순서를 고정한다.
     private func soloMoveFighter(_ id: UUID, speed: Int) -> MultiplayerFighter {
         let move = MoveSpec(id: 1, names: [:], type: .normal, power: 40,

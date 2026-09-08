@@ -206,42 +206,46 @@ private struct ItemCard: View {
         .pokedoroCard()
     }
 
-    /// 이 아이템을 지금 쓸 수 있나 (kind 별 — 사탕은 라인 로딩 필요, 민트는 활성 포켓몬만).
+    /// 이 아이템을 지금 쓸 수 있나 (갈래별 — 사탕은 라인 로딩 필요, 민트·테라피스는 활성 포켓몬만).
+    ///
+    /// 아래 세 switch 는 **`default:` 를 두지 않는다.** 갈래를 하나 늘렸는데 한 자리만 빠뜨리면
+    /// 컴파일은 통과한 채 그 아이템이 진화 아이템처럼 다뤄진다 — `ItemKind.bagUse` 가 있는 이유다.
     private var canUse: Bool {
-        switch kind {
-        case .rareCandy: return store.canUseRareCandy
-        case .mint:      return store.canUseMint
-        case .shinyCharm: return false   // 보유형 — 사용 개념 없음(상시 효과)
-        case .heartScale: return store.canUseHeartScale
-        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return false
-        default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
-            return store.canUseEvolutionItem(kind)
+        switch kind.bagUse {
+        case .candy:          return store.canUseRareCandy
+        case .mint:           return store.canUseMint
+        case .teraShard:      return store.canUseTeraShard
+        case .heartScale:     return store.canUseHeartScale
+        case .heldItem:       return store.canGiveHeldItem(kind)
+        case .passive:        return false   // 보유형 — 사용 개념 없음(상시 효과)
+        case .furniture:      return false
+        case .evolutionItem:  return store.canUseEvolutionItem(kind)
         }
     }
     /// 사용 컨트롤 효과 힌트 ("+XP" / "성격 랜덤 변경").
     private func effectHint(_ l: L) -> String {
-        switch kind {
-        case .rareCandy: return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
-        case .mint:      return l.mintEffectHint
-        case .shinyCharm: return l.shinyCharmEffectHint
+        switch kind.bagUse {
+        case .candy:      return "+\(GameNumberFormatter.compact(RareCandy.xp)) XP"
+        case .mint:       return l.mintEffectHint
+        case .teraShard:  return l.teraShardEffectHint
         case .heartScale: return l.heartScaleEffectHint
-        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return "미니룸에서 배치"
-        default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
+        case .heldItem:   return l.heldItemEffectHint(kind)
+        case .passive:    return l.shinyCharmEffectHint
+        case .furniture:  return "미니룸에서 배치"
+        case .evolutionItem:
             return "진화 가능할 때 사용"
         }
     }
     private func performUse() {
-        switch kind {
-        case .rareCandy: _ = store.useRareCandy()
-        case .mint:      _ = store.useMint()
-        case .shinyCharm: break   // 보유형 — 사용 동작 없음
+        switch kind.bagUse {
+        case .candy:      _ = store.useRareCandy()
+        case .mint:       _ = store.useMint()
+        case .teraShard:  _ = store.useTeraShard()
         case .heartScale: store.useHeartScale()
-        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: break
-        default:   // 진화 아이템 전체(돌·연결의끈·지닌물건) — kind.isEvolutionItem
-            _ = store.useEvolutionItem(kind)
+        case .heldItem:   store.giveHeldItem(kind)
+        case .passive:    break   // 보유형 — 사용 동작 없음
+        case .furniture:  break
+        case .evolutionItem: _ = store.useEvolutionItem(kind)
         }
     }
 
@@ -280,12 +284,21 @@ private struct ItemCard: View {
         } else {
             // 알(부화 전)/활성 없음/(사탕만)라인 미로딩 — 비활성 + 사유. 쓸 수 없어도 버릴 수는 있다.
             HStack {
-                Text(store.isEgg ? l.useAfterHatch : l.useNeedsPokemon)
+                Text(unusableReason(l))
                     .font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 discardButton(l)
             }
         }
+    }
+
+    /// 왜 못 쓰는가. 지닌물건은 **이미 지니고 있어서** 막히는 경우가 있는데, 그때 "포켓몬이
+    /// 필요해요" 를 띄우면 재고도 동행도 있는 사용자가 이유를 알 수 없다.
+    private func unusableReason(_ l: L) -> String {
+        if kind.bagUse == .heldItem, store.state.active?.heldItem == kind {
+            return l.heldItemAlreadyHeld
+        }
+        return store.isEgg ? l.useAfterHatch : l.useNeedsPokemon
     }
 
     /// 버리기는 되돌릴 수 없어 문구를 한 줄 위에 따로 둔다 — 버튼과 같은 줄에 넣으면 잘린다.
@@ -323,6 +336,9 @@ private struct ItemCard: View {
     private func useNow() {
         confirming = false
         performUse()
+        // 지닌물건은 **가방에 머문다** — 홈에는 연출이 없어 탭을 옮기면 아무 일도 안 일어난 것처럼
+        // 보인다. 가방에 남으면 그 카드가 곧바로 "이미 지니고 있어요" 로 바뀌어 결과가 보인다.
+        guard kind.bagUse != .heldItem else { return }
         nav.tab = .home
     }
 }

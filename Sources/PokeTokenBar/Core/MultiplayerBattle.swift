@@ -270,7 +270,8 @@ enum MultiplayerValidation {
               participant.speciesID == snapshot.speciesID,
               (1...10_000).contains(snapshot.speciesID), (1...100).contains(snapshot.level),
               (1...2).contains(snapshot.types.count),
-              validAbility(snapshot.ability) else { return false }
+              validAbility(snapshot.ability),
+              validHeldItem(snapshot.heldItem) else { return false }
         let stats = snapshot.base
         guard [stats.hp, stats.atk, stats.def, stats.spa, stats.spd, stats.spe]
             .allSatisfy({ (1...255).contains($0) }) else { return false }
@@ -288,6 +289,18 @@ enum MultiplayerValidation {
     /// 배틀을 안 바꾸고, 여기서 거르면 신버전 피어가 특성을 하나 늘릴 때마다 입장 자체가 거절된다.
     static func validAbility(_ slug: String?) -> Bool {
         slug.map { !$0.isEmpty && $0.utf8.count <= BattleAbility.maxSlugLength } ?? true
+    }
+
+    /// 지닌물건 화이트리스트 — **지닐 수 있는 물건만** 통과한다.
+    ///
+    /// 모르는 이름은 여기 오기 전에 디코딩이 `nil` 로 접으므로(신버전 피어가 아이템을 늘려도
+    /// 입장이 막히지 않는다) 이 함수가 거절하는 것은 **아는데 지닐 수 없는 물건**이다. 거절해 두는
+    /// 이유는 그 조합이 정상 앱에서 나올 수 없어서다 — 사탕·가구에 배틀 효과가 붙는 날
+    /// (`heldBattleEffect` 가 늘어나는 날) 검증이 없으면 그 자리가 곧 조작 경로가 된다.
+    ///
+    /// 특성 슬러그와 같은 이유로 **두 입구가 다 본다**: 방 입장만 보면 1v1 LAN 이 무검사가 된다.
+    static func validHeldItem(_ kind: ItemKind?) -> Bool {
+        kind.map { $0.heldBattleEffect != nil } ?? true
     }
 
     /// 한 턴 데미지 천장 — **위력 × 히트 수**. `validMoves` 가 상대 무브셋을 이 값으로 자르고,
@@ -560,7 +573,8 @@ struct MultiplayerBattle: Sendable {
         }
         // 점수가 전부 0 이거나 PP 가 말랐어도 **행동은 낸다** — 안 내면 라운드가 마감까지 멈춘다.
         // `-1` 은 발버둥이다(1v1·개인전과 같은 규약).
-        let chosen = best ?? (0, boss.side.pp.firstIndex(where: { $0 > 0 }) ?? -1, fallbackTarget.id)
+        let chosen = best ?? (0, boss.side.moves.indices.first { boss.side.canUse(moveAt: $0) } ?? -1,
+                              fallbackTarget.id)
         return MultiplayerAction(attackerID: boss.id, targetID: chosen.targetID,
                                  moveIndex: chosen.moveIndex)
     }
@@ -580,7 +594,8 @@ struct MultiplayerBattle: Sendable {
             }.sorted { $0.id.uuidString < $1.id.uuidString }
             guard let target = targets.first else { return nil }
             return MultiplayerAction(attackerID: fighter.id, targetID: target.id,
-                                     moveIndex: fighter.side.pp.firstIndex(where: { $0 > 0 }) ?? -1)
+                                     moveIndex: fighter.side.moves.indices
+                                         .first { fighter.side.canUse(moveAt: $0) } ?? -1)
         }
     }
 
@@ -598,8 +613,23 @@ struct MultiplayerBattle: Sendable {
                   let target = fighters.first(where: { $0.id == action.targetID }) else {
                 throw MultiplayerBattleError.unknownFighter
             }
-            guard attacker.id != target.id, target.isAlive,
-                  mode == .freeForAll || attacker.team != target.team else {
+            // **자기에게 거는 기술은 자기를 지목한다**(따라와·대타출동·방어·회복). 그 경우 아래
+            // "자기 자신·같은 편은 못 때린다" 규칙이 그대로 걸리면 방에서는 그 기술을 아예 낼 수
+            // 없다 — 액션을 보낼 방법이 없어 화면에서 조용히 실패한다.
+            let move = attacker.side.move(at: action.moveIndex)
+            let selfAimed = move.targetsUser == true
+            // **아군을 지목하는 기술(도우미)은 같은 편을 고른다** — 반대로 상대를 고르면 실패다.
+            // 개인전은 참가자 하나가 한 편이라 걸 아군이 없고, 그래서 이 부류는 거절된다.
+            if move.targetsAlly {
+                guard mode != .freeForAll, attacker.id != target.id,
+                      attacker.team == target.team, target.isAlive else {
+                    throw MultiplayerBattleError.invalidTarget
+                }
+                continue
+            }
+            guard selfAimed || (attacker.id != target.id
+                                && (mode == .freeForAll || attacker.team != target.team)),
+                  target.isAlive else {
                 throw MultiplayerBattleError.invalidTarget
             }
             guard action.moveIndex == -1 || attacker.side.canUse(moveAt: action.moveIndex) else {
@@ -635,9 +665,22 @@ struct MultiplayerBattle: Sendable {
         var roundEvents: [BattleEvent] = [.turn(round)]
         for action in ordered {
             guard let ai = fighters.firstIndex(where: { $0.id == action.attackerID }), fighters[ai].isAlive,
-                  let ti = fighters.firstIndex(where: { $0.id == action.targetID }), fighters[ti].isAlive else { continue }
+                  let chosenIndex = fighters.firstIndex(where: { $0.id == action.targetID }),
+                  fighters[chosenIndex].isAlive else { continue }
             // 인덱스·PP 는 위 사전 검증을 통과한 값이다.
             let move = fighters[ai].side.move(at: action.moveIndex)
+            // 유도(따라와·성원·스포트라이트)는 고른 대상보다 세다 — 판정은 웨이브 런과 **같은
+            // 함수**가 한다. 끌어올 후보는 **지목된 참가자와 한 편인** 살아 있는 참가자들이라,
+            // 개인전(참가자 하나가 한 편)에서는 자기 자신뿐이고 남의 유도가 끼어들지 않는다.
+            let drawnTeam = fighters[chosenIndex].teamSlot
+            let drawn = BattleEngine.redirectedTarget(
+                move: move, attacker: fighters[ai].side,
+                candidates: fighters.indices.filter { fighters[$0].teamSlot == drawnTeam }
+                    .map { (slot: $0, side: fighters[$0].side) })
+            let ti = drawn?.slot ?? chosenIndex
+            if let drawn, drawn.slot != chosenIndex {
+                roundEvents.append(.volatileTriggered(.fighter(fighters[ti].id), drawn.volatileStatus))
+            }
             if action.moveIndex >= 0 { fighters[ai].side.pp[action.moveIndex] -= 1 }
             // 양쪽을 지역 사본으로 꺼내 넘긴다 — 같은 배열의 두 원소를 동시에 inout 으로 잡으면
             // 배타적 접근 위반이다. 공격측도 inout 인 건 행동 가능 판정(잠듦·혼란)이 공격측 상태를
@@ -651,8 +694,11 @@ struct MultiplayerBattle: Sendable {
                                                     move: move, field: &field,
                                                     attackerTeam: fighters[ai].teamSlot,
                                                     defenderTeam: fighters[ti].teamSlot, rng: &rng)
-            fighters[ai].side = attacker
+            // **방어측을 먼저 쓰고 공격측을 나중에 쓴다.** 자기에게 거는 기술은 둘이 같은 자리라
+            // (따라와·대타출동·방어), 순서가 반대면 시전 **전에** 뜬 방어측 사본이 방금 붙은
+            // 상태를 통째로 덮어쓴다 — 그 기술이 아무 일도 하지 않은 턴이 된다.
             fighters[ti].side = target
+            fighters[ai].side = attacker
             // 보스에게 들어간 몫만 센다 — 러너끼리 때릴 수는 없지만, 보스가 러너를 때린 것을
             // 기여도로 세면 정산이 보스에게 보상을 배정한다.
             if mode == .coopBoss, fighters[ti].team == .blue {
@@ -660,9 +706,30 @@ struct MultiplayerBattle: Sendable {
             }
         }
         // 턴 끝 잔뎀 — 1v1 과 같은 규칙이다. 참가자 배열 순서로 고정해야 모든 피어가 같은 순서로 본다.
+        // **순서도 1v1 과 같다**: 잔뎀 전원 → 씨뿌리기 → 날씨 전원. 씨뿌리기는 두 참가자를 동시에
+        // 만져 개체별 한 패스에 끼울 수 없으므로, 세 패스로 나눠 모드끼리 순서가 갈리지 않게 한다.
         for index in fighters.indices {
             var side = fighters[index].side
             roundEvents += BattleEngine.endOfTurnResidual(&side, actor: .fighter(fighters[index].id))
+            fighters[index].side = side
+        }
+        // 씨뿌리기는 뿌린 **자리**가 받는다. 같은 배열의 두 원소를 동시에 inout 으로 잡을 수 없어
+        // 지역 사본으로 꺼내 넘긴다(공격 해상과 같은 이유). 참가자 배열은 라운드 중에 줄지 않으므로
+        // 자리는 언제나 찾는다 — 못 찾으면 그 씨는 이번 라운드에 아무 일도 하지 않는다.
+        for index in fighters.indices where fighters[index].side.has(.leechSeed) {
+            guard let source = fighters[index].side.leechSeedSource,
+                  let sourceIndex = fighters.firstIndex(where: { BattleActor.fighter($0.id) == source }),
+                  sourceIndex != index else { continue }
+            var seeded = fighters[index].side
+            var seeder = fighters[sourceIndex].side
+            roundEvents += BattleEngine.endOfTurnLeechSeed(seeded: &seeded,
+                                                           seededActor: .fighter(fighters[index].id),
+                                                           seeder: &seeder, seederActor: source)
+            fighters[index].side = seeded
+            fighters[sourceIndex].side = seeder
+        }
+        for index in fighters.indices {
+            var side = fighters[index].side
             roundEvents += BattleEngine.endOfTurnWeather(&side, actor: .fighter(fighters[index].id),
                                                          field: field)
             fighters[index].side = side

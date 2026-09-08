@@ -216,7 +216,8 @@ struct TournamentMatchEngine {
         if !team[active].isAlive,
            let next = team.indices.first(where: { team[$0].isAlive }) { return .switchTo(index: next) }
         if team[active].mustStruggle { return .move(index: -1) }
-        return .move(index: team[active].pp.indices.first(where: { team[active].pp[$0] > 0 }) ?? -1)
+        return .move(index: team[active].moves.indices
+            .first { team[active].canUse(moveAt: $0) } ?? -1)
     }
 }
 

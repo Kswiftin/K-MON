@@ -364,20 +364,23 @@ final class BattleStageTests: XCTestCase {
         XCTAssertEqual(victim.status, .sleep, "상대 대상 상태기는 계속 걸린다")
     }
 
-    /// **부호가 섞인 랭크 변화는 대상을 가릴 수 없다.** 저주(자기 스피드 −1 + 공격·방어 +1)를
-    /// 부호 규칙에 맡기면 스피드 감소가 상대에게 걸려 자기 버프 둘 + 상대 디버프 하나가 된다.
-    /// 확정 자기감소 공격기와 같은 자리(`statChangePercent == 0`)에서 걸러야 한 규칙만 남는다.
+    /// **부호가 섞인 랭크 변화는 대상을 가릴 수 없다.** 껍질깨기(공격·특공·스피드 +2 +
+    /// 방어·특방 −1)를 부호 규칙에 맡기면 방어 감소가 상대에게 걸려 자기 버프 셋 + 상대 디버프
+    /// 둘이 된다. 확정 자기감소 공격기와 같은 자리(`statChangePercent == 0`)에서 걸러야 한 규칙만 남는다.
+    ///
+    /// 저주(174)는 **이 규칙의 예외**다 — 부호가 섞인 것은 같지만 `BattleVolatile` 을 부르는
+    /// 기술이라 엔진이 그 기술만의 갈래에서 랭크를 직접 움직인다(`BattleVolatileTests` 가 잠근다).
     func testMixedSignStatChangesAreSkippedBecauseTheSignCannotPickATarget() {
-        let curse = statusMove(id: 174, type: .ghost,
-                               changes: [StatChange(stat: .spe, change: -1),
-                                         StatChange(stat: .atk, change: 1),
-                                         StatChange(stat: .def, change: 1)])
-        XCTAssertTrue(curse.hasAmbiguousStatTargets)
-        XCTAssertEqual(curse.statChangePercent, 0, "가릴 수 없으면 걸지 않는다")
+        let shellSmash = statusMove(id: 504, type: .normal,
+                                    changes: [StatChange(stat: .def, change: -1),
+                                              StatChange(stat: .atk, change: 2),
+                                              StatChange(stat: .spa, change: 2)])
+        XCTAssertTrue(shellSmash.hasAmbiguousStatTargets)
+        XCTAssertEqual(shellSmash.statChangePercent, 0, "가릴 수 없으면 걸지 않는다")
 
         var user = BattleSide(tank()), target = BattleSide(tank())
-        let events = attack(&user, &target, curse)
-        XCTAssertEqual(target.stage(.spe), 0, "자기 스피드 감소가 상대에게 걸리면 완전히 뒤집힌다")
+        let events = attack(&user, &target, shellSmash)
+        XCTAssertEqual(target.stage(.def), 0, "자기 방어 감소가 상대에게 걸리면 완전히 뒤집힌다")
         XCTAssertEqual(user.stage(.atk), 0, "한 기술의 랭크 변화는 통째로 걸리거나 통째로 안 걸린다")
         XCTAssertFalse(events.contains { if case .boost = $0 { return true } else { return false } })
 
@@ -640,7 +643,8 @@ final class BattleStageTests: XCTestCase {
     }
 
     /// 변화기 칸의 기준은 **엔진이 실제로 적용하는가** 다. 자기 대상 상태기(잠자기)와 부호가 섞인
-    /// 랭크 변화(저주)는 엔진이 건너뛰므로 그 칸에 앉히면 PP 만 태운다 — 효과 미구현 변화기와 같다.
+    /// 랭크 변화(껍질깨기)는 엔진이 건너뛰므로 그 칸에 앉히면 PP 만 태운다 — 효과 미구현 변화기와 같다.
+    /// 대조군으로 저주를 같이 본다: 부호는 섞였지만 엔진이 `BattleVolatile` 갈래로 적용하므로 그 칸을 가진다.
     func testStatusSlotSkipsMovesTheEngineWillNotApply() {
         func attackSpec(_ id: Int, _ type: PokemonType, _ power: Int) -> MoveSpec {
             MoveSpec(id: id, names: [:], type: type, power: power,
@@ -650,13 +654,13 @@ final class BattleStageTests: XCTestCase {
                             damageClass: .status, accuracy: nil, pp: 10)
         rest.ailment = "sleep"
         rest.targetsUser = true
-        let curse = statusMove(id: 174, type: .ghost,
-                               changes: [StatChange(stat: .spe, change: -1),
-                                         StatChange(stat: .atk, change: 1)])
+        let shellSmash = statusMove(id: 504, type: .normal,
+                                    changes: [StatChange(stat: .def, change: -1),
+                                              StatChange(stat: .atk, change: 2)])
         let attacks = [attackSpec(1, .fire, 90), attackSpec(2, .normal, 100),
                        attackSpec(3, .flying, 75), attackSpec(4, .dragon, 80)]
 
-        for useless in [rest, curse] {
+        for useless in [rest, shellSmash] {
             let picked = PokeAPIClient.pickFour(from: attacks + [useless], types: [.fire, .flying])
             XCTAssertEqual(picked.count, 4)
             XCTAssertTrue(picked.allSatisfy { $0.power > 0 },
@@ -667,6 +671,12 @@ final class BattleStageTests: XCTestCase {
         powder.targetsUser = false
         XCTAssertEqual(PokeAPIClient.pickFour(from: attacks + [powder], types: [.fire, .flying])
                         .filter { $0.power <= 0 }.count, 1)
+        // 대조군 둘: volatile 을 부르는 변화기(저주)도 엔진이 적용하므로 그 칸을 가진다.
+        let curse = statusMove(id: 174, type: .ghost,
+                               changes: [StatChange(stat: .spe, change: -1),
+                                         StatChange(stat: .atk, change: 1)])
+        XCTAssertEqual(PokeAPIClient.pickFour(from: attacks + [curse], types: [.fire, .flying])
+                        .filter { $0.power <= 0 }.map(\.id), [174])
     }
 
     /// **트리거 브랜치**: 쓸 만한 변화기가 하나도 없는 풀. 위 테스트는 *더 나은* 변화기를 고르는지만

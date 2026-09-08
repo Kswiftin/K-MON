@@ -229,6 +229,133 @@ struct L {
         case .weather:   return "\(name)은(는) 날씨 데미지! \(damage)"
         case .move:      return battleTookDamage(name, damage: damage)
         case .recoil:    return "\(name)은(는) 반동으로 \(damage) 데미지"
+        case .trap:      return "\(name)은(는) 조이기 데미지! \(damage)"
+        case .curse:     return "\(name)은(는) 저주 데미지! \(damage)"
+        case .leechSeed: return "\(name)은(는) 씨뿌리기에 체력을 빨렸다! \(damage)"
+        case .nightmare: return "\(name)은(는) 악몽에 시달렸다! \(damage)"
+        case .hazard:    return "\(name)은(는) 발밑에 깔린 것을 밟았다! \(damage)"
+        }
+    }
+
+    /// 개체에 붙은 상태가 붙었다 / 풀렸다. 진영 상태와 달리 이름이 들어간다 — 누구에게 붙은
+    /// 조이기인지가 문구의 절반이고, 필드에 개체가 넷인 모드(방·웨이브)에선 그것 없이는 안 읽힌다.
+    func battleVolatileStarted(_ name: String, _ volatileStatus: BattleVolatile) -> String {
+        switch volatileStatus {
+        case .aquaRing:         return "\(name)은(는) 물의베일을 둘렀다!"
+        case .ingrain:          return "\(name)은(는) 뿌리를 내렸다!"
+        case .leechSeed:        return "\(name)에게 씨가 박혔다!"
+        case .nightmare:        return "\(name)은(는) 악몽을 꾸기 시작했다!"
+        case .curse:            return "\(name)은(는) 저주에 걸렸다!"
+        case .partiallyTrapped: return "\(name)은(는) 조여졌다!"
+        case .focusEnergy:      return "\(name)은(는) 기합이 충전됐다!"
+        case .laserFocus:       return "\(name)은(는) 집중하기 시작했다!"
+        case .minimize:         return "\(name)은(는) 작아졌다!"
+        case .defenseCurl:      return "\(name)은(는) 몸을 웅크렸다!"
+        case .charge:           return "\(name)은(는) 전기를 모았다!"
+        case .endure:           return "\(name)은(는) 공격에 대비했다!"
+        case .destinyBond:      return "\(name)은(는) 상대를 길동무로 정했다!"
+        case .grudge:           return "\(name)은(는) 원한을 품었다!"
+        case .substitute:       return "\(name)은(는) 대타를 내세웠다!"
+        case .followMe:         return "\(name)은(는) 상대의 공격을 자기에게 모았다!"
+        case .ragePowder:       return "\(name)은(는) 성원의 가루를 뿌렸다!"
+        case .spotlight:        return "\(name)에게 스포트라이트가 비쳤다!"
+        case .helpingHand:      return "\(name)이(가) 도움을 받았다!"
+        case .disable:          return "\(name)의 기술이 봉인됐다!"
+        case .encore:           return "\(name)에게 앙코르가 걸렸다!"
+        case .taunt:            return "\(name)은(는) 도발에 넘어갔다!"
+        case .torment:          return "\(name)은(는) 트집이 잡혔다!"
+        case .imprison:         return "\(name)은(는) 같은 기술을 봉인당했다!"
+        case .healBlock:        return "\(name)은(는) 회복을 봉쇄당했다!"
+        }
+    }
+
+    /// 붙어 있던 상태가 **일한** 줄 — 버텼다 / 길동무로 데려갔다 / PP 를 앗았다.
+    ///
+    /// 셋 말고는 이 줄이 나가지 않는다(붙는 순간이나 턴 끝에만 일한다). 그래도 나머지를 한 자리에
+    /// 모아 **붙는 줄**로 되돌려 두는 이유는, 나중에 일하는 상태가 하나 늘었을 때 로그가 조용히
+    /// 비는 것보다 상태 이름이라도 나오는 편이 낫기 때문이다(컴파일러가 분류를 강제한다).
+    func battleVolatileTriggered(_ name: String, _ volatileStatus: BattleVolatile) -> String {
+        switch volatileStatus {
+        case .endure:      return "\(name)은(는) 공격을 버텼다!"
+        case .destinyBond: return "\(name)은(는) 상대를 길동무로 데려갔다!"
+        case .grudge:      return "\(name)의 원한이 상대 기술의 PP 를 앗았다!"
+        case .followMe:    return "\(name)이(가) 공격을 끌어 대신 받았다!"
+        case .ragePowder:  return "\(name)의 가루가 공격을 끌어왔다!"
+        case .spotlight:   return "스포트라이트가 \(name)에게 공격을 모았다!"
+        case .helpingHand: return "\(name)의 기술에 도움이 실렸다!"
+        case .substitute:  return "\(name) 대신 대타가 맞았다!"
+        case .aquaRing, .ingrain, .leechSeed, .nightmare, .curse, .partiallyTrapped,
+             .focusEnergy, .laserFocus, .minimize, .defenseCurl, .charge,
+             .disable, .encore, .taunt, .torment, .imprison, .healBlock:
+            return battleVolatileStarted(name, volatileStatus)
+        }
+    }
+
+    /// 지니고 있던 물건이 일한 줄 — **무엇으로** 버텼는지가 문구의 절반이다(인내와 구별된다).
+    /// 지금 이 줄을 내는 것은 기합의띠뿐이고, 나머지 둘은 자기 줄이 이미 있다(회복·반동 데미지).
+    func battleHeldItemTriggered(_ name: String, item: ItemKind) -> String {
+        let itemName = self.itemName(item)
+        return "\(name)은(는) \(itemName)으로 버텼다!"
+    }
+
+    func battleVolatileEnded(_ name: String, _ volatileStatus: BattleVolatile) -> String {
+        switch volatileStatus {
+        case .aquaRing:         return "\(name)의 물의베일이 사라졌다"
+        case .ingrain:          return "\(name)의 뿌리가 사라졌다"
+        case .leechSeed:        return "\(name)의 씨가 사라졌다"
+        case .nightmare:        return "\(name)은(는) 악몽에서 깨어났다"
+        case .curse:            return "\(name)의 저주가 풀렸다"
+        case .partiallyTrapped: return "\(name)은(는) 조이기에서 벗어났다"
+        case .focusEnergy:      return "\(name)의 기합이 풀렸다"
+        case .laserFocus:       return "\(name)의 집중이 풀렸다"
+        case .minimize:         return "\(name)은(는) 원래 크기로 돌아왔다"
+        case .defenseCurl:      return "\(name)은(는) 몸을 풀었다"
+        case .charge:           return "\(name)의 전기가 흩어졌다"
+        case .endure:           return "\(name)의 대비가 풀렸다"
+        case .destinyBond:      return "\(name)의 길동무가 풀렸다"
+        case .grudge:           return "\(name)의 원한이 풀렸다"
+        case .substitute:       return "\(name)의 대타가 부서졌다"
+        case .followMe:         return "\(name)에게 모이던 공격이 흩어졌다"
+        case .ragePowder:       return "\(name)의 성원의 가루가 걷혔다"
+        case .spotlight:        return "\(name)의 스포트라이트가 꺼졌다"
+        case .helpingHand:      return "\(name)의 도움이 끝났다"
+        case .disable:          return "\(name)의 기술 봉인이 풀렸다"
+        case .encore:           return "\(name)의 앙코르가 끝났다"
+        case .taunt:            return "\(name)의 도발이 풀렸다"
+        case .torment:          return "\(name)의 트집이 풀렸다"
+        case .imprison:         return "\(name)의 기술 봉인이 걷혔다"
+        case .healBlock:        return "\(name)은(는) 다시 회복할 수 있다"
+        }
+    }
+
+    /// 잠금 때문에 그 기술을 못 냈다 — **행동 직전에** 막힌 줄이다. 버튼 툴팁
+    /// (`moveSelectionLockReason`)과 문구를 나눠 두는 이유는 읽는 시점이 달라서다: 저쪽은 "왜 못
+    /// 누르나" 고 이쪽은 "왜 안 나갔나" 다. 선택만 막는 잠금은 이 자리에 오지 않는다
+    /// (`MoveSelectionLock.blocksExecution`).
+    func battleCantUseMove(_ name: String, lock: MoveSelectionLock) -> String {
+        switch lock {
+        case .disable:    return "\(name)은(는) 씨앙코르로 봉인된 기술을 쓸 수 없다!"
+        case .taunt:      return "\(name)은(는) 도발당해서 변화기를 쓸 수 없다!"
+        case .imprison:   return "\(name)은(는) 봉인된 기술을 쓸 수 없다!"
+        case .healBlock:  return "\(name)은(는) 회복이 봉쇄되어 그 기술을 쓸 수 없다!"
+        case .encore, .torment, .choiceItem:
+            // 선택만 막는 잠금이라 이 줄이 나갈 일은 없다. 비워 두면 나중에 `blocksExecution` 을
+            // 켤 때 로그에 빈 줄이 조용히 나간다.
+            return "\(name)은(는) 그 기술을 쓸 수 없다!"
+        }
+    }
+
+    /// 기술 버튼이 **왜** 비활성인가 — 잠금마다 갈린다. 하나로 뭉개면("쓸 수 없다") 무엇을 풀어야
+    /// 다시 쓸 수 있는지가 화면에서 사라진다(도발은 세 턴을 기다리고, 구애는 교체해야 풀린다).
+    func moveSelectionLockReason(_ lock: MoveSelectionLock) -> String {
+        switch lock {
+        case .disable:    return "기술이 봉인됐다"
+        case .encore:     return "앙코르로 한 기술만"
+        case .taunt:      return "도발로 변화기 금지"
+        case .torment:    return "트집으로 연속 금지"
+        case .imprison:   return "상대가 봉인한 기술"
+        case .healBlock:  return "회복이 봉쇄됐다"
+        case .choiceItem: return "구애로 기술 고정"
         }
     }
 
@@ -289,6 +416,17 @@ struct L {
         case .mist:        return "하얀안개가 편을 감쌌다!"
         case .luckyChant:  return "행운의부적이 편을 감쌌다!"
         case .tailwind:    return "순풍이 불기 시작했다!"
+        case .wideGuard:   return "와이드가드로 편을 지켰다!"
+        case .quickGuard:  return "퀵가드로 편을 지켰다!"
+        case .matBlock:    return "니가하지마로 편을 지켰다!"
+        case .craftyShield: return "트릭가드로 편을 지켰다!"
+        // 입장 데미지는 **상대 편에** 깔린다 — 그래서 문구가 "상대" 를 말한다(나머지는 앞 줄이
+        // 누가 썼는지 말하므로 편을 안 밝힌다). 몇 층인지는 문구에 넣지 않는다: 같은 줄이 다시
+        // 나가는 것이 곧 한 층 더 쌓였다는 뜻이고, 넣으면 세 언어를 층 수만큼 적어야 한다.
+        case .spikes:      return "상대 발밑에 압정이 흩뿌려졌다!"
+        case .toxicSpikes: return "상대 발밑에 독압정이 흩뿌려졌다!"
+        case .stealthRock: return "상대 주위에 스텔스록이 떠올랐다!"
+        case .stickyWeb:   return "상대 발밑에 끈적끈적네트가 깔렸다!"
         }
     }
 
@@ -318,6 +456,18 @@ struct L {
         case .mist:        return "하얀안개가 걷혔다"
         case .luckyChant:  return "행운의부적이 사라졌다"
         case .tailwind:    return "순풍이 멎었다"
+        // 편 방어기는 한 턴짜리라 걷히는 줄이 매 턴 나간다 — 그래서 문구를 짧게 둔다.
+        case .wideGuard:   return "와이드가드가 풀렸다"
+        case .quickGuard:  return "퀵가드가 풀렸다"
+        case .matBlock:    return "니가하지마가 풀렸다"
+        case .craftyShield: return "트릭가드가 풀렸다"
+        // 입장 데미지는 턴으로 걷히지 않아 이 줄이 지금은 나가지 않는다. 그래도 문구를 두는
+        // 이유는 제거 수단(코트체인지·고속스핀)이 붙는 자리가 이미 정해져 있기 때문이다 —
+        // 그때 걷히는 줄이 없으면 사라진 것이 로그로 설명되지 않는다.
+        case .spikes:      return "발밑의 압정이 사라졌다"
+        case .toxicSpikes: return "발밑의 독압정이 사라졌다"
+        case .stealthRock: return "떠 있던 스텔스록이 사라졌다"
+        case .stickyWeb:   return "발밑의 끈적끈적네트가 사라졌다"
         }
     }
 
@@ -1343,6 +1493,12 @@ struct L {
         switch kind {
         case .rareCandy: return "이상한 사탕"
         case .mint:      return "민트"
+        case .teraShard: return "테라피스"
+        case .lifeOrb: return "생명의구슬"
+        case .focusSash: return "기합의띠"
+        case .leftovers: return "먹다남은음식"
+        case .choiceBand: return "구애머리띠"
+        case .choiceSpecs: return "구애안경"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1432,24 +1588,44 @@ struct L {
     var outfitWardrobe: String { "꾸미기" }
     var outfitTakeOff: String { "벗기" }
     var outfitLocked: String { "업적으로 해금" }
+    /// 아이템 설명 — 가방과 상점이 읽는다. **`default:` 를 두지 않는다**: 진화가 아닌 새 아이템이
+    /// 진화 갈래로 흘러가면 설명이 빈 문자열이 된다(`ItemKind.bagUse` 가 있는 이유).
     func itemDescription(_ kind: ItemKind) -> String {
-        switch kind {
-        case .rareCandy:
+        switch kind.bagUse {
+        case .candy:
             let xp = GameNumberFormatter.compact(RareCandy.xp)   // 상수에서 파생(하드코딩 드리프트 방지)
             return "현재 포켓몬의 경험치를 \(xp) 올려줘요."
         case .mint:
             return "현재 포켓몬의 성격을 랜덤으로 바꿔줘요."
-        // 하트비늘(#97) — 아래 `default:` 는 진화 아이템 전용이라 여기에 명시하지 않으면
-        // `evolutionRule == nil` 로 흘러가 설명이 빈 문자열이 된다.
         case .heartScale:
             return "지금까지 배울 수 있었던 기술 하나를 다시 떠올려요. 기술이 4개면 하나를 잊어요."
-        case .shinyCharm:
+        case .teraShard:
+            return "테라스탈했을 때 되는 타입을 랜덤으로 바꿔줘요. 대전에서만 쓰이는 타입이에요."
+        case .heldItem:
+            // 문구가 아이템마다 갈린다 — 셋을 한 줄로 뭉개면 무엇을 사는지 화면에서 알 수 없다.
+            // 수치는 상수에서 파생하지 않는다(분모를 문장에 녹여야 자연스럽고, 어긋나면
+            // `HeldItemTests` 가 아니라 사람이 읽는다) — 상수를 바꾸면 이 세 줄도 함께 본다.
+            switch kind.heldBattleEffect {
+            case .lifeOrb:
+                return "대전에서 기술 데미지가 1.3배가 돼요. 대신 턴이 끝날 때 최대 HP의 1/10을 잃어요."
+            case .focusSash:
+                return "체력이 가득할 때 쓰러질 한 방을 HP 1로 버텨요. 대전 한 번에 한 번만이에요."
+            case .leftovers:
+                return "대전에서 턴이 끝날 때마다 최대 HP의 1/16을 회복해요."
+            case .choiceBand:
+                return "물리 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
+            case .choiceSpecs:
+                return "특수 기술의 데미지가 1.5배가 돼요. 대신 대전에서 처음 낸 기술만 계속 쓰게 돼요."
+            case nil:
+                // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
+                return ""
+            }
+        case .passive:
             return "보유하면 이로치 포켓몬이 태어날 확률이 올라가요."
-        case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
-             .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern:
+        case .furniture:
             return "미니룸에 배치하는 가구예요. 성장이나 보상에는 영향을 주지 않아요."
-        default:
-            // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 27개 나열하면 새 아이템을 넣을 때 빠뜨린다.
+        case .evolutionItem:
+            // 진화 아이템 설명은 규칙에서 갈린다 — 케이스를 40개 나열하면 새 아이템을 넣을 때 빠뜨린다.
             switch kind.evolutionRule {
             case .plainTrade:
                 return "통신교환으로 진화하는 포켓몬을 진화시켜요."
@@ -1458,12 +1634,35 @@ struct L {
             case .heldItem:
                 return "이 도구를 지녀야 진화하는 포켓몬을 진화시켜요."
             case nil:
-                return ""   // 진화 아이템이 아닌데 설명이 없는 경우(도달 불가 — 위 케이스가 다 덮는다)
+                // 진화 갈래인데 규칙이 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
+                return ""
             }
         }
     }
     /// 가방 사용 컨트롤의 효과 힌트 — 민트("성격 랜덤 변경", 사탕의 "+XP" 자리).
     var mintEffectHint: String { "성격 랜덤 변경" }
+    /// 지닌물건 3종의 효과 힌트 — 가방 사용 컨트롤의 "+XP" 자리다. 아이템마다 갈린다(무엇이
+    /// 붙는지가 이 물건의 전부라, 셋을 "지니게 하기" 한 줄로 뭉개면 고를 근거가 사라진다).
+    func heldItemEffectHint(_ kind: ItemKind) -> String {
+        switch kind.heldBattleEffect {
+        case .lifeOrb:   return "데미지 ×1.3 / 자해"
+        case .focusSash: return "만피에서 한 방 버티기"
+        case .leftovers: return "턴 끝 HP 회복"
+        case .choiceBand: return "물리 ×1.5 / 기술 고정"
+        case .choiceSpecs: return "특수 ×1.5 / 기술 고정"
+        case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
+        }
+    }
+    /// 이미 지니고 있는 물건을 또 지니게 할 수는 없다 — 가방이 비활성 사유로 쓴다. "포켓몬이
+    /// 필요해요" 로 뭉개면 재고도 동행도 있는데 거절당한 사용자가 이유를 알 수 없다.
+    var heldItemAlreadyHeld: String { "이미 지니고 있어요" }
+    /// 테라피스(#3) — 성격과 달리 대전 성능을 바꾸므로 문구도 "테라 타입" 을 밝힌다.
+    var teraShardEffectHint: String { "테라 타입 랜덤 변경" }
+    /// 바뀐 타입을 알리는 줄 — 어떤 타입이 됐는지가 이 아이템의 결과 전부다.
+    func teraShardUsed(_ type: PokemonType) -> String {
+        let name = type.name
+        return "테라 타입이 \(name)(으)로 바뀌었어요!"
+    }
 
     // MARK: 하트비늘 (기술 다시 배우기 — #97)
     var heartScaleEffectHint: String { "기술 다시 배우기" }
