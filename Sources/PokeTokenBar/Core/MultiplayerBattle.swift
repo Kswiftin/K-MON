@@ -439,7 +439,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     허탕보험·씨앗 넷). 구버전 게스트는 그 랭크를 안 올려 뒤 라운드의 데미지·명중이 갈린다.
     // 31: 기술의 성질(접촉·펀치·소리)에 답하는 물건 8종. 끈기갈고리손톱이 조이기 턴 난수를
     //     굴리지 않아 rng 소비 횟수까지 갈리고, 접촉 반응은 때린 쪽의 HP 를 깎는다.
-    static let protocolVersion = 31
+    // 32: 운에 걸린 물건 5종(선제공격손톱·기합의머리띠·스타열매·미클열매·애슈열매). 턴마다,
+    //     그리고 치명적인 히트마다 난수를 한 번씩 더 굴려 구버전과 소비 횟수가 갈린다.
+    static let protocolVersion = 32
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
@@ -669,6 +671,13 @@ struct MultiplayerBattle: Sendable {
         // 비교 클로저 안에서 rng 를 부르면 소비 횟수가 정렬 알고리즘의 비교 횟수에 딸려가고,
         // 그건 곧 피어마다 다른 rng 상태 — 이 배틀에서는 desync 다.
         let tieBreakers = actions.map { _ in rng.next() }
+        // 물건의 턴 머리 굴림은 **정렬 앞**이다 — 선공을 가져갔는지가 정렬의 입력이고, 비교
+        // 클로저 안에서 굴리면 난수 소비가 비교 횟수에 딸려간다(tie-break 와 같은 함정).
+        for index in fighters.indices {
+            events += BattleEngine.rollTurnStartItems(&fighters[index].side,
+                                                      actor: .fighter(fighters[index].id),
+                                                      rng: &rng)
+        }
         let ordered = zip(actions, tieBreakers).sorted { lhs, rhs in
             let leftFighter = fighters.first { $0.id == lhs.0.attackerID }!
             let rightFighter = fighters.first { $0.id == rhs.0.attackerID }!
@@ -677,6 +686,10 @@ struct MultiplayerBattle: Sendable {
             if leftPriority != rightPriority { return leftPriority > rightPriority }
             // 후공 물건(느림보꼬리·만복향로)은 우선도 **뒤**, 스피드 **앞**이다 — 아무리 빨라도
             // 뒤로 가지만 우선도는 이기지 못한다(1v1 `firstMoverIsA` 와 같은 순서).
+            // 선공 물건(선제공격손톱·애슈열매)은 우선도 **뒤**, 후공 물건 **앞**이다.
+            let leftHurries = BattleEngine.movesFirst(leftFighter.side)
+            let rightHurries = BattleEngine.movesFirst(rightFighter.side)
+            if leftHurries != rightHurries { return leftHurries }
             let leftLags = BattleEngine.movesLast(leftFighter.side)
             let rightLags = BattleEngine.movesLast(rightFighter.side)
             if leftLags != rightLags { return rightLags }

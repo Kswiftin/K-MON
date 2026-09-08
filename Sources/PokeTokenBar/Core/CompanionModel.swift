@@ -299,6 +299,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 위급 열매 6종 — HP 가 최대의 1/4 이하일 때 한 번 일하고 사라진다. 다섯은 랭크를 하나
     /// 올리고 랑사열매만 급소 단계를 올린다.
     case liechiBerry, ganlonBerry, salacBerry, petayaBerry, apicotBerry, lansatBerry
+    /// 위급 열매 셋 — 랭크·회복이 아니라 **그 다음 행동**에 답한다. 스타열매는 능력 하나를 두
+    /// 단계 올리고, 애슈열매는 그 턴의 선공을 가져가고, 미클열매는 다음 기술을 반드시 맞힌다.
+    case starfBerry, micleBerry, custapBerry
     /// 성격 회복 열매 5종 — 같은 위급 조건에서 최대 HP 의 1/3 을 회복한다.
     ///
     /// **본가의 "성격이 싫어하는 맛이면 혼란" 은 넣지 않았다.** 혼란은 남은 턴을 난수로 뽑는데,
@@ -384,6 +387,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 기술인지 답하고(`ShowdownMoveData.makingContact` 등) 엔진은 규칙만 구현한다.
     case rockyHelmet, stickyBarb, protectivePads, punchingGlove
     case loadedDice, bindingBand, gripClaw, throatSpray
+    /// 확률로 일하는 물건 둘 — 선제공격손톱은 20% 로 선공을 가져가고, 기합의머리띠는 10% 로
+    /// 치명적인 히트를 HP 1 에서 버틴다. 둘 다 소모품이 아니다.
+    case quickClaw, focusBand
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -408,6 +414,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .kebiaBerry, .shucaBerry, .cobaBerry, .payapaBerry, .tangaBerry, .chartiBerry,
              .kasibBerry, .habanBerry, .colburBerry, .babiriBerry, .chilanBerry, .roseliBerry,
              .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry,
+             .starfBerry, .micleBerry, .custapBerry,
              .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry,
              .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
              .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
@@ -429,6 +436,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
              .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -502,6 +510,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .kebiaBerry, .shucaBerry, .cobaBerry, .payapaBerry, .tangaBerry, .chartiBerry,
              .kasibBerry, .habanBerry, .colburBerry, .babiriBerry, .chilanBerry, .roseliBerry,
              .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry,
+             .starfBerry, .micleBerry, .custapBerry,
              .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry,
              .normalGem, .fireGem, .waterGem, .electricGem, .grassGem, .iceGem,
              .fightingGem, .poisonGem, .groundGem, .flyingGem, .psychicGem, .bugGem,
@@ -522,7 +531,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-             .loadedDice, .bindingBand, .gripClaw, .throatSpray:
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -617,6 +627,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .bindingBand: return .bindingBand
         case .gripClaw:    return .gripClaw
         case .throatSpray: return .throatSpray
+        case .quickClaw:   return .quickClaw
+        case .focusBand:   return .focusBand
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
@@ -656,6 +668,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .petayaBerry: return .pinchStatBoost(.spa)
         case .apicotBerry: return .pinchStatBoost(.spd)
         case .lansatBerry: return .pinchCrit
+        case .starfBerry:  return .pinchBestBoost
+        case .micleBerry:  return .pinchSureHit
+        case .custapBerry: return .pinchHurry
         case .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry: return .pinchHeal
         default: return nil
         }
@@ -825,7 +840,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .whiteHerb, .mentalHerb,
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
-             .rockyHelmet, .stickyBarb, .protectivePads, .bindingBand, .gripClaw:
+             .rockyHelmet, .stickyBarb, .protectivePads, .bindingBand, .gripClaw,
+             .quickClaw, .focusBand:
             return kebabRawValue
         // 9세대 물건 셋도 PokéAPI 에 스프라이트가 없다(통굽부츠·만능우산과 같은 자리).
         case .mirrorHerb, .clearAmulet, .covertCloak, .blunderPolicy,
@@ -896,7 +912,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .kebiaBerry, .shucaBerry, .cobaBerry, .payapaBerry, .tangaBerry, .chartiBerry,
              .kasibBerry, .habanBerry, .colburBerry, .babiriBerry, .chilanBerry, .roseliBerry:
             return "🫐"
-        case .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry:
+        case .liechiBerry, .ganlonBerry, .salacBerry, .petayaBerry, .apicotBerry, .lansatBerry,
+             .starfBerry, .micleBerry, .custapBerry:
             return "🍒"
         case .figyBerry, .wikiBerry, .magoBerry, .aguavBerry, .iapapaBerry:
             return "🍑"
@@ -944,6 +961,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .protectivePads: return "🧤"; case .punchingGlove: return "🥊"
         case .loadedDice: return "🎲"; case .bindingBand: return "🎗️"
         case .gripClaw: return "🪝"; case .throatSpray: return "💨"
+        case .quickClaw: return "🐾"; case .focusBand: return "🎽"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -985,7 +1003,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-             .loadedDice, .bindingBand, .gripClaw, .throatSpray:
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand:
             return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
@@ -1119,7 +1138,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
                .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
                .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
                .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-               .loadedDice, .bindingBand, .gripClaw, .throatSpray]
+               .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+               .quickClaw, .focusBand]
+            + [.pinchBestBoost, .pinchSureHit, .pinchHurry]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -1191,6 +1212,11 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     /// 기술의 성질에 답하는 여덟 갈래 — 접촉·펀치·소리·다단·조이기다.
     case rockyHelmet, stickyBarb, protectivePads, punchingGlove
     case loadedDice, bindingBand, gripClaw, throatSpray
+    /// 확률로 일하는 둘 — 손톱은 순서를, 머리띠는 치명적인 히트를 본다.
+    case quickClaw, focusBand
+    /// 위급일 때 **그 다음 행동**에 답하는 셋. 랭크·회복 갈래(`pinchAction`)와 자리를 나눈 이유는
+    /// 묻는 시점이다: 스타열매만 턴 끝이고, 애슈·미클은 턴이 시작될 때(순서를 재기 전) 답한다.
+    case pinchBestBoost, pinchSureHit, pinchHurry
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -1218,7 +1244,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return nil
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry: return nil
         }
     }
 
@@ -1242,7 +1269,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return nil
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry: return nil
         }
     }
 
@@ -1270,7 +1298,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return nil
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry: return nil
         }
     }
 
@@ -1319,7 +1348,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return false
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchBestBoost, .pinchSureHit, .pinchHurry: return false
         }
     }
 
@@ -1342,6 +1372,7 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case .pinchStatBoost(let stat): return .raise(stat)
         case .pinchCrit:                return .sharpenCrit
         case .pinchHeal:                return .heal
+        case .pinchBestBoost:           return .raiseBest
         case .lifeOrb, .focusSash, .leftovers, .choiceBand, .choiceSpecs, .choiceScarf,
              .flameOrb, .toxicOrb, .assaultVest, .typeBoost, .resistBerry,
              .gem, .ironBall, .movesLast,
@@ -1356,7 +1387,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .weaknessPolicy, .absorbBulb, .cellBattery, .snowball, .luminousMoss,
              .blunderPolicy, .electricSeed, .grassySeed, .mistySeed, .psychicSeed,
              .rockyHelmet, .stickyBarb, .protectivePads, .punchingGlove,
-             .loadedDice, .bindingBand, .gripClaw, .throatSpray: return nil
+             .loadedDice, .bindingBand, .gripClaw, .throatSpray,
+             .quickClaw, .focusBand, .pinchSureHit, .pinchHurry: return nil
         }
     }
 
@@ -1642,6 +1674,32 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         }
     }
 
+    /// 이 턴의 **선공을 가져갈 확률**(%) — 없으면 nil. 선제공격손톱은 늘 20% 이고, 애슈열매는
+    /// 위급일 때만 100% 다(그래서 위급 여부를 인자로 받는다).
+    ///
+    /// 확률 하나로 묻는 이유는 부르는 자리다: 턴이 시작될 때 한 번만 굴려 두 물건을 같은 값으로
+    /// 답하게 하면, 순서를 재는 세 모드는 "이 개체가 선공을 가져갔나" 만 보면 된다.
+    func turnStartHurryChance(pinched: Bool) -> Int? {
+        switch self {
+        case .quickClaw:  return HeldItemBalance.quickClawPercent
+        case .pinchHurry: return pinched ? 100 : nil
+        default:          return nil
+        }
+    }
+
+    /// 위급일 때 **다음 기술을 반드시 맞히는가** — 미클열매다. 명중을 곱하는 축(`accuracyScale`)과
+    /// 나눈 이유는 한 번뿐이라서다: 배율은 상시고 이쪽은 한 기술에만 붙는다.
+    var makesNextMoveHitAtPinch: Bool { self == .pinchSureHit }
+
+    /// 이 턴에 선공을 가져간 뒤 **사라지는가** — 열매는 한 번이고 손톱은 상시다.
+    var isConsumedWhenHurrying: Bool { self == .pinchHurry }
+
+    /// 치명적인 히트를 HP 1 에서 버틸 확률(%) — 기합의머리띠다. 기합의띠(`focusSash`)와 갈리는
+    /// 점은 둘이다: 만피 조건이 없고, 확률이며 소모되지 않는다.
+    var survivesLethalHitPercent: Int? {
+        self == .focusBand ? HeldItemBalance.focusBandPercent : nil
+    }
+
     /// **소리 기술을 쓰면** 올리는 랭크 — 목스프레이다. 맞은 히트·빗나감·필드 축과 나눈 이유는
     /// 방아쇠가 기술의 성질이라서다: 맞고 안 맞고를 보지 않는다(쓴 것만으로 터진다).
     var stageGainOnOwnSoundMove: [StatChange]? {
@@ -1689,6 +1747,10 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
 
     /// 위급 열매가 하는 일 — HP 가 아니라 **행동**이 갈리므로 값 하나로 접지 않는다.
     enum PinchAction: Equatable, Sendable {
+        /// 스타열매 — 능력 하나를 두 단계 올린다. **본가는 무작위지만** 이 엔진의 턴 끝 자리에는
+        /// 두 피어가 공유하는 난수원이 없어, 종족값이 가장 높은 능력을 올린다(같은 스냅샷을 보는
+        /// 두 피어가 같은 능력을 고른다). 같은 값이면 `HeldItemBalance` 의 나열 순서가 정한다.
+        case raiseBest
         /// 랭크를 하나 올린다.
         case raise(BattleStat)
         /// 급소 단계를 올린다(기합충전과 같은 자리에 붙는다).
@@ -1750,6 +1812,10 @@ enum HeldItemBalance {
     /// 대가만 있는 물건 셋(검은철구·느림보꼬리·만복향로)의 상점가 — 성능을 **깎는** 물건이라
     /// 값을 낮게 둔다. 0 원으로 두지 않는 이유는 자이로볼·카운터 조합에서 실제로 이득이라서다.
     static let drawbackPrice = 900
+    /// 선제공격손톱이 선공을 가져갈 확률(%) — 본가와 같은 20% 다.
+    static let quickClawPercent = 20
+    /// 기합의머리띠가 버틸 확률(%) — 본가와 같은 10% 다.
+    static let focusBandPercent = 10
     /// 울퉁불퉁멧이 때린 쪽에서 깎는 몫 — 최대 HP 의 1/6(본가와 같다).
     static let rockyHelmetDivisor = 6
     /// 끈적끈적바늘이 쥔 쪽에서 매 턴 깎는 몫 — 최대 HP 의 1/8(본가와 같다).

@@ -1500,6 +1500,13 @@ struct BattleSide: Sendable, Equatable {
     /// 있어서, 뿌린 쪽이 교체돼도 그 자리에 선 개체가 받는다(본가와 같다).
     /// 자리를 배열의 몇 번째로 푸는 것은 모드의 일이다 — 모드마다 배열이 다르다.
     var leechSeedSource: BattleActor?
+    /// 이 턴의 선공을 물건이 가져갔나 — 선제공격손톱·애슈열매다. 턴이 시작될 때
+    /// `BattleEngine.rollTurnStartItems` 가 한 번 정하고, 순서를 재는 세 모드가 그 값을 읽는다.
+    /// 굴리는 자리와 읽는 자리를 나눈 이유는 난수다: 정렬 비교 안에서 굴리면 소비 횟수가 비교
+    /// 횟수에 딸려가 같은 seed 의 판이 재현되지 않는다(모드들의 tie-break 와 같은 함정).
+    var actsFirstThisTurn = false
+    /// 다음 기술 하나가 반드시 맞나 — 미클열매다. 쓴 기술이 명중 판정을 지나면 곧바로 꺼진다.
+    var nextMoveNeverMisses = false
     /// 걸린 조이기의 잔뎀 분모 — 거는 쪽이 조임밴드를 쥐고 있었으면 그 값이 여기 남는다.
     /// 값이 없으면 기본 분모(`BattleVolatile.residualDamage`)다. 걸릴 때 정해지는 이유는 턴 끝이
     /// 개체 하나만 본다는 것이다 — 그 자리에서는 거는 쪽의 물건을 다시 물을 수 없다.
@@ -1960,7 +1967,10 @@ enum BattleEngine {
     ///      펀치글러브의 접촉 해제, 펀치글러브의 펀치 ×1.1, 속임수주사위의 다단 하한 4,
     ///      조임밴드의 조이기 잔뎀 1/6, 끈기갈고리손톱의 조이기 7턴, 목스프레이의 특공 상승).
     ///      **rng 소비까지 바꾼다** — 끈기갈고리손톱은 4~5턴 난수를 굴리지 않는다.
-    static let rulesVersion = 36
+    ///      + 운에 걸린 물건 5종(선제공격손톱의 20% 선공, 기합의머리띠의 10% 버팀, 스타열매의
+    ///      능력 상승, 애슈열매의 선공, 미클열매의 필중). **rng 소비가 갈린다** — 손톱은 턴마다,
+    ///      머리띠는 치명적인 히트마다 한 번씩 더 굴린다.
+    static let rulesVersion = 37
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2270,6 +2280,9 @@ enum BattleEngine {
         if defender.has(.minimize), ShowdownMoveData.hittingMinimizedHarder.contains(move.id) {
             return nil
         }
+        // 미클열매를 먹은 개체의 다음 기술은 명중을 굴리지 않는다 — 끄는 자리는 `applyHit` 이다
+        // (이 함수는 값 사본을 받으므로 여기서 끄면 아무 데도 남지 않는다).
+        if attacker.nextMoveNeverMisses { return nil }
         guard !MoveSpec.neverMisses(move.accuracy), let accuracy = move.accuracy else { return nil }
         let withAccuracy = accuracy * StatStages.accuracyPercent(stage: attacker.stage(.accuracy)) / 100
         var chance = withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
@@ -2608,8 +2621,12 @@ enum BattleEngine {
     /// 선공을 가져간다 — 실력과 무관한 데다 화면에 드러나지도 않는다.
     static func firstMoverIsA(priorityA: Int, priorityB: Int, speedA: Int, speedB: Int,
                               movesLastA: Bool = false, movesLastB: Bool = false,
+                              movesFirstA: Bool = false, movesFirstB: Bool = false,
                               rng: inout SplitMix64) -> Bool {
         if priorityA != priorityB { return priorityA > priorityB }
+        // 선공 물건(선제공격손톱·애슈열매)은 우선도 **뒤**, 후공 물건 **앞**이다 — 우선도는 못
+        // 이기지만 느림보꼬리를 쥔 상대보다는 먼저 움직인다(본가와 같은 순서).
+        if movesFirstA != movesFirstB { return movesFirstA }
         if movesLastA != movesLastB { return movesLastB }
         if speedA != speedB { return speedA > speedB }
         return rng.next() & 1 == 0
@@ -2621,6 +2638,43 @@ enum BattleEngine {
     /// 한다. 한 모드가 물건을 안 물으면 그 모드에서만 후공이 없고 화면에는 아무 오류도 안 보인다 —
     /// 순풍(`orderingSpeed`)과 같은 함정이라, 같은 방식으로 소스 스캔이 자리를 센다.
     static func movesLast(_ side: BattleSide) -> Bool { side.heldEffect?.movesLast == true }
+
+    /// 이 개체가 이번 턴 **선공을 가져갔는가** — 선제공격손톱·애슈열매다. 굴린 결과를 읽기만
+    /// 한다(`BattleEngine.rollTurnStartItems` 가 턴 머리에서 굴린다).
+    ///
+    /// 순서를 재는 자리가 모드마다 따로라 이 함수 하나를 지나게 한다 — 후공 물건과 같은 함정이고
+    /// 같은 방식으로 소스 스캔이 자리를 센다.
+    static func movesFirst(_ side: BattleSide) -> Bool { side.actsFirstThisTurn }
+
+    /// 턴 머리에서 물건이 굴리는 것 — 선공(선제공격손톱·애슈열매)과 다음 기술의 필중(미클열매)이다.
+    ///
+    /// **순서를 재기 전에** 부른다. 굴린 값을 `BattleSide` 에 적어 두는 이유는 정렬이다: 비교
+    /// 클로저 안에서 굴리면 난수 소비가 정렬 알고리즘의 비교 횟수에 딸려간다.
+    ///
+    /// 물건이 답하지 않는 개체에서는 난수를 **한 번도 쓰지 않는다** — 두 피어는 서로의 물건을
+    /// 스냅샷으로 알고 있으므로 소비 횟수가 갈리지 않는다.
+    static func rollTurnStartItems(_ side: inout BattleSide, actor: BattleActor,
+                                   rng: inout SplitMix64) -> [BattleEvent] {
+        side.actsFirstThisTurn = false
+        guard side.isAlive, let effect = side.heldEffect, let item = side.activeHeldItem else {
+            return []
+        }
+        let pinched = side.hp * HeldItemBalance.pinchThresholdDivisor <= side.stats.hp
+        var events: [BattleEvent] = []
+        if let chance = effect.turnStartHurryChance(pinched: pinched),
+           Int(rng.next() % 100) < chance {
+            side.actsFirstThisTurn = true
+            if effect.isConsumedWhenHurrying { side.heldItemConsumed = true }
+            events.append(.heldItemTriggered(actor, item))
+        }
+        // 미클열매는 확률이 아니라 위급 조건만 본다 — 난수를 쓰지 않는다.
+        if pinched, effect.makesNextMoveHitAtPinch {
+            side.nextMoveNeverMisses = true
+            side.heldItemConsumed = true
+            events.append(.heldItemTriggered(actor, item))
+        }
+        return events
+    }
 }
 
 // MARK: - 이벤트 스트림
@@ -2818,6 +2872,14 @@ extension BattleEngine {
         side.heldItemConsumed = true
         var events: [BattleEvent] = [.heldItemTriggered(actor, item)]
         switch action {
+        case .raiseBest:
+            // 능력치가 가장 높은 축을 올린다 — 본가의 무작위를 대신한다(턴 끝에는 두 피어가
+            // 공유하는 난수원이 없다). 같은 값이면 나열 순서가 정하므로 두 피어가 같은 답을 낸다.
+            let stat = HeldItemEffect.pinchRaisedStats.max {
+                side.rawStat($0) < side.rawStat($1)
+            } ?? .atk
+            let applied = side.changeStage(stat, by: HeldItemBalance.pinchStatStages)
+            if applied != 0 { events.append(.boost(actor, stat, applied)) }
         case .raise(let stat):
             // 랭크가 이미 +6 이면 적용량이 0 이고 줄도 안 나간다 — 열매는 그래도 사라진다
             // (본가와 같다: 먹은 뒤에 "효과가 없었다" 다).
@@ -3520,6 +3582,9 @@ extension BattleEngine {
         let outcome = resolveAttack(attacker: attacker, defender: defender, move: move,
                                     field: field, attackerTeam: attackerTeam,
                                     defenderTeam: defenderTeam, rng: &rng)
+        // 미클열매의 필중은 **기술 하나짜리**다 — 명중 판정을 지난 지금 끈다(빗나갈 수 있었는지와
+        // 무관하다: 필중 기술에 쓴 턴도 그 한 번으로 끝나는 것이 본가와 같다).
+        attacker.nextMoveNeverMisses = false
         // 실패 여부는 **모든 갈래에서** 갱신한다. 성공 갈래만 내리면 한 번 실패한 뒤로 계속 실패로
         // 남아 분함의발구르기가 영원히 두 배가 된다. 광역기는 마지막 대상의 결과가 남는다 —
         // 본가도 여러 대상 중 하나만 실패한 턴을 실패로 세지 않는다.
@@ -3580,6 +3645,14 @@ extension BattleEngine {
         if sashed {
             damage = defender.hp - 1
             defender.heldItemConsumed = true
+        }
+        // 기합의머리띠는 확률로 버틴다 — 만피 조건이 없고 소모되지 않는 것이 띠와 갈리는 점이다.
+        // 띠가 이미 잘랐으면 굴리지 않는다(같은 히트를 두 물건이 버티는 자리를 만들지 않는다).
+        if !sashed, !hitsSubstitute, damage >= defender.hp,
+           let percent = defender.heldEffect?.survivesLethalHitPercent,
+           Int(rng.next() % 100) < percent, let item = defender.activeHeldItem {
+            damage = defender.hp - 1
+            events.append(.heldItemTriggered(defenderActor, item))
         }
         // 데미지 0(변화기)은 `.damage` 를 내보내지 않는다 — "0 데미지" 줄은 맞았는데 안 깎인 것처럼 읽힌다.
         if damage > 0 {
@@ -3946,12 +4019,17 @@ extension BattleEngine {
                             field: inout BattleField, rng: inout SplitMix64) -> [BattleEvent] {
         beginTurn(&a); beginTurn(&b)
         var events: [BattleEvent] = [.turn(turn)]
+        // 물건의 턴 머리 굴림은 **순서를 재기 전**이다 — 선공을 가져갔는지가 순서의 입력이다.
+        events += rollTurnStartItems(&a, actor: .a, rng: &rng)
+        events += rollTurnStartItems(&b, actor: .b, rng: &rng)
         // 마비가 스피드를 깎으므로 순서 계산이 상태를 봐야 한다 — `stats.spe` 를 그대로 넘기면
         // 마비가 스탯 표시에만 남고 선공은 그대로다.
         let aIsFirst = firstMoverIsA(priorityA: moveA.turnPriority, priorityB: moveB.turnPriority,
                                      speedA: orderingSpeed(a, team: .a, field: field),
                                      speedB: orderingSpeed(b, team: .b, field: field),
-                                     movesLastA: movesLast(a), movesLastB: movesLast(b), rng: &rng)
+                                     movesLastA: movesLast(a), movesLastB: movesLast(b),
+                                     movesFirstA: movesFirst(a), movesFirstB: movesFirst(b),
+                                     rng: &rng)
         for attackerIsA in aIsFirst ? [true, false] : [false, true] {
             guard a.isAlive && b.isAlive else { break }   // 선공에 기절하면 후공 없음
             let move = attackerIsA ? moveA : moveB

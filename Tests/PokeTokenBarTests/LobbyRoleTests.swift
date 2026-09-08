@@ -138,13 +138,15 @@ final class LobbyRoleTests: XCTestCase {
         //      필드 — 구버전 게스트는 그 랭크를 안 올려 뒤 라운드가 통째로 갈린다).
         // 31 = 기술의 성질(접촉·펀치·소리)에 답하는 물건 8종 — 끈기갈고리손톱이 조이기 턴 난수를
         //      굴리지 않아 rng 소비 횟수까지 갈리고, 접촉 반응은 때린 쪽의 HP 를 깎는다.
+        // 32 = 운에 걸린 물건 5종(선제공격손톱·기합의머리띠·스타열매·미클열매·애슈열매) — 턴마다,
+        //      그리고 치명적인 히트마다 난수를 한 번씩 더 굴려 소비 횟수가 갈린다.
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
         //
         // **이 값을 리터럴로 박는 테스트는 여기 하나뿐이다.** 다섯 군데에 박혀 있던 동안은 누가
         // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
         // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
         // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 31)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 32)
     }
 
     /// `BattleEvent` 의 case 수를 동결한다 — **늘리면 `protocolVersion` 도 올려야 한다.**

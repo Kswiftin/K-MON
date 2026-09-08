@@ -260,6 +260,14 @@ struct WaveBattle: Sendable {
         // **전에** 하나씩 뽑는다 — 비교 클로저 안에서 rng 를 부르면 소비 횟수가 정렬 알고리즘의
         // 비교 횟수에 딸려가고, 그러면 같은 seed 로 판이 재현되지 않는다(LAN 팀전과 같은 함정).
         let tieBreakers = attacks.map { _ in rng.next() }
+        // 물건의 턴 머리 굴림은 **정렬 앞**이다(방 모드와 같은 이유) — 굴린 값이 정렬의 입력이다.
+        for slot in myField {
+            events += BattleEngine.rollTurnStartItems(&mine[slot.teamIndex], actor: .a, rng: &rng)
+        }
+        for slot in opponentField {
+            events += BattleEngine.rollTurnStartItems(&opponents[slot.teamIndex], actor: .b,
+                                                      rng: &rng)
+        }
         let ordered = zip(attacks, tieBreakers).sorted { lhs, rhs in
             let left = side(of: lhs.0), right = side(of: rhs.0)
             let leftPriority = left.move(at: lhs.0.moveIndex).turnPriority
@@ -267,6 +275,10 @@ struct WaveBattle: Sendable {
             if leftPriority != rightPriority { return leftPriority > rightPriority }
             // 후공 물건(느림보꼬리·만복향로)은 우선도 **뒤**, 스피드 **앞**이다 — 아무리 빨라도
             // 뒤로 가지만 우선도는 이기지 못한다(1v1 `firstMoverIsA` 와 같은 순서).
+            // 선공 물건(선제공격손톱·애슈열매)은 우선도 **뒤**, 후공 물건 **앞**이다.
+            let leftHurries = BattleEngine.movesFirst(left)
+            let rightHurries = BattleEngine.movesFirst(right)
+            if leftHurries != rightHurries { return leftHurries }
             let leftLags = BattleEngine.movesLast(left)
             let rightLags = BattleEngine.movesLast(right)
             if leftLags != rightLags { return rightLags }

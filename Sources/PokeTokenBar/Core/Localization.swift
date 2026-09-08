@@ -1550,6 +1550,9 @@ struct L {
         case .petayaBerry: return "야타비열매"
         case .apicotBerry: return "규살열매"
         case .lansatBerry: return "랑사열매"
+        case .starfBerry: return "스타열매"
+        case .micleBerry: return "미클열매"
+        case .custapBerry: return "애슈열매"
         case .figyBerry: return "무화열매"
         case .wikiBerry: return "위키열매"
         case .magoBerry: return "마고열매"
@@ -1650,6 +1653,8 @@ struct L {
         case .bindingBand: return "조임밴드"
         case .gripClaw: return "끈기갈고리손톱"
         case .throatSpray: return "목스프레이"
+        case .quickClaw: return "선제공격손톱"
+        case .focusBand: return "기합의머리띠"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1902,6 +1907,16 @@ struct L {
                 return "내가 건 조이기가 일곱 턴 동안 이어져요."
             case .throatSpray:
                 return "소리 기술을 쓰면 특수공격이 올라가고 사라져요."
+            case .quickClaw:
+                return "때때로 상대보다 먼저 움직여요."
+            case .focusBand:
+                return "때때로 쓰러질 공격을 체력 1로 버텨요."
+            case .pinchBestBoost:
+                return "체력이 얼마 안 남으면 가장 높은 능력이 크게 올라가고 사라져요."
+            case .pinchSureHit:
+                return "체력이 얼마 안 남으면 다음 기술 하나가 반드시 맞고 사라져요."
+            case .pinchHurry:
+                return "체력이 얼마 안 남으면 그 턴에 먼저 움직이고 사라져요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -2005,6 +2020,11 @@ struct L {
         case .bindingBand: return "내가 건 조이기 잔뎀 1/6"
         case .gripClaw: return "내가 건 조이기 7턴"
         case .throatSpray: return "소리 기술을 쓰면 특공 +1 / 1회"
+        case .quickClaw: return "20% 확률로 선공"
+        case .focusBand: return "10% 확률로 HP 1 버팀"
+        case .pinchBestBoost: return "위급 시 최고 능력 +2 / 1회"
+        case .pinchSureHit: return "위급 시 다음 기술 필중 / 1회"
+        case .pinchHurry: return "위급 시 그 턴 선공 / 1회"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }
