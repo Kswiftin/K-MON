@@ -78,7 +78,13 @@ enum SaveTransfer {
     /// 일일 사탕 원장(`dcd`)이 이미 배포된 `lastCandyDate` 를 서명에 넣었다 → 9 → 10. 이 필드는
     /// 2026-08-13 부터 있었고 하루라도 사탕을 받은 세이브엔 값이 차 있어, 조건부 append 로도
     /// 구서명이 재현되지 않았다(정상 세이브가 통째로 조작 판정돼 초기화됐다).
-    static let integrityVersion = 10
+    /// `maxKeyLength` 를 10 → 13 으로 올려 레이드 원장(`rd`/`rc`/`r3d`/`r5d`/`c3d`/`c5d`)의
+    /// "-am"/"-pm" 접미사가 더는 안 잘리게 했다 → 10 → 11. **필드를 더하거나 뺀 게 아니라 값 자체가
+    /// 달라지는 부류**다 — 레이드를 한 번이라도 돈 기존 세이브는 원장 값이 "yyyy-MM-dd-am"(13자,
+    /// 원본이 JSON에 그대로 있음)인데, 옛 클램프는 이걸 10자로 잘라 서명했다. 새 클램프는 13자
+    /// 그대로 서명해 같은 원본에서 다른 canonical 이 나온다 — 그대로면 값이 든 정상 세이브가 전부
+    /// 조작 판정된다(2026-09-08).
+    static let integrityVersion = 11
     /// 2026-08-13 게임 구조 개편 배포: 모든 기존 진행 데이터를 한 번 완전 초기화한다.
     static let forcedResetVersion = 1
     /// 세이브 파일 크기 상한. 정상 세이브는 수 KB 이고 도감이 가득 차도 수백 KB 를 넘지 않는다.
@@ -91,8 +97,18 @@ enum SaveTransfer {
 
     /// 세이브에서 온 **문자열** 상한. 숫자만 자르고 문자열을 빼 두면 임의 길이 문자열이 무결성
     /// canonical(매 저장의 해시 입력)과 화면·LAN 전송에 그대로 실린다.
-    /// 원장 키는 `yyyy-MM-dd`(10)·`yyyy-Www`(8)·`yyyy-MM`(7) 이라 10 이면 정상 키를 자르지 않는다.
-    static let maxKeyLength = 10
+    ///
+    /// 원장 키는 `yyyy-MM-dd`(10)·`yyyy-Www`(8)·`yyyy-MM`(7)·`RaidBoss.periodKey`의
+    /// `yyyy-MM-dd-am/pm`(13, 레이드 지급·포획 원장) 이라 **13** 이어야 정상 키를 자르지 않는다.
+    ///
+    /// **사고(2026-09-08)**: 이 값이 10 이던 동안 레이드 원장(`raidRewardDate` 등)의 "-am"/"-pm"
+    /// 접미사가 재시작(`load()` → `sanitized()`)마다 잘렸다 — JSON 파일에는 "2025-08-12-pm" 이
+    /// 그대로 저장되는데, 다음 로드에서 10 자로 잘려 "2025-08-12"가 되어 `RaidBoss.periodKey`
+    /// 와 다시는 같아질 수 없었다. `raidRewardClaimedToday` 가 매번 false 로 보여 앱을 껐다 켤
+    /// 때마다 하루 한 번 지급이 무한 재지급됐다. 같은 세션 안에서 시계만 돌리는 테스트
+    /// (`testRaidRewardIsPaidOncePerDay` 등)는 `sanitized()` 를 다시 안 거쳐 이 경로를 못 밟았다
+    /// — `testRaidRewardSurvivesRestart`/`testRaidCatchSurvivesRestart` 가 재로드 경로를 검증한다.
+    static let maxKeyLength = 13
     /// 이름·집합 id 상한. 앱이 입력에서 자르는 값과 같아야 한다(`setTrainerName`·별명) — 경계가 더
     /// 짧으면 정상 이름이 로드 때 잘린다. 배지 id(타입명)·`collectedFinals`("base:final") 도 이 안이다.
     static let maxNameLength = 20

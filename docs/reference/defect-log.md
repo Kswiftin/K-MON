@@ -5605,3 +5605,36 @@ PokéAPI 의 `move_meta` 테이블은 7세대에서 끊긴다. 8세대 이후 17
 - **부류 일반화**: 어떤 규칙이 "고를 수 있나" 를 막으면, **이미 고른 뒤에도 막히는가**를 같이
   답해야 한다. 규칙이 상대 행동으로 걸리는 것이면 그 턴 안에 걸리는 순서가 늘 존재한다.
   (`MoveSelectionLock.blocksExecution`, 2026-09-08.)
+
+## 문자열 길이 상한을 정할 때 "이 필드의 실제 최대 길이"를 재지 않으면 조용히 자른다
+
+- **증상**: 레이드 보상·포획을 받고 앱을 껐다 켜면(또는 릴리즈 업데이트하면) 방금 받은 티어가
+  다시 "미완료"로 보였다 — 재도전하면 또 지급됐다(하루 한 번 원장이 무한 재지급이 됨).
+- **근본원인**: `SaveTransfer.maxKeyLength = 10` 이 "원장 키는 `yyyy-MM-dd`(10)뿐"이라는 가정으로
+  정해졌는데, 레이드 원장(`raidRewardDate` 등)은 `RaidBoss.periodKey` 형식
+  `yyyy-MM-dd-am/pm`(13자)이었다. `sanitized()` 의 `clampedKey` 가 매 로드마다 이걸 10자로 잘라
+  "-am"/"-pm" 접미사를 지웠다 — JSON 파일에는 원본(13자)이 그대로 있는데 **메모리로 올라온
+  값만** 매번 잘려, `RaidBoss.periodKey(clock())` 와 다시는 같아질 수 없었다.
+  - **테스트/리뷰가 왜 못 걸렀나**: 기존 테스트(`testRaidRewardIsPaidOncePerDay` 등)는 전부
+    **같은 `CompanionStore` 인스턴스 안에서 시계만 돌려** 검증했다. `clampedKey` 는 `load()` →
+    `sanitized()` 경로에서만 도는데, 같은 인스턴스로는 이 경로를 다시 밟을 방법이 없다 — 파일에서
+    다시 읽는 것(=재시작)을 흉내 내는 테스트가 하나도 없었다.
+- **부류 스윕**: `clampedKey` 를 쓰는 다른 필드(`lastCandyDate`·`activeSecondsDate`·
+  `lastAdventureBonusDate`·`adventureWeekKey`·`gymDefenseRewardDate`) 는 전부 `dayKey`(10자)·
+  `weekKey`(8자) 형식이라 상한 10 안에 들어간다 — 레이드 원장 6개(`raidRewardDate`/
+  `raidRewardDateTierThree`/`raidRewardDateTierFive`/`raidCatchDate`/`raidCatchDateTierThree`/
+  `raidCatchDateTierFive`)만 `periodKey`(13자) 형식이라 걸렸다.
+- **영구 캡처**: `maxKeyLength` 를 13 으로 올리고, **같은 원본에서 다른 canonical 이 나오므로**
+  `integrityVersion` 도 10 → 11 로 올렸다(값 자체가 달라지는 변경은 필드 추가/삭제와 같은 부류 —
+  안 올리면 레이드를 돈 기존 세이브가 전부 조작 판정된다). 회귀 테스트는 재시작을 실제로
+  흉내 낸다 — 같은 파일 URL·같은 고정 시각으로 두 번째 `CompanionStore` 를 만들어 원장이
+  유지되는지 검증한다(`testRaidRewardSurvivesRestart`/`testRaidCatchSurvivesRestart`). 이
+  테스트를 고침 **전**에 CI 에 올려 실제로 빨개지는 것을 먼저 확인했다(2026-09-08).
+- **부류 일반화**: 문자열 길이 상한을 "지금 아는 형식들"만 보고 정하지 마라. **그 필드에 값을
+  쓰는 모든 생성 지점을 grep 해 실제 최대 길이를 재고** 상한을 정한다. 같은 원장류(dayKey 기반)
+  라도 나중에 구간을 쪼갠 원장(오전/오후처럼 접미사가 붙는)이 생기면 상한이 조용히 낡는다 —
+  원장 형식을 바꿀 때마다 이 상한과 맞는지 다시 확인해야 한다.
+- **검증 방법론**: Xcode 없는 환경이라 로컬 `swift test` 가 안 됐다. 가설만으로 고치지 않고,
+  (1) 재현 테스트를 먼저 작성해 CI 에 올려 **실패를 확인**하고 (2) `print` 로 저장된 raw JSON과
+  로드된 값을 나란히 찍어 정확한 차이(13자 vs 10자)를 확정한 뒤에야 원인을 특정했다. CI 자체를
+  로컬 실행 환경 대신 쓴 사례다.
