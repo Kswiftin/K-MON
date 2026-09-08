@@ -458,6 +458,22 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertEqual(center.combatRound, 2, "라운드가 막히면 게스트는 판이 멈춘 것을 본다")
     }
 
+    /// **판이 도는 레이드 방은 입장을 받지 않는다.** 늦게 들어온 사람에게 그 판의 편성을 보내는
+    /// 경로가 레이드엔 없어(토너먼트·체육관에는 있다), 받아 봐야 판이 끝날 때까지 로비 화면만
+    /// 보는 참가자가 명단에 하나 느는 것으로 끝난다.
+    @MainActor
+    func testARaidInProgressTurnsNewcomersAway() {
+        let store = stubStore(TestClock(), tag: "raid-join-locked")
+        let center = MultiplayerRoomCenter(companion: store)
+        XCTAssertTrue(center.acceptsJoinWhileInPlay, "로비에서는 당연히 받는다")
+
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 11, fighters: [me, mate, todaysBoss(tier: .one)],
+                                                 tier: .one))
+        XCTAssertFalse(center.acceptsJoinWhileInPlay, "판이 도는 중에는 받지 않는다")
+    }
+
     /// 안 뽑힌 사람은 못 잡는다 — 그래도 정산은 그대로 받는다. 둘이 갈리지 않으면 방 전원이 잡는다.
     @MainActor
     func testARunnerWhoWasNotDrawnStillGetsPaid() async {

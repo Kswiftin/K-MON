@@ -846,6 +846,15 @@ final class MultiplayerRoomCenter {
     /// 배틀 중에 바뀌면 승패 판정의 근거가 흔들린다(호스트 자기 자신도 예외가 아니다).
     var isInPlay: Bool { phase == .battling || phase == .pokeathlon || phase == .pokemonQuiz || phase == .tournament }
 
+    /// 판이 도는 중에 새 참가자를 받는가.
+    ///
+    /// **따라잡기 전송이 있는 방만 받는다.** 토너먼트는 입장 즉시 현재 대진을 그 연결에 보내므로
+    /// 늦게 들어와도 화면이 선다. 레이드·포켓슬론·퀴즈는 그런 전송이 없어, 받아 봐야 판이 끝날
+    /// 때까지 로비 화면만 보는 참가자가 하나 늘 뿐이다 — 명단에는 있는데 싸우지는 않는 사람이라
+    /// 남은 사람 화면의 인원수도 어긋난다. 들여보내고 아무것도 못 보게 하느니 사유를 말하고
+    /// 돌려보낸다. 체육관은 `phase` 가 `.hosting` 이라 여기 걸리지 않는다(자체 `gymState` 동기화).
+    var acceptsJoinWhileInPlay: Bool { !isInPlay || lobby?.activity == .tournament }
+
     /// 지금 **화면을 띄워야 하는** 방 컨텐츠가 도는가 — 창을 열지 정하는 신호다.
     /// 붙들지는 않는다(닫기는 언제나 된다).
     ///
@@ -1795,6 +1804,10 @@ final class MultiplayerRoomCenter {
                     // 버전이 갈렸다는 사실만 말하면 무엇을 해야 할지 알 수 없다 — 이 문구가
                     // 구버전 상대의 화면에 그대로 뜨는 유일한 통로다.
                     self.send(.rejected(reason: self.companion.l.gymVersionMismatch), over: connection)
+                    connection.cancel(); return
+                }
+                guard self.acceptsJoinWhileInPlay else {
+                    self.send(.rejected(reason: "판이 진행 중입니다. 끝나면 다시 시도하세요."), over: connection)
                     connection.cancel(); return
                 }
                 guard MultiplayerValidation.valid(participant: participant, snapshot: snapshot) else {
