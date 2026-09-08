@@ -44,6 +44,9 @@ enum SafariZone {
     // MARK: 방문 예산 (PR2 이후 `SafariVisit`/`CompanionStore` 가 쓰지만, 규칙과 값을 한 곳에
     // 두는 `RaidBoss` 관례를 따라 여기 둔다)
 
+    /// 하루 방문(참여) 상한 — 걷기·조우 세션 자체를 몇 번 열 수 있는지. `catchesPerVisitCap`
+    /// (2) × 이 값(3) = `dailyCatchCap`(6) 으로 정확히 맞물린다.
+    static let dailyVisitCap = 3
     /// 방문당 사파리 볼. 방문당 잡을 수 있는 건 최대 `catchesPerVisitCap`(2)뿐이라 30개는커녕
     /// 15개도 대부분 못 쓰고 버려진다 — 몇 번 실패·도망당해도 2마리는 넉넉히 노려볼 수 있는 선.
     static let ballsPerVisit = 10
