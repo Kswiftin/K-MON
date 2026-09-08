@@ -1073,6 +1073,10 @@ enum BattleVolatile: String, Codable, Sendable, Equatable, CaseIterable {
     /// 대가는 걸어 둔 쪽이 쓰러진 뒤에도 남는다는 것이고, 막히는 쪽이 교체하면 풀린다.
     case disable, encore, taunt, torment, imprison, healBlock
 
+    /// 이 상태가 막는 선택 잠금 — 안 막으면 nil. 두 열거형이 **같은 case 이름**을 쓰므로 이름으로
+    /// 잇는다. 목록을 손으로 적으면 새 잠금이 늘 때 한쪽만 남는다.
+    var selectionLock: MoveSelectionLock? { MoveSelectionLock(rawValue: rawValue) }
+
     /// 쇼다운이 쓰는 키 → 이 열거형. 모르는 키는 `nil` 이고, 그 키가 미구현인 사유는
     /// `ShowdownEffectTableTests` 가 동결한다.
     init?(showdownKey: String) {
@@ -1913,7 +1917,10 @@ enum BattleEngine {
     ///      통하고** 밟지 않던 함정을 밟는다 — 데미지가 아니라 맞고 안 맞고가 갈린다.
     ///      + 지속 시간을 늘리는 물건 6종(빛의점토의 장막 8턴, 날씨 돌 넷의 날씨 8턴,
     ///      그라운드코트의 필드 8턴). 구버전 피어는 5턴으로 세어 세 턴 동안 판을 다르게 본다.
-    static let rulesVersion = 33
+    ///      + 허브·무효화 물건 5종(하양허브의 랭크 원복, 멘탈허브의 선택 잠금 해제, 흉내허브의
+    ///      랭크 상승 따라하기, 클리어참의 하락 차단, 은밀망토의 부가효과 차단). 은밀망토는
+    ///      **rng 소비까지 바꾼다** — 막힌 부가효과는 확률을 굴리지 않는다.
+    static let rulesVersion = 34
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2056,6 +2063,8 @@ enum BattleEngine {
             guard layers > 0, grounded || !condition.hitsOnlyGrounded else { continue }
             switch condition {
             case .stickyWeb:
+                // 끈적끈적네트도 남이 내리는 랭크다 — 클리어참이 여기서도 답한다.
+                guard side.heldEffect?.blocksStatDrop != true else { continue }
                 let applied = side.changeStage(.spe, by: -1)
                 if applied != 0 { events.append(.boost(actor, .spe, applied)) }
             case .stealthRock:
@@ -2077,6 +2086,9 @@ enum BattleEngine {
             if !side.isAlive { break }
         }
         if !side.isAlive { events.append(.faint(actor)) }
+        // 밟아서 내려간 랭크에도 허브가 답한다 — 기술이 아니라 함정이 내렸을 뿐 같은 하락이다.
+        // 따라 올릴 상대가 없으므로 앞뒤 값은 같은 것을 넘긴다.
+        events += settleStageItems(&side, actor: actor, foeStagesBefore: [:], foeStagesAfter: [:])
         return events
     }
 
@@ -3060,6 +3072,69 @@ extension BattleEngine {
                             move: MoveSpec, field: inout BattleField,
                             attackerTeam: BattleTeamSlot = .a, defenderTeam: BattleTeamSlot = .b,
                             rng: inout SplitMix64) -> [BattleEvent] {
+        // 랭크에 답하는 물건(허브 3종)은 **기술이 끝난 뒤** 한 자리에서 본다. 랭크를 만지는 자리가
+        // 여럿이라(2차효과·저주·필드) 자리마다 물으면 새 자리가 늘 때 그 경로에서만 허브가 죽는다.
+        // 따라 올리려면 상대가 이번 기술에서 얼마나 올랐는지가 필요해서 앞뒤를 잰다.
+        let attackerStagesBefore = attacker.stages
+        let defenderStagesBefore = defender.stages
+        var events = resolveAttackAction(attacker: &attacker, defender: &defender,
+                                         attackerActor: attackerActor, defenderActor: defenderActor,
+                                         move: move, field: &field, attackerTeam: attackerTeam,
+                                         defenderTeam: defenderTeam, rng: &rng)
+        events += settleStageItems(&attacker, actor: attackerActor,
+                                   foeStagesBefore: defenderStagesBefore, foeStagesAfter: defender.stages)
+        events += settleStageItems(&defender, actor: defenderActor,
+                                   foeStagesBefore: attackerStagesBefore, foeStagesAfter: attacker.stages)
+        return events
+    }
+
+    /// 기술 하나가 랭크·잠금에 남긴 것에 답하는 물건들 — 하양허브·흉내허브·멘탈허브.
+    ///
+    /// 세 물건을 한 함수에 두는 이유는 부르는 자리가 같아서다: 셋 다 "기술이 끝난 지금" 을 본다.
+    /// 물건은 하나만 쥐므로 셋 중 하나만 답하고, 답한 물건은 그 자리에서 사라진다.
+    static func settleStageItems(_ side: inout BattleSide, actor: BattleActor,
+                                 foeStagesBefore: [BattleStat: Int],
+                                 foeStagesAfter: [BattleStat: Int]) -> [BattleEvent] {
+        guard let effect = side.heldEffect, let item = side.snapshot.heldItem, side.isAlive
+        else { return [] }
+        var events: [BattleEvent] = []
+        if effect.copiesFoeStatBoosts {
+            // **올라간 몫만** 따라간다(본가와 같다). 상대가 내려간 것까지 따라가면 물건이 벌이 된다.
+            // 순서를 `allCases` 로 도는 이유는 두 피어의 로그를 같게 하려는 것이다(딕셔너리 순회는
+            // 순서가 없다).
+            for stat in BattleStat.allCases {
+                let gained = (foeStagesAfter[stat] ?? 0) - (foeStagesBefore[stat] ?? 0)
+                guard gained > 0 else { continue }
+                let applied = side.changeStage(stat, by: gained)
+                if applied != 0 { events.append(.boost(actor, stat, applied)) }
+            }
+        }
+        if effect.restoresLoweredStages {
+            for stat in BattleStat.allCases where side.stage(stat) < 0 {
+                let applied = side.changeStage(stat, by: -side.stage(stat))
+                if applied != 0 { events.append(.boost(actor, stat, applied)) }
+            }
+        }
+        if effect.clearsSelectionLocks {
+            // 어느 상태가 선택을 막는지는 **잠금 열거형이 답한다**(같은 case 이름을 쓴다) — 목록을
+            // 여기 다시 적으면 새 잠금이 늘 때 이 자리만 옛 목록으로 남는다.
+            for volatileStatus in BattleVolatile.allCases
+            where volatileStatus.selectionLock != nil && side.has(volatileStatus) {
+                side.volatiles[volatileStatus] = nil
+                events.append(.volatileEnded(actor, volatileStatus))
+            }
+        }
+        guard !events.isEmpty else { return [] }
+        side.heldItemConsumed = true
+        return events + [.heldItemTriggered(actor, item)]
+    }
+
+    private static func resolveAttackAction(attacker: inout BattleSide, defender: inout BattleSide,
+                                            attackerActor: BattleActor, defenderActor: BattleActor,
+                                            move: MoveSpec, field: inout BattleField,
+                                            attackerTeam: BattleTeamSlot,
+                                            defenderTeam: BattleTeamSlot,
+                                            rng: inout SplitMix64) -> [BattleEvent] {
         var events: [BattleEvent] = []
         guard beginAttack(attacker: &attacker, actor: attackerActor, move: move,
                           rng: &rng, into: &events) else { return events }
@@ -3685,7 +3760,12 @@ extension BattleEngine {
         for change in applicable {
             let targetsSelf = change.change > 0
             // 하얀안개는 **상대가 내리는** 랭크만 막는다. 자기 상승까지 막으면 쓴 쪽이 손해를 본다.
-            if !targetsSelf, field.blocksStatDrop(against: defenderTeam) { continue }
+            // 클리어참은 하얀안개와 **같은 물음**에 답한다 — 남이 내리는 랭크만 막는다.
+            if !targetsSelf, field.blocksStatDrop(against: defenderTeam)
+                || defender.heldEffect?.blocksStatDrop == true { continue }
+            // 은밀망토는 **덤으로 붙는** 하락만 막는다. 변화기의 하락은 그 기술 자체라 지나간다.
+            if !targetsSelf, move.damageClass != .status,
+               defender.heldEffect?.blocksAddedEffects == true { continue }
             let applied = targetsSelf
                 ? attacker.changeStage(change.stat, by: change.change)
                 : defender.changeStage(change.stat, by: change.change)
@@ -3706,6 +3786,9 @@ extension BattleEngine {
         // 회복은 구현이 없어서, 걸면 남는 게 필중 100% 수면기다(대상을 모르는 게 아니라 아는데
         // 반대로 거는 경우다). 구현할 때는 `targetsUser` 를 보고 회복까지 같이 넣는다.
         guard move.targetsUser != true else { return [] }
+        // 은밀망토는 공격기에 딸린 덤만 막는다 — 변화기는 그것이 기술 자체라 지나간다. 확률을
+        // 굴리기 **전에** 막으므로 rng 소비가 줄지만, 두 피어가 같은 물건을 보므로 갈리지 않는다.
+        if move.damageClass != .status, side.heldEffect?.blocksAddedEffects == true { return [] }
         if move.flinchPercent > 0, side.isAlive, Int(rng.next() % 100) < move.flinchPercent { side.flinched = true }
         // 필드가 막는 상태는 걸리지 않는다 — 땅에 닿은 쪽만이다(일렉트릭필드는 잠듦,
         // 미스트필드는 주 상태 전부). 막히면 확률 판정을 굴리지 않아 rng 소비가 줄지만, 두 피어가

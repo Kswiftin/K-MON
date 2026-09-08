@@ -362,6 +362,13 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 그 자리에서 한 번 묻고 판은 누가 걸었는지를 안 들고 있는다(들면 교체·기절마다 주인을
     /// 따라다녀야 하고, 주인이 쓰러진 뒤 장막의 길이가 무슨 뜻인지 답할 수 없다).
     case lightClay, icyRock, smoothRock, heatRock, dampRock, terrainExtender
+    /// 허브·무효화 물건 5종 — 앞의 물건들이 배율이나 면역을 상시로 얹는 것과 달리, 이쪽은 **다른
+    /// 기전이 이미 한 일**에 답한다: 랭크가 내려간 뒤(하양허브), 선택 잠금이 걸린 뒤(멘탈허브),
+    /// 상대가 랭크를 올린 뒤(흉내허브)에 움직인다. 클리어참·은밀망토는 그 일이 일어나기 전에 막는다.
+    ///
+    /// 파워허브(2턴 기술 즉발)와 특성가드(특성 변경 차단)는 없다 — 이 엔진에는 2턴 기술도 특성을
+    /// 바꾸는 기술도 없어서 아무 일도 하지 않는 물건이 된다.
+    case whiteHerb, mentalHerb, mirrorHerb, clearAmulet, covertCloak
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -402,6 +409,7 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
              .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -490,7 +498,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .shellBell, .blackSludge, .bigRoot,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
-             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender:
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -562,6 +571,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .heatRock:       return .heatRock
         case .dampRock:       return .dampRock
         case .terrainExtender: return .terrainExtender
+        case .whiteHerb:   return .whiteHerb
+        case .mentalHerb:  return .mentalHerb
+        case .mirrorHerb:  return .mirrorHerb
+        case .clearAmulet: return .clearAmulet
+        case .covertCloak: return .covertCloak
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
@@ -766,8 +780,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .wideLens, .zoomLens, .brightPowder, .laxIncense,
              .shellBell, .blackSludge, .bigRoot,
              .airBalloon, .safetyGoggles, .ringTarget, .floatStone,
-             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender:
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb:
             return kebabRawValue
+        // 9세대 물건 셋도 PokéAPI 에 스프라이트가 없다(통굽부츠·만능우산과 같은 자리).
+        case .mirrorHerb, .clearAmulet, .covertCloak: return nil
         // 통굽부츠·만능우산은 PokéAPI 에 스프라이트가 없다(8세대 아이템) — 규칙에서 파생시키면
         // 화면에 깨진 이미지가 남으므로 이모지 폴백만 쓴다(민트·테라피스와 같은 자리).
         case .heavyDutyBoots, .utilityUmbrella: return nil
@@ -870,6 +887,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lightClay: return "🧱"; case .icyRock: return "🧊"
         case .smoothRock: return "🏜️"; case .heatRock: return "🔥"
         case .dampRock: return "💦"; case .terrainExtender: return "🧭"
+        case .whiteHerb: return "🌿"; case .mentalHerb: return "🍀"
+        case .mirrorHerb: return "🪞"; case .clearAmulet: return "🔮"
+        case .covertCloak: return "🧥"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -906,7 +926,8 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .shellBell, .blackSludge, .bigRoot,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
-             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender:
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak:
             return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
@@ -1035,7 +1056,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
                .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
                .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
                .floatStone,
-               .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender]
+               .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+               .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -1099,6 +1121,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case airBalloon, heavyDutyBoots, safetyGoggles, utilityUmbrella, ringTarget, floatStone
     /// 판에 거는 것을 오래 가게 하는 여섯 갈래 — 묻는 자리가 지닌 개체가 아니라 **거는 순간**이다.
     case lightClay, icyRock, smoothRock, heatRock, dampRock, terrainExtender
+    /// 다른 기전이 이미 한 일에 답하는 다섯 갈래 — 랭크·선택 잠금·부가효과다.
+    case whiteHerb, mentalHerb, mirrorHerb, clearAmulet, covertCloak
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -1121,8 +1145,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
-             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
-             .terrainExtender: return nil
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return nil
         }
     }
 
@@ -1141,8 +1165,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
-             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
-             .terrainExtender: return nil
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return nil
         }
     }
 
@@ -1165,8 +1189,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
-             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
-             .terrainExtender: return nil
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return nil
         }
     }
 
@@ -1210,8 +1234,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
-             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
-             .terrainExtender: return false
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return false
         }
     }
 
@@ -1243,8 +1267,8 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge,
              .airBalloon, .heavyDutyBoots, .safetyGoggles, .utilityUmbrella, .ringTarget,
              .floatStone,
-             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock,
-             .terrainExtender: return nil
+             .lightClay, .icyRock, .smoothRock, .heatRock, .dampRock, .terrainExtender,
+             .whiteHerb, .mentalHerb, .mirrorHerb, .clearAmulet, .covertCloak: return nil
         }
     }
 
@@ -1460,6 +1484,24 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
         case terrain(BattleTerrain)
         case sideCondition(BattleSideCondition)
     }
+
+    /// 내려간 랭크를 **0 으로 되돌리는가** — 하양허브다. 막는 클리어참과 나눈 이유는 시점이다:
+    /// 저기는 내려가기 전, 여기는 내려간 뒤라서 한 축으로 접으면 둘 중 하나가 반대편 일을 한다.
+    var restoresLoweredStages: Bool { self == .whiteHerb }
+
+    /// 기술 선택을 막는 상태를 **푸는가** — 멘탈허브다.
+    var clearsSelectionLocks: Bool { self == .mentalHerb }
+
+    /// 상대가 올린 랭크를 **따라 올리는가** — 흉내허브다.
+    var copiesFoeStatBoosts: Bool { self == .mirrorHerb }
+
+    /// 남이 내리는 랭크를 막는가 — 클리어참이다. 하얀안개(`BattleField.blocksStatDrop`)와 **같은
+    /// 물음**이라 묻는 자리도 같다: 자기 하락(인파이트)은 막지 않는다.
+    var blocksStatDrop: Bool { self == .clearAmulet }
+
+    /// 공격기에 딸린 **부가효과**(상태·풀죽음·랭크 하락)를 막는가 — 은밀망토다. 변화기가 본래 하는
+    /// 일은 못 막는다: 부가효과는 데미지에 얹힌 덤이고, 울부짖기의 하락은 그 기술 자체다.
+    var blocksAddedEffects: Bool { self == .covertCloak }
 
     /// 맞으면 사라지는가 — 풍선이다. 약점 반감 열매처럼 히트를 깎고 사라지는 것이 아니라 **데미지가
     /// 들어간 사실만** 보므로 조건을 물건 쪽에서 답한다(깎는 자리와 없애는 자리가 갈리지 않는다).

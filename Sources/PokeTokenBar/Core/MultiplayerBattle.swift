@@ -433,7 +433,9 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     그 이름을 모르는 아이템으로 접어 땅 기술 면역·입장 데미지·날씨·체중 위력이 갈린다.
     // 28: 지속 시간을 늘리는 물건 6종(빛의점토·날씨 돌 넷·그라운드코트). 구버전 게스트는 판이
     //     걷히는 턴을 다르게 세어 세 턴 동안 데미지·필드 효과가 갈린다.
-    static let protocolVersion = 28
+    // 29: 허브·무효화 물건 5종(하양허브·멘탈허브·흉내허브·클리어참·은밀망토). 은밀망토가 막은
+    //     부가효과는 확률을 안 굴려 rng 소비 횟수까지 갈린다.
+    static let protocolVersion = 29
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

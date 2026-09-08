@@ -1627,6 +1627,11 @@ struct L {
         case .heatRock: return "뜨거운바위"
         case .dampRock: return "축축한바위"
         case .terrainExtender: return "그라운드코트"
+        case .whiteHerb: return "하양허브"
+        case .mentalHerb: return "멘탈허브"
+        case .mirrorHerb: return "흉내허브"
+        case .clearAmulet: return "클리어참"
+        case .covertCloak: return "은밀망토"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1837,6 +1842,16 @@ struct L {
                 return "내가 부른 비가 5턴 대신 8턴 동안 이어져요."
             case .terrainExtender:
                 return "내가 깐 필드가 5턴 대신 8턴 동안 이어져요."
+            case .whiteHerb:
+                return "능력이 떨어지면 한 번만 원래대로 돌려주고 사라져요."
+            case .mentalHerb:
+                return "도발처럼 기술을 못 고르게 하는 상태를 한 번 풀어주고 사라져요."
+            case .mirrorHerb:
+                return "상대가 능력을 올리면 똑같이 따라 올리고 사라져요."
+            case .clearAmulet:
+                return "상대가 내 능력을 떨어뜨릴 수 없어요."
+            case .covertCloak:
+                return "공격 기술에 덤으로 붙는 효과를 받지 않아요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1917,6 +1932,11 @@ struct L {
         case .heatRock: return "쨍쨍한 햇살 8턴"
         case .dampRock: return "비 8턴"
         case .terrainExtender: return "필드 8턴"
+        case .whiteHerb: return "떨어진 능력 원복 / 1회"
+        case .mentalHerb: return "선택 잠금 해제 / 1회"
+        case .mirrorHerb: return "상대 능력 상승 따라하기 / 1회"
+        case .clearAmulet: return "능력 하락 차단"
+        case .covertCloak: return "부가효과 차단"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }
