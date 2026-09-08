@@ -422,6 +422,58 @@ final class RaidRoomTests: XCTestCase {
         XCTAssertTrue(store.raidCatchClaimedToday(tier: .three), "이 판은 3★ 원장에 찍혀야 한다")
     }
 
+    /// **판이 도는 중에 온 로비 갱신은 명단만 바꾼다.** 누가 들어오거나 나가면 호스트가 로비를
+    /// 전원에게 다시 뿌리는데, 그걸 받은 게스트가 화면 단계까지 로비로 되돌리면 배틀에서 튕긴다.
+    /// 그 뒤 라운드는 `phase == .battling` 가드에 막혀 영영 안 들어오고 정산도 못 받는다 —
+    /// 남은 사람들 눈에는 방이 통째로 멈춘 것으로 보인다.
+    @MainActor
+    func testALobbyUpdateDuringTheRaidDoesNotThrowGuestsOutOfTheBattle() throws {
+        let store = stubStore(TestClock(), tag: "raid-midfight-join")
+        let center = MultiplayerRoomCenter(companion: store)
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        let boss = todaysBoss(tier: .one)
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 11, fighters: [me, mate, boss], tier: .one))
+        XCTAssertEqual(center.phase, .battling)
+
+        // 늦게 들어온 사람이 하나 늘어난 명단이 도착한다.
+        let host = LobbyParticipant(id: mate.id, trainerName: "동료", speciesID: 143,
+                                    team: .red, isReady: true, isHost: true)
+        var lobby = try XCTUnwrap(try? MultiplayerLobby(host: host,
+                                                        capacity: MultiplayerLobby.raidCapacity,
+                                                        activity: .raid))
+        try lobby.join(LobbyParticipant(id: center.myID, trainerName: "나", speciesID: 143,
+                                        team: .red, isReady: true, isHost: false))
+        try lobby.join(LobbyParticipant(id: UUID(), trainerName: "지각", speciesID: 143,
+                                        team: .red, isReady: false, isHost: false))
+        center.applyGuestLobby(lobby)
+
+        XCTAssertEqual(center.phase, .battling, "판이 도는 중에는 화면 단계가 로비로 돌아가면 안 된다")
+        XCTAssertEqual(center.lobby?.participants.count, 3, "명단 자체는 갱신된다")
+
+        // 튕기지 않았으니 다음 라운드가 그대로 들어온다.
+        var hurtBoss = boss
+        hurtBoss.side.hp = boss.side.hp - 1
+        center.applyGuestResolvedRound(round: 1, fighters: [me, mate, hurtBoss], events: [])
+        XCTAssertEqual(center.combatRound, 2, "라운드가 막히면 게스트는 판이 멈춘 것을 본다")
+    }
+
+    /// **판이 도는 레이드 방은 입장을 받지 않는다.** 늦게 들어온 사람에게 그 판의 편성을 보내는
+    /// 경로가 레이드엔 없어(토너먼트·체육관에는 있다), 받아 봐야 판이 끝날 때까지 로비 화면만
+    /// 보는 참가자가 명단에 하나 느는 것으로 끝난다.
+    @MainActor
+    func testARaidInProgressTurnsNewcomersAway() {
+        let store = stubStore(TestClock(), tag: "raid-join-locked")
+        let center = MultiplayerRoomCenter(companion: store)
+        XCTAssertTrue(center.acceptsJoinWhileInPlay, "로비에서는 당연히 받는다")
+
+        let me = runner("나", id: center.myID)
+        let mate = runner("동료")
+        XCTAssertTrue(center.applyGuestRaidStart(seed: 11, fighters: [me, mate, todaysBoss(tier: .one)],
+                                                 tier: .one))
+        XCTAssertFalse(center.acceptsJoinWhileInPlay, "판이 도는 중에는 받지 않는다")
+    }
+
     /// 안 뽑힌 사람은 못 잡는다 — 그래도 정산은 그대로 받는다. 둘이 갈리지 않으면 방 전원이 잡는다.
     @MainActor
     func testARunnerWhoWasNotDrawnStillGetsPaid() async {

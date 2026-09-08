@@ -413,7 +413,11 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     // 17: 레이드 포획 추첨에서 몰수당한(`MultiplayerFighter.hasLeft`) 참가자만 제외 — 쓰러졌지만
     //     방에 남은 참가자는 대상이다.
     // 18: 협동 레이드 러너 정원을 4명에서 8명으로 확대.
-    static let protocolVersion = 18
+    // 19: 배틀 엔진이 `BattleEvent` 에 case 다섯을 더했다(`volatileStarted`·`volatileEnded`·
+    //     `volatileTriggered`·`heldItemTriggered`·`moveBlocked`). 이 enum 은 자동합성 `Codable` 이라
+    //     구버전 게스트가 모르는 case 를 만나면 `roundResolved` 통째로 디코딩에 실패하고 연결이
+    //     끊긴다 — 규칙만 바뀐 게 아니라 **와이어 모양**이 바뀌었다.
+    static let protocolVersion = 19
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)

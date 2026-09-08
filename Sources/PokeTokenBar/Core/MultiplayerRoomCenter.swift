@@ -657,6 +657,20 @@ final class MultiplayerRoomCenter {
         return true
     }
 
+    /// 호스트가 뿌린 방 명단. 입장 확인이자 이후의 명단 갱신이다.
+    ///
+    /// **판이 도는 중이면 명단만 바꾼다.** 호스트는 누가 들어오거나 나갈 때마다 로비를 전원에게
+    /// 다시 뿌리는데(`broadcastLobby` — 입장·이탈·연결 끊김 셋), 그때 화면 단계까지 `.joined` 로
+    /// 되돌리면 싸우던 게스트가 전원 배틀에서 튕긴다. 되돌아갈 길도 없다: `.battling` 을 세우는
+    /// 것은 `.start`·`.raidStart` 뿐이라 그 판에는 다시 못 들어오고, 이후 라운드는
+    /// `applyGuestResolvedRound` 의 `phase == .battling` 가드에 걸려 버려진다 — 화면은 멈추고
+    /// 정산도 못 받는다. 레이드는 판이 도는 동안에도 입장을 받으므로 실제로 밟힌다.
+    func applyGuestLobby(_ lobby: MultiplayerLobby) {
+        self.lobby = lobby
+        guard !isInPlay else { return }
+        phase = .joined
+    }
+
     /// 호스트가 확정한 기여도. **게스트의 지급은 이 메시지가 도착해야 일어난다.**
     func applyGuestRaidSettlement(_ contributions: [UUID: Int]) {
         guard combatMode == .coopBoss else { return }
@@ -831,6 +845,15 @@ final class MultiplayerRoomCenter {
     /// 경기가 시작된 뒤엔 로비 편성을 건드리지 않는다 — `lobby.mode` 는 편성에서 파생되므로
     /// 배틀 중에 바뀌면 승패 판정의 근거가 흔들린다(호스트 자기 자신도 예외가 아니다).
     var isInPlay: Bool { phase == .battling || phase == .pokeathlon || phase == .pokemonQuiz || phase == .tournament }
+
+    /// 판이 도는 중에 새 참가자를 받는가.
+    ///
+    /// **따라잡기 전송이 있는 방만 받는다.** 토너먼트는 입장 즉시 현재 대진을 그 연결에 보내므로
+    /// 늦게 들어와도 화면이 선다. 레이드·포켓슬론·퀴즈는 그런 전송이 없어, 받아 봐야 판이 끝날
+    /// 때까지 로비 화면만 보는 참가자가 하나 늘 뿐이다 — 명단에는 있는데 싸우지는 않는 사람이라
+    /// 남은 사람 화면의 인원수도 어긋난다. 들여보내고 아무것도 못 보게 하느니 사유를 말하고
+    /// 돌려보낸다. 체육관은 `phase` 가 `.hosting` 이라 여기 걸리지 않는다(자체 `gymState` 동기화).
+    var acceptsJoinWhileInPlay: Bool { !isInPlay || lobby?.activity == .tournament }
 
     /// 지금 **화면을 띄워야 하는** 방 컨텐츠가 도는가 — 창을 열지 정하는 신호다.
     /// 붙들지는 않는다(닫기는 언제나 된다).
@@ -1783,6 +1806,10 @@ final class MultiplayerRoomCenter {
                     self.send(.rejected(reason: self.companion.l.gymVersionMismatch), over: connection)
                     connection.cancel(); return
                 }
+                guard self.acceptsJoinWhileInPlay else {
+                    self.send(.rejected(reason: "판이 진행 중입니다. 끝나면 다시 시도하세요."), over: connection)
+                    connection.cancel(); return
+                }
                 guard MultiplayerValidation.valid(participant: participant, snapshot: snapshot) else {
                     self.send(.rejected(reason: "잘못된 참가자 정보입니다."), over: connection); connection.cancel(); return
                 }
@@ -1869,7 +1896,7 @@ final class MultiplayerRoomCenter {
             case .lobby(let lobby):
                 self.roomJoinTimeoutTask?.cancel(); self.roomJoinTimeoutTask = nil
                 self.roomJoinTask = nil
-                self.lobby = lobby; self.phase = .joined
+                self.applyGuestLobby(lobby)
                 // 입장하자마자 도전하기로 하고 들어왔으면 여기서 보낸다 — 입장이 비동기라
                 // 로비를 받은 이 시점이 도전을 보낼 수 있는 첫 자리다.
                 if self.pendingGymChallenge {

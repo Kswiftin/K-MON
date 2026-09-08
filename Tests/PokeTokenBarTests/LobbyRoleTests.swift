@@ -110,14 +110,47 @@ final class LobbyRoleTests: XCTestCase {
         // 15 = LAN 협동 레이드(`.raidStart`·`.raidSettlement`, `MultiplayerBattleMode.coopBoss`),
         // 16 = 레이드 포획을 참가자별 확률·순차 공개로, 보상 원장을 오전·오후로 분리,
         // 17 = 레이드 포획 추첨에서 몰수당한(`hasLeft`) 참가자만 제외,
-        // 18 = 협동 레이드 러너 정원을 4명에서 8명으로 확대.
+        // 18 = 협동 레이드 러너 정원을 4명에서 8명으로 확대,
+        // 19 = `BattleEvent` 에 case 다섯 추가(볼라틸 셋·지닌물건·기술 잠금).
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
         //
         // **이 값을 리터럴로 박는 테스트는 여기 하나뿐이다.** 다섯 군데에 박혀 있던 동안은 누가
         // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
         // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
         // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 18)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 19)
+    }
+
+    /// `BattleEvent` 의 case 수를 동결한다 — **늘리면 `protocolVersion` 도 올려야 한다.**
+    ///
+    /// 이 enum 은 associated value 를 들고 자동합성 `Codable` 이라, 모르는 case 를 만난 디코더는
+    /// `nil` 로 접는 게 아니라 throw 한다. 스트림은 `roundResolved` 에 통째로 실려 나가고
+    /// 수신부는 디코딩 실패를 연결 종료로 처리하므로(`MultiplayerRoomCenter` 의 길이 프레임 수신),
+    /// case 하나가 조용히 늘면 구버전 게스트가 그 이벤트가 처음 뜨는 라운드에서 방 밖으로 튕긴다.
+    ///
+    /// 왜 안 걸렸나: 배틀 엔진 쪽 테스트는 case 를 늘려도 전부 초록이고(엔진은 자기 안에서만 쓴다),
+    /// 버전 테스트는 값을 그대로 두면 초록이다. 두 사실을 잇는 자리가 없어 #291 이 case 다섯을
+    /// 더하면서 `rulesVersion` 만 올리고 지나갔다 — 방은 `rulesVersion` 을 읽지 않는다.
+    ///
+    /// 소스를 읽는 이유는 Swift 가 associated value 를 든 enum 을 열거하지 못해서다.
+    func testBattleEventCaseCountIsFrozenAgainstTheProtocolVersion() throws {
+        let source = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PokeTokenBar/Core/BattleModel.swift")
+        let lines = try String(contentsOf: source, encoding: .utf8).components(separatedBy: .newlines)
+        guard let start = lines.firstIndex(where: { $0.hasPrefix("enum BattleEvent: Codable") }),
+              let end = lines[start...].firstIndex(where: { $0 == "}" }) else {
+            return XCTFail("`BattleEvent` 선언을 못 찾았다 — 옮겼으면 이 경로도 같이 고친다")
+        }
+        let cases = lines[start...end].filter {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix("case ")
+        }
+        XCTAssertEqual(cases.count, 30,
+                       """
+                       `BattleEvent` 의 case 가 늘거나 줄었다. 고칠 것은 이 숫자만이 아니다 —
+                       `MultiplayerWireMessage.protocolVersion` 도 함께 올려야 구버전 게스트가
+                       라운드 스트림을 디코딩하다 튕기는 대신 입장에서 거절된다.
+                       """)
     }
 
     func testBettingMessagesRoundTrip() throws {

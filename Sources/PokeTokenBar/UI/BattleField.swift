@@ -326,7 +326,7 @@ struct CombatantBar: View {
                 // 로그 칩·기술 버튼과 같은 타입색 팔레트(`battleColor`)로 작게 붙인다.
                 // **지금** 타입이다 — 테라스탈한 개체는 접힌 타입 하나만 보여야 상성이 왜 달라졌는지 읽힌다.
                 ForEach(side.activeTypes, id: \.self) { type in
-                    Text(type.name.uppercased())
+                    Text(type.name)
                         .font(PokedoroTheme.badgeFont(size: 7, weight: .heavy))
                         .foregroundStyle(type.battleLabelColor)
                         .padding(.horizontal, 3).padding(.vertical, 1)
