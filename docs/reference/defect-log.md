@@ -5272,6 +5272,11 @@ PokéAPI 의 `move_meta` 테이블은 7세대에서 끊긴다. 8세대 이후 17
   한 건뿐임을 확인했다.
 - **처방**: XCTest 픽스처는 반드시 `storeStateURL()`/`storeDirectory()`를 사용한다. 새 테스트는
   `storeStateURL("dungeon-reward")`로 바꿨고, 기존 격리 스윕이 재발을 기계적으로 막는다.
+- **같은 PR의 두 번째 가드**: 픽스처를 고친 다음 실행에서는 2,335개 테스트 중
+  `testEveryCompanionStateFieldIsClassifiedForTransfer` 하나가 당시 추가한 일일 보상 원장을 분류하지
+  않았다고 막았다. 최신 `main`에는 같은 역할의 `waveRunEggRewardDate`가 먼저 들어와 리베이스에서
+  그 원장을 재사용했다. 이 필드는 기기 이전 때 더 최근 값을 남기는 **계정 원장**이며, 기존 분류표와
+  전수 가드가 이후 새 영속 필드도 계속 잡는다.
 
 ## 게이트가 전제한 cold build 를 파이프라인의 앞 단계가 warm 으로 만든다
 
