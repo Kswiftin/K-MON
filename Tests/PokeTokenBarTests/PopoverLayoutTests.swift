@@ -202,6 +202,40 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertEqual(long, short, accuracy: 1, "긴 이름이 아레나 높이를 키웠다")
     }
 
+    // MARK: 소유 포켓몬 — 머리줄이 한 줄에 든다
+
+    /// 실제 팝오버와 같은 폭(332pt)으로 머리줄을 렌더한다. 정렬은 가장 긴 이름("도감번호순"),
+    /// 마릿수는 두 자리/세 자리가 모두 나오는 "90/164" — 화면에서 실제로 깨졌던 조합이다.
+    private func rosterHeader(sort: RosterSort) -> some View {
+        let suiteName = "roster-header-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let settings = AppSettings(defaults: defaults)
+        settings.rosterSort = sort
+        return RosterHeader(shownCount: 90, ownedCount: 164, owned: [], types: [:],
+                            didResolveTypes: true, typeFilter: .constant(nil),
+                            favoritesOnly: .constant(false), duplicatesOnly: .constant(false),
+                            unregisteredOnly: .constant(false), page: .constant(0))
+            .environment(settings)
+    }
+
+    /// 머리줄은 폭이 모자라도 **한 줄로 남는다.**
+    ///
+    /// 2026-09-08 리포트: 머리줄 왼쪽의 "소유 포켓몬" 제목이 세 줄로 접혀 있었다. 정렬·타입
+    /// 메뉴는 `.fixedSize()`, 필터 버튼과 마릿수 캡슐은 고정 폭이라 **접힐 수 있는 요소가 제목
+    /// 하나뿐**이었고, 폭이 모자란 몫이 전부 제목으로 갔다.
+    ///
+    /// 넉넉한 폭에서의 높이와 실제 폭에서의 높이를 견준다 — 접히면 실제 폭 쪽이 커진다.
+    /// 높이를 상수로 박지 않는 이유는 폰트·SF Symbol 크기가 OS 판마다 달라서다.
+    func testTheRosterHeaderStaysOnOneLineAtThePopoverWidth() {
+        for sort in RosterSort.allCases {
+            let roomy = renderedHeight(rosterHeader(sort: sort), proposingWidth: 900)
+            let actual = renderedHeight(rosterHeader(sort: sort),
+                                        proposingWidth: PopoverMetrics.contentWidth)
+            XCTAssertEqual(actual, roomy, accuracy: 1,
+                           "\(sort) 정렬에서 머리줄이 접혔다 — 팝오버 폭에 안 드는 요소가 생겼다")
+        }
+    }
+
     // MARK: 소유 포켓몬 — 페이지 도달성
 
     /// 트리거 재현: 한 페이지를 넘긴 마릿수. 페이지가 하나로 머물면 초과분은 다시 도달 불가가 되고,
