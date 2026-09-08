@@ -234,6 +234,7 @@ struct L {
         case .leechSeed: return "\(name)은(는) 씨뿌리기에 체력을 빨렸다! \(damage)"
         case .nightmare: return "\(name)은(는) 악몽에 시달렸다! \(damage)"
         case .hazard:    return "\(name)은(는) 발밑에 깔린 것을 밟았다! \(damage)"
+        case .heldItem:  return "\(name)은(는) 지닌 물건에 체력을 빼앗겼다! \(damage)"
         }
     }
 
@@ -1602,6 +1603,18 @@ struct L {
         case .adamantOrb: return "금강옥"
         case .lustrousOrb: return "백옥"
         case .griseousOrb: return "백금옥"
+        case .muscleBand: return "힘의머리띠"
+        case .wiseGlasses: return "박식안경"
+        case .expertBelt: return "달인의띠"
+        case .metronome: return "메트로놈"
+        case .scopeLens: return "초점렌즈"
+        case .wideLens: return "광각렌즈"
+        case .zoomLens: return "포커스렌즈"
+        case .brightPowder: return "반짝가루"
+        case .laxIncense: return "무사태평향로"
+        case .shellBell: return "조개껍질방울"
+        case .blackSludge: return "검은오물"
+        case .bigRoot: return "큰뿌리"
         case .shinyCharm: return "이로치 부적"
         case .linkingCord: return "연결의끈"
         case .fireStone: return "불꽃의돌"
@@ -1766,6 +1779,28 @@ struct L {
                 return "펄기아가 지니면 드래곤·물 타입 기술의 위력이 1.2배가 돼요."
             case .griseousOrb:
                 return "기라티나가 지니면 드래곤·고스트 타입 기술의 위력이 1.2배가 돼요."
+            case .muscleBand:
+                return "물리 기술의 위력이 1.1배가 돼요. 특수 기술에는 아무 일도 없어요."
+            case .wiseGlasses:
+                return "특수 기술의 위력이 1.1배가 돼요. 물리 기술에는 아무 일도 없어요."
+            case .expertBelt:
+                return "효과가 굉장한 기술의 위력이 1.2배가 돼요. 그 밖의 기술은 그대로예요."
+            case .metronome:
+                return "같은 기술을 이어서 쓸수록 위력이 올라가요. 다섯 번째부터 두 배에서 멈춰요."
+            case .scopeLens:
+                return "급소에 맞히기 쉬워져요."
+            case .wideLens:
+                return "기술의 명중률이 1.1배가 돼요."
+            case .zoomLens:
+                return "상대가 먼저 움직인 턴에는 기술의 명중률이 1.2배가 돼요."
+            case .dullsFoeAim:
+                return "상대 기술의 명중률이 0.9배가 돼요."
+            case .shellBell:
+                return "기술로 준 데미지의 1/8만큼 회복해요."
+            case .bigRoot:
+                return "체력을 흡수하는 기술의 회복량이 1.3배가 돼요."
+            case .blackSludge:
+                return "독타입이 지니면 턴 끝에 회복하고, 그 밖의 포켓몬은 오히려 체력이 줄어요."
             case nil:
                 // 지닌물건 갈래인데 효과가 없는 조합 — `bagUse` 가 둘을 함께 정하므로 도달 불가다.
                 return ""
@@ -1823,6 +1858,17 @@ struct L {
         case .adamantOrb: return "디아루가 드래곤·강철 ×1.2"
         case .lustrousOrb: return "펄기아 드래곤·물 ×1.2"
         case .griseousOrb: return "기라티나 드래곤·고스트 ×1.2"
+        case .muscleBand: return "물리 ×1.1"
+        case .wiseGlasses: return "특수 ×1.1"
+        case .expertBelt: return "효과 굉장 ×1.2"
+        case .metronome: return "같은 기술 연속 시 위력 상승"
+        case .scopeLens: return "급소율 상승"
+        case .wideLens: return "명중 ×1.1"
+        case .zoomLens: return "후공이면 명중 ×1.2"
+        case .dullsFoeAim: return "상대 명중 ×0.9"
+        case .shellBell: return "준 데미지의 1/8 회복"
+        case .bigRoot: return "흡수 회복 ×1.3"
+        case .blackSludge: return "독타입 회복 / 그 외 데미지"
         case nil:        return ""   // `bagUse` 가 둘을 함께 정하므로 도달 불가다
         }
     }

@@ -705,6 +705,9 @@ enum DamageCause: String, Codable, Sendable, Equatable {
     /// volatile 하나에 원인 하나를 두는 이유는 로그다: "무엇에 맞았는지"를 잃으면 잔뎀이
     /// 전부 같은 줄로 읽혀, 조이기가 풀렸는데도 계속 깎이는 오구현이 화면에서 안 보인다.
     case trap, curse, nightmare, leechSeed
+    /// 지닌 물건이 깎은 몫 — 검은오물. 반동(`recoil`)과 나누는 이유는 로그다: 반동은 자기가 쓴
+    /// 기술의 대가고, 이쪽은 쥐고만 있어도 깎인다.
+    case heldItem
     /// 교체로 나올 때 밟은 몫 — 압정뿌리기·스텔스록. 넷을 한 원인으로 묶는 이유는 문구다:
     /// 어느 것을 밟았는지는 밟기 전에 나간 시작 줄이 이미 말한다.
     case hazard
@@ -1876,7 +1879,14 @@ enum BattleEngine {
     ///      + 특정 종 전용 10종(전기구슬·굵은뼈·금속파우더·스피드파우더·럭키펀치·대파·
     ///      마음의물방울·보옥 셋). 능력치 배율·급소 단계·두 타입 강화가 붙고, 구버전 피어는 그
     ///      이름을 모르는 값으로 접어 데미지·급소·행동 순서가 갈린다.
-    static let rulesVersion = 30
+    ///      + 일반 배틀 도구 12종(힘의머리띠·박식안경의 분류별 ×1.1, 달인의띠의 효과 굉장 ×1.2,
+    ///      메트로놈의 연속 사용 배율, 초점렌즈의 급소 +1, 광각렌즈·포커스렌즈의 명중 상승,
+    ///      반짝가루·무사태평향로의 상대 명중 하락, 조개껍질방울·큰뿌리의 회복, 검은오물의 턴 끝
+    ///      회복/데미지). 구버전 피어는 그 이름을 모르는 값으로 접어 데미지·명중·HP 가 갈린다.
+    ///      명중 배율은 **난수 소비까지** 바꾼다: 같은 seed 에서 맞고 빗나감이 갈리면 그 뒤 급소·
+    ///      난수 폭을 뽑는 횟수가 달라진다. `DamageCause` 에 원인 하나(`heldItem`)가 늘어
+    ///      구버전은 그 이벤트를 디코딩하지 못한다.
+    static let rulesVersion = 31
 
     /// 연결이 끊긴 배틀의 승패 — 남은 HP **비율**이 앞선 쪽이 이기고, 같으면 `nil`(무효)이다.
     ///
@@ -2174,7 +2184,21 @@ enum BattleEngine {
         }
         guard !MoveSpec.neverMisses(move.accuracy), let accuracy = move.accuracy else { return nil }
         let withAccuracy = accuracy * StatStages.accuracyPercent(stage: attacker.stage(.accuracy)) / 100
-        return withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
+        var chance = withAccuracy * StatStages.accuracyPercent(stage: -defender.stage(.evasion)) / 100
+        // 명중을 손대는 지닌물건은 **랭크 뒤**에 곱한다(본가 순서). 두 방향을 각자 묻는 이유는
+        // 물건이 다르기 때문이다: 올리는 것은 때리는 쪽(광각렌즈·포커스렌즈), 깎는 것은 맞는 쪽
+        // (반짝가루·무사태평향로)이 쥔다.
+        //
+        // 포커스렌즈의 조건(상대가 이번 턴 이미 움직였나)을 여기서 묻는 이유는 이 함수가 명중을
+        // 재는 **유일한 자리**라서다 — 부르는 자리마다 물으면 한 모드만 빠뜨렸을 때 그 모드에서만
+        // 렌즈가 상시로 일한다.
+        if let scale = attacker.heldEffect?.accuracyScale(targetAlreadyMoved: defender.movedThisTurn) {
+            chance = chance * scale.numerator / scale.denominator
+        }
+        if let scale = defender.heldEffect?.foeAccuracyScale {
+            chance = chance * scale.numerator / scale.denominator
+        }
+        return chance
     }
 
     /// 공격 1회 해상. **rng 소비 순서가 프로토콜의 일부다** — 명중 → 히트 수 →
@@ -2425,6 +2449,14 @@ enum BattleEngine {
         if attacker.heldEffect?.boostedDamageClass == move.damageClass {
             damage = damage * HeldItemBalance.choiceNumerator / HeldItemBalance.choiceDenominator
         }
+        // 일반 배틀 도구(힘의머리띠·박식안경·달인의띠·메트로놈)는 **한 물음**에 답한다 —
+        // 재는 것은 서로 다르지만 곱하는 자리가 하나라서다. 상성표를 안 보는 기술은
+        // `effectiveness` 가 1 이라 달인의띠가 저절로 빠진다(게이트를 따로 두지 않는 이유).
+        if let scale = attacker.heldEffect?.outgoingDamageScale(
+                damageClass: move.damageClass, effectiveness: effectiveness,
+                consecutiveUses: attacker.consecutiveMoveUses) {
+            damage = damage * scale.numerator / scale.denominator
+        }
         // 장막은 **급소를 못 막는다**(3세대 이후). 급소가 뚫지 못하면 장막 한 장으로 판이 잠긴다.
         // 고정 데미지·일격필살은 여기 오기 전에 빠져나가므로 장막을 타지 않는다(본가와 같다).
         if !isCritical, field.halvesDamage(move.damageClass, against: defenderTeam) { damage /= 2 }
@@ -2627,9 +2659,13 @@ extension BattleEngine {
         // 안에서만 살고(`RunBoosts`), 지닌물건은 개체에 붙어 와이어에 실린다. 그래서 웨이브 런에서
         // 둘이 겹치는 판이 실제로 있고, 한쪽만 보는 구현은 그 판에서 회복을 조용히 잃는다.
         // 줄은 **한 줄**이다: 같은 턴의 같은 회복을 두 줄로 내면 로그가 두 번 회복한 것처럼 읽힌다.
-        let leftovers = side.heldEffect == .leftovers
-            ? max(1, full / HeldItemBalance.leftoversDivisor) : 0
-        let heal = min(side.runBoosts.leftoversHeal(maxHP: full) + leftovers, full - side.hp)
+        //
+        // 물건이 회복인지 데미지인지는 **물건이 답한다**(`endOfTurnHPChange`) — 검은오물은 지닌
+        // 개체의 타입에 따라 둘 다 되므로, 이름을 직접 보는 자리를 두면 그 물건이 반쪽만 일한다.
+        let itemChange = side.heldEffect?.endOfTurnHPChange(holderTypes: side.activeTypes)
+        var itemHeal = 0
+        if case .heal(let divisor)? = itemChange { itemHeal = max(1, full / divisor) }
+        let heal = min(side.runBoosts.leftoversHeal(maxHP: full) + itemHeal, full - side.hp)
         if heal > 0 {
             side.hp += heal
             events.append(.heal(actor, amount: heal))
@@ -2648,6 +2684,13 @@ extension BattleEngine {
             let cost = min(max(1, full / HeldItemBalance.lifeOrbRecoilDivisor), side.hp)
             side.hp -= cost
             events.append(.damage(actor, amount: cost, cause: .recoil))
+        }
+        // 검은오물의 데미지 몫 — 회복과 **같은 축**의 반대쪽이다. 생명의구슬 자해와 같은 자리에
+        // 두는 이유도 같다: 잔뎀 뒤라야 이번 턴 깎인 HP 로 판단하고, 쓰러진 개체에게 다시 얹지 않는다.
+        if side.isAlive, case .hurt(let divisor)? = itemChange {
+            let cost = min(max(1, full / divisor), side.hp)
+            side.hp -= cost
+            events.append(.damage(actor, amount: cost, cause: .heldItem))
         }
         // 구슬 2종 — 턴 끝에 주인에게 상태를 건다. **잔뎀 뒤**다: 앞에 두면 구슬을 쥔 그 턴부터
         // 깎이고, `isAlive` 로 막지 않으면 그 턴에 쓰러진 개체가 기절 줄 뒤에 화상을 얻는다.
@@ -3326,13 +3369,24 @@ extension BattleEngine {
                 ownerHitBookkeeping(&defender, actor: defenderActor, move: move, damage: damage,
                                     outcome: outcome, damageScale: damageScale, into: &events)
             }
+            // 조개껍질방울 — 넣은 데미지의 1/8 을 회복한다. 드레인 **앞**에 두는 이유는 반동이다:
+            // 뒤에 두면 반동으로 쓰러진 개체가 기절 줄 뒤에 회복한다. 층이 대신 맞아도 회복한다
+            // (인형에 실제로 들어간 만큼을 본다 — 드레인과 같은 기준이다).
+            if let divisor = attacker.heldEffect?.damageDealtHealDivisor {
+                events += heal(&attacker, actor: attackerActor, upTo: max(1, damage / divisor))
+            }
             // 드레인·반동은 **넣은 데미지의 비율**이다. PokéAPI `meta.drain` 하나가 양쪽을 겸한다 —
             // 양수는 흡수, 음수는 반동. rng 를 안 쓰므로 소비 순서가 흔들리지 않는다.
             // 다단기는 합계로 한 번만 계산한다. 히트마다 회복하면 로그가 다섯 줄이 된다.
             // 광역기는 **대상마다** 계산한다(감쇠된 데미지 기준이라 합계 비율은 그대로다).
             let percent = move.drainPercent
             if percent > 0 {
-                events += heal(&attacker, actor: attackerActor, upTo: damage * percent / 100)
+                var drained = damage * percent / 100
+                // 큰뿌리는 **회복만** 키운다 — 데미지에 곱하면 흡수기가 위력까지 얻는다.
+                if let scale = attacker.heldEffect?.drainHealScale {
+                    drained = drained * scale.numerator / scale.denominator
+                }
+                events += heal(&attacker, actor: attackerActor, upTo: drained)
             } else if percent < 0 {
                 let amount = max(1, damage * -percent / 100)
                 attacker.hp = max(0, attacker.hp - amount)

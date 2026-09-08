@@ -123,13 +123,16 @@ final class LobbyRoleTests: XCTestCase {
         //      무작위 tie-break 소비까지 바꾼다).
         // 24 = 플레이트 17종(타입 강화 도구와 같은 ×1.2).
         // 25 = 특정 종 전용 10종(전기구슬 부류 — 능력치 배율·급소 단계·두 타입 강화).
+        // 26 = 일반 배틀 도구 12종(힘의머리띠 부류의 데미지 배율·초점렌즈의 급소·렌즈와 가루의
+        //      명중·조개껍질방울과 큰뿌리의 회복·검은오물의 턴 끝 회복 또는 데미지 — 명중이 갈리면
+        //      난수 소비 횟수까지 갈리고, `DamageCause` 에 원인 하나가 늘어 와이어 모양도 바뀐다).
         // 방은 `rulesVersion` 을 안 보므로 규칙 차이를 막을 곳이 이 값뿐이다.
         //
         // **이 값을 리터럴로 박는 테스트는 여기 하나뿐이다.** 다섯 군데에 박혀 있던 동안은 누가
         // 정당하게 올릴 때마다 무관한 테스트 넷이 같이 빨개져 진짜 회귀와 구별이 안 됐다
         // (defect-log: 버전 리터럴을 박은 테스트는 남의 정당한 상향에 깨진다). 나머지 자리는
         // 자기 기능이 들어간 버전 **이상**인지만 본다 — 그게 각자가 주장하려던 사실이다.
-        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 25)
+        XCTAssertEqual(MultiplayerWireMessage.protocolVersion, 26)
     }
 
     /// `BattleEvent` 의 case 수를 동결한다 — **늘리면 `protocolVersion` 도 올려야 한다.**

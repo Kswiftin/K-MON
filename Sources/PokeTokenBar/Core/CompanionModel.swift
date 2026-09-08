@@ -338,6 +338,15 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
     /// 심해의이빨·심해의비늘은 이 저장소에서 진화 아이템이라 빠졌다.
     case lightBall, thickClub, metalPowder, quickPowder, luckyPunch
     case stick, soulDew, adamantOrb, lustrousOrb, griseousOrb
+    /// 일반 배틀 도구 12종 — 앞의 물건들과 갈리는 점은 **조건이 물건 밖에 있다**는 것이다.
+    /// 힘의머리띠·박식안경은 기술 분류를, 달인의띠는 상성을, 메트로놈은 같은 기술을 이어 쓴
+    /// 횟수를, 포커스렌즈는 상대가 이번 턴 이미 움직였는지를 본다. 그래서 축이 값이 아니라
+    /// 물음이고(`HeldItemEffect.outgoingDamageScale`·`accuracyScale`), 엔진은 한 자리에서만 묻는다.
+    ///
+    /// 반짝가루와 무사태평향로는 **같은 효과**다(느림보꼬리·만복향로와 같은 자리).
+    case muscleBand, wiseGlasses, expertBelt, metronome, scopeLens
+    case wideLens, zoomLens, brightPowder, laxIncense
+    case shellBell, blackSludge, bigRoot
     /// R7 decor is inventory, not a second currency or store.
     // Mini Home furniture. The original three are the free campus starter set.
     case roomBed, roomTable, roomLamp
@@ -372,6 +381,9 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate,
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
              .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .brightPowder, .laxIncense,
+             .shellBell, .blackSludge, .bigRoot,
              .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
              .retroArcade, .retroRadio, .retroTV, .naturePlant, .natureBench, .natureLantern: return nil
         case .linkingCord: return .plainTrade
@@ -454,7 +466,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
              .toxicPlate, .earthPlate, .skyPlate, .mindPlate, .insectPlate, .stonePlate,
              .spookyPlate, .dracoPlate, .dreadPlate, .ironPlate, .pixiePlate,
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
-             .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb:
+             .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .brightPowder, .laxIncense,
+             .shellBell, .blackSludge, .bigRoot:
             return .heldItem
         case .shinyCharm: return .passive
         case .roomBed, .roomTable, .roomLamp, .lovelyVanity, .lovelySofa, .lovelyHeartLamp,
@@ -502,6 +517,18 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .griseousOrb: return .griseousOrb
         case .ironBall:    return .ironBall
         case .laggingTail, .fullIncense: return .movesLast
+        case .muscleBand:  return .muscleBand
+        case .wiseGlasses: return .wiseGlasses
+        case .expertBelt:  return .expertBelt
+        case .metronome:   return .metronome
+        case .scopeLens:   return .scopeLens
+        case .wideLens:    return .wideLens
+        case .zoomLens:    return .zoomLens
+        // 두 물건이 같은 효과다 — 느림보꼬리·만복향로와 같은 자리다.
+        case .brightPowder, .laxIncense: return .dullsFoeAim
+        case .shellBell:   return .shellBell
+        case .blackSludge: return .blackSludge
+        case .bigRoot:     return .bigRoot
         default:
             // 타입 강화 도구와 열매는 표에서 답한다 — 50여 종을 여기 다시 나열하면 하나 빠뜨렸을 때
             // "가방에서는 지니게 되는데 배틀에서는 아무 일도 안 하는" 물건이 생긴다.
@@ -701,6 +728,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .ironBall: return "iron-ball"
         case .laggingTail: return "lagging-tail"
         case .fullIncense: return "full-incense"
+        // 일반 배틀 도구 12종은 케이스명이 곧 API 아이템명이다(열매·주얼과 같은 규칙).
+        case .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .brightPowder, .laxIncense,
+             .shellBell, .blackSludge, .bigRoot:
+            return kebabRawValue
         default: return evolutionRule?.apiItemName
         }
     }
@@ -789,6 +821,11 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .ironBall: return "⚫"
         case .laggingTail: return "🐌"
         case .fullIncense: return "🕯️"
+        case .muscleBand: return "💪"; case .wiseGlasses: return "🤓"
+        case .expertBelt: return "🥋"; case .metronome: return "🎼"
+        case .scopeLens: return "🔭"; case .wideLens: return "🔍"; case .zoomLens: return "🔎"
+        case .brightPowder: return "🌟"; case .laxIncense: return "🕯️"
+        case .shellBell: return "🐚"; case .blackSludge: return "🛢️"; case .bigRoot: return "🌳"
         case .roomBed: return "🛏️"; case .roomTable: return "🪑"; case .roomLamp: return "💡"
         case .lovelyVanity: return "🪞"; case .lovelySofa: return "🩷"; case .lovelyHeartLamp: return "💕"
         case .retroArcade: return "🕹️"; case .retroRadio: return "📻"; case .retroTV: return "📺"
@@ -820,6 +857,10 @@ enum ItemKind: String, Codable, Sendable, CaseIterable {
         case .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch,
              .stick, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb:
             return HeldItemBalance.speciesBoundPrice
+        case .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .brightPowder, .laxIncense,
+             .shellBell, .blackSludge, .bigRoot:
+            return HeldItemBalance.battleToolPrice
         case .roomBed: return 1_500
         case .roomTable: return 1_000
         case .roomLamp: return 800
@@ -942,7 +983,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
             + HeldItemEffect.pinchRaisedStats.map(HeldItemEffect.pinchStatBoost)
             + PokemonType.allCases.map(HeldItemEffect.gem)
             + [.ironBall, .movesLast, .lightBall, .thickClub, .metalPowder, .quickPowder,
-               .luckyPunch, .leek, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb]
+               .luckyPunch, .leek, .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+               .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+               .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge]
     }
 
     /// 데미지가 1.3배가 되고 그 대가로 매 턴 최대 HP 의 1/10 을 잃는다.
@@ -986,6 +1029,21 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     case lightBall, thickClub, metalPowder, quickPowder
     case luckyPunch, leek, soulDew
     case adamantOrb, lustrousOrb, griseousOrb
+    /// 일반 배틀 도구 — **조건이 물건 밖에 있는** 첫 부류다. 힘의머리띠·박식안경은 기술 분류를,
+    /// 달인의띠는 상성을, 메트로놈은 같은 기술을 이어 쓴 횟수를 본다(`outgoingDamageScale`).
+    case muscleBand, wiseGlasses, expertBelt, metronome
+    /// 급소 단계를 올린다 — 럭키펀치·대파와 **같은 축**이고 크기만 다르다(+1).
+    case scopeLens
+    /// 명중을 올린다. 포커스렌즈는 상대가 이번 턴 이미 움직였을 때만 올린다(`accuracyScale`).
+    case wideLens, zoomLens
+    /// 상대의 명중을 깎는다 — 반짝가루·무사태평향로가 같은 효과라 갈래가 하나다.
+    /// 회피 랭크가 아니라 명중 배율인 이유는 본가와 같다: 랭크로 두면 랭크를 되돌리는 기술이
+    /// 물건까지 지운다.
+    case dullsFoeAim
+    /// 넣은 데미지의 일부를 회복한다(조개껍질방울) / 드레인 회복을 키운다(큰뿌리).
+    case shellBell, bigRoot
+    /// 턴 끝에 독 타입이면 회복, 아니면 데미지 — 한 물건이 두 답을 낸다(`endOfTurnHPChange`).
+    case blackSludge
 
     /// 위급 열매가 올릴 수 있는 스탯 — 본가에 열매가 있는 다섯뿐이다.
     static let pinchRaisedStats: [BattleStat] = [.atk, .def, .spa, .spd, .spe]
@@ -1003,7 +1061,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
              .gem, .ironBall, .movesLast,
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
-             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return nil
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return nil
         }
     }
 
@@ -1017,7 +1077,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
              .gem, .ironBall, .movesLast,
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
-             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return nil
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return nil
         }
     }
 
@@ -1035,7 +1097,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
              .gem, .ironBall, .movesLast,
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
-             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return nil
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return nil
         }
     }
 
@@ -1074,7 +1138,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .typeBoost, .resistBerry, .pinchStatBoost, .pinchCrit, .pinchHeal,
              .gem, .ironBall, .movesLast,
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
-             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return false
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return false
         }
     }
 
@@ -1101,7 +1167,9 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
              .flameOrb, .toxicOrb, .assaultVest, .typeBoost, .resistBerry,
              .gem, .ironBall, .movesLast,
              .lightBall, .thickClub, .metalPowder, .quickPowder, .luckyPunch, .leek,
-             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb: return nil
+             .soulDew, .adamantOrb, .lustrousOrb, .griseousOrb,
+             .muscleBand, .wiseGlasses, .expertBelt, .metronome, .scopeLens,
+             .wideLens, .zoomLens, .dullsFoeAim, .shellBell, .bigRoot, .blackSludge: return nil
         }
     }
 
@@ -1147,8 +1215,92 @@ enum HeldItemEffect: Sendable, Equatable, CaseIterable {
     var bonusCritStages: Int {
         switch self {
         case .luckyPunch, .leek: return 2
+        // 초점렌즈는 누구나 쥘 수 있어 종 전용 둘(+2)보다 작다 — 같은 크기면 종 전용을 쥘 이유가 없다.
+        case .scopeLens: return 1
         default: return 0
         }
+    }
+
+    /// 이 히트의 데미지에 곱할 분수 — 없으면 nil. 힘의머리띠·박식안경·달인의띠·메트로놈이
+    /// **한 물음**에 답한다.
+    ///
+    /// 물건마다 축을 따로 두지 않는 이유는 곱하는 자리가 하나라서다: 네 물건이 재는 것(기술 분류·
+    /// 상성·연속 사용 횟수)은 다르지만 결과는 전부 "이 데미지에 얼마를 곱하나" 다. 축을 넷으로
+    /// 나누면 엔진이 네 번 묻게 되고, 다섯째 도구가 늘 때 한 자리를 빠뜨린다.
+    ///
+    /// 상성표를 안 보는 기술(발버둥·변화기)은 `effectiveness` 가 1 로 들어오므로 달인의띠가
+    /// 저절로 빠진다 — 부르는 쪽이 게이트를 따로 두지 않아도 되는 이유다.
+    func outgoingDamageScale(damageClass: MoveDamageClass, effectiveness: Double,
+                             consecutiveUses: Int) -> (numerator: Int, denominator: Int)? {
+        switch self {
+        case .muscleBand where damageClass == .physical,
+             .wiseGlasses where damageClass == .special:
+            return (HeldItemBalance.damageToolNumerator, HeldItemBalance.damageToolDenominator)
+        case .expertBelt where effectiveness > 1:
+            return (HeldItemBalance.expertBeltNumerator, HeldItemBalance.expertBeltDenominator)
+        case .metronome:
+            // 첫 사용이 기본 위력이다 — `consecutiveMoveUses` 는 이 기술을 쓰는 턴에 이미 올라
+            // 있다(리프블레이드의 `doublingStreakPower` 와 같은 셈).
+            let steps = min(HeldItemBalance.metronomeMaxSteps, max(0, consecutiveUses - 1))
+            guard steps > 0 else { return nil }
+            return (HeldItemBalance.damageToolDenominator
+                        + HeldItemBalance.metronomeStepNumerator * steps,
+                    HeldItemBalance.damageToolDenominator)
+        default:
+            return nil
+        }
+    }
+
+    /// 이 물건이 **주인의** 명중에 곱하는 분수 — 없으면 nil. 포커스렌즈만 조건을 인자로 받는다
+    /// (상대가 이번 턴 이미 움직였을 때만 일한다).
+    func accuracyScale(targetAlreadyMoved: Bool) -> (numerator: Int, denominator: Int)? {
+        switch self {
+        case .wideLens:
+            return (HeldItemBalance.wideLensNumerator, HeldItemBalance.accuracyDenominator)
+        case .zoomLens where targetAlreadyMoved:
+            return (HeldItemBalance.zoomLensNumerator, HeldItemBalance.accuracyDenominator)
+        default:
+            return nil
+        }
+    }
+
+    /// 이 물건이 **상대의** 명중에 곱하는 분수 — 반짝가루·무사태평향로다. 올리는 축
+    /// (`accuracyScale`)과 나눈 이유는 방향이 반대라서다(때리는 쪽 / 맞는 쪽).
+    var foeAccuracyScale: (numerator: Int, denominator: Int)? {
+        self == .dullsFoeAim
+            ? (HeldItemBalance.dullFoeAimNumerator, HeldItemBalance.accuracyDenominator) : nil
+    }
+
+    /// 넣은 데미지를 나눠 회복하는 몫 — 조개껍질방울이다. 드레인 기술이 아니어도 회복한다.
+    var damageDealtHealDivisor: Int? { self == .shellBell ? HeldItemBalance.shellBellDivisor : nil }
+
+    /// 드레인 기술의 **회복만** 키우는 분수 — 큰뿌리다. 데미지는 그대로다.
+    var drainHealScale: (numerator: Int, denominator: Int)? {
+        self == .bigRoot ? (HeldItemBalance.bigRootNumerator, HeldItemBalance.bigRootDenominator)
+                         : nil
+    }
+
+    /// 턴 끝에 HP 를 얼마나 움직이나 — 먹다남은음식과 검은오물이 **같은 물음**에 답한다.
+    ///
+    /// 회복과 데미지를 한 축으로 묶는 이유는 검은오물이다: 같은 물건이 지닌 개체의 타입에 따라
+    /// 회복이 되기도 데미지가 되기도 한다. 축을 둘로 나누면 그 물건이 두 축에 반씩 걸려, 한쪽만
+    /// 보는 자리에서 조용히 아무 일도 안 한다.
+    func endOfTurnHPChange(holderTypes: [PokemonType]) -> ResidualHPChange? {
+        switch self {
+        case .leftovers: return .heal(divisor: HeldItemBalance.leftoversDivisor)
+        case .blackSludge:
+            return holderTypes.contains(.poison)
+                ? .heal(divisor: HeldItemBalance.leftoversDivisor)
+                : .hurt(divisor: HeldItemBalance.blackSludgeHurtDivisor)
+        default: return nil
+        }
+    }
+
+    /// 턴 끝에 물건이 움직이는 HP — 방향이 값의 부호가 아니라 갈래다(부호로 두면 회복 자리가
+    /// 음수를 그대로 더해 로그가 "회복 -6" 을 낸다).
+    enum ResidualHPChange: Equatable, Sendable {
+        case heal(divisor: Int)
+        case hurt(divisor: Int)
     }
 
     /// 이 물건이 **한 번만** 올려 주는 기술 타입 — 주얼이다. 상시 강화(`boostedMoveTypes`)와
@@ -1247,6 +1399,37 @@ enum HeldItemBalance {
     /// 한쪽 밸런스를 조정할 때 다른 쪽이 조용히 따라 움직인다.
     static let assaultVestNumerator = 3
     static let assaultVestDenominator = 2
+
+    /// 일반 배틀 도구 12종의 상점가 — 하나로 둔다. 배율이 작고(×1.1~×1.2) 조건이 붙어 있어
+    /// 타입 강화 도구(2,800)보다 약하고, 값을 물건마다 달리 두면 그 차이가 밸런스가 아니라
+    /// 취향처럼 읽힌다.
+    static let battleToolPrice = 2_500
+
+    /// 힘의머리띠·박식안경의 배율 — 본가와 같은 ×1.1. 메트로놈의 분모도 같은 값을 쓴다
+    /// (같은 자리에서 곱하는 분수라 분모가 갈리면 반올림이 물건마다 달라진다).
+    static let damageToolNumerator = 11
+    static let damageToolDenominator = 10
+    /// 달인의띠 — 효과가 굉장한 히트만 ×1.2(본가와 같다).
+    static let expertBeltNumerator = 12
+    static let expertBeltDenominator = 10
+    /// 메트로놈 — 같은 기술을 이어 쓸 때마다 +0.2, 다섯 번째부터 ×2.0 에서 멈춘다(본가와 같다).
+    static let metronomeStepNumerator = 2
+    static let metronomeMaxSteps = 5
+
+    /// 명중 배율의 분모 — 광각렌즈(×1.1)·포커스렌즈(×1.2)·반짝가루 부류(×0.9)가 함께 쓴다.
+    static let accuracyDenominator = 10
+    static let wideLensNumerator = 11
+    static let zoomLensNumerator = 12
+    static let dullFoeAimNumerator = 9
+
+    /// 조개껍질방울 — 넣은 데미지의 1/8 을 회복한다(본가와 같다).
+    static let shellBellDivisor = 8
+    /// 큰뿌리 — 드레인 회복이 ×1.3 이다(본가와 같다). 데미지는 안 바뀐다.
+    static let bigRootNumerator = 13
+    static let bigRootDenominator = 10
+    /// 검은오물 — 독 타입이 아니면 턴 끝에 최대 HP 의 1/8 을 잃는다. 회복 쪽 몫은
+    /// 먹다남은음식과 같은 1/16 이라 `leftoversDivisor` 를 그대로 쓴다.
+    static let blackSludgeHurtDivisor = 8
 
     /// 구애 배율 — 정수 분수로 곱한다(생명의구슬과 같은 이유: 부동소수 오차가 끼면 두 피어의
     /// 데미지가 갈린다). 스피드 배율(구애스카프)도 같은 값을 쓴다 — 셋이 같은 물건 계열이라

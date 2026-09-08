@@ -425,7 +425,11 @@ enum MultiplayerWireMessage: Codable, Sendable, Equatable {
     //     접어 데미지가 갈린다).
     // 25: 특정 종 전용 10종(전기구슬 부류) — 구버전 게스트는 그 이름을 모르는 아이템으로 접어
     //     능력치 배율·급소가 갈린다.
-    static let protocolVersion = 25
+    // 26: 일반 배틀 도구 12종(힘의머리띠 부류의 데미지 배율·초점렌즈의 급소·렌즈와 가루의 명중·
+    //     조개껍질방울과 큰뿌리의 회복·검은오물의 턴 끝 회복 또는 데미지). 명중이 갈리면 난수
+    //     소비 횟수까지 갈리고, `DamageCause` 에 원인 하나(`heldItem`)가 늘어 구버전 게스트는
+    //     그 데미지 줄이 처음 뜨는 라운드에서 디코딩에 실패한다.
+    static let protocolVersion = 26
     case join(version: Int, participant: LobbyParticipant, snapshot: BattleSnapshot)
     case lobby(MultiplayerLobby)
     case ready(participantID: UUID, ready: Bool)
