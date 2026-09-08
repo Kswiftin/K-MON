@@ -83,6 +83,22 @@ jobs:
             exit 1
           }
 
+      # main 이 채워 둔 MutatorGate 캐시를 읽기만 한다(키가 맞으면 저장은 스킵된다).
+      # 근거는 ci.yml 의 build-test 캐시 단계 주석에 있다.
+      - name: Show Swift version
+        id: swift
+        run: |
+          swift --version
+          echo "toolchain=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache MutatorGate build
+        uses: actions/cache@v4
+        with:
+          path: Tools/MutatorGate/.build
+          key: mutator-gate-${{ runner.os }}-${{ steps.swift.outputs.toolchain }}-${{ hashFiles('Tools/MutatorGate/Package.resolved', 'Tools/MutatorGate/Package.swift', 'Tools/MutatorGate/Sources/**') }}
+          restore-keys: |
+            mutator-gate-${{ runner.os }}-${{ steps.swift.outputs.toolchain }}-
+
       - name: Test and coverage gate
         run: ./scripts/test-gate.sh
 

@@ -35,7 +35,28 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Show Swift version
-        run: swift --version
+        id: swift
+        run: |
+          swift --version
+          # 캐시 키에 쓸 툴체인 지문. 버전 문자열이 곧 ABI 경계다.
+          echo "toolchain=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      # indexstore-db(고정 리비전)를 매 런마다 새로 받아 빌드하던 51초를 되돌려 받는다.
+      # **앱 모듈(.build)은 캐시하지 않는다** — 그쪽을 캐시하면 `swift build` 가 no-op 이 되고
+      # 재컴파일이 없는 빌드는 컴파일러 warning 을 다시 찍지 않아 게이트의 warning 검사가 빈
+      # 로그를 읽는다(#274 가 그 길로 통과했다). MutatorGate 는 판정 도구라 그 검사 대상이 아니고
+      # (`mutator-sweep.sh` 가 이 빌드의 출력을 버린다), 의존성 리비전이 Package.resolved 에
+      # 못 박혀 있어 캐시가 낡을 자리가 없다.
+      #
+      # Swift 버전을 키에 넣는다 — 툴체인이 바뀌면 산출물이 호환되지 않는다.
+      - name: Cache MutatorGate build
+        uses: actions/cache@v4
+        with:
+          path: Tools/MutatorGate/.build
+          key: mutator-gate-${{ runner.os }}-${{ steps.swift.outputs.toolchain }}-${{ hashFiles('Tools/MutatorGate/Package.resolved', 'Tools/MutatorGate/Package.swift', 'Tools/MutatorGate/Sources/**') }}
+          # 도구 소스만 바뀐 경우 indexstore-db 산출물은 그대로 쓴다(SwiftPM 이 증분으로 판정한다).
+          restore-keys: |
+            mutator-gate-${{ runner.os }}-${{ steps.swift.outputs.toolchain }}-
 
       # 게이트 앞에 빌드 단계를 두지 않는다. 두면 게이트 안에서 모듈을 컴파일하는 유일한 빌드
       # (`mutator-sweep.sh` 의 `swift build --enable-code-coverage`)가 no-op 이 되고,
@@ -52,6 +73,37 @@ jobs:
       # 커버리지 후퇴도 빌드를 실패시킨다.
       - name: Test + coverage gate
         run: ./scripts/test-gate.sh
+
+  warm-mutator-gate-cache:
+    name: warm-mutator-gate-cache
+    # **main 에서만 돈다 — PR 이 읽을 수 있는 캐시는 base 브랜치가 저장한 것뿐이다.**
+    # PR 런이 저장한 캐시는 그 PR ref 스코프에 갇혀 다른 PR 이 못 읽는다. 이 잡이 없으면
+    # 모든 PR 의 첫 런이 캐시 miss 가 되어 위 캐시 단계가 재푸시 때만 도움이 된다.
+    #
+    # build-test 를 main 에서 재실행하지 않는 규칙(위 주석)과 충돌하지 않는다 — 저 잡은
+    # 6분짜리 전체 게이트고, 이 잡은 판정 도구 하나만 빌드하는 ~50초짜리다.
+    if: github.event_name == 'push'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show Swift version
+        id: swift
+        run: |
+          swift --version
+          echo "toolchain=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      # 키는 build-test 의 것과 글자 그대로 같아야 한다. 어긋나면 채우기만 하고 아무도 안 읽는다.
+      - name: Cache MutatorGate build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: Tools/MutatorGate/.build
+          key: mutator-gate-${{ runner.os }}-${{ steps.swift.outputs.toolchain }}-${{ hashFiles('Tools/MutatorGate/Package.resolved', 'Tools/MutatorGate/Package.swift', 'Tools/MutatorGate/Sources/**') }}
+
+      - name: Build MutatorGate
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: swift build --package-path Tools/MutatorGate
 
   secret-scan:
     name: secret-scan
@@ -93,6 +145,22 @@ jobs:
 
       # Manual development publication does not have the PR jobs as dependencies,
       # so it owns the same test and coverage gate before signing an installable app.
+      # main 이 채워 둔 MutatorGate 캐시를 읽기만 한다(키가 맞으면 저장은 스킵된다).
+      # 근거는 ci.yml 의 build-test 캐시 단계 주석에 있다.
+      - name: Show Swift version
+        id: swift
+        run: |
+          swift --version
+          echo "toolchain=$(swift --version 2>&1 | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache MutatorGate build
+        uses: actions/cache@v4
+        with:
+          path: Tools/MutatorGate/.build
+          key: mutator-gate-${{ runner.os }}-${{ steps.swift.outputs.toolchain }}-${{ hashFiles('Tools/MutatorGate/Package.resolved', 'Tools/MutatorGate/Package.swift', 'Tools/MutatorGate/Sources/**') }}
+          restore-keys: |
+            mutator-gate-${{ runner.os }}-${{ steps.swift.outputs.toolchain }}-
+
       - name: Test and coverage gate
         run: ./scripts/test-gate.sh
 
