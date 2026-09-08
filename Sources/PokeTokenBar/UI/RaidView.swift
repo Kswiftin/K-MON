@@ -130,7 +130,7 @@ struct RaidView: View {
                 Image(systemName: claimed ? "checkmark.circle.fill" : "circle")
                 Text(claimed ? l.raidRewardClaimedBadge : l.raidRewardOpenBadge)
             }
-            .font(.system(size: 9))
+            .font(.caption2)
             .foregroundStyle(claimed ? .green : .secondary)
         }
         .frame(maxWidth: .infinity)
