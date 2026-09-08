@@ -647,6 +647,11 @@ struct L {
     var onlyOnPress: String { "누를 때만 Keychain 을 읽어요 — 자동 폴링은 안 읽어 팝업이 안 떠요. 토큰 만료 후 이 버튼으로 한도 갱신" }
     var launchAtLogin: String { "로그인 시 자동 시작" }
     var bundledOnly: String { ".app 번들로 설치된 경우에만 사용 가능 (scripts/build-app.sh)" }
+    var popoverShortcutLabel: String { "상단 창 열기/닫기 단축키" }
+    var popoverShortcutHint: String { "다른 앱에 있을 때도 이 단축키로 열고 닫을 수 있습니다." }
+    var popoverShortcutRecording: String { "키를 누르세요… (Esc로 취소)" }
+    var popoverShortcutEmpty: String { "설정 안 함" }
+    var popoverShortcutClear: String { "지우기" }
     var notificationsSection: String { "알림" }
     var limitNotificationsLabel: String { "한도 알림" }
     var companionNotificationsLabel: String { "Companion 이벤트 (부화·진화·졸업)" }

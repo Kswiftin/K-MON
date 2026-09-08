@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var didCheckUpdate = false
     @State private var trainerNameDraft = ""
     @State private var trainerNameFeedback: String?
+    @State private var isRecordingPopoverShortcut = false
     private var l: L { companion.l }
 
     private var isBundledApp: Bool { AppEnv.isBundledApp }
@@ -242,6 +243,28 @@ struct SettingsView: View {
                             launchAtLogin = LoginItem.isEnabled
                         }
                     }
+            }
+            Divider()
+            groupRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(l.popoverShortcutLabel)
+                    Text(l.popoverShortcutHint).font(.caption2).foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Button {
+                    isRecordingPopoverShortcut = true
+                } label: {
+                    Text(isRecordingPopoverShortcut ? l.popoverShortcutRecording
+                         : (settings.togglePopoverShortcut?.displayString ?? l.popoverShortcutEmpty))
+                        .font(.caption.monospaced())
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .background(ShortcutRecorderView(combo: $settings.togglePopoverShortcut,
+                                                 isRecording: $isRecordingPopoverShortcut).frame(width: 0, height: 0))
+                if settings.togglePopoverShortcut != nil {
+                    Button(l.popoverShortcutClear) { settings.togglePopoverShortcut = nil }
+                        .buttonStyle(.plain).font(.caption2).foregroundStyle(.secondary)
+                }
             }
             Divider()
             toggleRow(l.imageAntialiasingLabel, $settings.imageAntialiasing)

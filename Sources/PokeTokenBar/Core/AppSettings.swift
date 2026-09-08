@@ -81,6 +81,17 @@ final class AppSettings {
         didSet { defaults.set(releaseNotesOnUpdateEnabled, forKey: "releaseNotesOnUpdateEnabled") }
     }
     var doNotDisturb: Bool { didSet { defaults.set(doNotDisturb, forKey: "doNotDisturb") } }
+    /// 상단 창(팝오버)을 열고 닫는 전역 단축키. nil = 설정 안 함(기본) — 임의 조합을 기본값으로
+    /// 강제하면 다른 앱이 이미 쓰는 조합과 겹칠 수 있어, 사용자가 직접 고를 때까지 비워 둔다.
+    var togglePopoverShortcut: KeyCombo? {
+        didSet {
+            if let data = togglePopoverShortcut.flatMap({ try? JSONEncoder().encode($0) }) {
+                defaults.set(data, forKey: "togglePopoverShortcut")
+            } else {
+                defaults.removeObject(forKey: "togglePopoverShortcut")
+            }
+        }
+    }
     /// 하루에 마치려는 집중 세션 수. 체인은 **여기서 멈춘다** — 목표를 넘겨서까지 자동으로 미는
     /// 것이, 디스플레이만 켜 두고 자리를 뜬 경우에 가짜 세션이 쌓이는 마지막 통로다.
     ///
@@ -130,6 +141,8 @@ final class AppSettings {
         releaseNotesOnUpdateEnabled = defaults.object(forKey: "releaseNotesOnUpdateEnabled") as? Bool ?? true
         doNotDisturb = defaults.object(forKey: "doNotDisturb") as? Bool
             ?? defaults.object(forKey: "officeMode") as? Bool ?? false
+        togglePopoverShortcut = (defaults.data(forKey: "togglePopoverShortcut"))
+            .flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) }
         dailyFocusGoal = min(max(defaults.object(forKey: "dailyFocusGoal") as? Int
                                  ?? FocusChainRules.defaultDailyGoal,
                                  FocusChainRules.goalRange.lowerBound),

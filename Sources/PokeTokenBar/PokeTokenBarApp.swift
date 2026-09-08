@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
     private let focusTimer = FocusTimer()
     private var floatingPet: FloatingPetController!
     private let navigation = PopoverNavigation()
+    private let popoverShortcut = GlobalHotKey()
 
     // 메뉴바 캐릭터 애니메이션 — 단일 타이머로 프레임 순환.
     // 프레임 = 이미 22px 로 합성된 이미지 + delay. egg/static 은 2프레임 bob, animated 는 GIF 실제 프레임.
@@ -90,6 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
         updater = UpdateChecker()
         updater.startInstaller(automaticDownloads: settings.automaticUpdateDownloadsEnabled)
         observeAutomaticUpdates()
+        applyPopoverShortcut()
+        observePopoverShortcut()
         battleCenter = BattleCenter(companion: companion, settings: settings)
         playerGym = PlayerGymCoordinator(companion: companion, rooms: battleCenter.multiplayer)
         // 관장 자격은 세이브에 남는다. 기한이 지난 채 복원됐으면 여기서 곧바로 풀려야
@@ -157,6 +160,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, UNU
                 guard let self else { return }
                 self.updater.setAutomaticDownloads(self.settings.automaticUpdateDownloadsEnabled)
                 self.observeAutomaticUpdates()
+            }
+        }
+    }
+
+    /// 설정에서 고른 조합으로 (재)등록한다 — 지운 경우(nil)는 해제만 한다.
+    private func applyPopoverShortcut() {
+        if let combo = settings.togglePopoverShortcut {
+            popoverShortcut.register(combo) { [weak self] in self?.togglePopover() }
+        } else {
+            popoverShortcut.unregister()
+        }
+    }
+
+    private func observePopoverShortcut() {
+        withObservationTracking {
+            _ = settings.togglePopoverShortcut
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.applyPopoverShortcut()
+                self.observePopoverShortcut()
             }
         }
     }
