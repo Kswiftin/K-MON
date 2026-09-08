@@ -41,8 +41,8 @@ final class SafariZoneTests: XCTestCase {
         XCTAssertEqual(SafariZone.catchPercent(rarity: .uncommon, catchStage: 3), 50)
     }
 
-    /// 모든 등급 × 모든 단계 조합이 5~95 범위 안에 있는지 전수 확인 — 클램프를 지웠을 때 이
-    /// 테스트가 걸리는지도 구현 중 결함 주입으로 확인했다.
+    /// 모든 등급 × 모든 단계 조합이 5~95 범위 안에 있는지 전수 확인 — `catchPercent`/
+    /// `fleePercent` 의 `min(95, max(5, ...))` 클램프를 지우면 이 테스트가 실패해야 한다.
     func testCatchPercentStaysWithinBoundsAcrossAllRaritiesAndStages() {
         for rarity: Rarity in [.common, .uncommon, .rare, .legendary] {
             for stage in SafariZone.stageRange {
@@ -141,8 +141,8 @@ final class SafariZoneTests: XCTestCase {
 
     /// 이미 끝난 조우(도망을 직접 골라 `.ranAway`)에 다른 액션을 다시 보내도 상태가 안 바뀌고
     /// 같은 결과만 돌아오는지 — 결과 배너가 떠 있는 동안 버튼이 다시 눌려도 안전해야 한다.
-    /// (구현 중 `if let outcome { return outcome }` 가드를 지워 이 테스트가 실제로 빨간불이
-    /// 되는 것을 확인한 뒤 되돌렸다.)
+    /// `SafariEncounter.act` 맨 앞의 `if let outcome { return outcome }` 가드를 지우면 이
+    /// 테스트가 실패해야 한다.
     func testActIsNoOpAfterEncounterHasEnded() {
         var rng = SplitMix64(seed: 1)
         var encounter = SafariEncounter(speciesID: 1, rarity: .common)
